@@ -17,7 +17,7 @@
 ```
 设计版本:  v0.1.2（冻结）
 实现阶段:  v0.2 最小闭环
-当前步骤:  Step 0 已完成 · Step 1 (robot-core::time) 未开始（见 docs/01_implementation_steps.md）
+当前步骤:  Step 1 (robot-core::time) 已完成 · Step 2 (robot-msg schema) 未开始（见 docs/01_implementation_steps.md）
 上游项目:  /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
 
@@ -71,7 +71,7 @@ mock S1 command → iceoryx2 → s0_ipc → latest-command slot
 ```
 robot-system/
 ├─ Cargo.toml                # workspace 根（无 [package]）
-├─ rust-toolchain.toml       # nightly（见 docs/CHANGELOG.md 2026-04-21）
+├─ rust-toolchain.toml       # nightly（docs/00_design.md §9）
 ├─ .cargo/config.toml        # sccache + target 目录
 ├─ configs/                  # 机器人配置 TOML
 ├─ 3rd-party/                # vendor flatc、可能的 iceoryx2 patch
@@ -104,15 +104,16 @@ robot-system/
 
 ## Rust 规范
 
-- **默认 nightly**（与全局 CLAUDE.md §5 对齐，复用同一套工具链；偏离 `docs/00_design.md` §9 "尽量不用 nightly" 的记录见 `docs/CHANGELOG.md` 2026-04-21 条）。
-  - **核心 crate 不启用 unstable feature**：`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1` 任何文件禁用 `#![feature(...)]`；`Cargo.toml` 的 `rust-version` 保持近期 stable，保留随时切回 stable 的能力。
-  - 工具类 crate（`robot-cli` / `robot-viz` / `robot-rpc` / `robot-s2-bridge` / `robot-tests` 等）在必要时可用 nightly-only feature，但须在该 crate README / 顶部注释声明所依赖的 unstable feature 清单。
-  - CI 每次 release 前在 stable 通道跑一轮核心 crate 兼容构建（不过 clippy `-D warnings`），作为回退演练。
+- **Rust nightly 是硬要求**，**严格不用 stable**（`rust-toolchain.toml` pin `channel = "nightly"` 或 `nightly-YYYY-MM-DD`）。对应 `docs/00_design.md` §9。
+- **Edition 2024**。**不写 `rust-version`**：自动跟随最新 nightly；需要复现构建时用 `rust-toolchain.toml` pin `nightly-YYYY-MM-DD`。
+- **核心 crate 默认不用 nightly-only feature**：`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1` 原则上不写 `#![feature(...)]`；确需启用必须在 crate 顶部注释列出并过 review。目的是**降低 nightly 升级导致的回归风险**，不是留 stable 后门。
+- 工具类 crate（`robot-cli` / `robot-viz` / `robot-rpc` / `robot-s2-bridge` / `robot-tests` / `robot-recorder`）可自由使用 nightly feature。
+- nightly 回归风险靠**pin 具体日期 + 原地回滚到上一已验证日期**解决；CI 不跑 stable 回退演练。
 - Allocator 按 §0 表：S0/S1 用系统默认 + RT 禁 alloc；外部工具（cli/viz/rpc/s2-bridge）用 mimalloc。
 - `panic = "abort"` **仅限** `[profile.release.package.robot-s0]` / `[profile.release.package.robot-s1]`；其他 crate 保留 unwind。
 - 控制流多分支用 `match`，避免 if-else 链（全局 §5）。
 - **`cargo fmt` + `cargo clippy --all --all-targets -- -D warnings` 必须在每次 commit 前零警告通过**。
-- CI 严格串行：`fmt → clippy → test → build → cargo deny → allocation-guard → schema_compat → soak (夜间)`。
+- CI 严格串行（全程 nightly）：`fmt → clippy → test → build → cargo deny → allocation-guard → schema_compat → soak (夜间)`。
 
 ### 业务代码禁用的 API
 

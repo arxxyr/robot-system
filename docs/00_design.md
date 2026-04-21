@@ -1183,7 +1183,11 @@ record 文件头必须保存完整 `ConfigIdentity`；回放时据此校验或�
 
 ## 9. 构建与工具链
 
-- Rust **stable**（尽量不用 nightly）。
+- Rust **nightly**（硬要求；`rust-toolchain.toml` pin `channel = "nightly"`）。**不保留 stable 回退路径**，CI 不跑 stable 演练。
+- **Edition 2024**（`workspace.package.edition = "2024"`）。**不写 `rust-version`**：随 nightly 最新版自动走；如需复现特定日期构建，用 `rust-toolchain.toml` pin `nightly-YYYY-MM-DD`，而非 `rust-version`。
+- 核心 crate（`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`）默认不依赖 nightly-only `#![feature(...)]`；若确需启用，必须在 crate 顶部注释单独列出并过 review —— 目的是**避免 nightly 升级引入破坏性变更**，不是为了回切 stable。
+- 工具类 crate（`robot-cli` / `robot-viz` / `robot-rpc` / `robot-s2-bridge` / `robot-tests` / `robot-recorder`）可自由使用 nightly feature。
+- S0 / S1 不得依赖 `mimalloc`（§0 Allocator 策略不因 nightly 工具链改变）。
 - Cargo workspace profile：
 
 ```toml
@@ -1202,13 +1206,14 @@ panic = "abort"
 
 - FlatBuffers 通过 `build.rs` 调 `flatc` 生成代码；`flatc` 由 `3rd-party/` vendor，不依赖系统。
 - iceoryx2 走 crates.io；如需本地 patch，`[patch.crates-io]` 指向 vendor 路径。
-- CI 顺序（严格串行，失败即终止）：
+- CI 顺序（严格串行，失败即终止；全程仅 nightly）：
   1. `cargo fmt --all --check`
   2. `cargo clippy --all --all-targets -- -D warnings`
   3. `cargo test --all`
   4. `cargo build --release`
   5. `cargo deny check`
   6. 额外：allocation-guard 测试（release + debug）、FlatBuffers schema 兼容性、1 h soak（夜间 job）、`kill -9 s0` fail-safe 验证（v0.2+）
+- nightly 回归风险缓解：CI 支持 pin 具体 nightly 日期（`rust-toolchain.toml` 写 `channel = "nightly-YYYY-MM-DD"`），周期性手动升级 + 观察；若新日期破坏核心 crate 则原地回滚到上一已验证日期，**不回切 stable**。
 - 二进制发布命名遵照全局 CLAUDE.md §9 模板：`robot-s0-v${version}+${git_sha7}-linux-arm64.tar.gz`，例如 `robot-s0-v0.1.2+abc1234-linux-arm64.tar.gz`。
 
 ---
@@ -1499,3 +1504,4 @@ v0.1.2 解决 v0.1.1 评审发现的 5 个实现级自洽问题 + 4 个小修。
 |------|------|
 | verification doc 时限 | v0.1 原计划"v0.1 必须产出"，v0.1.2 实际收敛为"v0.2 开工前必须产出"（§1.4 / §10 标题）；附录 C 保留 v0 → v0.1 当时的历史决定 |
 | 发布命名示例 | §9 改用模板 `robot-s0-v${version}+${git_sha7}-linux-arm64.tar.gz` + 当前版本 `v0.1.2` 为例，避免示例落后于真实版本 |
+| 工具链（2026-04-21） | §9 由 "Rust stable（尽量不用 nightly）" 改为 **nightly 硬要求 + edition 2024**；**不保留 stable 回退**；不写 `rust-version`（随最新 nightly 走，复现构建用 `nightly-YYYY-MM-DD` pin）；核心 crate 默认不用 nightly-only feature 以防升级回归；回归风险靠 pin nightly 日期 + 原地回滚，不切 stable；S0/S1 禁 `mimalloc` 约束（§0）不变 |

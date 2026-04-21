@@ -2,7 +2,7 @@
 
 > 本文档是 [`docs/00_design.md`](00_design.md) §11.2 "v0.2 实现顺序" 的可执行版本。
 > 10 步顺序**强制**；第 6 步闭环打通前不接任何真硬件。
-> 当前位置：**Step 0 已完成 · Step 1 未开始**（commit `07a5446`）。
+> 当前位置：**Step 1 已完成 · Step 2 未开始**（Step 0 `07a5446`；Step 1 见下一次 commit）。
 
 ---
 
@@ -11,7 +11,7 @@
 ### 交付
 
 - `Cargo.toml`（workspace 根，无 `[package]`）
-- `rust-toolchain.toml`（stable，版本 pin）
+- `rust-toolchain.toml`（nightly，可 pin 具体日期 `nightly-YYYY-MM-DD`）
 - `.cargo/config.toml`（sccache、target 目录、共用 rustflags）
 - `.gitignore`（`target/`、`.DS_Store`、sccache cache 路径）
 - `crates/robot-core/`（空 crate，只有 `src/lib.rs` 和 `Cargo.toml`）
@@ -391,7 +391,7 @@ EStop 持久化 + 重启后保持 latched。
 3. **不放松 RT thread 限制**（禁 alloc / Arc / IO / panic / format）。
 4. **不引入 tokio 到 `robot-core`**。
 5. **不用 `google.protobuf.Any`**（已废弃选项）。
-6. **不在核心 crate 启用 nightly unstable feature**（`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1` 禁用 `#![feature(...)]`；工具链可用 nightly，详见 `docs/CHANGELOG.md` 2026-04-21 条）。
+6. **严格不用 stable；nightly 是硬要求**。核心 crate（`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`）默认不写 `#![feature(...)]` —— 只为降低 nightly 升级回归风险，不是为了留 stable 后门。见 `docs/00_design.md` §9 与 `docs/CHANGELOG.md` 2026-04-21 条。
 7. **`cargo fmt` + `cargo clippy -D warnings` 不过不提交**。
 
 ---

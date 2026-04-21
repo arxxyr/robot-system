@@ -45,7 +45,7 @@
 1. **不改 `docs/00_design.md`**。架构已冻结。发现语义问题 → 写 `docs/CHANGELOG.md` 讨论，不直接改设计。
 2. **不跳步**。`docs/01_implementation_steps.md` 的 10 步顺序强制。
 3. **commit 前零警告**：`cargo fmt --all --check && cargo clippy --all --all-targets -- -D warnings`。
-4. **Rust 默认 nightly**（偏离 `docs/00_design.md` §9 的记录见 `docs/CHANGELOG.md` 2026-04-21 条）。**核心 crate**（`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`）**禁用任何 `#![feature(...)]` unstable feature**，保持可切回 stable。
+4. **Rust nightly 是硬要求，严格不用 stable**（对应 `docs/00_design.md` §9）。**核心 crate**（`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`）**原则上不写 `#![feature(...)]`**，目的是降低 nightly 升级回归风险（不是为了留 stable 后门）；确需启用必须 crate 顶部注释 + review。
 5. **业务代码禁用 API**：
    - `std::time::Instant::now` / `SystemTime::now` / `tokio::time::Instant::now` → 走 `robot-core::time::RobotClock`
    - `google.protobuf.Any` 作为 RPC payload → 用 `CommandMeta` + 强类型 Command
@@ -59,7 +59,7 @@
 打开 session 后没有特殊指示，直接按 `docs/01_implementation_steps.md` Step 0 执行：
 
 1. 写 `Cargo.toml`（workspace 根，**无** `[package]`，列出未来所有 crate 但此刻只 include `robot-core`）
-2. 写 `rust-toolchain.toml`（pin `nightly`；MSRV 在 `Cargo.toml` 记为 `1.85`，对应 edition 2024 的最低稳定版）
+2. 写 `rust-toolchain.toml`（pin `channel = "nightly"`；可进一步 pin 具体日期 `nightly-YYYY-MM-DD`）。`Cargo.toml` 设 `edition = "2024"`，**不写 `rust-version`**（自动跟随最新 nightly；严格不用 stable）。
 3. 写 `.cargo/config.toml`（sccache rustc-wrapper、target 目录可选）
 4. 写 `.gitignore`（`target/`、`.DS_Store`、`*.sccache*`）
 5. 建 `crates/robot-core/`，`src/lib.rs` 留空 `// robot-core v0.1.2 frozen design`

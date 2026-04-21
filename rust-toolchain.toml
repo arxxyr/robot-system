@@ -1,7 +1,8 @@
 # Rust 工具链 pin。
-# 决定：使用 nightly（偏离 docs/00_design.md §9，详见 docs/CHANGELOG.md 2026-04-21）。
+# 决定：nightly 硬要求（docs/00_design.md §9 / docs/CHANGELOG.md 2026-04-21）。严格不用 stable。
 # 约束：核心 crate（robot-core / robot-msg / robot-transport / robot-s0 / robot-s1）
-#       禁用一切 `#![feature(...)]` unstable feature，保持可切回 stable。
+#       默认不写 `#![feature(...)]` —— 目的是降低 nightly 升级回归风险，不是留 stable 后门。
+#       确需启用时在 crate 顶部注释列出。
 
 [toolchain]
 channel    = "nightly"
