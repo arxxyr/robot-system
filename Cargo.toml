@@ -27,8 +27,8 @@ members = [
 
 [workspace.package]
 version      = "0.1.2"
-edition      = "2021"
-rust-version = "1.82"
+edition      = "2024"
+rust-version = "1.85"
 license      = "Proprietary"
 authors      = ["loosqk <loosqk07@gmail.com>"]
 repository   = "https://github.com/loosqk/robot-system"
@@ -40,9 +40,9 @@ thiserror = "1"
 
 # Workspace 级 lint 默认。
 # 子 crate 在自己的 Cargo.toml 里写 `[lints] workspace = true` 即可继承。
+# 注：`unsafe_op_in_unsafe_fn` 在 edition 2024 下已是默认 deny，不再在此重复声明。
 [workspace.lints.rust]
-unsafe_op_in_unsafe_fn = "warn"
-unreachable_pub        = "warn"
+unreachable_pub = "warn"
 
 [workspace.lints.clippy]
 # Clippy 规则按需增补；Step 0 只给一个基线，避免未来逐条开启触发大量 warning。

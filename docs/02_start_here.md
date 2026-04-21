@@ -59,7 +59,7 @@
 打开 session 后没有特殊指示，直接按 `docs/01_implementation_steps.md` Step 0 执行：
 
 1. 写 `Cargo.toml`（workspace 根，**无** `[package]`，列出未来所有 crate 但此刻只 include `robot-core`）
-2. 写 `rust-toolchain.toml`（pin 一个近期 stable，例如 `1.82` 或更新）
+2. 写 `rust-toolchain.toml`（pin `nightly`；MSRV 在 `Cargo.toml` 记为 `1.85`，对应 edition 2024 的最低稳定版）
 3. 写 `.cargo/config.toml`（sccache rustc-wrapper、target 目录可选）
 4. 写 `.gitignore`（`target/`、`.DS_Store`、`*.sccache*`）
 5. 建 `crates/robot-core/`，`src/lib.rs` 留空 `// robot-core v0.1.2 frozen design`

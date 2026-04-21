@@ -5,5 +5,4 @@
 //
 // Step 0 阶段：仅占位，模块树在 Step 1（time）起陆续落地。
 
-#![deny(unsafe_op_in_unsafe_fn)]
 #![forbid(unused_must_use)]

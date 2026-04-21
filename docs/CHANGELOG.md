@@ -27,7 +27,7 @@ v0.2 开工决定：**本项目开发 / CI 默认使用 nightly toolchain**（`r
 1. **核心 crate 禁用 `#![feature(...)]` unstable feature**：
    - `robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`
    - 任何一个 `.rs` 出现 `#![feature(` 或 `#[cfg_attr(..., feature(...))]` 引入未稳定 feature，视同破坏约束，CI lint 拦截（grep + clippy `disallowed_attributes` 策略；Step 1 之后补）。
-2. **MSRV 保持近期 stable**：`workspace.package.rust-version = "1.82"`（或后续升级到当时最新稳定版），确保任何核心 crate 在 stable 通道都能编译通过。
+2. **MSRV 保持近期 stable**：`workspace.package.rust-version = "1.85"`（对应 edition 2024 的最低稳定版；后续可随 edition / 依赖升级同步上调），确保任何核心 crate 在 stable 通道都能编译通过。
 3. **工具类 crate 可使用 nightly-only feature**（`robot-cli` / `robot-viz` / `robot-rpc` / `robot-s2-bridge` / `robot-tests` / `robot-recorder`），但须在该 crate 顶部注释 + README 列出所用 unstable feature 清单，便于将来迁移。
 4. **S0 / S1 RT 约束不变**：`panic = "abort"`、`mlockall`、禁 heap alloc、禁 `Arc::clone/drop` 等铁律（`00_design.md` §0、§4.9）全部保留。
 5. **S0 / S1 不得依赖 `mimalloc`**（即便全局偏好启用），该约束来自 `00_design.md` §0 Allocator 策略，未偏离。
