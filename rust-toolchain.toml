@@ -1,0 +1,11 @@
+# Rust 工具链 pin。
+# 决定：使用 nightly（偏离 docs/00_design.md §9，详见 docs/CHANGELOG.md 2026-04-21）。
+# 约束：核心 crate（robot-core / robot-msg / robot-transport / robot-s0 / robot-s1）
+#       禁用一切 `#![feature(...)]` unstable feature，保持可切回 stable。
+
+[toolchain]
+channel    = "nightly"
+components = ["rustfmt", "clippy"]
+profile    = "minimal"
+# targets 留空：开发机编译 host target 即可；Orin 部署时由 scripts/deploy.sh 追加
+# `rustup target add aarch64-unknown-linux-gnu`。

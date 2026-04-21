@@ -1,0 +1,20 @@
+# Cargo 项目级配置。
+#
+# sccache：已要求本机安装（brew install sccache / cargo install sccache）。
+# 若协作者未装 sccache，第一次 cargo build 会报 "error: could not execute process sccache"。
+# 屏蔽本行即可临时绕开。
+
+[build]
+rustc-wrapper = "sccache"
+
+# target 目录保持默认（`./target`）。如果要跨项目共享缓存，改为：
+# target-dir = "/Users/$USER/.cargo-target"
+# 这里不统一指定，避免干扰用户全局设置。
+
+# 共用 rustflags 暂不设置。RT crate 需要的 codegen 选项（如 target-cpu）
+# 由各自 [profile] / [target.<triple>] 追加；全局 rustflags 会影响依赖编译缓存命中率。
+
+# 如需 aarch64-unknown-linux-gnu 交叉编译（Orin 部署），追加：
+# [target.aarch64-unknown-linux-gnu]
+# linker = "aarch64-linux-gnu-gcc"
+# runner = "qemu-aarch64 -L /usr/aarch64-linux-gnu"

@@ -1,0 +1,58 @@
+# Rust 构建产物
+/target
+**/*.rs.bk
+*.pdb
+
+# Cargo 锁文件策略：
+# 本项目最终会发布 S0/S1 二进制，Cargo.lock 需要进版本控制以保证可复现构建。
+# 如有子 workspace / subcrate 额外生成 Cargo.lock，按需精细化忽略。
+# （默认不忽略 Cargo.lock）
+
+# sccache 缓存
+*.sccache*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~.nib
+
+# 环境 / 机密
+.env
+.env.*
+!.env.example
+
+# Python 工具链（robot-s2-bridge / robot-policy-host 未来可能产生）
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# FlatBuffers 生成文件 —— Step 2 起由 build.rs 输出到 OUT_DIR，
+# 不应被 check-in。保险起见忽略 *.fbs 对应的顶层 generated/ 目录。
+/generated/
+
+# 录制产物（开发期调试产生的 .mcap / .robotrec）
+/recordings/
+*.mcap
+*.robotrec

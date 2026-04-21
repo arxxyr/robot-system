@@ -1,0 +1,70 @@
+# robot-system workspace 根
+#
+# 设计版本：v0.1.2（冻结，见 docs/00_design.md）
+# 实施阶段：v0.2（见 docs/01_implementation_steps.md）
+# 工具链：nightly（核心 crate 禁 unstable feature，见 docs/CHANGELOG.md 2026-04-21）
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/robot-core",
+]
+
+# 未来 crate（按 docs/01_implementation_steps.md 顺序逐步启用；现在不要提前加入 members）：
+#   crates/robot-msg              # Step 2：FlatBuffers schema + registry
+#   crates/robot-transport        # Step 3–5：FrameHeader parser + SampleLease + iceoryx2
+#   crates/robot-s0               # Step 6：四线程骨架（panic = "abort"）
+#   crates/robot-s1               # Step 6：mock_s1；v0.3 coordinator（panic = "abort"）
+#   crates/robot-adapters/mock    # Step 6：mock HardRT adapter
+#   crates/robot-adapters/feetech # Step 10
+#   crates/robot-policy-host      # v0.5：ExternalPolicyHost
+#   crates/robot-rpc              # v0.3：tonic 网关
+#   crates/robot-s2-bridge        # v0.5：pyo3 module
+#   crates/robot-viz              # Rerun / Foxglove 桥
+#   crates/robot-recorder         # record/replay
+#   crates/robot-cli              # robotctl
+#   crates/robot-tests            # soak + crash/restart + schema_compat
+
+[workspace.package]
+version      = "0.1.2"
+edition      = "2021"
+rust-version = "1.82"
+license      = "Proprietary"
+authors      = ["loosqk <loosqk07@gmail.com>"]
+repository   = "https://github.com/loosqk/robot-system"
+readme       = "README.md"
+
+[workspace.dependencies]
+# Step 1 起 robot-core 会引入 thiserror；在此统一版本，避免子 crate 各自漂移。
+thiserror = "1"
+
+# Workspace 级 lint 默认。
+# 子 crate 在自己的 Cargo.toml 里写 `[lints] workspace = true` 即可继承。
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub        = "warn"
+
+[workspace.lints.clippy]
+# Clippy 规则按需增补；Step 0 只给一个基线，避免未来逐条开启触发大量 warning。
+all          = { level = "warn", priority = -1 }
+pedantic     = { level = "warn", priority = -1 }
+# pedantic 里有些太吵的关掉：
+module_name_repetitions = "allow"
+missing_errors_doc      = "allow"
+missing_panics_doc      = "allow"
+
+[profile.release]
+lto           = "fat"
+codegen-units = 1
+# panic 默认保留 unwind，利于 CLI / 工具诊断。
+# S0 / S1 二进制必须 abort（docs/00_design.md §9），在 Step 6 创建这些 crate 时追加：
+#   [profile.release.package.robot-s0] panic = "abort"
+#   [profile.release.package.robot-s1] panic = "abort"
+# 此刻这些 crate 尚未存在；若提前添加 override，cargo 会报 "unused manifest key"。
+
+[profile.dev]
+# 开发期开 debug 断言；opt-level = 1 让 mock 500 Hz soak 不至太慢。
+opt-level       = 1
+debug           = true
+debug-assertions = true
+overflow-checks  = true

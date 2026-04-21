@@ -1,0 +1,17 @@
+[package]
+name         = "robot-core"
+description  = "机器人运行时内核：trait、错误、时钟等基础类型；零 runtime 依赖。"
+version      .workspace = true
+edition      .workspace = true
+rust-version .workspace = true
+license      .workspace = true
+authors      .workspace = true
+repository   .workspace = true
+readme       .workspace = true
+
+# Step 0 阶段不引入任何依赖。Step 1 起再加 workspace 继承的 thiserror：
+# [dependencies]
+# thiserror = { workspace = true }
+
+[lints]
+workspace = true
