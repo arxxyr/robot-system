@@ -2,7 +2,7 @@
 
 > 本文档是 [`docs/00_design.md`](00_design.md) §11.2 "v0.2 实现顺序" 的可执行版本。
 > 10 步顺序**强制**；第 6 步闭环打通前不接任何真硬件。
-> 当前位置：**Step 4 已完成 · Step 5 未开始**（Step 0 `07a5446` / Step 1 `654d7ab` / Step 2 `3ba9a70` / Step 3 `d8eefa2`；Step 4 见本次 commit）。
+> 当前位置：**Step 4 已完成 · Step 5 开工**（Step 0 `07a5446` / Step 1 `654d7ab` + retrofit `69e6201` / Step 2 `3ba9a70` / Step 3 `d8eefa2` / Step 4 `5234da3`；Step 5 决策冻结 `f0e9add`）。
 
 ---
 
@@ -201,29 +201,68 @@ RAII 封装 + 生命周期严格；`view()` 借用不能 outlive lease。
 
 真正的 iceoryx2 service，但 publisher 和 subscriber 同进程；验证 trait 封装在真后端上工作。
 
+### 前置（已完成）
+
+- macOS 烟测 `/tmp/iceoryx2_smoke` 全绿（2026-04-22 session，见 `docs/CHANGELOG.md`）。
+- 依赖 / 决策全部冻结于 `docs/CHANGELOG.md` "2026-04-22 · Step 5 开工决策与 iceoryx2 依赖登记"。
+
 ### 交付
 
-- `crates/robot-transport/src/iceoryx2/`:
-  - `Iceoryx2Publisher<T>` / `Iceoryx2Subscriber<T>`
-  - QoS 按 §2.4 的类别映射
-  - service 创建时声明 max sample size / history depth / drop policy
-- `crates/robot-tests/src/bin/hello_pubsub.rs` 示例（一个进程内 pub + sub，打印收到的 JointState）
+- **workspace 根 `Cargo.toml`**：`[workspace.dependencies]` 追加 `iceoryx2 = "=0.8.1"`（精确 pin）。
+
+- **`crates/robot-msg/src/size_tier.rs`**（新增）：
+  - `pub enum SizeTier { Control, SensorSmall, SensorLarge, Tensor }`
+  - `pub const fn default_tier_of(schema_id: u32) -> Option<SizeTier>`
+  - `pub const fn max_bytes(tier: SizeTier) -> usize`（8 KiB / 1 MiB / 16 MiB / 128 MiB）
+  - 单元测试穷举 `SCHEMA_REGISTRY`：每个 id 必须返回 `Some`（加新 schema 必同步加 tier，测试拦截遗漏）
+
+- **`crates/robot-transport/Cargo.toml`**：
+  - `[dependencies]` 追加 `iceoryx2 = { workspace = true, optional = true }`
+  - `[features]` 加 `iceoryx2 = ["dep:iceoryx2"]`
+  - `default = ["mock", "iceoryx2"]`（macOS + Linux 均默认启用）
+
+- **`crates/robot-transport/src/iceoryx2/`**（新增模块，`#[cfg(feature = "iceoryx2")]` 门禁）：
+  - `mod.rs`：模块根 + re-export
+  - `service_name.rs`：`topic_to_service_name(topic: &str) -> Result<ServiceName, TransportError>`（方案 A，原样喂）
+  - `qos.rs`：`TopicClass` 枚举 + `apply_qos<T>(builder, class) -> ServiceBuilder<T>`（映射 §2.4 九类）
+  - `attributes.rs`：`define_schema_attrs(spec, schema_id, schema_version)` / `verify_schema_attrs(ver, schema_id)`
+  - `publisher.rs`：`Iceoryx2Publisher<T>` impl `Publisher<T>`（loan → SampleWriter）
+  - `subscriber.rs`：`Iceoryx2Subscriber<T>` impl `LatestSubscriber<T>`（receive → SampleLease）
+  - **Event service**：Step 5 不落；写 `mod event;` 占位 + `todo!()`，Step 6 S0 四线程时一并做
+
+- **`crates/robot-tests/`**（**新建 crate**）：
+  - `Cargo.toml`：加入 workspace `members`
+  - `src/bin/hello_pubsub.rs`：同进程 pub + sub，发 3 条 JointState，打印每条收到的 `layout_id / stamp_ns / positions[0]`
+  - `src/bin/hello_event.rs`：**推到 Step 6**（Event wrapper 同步推）
 
 ### 测试
 
-- 同进程 pub → sub 收到 JointState
-- sample size 超限拒绝 loan
-- drop subscriber 不影响 publisher
-- 100 Hz pub/sub 跑 1 分钟无 drop
+- **robot-msg**：`size_tier` 单元测试全绿
+- **robot-transport**：
+  - 新增 `tests/iceoryx2_roundtrip.rs`：同进程 JointState pub → sub，3 条全到
+  - 新增 `tests/iceoryx2_attr_mismatch.rs`：schema_id attr 不匹配 open → 拒绝
+  - 新增 `tests/iceoryx2_tier_oversize.rs`：sample size 超档 → loan 失败
+  - 已有 mock / parser / trybuild 测试继续全绿
+- **hello_pubsub.rs**：`cargo run -p robot-tests --bin hello_pubsub` 打印 3 条 JointState
+
+### 非本步交付（推到 Step 6+）
+
+- Event service wrapper（Step 6 S0 四线程一起上）
+- 1 分钟 100 Hz soak（需要独立 bench harness；与 Step 9 crash/restart 合并）
+- 1 h 夜间 soak（CI 夜间 job；Step 9 落 ci）
+- TOML override 机制（v0.3 ConfigIdentity 专项）
 
 ### 退出标准
 
-- 夜间 1 h soak：command topic drop = 0
-- unknown_layout_count = 0（warmup 后）
+- `cargo fmt + clippy -D warnings + test` 全绿（macOS 开发机）
+- `size_tier` 穷举测试覆盖当前 9 个 schema
+- `hello_pubsub` 跑通，终端输出 3 条 JointState
+- `iceoryx2 feature` off 时（`--no-default-features --features mock`）全部编译通过 + mock 测试绿（隔离保底）
 
 ### 设计文档参考
 
 §2.1, §2.3, §2.4
++ `docs/CHANGELOG.md` 2026-04-22 "Step 5 开工决策与 iceoryx2 依赖登记"
 
 ---
 
