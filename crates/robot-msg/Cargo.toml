@@ -1,0 +1,24 @@
+[package]
+name        = "robot-msg"
+description = "FlatBuffers schema 定义 + 生成代码 + schema_id registry + schema_lint bin。"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+build      = "build.rs"
+
+[dependencies]
+# §4.2 允许列表 + workspace runtime 白名单扩展，见 docs/CHANGELOG.md 2026-04-22：
+# - flatbuffers：schema runtime，版本与 3rd-party/flatc/VERSION 严格对齐
+# - blake3：layout_id 碰撞检测 + schema_lint 的固定测试向量校验
+flatbuffers = { workspace = true }
+blake3      = { workspace = true }
+
+[[bin]]
+name = "schema_lint"
+path = "src/bin/schema_lint.rs"
+
+[lints]
+workspace = true

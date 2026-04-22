@@ -1,0 +1,38 @@
+// frame_header.fbs — sample 的 envelope header。
+//
+// 对应 docs/00_design.md §2.2。每条 iceoryx2 sample 的前 4 字节是小端 u32
+// `frame_header_size` (H)，[4..4+H] 是本文件的 FrameHeader FlatBuffers root。
+// `schema_id` 路由到具体 body root table，见 src/schema_id.rs 常量表。
+//
+// capability_flags 位域见 §3.4。
+//
+// 解析侧验证顺序（§2.2 硬约束，9 步）：
+//   1. sample_size >= 4
+//   2. 读 H = u32 LE
+//   3. 0 < H <= 4096
+//   4. flatbuffers::root::<FrameHeader>(&sample[4..4+H]) with verifier
+//   5. body_offset >= 4 + H
+//   6. body_offset + body_size <= sample_size
+//   7. HAS_BLOB 时 blob_offset + blob_size <= sample_size 且 alignment 满足
+//   8. body_offset 区间与 blob_offset 区间不重叠
+//   9. 按 schema_id 查 registry，解析 body
+
+namespace robot.msg;
+
+table FrameHeader {
+    magic:            uint;      // "RBTC" = 0x52425443，接收端先切包后校验
+    abi_version:      ushort;
+    schema_id:        uint;      // 全局唯一 message type id，路由到 body root
+    schema_version:   ushort;
+    capability_flags: ulong;     // 见 §3.4 位域
+    stamp_ns:         ulong;     // CLOCK_MONOTONIC_RAW
+    source_id:        uint;      // 全局唯一发布者 id
+    seq:              ulong;
+    body_offset:      uint;      // sample 绝对 offset；≥ 4 + H
+    body_size:        uint;
+    blob_offset:      uint;      // sample 绝对 offset，无 blob 时为 0
+    blob_size:        uint;      // 无 blob 时为 0
+    header_crc32:     uint;      // 由 capability_flags::HEADER_CRC_VALID 决定是否填充
+}
+
+root_type FrameHeader;

@@ -1,0 +1,55 @@
+// blob.fbs — 通用 raw blob 描述符。
+//
+// 对应 docs/00_design.md §3.5 BlobDesc + 相关 enum。
+// v0.1.2 约束：单 blob，`BlobDesc.offset = 0`，`BlobDesc.size = FrameHeader.blob_size`（§2.2）。
+//
+// 本文件不包含 root_type —— BlobDesc 是内嵌类型，由 ImageHeader / PointCloudHeader /
+// TensorHeader 引用。
+
+namespace robot.msg;
+
+enum Dtype : byte {
+    U8 = 0,
+    I8 = 1,
+    U16 = 2,
+    I16 = 3,
+    F16 = 4,
+    F32 = 5,
+    F64 = 6,
+    I32 = 7,
+    U32 = 8,
+}
+
+enum BlobLayout : byte {
+    HWC = 0,
+    CHW = 1,
+    NHWC = 2,
+    NCHW = 3,
+    PointsXYZ = 4,
+    PointsXYZI = 5,
+    Opaque = 6,
+}
+
+enum Endian : byte {
+    Little = 0,
+    Big = 1,
+}
+
+enum Compression : byte {
+    None_ = 0,   // 避开 Rust 保留字 `None`；生成代码用 `Compression::None_`
+    Lz4 = 1,
+    Zstd = 2,
+}
+
+table BlobDesc {
+    offset:      ulong;          // v0.1.2 固定 0
+    size:        ulong;          // v0.1.2 = FrameHeader.blob_size
+    alignment:   ushort;
+    dtype:       Dtype;
+    shape:       [uint];
+    strides:     [int];
+    layout:      BlobLayout;
+    endian:      Endian;
+    compression: Compression;
+    crc32:       uint;           // 由 capability_flags::BLOB_CRC_VALID 决定是否填充
+}

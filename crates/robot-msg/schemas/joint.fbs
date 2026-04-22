@@ -1,0 +1,60 @@
+// joint.fbs — 关节布局 / 关节状态 / 关节命令。
+//
+// 对应 docs/00_design.md §3.5：
+//   - JointLayout  （1 Hz 或 change-only，订阅者缓存；§3.5.1）
+//   - JointState   （500 Hz+，只带 layout_id）
+//   - JointCommand （高频，只带 layout_id；§2.4 QoS keep-last depth=1）
+//
+// `layout_id: ulong` 的 64 bits 是 v0.1.2 冻结约定（§3.5.1 防跨时间跨机器人碰撞）。
+//
+// `ControlMode` / `StaleAction` enum 对应 §3.5 原文。
+
+namespace robot.msg;
+
+enum ControlMode : byte {
+    Position = 0,
+    Velocity = 1,
+    Torque = 2,
+    ServoPosition = 3,
+    Stop = 4,
+}
+
+enum StaleAction : byte {
+    Hold = 0,
+    Zero = 1,
+    Stop = 2,
+}
+
+// JointLayout：低频广播，消费者按 layout_id 建立缓存。
+table JointLayout {
+    layout_id:   ulong;
+    names:       [string];
+    joint_ids:   [uint];
+    hardware_id: string;
+}
+
+// JointState：高频上报，只带 layout_id。长度与 JointLayout.names 一致。
+table JointState {
+    layout_id:     ulong;
+    position_rad:  [double];
+    velocity_rps:  [double];
+    effort_nm:     [double];
+    stamp_ns:      ulong;
+    frame_id:      string;
+}
+
+// JointCommand：高频下发，只带 layout_id。on_timeout 默认 Hold（§3.5 原文）。
+table JointCommand {
+    layout_id:        ulong;
+    mode:             ControlMode;
+    target:           [double];
+    deadline_ns:      ulong;              // CLOCK_MONOTONIC_RAW
+    priority:         ubyte;              // 0..255，大者优先（§3.5）
+    source_task_id:   ulong;
+    on_timeout:       StaleAction = Hold;
+}
+
+// 本文件有三个 root type；flatc 支持每个 table 当作可选 root。body 路由靠
+// FrameHeader.schema_id，不靠文件级 root_type。这里给 JointState 作为"默认"
+// root 满足 flatc 要求；另外两个表读取时按 body schema_id 查 registry。
+root_type JointState;

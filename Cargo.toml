@@ -8,22 +8,25 @@
 resolver = "2"
 members = [
     "crates/robot-core",
+    "crates/robot-msg",
 ]
 
 # 未来 crate（按 docs/01_implementation_steps.md 顺序逐步启用；现在不要提前加入 members）：
-#   crates/robot-msg              # Step 2：FlatBuffers schema + registry
-#   crates/robot-transport        # Step 3–5：FrameHeader parser + SampleLease + iceoryx2
-#   crates/robot-s0               # Step 6：四线程骨架（panic = "abort"）
-#   crates/robot-s1               # Step 6：mock_s1；v0.3 coordinator（panic = "abort"）
-#   crates/robot-adapters/mock    # Step 6：mock HardRT adapter
-#   crates/robot-adapters/feetech # Step 10
-#   crates/robot-policy-host      # v0.5：ExternalPolicyHost
-#   crates/robot-rpc              # v0.3：tonic 网关
-#   crates/robot-s2-bridge        # v0.5：pyo3 module
-#   crates/robot-viz              # Rerun / Foxglove 桥
-#   crates/robot-recorder         # record/replay
-#   crates/robot-cli              # robotctl
-#   crates/robot-tests            # soak + crash/restart + schema_compat
+#   crates/robot-transport           # Step 3–5：FrameHeader parser + SampleLease + iceoryx2
+#   crates/robot-s0                  # Step 6：四线程骨架（panic = "abort"）
+#   crates/robot-s1                  # Step 6：mock_s1；v0.3 coordinator（panic = "abort"）
+#   crates/robot-adapters/mock       # Step 6：mock HardRT adapter
+#   crates/robot-adapters/feetech    # Step 10
+#   crates/robot-kinematics          # v0.3：ArmIkSolver / BaseKinematics trait + 纯类型（零 runtime）
+#   crates/robot-kinematics-xlerobot # v0.4：XLeRobot 双臂 + 三轮全向（移植 dimos kinematics/）
+#   crates/robot-kinematics-piper    # v0.6：Piper 单臂（结构异构第二机器人）
+#   crates/robot-policy-host         # v0.5：ExternalPolicyHost
+#   crates/robot-rpc                 # v0.3：tonic 网关
+#   crates/robot-s2-bridge           # v0.5：pyo3 module
+#   crates/robot-viz                 # Rerun / Foxglove 桥
+#   crates/robot-recorder            # record/replay
+#   crates/robot-cli                 # robotctl
+#   crates/robot-tests               # soak + crash/restart + schema_compat
 
 [workspace.package]
 version      = "0.1.2"
@@ -40,7 +43,13 @@ readme       = "README.md"
 # 的 FFI 绑定；`libc` 加入 §4.2 允许列表的登记见 docs/CHANGELOG.md 2026-04-21。
 libc      = "0.2"
 # thiserror：Step 1 暂未使用（Result 路径未登场），保留入口供后续子 crate 继承。
-thiserror = "1"
+thiserror = "2.0.18"
+# robot-msg (Step 2) FlatBuffers runtime：与 3rd-party/flatc/VERSION 对齐。
+# 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。
+flatbuffers = "=25.12.19"
+# blake3：layout_id / ConfigIdentity / schema_lint 碰撞检测需要的固定 hash。
+# 选 1.5+ 支持 const fn 更多；允许 minor 自由升。
+blake3 = "1"
 
 # Workspace 级 lint 默认。
 # 子 crate 在自己的 Cargo.toml 里写 `[lints] workspace = true` 即可继承。

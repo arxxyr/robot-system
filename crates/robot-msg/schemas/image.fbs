@@ -1,0 +1,22 @@
+// image.fbs — 图像 header（像素数据走 raw blob）。
+//
+// 对应 docs/00_design.md §3.5 ImageHeader。
+// 像素字节在 FrameHeader.blob_offset + blob_size 区间；BlobDesc.shape 描述
+// (H, W, C) / (C, H, W) 等布局，具体编码字段详见 `encoding`。
+
+include "blob.fbs";
+
+namespace robot.msg;
+
+table ImageHeader {
+    blob:        BlobDesc;
+    width:       uint;
+    height:      uint;
+    encoding:    string;         // "rgb8" / "bgr8" / "mono8" / "depth16"
+    step:        uint;           // bytes per row
+    color_order: string;         // "RGB" / "BGR"
+    stamp_ns:    ulong;
+    frame_id:    string;
+}
+
+root_type ImageHeader;

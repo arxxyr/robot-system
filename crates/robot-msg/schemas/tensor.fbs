@@ -1,0 +1,23 @@
+// tensor.fbs — 张量 header（tensor 数据走 raw blob）。
+//
+// 对应 docs/00_design.md §3.5 TensorHeader。
+// 主要用于 policy observation / action_chunk（§2.3 topic `/<robot>/policy/<name>/...`）。
+
+include "blob.fbs";
+
+namespace robot.msg;
+
+enum Device : byte {
+    Cpu = 0,
+    Cuda = 1,
+    Rocm = 2,
+}
+
+table TensorHeader {
+    blob:         BlobDesc;
+    device:       Device;
+    quantization: string;     // "" = none; 例如 "int8_per_tensor"
+    stamp_ns:     ulong;
+}
+
+root_type TensorHeader;

@@ -1,0 +1,22 @@
+// joint_v0.fbs — joint 上古版本快照，compat 测试专用。
+//
+// 意图：证明 schema 向后兼容性框架正确。当前 schemas/joint.fbs 的 JointState
+// 最后两个字段 `stamp_ns` / `frame_id` 是 "v1 新加的"；本文件故意保留其 "v0"
+// 形态（缺 frame_id），以便跑 old-reader-new-writer / new-reader-old-writer
+// 交叉测试（见 tests/compat.rs）。
+//
+// namespace 单独用 `robot.msg.v0`，避免和当前 `robot.msg` 同名 table 冲突；
+// wire 层二者兼容 —— FlatBuffers vtable 末尾字段缺失自动取默认值。
+
+namespace robot.msg.v0;
+
+// 与当前 JointState 相比，缺 `frame_id`（末尾字段）。
+table JointState {
+    layout_id:    ulong;
+    position_rad: [double];
+    velocity_rps: [double];
+    effort_nm:    [double];
+    stamp_ns:     ulong;
+}
+
+root_type JointState;

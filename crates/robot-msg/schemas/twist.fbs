@@ -1,0 +1,20 @@
+// twist.fbs — 线速度 + 角速度（双精度浮点），REP-103 坐标系。
+//
+// 对应 docs/00_design.md §3.5 Twist。
+
+namespace robot.msg;
+
+table Vec3 {
+    x: double;
+    y: double;
+    z: double;
+}
+
+table Twist {
+    linear:   Vec3;
+    angular:  Vec3;
+    frame_id: string;
+    stamp_ns: ulong;
+}
+
+root_type Twist;

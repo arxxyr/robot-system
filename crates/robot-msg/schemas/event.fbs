@@ -1,0 +1,28 @@
+// event.fbs — EStop / 心跳 等非周期事件。
+//
+// 对应 docs/00_design.md §3.5 EStopEvent + Heartbeat。
+// EStop 走 `/<robot>/events/estop`（§2.3）；Heartbeat 是 S1/S0 间的心跳
+// （§2.3 `/<robot>/s1/heartbeat`，§6.2 超时 200 ms）。
+
+namespace robot.msg;
+
+// EStop 事件。`latched` 告诉订阅者 S0 已经把 latch 持久化到磁盘（§6.6）。
+table EStopEvent {
+    reason:   string;
+    stamp_ns: ulong;
+    source:   string;      // "button" / "rpc" / "s1_detect"
+    latched:  bool;
+}
+
+// 心跳。S1 → S0 每 20 ms 一次（50 Hz，§6.2）；S0 RT 循环也以自身 tick 对外暴露。
+// tick_rate_hz 方便订阅端快速校对"应当的周期"。
+table Heartbeat {
+    source_id:    uint;
+    seq:          ulong;
+    tick_rate_hz: double;
+    stamp_ns:     ulong;
+}
+
+// 本文件两个 table 都是 root 候选，按 schema_id 路由。flatc 需要一个顶层
+// root_type 声明；选 Heartbeat 作占位，不影响 EStopEvent 的 root 解析。
+root_type Heartbeat;

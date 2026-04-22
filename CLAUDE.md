@@ -17,7 +17,7 @@
 ```
 设计版本:  v0.1.2（冻结）
 实现阶段:  v0.2 最小闭环
-当前步骤:  Step 1 (robot-core::time) 已完成 · Step 2 (robot-msg schema) 未开始（见 docs/01_implementation_steps.md）
+当前步骤:  Step 2 (robot-msg schema) 已完成 · Step 3 (transport parser) 未开始（见 docs/01_implementation_steps.md）
 上游项目:  /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
 
@@ -85,8 +85,12 @@ robot-system/
     ├─ robot-core/           # trait、错误、time；零 runtime 依赖
     ├─ robot-msg/            # FlatBuffers schema + 生成代码
     ├─ robot-transport/      # iceoryx2 封装 + SampleLease<T> / SampleWriter<T>
+    ├─ robot-kinematics/     # IK / FK / 雅可比 / 底盘运动学 trait + 纯类型（零 runtime 依赖）
+    ├─ robot-kinematics-<robot>/  # 每种机器人一个实现：xlerobot / piper / ...
+    │                        #   v0.4 起按需启用；用户可 fork 自己的 robot-kinematics-<mine>
+    │                        #   而不动 s1 / s0 / adapter
     ├─ robot-s0/             # 四线程二进制
-    ├─ robot-s1/             # coordinator 二进制
+    ├─ robot-s1/             # coordinator 二进制（持 Option<Box<dyn ArmIkSolver>>，按 feature 选实现）
     ├─ robot-policy-host/    # ExternalPolicyHost 二进制（Python/ONNX/HTTP）
     ├─ robot-adapters/
     │   ├─ mock/
@@ -101,6 +105,8 @@ robot-system/
     ├─ robot-cli/            # robotctl
     └─ robot-tests/          # soak + crash/restart + schema_compat
 ```
+
+**IK 分层说明**：IK 住在 S1，不进 S0 / adapter。`robot-kinematics` 定义 `ArmIkSolver` / `BaseKinematics` trait；每个机器人一个 `robot-kinematics-<robot>` 实现，按 feature flag（`xlerobot` / `piper` / ...）挂到 `robot-s1`。替换机器人 = 换一个 feature，s1 / s0 / adapter 都不用改。实现时机见 `docs/01_implementation_steps.md`（v0.4 起），trait 草案 v0.3 前定。
 
 ## Rust 规范
 

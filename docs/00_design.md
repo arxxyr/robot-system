@@ -573,8 +573,20 @@ robot-s1/            # 独立二进制
   ├─ coordinator.rs           # 主循环 READ→COMPUTE→ARBITRATE→ROUTE→WRITE
   ├─ arbiter.rs               # per-joint 优先级仲裁
   ├─ scheduler.rs             # task 调度 + deadline 监控
-  ├─ tasks/                   # trajectory / velocity / servo / safety
-  └─ policy_host/             # InProcessPolicyHost only（§4.7）
+  ├─ tasks/                   # trajectory / velocity / servo / safety / cartesian (IK)
+  ├─ policy_host/             # InProcessPolicyHost only（§4.7）
+  └─ ik/                      # Option<Box<dyn ArmIkSolver>> 持有 + cartesian task 胶水
+
+robot-kinematics/    # 零 runtime 依赖；trait 层
+  ├─ arm.rs          # ArmIkSolver / KinematicInfo / IkSolution / IkError
+  ├─ base.rs         # BaseKinematics（body↔wheel、里程计积分）
+  ├─ pose.rs         # Pose / Twist / Jacobian 纯类型
+  └─ error.rs        # NoSolution / OutOfReach / SingularityTooClose / DeadlineExceeded
+
+robot-kinematics-<robot>/     # 每种机器人一个实现，按 feature flag 挂到 robot-s1
+  ├─ xlerobot/                # XLeRobot 双臂 5DoF + 三轮全向（v0.4；移植自 dimos kinematics/）
+  ├─ piper/                   # AgileX 单臂（v0.6，结构异构验证）
+  └─ <user>/                  # 用户可 fork 自己的实现，不动 s1 / s0 / adapter
 
 robot-policy-host/   # 独立二进制（每个 policy 一个实例）
   └─ src/            # ExternalPolicyHost 实现（Python / ONNX / HTTP）
@@ -1505,3 +1517,4 @@ v0.1.2 解决 v0.1.1 评审发现的 5 个实现级自洽问题 + 4 个小修。
 | verification doc 时限 | v0.1 原计划"v0.1 必须产出"，v0.1.2 实际收敛为"v0.2 开工前必须产出"（§1.4 / §10 标题）；附录 C 保留 v0 → v0.1 当时的历史决定 |
 | 发布命名示例 | §9 改用模板 `robot-s0-v${version}+${git_sha7}-linux-arm64.tar.gz` + 当前版本 `v0.1.2` 为例，避免示例落后于真实版本 |
 | 工具链（2026-04-21） | §9 由 "Rust stable（尽量不用 nightly）" 改为 **nightly 硬要求 + edition 2024**；**不保留 stable 回退**；不写 `rust-version`（随最新 nightly 走，复现构建用 `nightly-YYYY-MM-DD` pin）；核心 crate 默认不用 nightly-only feature 以防升级回归；回归风险靠 pin nightly 日期 + 原地回滚，不切 stable；S0/S1 禁 `mimalloc` 约束（§0）不变 |
+| IK 分层（2026-04-22） | §4.1 模块地图新增 `robot-kinematics`（trait crate）+ `robot-kinematics-<robot>`（每机器人实现）。IK 位于 S1，不进 S0 / adapter；`robot-s1` 以 feature flag 挂具体 solver，替换机器人 = 换 feature；`robot-kinematics` 零 runtime 依赖，不放入 `robot-core`（§4.2 允许列表不受影响）。trait 草案 v0.3 前定，XLeRobot 实现 v0.4 起跟 adapter 对齐时落地 |

@@ -2,7 +2,7 @@
 
 > 本文档是 [`docs/00_design.md`](00_design.md) §11.2 "v0.2 实现顺序" 的可执行版本。
 > 10 步顺序**强制**；第 6 步闭环打通前不接任何真硬件。
-> 当前位置：**Step 1 已完成 · Step 2 未开始**（Step 0 `07a5446`；Step 1 见下一次 commit）。
+> 当前位置：**Step 2 已完成 · Step 3 未开始**（Step 0 `07a5446`；Step 1 `654d7ab`；Step 2 见本次 commit）。
 
 ---
 
@@ -79,25 +79,48 @@ FlatBuffers schema 定义 + 自动生成 + schema registry + 兼容性测试。
   - `blob.fbs`（`BlobDesc` / `Dtype` / `BlobLayout` / `Endian` / `Compression`）
   - `image.fbs`、`pointcloud.fbs`、`tensor.fbs`
   - `event.fbs`（`EStopEvent` / `Heartbeat`）
-- `crates/robot-msg/build.rs` 调 `flatc` 生成 Rust
+- `crates/robot-msg/build.rs` 调 `flatc` 生成 Rust（按 host platform 选 vendor 的 flatc）
+- `crates/robot-msg/Cargo.toml` 新增依赖 `flatbuffers = "24"`（见 `docs/CHANGELOG.md` 2026-04-22 workspace 依赖白名单）
 - `crates/robot-msg/src/lib.rs`：
   - 全局 `SCHEMA_REGISTRY`（`schema_id: u32 → &'static str` 名称）
   - `schema_id` 常量表
-- `3rd-party/flatc/`：vendor flatc 二进制或源码（不依赖系统 `flatc`）
-- `crates/robot-msg/tests/compat.rs`：old-reader-new-writer / new-reader-old-writer 交叉
+- `crates/robot-msg/src/bin/schema_lint.rs`（**独立 Rust bin**，CI 阶段 `cargo run -p robot-msg --bin schema_lint` 调用）：
+  - deprecated 字段 id 不可复用
+  - schema_id / layout_id 唯一性 + 碰撞检测（blake3 固定测试向量）
+  - 字段 id 单调递增
+  - 实现：v0.2 先 regex 扫 `.fbs` 文本，足够覆盖 v0.2–v0.3 schema 复杂度；v0.3 再评估是否上 `bfbs` 反射
+- `crates/robot-msg/tests/compat.rs`：old-reader-new-writer / new-reader-old-writer 运行时交叉（`cargo test` 跑）
+- **vendor flatc（策略 A：预编译二进制）**：
+  ```
+  3rd-party/flatc/
+  ├─ README.md                    # 版本 + 校验和 + 升级流程
+  ├─ VERSION                      # 纯文本，例如 "24.3.25"
+  ├─ darwin-arm64/flatc           # macOS 开发机
+  ├─ linux-x86_64/flatc           # Linux 开发机 / x86 CI
+  ├─ linux-aarch64/flatc          # Orin / arm64 CI
+  └─ checksums.sha256             # 三份二进制的 sha256
+  ```
+  - 版本 pin `flatbuffers 24.3.25`（与 Rust runtime crate 对齐）
+  - 升级频率 < 1/年，手动流程，不在 CI 自动拉新版本
+- `scripts/refresh_flatc.sh`：从 `github.com/google/flatbuffers/releases/download/v<VERSION>/` 拉三份官方 release 二进制，校验 sha256 后解压到 `3rd-party/flatc/<platform>/`；CI 跑一次保证 "vendor 文件 = 官方 release"
+- `scripts/refresh_flatc.ps1`：Windows 对应版本（不影响 `robot-msg` 构建，用户若只在 macOS/Linux 开发可忽略）
 
 ### 测试
 
 - 每个 table round-trip
 - 兼容性：v1 writer → v2 reader、v2 writer → v1 reader
 - 新字段加在末尾的兼容性
-- deprecated 字段 id 不可复用（CI lint）
-- `layout_id` 碰撞检测（给定配置集 blake3 不碰撞）
+- deprecated 字段 id 不可复用（`schema_lint` bin 拦截）
+- schema_id 唯一性（`schema_lint` bin）
+- `layout_id` 碰撞检测（`schema_lint` 跑 blake3 固定测试向量）
+- `refresh_flatc.sh` 重跑后 vendor 文件 sha256 不变
 
 ### 退出标准
 
-- 所有兼容性组合过
-- `flatc` vendor 化，不依赖系统
+- 所有兼容性组合过（运行时）
+- `schema_lint` bin 在当前 schema 集上零错误（静态）
+- `flatc` 完全 vendor 化，`build.rs` 不尝试调用系统 `flatc`；无网环境可 build
+- 不依赖 host 有 Python 环境（无 Python lint 脚本）
 
 ### 设计文档参考
 

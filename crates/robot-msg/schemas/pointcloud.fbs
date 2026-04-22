@@ -1,0 +1,19 @@
+// pointcloud.fbs — 点云 header（点数据走 raw blob）。
+//
+// 对应 docs/00_design.md §3.5 PointCloudHeader。
+
+include "blob.fbs";
+
+namespace robot.msg;
+
+table PointCloudHeader {
+    blob:        BlobDesc;
+    point_count: uint;
+    point_step:  uint;         // bytes per point
+    fields:      [string];     // e.g. ["x","y","z","intensity"]
+    is_dense:    bool;
+    stamp_ns:    ulong;
+    frame_id:    string;
+}
+
+root_type PointCloudHeader;
