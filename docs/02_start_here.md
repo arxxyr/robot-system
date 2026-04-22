@@ -19,7 +19,7 @@
 ```
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.2 最小闭环
-当前步骤:     Step 0 未开始（见 docs/01_implementation_steps.md）
+当前步骤:     见 docs/01_implementation_steps.md 顶部"当前位置"行（单一事实来源）
 平台:         Step 0-5 macOS 可跑；Step 6+ 需 Linux（Orin 或 Linux 开发机）
 ```
 

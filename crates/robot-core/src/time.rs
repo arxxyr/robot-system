@@ -45,6 +45,38 @@ pub struct DurationNs(pub u64);
 
 impl MonoRawNs {
     pub const ZERO: Self = Self(0);
+
+    /// `self - other` 的有符号差（纳秒）。正值表示 `self` 比 `other` 晚。
+    ///
+    /// 中间用 `i128` 防 `u64` 减法溢出，最终饱和到 `i64` 范围（±~292 年 ns，
+    /// v0.x 周期内绰绰有余）。饱和而非 panic，符合 RT 铁律（§0）。
+    ///
+    /// 与 `Sub for MonoRawNs`（返回 `Option<DurationNs>`）语义互补：`Sub` 只给
+    /// 前向差，`signed_delta_ns` 给方向信息。时间戳对齐 / `TimeAligner` 的最近邻
+    /// 搜索需要方向，单独开这个 API 避免调用方手工拼 `if a>=b`。
+    #[inline]
+    #[must_use]
+    #[allow(clippy::cast_lossless, clippy::cast_possible_truncation)]
+    pub const fn signed_delta_ns(self, other: MonoRawNs) -> i64 {
+        let diff = (self.0 as i128) - (other.0 as i128);
+        if diff > i64::MAX as i128 {
+            i64::MAX
+        } else if diff < i64::MIN as i128 {
+            i64::MIN
+        } else {
+            // diff ∈ [i64::MIN, i64::MAX]：`as i64` 数值保真。
+            diff as i64
+        }
+    }
+
+    /// `|self - other|`，方向无关。饱和到 `u64`（与 `MonoRawNs` 同宽）。
+    ///
+    /// 典型场景：`TimeAligner` 用 `abs_diff <= tol` 做"最近邻是否在容差内"判定。
+    #[inline]
+    #[must_use]
+    pub const fn abs_diff(self, other: MonoRawNs) -> DurationNs {
+        DurationNs(self.0.abs_diff(other.0))
+    }
 }
 
 impl DurationNs {
@@ -93,6 +125,20 @@ impl Deadline {
     #[must_use]
     pub const fn as_mono_raw_ns(self) -> MonoRawNs {
         self.0
+    }
+
+    /// 距 deadline 还剩多少；已过期返回 `None`。
+    ///
+    /// 语义与 `Sub for MonoRawNs` 对齐（`deadline - now`）：`now < deadline` →
+    /// `Some(剩余时长)`；`now >= deadline` → `None`。const fn + 饱和 / checked，
+    /// 不 panic。
+    #[inline]
+    #[must_use]
+    pub const fn remaining(self, now: MonoRawNs) -> Option<DurationNs> {
+        match self.0.0.checked_sub(now.0) {
+            Some(d) => Some(DurationNs(d)),
+            None => None,
+        }
     }
 }
 
@@ -631,6 +677,74 @@ mod tests {
                 "CLOCK_MONOTONIC_RAW backward: {prev:?} → {cur:?}"
             );
             prev = cur;
+        }
+    }
+
+    // --- signed_delta_ns / abs_diff / Deadline::remaining ---
+
+    #[test]
+    fn signed_delta_ns_positive_and_negative() {
+        assert_eq!(MonoRawNs(200).signed_delta_ns(MonoRawNs(50)), 150);
+        assert_eq!(MonoRawNs(50).signed_delta_ns(MonoRawNs(200)), -150);
+        assert_eq!(MonoRawNs(7).signed_delta_ns(MonoRawNs(7)), 0);
+    }
+
+    #[test]
+    fn signed_delta_ns_saturates_on_extreme_gap() {
+        // 正向超 i64::MAX → 饱和到 i64::MAX
+        let huge = MonoRawNs(u64::MAX);
+        let zero = MonoRawNs(0);
+        assert_eq!(huge.signed_delta_ns(zero), i64::MAX);
+        // 反向超 i64::MIN → 饱和到 i64::MIN
+        assert_eq!(zero.signed_delta_ns(huge), i64::MIN);
+    }
+
+    #[test]
+    fn signed_delta_ns_edge_at_i64_max() {
+        // 恰好等于 i64::MAX 的差：应保真，不 panic
+        #[allow(clippy::cast_sign_loss)]
+        let t = MonoRawNs(i64::MAX as u64);
+        assert_eq!(t.signed_delta_ns(MonoRawNs::ZERO), i64::MAX);
+        assert_eq!(MonoRawNs::ZERO.signed_delta_ns(t), -i64::MAX);
+    }
+
+    #[test]
+    fn abs_diff_is_symmetric() {
+        let a = MonoRawNs(300);
+        let b = MonoRawNs(120);
+        assert_eq!(a.abs_diff(b), DurationNs::from_nanos(180));
+        assert_eq!(b.abs_diff(a), DurationNs::from_nanos(180));
+        assert_eq!(a.abs_diff(a), DurationNs::ZERO);
+    }
+
+    #[test]
+    fn abs_diff_does_not_wrap() {
+        // u64 减法方向错误时会 wrap；abs_diff 必须先选方向再减。
+        let lo = MonoRawNs(10);
+        let hi = MonoRawNs(u64::MAX - 5);
+        assert_eq!(hi.abs_diff(lo), DurationNs(u64::MAX - 15));
+        assert_eq!(lo.abs_diff(hi), DurationNs(u64::MAX - 15));
+    }
+
+    #[test]
+    fn deadline_remaining_future_and_past() {
+        let dl = Deadline(MonoRawNs(1_000));
+        assert_eq!(
+            dl.remaining(MonoRawNs(400)),
+            Some(DurationNs::from_nanos(600))
+        );
+        assert_eq!(dl.remaining(MonoRawNs(1_000)), Some(DurationNs::ZERO));
+        assert_eq!(dl.remaining(MonoRawNs(1_001)), None);
+    }
+
+    #[test]
+    fn deadline_remaining_matches_sub_semantics() {
+        // 与 Sub for MonoRawNs 的 Option<DurationNs> 语义保持一致：
+        // 未过期 ↔ Some；已过期 ↔ None。
+        let dl = Deadline(MonoRawNs(500));
+        for now_ns in [0_u64, 499, 500, 501, 10_000] {
+            let now = MonoRawNs(now_ns);
+            assert_eq!(dl.remaining(now), dl.as_mono_raw_ns() - now);
         }
     }
 

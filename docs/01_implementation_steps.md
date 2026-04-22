@@ -80,7 +80,7 @@ FlatBuffers schema 定义 + 自动生成 + schema registry + 兼容性测试。
   - `image.fbs`、`pointcloud.fbs`、`tensor.fbs`
   - `event.fbs`（`EStopEvent` / `Heartbeat`）
 - `crates/robot-msg/build.rs` 调 `flatc` 生成 Rust（按 host platform 选 vendor 的 flatc）
-- `crates/robot-msg/Cargo.toml` 新增依赖 `flatbuffers = "24"`（见 `docs/CHANGELOG.md` 2026-04-22 workspace 依赖白名单）
+- `crates/robot-msg/Cargo.toml` 新增依赖 `flatbuffers = "=25.12.19"`（见 `docs/CHANGELOG.md` 2026-04-22 workspace 依赖白名单）
 - `crates/robot-msg/src/lib.rs`：
   - 全局 `SCHEMA_REGISTRY`（`schema_id: u32 → &'static str` 名称）
   - `schema_id` 常量表
@@ -94,13 +94,13 @@ FlatBuffers schema 定义 + 自动生成 + schema registry + 兼容性测试。
   ```
   3rd-party/flatc/
   ├─ README.md                    # 版本 + 校验和 + 升级流程
-  ├─ VERSION                      # 纯文本，例如 "24.3.25"
+  ├─ VERSION                      # 纯文本，当前 "25.12.19"
   ├─ darwin-arm64/flatc           # macOS 开发机
   ├─ linux-x86_64/flatc           # Linux 开发机 / x86 CI
   ├─ linux-aarch64/flatc          # Orin / arm64 CI
   └─ checksums.sha256             # 三份二进制的 sha256
   ```
-  - 版本 pin `flatbuffers 24.3.25`（与 Rust runtime crate 对齐）
+  - 版本 pin `flatbuffers 25.12.19`（与 Rust runtime crate 对齐；workspace Cargo.toml `flatbuffers = "=25.12.19"`）
   - 升级频率 < 1/年，手动流程，不在 CI 自动拉新版本
 - `scripts/refresh_flatc.sh`：从 `github.com/google/flatbuffers/releases/download/v<VERSION>/` 拉三份官方 release 二进制，校验 sha256 后解压到 `3rd-party/flatc/<platform>/`；CI 跑一次保证 "vendor 文件 = 官方 release"
 - `scripts/refresh_flatc.ps1`：Windows 对应版本（不影响 `robot-msg` 构建，用户若只在 macOS/Linux 开发可忽略）

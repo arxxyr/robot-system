@@ -201,7 +201,7 @@ pub trait BaseKinematics: Send {
 
 #### `robot-msg`（v0.2 Step 2 登记）
 - 允许：
-  - `flatbuffers = "24"`（与 vendor flatc 24.3.25 对齐；Step 2 schema 反序列化必需）
+  - `flatbuffers = "=25.12.19"`（与 vendor flatc 25.12.19 对齐；Step 2 schema 反序列化必需。Cargo.toml 用 `=` 精确 pin，防 minor 漂移）
   - `blake3`（`schema_lint` bin 的 `layout_id` 碰撞检测 + `ConfigIdentity` 相关 hash）
 - 禁止：同 `robot-core` 禁用列表（flatbuffers runtime 除外）
 - RT 影响：`robot-msg` 的 reader 路径零拷贝、零 allocation；`FlatBufferBuilder` 构造**禁止**进 RT thread（§0 RT thread 禁令已收录）
@@ -243,7 +243,7 @@ pub trait BaseKinematics: Send {
 | `docs/00_design.md` §4.2 | **不改**；本条是向其他 crate 的机制延伸，不修订 `robot-core` 铁律 |
 | dimos `docs/09_robot_framework.md` §4.2 | **不改**（源文档同上） |
 | `docs/CHANGELOG.md`（本文件） | 新增本条；未来每次新 crate / 新依赖都在此补登记 |
-| `docs/01_implementation_steps.md` Step 2 交付 | 显式列出 `flatbuffers = "24"` 并指向本条 |
+| `docs/01_implementation_steps.md` Step 2 交付 | 显式列出 `flatbuffers = "=25.12.19"` 并指向本条 |
 
 ### 审阅
 
@@ -265,7 +265,7 @@ pub trait BaseKinematics: Send {
 
 1. **flatc vendor 策略：A 预编译二进制**
    - 路径：`3rd-party/flatc/{darwin-arm64,linux-x86_64,linux-aarch64}/flatc` + `VERSION` + `checksums.sha256`
-   - 版本 pin `flatbuffers 24.3.25`，与 Rust `flatbuffers = "24"` 对齐
+   - 版本 pin `flatbuffers 25.12.19`，与 Rust `flatbuffers = "=25.12.19"` 对齐（`=` 精确 pin，防 minor 漂移）
    - 拒绝 B（源码 + cmake 构建）：CI 每次 clean build 多 2–3 min 不可接受，且 flatc 升级频率 ≪ 1/年
    - 升级走手动 `scripts/refresh_flatc.sh` + `git commit`，不在 CI 自动拉新版本
 
@@ -278,7 +278,7 @@ pub trait BaseKinematics: Send {
    - v0.2 实现：regex 扫 `.fbs` 文本；v0.3 视需要升级到 `bfbs` 反射
    - **拒绝 Python 脚本**：全局 CLAUDE.md 偏 Rust/C++，CI 不引入 Python runtime
 
-3. **依赖白名单扩展到 workspace**：`flatbuffers = "24"` 作为 `robot-msg` 的第一条白名单入库，见本文件 "workspace runtime 依赖白名单机制" 条目
+3. **依赖白名单扩展到 workspace**：`flatbuffers = "=25.12.19"` 作为 `robot-msg` 的第一条白名单入库，见本文件 "workspace runtime 依赖白名单机制" 条目
 
 ### 影响面
 
@@ -355,5 +355,64 @@ impl<'a, T> SampleWriter<'a, T> {
 - 提议：Claude Code（Step 4 决策 #5，发现 §4.3 原 API 在 borrow checker 下不可实现）
 - 决定：用户 loosqk（2026-04-22 session 内同意 "按 ▶ 倾向推"）
 - 复审触发：若未来某后端（Zenoh / 裸 shm）的 API 迫使 publish 回到 publisher trait（例如需要 publisher 内部持有的事务性状态在 publish 时更新），重新评估本调整；Step 5 iceoryx2 实现应能直接采纳当前签名。
+
+---
+
+## 2026-04-22 · Step 1 retrofit：`robot-core::time` 补时间代数原语（**状态：登记 / 向前兼容**）
+
+### 涉及 Step
+
+`docs/01_implementation_steps.md` Step 1 · `robot-core::time`（已完成于 `654d7ab`，本条属 retrofit，不回滚 Step 1 状态）。
+
+### 决定
+
+`crates/robot-core/src/time.rs` 追加三个 const fn method，填补 Step 1 原交付清单未覆盖但后续"多传感器时间对齐 / `TimeAligner`"必需的时间代数原语：
+
+```rust
+impl MonoRawNs {
+    /// `self - other` 的有符号差（ns）。正值 = self 更晚。
+    /// i128 中间值防 u64 减法下溢；饱和到 i64（±~292 年 ns，v0.x 绰绰有余）。
+    pub const fn signed_delta_ns(self, other: MonoRawNs) -> i64;
+
+    /// |self - other|，方向无关，内部走 u64::abs_diff。
+    pub const fn abs_diff(self, other: MonoRawNs) -> DurationNs;
+}
+
+impl Deadline {
+    /// 距 deadline 剩余时长；已过期返回 None。
+    /// 语义与 `Sub for MonoRawNs`（deadline - now）一致。
+    pub const fn remaining(self, now: MonoRawNs) -> Option<DurationNs>;
+}
+```
+
+### 理由
+
+1. **`Sub for MonoRawNs` 只给前向差**（`a >= b` 返 `Some(DurationNs)`，否则 `None`），表达不了"b 比 a 早多少 ns"这种方向信息。`TimeAligner` 的最近邻搜索 / 双向容差判断需要方向，单独开 `signed_delta_ns` 避免每个调用方手工拼 `if a>=b { ... } else { ... }`。
+2. **`abs_diff` 是 `TimeAligner` 容差比较的原子操作**（`abs_diff <= tol`）。直接走 `u64::abs_diff` 比手写 if/else 更短、clippy `manual_abs_diff` 零告警。
+3. **`Deadline::remaining` 把"距 deadline 还剩多久"从调用方散落的 `deadline.as_mono_raw_ns() - now` 收敛到一处**，const fn + `checked_sub`，零 panic。§6 / §10.1 里所有"剩余预算"语义都该走这个 API。
+4. **与 2026-04-22 session 对融合层评估的连续性**：本 session 评估了 "传感器数据根据时间融合吗"（结论：架构只给了时间戳基础设施，没给融合算法层；TimeAligner 该住独立 `robot-fusion` crate，v0.3+ 再排），`robot-core::time` 补这三个方法是**零依赖、向前兼容**的自然延伸，不承诺启动 fusion 工作，但未来谁写 aligner 都少造一次轮子。
+
+### 约束
+
+1. **纯扩展**：signature 向后兼容，不改现有任何 API；原有 33 测试全绿。
+2. **零新依赖**：不引入 `nalgebra` / `num-traits` 等 math crate，仍只依赖 `libc`（§4.2 既有例外）。
+3. **不 panic / 不 alloc**：三个方法都是 const fn + 饱和 / checked 算术，符合 RT 铁律（§0）；本身仍不建议在 RT thread 直接调用（`robot-core::time` 任意 API 在 RT 路径的使用仍按 §1.2 单独审）。
+4. **使用范围**：任意 crate 可用；`TimeAligner` / fusion 层真正落地仍走 CHANGELOG 新条目（届时登记 crate 名 / 依赖 / 策略枚举）。
+
+### 影响面
+
+| 文件 | 调整 |
+|------|------|
+| `crates/robot-core/src/time.rs` | `impl MonoRawNs` 加 `signed_delta_ns` / `abs_diff`；`impl Deadline` 加 `remaining`；追加 6 条单元测试（含 `u64::MAX` 极限 / 方向对称 / 与 `Sub` 一致性） |
+| `docs/00_design.md` §3.2 / §3.2.1 | **不改**（属同一语义域的工具函数扩展，不新增时钟域 / 不引入 wall clock） |
+| `docs/01_implementation_steps.md` Step 1 交付清单 | **不改**（retrofit 不回写原步骤；未来整理 v0.2 总结时可并入） |
+
+### 审阅
+
+- 提议：Claude Code（2026-04-22 session 评估 "传感器数据根据时间融合吗" 的后续行动项 #1）
+- 决定：用户 loosqk（2026-04-22 session 内 "先把 1 完成"）
+- 复审触发：
+  - v0.3 抽 `robot-fusion` crate 时，若发现需要有符号 `DurationNs` / `SignedDurationNs` 类型（例如 IMU 样本时间戳可能早于 tick 的 ±1 ms 窗口），考虑把 `signed_delta_ns` 返回值升级为 newtype。
+  - 若后续要加 wall clock offset / 硬件时钟校准原语（`HwClockOffset`），单独登记新条目，不塞回本条。
 
 ---
