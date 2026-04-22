@@ -196,7 +196,7 @@ pub trait BaseKinematics: Send {
 
 #### `robot-core`（§4.2，原文）
 - 允许：`thiserror`、`smallvec`、`arrayvec`、`bytemuck`、`crc32fast`
-- 例外：`libc = "0.2"`（仅 `robot-core::time` 与未来 `robot-core::os`，见 2026-04-21 条）
+- 例外：`libc = "=1.0.0-alpha.3"`（仅 `robot-core::time` 与未来 `robot-core::os`，见 2026-04-21 条；2026-04-22 由用户决定从 `0.2.x` stable 切到 `1.0` 预发布轨道，精确 pin 防 alpha.N → alpha.N+1 破坏性变更）
 - 禁止：`iceoryx2 / tonic / pyo3 / tokio / tracing-subscriber / vendor SDK / flatbuffers runtime / serde_json`
 
 #### `robot-msg`（v0.2 Step 2 登记）

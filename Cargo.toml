@@ -41,8 +41,9 @@ readme       = "README.md"
 [workspace.dependencies]
 # robot-core::time (Step 1) 需要 `clock_gettime(CLOCK_MONOTONIC_RAW)` + `nanosleep`
 # 的 FFI 绑定；`libc` 加入 §4.2 允许列表的登记见 docs/CHANGELOG.md 2026-04-21。
-# 注：crates.io 存在 libc 1.0.0-alpha.x 预发布版，不采用；stable 轨道走 0.2.x。
-libc      = "0.2.185"
+# 用户 2026-04-22 显式决定走 1.0 预发布轨道；精确 pin 防 alpha.N → alpha.N+1
+# 的破坏性变更（pre-release SemVer 不保证兼容）。升级 alpha 时同步跑 time.rs 测试。
+libc      = "=1.0.0-alpha.3"
 # thiserror：Step 1 暂未使用（Result 路径未登场），保留入口供后续子 crate 继承。
 thiserror = "2.0.18"
 # robot-msg (Step 2) FlatBuffers runtime：与 3rd-party/flatc/VERSION 严格对齐（精确 pin，防 minor 漂移）。
