@@ -17,7 +17,7 @@
 ```
 设计版本:  v0.1.2（冻结）
 实现阶段:  v0.2 最小闭环
-当前步骤:  Step 4 (SampleLease / SampleWriter) 已完成 · Step 5 (iceoryx2 后端) 未开始（见 docs/01_implementation_steps.md）
+当前步骤:  Step 5 (mock iceoryx2 pub/sub) 已完成 · Step 6 (S0 四线程 mock) 未开始（见 docs/01_implementation_steps.md；CI + cargo-deny + env_id 脚本已接入）
 上游项目:  /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
 
