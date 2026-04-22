@@ -1,0 +1,3 @@
+7ff99c0fd907bfa9c8bfff408ffe317885f2754752f03625a464b1b79ce5d4d7  darwin-arm64/flatc
+7d16cbedc9721dc6985a810438038531cd8e4e6e11630af707d3a4c0c40f91f4  linux-x86_64/flatc
+# linux-aarch64/flatc  MISSING (build from source, see README.md)
