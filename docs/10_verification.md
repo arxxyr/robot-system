@@ -1,0 +1,266 @@
+# 10 · 验证与测试（活文档）
+
+> `docs/00_design.md` §10 的落地版本。**骨架提交**：数值占位，随 Step 5–10
+> 推进逐项填实测。
+>
+> - 权威语义来源：`docs/00_design.md` §10 / §6 / §4.9。
+> - 偏离 / 调整语义走 `docs/CHANGELOG.md`，不在本文件改。
+> - 本文件每次更新 → 在底部《变更记录》追加一行。
+
+---
+
+## 0. 使用约定
+
+### 状态标签
+
+| 标签 | 含义 |
+|---|---|
+| ✅ | 指标已达成，baseline / regression threshold 已写死 |
+| 🟡 | 已有测试但指标未实测 / 未落 CI |
+| ⏳ | 测试尚未落地（Step 未到） |
+| ⚠️ | 实测未达标 / 有待开的债 |
+
+### 更新触发
+
+- 每完成一个 Step：过一遍本文件，把该 Step 解锁的指标状态从 ⏳ → 🟡 或 ✅
+- 基线数值实测：在《表》里填 `measured` + `measured_at` + `run_env`
+- 回归阈值变动：走 `docs/CHANGELOG.md` 登记 + 更新本文件《10.1 硬指标》表
+
+### run_env 约定
+
+实测值必须同时记录机器 / 内核 / CPU 频率治理器 / iceoryx2 版本，否则不可比较。
+本文件用 `env_id` 字符串代称，详解见底部《附录 · 实测环境登记》。
+
+---
+
+## 10.1 硬指标（与 `00_design.md` §10.1 1:1 对齐）
+
+### 10.1.1 S0 loop
+
+| 指标 | 目标 | measured | measured_at | env_id | 状态 | Step |
+|---|---|---|---|---|---|---|
+| target rate | 1 kHz | — | — | — | ⏳ | Step 6 |
+| p99 latency | < 1.5 ms | — | — | — | ⏳ | Step 10 (Orin) |
+| max latency (1 h soak) | < 5 ms | — | — | — | ⏳ | Step 10 |
+| watchdog timeout path | < 2 cycles | — | — | — | ⏳ | Step 7 |
+| RT thread allocation count (after init) | = 0 | — | — | — | ⏳ | Step 6 |
+| RT thread `Arc::clone/drop` count | = 0 | — | — | — | ⏳ | Step 6 |
+
+`docs/00_design.md` §4.9 / §10.1 定义；检测钩子 = `robot-tests::rt_arc_guard` + `assert-no-alloc`（§10.2）。
+
+### 10.1.2 S1 loop
+
+| 指标 | 目标 | measured | measured_at | env_id | 状态 | Step |
+|---|---|---|---|---|---|---|
+| target rate | 100 Hz | — | — | — | ⏳ | Step 6 |
+| p99 latency | < 15 ms | — | — | — | ⏳ | Step 10 |
+| policy timeout 不阻塞 coordinator | kill -9 policy host → coordinator 仍 100 Hz | — | — | — | ⏳ | Step 9 |
+
+### 10.1.3 Transport
+
+**Measured baseline**（v0.1 必产，v0.2 起作 regression 基准；按机型分别 histogram）：
+
+| 场景 | 目标 | measured p99 | measured_at | env_id | 状态 |
+|---|---|---|---|---|---|
+| 512 B message p99 (same host) | baseline | — | — | — | 🟡 Step 5 已具备测试入口，数值待 bench |
+| 3 MiB blob p99 | baseline | — | — | — | ⏳ Step 6 加 blob 类 topic 后 |
+| 1 h soak command topic drop | `== 0` (hard) | — | — | — | ⏳ Step 9 soak harness 落地 |
+
+**硬约束（不受绝对值影响）**：
+
+| 约束 | 状态 |
+|---|---|
+| command topic drop count == 0 | ⏳ Step 9 soak |
+| sensor topic drop allowed but counted | ⏳ Step 6 metrics hook |
+| `unknown_layout_count == 0`（warmup 后） | ⏳ Step 6 |
+
+**v0.2+ regression threshold**（基线确定后启用）：
+
+| 回归项 | 阈值 | 状态 |
+|---|---|---|
+| command topic p99 | 相比 baseline 回退 ≤ 30% | ⏳ |
+| blob topic p99 | 相比 baseline 回退 ≤ 30% | ⏳ |
+
+**Step 5 已落的 transport 层可观测项**（作为未来 bench 的测量点）：
+- `robot-transport::ParseMetrics`：每种 `ParseError` 变体独立 `AtomicU64`
+- `Iceoryx2Publisher::loan` 早期拒绝 → `TransportError::SampleTooLarge`（size > tier cap）
+- `Iceoryx2SampleWriter::iceoryx2_publish` → `loan_slice_uninit` → `send`（三段可打点）
+
+### 10.1.4 Safety
+
+| 指标 | 目标 | measured | measured_at | env_id | 状态 | Step |
+|---|---|---|---|---|---|---|
+| EStop RPC → S0 latched | < 20 ms | — | — | — | ⏳ | Step 8 |
+| S1 crash → S0 safe output | < 250 ms | — | — | — | ⏳ | Step 7 |
+| RPC gateway crash → S0/S1 | 0 tick drop | — | — | — | ⏳ | Step 9 |
+| physical estop button → latched | < 5 ms | — | — | — | ⏳ | Step 10 |
+| EStop latch 持久化往返（重启 S0 后仍 latched） | 必过 | — | — | — | ⏳ | Step 8 |
+| kill -9 s0 → 硬件 fail-safe（torque disable/zero/brake） | < 500 ms | — | — | — | ⏳ | Step 10 |
+
+### 10.1.5 Schema
+
+| 指标 | 目标 | 状态 | Step |
+|---|---|---|---|
+| old reader reads new writer（所有 v0 组合） | 全通 | 🟡 已落 `robot-msg/tests/compat.rs`（Step 2），v0 只含 JointState；新增 schema 时需补 | Step 2 已做 |
+| new reader reads old writer（所有 v0 组合） | 全通 | 🟡 同上 | Step 2 已做 |
+| deprecated 字段 id 不可复用 | CI lint 拦截 | ✅ `robot-msg/src/bin/schema_lint.rs`（Step 2） | Step 2 |
+| `layout_id` 碰撞检测 | CI lint（固定测试向量） | ✅ `schema_lint` 跑 blake3（Step 2） | Step 2 |
+| `SCHEMA_REGISTRY` 严格递增 | CI 单测 | ✅ `schema_id::tests::registry_ids_are_unique_and_monotonic` | Step 2 |
+| 每个 `schema_id` 必须有 `SizeTier` | CI 单测 | ✅ `size_tier::tests::every_registered_schema_has_a_tier`（Step 5） | Step 5 |
+
+---
+
+## 10.2 测试基础设施
+
+### 10.2.1 Harness 清单
+
+| Harness | 位置 | 用途 | 状态 | 触发 Step |
+|---|---|---|---|---|
+| `cyclictest` 1 h + 直方图 | 外部工具（cyclictest deb 包） | RT 抖动 baseline | ⏳ | Step 6 Linux / Step 10 Orin |
+| `assert-no-alloc` 钩子 | RT thread 入口 | CI debug+release 跑 0 alloc | ⏳ | Step 6 |
+| `robot-tests::soak` | `crates/robot-tests/src/bin/soak.rs`（未创建） | mock 500 Hz state + 200 Hz command / 1 h / 24 h | ⏳ | Step 6 后 / Step 9 |
+| `robot-tests::crash_restart` | `crates/robot-tests/src/bin/crash_restart.rs`（未创建） | 随机 `kill -9` S1 / policy / gateway | ⏳ | Step 9 |
+| `robot-tests::schema_compat` | 当前由 `crates/robot-msg/tests/compat.rs` 覆盖 | old/new 交叉解析 | 🟡 v0 层已覆盖；跨 crate 版本交叉推到 v0.3 | Step 2 部分 / v0.3 补 |
+| `robot-tests::rt_arc_guard` | 未创建 | RT thread 内 `Arc::clone/drop` 计数 | ⏳ | Step 6 |
+| `hello_pubsub` | `crates/robot-tests/src/bin/hello_pubsub.rs` | Step 5 最小闭环演示 | ✅ | Step 5 |
+
+### 10.2.2 现存单元 / 集成测试清单（Step 5 完成时刻快照）
+
+| Crate | 测试 | 计数 | 覆盖 |
+|---|---|---|---|
+| `robot-core` | `time::tests` | 33 | `RobotClock` / `Deadline` / `MonoRawNs` 代数 / Mock / `SystemClock` 单调 |
+| `robot-msg` | `schema_id` + `capability` + `size_tier` | 15 | registry 单调 + 穷举 tier + capability flag 位 |
+| `robot-msg` | `tests/compat.rs` | 13 | v0 ↔ 当前 JointState 交叉 + deprecated id 拦截 |
+| `robot-transport` | unit | 12 | parser / sample / writer / metrics |
+| `robot-transport` | `tests/iceoryx2_roundtrip.rs` | 4 | 真后端 roundtrip / size 超档 / attribute mismatch / Debug |
+| `robot-transport` | `tests/sample.rs` | 20 | mock round-trip + SchemaMismatch + BlobMisaligned + 资源计数守恒 |
+| `robot-transport` | `tests/iceoryx2` 混入 | 10 | qos + service_name + 类型层 |
+| `robot-transport` | `tests/trybuild.rs` | 1 test，编译期 3 条负向 | `MessageView` outlive lease / publish 后写 / 二次 loan |
+
+### 10.2.3 CI 顺序（严格串行，全程 nightly）
+
+1. `cargo fmt --all --check`
+2. `cargo clippy --all --all-targets -- -D warnings`（含 pedantic）
+3. `cargo test --workspace --all-features`
+4. `cargo test -p robot-transport --no-default-features --features mock`（iceoryx2 off 保底）
+5. `cargo build --all`（release）
+6. `cargo deny check`（⏳ 未接入，Step 6 前落）
+7. `allocation-guard`（⏳ Step 6 `assert-no-alloc` + RT thread 入口钩子）
+8. `schema_compat`（跨版本 crate round-trip；⏳ v0.3）
+9. 夜间：soak 1 h / 24 h + `cyclictest` + crash/restart（⏳ Step 9+）
+
+**当前 CI 实际状态**：尚未接 GitHub Actions；所有步骤靠人工 `cargo ...` 保证。`.github/workflows/` 骨架推到 Step 6 开工前补（见底部 TODO）。
+
+---
+
+## 10.3 Record / Replay 格式
+
+### 10.3.1 记录必须保存的字段（§10.3 原样引用）
+
+| 字段 | 语义 | 状态 |
+|---|---|---|
+| `topic` | iceoryx2 ServiceName 原字符串 | ⏳ Step 9+ recorder |
+| `schema_id` | `FrameHeader.schema_id` | ⏳ |
+| `schema_version` | `FrameHeader.schema_version` | ⏳ |
+| monotonic `stamp_ns` | `FrameHeader.stamp_ns`（`CLOCK_MONOTONIC_RAW`） | ⏳ |
+| receive `stamp_ns` | recorder 本地取样时刻 | ⏳ |
+| `seq` | `FrameHeader.seq` | ⏳ |
+| header bytes | 原始 `FrameHeader` FlatBuffers | ⏳ |
+| body bytes | 原始 body FlatBuffers | ⏳ |
+| blob bytes 或 blob 文件 offset | 两种存储形式都支持 | ⏳ |
+| dropped sample marker | recorder 发现 seq 跳号时插入 | ⏳ |
+| clock info（monotonic → wall offset 采样） | 录制开始 + 结束 + 中间抽样 | ⏳ |
+| robot config hash | `ConfigIdentity.config_hash` | ⏳ Step 8+ |
+| calibration hash | `ConfigIdentity.calibration_hash` | ⏳ |
+| session_id | 每次运行 uuid | ⏳ |
+| active `layout_id` → `JointLayout` 映射表 | 录制期间所有出现过的组合 | ⏳ |
+
+### 10.3.2 回放模式
+
+| 模式 | 语义 | 状态 |
+|---|---|---|
+| `as-fast-as-possible` | 忽略时间戳最大速度重放 | ⏳ |
+| `real-time` | 按原 `stamp_ns` 间隔重放 | ⏳ |
+| `scaled-time` (x2, x0.5, …) | 按倍速缩放重放 | ⏳ |
+| `step-by-step` | 交互式逐帧 | ⏳ |
+| `topic remap` | 回放到不同 topic | ⏳ |
+| `robot_id remap` | 回放到不同机器人实例 | ⏳ |
+
+### 10.3.3 长期互操作
+
+- 短期：自定义二进制格式（body / blob concat + index 文件）。
+- 长期：对接 MCAP / LeRobotDataset 导出器（§13 开放问题 5）。
+
+Recorder crate (`crates/robot-recorder/`) 规划时机：v0.3 – v0.4，具体排期见 `docs/01_implementation_steps.md`（本文件不重复）。
+
+---
+
+## 10.4 v0.2 退出标准（本文件视角）
+
+Step 10 完成 = v0.2 达成。以下 **所有** 指标必须从 ⏳ / 🟡 升到 ✅：
+
+- [ ] 10.1.1 S0 loop 全部（1 kHz / p99 / max / watchdog / alloc / arc）
+- [ ] 10.1.2 S1 loop 全部
+- [ ] 10.1.3 Transport baseline + 1 h soak drop=0 + unknown_layout=0
+- [ ] 10.1.4 Safety 全部（含物理按钮 < 5 ms + kill -9 s0 硬件 fail-safe < 500 ms）
+- [ ] 10.1.5 Schema 全通
+- [ ] 10.2.1 全部 harness 状态 ✅
+- [ ] 10.2.3 CI 1 – 9 条全通
+- [ ] 10.3 recorder 至少 `real-time` + `as-fast-as-possible` 两模式可用（其余推 v0.3）
+
+⚠️ 当前（Step 5 完成时）距离 v0.2 退出标准还差 Step 6–10 的全部工作量 + 本表绝大多数行。
+
+---
+
+## 附录 · 实测环境登记
+
+随实测推进在此追加条目。建议字段：
+
+```
+env_id        macos-m4pro-nightly-20260422
+host          Apple MacBook Pro M4 Pro, 64 GB
+os            macOS 15.4 (Darwin 25.4.0)
+cpu governor  N/A (macOS)
+iceoryx2      0.8.1
+rust toolchain nightly-2026-04-22 (或当时具体日期)
+测量场景       Step 5 同进程 pub/sub
+测得项        <列表>
+备注           macOS 仅作 Step 0–5 开发期支持；§10.1 绝对值不作 baseline
+```
+
+初始化：
+
+```
+env_id        macos-m4pro-nightly-20260422
+host          Apple MacBook Pro M4 Pro（详 CPU 型号补）
+os            Darwin 25.4.0
+cpu governor  —
+iceoryx2      0.8.1
+rust toolchain nightly（Cargo.toml edition=2024；未 pin 具体日期）
+测得项        (仅定性) hello_pubsub 同进程 roundtrip OK；无 drop；
+              size tier cap 早期拒绝正确；attribute 不匹配 open 被拒
+备注           不作为 §10.1 baseline —— 设计文档明确要求按 Orin / Linux
+              x86_64 两档实测
+```
+
+### 待登记
+
+- `linux-x86_64-nightly-YYYYMMDD`：Step 6 开工用
+- `orin-agx-nightly-YYYYMMDD`：Step 10 前必须
+
+---
+
+## 变更记录
+
+| 日期 | 变更 | 作者 |
+|---|---|---|
+| 2026-04-22 | 骨架初稿：§10.1/§10.2/§10.3 三级结构 + 状态标签 + env_id 机制；所有数值行占位。Step 5 完成时刻快照 | Claude Code (提议) / loosqk (拍板) |
+
+---
+
+## TODO（与本文件直接相关，尚未落）
+
+1. **CI 接入**：`.github/workflows/ci.yml` 骨架按 §10.2.3 九步串行写；Step 6 开工前完成。
+2. **`assert-no-alloc` 集成**：`crates/robot-tests::rt_arc_guard` / `robot-s0::rt_thread` 启动期全局安装；Step 6 必须。
+3. **cargo-deny 配置**：`deny.toml`（版本 / 许可证 / 重复依赖）Step 6 前加，拦截未经登记的新依赖。
+4. **env_id 自动采集脚本**：`scripts/collect_env_id.sh`（uname / sw_vers / sysctl / rustc -V / cargo tree 合成 id），实测时一键生成登记条。
