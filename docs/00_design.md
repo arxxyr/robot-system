@@ -635,7 +635,10 @@ pub trait LatestSubscriber<T> {
 
 pub trait Publisher<T> {
     fn loan(&mut self) -> Result<SampleWriter<'_, T>, TransportError>;
-    fn publish(&mut self, w: SampleWriter<'_, T>) -> Result<(), TransportError>;
+}
+
+impl<'a, T> SampleWriter<'a, T> {
+    pub fn publish(self) -> Result<(), TransportError>;
 }
 
 pub trait RequestClient<Req, Resp> {
@@ -647,7 +650,7 @@ pub trait RequestClient<Req, Resp> {
 
 - `loan()` 返回的 `SampleWriter` 持有 iceoryx2 sample 的可写借用，生命周期绑定到 publisher 的借用期。
 - **未 publish 即 drop**：自动 discard / release loan，不留悬挂 sample。
-- **publish 消费 writer**：`publish(w)` 按值接收，调用后 `w` 不可再用；编译期拦截 "publish 后继续写 body/blob"。
+- **publish 消费 writer**：`writer.publish()` 按值消费 self，调用后 writer 不可再用；编译期拦截 "publish 后继续写 body/blob"。`publish` 方法挂在 writer 上（而非 `Publisher` trait），避免 writer 持有 `&mut Publisher` 期间再调 `Publisher::publish(&mut self, w)` 的 borrow checker 冲突（v0.1.2 → v0.1.3 文档卫生调整，见 `docs/CHANGELOG.md` 2026-04-22 "§4.3 writer API 调整"）。
 - 错误路径（例如 body 编码失败）无需显式 release：直接 `return Err(..)` 让 `SampleWriter` drop，iceoryx2 loan 自动归还。
 
 后端先实现 iceoryx2，保留切换到 Zenoh / 裸 shm 的余地。
@@ -1518,3 +1521,4 @@ v0.1.2 解决 v0.1.1 评审发现的 5 个实现级自洽问题 + 4 个小修。
 | 发布命名示例 | §9 改用模板 `robot-s0-v${version}+${git_sha7}-linux-arm64.tar.gz` + 当前版本 `v0.1.2` 为例，避免示例落后于真实版本 |
 | 工具链（2026-04-21） | §9 由 "Rust stable（尽量不用 nightly）" 改为 **nightly 硬要求 + edition 2024**；**不保留 stable 回退**；不写 `rust-version`（随最新 nightly 走，复现构建用 `nightly-YYYY-MM-DD` pin）；核心 crate 默认不用 nightly-only feature 以防升级回归；回归风险靠 pin nightly 日期 + 原地回滚，不切 stable；S0/S1 禁 `mimalloc` 约束（§0）不变 |
 | IK 分层（2026-04-22） | §4.1 模块地图新增 `robot-kinematics`（trait crate）+ `robot-kinematics-<robot>`（每机器人实现）。IK 位于 S1，不进 S0 / adapter；`robot-s1` 以 feature flag 挂具体 solver，替换机器人 = 换 feature；`robot-kinematics` 零 runtime 依赖，不放入 `robot-core`（§4.2 允许列表不受影响）。trait 草案 v0.3 前定，XLeRobot 实现 v0.4 起跟 adapter 对齐时落地 |
+| §4.3 writer API（2026-04-22） | `Publisher::publish(&mut self, w)` 在 writer 持 `&'a mut Publisher` 时会与再取 `&mut self` 冲突（Rust borrow checker 规则）；调整为 `SampleWriter::publish(self) -> Result<()>`（方法挂 writer 上，按值消费 self 自然释放 publisher borrow）。语义完全不变：按值消费、drop without publish = discard loan、loan 泄漏编译期拦截。详见 `docs/CHANGELOG.md` 2026-04-22 "§4.3 writer API 调整" |

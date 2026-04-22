@@ -297,3 +297,63 @@ pub trait BaseKinematics: Send {
   - `schema_lint` 的 regex 策略出现误报 / 漏报 → v0.3 升级到 bfbs 反射。
 
 ---
+
+## 2026-04-22 · §4.3 writer API 调整：`publish` 挂到 writer（**状态：已回写**）
+
+### 原文 → 当前
+
+原 `docs/00_design.md` §4.3：
+
+```rust
+pub trait Publisher<T> {
+    fn loan(&mut self) -> Result<SampleWriter<'_, T>, TransportError>;
+    fn publish(&mut self, w: SampleWriter<'_, T>) -> Result<(), TransportError>;
+}
+```
+
+当前（§4.3 + 附录 E 冻结后文档卫生行）：
+
+```rust
+pub trait Publisher<T> {
+    fn loan(&mut self) -> Result<SampleWriter<'_, T>, TransportError>;
+}
+
+impl<'a, T> SampleWriter<'a, T> {
+    pub fn publish(self) -> Result<(), TransportError>;
+}
+```
+
+### 理由
+
+`Publisher::publish(&mut self, w: SampleWriter<'_, T>)` 在 Rust borrow checker 下不自洽：
+
+1. `loan` 返回 `SampleWriter<'a, T>`，其 `'a` 绑定 `&'a mut Publisher`；
+2. 只要 `w` 存活，`&mut Publisher` 借用就被占用；
+3. 再调 `Publisher::publish(&mut self, ...)` 要拿第二个 `&mut self` → 冲突。
+
+把 `publish` 挂在 writer 上，**按值消费 self**：writer move 进 `publish` 后自然释放 `&mut Publisher` 借用，publisher 可以立即被再次借用（再次 `loan()`）。语义完全等价。
+
+### 语义不变的约束（§4.3 原保证全部保留）
+
+1. `loan()` 返回的 `SampleWriter` 持 iceoryx2 sample 可写借用，生命周期绑 publisher 的借用期。
+2. **未 publish 即 drop**：自动 discard / release loan，不留悬挂 sample（drop impl 实现）。
+3. **publish 消费 writer**：调用后 `w` 不可再用；编译期拦截 "publish 后继续写 body/blob"（move semantics）。
+4. 错误路径（body 编码失败等）`return Err` 让 writer drop，loan 自动归还。
+
+### 影响面
+
+| 文件 | 调整 |
+|------|------|
+| `docs/00_design.md` §4.3 | `Publisher` trait 删 `publish` 方法，加独立 `impl SampleWriter::publish(self)` 示例 |
+| `docs/00_design.md` 附录 E · 冻结后文档卫生 | 追加 "§4.3 writer API（2026-04-22）" 行 |
+| dimos `docs/09_robot_framework.md` §4.3 / 附录 E | 同步回写（源版本） |
+| `crates/robot-transport/src/traits.rs` | `Publisher` trait 只有 `loan`；无 `publish` method |
+| `crates/robot-transport/src/writer.rs` | `impl<'a, T> SampleWriter<'a, T> { pub fn publish(self) -> ... }` |
+
+### 审阅
+
+- 提议：Claude Code（Step 4 决策 #5，发现 §4.3 原 API 在 borrow checker 下不可实现）
+- 决定：用户 loosqk（2026-04-22 session 内同意 "按 ▶ 倾向推"）
+- 复审触发：若未来某后端（Zenoh / 裸 shm）的 API 迫使 publish 回到 publisher trait（例如需要 publisher 内部持有的事务性状态在 publish 时更新），重新评估本调整；Step 5 iceoryx2 实现应能直接采纳当前签名。
+
+---
