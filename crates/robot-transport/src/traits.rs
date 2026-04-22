@@ -95,3 +95,40 @@ impl<T: BodyMarker> LatestSubscriber<T> for crate::mock::MockSubscriber<T> {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Iceoryx2 实现
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "iceoryx2")]
+impl<T: BodyMarker> Publisher<T> for crate::iceoryx2::Iceoryx2Publisher<T> {
+    fn loan(&mut self, size: usize) -> Result<SampleWriter<'_, T>, TransportError> {
+        // 早期拒绝：调用方声明的上限 size 超过 publisher 创建时的
+        // `initial_max_slice_len`（= `SizeTier::max_bytes()`）→ 直接返
+        // SampleTooLarge，不构造 writer、不延迟到 publish。
+        let tier_cap = self.inner.initial_max_slice_len();
+        if size > tier_cap {
+            return Err(TransportError::SampleTooLarge {
+                size,
+                limit: tier_cap,
+            });
+        }
+        // 一次 disjoint 分裂：iceoryx2 publisher 给 writer（延迟 loan 用），
+        // loan_tok 做 `&'a mut u8` 的 borrow 锁。borrow checker 允许同方法内
+        // 同时拿两个不相交字段的 &mut。
+        let (pub_ref, tok) = self.split_for_loan();
+        let writer =
+            crate::iceoryx2::Iceoryx2SampleWriter::new_disjoint(pub_ref, T::SCHEMA_ID, size);
+        Ok(SampleWriter::from_iceoryx2(writer, tok))
+    }
+}
+
+#[cfg(feature = "iceoryx2")]
+impl<T: BodyMarker> LatestSubscriber<T> for crate::iceoryx2::Iceoryx2Subscriber<T> {
+    fn latest(&mut self) -> Result<Option<SampleLease<T>>, TransportError> {
+        match self.iceoryx2_latest()? {
+            Some(l) => Ok(Some(SampleLease::from_iceoryx2(l))),
+            None => Ok(None),
+        }
+    }
+}

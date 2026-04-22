@@ -37,12 +37,12 @@ pub struct SampleLease<T: BodyMarker> {
     _ty: PhantomData<T>,
 }
 
-#[allow(clippy::large_enum_variant)] // Step 5 加 Iceoryx2 变体后再评估
+#[allow(clippy::large_enum_variant)]
 enum SampleLeaseInner {
     #[cfg(feature = "mock")]
     Mock(crate::mock::MockSampleLease),
-    // Step 5 追加：
-    // Iceoryx2(crate::iceoryx2::Iceoryx2SampleLease),
+    #[cfg(feature = "iceoryx2")]
+    Iceoryx2(crate::iceoryx2::Iceoryx2SampleLease),
 }
 
 impl<T: BodyMarker> core::fmt::Debug for SampleLease<T> {
@@ -63,11 +63,22 @@ impl<T: BodyMarker> SampleLease<T> {
         }
     }
 
+    #[cfg(feature = "iceoryx2")]
+    #[must_use]
+    pub(crate) fn from_iceoryx2(lease: crate::iceoryx2::Iceoryx2SampleLease) -> Self {
+        Self {
+            inner: SampleLeaseInner::Iceoryx2(lease),
+            _ty: PhantomData,
+        }
+    }
+
     #[inline]
     fn bytes(&self) -> &[u8] {
         match &self.inner {
             #[cfg(feature = "mock")]
             SampleLeaseInner::Mock(m) => m.bytes(),
+            #[cfg(feature = "iceoryx2")]
+            SampleLeaseInner::Iceoryx2(l) => l.bytes(),
         }
     }
 

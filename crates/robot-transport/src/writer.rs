@@ -34,15 +34,17 @@ use crate::error::TransportError;
 /// 2. `&'a mut ()` 不行 —— ZST 引用被 Rust 特殊处理，多个 `&mut ()` 允许并存。
 /// 3. `&'a mut u8` 可以 —— 最小非 ZST 类型，完整参与借用检查。
 pub struct SampleWriter<'a, T: BodyMarker> {
-    inner: SampleWriterInner,
+    inner: SampleWriterInner<'a>,
     _borrow: &'a mut u8,
     _ty: PhantomData<T>,
 }
 
-#[allow(clippy::large_enum_variant)] // Iceoryx2 变体加入后再评估
-enum SampleWriterInner {
+#[allow(clippy::large_enum_variant)] // Mock 与 Iceoryx2 变体大小量级接近，保持 inline。
+enum SampleWriterInner<'a> {
     #[cfg(feature = "mock")]
-    Mock(crate::mock::MockSampleWriter),
+    Mock(crate::mock::MockSampleWriter, PhantomData<&'a ()>),
+    #[cfg(feature = "iceoryx2")]
+    Iceoryx2(crate::iceoryx2::Iceoryx2SampleWriter<'a>),
 }
 
 impl<T: BodyMarker> core::fmt::Debug for SampleWriter<'_, T> {
@@ -63,7 +65,19 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
         publisher_borrow: &'a mut u8,
     ) -> Self {
         Self {
-            inner: SampleWriterInner::Mock(mock),
+            inner: SampleWriterInner::Mock(mock, PhantomData),
+            _borrow: publisher_borrow,
+            _ty: PhantomData,
+        }
+    }
+
+    #[cfg(feature = "iceoryx2")]
+    pub(crate) fn from_iceoryx2(
+        w: crate::iceoryx2::Iceoryx2SampleWriter<'a>,
+        publisher_borrow: &'a mut u8,
+    ) -> Self {
+        Self {
+            inner: SampleWriterInner::Iceoryx2(w),
             _borrow: publisher_borrow,
             _ty: PhantomData,
         }
@@ -74,7 +88,9 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
     pub fn set_body_bytes(&mut self, body: &[u8]) {
         match &mut self.inner {
             #[cfg(feature = "mock")]
-            SampleWriterInner::Mock(m) => m.set_body_bytes(body),
+            SampleWriterInner::Mock(m, _) => m.set_body_bytes(body),
+            #[cfg(feature = "iceoryx2")]
+            SampleWriterInner::Iceoryx2(w) => w.set_body_bytes(body),
         }
     }
 
@@ -82,7 +98,9 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
     pub fn set_blob_bytes(&mut self, blob: &[u8]) {
         match &mut self.inner {
             #[cfg(feature = "mock")]
-            SampleWriterInner::Mock(m) => m.set_blob_bytes(blob),
+            SampleWriterInner::Mock(m, _) => m.set_blob_bytes(blob),
+            #[cfg(feature = "iceoryx2")]
+            SampleWriterInner::Iceoryx2(w) => w.set_blob_bytes(blob),
         }
     }
 
@@ -90,7 +108,9 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
     pub fn clear_blob(&mut self) {
         match &mut self.inner {
             #[cfg(feature = "mock")]
-            SampleWriterInner::Mock(m) => m.clear_blob(),
+            SampleWriterInner::Mock(m, _) => m.clear_blob(),
+            #[cfg(feature = "iceoryx2")]
+            SampleWriterInner::Iceoryx2(w) => w.clear_blob(),
         }
     }
 
@@ -99,7 +119,9 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
     pub fn set_stamp_ns(&mut self, stamp_ns: u64) {
         match &mut self.inner {
             #[cfg(feature = "mock")]
-            SampleWriterInner::Mock(m) => m.stamp_ns = stamp_ns,
+            SampleWriterInner::Mock(m, _) => m.stamp_ns = stamp_ns,
+            #[cfg(feature = "iceoryx2")]
+            SampleWriterInner::Iceoryx2(w) => w.stamp_ns = stamp_ns,
         }
     }
 
@@ -107,7 +129,9 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
     pub fn set_source_id(&mut self, source_id: u32) {
         match &mut self.inner {
             #[cfg(feature = "mock")]
-            SampleWriterInner::Mock(m) => m.source_id = source_id,
+            SampleWriterInner::Mock(m, _) => m.source_id = source_id,
+            #[cfg(feature = "iceoryx2")]
+            SampleWriterInner::Iceoryx2(w) => w.source_id = source_id,
         }
     }
 
@@ -115,7 +139,9 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
     pub fn set_seq(&mut self, seq: u64) {
         match &mut self.inner {
             #[cfg(feature = "mock")]
-            SampleWriterInner::Mock(m) => m.seq = seq,
+            SampleWriterInner::Mock(m, _) => m.seq = seq,
+            #[cfg(feature = "iceoryx2")]
+            SampleWriterInner::Iceoryx2(w) => w.seq = seq,
         }
     }
 
@@ -127,7 +153,9 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
     pub fn publish(self) -> Result<(), TransportError> {
         match self.inner {
             #[cfg(feature = "mock")]
-            SampleWriterInner::Mock(m) => m.mock_publish(),
+            SampleWriterInner::Mock(m, _) => m.mock_publish(),
+            #[cfg(feature = "iceoryx2")]
+            SampleWriterInner::Iceoryx2(w) => w.iceoryx2_publish(),
         }
     }
 }
