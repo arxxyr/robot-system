@@ -9,13 +9,26 @@ repository .workspace = true
 readme     .workspace = true
 
 [dependencies]
-# Step 3 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。
+# Step 3/4 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。
+robot-core  = { workspace = true }
 robot-msg   = { workspace = true }
 flatbuffers = { workspace = true }
 thiserror   = { workspace = true }
 
 # Step 5 起会追加：
 # iceoryx2 = "0.x"（版本 pin 在引入时登记到 CHANGELOG）
+
+[features]
+# Step 4 阶段 mock 是唯一实现，默认启用；Step 5 引入 iceoryx2 后
+# default 会改为 ["iceoryx2"]，mock 转入仅 dev-dep 启用的角色。
+default = ["mock"]
+mock = []
+
+[dev-dependencies]
+# 编译期负向测试：验证 `SampleLease::view()` 借用 / `SampleWriter::publish(self)`
+# move 语义在误用时产生 compile error。nightly 诊断格式变动可能要求
+# `TRYBUILD=overwrite` 刷一次 snapshot，见 tests/trybuild.rs 注释。
+trybuild = "1"
 
 [lints]
 workspace = true

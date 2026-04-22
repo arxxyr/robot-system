@@ -1,0 +1,133 @@
+//! `SampleWriter<'a, T>` —— publisher loan 出来的可写 sample 句柄。
+//!
+//! 对应 `docs/00_design.md` §4.3 + `docs/CHANGELOG.md` 2026-04-22 "§4.3
+//! writer API 调整"：`publish` 方法挂在 writer 自身（按值消费 `self`），
+//! 而非 `Publisher::publish(&mut self, w)`。这样 writer 持 `&'a mut
+//! Publisher` 的 borrow 自然在 publish move 的那一刻释放。
+//!
+//! ### 语义不变条款（§4.3 原保证）
+//!
+//! - `loan()` 得 writer 后，`&'a mut Publisher` borrow 被 writer 占用。
+//! - **drop without publish** → `SampleWriter::drop` 自动 discard；mock 下
+//!   减 `active_writers`，iceoryx2 下真 release shm loan。
+//! - **publish(self)** → 消费 writer，写入 service slot，`active_writers`
+//!   同样 -1 但 `publish_count` +1。
+//! - 错误路径直接 `?` 传播 → writer drop → discard 同步归还 loan。
+
+use core::marker::PhantomData;
+
+use robot_msg::markers::BodyMarker;
+
+use crate::error::TransportError;
+
+/// 可写 sample 句柄。Step 4 只暴露 body / blob 字节级写入 + publish；Step 5
+/// 起追加 typed builder 辅助（`set_body_with<F: FnOnce(&mut FlatBufferBuilder)>`）。
+///
+/// `'a` 绑定到 `Publisher` 内部的一个占位字段的 `&'a mut u8` 借用（mock 下是
+/// `MockPublisher::loan_tok`），**实际**占用 publisher 的可变借用，阻止
+/// writer 存活期间再 `loan()`（见 `tests/ui/second_loan_before_publish.rs`）。
+///
+/// **三个坑，按踩过的顺序列出**：
+///
+/// 1. `PhantomData<&'a mut ()>` 不行 —— lifetime 可以 subtype 到任意短，
+///    borrow check 不会把 publisher 算作被借。必须持有**真实** `&'a mut _` 字段。
+/// 2. `&'a mut ()` 不行 —— ZST 引用被 Rust 特殊处理，多个 `&mut ()` 允许并存。
+/// 3. `&'a mut u8` 可以 —— 最小非 ZST 类型，完整参与借用检查。
+pub struct SampleWriter<'a, T: BodyMarker> {
+    inner: SampleWriterInner,
+    _borrow: &'a mut u8,
+    _ty: PhantomData<T>,
+}
+
+#[allow(clippy::large_enum_variant)] // Iceoryx2 变体加入后再评估
+enum SampleWriterInner {
+    #[cfg(feature = "mock")]
+    Mock(crate::mock::MockSampleWriter),
+}
+
+impl<T: BodyMarker> core::fmt::Debug for SampleWriter<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SampleWriter")
+            .field("marker", &T::SCHEMA_NAME)
+            .finish()
+    }
+}
+
+impl<'a, T: BodyMarker> SampleWriter<'a, T> {
+    /// `publisher_borrow` 是 publisher 内部占位字段（非 ZST `u8`）的
+    /// `&'a mut u8` 借用；它被实际存进 writer 里（非 PhantomData），编译期
+    /// 强制 publisher 在 writer 存活期内被借用、不能再 `loan()`。
+    #[cfg(feature = "mock")]
+    pub(crate) fn from_mock(
+        mock: crate::mock::MockSampleWriter,
+        publisher_borrow: &'a mut u8,
+    ) -> Self {
+        Self {
+            inner: SampleWriterInner::Mock(mock),
+            _borrow: publisher_borrow,
+            _ty: PhantomData,
+        }
+    }
+
+    /// 写入 body 字节（应为一段完整的 `FlatBuffers` root table，对应 `T::Root`）。
+    /// 重复调用覆盖上一次。
+    pub fn set_body_bytes(&mut self, body: &[u8]) {
+        match &mut self.inner {
+            #[cfg(feature = "mock")]
+            SampleWriterInner::Mock(m) => m.set_body_bytes(body),
+        }
+    }
+
+    /// 写入 blob 字节（raw payload；由调用方保证 alignment / dtype / size 一致）。
+    pub fn set_blob_bytes(&mut self, blob: &[u8]) {
+        match &mut self.inner {
+            #[cfg(feature = "mock")]
+            SampleWriterInner::Mock(m) => m.set_blob_bytes(blob),
+        }
+    }
+
+    /// 清除 blob —— 下一次 `publish` 将产出一条无 blob sample。
+    pub fn clear_blob(&mut self) {
+        match &mut self.inner {
+            #[cfg(feature = "mock")]
+            SampleWriterInner::Mock(m) => m.clear_blob(),
+        }
+    }
+
+    /// 设置 `FrameHeader.stamp_ns` —— 调用方自己用 [`robot_core::time::RobotClock`]
+    /// 生成，禁止直接 `Instant::now()`（业务代码禁令，见 `CLAUDE.md`）。
+    pub fn set_stamp_ns(&mut self, stamp_ns: u64) {
+        match &mut self.inner {
+            #[cfg(feature = "mock")]
+            SampleWriterInner::Mock(m) => m.stamp_ns = stamp_ns,
+        }
+    }
+
+    /// 设置 `FrameHeader.source_id`。
+    pub fn set_source_id(&mut self, source_id: u32) {
+        match &mut self.inner {
+            #[cfg(feature = "mock")]
+            SampleWriterInner::Mock(m) => m.source_id = source_id,
+        }
+    }
+
+    /// 设置 `FrameHeader.seq` —— 发布方负责单调递增。
+    pub fn set_seq(&mut self, seq: u64) {
+        match &mut self.inner {
+            #[cfg(feature = "mock")]
+            SampleWriterInner::Mock(m) => m.seq = seq,
+        }
+    }
+
+    /// 按值消费 `self` 发布 sample。
+    ///
+    /// 成功后：publisher 的 `&'a mut` borrow 释放（writer moved），调用方可
+    /// 立即 `publisher.loan()` 取下一个 writer。失败时也消费 self（错误已
+    /// 传出，不需要复用 writer）。
+    pub fn publish(self) -> Result<(), TransportError> {
+        match self.inner {
+            #[cfg(feature = "mock")]
+            SampleWriterInner::Mock(m) => m.mock_publish(),
+        }
+    }
+}

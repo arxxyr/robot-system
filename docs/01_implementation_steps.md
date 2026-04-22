@@ -2,7 +2,7 @@
 
 > 本文档是 [`docs/00_design.md`](00_design.md) §11.2 "v0.2 实现顺序" 的可执行版本。
 > 10 步顺序**强制**；第 6 步闭环打通前不接任何真硬件。
-> 当前位置：**Step 3 已完成 · Step 4 未开始**（Step 0 `07a5446` / Step 1 `654d7ab` / Step 2 `3ba9a70`；Step 3 见本次 commit）。
+> 当前位置：**Step 4 已完成 · Step 5 未开始**（Step 0 `07a5446` / Step 1 `654d7ab` / Step 2 `3ba9a70` / Step 3 `d8eefa2`；Step 4 见本次 commit）。
 
 ---
 
