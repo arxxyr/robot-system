@@ -139,17 +139,19 @@
 
 ### 10.2.3 CI 顺序（严格串行，全程 nightly）
 
-1. `cargo fmt --all --check`
-2. `cargo clippy --all --all-targets -- -D warnings`（含 pedantic）
-3. `cargo test --workspace --all-features`
-4. `cargo test -p robot-transport --no-default-features --features mock`（iceoryx2 off 保底）
-5. `cargo build --all`（release）
-6. `cargo deny check`（⏳ 未接入，Step 6 前落）
-7. `allocation-guard`（⏳ Step 6 `assert-no-alloc` + RT thread 入口钩子）
-8. `schema_compat`（跨版本 crate round-trip；⏳ v0.3）
-9. 夜间：soak 1 h / 24 h + `cyclictest` + crash/restart（⏳ Step 9+）
+| # | 步骤 | 状态 |
+|---|---|---|
+| 1 | `cargo fmt --all --check` | ✅ `.github/workflows/ci.yml` |
+| 2 | `cargo clippy --all --all-targets --all-features -- -D warnings`（含 pedantic） | ✅ |
+| 3 | `cargo test --workspace --all-features` | ✅ |
+| 4 | `cargo test -p robot-transport --no-default-features --features mock`（iceoryx2 off 保底） | ✅ |
+| 5 | `cargo build --release --workspace` | ✅ |
+| 6 | `cargo deny check`（advisories / bans / licenses / sources） | ✅ 独立 job（`deny.toml`） |
+| 7 | `allocation-guard`（`assert-no-alloc` + RT thread 入口钩子） | ⏳ Step 6 |
+| 8 | `schema_compat`（跨版本 crate round-trip） | ⏳ v0.3 |
+| 9 | 夜间：soak 1 h / 24 h + `cyclictest` + crash/restart | ⏳ Step 9+ |
 
-**当前 CI 实际状态**：尚未接 GitHub Actions；所有步骤靠人工 `cargo ...` 保证。`.github/workflows/` 骨架推到 Step 6 开工前补（见底部 TODO）。
+**CI 配置文件**：`.github/workflows/ci.yml`。matrix 覆盖 `ubuntu-latest` + `macos-latest`（Step 0–5 两平台都跑）。Step 6 起 Linux-only 工作另开 workflow（`SCHED_FIFO` / `mlockall` 等不可在 macOS 跑）。
 
 ---
 
@@ -255,12 +257,13 @@ rust toolchain nightly（Cargo.toml edition=2024；未 pin 具体日期）
 | 日期 | 变更 | 作者 |
 |---|---|---|
 | 2026-04-22 | 骨架初稿：§10.1/§10.2/§10.3 三级结构 + 状态标签 + env_id 机制；所有数值行占位。Step 5 完成时刻快照 | Claude Code (提议) / loosqk (拍板) |
+| 2026-04-22 | §10.2.3 CI 1–6 步接入 `.github/workflows/ci.yml`；`deny.toml` 落地（allow 0BSD；workspace path wildcard + private crate 豁免；iceoryx2 / trybuild winnow dup 走 skip-tree）；`scripts/collect_env_id.sh` 兼容 macOS + Linux。TODO 1/3/4 划掉，只剩 2（assert-no-alloc） | Claude Code |
 
 ---
 
 ## TODO（与本文件直接相关，尚未落）
 
-1. **CI 接入**：`.github/workflows/ci.yml` 骨架按 §10.2.3 九步串行写；Step 6 开工前完成。
+1. ~~**CI 接入**：`.github/workflows/ci.yml` 骨架按 §10.2.3 九步串行写；Step 6 开工前完成。~~ → ✅ 已落（`.github/workflows/ci.yml`，ubuntu + macos matrix，第 1–6 步串行 + `cargo deny` 独立 job）
 2. **`assert-no-alloc` 集成**：`crates/robot-tests::rt_arc_guard` / `robot-s0::rt_thread` 启动期全局安装；Step 6 必须。
-3. **cargo-deny 配置**：`deny.toml`（版本 / 许可证 / 重复依赖）Step 6 前加，拦截未经登记的新依赖。
-4. **env_id 自动采集脚本**：`scripts/collect_env_id.sh`（uname / sw_vers / sysctl / rustc -V / cargo tree 合成 id），实测时一键生成登记条。
+3. ~~**cargo-deny 配置**：`deny.toml`（版本 / 许可证 / 重复依赖）Step 6 前加，拦截未经登记的新依赖。~~ → ✅ 已落（`deny.toml`，`cargo deny check` 本地 + CI 均过）
+4. ~~**env_id 自动采集脚本**：`scripts/collect_env_id.sh`（uname / sw_vers / sysctl / rustc -V / cargo tree 合成 id），实测时一键生成登记条。~~ → ✅ 已落（`scripts/collect_env_id.sh`，macOS + Linux 兼容）

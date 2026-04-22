@@ -7,6 +7,7 @@ license    .workspace = true
 authors    .workspace = true
 repository .workspace = true
 readme     .workspace = true
+publish    .workspace = true
 
 [dependencies]
 # §4.2 允许列表扩展（libc），登记见 docs/CHANGELOG.md 2026-04-21。

@@ -7,6 +7,7 @@ license    .workspace = true
 authors    .workspace = true
 repository .workspace = true
 readme     .workspace = true
+publish    .workspace = true
 
 [dependencies]
 # Step 3/4 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。

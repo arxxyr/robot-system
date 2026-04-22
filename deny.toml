@@ -1,0 +1,96 @@
+# cargo-deny 配置（`docs/10_verification.md` §10.2.3 CI 第 6 步）。
+#
+# 本文件作为 `docs/CHANGELOG.md` "workspace runtime 依赖白名单机制"（2026-04-22）
+# 的硬化补充：CHANGELOG 是文字契约，deny.toml 是机械闸门。
+#
+# 覆盖范围：
+# 1. 安全公告（RustSec / GHSA）拦截
+# 2. 许可证白名单
+# 3. ban rules（重复版本 / 通配符）
+# 4. 仅允许 crates.io 作为 source
+#
+# 不在本文件做：
+# - per-crate runtime dep 白名单 —— cargo-deny 的 deny.crates 是 **全局**
+#   禁令，没法表达 "robot-core 禁 tokio 但 robot-s1 可用"。该语义靠 CHANGELOG
+#   人工 review + 后续 CI grep 钩子（TODO）实现。
+# - feature flag 约束 —— cargo-deny 不支持 feature 级审计。
+
+[graph]
+all-features = true
+
+# ---------------------------------------------------------------------------
+# 安全公告
+# ---------------------------------------------------------------------------
+[advisories]
+version = 2
+# `yanked = "deny"` 意味任何 Cargo.lock 里的 yanked 版本立即失败，
+# 迫使我们在 Cargo.lock 里不留历史 yank；切实际由 `cargo update -p <crate>`
+# 解决。
+yanked = "deny"
+
+# ignore 按公告 ID 列：
+# ignore = ["RUSTSEC-YYYY-NNNN"]
+# 加条目前必须先在 docs/CHANGELOG.md 登记 "偏离" 条，写明豁免理由 + 复审触发。
+ignore = []
+
+# ---------------------------------------------------------------------------
+# 许可证白名单
+# ---------------------------------------------------------------------------
+[licenses]
+version = 2
+# 允许列表：常见的宽松 + 兼容 Apache。新许可证出现时走 CHANGELOG 偏离登记。
+allow = [
+    "0BSD",                            # 通过 iceoryx2 → enum-iterator 引入
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "Unicode-3.0",                     # unicode-ident 新版用
+    "Unlicense",                       # 极少依赖用，语义与 CC0 接近
+]
+confidence-threshold = 0.93
+# 内部 workspace crate（robot-*）用 "Proprietary"（非 SPDX），且 publish=false
+# 不上 crates.io；`private.ignore` 让 cargo-deny 跳过这些 crate 的许可证校验。
+private = { ignore = true }
+
+# ---------------------------------------------------------------------------
+# Ban 规则
+# ---------------------------------------------------------------------------
+[bans]
+# v0.x 阶段允许重复版本（iceoryx2 依赖链会带若干内部 crate 重复），只 warn；
+# v1 发版前改 "deny" 收紧。
+multiple-versions = "warn"
+wildcards = "deny"
+# workspace 内部 path 依赖（robot-tests → robot-transport 等）会被 cargo-deny
+# 识别为 wildcard；显式允许路径形 wildcard，保留外部 wildcard 的 deny。
+allow-wildcard-paths = true
+highlight = "all"
+
+# 显式禁用的 crate 列表（全局级）。
+# - 目前为空：CHANGELOG 的 "robot-core 禁 tokio" 等是 per-crate 约束，cargo-deny
+#   表达不了（见本文件顶部说明）；TODO 用 grep-based CI 钩子补。
+deny = []
+
+# skip-tree：允许某依赖子树里出现重复版本。
+# iceoryx2 0.8.1 依赖 toml 0.9 (→ winnow 0.7)，trybuild 1.0.116 依赖
+# toml 1.1 (→ winnow 1.0)。两棵独立子树，dup 不在我们控制面；升级 iceoryx2
+# 新版 / 等上游对齐后再清。仅标 iceoryx2 不够（因为 trybuild 那棵也贡献）；
+# 标 toml 会把整个 toml 生态豁免过粗。务实折中：标两端。
+skip-tree = [
+    { crate = "iceoryx2" },
+    { crate = "trybuild" },
+]
+
+# ---------------------------------------------------------------------------
+# Source 白名单
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# git 源白名单：目前不依赖任何 git 源 crate。未来如需 patch 上游（例如 iceoryx2
+# 需要 hotfix），走 CHANGELOG 偏离登记 + 在此追加。
+allow-git = []

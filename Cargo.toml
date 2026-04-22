@@ -35,6 +35,9 @@ edition      = "2024"
 # 不写 rust-version：随 nightly 自动走最新；需要复现特定日期构建时用
 # rust-toolchain.toml 的 `channel = "nightly-YYYY-MM-DD"`，而非 rust-version。
 license      = "Proprietary"
+# 所有 crate 默认 publish=false（各子 crate 用 `publish.workspace = true` 继承）。
+# cargo-deny 识别 publish=false 即跳过 license 校验（deny.toml private.ignore=true）。
+publish      = false
 authors      = ["loosqk <loosqk07@gmail.com>"]
 repository   = "https://github.com/loosqk/robot-system"
 readme       = "README.md"

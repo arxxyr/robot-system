@@ -1,0 +1,96 @@
+# CI 严格串行（`docs/10_verification.md` §10.2.3），全程 nightly。
+#
+# 矩阵：ubuntu-latest (x86_64) + macos-latest (arm64)。两平台都跑前 5 步，
+# 因为 Step 0–5 的交付目标是 "macOS 可跑"（详 docs/00_design.md §11.3
+# 构建假设 + docs/01_implementation_steps.md Step 5 macOS 烟测）。
+# Step 6+ 的 Linux-only 工作（SCHED_FIFO / mlockall / sd_notify）用后续独立
+# workflow 或 matrix 过滤，本文件不先配。
+#
+# sccache：.cargo/config.toml 默认 rustc-wrapper = "sccache"，CI 必须装，
+# 否则第一次 cargo 命令直接失败。用官方 action 注入。
+#
+# rust-toolchain.toml channel = "nightly"（未 pin 日期），actions-rust-lang
+# 的 setup-rust-toolchain 会自动读该文件并 rustup install，不需显式传 toolchain。
+
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0  # CI 关 incremental（与 sccache 组合时收益反转，且稳定缓存命中）
+  RUST_BACKTRACE: 1
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # rust-toolchain.toml 里 channel = "nightly" + components = ["rustfmt", "clippy"]
+          # 会被自动读取；这里 components 省略避免重复。
+          cache: false  # 我们自管 sccache，不用 action 的 target cache。
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      # 1. fmt
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+      # 2. clippy（pedantic 已在 workspace Cargo.toml 开 warn；`-D warnings` 升级成 error）
+      - name: cargo clippy --all-targets --all-features -D warnings
+        run: cargo clippy --all --all-targets --all-features -- -D warnings
+
+      # 3. 全 feature 测试
+      - name: cargo test --workspace --all-features
+        run: cargo test --workspace --all-features
+
+      # 4. iceoryx2 feature off 的保底编译 + 测试（隔离保底，docs/01_implementation_steps.md
+      #    Step 5 退出标准）
+      - name: cargo test -p robot-transport --no-default-features --features mock
+        run: cargo test -p robot-transport --no-default-features --features mock
+
+      # 5. release 构建（产物可用于后续 soak / bench / 打包）
+      - name: cargo build --release --workspace
+        run: cargo build --release --workspace
+
+      - name: sccache stats
+        run: sccache --show-stats
+
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-deny (binary)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo deny check
+        run: cargo deny check advisories bans licenses sources
+
+# TODO（与 docs/10_verification.md §10.2.3 CI 顺序 6–9 对齐，后续 Step 加）：
+# - allocation-guard：Step 6 `assert-no-alloc` + `rt_arc_guard` 钩子就位后加
+# - schema_compat：Step 2 已有运行时交叉测试在 `cargo test` 里；跨 crate 版本
+#   交叉推到 v0.3（CHANGELOG 2026-04-22 Step 2 工具链决策）
+# - soak 1h / 24h：Step 9 `robot-tests::soak` bin 就位后加 nightly schedule
