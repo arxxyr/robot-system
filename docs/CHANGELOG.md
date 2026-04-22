@@ -416,3 +416,107 @@ impl Deadline {
   - 若后续要加 wall clock offset / 硬件时钟校准原语（`HwClockOffset`），单独登记新条目，不塞回本条。
 
 ---
+
+## 2026-04-22 · Step 5 开工决策与 iceoryx2 依赖登记（**状态：登记**）
+
+### 涉及 Step
+
+`docs/01_implementation_steps.md` Step 5 · mock iceoryx2 pub/sub。
+
+### 前置：macOS 烟测
+
+在 `/tmp/iceoryx2_smoke` 跑 iceoryx2 0.8.1 独立 sandbox，验证了同进程 pub/sub、ServiceName 字符集、service attribute、event service 四条。macOS (Darwin 25.4) 全绿。烟测源码不入仓库。
+
+### 决策一览（用户 2026-04-22 session 拍板）
+
+| # | 决策 | 结论 |
+|---|---|---|
+| ① iceoryx2 版本 pin | `iceoryx2 = "=0.8.1"` 精确 pin，仿 flatbuffers `=25.12.19`；升级走 CHANGELOG |
+| ② Service name 映射 | **方案 A**：topic 原样喂 `ServiceName::new()`（`/<robot>/s0/<hw>/state` 实测接受），§2.3 命名空间零改动 |
+| ③ QoS 映射表（§2.4 → iceoryx2 builder） | 见本条"QoS 映射"小节 |
+| ④ Sample size 分档 | 4 档 + 硬编码 default + TOML override 两层，见"size tier"小节 |
+| ⑤ schema_id 绑定 | FrameHeader 字段（已落 Step 3）+ iceoryx2 service attribute `schema_id` 两道防线；attribute 是硬约束，不匹配 verifier 拒绝 open |
+| ⑥ macOS 可行性 | ✓ 通过烟测；Step 5 可在 macOS 完整做 |
+| ⑦ 事件 / 轮询 | 方案 B：`s0_ipc_thread` 用 iceoryx2 Event service + `timed_wait_one` 代替 polling（50 ms 实测 51 ms，抖动 1 ms 内） |
+
+### Size tier（决策 ④ 展开）
+
+**4 档上限**：
+
+| 档 | `max_sample_size` | 覆盖（按当前注册的 9 个 schema） |
+|---|---|---|
+| control | **8 KiB** | JointLayout / JointState / JointCommand / Twist / EStopEvent / Heartbeat |
+| sensor_small | **1 MiB** | 预留：未来 IMU / FT 等小 sensor |
+| sensor_large | **16 MiB** | ImageHeader / PointCloudHeader / TensorHeader |
+| tensor | **128 MiB** | 预留：未来 `SCHEMA_POLICY_OBSERVATION` / `SCHEMA_ACTION_CHUNK` |
+
+**两层映射**：
+
+1. **硬编码 default**（`crates/robot-msg/src/size_tier.rs`）：
+   - `pub enum SizeTier { Control, SensorSmall, SensorLarge, Tensor }`
+   - `pub const fn default_tier_of(schema_id: u32) -> Option<SizeTier>`
+   - 未注册 schema 返回 `None`（transport 侧 fail-fast）
+   - 单元测试穷举 `SCHEMA_REGISTRY`，每个 id 必须返回 `Some`（加新 schema 必同步加 tier，测试拦截遗漏）
+
+2. **TOML override**（`robot-s0` / `robot-s1` 启动期读 `configs/<robot>.toml`）：
+   ```toml
+   [transport.tier_override]
+   "/xlerobot_01/policy/pi0_5/observation" = { max_sample_size_bytes = 33554432 }  # 32 MiB
+   ```
+   - 以 **topic 字符串** 为键（最常见场景）；schema 级 override 留未来需要时再加
+   - 双向允许（升 / 降）；iceoryx2 在 sample 超限 loan 时自然失败，安全网本来就在
+   - 所有 override 参与 `ConfigIdentity.transport_config_hash`，跨节点不一致启动拒绝（具体落地在 v0.3 ConfigIdentity 专项）
+
+### QoS 映射（决策 ③）
+
+§2.4 九类 → iceoryx2 `service_builder.publish_subscribe::<T>()` 选项：
+
+| 类别 | 典型 topic | `history_size` | `subscriber_max_buffer_size` | `max_publishers` | `max_subscribers` | 备注 |
+|---|---|---|---|---|---|---|
+| S0 command | `/<r>/s0/<hw>/command` | 1 | 1 | 1 | 1 | 过时由 S0 按 `on_timeout` 兜底；不启用 safe_overflow（满了即 drop-and-metric） |
+| S0 state | `/<r>/s0/<hw>/state` | 2 | 2 | 1 | N | drop old OK；safe_overflow=true |
+| S1 trajectory | `/<r>/s1/trajectory/<task>` | 8 | 16 | 1 | N | 丢弃必报警；safe_overflow=false |
+| S1 cmd_vel | `/<r>/s1/cmd_vel` | 1 | 1 | 1 | 1 | latest-only；safe_overflow=true |
+| Sensor / Image | `/<r>/sensors/**` | 2 | 4 | 1 | N | drop old；safe_overflow=true |
+| Safety event | `/<r>/events/estop` | 32 | 64 | N | N | 不丢；满则升 fault + emergency log |
+| Task event | `/<r>/s1/task_status` | 64 | 64 | 1 | N | 丢弃必可观测（metric + log） |
+| RPC response | iceoryx2 req/resp | 1 | 1 | — | — | deadline 驱动；不在 publish_subscribe |
+| Policy observation / action_chunk | `/<r>/policy/<name>/**` | 1 | 2 | 1 | 1 | VLA 单方向；S1 永不等 policy |
+
+**QoS 推迟项**：payload_alignment（当前统一 8 B；图像 blob 需 64 B 的话 v0.3 再加）、`max_loaned_samples`（默认即可）。
+
+### 事件服务（决策 ⑦）
+
+- `s0_ipc_thread` 订阅 `/<r>/s1/heartbeat` 的 Event service，阻塞在 `Listener::timed_wait_one(2 × heartbeat_period)`
+- `s0_pub_thread` 仍周期性 publish，不走 event（publish 是主动动作）
+- `/events/estop` 类：走 event + publish 双通道（event 通知 wakeup，publish 带载荷）
+- Step 5 先落 publish_subscribe，Event service wrapper 放 Step 5 末段或 Step 6 初段
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `Cargo.toml`（workspace 根） | `[workspace.dependencies]` 追加 `iceoryx2 = "=0.8.1"` |
+| `crates/robot-transport/Cargo.toml` | `[dependencies]` 可选 `iceoryx2 = { workspace = true, optional = true }`；`[features]` 加 `iceoryx2 = ["dep:iceoryx2"]`；默认 feature 从 `["mock"]` 改 `["mock", "iceoryx2"]`（macOS 烟测已验证） |
+| `crates/robot-msg/src/size_tier.rs` | 新增：`SizeTier` / `default_tier_of` + 穷举测试 |
+| `crates/robot-msg/src/lib.rs` | 导出 `size_tier::*` |
+| `crates/robot-transport/src/iceoryx2/` | 新增：`mod.rs` / `service_name.rs` / `qos.rs` / `publisher.rs` / `subscriber.rs` / `attributes.rs`（Event wrapper 酌情） |
+| `docs/01_implementation_steps.md` Step 5 | 交付清单具体化（后续 commit） |
+| **`docs/00_design.md`** | **不改**。QoS 映射 + size tier 是实施细节；§2.4 类别定义不变 |
+
+### 约束
+
+1. **iceoryx2 使用范围**：仅 `robot-transport::iceoryx2` 子模块。其他 crate（`robot-msg` / `robot-s0` / `robot-s1` / adapters）禁止 `use iceoryx2`。CI 后续加 grep 拦截。
+2. **Service attribute 键空间**：目前只用 `schema_id` / `schema_version`；未来增加 `layout_id` 等需登记新条目。
+3. **Config 路径的 override 未在 Step 5 落地**：Step 5 只落 default tier；override 机制推到 v0.3 ConfigIdentity 专项时一起做。
+
+### 审阅
+
+- 提议：Claude Code（Step 5 开工决策，含 macOS 烟测）
+- 决定：用户 loosqk（2026-04-22 session 内逐条拍板：①⑥ 烟测通过 → ② 从 B 改回 A；④ 4 档 + 两层 + control 升 8 KiB；⑤ 先看 C 成功 → C；⑦ B）
+- 复审触发：
+  - iceoryx2 0.9.x / 1.0 发布时重跑烟测 → 更新精确 pin
+  - 出现单个 topic 实际需要穿越档位（含升降档）→ 走 TOML override 而非扩充默认档
+  - macOS 烟测 regression（iceoryx2 新版 macOS 支持回退）→ 撤回 §3.1 默认 feature，`mock` 回到默认
+
+---
