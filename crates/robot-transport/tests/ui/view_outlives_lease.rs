@@ -27,7 +27,7 @@ fn main() {
         fbb.finish(js, None);
         fbb.finished_data().to_vec()
     };
-    let mut w = publisher.loan().unwrap();
+    let mut w = publisher.loan(65536).unwrap();
     w.set_body_bytes(&body);
     w.publish().unwrap();
 

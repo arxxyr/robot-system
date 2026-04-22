@@ -16,7 +16,7 @@
 //! let mut sub = ch.subscriber();
 //!
 //! // 发布
-//! let mut w = pub_.loan()?;
+//! let mut w = pub_.loan(8192)?;      // size = 调用方承诺的 sample 字节上限
 //! w.set_body_bytes(&fbb_bytes);     // typed body 由调用方用 flatbuffers::FlatBufferBuilder 构造
 //! w.publish()?;                      // consume writer，释放 publisher borrow
 //!
@@ -52,7 +52,16 @@ pub trait Publisher<T: BodyMarker> {
     /// Loan 一个可写 sample；writer 持 `&'_ mut self` 的实际借用（通过
     /// `SampleWriter::_borrow: &'_ mut u8`），writer drop 或 `publish()`
     /// 消费后才释放。
-    fn loan(&mut self) -> Result<SampleWriter<'_, T>, TransportError>;
+    ///
+    /// `size` 是调用方承诺的 sample 字节上限（`FrameHeader + body + blob`
+    /// 总和）。后端据此：
+    /// - **mock**：作为 publish 时的硬限检查（超限返 [`TransportError::SampleTooLarge`]）
+    /// - **iceoryx2**：直接作 `loan_slice_uninit(size)` 的元素数；必须 ≤
+    ///   service 创建时的 `max_slice_len`（见 `docs/CHANGELOG.md` 2026-04-22
+    ///   Step 5 决策 ④ · size tier）
+    ///
+    /// 超档即返错、不截断。
+    fn loan(&mut self, size: usize) -> Result<SampleWriter<'_, T>, TransportError>;
 }
 
 /// Request-response 客户端（§5 RPC / §7.3 `ConfigIdentity` 交换等同步路径用）。
@@ -68,8 +77,8 @@ pub trait RequestClient<Req, Resp> {
 
 #[cfg(feature = "mock")]
 impl<T: BodyMarker> Publisher<T> for crate::mock::MockPublisher<T> {
-    fn loan(&mut self) -> Result<SampleWriter<'_, T>, TransportError> {
-        let mock = self.mock_loan()?;
+    fn loan(&mut self, size: usize) -> Result<SampleWriter<'_, T>, TransportError> {
+        let mock = self.mock_loan(size)?;
         // writer 持有 `&mut self.loan_tok` 的实际借用（非 ZST u8），
         // 编译期阻止 writer 存活期间再 `loan()`（见 tests/ui/second_loan_before_publish.rs）。
         let borrow = self.loan_borrow();

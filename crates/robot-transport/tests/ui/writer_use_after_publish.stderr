@@ -1,7 +1,7 @@
 error[E0382]: borrow of moved value: `w`
   --> tests/ui/writer_use_after_publish.rs:16:5
    |
-12 |     let mut w = publisher.loan().unwrap();
+12 |     let mut w = publisher.loan(65536).unwrap();
    |         ----- move occurs because `w` has type `SampleWriter<'_, robot_msg::markers::JointState>`, which does not implement the `Copy` trait
 13 |     w.set_body_bytes(&[]);
 14 |     w.publish().unwrap();

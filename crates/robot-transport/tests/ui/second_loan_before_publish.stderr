@@ -1,10 +1,10 @@
 error[E0499]: cannot borrow `publisher` as mutable more than once at a time
   --> tests/ui/second_loan_before_publish.rs:18:15
    |
-16 |     let mut w1 = publisher.loan().unwrap();
+16 |     let mut w1 = publisher.loan(65536).unwrap();
    |                  --------- first mutable borrow occurs here
 17 |     // w1 仍持 &mut publisher borrow，下一行 loan 借用冲突：
-18 |     let _w2 = publisher.loan().unwrap();
+18 |     let _w2 = publisher.loan(65536).unwrap();
    |               ^^^^^^^^^ second mutable borrow occurs here
 19 |     // 在 second loan 之后用 w1，阻止 NLL 把 borrow 缩短：
 20 |     w1.set_body_bytes(&[]);

@@ -127,7 +127,14 @@ pub struct MockPublisher<T: BodyMarker> {
 
 impl<T: BodyMarker> MockPublisher<T> {
     /// 分配一个新 writer；`active_writers` +1，`loan_count` +1。
-    pub(crate) fn mock_loan(&mut self) -> Result<MockSampleWriter, TransportError> {
+    ///
+    /// `max_sample_size` 是调用方承诺的 sample 字节上限；publish 时若合成的
+    /// sample 超过此值会返 [`TransportError::SampleTooLarge`]。mock 此处不做
+    /// 底层分配（body / blob 按需 push 进 `Vec<u8>`），仅记录上限。
+    pub(crate) fn mock_loan(
+        &mut self,
+        max_sample_size: usize,
+    ) -> Result<MockSampleWriter, TransportError> {
         self.inner.loan_count.fetch_add(1, Ordering::Relaxed);
         self.inner.active_writers.fetch_add(1, Ordering::Relaxed);
         Ok(MockSampleWriter {
@@ -137,6 +144,7 @@ impl<T: BodyMarker> MockPublisher<T> {
             source_id: 0,
             seq: 0,
             schema_id: T::SCHEMA_ID,
+            max_sample_size,
             channel: Arc::clone(&self.inner),
             consumed: false,
         })
@@ -188,6 +196,8 @@ pub struct MockSampleWriter {
     pub(crate) source_id: u32,
     pub(crate) seq: u64,
     schema_id: u32,
+    /// 由 `mock_loan(size)` 传入；publish 时对合成 sample 总字节做硬限检查。
+    max_sample_size: usize,
     channel: Arc<MockChannelInner>,
     consumed: bool,
 }
@@ -208,8 +218,17 @@ impl MockSampleWriter {
 
     /// 按 §2.2 wire 格式合成完整 sample 并写入 latest slot；成功后
     /// `active_writers` -1，`publish_count` +1。
+    ///
+    /// 若合成字节超过 `mock_loan(size)` 承诺上限 → [`TransportError::SampleTooLarge`]
+    /// （与 iceoryx2 后端 `loan_slice_uninit` 的硬限检查对齐）。
     pub(crate) fn mock_publish(mut self) -> Result<(), TransportError> {
         let bytes = self.build_sample()?;
+        if bytes.len() > self.max_sample_size {
+            return Err(TransportError::SampleTooLarge {
+                size: bytes.len(),
+                limit: self.max_sample_size,
+            });
+        }
         {
             let mut slot = self
                 .channel

@@ -92,7 +92,7 @@ fn publish_then_subscribe_roundtrip() {
     let mut subscriber = ch.subscriber();
 
     let body = build_joint_state_body();
-    let mut w = publisher.loan().expect("loan");
+    let mut w = publisher.loan(65536).expect("loan");
     w.set_stamp_ns(42);
     w.set_seq(100);
     w.set_source_id(7);
@@ -133,7 +133,7 @@ fn lease_drop_returns_loan_even_without_view() {
     let mut publisher = ch.publisher();
     let mut subscriber = ch.subscriber();
 
-    let mut w = publisher.loan().unwrap();
+    let mut w = publisher.loan(65536).unwrap();
     w.set_body_bytes(&build_joint_state_body());
     w.publish().unwrap();
 
@@ -157,7 +157,7 @@ fn writer_drop_without_publish_discards_loan() {
     let mut publisher = ch.publisher();
 
     {
-        let mut w = publisher.loan().unwrap();
+        let mut w = publisher.loan(65536).unwrap();
         w.set_body_bytes(&build_joint_state_body());
         assert_eq!(ch.active_writers(), 1);
         assert_eq!(ch.loans(), 1);
@@ -173,7 +173,7 @@ fn writer_publish_consumes_and_increments_publish_count() {
     let ch = MockChannel::<markers::JointState>::new();
     let mut publisher = ch.publisher();
 
-    let mut w = publisher.loan().unwrap();
+    let mut w = publisher.loan(65536).unwrap();
     w.set_body_bytes(&build_joint_state_body());
     assert_eq!(ch.active_writers(), 1);
     w.publish().unwrap();
@@ -188,11 +188,11 @@ fn second_loan_after_publish_works() {
     let ch = MockChannel::<markers::JointState>::new();
     let mut publisher = ch.publisher();
 
-    let mut w1 = publisher.loan().unwrap();
+    let mut w1 = publisher.loan(65536).unwrap();
     w1.set_body_bytes(&build_joint_state_body());
     w1.publish().unwrap();
 
-    let mut w2 = publisher.loan().unwrap();
+    let mut w2 = publisher.loan(65536).unwrap();
     w2.set_body_bytes(&build_joint_state_body());
     w2.publish().unwrap();
 
@@ -231,7 +231,7 @@ fn blob_misaligned_when_offset_not_multiple_of_alignment() {
     let body = build_image_header_body(16); // alignment = 16
     let blob = vec![0xABu8; 12]; // 12 bytes，凑 body + blob 长度
 
-    let mut w = publisher.loan().unwrap();
+    let mut w = publisher.loan(65536).unwrap();
     w.set_body_bytes(&body);
     w.set_blob_bytes(&blob);
     w.publish().unwrap();
@@ -243,7 +243,7 @@ fn blob_misaligned_when_offset_not_multiple_of_alignment() {
             // 本用例就不触发；换 alignment=1024 再试一次。
             let body2 = build_image_header_body(1024);
             let blob2 = vec![0xABu8; 12];
-            let mut w2 = publisher.loan().unwrap();
+            let mut w2 = publisher.loan(65536).unwrap();
             w2.set_body_bytes(&body2);
             w2.set_blob_bytes(&blob2);
             w2.publish().unwrap();
@@ -275,7 +275,7 @@ fn blob_aligned_blob_passes_view() {
 
     let body = build_image_header_body(1);
     let blob = vec![0xCDu8; 12];
-    let mut w = publisher.loan().unwrap();
+    let mut w = publisher.loan(65536).unwrap();
     w.set_body_bytes(&body);
     w.set_blob_bytes(&blob);
     w.publish().unwrap();
@@ -311,7 +311,7 @@ fn latest_returns_same_sample_repeatedly_until_new_publish() {
     let mut publisher = ch.publisher();
     let mut subscriber = ch.subscriber();
 
-    let mut w = publisher.loan().unwrap();
+    let mut w = publisher.loan(65536).unwrap();
     w.set_stamp_ns(1000);
     w.set_body_bytes(&build_joint_state_body());
     w.publish().unwrap();
@@ -323,11 +323,40 @@ fn latest_returns_same_sample_repeatedly_until_new_publish() {
     assert_eq!(ch.active_leases(), 2);
 
     // 新 publish 后 latest 拿到新 stamp
-    let mut w2 = publisher.loan().unwrap();
+    let mut w2 = publisher.loan(65536).unwrap();
     w2.set_stamp_ns(2000);
     w2.set_body_bytes(&build_joint_state_body());
     w2.publish().unwrap();
 
     let l3 = subscriber.latest().unwrap().unwrap();
     assert_eq!(l3.view().unwrap().header.stamp_ns(), 2000);
+}
+
+// ---------------------------------------------------------------------------
+// loan(size) 硬限：publish 超档返 SampleTooLarge（Step 5 A1 新语义）
+// ---------------------------------------------------------------------------
+
+#[test]
+fn publish_exceeds_loan_max_sample_size_errors() {
+    let ch = MockChannel::<markers::JointState>::new();
+    let mut publisher = ch.publisher();
+
+    // 声明 size=64 字节：FrameHeader 本身就远超此值，publish 必返 SampleTooLarge。
+    let mut w = publisher.loan(64).unwrap();
+    w.set_body_bytes(&build_joint_state_body());
+    let err = w.publish().unwrap_err();
+    match err {
+        TransportError::SampleTooLarge { size, limit } => {
+            assert!(
+                size > limit,
+                "expected size > limit, got size={size} limit={limit}"
+            );
+            assert_eq!(limit, 64);
+        }
+        other => panic!("expected SampleTooLarge, got {other:?}"),
+    }
+    // 失败后 writer 被消费（drop），active_writers 归零。
+    assert_eq!(ch.active_writers(), 0);
+    // 未成功写入 slot，publish_count 保持 0。
+    assert_eq!(ch.publishes(), 0);
 }

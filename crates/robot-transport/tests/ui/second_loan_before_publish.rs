@@ -13,9 +13,9 @@ fn main() {
     let ch = MockChannel::<JointState>::new();
     let mut publisher = ch.publisher();
 
-    let mut w1 = publisher.loan().unwrap();
+    let mut w1 = publisher.loan(65536).unwrap();
     // w1 仍持 &mut publisher borrow，下一行 loan 借用冲突：
-    let _w2 = publisher.loan().unwrap();
+    let _w2 = publisher.loan(65536).unwrap();
     // 在 second loan 之后用 w1，阻止 NLL 把 borrow 缩短：
     w1.set_body_bytes(&[]);
 }
