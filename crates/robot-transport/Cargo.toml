@@ -1,0 +1,21 @@
+[package]
+name        = "robot-transport"
+description = "本机通信层：iceoryx2 封装 + FrameHeader/Body/Blob parser + SampleLease<T>。"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+
+[dependencies]
+# Step 3 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。
+robot-msg   = { workspace = true }
+flatbuffers = { workspace = true }
+thiserror   = { workspace = true }
+
+# Step 5 起会追加：
+# iceoryx2 = "0.x"（版本 pin 在引入时登记到 CHANGELOG）
+
+[lints]
+workspace = true

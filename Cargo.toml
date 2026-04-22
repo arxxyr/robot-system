@@ -9,10 +9,10 @@ resolver = "2"
 members = [
     "crates/robot-core",
     "crates/robot-msg",
+    "crates/robot-transport",
 ]
 
 # 未来 crate（按 docs/01_implementation_steps.md 顺序逐步启用；现在不要提前加入 members）：
-#   crates/robot-transport           # Step 3–5：FrameHeader parser + SampleLease + iceoryx2
 #   crates/robot-s0                  # Step 6：四线程骨架（panic = "abort"）
 #   crates/robot-s1                  # Step 6：mock_s1；v0.3 coordinator（panic = "abort"）
 #   crates/robot-adapters/mock       # Step 6：mock HardRT adapter
@@ -50,6 +50,11 @@ flatbuffers = "=25.12.19"
 # blake3：layout_id / ConfigIdentity / schema_lint 碰撞检测需要的固定 hash。
 # 选 1.5+ 支持 const fn 更多；允许 minor 自由升。
 blake3 = "1"
+
+# 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
+robot-core      = { path = "crates/robot-core" }
+robot-msg       = { path = "crates/robot-msg" }
+robot-transport = { path = "crates/robot-transport" }
 
 # Workspace 级 lint 默认。
 # 子 crate 在自己的 Cargo.toml 里写 `[lints] workspace = true` 即可继承。
