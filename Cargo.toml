@@ -9,6 +9,7 @@ resolver = "2"
 members = [
     "crates/robot-core",
     "crates/robot-msg",
+    "crates/robot-tests",
     "crates/robot-transport",
 ]
 

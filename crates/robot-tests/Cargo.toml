@@ -1,0 +1,28 @@
+[package]
+name        = "robot-tests"
+description = "集成示例 + soak / crash-restart / schema_compat 测试套（v0.2+）。"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+publish    = false
+
+# Step 5 bin：同进程 pub/sub 示例，打印 3 条 JointState。
+# 后续（Step 7+）会加 crash_restart / schema_compat / soak bin。
+
+[[bin]]
+name = "hello_pubsub"
+path = "src/bin/hello_pubsub.rs"
+
+[dependencies]
+# iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
+flatbuffers     = { workspace = true }
+iceoryx2        = { workspace = true }
+robot-core      = { workspace = true }
+robot-msg       = { workspace = true }
+robot-transport = { workspace = true, default-features = true }
+
+[lints]
+workspace = true

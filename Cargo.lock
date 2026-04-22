@@ -607,6 +607,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "robot-tests"
+version = "0.1.2"
+dependencies = [
+ "flatbuffers",
+ "iceoryx2",
+ "robot-core",
+ "robot-msg",
+ "robot-transport",
+]
+
+[[package]]
 name = "robot-transport"
 version = "0.1.2"
 dependencies = [

@@ -2,7 +2,7 @@
 
 > 本文档是 [`docs/00_design.md`](00_design.md) §11.2 "v0.2 实现顺序" 的可执行版本。
 > 10 步顺序**强制**；第 6 步闭环打通前不接任何真硬件。
-> 当前位置：**Step 4 已完成 · Step 5 开工**（Step 0 `07a5446` / Step 1 `654d7ab` + retrofit `69e6201` / Step 2 `3ba9a70` / Step 3 `d8eefa2` / Step 4 `5234da3`；Step 5 决策冻结 `f0e9add`）。
+> 当前位置：**Step 5 已完成 · Step 6 未开始**（Step 0 `07a5446` / Step 1 `654d7ab` + retrofit `69e6201` / Step 2 `3ba9a70` / Step 3 `d8eefa2` / Step 4 `5234da3`；Step 5 决策冻结 `f0e9add` → 分档 `b5e2e63` → iceoryx2 类型层 `569166d` → loan(size) 重构 `e931394` → Iceoryx2 Pub/Sub `86e15aa` → robot-tests 示例见本次 commit）。
 
 ---
 
