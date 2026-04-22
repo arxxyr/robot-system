@@ -80,12 +80,26 @@ jobs:
   deny:
     name: cargo deny
     runs-on: ubuntu-latest
+    # `.cargo/config.toml` 把 rustc-wrapper 设为 sccache，但本 job 不装
+    # sccache（deny 只跑 `cargo metadata` 读依赖树，不需要编译缓存）。
+    # 用 CARGO_BUILD_RUSTC_WRAPPER="" 覆盖 config.toml，避免 cargo 找不到
+    # sccache 失败。cargo 文档：`CARGO_BUILD_RUSTC_WRAPPER` 覆盖
+    # `[build].rustc-wrapper`，空串即 "不使用 wrapper"。
+    env:
+      CARGO_BUILD_RUSTC_WRAPPER: ""
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (for cargo metadata)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+
       - name: Install cargo-deny (binary)
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
+
       - name: cargo deny check
         run: cargo deny check advisories bans licenses sources
 
