@@ -51,6 +51,9 @@ thiserror = "2.0.18"
 flatbuffers = "=25.12.19"
 # blake3：layout_id / ConfigIdentity / schema_lint 碰撞检测需要的固定 hash。
 blake3 = "1.8.4"
+# iceoryx2：本机零拷贝 pub-sub（§2.1）。精确 pin 仿 flatbuffers，防 minor 破坏性变更。
+# 烟测见 docs/CHANGELOG.md 2026-04-22 "Step 5 开工决策与 iceoryx2 依赖登记"。
+iceoryx2 = "=0.8.1"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core      = { path = "crates/robot-core" }

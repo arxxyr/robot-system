@@ -12,10 +12,13 @@
 //! - [`sample`]：`SampleLease<T>` / `MessageView` / `BodyView` / `BlobView`。
 //! - [`writer`]：`SampleWriter<'_, T>` 及其按值消费的 `publish(self)`。
 //! - [`traits`]：`LatestSubscriber<T>` / `Publisher<T>` / `RequestClient<Req, Resp>`。
-//! - [`mock`]（`feature = "mock"`，Step 4 默认开启）：内存后端，测试用
-//!   `MockChannel` 驱动 publisher / subscriber 并观测 loan / publish /
-//!   active-lease / active-writer 计数守恒。Step 5 引入 iceoryx2 feature 后
-//!   default 会改为 iceoryx2，mock 作为 dev-dep 继续保留。
+//! - [`mock`]（`feature = "mock"`，默认开启）：内存后端，测试用 `MockChannel`
+//!   驱动 publisher / subscriber 并观测 loan / publish / active-lease /
+//!   active-writer 计数守恒。Step 5 起 mock 作为"iceoryx2 off" 的编译 / 测试
+//!   保底（后端隔离），不会被 iceoryx2 替掉。
+//! - [`iceoryx2`]（`feature = "iceoryx2"`，默认开启）：真 iceoryx2 后端。当前
+//!   落地 `service_name` / `qos` 两个纯类型层；Publisher / Subscriber / Event
+//!   wrapper 在后续 commit 增量上。
 //!
 //! ### RT 约束
 //!
@@ -35,6 +38,9 @@ pub mod writer;
 
 #[cfg(feature = "mock")]
 pub mod mock;
+
+#[cfg(feature = "iceoryx2")]
+pub mod iceoryx2;
 
 pub use error::TransportError;
 pub use metrics::ParseMetrics;
