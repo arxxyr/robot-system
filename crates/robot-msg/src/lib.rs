@@ -19,6 +19,7 @@
 //! - `FlatBufferBuilder` 的构造**严禁**进 RT thread（`00_design.md` §0）；
 //!   publishers 必须在 RT 线程外准备 sample。
 
+pub mod capability;
 pub mod schema_id;
 
 // ---------------------------------------------------------------------------

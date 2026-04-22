@@ -206,9 +206,16 @@ pub trait BaseKinematics: Send {
 - 禁止：同 `robot-core` 禁用列表（flatbuffers runtime 除外）
 - RT 影响：`robot-msg` 的 reader 路径零拷贝、零 allocation；`FlatBufferBuilder` 构造**禁止**进 RT thread（§0 RT thread 禁令已收录）
 
-#### `robot-transport`（v0.2 Step 5 登记）
-- 预期允许：`iceoryx2 = "0.x"`（Step 5 具体版本再 pin）
-- 占位，真正引入时在本条补写 sha256 + 版本
+#### `robot-transport`（v0.2 Step 3 首次登记 / Step 5 会追加 iceoryx2）
+- 允许（Step 3 已引入，见 `crates/robot-transport/Cargo.toml`）：
+  - `robot-msg = { workspace = true }`（解析 FrameHeader / 查 `SCHEMA_REGISTRY`）
+  - `robot-core = { workspace = true }`（保留入口；parser 目前未用，但 Step 4
+    `SampleLease<T>` / trait 层会用到 `RobotClock` / newtype）
+  - `flatbuffers = { workspace = true }`（`flatbuffers::root` verifier + 类型 handle）
+  - `thiserror = { workspace = true }`（`ParseError` 分类派生）
+- 预期允许（Step 5 追加）：`iceoryx2 = "0.x"`（具体版本在 Step 5 引入时登记 sha256 + tag）
+- 禁止：同 `robot-core` 禁用列表，外加 `tokio`（RT 线程会直接走 parser 路径，不得引入 async runtime）
+- RT 影响：`parse_sample` **零 alloc、零 panic、零 unwrap**，可在非 RT subscriber 线程调用；RT 线程本身仍不应在 hot path 直接 parse iceoryx2 sample（IPC 线程负责解析后写 slot，§1.2）
 
 #### `robot-kinematics`（v0.3 登记）
 - 预期允许：纯 math（`nalgebra`?/自研简薄线代），零 runtime
