@@ -22,6 +22,7 @@
 pub mod capability;
 pub mod markers;
 pub mod schema_id;
+pub mod size_tier;
 
 // ---------------------------------------------------------------------------
 // flatc 生成代码入口
