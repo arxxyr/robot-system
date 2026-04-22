@@ -41,15 +41,15 @@ readme       = "README.md"
 [workspace.dependencies]
 # robot-core::time (Step 1) 需要 `clock_gettime(CLOCK_MONOTONIC_RAW)` + `nanosleep`
 # 的 FFI 绑定；`libc` 加入 §4.2 允许列表的登记见 docs/CHANGELOG.md 2026-04-21。
-libc      = "0.2"
+# 注：crates.io 存在 libc 1.0.0-alpha.x 预发布版，不采用；stable 轨道走 0.2.x。
+libc      = "0.2.185"
 # thiserror：Step 1 暂未使用（Result 路径未登场），保留入口供后续子 crate 继承。
 thiserror = "2.0.18"
-# robot-msg (Step 2) FlatBuffers runtime：与 3rd-party/flatc/VERSION 对齐。
+# robot-msg (Step 2) FlatBuffers runtime：与 3rd-party/flatc/VERSION 严格对齐（精确 pin，防 minor 漂移）。
 # 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。
 flatbuffers = "=25.12.19"
 # blake3：layout_id / ConfigIdentity / schema_lint 碰撞检测需要的固定 hash。
-# 选 1.5+ 支持 const fn 更多；允许 minor 自由升。
-blake3 = "1"
+blake3 = "1.8.4"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core      = { path = "crates/robot-core" }
