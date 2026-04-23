@@ -7,5 +7,6 @@
 | [`02_start_here.md`](02_start_here.md) | Claude Code 上手指南（新 session 必读） |
 | [`10_verification.md`](10_verification.md) | 验证测试文档（活文档，Step 5 完成时落骨架，随后每 Step 填实测） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 偏离 `00_design.md` 冻结语义的登记簿 |
+| [`targets/`](targets/) | 未来部署目标分析（XLeRobot / ATOM01 / Piper ...）；跟随上游演进更新，不影响冻结设计 |
 
 **首次进入 session 阅读顺序**：`../CLAUDE.md` → `02_start_here.md` → `00_design.md` → `01_implementation_steps.md`
