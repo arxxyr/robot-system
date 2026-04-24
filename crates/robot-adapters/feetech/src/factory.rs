@@ -105,18 +105,17 @@ impl AdapterFactory for FeetechFactory {
             })?;
             let mut out = Vec::with_capacity(ctx.joint_names.len());
             for name in ctx.joint_names {
-                match merged.get(name) {
-                    Some(cal) => out.push(*cal),
-                    None => {
-                        eprintln!(
-                            "fatal: feetech calibration: joint '{name}' not found in {:?} (available: {:?})",
-                            ctx.calibration_paths,
-                            merged.keys().collect::<Vec<_>>()
-                        );
-                        return Err(RobotError::InvalidParameter(
-                            "feetech: calibration missing motor",
-                        ));
-                    }
+                if let Some(cal) = merged.get(name) {
+                    out.push(*cal);
+                } else {
+                    eprintln!(
+                        "fatal: feetech calibration: joint '{name}' not found in {:?} (available: {:?})",
+                        ctx.calibration_paths,
+                        merged.keys().collect::<Vec<_>>()
+                    );
+                    return Err(RobotError::InvalidParameter(
+                        "feetech: calibration missing motor",
+                    ));
                 }
             }
             out

@@ -48,5 +48,11 @@ tempfile  = { workspace = true }
 name = "feetech_bench"
 harness = false # criterion 自带 harness，不用 default test runner
 
+# Step 7 task 29 follow-up：bring-up / 下使能 / 单寄存器诊断的裸 wire 工具。
+# required-features = ["real-hw"] 保证 mock-only 编译路径不拉 serialport。
+[[example]]
+name              = "feetech_poke"
+required-features = ["real-hw"]
+
 [lints]
 workspace = true
