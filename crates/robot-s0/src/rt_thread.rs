@@ -201,6 +201,23 @@ fn run_rt_loop<A: ManipulatorAdapter>(
     let mut tick_seq: u64 = 0;
     let mut deadline = Deadline(clock.now());
 
+    // ---- arc-swap / seqlock thread_local warmup（RT-critical）----
+    //
+    // arc-swap 的 hazard-pointer slot 是 *per-thread thread_local*，**第一次** load
+    // 在新线程上会 alloc ~128 bytes（hazard pointer 单 slot + retired list 初始 cap）。
+    // 同理 RtSnapshotPublisher 内部 seqlock writer 在首次 publish 时初始化 thread_local
+    // 计数。如果不在这里 warmup，第一个 rt_entry! 就 alloc → assert_no_alloc abort
+    // （Step 7 task 26 `rt_guard_soak` 集成测试发现）。
+    //
+    // warmup 在 rt_entry! 之前 + 在主循环之前，alloc 允许。完成后 thread_local 全
+    // 已初始化，主循环稳态 0 alloc。
+    drop(cmd_reader.load());
+    snapshot_pub.publish(&RtSnapshot {
+        state: state_buf,
+        tick_seq: 0,
+        tick_deadline_ns: 0,
+    });
+
     // ---- 主循环 ----
     while !stop.load(Ordering::Acquire) {
         let tick_period = DurationNs(cfg.tick_period_ns);
