@@ -162,6 +162,9 @@ TOPICS:
 // ============================================================================
 
 fn main() {
+    // task-32：统一 tracing subscriber 初始化。
+    let _ = robot_logging::init();
+
     let args = match Args::parse() {
         Ok(a) => a,
         Err(msg) => {

@@ -148,6 +148,9 @@ fn do_write<T: robot_adapter_feetech::SerialTransport>(
 }
 
 fn main() -> ExitCode {
+    // task-32：统一 tracing subscriber 初始化。
+    let _ = robot_logging::init();
+
     let args: Vec<String> = std::env::args().collect();
     let prog = args
         .first()

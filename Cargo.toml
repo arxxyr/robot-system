@@ -11,6 +11,7 @@ members = [
     "crates/robot-adapters/mock",
     "crates/robot-cli",
     "crates/robot-core",
+    "crates/robot-logging",
     "crates/robot-msg",
     "crates/robot-s0",
     "crates/robot-s1",
@@ -100,9 +101,23 @@ criterion = { version = "0.5", default-features = false, features = ["cargo_benc
 # serialport：跨平台串口 crate（Linux 走 libudev，需 libudev-dev / libudev1）。
 # Step 7 task 28 feetech `real-hw` feature 必需；mock-only 编译路径不 link。
 serialport = "4"
+# tracing + tracing-subscriber：Rust 生态标准结构化日志（相当于 C++ spdlog）。
+# task-32 (2026-04-25) 日志骨架：所有 bin（s0_daemon / mock_s1 / robotctl /
+# policy_host 等）启动时 `init_tracing()`，RT thread 内严格**禁用**（带 format
+# arg 的 tracing::info! 会 heap alloc，违反 §4.9 RT 铁律 —— CLAUDE.md 禁用表
+# 已列）。字段约定 / 格式配置详 docs/logging.md。白名单登记见 docs/CHANGELOG.md
+# 2026-04-25 "task-32 日志骨架"。
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "json", "ansi", "smallvec", "tracing-log"] }
+# ctor：binary main 执行前自动运行构造函数（等价 C++ __attribute__((constructor))），
+# 让所有 bin 只要依赖 `robot-logging` 就自动 init tracing subscriber，不用
+# 每个 main 写 `robot_logging::init()`。白名单登记见 docs/CHANGELOG.md 2026-04-25
+# "task-32 日志骨架"。
+ctor               = "0.3"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core          = { path = "crates/robot-core" }
+robot-logging       = { path = "crates/robot-logging" }
 robot-msg           = { path = "crates/robot-msg" }
 robot-transport     = { path = "crates/robot-transport" }
 robot-adapter-mock    = { path = "crates/robot-adapters/mock" }

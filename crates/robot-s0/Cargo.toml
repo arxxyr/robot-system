@@ -11,8 +11,12 @@ publish    .workspace = true
 
 [dependencies]
 robot-core          = { workspace = true }
+robot-logging       = { workspace = true }
 robot-transport     = { workspace = true }
 robot-msg           = { workspace = true }
+# task-32 (2026-04-25) 日志骨架：tracing macro 在 bin / lib 全用，subscriber
+# init 只在 bin main 做一次（走 robot-logging::init()）。
+tracing             = { workspace = true }
 # adapter crates 全部 optional，由 robot 组合 features 决定 link 哪些。
 # 每加一个新 adapter，按 mock / feetech 同模式扩 [features] 段。
 robot-adapter-mock    = { workspace = true, optional = true }

@@ -1,0 +1,29 @@
+[package]
+name         = "robot-logging"
+description  = "robot-system 所有 bin 共用的 tracing 初始化 + 字段命名约定（相当于 C++ spdlog）"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+publish    .workspace = true
+
+# task-32 (2026-04-25) 日志骨架。详 docs/logging.md + docs/CHANGELOG.md
+# 2026-04-25 "task-32 日志骨架"。
+#
+# **这是面向 binary 的 init helper crate**：`robot-core` / `robot-msg` /
+# `robot-transport` 等 library crate **只用 `tracing` macros**（编译期零开销
+# 生产 Event），**不依赖 `robot-logging`**，避免把 subscriber 绑定到 library
+# 边界。subscriber init 是 binary 的 responsibility，`robot-logging` 只提供
+# 统一的初始化入口。
+
+[dependencies]
+# tracing-subscriber：fmt / json / env-filter 全在白名单内 feature 集
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+# ctor：auto-init（bin 依赖本 crate 即自动 init，不必写 robot_logging::init()）
+ctor               = { workspace = true }
+
+[lints]
+workspace = true

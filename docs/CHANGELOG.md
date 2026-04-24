@@ -1650,3 +1650,88 @@ timeout 14 ./target/release/robotctl watch --robot-id xlerobot_task29 \
   - `robotctl calibrate --apply` 工具 → 如果未来需要一键写 EEPROM，重新激活
     `crate::calibration::write_calibration` 这条路
   - dimos JSON 格式变更 → 后续 CHANGELOG 登记 + 同步 parser
+
+---
+
+## 2026-04-25 · task-32 日志骨架（**状态：登记 / 骨架落地**）
+
+### 涉及小节
+
+- `docs/CHANGELOG.md` 2026-04-22 "workspace runtime 依赖白名单机制" → 新增
+  `tracing` / `tracing-subscriber` / `ctor` 进 workspace 白名单
+- `docs/00_design.md` 不动（本 task 只增基础设施，不改设计语义）
+- 新增规范文档 `docs/logging.md`（字段词汇表 + 级别约定 + RT 铁律）
+
+### 决定
+
+- **事实标准库**：`tracing` + `tracing-subscriber`（Rust 版 spdlog），
+  `thiserror` 继续做 error derive 标准（已在用）。
+- **时间戳**：wall clock RFC3339 UTC + monotonic `[+secs.ns s]`（`Instant::
+  now().duration_since(start)`，`CLOCK_MONOTONIC_RAW` 原理一致，NTP / 闰秒
+  无感）。手写 Howard Hinnant 日期算法，零外部 chrono/time 依赖。
+- **字段命名统一词汇表**（`docs/logging.md` 权威）：`robot_id` / `hardware_id`
+  / `motor_id` / `joint` / `adapter` / `err` (Debug) / `attempt` /
+  `duration_ms` 等，新增字段必须走 CHANGELOG + 更新 logging.md。
+- **自动初始化**：`ctor` crate `#[ctor::ctor]` 在 `main` 运行前自动装 subscriber
+  —— **bin 的 main 里不用写 init 代码**，只要 `Cargo.toml` 依赖 `robot-logging`。
+  可选 `let _ = robot_logging::init()` 作 self-documenting anchor（幂等）。
+- **RT 铁律保留**：RT thread 内**禁用**任何 `tracing::*!` 调用（含 literal
+  message）—— tracing Event 构造可能 alloc，违反 §4.9。RT 路径走 metrics
+  atomic counter + 非 RT 线程定期采样。
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `Cargo.toml`（workspace） | `members` 加 `crates/robot-logging`；deps 加 `tracing` / `tracing-subscriber` / `ctor`；`robot-logging` path dep |
+| `crates/robot-logging/` | **新增 crate**（135 行 lib.rs + Cargo.toml）：`init()` 公共入口 + `WallAndMono` FormatTime + `#[ctor]` 自动初始化 + 3 单测（civil_from_days / RFC3339 / init 幂等） |
+| `crates/robot-s0/Cargo.toml` | 加 `robot-logging` + `tracing` deps |
+| `crates/robot-s0/src/bin/s0_daemon.rs` | `main` 顶部加 `let _ = robot_logging::init();`（self-documenting anchor，ctor 已自动跑过） |
+| `crates/robot-s1/Cargo.toml` | 同上 |
+| `crates/robot-s1/src/bin/mock_s1.rs` | 同上 |
+| `crates/robot-cli/Cargo.toml` | 同上 |
+| `crates/robot-cli/src/bin/robotctl.rs` | 同上 |
+| `crates/robot-adapters/feetech/Cargo.toml` | 加 `tracing` dep（lib 用 macros）；`robot-logging` optional + 进 `real-hw` feature（feetech_poke example 需要） |
+| `crates/robot-adapters/feetech/examples/feetech_poke.rs` | 同上（anchor init） |
+| `docs/logging.md` | **新增** 规范文档 |
+| `docs/CHANGELOG.md` 本条 | 新增 |
+
+### 依赖白名单更新
+
+| 依赖 | 范围 | 用途 |
+|---|---|---|
+| `tracing = "0.1"` | workspace.dependencies | 结构化日志 macros；**所有 lib / bin 允许用**（RT thread 除外） |
+| `tracing-subscriber = { version = "0.3", default-features = false, features = [...] }` | workspace.dependencies | subscriber runtime；**只允许 `robot-logging` crate 用** |
+| `ctor = "0.3"` | workspace.dependencies | 自动初始化 hook；**只允许 `robot-logging` crate 用** |
+
+### 约束
+
+1. **本 commit 是骨架 + 规范**，**现有 `eprintln!` / `println!` 调用不动** ——
+   全量替换分后续多个小 commit 做（按 crate 切分，每次 30-60 min），避免一次
+   改动过大。大致有 100+ callsite 需要迁移。
+2. **新代码默认用 tracing**：task-32 之后所有新加的 log 必须用 `tracing::*!`
+   + 统一词汇表。reviewer 看到 `eprintln!` 打非 debug 信息（非 fatal error
+   stderr / 非 --help 输出）直接 block。
+3. **`tracing-journald` 暂不接**：systemd 下 JSON 模式走 stdout → journald 能
+   抓结构化字段（`PRIORITY=` 等）。接 native journald 留后续评估（需要比较
+   JSON 抓取 vs native binary protocol 的运维友好度）。
+4. **Error 结构保留**：打错误一律 `error!(?err, "...")`（`?` 走 Debug），不用
+   `error!(err = %err, ...)` 或 `format!("{err}")` 丢结构。
+
+### 验证
+
+- `cargo fmt --all --check` ✅
+- `cargo clippy --all --all-targets -- -D warnings` ✅（含 `--features real-hw`）
+- `cargo test --all` ✅（robot-logging 新增 3 单测全绿；workspace 共 339 pass）
+- `cargo build --all` ✅（matrix 4 组合无回归）
+
+### 审阅
+
+- 提议 → 决定：用户 loosqk（2026-04-25 本 session：`整个项目的日志也要用成熟
+  的高性能日志库，就像 spdlog 之于 c++` → `日志格式也要统一方便查看` → `日志
+  还要加上 monotonic 时间` → `用事实性的标准 error，例如 thiserror？都用最新
+  版本` → `有统一 init 的吗，这要一个一个写`）
+- 复审触发：
+  - 全量替换 `eprintln!` 时发现词汇表缺字段 → 更新 `docs/logging.md` + CHANGELOG
+  - RT 路径日志需求（v0.3+）→ 专门 task 设计 lock-free ring buffer + 异步 flush
+  - `tracing-journald` 真切到 native binary protocol → 新 CHANGELOG 条目

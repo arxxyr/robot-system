@@ -11,11 +11,14 @@ publish    .workspace = true
 
 [dependencies]
 robot-core      = { workspace = true }
+robot-logging   = { workspace = true }
 robot-msg       = { workspace = true }
 robot-transport = { workspace = true }
 iceoryx2        = { workspace = true }
 # Linux 信号处理（SIGINT/SIGTERM → 原子 AtomicBool）；只 Linux 走实现，其他 OS 桩空。
 libc            = { workspace = true }
+# task-32 (2026-04-25)：日志骨架统一到 tracing。
+tracing         = { workspace = true }
 
 [lints]
 workspace = true

@@ -352,6 +352,10 @@ struct Topics {
 // ============================================================================
 
 fn main() {
+    // task-32：所有 bin 的第一件事 —— 统一 tracing subscriber 初始化。
+    // 幂等：多次调用只第一次生效（底层 `set_global_default` 限制）。
+    let _ = robot_logging::init();
+
     let parsed = match Args::parse() {
         Ok(a) => a,
         Err(msg) => {

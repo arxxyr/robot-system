@@ -11,10 +11,13 @@ publish    .workspace = true
 
 [dependencies]
 robot-core      = { workspace = true }
+robot-logging   = { workspace = true }
 robot-msg       = { workspace = true }
 robot-transport = { workspace = true }
 iceoryx2        = { workspace = true }
 libc            = { workspace = true }
+# task-32 (2026-04-25)：日志骨架统一到 tracing。
+tracing         = { workspace = true }
 
 [lints]
 workspace = true

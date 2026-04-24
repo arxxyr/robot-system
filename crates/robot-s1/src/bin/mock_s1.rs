@@ -240,6 +240,9 @@ TOPICS:
 // ============================================================================
 
 fn main() {
+    // task-32：统一 tracing subscriber 初始化（详 robot-logging::init）。
+    let _ = robot_logging::init();
+
     let args = match Args::parse() {
         Ok(a) => a,
         Err(msg) => {
@@ -263,22 +266,20 @@ fn run(args: &Args) -> Result<(), i32> {
     let topic_cmd = format!("/{}/s1/{}/command", args.robot_id, args.hardware_id);
     let topic_hb = format!("/{}/s1/heartbeat", args.robot_id);
 
-    eprintln!(
-        "mock_s1 starting:\n  \
-         robot_id={}  hardware_id={}\n  \
-         joints={}  amplitude={:.3}  frequency={:.3}\n  \
-         state_hz={}  heartbeat_hz={}  duration={:?}\n  \
-         pub cmd: {}\n  pub hb : {}",
-        args.robot_id,
-        args.hardware_id,
-        args.joints,
-        args.amplitude,
-        args.frequency,
-        args.state_hz,
-        args.heartbeat_hz,
-        args.duration,
-        topic_cmd,
-        topic_hb,
+    // task-32 示范：启动 banner 走 tracing 结构化字段（原 eprintln 见 git
+    // blame；其余 eprintln 逐步迁移）。
+    tracing::info!(
+        robot_id = %args.robot_id,
+        hardware_id = %args.hardware_id,
+        joints = args.joints,
+        amplitude = args.amplitude,
+        frequency = args.frequency,
+        state_hz = args.state_hz,
+        heartbeat_hz = args.heartbeat_hz,
+        duration = ?args.duration,
+        topic_cmd = %topic_cmd,
+        topic_hb = %topic_hb,
+        "mock_s1 starting"
     );
 
     // ---- 构造 iceoryx2 publishers ----
