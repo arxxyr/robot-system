@@ -2,7 +2,12 @@
 
 > 本文档是 [`docs/00_design.md`](00_design.md) §11.2 "v0.2 实现顺序" 的可执行版本。
 > 10 步顺序**强制**；第 6 步闭环打通前不接任何真硬件。
-> 当前位置：**Step 5 已完成 · Step 6 未开始**（Step 0 `07a5446` / Step 1 `654d7ab` + retrofit `69e6201` / Step 2 `3ba9a70` / Step 3 `d8eefa2` / Step 4 `5234da3`；Step 5 决策冻结 `f0e9add` → 分档 `b5e2e63` → iceoryx2 类型层 `569166d` → loan(size) 重构 `e931394` → Iceoryx2 Pub/Sub `86e15aa` → robot-tests 示例 `8f4c434`；基础设施 `f5d8d68` 10_verification 骨架 / `fe95f3e` CI + cargo-deny + env_id）。
+> 当前位置：**Step 6 Part 1 + Part 2 功能性完成 · Step 7 未开始**。
+> Part 1 (`2026-04-24_3.md`)：6 crate + rt_thread + state machine + s0_daemon smoke。
+> Part 2：task 10-12 `c738b87` → 13 `de6ffc6` → 14 `414fee1` → 15 `a83cee1` →
+> 16 `f30b5e8` → 17 `87def64` → 18 `2189daf` → 19 `10afe8d` → 20 `85fa270` →
+> 21 `8d377ab`。v0.2 最小闭环数据路径本机 release 3-端跑通（S0 daemon + mock_s1 + robotctl）。
+> Orin baseline harness 就位；task 22 实测 p50 21 µs / p99 1–15 ms，PREEMPT 内核 + 无 isolcpus 系统瓶颈，系统调优阻塞，见 `docs/handoffs/2026-04-24_5.md` §5.3。
 
 ---
 

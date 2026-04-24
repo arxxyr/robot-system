@@ -17,7 +17,7 @@
 ```
 设计版本:  v0.1.2（冻结）
 实现阶段:  v0.2 最小闭环
-当前步骤:  Step 5 (mock iceoryx2 pub/sub) 已完成 · Step 6 (S0 四线程 mock) 未开始（见 docs/01_implementation_steps.md；CI + cargo-deny + env_id 脚本已接入）
+当前步骤:  Step 6 Part 1 + Part 2 全部功能性完成（task 1-23）：S0 四线程 + watchdog + estop latch + mock_s1 + robotctl 本机 release 3-端闭环跑通，iceoryx2_rt_baseline harness 就位。Orin 实测 p50 21 µs / p99 1-15 ms（PREEMPT 内核 + schedutil governor + 无 isolcpus 系统瓶颈，需 sudo 调优或 PREEMPT_RT 内核，见 docs/handoffs/2026-04-24_5.md §5.3）。下一步 Step 7：真 Feetech adapter + CI + config loader。
 上游项目:  /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
 
