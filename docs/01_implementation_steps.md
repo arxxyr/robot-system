@@ -6,6 +6,87 @@
 
 ---
 
+## 可测性架构（跨步原则）
+
+> 本节说明 10 步顺序**为什么**必然可测，不给具体数值（数值去 [`docs/10_verification.md`](10_verification.md)）。
+> **新步骤必须同时满足本节 5 条**，否则走 `docs/CHANGELOG.md` 讨论再拍板，不得直接进入实施。
+
+### 原则 1 · 步骤拓扑 = 前步产出是后步 mock
+
+10 步不是时间线，是**依赖 DAG**。每一步的"交付"里必须包含"给下一步当 mock 用"的产物，使得 Step N 的测试**只依赖 Step 1..N-1 的产物**，不依赖 Step N+1 的真实现。
+
+| 步骤 | 留给下一步的 mock |
+|---|---|
+| 1 `time` | `MockClock`（所有后续确定性时钟） |
+| 2 `robot-msg` | schema registry + `layout_id` + `schema_lint` bin |
+| 3 parser | `ParsedSample<'_>` 供 S0/S1 |
+| 4 `SampleLease/Writer` | trait + mock 内存后端 |
+| 5 iceoryx2 封装 | `Iceoryx2Publisher/Subscriber`（真后端，同进程） |
+| 6 S0 四线程 | `mock_s1` + `--freeze-after-ms` 钩子 |
+| 7 watchdog | — |
+| 8 EStop latch | — |
+| 9 crash/restart | — |
+| 10 Feetech | — |
+
+### 原则 2 · 时间 / 分配 / 并发通过 trait 注入可测
+
+- `RobotClock` trait（Step 1）→ 业务代码只拿 trait，测试里替换 `MockClock` 确定性推进；**禁用** `Instant::now` / `SystemTime::now`（clippy 拦截，全局 CLAUDE.md §6 / §8）。
+- RT 线程入口挂 `assert-no-alloc` + `rt_arc_guard`（Step 6 交付）→ **运行时直接断言**"init 后 0 allocation / 0 `Arc::clone/drop`"，不靠自觉。
+
+### 原则 3 · 可在编译期拦截的错误不留到运行时
+
+- `SampleLease<T>` / `SampleWriter<'a, T>` 用 `PhantomData` + `&mut` 约束寿命；**负向测试走 `trybuild` 期望编译失败**。踩坑教训：用 NLL 的代码 trybuild 会假过 → 必须用 `&mut u8` 而不是 ZST（见 `memory/rust_borrow_pitfalls.md`）。
+- `schema_id` / `layout_id` 碰撞由 **`robot-msg/src/bin/schema_lint.rs`** CI 阶段 `cargo run -p robot-msg --bin schema_lint` 拦掉，不走运行时。
+- `#[deny(warnings)]` + `clippy -- -D warnings` 把"应当写出来就不该合并"的东西顶在门口。
+
+### 原则 4 · 真后端但环境可控
+
+- Step 5 的关键设计：**上真 iceoryx2，但 pub/sub 同进程**。
+  - 不需要多进程 orchestration（Step 6 才上）；
+  - 真实验证 ServiceName / QoS / attribute 匹配逻辑，不是 mock；
+  - macOS 就能跑，`SCHED_FIFO` 推到 Step 6。
+- `robot-transport` 的 `default = ["mock", "iceoryx2"]` + CI 独跑一条 `--no-default-features --features mock` → iceoryx2 出锅也不阻塞上层类型测试（10_verification §10.2.3 第 4 条）。
+
+### 原则 5 · CI + 活文档是最外层 gate
+
+- `docs/10_verification.md` 是**活文档**：每步 exit criteria 的硬指标（250 ms 切换 / cyclictest p99 / fsync 双写 / 1000 次 kill 0 drop……）在那里集中收尾、挂 `env_id`。
+- CI 严格**串行**（全程 nightly，见 §10.2.3）：
+  `fmt → clippy → test → test(mock-only) → build → cargo deny → allocation-guard → schema_compat → soak(夜间)`。
+- 里程碑按**测试平台**而不是时间切：
+  - v0.2-m1（Step 0–4）：macOS 纯类型 + mock；
+  - v0.2-m2（Step 5–6）：Linux 开发机最小闭环；
+  - v0.2-m3（Step 7–9）：Linux 安全链路；
+  - v0.2-final（Step 10）：Orin + 真硬件。
+  每步哪台机器能跑是**写死的**，不允许"本地跑不了，晚点再测"。
+
+### 一张图
+
+```
+编译期（trybuild / clippy -D warnings / schema_lint bin）
+   ↑
+纯类型层（RobotClock+MockClock / SampleLease mock 后端 / parser）
+   ↑
+集成层（同进程 iceoryx2 / mock HardRT adapter / mock_s1）
+   ↑
+进程链路层（S0 四线程 + mock_s1 + robotctl，kill -9 注入）
+   ↑
+真硬件（Orin + Feetech，cyclictest + fail-safe 时序）
+```
+
+每一层的测试只管自己那层，**下一层对它来说是可替换的 mock**。
+
+### 对"新步骤 / 新 Crate"的硬性检查单
+
+开 PR 前每一项都要能写出 checked：
+
+- [ ] **原则 1**：本步给后续步骤留了什么 mock / trait / 假实现？列出来。
+- [ ] **原则 2**：本步引入的时间 / 并发 / 分配敏感代码是否走 `RobotClock` + RT 守卫？
+- [ ] **原则 3**：本步哪些错误在编译期拦（`trybuild` / `schema_lint` / clippy）？
+- [ ] **原则 4**：本步在**不接真硬件、不跨进程**的前提下能跑哪些测试？对应 feature flag 配置是什么？
+- [ ] **原则 5**：本步新增指标有没有进 `docs/10_verification.md`？对应 CI 步骤状态 ⏳/🟡/✅ 有没有更新？
+
+---
+
 ## Step 0 · 项目初始化
 
 ### 交付
