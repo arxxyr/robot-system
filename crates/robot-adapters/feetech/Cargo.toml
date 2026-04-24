@@ -1,0 +1,26 @@
+[package]
+name         = "robot-adapter-feetech"
+description  = "Feetech STS3215 / SMS / SCS 系列 servo adapter（Rust 自实现 wire protocol）"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+publish    .workspace = true
+
+# v0.2 task 27 范围说明（详 src/lib.rs module-level docs）：
+# - 本 crate **只**提供 Feetech wire protocol + ManipulatorAdapter 实现 + mock
+#   transport 单测；**不**带 `serialport` 依赖，不能直接驱动真硬件。
+# - task 28 真机阶段加 `feature = "real-hw"`，把 `serialport` link 进来。
+# 依赖白名单登记见 docs/CHANGELOG.md 2026-04-24 "Step 7 task 27 robot-adapter-feetech"。
+
+[dependencies]
+robot-core = { workspace = true }
+thiserror  = { workspace = true }
+
+[dev-dependencies]
+# 无外部 dev-dep；mock transport 在 src/transport.rs 内部实现。
+
+[lints]
+workspace = true

@@ -922,3 +922,121 @@ toml  = "0.9"
   - 第二个 binary（robot-s1 / robot-recorder）需要读同一 TOML → 评估抽 `robot-config` 共享 crate（决定 §3 留的扩展点）。
 
 ---
+
+## 2026-04-24 · Step 7 task 27 robot-adapter-feetech 协议层 + adapter trait 实现（**状态：登记 / 部分实现**）
+
+### 涉及小节
+
+- `docs/CHANGELOG.md` 2026-04-22 "workspace runtime 依赖白名单机制" → 新增
+  `robot-adapter-feetech` 子条目
+- `docs/01_implementation_steps.md` Step 10 "Feetech 单关节" → task 27 完成
+  *协议层 + adapter trait 实现*；剩 *真硬件 wire 路径 + IO 线程* 留 task 28
+- `Cargo.toml` workspace.members 新增 `crates/robot-adapters/feetech`
+- 不动 `docs/00_design.md` §4.4 / §4.6（trait 形状不变）
+- 不动 `docs/00_design.md` §10.1（feetech adapter 自身不引入新 RT 指标）
+
+### 背景
+
+`docs/handoffs/2026-04-24_5.md` §8 task 27 入口清单：把 dimos `feetech_io/`
+（8 文件 / ~900 行 Python）+ `06_lerobot_replace_spec.md` 移植成 Rust
+adapter，挂 `ManipulatorAdapter` trait。
+
+dimos 端走 `scservo_sdk` Python 绑定；Rust 端**不**链接 `scservo_sdk`，wire
+protocol 自实现（packet 头 + checksum + ping/read/write/sync_*）。这样：
+- 无 Python / vendor SDK 依赖，CI 可全量编译；
+- 协议层每帧字节级单测可比对；
+- task 28 真机阶段只换 `SerialTransport` 实现，protocol / bus / adapter 层
+  零改动。
+
+### 决定
+
+1. **新 crate `robot-adapter-feetech`**（`crates/robot-adapters/feetech/`）：
+   - `registers` —— 14 项控制表 + sign-magnitude 表 + EEPROM 写保护标记 +
+     `OperatingMode` / `TorqueMode` enum，字面对照 dimos `registers.py` 117 行。
+   - `encoding` —— sign-magnitude encode/decode + LE byte split/combine，对照
+     `06_lerobot_replace_spec.md` §1.4 / §2 + dimos `encoding.py`。
+   - `protocol` —— `build_ping` / `build_read` / `build_write` / `build_sync_*`
+     / `parse_status` / `find_header`，字节级单测对照 Dynamixel protocol 1
+     标准（`PING ID=1` = `FF FF 01 02 01 FB`，`WRITE Goal_Position=2048` =
+     `FF FF 01 05 03 2A 00 08 C4`）。
+   - `transport` —— `SerialTransport` trait + 内存 `MockTransport`（仅单测）。
+   - `bus` —— `FeetechBus` 公开 API：`new` / `connect` / `ping` / `read` /
+     `write` / `sync_read` / `sync_write`，sign-magnitude 编解码透明，调用方
+     一律传/收 `i32`。
+   - `calibration` —— `unlock_eeprom` / `lock_eeprom` / `reset_calibration` /
+     `write_calibration` / `set_half_turn_homings`，字面移植 dimos
+     `calibration.py` 算法。EEPROM `Lock=0` + `Torque_Enable=0` 显式写。
+   - `adapter` —— `FeetechAdapter` 实现 `ManipulatorAdapter` trait（9 方法）。
+     单位换算：12-bit tick (4096/圈) ↔ rad，中点 = 2047 = 0 rad。
+   - `error` —— `FeetechError` 富信息 enum，`From<FeetechError> for RobotError`
+     映射成 `&'static str` 静态消息（恪守 robot-core::error 零堆分配约束，
+     富信息走 `eprintln!` 在 adapter 层落地）。
+   - 83 单元测试，全部用 `MockTransport` 喂虚假回包 → 字节级验证 wire 正确性。
+
+2. **同步阻塞模型 + 文档警告**：v0.2 `read_state` / `write_command` 在调用线程
+   内做完整 wire RTT（ms 量级，违反 §4.9 RT 铁律 < 100 µs）。`info().rt_class`
+   仍标 `HardRT` —— "目标分类"，不代表 v0.2 已就绪挂 `s0_rt_thread`。task 28
+   实测后决定是否引入"adapter 内部 IO 线程 + atomic snapshot"双层。
+
+3. **不引入 `serialport` crate**（task 27 范围）：真 USB-RS485 实现走 task 28
+   的 `feature = "real-hw"`，本任务零硬件依赖，CI 可在 mac / Linux runner 全
+   量跑通。
+
+4. **不接 inventory + matrix**：留 task 27b（matrix + 自注册），task 27 仅
+   交付独立 crate；s0_daemon 当前继续硬 link `robot-adapter-mock`。
+
+### `robot-adapter-feetech` 依赖白名单
+
+| 依赖 | 范围 | 用途 |
+|---|---|---|
+| `robot-core = { workspace = true }` | dependencies | trait `ManipulatorAdapter` + POD 类型 + `RobotError` |
+| `thiserror = { workspace = true }` | dependencies | `FeetechError` derive Display/Error |
+| 无 dev-dep | | mock transport 在 src 内自实现，不引外部 |
+
+**预留**（task 28 加）：
+- `serialport`（feature `real-hw`）—— USB-RS485 真后端
+
+**禁止**：
+- 任何 vendor C/C++ SDK（含 `scservo_sdk`）—— wire protocol 自实现
+- `tokio` —— v0.2 同步路径，无 async runtime；task 28 IO 线程方案待定
+- `serde` —— calibration JSON 等 v0.4+ 走 `robot-core::config` 共享路径
+
+### 约束
+
+1. **`info().rt_class = HardRT` 是目标分类，不是当前能力**。挂 `s0_rt_thread`
+   在 task 28 IO 线程模型落地前**禁止**；当前只能用作离线校准 / 单元测试 /
+   非 RT 控制路径（如 robot-cli debug）。
+2. **PING 的 model number 通过显式第二步 READ_DATA(addr=3, len=2) 拿到**，
+   而非依赖 scservo_sdk 的隐式 PING+READ 复合行为。dimos / lerobot 移植对照时
+   注意**两步**对应一次 `bus.ping()` 调用。
+3. **EEPROM 写保护必须显式做**：`unlock_eeprom`（`Torque_Enable=0` +
+   `Lock=0`）→ 写 EEPROM 寄存器 → `lock_eeprom`（`Lock=1`，**不**重新打开
+   `Torque_Enable`）。漏 `Lock=0` → motor 静默忽略写（`06_lerobot_replace_spec.md`
+   §11 风险 1）。
+4. **rad ↔ raw 单位假设全圈 2π / 4096 tick**：v0.2 不接 calibration / drive_mode
+   反转 / 限位裁剪。task 28 真机阶段实测 → 视情况引入 calibration JSON。
+5. **velocity / torque raw 单位 v0.2 直接透传 f32**（lerobot 也未做精确换算）。
+   task 28 用示波器 + known 命令对照定单位转换。
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `Cargo.toml`（workspace） | members 新增 `crates/robot-adapters/feetech`；workspace.dependencies 加 `robot-adapter-feetech` path |
+| `crates/robot-adapters/feetech/` | **新增**整 crate（lib + 9 模块 + 83 单测） |
+| `docs/CHANGELOG.md` 本条 | 新增 |
+| `docs/00_design.md` | **不动**（trait 形状不变） |
+| `docs/01_implementation_steps.md` Step 10 | 后续 task 28 commit 同步更新 "当前位置" |
+
+### 审阅
+
+- 提议：Claude Code（2026-04-24 session 内 Step 7 task 27 入手时）
+- 决定：用户 loosqk（2026-04-24 session 内"上真机前冒烟测试 / 全量测试 /
+  性能测试 / 火焰图都要搞好" → 拆出 task 27c 阻 task 28；本条只负责协议层 +
+  adapter trait 实现）
+- 复审触发：
+  - task 28 真机实测发现 wire protocol 字节级与 scservo_sdk 不一致 → 回头改 protocol.rs
+  - task 28 实测同步 `read_state` 单 tick 延迟 > 5 ms → 引入 adapter 内部 IO 线程 + atomic snapshot 双层架构
+  - 第二个 motor 型号需要支持（SMS / SCS 系列）→ registers / sign_bit / model_number 表抽 trait
+
+---

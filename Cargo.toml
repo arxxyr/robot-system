@@ -7,6 +7,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/robot-adapters/feetech",
     "crates/robot-adapters/mock",
     "crates/robot-cli",
     "crates/robot-core",
@@ -85,7 +86,8 @@ toml  = "0.9"
 robot-core          = { path = "crates/robot-core" }
 robot-msg           = { path = "crates/robot-msg" }
 robot-transport     = { path = "crates/robot-transport" }
-robot-adapter-mock  = { path = "crates/robot-adapters/mock" }
+robot-adapter-mock    = { path = "crates/robot-adapters/mock" }
+robot-adapter-feetech = { path = "crates/robot-adapters/feetech" }
 robot-s0            = { path = "crates/robot-s0" }
 robot-s1            = { path = "crates/robot-s1" }
 robot-cli           = { path = "crates/robot-cli" }

@@ -786,6 +786,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
+name = "robot-adapter-feetech"
+version = "0.1.2"
+dependencies = [
+ "robot-core",
+ "thiserror",
+]
+
+[[package]]
 name = "robot-adapter-mock"
 version = "0.1.2"
 dependencies = [
