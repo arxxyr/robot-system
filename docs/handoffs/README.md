@@ -36,3 +36,4 @@ ls -t docs/handoffs/*.md | head -2 | xargs -I {} less {}
 | 2026-04-24 | Target 文档三分重构 + RT 线程拓扑方案 B + policy_host RT 内核判断 + iceoryx2 RT baseline 提前到 Step 6 | [2026-04-24.md](2026-04-24.md) |
 | 2026-04-24（下午）| Orin Nano Super bringup：workspace 全绿 + vendor flatc aarch64 + cyclictest 50Hz max 94-127µs | [2026-04-24_2.md](2026-04-24_2.md) |
 | 2026-04-24（晚上）| Step 6 Part 1 落地：6 crate + 1 bin + 173 tests + seqlock/arc-swap 同步原语 + 5 主态 state machine | [2026-04-24_3.md](2026-04-24_3.md) |
+| 2026-04-24（深夜）| Step 6 Part 2 基础设施（task 10-12/14）：build_helpers + estop_latch + watchdog；192 tests；剩 11 task 留下次 session | [2026-04-24_4.md](2026-04-24_4.md) |
