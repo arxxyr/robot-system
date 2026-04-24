@@ -1262,3 +1262,114 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
     nightly schedule 跑 smoke 重复 100×
 
 ---
+
+## 2026-04-24 · Step 7 task 28 feetech `real-hw` + Orin USB-RS485 单关节真机 bring-up（**状态：登记 / 实施 + 实测**）
+
+### 涉及小节
+
+- `docs/CHANGELOG.md` 2026-04-22 "workspace runtime 依赖白名单机制" → 新增
+  `serialport` 进 `robot-adapter-feetech` 白名单（feature gated `real-hw`）
+- `docs/CHANGELOG.md` 2026-04-24 task 27b → `AdapterBuildContext` 字段扩展
+  规则首次行权（加 `address` + `motor_ids`）
+- `docs/01_implementation_steps.md` Step 10 "Feetech 单关节" → bring-up 起步
+  完成；剩 *真转电机* + *fail-safe 时延实测* 留下次 session
+- `docs/handoffs/2026-04-24_6.md` §3 真机实测全文档
+- 不动 `docs/00_design.md`
+
+### Phase A 改动（commit `940c563`，本机准备）
+
+1. **AdapterBuildContext 扩字段**（`robot-core::factory`）：
+   - `address: Option<&'a str>` —— mock factory 忽略；feetech 必填
+   - `motor_ids: &'a [u8]` —— 空 = fallback 1..=N；显式 = 按 joints 顺序对齐
+   - 字段扩展严格遵守 task 27b 约定："旧 factory 忽略不读 / 新 factory 消费"
+2. **`serialport = "4"` 加 workspace.dependencies**（仅 dev 机 + Linux 真机，
+   依赖系统 `libudev-dev`；本条**进 robot-adapter-feetech 白名单**，仅
+   `real-hw` feature 启用时 link，CI 默认 off 保持跨平台编译）
+3. **`real-hw` feature**（`robot-adapter-feetech/Cargo.toml`）：拉
+   `serialport` + 启用 `transport::real::RealSerialTransport` 模块 + 启用
+   `factory::FeetechFactory` 模块（inventory submit）
+4. **`xlerobot-real` combo feature**（`robot-s0/Cargo.toml`）：`xlerobot` +
+   `robot-adapter-feetech/real-hw`；default 仍 `xlerobot`（mock-only），
+   dev / CI 不强制 libudev-dev
+5. **s0_daemon `build_adapter` 透传 address + motor_ids**：从
+   `[[hardware]]` TOML extras 读 `motor_ids` 数组（`toml::Value::as_array`）
+6. **`configs/xlerobot_task28_single_joint.toml`** 新增：`adapter =
+   "feetech_sts3215"` + `address = "/dev/serial/by-id/usb-1a86_..."` +
+   `joints = ["test_j1"]` + `motor_ids = [1]`
+
+### Phase B 实测（本 session，详 `docs/handoffs/2026-04-24_6.md` §3）
+
+- Orin (5.15.185-tegra aarch64 / JetPack 5) 上 `cargo build --release
+  --no-default-features --features xlerobot-real -p robot-s0 --bin s0_daemon`
+  通过（1m 36s clean rebuild）
+- s0_daemon `--config configs/xlerobot_task28_single_joint.toml
+  --smoke-duration 3s` 端到端通过：
+  - `FeetechFactory::build` 正确实例化 + 打开 `/dev/serial/by-id/
+    usb-1a86_USB_Single_Serial_5A7C121427-if00`
+  - `FeetechBus::connect(true)` 内部 handshake：PING ID=1 + READ Model_Number
+    → 收到 777 (STS3215)
+  - 4 线程 spawn + state machine SAFE → READY（auto-Enable）
+  - rt_thread 50 Hz tick 跑 `sync_read_by_id_into Present_Position/Velocity`
+    在真 USB-RS485 wire 上 3s × 50Hz = 150 tick 全无错
+  - clean shutdown + EStop latch 持久化 + exit 0
+- 已确认：**5A7C121427 = bus1**（dimos `04_踩坑记录` 左臂总线，含 ID 1-8 +
+  头部）
+
+### 约束
+
+1. **Orin build 两个坑**（已写 handoff §3.2）：
+   - `.cargo/config.toml` 设 `rustc-wrapper = sccache`，但 Orin 没装 sccache
+     → `CARGO_BUILD_RUSTC_WRAPPER=""` 绕开
+   - cargo download 偶发 "transfer too slow"（默认 timeout 30s 不够）→
+     `CARGO_HTTP_TIMEOUT=300 CARGO_NET_RETRY=10` + `cargo clean` 从干净状态
+2. **address by-id 推荐 / ttyACM 不推荐**：udev 稳定路径 vs USB enumeration
+   动态分配。configs 全部应用 by-id 路径。
+3. **`motor_ids` 字段必须显式写**（除非 fallback 1..=N 适用）：dimos 多 bus
+   场景（bus2 含底盘 ID 7-9）必须显式数组；factory 在 ID 长度不匹配时立刻
+   `RobotError::InvalidParameter` 拒绝启动
+4. **task 28 *未*覆盖**：真转电机 / kill -9 fail-safe 时延 / bus2 验证 /
+   13-motor 同时跑 / Orin flamegraph / dimos 标定值接入。下次 session 待办
+   完整列表见 `docs/handoffs/2026-04-24_6.md` §4（含用户提示的 dimos
+   `~/repo/dimensional-applications/calibration/{left_arm,right_arm,head,
+   base}.json` 4 份现成标定，格式与 `MotorCalibration` strut 字段对齐）
+
+### `robot-adapter-feetech` 依赖白名单更新
+
+| 依赖 | 范围 | feature gate | 用途 |
+|---|---|---|---|
+| `inventory = { workspace = true }` | dependencies | 默认 | factory 自注册（task 27b 已加，本次未变） |
+| `serialport = { workspace = true, optional = true }` | dependencies | `real-hw` | RealSerialTransport USB-RS485 后端（**本次新增**） |
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `Cargo.toml`（workspace） | `[workspace.dependencies]` 加 `serialport = "4"` |
+| `crates/robot-core/src/factory.rs` | `AdapterBuildContext` 加 `address` + `motor_ids` 字段 + 单测覆盖 |
+| `crates/robot-adapters/feetech/Cargo.toml` | `inventory` deps 加；`serialport` optional + `[features] real-hw` |
+| `crates/robot-adapters/feetech/src/transport.rs` | 加 `#[cfg(feature = "real-hw")] pub mod real { ... RealSerialTransport ... }` |
+| `crates/robot-adapters/feetech/src/factory.rs` | **新增**（`FeetechFactory` + `inventory::submit!`，feature gated） |
+| `crates/robot-adapters/feetech/src/lib.rs` | `pub mod factory` + `pub use FeetechFactory`（feature gated） |
+| `crates/robot-s0/Cargo.toml` | `[features] xlerobot-real` 新增 |
+| `crates/robot-s0/src/bin/s0_daemon.rs` | `build_adapter` 从 TOML 读 `address` + `extras["motor_ids"]` 数组，透传 ctx |
+| `configs/xlerobot_task28_single_joint.toml` | **新增**（task 28 单关节测试 config） |
+| `docs/handoffs/2026-04-24_6.md` | **新增**（Phase B 实测全过程 + 6 个待办） |
+| `docs/handoffs/README.md` | 列表加 2026-04-24_6 行 |
+| `docs/CHANGELOG.md` 本条 | 新增 |
+| `docs/00_design.md` | **不动**（设计冻结） |
+
+### 审阅
+
+- 提议：Claude Code（2026-04-24 session 内 task 28 入手时）
+- 决定：用户 loosqk（2026-04-24 session 内拍板继续 → "继续 27b/27c/28"
+  → "刚才的优化点加上"（task 27c follow-up by-id）→ task 28 真机
+  bring-up 跑通 → "orin 里的 dimos-deploy 有标定好的电机值" → handoff 加待办）
+- 复审触发：
+  - 真转电机 → 需要先 dump 当前 EEPROM Homing_Offset 备份再 write_calibration
+    （防覆盖 dimos 已校）
+  - bus2 (5A7C122340) 上线，加 second `[[hardware]]` 段 → 评估 s0_daemon
+    多 bus 一进程拓扑 vs 多 instance（设计 §1.2 多 bus 方案 B 真落地）
+  - dimos calibration JSON 接入 → robot-adapter-feetech 加 serde + serde_json
+    依赖（白名单走本条 + CHANGELOG 后续条）
+
+---

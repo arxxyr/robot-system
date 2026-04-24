@@ -38,3 +38,4 @@ ls -t docs/handoffs/*.md | head -2 | xargs -I {} less {}
 | 2026-04-24（晚上）| Step 6 Part 1 落地：6 crate + 1 bin + 173 tests + seqlock/arc-swap 同步原语 + 5 主态 state machine | [2026-04-24_3.md](2026-04-24_3.md) |
 | 2026-04-24（深夜）| Step 6 Part 2 基础设施（task 10-12/14）：build_helpers + estop_latch + watchdog；192 tests；剩 11 task 留下次 session | [2026-04-24_4.md](2026-04-24_4.md) |
 | 2026-04-24（凌晨收尾）| Step 6 Part 2 完整落地（task 13-23）：S0 四线程 + mock_s1 + robotctl 闭环跑通；Orin baseline FAIL 量化（系统调优阻塞） | [2026-04-24_5.md](2026-04-24_5.md) |
+| 2026-04-24（深夜）| Step 7 task 24-28 全落地：CI smoke + ConfigIdentity + rt_guard soak + feetech crate（83 unit + 3 集成 smoke + criterion bench）+ inventory matrix + flamegraph baseline + by-id hot path -54% + Orin USB-RS485 真硬件 ping smoke 通过 | [2026-04-24_6.md](2026-04-24_6.md) |

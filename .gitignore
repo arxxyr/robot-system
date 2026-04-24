@@ -61,3 +61,5 @@ venv/
 # 原始 perf.data 不进版本控制）
 perf*.data
 perf*.data.old
+
+.claude/*
