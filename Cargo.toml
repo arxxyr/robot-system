@@ -8,6 +8,7 @@
 resolver = "2"
 members = [
     "crates/robot-adapters/mock",
+    "crates/robot-cli",
     "crates/robot-core",
     "crates/robot-msg",
     "crates/robot-s0",
@@ -78,6 +79,7 @@ robot-transport     = { path = "crates/robot-transport" }
 robot-adapter-mock  = { path = "crates/robot-adapters/mock" }
 robot-s0            = { path = "crates/robot-s0" }
 robot-s1            = { path = "crates/robot-s1" }
+robot-cli           = { path = "crates/robot-cli" }
 
 # Workspace 级 lint 默认。
 # 子 crate 在自己的 Cargo.toml 里写 `[lints] workspace = true` 即可继承。

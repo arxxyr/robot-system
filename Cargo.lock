@@ -717,6 +717,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "robot-cli"
+version = "0.1.2"
+dependencies = [
+ "iceoryx2",
+ "libc 1.0.0-alpha.3",
+ "robot-core",
+ "robot-msg",
+ "robot-transport",
+]
+
+[[package]]
 name = "robot-core"
 version = "0.1.2"
 dependencies = [
