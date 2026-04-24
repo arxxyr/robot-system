@@ -22,7 +22,15 @@
 | **Design spec** — 架构规格 | [`00_design.md`](00_design.md) | 不变量、语义契约、线程模型、消息格式、§6.7 five invariants | 行数 / 函数签名 / 调度细节 |
 | **Implementation spec** — 实施规格 | [`01_implementation_steps.md`](01_implementation_steps.md) | 10 步顺序、每步交付清单、退出标准、可测性原则 5 条 | 具体怎么 coding / 代码风格 |
 | **Verification spec** — 验证规格 | [`10_verification.md`](10_verification.md) | 指标目标值、measured baseline、CI 串行顺序、env_id | 每一次实际跑出的原始数据 |
-| **Target spec** — 部署目标规格 | [`targets/*.md`](targets/) | 上游硬件 / 算法不变量 / 迁移映射 | 迁移代码本身 |
+| **Target spec** — 部署目标规格 | [`targets/<name>.md`](targets/) 的 **§2 训练 / 部署契约** | 每个平台必须 1:1 复刻的硬契约（字段顺序、数值常量、公式） | 路线图 / 源码 walkthrough（见下方辅助文件） |
+
+> **Target spec 的范围很窄**：只有 `targets/<name>.md` 的 §2 是 spec；同文件的 §1 / §3 – §7 跟随上游演进更新，不走 CHANGELOG。
+>
+> 附属文件（**非 spec**）：
+> - `targets/<name>_migration.md` — 路线图 / 项目管理清单
+> - `targets/<name>_<subsystem>_<commit7>.md` — 上游某 commit 的源码快照（commit-pinned）
+>
+> 详见 [`targets/README.md`](targets/)。
 
 **外部 spec 的引用**：Step 10 引用 dimos `docs/06_lerobot_replace_spec.md`（Feetech 寄存器序列规格）—— 算 target spec 的一部分，不进本仓库。
 

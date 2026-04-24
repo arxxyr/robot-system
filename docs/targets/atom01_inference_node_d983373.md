@@ -1,7 +1,11 @@
 # ATOM01 `inference_node` 完整逻辑拆解
 
-> 配套文档：[`atom01.md`](atom01.md)
-> 目的：给迁移到 `robot-system` 的 `robot-app-atom01` 提供一份**可精确复刻的源码解读**。
+> ⚠️ **源码快照文档（snapshot）**
+> - 本文是上游 `atom01_deploy` commit `d983373` 的**逆向工程笔记**，所有行号引用（`L164-167` 之类）精确到该 commit；
+> - **不是 spec、不是契约**。真 spec / 契约去 [`atom01.md`](atom01.md) §2《训练 / 部署契约》；
+> - **不在上游升版时 in-place 改**。上游动过 → 重新扫一遍 → 在同目录新建 `atom01_inference_node_<newcommit7>.md`，保留本文件作为旧快照；
+> - 迁移完成后本文件可删除，CHANGELOG 里登记"归档 `atom01_inference_node_d983373.md`"即可，不影响 spec。
+>
 > 上游代码位置：https://github.com/Roboparty/atom01_deploy.git （commit `d983373`）。
 > 本地仓库位置：`~/repo/robot/atom01_deploy/src/inference/`。
 
