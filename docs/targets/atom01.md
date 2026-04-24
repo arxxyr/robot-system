@@ -1,7 +1,7 @@
 # 部署目标：ATOM01 人形机器人
 
-> 上游参考实现：`/home/loosqk/repo/robot/atom01_deploy`（ROS 2 Humble + C++17）
-> 仓库：`github.com/Roboparty/atom01_deploy`
+> 上游参考实现：https://github.com/Roboparty/atom01_deploy.git （ROS 2 Humble + C++17）
+> 本地仓库位置：`~/repo/robot/atom01_deploy`
 > 目的：验证 `robot-system` 能承载**端到端 RL 策略（joint-space）** 这类部署场景，并作为首个人形机器人目标。
 
 ---
@@ -444,7 +444,7 @@ robot-app-atom01/
 10. 替换原 atom01_deploy 作为正式部署栈
 ```
 
-**退路**：任何一步失败，原 `atom01_deploy` 仍在 `/home/loosqk/repo/robot/atom01_deploy` 可跑。迁移是**可逆的 A/B**，不是一次性切换。
+**退路**：任何一步失败，原 `atom01_deploy` 仍在 `~/repo/robot/atom01_deploy` 可跑。迁移是**可逆的 A/B**，不是一次性切换。
 
 ---
 
@@ -452,7 +452,8 @@ robot-app-atom01/
 
 | 资源 | 位置 |
 |------|------|
-| 原上游仓库 | `/home/loosqk/repo/robot/atom01_deploy` |
+| 原上游仓库 | https://github.com/Roboparty/atom01_deploy.git |
+| 本地仓库位置 | `~/repo/robot/atom01_deploy` |
 | inference_node 主逻辑 | `atom01_deploy/src/inference/src/inference_node.{hpp,cpp}` |
 | Obs / action pipeline 源码 | `inference_node.cpp` L136-286 |
 | 启动脚本 / Fast DDS profile | `atom01_deploy/tools/start_robot.sh`、`assets/rt_fastdds_profile.xml` |

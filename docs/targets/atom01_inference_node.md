@@ -2,7 +2,8 @@
 
 > 配套文档：[`atom01.md`](atom01.md)
 > 目的：给迁移到 `robot-system` 的 `robot-app-atom01` 提供一份**可精确复刻的源码解读**。
-> 上游代码位置：`/home/loosqk/repo/robot/atom01_deploy/src/inference/`（commit `d983373`）。
+> 上游代码位置：https://github.com/Roboparty/atom01_deploy.git （commit `d983373`）。
+> 本地仓库位置：`~/repo/robot/atom01_deploy/src/inference/`。
 
 ---
 
