@@ -380,6 +380,7 @@ Linux（`SCHED_FIFO` + `mlockall` + `sd_notify`）。macOS 无法跑，转 Linux
 
 - **最小闭环贯通**（§11.2 图）
 - 1 h soak：无 drop、无 RT overrun
+- **iceoryx2 RT behavior baseline 落 `docs/10_verification.md`**（Linux RT 内核 + `SCHED_FIFO 70` + CPU pin + mlockall；50 Hz / 10 min；publish→receive p99 < 100 µs、p999 < 500 µs）—— 见 `docs/CHANGELOG.md` 2026-04-24 "§4.7 policy_host 调度等价 inline" 条。**p99 / p999 不过 → block Step 7 开工**。
 
 ### 设计文档参考
 

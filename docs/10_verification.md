@@ -65,6 +65,10 @@
 | 512 B message p99 (same host) | baseline | — | — | — | 🟡 Step 5 已具备测试入口，数值待 bench |
 | 3 MiB blob p99 | baseline | — | — | — | ⏳ Step 6 加 blob 类 topic 后 |
 | 1 h soak command topic drop | `== 0` (hard) | — | — | — | ⏳ Step 9 soak harness 落地 |
+| **iceoryx2 publish→receive p99**（RT 内核 + `SCHED_FIFO 70` + CPU pin + mlockall，50 Hz × 10 min）| **< 100 µs** (hard) | — | — | — | ⏳ **Step 6 必产**；不过 → block Step 7 |
+| **iceoryx2 publish→receive p999**（同上）| **< 500 µs** (hard) | — | — | — | ⏳ **Step 6 必产**；不过 → block Step 7 |
+
+**iceoryx2 RT baseline 指标出处**：`docs/CHANGELOG.md` 2026-04-24 "§4.7 policy_host 调度等价 inline" 条目第 2 项决定。测试需在 Linux RT 内核（5.10 RT / 6.1 RT）+ `chrt -f 70` + `taskset` CPU pin + publisher / subscriber 两端均 `mlockall` 下完成，非 RT 或 macOS 测的数据不作 baseline。
 
 **硬约束（不受绝对值影响）**：
 
@@ -117,6 +121,7 @@
 | Harness | 位置 | 用途 | 状态 | 触发 Step |
 |---|---|---|---|---|
 | `cyclictest` 1 h + 直方图 | 外部工具（cyclictest deb 包） | RT 抖动 baseline | ⏳ | Step 6 Linux / Step 10 Orin |
+| `iceoryx2 rt_baseline` | `crates/robot-tests/src/bin/iceoryx2_rt_baseline.rs`（Step 6 新建）| 50 Hz × 10 min publish→receive 时刻直方图，配 SCHED_FIFO 70 + CPU pin + mlockall | ⏳ | **Step 6 必产** |
 | `assert-no-alloc` 钩子 | RT thread 入口 | CI debug+release 跑 0 alloc | ⏳ | Step 6 |
 | `robot-tests::soak` | `crates/robot-tests/src/bin/soak.rs`（未创建） | mock 500 Hz state + 200 Hz command / 1 h / 24 h | ⏳ | Step 6 后 / Step 9 |
 | `robot-tests::crash_restart` | `crates/robot-tests/src/bin/crash_restart.rs`（未创建） | 随机 `kill -9` S1 / policy / gateway | ⏳ | Step 9 |

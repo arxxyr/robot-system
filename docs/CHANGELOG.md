@@ -678,3 +678,87 @@ v0.2 Step 6 单 bus 场景下字面成立。但 ATOM01（4 × CAN）和 XLeRobot
   - Step 10 Feetech 单总线实测 `write()` 稳态延迟分布 → 写进 `docs/10_verification.md` 作 baseline
 
 ---
+
+## 2026-04-24 · §4.7 ExternalPolicyHost 在 RT 内核下调度等价 inline + iceoryx2 RT baseline 提前到 Step 6（**状态：登记 / 验收条件冻结**）
+
+### 涉及小节
+
+- `docs/00_design.md` §4.7 "Policy runtime（InProcess vs External）"（不改正文；本条**收口 External 路径在 RT 内核下的调度风险**）
+- `docs/01_implementation_steps.md` Step 6 退出标准（新增 iceoryx2 RT baseline）
+- `docs/10_verification.md` §10.1.3 Transport（新增 iceoryx2 RT 行为指标）
+- `docs/targets/atom01.md` §4.3 延迟预算 + §6 风险与门槛
+- `docs/targets/xlerobot.md` §6 风险与门槛
+
+### 背景
+
+2026-04-24 session 里评估"`robot-system` 能否替代 `atom01_deploy`"时，唯一未 closed 的架构级风险是 **policy_host 独立进程 vs inline ONNX 推理的调度抖动** ——原栈 `inference_thread` SCHED_FIFO 70 inline，robot-system 走 iceoryx2 发/收 obs/action 到独立进程。
+
+用户（loosqk）指出：**atom01 运行环境已经是 5.10 RT 内核（OPi 5+ 装 `assets/*.deb`）或 6.1.83 RT（RDK X5 出厂 RT）**，`rtprio 98 + memlock unlimited` 就位。在 RT 内核 + SCHED_FIFO + CPU pinning + mlockall 下，**独立进程的调度确定性与 inline 等价**，所谓"进程切换抖动"仅是未配 RT 调度时的默认 SCHED_OTHER 行为。
+
+### 决定
+
+1. **§4.7 External 路径在 atom01 部署环境（RT 内核）下不是架构风险**。具体配置：
+   - `SCHED_FIFO prio = 70`（与原栈 `inference_thread` 同级）
+   - 绑一个 A76 大核（RK3588 4 A76 + 4 A55，A76 ~2.4 GHz；若 A76 不够则让给 CAN rt_thread，policy_host 退 A55，实测取舍）
+   - `isolcpus=` 内核 bootarg 剔掉 policy_host 所用核（避免 kernel 随意调度其他任务）
+   - `mlockall(MCL_CURRENT | MCL_FUTURE)` 进程启动第一件事
+   - `ort::intra_threads = 1` + 启动 2 次 warmup 丢弃（触发 MemPattern + JIT）
+
+2. **XLeRobot（Jetson Orin 默认非 RT 内核）保留 §4.7 InProcess 分支作 fallback**。v0.4 立项时决定是否装 RT 内核；若不装，`robot-policy-host` 以 `feature = "inprocess"` 编进 `robot-s1`，丧失崩溃隔离换调度确定性。
+
+3. **iceoryx2 pub/sub 的 RT 行为 baseline 提前到 Step 6 必产**。此前计划在 v0.5 ATOM01 落地时才测；user 明确"iceoryx2 要提前测"，改为 Step 6 退出标准硬门槛：
+   - 场景：50 Hz publish、10 min、Linux RT 内核 + `SCHED_FIFO 70` + CPU pin
+   - 指标：receive 时刻相对 publish 的 delta，p99 < 100 µs，p999 < 500 µs
+   - 实测环境：`linux-x86_64-nightly-YYYYMMDD` env_id 登记到 `docs/10_verification.md` 附录
+
+### 验收清单（三条）
+
+与 atom01 替代 policy_host 部分相关的验收项：
+
+| 验收项 | 目标 | 落地 Step | 状态 |
+|---|---|---|---|
+| iceoryx2 RT 行为 baseline | p99 < 100 µs、p999 < 500 µs（50 Hz / 10 min / RT 内核 + SCHED_FIFO）| **Step 6** | ⏳ |
+| ORT 稳态 0 alloc（warmup 后）| 第 3 次及之后 `Run()` 经 `assert-no-alloc` 不触发 | v0.5 `robot-policy-host` 落地 | ⏳ |
+| 双 shm round-trip (obs + action) | p99 < 50 µs | v0.5 policy_host 接入 | ⏳ |
+
+三条全过 = `§4.7` External 路径在 atom01 部署环境收口；任一不过 → 切回 `InProcessPolicyHost`（`robot-s1` feature flag），设计 §4.7 的 fallback 路径已冻结，无需再评审。
+
+### 理由
+
+- **RT 内核在手**：atom01 硬件环境既定前提，不是额外工程成本。原栈已经依赖 `rtprio` / `memlock`，robot-system 不多付出。
+- **inline 和 External 的调度差距在 RT 内核下 = iceoryx2 shm 双向 round-trip 的延迟**：预期 p99 < 50 µs，在 20 ms 推理周期（50 Hz）上是 < 0.25% 预算。
+- **ORT 自身是 CPU-bound 计算**（~5-15 ms Run），整个推理期间 policy_host 线程独占核，正好是 SCHED_FIFO 的设计意图；非 RT 内核下才会被抢占。
+- **iceoryx2 RT baseline 提前到 Step 6** 的价值：Step 6 是第一个 Linux RT 场景，一起测 cyclictest + iceoryx2 roundtrip 时间机器; 拖到 v0.5 才发现 iceoryx2 本身不够 RT，返工成本高。
+
+### 约束
+
+1. **iceoryx2 RT baseline 不过 → block Step 6 退出**。若 p99 / p999 达不到，不继续 Step 7–10，先调查原因（iceoryx2 版本 / kernel tunable / 测试方法）。
+2. **Step 6 iceoryx2 RT 测试必须配 SCHED_FIFO + CPU pin + mlockall**，不是"macOS 开发机随便跑"—— 设备必须是 Linux RT 内核（用户 Linux 开发机 / Orin / Orange Pi 5+ 其中之一）。
+3. **RT 内核 tunable 清单**（写入 `scripts/collect_env_id.sh` 采集项）：
+   - `/proc/cmdline`（`isolcpus`、`rcu_nocbs`、`threadirqs`、`idle=poll`）
+   - `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`（建议 performance）
+   - `/proc/sys/kernel/sched_rt_runtime_us`（不能限制 RT 抢占）
+4. **XLeRobot 不强制 RT 内核**：v0.4 立项时实测 Orin 默认 kernel 下 InProcess 和 External 两种模式延迟差，决定是否装 RT。
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `docs/01_implementation_steps.md` Step 6 退出标准 | 新增 "iceoryx2 RT behavior baseline 落 `docs/10_verification.md`"（**本次改动**） |
+| `docs/10_verification.md` §10.1.3 | 新增 "iceoryx2 publish→receive 延迟 p99 < 100 µs / p999 < 500 µs（RT 内核 + SCHED_FIFO 70）" 指标行，状态 ⏳ Step 6（**本次改动**） |
+| `docs/targets/atom01.md` §4.3 | 延迟预算段落改写：显式说 RT 内核在手，policy_host 调度与 inline 等价（**本次改动**） |
+| `docs/targets/atom01.md` §6 | policy_host 抖动 + SocketCAN write() 两条从风险降级到验收项（**本次改动**） |
+| `docs/targets/xlerobot.md` §6 | 新增 "policy_host 调度抖动（Orin 默认非 RT 内核）" 风险 + v0.4 取舍说明（**本次改动**） |
+| `docs/CHANGELOG.md` 本条 | 新增（**本次改动**） |
+| `docs/00_design.md` §4.7 | **不改正文**（冻结，InProcess / External 两路本就都在）；本条收口 External 在 atom01 场景的判断 |
+
+### 审阅
+
+- 提议：Claude Code（2026-04-24 session 内"RT 内核可用 → policy_host 调度抖动不是真风险"整合）
+- 决定：用户 loosqk（2026-04-24 session 内明确："policy_host 可以用绑定内核加高优先级测试。因为 atom01 运行环境已经是 RT kernel" + "iceoryx2 要提前测，都落进去"）
+- 复审触发：
+  - Step 6 iceoryx2 RT baseline 测出来 p99 超标 → 评估换 iceoryx2 版本 / 或切 InProcess 作 atom01 默认
+  - v0.5 ATOM01 `robot-policy-host` 落地实测若 ORT warmup 后仍有 alloc → 加 preallocated arena 或切 InProcess
+  - XLeRobot v0.4 实测 Orin 默认 kernel 下 External 能用 → 回撤 InProcess fallback 的必要性；装 RT 内核变成可选
+
+---

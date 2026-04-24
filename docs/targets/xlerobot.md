@@ -289,7 +289,7 @@ RS485 是半双工，单 bus 不能同时 read+write，所以 "pipeline 读写" 
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| Feetech 多总线 pipeline 复杂度 | 总线时序错 → 状态读取延迟 / 漏读 | 先在 bench 上单总线跑稳，再扩两路；io_thread 不进 RT |
+| Feetech 多总线 pipeline 复杂度 | 总线时序错 → 状态读取延迟 / 漏读 | 先在 bench 上单总线跑稳，再扩两路；每 bus 一个 rt_thread（[`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 条 1）|
 | 校准 offset 文件路径 / schema 漂移 | 不同机器人间校准文件不兼容 | §2.2 schema 冻结；所有字段走 target-contract 登记 |
 | 三轮全向运动学数值差异 | 机器人漂移 / 方向错 | §2.3 从 dimos `units.py` 逐行复刻；单元测试对拍 |
 | RealSense 启动时 enumeration 慢 | 启动期 s0 超 `sd_notify` 超时 | adapter 内部独立线程 + 状态机，initial 阶段不阻塞 ready |
@@ -297,6 +297,7 @@ RS485 是半双工，单 bus 不能同时 read+write，所以 "pipeline 读写" 
 | 视觉外参漂移 | 策略看到的相对位置错 | §2.7 外参走 target-contract 登记；改装前必须重新标定 |
 | dimos 侧策略继续演进 | robot-system 侧 adapter 契约追不上 | v0.4 先切换 adapter 层；策略切换滞后到 v0.5（OpenPI 接入时） |
 | v0.4 开工时 §2 大量 TBD 未填 | adapter 写出来可能和 dimos 不对齐 | 第一件事：从 dimos 源码批量导出 §2 TBD 项，补完整走 CHANGELOG 登记 |
+| **policy_host 调度抖动** —— XLeRobot 默认 Jetson Orin **非 RT 内核** | `SCHED_OTHER` 下 policy_host 推理延迟 p99 可能飘到 30 ms+ | v0.4 立项时决定是否装 RT 内核；若不装，用 `InProcessPolicyHost`（设计 §4.7 分支）绑进 s1；装 RT 则按 ATOM01 同套配置（`SCHED_FIFO 70` + CPU pinning + `mlockall`）—— 见 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 条 2 |
 
 ---
 

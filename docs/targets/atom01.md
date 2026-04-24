@@ -379,7 +379,9 @@ robot-app-atom01/
 | ONNX 推理 | inference_node 内联调用 | policy_host 独立进程，iceoryx2 send/recv command |
 | action → MIT 命令 | control_thread 本地 → CAN | `robot-app-atom01` publish `command/action` → `robot-s0 rt_thread` → CAN |
 
-额外跳数：IMU 状态 / 电机状态 / action 各一次 iceoryx2 shm 拷贝。共享内存单次 < 1 µs，总额远小于 20 ms 推理周期，**理论上 OK**。必须实测：policy_host 调度抖动可能比 inline 调用更差，用 `chrt -f` 保证 SCHED_FIFO。
+额外跳数：IMU 状态 / 电机状态 / action 各一次 iceoryx2 shm 拷贝。共享内存单次 < 1 µs，总额远小于 20 ms 推理周期。
+
+**policy_host 调度确定性**：atom01 运行环境已是 **5.10 RT 内核（OPi 5+）或 6.1.83 RT（RDK X5）**，`rtprio 98 + memlock unlimited` 可用。policy_host 按 `SCHED_FIFO prio=70`（与原栈 `inference_thread` 同级）+ 绑 A76 大核 + `mlockall(MCL_CURRENT|MCL_FUTURE)` 跑，与原栈 inline 推理在**调度层面等价**。落地见 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 "`§4.7` policy_host 在 RT 内核下调度等价 inline"。
 
 ---
 
@@ -467,14 +469,24 @@ loop {
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| policy_host 调度抖动 > inline 调用 | 推理 20 ms 抖到 30 ms+ → 策略不稳定 | `chrt -f`、CPU affinity、预热 ORT session |
-| SocketCAN `write()` 阻塞 | RT 线程 miss deadline | 非阻塞 fd + queue；或调 txqueuelen |
 | 闭链解耦数值差异 | 踝关节抖 / 卡滞 | §2.8：给定 `motor_q` → Rust 版 `joint_q` 与 C++ 对拍 1e-6 |
 | 观测位错位 | 机器人抽搐 / 直接倒 | §2.2 dry-run dump + 训练 replay 对拍 |
 | 零点持久化 | 每次上电都要重标 | §5.1 `set_motor_zero` 必须写 EEPROM |
 | 训练侧非 Isaac / 非 `obs_num=78` 布局 | §2.2 不适用 | `robot-app-atom01` 里做可配置的 obs builder（TOML 描述字段顺序） |
 | 多策略切换 state 残留 | 模式切换瞬间输出异常 | §2.9：强制 `is_first_frame_ = true`、清零 `last_act` / motion_frame |
 | 倒地行为依赖进程退出 | systemd + iceoryx2 行为不等价原栈 | §2.4：走 EStop latch，不走 shutdown |
+| SocketCAN `write()` 阻塞 RT | RT 线程 miss deadline | §5.1 方案 B + `SO_SNDBUF ≥ 1 MB` + `txqueuelen ≥ 1000` + `EAGAIN` 不 retry；验收：XLeRobot v0.4 cyclictest + EAGAIN=0（[`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 条 1） |
+
+### 从"风险"降级为"验收项"
+
+下列此前列为风险，已在 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 条 2 明确为**工程参数可调，架构无未知**，跟踪改走 [`../10_verification.md`](../10_verification.md)：
+
+| 项 | 收口条件 | 验收 Step |
+|---|---|---|
+| policy_host 调度抖动 vs inline | `SCHED_FIFO 70 + A76 pinning + mlockall` 下 p99 推理延迟差 < 1 ms | Step 6 iceoryx2 RT baseline + v0.5 ATOM01 policy_host 落地对拍 |
+| iceoryx2 pub/sub RT 行为 | 50 Hz publish、10 min、receive 时刻 p99 < 100 µs、p999 < 500 µs（RT 内核 + SCHED_FIFO 70） | **Step 6 必产**（提前到最小闭环）|
+| ORT 稳态 0 alloc | warmup 2 次后第 3 次及之后 Run 经 `assert-no-alloc` 守卫不触发 | v0.5 `robot-policy-host` 落地 |
+| 双 shm round-trip (obs + action) | p99 < 50 µs | v0.5 policy_host 接入 iceoryx2 |
 
 ---
 
