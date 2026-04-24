@@ -1,8 +1,8 @@
 # XLeRobot task 29 单关节真机 bring-up 配置（含 dimos 标定接入）。
 #
 # 基于 task 28 的单关节 config 扩展：
-#   - joint 名改为 dimos 标准 `left_arm_shoulder_pan`（与 bus1 ID=1 对齐
-#     dimos `calibration/left_arm.json` 第一条记录）
+#   - joint 改为**左臂夹爪** `left_arm_gripper`（bus1 ID=6）—— 动的是末端夹爪
+#     开合，不会让机械臂本体飞；在机械臂不装到小车上的 bring-up 阶段最安全
 #   - 加 `calibration_paths` 读 Orin 上 dimos-deploy 部署好的标定 JSON
 #
 # **calibration 语义**：factory 仅 *读* JSON 到内存做 silent clamp +
@@ -27,8 +27,11 @@ config_version = "0.2.0-task29"
 id          = "left_arm_single"
 adapter     = "feetech_sts3215"
 address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
-joints      = ["left_arm_shoulder_pan"]
-motor_ids   = [1]
+joints      = ["left_arm_gripper"]
+motor_ids   = [6]
+# dimos calibration/left_arm.json 里 left_arm_gripper: range=[1408, 2886] raw，
+# 对应 rad ≈ [-0.98, +1.29]（≈ [-56°, +74°]）。±5° 远在 range 内，silent clamp
+# 不触发；真机闭环 bring-up 阶段只试小角度开合。
 # Orin 上 dimos-deploy 侧已写好的标定；绝对路径，不走 symlink（handoff §4.6）。
 calibration_paths = [
     "/home/loosqk/repo/dimensional-applications/calibration/left_arm.json",
