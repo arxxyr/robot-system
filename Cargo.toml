@@ -136,3 +136,10 @@ opt-level       = 1
 debug           = true
 debug-assertions = true
 overflow-checks  = true
+
+[profile.bench]
+# 等价 release（lto=fat / codegen-units=1）+ 强制 debuginfo。
+# 必须有 debug 信息，否则 cargo flamegraph / perf record 拿不到 symbol，
+# SVG 全是 0x... 地址。开 debug 不影响代码生成（仅多写 .debug 段）。
+inherits = "release"
+debug    = true
