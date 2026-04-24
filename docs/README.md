@@ -8,6 +8,7 @@
 | [`10_verification.md`](10_verification.md) | 验证测试文档（活文档，Step 5 完成时落骨架，随后每 Step 填实测） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 冻结后 spec 变更登记簿：①偏离登记 · ②回写登记 · ③Target 契约登记（仅 `targets/<name>.md` §2） |
 | [`targets/`](targets/) | 未来部署目标分析（XLeRobot / ATOM01 / Piper ...）；跟随上游演进更新，不影响冻结设计 |
+| [`handoffs/`](handoffs/) | 每次 session 结束的**进度快照**（非 spec，不走 CHANGELOG），异地 resume 用：`ls -t docs/handoffs/*.md \| head -2` |
 
 **首次进入 session 阅读顺序**：`../CLAUDE.md` → `02_start_here.md` → `00_design.md` → `01_implementation_steps.md`
 
