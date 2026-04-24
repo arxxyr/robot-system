@@ -69,6 +69,17 @@ pub enum FeetechError {
         second: PathBuf,
     },
 
+    // ── adapter 防飞序列诊断（task 29 commit 4） ─────────────────────
+    #[error(
+        "sync_goal_to_present: motor id={motor_id} readback mismatch after {attempts} attempts (wrote={wrote}, got={got})"
+    )]
+    SyncGoalReadbackMismatch {
+        motor_id: u8,
+        wrote: i32,
+        got: i32,
+        attempts: u32,
+    },
+
     #[error("byte length {0} unsupported (only 1 / 2 / 4 allowed)")]
     UnsupportedByteLength(usize),
 
@@ -163,6 +174,9 @@ impl From<FeetechError> for robot_core::error::RobotError {
             | F::CalibrationMaxOutOfRange(_)
             | F::CalibrationEntryInvalid { .. }
             | F::CalibrationDuplicateMotor { .. } => Self::InvalidParameter("feetech calibration"),
+            F::SyncGoalReadbackMismatch { .. } => {
+                Self::HardwareFault("feetech sync_goal_to_present readback mismatch")
+            }
             F::CalibrationIo { .. } | F::CalibrationParse { .. } => {
                 Self::InvalidParameter("feetech calibration file")
             }

@@ -57,6 +57,26 @@ const TORQUE_ENABLE_RETRY_DELAY: Duration = Duration::from_millis(150);
 /// 1:1 移植自 dimos `_manipulator_base.py:465` `max_attempts = 3`。
 const TORQUE_ENABLE_MAX_ATTEMPTS: u32 = 3;
 
+/// `sync_goal_to_present` 写 Goal 后、readback 验证前的消化延时。
+///
+/// 50 ms 给总线消化 sync_write，但不必和 `ENABLE_SYNC_SETTLE` 一样 —— 本 settle
+/// 之后立刻读 Goal_Position 验证，20 ms 足够；过长拖慢启动。
+const SYNC_GOAL_READBACK_WAIT: Duration = Duration::from_millis(20);
+
+/// `sync_goal_to_present` 写 Goal 的最多尝试次数（每次失败 = readback 到的 Goal
+/// 与 Present 不匹配）。task 29 real-hw 观察到 Torque_Enable=0 时 sync_write
+/// Goal_Position 有时会被 motor 忽略（返回开机默认值 2047），导致 Torque 接上
+/// 的瞬间电机追错 Goal → 启动"跳到一半"。本 retry + readback 兜底这个失效模式。
+const SYNC_GOAL_MAX_ATTEMPTS: u32 = 3;
+
+/// `sync_goal_to_present` readback 的 Goal 与期望值之间允许的最大偏差（raw tick）。
+///
+/// 真机 sync_read Present → sync_write Goal → sync_read Goal 这个 roundtrip
+/// 之间，motor 的 Present 本身可能在微动（外力 / 重力 / 控制精度），实测一次
+/// gripper pose hold ±10 tick (~0.9°) 属于正常噪声。容差设 20 tick (~1.8°)：
+/// 比噪声宽一倍，远小于 "跳到 center" 的失效幅度（600+ tick）。
+const SYNC_GOAL_TOLERANCE: i32 = 20;
+
 /// 12-bit tick → rad：`tick / 4096 * 2π`。
 const RAD_PER_TICK: f32 = TAU / (STS3215_RESOLUTION as f32);
 
@@ -124,6 +144,10 @@ pub struct FeetechAdapter<T: SerialTransport> {
     /// Per-joint 标定。非空 Vec 长度等于 `joint_count`；空 Vec 表示无标定，
     /// `write_command` 热路径跳过 silent clamp。task 29 commit 2 新增。
     calibrations: Vec<MotorCalibration>,
+    /// `sync_goal_to_present` 里 readback 用的 Goal_Position 缓冲（预分配避免
+    /// 热路径 alloc，虽然 enable 不在 RT scope 但保持一致风格）。task 29 commit
+    /// 4 新增 —— 用于防飞序列的 write Goal 后 readback 验证。
+    goal_raw: Vec<i32>,
 }
 
 impl<T: SerialTransport> FeetechAdapter<T> {
@@ -193,6 +217,8 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             limits,
             joint_count: u8::try_from(joint_count_usize).expect("joint_count <= MAX_JOINTS=32"),
             calibrations,
+            // task 29 commit 4：sync_goal_to_present readback 验证缓冲
+            goal_raw: vec![0_i32; joint_count_usize],
         })
     }
 
@@ -210,18 +236,85 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     ///   心跳断掉后再恢复，goal 重置成当时的 Present_Position"），避免 S1 带旧
     ///   goal 回来猛拉电机。
     ///
+    /// ## task 29 commit 4：readback 验证 + retry
+    ///
+    /// 真机实测发现：`Torque_Enable=0` 状态下 `sync_write Goal_Position` 有时
+    /// 会被 motor 忽略（写入未生效，motor 内部 Goal 保留开机默认值 2047）。
+    /// 于是 `enable(true)` 刚接上 Torque 时电机从当前位置**跳向 center** ——
+    /// "张开到一半"症状。
+    ///
+    /// 兜底策略：
+    /// 1. 写完 Goal 后 `sleep SYNC_GOAL_READBACK_WAIT`（20 ms）消化总线
+    /// 2. `sync_read Goal_Position` **验证** 写入生效
+    /// 3. 若 readback 值与期望 Present 不匹配（任一 joint 差 > [`SYNC_GOAL_TOLERANCE`]
+    ///    tick）→ 重写，至多 [`SYNC_GOAL_MAX_ATTEMPTS`] 次
+    /// 4. 全部重试失败 → 返回 [`FeetechError::SyncGoalReadbackMismatch`]
+    ///
+    /// 每次失败 attempt 都 `eprintln!` 打印 write/readback 对比 —— 即便 fix
+    /// 对个别 motor 型号无效，日志也留诊断线索。
+    ///
     /// # Errors
-    /// 透传 `sync_read` / `sync_write` 的 [`FeetechError`]；常见情况 = handshake
-    /// 后 motor 丢响应 / 总线电磁干扰单包 checksum 错。
+    /// - 透传 `sync_read` / `sync_write` 的 [`FeetechError`]（总线通信失败）
+    /// - Readback 连续不匹配 → [`FeetechError::SyncGoalReadbackMismatch`]
     pub fn sync_goal_to_present(&mut self) -> Result<(), FeetechError> {
+        // 1. 读 Present_Position（target 目标值）
         self.bus
             .sync_read_by_id_into("Present_Position", &self.joint_ids, &mut self.pos_raw)?;
+
+        // 构造 Goal entries = Present
         self.cmd_entries.clear();
         for i in 0..self.joint_ids.len() {
             self.cmd_entries.push((self.joint_ids[i], self.pos_raw[i]));
         }
-        self.bus
-            .sync_write_by_id("Goal_Position", &self.cmd_entries)
+
+        // 2. 写入 + readback + retry
+        for attempt in 1..=SYNC_GOAL_MAX_ATTEMPTS {
+            self.bus
+                .sync_write_by_id("Goal_Position", &self.cmd_entries)?;
+            sleep(SYNC_GOAL_READBACK_WAIT);
+            self.bus
+                .sync_read_by_id_into("Goal_Position", &self.joint_ids, &mut self.goal_raw)?;
+
+            // 比较 Goal (readback) vs Present (期望值) —— 允许 ±SYNC_GOAL_TOLERANCE
+            // tick 的微小偏差（motor 内部编码精度噪声）
+            let mut mismatch: Option<(u8, i32, i32)> = None;
+            for i in 0..self.joint_ids.len() {
+                let wanted = self.pos_raw[i];
+                let got = self.goal_raw[i];
+                if (got - wanted).abs() > SYNC_GOAL_TOLERANCE {
+                    mismatch = Some((self.joint_ids[i], wanted, got));
+                    break;
+                }
+            }
+
+            let max = SYNC_GOAL_MAX_ATTEMPTS;
+            match mismatch {
+                None => {
+                    if attempt > 1 {
+                        eprintln!(
+                            "feetech sync_goal_to_present: attempt {attempt}/{max} succeeded"
+                        );
+                    }
+                    return Ok(());
+                }
+                Some((id, wanted, got)) => {
+                    let diff = got - wanted;
+                    eprintln!(
+                        "feetech sync_goal_to_present: attempt {attempt}/{max}: motor id={id} Goal readback mismatch (wrote={wanted}, read={got}, diff={diff})"
+                    );
+                    if attempt == max {
+                        return Err(FeetechError::SyncGoalReadbackMismatch {
+                            motor_id: id,
+                            wrote: wanted,
+                            got,
+                            attempts: attempt,
+                        });
+                    }
+                }
+            }
+        }
+        // 所有 attempt 分支都走 return，这里不可达
+        unreachable!("sync_goal_to_present: attempt loop should have returned")
     }
 
     /// S0 在 `CONTROL_LOST` 恢复时调 —— 把 Goal 拉回当前 Present，让后续的第
@@ -556,16 +649,20 @@ mod tests {
 
     #[test]
     fn enable_true_follows_dimos_sequence() {
-        // task 29 commit 2：enable(true) 1:1 移植 dimos 序列：
+        // task 29 commit 2 + commit 4：enable(true) 移植 dimos 序列 + 新加 readback 验证：
         //   1) sync_read Present_Position（每 motor 一个 status 回包）
         //   2) sync_write Goal_Position（broadcast，不等 ACK）
-        //   3) sleep ENABLE_SYNC_SETTLE（50ms）
-        //   4) per-motor WRITE Torque_Enable=1（最多 3 次重试，每个 1 个 ACK）
+        //   3) sync_read Goal_Position 验证（每 motor 一个 status 回包，匹配 → 一次通过）
+        //   4) sleep ENABLE_SYNC_SETTLE（50ms）
+        //   5) per-motor WRITE Torque_Enable=1（每个 1 个 ACK）
         let (mut a, h) = make_adapter(&[("j1", 1), ("j2", 2)]);
-        // step 1 sync_read Present_Position response：每 motor 一个 status packet
-        h.push_rx(&read_status(1, &[0x00, 0x08])); // raw=2048
+        // step 1 sync_read Present_Position：每 motor 一个 status packet，raw=2048
+        h.push_rx(&read_status(1, &[0x00, 0x08]));
         h.push_rx(&read_status(2, &[0x00, 0x08]));
-        // step 4 Torque_Enable ACK：每 motor 一个
+        // step 3 sync_read Goal_Position readback：返回 2048 匹配 → 一次通过
+        h.push_rx(&read_status(1, &[0x00, 0x08]));
+        h.push_rx(&read_status(2, &[0x00, 0x08]));
+        // step 5 Torque_Enable ACK：每 motor 一个
         h.push_rx(&ack_status(1));
         h.push_rx(&ack_status(2));
         a.enable(true).unwrap();
@@ -590,16 +687,83 @@ mod tests {
     #[test]
     fn hold_current_position_syncs_goal_to_present() {
         let (mut a, h) = make_adapter(&[("j1", 1)]);
-        // sync_read Present_Position: raw=1500 (LE [0xDC, 0x05])
-        h.push_rx(&read_status(1, &[0xDC, 0x05]));
-        // sync_write 不 ACK
+        // 序列（task 29 commit 4 后）：
+        //   1) sync_read Present_Position -> raw=1500 (LE [0xDC, 0x05])
+        //   2) sync_write Goal_Position = 1500（不 ACK）
+        //   3) sync_read Goal_Position 验证 -> 返回 1500 = 匹配，attempt 1 就通过
+        h.push_rx(&read_status(1, &[0xDC, 0x05])); // Present
+        h.push_rx(&read_status(1, &[0xDC, 0x05])); // Goal readback (match → 一次通过)
         a.hold_current_position().unwrap();
         let tx = h.drain_tx();
-        // 应含：一条 READ Present_Position（sync_read）+ 一条 sync_write Goal_Position
-        //   sync_read Present_Position addr=56=0x38, len=2 → SYNC_READ frame 包含 [0x38, 0x02]
-        //   sync_write Goal_Position addr=42=0x2A, len=2, motor 1, raw 1500 LE = [0xDC, 0x05]
+        // sync_write Goal_Position addr=42=0x2A, len=2, motor 1, raw 1500 LE = [0xDC, 0x05]
         let has_sync_write = tx.windows(5).any(|w| *w == [0x2A, 0x02, 0x01, 0xDC, 0x05]);
         assert!(has_sync_write, "应含 sync_write Goal=1500 frame");
+    }
+
+    #[test]
+    fn sync_goal_to_present_retries_on_readback_mismatch() {
+        let (mut a, h) = make_adapter(&[("j1", 1)]);
+        // 模拟 Torque_Enable=0 导致第一次 write Goal 未生效的场景：
+        //   1) sync_read Present_Position -> raw=1500
+        //   2) sync_write Goal_Position = 1500（不 ACK）
+        //   3) sync_read Goal_Position   -> raw=2047（motor 开机默认，失败）
+        //   4) sync_write Goal_Position = 1500（重试）
+        //   5) sync_read Goal_Position   -> raw=1500（匹配，attempt 2 通过）
+        h.push_rx(&read_status(1, &[0xDC, 0x05])); // Present = 1500
+        h.push_rx(&read_status(1, &[0xFF, 0x07])); // Goal readback = 2047 (mismatch)
+        h.push_rx(&read_status(1, &[0xDC, 0x05])); // Goal readback 2 = 1500 (match)
+        a.sync_goal_to_present().unwrap();
+        // 两次 sync_write Goal，确认有重试行为
+        let tx = h.drain_tx();
+        let count = tx
+            .windows(5)
+            .filter(|w| *w == [0x2A, 0x02, 0x01, 0xDC, 0x05])
+            .count();
+        assert_eq!(
+            count, 2,
+            "应含 2 次 sync_write Goal=1500 (一次原始 + 一次 retry)"
+        );
+    }
+
+    #[test]
+    fn sync_goal_to_present_tolerance_accepts_small_drift() {
+        let (mut a, h) = make_adapter(&[("j1", 1)]);
+        // Present=1500, Goal readback=1510（差 10 tick，在 SYNC_GOAL_TOLERANCE=20 内）
+        //   → 应一次通过，不触发 retry
+        h.push_rx(&read_status(1, &[0xDC, 0x05])); // Present = 1500
+        h.push_rx(&read_status(1, &[0xE6, 0x05])); // Goal readback = 1510
+        a.sync_goal_to_present().unwrap();
+        let tx = h.drain_tx();
+        let count = tx
+            .windows(5)
+            .filter(|w| *w == [0x2A, 0x02, 0x01, 0xDC, 0x05])
+            .count();
+        assert_eq!(count, 1, "容差内 Goal readback 不应触发 retry");
+    }
+
+    #[test]
+    fn sync_goal_to_present_returns_error_after_max_attempts() {
+        let (mut a, h) = make_adapter(&[("j1", 1)]);
+        // Present=1500, Goal readback=2047 (永远不匹配) × 3 次 → 报 SyncGoalReadbackMismatch
+        h.push_rx(&read_status(1, &[0xDC, 0x05])); // Present
+        for _ in 0..3 {
+            h.push_rx(&read_status(1, &[0xFF, 0x07])); // Goal readback 总是 2047
+        }
+        match a.sync_goal_to_present() {
+            Err(FeetechError::SyncGoalReadbackMismatch {
+                motor_id,
+                wrote,
+                got,
+                attempts,
+            }) => {
+                assert_eq!(motor_id, 1);
+                assert_eq!(wrote, 1500);
+                assert_eq!(got, 2047);
+                assert_eq!(attempts, 3);
+            }
+            Ok(()) => panic!("expected SyncGoalReadbackMismatch"),
+            Err(e) => panic!("expected SyncGoalReadbackMismatch, got {e:?}"),
+        }
     }
 
     #[test]
