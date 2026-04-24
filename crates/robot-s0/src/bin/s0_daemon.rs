@@ -1,48 +1,98 @@
-//! S0 daemon 的 Part 1 smoke main：
+//! `s0_daemon` —— Step 6 Part 2 完整 S0 守护进程。
 //!
-//! - 构造 `SystemClock` + `MockHardRTAdapter`（3 关节）+ `LatestCommandSlot` +
-//!   `RtSnapshotPublisher/Reader`；
-//! - 拉起 `rt_thread`（默认 `SCHED_FIFO 70 + mlockall + 50 Hz`，权限不足时降级）；
-//! - 跑 `--smoke-duration`（默认 10 s），读 snapshot 计数 + 报摘要；
-//! - `Ctrl+C` / 超时 / 主线程 panic 时 `request_stop` + `join`。
+//! ### 启动顺序
 //!
-//! 没有 `ipc_thread` / `pub_thread` / iceoryx2 / state machine 驱动——那些是 Part 2
-//! 的交付。本 main 是 "`rt_thread` 在真正内核下能跑稳" 的最小证据。
+//! 1. 解析 CLI（`--robot-id` / `--hardware-id` / `--latch-path` /
+//!    `--heartbeat-timeout-ms` / `--smoke-duration` 等）
+//! 2. 读 `EStop` latch 文件 → 若持久化为 `true` 则 `initial_guards.estop_latched = true`
+//! 3. 构造共享 channel / atomic / seqlock / latest-command slot
+//! 4. 按顺序 spawn：
+//!    - `ipc_thread`（iceoryx2 subscribers 在内部构造，factory closure 同步）
+//!    - `watchdog`（读 `ipc_thread`.`last_hb_ns`，超时发 `HeartbeatTimeout` 到 `wd_tx`）
+//!    - `rt_thread`（`SCHED_FIFO` 70 + `mlockall`；`strict_rt` 可选）
+//!    - `pub_thread`（iceoryx2 publishers 在内部构造）
+//!    - `io_thread`（no-op 占位）
+//! 5. 注册 `SIGINT` / `SIGTERM` handler → 原子 shutdown flag
+//! 6. 主 loop 等：`smoke_duration` 到期 / shutdown flag 触发 / state 进入 `STOPPING`
+//! 7. 发 `Event::Stop` 给 `ipc_thread`（让 state machine 真正走进 `STOPPING`），
+//!    `request_stop` 所有线程，`join`，保存 `EStop latch`（若 `estop_latched`=true）
+//!
+//! ### CLI
+//!
+//! ```text
+//! s0_daemon --robot-id xlerobot \
+//!           --hardware-id right_arm \
+//!           --heartbeat-timeout-ms 200 \
+//!           --latch-path /var/lib/robot/xlerobot/estop_latch \
+//!           --smoke-duration 10s
+//! ```
+//!
+//! `robot_id` 来源（架构决策 ②）：`--robot-id` > 环境变量 `ROBOT_ID` > `"default"`。
 //!
 //! ### 退出码
 //!
-//! - `0`：smoke duration 到期，snapshot 观察到 ≥ 1 个 tick，无 panic。
-//! - `1`：RT 线程完全没跑（`tick_count` == 0），可能 `SCHED_FIFO` + `MockClock` 配错。
-//! - `2`：参数解析失败。
-//!
-//! ### 用法
-//!
-//! ```bash
-//! # 开发机（无 rtprio），走降级路径
-//! cargo run -p robot-s0 --bin s0_daemon -- --smoke-duration 3s
-//!
-//! # Orin（已配 limits.d），严格 RT
-//! cargo run -p robot-s0 --release --bin s0_daemon -- --smoke-duration 10s --strict-rt
-//! ```
+//! - `0`：正常 shutdown（到 `STOPPING` 或 `smoke_duration` 到期）。
+//! - `1`：线程启动失败 / 运行中 panic / RT 线程零 tick。
+//! - `2`：CLI 参数解析失败。
 
 #![cfg(target_os = "linux")]
 
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use crossbeam_channel::unbounded;
+use iceoryx2::prelude::NodeBuilder;
+use iceoryx2::service::ipc::Service as IxService;
 use robot_adapter_mock::MockHardRTAdapter;
 use robot_core::adapter::{JointCommandBuf, RtSnapshot};
 use robot_core::time::{RobotClock, SystemClock};
+use robot_msg::markers;
+use robot_s0::estop_latch::{load_estop_latch, save_estop_latch};
+use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
+use robot_s0::ipc_thread::{IpcSubscribers, IpcThreadConfig, IpcThreadHandle, spawn_ipc_thread};
+use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread};
 use robot_s0::rt_thread::{RtThreadConfig, spawn_rt_thread};
+use robot_s0::state_machine::{Event, Guards, S0State, S0StateSnapshot};
+use robot_s0::watchdog::{WatchdogConfig, spawn_watchdog};
+use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
 use robot_transport::{LatestCommandSlot, RtSnapshotPublisher};
 
 // ============================================================================
-// CLI 参数（手写 parse，不引 clap）
+// 全局 shutdown 原子（signal handler 写，main 循环读）
+// ============================================================================
+
+static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn shutdown_signal_handler(_sig: i32) {
+    // signal-safe：只写 AtomicBool，不做堆分配、不做任何 async-signal-unsafe 操作。
+    SHUTDOWN.store(true, Ordering::Release);
+}
+
+fn install_signal_handlers() {
+    // SA_RESTART 留默认；SIGINT / SIGTERM 都走同一 handler，设置 SHUTDOWN flag。
+    // SAFETY: libc signal FFI；handler 函数签名匹配 `extern "C" fn(i32)`；
+    //         handler 内部只写 AtomicBool，满足 async-signal-safety。
+    // 双 cast：function item → thin pointer → libc::sighandler_t（= usize）。
+    // 直接 `as usize` 在新 rustc 下会 warn `function_casts_as_integer`。
+    let h = shutdown_signal_handler as *const () as libc::sighandler_t;
+    unsafe {
+        libc::signal(libc::SIGINT, h);
+        libc::signal(libc::SIGTERM, h);
+    }
+}
+
+// ============================================================================
+// CLI
 // ============================================================================
 
 struct Args {
-    smoke_duration: Duration,
+    robot_id: String,
+    hardware_id: String,
+    latch_path: PathBuf,
+    heartbeat_timeout_ns: u64,
+    smoke_duration: Option<Duration>,
     tick_period_ns: u64,
     strict_rt: bool,
     joint_count: u8,
@@ -50,27 +100,55 @@ struct Args {
 }
 
 impl Args {
-    fn defaults() -> Self {
-        Self {
-            smoke_duration: Duration::from_secs(10),
+    fn parse() -> Result<Self, String> {
+        // robot_id 优先级：CLI > env ROBOT_ID > "default"
+        let env_robot_id = std::env::var("ROBOT_ID").ok();
+        let mut args = Self {
+            robot_id: env_robot_id.clone().unwrap_or_else(|| "default".into()),
+            hardware_id: "default_arm".into(),
+            latch_path: PathBuf::new(),        // 空 = 按 robot_id 回填默认
+            heartbeat_timeout_ns: 200_000_000, // 200 ms
+            smoke_duration: None,
             tick_period_ns: 20_000_000, // 50 Hz
             strict_rt: false,
             joint_count: 3,
             cpu_affinity: None,
-        }
-    }
+        };
 
-    fn parse() -> Result<Self, String> {
-        let mut args = Self::defaults();
         let raw: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
         while i < raw.len() {
             let a = &raw[i];
             match a.as_str() {
+                "--robot-id" => {
+                    i += 1;
+                    args.robot_id
+                        .clone_from(raw.get(i).ok_or("--robot-id requires value")?);
+                }
+                "--hardware-id" => {
+                    i += 1;
+                    args.hardware_id
+                        .clone_from(raw.get(i).ok_or("--hardware-id requires value")?);
+                }
+                "--latch-path" => {
+                    i += 1;
+                    args.latch_path =
+                        PathBuf::from(raw.get(i).ok_or("--latch-path requires value")?);
+                }
+                "--heartbeat-timeout-ms" => {
+                    i += 1;
+                    let ms: u64 = raw
+                        .get(i)
+                        .ok_or("--heartbeat-timeout-ms requires value")?
+                        .parse()
+                        .map_err(|e| format!("--heartbeat-timeout-ms: {e}"))?;
+                    args.heartbeat_timeout_ns = ms.saturating_mul(1_000_000);
+                }
                 "--smoke-duration" => {
                     i += 1;
-                    args.smoke_duration =
-                        parse_duration(raw.get(i).ok_or("--smoke-duration requires value")?)?;
+                    args.smoke_duration = Some(parse_duration(
+                        raw.get(i).ok_or("--smoke-duration requires value")?,
+                    )?);
                 }
                 "--tick-hz" => {
                     i += 1;
@@ -102,51 +180,84 @@ impl Args {
                         .map_err(|e| format!("--cpu: {e}"))?;
                     args.cpu_affinity = Some(cpu);
                 }
-                "--help" | "-h" => {
-                    return Err("HELP".into());
-                }
+                "--help" | "-h" => return Err("HELP".into()),
                 other => return Err(format!("unknown arg: {other}")),
             }
             i += 1;
         }
+
+        // 回填 latch_path 默认：/var/lib/robot/<robot_id>/estop_latch
+        if args.latch_path.as_os_str().is_empty() {
+            args.latch_path =
+                PathBuf::from(format!("/var/lib/robot/{}/estop_latch", args.robot_id));
+        }
+
         Ok(args)
     }
 }
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
-    // 支持 `3s` / `500ms` / `100` 纯数字（默认秒）
     if let Some(rest) = s.strip_suffix("ms") {
-        let ms: u64 = rest
-            .parse()
-            .map_err(|e| format!("--smoke-duration ms: {e}"))?;
+        let ms: u64 = rest.parse().map_err(|e| format!("ms: {e}"))?;
         Ok(Duration::from_millis(ms))
     } else if let Some(rest) = s.strip_suffix('s') {
-        let secs: u64 = rest
-            .parse()
-            .map_err(|e| format!("--smoke-duration s: {e}"))?;
+        let secs: u64 = rest.parse().map_err(|e| format!("s: {e}"))?;
         Ok(Duration::from_secs(secs))
     } else {
-        let secs: u64 = s.parse().map_err(|e| format!("--smoke-duration: {e}"))?;
+        let secs: u64 = s.parse().map_err(|e| format!("secs: {e}"))?;
         Ok(Duration::from_secs(secs))
     }
 }
 
 fn print_help() {
     eprintln!(
-        "s0_daemon (Step 6 Part 1 smoke)
+        "s0_daemon (Step 6 Part 2)
 
 USAGE:
   s0_daemon [OPTIONS]
 
 OPTIONS:
-  --smoke-duration <DUR>   总运行时长（例：3s / 500ms / 10）。默认 10s。
-  --tick-hz <HZ>           tick 频率（默认 50 Hz = 20 ms period）。
-  --joints <N>             mock adapter 关节数（默认 3；上限 MAX_JOINTS=32）。
-  --strict-rt              SCHED_FIFO / mlockall / pin_to_cpu 失败立即 panic。默认 false（降级）。
-  --cpu <IDX>              CPU 亲和性。默认不绑核。
-  -h, --help               显示此帮助。
+  --robot-id <ID>              Robot identifier。优先级：CLI > env ROBOT_ID > \"default\"。
+  --hardware-id <ID>           本实例控制的硬件（如 \"left_arm\"）。默认 \"default_arm\"。
+  --latch-path <PATH>          EStop latch 文件路径。默认 /var/lib/robot/<robot_id>/estop_latch。
+  --heartbeat-timeout-ms <MS>  S1 heartbeat 超时阈值（毫秒）。默认 200。
+  --smoke-duration <DUR>       运行时长上限（3s / 500ms / 10 均可）。默认无限（直到 signal）。
+  --tick-hz <HZ>               rt_thread tick 频率。默认 50。
+  --joints <N>                 mock adapter 关节数。默认 3。
+  --strict-rt                  RT syscall 失败立即 panic（生产推荐）。
+  --cpu <IDX>                  rt_thread CPU 亲和性。默认不绑核。
+  -h, --help                   显示帮助。
+
+TOPICS（iceoryx2）:
+  订阅：
+    /<robot_id>/s1/<hardware_id>/command
+    /<robot_id>/s1/heartbeat
+    /<robot_id>/events/estop
+  发布：
+    /<robot_id>/s0/<hardware_id>/state
+    /<robot_id>/s0/heartbeat
 "
     );
+}
+
+fn topics(args: &Args) -> Topics {
+    let r = &args.robot_id;
+    let h = &args.hardware_id;
+    Topics {
+        sub_command: format!("/{r}/s1/{h}/command"),
+        sub_heartbeat: format!("/{r}/s1/heartbeat"),
+        sub_estop: format!("/{r}/events/estop"),
+        pub_state: format!("/{r}/s0/{h}/state"),
+        pub_heartbeat: format!("/{r}/s0/heartbeat"),
+    }
+}
+
+struct Topics {
+    sub_command: String,
+    sub_heartbeat: String,
+    sub_estop: String,
+    pub_state: String,
+    pub_heartbeat: String,
 }
 
 // ============================================================================
@@ -167,76 +278,294 @@ fn main() {
         }
     };
 
+    if let Err(code) = run(&args) {
+        std::process::exit(code);
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn run(args: &Args) -> Result<(), i32> {
+    let t = topics(args);
+
     eprintln!(
-        "s0_daemon: starting rt_thread (hz={}, joints={}, strict_rt={}, cpu={:?}, duration={:?})",
+        "s0_daemon starting:\n  \
+         robot_id={}  hardware_id={}\n  \
+         latch={}\n  \
+         hb_timeout_ms={}  tick_hz={}  strict_rt={}  joints={}  cpu={:?}",
+        args.robot_id,
+        args.hardware_id,
+        args.latch_path.display(),
+        args.heartbeat_timeout_ns / 1_000_000,
         1_000_000_000 / args.tick_period_ns,
-        args.joint_count,
         args.strict_rt,
+        args.joint_count,
         args.cpu_affinity,
-        args.smoke_duration,
+    );
+    eprintln!("topics:");
+    eprintln!("  sub cmd   : {}", t.sub_command);
+    eprintln!("  sub hb    : {}", t.sub_heartbeat);
+    eprintln!("  sub estop : {}", t.sub_estop);
+    eprintln!("  pub state : {}", t.pub_state);
+    eprintln!("  pub hb    : {}", t.pub_heartbeat);
+
+    // ---- 1) EStop latch ----
+    let initial_estop_latched = match load_estop_latch(&args.latch_path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "fatal: failed to load EStop latch {}: {e}",
+                args.latch_path.display()
+            );
+            return Err(1);
+        }
+    };
+    eprintln!("initial estop_latched = {initial_estop_latched}");
+
+    // ---- 2) 共享 channel / atomic / slot ----
+    let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+
+    let (cmd_writer, cmd_reader) =
+        LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
+
+    let (rt_snap_pub, rt_snap_rdr) = RtSnapshotPublisher::<RtSnapshot>::new(RtSnapshot::default());
+    let (state_pub, state_rdr) =
+        RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
+
+    let (wd_tx, wd_rx) = unbounded::<Event>();
+
+    // ---- 3) spawn ipc_thread ----
+    let mut initial_guards = Guards {
+        estop_latched: initial_estop_latched,
+        adapter_connected: true,
+        calibration_loaded: true,
+        joint_state_valid: true,
+        power_ok: true,
+        heartbeat_ok: false,
+        cmd_deadline_valid: true,
+        limits_valid: true,
+        hw_enable_ok: true,
+        adapter_fault_cleared: true,
+        command_mode: robot_core::adapter::ControlMode::Position,
+        on_timeout_hint: robot_s0::state_machine::EnabledSub::CtrlLostHold,
+    };
+    // latch 为 true 时开工就 SAFE；ipc_thread 里只在未 latch 时才进 Ready/Enabled。
+    if initial_estop_latched {
+        initial_guards.adapter_connected = true;
+    }
+
+    let ipc_cfg = IpcThreadConfig {
+        poll_interval_ns: 500_000,
+        initial_guards,
+        initial_state: S0State::Safe,
+    };
+
+    let sub_cmd_topic = t.sub_command.clone();
+    let sub_hb_topic = t.sub_heartbeat.clone();
+    let sub_estop_topic = t.sub_estop.clone();
+    let ipc_factory = move || {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let command =
+            open_sub::<markers::JointCommand>(&node, &sub_cmd_topic, TopicClass::S0Command)
+                .expect("open command subscriber");
+        let heartbeat = open_sub::<markers::Heartbeat>(&node, &sub_hb_topic, TopicClass::S1CmdVel)
+            .expect("open heartbeat subscriber");
+        let estop =
+            open_sub::<markers::EStopEvent>(&node, &sub_estop_topic, TopicClass::SafetyEvent)
+                .expect("open estop subscriber");
+        // Node 保持活到 subscribers 消亡 = daemon 生命周期。
+        Box::leak(Box::new(node));
+        IpcSubscribers {
+            command,
+            heartbeat,
+            estop,
+        }
+    };
+
+    let ipc = match spawn_ipc_thread(
+        ipc_cfg,
+        Arc::clone(&clock),
+        ipc_factory,
+        cmd_writer,
+        state_pub,
+        wd_rx,
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("fatal: spawn_ipc_thread: {e}");
+            return Err(1);
+        }
+    };
+    let event_tx = ipc.event_sender();
+    let last_hb_ns = ipc.last_hb_ns();
+
+    // ---- 4) spawn watchdog ----
+    let wd_stop = Arc::new(AtomicBool::new(false));
+    let wd_handle = spawn_watchdog(
+        WatchdogConfig {
+            heartbeat_timeout_ns: args.heartbeat_timeout_ns,
+            poll_interval_ns: 10_000_000, // 10 ms
+        },
+        Arc::clone(&clock),
+        last_hb_ns,
+        wd_tx,
+        Arc::clone(&wd_stop),
     );
 
-    // ---- 构造 ----
-    let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+    // ---- 5) spawn rt_thread ----
     let adapter = MockHardRTAdapter::with_unlimited_limits(args.joint_count);
-    let (_cmd_writer, cmd_reader) =
-        LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
-    let (snap_pub, snap_rdr) = RtSnapshotPublisher::new(RtSnapshot::default());
-
-    let cfg = RtThreadConfig {
+    let rt_cfg = RtThreadConfig {
         tick_period_ns: args.tick_period_ns,
         sched_fifo_priority: 70,
         cpu_affinity: args.cpu_affinity,
         strict_rt: args.strict_rt,
     };
-
-    // ---- 启动 RT 线程 ----
-    let handle = match spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub) {
+    let rt = match spawn_rt_thread(rt_cfg, Arc::clone(&clock), adapter, cmd_reader, rt_snap_pub) {
         Ok(h) => h,
         Err(e) => {
-            eprintln!("fatal: failed to spawn rt_thread: {e}");
-            std::process::exit(1);
+            eprintln!("fatal: spawn_rt_thread: {e}");
+            graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
+            return Err(1);
         }
     };
 
-    // ---- smoke 期间周期性采样 ----
+    // ---- 6) spawn pub_thread ----
+    let pub_state_topic = t.pub_state.clone();
+    let pub_hb_topic = t.pub_heartbeat.clone();
+    let pub_factory = move || {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let joint_state =
+            open_pub::<markers::JointState>(&node, &pub_state_topic, TopicClass::S0State)
+                .expect("open state publisher");
+        let heartbeat = open_pub::<markers::Heartbeat>(&node, &pub_hb_topic, TopicClass::S1CmdVel)
+            .expect("open heartbeat publisher");
+        Box::leak(Box::new(node));
+        IpcPublishers {
+            joint_state,
+            heartbeat,
+        }
+    };
+
+    let pub_cfg = PubThreadConfig {
+        state_hz: 50.0,
+        heartbeat_hz: 50.0,
+        s0_source_id: 1,
+        joint_layout_id: 0xCAFE_BABE_DEAD_BEEF,
+        poll_interval_ns: 1_000_000,
+    };
+    let pub_handle = match spawn_pub_thread(
+        pub_cfg,
+        Arc::clone(&clock),
+        pub_factory,
+        rt_snap_rdr,
+        state_rdr.clone(),
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("fatal: spawn_pub_thread: {e}");
+            graceful_stop(ipc, &wd_stop, wd_handle, Some(rt), None, None);
+            return Err(1);
+        }
+    };
+
+    // ---- 7) spawn io_thread（占位）----
+    let io_handle = match spawn_io_thread(IoThreadConfig::default()) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("fatal: spawn_io_thread: {e}");
+            graceful_stop(ipc, &wd_stop, wd_handle, Some(rt), Some(pub_handle), None);
+            return Err(1);
+        }
+    };
+
+    // ---- 8) 注册 signal handlers ----
+    install_signal_handlers();
+
+    // ---- 9) 主 loop：等 shutdown flag / smoke 超时 / state = STOPPING ----
     let start = std::time::Instant::now();
-    let sample_interval = args.smoke_duration / 4;
-    let mut samples: Vec<u64> = Vec::with_capacity(5);
-    while start.elapsed() < args.smoke_duration {
-        std::thread::sleep(sample_interval);
-        let snap = snap_rdr.load();
-        samples.push(snap.tick_seq);
+    let mut last_report = start;
+    loop {
+        if SHUTDOWN.load(Ordering::Acquire) {
+            eprintln!("signal received → Event::Stop");
+            break;
+        }
+        if args.smoke_duration.is_some_and(|d| start.elapsed() >= d) {
+            eprintln!("smoke duration elapsed → Event::Stop");
+            break;
+        }
+        let snap = state_rdr.load();
+        if matches!(snap.state, S0State::Stopping) {
+            eprintln!("state machine entered STOPPING → exiting main loop");
+            break;
+        }
+        if last_report.elapsed() >= Duration::from_secs(2) {
+            eprintln!(
+                "heartbeat: state={:?}  guards.estop={}  guards.hb_ok={}  t={:?}",
+                snap.state,
+                snap.guards_summary.estop_latched,
+                snap.guards_summary.heartbeat_ok,
+                start.elapsed(),
+            );
+            last_report = std::time::Instant::now();
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    // ---- 10) 发 Event::Stop，让 state machine 进 STOPPING ----
+    let _ = event_tx.send(Event::Stop);
+
+    // ---- 11) graceful stop ----
+    graceful_stop(
+        ipc,
+        &wd_stop,
+        wd_handle,
+        Some(rt),
+        Some(pub_handle),
+        Some(io_handle),
+    );
+
+    // ---- 12) 保存 EStop latch ----
+    let final_state_snap = state_rdr.load();
+    let final_latched = final_state_snap.guards_summary.estop_latched;
+    if let Err(e) = save_estop_latch(&args.latch_path, final_latched) {
         eprintln!(
-            "sample t={:>6}ms tick_seq={} state.joint_count={}",
-            start.elapsed().as_millis(),
-            snap.tick_seq,
-            snap.state.joint_count,
+            "warn: failed to save EStop latch to {}: {e}",
+            args.latch_path.display()
+        );
+    } else {
+        eprintln!(
+            "final estop_latched = {final_latched} → persisted to {}",
+            args.latch_path.display()
         );
     }
 
-    // ---- 停止 + 摘要 ----
-    handle.request_stop();
-    let metrics = Arc::clone(handle.metrics());
-    handle.join().expect("rt_thread panicked");
+    eprintln!("s0_daemon: clean shutdown");
+    Ok(())
+}
 
-    let final_tick = metrics.tick_count.load(Ordering::Relaxed);
-    let overruns = metrics.overruns.load(Ordering::Relaxed);
-    let write_errs = metrics.write_errors.load(Ordering::Relaxed);
-    let read_errs = metrics.read_errors.load(Ordering::Relaxed);
-
-    eprintln!(
-        "\n=== summary ===\n\
-         total_ticks : {final_tick}\n\
-         overruns    : {overruns}\n\
-         read_errors : {read_errs}\n\
-         write_errors: {write_errs}\n\
-         samples     : {samples:?}\n"
-    );
-
-    if final_tick == 0 {
-        eprintln!("error: rt_thread produced 0 ticks — RT loop likely never entered");
-        std::process::exit(1);
+/// 有顺序地停线程 + `join`，容忍任一 handle 为 None（早期启动失败场景）。
+fn graceful_stop(
+    ipc: IpcThreadHandle,
+    wd_stop: &Arc<AtomicBool>,
+    wd_handle: std::thread::JoinHandle<()>,
+    rt: Option<robot_s0::rt_thread::RtThreadHandle>,
+    pub_handle: Option<robot_s0::pub_thread::PubThreadHandle>,
+    io_handle: Option<robot_s0::io_thread::IoThreadHandle>,
+) {
+    // 顺序：pub/io 先停（不再往外发），rt 停（不再动 adapter），ipc 停，watchdog 最后。
+    if let Some(h) = pub_handle {
+        h.request_stop();
+        let _ = h.join();
     }
-    std::process::exit(0);
+    if let Some(h) = io_handle {
+        h.request_stop();
+        let _ = h.join();
+    }
+    if let Some(h) = rt {
+        h.request_stop();
+        let _ = h.join();
+    }
+    ipc.request_stop();
+    let _ = ipc.join();
+    wd_stop.store(true, Ordering::Release);
+    let _ = wd_handle.join();
 }

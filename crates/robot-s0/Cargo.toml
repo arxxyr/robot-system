@@ -16,12 +16,14 @@ robot-msg           = { workspace = true }
 robot-adapter-mock  = { workspace = true }
 # watchdog / ipc_thread 非 RT 事件队列（Part 2）。
 crossbeam-channel   = { workspace = true }
+# s0_daemon bin 构造 iceoryx2 Node / subscriber / publisher（lib 层只抽象 Subscriber/Publisher 类型）。
+iceoryx2            = { workspace = true }
+# s0_daemon bin 信号处理（SIGINT / SIGTERM）直接用 libc 的 signal FFI。
+libc                = { workspace = true }
 
 [dev-dependencies]
 # estop_latch 单测用 tempfile 做临时目录。版本 pin 在 workspace Cargo.toml。
 tempfile = { workspace = true }
-# ipc_thread 集成测试需要构造同进程 iceoryx2 Node。
-iceoryx2 = { workspace = true }
 
 [features]
 default = []

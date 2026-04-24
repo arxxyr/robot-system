@@ -740,6 +740,7 @@ dependencies = [
  "assert_no_alloc",
  "crossbeam-channel",
  "iceoryx2",
+ "libc 1.0.0-alpha.3",
  "robot-adapter-mock",
  "robot-core",
  "robot-msg",
