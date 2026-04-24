@@ -1799,3 +1799,91 @@ timeout 14 ./target/release/robotctl watch --robot-id xlerobot_task29 \
 
 - 提议 → 决定：用户 loosqk（2026-04-25 `看门狗要盯着系统总体资源占用以及使
   用率，top5 进程，以及我的每个服务进程资源占用`）
+
+---
+
+## 2026-04-25 · task-31 B'b 看门狗扩展 per-process + top5 + TOML（**状态：登记 / B'b 完成**）
+
+### 涉及小节
+
+- 本条延伸 B'a（同日 commit `b59e286`）；两条合在一起 = task-31 B' 完整骨架
+- `docs/logging.md` 词汇表 → 新增 `cpu_usage_pct` / `load_*` / `mem_*` /
+  `interested` / `top_by_cpu`
+- `robot-s0` TOML schema 加 `[monitor]` 段
+
+### 决定
+
+- **per-process CPU 语义与 `top` 一致**：`delta / total_cpu_delta * num_cpus *
+  100`，单核 100% 满载 → 100.0；多核同时 → 超 100。不归一化到 (0, 100]，保留
+  直觉语义。
+- **`/proc/<pid>/stat` `comm` 字段解析坑**：括号可含空格 + 嵌入括号（`(kworker
+  u:1-events)` / `(python 3)`）。解析走 `rfind(')')` 找最后一个右括号后再切字段。
+  手写 parser + 4 个专项单测（simple / tricky parens / no parens / short）。
+- **HashMap 生命周期管理**：`collect_process_snapshots` 每帧替换 `last_pid_cpu`
+  为当前帧存活 pid，**短命进程 pid GC**，长期运行 HashMap 不增长。
+- **TOML `[monitor]` 段**：三字段 `interval_secs` / `top_n` / `interested_
+  processes`，全部可缺省（走 `Default`，兼容 v0.1 无 `[monitor]` 段 config）。
+- **tracing 输出格式**：`interested` / `top_by_cpu` 做 `Display` 字段（一行展示：
+  `pid:comm@cpu%[rssM],...`），不打散为嵌套字段 —— 保证"一行看全貌"，JSON 模式
+  下为 embedded string（不嵌套 array）。
+
+### 实测（本机 smoke 8s）
+
+```
+system health cpu_usage_pct=0.0  ... mem_used_pct=84.55
+  interested=825550:s0_daemon@0.0%[20M]
+  top_by_cpu=1:systemd@0.0%[10M],2:kthreadd@0.0%[0M],3:pool_workqueue_release@0.0%[0M]
+
+system health cpu_usage_pct=8.83  ... mem_used_pct=84.95
+  interested=825550:s0_daemon@1.5%[20M]
+  top_by_cpu=3297879:python3@111.7%[38131M],2345972:python3@106.7%[32940M],3131702:rustdesk@20.4%[400M]
+```
+
+系统 CPU 差分 8.8%，`s0_daemon` 自身 1.5%（cargo build 负载已散去），`top_by_cpu`
+捕捉到本机两个 python3（训练跑满多核 ≈ 110%）+ rustdesk (20%)。完全符合 `top`
+视角。
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `crates/robot-health/src/proc.rs` | 加 `PidStatRaw` / `parse_pid_stat` / `read_pid_stat` / `parse_vm_rss_kib` / `read_pid_rss_kib` / `list_pids`；7 新单测（含 tricky comm parens / live self-pid read） |
+| `crates/robot-health/src/lib.rs` | `ProcessSnapshot` 新增；`SystemSnapshot` 扩 `interested` + `top_by_cpu`；`MonitorConfig` 扩 `interested_processes` + `top_n`；`collect_process_snapshots` / `per_process_cpu_pct` / `num_cpus_online` / `parse_cpu_online` / `summarize` + 10 新单测 |
+| `crates/robot-s0/src/config_loader.rs` | `RobotConfigToml` 加 `monitor: MonitorSection`（`interval_secs` / `top_n` / `interested_processes`，全部 `#[serde(default)]`） |
+| `crates/robot-s0/src/bin/s0_daemon.rs` | spawn_monitor 从 `ConfigLoader.parsed.monitor` 构建 `MonitorConfig`，无 `[monitor]` 段 fallback `Default::default()` |
+| `docs/logging.md` | 词汇表补 7 个字段（cpu / load / mem / interested / top_by_cpu）|
+| `docs/CHANGELOG.md` 本条 | 新增 |
+
+### 验证
+
+- `cargo fmt --all --check` ✅
+- `cargo clippy --all --all-targets -- -D warnings` ✅（含 `--features real-hw`）
+- `cargo test --all` ✅（robot-health **42 单测 + 1 doctest 全绿**；workspace 共 381 pass）
+- matrix features 本机 build ✅（4 组合）
+- 本机 8s smoke：`[monitor]` 段 TOML 正确传到 spawn_monitor，interested / top5
+  输出正确
+
+### B'c 待做（supervisor + 重启策略）
+
+用户 2026-04-25 明确 **走方案 C**（`B'c 同意c方案`）：
+
+**方案 C：监控 + 决策上报，systemd 执行重启**
+
+- `robot-health` 层**监控** CPU / RSS / 状态（本 B'a + B'b 已完成）
+- **新增**：TOML `[monitor.rules]` 段声明阈值（`max_cpu_pct_sustained` / `max_rss_kib`
+  / `restart_on_zombie` / `cooldown_secs`），sampler 发现违规 → `tracing::warn!`
+  + 发 `Event::ServiceUnhealthy` 到 state_machine（待 task-30 执行链路接通后可用）
+- **真动作** 仍由 systemd 执行：可选调 `systemctl restart <service>`（需要
+  `robot-health` / `s0_daemon` 有 PolicyKit 权限）
+- **不做**：自己 fork/exec 启动服务、自己 reap zombie、自己管 PID 1 语义（与
+  §6.7 "systemd 是最外层看门狗" 冲突 → 方案 A 已被否）
+
+工作量估计：~2 小时（rules + warn 级别联动）。留独立 task-31 B'c commit。
+
+### 审阅
+
+- 提议 → 决定：用户 loosqk（2026-04-25 `还要考虑稳定性，以及方案[可能所有
+  服务从看门狗启动，如果是非正常退出，重启策略]` → 对齐三方案 → `B'c 同意c方案`）
+- 复审触发：
+  - B'c 实施时 supervisor ↔ state_machine 交互 → 依赖 task-30 先落地
+  - PolicyKit / systemd D-Bus 权限粒度评估 → 可能改 systemd unit 配置

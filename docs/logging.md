@@ -62,6 +62,12 @@
 | `deadline_ns`  | `u64`            | `603924378768480`                | RT tick deadline（`CLOCK_MONOTONIC_RAW`）                            |
 | `bus_address`  | `&str`           | `"/dev/serial/by-id/usb-..."`    | 真串口物理路径                                                       |
 | `calibration`  | `"loaded"\|"none"` | `"loaded"`                     | factory 加载 calibration 状态                                        |
+| `cpu_usage_pct` | `f32`           | `8.91`                           | 系统级 CPU 使用率（0-100，所有 core 合并）                           |
+| `load_1m` / `load_5m` / `load_15m` | `f32` | `3.51`                 | 系统 load average                                                     |
+| `mem_total_kib` / `mem_available_kib` | `u64` | `16333668`         | `/proc/meminfo` 内存（KiB）                                          |
+| `mem_used_pct` | `f32`            | `85.9`                           | 内存使用率（0-100）                                                  |
+| `interested`   | `%` (Display)    | `"123:s0_daemon@1.5%[20M]"`      | `MonitorSection::interested_processes` 匹配到的进程（`pid:comm@cpu%[rssM]`，`-` = 空） |
+| `top_by_cpu`   | `%` (Display)    | `"1:a@111%[38G],2:b@106%[32G]"`  | 全系统按 CPU 占用 top N，`,` 分隔，格式同上                          |
 
 ### 字段使用原则
 

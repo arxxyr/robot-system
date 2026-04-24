@@ -53,6 +53,10 @@ pub struct RobotConfigToml {
     pub hardware: Vec<HardwareSection>,
     #[serde(default)]
     pub sensor: Vec<SensorSection>,
+    /// `[monitor]` 段（task-31 B'b 加）：系统健康采样配置。缺省时 `s0_daemon`
+    /// 跑默认值（5 s 间隔 / `top_n=5` / 空 `interested_processes`）。
+    #[serde(default)]
+    pub monitor: MonitorSection,
 }
 
 /// `[robot]` 段：v0.2 仅这两字段被 `ConfigIdentity` 直接消费。
@@ -78,6 +82,45 @@ pub struct HardwareSection {
     /// 拆 enum；v0.2 通用 map 兜底。
     #[serde(flatten, default)]
     pub extras: toml::Table,
+}
+
+/// `[monitor]` 段（task-31 B'b）：`robot-health` 采样配置。
+///
+/// 示例：
+///
+/// ```toml
+/// [monitor]
+/// interval_secs = 5
+/// top_n = 5
+/// interested_processes = ["s0_daemon", "mock_s1", "robotctl"]
+/// ```
+///
+/// 所有字段缺省 → `MonitorSection::default()`（5 s / top 5 / 空列表）。
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct MonitorSection {
+    #[serde(default = "default_monitor_interval_secs")]
+    pub interval_secs: u64,
+    #[serde(default = "default_monitor_top_n")]
+    pub top_n: usize,
+    #[serde(default)]
+    pub interested_processes: Vec<String>,
+}
+
+impl Default for MonitorSection {
+    fn default() -> Self {
+        Self {
+            interval_secs: default_monitor_interval_secs(),
+            top_n: default_monitor_top_n(),
+            interested_processes: Vec::new(),
+        }
+    }
+}
+
+const fn default_monitor_interval_secs() -> u64 {
+    5
+}
+const fn default_monitor_top_n() -> usize {
+    5
 }
 
 /// `[[sensor]]` 段：与 `HardwareSection` 同结构；保留独立类型给 v0.4

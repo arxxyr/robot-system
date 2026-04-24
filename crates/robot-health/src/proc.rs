@@ -232,6 +232,155 @@ fn next_f32<'a>(it: &mut impl Iterator<Item = &'a str>, name: &str) -> io::Resul
 }
 
 // ============================================================================
+// Per-process /proc/<pid>/stat + /proc/<pid>/status
+// ============================================================================
+
+/// 单进程原始计数（未做 delta）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PidStatRaw {
+    pub pid: u32,
+    /// 进程名（`/proc/<pid>/stat` 的 `comm` 字段，原始括号已剥掉；可能含空格）。
+    pub comm: String,
+    /// `state` 字段（`R` Running / `S` Sleeping / `D` Uninterruptible / `Z` Zombie
+    /// / `T` Stopped / `X` Dead 等，见 `man proc`）。
+    pub state: char,
+    /// `utime + stime`（jiffies）—— user + system 的累计 CPU 时间。delta 算
+    /// per-process CPU% 用这一列。
+    pub cpu_jiffies_total: u64,
+}
+
+/// 解析 `/proc/<pid>/stat` 一行。
+///
+/// **坑**：`comm` 字段被括号包围，**可能含空格 + 括号**（Python 解释器 `(python
+/// 3)` 这种）。正确做法：找**最后一个 `)`**，把 `[0]` 当 pid、`[1..last_paren]`
+/// 当 comm、`last_paren` 之后的字段按空格切。
+///
+/// # Errors
+/// 格式异常返回 `InvalidData`。
+pub fn parse_pid_stat(text: &str) -> io::Result<PidStatRaw> {
+    let line = text
+        .lines()
+        .next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "empty /proc/<pid>/stat"))?;
+    let last_paren = line.rfind(')').ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "no closing paren in /proc/<pid>/stat line",
+        )
+    })?;
+    let first_paren = line.find('(').ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "no opening paren in /proc/<pid>/stat line",
+        )
+    })?;
+    if first_paren >= last_paren {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "malformed parens in /proc/<pid>/stat",
+        ));
+    }
+    // pid（第一个空格之前）
+    let pid_end = line[..first_paren].trim_end();
+    let pid: u32 = pid_end.trim().parse().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("pid '{pid_end}' parse: {e}"),
+        )
+    })?;
+    // comm（括号之间）
+    let comm = line[first_paren + 1..last_paren].to_string();
+    // 剩余字段（last_paren+1 之后，按空格切；index 0 = state）
+    let rest = line[last_paren + 1..].trim();
+    let mut fields = rest.split_whitespace();
+    let state_str = fields
+        .next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing state field"))?;
+    let state = state_str
+        .chars()
+        .next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "empty state field"))?;
+    // man proc 字段索引从 3 起（tgid / ppid / pgrp / session / tty_nr / tpgid
+    // / flags / minflt / cminflt / majflt / cmajflt / utime / stime）
+    // → 在 rest 里，state 是 index 0，utime 是 index 11，stime 是 index 12
+    let remaining: Vec<&str> = fields.collect();
+    if remaining.len() < 12 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("expected ≥ 12 fields after state, got {}", remaining.len()),
+        ));
+    }
+    let utime: u64 = remaining[10].parse().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("utime '{}' parse: {e}", remaining[10]),
+        )
+    })?;
+    let stime: u64 = remaining[11].parse().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("stime '{}' parse: {e}", remaining[11]),
+        )
+    })?;
+
+    Ok(PidStatRaw {
+        pid,
+        comm,
+        state,
+        cpu_jiffies_total: utime + stime,
+    })
+}
+
+/// 读 `/proc/<pid>/stat`。
+///
+/// # Errors
+/// 进程不存在 / 无权限 → `io::Error`。
+pub fn read_pid_stat(pid: u32) -> io::Result<PidStatRaw> {
+    let text = fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    parse_pid_stat(&text)
+}
+
+/// 读 `/proc/<pid>/status` 里的 `VmRSS`（KiB）。比 `/proc/<pid>/stat` 第 24
+/// 字段好用：直接 KiB 单位，不用 × `page_size`。
+///
+/// # Errors
+/// 进程不存在 / 无权限 / 无 `VmRSS`（kernel thread 无虚存）。
+pub fn read_pid_rss_kib(pid: u32) -> io::Result<u64> {
+    let text = fs::read_to_string(format!("/proc/{pid}/status"))?;
+    parse_vm_rss_kib(&text)
+}
+
+/// 解析 `/proc/<pid>/status` 里 `VmRSS:  12345 kB` 行。
+pub fn parse_vm_rss_kib(text: &str) -> io::Result<u64> {
+    for line in text.lines() {
+        if let Some(v) = parse_meminfo_line(line, "VmRSS:") {
+            return Ok(v);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        "VmRSS line not present (kernel thread?)",
+    ))
+}
+
+/// 扫 `/proc`，收集所有数字目录名（= pid）。
+///
+/// # Errors
+/// `/proc` 不可读 → `io::Error`。
+pub fn list_pids() -> io::Result<Vec<u32>> {
+    let mut out = Vec::with_capacity(256);
+    for entry in fs::read_dir("/proc")? {
+        let entry = entry?;
+        if let Some(name) = entry.file_name().to_str()
+            && let Ok(pid) = name.parse::<u32>()
+        {
+            out.push(pid);
+        }
+    }
+    Ok(out)
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -464,5 +613,116 @@ MemFree:         400 kB
     fn linux_live_read_loadavg_works() {
         let l = read_loadavg().unwrap();
         assert!(l.load_1m >= 0.0);
+    }
+
+    // ---- pid stat parsing ----
+
+    /// 真实 `/proc/<pid>/stat` sample（comm 无空格）。
+    /// 字段: pid=1 comm=(systemd) state=S ... utime=42 stime=99 ...
+    const PID_STAT_SIMPLE: &str = "\
+1 (systemd) S 0 1 1 0 -1 4194560 100 200 0 0 42 99 0 0 20 0 1 0 12 34 56 78";
+
+    /// comm 含空格 + 嵌入括号（类似 `(python 3)` / `(kworker u:1)`）。
+    const PID_STAT_TRICKY_COMM: &str = "\
+1234 (kworker u:1-events) S 2 1234 0 0 -1 0 0 0 0 0 100 200 0 0 20 0 1 0 12 34 56 78";
+
+    #[test]
+    fn parse_pid_stat_simple() {
+        let r = parse_pid_stat(PID_STAT_SIMPLE).unwrap();
+        assert_eq!(r.pid, 1);
+        assert_eq!(r.comm, "systemd");
+        assert_eq!(r.state, 'S');
+        // utime=42, stime=99 → total=141
+        assert_eq!(r.cpu_jiffies_total, 141);
+    }
+
+    #[test]
+    fn parse_pid_stat_tricky_comm_with_spaces_and_parens() {
+        let r = parse_pid_stat(PID_STAT_TRICKY_COMM).unwrap();
+        assert_eq!(r.pid, 1234);
+        assert_eq!(r.comm, "kworker u:1-events"); // 空格保留
+        assert_eq!(r.state, 'S');
+        assert_eq!(r.cpu_jiffies_total, 300);
+    }
+
+    #[test]
+    fn parse_pid_stat_no_parens_rejected() {
+        assert!(parse_pid_stat("1 systemd S 0 1").is_err());
+    }
+
+    #[test]
+    fn parse_pid_stat_empty_rejected() {
+        assert!(parse_pid_stat("").is_err());
+    }
+
+    #[test]
+    fn parse_pid_stat_short_fields_rejected() {
+        // 只有 state 之后 5 个字段，少于 12 → 拒绝
+        assert!(parse_pid_stat("1 (a) S 0 1 1 0 -1").is_err());
+    }
+
+    // ---- VmRSS ----
+
+    const PID_STATUS_SAMPLE: &str = "\
+Name:   systemd
+State:  S (sleeping)
+Tgid:   1
+Pid:    1
+VmPeak: 100000 kB
+VmSize: 98765 kB
+VmLck:  0 kB
+VmPin:  0 kB
+VmHWM:  45678 kB
+VmRSS:  43210 kB
+RssAnon:    20000 kB
+";
+
+    #[test]
+    fn parse_vm_rss_kib_ok() {
+        assert_eq!(parse_vm_rss_kib(PID_STATUS_SAMPLE).unwrap(), 43_210);
+    }
+
+    #[test]
+    fn parse_vm_rss_kib_missing_rejected() {
+        // kernel thread 无 VmRSS
+        let text = "Name: kthreadd\nState: S\n";
+        let err = parse_vm_rss_kib(text).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    // ---- Live Linux ----
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn linux_live_list_pids_contains_self() {
+        let pids = list_pids().unwrap();
+        let me = std::process::id();
+        assert!(
+            pids.contains(&me),
+            "list_pids() should contain current pid {me}, got {} entries",
+            pids.len()
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn linux_live_read_self_stat() {
+        let me = std::process::id();
+        let r = read_pid_stat(me).unwrap();
+        assert_eq!(r.pid, me);
+        // 当前进程必在运行（或 R 或 S），不该是 Zombie
+        assert!(
+            matches!(r.state, 'R' | 'S' | 'D' | 't' | 'T'),
+            "unexpected state {:?}",
+            r.state
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn linux_live_read_self_rss() {
+        let me = std::process::id();
+        let rss = read_pid_rss_kib(me).unwrap();
+        assert!(rss > 0, "self RSS should be > 0, got {rss}");
     }
 }

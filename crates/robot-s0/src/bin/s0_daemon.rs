@@ -521,15 +521,24 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         Arc::clone(&wd_stop),
     );
 
-    // ---- 4.5) spawn system health monitor（task-31 B'a）----
-    // 5 秒一次采样 /proc/stat + /proc/meminfo + /proc/loadavg，tracing::info!
-    // 结构化输出。非 RT，普通优先级线程，无 RT 影响。
-    // handle `_health_handle` 不 `stop()`，依赖 main 结束时 Drop 自动 join；
-    // 早失败分支 early return 前 Drop 也会被触发（main 作用域内的 local）。
-    // 未来 B'b 扩 per-process + top5 + s0_daemon 配置化 interested_processes。
-    let _health_handle = robot_health::spawn_monitor(robot_health::MonitorConfig {
-        interval: std::time::Duration::from_secs(5),
-    });
+    // ---- 4.5) spawn system health monitor（task-31 B'a + B'b）----
+    // 每 [monitor.interval_secs]（默认 5 s）采样系统级 CPU / mem / load +
+    // per-process（`interested_processes` + 全系统 top N by CPU），
+    // tracing::info! 结构化输出。非 RT，普通优先级线程，无 RT 影响。
+    // handle 不显式 stop —— main 作用域内 local，Drop 自动 join（含 early return）。
+    let monitor_cfg = args
+        .loaded_config
+        .as_ref()
+        .map(|cfg| {
+            let m = &cfg.parsed.monitor;
+            robot_health::MonitorConfig {
+                interval: std::time::Duration::from_secs(m.interval_secs),
+                interested_processes: m.interested_processes.clone(),
+                top_n: m.top_n,
+            }
+        })
+        .unwrap_or_default();
+    let _health_handle = robot_health::spawn_monitor(monitor_cfg);
 
     // ---- 5) spawn rt_thread ----
     //
