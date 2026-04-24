@@ -31,8 +31,25 @@ use robot_transport::traits::LatestSubscriber;
 
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
+/// SIGINT / SIGTERM 处理器 —— **直接 `_exit(0)`**。
+///
+/// 原设计是只 set `SHUTDOWN` flag + 主循环检测 + `process::exit(0)` 跳过 Drop。
+/// 实测场景（handoff `2026-04-25_1` §7.6.3 待办 #1）：publisher（`s0_daemon`）先
+/// 死 + 几秒后 robotctl 被 SIGTERM → SIGSEGV (exit=139)，crash 在**主循环内**
+/// 而不是 Drop 路径 —— 大概率 `iceoryx2 0.8.1` subscriber 内部 critical section
+/// 被 signal interrupt 后状态不一致。
+///
+/// `libc::_exit(0)` 是 **async-signal-safe**（POSIX `signal(7)` 白名单），立刻
+/// 退出不走任何清理 —— iceoryx2 shared memory 由 OS 回收，无 leak 影响。
+/// `SHUTDOWN` flag 保留以便 Cargo test / 非 Linux 上仍能正常 break 循环。
 extern "C" fn shutdown_signal_handler(_sig: i32) {
     SHUTDOWN.store(true, Ordering::Release);
+    // 限定 robotctl 这种短命 CLI：crash 场景下 graceful Drop 不可靠，直接
+    // _exit 最稳。不要把这个 pattern 复制到 long-lived 进程或 library。
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::_exit(0);
+    }
 }
 
 #[cfg(target_os = "linux")]
