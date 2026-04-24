@@ -71,6 +71,9 @@ tempfile = "3.10"
 # crossbeam-channel：Step 6 Part 2 非 RT 线程间事件队列（watchdog → ipc_thread，SIGINT → ipc_thread）。
 # MPMC + bounded + try_recv，零依赖无 unsafe。成熟 3.5+ SLoC 库。
 crossbeam-channel = "0.5"
+# hdrhistogram：Step 6 Part 2 iceoryx2_rt_baseline harness 的延迟分布统计。
+# 10 µs - 10 s 动态范围，p50/p99/p999/max 精确到 3 位有效数字即可。
+hdrhistogram = "7.5"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core          = { path = "crates/robot-core" }

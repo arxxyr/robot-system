@@ -16,6 +16,10 @@ publish    .workspace = true
 name = "hello_pubsub"
 path = "src/bin/hello_pubsub.rs"
 
+[[bin]]
+name = "iceoryx2_rt_baseline"
+path = "src/bin/iceoryx2_rt_baseline.rs"
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -23,6 +27,7 @@ iceoryx2        = { workspace = true }
 robot-core      = { workspace = true }
 robot-msg       = { workspace = true }
 robot-transport = { workspace = true, default-features = true }
+hdrhistogram    = { workspace = true }
 
 [lints]
 workspace = true

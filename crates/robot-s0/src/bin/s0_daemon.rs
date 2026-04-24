@@ -487,10 +487,10 @@ fn run(args: &Args) -> Result<(), i32> {
     // 推进到 READY。之后 ipc_thread 收到第一个 heartbeat 会把 READY 推到
     // ENABLED.Active。跳过 EStop latch 时 estop_latched=true → try_transition 拒绝
     // 进 READY，state 留在 SAFE —— 期望行为。
-    if !initial_estop_latched {
-        let _ = event_tx.send(Event::Enable);
-    } else {
+    if initial_estop_latched {
         eprintln!("estop_latched = true → not auto-sending Event::Enable");
+    } else {
+        let _ = event_tx.send(Event::Enable);
     }
 
     // ---- 9) 主 loop：等 shutdown flag / smoke 超时 / state = STOPPING ----
