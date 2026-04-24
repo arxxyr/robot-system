@@ -18,9 +18,9 @@
 
 #![forbid(unused_must_use)]
 
+pub mod estop_latch;
 pub mod state_machine;
+pub mod watchdog;
 
 #[cfg(target_os = "linux")]
 pub mod rt_thread;
-
-// Task 8 将加入 `bin/s0_daemon.rs`。

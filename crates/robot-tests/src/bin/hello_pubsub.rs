@@ -8,34 +8,16 @@
 //! cargo run -p robot-tests --bin hello_pubsub
 //! ```
 
-use flatbuffers::FlatBufferBuilder;
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::time::{RobotClock, SystemClock};
+use robot_msg::build_helpers::build_joint_state;
 use robot_msg::markers;
-use robot_msg::msg::{JointState as FbJointState, JointStateArgs};
 use robot_transport::iceoryx2::{TopicClass, channel};
 use robot_transport::traits::{LatestSubscriber, Publisher};
 
 const TOPIC: &str = "/demo_robot/s0/left_arm/state";
-
-fn build_joint_state(stamp_ns: u64, positions: &[f64]) -> Vec<u8> {
-    let mut fbb = FlatBufferBuilder::new();
-    let pos = fbb.create_vector::<f64>(positions);
-    let js = FbJointState::create(
-        &mut fbb,
-        &JointStateArgs {
-            layout_id: 0xCAFE_BABE_DEAD_BEEF,
-            position_rad: Some(pos),
-            velocity_rps: None,
-            effort_nm: None,
-            stamp_ns,
-            frame_id: None,
-        },
-    );
-    fbb.finish(js, None);
-    fbb.finished_data().to_vec()
-}
+const DEMO_LAYOUT_ID: u64 = 0xCAFE_BABE_DEAD_BEEF;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== hello_pubsub · iceoryx2 同进程 pub/sub 演示 ===");
@@ -50,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let samples: [&[f64]; 3] = [&[0.0, 0.0, 0.0], &[0.1, 0.2, 0.3], &[0.7, 0.5, 0.3]];
     for (seq, positions) in samples.iter().enumerate() {
         let stamp = clock.now().0;
-        let body = build_joint_state(stamp, positions);
+        let body = build_joint_state(DEMO_LAYOUT_ID, stamp, positions, &[], &[], "");
         // Control 档上限 8 KiB；FrameHeader + JointState 此处远低于上限。
         let upper = 1024 + body.len();
         let mut w = pub_.loan(upper)?;

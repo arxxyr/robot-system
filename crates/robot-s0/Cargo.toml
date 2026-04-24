@@ -13,6 +13,12 @@ publish    .workspace = true
 robot-core          = { workspace = true }
 robot-transport     = { workspace = true }
 robot-adapter-mock  = { workspace = true }
+# watchdog / ipc_thread 非 RT 事件队列（Part 2）。
+crossbeam-channel   = { workspace = true }
+
+[dev-dependencies]
+# estop_latch 单测用 tempfile 做临时目录。版本 pin 在 workspace Cargo.toml。
+tempfile = { workspace = true }
 
 [features]
 default = []
