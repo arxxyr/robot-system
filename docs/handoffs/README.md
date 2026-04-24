@@ -34,3 +34,4 @@ ls -t docs/handoffs/*.md | head -2 | xargs -I {} less {}
 | 日期 | 主题 | 文件 |
 |---|---|---|
 | 2026-04-24 | Target 文档三分重构 + RT 线程拓扑方案 B + policy_host RT 内核判断 + iceoryx2 RT baseline 提前到 Step 6 | [2026-04-24.md](2026-04-24.md) |
+| 2026-04-24（下午）| Orin Nano Super bringup：workspace 全绿 + vendor flatc aarch64 + cyclictest 50Hz max 94-127µs | [2026-04-24_2.md](2026-04-24_2.md) |
