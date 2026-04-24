@@ -11,6 +11,7 @@ members = [
     "crates/robot-adapters/mock",
     "crates/robot-cli",
     "crates/robot-core",
+    "crates/robot-health",
     "crates/robot-logging",
     "crates/robot-msg",
     "crates/robot-s0",
@@ -117,6 +118,7 @@ ctor               = "0.3"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core          = { path = "crates/robot-core" }
+robot-health        = { path = "crates/robot-health" }
 robot-logging       = { path = "crates/robot-logging" }
 robot-msg           = { path = "crates/robot-msg" }
 robot-transport     = { path = "crates/robot-transport" }

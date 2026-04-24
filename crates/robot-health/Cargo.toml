@@ -1,0 +1,29 @@
+[package]
+name         = "robot-health"
+description  = "系统资源监控（CPU / memory / load / per-process），非 RT 采样线程"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+publish    .workspace = true
+
+# task-31 (2026-04-25) B' 看门狗扩展骨架。
+#
+# 职责：每 N 秒采样 Linux /proc 得系统健康快照（CPU / mem / load；后续加
+# per-process + top5），打 tracing 结构化日志 + 可选发 iceoryx2 topic。
+#
+# **非 RT**：采样线程普通优先级，周期秒级，允许 heap alloc / 文件 IO。
+# **独立 crate**：不进 `robot-core`（§4.2 零 runtime 依赖），也不强绑 `robot-s0`
+# （其他 daemon 如 `robot-rpc` / `robot-policy-host` 也能用）。
+
+[dependencies]
+# tracing：输出结构化日志 key=value，通用字段约定见 docs/logging.md
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

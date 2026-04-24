@@ -1735,3 +1735,67 @@ timeout 14 ./target/release/robotctl watch --robot-id xlerobot_task29 \
   - 全量替换 `eprintln!` 时发现词汇表缺字段 → 更新 `docs/logging.md` + CHANGELOG
   - RT 路径日志需求（v0.3+）→ 专门 task 设计 lock-free ring buffer + 异步 flush
   - `tracing-journald` 真切到 native binary protocol → 新 CHANGELOG 条目
+
+---
+
+## 2026-04-25 · task-31 B'a 看门狗扩展骨架：`robot-health` crate（**状态：登记 / 骨架落地**）
+
+### 涉及小节
+
+- session 路线图步骤 4（handoff 2026-04-25_1 §8 / §7.6.3 待办）
+- `docs/logging.md` 字段词汇表 → 新增 `cpu_usage_pct` / `load_1m` / `load_5m` /
+  `load_15m` / `mem_total_kib` / `mem_available_kib` / `mem_used_pct`
+- 依赖 task-32（同日 commit `9cdeb1b`）的日志骨架 —— 本 task 产物直接用
+  `tracing::info!` 输出
+
+### 决定
+
+- **独立 crate `robot-health`**：不进 `robot-core`（§4.2 零 runtime 依赖），
+  也不强绑 `robot-s0`（其他 daemon 也能用）。
+- **只做系统级 + 骨架**：CPU / memory / load 三项，5 秒周期；**不做** per-
+  process / top5 / 配置化 —— 留 B'b。
+- **手写 `/proc` parser**：不依赖 `sysinfo` / `procfs` crate，纯整数 / 字符串
+  解析 + 22 单测（fixture + Linux live read）。macOS stub `Err` → 上层 fallback
+  0 让 dev 机编译。
+- **非 RT**：`SCHED_OTHER` 默认优先级，秒级周期，**不**挤占 `s0_rt_thread`。
+- **`s0_daemon` 默认集成**：spawn 一个 `_health_handle`（Drop 自动 join），
+  早失败分支也会触发（main 作用域内的 local），**不需要**改 `graceful_stop`。
+
+### CPU 使用率差分算法
+
+`/proc/stat` 第一行 `cpu user nice system idle iowait irq softirq steal ...`
+（jiffies）。两帧差分：`busy_delta / total_delta * 100`。单帧无意义（返回
+`0.0` 占位）。本机 12s smoke 实测：帧 1 = 0.0%、帧 2 = 8.91%、帧 3 = 8.98%。
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `Cargo.toml`（workspace） | members 加 `crates/robot-health`；path dep 加 |
+| `crates/robot-health/` | **新增 crate**（2 文件 + 22 单测 + 1 doctest）：`lib.rs`（SystemSnapshot / MonitorConfig / spawn_monitor / MonitorHandle）；`proc.rs`（CpuTimes / MemInfo / LoadAvg + 纯整数 parser）|
+| `crates/robot-s0/Cargo.toml` | 加 `robot-health` dep |
+| `crates/robot-s0/src/bin/s0_daemon.rs` | 第 4.5 阶段（watchdog 之后）加 3 行 spawn_monitor + 5 行注释 |
+| `docs/CHANGELOG.md` 本条 | 新增 |
+
+### 验证
+
+- `cargo fmt --all --check` ✅
+- `cargo clippy --all --all-targets -- -D warnings` ✅（含 `--features real-hw`）
+- `cargo test --all` ✅（robot-health 22 单测 + 1 doctest；workspace 共 361 pass）
+- matrix features 本机 build ✅（4 组合）
+- 本机 12s smoke：health 3 帧 tracing 输出，CPU 差分稳态 ~9%
+
+### B'b 待做
+
+- per-process 采集（`/proc/<pid>/stat` + `status`）：interested processes RSS / CPU%
+- 全系统 top 5 by CPU
+- TOML `[monitor]` 段：`interested_processes` 列表 + `interval_secs`
+- 可选：`/<robot_id>/s0/system_health` iceoryx2 topic（定义 FlatBuffers schema，
+  **先不做**，等真有跨进程订阅需求再加）
+- B'c 候选：CPU > 阈值 → `Event::RtOverrun` → state_machine 进 `Fault`；依赖
+  task-30 state_machine ↔ adapter 执行链路先接通
+
+### 审阅
+
+- 提议 → 决定：用户 loosqk（2026-04-25 `看门狗要盯着系统总体资源占用以及使
+  用率，top5 进程，以及我的每个服务进程资源占用`）

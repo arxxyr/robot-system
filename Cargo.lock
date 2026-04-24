@@ -1112,6 +1112,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "robot-health"
+version = "0.1.2"
+dependencies = [
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "robot-logging"
 version = "0.1.2"
 dependencies = [
@@ -1140,6 +1148,7 @@ dependencies = [
  "robot-adapter-feetech",
  "robot-adapter-mock",
  "robot-core",
+ "robot-health",
  "robot-logging",
  "robot-msg",
  "robot-transport",

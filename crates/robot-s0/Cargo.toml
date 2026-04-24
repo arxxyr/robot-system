@@ -11,6 +11,7 @@ publish    .workspace = true
 
 [dependencies]
 robot-core          = { workspace = true }
+robot-health        = { workspace = true }
 robot-logging       = { workspace = true }
 robot-transport     = { workspace = true }
 robot-msg           = { workspace = true }
