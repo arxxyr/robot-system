@@ -830,3 +830,95 @@ p50 21 µs 表稳态 OK，p99 1–15 ms 是 PREEMPT 内核 + schedutil governor 
 - 复审触发：见上方"约束 §3"
 
 ---
+
+## 2026-04-24 · Step 7 task 25 robot-s0 / robot-core::config 依赖白名单更新 + ConfigIdentity v0.2 部分骨架（**状态：登记 / 部分实现**）
+
+### 涉及小节
+
+- `docs/00_design.md` §7.2（TOML schema）+ §7.3（`ConfigIdentity`）—— **不动**正文
+- `docs/CHANGELOG.md` 2026-04-22 "workspace runtime 依赖白名单机制" 各 crate 子清单（本条更新 `robot-s0` / 新增 `robot-core::config` 例外）
+- `crates/robot-core/src/config.rs`（**本次新增**：`IdentityFingerprint` 类型 + 4 单测）
+- `crates/robot-s0/src/config_loader.rs`（**本次新增**：TOML schema strut + 加载入口 + 9 单测）
+- `crates/robot-s0/src/bin/s0_daemon.rs`（**本次改动**：`Args` → `ResolvedArgs` 拆分 + `--config` 参数 + identity 打印）
+- `configs/xlerobot.toml`（**本次新增**：v0.2 示例）
+- `Cargo.toml` workspace.dependencies 加 `serde` / `toml = "0.9"`
+
+### 背景
+
+设计 §7.3 `ConfigIdentity` 是跨进程启动 handshake 的核心：5 个 hash + `robot_id` + `config_version`，用于把"S0 升级后 joint 顺序变了，S1 还用旧配置"这类隐性事故拦在启动期。
+
+`docs/handoffs/2026-04-24_5.md` §8 task 25 入口清单要求：v0.2 阶段 **替代纯 CLI 模式**，从 `configs/<robot>.toml` 读取配置 + 算 `ConfigIdentity`。但 §7.3 描述的"跨进程 iceoryx2 request-response 互换 + 不一致进 `DEGRADED`" 完整实现需要：calibration / schema_registry / adapter inventory **三个 v0.3+ 子系统**全部就位才能算齐 4 hash。强行 v0.2 全做会扯 v0.3 才该做的事。
+
+### 决定
+
+1. **拆分 v0.2 partial vs v0.3 full**：
+   - v0.2 只算 `config_hash`（blake3 over TOML 原始 bytes）+ `robot_id` + `config_version`；
+   - 余 `calibration_hash` / `schema_registry_hash` / `adapter_registry_hash` 留 `[0u8; 32]` placeholder；
+   - 类型 `IdentityFingerprint::v02_partial(...)` + `is_fully_partial() -> bool` 把"v0.2 占位"语义显式化，避免 v0.3 误用 placeholder 做真比对。
+   - Display 在 placeholder 字段后缀 `*`，人眼一秒分辨"v0.2 vs v0.3"。
+2. **跨进程 handshake 推 v0.3+**：本任务**不**改 state machine、**不**接 iceoryx2 request-response、**不**实现 `DEGRADED` 分支。s0_daemon 仅启动期打印一次 identity，仅供观测。
+3. **类型分层 + 依赖隔离**：
+   - 纯类型 `IdentityFingerprint` → `robot_core::config`，**无** serde derive，恪守 §4.2 "零 runtime 依赖"。
+   - TOML 解析逻辑（含 `serde` derive + `toml::from_str`）→ `robot_s0::config_loader`。`robot-s0` 是 Linux binary crate，加 `serde` / `toml` / `blake3` / `thiserror` 不污染跨平台核心。
+   - v0.3 起若 `robot-s1` / `robot-recorder` 也要读同一份 TOML，再抽 `robot-config` 共享 crate（v0.2 单 binary 不值得抽）。
+4. **CLI > TOML > env > 默认 优先级**：
+   - `s0_daemon --robot-id` 仍可 override TOML `[robot] id`，便于多实例调试 / 同 robot 多硬件 (`--hardware-id` 同理)。
+   - **identity 始终来自 TOML**（不跟 CLI override 走）：v0.2 阶段允许这一不对称，因为没有跨进程 handshake 真消费 identity；v0.3 跨进程 handshake 落地时若发现 CLI override 导致 identity 漂移引发问题，再决策（候选：CLI override 时强制重算 identity，或禁止 CLI override 已有 `--config` 字段）。
+5. **TOML schema 字段宽松**：`[[hardware]]` / `[[sensor]]` 仅 `id` + `adapter` 必填，其他字段（`baud` / `wheel_radius` / `joints` / `streams` / ...）按需出现，未知字段不报错，由 `extras: toml::Table` flatten 兜底。v0.4 真 adapter 落地时按 adapter 名做 enum dispatch；v0.2 不锁 schema。
+
+### 各 crate 白名单更新
+
+#### `robot-core`（§4.2 + 2026-04-21 libc 例外，本次**不变**）
+
+- `robot-core::config` 模块**只**用 std + 自身已有依赖（无 `serde` / `toml` / `blake3`）。
+- 新增类型 `IdentityFingerprint` 是纯 POD（`String` + `[u8; 32]`），不破坏"零 runtime 依赖"。
+
+#### `robot-s0`（v0.2 Step 6 → Step 7 task 25 扩展）
+
+| 依赖 | 范围 | 用途 | RT 影响 |
+|---|---|---|---|
+| `serde = { workspace = true, features = ["derive"] }` | **本次新增** | `config_loader::RobotConfigToml` deserialize | 仅 daemon 启动期 parse；RT 线程未 link |
+| `toml = { workspace = true }`（v0.9） | **本次新增** | TOML 解析 | 同上；与 iceoryx2 0.8.1 子树同 0.9.x，避免 dup-version warning |
+| `blake3 = { workspace = true }` | **本次新增** | `compute_v02_partial_identity` | 启动期一次性 hash；RT 线程未调用 |
+| `thiserror = { workspace = true }` | **本次新增** | `ConfigLoadError` derive | 同已有 `robot-core::error::RobotError` |
+
+#### workspace.dependencies（首次声明）
+
+```toml
+serde = { version = "1", features = ["derive"] }
+toml  = "0.9"
+```
+
+### 约束
+
+1. **不改 §4.2 robot-core 白名单文字**：本条只在 `robot-s0` 范围引入 serde / toml；`robot-core::config` 仍纯类型。后续若 `robot-msg` / `robot-transport` 等其他核心 crate 想加 serde，单独走 CHANGELOG 评审，不视同本条豁免。
+2. **`config_hash` 用 raw bytes 非 canonical 化**：调用方注意 line-ending / trailing newline 差会改 hash。v0.3 跨进程 handshake 实测出"开发机 vs 部署机的 newline 差成痛点"再升 canonical 化。
+3. **identity 不参与 v0.2 任何决策**：仅打印一次，禁止任何 v0.2 路径分支（state machine / RPC / topics）依赖 identity 字段值；v0.3 接 handshake 后再开放消费。
+4. **`extras: toml::Table` 字段不进类型契约**：v0.4 真 adapter 落地时按 adapter 名 enum dispatch + 强类型 schema；v0.2 的 `extras` 仅作"不报错"占位，不做契约检查。
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `Cargo.toml`（workspace） | `[workspace.dependencies]` 加 `serde` / `toml` |
+| `crates/robot-core/Cargo.toml` | **不动**（无新增依赖） |
+| `crates/robot-core/src/lib.rs` | `pub mod config` |
+| `crates/robot-core/src/config.rs` | 新增 |
+| `crates/robot-s0/Cargo.toml` | dependencies 加 `serde` / `toml` / `blake3` / `thiserror` |
+| `crates/robot-s0/src/lib.rs` | `pub mod config_loader` |
+| `crates/robot-s0/src/config_loader.rs` | 新增 |
+| `crates/robot-s0/src/bin/s0_daemon.rs` | `Args` → `ResolvedArgs` + `--config` + identity 打印 |
+| `configs/xlerobot.toml` | 新增（v0.2 示例：robot + 3 hardware mock + 1 sensor） |
+| `docs/CHANGELOG.md` 本条 | 新增 |
+| `docs/00_design.md` §7.2 / §7.3 | **不动**（设计冻结） |
+
+### 审阅
+
+- 提议：Claude Code（2026-04-24 session 内 Step 7 task 25 入手时）
+- 决定：用户 loosqk（2026-04-24 session 起手 prompt 已锁定 task 顺序：CI baseline → ConfigIdentity → rt_guard → feetech → 真机）
+- 复审触发：
+  - v0.3 跨进程 handshake 落地，发现 CLI override identity 漂移成问题 → 评估"identity 跟 CLI 走"还是"CLI override 禁止"（决定 §4 留的口子）。
+  - v0.4 真 adapter 落地，发现 `extras: toml::Table` 太宽（adapter 字段拼写错被静默 ignore）→ 评估按 adapter 名 enum dispatch 的实现节奏。
+  - 第二个 binary（robot-s1 / robot-recorder）需要读同一 TOML → 评估抽 `robot-config` 共享 crate（决定 §3 留的扩展点）。
+
+---

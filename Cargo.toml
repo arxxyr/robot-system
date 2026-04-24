@@ -74,6 +74,12 @@ crossbeam-channel = "0.5"
 # hdrhistogram：Step 6 Part 2 iceoryx2_rt_baseline harness 的延迟分布统计。
 # 10 µs - 10 s 动态范围，p50/p99/p999/max 精确到 3 位有效数字即可。
 hdrhistogram = "7.5"
+# serde + toml：Step 7 task 25 ConfigIdentity TOML loader（v0.2 阶段限 robot-s0
+# 使用，robot-core 仍恪守 §4.2 零 runtime 依赖；白名单登记见 docs/CHANGELOG.md
+# 2026-04-24 "Step 7 task 25 robot-s0 / robot-core::config 依赖白名单更新"）。
+# toml 0.9 与 iceoryx2 0.8.1 子树对齐，避免新增重复版本（deny.toml skip-tree 注释）。
+serde = { version = "1", features = ["derive"] }
+toml  = "0.9"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core          = { path = "crates/robot-core" }

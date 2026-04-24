@@ -1,0 +1,58 @@
+# XLeRobot 默认配置（v0.2 task 25 示例）。
+#
+# `docs/00_design.md` §7.2 / §7.3 schema：
+#   [robot]            必填，给 ConfigIdentity 用
+#   [[hardware]]       v0.2 仅 mock；v0.4 切真 Feetech adapter
+#   [[sensor]]         v0.4 接 RealSense / Webcam
+#
+# v0.2 仅供 s0_daemon `--config configs/xlerobot.toml` 替代纯 CLI 模式。
+# 跨进程 ConfigIdentity handshake 推 v0.3+。
+
+[robot]
+id             = "xlerobot"
+config_version = "0.2.0"
+
+# ---- 手臂总线（v0.4 切 feetech_sts3215）-----------------------------------
+[[hardware]]
+id          = "left_arm"
+adapter     = "mock_hard_rt"
+address     = "/dev/ttyACM0"
+joints      = [
+    "left_arm_shoulder_pan",
+    "left_arm_shoulder_lift",
+    "left_arm_elbow",
+    "left_arm_wrist",
+    "left_arm_gripper",
+]
+calibration = "calibration/left_arm.json"
+auto_enable = true
+
+[[hardware]]
+id          = "right_arm"
+adapter     = "mock_hard_rt"
+address     = "/dev/ttyACM1"
+joints      = [
+    "right_arm_shoulder_pan",
+    "right_arm_shoulder_lift",
+    "right_arm_elbow",
+    "right_arm_wrist",
+    "right_arm_gripper",
+]
+calibration = "calibration/right_arm.json"
+auto_enable = true
+
+# ---- 三轮全向底盘（v0.4 切 feetech_omni3）---------------------------------
+[[hardware]]
+id           = "base"
+adapter      = "mock_omni3"
+address      = "/dev/ttyACM2"
+joints       = ["wheel_1", "wheel_2", "wheel_3"]
+wheel_radius = 0.05
+base_radius  = 0.125
+
+# ---- 视觉传感器（v0.4 接 realsense_d435i）---------------------------------
+[[sensor]]
+id      = "head_cam"
+adapter = "realsense_d435i"
+serial  = ""               # 实机填序列号
+streams = ["color", "depth"]

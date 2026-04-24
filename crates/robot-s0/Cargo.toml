@@ -20,6 +20,16 @@ crossbeam-channel   = { workspace = true }
 iceoryx2            = { workspace = true }
 # s0_daemon bin 信号处理（SIGINT / SIGTERM）直接用 libc 的 signal FFI。
 libc                = { workspace = true }
+# Step 7 task 25：config TOML loader（仅 s0_daemon / config_loader 用）。
+# robot-core 不引入 serde/toml，恪守 §4.2 零 runtime 依赖；白名单登记见
+# docs/CHANGELOG.md 2026-04-24 "Step 7 task 25 robot-s0 / robot-core::config 依赖白名单更新"。
+serde               = { workspace = true }
+toml                = { workspace = true }
+# blake3：算 ConfigIdentity.config_hash（v0.2 仅这一字段，余 4 hash placeholder）。
+blake3              = { workspace = true }
+# thiserror：config_loader::ConfigLoadError 派生 Display/Error。robot-core 已用，
+# 走 workspace 继承避免版本漂移。
+thiserror           = { workspace = true }
 
 [dev-dependencies]
 # estop_latch 单测用 tempfile 做临时目录。版本 pin 在 workspace Cargo.toml。

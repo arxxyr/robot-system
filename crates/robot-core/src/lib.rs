@@ -9,6 +9,7 @@
 #![forbid(unused_must_use)]
 
 pub mod adapter;
+pub mod config;
 pub mod error;
 pub mod rt_guard;
 #[cfg(target_os = "linux")]

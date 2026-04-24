@@ -47,8 +47,10 @@ use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_adapter_mock::MockHardRTAdapter;
 use robot_core::adapter::{JointCommandBuf, RtSnapshot};
+use robot_core::config::IdentityFingerprint;
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
+use robot_s0::config_loader::{LoadedConfig, load_robot_config};
 use robot_s0::estop_latch::{load_estop_latch, save_estop_latch};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
 use robot_s0::ipc_thread::{IpcSubscribers, IpcThreadConfig, IpcThreadHandle, spawn_ipc_thread};
@@ -88,6 +90,23 @@ fn install_signal_handlers() {
 // ============================================================================
 
 struct Args {
+    /// CLI 显式指定时为 `Some`；否则从 `--config` TOML / env / "default" 回填。
+    robot_id_cli: Option<String>,
+    /// CLI 显式指定时为 `Some`；否则从 `--config` 第一段 hardware / `"default_arm"` 回填。
+    hardware_id_cli: Option<String>,
+    /// CLI 显式指定时为 `Some`；否则按 `robot_id` 回填 `/var/lib/robot/<id>/estop_latch`。
+    latch_path_cli: Option<PathBuf>,
+    config_path: Option<PathBuf>,
+    heartbeat_timeout_ns: u64,
+    smoke_duration: Option<Duration>,
+    tick_period_ns: u64,
+    strict_rt: bool,
+    joint_count: u8,
+    cpu_affinity: Option<usize>,
+}
+
+/// CLI 解析完 + `--config` 加载完之后的最终配置（CLI override 优先级已应用）。
+struct ResolvedArgs {
     robot_id: String,
     hardware_id: String,
     latch_path: PathBuf,
@@ -97,16 +116,20 @@ struct Args {
     strict_rt: bool,
     joint_count: u8,
     cpu_affinity: Option<usize>,
+    /// `--config` 加载的完整配置（含 ConfigIdentity），无 `--config` 时为 None。
+    loaded_config: Option<LoadedConfig>,
+    /// v0.2 partial fingerprint：`--config` 模式下来自 TOML，否则按 CLI 现场算
+    /// 一个不带 hash 的 stub（仅 Display 用，跨进程 handshake 推 v0.3）。
+    identity: IdentityFingerprint,
 }
 
 impl Args {
     fn parse() -> Result<Self, String> {
-        // robot_id 优先级：CLI > env ROBOT_ID > "default"
-        let env_robot_id = std::env::var("ROBOT_ID").ok();
         let mut args = Self {
-            robot_id: env_robot_id.clone().unwrap_or_else(|| "default".into()),
-            hardware_id: "default_arm".into(),
-            latch_path: PathBuf::new(),        // 空 = 按 robot_id 回填默认
+            robot_id_cli: None,
+            hardware_id_cli: None,
+            latch_path_cli: None,
+            config_path: None,
             heartbeat_timeout_ns: 200_000_000, // 200 ms
             smoke_duration: None,
             tick_period_ns: 20_000_000, // 50 Hz
@@ -122,18 +145,24 @@ impl Args {
             match a.as_str() {
                 "--robot-id" => {
                     i += 1;
-                    args.robot_id
-                        .clone_from(raw.get(i).ok_or("--robot-id requires value")?);
+                    args.robot_id_cli =
+                        Some(raw.get(i).ok_or("--robot-id requires value")?.clone());
                 }
                 "--hardware-id" => {
                     i += 1;
-                    args.hardware_id
-                        .clone_from(raw.get(i).ok_or("--hardware-id requires value")?);
+                    args.hardware_id_cli =
+                        Some(raw.get(i).ok_or("--hardware-id requires value")?.clone());
                 }
                 "--latch-path" => {
                     i += 1;
-                    args.latch_path =
-                        PathBuf::from(raw.get(i).ok_or("--latch-path requires value")?);
+                    args.latch_path_cli = Some(PathBuf::from(
+                        raw.get(i).ok_or("--latch-path requires value")?,
+                    ));
+                }
+                "--config" => {
+                    i += 1;
+                    args.config_path =
+                        Some(PathBuf::from(raw.get(i).ok_or("--config requires value")?));
                 }
                 "--heartbeat-timeout-ms" => {
                     i += 1;
@@ -186,13 +215,70 @@ impl Args {
             i += 1;
         }
 
-        // 回填 latch_path 默认：/var/lib/robot/<robot_id>/estop_latch
-        if args.latch_path.as_os_str().is_empty() {
-            args.latch_path =
-                PathBuf::from(format!("/var/lib/robot/{}/estop_latch", args.robot_id));
-        }
-
         Ok(args)
+    }
+
+    /// 应用 *CLI > TOML > env > 默认* 优先级，加载 `--config`（如有），算
+    /// ConfigIdentity，回填默认。
+    ///
+    /// 优先级链：
+    /// - `robot_id`：CLI `--robot-id` > TOML `[robot] id` > env `ROBOT_ID` > `"default"`
+    /// - `hardware_id`：CLI `--hardware-id` > TOML 第一段 `[[hardware]] id` > `"default_arm"`
+    /// - `latch_path`：CLI `--latch-path` > `/var/lib/robot/<robot_id>/estop_latch`
+    fn resolve(self) -> Result<ResolvedArgs, String> {
+        let loaded_config = match &self.config_path {
+            Some(path) => Some(load_robot_config(path).map_err(|e| e.to_string())?),
+            None => None,
+        };
+
+        let env_robot_id = std::env::var("ROBOT_ID").ok();
+
+        let robot_id = self
+            .robot_id_cli
+            .clone()
+            .or_else(|| loaded_config.as_ref().map(|c| c.parsed.robot.id.clone()))
+            .or(env_robot_id)
+            .unwrap_or_else(|| "default".into());
+
+        let hardware_id = self.hardware_id_cli.clone().unwrap_or_else(|| {
+            loaded_config
+                .as_ref()
+                .and_then(|c| c.parsed.hardware.first().map(|h| h.id.clone()))
+                .unwrap_or_else(|| "default_arm".into())
+        });
+
+        let latch_path = self
+            .latch_path_cli
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(format!("/var/lib/robot/{robot_id}/estop_latch")));
+
+        // identity：有 TOML 用 TOML 的；无 TOML 时构造 stub（hash = blake3(空)），
+        // robot_id / config_version 取 CLI 现场值。stub 仅供 Display；v0.3 跨进程
+        // handshake 强制要求 --config，到时移除 stub 路径。
+        let identity = loaded_config.as_ref().map_or_else(
+            || {
+                IdentityFingerprint::v02_partial(
+                    robot_id.clone(),
+                    "cli-only",
+                    *blake3::hash(b"").as_bytes(),
+                )
+            },
+            |c| c.identity.clone(),
+        );
+
+        Ok(ResolvedArgs {
+            robot_id,
+            hardware_id,
+            latch_path,
+            heartbeat_timeout_ns: self.heartbeat_timeout_ns,
+            smoke_duration: self.smoke_duration,
+            tick_period_ns: self.tick_period_ns,
+            strict_rt: self.strict_rt,
+            joint_count: self.joint_count,
+            cpu_affinity: self.cpu_affinity,
+            loaded_config,
+            identity,
+        })
     }
 }
 
@@ -211,14 +297,15 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
 
 fn print_help() {
     eprintln!(
-        "s0_daemon (Step 6 Part 2)
+        "s0_daemon (Step 7)
 
 USAGE:
   s0_daemon [OPTIONS]
 
 OPTIONS:
-  --robot-id <ID>              Robot identifier。优先级：CLI > env ROBOT_ID > \"default\"。
-  --hardware-id <ID>           本实例控制的硬件（如 \"left_arm\"）。默认 \"default_arm\"。
+  --config <PATH>              configs/<robot>.toml。CLI > TOML > env > 默认（task 25）。
+  --robot-id <ID>              Robot identifier。优先级：CLI > TOML > env ROBOT_ID > \"default\"。
+  --hardware-id <ID>           本实例控制的硬件（如 \"left_arm\"）。优先级：CLI > TOML 首段 > \"default_arm\"。
   --latch-path <PATH>          EStop latch 文件路径。默认 /var/lib/robot/<robot_id>/estop_latch。
   --heartbeat-timeout-ms <MS>  S1 heartbeat 超时阈值（毫秒）。默认 200。
   --smoke-duration <DUR>       运行时长上限（3s / 500ms / 10 均可）。默认无限（直到 signal）。
@@ -240,7 +327,7 @@ TOPICS（iceoryx2）:
     );
 }
 
-fn topics(args: &Args) -> Topics {
+fn topics(args: &ResolvedArgs) -> Topics {
     let r = &args.robot_id;
     let h = &args.hardware_id;
     Topics {
@@ -265,7 +352,7 @@ struct Topics {
 // ============================================================================
 
 fn main() {
-    let args = match Args::parse() {
+    let parsed = match Args::parse() {
         Ok(a) => a,
         Err(msg) => {
             if msg == "HELP" {
@@ -278,13 +365,21 @@ fn main() {
         }
     };
 
-    if let Err(code) = run(&args) {
+    let resolved = match parsed.resolve() {
+        Ok(r) => r,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            std::process::exit(2);
+        }
+    };
+
+    if let Err(code) = run(&resolved) {
         std::process::exit(code);
     }
 }
 
 #[allow(clippy::too_many_lines)]
-fn run(args: &Args) -> Result<(), i32> {
+fn run(args: &ResolvedArgs) -> Result<(), i32> {
     let t = topics(args);
 
     eprintln!(
@@ -301,6 +396,17 @@ fn run(args: &Args) -> Result<(), i32> {
         args.joint_count,
         args.cpu_affinity,
     );
+    if let Some(cfg) = &args.loaded_config {
+        eprintln!(
+            "config       : {} ({} hardware, {} sensor sections)",
+            cfg.source_path.display(),
+            cfg.parsed.hardware.len(),
+            cfg.parsed.sensor.len(),
+        );
+    } else {
+        eprintln!("config       : <none> (CLI-only mode; identity is stub)");
+    }
+    eprintln!("identity     : {}", args.identity);
     eprintln!("topics:");
     eprintln!("  sub cmd   : {}", t.sub_command);
     eprintln!("  sub hb    : {}", t.sub_heartbeat);

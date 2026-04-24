@@ -18,6 +18,7 @@
 
 #![forbid(unused_must_use)]
 
+pub mod config_loader;
 pub mod estop_latch;
 pub mod io_thread;
 pub mod ipc_thread;
