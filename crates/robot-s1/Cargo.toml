@@ -1,0 +1,21 @@
+[package]
+name         = "robot-s1"
+description  = "S1（快反射层）：v0.2 Part 2 仅含 mock_s1 二进制，v0.3 起扩成真 coordinator。"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+publish    .workspace = true
+
+[dependencies]
+robot-core      = { workspace = true }
+robot-msg       = { workspace = true }
+robot-transport = { workspace = true }
+iceoryx2        = { workspace = true }
+# Linux 信号处理（SIGINT/SIGTERM → 原子 AtomicBool）；只 Linux 走实现，其他 OS 桩空。
+libc            = { workspace = true }
+
+[lints]
+workspace = true
