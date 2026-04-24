@@ -1,0 +1,821 @@
+//! `s0_ipc_thread` —— S0 四线程模型的"非 RT IPC 枢纽"。
+//!
+//! 对应 `docs/00_design.md` §1.2：
+//! - 订阅 `JointCommand` / `Heartbeat` / `EStopEvent` iceoryx2 topic
+//! - 把 `FlatBuffers` `JointCommand` 解析 → [`JointCommandBuf`] → 写
+//!   [`LatestCommandWriter`]（供 `rt_thread` 零拷贝读）
+//! - **驱动 state machine**：每 tick 消费 command/heartbeat/estop/`watchdog`/外部事件，
+//!   调 [`try_transition`]，结果写入 state seqlock（供 `pub_thread` 读）
+//! - 写 `last_hb_ns: Arc<AtomicU64>`（供 `watchdog` 监测）
+//!
+//! ### 架构决策（Part 2 已 confirm，见 `docs/handoffs/2026-04-24_4.md` §2）
+//!
+//! **state machine 执行者 = `ipc_thread`**：[`S0State`] 生命周期跟 `ipc_thread` 绑定，
+//! 不设独立的 `state_thread`；`ipc_thread` 非 RT，allocate / lock / iceoryx2 都允许。
+//!
+//! ### 为什么 iceoryx2 subscribers 走 factory closure 注入
+//!
+//! iceoryx2 0.8 的 `ipc::Service` 家族用 `SingleThreaded` `arc_sync_policy`，
+//! `Iceoryx2Subscriber<T>` 因此 **`!Send`**（内部 `Rc`）。直接把 subscriber 作为
+//! 参数 move 进线程会被借用检查器拒绝；唯一干净的办法是让调用方提供一个
+//! `FnOnce() -> IpcSubscribers` 闭包，在 `ipc_thread` **内部**执行构造 —— 这样 `!Send`
+//! 的 subscribers 从不跨线程，只在 spawn 后的线程里存在。
+//!
+//! 闭包里通常调用 [`robot_transport::iceoryx2::subscriber`] 三次。同进程测试和
+//! 跨进程 `s0_daemon` 共用同一模式。
+//!
+//! ### 线程语义
+//!
+//! - **非 RT**（普通优先级）。轮询周期 500 µs 默认（2 kHz），足够把最新 command
+//!   转发给 `rt_thread`（`rt_thread` 本身 1 kHz）。
+//! - 用 `Arc<AtomicBool>` 作退出信号；`event_tx.send(Event::Stop)` 也会走
+//!   state machine 变成 `STOPPING` 态然后外层 stop。
+//! - 用 `crossbeam_channel` 接 `watchdog`（下行） + 外部事件（`SIGINT` / 测试驱动）。
+//!
+//! ### Guards 生命周期（Part 2 简化）
+//!
+//! Part 2 scope 内，`Guards` 大部分字段（`adapter_connected` / `calibration_loaded` /
+//! `power_ok` / `limits_valid` / `hw_enable_ok` 等）在**启动期一次性由 caller 填入**
+//! `IpcThreadConfig::initial_guards`，运行期 `ipc_thread` 只更新 3 个字段：
+//! - `heartbeat_ok`：收到新 heartbeat 置 true，收到 `HeartbeatTimeout` 事件置 false
+//! - `estop_latched`：收到 `EStop` topic / 外部 `Event::EStop` 置 true；`ClearEStop` 置 false
+//! - `adapter_fault_cleared`：收到外部 `Event::ClearError` 置 true
+//!
+//! 其他字段由 `rt_thread` 产生的观测（Part 3 加）回填；Part 2 不做。
+
+#![forbid(unused_must_use)]
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
+
+use crossbeam_channel::{Receiver, Sender, unbounded};
+use robot_core::adapter::{ControlModeRepr, JointCommandBuf, MAX_JOINTS};
+use robot_core::time::RobotClock;
+use robot_msg::markers;
+use robot_msg::msg::{ControlMode as FbControlMode, JointCommand as FbJointCommand};
+use robot_transport::iceoryx2::Iceoryx2Subscriber;
+use robot_transport::{LatestCommandWriter, LatestSubscriber, RtSnapshotPublisher};
+
+use crate::state_machine::{Event, Guards, S0State, S0StateSnapshot, try_transition};
+
+// ============================================================================
+// Config / Metrics / Handle
+// ============================================================================
+
+/// `ipc_thread` 配置。
+#[derive(Clone, Debug)]
+pub struct IpcThreadConfig {
+    /// 主循环轮询间隔（纳秒）。默认 500 µs（2 kHz）。
+    pub poll_interval_ns: u64,
+    /// 启动期 Guards 快照。大部分字段由 caller（`s0_daemon`）在 `adapter.connect()`
+    /// 成功后填入 all-true；`estop_latched` 从 latch 文件读。
+    pub initial_guards: Guards,
+    /// 初始 state。生产 `S0State::Safe`；测试可注入任意初值。
+    pub initial_state: S0State,
+}
+
+impl Default for IpcThreadConfig {
+    fn default() -> Self {
+        Self {
+            poll_interval_ns: 500_000, // 500 µs
+            initial_guards: Guards::default(),
+            initial_state: S0State::Safe,
+        }
+    }
+}
+
+/// 非 RT 路径的观测计数器（测试 / 诊断用）。
+///
+/// `Relaxed` ordering 足够 —— 这些是统计类 counter，不参与控制流同步。
+#[derive(Debug, Default)]
+pub struct IpcThreadMetrics {
+    /// 主循环 tick 数。
+    pub tick_count: AtomicU64,
+    /// 成功解析并写入 `LatestCommandWriter` 的 `JointCommand` 数。
+    pub commands_applied: AtomicU64,
+    /// `JointCommand` 解析失败（schema mismatch / verify 失败）次数。
+    pub command_parse_errors: AtomicU64,
+    /// `Heartbeat` 成功接收数。
+    pub heartbeats_received: AtomicU64,
+    /// `Heartbeat` 解析失败次数。
+    pub heartbeat_parse_errors: AtomicU64,
+    /// `EStopEvent` topic 接收数。
+    pub estops_received: AtomicU64,
+    /// `EStopEvent` 解析失败次数。
+    pub estop_parse_errors: AtomicU64,
+    /// Watchdog 发来的事件数（主要是 `HeartbeatTimeout`）。
+    pub watchdog_events: AtomicU64,
+    /// 外部 channel 发来的事件数（`SIGINT` / 测试驱动）。
+    pub external_events: AtomicU64,
+    /// `try_transition` 返回 `Rejected` 的次数。
+    pub transition_rejected: AtomicU64,
+    /// state 变化次数（`new_state != prev_state`）。
+    pub state_changes: AtomicU64,
+}
+
+/// `ipc_thread` 线程内部持有的 3 个 iceoryx2 subscriber。
+///
+/// `!Send`（iceoryx2 `ipc::Service` 是 `SingleThreaded` `arc_sync_policy`），所以只能
+/// 在线程内部构造。外部 `spawn_ipc_thread` 通过 factory closure 交付。
+pub struct IpcSubscribers {
+    pub command: Iceoryx2Subscriber<markers::JointCommand>,
+    pub heartbeat: Iceoryx2Subscriber<markers::Heartbeat>,
+    pub estop: Iceoryx2Subscriber<markers::EStopEvent>,
+}
+
+/// `ipc_thread` 启动后返回的控制 handle。
+pub struct IpcThreadHandle {
+    join: JoinHandle<()>,
+    stop: Arc<AtomicBool>,
+    /// 给 `watchdog` 读：`ipc_thread` 每收到 heartbeat 就 `store(now, Release)`。
+    last_hb_ns: Arc<AtomicU64>,
+    /// 给外部（signal handler / `CLI` / 测试）发 Event（`EStop` / Stop / Clear`EStop` ...）。
+    event_tx: Sender<Event>,
+    metrics: Arc<IpcThreadMetrics>,
+}
+
+impl IpcThreadHandle {
+    /// 请求停止。下次 tick 开始时检测到并退出。
+    pub fn request_stop(&self) {
+        self.stop.store(true, Ordering::Release);
+    }
+
+    /// Watchdog 监测用的 `last_hb_ns` 原子。
+    #[must_use]
+    pub fn last_hb_ns(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.last_hb_ns)
+    }
+
+    /// 外部注入事件（signal handler / `CLI` / 测试）。
+    #[must_use]
+    pub fn event_sender(&self) -> Sender<Event> {
+        self.event_tx.clone()
+    }
+
+    #[must_use]
+    pub fn metrics(&self) -> &Arc<IpcThreadMetrics> {
+        &self.metrics
+    }
+
+    /// 等待线程退出。
+    ///
+    /// # Errors
+    ///
+    /// 返回 `Err` 当 `ipc_thread` panic。
+    pub fn join(self) -> thread::Result<()> {
+        self.join.join()
+    }
+}
+
+// ============================================================================
+// 入口
+// ============================================================================
+
+/// 启动 `ipc_thread`。
+///
+/// - `cfg`：初值 + 轮询间隔。
+/// - `clock`：测试用 `MockClock`，生产用 `SystemClock`。
+/// - `subscribers_factory`：`FnOnce` 闭包，在 `ipc_thread` 线程内执行，返回 3 个
+///   已 open 的 iceoryx2 subscriber。用闭包包装是因为 iceoryx2 `ipc::Service`
+///   的 subscriber 是 `!Send`（见模块 doc "为什么 ..."）。闭包 panic / unwind
+///   会让 `ipc_thread` 直接退出（stop signal 没机会走 state machine）—— 调用方应
+///   保证 iceoryx2 open 成功再进入 `production daemon`，或者接受 `panic-abort`。
+/// - `cmd_writer`：`LatestCommandWriter<JointCommandBuf>` 写端（单写者）。
+/// - `state_pub`：`RtSnapshotPublisher<S0StateSnapshot>` 写端（单写者，每 tick 发布）。
+/// - `watchdog_rx`：`watchdog` 发 `HeartbeatTimeout` 进来。
+///
+/// # Errors
+///
+/// 返回 `std::io::Error` 当 `thread::Builder::spawn` 失败（OS 资源）。
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_ipc_thread<F>(
+    cfg: IpcThreadConfig,
+    clock: Arc<dyn RobotClock>,
+    subscribers_factory: F,
+    cmd_writer: LatestCommandWriter<JointCommandBuf>,
+    state_pub: RtSnapshotPublisher<S0StateSnapshot>,
+    watchdog_rx: Receiver<Event>,
+) -> std::io::Result<IpcThreadHandle>
+where
+    F: FnOnce() -> IpcSubscribers + Send + 'static,
+{
+    let stop = Arc::new(AtomicBool::new(false));
+    let last_hb_ns = Arc::new(AtomicU64::new(clock.now().0));
+    let metrics = Arc::new(IpcThreadMetrics::default());
+
+    // 外部事件 channel（SIGINT / CLI / 测试驱动）。unbounded 避免发送端阻塞；
+    // 预期流量极低（信号级），不会内存失控。
+    let (event_tx, event_rx) = unbounded::<Event>();
+
+    let join_stop = Arc::clone(&stop);
+    let join_last_hb = Arc::clone(&last_hb_ns);
+    let join_metrics = Arc::clone(&metrics);
+
+    // 同步信号：spawn 返回前，确保 subscribers_factory 已成功完成 —— 调用方一旦
+    // 拿到 handle，就可以开始发 publish，subscribers 这时已经 subscribe 到 service。
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<()>(0);
+
+    let join = thread::Builder::new()
+        .name("s0_ipc_thread".into())
+        .spawn(move || {
+            let subs = subscribers_factory();
+            // 通知外层 "subscribers 已 ready"；ready_rx.recv() 立刻解除阻塞。
+            let _ = ready_tx.send(());
+            drop(ready_tx);
+            run_loop(
+                &cfg,
+                clock.as_ref(),
+                subs,
+                &cmd_writer,
+                &state_pub,
+                &watchdog_rx,
+                &event_rx,
+                &join_stop,
+                &join_last_hb,
+                &join_metrics,
+            );
+        })?;
+
+    // 阻塞等 factory 完成。若 factory panic 则 ready_tx drop → recv 返回 Err，
+    // 我们往上抛一个 io::Error（调用方 unwrap 会看到"ipc_thread factory panicked"）。
+    if ready_rx.recv().is_err() {
+        return Err(std::io::Error::other(
+            "ipc_thread subscribers_factory panicked before signalling ready",
+        ));
+    }
+
+    Ok(IpcThreadHandle {
+        join,
+        stop,
+        last_hb_ns,
+        event_tx,
+        metrics,
+    })
+}
+
+// ============================================================================
+// 主循环
+// ============================================================================
+
+#[allow(clippy::too_many_arguments)]
+fn run_loop(
+    cfg: &IpcThreadConfig,
+    clock: &dyn RobotClock,
+    mut subs: IpcSubscribers,
+    cmd_writer: &LatestCommandWriter<JointCommandBuf>,
+    state_pub: &RtSnapshotPublisher<S0StateSnapshot>,
+    watchdog_rx: &Receiver<Event>,
+    event_rx: &Receiver<Event>,
+    stop: &AtomicBool,
+    last_hb_ns: &AtomicU64,
+    metrics: &IpcThreadMetrics,
+) {
+    let mut state = cfg.initial_state;
+    let mut guards = cfg.initial_guards;
+
+    // 启动即发一次初值快照，保证 pub_thread / observer 立刻能读到有效 state。
+    state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
+
+    while !stop.load(Ordering::Acquire) {
+        // 1) JointCommand
+        poll_command(&mut subs.command, cmd_writer, metrics);
+
+        // 2) Heartbeat
+        if poll_heartbeat(&mut subs.heartbeat, clock, last_hb_ns, metrics) {
+            guards.heartbeat_ok = true;
+            state = apply_event(state, Event::Heartbeat, &guards, metrics);
+        }
+
+        // 3) EStopEvent topic
+        if poll_estop(&mut subs.estop, metrics) {
+            guards.estop_latched = true;
+            state = apply_event(state, Event::EStop, &guards, metrics);
+        }
+
+        // 4) Watchdog events
+        while let Ok(ev) = watchdog_rx.try_recv() {
+            metrics.watchdog_events.fetch_add(1, Ordering::Relaxed);
+            if matches!(ev, Event::HeartbeatTimeout) {
+                guards.heartbeat_ok = false;
+            }
+            state = apply_event(state, ev, &guards, metrics);
+        }
+
+        // 5) 外部 channel 事件（SIGINT / CLI / 测试）
+        while let Ok(ev) = event_rx.try_recv() {
+            metrics.external_events.fetch_add(1, Ordering::Relaxed);
+            apply_external_guard_side_effect(ev, &mut guards);
+            state = apply_event(state, ev, &guards, metrics);
+        }
+
+        // 6) 发布 snapshot
+        state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
+        metrics.tick_count.fetch_add(1, Ordering::Relaxed);
+
+        // 非 RT 线程：std::thread::sleep 够用。RobotClock::sleep_until 依赖 MonoRawNs
+        // 的绝对 deadline，非 RT 路径不必。
+        thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
+    }
+}
+
+/// 按事件类型对 guards 做已知的副作用（外部注入事件专用）。
+fn apply_external_guard_side_effect(ev: Event, guards: &mut Guards) {
+    match ev {
+        Event::EStop => guards.estop_latched = true,
+        Event::ClearEStop => guards.estop_latched = false,
+        Event::ClearError => guards.adapter_fault_cleared = true,
+        _ => {}
+    }
+}
+
+/// 包一层 `try_transition` + metrics 记录。
+fn apply_event(prev: S0State, ev: Event, guards: &Guards, metrics: &IpcThreadMetrics) -> S0State {
+    match try_transition(prev, ev, guards) {
+        Ok(next) => {
+            if next != prev {
+                metrics.state_changes.fetch_add(1, Ordering::Relaxed);
+            }
+            next
+        }
+        Err(_rej) => {
+            metrics.transition_rejected.fetch_add(1, Ordering::Relaxed);
+            prev
+        }
+    }
+}
+
+// ============================================================================
+// Topic poll helpers（把 iceoryx2 lease → typed body → 业务动作）
+// ============================================================================
+
+fn poll_command(
+    cmd_sub: &mut Iceoryx2Subscriber<markers::JointCommand>,
+    cmd_writer: &LatestCommandWriter<JointCommandBuf>,
+    metrics: &IpcThreadMetrics,
+) {
+    let Ok(Some(lease)) = cmd_sub.latest() else {
+        return;
+    };
+    let Ok(view) = lease.view() else {
+        metrics.command_parse_errors.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
+    let fb_cmd: FbJointCommand<'_> = view.body.get();
+    let stamp_ns = view.header.stamp_ns();
+    let buf = parse_joint_command(&fb_cmd, stamp_ns);
+    cmd_writer.store(buf);
+    metrics.commands_applied.fetch_add(1, Ordering::Relaxed);
+}
+
+fn poll_heartbeat(
+    hb_sub: &mut Iceoryx2Subscriber<markers::Heartbeat>,
+    clock: &dyn RobotClock,
+    last_hb_ns: &AtomicU64,
+    metrics: &IpcThreadMetrics,
+) -> bool {
+    let Ok(Some(lease)) = hb_sub.latest() else {
+        return false;
+    };
+    // Heartbeat body 解析失败也算"收到过"—— payload 解码失败是网关 / schema 层问题，
+    // 不影响 heartbeat 存活信号。但计到 parse_errors 方便诊断。
+    if lease.view().is_ok() {
+        metrics.heartbeats_received.fetch_add(1, Ordering::Relaxed);
+        last_hb_ns.store(clock.now().0, Ordering::Release);
+        true
+    } else {
+        metrics
+            .heartbeat_parse_errors
+            .fetch_add(1, Ordering::Relaxed);
+        false
+    }
+}
+
+fn poll_estop(
+    estop_sub: &mut Iceoryx2Subscriber<markers::EStopEvent>,
+    metrics: &IpcThreadMetrics,
+) -> bool {
+    let Ok(Some(lease)) = estop_sub.latest() else {
+        return false;
+    };
+    if lease.view().is_ok() {
+        metrics.estops_received.fetch_add(1, Ordering::Relaxed);
+        true
+    } else {
+        metrics.estop_parse_errors.fetch_add(1, Ordering::Relaxed);
+        false
+    }
+}
+
+// ============================================================================
+// FlatBuffers JointCommand → JointCommandBuf POD
+// ============================================================================
+
+/// `FlatBuffers` `JointCommand` → POD [`JointCommandBuf`]。
+///
+/// f64 → f32 的 narrowing cast：`docs/00_design.md` §3.5 明确底层 adapter 用
+/// f32（HardRT 寄存器精度），网关 schema 用 f64 统一公开接口。精度损失对关节
+/// 控制不影响（位置误差 < 1e-7 rad）。
+fn parse_joint_command(fb: &FbJointCommand<'_>, stamp_ns: u64) -> JointCommandBuf {
+    let mut buf = JointCommandBuf::default();
+
+    let target = fb.target();
+    let n = target.map_or(0, |v| v.len().min(MAX_JOINTS));
+    #[allow(clippy::cast_possible_truncation)]
+    {
+        buf.joint_count = n as u8;
+    }
+    if let Some(v) = target {
+        for i in 0..n {
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                buf.positions[i] = v.get(i) as f32;
+            }
+        }
+    }
+    buf.mode = fb_control_mode_to_repr(fb.mode());
+    buf.stamp_ns = stamp_ns;
+    buf.deadline_ns = fb.deadline_ns();
+    buf.seq = fb.source_task_id();
+    buf
+}
+
+/// FB `ControlMode` → `ControlModeRepr`。FB 生成的 enum 是独立类型，需要显式映射。
+fn fb_control_mode_to_repr(m: FbControlMode) -> ControlModeRepr {
+    match m {
+        FbControlMode::Position => ControlModeRepr::Position,
+        FbControlMode::Velocity => ControlModeRepr::Velocity,
+        FbControlMode::Torque => ControlModeRepr::Torque,
+        FbControlMode::ServoPosition => ControlModeRepr::ServoPosition,
+        // FB 的 enum 允许未来扩展；未识别值保守 Stop（S0 在 Stop 模式下不驱动电机）。
+        _ => ControlModeRepr::Stop,
+    }
+}
+
+// ============================================================================
+// Tests（同进程 iceoryx2 pub/sub，所有跨线程限制通过 factory closure 绕开）
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iceoryx2::prelude::NodeBuilder;
+    use iceoryx2::service::ipc::Service as IxService;
+    use robot_core::adapter::ControlMode as AdapterControlMode;
+    use robot_core::time::{MockClock, MonoRawNs, SystemClock};
+    use robot_msg::build_helpers::{build_estop_event, build_heartbeat, build_joint_command};
+    use robot_msg::msg::StaleAction;
+    use robot_transport::iceoryx2::{TopicClass, publisher, subscriber};
+    use robot_transport::traits::Publisher;
+    use robot_transport::{LatestCommandSlot, RtSnapshotReader};
+    use std::sync::atomic::AtomicU32;
+
+    // 每个测试用独立 topic 前缀，避免 cargo test 并行执行时 iceoryx2 service 名冲突。
+    static TEST_SEQ: AtomicU32 = AtomicU32::new(0);
+
+    struct Topics {
+        command: String,
+        heartbeat: String,
+        estop: String,
+    }
+
+    fn fresh_topics() -> Topics {
+        let id = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+        let base = format!("/test_ipc_{}_{}", std::process::id(), id);
+        Topics {
+            command: format!("{base}/cmd"),
+            heartbeat: format!("{base}/hb"),
+            estop: format!("{base}/estop"),
+        }
+    }
+
+    fn healthy_guards() -> Guards {
+        Guards {
+            estop_latched: false,
+            adapter_connected: true,
+            calibration_loaded: true,
+            joint_state_valid: true,
+            power_ok: true,
+            heartbeat_ok: false, // 等 ipc 收到 heartbeat 再变 true
+            cmd_deadline_valid: true,
+            limits_valid: true,
+            hw_enable_ok: true,
+            adapter_fault_cleared: false,
+            command_mode: AdapterControlMode::Position,
+            on_timeout_hint: crate::state_machine::EnabledSub::CtrlLostHold,
+        }
+    }
+
+    fn enabled_active() -> S0State {
+        S0State::Enabled {
+            sub: crate::state_machine::EnabledSub::Active,
+            control_link: crate::state_machine::ControlLink::Ok,
+            output_mode: crate::state_machine::OutputMode::Active,
+        }
+    }
+
+    /// 等待闭包返回 true，最长 `max`；否则 panic。用于等异步 tick 产生观察结果。
+    fn wait_until<F: FnMut() -> bool>(mut cond: F, max: Duration) {
+        let start = std::time::Instant::now();
+        while start.elapsed() < max {
+            if cond() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        panic!("wait_until timed out after {max:?}");
+    }
+
+    /// 构造 `ipc_thread` + 配套的 iceoryx2 publishers（在调用方线程里存活，用于发数据）。
+    ///
+    /// 关键点：subscribers 在 `ipc_thread` 内部 open；publishers 在测试主线程 open。
+    /// iceoryx2 service 首次调用 create，后续 open。两端 Node 不同但 service 共享。
+    #[allow(clippy::type_complexity)]
+    fn bring_up(
+        initial_state: S0State,
+        initial_guards: Guards,
+        watchdog_rx: Receiver<Event>,
+        clock: Arc<dyn RobotClock>,
+    ) -> (
+        IpcThreadHandle,
+        robot_transport::LatestCommandReader<JointCommandBuf>,
+        RtSnapshotReader<S0StateSnapshot>,
+        robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
+        robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
+        robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
+    ) {
+        let topics = fresh_topics();
+        // publisher-side Node，测试线程持有。leak 到 'static 避免 drop 后 service
+        // 被 iceoryx2 回收（ipc_thread 还要继续 open service）；测试进程 staci 可接受。
+        let pub_node: &'static _ =
+            Box::leak(Box::new(NodeBuilder::new().create::<IxService>().unwrap()));
+        // 先 open publisher 端（会 create service）。
+        let cmd_pub =
+            publisher::<markers::JointCommand>(pub_node, &topics.command, TopicClass::S0Command)
+                .unwrap();
+        let hb_pub =
+            publisher::<markers::Heartbeat>(pub_node, &topics.heartbeat, TopicClass::S1CmdVel)
+                .unwrap();
+        let estop_pub =
+            publisher::<markers::EStopEvent>(pub_node, &topics.estop, TopicClass::SafetyEvent)
+                .unwrap();
+
+        let (cmd_writer, cmd_reader) =
+            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
+        let reader_clone = cmd_reader.clone();
+        let (state_pub, state_rdr) =
+            RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
+
+        let cfg = IpcThreadConfig {
+            poll_interval_ns: 500_000,
+            initial_guards,
+            initial_state,
+        };
+
+        let topics_for_factory = Topics {
+            command: topics.command.clone(),
+            heartbeat: topics.heartbeat.clone(),
+            estop: topics.estop.clone(),
+        };
+        let factory = move || {
+            // ipc_thread 内部的 Node —— iceoryx2 ipc_policy::SingleThreaded 要求
+            // 每线程独立 Node。两端的 Node 指向同一个 iceoryx2 service（topic +
+            // schema attribute 匹配时 open_or_create 合并到同一 service）。
+            //
+            // sub_node 需要活得跟 subscribers 一样久（subscriber 持有 Node 内的
+            // shm handle 句柄）。factory 结束后 node 会 drop，因此 leak 到 'static。
+            // 生产 s0_daemon 里 Node 由 main 持有，无需 leak。
+            let sub_node = NodeBuilder::new().create::<IxService>().unwrap();
+            let command = subscriber::<markers::JointCommand>(
+                &sub_node,
+                &topics_for_factory.command,
+                TopicClass::S0Command,
+            )
+            .unwrap();
+            let heartbeat = subscriber::<markers::Heartbeat>(
+                &sub_node,
+                &topics_for_factory.heartbeat,
+                TopicClass::S1CmdVel,
+            )
+            .unwrap();
+            let estop = subscriber::<markers::EStopEvent>(
+                &sub_node,
+                &topics_for_factory.estop,
+                TopicClass::SafetyEvent,
+            )
+            .unwrap();
+            Box::leak(Box::new(sub_node));
+            IpcSubscribers {
+                command,
+                heartbeat,
+                estop,
+            }
+        };
+
+        let handle =
+            spawn_ipc_thread(cfg, clock, factory, cmd_writer, state_pub, watchdog_rx).unwrap();
+
+        (handle, reader_clone, state_rdr, cmd_pub, hb_pub, estop_pub)
+    }
+
+    fn publish_heartbeat(
+        pub_: &mut robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
+        seq: u64,
+    ) {
+        let body = build_heartbeat(2, seq, 50.0, 1_000_000);
+        let mut w = pub_.loan(1024 + body.len()).unwrap();
+        w.set_seq(seq);
+        w.set_source_id(2);
+        w.set_stamp_ns(1_000_000);
+        w.set_body_bytes(&body);
+        w.publish().unwrap();
+    }
+
+    fn publish_command(
+        pub_: &mut robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
+        seq: u64,
+        target: &[f64],
+    ) {
+        let body = build_joint_command(
+            0xCAFE_0001,
+            robot_msg::msg::ControlMode::Position,
+            target,
+            999_999_999_999,
+            10,
+            StaleAction::Hold,
+            seq,
+        );
+        let mut w = pub_.loan(1024 + body.len()).unwrap();
+        w.set_seq(seq);
+        w.set_source_id(2);
+        w.set_stamp_ns(seq * 1_000_000);
+        w.set_body_bytes(&body);
+        w.publish().unwrap();
+    }
+
+    fn publish_estop(
+        pub_: &mut robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
+        stamp_ns: u64,
+    ) {
+        let body = build_estop_event("test-driver", stamp_ns, "rpc", true);
+        let mut w = pub_.loan(1024 + body.len()).unwrap();
+        w.set_stamp_ns(stamp_ns);
+        w.set_body_bytes(&body);
+        w.publish().unwrap();
+    }
+
+    /// 最小冒烟：spawn + 立即 stop，验证不 panic、线程干净退出。
+    #[test]
+    fn spawn_then_stop_cleanly() {
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let (_wd_tx, wd_rx) = unbounded();
+        let (handle, _cmd_reader, _state_rdr, _cp, _hp, _ep) =
+            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
+        thread::sleep(Duration::from_millis(30));
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// 收到 `JointCommand` → `LatestCommandWriter` 里出现对应 POD。
+    #[test]
+    fn command_plumbing_writes_pod_buffer() {
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let (_wd_tx, wd_rx) = unbounded();
+        let (handle, cmd_reader, _state_rdr, mut cmd_pub, _hp, _ep) =
+            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
+
+        publish_command(&mut cmd_pub, 7, &[0.1, 0.2, 0.3]);
+
+        wait_until(
+            || {
+                let g = cmd_reader.load();
+                g.joint_count == 3 && (g.positions[0] - 0.1).abs() < 1e-3
+            },
+            Duration::from_secs(2),
+        );
+
+        let loaded = cmd_reader.load();
+        assert_eq!(loaded.joint_count, 3);
+        assert!((loaded.positions[0] - 0.1).abs() < 1e-3);
+        assert!((loaded.positions[1] - 0.2).abs() < 1e-3);
+        assert!((loaded.positions[2] - 0.3).abs() < 1e-3);
+        assert_eq!(loaded.mode, ControlModeRepr::Position);
+        assert_eq!(loaded.seq, 7);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// heartbeat 到达 → state 从 `READY` 推进到 `ENABLED.Active`；`last_hb_ns` 被更新。
+    #[test]
+    fn heartbeat_transitions_state_and_updates_watchdog_atom() {
+        let clock = Arc::new(MockClock::new(MonoRawNs(100_000_000)));
+        let clock_dyn: Arc<dyn RobotClock> = Arc::clone(&clock) as Arc<dyn RobotClock>;
+        let (_wd_tx, wd_rx) = unbounded();
+        let (handle, _cmd_reader, state_rdr, _cp, mut hb_pub, _ep) =
+            bring_up(S0State::Ready, healthy_guards(), wd_rx, clock_dyn);
+
+        publish_heartbeat(&mut hb_pub, 1);
+
+        let last_hb = handle.last_hb_ns();
+        wait_until(
+            || state_rdr.load().state == enabled_active() && last_hb.load(Ordering::Acquire) > 0,
+            Duration::from_secs(2),
+        );
+
+        let snap = state_rdr.load();
+        assert_eq!(snap.state, enabled_active());
+        assert!(snap.guards_summary.heartbeat_ok);
+        assert_eq!(last_hb.load(Ordering::Acquire), clock.now().0);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// `watchdog` 发 `HeartbeatTimeout` → `Active` 态退到 `CONTROL_LOST_*`（hold）。
+    #[test]
+    fn watchdog_timeout_drops_to_control_lost() {
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let (wd_tx, wd_rx) = unbounded();
+        let mut initial = healthy_guards();
+        initial.heartbeat_ok = true;
+        let (handle, _cmd_reader, state_rdr, _cp, _hp, _ep) =
+            bring_up(enabled_active(), initial, wd_rx, clock);
+
+        wd_tx.send(Event::HeartbeatTimeout).unwrap();
+
+        wait_until(
+            || {
+                matches!(
+                    state_rdr.load().state,
+                    S0State::Enabled {
+                        control_link: crate::state_machine::ControlLink::Lost,
+                        ..
+                    }
+                )
+            },
+            Duration::from_secs(2),
+        );
+
+        let snap = state_rdr.load();
+        assert!(matches!(
+            snap.state,
+            S0State::Enabled {
+                sub: crate::state_machine::EnabledSub::CtrlLostHold,
+                control_link: crate::state_machine::ControlLink::Lost,
+                output_mode: crate::state_machine::OutputMode::Hold,
+            }
+        ));
+        assert!(!snap.guards_summary.heartbeat_ok);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// `EStop` topic → 任意态 → `SAFE`；guards.`estop_latched` 置位。
+    #[test]
+    fn estop_topic_drops_to_safe() {
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let (_wd_tx, wd_rx) = unbounded();
+        let mut initial = healthy_guards();
+        initial.heartbeat_ok = true;
+        let (handle, _cmd_reader, state_rdr, _cp, _hp, mut estop_pub) =
+            bring_up(enabled_active(), initial, wd_rx, clock);
+
+        publish_estop(&mut estop_pub, 42_000_000);
+
+        wait_until(
+            || state_rdr.load().state == S0State::Safe,
+            Duration::from_secs(2),
+        );
+
+        let snap = state_rdr.load();
+        assert_eq!(snap.state, S0State::Safe);
+        assert!(snap.guards_summary.estop_latched);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// 外部事件 channel：注入 `Event::Stop` → 进 `STOPPING`。
+    #[test]
+    fn external_stop_event_transitions_to_stopping() {
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let (_wd_tx, wd_rx) = unbounded();
+        let (handle, _cmd_reader, state_rdr, _cp, _hp, _ep) =
+            bring_up(S0State::Ready, healthy_guards(), wd_rx, clock);
+
+        handle.event_sender().send(Event::Stop).unwrap();
+
+        wait_until(
+            || state_rdr.load().state == S0State::Stopping,
+            Duration::from_secs(2),
+        );
+
+        assert_eq!(state_rdr.load().state, S0State::Stopping);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+}

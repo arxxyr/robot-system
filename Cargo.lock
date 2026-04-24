@@ -739,8 +739,10 @@ version = "0.1.2"
 dependencies = [
  "assert_no_alloc",
  "crossbeam-channel",
+ "iceoryx2",
  "robot-adapter-mock",
  "robot-core",
+ "robot-msg",
  "robot-transport",
  "tempfile",
 ]

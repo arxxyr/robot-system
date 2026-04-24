@@ -19,6 +19,7 @@
 #![forbid(unused_must_use)]
 
 pub mod estop_latch;
+pub mod ipc_thread;
 pub mod state_machine;
 pub mod watchdog;
 

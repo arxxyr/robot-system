@@ -58,48 +58,32 @@ use core::marker::PhantomData;
 
 use iceoryx2::prelude::Node;
 use iceoryx2::service::ipc::Service as IxService;
+use iceoryx2::service::port_factory::publish_subscribe::PortFactory;
 use robot_msg::markers::BodyMarker;
 use robot_msg::size_tier::default_tier_of;
 
 use crate::error::TransportError;
 
 /// 同进程对称 pub/sub 创建：返回已配置好 service attributes / `QoS` / tier
-/// 的一对发布者 + 订阅者。生产路径（跨进程）下分别调用各自半边即可。
+/// 的一对发布者 + 订阅者。跨进程场景下也可以调用这个函数（每一端各拿自己要
+/// 的那一半），因为底层走 `open_or_create_with_attributes` —— 首次调用 create，
+/// 后续相同 topic 的调用自动 open 同一 service 并校验 schema attribute。
 ///
 /// # Errors
 ///
 /// - `topic` 字符串非法（iceoryx2 `ServiceName::new` 拒绝）
 /// - `T::SCHEMA_ID` 未在 [`robot_msg::size_tier::default_tier_of`] 登记（未知
 ///   schema 拒绝创建 service）
-/// - iceoryx2 service 创建失败（权限 / 端口耗尽 / 后端异常）
+/// - iceoryx2 service 创建失败（权限 / 端口耗尽 / 后端异常 / attribute 不匹配）
 pub fn channel<T: BodyMarker>(
     node: &Node<IxService>,
     topic: &str,
     class: TopicClass,
 ) -> Result<(Iceoryx2Publisher<T>, Iceoryx2Subscriber<T>), TransportError> {
-    let service_name = topic_to_service_name(topic)?;
-    let tier = default_tier_of(T::SCHEMA_ID).ok_or_else(|| {
-        TransportError::Backend(format!(
-            "schema {:#010x} ({}) has no size tier in robot-msg::size_tier; \
-             refusing to create iceoryx2 service",
-            T::SCHEMA_ID,
-            T::SCHEMA_NAME
-        ))
-    })?;
-    let max_bytes = tier.max_bytes();
-    let profile = profile_of(class);
-    let spec = schema_attribute_spec(T::SCHEMA_ID, 1)?;
-
-    let service = node
-        .service_builder(&service_name)
-        .publish_subscribe::<[u8]>()
-        .history_size(profile.history_size)
-        .subscriber_max_buffer_size(profile.subscriber_max_buffer_size)
-        .max_publishers(profile.max_publishers)
-        .max_subscribers(profile.max_subscribers)
-        .enable_safe_overflow(profile.safe_overflow)
-        .create_with_attributes(&spec)
-        .map_err(|e| TransportError::Backend(format!("iceoryx2 service create: {e:?}")))?;
+    let service = build_service::<T>(node, topic, class)?;
+    let max_bytes = default_tier_of(T::SCHEMA_ID)
+        .expect("default_tier_of is already validated by build_service")
+        .max_bytes();
 
     let publisher = service
         .publisher_builder()
@@ -123,4 +107,90 @@ pub fn channel<T: BodyMarker>(
             _ty: PhantomData,
         },
     ))
+}
+
+/// 只 open/create subscriber —— 跨进程场景下"订阅端"专用（S0 subscribe S1 的
+/// command/heartbeat，robotctl subscribe S0 的 state 等）。
+///
+/// 不创建 publisher；service 在首次调用时用 schema attribute 初始化，后续
+/// 相同 topic 调用会走 open 路径。
+///
+/// # Errors
+///
+/// 同 [`channel`]。
+pub fn subscriber<T: BodyMarker>(
+    node: &Node<IxService>,
+    topic: &str,
+    class: TopicClass,
+) -> Result<Iceoryx2Subscriber<T>, TransportError> {
+    let service = build_service::<T>(node, topic, class)?;
+    let sub = service
+        .subscriber_builder()
+        .create()
+        .map_err(|e| TransportError::Backend(format!("iceoryx2 subscriber create: {e:?}")))?;
+    Ok(Iceoryx2Subscriber {
+        inner: sub,
+        _ty: PhantomData,
+    })
+}
+
+/// 只 open/create publisher —— 跨进程场景下"发布端"专用（`mock_s1` publish
+/// command/heartbeat，S0 `pub_thread` publish state 等）。
+///
+/// # Errors
+///
+/// 同 [`channel`]。
+pub fn publisher<T: BodyMarker>(
+    node: &Node<IxService>,
+    topic: &str,
+    class: TopicClass,
+) -> Result<Iceoryx2Publisher<T>, TransportError> {
+    let service = build_service::<T>(node, topic, class)?;
+    let max_bytes = default_tier_of(T::SCHEMA_ID)
+        .expect("default_tier_of is already validated by build_service")
+        .max_bytes();
+    let pub_ = service
+        .publisher_builder()
+        .initial_max_slice_len(max_bytes)
+        .create()
+        .map_err(|e| TransportError::Backend(format!("iceoryx2 publisher create: {e:?}")))?;
+    Ok(Iceoryx2Publisher {
+        inner: pub_,
+        loan_tok: 0,
+        _ty: PhantomData,
+    })
+}
+
+/// 内部辅助：`open_or_create_with_attributes` service + `QoS` 参数。
+///
+/// `schema_attribute_spec` 不再需要 —— verifier 的 required attributes 在
+/// create 分支会被 iceoryx2 自动写入 service（§"决策 ⑤C 双道防线"）。多次
+/// 调用相同 topic 时，create 只命中一次，后续走 open 并做 attribute verify。
+fn build_service<T: BodyMarker>(
+    node: &Node<IxService>,
+    topic: &str,
+    class: TopicClass,
+) -> Result<PortFactory<IxService, [u8], ()>, TransportError> {
+    let service_name = topic_to_service_name(topic)?;
+    let tier = default_tier_of(T::SCHEMA_ID).ok_or_else(|| {
+        TransportError::Backend(format!(
+            "schema {:#010x} ({}) has no size tier in robot-msg::size_tier; \
+             refusing to create iceoryx2 service",
+            T::SCHEMA_ID,
+            T::SCHEMA_NAME
+        ))
+    })?;
+    let _ = tier; // 仅验证存在；max_bytes 在 publisher 侧取
+    let profile = profile_of(class);
+    let verifier = schema_attribute_verifier(T::SCHEMA_ID, 1)?;
+
+    node.service_builder(&service_name)
+        .publish_subscribe::<[u8]>()
+        .history_size(profile.history_size)
+        .subscriber_max_buffer_size(profile.subscriber_max_buffer_size)
+        .max_publishers(profile.max_publishers)
+        .max_subscribers(profile.max_subscribers)
+        .enable_safe_overflow(profile.safe_overflow)
+        .open_or_create_with_attributes(&verifier)
+        .map_err(|e| TransportError::Backend(format!("iceoryx2 service open_or_create: {e:?}")))
 }
