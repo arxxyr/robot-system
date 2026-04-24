@@ -333,7 +333,7 @@ main() → mlockall(MCL_CURRENT|MCL_FUTURE) → SCHED_FIFO prio=50
 | 四路 SocketCAN 并行驱动 | `robot-adapters/damiao`（**新 crate**） | 移植达妙 MIT 帧协议、错误码、offline 判定 |
 | HiPNUC 串口驱动 | `robot-adapters/hipnuc`（**新 crate**） | 移植 HiPNUC 0x91/0xA0 帧解析 |
 | 进程间通信 | `robot-transport`（iceoryx2） | 沿用 |
-| S0 四线程（ipc/rt/pub/io） | `robot-s0` | 沿用；RT 线程跑 MIT 命令发送 + 电机状态读取 |
+| S0 线程（ipc / rt×M / pub / io） | `robot-s0` | 多 bus 场景 rt 线程 ×M（每 CAN bus 一个；ATOM01 M=4）；见 §5.1 + [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 "`s0_rt_thread` 多 bus 语义澄清" |
 | RT 约束执行 | `robot-core::time` + allocation-guard | 沿用 |
 | ONNX 推理进程 | `robot-policy-host`（**新 crate**，暂无） | 沿用设计 §4.7；需要 `ort` crate |
 | 外部 RPC（init / start / set_zeros ...） | `robot-rpc` | 沿用；把 10 个 ROS 服务映射成 gRPC method |
@@ -389,6 +389,27 @@ robot-app-atom01/
 
 **功能对标**：`atom01_deploy/src/motors`（Damiao 子模块）。
 
+**线程拓扑（方案 B，见 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 "S0 `s0_rt_thread` 多 bus 语义澄清"）**
+
+ATOM01 4 路独立 CAN → 在 `robot-s0` 内实例化 **4 个 rt_thread，每 bus 一个**。每个 rt_thread 的 tick 闭环：
+
+```
+loop {
+    clock.sleep_until(deadline); deadline += tick_period;
+    bus.drain_rx();                            // non-blocking 到 EAGAIN
+    cmd = target_slot.load_latest();           // SampleLease latest-wins
+    if fault = safety_check(&state, &cmd) {
+        bus.safe_output(); snapshot.publish_fault(fault); continue;
+    }
+    bus.write_frames_serial(&cmd, &state);     // N ≈ 6 电机 × write()
+    snapshot.write_bus_slice(bus.id, &state);  // per-bus seqlock
+}
+```
+
+**不**照搬上游 `atom01_deploy` 的 "每 bus 2 个 RT I/O 线程（RX select + TX cv+lockfree_queue）+ ThreadPool(4) fan-out" 总 13 线程拓扑，理由：
+- 上游 `dm_motor_driver.cpp:135-160` 的 RX callback 在 I/O 线程里 `logger_->error(...)` format + 写非 atomic `float` 成员，**违反 §4.9 RT 铁律 + 有数据竞态**
+- 单线程闭环等价：RX 改 tick 开始 `drain_rx()` 非阻塞 drain；TX 直接 `write()`，靠 `SO_SNDBUF ≥ 1 MB` + `txqueuelen ≥ 1000` 保稳态 <10 µs 返回
+
 **必须实现**：
 - 4 路独立 SocketCAN（支持 `can0`–`canN`，数量可配）
 - MIT 模式帧（position + velocity + kp/kd + torque）；寄存器序列见上游 `src/motors/src/drivers/dm/`
@@ -397,12 +418,18 @@ robot-app-atom01/
 - `set_motor_zero`：写零点到电机 EEPROM（**必须持久化**）
 - `refresh_motor_status` / `get_response_count`：离线判定（`offline_threshold = 25`）
 - `clear_motor_error`
-- **线程模型**：每路 CAN 一个工作线程并行下发；robot-system 走 `robot-s0` rt_thread + io_thread 分工。
-- **RT 约束**：`motor_mit_cmd` 在 RT 路径调用，**禁止分配**（预分配 `can_frame` + `write()` syscall）。
+- 跨线程状态只走 seqlock / atomic / SampleLease；`response_count_` 在 rt_thread 内计数即可，非 atomic
+
+**RT 约束**：
+- `motor_mit_cmd` 在 rt_thread 路径上调用，**禁止分配**（预分配 `can_frame` 数组并复用）
+- `write()` 返回 `EAGAIN` → 记 `write_eagain_count` metric，跳过该帧，**不在 rt_thread 内 retry**
+- 无 spdlog / tracing-format / 任何 format 构造；`AtomicU64::fetch_add` 计数，dump 由 pub_thread 完成
+- socket fd 启动时配：`O_NONBLOCK` + `SO_SNDBUF ≥ 1 MB` + 外部 `ip link set canN txqueuelen 1000`
 
 **RT 风险点**：
-- SocketCAN `write()` 阻塞 syscall；RT 线程要么非阻塞 + 轮询，要么保证 kernel 不 block（调 `txqueuelen` + `SO_SNDTIMEO`）。
-- 4 路 CAN = 4 线程；Orange Pi 8 核 OK，但要预约 CPU affinity 避免和内核 RT 线程抢。
+- 单 CAN bus 稳态 write 时间：6 电机 × ~14 B 帧 × 1 Mbps ≈ 780 µs；1 kHz tick 1 ms 边界紧 → **每 rt_thread 必须独占 CPU 核**（CPU affinity）
+- Orange Pi 5+（RK3588 8 核）/ Orin：4 个 CAN rt_thread + ipc + pub + io + s1 + 余 1-2 核 ≈ 8 核正好；**`robot.toml` 里显式指派 affinity**，不让 kernel 自由调度
+- 多 bus 并发 snapshot 写：`RtSnapshotWriter` per-bus slice（seqlock），pub_thread 读多 slice 组装全关节快照 —— 具体 API 形状待 v0.4 多 bus 首次落地时定形（CHANGELOG 2026-04-24 条目有登记）
 
 ### 5.2 `robot-adapters/hipnuc`
 

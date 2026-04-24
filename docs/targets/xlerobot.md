@@ -222,13 +222,39 @@
 
 ### 5.1 `robot-adapters/feetech`（v0.2 Step 10 起规划，v0.4 扩展）
 
-- v0.2 Step 10：单总线单关节（已规划）
-- v0.4 扩展：
-  - 多总线并行（2–3 路 USB-RS485）
+**线程拓扑（方案 B，见 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 "S0 `s0_rt_thread` 多 bus 语义澄清"）**
+
+XLeRobot 有 2–3 路 USB-RS485 → 在 `robot-s0` 内实例化 **M 个 rt_thread，每 bus 一个**（M=2 或 3 看装机）。每个 rt_thread 的 tick 闭环与 ATOM01 CAN 方向一致：
+
+```
+loop {
+    clock.sleep_until(deadline); deadline += tick_period;
+    bus.drain_rx();                            // non-blocking 到 EAGAIN
+    cmd = target_slot.load_latest();
+    if fault = safety_check(&state, &cmd) { bus.safe_output(); continue; }
+    bus.write_frames_serial(&cmd, &state);     // 每 bus N 电机 pipeline
+    snapshot.write_bus_slice(bus.id, &state);
+}
+```
+
+RS485 是半双工，单 bus 不能同时 read+write，所以 "pipeline 读写" 指一次发 N 请求后连续 drain 回应（而非并行 I/O）。这与方案 B 的 tick 闭环天然吻合。
+
+**必须实现**：
+- v0.2 Step 10：单总线单关节验证（M=1）
+- v0.4 扩展到 M=2–3：
+  - 每 USB-RS485 独立 `termios` / file descriptor
   - 底盘速度模式（位置模式之外的模式枚举）
-  - Pipeline 读写（总线内多电机请求）
-- RT 约束：位置命令在 RT 路径调用，禁止分配；响应读取放 io_thread
-- 详细寄存器序列见 dimos `docs/06_lerobot_replace_spec.md`
+  - Pipeline 读写（总线内多电机请求 → 连续响应 drain）
+  - CPU affinity：每 rt_thread 独占一核
+
+**RT 约束**：
+- 位置 / 速度命令在 rt_thread 路径调用，禁止分配（预分配帧缓冲复用）
+- 无 spdlog / format / log；`AtomicU64::fetch_add` 计数，dump 由 pub_thread 完成
+- 跨线程状态只走 seqlock / atomic / SampleLease
+
+**参考**：
+- 寄存器序列：dimos `~/repo/robot/dimos/docs/06_lerobot_replace_spec.md`
+- 硬件 fail-safe：STS3215 `command timeout`（典型 100 ms）—— `robot-adapters/feetech` 必须设置
 
 ### 5.2 `robot-adapters/realsense`（**新 crate**，v0.4）
 
