@@ -480,6 +480,19 @@ fn run(args: &Args) -> Result<(), i32> {
     // ---- 8) 注册 signal handlers ----
     install_signal_handlers();
 
+    // ---- 8b) 自动 Event::Enable（Part 2 无 RPC，由 daemon 启动时替代 RPC 源）----
+    //
+    // state machine 的 SAFE → READY 转换需要 Event::Enable。v0.3 起由 RPC 网关
+    // 发；Part 2 简化：daemon 启动时立即发一次，配合 initial_guards 的 all-true
+    // 推进到 READY。之后 ipc_thread 收到第一个 heartbeat 会把 READY 推到
+    // ENABLED.Active。跳过 EStop latch 时 estop_latched=true → try_transition 拒绝
+    // 进 READY，state 留在 SAFE —— 期望行为。
+    if !initial_estop_latched {
+        let _ = event_tx.send(Event::Enable);
+    } else {
+        eprintln!("estop_latched = true → not auto-sending Event::Enable");
+    }
+
     // ---- 9) 主 loop：等 shutdown flag / smoke 超时 / state = STOPPING ----
     let start = std::time::Instant::now();
     let mut last_report = start;
