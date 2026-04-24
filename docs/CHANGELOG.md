@@ -1887,3 +1887,44 @@ system health cpu_usage_pct=8.83  ... mem_used_pct=84.95
 - 复审触发：
   - B'c 实施时 supervisor ↔ state_machine 交互 → 依赖 task-30 先落地
   - PolicyKit / systemd D-Bus 权限粒度评估 → 可能改 systemd unit 配置
+
+---
+
+## 2026-04-25 · task-30 设计方案：state_machine ↔ adapter 执行链路（**状态：草案 / 等 review**）
+
+### 涉及小节
+
+- 路线图步骤 5（handoff 2026-04-25_1 §8 "task-30 高优先候选"）
+- `docs/handoffs/2026-04-25_1.md` §7.5.2 架构缺口记录的延续
+- **不动 `docs/00_design.md`**（§4.9 / §6.7 / §1.4 全保）
+
+### 产出
+
+- 新增 `docs/designs/task-30_state_machine_adapter_link.md`（523 行设计文档）
+  - §1 问题陈述：当前 state_machine 只反映状态不驱动 adapter；EStop 不断扭是
+    安全级 bug；ControlMode::Stop 被 adapter 忽略
+  - §2 设计原则（硬约束）：RT 铁律 / systemd supervisor / trait 外部签名 / panic
+    abort / 单测 100% 向后兼容 / 允许增量
+  - §3 架构图：当前 vs task-30 后（io_helper thread 接管 adapter 所有权）
+  - §4 候选方案 A-F 对比，**推荐方案 F**（adapter 在 io_helper 独占 + RT 读写
+    lock-free POD）
+  - §5 详细设计：AdapterReq/Resp + AdapterCtrlClient + AdapterCtrlServer
+    + HotShared；`ManipulatorAdapter::hold_current_position` 加默认 no-op
+  - §6 迁移计划 M1-M4 四个独立 commit（1 + 0.5 + 2 + 1 ≈ 4.5 h）
+  - §7 测试覆盖：单测 / integration / soak / Orin 真机
+  - §8 风险 R1-R4 + 回滚策略（每 commit 独立 revert）
+  - §9 不做的事
+  - §10 决议请求（5 个问题请 user 回复）
+
+### 5 个决议请求（等 user review）
+
+1. 整体方向方案 F 是否 approve？
+2. 迁移计划 M1-M4 分 commit 是否合理？
+3. `hold_current_position` trait 默认 no-op 是否接受？
+4. rt_thread 降级为纯数据通路（5.5.b，一帧 ≤20 ms 延迟）是否接受？
+5. feature flag `state_machine_adapter_link` 是否需要？默认 on / off？
+
+### 审阅
+
+- 提议：Claude Code（2026-04-25 路线图步骤 5 "A 设计方案"）
+- 等决：用户 loosqk
