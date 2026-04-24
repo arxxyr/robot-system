@@ -8,12 +8,12 @@
 
 | 平台 | 上游参考 | 框架阶段 | 状态 | 文档 |
 |------|---------|---------|------|------|
-| XLeRobot | `dimos`（Python） | v0.4（首个 adapter 落地目标） | 规划中 | 见 `00_design.md` §11.3（暂不独立成 target spec） |
+| XLeRobot 双臂 + 全向底盘 | `dimos`（Python） | v0.4（首个 adapter 落地目标） | 规划中（骨架） | [`xlerobot.md`](xlerobot.md) |
 | ATOM01 人形 | `atom01_deploy`（ROS 2 + C++） | v0.5 候选（端到端 RL 推理） | 规划中 | [`atom01.md`](atom01.md) + [`atom01_inference_node_d983373.md`](atom01_inference_node_d983373.md) + [`atom01_migration.md`](atom01_migration.md) |
-| AgileX Piper | — | v0.6（异构验证） | 规划中 | 见 `00_design.md` §11.4 |
+| AgileX Piper | — | v0.6（异构验证） | 规划中 | 见 `00_design.md` §11.4（立项时建 `piper.md`）|
 | 移动底盘 / 四足 / 其他人形 | — | ≥ v0.7 | 未立项 | — |
 
-> 说明：**XLeRobot 当前不补独立 target 文档**，现役控制栈在 `02_start_here.md` 里有指针。第二个独立 target（如 Piper 实际立项时）会新建 `piper.md`，同 `atom01.md` 骨架，以逼出"骨架是否真可复用"的早期反馈。
+> 说明：第二个真 target（XLeRobot）建在先；ATOM01 建在后。骨架（6 节）是否真可复用看这两家是否都装得下，后续第三家（Piper）落地时作最终验证。
 
 ---
 
@@ -58,20 +58,24 @@
 
 ---
 
-## Spec 登记规则（与 `docs/CHANGELOG.md` 的关系）
+## Spec 登记规则（与 [`../CHANGELOG.md`](../CHANGELOG.md) 的关系）
 
-target 文档里 **仅 §2 训练 / 部署契约** 属于 spec。
+target 文档里 **仅 §2 训练 / 部署契约** 属于 spec。对应 `docs/CHANGELOG.md` 序言的**第 3 类条目**（`target-contract`，2026-04-24 建立）。
 
 | 改动 | 是否走 CHANGELOG | 示例 |
 |---|---|---|
-| 上游 obs_num 从 78 改成 82 | **必须** | §2.2 契约变了 |
-| 上游 `gravity_z_upper` 阈值改 | **必须** | §2.4 倒地判定变了 |
-| 上游 kp/kd 表换了 | **必须** | §2.7 契约变了 |
-| 上游新增一个 ROS 服务 | 不需要 | §3.4 是参考，非契约 |
+| 上游 obs_num 从 78 改成 82 | **必须**（第 3 类 target-contract） | ATOM01 §2.2 契约变了 |
+| 上游 `gravity_z_upper` 阈值改 | **必须** | ATOM01 §2.4 倒地判定变了 |
+| 上游 kp/kd 表换了 | **必须** | ATOM01 §2.7 契约变了 |
+| XLeRobot 三轮运动学矩阵常数变动 | **必须** | XLeRobot §2.3 契约变了 |
+| XLeRobot 校准 JSON schema 加新字段 | **必须** | XLeRobot §2.2 契约变了 |
+| 首次从 dimos 源码填实 XLeRobot §2 TBD 项 | **必须**（每次 batch 填实走一条） | v0.4 开工时批量登记 |
+| 上游新增一个 ROS 服务 / RPC | 不需要 | §3 是参考，非契约 |
 | 硬件从 Orange Pi 换 RDK X5 | 不需要 | §1 是事实，非契约 |
-| 延迟预算数值更新 | 不需要 | §4.3 是设计映射 |
+| 延迟预算数值更新 | 不需要 | §4 是设计映射 |
 | 路线图加减步骤 | 不需要 | 在 `_migration.md`，非 spec |
 | 源码快照过期 | 不需要 | 新建 `_<newcommit>.md`，归档旧 |
+| §6 风险清单追加 | 不需要 | 风险是工程判断，非契约 |
 
 ---
 

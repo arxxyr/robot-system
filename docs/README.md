@@ -6,7 +6,7 @@
 | [`01_implementation_steps.md`](01_implementation_steps.md) | v0.2 实施步骤（10 步强制顺序，执行依据） |
 | [`02_start_here.md`](02_start_here.md) | Claude Code 上手指南（新 session 必读） |
 | [`10_verification.md`](10_verification.md) | 验证测试文档（活文档，Step 5 完成时落骨架，随后每 Step 填实测） |
-| [`CHANGELOG.md`](CHANGELOG.md) | 偏离 `00_design.md` 冻结语义的登记簿 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 冻结后 spec 变更登记簿：①偏离登记 · ②回写登记 · ③Target 契约登记（仅 `targets/<name>.md` §2） |
 | [`targets/`](targets/) | 未来部署目标分析（XLeRobot / ATOM01 / Piper ...）；跟随上游演进更新，不影响冻结设计 |
 
 **首次进入 session 阅读顺序**：`../CLAUDE.md` → `02_start_here.md` → `00_design.md` → `01_implementation_steps.md`
@@ -44,4 +44,4 @@
 
 - **Design spec 冻结**：`00_design.md` 不在代码 PR 中改。发现语义问题 → `CHANGELOG.md` 登记 → 评审通过 → 该动才动。
 - **Implementation / Verification spec 随步更新**：每完成一步同步 "当前位置" / 指标状态 ⏳→🟡→✅。
-- **Target spec 跟随上游**：上游仓库演进时更新 `targets/*.md`，不影响 design spec。
+- **Target spec 跟随上游**：上游仓库演进时更新 `targets/*.md`，不影响 design spec。**§2 契约节改动必经 [`CHANGELOG.md`](CHANGELOG.md) 第 3 类（target-contract）登记**；其他节 PR 直接改。规则表见 [`targets/README.md`](targets/)《Spec 登记规则》。
