@@ -336,6 +336,104 @@ impl<T: SerialTransport> FeetechBus<T> {
         self.transport.write_all(&tx[..n])
     }
 
+    // ── by-id hot-path API（Step 7 task 27c follow-up：消除 HashMap String compare）──
+    //
+    // 火焰图（docs/perf/2026-04-24_task27c_feetech_baseline）显示 `sync_write`
+    // 的 hot frame 之一是 `__memcmp_evex_movbe` —— 来自 `motor_id(name)` 查
+    // `HashMap<String, Motor>` 时的 hash + string compare。`FeetechAdapter`
+    // 在 `connect()` 一次性把 `joint_names → joint_ids: Vec<u8>` 缓存后，
+    // hot path 调下面这两个 by-id API，**完全跳过 HashMap lookup**，零
+    // string compare。
+    //
+    // 现有 by-name `sync_read` / `sync_write` API 保留，给 calibration / 离线
+    // 工具用（这些路径不在 hot path）。
+
+    /// by-id 版 [`sync_read`](FeetechBus::sync_read)：结果按 `ids` 顺序写入
+    /// `out`，避免 HashMap 分配 + String hash 计算。
+    ///
+    /// `out.len()` 必须 ≥ `ids.len()`（多余位置不写）。
+    ///
+    /// # Errors
+    ///
+    /// - `out.len() < ids.len()` → [`FeetechError::ByteLengthMismatch`]
+    /// - 任一回包 id ≠ 期望 id → [`FeetechError::Handshake`]
+    /// - 任一 status `ERROR != 0` → [`FeetechError::StatusError`]
+    /// - 透传 transport / 编码错误
+    pub fn sync_read_by_id_into(
+        &mut self,
+        reg_name: &'static str,
+        ids: &[u8],
+        out: &mut [i32],
+    ) -> Result<(), FeetechError> {
+        if out.len() < ids.len() {
+            return Err(FeetechError::ByteLengthMismatch {
+                expected: ids.len(),
+                actual: out.len(),
+            });
+        }
+        let reg = get_register(reg_name)?;
+
+        // 发请求
+        let mut tx = vec![0u8; 6 + 2 + ids.len()];
+        let n = build_sync_read(reg.addr, reg.length, ids, &mut tx)?;
+        self.transport.write_all(&tx[..n])?;
+
+        // 回包
+        let per_status_len = 6 + usize::from(reg.length);
+        let total = per_status_len * ids.len();
+        let mut rx = vec![0u8; total];
+        self.transport.read_exact(&mut rx)?;
+
+        let mut cursor = 0usize;
+        for (idx, &id) in ids.iter().enumerate() {
+            let pkt: StatusPacket<'_> = parse_status(&rx[cursor..cursor + per_status_len])?;
+            if pkt.id != id {
+                return Err(FeetechError::Handshake(format!(
+                    "sync_read_by_id response id mismatch at idx {idx}: expected {id}, got {}",
+                    pkt.id
+                )));
+            }
+            if pkt.error != 0 {
+                return Err(FeetechError::StatusError(pkt.error));
+            }
+            let raw = combine_bytes_le(pkt.params, usize::from(reg.length))?;
+            out[idx] = decode_value(reg_name, raw);
+            cursor += pkt.consumed;
+        }
+        Ok(())
+    }
+
+    /// by-id 版 [`sync_write`](FeetechBus::sync_write)：直接接 `&[(id, value)]`，
+    /// 跳过 HashMap lookup。**不**等 ACK。
+    ///
+    /// # Errors
+    /// 透传协议 / transport / 编码错误。
+    pub fn sync_write_by_id(
+        &mut self,
+        reg_name: &'static str,
+        entries: &[(u8, i32)],
+    ) -> Result<(), FeetechError> {
+        let reg = get_register(reg_name)?;
+        let length_usize = usize::from(reg.length);
+
+        let mut encoded_data: Vec<(u8, [u8; 4])> = Vec::with_capacity(entries.len());
+        for (id, value) in entries {
+            let encoded = encode_value(reg_name, *value)?;
+            let mut buf = [0u8; 4];
+            split_bytes_le(encoded, length_usize, &mut buf[..length_usize])?;
+            encoded_data.push((*id, buf));
+        }
+        let frame_entries: Vec<(u8, &[u8])> = encoded_data
+            .iter()
+            .map(|(id, data)| (*id, &data[..length_usize]))
+            .collect();
+
+        let total_size = 6 + 2 + frame_entries.len() * (1 + length_usize);
+        let mut tx = vec![0u8; total_size];
+        let n = build_sync_write(reg.addr, reg.length, &frame_entries, &mut tx)?;
+        self.transport.write_all(&tx[..n])
+    }
+
     // ── 工具 ──────────────────────────────────────────────────────────
 
     /// `motor_name` → `motor_id`，未知名 → [`FeetechError::UnknownMotor`]。

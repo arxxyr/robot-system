@@ -243,6 +243,40 @@ fn bench_bus_sync(c: &mut Criterion) {
         });
     });
 
+    // ── Step 7 task 27c follow-up: by-id 对照 ─────────────────────────
+    //
+    // 火焰图揭示 sync_write 的 hot frame 之一是 `__memcmp_evex_movbe`（来自
+    // `motor_id(name)` 查 HashMap<String, Motor> 时的 String compare）。
+    // by-id 版本完全跳过 HashMap lookup，预期消除 30%-40% 开销。
+
+    let ids: Vec<u8> = XLEROBOT_JOINTS.iter().map(|(_, id)| *id).collect();
+
+    g.bench_function("sync_read_present_position_13motor_by_id", |b| {
+        let (mut bus, handle) = make_bus_with_motors(XLEROBOT_JOINTS);
+        let mut out = vec![0_i32; ids.len()];
+        b.iter(|| {
+            for &(_, id) in XLEROBOT_JOINTS {
+                handle.push_rx(&fake_status(id, &[0x00, 0x08]));
+            }
+            bus.sync_read_by_id_into(
+                black_box("Present_Position"),
+                black_box(&ids),
+                black_box(&mut out),
+            )
+            .unwrap();
+            let _ = handle.drain_tx();
+        });
+    });
+
+    g.bench_function("sync_write_goal_position_13motor_by_id", |b| {
+        let (mut bus, _handle) = make_bus_with_motors(XLEROBOT_JOINTS);
+        let entries: Vec<(u8, i32)> = ids.iter().map(|id| (*id, 2048_i32)).collect();
+        b.iter(|| {
+            bus.sync_write_by_id(black_box("Goal_Position"), black_box(&entries))
+                .unwrap();
+        });
+    });
+
     g.finish();
 }
 

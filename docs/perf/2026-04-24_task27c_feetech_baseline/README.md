@@ -12,9 +12,17 @@
 - **task 28 真机延迟瓶颈**几乎全部在 USB-RS485 wire RTT（1 Mbps × packet
   ~50 B / motor → 几 ms 量级），**不**在 Rust 协议层。
 - **火焰图揭示的真实可优化点**（task 28 + 留意；本次不改）：
-  - `FeetechBus::motor_id` 是 `HashMap<String, Motor>` 查找，`__memcmp_evex_movbe`
+  - ~~`FeetechBus::motor_id` 是 `HashMap<String, Motor>` 查找，`__memcmp_evex_movbe`
     是 hot frame；改 *index-based lookup*（预编译 motor name → joint index 数组）
-    可消除 hash + string compare 开销。
+    可消除 hash + string compare 开销。~~ → ✅ **已落（commit 后续）**：
+    `FeetechBus` 加 `sync_read_by_id_into` / `sync_write_by_id` API；
+    `FeetechAdapter` 在 `connect()` 缓存 `joint_ids: Vec<u8>` + 预分配
+    `pos_raw` / `vel_raw` / `cmd_entries` 缓冲，hot path **零 HashMap lookup +
+    零 alloc**。实测改善：
+    | case | by-name | by-id | 改善 |
+    |---|---|---|---|
+    | `sync_read_13motor` | 1044 ns | **482 ns** | **-54%** (2.17×) |
+    | `sync_write_13motor` | 298 ns | **138 ns** | **-54%** (2.16×) |
   - `bench/integration` 用的 `MockTransport` 走 `Mutex<VecDeque<u8>>` + `Vec` alloc，
     sync_read 测出的 866 ns **包含约 30%-40% 的 mock fixture 开销**（见 §4.1）；
     真硬件 `serialport::SerialPort` 的 syscall 路径开销分布会**完全不同**，

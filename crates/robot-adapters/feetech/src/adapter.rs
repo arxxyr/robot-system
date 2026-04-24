@@ -73,6 +73,18 @@ pub struct FeetechAdapter<T: SerialTransport> {
     info: AdapterInfo,
     bus: FeetechBus<T>,
     joint_names: Vec<String>,
+    /// `joint_names` 翻译成 motor id（hot path 用，避开 HashMap String compare）。
+    /// `connect()` 内一次性填充；`new()` 只能拿 `Vec::new()` placeholder。
+    /// Step 7 task 27c follow-up 优化点（火焰图发现 `__memcmp_evex_movbe` 来自
+    /// `FeetechBus::motor_id` HashMap lookup）。
+    joint_ids: Vec<u8>,
+    /// `read_state` 用的 position raw 缓冲（预分配 `joint_count` 长度，hot
+    /// path 不 alloc）。
+    pos_raw: Vec<i32>,
+    /// `read_state` 用的 velocity raw 缓冲。
+    vel_raw: Vec<i32>,
+    /// `write_command` 用的 entries 缓冲（id, encoded raw）。
+    cmd_entries: Vec<(u8, i32)>,
     /// 关节限位（v0.2 默认全开 ±π，task 28 真机阶段从 calibration JSON 读）。
     limits: JointLimits,
     /// `joint_names` 长度，缓存避免热路径调 `len()`。
@@ -119,6 +131,12 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             },
             bus,
             joint_names: config.joint_names,
+            // joint_ids 留空，connect() 时填充（避免 new 也要查 bus 的 HashMap）
+            joint_ids: Vec::new(),
+            // hot path 缓冲预分配到 joint_count，read_state / write_command 不 alloc
+            pos_raw: vec![0_i32; joint_count_usize],
+            vel_raw: vec![0_i32; joint_count_usize],
+            cmd_entries: Vec::with_capacity(joint_count_usize),
             limits,
             joint_count: u8::try_from(joint_count_usize).expect("joint_count <= MAX_JOINTS=32"),
         })
@@ -136,7 +154,19 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     }
 
     fn connect(&mut self) -> Result<(), RobotError> {
-        self.bus.connect(true).map_err(Into::into)
+        self.bus.connect(true).map_err(RobotError::from)?;
+        // Step 7 task 27c follow-up：一次性翻译 joint_names → joint_ids，
+        // 让 read_state / write_command hot path 走 by-id API 跳过 HashMap lookup。
+        self.joint_ids.clear();
+        self.joint_ids.reserve(self.joint_names.len());
+        for name in &self.joint_names {
+            let id = self.bus.motor_id(name).map_err(|e| {
+                eprintln!("feetech connect: motor_id({name}): {e}");
+                RobotError::from(e)
+            })?;
+            self.joint_ids.push(id);
+        }
+        Ok(())
     }
 
     fn disconnect(&mut self) -> Result<(), RobotError> {
@@ -145,33 +175,29 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     }
 
     fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
-        let names: Vec<&str> = self.joint_names.iter().map(String::as_str).collect();
-        let positions = self
-            .bus
-            .sync_read("Present_Position", &names)
+        // Step 7 task 27c follow-up：走 by-id API + 复用预分配 raw 缓冲，
+        // 完全跳过 HashMap String compare（火焰图 hot path 优化）。
+        // pos_raw / vel_raw 在 new() 已 vec![0; joint_count]，size 与 joint_count
+        // 对齐，sync_read_by_id_into 写满 joint_ids.len() 个槽位即可。
+        self.bus
+            .sync_read_by_id_into("Present_Position", &self.joint_ids, &mut self.pos_raw)
             .map_err(|e| {
                 eprintln!("feetech read_state Present_Position: {e}");
                 RobotError::from(e)
             })?;
-        let velocities = self
-            .bus
-            .sync_read("Present_Velocity", &names)
+        self.bus
+            .sync_read_by_id_into("Present_Velocity", &self.joint_ids, &mut self.vel_raw)
             .map_err(|e| {
                 eprintln!("feetech read_state Present_Velocity: {e}");
                 RobotError::from(e)
             })?;
 
-        for (i, name) in self.joint_names.iter().enumerate() {
-            let pos_raw = *positions.get(name).ok_or(RobotError::HardwareFault(
-                "feetech missing motor in sync_read",
-            ))?;
-            let vel_raw = *velocities.get(name).ok_or(RobotError::HardwareFault(
-                "feetech missing motor in sync_read",
-            ))?;
-            out.positions[i] = raw_to_rad(pos_raw);
+        let n = self.joint_ids.len();
+        for i in 0..n {
+            out.positions[i] = raw_to_rad(self.pos_raw[i]);
             // velocity raw 单位是 0.01 rev/s 还是 RPM 取决于固件 setting；v0.2 直接
             // 透传 raw 到 f32，等 task 28 实测用示波器 / known 命令对照定单位换算。
-            out.velocities[i] = vel_raw as f32;
+            out.velocities[i] = self.vel_raw[i] as f32;
             out.torques[i] = 0.0; // STS3215 无 torque sensor
         }
         out.joint_count = self.joint_count;
@@ -193,16 +219,20 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             return Ok(());
         }
 
-        let n = std::cmp::min(cmd.positions.len(), self.joint_names.len());
-        let mut entries: Vec<(&str, i32)> = Vec::with_capacity(n);
+        // Step 7 task 27c follow-up：复用预分配 cmd_entries 缓冲 + by-id API。
+        // joint_ids 已在 connect() 缓存好，零 HashMap lookup。
+        let n = std::cmp::min(cmd.positions.len(), self.joint_ids.len());
+        self.cmd_entries.clear();
         for i in 0..n {
             let raw = rad_to_raw(cmd.positions[i]);
-            entries.push((self.joint_names[i].as_str(), raw));
+            self.cmd_entries.push((self.joint_ids[i], raw));
         }
-        self.bus.sync_write("Goal_Position", &entries).map_err(|e| {
-            eprintln!("feetech write_command sync_write Goal_Position: {e}");
-            RobotError::from(e)
-        })
+        self.bus
+            .sync_write_by_id("Goal_Position", &self.cmd_entries)
+            .map_err(|e| {
+                eprintln!("feetech write_command sync_write Goal_Position: {e}");
+                RobotError::from(e)
+            })
     }
 
     fn set_mode(&mut self, mode: ControlMode) -> Result<(), RobotError> {
@@ -269,6 +299,12 @@ mod tests {
     use crate::types::Motor;
     use std::collections::HashMap;
 
+    /// 构造 + connected 状态的 adapter。喂 handshake 回包（每 motor 2 包：
+    /// PING ack + Model_Number 777）让 `connect()` 内部 handshake + populate
+    /// `joint_ids` 全部跑完，drain 掉 handshake tx，返回干净 handle。
+    ///
+    /// task 27c follow-up 之后 read_state / write_command 必须在 `joint_ids` 已
+    /// populate 后才能正确工作，所以测试一律从 connected 状态出发。
     fn make_adapter(joints: &[(&str, u8)]) -> (FeetechAdapter<MockTransport>, MockHandle) {
         let (transport, handle) = MockTransport::new();
         let mut motors = HashMap::new();
@@ -276,7 +312,7 @@ mod tests {
             motors.insert((*name).to_string(), Motor::new(*id).unwrap());
         }
         let bus = FeetechBus::new(transport, motors).unwrap();
-        let adapter = FeetechAdapter::new(
+        let mut adapter = FeetechAdapter::new(
             FeetechAdapterConfig {
                 adapter_name: "feetech_sts3215_test",
                 joint_names: joints.iter().map(|(n, _)| (*n).to_string()).collect(),
@@ -284,6 +320,13 @@ mod tests {
             bus,
         )
         .unwrap();
+        // handshake：connect() 对每个 motor 调 ping（PING ack + READ Model_Number）
+        for &(_, id) in joints {
+            handle.push_rx(&ack_status(id));
+            handle.push_rx(&read_status(id, &[0x09, 0x03])); // 777 LE
+        }
+        adapter.connect().unwrap();
+        let _ = handle.drain_tx();
         (adapter, handle)
     }
 
