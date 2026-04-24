@@ -1374,7 +1374,7 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
 
 ---
 
-## 2026-04-25 · Step 7 task 29 feetech calibration JSON loader + silent clamp helper（**状态：完整通过（commit 1/2/3 代码 + Orin 真机闭环真转电机 ±5°）**）
+## 2026-04-25 · Step 7 task 29 feetech calibration JSON loader + silent clamp helper（**状态：完整通过（commit 1-5 + Orin 真机闭环 + 防跳 fix）**）
 
 ### 涉及小节
 
@@ -1539,6 +1539,49 @@ timeout 14 ./target/release/robotctl watch --robot-id xlerobot_task29 \
   §6.7 + §10.1 要求 < 500 ms）
 - `robotctl calibrate --apply` 工具（如果未来需要 Rust 侧主动写 EEPROM）
 - Orin flamegraph aarch64 hot path（任务 27c 火焰图是本机 mock，真机分布可能不同）
+
+### commit 4/5 防跳 follow-up（本 session 后续发现 + 修复）
+
+三端闭环真机看到的瑕疵：**从闭合位启动后，mock_s1 接管瞬间电机从 raw ~1400
+（闭合）跳到 raw 2047（center）≈ 36° "张开到一半"**。先做了两条独立修复：
+
+- **commit 4**（`61d2b76` · adapter defensive）：`FeetechAdapter::sync_goal_to_
+  present` 加 readback + retry：写完 Goal 后 `sleep 20 ms → sync_read Goal_Position`
+  验证，若差 > `SYNC_GOAL_TOLERANCE (20 tick)` → 重写最多 3 次；失败返回
+  `FeetechError::SyncGoalReadbackMismatch` + 每次 attempt eprintln 对比日志。
+  最初假设 "Torque=0 时 sync_write 被忽略"，但用户澄清**从没断电** → adapter
+  层不是 root cause。**保留作 defensive 兜底**（真冷启动 + 固件异常时仍有用），
+  3 新单测覆盖 retry / tolerance / max-attempts 边界。
+- **commit 5**（`25658f0` · **真 root cause fix**）：mock_s1 加 `--anchor-timeout-ms`
+  参数（默认 1000）。启动时订阅 S0 state topic 读一帧 `positions[0..joints]`
+  做正弦 bias，`target[i] = bias[i] + amp*sin(phase + i*π/4)`。原公式 `amp*sin(phase)`
+  第一帧 sin(0)=0 rad = raw 2047 (center) → motor 被硬拉到中点；锚定后第一
+  帧 Goal=bias=当前位置 → **motor 不动**。超时 / 订阅失败 fallback 旧行为 +
+  warning。
+
+**commit 5 真机验证**（bus1 left_arm_gripper，夹爪已在 raw 1418 闭合位）：
+
+| 验证项 | 结果 |
+|---|---|
+| mock_s1 anchor log: `bias=[-0.962]` | ✅ 对应 raw ≈ 1420 |
+| 第一帧 pos = -0.882 rad | ✅ 不是 0.080 (center)，完全无 36° 跳变 |
+| 正弦围绕 bias 摆动 `[-0.969, -0.882]` | ✅ 幅值 ±0.044（限位前有效开合） |
+| 负峰被 silent clamp 卡在 range_min (-0.98) | ✅ clamp 同时生效，验证 commit 2 |
+| S1 duration 结束 → `hold_current` 锁死 -0.969 × 14 次 | ✅ hold_current 不 drift |
+| 用户肉眼："没跳，紧紧闭合没动" | ✅ bias 太接近 range_min → 负半周期物理被 clamp 限位，视觉表现为"挤压闭合" |
+
+**commit 5 改动范围**：
+- `crates/robot-s1/src/bin/mock_s1.rs`：加 `--anchor-timeout-ms <MS>` CLI（默认
+  1000，0=禁用）；启动时开 state subscriber + 10 ms 间隔 poll；主循环正弦公
+  式加 bias；三条 fallback 路径（subscriber open 失败 / view decode 失败 /
+  轮询 timeout）全部 `warning + bias=0` 保留旧行为
+
+### commit 5 已知小瑕疵（非 regression）
+
+- `robotctl watch` 用 `timeout 14` 被 SIGTERM kill 时 segfault。全程 13s 数据
+  正常，是 iceoryx2 subscriber drop 顺序问题，**不影响功能**。记 task-30
+  候选：robotctl signal handler 提早 drop subscriber 或改 `ctrlc` crate 优雅
+  退出。
 
 ### 依赖白名单更新（robot-adapter-feetech）
 

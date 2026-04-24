@@ -17,7 +17,7 @@
 ```
 设计版本:  v0.1.2（冻结）
 实现阶段:  v0.2 最小闭环
-当前步骤:  Step 7 task 24-29 全落地（含 Orin 真机闭环真转电机）：feetech adapter 协议栈 + criterion bench + by-id hot path -54% + real-hw feature + USB-RS485 真硬件 ping smoke + calibration JSON loader + 防飞 enable 序列 + hold_current_position helper。**Orin bus1 left_arm_gripper (ID=6) 真转电机通过**：±5° 正弦 × 3 周期 + CtrlLostHold 子态 hold_current 语义真机数据验证。见 docs/handoffs/2026-04-25_1.md。下一步 Step 8：EStop latch 文件双写 + 重启恢复（或可选 bus2 13-motor / fail-safe 时延实测）。
+当前步骤:  Step 7 task 24-29 全落地（含 Orin 真机闭环 + 启动不跳 fix）：feetech adapter 协议栈 + criterion bench + by-id hot path -54% + real-hw feature + calibration JSON loader + 防飞 enable 序列 + hold_current_position helper + sync_goal_to_present readback 兜底 + mock_s1 --anchor-timeout-ms 启动锚定当前位置 + feetech_poke example 诊断工具。**Orin 真机三轮闭环全通**：左单端 ±5° / 单端 ±17° / **双端 ±17° 同步** + 肉眼物理确认。发现架构缺口 task-30 候选：state_machine ↔ adapter 执行链路未接通，ControlMode::Stop 不会真 disable torque。详 docs/handoffs/2026-04-25_1.md。下一步候选：task 30（state_machine 接通 adapter）/ bus2 13-motor / Step 8 EStop。
 上游项目:  /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
 

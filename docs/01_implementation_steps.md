@@ -10,7 +10,7 @@
 > Orin baseline harness 就位；task 22 实测 p50 21 µs / p99 1–15 ms，PREEMPT 内核 + 无 isolcpus 系统瓶颈。
 > **Step 6.5（Orin RT 调优攻克 §10.1 硬门槛）已搁置** —— XLeRobot 不需要高实时 + Orin Nano 算力偏弱，详见 `docs/CHANGELOG.md` 2026-04-24 "Step 6.5 RT 调优搁置 + XLeRobot 不卡 §10.1 RT 硬门槛"。Orin 真要刷数据走 `scripts/baseline.sh orin`。
 > Step 7 task 24-28（`2026-04-24_6.md`）：CI baseline-smoke + ConfigIdentity + rt_guard soak + feetech adapter 协议栈 + criterion bench + by-id hot path -54% + real-hw feature + Orin ping smoke。
-> Step 7 task 29 + Step 10 bring-up（`2026-04-25_1.md`）：feetech calibration JSON loader + 防飞 enable 序列 + hold_current_position helper；**Orin bus1 `left_arm_gripper` (ID=6) 真转电机通过** ±5° 正弦 × 3 周期，CtrlLostHold hold_current 语义真机数据确认。
+> Step 7 task 29 + Step 10 bring-up（`2026-04-25_1.md`）：feetech calibration JSON loader + 防飞 enable 序列 + hold_current_position helper + sync_goal_to_present readback 兜底 + mock_s1 `--anchor-timeout-ms` 启动锚定当前位置 + feetech_poke example 诊断工具；**Orin 真机三轮闭环全通**：左单端 ±5° / 单端 ±17° / **双端 ±17° 同步** 肉眼物理确认。发现 task-30 候选：state_machine ↔ adapter 执行链路未接通。
 
 ---
 
