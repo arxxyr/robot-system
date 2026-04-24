@@ -2,13 +2,15 @@
 
 > 本文档是 [`docs/00_design.md`](00_design.md) §11.2 "v0.2 实现顺序" 的可执行版本。
 > 10 步顺序**强制**；第 6 步闭环打通前不接任何真硬件。
-> 当前位置：**Step 6 Part 1 + Part 2 功能性完成 · Step 7 未开始**。
+> 当前位置：**Step 6 + Step 7 task 24-29 功能性完成 · Step 10 Feetech 真机 bring-up 通过 · Step 8 未开始**。
 > Part 1 (`2026-04-24_3.md`)：6 crate + rt_thread + state machine + s0_daemon smoke。
 > Part 2：task 10-12 `c738b87` → 13 `de6ffc6` → 14 `414fee1` → 15 `a83cee1` →
 > 16 `f30b5e8` → 17 `87def64` → 18 `2189daf` → 19 `10afe8d` → 20 `85fa270` →
 > 21 `8d377ab`。v0.2 最小闭环数据路径本机 release 3-端跑通（S0 daemon + mock_s1 + robotctl）。
 > Orin baseline harness 就位；task 22 实测 p50 21 µs / p99 1–15 ms，PREEMPT 内核 + 无 isolcpus 系统瓶颈。
 > **Step 6.5（Orin RT 调优攻克 §10.1 硬门槛）已搁置** —— XLeRobot 不需要高实时 + Orin Nano 算力偏弱，详见 `docs/CHANGELOG.md` 2026-04-24 "Step 6.5 RT 调优搁置 + XLeRobot 不卡 §10.1 RT 硬门槛"。Orin 真要刷数据走 `scripts/baseline.sh orin`。
+> Step 7 task 24-28（`2026-04-24_6.md`）：CI baseline-smoke + ConfigIdentity + rt_guard soak + feetech adapter 协议栈 + criterion bench + by-id hot path -54% + real-hw feature + Orin ping smoke。
+> Step 7 task 29 + Step 10 bring-up（`2026-04-25_1.md`）：feetech calibration JSON loader + 防飞 enable 序列 + hold_current_position helper；**Orin bus1 `left_arm_gripper` (ID=6) 真转电机通过** ±5° 正弦 × 3 周期，CtrlLostHold hold_current 语义真机数据确认。
 
 ---
 

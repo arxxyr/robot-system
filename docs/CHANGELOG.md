@@ -1374,7 +1374,7 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
 
 ---
 
-## 2026-04-25 · Step 7 task 29 feetech calibration JSON loader + silent clamp helper（**状态：登记 / 实施（commit 3/3 代码已落地，Orin 真机闭环待验证）**）
+## 2026-04-25 · Step 7 task 29 feetech calibration JSON loader + silent clamp helper（**状态：完整通过（commit 1/2/3 代码 + Orin 真机闭环真转电机 ±5°）**）
 
 ### 涉及小节
 
@@ -1496,46 +1496,49 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
    - 文件头长注释说明：calibration 只读 / 不写 EEPROM / follow-current 防飞 /
      bus1 拓扑
 
-### commit 3 待做：Orin 真机端到端闭环（**下一步单独执行**）
+### commit 3 Orin 端到端闭环实测（**已完整通过**，详见 `docs/handoffs/2026-04-25_1.md` §3）
 
-触发前必须：
-- `ssh loosqk@10.0.1.41 'sudo -n systemctl stop xlerobot-coordinator xlerobot-web'`
-  （释放 USB-RS485 + 摄像头；handoff §3.1 已实测）
-- 空载 / 桌面夹好夹具，**不**装到机械臂上（用户 2026-04-25 指令"空载优先"待
-  后续讨论）
-- Orin 上 `git pull` 到本 commit hash
+**bring-up 策略调整**（用户 2026-04-25 指令"只动末端夹爪"）：
+原 config 选 `left_arm_shoulder_pan` (ID=1) —— 机械臂未装到小车时旋转 shoulder
+风险大；切换到 `left_arm_gripper` (ID=6)，动的是末端夹爪开合，无机械风险。
+config 改动在 commit `82e7a13`（task29 config 切换）。
 
-Orin 侧三端闭环命令（计划）：
+**三端闭环实测结果**：
+
+| 验证项 | 结果 |
+|---|---|
+| `calibration=loaded`（factory 日志） | ✅ |
+| auto-enable 序列不飞（smoke 5s 无 S1） | ✅ state=Ready，夹爪不动 |
+| state 升 Enabled（control_link Ok） | ✅ S1 心跳 + command 正常接收 |
+| Goal_Position 真物理运动 ±5° | ✅ 用户肉眼物理确认夹爪真的在开合 |
+| 正弦振幅跟踪精度 | ✅ 实测 0.083 vs 目标 0.087 rad，误差 4.6% |
+| 正弦周期精度 | ✅ 4 s / cycle = 0.25 Hz，3 个完整周期 |
+| `CtrlLostHold` 子态触发（S1 duration 到） | ✅ output_mode: Hold |
+| `hold_current_position` helper 工作 | ✅ 12 个采样锁死 `-0.008` rad，不 drift / 不归零 |
+| s0 / s1 / robotctl clean shutdown | ✅ |
+
+实测命令（供复现 / 后续验证参考）：
 
 ```bash
-# 终端 A：s0_daemon（带 task29 config，含 calibration_paths）
 ./target/release/s0_daemon \
   --config configs/xlerobot_task29_single_joint.toml \
-  --latch-path /tmp/robot-task29/estop_latch
-
-# 终端 B：mock_s1 推 Goal_Position ±5° 小角度往返（sinusoid）
-./target/release/mock_s1 \
-  --robot-id xlerobot_task29 \
-  --hardware-id left_arm_single \
-  --joint-count 1
-
-# 终端 C：robotctl status 观察
-./target/release/robotctl status --robot-id xlerobot_task29
+  --latch-path /tmp/robot-task29/estop_latch --smoke-duration 18s &
+sleep 2
+./target/release/mock_s1 --robot-id xlerobot_task29 \
+  --hardware-id left_arm_single --joints 1 \
+  --amplitude 0.087 --frequency 0.25 --duration 12s &
+sleep 1
+timeout 14 ./target/release/robotctl watch --robot-id xlerobot_task29 \
+  --hardware-id left_arm_single --interval-ms 250
 ```
-
-验证项：
-- s0_daemon 启动日志含 `calibration=loaded`（factory 日志）
-- follow-current 冻结：启动 2 s 内 motor 不动（即使 mock_s1 还未开始）
-- mock_s1 推 ±5° → motor 真物理运动 ±5°（用手感 / 示波器观察 current spike 验证）
-- range 超限实验：手动推 mock_s1 发 50° goal → silent clamp 到
-  `range_max - center_rad`（dimos `left_arm_shoulder_pan`: range_max=3301 →
-  rad ≈ +1.924 rad ≈ 110°，所以 50° 实际在 clamp 范围内不触发，要故意测
-  clamp 需要发 > 110° 的 goal）
 
 **未做**（留更后续 session）：
 - bus2（5A7C122340 右臂 + 底盘）多 motor 同时闭环
-- fail-safe 时延实测（kill -9 s0_daemon → motor torque disable 时延）
-- dimos 现有 EEPROM 的保护性 dump / 备份
+- 13-motor 全栈 sync_read（双 bus 同时）
+- fail-safe 时延实测（kill -9 s0_daemon → motor torque disable 时延，设计
+  §6.7 + §10.1 要求 < 500 ms）
+- `robotctl calibrate --apply` 工具（如果未来需要 Rust 侧主动写 EEPROM）
+- Orin flamegraph aarch64 hot path（任务 27c 火焰图是本机 mock，真机分布可能不同）
 
 ### 依赖白名单更新（robot-adapter-feetech）
 
@@ -1580,13 +1583,16 @@ Orin 侧三端闭环命令（计划）：
 | `docs/CHANGELOG.md` 本条 | 新增 / 更新 | 1 + 2 + 3 |
 | `docs/00_design.md` | **不动**（设计冻结） | — |
 
-### 验证（commit 3 代码落地后）
+### 验证（task 29 全部完成后）
 
 - `cargo fmt --all --check` ✅
 - `cargo clippy --all --all-targets -- -D warnings` ✅（零警告）
-- `cargo test --all` ✅ 全部绿；feetech 单测 **105 pass**（commit 1 的 98 + commit 2 的 7）
+- `cargo test --all` ✅ 全部绿；feetech 单测 **105 pass**（commit 1 的 98 + commit 2 的 7）；
+  workspace 总 **336 pass** / 0 fail / 7 ignored
 - matrix features 本机 build：`mock-only` / `xlerobot` / `atom01` 三个组合 ✅
-- `xlerobot-real` + Orin 端到端闭环：**下一步单独执行**（见 commit 3 改动范围）
+- **`xlerobot-real` + Orin 真机端到端闭环**：✅ bus1 `left_arm_gripper` (ID=6)
+  真转电机通过（±5° 正弦 × 3 周期 + `CtrlLostHold` 子态 hold_current_position
+  语义确认）。详 `docs/handoffs/2026-04-25_1.md` §3
 
 ### 审阅
 
