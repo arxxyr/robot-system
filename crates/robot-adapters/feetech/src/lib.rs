@@ -63,6 +63,7 @@
 pub mod adapter;
 pub mod bus;
 pub mod calibration;
+pub mod calibration_io;
 pub mod encoding;
 pub mod error;
 #[cfg(feature = "real-hw")]
@@ -74,6 +75,7 @@ pub mod types;
 
 pub use adapter::FeetechAdapter;
 pub use bus::FeetechBus;
+pub use calibration_io::{clamp_raw, load_and_merge, load_file};
 pub use error::FeetechError;
 #[cfg(feature = "real-hw")]
 pub use factory::FeetechFactory;

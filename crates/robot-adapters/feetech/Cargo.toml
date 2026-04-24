@@ -22,6 +22,12 @@ inventory  = { workspace = true }
 # Step 7 task 28：real-hw feature 拉 serialport，提供 RealSerialTransport +
 # 注册 FeetechFactory（task 28 真机阶段必需；CI / dev 默认 off 走 mock）。
 serialport = { workspace = true, optional = true }
+# Step 7 task 29 (2026-04-25)：MotorCalibration JSON loader，格式与 dimos
+# scripts/calibrate.py 输出 1:1 兼容。纯 deserialize + try_from 校验，不写
+# EEPROM（EEPROM 写仍走 calibration::write_calibration / set_half_turn_homings
+# 这条路，调用方自己控制）。白名单登记 docs/CHANGELOG.md 2026-04-25。
+serde      = { workspace = true }
+serde_json = { workspace = true }
 
 [features]
 default = []
@@ -35,6 +41,8 @@ real-hw = ["dep:serialport"]
 # Step 7 task 27c：criterion bench harness（5 组：sign-magnitude / LE byte /
 # protocol packet / parse_status / bus end-to-end）。
 criterion = { workspace = true }
+# Step 7 task 29：calibration_io 单测用 NamedTempFile 写 JSON fixture。
+tempfile  = { workspace = true }
 
 [[bench]]
 name = "feetech_bench"

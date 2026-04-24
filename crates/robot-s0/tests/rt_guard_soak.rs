@@ -17,7 +17,7 @@
 //!    任何堆分配立即 panic（thread panic propagate 到 `JoinHandle::join`）。
 //! 2. **0 `Arc::clone` / `Arc::drop` in RT scope**：`rt_entry!` 同时挂
 //!    `RtArcGuard`，`RtArc::clone` / `RtArc::drop` 在 scope 内 panic。
-//! 3. **稳态吞吐**：tick_count ≥ `duration * tick_hz * 0.95`，证明 RT 循环
+//! 3. **稳态吞吐**：`tick_count` ≥ `duration * tick_hz * 0.95`，证明 RT 循环
 //!    没被周期性 stall。
 //! 4. **stderr/journal 无 `assert_no_alloc` 警告**：本文件代码没 import 任何
 //!    会在 RT 闭环里调用 alloc 的 helper（数据全 stack-allocated POD）。
@@ -34,7 +34,7 @@
 //! ### 不做的事
 //!
 //! - 不接 iceoryx2（避免 transport 层 alloc 干扰；纯 RT loop alloc 守卫）。
-//! - 不接 SCHED_FIFO（dev 机 / CI 都拿不到 rtprio；本测试是 *alloc 守卫*，
+//! - 不接 `SCHED_FIFO`（dev 机 / CI 都拿不到 rtprio；本测试是 *alloc 守卫*，
 //!   不是 *latency 守卫*）。
 //! - 不接 mlockall（同上）。
 

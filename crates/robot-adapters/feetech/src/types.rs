@@ -1,5 +1,7 @@
 //! `Motor` / `MotorCalibration` 强类型，源自 dimos `feetech_io/types.py` 全 49 行。
 
+use serde::{Deserialize, Serialize};
+
 use crate::error::FeetechError;
 use crate::registers::STS3215_RESOLUTION;
 
@@ -31,13 +33,46 @@ impl Motor {
 /// - `homing_offset`：sign-magnitude 11-bit signed → 限制 \[-2047, +2047\]
 /// - `range_min` / `range_max`：raw unsigned 12-bit → 限制 \[0, 4095\]
 /// - `drive_mode`：Feetech 原生方向反转，0 / 1（v0.2 暂未消费，留向后兼容）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// ## JSON 反序列化
+///
+/// 通过 `#[serde(try_from = "MotorCalibrationRaw")]` 接入 serde：读到的字段
+/// 会先填到内部 [`MotorCalibrationRaw`]，再调 [`Self::new`] 做范围校验 —— 与
+/// 直接 `new` 构造走的是同一条校验路径，保证 JSON / 代码两条入口等价。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "MotorCalibrationRaw")]
 pub struct MotorCalibration {
     pub id: u8,
     pub drive_mode: u8,
     pub homing_offset: i32,
     pub range_min: u16,
     pub range_max: u16,
+}
+
+/// 反序列化用的 "unchecked" struct：字段布局与 dimos `scripts/calibrate.py`
+/// 输出一致，`drive_mode` 可缺省（默认 0），对应 dimos `entry.get("drive_mode", 0)`。
+#[derive(Debug, Clone, Copy, Deserialize)]
+struct MotorCalibrationRaw {
+    id: u8,
+    #[serde(default)]
+    drive_mode: u8,
+    homing_offset: i32,
+    range_min: u16,
+    range_max: u16,
+}
+
+impl TryFrom<MotorCalibrationRaw> for MotorCalibration {
+    type Error = FeetechError;
+
+    fn try_from(raw: MotorCalibrationRaw) -> Result<Self, Self::Error> {
+        Self::new(
+            raw.id,
+            raw.drive_mode,
+            raw.homing_offset,
+            raw.range_min,
+            raw.range_max,
+        )
+    }
 }
 
 impl MotorCalibration {

@@ -1373,3 +1373,131 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
     依赖（白名单走本条 + CHANGELOG 后续条）
 
 ---
+
+## 2026-04-25 · Step 7 task 29 feetech calibration JSON loader + silent clamp helper（**状态：登记 / 实施（commit 1/3）**）
+
+### 涉及小节
+
+- `docs/CHANGELOG.md` 2026-04-24 task 28 §复审触发第 3 条 "dimos calibration JSON
+  接入 → feetech 加 serde + serde_json 依赖" 行权 —— 本条是该行权的白名单登记 +
+  实施首 commit
+- `docs/CHANGELOG.md` 2026-04-22 "workspace runtime 依赖白名单机制" → 新增
+  `serde` + `serde_json` 进 `robot-adapter-feetech` 依赖白名单
+- `docs/01_implementation_steps.md` Step 10 "Feetech 单关节 bring-up" → task 28
+  "真转电机" 待办的前置工作（commit 1/3：纯内存 loader；commit 2 给 adapter
+  挂 follow-current + silent clamp；commit 3 Orin 三端闭环真转）
+- 不动 `docs/00_design.md`
+
+### 关键决定：**不写 EEPROM**
+
+`MotorCalibration` JSON 已由 dimos 侧在 Orin EEPROM 上一次性写好（`Homing_Offset`
+/ `Min_Position_Limit` / `Max_Position_Limit` 都是 EEPROM 区），本次 loader
+**只读 + 内存缓存**，**不** 调 `crate::calibration::write_calibration` 覆盖 —— 覆盖 dimos
+已校值的风险 > 每次冷启动写 EEPROM 的便利。真需要写 EEPROM 走单独的
+`robotctl calibrate --apply` 手工命令（task 29 后续阶段再定义）。
+
+用途：
+
+1. adapter 启动时缓存 `range_min/max` 供热路径 silent clamp（1:1 对齐 dimos
+   `_manipulator_base.py:422-426`）
+2. 未来 raw ↔ rad 换算加 per-joint `direction` / `zero_offset_rad` 扩展（commit 1
+   **不**实现，留给 commit 2 / 上层 adapter 配置）
+
+### commit 1 改动范围（本 commit）
+
+1. **`MotorCalibration` 加 serde derive**（`types.rs`）：
+   - `#[derive(Serialize, Deserialize)]` + `#[serde(try_from = "MotorCalibrationRaw")]`
+   - 内部 `MotorCalibrationRaw` private struct，`drive_mode` 可缺省默认 0（对齐
+     dimos `entry.get("drive_mode", 0)`）
+   - `TryFrom<MotorCalibrationRaw>` 调 `MotorCalibration::new` 走**同一条校验**
+     （homing_offset ∈ [-2047, +2047]、range_min/max ∈ [0, 4095]）
+2. **新增 `calibration_io` 模块**：
+   - `load_file(path) -> HashMap<String, MotorCalibration>` —— 单文件
+   - `load_and_merge(&[Path]) -> HashMap<String, MotorCalibration>` —— 多文件合并，
+     motor name 重复 → 报 `CalibrationDuplicateMotor`（比 dimos "warning 后静默覆盖"
+     **更严格**，避免配置错配难定位）
+   - `clamp_raw(raw, lower, upper)` inline helper（1:1 移植 dimos
+     `units.py::clamp_raw`）
+   - 内部走 `serde_json::Value` 中转，per-entry 错误附带 motor name + file path
+     （比 derive 默认的 "unknown field foo at line X" 更有定位价值）
+3. **`FeetechError` 4 个新变体**：
+   - `CalibrationIo { path, source: std::io::Error }`
+   - `CalibrationParse { path, source: serde_json::Error }`
+   - `CalibrationEntryInvalid { path, name, reason: String }`（serde 把 TryFrom 的
+     `FeetechError::Display` 压成 String，无法拿回原结构化错误 —— 这里用 String 留
+     serde 原文，保留 "range_max=5000 out of [0, 4095]" 这类可读信息）
+   - `CalibrationDuplicateMotor { name, first: PathBuf, second: PathBuf }`
+   - `From<FeetechError> for RobotError`：前两者归 `InvalidParameter("feetech
+     calibration file")`；后两者归 `InvalidParameter("feetech calibration")`
+4. **15 个单测**：load_file × 8（含 IO error / parse error / 非 object top-level /
+   homing_offset 越界 / range 越界 / u16 溢出 / drive_mode 缺省）+ load_and_merge × 2
+   （合并 / 重名）+ clamp_raw × 5（内 / 下越 / 上越 / 负数 / 等值退化）
+
+### commit 2 / 3 计划（本 commit **不做**）
+
+- **commit 2**：`FeetechAdapter` 加 `Vec<MotorCalibration>` 字段 + 挂 silent clamp；
+  `enable(true)` 1:1 移植 dimos `_manipulator_base.py:468-476` "sync_read Present
+  → sync_write Goal → sleep 50ms → Torque_Enable 带 3x 重试"；`write_stop` 走
+  follow-current（读 Present 写回 Goal，不 disable）
+- **commit 3**：`FeetechFactory::build` 从 config `extras.calibration_path` 读 JSON
+  → 传 adapter；Orin 上 mock_s1 + robotctl + s0_daemon 三端闭环 Goal_Position
+  ±5° 往返，验证 follow-current 启动不飞 + 真物理运动
+
+### 依赖白名单更新（robot-adapter-feetech）
+
+| 依赖 | 范围 | feature gate | 用途 |
+|---|---|---|---|
+| `serde = { workspace = true }` | dependencies | 默认 | `MotorCalibration` try_from + derive（**本次新增**） |
+| `serde_json = { workspace = true }` | dependencies | 默认 | JSON 读文件 + per-entry 错误定位（**本次新增**） |
+| `tempfile = { workspace = true }` | dev-dependencies | 默认 | 单测 NamedTempFile 写 JSON fixture（**本次新增**） |
+
+### 约束
+
+1. **JSON 格式与 dimos 1:1 兼容**（`scripts/calibrate.py` / `common/calibration.py`
+   输出）：顶层 `{motor_name: {id, drive_mode?, homing_offset, range_min, range_max}}`；
+   未来格式变更走 CHANGELOG + 对应 dimos 同步
+2. **loader 纯只读 / 纯内存**，**不**触 motor EEPROM；`write_calibration` 路径仍在
+   `crate::calibration`，调用方自己控制（未来 `robotctl calibrate --apply` 入口）
+3. **重名 = 错误**（与 dimos warning 行为有意不同）；静默覆盖的调试成本 > 明确
+   拒绝的 config 修正成本
+4. **`MotorCalibration::new` 不校验 `id`**（id ∈ [1, 253] 校验在 `Motor::new`，
+   calibration 不直接构造 Motor）—— loader 不重复这层，保留 dimos 的松耦合
+5. **raw ↔ rad 换算本 commit 不改**：`adapter.rs` 的 `raw_to_rad` / `rad_to_raw`
+   保留纯线性（无 direction / zero_offset_rad）；per-joint 偏移扩展留 commit 2
+   实际需要时再加，避免过度设计
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `Cargo.toml`（workspace） | `[workspace.dependencies]` 加 `serde_json = "1"` + 白名单注释 |
+| `crates/robot-adapters/feetech/Cargo.toml` | `[dependencies]` 加 `serde` + `serde_json`；`[dev-dependencies]` 加 `tempfile` |
+| `crates/robot-adapters/feetech/src/types.rs` | `MotorCalibration` 加 `#[derive(Serialize, Deserialize)]` + `#[serde(try_from)]` + 私有 `MotorCalibrationRaw` struct + `TryFrom` impl |
+| `crates/robot-adapters/feetech/src/calibration_io.rs` | **新增**（`load_file` + `load_and_merge` + `clamp_raw` + 15 单测） |
+| `crates/robot-adapters/feetech/src/error.rs` | `FeetechError` 加 4 变体 + `From` impl 对应更新 |
+| `crates/robot-adapters/feetech/src/lib.rs` | `pub mod calibration_io` + `pub use calibration_io::{clamp_raw, load_and_merge, load_file}` |
+| `crates/robot-s0/tests/rt_guard_soak.rs` | pre-existing 2 处 `clippy::doc_markdown` 错误（`tick_count` / `SCHED_FIFO`）顺手补 backtick —— **非本 task 引入的回归，clippy `--all-targets` 才会扫到 integration test doc comments** |
+| `docs/CHANGELOG.md` 本条 | 新增 |
+| `docs/00_design.md` | **不动**（设计冻结） |
+
+### 验证
+
+- `cargo fmt --all --check` ✅
+- `cargo clippy --all --all-targets -- -D warnings` ✅（零警告）
+- `cargo test --all` ✅ 全部绿；feetech 单测 98 pass（原 83 + calibration_io 15）
+- matrix features 本机 build：`mock-only` / `xlerobot` / `atom01` 三个组合 ✅
+- `xlerobot-real` 需 libudev，留 Orin 本地验证（commit 3 顺带）
+
+### 审阅
+
+- 提议：Claude Code（2026-04-25 session 开场；用户 2026-04-24 handoff §4.6
+  提示 "接入 dimos 现成标定值"）
+- 决定：用户 loosqk（2026-04-25 本 session 拍板 "不覆盖 EEPROM，仅内存层
+  loader"，"启动时 follow-current 防飞"，"range 超限走 silent clamp 对齐 dimos"）
+- 复审触发：
+  - adapter 真集成 calibration（commit 2）→ 需定义 `FeetechAdapter::connect` 时
+    `MotorCalibration[]` 注入路径 + per-joint direction / zero_offset_rad 是否
+    进 crate
+  - `robotctl calibrate --apply` 工具 → 如果未来需要一键写 EEPROM，重新激活
+    `crate::calibration::write_calibration` 这条路
+  - dimos JSON 格式变更 → 后续 CHANGELOG 登记 + 同步 parser

@@ -37,6 +37,38 @@ pub enum FeetechError {
     #[error("calibration range_max {0} out of [0, 4095]")]
     CalibrationMaxOutOfRange(i32),
 
+    // ── calibration JSON loader (task 29) ──────────────────────────────
+    #[error("calibration file {path:?}: {source}")]
+    CalibrationIo {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("calibration file {path:?}: parse error: {source}")]
+    CalibrationParse {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("calibration file {path:?}: motor {name} field invalid: {reason}")]
+    CalibrationEntryInvalid {
+        path: PathBuf,
+        name: String,
+        /// 来自 `serde_json::from_value` 的字段错误文本 —— 含 "unknown field foo" /
+        /// "value 2048 out of [-2047, 2047]" 等 Display 消息；细粒度分类留给
+        /// serde_json::Error / `MotorCalibration::new` 自己的 error 类。
+        reason: String,
+    },
+
+    #[error("calibration merge: motor {name} duplicated between {first:?} and {second:?}")]
+    CalibrationDuplicateMotor {
+        name: String,
+        first: PathBuf,
+        second: PathBuf,
+    },
+
     #[error("byte length {0} unsupported (only 1 / 2 / 4 allowed)")]
     UnsupportedByteLength(usize),
 
@@ -128,7 +160,12 @@ impl From<FeetechError> for robot_core::error::RobotError {
             | F::StatusError(_) => Self::HardwareFault("feetech wire protocol"),
             F::CalibrationOffsetOutOfRange(_)
             | F::CalibrationMinOutOfRange(_)
-            | F::CalibrationMaxOutOfRange(_) => Self::InvalidParameter("feetech calibration"),
+            | F::CalibrationMaxOutOfRange(_)
+            | F::CalibrationEntryInvalid { .. }
+            | F::CalibrationDuplicateMotor { .. } => Self::InvalidParameter("feetech calibration"),
+            F::CalibrationIo { .. } | F::CalibrationParse { .. } => {
+                Self::InvalidParameter("feetech calibration file")
+            }
             F::MagnitudeOutOfRange { .. } | F::ValueExceedsByteRange { .. } => {
                 Self::InvalidParameter("feetech encoded value out of range")
             }

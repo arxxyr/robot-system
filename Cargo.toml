@@ -81,6 +81,12 @@ hdrhistogram = "7.5"
 # toml 0.9 与 iceoryx2 0.8.1 子树对齐，避免新增重复版本（deny.toml skip-tree 注释）。
 serde = { version = "1", features = ["derive"] }
 toml  = "0.9"
+# serde_json：Step 7 task 29 (2026-04-25) feetech MotorCalibration JSON loader。
+# 限 robot-adapter-feetech 使用，格式与 dimos `scripts/calibrate.py` 输出 1:1 兼容
+# （顶层 {motor_name: {id, drive_mode, homing_offset, range_min, range_max}}）。
+# 白名单登记见 docs/CHANGELOG.md 2026-04-25 "Step 7 task 29 feetech calibration
+# JSON loader"。
+serde_json = "1"
 # inventory：static 注册机制（adapter 工厂表）。Step 7 task 27b 落地。
 # 链接器把每个 adapter crate 的 `submit!` 项收到一个 array section，启动期
 # `iter::<&dyn AdapterFactory>()` 遍历。**零 runtime 开销**（无 alloc / 无 IO），

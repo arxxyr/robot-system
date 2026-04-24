@@ -1032,7 +1032,10 @@ dependencies = [
  "criterion",
  "inventory",
  "robot-core",
+ "serde",
+ "serde_json",
  "serialport",
+ "tempfile",
  "thiserror",
 ]
 
