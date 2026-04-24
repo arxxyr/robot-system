@@ -7,7 +7,8 @@
 > Part 2：task 10-12 `c738b87` → 13 `de6ffc6` → 14 `414fee1` → 15 `a83cee1` →
 > 16 `f30b5e8` → 17 `87def64` → 18 `2189daf` → 19 `10afe8d` → 20 `85fa270` →
 > 21 `8d377ab`。v0.2 最小闭环数据路径本机 release 3-端跑通（S0 daemon + mock_s1 + robotctl）。
-> Orin baseline harness 就位；task 22 实测 p50 21 µs / p99 1–15 ms，PREEMPT 内核 + 无 isolcpus 系统瓶颈，系统调优阻塞，见 `docs/handoffs/2026-04-24_5.md` §5.3。
+> Orin baseline harness 就位；task 22 实测 p50 21 µs / p99 1–15 ms，PREEMPT 内核 + 无 isolcpus 系统瓶颈。
+> **Step 6.5（Orin RT 调优攻克 §10.1 硬门槛）已搁置** —— XLeRobot 不需要高实时 + Orin Nano 算力偏弱，详见 `docs/CHANGELOG.md` 2026-04-24 "Step 6.5 RT 调优搁置 + XLeRobot 不卡 §10.1 RT 硬门槛"。Orin 真要刷数据走 `scripts/baseline.sh orin`。
 
 ---
 

@@ -77,6 +77,44 @@ jobs:
       - name: sccache stats
         run: sccache --show-stats
 
+  baseline-smoke:
+    name: iceoryx2 baseline smoke (30s, ubuntu)
+    runs-on: ubuntu-latest
+    needs: test
+    # 仅作 *harness 不退化* 冒烟：宽阈值（p99 50 ms / p999 100 ms）+ 不带
+    # `--strict-rt`，GitHub 共享 runner 拿不到 SCHED_FIFO，会自动降级到
+    # 普通线程优先级。这一关只验证：
+    #   (1) iceoryx2 service open / sample 路径仍工作；
+    #   (2) sample_ratio ≥ 90%（harness 内部已硬编码失败条件之一）；
+    #   (3) `iceoryx2_rt_baseline` bin 没被改坏。
+    # XLeRobot 不卡 `docs/00_design.md` §10.1 的 100 µs / 500 µs 硬门槛
+    # （Orin Nano 算力 + 非 PREEMPT_RT 内核做不到也不需要，详见
+    #  `docs/CHANGELOG.md` 2026-04-24 "Step 6.5 RT 调优搁置 + XLeRobot 不卡硬门槛"）。
+    # 真要拿 Orin 数据走 `scripts/baseline.sh orin`，本地手动跑。
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Build iceoryx2_rt_baseline (release)
+        run: cargo build -p robot-tests --release --bin iceoryx2_rt_baseline
+
+      - name: Run smoke (30s, p99 ≤ 50 ms, p999 ≤ 100 ms)
+        run: |
+          ./target/release/iceoryx2_rt_baseline \
+            --duration 30s \
+            --hz 50 \
+            --p99-us 50000 \
+            --p999-us 100000
+
   deny:
     name: cargo deny
     runs-on: ubuntu-latest
@@ -105,6 +143,7 @@ jobs:
 
 # TODO（与 docs/10_verification.md §10.2.3 CI 顺序 6–9 对齐，后续 Step 加）：
 # - allocation-guard：Step 6 `assert-no-alloc` + `rt_arc_guard` 钩子就位后加
+#   （task 26 落地后挂 nightly schedule 跑 `cargo test --features rt_guard -- --ignored`）
 # - schema_compat：Step 2 已有运行时交叉测试在 `cargo test` 里；跨 crate 版本
 #   交叉推到 v0.3（CHANGELOG 2026-04-22 Step 2 工具链决策）
 # - soak 1h / 24h：Step 9 `robot-tests::soak` bin 就位后加 nightly schedule

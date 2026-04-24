@@ -762,3 +762,71 @@ v0.2 Step 6 单 bus 场景下字面成立。但 ATOM01（4 × CAN）和 XLeRobot
   - XLeRobot v0.4 实测 Orin 默认 kernel 下 External 能用 → 回撤 InProcess fallback 的必要性；装 RT 内核变成可选
 
 ---
+
+## 2026-04-24 · Step 6.5 RT 调优搁置 + XLeRobot 不卡 §10.1 RT 硬门槛（**状态：偏离登记**）
+
+### 涉及小节
+
+- `docs/00_design.md` §10.1 "S0 loop / Safety / crash-restart 指标"（**不动**；本条只把 XLeRobot target 的适用性收口，§10.1 数值对 ATOM01 / 人形 / 四足 仍是契约）
+- `docs/01_implementation_steps.md` 顶部"当前位置"行（同步标 Step 6.5 暂不做的理由）
+- `docs/targets/xlerobot.md` §1 实时内核行 + §6 风险表（已注 "Orin 默认即可"，本条把 Step 6.5 搁置理由补足）
+- `.github/workflows/ci.yml`（**本次改动**：仅挂宽阈值 ubuntu smoke，不挂 Orin self-hosted strict-rt job）
+- `scripts/baseline.sh`（**本次改动**：新建封装，本机 / Orin 两模式，门槛不严卡）
+
+### 背景
+
+`docs/handoffs/2026-04-24_5.md` §5 task 22 实测 Orin Nano Super 三轮 60s/30s strict-rt：
+
+```
+配置                  | p50    | p99       | p999      | max
+--duration 60s       | 22.5µs | 1018.4µs  | 19955.7µs | 20021.2µs   FAIL
+--duration 60s --cpu4| 20.5µs | 5746.7µs  | 6447.1µs  | 6504.4µs    FAIL
+--duration 30s --cpu4| 21.0µs | 15237.1µs | 15491.1µs | 15499.3µs   FAIL
+```
+
+p50 21 µs 表稳态 OK，p99 1–15 ms 是 PREEMPT 内核 + schedutil governor + 无 isolcpus 的系统瓶颈（详 handoff §5.2）。原计划走 handoff §5.3 的 sudo 调优清单（governor / cpu_dma_latency / isolcpus / PREEMPT_RT 内核）→ Step 6.5 闯门槛。
+
+用户（loosqk）2026-04-24 明确两条搁置 Step 6.5 的理由：
+
+1. **XLeRobot 不需要高实时性**：Feetech STS3215 自带 command timeout，硬件层 fail-safe；上层 50 Hz / 20 ms 周期对 100 µs / 500 µs 没有刚需。原 §10.1 硬门槛是按 ATOM01 5×CAN 多 bus 同步刚需推导的（2026-04-24 多 bus 拓扑方案 B 条），XLeRobot 单 USB-RS485 不是同一量级。
+2. **Orin Nano 算力本身偏弱**：6 核 A78AE，A78AE 相对 RK3588 A76 缺 RT 内核厂家支持（JetPack 默认 PREEMPT 不是 PREEMPT_RT），自编 PREEMPT_RT 内核 + driver 重新调通的工程成本，对一个不需要硬实时的目标不划算。
+
+### 决定
+
+1. **Step 6.5（Orin RT 调优攻克 §10.1 硬门槛）暂不做**。`docs/01_implementation_steps.md` 10 步主线不受影响（Step 6 退出标准里"iceoryx2 RT baseline harness 就位 + 跑通"已在 task 21 落地，门槛达标 *不是* Step 6 退出条件 —— 见 handoff §1）。
+2. **`docs/00_design.md` §10.1 数值不动**：对 **ATOM01 / 四足 / 人形** 等目标仍是契约（这些 target 跑 RT 内核 + 多 bus，门槛是真刚需）。XLeRobot 是 §10.1 数值的 *target-specific 不适用*，不是数值本身的修订。
+3. **CI 不挂 Orin self-hosted runner 的 strict-rt baseline job**：理由同 (1)，挂上去会因系统瓶颈持续红 CI；ubuntu-latest 30s smoke job 仍要（本次新增），用宽阈值 p99 ≤ 50 ms / p999 ≤ 100 ms，作用是防 `iceoryx2_rt_baseline` harness 代码退化。
+4. **`scripts/baseline.sh`**（本次新增）封装 handoff §5.4 的两条命令，Orin 真要刷数据时手动跑：
+   - `./scripts/baseline.sh local [DUR]` —— 本机 release smoke
+   - `./scripts/baseline.sh orin  [DUR]` —— ssh Orin 跑 strict-rt（默认 60s + `--cpu 4`）
+5. **XLeRobot target 走 §4.7 InProcess fallback** 已在 2026-04-24 "§4.7 ExternalPolicyHost RT 等价 inline" 条 §决定 (2) 锁定，本条只追加注脚：v0.4 立项时的"是否装 RT 内核"决定可以 *直接拍板不装*，理由是 (1)+(2)。
+
+### 约束
+
+1. **本条只对 XLeRobot 生效**。其他 target（ATOM01 / 四足 / 人形）开新 spec 时，`§5/§6` 风险表必须显式声明 "适用 §10.1 RT 硬门槛"，否则视同同一豁免。
+2. **`docs/00_design.md` §10.1 文本不能加 "XLeRobot 例外"**（设计冻结）；解释一律放在本 CHANGELOG 条 + `targets/xlerobot.md` §1+§6。
+3. **复审触发**：
+   - XLeRobot 加第二条 USB-RS485（双臂 / 移动底盘 + 头部）→ Feetech bus 数 ≥ 2 后重新评估是否进入 §10.1 门槛域；
+   - dimos 现役栈实测出 ≥ 30 ms 控制延迟 spike 导致行为退化 → 评估是否要装 RT 内核 + cpu_dma_latency；
+   - ATOM01 v0.5 落地，发现 §10.1 数值需要进一步细化（per-bus / per-target 数值表）→ 顺带把 XLeRobot 行写进去。
+4. **scripts/baseline.sh 的宽阈值不能视作"达标线"**。它是 *harness 不退化* 的最低线；真要拿数据走严阈值需手动传 `--p99-us 100 --p999-us 500`（即 §10.1 数值）。
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `.github/workflows/ci.yml` | 新增 `baseline-smoke` job（ubuntu，30s，宽阈值，依赖 `test`）（**本次改动**） |
+| `scripts/baseline.sh` | 新增（**本次改动**） |
+| `docs/01_implementation_steps.md` | 顶部"当前位置"行同步：Step 6.5 不做 + 理由指针（**本次改动**） |
+| `docs/targets/xlerobot.md` | §1 实时内核行 + §6 风险表注脚补 "Step 6.5 搁置 → 走 InProcess fallback"（**本次改动**） |
+| `docs/CHANGELOG.md` 本条 | 新增（**本次改动**） |
+| `docs/00_design.md` §10.1 | **不动**（设计冻结） |
+| `docs/handoffs/2026-04-24_5.md` | **不动**（handoff 本身就是历史快照，不回写） |
+
+### 审阅
+
+- 提议：Claude Code（2026-04-24 session 内 Step 7 task 24 入手时）
+- 决定：用户 loosqk（2026-04-24 session 内明确："推迟 6.5 的原因是 1. 他跑的 xlerobot 不需要高实时性。2. orin nano 本身性能就弱"）
+- 复审触发：见上方"约束 §3"
+
+---

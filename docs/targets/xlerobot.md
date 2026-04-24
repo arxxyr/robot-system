@@ -36,7 +36,7 @@
 | 夹爪 / Gripper | TBD（取决于具体装机，dimos 支持可选 2 × Feetech） | 同手臂总线 | |
 | 视觉传感器 | Intel RealSense（具体型号 TBD，典型 D435i / D435）× 1 | USB-3.0 | RGB + depth + IMU |
 | 辅助相机 | USB Webcam × N（可选） | USB-2.0 | |
-| 实时内核 | Linux 主线内核（非必须 RT，因 STS3215 自带 command timeout 作硬件 fail-safe） | — | Orin 默认即可 |
+| 实时内核 | Linux 主线内核（非必须 RT，因 STS3215 自带 command timeout 作硬件 fail-safe） | — | Orin 默认即可。Step 6.5 RT 调优搁置，详 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 "Step 6.5 RT 调优搁置 + XLeRobot 不卡 §10.1 RT 硬门槛" |
 
 **DoF 布局（v0.4 起以此为准；具体编号 TBD）**：
 - 左臂 5 DoF（肩 3 + 肘 1 + 腕 1，或类似，TBD 从 URDF 导出）
@@ -297,7 +297,7 @@ RS485 是半双工，单 bus 不能同时 read+write，所以 "pipeline 读写" 
 | 视觉外参漂移 | 策略看到的相对位置错 | §2.7 外参走 target-contract 登记；改装前必须重新标定 |
 | dimos 侧策略继续演进 | robot-system 侧 adapter 契约追不上 | v0.4 先切换 adapter 层；策略切换滞后到 v0.5（OpenPI 接入时） |
 | v0.4 开工时 §2 大量 TBD 未填 | adapter 写出来可能和 dimos 不对齐 | 第一件事：从 dimos 源码批量导出 §2 TBD 项，补完整走 CHANGELOG 登记 |
-| **policy_host 调度抖动** —— XLeRobot 默认 Jetson Orin **非 RT 内核** | `SCHED_OTHER` 下 policy_host 推理延迟 p99 可能飘到 30 ms+ | v0.4 立项时决定是否装 RT 内核；若不装，用 `InProcessPolicyHost`（设计 §4.7 分支）绑进 s1；装 RT 则按 ATOM01 同套配置（`SCHED_FIFO 70` + CPU pinning + `mlockall`）—— 见 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 条 2 |
+| **policy_host 调度抖动** —— XLeRobot 默认 Jetson Orin **非 RT 内核** | `SCHED_OTHER` 下 policy_host 推理延迟 p99 可能飘到 30 ms+ | v0.4 立项时决定是否装 RT 内核；若不装，用 `InProcessPolicyHost`（设计 §4.7 分支）绑进 s1；装 RT 则按 ATOM01 同套配置（`SCHED_FIFO 70` + CPU pinning + `mlockall`）—— 见 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 条 2。**2026-04-24 更新**：v0.4 立项决议直接 *不装 RT 内核*，走 `InProcessPolicyHost`，详 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 "Step 6.5 RT 调优搁置" |
 
 ---
 
