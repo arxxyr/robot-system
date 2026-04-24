@@ -65,6 +65,8 @@ pub mod bus;
 pub mod calibration;
 pub mod encoding;
 pub mod error;
+#[cfg(feature = "real-hw")]
+pub mod factory;
 pub mod protocol;
 pub mod registers;
 pub mod transport;
@@ -73,6 +75,8 @@ pub mod types;
 pub use adapter::FeetechAdapter;
 pub use bus::FeetechBus;
 pub use error::FeetechError;
+#[cfg(feature = "real-hw")]
+pub use factory::FeetechFactory;
 pub use registers::{
     DEFAULT_BAUDRATE, MODEL_NUMBER_STS3215, OperatingMode, STS3215_MAX_POSITION,
     STS3215_RESOLUTION, STS3215_SIGN_BIT, TorqueMode, get_register, is_eeprom_register,

@@ -682,11 +682,31 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
 ///
 /// 错误返回 i32 退出码（与 `run` 顶层一致），调用方据此 `graceful_stop`。
 fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Send>, i32> {
-    // 1) 决定 adapter_kind + joint_names 来源
-    let (adapter_kind, joint_names): (String, Vec<String>) = if let Some(cfg) = &args.loaded_config
-    {
+    // 1) 决定 adapter_kind + joint_names + address + motor_ids 来源
+    let (adapter_kind, joint_names, address, motor_ids): (
+        String,
+        Vec<String>,
+        Option<String>,
+        Vec<u8>,
+    ) = if let Some(cfg) = &args.loaded_config {
         if let Some(hw) = cfg.parsed.hardware.first() {
-            (hw.adapter.clone(), hw.joints.clone())
+            // motor_ids 从 [[hardware]] extras["motor_ids"] 数组读（task 28 扩展）
+            let ids = hw
+                .extras
+                .get("motor_ids")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_integer().and_then(|i| u8::try_from(i).ok()))
+                        .collect::<Vec<u8>>()
+                })
+                .unwrap_or_default();
+            (
+                hw.adapter.clone(),
+                hw.joints.clone(),
+                hw.address.clone(),
+                ids,
+            )
         } else {
             eprintln!(
                 "fatal: --config {} 内无 [[hardware]] 段，无 adapter 可启动",
@@ -695,9 +715,9 @@ fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Sen
             return Err(2);
         }
     } else {
-        // CLI-only fallback：mock + 自动生成 j0..jN-1 关节名
+        // CLI-only fallback：mock + 自动生成 j0..jN-1 关节名（无 address / motor_ids）
         let names = (0..args.joint_count).map(|i| format!("j{i}")).collect();
-        ("mock_hard_rt".to_string(), names)
+        ("mock_hard_rt".to_string(), names, None, Vec::new())
     };
 
     // 2) 查 factory
@@ -719,6 +739,8 @@ fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Sen
         instance_name: &args.hardware_id,
         adapter_kind: &adapter_kind,
         joint_names: &joint_names,
+        address: address.as_deref(),
+        motor_ids: &motor_ids,
     };
     factory.build(&ctx).map_err(|e| {
         eprintln!("fatal: adapter '{adapter_kind}' build failed: {e}");

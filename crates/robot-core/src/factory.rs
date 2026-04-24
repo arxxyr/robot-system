@@ -46,6 +46,9 @@ use crate::error::RobotError;
 ///
 /// 字段都是借用，调用方负责生命周期。`AdapterFactory::build` 不持有 context
 /// 引用 —— 仅在调用栈上读 + 拷出需要的字段。
+///
+/// **字段扩展规则**：每加一个字段都要保证旧 factory 忽略不读不破坏；新 factory
+/// 按需消费。任何 *改语义* 的字段调整走 `docs/CHANGELOG.md` 评审。
 #[derive(Clone, Copy, Debug)]
 pub struct AdapterBuildContext<'a> {
     /// `[[hardware]] id`，本实例在 robot 内的唯一名（如 `"left_arm"`）。
@@ -56,6 +59,15 @@ pub struct AdapterBuildContext<'a> {
     /// `[[hardware]] joints`，按 joint index 顺序对齐 `JointStateBuf.positions`。
     /// 长度 ≤ [`crate::adapter::MAX_JOINTS`]。
     pub joint_names: &'a [String],
+    /// `[[hardware]] address`：硬件位置串（如 `/dev/serial/by-id/usb-1a86_...`）。
+    /// `mock_*` factory 忽略；`feetech_sts3215` / 真硬件 factory 必填。
+    /// Step 7 task 28 加。
+    pub address: Option<&'a str>,
+    /// `[[hardware]] motor_ids`：每个 joint 对应的 motor ID（按 `joint_names` 顺序
+    /// 一一对应）。空数组 = "缺省 1-N（即 joint 0 → ID 1, joint 1 → ID 2, ...）"。
+    /// Step 7 task 28 加，给 dimos 移植场景留接口（dimos bus1 用 ID 1-8 / bus2
+    /// 用 ID 1-9 含底盘，需要显式指定）。
+    pub motor_ids: &'a [u8],
 }
 
 /// adapter 工厂 trait。每个 adapter crate 实现 + 用 `inventory::submit!` 注册一个
@@ -188,6 +200,8 @@ mod tests {
             instance_name: "test",
             adapter_kind: "robot_core_test_stub",
             joint_names: &[],
+            address: None,
+            motor_ids: &[],
         };
         let adapter = f.build(&ctx).unwrap();
         assert_eq!(adapter.info().name, "stub_adapter");
@@ -210,13 +224,18 @@ mod tests {
     #[test]
     fn build_context_passes_through_fields() {
         let names = vec!["a".to_string(), "b".to_string()];
+        let ids = [3u8, 7];
         let ctx = AdapterBuildContext {
             instance_name: "left_arm",
             adapter_kind: "robot_core_test_stub",
             joint_names: &names,
+            address: Some("/dev/serial/by-id/usb-test"),
+            motor_ids: &ids,
         };
         assert_eq!(ctx.instance_name, "left_arm");
         assert_eq!(ctx.adapter_kind, "robot_core_test_stub");
         assert_eq!(ctx.joint_names.len(), 2);
+        assert_eq!(ctx.address, Some("/dev/serial/by-id/usb-test"));
+        assert_eq!(ctx.motor_ids, &[3u8, 7]);
     }
 }

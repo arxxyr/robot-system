@@ -1,7 +1,9 @@
-//! `SerialTransport` trait + 内存 mock 实现（**仅** 单测 / dry-run 工具用）。
+//! `SerialTransport` trait + 内存 mock 实现 + `real-hw` feature gated 真 USB-RS485
+//! 实现。
 //!
-//! 真 USB-RS485 实现（基于 `serialport` crate）由 task 28 加 `feature = "real-hw"`
-//! 时引入；本文件 v0.2 阶段只做 trait + mock。
+//! - 默认编译路径：仅 trait + [`MockTransport`]（单测 / dry-run 工具）。
+//! - `--features real-hw`：额外暴露 [`real::RealSerialTransport`]（拉 `serialport`
+//!   crate，Linux 需 `libudev-dev`），task 28 真机阶段使用。
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -162,6 +164,93 @@ impl MockHandle {
     #[must_use]
     pub fn peek_tx(&self) -> Vec<u8> {
         self.tx_log.lock().expect("mock tx_log poisoned").clone()
+    }
+}
+
+// ============================================================================
+// Real serial transport（feature = "real-hw"）
+// ============================================================================
+
+/// `serialport` crate 的 [`SerialTransport`] 包装。**仅** `--features real-hw`
+/// 编译。
+///
+/// task 28 真机阶段使用：`/dev/serial/by-id/usb-...` 路径 + 1 Mbps baudrate +
+/// 1 s 默认 timeout。dimos `feetech_io/patches.py` 的 `_patched_setPacketTimeout`
+/// **不需要**，那是 `scservo_sdk` Python sdk 的 timeout 计算 bug，Rust 端走
+/// `serialport::SerialPort::set_timeout` 直传。
+#[cfg(feature = "real-hw")]
+pub mod real {
+    use super::{Duration, FeetechError, SerialTransport};
+    use std::path::Path;
+
+    /// 真 USB-RS485 串口包装。
+    pub struct RealSerialTransport {
+        port: Box<dyn serialport::SerialPort>,
+        path: std::path::PathBuf,
+    }
+
+    impl RealSerialTransport {
+        /// 打开串口。`path` 推荐用 `/dev/serial/by-id/usb-...`（udev 稳定路径，
+        /// reboot / 拔插顺序变化也不漂移）；ttyACM* 是动态分配，**不**推荐。
+        ///
+        /// `baudrate` 典型 `1_000_000`（[`crate::registers::DEFAULT_BAUDRATE`]）。
+        ///
+        /// # Errors
+        /// open 失败 → [`FeetechError::TransportOpen`]。
+        pub fn open(path: &Path, baudrate: u32) -> Result<Self, FeetechError> {
+            let port = serialport::new(path.to_string_lossy(), baudrate)
+                .timeout(Duration::from_millis(crate::registers::DEFAULT_TIMEOUT_MS))
+                .open()
+                .map_err(|e| FeetechError::TransportOpen {
+                    path: path.to_path_buf(),
+                    source: std::io::Error::other(e.to_string()),
+                })?;
+            Ok(Self {
+                port,
+                path: path.to_path_buf(),
+            })
+        }
+
+        /// 用于 Display / 日志。
+        #[must_use]
+        pub fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl SerialTransport for RealSerialTransport {
+        fn write_all(&mut self, buf: &[u8]) -> Result<(), FeetechError> {
+            std::io::Write::write_all(&mut self.port, buf).map_err(FeetechError::TransportWrite)
+        }
+
+        fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), FeetechError> {
+            // serialport 的 SerialPort impl Read，read_exact 由 Read trait 提供。
+            // timeout 由 set_timeout 控制；timeout 时 read_exact 返
+            // io::Error::kind == TimedOut 或 ErrorKind::Other。
+            match std::io::Read::read_exact(&mut self.port, buf) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                    Err(FeetechError::TransportTimeout {
+                        timeout_ms: crate::registers::DEFAULT_TIMEOUT_MS,
+                        wanted: buf.len(),
+                        got: 0, // serialport read_exact 不报已读字节数；保守填 0
+                    })
+                }
+                Err(e) => Err(FeetechError::TransportRead(e)),
+            }
+        }
+
+        fn set_timeout(&mut self, timeout: Duration) -> Result<(), FeetechError> {
+            self.port
+                .set_timeout(timeout)
+                .map_err(|e| FeetechError::TransportRead(std::io::Error::other(e.to_string())))
+        }
+
+        fn is_connected(&self) -> bool {
+            // serialport 没显式 is_open；open 后视为 connected，错误时调用方报
+            // TransportRead/Write 自动失败。
+            true
+        }
     }
 }
 

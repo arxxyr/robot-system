@@ -91,6 +91,9 @@ inventory = "0.3"
 # 仅在 [dev-dependencies] 用，不进任何 binary；用 default features 的
 # rayon / plotters 子集，跑 cargo bench 时拉链接。
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
+# serialport：跨平台串口 crate（Linux 走 libudev，需 libudev-dev / libudev1）。
+# Step 7 task 28 feetech `real-hw` feature 必需；mock-only 编译路径不 link。
+serialport = "4"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core          = { path = "crates/robot-core" }

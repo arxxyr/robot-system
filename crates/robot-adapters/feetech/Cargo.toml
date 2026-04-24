@@ -18,6 +18,18 @@ publish    .workspace = true
 [dependencies]
 robot-core = { workspace = true }
 thiserror  = { workspace = true }
+inventory  = { workspace = true }
+# Step 7 task 28：real-hw feature 拉 serialport，提供 RealSerialTransport +
+# 注册 FeetechFactory（task 28 真机阶段必需；CI / dev 默认 off 走 mock）。
+serialport = { workspace = true, optional = true }
+
+[features]
+default = []
+# 启用 real-hw 后：
+# - `transport::real::RealSerialTransport` 可用
+# - `factory::FeetechFactory` 自注册（adapter name = "feetech_sts3215"）
+# 详 docs/CHANGELOG.md 2026-04-24 "Step 7 task 28 feetech real-hw + Orin 实跑"。
+real-hw = ["dep:serialport"]
 
 [dev-dependencies]
 # Step 7 task 27c：criterion bench harness（5 组：sign-magnitude / LE byte /

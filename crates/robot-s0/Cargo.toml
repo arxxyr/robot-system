@@ -48,6 +48,12 @@ mock-only = ["mock"]
 xlerobot  = ["mock", "feetech"]
 atom01    = ["mock"] # v0.5 piper crate 落地后改 ["mock", "piper"]
 
+# ── 真硬件组合（Step 7 task 28）——
+# `xlerobot-real`：在 xlerobot 基础上启 feetech 的 real-hw（拉 serialport），
+# Orin / Linux 真机部署用。dev / CI 默认 xlerobot 仅 mock，避免 libudev-dev
+# 系统依赖。
+xlerobot-real = ["xlerobot", "robot-adapter-feetech/real-hw"]
+
 # ── adapter 基础 features（gating 单 crate dep；不直接给用户用，用上面组合 ──
 mock    = ["dep:robot-adapter-mock"]
 feetech = ["dep:robot-adapter-feetech"]
