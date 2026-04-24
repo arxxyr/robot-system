@@ -46,8 +46,11 @@ use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::build_helpers::{build_heartbeat, build_joint_command};
 use robot_msg::markers;
 use robot_msg::msg::{ControlMode, StaleAction};
-use robot_transport::iceoryx2::{Iceoryx2Publisher, TopicClass, publisher as open_pub};
-use robot_transport::traits::Publisher;
+use robot_transport::iceoryx2::{
+    Iceoryx2Publisher, Iceoryx2Subscriber, TopicClass, publisher as open_pub,
+    subscriber as open_sub,
+};
+use robot_transport::traits::{LatestSubscriber, Publisher};
 
 // ============================================================================
 // Signal handling
@@ -88,6 +91,10 @@ struct Args {
     duration: Option<Duration>,
     layout_id: u64,
     source_id: u32,
+    /// 启动时从 S0 state topic 读一次当前 `positions[0..joints]` 作正弦 bias，
+    /// 让第一帧 Goal 等于当前位置（motor 不跳）。task 29 commit 5 加。
+    /// 0 = 禁用（旧行为，bias 全 0，对未在 center 附近的 motor 会瞬间跳）。
+    anchor_timeout_ms: u64,
 }
 
 impl Args {
@@ -104,6 +111,7 @@ impl Args {
             duration: None,
             layout_id: 0xCAFE_BABE_DEAD_BEEF,
             source_id: 2, // S1 固定 2（§3.5）
+            anchor_timeout_ms: 1000,
         };
 
         let raw: Vec<String> = std::env::args().skip(1).collect();
@@ -167,6 +175,14 @@ impl Args {
                         raw.get(i).ok_or("--duration requires value")?,
                     )?);
                 }
+                "--anchor-timeout-ms" => {
+                    i += 1;
+                    args.anchor_timeout_ms = raw
+                        .get(i)
+                        .ok_or("--anchor-timeout-ms requires value")?
+                        .parse()
+                        .map_err(|e| format!("--anchor-timeout-ms: {e}"))?;
+                }
                 "--help" | "-h" => return Err("HELP".into()),
                 other => return Err(format!("unknown arg: {other}")),
             }
@@ -206,9 +222,13 @@ OPTIONS:
   --state-hz <HZ>          JointCommand 发布频率（默认 50）。
   --heartbeat-hz <HZ>      Heartbeat 发布频率（默认 50）。
   --duration <DUR>         运行时长（3s / 500ms / 10）。省略 = 无限。
+  --anchor-timeout-ms <MS> 启动时从 S0 state 读当前位置作正弦 bias 的超时（默认
+                           1000 ms）。0 = 禁用（正弦从 rad=0 开始，motor 可能瞬
+                           间跳到 center）。task 29 commit 5 加。
   -h, --help               显示此帮助。
 
 TOPICS:
+  sub /<robot_id>/s0/<hardware_id>/state  (一次性读当前 positions 作 bias)
   pub /<robot_id>/s1/<hardware_id>/command
   pub /<robot_id>/s1/heartbeat
 "
@@ -285,6 +305,27 @@ fn run(args: &Args) -> Result<(), i32> {
         }
     };
 
+    // ---- 锚定当前位置做正弦 bias（task 29 commit 5）----
+    //
+    // 防跳 root cause：mock_s1 原先正弦公式是 `amp * sin(phase)`，第一帧 sin(0) = 0
+    // rad → Goal = center (raw 2047)。若 motor 当前在闭合位（如夹爪 raw 1400），
+    // mock_s1 接管瞬间电机从 1400 跳到 2047 ≈ 36°（"张开到一半"）。
+    //
+    // 解法：启动时读一次 S0 state topic 的 `positions[0..joints]`，把正弦 bias 设成
+    // 当前位置。第一帧 Goal = current_pos + 0 = current_pos → motor 不动。
+    let topic_state = format!("/{}/s0/{}/state", args.robot_id, args.hardware_id);
+    let bias = if args.anchor_timeout_ms > 0 {
+        read_anchor_bias(
+            &node,
+            &topic_state,
+            args.joints,
+            Duration::from_millis(args.anchor_timeout_ms),
+        )
+    } else {
+        eprintln!("anchor disabled (--anchor-timeout-ms 0), bias = 0 for all joints");
+        vec![0.0; args.joints]
+    };
+
     install_signal_handlers();
 
     let clock = SystemClock::new();
@@ -325,7 +366,7 @@ fn run(args: &Args) -> Result<(), i32> {
             let phase = TAU * args.frequency * elapsed_s;
             #[allow(clippy::cast_precision_loss)]
             let target: Vec<f64> = (0..args.joints)
-                .map(|i| args.amplitude * (phase + (i as f64) * (TAU / 8.0)).sin())
+                .map(|i| bias[i] + args.amplitude * (phase + (i as f64) * (TAU / 8.0)).sin())
                 .collect();
             let body = build_joint_command(
                 args.layout_id,
@@ -365,6 +406,75 @@ fn run(args: &Args) -> Result<(), i32> {
         run_start.elapsed()
     );
     Ok(())
+}
+
+/// 启动时订阅 S0 state topic，轮询直到拿到一帧 `JointState`（或 timeout），
+/// 返回 `positions[0..joints]` 作为正弦 bias。
+///
+/// - 订阅 open 失败 → log + 返回 `vec![0.0; joints]`（fallback，不退出）
+/// - 在 `timeout` 内取到 sample → 用 `positions[0..min(joints, state.n)]`；
+///   joints 超出 state.n 的部分 bias=0（warning：S0 adapter 不管那些 joint）
+/// - timeout → log warning + 返回 `vec![0.0; joints]`
+///
+/// 该函数**只在启动一次性调用**，不在热路径上，alloc + warning log 都 OK。
+fn read_anchor_bias(
+    node: &iceoryx2::node::Node<IxService>,
+    topic_state: &str,
+    joints: usize,
+    timeout: Duration,
+) -> Vec<f64> {
+    let mut state_sub: Iceoryx2Subscriber<markers::JointState> =
+        match open_sub(node, topic_state, TopicClass::S0State) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("warn: open state sub for anchor failed: {e} -- bias=0");
+                return vec![0.0; joints];
+            }
+        };
+
+    let poll_interval = Duration::from_millis(10);
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match state_sub.latest() {
+            Ok(Some(lease)) => match lease.view() {
+                Ok(view) => {
+                    let js = view.body.get();
+                    let Some(pos_vec) = js.position_rad() else {
+                        eprintln!("warn: state sample no position_rad field -- bias=0");
+                        return vec![0.0; joints];
+                    };
+                    let mut bias = vec![0.0; joints];
+                    let n = usize::min(joints, pos_vec.len());
+                    for (i, slot) in bias.iter_mut().take(n).enumerate() {
+                        *slot = pos_vec.get(i);
+                    }
+                    if n < joints {
+                        eprintln!(
+                            "warn: state has {n} joints, mock_s1 expects {joints}; extra joints bias=0"
+                        );
+                    }
+                    eprintln!("anchored to current S0 state: bias={bias:?}  (first {n} joints)");
+                    return bias;
+                }
+                Err(e) => {
+                    eprintln!("warn: state view decode error: {e} -- retry");
+                }
+            },
+            Ok(None) => {
+                // 还没 sample，睡会儿再试
+            }
+            Err(e) => {
+                eprintln!("warn: state sub recv error: {e} -- retry");
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            eprintln!(
+                "warn: anchor timeout ({timeout:?}) no S0 state sample; bias=0 (motor may jump from current position to rad=0 on first command)"
+            );
+            return vec![0.0; joints];
+        }
+        thread::sleep(poll_interval);
+    }
 }
 
 fn publish_body<T: robot_msg::markers::BodyMarker>(
