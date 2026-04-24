@@ -11,6 +11,8 @@ publish    .workspace = true
 
 [dependencies]
 robot-core = { workspace = true }
+# Step 7 task 27b：MockFactory 自注册（inventory::submit!）。
+inventory  = { workspace = true }
 
 [lints]
 workspace = true

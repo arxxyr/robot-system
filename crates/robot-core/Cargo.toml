@@ -15,6 +15,10 @@ publish    .workspace = true
 libc = { workspace = true }
 # Step 6 Part 1：adapter / error 模块启用；RobotError 的 Display / Error impl 经 derive。
 thiserror = { workspace = true }
+# Step 7 task 27b：adapter 静态注册（inventory::submit! / iter）。
+# 详 src/adapter/factory.rs 头部说明 + docs/CHANGELOG.md 2026-04-24
+# "Step 7 task 27b matrix + inventory adapter 自注册"。
+inventory = { workspace = true }
 # Step 6 Part 1：RT 铁律守卫（rt_guard feature）。
 # 默认 off 避免给所有依赖方强制替换 global allocator；rt_guard on 时打开 scope 宏。
 assert_no_alloc = { version = "1.1", optional = true }

@@ -26,6 +26,7 @@ use robot_core::adapter::{
     JointStateBuf, MAX_JOINTS, ManipulatorAdapter, RtClass,
 };
 use robot_core::error::RobotError;
+use robot_core::factory::{AdapterBuildContext, AdapterFactory};
 
 /// Mock `HardRT` 机械臂 adapter。默认 `joint_count = 0`，使用前通过
 /// `MockHardRTAdapter::new(joint_count, limits)` 配置关节数 + 限位；也可以用
@@ -84,7 +85,9 @@ impl MockHardRTAdapter {
 impl ManipulatorAdapter for MockHardRTAdapter {
     fn info(&self) -> AdapterInfo {
         AdapterInfo {
-            name: "mock_hardrt",
+            // 与 [`MockFactory::name`] 字面对齐 + `configs/<robot>.toml` 里
+            // `[[hardware]] adapter = "mock_hard_rt"` 一致。
+            name: "mock_hard_rt",
             kind: AdapterKind::Manipulator,
             rt_class: RtClass::HardRT,
             vendor_sdk: false,
@@ -167,6 +170,41 @@ impl ManipulatorAdapter for MockHardRTAdapter {
     }
 }
 
+// ============================================================================
+// Factory（Step 7 task 27b inventory 自注册）
+// ============================================================================
+
+/// `MockHardRTAdapter` 的 inventory 工厂。
+///
+/// `[[hardware]] adapter = "mock_hard_rt"` 时被 `s0_daemon` 命中。
+/// build 出的 adapter 用 `JointLimits::default()`（全 0），调用方按需 reset。
+pub struct MockFactory;
+
+impl AdapterFactory for MockFactory {
+    fn name(&self) -> &'static str {
+        "mock_hard_rt"
+    }
+
+    fn build(
+        &self,
+        ctx: &AdapterBuildContext<'_>,
+    ) -> Result<Box<dyn ManipulatorAdapter + Send>, RobotError> {
+        let n = ctx.joint_names.len();
+        if n > MAX_JOINTS {
+            return Err(RobotError::InvalidParameter(
+                "mock joint_count > MAX_JOINTS",
+            ));
+        }
+        let joint_count =
+            u8::try_from(n).map_err(|_| RobotError::InvalidParameter("mock joint_count > 255"))?;
+        Ok(Box::new(MockHardRTAdapter::with_unlimited_limits(
+            joint_count,
+        )))
+    }
+}
+
+inventory::submit! { &MockFactory as &dyn AdapterFactory }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,7 +230,7 @@ mod tests {
         let info = a.info();
         assert_eq!(info.rt_class, RtClass::HardRT);
         assert_eq!(info.kind, AdapterKind::Manipulator);
-        assert_eq!(info.name, "mock_hardrt");
+        assert_eq!(info.name, "mock_hard_rt");
         assert!(!info.vendor_sdk);
     }
 

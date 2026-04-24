@@ -77,6 +77,40 @@ jobs:
       - name: sccache stats
         run: sccache --show-stats
 
+  matrix-build:
+    name: matrix build (${{ matrix.combo }})
+    runs-on: ubuntu-latest
+    needs: test
+    # Step 7 task 27b：验证 robot-s0 binary 在每个 robot-specific feature combo
+    # 下都能编译 + 跑 1s smoke。test job 已经覆盖 default features = `xlerobot`，
+    # 这里增量验证 mock-only / atom01；新机器人加 entry 时往 matrix 加一行即可。
+    strategy:
+      fail-fast: false
+      matrix:
+        combo: [mock-only, xlerobot, atom01]
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: cargo build -p robot-s0 --no-default-features --features ${{ matrix.combo }}
+        run: |
+          cargo build --release \
+            -p robot-s0 --bin s0_daemon \
+            --no-default-features --features ${{ matrix.combo }}
+
+      - name: cargo test -p robot-s0 --no-default-features --features ${{ matrix.combo }}
+        run: |
+          cargo test --release \
+            -p robot-s0 \
+            --no-default-features --features ${{ matrix.combo }}
+
   baseline-smoke:
     name: iceoryx2 baseline smoke (30s, ubuntu)
     runs-on: ubuntu-latest

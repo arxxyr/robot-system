@@ -18,6 +18,22 @@
 
 #![forbid(unused_must_use)]
 
+// ── adapter crate 强制 link（Step 7 task 27b）─────────────────────────
+//
+// 每个 adapter crate 通过 `inventory::submit!` 静态注册一个 factory，注册
+// 项靠链接器收到 special section。但 Rust 的 dead-code stripping 会丢弃 *未被
+// 任何代码引用*的 lib，导致 `submit!` item 被一起 strip。
+//
+// 在这里 `pub use ... as _` 强制 lib 被 link，inventory section 才会被合并；
+// `as _` 不污染 robot_s0 公开命名空间。
+#[cfg(feature = "mock")]
+#[allow(unused_imports)]
+pub use robot_adapter_mock as _;
+
+#[cfg(feature = "feetech")]
+#[allow(unused_imports)]
+pub use robot_adapter_feetech as _;
+
 pub mod config_loader;
 pub mod estop_latch;
 pub mod io_thread;

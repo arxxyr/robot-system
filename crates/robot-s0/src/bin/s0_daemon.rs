@@ -45,9 +45,9 @@ use std::time::Duration;
 use crossbeam_channel::unbounded;
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
-use robot_adapter_mock::MockHardRTAdapter;
-use robot_core::adapter::{JointCommandBuf, RtSnapshot};
+use robot_core::adapter::{JointCommandBuf, ManipulatorAdapter, RtSnapshot};
 use robot_core::config::IdentityFingerprint;
+use robot_core::factory::{AdapterBuildContext, find_factory, registered_factories};
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
 use robot_s0::config_loader::{LoadedConfig, load_robot_config};
@@ -518,7 +518,19 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     );
 
     // ---- 5) spawn rt_thread ----
-    let adapter = MockHardRTAdapter::with_unlimited_limits(args.joint_count);
+    //
+    // adapter 来源（Step 7 task 27b）：
+    // - 有 `--config`：取 TOML 第一段 `[[hardware]]` 的 `adapter` + `joints` 字段，
+    //   走 `inventory::find_factory` 查 factory + build。
+    // - 无 `--config`：fallback 到 `mock_hard_rt`，joint 名按 j0..jN 自动生成
+    //   （兼容旧 CLI smoke 路径）。
+    let adapter: Box<dyn ManipulatorAdapter + Send> = match build_adapter(args) {
+        Ok(a) => a,
+        Err(code) => {
+            graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
+            return Err(code);
+        }
+    };
     let rt_cfg = RtThreadConfig {
         tick_period_ns: args.tick_period_ns,
         sched_fifo_priority: 70,
@@ -659,6 +671,59 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
 
     eprintln!("s0_daemon: clean shutdown");
     Ok(())
+}
+
+// ============================================================================
+// adapter 构造（Step 7 task 27b：走 inventory factory）
+// ============================================================================
+
+/// 按 `--config` TOML 第一段 hardware（或 fallback `mock_hard_rt`）走
+/// `robot_core::factory::find_factory` 拿 factory + build。
+///
+/// 错误返回 i32 退出码（与 `run` 顶层一致），调用方据此 `graceful_stop`。
+fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Send>, i32> {
+    // 1) 决定 adapter_kind + joint_names 来源
+    let (adapter_kind, joint_names): (String, Vec<String>) = if let Some(cfg) = &args.loaded_config
+    {
+        if let Some(hw) = cfg.parsed.hardware.first() {
+            (hw.adapter.clone(), hw.joints.clone())
+        } else {
+            eprintln!(
+                "fatal: --config {} 内无 [[hardware]] 段，无 adapter 可启动",
+                cfg.source_path.display()
+            );
+            return Err(2);
+        }
+    } else {
+        // CLI-only fallback：mock + 自动生成 j0..jN-1 关节名
+        let names = (0..args.joint_count).map(|i| format!("j{i}")).collect();
+        ("mock_hard_rt".to_string(), names)
+    };
+
+    // 2) 查 factory
+    let Some(factory) = find_factory(&adapter_kind) else {
+        eprintln!(
+            "fatal: 没有名为 '{adapter_kind}' 的 adapter factory。\n\
+             已注册：{:?}\n\
+             检查 robot-s0 features（cargo build --features <combo>）或 \
+             configs/<robot>.toml 里 [[hardware]] adapter 字段拼写。",
+            registered_factories()
+                .map(robot_core::factory::AdapterFactory::name)
+                .collect::<Vec<_>>()
+        );
+        return Err(2);
+    };
+
+    // 3) build adapter
+    let ctx = AdapterBuildContext {
+        instance_name: &args.hardware_id,
+        adapter_kind: &adapter_kind,
+        joint_names: &joint_names,
+    };
+    factory.build(&ctx).map_err(|e| {
+        eprintln!("fatal: adapter '{adapter_kind}' build failed: {e}");
+        1
+    })
 }
 
 /// 有顺序地停线程 + `join`，容忍任一 handle 为 None（早期启动失败场景）。

@@ -81,6 +81,12 @@ hdrhistogram = "7.5"
 # toml 0.9 与 iceoryx2 0.8.1 子树对齐，避免新增重复版本（deny.toml skip-tree 注释）。
 serde = { version = "1", features = ["derive"] }
 toml  = "0.9"
+# inventory：static 注册机制（adapter 工厂表）。Step 7 task 27b 落地。
+# 链接器把每个 adapter crate 的 `submit!` 项收到一个 array section，启动期
+# `iter::<&dyn AdapterFactory>()` 遍历。**零 runtime 开销**（无 alloc / 无 IO），
+# 仅在进程启动一次性扫描。白名单登记见 docs/CHANGELOG.md 2026-04-24
+# "Step 7 task 27b matrix + inventory adapter 自注册"。
+inventory = "0.3"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core          = { path = "crates/robot-core" }

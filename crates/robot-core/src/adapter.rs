@@ -241,6 +241,45 @@ pub trait ManipulatorAdapter: Send {
     fn limits(&self) -> &JointLimits;
 }
 
+/// `Box<dyn ManipulatorAdapter>` 透传 blanket impl —— Step 7 task 27b 加。
+///
+/// 让 inventory factory 返回的 `Box<dyn ManipulatorAdapter + Send>` 直接满足
+/// `spawn_rt_thread<A: ManipulatorAdapter + Send + 'static>` 的泛型约束，无需在
+/// 调用方再包一层 newtype。零运行时开销（每方法多一次 vtable 间接 + Box deref，
+/// 与显式 dyn 调用等价）。
+impl<Inner> ManipulatorAdapter for Box<Inner>
+where
+    Inner: ManipulatorAdapter + ?Sized,
+{
+    fn info(&self) -> AdapterInfo {
+        (**self).info()
+    }
+    fn connect(&mut self) -> Result<(), RobotError> {
+        (**self).connect()
+    }
+    fn disconnect(&mut self) -> Result<(), RobotError> {
+        (**self).disconnect()
+    }
+    fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
+        (**self).read_state(out)
+    }
+    fn write_command(&mut self, cmd: &JointCommandView) -> Result<(), RobotError> {
+        (**self).write_command(cmd)
+    }
+    fn set_mode(&mut self, mode: ControlMode) -> Result<(), RobotError> {
+        (**self).set_mode(mode)
+    }
+    fn enable(&mut self, on: bool) -> Result<(), RobotError> {
+        (**self).enable(on)
+    }
+    fn safety_stop(&mut self) -> Result<(), RobotError> {
+        (**self).safety_stop()
+    }
+    fn limits(&self) -> &JointLimits {
+        (**self).limits()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

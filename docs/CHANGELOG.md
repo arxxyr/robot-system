@@ -1040,3 +1040,128 @@ protocol 自实现（packet 头 + checksum + ping/read/write/sync_*）。这样�
   - 第二个 motor 型号需要支持（SMS / SCS 系列）→ registers / sign_bit / model_number 表抽 trait
 
 ---
+
+## 2026-04-24 · Step 7 task 27b matrix 编译 + inventory adapter 自注册 + CI 矩阵（**状态：登记 / 实施细节落地**）
+
+### 涉及小节
+
+- `docs/00_design.md` §4.5 "静态注册"（**不动正文**；本条把 §4.5 描述的
+  inventory + factory 模式具体实现落地）
+- `docs/CHANGELOG.md` 2026-04-22 "workspace runtime 依赖白名单机制" → 新增
+  `inventory` 进 `robot-core` / `robot-adapter-mock` / `robot-s0` 白名单条目
+- `Cargo.toml` workspace.dependencies 加 `inventory = "0.3"`
+- `crates/robot-core/src/factory.rs`（**本次新增**：AdapterBuildContext + AdapterFactory + find_factory + registered_factories + 4 单测）
+- `crates/robot-core/src/adapter.rs` 加 `Box<Inner>: ManipulatorAdapter` blanket impl
+- `crates/robot-adapters/mock/src/lib.rs` 加 `MockFactory` + `inventory::submit!`
+- `crates/robot-s0/Cargo.toml` adapter dep 改 optional + 新增 features `mock-only` / `xlerobot` / `atom01`（基础 `mock` / `feetech`）
+- `crates/robot-s0/src/lib.rs` `pub use ... as _` 强制 link（防 dead-code strip）
+- `crates/robot-s0/src/bin/s0_daemon.rs` 替换硬 link `MockHardRTAdapter` 为 `find_factory(...).build(ctx)`
+- `.github/workflows/ci.yml` 新增 `matrix-build` job（mock-only / xlerobot / atom01 三 combo build + test）
+
+### 背景
+
+`docs/00_design.md` §4.5 + `CLAUDE.md` "robot-kinematics-<robot> 按 feature flag
+挂到 robot-s1" 模式：每种机器人配置 link 不同 adapter 子集，s0_daemon 启动期
+按 `configs/<robot>.toml` `[[hardware]] adapter = "..."` 字符串实例化对应
+factory。
+
+task 24-27 期间 s0_daemon 一直硬 link `MockHardRTAdapter`，没接 inventory 也没
+matrix。task 27 落 feetech 协议层后切要解决"不同 robot link 不同 adapter"问题，
+否则 task 28 真机 + 后续 piper / realsense 接入时还是改 s0_daemon 硬 link 的
+反模式。
+
+### 决定
+
+1. **`robot-core::factory` 模块**：
+   - `AdapterBuildContext<'_>` —— v0.2 最小集字段（`instance_name` / `adapter_kind`
+     / `joint_names`），不含 `address` / `baud` 等 adapter-specific 字段
+     （v0.4 真硬件 adapter 落地时按需扩；扩字段保证不破坏现有 factory 兼容）。
+   - `AdapterFactory: Sync + 'static` trait —— `name()` + `build(&ctx) ->
+     Result<Box<dyn ManipulatorAdapter + Send>, RobotError>`。
+   - `inventory::collect!(&'static dyn AdapterFactory)` + `find_factory(name) ->
+     Option<&'static dyn AdapterFactory>` + `registered_factories() -> impl Iterator`。
+2. **`Box<Inner>: ManipulatorAdapter` blanket impl** 加在 `robot-core::adapter`
+   末尾 —— 让 `Box<dyn ManipulatorAdapter + Send>` 直接满足 `spawn_rt_thread<A>`
+   的泛型约束。零 runtime 开销（vtable 间接 + Box deref，与显式 dyn 调用等价）。
+3. **每个 adapter crate 自注册**：mock 已注册；feetech 暂不注册（缺 SerialTransport
+   选择 + 真硬件依赖，留 task 28 加 `real-hw` feature 时再注册）。
+4. **`robot-s0` features 设计**：
+   ```toml
+   default   = ["xlerobot"]            # 开发期默认拿到 mock + feetech
+   mock-only = ["mock"]
+   xlerobot  = ["mock", "feetech"]
+   atom01    = ["mock"]                # piper crate 待 v0.5 落地后扩 ["mock", "piper"]
+   mock      = ["dep:robot-adapter-mock"]
+   feetech   = ["dep:robot-adapter-feetech"]
+   ```
+   组合 features (`xlerobot` / `atom01` / `mock-only`) 对外暴露给用户 + CI；
+   基础 features (`mock` / `feetech`) 内部 gating 单 crate dep。
+5. **强制 link 防 dead-code strip**：`robot-s0/src/lib.rs` 加
+   `#[cfg(feature = "X")] pub use robot_adapter_X as _;`。Rust 不会 strip
+   被 `pub use` 的 lib，inventory section 被合并入最终 binary。
+6. **s0_daemon adapter 来源**：
+   - 有 `--config`：取 TOML 第一段 `[[hardware]]` 的 `adapter` + `joints` 字段，
+     走 `find_factory` 查 + `factory.build(&ctx)`。
+   - 无 `--config`：fallback 到 `mock_hard_rt`，joint 名按 `j0..jN-1` 自动生成
+     （兼容旧 CLI smoke 路径）。
+   - 找不到 factory → 打印"已注册：[...]"清单 + exit 2，便于排查 feature 漏开 / 拼写错。
+7. **CI matrix-build job** 跑 3 combo（mock-only / xlerobot / atom01），每个
+   `cargo build --release -p robot-s0 --bin s0_daemon --no-default-features
+   --features <combo>` + `cargo test`。新机器人 entry 加一行 matrix 即可。
+
+### `inventory` 依赖白名单
+
+新增 `inventory = "0.3"` 到 workspace.dependencies，加进 `robot-core` /
+`robot-adapter-mock` / `robot-s0` 白名单。
+
+理由：链接器把 `submit!` 项收到 array section，**零 runtime 开销**（无 alloc /
+无 IO，仅启动期一次性遍历）。技术上不破坏 §4.2 "robot-core 零 runtime 依赖" 精神，
+但形式上是新依赖 → 走白名单登记。
+
+### 约束
+
+1. **`AdapterFactory::name()` 必须与 `[[hardware]] adapter = "..."` 字符串字面
+   一致**。本次约定 snake_case：`mock_hard_rt` / `feetech_sts3215` / `piper_*`
+   / `realsense_*`。新 factory 在 module-level docs 显式标注与 TOML 字符串关系。
+2. **`AdapterBuildContext` 字段扩展不破坏旧 factory**：v0.4 加 `address` /
+   `baud` 等字段时，旧 factory 忽略不读即可，新 factory 读新字段。
+3. **`info().rt_class = HardRT` 是声明而非编译期保证**：trait 无法静态保证
+   `read_state` / `write_command` 不 IO 阻塞。task 27 feetech 同步实现 + task 27c
+   bench 报告 + task 28 真机实测 一起把"声明 vs 实测"对齐。
+4. **inventory 链接行为依赖 binary link**：lib crate 内 `submit!` 必须经过
+   `pub use ... as _` 或类似机制让 binary 真 link。否则 dead-code strip 会丢失
+   注册项（test build 因 cargo 默认 link 全 lib，不受影响；release 优化下必中招）。
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `Cargo.toml`（workspace） | `[workspace.dependencies]` 加 `inventory = "0.3"` |
+| `crates/robot-core/Cargo.toml` | `[dependencies]` 加 `inventory` |
+| `crates/robot-core/src/lib.rs` | `pub mod factory` |
+| `crates/robot-core/src/factory.rs` | **新增**（4 单测：自注册 stub + find / iter / context） |
+| `crates/robot-core/src/adapter.rs` | 加 `Box<Inner>: ManipulatorAdapter` blanket impl |
+| `crates/robot-adapters/mock/Cargo.toml` | `[dependencies]` 加 `inventory` |
+| `crates/robot-adapters/mock/src/lib.rs` | `info().name` 改 `mock_hard_rt` 与 factory 一致；末尾加 `MockFactory` + `inventory::submit!` |
+| `crates/robot-s0/Cargo.toml` | adapter dep 改 optional；features 新增 `mock-only` / `xlerobot` / `atom01` / `mock` / `feetech` |
+| `crates/robot-s0/src/lib.rs` | `pub use robot_adapter_X as _` 强制 link |
+| `crates/robot-s0/src/bin/s0_daemon.rs` | 移除 `use robot_adapter_mock::MockHardRTAdapter`；新增 `build_adapter` helper 走 inventory |
+| `.github/workflows/ci.yml` | 新增 `matrix-build` job（3 combo） |
+| `docs/CHANGELOG.md` 本条 | 新增 |
+| `docs/00_design.md` §4.5 | **不动**（设计冻结） |
+
+### 审阅
+
+- 提议：Claude Code（2026-04-24 session 内 task 27b 入手时）
+- 决定：用户 loosqk（2026-04-24 session 内"能不能做成矩阵式加载或者 ci，
+  不同的机器人编译不同的模块" → 拍板方案 A：先 task 27 协议层 → task 27b
+  matrix → task 27c bench → task 28 真机）
+- 复审触发：
+  - task 28 加 feetech factory + `real-hw` feature → 评估 feetech 注册 factory 时
+    SerialTransport 来源（factory 内部硬编码 `serialport::new(addr)`，还是 context
+    里加 `address` 字段后 factory 读？）
+  - 第三个 robot（piper / 四足）落地 → 重新审视 features 命名约定（是否要
+    `xlerobot-arms` / `xlerobot-base` 之类的二级拆分）
+  - inventory crate 升级到 0.4 / `linkme` 替代 → 评估 API 兼容性
+
+---

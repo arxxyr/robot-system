@@ -13,7 +13,10 @@ publish    .workspace = true
 robot-core          = { workspace = true }
 robot-transport     = { workspace = true }
 robot-msg           = { workspace = true }
-robot-adapter-mock  = { workspace = true }
+# adapter crates 全部 optional，由 robot 组合 features 决定 link 哪些。
+# 每加一个新 adapter，按 mock / feetech 同模式扩 [features] 段。
+robot-adapter-mock    = { workspace = true, optional = true }
+robot-adapter-feetech = { workspace = true, optional = true }
 # watchdog / ipc_thread 非 RT 事件队列（Part 2）。
 crossbeam-channel   = { workspace = true }
 # s0_daemon bin 构造 iceoryx2 Node / subscriber / publisher（lib 层只抽象 Subscriber/Publisher 类型）。
@@ -36,7 +39,19 @@ thiserror           = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
-default = []
+# default = xlerobot：开发期 cargo test / cargo run 默认拿到 mock + feetech。
+# CI matrix 显式覆盖：mock-only / xlerobot / atom01（详 .github/workflows/ci.yml）。
+default = ["xlerobot"]
+
+# ── adapter 组合 features（matrix 入口；新 robot 在此扩 entry）──
+mock-only = ["mock"]
+xlerobot  = ["mock", "feetech"]
+atom01    = ["mock"] # v0.5 piper crate 落地后改 ["mock", "piper"]
+
+# ── adapter 基础 features（gating 单 crate dep；不直接给用户用，用上面组合 ──
+mock    = ["dep:robot-adapter-mock"]
+feetech = ["dep:robot-adapter-feetech"]
+
 # 对齐 robot-core::rt_guard feature；binary 侧需要自己声明 AllocDisabler
 # 作为 global_allocator 才能让 assert_no_alloc 生效（见 src/bin/s0_daemon.rs）。
 rt_guard = ["robot-core/rt_guard", "dep:assert_no_alloc"]
