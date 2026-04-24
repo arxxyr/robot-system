@@ -1374,7 +1374,7 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
 
 ---
 
-## 2026-04-25 · Step 7 task 29 feetech calibration JSON loader + silent clamp helper（**状态：登记 / 实施（commit 1/3）**）
+## 2026-04-25 · Step 7 task 29 feetech calibration JSON loader + silent clamp helper（**状态：登记 / 实施（commit 2/3 已落地）**）
 
 ### 涉及小节
 
@@ -1433,15 +1433,50 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
    homing_offset 越界 / range 越界 / u16 溢出 / drive_mode 缺省）+ load_and_merge × 2
    （合并 / 重名）+ clamp_raw × 5（内 / 下越 / 上越 / 负数 / 等值退化）
 
-### commit 2 / 3 计划（本 commit **不做**）
+### commit 2 改动范围（已落地）
 
-- **commit 2**：`FeetechAdapter` 加 `Vec<MotorCalibration>` 字段 + 挂 silent clamp；
-  `enable(true)` 1:1 移植 dimos `_manipulator_base.py:468-476` "sync_read Present
-  → sync_write Goal → sleep 50ms → Torque_Enable 带 3x 重试"；`write_stop` 走
-  follow-current（读 Present 写回 Goal，不 disable）
-- **commit 3**：`FeetechFactory::build` 从 config `extras.calibration_path` 读 JSON
-  → 传 adapter；Orin 上 mock_s1 + robotctl + s0_daemon 三端闭环 Goal_Position
-  ±5° 往返，验证 follow-current 启动不飞 + 真物理运动
+1. **`FeetechAdapterConfig` 加 `calibrations: Vec<MotorCalibration>` 字段**（同序
+   对齐 `joint_names`；空 Vec = 无标定）。`FeetechAdapter::new` 做长度校验（非空
+   长度必须 == `joint_names.len()`），`limits` 依据 calibration 的 `range_min/max`
+   raw → rad 换算；无 calibration 时保留原 ±π 默认
+2. **`connect()` 加 `calibration.id == bus motor id` 校验**（防配错 `left_arm.json`
+   被指给了 `right_arm` joints），不匹配立刻 `RobotError::InvalidParameter`
+3. **`enable(true)` 1:1 移植 dimos `_manipulator_base.py:468-504` 防飞序列**：
+   - sync_read Present_Position（每 motor 一 status 包）
+   - sync_write Goal_Position ← Present（target 追平 current）
+   - sleep 50 ms（常量 `ENABLE_SYNC_SETTLE`）消化总线
+   - per-motor WRITE Torque_Enable=1 带 3× 重试 + 150 ms 间隔（常量
+     `TORQUE_ENABLE_MAX_ATTEMPTS` / `TORQUE_ENABLE_RETRY_DELAY`）
+   - 任一 motor 全部重试都失败 → 返回第一失败 motor 的错误
+4. **`enable(false)` 也走 3× 重试**（对齐 enable(true) 一致性；无 sync_read 前置）
+5. **`write_command` 热路径 silent clamp**：非空 calibration 时每 joint 走
+   `clamp_raw(raw, range_min, range_max)`；空 calibration 时直写（dimos
+   `_manipulator_base.py:422-426` 1:1）
+6. **新增 public helper**：
+   - `FeetechAdapter::sync_goal_to_present() -> Result<(), FeetechError>`（读当前
+     Present，写回 Goal，不动 Torque）
+   - `FeetechAdapter::hold_current_position() -> Result<(), RobotError>`（S0 在
+     `CONTROL_LOST` 恢复时主动调，handoff §4.1 语义）
+7. **私有 helper `write_torque_enable_with_retry(on: bool)`** 提取，避免 enable
+   / disable 两条路径重复 3× retry loop
+8. **Factory 侧传空 Vec**：`FeetechFactory::build` 暂时 `calibrations: Vec::new()`
+   —— commit 3 扩 factory 从 config 读 `calibration_path` → 加载 → 传 adapter
+9. **7 新单测**：enable(true) dimos 序列 / enable(false) 直写 / hold_current_position
+   / write_command clamp 有 cal / write_command 无 cal 不 clamp / calibration-derived
+   limits / 长度不匹配拒绝 / id 不匹配 connect 拒绝
+
+### commit 3 计划（下一步）
+
+- **Factory 扩 calibration_path**：`FeetechFactory::build` 从 `ctx.extras`
+  （`AdapterBuildContext` 字段扩展）读 calibration JSON 路径（支持数组，对应
+  dimos bus1 = left_arm + head 两文件合并）→ `calibration_io::load_and_merge`
+  → 按 joint_names 顺序取出 `MotorCalibration` → 传 `FeetechAdapterConfig`
+- **Config 侧**：`configs/xlerobot_task29_single_joint.toml` 加 `calibration_paths
+  = ["..."]` 字段（或复用 extras）；s0_daemon 的 `build_adapter` 透传
+- **Orin 端到端**：s0_daemon + mock_s1 + robotctl 三端闭环：
+  - s0_daemon 起来 → follow-current 冻结当前位置（不飞）
+  - mock_s1 推 Goal_Position = 当前 ± 5° 小角度往返
+  - 验证电机真转、range 超限时 silent clamp 生效、follow-current 恢复语义
 
 ### 依赖白名单更新（robot-adapter-feetech）
 
@@ -1468,23 +1503,25 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
 
 ### 影响面
 
-| 文件 | 调整 |
-|---|---|
-| `Cargo.toml`（workspace） | `[workspace.dependencies]` 加 `serde_json = "1"` + 白名单注释 |
-| `crates/robot-adapters/feetech/Cargo.toml` | `[dependencies]` 加 `serde` + `serde_json`；`[dev-dependencies]` 加 `tempfile` |
-| `crates/robot-adapters/feetech/src/types.rs` | `MotorCalibration` 加 `#[derive(Serialize, Deserialize)]` + `#[serde(try_from)]` + 私有 `MotorCalibrationRaw` struct + `TryFrom` impl |
-| `crates/robot-adapters/feetech/src/calibration_io.rs` | **新增**（`load_file` + `load_and_merge` + `clamp_raw` + 15 单测） |
-| `crates/robot-adapters/feetech/src/error.rs` | `FeetechError` 加 4 变体 + `From` impl 对应更新 |
-| `crates/robot-adapters/feetech/src/lib.rs` | `pub mod calibration_io` + `pub use calibration_io::{clamp_raw, load_and_merge, load_file}` |
-| `crates/robot-s0/tests/rt_guard_soak.rs` | pre-existing 2 处 `clippy::doc_markdown` 错误（`tick_count` / `SCHED_FIFO`）顺手补 backtick —— **非本 task 引入的回归，clippy `--all-targets` 才会扫到 integration test doc comments** |
-| `docs/CHANGELOG.md` 本条 | 新增 |
-| `docs/00_design.md` | **不动**（设计冻结） |
+| 文件 | 调整 | commit |
+|---|---|---|
+| `Cargo.toml`（workspace） | `[workspace.dependencies]` 加 `serde_json = "1"` + 白名单注释 | 1 |
+| `crates/robot-adapters/feetech/Cargo.toml` | `[dependencies]` 加 `serde` + `serde_json`；`[dev-dependencies]` 加 `tempfile` | 1 |
+| `crates/robot-adapters/feetech/src/types.rs` | `MotorCalibration` 加 `#[derive(Serialize, Deserialize)]` + `#[serde(try_from)]` + 私有 `MotorCalibrationRaw` struct + `TryFrom` impl | 1 |
+| `crates/robot-adapters/feetech/src/calibration_io.rs` | **新增**（`load_file` + `load_and_merge` + `clamp_raw` + 15 单测） | 1 |
+| `crates/robot-adapters/feetech/src/error.rs` | `FeetechError` 加 4 变体 + `From` impl 对应更新 | 1 |
+| `crates/robot-adapters/feetech/src/lib.rs` | `pub mod calibration_io` + `pub use calibration_io::{clamp_raw, load_and_merge, load_file}` | 1 |
+| `crates/robot-s0/tests/rt_guard_soak.rs` | pre-existing 2 处 `clippy::doc_markdown` 错误（`tick_count` / `SCHED_FIFO`）顺手补 backtick | 1 |
+| `crates/robot-adapters/feetech/src/adapter.rs` | `FeetechAdapterConfig` 加 `calibrations`；adapter 存字段 + calibration-derived limits；`connect()` 加 id 校验；`enable(true)` 按 dimos 序列 + 50 ms 消化 + 3× 重试；`enable(false)` 同 3× 重试；silent clamp in `write_command`；新加 `sync_goal_to_present` + `hold_current_position` public helper + `write_torque_enable_with_retry` 私有 helper；新增 7 单测 | 2 |
+| `crates/robot-adapters/feetech/src/factory.rs` | `FeetechFactory::build` 构造 `FeetechAdapterConfig` 时传 `calibrations: Vec::new()`（commit 3 再扩读 calibration_path） | 2 |
+| `docs/CHANGELOG.md` 本条 | 新增 / 更新 | 1 + 2 |
+| `docs/00_design.md` | **不动**（设计冻结） | — |
 
-### 验证
+### 验证（commit 2 后）
 
 - `cargo fmt --all --check` ✅
 - `cargo clippy --all --all-targets -- -D warnings` ✅（零警告）
-- `cargo test --all` ✅ 全部绿；feetech 单测 98 pass（原 83 + calibration_io 15）
+- `cargo test --all` ✅ 全部绿；feetech 单测 **105 pass**（commit 1 的 98 + commit 2 的 7）
 - matrix features 本机 build：`mock-only` / `xlerobot` / `atom01` 三个组合 ✅
 - `xlerobot-real` 需 libudev，留 Orin 本地验证（commit 3 顺带）
 

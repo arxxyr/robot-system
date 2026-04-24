@@ -88,10 +88,16 @@ impl AdapterFactory for FeetechFactory {
         })?;
 
         // ---- 5) 构造 adapter ----
+        //
+        // task 29 commit 2：`calibrations: Vec::new()` 表示无标定 —— silent
+        // clamp 不启用，limits 保持 ±π 默认。commit 3 会扩这里从
+        // ctx.extras / 新字段读 calibration_path，加载 JSON → 按 joint_names
+        // 顺序取 MotorCalibration，传给 adapter。
         let adapter = FeetechAdapter::new(
             FeetechAdapterConfig {
                 adapter_name: "feetech_sts3215",
                 joint_names: ctx.joint_names.to_vec(),
+                calibrations: Vec::new(),
             },
             bus,
         )
