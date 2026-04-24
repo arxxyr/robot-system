@@ -209,7 +209,16 @@ fn run(args: &Args) -> Result<(), i32> {
                 thread::sleep(Duration::from_millis(args.interval_ms));
             }
             eprintln!("signal received → exit");
-            Ok(())
+            // task-30 follow-up（handoff 2026-04-25_1 §3.6）：iceoryx2 0.8.1
+            // subscriber Drop 路径在 publisher（如 s0_daemon）已先退出时访问
+            // 已释放的 shared memory 会 SIGSEGV（exit=139）。这是 iceoryx2 内部
+            // race，修框架超 scope —— 短寿命 CLI 工具接受 **跳过 Drop** 直接
+            // `process::exit(0)` 的妥协（iceoryx2 shared-memory 资源由 OS 回收，
+            // 无 leak 影响）。
+            //
+            // **不要**把这个 pattern 复制到 long-lived 进程或 library；只限
+            // 单次运行、立刻退出的 CLI 子命令。
+            std::process::exit(0);
         }
     }
 }
