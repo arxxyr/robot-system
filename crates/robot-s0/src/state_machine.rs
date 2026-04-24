@@ -196,6 +196,64 @@ pub struct Rejected {
 }
 
 // ============================================================================
+// S0StateSnapshot（给 seqlock 用的 Copy/POD 快照）
+// ============================================================================
+
+/// `ipc_thread` → `pub_thread` 方向的 state machine 快照。
+///
+/// ### 为什么要这个类型
+///
+/// Part 2 架构决策：`ipc_thread` 是 state machine 的执行者，每 tick 消费事件调
+/// [`try_transition`] 后必须把结果发布给 `pub_thread`（它负责对外 iceoryx2 publish
+/// `JointState` + S0 自身 Heartbeat）。同步原语复用现有 `RtSnapshotPublisher<T>`
+/// seqlock —— 要求 `T: Copy`。
+///
+/// 把当前 [`S0State`] + [`Guards`] 快照 + 时间戳打包成单一 POD struct 承载，方便
+/// `pub_thread` 侧一次 `load()` 拿到完整视图（避免两次 load 之间的撕裂语义）。
+///
+/// ### 字段
+///
+/// - `state`：主状态机当前态（5 主态之一）。
+/// - `guards_summary`：`ipc_thread` 本 tick 喂给 [`try_transition`] 的 [`Guards`]；
+///   `pub_thread` 可以从中读出 `estop_latched` / `heartbeat_ok` 等细粒度信号写进
+///   对外 state body。
+/// - `stamp_ns`：`RobotClock::now()` 纳秒，**单调**；`pub_thread` 侧可据此判断
+///   "本 tick 是否更新"（两次 load 比 stamp 即可，无需比对整个结构）。
+///
+/// ### 不变量
+///
+/// - **Copy/POD**：编译期 `size_of` 断言 ≤ 64 B（当前实测 ≈ 32 B）；无带 Drop 字段。
+/// - **Default = Safe**：上电初值；`ipc_thread` spawn 时 seqlock 用 `Default` 初始化，
+///   `pub_thread` 在 `ipc_thread` 还没发第一次 publish 前读到的也是 Safe 态（对应
+///   §6.7 "S0 启动 = 进 SAFE 状态"的观测一致性）。
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct S0StateSnapshot {
+    pub state: S0State,
+    pub guards_summary: Guards,
+    pub stamp_ns: u64,
+}
+
+impl S0StateSnapshot {
+    /// 构造一份快照。`ipc_thread` 每 tick 在完成 `try_transition` 后调用。
+    #[must_use]
+    pub const fn new(state: S0State, guards_summary: Guards, stamp_ns: u64) -> Self {
+        Self {
+            state,
+            guards_summary,
+            stamp_ns,
+        }
+    }
+}
+
+// 编译期尺寸守卫：seqlock memcpy 成本随 T 大小线性上升，S0StateSnapshot 必须保持精简。
+// 实测大小受 Guards（10 bool + 2 enum = ~12 B）+ S0State（~4 B）+ stamp_ns (8 B) + padding。
+// 留 64 B 余量，未来若要扩字段（fault code 明细、last event）仍有空间。
+const _: () = assert!(
+    core::mem::size_of::<S0StateSnapshot>() <= 64,
+    "S0StateSnapshot must stay ≤ 64 B to keep seqlock memcpy cheap",
+);
+
+// ============================================================================
 // try_transition
 // ============================================================================
 
@@ -608,5 +666,67 @@ mod tests {
             OutputMode::from_sub(EnabledSub::CtrlLostStop),
             OutputMode::Stop
         );
+    }
+
+    // ---- S0StateSnapshot ----
+
+    #[test]
+    fn snapshot_default_is_safe_zero_stamp() {
+        let snap = S0StateSnapshot::default();
+        assert_eq!(snap.state, S0State::Safe);
+        assert_eq!(snap.stamp_ns, 0);
+        assert!(!snap.guards_summary.estop_latched);
+    }
+
+    #[test]
+    fn snapshot_new_roundtrip_fields() {
+        let g = healthy_guards();
+        let snap = S0StateSnapshot::new(enabled_active(), g, 42);
+        assert_eq!(snap.state, enabled_active());
+        assert_eq!(snap.stamp_ns, 42);
+        assert!(snap.guards_summary.heartbeat_ok);
+    }
+
+    #[test]
+    fn snapshot_is_copy_and_eq() {
+        // Compile-time check via assignment + direct PartialEq
+        let g = healthy_guards();
+        let snap = S0StateSnapshot::new(S0State::Ready, g, 7);
+        let copy = snap; // move is actually copy since S0StateSnapshot: Copy
+        assert_eq!(snap, copy);
+        // snap still usable after "move"
+        assert_eq!(snap.stamp_ns, 7);
+    }
+
+    #[test]
+    fn snapshot_size_within_budget() {
+        // 运行时 sanity check（const _ 断言已在 compile time 验证；这里留一份显式日志用）。
+        let sz = core::mem::size_of::<S0StateSnapshot>();
+        assert!(sz <= 64, "S0StateSnapshot grew to {sz} B, must stay ≤ 64 B");
+    }
+
+    /// 集成测试：`S0StateSnapshot` 经 seqlock publish/load 语义正确。
+    ///
+    /// 本测试同时在**编译期**证明 `S0StateSnapshot: Copy + Send + 'static`
+    /// —— `RtSnapshotPublisher<T>` 泛型 bound 为 `T: Copy + Send + 'static`，
+    /// 实例化失败即编译失败。这是 Part 2 `ipc_thread.state_pub` / `pub_thread.state_rdr`
+    /// 接线的前置条件。
+    #[test]
+    fn snapshot_roundtrips_through_seqlock() {
+        use robot_transport::RtSnapshotPublisher;
+
+        let initial = S0StateSnapshot::default();
+        let (pubr, rdr) = RtSnapshotPublisher::new(initial);
+        assert_eq!(rdr.load(), initial);
+
+        let g = healthy_guards();
+        let snap = S0StateSnapshot::new(enabled_active(), g, 12_345_000);
+        pubr.publish(&snap);
+
+        let loaded = rdr.load();
+        assert_eq!(loaded, snap);
+        assert_eq!(loaded.state, enabled_active());
+        assert_eq!(loaded.stamp_ns, 12_345_000);
+        assert!(loaded.guards_summary.heartbeat_ok);
     }
 }
