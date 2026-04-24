@@ -20,7 +20,13 @@ robot-core = { workspace = true }
 thiserror  = { workspace = true }
 
 [dev-dependencies]
-# 无外部 dev-dep；mock transport 在 src/transport.rs 内部实现。
+# Step 7 task 27c：criterion bench harness（5 组：sign-magnitude / LE byte /
+# protocol packet / parse_status / bus end-to-end）。
+criterion = { workspace = true }
+
+[[bench]]
+name = "feetech_bench"
+harness = false # criterion 自带 harness，不用 default test runner
 
 [lints]
 workspace = true

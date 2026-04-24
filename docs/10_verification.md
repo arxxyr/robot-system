@@ -128,6 +128,9 @@
 | `robot-tests::schema_compat` | 当前由 `crates/robot-msg/tests/compat.rs` 覆盖 | old/new 交叉解析 | 🟡 v0 层已覆盖；跨 crate 版本交叉推到 v0.3 | Step 2 部分 / v0.3 补 |
 | `robot-tests::rt_arc_guard` | 未创建 | RT thread 内 `Arc::clone/drop` 计数 | ⏳ | Step 6 |
 | `hello_pubsub` | `crates/robot-tests/src/bin/hello_pubsub.rs` | Step 5 最小闭环演示 | ✅ | Step 5 |
+| `feetech_bench` | `crates/robot-adapters/feetech/benches/feetech_bench.rs`（task 27c）| criterion 5 组：encoding / protocol / parse / bus / bus_sync(13motor) | ✅ | Step 7 task 27c |
+| `feetech::integration_smoke` | `crates/robot-adapters/feetech/tests/integration_smoke.rs`（task 27c）| 13-motor × 1000 循环 sync_read+sync_write + 跨 0 边界 + handshake | ✅ | Step 7 task 27c |
+| `scripts/feetech_flamegraph.sh` | 同上 | 封装 cargo flamegraph 跑 bench 长循环 + perf record + SVG | ✅（脚本就绪；首次运行需 `cargo install flamegraph` + `perf_event_paranoid`） | Step 7 task 27c |
 
 ### 10.2.2 现存单元 / 集成测试清单（Step 5 完成时刻快照）
 
@@ -250,6 +253,43 @@ rust toolchain nightly（Cargo.toml edition=2024；未 pin 具体日期）
               x86_64 两档实测
 ```
 
+### feetech bench baseline（Step 7 task 27c 实测，Linux x86_64 dev 机）
+
+```
+env_id        linux-x86_64-nightly-2026-04-24-feetech-bench
+host          (dev 机；CPU 型号 + governor 待 collect_env_id.sh 补)
+os            Linux 6.17（PREEMPT，非 PREEMPT_RT）
+rust toolchain nightly（rust-toolchain.toml channel = "nightly"）
+profile       release（lto=fat / codegen-units=1）
+criterion     0.5.1
+测量场景       criterion `--warm-up-time 1 --measurement-time 2`（短跑，仅作回归 baseline）
+```
+
+| 组 / case | 中位数 |
+|---|---|
+| encoding/encode_sign_magnitude_pos | 494 ps |
+| encoding/encode_sign_magnitude_neg | 492 ps |
+| encoding/decode_sign_magnitude     | 368 ps |
+| encoding/split_bytes_le_2 / _4     | 184 / 183 ps |
+| encoding/combine_bytes_le_2 / _4   | 367 / 368 ps |
+| protocol_build/build_ping          | 560 ps |
+| protocol_build/build_read          | 562 ps |
+| protocol_build/build_write_2byte   | 966 ps |
+| protocol_build/build_sync_write_13motor_2byte | 33.2 ns |
+| protocol_build/build_sync_read_13motor        | 14.5 ns |
+| parse/parse_status_empty           | 1.50 ns |
+| parse/parse_status_2byte           | 1.58 ns |
+| parse/checksum_6byte               | 1.28 ns |
+| bus/write_goal_position_1motor     | 73.7 ns |
+| bus/read_present_position_1motor   | 66.2 ns |
+| **bus_sync/sync_read_present_position_13motor**  | **866 ns** |
+| **bus_sync/sync_write_goal_position_13motor**    | **240 ns** |
+
+**判断**：protocol / encoding 层零瓶颈。13-motor sync_read 端到端 866 ns ≈ 1 µs，
+远小于 50 Hz tick (20 ms) 预算；task 28 真机 Orin USB-RS485 实测的延迟瓶颈
+**几乎全部在 wire RTT**（1 Mbps × packet ~50 B / motor → 几 ms 量级），不在 Rust
+协议层。这是上 Orin 真机前的"协议层无回归"基线。
+
 ### 待登记
 
 - `linux-x86_64-nightly-YYYYMMDD`：Step 6 开工用
@@ -263,6 +303,7 @@ rust toolchain nightly（Cargo.toml edition=2024；未 pin 具体日期）
 |---|---|---|
 | 2026-04-22 | 骨架初稿：§10.1/§10.2/§10.3 三级结构 + 状态标签 + env_id 机制；所有数值行占位。Step 5 完成时刻快照 | Claude Code (提议) / loosqk (拍板) |
 | 2026-04-22 | §10.2.3 CI 1–6 步接入 `.github/workflows/ci.yml`；`deny.toml` 落地（allow 0BSD；workspace path wildcard + private crate 豁免；iceoryx2 / trybuild winnow dup 走 skip-tree）；`scripts/collect_env_id.sh` 兼容 macOS + Linux。TODO 1/3/4 划掉，只剩 2（assert-no-alloc） | Claude Code |
+| 2026-04-24 | §10.2.1 加 3 个 task 27c harness（`feetech_bench` criterion / `feetech::integration_smoke` / `scripts/feetech_flamegraph.sh`）+ 附录加 feetech bench baseline 实测数值。结论：协议层零瓶颈，task 28 真机延迟瓶颈在 USB-RS485 wire RTT。 | Claude Code |
 
 ---
 

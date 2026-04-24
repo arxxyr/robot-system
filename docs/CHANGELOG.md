@@ -1165,3 +1165,100 @@ matrix。task 27 落 feetech 协议层后切要解决"不同 robot link 不同 a
   - inventory crate 升级到 0.4 / `linkme` 替代 → 评估 API 兼容性
 
 ---
+
+## 2026-04-24 · Step 7 task 27c feetech 性能 / 集成 smoke / 火焰图配套（**状态：登记 / 实施细节落地**）
+
+### 涉及小节
+
+- `docs/10_verification.md` §10.2.1 Harness 清单 → 新增 3 条 task 27c 产出
+- `docs/10_verification.md` 附录 → 新增 feetech bench baseline 实测数值
+- `Cargo.toml` workspace.dependencies 加 `criterion = "0.5"`（仅 dev-deps 用）
+- `crates/robot-adapters/feetech/Cargo.toml` 加 `criterion` dev-dep + `[[bench]]` entry
+- `crates/robot-adapters/feetech/benches/feetech_bench.rs`（**本次新增**）
+- `crates/robot-adapters/feetech/tests/integration_smoke.rs`（**本次新增**）
+- `scripts/feetech_flamegraph.sh`（**本次新增**）
+
+### 背景
+
+用户拍板"上真机前，冒烟测试，全量测试，性能测试和火焰图都要搞好"。task 27
+完成 feetech 协议层 + 83 单元测试，task 27b 完成 inventory + matrix 编译；
+task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规模端到端
+集成 smoke，(3) 火焰图配套。本任务全部交付。
+
+### 决定
+
+1. **criterion bench 5 组**（`benches/feetech_bench.rs`）：
+   - `encoding`：encode/decode_sign_magnitude + split/combine_bytes_le
+   - `protocol_build`：build_ping/read/write/sync_read/sync_write
+   - `parse`：parse_status + checksum
+   - `bus`：单 motor read/write 端到端（mock transport）
+   - `bus_sync`：13-motor sync_read / sync_write（XLeRobot 双臂 5+5 + 三轮 3 规模）
+2. **集成 smoke 3 测试**（`tests/integration_smoke.rs`）：
+   - 13-motor × 1000 循环 sync_read+sync_write（含 sign-magnitude 跨 0 边界）
+   - 13-motor sync_read 解码负值（`-400` raw）
+   - 13-motor handshake（每 motor PING + READ_DATA Model_Number）
+3. **flamegraph 脚本**（`scripts/feetech_flamegraph.sh`）：
+   - 封装 `cargo flamegraph -p robot-adapter-feetech --bench feetech_bench`
+   - 默认 case = `sync_read_present_position_13motor`（task 28 真机最关心的 hot path）
+   - 前置检查：`cargo-flamegraph` / `perf` / `perf_event_paranoid`
+   - 输出 `target/criterion-flamegraph/<case>.svg`
+4. **bench 数值入档** `docs/10_verification.md` 附录，作为协议层"无回归"的
+   baseline。task 28 真机延迟瓶颈在 USB-RS485 wire RTT，**不**在 Rust 协议层。
+
+### 实测 baseline（Linux x86_64 dev 机，release，criterion 0.5.1）
+
+| 关键 case | 中位数 | 注 |
+|---|---|---|
+| `encode_sign_magnitude_pos` | 494 ps | 亚纳秒 |
+| `decode_sign_magnitude` | 368 ps | |
+| `build_sync_write_13motor_2byte` | 33.2 ns | 13 motor 包 build |
+| `build_sync_read_13motor` | 14.5 ns | 13 motor 包 build |
+| `parse_status_2byte` | 1.58 ns | |
+| `bus.read_present_position_1motor` | 66.2 ns | 含 mock tx + ack rx + parse + drain |
+| `bus.write_goal_position_1motor` | 73.7 ns | 同上 |
+| **`bus.sync_read_present_position_13motor`** | **866 ns** | **task 28 真机最关心 hot path** |
+| **`bus.sync_write_goal_position_13motor`** | **240 ns** | **同上**（不 ACK） |
+
+**结论**：13-motor sync_read 端到端 866 ns ≈ 1 µs，远小于 50 Hz tick (20 ms)
+预算。task 28 真机延迟全部在 USB-RS485 wire RTT（1 Mbps × packet ~50 B / motor →
+几 ms 量级），不在协议层。
+
+### 约束
+
+1. **bench baseline 是相对值**：本机 dev 机数据仅作回归对照（CI 不卡阈值）。
+   绝对延迟门槛以 task 28 Orin USB-RS485 实测为准。
+2. **集成 smoke 的 1000 次循环非性能基准**：仅验"长循环不出错 + tx/rx buffer
+   不泄漏"。性能数据走 criterion bench。
+3. **flamegraph 脚本需要前置环境**：`cargo install flamegraph` + `perf` +
+   `perf_event_paranoid <= 0`（`echo -1 | sudo tee ...`）。脚本内已检测 + 提示。
+4. **CI 不自动跑 bench**：criterion 5+ 分钟一轮太重，本任务不挂 CI。task 28
+   真机阶段或 v0.5 性能回归出现时手动跑。
+
+### 影响面
+
+| 文件 | 调整 |
+|---|---|
+| `Cargo.toml`（workspace） | `[workspace.dependencies]` 加 `criterion`（default-features=false + cargo_bench_support + html_reports） |
+| `crates/robot-adapters/feetech/Cargo.toml` | dev-dependencies 加 `criterion`；`[[bench]] name="feetech_bench" harness=false` |
+| `crates/robot-adapters/feetech/benches/feetech_bench.rs` | **新增**（5 组 criterion bench） |
+| `crates/robot-adapters/feetech/tests/integration_smoke.rs` | **新增**（3 测试） |
+| `scripts/feetech_flamegraph.sh` | **新增**（封装 cargo flamegraph） |
+| `docs/10_verification.md` §10.2.1 | 加 3 行 task 27c harness |
+| `docs/10_verification.md` 附录 | 加 feetech bench baseline 实测表 |
+| `docs/10_verification.md` 变更记录 | 加 2026-04-24 条 |
+| `docs/CHANGELOG.md` 本条 | 新增 |
+| `docs/00_design.md` | **不动**（设计冻结） |
+
+### 审阅
+
+- 提议：Claude Code（2026-04-24 session 内 task 27c 入手时）
+- 决定：用户 loosqk（2026-04-24 session 内"上真机前，冒烟测试，全量测试，
+  性能测试和火焰图都要搞好"）
+- 复审触发：
+  - task 28 真机实测发现协议层 hot path 与本机 bench 偏差 > 10× → 重跑
+    flamegraph 找瓶颈 + 更新 baseline 表
+  - bench 数值在某 commit 突然退化 > 30% → 加 CI 夜间 bench compare job
+  - 集成 smoke 1000 循环偶发失败（mock 行为变化 / inventory 链接问题）→ 加
+    nightly schedule 跑 smoke 重复 100×
+
+---
