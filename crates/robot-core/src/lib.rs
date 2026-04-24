@@ -8,4 +8,9 @@
 
 #![forbid(unused_must_use)]
 
+pub mod adapter;
+pub mod error;
+pub mod rt_guard;
+#[cfg(target_os = "linux")]
+pub mod thread;
 pub mod time;

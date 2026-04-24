@@ -1,0 +1,16 @@
+[package]
+name         = "robot-adapter-mock"
+description  = "Mock HardRT adapter：纯内存关节模型，用于 S0 最小闭环测试。"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+publish    .workspace = true
+
+[dependencies]
+robot-core = { workspace = true }
+
+[lints]
+workspace = true

@@ -13,8 +13,18 @@ publish    .workspace = true
 # §4.2 允许列表扩展（libc），登记见 docs/CHANGELOG.md 2026-04-21。
 # 仅允许出现在 robot-core::time（及未来 robot-core::os）一类 OS 抽象模块。
 libc = { workspace = true }
-# thiserror：Step 1 未使用（time 模块无 Result 返回路径）；Step 2+ 启用时解开。
-# thiserror = { workspace = true }
+# Step 6 Part 1：adapter / error 模块启用；RobotError 的 Display / Error impl 经 derive。
+thiserror = { workspace = true }
+# Step 6 Part 1：RT 铁律守卫（rt_guard feature）。
+# 默认 off 避免给所有依赖方强制替换 global allocator；rt_guard on 时打开 scope 宏。
+assert_no_alloc = { version = "1.1", optional = true }
+
+[features]
+default = []
+# 打开 rt_guard 后 rt_entry! 宏用 assert_no_alloc 包裹 body，配合 BINARY 侧设
+# `#[global_allocator] static _: assert_no_alloc::AllocDisabler = ...` 可在 scope 内
+# 捕获任何 heap allocation。详见 src/rt_guard.rs 头部说明。
+rt_guard = ["dep:assert_no_alloc"]
 
 [lints]
 workspace = true

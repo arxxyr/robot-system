@@ -7,8 +7,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/robot-adapters/mock",
     "crates/robot-core",
     "crates/robot-msg",
+    "crates/robot-s0",
     "crates/robot-tests",
     "crates/robot-transport",
 ]
@@ -58,11 +60,16 @@ blake3 = "1.8.4"
 # iceoryx2：本机零拷贝 pub-sub（§2.1）。精确 pin 仿 flatbuffers，防 minor 破坏性变更。
 # 烟测见 docs/CHANGELOG.md 2026-04-22 "Step 5 开工决策与 iceoryx2 依赖登记"。
 iceoryx2 = "=0.8.1"
+# arc-swap：Step 6 Part 1 latest-command slot 的同步原语（ipc_thread → rt_thread 方向）。
+# RT 侧 load() 返回 Guard 不 bump refcount（hazard pointer），满足 §4.9 RT 铁律。
+arc-swap = "1.7"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
-robot-core      = { path = "crates/robot-core" }
-robot-msg       = { path = "crates/robot-msg" }
-robot-transport = { path = "crates/robot-transport" }
+robot-core          = { path = "crates/robot-core" }
+robot-msg           = { path = "crates/robot-msg" }
+robot-transport     = { path = "crates/robot-transport" }
+robot-adapter-mock  = { path = "crates/robot-adapters/mock" }
+robot-s0            = { path = "crates/robot-s0" }
 
 # Workspace 级 lint 默认。
 # 子 crate 在自己的 Cargo.toml 里写 `[lints] workspace = true` 即可继承。
@@ -82,11 +89,15 @@ missing_panics_doc      = "allow"
 [profile.release]
 lto           = "fat"
 codegen-units = 1
-# panic 默认保留 unwind，利于 CLI / 工具诊断。
-# S0 / S1 二进制必须 abort（docs/00_design.md §9），在 Step 6 创建这些 crate 时追加：
-#   [profile.release.package.robot-s0] panic = "abort"
-#   [profile.release.package.robot-s1] panic = "abort"
-# 此刻这些 crate 尚未存在；若提前添加 override，cargo 会报 "unused manifest key"。
+# panic = "abort"：S0 二进制必须 abort（docs/00_design.md §9 + §6.7 "S0 存活 = 安全充分条件"）。
+# Cargo 不允许 per-package `panic` override（会报 "panic may not be specified in a package profile"），
+# 所以只能设在 workspace 级别。当前 workspace 唯一的 binary 是 robot-s0，这个设置
+# 正好匹配意图。Part 2 加入 robot-cli / robot-viz 等工具类 binary 后：
+#   - 方案 A：给 cli 引入自定义 profile（`[profile.release-debug] inherits = "release"` +
+#     `panic = "unwind"`），cli 构建用 `cargo build --profile release-debug -p robot-cli`。
+#   - 方案 B：cli 保持 unwind 的代价比 S0 abort 的收益低，直接接受全局 abort。
+# 到时候走 CHANGELOG 决定。
+panic = "abort"
 
 [profile.dev]
 # 开发期开 debug 断言；opt-level = 1 让 mock 500 Hz soak 不至太慢。

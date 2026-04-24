@@ -29,10 +29,12 @@
 
 #![forbid(unused_must_use)]
 
+pub mod command_slot;
 pub mod error;
 pub mod metrics;
 pub mod parser;
 pub mod sample;
+pub mod snapshot;
 pub mod traits;
 pub mod writer;
 
@@ -42,9 +44,11 @@ pub mod mock;
 #[cfg(feature = "iceoryx2")]
 pub mod iceoryx2;
 
+pub use command_slot::{LatestCommandReader, LatestCommandSlot, LatestCommandWriter};
 pub use error::TransportError;
 pub use metrics::ParseMetrics;
 pub use parser::{ParseError, ParsedSample, parse_sample};
 pub use sample::{BlobView, BodyView, HeaderView, MessageView, SampleLease};
+pub use snapshot::{RtSnapshotPublisher, RtSnapshotReader};
 pub use traits::{LatestSubscriber, Publisher, RequestClient};
 pub use writer::SampleWriter;

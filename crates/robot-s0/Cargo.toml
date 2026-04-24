@@ -1,0 +1,28 @@
+[package]
+name         = "robot-s0"
+description  = "S0 二进制：四线程骨架 + 状态机 + mock adapter 接入（v0.2 Step 6 Part 1）。"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+publish    .workspace = true
+
+[dependencies]
+robot-core          = { workspace = true }
+robot-transport     = { workspace = true }
+robot-adapter-mock  = { workspace = true }
+
+[features]
+default = []
+# 对齐 robot-core::rt_guard feature；binary 侧需要自己声明 AllocDisabler
+# 作为 global_allocator 才能让 assert_no_alloc 生效（见 src/bin/s0_daemon.rs）。
+rt_guard = ["robot-core/rt_guard", "dep:assert_no_alloc"]
+
+[dependencies.assert_no_alloc]
+version  = "1.1"
+optional = true
+
+[lints]
+workspace = true
