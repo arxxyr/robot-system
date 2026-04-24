@@ -682,12 +682,13 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
 ///
 /// 错误返回 i32 退出码（与 `run` 顶层一致），调用方据此 `graceful_stop`。
 fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Send>, i32> {
-    // 1) 决定 adapter_kind + joint_names + address + motor_ids 来源
-    let (adapter_kind, joint_names, address, motor_ids): (
+    // 1) 决定 adapter_kind + joint_names + address + motor_ids + calibration_paths 来源
+    let (adapter_kind, joint_names, address, motor_ids, calibration_paths): (
         String,
         Vec<String>,
         Option<String>,
         Vec<u8>,
+        Vec<String>,
     ) = if let Some(cfg) = &args.loaded_config {
         if let Some(hw) = cfg.parsed.hardware.first() {
             // motor_ids 从 [[hardware]] extras["motor_ids"] 数组读（task 28 扩展）
@@ -701,11 +702,26 @@ fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Sen
                         .collect::<Vec<u8>>()
                 })
                 .unwrap_or_default();
+            // calibration_paths 从 [[hardware]] extras["calibration_paths"] 数组
+            // 读（task 29 commit 3 扩展）：dimos bus1 = left_arm.json + head.json
+            // 双文件，bus2 = right_arm.json + base.json。空数组 / 未设置 =
+            // "无标定"，factory 不做 silent clamp。
+            let cal_paths = hw
+                .extras
+                .get("calibration_paths")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect::<Vec<String>>()
+                })
+                .unwrap_or_default();
             (
                 hw.adapter.clone(),
                 hw.joints.clone(),
                 hw.address.clone(),
                 ids,
+                cal_paths,
             )
         } else {
             eprintln!(
@@ -715,9 +731,15 @@ fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Sen
             return Err(2);
         }
     } else {
-        // CLI-only fallback：mock + 自动生成 j0..jN-1 关节名（无 address / motor_ids）
+        // CLI-only fallback：mock + 自动生成 j0..jN-1 关节名（无 address / motor_ids / calibration）
         let names = (0..args.joint_count).map(|i| format!("j{i}")).collect();
-        ("mock_hard_rt".to_string(), names, None, Vec::new())
+        (
+            "mock_hard_rt".to_string(),
+            names,
+            None,
+            Vec::new(),
+            Vec::new(),
+        )
     };
 
     // 2) 查 factory
@@ -741,6 +763,7 @@ fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Sen
         joint_names: &joint_names,
         address: address.as_deref(),
         motor_ids: &motor_ids,
+        calibration_paths: &calibration_paths,
     };
     factory.build(&ctx).map_err(|e| {
         eprintln!("fatal: adapter '{adapter_kind}' build failed: {e}");

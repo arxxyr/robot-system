@@ -1374,7 +1374,7 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
 
 ---
 
-## 2026-04-25 · Step 7 task 29 feetech calibration JSON loader + silent clamp helper（**状态：登记 / 实施（commit 2/3 已落地）**）
+## 2026-04-25 · Step 7 task 29 feetech calibration JSON loader + silent clamp helper（**状态：登记 / 实施（commit 3/3 代码已落地，Orin 真机闭环待验证）**）
 
 ### 涉及小节
 
@@ -1465,18 +1465,77 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
    / write_command clamp 有 cal / write_command 无 cal 不 clamp / calibration-derived
    limits / 长度不匹配拒绝 / id 不匹配 connect 拒绝
 
-### commit 3 计划（下一步）
+### commit 3 改动范围（已落地 —— 代码 / config；Orin 真机闭环待下一步）
 
-- **Factory 扩 calibration_path**：`FeetechFactory::build` 从 `ctx.extras`
-  （`AdapterBuildContext` 字段扩展）读 calibration JSON 路径（支持数组，对应
-  dimos bus1 = left_arm + head 两文件合并）→ `calibration_io::load_and_merge`
-  → 按 joint_names 顺序取出 `MotorCalibration` → 传 `FeetechAdapterConfig`
-- **Config 侧**：`configs/xlerobot_task29_single_joint.toml` 加 `calibration_paths
-  = ["..."]` 字段（或复用 extras）；s0_daemon 的 `build_adapter` 透传
-- **Orin 端到端**：s0_daemon + mock_s1 + robotctl 三端闭环：
-  - s0_daemon 起来 → follow-current 冻结当前位置（不飞）
-  - mock_s1 推 Goal_Position = 当前 ± 5° 小角度往返
-  - 验证电机真转、range 超限时 silent clamp 生效、follow-current 恢复语义
+1. **`AdapterBuildContext` 加 `calibration_paths: &'a [String]` 字段**：
+   - 字段语义：一条总线的标定 JSON 路径数组，dimos bus1 = left_arm.json +
+     head.json（双文件合并），bus2 = right_arm.json + base.json
+   - 空数组 = "无标定"；非空 → factory 负责 `load_and_merge` + 按 `joint_names`
+     顺序 lookup
+   - 遵循 task 27b 字段扩展规则：旧 factory 忽略不读（mock / 其他 non-feetech
+     adapter 不受影响）；新 factory 按需消费
+   - `factory.rs` 内 `build_context_passes_through_fields` 测试同步扩
+2. **`FeetechFactory::build` 消费 calibration_paths**：
+   - `ctx.calibration_paths.is_empty()` → `calibrations: Vec::new()` 传给 adapter
+   - 非空 → `calibration_io::load_and_merge(ctx.calibration_paths)` 合并所有文件
+     → `motor_name → MotorCalibration` map
+   - 按 `joint_names` 顺序 lookup；任一 joint 查不到 → `RobotError::
+     InvalidParameter("feetech: calibration missing motor")` + stderr 打印
+     available keys 辅助定位
+   - build 完成日志附 `calibration=loaded|none` 字段
+3. **`s0_daemon::build_adapter` 读 TOML extras**：
+   - `[[hardware]] calibration_paths = ["..."]` 字段通过 `hw.extras` 读取
+     （`as_array()` + `as_str()` filter_map）
+   - 未设置 / 空数组 → 透传空 Vec，factory 不加载
+   - fallback 路径（CLI-only mock）保持空 calibration_paths
+4. **新增 config 文件**：
+   - `configs/xlerobot_task29_single_joint.toml`：基于 task28 config，joint 名
+     改为 dimos 标准 `left_arm_shoulder_pan`（对齐 `left_arm.json` 第一条），
+     加 `calibration_paths` 指 Orin 上 `/home/loosqk/repo/dimensional-applications
+     /calibration/{left_arm,head}.json`（bus1 完整合并）
+   - 文件头长注释说明：calibration 只读 / 不写 EEPROM / follow-current 防飞 /
+     bus1 拓扑
+
+### commit 3 待做：Orin 真机端到端闭环（**下一步单独执行**）
+
+触发前必须：
+- `ssh loosqk@10.0.1.41 'sudo -n systemctl stop xlerobot-coordinator xlerobot-web'`
+  （释放 USB-RS485 + 摄像头；handoff §3.1 已实测）
+- 空载 / 桌面夹好夹具，**不**装到机械臂上（用户 2026-04-25 指令"空载优先"待
+  后续讨论）
+- Orin 上 `git pull` 到本 commit hash
+
+Orin 侧三端闭环命令（计划）：
+
+```bash
+# 终端 A：s0_daemon（带 task29 config，含 calibration_paths）
+./target/release/s0_daemon \
+  --config configs/xlerobot_task29_single_joint.toml \
+  --latch-path /tmp/robot-task29/estop_latch
+
+# 终端 B：mock_s1 推 Goal_Position ±5° 小角度往返（sinusoid）
+./target/release/mock_s1 \
+  --robot-id xlerobot_task29 \
+  --hardware-id left_arm_single \
+  --joint-count 1
+
+# 终端 C：robotctl status 观察
+./target/release/robotctl status --robot-id xlerobot_task29
+```
+
+验证项：
+- s0_daemon 启动日志含 `calibration=loaded`（factory 日志）
+- follow-current 冻结：启动 2 s 内 motor 不动（即使 mock_s1 还未开始）
+- mock_s1 推 ±5° → motor 真物理运动 ±5°（用手感 / 示波器观察 current spike 验证）
+- range 超限实验：手动推 mock_s1 发 50° goal → silent clamp 到
+  `range_max - center_rad`（dimos `left_arm_shoulder_pan`: range_max=3301 →
+  rad ≈ +1.924 rad ≈ 110°，所以 50° 实际在 clamp 范围内不触发，要故意测
+  clamp 需要发 > 110° 的 goal）
+
+**未做**（留更后续 session）：
+- bus2（5A7C122340 右臂 + 底盘）多 motor 同时闭环
+- fail-safe 时延实测（kill -9 s0_daemon → motor torque disable 时延）
+- dimos 现有 EEPROM 的保护性 dump / 备份
 
 ### 依赖白名单更新（robot-adapter-feetech）
 
@@ -1514,16 +1573,20 @@ task 28 上 Orin 真机前还差三件套：(1) 性能基准，(2) 13-motor 规�
 | `crates/robot-s0/tests/rt_guard_soak.rs` | pre-existing 2 处 `clippy::doc_markdown` 错误（`tick_count` / `SCHED_FIFO`）顺手补 backtick | 1 |
 | `crates/robot-adapters/feetech/src/adapter.rs` | `FeetechAdapterConfig` 加 `calibrations`；adapter 存字段 + calibration-derived limits；`connect()` 加 id 校验；`enable(true)` 按 dimos 序列 + 50 ms 消化 + 3× 重试；`enable(false)` 同 3× 重试；silent clamp in `write_command`；新加 `sync_goal_to_present` + `hold_current_position` public helper + `write_torque_enable_with_retry` 私有 helper；新增 7 单测 | 2 |
 | `crates/robot-adapters/feetech/src/factory.rs` | `FeetechFactory::build` 构造 `FeetechAdapterConfig` 时传 `calibrations: Vec::new()`（commit 3 再扩读 calibration_path） | 2 |
-| `docs/CHANGELOG.md` 本条 | 新增 / 更新 | 1 + 2 |
+| `crates/robot-core/src/factory.rs` | `AdapterBuildContext` 加 `calibration_paths: &'a [String]`；测试同步扩 | 3 |
+| `crates/robot-adapters/feetech/src/factory.rs` | 扩读 `ctx.calibration_paths` → `load_and_merge` → 按 `joint_names` 顺序 lookup → 传 adapter；build 日志附 `calibration=loaded|none` | 3 |
+| `crates/robot-s0/src/bin/s0_daemon.rs` | `build_adapter` 从 TOML `hw.extras["calibration_paths"]` 读数组 → 透传 `AdapterBuildContext.calibration_paths` | 3 |
+| `configs/xlerobot_task29_single_joint.toml` | **新增**（task 29 单关节 + 完整 bus1 calibration 合并 config） | 3 |
+| `docs/CHANGELOG.md` 本条 | 新增 / 更新 | 1 + 2 + 3 |
 | `docs/00_design.md` | **不动**（设计冻结） | — |
 
-### 验证（commit 2 后）
+### 验证（commit 3 代码落地后）
 
 - `cargo fmt --all --check` ✅
 - `cargo clippy --all --all-targets -- -D warnings` ✅（零警告）
 - `cargo test --all` ✅ 全部绿；feetech 单测 **105 pass**（commit 1 的 98 + commit 2 的 7）
 - matrix features 本机 build：`mock-only` / `xlerobot` / `atom01` 三个组合 ✅
-- `xlerobot-real` 需 libudev，留 Orin 本地验证（commit 3 顺带）
+- `xlerobot-real` + Orin 端到端闭环：**下一步单独执行**（见 commit 3 改动范围）
 
 ### 审阅
 

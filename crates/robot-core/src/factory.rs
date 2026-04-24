@@ -68,6 +68,15 @@ pub struct AdapterBuildContext<'a> {
     /// Step 7 task 28 加，给 dimos 移植场景留接口（dimos bus1 用 ID 1-8 / bus2
     /// 用 ID 1-9 含底盘，需要显式指定）。
     pub motor_ids: &'a [u8],
+    /// `[[hardware]] calibration_paths`：一条总线的标定 JSON 路径数组（按 dimos
+    ///   bus1 = `left_arm.json` + `head.json` 双文件合并语义，或 bus2 =
+    ///   `right_arm.json` + `base.json`）。空数组 = "无标定"（`feetech_sts3215`
+    ///   factory 会让 adapter 不做 silent clamp）。Step 7 task 29 加。
+    ///
+    ///   语义：factory 按顺序读所有路径 → 合并成 `motor_name → MotorCalibration`
+    ///   map → 按 `joint_names` 顺序取出对应条目组成 `Vec<MotorCalibration>` 传给
+    ///   adapter。任一 joint 在 map 中查不到 → `RobotError::InvalidParameter`。
+    pub calibration_paths: &'a [String],
 }
 
 /// adapter 工厂 trait。每个 adapter crate 实现 + 用 `inventory::submit!` 注册一个
@@ -202,6 +211,7 @@ mod tests {
             joint_names: &[],
             address: None,
             motor_ids: &[],
+            calibration_paths: &[],
         };
         let adapter = f.build(&ctx).unwrap();
         assert_eq!(adapter.info().name, "stub_adapter");
@@ -225,17 +235,24 @@ mod tests {
     fn build_context_passes_through_fields() {
         let names = vec!["a".to_string(), "b".to_string()];
         let ids = [3u8, 7];
+        let cal_paths = vec![
+            "/tmp/left_arm.json".to_string(),
+            "/tmp/head.json".to_string(),
+        ];
         let ctx = AdapterBuildContext {
             instance_name: "left_arm",
             adapter_kind: "robot_core_test_stub",
             joint_names: &names,
             address: Some("/dev/serial/by-id/usb-test"),
             motor_ids: &ids,
+            calibration_paths: &cal_paths,
         };
         assert_eq!(ctx.instance_name, "left_arm");
         assert_eq!(ctx.adapter_kind, "robot_core_test_stub");
         assert_eq!(ctx.joint_names.len(), 2);
         assert_eq!(ctx.address, Some("/dev/serial/by-id/usb-test"));
         assert_eq!(ctx.motor_ids, &[3u8, 7]);
+        assert_eq!(ctx.calibration_paths.len(), 2);
+        assert_eq!(ctx.calibration_paths[0], "/tmp/left_arm.json");
     }
 }

@@ -24,9 +24,10 @@ use robot_core::factory::{AdapterBuildContext, AdapterFactory};
 
 use crate::adapter::{FeetechAdapter, FeetechAdapterConfig};
 use crate::bus::FeetechBus;
+use crate::calibration_io::load_and_merge;
 use crate::registers::DEFAULT_BAUDRATE;
 use crate::transport::real::RealSerialTransport;
-use crate::types::Motor;
+use crate::types::{Motor, MotorCalibration};
 
 /// task 28 真硬件 factory。
 pub struct FeetechFactory;
@@ -87,17 +88,47 @@ impl AdapterFactory for FeetechFactory {
             RobotError::from(e)
         })?;
 
-        // ---- 5) 构造 adapter ----
+        // ---- 5) 加载 calibration（task 29 commit 3）----
         //
-        // task 29 commit 2：`calibrations: Vec::new()` 表示无标定 —— silent
-        // clamp 不启用，limits 保持 ±π 默认。commit 3 会扩这里从
-        // ctx.extras / 新字段读 calibration_path，加载 JSON → 按 joint_names
-        // 顺序取 MotorCalibration，传给 adapter。
+        // 空 calibration_paths = 不加载 = adapter 无 silent clamp；非空则
+        // load_and_merge 所有文件 → 按 joint_names 顺序挑出 MotorCalibration。
+        // 任一 joint 缺标定 → fail-fast（防 left_arm.json 漏 wrist_flex 一类错配）。
+        let calibrations: Vec<MotorCalibration> = if ctx.calibration_paths.is_empty() {
+            Vec::new()
+        } else {
+            let merged = load_and_merge(ctx.calibration_paths).map_err(|e| {
+                eprintln!(
+                    "fatal: feetech calibration load_and_merge {:?}: {e}",
+                    ctx.calibration_paths
+                );
+                RobotError::from(e)
+            })?;
+            let mut out = Vec::with_capacity(ctx.joint_names.len());
+            for name in ctx.joint_names {
+                match merged.get(name) {
+                    Some(cal) => out.push(*cal),
+                    None => {
+                        eprintln!(
+                            "fatal: feetech calibration: joint '{name}' not found in {:?} (available: {:?})",
+                            ctx.calibration_paths,
+                            merged.keys().collect::<Vec<_>>()
+                        );
+                        return Err(RobotError::InvalidParameter(
+                            "feetech: calibration missing motor",
+                        ));
+                    }
+                }
+            }
+            out
+        };
+
+        // ---- 6) 构造 adapter ----
+        let has_calibration = !calibrations.is_empty();
         let adapter = FeetechAdapter::new(
             FeetechAdapterConfig {
                 adapter_name: "feetech_sts3215",
                 joint_names: ctx.joint_names.to_vec(),
-                calibrations: Vec::new(),
+                calibrations,
             },
             bus,
         )
@@ -107,11 +138,12 @@ impl AdapterFactory for FeetechFactory {
         })?;
 
         eprintln!(
-            "feetech factory: built '{}' adapter on {} (motors {} | ids {:?})",
+            "feetech factory: built '{}' adapter on {} (motors {} | ids {:?} | calibration={})",
             ctx.instance_name,
             address,
             ctx.joint_names.len(),
-            motor_ids
+            motor_ids,
+            if has_calibration { "loaded" } else { "none" }
         );
         Ok(Box::new(adapter))
     }
