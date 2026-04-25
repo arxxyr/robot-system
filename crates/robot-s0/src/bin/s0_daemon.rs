@@ -49,12 +49,13 @@ use robot_core::adapter::{
     HardRtAdapter, JointCommandBuf, ManipulatorAdapter, RtClass, RtSnapshot,
 };
 use robot_core::config::IdentityFingerprint;
+use robot_core::executor_ctrl::ExecutorCtrlClient;
 use robot_core::factory::{AdapterBuildContext, find_factory, registered_factories};
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
 use robot_s0::config_loader::{LoadedConfig, load_robot_config};
 use robot_s0::estop_latch::{load_estop_latch, save_estop_latch};
-use robot_s0::hard_rt_ctrl::HardRtCtrlInner;
+use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
 use robot_s0::ipc_thread::{IpcSubscribers, IpcThreadConfig, IpcThreadHandle, spawn_ipc_thread};
 use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread};
@@ -446,7 +447,51 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
 
     let (wd_tx, wd_rx) = unbounded::<Event>();
 
-    // ---- 3) spawn ipc_thread ----
+    // ---- 3) build adapter + 创建 rt_ctrl + ExecutorCtrlClient（必须在 spawn_ipc_thread 之前） ----
+    //
+    // **task-30 v9 / M7 阶段 4**：spawn_ipc_thread 必传 `Arc<dyn ExecutorCtrlClient>`
+    // 让 ipc_tick 三步式驱动 set_policy / safety_stop / request_normal /
+    // poll_last_normal_resp / clear_safety_latch。client 由对应路径 ctrl 包装：
+    // - HardRT 路径：`HardRtCtrlClient::new(Arc::clone(&rt_ctrl))`
+    // - SerialRT 路径：`SerialIoCtrlClient` 是 `HardRtCtrlClient` 的 type alias
+    //   （v9 收敛后 atomic 协议层共用），同款构造。
+    let built = build_adapter(args)?;
+    // task-30 v9 finding #3 守门：编译期 + 运行期双重 dispatch。
+    // - HardRt 变体：trait object 已 RtSafeCtrl witness，可进 spawn_rt_thread。
+    // - SerialRtOrSoft 变体：M7 阶段 4 第二步（待 Factory::build_serial_rt 入口）
+    //   才接通 SerialRT path，当前仍拒启动。
+    let adapter: Box<dyn HardRtAdapter + Send> = match built {
+        BuiltAdapter::HardRt(a) => {
+            debug_assert_eq!(a.info().rt_class, RtClass::HardRT);
+            a
+        }
+        BuiltAdapter::SerialRtOrSoft(a) => {
+            let class = a.info().rt_class;
+            let name = a.info().name;
+            match class {
+                RtClass::SerialRT => eprintln!(
+                    "fatal: adapter '{name}' is RtClass::SerialRT; M7 阶段 4 第二步 \
+                     (Factory::build_serial_rt 入口) 待落地后接通 SerialRT path。"
+                ),
+                RtClass::SoftRT => eprintln!(
+                    "fatal: adapter '{name}' is RtClass::SoftRT; SoftRT adapter 应挂 \
+                     s0_io_thread (v0.4)，不能进 ManipulatorAdapter spawn 路径。"
+                ),
+                RtClass::HardRT => eprintln!(
+                    "fatal: adapter '{name}' 报告 RtClass::HardRT 但 factory 没走 \
+                     `build_hard_rt`（factory 实现遗漏 RtSafeCtrl + override）。"
+                ),
+            }
+            return Err(1);
+        }
+    };
+
+    // rt_ctrl + client：ipc_thread 拿 client，rt_thread 拿 ctrl。
+    let rt_ctrl = Arc::new(HardRtCtrlInner::new());
+    let executor_ctrl: Arc<dyn ExecutorCtrlClient> =
+        Arc::new(HardRtCtrlClient::new(Arc::clone(&rt_ctrl)));
+
+    // ---- 4) spawn ipc_thread ----
     let mut initial_guards = Guards {
         estop_latched: initial_estop_latched,
         adapter_connected: true,
@@ -501,6 +546,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         cmd_writer,
         state_pub,
         wd_rx,
+        Arc::clone(&executor_ctrl),
     ) {
         Ok(h) => h,
         Err(e) => {
@@ -543,73 +589,20 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         .unwrap_or_default();
     let _health_handle = robot_health::spawn_monitor(monitor_cfg);
 
-    // ---- 5) spawn rt_thread ----
+    // ---- 6) spawn rt_thread (HardRT 路径) ----
     //
-    // adapter 来源（Step 7 task 27b）：
-    // - 有 `--config`：取 TOML 第一段 `[[hardware]]` 的 `adapter` + `joints` 字段，
-    //   走 `inventory::find_factory` 查 factory + build。
-    // - 无 `--config`：fallback 到 `mock_hard_rt`，joint 名按 j0..jN 自动生成
-    //   （兼容旧 CLI smoke 路径）。
-    let built = match build_adapter(args) {
-        Ok(a) => a,
-        Err(code) => {
-            graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
-            return Err(code);
-        }
-    };
-    // task-30 v9 finding #3 守门：编译期 + 运行期双重 dispatch。
-    // - HardRt 变体：trait object 已 `RtSafeCtrl` witness，可进 spawn_rt_thread。
-    // - SerialRtOrSoft 变体：M6 / v0.4 才有对应入口，当前拒启动。
-    let adapter: Box<dyn HardRtAdapter + Send> = match built {
-        BuiltAdapter::HardRt(a) => {
-            // 二次校验 rt_class 与 trait 一致（防 factory 内部错配）。
-            debug_assert_eq!(a.info().rt_class, RtClass::HardRT);
-            a
-        }
-        BuiltAdapter::SerialRtOrSoft(a) => {
-            let class = a.info().rt_class;
-            let name = a.info().name;
-            match class {
-                RtClass::SerialRT => eprintln!(
-                    "fatal: adapter '{name}' is RtClass::SerialRT; s0_daemon dispatch \
-                     by RtClass not yet implemented (task-30 M6/M7). 拒绝启动以避免 \
-                     串口 ms 级 RTT 误挂 SCHED_FIFO 线程违反 §4.9 RT 铁律。"
-                ),
-                RtClass::SoftRT => eprintln!(
-                    "fatal: adapter '{name}' is RtClass::SoftRT; SoftRT adapter 应挂 \
-                     s0_io_thread (v0.4)，不能进 ManipulatorAdapter spawn 路径。"
-                ),
-                RtClass::HardRT => eprintln!(
-                    "fatal: adapter '{name}' 报告 RtClass::HardRT 但 factory 没走 \
-                     `build_hard_rt`（factory 实现遗漏 RtSafeCtrl + override）。"
-                ),
-            }
-            drop(a);
-            graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
-            return Err(1);
-        }
-    };
+    // adapter / rt_ctrl / executor_ctrl 已经在 ---- 3) 创建好。这里只接通到
+    // spawn_rt_thread。HardRtCtrlInner 默认 policy = Disabled / safety_state =
+    // TorqueOffConfirmed —— 由 state_machine `Safe → Ready → Enabled.Active`
+    // 走两阶段 transition 通过 client.request_normal(Enable(true)) 走 ctrl
+    // 路径，rt_thread 主循环 Step 2 真上扭后 ipc_tick Pure/Effectful 分支才
+    // set_policy(ActiveForward)。
     let rt_cfg = RtThreadConfig {
         tick_period_ns: args.tick_period_ns,
         sched_fifo_priority: 70,
         cpu_affinity: args.cpu_affinity,
         strict_rt: args.strict_rt,
     };
-    // task-30 v9 / M7 修订：HardRtCtrlInner 默认 `policy = Disabled` /
-    // `safety_state = TorqueUnknown`。**不**在 daemon 启动期把 policy 提前
-    // 置 ActiveForward —— 与 spawn-time enable(true) 已被移除的语义保持
-    // 一致：state_machine 走完 `Safe → Ready → Enabled.Active` 两阶段
-    // transition 并且 effectful `Enable(true)` ack 成功后，**ipc_thread**
-    // （M7 阶段 3）才会 `set_policy(ActiveForward)`。
-    //
-    // 当前 ipc_thread 还没接 ExecutorCtrlClient（M7 阶段 3 加），所以
-    // `policy` 在整个 smoke run 内会保持 `Disabled` —— rt_thread 主循环
-    // do_write 白名单不含 Disabled，**read_state + publish 仍跑**，但
-    // **不**调 write_command。这是预期行为。
-    //
-    // 测试 / mock smoke 路径若需要 ActiveForward 行为，由对应单测在 spawn
-    // 之后通过 `client.set_policy(...)` 显式切（见 rt_thread tests）。
-    let rt_ctrl = Arc::new(HardRtCtrlInner::new());
     let rt = match spawn_rt_thread(
         rt_cfg,
         Arc::clone(&clock),

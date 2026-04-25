@@ -58,7 +58,10 @@ use robot_msg::msg::{ControlMode as FbControlMode, JointCommand as FbJointComman
 use robot_transport::iceoryx2::Iceoryx2Subscriber;
 use robot_transport::{LatestCommandWriter, LatestSubscriber, RtSnapshotPublisher};
 
-use crate::state_machine::{Event, Guards, S0State, S0StateSnapshot, try_transition};
+use robot_core::executor_ctrl::ExecutorCtrlClient;
+
+use crate::ipc_tick::{IpcRetryState, ipc_tick};
+use crate::state_machine::{Event, EventQueue, Guards, S0State, S0StateSnapshot};
 
 // ============================================================================
 // Config / Metrics / Handle
@@ -109,8 +112,8 @@ pub struct IpcThreadMetrics {
     pub watchdog_events: AtomicU64,
     /// 外部 channel 发来的事件数（`SIGINT` / 测试驱动）。
     pub external_events: AtomicU64,
-    /// `try_transition` 返回 `Rejected` 的次数。
-    pub transition_rejected: AtomicU64,
+    /// task-30 v9 / M7 阶段 4：`ipc_tick` 调用次数（每 tick 一次）。
+    pub ipc_tick_count: AtomicU64,
     /// state 变化次数（`new_state != prev_state`）。
     pub state_changes: AtomicU64,
 }
@@ -189,6 +192,16 @@ impl IpcThreadHandle {
 /// # Errors
 ///
 /// 返回 `std::io::Error` 当 `thread::Builder::spawn` 失败（OS 资源）。
+///
+/// **task-30 v9 / M7 阶段 4**：新增必传参数 `executor_ctrl: Arc<dyn
+/// ExecutorCtrlClient>`。`ipc_thread` 主循环现在用 [`ipc_tick`] 三步式驱动
+/// `executor_ctrl`（`set_policy` / `safety_stop` / `request_normal` /
+/// `poll_last_normal_resp` / `clear_safety_latch`），**不再绕过 `ipc_tick`
+/// 直接改 state**（reviewer 硬要求 #2）。
+///
+/// `executor_ctrl` 由 `s0_daemon` 按 `RtClass` 分发后构造：`HardRT` 路径的
+/// `Arc<HardRtCtrlClient>`，`SerialRT` 路径的 `Arc<SerialIoCtrlClient>`
+/// （同份 `HardRtCtrlInner` 的两路命名 alias）。
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_ipc_thread<F>(
     cfg: IpcThreadConfig,
@@ -197,6 +210,7 @@ pub fn spawn_ipc_thread<F>(
     cmd_writer: LatestCommandWriter<JointCommandBuf>,
     state_pub: RtSnapshotPublisher<S0StateSnapshot>,
     watchdog_rx: Receiver<Event>,
+    executor_ctrl: Arc<dyn ExecutorCtrlClient>,
 ) -> std::io::Result<IpcThreadHandle>
 where
     F: FnOnce() -> IpcSubscribers + Send + 'static,
@@ -235,6 +249,7 @@ where
                 &join_stop,
                 &join_last_hb,
                 &join_metrics,
+                executor_ctrl.as_ref(),
             );
         })?;
 
@@ -259,6 +274,17 @@ where
 // 主循环
 // ============================================================================
 
+/// **task-30 v9 / M7 阶段 4**：主循环改造为 [`ipc_tick`] 驱动。
+///
+/// 与旧 `run_loop` 的差别：
+/// - **删除** `apply_event` + `try_transition` 直接改 state 的旧路径
+///   （reviewer 硬要求 #2）；
+/// - [`EventQueue`] 收集所有来源（`heartbeat` / `estop` topic / `watchdog` /
+///   外部 channel），由 `ipc_tick` 三步式（`drain_emergency` → 推进 pending →
+///   plan）统一消费；
+/// - **`ClearEStop` / `EStop` / `ClearError` 等事件的 `guards` 副作用必须在
+///   `events.push` 之前更新**（reviewer 硬要求 #1）—— 否则 `ipc_tick` 内部
+///   `plan_transition` 会因 stale guard 拒绝 transition。
 #[allow(clippy::too_many_arguments)]
 fn run_loop(
     cfg: &IpcThreadConfig,
@@ -271,78 +297,89 @@ fn run_loop(
     stop: &AtomicBool,
     last_hb_ns: &AtomicU64,
     metrics: &IpcThreadMetrics,
+    executor_ctrl: &dyn ExecutorCtrlClient,
 ) {
     let mut state = cfg.initial_state;
     let mut guards = cfg.initial_guards;
+    let mut events = EventQueue::new();
+    let mut retry = IpcRetryState::new();
 
-    // 启动即发一次初值快照，保证 pub_thread / observer 立刻能读到有效 state。
+    // 启动即发一次初值快照。
     state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
 
     while !stop.load(Ordering::Acquire) {
-        // 1) JointCommand
+        // ─── 1) data plane: JointCommand → cmd_writer (不进 EventQueue) ───
         poll_command(&mut subs.command, cmd_writer, metrics);
 
-        // 2) Heartbeat
+        // ─── 2) Heartbeat：guard 先更新（硬要求 #1），再入队 ───
         if poll_heartbeat(&mut subs.heartbeat, clock, last_hb_ns, metrics) {
             guards.heartbeat_ok = true;
-            state = apply_event(state, Event::Heartbeat, &guards, metrics);
+            events.push(Event::Heartbeat);
         }
 
-        // 3) EStopEvent topic
+        // ─── 3) EStop topic：guard 先更新，再入队 ───
         if poll_estop(&mut subs.estop, metrics) {
             guards.estop_latched = true;
-            state = apply_event(state, Event::EStop, &guards, metrics);
+            events.push(Event::EStop);
         }
 
-        // 4) Watchdog events
+        // ─── 4) Watchdog 事件：guard 先更新，再入队 ───
         while let Ok(ev) = watchdog_rx.try_recv() {
             metrics.watchdog_events.fetch_add(1, Ordering::Relaxed);
-            if matches!(ev, Event::HeartbeatTimeout) {
-                guards.heartbeat_ok = false;
-            }
-            state = apply_event(state, ev, &guards, metrics);
+            apply_event_guard_side_effect(ev, &mut guards);
+            events.push(ev);
         }
 
-        // 5) 外部 channel 事件（SIGINT / CLI / 测试）
+        // ─── 5) 外部 channel 事件（SIGINT / CLI / 测试）：同款先 guard 后入队 ───
+        //
+        // 关键：`Event::ClearEStop` 必须在这里把 guards.estop_latched 改成
+        // false，**先于** events.push —— ipc_tick 内部走 plan_transition 时
+        // 看到 estop_latched 已清，才能放行 SAFE→SAFE 的 ClearEStop transition
+        // （Pure 分支会调 executor_ctrl.clear_safety_latch()，把 executor 的
+        // safety_latched 也清掉）。reviewer 硬要求 #1。
         while let Ok(ev) = event_rx.try_recv() {
             metrics.external_events.fetch_add(1, Ordering::Relaxed);
-            apply_external_guard_side_effect(ev, &mut guards);
-            state = apply_event(state, ev, &guards, metrics);
+            apply_event_guard_side_effect(ev, &mut guards);
+            events.push(ev);
         }
 
-        // 6) 发布 snapshot
+        // ─── 6) ipc_tick 三步式：唯一改 state 的路径（硬要求 #2）───
+        let prev_state = state;
+        ipc_tick(
+            &mut retry,
+            &mut state,
+            &guards,
+            executor_ctrl,
+            clock,
+            &mut events,
+        );
+        if state != prev_state {
+            metrics.state_changes.fetch_add(1, Ordering::Relaxed);
+        }
+        metrics.ipc_tick_count.fetch_add(1, Ordering::Relaxed);
+
+        // ─── 7) 发布 snapshot ───
         state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
         metrics.tick_count.fetch_add(1, Ordering::Relaxed);
 
-        // 非 RT 线程：std::thread::sleep 够用。RobotClock::sleep_until 依赖 MonoRawNs
-        // 的绝对 deadline，非 RT 路径不必。
+        // 非 RT 线程：std::thread::sleep 够用。
         thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
     }
 }
 
-/// 按事件类型对 guards 做已知的副作用（外部注入事件专用）。
-fn apply_external_guard_side_effect(ev: Event, guards: &mut Guards) {
+/// 按事件类型对 guards 做已知的副作用（**入 [`EventQueue`] 之前调用**）。
+///
+/// reviewer 硬要求 #1：`ClearEStop` / `ClearError` / `EStop` /
+/// `HeartbeatTimeout` 等影响 guard 的事件，**必须**在 push 前更新对应
+/// guard，否则 `ipc_tick` 的 `plan_transition` 会因 stale guard 拒绝
+/// transition。
+fn apply_event_guard_side_effect(ev: Event, guards: &mut Guards) {
     match ev {
         Event::EStop => guards.estop_latched = true,
         Event::ClearEStop => guards.estop_latched = false,
         Event::ClearError => guards.adapter_fault_cleared = true,
+        Event::HeartbeatTimeout => guards.heartbeat_ok = false,
         _ => {}
-    }
-}
-
-/// 包一层 `try_transition` + metrics 记录。
-fn apply_event(prev: S0State, ev: Event, guards: &Guards, metrics: &IpcThreadMetrics) -> S0State {
-    match try_transition(prev, ev, guards) {
-        Ok(next) => {
-            if next != prev {
-                metrics.state_changes.fetch_add(1, Ordering::Relaxed);
-            }
-            next
-        }
-        Err(_rej) => {
-            metrics.transition_rejected.fetch_add(1, Ordering::Relaxed);
-            prev
-        }
     }
 }
 
@@ -527,6 +564,34 @@ mod tests {
         panic!("wait_until timed out after {max:?}");
     }
 
+    /// task-30 v9 / M7 阶段 4 测试辅助：把 `bring_up` 返回的 `Arc<HardRtCtrlInner>`
+    /// 包成一个**自动应答**线程 —— 把 `pending_normal` swap 出来后立即
+    /// store `last_completed = (seq, AdapterResp::Ok)`。
+    ///
+    /// 用途：测试只关心 `ipc_thread` 通路，不想真起 `rt_thread`；但
+    /// `Ready → Enabled.Active` 是 Effectful `Enable(true)`，必须 executor 端
+    /// ack 才能 commit。本 helper 提供 ack。
+    fn spawn_auto_ack(
+        inner: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+    ) -> (Arc<AtomicBool>, std::thread::JoinHandle<()>) {
+        use robot_core::executor_ctrl::{AdapterResp, pack_completed, unpack_pending_normal};
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = Arc::clone(&stop);
+        let h = std::thread::spawn(move || {
+            while !stop_clone.load(Ordering::Acquire) {
+                let p = inner.pending_normal.swap(0, Ordering::AcqRel);
+                if p != 0 {
+                    let (_, _, seq) = unpack_pending_normal(p);
+                    inner
+                        .last_completed
+                        .store(pack_completed(seq, AdapterResp::Ok), Ordering::Release);
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+        (stop, h)
+    }
+
     /// 构造 `ipc_thread` + 配套的 iceoryx2 publishers（在调用方线程里存活，用于发数据）。
     ///
     /// 关键点：subscribers 在 `ipc_thread` 内部 open；publishers 在测试主线程 open。
@@ -544,6 +609,7 @@ mod tests {
         robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
         robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
         robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
+        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     ) {
         let topics = fresh_topics();
         // publisher-side Node，测试线程持有。leak 到 'static 避免 drop 后 service
@@ -613,10 +679,36 @@ mod tests {
             }
         };
 
-        let handle =
-            spawn_ipc_thread(cfg, clock, factory, cmd_writer, state_pub, watchdog_rx).unwrap();
+        // task-30 v9 / M7 阶段 4 测试桩：注入一份默认 HardRtCtrlClient（Inner
+        // 默认值即可）。本模块单测重点是 ipc_thread 的"事件 → guards → 入队 →
+        // ipc_tick → snapshot 发布"通路；executor_ctrl 端的具体语义由
+        // hard_rt_ctrl.rs / ipc_tick.rs 自己的单测覆盖。inner 暴露给测试，
+        // 测试侧按需 spawn_auto_ack 模拟 rt_thread ack。
+        let inner = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
+        let inner_clone = Arc::clone(&inner);
+        let executor_ctrl: Arc<dyn ExecutorCtrlClient> =
+            Arc::new(crate::hard_rt_ctrl::HardRtCtrlClient::new(inner_clone));
 
-        (handle, reader_clone, state_rdr, cmd_pub, hb_pub, estop_pub)
+        let handle = spawn_ipc_thread(
+            cfg,
+            clock,
+            factory,
+            cmd_writer,
+            state_pub,
+            watchdog_rx,
+            executor_ctrl,
+        )
+        .unwrap();
+
+        (
+            handle,
+            reader_clone,
+            state_rdr,
+            cmd_pub,
+            hb_pub,
+            estop_pub,
+            inner,
+        )
     }
 
     fn publish_heartbeat(
@@ -670,7 +762,7 @@ mod tests {
     fn spawn_then_stop_cleanly() {
         let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
         let (_wd_tx, wd_rx) = unbounded();
-        let (handle, _cmd_reader, _state_rdr, _cp, _hp, _ep) =
+        let (handle, _cmd_reader, _state_rdr, _cp, _hp, _ep, _inner) =
             bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
         thread::sleep(Duration::from_millis(30));
         handle.request_stop();
@@ -682,7 +774,7 @@ mod tests {
     fn command_plumbing_writes_pod_buffer() {
         let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
         let (_wd_tx, wd_rx) = unbounded();
-        let (handle, cmd_reader, _state_rdr, mut cmd_pub, _hp, _ep) =
+        let (handle, cmd_reader, _state_rdr, mut cmd_pub, _hp, _ep, _inner) =
             bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
 
         publish_command(&mut cmd_pub, 7, &[0.1, 0.2, 0.3]);
@@ -708,13 +800,17 @@ mod tests {
     }
 
     /// heartbeat 到达 → state 从 `READY` 推进到 `ENABLED.Active`；`last_hb_ns` 被更新。
+    ///
+    /// task-30 v9：READY → ENABLED.Active 是 Effectful Enable(true)，需要
+    /// executor ack。本测试用 [`spawn_auto_ack`] 模拟 `rt_thread` ack 通路。
     #[test]
     fn heartbeat_transitions_state_and_updates_watchdog_atom() {
         let clock = Arc::new(MockClock::new(MonoRawNs(100_000_000)));
         let clock_dyn: Arc<dyn RobotClock> = Arc::clone(&clock) as Arc<dyn RobotClock>;
         let (_wd_tx, wd_rx) = unbounded();
-        let (handle, _cmd_reader, state_rdr, _cp, mut hb_pub, _ep) =
+        let (handle, _cmd_reader, state_rdr, _cp, mut hb_pub, _ep, inner) =
             bring_up(S0State::Ready, healthy_guards(), wd_rx, clock_dyn);
+        let (ack_stop, ack_join) = spawn_auto_ack(Arc::clone(&inner));
 
         publish_heartbeat(&mut hb_pub, 1);
 
@@ -731,6 +827,8 @@ mod tests {
 
         handle.request_stop();
         handle.join().unwrap();
+        ack_stop.store(true, Ordering::Release);
+        ack_join.join().unwrap();
     }
 
     /// `watchdog` 发 `HeartbeatTimeout` → `Active` 态退到 `CONTROL_LOST_*`（hold）。
@@ -740,7 +838,7 @@ mod tests {
         let (wd_tx, wd_rx) = unbounded();
         let mut initial = healthy_guards();
         initial.heartbeat_ok = true;
-        let (handle, _cmd_reader, state_rdr, _cp, _hp, _ep) =
+        let (handle, _cmd_reader, state_rdr, _cp, _hp, _ep, _inner) =
             bring_up(enabled_active(), initial, wd_rx, clock);
 
         wd_tx.send(Event::HeartbeatTimeout).unwrap();
@@ -780,7 +878,7 @@ mod tests {
         let (_wd_tx, wd_rx) = unbounded();
         let mut initial = healthy_guards();
         initial.heartbeat_ok = true;
-        let (handle, _cmd_reader, state_rdr, _cp, _hp, mut estop_pub) =
+        let (handle, _cmd_reader, state_rdr, _cp, _hp, mut estop_pub, _inner) =
             bring_up(enabled_active(), initial, wd_rx, clock);
 
         publish_estop(&mut estop_pub, 42_000_000);
@@ -803,7 +901,7 @@ mod tests {
     fn external_stop_event_transitions_to_stopping() {
         let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
         let (_wd_tx, wd_rx) = unbounded();
-        let (handle, _cmd_reader, state_rdr, _cp, _hp, _ep) =
+        let (handle, _cmd_reader, state_rdr, _cp, _hp, _ep, _inner) =
             bring_up(S0State::Ready, healthy_guards(), wd_rx, clock);
 
         handle.event_sender().send(Event::Stop).unwrap();
