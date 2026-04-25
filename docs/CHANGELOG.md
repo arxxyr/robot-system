@@ -2160,6 +2160,71 @@ User v4 review 给出 6 项 critical 修订，全部接受：
 
 详 `docs/designs/task-30_state_machine_adapter_link.md`（v5，~700 行）。
 
+### v6 修订（2026-04-25 user 五轮 review 后）
+
+User v5 review 给出 3 blocker + 4 修正，全部接受。
+
+**3 Blocker**（不修不能开工）：
+
+- **B1**：`safety_stop_fast` 成功立刻标 `TorqueOffConfirmed` —— 但 fast path
+  不等 ACK，"软件下发"≠"硬件已断扭"。**新增 `OutputSafetyState::StopCommanded`**
+  variant：下发成功 → `StopCommanded`；下一 tick `confirm_torque_off()` 读回
+  → 一致升 `TorqueOffConfirmed`，不一致 → `AdapterUncertain`，读失败 →
+  `StopFailed`
+- **B2**：现有 `JointStateBuf` / `read_state` 没有 `Torque_Enable` 字段，"下
+  一 tick read_state 确认"接口不支持。**新增独立 `OutputSafetyProbe` trait**
+  （`fn read_torque_enable_mask(&mut self, out: &mut [bool])`），不污染普通
+  hot path；Feetech impl 走 sync_read Torque_Enable 寄存器
+- **B3**：HardRT 路径 `ArcSwap<Option<AdapterNormalReq>>` 冷字段在 rt_thread
+  `load_full` → 触发 Arc refcount → **违反 §4.9 RT 铁律**。HardRT 控制动作
+  **全部** atomic 编码（`emergency_action: AtomicU8` / `normal_action: AtomicU8`
+  / `action_arg: AtomicU8` / `action_seq: AtomicU64` / `safety_latched:
+  AtomicBool`）；移除所有 ArcSwap / Vec；不可 atomic 编码的请求 → `Unsupported`
+
+**4 修正**：
+
+- **C1** `action_slot` last-writer-wins 危险（SafetyStop 被 Enable(true) 覆盖）
+  → 拆 emergency_action + normal_action 两 atomic + safety_latched AtomicBool
+  锁住 Enable 直到 ClearEStop
+- **C2** `OutputPolicy::from_u8` "全 8 值"措辞错（enum 只 6 variant）→ 改"6
+  valid + 兜底 `Disabled`"
+- **C3** "Mock + Feetech 不实现 RtSafeCtrl" 自相矛盾 → **Mock (HardRT) 实现** +
+  Feetech (SerialRT) 不实现
+- **C4** `safety_stop_fast` 伪代码分配 Vec → adapter 持 `safety_stop_buf` +
+  `confirm_torque_buf` 启动期预分配；运行期不 alloc
+
+**v6 新增章节**：
+
+- §0 v5→v6 修订记录（3 blocker + 4 修正表）
+- §2 加 3 条硬约束（17/18/19）：safety 路径区分下发 vs 确认；RT 路径全
+  atomic；安全路径不分配
+- §3 架构图 v6（HardRT 全 atomic 字段 + emergency/normal 拆 + safety_latched）
+- §4.2 HardRtCtrlInner v6 重写（全 atomic 字段 + rt_thread 主循环消费两 atomic）
+- §5.1 OutputPolicy::from_u8 措辞修正
+- §5.3 OutputSafetyState 加 StopCommanded variant
+- §5.4 OutputSafetyProbe trait 详细设计（独立路径）
+- §5.5 RtSafeCtrl 实施方修正（Mock 实现 / Feetech 不实现）
+- §6 SerialRT confirm_torque_off 路径完整实现（B1+B2 闭环）
+- §7.2 Feetech safety_stop_fast 预分配 buffer + OutputSafetyProbe impl
+- §10 测试加 13 项（含 assert_no_alloc soak / safety_latched reject /
+  StopCommanded → TorqueOffConfirmed 二阶段 / Mock 实现 RtSafeCtrl 编译验证）
+- §11 M1-M7（v5 M1-M6 拆 OutputSafetyProbe 单独 commit）；总 8h → 9.5h
+- §12 风险加 R13（HardRT atomic 编码上限）+ R14（confirm 一次 RTT）
+
+**v6 8 个决议请求**：
+
+1. v6 整体 approve？
+2. OutputSafetyState 加 StopCommanded 同意（B1）？
+3. OutputSafetyProbe 独立 trait（不塞 read_state）同意（B2）？
+4. HardRT 全 atomic + 复杂请求 Unsupported 接受（B3）？
+5. safety_latched + Enable(true) reject 接受（C1）？
+6. M1-M7 拆开总 9.5h 合理？
+7. M7 拆两 commit（flag on + 删 legacy）？
+8. 真机最低门槛加新项：Stop → safety_state 先 StopCommanded 后 TorqueOffConfirmed
+   + SIGTERM 后 feetech_poke read Torque_Enable=0。同意 / 加项？
+
+详 `docs/designs/task-30_state_machine_adapter_link.md`（v6，~860 行）。
+
 ---
 
 ## 2026-04-25 · Step 8 EStop latch 双文件 + 重启恢复（**状态：登记 / 实施完成**）
