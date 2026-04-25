@@ -1974,3 +1974,66 @@ User 给出 12 条 critical 反馈，全部接受。文档从 523 行 → ~860 �
 5. 真机最低门槛：feetech_poke 读 `Torque_Enable=0` + 物理推夹爪确认 —— 同意 / 加项？
 
 详 `docs/designs/task-30_state_machine_adapter_link.md`（v2，~860 行）。
+
+### v3 修订（2026-04-25 user 二轮 review 后）
+
+User v2 review 给出 7 主问题 + 3 次问题，全部接受 + 重写覆盖文档。718 行
+→ 744 行。**关键诚实修正**：v2 把 hardware IO 从 `s0_rt_thread` 移到普通线程
+但**声称不改设计**——与 `docs/00_design.md:114` 冻结条款冲突。事实上 Feetech
+串口 RTT ms 级**从来不是 HardRT**，但代码（`feetech/src/adapter.rs:202`）仍
+标 `RtClass::HardRT`（注释里早就承认是"目标分类"）。v3 把这件事**正式化**为
+`task-30-pre-1`。
+
+**v3 新增 3 个前置 task**（必须 task-30 主体 M1-M5 之前完成）：
+
+- **pre-1**（30 min + 评审）：Feetech 重分类 `RtClass::SerialRT`（新增 enum
+  variant + 改 feetech adapter `RtClass::HardRT → SerialRT` + 走 CHANGELOG
+  设计修订评审 + 加 `10_verification.md` SerialRT baseline 行）
+- **pre-2**（1.5 h + 评审）：state schema 补字段（`mode/control_link/output
+  _mode/safety_state` 全部加 `Unknown` variant 兼容旧 writer）+ build_helpers
+  + pub_thread 真发字段 + robotctl 展示 + schema_compat 测试 + state_machine
+  转换表加 `* → Fault(SafetyStopFailed)`（设计修订级 §1.4 / §3.4）
+- **pre-3a/b**（45 min）：`RobotError::Unsupported(&'static str)` variant +
+  adapter_io_thread 用 `RobotClock` 替代 `Instant::now`（业务代码禁用 §业务
+  代码禁用 API）
+
+**v3 主要 v2 修订**：
+
+- ➕ §1.2 / §1.3 / §1.4 v3 新章节：架构修订级问题陈述（Feetech 不是 HardRT；
+  schema 与冻结设计不一致）
+- 🔄 §5.2 `AdapterCtrlClient` 重写**非阻塞**：v2 用 bounded(1) send 会阻塞
+  ipc_thread → 心跳/watchdog/EStop 全卡死。v3 方案 A `pending op slot`（异步
+  + state_machine 下次 tick poll resp）；**采用 A**
+- 🔄 §5.4 server loop emergency `select!` arm 改**立即 dispatch** —— v2 写
+  `recv → _ => loop` 会消费但不处理，丢 EStopLatch 这类语义消息
+- 🔄 §5.6 `tick_hardware` `Velocity` 真闭环或 `Unsupported`：v2 set_mode 后
+  仍调 `write_command`，但 feetech 对非 Position 静默 no-op = 假闭环。v3：
+  `state.current_mode_supports_write` 标位 + 不支持 → `FaultCode::Adapter
+  UnsupportedMode` 进 Fault
+- 🔄 §6.3 state_machine 转换表加 `* → Fault(SafetyStopFailed)` 全状态接受 ——
+  v2 只 `Enabled.* → Fault`，EStop 已 Safe 时再来 SafetyStopFailed 会被拒收；
+  这是 §1.4 冻结条款修订，必须走评审
+- 🔄 §6.4 `OutputSafetyState` 与 `S0State` **正交独立**（不合并到 Fault），
+  state topic 同时暴露两字段（意图 vs 实测）
+- 🔄 §7.2 SIGKILL 改写：**不是 task-30 验收项，是 blocking gap**。`docs/10_
+  verification.md:102` 冻结 SLA "kill -9 → fail-safe < 500 ms" 留 `task-30-
+  post`：servo Goal_Position watchdog 标定 + 硬件继电器
+- ➕ §8 测试加 5+ 项：非阻塞 client / state_machine hook 不卡心跳 / SafetyStop
+  Failed 全状态接受 / EStopLatch 不丢 / Velocity Unsupported / state schema
+  字段全 / pub_thread 真发字段 / robotctl 显示 / **SIGKILL 不通过**（known issue）
+- 🔄 §9 迁移加 pre-1/2/3 前置；M1-M5 工作量 6 h → 6.75 h
+- 🔄 §11 7 个 v3 决议请求（取代 v2 5 问题）
+
+**v3 7 个决议请求**：
+
+1. v3 整体（pre-1/2/3 + M1-M5 + SIGKILL blocking gap）是否 approve？
+2. pre-1 Feetech `RtClass::SerialRT` 走 §4.6 设计修订评审？还是用现有 `SoftRT`
+   不新增 variant？
+3. pre-2 schema 字段全部加 `Unknown` variant 兼容旧 writer？
+4. §5.2 方案 A（pending op slot 异步） vs 方案 B（`send_timeout(50ms)` 紧上限）？
+5. `* → Fault(SafetyStopFailed)` 修订是否走 §1.4 转换表评审 + dimos 同步回写？
+6. §7.2 SIGKILL 留 `task-30-post` 同意？
+7. 真机最低门槛 M5 smoke：`feetech_poke read Torque_Enable=0` + `robotctl status`
+   显 `safety_state=TorqueOffConfirmed` + 物理推夹爪。同意 / 加项？
+
+详 `docs/designs/task-30_state_machine_adapter_link.md`（v3，744 行）。
