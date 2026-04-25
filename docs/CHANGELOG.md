@@ -2290,6 +2290,66 @@ User v6 review 给出 5 项卡点，全部接受（706 行 → 700+ 行）：
 
 详 `docs/designs/task-30_state_machine_adapter_link.md`（v7，~700 行）。
 
+### v8 修订（2026-04-25 user 七轮 review 后）
+
+User v7 review 给出 5 项 blocker，全部接受：
+
+1. **HardRT normal 提交仍有竞态**（v7 先 store arg 再 cas action_code → arg
+   撕裂；cas 后 fetch_add seq → action 与 seq 不匹配）→ 改 **单 packed
+   AtomicU64 slot**（bits 0-7 action / 8-15 arg / 16-63 seq），单次 CAS(0,
+   packed)；seq 先 fetch_add，cas 失败时该 seq 废弃（允许空洞）
+2. **SafetyStop 后同 tick 仍执行 pending Enable(true)**（v7 RT loop emergency
+   后无条件处理 normal）→ emergency 处理后**立即** `pending_normal.swap(0)`
+   drain，写 `RESP_ERR_PREEMPTED_BY_EMERGENCY`；之后处理新 normal 时仍二次
+   check `safety_latched`
+3. **Busy 不能"放弃本次 request"**（transition 不一定再发，逻辑 Enabled 但
+   硬件没 enable）→ ipc_thread 加 retry 协议 `pending_action: Option<(req,
+   Option<seq>)>`；in-flight 未完成不开新 transition；副作用 transition
+   (READY→ENABLED) 必须等 poll Ok 才认为对齐；超时 1s 升 Fault
+4. **safety_latched 没有清除 API**（trait 无暴露）→ trait 加第 5 method
+   `fn clear_safety_latch(&self)`；调用顺序约定 = 清 EStop latch → 清 Fault
+   → clear_safety_latch；HardRT impl atomic store false
+5. **sync_write_by_id_into 不严格 no-alloc / wire-incorrect**（v7 误用 `&mut
+   Vec<u8>` + push；用了不存在字段 `reg.size`；自己算 LEN 错）→ 改 `&mut [u8]`
+   slice + 内部栈数组 `[(u8, [u8; 4]); MAX_JOINTS]`；`build_sync_write` 内部
+   `vec!` → `[u8; MAX_PARAMS]` 栈数组（与现有 `build_write` 模式一致）；用
+   `register.length` 字段（事实）；LEN/wire 由 `build_instruction` 处理（不
+   自己写）
+
+**v8 主要新增**：
+
+- §0 5 项 blocker 修订表
+- §2 加硬约束 21/22/23：单 packed atomic CAS / emergency 抢占 in-flight /
+  副作用 transition 不可丢
+- §4.1 trait 加 5 method：`clear_safety_latch`
+- §4.2 HardRtCtrlInner 重写：`pending_normal: AtomicU64` packed +
+  `seq_counter: AtomicU64` + `last_completed: AtomicU64` packed；`pack_normal`
+  / `unpack_normal` / `pack_completed` helper
+- §4.3 rt_thread 主循环重排：emergency drain pending + 二次 latch check
+- §4.4 新增 ipc_thread retry 协议章节（in-flight 状态机 + 1s 超时）
+- §4.5 SerialRT clear_safety_latch impl
+- §7.2 `bus::sync_write_by_id_into` slice-based API + 内部栈数组 +
+  `register.length` fix；`protocol::build_sync_write` 内部 vec → 栈数组
+- §9 测试加 13+ 用例（pack/unpack 单测 / Busy semantics / drain pending /
+  retry 协议 / 1s 超时 / clear_safety_latch 顺序 / assert_no_alloc）
+- §10 R16 (Busy 死循环) + R17 (seq u48 wrap)
+- §11.2 M4 / M5 重写；总 10h → 11h
+
+**v8 8 个决议请求**：
+
+1. v8 整体 approve？
+2. pending_normal AtomicU64 packed (8/8/48) 是否合适？预留 reserved bits？
+3. emergency 后 RT drain 全部 pending（不只 Enable）同意？
+4. ipc retry 协议（in-flight 不完成不开新 transition + 1s 超时升 Fault）同意？
+5. `clear_safety_latch` 调用顺序约定要 trait doc 强制 / runtime 校验？
+6. M4 改动 (protocol 栈数组 + bus.sync_write_by_id_into slice API) 影响现有
+   `sync_write_by_id` 调用方？保留 vs 删除？
+7. M7 拆两 commit（flag on + 删 legacy）？
+8. 真机门槛加新项：Busy retry / emergency drain pending / clear_safety_latch
+   顺序违反 reject。同意 / 加项？
+
+详 `docs/designs/task-30_state_machine_adapter_link.md`（v8，~880 行）。
+
 ---
 
 ## 2026-04-25 · Step 8 EStop latch 双文件 + 重启恢复（**状态：登记 / 实施完成**）
