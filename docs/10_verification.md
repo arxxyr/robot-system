@@ -98,8 +98,9 @@
 | S1 crash → S0 safe output | < 250 ms | — | — | — | ⏳ | Step 7 |
 | RPC gateway crash → S0/S1 | 0 tick drop | — | — | — | ⏳ | Step 9 |
 | physical estop button → latched | < 5 ms | — | — | — | ⏳ | Step 10 |
-| EStop latch 持久化往返（重启 S0 后仍 latched） | 必过 | — | — | — | ⏳ | Step 8 |
-| kill -9 s0 → 硬件 fail-safe（torque disable/zero/brake） | < 500 ms | — | — | — | ⏳ | Step 10 |
+| EStop latch 持久化往返（重启 S0 后仍 latched） | 必过 | ✅ 23 unit tests | 2026-04-25 | local | ✅ | Step 8 |
+| EStop latch 双文件 fail-over（primary 损坏/缺失 → backup 自愈） | 必过 | ✅ 同上 | 2026-04-25 | local | ✅ | Step 8 |
+| kill -9 s0 → 硬件 fail-safe（torque disable/zero/brake） | < 500 ms | — | — | — | ⏳ blocking gap | Step 10 / task-30-post |
 
 ### 10.1.5 Schema
 

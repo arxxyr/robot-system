@@ -2037,3 +2037,88 @@ User v2 review 给出 7 主问题 + 3 次问题，全部接受 + 重写覆盖文
    显 `safety_state=TorqueOffConfirmed` + 物理推夹爪。同意 / 加项？
 
 详 `docs/designs/task-30_state_machine_adapter_link.md`（v3，744 行）。
+
+---
+
+## 2026-04-25 · Step 8 EStop latch 双文件 + 重启恢复（**状态：登记 / 实施完成**）
+
+### 涉及小节
+
+- `docs/01_implementation_steps.md:1366` Step 8 `EStop latch 文件双写 + 重启
+  恢复 (fsync 双文件、读取校验、持久化测试)`
+- `docs/00_design.md` §6.6 / §6.7 / §1394 风险表 "fsync 双写 + 备份文件"
+- `docs/10_verification.md:101-102` Step 8 SLA：EStop latch 持久化必过
+- 路线图步骤 6（C task）
+
+### 现状识别
+
+`crates/robot-s0/src/estop_latch.rs` 已存在（task 13 commit `de6ffc6`）：tmp +
+fsync + rename + parent dir fsync + 11 单测。但**只写一份文件**，与设计原文
+"fsync **双写** + 备份文件"差一份 backup。Step 8 正式补完。
+
+### 修改内容
+
+- `crates/robot-s0/src/estop_latch.rs`：
+  - **`save_estop_latch`** 改为双文件：先写 primary 再写 backup（`<path>.bak`），
+    每份独立走 tmp + fsync + rename + dir fsync。primary 写完 crash → primary
+    新值 + backup 旧值（不丢更新，因为 primary 是权威）；primary 失败 → 直接
+    报错（**不**回退到只写 backup）。
+  - **`load_estop_latch`** 加 fallback + 自愈：
+    - primary 合法 → 用之
+    - primary `NotFound` → 试 backup → 拿到合法值后**回写 primary**（自愈）→
+      backup 也 `NotFound` → return `false`（首次启动）
+    - primary `InvalidData`（损坏）→ 试 backup → 合法 → 回写 primary 自愈；
+      backup 也损坏 → return `InvalidData`（**不**默认 false，调用方按 Fault 处理）
+  - **`clear_estop_latch`** 同时删 primary + backup（任一 NotFound 视为成功）。
+  - 新增 `pub fn backup_path(&Path) -> PathBuf`：派生 `<primary>.bak` 路径。
+  - 抽出私有 `read_single` / `save_single_atomic` 共享逻辑。
+  - **新增 12 单测**（原 11 + 新 12 = 23 共）：backup_path 派生 / 双文件写入 /
+    primary 缺失 fallback / primary 损坏 fallback / 两份都缺失 / 两份都损坏
+    （Err InvalidData 不默认 false）/ backup 损坏走 primary / clear 双删 /
+    save 覆盖双文件 / 部分损坏不主动修 backup（设计选择：primary 权威）/ restart
+    持久化往返。
+- `docs/10_verification.md:101`：Step 8 EStop latch 持久化往返 `⏳ → ✅`；
+  新增"双文件 fail-over"行 ✅；同时把 `kill -9 → fail-safe < 500 ms`
+  状态改 **`⏳ blocking gap`** + 标 task-30-post（task-30 v3 §7.2 已对齐）。
+- 不动 `s0_daemon.rs`：`load_estop_latch` / `save_estop_latch` 公开 API 签名
+  不变，调用方零改动；backup 路径自动派生。
+
+### 关键决策
+
+- **API 兼容**：保留单 path 参数；backup 隐式派生 `<primary>.bak`。这样
+  `s0_daemon` 既有路径计算（`/var/lib/robot/<id>/estop_latch`）/ CLI flag
+  `--latch-path` / 单测都不用改。
+- **primary 权威**：load 时 primary 合法即用，不主动检查 backup 是否对齐。
+  backup 仅在 primary 失败时兜底。设计选择是"备份文件"而非"双副本同步"。
+- **两份都损坏 = Fault**：不默认 `false`，避免"系统级故障被掩盖成首次启动"。
+  调用方（`s0_daemon`）应进 Fault 状态。
+- **`kill -9 → fail-safe` 状态明确为 blocking gap**：与 task-30 v3 §7.2 对齐。
+  软件层无法保证 SIGKILL 后的 fail-safe；需要 servo timeout 标定 + 硬件继电器
+  （task-30-post）。Step 8 不闭环此项。
+
+### 验证
+
+- `cargo fmt --all --check` ✅
+- `cargo clippy --all --all-targets -- -D warnings` ✅（含 `--features real-hw`）
+- `cargo test --all` ✅（estop_latch 23 单测；workspace 共 393 pass / 0 fail）
+- 单测覆盖 §6.7 "fsync 双写 + 备份文件"全部失效模式：primary 损坏 / 缺失 /
+  两份都坏 / 部分损坏 / clear 双删 / restart 往返
+
+### 未做（留 task-30 / Step 9）
+
+- **EStop topic → state_machine 真触发 `safety_stop()`**（adapter 真断扭）
+  → task-30 M5
+- **`ClearEStop` RPC 端点**（设计 §6.7 要求 maintainer+）→ Step 7+ RPC 网关
+- **物理 estop button → latched < 5 ms**（`docs/10_verification.md:100`）→ Step 10 真硬件
+- **kill -9 s0 → fail-safe < 500 ms**（`docs/10_verification.md:102`）→ task-30-post
+  （servo timeout 标定 + 硬件继电器）
+
+### 审阅
+
+- 提议：Claude Code（路线图步骤 6 "C Step 8 EStop latch"）
+- 实施：本 commit
+- 复审触发：
+  - task-30 实施时 `EStopLatch` emergency 路径调 `save_estop_latch(true)` →
+    一并验证双文件路径在真机 SIGTERM 路径下能落盘
+  - bus2 / 13-motor 多 hardware_id 时 latch 路径计算 → `s0_daemon` 路径策略可能
+    需要扩
