@@ -715,23 +715,47 @@ piper = ["robot-adapter-piper"]
 
 runtime 插件 ABI 留到 v1.x 之后。
 
-### 4.6 Adapter 分级：HardRT vs SoftRT
+### 4.6 Adapter 分级：HardRT vs SerialRT vs SoftRT
+
+> **task-30 v9 修订（2026-04-25）**：v0.1.x 原版只有 HardRT / SoftRT 两级，
+> 把串口舵机错标 HardRT 导致无法挂真 RT 线程。v9 引入第三级 `SerialRT`，
+> 与 SoftRT 区分（SerialRT 总线 latency 可证明，SoftRT 不可证明）。
 
 ```
 HardRT adapter:
-  - read_state / write_command 可进 S0 RT loop
+  - read_state / write_command 可进 s0_rt_thread
   - bounded latency (< 100 μs typical)
   - 只做寄存器级 / DMA / SPI / CAN 操作
   - 无 malloc、无 lock wait、无 blocking syscall
-  - 挂 s0_rt_thread
+  - 走 HardRtCtrlClient（packed AtomicU64 + RT-only safety 路径）
+  - 典型：FPGA 总线、内存映射 I/O、专用控制板
+
+SerialRT adapter（task-30 新加）:
+  - 禁止挂 s0_rt_thread（单帧 RTT 远超 100 μs，毫秒量级）
+  - 挂独立的 s0_serial_io_thread（普通优先级 + select! 主循环）
+  - 走 SerialIoCtrlClient（独立 channel + atomic latch + safety_stop_fast）
+  - 总线 latency **可证明**：固定波特率 + 固定帧长 + 厂家 fail-safe timeout
+  - safety_stop_fast 时延 SLA < 10 ms（13-motor 一次 sync_write Torque_Enable=0）
+  - confirm_torque_off RTT SLA < 50 ms（13-motor 一次 sync_read 确认）
+  - 典型：Feetech STS3215 / Dynamixel / Modbus RTU 串口设备
 
 SoftRT adapter:
   - 禁止挂 s0_rt_thread
   - 禁止挂 s0_pub_thread（Pub 必须纯净；阻塞 = S1 watchdog 超时）
   - 只能挂 s0_io_thread
   - 结果写入独立 softrt_snapshot，RT thread 通过 latest snapshot 只读
+  - 总线 latency **不可证明**（USB / 网络 / 未审计 C++ SDK）
   - 典型：USB 相机、未审计厂家 C++ SDK、网络传感器
 ```
+
+**判定准则**（决策树）：
+
+1. 单帧 RTT 是否能证明 < 100 μs，且无 alloc / lock / blocking？
+   - 是 → `HardRT`
+   - 否 → 看 2
+2. 总线 latency 是否**可证明**（固定波特率 + 固定协议帧长 + 厂家 fail-safe）？
+   - 是 → `SerialRT`（毫秒量级 RTT，但 bounded）
+   - 否 → `SoftRT`（USB / 网络 / 未审计 SDK，无 latency 证明）
 
 `AdapterInfo` 中声明等级：
 
@@ -739,12 +763,20 @@ SoftRT adapter:
 pub struct AdapterInfo {
     pub name: &'static str,
     pub kind: AdapterKind,
-    pub rt_class: RtClass,   // HardRT | SoftRT
+    pub rt_class: RtClass,   // HardRT | SerialRT | SoftRT
     pub vendor_sdk: bool,
 }
 ```
 
-S0 启动时按 `rt_class` 分配线程；违反（例如 SoftRT 试图挂 RT 线程）即拒绝启动。
+S0 启动时按 `rt_class` 分配线程：
+
+| RtClass | 线程 | 控制句柄 | 紧急路径 |
+|---|---|---|---|
+| HardRT | `s0_rt_thread`（SCHED_FIFO） | `HardRtCtrlClient` | `RtSafeCtrl::safety_stop_rt`（RT-only fast path） |
+| SerialRT | `s0_serial_io_thread`（普通） | `SerialIoCtrlClient` | `safety_stop_fast`（broadcast Torque_Enable=0） |
+| SoftRT | `s0_io_thread`（普通） | 无控制句柄（read-only） | n/a |
+
+违反（例如 SoftRT 试图挂 RT 线程，或 SerialRT 试图挂 RT 线程）即拒绝启动。
 
 ### 4.7 Policy Host 隔离规则
 
@@ -1420,7 +1452,7 @@ mock S1 command → iceoryx2 → s0_ipc_thread
 - **Blob**：一块连续的二进制数据，通过 shm 传递，不走序列化。
 - **Policy**：把观测映射到动作的函数（PID / RL / VLA）。
 - **Task**：S1 中的一个控制目标（一条轨迹、一段底盘速度、一次伺服跟踪）。
-- **HardRT / SoftRT adapter**：按是否可进 S0 RT loop 分级的 adapter。
+- **HardRT / SerialRT / SoftRT adapter**：按是否可进 S0 RT loop 分级的 adapter（§4.6）。
 - **InProcessPolicyHost / ExternalPolicyHost**：按是否跨进程分级的 policy runtime。
 - **Sample lease**：iceoryx2 sample 的借用期；`SampleLease<T>` 是 Rust 封装，值语义持有 loan。
 - **StaleAction**：命令过期后 S0 采取的动作（Hold / Zero / Stop）。
@@ -1463,7 +1495,7 @@ mock S1 command → iceoryx2 → s0_ipc_thread
 | v0.1 范围 | hello-world | 加 soak / 兼容性 / crash-restart / allocation guard |
 | 权限模型 | 推迟 | v0.1 接口到位，实现可延后 |
 | 控制边界 ACL | 软约束 | 编译期 topic ↔ publisher 类型绑定 |
-| Adapter RT 分级 | 无 | HardRT / SoftRT 显式声明（§4.6） |
+| Adapter RT 分级 | 无 | HardRT / SerialRT / SoftRT 显式声明（§4.6） |
 | S2 bridge 边界 | 单一 pyo3 | embedded + remote 两种模式 + ACL（§5.6） |
 | QoS | 四类粗粒度 | 按 topic 类别细化（§2.4） |
 | 行为树 vs 状态机 | 两者都支持 | 底层统一状态机；行为树仅用于 S2 编排（§13.1） |

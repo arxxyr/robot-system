@@ -23,13 +23,22 @@ use crate::error::RobotError;
 // 分类枚举
 // ============================================================================
 
-/// Adapter 的 RT 分级。见 §4.6。
+/// Adapter 的 RT 分级。见 `docs/00_design.md` §4.6。
 ///
-/// - `HardRT`：可挂 `s0_rt_thread`，bounded latency < 100 µs，无 malloc / lock。
+/// - `HardRT`：可挂 `s0_rt_thread`，bounded latency < 100 µs，无 malloc / lock，
+///   走 `HardRtCtrlClient`（packed `AtomicU64` + RT-only safety 路径）。典型硬件：
+///   FPGA 总线、内存映射 I/O、专用控制板。
+/// - `SerialRT`：串口 / USB-RS485 / Modbus RTU 等**总线 latency 可证明但单帧 RTT
+///   远超 100 µs**（毫秒量级）的硬件。挂 `s0_serial_io_thread`（普通优先级 +
+///   `select!` 主循环），走 `SerialIoCtrlClient`（独立 channel + atomic latch）；
+///   绝不允许挂 `s0_rt_thread`。典型硬件：Feetech STS3215 串口舵机、Dynamixel、
+///   `Modbus` 串口设备。
 /// - `SoftRT`：只能挂 `s0_io_thread`；禁挂 `s0_rt_thread` / `s0_pub_thread`。
+///   典型硬件：USB camera、网络相机、点云传感器。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum RtClass {
     HardRT,
+    SerialRT,
     SoftRT,
 }
 
@@ -241,6 +250,112 @@ pub trait ManipulatorAdapter: Send {
     fn limits(&self) -> &JointLimits;
 }
 
+// ============================================================================
+// RtSafeCtrl 子 trait（task-30 v9 §5.5 / M2）
+// ============================================================================
+//
+// 本节大量 doc-comment 用中文描述 RT 路径约束，反引号代价高且可读性下降。
+// trait + 三 method block 内 allow doc_markdown，每个公共 API 还是会用反引号
+// 标 Rust 类型；实际 lint 由 clippy 在外围 catch。
+
+/// **RT-safe 控制路径**：`rt_thread` 主循环 (SCHED_FIFO 70) 在 hot-path 直接
+/// 调用的最小集合。**只有 `RtClass::HardRT` adapter 实现本 trait**；
+/// `RtClass::SerialRT` / `RtClass::SoftRT` adapter **禁止实现**
+/// (`spawn_rt_thread` 通过 trait bound 在编译期拒)。
+///
+/// ## 不变量（必须满足）
+///
+/// 1. **无堆 alloc**：实现里不许 `Vec::push` / `Box::new` / `format!` / 日志
+///    格式化 / `Arc::clone/drop` / `FlatBufferBuilder`。
+/// 2. **无 blocking syscall**：no read/write 串口、no select/poll、no
+///    `std::thread::sleep`。HardRT 实现允许的 syscall 限于内存映射 IO
+///    （mmap 页 / spinlock 上的 atomic 读写）。
+/// 3. **bounded latency < 100 µs**（典型）：每个方法在最坏情况下完成时间可
+///    证明上界。
+/// 4. **`safety_stop_rt` 必须 fail-safe**：即使总线 hang / 寄存器写错，方法
+///    本身可以返回 `Err`，但 motor torque 必须真正断（硬件级 fail-safe，比如
+///    内存映射写 + watchdog）。
+/// 5. **可重入安全**：rt_thread 同一 tick 内连续调
+///    `safety_stop_rt` + `enable_rt(false)` 必须正确（不依赖外部状态机器）。
+///
+/// ## 与 [`ManipulatorAdapter`] 的关系
+///
+/// `ManipulatorAdapter::safety_stop` / `enable` / `set_mode` 是**普通**版本，
+/// 允许阻塞 / 分配 / 走串口。`RtSafeCtrl::*_rt` 是**RT 版本**，必须满足上面 5
+/// 条。两者通常实现有重合代码，但**不允许内部互相调用**（避免 RT 版本意外
+/// 走到非 RT 路径）。
+#[allow(clippy::doc_markdown)]
+pub trait RtSafeCtrl {
+    /// RT-safe 紧急停止。**fire-and-forget 语义**：rt_thread 调完即认为已下发，
+    /// 实际硬件状态由 `OutputSafetyProbe`（M3）下 tick 确认。
+    ///
+    /// HardRT 实现：mmap 写 torque enable register = 0，bounded < 1 µs。
+    /// Mock 实现：只改 bool flag，trivially RT-safe。
+    ///
+    /// # Errors
+    ///
+    /// 仅在 adapter 内部状态损坏（例如 connect 前调）时返回 `NotConnected` 等；
+    /// **绝不**因为"硬件可能已经 stop"返回 Err（fail-safe 语义优先）。
+    fn safety_stop_rt(&mut self) -> Result<(), RobotError>;
+
+    /// RT-safe enable / disable torque。HardRT 实现 mmap 写寄存器；Mock 实现
+    /// 改 bool flag。
+    ///
+    /// # Errors
+    ///
+    /// `NotConnected` / `HardwareFault("safety_stop latched")`（latched 时拒
+    /// `enable(true)`）。
+    fn enable_rt(&mut self, on: bool) -> Result<(), RobotError>;
+
+    /// RT-safe 切换控制模式。HardRT 通常 mmap 写一个寄存器；Mock 直接改 enum。
+    ///
+    /// # Errors
+    ///
+    /// `NotConnected` / `Unsupported`（adapter 不支持该 mode）。
+    fn set_mode_rt(&mut self, mode: ControlMode) -> Result<(), RobotError>;
+}
+
+/// `Box<Inner>` 对 `RtSafeCtrl` 的透传 blanket impl，对称于下方 `ManipulatorAdapter`
+/// 的同款实现。让 inventory factory 返回的 `Box<...>` 直接满足
+/// `spawn_rt_thread<A: ManipulatorAdapter + RtSafeCtrl + Send>` 的 trait bound。
+impl<Inner> RtSafeCtrl for Box<Inner>
+where
+    Inner: RtSafeCtrl + ?Sized,
+{
+    fn safety_stop_rt(&mut self) -> Result<(), RobotError> {
+        (**self).safety_stop_rt()
+    }
+    fn enable_rt(&mut self, on: bool) -> Result<(), RobotError> {
+        (**self).enable_rt(on)
+    }
+    fn set_mode_rt(&mut self, mode: ControlMode) -> Result<(), RobotError> {
+        (**self).set_mode_rt(mode)
+    }
+}
+
+// ============================================================================
+// HardRtAdapter 综合 trait（task-30 v9 finding #3 修复）
+// ============================================================================
+
+#[allow(clippy::doc_markdown)]
+/// **HardRT 路径的 adapter 综合契约**：必须同时实现 [`ManipulatorAdapter`]
+/// 与 [`RtSafeCtrl`]。
+///
+/// `spawn_rt_thread<A: HardRtAdapter + Send + 'static>` 用本 trait 作 bound，
+/// **编译期**拒绝未实现 `RtSafeCtrl` 的 adapter（finding #3：之前只靠
+/// `RtClass::HardRT` 字符串分类做运行时守门，adapter 写错也能进 RT 路径）。
+///
+/// 自动 blanket impl：任何 `T: ManipulatorAdapter + RtSafeCtrl` 自动满足。
+/// `Box<dyn HardRtAdapter + Send>` 作 trait object 时同样可调 RT 三方法
+/// （via 上方两条 `Box<Inner>` 透传 blanket impl）。
+///
+/// **factory 入口**：`AdapterFactory::build_hard_rt` 返
+/// `Box<dyn HardRtAdapter + Send>`；HardRT factory（如 `MockFactory`）必须
+/// override 该方法。SerialRT / SoftRT factory 留 default 实现 = 拒绝。
+pub trait HardRtAdapter: ManipulatorAdapter + RtSafeCtrl {}
+
+impl<T: ManipulatorAdapter + RtSafeCtrl + ?Sized> HardRtAdapter for T {}
+
 /// `Box<dyn ManipulatorAdapter>` 透传 blanket impl —— Step 7 task 27b 加。
 ///
 /// 让 inventory factory 返回的 `Box<dyn ManipulatorAdapter + Send>` 直接满足
@@ -351,5 +466,21 @@ mod tests {
         };
         let info2 = info;
         assert_eq!(info, info2);
+    }
+
+    #[test]
+    fn rt_class_three_variants_are_distinct() {
+        // pre-1a：SerialRT 与 HardRT / SoftRT 在 PartialEq / Hash / Debug 维度
+        // 完全独立。后续 s0_daemon dispatch_by_rt_class 会基于 PartialEq 路由。
+        let v = [RtClass::HardRT, RtClass::SerialRT, RtClass::SoftRT];
+        for (i, a) in v.iter().enumerate() {
+            for (j, b) in v.iter().enumerate() {
+                assert_eq!(a == b, i == j, "{a:?} vs {b:?}");
+            }
+        }
+        // 编译期 Copy 校验
+        let a = RtClass::SerialRT;
+        let b = a;
+        assert_eq!(a, b);
     }
 }

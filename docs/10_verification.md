@@ -102,6 +102,31 @@
 | EStop latch 双文件 fail-over（primary 损坏/缺失 → backup 自愈） | 必过 | ✅ 同上 | 2026-04-25 | local | ✅ | Step 8 |
 | kill -9 s0 → 硬件 fail-safe（torque disable/zero/brake） | < 500 ms | — | — | — | ⏳ blocking gap | Step 10 / task-30-post |
 
+### 10.1.4.1 Adapter RT baseline（按 RtClass 分级）
+
+> **task-30 v9（pre-1d）**：原 §10.1 只覆盖 HardRT / SoftRT 假设。task-30 引入
+> `RtClass::SerialRT`（§4.6 Adapter 分级），feetech 串口舵机由 HardRT 改标
+> SerialRT，挂 `s0_serial_io_thread`。本节列 SerialRT 专属 SLA + baseline 项。
+
+| 指标 | 目标 | measured | measured_at | env_id | 状态 | Step |
+|---|---|---|---|---|---|---|
+| **HardRT** `read_state` p99 | < 50 µs | — | — | — | ⏳ | Step 6 mock |
+| **HardRT** `write_command` p99 | < 50 µs | — | — | — | ⏳ | Step 6 mock |
+| **HardRT** `safety_stop_rt` (RT-only fast path) p99 | < 100 µs | — | — | — | ⏳ | M5 mock + Step 10 |
+| **SerialRT** `feetech_poke ping`（13-motor handshake，逐 motor） | baseline（毫秒量级）| — | — | — | ⏳ | Step 10 task-30 实测 |
+| **SerialRT** `safety_stop_fast`（13-motor 一次 sync_write Torque_Enable=0）| **< 10 ms** (hard) | — | — | — | ⏳ M4 落地 + Orin 实测 |
+| **SerialRT** `confirm_torque_off` RTT（13-motor 一次 sync_read 验证 Torque_Enable=0）| **< 50 ms** (hard) | — | — | — | ⏳ M6 落地 + Orin 实测 |
+| **SerialRT** `read_state`（13-motor sync_read Present_Position+Velocity）p99 | < 8 ms | — | — | — | ⏳ Step 10 |
+| **SerialRT** `write_command`（13-motor sync_write Goal_Position）p99 | < 4 ms | — | — | — | ⏳ Step 10 |
+| **SoftRT** snapshot 更新到 RT thread 可见的 staleness | < 50 ms | — | — | — | ⏳ | v0.4 RealSense |
+
+**SerialRT 测量约束**：
+- 必须在 Orin（aarch64 + USB-RS485 实机）跑，dev 机数据**不作 baseline**；
+- `safety_stop_fast` / `confirm_torque_off` 跑 100 次取 p50 / p99 / max；
+- 触发条件 = `s0_daemon` 已 spawn `s0_serial_io_thread` + Feetech adapter connected
+  + 13 motor 全 ping 通过；
+- baseline 采集时机 = M6 落地后即刻；M7 真机 smoke 跑通过夜间 1 h soak 复查。
+
 ### 10.1.5 Schema
 
 | 指标 | 目标 | 状态 | Step |

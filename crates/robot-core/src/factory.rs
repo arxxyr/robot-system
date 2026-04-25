@@ -39,7 +39,9 @@
 //!   factory 的兼容**（加新字段只改 robot-s0 build 侧 + 新 factory，旧 factory
 //!   忽略不读即可）。
 
-use crate::adapter::ManipulatorAdapter;
+#![allow(clippy::doc_markdown)]
+
+use crate::adapter::{HardRtAdapter, ManipulatorAdapter};
 use crate::error::RobotError;
 
 /// 启动期 build adapter 的最小上下文。
@@ -95,6 +97,10 @@ pub trait AdapterFactory: Sync + 'static {
     /// 实现内部按 `ctx.adapter_kind` 应**双重检查** = `self.name()`（防 caller 传错；
     /// 一般 `find_factory` 已保证一致）。
     ///
+    /// **本入口返回的 adapter 不带 [`crate::adapter::RtSafeCtrl`] 编译期
+    /// 守门**，仅适合非 RT 路径（SerialRT / SoftRT）。HardRT path 必须调
+    /// [`AdapterFactory::build_hard_rt`]。
+    ///
     /// # Errors
     ///
     /// - 必填 context 字段缺失 / 不合法 → [`RobotError::InvalidParameter`]
@@ -103,6 +109,30 @@ pub trait AdapterFactory: Sync + 'static {
         &self,
         ctx: &AdapterBuildContext<'_>,
     ) -> Result<Box<dyn ManipulatorAdapter + Send>, RobotError>;
+
+    /// **task-30 v9 finding #3 修复**：HardRT 专用构造入口。返回的 adapter
+    /// **编译期保证**实现 [`crate::adapter::RtSafeCtrl`]（综合 trait
+    /// [`HardRtAdapter`]）。
+    ///
+    /// `s0_daemon` 在 `RtClass::HardRT` 路径**必须**调本方法（而不是
+    /// [`AdapterFactory::build`]）；本方法的返回值才能进 `spawn_rt_thread`。
+    ///
+    /// **default 实现**：返 `Err(RobotError::Unsupported(...))`。SerialRT /
+    /// SoftRT factory 留 default 即可（它们不该走 HardRT 路径）；HardRT
+    /// factory 必须 override 返综合 trait object。
+    ///
+    /// # Errors
+    ///
+    /// - factory 不支持 HardRT 路径 → [`RobotError::Unsupported`]
+    /// - 透传 [`AdapterFactory::build`] 的错误。
+    fn build_hard_rt(
+        &self,
+        _ctx: &AdapterBuildContext<'_>,
+    ) -> Result<Box<dyn HardRtAdapter + Send>, RobotError> {
+        Err(RobotError::Unsupported(
+            "factory does not support HardRT path",
+        ))
+    }
 }
 
 // `inventory` 收集所有 `submit!` 进来的 `&dyn AdapterFactory` 静态实例。

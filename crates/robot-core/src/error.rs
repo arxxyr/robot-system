@@ -20,6 +20,7 @@ use thiserror::Error;
 /// - **connectivity**: `NotConnected` / `Busy`
 /// - **parameter**: `InvalidParameter`
 /// - **runtime**: `HardwareFault` / `DeadlineExceeded` / `LimitsViolation`
+/// - **capability**: `Unsupported`（task-30 v9 pre-3a）
 ///
 /// 扩展新变体前请在 `docs/CHANGELOG.md` 登记（非 hot-path 错误无需走 baseline
 /// 回归，但需保持静态 `&'static str` 的 no-alloc 约束）。
@@ -49,6 +50,33 @@ pub enum RobotError {
     /// 命令违反 `JointLimits`（位置 / 速度 / 力矩边界）。
     #[error("limits violation")]
     LimitsViolation,
+
+    /// 操作 / 请求**当前 adapter 不支持**（能力级拒绝，不是参数错误也不是硬件
+    /// 故障）。task-30 v9 pre-3a 新加。**纯能力声明**：返回这个错误本身**不**
+    /// 升 `Fault`。是否进 `Fault` 取决于调用边界，由调用方在拿到本错误后**显式**
+    /// 决策，**不在** `RobotError` 这一层做。
+    ///
+    /// **三种调用边界**：
+    /// - **effectful state-machine transition**（M7 `ipc_tick`）路径：本错误
+    ///   被包装成 [`crate::executor_ctrl::NormalReqStatus::Unsupported`]，再由
+    ///   `ipc_tick` **显式**调 `commit_fault(AdapterErr)`。`RobotError::Unsupported`
+    ///   不直接触发 fault；触发动作发生在 `NormalReqStatus` 这一层。
+    /// - **探测式 / pre-flight 路径**（启动期 capability 检测）：调用方拿到
+    ///   `Err(Unsupported)` 后选择降级 / 跳过 / 警告，**不**升 fault。
+    /// - **配置加载 / 工具命令路径**：通常直接 surface 给 user / 写日志。
+    ///
+    /// 覆盖示例：
+    /// - `SerialRT` adapter 收到 `RtSafeCtrl::safety_stop_rt` 这种 RT-only 请求
+    ///   → 返回 `Unsupported("safety_stop_rt only available on HardRT")`。
+    /// - 串口 adapter 收到不识别的寄存器 / 控制 mode 组合。
+    /// - mock adapter 拒绝它 design 上不实现的可选 trait method。
+    ///
+    /// **总结**：
+    /// `RobotError::Unsupported` = "能力级 NO"（中性事实）；
+    /// `NormalReqStatus::Unsupported` = "能力级 NO + 我在 effectful 路径上拿到它"
+    /// （强制升 fault 的具体调用边界）。两者在不同抽象层，不冲突。
+    #[error("unsupported: {0}")]
+    Unsupported(&'static str),
 }
 
 #[cfg(test)]
@@ -66,6 +94,7 @@ mod tests {
             RobotError::HardwareFault("CAN bus offline"),
             RobotError::DeadlineExceeded,
             RobotError::LimitsViolation,
+            RobotError::Unsupported("safety_stop_rt only on HardRT"),
         ];
         for e in &samples {
             // 使用 `ToString` 会分配；这里用 writeln 到固定 buffer 验证零 alloc 路径：
@@ -83,5 +112,14 @@ mod tests {
         let b = a;
         let c = a;
         assert_eq!(b, c);
+    }
+
+    #[test]
+    fn unsupported_format_string_is_static() {
+        // task-30 v9 pre-3a：Display 不分配；message 静态借用。
+        let e = RobotError::Unsupported("safety_stop_rt only on HardRT");
+        let s = format!("{e}");
+        assert!(s.contains("unsupported"));
+        assert!(s.contains("safety_stop_rt only on HardRT"));
     }
 }

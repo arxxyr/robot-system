@@ -61,7 +61,7 @@ thiserror = "2.0.18"
 # 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。
 flatbuffers = "=25.12.19"
 # blake3：layout_id / ConfigIdentity / schema_lint 碰撞检测需要的固定 hash。
-blake3 = "1.8.4"
+blake3 = "1.8.5"
 # iceoryx2：本机零拷贝 pub-sub（§2.1）。精确 pin 仿 flatbuffers，防 minor 破坏性变更。
 # 烟测见 docs/CHANGELOG.md 2026-04-22 "Step 5 开工决策与 iceoryx2 依赖登记"。
 iceoryx2 = "=0.8.1"
@@ -82,7 +82,7 @@ hdrhistogram = "7.5"
 # 2026-04-24 "Step 7 task 25 robot-s0 / robot-core::config 依赖白名单更新"）。
 # toml 0.9 与 iceoryx2 0.8.1 子树对齐，避免新增重复版本（deny.toml skip-tree 注释）。
 serde = { version = "1", features = ["derive"] }
-toml  = "0.9"
+toml  = "1.1.2"
 # serde_json：Step 7 task 29 (2026-04-25) feetech MotorCalibration JSON loader。
 # 限 robot-adapter-feetech 使用，格式与 dimos `scripts/calibrate.py` 输出 1:1 兼容
 # （顶层 {motor_name: {id, drive_mode, homing_offset, range_min, range_max}}）。
@@ -98,7 +98,7 @@ inventory = "0.3"
 # criterion：性能基准 harness。Step 7 task 27c feetech bench 落地。
 # 仅在 [dev-dependencies] 用，不进任何 binary；用 default features 的
 # rayon / plotters 子集，跑 cargo bench 时拉链接。
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 # serialport：跨平台串口 crate（Linux 走 libudev，需 libudev-dev / libudev1）。
 # Step 7 task 28 feetech `real-hw` feature 必需；mock-only 编译路径不 link。
 serialport = "4"
@@ -114,7 +114,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 # 让所有 bin 只要依赖 `robot-logging` 就自动 init tracing subscriber，不用
 # 每个 main 写 `robot_logging::init()`。白名单登记见 docs/CHANGELOG.md 2026-04-25
 # "task-32 日志骨架"。
-ctor               = "0.3"
+ctor               = "0.10.1"
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core          = { path = "crates/robot-core" }
