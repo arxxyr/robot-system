@@ -394,6 +394,17 @@ pub trait ExecutorCtrlClient: Send + Sync {
     /// 不再被 latch 拒。HardRT / SerialRT 实现都是 `safety_latched.store(false,
     /// Release)`（v9 §0 #2 修正）。
     fn clear_safety_latch(&self);
+
+    /// 读当前 [`OutputSafetyState`]（rt_thread / serial_io_thread 写入端）。
+    ///
+    /// **task-30 v9 / SerialRT E2E #4 守门**：`ipc_tick` 在 `Event::ClearEStop`
+    /// transition 调 [`Self::clear_safety_latch`] **之前**用本方法检查
+    /// `OutputSafetyState == TorqueOffConfirmed`。否则 SerialRT 端可能还有未
+    /// 消费的 `emergency_action`，下一 tick 兜底 `safety_latched.store(true)`
+    /// 会**覆盖** `clear_safety_latch` 的清除（race window）。
+    ///
+    /// 这是只读的 atomic load，无副作用。
+    fn safety_state(&self) -> OutputSafetyState;
 }
 
 // ============================================================================

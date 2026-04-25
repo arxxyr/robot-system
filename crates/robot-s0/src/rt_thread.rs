@@ -308,6 +308,15 @@ fn run_rt_loop<A: HardRtAdapter>(
                 // **finding #1 兜底**：把 policy 兜底切到 StopTorque。client
                 // safety_stop() 已经先 store 过；这里再写一次是防"emergency
                 // 由测试 / 其它路径直接置 emergency_action 没经 client"的场景。
+                //
+                // **task-30 v9 / SerialRT E2E #4 调用规范**：本 tick 在
+                // emergency_action 被消费时**会**重新 store(latch, true)。这
+                // 意味着 ipc_tick 调 `clear_safety_latch` 前必须等
+                // `safety_state == TorqueOffConfirmed`（SerialRT 端 confirm 完
+                // 成 = emergency_action 已 swap 完 = rt 端兜底 store latch 已
+                // 落地）。否则 clear 之后会被 rt 端兜底重写。这是工程上合理
+                // 的：操作员/RPC 调 ClearEStop 时本就该已经 confirm hardware
+                // torque off。
                 ctrl.policy
                     .store(OutputPolicy::StopTorque.to_u8(), Ordering::Release);
                 let new_safety_state = match result {

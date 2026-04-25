@@ -311,44 +311,43 @@ fn run_loop(
         // ─── 1) data plane: JointCommand → cmd_writer (不进 EventQueue) ───
         poll_command(&mut subs.command, cmd_writer, metrics);
 
-        // ─── 2) Heartbeat：guard 先更新（硬要求 #1），再入队 ───
+        // ─── 2) Heartbeat：本 event 没有"反向 guard 副作用"（只在收到时
+        //       置 heartbeat_ok=true，未收到时由 watchdog HeartbeatTimeout
+        //       走 ipc_tick 内置 false），可以在 push 前安全置位 ───
         if poll_heartbeat(&mut subs.heartbeat, clock, last_hb_ns, metrics) {
             guards.heartbeat_ok = true;
             events.push(Event::Heartbeat);
         }
 
-        // ─── 3) EStop topic：guard 先更新，再入队 ───
+        // ─── 3) EStop topic / 4) Watchdog channel / 5) 外部 channel ───
+        //
+        // **第 5 条门槛修订（SerialRT E2E）**：本 ipc_thread::run_loop **不再**
+        // 在 channel drain 阶段对 ClearEStop / EStop / ClearError /
+        // HeartbeatTimeout 调 apply_event_guard_side_effect（旧逻辑会让同
+        // tick 多事件批量进入 ipc_tick 时，前到事件被后到事件的 guard 改写
+        // 污染 plan）。改成 ipc_tick 内每个 event pop 后逐条 apply。详
+        // ipc_tick 模块 doc + 锁测
+        // `events_in_same_tick_use_per_event_guard_view`。
         if poll_estop(&mut subs.estop, metrics) {
-            guards.estop_latched = true;
             events.push(Event::EStop);
         }
-
-        // ─── 4) Watchdog 事件：guard 先更新，再入队 ───
         while let Ok(ev) = watchdog_rx.try_recv() {
             metrics.watchdog_events.fetch_add(1, Ordering::Relaxed);
-            apply_event_guard_side_effect(ev, &mut guards);
             events.push(ev);
         }
-
-        // ─── 5) 外部 channel 事件（SIGINT / CLI / 测试）：同款先 guard 后入队 ───
-        //
-        // 关键：`Event::ClearEStop` 必须在这里把 guards.estop_latched 改成
-        // false，**先于** events.push —— ipc_tick 内部走 plan_transition 时
-        // 看到 estop_latched 已清，才能放行 SAFE→SAFE 的 ClearEStop transition
-        // （Pure 分支会调 executor_ctrl.clear_safety_latch()，把 executor 的
-        // safety_latched 也清掉）。reviewer 硬要求 #1。
         while let Ok(ev) = event_rx.try_recv() {
             metrics.external_events.fetch_add(1, Ordering::Relaxed);
-            apply_event_guard_side_effect(ev, &mut guards);
             events.push(ev);
         }
 
         // ─── 6) ipc_tick 三步式：唯一改 state 的路径（硬要求 #2）───
+        //
+        // guards 现在是 &mut，ipc_tick 内部对每个 event 单独 apply 副作用。
         let prev_state = state;
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             executor_ctrl,
             clock,
             &mut events,
@@ -364,22 +363,6 @@ fn run_loop(
 
         // 非 RT 线程：std::thread::sleep 够用。
         thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
-    }
-}
-
-/// 按事件类型对 guards 做已知的副作用（**入 [`EventQueue`] 之前调用**）。
-///
-/// reviewer 硬要求 #1：`ClearEStop` / `ClearError` / `EStop` /
-/// `HeartbeatTimeout` 等影响 guard 的事件，**必须**在 push 前更新对应
-/// guard，否则 `ipc_tick` 的 `plan_transition` 会因 stale guard 拒绝
-/// transition。
-fn apply_event_guard_side_effect(ev: Event, guards: &mut Guards) {
-    match ev {
-        Event::EStop => guards.estop_latched = true,
-        Event::ClearEStop => guards.estop_latched = false,
-        Event::ClearError => guards.adapter_fault_cleared = true,
-        Event::HeartbeatTimeout => guards.heartbeat_ok = false,
-        _ => {}
     }
 }
 

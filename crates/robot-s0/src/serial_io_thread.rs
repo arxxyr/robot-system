@@ -321,6 +321,14 @@ fn run_serial_io_loop<A: SerialRtAdapter>(
             ctrl.safety_latched.store(true, Ordering::Release);
             // **finding #1 兜底**：把 policy 切到 StopTorque。client safety_stop()
             // 已先 store 过；这里再写一次防 emergency_action 由非 client 路径直置。
+            //
+            // **task-30 v9 / SerialRT E2E #4 调用规范**：本 tick 在 emergency
+            // 被消费时**会**重新 store(latch, true)。这意味着 ipc_tick 调
+            // `clear_safety_latch` 前必须等 `safety_state == TorqueOffConfirmed`
+            // （SerialRT 端 confirm 完成 = emergency_action 已 swap 完 = serial
+            // 端兜底 store latch 已落地）。否则 clear 之后会被 serial 端兜底
+            // 重写。这是工程上合理的：操作员/RPC 调 ClearEStop 时本就该已经
+            // confirm hardware torque off。
             ctrl.policy
                 .store(OutputPolicy::StopTorque.to_u8(), Ordering::Release);
             // SerialRT 与 HardRT 不同：safety_stop 下发**不**等于 confirmed。

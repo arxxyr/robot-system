@@ -41,7 +41,9 @@
 
 #![allow(clippy::doc_markdown)]
 
-use robot_core::executor_ctrl::{AdapterResp, ExecutorCtrlClient, NormalReqStatus, OutputPolicy};
+use robot_core::executor_ctrl::{
+    AdapterResp, ExecutorCtrlClient, NormalReqStatus, OutputPolicy, OutputSafetyState,
+};
 use robot_core::time::{DurationNs, MonoRawNs, RobotClock};
 
 use crate::state_machine::{
@@ -83,15 +85,24 @@ const PENDING_TOTAL_TIMEOUT: DurationNs = DurationNs::from_secs(1);
 /// **task-30 v9 §4.4.3 errata 实施版**：单次 ipc tick 的三步式。
 ///
 /// 三步顺序见模块 doc 表。返回 `()`；副作用全部通过 `state` / `retry` /
-/// `executor_ctrl` 各 atomic store 落地。M7 阶段 4 把本函数嵌进 `run_ipc_loop`
-/// 主循环；当前阶段独立可测。
+/// `executor_ctrl` / `guards` 各 store 落地。M7 阶段 4 把本函数嵌进
+/// `run_ipc_loop` 主循环；当前阶段独立可测。
+///
+/// **task-30 v9 / SerialRT E2E 第 5 条门槛 修订**：`guards` 改 `&mut`。
+/// `apply_event_guard_side_effect` 不再由 `run_ipc_loop` 在 channel drain
+/// 阶段批量调用 —— 改为本函数内**每个 event 处理前**逐条 apply。这样
+/// 同 tick 多事件场景下，**每个 event 的 plan_transition 看到的 guards
+/// 是"该事件被处理那一刻的状态"**，不会被同 batch 后续事件提前污染（典型
+/// 反例：`[Enable, ClearEStop]` 同 tick 入队，旧实现会让 Enable 因 ClearEStop
+/// 提前清 estop_latched 而误通过；本修订让 Enable 看到 estop_latched=true →
+/// 拒绝；ClearEStop 自己处理时再清 latch）。
 ///
 /// 阶段 4 若需要"本 tick 是否做过动作 → 决定 idle sleep"，再加返回 bool（当前
 /// 的 §0.5 三测红灯门槛不依赖此返回值）。
 pub fn ipc_tick(
     retry: &mut IpcRetryState,
     state: &mut S0State,
-    guards: &Guards,
+    guards: &mut Guards,
     executor_ctrl: &dyn ExecutorCtrlClient,
     clock: &dyn RobotClock,
     events: &mut EventQueue,
@@ -102,6 +113,10 @@ pub fn ipc_tick(
     // 推进 pending 处理。命中即清 pending 并 commit Emergency；本 tick 直接
     // return，后续的 normal action 留给下 tick。
     if let Some(em) = events.drain_emergency() {
+        // 第 5 条门槛修订：emergency event 自身的 guard 副作用（EStop →
+        // estop_latched=true）必须先于 plan_transition 应用，否则
+        // plan_transition 看到的还是旧 guards 会拒绝 transition。
+        apply_event_guard_side_effect(em, guards);
         if let Some(plan) = plan_transition(*state, em, guards) {
             debug_assert!(matches!(plan.kind, TransitionKind::Emergency));
             executor_ctrl.safety_stop();
@@ -185,6 +200,11 @@ pub fn ipc_tick(
 
     // ─── Step 3: plan_transition（pending 为空时）───
     while let Some(event) = events.pop() {
+        // 第 5 条门槛修订：每个 event 的 guard 副作用必须**在它自己 plan
+        // 之前**应用，**不**与同 batch 其它 event 共用一份"已被批量更新"的
+        // guards。否则 [Enable, ClearEStop] 这种顺序会让 Enable 看到 ClearEStop
+        // 提前清的 estop_latched=false 而误通过。
+        apply_event_guard_side_effect(event, guards);
         let Some(plan) = plan_transition(*state, event, guards) else {
             continue;
         };
@@ -200,7 +220,24 @@ pub fn ipc_tick(
                 // check 拒，再被 ipc_tick 升 `Fault(AdapterErr)`，破坏端到端
                 // ClearEStop 恢复链路。
                 if matches!(event, Event::ClearEStop) {
-                    executor_ctrl.clear_safety_latch();
+                    // **task-30 v9 / SerialRT E2E #4 守门**：清 latch 之前
+                    // 必须确认 SerialRT/HardRT 端已 confirm torque off
+                    // （emergency_action 已被消费完 + safety_state 已升
+                    // TorqueOffConfirmed），否则下一 rt/serial tick 兜底
+                    // store(latch, true) 会**覆盖**本次 clear（race window）。
+                    //
+                    // emergency 触发瞬间，client.safety_stop() 同步把
+                    // safety_state 重置为 StopCommanded（不再相信 spawn 初值
+                    // TorqueOffConfirmed），rt/serial 端真断扭后才升回 Confirmed。
+                    //
+                    // 若 safety_state != TorqueOffConfirmed：state 已 commit
+                    // 进 Safe（保持 ClearEStop 的"主态"语义），但**不**调
+                    // clear_safety_latch —— 操作员/RPC 应在看到 wire
+                    // S0SafetyState=TorqueOffConfirmed 后**重新发送** ClearEStop
+                    // 才能真正解 latch。
+                    if executor_ctrl.safety_state() == OutputSafetyState::TorqueOffConfirmed {
+                        executor_ctrl.clear_safety_latch();
+                    }
                 }
             }
             TransitionKind::Emergency => {
@@ -216,6 +253,27 @@ pub fn ipc_tick(
                 break; // 一个 tick 只排一个 pending
             }
         }
+    }
+}
+
+/// 按事件类型对 `guards` 做已知副作用。**ipc_tick 内部**逐 event 调用
+/// （第 5 条门槛修订）。
+///
+/// 历史包袱：原本由 `ipc_thread::run_loop` 在 channel drain 阶段批量调用，
+/// 那个语义在多事件批量场景下会让"后到事件的 guard 更新被前到事件的
+/// plan_transition 看到"。本函数被移到 ipc_tick 之后，每个 event 的
+/// plan_transition 只看到自己的 guard 副作用。
+///
+/// 本函数**仅**处理"事件自身明确指定"的 guard 字段；其它 guard
+/// （`adapter_connected` / `power_ok` 等）由 caller 在启动 / 错误恢复路径
+/// 单独维护。
+pub(crate) fn apply_event_guard_side_effect(ev: Event, guards: &mut Guards) {
+    match ev {
+        Event::EStop => guards.estop_latched = true,
+        Event::ClearEStop => guards.estop_latched = false,
+        Event::ClearError => guards.adapter_fault_cleared = true,
+        Event::HeartbeatTimeout => guards.heartbeat_ok = false,
+        _ => {}
     }
 }
 
@@ -305,7 +363,7 @@ mod tests {
     /// 被强制清空；后续即使 rt_thread ack 也不影响 state。
     #[test]
     fn test_estop_preempts_in_flight_pending() {
-        let (inner, client, clock, mut events, mut retry, guards) = fixtures();
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
 
         // 1) 让 state 处于 Ready，模拟"准备 effectful Enable(true)"
         let mut state = S0State::Ready;
@@ -315,7 +373,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -329,7 +387,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -347,7 +405,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -382,7 +440,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -399,7 +457,7 @@ mod tests {
     /// **不**允许永久卡 Busy。
     #[test]
     fn test_busy_total_timeout_1s() {
-        let (inner, client, clock, mut events, mut retry, guards) = fixtures();
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
 
         // 1) 准备一个永远 Busy 的状态：手动占住 packed slot（非零）
         // pack_pending_normal(action, arg, seq) 设一个 dummy 值
@@ -419,7 +477,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -433,7 +491,7 @@ mod tests {
             ipc_tick(
                 &mut retry,
                 &mut state,
-                &guards,
+                &mut guards,
                 &client,
                 clock.as_ref(),
                 &mut events,
@@ -484,7 +542,7 @@ mod tests {
     /// **不**经过任何 `Event::AdapterErr` 入队（events queue 仍空）。
     #[test]
     fn test_effectful_failure_direct_fault() {
-        let (inner, client, clock, mut events, mut retry, guards) = fixtures();
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
 
         // 1) state = Ready，Heartbeat → effectful Enable(true)
         let mut state = S0State::Ready;
@@ -494,7 +552,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -503,7 +561,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -527,7 +585,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -559,14 +617,14 @@ mod tests {
     /// Pure transition 立即 commit + set_policy，不入 pending。
     #[test]
     fn pure_transition_commits_immediately() {
-        let (inner, client, clock, mut events, mut retry, guards) = fixtures();
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
         let mut state = S0State::Safe;
         // SAFE → READY 是 Pure（守卫满足）
         events.push(Event::Enable);
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -582,14 +640,14 @@ mod tests {
     /// Effectful transition：Submitted → 下 tick poll Ok → commit。
     #[test]
     fn effectful_transition_commits_after_ack() {
-        let (inner, client, clock, mut events, mut retry, guards) = fixtures();
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
         let mut state = S0State::Ready;
         events.push(Event::Heartbeat);
         // tick 1: Step 3 入 pending (None)
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -599,7 +657,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -615,7 +673,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -651,6 +709,11 @@ mod tests {
             fn clear_safety_latch(&self) {
                 self.0.safety_latched.store(false, Ordering::Release);
             }
+            fn safety_state(&self) -> robot_core::executor_ctrl::OutputSafetyState {
+                robot_core::executor_ctrl::OutputSafetyState::from_u8(
+                    self.0.safety_state.load(Ordering::Acquire),
+                )
+            }
         }
 
         let inner = Arc::new(HardRtCtrlInner::new());
@@ -659,14 +722,14 @@ mod tests {
         let mut events = EventQueue::new();
         let mut retry = IpcRetryState::new();
         let mut state = S0State::Ready;
-        let guards = healthy_guards();
+        let mut guards = healthy_guards();
 
         events.push(Event::Heartbeat);
         // tick 1: 入 pending
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -675,7 +738,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -712,7 +775,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -723,13 +786,24 @@ mod tests {
             "EStop 后 safety_latched 必须为 true"
         );
 
-        // 2) 测试方模拟 latch 文件已清 + 排 ClearEStop
+        // 2) 测试方模拟 latch 文件已清 + rt/serial 端 confirm torque off +
+        //    排 ClearEStop。
+        //
+        // **task-30 v9 / SerialRT E2E #4 守门**：ipc_tick 在 ClearEStop Pure
+        // 路径调 clear_safety_latch 之前会 check
+        // executor_ctrl.safety_state() == TorqueOffConfirmed。
+        // 测试里 inner 没有 rt/serial thread 推 safety_state，必须手动
+        // store —— 模拟 SerialRT confirm_torque_off 已完成的场景。
         guards.estop_latched = false; // estop_latched guard 由外部 latch 文件清
+        inner.safety_state.store(
+            OutputSafetyState::TorqueOffConfirmed.to_u8(),
+            Ordering::Release,
+        );
         events.push(Event::ClearEStop);
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -747,7 +821,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -760,7 +834,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -769,7 +843,7 @@ mod tests {
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
@@ -790,16 +864,78 @@ mod tests {
         );
     }
 
+    /// **第 5 条门槛锁测（SerialRT E2E）**：同 tick 内 `[Enable, ClearEStop]`
+    /// 顺序进入 EventQueue（先 Enable 后 ClearEStop），Enable 必须**看不到**
+    /// ClearEStop 提前清的 `estop_latched=false` —— 也就是 Enable 的
+    /// `plan_transition` 看到 `estop_latched=true` 被拒绝；ClearEStop 自己
+    /// 处理时再清 latch。
+    ///
+    /// 旧实现（apply_event_guard_side_effect 在 ipc_thread::run_loop
+    /// channel drain 阶段批量调用）会让 ClearEStop 提前改 guards.estop_latched
+    /// =false，Enable 紧接其后 plan 时看到 false 就误通过 → state=Ready。
+    /// 修订后：apply 移到 ipc_tick 内逐 event 处理时再调，Enable 看到的是
+    /// 旧 guards（estop_latched=true），plan_transition 拒绝；只有 ClearEStop
+    /// 自己处理时才把 estop_latched 改成 false（state 仍留 Safe，因为
+    /// ClearEStop 的 transition 只是 SAFE→SAFE）。
+    ///
+    /// 这条不变量未来如果有人改回 batch update guards 模式，会被本测试钉死。
+    #[test]
+    fn events_in_same_tick_use_per_event_guard_view() {
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
+        // 初始 state=Safe，guards.estop_latched=true（模拟 EStop 已落 latch）。
+        // safety_state 模拟 SerialRT 已 confirm torque off（让 ClearEStop 守门
+        // 通过，能真正调 clear_safety_latch；本测试核心是验"per-event guard
+        // view"，端到端走通 latch 清也算 bonus）。
+        let mut state = S0State::Safe;
+        guards.estop_latched = true;
+        inner.safety_state.store(
+            OutputSafetyState::TorqueOffConfirmed.to_u8(),
+            Ordering::Release,
+        );
+        // 同 tick 把 Enable 与 ClearEStop 顺序入队。注意发送顺序：先 Enable
+        // 后 ClearEStop —— 这是测试的关键场景。
+        events.push(Event::Enable);
+        events.push(Event::ClearEStop);
+
+        ipc_tick(
+            &mut retry,
+            &mut state,
+            &mut guards,
+            &client,
+            clock.as_ref(),
+            &mut events,
+        );
+
+        // **关键断言**：state 必须留在 Safe（Enable 因 estop_latched=true 被拒，
+        // ClearEStop 处理后只是 SAFE→SAFE）。**不**得变 Ready。
+        assert_eq!(
+            state,
+            S0State::Safe,
+            "Enable 不应因 ClearEStop 提前清 estop_latched 而误通过；\
+             实际 state={state:?}"
+        );
+        // ClearEStop 自己被处理时已把 guards.estop_latched 改成 false。
+        assert!(
+            !guards.estop_latched,
+            "ClearEStop 处理后 guards.estop_latched 应清"
+        );
+        // ClearEStop 走 Pure 分支调 clear_safety_latch（即使初始 latch=false
+        // 也是无副作用 idempotent store）。这里 inner 默认初值 latch=false，
+        // 所以这条只确认 store 被调到（false→false 无变化）；锁测核心不靠
+        // 这条，但保留以确认 Pure 分支真的走通了。
+        assert!(!inner.safety_latched.load(Ordering::Acquire));
+    }
+
     /// emergency event drain 时**没有** in-flight pending，state 仍正确进 Safe。
     #[test]
     fn emergency_without_pending_still_commits() {
-        let (inner, client, clock, mut events, mut retry, guards) = fixtures();
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
         let mut state = enabled_active();
         events.push(Event::EStop);
         ipc_tick(
             &mut retry,
             &mut state,
-            &guards,
+            &mut guards,
             &client,
             clock.as_ref(),
             &mut events,

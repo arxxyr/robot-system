@@ -24,6 +24,7 @@
 use robot_core::adapter::{
     AdapterInfo, AdapterKind, ControlMode, ControlModeRepr, HardRtAdapter, JointCommandView,
     JointLimits, JointStateBuf, MAX_JOINTS, ManipulatorAdapter, RtClass, RtSafeCtrl,
+    SerialRtAdapter,
 };
 use robot_core::error::RobotError;
 use robot_core::executor_ctrl::OutputSafetyProbe;
@@ -65,6 +66,17 @@ impl MockHardRTAdapter {
             enabled: false,
             safety_stopped: false,
         }
+    }
+
+    /// **task-30 v9 / `SerialRT` E2E 修订**：清 mock 的持久 `safety_stopped` flag。
+    ///
+    /// **仅供 test / `SerialRT` wrap 内部使用**：模拟真 `SerialRT` 硬件
+    /// （Feetech）的 `ClearEStop` 语义 —— `safety_stop` 是 broadcast disable，
+    /// 不持久 latch；操作员 `ClearEStop` 后再 `enable(true)` 应该成功。mock
+    /// 内部为单测便利保留持久 latch；E2E 测试用 `MockSerialRTAdapter` wrap，
+    /// 在 `enable(true)` 之前先调本 API 清 latch，行为更接近真硬件。
+    pub fn reset_safety_latch_for_test(&mut self) {
+        self.safety_stopped = false;
     }
 
     /// 便利构造：`joint_count` 关节，位置限位均为 `[-pi, pi]`，速度 / 力矩限位
@@ -297,6 +309,137 @@ fn build_concrete(ctx: &AdapterBuildContext<'_>) -> Result<Box<MockHardRTAdapter
 }
 
 inventory::submit! { &MockFactory as &dyn AdapterFactory }
+
+// ============================================================================
+// MockSerialRTAdapter + MockSerialRTFactory（task-30 v9 / SerialRT E2E）
+// ============================================================================
+//
+// SerialRT 路径的 mock：包一份 `MockHardRTAdapter`（复用 ManipulatorAdapter +
+// OutputSafetyProbe 的实现）作为内部状态，但**不**实现 `RtSafeCtrl`，
+// 编译期保证它**只能**走 `RtClass::SerialRT` 路径（spawn_serial_io_thread）。
+// `info().rt_class` 报告 SerialRT；`info().name` 报告 `mock_serial_rt`。
+//
+// 用途：robot-s0 的 SerialRT 端到端集成测试 + s0_daemon dispatch 锁测，
+// 不依赖真硬件即可验证 build_serial_rt → spawn_serial_io_thread 全链路。
+
+/// `RtClass::SerialRT` 的 mock adapter。
+pub struct MockSerialRTAdapter {
+    inner: MockHardRTAdapter,
+}
+
+impl MockSerialRTAdapter {
+    /// 便利构造：与 `MockHardRTAdapter::with_unlimited_limits` 一致，但
+    /// 顶层 `info().rt_class = SerialRT`。
+    #[must_use]
+    pub fn with_unlimited_limits(joint_count: u8) -> Self {
+        Self {
+            inner: MockHardRTAdapter::with_unlimited_limits(joint_count),
+        }
+    }
+}
+
+impl ManipulatorAdapter for MockSerialRTAdapter {
+    fn info(&self) -> AdapterInfo {
+        AdapterInfo {
+            name: "mock_serial_rt",
+            kind: AdapterKind::Manipulator,
+            rt_class: RtClass::SerialRT,
+            vendor_sdk: false,
+        }
+    }
+    fn connect(&mut self) -> Result<(), RobotError> {
+        self.inner.connect()
+    }
+    fn disconnect(&mut self) -> Result<(), RobotError> {
+        self.inner.disconnect()
+    }
+    fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
+        self.inner.read_state(out)
+    }
+    fn write_command(&mut self, cmd: &JointCommandView) -> Result<(), RobotError> {
+        self.inner.write_command(cmd)
+    }
+    fn set_mode(&mut self, mode: ControlMode) -> Result<(), RobotError> {
+        self.inner.set_mode(mode)
+    }
+    fn enable(&mut self, on: bool) -> Result<(), RobotError> {
+        // **task-30 v9 / SerialRT E2E 修订**：模拟真 SerialRT (Feetech) 硬件
+        // 的 ClearEStop 语义 —— `safety_stop` 只 broadcast disable
+        // Torque_Enable，不持久 latch；下次 `enable(true)` 是新的 broadcast
+        // Torque_Enable=1，应当成功（对应物理上操作员清完 EStop 后重新使能）。
+        // inner（`MockHardRTAdapter`）为单测便利保留持久 `safety_stopped`
+        // 粘性 latch；这里在 enable(true) 之前清掉，让 wrap 的对外行为更
+        // 接近真硬件。
+        if on {
+            self.inner.reset_safety_latch_for_test();
+        }
+        self.inner.enable(on)
+    }
+    fn safety_stop(&mut self) -> Result<(), RobotError> {
+        self.inner.safety_stop()
+    }
+    fn limits(&self) -> &JointLimits {
+        self.inner.limits()
+    }
+}
+
+impl OutputSafetyProbe for MockSerialRTAdapter {
+    fn read_torque_enable_mask(&mut self, out: &mut [bool]) -> Result<(), RobotError> {
+        self.inner.read_torque_enable_mask(out)
+    }
+    fn joint_count(&self) -> usize {
+        self.inner.joint_count()
+    }
+}
+
+// ManipulatorAdapter + OutputSafetyProbe → blanket impl 自动满足 SerialRtAdapter。
+
+/// `MockSerialRTAdapter` 的 inventory 工厂。
+///
+/// `[[hardware]] adapter = "mock_serial_rt"` 时被 `s0_daemon` 命中。
+/// 与 `MockFactory` 的关键区别：**不** override `build_hard_rt`（保持
+/// default = `Unsupported`），改 override `build_serial_rt`。`s0_daemon`
+/// 的三段 dispatch 自然落到 `SerialRT` 路径。
+pub struct MockSerialRTFactory;
+
+impl AdapterFactory for MockSerialRTFactory {
+    fn name(&self) -> &'static str {
+        "mock_serial_rt"
+    }
+
+    fn build(
+        &self,
+        ctx: &AdapterBuildContext<'_>,
+    ) -> Result<Box<dyn ManipulatorAdapter + Send>, RobotError> {
+        Ok(build_serial_concrete(ctx)?)
+    }
+
+    fn build_serial_rt(
+        &self,
+        ctx: &AdapterBuildContext<'_>,
+    ) -> Result<Box<dyn SerialRtAdapter + Send>, RobotError> {
+        let adapter = build_serial_concrete(ctx)?;
+        Ok(adapter as Box<dyn SerialRtAdapter + Send>)
+    }
+}
+
+fn build_serial_concrete(
+    ctx: &AdapterBuildContext<'_>,
+) -> Result<Box<MockSerialRTAdapter>, RobotError> {
+    let n = ctx.joint_names.len();
+    if n > MAX_JOINTS {
+        return Err(RobotError::InvalidParameter(
+            "mock_serial_rt joint_count > MAX_JOINTS",
+        ));
+    }
+    let joint_count = u8::try_from(n)
+        .map_err(|_| RobotError::InvalidParameter("mock_serial_rt joint_count > 255"))?;
+    Ok(Box::new(MockSerialRTAdapter::with_unlimited_limits(
+        joint_count,
+    )))
+}
+
+inventory::submit! { &MockSerialRTFactory as &dyn AdapterFactory }
 
 #[cfg(test)]
 mod tests {

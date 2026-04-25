@@ -172,6 +172,15 @@ impl ExecutorCtrlClient for HardRtCtrlClient {
             .policy
             .store(OutputPolicy::StopTorque.to_u8(), Ordering::Release);
         self.inner.safety_latched.store(true, Ordering::Release);
+        // **task-30 v9 / SerialRT E2E #4 修订**：同步重置 safety_state 到
+        // StopCommanded —— spawn 之初设的 TorqueOffConfirmed 在 emergency 触
+        // 发后已不再可信（rt/serial 端尚未消费 emergency_action 真断扭）。
+        // 让 ipc_tick 的 ClearEStop 守门 (== TorqueOffConfirmed) 必须等
+        // SerialRT 端**真正** confirm 完毕后才放行 clear_safety_latch，避免
+        // race window。
+        self.inner
+            .safety_state
+            .store(OutputSafetyState::StopCommanded.to_u8(), Ordering::Release);
         let pending = self.inner.pending_normal.swap(0, Ordering::AcqRel);
         if pending != 0 {
             let (action, _arg, seq) = unpack_pending_normal(pending);
@@ -243,6 +252,10 @@ impl ExecutorCtrlClient for HardRtCtrlClient {
         // 必须 atomic store —— 让后续 `request_normal(Enable(true))` 立刻不被
         // latch 拒。
         self.inner.safety_latched.store(false, Ordering::Release);
+    }
+
+    fn safety_state(&self) -> OutputSafetyState {
+        OutputSafetyState::from_u8(self.inner.safety_state.load(Ordering::Acquire))
     }
 }
 
