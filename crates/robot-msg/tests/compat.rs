@@ -79,6 +79,7 @@ fn joint_state_roundtrip() {
             effort_nm: Some(eff),
             stamp_ns: 12345,
             frame_id: Some(fid),
+            ..msg::JointStateArgs::default()
         },
     );
     fbb.finish(js, None);
@@ -437,6 +438,90 @@ fn v0_writer_current_reader_ignores_new_field() {
     assert!((current.position_rad().unwrap().get(0) - 0.1).abs() < 1e-12);
 }
 
+// task-30 v9 pre-2 + finding #2 修补：wire `S0SafetyState` 必须与
+// `robot_core::executor_ctrl::OutputSafetyState` **数值严格 1:1**。否则
+// rt_thread 写 atomic u8 → pub_thread copy 进 wire body → subscriber 解读时
+// 语义会错位（如 1 既可能是 wire `Safe` 也可能是 core `TorqueOn`），是隐性
+// 安全失真。把数值用常量 lock 住，未来谁动哪边都会编译失败 / assert fail。
+#[test]
+fn s0_safety_state_wire_matches_core_output_safety_state() {
+    // 0 = TorqueUnknown
+    assert_eq!(msg::S0SafetyState::TorqueUnknown.0, 0);
+    // 1 = TorqueOn
+    assert_eq!(msg::S0SafetyState::TorqueOn.0, 1);
+    // 2 = StopCommanded
+    assert_eq!(msg::S0SafetyState::StopCommanded.0, 2);
+    // 3 = TorqueOffConfirmed
+    assert_eq!(msg::S0SafetyState::TorqueOffConfirmed.0, 3);
+    // 4 = StopFailed
+    assert_eq!(msg::S0SafetyState::StopFailed.0, 4);
+    // 5 = AdapterUncertain
+    assert_eq!(msg::S0SafetyState::AdapterUncertain.0, 5);
+}
+
+// task-30 v9 pre-2：v0 writer 不写 5 个 S0 状态字段 → 当前 reader 读到 Unknown
+#[test]
+fn v0_writer_current_reader_s0_state_fields_default_unknown() {
+    let mut fbb = FlatBufferBuilder::new();
+    let pos = fbb.create_vector::<f64>(&[1.0, 2.0]);
+    let v0_js = v0::JointState::create(
+        &mut fbb,
+        &v0::JointStateArgs {
+            layout_id: 0xAAAA_BBBB_0000_0001,
+            position_rad: Some(pos),
+            velocity_rps: None,
+            effort_nm: None,
+            stamp_ns: 1234,
+        },
+    );
+    fbb.finish(v0_js, None);
+    let bytes = fbb.finished_data().to_vec();
+
+    let current = flatbuffers::root::<msg::JointState>(&bytes).expect("verify v0 bytes");
+    // 5 个 S0 字段全部 = Unknown（FlatBuffers vtable 缺失 → 默认 enum value=0=Unknown）
+    assert_eq!(current.s0_mode(), msg::S0Mode::Unknown);
+    assert_eq!(current.s0_control_link(), msg::S0ControlLink::Unknown);
+    assert_eq!(current.s0_output_mode(), msg::S0OutputMode::Unknown);
+    assert_eq!(current.s0_safety_state(), msg::S0SafetyState::TorqueUnknown);
+    assert_eq!(current.s0_fault_code(), msg::S0FaultCode::Unknown);
+}
+
+// task-30 v9 pre-2：当前 writer 写 mode=Enabled + safety_state=StopCommanded
+// → reader 取出来对得上
+#[test]
+fn current_writer_with_s0_state_round_trip() {
+    let mut fbb = FlatBufferBuilder::new();
+    let pos = fbb.create_vector::<f64>(&[0.5]);
+    let cur_js = msg::JointState::create(
+        &mut fbb,
+        &msg::JointStateArgs {
+            layout_id: 0xCCCC_DDDD_0000_0003,
+            position_rad: Some(pos),
+            velocity_rps: None,
+            effort_nm: None,
+            stamp_ns: 5678,
+            frame_id: None,
+            s0_mode: msg::S0Mode::Enabled,
+            s0_control_link: msg::S0ControlLink::Ok,
+            s0_output_mode: msg::S0OutputMode::Active,
+            s0_safety_state: msg::S0SafetyState::StopCommanded,
+            s0_fault_code: msg::S0FaultCode::SafetyStopFailed,
+        },
+    );
+    fbb.finish(cur_js, None);
+    let bytes = fbb.finished_data().to_vec();
+
+    let parsed = flatbuffers::root::<msg::JointState>(&bytes).expect("round-trip parse");
+    assert_eq!(parsed.s0_mode(), msg::S0Mode::Enabled);
+    assert_eq!(parsed.s0_control_link(), msg::S0ControlLink::Ok);
+    assert_eq!(parsed.s0_output_mode(), msg::S0OutputMode::Active);
+    assert_eq!(parsed.s0_safety_state(), msg::S0SafetyState::StopCommanded);
+    assert_eq!(parsed.s0_fault_code(), msg::S0FaultCode::SafetyStopFailed);
+    // 旧字段不受影响
+    assert_eq!(parsed.layout_id(), 0xCCCC_DDDD_0000_0003);
+    assert_eq!(parsed.stamp_ns(), 5678);
+}
+
 #[test]
 fn current_writer_v0_reader_ignores_unknown_field() {
     // ---- current writer：带 frame_id 的完整 JointState bytes ----
@@ -452,6 +537,7 @@ fn current_writer_v0_reader_ignores_unknown_field() {
             effort_nm: None,
             stamp_ns: 8888,
             frame_id: Some(frame),
+            ..msg::JointStateArgs::default()
         },
     );
     fbb.finish(cur_js, None);

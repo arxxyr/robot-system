@@ -1,12 +1,12 @@
 error[E0505]: cannot move out of `lease` because it is borrowed
-  --> tests/ui/view_outlives_lease.rs:36:10
+  --> tests/ui/view_outlives_lease.rs:37:10
    |
-34 |     let lease = subscriber.latest().unwrap().unwrap();
+35 |     let lease = subscriber.latest().unwrap().unwrap();
    |         ----- binding `lease` declared here
-35 |     let view = lease.view().unwrap();
+36 |     let view = lease.view().unwrap();
    |                ----- borrow of `lease` occurs here
-36 |     drop(lease); // move-out / drop 掉 lease
+37 |     drop(lease); // move-out / drop 掉 lease
    |          ^^^^^ move out of `lease` occurs here
-37 |     // view 借用 lease 内字节；lease 已不在 → 编译错误
-38 |     let _hdr = view.header;
+38 |     // view 借用 lease 内字节；lease 已不在 → 编译错误
+39 |     let _hdr = view.header;
    |                ----------- borrow later used here

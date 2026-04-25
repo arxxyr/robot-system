@@ -30,6 +30,7 @@ fn build_joint_state_body(stamp: u64) -> Vec<u8> {
             effort_nm: None,
             stamp_ns: stamp,
             frame_id: None,
+            ..JointStateArgs::default()
         },
     );
     fbb.finish(js, None);

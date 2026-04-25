@@ -22,6 +22,7 @@ fn main() {
                 effort_nm: None,
                 stamp_ns: 0,
                 frame_id: None,
+                ..robot_msg::msg::JointStateArgs::default()
             },
         );
         fbb.finish(js, None);

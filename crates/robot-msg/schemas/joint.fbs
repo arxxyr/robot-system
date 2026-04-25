@@ -25,6 +25,67 @@ enum StaleAction : byte {
     Stop = 2,
 }
 
+// === task-30 v9 pre-2：S0 自身状态字段（JointState 末尾追加） =================
+//
+// 设计原则：每个 enum 第一个 variant 必须是 `Unknown = 0`。
+// 这样老 writer（不知道这些字段）写出来的 bytes，新 reader 读到 0 → Unknown，
+// 而不是错误地映射到 Safe / Ok 等明确语义；schema_compat 老 writer ↔ 新 reader
+// 测试需覆盖此场景。
+
+// S0 主状态机的 5 主态。Unknown 兼容旧 writer。
+enum S0Mode : ubyte {
+    Unknown = 0,
+    Safe = 1,
+    Ready = 2,
+    Enabled = 3,
+    Fault = 4,
+    Stopping = 5,
+}
+
+// 控制链路（S1 心跳）状态。Unknown 兼容旧 writer。
+enum S0ControlLink : ubyte {
+    Unknown = 0,
+    Ok = 1,
+    Lost = 2,
+}
+
+// 输出模式（与 S0 子态 EnabledSub 一一对应）。Unknown 兼容旧 writer。
+enum S0OutputMode : ubyte {
+    Unknown = 0,
+    Active = 1,
+    Hold = 2,
+    Zero = 3,
+    Stop = 4,
+}
+
+// 输出 safety 状态（task-30 v9 §5 OutputSafetyState）。
+// **数值与 robot_core::executor_ctrl::OutputSafetyState 严格 1:1 对齐**：
+//   0=TorqueUnknown / 1=TorqueOn / 2=StopCommanded / 3=TorqueOffConfirmed
+//   / 4=StopFailed / 5=AdapterUncertain
+// 历史教训：早期版本把 wire 1 写成 Safe → 与 core 的 TorqueOn 错位，
+// 同一个 atomic u8 经 publish→subscribe 后语义会从"硬件 torque on"误显示为
+// "硬件 safe"，是隐性安全失真。本 enum 与 core 同步演进，禁止再次错位。
+enum S0SafetyState : ubyte {
+    TorqueUnknown = 0,
+    TorqueOn = 1,
+    StopCommanded = 2,
+    TorqueOffConfirmed = 3,
+    StopFailed = 4,
+    AdapterUncertain = 5,
+}
+
+// Fault 详情码（与 robot_s0::state_machine::FaultCode 一一对应 + v9 加 SafetyStopFailed）。
+// Unknown 兼容旧 writer 与 mode != Fault 的所有场景。
+enum S0FaultCode : ubyte {
+    Unknown = 0,
+    AdapterErr = 1,
+    CmdDeadlineExpired = 2,
+    LimitViolation = 3,
+    WatchdogTimeout = 4,
+    RtOverrun = 5,
+    SafetyStopFailed = 6,
+}
+
 // JointLayout：低频广播，消费者按 layout_id 建立缓存。
 table JointLayout {
     layout_id:   ulong;
@@ -34,6 +95,10 @@ table JointLayout {
 }
 
 // JointState：高频上报，只带 layout_id。长度与 JointLayout.names 一致。
+//
+// task-30 v9 pre-2：末尾追加 5 个 S0 自身状态字段（mode / control_link /
+// output_mode / safety_state / fault_code）。FlatBuffers 仅允许 append；
+// 这些字段对老 writer 缺省 = Unknown，对新 reader 永远可读。
 table JointState {
     layout_id:     ulong;
     position_rad:  [double];
@@ -41,6 +106,13 @@ table JointState {
     effort_nm:     [double];
     stamp_ns:      ulong;
     frame_id:      string;
+    // —— task-30 v9 pre-2 新加：S0 自身状态镜像（每 publish tick 写）——
+    s0_mode:         S0Mode         = Unknown;
+    s0_control_link: S0ControlLink  = Unknown;
+    s0_output_mode:  S0OutputMode   = Unknown;
+    // s0_safety_state 默认 = TorqueUnknown（数值 0），与 core OutputSafetyState 对齐。
+    s0_safety_state: S0SafetyState  = TorqueUnknown;
+    s0_fault_code:   S0FaultCode    = Unknown;
 }
 
 // JointCommand：高频下发，只带 layout_id。on_timeout 默认 Hold（§3.5 原文）。

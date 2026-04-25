@@ -28,19 +28,23 @@ use flatbuffers::FlatBufferBuilder;
 
 use crate::msg::{
     ControlMode, EStopEvent, EStopEventArgs, Heartbeat, HeartbeatArgs, JointCommand,
-    JointCommandArgs, JointState, JointStateArgs, StaleAction,
+    JointCommandArgs, JointState, JointStateArgs, S0ControlLink, S0FaultCode, S0Mode, S0OutputMode,
+    S0SafetyState, StaleAction,
 };
 
 // ============================================================================
 // JointState（`robot.msg.JointState`）
 // ============================================================================
 
-/// 构造 `JointState` body bytes。
+/// 构造 `JointState` body bytes（仅关节字段；S0 自身状态字段 = Unknown）。
 ///
 /// - `layout_id` 来自上游 `JointLayout`。demo / test 常用 `0xCAFE_BABE_DEAD_BEEF`。
 /// - `positions` 长度应与 `JointLayout.names` 相同；本函数不校验。
 /// - `velocities` / `torques` 为空 slice 时写入 `None`（不占字节）。
 /// - `frame_id` 为空字符串时写入 `None`。
+/// - `s0_mode` / `s0_control_link` / `s0_output_mode` / `s0_safety_state` /
+///   `s0_fault_code` 全部留 `Unknown`（`FlatBuffers` 默认值不写 vtable）。
+///   想带 S0 状态用 [`build_joint_state_with_s0`].
 #[must_use]
 pub fn build_joint_state(
     layout_id: u64,
@@ -49,6 +53,40 @@ pub fn build_joint_state(
     velocities: &[f64],
     torques: &[f64],
     frame_id: &str,
+) -> Vec<u8> {
+    build_joint_state_with_s0(
+        layout_id,
+        stamp_ns,
+        positions,
+        velocities,
+        torques,
+        frame_id,
+        S0Mode::Unknown,
+        S0ControlLink::Unknown,
+        S0OutputMode::Unknown,
+        S0SafetyState::TorqueUnknown,
+        S0FaultCode::Unknown,
+    )
+}
+
+/// 构造 `JointState` body bytes，**带 S0 自身状态字段**（task-30 v9 pre-2）。
+///
+/// `pub_thread.publish_joint_state` 调本变体把当前 `S0StateSnapshot` 镜像
+/// 写进 wire body，让外部订阅者一次拿到 joint + S0 mode + `safety_state`。
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn build_joint_state_with_s0(
+    layout_id: u64,
+    stamp_ns: u64,
+    positions: &[f64],
+    velocities: &[f64],
+    torques: &[f64],
+    frame_id: &str,
+    s0_mode: S0Mode,
+    s0_control_link: S0ControlLink,
+    s0_output_mode: S0OutputMode,
+    s0_safety_state: S0SafetyState,
+    s0_fault_code: S0FaultCode,
 ) -> Vec<u8> {
     let mut fbb = FlatBufferBuilder::with_capacity(256);
     let pos = fbb.create_vector::<f64>(positions);
@@ -76,6 +114,11 @@ pub fn build_joint_state(
             effort_nm: eff,
             stamp_ns,
             frame_id: frame,
+            s0_mode,
+            s0_control_link,
+            s0_output_mode,
+            s0_safety_state,
+            s0_fault_code,
         },
     );
     fbb.finish(js, None);

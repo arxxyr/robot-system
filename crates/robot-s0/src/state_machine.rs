@@ -24,6 +24,8 @@
 //! 现实填写（例如 `adapter_connected` 来自 `ManipulatorAdapter::connect()` 的结果）。
 //! Part 2 的 watchdog / deadline 会增量写入对应字段；Guards struct 本身不需改。
 
+#![allow(clippy::doc_markdown)]
+
 use robot_core::adapter::ControlMode;
 
 // ============================================================================
@@ -69,7 +71,8 @@ impl OutputMode {
     }
 }
 
-/// Fault 代码。对应 §1.4 ENABLED → FAULT 的 5 条触发边。
+/// Fault 代码。对应 §1.4 ENABLED → FAULT 的 5 条触发边 + task-30 v9 加 1 条
+/// (`SafetyStopFailed`：`safety_stop` / `confirm_torque_off` 失败)。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FaultCode {
     AdapterErr,
@@ -77,6 +80,20 @@ pub enum FaultCode {
     LimitViolation,
     WatchdogTimeout,
     RtOverrun,
+    /// task-30 v9 pre-2 / §0.5 errata + finding #3 修订：
+    /// **真**硬件 fail-safe 失败时升 `Fault(SafetyStopFailed)`：
+    /// 1. `RtSafeCtrl::safety_stop_rt` / `ManipulatorAdapter::safety_stop`
+    ///    返回 `Err`；
+    /// 2. `OutputSafetyProbe::read_torque_enable_mask` 持续显示 motor 仍
+    ///    torque-on（`confirm_torque_off` 超阈值）。
+    ///
+    /// **不**来自 `AdapterResp::Err(AdapterErr::SafetyLatched)` —— v9 finding
+    /// #3 收紧：latch 拒请求 = 正常保护，非"停机失败"，由 ipc_tick A3 升
+    /// `Fault(AdapterErr)`（见 [`crate::ipc_tick`]）。
+    ///
+    /// 比 `AdapterErr` 更高优级，提示上游"硬件 fail-safe 没拿到证据，需要
+    /// 人工现场确认"。
+    SafetyStopFailed,
 }
 
 /// S0 主状态机。5 主态。`ENABLED` 带子态结构。
@@ -254,6 +271,215 @@ const _: () = assert!(
 );
 
 // ============================================================================
+// task-30 v9 / M7：plan_transition / commit_transition / commit_fault API
+// + EventQueue + drain_emergency
+// ============================================================================
+
+use robot_core::executor_ctrl::{AdapterNormalReq, OutputPolicy};
+
+/// transition 副作用类别（v9 §4.4.1）。
+///
+/// `ipc_tick` 据此决定如何 commit：
+/// - [`Pure`] / [`Emergency`]：立即 commit state + set_policy；
+/// - [`Effectful`]：先把 plan 入 `IpcRetryState.pending`，等 adapter ack 才 commit。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransitionKind {
+    /// 无副作用 transition（如 SAFE → READY 守卫满足 / FAULT 子态切换 / 子态间
+    /// 切换）。立即 `commit_transition` + `set_policy`，无需等 adapter ack。
+    Pure,
+    /// 紧急 transition（任意态 + `Event::EStop` → `Safe`）。立即 commit +
+    /// `safety_stop()` fire-and-forget；硬件实际状态由 `OutputSafetyState` 异步反映。
+    Emergency,
+    /// 副作用 transition：必须先调 adapter 动作，等硬件 ack 才 commit。
+    /// 例：`READY → ENABLED.Active` 需 `Enable(true)`；`ENABLED → Safe`
+    /// 非紧急路径走 `Enable(false)`。M7 `ipc_tick` 把 plan 入 pending。
+    Effectful { action: AdapterNormalReq },
+}
+
+/// `plan_transition` 的输出：未提交的 transition 计划。`ipc_tick` 决定何时
+/// `commit_transition`（立即 / ack 后）。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PlannedTransition {
+    pub new_state: S0State,
+    pub new_policy: OutputPolicy,
+    pub kind: TransitionKind,
+}
+
+/// 计算 transition 的**计划**，**不**提交。返回 `None` 表示 `(cur, ev)` 不在
+/// 转换表 / guard 不通过；返回 `Some(plan)` 表示有合法 transition，由调用方
+/// 决定何时 [`commit_transition`]。
+///
+/// 与 [`try_transition`] 的关系：
+/// - 旧 `try_transition` 直接返新 state（v0.2 用），不区分 Pure/Emergency/Effectful；
+/// - 新 `plan_transition` 返综合计划（**含**副作用类别 + new_policy），是 M7
+///   `ipc_tick` 走 errata 三步式的入口。
+/// - 两者**必须语义等价**：同 `(cur, ev, guards)` 下 `plan_transition.is_some()`
+///   ↔ `try_transition.is_ok()`，且 `plan.new_state == try_transition.new_state`。
+///   单测 `plan_and_try_transition_agree_on_state` 强制对齐。
+#[must_use]
+#[allow(clippy::too_many_lines)]
+pub fn plan_transition(cur: S0State, ev: Event, g: &Guards) -> Option<PlannedTransition> {
+    // 先按 try_transition 的逻辑算 new_state
+    let new_state = try_transition(cur, ev, g).ok()?;
+
+    // 决定副作用类别 + new_policy
+    let (kind, new_policy) = classify_transition(cur, ev, new_state);
+
+    Some(PlannedTransition {
+        new_state,
+        new_policy,
+        kind,
+    })
+}
+
+/// 内部 helper：根据 (cur, event, new_state) 决定 kind + policy。
+///
+/// **EStop 路径** → Emergency + StopTorque。
+/// **`AdapterErr(SafetyStopFailed)`** → Emergency + Disabled（任意态 → Fault
+/// 都视为 emergency，让 ipc_tick 立即下 safety_stop 兜底）。
+/// **READY → ENABLED.Active**（`Heartbeat`）→ Effectful + ActiveForward
+/// （需要 `Enable(true)` 上扭）。
+/// **ENABLED → ENABLED 子态切换**（`HeartbeatTimeout` / `Heartbeat` 恢复）→
+/// Pure + 对应 policy。
+/// **其它**（SAFE → READY / Stop / ClearError 等）→ Pure。
+#[allow(clippy::too_many_lines)]
+fn classify_transition(
+    cur: S0State,
+    ev: Event,
+    new_state: S0State,
+) -> (TransitionKind, OutputPolicy) {
+    use Event as E;
+    use S0State as S;
+
+    // EStop = Emergency
+    if matches!(ev, E::EStop) {
+        return (TransitionKind::Emergency, OutputPolicy::StopTorque);
+    }
+
+    // SafetyStopFailed = Emergency（任意态 → Fault(SafetyStopFailed)）
+    if matches!(ev, E::AdapterErr(FaultCode::SafetyStopFailed)) {
+        return (TransitionKind::Emergency, OutputPolicy::Disabled);
+    }
+
+    // READY → ENABLED.Active：需要先 Enable(true)（Effectful）
+    if matches!(cur, S::Ready) && matches!(ev, E::Heartbeat) {
+        return (
+            TransitionKind::Effectful {
+                action: AdapterNormalReq::Enable(true),
+            },
+            OutputPolicy::ActiveForward,
+        );
+    }
+
+    // ENABLED → Safe（非 EStop 路径）应是 Effectful Enable(false)，但当前
+    // try_transition 表里没有这条 transition；留 M7 后续扩展。
+
+    // 决定 new_policy：按 new_state 选典型 policy
+    let policy = match new_state {
+        S::Safe | S::Fault(_) | S::Stopping => OutputPolicy::Disabled,
+        S::Ready => OutputPolicy::ReadyHold,
+        S::Enabled {
+            output_mode: OutputMode::Active,
+            ..
+        } => OutputPolicy::ActiveForward,
+        S::Enabled {
+            output_mode: OutputMode::Hold,
+            ..
+        } => OutputPolicy::HoldCurrent,
+        S::Enabled {
+            output_mode: OutputMode::Zero,
+            ..
+        } => OutputPolicy::ZeroCommand,
+        S::Enabled {
+            output_mode: OutputMode::Stop,
+            ..
+        } => OutputPolicy::StopTorque,
+    };
+
+    (TransitionKind::Pure, policy)
+}
+
+/// 提交计划好的 transition。**仅在** `Pure` / `Emergency` 立即调；`Effectful`
+/// 路径必须等 adapter ack 成功后调。
+pub fn commit_transition(state: &mut S0State, plan: &PlannedTransition) {
+    *state = plan.new_state;
+}
+
+/// 直接把 state 拍到 `Fault(code)`，不走 `plan_transition`。
+///
+/// **task-30 v9 §0.5 A3 实施版**：M7 `ipc_tick` 在 effectful ack 失败时调本 API
+/// **直接**升 fault，不走 `Event::AdapterErr` 入队 + `plan_transition` —— 防止
+/// guard 挡住造成 silent stall。
+pub fn commit_fault(state: &mut S0State, fault: FaultCode) {
+    *state = S0State::Fault(fault);
+}
+
+// ============================================================================
+// EventQueue（task-30 v9 §4.4.3 errata Step 1 用）
+// ============================================================================
+
+/// 简单 FIFO 队列 + `drain_emergency` 优先抽取语义。
+///
+/// **设计 v9 errata §0.5 A1**：`ipc_tick` 第一步 `drain_emergency` 必须**先于**
+/// 推进 in-flight pending 处理；emergency 不能被 effectful pending 阻塞 1s。
+/// 本类型提供线性扫一次队列、移除并返回**第一个** `Event::EStop` /
+/// `Event::FaultLatched` / `Event::SafetyStopFailed` 的方法，其它事件原序保留。
+///
+/// 普通入队 / 出队走 `push` / `pop`；emergency 走 `drain_emergency`。
+#[derive(Debug, Default)]
+pub struct EventQueue {
+    inner: std::collections::VecDeque<Event>,
+}
+
+impl EventQueue {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 普通入队（FIFO 尾部）。
+    pub fn push(&mut self, ev: Event) {
+        self.inner.push_back(ev);
+    }
+
+    /// 普通出队（FIFO 头部）。
+    pub fn pop(&mut self) -> Option<Event> {
+        self.inner.pop_front()
+    }
+
+    /// 队列是否为空。
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// 队列长度（含 emergency events）。
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// **task-30 v9 §0.5 A1**：从队列摘出第一个 emergency event（按 push
+    /// 顺序），其它事件**原序保留**。返回 `None` 表示队列里没有 emergency。
+    ///
+    /// emergency events：
+    /// - `Event::EStop`
+    /// - `Event::AdapterErr(FaultCode::SafetyStopFailed)` —— v9 视作 emergency
+    ///   级别 fault（safety_stop 失败 = 任意态直进 Fault + 立即下硬件
+    ///   safety_stop 兜底）。
+    pub fn drain_emergency(&mut self) -> Option<Event> {
+        // 找到第一个 emergency event 的位置，移除并返回。
+        let pos = self.inner.iter().position(|ev| {
+            matches!(
+                ev,
+                Event::EStop | Event::AdapterErr(FaultCode::SafetyStopFailed)
+            )
+        })?;
+        self.inner.remove(pos)
+    }
+}
+
+// ============================================================================
 // try_transition
 // ============================================================================
 
@@ -285,6 +511,15 @@ pub fn try_transition(cur: S0State, ev: Event, g: &Guards) -> Result<S0State, Re
 
         // ---- * → STOPPING（systemd SIGTERM 等关停信号）----
         (_, E::Stop) => Ok(S::Stopping),
+
+        // ---- * → FAULT(SafetyStopFailed)（task-30 v9 pre-2）----
+        // safety_stop / confirm_torque_off 失败 → 任意态直进 Fault(SafetyStopFailed)。
+        // 比 AdapterErr 更高优：硬件 fail-safe 没拿到证据，硬件状态视为不可信。
+        // 通过 `Event::AdapterErr(FaultCode::SafetyStopFailed)` 注入，**所有**主态
+        // （含 Safe / Ready / Stopping / 其它 Fault）都允许进 Fault(SafetyStopFailed)。
+        (_, E::AdapterErr(FaultCode::SafetyStopFailed)) => {
+            Ok(S::Fault(FaultCode::SafetyStopFailed))
+        }
 
         // ---- SAFE → READY ----
         (S::Safe, E::Enable) => {
@@ -615,6 +850,43 @@ mod tests {
         );
     }
 
+    // ---- * → FAULT(SafetyStopFailed)（task-30 v9 pre-2）----
+
+    #[test]
+    fn safety_stop_failed_from_any_state() {
+        // 任意态 + Event::AdapterErr(SafetyStopFailed) → Fault(SafetyStopFailed)
+        let g = healthy_guards();
+        for from in [
+            S0State::Safe,
+            S0State::Ready,
+            enabled_active(),
+            S0State::Fault(FaultCode::AdapterErr),
+            S0State::Fault(FaultCode::CmdDeadlineExpired),
+            S0State::Stopping,
+        ] {
+            let next =
+                try_transition(from, Event::AdapterErr(FaultCode::SafetyStopFailed), &g).unwrap();
+            assert_eq!(
+                next,
+                S0State::Fault(FaultCode::SafetyStopFailed),
+                "SafetyStopFailed should drop {from:?} into Fault(SafetyStopFailed)"
+            );
+        }
+    }
+
+    #[test]
+    fn safety_stop_failed_does_not_break_normal_adapter_err_branch() {
+        // 确认普通 AdapterErr(AdapterErr) 仍走 Enabled.* → Fault(AdapterErr) 旧路径
+        let g = healthy_guards();
+        let next = try_transition(
+            enabled_active(),
+            Event::AdapterErr(FaultCode::AdapterErr),
+            &g,
+        )
+        .unwrap();
+        assert_eq!(next, S0State::Fault(FaultCode::AdapterErr));
+    }
+
     // ---- * → STOPPING ----
 
     #[test]
@@ -728,5 +1000,210 @@ mod tests {
         assert_eq!(loaded.state, enabled_active());
         assert_eq!(loaded.stamp_ns, 12_345_000);
         assert!(loaded.guards_summary.heartbeat_ok);
+    }
+
+    // ============================================================================
+    // task-30 v9 / M7：plan_transition / commit_transition / commit_fault /
+    // EventQueue 单测
+    // ============================================================================
+
+    /// **plan_transition vs try_transition 一致性**：同 `(cur, ev, guards)`
+    /// 下两者对 new_state 必须语义等价。任何 transition 表演化两边一起改。
+    #[test]
+    fn plan_and_try_transition_agree_on_state() {
+        let g = healthy_guards();
+        // 覆盖关键 state × event 组合
+        let cases = [
+            (S0State::Safe, Event::Enable),
+            (S0State::Ready, Event::Heartbeat),
+            (enabled_active(), Event::EStop),
+            (enabled_active(), Event::AdapterErr(FaultCode::AdapterErr)),
+            (enabled_active(), Event::HeartbeatTimeout),
+            (S0State::Safe, Event::EStop),
+            (S0State::Stopping, Event::EStop),
+            (
+                S0State::Safe,
+                Event::AdapterErr(FaultCode::SafetyStopFailed),
+            ),
+            (S0State::Fault(FaultCode::AdapterErr), Event::ClearError),
+        ];
+        for (cur, ev) in cases {
+            let plan = plan_transition(cur, ev, &g);
+            let try_res = try_transition(cur, ev, &g);
+            match (plan, try_res) {
+                (Some(p), Ok(s)) => {
+                    assert_eq!(p.new_state, s, "plan vs try mismatch for ({cur:?}, {ev:?})");
+                }
+                (None, Err(_)) => {} // 双方都拒，OK
+                (Some(p), Err(e)) => {
+                    panic!("plan returned Some({p:?}) but try rejected: {e:?}")
+                }
+                (None, Ok(s)) => {
+                    panic!("plan returned None but try returned Ok({s:?}) for ({cur:?}, {ev:?})")
+                }
+            }
+        }
+    }
+
+    /// EStop 任意态都是 Emergency + StopTorque。
+    #[test]
+    fn plan_estop_is_emergency() {
+        let g = healthy_guards();
+        for cur in [
+            S0State::Safe,
+            S0State::Ready,
+            enabled_active(),
+            S0State::Fault(FaultCode::AdapterErr),
+            S0State::Stopping,
+        ] {
+            let plan = plan_transition(cur, Event::EStop, &g).unwrap();
+            assert_eq!(
+                plan.kind,
+                TransitionKind::Emergency,
+                "EStop from {cur:?} must be Emergency"
+            );
+            assert_eq!(plan.new_state, S0State::Safe);
+            assert_eq!(plan.new_policy, OutputPolicy::StopTorque);
+        }
+    }
+
+    /// `AdapterErr(SafetyStopFailed)` 任意态都是 Emergency + Disabled
+    /// （v9 §0.5 A3 + §pre-2 `* → Fault(SafetyStopFailed)`）。
+    #[test]
+    fn plan_safety_stop_failed_is_emergency() {
+        let g = healthy_guards();
+        for cur in [
+            S0State::Safe,
+            S0State::Ready,
+            enabled_active(),
+            S0State::Fault(FaultCode::AdapterErr),
+        ] {
+            let plan =
+                plan_transition(cur, Event::AdapterErr(FaultCode::SafetyStopFailed), &g).unwrap();
+            assert_eq!(plan.kind, TransitionKind::Emergency);
+            assert_eq!(plan.new_state, S0State::Fault(FaultCode::SafetyStopFailed));
+            assert_eq!(plan.new_policy, OutputPolicy::Disabled);
+        }
+    }
+
+    /// `READY → ENABLED.Active`（`Heartbeat`）必须是 Effectful + Enable(true)。
+    /// **finding M7 关键**：state machine 决定上扭后必须先排 adapter
+    /// `Enable(true)` action 等 ack 才能 commit Enabled，避免对外汇报 Enabled
+    /// 但硬件未真上扭的窗口。
+    #[test]
+    fn plan_ready_to_enabled_is_effectful_enable_true() {
+        let g = healthy_guards();
+        let plan = plan_transition(S0State::Ready, Event::Heartbeat, &g).unwrap();
+        match plan.kind {
+            TransitionKind::Effectful {
+                action: AdapterNormalReq::Enable(true),
+            } => {}
+            other => panic!("expected Effectful{{Enable(true)}}, got {other:?}"),
+        }
+        assert_eq!(plan.new_policy, OutputPolicy::ActiveForward);
+    }
+
+    /// `Pure` transition：SAFE → READY 守卫满足 → 立即可 commit。
+    #[test]
+    fn plan_safe_to_ready_is_pure() {
+        let g = healthy_guards();
+        let plan = plan_transition(S0State::Safe, Event::Enable, &g).unwrap();
+        assert_eq!(plan.kind, TransitionKind::Pure);
+        assert_eq!(plan.new_state, S0State::Ready);
+        assert_eq!(plan.new_policy, OutputPolicy::ReadyHold);
+    }
+
+    /// commit_transition 写入 state；commit_fault 直接拍 Fault。
+    #[test]
+    fn commit_transition_and_fault() {
+        let g = healthy_guards();
+        let mut state = S0State::Safe;
+        let plan = plan_transition(S0State::Safe, Event::Enable, &g).unwrap();
+        commit_transition(&mut state, &plan);
+        assert_eq!(state, S0State::Ready);
+
+        commit_fault(&mut state, FaultCode::AdapterErr);
+        assert_eq!(state, S0State::Fault(FaultCode::AdapterErr));
+
+        commit_fault(&mut state, FaultCode::SafetyStopFailed);
+        assert_eq!(state, S0State::Fault(FaultCode::SafetyStopFailed));
+    }
+
+    // ---- EventQueue + drain_emergency ----
+
+    #[test]
+    fn event_queue_fifo_push_pop() {
+        let mut q = EventQueue::new();
+        assert!(q.is_empty());
+        q.push(Event::Heartbeat);
+        q.push(Event::Enable);
+        assert_eq!(q.len(), 2);
+        assert_eq!(q.pop(), Some(Event::Heartbeat));
+        assert_eq!(q.pop(), Some(Event::Enable));
+        assert_eq!(q.pop(), None);
+    }
+
+    /// **v9 §0.5 A1 关键**：drain_emergency 摘 EStop / SafetyStopFailed，
+    /// 其它事件原序保留。
+    #[test]
+    fn event_queue_drain_emergency_estop_first() {
+        let mut q = EventQueue::new();
+        q.push(Event::Heartbeat);
+        q.push(Event::EStop);
+        q.push(Event::Enable);
+        q.push(Event::AdapterErr(FaultCode::AdapterErr));
+
+        // drain 出 EStop（第一个 emergency）
+        assert_eq!(q.drain_emergency(), Some(Event::EStop));
+        // 其它事件原序保留
+        assert_eq!(q.pop(), Some(Event::Heartbeat));
+        assert_eq!(q.pop(), Some(Event::Enable));
+        assert_eq!(q.pop(), Some(Event::AdapterErr(FaultCode::AdapterErr)));
+        assert_eq!(q.pop(), None);
+    }
+
+    /// `AdapterErr(SafetyStopFailed)` 也算 emergency；`AdapterErr(其它)` 不算。
+    #[test]
+    fn event_queue_drain_emergency_safety_stop_failed() {
+        let mut q = EventQueue::new();
+        q.push(Event::Heartbeat);
+        q.push(Event::AdapterErr(FaultCode::AdapterErr)); // **不**是 emergency
+        q.push(Event::AdapterErr(FaultCode::SafetyStopFailed)); // 是 emergency
+        q.push(Event::Stop);
+
+        assert_eq!(
+            q.drain_emergency(),
+            Some(Event::AdapterErr(FaultCode::SafetyStopFailed))
+        );
+        // AdapterErr(AdapterErr) 留下
+        assert_eq!(q.pop(), Some(Event::Heartbeat));
+        assert_eq!(q.pop(), Some(Event::AdapterErr(FaultCode::AdapterErr)));
+        assert_eq!(q.pop(), Some(Event::Stop));
+    }
+
+    #[test]
+    fn event_queue_drain_emergency_returns_none_when_no_emergency() {
+        let mut q = EventQueue::new();
+        q.push(Event::Heartbeat);
+        q.push(Event::Stop);
+        assert_eq!(q.drain_emergency(), None);
+        // 队列不变
+        assert_eq!(q.len(), 2);
+    }
+
+    /// drain_emergency 多次调用：先 EStop 后 SafetyStopFailed（按 push 顺序）。
+    #[test]
+    fn event_queue_drain_emergency_multiple_returns_in_push_order() {
+        let mut q = EventQueue::new();
+        q.push(Event::EStop);
+        q.push(Event::AdapterErr(FaultCode::SafetyStopFailed));
+        q.push(Event::Heartbeat);
+        assert_eq!(q.drain_emergency(), Some(Event::EStop));
+        assert_eq!(
+            q.drain_emergency(),
+            Some(Event::AdapterErr(FaultCode::SafetyStopFailed))
+        );
+        assert_eq!(q.drain_emergency(), None);
+        assert_eq!(q.pop(), Some(Event::Heartbeat));
     }
 }

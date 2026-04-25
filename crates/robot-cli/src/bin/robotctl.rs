@@ -256,12 +256,19 @@ fn print_snapshot(
                     .position_rad()
                     .map(|v| v.iter().collect())
                     .unwrap_or_default();
+                // task-30 v9 pre-2：附 S0 mode + safety_state + fault_code 摘要
                 format!(
-                    "state: stamp={}  layout={:#018x}  n={}  pos={:.3?}",
+                    "state: stamp={}  layout={:#018x}  n={}  pos={:.3?}\n\
+                     s0:    mode={:?}  link={:?}  out={:?}  safety={:?}  fault={:?}",
                     js.stamp_ns(),
                     js.layout_id(),
                     positions.len(),
                     positions,
+                    js.s0_mode(),
+                    js.s0_control_link(),
+                    js.s0_output_mode(),
+                    js.s0_safety_state(),
+                    js.s0_fault_code(),
                 )
             }
             Err(e) => format!("state: decode error: {e}"),

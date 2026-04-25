@@ -35,8 +35,9 @@ use std::time::Duration;
 
 use robot_core::adapter::RtSnapshot;
 use robot_core::time::RobotClock;
-use robot_msg::build_helpers::{build_heartbeat, build_joint_state};
+use robot_msg::build_helpers::{build_heartbeat, build_joint_state_with_s0};
 use robot_msg::markers;
+use robot_msg::msg::{S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyState};
 use robot_transport::iceoryx2::Iceoryx2Publisher;
 use robot_transport::{RtSnapshotReader, traits::Publisher};
 
@@ -238,7 +239,7 @@ fn publish_joint_state(
     pub_: &mut Iceoryx2Publisher<markers::JointState>,
     cfg: &PubThreadConfig,
     rt_snap_rdr: &RtSnapshotReader<RtSnapshot>,
-    _state_rdr: &RtSnapshotReader<S0StateSnapshot>,
+    state_rdr: &RtSnapshotReader<S0StateSnapshot>,
     seq: u64,
     now_ns: u64,
     metrics: &PubThreadMetrics,
@@ -258,13 +259,22 @@ fn publish_joint_state(
         .iter()
         .map(|x| f64::from(*x))
         .collect();
-    let body = build_joint_state(
+    // task-30 v9 pre-2：从 S0StateSnapshot 抽 5 个状态字段镜像进 wire body。
+    // S0SafetyState 在 v0.2 阶段还没接 OutputSafetyProbe（M3 加），暂置 Unknown。
+    let s0_snap = state_rdr.load();
+    let (s0_mode, s0_control_link, s0_output_mode, s0_fault_code) = map_state_to_wire(&s0_snap);
+    let body = build_joint_state_with_s0(
         cfg.joint_layout_id,
         snap.state.stamp_ns,
         &positions,
         &velocities,
         &torques,
         "",
+        s0_mode,
+        s0_control_link,
+        s0_output_mode,
+        S0SafetyState::TorqueUnknown,
+        s0_fault_code,
     );
     let upper = 1024 + body.len();
     match pub_.loan(upper) {
@@ -288,6 +298,68 @@ fn publish_joint_state(
             metrics.joint_state_errors.fetch_add(1, Ordering::Relaxed);
         }
     }
+}
+
+/// task-30 v9 pre-2：把 [`S0StateSnapshot`] 映射成 4 个 wire enum
+/// (`S0Mode` / `S0ControlLink` / `S0OutputMode` / `S0FaultCode`)。
+/// `S0SafetyState` 由 M3 接 `OutputSafetyProbe` 后再填，本函数不返回。
+fn map_state_to_wire(snap: &S0StateSnapshot) -> (S0Mode, S0ControlLink, S0OutputMode, S0FaultCode) {
+    use crate::state_machine::{ControlLink, FaultCode, OutputMode, S0State};
+
+    let (mode, link, out, fc) = match snap.state {
+        S0State::Safe => (
+            S0Mode::Safe,
+            S0ControlLink::Unknown,
+            S0OutputMode::Unknown,
+            S0FaultCode::Unknown,
+        ),
+        S0State::Ready => (
+            S0Mode::Ready,
+            S0ControlLink::Unknown,
+            S0OutputMode::Unknown,
+            S0FaultCode::Unknown,
+        ),
+        S0State::Enabled {
+            control_link,
+            output_mode,
+            ..
+        } => {
+            let link_w = match control_link {
+                ControlLink::Ok => S0ControlLink::Ok,
+                ControlLink::Lost => S0ControlLink::Lost,
+            };
+            let out_w = match output_mode {
+                OutputMode::Active => S0OutputMode::Active,
+                OutputMode::Hold => S0OutputMode::Hold,
+                OutputMode::Zero => S0OutputMode::Zero,
+                OutputMode::Stop => S0OutputMode::Stop,
+            };
+            (S0Mode::Enabled, link_w, out_w, S0FaultCode::Unknown)
+        }
+        S0State::Fault(fc) => {
+            let fc_w = match fc {
+                FaultCode::AdapterErr => S0FaultCode::AdapterErr,
+                FaultCode::CmdDeadlineExpired => S0FaultCode::CmdDeadlineExpired,
+                FaultCode::LimitViolation => S0FaultCode::LimitViolation,
+                FaultCode::WatchdogTimeout => S0FaultCode::WatchdogTimeout,
+                FaultCode::RtOverrun => S0FaultCode::RtOverrun,
+                FaultCode::SafetyStopFailed => S0FaultCode::SafetyStopFailed,
+            };
+            (
+                S0Mode::Fault,
+                S0ControlLink::Unknown,
+                S0OutputMode::Unknown,
+                fc_w,
+            )
+        }
+        S0State::Stopping => (
+            S0Mode::Stopping,
+            S0ControlLink::Unknown,
+            S0OutputMode::Unknown,
+            S0FaultCode::Unknown,
+        ),
+    };
+    (mode, link, out, fc)
 }
 
 fn publish_s0_heartbeat(
