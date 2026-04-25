@@ -19,10 +19,14 @@
 >   完了再消化 EStop"；
 > - **A2**：`pending_started_at` 在 **plan 入 pending 那一刻**立即置位（不是
 >   `Submitted` 后才置），让 Busy 不断重试也计入 1s 总超时；
-> - **A3**：副作用 transition 的 ack 失败（包括 `Err` 与 1s 超时）**直接**
->   `commit_fault(SafetyStopFailed)` + `set_policy(Disabled)` + `safety_stop()`
->   兜底，**不**通过 `Event::AdapterErr` 走旧 transition 表（避免再被 guard
->   挡掉造成 silent stall）。
+> - **A3**（**finding #3 修订版**）：副作用 transition 的 ack 失败（包括
+>   `AdapterResp::Err(_)`、1s 超时、`NormalReqStatus::Unsupported`）**直接**
+>   `commit_fault(FaultCode::AdapterErr)` + `set_policy(Disabled)`，
+>   **不**调用 `safety_stop()` 兜底（safety_stop client 端会把 policy 切到
+>   StopTorque 覆盖 Disabled；AdapterErr 不是 emergency 路径），
+>   **不**通过 `Event::AdapterErr` 走旧 transition 表（避免再被 guard 挡掉
+>   造成 silent stall）。`Fault(SafetyStopFailed)` 只来自 `safety_stop_rt`
+>   返 Err / `confirm_torque_off` 超阈值，不来自 effectful ack 失败。
 
 ---
 
@@ -93,15 +97,23 @@ ipc_tick 反复返回 `Busy` → `pending_started_at` 永远 None → 永远不�
 新加的 `* → Fault(SafetyStopFailed)` 也有 guard），如果某 corner case 把
 event 挡住 → state_machine 卡在原态 + pending 已清 → silent stall。
 
-**约束**：
+**约束**（**M2-M4 review finding #3 + M7 阶段 3 收尾收紧版**）：
 - ack 失败（`AdapterResp::Err(_)` / 1s 超时 / `NormalReqStatus::Unsupported`）
-  **直接调** `commit_fault(state, FaultCode::AdapterErr | SafetyStopFailed)`
-  + `executor_ctrl.set_policy(OutputPolicy::Disabled)` + （兜底）
-  `executor_ctrl.safety_stop()`；
+  **直接调** `commit_fault(state, FaultCode::AdapterErr)` +
+  `executor_ctrl.set_policy(OutputPolicy::Disabled)`；
+- **不**调 `executor_ctrl.safety_stop()` 兜底 —— `safety_stop` client 端会
+  把 `policy` 切到 `StopTorque` 覆盖 `Disabled`；AdapterErr 不是 emergency
+  路径，下游若需 emergency 由 state_machine `* → Fault(SafetyStopFailed)`
+  走 emergency drain；
 - **不**走 `events.push(Event::AdapterErr(...))` + plan_transition；
-- 失败原因映射：
-  - `AdapterResp::Err(SafetyLatched)` → `FaultCode::SafetyStopFailed`
+- 失败原因映射（**M2-M4 review finding #3 收紧版**）：
+  - `AdapterResp::Err(SafetyLatched)` → `FaultCode::AdapterErr`
+    （**不是** `SafetyStopFailed`：latch 拒请求 = 正常保护，
+    state_machine 编排错应先 ClearEStop 再 Enable）
   - `AdapterResp::Err(其它)` / 1s 超时 / `Unsupported` → `FaultCode::AdapterErr`
+  - `FaultCode::SafetyStopFailed` 仅来自：
+    1. `RtSafeCtrl::safety_stop_rt` / `ManipulatorAdapter::safety_stop` 返回 Err
+    2. `OutputSafetyProbe::read_torque_enable_mask` 持续显示 motor 仍 torque-on
 - 失败后 pending 立即清空（同 v9）；
 - M7 仍保留 `commit_fault` API 给其它路径（如 watchdog soft-deadline 触发）
   使用，但 ack 失败路径**不依赖** event queue。
@@ -114,7 +126,7 @@ event 挡住 → state_machine 卡在原态 + pending 已清 → silent stall。
 |---|---|---|
 | `test_estop_preempts_in_flight_pending` | A1：在 effectful pending 卡在 Submitted 等 ack 时注入 EStop event | EStop 在**当前 tick** 内 commit Safe + `set_policy(StopTorque)`，pending 被清空（即使后续 rt_thread ack 也不影响 state） |
 | `test_busy_total_timeout_1s` | A2：rt_thread 始终返回 Busy（不消费 slot），1s 后必须 commit Fault | 入 pending 后 ≤ 1.05s 内 `state == Fault(AdapterErr)` + `policy == Disabled`；**不**允许永久卡 Busy |
-| `test_effectful_failure_direct_fault` | A3：ack 返回 `Err(SafetyLatched)` | 当前 tick 内 `state == Fault(SafetyStopFailed)` + `policy == Disabled`；**不**经过任何 `Event::AdapterErr` 入队 |
+| `test_effectful_failure_direct_fault` | A3：ack 返回 `Err(SafetyLatched)` | 当前 tick 内 `state == Fault(AdapterErr)` + `policy == Disabled`；**不**经过任何 `Event::AdapterErr` 入队。（**finding #3 修订**：SafetyLatched 不再映射 `SafetyStopFailed`；`Fault(SafetyStopFailed)` 仅来自真硬件 fail-safe 失败 —— `safety_stop_rt` `Err` / `confirm_torque_off` 超阈值） |
 
 ---
 
@@ -414,10 +426,11 @@ fn ipc_tick(
         if let Some(start) = retry.pending_started_at
             && clock.now() - start > DurationNs::from_secs(1)
         {
-            // A3：直接 commit_fault，**不**走 events.push(AdapterErr)
+            // A3：直接 commit_fault，**不**走 events.push(AdapterErr)。
+            // **不**调 safety_stop()（finding #3 + 阶段 3 收尾修订）：
+            // safety_stop client 端会把 policy 切到 StopTorque，覆盖 Disabled。
             commit_fault(state_machine_state, FaultCode::AdapterErr);
             executor_ctrl.set_policy(OutputPolicy::Disabled);
-            executor_ctrl.safety_stop(); // 兜底
             retry.pending = None;
             retry.pending_started_at = None;
             return;
@@ -440,10 +453,10 @@ fn ipc_tick(
                         return;
                     }
                     NormalReqStatus::Unsupported(_msg) => {
-                        // A3：直接 commit_fault
+                        // A3：直接 commit_fault；**不**调 safety_stop()
+                        // （finding #3 + 阶段 3 收尾修订）。
                         commit_fault(state_machine_state, FaultCode::AdapterErr);
                         executor_ctrl.set_policy(OutputPolicy::Disabled);
-                        executor_ctrl.safety_stop();
                         retry.pending = None;
                         retry.pending_started_at = None;
                         return;
@@ -461,16 +474,17 @@ fn ipc_tick(
                         retry.pending_started_at = None;
                     }
                     Some(AdapterResp::Err(e)) => {
-                        // A3：直接 commit_fault；不走 Event::AdapterErr
-                        let fault = match e {
-                            AdapterErr::SafetyLatched => FaultCode::SafetyStopFailed,
-                            _ => FaultCode::AdapterErr,
-                        };
-                        commit_fault(state_machine_state, fault);
+                        // A3：直接 commit_fault；不走 Event::AdapterErr。
+                        // finding #3：**所有** AdapterErr 变体（含 SafetyLatched）
+                        // 都映射到 FaultCode::AdapterErr。SafetyStopFailed 仅来自
+                        // 真硬件 fail-safe 失败（safety_stop_rt Err / confirm 失败）。
+                        let _ = e; // 暂不细分
+                        commit_fault(state_machine_state, FaultCode::AdapterErr);
                         executor_ctrl.set_policy(OutputPolicy::Disabled);
-                        if matches!(fault, FaultCode::SafetyStopFailed) {
-                            executor_ctrl.safety_stop(); // 兜底
-                        }
+                        // 注：不再"if SafetyStopFailed 兜底 safety_stop"——AdapterErr
+                        // 路径不需要再下发 safety_stop（hardware 还在 Active 时
+                        // commit_fault 由 set_policy(Disabled) + 下游 transition
+                        // 决定是否 emergency）。
                         retry.pending = None;
                         retry.pending_started_at = None;
                     }
