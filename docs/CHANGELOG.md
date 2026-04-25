@@ -2038,6 +2038,65 @@ User v2 review 给出 7 主问题 + 3 次问题，全部接受 + 重写覆盖文
 
 详 `docs/designs/task-30_state_machine_adapter_link.md`（v3，744 行）。
 
+### v4 修订（2026-04-25 user 三轮 review 后 —— 架构级方向修正）
+
+User v3 review 提出**架构级方向修正**：v3 把 hardware IO 永久移到 `adapter_io
+_thread`，等于把原设计 §1.2 / §1.4 "HardRT adapter 直挂 s0_rt_thread" 给放
+弃了。**这是过度修订**。
+
+User 关键洞察：
+- 原设计 §1.2 / §1.4 没错；rt_thread 直接调 HardRT adapter **对真 HardRT 仍
+  然成立**（EtherCAT / RT-CAN / DMA mmap / 自家 FPGA shared-mem）
+- Feetech 的问题不是设计错，是 **adapter 分类错** —— 标 HardRT 但 ms 级 IO
+- 解法：**保留原设计 HardRT 路径不动**；**新增第三类** `RtClass::SerialRT`
+  与 HardRT / SoftRT 并列；`s0_daemon` 按 `adapter.info().rt_class` dispatch
+
+判定基准：**可证明的最坏延迟 + RT 铁律合规性**，不靠协议名字。EtherCAT 用了
+会阻塞库 / 动态分配 / mutex 也不是 HardRT；某些 CAN bounded + no alloc 就是
+HardRT。
+
+**v4 主要修订**：
+
+- 三类 executor 并列：`spawn_rt_thread`（HardRT，**原设计不动**）+ 新增
+  `spawn_serial_io_thread`（SerialRT）+ `spawn_io_thread`（SoftRT，v0.4）
+- v3 "rt_thread 改读 HotShared / 永久数据通路" → **v4 撤销**；rt_thread 保留
+  原设计 `read cmd slot → adapter.write/read → write rt_snapshot`
+- v3 OutputPolicy / emergency / IoState / 复杂语义 **范围限定到 SerialRT
+  executor**；HardRT executor 的 OutputPolicy gate **简化版**（仅"是否调
+  write_command" 分支，不做 hold fallback / mode change 等）
+- §3 架构图重画：rt_thread + serial_io_thread + io_thread 三条并列
+- §6 新增 `s0_daemon dispatch by RtClass`：`match adapter.info().rt_class`
+  决定 spawn 哪个 executor
+- 现有 `mock_hard_rt` 保持 `RtClass::HardRT` 不变，走 rt_thread 路径，v0.2
+  测试 + smoke 零回归
+- Feetech adapter 改 `RtClass::SerialRT`（pre-1），走 serial_io_thread 路径
+- 风险加 R9（HardRT executor 简化版 OutputPolicy 语义边界）+ R10（dispatch
+  by RtClass 错配的安全风险 + adapter 实现方分类纪律）
+
+**v4 vs v3 本质区别**：
+- v3：把 hot path 移走 → rt_thread 永久变数据通路 → **否定原设计**
+- v4：**新加一条平行路径** → rt_thread 仍是 HardRT 真接入点 → **原设计完全保留**
+
+文档 744 → 802 行（v4 重画 §3 架构图 + §6 dispatch + §10 R9/R10 + §0 v3→v4
+修订表 + §12 7 个新决议）。
+
+**v4 7 个决议请求**：
+
+1. v4 整体（保 HardRT 路径 + 新 SerialRT executor + dispatch by RtClass）approve？
+2. `RtClass::SerialRT` 走 §4.6 设计修订 + dimos 同步回写？
+3. HardRT executor OutputPolicy gate **简化版** 接受（v0.4 真 HardRT adapter
+   需要 hold fallback 等再升级 rt_thread）？
+4. `s0_daemon` dispatch 走启动期 match `adapter.info().rt_class` 还是编译期
+   trait method（`fn spawn_executor`）？
+5. v0.2 范围内 `RtClass::SoftRT` 在 s0_daemon 走 `Err(Unsupported)` 不实施
+   接受？
+6. M5 行为切换点拆两 commit（flag on + 删 legacy）？
+7. 真机最低门槛 M5：mock_hard_rt 走 rt_thread 不回归（task 29 ±17° 双夹爪
+   重跑） + feetech 走 serial_io_thread（feetech_poke Torque_Enable=0 +
+   robotctl safety_state=TorqueOffConfirmed + 物理推夹爪）。同意 / 加项？
+
+详 `docs/designs/task-30_state_machine_adapter_link.md`（v4，~800 行）。
+
 ---
 
 ## 2026-04-25 · Step 8 EStop latch 双文件 + 重启恢复（**状态：登记 / 实施完成**）
