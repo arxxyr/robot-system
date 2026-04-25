@@ -36,11 +36,18 @@ pub use robot_adapter_feetech as _;
 
 pub mod config_loader;
 pub mod estop_latch;
+pub mod hard_rt_ctrl;
 pub mod io_thread;
 pub mod ipc_thread;
+pub mod ipc_tick;
 pub mod pub_thread;
+pub mod serial_io_ctrl;
+pub mod serial_io_thread;
 pub mod state_machine;
 pub mod watchdog;
+
+#[cfg(test)]
+mod test_util;
 
 #[cfg(target_os = "linux")]
 pub mod rt_thread;

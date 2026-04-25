@@ -51,7 +51,9 @@ use std::time::{Duration, Instant};
 
 use robot_adapter_mock::MockHardRTAdapter;
 use robot_core::adapter::{JointCommandBuf, RtSnapshot};
+use robot_core::executor_ctrl::OutputPolicy;
 use robot_core::time::{RobotClock, SystemClock};
+use robot_s0::hard_rt_ctrl::HardRtCtrlInner;
 use robot_s0::rt_thread::{RtThreadConfig, spawn_rt_thread};
 use robot_transport::{LatestCommandSlot, RtSnapshotPublisher};
 
@@ -92,8 +94,18 @@ fn rt_guard_soak_no_alloc_no_arc_for_one_minute() {
     };
 
     // ---- spawn RT 线程并跑 soak ----
-    let handle =
-        spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub).expect("spawn_rt_thread failed");
+    //
+    // task-30 v9 / M5：spawn_rt_thread 新增必传 `Arc<HardRtCtrlInner>` 参数。
+    // soak 测试只验 alloc / Arc 守卫，**不**驱动 emergency / normal action；
+    // 默认 OutputPolicy=Disabled 跳 write_command（仍 read_state + publish）。
+    // 如果想覆盖 write_command 路径，把 policy 切到 ActiveForward。
+    let rt_ctrl = Arc::new(HardRtCtrlInner::new());
+    rt_ctrl.policy.store(
+        OutputPolicy::ActiveForward.to_u8(),
+        std::sync::atomic::Ordering::Release,
+    );
+    let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, rt_ctrl)
+        .expect("spawn_rt_thread failed");
     let metrics = Arc::clone(handle.metrics());
 
     let started = Instant::now();

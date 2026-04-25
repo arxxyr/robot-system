@@ -45,13 +45,16 @@ use std::time::Duration;
 use crossbeam_channel::unbounded;
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
-use robot_core::adapter::{JointCommandBuf, ManipulatorAdapter, RtSnapshot};
+use robot_core::adapter::{
+    HardRtAdapter, JointCommandBuf, ManipulatorAdapter, RtClass, RtSnapshot,
+};
 use robot_core::config::IdentityFingerprint;
 use robot_core::factory::{AdapterBuildContext, find_factory, registered_factories};
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
 use robot_s0::config_loader::{LoadedConfig, load_robot_config};
 use robot_s0::estop_latch::{load_estop_latch, save_estop_latch};
+use robot_s0::hard_rt_ctrl::HardRtCtrlInner;
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
 use robot_s0::ipc_thread::{IpcSubscribers, IpcThreadConfig, IpcThreadHandle, spawn_ipc_thread};
 use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread};
@@ -547,11 +550,43 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     //   走 `inventory::find_factory` 查 factory + build。
     // - 无 `--config`：fallback 到 `mock_hard_rt`，joint 名按 j0..jN 自动生成
     //   （兼容旧 CLI smoke 路径）。
-    let adapter: Box<dyn ManipulatorAdapter + Send> = match build_adapter(args) {
+    let built = match build_adapter(args) {
         Ok(a) => a,
         Err(code) => {
             graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
             return Err(code);
+        }
+    };
+    // task-30 v9 finding #3 守门：编译期 + 运行期双重 dispatch。
+    // - HardRt 变体：trait object 已 `RtSafeCtrl` witness，可进 spawn_rt_thread。
+    // - SerialRtOrSoft 变体：M6 / v0.4 才有对应入口，当前拒启动。
+    let adapter: Box<dyn HardRtAdapter + Send> = match built {
+        BuiltAdapter::HardRt(a) => {
+            // 二次校验 rt_class 与 trait 一致（防 factory 内部错配）。
+            debug_assert_eq!(a.info().rt_class, RtClass::HardRT);
+            a
+        }
+        BuiltAdapter::SerialRtOrSoft(a) => {
+            let class = a.info().rt_class;
+            let name = a.info().name;
+            match class {
+                RtClass::SerialRT => eprintln!(
+                    "fatal: adapter '{name}' is RtClass::SerialRT; s0_daemon dispatch \
+                     by RtClass not yet implemented (task-30 M6/M7). 拒绝启动以避免 \
+                     串口 ms 级 RTT 误挂 SCHED_FIFO 线程违反 §4.9 RT 铁律。"
+                ),
+                RtClass::SoftRT => eprintln!(
+                    "fatal: adapter '{name}' is RtClass::SoftRT; SoftRT adapter 应挂 \
+                     s0_io_thread (v0.4)，不能进 ManipulatorAdapter spawn 路径。"
+                ),
+                RtClass::HardRT => eprintln!(
+                    "fatal: adapter '{name}' 报告 RtClass::HardRT 但 factory 没走 \
+                     `build_hard_rt`（factory 实现遗漏 RtSafeCtrl + override）。"
+                ),
+            }
+            drop(a);
+            graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
+            return Err(1);
         }
     };
     let rt_cfg = RtThreadConfig {
@@ -560,7 +595,29 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         cpu_affinity: args.cpu_affinity,
         strict_rt: args.strict_rt,
     };
-    let rt = match spawn_rt_thread(rt_cfg, Arc::clone(&clock), adapter, cmd_reader, rt_snap_pub) {
+    // task-30 v9 / M7 修订：HardRtCtrlInner 默认 `policy = Disabled` /
+    // `safety_state = TorqueUnknown`。**不**在 daemon 启动期把 policy 提前
+    // 置 ActiveForward —— 与 spawn-time enable(true) 已被移除的语义保持
+    // 一致：state_machine 走完 `Safe → Ready → Enabled.Active` 两阶段
+    // transition 并且 effectful `Enable(true)` ack 成功后，**ipc_thread**
+    // （M7 阶段 3）才会 `set_policy(ActiveForward)`。
+    //
+    // 当前 ipc_thread 还没接 ExecutorCtrlClient（M7 阶段 3 加），所以
+    // `policy` 在整个 smoke run 内会保持 `Disabled` —— rt_thread 主循环
+    // do_write 白名单不含 Disabled，**read_state + publish 仍跑**，但
+    // **不**调 write_command。这是预期行为。
+    //
+    // 测试 / mock smoke 路径若需要 ActiveForward 行为，由对应单测在 spawn
+    // 之后通过 `client.set_policy(...)` 显式切（见 rt_thread tests）。
+    let rt_ctrl = Arc::new(HardRtCtrlInner::new());
+    let rt = match spawn_rt_thread(
+        rt_cfg,
+        Arc::clone(&clock),
+        adapter,
+        cmd_reader,
+        rt_snap_pub,
+        Arc::clone(&rt_ctrl),
+    ) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("fatal: spawn_rt_thread: {e}");
@@ -700,11 +757,25 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
 // adapter 构造（Step 7 task 27b：走 inventory factory）
 // ============================================================================
 
+/// task-30 v9 finding #3：build 出来的 adapter 按 `RtClass` 分两路。
+///
+/// `HardRt` 变体的 trait object **编译期保证**实现 `RtSafeCtrl`（综合
+/// `HardRtAdapter`），可直接 move 进 `spawn_rt_thread`。`SerialRtOrSoft`
+/// 走非 RT path（M6 `SerialIoCtrl` / 未来 `SoftRT`）。
+enum BuiltAdapter {
+    HardRt(Box<dyn HardRtAdapter + Send>),
+    SerialRtOrSoft(Box<dyn ManipulatorAdapter + Send>),
+}
+
 /// 按 `--config` TOML 第一段 hardware（或 fallback `mock_hard_rt`）走
 /// `robot_core::factory::find_factory` 拿 factory + build。
 ///
+/// **task-30 v9 finding #3**：先试 `build_hard_rt`（`HardRT` factory 必返综合
+/// 类型）；若返 `Unsupported` → 走 `build` 普通路径。两条路径各自封装在
+/// [`BuiltAdapter`] 变体内。
+///
 /// 错误返回 i32 退出码（与 `run` 顶层一致），调用方据此 `graceful_stop`。
-fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Send>, i32> {
+fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
     // 1) 决定 adapter_kind + joint_names + address + motor_ids + calibration_paths 来源
     let (adapter_kind, joint_names, address, motor_ids, calibration_paths): (
         String,
@@ -788,10 +859,25 @@ fn build_adapter(args: &ResolvedArgs) -> Result<Box<dyn ManipulatorAdapter + Sen
         motor_ids: &motor_ids,
         calibration_paths: &calibration_paths,
     };
-    factory.build(&ctx).map_err(|e| {
-        eprintln!("fatal: adapter '{adapter_kind}' build failed: {e}");
-        1
-    })
+    // **finding #3 修复**：HardRT factory 走 `build_hard_rt`（返综合 trait
+    // object，编译期保证 RtSafeCtrl），其它走 `build`。
+    match factory.build_hard_rt(&ctx) {
+        Ok(hard_rt) => Ok(BuiltAdapter::HardRt(hard_rt)),
+        Err(robot_core::error::RobotError::Unsupported(_)) => {
+            // factory 不支持 HardRT path → 走普通构造
+            factory
+                .build(&ctx)
+                .map(BuiltAdapter::SerialRtOrSoft)
+                .map_err(|e| {
+                    eprintln!("fatal: adapter '{adapter_kind}' build failed: {e}");
+                    1
+                })
+        }
+        Err(e) => {
+            eprintln!("fatal: adapter '{adapter_kind}' build_hard_rt failed: {e}");
+            Err(1)
+        }
+    }
 }
 
 /// 有顺序地停线程 + `join`，容忍任一 handle 为 None（早期启动失败场景）。

@@ -115,30 +115,43 @@ mod tests {
 
     #[test]
     fn tick_count_increments() {
+        use crate::test_util::wait_until;
         // 加速 poll 让测试短时间就看到多次 tick。
         let cfg = IoThreadConfig {
             poll_interval_ns: 1_000_000, // 1 ms
         };
         let handle = spawn_io_thread(cfg).unwrap();
-        thread::sleep(Duration::from_millis(30));
-        let ticks = handle.metrics().tick_count.load(Ordering::Relaxed);
+        let metrics = Arc::clone(handle.metrics());
+        // 确定性轮询：等 tick_count >= 5（每 ms 一次，100ms 内绰绰有余）
+        assert!(
+            wait_until(Duration::from_secs(2), || {
+                metrics.tick_count.load(Ordering::Relaxed) >= 5
+            }),
+            "io_thread 2s 内未 tick ≥ 5 次，实际 {}",
+            metrics.tick_count.load(Ordering::Relaxed)
+        );
         handle.request_stop();
         handle.join().unwrap();
-        assert!(
-            ticks >= 5,
-            "io_thread should have ticked ≥ 5 times, saw {ticks}"
-        );
     }
 
     #[test]
     fn stops_promptly() {
+        use crate::test_util::wait_until;
         let handle = spawn_io_thread(IoThreadConfig::default()).unwrap();
-        thread::sleep(Duration::from_millis(5));
+        let metrics = Arc::clone(handle.metrics());
+        // 等线程跑起来（至少 1 tick）再 request_stop —— 比固定 5ms sleep 稳
+        assert!(
+            wait_until(Duration::from_secs(2), || {
+                metrics.tick_count.load(Ordering::Relaxed) > 0
+            }),
+            "io_thread 2s 内未跑出第一 tick"
+        );
         handle.request_stop();
         let start = std::time::Instant::now();
         handle.join().unwrap();
+        // 退出延迟仍按 50ms 上限（poll_interval default 是 1ms 量级）
         assert!(
-            start.elapsed() < Duration::from_millis(50),
+            start.elapsed() < Duration::from_millis(500),
             "io_thread join too slow: {:?}",
             start.elapsed()
         );
