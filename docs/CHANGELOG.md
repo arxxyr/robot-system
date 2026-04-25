@@ -1928,3 +1928,49 @@ system health cpu_usage_pct=8.83  ... mem_used_pct=84.95
 
 - 提议：Claude Code（2026-04-25 路线图步骤 5 "A 设计方案"）
 - 等决：用户 loosqk
+
+### v2 修订（2026-04-25 user review 后）
+
+User 给出 12 条 critical 反馈，全部接受。文档从 523 行 → ~860 行重写覆盖：
+
+**核心 framing 变化**：v1 解决"谁拥有 adapter"；v2 必须同时解决"什么时候允
+许 `latest_cmd` 写硬件" —— 后者才是安全闭环。原 v1 的 `hold_current_position`
+设计**有破洞**：io_helper 仍然每 tick 转发 stale `latest_cmd`，会冲掉 hold
+语义。
+
+**主要 v2 加 / 改 / 删**：
+- ➕ `§4 OutputPolicy` 新章节：7 variant（Disabled / ReadyHold / ActiveForward
+  / HoldCurrent / ZeroCommand / StopTorque）+ `S0State → OutputPolicy` 映射表 +
+  arc-swap 实现；adapter_io_thread 严格按 policy 决定是否转发 `latest_cmd`
+- ➕ `§5.1` AdapterReq 拆 `Emergency` / `Normal` 双 channel + `estop_requested:
+  AtomicBool` 双兜底；emergency 不被 normal 阻塞
+- ➕ `§5.4` server loop 改 `crossbeam_channel::select!` + deadline，**防 busy
+  spin**（断连不 CPU 100%）；明确不靠串口 RTT 当节拍器
+- ➕ `§5.5` `tick_hardware` 按 OutputPolicy 决定输出；`cmd.mode = Stop` 真触发
+  emergency safety_stop；mode 变化时调 set_mode 一次（不每 tick 调）
+- ➕ `§5.7` `hold_current_position` trait 默认改 `Err(RobotError::Unsupported)`
+  （**不**默认 no-op）；mock 显式 no-op；fallback：hold 失败 → safety_stop
+- ➕ `§6 OutputSafetyState` 新章节：`TorqueOffConfirmed` / `TorqueOn` /
+  `TorqueUnknown` / `StopFailed`；新 `FaultCode::SafetyStopFailed` /
+  `AdapterUncertain`；对外 state topic 加 `safety_state` 字段（与现有
+  `OutputMode` 正交：意图 vs 真实硬件状态）
+- ➕ `§7 SIGTERM graceful` 新章节：明确不依赖 Drop / panic = abort 不跑 Drop；
+  shutdown 走 emergency channel + bounded timeout；SIGKILL / panic 必须靠硬件层
+- ➕ `§8 测试覆盖` 加 9 条用例：stale gate / Stop trigger safety / mode change
+  once / emergency preempt / no busy spin / shutdown / adapter timeout /
+  TorqueOffConfirmed E2E / OutputSafetyState 上报
+- ➖ 删 v1 `§5.5.a` "RT 直调 adapter" 退路（user review §7：是方案 F 否定式）
+- ➖ 改名 `io_helper` → `adapter_io_thread`（user review §7：原名太轻）
+- 🔄 迁移计划 M1-M4 拆为 **M1-M5**（user review §6：M3 单独合并行为退化），
+  feature flag 时间线明确：M1-M3 不存在 / M4 默认 off / M5 真机 smoke 通过后
+  默认 on / **下个 release 必须 on + 删 flag**（安全链路不可永久 feature gated）
+- 🔄 总工时 4.5 h → 6 h（更真实）
+
+**v2 决议请求**（5 个新问题）：
+1. v2 整体是否 approve？
+2. `OutputPolicy` 7 variant 是否覆盖？需要加 `LimitedForward`（rate limit）吗？
+3. `OutputSafetyState` 上 state topic 是否走 `00_design.md` §3.4 schema 评审？
+4. M5 行为切换点是否拆两 commit（"flag on" + "删 legacy"）？
+5. 真机最低门槛：feetech_poke 读 `Torque_Enable=0` + 物理推夹爪确认 —— 同意 / 加项？
+
+详 `docs/designs/task-30_state_machine_adapter_link.md`（v2，~860 行）。

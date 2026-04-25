@@ -1,224 +1,257 @@
 # Task-30 设计方案：state_machine ↔ adapter 执行链路
 
-> **状态**：**草案，等 review**
-> **作者**：Claude Code（2026-04-25 session）
-> **背景**：`docs/handoffs/2026-04-25_1.md` §7.5.2 + §8；task 29 session 发现
-> `robotctl watch` SIGTERM segfault 根因实际暴露出更深的**架构缺口**。
-> **不改设计**：本文档仅**补充实现细节**，`docs/00_design.md` §0 / §1.4 / §4.9
-> / §6.7 等冻结条款**一字不改**。
+> **状态**：**v2，等再次 review**
+> **作者**：Claude Code（v1：2026-04-25 草案；v2：2026-04-25 user review 后修订）
+> **背景**：`docs/handoffs/2026-04-25_1.md` §7.5.2；task 29 session 暴露架构缺口
+> **不改设计**：本文档仅**补充实现细节**，`docs/00_design.md` 冻结条款不动
+>
+> **核心问题（v1 review 重新定调）**：
+>
+> > v1 解决了"**谁拥有 adapter**"。
+> > v2 必须同时解决"**什么时候允许 `latest_cmd` 写进硬件**"——后者才是安全闭环的核心。
 
 ---
 
-## 1. 问题陈述
+## §0 v1 → v2 修订记录
+
+User review 在 v1 上提出 12 条 critical 反馈，v2 全部接受 + 落实到具体章节：
+
+| # | v1 缺陷 | v2 修订位置 |
+|---|---|---|
+| 1 | **缺 OutputPolicy 门控**（最大问题：`hold_current_position` 后 io_helper 仍然继续转发 stale `latest_cmd` → 破坏 hold 语义） | §4 新章节 OutputPolicy + 状态映射表；§5 server loop 严格按 policy 转发 |
+| 2 | `ControlMode::Stop/Velocity` 缺口只是从 rt 挪到 io_helper，没有真闭环 | §5.4 io_helper 内维 `IoState { current_mode, ... }`；cmd.mode 变化触发 `set_mode`；`Stop` 走 emergency `safety_stop` |
+| 3 | server loop 在断连 / 串口 Err 时会 CPU 100% busy spin | §5.4 改用 `crossbeam_channel::select!` + deadline 周期；不靠串口 RTT 当节拍 |
+| 4 | `bounded(1)` 普通 + emergency 共用一个队列 → SafetyStop 可能被卡住 | §5.2 拆 emergency / normal 双 channel；§5.5 加独立 `emergency_stop_requested: AtomicBool` 让 io 线程每轮最先检查 |
+| 5 | `hold_current_position` 默认 no-op 会**掩盖** "生产 adapter 没实现 follow-current" 的安全问题 | §5.7 trait 默认改 `Err(RobotError::Unsupported)`；mock 显式 no-op；生产 adapter 不支持 hold 时 state_machine **fallback 到 `safety_stop()`** |
+| 6 | M3 合并后 io_helper 已接管 adapter，M4 才接 state_machine hook → M3 单独合并行为退化 | §6 拆 M1-M5；M4 保留 legacy bootstrap；M5 才删 |
+| 7 | v1 §5.5 留 5.5.a "RT 直调 adapter" 退路 = 否定方案 F；表述上还说 "RT hot path 0 修改" | §3 / §5 删 5.5.a；明确 rt_thread 职责变成"数据通路 + tick 统计"，不碰硬件 IO；`io_helper` **改名 `adapter_io_thread`** |
+| 8 | `safety_stop()` 失败简单升级 Fault → 软件状态 = Safe，硬件 = Torque on，**Safe 这个词掩盖了硬件失败** | §7 新章节 OutputSafetyState（TorqueOffConfirmed / TorqueOn / TorqueUnknown / StopFailed）+ 新 FaultCode（SafetyStopFailed / AdapterUncertain）；对外 state topic 加字段 |
+| 9 | SIGTERM 测试只写"`safety_stop` 调用"，没说不能依赖 Drop / panic = abort 下 Drop 不跑 | §8 SIGTERM graceful 路径明确：main shutdown controller 发 emergency safety_stop → 等 bounded timeout → disconnect → join → exit；**不依赖 Drop** |
+| 10 | 测试覆盖缺安全语义：stale cmd gate / mode change once / emergency preempt / busy spin / shutdown / timeout | §9 测试覆盖表加 9 个新用例 |
+| 11 | feature flag 默认 / 走向不明 | §6 / §10 明确：M1-M4 默认 off → smoke 通过后 on → 发布必 on，**不长期保留两套路径**（安全链路不可永久 feature-gated） |
+| 12 | 整个文档 framing 在"接 channel"，没在"输出门控" | §0 重写问题陈述；§4 OutputPolicy 提到顶层概念，先于通信机制 |
+
+v1 文档归档到 git history（commit `4cca734`），不另存文件。v2 是当前权威。
+
+---
+
+## §1 问题陈述（v2 重述）
 
 ### 1.1 现状
 
-`crates/robot-s0/src/state_machine.rs` 定义了：
-- **5 主态** `Safe / Ready / Enabled{sub} / Fault / Stopping`
-- **4 子态** `Active / CtrlLostHold / CtrlLostZero / CtrlLostStop`
-- **12 事件** `Enable / Heartbeat / HeartbeatTimeout / AdapterErr / ...`
-- 完整 `try_transition` 规则表 + Guards 校验 + 单元测试全绿
+`crates/robot-s0/src/state_machine.rs` 定义 5 主态 / 4 子态 / 12 事件 / Guards
+/ 完整 transition 表 + 单测。运行期跑在 `ipc_thread`，写 iceoryx2 state topic
+对外汇报状态。
 
-运行期 state machine 跑在 `ipc_thread`：
-- 收到 heartbeat → `Event::Heartbeat` → state 升级
-- 心跳超时 → `Event::HeartbeatTimeout` → 进 `CtrlLostHold`
-- EStop 事件 → `Event::EStop` → 进 `Safe`
-- 写 iceoryx2 state topic 对外汇报当前态
+### 1.2 双重缺口
 
-### 1.2 缺口
+#### 缺口 A：state machine 不驱动 adapter
 
-**state machine 的 transition 不驱动 adapter 实际硬件动作**：
-
-| 状态变化 | 期望 adapter 动作 | 当前实际 |
+| 状态变化 | 期望 adapter 动作 | 当前 |
 |---|---|---|
-| `Safe → Ready`（启动 / 清 fault） | `connect()` + `set_mode(Position)` | ✅ 但是 `spawn_rt_thread` 里**一次性**做，state machine 不驱动 |
-| `Ready → Enabled.Active` | `enable(true)` 防飞序列 | ✅ 但也是**一次性**（同上），state machine 不驱动 |
-| `Enabled → Safe`（手动 /  stop） | `enable(false)` 断扭 | ❌ **不执行**，torque 继续 on |
-| `Enabled.Active → Fault(...)` | `safety_stop()` 或 `enable(false)` | ❌ **不执行** |
-| `EStop` 事件 | `safety_stop()` 立刻断扭 | ❌ **不执行** |
-| `CtrlLostHold` 子态进入 | `hold_current_position()` 冻结 Goal | ⚠️ `feetech` adapter **有** helper，但没人调 |
-| `cmd.mode = ControlMode::Stop` | `set_mode(Stop) → enable(false)` | ❌ **不执行**，adapter `write_command` 看到 Stop 直接 `return Ok(())` |
-| `cmd.mode = ControlMode::Velocity` | `set_mode(Velocity)` 切模式 | ❌ **不执行**，adapter 只做 Position |
+| `Safe → Ready` | `connect()` + `set_mode(Position)` | ⚠️ 一次性 spawn 时做，state machine 不驱动 |
+| `Ready → Enabled.Active` | 防飞 `enable(true)` 序列 | ⚠️ 同上 |
+| `Enabled → Safe`（手动 / Stop） | `enable(false)` 断扭 | ❌ |
+| `Enabled.Active → Fault` | `safety_stop()` | ❌ |
+| `EStop` 事件 | `safety_stop()` 立刻断扭 | ❌ **安全级 bug** |
+| `→ CtrlLostHold` 子态 | `hold_current_position()` 冻结 Goal | ❌（feetech 有 helper，没人调） |
+| `cmd.mode = Stop` | `set_mode(Stop) → enable(false)` | ❌ adapter 直接 `return Ok` |
+| `cmd.mode = Velocity` | `set_mode(Velocity)` 切模式 | ❌ adapter 仅 Position |
 
-### 1.3 原因：adapter 所有权被 RT 闭包独占
+#### 缺口 B：`latest_cmd` 无门控
 
-`crates/robot-s0/src/rt_thread.rs:147-154` 注释原文：
+即便缺口 A 修了（state_machine 能调 adapter.safety_stop），如果 io 层每帧仍
+**无条件**把 `LatestCommandSlot::latest_cmd` 写给硬件，就会出现：
 
 ```
-// Part 1：在 spawn 之前 connect + enable，避免 RT 线程启动期做这些。
-// Part 2 由 state machine 控制 enable/disable。
-adapter.connect()?;
-adapter.enable(true)?;
+t=0    心跳丢失
+t=10ms state_machine: Active → CtrlLostHold
+t=11ms hold_current_position()：读 Present=1500，写 Goal=1500
+t=12ms io 层 tick：读 latest_cmd（旧 S1 命令 Goal=2500） → 写硬件 Goal=2500
+t=13ms motor 追 Goal=2500，破坏 hold 语义
 ```
 
-"Part 2 由 state machine 控制" = **已欠债**。
+**Hold / Safe / Fault / EStop 都会被 stale command 冲掉**。这是 v1 没看到的核心。
 
-`adapter` 随后 `move` 进 `spawn` 闭包，rt_thread 独占所有权。ipc_thread（state machine 所在）拿不到可调的 adapter 方法。
+### 1.3 双管齐下：所有权 + 输出门控
 
-### 1.4 影响面
+v2 必须同时回答：
 
-- **S1 无法远程 disable torque**（robotctl / mock_s1 发 ControlMode::Stop 无效）
-- **EStop 事件不断扭**（只改 state 字段，硬件状态不变）—— **违反安全**
-- **`Fault` 恢复时 torque 仍然 on**（设计 §1.4 期望 Fault 进入时应进入"安全输出"）
-- **bring-up 无"软件下使能"入口**（task 29 session 实测：推夹爪到闭合位用了 `feetech_poke` 裸 wire 绕过）
-- **多模态控制（未来）**：v0.3 加速度 / 力控 / 动态切 Position↔Velocity 全做不了
-
-### 1.5 优先级
-
-- **EStop 不断扭** = **安全级 bug**，理论上 `docs/00_design.md` §6.7 "EStop 不可
-  被软件清除为失忆态" 虽然指的是 *latch 持久化*，但配合"`adapter.safety_stop` 被
-  调用"才构成完整闭环。当前半条腿。
-- 其他（Stop mode / Velocity 模式 / Fault 断扭）属于**功能缺失**，阻塞 v0.3 功能。
+1. **谁拥有 adapter**（v1 已答：`adapter_io_thread`）
+2. **什么时候 io 线程才把 `latest_cmd` 写进硬件**（v2 答：`OutputPolicy`）
 
 ---
 
-## 2. 设计原则（硬约束）
+## §2 设计原则（硬约束，v1 + v2 合并）
 
-**本设计必须同时满足**：
-
-1. **§4.9 RT 铁律不变**：RT thread 内禁 heap alloc / 禁 `Arc::clone`/`drop` /
-   禁 blocking IO / 禁 `format!`。adapter 新增路径不得让 RT 线程做串口 RTT。
-2. **§6.7 systemd 为最外层 supervisor 不变**：本 task 不做进程 / supervisor 层
-   改动；任何 "robot-health 启动服务" 方向走 B'c 方案 C（监控 + 决策上报）。
-3. **`ManipulatorAdapter` trait 外部签名尽量不改**：保持
-   `connect/disconnect/read_state/write_command/set_mode/enable/safety_stop/limits`
-   8 个方法。内部实现可以换，调用方（`rt_thread`）代码零改动 / 最小改动。
-4. **`panic = "abort"` 范围不变**：`robot-s0` / `robot-s1` 仍 abort；新增的 io
-   helper thread 在 robot-s0 里 → 仍 abort 语义（任何 panic → 进程挂 → systemd
-   重启）。
-5. **现有单测 / 真机闭环 100% 向后兼容**：task 29 的 ±17° 正弦演示 + mock 单测
-   必须在切换后 0 回归。
-6. **允许分步合并**：设计必须支持**增量落地**（N 个小 commit），每个 commit
-   都能独立通过 CI + 真机 smoke，避免大 PR 炸掉 master。
+1. **§4.9 RT 铁律**：RT thread 不 alloc / 不 lock / 不 IO / 不 format
+2. **§6.7 systemd 为最外层 supervisor**：本 task 不做进程 / supervisor 改动
+3. **`ManipulatorAdapter` trait 外部签名稳定**：现有 8 方法不动 + 加
+   `hold_current_position`（默认 `Err(Unsupported)`）
+4. **`panic = "abort"`**：robot-s0 仍 abort；`adapter_io_thread` 在同进程内
+5. **现有单测 + task 29 真机闭环 100% 向后兼容**
+6. **每个 commit 独立 CI 通过 + 真机 smoke**：增量落地
+7. **安全链路不长期 feature-gated**：feature flag 仅 M1-M4 期临时；smoke 通过后默认 on / 发布必 on / 不留两套路径
+8. **adapter 串口方法必须有有界 timeout**：禁止无限阻塞（io_helper 抢占不了同一个串口调用）
+9. **失败 ≠ 静默升级 Fault**：`safety_stop()` 失败属于"硬件状态不明"，需要新 FaultCode + 对外 state topic 字段，不能让"Safe" 这个词掩盖
 
 ---
 
-## 3. 架构图
+## §3 架构图
 
-### 3.1 当前（task-30 之前）
-
-```
-┌─────────────────── robot-s0 process ──────────────────┐
-│                                                       │
-│  ipc_thread                rt_thread (RT/SCHED_FIFO)  │
-│  ┌─────────────┐           ┌─────────────────────┐    │
-│  │ state_machine│          │  adapter (move 进)   │    │
-│  │ (12 events) │           │  ┌───────────────┐  │    │
-│  └──────┬──────┘           │  │ FeetechAdapter│  │    │
-│         │ writes           │  │ + FeetechBus  │  │    │
-│         ▼                  │  │ + SerialPort  │  │    │
-│  iceoryx2 state topic ────>│  └──┬────────────┘  │    │
-│         (only reports)     │     │               │    │
-│                            │     ▼ every tick:   │    │
-│  adapter ←─── NOT HERE ────┤   write_command     │    │
-│  (can't reach)             │   read_state        │    │
-│                            └─────────────────────┘    │
-│                                                       │
-│  watchdog thread (crossbeam → ipc)                    │
-│  pub_thread (reads rt_snapshot → iceoryx2)            │
-└───────────────────────────────────────────────────────┘
-```
-
-### 3.2 Task-30 后（推荐方案 F）
+### 3.1 当前
 
 ```
-┌─────────────────── robot-s0 process ────────────────────────┐
-│                                                             │
-│  ipc_thread                rt_thread (RT/SCHED_FIFO)        │
-│  ┌─────────────┐           ┌─────────────────────────────┐  │
-│  │state_machine│           │ rt_hot_path (zero alloc)    │  │
-│  └──────┬──────┘           │ ┌─────────────────────────┐ │  │
-│         │                  │ │ read LatestCommandSlot  │ │  │
-│         │ on transition:   │ │ write StateSlot         │ │  │
-│         │ send AdapterReq  │ │ every 20ms tick         │ │  │
-│         ▼                  │ └──────┬──────────────────┘ │  │
-│  AdapterCtrlClient         │        │ reads/writes       │  │
-│  (state-free facade) ─────┐│        ▼                    │  │
-│  .enable(true)            ││   ┌──────────────────┐      │  │
-│  .set_mode(Velocity)      ││   │ HotShared (POD)  │      │  │
-│  .safety_stop()           ││   │  latest_cmd      │      │  │
-│  .hold_current_position() ││   │  latest_state    │      │  │
-│         │                 ││   └────┬─────────────┘      │  │
-│         │ channel req     ││        │ drained by io      │  │
-│         ▼                 │└────────┼────────────────────┘  │
-│  ┌──────────────┐ <───────┘         │                       │
-│  │ io_helper    │                   │                       │
-│  │ (普通优先级) │                   │                       │
-│  │ ┌──────────┐ │                   │                       │
-│  │ │ Adapter  │<────────────────────┘                       │
-│  │ │ (真持)   │   // io 线程独占串口                        │
-│  │ │ FeetechBus│  // RTT ms 级阻塞 IO OK                    │
-│  │ └──────────┘ │                                            │
-│  └──────────────┘                                            │
-└──────────────────────────────────────────────────────────────┘
+┌─── robot-s0 ──────────────────────────────────────┐
+│                                                   │
+│  ipc_thread          rt_thread (SCHED_FIFO)       │
+│  ┌─────────────┐     ┌────────────────────────┐   │
+│  │state_machine│     │ adapter (move 进闭包)  │   │
+│  └──────┬──────┘     │ ┌────────────────────┐ │   │
+│         │            │ │FeetechAdapter+Bus  │ │   │
+│         │ writes     │ │ + SerialPort       │ │   │
+│         ▼            │ └────┬───────────────┘ │   │
+│  iceoryx2 state ─────│      │ every tick:     │   │
+│   (only reports)     │      ▼                 │   │
+│                      │   write_command        │   │
+│  adapter ←─ NOT HERE │   read_state           │   │
+│                      └────────────────────────┘   │
+└───────────────────────────────────────────────────┘
 ```
 
-**关键变化**：
-- `adapter` **所有权移到 `io_helper` thread**（普通优先级，允许 blocking IO）
-- RT thread 不持 `&mut adapter`；只读写 `HotShared` POD 结构（atomic / seqlock
-  已建好的 `LatestCommandSlot` / seqlock snapshot，**复用当前 Part 1 类型**）
-- io_helper 在后台：
-  - 定期 drain HotShared.latest_cmd → 发串口
-  - 定期 sync_read 硬件 → 写 HotShared.latest_state
-  - 接收 state_machine 发来的 `AdapterReq`（`Enable(bool)` / `SetMode` /
-    `SafetyStop` / `HoldCurrentPosition` / `Connect`）→ 阻塞执行 → 回 response
-- state_machine 在 ipc_thread 里**通过 facade** 发 `AdapterReq`：看上去就是调
-  `adapter.enable(false)`，实际走 channel
+### 3.2 v2（task-30 落地后）
+
+```
+┌─── robot-s0 ──────────────────────────────────────────────────┐
+│                                                               │
+│  ipc_thread (state_machine)                                   │
+│  ┌──────────────────────────────────────┐                     │
+│  │ try_transition (12 events)           │                     │
+│  │  ↓ on transition:                    │                     │
+│  │  - 决定 OutputPolicy                  │                     │
+│  │  - 发 AdapterReq via Client          │                     │
+│  └────┬──────────────────┬──────────────┘                     │
+│       │ AdapterReq       │ OutputPolicy (atomic / arc-swap)   │
+│       │ via channel      │                                    │
+│       ▼                  ▼                                    │
+│  ┌─────────────────────────────────────────┐                  │
+│  │ adapter_io_thread (普通优先级)           │                  │
+│  │ ┌───────────────────────────────────┐   │                  │
+│  │ │  IoState {                        │   │                  │
+│  │ │    output_policy,                 │   │                  │
+│  │ │    current_mode,                  │   │                  │
+│  │ │    safety_state, ...              │   │                  │
+│  │ │  }                                │   │                  │
+│  │ └───────────────────────────────────┘   │                  │
+│  │                                         │                  │
+│  │ select! {                               │                  │
+│  │   recv emergency_rx → safety_stop      │ ← 高优先          │
+│  │   recv normal_rx    → SetMode/Enable...│                  │
+│  │   default(20ms)     → tick:            │                  │
+│  │     match output_policy {              │                  │
+│  │       ActiveForward → write latest_cmd │                  │
+│  │       HoldCurrent  → hold_current_*    │                  │
+│  │       Disabled / StopTorque → 不写     │                  │
+│  │     }                                  │                  │
+│  │     read_state → HotShared.state_slot  │                  │
+│  │ }                                      │                  │
+│  │  + adapter (独占 SerialPort)           │                  │
+│  └─────────────┬───────────────────────────┘                  │
+│                │ writes                                       │
+│                ▼                                              │
+│         HotShared.state_slot (seqlock)                        │
+│                ▲                                              │
+│                │ reads                                        │
+│  rt_thread (SCHED_FIFO)                                       │
+│  ┌──────────────────────────────────────┐                     │
+│  │ tick @ 50Hz：                        │                     │
+│  │   read HotShared.cmd_slot            │                     │
+│  │   write HotShared.state_slot' (转发)  │                     │
+│  │   写 deadline / overrun metrics       │                     │
+│  │   不碰硬件                            │                     │
+│  └──────────────────────────────────────┘                     │
+│                                                               │
+│  pub_thread (从 state_slot' → iceoryx2 publish, 不变)         │
+│  watchdog (不变)                                              │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**核心变化**：
+- `adapter` 所有权：`adapter_io_thread` 独占（不再叫 io_helper —— 这个名字太轻，
+  实际是硬件执行线程）
+- 增加 **OutputPolicy** atomic（state_machine 写 / adapter_io 读，每 tick 检查）
+- 增加 **emergency channel** 与 normal channel 分离 + atomic estop flag 兜底
+- rt_thread 变成纯数据通路（读 cmd slot / 写 state' slot / 算 metrics），**不
+  做硬件 RTT**
 
 ---
 
-## 4. 候选方案对比
+## §4 OutputPolicy（v2 新增核心章节）
 
-| 方案 | 说明 | 优 | 缺 | 决议 |
-|---|---|---|---|---|
-| **A. 拆 trait** `ManipulatorRtCtrl`（RT） + `ManipulatorCtrl`（冷） | adapter 实现两个 trait，RT 线程持前者、io 线程持后者 | 类型清晰 | **两个 impl 如何共享串口** 无干净解法（`Arc<Mutex<Bus>>` + RT lock 违反铁律） | ❌ |
-| **B. 合并 rt_thread + io_thread** | 去掉 SCHED_FIFO 的 rt_thread，io 线程跑 tick loop | 单所有权 | 破坏 §4.9 RT 铁律（io 线程做串口 RTT，50 Hz deadline 必超） | ❌ |
-| **C. `Arc<Mutex<Inner>>` 共享** | adapter 内部 Arc，RT 和 io 两边 lock | 代码量小 | RT 线程 `mutex.lock()` 违反 §4.9（可能阻塞、可能 alloc futex 状态）| ❌ |
-| **D. rt_thread 内 drain request queue** | cold request 发到 rt_thread，在 tick 间隙执行 | adapter 独占不变 | `enable` 走串口 RTT ms 级，占 tick deadline → 50 Hz tick 超时 | ❌ |
-| **E. rt / io 间 move adapter 所有权** | 冷窗口内 rt_thread pause，把 adapter move 给 io，再 move 回 | 理论可行 | pause/resume 复杂，state 不及时（pause 期间 motor 无输出） | ❌ |
-| **F. adapter 在 io_helper 独占 + RT 读写共享 POD**（推荐） | RT 只读写 lock-free POD，io_helper 独占 adapter + channel 接受控制命令 | 分层清晰 / 复用现有 LatestCommandSlot / 无 RT lock | io_helper ↔ adapter 需要定义 `AdapterReq`/`AdapterResp` 枚举 + channel；对 `ManipulatorAdapter` trait 内部实现重构 | ✅ |
-
-### 为什么选 F
-
-1. **RT 铁律保留**：RT 侧只碰 seqlock / arc-swap（已有基础设施），**零改 RT 铁律**
-2. **`ManipulatorAdapter` trait 对外**依旧有完整 8 个方法 —— 调用方（ipc_thread
-   的 state_machine hook 代码）看到"正常"trait；实现层拆成 client / server 两半
-3. **现有 RT hot path 代码 0 修改**（`rt_thread.rs` 的 `write_command` + `read_state`
-   调用可以保持不变，只是 adapter 实例换了；也可以直接改成读写 HotShared POD）
-4. **增量落地**：先只把 `enable` / `set_mode` / `safety_stop` 走新路径，
-   `read_state` / `write_command` 仍走原路径（RT 独占 adapter），**分两步完成切换**
-
----
-
-## 5. 详细设计（方案 F）
-
-### 5.1 新增模块
-
-```
-crates/robot-core/src/adapter.rs         （不改，trait 定义）
-crates/robot-s0/src/adapter_link/
-├── mod.rs                               （pub use）
-├── client.rs                            （ipc_thread / state_machine 侧 AdapterCtrlClient）
-├── server.rs                            （io_helper 线程内 AdapterCtrlServer loop）
-├── req.rs                               （AdapterReq / AdapterResp enum）
-└── hot_shared.rs                        （RT ↔ io 的 lock-free POD 共享，复用 LatestCommandSlot / seqlock）
-```
-
-### 5.2 `AdapterReq` / `AdapterResp` 枚举
+### 4.1 定义
 
 ```rust
-/// state_machine 发给 io_helper 的控制请求。
-///
-/// 非 RT 路径。channel 走 crossbeam `bounded(1)`（深度 1，避免堆积；最新命令
-/// 覆盖老命令或等待上一条完成）。每请求带一个 `oneshot::Sender<AdapterResp>`
-/// 让调用方同步等结果。
-pub enum AdapterReq {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputPolicy {
+    /// `Safe` / `Fault` / `Stopping`：禁止转发 `latest_cmd`，要求 torque off
+    Disabled,
+    /// `Ready`：连接但 torque off，目标跟随当前位置（启动期 hold 防飞）
+    ReadyHold,
+    /// `Enabled.Active`：允许转发 `latest_cmd`（**唯一**写硬件 Goal 的 policy）
+    ActiveForward,
+    /// `Enabled.CtrlLostHold`：冻结当前姿态，**不**转发 `latest_cmd`
+    HoldCurrent,
+    /// `Enabled.CtrlLostZero`：写零速 / 零增量
+    ZeroCommand,
+    /// `Enabled.CtrlLostStop` / `EStop` / hard stop：断扭
+    StopTorque,
+}
+```
+
+### 4.2 状态 → policy 映射表
+
+| `S0State` | `OutputPolicy` | adapter 应处于 |
+|---|---|---|
+| `Safe` | `Disabled` | torque off + 不连接（或已 disconnect） |
+| `Ready` | `ReadyHold` | connected + Position mode + torque off |
+| `Enabled { Active, … }` | `ActiveForward` | torque on + 转发 latest_cmd |
+| `Enabled { CtrlLostHold, … }` | `HoldCurrent` | torque on + Goal=Present 冻结 |
+| `Enabled { CtrlLostZero, … }` | `ZeroCommand` | torque on + 速度 0（位置模式下退化为 Hold） |
+| `Enabled { CtrlLostStop, … }` | `StopTorque` | torque off |
+| `Fault(…)` | `StopTorque` | torque off |
+| `Stopping` | `StopTorque` | torque off + disconnect |
+
+`OutputPolicy::from_state(S0State) -> OutputPolicy` 是**纯函数 + 常量表**，
+state_machine 每次 transition 调一次写到 atomic。
+
+### 4.3 实现：`Arc<arc_swap::ArcSwap<OutputPolicy>>`
+
+`OutputPolicy` 16 字节（enum + repr），可走 `AtomicU8` 加映射；但选 `ArcSwap`
+保持和现有 `LatestCommandSlot` 同 pattern，零额外原语。
+
+`adapter_io_thread` 每个 tick 头部 `policy_slot.load()` 取最新 policy（开销
+≈ 几 ns），分支处理。
+
+---
+
+## §5 详细设计
+
+### 5.1 `AdapterReq` / `AdapterResp` 拆分（v2）
+
+```rust
+/// 紧急安全请求 —— 走独立 channel + AtomicBool 兜底，绝不被普通请求阻塞。
+pub enum AdapterEmergencyReq {
+    SafetyStop,            // disable torque
+    EStopLatch,            // 写 EStop latch + safety_stop
+}
+
+/// 普通控制请求 —— 走 bounded(1) channel + oneshot 同步等结果。
+pub enum AdapterNormalReq {
     Connect,
     Disconnect,
-    Enable(bool),                  // 含防飞序列
+    Enable(bool),
     SetMode(ControlMode),
-    SafetyStop,                    // disable torque
-    HoldCurrentPosition,           // sync Goal=Present，不动 torque
+    HoldCurrentPosition,
 }
 
 pub enum AdapterResp {
@@ -227,297 +260,459 @@ pub enum AdapterResp {
 }
 ```
 
-### 5.3 `AdapterCtrlClient`（state_machine facade）
-
-state_machine transition 时调用的入口：
+### 5.2 `AdapterCtrlClient`
 
 ```rust
 pub struct AdapterCtrlClient {
-    tx: crossbeam_channel::Sender<(AdapterReq, oneshot::Sender<AdapterResp>)>,
+    emergency_tx: crossbeam_channel::Sender<AdapterEmergencyReq>,
+    /// 与 emergency channel 互补的 atomic：万一 channel 也卡了，`adapter_io_thread`
+    /// 每个 tick 头部检查 `estop_requested` 也能触发 safety_stop。
+    estop_requested: Arc<AtomicBool>,
+    normal_tx: crossbeam_channel::Sender<(AdapterNormalReq, oneshot::Sender<AdapterResp>)>,
+    /// state_machine transition 后写这里，io 线程读这里。
+    policy_slot: Arc<arc_swap::ArcSwap<OutputPolicy>>,
 }
 
 impl AdapterCtrlClient {
-    /// 阻塞调用 —— 等 io_helper 执行完 adapter.enable(...) 再返回。ipc_thread
-    /// 是非 RT，阻塞 500 ms 可接受（enable 真机 RTT 约 50 ms + settle 50 ms
-    /// + torque_enable ~10 ms × N joint）。
+    pub fn set_policy(&self, p: OutputPolicy) {
+        self.policy_slot.store(Arc::new(p));
+    }
+
+    /// 紧急 —— 同时发 channel + 设 atomic（双兜底）。不等 resp（fire-and-forget）。
+    pub fn safety_stop(&self) {
+        self.estop_requested.store(true, Ordering::Release);
+        let _ = self.emergency_tx.try_send(AdapterEmergencyReq::SafetyStop);
+    }
+
+    /// 普通 —— 同步等 resp（2 s 超时）。
     pub fn enable(&self, on: bool) -> Result<(), RobotError> {
-        let (resp_tx, resp_rx) = oneshot::channel();
-        self.tx.send((AdapterReq::Enable(on), resp_tx))?;
-        match resp_rx.recv_timeout(Duration::from_secs(2))? {
-            AdapterResp::Ok => Ok(()),
-            AdapterResp::Err(e) => Err(e),
+        let (tx, rx) = oneshot::channel();
+        self.normal_tx
+            .send((AdapterNormalReq::Enable(on), tx))
+            .map_err(|_| RobotError::Internal("io thread queue closed"))?;
+        match rx.recv_timeout(Duration::from_secs(2)) {
+            Ok(AdapterResp::Ok) => Ok(()),
+            Ok(AdapterResp::Err(e)) => Err(e),
+            Err(_) => Err(RobotError::DeadlineExceeded),
         }
     }
-    // 同样的 pattern：set_mode / safety_stop / hold_current_position / connect / disconnect
+    // ... set_mode / connect / disconnect / hold_current_position 同模式
 }
 ```
 
-**关键选择**：
-- `bounded(1)` channel + `oneshot` —— 同步语义；state_machine 一条 transition
-  要么等 adapter 执行完才继续，要么超时报错升级成 Fault。
-- 2 秒总超时 —— 真机 handshake 最长 1s（task 28 实测）+ 防飞序列 ~100 ms +
-  retry 3x × 150 ms = 最坏 ~1.5 s；给 500 ms buffer。
-- 超时 → `RobotError::DeadlineExceeded` 返回 state_machine → 触发 `Event::
-  AdapterErr(FaultCode::AdapterErr)` 进 Fault。
-
-### 5.4 `AdapterCtrlServer`（io_helper loop）
+### 5.3 `IoState`（adapter_io_thread 内部）
 
 ```rust
-pub fn run_server(
+struct IoState {
+    connected: bool,
+    enabled: bool,
+    /// 上次成功 set_mode 的模式；用于检测 cmd.mode 变化是否需要重新调
+    /// adapter.set_mode（而不是每 tick 都 set）。
+    current_mode: ControlMode,
+    /// adapter 真实硬件输出状态（v2 新增），写到 state topic 让 S1 / UI 看到诚实信息
+    safety_state: OutputSafetyState,
+    /// 最后一次 cmd.mode（用来检测变化）
+    last_seen_cmd_mode: ControlMode,
+}
+```
+
+### 5.4 `adapter_io_thread` 主 loop（v2 重写）
+
+```rust
+fn run_adapter_io(
     mut adapter: Box<dyn ManipulatorAdapter + Send>,
-    rx: crossbeam_channel::Receiver<(AdapterReq, oneshot::Sender<AdapterResp>)>,
-    hot: Arc<HotShared>,
-    stop: Arc<AtomicBool>,
+    ctx: AdapterIoCtx,
 ) {
-    while !stop.load(Ordering::Acquire) {
-        // 优先处理控制命令（state_machine 最高优先级）
-        if let Ok((req, resp)) = rx.try_recv() {
-            let result = dispatch(&mut *adapter, req);
+    let mut io_state = IoState::default();
+    let tick_period = Duration::from_millis(20); // 50 Hz baseline
+    let mut next_tick = Instant::now() + tick_period;
+
+    while !ctx.stop.load(Ordering::Acquire) {
+        // ---- 1) 最高优先级：检查 atomic estop flag（兜底，channel 卡死也不漏）----
+        if ctx.estop_requested.swap(false, Ordering::AcqRel) {
+            handle_safety_stop(&mut adapter, &mut io_state, &ctx);
+            // 不 continue —— 后续仍然处理周期性 tick（read state）
+        }
+
+        // ---- 2) drain emergency channel（多个 emergency 全 drain，不只一条）----
+        while let Ok(req) = ctx.emergency_rx.try_recv() {
+            match req {
+                AdapterEmergencyReq::SafetyStop => {
+                    handle_safety_stop(&mut adapter, &mut io_state, &ctx);
+                }
+                AdapterEmergencyReq::EStopLatch => {
+                    write_estop_latch(&ctx);
+                    handle_safety_stop(&mut adapter, &mut io_state, &ctx);
+                }
+            }
+        }
+
+        // ---- 3) 处理一条 normal request（如果有）----
+        // 不在 select 里阻塞等，避免拖慢 hardware tick
+        if let Ok((req, resp)) = ctx.normal_rx.try_recv() {
+            let result = dispatch_normal(&mut adapter, &mut io_state, req);
             let _ = resp.send(match result {
                 Ok(()) => AdapterResp::Ok,
                 Err(e) => AdapterResp::Err(e),
             });
-            continue;
         }
 
-        // hot path：drain HotShared.latest_cmd → adapter.write_command
-        //           然后 adapter.read_state → HotShared.latest_state
-        if let Some(cmd) = hot.latest_cmd.load() {
-            let _ = adapter.write_command(&cmd.as_view());  // silent clamp 等 adapter 内处理
+        // ---- 4) 周期性硬件 tick：按当前 OutputPolicy 决定写什么 ----
+        let policy = ctx.policy_slot.load_full();
+        if io_state.connected {
+            tick_hardware(&mut adapter, &mut io_state, *policy, &ctx);
         }
-        let mut state = JointStateBuf::default();
-        if adapter.read_state(&mut state).is_ok() {
-            hot.latest_state.publish(&state);
+
+        // ---- 5) sleep until next tick ----
+        let now = Instant::now();
+        if now < next_tick {
+            // crossbeam_channel::select! 兼容唤醒：emergency 来了立刻唤醒
+            crossbeam_channel::select! {
+                recv(ctx.emergency_rx_peek) -> _ => { /* 立刻 loop */ }
+                default(next_tick - now) => { /* 睡到 deadline */ }
+            }
         }
-        // 不 sleep —— read_state 本身走 sync_read，串口 RTT 即周期
-        // 目标 50 Hz → read_state 20ms round-trip。实测 feetech 13 motor ≈ 5 ms
+        next_tick += tick_period;
+        // 防止 deadline 漂移（如果上一个 tick 超时，跳过中间 tick 而不是连续追）
+        if next_tick < Instant::now() {
+            next_tick = Instant::now() + tick_period;
+        }
     }
-}
 
-fn dispatch(adapter: &mut dyn ManipulatorAdapter, req: AdapterReq) -> Result<(), RobotError> {
-    match req {
-        AdapterReq::Connect => adapter.connect(),
-        AdapterReq::Disconnect => adapter.disconnect(),
-        AdapterReq::Enable(on) => adapter.enable(on),
-        AdapterReq::SetMode(m) => adapter.set_mode(m),
-        AdapterReq::SafetyStop => adapter.safety_stop(),
-        AdapterReq::HoldCurrentPosition => {
-            // 仅 feetech 有这个 method，trait 没有 —— 需要向上 cast；或者给 trait
-            // 加一个默认 no-op：
-            //    fn hold_current_position(&mut self) -> Result<(), RobotError> { Ok(()) }
-            // 见 §5.7 trait 改动讨论
-            adapter.hold_current_position()
+    // ---- shutdown 路径（不依赖 Drop，§8 graceful）----
+    let _ = adapter.safety_stop();
+    let _ = adapter.disconnect();
+}
+```
+
+**关键防 busy spin**：`select!` + `default(next_tick - now)` —— 没事干就睡到下个
+deadline，emergency 来了立刻唤醒。即使 adapter `read_state` 失败 / 断连，主
+loop 也按 20 ms tick 循环，**不会 CPU 100%**。
+
+### 5.5 `tick_hardware`：按 policy 决定输出
+
+```rust
+fn tick_hardware(
+    adapter: &mut dyn ManipulatorAdapter,
+    state: &mut IoState,
+    policy: OutputPolicy,
+    ctx: &AdapterIoCtx,
+) {
+    // 先读 state，无论 policy 都更新（pub_thread 要发出去）
+    let mut buf = JointStateBuf::default();
+    if let Err(e) = adapter.read_state(&mut buf) {
+        tracing::warn!(?e, "adapter.read_state failed");
+        return;
+    }
+    ctx.hot_shared.state_slot.publish(&buf);
+
+    // 根据 policy 决定是否写 Goal
+    match policy {
+        OutputPolicy::Disabled | OutputPolicy::StopTorque => {
+            // 不转发 latest_cmd；torque 状态由 transition hook 通过 normal_rx
+            // (Enable(false)) 已经设过；这里不重复发指令
+        }
+
+        OutputPolicy::ReadyHold => {
+            // 已 connect 但 torque off；持续把 Goal 拉到 Present 防 enable 时跳
+            // 仅当 cmd.mode 还没切到 Position 时才需要 set_mode
+            // 不 enable 不 set_mode 也行 —— state_machine 进 Ready 时已通过
+            // SetMode(Position) 切过
+        }
+
+        OutputPolicy::ActiveForward => {
+            let cmd = ctx.hot_shared.cmd_slot.load();
+            let view = cmd.as_view();
+
+            // ControlMode::Stop 真 disable torque（不再吞默静默 return Ok）
+            if view.mode == ControlMode::Stop {
+                ctx.client.safety_stop(); // 走 emergency 路径
+                state.last_seen_cmd_mode = ControlMode::Stop;
+                return;
+            }
+
+            // mode 变化时调 set_mode（不每 tick 调）
+            if view.mode != state.current_mode {
+                if let Err(e) = adapter.set_mode(view.mode) {
+                    tracing::warn!(?e, mode = ?view.mode, "set_mode failed");
+                } else {
+                    state.current_mode = view.mode;
+                }
+            }
+            state.last_seen_cmd_mode = view.mode;
+
+            if let Err(e) = adapter.write_command(&view) {
+                tracing::warn!(?e, "write_command failed");
+            }
+        }
+
+        OutputPolicy::HoldCurrent => {
+            // 一次性 hold，下一帧不重复（hold_current_position 已经把 Goal=Present）
+            // 但是为了防 motor 自己漂移，仍可以每 tick 重新调一次
+            // 这里**不**转发 latest_cmd
+            if let Err(e) = adapter.hold_current_position() {
+                // 关键：hold 失败 → 升级到 safety_stop（§7 OutputSafetyState）
+                tracing::error!(?e, "hold_current_position failed; falling back to safety_stop");
+                ctx.client.safety_stop();
+            }
+        }
+
+        OutputPolicy::ZeroCommand => {
+            // v0.2 仅 Position 模式 → 退化为 hold（写 Goal=Present）
+            if let Err(e) = adapter.hold_current_position() {
+                ctx.client.safety_stop();
+            }
+            // v0.3 Velocity 真支持后这里写 Goal_Velocity=0
         }
     }
 }
 ```
 
-### 5.5 `HotShared` —— RT ↔ io 共享 POD
+### 5.6 `handle_safety_stop` 与 OutputSafetyState
 
-**复用 Part 1 已有基础**：
-- `LatestCommandSlot<JointCommandBuf>`（arc-swap，RT 读 / ipc 写）
-- `RtSnapshotPublisher<RtSnapshot>`（seqlock，RT 写 / pub_thread 读）
-
-Task-30 新增：**io_helper 接管 adapter 后**，现有 rt_thread 的 `write_command`/
-`read_state` 调用要转成"读 HotShared.latest_cmd / 写 HotShared.latest_state"。
-实际实现有两个选择：
-
-- **5.5.a**：**保留 rt_thread 调 adapter.write_command/read_state** —— 矛盾：
-  adapter 已被 io_helper 持有，RT 线程无 adapter ref 可调
-- **5.5.b（推荐）**：**rt_thread 去除 adapter 调用，改读 HotShared**。io_helper
-  持续同步硬件 ↔ HotShared，rt_thread 的 tick loop 只做 cmd_reader → HotShared
-  / read HotShared → state_pub 的转发。**rt_thread 实际上降级为数据通路，不再
-  做 adapter RTT**
-
-**5.5.b 的影响**：
-- rt_thread 真实做的事缩水（从 "sync_read + sync_write" → "读 slot + 写 slot"），
-  deadline 从 5-10 ms 骤降到 < 10 µs —— **RT 余量大增**
-- io_helper 跑到实际硬件带宽的极限（feetech 50-100 Hz），与 rt_thread 解耦：
-  RT tick 仍 50 Hz 但只做 snapshot 转发
-- **缺点**：RT 线程和硬件实际读写有一帧延迟（io_helper 慢半拍）；50 Hz 下延迟
-  ≤ 20 ms，机器人控制可接受
-- **优点**：硬件异常（sync_read timeout）不阻塞 rt_thread，故障隔离更好
-
-### 5.6 线程拓扑
-
-| 线程 | 优先级 | 职责 | 新增？ |
-|---|---|---|---|
-| `ipc_thread` | 普通 | state_machine + iceoryx2 sub/pub 元数据 | 改：加 AdapterCtrlClient 并在 transition hook 里调 |
-| `rt_thread` | SCHED_FIFO | tick loop，读 cmd slot / 写 state slot | 改：不再直接调 adapter，改读写 HotShared |
-| `pub_thread` | 普通 | seqlock read → iceoryx2 publish | 不改 |
-| `watchdog` | 普通 | 心跳超时检测 | 不改 |
-| `io_helper` | 普通 | **adapter 独占，执行 AdapterReq + 硬件 RTT** | **新增** |
-| `s0_io_thread`（SoftRT adapter，v0.4 加） | 普通 | 相机 / 外部传感器 | 无关 |
+```rust
+fn handle_safety_stop(
+    adapter: &mut dyn ManipulatorAdapter,
+    state: &mut IoState,
+    ctx: &AdapterIoCtx,
+) {
+    match adapter.safety_stop() {
+        Ok(()) => {
+            state.safety_state = OutputSafetyState::TorqueOffConfirmed;
+            state.enabled = false;
+        }
+        Err(e) => {
+            tracing::error!(?e, "safety_stop FAILED — hardware state UNKNOWN");
+            state.safety_state = OutputSafetyState::StopFailed;
+            // 上报到 state_machine：这不是普通 Fault，是 SafetyStopFailed
+            let _ = ctx.fault_tx.send(FaultCode::SafetyStopFailed);
+        }
+    }
+    // 把 safety_state 也广播到 HotShared，供 pub_thread 写到 state topic
+    ctx.hot_shared.safety_state_slot.store(state.safety_state);
+}
+```
 
 ### 5.7 `ManipulatorAdapter` trait 改动
 
-**最小化改动**，建议：
-
-| 方法 | 改动 |
-|---|---|
-| `connect` | 不改 |
-| `disconnect` | 不改 |
-| `read_state` | 不改（io_helper 里调） |
-| `write_command` | 不改（io_helper 里调） |
-| `set_mode` | 不改 |
-| `enable` | 不改 |
-| `safety_stop` | 不改 |
-| `limits` | 不改 |
-| **`hold_current_position`（新）** | **加** 默认 no-op，feetech override；让 `AdapterCtrlClient` 用统一接口调用 |
-
 ```rust
 pub trait ManipulatorAdapter {
-    // ... existing 8 methods ...
+    // ... 8 个原方法不变 ...
 
-    /// 冻结当前姿态：读当前 Present 写回 Goal。**不** 动 Torque。
+    /// 冻结当前姿态：读当前 Present 写回 Goal。**不**动 Torque。
     ///
-    /// 默认 no-op（mock adapter）；`FeetechAdapter` override 走 follow-current
-    /// 序列。S0 在 `CtrlLostHold` 子态自动调用。
+    /// **默认 `Err(RobotError::Unsupported)`**（v2 强制）—— 不是 no-op。
+    /// 原因：`hold_current_position` 是**安全相关**动作；让默认实现 no-op 会
+    /// 掩盖 "生产 adapter 没实现 follow-current" 的问题。`mock_*` 显式 override
+    /// 为 no-op；生产 adapter 必须显式实现，否则 state_machine 会 fallback 到
+    /// `safety_stop()`。
     fn hold_current_position(&mut self) -> Result<(), RobotError> {
-        Ok(())
+        Err(RobotError::Unsupported("hold_current_position"))
     }
 }
 ```
 
-### 5.8 state_machine transition hook
-
-在 `state_machine.rs` 里**不直接调 adapter**（保持 state_machine 纯函数），
-而是在 `ipc_thread` 的 transition 处理循环里：
+`MockAdapter` 显式：
 
 ```rust
-// ipc_thread.rs（简化示意）
-fn on_transition(
-    old: S0State,
-    new: S0State,
-    adapter_ctrl: &AdapterCtrlClient,
-) -> Result<(), RobotError> {
-    match (old, new) {
-        (_, S0State::Safe) => adapter_ctrl.safety_stop(),
-        (S0State::Safe, S0State::Ready) => {
-            adapter_ctrl.connect()?;
-            adapter_ctrl.set_mode(ControlMode::Position)?;
-            Ok(())
-        }
-        (S0State::Ready, S0State::Enabled { .. }) => adapter_ctrl.enable(true),
-        (S0State::Enabled { .. }, S0State::Fault(_)) => adapter_ctrl.safety_stop(),
-        (
-            S0State::Enabled { sub: a, .. },
-            S0State::Enabled { sub: EnabledSub::CtrlLostHold, .. }
-        ) if a != EnabledSub::CtrlLostHold => {
-            adapter_ctrl.hold_current_position()
-        }
-        _ => Ok(()),
+impl ManipulatorAdapter for MockAdapter {
+    // ...
+    fn hold_current_position(&mut self) -> Result<(), RobotError> {
+        Ok(()) // mock 没硬件，no-op 合理且显式
     }
 }
 ```
 
-**失败处理**：
-- `adapter_ctrl.*()` 返回 Err → 发 `Event::AdapterErr(FaultCode::AdapterErr)` 到
-  state_machine，下一 tick 进 `Fault`
-- 超时（io_helper 阻塞 / 死锁）→ `RobotError::DeadlineExceeded` → 同上
+`FeetechAdapter`：override 走 task 29 commit 4 已加的 sync_goal_to_present + retry。
+
+state_machine fallback 逻辑（§5.5 已含）：`hold_current_position` 返回
+`Unsupported` → io 线程升级为 `safety_stop()`，对外 state 字段 = `StopFailed`
+→ "能 hold 就 hold；不能 hold 就断扭；**不能假装 hold 成功**"。
 
 ---
 
-## 6. 迁移计划（分 4 个 commit）
+## §6 OutputSafetyState（v2 新增）
 
-| # | 主题 | 工作量 | 风险 |
-|---|---|---|---|
-| **M1** | 新增 `adapter_link` module + `AdapterReq/Resp` / client / server skeleton + 单测 mock | 1 h | 低（纯新增代码，不动现有） |
-| **M2** | `ManipulatorAdapter::hold_current_position` default no-op；`FeetechAdapter` override；单测 | 30 min | 低 |
-| **M3** | `spawn_io_helper` 接管 adapter 所有权；`rt_thread` 改读 `HotShared`（原 `LatestCommandSlot` + seqlock 复用）；`spawn_rt_thread` 签名改成拿 `Arc<HotShared>` 而不是 adapter | 1.5-2 h | 中（rt_thread 行为变化，要 soak 验证） |
-| **M4** | `ipc_thread` 加 transition hook 调 `AdapterCtrlClient`；`s0_daemon` wire io_helper 启停；mock_s1 发 `ControlMode::Stop` 单测 adapter 真 disable torque | 1 h | 低 |
+### 6.1 枚举
 
-**合计 ~3-4.5 h**（原估 2-3 h 偏乐观，实际拆清后更真实）。
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputSafetyState {
+    /// safety_stop / enable(false) 成功执行 + 验证（如读 Torque_Enable=0）
+    TorqueOffConfirmed,
+    /// 正常运行，torque on
+    TorqueOn,
+    /// 启动期 / 断连后未恢复，硬件状态未知
+    TorqueUnknown,
+    /// safety_stop 调用返回 Err —— 软件试图断扭但失败，**硬件可能仍 torque on**
+    StopFailed,
+}
+```
 
-每个 commit 都能独立通过 CI + smoke，**不一次性换栈**。
+### 6.2 新 FaultCode
+
+`state_machine.rs::FaultCode` 加：
+
+```rust
+pub enum FaultCode {
+    AdapterErr,
+    CmdDeadlineExpired,
+    LimitViolation,
+    WatchdogTimeout,
+    RtOverrun,
+    // v2 新增
+    SafetyStopFailed,    // safety_stop() 调用失败
+    AdapterUncertain,    // io 线程报 read_state 多次连续失败 / 模式不一致
+}
+```
+
+### 6.3 对外 state topic 加字段
+
+`docs/00_design.md` §3.4 state schema 不动；本字段加在 ipc_thread 写
+state topic 的额外字段（FlatBuffers schema 加 `safety_state: u8`）。设计
+冻结条款 §3.4 是 `OutputMode`（Active / Hold / Zero / Stop），与本字段
+**正交**：`OutputMode` = state_machine 的意图；`OutputSafetyState` = adapter
+的实际硬件输出状态。两者并列让外部观察者能区分"我想 Safe vs 我成功 Safe"。
 
 ---
 
-## 7. 测试覆盖
+## §7 SIGTERM / 关停 graceful 路径（v2 新增）
 
-| 层次 | 用例 | 工具 |
+`s0_daemon` main 收到 SIGTERM：
+
+```text
+1. signal handler 设 SHUTDOWN flag
+2. main loop 检测 flag → graceful_stop()
+3. graceful_stop():
+   a. ipc_thread::request_stop()  → drain in-flight transitions
+   b. AdapterCtrlClient::safety_stop()  → 走 emergency channel
+   c. wait_response(timeout=1s) → 确认 OutputSafetyState=TorqueOffConfirmed
+      或 StopFailed
+   d. AdapterCtrlClient::disconnect()
+   e. adapter_io_thread::request_stop() + join
+   f. rt_thread::request_stop() + join
+   g. pub_thread / watchdog::stop + join
+   h. exit
+4. 不依赖 Drop（panic = abort 时 Drop 不跑；正常退出也不该把安全动作放 Drop
+   里 —— Drop 顺序 + panic 都不可靠）
+```
+
+`SIGKILL` / panic：进程被 OS 干掉。**软件层无法保证断扭**，必须靠：
+- 硬件级：servo 内部 timeout（Feetech `Goal_Position` 多久没新值就 hold 当前）
+- 进程层：systemd `TimeoutStopSec` 超时升级到 `KillMode=mixed` 让所有线程停
+- **未来**：外部硬件急停 / 继电器（设计 §0 / §6.7 已写）
+
+文档明确写：**这不是软件能 100% 保证的**，需要硬件 + 软件 + systemd 三层兜底。
+
+---
+
+## §8 测试覆盖（v2 扩）
+
+| 类型 | 用例 | 验证 |
 |---|---|---|
-| Unit | `AdapterCtrlClient::enable` → channel send + oneshot recv 语义 | 自编 mock server |
-| Unit | `AdapterCtrlServer::dispatch` 所有 `AdapterReq` variant | `mock_hard_rt` adapter |
-| Unit | `HotShared` drain 语义 | seqlock 现有测试扩展 |
-| Unit | state_machine transition → 对应 `AdapterReq` 被发（用 fake client）| 新 fixture |
-| Integration | mock adapter 场景：mock_s1 发 `Stop` → `robotctl status` 看到 `enabled=false` | tests/ |
-| Soak | rt_guard_soak（task 26）扩：io_helper 不 leak / 不 alloc on hot path | 现有 harness |
-| **Orin 真机** | `feetech_poke read Torque_Enable` 在 S1 发 `Stop` 后应返 `0` | 手动 |
-| **Orin 真机** | `kill -SIGTERM s0_daemon` → adapter.safety_stop 调用 → motor torque off（示波器 / 夹爪手推） | 手动 |
+| Unit | `AdapterCtrlClient::safety_stop` 同时设 atomic + 发 channel | 双兜底 |
+| Unit | `AdapterCtrlClient::enable` 超时 → `DeadlineExceeded` | timeout 处理 |
+| Unit | `OutputPolicy::from_state` 全 8 状态 → 对应 policy | 映射表 |
+| Unit | `IoState::current_mode` 持久 | mode change once 不重复 set |
+| Unit | tick_hardware 在 `Disabled` policy 下不调 write_command | gate |
+| Unit | tick_hardware 在 `HoldCurrent` policy 下不读 latest_cmd | gate |
+| Unit | tick_hardware 在 `ActiveForward` 看到 `cmd.mode = Stop` → 触发 `safety_stop` | Stop 闭环 |
+| Unit | tick_hardware 看到 `cmd.mode` 变化 → set_mode 调用 1 次 | mode change |
+| Unit | `hold_current_position` Err → fallback `safety_stop` | trait fallback |
+| Unit | `safety_stop` Err → `OutputSafetyState::StopFailed` + `FaultCode::SafetyStopFailed` 上报 | 诚实状态 |
+| Integration | mock adapter：mock_s1 发 `Stop` → `robotctl status` 看到 `enabled=false` + `safety_state=TorqueOffConfirmed` | E2E |
+| Integration | mock adapter：state_machine 进 `CtrlLostHold` → `latest_cmd` 不再被写硬件 | stale gate |
+| Integration | mock adapter：`Safe`/`Fault` 状态下 S1 继续发 cmd → adapter 不被调 write_command | stale gate |
+| Integration | emergency `SafetyStop` 发送时 normal channel 已满 → emergency 仍能立刻执行 | emergency preempt |
+| Integration | adapter 断连 → adapter_io_thread CPU 占用 < 5%（不 busy spin） | 防 busy |
+| Integration | SIGTERM s0_daemon → exit code 0 + 最后输出 OutputSafetyState=TorqueOffConfirmed | graceful |
+| Integration | adapter 串口 `read_state` 卡死（mock 注入 sleep 5s）→ io 线程 select 超时 + 上报 `AdapterUncertain` | timeout |
+| Soak | rt_guard_soak 扩：adapter_io_thread 连跑 60 s 不 leak / 不 alloc on hot path | regression |
+| Orin 真机 | `feetech_poke read Torque_Enable` 在 S1 发 `Stop` 后应返 `0` | 真机 Stop |
+| Orin 真机 | `kill -SIGTERM s0_daemon` → 物理摸 / 推夹爪 → torque off | graceful real |
+| Orin 真机 | `kill -SIGKILL s0_daemon` → torque 仍 on（**预期**，需硬件层兜底） | 边界确认 |
 
 ---
 
-## 8. 风险 + 回滚
+## §9 迁移计划（v2：拆 M1-M5）
 
-### 风险 R1：io_helper 死锁 / 阻塞
+| # | 主题 | 工作量 | 行为变化 | 独立合并安全？ |
+|---|---|---|---|---|
+| **M1** | 新增 `adapter_link` module skeleton：req/resp/client/server + `OutputPolicy` + `IoState` 类型；mock 单测全套；**不接进 s0_daemon** | 1 h | 0 | ✅ 纯增量 |
+| **M2** | `OutputPolicy` + `tick_hardware` + 命令 gate 单测落地（`Disabled` / `HoldCurrent` / `ActiveForward` 等场景）；adapter feature flag `state_machine_adapter_link = false` 默认 | 1 h | 0 | ✅ 仍未接 |
+| **M3** | `ManipulatorAdapter::hold_current_position` 默认 `Err(Unsupported)`；mock 显式 no-op；feetech override 走 task 29 commit 4 路径；trait 单测扩 | 30 min | 0（fallback 让生产无感）| ✅ |
+| **M4** | feature flag 启用：`adapter_io_thread` 接管 adapter 所有权；rt_thread 改读 `HotShared`；**保留 legacy bootstrap**（启动时 ipc_thread 仍发 `Connect` + `Enable(true)`，等价旧行为）；OutputSafetyState 字段写到 state topic | 2 h | 行为等价旧版本 | ✅（feature off 默认；on 时 legacy bootstrap 维稳） |
+| **M5** | ipc_thread 加 transition hook，state_machine 真实驱动 adapter；删除 legacy bootstrap；feature flag 默认 on；`ControlMode::Stop` 真 disable torque + Velocity 模式真切换 | 1.5 h | **行为变** —— 安全增强（EStop 真断扭 / Stop 真断扭） | ⚠️ 这个 commit 是行为切换点；smoke 不过应 revert |
 
-- **情景**：adapter.enable 内部死循环、串口 hang。
-- **检测**：`AdapterCtrlClient::*` 的 `recv_timeout(2s)` 超时。
-- **反应**：上报 `Event::AdapterErr` 进 Fault；io_helper **不重启**（systemd 整
-  进程重启策略统一走）。
-- **回滚路径**：加 feature flag `state_machine_adapter_link`，默认 off，失败时
-  可以一键回退到 Part 1 行为（spawn_rt_thread 直接持 adapter）。
+**合计 ~6 h**（v1 估 4.5 h 偏乐观；review 后真实化）。
 
-### 风险 R2：RT 一帧延迟
+**feature flag 时间线**：
+- M1-M3 合并：flag 不存在
+- M4：flag 加，**默认 off**
+- M5 真机 smoke 通过：默认 on
+- **下一个 release 必须 on + flag 删除**（不长期保留两套路径）
 
-- **情景**：5.5.b 下 rt_thread 只读 HotShared，io_helper 刷 HotShared 慢一拍。
-- **量化**：50 Hz 下最大 20 ms 延迟。机器人位置控制本就有 10-30 ms 控制延时
-  余量，可接受。
-- **缓解**：`pub_thread` 读 state_slot 时也经同样延迟，**对外对齐**，不引入
-  观测不一致。
+---
 
-### 风险 R3：`ControlMode::Stop` 语义变化
+## §10 风险 + 回滚
 
-- **情景**：当前 `Stop` = adapter 忽略；task-30 后 `Stop` = adapter 真 disable
-  torque。S1 现有代码（若有依赖旧行为）会炸。
-- **缓解**：`mock_s1` / `robotctl` 都没真正用 `Stop` 走任何业务逻辑；`feetech`
-  adapter 的 `set_mode(Stop)` 之前实际也走 `enable(false)`（`adapter.rs:249-250`），
-  **行为一致化**而已。
+### R1：`adapter_io_thread` 内死锁 / 阻塞
+- 检测：`AdapterCtrlClient::*` 的 `recv_timeout(2s)` 超时 → state_machine 上报
+  `Event::AdapterErr(SafetyStopFailed)` → 进 Fault
+- 兜底：`estop_requested: AtomicBool` + `select!` deadline → 即便 channel 卡，
+  下一 tick 也能跳出
+- 回滚：feature flag off → 旧路径
 
-### 风险 R4：`hold_current_position` 默认 no-op 的 mock
+### R2：rt_thread 一帧延迟（5.5.b）
+- 量化：50 Hz 下 ≤ 20 ms。机器人控制余量 10-30 ms，可接受
+- 缓解：rt_thread 与 io_thread 同步用 seqlock，无锁 + 无 alloc，延迟稳定
 
-- **情景**：state_machine 进 `CtrlLostHold` 调 `adapter.hold_current_position`；
-  mock adapter no-op → 内部 cmd 不变 → 还是发 "跟 cmd_reader 里的 Goal" → RT
-  tick 吃到旧 Goal 重复回写 → 行为等价。
-- **结论**：**对 mock 无害**，只对真硬件有 follow-current 效果。
+### R3：`ControlMode::Stop` 行为变化（语义增强）
+- 当前 `feetech::set_mode(Stop)` 已调 `enable(false)`，行为一致化无副作用
+- mock_s1 / robotctl 均没依赖旧行为
+
+### R4：`hold_current_position` fallback 到 safety_stop 的语义变化
+- 风险：如果某 adapter 漏实现 → 进 `CtrlLostHold` 子态时实际 disable torque
+- 缓解：M3 加 trait 默认 + 单测要求 mock_*  / feetech 显式实现；CI 检查通过
+- **预期行为**：fallback **更安全**（hold 不了 → 断扭比假装 hold 安全）
+
+### R5：emergency channel 卡死
+- 缓解：双兜底 atomic + channel；adapter 串口方法必须有 bounded timeout
+- 不可解决场景：硬件层串口物理卡死（USB-RS485 卡） → 软件无能为力，需硬件
+  watchdog / 外部继电器
 
 ### 回滚策略
 
-每个 commit 都能独立 revert：
-- M4 revert → ipc_thread 不调 AdapterCtrlClient，io_helper 空转，行为回退到
-  Part 1
-- M3 revert → rt_thread 重新持 adapter，io_helper crate 保留但无调用者
-- M2 revert → `hold_current_position` 从 trait 移除
-- M1 revert → `adapter_link` module 整体删除
-
-任何一步真机回归 → 上一个 commit 是 rollback 点。
+每个 M commit 独立 revertable：
+- M5 revert → ipc_thread 不接 hook，回到 legacy bootstrap
+- M4 revert → adapter 重新 move 到 rt_thread，io_thread crate 保留无调用
+- M3 revert → trait 默认从 `Err(Unsupported)` 回到 v1 的 no-op
+- M2/M1 revert → 整个 module 删除
 
 ---
 
-## 9. 不做的事（留后续 task）
+## §11 不做的事（留后续 task）
 
-1. **`robot-rpc` / `robot-viz` / `robot-policy-host` 的同类改造**：v0.4 真
-   多 bus 后重新评估，可能需要各自的 io_helper。
-2. **rt_thread 降级为纯数据通路后的 RT 必要性评估**：如果 rt_thread 不再做硬
-   件 RTT，是否还需 `SCHED_FIFO`？留 task-30 实施后 flamegraph baseline 再回
-   答。
-3. **`ManipulatorAdapter` trait 重命名 / 重新分组**：现在 8 + 1 方法勉强塞
-   在一个 trait，v0.4 真加 SoftRT adapter 时再拆。
-4. **B'c supervisor / 重启策略联动**：依赖本 task 完成后的 `Event::Service
-   Unhealthy` 真能驱动 adapter —— 见 task-31 B'c。
+1. `robot-rpc` / `robot-viz` / `robot-policy-host` 的同类改造 → v0.4
+2. rt_thread 降级后的 RT 必要性评估 → flamegraph 后回答
+3. `ManipulatorAdapter` trait 大重构 → v0.4 真加 SoftRT adapter 时
+4. B'c supervisor 联动 → 依赖本 task 完成后的 `Event::ServiceUnhealthy` 才能落
+5. 硬件级急停（继电器 / GPIO）→ §6.7 / §10.1 范围，本 task 不动
+6. servo 端 `Goal_Position` timeout fail-safe 的标定 → task-29 §4 待办
 
 ---
 
-## 10. 决议请求
+## §12 决议请求 v2
 
-**请 review 并回复**：
+请 review 并回复：
 
-1. 整体方向 F 是否 approve？
-2. 迁移计划 M1-M4 分 commit 是否合理？
-3. `hold_current_position` trait 默认 no-op 是否接受？
-4. 5.5.b "rt_thread 降级为数据通路" 是否接受（一帧延迟）？还是倾向 5.5.a（强
-   制 RT 直调 adapter，方案 F 退化失败）？
-5. feature flag `state_machine_adapter_link` 是否需要？如要，默认 on 还是 off？
+1. v2 整体（含 OutputPolicy + emergency 拆分 + safety_state + M1-M5）是否 approve？
+2. `OutputPolicy` 7 个 variant 是否覆盖完整？要不要加 `LimitedForward`（带 rate limit）等？
+3. `OutputSafetyState` 与现有 `OutputMode` 并列写到 state topic，是否需要走
+   设计冻结评审（`docs/00_design.md` §3.4 schema 字段加）？
+4. M5 行为切换点（feature flag on）是否需要分两个 commit（"flag on" + "删
+   legacy"）？
+5. 真机验证最低门槛：M5 smoke 通过 = `feetech_poke read Torque_Enable=0` 在
+   `mock_s1 --duration 0s` 后断扭 + 物理夹爪推动确认。同意 / 加项？
 
-Review 通过后我按 M1-M4 顺序动手 task-30 实施。
+review 通过我按 M1-M5 顺序动手 task-30 实施。
