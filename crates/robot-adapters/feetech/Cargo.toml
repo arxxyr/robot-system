@@ -50,6 +50,9 @@ real-hw = ["dep:serialport", "dep:robot-logging"]
 criterion = { workspace = true }
 # Step 7 task 29：calibration_io 单测用 NamedTempFile 写 JSON fixture。
 tempfile  = { workspace = true }
+# task-30 v9 / M4：safety_stop_fast / sync_write_by_id_into 路径 zero-alloc
+# 单测包裹（与 robot-adapter-mock 同款）。
+assert_no_alloc = "1.1"
 
 [[bench]]
 name = "feetech_bench"

@@ -4,9 +4,11 @@
 //!
 //! - 同步实现：`read_state` / `write_command` 在调用线程内完成 wire RTT
 //!   （sync_read / sync_write）。
-//! - **不可直接挂 `s0_rt_thread`**：串口 RTT ms 量级 → 违反 §4.9 RT 铁律的
-//!   "< 100 µs / no blocking" 约束；adapter info 仍标 `RtClass::HardRT`，是按
-//!   "目标分类"标的（task 28 上 IO 线程 + atomic snapshot 后才是真 HardRT）。
+//! - **挂 `s0_serial_io_thread`，不挂 `s0_rt_thread`**（task-30 pre-1a/1b）：
+//!   串口 RTT ms 量级（13-motor sync_read ≈ 6 ms）→ 违反 §4.9 RT 铁律的
+//!   "< 100 µs / no blocking" 约束。RtClass 标 `RtClass::SerialRT` 让 s0_daemon
+//!   按 "总线 latency 可证明但单帧 RTT 远超 100 µs" 路由到 SerialIoCtrlClient
+//!   + serial_io_thread（普通优先级 + select! 主循环）。
 //! - **校准 / homing offset**：v0.2 不内置：raw ↔ rad 转换全部走线性 + 全圈
 //!   `2 π` 假设；真 calibration 接入留 v0.3+（与 `robot-core::config`
 //!   ConfigIdentity full hash 同步）。
@@ -29,6 +31,7 @@ use robot_core::adapter::{
     ManipulatorAdapter, RtClass,
 };
 use robot_core::error::RobotError;
+use robot_core::executor_ctrl::OutputSafetyProbe;
 
 use crate::bus::FeetechBus;
 use crate::calibration_io::clamp_raw;
@@ -148,6 +151,18 @@ pub struct FeetechAdapter<T: SerialTransport> {
     /// 热路径 alloc，虽然 enable 不在 RT scope 但保持一致风格）。task 29 commit
     /// 4 新增 —— 用于防飞序列的 write Goal 后 readback 验证。
     goal_raw: Vec<i32>,
+    /// task-30 v9 / M3：`OutputSafetyProbe::read_torque_enable_mask` 路径的预分配
+    /// 缓冲。serial_io_thread 在 emergency 后下 tick 调，必须不 alloc。
+    /// 长度 = `joint_count`，sync_read Torque_Enable 回包后解码到这里再翻 bool。
+    torque_enable_raw: Vec<i32>,
+    /// task-30 v9 / M4：`safety_stop_fast` 路径的预分配 (id, 0) 列表。
+    /// `connect()` 时按 `joint_ids` 一次性填充；`safety_stop_fast` 调用时只读不
+    /// 改，**emergency 路径不 alloc**。
+    safety_stop_entries: Vec<(u8, i32)>,
+    /// task-30 v9 / M4：`safety_stop_fast` 路径的 wire frame 预分配缓冲。
+    /// `MAX_JOINTS=32 × length=4` → max frame = 168 byte，预分配 256 留余量。
+    /// 公式：`6 (FF FF ID LEN INST CHKSUM) + 2 (addr+length) + N×(1+length_byte)`。
+    safety_stop_frame_buf: Vec<u8>,
 }
 
 impl<T: SerialTransport> FeetechAdapter<T> {
@@ -203,7 +218,10 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             info: AdapterInfo {
                 name: config.adapter_name,
                 kind: AdapterKind::Manipulator,
-                rt_class: RtClass::HardRT,
+                // task-30 pre-1b：feetech rt_class HardRT → SerialRT。串口 RTT
+                // 毫秒量级，绝不能挂 s0_rt_thread。s0_daemon 按 SerialRT 路由到
+                // s0_serial_io_thread（普通优先级 + select! 主循环）。
+                rt_class: RtClass::SerialRT,
                 vendor_sdk: false, // Rust 自实现 wire protocol，无 vendor SDK 链接
             },
             bus,
@@ -219,6 +237,12 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             calibrations,
             // task 29 commit 4：sync_goal_to_present readback 验证缓冲
             goal_raw: vec![0_i32; joint_count_usize],
+            // task-30 v9 / M3：OutputSafetyProbe 路径预分配缓冲
+            torque_enable_raw: vec![0_i32; joint_count_usize],
+            // task-30 v9 / M4：safety_stop_fast 路径预分配。entries 在 connect()
+            // 填充（new() 还没拿 motor id）；frame_buf 一次性 resize 到 256。
+            safety_stop_entries: Vec::with_capacity(joint_count_usize),
+            safety_stop_frame_buf: vec![0u8; 256],
         })
     }
 
@@ -375,6 +399,52 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         }
         Ok(())
     }
+
+    /// **task-30 v9 / M4**：emergency 路径专用快速断扭。
+    ///
+    /// 一次 broadcast `sync_write Torque_Enable=0`（**不**等 ACK，**不**重试）
+    /// + 预分配 `safety_stop_entries` / `safety_stop_frame_buf`。13 motor 一次
+    ///   wire 帧 ≈ 4-6 ms RTT，远低于 SLA `< 10ms`（pre-1d baseline）。
+    ///
+    /// 与 `enable(false)` 的对比：
+    /// - `enable(false)`：per-motor `Torque_Enable=0` 写 × 3 次重试 × 150 ms =
+    ///   13 × 3 × 150 ms ≈ 5.85s。**不能**做 emergency。
+    /// - `safety_stop_fast`：单 broadcast → < 10 ms。**emergency 路径专用**，
+    ///   失败也不重试（再失败由 confirm_torque_off 升 `StopFailed`）。
+    ///
+    /// 调用约束：必须在 `connect()` 之后调；`safety_stop_entries` 已被填充。
+    /// 路径**不分配堆**（`assert_no_alloc::assert_no_alloc(...)` 包裹下不 panic）。
+    ///
+    /// # Errors
+    ///
+    /// - 透传 `sync_write_by_id_into` 的协议 / transport 错误。
+    /// - 若 `connect()` 还没跑过 → entries 为空，sync_write 发空帧，调用方应
+    ///   先 connect。
+    pub fn safety_stop_fast(&mut self) -> Result<(), FeetechError> {
+        // task-30 v9 finding #2：emergency 路径不允许"假成功"。
+        //
+        // 触发条件：`safety_stop_entries` 在 `connect()` 末尾才填充。如果在
+        // 半初始化（new 后未 connect）/ 重连失败 / teardown 中调用本方法，
+        // entries 为空 → sync_write 仍然能写出"广播 + 0 entry"的合法 wire 帧
+        // → 返回 Ok 但**没有 motor 真的被 disable**。这种"假成功"在 emergency
+        // 路径上等于"硬件 fail-safe 被消音"，是隐性安全失真。
+        //
+        // 这里强制 entries.len() == joint_ids.len() 且都 > 0，否则 NotConnected
+        // 让上层（serial_io_thread）走 confirm_torque_off → `StopFailed` 路径。
+        if self.safety_stop_entries.is_empty()
+            || self.safety_stop_entries.len() != self.joint_ids.len()
+        {
+            return Err(FeetechError::NotConnected);
+        }
+        // 非 RT scope（serial_io_thread），但路径整体不分配堆。**`borrow_mut`
+        // 双重借用避坑**：先把字段切出来用临时 mutable 引用 + transport，
+        // 让 sync_write_by_id_into 同时借用 self.bus 与 self.safety_stop_frame_buf。
+        // Rust 借用检查接受这个 pattern：两个字段独立 mut borrow。
+        let entries = &self.safety_stop_entries;
+        let frame_buf = &mut self.safety_stop_frame_buf;
+        self.bus
+            .sync_write_by_id_into("Torque_Enable", entries, frame_buf)
+    }
 }
 
 impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
@@ -412,6 +482,12 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
                     ));
                 }
             }
+        }
+        // task-30 v9 / M4：safety_stop_fast 路径预填 (id, 0) 列表。connect 后
+        // 任何 emergency 调 safety_stop_fast 不需要再走 HashMap / alloc。
+        self.safety_stop_entries.clear();
+        for &id in &self.joint_ids {
+            self.safety_stop_entries.push((id, 0));
         }
         Ok(())
     }
@@ -539,13 +615,70 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     }
 
     fn safety_stop(&mut self) -> Result<(), RobotError> {
-        // STS3215 没"硬件级 ESTOP"指令；最强 software stop = 全部 Torque_Enable=0
-        // 真硬件级安全停（断电）由上层 GPIO / 继电器控制，v0.2 不在 adapter 内 wire。
-        self.enable(false)
+        // task-30 v9 / M4：emergency 入口必须走 fast path（一次 broadcast，
+        // < 10ms RTT），**不**能落到 enable(false) 的 per-motor 3× 重试 ×
+        // 150ms = ~5.85s 慢路径。SerialRT executor (M6) 在 emergency 路径
+        // 唯一调用本方法。
+        //
+        // STS3215 没"硬件级 ESTOP"指令；最强 software stop = 全部
+        // Torque_Enable=0（broadcast 单帧）。真硬件级安全停（断电）由上层
+        // GPIO / 继电器控制，v0.2 不在 adapter 内 wire。
+        //
+        // confirm_torque_off 由 SerialIoCtrlClient 下 tick 调
+        // `OutputSafetyProbe::read_torque_enable_mask` 验证；本方法只负责下发。
+        self.safety_stop_fast().map_err(|e| {
+            eprintln!("feetech safety_stop_fast: {e}");
+            RobotError::from(e)
+        })
     }
 
     fn limits(&self) -> &JointLimits {
         &self.limits
+    }
+}
+
+// ============================================================================
+// OutputSafetyProbe（task-30 v9 / M3）
+// ============================================================================
+//
+// SerialRT 路径：emergency safety_stop 后下 tick 由 serial_io_thread 调本 trait
+// 确认硬件真断扭。读 Torque_Enable 寄存器（addr 40, 1 byte）；==0 则 motor
+// torque off 已确认。13 motor sync_read 一次 RTT，预期 < 50ms（pre-1d
+// baseline SLA）。
+
+impl<T: SerialTransport + 'static> OutputSafetyProbe for FeetechAdapter<T> {
+    fn read_torque_enable_mask(&mut self, out: &mut [bool]) -> Result<(), RobotError> {
+        let n = self.joint_count as usize;
+        if out.len() < n {
+            return Err(RobotError::InvalidParameter(
+                "OutputSafetyProbe out len < joint_count",
+            ));
+        }
+        if self.joint_ids.len() != n {
+            // connect() 还没跑过；joint_ids 为空 → safety probe 没意义。
+            return Err(RobotError::NotConnected);
+        }
+        // sync_read Torque_Enable 一次 wire RTT；torque_enable_raw 已在 new()
+        // 预分配 vec![0; joint_count]，本路径不 alloc。
+        self.bus
+            .sync_read_by_id_into(
+                "Torque_Enable",
+                &self.joint_ids,
+                &mut self.torque_enable_raw,
+            )
+            .map_err(|e| {
+                eprintln!("feetech read_torque_enable_mask: {e}");
+                RobotError::from(e)
+            })?;
+        // 解码：== 0 → torque off (false)；其它（== 1 通常）→ torque on (true)。
+        for (i, raw) in self.torque_enable_raw[..n].iter().enumerate() {
+            out[i] = *raw != 0;
+        }
+        Ok(())
+    }
+
+    fn joint_count(&self) -> usize {
+        self.joint_count as usize
     }
 }
 
@@ -631,11 +764,12 @@ mod tests {
     }
 
     #[test]
-    fn info_reports_hard_rt_manipulator() {
+    fn info_reports_serial_rt_manipulator() {
+        // task-30 pre-1b：feetech rt_class 已从 HardRT 改成 SerialRT。
         let (a, _h) = make_adapter(&[("j1", 1)]);
         let info = a.info();
         assert_eq!(info.kind, AdapterKind::Manipulator);
-        assert_eq!(info.rt_class, RtClass::HardRT);
+        assert_eq!(info.rt_class, RtClass::SerialRT);
         assert!(!info.vendor_sdk);
         assert_eq!(info.name, "feetech_sts3215_test");
     }
@@ -939,5 +1073,230 @@ mod tests {
         let (mut a, _h) = make_adapter(&[("j1", 1)]);
         let err = a.set_mode(ControlMode::Torque).unwrap_err();
         assert!(matches!(err, RobotError::InvalidParameter(_)));
+    }
+
+    // ---- task-30 v9 / M3：OutputSafetyProbe ----
+
+    /// safety_stop 后 confirm_torque_off 路径：sync_read Torque_Enable 全部 0
+    /// → mask 全 false。
+    #[test]
+    fn output_safety_probe_all_off_confirmed() {
+        let (mut a, h) = make_adapter(&[("j1", 1), ("j2", 2)]);
+        // sync_read Torque_Enable：每 motor 1 byte = 0x00
+        h.push_rx(&read_status(1, &[0x00]));
+        h.push_rx(&read_status(2, &[0x00]));
+
+        let mut mask = [true; 4];
+        a.read_torque_enable_mask(&mut mask).unwrap();
+        assert_eq!(&mask[..2], &[false, false]);
+
+        // wire bytes 检查：READ_DATA 走 sync_read API（INST=0x82 SYNC_READ）
+        let tx = h.drain_tx();
+        // SYNC_READ pkt: FF FF FE LEN 82 ADDR LEN_BYTE id1 id2 CHK
+        // ADDR = 40 = 0x28, LEN_BYTE = 1
+        assert_eq!(tx[0..5], [0xFF, 0xFF, 0xFE, 0x06, 0x82]);
+        assert_eq!(tx[5..6], [0x28]);
+        assert_eq!(tx[6..7], [0x01]);
+        assert_eq!(tx[7..9], [0x01, 0x02]);
+    }
+
+    /// 部分 motor 仍 torque on（混合状态）→ mask 反映实际：[true, false]。
+    /// 这是 confirm_torque_off 升级 `OutputSafetyState::AdapterUncertain`
+    /// 或 `StopFailed` 的判别基础（serial_io_thread 在上层做）。
+    #[test]
+    fn output_safety_probe_mixed_state() {
+        let (mut a, h) = make_adapter(&[("j1", 1), ("j2", 2)]);
+        h.push_rx(&read_status(1, &[0x01])); // motor 1: torque on
+        h.push_rx(&read_status(2, &[0x00])); // motor 2: torque off
+        let mut mask = [false; 2];
+        a.read_torque_enable_mask(&mut mask).unwrap();
+        assert_eq!(mask, [true, false]);
+    }
+
+    #[test]
+    fn output_safety_probe_short_out_rejected() {
+        let (mut a, _h) = make_adapter(&[("j1", 1), ("j2", 2)]);
+        let mut mask = [false; 1]; // 太短
+        let err = a.read_torque_enable_mask(&mut mask).unwrap_err();
+        assert_eq!(
+            err,
+            RobotError::InvalidParameter("OutputSafetyProbe out len < joint_count")
+        );
+    }
+
+    #[test]
+    fn output_safety_probe_joint_count_reports() {
+        let (a, _h) = make_adapter(&[("j1", 1), ("j2", 2), ("j3", 3)]);
+        assert_eq!(a.joint_count(), 3);
+    }
+
+    // ---- task-30 v9 / M4：safety_stop_fast + sync_write_by_id_into ----
+
+    /// `safety_stop_fast` 一次 broadcast `sync_write Torque_Enable=0`（13 motor
+    /// 一次 wire 帧）。本单测验证 wire 字节正确：broadcast id (0xFE) + addr 40 +
+    /// length 1 + 全 0 data。
+    #[test]
+    fn safety_stop_fast_broadcasts_torque_disable() {
+        let (mut a, h) = make_adapter(&[
+            ("j1", 1),
+            ("j2", 2),
+            ("j3", 3),
+            ("j4", 4),
+            ("j5", 5),
+            ("j6", 6),
+            ("j7", 7),
+            ("j8", 8),
+            ("j9", 9),
+            ("j10", 10),
+            ("j11", 11),
+            ("j12", 12),
+            ("j13", 13),
+        ]);
+        a.safety_stop_fast().expect("safety_stop_fast");
+        let tx = h.drain_tx();
+        // SYNC_WRITE：FF FF FE LEN 83 ADDR LEN_BYTE [id1 data1 id2 data2 ...] CHK
+        assert_eq!(tx[0..3], [0xFF, 0xFF, 0xFE], "broadcast preamble");
+        assert_eq!(tx[4], 0x83, "instruction = SYNC_WRITE");
+        assert_eq!(tx[5], 40, "addr = Torque_Enable (40)");
+        assert_eq!(tx[6], 1, "length = 1 byte");
+        // 13 entries：id 1..=13，每个 data byte = 0
+        for i in 0..13 {
+            let off = 7 + i * 2;
+            assert_eq!(tx[off], (i + 1) as u8, "entry {i} id");
+            assert_eq!(tx[off + 1], 0x00, "entry {i} data byte = 0");
+        }
+        // LEN = 2 (addr+length) + 13×(1+1) + 2 (inst+chksum) = 30
+        // 由 build_instruction 写入 tx[3]
+        // total params = 28；total tx len = 6 + 28 = 34；checksum 在末位
+        assert_eq!(tx.len(), 34, "13-motor sync_write frame length");
+    }
+
+    /// `safety_stop_fast` 路径**不分配堆**。本单测把它包进 assert_no_alloc，
+    /// 触发任何 alloc 即 panic。serial_io_thread emergency 路径必须满足。
+    #[test]
+    fn safety_stop_fast_is_alloc_free() {
+        use assert_no_alloc::assert_no_alloc;
+
+        let (mut a, _h) = make_adapter(&[
+            ("j1", 1),
+            ("j2", 2),
+            ("j3", 3),
+            ("j4", 4),
+            ("j5", 5),
+            ("j6", 6),
+            ("j7", 7),
+            ("j8", 8),
+            ("j9", 9),
+            ("j10", 10),
+            ("j11", 11),
+            ("j12", 12),
+            ("j13", 13),
+        ]);
+
+        assert_no_alloc(|| {
+            let _ = a.safety_stop_fast();
+        });
+    }
+
+    /// `sync_write_by_id_into` 直接在 bus 层调；验证两阶段 borrow + 栈数组
+    /// 路径**不分配堆**。
+    #[test]
+    fn sync_write_by_id_into_is_alloc_free() {
+        use assert_no_alloc::assert_no_alloc;
+
+        let (mut a, _h) = make_adapter(&[("j1", 1), ("j2", 2), ("j3", 3)]);
+        let entries = [(1u8, 0i32), (2u8, 0i32), (3u8, 0i32)];
+        let mut frame_buf = vec![0u8; 256];
+
+        assert_no_alloc(|| {
+            let _ = a
+                .bus()
+                .sync_write_by_id_into("Torque_Enable", &entries, &mut frame_buf);
+        });
+    }
+
+    /// 长度超 MAX_JOINTS 拒绝（safety_stop_fast 应永远不命中此分支，但防御性
+    /// 检查存在）。
+    #[test]
+    fn sync_write_by_id_into_rejects_too_many_motors() {
+        let (mut a, _h) = make_adapter(&[("j1", 1)]);
+        let huge = vec![(1u8, 0i32); robot_core::adapter::MAX_JOINTS + 1];
+        let mut frame_buf = vec![0u8; 256];
+        let err = a
+            .bus()
+            .sync_write_by_id_into("Torque_Enable", &huge, &mut frame_buf)
+            .unwrap_err();
+        assert!(matches!(err, FeetechError::ByteLengthMismatch { .. }));
+    }
+
+    /// **finding #5 lock 测试**：`frame_buf` 太小时返回的是
+    /// `ByteLengthMismatch`（由 `build_instruction` 抛），**不是**
+    /// `BadPacketLength`（后者只在协议层 `params.len() > MAX_PARAMS` 时出现）。
+    /// 锁住这个错误类型，未来谁动了底层错误传播路径会立刻 fail。
+    #[test]
+    fn sync_write_by_id_into_short_frame_buf_returns_byte_length_mismatch() {
+        let (mut a, _h) = make_adapter(&[("j1", 1), ("j2", 2)]);
+        let entries = [(1u8, 0i32), (2u8, 0i32)];
+        let mut tiny = vec![0u8; 4]; // 远不够装 sync_write 帧
+        let err = a
+            .bus()
+            .sync_write_by_id_into("Torque_Enable", &entries, &mut tiny)
+            .unwrap_err();
+        match err {
+            FeetechError::ByteLengthMismatch { expected, actual } => {
+                assert!(expected > actual, "expected={expected} actual={actual}");
+                assert_eq!(actual, 4);
+            }
+            other => panic!("expected ByteLengthMismatch, got {other:?}"),
+        }
+    }
+
+    /// **finding #1 + #2 lock 测试**：`safety_stop()` 必须走快路径（一帧
+    /// broadcast wire），**不**走 enable(false) 的 per-motor 重试。
+    /// 验证：调一次 safety_stop()，wire 帧数 = 1（broadcast SYNC_WRITE）。
+    #[test]
+    fn safety_stop_uses_fast_path_one_broadcast_frame() {
+        let (mut a, h) = make_adapter(&[("j1", 1), ("j2", 2), ("j3", 3)]);
+        a.safety_stop().expect("safety_stop");
+        let tx = h.drain_tx();
+        // 慢路径会发 3 motor × 重试 多帧；快路径就 1 帧 broadcast。
+        // 一帧 = 6 + 2 + 3×(1+1) = 14 byte。
+        assert_eq!(tx.len(), 14, "fast path frame length");
+        assert_eq!(tx[0..3], [0xFF, 0xFF, 0xFE], "broadcast preamble");
+        assert_eq!(tx[4], 0x83, "INST = SYNC_WRITE");
+        // 慢路径会有多个 INST = WriteData (0x03) 的帧。
+    }
+
+    /// **finding #2 lock 测试**：未 connect（safety_stop_entries 为空）
+    /// 时 `safety_stop_fast` 返 NotConnected，**不**发空 SYNC_WRITE。
+    #[test]
+    fn safety_stop_fast_unconnected_returns_not_connected() {
+        // 直接构造一个未 connect 的 adapter；不能用 make_adapter（它会 connect）。
+        let (transport, handle) = MockTransport::new();
+        let mut motors = HashMap::new();
+        motors.insert("j1".to_string(), Motor::new(1).unwrap());
+        motors.insert("j2".to_string(), Motor::new(2).unwrap());
+        let bus = FeetechBus::new(transport, motors).unwrap();
+        let mut a = FeetechAdapter::new(
+            FeetechAdapterConfig {
+                adapter_name: "test_unconnected",
+                joint_names: vec!["j1".into(), "j2".into()],
+                calibrations: Vec::new(),
+            },
+            bus,
+        )
+        .unwrap();
+        // 关键：**没**调 connect()，所以 safety_stop_entries 为空 + joint_ids 为空
+        let err = a.safety_stop_fast().unwrap_err();
+        assert!(
+            matches!(err, FeetechError::NotConnected),
+            "expected NotConnected, got {err:?}"
+        );
+        // **未**发任何 wire bytes（emergency 路径不能假成功）
+        let tx = handle.drain_tx();
+        assert!(
+            tx.is_empty(),
+            "未 connect 时不应发任何 wire bytes，发了：{tx:?}"
+        );
     }
 }

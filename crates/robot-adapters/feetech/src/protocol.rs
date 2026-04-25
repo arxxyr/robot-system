@@ -198,7 +198,10 @@ pub fn build_sync_write(
             body_len: total_params,
         });
     }
-    let mut params = vec![0u8; total_params];
+    // task-30 v9 / M4：vec → 栈数组（与 build_write 对齐 pattern）。`MAX_PARAMS=253`
+    // 是协议头 LEN 字段 1 byte 的物理上限，栈分配安全。safety_stop_fast 路径
+    // 必须不分配堆。
+    let mut params = [0u8; MAX_PARAMS];
     params[0] = addr;
     params[1] = length;
     for (i, (id, data)) in per_motor.iter().enumerate() {
@@ -206,7 +209,12 @@ pub fn build_sync_write(
         params[off] = *id;
         params[off + 1..off + 1 + length_usize].copy_from_slice(data);
     }
-    build_instruction(BROADCAST_ID, Instruction::SyncWrite, &params, out)
+    build_instruction(
+        BROADCAST_ID,
+        Instruction::SyncWrite,
+        &params[..total_params],
+        out,
+    )
 }
 
 /// SYNC_READ：`FF FF FE <LEN> 82 <ADDR> <PER_LEN> <ID1> <ID2> ... <CHK>`。
@@ -230,11 +238,17 @@ pub fn build_sync_read(
             body_len: total_params,
         });
     }
-    let mut params = vec![0u8; total_params];
+    // task-30 v9 / M4：与 build_sync_write 对齐 pattern：vec → 栈数组。
+    let mut params = [0u8; MAX_PARAMS];
     params[0] = addr;
     params[1] = length;
-    params[2..].copy_from_slice(motor_ids);
-    build_instruction(BROADCAST_ID, Instruction::SyncRead, &params, out)
+    params[2..total_params].copy_from_slice(motor_ids);
+    build_instruction(
+        BROADCAST_ID,
+        Instruction::SyncRead,
+        &params[..total_params],
+        out,
+    )
 }
 
 // ============================================================================

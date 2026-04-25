@@ -434,6 +434,71 @@ impl<T: SerialTransport> FeetechBus<T> {
         self.transport.write_all(&tx[..n])
     }
 
+    /// **task-30 v9 / M4**：`sync_write_by_id` 的预分配版本。`safety_stop_fast`
+    /// 路径调本方法 → wire bytes 写入调用方传入的 `frame_buf`，**全程零堆 alloc**
+    /// （`assert_no_alloc::assert_no_alloc(...)` 包裹下不 panic）。
+    ///
+    /// `frame_buf` 必须 `>= MAX_FRAME_LEN` byte。MAX_FRAME_LEN 公式：
+    ///   = 6 (FF FF ID LEN INST CHKSUM) + max_params
+    ///   max_params = 2 (addr + length) + N × (1 + length_byte)
+    ///   N=MAX_JOINTS=32, length=4 → max_params = 162 → MAX_FRAME_LEN = 168
+    /// 调用方推荐预分配 `[0u8; 256]` 留余量。
+    ///
+    /// 实现走两阶段 borrow（v9 §0 #4 修订）：
+    /// - 阶段 1：mut 写 `data_bufs[..n]`，每个 i 独立无借用冲突；
+    /// - 阶段 1 结束 mut borrow drop；
+    /// - 阶段 2：shared 构造 `entry_refs[..n]`（&data_bufs[i][..]）—— 借用检查通过。
+    ///
+    /// # Errors
+    ///
+    /// - `entries.len() > MAX_JOINTS` → [`FeetechError::ByteLengthMismatch`]
+    ///   `{ expected: MAX_JOINTS, actual: entries.len() }`（本函数顶层校验）。
+    /// - `frame_buf.len() < total_size` →
+    ///   [`FeetechError::ByteLengthMismatch`]`{ expected: total_size, actual:
+    ///   frame_buf.len() }`（由 `build_instruction` 抛出）。
+    ///   注：**不是** `BadPacketLength`；后者只在协议层 `params.len() >
+    ///   MAX_PARAMS` 时出现。`sync_write_by_id_into` 内部已校验 `MAX_JOINTS`
+    ///   足够小不会触发协议层 `BadPacketLength`，所以 frame_buf 不足只走
+    ///   `ByteLengthMismatch`。
+    /// - 透传协议 / transport / 编码错误。
+    pub fn sync_write_by_id_into(
+        &mut self,
+        reg_name: &'static str,
+        entries: &[(u8, i32)],
+        frame_buf: &mut [u8],
+    ) -> Result<(), FeetechError> {
+        let reg = get_register(reg_name)?;
+        let length_usize = usize::from(reg.length); // v9 fix：字段名 length
+        let n = entries.len();
+        if n > robot_core::adapter::MAX_JOINTS {
+            return Err(FeetechError::ByteLengthMismatch {
+                expected: robot_core::adapter::MAX_JOINTS,
+                actual: n,
+            });
+        }
+
+        // 栈数组（无 alloc）。`MAX_JOINTS = 32` 恒小，单帧最坏 32×4 = 128 byte。
+        let mut data_bufs: [[u8; 4]; robot_core::adapter::MAX_JOINTS] =
+            [[0; 4]; robot_core::adapter::MAX_JOINTS];
+
+        // ===== 阶段 1：mut 写 data_bufs[..n]（每个 i 独立无借用冲突）=====
+        for (i, (_id, value)) in entries.iter().enumerate() {
+            let encoded = encode_value(reg_name, *value)?;
+            split_bytes_le(encoded, length_usize, &mut data_bufs[i][..length_usize])?;
+        }
+        // 阶段 1 结束 —— mut borrow drop
+
+        // ===== 阶段 2：shared 构造 entry_refs[..n]（data_bufs 不再 mut，借用 OK） =====
+        let mut entry_refs: [(u8, &[u8]); robot_core::adapter::MAX_JOINTS] =
+            [(0u8, &[] as &[u8]); robot_core::adapter::MAX_JOINTS];
+        for (i, (id, _)) in entries.iter().enumerate() {
+            entry_refs[i] = (*id, &data_bufs[i][..length_usize]);
+        }
+
+        let n_bytes = build_sync_write(reg.addr, reg.length, &entry_refs[..n], frame_buf)?;
+        self.transport.write_all(&frame_buf[..n_bytes])
+    }
+
     // ── 工具 ──────────────────────────────────────────────────────────
 
     /// `motor_name` → `motor_id`，未知名 → [`FeetechError::UnknownMotor`]。
