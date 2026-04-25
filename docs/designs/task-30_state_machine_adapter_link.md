@@ -1,217 +1,190 @@
 # Task-30 设计方案：state_machine ↔ adapter 执行链路
 
-> **状态**：**v6**，等再次 review
-> **历史**：v1（`4cca734`）→ v2（`130b44b`）→ v3（`f7bdc00`）→ v4（`881e927`）
-> → v5（`46dd3c1`，706 行）→ v6（本版本，user v5 五轮 review 后修订）
+> **状态**：**v7**，等再次 review
+> **历史**：v1 (`4cca734`) → v2 (`130b44b`) → v3 (`f7bdc00`) → v4 (`881e927`)
+> → v5 (`46dd3c1`) → v6 (`4d016d4`) → v7（user v6 六轮 review 后修订）
 > **作者**：Claude Code
 >
-> **v6 关键修订**：v5 三个 blocker + 四个修正全收。最重要的是 **B1 ("下发"≠
-> "确认")**：`safety_stop_fast` 不等 ACK 的语义必须诚实反映到 `OutputSafety
-> State`，不能立刻标 `TorqueOffConfirmed`。**B2 (确认通路缺失)**：现有
-> `JointStateBuf` / `read_state` 没有 `Torque_Enable` 字段；**新增独立
-> `OutputSafetyProbe` trait**，不污染普通 read_state 路径。**B3 (RT 路径
-> ArcSwap)**：HardRT 路径所有控制动作全 atomic 编码，杜绝 rt_thread 碰
-> Arc refcount。
->
-> 同时修：emergency / normal action 拆两个 atomic（避免 SafetyStop 被
-> Enable(true) 覆盖）；RtSafeCtrl 实施方修正（mock 实现 / Feetech 不实现）；
-> `safety_stop_fast` 用 adapter 内预分配 buffer（避免内存压力下急停路径分配
-> 失败）。
+> **v7 关键修订**：v6 的 5 个真实卡点全收。最关键是 #1（HardRT 提交丢请求 +
+> seq 误确认）：v6 的 `store + fetch_add` 有数据竞争 → 改 `compare_exchange`；
+> #2（rt_thread 调 connect / disconnect / hold_current_position 都不是
+> RT-safe）→ HardRT normal_action **只**编码 `RtSafeCtrl` 方法；
+> #3（`sync_write_by_id` 内部仍 alloc）→ M4 加 `sync_write_by_id_into` 预分配
+> frame API；#4（`AdapterUncertain` 自相矛盾）加 enum variant；
+> #5（pre 任务无具体文件）§11.1 改写明确每个 pre 改哪些文件哪些行。
 
 ---
 
-## §0 v5 → v6 修订记录
+## §0 v6 → v7 修订记录
 
-User v5 review 给出 3 blocker + 4 修正，全部接受：
+User v6 review 给出 5 项卡点，全部接受：
 
-### 3 Blocker
-
-| # | v5 缺陷 | v6 修订位置 |
+| # | v6 缺陷 | v7 修订位置 |
 |---|---|---|
-| **B1** | `safety_stop_fast` 成功立刻标 `TorqueOffConfirmed`；但 fast path 不等 ACK 只保证"软件已下发"≠"硬件已断扭" | **§5.4 + §7.3** `OutputSafetyState` 加 **`StopCommanded`** variant：下发成功 → `StopCommanded`；下一 tick `confirm_torque_off()` 读回 → 一致升 `TorqueOffConfirmed`，不一致 → `AdapterUncertain`，读失败 → `StopFailed` |
-| **B2** | "下一 tick read_state 读回 Torque_Enable" 但 `JointStateBuf` 没此字段；接口不支持 | **§5.3 新增 `OutputSafetyProbe` trait**（独立路径，不污染普通 `read_state` / `JointStateBuf`）：`fn read_torque_enable_mask(&mut self, out: &mut [bool]) -> Result<(), RobotError>`；Feetech impl 走 sync_read `Torque_Enable` 寄存器；序列化加 `safety_state_slot`，不入 state topic 主 schema |
-| **B3** | HardRT 路径 `ArcSwap<Option<AdapterNormalReq>>` 冷字段被 rt_thread 触发 `load_full` → Arc refcount → **违反 §4.9 RT 铁律** | **§4.2 重写 `HardRtCtrlInner`**：所有控制动作全 atomic（`emergency_action: AtomicU8` / `normal_action: AtomicU8` / `action_arg: AtomicU8` / `action_seq: AtomicU64`）；**ArcSwap 完全移除 HardRT 路径**；不可 atomic 编码的请求（如 SetMode 含复杂参数）→ HardRtCtrlClient 返 `Unsupported`，不入 RT loop |
+| **1** | `request_normal` 直接 `store(normal_action, action_code)` → 两个 normal 连续提交**静默覆盖**；`fetch_add` 返回旧 seq + rt_thread 完成时读"当前 action_seq"可能把**后**一个请求误标完成 | **§4.2 重写**：normal_action 用 `compare_exchange(NONE, action)` 占用 slot；占用失败 → `NormalReqStatus::Busy`；seq 在 cas 成功**之后**分配 `fetch_add(1) + 1`；rt_thread 完成时 seq + result 原子绑定 |
+| **2** | rt_thread 主循环调 `adapter.connect()`（启动期方法）/ `disconnect()` / `hold_current_position()`（走 sync_read+write）—— 都不是 RT-safe | **§4.2 normal_action 编码集裁剪**：只允许 `RtSafeCtrl` 方法（`Enable(bool)` / `SetMode(Position)`）；`Connect` / `Disconnect` 移到 `s0_daemon` main（spawn 前 connect / join 后 disconnect）；`HoldCurrent` 在 HardRT 仅靠 `OutputPolicy::HoldCurrent` gate（rt_thread 不调 write_command = motor 维持上次 Goal）；SerialRT 才走 `hold_current_position()` 真 helper |
+| **3** | `safety_stop_fast` 走 `sync_write_by_id` 但 `bus.rs:419/426/432` + `protocol.rs:201` 仍 alloc Vec → §2.19 "安全路径不分配"破产 | **§7.2 + M4** 加 `sync_write_by_id_into` 预分配 frame API（与现有 `sync_read_by_id_into` 对称），`build_sync_write_into(&mut frame_buf, ...)` 不 alloc；`safety_stop_fast` 走新 API；`assert_no_alloc` 单测覆盖 |
+| **4** | `OutputSafetyState` enum 到 `StopFailed=4` 但 §6 引用 `AdapterUncertain` —— 自相矛盾 | **§5.3 加 `AdapterUncertain = 5`** variant；语义：safety_stop 下发**成功**但 confirm 读回 Torque_Enable mask **部分一致**（≠全断扭，≠全失败）；与 `StopFailed`（软件下发就失败）区别明确 |
+| **5** | pre 任务无具体文件 / 行号 → 实施期发现 `RtClass::SerialRT` 不存在 / `RobotError::Unsupported` 不存在卡编译 | **§11.1 重写 pre 表**：每个 pre 列具体文件路径 + 当前代码状态 + 改动；含 `crates/robot-core/src/adapter.rs:31` (RtClass) / `crates/robot-adapters/feetech/src/adapter.rs:202` / `crates/robot-core/src/error.rs:28` / `joint.fbs:36` |
 
-### 4 修正
-
-| # | v5 错误 | v6 修订 |
-|---|---|---|
-| **C1** | `action_slot` 单 atomic last-writer-wins → SafetyStop 被随后 Enable(true) 覆盖 = **危险** | **§4.2 拆 emergency_action + normal_action 两 atomic**；rt_thread tick 永远**先消费 emergency**；safety latched 后**拒绝 normal Enable(true)**（state_machine 必须先 ClearEStop） |
-| **C2** | `OutputPolicy::from_u8` 文档说"全 8 值"，enum 只 6 variant | **§5.1 改措辞**："`from_u8` 接受 6 valid + 兜底 `Disabled`（保守）" |
-| **C3** | "Mock + Feetech 不实现 `RtSafeCtrl`" 自相矛盾（mock 是 HardRT 必须实现） | **§5.5 改正**：Mock (`RtClass::HardRT`) **实现** `RtSafeCtrl`；Feetech (`RtClass::SerialRT`) **不实现**（不挂 rt_thread） |
-| **C4** | `safety_stop_fast` 伪代码 `entries: Vec<(u8, i32)>` 在急停路径分配 → 内存压力下可能分配失败 | **§7.2 改预分配**：`FeetechAdapter` 加 `safety_stop_buf: Vec<(u8, i32)>` 字段；`connect()` 时 `with_capacity(joint_count)` + 一次性 push 占位；`safety_stop_fast` 调时只改值不重新分配 |
-
-v1-v5 文档归档 git history。v6 是当前权威。
+v1-v6 文档归档 git history。v7 是当前权威。
 
 ---
 
-## §1 问题陈述（v4-v5 保留）
+## §1 问题陈述（v4-v6 保留）
 
 ### 1.1 三类 adapter，三条 executor
 
 | `RtClass` | 典型硬件 | RT 合规性 | Executor |
 |---|---|---|---|
-| `HardRT` | EtherCAT / RT-CAN / DMA mmap / mock_hard_rt | 可证明 bounded latency + no alloc + no block | `s0_rt_thread` (SCHED_FIFO) |
+| `HardRT` | EtherCAT / RT-CAN / DMA mmap / mock_hard_rt | bounded latency + no alloc + no block + no syscall | `s0_rt_thread` (SCHED_FIFO) |
 | `SerialRT` | 串口舵机 / USB-RS485 / Modbus RTU | 控制语义属 S0；IO ms 级 syscall | **新增** `s0_serial_io_thread` |
-| `SoftRT` | RealSense / webcam / vendor SDK / 网络 sensor | 仅观测，不直接驱动 motor | `s0_io_thread[0..N]` (v0.4) |
-
-判定基准：可证明的最坏延迟 + RT 铁律合规性。
+| `SoftRT` | RealSense / vendor SDK / 网络 sensor | 仅观测 | `s0_io_thread[0..N]` (v0.4) |
 
 ### 1.2 双重缺口（v3 已识别）
 
-A：state_machine 不驱动 adapter；B：`latest_cmd` 无门控（OutputPolicy 解决）。
+A：state_machine 不驱动 adapter；B：`latest_cmd` 无门控（`OutputPolicy` 解决）。
 
 ### 1.3 Schema / state_machine 修订（pre-2 修补）
 
-详 v3 §1.3。
+`joint.fbs` 缺 `mode/control_link/output_mode/safety_state` 字段；
+`state_machine` 缺 `* → Fault(SafetyStopFailed)` 转换。
 
-### 1.4 v0.2 safety exit criteria 状态
+### 1.4 SIGKILL ≠ task-30 完成
 
-`docs/10_verification.md:102` "kill -9 s0 → 硬件 fail-safe < 500 ms"
-**task-30 完成 ≠ 此 SLA 通过**。详 §9。
-
----
-
-## §2 设计原则（v5 16 条 + v6 加 3）
-
-1-16：v5 全保留。
-
-**17（v6 新加）**：**`safety_stop` 路径必须区分"下发"和"确认"**。下发成功
-仅升级到 `StopCommanded`；只有读回 `Torque_Enable=0` 才升 `TorqueOffConfirmed`。
-"假装已断扭"是不诚实的安全状态广播。
-
-**18（v6 新加）**：**RT 路径所有控制动作必须可 atomic 编码**（u8/u16/u32/u64）。
-任何 ArcSwap / Mutex / Channel send 都不得在 rt_thread 主循环内出现，连冷
-路径也不行（rt_thread 不存在"冷路径"，主循环每个分支都是 hot）。复杂参数
-请求（含 String / Vec / Box）→ `RobotError::Unsupported`，强制走 SerialRT 路径
-或 v0.4 升级。
-
-**19（v6 新加）**：**安全路径不分配**。Emergency / SafetyStop 的所有缓冲必须
-在 `connect()` / 启动期预分配；运行期 OOM / 内存压力下急停路径**仍能执行**。
+`docs/10_verification.md:102` "kill -9 → 硬件 fail-safe < 500 ms" **task-30
+不闭环此 SLA**，留 task-30-post（servo timeout + 硬件继电器）。
 
 ---
 
-## §3 架构图（v6 = v5 + atomic 化 HardRT 控制路径）
+## §2 设计原则（v6 19 条 + v7 加 1）
+
+1-19：v6 保留。
+
+**20（v7 新加）**：**RT slot 提交协议必须 1:1 配对**。提交端用 `compare_
+exchange` 占用 slot 失败 → 返 `Busy`；seq 在 cas 成功后分配，与本次 action 原
+子绑定；rt_thread 消费端先 `swap` 出 action 再 load seq → 保证"调用方持有的
+seq" 与"rt_thread 完成的 seq" 一一对应，不串货。
+
+---
+
+## §3 架构图（v6 保留 + v7 修订 normal_action 协议）
 
 ```
 ┌─── robot-s0 ────────────────────────────────────────────────────────────┐
 │                                                                         │
 │  ipc_thread (state_machine)                                             │
-│  ┌─────────────────────────────────────────────────┐                    │
-│  │ executor_ctrl: Box<dyn ExecutorCtrlClient>      │                    │
-│  │  ↓ on transition:                                │                    │
-│  │  - set_policy(p)        — atomic store          │                    │
-│  │  - safety_stop()        — fire-and-forget       │                    │
-│  │  - request_normal(req)  — try_send / atomic     │                    │
-│  │  - poll_last_normal_resp() — peek result         │                    │
-│  └─────────────┬───────────────────────────────────┘                    │
-│                │ trait                                                  │
-│  ╔═════════════▼═══════════════════════════════════════════════════════╗│
-│  ║                                                                     ║│
-│  ║  HardRtCtrlClient impl       SerialIoCtrlClient impl                ║│
-│  ║  ┌────────────────────────┐  ┌─────────────────────────────────┐    ║│
-│  ║  │ policy: AtomicU8       │  │ policy: AtomicU8                │    ║│
-│  ║  │ emergency_action: AU8  │← │ emergency_tx: ch (depth=8)      │    ║│
-│  ║  │ normal_action:    AU8  │  │ estop_atomic: AtomicBool (兜底) │    ║│
-│  ║  │ action_arg:       AU8  │  │ pending_normal: ArcSwap (普通)  │    ║│
-│  ║  │ action_seq:       AU64 │  │ last_resp:      ArcSwap         │    ║│
-│  ║  │ safety_latched:   AB   │  │                                 │    ║│
-│  ║  │ (无 ArcSwap，无 Vec)   │  │                                 │    ║│
-│  ║  └──────────┬─────────────┘  └────────────┬────────────────────┘    ║│
-│  ║             │                              │                        ║│
-│  ║             ▼                              ▼                        ║│
-│  ║  ┌────────────────────────┐    ┌─────────────────────────────────┐  ║│
-│  ║  │ rt_thread (SCHED_FIFO) │    │ serial_io_thread (普通)         │  ║│
-│  ║  │ tick @ 50Hz：           │    │ select! {                        │  ║│
-│  ║  │ 1. emergency_action    │    │   recv emergency_rx → exec       │  ║│
-│  ║  │      .swap(NONE)       │    │   pending normal → handle_normal │  ║│
-│  ║  │      → if !=NONE:      │    │   default(20ms) → tick:          │  ║│
-│  ║  │        adapter.        │    │     check estop_atomic           │  ║│
-│  ║  │          safety_stop_rt│    │     按 OutputPolicy gate         │  ║│
-│  ║  │        latched=true    │    │     if StopCommanded:            │  ║│
-│  ║  │ 2. normal_action       │    │       confirm_torque_off()       │  ║│
-│  ║  │      .swap(NONE)       │    │       update safety_state        │  ║│
-│  ║  │      → if !=NONE       │    │     adapter.write/read           │  ║│
-│  ║  │        & !latched:     │    │ }                                │  ║│
-│  ║  │        dispatch        │    │                                  │  ║│
-│  ║  │ 3. policy gate         │    │  独占 SerialRT adapter           │  ║│
-│  ║  │ 4. write_command       │    │  + OutputSafetyProbe             │  ║│
-│  ║  │ 5. read_state          │    └──────────────────────────────────┘  ║│
-│  ║  │ 6. publish snapshot    │                                          ║│
-│  ║  │ 全程零 alloc / 零 Arc   │                                          ║│
-│  ║  └────────────────────────┘                                          ║│
-│  ╚═════════════════════════════════════════════════════════════════════╝│
+│  ┌──────────────────────────────────────┐                               │
+│  │ executor_ctrl: Box<dyn ExecutorCtrl> │                               │
+│  │ on transition:                       │                               │
+│  │   set_policy / safety_stop /         │                               │
+│  │   request_normal (返 Submitted/Busy) │                               │
+│  └──────────────┬───────────────────────┘                               │
+│                 │ trait                                                 │
+│  ╔══════════════▼═══════════════════════════════════════════════════╗  │
+│  ║                                                                  ║  │
+│  ║  HardRtCtrlClient impl (全 atomic)  SerialIoCtrlClient impl     ║  │
+│  ║  ┌──────────────────────────────┐   ┌────────────────────────┐  ║  │
+│  ║  │ policy: AtomicU8             │   │ policy: AtomicU8       │  ║  │
+│  ║  │ emergency_action: AtomicU8   │   │ emergency_tx: ch (8)   │  ║  │
+│  ║  │ normal_action: AtomicU8      │   │ estop_atomic: AB       │  ║  │
+│  ║  │   (CAS occupy / Busy reject) │   │ pending_normal: ArcSwap│  ║  │
+│  ║  │ action_arg: AtomicU8         │   │ last_resp:    ArcSwap  │  ║  │
+│  ║  │ action_seq: AtomicU64        │   │                        │  ║  │
+│  ║  │   (cas 成功后 fetch_add+1)    │   │                        │  ║  │
+│  ║  │ last_completed_seq: AU64     │   │                        │  ║  │
+│  ║  │ last_completed_result: AU8   │   │                        │  ║  │
+│  ║  │ safety_latched: AtomicBool   │   │                        │  ║  │
+│  ║  └──────────┬───────────────────┘   └────────────┬───────────┘  ║  │
+│  ║             ▼                                    ▼              ║  │
+│  ║  ┌──────────────────────────────┐   ┌────────────────────────┐  ║  │
+│  ║  │ rt_thread (SCHED_FIFO)        │   │ serial_io_thread        │  ║  │
+│  ║  │ tick @ 50Hz：                 │   │ select! {                │  ║  │
+│  ║  │ 1. emergency_action.swap     │   │   recv emergency → exec  │  ║  │
+│  ║  │    → safety_stop_rt          │   │   pending normal         │  ║  │
+│  ║  │    → safety_latched=true     │   │   default(20ms) → tick:  │  ║  │
+│  ║  │ 2. normal_action.swap        │   │     check estop_atomic   │  ║  │
+│  ║  │    → enable_rt / set_mode_rt │   │     按 OutputPolicy gate │  ║  │
+│  ║  │    （仅 RtSafeCtrl 方法）     │   │     if StopCommanded:    │  ║  │
+│  ║  │    → load action_seq         │   │       confirm_torque_off │  ║  │
+│  ║  │    → store last_completed_*  │   │     adapter.write/read   │  ║  │
+│  ║  │ 3. policy gate (ActiveForward│   │ }                        │  ║  │
+│  ║  │    + !latched → write_cmd)   │   │                          │  ║  │
+│  ║  │ 4. read_state                │   │  独占 SerialRT adapter   │  ║  │
+│  ║  │ 5. publish snapshot          │   │  + OutputSafetyProbe     │  ║  │
+│  ║  │ 全程零 alloc / 零 Arc        │   └──────────────────────────┘  ║  │
+│  ║  │ 不调 connect/disconnect/hold │                                 ║  │
+│  ║  │ （这些走 main 启动 / 退出）   │                                 ║  │
+│  ║  └──────────────────────────────┘                                 ║  │
+│  ╚══════════════════════════════════════════════════════════════════╝  │
 │                                                                         │
-│  HotShared.safety_state_slot (AtomicU8 编码 OutputSafetyState)         │
-│                  ↑ written by both executors                           │
-│  pub_thread reads it → state topic safety_state 字段（pre-2 schema）   │
+│  HotShared.safety_state_slot (AtomicU8 编码 OutputSafetyState 6 variant) │
+│  pub_thread reads → state topic safety_state 字段 (pre-2 schema)        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**v5 → v6 主要差异**：
-
-- **HardRtCtrlClient 内部全 atomic** —— ArcSwap / Vec / Box 移到 v6 之外（不存在）
-- emergency / normal action 拆两 atomic —— 优先级独立，互不覆盖
-- `safety_latched: AtomicBool` —— EStop 触发后 rt_thread 不响应 normal enable
-- `safety_state_slot` AtomicU8（编码 5 variant of `OutputSafetyState` 含新增的
-  `StopCommanded`）—— 跨 executor 共享，pub_thread 读入 state topic
-- serial_io_thread 加 `confirm_torque_off()` 步骤（StopCommanded → 下 tick 读回
-  → 升级 / 降级 safety_state）
-
 ---
 
-## §4 ExecutorCtrlClient trait（v5 保留 + v6 atomic 化）
+## §4 ExecutorCtrlClient trait（v5-v6 保留 + v7 修 §4.2）
 
-### 4.1 trait 定义（v5 保留，4 方法）
+### 4.1 trait 定义（v5 保留）
 
 ```rust
 pub trait ExecutorCtrlClient: Send + Sync {
     fn set_policy(&self, policy: OutputPolicy);
     fn safety_stop(&self);
     fn request_normal(&self, req: AdapterNormalReq) -> NormalReqStatus;
-    fn poll_last_normal_resp(&self) -> Option<AdapterResp>;
+    fn poll_last_normal_resp(&self, expected_seq: u64) -> Option<AdapterResp>;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum NormalReqStatus {
+    /// 占用 slot 成功，调用方持有 `seq`，下次用 `poll_last_normal_resp(seq)` 查结果
+    Submitted { seq: u64 },
+    /// **v7 新增**：slot 已被上一个 normal action 占用，未被 rt_thread 消费；
+    /// 调用方应稍后重试或决定是否抢占
+    Busy,
+    /// 编码失败（复杂参数 unsupported）
+    Unsupported(&'static str),
 }
 ```
 
-### 4.2 HardRT 实现：v6 全 atomic（**移除所有 ArcSwap / Vec**）
+### 4.2 HardRT 实现：v7 重写（CAS 占用 + RtSafeCtrl-only 编码）
 
 ```rust
 /// HardRT executor 的 ctrl client。**所有字段都是 atomic** —— rt_thread 主
 /// 循环零 alloc / 零 Arc refcount。
 pub struct HardRtCtrlInner {
-    /// `OutputPolicy` 编码（`#[repr(u8)]`，6 variant + 0=Disabled 兜底）
     policy: AtomicU8,
 
-    /// **紧急 action**：rt_thread tick **优先**消费。非零值表示有紧急动作。
-    /// 编码：1 = SafetyStop。
-    /// 不被 normal_action 覆盖（拆开 channel 的精神）。
+    /// 紧急 action：rt_thread tick **优先**消费。1 = SafetyStop。
     emergency_action: AtomicU8,
 
-    /// **普通 action**：rt_thread tick 在消费完 emergency 后处理。
-    /// 编码：1=Connect / 2=Disconnect / 3=Enable(true) / 4=Enable(false) /
-    ///        5=SetMode(Position) / 6=HoldCurrent
-    /// 复杂请求（带参数）→ `request_normal` 返 `Unsupported`，不入此 slot。
+    /// **v7 修**：normal action **CAS 占用**协议：
+    /// - `request_normal` 用 `compare_exchange(NONE, action)` 占用
+    /// - 占用失败（slot != NONE）→ 返 `Busy`，调用方知晓上次未消费
+    /// - rt_thread 用 `swap(NONE)` 消费
+    /// **v7 编码集裁剪**（仅 `RtSafeCtrl` 方法）：
+    /// - 1 = Enable(bool)（arg = 0/1）
+    /// - 2 = SetMode(Position)（arg 忽略；v0.2 仅 Position）
+    /// **不再编码** Connect / Disconnect / HoldCurrent（移到 main / OutputPolicy）
     normal_action: AtomicU8,
-
-    /// `normal_action` 的伴随参数（小标量；u8 足够编码 ControlMode 等）。
-    /// rt_thread 在 `swap` 出 normal_action 后才读这个，无 race。
     action_arg: AtomicU8,
 
-    /// **每次 set 加 1**；rt_thread 完成后 `last_completed_seq.store(seq)`。
-    /// state_machine 据此判断"我上次的 request_normal 是否已被执行"。
+    /// `request_normal` cas 成功后 `fetch_add(1) + 1` → `Submitted { seq }`
+    /// 返调用方；rt_thread 完成后 `last_completed_seq.store(seq)` + result
     action_seq: AtomicU64,
     last_completed_seq: AtomicU64,
-    last_completed_result: AtomicU8, // 0=Ok, 1=Err{InvalidParam}, 2=Err{HardwareFault}, ...
+    last_completed_result: AtomicU8,
+    /// 标记 last_completed_seq 写入完成（防 result 写入未 visible 时被读）
+    last_completed_ready: AtomicBool,
 
-    /// **safety latched**：EStop / Fault 触发后 rt_thread 拒绝 normal Enable(true)
-    /// 直到 state_machine 显式 ClearEStop（`safety_latched.store(false)`）。
-    /// 防 v5 C1 bug：emergency 后随即 normal Enable(true) 把 SafetyStop 覆盖。
+    /// EStop / Fault 后置位；rt_thread 拒绝 normal Enable(true)；ClearEStop 清
     safety_latched: AtomicBool,
 }
 
 pub struct HardRtCtrlClient {
-    inner: Arc<HardRtCtrlInner>, // Arc**只在 spawn 时 clone 一次**，rt_thread 持
-                                   // &Arc 生命周期 = 进程；运行期不 clone/drop
+    inner: Arc<HardRtCtrlInner>, // spawn 时一次 clone，rt_thread 持只读引用
 }
 
 impl ExecutorCtrlClient for HardRtCtrlClient {
@@ -221,35 +194,73 @@ impl ExecutorCtrlClient for HardRtCtrlClient {
 
     fn safety_stop(&self) {
         self.inner.emergency_action.store(EMERGENCY_SAFETY_STOP, Ordering::AcqRel);
-        // 不 latch 这里 —— 由 rt_thread 完成后再 latch（保证"已开始执行"才锁）
     }
 
     fn request_normal(&self, req: AdapterNormalReq) -> NormalReqStatus {
-        let (action_code, arg) = match encode_action(&req) {
-            Some(pair) => pair,
-            None => return NormalReqStatus::PreviousErr(RobotError::Unsupported(
-                "HardRT path: complex AdapterNormalReq not encodable as atomic"
-            )),
+        // v7 §0 修订 #2：HardRT 只编码 RtSafeCtrl 方法
+        let (action_code, arg) = match req {
+            AdapterNormalReq::Enable(true) => (NORMAL_ENABLE, 1),
+            AdapterNormalReq::Enable(false) => (NORMAL_ENABLE, 0),
+            AdapterNormalReq::SetMode(ControlMode::Position) => (NORMAL_SET_MODE_POSITION, 0),
+            AdapterNormalReq::Connect
+            | AdapterNormalReq::Disconnect => {
+                // 走 main 路径：spawn 前 connect / join 后 disconnect
+                return NormalReqStatus::Unsupported(
+                    "HardRT path: Connect/Disconnect must be called from s0_daemon main, not rt_thread"
+                );
+            }
+            AdapterNormalReq::HoldCurrentPosition => {
+                // HardRT path: HoldCurrent 由 OutputPolicy::HoldCurrent gate 实现（不调 write_command）
+                return NormalReqStatus::Unsupported(
+                    "HardRT path: HoldCurrent realized via OutputPolicy gate, no rt action"
+                );
+            }
+            AdapterNormalReq::SetMode(other) => {
+                // v0.2 HardRT 仅支持 Position mode；其他模式留 v0.3+
+                return NormalReqStatus::Unsupported(
+                    "HardRT path: only ControlMode::Position supported in v0.2"
+                );
+            }
         };
-        // safety latched 时拒绝 Enable(true)（防 C1）
+
+        // safety_latched 时拒绝 Enable(true)
         if action_code == NORMAL_ENABLE && arg == 1
             && self.inner.safety_latched.load(Ordering::Acquire)
         {
-            return NormalReqStatus::PreviousErr(RobotError::Unsupported(
+            return NormalReqStatus::Unsupported(
                 "Enable(true) refused while safety latched (need ClearEStop first)"
-            ));
+            );
         }
+
+        // **v7 关键**：先 store arg（rt_thread 看到 normal_action 才会读 arg）
         self.inner.action_arg.store(arg, Ordering::Release);
-        self.inner.normal_action.store(action_code, Ordering::Release);
-        let seq = self.inner.action_seq.fetch_add(1, Ordering::AcqRel);
-        NormalReqStatus::Submitted { seq }
+
+        // CAS 占用 normal_action slot
+        match self.inner.normal_action.compare_exchange(
+            NORMAL_NONE,
+            action_code,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                // 占用成功 → 分配新 seq
+                let new_seq = self.inner.action_seq.fetch_add(1, Ordering::AcqRel) + 1;
+                NormalReqStatus::Submitted { seq: new_seq }
+            }
+            Err(_) => {
+                // 上一个 normal 还没被 rt_thread 消费
+                NormalReqStatus::Busy
+            }
+        }
     }
 
-    fn poll_last_normal_resp(&self) -> Option<AdapterResp> {
+    fn poll_last_normal_resp(&self, expected_seq: u64) -> Option<AdapterResp> {
+        if !self.inner.last_completed_ready.load(Ordering::Acquire) {
+            return None;
+        }
         let last_seq = self.inner.last_completed_seq.load(Ordering::Acquire);
-        let cur_seq = self.inner.action_seq.load(Ordering::Acquire);
-        if last_seq < cur_seq {
-            return None; // 还没执行
+        if last_seq != expected_seq {
+            return None; // 旧请求结果或还没执行
         }
         let code = self.inner.last_completed_result.load(Ordering::Acquire);
         Some(decode_resp(code))
@@ -257,59 +268,54 @@ impl ExecutorCtrlClient for HardRtCtrlClient {
 }
 ```
 
-**rt_thread 主循环消费 atomic（v6 重写）**：
+**rt_thread 主循环（v7 重写）**：
 
 ```rust
 fn run_rt_loop<A: ManipulatorAdapter + RtSafeCtrl>(
     cfg: RtThreadConfig,
-    mut adapter: A,
+    mut adapter: A,                          // **已 connect**（main 在 spawn 前 connect）
     ctrl: Arc<HardRtCtrlInner>,
     cmd_reader: ...,
     snapshot_pub: ...,
     safety_state_slot: Arc<AtomicU8>,
     ...
 ) {
-    // pre-warmup：thread_local hazard pointer 等（task 26 已做）
-    // ...
+    // pre-warmup hazard pointer 等
     loop {
         let deadline = ...;
         clock.sleep_until(deadline);
         rt_entry!({
-            // 1. emergency_action 优先消费（永远先于 normal）
+            // 1. emergency 优先消费
             let em = ctrl.emergency_action.swap(EMERGENCY_NONE, Ordering::AcqRel);
             if em == EMERGENCY_SAFETY_STOP {
                 let result = adapter.safety_stop_rt();
                 ctrl.safety_latched.store(true, Ordering::Release);
-                let safety_state = match result {
-                    Ok(()) => OUTPUT_SAFETY_STOP_COMMANDED,  // 不立刻 confirm
+                // HardRT mmap 写完即生效，TorqueOffConfirmed 直接置（不需 confirm path）
+                let s = match result {
+                    Ok(()) => OUTPUT_SAFETY_TORQUE_OFF_CONFIRMED,
                     Err(_) => OUTPUT_SAFETY_STOP_FAILED,
                 };
-                safety_state_slot.store(safety_state, Ordering::Release);
-                // HardRT 不做 confirm_torque_off —— 真 HardRT adapter 的
-                // safety_stop_rt 通常是 mmap 写寄存器立即生效，bounded < 1µs，
-                // 可以视为下发=确认。SerialRT 才需要 confirm 路径。
-                // mock_hard_rt 直接进 TorqueOffConfirmed：
-                if matches!(result, Ok(())) {
-                    safety_state_slot.store(OUTPUT_SAFETY_TORQUE_OFF_CONFIRMED, Ordering::Release);
-                }
+                safety_state_slot.store(s, Ordering::Release);
             }
 
-            // 2. normal_action（safety_latched 后 Enable(true) 已被 client 端拒）
+            // 2. normal action（仅 RtSafeCtrl 方法）
             let na = ctrl.normal_action.swap(NORMAL_NONE, Ordering::AcqRel);
             if na != NORMAL_NONE {
                 let arg = ctrl.action_arg.load(Ordering::Acquire);
+                // **关键**：先 load action_seq（消费时刻 = 提交时分配的 seq）
+                let seq = ctrl.action_seq.load(Ordering::Acquire);
                 let result = match na {
-                    NORMAL_CONNECT => adapter.connect(),
-                    NORMAL_DISCONNECT => adapter.disconnect(),
                     NORMAL_ENABLE => adapter.enable_rt(arg == 1),
                     NORMAL_SET_MODE_POSITION => adapter.set_mode_rt(ControlMode::Position),
-                    NORMAL_HOLD_CURRENT => adapter.hold_current_position(),
                     _ => Err(RobotError::Unsupported("rt_thread: unknown normal_action")),
                 };
                 let code = encode_resp(&result);
+                // 顺序：result → seq → ready，让 client 看到 ready=true 时
+                // 一定能读到匹配的 seq + result
                 ctrl.last_completed_result.store(code, Ordering::Release);
-                let seq = ctrl.action_seq.load(Ordering::Acquire);
                 ctrl.last_completed_seq.store(seq, Ordering::Release);
+                ctrl.last_completed_ready.store(true, Ordering::Release);
+                // 成功 Enable(true) 后清 safety_latched（让后续 normal 可发）
                 if matches!(result, Ok(())) && na == NORMAL_ENABLE && arg == 1 {
                     ctrl.safety_latched.store(false, Ordering::Release);
                 }
@@ -318,6 +324,7 @@ fn run_rt_loop<A: ManipulatorAdapter + RtSafeCtrl>(
             // 3. policy gate
             let policy_u8 = ctrl.policy.load(Ordering::Acquire);
             let policy = OutputPolicy::from_u8(policy_u8);
+            // ActiveForward 且 !safety_latched 才转发
             if matches!(policy, OutputPolicy::ActiveForward)
                 && !ctrl.safety_latched.load(Ordering::Acquire)
             {
@@ -325,6 +332,10 @@ fn run_rt_loop<A: ManipulatorAdapter + RtSafeCtrl>(
                 let cmd = cmd_guard.as_view();
                 let _ = adapter.write_command(&cmd);
             }
+            // HoldCurrent / Disabled / StopTorque / ReadyHold / ZeroCommand 都是
+            // "不调 write_command"；motor 输出层面：torque off 由 emergency
+            // safety_stop_rt 或 normal Enable(false) 单独驱动；hold 由"不发新
+            // Goal" 隐式实现（HardRT motor 维持上次 Goal = 当前 Present 附近）
 
             // 4. read_state + publish
             let _ = adapter.read_state(&mut state_buf);
@@ -334,156 +345,127 @@ fn run_rt_loop<A: ManipulatorAdapter + RtSafeCtrl>(
 }
 ```
 
-**全程零 alloc / 零 Arc refcount**：所有读写都是原子标量；`Arc<HardRtCtrlInner>`
-spawn 时 clone 一次，rt_thread 持只读引用，不再 clone/drop。`adapter` move 进
-闭包独占。
+**编码常量（reference）**：
+
+```rust
+// emergency_action
+pub const EMERGENCY_NONE: u8 = 0;
+pub const EMERGENCY_SAFETY_STOP: u8 = 1;
+
+// normal_action（仅 RtSafeCtrl 方法）
+pub const NORMAL_NONE: u8 = 0;
+pub const NORMAL_ENABLE: u8 = 1;
+pub const NORMAL_SET_MODE_POSITION: u8 = 2;
+
+// last_completed_result
+pub const RESP_OK: u8 = 0;
+pub const RESP_ERR_INVALID_PARAM: u8 = 1;
+pub const RESP_ERR_HARDWARE_FAULT: u8 = 2;
+pub const RESP_ERR_OTHER: u8 = 3;
+```
 
 ### 4.3 SerialRT 实现（v5 保留）
 
 `SerialIoCtrlClient` 用 emergency channel + AtomicBool 兜底 + ArcSwap pending
-normal —— SerialRT executor 是普通线程，允许 ArcSwap。详 v5 §4.3。
+normal —— 普通线程允许 ArcSwap。详 v5 §4.3。SerialRT 路径**保留**`Connect /
+Disconnect / HoldCurrent` action（serial_io_thread 普通线程允许这些 ms 级 IO）。
 
 ---
 
-## §5 OutputPolicy / OutputSafetyState / RtSafeCtrl（v6 修订）
+## §5 OutputPolicy / OutputSafetyState / OutputSafetyProbe / RtSafeCtrl
 
-### 5.1 OutputPolicy（C2 措辞修订）
+### 5.1 OutputPolicy（v6 保留）
 
-```rust
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OutputPolicy {
-    Disabled       = 0,
-    ReadyHold      = 1,
-    ActiveForward  = 2,
-    HoldCurrent    = 3,
-    ZeroCommand    = 4,
-    StopTorque     = 5,
-}
-
-impl OutputPolicy {
-    /// 接受 6 个有效值（0-5），其他 → `Disabled`（保守兜底，prevent UB
-    /// from corrupted atomic）。
-    #[must_use]
-    pub const fn from_u8(v: u8) -> Self {
-        match v {
-            1 => Self::ReadyHold,
-            2 => Self::ActiveForward,
-            3 => Self::HoldCurrent,
-            4 => Self::ZeroCommand,
-            5 => Self::StopTorque,
-            _ => Self::Disabled, // 0 / 6+ 均归 Disabled（保守）
-        }
-    }
-}
-```
+6 variant + `from_u8` 6 valid + 兜底 `Disabled`。详 v6 §5.1。
 
 ### 5.2 OutputPolicy 在两类 executor 的实现
 
-详 v5 §5.2 表（不变）。
+| Policy | HardRT (rt_thread) | SerialRT (serial_io_thread) |
+|---|---|---|
+| `Disabled` | 不调 `write_command`；torque 状态由 emergency `SafetyStop` 或 normal `Enable(false)` 单独驱动（与 v6 一致） | 同 |
+| `ReadyHold` | 不调 `write_command`（adapter 已 connected + Position + torque off） | 同 |
+| `ActiveForward` | 调 `write_command(cmd)`；要求 RT-safe（HardRT adapter 合约）；`cmd.mode = Stop` → adapter 内 RT-safe cut output（合约 §5.5） | 调 `write_command(cmd)`；含 `cmd.mode = Stop` → `executor_ctrl.safety_stop()` emergency；非 Position → `Err(Unsupported)` Fault |
+| `HoldCurrent` | **不调 write_command**（motor 维持上次 Goal）—— v0.2 范围内对 mock_hard_rt 等价 hold；真 HardRT EtherCAT 等可以加 `RtSafeCtrl::hold_current_rt`（v0.4 评估） | 调 `adapter.hold_current_position()`；失败 fallback `safety_stop` |
+| `ZeroCommand` | 不调 `write_command`（v0.2 退化为 hold） | 同 |
+| `StopTorque` | 不调 `write_command`；torque off 由 `safety_stop_rt` 或 `enable_rt(false)` 驱动 | 同 |
 
-### 5.3 OutputSafetyState（v6 加 `StopCommanded`）
+### 5.3 OutputSafetyState（**v7 加 `AdapterUncertain`**）
 
 ```rust
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputSafetyState {
-    /// 启动期 / 断连后未恢复，硬件状态未知
     TorqueUnknown        = 0,
-    /// 正常运行，torque on
     TorqueOn             = 1,
-    /// **v6 新增**：safety_stop **已下发**（sync_write broadcast 已发送 OK），
-    /// 但**未读回 Torque_Enable=0 确认**。下一 tick `confirm_torque_off`
-    /// 走完才能升 `TorqueOffConfirmed`。
-    /// HardRT 路径不会停留在此状态（mmap 写完即视为确认）；SerialRT 路径会。
-    StopCommanded        = 2,
-    /// safety_stop 完成 + 确认硬件已断扭（read Torque_Enable = 0 一致）
+    StopCommanded        = 2,  // safety_stop 已下发，未 confirm（SerialRT 用）
     TorqueOffConfirmed   = 3,
-    /// safety_stop 调用返回 Err / 或 confirm 多次失败 → 硬件可能仍 torque on
-    StopFailed           = 4,
+    StopFailed           = 4,  // 下发就失败
+    /// **v7 新增**：下发**成功**但 confirm 读回 Torque_Enable mask **部分一致**
+    /// （≠ 全断扭，≠ 全失败）。状态明确不一致；上报 `FaultCode::AdapterUncertain`。
+    AdapterUncertain     = 5,
 }
 ```
 
-序列化到 `safety_state_slot: Arc<AtomicU8>`，`from_u8` 同模式（0-4 valid，
-其他 → `TorqueUnknown` 兜底）。
+`from_u8`：`0..=5` 直映射，其他 → `TorqueUnknown` 兜底。
 
-### 5.4 OutputSafetyProbe trait（v6 新增 - B2 fix）
+### 5.4 OutputSafetyProbe trait（v6 保留）
 
-```rust
-/// SerialRT 执行 emergency safety_stop 后下 tick 调用，确认硬件真断扭。
-///
-/// **独立路径**，不污染 `ManipulatorAdapter::read_state` / `JointStateBuf`：
-///
-/// - read_state 是 hot path（每 tick 跑），加 Torque_Enable 字段会拖慢
-///   sync_read packet（每个 motor 多读 1 byte）
-/// - safety probe 是 cold path（仅 EStop / safety_stop 后用），偶发 RTT OK
-/// - 类型隔离：观测（位置/速度）vs 安全状态（torque enable mask）
-///
-/// HardRT executor 不调本 trait（mmap 写 torque enable 是即时生效的）。
-pub trait OutputSafetyProbe {
-    /// 读所有 joint 当前 `Torque_Enable` 寄存器到 `out[..joint_count]`。
-    /// `out.len()` 须 >= `joint_count`，否则返 `InvalidParameter`。
-    fn read_torque_enable_mask(&mut self, out: &mut [bool]) -> Result<(), RobotError>;
-}
-```
+详 v6 §5.4。Feetech impl 走 sync_read `Torque_Enable`。Mock impl 返回内部
+`enabled` 镜像。
 
-`FeetechAdapter` 实现：sync_read `Torque_Enable` 寄存器（addr 40, 1 byte）
-→ 解码到 `out`。预分配 buffer 同 §7.2。
-
-`MockAdapter` 实现：返回内部 `enabled` 字段镜像。
-
-### 5.5 RtSafeCtrl（v5 保留 + C3 修正实施方）
+### 5.5 RtSafeCtrl trait（v6 保留 + v7 编码集对齐）
 
 ```rust
 pub trait RtSafeCtrl {
+    /// RT-safe 断扭。bounded < 1 µs（mmap 写寄存器即返）。
     fn safety_stop_rt(&mut self) -> Result<(), RobotError>;
+
+    /// RT-safe enable / disable。不带防飞序列（防飞由 OutputPolicy + read_state
+    /// follow-current 实现）。
     fn enable_rt(&mut self, on: bool) -> Result<(), RobotError>;
+
+    /// RT-safe 模式切换（仅瞬时寄存器写）。v0.2 仅要求 Position 真支持。
     fn set_mode_rt(&mut self, mode: ControlMode) -> Result<(), RobotError>;
-    // write_command(mode=Stop) 合约保留（v5 §5.3）
+
+    // write_command(mode = Stop) 必须 RT-safe cut output（trait `Manipulator
+    // Adapter::write_command` 主签名的合约附加；不在 RtSafeCtrl 显式列方法）
 }
 ```
 
-**C3 修正**：
-
-- **`MockAdapter` 实现** `RtSafeCtrl`：mock_hard_rt 是 `RtClass::HardRT`，rt_thread
-  会调；实现就是简单状态字段操作（无 IO 无 alloc，trivially RT-safe）+ 单测验
-  `assert_no_alloc` scope 内不 panic
-- **`FeetechAdapter` 不实现** `RtSafeCtrl`：feetech 是 `RtClass::SerialRT`，挂
-  serial_io_thread；rt_thread 不调它。`spawn_rt_thread<A: ManipulatorAdapter +
-  RtSafeCtrl>` trait bound 让编译期就拒 SerialRT adapter 走 HardRT 路径
+**实施方**：
+- `MockAdapter` (RtClass::HardRT) **实现** `RtSafeCtrl`（trivially RT-safe，
+  状态字段写）；M2 加 `assert_no_alloc` 单测验证
+- `FeetechAdapter` (RtClass::SerialRT) **不实现** `RtSafeCtrl`；编译期
+  `spawn_rt_thread<A: ManipulatorAdapter + RtSafeCtrl>` trait bound 拒错配
 
 ---
 
-## §6 SerialRT executor 的 confirm_torque_off 路径（v6 新增 - B1/B2 闭环）
+## §6 SerialRT confirm_torque_off 路径（v6 保留 + v7 加 AdapterUncertain）
 
 ```rust
-fn tick_hardware(
-    adapter: &mut dyn ManipulatorAdapter,
-    probe: &mut dyn OutputSafetyProbe,    // v6 新增
-    state: &mut IoState,
-    policy: OutputPolicy,
-    ctx: &SerialIoCtx,
-) {
-    // ... 已有 read_state / policy gate / mode 路由 / hold ... (v5 §5.6)
+fn tick_hardware(...) {
+    // ... v6 §6 保留 ...
 
-    // v6 新增：StopCommanded → 下 tick confirm
     if state.safety_state == OutputSafetyState::StopCommanded {
-        // 用 adapter 内预分配 buffer（避免 alloc）
         let n = state.joint_count;
         let mask = &mut state.confirm_buf[..n];
         match probe.read_torque_enable_mask(mask) {
             Ok(()) => {
-                if mask.iter().all(|&b| !b) {
-                    // 全部 Torque_Enable=0 → 升级 confirmed
-                    state.safety_state = OutputSafetyState::TorqueOffConfirmed;
-                } else {
-                    // 至少一个 motor 仍 torque on → 不一致
-                    state.safety_state = OutputSafetyState::AdapterUncertain;
+                let all_off = mask.iter().all(|&b| !b);
+                let any_off = mask.iter().any(|&b| !b);
+                state.safety_state = if all_off {
+                    OutputSafetyState::TorqueOffConfirmed
+                } else if any_off {
+                    // **v7 fix #4**：部分 motor 仍 torque on
                     let _ = ctx.fault_tx.try_send(FaultCode::AdapterUncertain);
-                }
+                    OutputSafetyState::AdapterUncertain
+                } else {
+                    // 全 motor 仍 torque on（safety_stop_fast 完全失效）
+                    let _ = ctx.fault_tx.try_send(FaultCode::SafetyStopFailed);
+                    OutputSafetyState::StopFailed
+                };
             }
             Err(e) => {
-                // 读失败：升级到 StopFailed（保守）
                 tracing::error!(?e, "confirm_torque_off failed");
                 state.safety_state = OutputSafetyState::StopFailed;
                 let _ = ctx.fault_tx.try_send(FaultCode::SafetyStopFailed);
@@ -492,215 +474,207 @@ fn tick_hardware(
         ctx.safety_state_slot.store(state.safety_state as u8, Ordering::Release);
     }
 }
-
-fn handle_safety_stop(
-    adapter: &mut dyn ManipulatorAdapter,
-    state: &mut IoState,
-    ctx: &SerialIoCtx,
-) {
-    let result = adapter.safety_stop(); // feetech impl 走 fast path
-    match result {
-        Ok(()) => {
-            // **v6 修订（B1）**：不立刻 confirmed
-            state.safety_state = OutputSafetyState::StopCommanded;
-        }
-        Err(e) => {
-            tracing::error!(?e, "safety_stop FAILED — hardware state UNKNOWN");
-            state.safety_state = OutputSafetyState::StopFailed;
-            let _ = ctx.fault_tx.try_send(FaultCode::SafetyStopFailed);
-        }
-    }
-    ctx.safety_state_slot.store(state.safety_state as u8, Ordering::Release);
-}
 ```
-
-`IoState` 加 `confirm_buf: Vec<bool>`（启动期 `with_capacity(MAX_JOINTS)` +
-`resize`），运行期 `&mut [..n]` 切片复用 —— **零运行期 alloc**。
 
 ---
 
-## §7 Feetech `safety_stop_fast()` 设计（v5 保留 + C4 修正预分配）
+## §7 Feetech `safety_stop_fast` + 预分配 frame API（v7 修 #3）
 
-### 7.1 当前状态 + 时延对比（v5 保留）
+### 7.1 当前状态
 
-`enable(false)` 13 motor × 3 retry × 150ms = ~5.85s 最坏 → emergency 不可用。
+`enable(false)` 13 motor × 3 retry × 150ms = ~5.85s 最坏。
 
-### 7.2 v6 预分配实现（C4 fix）
+### 7.2 v7 实现：新增 `sync_write_by_id_into` 预分配 API
+
+**问题**：v6 调 `bus.sync_write_by_id` 但 `bus.rs:419/426/432` + `protocol.rs:201`
+`build_sync_write` 内部仍 alloc Vec —— "预分配 buffer" 承诺破产。
+
+**v7 修订**：M4 加 `sync_write_by_id_into` 预分配 frame API：
+
+```rust
+// crates/robot-adapters/feetech/src/bus.rs
+impl<T: SerialTransport> FeetechBus<T> {
+    /// 预分配 frame buffer 版本的 sync_write。复用调用方持有的 `frame_buf`，
+    /// 不在内部 `Vec::new()` / `Vec::push`。
+    ///
+    /// `frame_buf` 必须 `with_capacity(MAX_FRAME_LEN)` 预分配；本方法
+    /// `clear()` 后 `extend_from_slice` —— 容量足够则不 realloc。
+    /// 与 `sync_read_by_id_into` 对称。
+    pub fn sync_write_by_id_into(
+        &mut self,
+        reg_name: &'static str,
+        entries: &[(u8, i32)],
+        frame_buf: &mut Vec<u8>,
+    ) -> Result<(), FeetechError> {
+        frame_buf.clear();
+        // build_sync_write_into 写入 frame_buf 不 alloc（capacity 已够）
+        crate::protocol::build_sync_write_into(reg_name, entries, frame_buf)?;
+        self.transport.write_all(frame_buf)?;
+        // sync_write 不等 ACK
+        Ok(())
+    }
+}
+
+// crates/robot-adapters/feetech/src/protocol.rs
+pub fn build_sync_write_into(
+    reg_name: &'static str,
+    entries: &[(u8, i32)],
+    out: &mut Vec<u8>,
+) -> Result<(), FeetechError> {
+    let reg = get_register(reg_name)?;
+    let n = entries.len();
+    let len = (n * (1 + reg.size as usize)) + 4; // PARAMS = addr + size + N×(id+data)
+    out.push(0xFF);
+    out.push(0xFF);
+    out.push(0xFE); // broadcast id
+    out.push(len as u8);
+    out.push(0x83); // SYNC_WRITE
+    out.push(reg.addr);
+    out.push(reg.size);
+    for &(id, val) in entries {
+        out.push(id);
+        // val 编码到 reg.size 字节（sign-magnitude 等，复用现有 encoding）
+        encode_value_into(reg_name, val, reg.size, out)?;
+    }
+    let chk = checksum(&out[2..]);
+    out.push(chk);
+    Ok(())
+}
+```
+
+`FeetechAdapter`：
 
 ```rust
 pub struct FeetechAdapter<T: SerialTransport> {
     // ... 现有字段 ...
-
-    /// **v6 新增**：emergency safety_stop 路径预分配 buffer。
-    /// `connect()` 时按 joint_count `with_capacity` + 一次性 push 占位
-    /// (id, 0)；`safety_stop_fast` 调时只更新元素值，不重新 alloc。
-    /// 防 §2.19 "安全路径不分配"。
-    safety_stop_buf: Vec<(u8, i32)>,
-
-    /// **v6 新增**：confirm_torque_off 用的 Torque_Enable raw 缓冲。
+    safety_stop_buf: Vec<(u8, i32)>,    // joint_count × (id, 0)
+    safety_stop_frame_buf: Vec<u8>,     // MAX_FRAME_LEN bytes
     confirm_torque_buf: Vec<i32>,
 }
 
-impl<T: SerialTransport> FeetechAdapter<T> {
+impl FeetechAdapter {
     pub fn safety_stop_fast(&mut self) -> Result<(), FeetechError> {
-        // 复用预分配 buffer，运行期不 alloc
+        // safety_stop_buf 已预填 (id, 0)；这里只更新值确保都是 0
         for entry in self.safety_stop_buf.iter_mut() {
-            entry.1 = 0; // 全部置 Torque_Enable = 0
+            entry.1 = 0;
         }
-        // sync_write broadcast (id=0xFE)；不等 ACK；1 次串口往返 ~1-2ms
-        self.bus.sync_write_by_id("Torque_Enable", &self.safety_stop_buf)?;
+        // 用预分配 frame_buf，运行期不 alloc
+        self.bus.sync_write_by_id_into(
+            "Torque_Enable",
+            &self.safety_stop_buf,
+            &mut self.safety_stop_frame_buf,
+        )?;
         Ok(())
     }
-}
 
-impl<T: SerialTransport> ManipulatorAdapter for FeetechAdapter<T> {
-    fn safety_stop(&mut self) -> Result<(), RobotError> {
-        // 默认 trait impl 走 enable(false) 慢路径；feetech override 走 fast
-        self.safety_stop_fast().map_err(RobotError::from)
-    }
-    fn connect(&mut self) -> Result<(), RobotError> {
-        // ... 现有 handshake / joint_id 缓存 ...
+    pub fn connect(&mut self) -> Result<(), RobotError> {
+        // ... 现有 handshake ...
 
-        // v6：safety buffer 预分配
+        // v7 预分配
         self.safety_stop_buf.clear();
         for &id in &self.joint_ids {
             self.safety_stop_buf.push((id, 0));
         }
+        // MAX_FRAME_LEN：N joint × 3 byte (id + 2 byte data) + 8 header/checksum = 13×3+8 ≈ 47
+        // 保守 256 字节够用
+        self.safety_stop_frame_buf = Vec::with_capacity(256);
         self.confirm_torque_buf.resize(self.joint_ids.len(), 0);
-        Ok(())
-    }
-}
-
-impl<T: SerialTransport> OutputSafetyProbe for FeetechAdapter<T> {
-    fn read_torque_enable_mask(&mut self, out: &mut [bool]) -> Result<(), RobotError> {
-        let n = self.joint_ids.len();
-        if out.len() < n {
-            return Err(RobotError::InvalidParameter("out buffer too small"));
-        }
-        // 预分配 confirm_torque_buf；sync_read by-id 走 by-id hot path
-        self.bus.sync_read_by_id_into(
-            "Torque_Enable",
-            &self.joint_ids,
-            &mut self.confirm_torque_buf,
-        )?;
-        for (i, &raw) in self.confirm_torque_buf[..n].iter().enumerate() {
-            out[i] = raw != 0; // 1 = enabled, 0 = disabled
-        }
         Ok(())
     }
 }
 ```
 
----
-
-## §8 OutputSafetyState + state_machine（v3 保留）
-
-详 v3 §6 + pre-2 transition 表加 `* → Fault(SafetyStopFailed)`。
-
----
-
-## §9 SIGTERM graceful + SIGKILL blocking gap（v5 保留）
-
-### 9.1 SIGTERM graceful
-
-详 v3 §7。
-
-### 9.2 SIGKILL：明确 task-30 ≠ v0.2 SLA
-
-详 v5 §9.2。task-30 完成只完成"graceful 软件断扭" + "EStop 真断扭" + "
-StopCommanded → confirmed" 路径；硬件 fail-safe 留 task-30-post。
+**测试**（M4）：
+- mock transport：`safety_stop_fast` 调用前后 `Vec` capacity 不变（无 realloc）
+- `assert_no_alloc::assert_no_alloc(|| adapter.safety_stop_fast())` 不 panic
+- wire bytes 含 broadcast id `0xFE` + `Torque_Enable` addr + 全 0 data
+- 时延 ≤ 5ms（mock transport 即时返回）
 
 ---
 
-## §10 测试覆盖（v5 + v6 新增）
+## §8 SIGTERM graceful + SIGKILL blocking gap（v5 保留）
 
-继承 v5 全部 + v6 加：
+详 v5 §9。
+
+---
+
+## §9 测试覆盖（v6 + v7）
+
+继承 v6 全部 + v7 加：
 
 | 用例 | 验证 |
 |---|---|
-| `HardRtCtrlInner` 全字段 atomic（无 ArcSwap / 无 Vec）；`#[derive]` 不含 alloc 字段 | B3 |
-| rt_thread 主循环 `assert_no_alloc` scope 全过（含 emergency / normal 处理）| B3 + R11 |
-| `safety_stop()` 后 `Enable(true)` `request_normal` 返 `Unsupported`（safety_latched） | C1 |
-| safety_stop 下发成功 → `safety_state == StopCommanded`（**不**是 TorqueOffConfirmed）| B1 |
-| 下一 tick `confirm_torque_off` 读回 mask 全 0 → 升 `TorqueOffConfirmed` | B1 + B2 |
-| 下一 tick read 失败 → `StopFailed` + `FaultCode::SafetyStopFailed` 上报 | B2 |
-| `confirm_torque_off` mask 部分 1 → `AdapterUncertain` + Fault | B2 |
-| `OutputSafetyProbe::read_torque_enable_mask`（feetech mock transport）解码 sync_read response 正确 | B2 |
-| `safety_stop_fast` 调用前 `connect()` 必先 `safety_stop_buf` 预分配；运行期 `safety_stop_fast` 在 `assert_no_alloc` scope 不 panic | C4 + R11 |
-| `OutputPolicy::from_u8` 0/6/255 → `Disabled` 兜底 | C2 |
-| `MockAdapter` 实现 `RtSafeCtrl`（spawn_rt_thread 编译通过）；`FeetechAdapter` 不实现（spawn_rt_thread 编译期拒）| C3 |
-| **【blocking gap】** SIGKILL → torque off 不通过（标 known issue） | 不假装 |
+| `request_normal` 两次连续提交 → 第二次返 `Busy`（不覆盖第一个）| v7 #1 |
+| `request_normal` cas 成功后 seq + action 1:1 配对（rt_thread swap action 后 load seq 与 client 持有 seq 一致）| v7 #1 |
+| `request_normal(Connect / Disconnect / HoldCurrent / SetMode(Velocity))` 在 HardRT 路径返 `Unsupported` | v7 #2 |
+| rt_thread 主循环不 reach `adapter.connect/disconnect/hold_current_position` | v7 #2 |
+| `sync_write_by_id_into` 用预分配 frame_buf；mock transport 验证 wire bytes + capacity 不变 | v7 #3 |
+| `safety_stop_fast` 在 `assert_no_alloc::assert_no_alloc(...)` scope 不 panic | v7 #3 + R11 |
+| `confirm_torque_off` mask 部分 1 部分 0 → `OutputSafetyState::AdapterUncertain` + `FaultCode::AdapterUncertain` | v7 #4 |
+| `OutputSafetyState::from_u8(5)` → `AdapterUncertain` | v7 #4 |
 
 ---
 
-## §11 迁移计划（v5 重排 + v6 加 OutputSafetyProbe）
+## §10 风险（v3-v6 + v7 加 R15）
 
-### 11.1 前置 task-30-pre（v3-v5 沿用）
+### v7 R15：HardRT executor `OutputPolicy::HoldCurrent` 隐式 hold 假设
 
-详 v5 §11.1。
+**风险**：v7 `OutputPolicy::HoldCurrent` 在 HardRT 路径**不调 write_command**，
+依赖 motor 维持上次 Goal。如果 HardRT motor 是 "无 Goal 不维持"（少见），会
+drift 或 disable。
 
-### 11.2 主体 M1-M7（v6 拆 OutputSafetyProbe）
+**缓解**：
+- 真 HardRT adapter 的 motor 几乎都内部 hold last Goal（EtherCAT servo / RT-CAN
+  motor controller / mock_hard_rt 仿真）；这个假设对 v0.4+ 真上 EtherCAT 时
+  仍要确认 servo 行为
+- v0.4 真上 EtherCAT 时若 motor "无 Goal 不维持" → 加 `RtSafeCtrl::hold_
+  current_rt`（瞬时写一个 Goal=Present 的 PDO），rt_thread `OutputPolicy::
+  HoldCurrent` 时调
+- v0.2 mock_hard_rt 模拟即可
+
+---
+
+## §11 迁移计划（v7 重写 pre 表 + 改进 M 表）
+
+### 11.1 前置 task-30-pre（**v7 列具体文件**）
+
+| # | 主题 | 具体文件 + 当前状态 + 改动 | 工作量 | 评审 |
+|---|---|---|---|---|
+| **pre-1a** | `RtClass` 加 `SerialRT` variant | `crates/robot-core/src/adapter.rs:31-37` 当前 `enum RtClass { HardRT, SoftRT }` → 加 `SerialRT`；`Display` impl 同步；`from_str` 同步；单测扩 | 15 min | §4.6 设计修订 |
+| **pre-1b** | Feetech adapter rt_class HardRT → SerialRT | `crates/robot-adapters/feetech/src/adapter.rs:202` 当前 `RtClass::HardRT` → `RtClass::SerialRT`；删除 v0.2 task 28 注释 "目标分类" 一段；改 `info()` 文档说明 | 5 min | 与 pre-1a 同评审 |
+| **pre-1c** | `docs/00_design.md` §4.6 Adapter 分级章节扩 | 加 `SerialRT` 段：定义、判定准则（可证明 RT 合规性）、典型硬件（串口舵机 / USB-RS485 / Modbus RTU）；走 dimos 同步回写 `docs/09_robot_framework.md` | 30 min | **设计修订评审** |
+| **pre-1d** | `docs/10_verification.md` 加 SerialRT baseline 行 | 当前 §10.1 只有 HardRT / SoftRT；加 SerialRT：`feetech_poke ping 13-motor` baseline、`safety_stop_fast` 时延 SLA `< 10ms`、confirm_torque_off RTT SLA `< 50ms` | 15 min | 同 pre-1c |
+| **pre-2** | state schema 补字段 + state_machine 转换表加 `* → Fault(SafetyStopFailed)` | `crates/robot-msg/schemas/joint.fbs:36` 加字段（`mode/control_link/output_mode/safety_state` 全 `Unknown` variant 兼容旧 writer）；`crates/robot-s0/src/state_machine.rs:357` 加全状态转换；`build_helpers` + `pub_thread:237` + `robotctl status` + `schema_compat` 测试 | 1.5 h | **§3.4 / §1.4 设计修订** |
+| **pre-3a** | `RobotError::Unsupported(&'static str)` variant + thiserror Display | `crates/robot-core/src/error.rs:28` 当前 enum 无 Unsupported；加 variant + `#[error("unsupported: {0}")]` + `impl From` 链路；现有 `Err(RobotError::InvalidParameter(...))` 不动 | 15 min | 纯增量 |
+| **pre-3b** | adapter_io_thread 走 RobotClock | `crates/robot-core/src/time.rs` 现成 `MonoRawNs` / `Deadline` / `RobotClock` trait；serial_io_thread 内部用 `RobotClock` 替换任何 `std::time::Instant::now`（业务代码 §业务代码禁用 API） | 30 min | 纯增量 |
+
+### 11.2 主体 M1-M7（v6 保留 + v7 修 M4）
 
 | # | 主题 | 工作量 | 依赖 |
 |---|---|---|---|
-| **M1** | `ExecutorCtrlClient` trait + `OutputPolicy(AtomicU8)` + `OutputSafetyState(含 StopCommanded)` + `AdapterNormalReq` + atomic 编码常量；纯类型 + 单测 | 1 h | pre-3a/b |
+| **M1** | `ExecutorCtrlClient` trait + `OutputPolicy(AtomicU8)` + `OutputSafetyState(含 StopCommanded + AdapterUncertain)` + `AdapterNormalReq` + `NormalReqStatus(Submitted/Busy/Unsupported)` + atomic 编码常量；纯类型 + 单测（含 `Busy` semantics + `AdapterUncertain` u8 转换） | 1 h | pre-3a/b |
 | **M2** | `RtSafeCtrl` 子 trait + `MockAdapter` 实现 + `assert_no_alloc` 单测；`ManipulatorAdapter::write_command(mode=Stop)` 合约 doc | 1 h | M1 |
-| **M3** | **v6 新增**：`OutputSafetyProbe` trait + `FeetechAdapter` 实现 + `MockAdapter` 实现；mock transport 单测 | 1 h | pre-1 |
-| **M4** | `FeetechAdapter::safety_stop_fast()` + `safety_stop` override + 预分配 buffer；连接时 `safety_stop_buf` / `confirm_torque_buf` resize；mock transport 单测 broadcast wire bytes + 时延 | 1 h | M3 |
-| **M5** | `HardRtCtrlClient` 实现（**全 atomic**）+ rt_thread 主循环消费 emergency / normal action + safety_latched 拒绝 enable + assert_no_alloc soak | 1.5 h | M1 / M2 |
-| **M6** | `SerialIoCtrlClient` + `serial_io_thread` skeleton + `select!` loop + `tick_hardware` 含 `confirm_torque_off` 路径；feature flag off | 2.5 h | M1 / M3 / M4 / pre-3b |
-| **M7** | `s0_daemon` dispatch by `RtClass`；ipc_thread 加 `Box<dyn ExecutorCtrlClient>` + transition hook 真驱动；删 legacy bootstrap；feature flag default on；smoke 通过下个 release 删 flag | 1.5 h | M5 / M6 / pre-2 |
+| **M3** | `OutputSafetyProbe` trait + `FeetechAdapter` 实现 + `MockAdapter` 实现；mock transport 单测 | 1 h | pre-1 |
+| **M4** | **v7 重写**：`bus.sync_write_by_id_into` + `protocol.build_sync_write_into` 预分配 frame API；`FeetechAdapter::safety_stop_fast()` 走新 API；`safety_stop` override + 预分配 buffer；`assert_no_alloc` 单测 + wire bytes 单测 + 时延单测 | 1.5 h | M3 |
+| **M5** | `HardRtCtrlClient` 实现（**全 atomic + CAS 占用 normal_action**）+ rt_thread 主循环消费 emergency / normal action + safety_latched 拒绝 enable + `assert_no_alloc` soak（rt_guard_soak 复用） | 1.5 h | M1 / M2 |
+| **M6** | `SerialIoCtrlClient` + `serial_io_thread` skeleton + `select!` loop + `tick_hardware` 含 `confirm_torque_off` 路径（StopCommanded → TorqueOffConfirmed / AdapterUncertain / StopFailed 三分支）；feature flag off | 2.5 h | M1 / M3 / M4 / pre-3b |
+| **M7** | `s0_daemon` dispatch by `RtClass`（含 main 路径调 connect/disconnect 不走 rt_thread）；ipc_thread 加 `Box<dyn ExecutorCtrlClient>` + transition hook 真驱动；删 legacy bootstrap；feature flag default on；smoke 通过下个 release 删 flag | 1.5 h | M5 / M6 / pre-2 |
 
-**总 ~9.5 h**（v5 估 8 h；v6 加 OutputSafetyProbe + safety_state 二阶段确认
-+ 全 atomic HardRT 重写 多 1.5 h，更真实）。
-
----
-
-## §12 风险（v3-v5 R1-R12 保留 + v6 加）
-
-### v6 R13：HardRT 路径"原子编码不下"的请求
-
-**风险**：未来某 HardRT adapter 的 `set_mode(Velocity)` 需要带速度上限参数（e.g.
-`SetMode { mode: Velocity, max_rpm: u32 }`）→ 不可单字节 atomic 编码 → request_
-normal 返 `Unsupported`，需要 v0.4 升级（多 atomic 字段 / 跨 tick 多步 commit
-等）。
-
-**缓解**：v0.2 范围内 HardRT 控制集小（Connect / Disconnect / Enable bool /
-SetMode(Position only) / HoldCurrent），全部 atomic 编码够用；v0.3 加复杂参数
-时再扩。
-
-### v6 R14：SerialRT confirm_torque_off 增加一次 RTT
-
-**风险**：`StopCommanded → 下 tick read_torque_enable_mask` 增加一次 sync_read
-RTT（feetech ~5ms 13 motor）；emergency 路径总时延 = safety_stop_fast(~2ms)
-+ confirm(~5ms) ≈ 7ms。仍远低于 verification SLA 250 ms。
-
-**缓解**：可接受；测试覆盖确认时延 < 50ms 即过。
-
-### 回滚（v5 沿用 + 加 OutputSafetyProbe revert）
-
-每 M commit 独立 revertable；OutputSafetyProbe 回退 → safety_state 直接停留
-`StopCommanded`（**不**升 `TorqueOffConfirmed`）—— 安全语义降级（保守）但可用。
+**总 ~10 h**（v6 估 9.5 h；v7 加 `sync_write_by_id_into` API + `Busy` 语义 + 测试增强多 0.5 h）。
 
 ---
 
-## §13 v6 决议请求
+## §12 v7 决议请求
 
 请 review 并回复：
 
-1. v6 整体（HardRT 全 atomic + emergency/normal 拆 + safety_latched +
-   StopCommanded 二阶段 + OutputSafetyProbe + safety_stop_fast 预分配）approve？
-2. **`OutputSafetyState` 加 `StopCommanded` variant** 是否同意（B1 fix）？
-3. **`OutputSafetyProbe` 独立 trait** 而非塞进 `read_state` 是否同意（B2 fix）？
-4. **HardRT 全 atomic（移除所有 ArcSwap）** + 复杂请求 `Unsupported` 是否接受（B3 fix）？
-5. **`safety_latched` AtomicBool** + Enable(true) reject 直到 ClearEStop 是否接受（C1 fix）？
-6. M5 / M6 / M7 拆开（v5 M5+M6 → v6 M5/M6/M7）总 9.5h 是否合理？
-7. M7 行为切换点是否拆两 commit（"flag on" + "删 legacy"）？
-8. 真机最低门槛 M7 smoke：v5 8 项 + v6 新增：
-   - `mock_s1` 发 `Stop` → `safety_state` 先 `StopCommanded` 后 `TorqueOff
-     Confirmed`（确认 confirm_torque_off 路径）
-   - `feetech_poke read Torque_Enable` 在 SIGTERM 后必须 = 0（emergency 路径
-     可工作）
-   - 同意 / 加项？
+1. v7 整体（CAS occupy + RtSafeCtrl-only normal_action + `sync_write_by_id_into` 预分配 + `AdapterUncertain` variant + pre 任务列文件）approve？
+2. **`NormalReqStatus::Busy`** 语义：调用方收到后**应**重试还是抢占？v7 让调用方决定，state_machine transition hook 收 Busy 时直接放弃本次 request 等下次 transition 重试 —— 同意？
+3. **HardRT `Connect / Disconnect / HoldCurrent` 不走 rt_thread**：`Connect/Disconnect` 移到 `s0_daemon` main；`HoldCurrent` 由 `OutputPolicy::HoldCurrent` gate 隐式实现（不调 write_command = motor 维持 last Goal）。同意？
+4. **R15 假设**："HardRT motor 默认 internal hold last Goal" 对 mock_hard_rt 适用；v0.4 真上 EtherCAT 时若不适用则加 `RtSafeCtrl::hold_current_rt`。同意？
+5. **`sync_write_by_id_into` API 与现有 `sync_read_by_id_into` 对称**（M4 加），改 protocol 内 `build_sync_write_into` 接受 `&mut Vec<u8>`。同意 / 改名 / 改签名？
+6. pre 任务表（pre-1a/b/c/d + pre-2 + pre-3a/b）列具体文件 + 行号是否清晰可执行？
+7. M7 行为切换点拆两 commit（"flag on" + "删 legacy"）？
+8. 真机最低门槛 M7 smoke：v6 + v7 加 `request_normal` `Busy` semantics 测（mock 提交两次第二次返 Busy）+ feetech `safety_stop_fast` `assert_no_alloc` + `AdapterUncertain` 路径测（mock 强制 confirm 部分一致）。同意 / 加项？
 
 review 通过我按 pre-1 → pre-2 → pre-3 → M1-M7 顺序动手 task-30 实施。

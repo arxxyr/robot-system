@@ -2225,6 +2225,71 @@ User v5 review 给出 3 blocker + 4 修正，全部接受。
 
 详 `docs/designs/task-30_state_machine_adapter_link.md`（v6，~860 行）。
 
+### v7 修订（2026-04-25 user 六轮 review 后）
+
+User v6 review 给出 5 项卡点，全部接受（706 行 → 700+ 行）：
+
+1. **HardRT 提交丢请求 + seq 误确认**：v6 `store + fetch_add` 有数据竞争 →
+   normal_action 用 `compare_exchange(NONE, action)` 占用 slot；占用失败返
+   `NormalReqStatus::Busy`；seq 在 cas 成功**之后**分配 `fetch_add(1) + 1`
+   保证与 action 1:1 配对；rt_thread 完成时按 result→seq→ready 顺序写
+2. **rt_thread 调 connect / disconnect / hold_current_position 不是 RT-safe**：
+   HardRT normal_action 编码集**裁剪**只允许 `RtSafeCtrl` 方法
+   （`Enable(bool)` / `SetMode(Position)`）；`Connect / Disconnect` 移
+   到 `s0_daemon` main（spawn 前 connect / join 后 disconnect）；
+   `HoldCurrent` 在 HardRT 由 `OutputPolicy::HoldCurrent` gate 隐式实现
+   （不调 write_command = motor 维持 last Goal）；SerialRT 才走真 helper
+3. **`sync_write_by_id` 内部 alloc** 与 "预分配" 承诺冲突 → M4 加
+   `bus.sync_write_by_id_into` + `protocol.build_sync_write_into` 预分配
+   frame API（与现有 `sync_read_by_id_into` 对称）；safety_stop_fast 走新
+   API；`assert_no_alloc` 单测覆盖
+4. **`OutputSafetyState::AdapterUncertain` 自相矛盾**（enum 到 StopFailed=4
+   但后用 AdapterUncertain）→ 加 `AdapterUncertain = 5` variant；语义：下
+   发成功但 confirm 读回 mask 部分一致（≠全断扭，≠全失败）；与 `StopFailed`
+   区分明确
+5. **pre 任务无具体文件 / 行号** → §11.1 重写 pre 表，每个 pre 列具体文件路径 +
+   当前代码状态 + 改动 + 评审：
+   - pre-1a：`crates/robot-core/src/adapter.rs:31` (RtClass enum 加 SerialRT)
+   - pre-1b：`crates/robot-adapters/feetech/src/adapter.rs:202` (HardRT → SerialRT)
+   - pre-1c：`docs/00_design.md` §4.6 + dimos 同步回写
+   - pre-1d：`docs/10_verification.md` 加 SerialRT baseline 行
+   - pre-2：`crates/robot-msg/schemas/joint.fbs:36` + state_machine
+     `* → Fault(SafetyStopFailed)` 转换表
+   - pre-3a：`crates/robot-core/src/error.rs:28` (加 Unsupported variant)
+   - pre-3b：serial_io_thread 走 RobotClock 替换 `Instant::now`
+
+**v7 主要新增**：
+
+- §0 v6→v7 修订记录（5 项 + 修订位置）
+- §2 加硬约束 20：RT slot 提交协议 1:1 配对（CAS 占用 + seq cas 后分配）
+- §3 架构图修订 normal_action 协议（CAS occupy / Busy reject）
+- §4.2 HardRtCtrlClient 重写：CAS occupy + RtSafeCtrl-only 编码 +
+  Connect/Disconnect/HoldCurrent 移出 rt_thread
+- §5.2 OutputPolicy 在 HardRT 的实现表更新（HoldCurrent 隐式 / Stop 走 trait
+  合约）
+- §5.3 OutputSafetyState 加 AdapterUncertain = 5
+- §6 confirm_torque_off 三分支（all_off → TorqueOffConfirmed / any_off →
+  AdapterUncertain / none_off → StopFailed）
+- §7.2 sync_write_by_id_into 预分配 API 完整设计
+- §10 加 R15（HardRT HoldCurrent 隐式 hold 假设）
+- §11 M1-M7 + M4 重写 + 总 9.5h → 10h
+- §12 8 个 v7 决议请求
+
+**v7 8 个决议请求**：
+
+1. v7 整体 approve？
+2. NormalReqStatus::Busy 语义：调用方收 Busy 直接放弃本次 request 等下次
+   transition 重试 同意？
+3. HardRT Connect/Disconnect 移 main + HoldCurrent OutputPolicy gate 同意？
+4. R15 "HardRT motor 默认 internal hold last Goal" 假设可接受？
+5. sync_write_by_id_into / build_sync_write_into 预分配 frame API 设计同意？
+6. pre 任务表列具体文件 + 行号清晰可执行？
+7. M7 拆两 commit（flag on + 删 legacy）？
+8. 真机门槛加新项：Busy semantics + safety_stop_fast assert_no_alloc +
+   AdapterUncertain 三分支路径测。同意 / 加项？
+
+详 `docs/designs/task-30_state_machine_adapter_link.md`（v7，~700 行）。
+
 ---
 
 ## 2026-04-25 · Step 8 EStop latch 双文件 + 重启恢复（**状态：登记 / 实施完成**）
