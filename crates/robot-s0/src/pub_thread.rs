@@ -138,6 +138,7 @@ pub fn spawn_pub_thread<F>(
     publishers_factory: F,
     rt_snap_rdr: RtSnapshotReader<RtSnapshot>,
     state_rdr: RtSnapshotReader<S0StateSnapshot>,
+    rt_ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
 ) -> std::io::Result<PubThreadHandle>
 where
     F: FnOnce() -> IpcPublishers + Send + 'static,
@@ -163,6 +164,7 @@ where
                 pubs,
                 &rt_snap_rdr,
                 &state_rdr,
+                &rt_ctrl,
                 &join_stop,
                 &join_metrics,
             );
@@ -185,13 +187,14 @@ where
 // 主循环
 // ============================================================================
 
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
 fn run_loop(
     cfg: &PubThreadConfig,
     clock: &dyn RobotClock,
     mut pubs: IpcPublishers,
     rt_snap_rdr: &RtSnapshotReader<RtSnapshot>,
     state_rdr: &RtSnapshotReader<S0StateSnapshot>,
+    rt_ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
     stop: &AtomicBool,
     metrics: &PubThreadMetrics,
 ) {
@@ -215,6 +218,7 @@ fn run_loop(
                 cfg,
                 rt_snap_rdr,
                 state_rdr,
+                rt_ctrl,
                 state_seq,
                 now,
                 metrics,
@@ -235,11 +239,13 @@ fn run_loop(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn publish_joint_state(
     pub_: &mut Iceoryx2Publisher<markers::JointState>,
     cfg: &PubThreadConfig,
     rt_snap_rdr: &RtSnapshotReader<RtSnapshot>,
     state_rdr: &RtSnapshotReader<S0StateSnapshot>,
+    rt_ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
     seq: u64,
     now_ns: u64,
     metrics: &PubThreadMetrics,
@@ -259,10 +265,13 @@ fn publish_joint_state(
         .iter()
         .map(|x| f64::from(*x))
         .collect();
-    // task-30 v9 pre-2：从 S0StateSnapshot 抽 5 个状态字段镜像进 wire body。
-    // S0SafetyState 在 v0.2 阶段还没接 OutputSafetyProbe（M3 加），暂置 Unknown。
+    // task-30 v9 pre-2 + M7 阶段 5：从 S0StateSnapshot 抽 4 个状态字段；
+    // S0SafetyState 直接从共享 `HardRtCtrlInner.safety_state` 原子读
+    // （rt_thread / serial_io_thread 都把当前 OutputSafetyState 写到这里），
+    // 转 wire enum（数值已 1:1 对齐，schema_compat 锁测保证）。
     let s0_snap = state_rdr.load();
     let (s0_mode, s0_control_link, s0_output_mode, s0_fault_code) = map_state_to_wire(&s0_snap);
+    let s0_safety_state = map_safety_state_to_wire(rt_ctrl.safety_state.load(Ordering::Acquire));
     let body = build_joint_state_with_s0(
         cfg.joint_layout_id,
         snap.state.stamp_ns,
@@ -273,7 +282,7 @@ fn publish_joint_state(
         s0_mode,
         s0_control_link,
         s0_output_mode,
-        S0SafetyState::TorqueUnknown,
+        s0_safety_state,
         s0_fault_code,
     );
     let upper = 1024 + body.len();
@@ -362,6 +371,25 @@ fn map_state_to_wire(snap: &S0StateSnapshot) -> (S0Mode, S0ControlLink, S0Output
     (mode, link, out, fc)
 }
 
+/// task-30 v9 / M7 阶段 5：把共享 `HardRtCtrlInner.safety_state` 的原子
+/// `u8` 转 wire `S0SafetyState`。**数值 1:1 对齐**（详
+/// `crates/robot-msg/tests/compat.rs` 的
+/// `s0_safety_state_wire_matches_core_output_safety_state` 锁测，schema 与
+/// core 不再独立演进）。未知值（理论上不该出现，atomic 写者只 store
+/// `OutputSafetyState::to_u8`）由 [`OutputSafetyState::from_u8`] 兜底成
+/// `TorqueUnknown`，let wire 端不被假绿带跑。
+fn map_safety_state_to_wire(raw: u8) -> S0SafetyState {
+    use robot_core::executor_ctrl::OutputSafetyState;
+    match OutputSafetyState::from_u8(raw) {
+        OutputSafetyState::TorqueUnknown => S0SafetyState::TorqueUnknown,
+        OutputSafetyState::TorqueOn => S0SafetyState::TorqueOn,
+        OutputSafetyState::StopCommanded => S0SafetyState::StopCommanded,
+        OutputSafetyState::TorqueOffConfirmed => S0SafetyState::TorqueOffConfirmed,
+        OutputSafetyState::StopFailed => S0SafetyState::StopFailed,
+        OutputSafetyState::AdapterUncertain => S0SafetyState::AdapterUncertain,
+    }
+}
+
 fn publish_s0_heartbeat(
     pub_: &mut Iceoryx2Publisher<markers::Heartbeat>,
     cfg: &PubThreadConfig,
@@ -433,6 +461,7 @@ mod tests {
         RtSnapshotPublisher<S0StateSnapshot>,
         Iceoryx2Subscriber<markers::JointState>,
         Iceoryx2Subscriber<markers::Heartbeat>,
+        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     ) {
         let topics = fresh_topics();
         // subscriber 端 Node 放主线程（测试观察者）。
@@ -471,8 +500,19 @@ mod tests {
             }
         };
 
-        let handle = spawn_pub_thread(cfg, clock, factory, rt_rdr, state_rdr.clone()).unwrap();
-        (handle, rt_pub, state_pub, js_sub, hb_sub)
+        // task-30 v9 / M7 阶段 5：默认共享 ctrl，safety_state = TorqueUnknown。
+        // 测试可在 store 后断言 wire S0SafetyState 同步。
+        let rt_ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
+        let handle = spawn_pub_thread(
+            cfg,
+            clock,
+            factory,
+            rt_rdr,
+            state_rdr.clone(),
+            Arc::clone(&rt_ctrl),
+        )
+        .unwrap();
+        (handle, rt_pub, state_pub, js_sub, hb_sub, rt_ctrl)
     }
 
     /// 轮询 `latest()` 直到拿到 `sample` 或超时 panic。
@@ -497,7 +537,7 @@ mod tests {
 
     #[test]
     fn spawn_then_stop_cleanly() {
-        let (handle, _rt_pub, _state_pub, _js_sub, _hb_sub) = bring_up();
+        let (handle, _rt_pub, _state_pub, _js_sub, _hb_sub, _rt_ctrl) = bring_up();
         thread::sleep(Duration::from_millis(30));
         handle.request_stop();
         handle.join().unwrap();
@@ -506,7 +546,7 @@ mod tests {
     /// RT snapshot → `pub_thread` → subscriber 能看到 `JointState` body 的字段。
     #[test]
     fn joint_state_reaches_subscriber() {
-        let (handle, rt_pub, _state_pub, mut js_sub, _hb_sub) = bring_up();
+        let (handle, rt_pub, _state_pub, mut js_sub, _hb_sub, _rt_ctrl) = bring_up();
 
         // 发一个带 3 关节的 RT snapshot
         let mut jsb = JointStateBuf {
@@ -539,10 +579,81 @@ mod tests {
         handle.join().unwrap();
     }
 
+    /// **task-30 v9 / M7 阶段 5 锁测**：`rt_ctrl.safety_state` 写入后，下一帧
+    /// `JointState` 的 `s0_safety_state` wire 字段必须同步到对应值。覆盖
+    /// 三个有代表性的状态：`StopCommanded`（emergency 后立即态）/
+    /// `TorqueOffConfirmed`（confirm 成功）/ `AdapterUncertain`（confirm
+    /// timeout）。
+    #[test]
+    fn safety_state_atomic_propagates_to_wire() {
+        use robot_core::executor_ctrl::OutputSafetyState;
+        use robot_msg::msg::{JointState as FbJointState, S0SafetyState as WireSafetyState};
+
+        let (handle, rt_pub, _state_pub, mut js_sub, _hb_sub, rt_ctrl) = bring_up();
+
+        let cases = [
+            (
+                OutputSafetyState::StopCommanded,
+                WireSafetyState::StopCommanded,
+            ),
+            (
+                OutputSafetyState::TorqueOffConfirmed,
+                WireSafetyState::TorqueOffConfirmed,
+            ),
+            (
+                OutputSafetyState::AdapterUncertain,
+                WireSafetyState::AdapterUncertain,
+            ),
+        ];
+
+        for (i, (core_state, wire_expected)) in cases.iter().enumerate() {
+            rt_ctrl
+                .safety_state
+                .store(core_state.to_u8(), Ordering::Release);
+            // 触发新一帧 publish（snap.tick_seq 唯一让 reader 能区分）。
+            #[allow(clippy::cast_possible_truncation)]
+            rt_pub.publish(&RtSnapshot {
+                state: JointStateBuf {
+                    joint_count: 0,
+                    stamp_ns: (i as u64 + 1) * 1_000_000,
+                    ..JointStateBuf::default()
+                },
+                tick_seq: i as u64 + 1,
+                tick_deadline_ns: 0,
+            });
+
+            // 轮询直到拿到 stamp_ns 匹配的最新帧 —— 旧帧 stamp_ns 不一致就丢。
+            let target_stamp = (i as u64 + 1) * 1_000_000;
+            let start = std::time::Instant::now();
+            let mut got = false;
+            while start.elapsed() < Duration::from_secs(2) {
+                if let Ok(Some(lease)) = js_sub.latest()
+                    && let Ok(view) = lease.view()
+                {
+                    let fb: FbJointState<'_> = view.body.get();
+                    if fb.stamp_ns() == target_stamp {
+                        assert_eq!(
+                            fb.s0_safety_state(),
+                            *wire_expected,
+                            "case {i} core={core_state:?} 应映射到 wire={wire_expected:?}"
+                        );
+                        got = true;
+                        break;
+                    }
+                }
+                thread::sleep(Duration::from_millis(2));
+            }
+            assert!(got, "case {i} 未观察到 stamp={target_stamp} 帧");
+        }
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
     /// S0 heartbeat 也按频率发出（`source_id` = 1，seq 单调）。
     #[test]
     fn s0_heartbeat_emitted_with_source_id_1() {
-        let (handle, _rt_pub, _state_pub, _js_sub, mut hb_sub) = bring_up();
+        let (handle, _rt_pub, _state_pub, _js_sub, mut hb_sub, _rt_ctrl) = bring_up();
         let lease = drain_latest(&mut hb_sub, Duration::from_secs(2));
         let view = lease.view().unwrap();
         let fb = view.body.get();
@@ -556,7 +667,7 @@ mod tests {
     /// Metrics 有 `tick_count` 增长 + `joint_state_published` > 0。
     #[test]
     fn metrics_increment_during_run() {
-        let (handle, _rt_pub, _state_pub, _js_sub, _hb_sub) = bring_up();
+        let (handle, _rt_pub, _state_pub, _js_sub, _hb_sub, _rt_ctrl) = bring_up();
         thread::sleep(Duration::from_millis(60));
         let m = handle.metrics();
         assert!(
@@ -614,7 +725,8 @@ mod tests {
                 heartbeat,
             }
         };
-        let handle = spawn_pub_thread(cfg, clock, factory, rt_rdr, state_rdr).unwrap();
+        let rt_ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
+        let handle = spawn_pub_thread(cfg, clock, factory, rt_rdr, state_rdr, rt_ctrl).unwrap();
 
         // MockClock 冻结在 0：循环里 now = 0，last_state = 0，`0 - 0 >= period` 永远 false
         // （除非 period == 0；这里 period = 5 ms）。sleep 让 tick 跑几轮。

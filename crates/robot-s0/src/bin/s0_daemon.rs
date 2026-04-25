@@ -696,6 +696,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         pub_factory,
         rt_snap_rdr,
         state_rdr.clone(),
+        Arc::clone(&rt_ctrl),
     ) {
         Ok(h) => h,
         Err(e) => {
