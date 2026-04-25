@@ -2097,6 +2097,69 @@ HardRT。
 
 详 `docs/designs/task-30_state_machine_adapter_link.md`（v4，~800 行）。
 
+### v5 修订（2026-04-25 user 四轮 review 后）
+
+User v4 review 给出 6 项 critical 修订，全部接受：
+
+1. **HardRT 安全动作不能只靠"不调 write_command"** —— 与 §0 / §1.4 :149
+   "cut output / torque disable" 冲突（"不写"≠"断扭"）。**新增**
+   `ExecutorCtrlClient` trait 统一抽象：state_machine 只表达意图，
+   HardRT impl 用 atomic action slot（rt_thread tick 内 RT-safe 调
+   adapter）+ SerialRT impl 用 emergency / normal channel
+2. v4 §4 自相矛盾（"仅 SerialRT" vs "HardRT 也读 policy"）→ v5 重写
+   "OutputPolicy 是**所有 motor executor 的统一门控**；执行动作因 executor
+   类型不同"
+3. RT 路径 `ArcSwap<OutputPolicy>` 有 hazard pointer 复杂度 → 改 **`Atomic
+   U8 + #[repr(u8)]`**：`OutputPolicy` 8 variant 单字节够用；RT 读 < 1ns 无
+   alloc
+4. Feetech `enable(false)` 13 motor × 3 retry × 150ms = 最坏 5.85s 不适合
+   emergency → **新增 `safety_stop_fast()`** 走 sync_write broadcast
+   (id=0xFE, ~1-2ms)；保留 `enable(false)` 给普通路径
+5. SIGKILL 列 blocking gap 但 verification.md:102 仍是 v0.2 SLA → **明确**
+   task-30 完成 **≠** v0.2 safety exit criteria 通过；只完成"graceful 软件
+   断扭"；硬件 fail-safe 留 task-30-post
+6. HardRT `ControlMode::Stop` 合约缺失 → **新增 `RtSafeCtrl` 子 trait**
+   （HardRT adapter 必实现）+ `ManipulatorAdapter::write_command(mode=Stop)`
+   合约：HardRT adapter 必须实现为 RT-safe cut output，**不**得 no-op
+
+**v5 新增**：
+
+- §4 `ExecutorCtrlClient` trait（4 方法：`set_policy` / `safety_stop` /
+  `request_normal` / `poll_last_normal_resp`）；HardRT impl 用 atomic action
+  slot；SerialRT impl 用 emergency / normal channel；state_machine `Box<dyn>`
+  持有，不感知底层
+- §5.1 `OutputPolicy` AtomicU8 + `repr(u8)` 实现
+- §5.2 OutputPolicy 在两类 executor 的执行表（HardRT 简化数据 gate；SerialRT
+  完整语义）
+- §5.3 `RtSafeCtrl` 子 trait（HardRT adapter 必实现 `safety_stop_rt` /
+  `enable_rt` / `set_mode_rt`，且 `write_command(Stop)` 必须 RT-safe cut
+  output）
+- §7 `FeetechAdapter::safety_stop_fast()` 详细设计（sync_write broadcast,
+  1-2ms vs 5.85s 慢路径）
+- §9 SIGKILL 措辞调整：task-30 完成不等于 v0.2 SLA 通过
+- §10 测试加 5+ 项：OutputPolicy AtomicU8 / HardRtCtrlClient action_slot /
+  feetech safety_stop_fast 时延 / RtSafeCtrl 合约 / 多 executor 并存
+- §11 M1-M5 拆为 M1-M6（加 `RtSafeCtrl` + `safety_stop_fast` + ExecutorCtrl
+  Client 三个独立 commit）；总 ~8 h（v4 估 6.75 h，更真实）
+- §12 风险加 R11（RtSafeCtrl 合约违约）+ R12（safety_stop_fast 不等 ACK）
+
+**v5 8 个决议请求**：
+
+1. v5 整体（ExecutorCtrlClient + AtomicU8 + RtSafeCtrl + safety_stop_fast）
+   approve？
+2. ExecutorCtrlClient 4 方法是否覆盖完整？要加 clear_pending / cancel 吗？
+3. OutputPolicy 用 AtomicU8 不用 ArcSwap 同意？
+4. RtSafeCtrl 子 trait 强制 HardRT adapter 实现接受？
+5. FeetechAdapter::safety_stop_fast (sync_write broadcast id=0xFE + 不等 ACK
+   + 1-2ms) 设计同意？
+6. verification.md:102 状态改 "⏳ blocking gap (软件不可解；待 task-30-post)"
+   同意？task-30 实施后此项**仍 ⏳**。
+7. M5 行为切换点拆两 commit（flag on + 删 legacy）？
+8. 真机最低门槛 M6 smoke 加新项：mock_s1 发 ControlMode::Stop → feetech_poke
+   在 mock_s1 跑时 read Torque_Enable=0（验证 Stop 路径走通）。同意 / 加项？
+
+详 `docs/designs/task-30_state_machine_adapter_link.md`（v5，~700 行）。
+
 ---
 
 ## 2026-04-25 · Step 8 EStop latch 双文件 + 重启恢复（**状态：登记 / 实施完成**）
