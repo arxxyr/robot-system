@@ -1,8 +1,9 @@
 # Task-30 设计方案：state_machine ↔ adapter 执行链路
 
-> **状态**：**v9**，等再次 review
+> **状态**：**v9 + errata（已批准为实施基线）**
 > **历史**：v1 (`4cca734`) → v2 (`130b44b`) → v3 (`f7bdc00`) → v4 (`881e927`)
 > → v5 (`46dd3c1`) → v6 (`4d016d4`) → v7 (`7334817`) → v8 (`3a89b56`) → v9
+> → **v9 errata**（本文件 §0.5；不再出 v10，errata 直接写进 §0.5 + §4.4.2 + §11.2）
 > **作者**：Claude Code
 >
 > **v9 关键修订**：v8 5 项 finding 全收 + 收敛。最关键 #1：state_machine 改
@@ -11,6 +12,17 @@
 > `safety_latched` 与 HardRT 对齐用 `Arc<AtomicBool>`，`clear_safety_latch`
 > 同步 atomic store；#3 测试期望对齐设计（seq 空洞允许）；#4 sync_write
 > 借用检查两阶段拆；#5 frame size 注释 fix。
+>
+> **v9 errata（实施约束，不再做大版设计）**：
+> - **A1**：EStop / 任何 Emergency 事件**必须**在每个 `ipc_tick` 头部**先于**
+>   pending 推进处理（preempt in-flight effectful pending），不允许"等 ack
+>   完了再消化 EStop"；
+> - **A2**：`pending_started_at` 在 **plan 入 pending 那一刻**立即置位（不是
+>   `Submitted` 后才置），让 Busy 不断重试也计入 1s 总超时；
+> - **A3**：副作用 transition 的 ack 失败（包括 `Err` 与 1s 超时）**直接**
+>   `commit_fault(SafetyStopFailed)` + `set_policy(Disabled)` + `safety_stop()`
+>   兜底，**不**通过 `Event::AdapterErr` 走旧 transition 表（避免再被 guard
+>   挡掉造成 silent stall）。
 
 ---
 
@@ -28,6 +40,81 @@ User v8 review 5 项 finding，全部接受：
 
 v1-v8 文档归档 git history。v9 是当前权威。**最终设计版本**：本轮所有 finding
 都修完，**v9 之后建议直接进入实施**，不再追加 v10。
+
+---
+
+## §0.5 v9 errata（实施约束，**不另出 v10**）
+
+v9 review 通过后，user 把 **3 条已知的安全语义问题**直接固化为实施约束 +
+测试要求，避免"M7 写完再补丁"。本节是权威，**M7 实现必须满足这 3 条 + 加
+对应测试**。任何与 §4.4.2 v9 原伪代码冲突的地方，以本节 + 下面"§4.4.2
+errata 重写版"为准。
+
+### A1：EStop / Emergency 必须 preempt in-flight pending
+
+**问题**：v9 §4.4.2 ipc_tick 把"推进 pending"放在第 1 步、"消化 events"放在
+第 2 步；如果 pending 卡在 1s 超时窗口内，期间 EStop 入 events 队列只能
+等下下下个 tick 才能跑——违反"EStop 不可被任何 in-flight 操作阻塞"。
+
+**约束**：
+- ipc_tick **第一步**：`drain emergency events`（EStop / FaultLatched /
+  SafetyStopFailed），命中即调用 `safety_stop()` + commit Emergency
+  transition + `set_policy(StopTorque/Disabled)` + **强制清空 pending**
+  （把 in-flight effectful 计为 cancelled，下 tick 不再 poll 它的 seq）；
+- 第二步才是"推进剩下的 in-flight pending"；
+- 第三步才是"plan 新 transition（pending 为空时）"。
+
+**实现要点**：
+- emergency drain 路径**不**走 plan_transition（不需要 Effectful 分支），
+  直接走 §4.4.2 的 Emergency commit；
+- pending cancel 时**不**回放它对应的 ack（即使 rt_thread 后来 ack 成功，
+  ipc_thread 已经 commit Safe，丢弃 ack 不冲突——`safety_stop` 已经把
+  policy 拍成 StopTorque）。
+
+### A2：`pending_started_at` 在 plan 创建时置位（不是 Submitted 后）
+
+**问题**：v9 §4.4.2 把 `pending_started_at = Some(clock.now())` 放在
+`Submitted { seq }` 分支里。如果 rt_thread 一直 Busy（slot 占用从未空出），
+ipc_tick 反复返回 `Busy` → `pending_started_at` 永远 None → 永远不会触发
+1s 超时升 Fault。
+
+**约束**：
+- `pending_started_at` 在 **plan 入 pending 那一刻**立即置位（即 §4.4.2
+  ipc_tick 第 3 步 Effectful 分支 `retry.pending = Some((plan, None))` 的
+  同时 `retry.pending_started_at = Some(clock.now())`）；
+- Busy 重试期间不重置 `pending_started_at`（保持原始 plan 入队时刻）；
+- 1s 超时检查覆盖 None / Some(seq) 两个分支，**任何**未完成 pending 都计时。
+
+### A3：Effectful ack 失败（Err / Timeout）直接 commit_fault，不走旧 transition 表
+
+**问题**：v9 §4.4.2 ack 失败路径写的是 `events.push(Event::AdapterErr(...))`
++ 清 pending，等下 tick 才靠 `plan_transition` 把 AdapterErr 翻译成
+`* → Fault` transition。但 `plan_transition` 受 guards 影响（task-30-pre-2
+新加的 `* → Fault(SafetyStopFailed)` 也有 guard），如果某 corner case 把
+event 挡住 → state_machine 卡在原态 + pending 已清 → silent stall。
+
+**约束**：
+- ack 失败（`AdapterResp::Err(_)` / 1s 超时 / `NormalReqStatus::Unsupported`）
+  **直接调** `commit_fault(state, FaultCode::AdapterErr | SafetyStopFailed)`
+  + `executor_ctrl.set_policy(OutputPolicy::Disabled)` + （兜底）
+  `executor_ctrl.safety_stop()`；
+- **不**走 `events.push(Event::AdapterErr(...))` + plan_transition；
+- 失败原因映射：
+  - `AdapterResp::Err(SafetyLatched)` → `FaultCode::SafetyStopFailed`
+  - `AdapterResp::Err(其它)` / 1s 超时 / `Unsupported` → `FaultCode::AdapterErr`
+- 失败后 pending 立即清空（同 v9）；
+- M7 仍保留 `commit_fault` API 给其它路径（如 watchdog soft-deadline 触发）
+  使用，但 ack 失败路径**不依赖** event queue。
+
+### v9 errata 强制测试（M7）
+
+实施 task #6（M7）必须包含以下 3 条单测，**红灯不允许 merge**：
+
+| 测试 | 验证 | 期望 |
+|---|---|---|
+| `test_estop_preempts_in_flight_pending` | A1：在 effectful pending 卡在 Submitted 等 ack 时注入 EStop event | EStop 在**当前 tick** 内 commit Safe + `set_policy(StopTorque)`，pending 被清空（即使后续 rt_thread ack 也不影响 state） |
+| `test_busy_total_timeout_1s` | A2：rt_thread 始终返回 Busy（不消费 slot），1s 后必须 commit Fault | 入 pending 后 ≤ 1.05s 内 `state == Fault(AdapterErr)` + `policy == Disabled`；**不**允许永久卡 Busy |
+| `test_effectful_failure_direct_fault` | A3：ack 返回 `Err(SafetyLatched)` | 当前 tick 内 `state == Fault(SafetyStopFailed)` + `policy == Disabled`；**不**经过任何 `Event::AdapterErr` 入队 |
 
 ---
 
@@ -283,6 +370,165 @@ fn ipc_tick(
   字段反映（意图 vs 实际正交）
 - 1s 超时升 Fault 防止 rt_thread / serial_io_thread hang 永久卡
 
+#### 4.4.3 ipc_tick errata 重写版（**§0.5 A1/A2/A3 实施版**，M7 以本版为准）
+
+> 本节是 §4.4.2 的**最终实施版**。§4.4.2 原伪代码保留作历史对比；M7 落地
+> 必须按本节实现，并通过 §0.5 强制测试。
+
+```rust
+fn ipc_tick(
+    retry: &mut IpcRetryState,
+    state_machine_state: &mut S0State,
+    guards: &mut Guards,
+    executor_ctrl: &dyn ExecutorCtrlClient,
+    clock: &dyn RobotClock,
+    events: &mut EventQueue,
+) {
+    // === Step 1: A1 — emergency / safety events 优先 preempt 任何 in-flight ===
+    //
+    // EStop / FaultLatched / SafetyStopFailed 必须在 tick 头部消化，不能
+    // 被 effectful pending 阻塞 1s。命中即清 pending、commit Emergency、
+    // 调 safety_stop()。后续 rt_thread 即使 ack 成功也不再 commit（pending
+    // 已 cancelled）。
+    if let Some(emergency_event) = events.drain_emergency() {
+        // drain_emergency: 从 EventQueue 摘出第一个 EStop/FaultLatched/
+        //                  SafetyStopFailed；其它事件保留
+        if let Some(plan) =
+            plan_transition(*state_machine_state, emergency_event, guards)
+        {
+            debug_assert!(matches!(plan.kind, TransitionKind::Emergency));
+            executor_ctrl.safety_stop();                 // fire-and-forget
+            commit_transition(state_machine_state, &plan);
+            executor_ctrl.set_policy(plan.new_policy);   // StopTorque/Disabled
+        }
+        // 强制清空任何 in-flight pending：即使后来 rt_thread ack，丢弃即可
+        retry.pending = None;
+        retry.pending_started_at = None;
+        // 本 tick 不再处理后续（emergency 已经把状态拍到 Safe；下 tick 继续）
+        return;
+    }
+
+    // === Step 2: 推进 in-flight effectful pending（仅 Effectful） ===
+    if let Some((plan, seq_opt)) = retry.pending.clone() {
+        // A2：超时检查覆盖**所有**未完成 pending（None 与 Some(seq) 都查）
+        if let Some(start) = retry.pending_started_at
+            && clock.now() - start > DurationNs::from_secs(1)
+        {
+            // A3：直接 commit_fault，**不**走 events.push(AdapterErr)
+            commit_fault(state_machine_state, FaultCode::AdapterErr);
+            executor_ctrl.set_policy(OutputPolicy::Disabled);
+            executor_ctrl.safety_stop(); // 兜底
+            retry.pending = None;
+            retry.pending_started_at = None;
+            return;
+        }
+        match seq_opt {
+            None => {
+                // 第一次或 Busy 重试 —— 注意 pending_started_at 已在 Step 3
+                // plan 入队时设过，Busy 重试**不**重置
+                let req = match &plan.kind {
+                    TransitionKind::Effectful { action } => action.clone(),
+                    _ => unreachable!("non-Effectful in pending"),
+                };
+                match executor_ctrl.request_normal(req) {
+                    NormalReqStatus::Submitted { seq } => {
+                        retry.pending = Some((plan, Some(seq)));
+                        // pending_started_at 不动（A2：保持 plan 入队时刻）
+                    }
+                    NormalReqStatus::Busy => {
+                        // 等下 tick；超时由上面的 Step 2 头部检查兜底
+                        return;
+                    }
+                    NormalReqStatus::Unsupported(_msg) => {
+                        // A3：直接 commit_fault
+                        commit_fault(state_machine_state, FaultCode::AdapterErr);
+                        executor_ctrl.set_policy(OutputPolicy::Disabled);
+                        executor_ctrl.safety_stop();
+                        retry.pending = None;
+                        retry.pending_started_at = None;
+                        return;
+                    }
+                }
+            }
+            Some(seq) => {
+                match executor_ctrl.poll_last_normal_resp(seq) {
+                    None => return, // 等下 tick；超时由 Step 2 头部检查
+                    Some(AdapterResp::Ok) => {
+                        // ack 成功 —— 现在才 commit state + set_policy
+                        commit_transition(state_machine_state, &plan);
+                        executor_ctrl.set_policy(plan.new_policy);
+                        retry.pending = None;
+                        retry.pending_started_at = None;
+                    }
+                    Some(AdapterResp::Err(e)) => {
+                        // A3：直接 commit_fault；不走 Event::AdapterErr
+                        let fault = match e {
+                            AdapterErr::SafetyLatched => FaultCode::SafetyStopFailed,
+                            _ => FaultCode::AdapterErr,
+                        };
+                        commit_fault(state_machine_state, fault);
+                        executor_ctrl.set_policy(OutputPolicy::Disabled);
+                        if matches!(fault, FaultCode::SafetyStopFailed) {
+                            executor_ctrl.safety_stop(); // 兜底
+                        }
+                        retry.pending = None;
+                        retry.pending_started_at = None;
+                    }
+                }
+            }
+        }
+    }
+
+    // === Step 3: plan_transition（pending 为空时） ===
+    if retry.pending.is_some() {
+        return;
+    }
+    while let Some(event) = events.pop() {
+        let plan = match plan_transition(*state_machine_state, event, guards) {
+            Some(p) => p,
+            None => continue,
+        };
+        match plan.kind {
+            TransitionKind::Pure => {
+                commit_transition(state_machine_state, &plan);
+                executor_ctrl.set_policy(plan.new_policy);
+            }
+            TransitionKind::Emergency => {
+                // 兜底：万一 events 里漏出 emergency（不该发生，drain_emergency
+                // 应该在 Step 1 都拿走），这里也走 emergency commit
+                executor_ctrl.safety_stop();
+                commit_transition(state_machine_state, &plan);
+                executor_ctrl.set_policy(plan.new_policy);
+            }
+            TransitionKind::Effectful { .. } => {
+                // A2：plan 入 pending 同时立即置 pending_started_at
+                retry.pending = Some((plan, None));
+                retry.pending_started_at = Some(clock.now());
+                break; // 一个 tick 只排一个 pending
+            }
+        }
+    }
+}
+```
+
+**与 §4.4.2 v9 原版差异（errata diff）**：
+1. 新增 Step 1（A1）：`events.drain_emergency()` 头部消化 emergency，命中即
+   清 pending + commit Emergency；
+2. Step 2 头部加 1s 总超时检查（A2 配套）；ack 失败 / 超时 / Unsupported
+   全改成**直接** `commit_fault` + `set_policy(Disabled)` + 兜底
+   `safety_stop`（A3），不再 `events.push(Event::AdapterErr)`；
+3. Step 3 Effectful 分支：`pending_started_at` 与 `pending` 同 tick 置位
+   （A2）。
+
+`EventQueue::drain_emergency()` 是新加 method（Step 1 用），实现：
+- 内部线性扫一次队列
+- 移除并返回第一个 `Event::EStop` / `Event::FaultLatched` /
+  `Event::SafetyStopFailed`（如有）
+- 其它事件原序保留
+
+`commit_fault` 是 §4.4.1 新加 API，参数 `(state, FaultCode)`，直接把
+state 拍到对应 `Fault(code)` 子态，不走 plan_transition。
+
 ### 4.5 SerialRT 实现（**v9 与 HardRT latch 对齐**）
 
 ```rust
@@ -537,9 +783,10 @@ vs v8 立即 commit：state 切换 0 延迟。
 | **M4** | **v8/v9 重写**：`protocol::build_sync_write` 内部 vec → 栈数组；`bus::sync_write_by_id_into` slice API + 两阶段 borrow；`safety_stop_fast` + 预分配；`assert_no_alloc` + 借用检查单测 | 1.5 h | M3 |
 | **M5** | `HardRtCtrlClient` (单 packed AtomicU64 + safety_latched AtomicBool) + rt_thread 主循环 (emergency drain + 二次 latch check) + `clear_safety_latch` trait method 实现 | 2 h | M1 / M2 |
 | **M6** | `SerialIoCtrlClient` (含 v9 共享 `Arc<AtomicBool> safety_latched`) + `serial_io_thread` skeleton + confirm_torque_off + clear_safety_latch atomic store；feature flag off | 2.5 h | M1 / M3 / M4 / pre-3b |
-| **M7** | **v9 重写**：`s0_daemon` dispatch by RtClass；ipc_thread 加 `IpcRetryState` + **两阶段 transition 协议**（plan / commit）；state_machine 加 `plan_transition` / `commit_transition` API；删 legacy bootstrap；feature flag default on | 2.5 h | M5 / M6 / pre-2 |
+| **M7** | **v9 errata 实施版**：`s0_daemon` dispatch by RtClass；ipc_thread 按 §4.4.3 errata 三步式（Step 1 emergency drain → Step 2 推进 pending + 1s 超时 → Step 3 plan）；state_machine 加 `plan_transition` / `commit_transition` / `commit_fault` API；`EventQueue::drain_emergency` 新 method；删 legacy bootstrap；feature flag default on；**强制带 §0.5 三测**（`test_estop_preempts_in_flight_pending` / `test_busy_total_timeout_1s` / `test_effectful_failure_direct_fault`） | 3 h | M5 / M6 / pre-2 |
 
-**总 ~11.5 h**（v8 估 11h；v9 加两阶段 transition 协议 +0.5h）。
+**总 ~12 h**（v8 估 11h；v9 加两阶段 transition +0.5h；v9 errata M7 +0.5h
+ 写 §0.5 三测）。
 
 ---
 
