@@ -356,6 +356,35 @@ pub trait HardRtAdapter: ManipulatorAdapter + RtSafeCtrl {}
 
 impl<T: ManipulatorAdapter + RtSafeCtrl + ?Sized> HardRtAdapter for T {}
 
+// ============================================================================
+// SerialRtAdapter 综合 trait（task-30 v9 / M7 阶段 4 第二步）
+// ============================================================================
+
+#[allow(clippy::doc_markdown)]
+/// **SerialRT 路径的 adapter 综合契约**：必须同时实现 [`ManipulatorAdapter`]
+/// 与 [`crate::executor_ctrl::OutputSafetyProbe`]。
+///
+/// `spawn_serial_io_thread<A: SerialRtAdapter + Send + 'static>` 用本 trait
+/// 作 bound，**编译期**拒绝缺 `OutputSafetyProbe` 的 adapter（serial_io_thread
+/// 在 emergency 后必须下 tick 调用 `read_torque_enable_mask` 把
+/// `OutputSafetyState` 推进到 `TorqueOffConfirmed` / `AdapterUncertain` /
+/// `StopFailed`，缺 probe 则无法 confirm）。
+///
+/// 自动 blanket impl：任何 `T: ManipulatorAdapter + OutputSafetyProbe` 自动
+/// 满足。`Box<dyn SerialRtAdapter + Send>` 作 trait object 时同样可调两组方法
+/// （via 上方 `ManipulatorAdapter` blanket impl + `OutputSafetyProbe` 自身的
+/// `Box<Inner>` 透传）。
+///
+/// **factory 入口**：[`crate::factory::AdapterFactory::build_serial_rt`] 返
+/// `Box<dyn SerialRtAdapter + Send>`；SerialRT factory（如 `FeetechFactory`）
+/// 必须 override 该方法。HardRT / SoftRT factory 留 default 实现 = 拒绝。
+pub trait SerialRtAdapter: ManipulatorAdapter + crate::executor_ctrl::OutputSafetyProbe {}
+
+impl<T: ManipulatorAdapter + crate::executor_ctrl::OutputSafetyProbe + ?Sized> SerialRtAdapter
+    for T
+{
+}
+
 /// `Box<dyn ManipulatorAdapter>` 透传 blanket impl —— Step 7 task 27b 加。
 ///
 /// 让 inventory factory 返回的 `Box<dyn ManipulatorAdapter + Send>` 直接满足

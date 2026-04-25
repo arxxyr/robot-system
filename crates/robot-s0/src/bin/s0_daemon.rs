@@ -40,13 +40,14 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 use std::time::Duration;
 
 use crossbeam_channel::unbounded;
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::adapter::{
-    HardRtAdapter, JointCommandBuf, ManipulatorAdapter, RtClass, RtSnapshot,
+    HardRtAdapter, JointCommandBuf, ManipulatorAdapter, RtClass, RtSnapshot, SerialRtAdapter,
 };
 use robot_core::config::IdentityFingerprint;
 use robot_core::executor_ctrl::ExecutorCtrlClient;
@@ -59,7 +60,10 @@ use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
 use robot_s0::ipc_thread::{IpcSubscribers, IpcThreadConfig, IpcThreadHandle, spawn_ipc_thread};
 use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread};
-use robot_s0::rt_thread::{RtThreadConfig, spawn_rt_thread};
+use robot_s0::rt_thread::{RtThreadConfig, RtThreadHandle, spawn_rt_thread};
+use robot_s0::serial_io_thread::{
+    SerialIoThreadConfig, SerialIoThreadHandle, spawn_serial_io_thread,
+};
 use robot_s0::state_machine::{Event, Guards, S0State, S0StateSnapshot};
 use robot_s0::watchdog::{WatchdogConfig, spawn_watchdog};
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
@@ -456,23 +460,30 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     // - SerialRT 路径：`SerialIoCtrlClient` 是 `HardRtCtrlClient` 的 type alias
     //   （v9 收敛后 atomic 协议层共用），同款构造。
     let built = build_adapter(args)?;
-    // task-30 v9 finding #3 守门：编译期 + 运行期双重 dispatch。
-    // - HardRt 变体：trait object 已 RtSafeCtrl witness，可进 spawn_rt_thread。
-    // - SerialRtOrSoft 变体：M7 阶段 4 第二步（待 Factory::build_serial_rt 入口）
-    //   才接通 SerialRT path，当前仍拒启动。
-    let adapter: Box<dyn HardRtAdapter + Send> = match built {
+    // task-30 v9 finding #3 + M7 阶段 4 第二步守门：编译期 + 运行期双重 dispatch。
+    //
+    // - HardRt：trait object 已 RtSafeCtrl witness，进 spawn_rt_thread。
+    // - SerialRt：trait object 已 OutputSafetyProbe witness，进
+    //   spawn_serial_io_thread。
+    // - SoftRt：v0.2 不接通；v0.4 起 SoftRT adapter 挂 s0_io_thread。
+    //
+    // executor_ctrl 在两条路径上类型一致（HardRtCtrlClient ==
+    // SerialIoCtrlClient = HardRtCtrlClient 的 type alias，atomic 协议层共享
+    // HardRtCtrlInner），ipc_thread 注入 `Arc<dyn ExecutorCtrlClient>` 不区分
+    // 路径。reviewer 硬要求 #3：dispatch 后只把对应路径的 client 注入。
+    let plan: SpawnPlan = match built {
         BuiltAdapter::HardRt(a) => {
             debug_assert_eq!(a.info().rt_class, RtClass::HardRT);
-            a
+            SpawnPlan::HardRt(a)
         }
-        BuiltAdapter::SerialRtOrSoft(a) => {
+        BuiltAdapter::SerialRt(a) => {
+            debug_assert_eq!(a.info().rt_class, RtClass::SerialRT);
+            SpawnPlan::SerialRt(a)
+        }
+        BuiltAdapter::SoftRt(a) => {
             let class = a.info().rt_class;
             let name = a.info().name;
             match class {
-                RtClass::SerialRT => eprintln!(
-                    "fatal: adapter '{name}' is RtClass::SerialRT; M7 阶段 4 第二步 \
-                     (Factory::build_serial_rt 入口) 待落地后接通 SerialRT path。"
-                ),
                 RtClass::SoftRT => eprintln!(
                     "fatal: adapter '{name}' is RtClass::SoftRT; SoftRT adapter 应挂 \
                      s0_io_thread (v0.4)，不能进 ManipulatorAdapter spawn 路径。"
@@ -481,12 +492,18 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
                     "fatal: adapter '{name}' 报告 RtClass::HardRT 但 factory 没走 \
                      `build_hard_rt`（factory 实现遗漏 RtSafeCtrl + override）。"
                 ),
+                RtClass::SerialRT => eprintln!(
+                    "fatal: adapter '{name}' 报告 RtClass::SerialRT 但 factory 没走 \
+                     `build_serial_rt`（factory 实现遗漏 OutputSafetyProbe + override）。"
+                ),
             }
             return Err(1);
         }
     };
 
-    // rt_ctrl + client：ipc_thread 拿 client，rt_thread 拿 ctrl。
+    // rt_ctrl + client：ipc_thread 拿 client；rt_thread / serial_io_thread 拿 ctrl。
+    // HardRtCtrlInner 在 HardRT / SerialRT 两条路径上共享类型（v9 收敛后 atomic
+    // 协议层统一），构造方式相同。
     let rt_ctrl = Arc::new(HardRtCtrlInner::new());
     let executor_ctrl: Arc<dyn ExecutorCtrlClient> =
         Arc::new(HardRtCtrlClient::new(Arc::clone(&rt_ctrl)));
@@ -589,33 +606,63 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         .unwrap_or_default();
     let _health_handle = robot_health::spawn_monitor(monitor_cfg);
 
-    // ---- 6) spawn rt_thread (HardRT 路径) ----
+    // ---- 6) spawn executor (rt_thread for HardRT, serial_io_thread for SerialRT) ----
     //
-    // adapter / rt_ctrl / executor_ctrl 已经在 ---- 3) 创建好。这里只接通到
-    // spawn_rt_thread。HardRtCtrlInner 默认 policy = Disabled / safety_state =
-    // TorqueOffConfirmed —— 由 state_machine `Safe → Ready → Enabled.Active`
-    // 走两阶段 transition 通过 client.request_normal(Enable(true)) 走 ctrl
-    // 路径，rt_thread 主循环 Step 2 真上扭后 ipc_tick Pure/Effectful 分支才
-    // set_policy(ActiveForward)。
-    let rt_cfg = RtThreadConfig {
-        tick_period_ns: args.tick_period_ns,
-        sched_fifo_priority: 70,
-        cpu_affinity: args.cpu_affinity,
-        strict_rt: args.strict_rt,
-    };
-    let rt = match spawn_rt_thread(
-        rt_cfg,
-        Arc::clone(&clock),
-        adapter,
-        cmd_reader,
-        rt_snap_pub,
-        Arc::clone(&rt_ctrl),
-    ) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("fatal: spawn_rt_thread: {e}");
-            graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
-            return Err(1);
+    // adapter / rt_ctrl / executor_ctrl 已经在 ---- 3) 创建好；这里按 SpawnPlan
+    // 分发：
+    //
+    // - HardRT：spawn_rt_thread（SCHED_FIFO 70 + mlockall）。`HardRtCtrlInner`
+    //   默认 policy = Disabled / safety_state = TorqueOffConfirmed —— 由
+    //   state_machine `Safe → Ready → Enabled.Active` 走两阶段 transition 通过
+    //   client.request_normal(Enable(true)) 走 ctrl 路径，rt_thread 主循环 Step
+    //   2 真上扭后 ipc_tick Pure/Effectful 分支才 set_policy(ActiveForward)。
+    // - SerialRT：spawn_serial_io_thread（普通优先级；SerialRT 不进 SCHED_FIFO，
+    //   串口 RTT 决定 tick 周期 5-20 ms）。同样走两阶段 transition；
+    //   serial_io_thread 在 Step 3 consume normal action 时调
+    //   `adapter.enable(true)`，emergency 后下 tick `read_torque_enable_mask`
+    //   把 OutputSafetyState 推进到 TorqueOffConfirmed / AdapterUncertain /
+    //   StopFailed。
+    let executor: ExecutorHandle = match plan {
+        SpawnPlan::HardRt(adapter) => {
+            let rt_cfg = RtThreadConfig {
+                tick_period_ns: args.tick_period_ns,
+                sched_fifo_priority: 70,
+                cpu_affinity: args.cpu_affinity,
+                strict_rt: args.strict_rt,
+            };
+            match spawn_rt_thread(
+                rt_cfg,
+                Arc::clone(&clock),
+                adapter,
+                cmd_reader,
+                rt_snap_pub,
+                Arc::clone(&rt_ctrl),
+            ) {
+                Ok(h) => ExecutorHandle::HardRt(h),
+                Err(e) => {
+                    eprintln!("fatal: spawn_rt_thread: {e}");
+                    graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
+                    return Err(1);
+                }
+            }
+        }
+        SpawnPlan::SerialRt(adapter) => {
+            let serial_cfg = SerialIoThreadConfig::default();
+            match spawn_serial_io_thread(
+                serial_cfg,
+                Arc::clone(&clock),
+                adapter,
+                cmd_reader,
+                rt_snap_pub,
+                Arc::clone(&rt_ctrl),
+            ) {
+                Ok(h) => ExecutorHandle::SerialRt(h),
+                Err(e) => {
+                    eprintln!("fatal: spawn_serial_io_thread: {e}");
+                    graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
+                    return Err(1);
+                }
+            }
         }
     };
 
@@ -653,7 +700,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         Ok(h) => h,
         Err(e) => {
             eprintln!("fatal: spawn_pub_thread: {e}");
-            graceful_stop(ipc, &wd_stop, wd_handle, Some(rt), None, None);
+            graceful_stop(ipc, &wd_stop, wd_handle, Some(executor), None, None);
             return Err(1);
         }
     };
@@ -663,7 +710,14 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         Ok(h) => h,
         Err(e) => {
             eprintln!("fatal: spawn_io_thread: {e}");
-            graceful_stop(ipc, &wd_stop, wd_handle, Some(rt), Some(pub_handle), None);
+            graceful_stop(
+                ipc,
+                &wd_stop,
+                wd_handle,
+                Some(executor),
+                Some(pub_handle),
+                None,
+            );
             return Err(1);
         }
     };
@@ -722,7 +776,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         ipc,
         &wd_stop,
         wd_handle,
-        Some(rt),
+        Some(executor),
         Some(pub_handle),
         Some(io_handle),
     );
@@ -753,11 +807,24 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
 /// task-30 v9 finding #3：build 出来的 adapter 按 `RtClass` 分两路。
 ///
 /// `HardRt` 变体的 trait object **编译期保证**实现 `RtSafeCtrl`（综合
-/// `HardRtAdapter`），可直接 move 进 `spawn_rt_thread`。`SerialRtOrSoft`
-/// 走非 RT path（M6 `SerialIoCtrl` / 未来 `SoftRT`）。
+/// `HardRtAdapter`），可直接 move 进 `spawn_rt_thread`。`SerialRt` 变体的
+/// trait object **编译期保证**实现 `OutputSafetyProbe`（综合
+/// [`SerialRtAdapter`]），可直接 move 进 `spawn_serial_io_thread`。`SoftRt`
+/// 仍走 fallback `build()`，目前 v0.2 拒启动（待 v0.4 `SoftRT s0_io_thread`
+/// 落地）。
+#[allow(clippy::enum_variant_names)] // 三变体共后缀 Rt 是与 RtClass 枚举的有意对齐
 enum BuiltAdapter {
     HardRt(Box<dyn HardRtAdapter + Send>),
-    SerialRtOrSoft(Box<dyn ManipulatorAdapter + Send>),
+    SerialRt(Box<dyn SerialRtAdapter + Send>),
+    SoftRt(Box<dyn ManipulatorAdapter + Send>),
+}
+
+/// `BuiltAdapter` `SoftRT` 早退 + 标 `RtClass` 后的"已分发"形态。仅
+/// `HardRt` / `SerialRt` 两路对应 `spawn_rt_thread` / `spawn_serial_io_thread`。
+#[allow(clippy::enum_variant_names)] // 同 BuiltAdapter，对齐 RtClass 命名
+enum SpawnPlan {
+    HardRt(Box<dyn HardRtAdapter + Send>),
+    SerialRt(Box<dyn SerialRtAdapter + Send>),
 }
 
 /// 按 `--config` TOML 第一段 hardware（或 fallback `mock_hard_rt`）走
@@ -852,23 +919,55 @@ fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
         motor_ids: &motor_ids,
         calibration_paths: &calibration_paths,
     };
-    // **finding #3 修复**：HardRT factory 走 `build_hard_rt`（返综合 trait
-    // object，编译期保证 RtSafeCtrl），其它走 `build`。
+    // **task-30 v9 finding #3 + M7 阶段 4 第二步**：按 RtClass 三路 dispatch。
+    // 1) 先 `build_hard_rt`：HardRT factory 必返综合 trait object（编译期 RtSafeCtrl）。
+    // 2) HardRT factory `Unsupported` → 试 `build_serial_rt`：SerialRT factory
+    //    必返综合 trait object（编译期 OutputSafetyProbe）。
+    // 3) 仍 `Unsupported` → 走 `build`（SoftRT 占位；v0.2 不接通）。
+    //
+    // **顺序极其关键**：HardRT 优先 = 编译期最强守门；SerialRT 次之 = 串口路径
+    // confirm_torque_off 必须；SoftRT 兜底 = 仅做日志/策略 adapter（无 motor torque）。
     match factory.build_hard_rt(&ctx) {
         Ok(hard_rt) => Ok(BuiltAdapter::HardRt(hard_rt)),
-        Err(robot_core::error::RobotError::Unsupported(_)) => {
-            // factory 不支持 HardRT path → 走普通构造
-            factory
-                .build(&ctx)
-                .map(BuiltAdapter::SerialRtOrSoft)
-                .map_err(|e| {
+        Err(robot_core::error::RobotError::Unsupported(_)) => match factory.build_serial_rt(&ctx) {
+            Ok(serial_rt) => Ok(BuiltAdapter::SerialRt(serial_rt)),
+            Err(robot_core::error::RobotError::Unsupported(_)) => {
+                factory.build(&ctx).map(BuiltAdapter::SoftRt).map_err(|e| {
                     eprintln!("fatal: adapter '{adapter_kind}' build failed: {e}");
                     1
                 })
-        }
+            }
+            Err(e) => {
+                eprintln!("fatal: adapter '{adapter_kind}' build_serial_rt failed: {e}");
+                Err(1)
+            }
+        },
         Err(e) => {
             eprintln!("fatal: adapter '{adapter_kind}' build_hard_rt failed: {e}");
             Err(1)
+        }
+    }
+}
+
+/// 用于 `graceful_stop` 的 executor 线程 handle 包装，按 `RtClass` 分发后只持
+/// 其中一种（task-30 v9 / M7 阶段 4）。
+enum ExecutorHandle {
+    HardRt(RtThreadHandle),
+    SerialRt(SerialIoThreadHandle),
+}
+
+impl ExecutorHandle {
+    fn request_stop(&self) {
+        match self {
+            Self::HardRt(h) => h.request_stop(),
+            Self::SerialRt(h) => h.request_stop(),
+        }
+    }
+
+    fn join(self) -> thread::Result<()> {
+        match self {
+            Self::HardRt(h) => h.join(),
+            Self::SerialRt(h) => h.join(),
         }
     }
 }
@@ -878,11 +977,12 @@ fn graceful_stop(
     ipc: IpcThreadHandle,
     wd_stop: &Arc<AtomicBool>,
     wd_handle: std::thread::JoinHandle<()>,
-    rt: Option<robot_s0::rt_thread::RtThreadHandle>,
+    executor: Option<ExecutorHandle>,
     pub_handle: Option<robot_s0::pub_thread::PubThreadHandle>,
     io_handle: Option<robot_s0::io_thread::IoThreadHandle>,
 ) {
-    // 顺序：pub/io 先停（不再往外发），rt 停（不再动 adapter），ipc 停，watchdog 最后。
+    // 顺序：pub/io 先停（不再往外发），executor（rt 或 serial_io）停（不再动
+    // adapter），ipc 停，watchdog 最后。
     if let Some(h) = pub_handle {
         h.request_stop();
         let _ = h.join();
@@ -891,7 +991,7 @@ fn graceful_stop(
         h.request_stop();
         let _ = h.join();
     }
-    if let Some(h) = rt {
+    if let Some(h) = executor {
         h.request_stop();
         let _ = h.join();
     }

@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use robot_core::adapter::ManipulatorAdapter;
+use robot_core::adapter::{ManipulatorAdapter, SerialRtAdapter};
 use robot_core::error::RobotError;
 use robot_core::factory::{AdapterBuildContext, AdapterFactory};
 
@@ -32,15 +32,16 @@ use crate::types::{Motor, MotorCalibration};
 /// task 28 真硬件 factory。
 pub struct FeetechFactory;
 
-impl AdapterFactory for FeetechFactory {
-    fn name(&self) -> &'static str {
-        "feetech_sts3215"
-    }
-
-    fn build(
-        &self,
+impl FeetechFactory {
+    /// 内部 helper：跑完整的"address / motor_ids / 串口 / motors / calibration /
+    /// adapter new" 流水线，返回**concrete** `FeetechAdapter`。`build` 与
+    /// `build_serial_rt` 各自把它装进对应的 `Box<dyn …>`。
+    ///
+    /// `path_kind` 仅用于日志（`"" / " (SerialRT)"`），帮诊断哪条路径触发本次构造。
+    fn build_concrete(
         ctx: &AdapterBuildContext<'_>,
-    ) -> Result<Box<dyn ManipulatorAdapter + Send>, RobotError> {
+        path_kind: &'static str,
+    ) -> Result<FeetechAdapter<RealSerialTransport>, RobotError> {
         // ---- 1) address ----
         let address = ctx
             .address
@@ -137,14 +138,39 @@ impl AdapterFactory for FeetechFactory {
         })?;
 
         eprintln!(
-            "feetech factory: built '{}' adapter on {} (motors {} | ids {:?} | calibration={})",
+            "feetech factory{}: built '{}' adapter on {} (motors {} | ids {:?} | calibration={})",
+            path_kind,
             ctx.instance_name,
             address,
             ctx.joint_names.len(),
             motor_ids,
             if has_calibration { "loaded" } else { "none" }
         );
-        Ok(Box::new(adapter))
+        Ok(adapter)
+    }
+}
+
+impl AdapterFactory for FeetechFactory {
+    fn name(&self) -> &'static str {
+        "feetech_sts3215"
+    }
+
+    fn build(
+        &self,
+        ctx: &AdapterBuildContext<'_>,
+    ) -> Result<Box<dyn ManipulatorAdapter + Send>, RobotError> {
+        Ok(Box::new(Self::build_concrete(ctx, "")?))
+    }
+
+    /// **task-30 v9 / M7 阶段 4 第二步**：`FeetechFactory` 是 `RtClass::SerialRT`
+    /// 路径，必须 override `build_serial_rt`。`FeetechAdapter` 编译期已实现
+    /// `OutputSafetyProbe`（M3），与 `ManipulatorAdapter` 合成
+    /// [`SerialRtAdapter`]，blanket impl 直接满足。
+    fn build_serial_rt(
+        &self,
+        ctx: &AdapterBuildContext<'_>,
+    ) -> Result<Box<dyn SerialRtAdapter + Send>, RobotError> {
+        Ok(Box::new(Self::build_concrete(ctx, " (SerialRT)")?))
     }
 }
 

@@ -41,7 +41,7 @@
 
 #![allow(clippy::doc_markdown)]
 
-use crate::adapter::{HardRtAdapter, ManipulatorAdapter};
+use crate::adapter::{HardRtAdapter, ManipulatorAdapter, SerialRtAdapter};
 use crate::error::RobotError;
 
 /// 启动期 build adapter 的最小上下文。
@@ -131,6 +131,31 @@ pub trait AdapterFactory: Sync + 'static {
     ) -> Result<Box<dyn HardRtAdapter + Send>, RobotError> {
         Err(RobotError::Unsupported(
             "factory does not support HardRT path",
+        ))
+    }
+
+    /// **task-30 v9 / M7 阶段 4 第二步**：SerialRT 专用构造入口。返回的
+    /// adapter **编译期保证**实现 [`crate::executor_ctrl::OutputSafetyProbe`]
+    /// （综合 trait [`SerialRtAdapter`]）。
+    ///
+    /// `s0_daemon` 在 `RtClass::SerialRT` 路径**必须**调本方法（而不是
+    /// [`AdapterFactory::build`]）；本方法的返回值才能进
+    /// `spawn_serial_io_thread`。
+    ///
+    /// **default 实现**：返 `Err(RobotError::Unsupported(...))`。HardRT /
+    /// SoftRT factory 留 default 即可（它们不该走 SerialRT 路径）；SerialRT
+    /// factory（如 `FeetechFactory`）必须 override 返综合 trait object。
+    ///
+    /// # Errors
+    ///
+    /// - factory 不支持 SerialRT 路径 → [`RobotError::Unsupported`]
+    /// - 透传 [`AdapterFactory::build`] 的错误。
+    fn build_serial_rt(
+        &self,
+        _ctx: &AdapterBuildContext<'_>,
+    ) -> Result<Box<dyn SerialRtAdapter + Send>, RobotError> {
+        Err(RobotError::Unsupported(
+            "factory does not support SerialRT path",
         ))
     }
 }

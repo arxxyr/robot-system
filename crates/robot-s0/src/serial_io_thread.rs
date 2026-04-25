@@ -81,13 +81,12 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 
 use robot_core::adapter::{
-    ControlMode, JointCommandBuf, JointStateBuf, MAX_JOINTS, ManipulatorAdapter, RtClass,
-    RtSnapshot,
+    ControlMode, JointCommandBuf, JointStateBuf, MAX_JOINTS, RtClass, RtSnapshot,
 };
 use robot_core::error::RobotError;
 use robot_core::executor_ctrl::{
-    AdapterErr, AdapterResp, OutputPolicy, OutputSafetyProbe, OutputSafetyState, emergency_codes,
-    normal_codes, pack_completed, unpack_pending_normal,
+    AdapterErr, AdapterResp, OutputPolicy, OutputSafetyState, emergency_codes, normal_codes,
+    pack_completed, unpack_pending_normal,
 };
 use robot_core::time::{Deadline, DurationNs, RobotClock};
 use robot_transport::{LatestCommandReader, RtSnapshotPublisher};
@@ -97,14 +96,13 @@ use crate::serial_io_ctrl::SerialIoCtrlInner;
 // ============================================================================
 // SerialRtAdapter 综合 trait
 // ============================================================================
+//
+// **task-30 v9 / M7 阶段 4 第二步**：trait 定义统一在 `robot_core::adapter`
+// （与 `HardRtAdapter` 并列），factory `build_serial_rt` 入口才能跨 crate 返回
+// `Box<dyn SerialRtAdapter + Send>`。这里 re-export 保持调用方 import 路径
+// 不变。
 
-/// **SerialRT 路径的 adapter 综合契约**：必须同时实现 [`ManipulatorAdapter`]
-/// 与 [`OutputSafetyProbe`]（confirm_torque_off 异步路径要 read_torque_enable_mask）。
-///
-/// blanket impl + 透传：任何 `T: ManipulatorAdapter + OutputSafetyProbe + Send`
-/// 自动满足。
-pub trait SerialRtAdapter: ManipulatorAdapter + OutputSafetyProbe {}
-impl<T: ManipulatorAdapter + OutputSafetyProbe + ?Sized> SerialRtAdapter for T {}
+pub use robot_core::adapter::SerialRtAdapter;
 
 // ============================================================================
 // Config / Metrics / Handle
@@ -550,8 +548,9 @@ mod tests {
     use super::*;
     use robot_adapter_mock::MockHardRTAdapter;
     use robot_core::adapter::{
-        AdapterInfo, ControlMode, JointCommandView, JointLimits, JointStateBuf,
+        AdapterInfo, ControlMode, JointCommandView, JointLimits, JointStateBuf, ManipulatorAdapter,
     };
+    use robot_core::executor_ctrl::OutputSafetyProbe;
     use robot_core::time::SystemClock;
     use robot_transport::{LatestCommandSlot, RtSnapshotPublisher};
     use std::time::Duration;
