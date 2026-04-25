@@ -2350,6 +2350,78 @@ User v7 review 给出 5 项 blocker，全部接受：
 
 详 `docs/designs/task-30_state_machine_adapter_link.md`（v8，~880 行）。
 
+### v9 修订（2026-04-25 user 八轮 review 后；**最终设计版本**）
+
+User v8 review 5 项 finding，全部接受。**v9 之后建议直接进入实施，不再追加
+v10**。
+
+5 项 finding：
+
+1. **副作用 transition 仍可能先 commit 再等硬件 ack**：v8 伪代码立刻 set_policy
+   (from_state(new))，state topic 出现 "Enabled 但硬件未 enable" 的撒谎窗口
+   → **改两阶段**：`plan_transition(old, event, guards) → Option<PlannedTransition>`
+   不提交；副作用 transition 走 pending → poll Ok 才 `commit_transition` +
+   `set_policy`；emergency 立即 commit（state 进 Safe，硬件由 OutputSafetyState
+   异步反映）；新 transition kind: Pure / Emergency / Effectful
+
+2. **SerialRT clear_safety_latch fire-and-forget 顺序不可靠**（trait void +
+   走 normal channel ClearLatch + ArcSwap）→ SerialRT `safety_latched` 改
+   `Arc<AtomicBool>` **与 HardRT 完全对齐**；trait method 直接 atomic store
+   false（同步 + 立即 visible）；**移除** `AdapterNormalReq::ClearLatch`
+   channel 路径
+
+3. **测试 vs 设计自相矛盾**：v8 §9 写"第二次 Busy 不消耗 seq counter"，但
+   §0 #1 说"seq 先 fetch_add，cas 失败 seq 废弃" → 改测试期望"允许 seq 空洞，
+   Busy 不覆盖 packed slot；fetch_add 永远 +1（即便 cas 失败该 seq 废弃）"
+
+4. **`sync_write_by_id_into` borrow checker 问题**：v8 伪代码 for 循环内
+   `entry_refs[i] = (*id, &data_bufs[i][..])` 与 `split_bytes_le(..., &mut
+   data_bufs[i][..])` 同时 mut + shared borrow → 编译不过 → **两阶段拆**：
+   阶段 1 全部 mut 写 data_bufs；阶段 1 结束（drop mut）；阶段 2 shared 构造
+   entry_refs；M4 加 cargo build + clippy 编译验证
+
+5. **frame buffer 大小注释不准确**：v8 写 "258 = 4 header + 254 payload + 1
+   chksum"，与 `build_instruction:104` 实际公式 `6 + params.len()` 不符 →
+   注释 fix：`max frame = 6 (FF FF ID LEN INST CHKSUM) + params_len`；
+   MAX_JOINTS=32 × length=4 → params=162 → frame=168 byte；预分配 256 留余量
+
+**v9 主要新增**：
+
+- §0 5 项 finding 修订表
+- §2 加硬约束 24/25：副作用 transition 两阶段 / latch 字段语义跨 executor 一致
+- §4.4 重写为两阶段 transition 协议：`plan_transition` / `commit_transition`
+  / `commit_fault` API；`PlannedTransition { new_state, new_policy, kind }`；
+  `TransitionKind::{ Pure, Emergency, Effectful{action} }`；ipc_thread retry
+  coordinator 完整伪代码
+- §4.5 SerialRT `safety_latched: Arc<AtomicBool>`（与 HardRT 对齐）；
+  `clear_safety_latch` 直接 atomic store；移除 ClearLatch channel
+- §7.2 sync_write_by_id_into 两阶段 borrow（mut data_bufs → shared entry_refs）；
+  frame size 注释 fix（`6 + params_len` 公式 + MAX_JOINTS=32 计算）
+- §9 修测试 #3 期望（seq 空洞允许）+ 加 v9 #1/#2/#4/#5 用例
+- §10 R18：两阶段 transition 增加 ipc tick 延迟（HardRT 21ms / SerialRT 100ms）
+- §11.2 M7 +0.5h 加两阶段 transition；总 11h → 11.5h
+
+**v9 8 个决议请求**：
+
+1. v9 整体 approve？
+2. PlannedTransition 三分类（Pure/Emergency/Effectful）覆盖 state_machine 12
+   events 完整？
+3. emergency `Pure` 分支立即 commit state（意图）+ safety_state 反映硬件实际
+   接受 R18？
+4. SerialRT safety_latched 改 Arc<AtomicBool> 与 HardRT 对齐 同意？
+5. plan_transition / commit_transition API 扩展 vs 替换 try_transition？
+6. M7 +0.5h 加两阶段 transition 总 11.5h 合理？
+7. M7 拆两 commit（flag on + 删 legacy）？
+8. 真机门槛加新项：副作用 transition 期间 robotctl 看到旧 state /
+   SerialRT clear_safety_latch 后立即 Enable / sync_write_by_id_into 编译过。
+   同意 / 加项？
+
+详 `docs/designs/task-30_state_machine_adapter_link.md`（v9，~840 行）。
+
+**v9 之后预期路径**：approve → 按 pre-1a/b/c/d → pre-2 → pre-3a/b → M1-M7
+顺序进入 task-30 实施。如有更深问题应**实施时反馈到 v10**（设计永远不能完
+全闭环；实践才能进一步暴露）。
+
 ---
 
 ## 2026-04-25 · Step 8 EStop latch 双文件 + 重启恢复（**状态：登记 / 实施完成**）
