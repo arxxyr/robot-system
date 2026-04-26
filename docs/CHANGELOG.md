@@ -10,6 +10,99 @@
 
 ---
 
+## 2026-04-26 · v0.2 收尾 —— Step 9 + systemd 双 bus + #16 partial + reviewer 三轮阻断闭环（**状态：登记 / 实施完成 + 真机 PASS**）
+
+### 背景
+
+[`docs/handoffs/2026-04-26_3.md`](handoffs/2026-04-26_3.md) Stage 2 真
+机闭环之后，按 reviewer 命令推进 v0.2 收尾的三件事 —— **Step 9 EStop
+crash/restart 测试套**（§6.7 不变量 #3 + #4 真机锁定）+ **systemd
+Type=notify 双 bus 集成**（§6.7 不变量 #2 systemd 是最外层看门狗 落地）+
+**task #16 eprintln → tracing 迁移**（lib + 生产 daemon ~58 sites；CLI
+tool 故意保留）。reviewer 三轮 review 各点出阻断，每轮全数修完真机回归。
+
+### 验证结果（2026-04-26）
+
+详见 [`handoffs/2026-04-26_4.md`](handoffs/2026-04-26_4.md) §3-§4。
+关键证据：
+
+- **Step 9**：Orin 真机 `crash_restart_smoke` 5/5 PASS。SIGKILL daemon
+  后 latch primary+bak 都 = "1"；重启 daemon 按结构化字段断言
+  `initial estop_latched` + `latched=true`。
+- **systemd Type=notify**：bus1 + bus2 两 daemon 同时 active；宿主
+  mock_s1 + 双 robotctl watch（A=20 / B=20 sample）+ robotctl estop 跨
+  进程通信全通；kill -9 daemon 4s 内 `Restart=on-failure` 自动拉起新
+  PID。
+- **task #16 partial**：daemon 在 systemd
+  `Environment=ROBOT_LOG_FORMAT=json` 下 journald 全部输出走 JSON
+  Lines，所有结构化字段（`robot_id` / `motor_id` / `joint` / `state` /
+  `latched` ...）可索引。
+
+### reviewer 三轮否决 + 修复链路
+
+#### Round 1 阻断（commit `2a1640e`）
+
+1. **systemd `PrivateTmp=yes` 隔离 iceoryx2 跨进程**（高）：daemon 私
+   有 /tmp 让宿主 mock_s1 / robotctl 看不到 service。修：删除
+   `PrivateTmp=yes`，注释明确权衡。
+2. **`crash_restart_smoke` 被 task #16 tracing 迁移打坏**（高）：旧 grep
+   `"initial estop_latched = true"` 失效。修：`log_contains_initial_latched_true`
+   按结构化字段（message + `latched=true|"latched":true`）+ 7 条 unit
+   test（含**回归锁** 钉死旧字串）。
+3. **`systemd_notify` 单测并发 env mutation 不稳**（中）：`--test-threads=8`
+   循环 20 轮第 7 轮失败。修：拆 `send_message_to(payload, path)` +
+   `spawn_watchdog_thread_with_usec(stop, usec)` 内部 helper 不读 env；
+   剩余 env-探测测试加全局 `Mutex<()> ENV_LOCK` 串行化。
+
+#### Round 2 阻断（commit `f88e2ab` + `df6e207`）
+
+4. **`ProtectSystem=strict` 让 iceoryx2 `NodeBuilder::create` panic
+   InternalError**：reviewer round 1 删 PrivateTmp 后 daemon 在 systemd
+   下还是 panic。Bisect 找出 `strict` 让 /var 整体只读，iceoryx2 在
+   /var 写其它（非 ReadWritePaths）路径失败。修：降到 `ProtectSystem=full`
+   /var 可写、/usr /boot /efi /etc 仍只读。
+5. **`crash_restart_smoke` Orin 真机 5/5 FAIL**：reviewer round 1 修了
+   grep 仍然 fail。Root cause 双重：
+   - tracing-subscriber 默认输出 **stdout 不是 stderr**，只 piped stderr
+     拿不到 daemon 启动 banner；
+   - 即使 piped 也带 ANSI 转义码（`latched\x1b[0m\x1b[2m=\x1b[0mtrue`
+     ≠ `latched=true`）。
+   修：抓 stdout + stderr 合并；env 注入 `ROBOT_LOG_FORMAT=json + NO_COLOR=1`
+   关 ANSI。
+
+#### Round 3 残留（commit `e2e7e30`）
+
+6. `scripts/systemd/xlerobot-s0-bus2.service` 顶部注释残留 "sleep 5 等
+   daemon 进入 Enabled.Active"，跟 README 已修的 "sleep 3 等 Ready" 口
+   径不一致（unit 只启 S0，没 S1 心跳进不了 Active）。修：unit 注释同
+   步成跟 README 一致。
+
+### 影响面
+
+- **代码**：
+  - 新模块 `crates/robot-s0/src/systemd_notify.rs`（~150 行 + 10 单测）
+  - 新 binary `crates/robot-tests/src/bin/crash_restart_smoke.rs`（~580
+    行 + 7 matcher 单测）
+  - `crates/robot-s0/src/bin/s0_daemon.rs`：systemd_notify 集成 + 大量
+    eprintln → tracing
+  - `crates/robot-adapters/feetech/src/{adapter,factory,error}.rs`：
+    eprintln → tracing
+  - `crates/robot-s0/src/{rt_thread,estop_latch,watchdog,config_loader}.rs`：
+    eprintln → tracing（rt_thread 含 RT 边界注释）
+- **配置 / 部署**：
+  - `configs/xlerobot_bus1_full.toml`（新；左臂+头部 8 motor）
+  - `scripts/systemd/xlerobot-s0-bus1.service`（新）
+  - `scripts/systemd/xlerobot-s0-bus2.service`（新；ProtectSystem=full）
+  - `scripts/systemd/README.md`
+- **文档**：本 CHANGELOG 条目 + `2026-04-26_4.md` handoff +
+  `handoffs/README.md` 列表。
+
+### 审阅人
+
+reviewer (用户) ✓ —— 三轮 review，三轮全数修完真机回归通过。
+
+---
+
 ## 2026-04-26 · task #15 Stage 2 真机闭环全过 + §5.1 known-issue 真机撤销（**状态：登记 / 实施完成 + 真机 PASS**）
 
 ### 背景
