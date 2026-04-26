@@ -14,6 +14,7 @@ members = [
     "crates/robot-health",
     "crates/robot-logging",
     "crates/robot-msg",
+    "crates/robot-rpc",
     "crates/robot-s0",
     "crates/robot-s1",
     "crates/robot-tests",
@@ -21,20 +22,17 @@ members = [
 ]
 
 # 未来 crate（按 docs/01_implementation_steps.md 顺序逐步启用；现在不要提前加入 members）：
-#   crates/robot-s0                  # Step 6：四线程骨架（panic = "abort"）
-#   crates/robot-s1                  # Step 6：mock_s1；v0.3 coordinator（panic = "abort"）
-#   crates/robot-adapters/mock       # Step 6：mock HardRT adapter
-#   crates/robot-adapters/feetech    # Step 10
 #   crates/robot-kinematics          # v0.3：ArmIkSolver / BaseKinematics trait + 纯类型（零 runtime）
 #   crates/robot-kinematics-xlerobot # v0.4：XLeRobot 双臂 + 三轮全向（移植 dimos kinematics/）
 #   crates/robot-kinematics-piper    # v0.6：Piper 单臂（结构异构第二机器人）
 #   crates/robot-policy-host         # v0.5：ExternalPolicyHost
-#   crates/robot-rpc                 # v0.3：tonic 网关
 #   crates/robot-s2-bridge           # v0.5：pyo3 module
 #   crates/robot-viz                 # Rerun / Foxglove 桥
 #   crates/robot-recorder            # record/replay
-#   crates/robot-cli                 # robotctl
-#   crates/robot-tests               # soak + crash/restart + schema_compat
+#
+# robot-rpc v0.3 A1：仅 ClearEStop control-plane slice + 全纯单测；**不**
+# 起 server binary（reviewer A1-1 拍板硬边界）。Phase B 的 B3 才扩展完整
+# §5.3 RPC gateway（task / stream / S1 coordinator 交互等）。
 
 [workspace.package]
 version      = "0.1.2"
@@ -116,6 +114,23 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 # "task-32 日志骨架"。
 ctor               = "0.10.1"
 
+# v0.3 A1 ClearEStop control-plane slice 网关依赖（**仅** robot-rpc 用；
+# 其它 crate **不**得 link tonic / prost / 跨 crate 复用 RPC 类型）。
+# A1-1 (3/3) 阶段引入；reviewer 拍板"不起 server binary，全纯单测"。
+# 白名单登记走 docs/CHANGELOG.md 2026-04-27 "v0.3 A1-1 (3/3) robot-rpc
+# skeleton + tonic 引入" 偏离登记。
+tonic = { version = "0.12", default-features = false, features = ["codegen", "prost"] }
+prost = "0.13"
+# UUIDv7 生成 + parse（CommandMeta.request_id）。robot-rpc auth + idempotency
+# 用此 crate 校验 request_id 格式。
+uuid = { version = "1.10", default-features = false, features = ["v7", "std"] }
+# tonic-build：A1-1 (3/3) robot-rpc proto 代码生成。仅 robot-rpc/build.rs 用
+# （`[build-dependencies] tonic-build = { workspace = true }`）。
+tonic-build = { version = "0.12", default-features = false, features = ["prost"] }
+# protoc-bin-vendored：vendored protoc binary（避免 host 必须装 protoc）。
+# 跟 vendored flatc 同款隔离策略：编译期一致性 + 跨开发机不依赖系统包。
+protoc-bin-vendored = "3"
+
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core          = { path = "crates/robot-core" }
 robot-health        = { path = "crates/robot-health" }
@@ -124,6 +139,7 @@ robot-msg           = { path = "crates/robot-msg" }
 robot-transport     = { path = "crates/robot-transport" }
 robot-adapter-mock    = { path = "crates/robot-adapters/mock" }
 robot-adapter-feetech = { path = "crates/robot-adapters/feetech" }
+robot-rpc           = { path = "crates/robot-rpc" }
 robot-s0            = { path = "crates/robot-s0" }
 robot-s1            = { path = "crates/robot-s1" }
 robot-cli           = { path = "crates/robot-cli" }

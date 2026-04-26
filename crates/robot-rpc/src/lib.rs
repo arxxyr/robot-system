@@ -1,0 +1,74 @@
+//! # robot-rpc
+//!
+//! v0.3 A1 ClearEStop control-plane slice gateway 骨架。
+//!
+//! ## A1-1 (3/3) scope（reviewer A1-1 拍板硬边界）
+//!
+//! - **仅** lib 导出 [`proto`] 模块（tonic codegen）+ [`auth`] /
+//!   [`idempotency`] / [`clear_estop`] 三块纯函数。
+//! - **全纯单测**；**不**起 server binary（无 `[[bin]]` 入口）。
+//! - **不**接 S0 mutation；**不**删 `--allow-empty-latch` /
+//!   `MissingLatchPolicy::AllowEmpty`；**不**宣称 `docs/00_design.md` §6.7
+//!   #3 真锁住。
+//! - tonic / prost / uuid 引入登记走 `docs/CHANGELOG.md`（A1-2 / A1-3 落
+//!   地时一起登记）。
+//!
+//! ## ClearEStop control action 安全边界（reviewer 拍板硬边界）
+//!
+//! 跟 `docs/CHANGELOG.md` 2026-04-26 "v0.3 entry：ClearEStop RPC 文案的控
+//! 制动作解释" 解释登记一致：
+//!
+//! - **wire `role` 字段仅 audit**：S0 端**不**做授权决策；RPC 端**必须**
+//!   完成 auth / role 查表 / capability 校验，viewer / operator 在 publish
+//!   之前直接 PermissionDenied。
+//! - **dry_run 进 S0 端 action layer**：RPC 端**不**短路返；只做 auth /
+//!   confirmation / idempotency 预检。
+//! - **idempotency**：robot-rpc 进程内 TTL cache，**不**持久化；cache key =
+//!   `meta.idempotency_key`，**不**用 `request_id`；同 key 不同 payload 必
+//!   须拒绝（**不**复用错误请求的 cached Ack）。
+//! - **`RpcStatus` → `tonic::Code` 转译**：**禁止** `code as i32` cast；
+//!   **必须**用显式 `match` 全枚举（[`clear_estop::rpc_status_to_tonic_code`]
+//!   + 单测覆盖每条映射）。
+//!
+//! ## A1-2 / A1-3 留作业（**不**在 part 3 范围）
+//!
+//! - 真起 tonic server binary（A1-3）。
+//! - S0 端 `Event::ClearEStop` ordering 重写（A1-2，详 v0.3_entry.md §3.3
+//!   端到端动作）。
+//! - 跨进程 `robot-transport` RR client / server 真接 daemon（A1-2）。
+//! - response schema_id attribute 验证（A1-1 part 2 reviewer 非阻断提醒）。
+//! - mTLS / OIDC（A1 接受 fake token；推 v0.5+）。
+
+// 中文 doc 块大量 identifier-like 字串（CommandMeta / RoleTable / RpcStatus
+// / ClearEStop / TTL / UUIDv7 等），robot-rpc 全 crate 走宽松 doc-markdown。
+#![allow(clippy::doc_markdown)]
+
+pub mod auth;
+pub mod clear_estop;
+pub mod idempotency;
+
+/// gRPC tonic 生成代码（`robot.control.v1` namespace）。包含
+/// `AuthContext` / `CommandMeta` / `ClearEStopCommand` / `Ack` /
+/// `RobotControl` server trait（A1-3 真起 server 时 impl）。
+pub mod proto {
+    // tonic-build 生成代码不走 robot-system 的 lint 风格；显式 allow 各项
+    // generated-code clippy 噪音（doc 格式 / 风格性 lint），保留**真错误**
+    // 覆盖（如 unsafe / unused_must_use 等仍 deny）。
+    #![allow(
+        clippy::doc_markdown,
+        clippy::doc_lazy_continuation,
+        clippy::doc_overindented_list_items,
+        clippy::default_trait_access,
+        clippy::derive_partial_eq_without_eq,
+        clippy::missing_const_for_fn,
+        clippy::module_name_repetitions,
+        clippy::needless_lifetimes,
+        clippy::redundant_pub_crate,
+        clippy::similar_names,
+        clippy::wildcard_imports,
+        unreachable_pub
+    )]
+    // tonic-build 生成进 `$OUT_DIR/robot.control.v1.rs`；本 macro 把
+    // 它 include 到当前 module。
+    tonic::include_proto!("robot.control.v1");
+}

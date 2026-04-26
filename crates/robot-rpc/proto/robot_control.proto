@@ -1,0 +1,85 @@
+// v0.3 A1 ClearEStop control-plane slice proto schema。
+//
+// 对应 docs/00_design.md §5.2 (CommandMeta + AuthContext) + §5.3 (rpc
+// ClearEStop) frozen schema。**字段 / 字段编号不可改**；只可 append。
+//
+// **A1-1 (3/3) scope**：仅 ClearEStop 一个 RPC + 配套 message。其它 §5.3
+// RPC（SetEnabled / EStop / ClearError / InvokeTask / ReloadCalibration /
+// SetPolicy / 等）留 v0.5+ Phase B B3 完整 robot-rpc gateway 落地，**不**
+// 在本 proto 出现（tonic 生成 server trait 只暴露 ClearEStop 方法）。
+//
+// **跟 robot-msg 关系**：本 proto 是 RPC 边界 wire format（client →
+// gateway）；gateway 内部转换为 `robot-msg`
+// `ClearEStopRequest`（FlatBuffers, A1-1 part 1）发到 daemon。两份 schema
+// 平行存在 v0.3 A1 期间；**不**等价 / **不**自动转换。
+
+syntax = "proto3";
+
+package robot.control.v1;
+
+// 调用方身份。docs/00_design.md §5.2 frozen。
+//
+// v0.3 A1 接受 fake token（gateway 端用查表把 token → role）；mTLS / OIDC
+// 留 v0.5+。
+message AuthContext {
+    string token            = 1;  // fake token，对照 configs/rpc_roles.toml
+    string mtls_fingerprint = 2;  // v0.5+ 用；A1-1 仅占位
+}
+
+// docs/00_design.md §5.2 frozen envelope。每条 RPC 必带。
+//
+// 字段语义（与 docs/CHANGELOG.md 2026-04-26 ClearEStop control action 解释
+// 登记一致）：
+// - request_id：UUIDv7，gateway 生成或客户端传；用 RR correlation + audit
+//   trace。`auth.rs::validate_request_id` 拒绝非 UUIDv7 / 空串。
+// - source：调用源 ("cli.loosqk" / "web.ui" / "local_panel.s0")。仅 audit。
+// - auth：见 AuthContext。
+// - timeout_ms：客户端 monotonic 相对超时；gateway 转 daemon clock
+//   `deadline_ns = clock.now() + timeout_ms * 1_000_000`。
+// - idempotency_key：robot-rpc 进程内 TTL cache key。同 key 不同 payload
+//   必须拒绝（reviewer A1 第 3 个拍板）。`request_id` **不**等于
+//   `idempotency_key`：前者每次重试改变（用于 audit），后者跨重试稳定。
+// - dry_run：daemon 端 action layer **必须**真识别（reviewer A1 第 2 个
+//   拍板：dry_run 进 S0 端 action layer，gateway 不短路）。
+// - audit_reason：human context "谁/为什么调"。
+message CommandMeta {
+    string      request_id      = 1;
+    string      source          = 2;
+    AuthContext auth            = 3;
+    uint64      timeout_ms      = 4;
+    string      idempotency_key = 5;
+    bool        dry_run         = 6;
+    string      audit_reason    = 7;
+}
+
+// docs/00_design.md §5.3 frozen。**`confirmation`** 必须非空（gateway 验
+// 证）；具体格式约束（如必须含 request_id 后缀 / 操作员姓名）v0.3 实施
+// 时定，本 proto 不锁。
+message ClearEStopCommand {
+    CommandMeta meta         = 1;
+    string      confirmation = 2;
+}
+
+// docs/00_design.md §5.3 通用 Ack 回执。
+//
+// 字段语义：
+// - request_id：回传 ClearEStopCommand.meta.request_id，client correlation。
+// - cleared_at_ns：daemon 端 clock.now()（CLOCK_MONOTONIC_RAW；
+//   `clear_safety_latch` 完成时刻）；dry_run = true 时为 daemon 端"would
+//   clear at"评估时刻；status != Ok 时为 0（gateway 用 tonic Status 转
+//   error）。
+// - dry_run：回传 request.dry_run，方便 client audit 不需 lookup request。
+message Ack {
+    string request_id    = 1;
+    uint64 cleared_at_ns = 2;
+    bool   dry_run       = 3;
+}
+
+// v0.3 A1 ClearEStop control-plane slice 仅暴露一条 RPC。
+//
+// **A1-1 (3/3) 阶段**：tonic 生成 server trait，但**不**起 server binary。
+// `auth.rs` / `idempotency.rs` / `clear_estop.rs` 提供 validation / cache /
+// status mapping 纯函数；A1-3 真起 server 时注入到 trait impl。
+service RobotControl {
+    rpc ClearEStop (ClearEStopCommand) returns (Ack);
+}

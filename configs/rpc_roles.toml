@@ -1,0 +1,68 @@
+# v0.3 A1 RPC 角色 → capability 映射表。
+#
+# 对应 docs/00_design.md §5.4 权限模型（4 roles + 9 capabilities）。
+#
+# **A1-1 (3/3) scope**：本表只被 robot-rpc::auth::load_role_table 加载用
+# 于 viewer / operator / maintainer / admin → capability 查表。`clear_estop`
+# 是 A1-1 阶段唯一被 robot-rpc 真正使用的 capability；其它 capability 在
+# 本文件占位列出，是为 v0.5+ Phase B B3 完整 robot-rpc gateway 落地时一次
+# 性 check-in（避免那时改 schema 又改 role 表两边对不齐）。
+#
+# **`clear_estop` 必须 `(maintainer+)`**（reviewer A1-1 拍板硬边界）：
+# viewer / operator 不得拥有此 capability；任何修改本文件让 viewer /
+# operator 拿到 `clear_estop` 的 PR 都视为 §6.7 #3 "EStop 不可清为失忆态"
+# 阻断。
+
+# v0.3 A1 fake token → role 映射（mTLS / OIDC v0.5+）。**仅** dev /
+# staging 用；生产部署必须改成真 token store。token 字串内容自由（gateway
+# 不验证形式，只查表）。
+[tokens]
+"viewer-fake-token-001"     = "viewer"
+"operator-fake-token-001"   = "operator"
+"maintainer-fake-token-001" = "maintainer"
+"admin-fake-token-001"      = "admin"
+
+# 4 roles + capability 集合。
+#
+# capability 命名跟 docs/00_design.md §5.4 严格对齐（snake_case）；新加
+# capability 必须同步在 robot-rpc::auth::Capability enum 加 variant。
+
+[roles.viewer]
+description = "只读：list / get / stream"
+capabilities = ["read_state"]
+
+[roles.operator]
+description = "操作员：可控但不可清 EStop / 改配置"
+capabilities = [
+    "read_state",
+    "invoke_task",
+    "set_enabled",
+    "clear_error",
+    "estop",
+]
+
+[roles.maintainer]
+description = "维护：可清 EStop / 重载校准（v0.3 A1 真正用此 role 调 ClearEStop）"
+capabilities = [
+    "read_state",
+    "invoke_task",
+    "set_enabled",
+    "clear_error",
+    "clear_estop",
+    "estop",
+    "reload_calibration",
+]
+
+[roles.admin]
+description = "管理：可改 policy / shutdown"
+capabilities = [
+    "read_state",
+    "invoke_task",
+    "set_enabled",
+    "clear_error",
+    "clear_estop",
+    "estop",
+    "reload_calibration",
+    "set_policy",
+    "shutdown",
+]
