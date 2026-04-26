@@ -65,6 +65,44 @@ reviewer (用户) ✓ — 假设由用户提出，本 commit 锁住。
 
 ---
 
+## 2026-04-26 · `docs/00_design.md` §8 tracelog 格式硬契约（**状态：登记 / 已回写**）
+
+### 背景
+
+§8 原文只一句 "`tracing` + `tracing-subscriber`，结构化 JSON，按进程分
+文件到 `/var/log/robot/<robot_id>/`"，没把 tracelog 格式写成硬契约
+（结构化字段 / Debug-vs-Display / 双时间戳栈 / 双格式模式 / RT 禁 log
+/ 自动 init）。`docs/logging.md` 早已落地权威字段表与级别守则，但 §8
+主线没引用，导致评审 / 上手时容易漏。
+
+### 决定
+
+§8 第一条扩成 7 条硬契约骨架，明确：
+1. 结构化字段，禁 format-arg message 拼接。
+2. `error!(?err, ...)` 用 Debug 捕获 thiserror 结构。
+3. human + JSON 双模式（`ROBOT_LOG_FORMAT=json` 切换）；时间戳同时给
+   wall clock RFC3339 UTC + monotonic `[+秒.纳秒s]`。
+4. `RUST_LOG` `EnvFilter` 标准过滤。
+5. bin 自动 init（`#[ctor::ctor]`），lib 不依赖 `robot-logging`。
+6. RT thread 内禁所有 `tracing::*!`（包括 literal）—— 走 atomic
+   counter / lock-free ring buffer，non-RT 线程定期采样。
+7. 字段表 / 级别守则 / 单位约定在 [`docs/logging.md`](logging.md)
+   作为权威，新增字段先动那张表 + 登记 CHANGELOG。
+
+### 影响面
+
+- `docs/00_design.md` §8 第一条扩展（其余条目原样保留）。
+- `docs/logging.md` 不动（已与新硬契约一致；本回写仅把 §8 主线接通到那张
+  权威表）。
+- 不动代码：现有 `tracing` 调用已合规（task-32 落地）。
+
+### 审阅人
+
+reviewer (用户) ✓ —— 本 session 明确指令 "spec 加上 tracelog 的格式
+要求"，据此回写 §8。
+
+---
+
 ## 2026-04-26 · task #15 Stage 1 真机 bus2 6-motor SerialRT 闭环（**状态：登记 / 实施完成 + 真机 PASS**）
 
 ### 背景

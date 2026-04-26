@@ -1220,7 +1220,14 @@ record 文件头必须保存完整 `ConfigIdentity`；回放时据此校验或�
 
 ## 8. 观测与调试
 
-- **日志**：`tracing` + `tracing-subscriber`，结构化 JSON，按进程分文件到 `/var/log/robot/<robot_id>/`。
+- **日志**：`tracing` + `tracing-subscriber`，结构化输出，按进程归档到 `/var/log/robot/<robot_id>/`（systemd 部署下 journald 接管 stderr 等价）。**字段命名表 + 单位约定 + 级别使用守则 + bin/lib 接入步骤**集中在 [`docs/logging.md`](logging.md)（权威 spec），新增字段必须先动那张表 + 登记 CHANGELOG。本节给硬契约骨架：
+
+  1. **结构化字段，不拼字符串**：`tracing::info!(motor_id = 6, adapter = "feetech_sts3215", "built adapter")`。禁用 `info!("motor {} failed", id)` 这类 format-arg message 拼接（运行期分配 + 不可机读）。
+  2. **错误用 Debug 捕获结构**：`error!(?err, "connect failed")`，保留 `thiserror` 枚举层次；不要 `{err}` 拍扁成 string。
+  3. **格式双模式 + 时间戳双栈**：默认 human（带 ANSI；TTY 自动检测，`NO_COLOR=1` 强关），`ROBOT_LOG_FORMAT=json` 切 JSON Lines（journald / Loki / Elastic）。两种模式的时间戳字段都同时给 **wall clock RFC3339 UTC** + `[+秒.纳秒s]` **monotonic 自进程启动**：前者用于跨机器对齐，后者用于回放算时延（NTP 跳 / 闰秒无感）。
+  4. **过滤走 `RUST_LOG`**：`tracing-subscriber::EnvFilter` 标准语法，默认 `info`。
+  5. **bin 自动 init**：bin crate 依赖 `robot-logging` 即装上 subscriber（`#[ctor::ctor]`），不要在 main 里手撸 init。lib crate **只**依赖 `tracing` macros，不依赖 `robot-logging`。
+  6. **RT thread 内禁 `tracing::*!`**（呼应 §0 / §4.9 RT 铁律）：哪怕 literal message 也禁用 —— `tracing::Event` 内部仍可能分配字段元数据 + 与 subscriber 打交道。RT 调试期改走 atomic counter / lock-free ring buffer，由 non-RT 线程定期采样 → `tracing::info!`。
 - **指标**：`metrics` crate → Prometheus endpoint（9200）。关键指标：`tick_latency_p99`、`rt_overrun_count`、`message_drop_count{topic}`、`adapter_rtt`、`policy_inference_ms`、`watchdog_timeout_count`、`unknown_layout_count`、`unauthorized_publish_count`。
 - **Tracing**：OpenTelemetry，可选，跨进程 span（`request_id` 贯穿）。
 - **可视化**：`robot-viz` 独立进程，订阅 iceoryx2 全量 topic 转 Rerun / Foxglove，不在关键路径。
