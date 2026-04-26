@@ -45,6 +45,7 @@
 
 #![forbid(unused_must_use)]
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
@@ -60,6 +61,7 @@ use robot_transport::{LatestCommandWriter, LatestSubscriber, RtSnapshotPublisher
 
 use robot_core::executor_ctrl::ExecutorCtrlClient;
 
+use crate::estop_latch::save_estop_latch;
 use crate::ipc_tick::{IpcRetryState, ipc_tick};
 use crate::state_machine::{Event, EventQueue, Guards, S0State, S0StateSnapshot};
 
@@ -77,6 +79,22 @@ pub struct IpcThreadConfig {
     pub initial_guards: Guards,
     /// 初始 state。生产 `S0State::Safe`；测试可注入任意初值。
     pub initial_state: S0State,
+    /// **task #15 阻断 1 修复**：`EStop` latch 文件路径（`fsync` 双写）。
+    ///
+    /// 设计 `docs/00_design.md` §6.7 不变量 #4 + §1117 强制要求：
+    /// > "`EStop` 来源进入 S0 → 立即 `fsync` 写 latch 文件，不等 graceful shutdown"
+    ///
+    /// 旧实现仅在 daemon 退出时一次性 save，**daemon 在 graceful 退出前崩溃
+    /// 会让 latch 落不下来 → 重启读 false → 自动 `Enable` → 安全语义破坏**。
+    ///
+    /// 新实现：本字段 `Some` 时，`ipc_thread` 主循环每 tick 比较
+    /// `prev_estop_latched` vs `guards.estop_latched`：从 false→true 立即
+    /// `save_estop_latch(latch_path, true)`（双文件 `fsync` rename，~ms 级）；
+    /// 从 true→false（`ClearEStop` 处理）立即 `save_estop_latch(false)`。
+    ///
+    /// `None` 仅供单测：跳过 latch IO，保持测试纯类型路径。生产 daemon 必须
+    /// 传 `Some(args.latch_path.clone())`。
+    pub latch_path: Option<PathBuf>,
 }
 
 impl Default for IpcThreadConfig {
@@ -85,6 +103,7 @@ impl Default for IpcThreadConfig {
             poll_interval_ns: 500_000, // 500 µs
             initial_guards: Guards::default(),
             initial_state: S0State::Safe,
+            latch_path: None,
         }
     }
 }
@@ -116,6 +135,13 @@ pub struct IpcThreadMetrics {
     pub ipc_tick_count: AtomicU64,
     /// state 变化次数（`new_state != prev_state`）。
     pub state_changes: AtomicU64,
+    /// **task #15 阻断 1 修复**：触发即写 latch 的累计成功次数（每次
+    /// `guards.estop_latched` 翻转 + `save_estop_latch` 成功 → +1）。
+    pub latch_writes: AtomicU64,
+    /// 同上，写盘失败次数（IO error）；触发后即便失败也继续运行（state 已
+    /// 进 Safe，硬件已断扭；下次 daemon 启动可能漏读 latch，但这是分级降级
+    /// 不阻断当前 tick）。
+    pub latch_write_errors: AtomicU64,
 }
 
 /// `ipc_thread` 线程内部持有的 3 个 iceoryx2 subscriber。
@@ -304,6 +330,11 @@ fn run_loop(
     let mut events = EventQueue::new();
     let mut retry = IpcRetryState::new();
 
+    // **task #15 阻断 1 修复**：初值落盘 baseline。`prev_estop_latched`
+    // 跟 `guards.estop_latched` 同步，每 tick 比较；翻转时立即 fsync 写
+    // latch 文件。`latch_path` 为 `None` 时（单测）整条路径 no-op。
+    let mut prev_estop_latched = guards.estop_latched;
+
     // 启动即发一次初值快照。
     state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
 
@@ -356,6 +387,38 @@ fn run_loop(
             metrics.state_changes.fetch_add(1, Ordering::Relaxed);
         }
         metrics.ipc_tick_count.fetch_add(1, Ordering::Relaxed);
+
+        // ─── 6.5) **task #15 阻断 1 修复 / EStop latch 触发即落盘** ───
+        //
+        // 比较 ipc_tick 之后的 `guards.estop_latched` vs tick 前的快照；
+        // 翻转时立即 fsync 双写 latch 文件。这覆盖 EStop 来源（topic /
+        // watchdog / external channel / 同 tick 多事件 ipc_tick 内部 apply）
+        // 的**所有**路径 —— 不依赖事件来源，只看 guards 翻转。
+        //
+        // 设计 §6.7 不变量 #4：S0 重启不失忆，EStop / fault / 最后 safe 输出
+        // 都 fsync 双写。本 hook 是 EStop 这条的实施点。
+        //
+        // 注：ClearEStop 翻转 (true→false) 也写盘，让"ClearEStop 后立即重启
+        // daemon" 也能读到 latch=false。`save_estop_latch` 内部双文件 atomic
+        // rename + fsync，几 ms 级阻塞；EStop 是低频事件，对 500us tick
+        // 节奏影响仅在事件发生瞬间，不持续。
+        if guards.estop_latched != prev_estop_latched {
+            if let Some(path) = cfg.latch_path.as_ref() {
+                match save_estop_latch(path, guards.estop_latched) {
+                    Ok(()) => {
+                        metrics.latch_writes.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(_e) => {
+                        metrics.latch_write_errors.fetch_add(1, Ordering::Relaxed);
+                        // **不**中断主循环：即便 IO 失败，state 已进 Safe，
+                        // executor 已 safety_stop（client 同步置 latch +
+                        // emergency_action）。重启读不到 latch 是分级降级，
+                        // 不阻断 emergency 响应路径。
+                    }
+                }
+            }
+            prev_estop_latched = guards.estop_latched;
+        }
 
         // ─── 7) 发布 snapshot ───
         state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
@@ -594,6 +657,28 @@ mod tests {
         robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
         Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     ) {
+        bring_up_with_latch(initial_state, initial_guards, watchdog_rx, clock, None)
+    }
+
+    /// `bring_up` 的扩展形态：可注入 `latch_path`，让单测覆盖"`EStop` 触发即
+    /// `fsync` 落盘"链路。daemon 内嵌 `ipc_thread` 用这条 hook（`Some(path)`）；
+    /// 其它纯通路单测用 `None` 跳过 IO。
+    #[allow(clippy::type_complexity)]
+    fn bring_up_with_latch(
+        initial_state: S0State,
+        initial_guards: Guards,
+        watchdog_rx: Receiver<Event>,
+        clock: Arc<dyn RobotClock>,
+        latch_path: Option<std::path::PathBuf>,
+    ) -> (
+        IpcThreadHandle,
+        robot_transport::LatestCommandReader<JointCommandBuf>,
+        RtSnapshotReader<S0StateSnapshot>,
+        robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
+        robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
+        robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
+        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+    ) {
         let topics = fresh_topics();
         // publisher-side Node，测试线程持有。leak 到 'static 避免 drop 后 service
         // 被 iceoryx2 回收（ipc_thread 还要继续 open service）；测试进程 staci 可接受。
@@ -620,6 +705,7 @@ mod tests {
             poll_interval_ns: 500_000,
             initial_guards,
             initial_state,
+            latch_path,
         };
 
         let topics_for_factory = Topics {
@@ -875,6 +961,98 @@ mod tests {
         assert_eq!(snap.state, S0State::Safe);
         assert!(snap.guards_summary.estop_latched);
 
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **task #15 阻断 1 锁测**：`EStop` topic 进来后，**daemon 仍在运行
+    /// 时**（不依赖 graceful shutdown）latch 文件已为 `1` 落盘双写。
+    ///
+    /// 旧实现 latch 仅在 `s0_daemon` graceful shutdown 路径写一次；daemon
+    /// 在 graceful 退出前崩溃时 latch 落不下来，重启读到 false → 自动
+    /// `Event::Enable` → 安全语义破坏。本测试钉死 "`EStop` 触发即 `fsync`
+    /// 落盘" 不变量：handle 仍 active 时文件已存在 + 内容 = `1\n`，bak 同。
+    ///
+    /// 关键时序：
+    /// 1. publish `EStop` topic
+    /// 2. `wait_until` daemon `state=Safe` + `guards_summary.estop_latched=true`
+    ///    （也即 `ipc_tick` emergency drain 已处理）
+    /// 3. **不**调用 `handle.request_stop` / `handle.join`
+    /// 4. 直接读 `latch_path` / `latch_path.bak` 文件 → 必须存在 + 内容 = `1`
+    /// 5. 然后才 stop daemon（验证关闭无副作用）
+    #[test]
+    fn estop_topic_writes_latch_to_disk_immediately() {
+        use std::fs;
+        let tmp = tempfile::tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        let bak_path = tmp.path().join("estop_latch.bak");
+
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let (_wd_tx, wd_rx) = unbounded();
+        let mut initial = healthy_guards();
+        initial.heartbeat_ok = true;
+        // 关键：把 latch_path 注入 ipc_thread —— daemon 现实场景同款。
+        let (handle, _cmd_reader, state_rdr, _cp, _hp, mut estop_pub, _inner) = bring_up_with_latch(
+            enabled_active(),
+            initial,
+            wd_rx,
+            clock,
+            Some(latch_path.clone()),
+        );
+
+        // 触发前确认：latch 文件**不存在**（baseline；ipc_thread 启动期初值
+        // estop_latched=false，prev_estop_latched=false，没有 false→? 翻转，
+        // 所以不写）。
+        assert!(
+            !latch_path.exists(),
+            "baseline: latch file should not exist before EStop"
+        );
+
+        publish_estop(&mut estop_pub, 42_000_000);
+
+        // 等 ipc_tick emergency drain 完成（state=Safe + guard 翻转）
+        wait_until(
+            || {
+                let snap = state_rdr.load();
+                snap.state == S0State::Safe && snap.guards_summary.estop_latched
+            },
+            Duration::from_secs(2),
+        );
+
+        // 等 ipc_thread 主循环 §6.5 hook 把 latch 写盘。`save_estop_latch`
+        // 双文件 atomic rename + fsync，几 ms 级；用 wait_until 防 IO 抖动。
+        wait_until(
+            || latch_path.exists() && bak_path.exists(),
+            Duration::from_secs(2),
+        );
+
+        // **关键断言（daemon 仍 active 时）**：两份文件都已落盘 + 内容是 `1`。
+        let content = fs::read_to_string(&latch_path).expect("read latch_path");
+        assert_eq!(
+            content.trim_end(),
+            "1",
+            "latch_path content (daemon still alive): {content:?}"
+        );
+        let bak_content = fs::read_to_string(&bak_path).expect("read latch_path.bak");
+        assert_eq!(
+            bak_content.trim_end(),
+            "1",
+            "latch_path.bak content (daemon still alive): {bak_content:?}"
+        );
+
+        // 同时验 metrics 计数：至少 1 次成功写盘，0 次错误
+        let m = handle.metrics();
+        assert!(
+            m.latch_writes.load(Ordering::Relaxed) >= 1,
+            "metrics.latch_writes should be >= 1 after EStop"
+        );
+        assert_eq!(
+            m.latch_write_errors.load(Ordering::Relaxed),
+            0,
+            "metrics.latch_write_errors should be 0 (tmpdir always writable)"
+        );
+
+        // 之后才停 daemon —— 验证 stop 路径无副作用
         handle.request_stop();
         handle.join().unwrap();
     }

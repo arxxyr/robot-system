@@ -532,6 +532,10 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         poll_interval_ns: 500_000,
         initial_guards,
         initial_state: S0State::Safe,
+        // **task #15 阻断 1 修复**：把 latch_path 注入 ipc_thread，让 EStop
+        // 触发即 fsync 落盘（不等 graceful shutdown）。daemon 退出时仍会再
+        // 写一次 final 值（§12 graceful save），但不再依赖那次写。
+        latch_path: Some(args.latch_path.clone()),
     };
 
     let sub_cmd_topic = t.sub_command.clone();

@@ -211,6 +211,10 @@ fn spawn_harness(factory_name: &str) -> Harness {
         poll_interval_ns: 500_000,
         initial_guards: healthy_guards(),
         initial_state: S0State::Safe,
+        // E2E 测试不验 latch IO（lib 锁测
+        // `estop_topic_writes_latch_to_disk_immediately` 已覆盖）；这里
+        // 跳过文件写盘，简化 fixture。
+        latch_path: None,
     };
     let topics_for_ipc = topics.clone();
     let ipc_factory = move || {

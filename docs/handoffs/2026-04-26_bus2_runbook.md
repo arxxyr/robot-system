@@ -142,11 +142,11 @@ target/release/mock_s1 \
 
 终端 C（robotctl watch，可选）：
 ```bash
-target/release/robotctl status \
+target/release/robotctl watch \
     --robot-id xlerobot_bus2_right_arm \
-    --watch \
+    --hardware-id right_arm_full \
     --interval-ms 250 \
-    --duration 13s 2>&1 | tee logs/bus2_ballet_status.log
+    --duration-secs 13 2>&1 | tee logs/bus2_ballet_status.log
 ```
 
 期望物理观察：
@@ -228,11 +228,11 @@ target/release/mock_s1 \
 
 终端 C（robotctl watch）：
 ```bash
-target/release/robotctl status \
+target/release/robotctl watch \
     --robot-id xlerobot_bus2_right_arm \
-    --watch \
+    --hardware-id right_arm_full \
     --interval-ms 200 \
-    --duration 13s 2>&1 | tee logs/bus2_estop_status.log
+    --duration-secs 13 2>&1 | tee logs/bus2_estop_status.log
 ```
 
 终端 D（**等右臂摆起来 ~5s 后**触发 EStop）：
@@ -256,7 +256,7 @@ target/release/robotctl estop \
 robotctl estop: published 1 EStopEvent (stamp_ns=...); daemon should
    emergency-drain within next ipc tick + serial/rt tick (≈ 10–50 ms).
 
-# robotctl status 终端（estop 之后的快照）
+# robotctl watch 终端（estop 之后的快照）
 state: Safe                      ← 从 Enabled.Active 跳到 Safe
 guards.estop=true                ← latch 已落 guard
 output_mode: Unknown
@@ -275,13 +275,19 @@ state_changes 计数 (estop 之后): >= 3   ← Active→Safe (+ 可能进 Stopp
    端 confirm 真断扭）。
 4. ✅ wire `S0FaultCode=Unknown`（EStop **不**走 Fault 路径，这是正常
    emergency 处理）。
-5. ✅ daemon shutdown 时 latch 文件写 `1`：
+5. ✅ **触发即落盘**（**daemon 仍在运行**就读 latch 文件，**不**等
+   shutdown）：
    ```bash
+   # robotctl estop 发出后立即（< 100 ms）执行：
    sudo cat /var/lib/robot/xlerobot_bus2_right_arm/estop_latch
    # 期望输出：1
    sudo cat /var/lib/robot/xlerobot_bus2_right_arm/estop_latch.bak
    # 期望输出：1
    ```
+   这条门槛是 task #15 阻断 1 修复后的硬要求：旧实现仅在 graceful
+   shutdown 写 latch，daemon 在 graceful 退出前崩溃会丢 latch；本批
+   `ipc_thread` 加了"`guards.estop_latched` 翻转即 `save_estop_latch`"
+   hook + 锁测 `estop_topic_writes_latch_to_disk_immediately` 钉死。
 
 ---
 
@@ -327,7 +333,7 @@ shutdown line: <粘贴 'smoke duration elapsed' / 'clean shutdown'>
 === bus2 6-motor §4 Ballet ===
 state_changes 计数: <从 metrics 取，或粘贴 daemon 输出最末行>
 mock_s1 anchor 行: <'anchor: bias = [...]'>
-robotctl status 节选: <粘贴 1-2 行最稳态 'state=Enabled.Active ...'>
+robotctl watch 节选: <粘贴 1-2 行最稳态 'state=Enabled.Active ...'>
 物理观察: 6 关节摆动 [ 同步正弦 ±5° / 不同步 / 部分关节抖动 / 跳起 / ... ]
 shutdown 后 torque: feetech_poke read Torque_Enable=<0/1>
 ==>  PASS / FAIL
@@ -335,7 +341,7 @@ shutdown 后 torque: feetech_poke read Torque_Enable=<0/1>
 === bus2 6-motor §5 EStop ===
 estop 触发时刻: t=<秒>
 right_arm 软掉延迟: <估算 ms>
-estop 后 status 节选: <粘贴 'state=Safe ... safety_state=TorqueOffConfirmed'>
+estop 后 watch 节选: <粘贴 'state=Safe ... safety_state=TorqueOffConfirmed'>
 shutdown 后 latch 文件: <粘贴 cat /var/lib/.../estop_latch 输出>
 ==>  PASS / FAIL
 

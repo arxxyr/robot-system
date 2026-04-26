@@ -86,6 +86,9 @@ struct Args {
     robot_id: String,
     hardware_id: String,
     interval_ms: u64,
+    /// `Watch` 子命令的总持续时间（秒）。`None` = 无限跑直到 SIGINT/SIGTERM。
+    /// `Some(n)` = `n` 秒后正常退出，方便 runbook 不用 `timeout` 包装。
+    watch_duration_secs: Option<u64>,
     /// `Estop` 子命令的 reason 字符串。仅日志 / 诊断用，不影响 transition。
     estop_reason: String,
 }
@@ -112,6 +115,7 @@ impl Args {
             robot_id: env_robot_id.unwrap_or_else(|| "default".into()),
             hardware_id: "default_arm".into(),
             interval_ms: 100,
+            watch_duration_secs: None,
             estop_reason: "robotctl".into(),
         };
 
@@ -136,6 +140,15 @@ impl Args {
                         .ok_or("--interval-ms requires value")?
                         .parse()
                         .map_err(|e| format!("--interval-ms: {e}"))?;
+                }
+                "--duration-secs" => {
+                    i += 1;
+                    let secs: u64 = raw
+                        .get(i)
+                        .ok_or("--duration-secs requires value")?
+                        .parse()
+                        .map_err(|e| format!("--duration-secs: {e}"))?;
+                    args.watch_duration_secs = Some(secs);
                 }
                 "--reason" => {
                     i += 1;
@@ -168,6 +181,7 @@ OPTIONS:
   --robot-id <ID>       优先级：CLI > env ROBOT_ID > \"default\"。
   --hardware-id <ID>    默认 \"default_arm\"，匹配 S0 / mock_s1。
   --interval-ms <MS>    watch 刷新间隔（默认 100 ms）。
+  --duration-secs <N>   watch 总持续时间（秒）。不传 = 无限跑直到 Ctrl+C。
   --reason <STR>        estop 子命令的 reason 字符串（默认 \"robotctl\"，仅日志）。
 
 TOPICS:
@@ -251,11 +265,24 @@ fn run(args: &Args) -> Result<(), i32> {
             Ok(())
         }
         Command::Watch => {
+            // **task #15 阻断 2 修复**：可选 `--duration-secs` 让 runbook /
+            // CI 跑固定窗口的 watch 不用外面套 `timeout`；不传 = 老语义
+            // (Ctrl+C 退出)。
+            let started = std::time::Instant::now();
+            let limit = args.watch_duration_secs.map(Duration::from_secs);
             while !SHUTDOWN.load(Ordering::Acquire) {
                 print_snapshot(&mut state_sub, &mut hb_sub);
+                if let Some(d) = limit
+                    && started.elapsed() >= d
+                {
+                    eprintln!("watch duration {} s elapsed → exit", d.as_secs());
+                    break;
+                }
                 thread::sleep(Duration::from_millis(args.interval_ms));
             }
-            eprintln!("signal received → exit");
+            if SHUTDOWN.load(Ordering::Acquire) {
+                eprintln!("signal received → exit");
+            }
             // task-30 follow-up（handoff 2026-04-25_1 §3.6）：iceoryx2 0.8.1
             // subscriber Drop 路径在 publisher（如 s0_daemon）已先退出时访问
             // 已释放的 shared memory 会 SIGSEGV（exit=139）。这是 iceoryx2 内部
