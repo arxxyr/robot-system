@@ -29,7 +29,16 @@ ls -t docs/handoffs/*.md | head -2 | xargs -I {} less {}
 # 然后按 handoff 末尾 "开工前必读" 补齐语境
 ```
 
-## 列表
+## Milestone anchor（**不**是 daily snapshot）
+
+跟下面 daily 列表区别开，专门挂 milestone 入口的 handoff —— 这些是 onboarding
+/ 跨阶段交接时的**当前**权威读物，不是历史快照。
+
+| Milestone | 用途 | 文件 |
+|---|---|---|
+| **v0.3 entry** | v0.2 → v0.3 边界 + 第一批工作项硬契约（ClearEStop RPC / freeze hook + e2e / 禁止项）；reviewer 先用本 handoff 做文档审核再放第一批实现 | [v0.3_entry.md](v0.3_entry.md) |
+
+## 列表（daily session snapshots）
 
 | 日期 | 主题 | 文件 |
 |---|---|---|
