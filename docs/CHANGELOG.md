@@ -10,6 +10,59 @@
 
 ---
 
+## 2026-04-27 · `docs/00_design.md` RPC routing / auth + S1 action backend 术语澄清（**状态：已回写 / errata**）
+
+### 背景
+
+A1-2 开工前复核 `docs/00_design.md` 时发现三类会误导实现的旧口径：
+
+1. §5.2 写 "按 RPC 类型 × `AuthContext.role` 查
+   `configs/rpc_roles.toml`"，但 `AuthContext` 没有 `role` 字段；A1-1
+   已拍板 gateway 用 token / 未来 mTLS fingerprint 解析 role，S0 不授权。
+2. §5.5 写 "写接口转成 iceoryx2 request-response 发给 S1"，会误导
+   `EStop` / `ClearEStop` 这类 safety action 也经 S1。A1 拍板要求
+   `ClearEStop` 直接落 S0 action handler。
+3. §4.1 / 附录 E 的 IK 表述容易让 Phase B 继续被误读成"必须先落
+   IK/FK"。v0.3 最新口径是 policy/action backend + robot profile matrix：
+   RL / IK / scripted controller 都是 backend。
+
+### 回写内容
+
+- `docs/00_design.md` §5.2 句子改成：gateway 先把
+  `AuthContext.token` / 未来 mTLS fingerprint 解析为 role，再按 RPC 类型 ×
+  role 查 `configs/rpc_roles.toml`；S0 端不做授权决策。
+- `docs/00_design.md` §5.5 句子改成：普通 task / policy / config 写接口走
+  S1；`EStop` / `ClearEStop` 等 safety-critical control action 直接落到
+  S0 action handler，S1 不参与授权或清 latch。
+- `docs/00_design.md` §4.1 模块地图把 S1 的动作来源改为
+  `policy/action backend`，并把 `robot-kinematics` 标为可选 kinematics
+  backend。
+- `docs/00_design.md` §4.1 同步把 policy runtime 表述从 "In-Process only"
+  改成 "InProcess / External"，避免 RL / policy-host 接入时误读为只能内嵌。
+- 新增 `docs/00_design.md` §6.6.3 "RPC gateway routing / auth 术语澄清
+  （errata）"。
+- 新增 `docs/00_design.md` §6.6.4 "S1 action backend / IK-RL 术语澄清
+  （errata）"：Phase B gate 是 S1 把高层 action 通过 robot profile 映射
+  和安全限幅转换为 S0 joint command；IK/FK、RL、scripted controller 都
+  是可插拔 backend。
+- `docs/handoffs/v0.3_entry.md` §3.1 / §3.2 同步 `request_id` /
+  `idempotency_key` 注释和 auth 口径。
+
+### 不改变的内容
+
+- 不改 `CommandMeta` / `ClearEStopCommand` wire 字段或字段编号。
+- 不改 §5.3 `RobotControl` 方法集。
+- 不放宽 §6.7 #3；A1 完成前仍不能宣称 `ClearEStop` 真闭环 / #3 真锁住。
+- 不撤销 2026-04-22 "新增 IK 层"登记；只澄清 IK/FK 是可选 backend，不是
+  Phase B gate。
+
+### 审阅人
+
+reviewer（用户）— 要求把 auth/routing/request_id 残留和 IK/RL 口径全部
+修到文档。
+
+---
+
 ## 2026-04-27 · v0.3 A1-1 (3/3) robot-rpc / tonic / prost / uuid / blake3 依赖白名单登记（**状态：登记**）
 
 ### 背景
@@ -142,7 +195,9 @@ Phase B 的 gate 改为：
 
 ### 不改变的内容
 
-- 不改 `docs/00_design.md` frozen schema / 模块图。
+- 不改 `docs/00_design.md` frozen schema；模块图措辞后续已通过
+  2026-04-27 "RPC routing / auth + S1 action backend 术语澄清" errata
+  回写为 policy/action backend 口径。
 - 不撤销 2026-04-22 "新增 IK 层"登记；`robot-kinematics` 仍是可选
   kinematics backend，但不再是 Phase B gate。
 - 不放松 Phase A gate：A1 + A2 仍必须在 Phase B 之前 land。

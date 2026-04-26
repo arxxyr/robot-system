@@ -53,8 +53,8 @@ RT loop 启动前通过 `mlockall(MCL_CURRENT | MCL_FUTURE)` 锁页，并预触�
 ┌─────────────────────────▼────────────────────────────────────┐
 │  S1  快反射层 (50–200 Hz)                                     │
 │   ├─ Coordinator + Arbiter  ├─ VLA chunk executor            │
-│   ├─ Trajectory tracker     ├─ 避障 / WBC / IK               │
-│   └─ Policy runtime host (In-Process only)                   │
+│   ├─ Trajectory tracker     ├─ policy/action backend         │
+│   └─ Policy action ingress (InProcess / External)            │
 │   语言: Rust  ‖  runtime: 裸线程 + tokio（I/O 部分）          │
 └─────────────────────────▲────────────────────────────────────┘
                           │ iceoryx2 pub-sub (shm, μs)
@@ -149,7 +149,7 @@ ENABLED 子态:  ACTIVE / CONTROL_LOST_HOLD / CONTROL_LOST_ZERO / CONTROL_LOST_S
 | ENABLED.* → FAULT | `adapter_err` / `cmd_deadline_expired` / `limit_violation` / `watchdog_timeout` / `rt_overrun` | — | disable output; latch fault code | — |
 | * → SAFE | `estop()` / physical button | — | cut output; latch EStop (持久化) | — |
 | FAULT → READY | `ClearError` RPC | fault cleared by adapter; `!estop_latched` | reset fault code | — |
-| EStopLatched → cleared | `ClearEStop` RPC (maintainer+) | 人工确认 guard | clear estop latch | — |
+| EStopLatched → cleared | `ClearEStop` control action (maintainer+) | 人工确认 guard | clear estop latch | — |
 
 **语义澄清**：
 - `ENABLED` 主状态代表硬件仍使能（电机未 torque disable，除非 `CONTROL_LOST_STOP` 子态显式要求）。
@@ -573,17 +573,18 @@ robot-s1/            # 独立二进制
   ├─ coordinator.rs           # 主循环 READ→COMPUTE→ARBITRATE→ROUTE→WRITE
   ├─ arbiter.rs               # per-joint 优先级仲裁
   ├─ scheduler.rs             # task 调度 + deadline 监控
-  ├─ tasks/                   # trajectory / velocity / servo / safety / cartesian (IK)
-  ├─ policy_host/             # InProcessPolicyHost only（§4.7）
-  └─ ik/                      # Option<Box<dyn ArmIkSolver>> 持有 + cartesian task 胶水
+  ├─ tasks/                   # trajectory / velocity / servo / safety / policy action
+  ├─ policy_host/             # InProcessPolicyHost fallback；ExternalPolicyHost 见 robot-policy-host/
+  ├─ action_backend/           # RL / IK(FK) / scripted backend 胶水，按 robot profile 选择
+  └─ ik/                      # 可选 kinematics backend；不是 S1 / Phase B 必选路径
 
-robot-kinematics/    # 零 runtime 依赖；trait 层
+robot-kinematics/    # 零 runtime 依赖；可选 kinematics trait 层
   ├─ arm.rs          # ArmIkSolver / KinematicInfo / IkSolution / IkError
   ├─ base.rs         # BaseKinematics（body↔wheel、里程计积分）
   ├─ pose.rs         # Pose / Twist / Jacobian 纯类型
   └─ error.rs        # NoSolution / OutOfReach / SingularityTooClose / DeadlineExceeded
 
-robot-kinematics-<robot>/     # 每种机器人一个实现，按 feature flag 挂到 robot-s1
+robot-kinematics-<robot>/     # 每种机器人一个可选 IK/FK 实现，按 feature flag 挂到 robot-s1
   ├─ xlerobot/                # XLeRobot 双臂 5DoF + 三轮全向（v0.4；移植自 dimos kinematics/）
   ├─ piper/                   # AgileX 单臂（v0.6，结构异构验证）
   └─ <user>/                  # 用户可 fork 自己的实现，不动 s1 / s0 / adapter
@@ -914,7 +915,7 @@ message ReloadCalibrationCommand  { CommandMeta meta = 1; }
 message SetPolicyCommand          { CommandMeta meta = 1; string policy_name = 2; bytes policy_config = 3; }
 ```
 
-gateway 把 `CommandMeta.timeout_ms` 转为本机 monotonic deadline（`now() + timeout_ms * 1_000_000`），写入 iceoryx2 request header。权限校验按 RPC 类型 × `AuthContext.role` 查 `configs/rpc_roles.toml`。
+gateway 把 `CommandMeta.timeout_ms` 转为本机 monotonic deadline（`now() + timeout_ms * 1_000_000`），写入 iceoryx2 request header。权限校验由 gateway 先把 `AuthContext.token` / 未来 mTLS fingerprint 解析为 role，再按 RPC 类型 × role 查 `configs/rpc_roles.toml`；S0 端不做授权决策。
 
 **字段语义消歧**：
 - `CommandMeta.audit_reason`：审计日志用，记录 "谁、为什么调"（human context）。
@@ -969,7 +970,7 @@ role → capabilities 表放 `configs/rpc_roles.toml`。v0.1.2 可接受 fake to
 
 ### 5.5 网关实现
 
-`robot-rpc-gateway`：独立进程，崩了不影响机器人运行。订阅 iceoryx2 只读 topic 做状态聚合；写接口转成 iceoryx2 request-response 发给 S1。
+`robot-rpc-gateway`：独立进程，崩了不影响机器人运行。订阅 iceoryx2 只读 topic 做状态聚合；普通 task / policy / config 写接口转成 iceoryx2 request-response 发给 S1；`EStop` / `ClearEStop` 等 safety-critical control action 直接落到 S0 action handler，S1 不参与授权或清 latch。
 
 ### 5.6 S2 bridge 两种模式
 
@@ -1155,6 +1156,22 @@ EStop latch 持久化到 /var/lib/robot/<robot_id>/estop_latch：
 
 实现层 fingerprint helper 必须**显式排除** `request_id` 和 `timeout_ms`：详
 [`crates/robot-rpc/src/clear_estop.rs::clear_estop_idempotency_fingerprint`]。
+
+### 6.6.3 RPC gateway routing / auth 术语澄清（errata）
+
+§5.2 旧版文字写 "按 RPC 类型 × `AuthContext.role` 查 `configs/rpc_roles.toml`"；§5.5 旧版文字写"写接口转成 iceoryx2 request-response 发给 S1"。这两句会误导 A1 / Phase B 实现，澄清如下：
+
+- `AuthContext` 不携带 `role` 字段。gateway 必须先从 `AuthContext.token` / 未来 mTLS fingerprint 解析出 role，再按 RPC 类型 × role 查 `configs/rpc_roles.toml`；S0 端不做授权决策。
+- 普通 task / policy / config 写接口走 S1 coordinator；`EStop` / `ClearEStop` 等 safety-critical control action 直接落到 S0 action handler，不经 S1。
+- `ClearEStop` 的安全语义仍以 §6.6.1 为准：同一 action handler、同一套 maintainer+ / confirmation / idempotency / `TorqueOffConfirmed` / fsync / audit guard。
+
+### 6.6.4 S1 action backend / IK-RL 术语澄清（errata）
+
+§4.1 模块地图保留 `robot-kinematics` / `robot-kinematics-<robot>`，但它们只是可选 kinematics backend，不是 S1 的硬依赖，也不是 Phase B gate。Phase B 的真实 gate 是：
+
+> S1 coordinator 能把高层 action 经过 robot profile 映射、joint limit / velocity limit / rate limit / heartbeat 约束后，转换成 S0 可执行的 joint command。
+
+IK/FK、RL、scripted controller 都是 action backend。v0.3 只要求至少一个 backend 闭环到 S0 joint command；如果 RL 直接输出 joint target / joint delta / normalized action，则不需要 IK/FK。S0 / adapter 不知道 action 来源，且 v0.3 不开放 raw torque / raw current policy 直通 S0。
 
 ### 6.7 不变量（系统级保证）
 
@@ -1492,7 +1509,7 @@ mock S1 command → iceoryx2 → s0_ipc_thread
 - **InProcessPolicyHost / ExternalPolicyHost**：按是否跨进程分级的 policy runtime。
 - **Sample lease**：iceoryx2 sample 的借用期；`SampleLease<T>` 是 Rust 封装，值语义持有 loan。
 - **StaleAction**：命令过期后 S0 采取的动作（Hold / Zero / Stop）。
-- **EStop latch**：紧停锁存，持久化到磁盘，只能通过 `ClearEStop` RPC（maintainer+）解除。
+- **EStop latch**：紧停锁存，持久化到磁盘，只能通过 `ClearEStop` control action（首个 transport 是 maintainer+ 的 `rpc ClearEStop`）解除。
 - **RtSnapshotReader / Publisher**：RT 安全的 immutable snapshot 切换原语；读路径不 bump refcount，回收在普通线程。
 - **ControlLink**：state topic 暴露的控制链路状态（OK / Lost），与 `ENABLED` 主态组合描述系统。
 
@@ -1588,5 +1605,5 @@ v0.1.2 解决 v0.1.1 评审发现的 5 个实现级自洽问题 + 4 个小修。
 | verification doc 时限 | v0.1 原计划"v0.1 必须产出"，v0.1.2 实际收敛为"v0.2 开工前必须产出"（§1.4 / §10 标题）；附录 C 保留 v0 → v0.1 当时的历史决定 |
 | 发布命名示例 | §9 改用模板 `robot-s0-v${version}+${git_sha7}-linux-arm64.tar.gz` + 当前版本 `v0.1.2` 为例，避免示例落后于真实版本 |
 | 工具链（2026-04-21） | §9 由 "Rust stable（尽量不用 nightly）" 改为 **nightly 硬要求 + edition 2024**；**不保留 stable 回退**；不写 `rust-version`（随最新 nightly 走，复现构建用 `nightly-YYYY-MM-DD` pin）；核心 crate 默认不用 nightly-only feature 以防升级回归；回归风险靠 pin nightly 日期 + 原地回滚，不切 stable；S0/S1 禁 `mimalloc` 约束（§0）不变 |
-| IK 分层（2026-04-22） | §4.1 模块地图新增 `robot-kinematics`（trait crate）+ `robot-kinematics-<robot>`（每机器人实现）。IK 位于 S1，不进 S0 / adapter；`robot-s1` 以 feature flag 挂具体 solver，替换机器人 = 换 feature；`robot-kinematics` 零 runtime 依赖，不放入 `robot-core`（§4.2 允许列表不受影响）。trait 草案 v0.3 前定，XLeRobot 实现 v0.4 起跟 adapter 对齐时落地 |
+| IK 分层（2026-04-22，2026-04-27 errata） | §4.1 模块地图新增 `robot-kinematics`（trait crate）+ `robot-kinematics-<robot>`（每机器人实现）。IK 位于 S1，不进 S0 / adapter；`robot-s1` 以 feature flag 挂具体 solver，替换机器人 = 换 feature；`robot-kinematics` 零 runtime 依赖，不放入 `robot-core`（§4.2 允许列表不受影响）。2026-04-27 澄清：IK/FK 是可选 action backend，不是 S1 / Phase B gate；RL / scripted controller 同样可作为 action backend，S1 统一负责 profile 映射和安全限幅 |
 | §4.3 writer API（2026-04-22） | `Publisher::publish(&mut self, w)` 在 writer 持 `&'a mut Publisher` 时会与再取 `&mut self` 冲突（Rust borrow checker 规则）；调整为 `SampleWriter::publish(self) -> Result<()>`（方法挂 writer 上，按值消费 self 自然释放 publisher borrow）。语义完全不变：按值消费、drop without publish = discard loan、loan 泄漏编译期拦截。详见 `docs/CHANGELOG.md` 2026-04-22 "§4.3 writer API 调整" |

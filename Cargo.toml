@@ -22,9 +22,9 @@ members = [
 ]
 
 # 未来 crate（按 docs/01_implementation_steps.md 顺序逐步启用；现在不要提前加入 members）：
-#   crates/robot-kinematics          # v0.3：ArmIkSolver / BaseKinematics trait + 纯类型（零 runtime）
-#   crates/robot-kinematics-xlerobot # v0.4：XLeRobot 双臂 + 三轮全向（移植 dimos kinematics/）
-#   crates/robot-kinematics-piper    # v0.6：Piper 单臂（结构异构第二机器人）
+#   crates/robot-kinematics          # v0.3+：可选 IK/FK backend trait + 纯类型（零 runtime；不是 Phase B gate）
+#   crates/robot-kinematics-xlerobot # v0.4+：XLeRobot 可选 IK/FK backend（若 profile 选择 IK）
+#   crates/robot-kinematics-piper    # v0.6+：Piper 可选 IK/FK backend（结构异构验证）
 #   crates/robot-policy-host         # v0.5：ExternalPolicyHost
 #   crates/robot-s2-bridge           # v0.5：pyo3 module
 #   crates/robot-viz                 # Rerun / Foxglove 桥
