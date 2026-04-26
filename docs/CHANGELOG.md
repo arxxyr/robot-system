@@ -10,6 +10,56 @@
 
 ---
 
+## 2026-04-27 · v0.3 Phase B：policy/action backend + robot profile matrix 口径澄清（**状态：解释登记**）
+
+### 背景
+
+`docs/handoffs/v0.3_entry.md` 初版把 Phase B 写成 "S1 真实现 +
+IK/FK"，容易被误读为 v0.3 必须先落 IK/FK 才能继续。用户明确指出：
+后续可能用 RL，不一定需要 IK/FK；同时希望根据不同机器人构型做编译矩阵，
+例如 type1 = Feetech 电机 + RL，type2 = DM 电机 + IK。
+
+### 澄清内容
+
+Phase B 的 gate 改为：
+
+> S1 coordinator 真实现 + policy/action interface + robot profile matrix。
+> IK/FK、RL、scripted controller 都是可插拔 action backend；v0.3 只要求
+> 至少一个 backend 能经 S1 安全约束后跑通到 S0 joint command，不要求
+> IK/FK 必须落地。
+
+`docs/handoffs/v0.3_entry.md` §2 已同步更新依赖图与硬约束：
+
+- `Phase B — S1 真实现 + IK/FK` 改成 `Phase B — S1 真实现 +
+  policy/action profile matrix`。
+- B2 改为 `policy/action interface + robot profile matrix`。
+- B3 改为 "至少一个 action backend 跑通到 S0 joint cmd (RL / IK /
+  scripted)"。
+- 新增 build/deploy profile matrix 约束：一个生产 binary 应明确选择
+  motor adapter（如 `feetech` / `dm`）、action backend（如 `rl` / `ik` /
+  `scripted`）、robot model（如 `xlerobot` / `piper` / custom）与 command
+  mode。
+- runtime config 只能选择已编译能力；配置与编译 profile 不匹配必须启动期
+  fail fast。
+- S0 / adapter 不得知道 action 来源；RL / IK / scripted 输出都必须先在 S1
+  归一成安全后的 joint command。
+- v0.3 不开放 raw torque / raw current policy 直通 S0。
+
+### 不改变的内容
+
+- 不改 `docs/00_design.md` frozen schema / 模块图。
+- 不撤销 2026-04-22 "新增 IK 层"登记；`robot-kinematics` 仍是可选
+  kinematics backend，但不再是 Phase B gate。
+- 不放松 Phase A gate：A1 + A2 仍必须在 Phase B 之前 land。
+- 不允许 RL / policy-host 绕过 S1/S0 安全链路。
+
+### 审阅人
+
+reviewer（用户）— 明确 v0.3 可能用 RL，不应把 IK/FK 写成硬前置；要求把
+Phase B 文案改成 policy/action backend + robot profile matrix。
+
+---
+
 ## 2026-04-27 · `docs/00_design.md` ClearEStop control action 术语澄清（**状态：已回写 / errata**）
 
 ### 背景
