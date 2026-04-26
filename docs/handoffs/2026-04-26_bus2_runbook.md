@@ -176,8 +176,16 @@ smoke duration elapsed → Event::Stop
 2. ✅ `motors 6 | ids [1, 2, 3, 4, 5, 6]`。
 3. ✅ `calibration=loaded`（不是 `none`）。
 4. ✅ state=Ready（不是 Safe / Fault；如 Safe 则 latch 文件还在，看 §6 重置）。
-5. ✅ **5s 内右臂物理上**完全不动**（adapter `enable(true)` 没被调，电机
-   torque off，自由下垂或机架支撑）。
+5. ✅ **5s 内右臂物理上完全不动**（daemon 仅 `connect()`，**未**下发
+   `enable(true)` / `safety_stop`，所以**不会改写** motor `Torque_Enable`，
+   它保持进入 daemon **之前的 baseline**）。
+   - **⚠️ 安全注意**：daemon 没有"自动断扭"语义。`Torque_Enable` 状态由
+     **进入 §3 之前**决定 —— 例如 dimos 留扭场景下 baseline=1，§3 跑完
+     仍是 1（电机仍上扭，**不**能徒手掰）。**徒手接触电机前必须**用
+     `feetech_poke read Torque_Enable` 实测确认每个 motor = 0；如非 0，
+     先手动 `feetech_poke write Torque_Enable 0` 或跑 §5 EStop 再接触。
+   - 2026-04-26 实测：baseline = 1（dimos service stop 不广播 disable），
+     §3 跑完仍 = 1（daemon 不动）。
 6. ✅ `clean shutdown`，无 panic / fatal。
 
 ---
@@ -257,8 +265,19 @@ fault_code: Unknown
 3. ✅ wire `S0SafetyState=TorqueOn`（rt_thread / serial_io_thread 推上来；任何
    confirm/StopFailed 都说明有问题）。
 4. ✅ wire `state=Enabled.Active`，`output_mode=Active`，`fault_code=Unknown`。
-5. ✅ shutdown 干净，retire 后所有 motor torque off（`feetech_poke read`
-   Torque_Enable=0）。
+5. ✅ daemon `clean shutdown`（`Event::Stop` → `state=Stopping` → graceful join 退出，
+   无 panic / fatal）。
+   - **⚠️ 安全注意：普通 ballet shutdown 不保证电机断扭**。
+     `Stopping` 路径只是把 `OutputPolicy` 切到 `Disabled`（停下命令），
+     **不**调 `enable(false)`；`FeetechAdapter::disconnect()` 也只
+     close serial port，不写 `Torque_Enable=0`。**所以电机仍处于 ballet
+     期间被 enable(true) 上扭的状态**。
+   - **接触硬件前必须** ① 跑 §5 EStop 触发 broadcast `Torque_Enable=0`，
+     **或** ② 手动 `feetech_poke write Torque_Enable 0` 逐 motor + readback
+     确认全 0，**或** ③ 直接物理切电源。
+   - 2026-04-26 实测：§4 退出后没单独读 `Torque_Enable`（只读 `Present_Position`
+     拿 motor 偏移）；后续 §5 EStop 后才真正 broadcast 全 0 + post-shutdown
+     验证 6 motor = 0。
 
 ---
 
