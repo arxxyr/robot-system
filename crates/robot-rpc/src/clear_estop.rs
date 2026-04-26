@@ -129,6 +129,60 @@ pub fn validate_clear_estop_command(
 }
 
 // ---------------------------------------------------------------------------
+// Idempotency fingerprint（reviewer A1-1 (3/3) round 2 阻断 1 修正）
+// ---------------------------------------------------------------------------
+
+/// 算 [`ValidatedClearEStop`] 的 idempotency fingerprint（32-byte blake3
+/// hash）；**排除** `request_id` / `timeout_ms` / `idempotency_key`，保证
+/// 同一 idempotency_key 的合法 retry（每次 retry 客户端生成新 UUIDv7
+/// request_id + 可能调整 timeout）走 [`crate::idempotency::Decision::Replay`]
+/// 而**不**误走 `Conflict`。
+///
+/// ## 字段分类
+///
+/// **进 fingerprint**（语义字段；retry 必须不变，否则视同新意图）：
+/// - `source`（"cli.loosqk" / "web.ui" / 等；同一来源 retry）
+/// - `confirmation`（人工确认串；改字串 = 不同操作员意图）
+/// - `audit_reason`（"为什么调"；改 reason = 不同 audit 上下文）
+/// - `dry_run`（dry_run 翻转 = 行为彻底改变）
+/// - `auth_token`（攻击者切换 token 应被检测）
+///
+/// **不进 fingerprint**（audit-only / retry 可变）：
+/// - `request_id`（reviewer A1-1 (3/3) round 2 明文：每次 retry 改变；audit
+///   trace correlation 用，不进幂等键）
+/// - `timeout_ms`（客户端 retry 调整 timeout 是合理的）
+/// - `idempotency_key`（cache key 自身；不应该是 fingerprint 输入）
+///
+/// ## Wire format
+///
+/// length-prefixed (label, value) 序对，blake3-256 hash。length-prefix 防
+/// "ab"+"c" vs "a"+"bc" hash 相同的 ambiguity。`label` 字符串硬编码在源
+/// 码，避免外部输入污染 hash 输入。
+#[must_use]
+pub fn clear_estop_idempotency_fingerprint(v: &ValidatedClearEStop) -> [u8; 32] {
+    let mut h = blake3::Hasher::new();
+    fingerprint_field(&mut h, "source", v.source.as_bytes());
+    fingerprint_field(&mut h, "confirmation", v.confirmation.as_bytes());
+    fingerprint_field(&mut h, "audit_reason", v.audit_reason.as_bytes());
+    fingerprint_field(&mut h, "dry_run", &[u8::from(v.dry_run)]);
+    fingerprint_field(&mut h, "auth_token", v.auth_token.as_bytes());
+    h.finalize().into()
+}
+
+fn fingerprint_field(h: &mut blake3::Hasher, label: &str, value: &[u8]) {
+    let label_bytes = label.as_bytes();
+    // u32 大端长度前缀；硬编码 label 长度永远不会超 u32::MAX。
+    h.update(
+        &u32::try_from(label_bytes.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    h.update(label_bytes);
+    h.update(&u32::try_from(value.len()).unwrap_or(u32::MAX).to_be_bytes());
+    h.update(value);
+}
+
+// ---------------------------------------------------------------------------
 // RpcStatus → tonic::Code 显式映射
 // ---------------------------------------------------------------------------
 
@@ -380,6 +434,143 @@ mod tests {
              gRPC code 数值意外对齐了，需要重新审计 fbs comment + 本回归锁"
         );
     }
+
+    // ---- idempotency fingerprint（reviewer A1-1 (3/3) round 2 阻断 1）----
+
+    /// 把 ValidatedClearEStop 通过 fresh_cmd 路径构造（共享 fresh_cmd
+    /// 的语义字段），然后允许 mutator 改 audit-only / 重试可变字段。
+    fn validated_with(mutator: impl FnOnce(&mut ClearEStopCommand)) -> ValidatedClearEStop {
+        let mut cmd = fresh_cmd();
+        mutator(&mut cmd);
+        validate_clear_estop_command(&cmd).unwrap()
+    }
+
+    /// **回归锁**：合法 retry — 同 idempotency_key + 新 request_id + 新
+    /// timeout_ms + 其它语义字段不变 → fingerprint **必须**相同（不能让
+    /// cache 误走 Conflict 杀合法 retry，reviewer A1-1 (3/3) round 2 阻
+    /// 断 1）。
+    #[test]
+    fn fingerprint_stable_across_request_id_and_timeout_changes() {
+        let v1 = validated_with(|c| {
+            // attempt 1：默认 fresh_cmd（UUIDv7 #1, timeout 5000）
+            let _ = c;
+        });
+        let v2 = validated_with(|c| {
+            // attempt 2：retry，新 UUIDv7 + 新 timeout
+            let m = c.meta.as_mut().unwrap();
+            m.request_id = Uuid::now_v7().to_string();
+            m.timeout_ms = 10_000;
+        });
+        assert_ne!(
+            v1.request_id, v2.request_id,
+            "测试前提：retry 必须用新 request_id"
+        );
+        assert_ne!(
+            v1.timeout_ms, v2.timeout_ms,
+            "测试前提：retry 必须用新 timeout_ms"
+        );
+        assert_eq!(
+            clear_estop_idempotency_fingerprint(&v1),
+            clear_estop_idempotency_fingerprint(&v2),
+            "REGRESSION: fingerprint 跟 request_id / timeout_ms 耦合，合法 \
+             retry 会被 cache 误走 Conflict（reviewer A1-1 (3/3) round 2 \
+             阻断 1）"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_when_confirmation_changes() {
+        let v1 = validated_with(|_| {});
+        let v2 = validated_with(|c| {
+            c.confirmation = "different-operator-different-confirmation".into();
+        });
+        assert_ne!(
+            clear_estop_idempotency_fingerprint(&v1),
+            clear_estop_idempotency_fingerprint(&v2),
+            "confirmation 是语义字段，改它应当让 fingerprint 不同 → 同 \
+             idempotency_key + 不同 confirmation 走 Conflict"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_when_dry_run_flips() {
+        let v1 = validated_with(|_| {});
+        let v2 = validated_with(|c| {
+            c.meta.as_mut().unwrap().dry_run = true;
+        });
+        assert_ne!(
+            clear_estop_idempotency_fingerprint(&v1),
+            clear_estop_idempotency_fingerprint(&v2),
+            "dry_run 翻转 = 行为彻底改变；同 idempotency_key + 不同 dry_run \
+             必须走 Conflict（防 client 用 dry_run cache 替真清 latch 路径）"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_when_auth_token_changes() {
+        let v1 = validated_with(|_| {});
+        let v2 = validated_with(|c| {
+            c.meta.as_mut().unwrap().auth.as_mut().unwrap().token = "admin-fake-token-001".into();
+        });
+        assert_ne!(
+            clear_estop_idempotency_fingerprint(&v1),
+            clear_estop_idempotency_fingerprint(&v2),
+            "auth_token 切换 = 不同身份调用；必须走 Conflict 防止 token 切换 \
+             复用其它身份的 cached ack"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_when_source_changes() {
+        let v1 = validated_with(|_| {});
+        let v2 = validated_with(|c| {
+            c.meta.as_mut().unwrap().source = "web.ui".into();
+        });
+        assert_ne!(
+            clear_estop_idempotency_fingerprint(&v1),
+            clear_estop_idempotency_fingerprint(&v2),
+            "source 切换 = 不同入口；audit 视角同 idempotency_key 跨 source \
+             复用 cached ack 会丢 audit 轨迹，必须走 Conflict"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_when_audit_reason_changes() {
+        let v1 = validated_with(|_| {});
+        let v2 = validated_with(|c| {
+            c.meta.as_mut().unwrap().audit_reason = "different reason".into();
+        });
+        assert_ne!(
+            clear_estop_idempotency_fingerprint(&v1),
+            clear_estop_idempotency_fingerprint(&v2),
+            "audit_reason 改变 = 不同 audit 上下文意图；必须走 Conflict"
+        );
+    }
+
+    /// length-prefix 防 ambiguity 锁：不带 length-prefix 的 naive 拼接
+    /// 会让 ("ab", "c") 跟 ("a", "bc") 同 hash。本测试用不同 audit_reason
+    /// + source 长度组合验证 fingerprint 不会假等。
+    #[test]
+    fn fingerprint_length_prefix_prevents_ambiguity() {
+        let v1 = validated_with(|c| {
+            let m = c.meta.as_mut().unwrap();
+            m.source = "ab".into();
+            m.audit_reason = "c".into();
+        });
+        let v2 = validated_with(|c| {
+            let m = c.meta.as_mut().unwrap();
+            m.source = "a".into();
+            m.audit_reason = "bc".into();
+        });
+        assert_ne!(
+            clear_estop_idempotency_fingerprint(&v1),
+            clear_estop_idempotency_fingerprint(&v2),
+            "length-prefix 失效 → naive 拼接的 ('ab','c') 跟 ('a','bc') 会假 \
+             等。fingerprint helper 必须 length-prefix 各字段"
+        );
+    }
+
+    // ---- RpcStatus -> tonic::Code 映射继续 ----
 
     /// **变体数计数锁**（reviewer A1-1 part 1 拍板硬边界 round 2）：flatc
     /// 把 RpcStatus 生成成 `pub struct RpcStatus(pub u8)`，`match` 非穷举

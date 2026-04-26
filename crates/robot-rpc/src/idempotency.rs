@@ -1,22 +1,39 @@
 //! In-process TTL idempotency cache（A1-1 (3/3) 范围）。
 //!
-//! ## 安全边界（reviewer A1 第 3 个拍板硬边界）
+//! ## 安全边界（reviewer A1 第 3 个拍板硬边界 + A1-1 (3/3) round 2 阻断）
 //!
 //! - **进程内**：仅 `robot-rpc` 进程持有；**不**持久化（A1 不解决 RPC
 //!   重启重放问题，留 v0.5+ 完整 gateway 时再决定要不要持久化）。
 //! - **cache key = `meta.idempotency_key`**：**不**用 `request_id`
 //!   （`request_id` 每次重试改变，仅 audit；`idempotency_key` 跨重试稳定，
 //!   是真正的去重 key）。
-//! - **同 key 不同 payload 必须拒绝**：禁止复用错误请求的 cached Ack。
-//!   payload 比较走 hash（blake3），cache 只记 hash 不存 payload bytes。
-//! - **TTL 过期清理**：`get_or_insert` 每次调用顺手清过期项；不起后台清
-//!   理线程（A1 简化）。
+//! - **指纹比较走 [`Fingerprint`]**（reviewer A1-1 (3/3) round 2 阻断 1
+//!   修正）：**不**直接 hash request payload bytes —— 那样会把
+//!   `request_id` 等"每次重试可变"的 audit 字段算进 fingerprint，导致同
+//!   `idempotency_key` + 新 `request_id` 的合法 retry 误走
+//!   [`Decision::Conflict`]。**调用方负责构造 fingerprint**：把语义字段
+//!   （`source` / `confirmation` / `audit_reason` / `dry_run` /
+//!   `auth_token` 等）合成稳定 byte sequence 再 hash；显式排除 audit-only
+//!   / 每次重试可变字段（`request_id` / `timeout_ms`）。`clear_estop`
+//!   模块提供 [`crate::clear_estop::clear_estop_idempotency_fingerprint`]
+//!   helper。
+//! - **同 key 不同 fingerprint 必须拒绝**：禁止复用错误请求的 cached Ack。
+//!   cache 只记 fingerprint 不存原 payload bytes。
+//! - **TTL 过期清理**：`decide` 每次调用顺手清过期项；不起后台清理线程
+//!   （A1 简化）。
 //! - **首次插入 vs 命中**：首次插入返 `Decision::FreshInsert(handle)`；命
-//!   中且 hash 匹配返 `Decision::Replay(cached_ack)`；命中但 hash 不匹配
-//!   返 `Decision::Conflict { cached_payload_hash, incoming_payload_hash }`。
+//!   中且 fingerprint 匹配返 `Decision::Replay(cached_ack)`；命中但
+//!   fingerprint 不匹配返
+//!   `Decision::Conflict { cached_fingerprint, incoming_fingerprint }`。
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+
+/// 32-byte 指纹（一般是 blake3-256 hash）。**调用方**负责从语义字段
+/// （**排除** `request_id` / `timeout_ms` 等 audit-only / 每次重试可变
+/// 字段）合成稳定 byte sequence 再 hash 出来。详 [`crate::clear_estop::
+/// clear_estop_idempotency_fingerprint`] 一类 helper。
+pub type Fingerprint = [u8; 32];
 
 /// Cache 决策。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,26 +43,26 @@ pub enum Decision {
     /// drop handle（panic / 提前 return），下一次同 key 请求依然是
     /// `FreshInsert`（cache 没记本次的 ack）。
     FreshInsert(InsertHandle),
-    /// 命中且 payload hash 匹配：可以直接返 cached ack（含 dry_run 状态、
+    /// 命中且 fingerprint 匹配：可以直接返 cached ack（含 dry_run 状态、
     /// cleared_at_ns、tonic Status 等）。
     Replay(CachedAck),
-    /// 命中但 payload hash 不匹配：reviewer 硬边界 — 拒绝复用，返
-    /// `tonic::Code::AlreadyExists` 让客户端发现 key 冲突。
+    /// 命中但 fingerprint 不匹配：reviewer 硬边界 — 拒绝复用，调用方应
+    /// 返 `tonic::Code::AlreadyExists` 让客户端发现 key 冲突。
     Conflict {
-        cached_payload_hash: [u8; 32],
-        incoming_payload_hash: [u8; 32],
+        cached_fingerprint: Fingerprint,
+        incoming_fingerprint: Fingerprint,
     },
 }
 
 /// `Decision::FreshInsert` 内部 handle —— 调用方处理完 RPC 后必须 commit
 /// 一次，否则 cache 无记录（同 key 下次请求当 fresh）。
 ///
-/// 类型只携带 cache key + payload hash + TTL；commit 时写入 ack + 时间戳。
+/// 类型只携带 cache key + fingerprint + TTL；commit 时写入 ack + 时间戳。
 /// **手动 commit / 手动 abandon**：不实现 Drop，让调用方明示意图。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InsertHandle {
     key: String,
-    payload_hash: [u8; 32],
+    fingerprint: Fingerprint,
 }
 
 impl InsertHandle {
@@ -55,7 +72,7 @@ impl InsertHandle {
         cache.entries.insert(
             self.key,
             CacheEntry {
-                payload_hash: self.payload_hash,
+                fingerprint: self.fingerprint,
                 ack,
                 inserted_at: now,
             },
@@ -75,7 +92,7 @@ pub struct CachedAck {
 
 #[derive(Debug, Clone)]
 struct CacheEntry {
-    payload_hash: [u8; 32],
+    fingerprint: Fingerprint,
     ack: CachedAck,
     inserted_at: Instant,
 }
@@ -113,27 +130,29 @@ impl IdempotencyCache {
 
     /// 查 cache 决策 —— 顺手清过期项（lazy GC）。
     ///
-    /// `payload_bytes` 是**完整** request payload（用于 hash 比较；A1 用
-    /// blake3-256 hash）。
+    /// **调用方负责构造 [`Fingerprint`]**（reviewer A1-1 (3/3) round 2 阻
+    /// 断 1 修正）：本函数**不**自己 hash payload bytes，避免把
+    /// `request_id` 等"每次重试可变"字段算进 fingerprint 误杀合法 retry。
+    /// 详 module doc 安全边界第 3 条 + [`crate::clear_estop::
+    /// clear_estop_idempotency_fingerprint`]。
     ///
-    /// 调用方需要持有 `&mut` 因为 GC 可能写表（写过期清理）。
-    pub fn decide(&mut self, key: &str, payload_bytes: &[u8]) -> Decision {
+    /// 调用方需要持有 `&mut` 因为 GC 可能写表（过期清理）。
+    pub fn decide(&mut self, key: &str, fingerprint: Fingerprint) -> Decision {
         self.gc_expired(Instant::now());
-        let incoming_hash = blake3::hash(payload_bytes).into();
         match self.entries.get(key) {
             Some(entry) => {
-                if entry.payload_hash == incoming_hash {
+                if entry.fingerprint == fingerprint {
                     Decision::Replay(entry.ack.clone())
                 } else {
                     Decision::Conflict {
-                        cached_payload_hash: entry.payload_hash,
-                        incoming_payload_hash: incoming_hash,
+                        cached_fingerprint: entry.fingerprint,
+                        incoming_fingerprint: fingerprint,
                     }
                 }
             }
             None => Decision::FreshInsert(InsertHandle {
                 key: key.to_string(),
-                payload_hash: incoming_hash,
+                fingerprint,
             }),
         }
     }
@@ -163,20 +182,25 @@ impl IdempotencyCache {
 mod tests {
     use super::*;
 
+    /// 测试用 fingerprint 工厂：blake3 hash 任意 byte slice。**不**走
+    /// production code path —— production 走 [`crate::clear_estop::
+    /// clear_estop_idempotency_fingerprint`] 之类的 helper（排除
+    /// `request_id` / `timeout_ms` 等 audit-only / 重试可变字段）。
+    fn test_fp(bytes: &[u8]) -> Fingerprint {
+        blake3::hash(bytes).into()
+    }
+
     #[test]
     fn fresh_insert_then_commit_then_replay() {
         let mut cache = IdempotencyCache::new(Duration::from_mins(1));
-        let payload = b"req-payload-1";
+        let fp = test_fp(b"req-payload-1");
         let key = "idem-key-1";
 
-        // 第一次：FreshInsert
-        let dec = cache.decide(key, payload);
+        let dec = cache.decide(key, fp);
         let handle = match dec {
             Decision::FreshInsert(h) => h,
             other => panic!("expected FreshInsert, got {other:?}"),
         };
-
-        // 调用方处理完后 commit
         handle.commit(
             &mut cache,
             CachedAck {
@@ -185,8 +209,7 @@ mod tests {
             },
         );
 
-        // 第二次：Replay
-        let dec2 = cache.decide(key, payload);
+        let dec2 = cache.decide(key, fp);
         match dec2 {
             Decision::Replay(ack) => {
                 assert_eq!(ack.cleared_at_ns, 1_234_567_890);
@@ -200,25 +223,22 @@ mod tests {
     fn handle_dropped_without_commit_means_next_call_is_still_fresh() {
         let mut cache = IdempotencyCache::new(Duration::from_mins(1));
         let key = "idem-key-2";
-        // 第一次拿 handle 不 commit（模拟 RPC handler panic / 提前 return）
-        let handle = cache.decide(key, b"payload-a");
+        let fp = test_fp(b"payload-a");
+        let handle = cache.decide(key, fp);
         drop(handle);
         assert!(cache.is_empty());
-
-        // 第二次：仍然是 FreshInsert
-        match cache.decide(key, b"payload-a") {
+        match cache.decide(key, fp) {
             Decision::FreshInsert(_) => {}
             other => panic!("expected FreshInsert (handle dropped), got {other:?}"),
         }
     }
 
     #[test]
-    fn same_key_different_payload_returns_conflict() {
+    fn same_key_different_fingerprint_returns_conflict() {
         let mut cache = IdempotencyCache::new(Duration::from_mins(1));
         let key = "idem-key-3";
-
-        // 第一次：FreshInsert + commit payload "A"
-        match cache.decide(key, b"payload-A") {
+        let fp_a = test_fp(b"payload-A");
+        match cache.decide(key, fp_a) {
             Decision::FreshInsert(h) => h.commit(
                 &mut cache,
                 CachedAck {
@@ -229,16 +249,61 @@ mod tests {
             other => panic!("first call expected FreshInsert, got {other:?}"),
         }
 
-        // 第二次同 key 但 payload "B"：必须 Conflict（reviewer 硬边界，**不**
-        // 复用错误请求的 cached ack）
-        match cache.decide(key, b"payload-B") {
+        let fp_b = test_fp(b"payload-B");
+        match cache.decide(key, fp_b) {
             Decision::Conflict {
-                cached_payload_hash,
-                incoming_payload_hash,
+                cached_fingerprint,
+                incoming_fingerprint,
             } => {
-                assert_ne!(cached_payload_hash, incoming_payload_hash);
+                assert_eq!(cached_fingerprint, fp_a);
+                assert_eq!(incoming_fingerprint, fp_b);
+                assert_ne!(cached_fingerprint, incoming_fingerprint);
             }
-            other => panic!("expected Conflict for same key + different payload, got {other:?}"),
+            other => {
+                panic!("expected Conflict for same key + different fingerprint, got {other:?}")
+            }
+        }
+    }
+
+    /// **回归锁（reviewer A1-1 (3/3) round 2 阻断 1）**：cache 必须把"同
+    /// `idempotency_key` + 同 `Fingerprint`"重试当 `Replay`，即使每次重试
+    /// 客户端生成了新的 `request_id`（UUIDv7）+ 新 `timeout_ms`。fingerprint
+    /// helper 排除那些 audit-only / 重试可变字段；cache 只看 fingerprint。
+    ///
+    /// 本测试从 cache 视角锁住 contract："只要调用方给同一 fingerprint，
+    /// cache 必须 Replay；不能误走 Conflict"。`clear_estop` module 单测从
+    /// helper 视角锁住"request_id 变 / timeout_ms 变 → fingerprint 不变"。
+    /// 两端共同保证合法 retry 不被误杀。
+    #[test]
+    fn same_key_same_fingerprint_replays_across_retries() {
+        let mut cache = IdempotencyCache::new(Duration::from_mins(1));
+        let key = "retry-key";
+        let canonical_fp = test_fp(b"canonical-payload-without-request-id-or-timeout");
+
+        match cache.decide(key, canonical_fp) {
+            Decision::FreshInsert(h) => h.commit(
+                &mut cache,
+                CachedAck {
+                    cleared_at_ns: 12_345,
+                    dry_run: false,
+                },
+            ),
+            other => panic!("attempt 1 expected FreshInsert, got {other:?}"),
+        }
+
+        match cache.decide(key, canonical_fp) {
+            Decision::Replay(ack) => {
+                assert_eq!(ack.cleared_at_ns, 12_345, "retry must replay cached ack");
+                assert!(!ack.dry_run);
+            }
+            Decision::Conflict { .. } => panic!(
+                "REGRESSION: same idempotency_key + same canonical fingerprint must \
+                 replay; got Conflict — fingerprint contract violated, cache 误杀合 \
+                 法 retry（reviewer A1-1 (3/3) round 2 阻断 1）"
+            ),
+            Decision::FreshInsert(_) => {
+                panic!("attempt 2 expected Replay, got FreshInsert (cache lost first commit)")
+            }
         }
     }
 
@@ -246,8 +311,9 @@ mod tests {
     fn ttl_expiry_drops_entry() {
         let mut cache = IdempotencyCache::new(Duration::from_millis(50));
         let key = "idem-key-4";
+        let fp = test_fp(b"payload");
 
-        match cache.decide(key, b"payload") {
+        match cache.decide(key, fp) {
             Decision::FreshInsert(h) => h.commit(
                 &mut cache,
                 CachedAck {
@@ -259,27 +325,24 @@ mod tests {
         }
         assert_eq!(cache.len(), 1);
 
-        // 强制把 entry 老化超过 TTL
         cache.force_age(key, Duration::from_millis(200));
 
-        // 再 decide → 应该清掉旧的，给 FreshInsert
-        match cache.decide(key, b"payload") {
+        match cache.decide(key, fp) {
             Decision::FreshInsert(_) => {}
             other => panic!("expected FreshInsert after TTL expiry, got {other:?}"),
         }
-        // GC 应该跑过：除了刚塞进去的 0 个 commit，cache 应该是空的
         assert!(cache.is_empty());
     }
 
-    /// 边界：同 key 同 payload 但 dry_run cached_ack 是 dry_run=true，重
-    /// 放时**必须**回放 dry_run=true（client 不能误以为真清了 latch）。
+    /// 同 key + 同 fingerprint 但 cached ack 是 dry_run=true，重放时必须
+    /// 回放 dry_run=true（client 不能误以为真清了 latch）。
     #[test]
     fn replay_preserves_dry_run_flag() {
         let mut cache = IdempotencyCache::new(Duration::from_mins(1));
         let key = "dry-run-replay-key";
-        let payload = b"dry-run-payload";
+        let fp = test_fp(b"dry-run-payload");
 
-        match cache.decide(key, payload) {
+        match cache.decide(key, fp) {
             Decision::FreshInsert(h) => h.commit(
                 &mut cache,
                 CachedAck {
@@ -289,7 +352,7 @@ mod tests {
             ),
             other => panic!("expected FreshInsert, got {other:?}"),
         }
-        match cache.decide(key, payload) {
+        match cache.decide(key, fp) {
             Decision::Replay(ack) => {
                 assert_eq!(ack.cleared_at_ns, 999);
                 assert!(ack.dry_run, "dry_run must be preserved across replay");
@@ -299,10 +362,11 @@ mod tests {
     }
 
     #[test]
-    fn empty_payload_works_consistently() {
+    fn empty_fingerprint_works_consistently() {
         let mut cache = IdempotencyCache::new(Duration::from_mins(1));
-        let key = "empty-payload-key";
-        match cache.decide(key, b"") {
+        let key = "empty-fp-key";
+        let fp = test_fp(b"");
+        match cache.decide(key, fp) {
             Decision::FreshInsert(h) => h.commit(
                 &mut cache,
                 CachedAck {
@@ -312,7 +376,7 @@ mod tests {
             ),
             other => panic!("expected FreshInsert, got {other:?}"),
         }
-        match cache.decide(key, b"") {
+        match cache.decide(key, fp) {
             Decision::Replay(_) => {}
             other => panic!("expected Replay, got {other:?}"),
         }
