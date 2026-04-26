@@ -92,12 +92,20 @@
 
 ## 过滤（`RUST_LOG`）
 
-`tracing-subscriber::EnvFilter` 标准语法：
+`tracing-subscriber::EnvFilter` 标准语法。
+
+**默认值**：`info,robot=debug` —— 项目内（crate 名以 `robot` 前缀）走
+`debug`，外部依赖（iceoryx2、tokio、serde、...）走 `info`。权威实现在
+`crates/robot-logging/src/lib.rs::init`（`EnvFilter::try_from_env(...)
+.unwrap_or_else(|_| EnvFilter::new("info,robot=debug"))`）。修改默认值
+必须同时改：① `crates/robot-logging/src/lib.rs::init`、② 本文件、③
+`docs/00_design.md` §8 第 4 条，三处口径必须一致。
 
 ```bash
-RUST_LOG=info                         # 全局 info（默认）
-RUST_LOG=debug                        # 全 debug
-RUST_LOG=info,robot=debug             # 项目 crate debug，外部 info（默认值）
+# 不传 RUST_LOG = 用默认 "info,robot=debug"
+RUST_LOG=info                         # 全局 info（覆盖默认，连项目 crate 也降到 info）
+RUST_LOG=debug                        # 全 debug（连外部依赖也升 debug）
+RUST_LOG=info,robot=debug             # 显式写出默认值
 RUST_LOG=robot_s0=trace,info          # 仅 s0 走 trace
 RUST_LOG=robot_adapter_feetech=debug  # 仅 feetech adapter 走 debug
 ```
