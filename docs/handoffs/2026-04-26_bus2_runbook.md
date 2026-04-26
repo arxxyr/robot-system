@@ -1,12 +1,39 @@
 # Handoff · 2026-04-26 · bus2 right_arm 6-motor 真机闭环 Runbook
 
+> **⚠️ pre-strict 历史档案 — 不可照跑**（reviewer round 6 阻断登记，
+> 2026-04-26 commit `a9f8dc7` 之后）。
+>
+> 本 runbook 是 task #15 Stage 1 当时的实测记录，**§7 "手动 ClearEStop
+> = rm latch + 重启"** 在当时（commit `a9f8dc7` 之前）是合法操作。Reviewer
+> round 4 之后 `s0_daemon` 默认 `MissingLatchPolicy::Strict`：primary +
+> bak 都不存在时 daemon **fail-closed 拒启动**，"rm latch && restart"
+> **不再**等价于 ClearEStop。详 `crates/robot-s0/src/estop_latch.rs`
+> + `docs/CHANGELOG.md` 2026-04-26 round 4 / 5 条目。
+>
+> **当前 v0.2 合法操作**：
+> - 部署 / 重置 latch=0 → 走 `scripts/systemd/README.md` "首次部署 — latch
+>   provision **必读**" 节（推荐流程或 `--allow-empty-latch` opt-in 替
+>   代流程）。
+> - "只能 ClearEStop 解除 EStop" 完整语义留 v0.3 RPC；v0.2 由
+>   provision / opt-in 流程做 displayed authorization 守门，**不**等价
+>   于 ClearEStop。
+>
+> 本文件保留作历史档案：实测数据 + 踩坑经验仍有参考价值，但**不可作为
+> 当前 runbook 直接执行**。task #15 Stage 1 状态 "✅ 全过"（2026-04-26）
+> 是当时 pre-strict 语义下的 PASS。
+>
+> ---
+>
+> （以下为 pre-strict 时代原文，pre-`a9f8dc7`）
+>
 > **状态：✅ task #15 Stage 1 真机验证全过（2026-04-26）**。
 > bus2 右臂 6 motor SerialRT 路径完整闭环，§2-§7 全部通过。Stage 2（加 base
 > 3 wheel = 9 motor 全栈）待 mock_s1 加 "部分关节冻结" 模式后再做。
 >
 > 实测结果详见 [`2026-04-26.md`](2026-04-26.md) handoff §3。本 runbook 在
 > 实测后已根据踩坑经验更新（命令 typo 修复 + sudo↔user 模式选择 + 多个
-> known issue / workaround）。下次跑可直接按本 runbook 执行。
+> known issue / workaround）。~~下次跑可直接按本 runbook 执行~~ → 见上面
+> ⚠️ banner，pre-strict 不可直接照跑。
 
 ---
 
@@ -394,18 +421,40 @@ state_changes 计数 (estop 之后): >= 3   ← Active→Safe (+ 可能进 Stopp
 4. mock_s1 发 heartbeat 12s → state 应**留在 Safe**（latch 没清，
    ready_guards_pass 不通），右臂**全程不动**。
 
-## 7. 手动 ClearEStop（latch 文件清）
+## 7. 手动 ClearEStop（latch 文件清）— **⚠️ pre-strict，已废弃**
 
-v0.2 没接 ClearEStop RPC；手动等价 = 清 latch 文件 + 重启。
+> **这一节在当前 v0.2 strict 语义下不再合法**（reviewer round 4，commit
+> `4222df5`）。下文 "rm latch + 重启" 是 pre-`4222df5` 时代的临时
+> bring-up 操作；现在 daemon 默认 `MissingLatchPolicy::Strict`，rm latch
+> 后再 start 会 **fail-closed 拒启动**（journal: `"primary AND backup
+> both missing; fail-closed (need --allow-empty-latch opt-in or ClearEStop
+> RPC in v0.3)"`）。
+>
+> **当前合法路径**：
+>
+> - **首次部署 / 重置 latch=0**：走 `scripts/systemd/README.md` "首次部
+>   署 — latch provision **必读**"（推荐 `printf '0\n' | tee` 直接 provision；
+>   或 `--allow-empty-latch` drop-in 一次性 opt-in 后撤掉）。
+> - **EStop 真清除**：v0.2 **没有**等价路径；`docs/00_design.md` §6.7 #3
+>   "只能 ClearEStop RPC 解除"完整语义**留 v0.3 RPC** 落地。运维上的
+>   "rm latch + provision 0 + restart" 流程是 deploy 显式授权流程，但
+>   按 reviewer round 4 边界**不**等价于 ClearEStop。
+>
+> 以下原文（pre-strict）保留作历史档案。**不可照跑**。
 
 ```bash
+# ⚠️ pre-strict 历史，照跑 strict daemon 会 fail-closed 拒启动
 sudo rm logs/estop_latch_bus2_right_arm \
         logs/estop_latch_bus2_right_arm.bak
 # 重新跑 §4 (mock_s1 ballet)
 ```
 
-期望：daemon 启动期日志 `EStop latch: not found, latched=false`，
-state=Safe→Ready→Enabled.Active 链路恢复，正弦继续。
+期望（pre-strict）：daemon 启动期日志 `EStop latch: not found,
+latched=false`，state=Safe→Ready→Enabled.Active 链路恢复，正弦继续。
+
+期望（strict，commit `4222df5` 之后）：daemon ERROR `"primary AND backup
+both missing; fail-closed"` + systemd unit failed。要恢复到 latched=false
+状态必须先按 `scripts/systemd/README.md` provision `latch=0\n`。
 
 ---
 
@@ -450,7 +499,8 @@ state 全程 Safe (t=2..12s)，即便 hb_ok=true 也不进 Enabled
 
 ---
 
-未来跑时如有 fail，按下面格式回执：
+未来跑时如有 fail，按下面格式回执（**注意**：§7 模板 "手动 ClearEStop"
+仅 pre-strict 历史档案，当前 strict 语义下不该照跑；详上面 §7 banner）：
 
 ```
 === bus2 6-motor §3 Smoke ===

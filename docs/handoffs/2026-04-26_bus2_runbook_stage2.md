@@ -1,5 +1,27 @@
 # Handoff · 2026-04-26 · bus2 9-motor 全栈真机闭环 Runbook（Stage 2）
 
+> **⚠️ pre-strict 历史档案 — 不可照跑**（reviewer round 6 阻断登记，
+> 2026-04-26 commit `a9f8dc7` 之后）。
+>
+> 本 runbook §7 "latch 重启 / 删 latch 恢复 / 第二次 EStop" 是 task #15
+> Stage 2 当时（pre-`4222df5`）pre-strict 时代的实测记录。reviewer round 4
+> 之后 `s0_daemon` 默认 `MissingLatchPolicy::Strict`，`rm latch + restart`
+> **不再**等价于 ClearEStop —— daemon 会 fail-closed 拒启动。
+>
+> **当前 v0.2 合法的 latch=0 重置路径**：见
+> `scripts/systemd/README.md` "首次部署 — latch provision **必读**"
+> 节（推荐 `printf '0\n' | tee` provision；或一次性
+> `--allow-empty-latch` drop-in opt-in）。**不**等价于 ClearEStop —— §6.7
+> #3 完整闭环留 v0.3 RPC。
+>
+> 本文件保留作历史档案：Stage 2 9-motor 真机数据 / Operating_Mode +
+> EEPROM unlock 五步序列 / 双 watch QoS 验证 / base 不动锁测 仍有参考
+> 价值，但 §7 步骤 **不可作为当前 runbook 直接执行**。
+>
+> ---
+>
+> （以下为 pre-strict 时代原文）
+>
 > **状态：✅ Stage 2 真机闭环全过（2026-04-26）**。Orin AGX `10.0.1.41`
 > bus2 9 motor SerialRT 路径完整闭环，§2 ping → §2.2 Operating_Mode 切换
 > → §2.3 baseline → §3 smoke → §4 ballet（含双 watch QoS 修复回归）→ §5
@@ -14,8 +36,9 @@
 > - §5 EStop 后 9 motor `Torque_Enable=0` 全断扭，latch 在 ~200-260 ms
 >   内 fsync 落盘（daemon 仍 alive）；
 > - §6 base 3 motor `Δ Present_Position = 0/0/0`（frozen mask 真冻死）；
-> - §7 latch=1 重启 daemon 留 Safe 不进 Enabled；rm latch 后恢复 +
->   2nd EStop 链路同款。
+> - §7 latch=1 重启 daemon 留 Safe 不进 Enabled；**~~rm latch 后恢复~~**
+>   pre-strict 行为，strict 模式下会 fail-closed，详上 ⚠️ banner +
+>   `scripts/systemd/README.md`；2nd EStop 链路同款。
 >
 > 本 runbook 与 Stage 1 互补，**只列差异**；通用步骤（环境清理 /
 > 编译 / sudo↔user 模式 / latch 路径 / 排查表）请直接参考 Stage 1 runbook
@@ -358,10 +381,24 @@ diff <(grep -A1 "^motor [1-9]:" logs/bus2_stage2_baseline.log | grep Present_Pos
 
 ---
 
-## 7. latch 重启 / 删 latch 恢复 / 第二次 EStop
+## 7. latch=1 重启 / latch 重置 / 第二次 EStop — **⚠️ §7-step2 已废弃**
 
-跟 Stage 1 §6 / §7 完全同款，只是把 robot_id / latch path 换成
-`xlerobot_bus2_full` / `logs/estop_latch_bus2_full*`。验证项不变。
+Stage 1 §6 (latch=1 重启留 Safe) 仍然有效，跟 Stage 2 同款只换 robot_id
+/ latch path 即可。
+
+§7-step2 "rm latch + 恢复 + 第二次 EStop" 在当前 v0.2 strict 语义下
+**不再合法**：rm latch 后 daemon `MissingLatchPolicy::Strict` 会
+fail-closed 拒启动（详 Stage 1 runbook §7 banner +
+`crates/robot-s0/src/estop_latch.rs`）。
+
+**当前 v0.2 等价路径**：要把 latch 从 = "1" 重置回 = "0" 走
+`scripts/systemd/README.md` "首次部署 — latch provision **必读**" 节
+（手动 `printf '0\n' | tee` provision，**这是 deploy 显式授权流程，
+不是 ClearEStop**）。第二次 EStop 触发同 §5（不动 §7-step2）。
+
+§6.7 #3 真"只能 ClearEStop 解除"完整闭环留 v0.3 RPC。
+
+`logs/` 路径同 Stage 1 同款换成 `logs/estop_latch_bus2_full*`。
 
 ---
 
@@ -405,8 +442,9 @@ motor 8 ΔPos: <raw>
 motor 9 ΔPos: <raw>
 ==>  PASS / FAIL
 
-=== bus2 9-motor §7 latch 重启 / 删 latch / 第二次 EStop ===
-（同 Stage 1 §6+§7 模板，只换 path）
+=== bus2 9-motor §7 latch=1 重启留 Safe ===
+（同 Stage 1 §6 模板，只换 path；**§7-step2 "rm latch + 恢复" 已废弃**，
+strict 模式下应当走 README provision 流程而**不**是 rm latch；详 §7 banner）
 ==>  PASS / FAIL
 ```
 
