@@ -10,6 +10,94 @@
 
 ---
 
+## 2026-04-26 · v0.2 收尾 reviewer round 5 否决 — runbook / 文档跟代码语义同步（**状态：偏离 / 实施完成 + 真机 PASS**）
+
+### 背景
+
+[`docs/CHANGELOG.md`](CHANGELOG.md) 上一条（commit `d40bfee`，round 4
+阻断闭环 + 宣称降级）登记后 reviewer **再次复核否决**：代码层面 round 4
+的修我认可，但仓库仍有真机 runbook / 安全宣称跟代码语义不一致，按审核
+规则算阻断。
+
+具体三条：
+1. **systemd 首次部署 runbook 跟 strict latch 冲突**（高）：
+   `scripts/systemd/README.md` 安装步骤 + bus2 unit 顶部注释还是"创建
+   目录后直接 start"，没 latch provision 也没 opt-in。代码现在默认
+   `MissingLatchPolicy::Strict`，干净机照 runbook 跑会立即 failed。
+2. **systemd watchdog runbook 仍过度宣称 §6.7 #2**（高）：
+   round 4 handoff 已降级（"freeze hook 留 v0.3"），但 README + bus2
+   unit 注释里 "kill -9 MainPID 锁定 §6.7 #2 真机硬门槛" 还在，回到了
+   前一轮被否决的过强宣称。
+3. **`estop_latch` 公共文档仍写旧语义**（中）：
+   实现已 strict fail-closed，但模块 / 函数 doc 还写"文件不存在 = not
+   latched / 两份都不存在返 false"，安全语义文档反向。
+
+### 修复（commit `a9f8dc7`）
+
+#### 阻断 1：runbook + unit 首次部署
+
+- `scripts/systemd/README.md` "首次部署 — latch provision **必读**" 段：
+  - **推荐流程**：直接 `printf '0\n' | tee` provision primary + bak 双
+    文件后正常 start（strict 不阻断）。
+  - **替代流程**：drop-in `--allow-empty-latch` 一次性启停产生 latch=0，
+    撤掉 drop-in，strict 接管 + 跑"rm latch → start fail" 验证。
+  - 全栈部署改成"跑两遍上面推荐流程"。
+- bus2 / bus1 unit 顶部注释指向 README，明确不能跳过老式"目录 + start"。
+
+#### 阻断 2：watchdog runbook 宣称降级
+
+- README 标题改成 "**仅** `Restart=on-failure` 已锁；watchdog
+  cap-deadlock **留 v0.3**"，开头加 callout 明确：
+  - 锁定的是"进程死亡 → `Restart=on-failure`"。
+  - §6.7 #2 完整（worker-stall → `WatchdogSec` → 真重启）留 v0.3
+    `cfg(test)` freeze hook。
+  - 当前 watchdog 已是 liveness-gated（已实施）但端到端真重启路径未测。
+- bus2 / bus1 unit 顶部同款降级。
+
+#### 阻断 3：`estop_latch` 公共文档同步 strict 默认
+
+- 模块 doc "文件格式" 段改"按 [`MissingLatchPolicy`] 决定"。
+- "读 fallback 自愈" 段改 `NotFound` 分流（`Strict` 返 `NotFound` err；
+  `AllowEmpty` 返 `Ok(false)`）。
+- `load_estop_latch` 函数 doc 明示走 `Strict`（生产默认）+ `NotFound`
+  err 含 "需 `ClearEStop` RPC（v0.3）解除，或 `--allow-empty-latch`
+  opt-in" 提示 + Errors 段加 `NotFound` 条目。
+
+### 真机回归（Orin AGX 干净机起点）
+
+按 README 两个流程**端到端跑了一遍**：
+
+```
+=== README 推荐流程 §2-§6（bus2）===
+- install -d /var/lib/robot/xlerobot_bus2_full ✓
+- printf '0\n' | tee provision primary + bak ✓
+- systemctl start → is-active=active
+- journal: "initial estop_latched latched=false" + "state":"Ready" 稳态
+
+=== README 替代流程 §3f：strict 守门验证 ===
+- rm latch primary + bak
+- systemctl start → ERROR "primary AND backup both missing; fail-closed
+  (need --allow-empty-latch opt-in or ClearEStop RPC in v0.3)"
+  + Restart=on-failure × StartLimitBurst=5 后 unit 进 failed
+- strict 守门真挡住 "rm latch && restart"，符合预期
+```
+
+### 影响面
+
+- 文档：`scripts/systemd/{README.md, xlerobot-s0-bus1.service,
+  xlerobot-s0-bus2.service}` + `crates/robot-s0/src/estop_latch.rs`
+  模块/函数 doc。**不动代码语义**（commit `4222df5` + `e15cd41` 已
+  实施 strict + liveness-gated）。
+- 本 CHANGELOG 条目 + `2026-04-26_5.md` handoff §2.4 + §2.5 追加 round 5
+  闭环 + 真机回归。
+
+### 审阅人
+
+reviewer (用户) ✓ — round 5 三条文档同步阻断全数闭环 + 真机端到端 runbook
+跑通 + strict 守门验证。
+
+---
+
 ## 2026-04-26 · v0.2 收尾 reviewer round 4 阻断闭环 + 安全宣称降级（**状态：登记 / 实施完成 + 真机 PASS**）
 
 ### 背景
