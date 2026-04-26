@@ -365,25 +365,54 @@ fn preflight(args: &Args) -> Result<EnvCtx, String> {
     let user_unit_dir = PathBuf::from(&xdg).join("systemd/user");
     std::fs::create_dir_all(&user_unit_dir)
         .map_err(|e| format!("create {}: {e}", user_unit_dir.display()))?;
-    // (4) systemctl --user 可用
+    // (4) systemctl --user 可用 + user bus 真连得上
+    //
+    // reviewer A2-3 round 2 阻断 1：原实现只看 exit code 是否存在，**没**真识别
+    // 用户 manager 是否可用。`systemctl --user is-system-running` 在以下场景
+    // 都会返非 0 但**不**代表 user manager 不可用：
+    //
+    // - exit 1 stdout=`degraded`：user manager 在跑，只是某 unit 之前 failed
+    // - exit 2 stdout=`starting` / `initializing`：user manager 还在 boot
+    //
+    // 真正不可用 = stdout 是 stopped / offline / maintenance，或者 stderr 含
+    // "Failed to connect to bus" / "No such file" 等（headless 容器 /
+    // ssh 进会话没 enable-linger / D-Bus user session 没起来）。
+    //
+    // 白名单：running / degraded / starting / initializing 视为可用。
     let probe = Command::new("systemctl")
         .args(["--user", "is-system-running"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .status();
-    match probe {
-        Ok(s) if s.code().is_some() => {
-            // is-system-running 可能返 degraded / running / starting 都算可用；
-            // 真正不可用是 systemctl 本身退出错误（命令不存在 / 找不到 user manager）
-        }
-        Ok(_) => {
-            return Err("systemctl --user is-system-running terminated by signal".into());
-        }
-        Err(e) => {
-            return Err(format!(
-                "systemctl --user is-system-running spawn failed: {e}"
-            ));
-        }
+        .output()
+        .map_err(|e| format!("systemctl --user is-system-running spawn failed: {e}"))?;
+    let stdout_first = String::from_utf8_lossy(&probe.stdout)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let stderr_text = String::from_utf8_lossy(&probe.stderr).trim().to_string();
+    if stderr_text.contains("Failed to connect to bus")
+        || stderr_text.contains("No such file or directory")
+        || stderr_text.contains("Failed to get bus connection")
+    {
+        return Err(format!(
+            "systemctl --user is-system-running: user bus unreachable; \
+             stderr={stderr_text:?} stdout={stdout_first:?}（容器 / ssh 无 \
+             user session：试 `loginctl enable-linger $USER` 或在 \
+             `systemd-run --user --scope` 下跑）"
+        ));
+    }
+    let allowed = matches!(
+        stdout_first.as_str(),
+        "running" | "degraded" | "starting" | "initializing"
+    );
+    if !allowed {
+        return Err(format!(
+            "systemctl --user is-system-running: state={stdout_first:?} \
+             不在白名单 [running|degraded|starting|initializing]; \
+             stderr={stderr_text:?}（user manager 不可用 / stopped / offline / maintenance）"
+        ));
     }
     // (5) workdir_base 准备好
     std::fs::create_dir_all(&args.workdir_base)
@@ -503,52 +532,86 @@ fn run_iteration(
     // ---- 8) 等 systemd 触发 watchdog timeout + Restart=on-failure 拉起新 daemon ----
     sleep_ms(args.restart_wait_ms);
 
-    // ---- 9) 抓 PID1 ----
-    let pid1 = match read_active_pid(unit_name) {
+    // ---- 9) 强制 wait_for_active 二次确认新 daemon 真 active ----
+    //
+    // reviewer A2-3 round 2 阻断 2：原实现只读 `MainPID` 非 0，**不**等于
+    // `systemctl --user is-active` 通过 + Type=notify 第二次 sd_notify(READY=1)
+    // 已完成。`wait_for_active_pid` 内部先 read MainPID 再调 `is-active` 二次
+    // 确认，**且**要求 `MainPID != pid0`（restart 真切换；仅 `!= 0` 不够）。
+    let pid1 = match wait_for_active_pid_distinct_from(unit_name, pid0, args.daemon_active_wait_ms)
+    {
         Ok(p) => p,
-        Err(e) => return fail(format!("read PID1: {e}")),
+        Err(e) => return fail(format!("wait for restart daemon active: {e}")),
     };
-    eprintln!("  PID after wait: PID1={pid1}");
+    eprintln!(
+        "  ✓ PID switched: PID0={pid0} → PID1={pid1} (systemd watchdog restart, is-active confirmed)"
+    );
 
-    // ---- 10) 断言 PID0 ≠ PID1 + PID1 ≠ 0 ----
-    if pid1 == 0 {
-        return fail(format!(
-            "PID1=0 (unit not active after restart-wait-ms={}; \
-             possibly StartLimitBurst hit or restart never triggered)",
-            args.restart_wait_ms
-        ));
-    }
-    if pid1 == pid0 {
-        return fail(format!(
-            "PID didn't change: PID0=PID1={pid0} (systemd watchdog 没真重启 \
-             daemon —— freeze hook 路径或 LivenessObserver liveness-gating 失效)"
-        ));
-    }
-    eprintln!("  ✓ PID switched: PID0={pid0} → PID1={pid1} (systemd watchdog restart)");
-
-    // ---- 11) journalctl 看 withholding warn + 两次 ready ----
+    // ---- 10) journalctl 硬断言（reviewer A2-3 round 2 阻断 2 收紧）----
+    //
+    // 原实现："watchdog ping started" 这条 log 在 daemon 源码里**不存在**，
+    // 只是数 `freeze_control thread ready`。而后者发生在 `systemd_notify::ready()`
+    // 之前，**不能**替代"新 daemon active / state=Ready"语义。
+    //
+    // 收紧后断言（**全 journal 视角**，不切窗口；ready/start 至少第二轮覆盖）：
+    // - `withholding sd_notify` ≥ 1：LivenessObserver 真停过 ping。
+    // - `s0_daemon starting` ≥ 2：daemon 启动 banner（`crates/robot-s0/src/bin/s0_daemon.rs:422`）
+    //   各跑一次 = 第一次启动 + 重启后再启动。
+    // - `freeze_control thread ready` ≥ 2：control thread 在 daemon 启动期 spawn
+    //   并进 receive loop，重启后也跑一次。
+    // - state=Ready / `"state":"Ready"` ≥ 1（JSON or human 兼容）：daemon
+    //   主 loop 的 heartbeat 周期 log（`crates/robot-s0/src/bin/s0_daemon.rs:878`）
+    //   至少出现一次（足够证明 daemon 进入了主循环 / 状态机推进；不强制 ≥ 2
+    //   是因为 freeze 期间第一个 daemon 已停止 heartbeat）。
     let journal = match journalctl_user(unit_name) {
         Ok(j) => j,
         Err(e) => return fail(format!("journalctl: {e}")),
     };
     let withholding_count = count_substring(&journal, "withholding sd_notify");
+    let starting_count = count_substring(&journal, "s0_daemon starting");
+    let freeze_ready_count = count_substring(&journal, "freeze_control thread ready");
+    let state_ready_count =
+        count_substring(&journal, "\"state\":\"Ready\"") + count_substring(&journal, "state=Ready");
+
+    let mut hard_asserts: Vec<String> = Vec::new();
     if withholding_count == 0 {
-        return fail(format!(
-            "journal missing 'withholding sd_notify' warn (LivenessObserver 可能没 \
-             liveness-gate worker stall); journal tail:\n{}",
-            tail_lines(&journal, 30)
+        hard_asserts.push(
+            "missing 'withholding sd_notify' warn (LivenessObserver liveness-gate \
+             失效); count=0"
+                .to_string(),
+        );
+    }
+    if starting_count < 2 {
+        hard_asserts.push(format!(
+            "'s0_daemon starting' count={starting_count} (期望 ≥ 2：first + restart)"
         ));
     }
-    let ready_count = count_substring(&journal, "freeze_control thread ready")
-        + count_substring(&journal, "watchdog ping started");
-    if ready_count < 2 {
-        return fail(format!(
-            "journal expected ≥ 2 daemon ready markers (first daemon + restart \
-             daemon)，got {ready_count}; journal tail:\n{}",
-            tail_lines(&journal, 30)
+    if freeze_ready_count < 2 {
+        hard_asserts.push(format!(
+            "'freeze_control thread ready' count={freeze_ready_count} \
+             (期望 ≥ 2：first + restart)"
         ));
     }
-    eprintln!("  ✓ journal: withholding-warns={withholding_count} ready-markers={ready_count}");
+    if state_ready_count == 0 {
+        hard_asserts.push(
+            "'state=Ready' / '\"state\":\"Ready\"' count=0 (期望 ≥ 1：daemon \
+             进 main loop heartbeat 才算真 active)"
+                .to_string(),
+        );
+    }
+    if !hard_asserts.is_empty() {
+        return fail(format!(
+            "journal hard-asserts FAIL ({} 条):\n  - {}\njournal tail:\n{}",
+            hard_asserts.len(),
+            hard_asserts.join("\n  - "),
+            tail_lines(&journal, 40),
+        ));
+    }
+    eprintln!(
+        "  ✓ journal: withholding={withholding_count} \
+         starting={starting_count} freeze_ready={freeze_ready_count} \
+         state_ready={state_ready_count}"
+    );
 
     // ---- 12) latch 文件保持 "0\n"（fsync 不被 watchdog kill 干扰）----
     let primary_after = std::fs::read_to_string(&latch_path).unwrap_or_default();
@@ -609,11 +672,31 @@ fn read_active_pid(unit_name: &str) -> Result<u32, String> {
 }
 
 fn wait_for_active_pid(unit_name: &str, timeout_ms: u64) -> Result<u32, String> {
+    wait_for_active_pid_with(unit_name, timeout_ms, |_pid| true)
+}
+
+/// 跟 [`wait_for_active_pid`] 一样轮询 active + MainPID，但额外要求新 PID
+/// **不等于** `excluded`（典型用法：等 systemd watchdog 重启后的新 daemon
+/// PID，避免读到尚未真重启时仍是旧 PID 的窗口）。
+fn wait_for_active_pid_distinct_from(
+    unit_name: &str,
+    excluded: u32,
+    timeout_ms: u64,
+) -> Result<u32, String> {
+    wait_for_active_pid_with(unit_name, timeout_ms, |pid| pid != excluded)
+}
+
+fn wait_for_active_pid_with<F: Fn(u32) -> bool>(
+    unit_name: &str,
+    timeout_ms: u64,
+    accept: F,
+) -> Result<u32, String> {
     let start = Instant::now();
     let timeout = Duration::from_millis(timeout_ms);
     while start.elapsed() < timeout {
         if let Ok(pid) = read_active_pid(unit_name)
             && pid != 0
+            && accept(pid)
         {
             // 还要确认 active（pid != 0 也可能在 activating）
             let active = Command::new("systemctl")
