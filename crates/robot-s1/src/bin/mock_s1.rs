@@ -298,7 +298,7 @@ fn run(args: &Args) -> Result<(), i32> {
                 return Err(1);
             }
         };
-    let mut hb_pub = match open_pub::<markers::Heartbeat>(&node, &topic_hb, TopicClass::S1CmdVel) {
+    let mut hb_pub = match open_pub::<markers::Heartbeat>(&node, &topic_hb, TopicClass::Heartbeat) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("fatal: open heartbeat publisher: {e}");

@@ -248,7 +248,7 @@ fn run(args: &Args) -> Result<(), i32> {
                 return Err(1);
             }
         };
-    let mut hb_sub = match open_sub::<markers::Heartbeat>(&node, &topic_hb, TopicClass::S1CmdVel) {
+    let mut hb_sub = match open_sub::<markers::Heartbeat>(&node, &topic_hb, TopicClass::Heartbeat) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("fatal: open heartbeat subscriber: {e}");

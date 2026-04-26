@@ -689,7 +689,7 @@ mod tests {
             publisher::<markers::JointCommand>(pub_node, &topics.command, TopicClass::S0Command)
                 .unwrap();
         let hb_pub =
-            publisher::<markers::Heartbeat>(pub_node, &topics.heartbeat, TopicClass::S1CmdVel)
+            publisher::<markers::Heartbeat>(pub_node, &topics.heartbeat, TopicClass::Heartbeat)
                 .unwrap();
         let estop_pub =
             publisher::<markers::EStopEvent>(pub_node, &topics.estop, TopicClass::SafetyEvent)
@@ -731,7 +731,7 @@ mod tests {
             let heartbeat = subscriber::<markers::Heartbeat>(
                 &sub_node,
                 &topics_for_factory.heartbeat,
-                TopicClass::S1CmdVel,
+                TopicClass::Heartbeat,
             )
             .unwrap();
             let estop = subscriber::<markers::EStopEvent>(

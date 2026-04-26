@@ -553,7 +553,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         let command =
             open_sub::<markers::JointCommand>(&node, &sub_cmd_topic, TopicClass::S0Command)
                 .expect("open command subscriber");
-        let heartbeat = open_sub::<markers::Heartbeat>(&node, &sub_hb_topic, TopicClass::S1CmdVel)
+        let heartbeat = open_sub::<markers::Heartbeat>(&node, &sub_hb_topic, TopicClass::Heartbeat)
             .expect("open heartbeat subscriber");
         let estop =
             open_sub::<markers::EStopEvent>(&node, &sub_estop_topic, TopicClass::SafetyEvent)
@@ -685,7 +685,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         let joint_state =
             open_pub::<markers::JointState>(&node, &pub_state_topic, TopicClass::S0State)
                 .expect("open state publisher");
-        let heartbeat = open_pub::<markers::Heartbeat>(&node, &pub_hb_topic, TopicClass::S1CmdVel)
+        let heartbeat = open_pub::<markers::Heartbeat>(&node, &pub_hb_topic, TopicClass::Heartbeat)
             .expect("open heartbeat publisher");
         Box::leak(Box::new(node));
         IpcPublishers {

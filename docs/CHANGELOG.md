@@ -10,6 +10,61 @@
 
 ---
 
+## 2026-04-26 · runbook §5.1 known-issue 撤销 —— Heartbeat QoS 多订阅（**状态：偏离 / 实施完成**）
+
+### 背景
+
+`docs/handoffs/2026-04-26.md` §5.1 把 `robotctl watch` 第二个 sub 拿不到
+sample 归因为 "iceoryx2 0.8.1 single-service multi-subscriber attach
+race"（框架 bug）。reviewer（用户）2026-04-26 复盘时直接否决该归因，定位
+到我们自己的 QoS 分类错误：所有 heartbeat publisher / subscriber 借用
+`TopicClass::S1CmdVel`（`crates/robot-transport/src/iceoryx2/qos.rs`
+`max_subscribers=1`），第二个 subscriber attach 实际被 iceoryx2 拒绝。
+这条对 `S1CmdVel` 单订阅语义本身没问题（cmd_vel 真的只有 S0 一个消费
+者），错在被 heartbeat 蹭用。
+
+### 决定
+
+新增独立 [`TopicClass::Heartbeat`](../crates/robot-transport/src/iceoryx2/qos.rs)
+（`max_subscribers=8` + `safe_overflow=true` + `history=4` + `buffer=4`），
+所有 heartbeat 收发站点（`pub_thread` / `s0_daemon` / `ipc_thread` /
+`robotctl` / `mock_s1` / `serial_rt_e2e` / `iceoryx2_rt_baseline`）一次
+性迁过去。`S1CmdVel` 保留单订阅语义（max=1）专给真正的 cmd_vel 用。
+
+### 锁测（防回归）
+
+- `crates/robot-transport/src/iceoryx2/qos.rs` 新增三条 unit test：
+  - `observer_classes_support_multi_subscriber`：`Heartbeat` / `S0State` /
+    `Sensor` / `SafetyEvent` / `TaskEvent` 必须 `max_subscribers >= 8`。
+  - `heartbeat_is_drop_old`：`Heartbeat` 必须 `safe_overflow=true` +
+    `subscriber_max_buffer_size >= 2`。
+  - `safe_overflow_semantics` 扩列把 `Heartbeat` 加入 latest-wins 集合。
+- `crates/robot-transport/tests/iceoryx2_roundtrip.rs` 新增两条端到端：
+  - `heartbeat_class_supports_two_subscribers_receiving_same_publish`：
+    同 service 双 sub 都收到同一帧 publisher（钉死多订阅可达性）。
+  - `s1_cmdvel_class_rejects_second_subscriber`：反向证明
+    `S1CmdVel` `max_subscribers=1` 第二个 sub create 真的被拒，否则
+    前一个测试就退化为恒真。
+
+### 影响面
+
+- `crates/robot-transport/src/iceoryx2/qos.rs`：新增 `TopicClass::Heartbeat`
+  + 三条 unit test。
+- 迁移站点（pub + sub 两端必须同 class，否则 service QoS 不匹配 open
+  失败）：`crates/robot-s0/src/{pub_thread.rs,ipc_thread.rs,bin/s0_daemon.rs}`
+  + `crates/robot-s0/tests/serial_rt_e2e.rs`
+  + `crates/robot-cli/src/bin/robotctl.rs`
+  + `crates/robot-s1/src/bin/mock_s1.rs`
+  + `crates/robot-tests/src/bin/iceoryx2_rt_baseline.rs`。
+- handoff `docs/handoffs/2026-04-26.md` §5.1 已追加"已修复（本 commit）—
+  非框架 bug，QoS 分类错误"指向 follow-up。
+
+### 审阅人
+
+reviewer (用户) ✓ — 假设由用户提出，本 commit 锁住。
+
+---
+
 ## 2026-04-26 · task #15 Stage 1 真机 bus2 6-motor SerialRT 闭环（**状态：登记 / 实施完成 + 真机 PASS**）
 
 ### 背景

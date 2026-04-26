@@ -134,6 +134,107 @@ fn schema_attribute_mismatch_rejects_open() {
     );
 }
 
+/// **Bug regression（2026-04-26 锁测）**：runbook §4-§7 真机端到端测试时
+/// `robotctl watch` 跟其它 observer（例如另一个 watch / mock_s1.anchor /
+/// 未来 recorder/viz）同跑会出现"第二个 sub 拿不到 sample"的现象。最初被
+/// 怀疑成 iceoryx2 0.8.1 框架 bug，user 复盘后定位到我们自己的 QoS
+/// 分类错误：S0 heartbeat 错用 [`TopicClass::S1CmdVel`]
+/// （`max_subscribers=1`），导致第二个 subscriber attach 实际失败 / 不发样本。
+///
+/// 修复：新增 [`TopicClass::Heartbeat`] (`max_subscribers=8` +
+/// `safe_overflow=true`)；本测试钉死"同一 service 两个 subscriber 都收到
+/// 同一帧 publisher 输出"，防止哪天又被人按回 1。
+#[test]
+fn heartbeat_class_supports_two_subscribers_receiving_same_publish() {
+    use flatbuffers::FlatBufferBuilder;
+    use robot_msg::msg::{Heartbeat as FbHeartbeat, HeartbeatArgs};
+
+    fn build_hb_body(seq: u64, stamp: u64) -> Vec<u8> {
+        let mut fbb = FlatBufferBuilder::new();
+        let hb = FbHeartbeat::create(
+            &mut fbb,
+            &HeartbeatArgs {
+                source_id: 1,
+                seq,
+                tick_rate_hz: 50.0,
+                stamp_ns: stamp,
+            },
+        );
+        fbb.finish(hb, None);
+        fbb.finished_data().to_vec()
+    }
+
+    let node = NodeBuilder::new()
+        .create::<ipc::Service>()
+        .expect("node create");
+    let topic = unique_topic("hb_multi_sub");
+
+    // Pub 单创建（先于 sub），下面再开两个 sub 都对接到同一 service。
+    let mut pub_: Iceoryx2Publisher<markers::Heartbeat> =
+        robot_transport::iceoryx2::publisher(&node, &topic, TopicClass::Heartbeat)
+            .expect("open heartbeat publisher");
+
+    let mut sub_a: Iceoryx2Subscriber<markers::Heartbeat> =
+        robot_transport::iceoryx2::subscriber(&node, &topic, TopicClass::Heartbeat)
+            .expect("open heartbeat subscriber A");
+    let mut sub_b: Iceoryx2Subscriber<markers::Heartbeat> =
+        robot_transport::iceoryx2::subscriber(&node, &topic, TopicClass::Heartbeat)
+            .expect("open heartbeat subscriber B（如果 max_subscribers=1 这里就 fail）");
+
+    // 发一帧
+    let body = build_hb_body(7, 12_345);
+    let mut w = pub_.loan(1024 + body.len()).expect("loan");
+    w.set_seq(7);
+    w.set_source_id(1);
+    w.set_stamp_ns(12_345);
+    w.set_body_bytes(&body);
+    w.publish().expect("publish");
+
+    let lease_a = sub_a.latest().expect("A latest").expect("A got sample");
+    let lease_b = sub_b.latest().expect("B latest").expect("B got sample");
+    let view_a = lease_a.view().expect("A view");
+    let view_b = lease_b.view().expect("B view");
+    assert_eq!(view_a.header.seq(), 7, "A 收到 seq=7");
+    assert_eq!(view_b.header.seq(), 7, "B 收到 seq=7");
+    let hb_a: robot_msg::msg::Heartbeat<'_> = view_a.body.get();
+    let hb_b: robot_msg::msg::Heartbeat<'_> = view_b.body.get();
+    assert_eq!(hb_a.stamp_ns(), 12_345);
+    assert_eq!(hb_b.stamp_ns(), 12_345);
+}
+
+/// 反向证明：[`TopicClass::S1CmdVel`] 故意保留 `max_subscribers=1`（cmd_vel
+/// 的真单订阅语义）。开第二个 sub 应当被 iceoryx2 拒绝（不是静默 0
+/// sample），用以**反证**前一个测试不是因为框架始终允许多 sub。
+///
+/// 这条同时锁住"S1CmdVel 不能被人手抖改成多订阅"——如果未来想让 cmd_vel
+/// 有多订阅者，应当走新 class 而不是动这条配置。
+#[test]
+fn s1_cmdvel_class_rejects_second_subscriber() {
+    let node = NodeBuilder::new()
+        .create::<ipc::Service>()
+        .expect("node create");
+    let topic = unique_topic("cmdvel_single_sub");
+
+    let _pub_: Iceoryx2Publisher<markers::Heartbeat> =
+        robot_transport::iceoryx2::publisher(&node, &topic, TopicClass::S1CmdVel)
+            .expect("open S1CmdVel publisher");
+    let _sub_a: Iceoryx2Subscriber<markers::Heartbeat> =
+        robot_transport::iceoryx2::subscriber(&node, &topic, TopicClass::S1CmdVel)
+            .expect("first subscriber attaches");
+
+    // 第二个 sub 必须 fail（不能 silent succeed），否则 max_subscribers=1
+    // 守门已坏，前一个 multi-sub 测试也变成无意义的恒真。
+    let result = robot_transport::iceoryx2::subscriber::<markers::Heartbeat>(
+        &node,
+        &topic,
+        TopicClass::S1CmdVel,
+    );
+    assert!(
+        result.is_err(),
+        "S1CmdVel max_subscribers=1，第二个 sub 应被拒绝；但 create 成功了 = QoS 失守"
+    );
+}
+
 #[test]
 fn publisher_and_subscriber_debug_formats_dont_panic() {
     let node = NodeBuilder::new()

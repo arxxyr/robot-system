@@ -470,7 +470,7 @@ mod tests {
         let js_sub =
             make_sub::<markers::JointState>(sub_node, &topics.state, TopicClass::S0State).unwrap();
         let hb_sub =
-            make_sub::<markers::Heartbeat>(sub_node, &topics.heartbeat, TopicClass::S1CmdVel)
+            make_sub::<markers::Heartbeat>(sub_node, &topics.heartbeat, TopicClass::Heartbeat)
                 .unwrap();
 
         let (rt_pub, rt_rdr) = RtSnapshotPublisher::<RtSnapshot>::new(RtSnapshot::default());
@@ -492,7 +492,8 @@ mod tests {
                 make_pub::<markers::JointState>(&pub_node, &state_topic, TopicClass::S0State)
                     .unwrap();
             let heartbeat =
-                make_pub::<markers::Heartbeat>(&pub_node, &hb_topic, TopicClass::S1CmdVel).unwrap();
+                make_pub::<markers::Heartbeat>(&pub_node, &hb_topic, TopicClass::Heartbeat)
+                    .unwrap();
             Box::leak(Box::new(pub_node));
             IpcPublishers {
                 joint_state,
@@ -718,7 +719,8 @@ mod tests {
                 make_pub::<markers::JointState>(&pub_node, &state_topic, TopicClass::S0State)
                     .unwrap();
             let heartbeat =
-                make_pub::<markers::Heartbeat>(&pub_node, &hb_topic, TopicClass::S1CmdVel).unwrap();
+                make_pub::<markers::Heartbeat>(&pub_node, &hb_topic, TopicClass::Heartbeat)
+                    .unwrap();
             Box::leak(Box::new(pub_node));
             IpcPublishers {
                 joint_state,

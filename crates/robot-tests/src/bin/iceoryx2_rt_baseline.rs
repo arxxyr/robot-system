@@ -387,7 +387,7 @@ fn run(args: &Args) -> Result<Report, String> {
             let node = NodeBuilder::new()
                 .create::<IxService>()
                 .expect("sub node create");
-            let mut sub = open_sub::<markers::Heartbeat>(&node, &sub_topic, TopicClass::S1CmdVel)
+            let mut sub = open_sub::<markers::Heartbeat>(&node, &sub_topic, TopicClass::Heartbeat)
                 .expect("open subscriber");
 
             let _ = sub_ready_tx.send(());
@@ -444,7 +444,7 @@ fn run(args: &Args) -> Result<Report, String> {
             let node = NodeBuilder::new()
                 .create::<IxService>()
                 .expect("pub node create");
-            let mut pub_ = open_pub::<markers::Heartbeat>(&node, &pub_topic, TopicClass::S1CmdVel)
+            let mut pub_ = open_pub::<markers::Heartbeat>(&node, &pub_topic, TopicClass::Heartbeat)
                 .expect("open publisher");
 
             let clock = SystemClock::new();

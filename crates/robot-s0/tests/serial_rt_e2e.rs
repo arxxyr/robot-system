@@ -200,8 +200,9 @@ fn spawn_harness(factory_name: &str) -> Harness {
     let cmd_pub =
         publisher::<markers::JointCommand>(pub_node, &topics.command, TopicClass::S0Command)
             .expect("open command publisher");
-    let hb_pub = publisher::<markers::Heartbeat>(pub_node, &topics.heartbeat, TopicClass::S1CmdVel)
-        .expect("open heartbeat publisher");
+    let hb_pub =
+        publisher::<markers::Heartbeat>(pub_node, &topics.heartbeat, TopicClass::Heartbeat)
+            .expect("open heartbeat publisher");
     let estop_pub =
         publisher::<markers::EStopEvent>(pub_node, &topics.estop, TopicClass::SafetyEvent)
             .expect("open estop publisher");
@@ -228,7 +229,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
         let heartbeat = subscriber::<markers::Heartbeat>(
             &node,
             &topics_for_ipc.heartbeat,
-            TopicClass::S1CmdVel,
+            TopicClass::Heartbeat,
         )
         .unwrap();
         let estop = subscriber::<markers::EStopEvent>(
@@ -288,7 +289,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
         let heartbeat = publisher::<markers::Heartbeat>(
             &node,
             &topics_for_pub.s0_heartbeat,
-            TopicClass::S1CmdVel,
+            TopicClass::Heartbeat,
         )
         .unwrap();
         Box::leak(Box::new(node));

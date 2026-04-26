@@ -21,8 +21,21 @@ pub enum TopicClass {
     S0State,
     /// `/<r>/s1/trajectory/<task>`：丢弃必报警，history 深。
     S1Trajectory,
-    /// `/<r>/s1/cmd_vel`：latest-only。
+    /// `/<r>/s1/cmd_vel`：latest-only **单订阅**（S1 → S0 速度命令，只有 S0 消费）。
     S1CmdVel,
+    /// `/<r>/s0/heartbeat` / `/<r>/s1/heartbeat`：心跳广播，多订阅观测路径
+    /// （S0 hb 的订阅方至少包括 S0 自身 watchdog + recorder + viz + robotctl
+    /// watch + gateway 客户端；S1 hb 早期只有 S0 一个订阅者，但保留扩展余量
+    /// 以便 recorder 等工具同步看 S1 心跳）。
+    ///
+    /// 行为：drop-old（最新心跳即真实存活信号），多订阅 + 大缓冲。
+    ///
+    /// **回归源（2026-04-26）**：原本所有 heartbeat 站点借用
+    /// `S1CmdVel`（`max_subscribers=1`），导致 `robotctl watch` 跟其它
+    /// observer 同跑时第二个 subscriber 拿不到 sample，runbook §4-§7 wire
+    /// 三方合验路径打折扣（详 `docs/handoffs/2026-04-26.md` §5.1 known-issue
+    /// 在本 commit 被否决：不是 iceoryx2 框架 bug，是我们的 `QoS` 分类错误）。
+    Heartbeat,
     /// `/<r>/sensors/**`：drop old OK。
     Sensor,
     /// `/<r>/events/estop` / 各类 error：不丢，满则升 fault。
@@ -101,6 +114,21 @@ pub const fn profile_of(class: TopicClass) -> QosProfile {
             max_subscribers: 1,
             safe_overflow: true,
         },
+        TopicClass::Heartbeat => QosProfile {
+            // history=4 给新 attach 的订阅者 ~80 ms (50 Hz × 4) 心跳热身，让
+            // recorder / viz 重连后能立刻判活；同时把这条跟 Sensor profile 错开
+            // （clippy `match_same_arms` 的实际意图是别让两条策略意外趋同）。
+            history_size: 4,
+            // 4 帧缓冲足够吸收 watch / recorder 这种 100~250 ms 间隔的 polling
+            // 跟 50 Hz publisher 之间的临时落后；safe_overflow=true 让快 publisher
+            // 永远能写下去。
+            subscriber_max_buffer_size: 4,
+            max_publishers: 1,
+            // N 订阅者：s0 自身 watchdog（订 S1 hb）/ recorder / viz /
+            // robotctl watch / gateway / 备用 = 8 个上限留充分 headroom。
+            max_subscribers: 8,
+            safe_overflow: true,
+        },
         TopicClass::Sensor => QosProfile {
             history_size: 2,
             subscriber_max_buffer_size: 4,
@@ -154,6 +182,7 @@ mod tests {
             TopicClass::S0State,
             TopicClass::S1Trajectory,
             TopicClass::S1CmdVel,
+            TopicClass::Heartbeat,
             TopicClass::Sensor,
             TopicClass::SafetyEvent,
             TopicClass::TaskEvent,
@@ -170,12 +199,50 @@ mod tests {
         }
     }
 
+    /// 锁住 heartbeat / 多观测者类 topic 的"必须支持多 sub"语义 —— 防止
+    /// 哪天有人手抖把 `max_subscribers` 改回 1，又复现 2026-04-26 那个
+    /// `robotctl watch` 第二个 sub 拿不到 sample 的回归。
+    #[test]
+    fn observer_classes_support_multi_subscriber() {
+        for class in [
+            TopicClass::S0State,
+            TopicClass::Heartbeat,
+            TopicClass::Sensor,
+            TopicClass::SafetyEvent,
+            TopicClass::TaskEvent,
+        ] {
+            let p = profile_of(class);
+            assert!(
+                p.max_subscribers >= 8,
+                "{class:?} max_subscribers={} 应 >= 8（多观测者：recorder + viz + cli + ...）",
+                p.max_subscribers
+            );
+        }
+    }
+
+    /// Heartbeat 必须 drop-old：50 Hz 心跳，对慢订阅者覆盖最老才是合理语义。
+    /// 如果 `safe_overflow=false` 一旦 buffer 满 publisher 直接 fail，会把 S0
+    /// 的 50 Hz `pub_thread` 卡住，违反 §0 "RT thread 不能阻塞" 的口风。
+    #[test]
+    fn heartbeat_is_drop_old() {
+        let p = profile_of(TopicClass::Heartbeat);
+        assert!(
+            p.safe_overflow,
+            "Heartbeat 必须 safe_overflow=true（drop-old）"
+        );
+        assert!(
+            p.subscriber_max_buffer_size >= 2,
+            "Heartbeat subscriber_max_buffer_size 至少 2，吸收慢 polling"
+        );
+    }
+
     #[test]
     fn safe_overflow_semantics() {
-        // "latest-wins" 语义：state / cmd_vel / sensor 允许覆盖
+        // "latest-wins" 语义：state / cmd_vel / heartbeat / sensor 允许覆盖
         for class in [
             TopicClass::S0State,
             TopicClass::S1CmdVel,
+            TopicClass::Heartbeat,
             TopicClass::Sensor,
         ] {
             assert!(
