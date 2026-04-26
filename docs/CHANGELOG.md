@@ -10,6 +10,86 @@
 
 ---
 
+## 2026-04-26 · v0.2 收尾 reviewer round 4 阻断闭环 + 安全宣称降级（**状态：登记 / 实施完成 + 真机 PASS**）
+
+### 背景
+
+[`docs/CHANGELOG.md`](CHANGELOG.md) 上一条 (commit `3a1cca2`) v0.2 收尾文档登
+记后 reviewer **复核否决** "§6.7 #2/#3/#4 全部锁住"宣称。给两条具体代码
+语义债：
+
+1. **阻断 1（高 / §6.7 #2）**：`spawn_watchdog_thread` 是独立线程无条件
+   `WATCHDOG=1`，只要本线程还活就喂 systemd → RT/SerialRT/ipc/pub 任意
+   worker 卡死也照样喂，等价于禁用 watchdog；`docs/00_design.md:1134`
+   "内部 RT watchdog 失效 → sd_notify 超时 → systemd 重启 S0" 不成立。
+2. **阻断 2（高 / §6.7 #3）**：`load_estop_latch` 在 primary + bak 都不存
+   在时返 `Ok(false)`，`rm latch && restart` 等价于"清空 EStop"，跟"只能
+   ClearEStop RPC 解除"冲突。
+
+### 修复（commit `4222df5` + `e15cd41`）
+
+**阻断 1 修复**：`systemd_notify` 加 `LivenessObserver` + `spawn_watchdog_thread`
+接受 `Vec<LivenessObserver>`。每周期对所有 observer 调 `tick` 闭包 + 跟
+上次 snapshot 比较；任一停滞就**不**发 `WATCHDOG=1`，systemd
+`WatchdogSec` 超时 → `Restart=on-failure` 拉起。`s0_daemon` main 把 4
+worker（ipc / rt-or-serial / pub / io）的 `tick_count` 收集传给 watchdog。
+启动 grace 一周期让 worker 完成 first tick。**watchdog 主循环 sleep 移到
+compare 之前**避免第一次 iteration 0 时间过去误报 stalled（commit
+`e15cd41`）。
+
+**阻断 2 修复**：`estop_latch` 加 `MissingLatchPolicy { Strict, AllowEmpty }`
++ `load_estop_latch_with_mode(path, mode)`。生产 daemon 默认走 `Strict`
+（fail-closed `NotFound` err，daemon 拒启动 + tracing::error 报"需
+`--allow-empty-latch` opt-in 或 v0.3 ClearEStop RPC"）。新增
+`s0_daemon --allow-empty-latch` CLI flag（default false）+
+`crash_restart_smoke` 工具自动加该 flag（test 场景每次清空 latch 目录）。
+
+### 锁测
+
+- `systemd_notify::tests::watchdog_pings_when_all_observers_alive` /
+  `watchdog_withholds_ping_when_observer_stalled`（双向锁）
+- `estop_latch::tests::load_nonexistent_strict_returns_not_found_err` /
+  `load_nonexistent_allow_empty_returns_false` /
+  `load_returns_not_found_when_both_missing_strict`
+- `cargo test -p robot-s0 systemd_notify -- --test-threads=8` × 20 轮
+  全过（12 测试 / 0 flake，包括 reviewer round 3 修复的 env race）。
+
+### 真机回归（Orin AGX）
+
+- **happy path 8s**：daemon active + state=Ready；**0 stalled warning**；
+  main PID 不变 → systemd 没误重启。
+- **fail-closed 验证**：无 latch + 无 flag → systemd unit failed +
+  journal ERROR `"primary AND backup both missing; fail-closed"`。
+- **opt-in 验证**：drop-in unit override 加 `--allow-empty-latch` →
+  unit active + state=Ready。
+- **crash_restart_smoke 5/5 PASS**（从未退化）。
+
+### v0.2 收尾安全宣称（按 reviewer 边界，**已降级**）
+
+| §6.7 不变量 | 旧（commit 3a1cca2）误宣称 | 新真实状态 |
+|---|---|---|
+| #2 systemd 是最外层看门狗 | "systemctl kill -9 → 4s 重启" 锁住 | **代码层面**满足：watchdog 真观测 4 worker tick；任一卡死 → systemd 超时重启。**未做**：daemon 内人为冻 worker（cfg(test) freeze hook）+ 测真重启路径，留 v0.3 测试基础设施。 |
+| #3 EStop 不可清为失忆态 | "crash_restart_smoke 5/5" 锁住 | **代码层面**部分满足：fail-closed default + `--allow-empty-latch` opt-in 守门。**未做**：真"只能 `ClearEStop` 解除"语义，留 v0.3 RPC 落地。 |
+| #4 S0 重启不失忆 | "fsync 双写 + crash 5/5" 锁住 | **真锁住**（fsync 双写 + 重启读回；smoke 稳定）。 |
+
+### 影响面
+
+- 代码：`crates/robot-s0/src/{systemd_notify,estop_latch,bin/s0_daemon}.rs`
+  + `crates/robot-tests/src/bin/crash_restart_smoke.rs`
+- 文档：本 CHANGELOG 条目 + `2026-04-26_5.md` handoff +
+  `handoffs/README.md`。
+- 不动 systemd unit 文件（已在前次 commit 配齐）。
+- 依然不阻塞 v0.3 进入；v0.3 第一个 milestone 完成 `ClearEStop` RPC 即可
+  把 §6.7 #3 真完整闭环。
+
+### 审阅人
+
+reviewer (用户) ✓ — round 4 给的边界 "代码语义 fail-closed + watchdog
+真观测 worker" 实施到位，"systemd 真重启路径 / ClearEStop-only 解除"
+完整锁定留 v0.3。
+
+---
+
 ## 2026-04-26 · v0.2 收尾 —— Step 9 + systemd 双 bus + #16 partial + reviewer 三轮阻断闭环（**状态：登记 / 实施完成 + 真机 PASS**）
 
 ### 背景
