@@ -62,8 +62,19 @@ enum RpcRole : ubyte {
 // RR response status（v0.3 ClearEStop control-plane slice 用；后续其它
 // control RPC 也复用本 enum）。
 //
-// 数值跟 gRPC `tonic::Code` 部分对齐方便 RPC 端转译；非全集 —— 只列
-// ClearEStop 用得到的 6 个 + Unknown 兼容旧 writer。
+// **本 enum 是 S0 ↔ robot-rpc 进程间内部状态码，跟 gRPC numeric code
+// 不对齐**。数值仅保证 (a) `Unknown=0` 兼容旧 writer，(b) 各值在本表内
+// 唯一升序，(c) 跨 schema 版本只增不删（FlatBuffers append-only）。
+//
+// **RPC 端转译硬要求**（reviewer A1-1 part 1 round 2 拍板）：
+// `robot-rpc` 把 `RpcStatus` 转 `tonic::Code` 时**必须**用显式 `match`
+// 全枚举所有 variant；**禁止** `code as i32` 之类靠数值对齐的 cast，因
+// 为 `RpcStatus::FailedPrecondition` (=2) 在 gRPC 里是 9，等等都不一致。
+// A1-3 单测必须覆盖每条 `RpcStatus` → `tonic::Code` 映射；新增 variant
+// 时编译期 `match` 非穷举会报错强制更新映射 + 测试。
+//
+// ClearEStop 用得到 6 个 + Unknown 兼容旧 writer。后续 control RPC 复用
+// 本 enum 时按需扩 variant，**不**碰已有数值。
 enum RpcStatus : ubyte {
     Unknown = 0,
     Ok = 1,
