@@ -28,6 +28,7 @@
 pub mod attributes;
 pub mod publisher;
 pub mod qos;
+pub mod request_response;
 pub mod service_name;
 pub mod subscriber;
 
