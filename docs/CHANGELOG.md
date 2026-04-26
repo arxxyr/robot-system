@@ -22,11 +22,15 @@ protoc-bin-vendored 3）。docs/CHANGELOG.md 2026-04-22 "workspace runtime
 
 ### Scope
 
-- **仅 robot-rpc crate** link 这些依赖；其它 crate（robot-msg /
+- **仅 robot-rpc crate** link `tonic` / `prost` / `uuid` / `tonic-build` /
+  `protoc-bin-vendored`；其它 crate（robot-msg /
   robot-transport / robot-s0 / robot-s1 / robot-tests / robot-cli /
   robot-core / robot-health / robot-logging / robot-adapters/* /
-  robot-rpc 之外的 v0.5+ 新 crate）一律不允许直接 link tonic / prost /
-  uuid / blake3 / tonic-build / protoc-bin-vendored。
+  robot-rpc 之外的 v0.5+ 新 crate）一律不允许直接 link 上述 RPC / proto
+  codegen 依赖。
+- `blake3` 是 workspace 既有依赖（`robot-msg` / `robot-s0` 已使用）；
+  本条只登记 robot-rpc 新增的 idempotency fingerprint 用途，不把 `blake3`
+  收窄成 robot-rpc 专属依赖。
 - **生产 release `s0_daemon` binary 0 robot_rpc / tonic / prost 符号**
   —— 已用 `strings target/release/s0_daemon | grep -oE "robot_rpc|tonic::|::tonic|prost::|::prost|robot::control"` 验证。
 

@@ -15,8 +15,8 @@ publish    .workspace = true
 # - 全纯单测；**不**起 server binary（无 `[[bin]]`）。
 # - **不**接 S0 mutation；**不**删 `--allow-empty-latch`；**不**宣称 §6.7
 #   #3 真锁住。
-# - tonic / prost / uuid 引入登记走 docs/CHANGELOG.md（A1-2 落地时一起
-#   登记）。
+# - tonic / prost / uuid 引入登记见 docs/CHANGELOG.md 2026-04-27
+#   "v0.3 A1-1 (3/3) robot-rpc / tonic / prost / uuid / blake3 依赖白名单登记"。
 
 [dependencies]
 robot-core = { workspace = true }
