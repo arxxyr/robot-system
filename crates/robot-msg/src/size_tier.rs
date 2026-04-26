@@ -11,9 +11,9 @@
 //! 3. 所有函数都是 `const fn`，不涉及分配 / 查表开销。
 
 use crate::schema_id::{
-    SCHEMA_ESTOP_EVENT, SCHEMA_HEARTBEAT, SCHEMA_IMAGE_HEADER, SCHEMA_JOINT_COMMAND,
-    SCHEMA_JOINT_LAYOUT, SCHEMA_JOINT_STATE, SCHEMA_POINTCLOUD_HEADER, SCHEMA_TENSOR_HEADER,
-    SCHEMA_TWIST,
+    SCHEMA_CLEAR_ESTOP_REQUEST, SCHEMA_CLEAR_ESTOP_RESPONSE, SCHEMA_ESTOP_EVENT, SCHEMA_HEARTBEAT,
+    SCHEMA_IMAGE_HEADER, SCHEMA_JOINT_COMMAND, SCHEMA_JOINT_LAYOUT, SCHEMA_JOINT_STATE,
+    SCHEMA_POINTCLOUD_HEADER, SCHEMA_TENSOR_HEADER, SCHEMA_TWIST,
 };
 
 /// Iceoryx2 sample 大小档位。
@@ -57,9 +57,15 @@ impl SizeTier {
 #[must_use]
 pub const fn default_tier_of(schema_id: u32) -> Option<SizeTier> {
     match schema_id {
-        // control：关节 / 运动 / 事件 / 心跳
-        SCHEMA_JOINT_LAYOUT | SCHEMA_JOINT_STATE | SCHEMA_JOINT_COMMAND | SCHEMA_TWIST
-        | SCHEMA_ESTOP_EVENT | SCHEMA_HEARTBEAT => Some(SizeTier::Control),
+        // control：关节 / 运动 / 事件 / 心跳 / control RPC payload
+        SCHEMA_JOINT_LAYOUT
+        | SCHEMA_JOINT_STATE
+        | SCHEMA_JOINT_COMMAND
+        | SCHEMA_TWIST
+        | SCHEMA_ESTOP_EVENT
+        | SCHEMA_HEARTBEAT
+        | SCHEMA_CLEAR_ESTOP_REQUEST
+        | SCHEMA_CLEAR_ESTOP_RESPONSE => Some(SizeTier::Control),
 
         // sensor_small：未来 IMU / FT 等小 sensor 在此扩。
         // 目前无注册的 schema 落此档。
@@ -139,6 +145,8 @@ mod tests {
             SCHEMA_TWIST,
             SCHEMA_ESTOP_EVENT,
             SCHEMA_HEARTBEAT,
+            SCHEMA_CLEAR_ESTOP_REQUEST,
+            SCHEMA_CLEAR_ESTOP_RESPONSE,
         ] {
             assert_eq!(
                 default_tier_of(id),

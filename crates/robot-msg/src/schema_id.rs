@@ -13,7 +13,9 @@
 //! 0x0000_0100..=0x0000_01FF   motion 系列（Twist / Odometry / …）
 //! 0x0000_0200..=0x0000_02FF   sensor 系列（Image / PointCloud / Tensor / …）
 //! 0x0000_0300..=0x0000_03FF   event 系列（EStop / Heartbeat / …）
-//! 0x0000_0400..=0x7FFF_FFFF   未分配，留给未来扩展
+//! 0x0000_0400..=0x0000_04FF   control 系列（ClearEStopRequest / Response /
+//!                              v0.5+ 其它 control RPC payload）
+//! 0x0000_0500..=0x7FFF_FFFF   未分配，留给未来扩展
 //! 0x8000_0000..=0xFFFF_FFFF   实验 / fork 命名空间（下游机器人可用，上游不占）
 //! ```
 //!
@@ -53,6 +55,18 @@ pub const SCHEMA_ESTOP_EVENT: u32 = 0x0000_0300;
 /// `robot.msg.Heartbeat`。
 pub const SCHEMA_HEARTBEAT: u32 = 0x0000_0301;
 
+// ------------------------ 0x400..0x4FF · control -----------------------------
+//
+// v0.3 A1 ClearEStop control-plane slice（`docs/handoffs/v0.3_entry.md` §3）。
+// 后续 v0.5+ 完整 robot-rpc gateway 落地时其它 §5.3 RPC payload 也分配本段。
+
+/// `robot.msg.ClearEStopRequest` —— v0.3 A1 `ClearEStop` control action 跨
+/// 进程 wire format（iceoryx2 `RequestResponse` client → server payload）。
+pub const SCHEMA_CLEAR_ESTOP_REQUEST: u32 = 0x0000_0400;
+/// `robot.msg.ClearEStopResponse` —— v0.3 A1 `ClearEStop` control action 跨
+/// 进程 wire format（iceoryx2 `RequestResponse` server → client reply payload）。
+pub const SCHEMA_CLEAR_ESTOP_RESPONSE: u32 = 0x0000_0401;
+
 // -----------------------------------------------------------------------------
 // deprecated 登记
 // -----------------------------------------------------------------------------
@@ -83,6 +97,8 @@ pub const SCHEMA_REGISTRY: &[(u32, &str)] = &[
     (SCHEMA_TENSOR_HEADER, "robot.msg.TensorHeader"),
     (SCHEMA_ESTOP_EVENT, "robot.msg.EStopEvent"),
     (SCHEMA_HEARTBEAT, "robot.msg.Heartbeat"),
+    (SCHEMA_CLEAR_ESTOP_REQUEST, "robot.msg.ClearEStopRequest"),
+    (SCHEMA_CLEAR_ESTOP_RESPONSE, "robot.msg.ClearEStopResponse"),
 ];
 
 /// 按 `schema_id` 查规范名；未知返回 `None`。

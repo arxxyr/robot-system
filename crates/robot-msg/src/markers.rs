@@ -108,6 +108,16 @@ pub struct EStopEvent;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Heartbeat;
 
+/// Marker for [`msg::ClearEStopRequest`]（v0.3 A1 `ClearEStop` control-plane
+/// slice request payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClearEStopRequest;
+
+/// Marker for [`msg::ClearEStopResponse`]（v0.3 A1 `ClearEStop` control-plane
+/// slice response payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClearEStopResponse;
+
 // ---------------------------------------------------------------------------
 // BodyMarker 实现
 // ---------------------------------------------------------------------------
@@ -185,6 +195,20 @@ impl BodyMarker for Heartbeat {
     const SCHEMA_NAME: &'static str = "robot.msg.Heartbeat";
     const BLOB_EMBEDDED: bool = false;
     type Root<'a> = msg::Heartbeat<'a>;
+}
+
+impl BodyMarker for ClearEStopRequest {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_CLEAR_ESTOP_REQUEST;
+    const SCHEMA_NAME: &'static str = "robot.msg.ClearEStopRequest";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::ClearEStopRequest<'a>;
+}
+
+impl BodyMarker for ClearEStopResponse {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_CLEAR_ESTOP_RESPONSE;
+    const SCHEMA_NAME: &'static str = "robot.msg.ClearEStopResponse";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::ClearEStopResponse<'a>;
 }
 
 // ---------------------------------------------------------------------------

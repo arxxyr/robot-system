@@ -27,9 +27,10 @@
 use flatbuffers::FlatBufferBuilder;
 
 use crate::msg::{
+    ClearEStopRequest, ClearEStopRequestArgs, ClearEStopResponse, ClearEStopResponseArgs,
     ControlMode, EStopEvent, EStopEventArgs, Heartbeat, HeartbeatArgs, JointCommand,
-    JointCommandArgs, JointState, JointStateArgs, S0ControlLink, S0FaultCode, S0Mode, S0OutputMode,
-    S0SafetyState, StaleAction,
+    JointCommandArgs, JointState, JointStateArgs, RpcRole, RpcStatus, S0ControlLink, S0FaultCode,
+    S0Mode, S0OutputMode, S0SafetyState, StaleAction,
 };
 
 // ============================================================================
@@ -219,6 +220,95 @@ pub fn build_estop_event(reason: &str, stamp_ns: u64, source: &str, latched: boo
 }
 
 // ============================================================================
+// ClearEStopRequest（`robot.msg.ClearEStopRequest`）—— v0.3 A1
+// ============================================================================
+
+/// 构造 `ClearEStopRequest` body bytes（v0.3 A1 `ClearEStop` control-plane
+/// slice 跨进程 RR client → server payload）。
+///
+/// **字段语义** + **`role` 字段安全边界** 详 [`crate::markers::ClearEStopRequest`]
+/// + `crates/robot-msg/schemas/clear_estop.fbs`。
+///
+/// 调用方：
+/// - `robot-rpc::clear_estop` handler（v0.3 A1-3 落地后真起 server）。
+/// - `crates/robot-tests/src/bin/clear_estop_smoke.rs`（A1-4 落地）。
+/// - 单测 / 集成测可以直接调，绕过 RPC 端 auth / idempotency 验证。
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn build_clear_estop_request(
+    request_id: &str,
+    idempotency_key: &str,
+    source: &str,
+    role: RpcRole,
+    confirmation: &str,
+    audit_reason: &str,
+    dry_run: bool,
+    deadline_ns: u64,
+    stamp_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(256);
+    let request_id_off = fbb.create_string(request_id);
+    let idempotency_off = fbb.create_string(idempotency_key);
+    let source_off = fbb.create_string(source);
+    let confirmation_off = fbb.create_string(confirmation);
+    let audit_off = fbb.create_string(audit_reason);
+    let req = ClearEStopRequest::create(
+        &mut fbb,
+        &ClearEStopRequestArgs {
+            request_id: Some(request_id_off),
+            idempotency_key: Some(idempotency_off),
+            source: Some(source_off),
+            role,
+            confirmation: Some(confirmation_off),
+            audit_reason: Some(audit_off),
+            dry_run,
+            deadline_ns,
+            stamp_ns,
+        },
+    );
+    fbb.finish(req, None);
+    fbb.finished_data().to_vec()
+}
+
+// ============================================================================
+// ClearEStopResponse（`robot.msg.ClearEStopResponse`）—— v0.3 A1
+// ============================================================================
+
+/// 构造 `ClearEStopResponse` body bytes（v0.3 A1 `ClearEStop` control-plane
+/// slice 跨进程 RR server → client reply payload）。
+///
+/// **字段语义** 详 [`crate::markers::ClearEStopResponse`] +
+/// `crates/robot-msg/schemas/clear_estop.fbs`。
+///
+/// 调用方：
+/// - `robot-s0::ipc_thread`（A1-2 落地后真在 daemon 端发 reply）。
+/// - 单测 / 集成测可直接调。
+#[must_use]
+pub fn build_clear_estop_response(
+    request_id: &str,
+    status: RpcStatus,
+    error_msg: &str,
+    cleared_at_ns: u64,
+    dry_run: bool,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let resp = ClearEStopResponse::create(
+        &mut fbb,
+        &ClearEStopResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            cleared_at_ns,
+            dry_run,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -298,5 +388,86 @@ mod tests {
         assert_eq!(ev.stamp_ns(), 555);
         assert_eq!(ev.source(), Some("button"));
         assert!(ev.latched());
+    }
+
+    #[test]
+    fn clear_estop_request_round_trip() {
+        let bytes = build_clear_estop_request(
+            "req-uuidv7-aaaa",
+            "idem-bbbb",
+            "cli.loosqk",
+            RpcRole::Maintainer,
+            "operator-loosqk-confirm-001",
+            "manual recovery after EStop button press",
+            /* dry_run */ false,
+            /* deadline_ns */ 1_234_567_890_000,
+            /* stamp_ns */ 1_234_567_000_000,
+        );
+        let req = root::<ClearEStopRequest>(&bytes).unwrap();
+        assert_eq!(req.request_id().unwrap(), "req-uuidv7-aaaa");
+        assert_eq!(req.idempotency_key().unwrap(), "idem-bbbb");
+        assert_eq!(req.source().unwrap(), "cli.loosqk");
+        assert_eq!(req.role(), RpcRole::Maintainer);
+        assert_eq!(req.confirmation().unwrap(), "operator-loosqk-confirm-001");
+        assert_eq!(
+            req.audit_reason().unwrap(),
+            "manual recovery after EStop button press"
+        );
+        assert!(!req.dry_run());
+        assert_eq!(req.deadline_ns(), 1_234_567_890_000);
+        assert_eq!(req.stamp_ns(), 1_234_567_000_000);
+    }
+
+    #[test]
+    fn clear_estop_request_dry_run_default_role_unknown() {
+        // 验证 dry_run = true 路径 + role 字段不传时默认 Unknown。
+        let bytes = build_clear_estop_request(
+            "req-2",
+            "idem-2",
+            "smoke-test",
+            RpcRole::Unknown,
+            "smoke-confirm",
+            "test only",
+            /* dry_run */ true,
+            0,
+            0,
+        );
+        let req = root::<ClearEStopRequest>(&bytes).unwrap();
+        assert!(req.dry_run());
+        assert_eq!(req.role(), RpcRole::Unknown);
+    }
+
+    #[test]
+    fn clear_estop_response_round_trip_ok() {
+        let bytes = build_clear_estop_response(
+            "req-uuidv7-aaaa",
+            RpcStatus::Ok,
+            "",
+            /* cleared_at_ns */ 1_234_567_890_001,
+            /* dry_run */ false,
+        );
+        let resp = root::<ClearEStopResponse>(&bytes).unwrap();
+        assert_eq!(resp.request_id().unwrap(), "req-uuidv7-aaaa");
+        assert_eq!(resp.status(), RpcStatus::Ok);
+        assert_eq!(resp.error_msg().unwrap(), "");
+        assert_eq!(resp.cleared_at_ns(), 1_234_567_890_001);
+        assert!(!resp.dry_run());
+    }
+
+    #[test]
+    fn clear_estop_response_round_trip_failed_precondition() {
+        // safety_state != TorqueOffConfirmed 时 daemon 端发的 reply：
+        // status = FailedPrecondition / cleared_at_ns = 0 / dry_run 回传 false。
+        let bytes = build_clear_estop_response(
+            "req-3",
+            RpcStatus::FailedPrecondition,
+            "safety_state must be TorqueOffConfirmed before ClearEStop",
+            0,
+            false,
+        );
+        let resp = root::<ClearEStopResponse>(&bytes).unwrap();
+        assert_eq!(resp.status(), RpcStatus::FailedPrecondition);
+        assert_eq!(resp.cleared_at_ns(), 0);
+        assert!(resp.error_msg().unwrap().contains("TorqueOffConfirmed"));
     }
 }
