@@ -20,13 +20,21 @@
 #
 # ## 验证 watchdog 重启路径（§6.7 不变量 #2 的真机门槛）
 #
+# **注意**：本 unit **只**启 S0，**不**启 S1 coordinator。S0 daemon 没有
+# `Heartbeat` 输入源时**最多走到 `state=Ready`**，不会自己进
+# `Enabled.Active`（Active 必须 S1 发心跳）。下面"等 daemon 起来"是等
+# `state=Ready` + `READY=1` 通知 systemd，不是 `Enabled.Active`。完整步骤
+# 见 `scripts/systemd/README.md` "验证 watchdog 重启路径" 节。
+#
 # ```bash
 # sudo systemctl start xlerobot-s0-bus2
-# sleep 5     # 等 daemon 进入 Enabled.Active
-# sudo kill -9 $(pidof s0_daemon)
-# # 期望：systemctl status 显示 inactive→activating→active；journalctl 看到
-# # "READY=1" 重新出现 + state=Ready；2s 内重启完成。
-# sudo systemctl status xlerobot-s0-bus2
+# sleep 3     # 等 daemon 启动 + sd_notify(READY=1) 让 unit active
+# sudo kill -9 $(systemctl show -p MainPID --value xlerobot-s0-bus2)
+# sleep 4     # WatchdogSec=2s + RestartSec=2s 余量
+# # 期望：systemctl is-active 仍 active（新 PID）；journalctl 看到第二次
+# # "s0_daemon starting" + 第二次 state=Ready，证明 systemd 真把 daemon
+# # 重新拉起来。
+# sudo systemctl status xlerobot-s0-bus2 --no-pager
 # ```
 #
 # ## 不在本 unit 范围内的事
