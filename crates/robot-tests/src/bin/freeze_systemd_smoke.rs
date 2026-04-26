@@ -717,22 +717,27 @@ fn wait_for_active_pid_with<F: Fn(u32) -> bool>(
 }
 
 fn journalctl_user(unit_name: &str) -> Result<String, String> {
+    // 用 `_SYSTEMD_USER_UNIT=<unit>` 系统 journal matcher，跨发行版稳。
+    //
+    // **不**用 `journalctl --user -u <unit>`：Ubuntu Tegra (Orin AGX) 等发行
+    // 版默认**没**启 user journal namespace（`SystemMaxUse` / `Storage=auto`
+    // 在 user 域不创建 `/var/log/journal/<user>/`），`--user` 视角看不到 unit
+    // 输出。但 user services 的 stdout/stderr 仍正常路由到 system journal，
+    // 带 `_SYSTEMD_USER_UNIT=<unit>` 索引字段；用此字段 query 兼容 user journal
+    // 启用 / 不启用两种配置（FRIDAY workstation + Orin AGX 实测都过）。
+    //
+    // 跟 reviewer A2-3 round 2 阻断 2 收紧后的 4 条 journal 硬断言对齐（不
+    // 改断言文本，只改 query 路径）。
+    let matcher = format!("_SYSTEMD_USER_UNIT={unit_name}");
     let out = Command::new("journalctl")
-        .args([
-            "--user",
-            "-u",
-            unit_name,
-            "--no-pager",
-            "--output",
-            "short-iso",
-        ])
+        .args([&matcher, "--no-pager", "--output", "short-iso"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .map_err(|e| format!("spawn journalctl: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "journalctl --user -u {unit_name} exit={}: {}",
+            "journalctl {matcher} exit={}: {}",
             out.status,
             String::from_utf8_lossy(&out.stderr).trim(),
         ));
