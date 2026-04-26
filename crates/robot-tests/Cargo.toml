@@ -20,6 +20,13 @@ path = "src/bin/hello_pubsub.rs"
 name = "iceoryx2_rt_baseline"
 path = "src/bin/iceoryx2_rt_baseline.rs"
 
+# Step 9 EStop latch crash/restart 测试套（task #15 后续 v0.2 收尾）。
+# spawn s0_daemon + mock_s1 + robotctl 真子进程，SIGKILL daemon 后验证 latch
+# 一致性。详 docs/handoffs/2026-04-26_3.md §5 + 本文件注释。
+[[bin]]
+name = "crash_restart_smoke"
+path = "src/bin/crash_restart_smoke.rs"
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -28,6 +35,13 @@ robot-core      = { workspace = true }
 robot-msg       = { workspace = true }
 robot-transport = { workspace = true, default-features = true }
 hdrhistogram    = { workspace = true }
+# task-32 (2026-04-25) 日志骨架：crash_restart_smoke binary 走 robot-logging
+# 自动 init（其它 bin 同款，统一字段表 + JSON/human 双模式）。
+robot-logging   = { workspace = true }
+tracing         = { workspace = true }
+# Step 9 crash_restart_smoke：libc::kill(pid, SIGKILL) 直接发 kill -9，
+# 模拟最严格的"无 signal handler 机会"故障模型（systemd OOM kill 同款）。
+libc            = { workspace = true }
 
 [lints]
 workspace = true

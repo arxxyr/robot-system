@@ -1196,9 +1196,12 @@ dependencies = [
  "flatbuffers",
  "hdrhistogram",
  "iceoryx2",
+ "libc 1.0.0-alpha.3",
  "robot-core",
+ "robot-logging",
  "robot-msg",
  "robot-transport",
+ "tracing",
 ]
 
 [[package]]
