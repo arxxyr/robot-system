@@ -759,6 +759,46 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         }
     };
 
+    // ---- 7b) **test-only** freeze control thread（A2-2，cfg-gated；生产
+    //          release 不编译）：订阅 `/{robot_id}/test/freeze`，把测试驱动 publish
+    //          的 freeze 命令路由到对应 worker 的 `freeze_until_ns` 原子。
+    //
+    // **不进 watchdog observer**（reviewer 拍板硬边界："control thread 不进
+    // watchdog observer；它只是测试注入器"），所以 spawn 完不挂 LivenessObserver。
+    // 失败仅 log + 返 None，**不**杀 daemon（test-only 路径不应影响生产）。
+    //
+    // 本 bin 只 gate `feature = "test-freeze-hook"`（**不**带 `test`）：bin 的
+    // doctest / unittest target 在 lib 没启该 feature 时，`robot_s0::freeze_control`
+    // 不存在 → 用 `cfg(test)` 会编译失败。要测 daemon binary + freeze_control，
+    // 显式 `--features test-freeze-hook`（lib 的单测仍可在 cfg(test) 下用 module，
+    // 不受本 bin 行为影响）。
+    #[cfg(feature = "test-freeze-hook")]
+    let freeze_control_handle: Option<robot_s0::freeze_control::FreezeControlHandle> = {
+        let (rt_m, serial_m) = executor.freeze_metrics();
+        let ctx = robot_s0::freeze_control::FreezeControlContext {
+            robot_id: args.robot_id.clone(),
+            clock: Arc::clone(&clock),
+            ipc: Arc::clone(ipc.metrics()),
+            rt: rt_m,
+            serial_io: serial_m,
+            pub_thr: Arc::clone(pub_handle.metrics()),
+            io: Arc::clone(io_handle.metrics()),
+        };
+        match robot_s0::freeze_control::spawn_freeze_control_thread(ctx) {
+            Ok(h) => {
+                tracing::info!("freeze_control thread spawned (test-freeze-hook feature)");
+                Some(h)
+            }
+            Err(e) => {
+                tracing::error!(
+                    ?e,
+                    "freeze_control thread spawn failed; freeze hook control inactive"
+                );
+                None
+            }
+        }
+    };
+
     // ---- 8) 注册 signal handlers ----
     install_signal_handlers();
 
@@ -858,6 +898,15 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     robot_s0::systemd_notify::stopping();
     systemd_wd_stop.store(true, std::sync::atomic::Ordering::Release);
     if let Some(h) = systemd_wd_handle {
+        let _ = h.join();
+    }
+
+    // ---- 10b) **test-only** stop freeze_control thread（A2-2，cfg-gated）。
+    //          跟 watchdog 平行 stop，不进 graceful_stop（保持 graceful_stop 签名
+    //          与生产 release 一致）。同上只 gate feature（不带 test）。
+    #[cfg(feature = "test-freeze-hook")]
+    if let Some(h) = freeze_control_handle {
+        h.request_stop();
         let _ = h.join();
     }
 
@@ -1089,6 +1138,24 @@ impl ExecutorHandle {
                     m.tick_count.load(Ordering::Relaxed)
                 })
             }
+        }
+    }
+
+    /// **A2-2 freeze hook control routing** (test-only)：把 dispatch 路径活跃
+    /// 的 RT 线程 metrics 暴露给 [`robot_s0::freeze_control`] 控制路由。返回
+    /// `(rt_metrics, serial_io_metrics)` 二元组，按 dispatch 路径恰好一个为
+    /// `Some`。生产 release 不编译本方法。本 bin gate `feature = "test-freeze-hook"`
+    /// （不带 `test`），跟 §7b spawn 处一致；详 §7b 注释。
+    #[cfg(feature = "test-freeze-hook")]
+    fn freeze_metrics(
+        &self,
+    ) -> (
+        Option<Arc<robot_s0::rt_thread::RtThreadMetrics>>,
+        Option<Arc<robot_s0::serial_io_thread::SerialIoThreadMetrics>>,
+    ) {
+        match self {
+            Self::HardRt(h) => (Some(Arc::clone(h.metrics())), None),
+            Self::SerialRt(h) => (None, Some(Arc::clone(h.metrics()))),
         }
     }
 }
