@@ -10,6 +10,59 @@
 
 ---
 
+## 2026-04-26 · task #15 Stage 2 真机闭环全过 + §5.1 known-issue 真机撤销（**状态：登记 / 实施完成 + 真机 PASS**）
+
+### 背景
+
+[`docs/handoffs/2026-04-26_2.md`](handoffs/2026-04-26_2.md) Stage 2 软件
+就绪 + Heartbeat QoS 修复 + §2.2 Operating_Mode + EEPROM unlock 序列修
+正落地后，本场把全部交付物上 Orin AGX `10.0.1.41` 真机 bus2（9 motor）
+端到端验证。
+
+### 验证结果（2026-04-26）
+
+详见 [`handoffs/2026-04-26_3.md`](handoffs/2026-04-26_3.md) §2。**§2.1 ping
+→ §2.2 Operating_Mode 切换 → §2.3 baseline → §3 smoke → §4 ballet（含
+双 watch 同跑回归）→ §5 EStop → §6 base 不动锁测 → §7 latch 重启 / 删 /
+2nd EStop 全过**。关键证据：
+
+- §2.2 base 3 motor `Operating_Mode` 1 → 0 五步序列（Torque_Enable=0 →
+  Lock=0 → Operating_Mode=0 → Lock=1 → readback assert）一次写入即生效。
+- §4 双 watch 同跑各拿 **45 sample**（旧实现下 B 永远 0 sample）→
+  Heartbeat QoS 修复 (`TopicClass::Heartbeat` max=8) 真机回归 PASS。
+- §5 EStop 后 9 motor `Torque_Enable` 全部 1 → 0（broadcast 覆盖 base
+  motor 7/8/9，不只是 right arm）。
+- §5 latch primary+bak 双文件 fsync 实测 188-255 ms 内落盘（daemon 仍
+  alive），与 Stage 1 §5 实测一致；阻断 1 修复在第二次 EStop 路径仍稳。
+- §6 base 3 motor `ΔPos = 0/0/0`（frozen mask 真冻死）。
+- §7 latch=1 重启 daemon 主动"not auto-sending Event::Enable" + state
+  全程 Safe；rm latch 后恢复 Ready/Enabled，2nd EStop 链路同款。
+
+### 撤销 / 回写
+
+- `docs/handoffs/2026-04-26.md` §5.1：横幅升级"待 Stage 2 回归"→"✅ 已撤
+  销"，列出真机证据（Stage 2 §4 双 watch 各 45 sample）。
+- `docs/handoffs/2026-04-26_bus2_runbook.md` 附 A 表 + 附 C.1：横幅同步
+  升级 ✅ 已撤销 + PASS 真机证据指向 [`2026-04-26_3.md`](handoffs/2026-04-26_3.md)
+  §2.5。
+- `docs/handoffs/2026-04-26_bus2_runbook_stage2.md` 顶部 ⏳ → ✅ Stage 2
+  真机闭环全过 + 列出 5 条关键证据。
+- `docs/handoffs/README.md` 加 2026-04-26（再续）行指向新 handoff。
+
+### 影响面
+
+- 不动代码（Stage 2 软件已在前序 commit 落地，本批次纯文档收口）。
+- 文档：本 CHANGELOG 条目 + Stage 1/2 runbook 顶部状态升级 + handoff
+  `2026-04-26_3.md` 新建 + handoffs/README.md 列表追加 + Stage 1 handoff
+  `2026-04-26.md` §5.1 横幅 PASS 升级。
+
+### 审阅人
+
+reviewer (用户) ✓ —— 用户授权 "你替我在真机上跑"，本场全部 7 段 + 双
+watch 回归实测在 Orin 上跑完。
+
+---
+
 ## 2026-04-26 · runbook §5.1 known-issue 撤销 —— Heartbeat QoS 多订阅（**状态：偏离 / 实施完成**）
 
 ### 背景

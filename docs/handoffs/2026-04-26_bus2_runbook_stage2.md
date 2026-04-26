@@ -1,9 +1,23 @@
 # Handoff · 2026-04-26 · bus2 9-motor 全栈真机闭环 Runbook（Stage 2）
 
-> **状态：⏳ 软件就绪，待 Orin 真机验证**。Stage 1（[6-motor right_arm](
-> 2026-04-26_bus2_runbook.md)）已 PASS；Stage 2 在 Stage 1 之上加 base 三
-> 个 wheel（ID 7-9）= 9 motor 全栈，让 SerialRT 多 motor 路径在更大组上
-> 跑稳。本 runbook 与 Stage 1 互补，**只列差异**；通用步骤（环境清理 /
+> **状态：✅ Stage 2 真机闭环全过（2026-04-26）**。Orin AGX `10.0.1.41`
+> bus2 9 motor SerialRT 路径完整闭环，§2 ping → §2.2 Operating_Mode 切换
+> → §2.3 baseline → §3 smoke → §4 ballet（含双 watch QoS 修复回归）→ §5
+> EStop → §6 base 不动锁测 → §7 latch 重启 / 删 / 第二次 EStop 全部
+> PASS。详 [`2026-04-26_3.md`](2026-04-26_3.md) §2。
+>
+> 关键证据：
+> - §2.2 base motor `Operating_Mode` 1→0 五步序列在真机生效（写入即成功，
+>   Lock=0 + Lock=1 重锁链路无碍）；
+> - §4 双 watch 同跑各拿 45 sample → 撤销
+>   [`2026-04-26.md`](2026-04-26.md) §5.1 known-issue；
+> - §5 EStop 后 9 motor `Torque_Enable=0` 全断扭，latch 在 ~200-260 ms
+>   内 fsync 落盘（daemon 仍 alive）；
+> - §6 base 3 motor `Δ Present_Position = 0/0/0`（frozen mask 真冻死）；
+> - §7 latch=1 重启 daemon 留 Safe 不进 Enabled；rm latch 后恢复 +
+>   2nd EStop 链路同款。
+>
+> 本 runbook 与 Stage 1 互补，**只列差异**；通用步骤（环境清理 /
 > 编译 / sudo↔user 模式 / latch 路径 / 排查表）请直接参考 Stage 1 runbook
 > §0-§1 + 附 A / 附 C。
 

@@ -507,7 +507,7 @@ mock_s1 12s 期间右臂动作: [ 完整 ballet / 卡 Safe / 部分抖动 ]
 | EStop 后 motor 仍 torque-on | safety_stop_fast 没生效或 broadcast 没到；feetech_poke 单 motor read Torque_Enable 看真值 |
 | daemon `Permission denied (os error 13)` 启动 fatal | latch 文件 owner 跟当前 daemon user 不一致（如之前 sudo daemon 写 root-owner latch，现在 user daemon 读不到）；`sudo rm -f <latch> <latch>.bak` 重置 |
 | mock_s1 / robotctl `ServiceInCorruptedState` | iceoryx2 service 元数据 owner 不一致或 stale；`sudo rm -rf /tmp/iceoryx2/nodes/* /tmp/iceoryx2/services/*` 重置 |
-| robotctl watch 全程 "no sample yet" | **已修复（commit `21bb44f`）**：原归因"iceoryx2 0.8.1 framework race"被否决，root cause 是 heartbeat QoS 错用 `S1CmdVel` (`max_subscribers=1`)；新增 `TopicClass::Heartbeat` (max=8 + safe_overflow=true) 替换。Stage 2 §4 顺手 2 watch 同跑做回归验证。详附 C.1（横幅指向 follow-up）|
+| robotctl watch 全程 "no sample yet" | **✅ 已修复 + 真机回归 PASS**（commit `21bb44f` + Stage 2 §4 双 watch 同跑各 45 sample）。原归因"iceoryx2 0.8.1 framework race"被否决，root cause 是 heartbeat QoS 错用 `S1CmdVel` (`max_subscribers=1`)；新增 `TopicClass::Heartbeat` (max=8 + safe_overflow=true) 替换。详附 C.1（横幅指向 [`2026-04-26_3.md`](2026-04-26_3.md) §2.5 真机证据）|
 | feetech_poke "Device or resource busy" | daemon 占着 ttyACM1，**期望行为**；mid-run 不能并发读 motor，等 daemon 退出后再 poke（详 附 C.3）|
 
 ---
@@ -535,8 +535,9 @@ de67bb7 ✨ feat: task-30 v9 M7 阶段 3 —— ipc_tick errata 三步式 + §0.
 
 ### C.1 iceoryx2 0.8.1 single-service multi-subscriber attach race
 
-> **2026-04-26 续场更新（commit `21bb44f`）—— 已修复**。
-> reviewer 复盘**否决**框架 bug 归因。root cause 是我们自己的 QoS 分类
+> **✅ 已撤销 (PASS)**（commit `21bb44f` + 真机回归 PASS @ 2026-04-26）。
+>
+> reviewer 复盘**否决**框架 bug 归因。root cause = 我们自己的 QoS 分类
 > 错误：所有 heartbeat publisher / subscriber 蹭用
 > `TopicClass::S1CmdVel`（`max_subscribers=1`），第二个 sub attach 实际
 > 被 iceoryx2 拒绝（不是静默 race）。修复 = 新增独立
@@ -545,7 +546,11 @@ de67bb7 ✨ feat: task-30 v9 M7 阶段 3 —— ipc_tick errata 三步式 + §0.
 > （`pub_thread` / `s0_daemon` / `ipc_thread` / `robotctl` / `mock_s1` /
 > `serial_rt_e2e` / `iceoryx2_rt_baseline`）一次性迁过去。
 >
-> 锁测：
+> **真机证据**（Stage 2 §4，详 [`2026-04-26_3.md`](2026-04-26_3.md) §2.5）：
+> daemon + mock_s1 + 2 watch 同跑 11s，A/B 各拿 **45 sample**，wire
+> 字段都正确观测到。
+>
+> 锁测（防回归）：
 > - `crates/robot-transport/tests/iceoryx2_roundtrip.rs::heartbeat_class_supports_two_subscribers_receiving_same_publish`
 >   钉死同 service 双 sub 都拿到样本；
 > - `s1_cmdvel_class_rejects_second_subscriber` 反向证明
@@ -553,12 +558,11 @@ de67bb7 ✨ feat: task-30 v9 M7 阶段 3 —— ipc_tick errata 三步式 + §0.
 > - `qos::tests::observer_classes_support_multi_subscriber` 钉死多观测
 >   者类 topic 的 `max_subscribers >= 8`。
 >
-> Stage 2 真机回归：[Stage 2 runbook §4](2026-04-26_bus2_runbook_stage2.md#4-ballet-14s关键闭环)
-> 的"2 个 watch 同跑都拿样本"（§4 验证项 4）即真机端到端验证。验证全
-> PASS 后本节完全撤销。详 `docs/CHANGELOG.md` 2026-04-26 "runbook §5.1
-> known-issue 撤销" + `docs/handoffs/2026-04-26_2.md` §2.1。
+> 详 `docs/CHANGELOG.md` 2026-04-26 "Stage 2 真机闭环全过 + §5.1 撤销" +
+> `docs/handoffs/2026-04-26_2.md` §2.1 + `docs/handoffs/2026-04-26_3.md`
+> §2.5。
 >
-> 以下原文保留作历史对照：
+> 以下原文纯档案保留，不再 active：
 
 **复现**：daemon + 2 个 `robotctl watch`（**没** mock_s1，**没** sudo），
 第一个 watch 拿 17 samples，第二个 watch **0 samples**。daemon →
