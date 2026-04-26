@@ -129,11 +129,20 @@ impl<Req: BodyMarker, Resp: BodyMarker> core::fmt::Debug for Iceoryx2ActiveReque
 // service open / client / server 工厂
 // ---------------------------------------------------------------------------
 
-/// 同进程对称 RR 创建：返回已配置好 service attribute verifier (`Req::
-/// SCHEMA_ID`) 的 client + server pair。
+/// **仅同进程测试 / spike 便利用**：在同一 node 上 create 一份 service +
+/// 同时 create client + server，返回 pair。本函数让单测能一行起完整 RR
+/// round-trip 通路，**不**适合跨进程生产路径。
 ///
-/// 跨进程场景（A1-2 真接 daemon ↔ RPC 时）各端各调一次本函数，传同一
-/// `topic`；首次 call create + 后续 call open，attribute verify 自动守门。
+/// **跨进程禁用**（reviewer A1-1 part 2 round 2 拍板硬边界）：A1-2 真接
+/// daemon ↔ RPC 时**禁止**两端都调本函数 —— 那会让 RPC 进程多挂一个
+/// server / S0 进程多挂一个 client，request 可能被错误 server 端口占住
+/// / 造成调试歧义。跨进程**必须**分别调：
+///
+/// - `robot-rpc` 端 → [`rr_client`]
+/// - `s0_daemon` / `ipc_thread` 端 → [`rr_server`]
+///
+/// 两端共用同一 `topic`，首次 call 由先到那端 create + 后到那端 open，
+/// attribute verify 自动守门（schema_id mismatch → open 拒绝）。
 ///
 /// # Errors
 ///
