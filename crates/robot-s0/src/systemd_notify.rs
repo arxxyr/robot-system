@@ -170,7 +170,14 @@ fn run_watchdog_loop(stop: &AtomicBool, interval: Duration, observers: &[Livenes
     thread::sleep(interval);
     let mut prev: Vec<u64> = observers.iter().map(|o| (o.tick)()).collect();
 
+    // **关键**：每次 iteration 先 sleep 一个 interval **再** compare。如果
+    // 反过来（snapshot prev 之后立刻 compare）第一次 iteration 必然
+    // now == prev = stalled 误报，因为 0 时间过去。
     while !stop.load(Ordering::Acquire) {
+        thread::sleep(interval);
+        if stop.load(Ordering::Acquire) {
+            break;
+        }
         let mut all_alive = true;
         for (i, observer) in observers.iter().enumerate() {
             let now = (observer.tick)();
@@ -190,7 +197,6 @@ fn run_watchdog_loop(stop: &AtomicBool, interval: Duration, observers: &[Livenes
         if all_alive {
             watchdog();
         }
-        thread::sleep(interval);
     }
 }
 
