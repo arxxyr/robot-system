@@ -35,9 +35,14 @@
 //!
 //! ## RT 安全性
 //!
-//! [`freeze_check`] 是 **alloc-free / syscall-free / no-Arc-clone**：
-//! - 1 次 `AtomicU64::load`（命中 0 则提前 return，hot path 极轻）
-//! - 否则循环：`clock.now()` 单调时钟读 + `AtomicBool::load` + `spin_loop()` hint
+//! [`freeze_check`] 是 **alloc-free / no-Arc-clone**，分两条路径：
+//!
+//! - **未冻结 hot path**（`freeze_until_ns == 0`）：1 次 `AtomicU64::load` +
+//!   比较 + 提前 return，**真 syscall-free**，hot path 极轻。
+//! - **active freeze 路径**：循环里 `clock.now()` 单调时钟读
+//!   （[`robot_core::time::SystemClock`] 走 `clock_gettime(CLOCK_MONOTONIC_RAW)`
+//!   syscall）+ `AtomicBool::load` + `spin_loop()` hint。**有 syscall**，但只
+//!   在测试触发 freeze 时进入，生产 release 不编译本 module。
 //!
 //! 可在 [`crate::rt_thread`] `SCHED_FIFO` 路径调（reviewer 拍板：`rt_thread`
 //! hook 加，但**不**在 Orin `SCHED_FIFO` busy-spin 冻 RT 系统级 smoke，避免调
