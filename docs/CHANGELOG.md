@@ -10,6 +10,67 @@
 
 ---
 
+## 2026-04-26 · task #15 Stage 1 真机 bus2 6-motor SerialRT 闭环（**状态：登记 / 实施完成 + 真机 PASS**）
+
+### 背景
+
+task-30 v9 M7 落地（state_machine ↔ adapter 接通 + SerialRT 路径 +
+ipc_tick errata 三步式 + per-event guard view + ClearEStop confirmed
+守门 + EStop 触发即 fsync latch 落盘 + `robotctl estop` 子命令 +
+bus2 right_arm 6-motor 配置 + Orin runbook + ensure_latch_parent 守门）。
+
+随后在 Orin 真机上端到端验证 bus2 右臂 6 motor 的 SerialRT 路径：
+
+### 验证结果（2026-04-26）
+
+详见 [`handoffs/2026-04-26.md`](handoffs/2026-04-26.md) §3。**§2 ping → §3
+smoke → §4 ballet → §5 EStop → §6 重启 latch=true → §7 删 latch 恢复 + 再
+EStop 全过**。关键证据：
+
+- §5/§7 真机 robotctl estop 后**< 200 ms** 内 daemon 仍 active 时 latch
+  primary+bak 双文件已 = "1"（fsync 落盘成立，安全语义不依赖 graceful
+  shutdown）。
+- §5/§7 EStop 后 6 motor `Torque_Enable` 全部从 1 → 0（Feetech broadcast
+  `Torque_Enable=0` 真断扭）。
+- §6 latch=true 重启后 daemon `initial estop_latched=true` + state 全程
+  `Safe`（即便收到 hb 也不进 Ready/Enabled）+ 无任何 `Enable(true)` 转换。
+
+### 暴露的 known-issue（不阻断 #15 但记账）
+
+1. **iceoryx2 0.8.1 single-service multi-subscriber attach race**：daemon +
+   2 个 robotctl watch 在同一 service 上 attach，第二个 watch 静默失败拿不
+   到 sample。同样影响 `mock_s1.anchor + watch` 同跑场景。**不影响**控制
+   链路（control 不走 watch；watch 仅诊断观测）。workaround：物理验证靠
+   daemon log + mock_s1 log + post-run motor pos 三方合验。follow-up：升
+   iceoryx2 0.9 / 0.10 看是否 fix。
+2. **sudo ↔ user 模式切换的 ownership 残留**：sudo daemon 写的 latch 文件
+   是 root owner，后续 user daemon 读 `Permission denied` fatal 退出；同
+   样 sudo 创建的 `/tmp/iceoryx2/nodes/<uuid>/` 让 user clients 报
+   `ServiceInCorruptedState`。**约定**：统一 user 模式（推荐）；切换时清
+   `<latch>` + `<latch>.bak` + `/tmp/iceoryx2/{nodes,services}/*`。
+
+### 影响面
+
+- 代码：`crates/robot-s0/src/ipc_thread.rs`（latch fsync hook）+
+  `crates/robot-s0/src/bin/s0_daemon.rs`（ensure_latch_parent）+
+  `crates/robot-cli/src/bin/robotctl.rs`（estop 子命令 + watch
+  --duration-secs）+ `crates/robot-adapters/feetech/src/factory.rs`
+  （build_serial_rt）+ `crates/robot-core/src/{adapter,factory,executor_ctrl}.rs`
+  （SerialRtAdapter 综合 trait + ExecutorCtrlClient::safety_state）。
+- 测试：`crates/robot-s0/src/ipc_thread.rs::tests::estop_topic_writes_latch_to_disk_immediately`
+  + `crates/robot-s0/src/ipc_tick.rs::tests::events_in_same_tick_use_per_event_guard_view`
+  + `crates/robot-s0/tests/serial_rt_e2e.rs` 5 条 E2E。
+- 文档：`configs/xlerobot_bus2_right_arm_full.toml` +
+  `docs/handoffs/2026-04-26_bus2_runbook.md`（含真机实测回执 + 附 A 排查
+  + 附 C known-issue + workaround）+ `docs/handoffs/2026-04-26.md`
+  （session 状态 handoff）。
+
+### 审阅人
+
+reviewer (用户) ✓
+
+---
+
 ## 2026-04-21 · 工具链：nightly 硬要求 + edition 2024（**状态：已回写**）
 
 ### 决定

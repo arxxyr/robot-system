@@ -113,19 +113,33 @@
 | **HardRT** `read_state` p99 | < 50 µs | — | — | — | ⏳ | Step 6 mock |
 | **HardRT** `write_command` p99 | < 50 µs | — | — | — | ⏳ | Step 6 mock |
 | **HardRT** `safety_stop_rt` (RT-only fast path) p99 | < 100 µs | — | — | — | ⏳ | M5 mock + Step 10 |
-| **SerialRT** `feetech_poke ping`（13-motor handshake，逐 motor） | baseline（毫秒量级）| — | — | — | ⏳ | Step 10 task-30 实测 |
-| **SerialRT** `safety_stop_fast`（13-motor 一次 sync_write Torque_Enable=0）| **< 10 ms** (hard) | — | — | — | ⏳ M4 落地 + Orin 实测 |
-| **SerialRT** `confirm_torque_off` RTT（13-motor 一次 sync_read 验证 Torque_Enable=0）| **< 50 ms** (hard) | — | — | — | ⏳ M6 落地 + Orin 实测 |
-| **SerialRT** `read_state`（13-motor sync_read Present_Position+Velocity）p99 | < 8 ms | — | — | — | ⏳ Step 10 |
-| **SerialRT** `write_command`（13-motor sync_write Goal_Position）p99 | < 4 ms | — | — | — | ⏳ Step 10 |
+| **SerialRT** `feetech_poke ping`（9-motor handshake，逐 motor） | baseline（毫秒量级）| ✓ 9/9 ping ok | 2026-04-26 | Orin AGX bus2 5A7C122340 | 🟢 task #15 Stage 1 实测 | Step 10 |
+| **SerialRT** `safety_stop_fast`（6-motor sync_write Torque_Enable=0）| **< 10 ms** (hard) | < 1 s 端到端断扭（broadcast 已生效）| 2026-04-26 | 同上 | 🟢 端到端真断扭 | M4 落地 + Orin 实测 |
+| **SerialRT** `confirm_torque_off` RTT（6-motor sync_read 验证 Torque_Enable=0）| **< 50 ms** (hard) | post-shutdown 全 0（ms-level 实测留 follow-up）| 2026-04-26 | 同上 | 🟢 hardware 真断扭确认 | M6 落地 + Orin 实测 |
+| **SerialRT** `latch fsync` 触发 → 双文件落盘 | < 200 ms（hard，daemon 仍 active）| ✓ < 200 ms | 2026-04-26 | 同上 | 🟢 §5/§7 两次复测 | task #15 阻断 1 |
+| **SerialRT** `read_state`（6-motor sync_read Present_Position+Velocity）p99 | < 8 ms | — | — | — | ⏳ p99 数采集留 follow-up | Step 10 |
+| **SerialRT** `write_command`（6-motor sync_write Goal_Position）p99 | < 4 ms | — | — | — | ⏳ p99 数采集留 follow-up | Step 10 |
+| **SerialRT** ballet（6-motor 50 Hz cmd 12 s 全程）| daemon Enabled.Active 持续 | ✓ 8 s+ Enabled，motor 2/4 偏移 +3-4° (±5° amp) | 2026-04-26 | 同上 | 🟢 §4 物理摆动确认 | task #15 Stage 1 |
 | **SoftRT** snapshot 更新到 RT thread 可见的 staleness | < 50 ms | — | — | — | ⏳ | v0.4 RealSense |
 
 **SerialRT 测量约束**：
 - 必须在 Orin（aarch64 + USB-RS485 实机）跑，dev 机数据**不作 baseline**；
 - `safety_stop_fast` / `confirm_torque_off` 跑 100 次取 p50 / p99 / max；
 - 触发条件 = `s0_daemon` 已 spawn `s0_serial_io_thread` + Feetech adapter connected
-  + 13 motor 全 ping 通过；
+  + bus 上 motor 全 ping 通过；
 - baseline 采集时机 = M6 落地后即刻；M7 真机 smoke 跑通过夜间 1 h soak 复查。
+
+**2026-04-26 task #15 Stage 1 实测 baseline**（bus2 right_arm 6 motor + dimos 留扭）：
+- §2 9 motor (1-9) 全部 `ping ok: motor_id=<id> ... (Model_Number=STS3215 777)`
+- §3 smoke 5s daemon connect 仅，**不**调 enable，motor `Torque_Enable` 维持 baseline (1)，state=Ready
+- §4 ballet 12s（mock_s1 anchor 1s + cmd_seq=788）：state Ready→Enabled.Active@t=6s 持续 8s+，post-run motor 2/4 偏 +3-4°（±5° amp 内）
+- §5 EStop trigger：daemon active T+200ms 时 latch primary+bak 都 = "1"（fsync 双写已落盘），post-shutdown 6 motor `Torque_Enable=0` 全
+- §6 latch=true 重启：`initial estop_latched=true`，state 全程 Safe，hb 进来后仍**不**进 Ready/Enabled
+- §7 删 latch 重启：`estop_latched=false` → 第二次 ballet → 第二次 EStop → motor 全 0
+
+**未填项**（follow-up）：`read_state` / `write_command` p99 ms-level 量化采样（要在 daemon hot path 加 latency
+计数 + 100 次抽样）；safety_stop_fast / confirm_torque_off 单独 ms-level 计时（当前只验"端到端 < 1s 断扭"，没拆 sync_write
+本身耗时）。这两条留在 task #15 Stage 2 / Step 10 完成。
 
 ### 10.1.5 Schema
 
