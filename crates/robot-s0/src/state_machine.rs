@@ -533,7 +533,9 @@ pub fn try_transition(cur: S0State, ev: Event, g: &Guards) -> Result<S0State, Re
         // ---- SAFE → SAFE（解除 EStop）----
         (S::Safe, E::ClearEStop) => {
             if g.estop_latched {
-                // Part 2：ClearEStop RPC 在 estop_latch 层已经清理 latch；到这里应该是 false。
+                // Part 2：ClearEStop control action（v0.3 A1 落地后由 control-plane slice
+                // 触发；v0.2 期间仅由显式授权的 deploy 流程 + opt-in 守门兼容）在
+                // estop_latch 层已经清理 latch；到这里应该是 false。
                 reject("ClearEStop arrived but estop still latched")
             } else {
                 // 已经没 latch，什么都不做

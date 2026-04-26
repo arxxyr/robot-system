@@ -333,7 +333,8 @@ OPTIONS:
   --allow-empty-latch          首次部署 / bring-up 实验：primary + bak 两个 latch
                                都不存在时显式 opt-in 走 latched=false。**默认拒**：
                                daemon fail-closed 拒启动，因为 \"rm latch && restart\"
-                               不等价于 ClearEStop 解除（v0.3 RPC 落地前的守门，详
+                               不等价于 ClearEStop control action 解除（v0.3 A1
+                               ClearEStop control-plane slice 落地前的守门，详
                                docs/00_design.md §6.7 #3）。
   --cpu <IDX>                  rt_thread CPU 亲和性。默认不绑核。
   -h, --help                   显示帮助。

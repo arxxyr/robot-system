@@ -10,6 +10,56 @@
 
 ---
 
+## 2026-04-26 · v0.3 entry：`ClearEStop RPC` 文案的控制动作解释（**状态：偏离**）
+
+### 背景
+
+`docs/00_design.md` §6.6 / §6.7 写的是 "`EStop` latch 只能被
+`ClearEStop` RPC 解除"。v0.3 entry handoff 复核时指出：按字面把安全语义
+绑死在 **RPC 这一种传输协议** 上过窄，也容易跟物理急停按钮松开、Web 管理
+界面、本地维护面板等入口混淆。
+
+### 解释登记
+
+本条是对冻结正文 `RPC` 字样的解释登记，不是新增第四类 CHANGELOG 状态。
+
+冻结设计正文的安全语义解释为：
+
+> `EStop` software latch 只能被显式授权、可审计的 `ClearEStop` control
+> action 解除；RPC / Web 管理界面 / 本地维护面板只是 transport / UI 入口，
+> 都必须落到同一个 `ClearEStop` action，并走同一套 maintainer+ /
+> confirmation / idempotency / `TorqueOffConfirmed` / fsync 双写 / audit
+> guard。
+
+这不是放宽 §6.7 #3，而是避免把"解除 EStop 的安全动作"误读成"只能通过
+gRPC 这一条网络路径"。物理急停按钮松开 / 旋出只表示**物理 EStop 装置复位**；
+不得自动清 `EStop` software latch，更不得自动 enable / restart。解除
+software latch 仍必须走 `ClearEStop` control action；解除后也只允许后续
+独立 `Enable` / `Start`，不能自动重启。
+
+### 对 v0.3 entry 的影响
+
+- A1 命名为 `ClearEStop control-plane slice`，只切最小外部入口：
+  `robot-rpc` 的 `ClearEStop` endpoint + S0 内部 `Event::ClearEStop`
+  闭环；**不**提前落完整 RPC 平台。
+- Phase B 的 `robot-rpc full gateway` 才扩展其它 §5.3 RPC / task /
+  stream / S1 coordinator 交互。
+- Web 管理界面 / 本地维护面板未来接入时必须复用同一个 `ClearEStop`
+  action，不允许开旁路。
+- `rm latch + restart` / deploy provision 仍不等价于 `ClearEStop`。
+
+### 影响面
+
+- 不改 `docs/00_design.md` 正文，不改 frozen schema。
+- 本条作为解释登记；若未来决定把 `docs/00_design.md` 正文从 "RPC" 回写成
+  "control action"，另走"回写登记"。
+
+### 审阅人
+
+reviewer (用户) 待复核。
+
+---
+
 ## 2026-04-26 · v0.2 收尾 reviewer round 5 否决 — runbook / 文档跟代码语义同步（**状态：偏离 / 实施完成 + 真机 PASS**）
 
 ### 背景

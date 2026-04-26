@@ -1,4 +1,7 @@
-//! `EStop` latch 持久化：S0 启动期读，触发 `EStop` 后写，`ClearEStop` RPC 清。
+//! `EStop` latch 持久化：S0 启动期读，触发 `EStop` 后写，`ClearEStop`
+//! control action 清（RPC / Web / 本地维护面板都是同一 action 的 transport
+//! 入口；详 `docs/CHANGELOG.md` 2026-04-26 "v0.3 entry：`ClearEStop RPC`
+//! 文案的控制动作解释"条目）。
 //!
 //! 对应 `docs/00_design.md` §6.6 "`EStop` 不可被软件清除为失忆态"（即：S0 重启不
 //! 失忆）+ §6.7 + `docs/00_design.md:1394` 风险表 "`EStop` latch 文件损坏 →
@@ -14,8 +17,8 @@
 //!
 //! - `Strict`（[`load_estop_latch`] 默认 / 生产 daemon）：primary + backup
 //!   都不存在时返 `io::ErrorKind::NotFound` 让调用方拒启动 —— "rm latch
-//!   && restart" **不**等价于"清空 EStop"，要等 v0.3 `ClearEStop` RPC 真
-//!   清才算解锁。
+//!   && restart" **不**等价于"清空 EStop"，要等 v0.3 `ClearEStop` control
+//!   action（A1 control-plane slice）真清才算解锁。
 //! - `AllowEmpty`（[`load_estop_latch_with_mode`] + `--allow-empty-latch`
 //!   CLI / 单测 / bring-up 工具走这条）：保留旧 `Ok(false)` 行为，等价于
 //!   "首次部署 / 实验场景"显式 opt-in。
@@ -74,8 +77,8 @@ static TMP_SUFFIX_SEQ: AtomicU64 = AtomicU64::new(0);
 /// （生产 daemon 默认；reviewer round 4 阻断 2 实施 §6.7 #3）。
 ///
 /// 两份文件都不存在 → **fail-closed**：返 `io::ErrorKind::NotFound`，调用
-/// 方应拒启动 + 报"需 `ClearEStop` RPC（v0.3）解除，或显式
-/// `--allow-empty-latch` opt-in（首次部署 / bring-up）"。
+/// 方应拒启动 + 报"需 `ClearEStop` control action（v0.3 A1 control-plane
+/// slice）解除，或显式 `--allow-empty-latch` opt-in（首次部署 / bring-up）"。
 ///
 /// # Errors
 ///
@@ -94,8 +97,8 @@ pub fn load_estop_latch(path: &Path) -> io::Result<bool> {
 pub enum MissingLatchPolicy {
     /// **严格模式**（生产默认，`docs/00_design.md` §6.7 #3 实施）：primary
     /// 跟 backup 都不存在时返 `io::ErrorKind::NotFound`，daemon 启动期拒
-    /// 启动。调用方应当报 "需 `ClearEStop` RPC（v0.3）解除，或
-    /// `--allow-empty-latch` CLI 显式 opt-in"。
+    /// 启动。调用方应当报 "需 `ClearEStop` control action（v0.3 A1
+    /// control-plane slice）解除，或 `--allow-empty-latch` CLI 显式 opt-in"。
     Strict,
     /// **opt-in 模式**：primary 跟 backup 都不存在时返 `Ok(false)`，等价
     /// 于 "首次部署 / 实验场景" 的 `latched=false` 默认。调用方必须显式
@@ -133,8 +136,11 @@ pub fn load_estop_latch_with_mode(path: &Path, mode: MissingLatchPolicy) -> io::
                         // 两份都不存在 — 按 mode 分流（reviewer round 4 阻断 2）：
                         // - Strict（生产默认）：返 NotFound err，daemon 拒启动。
                         //   "rm latch && restart" 不再等价于 "ClearEStop"；§6.7
-                        //   #3 "只能 ClearEStop 解除" 在 v0.3 RPC 落地前由
-                        //   "显式 --allow-empty-latch opt-in" 守门。
+                        //   #3 "只能 ClearEStop control action 解除" 在 v0.3
+                        //   ClearEStop control plane slice 落地前由 "显式
+                        //   --allow-empty-latch opt-in" 守门。control action
+                        //   解释见 docs/CHANGELOG.md 2026-04-26 "v0.3 entry：
+                        //   ClearEStop RPC 文案的控制动作解释"条目。
                         // - AllowEmpty：保留旧 Ok(false) 行为（首次部署 / 单测 /
                         //   bring-up 实验场景）。
                         match mode {
@@ -144,13 +150,13 @@ pub fn load_estop_latch_with_mode(path: &Path, mode: MissingLatchPolicy) -> io::
                                     backup = %bak.display(),
                                     "estop_latch: primary AND backup both missing; \
                                      fail-closed (need --allow-empty-latch opt-in or \
-                                     ClearEStop RPC in v0.3)"
+                                     ClearEStop control action in v0.3)"
                                 );
                                 Err(io::Error::new(
                                     io::ErrorKind::NotFound,
                                     "estop_latch: primary AND backup both missing \
                                      (fail-closed; pass --allow-empty-latch on first \
-                                     deploy or wait for ClearEStop RPC in v0.3)",
+                                     deploy or wait for ClearEStop control action in v0.3)",
                                 ))
                             }
                             MissingLatchPolicy::AllowEmpty => {

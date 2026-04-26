@@ -36,7 +36,7 @@ ls -t docs/handoffs/*.md | head -2 | xargs -I {} less {}
 
 | Milestone | 用途 | 文件 |
 |---|---|---|
-| **v0.3 entry** | v0.2 → v0.3 边界 + 第一批工作项硬契约（ClearEStop RPC / freeze hook + e2e / 禁止项）；reviewer 先用本 handoff 做文档审核再放第一批实现 | [v0.3_entry.md](v0.3_entry.md) |
+| **v0.3 entry** | v0.2 → v0.3 边界 + 第一批工作项硬契约（ClearEStop control-plane slice / freeze hook + e2e / 禁止项）；reviewer 先用本 handoff 做文档审核再放第一批实现 | [v0.3_entry.md](v0.3_entry.md) |
 
 ## 列表（daily session snapshots）
 

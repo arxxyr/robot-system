@@ -41,8 +41,11 @@ unit 会立刻 `failed` —— 所以首次部署必须**先 provision** 一份 
 文件（值 = `0`，等价于 "EStop 未触发"）。之后 strict 守门 "rm latch &&
 restart" 就**不**等价于"清空 EStop"。
 
-> v0.2 没有 `ClearEStop` RPC（v0.3 落地），目前唯一合法的"重设
-> latch=0"路径就是 deploy 时一次性手动 provision；这是显式授权流程。
+> v0.2 没有 `ClearEStop` control action 入口（v0.3 A1 control-plane slice
+> 落地；RPC / Web / 本地维护面板都是同一 action 的 transport 入口，详
+> `docs/CHANGELOG.md` 2026-04-26 "v0.3 entry：`ClearEStop RPC` 文案的控制
+> 动作解释"）。目前唯一合法的"重设 latch=0"路径就是 deploy 时一次性手动
+> provision；这是显式授权流程，不等价于 ClearEStop control action。
 
 ### 推荐流程：直接 provision latch=0（无需 opt-in flag）
 
@@ -124,7 +127,7 @@ systemctl is-active xlerobot-s0-bus2   # 期望 failed (NOT active)
 sudo journalctl -u xlerobot-s0-bus2 -n 8 --no-pager -o cat | grep -E "fail-closed|allow-empty"
                                        # 期望看到 ERROR "fail-closed
                                        # (need --allow-empty-latch opt-in or
-                                       # ClearEStop RPC in v0.3)"
+                                       # ClearEStop control action in v0.3)"
 # 验证完后 provision latch=0（按上面"推荐流程" §3 步骤），重启 strict
 ```
 
@@ -195,5 +198,7 @@ worker thread → `WatchdogSec` 真超时 → systemd `Restart=on-failure`
   v0.3+ 的 unit —— 跟着相应 crate 一起在那个 milestone 加。
 - 动态生成 unit（unit template `@.service`）—— v0.2 单 robot 部署用静
   态 unit 即可；多机器 / 多 robot 部署再考虑模板化。
-- `ClearEStop` RPC method（v0.3）—— 落地后 `--allow-empty-latch` flag
-  应当移除，latch=0 重设只能走 RPC（带 maintainer auth）。
+- `ClearEStop` control-plane slice（v0.3 A1）—— 落地后 `--allow-empty-latch`
+  flag 应当移除，latch=0 重设只能走 `ClearEStop` control action（RPC / Web /
+  本地维护面板都是同一 action 的 transport 入口，带 maintainer+ auth +
+  confirmation + audit；详 `docs/handoffs/v0.3_entry.md` §3.5）。
