@@ -10,6 +10,54 @@
 
 ---
 
+## 2026-04-27 · `docs/00_design.md` ClearEStop control action 术语澄清（**状态：已回写 / errata**）
+
+### 背景
+
+v0.3 A1 开工复核时，reviewer 多次指出 "`ClearEStop RPC`" 的字面写法容易
+被误读为 "只有 gRPC 这一种传输协议能解除 EStop"，或者把 `EStop` 与
+`ClearEStop` 两条相反动作混成一条链路。此前
+`docs/CHANGELOG.md` 2026-04-26 "v0.3 entry：`ClearEStop RPC` 文案的控制
+动作解释" 已做解释登记；本次把该解释以 errata 形式回写到冻结正文，避免后
+续实现阶段继续犯错。
+
+### 回写内容
+
+- `docs/00_design.md` §5.2 `ClearEStopCommand` 注释补指针：字段仍是
+  `CommandMeta meta + string confirmation`，但读者需看 §6.6.1 的
+  `ClearEStop action` 澄清。
+- `docs/00_design.md` §5.3 `rpc ClearEStop` 注释补充：这是
+  `ClearEStop action` 的首个 transport，且仍独立于 `ClearError`。
+- `docs/00_design.md` §6.6 EStop latch 规则从"只能被 `ClearEStop RPC`
+  解除"澄清为"只能被 `ClearEStop control action` 解除（首个 transport 是
+  maintainer+ 的 `rpc ClearEStop`）"。
+- 新增 `docs/00_design.md` §6.6.1 "ClearEStop 术语澄清（errata）"：
+  - `ClearEStop` 是安全控制动作，不是 gRPC 传输协议本身。
+  - Web 管理界面 / 本地维护面板等未来入口必须复用同一个 action handler
+    与同一套 maintainer+ / confirmation / idempotency /
+    `TorqueOffConfirmed` / fsync / audit guard。
+  - `EStop` 与 `ClearEStop` 是相反方向：`EStop` 置 latch=true 并停输出；
+    `ClearEStop` 授权后确认 `TorqueOffConfirmed`，fsync latch=false，
+    更新 guard，调用 `clear_safety_latch()`，再返回 `Ack`。
+  - 物理急停按钮松开 / 旋出、`rm latch + restart`、deploy provision 都不
+    等价于 `ClearEStop`。
+
+### 不改变的内容
+
+- 不改 `CommandMeta` / `ClearEStopCommand` wire 字段。
+- 不改 `RobotControl` 方法集。
+- 不放宽 §6.7 #3；A1 完成前仍只能宣称"代码层面到位"，不能宣称
+  "`ClearEStop` 真闭环 / #3 真锁住"。
+- 不引入新的 transport；A1 仍按 v0.3 entry 拍板，先落
+  `robot-rpc` 的最小 `ClearEStop` endpoint。
+
+### 审阅人
+
+reviewer（用户）— 要求将 `ClearEStop control action` 写入 design errata，
+避免 A1 实现阶段再次误读。
+
+---
+
 ## 2026-04-26 · v0.3 A2：§6.7 #2 "systemd 是最外层看门狗" 真宣称升级（**状态：偏离 / 实施完成 + 真机 PASS**）
 
 ### 背景

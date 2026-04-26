@@ -907,7 +907,7 @@ message CommandMeta {
 message SetEnabledCommand         { CommandMeta meta = 1; bool   enabled = 2; }
 message EStopCommand              { CommandMeta meta = 1; string estop_reason = 2; }   // 机器人-侧原因
 message ClearErrorCommand         { CommandMeta meta = 1; }
-message ClearEStopCommand         { CommandMeta meta = 1; string confirmation = 2; }   // 人工确认串
+message ClearEStopCommand         { CommandMeta meta = 1; string confirmation = 2; }   // 人工确认串；见 §6.6.1 的 ClearEStop action 澄清
 message InvokeTaskCommand         { CommandMeta meta = 1; string task_name = 2; bytes task_payload = 3; }
 message CancelTaskCommand         { CommandMeta meta = 1; TaskHandleRef handle = 2; }
 message ReloadCalibrationCommand  { CommandMeta meta = 1; }
@@ -937,7 +937,7 @@ service RobotControl {
     rpc SetEnabled       (SetEnabledCommand)        returns (Ack);
     rpc EStop            (EStopCommand)             returns (Ack);
     rpc ClearError       (ClearErrorCommand)        returns (Ack);
-    rpc ClearEStop       (ClearEStopCommand)        returns (Ack);    // 独立于 ClearError
+    rpc ClearEStop       (ClearEStopCommand)        returns (Ack);    // 独立于 ClearError；这是 ClearEStop action 的首个 transport
     rpc InvokeTask       (InvokeTaskCommand)        returns (TaskHandle);
     rpc CancelTask       (CancelTaskCommand)        returns (Ack);
     rpc GetTaskStatus    (TaskHandleRef)            returns (TaskStatus);
@@ -1122,10 +1122,21 @@ EStop 来源：
     S0 watchdog  → 内部 → latch FAULT（非 EStop，可 ClearError）
 
 EStop latch 持久化到 /var/lib/robot/<robot_id>/estop_latch：
-    - 只能被 ClearEStop RPC 解除（maintainer+ 权限）
+    - 只能被 ClearEStop control action 解除（首个 transport 是 maintainer+ 的 rpc ClearEStop）
     - 重启 S0 不清除
     - 磁盘损坏导致读不到 → 启动即拒绝进入 READY，进入 SAFE 等人工介入
 ```
+
+### 6.6.1 ClearEStop 术语澄清（errata）
+
+`ClearEStop` 是一个安全控制动作（control action），不是 gRPC 这一种传输协议本身。`rpc ClearEStop` 是该动作的首个 transport adapter；未来 Web 管理界面 / 本地维护面板等入口也必须落到同一个 `ClearEStop` action handler，走同一套 maintainer+ / confirmation / idempotency / `TorqueOffConfirmed` / fsync / audit guard，不得开旁路。
+
+`EStop` 与 `ClearEStop` 是相反方向：
+
+- `EStop`：置 `latch=true`，fsync 持久化，进入 Safe / 停输出。
+- `ClearEStop`：显式授权后，S0 先确认 `TorqueOffConfirmed`，再 fsync `latch=false`，更新内存 guard，调用 `clear_safety_latch()`，最后返回 `Ack`。
+
+物理急停按钮松开 / 旋出只表示物理装置复位，不自动清软件 latch，也不自动 enable。`rm latch + restart` / deploy provision 不等价于 `ClearEStop`。
 
 ### 6.7 不变量（系统级保证）
 
