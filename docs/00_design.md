@@ -895,11 +895,11 @@ impl<T: 'static> RtSnapshotPublisher<T> {
 
 ```proto
 message CommandMeta {
-    string request_id      = 1;   // UUIDv7，幂等键
+    string request_id      = 1;   // UUIDv7；correlation / audit only（每次 retry 改变，详 §6.6.2 errata）
     string source          = 2;   // "cli.loosqk" / "web.ui"
     AuthContext auth       = 3;   // token / mTLS cert fingerprint
     uint64 timeout_ms      = 4;   // 客户端-侧相对超时，不依赖时钟同步
-    string idempotency_key = 5;
+    string idempotency_key = 5;   // 幂等键（跨 retry 稳定；详 §6.6.2 errata）
     bool   dry_run         = 6;
     string audit_reason    = 7;   // 审计日志（"who/why"）
 }
@@ -1137,6 +1137,24 @@ EStop latch 持久化到 /var/lib/robot/<robot_id>/estop_latch：
 - `ClearEStop`：显式授权后，S0 先确认 `TorqueOffConfirmed`，再 fsync `latch=false`，更新内存 guard，调用 `clear_safety_latch()`，最后返回 `Ack`。
 
 物理急停按钮松开 / 旋出只表示物理装置复位，不自动清软件 latch，也不自动 enable。`rm latch + restart` / deploy provision 不等价于 `ClearEStop`。
+
+### 6.6.2 `CommandMeta.request_id` vs `idempotency_key` 角色澄清（errata）
+
+§5.2 `CommandMeta` 旧版注释把 `request_id` 写成"UUIDv7，幂等键"——这是错的，会让实现端把每次 retry 改变的 `request_id` 当 cache key 而误杀合法 retry。冻结正文与 v0.3 A1 实现的真正契约是：
+
+- **`request_id` (UUIDv7)** = correlation / audit。**每次 retry 必须重新生成**（客户端侧），用于：
+  - gRPC client ↔ gateway ↔ daemon 跨进程链路 correlation；
+  - audit log / recorder / journal trace（按 UUIDv7 时间字段排序）；
+  - daemon 端内部 RR pending response 匹配。
+- **`idempotency_key`** = **真正的幂等键**，**跨 retry 稳定**（客户端侧），用于：
+  - gateway 进程内 idempotency cache 去重 / replay；
+  - 同 `idempotency_key` + 不同 payload 必须拒绝（防复用错误请求的 cached Ack）；
+  - 客户端重试时**复用同一 `idempotency_key`** + **生成新 `request_id`**（标准模式）。
+
+两者**不能**混用：把 `request_id` 当 cache key 会让任何重试都看似新请求；把 `idempotency_key` 当 audit correlation 会让 audit trace 在重试场景下塌陷成同一条目。
+
+实现层 fingerprint helper 必须**显式排除** `request_id` 和 `timeout_ms`：详
+[`crates/robot-rpc/src/clear_estop.rs::clear_estop_idempotency_fingerprint`]。
 
 ### 6.7 不变量（系统级保证）
 

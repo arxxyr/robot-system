@@ -10,6 +10,97 @@
 
 ---
 
+## 2026-04-27 · v0.3 A1-1 (3/3) robot-rpc / tonic / prost / uuid / blake3 依赖白名单登记（**状态：登记**）
+
+### 背景
+
+A1-1 (3/3) commit `7c9362f` 引入了 robot-rpc crate 跟外部 RPC 依赖（tonic
+0.12 / prost 0.13 / uuid 1.10 / blake3 / tonic-build 0.12 /
+protoc-bin-vendored 3）。docs/CHANGELOG.md 2026-04-22 "workspace runtime
+依赖白名单机制"要求新外部依赖在偏离登记里写明 scope + 边界，本条补登
+记（reviewer A1-1 (3/3) round 2 阻断 3）。
+
+### Scope
+
+- **仅 robot-rpc crate** link 这些依赖；其它 crate（robot-msg /
+  robot-transport / robot-s0 / robot-s1 / robot-tests / robot-cli /
+  robot-core / robot-health / robot-logging / robot-adapters/* /
+  robot-rpc 之外的 v0.5+ 新 crate）一律不允许直接 link tonic / prost /
+  uuid / blake3 / tonic-build / protoc-bin-vendored。
+- **生产 release `s0_daemon` binary 0 robot_rpc / tonic / prost 符号**
+  —— 已用 `strings target/release/s0_daemon | grep -oE "robot_rpc|tonic::|::tonic|prost::|::prost|robot::control"` 验证。
+
+### 各依赖的引入理由
+
+| 依赖 | 版本 | 用途 |
+|---|---|---|
+| `tonic` | 0.12 | gRPC server runtime（A1-3 真起 server 时；A1-1 仅生成 server trait） |
+| `prost` | 0.13 | Protobuf runtime（tonic 必带） |
+| `tonic-build` | 0.12 | proto codegen（仅 robot-rpc/build.rs；非 runtime） |
+| `protoc-bin-vendored` | 3 | vendored protoc binary（避免 host 装 protoc；跟 vendor flatc 同款隔离策略） |
+| `uuid` | 1.10 | UUIDv7 验证 `CommandMeta.request_id`（A1 fake token；correlation/audit） |
+| `blake3` | workspace 已有（robot-msg 用） | idempotency fingerprint（reviewer A1-1 (3/3) round 2 阻断 1 修正：排除 request_id） |
+
+### 不引入
+
+- mTLS / OIDC / JWT 库（A1 fake token；推 v0.5+）。
+- async runtime（tonic 默认 tokio；A1-1 (3/3) **不**起 server binary，
+  tokio 不进 runtime path）。
+- gRPC client（tonic-build `build_client(false)`；A1-3 按需开）。
+
+### 影响面
+
+- 不改 `docs/00_design.md` §4.2 robot-core 零 runtime 依赖原则。
+- 不改 frozen FlatBuffers schema / iceoryx2 服务 attribute 体系。
+- robot-rpc Cargo.toml 顶部注释跟本条登记互相引用。
+- A1 land 后任何"在其它 crate link tonic / prost"的 PR 视为白名单违反，
+  按 reviewer 复核流程否决。
+
+### 审阅人
+
+reviewer（用户）— A1-1 (3/3) round 2 阻断 3 闭环。
+
+---
+
+## 2026-04-27 · `docs/00_design.md` §5.2 `request_id` vs `idempotency_key` 角色 errata（**状态：已回写 / errata**）
+
+### 背景
+
+A1-1 (3/3) commit `7c9362f` 引入 robot-rpc 端 idempotency cache 时 reviewer
+发现 `docs/00_design.md` §5.2 frozen 正文把 `CommandMeta.request_id` 注释为
+"UUIDv7，幂等键"，这跟当前拍板和实现都冲突：
+
+- 实现端 `crates/robot-rpc/src/idempotency.rs` 用 `idempotency_key` 作
+  cache key。
+- reviewer A1-1 (3/3) round 2 阻断 1 明确：`request_id` 是 correlation /
+  audit-only，**每次 retry 必须改变**；`idempotency_key` 才是跨 retry
+  稳定的真幂等键。
+- A1-2 / A1-3 接班人若按旧注释把 `request_id` 当 cache key 会误杀合法
+  retry（同 `idempotency_key` + 新 `request_id` 走 Conflict）。
+
+### 回写内容
+
+- `docs/00_design.md` §5.2 `CommandMeta.request_id` 注释从 "UUIDv7，幂
+  等键" 改成 "UUIDv7；correlation / audit only（每次 retry 改变，详
+  §6.6.2 errata）"。
+- `docs/00_design.md` §5.2 `CommandMeta.idempotency_key` 注释从空白补成
+  "幂等键（跨 retry 稳定；详 §6.6.2 errata）"。
+- 新增 `docs/00_design.md` §6.6.2 "`CommandMeta.request_id` vs
+  `idempotency_key` 角色澄清（errata）"：明文两者用途、retry 模式、
+  fingerprint helper 必须排除 `request_id` / `timeout_ms`。
+
+### 不改变的内容
+
+- 不改 `CommandMeta` proto 字段 / 字段编号 / wire format。
+- 不改 `RobotControl` 方法集。
+- 不放宽 §6.7 #3。
+
+### 审阅人
+
+reviewer（用户）— A1-1 (3/3) round 2 阻断 2 闭环。
+
+---
+
 ## 2026-04-27 · v0.3 Phase B：policy/action backend + robot profile matrix 口径澄清（**状态：解释登记**）
 
 ### 背景

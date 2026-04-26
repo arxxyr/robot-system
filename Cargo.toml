@@ -31,8 +31,9 @@ members = [
 #   crates/robot-recorder            # record/replay
 #
 # robot-rpc v0.3 A1：仅 ClearEStop control-plane slice + 全纯单测；**不**
-# 起 server binary（reviewer A1-1 拍板硬边界）。Phase B 的 B3 才扩展完整
-# §5.3 RPC gateway（task / stream / S1 coordinator 交互等）。
+# 起 server binary（reviewer A1-1 拍板硬边界）。Phase B 的 B4 才扩展完整
+# §5.3 RPC gateway（task / stream / S1 coordinator 交互等；最新 handoff
+# 从 B3 改为 B4）。
 
 [workspace.package]
 version      = "0.1.2"
