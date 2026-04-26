@@ -155,8 +155,9 @@ pub struct LoadedConfig {
     pub identity: IdentityFingerprint,
 }
 
-/// 加载错误。`thiserror` derive 让 `s0_daemon` 可以 `eprintln!("{e}")` 直接拿到
-/// 人类可读消息。
+/// 加载错误。`thiserror` derive 让 `s0_daemon` 可以 `tracing::error!(?err)`
+/// 拿到结构化字段 + Display 人类可读消息（详 [`docs/logging.md`](../../../docs/logging.md)
+/// 字段使用约定）。
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigLoadError {
     #[error("read config file {path}: {source}")]

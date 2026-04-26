@@ -274,8 +274,8 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     ///    tick）→ 重写，至多 [`SYNC_GOAL_MAX_ATTEMPTS`] 次
     /// 4. 全部重试失败 → 返回 [`FeetechError::SyncGoalReadbackMismatch`]
     ///
-    /// 每次失败 attempt 都 `eprintln!` 打印 write/readback 对比 —— 即便 fix
-    /// 对个别 motor 型号无效，日志也留诊断线索。
+    /// 每次失败 attempt 都走 `tracing::warn!` 打印 write/readback 对比 ——
+    /// 即便 fix 对个别 motor 型号无效，日志也留诊断线索。
     ///
     /// # Errors
     /// - 透传 `sync_read` / `sync_write` 的 [`FeetechError`]（总线通信失败）
@@ -315,16 +315,24 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             match mismatch {
                 None => {
                     if attempt > 1 {
-                        eprintln!(
-                            "feetech sync_goal_to_present: attempt {attempt}/{max} succeeded"
+                        tracing::info!(
+                            attempt,
+                            max_attempts = max,
+                            "feetech sync_goal_to_present: succeeded after retry"
                         );
                     }
                     return Ok(());
                 }
                 Some((id, wanted, got)) => {
                     let diff = got - wanted;
-                    eprintln!(
-                        "feetech sync_goal_to_present: attempt {attempt}/{max}: motor id={id} Goal readback mismatch (wrote={wanted}, read={got}, diff={diff})"
+                    tracing::warn!(
+                        motor_id = id,
+                        attempt,
+                        max_attempts = max,
+                        wrote = wanted,
+                        got,
+                        diff,
+                        "feetech sync_goal_to_present: Goal readback mismatch"
                     );
                     if attempt == max {
                         return Err(FeetechError::SyncGoalReadbackMismatch {
@@ -352,7 +360,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     /// 透传 [`Self::sync_goal_to_present`] 的错误。
     pub fn hold_current_position(&mut self) -> Result<(), RobotError> {
         self.sync_goal_to_present().map_err(|e| {
-            eprintln!("feetech hold_current_position: {e}");
+            tracing::error!(?e, "feetech hold_current_position failed");
             RobotError::from(e)
         })
     }
@@ -379,7 +387,14 @@ impl<T: SerialTransport> FeetechAdapter<T> {
                         break;
                     }
                     Err(e) => {
-                        eprintln!("feetech {label} {name} attempt {attempt}/{max_attempts}: {e}");
+                        tracing::warn!(
+                            joint = %name,
+                            attempt,
+                            max_attempts,
+                            label,
+                            ?e,
+                            "feetech torque_enable write retry"
+                        );
                         last_err = Some(e);
                         if attempt < max_attempts {
                             sleep(TORQUE_ENABLE_RETRY_DELAY);
@@ -394,7 +409,12 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             }
         }
         if let Some((name, e)) = first_failure {
-            eprintln!("feetech {label}: first failing motor {name}: {e}");
+            tracing::error!(
+                joint = %name,
+                label,
+                ?e,
+                "feetech torque_enable: first failing motor"
+            );
             return Err(RobotError::from(e));
         }
         Ok(())
@@ -460,7 +480,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         self.joint_ids.reserve(self.joint_names.len());
         for name in &self.joint_names {
             let id = self.bus.motor_id(name).map_err(|e| {
-                eprintln!("feetech connect: motor_id({name}): {e}");
+                tracing::error!(joint = %name, ?e, "feetech connect: motor_id lookup failed");
                 RobotError::from(e)
             })?;
             self.joint_ids.push(id);
@@ -472,10 +492,12 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             for (i, cal) in self.calibrations.iter().enumerate() {
                 let bus_id = self.joint_ids[i];
                 if cal.id != bus_id {
-                    eprintln!(
-                        "feetech connect: calibration[{i}] id={cal_id} != bus motor id={bus_id} for joint {name}",
-                        cal_id = cal.id,
-                        name = self.joint_names[i]
+                    tracing::error!(
+                        joint = %self.joint_names[i],
+                        index = i,
+                        calibration_id = cal.id,
+                        bus_motor_id = bus_id,
+                        "feetech connect: calibration motor id mismatch with bus"
                     );
                     return Err(RobotError::InvalidParameter(
                         "feetech: calibration motor id mismatch",
@@ -505,13 +527,21 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         self.bus
             .sync_read_by_id_into("Present_Position", &self.joint_ids, &mut self.pos_raw)
             .map_err(|e| {
-                eprintln!("feetech read_state Present_Position: {e}");
+                tracing::warn!(
+                    register = "Present_Position",
+                    ?e,
+                    "feetech read_state failed"
+                );
                 RobotError::from(e)
             })?;
         self.bus
             .sync_read_by_id_into("Present_Velocity", &self.joint_ids, &mut self.vel_raw)
             .map_err(|e| {
-                eprintln!("feetech read_state Present_Velocity: {e}");
+                tracing::warn!(
+                    register = "Present_Velocity",
+                    ?e,
+                    "feetech read_state failed"
+                );
                 RobotError::from(e)
             })?;
 
@@ -534,9 +564,9 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             // 不报错，因为 state machine 的 holding command 也走这条路；只在
             // 非 stop 模式给警告
             if !matches!(cmd.mode, ControlMode::Stop) {
-                eprintln!(
-                    "feetech write_command: ControlMode {:?} not yet implemented (v0.2 only Position)",
-                    cmd.mode
+                tracing::warn!(
+                    mode = ?cmd.mode,
+                    "feetech write_command: ControlMode not yet implemented (v0.2 only Position)"
                 );
             }
             return Ok(());
@@ -561,7 +591,11 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         self.bus
             .sync_write_by_id("Goal_Position", &self.cmd_entries)
             .map_err(|e| {
-                eprintln!("feetech write_command sync_write Goal_Position: {e}");
+                tracing::warn!(
+                    register = "Goal_Position",
+                    ?e,
+                    "feetech write_command sync_write failed"
+                );
                 RobotError::from(e)
             })
     }
@@ -585,7 +619,13 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             self.bus
                 .write("Operating_Mode", name, op_mode_value)
                 .map_err(|e| {
-                    eprintln!("feetech set_mode {name}: {e}");
+                    tracing::error!(
+                        joint = %name,
+                        register = "Operating_Mode",
+                        value = op_mode_value,
+                        ?e,
+                        "feetech set_mode write failed"
+                    );
                     RobotError::from(e)
                 })?;
         }
@@ -602,7 +642,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             // 目的：Torque 接上瞬间 target == current → 电机不动，避开 Goal 还
             // 是旧值导致的"飞向 0"风险。
             self.sync_goal_to_present().map_err(|e| {
-                eprintln!("feetech enable(true): sync goal=present: {e}");
+                tracing::error!(?e, "feetech enable(true): sync_goal_to_present failed");
                 RobotError::from(e)
             })?;
             sleep(ENABLE_SYNC_SETTLE);
@@ -627,7 +667,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         // confirm_torque_off 由 SerialIoCtrlClient 下 tick 调
         // `OutputSafetyProbe::read_torque_enable_mask` 验证；本方法只负责下发。
         self.safety_stop_fast().map_err(|e| {
-            eprintln!("feetech safety_stop_fast: {e}");
+            tracing::error!(?e, "feetech safety_stop_fast failed");
             RobotError::from(e)
         })
     }
@@ -667,7 +707,11 @@ impl<T: SerialTransport + 'static> OutputSafetyProbe for FeetechAdapter<T> {
                 &mut self.torque_enable_raw,
             )
             .map_err(|e| {
-                eprintln!("feetech read_torque_enable_mask: {e}");
+                tracing::warn!(
+                    register = "Torque_Enable",
+                    ?e,
+                    "feetech read_torque_enable_mask failed"
+                );
                 RobotError::from(e)
             })?;
         // 解码：== 0 → torque off (false)；其它（== 1 通常）→ torque on (true)。

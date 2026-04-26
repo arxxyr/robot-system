@@ -371,7 +371,7 @@ fn main() {
                 print_help();
                 std::process::exit(0);
             }
-            eprintln!("error: {msg}");
+            tracing::error!(error = %msg, "CLI argument parse failed");
             print_help();
             std::process::exit(2);
         }
@@ -380,7 +380,7 @@ fn main() {
     let resolved = match parsed.resolve() {
         Ok(r) => r,
         Err(msg) => {
-            eprintln!("error: {msg}");
+            tracing::error!(error = %msg, "CLI argument resolve failed");
             std::process::exit(2);
         }
     };
@@ -394,57 +394,58 @@ fn main() {
 fn run(args: &ResolvedArgs) -> Result<(), i32> {
     let t = topics(args);
 
-    eprintln!(
-        "s0_daemon starting:\n  \
-         robot_id={}  hardware_id={}\n  \
-         latch={}\n  \
-         hb_timeout_ms={}  tick_hz={}  strict_rt={}  joints={}  cpu={:?}",
-        args.robot_id,
-        args.hardware_id,
-        args.latch_path.display(),
-        args.heartbeat_timeout_ns / 1_000_000,
-        1_000_000_000 / args.tick_period_ns,
-        args.strict_rt,
-        args.joint_count,
-        args.cpu_affinity,
+    tracing::info!(
+        robot_id = %args.robot_id,
+        hardware_id = %args.hardware_id,
+        latch_path = %args.latch_path.display(),
+        hb_timeout_ms = args.heartbeat_timeout_ns / 1_000_000,
+        tick_hz = 1_000_000_000 / args.tick_period_ns,
+        strict_rt = args.strict_rt,
+        joints = args.joint_count,
+        cpu = ?args.cpu_affinity,
+        "s0_daemon starting"
     );
     if let Some(cfg) = &args.loaded_config {
-        eprintln!(
-            "config       : {} ({} hardware, {} sensor sections)",
-            cfg.source_path.display(),
-            cfg.parsed.hardware.len(),
-            cfg.parsed.sensor.len(),
+        tracing::info!(
+            config_path = %cfg.source_path.display(),
+            hardware_sections = cfg.parsed.hardware.len(),
+            sensor_sections = cfg.parsed.sensor.len(),
+            "config loaded"
         );
     } else {
-        eprintln!("config       : <none> (CLI-only mode; identity is stub)");
+        tracing::info!("config: none (CLI-only mode; identity is stub)");
     }
-    eprintln!("identity     : {}", args.identity);
-    eprintln!("topics:");
-    eprintln!("  sub cmd   : {}", t.sub_command);
-    eprintln!("  sub hb    : {}", t.sub_heartbeat);
-    eprintln!("  sub estop : {}", t.sub_estop);
-    eprintln!("  pub state : {}", t.pub_state);
-    eprintln!("  pub hb    : {}", t.pub_heartbeat);
+    tracing::info!(identity = %args.identity, "identity fingerprint");
+    tracing::info!(
+        sub_cmd = %t.sub_command,
+        sub_hb = %t.sub_heartbeat,
+        sub_estop = %t.sub_estop,
+        pub_state = %t.pub_state,
+        pub_hb = %t.pub_heartbeat,
+        "iceoryx2 topics"
+    );
 
     // ---- 1) EStop latch ----
     if let Err(e) = ensure_latch_parent(&args.latch_path) {
-        eprintln!(
-            "fatal: failed to prepare EStop latch directory for {}: {e}",
-            args.latch_path.display()
+        tracing::error!(
+            latch_path = %args.latch_path.display(),
+            ?e,
+            "fatal: failed to prepare EStop latch directory"
         );
         return Err(1);
     }
     let initial_estop_latched = match load_estop_latch(&args.latch_path) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!(
-                "fatal: failed to load EStop latch {}: {e}",
-                args.latch_path.display()
+            tracing::error!(
+                latch_path = %args.latch_path.display(),
+                ?e,
+                "fatal: failed to load EStop latch"
             );
             return Err(1);
         }
     };
-    eprintln!("initial estop_latched = {initial_estop_latched}");
+    tracing::info!(latched = initial_estop_latched, "initial estop_latched");
 
     // ---- 2) 共享 channel / atomic / slot ----
     let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
@@ -491,17 +492,20 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
             let class = a.info().rt_class;
             let name = a.info().name;
             match class {
-                RtClass::SoftRT => eprintln!(
-                    "fatal: adapter '{name}' is RtClass::SoftRT; SoftRT adapter 应挂 \
-                     s0_io_thread (v0.4)，不能进 ManipulatorAdapter spawn 路径。"
+                RtClass::SoftRT => tracing::error!(
+                    adapter = name,
+                    rt_class = "SoftRT",
+                    "fatal: SoftRT adapter 应挂 s0_io_thread (v0.4)，不能进 ManipulatorAdapter spawn 路径"
                 ),
-                RtClass::HardRT => eprintln!(
-                    "fatal: adapter '{name}' 报告 RtClass::HardRT 但 factory 没走 \
-                     `build_hard_rt`（factory 实现遗漏 RtSafeCtrl + override）。"
+                RtClass::HardRT => tracing::error!(
+                    adapter = name,
+                    rt_class = "HardRT",
+                    "fatal: 报告 HardRT 但 factory 没走 build_hard_rt（factory 实现遗漏 RtSafeCtrl + override）"
                 ),
-                RtClass::SerialRT => eprintln!(
-                    "fatal: adapter '{name}' 报告 RtClass::SerialRT 但 factory 没走 \
-                     `build_serial_rt`（factory 实现遗漏 OutputSafetyProbe + override）。"
+                RtClass::SerialRT => tracing::error!(
+                    adapter = name,
+                    rt_class = "SerialRT",
+                    "fatal: 报告 SerialRT 但 factory 没走 build_serial_rt（factory 实现遗漏 OutputSafetyProbe + override）"
                 ),
             }
             return Err(1);
@@ -578,7 +582,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     ) {
         Ok(h) => h,
         Err(e) => {
-            eprintln!("fatal: spawn_ipc_thread: {e}");
+            tracing::error!(?e, "fatal: spawn_ipc_thread failed");
             return Err(1);
         }
     };
@@ -651,7 +655,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
             ) {
                 Ok(h) => ExecutorHandle::HardRt(h),
                 Err(e) => {
-                    eprintln!("fatal: spawn_rt_thread: {e}");
+                    tracing::error!(?e, "fatal: spawn_rt_thread failed");
                     graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
                     return Err(1);
                 }
@@ -669,7 +673,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
             ) {
                 Ok(h) => ExecutorHandle::SerialRt(h),
                 Err(e) => {
-                    eprintln!("fatal: spawn_serial_io_thread: {e}");
+                    tracing::error!(?e, "fatal: spawn_serial_io_thread failed");
                     graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
                     return Err(1);
                 }
@@ -711,7 +715,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     ) {
         Ok(h) => h,
         Err(e) => {
-            eprintln!("fatal: spawn_pub_thread: {e}");
+            tracing::error!(?e, "fatal: spawn_pub_thread failed");
             graceful_stop(ipc, &wd_stop, wd_handle, Some(executor), None, None);
             return Err(1);
         }
@@ -721,7 +725,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     let io_handle = match spawn_io_thread(IoThreadConfig::default()) {
         Ok(h) => h,
         Err(e) => {
-            eprintln!("fatal: spawn_io_thread: {e}");
+            tracing::error!(?e, "fatal: spawn_io_thread failed");
             graceful_stop(
                 ipc,
                 &wd_stop,
@@ -745,7 +749,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     // ENABLED.Active。跳过 EStop latch 时 estop_latched=true → try_transition 拒绝
     // 进 READY，state 留在 SAFE —— 期望行为。
     if initial_estop_latched {
-        eprintln!("estop_latched = true → not auto-sending Event::Enable");
+        tracing::info!("estop_latched=true → not auto-sending Event::Enable");
     } else {
         let _ = event_tx.send(Event::Enable);
     }
@@ -770,25 +774,25 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     let mut last_report = start;
     loop {
         if SHUTDOWN.load(Ordering::Acquire) {
-            eprintln!("signal received → Event::Stop");
+            tracing::info!("signal received → Event::Stop");
             break;
         }
         if args.smoke_duration.is_some_and(|d| start.elapsed() >= d) {
-            eprintln!("smoke duration elapsed → Event::Stop");
+            tracing::info!("smoke duration elapsed → Event::Stop");
             break;
         }
         let snap = state_rdr.load();
         if matches!(snap.state, S0State::Stopping) {
-            eprintln!("state machine entered STOPPING → exiting main loop");
+            tracing::info!("state machine entered STOPPING → exiting main loop");
             break;
         }
         if last_report.elapsed() >= Duration::from_secs(2) {
-            eprintln!(
-                "heartbeat: state={:?}  guards.estop={}  guards.hb_ok={}  t={:?}",
-                snap.state,
-                snap.guards_summary.estop_latched,
-                snap.guards_summary.heartbeat_ok,
-                start.elapsed(),
+            tracing::info!(
+                state = ?snap.state,
+                "guards.estop" = snap.guards_summary.estop_latched,
+                "guards.hb_ok" = snap.guards_summary.heartbeat_ok,
+                t = ?start.elapsed(),
+                "heartbeat"
             );
             last_report = std::time::Instant::now();
         }
@@ -823,18 +827,20 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     let final_state_snap = state_rdr.load();
     let final_latched = final_state_snap.guards_summary.estop_latched;
     if let Err(e) = save_estop_latch(&args.latch_path, final_latched) {
-        eprintln!(
-            "warn: failed to save EStop latch to {}: {e}",
-            args.latch_path.display()
+        tracing::warn!(
+            latch_path = %args.latch_path.display(),
+            ?e,
+            "failed to save EStop latch"
         );
     } else {
-        eprintln!(
-            "final estop_latched = {final_latched} → persisted to {}",
-            args.latch_path.display()
+        tracing::info!(
+            latched = final_latched,
+            latch_path = %args.latch_path.display(),
+            "final estop_latched persisted"
         );
     }
 
-    eprintln!("s0_daemon: clean shutdown");
+    tracing::info!("s0_daemon: clean shutdown");
     Ok(())
 }
 
@@ -925,9 +931,9 @@ fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
                 cal_paths,
             )
         } else {
-            eprintln!(
-                "fatal: --config {} 内无 [[hardware]] 段，无 adapter 可启动",
-                cfg.source_path.display()
+            tracing::error!(
+                config_path = %cfg.source_path.display(),
+                "fatal: config 内无 [[hardware]] 段，无 adapter 可启动"
             );
             return Err(2);
         }
@@ -945,14 +951,14 @@ fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
 
     // 2) 查 factory
     let Some(factory) = find_factory(&adapter_kind) else {
-        eprintln!(
-            "fatal: 没有名为 '{adapter_kind}' 的 adapter factory。\n\
-             已注册：{:?}\n\
-             检查 robot-s0 features（cargo build --features <combo>）或 \
-             configs/<robot>.toml 里 [[hardware]] adapter 字段拼写。",
-            registered_factories()
+        tracing::error!(
+            adapter_kind = %adapter_kind,
+            registered = ?registered_factories()
                 .map(robot_core::factory::AdapterFactory::name)
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
+            "fatal: 没有名为 '{adapter_kind}' 的 adapter factory。检查 robot-s0 \
+             features (cargo build --features <combo>) 或 configs/<robot>.toml 里 \
+             [[hardware]] adapter 字段拼写"
         );
         return Err(2);
     };
@@ -980,17 +986,17 @@ fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
             Ok(serial_rt) => Ok(BuiltAdapter::SerialRt(serial_rt)),
             Err(robot_core::error::RobotError::Unsupported(_)) => {
                 factory.build(&ctx).map(BuiltAdapter::SoftRt).map_err(|e| {
-                    eprintln!("fatal: adapter '{adapter_kind}' build failed: {e}");
+                    tracing::error!(adapter = %adapter_kind, ?e, "fatal: adapter build failed");
                     1
                 })
             }
             Err(e) => {
-                eprintln!("fatal: adapter '{adapter_kind}' build_serial_rt failed: {e}");
+                tracing::error!(adapter = %adapter_kind, ?e, "fatal: adapter build_serial_rt failed");
                 Err(1)
             }
         },
         Err(e) => {
-            eprintln!("fatal: adapter '{adapter_kind}' build_hard_rt failed: {e}");
+            tracing::error!(adapter = %adapter_kind, ?e, "fatal: adapter build_hard_rt failed");
             Err(1)
         }
     }

@@ -469,6 +469,13 @@ fn execute_normal<A: HardRtAdapter>(
     }
 }
 
+// **RT 边界说明**（§0 / §4.9 RT 铁律）：以下三个 `apply_*` helper 在 RT
+// thread **spawn 后、进入 tick 主循环之前**的 startup setup 阶段执行，
+// 非 hot path。RT 铁律的 "禁 alloc / 禁 tracing" 针对 tick loop 每帧；
+// startup setup 阶段允许一次性 alloc / log（fmt 字段、subscriber dispatch
+// 都只跑一次）。tick loop 内仍**严禁**任何 `tracing::*!` / `eprintln!` /
+// 带 format arg 的日志。
+
 fn apply_rt_prio(cfg: &RtThreadConfig) {
     if let Err(e) = rt_thread_os::set_sched_fifo(cfg.sched_fifo_priority) {
         assert!(
@@ -476,9 +483,10 @@ fn apply_rt_prio(cfg: &RtThreadConfig) {
             "set_sched_fifo(prio={}) failed in strict mode: {e}",
             cfg.sched_fifo_priority
         );
-        eprintln!(
-            "warn: set_sched_fifo(prio={}) failed: {e} — continuing without RT priority",
-            cfg.sched_fifo_priority
+        tracing::warn!(
+            sched_fifo_priority = cfg.sched_fifo_priority,
+            ?e,
+            "set_sched_fifo failed — continuing without RT priority"
         );
     }
 }
@@ -486,7 +494,7 @@ fn apply_rt_prio(cfg: &RtThreadConfig) {
 fn apply_mlockall(cfg: &RtThreadConfig) {
     if let Err(e) = rt_thread_os::mlockall() {
         assert!(!cfg.strict_rt, "mlockall failed in strict mode: {e}");
-        eprintln!("warn: mlockall failed: {e} — continuing without memlock");
+        tracing::warn!(?e, "mlockall failed — continuing without memlock");
     }
 }
 
@@ -497,7 +505,7 @@ fn apply_cpu_pin(cfg: &RtThreadConfig) {
             !cfg.strict_rt,
             "pin_to_cpu({cpu}) failed in strict mode: {e}"
         );
-        eprintln!("warn: pin_to_cpu({cpu}) failed: {e} — continuing unpinned");
+        tracing::warn!(cpu, ?e, "pin_to_cpu failed — continuing unpinned");
     }
 }
 

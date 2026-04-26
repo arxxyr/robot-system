@@ -56,10 +56,10 @@ impl FeetechFactory {
                 .collect::<Result<_, _>>()
                 .map_err(|_| RobotError::InvalidParameter("feetech: joint count > 255"))?
         } else if ctx.motor_ids.len() != ctx.joint_names.len() {
-            eprintln!(
-                "fatal: feetech factory: motor_ids.len()={} != joint_names.len()={}",
-                ctx.motor_ids.len(),
-                ctx.joint_names.len()
+            tracing::error!(
+                motor_ids_len = ctx.motor_ids.len(),
+                joint_names_len = ctx.joint_names.len(),
+                "feetech factory: motor_ids length mismatch joints"
             );
             return Err(RobotError::InvalidParameter(
                 "feetech: motor_ids length mismatch joints",
@@ -71,7 +71,7 @@ impl FeetechFactory {
         // ---- 3) 打开真串口 ----
         let transport =
             RealSerialTransport::open(Path::new(address), DEFAULT_BAUDRATE).map_err(|e| {
-                eprintln!("fatal: feetech open serial {address}: {e}");
+                tracing::error!(bus_address = %address, ?e, "feetech open serial failed");
                 RobotError::from(e)
             })?;
 
@@ -79,13 +79,13 @@ impl FeetechFactory {
         let mut motors = HashMap::with_capacity(ctx.joint_names.len());
         for (name, id) in ctx.joint_names.iter().zip(motor_ids.iter()) {
             let motor = Motor::new(*id).map_err(|e| {
-                eprintln!("fatal: feetech motor id={id}: {e}");
+                tracing::error!(motor_id = id, joint = %name, ?e, "feetech Motor::new failed");
                 RobotError::from(e)
             })?;
             motors.insert(name.clone(), motor);
         }
         let bus = FeetechBus::new(transport, motors).map_err(|e| {
-            eprintln!("fatal: feetech bus new: {e}");
+            tracing::error!(?e, "feetech FeetechBus::new failed");
             RobotError::from(e)
         })?;
 
@@ -98,9 +98,10 @@ impl FeetechFactory {
             Vec::new()
         } else {
             let merged = load_and_merge(ctx.calibration_paths).map_err(|e| {
-                eprintln!(
-                    "fatal: feetech calibration load_and_merge {:?}: {e}",
-                    ctx.calibration_paths
+                tracing::error!(
+                    calibration_paths = ?ctx.calibration_paths,
+                    ?e,
+                    "feetech calibration load_and_merge failed"
                 );
                 RobotError::from(e)
             })?;
@@ -109,10 +110,11 @@ impl FeetechFactory {
                 if let Some(cal) = merged.get(name) {
                     out.push(*cal);
                 } else {
-                    eprintln!(
-                        "fatal: feetech calibration: joint '{name}' not found in {:?} (available: {:?})",
-                        ctx.calibration_paths,
-                        merged.keys().collect::<Vec<_>>()
+                    tracing::error!(
+                        joint = %name,
+                        calibration_paths = ?ctx.calibration_paths,
+                        available = ?merged.keys().collect::<Vec<_>>(),
+                        "feetech calibration: joint not found in any file"
                     );
                     return Err(RobotError::InvalidParameter(
                         "feetech: calibration missing motor",
@@ -133,18 +135,19 @@ impl FeetechFactory {
             bus,
         )
         .map_err(|e| {
-            eprintln!("fatal: feetech adapter new: {e}");
+            tracing::error!(?e, "feetech FeetechAdapter::new failed");
             RobotError::from(e)
         })?;
 
-        eprintln!(
-            "feetech factory{}: built '{}' adapter on {} (motors {} | ids {:?} | calibration={})",
+        tracing::info!(
+            adapter = "feetech_sts3215",
             path_kind,
-            ctx.instance_name,
-            address,
-            ctx.joint_names.len(),
-            motor_ids,
-            if has_calibration { "loaded" } else { "none" }
+            instance = %ctx.instance_name,
+            bus_address = %address,
+            motors = ctx.joint_names.len(),
+            motor_ids = ?motor_ids,
+            calibration = if has_calibration { "loaded" } else { "none" },
+            "feetech factory: built adapter"
         );
         Ok(adapter)
     }

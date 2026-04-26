@@ -100,7 +100,10 @@ fn run_loop(
         let overdue = now.saturating_sub(cur_hb) > cfg.heartbeat_timeout_ns;
         if overdue && armed {
             if let Err(e) = event_tx.try_send(Event::HeartbeatTimeout) {
-                eprintln!("watchdog: event channel full/closed, dropping: {e}");
+                tracing::warn!(
+                    ?e,
+                    "watchdog: event channel full/closed, dropping HeartbeatTimeout"
+                );
             }
             armed = false; // 去抖：直到下次看到新 hb 才重新 armed
         }

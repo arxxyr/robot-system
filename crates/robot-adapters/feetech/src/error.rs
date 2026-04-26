@@ -151,7 +151,8 @@ impl From<FeetechError> for robot_core::error::RobotError {
     ///
     /// `RobotError` v0.2 设计为零堆分配（`robot-core/src/error.rs` 头部约束），
     /// 所有变体只能持 `&'static str`。映射在此**故意丢失细节**，富信息应在
-    /// adapter 层 `eprintln!` / `tracing::error!(?e)` 打印 `FeetechError` 原文。
+    /// adapter 层 `tracing::error!(?e, ...)` 打印 `FeetechError` 原文（task #16
+    /// 迁移后；字段使用约定详 `docs/logging.md`）。
     fn from(e: FeetechError) -> Self {
         use FeetechError as F;
         match e {

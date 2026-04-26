@@ -75,10 +75,11 @@ pub fn load_estop_latch(path: &Path) -> io::Result<bool> {
                 // primary 不存在：试 backup
                 match read_single(&bak) {
                     Ok(v) => {
-                        eprintln!(
-                            "warn: estop_latch primary {} missing, restored from backup {}: latched={v}",
-                            path.display(),
-                            bak.display()
+                        tracing::warn!(
+                            primary = %path.display(),
+                            backup = %bak.display(),
+                            latched = v,
+                            "estop_latch: primary missing, restored from backup"
                         );
                         // 自愈：把 backup 的合法值回写 primary（best-effort，不报错）
                         let _ = save_single_atomic(path, v);
@@ -95,17 +96,20 @@ pub fn load_estop_latch(path: &Path) -> io::Result<bool> {
                 // primary 文件损坏：试 backup
                 match read_single(&bak) {
                     Ok(v) => {
-                        eprintln!(
-                            "warn: estop_latch primary {} corrupted, restored from backup {}: latched={v}",
-                            path.display(),
-                            bak.display()
+                        tracing::warn!(
+                            primary = %path.display(),
+                            backup = %bak.display(),
+                            latched = v,
+                            "estop_latch: primary corrupted, restored from backup"
                         );
                         let _ = save_single_atomic(path, v);
                         Ok(v)
                     }
                     Err(e_bak) => {
-                        eprintln!(
-                            "fatal: estop_latch primary corrupted ({e_primary}), backup also bad ({e_bak}); both files unsalvageable"
+                        tracing::error!(
+                            err_primary = %e_primary,
+                            err_backup = %e_bak,
+                            "estop_latch: primary corrupted, backup also bad; both unsalvageable"
                         );
                         // 同时坏 → 返回 InvalidData，调用方按 Fault 处理（**不**默认 false）
                         Err(io::Error::new(
