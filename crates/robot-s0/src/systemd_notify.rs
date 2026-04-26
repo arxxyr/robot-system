@@ -84,10 +84,16 @@ pub fn status(text: &str) {
 #[must_use = "返回 Option<JoinHandle> 调用方应保留以便 graceful shutdown 时 join"]
 pub fn spawn_watchdog_thread(stop: Arc<AtomicBool>) -> Option<JoinHandle<()>> {
     let usec: u64 = std::env::var("WATCHDOG_USEC").ok()?.parse().ok()?;
+    spawn_watchdog_thread_with_usec(stop, usec)
+}
+
+/// 内部 helper：拿 `usec` 显式入参，不读 env。`spawn_watchdog_thread` 通过它
+/// 实现，单测也通过它直接验证（避免 env mutation 并发竞争）。
+fn spawn_watchdog_thread_with_usec(stop: Arc<AtomicBool>, usec: u64) -> Option<JoinHandle<()>> {
     if usec == 0 {
         return None;
     }
-    // ping 间隔 = WATCHDOG_USEC / 2，给 systemd 留 50% 余量吸收 jitter。
+    // ping 间隔 = usec / 2，给 systemd 留 50% 余量吸收 jitter。
     let interval = Duration::from_micros(usec / 2);
     let handle = thread::Builder::new()
         .name("s0_systemd_wd".into())
@@ -105,19 +111,30 @@ pub fn spawn_watchdog_thread(stop: Arc<AtomicBool>) -> Option<JoinHandle<()>> {
 // 内部
 // ============================================================================
 
-/// 发送一条 notify 消息。`NOTIFY_SOCKET` 未设置 / abstract socket 时 no-op。
+/// 发送一条 notify 消息。读 `NOTIFY_SOCKET` env，未设置时 no-op。
+///
+/// 内部 dispatch 到 [`send_message_to`]：测试可以直接调 `send_message_to`
+/// 验证 socket 行为，**不动 env**，避免单测之间并发竞争（详 reviewer
+/// 复验：`--test-threads=8` 循环 20 轮第 7 轮 status_payload_formatting
+/// 收不到 datagram；root cause = 多 test 同时改 NOTIFY_SOCKET）。
 fn send_message(payload: &str) -> std::io::Result<()> {
     let socket_path = match std::env::var("NOTIFY_SOCKET") {
         Ok(p) if !p.is_empty() => p,
         _ => return Ok(()), // 不在 systemd 下：no-op
     };
+    send_message_to(payload, &socket_path)
+}
+
+/// 内部 helper：拿 `socket_path` 显式入参，**不读 env**。abstract socket
+/// (`@<name>`) silent skip 跟 [`send_message`] 一致。
+fn send_message_to(payload: &str, socket_path: &str) -> std::io::Result<()> {
     if socket_path.starts_with('@') {
         // Abstract namespace socket（Linux 扩展）。本实现暂不支持；systemd
         // 240+ 默认 path-based，主流环境无影响。详 module-level 文档。
         return Ok(());
     }
     let sock = UnixDatagram::unbound()?;
-    sock.send_to(payload.as_bytes(), &socket_path).map(drop)
+    sock.send_to(payload.as_bytes(), socket_path).map(drop)
 }
 
 // ============================================================================
@@ -128,109 +145,182 @@ fn send_message(payload: &str) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use std::os::unix::net::UnixDatagram;
+    use std::sync::Mutex;
 
-    /// `NOTIFY_SOCKET` 未设置 → ready/watchdog/stopping/status 都 no-op + Ok。
-    #[test]
-    fn no_notify_socket_silent_noop() {
-        // 保险：用 SAFETY 临时清掉这个 env 防止意外注入污染测试。
-        // SAFETY: 在测试线程内同步操作 env，不与其它线程并发。生产代码不该这样做，
-        // 但单测里只有 main + spawned test thread，可以接受。
-        unsafe {
-            std::env::remove_var("NOTIFY_SOCKET");
-        }
-        // 这些都不应 panic 也不应 Err（目标语义：daemon 在 dev runbook 跑无副作用）。
-        ready();
-        watchdog();
-        stopping();
-        status("test");
+    // ========================================================================
+    // 全局 env 串行化锁
+    // ========================================================================
+    //
+    // **背景**（reviewer 复验，commit 8e5a238 后阻断）：本模块原始测试都直接
+    // 改全局 `NOTIFY_SOCKET` / `WATCHDOG_USEC` env。Cargo 默认并行测试
+    // (`--test-threads=N`)，多个测试同时改同一个 env → A 设的 NOTIFY_SOCKET
+    // 被 B 覆盖 / 移除，A 的 send_message 落到 B 的 socket，A 收不到 datagram。
+    // 用户实测 `cargo test -p robot-s0 systemd_notify -- --test-threads=8`
+    // 循环 20 轮第 7 轮 `status_payload_formatting` 失败。
+    //
+    // **修复**（双管齐下）：
+    // 1. 拆出 [`send_message_to`] / [`spawn_watchdog_thread_with_usec`] 内部
+    //    helper（不读 env），socket 行为测试改走 helper，零 env 竞争。
+    // 2. 仍要测 env 探测的少量 case（`no_notify_socket_silent_noop` /
+    //    `abstract_socket_silent_skip` / `watchdog_thread_returns_none_without_usec`
+    //    / `ready_via_env_round_trip`）通过 `ENV_LOCK` 全局 Mutex 串行化。
+    //
+    // PoisonError handle: 任一 test panic 时锁中毒，`.into_inner()` 直接拿
+    // guard。每个 test 独立设/清 env，不依赖前一 test 的状态，可接受。
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// 启动一个临时 UNIX datagram socket 模拟 systemd 接收端，验证
-    /// `READY=1` payload 真的发出去了。
-    #[test]
-    fn ready_writes_payload_to_unix_datagram() {
+    fn bind_test_socket() -> (tempfile::TempDir, std::path::PathBuf, UnixDatagram) {
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("notify.sock");
         let listener = UnixDatagram::bind(&sock_path).unwrap();
         listener
             .set_read_timeout(Some(Duration::from_millis(500)))
             .unwrap();
+        (dir, sock_path, listener)
+    }
 
-        // SAFETY: 同 no_notify_socket_silent_noop 注释。
-        unsafe {
-            std::env::set_var("NOTIFY_SOCKET", &sock_path);
-        }
+    // ========================================================================
+    // socket 行为测试：不动 env，零 race
+    // ========================================================================
 
-        ready();
+    /// `READY=1\n` payload 通过 `send_message_to` 真送到 UNIX datagram socket。
+    #[test]
+    fn send_message_to_writes_ready_payload() {
+        let (_dir, sock_path, listener) = bind_test_socket();
+        send_message_to("READY=1\n", sock_path.to_str().unwrap()).unwrap();
 
         let mut buf = [0u8; 64];
         let (n, _) = listener.recv_from(&mut buf).expect("recv READY");
         assert_eq!(&buf[..n], b"READY=1\n");
-
-        // 清掉避免后续 test 撞到
-        unsafe {
-            std::env::remove_var("NOTIFY_SOCKET");
-        }
     }
 
-    /// `STATUS=<text>` payload 拼接。
+    /// `STATUS=<text>\n` payload 拼接 + 通过 `send_message_to` 送出。
     #[test]
-    fn status_payload_formatting() {
-        let dir = tempfile::tempdir().unwrap();
-        let sock_path = dir.path().join("notify.sock");
-        let listener = UnixDatagram::bind(&sock_path).unwrap();
-        listener
-            .set_read_timeout(Some(Duration::from_millis(500)))
-            .unwrap();
+    fn send_message_to_status_payload_formatting() {
+        let (_dir, sock_path, listener) = bind_test_socket();
+        let payload = format!("STATUS={}\n", "Enabled.Active (sub: Active, link: Ok)");
+        send_message_to(&payload, sock_path.to_str().unwrap()).unwrap();
 
-        unsafe {
-            std::env::set_var("NOTIFY_SOCKET", &sock_path);
-        }
-        status("Enabled.Active (sub: Active, link: Ok)");
         let mut buf = [0u8; 256];
         let (n, _) = listener.recv_from(&mut buf).unwrap();
         assert_eq!(
             std::str::from_utf8(&buf[..n]).unwrap(),
             "STATUS=Enabled.Active (sub: Active, link: Ok)\n"
         );
+    }
+
+    /// `send_message_to` 收到 abstract socket 路径（`@` 开头）silent skip。
+    #[test]
+    fn send_message_to_abstract_silent_skip() {
+        // 给一个不存在的 abstract socket 路径，应当 Ok 而不是 NotFound err。
+        send_message_to("READY=1\n", "@/tmp/nonexistent.sock").unwrap();
+    }
+
+    /// `WATCHDOG_USEC=0` 等价 → 返 None（避免 0 间隔 busy-loop）。
+    /// 走内部 helper 不动 env。
+    #[test]
+    fn spawn_watchdog_with_zero_usec_returns_none() {
+        let stop = Arc::new(AtomicBool::new(false));
+        assert!(spawn_watchdog_thread_with_usec(stop, 0).is_none());
+    }
+
+    /// `usec > 0` 真 spawn 出线程；`stop` 原子设置后线程立刻退出。
+    #[test]
+    fn spawn_watchdog_with_positive_usec_spawns_and_exits_on_stop() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let h = spawn_watchdog_thread_with_usec(Arc::clone(&stop), 10_000_000)
+            .expect("usec > 0 应当 spawn 出线程");
+        // 不真 ping（NOTIFY_SOCKET 未设置 silent no-op），只验线程能停。
+        std::thread::sleep(Duration::from_millis(10));
+        stop.store(true, Ordering::Release);
+        h.join().expect("watchdog thread should join cleanly");
+    }
+
+    // ========================================================================
+    // env 探测测试：必须串行化（`ENV_LOCK`）+ 显式清理 env
+    // ========================================================================
+
+    /// `NOTIFY_SOCKET` 未设置 → ready/watchdog/stopping/status 都 no-op + Ok。
+    #[test]
+    fn no_notify_socket_silent_noop() {
+        let _guard = lock_env();
+        // SAFETY: env mutation 在 `ENV_LOCK` 锁定下与其它 test 串行。
         unsafe {
             std::env::remove_var("NOTIFY_SOCKET");
         }
+        // 不应 panic 也不应 Err（dev runbook 不在 systemd 下跑同款）。
+        ready();
+        watchdog();
+        stopping();
+        status("test");
     }
 
-    /// abstract socket 路径（@开头）silent skip，不报错。
+    /// `NOTIFY_SOCKET="@..."` → 公开 API 走 abstract silent skip 路径。
     #[test]
-    fn abstract_socket_silent_skip() {
+    fn abstract_socket_silent_skip_via_public_api() {
+        let _guard = lock_env();
+        // SAFETY: env mutation 在 `ENV_LOCK` 锁定下串行。
         unsafe {
             std::env::set_var("NOTIFY_SOCKET", "@/tmp/abstract.sock");
         }
         ready();
         watchdog();
+        // SAFETY: 同上。
         unsafe {
             std::env::remove_var("NOTIFY_SOCKET");
         }
     }
 
-    /// `WATCHDOG_USEC` 未设置 → `spawn_watchdog_thread` 返 None。
+    /// 端到端：公开 `ready()` 真把 `READY=1` 写到 NOTIFY_SOCKET 指向的
+    /// socket（验证 env 探测路径完整）。
+    #[test]
+    fn ready_via_env_round_trip() {
+        let _guard = lock_env();
+        let (_dir, sock_path, listener) = bind_test_socket();
+        // SAFETY: env mutation 在 `ENV_LOCK` 锁定下串行。
+        unsafe {
+            std::env::set_var("NOTIFY_SOCKET", &sock_path);
+        }
+        ready();
+        // SAFETY: 同上。
+        unsafe {
+            std::env::remove_var("NOTIFY_SOCKET");
+        }
+
+        let mut buf = [0u8; 64];
+        let (n, _) = listener.recv_from(&mut buf).expect("recv READY");
+        assert_eq!(&buf[..n], b"READY=1\n");
+    }
+
+    /// `WATCHDOG_USEC` 未设置 → `spawn_watchdog_thread`（**走 env**）返 None。
     #[test]
     fn watchdog_thread_returns_none_without_usec() {
+        let _guard = lock_env();
+        // SAFETY: env mutation 在 `ENV_LOCK` 锁定下串行。
         unsafe {
             std::env::remove_var("WATCHDOG_USEC");
         }
         let stop = Arc::new(AtomicBool::new(false));
-        let h = spawn_watchdog_thread(stop);
-        assert!(h.is_none());
+        assert!(spawn_watchdog_thread(stop).is_none());
     }
 
-    /// `WATCHDOG_USEC=0` → 返 None（避免 0 间隔 busy-loop）。
+    /// `WATCHDOG_USEC=0` → `spawn_watchdog_thread` 走 env 路径也返 None。
     #[test]
-    fn watchdog_thread_returns_none_with_zero_usec() {
+    fn watchdog_thread_returns_none_with_zero_usec_via_env() {
+        let _guard = lock_env();
+        // SAFETY: env mutation 在 `ENV_LOCK` 锁定下串行。
         unsafe {
             std::env::set_var("WATCHDOG_USEC", "0");
         }
         let stop = Arc::new(AtomicBool::new(false));
-        let h = spawn_watchdog_thread(stop);
-        assert!(h.is_none());
+        assert!(spawn_watchdog_thread(stop).is_none());
+        // SAFETY: 同上。
         unsafe {
             std::env::remove_var("WATCHDOG_USEC");
         }

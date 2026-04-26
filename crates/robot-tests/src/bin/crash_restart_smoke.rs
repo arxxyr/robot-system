@@ -18,7 +18,9 @@
 //!     window）
 //!   - `SIGKILL` daemon（**不**给它 graceful shutdown 的机会）
 //!   - 读 latch primary + bak 两个文件，**断言**都 = "1"
-//!   - 重启 daemon（短 smoke），抓 stderr 找 `initial estop_latched = true`
+//!   - 重启 daemon（短 smoke），抓 stderr 按结构化字段断言 message
+//!     `initial estop_latched` + `latched=true`（兼容 human + JSON tracing
+//!     格式；详 [`log_contains_initial_latched_true`] + 同名单测）
 //!   - 一致 = PASS；不一致 = FAIL
 //!
 //! 多次迭代（`--iterations`）每次用不同 `robot_id` 后缀避免 iceoryx2 service
@@ -184,8 +186,9 @@ OPTIONS:
 
 测试场景：kill_after_estop_fsync_window
   spawn daemon + mock_s1 → settle → robotctl estop → sleep grace → SIGKILL daemon
-  → assert latch primary+bak = '1' on disk → restart daemon → assert
-  'initial estop_latched = true' in stderr → cleanup → next iteration。
+  → assert latch primary+bak = '1' on disk → restart daemon → assert message
+  'initial estop_latched' + structured field latched=true (human + JSON
+  tracing 格式都兼容) → cleanup → next iteration。
 "
     );
 }
@@ -356,23 +359,32 @@ fn run_iteration(args: &Args, seq: u32, robot_id: &str) -> IterResult {
     }
     eprintln!("  ✓ post-SIGKILL latch primary='{primary_v}' bak='{bak_v}' (both = 1)");
 
-    // ---- 8) 重启 daemon，捕获 stderr 找 initial estop_latched=true ----
+    // ---- 8) 重启 daemon，捕获 stderr，按结构化字段断言 latched=true ----
+    //
+    // task #16 把 s0_daemon 的 `eprintln!("initial estop_latched = ...")` 迁
+    // 到 `tracing::info!(latched=..., "initial estop_latched")`，输出格式变成：
+    //   - human：`... initial estop_latched latched=true ...`
+    //   - JSON ：`{"message":"initial estop_latched","latched":true,...}`
+    // 旧 grep "initial estop_latched = true" 在两种格式下都失效。
+    // 这里改成"按行匹配 message + 结构化字段"（兼容 human + JSON），由 reviewer
+    // 在 commit 8e5a238 阻断后修。
     let restart_log = match run_daemon_briefly(args, robot_id, &latch_path, args.restart_smoke_secs)
     {
         Ok(s) => s,
         Err(e) => return fail(seq, robot_id, format!("restart daemon: {e}")),
     };
-    if !restart_log.contains("initial estop_latched = true") {
+    if !log_contains_initial_latched_true(&restart_log) {
         return fail(
             seq,
             robot_id,
             format!(
-                "restart daemon did NOT report 'initial estop_latched = true'. log tail:\n{}",
+                "restart daemon did NOT report 'initial estop_latched' with latched=true \
+                 (checked human + JSON tracing format). log tail:\n{}",
                 tail_lines(&restart_log, 15)
             ),
         );
     }
-    eprintln!("  ✓ restart daemon: initial estop_latched = true");
+    eprintln!("  ✓ restart daemon: initial estop_latched (latched=true)");
 
     // ---- 9) cleanup ----
     let _ = std::fs::remove_file(&latch_path);
@@ -525,4 +537,84 @@ fn tail_lines(s: &str, n: usize) -> String {
 #[allow(dead_code)]
 fn elapsed_str(start: Instant) -> String {
     format!("{:?}", start.elapsed())
+}
+
+/// 跨 human / JSON tracing 格式断言"daemon 重启读到 `initial estop_latched =
+/// true`"。
+///
+/// task #16 (commit 8e5a238) 把 `s0_daemon` 启动 banner 从
+/// `eprintln!("initial estop_latched = {latched}")` 迁到
+/// `tracing::info!(latched = ..., "initial estop_latched")`，输出格式：
+///
+/// - human：`... initial estop_latched latched=true ...`
+/// - JSON ：`{"message":"initial estop_latched","latched":true,...}`
+///
+/// 旧 grep `"initial estop_latched = true"` 在两种格式下都不匹配（reviewer
+/// 复验 grep 为空 = Step 9 工具失效）。本函数按"同一行同时含 message 和
+/// `latched=true|"latched":true`"判断，把语义和格式解耦：
+/// - human 形式：`message + space + latched=true`
+/// - JSON 形式：`"message":"initial estop_latched"` + `"latched":true`
+fn log_contains_initial_latched_true(log: &str) -> bool {
+    log.lines().any(|line| {
+        line.contains("initial estop_latched")
+            && (line.contains("latched=true") || line.contains("\"latched\":true"))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matches_human_tracing_format() {
+        let line =
+            "2026-04-26T13:00:00Z [+0.001s]  INFO s0_daemon: initial estop_latched latched=true";
+        assert!(log_contains_initial_latched_true(line));
+    }
+
+    #[test]
+    fn matches_json_tracing_format() {
+        let line = r#"{"timestamp":"2026-04-26T13:00:00Z [+0.001s]","level":"INFO","message":"initial estop_latched","latched":true,"target":"s0_daemon"}"#;
+        assert!(log_contains_initial_latched_true(line));
+    }
+
+    #[test]
+    fn does_not_match_latched_false_human() {
+        let line = "2026-04-26T13:00:00Z  INFO s0_daemon: initial estop_latched latched=false";
+        assert!(!log_contains_initial_latched_true(line));
+    }
+
+    #[test]
+    fn does_not_match_latched_false_json() {
+        let line = r#"{"message":"initial estop_latched","latched":false}"#;
+        assert!(!log_contains_initial_latched_true(line));
+    }
+
+    /// **回归锁**：旧 grep `"initial estop_latched = true"` 字串在 task #16
+    /// 迁移后**不**会出现在 daemon 输出里。本测试钉住"按结构化字段判断"
+    /// 行为正确，禁止有人退化回 `contains("initial estop_latched = true")`。
+    #[test]
+    fn old_pre_tracing_string_does_not_appear_in_real_daemon_output() {
+        // 模拟一个 daemon 启动期 stderr buffer，**不**含旧字串
+        // "initial estop_latched = true"，但有新 tracing 结构化输出。
+        let real_like = "2026-04-26T13:00:00Z  INFO s0_daemon: s0_daemon starting robot_id=foo\n\
+            2026-04-26T13:00:00Z  INFO s0_daemon: initial estop_latched latched=true\n\
+            2026-04-26T13:00:00Z  INFO s0_daemon: heartbeat state=Safe";
+        assert!(!real_like.contains("initial estop_latched = true"));
+        assert!(log_contains_initial_latched_true(real_like));
+    }
+
+    #[test]
+    fn missing_field_does_not_match() {
+        // message 在但缺 latched=true → 不匹配
+        let line = "2026-04-26  INFO s0_daemon: initial estop_latched";
+        assert!(!log_contains_initial_latched_true(line));
+    }
+
+    #[test]
+    fn cross_line_does_not_match() {
+        // message 和 latched=true 在不同行 → 不应当匹配（防误报）
+        let log = "INFO s0_daemon: initial estop_latched\nINFO s0_daemon: heartbeat latched=true";
+        assert!(!log_contains_initial_latched_true(log));
+    }
 }

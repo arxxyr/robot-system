@@ -54,9 +54,10 @@ StandardError=journal
 Environment=ROBOT_LOG_FORMAT=json
 Environment=RUST_LOG=info,robot=debug
 
-# 安全收紧（同 bus2）。
+# 安全收紧（同 bus2，含 PrivateTmp **故意不开** —— iceoryx2 服务元数据在
+# /tmp/iceoryx2/，systemd 私有 /tmp 会让宿主跑的 mock_s1 / robotctl 看不到
+# daemon 的 service。详 bus2 unit 同位置的注释）。
 NoNewPrivileges=yes
-PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ProtectKernelTunables=yes

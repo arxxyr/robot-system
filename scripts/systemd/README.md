@@ -70,21 +70,37 @@ sudo systemctl enable xlerobot-s0-bus1 xlerobot-s0-bus2
 
 ## 验证 watchdog 重启路径
 
-锁定 `docs/00_design.md` §6.7 不变量 #2 真机成立的硬门槛：
+锁定 `docs/00_design.md` §6.7 不变量 #2 真机成立的硬门槛。
+
+**注意**：本 unit **只**启 S0，**不**启 S1 coordinator。S0 daemon 没有
+`Heartbeat` 输入源时最多走到 `state=Ready`，**不**会自己进
+`Enabled.Active`（Active 必须 S1 发心跳）。所以下面"等 daemon 起来"是
+等 `state=Ready` + `READY=1` 通知到 systemd，不是 `Enabled.Active`。
 
 ```bash
 sudo systemctl start xlerobot-s0-bus2
-sleep 5     # 等 daemon 进 Enabled.Active
-sudo kill -9 $(pidof s0_daemon)
-# 期望：systemctl status xlerobot-s0-bus2 → activating → active（< 5s）
-# 期望：journalctl 看到 "READY=1" 重新出现 + state=Ready
-sudo systemctl status xlerobot-s0-bus2
+sleep 3     # 等 daemon 启动期 (factory build + 4 thread spawn + sd_notify READY=1)
+            # 同时 systemd 把 service 状态 inactive→active
+systemctl is-active xlerobot-s0-bus2   # 期望 active
+sudo journalctl -u xlerobot-s0-bus2 -n 5 --no-pager -o cat | grep -E "state=Ready|heartbeat"
+            # 期望：tracing JSON 行 "message":"heartbeat","state":"Ready",...
+
+sudo kill -9 $(systemctl show -p MainPID --value xlerobot-s0-bus2)
+sleep 4     # 等 systemd 检测 SIGCHLD + Restart=on-failure 拉起新 daemon
+            # 4s = 2s WatchdogSec + 2s RestartSec 余量
+
+systemctl is-active xlerobot-s0-bus2   # 期望 active（新 PID）
+sudo journalctl -u xlerobot-s0-bus2 -n 10 --no-pager -o cat | grep -E "s0_daemon starting|state=Ready"
+            # 期望：看到第二次 "s0_daemon starting" + 第二次 state=Ready，
+            # 证明 systemd 真把 daemon 重新拉起来了
+sudo systemctl status xlerobot-s0-bus2 --no-pager
 ```
 
-如果 latch 文件之前 = "1"（前一次 EStop 触发后崩了），重启后 daemon
-应当 `initial estop_latched = true` + state 全程 Safe。Step 9 的
-[`crash_restart_smoke`](../../crates/robot-tests/src/bin/crash_restart_smoke.rs)
-binary 是这条门槛的自动化测试。
+如果 latch 文件之前 = "1"（前一次 `EStop` 触发后 daemon 崩了），重启后
+daemon 应当报 `initial estop_latched` 字段 `latched=true` + state 全程
+`Safe`。Step 9 的 [`crash_restart_smoke`](../../crates/robot-tests/src/bin/crash_restart_smoke.rs)
+binary 是这条门槛的自动化测试（按结构化 tracing 字段断言，兼容 human +
+JSON 格式，详 `log_contains_initial_latched_true`）。
 
 ## 不在本目录范围内的事
 

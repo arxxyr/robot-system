@@ -111,8 +111,17 @@ Environment=RUST_LOG=info,robot=debug
 
 # 安全收紧（**不**影响 /dev/serial 串口访问；ttyACM* 在 dialout group 内
 # 受 SupplementaryGroups 兜底）。
+#
+# **不能**用 `PrivateTmp=yes`：iceoryx2 service 元数据 + shared memory 都在
+# `/tmp/iceoryx2/{nodes,services}/`（详 docs/handoffs/2026-04-26_bus2_runbook.md
+# §0），systemd 私有 /tmp 命名空间会让 daemon 在隔离 /tmp 创建 service，宿主
+# 跑的 mock_s1 / robotctl watch / robotctl estop 看不到 → 通信完全断。
+# 安全权衡：daemon 不写 /tmp 任何东西（除了 iceoryx2 自己），不接收 untrusted
+# 用户 input 路径，PrivateTmp 收益微小；其它 Protect* 全套 + ReadWritePaths
+# 已把 daemon 锁死在 /var/lib/robot/<id>/ + 串口设备节点。
+# **PrivateTmp 故意不开**——若未来 iceoryx2 0.9+ 切到 abstract socket 或
+# /run/iceoryx2/ 才能重新评估。
 NoNewPrivileges=yes
-PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ProtectKernelTunables=yes
