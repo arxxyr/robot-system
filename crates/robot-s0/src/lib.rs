@@ -44,6 +44,7 @@ pub mod pub_thread;
 pub mod serial_io_ctrl;
 pub mod serial_io_thread;
 pub mod state_machine;
+pub mod systemd_notify;
 pub mod watchdog;
 
 #[cfg(test)]

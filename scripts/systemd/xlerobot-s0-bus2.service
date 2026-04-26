@@ -1,0 +1,123 @@
+# XLeRobot S0 daemon — bus2 全栈 9-motor（task #15 Stage 2 + Step 9 收尾）
+#
+# `docs/00_design.md` §6.4 systemd unit 约束 + §6.7 不变量 #2 "systemd 是
+# 最外层看门狗" 的实施。`Type=notify` + `WatchdogSec=2s` 让 sd_notify(WATCHDOG=1)
+# ping 超时即触发 `Restart=on-failure`，daemon 死锁 / 崩溃自动拉起。
+#
+# ## 安装
+#
+# 1. 编辑下面 `User=` / `Group=` / `WorkingDirectory=` / `ExecStart=` 路径，
+#    填实机用户和 robot-system 仓库位置。**注意 `loosqk` 是 Orin 默认 user，
+#    其它机器要改**。
+# 2. `sudo install -d -m 0750 -o $USER -g $USER /var/lib/robot/xlerobot_bus2_full`
+#    创建 latch 目录（user 拥有，避免 sudo↔user 模式 ownership 残留，详
+#    docs/handoffs/2026-04-26.md §5.2）。
+# 3. `sudo cp scripts/systemd/xlerobot-s0-bus2.service /etc/systemd/system/`。
+# 4. `sudo systemctl daemon-reload`。
+# 5. `sudo systemctl start xlerobot-s0-bus2`（首次跑确认起来 ok 后
+#    `sudo systemctl enable xlerobot-s0-bus2` 开机自启）。
+# 6. 看日志：`journalctl -u xlerobot-s0-bus2 -f`。
+#
+# ## 验证 watchdog 重启路径（§6.7 不变量 #2 的真机门槛）
+#
+# ```bash
+# sudo systemctl start xlerobot-s0-bus2
+# sleep 5     # 等 daemon 进入 Enabled.Active
+# sudo kill -9 $(pidof s0_daemon)
+# # 期望：systemctl status 显示 inactive→activating→active；journalctl 看到
+# # "READY=1" 重新出现 + state=Ready；2s 内重启完成。
+# sudo systemctl status xlerobot-s0-bus2
+# ```
+#
+# ## 不在本 unit 范围内的事
+#
+# - 不直接挂 mock_s1 / 不直接发 robotctl estop —— 这些是上游（S1 coordinator）
+#   的事，由 `xlerobot-s1.service` / 运维工具拉起。
+# - 不带 `strict_rt=true`（SCHED_FIFO + mlockall）—— 这要求 `CAP_SYS_NICE` +
+#   `CAP_IPC_LOCK`，并且默认 mock / serial-rt 路径不需要 RT 优先级（task-30
+#   v9 SerialRT thread 是普通优先级 + tick 闭环）。如要切 HardRT 真接 SoC：
+#       AmbientCapabilities=CAP_SYS_NICE CAP_IPC_LOCK
+#       Nice=-19  # 或更激进
+#   并把 daemon `--strict-rt true` 放进 ExecStart。
+# - 不挂 `xlerobot-coordinator` / `xlerobot-web`（这是 dimos 旧栈的 service）。
+#   v0.4 之前 dimos 仍可继续跑（不同 robot_id），但同一台机器上同时跑
+#   两套 daemon **必须**给两边不同 robot_id（避 iceoryx2 service collision）。
+
+[Unit]
+Description=XLeRobot S0 daemon (bus2 9-motor: right_arm + base 3 wheel)
+Documentation=file:///home/loosqk/repo/robot/robot-system/docs/00_design.md
+Documentation=file:///home/loosqk/repo/robot/robot-system/docs/handoffs/2026-04-26_3.md
+
+# bus2 USB 串口出现才启动（避免 ttyACM1 还没枚举就跑导致 connect 失败）。
+# `Requires=` + `After=` 保证 udev rule 把 device unit 拉起来后再起本 unit。
+# 实物 by-id 路径在 dev 上是确定的（dimos 04_踩坑记录.md 验证）。
+After=network-online.target dev-serial-by-id-usb-1a86_USB_Single_Serial_5A7C122340-if00.device
+Requires=dev-serial-by-id-usb-1a86_USB_Single_Serial_5A7C122340-if00.device
+
+# 不跟 dimos service 同时跑（同一根 ttyACM1 互斥）。如果 dimos 在跑这个
+# unit 不会启动；deploy 流程上必须 `sudo systemctl stop xlerobot-coordinator
+# xlerobot-web` 后再 start 本 unit。
+Conflicts=xlerobot-coordinator.service xlerobot-web.service
+
+[Service]
+# `Type=notify` 让 systemd 等 daemon 调 sd_notify(READY=1) 才认为 active；
+# 详 crates/robot-s0/src/systemd_notify.rs。
+Type=notify
+NotifyAccess=main
+
+# 实机部署填实路径
+User=loosqk
+Group=loosqk
+SupplementaryGroups=dialout
+WorkingDirectory=/home/loosqk/repo/robot/robot-system
+
+ExecStart=/home/loosqk/repo/robot/robot-system/target/release/s0_daemon \
+    --robot-id xlerobot_bus2_full \
+    --hardware-id right_arm_full_with_base \
+    --config /home/loosqk/repo/robot/robot-system/configs/xlerobot_bus2_full.toml \
+    --latch-path /var/lib/robot/xlerobot_bus2_full/estop_latch \
+    --tick-hz 50
+
+# Watchdog: 2s 不来 ping 就视为僵死。daemon 内部按 `WATCHDOG_USEC / 2 = 1s`
+# 周期 ping，留 50% 余量吸收 jitter。看 §6.4 systemd unit 约束。
+WatchdogSec=2s
+
+# Restart 策略：on-failure（含 watchdog timeout、abnormal exit、SIGKILL），但
+# **不**含 `clean exit` (exit code 0，例如 --smoke-duration 到期 / SIGTERM
+# graceful)。这样 daemon 主动停下来 systemd 不会拉起；操作员意图清楚。
+Restart=on-failure
+RestartSec=2s
+
+# 防失控重启：60s 内挂 ≥ 5 次就停止 retry，进 failed 状态由人介入。
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# Latch / log 写权限（user 拥有 /var/lib/robot/<robot_id>/）。
+# 安装时按上面 "## 安装" §2 创建目录 + 改 owner。
+ReadWritePaths=/var/lib/robot/xlerobot_bus2_full
+
+# 日志统一走 journald；可在 unit override 切 ROBOT_LOG_FORMAT=json 适配
+# vector / fluentbit 采集（详 docs/logging.md）。
+StandardOutput=journal
+StandardError=journal
+Environment=ROBOT_LOG_FORMAT=json
+Environment=RUST_LOG=info,robot=debug
+
+# 安全收紧（**不**影响 /dev/serial 串口访问；ttyACM* 在 dialout group 内
+# 受 SupplementaryGroups 兜底）。
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

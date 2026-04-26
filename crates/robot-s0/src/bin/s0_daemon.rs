@@ -750,6 +750,21 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         let _ = event_tx.send(Event::Enable);
     }
 
+    // ---- 8c) systemd `Type=notify` 握手 + watchdog ping 线程 ----
+    //
+    // 所有线程都已 spawn + initial state 落盘后，告诉 systemd "READY"，让
+    // `Type=notify` unit 的 active 状态成立 + 解锁下游 unit 的 `After=` 链。
+    //
+    // `WATCHDOG_USEC` 由 systemd unit `WatchdogSec=` 注入；spawn 出独立非 RT
+    // 线程按 `usec / 2` 间隔 ping，daemon 卡死 / 死锁就让 systemd 按
+    // `Restart=on-failure` 自动拉起。**不在 systemd 下跑时**（NOTIFY_SOCKET /
+    // WATCHDOG_USEC 都未设置）这两条都 silent no-op，跟 runbook / crash_restart_smoke
+    // 等场景零差异。详 `crates/robot-s0/src/systemd_notify.rs`。
+    robot_s0::systemd_notify::ready();
+    let systemd_wd_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let systemd_wd_handle =
+        robot_s0::systemd_notify::spawn_watchdog_thread(std::sync::Arc::clone(&systemd_wd_stop));
+
     // ---- 9) 主 loop：等 shutdown flag / smoke 超时 / state = STOPPING ----
     let start = std::time::Instant::now();
     let mut last_report = start;
@@ -782,6 +797,17 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
 
     // ---- 10) 发 Event::Stop，让 state machine 进 STOPPING ----
     let _ = event_tx.send(Event::Stop);
+
+    // ---- 10a) 通知 systemd 进入 graceful shutdown，停 watchdog ping ----
+    //
+    // 顺序很关键：先 STOPPING= 让 systemd 切到 deactivating（停 watchdog
+    // timeout），再 stop ping 线程。如果反过来，watchdog 线程已经停但 systemd
+    // 还按 `WatchdogSec` 计时，graceful 期间稍长一点就被 systemd 误杀。
+    robot_s0::systemd_notify::stopping();
+    systemd_wd_stop.store(true, std::sync::atomic::Ordering::Release);
+    if let Some(h) = systemd_wd_handle {
+        let _ = h.join();
+    }
 
     // ---- 11) graceful stop ----
     graceful_stop(
