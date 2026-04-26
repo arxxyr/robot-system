@@ -280,9 +280,18 @@ fn handle_command(ctx: &FreezeControlContext, cmd: TestFreezeCommand) {
         );
         return;
     };
-    let now_ns = ctx.clock.now().0;
-    let duration_ns = u64::from(cmd.duration_ms).saturating_mul(1_000_000);
-    let until_ns = now_ns.saturating_add(duration_ns);
+    // **duration_ms == 0 ≡ no-op**：直接 store(0)，跟 [`crate::freeze_hook`]
+    // "未冻结 hot path == 0" 口径完全对齐。否则 store(clock.now()) 虽然语义
+    // 上不会 spin（now >= until 立即退出），但会让 worker tick loop 每次都
+    // 多走一次 clock.now() 比较，跟"未冻结 hot path 仅 1 次 atomic load"的
+    // 不变量背离。reviewer A2-2 非阻断备注（commit 17ce63c 复核）。
+    let until_ns = if cmd.duration_ms == 0 {
+        0
+    } else {
+        let now_ns = ctx.clock.now().0;
+        let duration_ns = u64::from(cmd.duration_ms).saturating_mul(1_000_000);
+        now_ns.saturating_add(duration_ns)
+    };
 
     match kind {
         WorkerKind::Ipc => {
@@ -595,37 +604,41 @@ mod tests {
         handle.join().unwrap();
     }
 
-    /// `duration_ms = 0` → `freeze_until_ns` 写出去 = `clock.now()`，下次 worker
-    /// tick 看到 `now >= until` 立即 not-spin（no-op 语义）。
+    /// `duration_ms = 0` ≡ no-op：必须 `store(0)`，跟 freeze_hook
+    /// "未冻结 hot path == 0" 口径对齐（reviewer A2-2 非阻断备注收紧）。
+    /// **不能** store `clock.now()`：那样 worker tick 每次都多 1 次
+    /// `clock.now()` 比较，违反"hot path 仅 1 次 atomic load"。
     ///
-    /// 用 `MockClock` 把 daemon 时钟冻在 `t = 5_000_000`，验证写入值严格等于 5_000_000
-    /// （duration_ms=0 + saturating_add(0) → store 当前 clock.now()）。
+    /// 测试方法：先发非零 cmd 让 `freeze_until_ns` 变成非 0，再发
+    /// `duration_ms = 0` 把它清回 0。
     #[test]
     fn duration_ms_zero_is_noop() {
-        use robot_core::time::{MockClock, MonoRawNs};
         let robot_id = fresh_robot_id();
-        let mock = Arc::new(MockClock::new(MonoRawNs(5_000_000)));
-        let clock: Arc<dyn RobotClock> = Arc::clone(&mock) as Arc<dyn RobotClock>;
-        let ctx = make_ctx(robot_id.clone(), clock);
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let ctx = make_ctx(robot_id.clone(), Arc::clone(&clock));
         let ipc = Arc::clone(&ctx.ipc);
 
         let handle = spawn_freeze_control_thread(ctx).unwrap();
         thread::sleep(Duration::from_millis(50));
         let publisher = open_publisher(&robot_id);
 
-        publish_cmd(&publisher, WorkerKind::Ipc, 0);
-
+        // 1) 先 dirty：发 100ms freeze 让 freeze_until_ns 变 ≠ 0
+        publish_cmd(&publisher, WorkerKind::Ipc, 100);
         assert!(
             wait_for(Duration::from_secs(2), || {
                 ipc.freeze_until_ns.load(Ordering::Acquire) != 0
             }),
-            "ipc.freeze_until_ns 未在 2s 内被写"
+            "warmup 100ms freeze 未在 2s 内 store"
         );
 
-        let until = ipc.freeze_until_ns.load(Ordering::Acquire);
-        assert_eq!(
-            until, 5_000_000,
-            "duration_ms=0 + MockClock(5_000_000) 应当严格 = 5_000_000，实际 {until}",
+        // 2) 发 duration_ms=0 → 期望严格 store(0)
+        publish_cmd(&publisher, WorkerKind::Ipc, 0);
+        assert!(
+            wait_for(Duration::from_secs(2), || {
+                ipc.freeze_until_ns.load(Ordering::Acquire) == 0
+            }),
+            "duration_ms=0 应当 store(0)，2s 内未观察到清零；实际 {}",
+            ipc.freeze_until_ns.load(Ordering::Acquire),
         );
 
         handle.request_stop();
