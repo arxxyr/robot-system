@@ -62,4 +62,9 @@ venv/
 perf*.data
 perf*.data.old
 
+# 测试 / smoke 运行期生成的 workdir（latch / config / iter 临时文件）
+# 比如 freeze_systemd_smoke 在 logs/freeze_smoke/<iter>/ 写 latch + cfg
+# + crash_restart_smoke 在 logs/crash_test/ 写 latch
+/logs
+
 .claude/*

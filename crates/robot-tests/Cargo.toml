@@ -27,6 +27,18 @@ path = "src/bin/iceoryx2_rt_baseline.rs"
 name = "crash_restart_smoke"
 path = "src/bin/crash_restart_smoke.rs"
 
+# v0.3 A2-3 systemd e2e test —— freeze ipc_thread 5s → systemd WatchdogSec
+# timeout → Restart=on-failure 拉起新 daemon → 5/5 round PASS。详
+# docs/handoffs/v0.3_entry.md §4.4 + scripts/systemd/xlerobot-s0-freeze-test.service。
+#
+# `required-features` 守门：本 bin 需要 `freeze-systemd-smoke` feature（启用
+# `robot-s0` optional dep + 它的 `test-freeze-hook` feature），生产构建（如
+# `cargo build -p robot-tests --release`）默认 feature 关，本 bin 不参编译。
+[[bin]]
+name = "freeze_systemd_smoke"
+path = "src/bin/freeze_systemd_smoke.rs"
+required-features = ["freeze-systemd-smoke"]
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -42,6 +54,32 @@ tracing         = { workspace = true }
 # Step 9 crash_restart_smoke：libc::kill(pid, SIGKILL) 直接发 kill -9，
 # 模拟最严格的"无 signal handler 机会"故障模型（systemd OOM kill 同款）。
 libc            = { workspace = true }
+
+# v0.3 A2-3 freeze_systemd_smoke optional dep：
+# - 复用 `robot_s0::freeze_control::{TestFreezeCommand, WorkerKind}` wire
+#   struct，**不**复制（reviewer 拍板硬要求："不要复制一份 wire struct"）。
+# - `default-features = false` + 显式 `mock-only` + `test-freeze-hook`：
+#   smoke 不需要 feetech adapter（**不**依赖 Feetech 真硬件，跟模板一致）；
+#   test-freeze-hook 启用 freeze_control module + freeze_until_ns 字段。
+# - `optional = true`：默认构建 / 生产构建不 link robot-s0；只在
+#   `freeze-systemd-smoke` feature 显式开启时才编译。
+# - **不**走 workspace 继承（`workspace = true`）：workspace 顶层 `robot-s0
+#   = { path = "..." }` 没显式 `default-features`，cargo 1.x 拒绝继承时
+#   override `default-features = false`（"cannot override workspace's
+#   default-features"）。直接 path 跳过继承。
+robot-s0 = { path = "../robot-s0", optional = true, default-features = false, features = [
+    "mock-only",
+    "test-freeze-hook",
+] }
+
+[features]
+# v0.3 A2-3 freeze systemd smoke 入口 feature。
+# - 生产 release **不**带本 feature（freeze_systemd_smoke binary 不参编译）。
+# - 本机跑：`cargo run -p robot-tests --bin freeze_systemd_smoke --features
+#   freeze-systemd-smoke -- ...`
+# - reviewer 硬边界：本 feature 同时启用 robot-s0 optional dep + 它的
+#   `test-freeze-hook` feature，让 smoke 跟 daemon binary 共享 wire struct。
+freeze-systemd-smoke = ["dep:robot-s0"]
 
 [lints]
 workspace = true
