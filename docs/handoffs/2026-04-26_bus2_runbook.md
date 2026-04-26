@@ -24,6 +24,13 @@
   Single_Serial_5A7C122340-if00` 必须存在；用 `ls -l /dev/serial/by-id/`
   确认。
 
+- EStop latch 目录必须存在；`s0_daemon` 启动期也会守门创建，下面命令作为
+  runbook 显式前置，避免权限问题拖到真机 EStop 时才暴露：
+
+  ```bash
+  sudo install -d -m 0750 /var/lib/robot/xlerobot_bus2_right_arm
+  ```
+
 ---
 
 ## 1. 真机编译（Orin 本地）
@@ -194,7 +201,7 @@ fault_code: Unknown
 
 跑动期间触发 EStop topic，看右臂**立即**断扭（< 1 秒，肉眼"啪一下"软掉）。
 
-`robotctl estop` 已在本批次落地（commit 待加）：发一帧 `EStopEvent` 到
+`robotctl estop` 已在本批次落地：发一帧 `EStopEvent` 到
 `/<robot_id>/events/estop`，daemon `ipc_thread::poll_estop` 拿到 →
 `ipc_tick` emergency drain → `executor_ctrl.safety_stop()` →
 `serial_io_thread` swap `emergency_action` → adapter `safety_stop_fast`

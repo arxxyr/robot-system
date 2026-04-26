@@ -37,7 +37,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -427,6 +427,13 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     eprintln!("  pub hb    : {}", t.pub_heartbeat);
 
     // ---- 1) EStop latch ----
+    if let Err(e) = ensure_latch_parent(&args.latch_path) {
+        eprintln!(
+            "fatal: failed to prepare EStop latch directory for {}: {e}",
+            args.latch_path.display()
+        );
+        return Err(1);
+    }
     let initial_estop_latched = match load_estop_latch(&args.latch_path) {
         Ok(v) => v,
         Err(e) => {
@@ -805,6 +812,15 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     Ok(())
 }
 
+/// 启动期确保 latch 父目录存在；失败直接拒启动，避免 `EStop` 后落盘失败却
+/// 已经进入可使能状态。
+fn ensure_latch_parent(path: &Path) -> std::io::Result<()> {
+    let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(parent)
+}
+
 // ============================================================================
 // adapter 构造（Step 7 task 27b：走 inventory factory）
 // ============================================================================
@@ -1004,4 +1020,24 @@ fn graceful_stop(
     let _ = ipc.join();
     wd_stop.store(true, Ordering::Release);
     let _ = wd_handle.join();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_latch_parent_creates_missing_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let latch = tmp
+            .path()
+            .join("robot")
+            .join("xlerobot")
+            .join("estop_latch");
+
+        ensure_latch_parent(&latch).unwrap();
+
+        assert!(latch.parent().unwrap().is_dir());
+        assert!(!latch.exists());
+    }
 }
