@@ -4,9 +4,16 @@
 
 ## 文件
 
-| Unit | 用途 | docs |
-|---|---|---|
-| `xlerobot-s0-bus2.service` | bus2 9-motor S0 daemon（right_arm + base 3 wheel） | `docs/handoffs/2026-04-26_3.md` §5 |
+| Unit | 用途 | bus | docs |
+|---|---|---|---|
+| `xlerobot-s0-bus1.service` | bus1 8-motor S0 daemon（左臂 6 + 头部 2） | ttyACM0 / 5A7C121427 | `docs/handoffs/2026-04-26_3.md` §5 |
+| `xlerobot-s0-bus2.service` | bus2 9-motor S0 daemon（右臂 6 + 底盘 3） | ttyACM1 / 5A7C122340 | `docs/handoffs/2026-04-26_3.md` §5 |
+
+XLeRobot 全栈部署 = 两个 unit 同时跑，daemon 各管一根串口；v0.2 骨架
+M=1 单 daemon 多 bus 还没落地（详 `docs/00_design.md` §1.2 + CHANGELOG
+2026-04-24 "S0 s0_rt_thread 多 bus 语义澄清"），所以 v0.2 走 "每 bus 一
+daemon" 部署。两 daemon 用 unique `robot-id`（`xlerobot_bus1_full` /
+`xlerobot_bus2_full`）避 iceoryx2 service collision。
 
 ## 通用约定
 
@@ -23,7 +30,10 @@
 - `Conflicts=xlerobot-coordinator.service xlerobot-web.service` 跟 dimos
   旧栈互斥（同一 `ttyACMx` 不能并发占用）。
 
-## 安装步骤（每个 unit）
+## 安装步骤
+
+每个 bus 走相同模板。下面以 bus2 为例；bus1 把 `bus2` 改成 `bus1`，
+`xlerobot_bus2_full` 改成 `xlerobot_bus1_full` 即可。
 
 ```bash
 # 1) 编辑 unit 里的 User= / WorkingDirectory= / ExecStart= 路径，填实机
@@ -43,6 +53,19 @@ sudo systemctl enable xlerobot-s0-bus2
 
 # 5) 看日志
 journalctl -u xlerobot-s0-bus2 -f
+```
+
+### 全栈部署（两 bus 一起跑）
+
+```bash
+sudo install -d -m 0750 -o $USER -g $USER /var/lib/robot/xlerobot_bus1_full
+sudo install -d -m 0750 -o $USER -g $USER /var/lib/robot/xlerobot_bus2_full
+sudo cp scripts/systemd/xlerobot-s0-bus1.service /etc/systemd/system/
+sudo cp scripts/systemd/xlerobot-s0-bus2.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start xlerobot-s0-bus1 xlerobot-s0-bus2
+sudo systemctl status xlerobot-s0-bus1 xlerobot-s0-bus2
+sudo systemctl enable xlerobot-s0-bus1 xlerobot-s0-bus2
 ```
 
 ## 验证 watchdog 重启路径

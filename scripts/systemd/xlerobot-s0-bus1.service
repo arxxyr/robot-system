@@ -1,0 +1,73 @@
+# XLeRobot S0 daemon — bus1 全栈 8-motor（左臂 6 + 头部 2）
+#
+# 跟 `xlerobot-s0-bus2.service` 互补；两个 daemon 各跑一个 bus（v0.2 骨架
+# M=1 单 daemon → 多 bus 走 "每 bus 一 daemon" 部署，详 docs/00_design.md
+# §1.2 多 bus 场景说明 + docs/CHANGELOG.md 2026-04-24 "S0 s0_rt_thread 多
+# bus 语义澄清"）。
+#
+# 安装步骤：详 scripts/systemd/README.md（跟 bus2 同模板）。
+
+[Unit]
+Description=XLeRobot S0 daemon (bus1 8-motor: left_arm + head)
+Documentation=file:///home/loosqk/repo/robot/robot-system/docs/00_design.md
+Documentation=file:///home/loosqk/repo/robot/robot-system/docs/handoffs/2026-04-26_3.md
+
+# bus1 = ttyACM0（5A7C121427）。同 bus2 注释，systemd 默认不为 by-id 创建
+# device unit；我们 daemon 走 by-id 开口，但 systemd 端 dependency 挂在
+# `dev-ttyACM0.device`。ACM enum 顺序变化时要更新；v0.2 接受。
+After=network-online.target dev-ttyACM0.device
+Requires=dev-ttyACM0.device
+
+# 不跟 dimos service 同时跑（同一根 ttyACM0 互斥）。
+Conflicts=xlerobot-coordinator.service xlerobot-web.service
+
+# 防失控重启：60s 内 ≥ 5 次失败就停 retry，等人介入。systemd 230+ 这两条
+# 必须在 [Unit] 节，systemd 249 实测放 [Service] 会被忽略 + warning。
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=main
+
+User=loosqk
+Group=loosqk
+SupplementaryGroups=dialout
+WorkingDirectory=/home/loosqk/repo/robot/robot-system
+
+ExecStart=/home/loosqk/repo/robot/robot-system/target/release/s0_daemon \
+    --robot-id xlerobot_bus1_full \
+    --hardware-id left_arm_full_with_head \
+    --config /home/loosqk/repo/robot/robot-system/configs/xlerobot_bus1_full.toml \
+    --latch-path /var/lib/robot/xlerobot_bus1_full/estop_latch \
+    --tick-hz 50
+
+# Watchdog 同 bus2：2s 不来 ping 就僵死，daemon 内部按 1s 周期 ping。
+WatchdogSec=2s
+Restart=on-failure
+RestartSec=2s
+
+ReadWritePaths=/var/lib/robot/xlerobot_bus1_full
+
+StandardOutput=journal
+StandardError=journal
+Environment=ROBOT_LOG_FORMAT=json
+Environment=RUST_LOG=info,robot=debug
+
+# 安全收紧（同 bus2）。
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

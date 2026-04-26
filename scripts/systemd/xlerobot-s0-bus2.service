@@ -48,16 +48,26 @@ Description=XLeRobot S0 daemon (bus2 9-motor: right_arm + base 3 wheel)
 Documentation=file:///home/loosqk/repo/robot/robot-system/docs/00_design.md
 Documentation=file:///home/loosqk/repo/robot/robot-system/docs/handoffs/2026-04-26_3.md
 
-# bus2 USB 串口出现才启动（避免 ttyACM1 还没枚举就跑导致 connect 失败）。
-# `Requires=` + `After=` 保证 udev rule 把 device unit 拉起来后再起本 unit。
-# 实物 by-id 路径在 dev 上是确定的（dimos 04_踩坑记录.md 验证）。
-After=network-online.target dev-serial-by-id-usb-1a86_USB_Single_Serial_5A7C122340-if00.device
-Requires=dev-serial-by-id-usb-1a86_USB_Single_Serial_5A7C122340-if00.device
+# bus2 USB 串口出现才启动（避免 ttyACM 还没枚举就跑导致 connect 失败）。
+# **注意**：systemd 默认**不**为 `/dev/serial/by-id/...` 创建 device unit，
+# 只为内核侧 `/dev/ttyACMx` 创建。我们 daemon 里仍走 by-id 路径开串口（固定
+# motor 1a86 / serial 5A7C122340 → 物理唯一），但 systemd 端的 dependency
+# 只能挂到 `dev-ttyACM1.device`。这意味着 ACM enum 顺序变化时（dimos /
+# 多 USB 串口同时插拔）unit 路径要更新；v0.2 单 robot 部署接受此约束。
+# 永久方案需要 udev rule + SYMLINK + SystemdAlias，留 v0.3+ 做。
+After=network-online.target dev-ttyACM1.device
+Requires=dev-ttyACM1.device
 
 # 不跟 dimos service 同时跑（同一根 ttyACM1 互斥）。如果 dimos 在跑这个
 # unit 不会启动；deploy 流程上必须 `sudo systemctl stop xlerobot-coordinator
 # xlerobot-web` 后再 start 本 unit。
 Conflicts=xlerobot-coordinator.service xlerobot-web.service
+
+# 防失控重启：60s 内挂 ≥ 5 次就停止 retry，进 failed 状态由人介入。
+# **systemd 230+** 这两条搬到 `[Unit]` 节（旧版在 `[Service]`），systemd 249
+# 实测放 `[Service]` 会 "Unknown key name" warning 并被忽略。
+StartLimitIntervalSec=60s
+StartLimitBurst=5
 
 [Service]
 # `Type=notify` 让 systemd 等 daemon 调 sd_notify(READY=1) 才认为 active；
@@ -87,10 +97,6 @@ WatchdogSec=2s
 # graceful)。这样 daemon 主动停下来 systemd 不会拉起；操作员意图清楚。
 Restart=on-failure
 RestartSec=2s
-
-# 防失控重启：60s 内挂 ≥ 5 次就停止 retry，进 failed 状态由人介入。
-StartLimitIntervalSec=60s
-StartLimitBurst=5
 
 # Latch / log 写权限（user 拥有 /var/lib/robot/<robot_id>/）。
 # 安装时按上面 "## 安装" §2 创建目录 + 改 owner。

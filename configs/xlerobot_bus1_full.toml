@@ -1,0 +1,65 @@
+# XLeRobot bus1 全栈 8-motor 真机闭环验证配置（task #15 follow-up "两个 bus 都控制"）。
+#
+# bus1 拓扑（dimos `04_踩坑记录.md` + `/home/loosqk/repo/dimensional-applications/
+# calibration/` 实测）：
+#
+# ```
+# /dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00 → 左臂 + 头部
+# left_arm.json → ID 1..=6（pan/lift/elbow/wrist_flex/wrist_roll/gripper）
+# head.json     → ID 7..=8（head_motor_1 = pan，head_motor_2 = tilt）
+# ```
+#
+# 跟 bus2 (xlerobot_bus2_full.toml) 不同点：
+# - bus1 没有 base wheel；不需要 §2.2 Operating_Mode 切换（head motor 默认就是
+#   位置模式，跟 left_arm motor 一样）。
+# - 8 motor 不是 9 motor；mock_s1 应当 `--joints 8`。
+# - 如果 ballet 时不想转头，可以 `--frozen-joints 6,7`（左臂 6 摆，head 2 冻结）。
+#   实测 head_motor_1 / head_motor_2 在闭合范围内做 ±5° 摆动也是安全的，
+#   只是看起来像"头在小幅点头摇头"。
+#
+# ## 启动期防飞
+#
+# 跟 bus2 同款：`FeetechAdapter::enable(true)` follow-current（sync_read Present
+# → sync_write Goal 让 target 追平 current 再上扭）。
+#
+# ## 各 motor range（dimos）
+#
+# 单位 raw（4096 = 360°）。±5° ≈ ±57 raw。
+#
+# | joint                  | id | range_raw    | rad_range          |
+# |---|---|---|---|
+# | left_arm_shoulder_pan  | 1 | [620, 3301]  | 涵盖 ±π/2          |
+# | left_arm_shoulder_lift | 2 | [1086, 3410] | 涵盖 ±π/2          |
+# | left_arm_elbow_flex    | 3 | [969, 3158]  | 涵盖 ±π/2          |
+# | left_arm_wrist_flex    | 4 | (类似)        |                     |
+# | left_arm_wrist_roll    | 5 | (类似)        |                     |
+# | left_arm_gripper       | 6 | (类似闭/张)   |                     |
+# | head_motor_1 (pan)     | 7 | [797, 3081]  | 涵盖 ±π/2          |
+# | head_motor_2 (tilt)    | 8 | [678, 3454]  | 涵盖 ±π/2 + 略多   |
+#
+# 真实 range 见 dimos JSON。±0.087 rad (5°) 远在所有 range 内，silent clamp
+# 不会触发。
+
+[robot]
+id             = "xlerobot_bus1_full"
+config_version = "0.2.0-task15-stage2-bus1"
+
+[[hardware]]
+id          = "left_arm_full_with_head"
+adapter     = "feetech_sts3215"
+address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
+joints      = [
+    "left_arm_shoulder_pan",
+    "left_arm_shoulder_lift",
+    "left_arm_elbow_flex",
+    "left_arm_wrist_flex",
+    "left_arm_wrist_roll",
+    "left_arm_gripper",
+    "head_motor_1",
+    "head_motor_2",
+]
+motor_ids   = [1, 2, 3, 4, 5, 6, 7, 8]
+calibration_paths = [
+    "/home/loosqk/repo/dimensional-applications/calibration/left_arm.json",
+    "/home/loosqk/repo/dimensional-applications/calibration/head.json",
+]
