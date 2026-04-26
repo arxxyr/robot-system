@@ -10,6 +10,81 @@
 
 ---
 
+## 2026-04-26 · v0.3 A2：§6.7 #2 "systemd 是最外层看门狗" 真宣称升级（**状态：偏离 / 实施完成 + 真机 PASS**）
+
+### 背景
+
+`docs/handoffs/v0.3_entry.md` §1.2 + §4.6 拍板：v0.2 收尾期 §6.7 #2
+"systemd 是最外层看门狗" 降级宣称为"代码层面到位 / 没端到端测过"
+（`LivenessObserver` 真接 4 worker `tick_count`，但 worker-stall →
+`WatchdogSec` → systemd 真重启的完整路径没端到端验证）。v0.3 A2
+（freeze hook + control plane + systemd e2e smoke）落地 + 本机 / Orin
+真机 PASS 后，**升级**到"真锁住"。
+
+### 升级登记内容
+
+§6.7 #2 完整路径在 v0.3 A2 后**端到端真锁定**：
+
+> S0 内部任一 worker (ipc / rt-or-serial / pub / io) cap-deadlock 或停
+> 滞 → `LivenessObserver` 观察对应 `tick_count` 不增 → watchdog 主循
+> 环跳 `sd_notify(WATCHDOG=1)` → systemd `WatchdogSec=2s` 真超时 →
+> `Restart=on-failure` 拉起新 daemon → 新 daemon 完成 `sd_notify(READY=1)`
+> 重新进入 active 状态。
+
+证据链：
+1. **代码层**：[`crates/robot-s0/src/systemd_notify.rs::LivenessObserver`](
+   ../crates/robot-s0/src/systemd_notify.rs)（v0.2 reviewer round 4
+   commit `4222df5`）+ [`crates/robot-s0/src/freeze_hook.rs`](
+   ../crates/robot-s0/src/freeze_hook.rs)（v0.3 A2-1 commit `ca42a29`，
+   5 worker tick loop 顶端 `cfg(test, feature = "test-freeze-hook")`
+   spin hook）+ [`crates/robot-s0/src/freeze_control.rs`](
+   ../crates/robot-s0/src/freeze_control.rs)（v0.3 A2-2 commit `17ce63c`，
+   test-only iceoryx2 topic + control thread 路由 + daemon 内 monotonic
+   clock 算 absolute `freeze_until_ns`）。
+2. **端到端 smoke**：[`crates/robot-tests/src/bin/freeze_systemd_smoke.rs`](
+   ../crates/robot-tests/src/bin/freeze_systemd_smoke.rs)（v0.3 A2-3
+   commit `04d14e1` + reviewer round 2 `91bb8df` + Orin 兼容 `b33b5c4`）：
+   起 user-mode systemd unit + freeze ipc_thread 5s → 期望 PID 切换 +
+   `is-active` 二次确认 + 4 条 journal 硬断言（`withholding sd_notify`
+   ≥ 1 / `s0_daemon starting` ≥ 2 / `freeze_control thread ready` ≥ 2 /
+   `state=Ready` ≥ 1）。
+3. **真机回归**：FRIDAY workstation 本机 5/5 PASS + Orin AGX 1 round
+   PASS（详 [`docs/handoffs/2026-04-26_6.md`](handoffs/2026-04-26_6.md)
+   §5 完整 journal 时序 + 数据对照表）。
+4. **跨发行版兼容性**：smoke `journalctl` query 走系统 journal
+   `_SYSTEMD_USER_UNIT=<unit>` matcher（commit `b33b5c4`），兼容启用 /
+   不启用 user journal namespace 两种发行版配置。
+
+### 不在本次升级范围
+
+- §6.7 #3 "EStop 不可清为失忆态"：v0.2 收尾代码层面到位
+  （`MissingLatchPolicy::Strict` + `--allow-empty-latch` opt-in），
+  完整真宣称留 v0.3 A1 ClearEStop control-plane slice。
+- 完整 RPC 网关：A2 的 freeze 控制路径**仅** test-only，**不**走
+  `robot-rpc` / 生产 schema；A1 才切第一个生产 control endpoint。
+
+### 影响面
+
+- 不改 `docs/00_design.md` 正文（"systemd 是最外层看门狗" 字面表达不
+  变；本条仅升级实施真锁定状态）。
+- 不改 frozen FlatBuffers schema / `TopicClass` 体系（`/<robot_id>/test/
+  freeze` 是 cfg-gated test-only topic，跟生产命名空间 isolation）。
+- 同步更新 [`scripts/systemd/README.md`](../scripts/systemd/README.md)
+  "验证 systemd 重启路径" 段从"**仅** Restart=on-failure 已锁；watchdog
+  cap-deadlock **留 v0.3**" 改成 "**全套已锁**"。
+- [`crates/robot-s0/src/systemd_notify.rs`](../crates/robot-s0/src/systemd_notify.rs)
+  模块 doc "Liveness-gated" 段补 "v0.3 已端到端验证" 引用 + 证据链路。
+- 模板 [`scripts/systemd/xlerobot-s0-freeze-test.service`](../scripts/systemd/xlerobot-s0-freeze-test.service)
+  L49 字面残留 `state=Safe` 改成 `state=Ready` 跟 smoke 实际硬断言对齐
+  （reviewer A2-3 round 1 留的非阻断 doc 残留）。
+
+### 审阅人
+
+reviewer (用户) — A2-1 / A2-2 / A2-3 round 1-3 全部放行 + A2-4 Orin 1
+round 真机 PASS 拍板进 A2-5。
+
+---
+
 ## 2026-04-26 · v0.3 entry：`ClearEStop RPC` 文案的控制动作解释（**状态：偏离**）
 
 ### 背景

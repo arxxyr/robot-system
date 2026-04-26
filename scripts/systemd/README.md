@@ -143,21 +143,51 @@ systemctl is-active xlerobot-s0-bus1 xlerobot-s0-bus2   # 都期望 active
 sudo systemctl enable xlerobot-s0-bus1 xlerobot-s0-bus2
 ```
 
-## 验证 systemd 重启路径（**仅** Restart=on-failure 已锁；watchdog cap-deadlock **留 v0.3**）
+## 验证 systemd 重启路径（**全套已锁** — `Restart=on-failure` + watchdog cap-deadlock）
 
-> **宣称范围**（reviewer round 4 阻断 1 + round 5 复核后边界）：本节验
-> 证只锁定 "进程死亡 → systemd `Restart=on-failure` 自动拉起" 这条路径。
-> `docs/00_design.md` §6.7 #2 "S0 内部 RT watchdog 失效 → sd_notify 超
-> 时 → systemd 重启" 的真锁定**留 v0.3**：需要 daemon 内 `cfg(test)`
-> worker freeze hook 模拟 cap-deadlock 触发 `WatchdogSec` timeout，再
-> 走真重启路径。
+> **宣称范围**（reviewer A2-3 / A2-4 复核后边界）：本节验证 §6.7 #2
+> "systemd 是最外层看门狗" 的**两条** systemd 重启路径都已端到端真锁住：
 >
-> 当前代码里 watchdog 已经是 liveness-gated（详
-> [`LivenessObserver`](../../crates/robot-s0/src/systemd_notify.rs)），
-> 观测 `ipc / rt-or-serial / pub / io` 4 worker 的 `tick_count`，任一
-> 停滞就**不**喂 `WATCHDOG=1`。但"在 daemon 里真冻一个 worker，看
-> systemd 真超时重启"这条端到端测试还没做，所以 §6.7 #2 完整真锁定还
-> 没成立。
+> 1. **进程死亡 → `Restart=on-failure` 拉起**（v0.2 收尾已锁，详 §6.1
+>    手动 kill -9 流程 + `crash_restart_smoke` 5/5 PASS）。
+> 2. **worker cap-deadlock → liveness-gated watchdog 不喂 ping →
+>    `WatchdogSec` timeout → `Restart=on-failure` 拉起新 daemon**
+>    （v0.3 A2 落地）。
+>
+> v0.3 A2 闭合的具体证据：
+>
+> - 代码：[`LivenessObserver`](../../crates/robot-s0/src/systemd_notify.rs)
+>   观测 `ipc / rt-or-serial / pub / io` 4 worker `tick_count`；任一停
+>   滞就跳 `sd_notify(WATCHDOG=1)`。
+> - 端到端 smoke：`crates/robot-tests/src/bin/freeze_systemd_smoke.rs`
+>   起 user-mode systemd unit (`Type=notify` + `WatchdogSec=2s` +
+>   `Restart=on-failure`) → 通过 test-only iceoryx2 topic
+>   `/<robot_id>/test/freeze` publish freeze 命令 → ipc_thread 真 spin
+>   5s → daemon liveness-gated watchdog 真停 ping → systemd
+>   `WatchdogSec=2s` 真超时 → SIGABRT → `Restart=on-failure` 真拉新
+>   daemon。
+> - 真机回归：FRIDAY workstation 本机 5/5 PASS + **Orin AGX 1 round
+>   PASS**（详 `docs/handoffs/2026-04-26_6.md` §5）。
+> - 真宣称升级走 [`docs/CHANGELOG.md`](../../docs/CHANGELOG.md) v0.3 偏
+>   离登记（v0.2 "代码层面到位" → v0.3 A2 "真锁住"），**不**改
+>   `docs/00_design.md` 正文。
+
+### 跑 cap-deadlock 真锁路径自动化测试（A2-3 smoke）
+
+```bash
+# 1) 编 daemon binary（必须显式带 test-freeze-hook feature；不带 default
+#    避免后续 cargo build --workspace 用默认 feature 覆盖产物）
+cargo build -p robot-s0 --bin s0_daemon \
+    --no-default-features --features mock-only,test-freeze-hook
+
+# 2) 跑 smoke（默认 5 round；--user 域，不需要 sudo）
+cargo run -p robot-tests --bin freeze_systemd_smoke \
+    --features freeze-systemd-smoke -- \
+    --daemon-bin target/debug/s0_daemon \
+    --iterations 5
+# 期望：每 iter PID 切换 + is-active 二次确认 + 4 条 journal 硬断言：
+#   withholding=1 starting=2 freeze_ready=2 state_ready=2
+```
 
 **注意**：本 unit **只**启 S0，**不**启 S1 coordinator。S0 daemon 没有
 `Heartbeat` 输入源时最多走到 `state=Ready`，**不**会自己进
@@ -186,11 +216,11 @@ sudo systemctl status xlerobot-s0-bus2 --no-pager
 按结构化 tracing 字段断言"重启 daemon 读到 `initial estop_latched`
 + `latched=true`"，兼容 human + JSON 两种输出。
 
-**v0.3 才能真锁住 §6.7 #2 cap-deadlock 路径的事**：`cfg(test)` 给
-daemon 内每个 worker 加 `freeze_for_test_ms()` 钩子 → 真冻一个
-worker thread → `WatchdogSec` 真超时 → systemd `Restart=on-failure`
-再次拉起 → 钉死 §6.7 #2 完整语义。本 v0.2 unit 已经把代码层面
-（liveness-gated watchdog）做对，**等的是 v0.3 测试基础设施**。
+**v0.3 A2 已真锁住 §6.7 #2 cap-deadlock 路径**：见本节顶部"全套已锁"
+段 + 上面 "跑 cap-deadlock 真锁路径自动化测试" 子节。`crash_restart_smoke`
+覆盖路径 1（进程死亡 → `Restart=on-failure`）；`freeze_systemd_smoke`
+覆盖路径 2（worker cap-deadlock → liveness-gated watchdog → `WatchdogSec`
+timeout → `Restart=on-failure`）。
 
 ## 不在本目录范围内的事
 

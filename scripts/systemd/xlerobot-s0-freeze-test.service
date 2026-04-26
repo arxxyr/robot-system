@@ -46,8 +46,11 @@
 #
 # ## 不在本 unit 范围内的事
 #
-# - `mock_s1`：本 smoke 不需要 S1 heartbeat —— daemon 进 `state=Safe` 即可
-#   freeze ipc_thread → systemd 重启验证。S1 加不加都不改 watchdog 逻辑。
+# - `mock_s1`：本 smoke 不需要 S1 heartbeat。s0_daemon 启动期会自动发一次
+#   Event::Enable，state 从 Safe → Ready；不收 S1 heartbeat 时 state 留在
+#   Ready（不会推进到 Enabled.Active）。smoke 跑 freeze ipc_thread + 验
+#   `state":"Ready"` 出现 ≥ 1 次（main loop heartbeat），加不加 S1 都不
+#   改 watchdog 逻辑 + 不改 smoke 4 条硬断言。
 # - `--strict-rt`：smoke 不验证 RT 优先级 / mlockall；test-only daemon 走
 #   普通优先级（CAP_SYS_NICE 也不一定有）。
 # - 真实 `/var/lib/robot/` 路径：所有 path 都在 `@WORKDIR@` 下，每 iteration

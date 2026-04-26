@@ -26,6 +26,26 @@
 //!
 //! [`spawn_watchdog_thread`] 启动 dedicated 线程做这件事，传入 `stop` 原子
 //! 让 daemon graceful shutdown 时停止 ping。
+//!
+//! ### Liveness-gated（`docs/00_design.md` §6.7 #2 — v0.3 已端到端验证）
+//!
+//! [`LivenessObserver`] 让 watchdog 线程**观测每个 worker 的 `tick_count`
+//! 才喂** `WATCHDOG=1`：任一 worker 停滞（如 cap-deadlock）→ 跳过 ping →
+//! systemd `WatchdogSec` 超时 → `Restart=on-failure` 拉起新 daemon。
+//!
+//! - **v0.2 边界**：代码层面到位（observer 真接 4 worker `tick_count`），
+//!   但**没**端到端测过 worker-stall → `WatchdogSec` → systemd 真重启。
+//! - **v0.3 A2 真锁住**：`crates/robot-s0/src/freeze_hook.rs` 5 worker
+//!   tick loop 顶端加 `cfg(test, feature = "test-freeze-hook")` freeze
+//!   钩子；`crates/robot-s0/src/freeze_control.rs` test-only iceoryx2
+//!   topic + control thread 路由 freeze 命令；
+//!   `crates/robot-tests/src/bin/freeze_systemd_smoke.rs` 端到端 smoke
+//!   起 user-mode systemd unit + freeze ipc_thread → 期望 PID 切换 +
+//!   journal 4 条硬断言。**FRIDAY 5/5 PASS + Orin AGX 1 round PASS**
+//!   （详 `docs/handoffs/2026-04-26_6.md` §5）。
+//! - 升级登记走 `docs/CHANGELOG.md` v0.3 偏离登记，**不**改
+//!   `docs/00_design.md` 正文（"systemd 是最外层看门狗" 的字面表达不变，
+//!   只是真锁定 + 端到端证据完整）。
 
 #![allow(clippy::doc_markdown)]
 
