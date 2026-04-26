@@ -67,6 +67,18 @@ feetech = ["dep:robot-adapter-feetech"]
 # 作为 global_allocator 才能让 assert_no_alloc 生效（见 src/bin/s0_daemon.rs）。
 rt_guard = ["robot-core/rt_guard", "dep:assert_no_alloc"]
 
+# ── A2 freeze hook（test-only；闭 §6.7 #2 systemd watchdog e2e）──
+#
+# v0.3 A2 实施。**生产 release 不得带本 feature**：
+# - **不得**进 default / xlerobot / xlerobot-real / atom01 / mock-only / rt_guard。
+# - 仅用于 dev `cargo test`（cfg(test) 自动激活）+ A2-3 落地后的
+#   `crates/robot-tests::freeze_systemd_smoke`（编译时显式 `--features
+#   robot-s0/test-freeze-hook`）+ Orin 1 round 兼容性回归。
+# - reviewer 硬边界（v0.3 entry handoff §4.2 + 拍板）：本 feature 进生产
+#   build 视为阻断；v0.3 期间任何 release 二进制 / production combo 都禁
+#   link 本 feature。详 `crates/robot-s0/src/freeze_hook.rs` 模块 doc。
+test-freeze-hook = []
+
 [dependencies.assert_no_alloc]
 version  = "1.1"
 optional = true

@@ -102,6 +102,14 @@ pub struct RtThreadMetrics {
     pub latch_rejected_count: AtomicU64,
     /// task-30 v9 / M5：normal action 完成（成功 + 失败）计数。
     pub normal_completed_count: AtomicU64,
+    /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
+    /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
+    /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
+    /// 生产 release**。**注意**：reviewer 拍板硬边界，rt_thread hook 加，但
+    /// 不在 Orin SCHED_FIFO busy-spin 冻 RT 系统级 smoke（避免调度饥饿）；
+    /// rt_thread 单测 / 非 SCHED_FIFO 集成验证即可。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
 }
 
 /// RT 线程启动后返回的控制 handle。
@@ -267,6 +275,15 @@ fn run_rt_loop<A: HardRtAdapter>(
 
     // ---- 主循环（task-30 v9 / M5 改造） ----
     while !stop.load(Ordering::Acquire) {
+        // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
+        //
+        // 放在 rt_entry! **外**：spin 是 alloc-free / syscall-free，但放外面避
+        // 免污染 RT-zone alloc-check 心智模型。freeze 期间整 tick 被 hold（含
+        // deadline 计算 + sleep_until + I/O），tick_count 不增 →
+        // LivenessObserver 看到停滞 → watchdog 不喂 sd_notify(WATCHDOG=1)。
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock.as_ref(), stop);
+
         let tick_period = DurationNs(cfg.tick_period_ns);
         deadline = deadline + tick_period;
 
@@ -1127,5 +1144,62 @@ mod tests {
         // snapshot 应有 joint_count 来自 read_state
         let snap = snap_rdr.load();
         assert!(snap.tick_seq > 0);
+    }
+
+    /// **A2 freeze hook 单测**：设 `freeze_until_ns` 后，rt_thread 的
+    /// `tick_count` 在 spin 期间不增长；过期后恢复。**SystemClock + 非
+    /// SCHED_FIFO**：reviewer 拍板硬要求 rt_thread 验证走单测 / 非
+    /// SCHED_FIFO 集成，避免 Orin 上 SCHED_FIFO busy-spin 让 RT 线程饥饿。
+    /// 单测里 `apply_rt_prio` 没 CAP_SYS_NICE 会 fallback 到 SCHED_OTHER。
+    #[test]
+    fn freeze_hook_holds_tick_count() {
+        use robot_core::time::SystemClock;
+        let sys_clock = SystemClock::new();
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let adapter = MockHardRTAdapter::with_unlimited_limits(2);
+        let (_cmd_writer, cmd_reader) =
+            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
+        let (snap_pub, _snap_rdr) = RtSnapshotPublisher::new(RtSnapshot::default());
+        let cfg = RtThreadConfig {
+            tick_period_ns: 1_000_000, // 1ms（单测节奏）
+            strict_rt: false,
+            ..RtThreadConfig::default()
+        };
+        let ctrl = Arc::new(HardRtCtrlInner::new());
+        ctrl.policy
+            .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
+        let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, ctrl).unwrap();
+        let metrics = Arc::clone(handle.metrics());
+
+        // 等 worker 跑起来
+        assert!(crate::test_util::wait_until(
+            Duration::from_secs(2),
+            || metrics.tick_count.load(Ordering::Relaxed) >= 5
+        ));
+        let pre_freeze = metrics.tick_count.load(Ordering::Relaxed);
+
+        // 设 freeze 80ms
+        let until = sys_clock.now().0 + 80_000_000;
+        metrics.freeze_until_ns.store(until, Ordering::Release);
+
+        // freeze 中段
+        std::thread::sleep(Duration::from_millis(40));
+        let mid_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        let mid_grew = mid_freeze.saturating_sub(pre_freeze);
+        assert!(
+            mid_grew <= 1,
+            "freeze 期间 tick_count 不应继续增长：pre={pre_freeze} mid={mid_freeze} 增 {mid_grew}",
+        );
+
+        // freeze 过期后恢复
+        std::thread::sleep(Duration::from_millis(100));
+        let post_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        assert!(
+            post_freeze > mid_freeze + 5,
+            "freeze 过期后 tick_count 应当恢复增长：mid={mid_freeze} post={post_freeze}",
+        );
+
+        handle.request_stop();
+        handle.join().unwrap();
     }
 }

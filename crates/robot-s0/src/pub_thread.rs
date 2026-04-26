@@ -83,6 +83,12 @@ pub struct PubThreadMetrics {
     pub joint_state_errors: AtomicU64,
     pub heartbeat_published: AtomicU64,
     pub heartbeat_errors: AtomicU64,
+    /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
+    /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
+    /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
+    /// 生产 release**。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
 }
 
 /// 闭包在线程内构造的两个 iceoryx2 publisher。
@@ -209,6 +215,10 @@ fn run_loop(
     let mut hb_seq: u64 = 0;
 
     while !stop.load(Ordering::Acquire) {
+        // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock, stop);
+
         let now = clock.now().0;
 
         // 1) JointState
@@ -744,5 +754,50 @@ mod tests {
         handle.join().unwrap();
 
         let _ = MAX_JOINTS; // 保留 import
+    }
+
+    /// **A2 freeze hook 单测**：设 `freeze_until_ns` 后，`pub_thread` 的
+    /// `tick_count` 在 spin 期间不增长；过期后恢复。`pub_thread` 是 `SoftRT`
+    /// publisher 路径，A2-2 control thread 控制路由（worker name → 各自
+    /// `freeze_until_ns`）必测之一。
+    #[test]
+    fn freeze_hook_holds_tick_count() {
+        let sys_clock = SystemClock::new();
+        let (handle, _rt_pub, _state_pub, _js_sub, _hb_sub, _rt_ctrl) = bring_up();
+        let metrics = Arc::clone(handle.metrics());
+
+        // 等 worker 跑起来
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(2)
+            && metrics.tick_count.load(Ordering::Relaxed) < 5
+        {
+            thread::sleep(Duration::from_millis(2));
+        }
+        let pre_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        assert!(pre_freeze >= 5, "warmup 失败 tick={pre_freeze}");
+
+        // 设 freeze 80ms
+        let until = sys_clock.now().0 + 80_000_000;
+        metrics.freeze_until_ns.store(until, Ordering::Release);
+
+        // freeze 中段
+        thread::sleep(Duration::from_millis(40));
+        let mid_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        let mid_grew = mid_freeze.saturating_sub(pre_freeze);
+        assert!(
+            mid_grew <= 1,
+            "freeze 期间 tick_count 不应继续增长：pre={pre_freeze} mid={mid_freeze} 增 {mid_grew}",
+        );
+
+        // freeze 过期后恢复
+        thread::sleep(Duration::from_millis(100));
+        let post_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        assert!(
+            post_freeze > mid_freeze + 5,
+            "freeze 过期后 tick_count 应当恢复增长：mid={mid_freeze} post={post_freeze}",
+        );
+
+        handle.request_stop();
+        handle.join().unwrap();
     }
 }

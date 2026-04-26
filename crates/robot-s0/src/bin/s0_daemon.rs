@@ -743,7 +743,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     };
 
     // ---- 7) spawn io_thread（占位）----
-    let io_handle = match spawn_io_thread(IoThreadConfig::default()) {
+    let io_handle = match spawn_io_thread(IoThreadConfig::default(), Arc::clone(&clock)) {
         Ok(h) => h,
         Err(e) => {
             tracing::error!(?e, "fatal: spawn_io_thread failed");

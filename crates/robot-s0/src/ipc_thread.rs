@@ -142,6 +142,12 @@ pub struct IpcThreadMetrics {
     /// 进 Safe，硬件已断扭；下次 daemon 启动可能漏读 latch，但这是分级降级
     /// 不阻断当前 tick）。
     pub latch_write_errors: AtomicU64,
+    /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
+    /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
+    /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
+    /// 生产 release**（reviewer 拍板硬边界）。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
 }
 
 /// `ipc_thread` 线程内部持有的 3 个 iceoryx2 subscriber。
@@ -339,6 +345,10 @@ fn run_loop(
     state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
 
     while !stop.load(Ordering::Acquire) {
+        // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock, stop);
+
         // ─── 1) data plane: JointCommand → cmd_writer (不进 EventQueue) ───
         poll_command(&mut subs.command, cmd_writer, metrics);
 
@@ -1073,6 +1083,52 @@ mod tests {
         );
 
         assert_eq!(state_rdr.load().state, S0State::Stopping);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **A2 freeze hook 单测**：设 `freeze_until_ns` 后，`ipc_thread` 的
+    /// `tick_count` 在 spin 期间不增长；过期后恢复 →
+    /// [`crate::systemd_notify::LivenessObserver`] 看到停滞，watchdog 主循环
+    /// 跳 `sd_notify(WATCHDOG=1)`。详 [`crate::freeze_hook`] 模块 doc。
+    #[test]
+    fn freeze_hook_holds_tick_count() {
+        let sys_clock = SystemClock::new();
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let (_wd_tx, wd_rx) = unbounded();
+        let (handle, _cmd_reader, _state_rdr, _cp, _hp, _ep, _inner) =
+            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
+
+        let metrics = Arc::clone(handle.metrics());
+        // 等 worker 跑起来
+        wait_until(
+            || metrics.tick_count.load(Ordering::Relaxed) >= 5,
+            Duration::from_secs(2),
+        );
+        let pre_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        assert!(pre_freeze >= 5, "warmup 失败 tick={pre_freeze}");
+
+        // 设 freeze 80ms
+        let until = sys_clock.now().0 + 80_000_000;
+        metrics.freeze_until_ns.store(until, Ordering::Release);
+
+        // 等 freeze 中段（40ms）
+        std::thread::sleep(Duration::from_millis(40));
+        let mid_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        let mid_grew = mid_freeze.saturating_sub(pre_freeze);
+        assert!(
+            mid_grew <= 1,
+            "freeze 期间 tick_count 不应继续增长：pre={pre_freeze} mid={mid_freeze} 增 {mid_grew}",
+        );
+
+        // 等 freeze 过期 + tick 恢复
+        std::thread::sleep(Duration::from_millis(100));
+        let post_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        assert!(
+            post_freeze > mid_freeze + 5,
+            "freeze 过期后 tick_count 应当恢复增长：mid={mid_freeze} post={post_freeze}",
+        );
 
         handle.request_stop();
         handle.join().unwrap();

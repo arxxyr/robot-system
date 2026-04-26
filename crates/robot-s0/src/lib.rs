@@ -36,6 +36,8 @@ pub use robot_adapter_feetech as _;
 
 pub mod config_loader;
 pub mod estop_latch;
+#[cfg(any(test, feature = "test-freeze-hook"))]
+pub mod freeze_hook;
 pub mod hard_rt_ctrl;
 pub mod io_thread;
 pub mod ipc_thread;

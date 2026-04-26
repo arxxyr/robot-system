@@ -26,6 +26,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use robot_core::time::RobotClock;
+
 /// `io_thread` 配置。
 #[derive(Clone, Copy, Debug)]
 pub struct IoThreadConfig {
@@ -45,6 +47,12 @@ impl Default for IoThreadConfig {
 #[derive(Debug, Default)]
 pub struct IoThreadMetrics {
     pub tick_count: AtomicU64,
+    /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
+    /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
+    /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
+    /// 生产 release**。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
 }
 
 /// `io_thread` 启动后的 handle。
@@ -74,20 +82,46 @@ impl IoThreadHandle {
 
 /// 启动 `io_thread`。Part 2 no-op 占位。
 ///
+/// `clock` 仅给 [`crate::freeze_hook`] 用；Part 3 接真 adapter 后也会用它做
+/// poll deadline。Part 2 占位 loop 仍用 `thread::sleep` 走真实时间，避免
+/// 跟 [`robot_core::time::MockClock`] 测试的语义不同。
+///
 /// # Errors
 ///
 /// `std::io::Error` 当 `thread::Builder::spawn` 失败。
-pub fn spawn_io_thread(cfg: IoThreadConfig) -> std::io::Result<IoThreadHandle> {
+#[allow(clippy::needless_pass_by_value)]
+pub fn spawn_io_thread(
+    cfg: IoThreadConfig,
+    clock: Arc<dyn RobotClock>,
+) -> std::io::Result<IoThreadHandle> {
     let stop = Arc::new(AtomicBool::new(false));
     let metrics = Arc::new(IoThreadMetrics::default());
 
     let join_stop = Arc::clone(&stop);
     let join_metrics = Arc::clone(&metrics);
+    // cfg(test) / feature 关时 clock 未被 closure 用；显式 rename 保证 Part 3
+    // 接真 adapter 后无需改 spawn 签名（clippy::needless_pass_by_value 已
+    // allow 于函数 attribute）。
+    let join_clock = clock;
 
     let join = thread::Builder::new()
         .name("s0_io_thread".into())
         .spawn(move || {
+            // cfg 关时 join_clock 进闭包后未使用；显式 forget 让 closure
+            // 拿走 ownership 但不触发 unused_variables（cfg 开时 freeze_check
+            // 真正读它）。
+            #[cfg(not(any(test, feature = "test-freeze-hook")))]
+            let _ = &join_clock;
+
             while !join_stop.load(Ordering::Acquire) {
+                // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
+                #[cfg(any(test, feature = "test-freeze-hook"))]
+                crate::freeze_hook::freeze_check(
+                    &join_metrics.freeze_until_ns,
+                    join_clock.as_ref(),
+                    &join_stop,
+                );
+
                 // Part 3：这里会调 adapter.poll_state() → 写 softrt_snapshot。
                 join_metrics.tick_count.fetch_add(1, Ordering::Relaxed);
                 thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
@@ -104,10 +138,15 @@ pub fn spawn_io_thread(cfg: IoThreadConfig) -> std::io::Result<IoThreadHandle> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use robot_core::time::SystemClock;
+
+    fn test_clock() -> Arc<dyn RobotClock> {
+        Arc::new(SystemClock::new())
+    }
 
     #[test]
     fn spawn_then_stop_cleanly() {
-        let handle = spawn_io_thread(IoThreadConfig::default()).unwrap();
+        let handle = spawn_io_thread(IoThreadConfig::default(), test_clock()).unwrap();
         thread::sleep(Duration::from_millis(30));
         handle.request_stop();
         handle.join().unwrap();
@@ -120,7 +159,7 @@ mod tests {
         let cfg = IoThreadConfig {
             poll_interval_ns: 1_000_000, // 1 ms
         };
-        let handle = spawn_io_thread(cfg).unwrap();
+        let handle = spawn_io_thread(cfg, test_clock()).unwrap();
         let metrics = Arc::clone(handle.metrics());
         // 确定性轮询：等 tick_count >= 5（每 ms 一次，100ms 内绰绰有余）
         assert!(
@@ -137,7 +176,7 @@ mod tests {
     #[test]
     fn stops_promptly() {
         use crate::test_util::wait_until;
-        let handle = spawn_io_thread(IoThreadConfig::default()).unwrap();
+        let handle = spawn_io_thread(IoThreadConfig::default(), test_clock()).unwrap();
         let metrics = Arc::clone(handle.metrics());
         // 等线程跑起来（至少 1 tick）再 request_stop —— 比固定 5ms sleep 稳
         assert!(
@@ -155,5 +194,46 @@ mod tests {
             "io_thread join too slow: {:?}",
             start.elapsed()
         );
+    }
+
+    /// **A2 freeze hook 单测**：设 `freeze_until_ns` 到未来 80ms，期间
+    /// `tick_count` 不增长（spin 期间 worker 卡住）；过期后恢复增长。
+    #[test]
+    fn freeze_hook_holds_tick_count() {
+        let cfg = IoThreadConfig {
+            poll_interval_ns: 1_000_000, // 1 ms
+        };
+        let clock = test_clock();
+        let handle = spawn_io_thread(cfg, Arc::clone(&clock)).unwrap();
+        let metrics = Arc::clone(handle.metrics());
+
+        // 等 worker 跑起来
+        thread::sleep(Duration::from_millis(20));
+        let pre_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        assert!(pre_freeze > 0, "worker 未启动，tick_count={pre_freeze}");
+
+        // 设 freeze 80ms
+        let until = clock.now().0 + 80_000_000;
+        metrics.freeze_until_ns.store(until, Ordering::Release);
+
+        // freeze 中段（40ms 后）确认 tick_count 没增多少
+        thread::sleep(Duration::from_millis(40));
+        let mid_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        let mid_grew = mid_freeze.saturating_sub(pre_freeze);
+        assert!(
+            mid_grew <= 1,
+            "freeze 期间 tick_count 不应继续增长：pre={pre_freeze} mid={mid_freeze} 增 {mid_grew}",
+        );
+
+        // 等 freeze 过期 + 一些 tick 时间
+        thread::sleep(Duration::from_millis(80));
+        let post_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        assert!(
+            post_freeze > mid_freeze + 5,
+            "freeze 过期后 tick_count 应当恢复增长：mid={mid_freeze} post={post_freeze}",
+        );
+
+        handle.request_stop();
+        handle.join().unwrap();
     }
 }

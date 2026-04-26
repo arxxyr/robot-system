@@ -155,6 +155,12 @@ pub struct SerialIoThreadMetrics {
     pub normal_completed_count: AtomicU64,
     /// emergency drain 时 cancel 一条 in-flight pending 的次数。
     pub emergency_preempted_count: AtomicU64,
+    /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
+    /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
+    /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
+    /// 生产 release**。SerialRT 真跑路径，A2-3 systemd e2e 必测之一。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
 }
 
 /// `serial_io_thread` 启动后返回的控制 handle。
@@ -306,6 +312,10 @@ fn run_serial_io_loop<A: SerialRtAdapter>(
     let mut torque_mask = [false; MAX_JOINTS];
 
     while !stop.load(Ordering::Acquire) {
+        // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock.as_ref(), stop);
+
         let tick_period = DurationNs(cfg.tick_period_ns);
         deadline = deadline + tick_period;
         clock.sleep_until(deadline);
@@ -954,5 +964,46 @@ mod tests {
             0,
             "DeadlineExceeded 不该走 StopFailed 路径"
         );
+    }
+
+    /// **A2 freeze hook 单测**：设 `freeze_until_ns` 后，serial_io_thread 的
+    /// `tick_count` 在 spin 期间不增长；过期后恢复。SerialRT 路径是 v0.2 task
+    /// #15 真跑的实路径，A2-3 systemd e2e 必测之一（reviewer 拍板硬要求）。
+    #[test]
+    fn freeze_hook_holds_tick_count() {
+        use crate::test_util::wait_until;
+        let sys_clock = SystemClock::new();
+        let kit = setup(2);
+        let metrics = Arc::clone(kit.handle.metrics());
+
+        // 等 worker 跑起来
+        assert!(wait_until(Duration::from_secs(2), || {
+            metrics.tick_count.load(Ordering::Relaxed) >= 5
+        }));
+        let pre_freeze = metrics.tick_count.load(Ordering::Relaxed);
+
+        // 设 freeze 80ms
+        let until = sys_clock.now().0 + 80_000_000;
+        metrics.freeze_until_ns.store(until, Ordering::Release);
+
+        // freeze 中段（40ms）
+        std::thread::sleep(Duration::from_millis(40));
+        let mid_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        let mid_grew = mid_freeze.saturating_sub(pre_freeze);
+        assert!(
+            mid_grew <= 1,
+            "freeze 期间 tick_count 不应继续增长：pre={pre_freeze} mid={mid_freeze} 增 {mid_grew}",
+        );
+
+        // freeze 过期后恢复
+        std::thread::sleep(Duration::from_millis(100));
+        let post_freeze = metrics.tick_count.load(Ordering::Relaxed);
+        assert!(
+            post_freeze > mid_freeze + 5,
+            "freeze 过期后 tick_count 应当恢复增长：mid={mid_freeze} post={post_freeze}",
+        );
+
+        kit.handle.request_stop();
+        kit.handle.join().unwrap();
     }
 }
