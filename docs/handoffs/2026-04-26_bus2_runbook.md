@@ -507,7 +507,7 @@ mock_s1 12s 期间右臂动作: [ 完整 ballet / 卡 Safe / 部分抖动 ]
 | EStop 后 motor 仍 torque-on | safety_stop_fast 没生效或 broadcast 没到；feetech_poke 单 motor read Torque_Enable 看真值 |
 | daemon `Permission denied (os error 13)` 启动 fatal | latch 文件 owner 跟当前 daemon user 不一致（如之前 sudo daemon 写 root-owner latch，现在 user daemon 读不到）；`sudo rm -f <latch> <latch>.bak` 重置 |
 | mock_s1 / robotctl `ServiceInCorruptedState` | iceoryx2 service 元数据 owner 不一致或 stale；`sudo rm -rf /tmp/iceoryx2/nodes/* /tmp/iceoryx2/services/*` 重置 |
-| robotctl watch 全程 "no sample yet" | iceoryx2 0.8.1 multi-sub attach race，**不阻断物理验证**（详 附 C.1）；workaround：用 daemon log + mock_s1 log + post-run motor pos 三方合验，watch 单跑（不与 mock_s1 并发）能拿 sample |
+| robotctl watch 全程 "no sample yet" | **已修复（commit `21bb44f`）**：原归因"iceoryx2 0.8.1 framework race"被否决，root cause 是 heartbeat QoS 错用 `S1CmdVel` (`max_subscribers=1`)；新增 `TopicClass::Heartbeat` (max=8 + safe_overflow=true) 替换。Stage 2 §4 顺手 2 watch 同跑做回归验证。详附 C.1（横幅指向 follow-up）|
 | feetech_poke "Device or resource busy" | daemon 占着 ttyACM1，**期望行为**；mid-run 不能并发读 motor，等 daemon 退出后再 poke（详 附 C.3）|
 
 ---
@@ -535,6 +535,31 @@ de67bb7 ✨ feat: task-30 v9 M7 阶段 3 —— ipc_tick errata 三步式 + §0.
 
 ### C.1 iceoryx2 0.8.1 single-service multi-subscriber attach race
 
+> **2026-04-26 续场更新（commit `21bb44f`）—— 已修复**。
+> reviewer 复盘**否决**框架 bug 归因。root cause 是我们自己的 QoS 分类
+> 错误：所有 heartbeat publisher / subscriber 蹭用
+> `TopicClass::S1CmdVel`（`max_subscribers=1`），第二个 sub attach 实际
+> 被 iceoryx2 拒绝（不是静默 race）。修复 = 新增独立
+> `TopicClass::Heartbeat` (`max_subscribers=8` + `safe_overflow=true` +
+> `history=4` + `buffer=4`)，把 heartbeat 全栈站点
+> （`pub_thread` / `s0_daemon` / `ipc_thread` / `robotctl` / `mock_s1` /
+> `serial_rt_e2e` / `iceoryx2_rt_baseline`）一次性迁过去。
+>
+> 锁测：
+> - `crates/robot-transport/tests/iceoryx2_roundtrip.rs::heartbeat_class_supports_two_subscribers_receiving_same_publish`
+>   钉死同 service 双 sub 都拿到样本；
+> - `s1_cmdvel_class_rejects_second_subscriber` 反向证明
+>   `S1CmdVel` `max=1` 第二个 sub create 被拒（不是恒真）；
+> - `qos::tests::observer_classes_support_multi_subscriber` 钉死多观测
+>   者类 topic 的 `max_subscribers >= 8`。
+>
+> Stage 2 真机回归：[Stage 2 runbook §4](2026-04-26_bus2_runbook_stage2.md#4-ballet-14s关键闭环)
+> 的"2 个 watch 同跑都拿样本"（§4 验证项 4）即真机端到端验证。验证全
+> PASS 后本节完全撤销。详 `docs/CHANGELOG.md` 2026-04-26 "runbook §5.1
+> known-issue 撤销" + `docs/handoffs/2026-04-26_2.md` §2.1。
+>
+> 以下原文保留作历史对照：
+
 **复现**：daemon + 2 个 `robotctl watch`（**没** mock_s1，**没** sudo），
 第一个 watch 拿 17 samples，第二个 watch **0 samples**。daemon →
 mock_s1.anchor + watch 同跑也是 watch 0 samples（无论 watch 起得比
@@ -544,14 +569,14 @@ mock_s1 早还是晚）。
 观测不到 wire `state` / `safety_state` / `fault_code`。**不影响**物理
 正确性（control 链路不走 watch；watch 仅诊断观测）。
 
-**workaround**：
+**workaround**（修复前的临时手段，新代码已不需要）：
 - 物理验证靠 **daemon log + mock_s1 log + post-run motor pos** 三方合验
   （§3.x 实测 §3-§7 全过）
 - watch 单独跑（不并发 mock_s1）能拿到 sample（17/8s @ 500ms）
 - 需要并发观测 wire 字段时改用 `robotctl status`（一次性快照）多次手动 fire
 
-**follow-up**：升 iceoryx2 0.9 / 0.10 看是否 fix；或 watch 用独立 service。
-**当前 task #15 scope 外**。
+~~**follow-up**：升 iceoryx2 0.9 / 0.10 看是否 fix；或 watch 用独立 service。
+当前 task #15 scope 外。~~ → 已修（QoS 分类错误，非框架 bug，commit `21bb44f`）。
 
 ### C.2 sudo ↔ user 模式切换的 ownership 残留
 
