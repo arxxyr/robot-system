@@ -1135,7 +1135,7 @@ EStop latch 持久化到 /var/lib/robot/<robot_id>/estop_latch：
 `EStop` 与 `ClearEStop` 是相反方向：
 
 - `EStop`：置 `latch=true`，fsync 持久化，进入 Safe / 停输出。
-- `ClearEStop`：显式授权后，S0 先确认 `TorqueOffConfirmed`，再 fsync `latch=false`，更新内存 guard，调用 `clear_safety_latch()`，最后返回 `Ack`。
+- `ClearEStop`：显式授权后，S0 先确认 `TorqueOffConfirmed`，再 fsync `latch=false`（primary + bak），调用 `clear_safety_latch()`，最后翻内存 guard `estop_latched = false`，返回 `Ack`。`clear_safety_latch()` 必须在 fsync 持久化**之后**、内存 guard 翻转**之前**——否则 fsync 失败时 executor latch 已被清，硬件可能重新 enable，而磁盘仍记 `latch=true`，重启后退回 Safe → 状态机自相矛盾。
 
 物理急停按钮松开 / 旋出只表示物理装置复位，不自动清软件 latch，也不自动 enable。`rm latch + restart` / deploy provision 不等价于 `ClearEStop`。
 

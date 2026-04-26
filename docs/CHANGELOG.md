@@ -10,6 +10,62 @@
 
 ---
 
+## 2026-04-27 · `docs/00_design.md` §6.6.1 ClearEStop 三步顺序硬契约修正（**状态：已回写 / errata**）
+
+### 背景
+
+A1-2 评审 round 1 reviewer 阻断 5：复核 `docs/00_design.md` §6.6.1 时
+发现顺序歧义。旧文本（line 1138）写的是：
+
+> 再 fsync `latch=false`，更新内存 guard，调用 `clear_safety_latch()`
+
+字面顺序把"更新内存 guard"放在 `clear_safety_latch()` **之前**，跟 A1-2
+reviewer 拍板的实施级硬契约相反。会让实现端把 guard 翻转放在 executor
+latch 清除之前，制造一个"内存 guard 已清、executor latch 未清、磁盘 latch
+还是 true"的中间窗口；fsync 失败时尤其危险。
+
+A1-2 reviewer 拍板的硬顺序是：
+
+```
+TorqueOffConfirmed gate
+    → save_estop_latch(false)               // primary + bak fsync
+    → executor_ctrl.clear_safety_latch()
+    → guards.estop_latched = false
+                                            → 返回 Ack
+```
+
+`clear_safety_latch()` 必须在 fsync 持久化**之后**、内存 guard 翻转
+**之前**：
+
+- 在 fsync 之前清 executor latch → fsync 失败时硬件已经被允许 enable，
+  但磁盘仍记 `latch=true`，重启后退回 Safe → 状态机自相矛盾。
+- 在内存 guard 翻转之后清 executor latch → 同 tick 内的 enable 路径会
+  看到 guard=false 但 executor latch 仍 true，下个 tick 再清，扩大不
+  一致窗口。
+
+### 回写内容
+
+- `docs/00_design.md` §6.6.1 line 1138 句子重写：
+  - 旧：`...再 fsync latch=false，更新内存 guard，调用 clear_safety_latch()，最后返回 Ack`
+  - 新：`...再 fsync latch=false（primary + bak），调用 clear_safety_latch()，最后翻内存 guard estop_latched=false，返回 Ack`
+- 同段附"`clear_safety_latch()` 必须在 fsync 持久化之后、内存 guard 翻转
+  之前"理由说明，避免后续实现 / 评审继续犯顺序错。
+
+### 不改变的内容
+
+- 不改 frozen schema (§5.2 / §5.3)。
+- 不放宽 §6.7 #3。A1-2 行为代码尚未 land；§6.7 #3 真宣称仍维持 v0.2
+  "代码层面到位 / 端到端测试留 v0.3" 降级口径。
+- 不动 `docs/handoffs/v0.3_entry.md` §3.3（写于 v0.3 entry 钉边界时已经
+  是正确顺序，本 errata 仅同步 `docs/00_design.md` §6.6.1）。
+- 不宣称 A1-2 已实现 / 已锁住；本条目只记录契约修正本身。
+
+### 审阅人
+
+reviewer（用户）— A1-2 round 1 阻断 5：§6.6.1 顺序歧义修正。
+
+---
+
 ## 2026-04-27 · `docs/00_design.md` RPC routing / auth + S1 action backend 术语澄清（**状态：已回写 / errata**）
 
 ### 背景
