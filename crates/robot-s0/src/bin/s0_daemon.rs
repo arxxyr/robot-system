@@ -55,7 +55,7 @@ use robot_core::factory::{AdapterBuildContext, find_factory, registered_factorie
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
 use robot_s0::config_loader::{LoadedConfig, load_robot_config};
-use robot_s0::estop_latch::{load_estop_latch, save_estop_latch};
+use robot_s0::estop_latch::{MissingLatchPolicy, load_estop_latch_with_mode, save_estop_latch};
 use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
 use robot_s0::ipc_thread::{IpcSubscribers, IpcThreadConfig, IpcThreadHandle, spawn_ipc_thread};
@@ -111,6 +111,12 @@ struct Args {
     strict_rt: bool,
     joint_count: u8,
     cpu_affinity: Option<usize>,
+    /// `--allow-empty-latch`：primary + bak 两个 latch 都不存在时显式 opt-in
+    /// 走 `latched=false` 启动（等价于"首次部署 / bring-up 实验"语义）。**默认
+    /// false**：daemon fail-closed 拒启动 + 报错（reviewer round 4 阻断 2，
+    /// `docs/00_design.md` §6.7 #3 实施）。`docs/00_design.md` §6.7 #3 真正
+    /// 的 "只能 `ClearEStop` RPC 解除" 在 v0.3 RPC 落地前由这个 flag 守门。
+    allow_empty_latch: bool,
 }
 
 /// CLI 解析完 + `--config` 加载完之后的最终配置（CLI override 优先级已应用）。
@@ -124,6 +130,7 @@ struct ResolvedArgs {
     strict_rt: bool,
     joint_count: u8,
     cpu_affinity: Option<usize>,
+    allow_empty_latch: bool,
     /// `--config` 加载的完整配置（含 ConfigIdentity），无 `--config` 时为 None。
     loaded_config: Option<LoadedConfig>,
     /// v0.2 partial fingerprint：`--config` 模式下来自 TOML，否则按 CLI 现场算
@@ -144,6 +151,7 @@ impl Args {
             strict_rt: false,
             joint_count: 3,
             cpu_affinity: None,
+            allow_empty_latch: false,
         };
 
         let raw: Vec<String> = std::env::args().skip(1).collect();
@@ -200,6 +208,7 @@ impl Args {
                     args.tick_period_ns = 1_000_000_000 / hz;
                 }
                 "--strict-rt" => args.strict_rt = true,
+                "--allow-empty-latch" => args.allow_empty_latch = true,
                 "--joints" => {
                     i += 1;
                     args.joint_count = raw
@@ -284,6 +293,7 @@ impl Args {
             strict_rt: self.strict_rt,
             joint_count: self.joint_count,
             cpu_affinity: self.cpu_affinity,
+            allow_empty_latch: self.allow_empty_latch,
             loaded_config,
             identity,
         })
@@ -320,6 +330,11 @@ OPTIONS:
   --tick-hz <HZ>               rt_thread tick 频率。默认 50。
   --joints <N>                 mock adapter 关节数。默认 3。
   --strict-rt                  RT syscall 失败立即 panic（生产推荐）。
+  --allow-empty-latch          首次部署 / bring-up 实验：primary + bak 两个 latch
+                               都不存在时显式 opt-in 走 latched=false。**默认拒**：
+                               daemon fail-closed 拒启动，因为 \"rm latch && restart\"
+                               不等价于 ClearEStop 解除（v0.3 RPC 落地前的守门，详
+                               docs/00_design.md §6.7 #3）。
   --cpu <IDX>                  rt_thread CPU 亲和性。默认不绑核。
   -h, --help                   显示帮助。
 
@@ -434,7 +449,12 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         );
         return Err(1);
     }
-    let initial_estop_latched = match load_estop_latch(&args.latch_path) {
+    let latch_policy = if args.allow_empty_latch {
+        MissingLatchPolicy::AllowEmpty
+    } else {
+        MissingLatchPolicy::Strict
+    };
+    let initial_estop_latched = match load_estop_latch_with_mode(&args.latch_path, latch_policy) {
         Ok(v) => v,
         Err(e) => {
             tracing::error!(
@@ -766,8 +786,35 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     // 等场景零差异。详 `crates/robot-s0/src/systemd_notify.rs`。
     robot_s0::systemd_notify::ready();
     let systemd_wd_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let systemd_wd_handle =
-        robot_s0::systemd_notify::spawn_watchdog_thread(std::sync::Arc::clone(&systemd_wd_stop));
+    // **liveness-gated watchdog**（reviewer round 4 阻断 1）：把 4 个 worker
+    // 的 `tick_count` 暴露给 watchdog 线程；任一停滞就**不**喂 systemd，
+    // WatchdogSec 超时让 systemd 真把 daemon 重启。详
+    // `crates/robot-s0/src/systemd_notify.rs::LivenessObserver`。
+    let observers = vec![
+        {
+            let m = Arc::clone(ipc.metrics());
+            robot_s0::systemd_notify::LivenessObserver::from_fn("ipc_thread", move || {
+                m.ipc_tick_count.load(Ordering::Relaxed)
+            })
+        },
+        executor.make_tick_observer(),
+        {
+            let m = Arc::clone(pub_handle.metrics());
+            robot_s0::systemd_notify::LivenessObserver::from_fn("pub_thread", move || {
+                m.tick_count.load(Ordering::Relaxed)
+            })
+        },
+        {
+            let m = Arc::clone(io_handle.metrics());
+            robot_s0::systemd_notify::LivenessObserver::from_fn("io_thread", move || {
+                m.tick_count.load(Ordering::Relaxed)
+            })
+        },
+    ];
+    let systemd_wd_handle = robot_s0::systemd_notify::spawn_watchdog_thread(
+        std::sync::Arc::clone(&systemd_wd_stop),
+        observers,
+    );
 
     // ---- 9) 主 loop：等 shutdown flag / smoke 超时 / state = STOPPING ----
     let start = std::time::Instant::now();
@@ -1021,6 +1068,26 @@ impl ExecutorHandle {
         match self {
             Self::HardRt(h) => h.join(),
             Self::SerialRt(h) => h.join(),
+        }
+    }
+
+    /// systemd watchdog 的 liveness observer：执行 thread `tick_count` 取值。
+    /// 在 `spawn_watchdog_thread` 闭包里调用，**不能** RT-thread-aware 加锁
+    /// 或 alloc，只用 `AtomicU64::load(Relaxed)`。
+    fn make_tick_observer(&self) -> robot_s0::systemd_notify::LivenessObserver {
+        match self {
+            Self::HardRt(h) => {
+                let m = Arc::clone(h.metrics());
+                robot_s0::systemd_notify::LivenessObserver::from_fn("rt_thread", move || {
+                    m.tick_count.load(Ordering::Relaxed)
+                })
+            }
+            Self::SerialRt(h) => {
+                let m = Arc::clone(h.metrics());
+                robot_s0::systemd_notify::LivenessObserver::from_fn("serial_io_thread", move || {
+                    m.tick_count.load(Ordering::Relaxed)
+                })
+            }
         }
     }
 }

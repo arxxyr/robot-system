@@ -70,26 +70,83 @@ pub fn status(text: &str) {
 }
 
 // ============================================================================
-// watchdog 周期 ping 线程
+// watchdog 周期 ping 线程（liveness-gated）
 // ============================================================================
+
+/// Worker thread liveness 观察器。`label` 用于日志识别失活线程；`tick` 闭包
+/// 返回该 worker 当前 monotonic tick 计数（一般是 `Arc<XxxMetrics>` 里的
+/// `tick_count.load(Relaxed)`），watchdog 周期间比较 snapshot 看是否增长。
+///
+/// **设计**（reviewer 在 commit 8e5a238 之后阻断 1 提出）：原 watchdog 线
+/// 程无条件 `sd_notify(WATCHDOG=1)`，只要本线程还活就喂 systemd —— RT /
+/// SerialRT / ipc / pub 任意 worker 卡死也照样喂，等价于禁用 watchdog。
+/// `docs/00_design.md:1134` 要求"内部 RT watchdog 失效 → sd_notify 超时
+/// → systemd 重启 S0"。改成"观测 worker tick 才喂"才能真把 worker 卡死
+/// 暴露给 systemd。
+pub struct LivenessObserver {
+    pub label: &'static str,
+    pub tick: Box<dyn Fn() -> u64 + Send>,
+}
+
+impl LivenessObserver {
+    /// 用 `Arc<AtomicU64>` 作 tick 源（最常见）。捕获所有 `XxxMetrics` 里
+    /// 的 `tick_count` 字段。
+    #[must_use]
+    pub fn from_atomic(label: &'static str, tick: Arc<std::sync::atomic::AtomicU64>) -> Self {
+        Self {
+            label,
+            tick: Box::new(move || tick.load(Ordering::Relaxed)),
+        }
+    }
+
+    /// 用任意闭包作 tick 源（`Arc<Metrics>` 里读 plain `AtomicU64` 字段时
+    /// 用这个：捕获 `Arc<Metrics>` 然后 `metrics.tick_count.load(...)`）。
+    #[must_use]
+    pub fn from_fn<F>(label: &'static str, f: F) -> Self
+    where
+        F: Fn() -> u64 + Send + 'static,
+    {
+        Self {
+            label,
+            tick: Box::new(f),
+        }
+    }
+}
 
 /// 启动 dedicated watchdog ping 线程。读 `WATCHDOG_USEC` env 决定 ping
 /// 间隔（= `usec / 2`），停在 `stop` 原子被 release 时。
 ///
-/// **不在 systemd 下跑时**（`WATCHDOG_USEC` 未设置或 = 0）返回 `None`，
-/// 调用方应当 graceful 处理（不需要 join）。
+/// **liveness-gated 语义**（reviewer round 4 阻断 1 修复，§6.7 #2 实施）：
+/// 每 ping 周期对 `observers` 里所有 `tick` 闭包调一次 + 跟上次 snapshot
+/// 比较；**任一**观察器停滞（值未增长）→ 本周期**不**发
+/// `sd_notify(WATCHDOG=1)`。systemd 收不到 ping → `WatchdogSec` 超时 →
+/// `Restart=on-failure` 拉起新 daemon。这把 RT/SerialRT/ipc/pub 任意 worker
+/// 死锁 / busy-loop / panic-after-handler 等场景接到 systemd 重启路径。
+///
+/// **启动 grace**：第一个 ping 周期固定喂一次（无 observer 比较），让
+/// daemon 4 个 worker 完成 spawn + first tick；之后才进 enforce 模式。
+///
+/// **不在 systemd 下跑时**（`WATCHDOG_USEC` 未设置或 = 0）返回 `None`。
+/// observers 数量为 0 时退化成无条件 ping（兼容；非 systemd 路径用不到）。
 ///
 /// **不在 RT 线程内调**：内部 `UnixDatagram::send_to` 涉及 syscall + 内核
 /// 队列写，违反 §0 / §4.9 RT 铁律。本线程是普通优先级 non-RT 工作线程。
 #[must_use = "返回 Option<JoinHandle> 调用方应保留以便 graceful shutdown 时 join"]
-pub fn spawn_watchdog_thread(stop: Arc<AtomicBool>) -> Option<JoinHandle<()>> {
+pub fn spawn_watchdog_thread(
+    stop: Arc<AtomicBool>,
+    observers: Vec<LivenessObserver>,
+) -> Option<JoinHandle<()>> {
     let usec: u64 = std::env::var("WATCHDOG_USEC").ok()?.parse().ok()?;
-    spawn_watchdog_thread_with_usec(stop, usec)
+    spawn_watchdog_thread_with_usec(stop, usec, observers)
 }
 
 /// 内部 helper：拿 `usec` 显式入参，不读 env。`spawn_watchdog_thread` 通过它
 /// 实现，单测也通过它直接验证（避免 env mutation 并发竞争）。
-fn spawn_watchdog_thread_with_usec(stop: Arc<AtomicBool>, usec: u64) -> Option<JoinHandle<()>> {
+fn spawn_watchdog_thread_with_usec(
+    stop: Arc<AtomicBool>,
+    usec: u64,
+    observers: Vec<LivenessObserver>,
+) -> Option<JoinHandle<()>> {
     if usec == 0 {
         return None;
     }
@@ -97,14 +154,44 @@ fn spawn_watchdog_thread_with_usec(stop: Arc<AtomicBool>, usec: u64) -> Option<J
     let interval = Duration::from_micros(usec / 2);
     let handle = thread::Builder::new()
         .name("s0_systemd_wd".into())
-        .spawn(move || {
-            while !stop.load(Ordering::Acquire) {
-                watchdog();
-                thread::sleep(interval);
-            }
-        })
+        .spawn(move || run_watchdog_loop(&stop, interval, &observers))
         .expect("spawn s0_systemd_wd thread");
     Some(handle)
+}
+
+/// 主循环：第一周期固定喂（grace），之后每周期对所有 observer 比较。
+fn run_watchdog_loop(stop: &AtomicBool, interval: Duration, observers: &[LivenessObserver]) {
+    // 第一周期：grace ping，让 4 个 worker 完成 spawn + first tick 增量。
+    if !stop.load(Ordering::Acquire) {
+        watchdog();
+    }
+    // 初始 snapshot：第一个 grace 间隔之后再读，避免 daemon 启动期 worker
+    // 还没跑第一个 tick 就被判停滞。
+    thread::sleep(interval);
+    let mut prev: Vec<u64> = observers.iter().map(|o| (o.tick)()).collect();
+
+    while !stop.load(Ordering::Acquire) {
+        let mut all_alive = true;
+        for (i, observer) in observers.iter().enumerate() {
+            let now = (observer.tick)();
+            if now == prev[i] {
+                tracing::warn!(
+                    thread = observer.label,
+                    prev = prev[i],
+                    now,
+                    "watchdog: worker tick stalled, withholding sd_notify(WATCHDOG=1)"
+                );
+                all_alive = false;
+                // 不更新 prev[i]：下个周期看是否恢复（值再次 == 还是停 vs 跳了一段值）
+            } else {
+                prev[i] = now;
+            }
+        }
+        if all_alive {
+            watchdog();
+        }
+        thread::sleep(interval);
+    }
 }
 
 // ============================================================================
@@ -227,19 +314,135 @@ mod tests {
     #[test]
     fn spawn_watchdog_with_zero_usec_returns_none() {
         let stop = Arc::new(AtomicBool::new(false));
-        assert!(spawn_watchdog_thread_with_usec(stop, 0).is_none());
+        assert!(spawn_watchdog_thread_with_usec(stop, 0, vec![]).is_none());
     }
 
     /// `usec > 0` 真 spawn 出线程；`stop` 原子设置后线程立刻退出。
     #[test]
     fn spawn_watchdog_with_positive_usec_spawns_and_exits_on_stop() {
         let stop = Arc::new(AtomicBool::new(false));
-        let h = spawn_watchdog_thread_with_usec(Arc::clone(&stop), 10_000_000)
+        let h = spawn_watchdog_thread_with_usec(Arc::clone(&stop), 10_000_000, vec![])
             .expect("usec > 0 应当 spawn 出线程");
         // 不真 ping（NOTIFY_SOCKET 未设置 silent no-op），只验线程能停。
         std::thread::sleep(Duration::from_millis(10));
         stop.store(true, Ordering::Release);
         h.join().expect("watchdog thread should join cleanly");
+    }
+
+    // ========================================================================
+    // liveness-gated watchdog 锁测（reviewer round 4 阻断 1）
+    // ========================================================================
+
+    /// 端到端：所有 observer tick 都增长 → watchdog 每周期都 ping。
+    /// 用 NOTIFY_SOCKET 临时 socket + ENV_LOCK 串行化（小心 env race）。
+    #[test]
+    fn watchdog_pings_when_all_observers_alive() {
+        use std::sync::atomic::AtomicU64;
+        let _guard = lock_env();
+        let (_dir, sock_path, listener) = bind_test_socket();
+
+        let tick_a = Arc::new(AtomicU64::new(0));
+        let tick_b = Arc::new(AtomicU64::new(0));
+        let observers = vec![
+            LivenessObserver::from_atomic("worker_a", Arc::clone(&tick_a)),
+            LivenessObserver::from_atomic("worker_b", Arc::clone(&tick_b)),
+        ];
+
+        // SAFETY: env mutation 在 ENV_LOCK 锁定下串行。
+        unsafe {
+            std::env::set_var("NOTIFY_SOCKET", &sock_path);
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        // usec=20ms → interval=10ms：grace ping 后 sleep 10ms snapshot；接下来
+        // 每 10ms 一周期。我们让 worker 持续 increment，验证 ping 到达。
+        let h = spawn_watchdog_thread_with_usec(Arc::clone(&stop), 20_000, observers)
+            .expect("usec > 0");
+
+        // 起一个"心跳"线程持续 increment（模拟 worker 活着）。
+        let bumper_stop = Arc::new(AtomicBool::new(false));
+        let bumper_stop_clone = Arc::clone(&bumper_stop);
+        let bumper_a = Arc::clone(&tick_a);
+        let bumper_b = Arc::clone(&tick_b);
+        let bumper_handle = std::thread::spawn(move || {
+            while !bumper_stop_clone.load(Ordering::Acquire) {
+                bumper_a.fetch_add(1, Ordering::Relaxed);
+                bumper_b.fetch_add(1, Ordering::Relaxed);
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        });
+
+        // 收集 ping：grace 1 + 至少 enforce 模式下 2 周期（共 ≥ 3 ping）
+        let mut count = 0;
+        let mut buf = [0u8; 32];
+        for _ in 0..5 {
+            if listener.recv_from(&mut buf).is_ok() {
+                count += 1;
+            }
+        }
+
+        bumper_stop.store(true, Ordering::Release);
+        let _ = bumper_handle.join();
+        stop.store(true, Ordering::Release);
+        let _ = h.join();
+        // SAFETY: 同上，cleanup env。
+        unsafe {
+            std::env::remove_var("NOTIFY_SOCKET");
+        }
+
+        assert!(
+            count >= 3,
+            "expected >= 3 pings (1 grace + ≥ 2 enforce), got {count}"
+        );
+    }
+
+    /// 端到端：observer tick **停滞** → watchdog 跳过 ping（grace 1 之后就
+    /// 停止 ping）。模拟 worker thread 死锁场景。
+    #[test]
+    fn watchdog_withholds_ping_when_observer_stalled() {
+        use std::sync::atomic::AtomicU64;
+        let _guard = lock_env();
+        let (_dir, sock_path, listener) = bind_test_socket();
+
+        let tick = Arc::new(AtomicU64::new(42));
+        // tick 永远不更新 → 模拟死锁的 worker thread。
+        let observers = vec![LivenessObserver::from_atomic(
+            "dead_worker",
+            Arc::clone(&tick),
+        )];
+
+        // SAFETY: env mutation 在 ENV_LOCK 锁定下串行。
+        unsafe {
+            std::env::set_var("NOTIFY_SOCKET", &sock_path);
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        let h = spawn_watchdog_thread_with_usec(Arc::clone(&stop), 20_000, observers)
+            .expect("usec > 0");
+
+        // 应该只收到 grace ping（第一个），之后 enforce 模式下 observer 停滞
+        // 应一直跳过 ping。等 5 个 interval (~50 ms) 看共收到几次。
+        let mut count = 0;
+        let mut buf = [0u8; 32];
+        let started = std::time::Instant::now();
+        while started.elapsed() < Duration::from_millis(50) {
+            // 短超时，免得拖慢 test
+            if listener.recv_from(&mut buf).is_ok() {
+                count += 1;
+            }
+        }
+
+        stop.store(true, Ordering::Release);
+        let _ = h.join();
+        // SAFETY: 同上。
+        unsafe {
+            std::env::remove_var("NOTIFY_SOCKET");
+        }
+
+        // grace 1 ping 是预期的；enforce 模式不该再有。**不能** = 0 因为 grace
+        // 始终发；**不能** > 1 因为之后 observer 停滞跳过。
+        assert_eq!(
+            count, 1,
+            "expected exactly 1 ping (grace only, then withhold on stall), got {count}"
+        );
     }
 
     // ========================================================================
@@ -307,7 +510,7 @@ mod tests {
             std::env::remove_var("WATCHDOG_USEC");
         }
         let stop = Arc::new(AtomicBool::new(false));
-        assert!(spawn_watchdog_thread(stop).is_none());
+        assert!(spawn_watchdog_thread(stop, vec![]).is_none());
     }
 
     /// `WATCHDOG_USEC=0` → `spawn_watchdog_thread` 走 env 路径也返 None。
@@ -319,7 +522,7 @@ mod tests {
             std::env::set_var("WATCHDOG_USEC", "0");
         }
         let stop = Arc::new(AtomicBool::new(false));
-        assert!(spawn_watchdog_thread(stop).is_none());
+        assert!(spawn_watchdog_thread(stop, vec![]).is_none());
         // SAFETY: 同上。
         unsafe {
             std::env::remove_var("WATCHDOG_USEC");
