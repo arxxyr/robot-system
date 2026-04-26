@@ -6,8 +6,19 @@
 //!
 //! ### 文件格式
 //!
-//! 单行文本：`"1\n"` = latched，`"0\n"` = not latched。文件不存在 = not latched。
-//! 其他内容（长度 > 2 / 首字符不是 `0` 或 `1`）= `InvalidData` 错误。
+//! 单行文本：`"1\n"` = latched，`"0\n"` = not latched。其他内容（长度 > 2 /
+//! 首字符不是 `0` 或 `1`）= `InvalidData` 错误。
+//!
+//! **缺失语义按 [`MissingLatchPolicy`] 决定**（reviewer round 4 阻断 2 实施
+//! `docs/00_design.md` §6.7 #3）：
+//!
+//! - `Strict`（[`load_estop_latch`] 默认 / 生产 daemon）：primary + backup
+//!   都不存在时返 `io::ErrorKind::NotFound` 让调用方拒启动 —— "rm latch
+//!   && restart" **不**等价于"清空 EStop"，要等 v0.3 `ClearEStop` RPC 真
+//!   清才算解锁。
+//! - `AllowEmpty`（[`load_estop_latch_with_mode`] + `--allow-empty-latch`
+//!   CLI / 单测 / bring-up 工具走这条）：保留旧 `Ok(false)` 行为，等价于
+//!   "首次部署 / 实验场景"显式 opt-in。
 //!
 //! ### 原子写（**双文件**）
 //!
@@ -29,11 +40,13 @@
 //!
 //! ### 读 fallback 自愈
 //!
-//! [`load_estop_latch`] 读 primary：
+//! [`load_estop_latch_with_mode`] 读 primary：
 //!
 //! - 合法 `0\n` / `1\n` → 直接用
-//! - **`NotFound`**：尝试读 backup；backup 也 `NotFound` → 返回 `false`；
-//!   backup 合法 → 用之 + 把值**回写 primary**（自愈）
+//! - **`NotFound`**：尝试读 backup；backup 合法 → 用之 + 把值**回写 primary**
+//!   （自愈）；backup 也 `NotFound` 时按 [`MissingLatchPolicy`] 分流：
+//!   - `Strict` → 返 `NotFound` err（fail-closed，调用方拒启动）
+//!   - `AllowEmpty` → 返 `Ok(false)`（显式 opt-in 后允许"首次部署"语义）
 //! - **`InvalidData`**（文件损坏）：尝试读 backup；backup 合法 → 用之 + 回写
 //!   primary（自愈）；backup 也损坏 → 返回 `InvalidData`（系统级故障，调用方
 //!   应进 Fault 而非默认 not-latched）
@@ -56,16 +69,22 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static TMP_SUFFIX_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// 从 primary `path` 读 `EStop` latch 状态；primary 缺失 / 损坏时 fallback 到
-/// `<path>.bak` 并自愈回写 primary。
+/// 从 primary `path` 读 `EStop` latch 状态；primary 缺失 / 损坏时 fallback
+/// 到 `<path>.bak` 并自愈回写 primary。**走 [`MissingLatchPolicy::Strict`]**
+/// （生产 daemon 默认；reviewer round 4 阻断 2 实施 §6.7 #3）。
+///
+/// 两份文件都不存在 → **fail-closed**：返 `io::ErrorKind::NotFound`，调用
+/// 方应拒启动 + 报"需 `ClearEStop` RPC（v0.3）解除，或显式
+/// `--allow-empty-latch` opt-in（首次部署 / bring-up）"。
 ///
 /// # Errors
 ///
-/// - `io::ErrorKind::InvalidData`：primary **和** backup 都损坏（系统级故障，
-///   调用方应进 Fault 状态）
-/// - 底层 IO 错误（权限 / 磁盘满等）：透传
-///
-/// 两份文件都不存在：返回 `Ok(false)`（S0 首次启动常态）。
+/// - `io::ErrorKind::NotFound`：primary + backup 都不存在（fail-closed，
+///   §6.7 #3 守门；走 `AllowEmpty` 反而返 `Ok(false)` 见
+///   [`load_estop_latch_with_mode`]）。
+/// - `io::ErrorKind::InvalidData`：primary **和** backup 都损坏（系统级
+///   故障，调用方应进 Fault 状态）。
+/// - 底层 IO 错误（权限 / 磁盘满等）：透传。
 pub fn load_estop_latch(path: &Path) -> io::Result<bool> {
     load_estop_latch_with_mode(path, MissingLatchPolicy::Strict)
 }

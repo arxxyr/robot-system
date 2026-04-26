@@ -5,7 +5,19 @@
 # §1.2 多 bus 场景说明 + docs/CHANGELOG.md 2026-04-24 "S0 s0_rt_thread 多
 # bus 语义澄清"）。
 #
-# 安装步骤：详 scripts/systemd/README.md（跟 bus2 同模板）。
+# **首次部署**：`s0_daemon` 默认 `MissingLatchPolicy::Strict`，干净机器
+# 没 latch 时 daemon 拒启动 + unit failed。**必须先 provision**
+# `/var/lib/robot/xlerobot_bus1_full/estop_latch{,.bak}` = `0\n`，详
+# scripts/systemd/README.md "首次部署 — latch provision **必读**" 节。
+#
+# **systemd 重启路径**：本 unit 锁定"进程死亡 → Restart=on-failure"；
+# §6.7 #2 完整真锁定（worker-stall WatchdogSec 真超时重启）留 v0.3
+# `cfg(test)` freeze hook，详 scripts/systemd/README.md "验证 systemd
+# 重启路径" 节。
+#
+# 安装步骤：跟 bus2 同模板，详 `scripts/systemd/README.md`；把
+# `bus2`/`xlerobot_bus2_full`/`right_arm_full_with_base` 替换成
+# `bus1`/`xlerobot_bus1_full`/`left_arm_full_with_head`。
 
 [Unit]
 Description=XLeRobot S0 daemon (bus1 8-motor: left_arm + head)

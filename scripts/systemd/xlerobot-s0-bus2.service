@@ -1,30 +1,48 @@
 # XLeRobot S0 daemon — bus2 全栈 9-motor（task #15 Stage 2 + Step 9 收尾）
 #
 # `docs/00_design.md` §6.4 systemd unit 约束 + §6.7 不变量 #2 "systemd 是
-# 最外层看门狗" 的实施。`Type=notify` + `WatchdogSec=2s` 让 sd_notify(WATCHDOG=1)
-# ping 超时即触发 `Restart=on-failure`，daemon 死锁 / 崩溃自动拉起。
+# 最外层看门狗" 的**部分实施**：`Type=notify` + `WatchdogSec=2s` + 进程
+# 死亡 `Restart=on-failure` 已锁。**worker-stall WatchdogSec 真超时重启**
+# 这条 §6.7 #2 完整路径**留 v0.3** 测试基础设施（详
+# `scripts/systemd/README.md` "验证 systemd 重启路径" 节）。
 #
-# ## 安装
+# **EStop latch fail-closed**（reviewer round 4 阻断 2 实施 §6.7 #3）：
+# `s0_daemon` 默认 `MissingLatchPolicy::Strict`，latch primary + bak 都
+# 不存在时拒启动。**首次部署必须先 provision 一份 `latch=0\n`**，详
+# `scripts/systemd/README.md` "首次部署 — latch provision" 节，**不要**
+# 直接照下面老式 6 步走（干净机器跑会立即 failed）。
 #
-# 1. 编辑下面 `User=` / `Group=` / `WorkingDirectory=` / `ExecStart=` 路径，
-#    填实机用户和 robot-system 仓库位置。**注意 `loosqk` 是 Orin 默认 user，
-#    其它机器要改**。
-# 2. `sudo install -d -m 0750 -o $USER -g $USER /var/lib/robot/xlerobot_bus2_full`
-#    创建 latch 目录（user 拥有，避免 sudo↔user 模式 ownership 残留，详
-#    docs/handoffs/2026-04-26.md §5.2）。
-# 3. `sudo cp scripts/systemd/xlerobot-s0-bus2.service /etc/systemd/system/`。
-# 4. `sudo systemctl daemon-reload`。
-# 5. `sudo systemctl start xlerobot-s0-bus2`（首次跑确认起来 ok 后
-#    `sudo systemctl enable xlerobot-s0-bus2` 开机自启）。
-# 6. 看日志：`journalctl -u xlerobot-s0-bus2 -f`。
+# ## 安装（必须 follow `scripts/systemd/README.md` 完整流程）
 #
-# ## 验证 watchdog 重启路径（§6.7 不变量 #2 的真机门槛）
+# 1. 编辑本 unit 的 `User=` / `Group=` / `WorkingDirectory=` / `ExecStart=`
+#    路径填实机用户和 robot-system 仓库位置（`loosqk` 是 Orin 默认 user，
+#    其它机器要改）。
+# 2. 按 README "首次部署 — latch provision **必读**" 节准备 latch
+#    （**两个流程二选一**，**都不能跳过**）：
+#    a) **推荐**：直接 `printf '0\n' | tee` provision primary + bak 双
+#       文件；之后正常 `start` strict 不阻断。
+#    b) **替代**：drop-in `--allow-empty-latch` 一次性启停产生 latch=0，
+#       然后撤掉 drop-in，strict 守门接管 + 验证 rm latch 后真 fail。
+# 3. `sudo cp scripts/systemd/xlerobot-s0-bus2.service /etc/systemd/system/`
+#    + `sudo systemctl daemon-reload`。
+# 4. `sudo systemctl start xlerobot-s0-bus2`；
+#    `sudo systemctl enable xlerobot-s0-bus2` 开机自启（首次确认 ok 后再 enable）。
+# 5. 看日志：`journalctl -u xlerobot-s0-bus2 -f`。
+#
+# ## 验证 systemd 重启路径（**仅** Restart=on-failure 已锁；watchdog cap-deadlock 留 v0.3）
+#
+# **本 unit 锁定的边界**：进程死亡 → systemd 自动拉起
+# （`Restart=on-failure`）。**§6.7 #2 完整真锁定**（worker-stall →
+# `WatchdogSec` 真超时 → systemd 重启）需要 daemon 内 `cfg(test)`
+# worker freeze hook 模拟 cap-deadlock，**留 v0.3 测试基础设施**。
+# 当前代码 watchdog 已是 liveness-gated（详
+# `crates/robot-s0/src/systemd_notify.rs::LivenessObserver`），观测 4
+# worker `tick_count`，任一停滞就**不**喂 ping。
 #
 # **注意**：本 unit **只**启 S0，**不**启 S1 coordinator。S0 daemon 没有
-# `Heartbeat` 输入源时**最多走到 `state=Ready`**，不会自己进
-# `Enabled.Active`（Active 必须 S1 发心跳）。下面"等 daemon 起来"是等
-# `state=Ready` + `READY=1` 通知 systemd，不是 `Enabled.Active`。完整步骤
-# 见 `scripts/systemd/README.md` "验证 watchdog 重启路径" 节。
+# `Heartbeat` 输入源时最多走到 `state=Ready`（不会自己进 `Enabled.Active`）。
+# 完整重启验证步骤见 `scripts/systemd/README.md` "验证 systemd 重启路径"
+# 节；最简：
 #
 # ```bash
 # sudo systemctl start xlerobot-s0-bus2
@@ -32,8 +50,7 @@
 # sudo kill -9 $(systemctl show -p MainPID --value xlerobot-s0-bus2)
 # sleep 4     # WatchdogSec=2s + RestartSec=2s 余量
 # # 期望：systemctl is-active 仍 active（新 PID）；journalctl 看到第二次
-# # "s0_daemon starting" + 第二次 state=Ready，证明 systemd 真把 daemon
-# # 重新拉起来。
+# # "s0_daemon starting" + 第二次 state=Ready。
 # sudo systemctl status xlerobot-s0-bus2 --no-pager
 # ```
 #
