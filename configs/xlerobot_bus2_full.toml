@@ -1,0 +1,115 @@
+# XLeRobot bus2 全栈 9-motor 真机闭环验证配置（task #15 Stage 2）。
+#
+# Stage 1（`xlerobot_bus2_right_arm_full.toml`）只驱动右臂 6 motor，base 三
+# 个 wheel 在物理上挂在同一根串口但**不在 daemon 配置里**，因此 daemon
+# 不向它们 sync_read / sync_write。Stage 2 要把 base 三个 wheel 也接到
+# daemon —— **adapter 启用** + **sync_read 拉 9 个 Present_Position** +
+# **sync_write 推 9 个 Goal_Position**，从而真正回答："多 motor SerialRT
+# 路径在 9-motor 全栈下还稳吗？"
+#
+# 但 base wheel **不能跟着右臂一起摆 ballet**（dimos 把它们当连续旋转
+# wheel 用，正弦摆动 = 整车颠簸，可能撞坏）。所以 mock_s1 这一边走
+# **mask 模式**（`--frozen-joints 6,7,8`）：base 三轮的 target 始终 = 启动
+# 期 anchor 读到的当前位置，sync_write 写出去后电机原地不动；右臂 6 关
+# 节正常 ±5° 正弦。
+#
+# ## Stage 2 真机闭环目标
+#
+# 1. daemon factory 报 `motors 9 | ids [1..=9]` + `calibration=loaded`。
+# 2. 启动期所有 9 motor 的 `Torque_Enable` 变化只发生在 enable(true) /
+#    safety_stop_fast 这两条 broadcast 上。
+# 3. ballet 期间右臂 motor 1-5 + gripper 6 走正弦 ±5°；base motor 7-9
+#    `Present_Position` post-shutdown 与 baseline 偏差 < 30 raw（≈ 2.6°，
+#    考虑到读 anchor 的几十 ms 内 wheel 自重微动 + sync_write 跟踪误差）。
+# 4. EStop 后 9 motor `Torque_Enable` 全 0（broadcast 真断扭覆盖 base）。
+# 5. latch 重启 / 手动 ClearEStop / 第二次 EStop 链路与 Stage 1 同款。
+#
+# ## bus2 拓扑（dimos `04_踩坑记录.md`）
+#
+# ```
+# /dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00 → 右臂 + 底盘
+# right_arm.json → ID 1..=6（pan/lift/elbow/wrist_flex/wrist_roll/gripper）
+# base.json      → ID 7..=9（base_left_wheel / base_back_wheel / base_right_wheel）
+# ```
+#
+# ## base wheel 操作模式风险（必读）
+#
+# dimos 服务运行期间 base wheel 通常被设到 STS3215 的 **wheel mode**
+# （Mode=1，Goal_Position 寄存器被解释为 Goal_Speed）。dimos service stop
+# 不会把 Mode 切回 0（位置模式），motor 自身保持上次设置。
+#
+# 我们的 `FeetechAdapter` 只写 `Goal_Position`，**不**触碰 Mode 寄存器。
+# 所以 Stage 2 跑前**必须先**确认 base wheel 是 Mode=0（位置模式），否则
+# sync_write Goal_Position 会被解释为速度命令 → wheel 持续旋转 → 整车跑掉。
+#
+# 跑前手动检查 + 强制位置模式（每个 base motor 都做一次）：
+#
+# ```bash
+# # 1) 先 ping 确认 motor 通
+# for id in 7 8 9; do feetech_poke <bus> $id ping; done
+#
+# # 2) 读当前 Mode；期望 0（位置模式），否则下一步强写 0
+# for id in 7 8 9; do feetech_poke <bus> $id read Mode; done
+#
+# # 3) 如果有 1 → 强写 0 + 复读确认
+# # （示例：所有 base motor 一律写 Mode=0）
+# for id in 7 8 9; do
+#     feetech_poke <bus> $id write Torque_Enable 0     # 改 Mode 前必须先断扭
+#     feetech_poke <bus> $id write Mode 0              # 切位置模式
+#     feetech_poke <bus> $id read Mode                  # 验证 = 0
+# done
+# ```
+#
+# 跑完 Stage 2 后**不需要**改回 wheel mode —— dimos 切回时会自己设 Mode=1。
+# 如果担心后续 dimos 启动看到 Mode=0 而行为变化，跑完 Stage 2 后手动复位
+# `Mode=1` 即可（dimos 启动也会再写一遍 Mode）。
+#
+# ## 启动期防飞
+#
+# 同 Stage 1：`FeetechAdapter::enable(true)` follow-current 序列让 9 motor
+# 的 Goal 在扭接上瞬间追平 Present；mock_s1 anchor 让正弦 bias = 当前位
+# 置；frozen base 三轮始终 target = bias[7..9]，**不**叠加正弦。
+#
+# ## right_arm + base 各 motor range（dimos）
+#
+# 单位 raw（4096 = 360°）。±5° ≈ ±57 raw。
+#
+# | joint              | id | range_raw    | rad_range          |
+# |---|---|---|---|
+# | right_arm_shoulder_pan  | 1 | [1024, 3072] | [-π/2, +π/2]   |
+# | right_arm_shoulder_lift | 2 | 同上          | 同上            |
+# | right_arm_elbow_flex    | 3 | 同上          | 同上            |
+# | right_arm_wrist_flex    | 4 | 同上          | 同上            |
+# | right_arm_wrist_roll    | 5 | 同上          | 同上            |
+# | right_arm_gripper       | 6 | [1384, 2847] | [-1.02, +1.23]  |
+# | base_left_wheel         | 7 | [0, 4095]    | [-π, +π]        |
+# | base_back_wheel         | 8 | [0, 4095]    | [-π, +π]        |
+# | base_right_wheel        | 9 | [0, 4095]    | [-π, +π]        |
+#
+# base wheel 的 [0, 4095] 是连续旋转 motor 的标定写法（任意位置都合法）。
+# 它们 frozen 后 target = bias，silent clamp 一定不会触发。
+
+[robot]
+id             = "xlerobot_bus2_full"
+config_version = "0.2.0-task15-stage2"
+
+[[hardware]]
+id          = "right_arm_full_with_base"
+adapter     = "feetech_sts3215"
+address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00"
+joints      = [
+    "right_arm_shoulder_pan",
+    "right_arm_shoulder_lift",
+    "right_arm_elbow_flex",
+    "right_arm_wrist_flex",
+    "right_arm_wrist_roll",
+    "right_arm_gripper",
+    "base_left_wheel",
+    "base_back_wheel",
+    "base_right_wheel",
+]
+motor_ids   = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+calibration_paths = [
+    "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",
+    "/home/loosqk/repo/dimensional-applications/calibration/base.json",
+]

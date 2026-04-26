@@ -95,9 +95,18 @@ struct Args {
     /// 让第一帧 Goal 等于当前位置（motor 不跳）。task 29 commit 5 加。
     /// 0 = 禁用（旧行为，bias 全 0，对未在 center 附近的 motor 会瞬间跳）。
     anchor_timeout_ms: u64,
+    /// 冻结 joint 集合（mask 模式）：这些 joint 在每帧 command 里始终发
+    /// `bias[i]`（即 anchor 时读到的当前位置），**不**叠加正弦摆动。
+    ///
+    /// 用途：bus 上同时挂"要 ballet 的关节"+"不该被 ballet 撞坏的关节"时，
+    /// 例如 task #15 Stage 2（bus2 9-motor：右臂 6 摆 + base 3 wheel 冻结）。
+    /// 冻结关节仍然走 `sync_write` 的 `Goal_Position`（adapter 没有"按 joint
+    /// 跳过 write"的接口），但 target 永远 = bias，电机原地不动。
+    frozen_joints: Vec<usize>,
 }
 
 impl Args {
+    #[allow(clippy::too_many_lines)] // 大段 if-else CLI 解析；分函数会更绕。
     fn parse() -> Result<Self, String> {
         let env_robot_id = std::env::var("ROBOT_ID").ok();
         let mut args = Self {
@@ -112,6 +121,7 @@ impl Args {
             layout_id: 0xCAFE_BABE_DEAD_BEEF,
             source_id: 2, // S1 固定 2（§3.5）
             anchor_timeout_ms: 1000,
+            frozen_joints: Vec::new(),
         };
 
         let raw: Vec<String> = std::env::args().skip(1).collect();
@@ -183,14 +193,56 @@ impl Args {
                         .parse()
                         .map_err(|e| format!("--anchor-timeout-ms: {e}"))?;
                 }
+                "--frozen-joints" => {
+                    i += 1;
+                    args.frozen_joints =
+                        parse_joint_indices(raw.get(i).ok_or("--frozen-joints requires value")?)?;
+                }
                 "--help" | "-h" => return Err("HELP".into()),
                 other => return Err(format!("unknown arg: {other}")),
             }
             i += 1;
         }
 
+        // --frozen-joints 越界 / 重复检查（必须在 --joints 之后做；CLI 解析顺
+        // 序由用户决定，这里在 parse 完后统一校验）。
+        for &idx in &args.frozen_joints {
+            if idx >= args.joints {
+                return Err(format!(
+                    "--frozen-joints: index {idx} out of range (joints={})",
+                    args.joints
+                ));
+            }
+        }
+
         Ok(args)
     }
+}
+
+/// 解析 `--frozen-joints "0,3,5"` 格式：逗号分隔的 joint 下标（**0-based**）。
+///
+/// - 空字符串 → 空 Vec（**等价**于不传 `--frozen-joints`，所有关节都摆动）。
+/// - 允许重复（去重后再用）。
+/// - 越界检查在 `Args::parse` 末尾统一做（这里不知道 `joints`）。
+fn parse_joint_indices(s: &str) -> Result<Vec<usize>, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut out: Vec<usize> = Vec::new();
+    for part in trimmed.split(',') {
+        let p = part.trim();
+        if p.is_empty() {
+            return Err(format!("--frozen-joints: empty entry in '{s}'"));
+        }
+        let idx: usize = p
+            .parse()
+            .map_err(|e| format!("--frozen-joints: '{p}' not a usize: {e}"))?;
+        if !out.contains(&idx) {
+            out.push(idx);
+        }
+    }
+    Ok(out)
 }
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
@@ -225,6 +277,10 @@ OPTIONS:
   --anchor-timeout-ms <MS> 启动时从 S0 state 读当前位置作正弦 bias 的超时（默认
                            1000 ms）。0 = 禁用（正弦从 rad=0 开始，motor 可能瞬
                            间跳到 center）。task 29 commit 5 加。
+  --frozen-joints <LIST>   逗号分隔的 0-based joint 下标，这些 joint 每帧 target
+                           = bias[i]（不叠加正弦）。其它 joint 仍按 sin 摆动。
+                           例：'--joints 9 --frozen-joints 6,7,8' = 前 6 摆 +
+                           后 3 冻结。task #15 Stage 2 加（bus2 9-motor 同栈）。
   -h, --help               显示此帮助。
 
 TOPICS:
@@ -279,6 +335,7 @@ fn run(args: &Args) -> Result<(), i32> {
         duration = ?args.duration,
         topic_cmd = %topic_cmd,
         topic_hb = %topic_hb,
+        frozen_joints = ?args.frozen_joints,
         "mock_s1 starting"
     );
 
@@ -367,7 +424,13 @@ fn run(args: &Args) -> Result<(), i32> {
             let phase = TAU * args.frequency * elapsed_s;
             #[allow(clippy::cast_precision_loss)]
             let target: Vec<f64> = (0..args.joints)
-                .map(|i| bias[i] + args.amplitude * (phase + (i as f64) * (TAU / 8.0)).sin())
+                .map(|i| {
+                    if args.frozen_joints.contains(&i) {
+                        bias[i]
+                    } else {
+                        bias[i] + args.amplitude * (phase + (i as f64) * (TAU / 8.0)).sin()
+                    }
+                })
                 .collect();
             let body = build_joint_command(
                 args.layout_id,
@@ -499,5 +562,44 @@ fn publish_body<T: robot_msg::markers::BodyMarker>(
         Err(e) => {
             eprintln!("warn: loan failed: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_joint_indices_empty_returns_empty_vec() {
+        assert_eq!(parse_joint_indices("").unwrap(), Vec::<usize>::new());
+        assert_eq!(parse_joint_indices("   ").unwrap(), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn parse_joint_indices_single_index() {
+        assert_eq!(parse_joint_indices("3").unwrap(), vec![3]);
+    }
+
+    #[test]
+    fn parse_joint_indices_multiple_with_whitespace() {
+        assert_eq!(parse_joint_indices("6, 7, 8").unwrap(), vec![6, 7, 8]);
+    }
+
+    #[test]
+    fn parse_joint_indices_dedup_preserves_first_occurrence_order() {
+        // 重复入参允许，去重后保留首次出现顺序（不稳定排序避免，按用户输入直观）。
+        assert_eq!(parse_joint_indices("0,3,0,1,3").unwrap(), vec![0, 3, 1]);
+    }
+
+    #[test]
+    fn parse_joint_indices_empty_entry_is_error() {
+        let err = parse_joint_indices("0,,3").unwrap_err();
+        assert!(err.contains("empty entry"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn parse_joint_indices_non_numeric_is_error() {
+        let err = parse_joint_indices("0,foo,2").unwrap_err();
+        assert!(err.contains("not a usize"), "unexpected: {err}");
     }
 }
