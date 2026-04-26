@@ -475,9 +475,19 @@ fn run_robotctl_estop(args: &Args, robot_id: &str) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// 重启 daemon 短暂跑 `secs`，捕获 stderr 返回字符串。要求 daemon 在
-/// 这段时间内**不**重新 fsync 改 latch（latch 已是 true，daemon 启动期
+/// 重启 daemon 短暂跑 `secs`，捕获 stdout + stderr 合并返回。要求 daemon
+/// 在这段时间内**不**重新 fsync 改 latch（latch 已是 true，daemon 启动期
 /// 读到 true 不会回写）。
+///
+/// **关键 env 注入**（reviewer 在 commit 8e5a238 后阻断验证发现）：
+/// - `tracing-subscriber` 默认走 **stdout** + 即使 piped 也带 ANSI 转义
+///   码，`latched=true` 实际字节是 `latched\x1b[0m\x1b[2m=\x1b[0mtrue`，
+///   substring `latched=true` 命中失败。
+/// - 注入 `ROBOT_LOG_FORMAT=json` 让 child daemon 输出 JSON Lines（无
+///   ANSI、固定字段），跟 [`log_contains_initial_latched_true`] 的
+///   `"latched":true` 分支命中。
+/// - `NO_COLOR=1` 双保险：万一 `ROBOT_LOG_FORMAT` 路径意外退化到 fmt 模式，
+///   ANSI 也被强制关闭，`latched=true` 字串干净可 grep。
 fn run_daemon_briefly(
     args: &Args,
     robot_id: &str,
@@ -497,11 +507,15 @@ fn run_daemon_briefly(
         .arg("50")
         .arg("--smoke-duration")
         .arg(format!("{secs}s"))
+        .env("ROBOT_LOG_FORMAT", "json")
+        .env("NO_COLOR", "1")
         .stderr(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .output()
         .map_err(|e| format!("spawn restart daemon: {e}"))?;
-    Ok(String::from_utf8_lossy(&out.stderr).into_owned())
+    let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
+    combined.push_str(&String::from_utf8_lossy(&out.stderr));
+    Ok(combined)
 }
 
 fn sigkill(pid: u32) -> std::io::Result<()> {
