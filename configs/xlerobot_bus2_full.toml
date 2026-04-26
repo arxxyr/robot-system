@@ -34,35 +34,32 @@
 #
 # ## base wheel 操作模式风险（必读）
 #
-# dimos 服务运行期间 base wheel 通常被设到 STS3215 的 **wheel mode**
-# （Mode=1，Goal_Position 寄存器被解释为 Goal_Speed）。dimos service stop
-# 不会把 Mode 切回 0（位置模式），motor 自身保持上次设置。
+# dimos 服务运行期间 base wheel 通常被设到 STS3215 的 **wheel/velocity 模式**
+# （`Operating_Mode=1`，`Goal_Position` 寄存器被解释为 `Goal_Speed`）。dimos
+# service stop 不会把 `Operating_Mode` 切回 0（位置模式），motor 自身保持上
+# 次设置。
 #
-# 我们的 `FeetechAdapter` 只写 `Goal_Position`，**不**触碰 Mode 寄存器。
-# 所以 Stage 2 跑前**必须先**确认 base wheel 是 Mode=0（位置模式），否则
-# sync_write Goal_Position 会被解释为速度命令 → wheel 持续旋转 → 整车跑掉。
+# 我们的 `FeetechAdapter` 只写 `Goal_Position`，**不**触碰 `Operating_Mode`。
+# 所以 Stage 2 跑前**必须先**确认 base wheel 是 `Operating_Mode=0`（位置
+# 模式），否则 sync_write Goal_Position 会被解释为速度命令 → wheel 持续旋
+# 转 → 整车跑掉。
 #
-# 跑前手动检查 + 强制位置模式（每个 base motor 都做一次）：
+# **EEPROM 写保护**：`Operating_Mode` 在 EEPROM 区（`crates/robot-adapters/
+# feetech/src/registers.rs::EEPROM_REGISTERS`）。写之前必须 `Torque_Enable=0`
+# **且** `Lock=0`，否则写包被 motor 静默拒绝（看不到错误，但 readback 还是
+# 旧值）。完整序列见 Stage 2 runbook §2.2，要点：
 #
-# ```bash
-# # 1) 先 ping 确认 motor 通
-# for id in 7 8 9; do feetech_poke <bus> $id ping; done
+# 1. `read Operating_Mode` 拿 baseline（**寄存器名**就是这个，不是 `Mode`；
+#    `feetech_poke` 是精确查表，写错名直接 `unknown register` fail）。
+# 2. `write Torque_Enable 0`
+# 3. `write Lock 0`         ← EEPROM 解锁
+# 4. `write Operating_Mode 0`
+# 5. `read Operating_Mode` 复读断言 == 0（不是 0 = 序列没生效，停下排查）。
+# 6. `write Lock 1`（可选；让后续 daemon enable(true) 时不会意外改其它
+#    EEPROM 寄存器）。
 #
-# # 2) 读当前 Mode；期望 0（位置模式），否则下一步强写 0
-# for id in 7 8 9; do feetech_poke <bus> $id read Mode; done
-#
-# # 3) 如果有 1 → 强写 0 + 复读确认
-# # （示例：所有 base motor 一律写 Mode=0）
-# for id in 7 8 9; do
-#     feetech_poke <bus> $id write Torque_Enable 0     # 改 Mode 前必须先断扭
-#     feetech_poke <bus> $id write Mode 0              # 切位置模式
-#     feetech_poke <bus> $id read Mode                  # 验证 = 0
-# done
-# ```
-#
-# 跑完 Stage 2 后**不需要**改回 wheel mode —— dimos 切回时会自己设 Mode=1。
-# 如果担心后续 dimos 启动看到 Mode=0 而行为变化，跑完 Stage 2 后手动复位
-# `Mode=1` 即可（dimos 启动也会再写一遍 Mode）。
+# 跑完 Stage 2 后**不需要**手动改回 wheel mode —— dimos 启动时会自己设
+# `Operating_Mode=1`。
 #
 # ## 启动期防飞
 #

@@ -16,10 +16,12 @@
 2. **mock_s1 加 mask 模式**：`--joints 9 --frozen-joints 6,7,8`，让 base 三轮
    target 始终 = anchor 读到的当前位置，不叠加正弦。其它 6 个右臂关节正常
    ±5° ballet（amplitude 0.087 rad、frequency 0.25 Hz）。
-3. **base wheel 必须先在位置模式**：dimos 平时把 base motor Mode 设到 1
-   （wheel/velocity 模式），那种状态下 sync_write `Goal_Position` 会被
-   解释为速度命令 → wheel 持续旋转 → 整车跑掉。**Stage 2 跑前必须先把
-   Mode 切到 0 + 复读确认**（详 §2.2）。
+3. **base wheel 必须先在位置模式**：dimos 平时把 base motor 的
+   `Operating_Mode` 设到 1（wheel/velocity 模式），那种状态下 sync_write
+   `Goal_Position` 会被解释为速度命令 → wheel 持续旋转 → 整车跑掉。
+   **Stage 2 跑前必须先把 `Operating_Mode` 切到 0 + 复读断言**（详 §2.2）；
+   `Operating_Mode` 在 EEPROM 区，写之前必须 `Torque_Enable=0` **且**
+   `Lock=0`，少一步就静默写失败。
 4. **启动期 6→9 motor 防飞**：`FeetechAdapter::enable(true)` 已经在 task
    29 落地 follow-current（sync_read Present → sync_write Goal 让 target
    追平 current 再上扭），9-motor 同款；mock_s1 anchor 也读到 9 个 bias。
@@ -62,36 +64,73 @@ done
 
 ### 2.2 base wheel 强制位置模式（关键安全步骤）
 
-dimos 在运行期把 base motor 切到 wheel 模式（Mode=1）；service stop 不会
-切回 0。本步骤把 7、8、9 三个 motor 强制写 `Mode=0`（位置模式）+ 复读
-确认。**改 Mode 必须先断扭**（厂家文档要求；带扭改 Mode 会被拒）。
+dimos 在运行期把 base motor 切到 wheel/velocity 模式
+（`Operating_Mode=1`，`Goal_Position` 被解释成 `Goal_Speed`）；service
+stop 不切回。本步骤把 7、8、9 三个 motor 强制写 `Operating_Mode=0`（位
+置模式）+ 复读断言。
+
+> **寄存器名硬要求**：必须用 **`Operating_Mode`**（addr 33）。
+> `feetech_poke` 是精确查表（`crates/robot-adapters/feetech/src/registers.rs::STS3215_CONTROL_TABLE`），
+> 写错成 `Mode` / `OperatingMode` / `mode` 都会直接返
+> `unknown register`。
+>
+> **EEPROM 写保护硬要求**：`Operating_Mode` 在 EEPROM 区
+> （`EEPROM_REGISTERS`，同文件）。STS3215 EEPROM 写要求 `Torque_Enable=0`
+> **且** `Lock=0`（解锁）。少了 `Lock=0` 这步**写包会被 motor 静默拒**——
+> 看不到错误，但 readback 还是旧值，ballet 一跑车就跑掉。所以下面序列
+> 三步缺一不可。
+
+完整切换序列（每个 base motor 都做一次）：
 
 ```bash
 BUS=/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00
 
-# 1) 读当前 Mode（baseline；记下来用于跑完后判断是否改回）
+# ── 1) 读当前 Operating_Mode（baseline）──
 for id in 7 8 9; do
-    target/release/examples/feetech_poke "$BUS" "$id" read Mode
+    echo -n "motor $id Operating_Mode = "
+    target/release/examples/feetech_poke "$BUS" "$id" read Operating_Mode
 done
-# 期望：3 行 Mode 值。如果全 = 0 可直接跳到 §2.3。
-# 如果有 1 / 其它值 → 进下一步。
+# 期望：3 行值。全 = 0 可直接跳 §2.3；有 1 / 其它值 → 进 step 2。
 
-# 2) 强制切到位置模式
+# ── 2) 强制切到位置模式（含 EEPROM 解锁 + 重锁）──
 for id in 7 8 9; do
+    # a. 必须先断扭（带扭改 EEPROM 静默失败）
     target/release/examples/feetech_poke "$BUS" "$id" write Torque_Enable 0
-    target/release/examples/feetech_poke "$BUS" "$id" write Mode 0
+    # b. EEPROM 解锁（少这步 write 直接被吞）
+    target/release/examples/feetech_poke "$BUS" "$id" write Lock 0
+    # c. 切位置模式
+    target/release/examples/feetech_poke "$BUS" "$id" write Operating_Mode 0
+    # d. 重锁 EEPROM（防止后续 daemon 操作误改其它 EEPROM 寄存器）
+    target/release/examples/feetech_poke "$BUS" "$id" write Lock 1
 done
 
-# 3) 复读确认 Mode = 0
+# ── 3) 复读断言 Operating_Mode == 0 ──
+all_ok=true
 for id in 7 8 9; do
-    target/release/examples/feetech_poke "$BUS" "$id" read Mode
+    echo -n "motor $id Operating_Mode = "
+    out=$(target/release/examples/feetech_poke "$BUS" "$id" read Operating_Mode)
+    echo "$out"
+    case "$out" in *"= 0"*|*"=0"*) ;; *) all_ok=false ;; esac
 done
-# 期望：3 行 = 0。如有非 0 必须停下排查。
+$all_ok && echo "OK: all base motors at position mode" \
+        || { echo "FAIL: 至少一个 base motor Operating_Mode != 0；"\
+             "停下排查（最常见原因：Lock 没解、Torque 没断、bus 通信丢包）"; exit 1; }
 ```
 
-**跑完 Stage 2 后是否改回**：dimos 启动时会重新写 Mode=1，所以**不强制**
-跑完后改回。如果担心改回前手工再跑 dimos 一段时间，可以同款写 `Mode 1`
-+ readback 确认。
+**为什么 step 2 序列必须按 a→b→c→d**：a 和 b 顺序可换（都是写 SRAM 区
++ 一个 EEPROM 锁位），但 c（写 EEPROM）必须在 a + b **都已落地**之后；d
+重锁是为了让"daemon 后续 enable(true) → write `Torque_Enable=1`" 这条
+SRAM 写不会因为 Lock 还开着而被怀疑（Torque_Enable 在 SRAM 区不受 Lock
+影响，但留 Lock=0 增加误改其它 EEPROM 寄存器的风险，所以 §2.2 完成立
+即重锁）。
+
+**断言失败的最常见原因**：
+- `Lock 0` 写之前忘了 `Torque_Enable 0`（部分批次 motor 会拒）
+- `Lock 0` 跟 `Operating_Mode 0` 之间 bus 丢包导致前一条没生效
+- 写错成 `Mode` 寄存器名 → `unknown register` 直接 fail（命令行该报错）
+
+**跑完 Stage 2 后**：dimos 启动会自己 `Operating_Mode=1` 把 base 切回
+wheel 模式，**不需要**手动恢复。
 
 ### 2.3 base wheel `Torque_Enable` baseline + `Present_Position` baseline
 
@@ -293,11 +332,15 @@ diff <(grep -A1 "^motor [1-9]:" logs/bus2_stage2_baseline.log | grep Present_Pos
 - **motor 7-9 (base wheel)：|Δ raw| < 30**（≈ 2.6°，frozen 模式 + EStop
   断扭后保持几乎不动）。
 
-如果 base motor Δ raw > 100：要么 §2.2 Mode 切换没生效（Goal_Position 被
-解释为速度命令），要么 mock_s1 没真把 base joint frozen。停下排查：
+如果 base motor Δ raw > 100：要么 §2.2 `Operating_Mode` 切换没生效
+（`Goal_Position` 被解释为速度命令；最常见原因是 EEPROM 解锁序列漏了
+`Lock=0`，写包被静默拒），要么 mock_s1 没真把 base joint frozen。停下
+排查：
 - 检查 mock_s1 启动 banner 的 `frozen_joints=[6, 7, 8]`（task-32 tracing
   field）。
-- 重读 base motor Mode：应当 = 0。
+- 重读 base motor `Operating_Mode`：应当 = 0；不是 0 → 回 §2.2 重做完整
+  序列（`Torque_Enable=0` → `Lock=0` → `Operating_Mode=0` → readback →
+  `Lock=1`），不能跳步。
 
 ---
 
@@ -315,9 +358,10 @@ diff <(grep -A1 "^motor [1-9]:" logs/bus2_stage2_baseline.log | grep Present_Pos
 9 motor 全 PASS / 部分 fail（列出 fail ID）
 ==>  PASS / FAIL
 
-=== bus2 9-motor §2.2 base mode 切换 ===
-baseline Mode: motor 7=<v> 8=<v> 9=<v>
-切换后 Mode: motor 7=<v> 8=<v> 9=<v>（应当 = 0）
+=== bus2 9-motor §2.2 base Operating_Mode 切换 ===
+baseline Operating_Mode: motor 7=<v> 8=<v> 9=<v>
+切换后 Operating_Mode: motor 7=<v> 8=<v> 9=<v>（必须 = 0）
+切换序列是否完整: Torque_Enable=0 + Lock=0 + Operating_Mode=0 + readback + Lock=1 [完整 / 跳步]
 ==>  PASS / FAIL
 
 === bus2 9-motor §3 Smoke ===
@@ -362,7 +406,7 @@ motor 9 ΔPos: <raw>
 | 症状 | 怀疑点 |
 |---|---|
 | factory `motors 6` 不是 `motors 9` | 启动用了 Stage 1 配置；检查 `--config` 路径 |
-| base wheel 跑掉 | §2.2 Mode 切换没做 / 没生效；停 daemon → `feetech_poke` 单独切 Mode 0 + readback |
+| base wheel 跑掉 | §2.2 `Operating_Mode` 切换没做 / 没生效（最常见：EEPROM `Lock=0` 漏写 → 写包被吞）；停 daemon → 完整跑 §2.2 序列（断扭 + 解锁 + 写 + readback + 重锁） |
 | ballet 期间 base motor Δ raw > 1000 | mock_s1 没传 `--frozen-joints 6,7,8`；检查 mock_s1 启动 banner |
 | `--frozen-joints: index N out of range` | mock_s1 `--joints` 给了 < 9，跟 frozen 索引冲突；改成 `--joints 9` |
 | post-shutdown motor 7-9 仍 `Torque_Enable=1` | §5 EStop 后 base wheel 没断扭；可能是 broadcast 没生效（实测应当全 0）；feetech_poke 单读多次确认 |
