@@ -21,9 +21,13 @@ use std::time::Duration;
 
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
+use robot_core::time::{RobotClock, SystemClock};
+use robot_msg::build_helpers::build_estop_event;
 use robot_msg::markers;
-use robot_transport::iceoryx2::{Iceoryx2Subscriber, TopicClass, subscriber as open_sub};
-use robot_transport::traits::LatestSubscriber;
+use robot_transport::iceoryx2::{
+    Iceoryx2Subscriber, TopicClass, publisher as open_pub, subscriber as open_sub,
+};
+use robot_transport::traits::{LatestSubscriber, Publisher};
 
 // ============================================================================
 // Signal handling
@@ -71,6 +75,10 @@ fn install_signal_handlers() {}
 enum Command {
     Status,
     Watch,
+    /// **task-30 v9 / task #15**：发一帧 `EStopEvent` 到
+    /// `/<robot_id>/events/estop`，让 `s0_daemon` `ipc_thread` `poll_estop` 拿到 →
+    /// `ipc_tick` emergency drain → 真硬件 broadcast `Torque_Enable=0`。
+    Estop,
 }
 
 struct Args {
@@ -78,6 +86,8 @@ struct Args {
     robot_id: String,
     hardware_id: String,
     interval_ms: u64,
+    /// `Estop` 子命令的 reason 字符串。仅日志 / 诊断用，不影响 transition。
+    estop_reason: String,
 }
 
 impl Args {
@@ -92,6 +102,7 @@ impl Args {
         let command = match sub.as_str() {
             "status" => Command::Status,
             "watch" => Command::Watch,
+            "estop" => Command::Estop,
             "-h" | "--help" => return Err("HELP".into()),
             other => return Err(format!("unknown subcommand: {other}")),
         };
@@ -101,6 +112,7 @@ impl Args {
             robot_id: env_robot_id.unwrap_or_else(|| "default".into()),
             hardware_id: "default_arm".into(),
             interval_ms: 100,
+            estop_reason: "robotctl".into(),
         };
 
         let mut i = 0;
@@ -125,6 +137,11 @@ impl Args {
                         .parse()
                         .map_err(|e| format!("--interval-ms: {e}"))?;
                 }
+                "--reason" => {
+                    i += 1;
+                    args.estop_reason
+                        .clone_from(raw.get(i).ok_or("--reason requires value")?);
+                }
                 "-h" | "--help" => return Err("HELP".into()),
                 other => return Err(format!("unknown arg: {other}")),
             }
@@ -144,15 +161,19 @@ USAGE:
 SUBCOMMANDS:
   status    订阅一次 S0 state + heartbeat，打印摘要退出。
   watch     每 --interval-ms（默认 100）刷一次；Ctrl+C 退出。
+  estop     发一帧 EStopEvent 到 /<robot_id>/events/estop，触发 daemon
+            emergency drain（软件层 EStop 入口）。
 
 OPTIONS:
   --robot-id <ID>       优先级：CLI > env ROBOT_ID > \"default\"。
   --hardware-id <ID>    默认 \"default_arm\"，匹配 S0 / mock_s1。
   --interval-ms <MS>    watch 刷新间隔（默认 100 ms）。
+  --reason <STR>        estop 子命令的 reason 字符串（默认 \"robotctl\"，仅日志）。
 
 TOPICS:
   sub /<robot_id>/s0/<hardware_id>/state
   sub /<robot_id>/s0/heartbeat
+  pub /<robot_id>/events/estop      （estop 子命令）
 "
     );
 }
@@ -184,6 +205,11 @@ fn main() {
 }
 
 fn run(args: &Args) -> Result<(), i32> {
+    // estop 子命令完全独立路径：只 open publisher，不 open state / hb subscribers。
+    if matches!(args.command, Command::Estop) {
+        return run_estop(args);
+    }
+
     let topic_state = format!("/{}/s0/{}/state", args.robot_id, args.hardware_id);
     let topic_hb = format!("/{}/s0/heartbeat", args.robot_id);
 
@@ -219,6 +245,7 @@ fn run(args: &Args) -> Result<(), i32> {
     install_signal_handlers();
 
     match args.command {
+        Command::Estop => unreachable!("handled above"),
         Command::Status => {
             print_snapshot(&mut state_sub, &mut hb_sub);
             Ok(())
@@ -241,6 +268,78 @@ fn run(args: &Args) -> Result<(), i32> {
             std::process::exit(0);
         }
     }
+}
+
+/// **task-30 v9 / task #15**：发一帧 `EStopEvent` 到
+/// `/<robot_id>/events/estop`。
+///
+/// `s0_daemon` `ipc_thread` `poll_estop` 收到 → `ipc_tick` emergency drain →
+/// `executor_ctrl.safety_stop()`（client 同步 `policy=StopTorque`,
+/// `safety_latched=true`, `safety_state=StopCommanded`）→ rt/serial 端 swap
+/// `emergency_action` 拿到 `SAFETY_STOP` → adapter `safety_stop_fast`
+/// （Feetech 真硬件 = broadcast `Torque_Enable=0`，< 10 ms）→ 下 tick
+/// `confirm_torque_off` → wire `S0SafetyState=TorqueOffConfirmed`。
+///
+/// daemon 退出时 latch 文件被写为 `1`，下次启动 `estop_latched=true`。
+fn run_estop(args: &Args) -> Result<(), i32> {
+    let topic_estop = format!("/{}/events/estop", args.robot_id);
+    eprintln!(
+        "robotctl estop: robot_id={}  reason={:?}\n  pub estop : {}",
+        args.robot_id, args.estop_reason, topic_estop,
+    );
+
+    let node = match NodeBuilder::new().create::<IxService>() {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("fatal: iceoryx2 node create: {e:?}");
+            return Err(1);
+        }
+    };
+
+    let mut estop_pub =
+        match open_pub::<markers::EStopEvent>(&node, &topic_estop, TopicClass::SafetyEvent) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("fatal: open estop publisher: {e}");
+                return Err(1);
+            }
+        };
+
+    let clock = SystemClock::new();
+    let stamp_ns = clock.now().0;
+    // build_estop_event(reason, stamp_ns, source, latched)
+    let body = build_estop_event(&args.estop_reason, stamp_ns, "robotctl", true);
+    let upper = 1024 + body.len();
+
+    let mut writer = match estop_pub.loan(upper) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("fatal: loan estop sample: {e}");
+            return Err(1);
+        }
+    };
+    writer.set_seq(1);
+    writer.set_source_id(99); // robotctl 约定 source_id=99
+    writer.set_stamp_ns(stamp_ns);
+    writer.set_body_bytes(&body);
+    if let Err(e) = writer.publish() {
+        eprintln!("fatal: publish estop: {e}");
+        return Err(1);
+    }
+
+    eprintln!(
+        "robotctl estop: published 1 EStopEvent (stamp_ns={stamp_ns}); daemon should \
+         emergency-drain within next ipc tick + serial/rt tick (≈ 10–50 ms)."
+    );
+
+    // **handoff 2026-04-25_1 §3.6**：iceoryx2 0.8.1 publisher Drop 路径在
+    // service 中其它端先退出时可能 SIGSEGV。短命 CLI 跳 Drop 直 _exit。
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::_exit(0);
+    }
+    #[cfg(not(target_os = "linux"))]
+    Ok(())
 }
 
 fn print_snapshot(
