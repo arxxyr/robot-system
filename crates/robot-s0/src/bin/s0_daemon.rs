@@ -43,7 +43,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use crossbeam_channel::unbounded;
+use crossbeam_channel::{bounded, unbounded};
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::adapter::{
@@ -58,14 +58,19 @@ use robot_s0::config_loader::{LoadedConfig, load_robot_config};
 use robot_s0::estop_latch::{MissingLatchPolicy, load_estop_latch_with_mode, save_estop_latch};
 use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
-use robot_s0::ipc_thread::{IpcSubscribers, IpcThreadConfig, IpcThreadHandle, spawn_ipc_thread};
+use robot_s0::ipc_thread::{
+    ClearEStopRrRequest, ClearEStopRrResponse, IpcSubscribers, IpcThreadConfig, IpcThreadHandle,
+    RrChannels, spawn_ipc_thread,
+};
 use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread};
+use robot_s0::rr_server_thread::{RrServerThreadConfig, spawn_rr_server_thread};
 use robot_s0::rt_thread::{RtThreadConfig, RtThreadHandle, spawn_rt_thread};
 use robot_s0::serial_io_thread::{
     SerialIoThreadConfig, SerialIoThreadHandle, spawn_serial_io_thread,
 };
 use robot_s0::state_machine::{Event, Guards, S0State, S0StateSnapshot};
 use robot_s0::watchdog::{WatchdogConfig, spawn_watchdog};
+use robot_transport::iceoryx2::request_response::rr_server;
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
 use robot_transport::{LatestCommandSlot, RtSnapshotPublisher};
 
@@ -347,6 +352,8 @@ TOPICS（iceoryx2）:
   发布：
     /<robot_id>/s0/<hardware_id>/state
     /<robot_id>/s0/heartbeat
+  RR server (A1-3 (1/3c-2)):
+    /<robot_id>/control/clear_estop
 "
     );
 }
@@ -360,6 +367,9 @@ fn topics(args: &ResolvedArgs) -> Topics {
         sub_estop: format!("/{r}/events/estop"),
         pub_state: format!("/{r}/s0/{h}/state"),
         pub_heartbeat: format!("/{r}/s0/heartbeat"),
+        // **A1-3 (1/3c-2)**：ClearEStop RR control plane topic（reviewer
+        // A1-3 (1/3b) 拍板 namespace）。
+        rr_clear_estop: format!("/{r}/control/clear_estop"),
     }
 }
 
@@ -369,6 +379,7 @@ struct Topics {
     sub_estop: String,
     pub_state: String,
     pub_heartbeat: String,
+    rr_clear_estop: String,
 }
 
 // ============================================================================
@@ -592,6 +603,12 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         }
     };
 
+    // **A1-3 (1/3c-2)**：ClearEStop RR control plane channels。reviewer 拍板
+    // bounded(64)。`rr_server_thread` (RR I/O) ↔ `ipc_thread` (action
+    // executor) 通过这两条 crossbeam channel 解耦。
+    let (rr_request_tx, rr_request_rx) = bounded::<ClearEStopRrRequest>(64);
+    let (rr_response_tx, rr_response_rx) = bounded::<ClearEStopRrResponse>(64);
+
     let ipc = match spawn_ipc_thread(
         ipc_cfg,
         Arc::clone(&clock),
@@ -600,9 +617,12 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         state_pub,
         wd_rx,
         Arc::clone(&executor_ctrl),
-        // **A1-3 (1/3c) 起接通**：rr_server_thread 落地后传 `Some(...)`；
-        // 当前 v0.3 A1-3 (1/3a/b) 阶段生产 daemon 仍不接 RR control plane。
-        None,
+        // **A1-3 (1/3c-2)**：接通 RR control plane channels（rr_server_thread
+        // 在下方 spawn 起来后通过同一对 channel 跟 ipc_thread 双向通信）。
+        Some(RrChannels {
+            request_rx: rr_request_rx,
+            response_tx: rr_response_tx,
+        }),
     ) {
         Ok(h) => h,
         Err(e) => {
@@ -612,6 +632,50 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     };
     let event_tx = ipc.event_sender();
     let last_hb_ns = ipc.last_hb_ns();
+
+    // ---- 3.5) spawn rr_server_thread (A1-3 (1/3c-2)) ----
+    //
+    // iceoryx2 RR server 在 spawn factory closure 内构造（service
+    // SingleThreaded → server `!Send`，必须 owner 线程内 create）。
+    // server_factory 内部独立 Node + leak 让 server 持有的 shm fd 跟 daemon
+    // 生命周期一致。
+    let rr_topic = t.rr_clear_estop.clone();
+    let rr_topic_for_factory = rr_topic.clone();
+    let rr_factory = move || {
+        let server_node = NodeBuilder::new().create::<IxService>().unwrap();
+        let server = rr_server::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+            &server_node,
+            &rr_topic_for_factory,
+        )
+        .expect("rr_server create");
+        // server 持 server_node 内部 shm fd；leak Node 让其活到 daemon 退出。
+        Box::leak(Box::new(server_node));
+        server
+    };
+    let rr_handle = match spawn_rr_server_thread(
+        RrServerThreadConfig {
+            topic: rr_topic.clone(),
+            poll_interval_ns: 500_000,
+            max_in_flight: 64,
+        },
+        Arc::clone(&clock),
+        rr_factory,
+        rr_request_tx,
+        rr_response_rx,
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::error!(?e, "fatal: spawn_rr_server_thread failed");
+            // ipc_thread 已起来 → 先 stop 再 return（其它线程都还没起）
+            ipc.request_stop();
+            let _ = ipc.join();
+            return Err(1);
+        }
+    };
+    tracing::info!(
+        topic = %rr_topic,
+        "rr_server_thread started (ClearEStop RR control plane; A1-3 (1/3c-2))"
+    );
 
     // ---- 4) spawn watchdog ----
     let wd_stop = Arc::new(AtomicBool::new(false));
@@ -680,7 +744,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
                 Ok(h) => ExecutorHandle::HardRt(h),
                 Err(e) => {
                     tracing::error!(?e, "fatal: spawn_rt_thread failed");
-                    graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
+                    graceful_stop(ipc, &wd_stop, wd_handle, None, None, None, Some(rr_handle));
                     return Err(1);
                 }
             }
@@ -698,7 +762,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
                 Ok(h) => ExecutorHandle::SerialRt(h),
                 Err(e) => {
                     tracing::error!(?e, "fatal: spawn_serial_io_thread failed");
-                    graceful_stop(ipc, &wd_stop, wd_handle, None, None, None);
+                    graceful_stop(ipc, &wd_stop, wd_handle, None, None, None, Some(rr_handle));
                     return Err(1);
                 }
             }
@@ -740,7 +804,15 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         Ok(h) => h,
         Err(e) => {
             tracing::error!(?e, "fatal: spawn_pub_thread failed");
-            graceful_stop(ipc, &wd_stop, wd_handle, Some(executor), None, None);
+            graceful_stop(
+                ipc,
+                &wd_stop,
+                wd_handle,
+                Some(executor),
+                None,
+                None,
+                Some(rr_handle),
+            );
             return Err(1);
         }
     };
@@ -757,6 +829,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
                 Some(executor),
                 Some(pub_handle),
                 None,
+                Some(rr_handle),
             );
             return Err(1);
         }
@@ -921,6 +994,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         Some(executor),
         Some(pub_handle),
         Some(io_handle),
+        Some(rr_handle),
     );
 
     // ---- 12) 保存 EStop latch ----
@@ -1164,6 +1238,7 @@ impl ExecutorHandle {
 }
 
 /// 有顺序地停线程 + `join`，容忍任一 handle 为 None（早期启动失败场景）。
+#[allow(clippy::too_many_arguments)]
 fn graceful_stop(
     ipc: IpcThreadHandle,
     wd_stop: &Arc<AtomicBool>,
@@ -1171,9 +1246,20 @@ fn graceful_stop(
     executor: Option<ExecutorHandle>,
     pub_handle: Option<robot_s0::pub_thread::PubThreadHandle>,
     io_handle: Option<robot_s0::io_thread::IoThreadHandle>,
+    rr_handle: Option<robot_s0::rr_server_thread::RrServerThreadHandle>,
 ) {
-    // 顺序：pub/io 先停（不再往外发），executor（rt 或 serial_io）停（不再动
-    // adapter），ipc 停，watchdog 最后。
+    // 顺序（A1-3 (1/3c-2) 加 rr_server 在最前面）：
+    //   rr_server 先停（不再接新 RR request；in-flight active 通过 ipc_thread
+    //              channel disconnect → ipc_thread 派发 response 给已断开
+    //              rr_server channel = drop，gateway 端按 RR timeout 处理）
+    //   → pub/io 停（不再往外发）
+    //   → executor（rt 或 serial_io）停（不再动 adapter）
+    //   → ipc 停（drain in-flight + state machine 收尾）
+    //   → watchdog 最后停
+    if let Some(h) = rr_handle {
+        h.request_stop();
+        let _ = h.join();
+    }
     if let Some(h) = pub_handle {
         h.request_stop();
         let _ = h.join();
