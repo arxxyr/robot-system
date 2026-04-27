@@ -118,7 +118,7 @@ impl GatewayConfig {
 
 /// [`GatewayConfig::validate`] 失败时的错误。reviewer A1-3 (2/3-b1)
 /// 拍板硬边界：bin 退出码 2（CLI 参数错）。
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ConfigError {
     #[error(transparent)]
     LoopbackBind(#[from] LoopbackBindError),
@@ -142,7 +142,7 @@ pub enum ConfigError {
 
 /// `validate_loopback_bind` 错误。reviewer A1-3 (2/3-a) 拍板硬边界：plain
 /// TCP + fake token 阶段非 loopback 必须拒启动。
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum LoopbackBindError {
     /// IP 不是 IPv4 `127.0.0.0/8` / IPv6 `::1`（含 `0.0.0.0` / `[::]` 通配
     /// + 任何外网 / 私网地址）。
@@ -229,6 +229,12 @@ impl RobotControl for ClearEStopHandler {
 // ============================================================================
 
 /// `run_gateway` 错误。
+///
+/// `tonic::transport::Error` / `std::io::Error` 都不是 `Clone`，所以本
+/// enum 也不是 `Clone`。`run_gateway_with_ready` 在 ready 阶段（pre-serve）
+/// 失败时需要把"等价的"错误同时送 `ready_tx` 和 return —— 用 [`GatewayReadyError`]
+/// 承载（A1-3 (2/3-b2-2a) reviewer 拍板：替换旧
+/// `clone_gateway_error` / `clone_config_error` 临时 helper）。
 #[derive(Debug, Error)]
 pub enum GatewayError {
     /// `GatewayConfig::validate()` 校验失败（含 listen-addr 非 loopback /
@@ -238,7 +244,7 @@ pub enum GatewayError {
 
     /// `TcpListener::bind` 失败（端口占用 / 权限不足等）。reviewer A1-3
     /// (2/3-b1) 拍板：bind 错误必须在 `ready_tx` 之前产生 → ready_tx
-    /// 携带 [`Result<SocketAddr, GatewayError>`]，测试能区分"已 ready"
+    /// 携带 [`Result<SocketAddr, GatewayReadyError>`]，测试能区分"已 ready"
     /// vs "bind 失败"。
     #[error("TcpListener::bind {addr}: {source}")]
     Bind {
@@ -258,6 +264,66 @@ pub enum GatewayError {
 impl From<LoopbackBindError> for GatewayError {
     fn from(e: LoopbackBindError) -> Self {
         Self::Config(ConfigError::LoopbackBind(e))
+    }
+}
+
+/// `ready_tx` 通道送出的错误（pre-serve 阶段失败：config validation /
+/// `TcpListener::bind`）。
+///
+/// 跟 [`GatewayError`] 区别：
+///
+/// - **没**有 `Tonic(tonic::transport::Error)` 变体：tonic 错误只在 server
+///   运行期产生，那时 `ready_tx` 已经 `take()` 进 owning closure，不可能
+///   还能通过 `ready_tx` 投递。
+/// - **是** `Clone + PartialEq`：`std::io::Error` 不是 `Clone`，所以 `Bind`
+///   变体把 `source` 拆成 `kind: io::ErrorKind` + `message: String`（语
+///   义不丢，但允许整个 enum 派生 `Clone`），让 `run_gateway_with_ready`
+///   pre-serve 失败路径能直接 send 一份 + return 一份等价错误，不再需
+///   要旧的 `clone_gateway_error` / `clone_config_error` 临时 helper。
+///
+/// `From<GatewayReadyError> for GatewayError` 让 caller / 测试可以把 ready
+/// 阶段错误升级到 [`GatewayError`]（`Bind` 重新构造一个 `io::Error`，跟
+/// 原始错误信息一致）。
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum GatewayReadyError {
+    /// 同 [`GatewayError::Config`]。
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+
+    /// 同 [`GatewayError::Bind`] 但 `source` 拆 kind + message 让整个 enum
+    /// 可 Clone。
+    #[error("TcpListener::bind {addr}: {message}")]
+    Bind {
+        addr: SocketAddr,
+        kind: std::io::ErrorKind,
+        message: String,
+    },
+}
+
+impl GatewayReadyError {
+    /// 从 `io::Error` 构造 `Bind` variant（拆 kind + message 让结果 Clone）。
+    fn bind_from_io(addr: SocketAddr, source: &std::io::Error) -> Self {
+        Self::Bind {
+            addr,
+            kind: source.kind(),
+            message: source.to_string(),
+        }
+    }
+}
+
+impl From<GatewayReadyError> for GatewayError {
+    fn from(e: GatewayReadyError) -> Self {
+        match e {
+            GatewayReadyError::Config(c) => Self::Config(c),
+            GatewayReadyError::Bind {
+                addr,
+                kind,
+                message,
+            } => Self::Bind {
+                addr,
+                source: std::io::Error::new(kind, message),
+            },
+        }
     }
 }
 
@@ -300,21 +366,20 @@ pub async fn run_gateway(
 /// # Errors
 ///
 /// 见 [`GatewayError`]。
-#[allow(clippy::too_many_lines)] // bind 错误处理两路（ready_tx send + 透传）让流程稍长
 pub async fn run_gateway_with_ready(
     cfg: GatewayConfig,
     handler: Arc<ClearEStopHandler>,
     mut shutdown_rx: watch::Receiver<bool>,
-    ready_tx: Option<tokio::sync::oneshot::Sender<Result<SocketAddr, GatewayError>>>,
+    ready_tx: Option<tokio::sync::oneshot::Sender<Result<SocketAddr, GatewayReadyError>>>,
 ) -> Result<(), GatewayError> {
     // 1) 配置校验 fail-fast
     if let Err(e) = cfg.validate() {
-        let err = GatewayError::Config(e);
+        let ready_err = GatewayReadyError::Config(e);
         if let Some(tx) = ready_tx {
-            // 把同一错误也发给 ready 监听者（防 await 永久阻塞）
-            let _ = tx.send(Err(clone_gateway_error(&err)));
+            // 把等价错误送 ready 监听者（防 await 永久阻塞）
+            let _ = tx.send(Err(ready_err.clone()));
         }
-        return Err(err);
+        return Err(ready_err.into());
     }
 
     tracing::info!(
@@ -330,14 +395,14 @@ pub async fn run_gateway_with_ready(
     let listener = match tokio::net::TcpListener::bind(cfg.listen_addr).await {
         Ok(l) => l,
         Err(e) => {
-            let err = GatewayError::Bind {
+            let ready_err = GatewayReadyError::bind_from_io(cfg.listen_addr, &e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            return Err(GatewayError::Bind {
                 addr: cfg.listen_addr,
                 source: e,
-            };
-            if let Some(tx) = ready_tx {
-                let _ = tx.send(Err(clone_gateway_error(&err)));
-            }
-            return Err(err);
+            });
         }
     };
 
@@ -345,14 +410,14 @@ pub async fn run_gateway_with_ready(
     let actual_addr = match listener.local_addr() {
         Ok(addr) => addr,
         Err(e) => {
-            let err = GatewayError::Bind {
+            let ready_err = GatewayReadyError::bind_from_io(cfg.listen_addr, &e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            return Err(GatewayError::Bind {
                 addr: cfg.listen_addr,
                 source: e,
-            };
-            if let Some(tx) = ready_tx {
-                let _ = tx.send(Err(clone_gateway_error(&err)));
-            }
-            return Err(err);
+            });
         }
     };
     if let Some(tx) = ready_tx {
@@ -396,38 +461,6 @@ pub async fn run_gateway_with_ready(
         "robot_rpc_gateway: tonic server stopped cleanly"
     );
     Ok(())
-}
-
-/// `GatewayError` 不实现 `Clone`（`tonic::transport::Error` /
-/// `std::io::Error` 都不是 Clone）。但 [`run_gateway_with_ready`] 在
-/// validation / bind 失败路径要把"同一"错误**两份**送出（一份给
-/// `ready_tx`，一份 return）—— 实际只用 message + variant 区分，construct
-/// 第二份等价 error 即可，不要求字段 byte-equality。
-fn clone_gateway_error(e: &GatewayError) -> GatewayError {
-    match e {
-        GatewayError::Config(c) => GatewayError::Config(clone_config_error(c)),
-        GatewayError::Bind { addr, source } => GatewayError::Bind {
-            addr: *addr,
-            source: std::io::Error::new(source.kind(), source.to_string()),
-        },
-        // ready_tx 仅在 validation / bind 阶段触发；Tonic err 出现时 ready_tx
-        // 已被 take 进 closure 不可能走到本分支。保留 unreachable 兜底，
-        // 避免未来重构破坏不变量。
-        GatewayError::Tonic(t) => unreachable!(
-            "clone_gateway_error not expected for Tonic err (ready_tx 已 take); got: {t}"
-        ),
-    }
-}
-
-fn clone_config_error(e: &ConfigError) -> ConfigError {
-    match e {
-        ConfigError::LoopbackBind(LoopbackBindError::NonLoopback(addr)) => {
-            ConfigError::LoopbackBind(LoopbackBindError::NonLoopback(*addr))
-        }
-        ConfigError::ZeroIdempotencyTtl => ConfigError::ZeroIdempotencyTtl,
-        ConfigError::ZeroIdempotencyMaxEntries => ConfigError::ZeroIdempotencyMaxEntries,
-        ConfigError::EmptyRobotId => ConfigError::EmptyRobotId,
-    }
 }
 
 // ============================================================================
@@ -663,13 +696,13 @@ mod tests {
             .expect("ready signal within 2s")
             .expect("ready_tx not dropped");
         match result {
-            Err(GatewayError::Config(ConfigError::ZeroIdempotencyTtl)) => {}
+            Err(GatewayReadyError::Config(ConfigError::ZeroIdempotencyTtl)) => {}
             other => panic!("expected ZeroIdempotencyTtl, got {other:?}"),
         }
     }
 
     /// **A1-3 (2/3-b1) reviewer 边界 1**：bind 失败时 ready_tx 也 send
-    /// `Err(GatewayError::Bind { .. })`。用 dual-bind 制造端口占用。
+    /// `Err(GatewayReadyError::Bind { .. })`。用 dual-bind 制造端口占用。
     #[tokio::test]
     async fn ready_tx_receives_err_when_bind_fails() {
         // 1) 先起一个真 server 占住一个 loopback 端口
@@ -722,8 +755,13 @@ mod tests {
             .expect("server B ready signal within 2s")
             .expect("ready_tx not dropped");
         match result {
-            Err(GatewayError::Bind { addr, source: _ }) => {
+            Err(GatewayReadyError::Bind {
+                addr,
+                kind,
+                message: _,
+            }) => {
                 assert_eq!(addr, occupied_addr);
+                assert_eq!(kind, std::io::ErrorKind::AddrInUse);
             }
             other => panic!("expected Bind err, got {other:?}"),
         }
