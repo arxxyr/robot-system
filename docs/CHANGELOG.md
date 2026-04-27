@@ -10,6 +10,103 @@
 
 ---
 
+## 2026-04-27 · A1-3 (1/3b) reviewer round 3 阻断 — RpcStatus 扩 ResourceExhausted/Aborted + deadline 不再事后覆盖 outcome（**状态：登记**）
+
+### 背景
+
+A1-3 (1/3b) commits `bf4f24d` + `2d790f0`（emergency preempt + deadline
+三处 check）落地后 reviewer 复核找到两个新阻断：
+
+#### 阻断 1：内部 payload 新增状态在 FlatBuffers wire 上表达不了
+
+`crates/robot-s0/src/ipc_thread.rs` `ClearEStopRrPayload` 已加
+`AlreadyInProgress` / `PreemptedByEmergency`，注释要求 gateway 映射到
+`tonic::Code::ResourceExhausted` / `Aborted`。但
+`crates/robot-msg/schemas/clear_estop.fbs:99` 的 `RpcStatus` enum 只有
+7 个 variant（Unknown / Ok / FailedPrecondition / PermissionDenied /
+InvalidArgument / Internal / DeadlineExceeded），无法承载这两个新状态。
+A1-3 (1/3c) `rr_server_thread` 构造 `ClearEStopResponse.status` 时必然
+**丢语义**——除非靠 `error_msg` 字符串解析，但这不该进协议层。
+
+#### 阻断 2：response 前 deadline 覆盖会造成"已执行成功但返 DeadlineExceeded"
+
+`crates/robot-s0/src/ipc_thread.rs:763` （commit `2d790f0`）在 ipc_tick
+已完成后用 `DeadlineExceeded` 覆盖真实 outcome；同文件注释也承认硬件 /
+磁盘 latch 可能已经清掉。这跟 `clear_estop.fbs:52`（A1-2 round 2 落地
+后的"S0 端 action layer ordering"段）写的"`deadline / emergency preempt`
+时三个翻转都不发生"硬契约**冲突**——客户端收到 `DeadlineExceeded` 会
+以为没成功，但实际硬件已 clear。
+
+### 修复
+
+#### 修复 1：fbs RpcStatus append-only 扩两个 variant
+
+`crates/robot-msg/schemas/clear_estop.fbs` `RpcStatus` enum 加：
+- `ResourceExhausted = 7` → `ClearEStopRrPayload::AlreadyInProgress`
+  （live 单飞冲突）
+- `Aborted = 8` → `ClearEStopRrPayload::PreemptedByEmergency`
+  （emergency preempt）
+
+FlatBuffers append-only 兼容：旧数值 0..6 不变，旧 reader 读到 7/8 会
+fallback 到 `Unknown`（不破坏向后兼容；同 fbs 顶部 doc 拍板）。
+
+`crates/robot-rpc/src/clear_estop.rs::rpc_status_to_tonic_code` 加两条
+显式 match arm：
+- `RpcStatus::ResourceExhausted => Code::ResourceExhausted`
+- `RpcStatus::Aborted => Code::Aborted`
+
+`rpc_status_variant_count_matches_explicit_mapping` 锁测把
+`EXPECTED_VARIANTS` 从 7 升到 9，强制 reviewer 在新增 variant 时同步
+更新 mapping + 单测。
+
+#### 修复 2：deadline 不再事后覆盖真实 outcome
+
+`crates/robot-s0/src/ipc_thread.rs` §6.6) RR live response 派发段**撤掉**
+`if clock.now().0 > req.deadline_ns { DeadlineExceeded }` 包装层，恢复
+直接 `match status` 映射 `ClearEStopTickOutcome` → `ClearEStopRrPayload`。
+
+deadline 现在只在两处 check：
+- §5.5) RR drain 入口：拦截过期请求不入队（写盘 / clear / 翻 guard
+  都没发生）
+- §5.6) preempt 段：drain 入队后到 ipc_tick 之前的窗口（同 emergency
+  preempt 共用 take + remove + reply 三件事）
+
+ipc_tick 跑期间过期的极端 window 不再"事后覆盖"——一旦 action 在 deadline
+前开始并产出 `Cleared` / `FsyncFailed` / `StateNotSafe` /
+`NotTorqueOffConfirmed`，response 必须返**真实** outcome。reviewer 拍板
+"若要挡长 fsync 前过期，就把 deadline 传进 action handler，在不可逆步骤
+前检查"——这条**留 A1-3 (3/3) 端到端阶段评估**，本轮 1/3b round 3 不
+强求；ipc_tick 同步执行 ms 级，single tick 内 deadline 过期的 window
+极小。
+
+### 顺手修复
+
+`docs/handoffs/v0.3_entry.md` §3.3 line 5 旧措辞 "显式 match 4 variant"
+现在更新为：
+- `ipc_tick` 输出 4 个 `ClearEStopTickOutcome` variant
+- `ipc_thread` 映射到 8 个 `ClearEStopRrPayload` variant（含
+  `WouldClear` / `AlreadyInProgress` / `PreemptedByEmergency` /
+  `DeadlineExceeded`）
+- gateway `rpc_status_to_tonic_code` 映射到 9 个 `tonic::Code`
+  （含新加 `Unknown` 旧 writer 兼容路径）
+
+### 不改变的内容
+
+- 不改 `docs/00_design.md` §5.2 / §5.3 / §6.7 不变量正文
+- 不动 fbs 已有 RpcStatus 数值 0..6（FlatBuffers append-only 兼容）
+- 不动 `ClearEStopRequest` / `ClearEStopResponse` table 字段或字段编号
+- 不升 §6.7 #3 真宣称（A1 全 land 后；A1-5）
+- 不接 robot-rpc → S0 RR 入口（A1-3 (1/3c) / A1-3 (2/3)）
+- 不撤 `--allow-empty-latch`（A1-5）
+- 不把 deadline 传进 `try_apply_clear_estop` action handler（reviewer 拍板
+  本轮不强求；A1-3 (3/3) e2e 时再评估）
+
+### 审阅人
+
+reviewer（用户）— A1-3 (1/3b) round 3 阻断 1 + 2 + v0.3_entry §3.3 残留。
+
+---
+
 ## 2026-04-27 · A1-3 (1/3b) reviewer round 2 阻断 — RR live emergency preempt + deadline 语义闭环（**状态：登记**）
 
 ### 背景
