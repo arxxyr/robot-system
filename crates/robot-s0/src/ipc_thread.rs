@@ -87,10 +87,21 @@ pub struct IpcThreadConfig {
     /// 旧实现仅在 daemon 退出时一次性 save，**daemon 在 graceful 退出前崩溃
     /// 会让 latch 落不下来 → 重启读 false → 自动 `Enable` → 安全语义破坏**。
     ///
-    /// 新实现：本字段 `Some` 时，`ipc_thread` 主循环每 tick 比较
-    /// `prev_estop_latched` vs `guards.estop_latched`：从 false→true 立即
-    /// `save_estop_latch(latch_path, true)`（双文件 `fsync` rename，~ms 级）；
-    /// 从 true→false（`ClearEStop` 处理）立即 `save_estop_latch(false)`。
+    /// 新实现：本字段 `Some` 时，`ipc_thread` 主循环每 tick 走 latch fsync
+    /// hook 两条路径（A1-3 (1/3a) 之后）：
+    ///
+    /// - **`EStop` 翻转 (false → true 单调)**：通用 hook 比较
+    ///   `prev_estop_latched` vs `guards.estop_latched`，翻转时立即
+    ///   `save_estop_latch(latch_path, true)`（primary-first 双文件 `fsync`
+    ///   rename，~ms 级）。
+    /// - **`ClearEStop` 路径 (true → false)**：由 `ipc_tick` 内
+    ///   [`crate::clear_estop_action::try_apply_clear_estop`] 调
+    ///   [`crate::estop_latch::save_estop_latch_clear`]（**backup-first**，
+    ///   保证 partial failure 时磁盘 latch 不动；详 `docs/CHANGELOG.md`
+    ///   2026-04-27 `round 2` 阻断登记）；`ipc_thread` hook 通过
+    ///   `tick_outcome.clear_estop` 的 `ClearEStopTickOutcome::Cleared` /
+    ///   `FsyncFailed` 等 variant 决定计数 + 同步 prev，**不**再二次
+    ///   `save_estop_latch`（防二次写）。
     ///
     /// `None` 仅供单测：跳过 latch IO，保持测试纯类型路径。生产 daemon 必须
     /// 传 `Some(args.latch_path.clone())`。
