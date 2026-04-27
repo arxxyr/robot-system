@@ -63,6 +63,7 @@ pub mod auth;
 pub mod clear_estop;
 pub mod gateway;
 pub mod idempotency;
+pub mod rr_io_thread;
 
 /// gRPC tonic 生成代码（`robot.control.v1` namespace）。包含
 /// `AuthContext` / `CommandMeta` / `ClearEStopCommand` / `Ack` /
