@@ -187,18 +187,21 @@ pub enum ClearEStopRrPayload {
     /// gateway 映射到 `tonic::Code::Aborted`。
     PreemptedByEmergency,
 
-    /// **deadline 过期**——`clock.now() > req.deadline_ns`。三处 check 之一
-    /// 命中：(a) RR drain 入口；(b) §5.6) preempt 段（drain 入队后到
-    /// ipc_tick 之前）；(c) §6.6) RR response 派发前（覆盖 ipc_tick 跑
-    /// 期间过期）。任一命中即 reply 本 variant。
+    /// **deadline 过期**——`clock.now() > req.deadline_ns`。两处 check 之一
+    /// 命中：(a) §5.5) RR drain 入口（过期请求直接拒，不入 in_flight_live
+    /// / 不 push event）；(b) §5.6) preempt 段（drain 入队后到 ipc_tick
+    /// 之前的窗口；同 emergency preempt 共用 take + remove + reply 三件事）。
+    /// 任一命中即 reply 本 variant。
     ///
-    /// **注意**：(c) 命中时硬件 / 磁盘 latch 已被 ipc_tick 三步硬顺序清掉
-    /// （成功路径），但客户端仍收 `DeadlineExceeded`——重发 ClearEStop
-    /// 会被 `NotTorqueOffConfirmed` 拒（已 clear），可重发其它 RPC（如
-    /// 状态查询）确认。
+    /// **A1-3 (1/3b) round 3** 拍板：派发前**不**再事后覆盖 outcome ——
+    /// 一旦 action 在 deadline 前开始产出 `Cleared` / `FsyncFailed` /
+    /// `StateNotSafe` / `NotTorqueOffConfirmed`，response 必须返真实 outcome；
+    /// 否则跟 `clear_estop.fbs` "S0 端 action layer ordering" 段"deadline
+    /// 时三个翻转都不发生" 硬契约冲突。长 fsync 跨 deadline 极端 window 留
+    /// A1-3 (3/3) e2e 评估。
     ///
-    /// reviewer A1-3 (1/3b) round 2 阻断 2 拍板 + frozen schema
-    /// `clear_estop.fbs:112` 要求。
+    /// reviewer A1-3 (1/3b) round 2 阻断 2 + round 3 阻断 2 + frozen
+    /// schema `clear_estop.fbs:112` 要求。
     /// gateway 映射到 `tonic::Code::DeadlineExceeded`。
     DeadlineExceeded,
 }
@@ -742,16 +745,27 @@ fn run_loop(
         //
         // 当本 tick 消费了 `Event::ClearEStop` 时（`tick_outcome.clear_estop
         // == Some(_)`），从 `in_flight_live` 取出原 request，把 4 variant
-        // domain status 映射成 RR response payload，通过 response_tx 回
-        // rr_server_thread。
+        // `ClearEStopTickOutcome` 显式 match 成对应 `ClearEStopRrPayload`
+        // domain status，通过 response_tx 回 rr_server_thread。
         //
-        // **A1-3 (1/3b) round 2 阻断 2**：派发前再 check deadline，覆盖
-        // ipc_tick 跑期间过期的极端 window（debug build 慢 / effectful
-        // pending 1s 占用 / freeze hook 等）。命中 → 用 `DeadlineExceeded`
-        // 覆盖 ipc_tick 计算的 outcome。注意：ipc_tick 已经动了硬件 + 磁盘
-        // latch（成功路径），但客户端仍收 `DeadlineExceeded`；重发
-        // ClearEStop 会被 `NotTorqueOffConfirmed` 拒（已 clear），可重发
-        // 状态查询确认。
+        // **A1-3 (1/3b) round 3 阻断 2**：派发前**不**再 check deadline。
+        // deadline 只在两处拦截：
+        // - §5.5) drain 入口：过期请求不入队（写盘 / clear / 翻 guard 都
+        //   未发生）
+        // - §5.6) preempt 段：drain 入队后到 ipc_tick 之前的窗口（同
+        //   emergency preempt 共用 take + remove + reply 三件事）
+        //
+        // 一旦 action 在 deadline 前开始并产出 `Cleared` / `FsyncFailed` /
+        // `StateNotSafe` / `NotTorqueOffConfirmed`，response 必须返**真实**
+        // outcome——不再"事后用 DeadlineExceeded 覆盖已成功 / 已失败的真
+        // 实结果"，避免"硬件已 clear 但客户端收 DeadlineExceeded 以为没
+        // 成功" 跟 `clear_estop.fbs` "S0 端 action layer ordering" 段
+        // "deadline 时三个翻转都不发生" 硬契约冲突。
+        //
+        // 长 fsync 跨 deadline 的极端 window 留 A1-3 (3/3) e2e 评估是否
+        // 把 deadline 传进 `try_apply_clear_estop` action handler 在不可
+        // 逆步骤前再 check（reviewer 拍板本轮不强求；ipc_tick 同步执行
+        // ms 级，single tick 内 deadline 过期的 window 极小）。
         //
         // **invariant**：`in_flight_live.is_some()` ↔ 上一轮 RR drain 把
         // `Event::ClearEStop` push 进 events queue（live 单飞）。如果
@@ -760,21 +774,17 @@ fn run_loop(
         // 外部 channel 入队，其它入队点都没了；这里 debug_assert 兜底）。
         if let (Some(rr), Some(status)) = (rr_channels, tick_outcome.clear_estop) {
             if let Some(req) = in_flight_live.take() {
-                let payload = if clock.now().0 > req.deadline_ns {
-                    ClearEStopRrPayload::DeadlineExceeded
-                } else {
-                    match status {
-                        ClearEStopTickOutcome::Cleared { cleared_at_ns } => {
-                            ClearEStopRrPayload::Cleared { cleared_at_ns }
-                        }
-                        ClearEStopTickOutcome::StateNotSafe { actual } => {
-                            ClearEStopRrPayload::StateNotSafe { actual }
-                        }
-                        ClearEStopTickOutcome::NotTorqueOffConfirmed { actual } => {
-                            ClearEStopRrPayload::NotTorqueOffConfirmed { actual }
-                        }
-                        ClearEStopTickOutcome::FsyncFailed => ClearEStopRrPayload::FsyncFailed,
+                let payload = match status {
+                    ClearEStopTickOutcome::Cleared { cleared_at_ns } => {
+                        ClearEStopRrPayload::Cleared { cleared_at_ns }
                     }
+                    ClearEStopTickOutcome::StateNotSafe { actual } => {
+                        ClearEStopRrPayload::StateNotSafe { actual }
+                    }
+                    ClearEStopTickOutcome::NotTorqueOffConfirmed { actual } => {
+                        ClearEStopRrPayload::NotTorqueOffConfirmed { actual }
+                    }
+                    ClearEStopTickOutcome::FsyncFailed => ClearEStopRrPayload::FsyncFailed,
                 };
                 let _ = rr.response_tx.send(ClearEStopRrResponse {
                     request_id: req.request_id,

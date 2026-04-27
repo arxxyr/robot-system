@@ -220,6 +220,15 @@ pub fn rpc_status_to_tonic_code(status: RpcStatus) -> Code {
         // 显式 Internal 错误（daemon 端 fsync 失败 / 内部 panic 等）。
         RpcStatus::Internal => Code::Internal,
         RpcStatus::DeadlineExceeded => Code::DeadlineExceeded,
+        // **A1-3 (1/3b) round 3** 新加：wire RpcStatus 7 / 8 是 RR domain
+        // 状态映射：
+        // - ResourceExhausted = ClearEStopRrPayload::AlreadyInProgress
+        //   （live 单飞冲突：in_flight_live 已被另一 live request 占用，
+        //   本 request 直拒不入队）
+        // - Aborted = ClearEStopRrPayload::PreemptedByEmergency
+        //   （in-flight live 被新触发的 EStop / SafetyStopFailed preempt 取消）
+        RpcStatus::ResourceExhausted => Code::ResourceExhausted,
+        RpcStatus::Aborted => Code::Aborted,
         // wildcard：flatc enum 是 newtype，理论 u8 0..=255 都合法。未知值
         // = wire 协议 mismatch / 旧 reader + 新 writer 的过渡期；视同内部
         // 错误。**注意**：新增 RpcStatus variant 时**不**该走到这里，
@@ -416,6 +425,26 @@ mod tests {
         );
     }
 
+    /// **A1-3 (1/3b) round 3 mapping 锁**：`RpcStatus::ResourceExhausted`
+    /// = `ClearEStopRrPayload::AlreadyInProgress`（live 单飞冲突）→
+    /// `tonic::Code::ResourceExhausted`。
+    #[test]
+    fn rpc_status_resource_exhausted_maps_to_resource_exhausted() {
+        assert_eq!(
+            rpc_status_to_tonic_code(RpcStatus::ResourceExhausted),
+            Code::ResourceExhausted
+        );
+    }
+
+    /// **A1-3 (1/3b) round 3 mapping 锁**：`RpcStatus::Aborted` =
+    /// `ClearEStopRrPayload::PreemptedByEmergency`（in-flight live 被新
+    /// 触发的 EStop / SafetyStopFailed preempt 取消）→
+    /// `tonic::Code::Aborted`。
+    #[test]
+    fn rpc_status_aborted_maps_to_aborted() {
+        assert_eq!(rpc_status_to_tonic_code(RpcStatus::Aborted), Code::Aborted);
+    }
+
     /// **回归锁**：禁止 `RpcStatus as i32 -> Code` 数值 cast。RpcStatus
     /// 数值（A1-1 part 1 wire enum，FailedPrecondition=2 / Internal=5）跟
     /// gRPC numeric code（FailedPrecondition=9 / Internal=13）**不**对齐。
@@ -586,8 +615,10 @@ mod tests {
     /// 任何漏第 3 步 → 测试失败强制 reviewer 关注。
     #[test]
     fn rpc_status_variant_count_matches_explicit_mapping() {
-        const EXPECTED_VARIANTS: usize = 7; // Unknown / Ok / FailedPrecondition /
-        // PermissionDenied / InvalidArgument / Internal / DeadlineExceeded
+        const EXPECTED_VARIANTS: usize = 9; // Unknown / Ok / FailedPrecondition /
+        // PermissionDenied / InvalidArgument / Internal / DeadlineExceeded /
+        // ResourceExhausted (A1-3 (1/3b) round 3) /
+        // Aborted (A1-3 (1/3b) round 3)
         let actual = RpcStatus::ENUM_VALUES.len();
         assert_eq!(
             actual, EXPECTED_VARIANTS,

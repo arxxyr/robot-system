@@ -94,8 +94,16 @@ enum RpcRole : ubyte {
 // A1-3 单测必须覆盖每条 `RpcStatus` → `tonic::Code` 映射；新增 variant
 // 时编译期 `match` 非穷举会报错强制更新映射 + 测试。
 //
-// ClearEStop 用得到 6 个 + Unknown 兼容旧 writer。后续 control RPC 复用
-// 本 enum 时按需扩 variant，**不**碰已有数值。
+// ClearEStop 用得到 8 个 + Unknown 兼容旧 writer。后续 control RPC 复用
+// 本 enum 时按需扩 variant，**不**碰已有数值（FlatBuffers append-only）。
+//
+// `ResourceExhausted` / `Aborted` 是 A1-3 (1/3b) round 3 拍板新加（reviewer
+// A1-3 (1/3b) round 3 阻断 1）：
+// - `ResourceExhausted` = `ClearEStopRrPayload::AlreadyInProgress`（live
+//   单飞冲突；第二个 live 直拒不入队）；gateway 映射 `tonic::Code::ResourceExhausted`。
+// - `Aborted` = `ClearEStopRrPayload::PreemptedByEmergency`（in-flight live
+//   被新触发的 EStop / SafetyStopFailed preempt 取消）；gateway 映射
+//   `tonic::Code::Aborted`。
 enum RpcStatus : ubyte {
     Unknown = 0,
     Ok = 1,
@@ -104,6 +112,8 @@ enum RpcStatus : ubyte {
     InvalidArgument = 4,
     Internal = 5,
     DeadlineExceeded = 6,
+    ResourceExhausted = 7,
+    Aborted = 8,
 }
 
 // ClearEStopRequest —— RPC 端验证完 auth / role / capability / confirmation /
@@ -151,10 +161,19 @@ table ClearEStopRequest {
 // **字段语义**：
 // - `request_id`：跟 ClearEStopRequest.request_id 一致，RPC 端用此 correlate
 //   pending response（多 in-flight request 的场景），并转译 tonic Status。
-// - `status`：处理结果。Ok = 真路径 fsync + guard 翻转 + clear_safety_latch
-//   全成功（dry_run=false）或 dry_run 评估通过；FailedPrecondition =
-//   safety_state != TorqueOffConfirmed；Internal = fsync IO err；
-//   DeadlineExceeded = 超 request.deadline_ns。
+// - `status`：处理结果。
+//     - `Ok` = 真路径 fsync + clear_safety_latch + guard 翻转全成功
+//       （dry_run=false）或 dry_run 评估通过
+//     - `FailedPrecondition` = `safety_state != TorqueOffConfirmed` 或
+//       `*state != Safe`
+//     - `Internal` = fsync IO err（backup-first save_estop_latch_clear
+//       失败；磁盘 latch 仍 latched=true）
+//     - `DeadlineExceeded` = `clock.now() > deadline_ns`（drain 入口或
+//       preempt 段命中；执行未开始或刚开始就被取消，三个翻转都不发生）
+//     - `ResourceExhausted` = live 单飞冲突（in_flight_live 已被另一
+//       live request 占用；本 request 直拒不入队）
+//     - `Aborted` = in-flight live 被新触发的 EStop / SafetyStopFailed
+//       preempt 取消（reviewer A1-3 (1/3b) round 2 阻断 1）
 // - `error_msg`：status != Ok 时人类可读错误描述（max ~256 chars）。Ok 时填
 //   空串。
 // - `cleared_at_ns`：status == Ok && dry_run == false 时填 daemon 内
