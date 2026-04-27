@@ -46,6 +46,7 @@ pub mod io_thread;
 pub mod ipc_thread;
 pub mod ipc_tick;
 pub mod pub_thread;
+pub mod rr_server_thread;
 pub mod serial_io_ctrl;
 pub mod serial_io_thread;
 pub mod state_machine;

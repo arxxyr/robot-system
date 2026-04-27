@@ -38,6 +38,9 @@ blake3              = { workspace = true }
 # thiserror：config_loader::ConfigLoadError 派生 Display/Error。robot-core 已用，
 # 走 workspace 继承避免版本漂移。
 thiserror           = { workspace = true }
+# rr_server_thread (A1-3 (1/3c-1)) decode wire ClearEStopRequest payload；
+# 跟 robot-msg 的 build_helpers 同源（依赖白名单同 robot-msg 一致）。
+flatbuffers         = { workspace = true }
 
 [dev-dependencies]
 # estop_latch 单测用 tempfile 做临时目录。版本 pin 在 workspace Cargo.toml。

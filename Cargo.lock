@@ -1420,6 +1420,7 @@ dependencies = [
  "assert_no_alloc",
  "blake3",
  "crossbeam-channel",
+ "flatbuffers",
  "iceoryx2",
  "libc 1.0.0-alpha.3",
  "robot-adapter-feetech",
