@@ -10,6 +10,94 @@
 
 ---
 
+## 2026-04-27 · A1-2 reviewer round 2 阻断 — `save_estop_latch_clear` backup-first 修复 ClearEStop 失败原子性（**状态：登记**）
+
+### 背景
+
+A1-2 commit `60f22df`（ClearEStop 三步硬顺序）落地后 reviewer 复核发现
+真实安全阻断：
+
+`crates/robot-s0/src/clear_estop_action.rs::try_apply_clear_estop` 直接
+复用 `crates/robot-s0/src/estop_latch.rs:216` 的 `save_estop_latch(_, false)`，
+但底层是 **primary-first** 写入：
+
+```
+1. save_single_atomic(primary, false)     → 可能成功（primary = "0\n"）
+2. save_single_atomic(bak, false)         → 失败 → 函数返 Err
+```
+
+partial failure 后磁盘状态：primary `= "0\n"`，bak `= "1\n"`。
+`try_apply_clear_estop` 返 `FsyncFailed`，guard 不翻、executor latch 不动；
+但 daemon crash/restart 后 `load_estop_latch` 默认走 primary
+（`crates/robot-s0/src/estop_latch.rs:118-120`），只在 primary
+`NotFound` / `InvalidData` 时才 fallback bak。它读 primary `"0\n"` →
+`latched=false` → **软件 latch 被错误清掉**，破坏 §6.7 #4 "S0 重启不失忆"
++ A1-2 失败不变量"磁盘 latch 不动"。
+
+reviewer 拍板阻断：A1-2 commit `60f22df` 安全契约未达成。
+
+### 修复
+
+- `crates/robot-s0/src/estop_latch.rs` 新加 `pub fn save_estop_latch_clear(path)`：
+  专为 `ClearEStop` 设计，**backup-first** 写入顺序：
+
+  ```
+  save_single_atomic(bak, false)            // backup 先写
+      → save_single_atomic(primary, false)  // primary 后写
+  ```
+
+  不变量：
+
+  - **bak 写失败** → primary 没动（仍 `"1\n"`）→ 重启 `load_estop_latch`
+    走 primary `latched=true`（安全）。
+  - **bak 成功 + primary 写失败** → primary 没动（rename 原子；仍 `"1\n"`）
+    → 重启 `load_estop_latch` 走 primary `latched=true`。bak 的 `"0\n"`
+    **不**会被 load 读到，因为 `load_estop_latch` 默认走 primary，只在
+    primary `NotFound` / `InvalidData` 时才 fallback bak。
+  - **两步全过** → primary + bak 都 `"0\n"` → 重启 load `latched=false`
+    （正常 ClearEStop 成功路径）。
+
+- `crates/robot-s0/src/clear_estop_action.rs::try_apply_clear_estop` 改调
+  `save_estop_latch_clear(latch_path)`，不再调 `save_estop_latch(_, false)`。
+
+- **EStop 路径继续用 `save_estop_latch(path, true)`（primary-first）不动**：
+  EStop 是 `latched=true` 单调写入。primary-first 失败时 primary 至少
+  写出 `"1\n"`（rename 原子），重启 load primary `latched=true`，安全
+  语义满足。改 backup-first 反而要为 EStop 多写一次 bak，无收益。
+
+### 单测
+
+- `estop_latch::tests::save_estop_latch_clear_writes_both_files`
+  （happy path：两文件 fsync 都写 `"0\n"`）
+- `estop_latch::tests::save_estop_latch_clear_backup_failure_preserves_primary_latched`
+  （**partial failure 锁测**，reviewer 拍板补：预置 primary + bak `= "1\n"`，
+  把 `<latch>.bak` 替换成非空目录让 rename target 失败 →
+  `save_estop_latch_clear` 返 Err，但 primary 仍 `"1\n"`，
+  `load_estop_latch` 仍返 `Ok(true)`）
+- `clear_estop_action::tests::clear_estop_partial_backup_failure_preserves_disk_latched_true`
+  （高层 partial failure：`try_apply_clear_estop` 返 `FsyncFailed` 时
+  `load_estop_latch` 仍返 `Ok(true)`，guard / executor 不动）
+
+### 不改变的内容
+
+- 不改 `docs/00_design.md` §6.6.1 文字（"fsync `latch=false`（primary + bak）"
+  仍然成立，仅内部顺序变了；语义上等价）。
+- EStop 路径 `save_estop_latch(path, true)` 不动。
+- §6.7 #3 真宣称仍维持 v0.2 "代码层面到位 / 端到端测试留 v0.3" 降级口径
+  （A1 全 land 后才升级；本登记只补 A1-2 fsync 原子性阻断）。
+- §6.7 #4 真宣称同样不动（v0.2 "S0 重启不失忆 ✅ 真锁住" 边界保留；本
+  修复消除 ClearEStop 失败时违反 #4 的窗口）。
+- 不接 robot-rpc → S0 RR 入口（A1-3 范围）。
+- 不撤 `--allow-empty-latch` CLI flag（A1-5 范围）。
+
+### 审阅人
+
+reviewer（用户）— A1-2 round 2 阻断：`save_estop_latch` primary-first
+复用导致 ClearEStop fsync 失败时磁盘 latch 被错误清零，违反 §6.7 #4 +
+A1-2 失败不变量。
+
+---
+
 ## 2026-04-27 · `docs/00_design.md` §6.6.1 ClearEStop 三步顺序硬契约修正（**状态：已回写 / errata**）
 
 ### 背景
