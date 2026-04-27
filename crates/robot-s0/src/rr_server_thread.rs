@@ -271,11 +271,21 @@ fn run_loop(
         }
 
         // ─── 2) drain wire request from server ───
-        while pending.len() < cfg.max_in_flight {
+        //
+        // **关键**：即使 `pending.len() >= max_in_flight`，仍**继续** try_recv
+        // 把 wire request 从 iceoryx2 队列里拿出来 → 消费 active handle →
+        // 直接 reply `ResourceExhausted`（不 forward、不入 pending、不挂在
+        // iceoryx2 队列里等到 deadline 超时；reviewer A1-3 (1/3c-1) round 1
+        // 阻断修复）。drain 不停直到 server.try_recv() 返 None。
+        loop {
             match server.try_recv() {
                 Ok(Some(active)) => {
                     metrics.requests_received.fetch_add(1, Ordering::Relaxed);
-                    handle_active_request(active, &mut pending, rr_request_tx, metrics);
+                    if pending.len() >= cfg.max_in_flight {
+                        handle_pending_overflow(active, metrics);
+                    } else {
+                        handle_active_request(active, &mut pending, rr_request_tx, metrics);
+                    }
                 }
                 Ok(None) => break,
                 Err(e) => {
@@ -285,8 +295,6 @@ fn run_loop(
             }
         }
 
-        // 容量满 + 仍有未读 wire request 时，靠下一轮 drain response 释放
-        // 容量后再处理；不在本轮强 drain。
         thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
     }
 }
@@ -413,6 +421,41 @@ fn handle_active_request(
             );
         }
     }
+}
+
+/// pending 容量满（`pending.len() >= max_in_flight`）时直接 reply
+/// `ResourceExhausted`，consume active handle，不入 pending、不 forward
+/// 到 ipc_thread。
+///
+/// reviewer A1-3 (1/3c-1) round 1 拍板修复：避免 wire request 在 iceoryx2
+/// 队列里悬挂到客户端 deadline 超时；rr_server_thread 一拿到 active 就立刻
+/// 给 client 一个明确的 ResourceExhausted 回包。
+///
+/// best-effort 解 `request_id` + `dry_run` 字段填回 wire response：
+/// FlatBuffers verifier 失败时 fallback 空 request_id + `dry_run=false`，
+/// 不再走 InvalidArgument 路径（gateway 看 ResourceExhausted 已能识别拒绝
+/// 类型）。
+fn handle_pending_overflow(
+    active: Iceoryx2ActiveRequest<markers::ClearEStopRequest, markers::ClearEStopResponse>,
+    metrics: &RrServerMetrics,
+) {
+    metrics.overflow_drops.fetch_add(1, Ordering::Relaxed);
+    let (request_id, dry_run) = match flatbuffers::root::<FbReq>(active.payload()) {
+        Ok(view) => (view.request_id().unwrap_or("").to_string(), view.dry_run()),
+        Err(_) => (String::new(), false),
+    };
+    tracing::warn!(
+        request_id = %request_id,
+        "rr_server_thread: pending full; replying ResourceExhausted"
+    );
+    send_error_reply(
+        active,
+        &request_id,
+        dry_run,
+        RpcStatus::ResourceExhausted,
+        "rr_server pending full",
+        metrics,
+    );
 }
 
 /// 直接 reply 错误 wire response，consume active handle。
@@ -1205,6 +1248,73 @@ mod tests {
     // 9) drain 顺序锁：先 drain rr_response_rx 再 drain wire request
     //    （reviewer 拍板：减少 backpressure 误报）
     // ────────────────────────────────────────────────────────────────────────
+
+    /// **A1-3 (1/3c-1) round 1 阻断锁测**：`pending.len() >= max_in_flight`
+    /// 时新 wire request 必须立刻 reply `ResourceExhausted`，**不**等
+    /// pending 释放、**不**挂在 iceoryx2 队列里到 deadline 超时。
+    ///
+    /// 场景：max_in_flight=1；第一条占 pending，mock ipc_thread 故意不回
+    /// response（pending 持续满）；第二条进来必须在 2s 内收到
+    /// `ResourceExhausted`（"rr_server pending full"），并且 `req_rx` **不**
+    /// 看到第二条 forward，metrics.overflow_drops 计 1。
+    #[test]
+    fn rr_server_replies_resource_exhausted_when_pending_overflow() {
+        let (handle, client, req_rx, _resp_tx) = bring_up(/* max_in_flight */ 1, 64, 64);
+
+        // 第一条占 pending；不发 response 让 pending 持续满
+        let _pending_1 = client
+            .send(&build_clear_estop_request(
+                "first",
+                "idem",
+                "src",
+                RpcRole::Maintainer,
+                "c1",
+                "a1",
+                false,
+                u64::MAX,
+                0,
+            ))
+            .unwrap();
+        let req1 = wait_for_request(&req_rx, Duration::from_secs(2));
+        assert_eq!(req1.request_id, "first");
+
+        // 第二条进来：pending 满（1/1），必须立刻被 rr_server consume + reply
+        // ResourceExhausted（不挂在 iceoryx2 队列里）
+        let pending_2 = client
+            .send(&build_clear_estop_request(
+                "second",
+                "idem",
+                "src",
+                RpcRole::Maintainer,
+                "c2",
+                "a2",
+                false,
+                u64::MAX,
+                0,
+            ))
+            .unwrap();
+        let (status, rid, err_msg, _cleared, _dry_run) =
+            wait_for_response(&pending_2, Duration::from_secs(2));
+        assert_eq!(status, RpcStatus::ResourceExhausted);
+        assert_eq!(rid, "second");
+        assert!(
+            err_msg.contains("pending full"),
+            "error_msg 应含 'pending full'；实际 = {err_msg:?}"
+        );
+
+        // mock ipc_thread 不应收到第二条 forward（pending 满拒不进 ipc_thread channel）
+        assert!(
+            req_rx.try_recv().is_err(),
+            "第二条 wire request 不应被 forward 到 ipc_thread"
+        );
+
+        let metrics = handle.metrics();
+        assert_eq!(metrics.overflow_drops.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.requests_forwarded.load(Ordering::Relaxed), 1);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
 
     /// 测试方法：max_in_flight=1 + 第一条 in flight 占用槽位；mock ipc_thread
     /// 提前发 response（释放槽位）；rr_server 主循环下一轮顺序：
