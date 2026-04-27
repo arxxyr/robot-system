@@ -16,9 +16,30 @@
 
 ```
 设计版本:  v0.1.2（冻结）
-实现阶段:  v0.2 最小闭环
-当前步骤:  Step 7 task 24-29 全落地（含 Orin 真机闭环 + 启动不跳 fix）：feetech adapter 协议栈 + criterion bench + by-id hot path -54% + real-hw feature + calibration JSON loader + 防飞 enable 序列 + hold_current_position helper + sync_goal_to_present readback 兜底 + mock_s1 --anchor-timeout-ms 启动锚定当前位置 + feetech_poke example 诊断工具。**Orin 真机三轮闭环全通**：左单端 ±5° / 单端 ±17° / **双端 ±17° 同步** + 肉眼物理确认。发现架构缺口 task-30 候选：state_machine ↔ adapter 执行链路未接通，ControlMode::Stop 不会真 disable torque。详 docs/handoffs/2026-04-25_1.md。下一步候选：task 30（state_machine 接通 adapter）/ bus2 13-motor / Step 8 EStop。
-上游项目:  /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
+实现阶段:  v0.3 Phase A —— 安全边界闭合（A1 ClearEStop control plane + A2 worker freeze hook）
+
+v0.2 收尾:  commit 0fa1d77（2026-04-26 reviewer "复核通过，按降级宣称进入 v0.3"）。
+            §6.7 #4 真锁住；#2/#3 代码层面到位但**未端到端真锁定**——必须 A1+A2 land 后才能升级真宣称。
+            详 docs/handoffs/v0.3_entry.md §1.2 降级宣称表。
+
+A1 进度:    A1-1（schema + 纯函数 + RpcStatus 9 variant 显式 match）✅
+            A1-2（ipc_tick action layer + try_apply_clear_estop 三步硬序 + save_estop_latch_clear backup-first）✅
+            A1-3 (1/3) rr_server_thread + ipc_thread RR drain ✅
+            A1-3 (2/3-a) gateway skeleton + loopback bind ✅
+            A1-3 (2/3-b1) IdempotencyCache::with_capacity + GatewayConfig::validate ✅
+            A1-3 (2/3-b2-1) rr_io_thread + pre-pass cleanup ✅（待 reviewer ACK；commit a41b1f8 仅本地）
+            A1-3 (2/3-b2-2) handler 完整 logic + run_gateway 集成 + GatewayReadyError 重构 ⬜
+            A1-3 (2/3-c) graceful shutdown 完整语义 ⬜
+            A1-3 (3/3) 两进程端到端集成测 ⬜
+            A1-4 clear_estop_smoke 集成测 + handoff ⬜
+            A1-5 撤 --allow-empty-latch + 升级 §6.7 #3 真宣称 ⬜
+
+A2 进度:    完全未开工（freeze hook 设计 + freeze_systemd_smoke binary）。
+
+Phase B:    A1+A2 land 后才开。B1 S1 coordinator → B2 policy/action interface →
+            B3 至少一个 action backend → B4 robot-rpc full gateway。详 v0.3_entry §2.
+
+上游项目:   /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
 
 ## 核心不变量
@@ -31,41 +52,39 @@
 4. **S0 重启不失忆**：EStop / fault code / 最后一次 safe 输出都 fsync 双写。
 5. **幂等写 RPC**：同 `CommandMeta.idempotency_key` 不产生重复副作用。
 
-## S0 线程模型（v0.2 骨架）
+## S0 线程模型（v0.2 骨架；v0.3 A1-3 加 rr_server_thread）
 
 ```
-s0_ipc_thread    普通优先级    iceoryx2 订阅 command/heartbeat  → 写 latest-command slot
-s0_rt_thread     SCHED_FIFO    读 command slot → HardRT adapter → 写 rt_snapshot
-s0_pub_thread    普通优先级    读 rt_snapshot  → iceoryx2 publish state/error/heartbeat
-s0_io_thread*    普通优先级    poll SoftRT adapter             → 写 softrt_snapshot
+s0_ipc_thread        普通优先级    iceoryx2 订阅 command/heartbeat  → 写 latest-command slot
+                                   (v0.3 A1-3) drain RR control channel → action executor
+s0_rt_thread         SCHED_FIFO    读 command slot → HardRT adapter → 写 rt_snapshot
+s0_pub_thread        普通优先级    读 rt_snapshot  → iceoryx2 publish state/error/heartbeat
+s0_io_thread*        普通优先级    poll SoftRT adapter             → 写 softrt_snapshot
+s0_rr_server_thread  普通优先级    (v0.3 A1-3) iceoryx2 RR server I/O → forward 到 ipc_thread
 ```
 
 硬约束：**RT thread 不碰 iceoryx2、不 `Arc::clone/drop`、不 heap allocation**。违反 = 破坏实时性。
 
 > **多 bus 场景语义**：v0.2 骨架 M=1，上述 `s0_rt_thread` 是单例。v0.4 起真多 bus 落地时（XLeRobot 2–3 × USB-RS485、ATOM01 4 × CAN），`s0_rt_thread` 按 **"每 HardRT bus 一实例"** 展开（方案 B：tick 闭环 drain-RX → read target → safety → serial write → per-bus snapshot slice）。详细语义 + 候选回写 §1.2 触发条件见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 2026-04-24 "S0 `s0_rt_thread` 多 bus 语义澄清"。
 
-## v0.2 实现顺序（强制）
+## v0.2 实现顺序（已收尾，留作历史参考）
 
-设计文档 §11.2。**不要跳步。** 第 6 步闭环打通前不接任何真硬件。
+设计文档 §11.2。v0.2 Step 1–10 在 `0fa1d77` 全部 land，**最小闭环 + Orin
+真机三轮闭环全通**。新工作走 v0.3 Phase A → B 路线（详
+[`docs/handoffs/v0.3_entry.md`](docs/handoffs/v0.3_entry.md)），不再按
+Step 序号推进。
 
 ```
-1.  robot-core::time                 (MonoRawNs / Deadline / RobotClock)
-2.  robot-msg schema registry        (FlatBuffers schemas + old/new 兼容测试)
-3.  FrameHeader / Body / Blob parser (4B size prefix + verifier + 单元测试)
-4.  SampleLease<T> / SampleWriter<T> (纯类型 + mock 内存后端)
-5.  mock iceoryx2 pub/sub            (真 iceoryx2，但 pub/sub 同进程)
-6.  S0 四线程 mock                    (ipc + rt + pub + io；mock HardRT adapter)
-7.  watchdog + CONTROL_LOST_* 切换    (kill -9 s1 验证子态转换)
-8.  EStop latch 文件双写 + 重启恢复    (fsync 双写 + 读回校验)
-9.  crash/restart 测试套               (随机 kill -9 s1 / policy / gateway)
-10. Feetech 单关节                     (HardRT adapter 第一次上真硬件)
-```
-
-**最小闭环目标**（第 6–7 步达成）：
-```
-mock S1 command → iceoryx2 → s0_ipc → latest-command slot
-                → s0_rt → rt_snapshot → s0_pub
-                → iceoryx2 → robot-cli status
+1.  robot-core::time                 ✅
+2.  robot-msg schema registry        ✅
+3.  FrameHeader / Body / Blob parser ✅
+4.  SampleLease<T> / SampleWriter<T> ✅
+5.  mock iceoryx2 pub/sub            ✅
+6.  S0 四线程 mock                    ✅
+7.  watchdog + CONTROL_LOST_* 切换    ✅（task 24-29）
+8.  EStop latch 文件双写 + 重启恢复    ✅（fsync 双写真锁住 §6.7 #4）
+9.  crash/restart 测试套               ✅（crash_restart_smoke 5/5 PASS）
+10. Feetech 单关节                     ✅（Orin 三轮闭环全通：±5° / ±17° / 双端 ±17° 同步）
 ```
 
 ## 规划的 workspace 布局
@@ -79,7 +98,7 @@ robot-system/
 ├─ 3rd-party/                # vendor flatc、可能的 iceoryx2 patch
 ├─ docs/
 │   ├─ 00_design.md          # v0.1.2 冻结设计（权威）
-│   └─ 10_verification.md    # v0.2 开工前必须产出
+│   └─ 10_verification.md    # 验证清单（v0.2 已落地，v0.3 持续维护）
 ├─ scripts/
 │   ├─ deploy.sh
 │   └─ deploy-windows.ps1
