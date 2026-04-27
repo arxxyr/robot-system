@@ -1,4 +1,5 @@
-//! `robot_rpc_gateway` —— A1-3 (2/3-b2-2) ClearEStop control-plane bin。
+//! `robot_rpc_gateway` —— A1-3 (2/3-c) ClearEStop control-plane bin（含
+//! 完整 graceful shutdown 语义）。
 //!
 //! ### 角色
 //!
@@ -21,9 +22,13 @@
 //!   `ClearEStopResponse` → 校验 response `request_id` 跟当前 request
 //!   一致 → `rpc_status_to_tonic_code` 显式 `match` → `Ok` 路径 commit
 //!   cache 加返 `Ack`；非 `Ok` drop `InsertHandle` 不缓存。
-//! - SIGINT / SIGTERM 触发 `tokio::sync::watch` shutdown 信号 → tonic
-//!   `serve_with_incoming_shutdown` graceful stop；tonic 退出后再
-//!   `rr_io_thread` stop / join（reviewer A1-3 (2/3-b2-1) 关键边界）。
+//! - SIGINT / SIGTERM 触发 `tokio::sync::watch` shutdown 信号；A1-3 (2/3-c)
+//!   三段式 graceful：(a) handler 在 cache.decide 之后、forward 之前 check
+//!   shutdown，true 直接返 `Unavailable("gateway is shutting down; ...")`；
+//!   (b) 已 forward 的 in-flight 请求由 tonic
+//!   `serve_with_incoming_shutdown` 自然让其跑完（含 oneshot await + RR
+//!   reply）；(c) tonic 退出**之后**才 `rr_io_thread` stop / join（reviewer
+//!   A1-3 (2/3-b2-1) 关键边界，避免 handler 还在等 RR 时 I/O 被掐）。
 //!
 //! ### CLI
 //!

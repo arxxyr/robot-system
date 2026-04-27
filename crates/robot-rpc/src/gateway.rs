@@ -1,5 +1,7 @@
-//! `robot_rpc_gateway` 服务端核心 —— A1-3 (2/3-b2-2) handler 完整 logic +
-//! `run_gateway_with_rr_io` 集成 rr_io_thread 落地。
+//! `robot_rpc_gateway` 服务端核心 —— A1-3 (2/3-c) graceful shutdown
+//! 完整语义落地（handler shutdown gate + tonic
+//! `serve_with_incoming_shutdown` 让 in-flight handler 跑完 + rr_io_thread
+//! 在 tonic 退出之后才 stop/join）。
 //!
 //! ## 角色
 //!
@@ -30,11 +32,28 @@
 //!   rr_io_thread（reviewer A1-3 (2/3-b2-1) 关键边界：rr_io_thread 生命周期
 //!   **必须**在 tonic server 退出之后才停）。
 //!
-//! ## 不在 A1-3 (2/3-b2-2) 范围
+//! ## A1-3 (2/3-c) graceful shutdown 语义（本轮新加）
 //!
-//! - shutdown handling 完整 graceful：已进 handler 的请求等 RR 或 self
-//!   `timeout_ms + grace_ms`，未进 handler 直接返 `Unavailable`（A1-3
-//!   (2/3-c)）。
+//! 三段式：
+//!
+//! 1. **新请求 fast-fail**：handler `clear_e_stop` 入口在 `cache.decide`
+//!    之后、forward 之前 check `*shutdown_rx.borrow()`；shutdown=true 且
+//!    走到 `Decision::FreshInsert` → drop `InsertHandle` + 返
+//!    `Unavailable("gateway is shutting down; new requests rejected")`。
+//!    `Replay` / `Conflict` / `Capacity` 路径**不**受影响（cached 成功
+//!    的 retry 不该因为 gateway shutdown 拒绝；已经 cleared 的 estop
+//!    retry 也不需要再走 daemon）。
+//! 2. **已 forward 的请求继续跑完**：tonic
+//!    `serve_with_incoming_shutdown` 自然让 in-flight handler 跑完（含
+//!    `oneshot.await` + RR reply）；handler 按原 `timeout_ms + grace_ms`
+//!    等 daemon reply，shutdown 不强制中断。
+//! 3. **rr_io_thread 在 tonic 退出之后才停**：[`run_gateway_with_rr_io`]
+//!    在 `run_gateway_with_ready` 返回**之后**才调
+//!    `rr_handle.request_stop()` + `join`（reviewer A1-3 (2/3-b2-1) 关
+//!    键边界：避免 handler 还在等 RR 时 I/O 被掐）。
+//!
+//! ## 不在 A1-3 (2/3-c) 范围
+//!
 //! - 端到端两进程集成测（A1-3 (3/3)）。
 //!
 //! ## 不变量
@@ -236,6 +255,15 @@ pub struct ClearEStopHandlerState {
     /// gateway 过早 `DeadlineExceeded` 会制造"副作用已发生但客户端以为失败"
     /// 的歧义（reviewer A1-3 (2/3-b2-2) 拍板边界）。
     pub rr_timeout_grace_ms: u64,
+    /// **A1-3 (2/3-c)** shutdown signal。`watch::Receiver<bool>` 是
+    /// Clone + Send + Sync，handler 每次入口 `*shutdown_rx.borrow()` 同步
+    /// 读一下；shutdown=true 时 cache.decide 之后、forward 之前 fast-fail
+    /// 返 `Unavailable("gateway is shutting down; ...")`。已进 handler 且
+    /// 已 forward 的请求**不**被强制中断：tonic `serve_with_incoming_shutdown`
+    /// 自然等 in-flight handler 跑完（含 oneshot await + RR reply）；
+    /// rr_io_thread 在 tonic 退出之后才 stop/join（reviewer (2/3-b2-1)
+    /// 关键边界）。
+    pub shutdown_rx: watch::Receiver<bool>,
 }
 
 // `Sender` / `Mutex<IdempotencyCache>` / `dyn RobotClock` 不全 Debug 友好；
@@ -287,6 +315,10 @@ impl ClearEStopHandler {
     pub fn for_test() -> Self {
         // forward channel 留 1 buf；测试 drop rx 让 handler 看见 Disconnected。
         let (forward_tx, _forward_rx) = bounded(1);
+        // shutdown_rx 始终 false（测试不模拟 shutdown）；保留 sender leak 让
+        // receiver borrow 永远拿到 false。
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        Box::leak(Box::new(shutdown_tx));
         let state = ClearEStopHandlerState {
             rr_forward_tx: forward_tx,
             role_table: Arc::new(RoleTable::default()),
@@ -296,6 +328,7 @@ impl ClearEStopHandler {
             ))),
             clock: Arc::new(robot_core::time::SystemClock),
             rr_timeout_grace_ms: 500,
+            shutdown_rx,
         };
         Self::new(state)
     }
@@ -416,6 +449,27 @@ impl RobotControl for ClearEStopHandler {
                 }
             }
         };
+
+        // ─── Step 5.5: shutdown gate（reviewer A1-3 (2/3-c) 拍板）。
+        //     Replay / Conflict / Capacity 路径已经在 Step 5 短路返；走到
+        //     这里说明拿到 FreshInsert handle，正要 forward 新请求。如果
+        //     gateway 已经在 graceful shutdown，**不**再启动新的 RR roundtrip
+        //     —— 已 forward 的请求由 tonic serve_with_incoming_shutdown
+        //     等其 in-flight 完成，未 forward 的 fresh 请求 fast-fail
+        //     `Unavailable("gateway is shutting down; ...")`。drop
+        //     insert_handle 让 cache 不留记录，下次同 key（gateway 重启
+        //     后）retry 重新走 fresh。 ───
+        if *self.state.shutdown_rx.borrow() {
+            tracing::warn!(
+                request_id = %validated.request_id,
+                idempotency_key = %validated.idempotency_key,
+                "ClearEStop rejected during shutdown (cache.decide=FreshInsert; not forwarding)"
+            );
+            drop(insert_handle);
+            return Err(tonic::Status::unavailable(
+                "gateway is shutting down; new requests rejected",
+            ));
+        }
 
         // ─── Step 6: 算 deadline_ns + stamp_ns（CLOCK_MONOTONIC_RAW；
         //     gateway 跟 daemon 同机器共享 clock domain） ───
@@ -788,7 +842,7 @@ pub async fn run_gateway_with_ready(
         idempotency_ttl_secs = cfg.idempotency_ttl_secs,
         idempotency_max_entries = cfg.idempotency_max_entries,
         rr_timeout_grace_ms = cfg.rr_timeout_grace_ms,
-        "robot_rpc_gateway: starting tonic gRPC server (A1-3 (2/3-b2-2) ClearEStop handler with full 12-step logic + rr_io_thread integration)"
+        "robot_rpc_gateway: starting tonic gRPC server (A1-3 (2/3-c) ClearEStop handler with full 12-step logic + shutdown gate + rr_io_thread integration)"
     );
 
     // 2) TcpListener bind 主动控制（不依赖 tonic 内部 bind 时机）
@@ -867,25 +921,35 @@ pub async fn run_gateway_with_ready(
 // run_gateway_with_rr_io: 起 rr_io_thread + 起 tonic server（高层入口）
 // ============================================================================
 
-/// **A1-3 (2/3-b2-2)** 高层入口。bin 直接调本函数即可启动整套 ClearEStop
+/// **A1-3 (2/3-c)** 高层入口。bin 直接调本函数即可启动整套 ClearEStop
 /// control plane gateway：
 ///
+/// 0. **`cfg.validate()` 优先**（reviewer (2/3-b2-2) round 2 阻断 1）：
+///    无效配置（空 robot_id / 非 loopback bind / 0 TTL / 0 max_entries）
+///    必须在 spawn rr_io_thread 之前 fail-fast；不能让 RR client 创建
+///    路径触碰共享 shm，也不能把"配置错"误报成 `RrIoSpawn`。
 /// 1. spawn [`crate::rr_io_thread`]（factory closure 在新线程内构造
 ///    `Iceoryx2RrClient`；topic = `/<robot_id>/control/clear_estop`，跟
 ///    daemon 端 `rr_server_thread` 对接）；
 /// 2. 构造 [`IdempotencyCache`]（TTL + cap 取自 `cfg`）；
 /// 3. 构造 [`ClearEStopHandler`] 持完整 state（rr forward channel +
-///    role table + cache + clock + grace）；
-/// 4. 调 [`run_gateway_with_ready`] 起 tonic gRPC server；
-/// 5. tonic server 退出后 `rr_handle.request_stop()` + `rr_handle.join()`
-///    （reviewer A1-3 (2/3-b2-1) 关键边界：rr_io_thread 生命周期**必须**
-///    在 tonic server 退出之后才停，避免 handler 还在等 RR 时 I/O 被掐）。
+///    role table + cache + clock + grace + **`shutdown_rx` clone**）；
+/// 4. 调 [`run_gateway_with_ready`] 起 tonic gRPC server（同一份
+///    `shutdown_rx` 也喂给 tonic shutdown signal future，独立 receiver
+///    borrow 不冲突）；
+/// 5. tonic server 退出**之后**才 `rr_handle.request_stop()` + `join`
+///    （reviewer A1-3 (2/3-b2-1) 关键边界：rr_io_thread 生命周期必须在
+///    tonic server 退出之后才停，避免 handler 还在等 RR 时 I/O 被掐）。
+///
+/// shutdown 过程的三段语义详 module-level doc "A1-3 (2/3-c) graceful
+/// shutdown 语义"段（新请求 fast-fail / 已 forward 的请求继续等 RR /
+/// rr_io_thread 在 tonic 之后停）。
 ///
 /// `forward channel buffer = 64`，跟 daemon 端 `rr_server_thread` 的
 /// `max_in_flight = 64` 对齐（reviewer A1-3 (2/3-b2-1) 拍板）。
 ///
 /// `ready_tx`（可选）：tonic server 真 bind 后送 `Ok(actual_addr)`；
-/// pre-serve 任意阶段（rr_io_thread spawn / config validate / bind）失败送
+/// pre-serve 任意阶段（config validate / rr_io_thread spawn / bind）失败送
 /// 等价 [`GatewayReadyError`]。
 ///
 /// # Errors
@@ -957,13 +1021,18 @@ pub async fn run_gateway_with_rr_io(
         cfg.idempotency_max_entries,
     )));
 
-    // ─── 3) handler ───
+    // ─── 3) handler（**A1-3 (2/3-c)**：handler clone 一份 shutdown_rx，
+    //     同 watch::channel 的 sender 也喂给 tonic shutdown_signal future
+    //     （由 run_gateway_with_ready 内部消费）；两路独立 receiver borrow
+    //     不冲突。 ───
+    let handler_shutdown_rx = shutdown_rx.clone();
     let handler = Arc::new(ClearEStopHandler::new(ClearEStopHandlerState {
         rr_forward_tx: forward_tx,
         role_table,
         idempotency: cache,
         clock,
         rr_timeout_grace_ms: cfg.rr_timeout_grace_ms,
+        shutdown_rx: handler_shutdown_rx,
     }));
 
     // ─── 4) tonic server ───
@@ -1346,23 +1415,42 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
 "#;
 
     /// 构造完整 handler state；caller 拿走 forward_rx 充当 mock daemon。
+    /// shutdown_rx 始终 false。
     fn make_handler_with_state(
         cache_max_entries: usize,
     ) -> (ClearEStopHandler, CrossbeamRecv<RrForwardRequest>) {
+        let (handler, _shutdown_tx, forward_rx) = make_handler_with_shutdown_tx(cache_max_entries);
+        (handler, forward_rx)
+    }
+
+    /// 跟 [`make_handler_with_state`] 同效但额外返回 shutdown_tx，让 (2/3-c)
+    /// shutdown gate 测试可主动 set true 触发 fast-fail 路径。`shutdown_tx`
+    /// **不**能 drop（drop 后 receiver borrow 拿到的 last value 仍 false，
+    /// 但 receiver.changed() 会 RecvError —— 测试只 borrow 不调 changed，所
+    /// 以即使 drop 也安全；返回 sender 让 test 可以显式 send(true)）。
+    fn make_handler_with_shutdown_tx(
+        cache_max_entries: usize,
+    ) -> (
+        ClearEStopHandler,
+        watch::Sender<bool>,
+        CrossbeamRecv<RrForwardRequest>,
+    ) {
         let role_table = Arc::new(load_role_table(TEST_RPC_ROLES_TOML).expect("role table parse"));
         let cache = Arc::new(Mutex::new(IdempotencyCache::with_capacity(
             Duration::from_mins(1),
             cache_max_entries,
         )));
         let (forward_tx, forward_rx) = bounded::<RrForwardRequest>(64);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let state = ClearEStopHandlerState {
             rr_forward_tx: forward_tx,
             role_table,
             idempotency: cache,
             clock: Arc::new(SystemClock),
             rr_timeout_grace_ms: 500,
+            shutdown_rx,
         };
-        (ClearEStopHandler::new(state), forward_rx)
+        (ClearEStopHandler::new(state), shutdown_tx, forward_rx)
     }
 
     /// 构造一个合法 maintainer ClearEStopCommand。`idempotency_key` 由调用方指定。
@@ -2066,5 +2154,198 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
                 other => panic!("expected Config(LoopbackBind); got {other:?}"),
             }
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // **A1-3 (2/3-c)** graceful shutdown 语义锁测
+    //
+    // 设计：cache.decide 之后、forward 之前检查 shutdown_rx。
+    //   - shutdown=false：handler 正常走 happy path
+    //   - shutdown=true 且 cache 命中（Replay）：仍返 cached Ack（shutdown
+    //     **不**影响已成功的请求 retry）
+    //   - shutdown=true 且 FreshInsert：drop handle + 返
+    //     `Unavailable("gateway is shutting down; ...")`
+    //   - **已 forward**（in-flight）的请求：shutdown 不强制中断；handler
+    //     按原 timeout_ms + grace 等 RR reply（tonic
+    //     serve_with_incoming_shutdown 自然让 in-flight handler 跑完）
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// shutdown=true → 新 fresh request → Unavailable + cache 不留记录。
+    #[tokio::test]
+    async fn handler_shutdown_rejects_fresh_request_with_unavailable_and_does_not_cache() {
+        let (handler, shutdown_tx, forward_rx) = make_handler_with_shutdown_tx(64);
+        let cache = Arc::clone(&handler.state().idempotency);
+
+        // 先 set shutdown=true
+        shutdown_tx.send(true).expect("send shutdown");
+
+        let cmd = make_cmd("idem-shutdown-1");
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("shutdown should reject fresh request");
+        assert_eq!(err.code(), tonic::Code::Unavailable);
+        assert!(
+            err.message().contains("shutting down"),
+            "error message 应明确 shutdown 原因；got: {}",
+            err.message()
+        );
+
+        // **不**应 forward
+        assert!(
+            forward_rx.try_recv().is_err(),
+            "shutdown gate 不应 forward；forward_rx 应空"
+        );
+        // **不**应 commit cache（drop insert_handle，下次 retry 重新 fresh）
+        assert_eq!(
+            cache.lock().unwrap().len(),
+            0,
+            "shutdown 拒绝路径**不**应缓存"
+        );
+    }
+
+    /// shutdown=true 但 cache 命中 → Replay 返 cached Ack（**不**受 shutdown
+    /// 影响）。reviewer 拍板边界：cached 成功的 retry 不该因为 gateway
+    /// shutdown 拒绝（已经 cleared 的 estop retry 不需要再走 daemon）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_shutdown_does_not_affect_replay_path() {
+        let (handler, shutdown_tx, forward_rx) = make_handler_with_shutdown_tx(64);
+        let key = "idem-shutdown-replay-1";
+
+        // 第一次：跑完整 happy path 让 cache commit（shutdown 仍 false）
+        {
+            let cmd = make_cmd(key);
+            let forward_rx_clone = forward_rx.clone();
+            let mock = tokio::task::spawn_blocking(move || {
+                mock_daemon_reply_with_status(
+                    &forward_rx_clone,
+                    RpcStatus::Ok,
+                    777_777,
+                    false,
+                    "",
+                    Duration::from_secs(2),
+                )
+            });
+            handler
+                .clear_e_stop(tonic::Request::new(cmd))
+                .await
+                .unwrap();
+            mock.await.unwrap();
+        }
+
+        // 现在 set shutdown=true
+        shutdown_tx.send(true).expect("send shutdown");
+
+        // 第二次：同 key + 同 fingerprint → 应走 Replay 路径返 cached Ack
+        let cmd2 = make_cmd(key);
+        let resp = handler
+            .clear_e_stop(tonic::Request::new(cmd2))
+            .await
+            .expect("Replay path should succeed even during shutdown");
+        let ack = resp.into_inner();
+        assert_eq!(ack.cleared_at_ns, 777_777);
+
+        // 仍**不** forward（Replay 路径 Step 5 短路返）
+        assert!(
+            forward_rx.try_recv().is_err(),
+            "Replay 不该 forward；shutdown 进 Step 5.5 之前已经短路"
+        );
+    }
+
+    /// shutdown 在 forward **之后**触发：已进 handler 且已 forward 的请求
+    /// 不被 shutdown 中断，按原 timeout 等 RR reply 返 Ack。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_shutdown_after_forward_does_not_interrupt_in_flight() {
+        let (handler, shutdown_tx, forward_rx) = make_handler_with_shutdown_tx(64);
+        let cmd = make_cmd("idem-shutdown-inflight-1");
+
+        // mock daemon：拿到 forward 后**先** set shutdown=true，**后**回
+        // wire response（模拟 in-flight 期间触发 shutdown）
+        let shutdown_tx_for_mock = shutdown_tx.clone();
+        let mock = tokio::task::spawn_blocking(move || {
+            let req = forward_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("forward request");
+            let view = flatbuffers::root::<FbReq>(&req.wire_bytes).expect("decode wire request");
+            let request_id = view.request_id().unwrap_or("").to_string();
+
+            // **关键**：handler 已经过 Step 5.5 + forward；现在 trigger shutdown
+            shutdown_tx_for_mock.send(true).expect("send shutdown");
+            std::thread::sleep(Duration::from_millis(50));
+
+            // 然后回 Ok wire response
+            let resp = build_clear_estop_response(&request_id, RpcStatus::Ok, "", 555_111, false);
+            req.oneshot_tx
+                .send(resp)
+                .expect("oneshot recv side dropped");
+            request_id
+        });
+
+        let resp = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect("in-flight request should complete despite shutdown signal");
+        let ack = resp.into_inner();
+        assert_eq!(
+            ack.cleared_at_ns, 555_111,
+            "已 forward 的请求应正常等到 RR reply 返 Ack"
+        );
+        let _request_id = mock.await.unwrap();
+    }
+
+    /// 进一步锁住边界：第一条请求 forward 后 shutdown 触发，第二条 fresh
+    /// 请求**应**立即返 Unavailable，第一条仍跑完成功。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn handler_shutdown_blocks_new_request_while_in_flight_finishes() {
+        let (handler, shutdown_tx, forward_rx) = make_handler_with_shutdown_tx(64);
+        let handler = Arc::new(handler);
+
+        // 起一条 in-flight 请求
+        let handler_a = Arc::clone(&handler);
+        let cmd_a = make_cmd("idem-inflight-A");
+        let task_a =
+            tokio::spawn(async move { handler_a.clear_e_stop(tonic::Request::new(cmd_a)).await });
+
+        // mock daemon: 等 in-flight forward 到位 → trigger shutdown → 才回 Ok
+        let shutdown_tx_for_mock = shutdown_tx.clone();
+        let mock = tokio::task::spawn_blocking(move || {
+            let req = forward_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("first forward (A)");
+            let view = flatbuffers::root::<FbReq>(&req.wire_bytes).expect("decode");
+            let request_id = view.request_id().unwrap_or("").to_string();
+
+            // shutdown 触发
+            shutdown_tx_for_mock.send(true).expect("send shutdown");
+            // 给 handler B 时间撞到 shutdown gate
+            std::thread::sleep(Duration::from_millis(50));
+
+            // 回 A 的 Ok
+            let resp = build_clear_estop_response(&request_id, RpcStatus::Ok, "", 888_111, false);
+            req.oneshot_tx.send(resp).expect("oneshot");
+
+            // 期望此时**不**再有第二条 forward 进来（B 在 shutdown gate 拒了）
+            std::thread::sleep(Duration::from_millis(50));
+            forward_rx.try_recv().is_err()
+        });
+
+        // 给 mock 一点点时间真触发 shutdown
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        // 起第二条 fresh 请求（A 还 in-flight；shutdown 应已 set）
+        let cmd_b = make_cmd("idem-inflight-B");
+        let res_b = handler.clear_e_stop(tonic::Request::new(cmd_b)).await;
+        assert!(
+            matches!(&res_b, Err(s) if s.code() == tonic::Code::Unavailable),
+            "B 应被 shutdown gate 拒；实际 {res_b:?}"
+        );
+
+        // A 应正常完成
+        let res_a = task_a.await.unwrap();
+        let ack_a = res_a.expect("A should complete despite shutdown");
+        assert_eq!(ack_a.into_inner().cleared_at_ns, 888_111);
+
+        let no_second_forward = mock.await.unwrap();
+        assert!(no_second_forward, "B 不应 forward（被 shutdown gate 拦下）");
     }
 }
