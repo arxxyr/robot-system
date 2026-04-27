@@ -84,6 +84,56 @@ impl GatewayConfig {
             rr_timeout_grace_ms: 500,
         }
     }
+
+    /// **A1-3 (2/3-b1)** reviewer 拍板：[`run_gateway`] 入口先调本方法
+    /// fail-fast 任何无效配置。
+    ///
+    /// 校验项：
+    /// - `listen_addr`：必须 loopback（[`validate_loopback_bind`]）
+    /// - `idempotency_ttl_secs > 0`：TTL = 0 让 cache 立即过期，等价于
+    ///   完全失效 idempotency；reviewer 拒
+    /// - `idempotency_max_entries > 0`：cap = 0 让所有新 key 立即返
+    ///   `ResourceExhausted`，gateway 不可用；reviewer 拒
+    /// - `robot_id` 非空：用于构造 iceoryx2 RR topic
+    ///   `/<robot_id>/control/clear_estop`，空字串会构出非法 topic
+    /// - `rr_timeout_grace_ms` 不限（0 也合理，handler 仍按 `timeout_ms` 等）
+    ///
+    /// # Errors
+    ///
+    /// 见 [`ConfigError`]。
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_loopback_bind(&self.listen_addr)?;
+        if self.idempotency_ttl_secs == 0 {
+            return Err(ConfigError::ZeroIdempotencyTtl);
+        }
+        if self.idempotency_max_entries == 0 {
+            return Err(ConfigError::ZeroIdempotencyMaxEntries);
+        }
+        if self.robot_id.is_empty() {
+            return Err(ConfigError::EmptyRobotId);
+        }
+        Ok(())
+    }
+}
+
+/// [`GatewayConfig::validate`] 失败时的错误。reviewer A1-3 (2/3-b1)
+/// 拍板硬边界：bin 退出码 2（CLI 参数错）。
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ConfigError {
+    #[error(transparent)]
+    LoopbackBind(#[from] LoopbackBindError),
+
+    #[error("idempotency_ttl_secs must be > 0; cache 立即过期等价于失效")]
+    ZeroIdempotencyTtl,
+
+    #[error(
+        "idempotency_max_entries must be > 0; cap = 0 会让所有新 key 立即返 \
+         ResourceExhausted，gateway 不可用"
+    )]
+    ZeroIdempotencyMaxEntries,
+
+    #[error("robot_id must be non-empty (用于构造 iceoryx2 RR topic)")]
+    EmptyRobotId,
 }
 
 // ============================================================================
@@ -181,23 +231,48 @@ impl RobotControl for ClearEStopHandler {
 /// `run_gateway` 错误。
 #[derive(Debug, Error)]
 pub enum GatewayError {
-    /// listen-addr 校验失败（非 loopback）。
+    /// `GatewayConfig::validate()` 校验失败（含 listen-addr 非 loopback /
+    /// 0 TTL / 0 max_entries / empty robot_id）。
     #[error(transparent)]
-    LoopbackBind(#[from] LoopbackBindError),
+    Config(#[from] ConfigError),
 
-    /// tonic transport 启动失败 / 服务运行期出错（端口占用 / IO 错）。
+    /// `TcpListener::bind` 失败（端口占用 / 权限不足等）。reviewer A1-3
+    /// (2/3-b1) 拍板：bind 错误必须在 `ready_tx` 之前产生 → ready_tx
+    /// 携带 [`Result<SocketAddr, GatewayError>`]，测试能区分"已 ready"
+    /// vs "bind 失败"。
+    #[error("TcpListener::bind {addr}: {source}")]
+    Bind {
+        addr: SocketAddr,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// tonic transport 启动失败 / 服务运行期出错。
     #[error("tonic transport: {0}")]
     Tonic(#[from] tonic::transport::Error),
+}
+
+// 兼容旧 callers (run_gateway_rejects_non_loopback_bind_before_serving 等)：
+// `LoopbackBindError` → `GatewayError::Config(ConfigError::LoopbackBind(_))`
+// 链。From 链由 ConfigError 提供 #[from] 完成。
+impl From<LoopbackBindError> for GatewayError {
+    fn from(e: LoopbackBindError) -> Self {
+        Self::Config(ConfigError::LoopbackBind(e))
+    }
 }
 
 /// 起 tonic gRPC server，bind 到 [`GatewayConfig::listen_addr`]，挂
 /// [`ClearEStopHandler`]，等 `shutdown_rx` 收到 `true` 后 graceful stop。
 ///
-/// **loopback 校验**先行：非 loopback 立刻返 [`GatewayError::LoopbackBind`]，
-/// 不起 server（reviewer 拍板硬边界）。
+/// **配置校验**先行：[`GatewayConfig::validate`] 通过（含 loopback bind /
+/// idempotency TTL/max > 0 / robot_id 非空）才往下走（reviewer 拍板硬边界）。
 ///
 /// `shutdown_rx` 是 [`tokio::sync::watch::Receiver<bool>`]：bin main 注册
 /// SIGINT/SIGTERM handler set true 触发 graceful shutdown。
+///
+/// **A1-3 (2/3-b1)** reviewer 拍板：复用 `run_gateway_with_ready` 的薄壳，
+/// 让单测能精确等 server bind 完再发 client 请求（替代 sleep 50ms 等
+/// readiness）。
 ///
 /// # Errors
 ///
@@ -205,9 +280,42 @@ pub enum GatewayError {
 pub async fn run_gateway(
     cfg: GatewayConfig,
     handler: Arc<ClearEStopHandler>,
-    mut shutdown_rx: watch::Receiver<bool>,
+    shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), GatewayError> {
-    validate_loopback_bind(&cfg.listen_addr)?;
+    run_gateway_with_ready(cfg, handler, shutdown_rx, None).await
+}
+
+/// [`run_gateway`] + 可选 `ready_tx` ：tonic server 真 bind 后（拿到实际
+/// 绑定的 `SocketAddr`）通过 `ready_tx` 把 `Ok(actual_addr)` 发出来。
+///
+/// reviewer A1-3 (2/3-b1) 边界 1 拍板：
+///
+/// - **`Ok(SocketAddr)` 仅在 `TcpListener::bind` + `local_addr()` 成功后**
+///   send；让单测能精确分辨 "ready 可发 gRPC client" vs "bind 失败"。
+/// - 配置校验失败 / bind 失败 → 把 `Err(GatewayError)` 发出 `ready_tx`
+///   后再 return Err（让 ready_rx 端不会永久阻塞 `await`）。
+/// - tonic `serve_with_incoming_shutdown` 走 [`TcpIncoming::from_listener`]，
+///   bind 时机由本函数控制（不是 tonic 内部）。
+///
+/// # Errors
+///
+/// 见 [`GatewayError`]。
+#[allow(clippy::too_many_lines)] // bind 错误处理两路（ready_tx send + 透传）让流程稍长
+pub async fn run_gateway_with_ready(
+    cfg: GatewayConfig,
+    handler: Arc<ClearEStopHandler>,
+    mut shutdown_rx: watch::Receiver<bool>,
+    ready_tx: Option<tokio::sync::oneshot::Sender<Result<SocketAddr, GatewayError>>>,
+) -> Result<(), GatewayError> {
+    // 1) 配置校验 fail-fast
+    if let Err(e) = cfg.validate() {
+        let err = GatewayError::Config(e);
+        if let Some(tx) = ready_tx {
+            // 把同一错误也发给 ready 监听者（防 await 永久阻塞）
+            let _ = tx.send(Err(clone_gateway_error(&err)));
+        }
+        return Err(err);
+    }
 
     tracing::info!(
         listen_addr = %cfg.listen_addr,
@@ -218,12 +326,54 @@ pub async fn run_gateway(
         "robot_rpc_gateway: starting tonic gRPC server (A1-3 (2/3-a) skeleton; ClearEStop returns Unimplemented)"
     );
 
+    // 2) TcpListener bind 主动控制（不依赖 tonic 内部 bind 时机）
+    let listener = match tokio::net::TcpListener::bind(cfg.listen_addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            let err = GatewayError::Bind {
+                addr: cfg.listen_addr,
+                source: e,
+            };
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(clone_gateway_error(&err)));
+            }
+            return Err(err);
+        }
+    };
+
+    // 3) 拿到真实绑定的 addr（处理 :0 自动分配端口的场景），发 ready 信号
+    let actual_addr = match listener.local_addr() {
+        Ok(addr) => addr,
+        Err(e) => {
+            let err = GatewayError::Bind {
+                addr: cfg.listen_addr,
+                source: e,
+            };
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(clone_gateway_error(&err)));
+            }
+            return Err(err);
+        }
+    };
+    if let Some(tx) = ready_tx {
+        // ready_rx 端可能已 drop（test cancel）；忽略 send err。
+        let _ = tx.send(Ok(actual_addr));
+    }
+
+    let incoming = tonic::transport::server::TcpIncoming::from_listener(listener, true, None)
+        .map_err(|e| {
+            // TcpIncoming::from_listener 在已经 bind 成功的 TcpListener 上
+            // 几乎不会失败；万一失败包成 GatewayError::Bind（保留原错误
+            // 字符串到 io::Error message）。
+            GatewayError::Bind {
+                addr: actual_addr,
+                source: std::io::Error::other(format!("{e}")),
+            }
+        })?;
+
     let svc = RobotControlServer::from_arc(handler);
 
     let shutdown_signal = async move {
-        // 等 shutdown_rx 翻 true（main 端 signal handler 触发）。watch
-        // channel 在 sender drop 后也会 changed → recv → returns Err，视同
-        // shutdown 信号。
         loop {
             if *shutdown_rx.borrow() {
                 break;
@@ -238,11 +388,46 @@ pub async fn run_gateway(
 
     tonic::transport::Server::builder()
         .add_service(svc)
-        .serve_with_shutdown(cfg.listen_addr, shutdown_signal)
+        .serve_with_incoming_shutdown(incoming, shutdown_signal)
         .await?;
 
-    tracing::info!("robot_rpc_gateway: tonic server stopped cleanly");
+    tracing::info!(
+        actual_addr = %actual_addr,
+        "robot_rpc_gateway: tonic server stopped cleanly"
+    );
     Ok(())
+}
+
+/// `GatewayError` 不实现 `Clone`（`tonic::transport::Error` /
+/// `std::io::Error` 都不是 Clone）。但 [`run_gateway_with_ready`] 在
+/// validation / bind 失败路径要把"同一"错误**两份**送出（一份给
+/// `ready_tx`，一份 return）—— 实际只用 message + variant 区分，construct
+/// 第二份等价 error 即可，不要求字段 byte-equality。
+fn clone_gateway_error(e: &GatewayError) -> GatewayError {
+    match e {
+        GatewayError::Config(c) => GatewayError::Config(clone_config_error(c)),
+        GatewayError::Bind { addr, source } => GatewayError::Bind {
+            addr: *addr,
+            source: std::io::Error::new(source.kind(), source.to_string()),
+        },
+        // ready_tx 仅在 validation / bind 阶段触发；Tonic err 出现时 ready_tx
+        // 已被 take 进 closure 不可能走到本分支。保留 unreachable 兜底，
+        // 避免未来重构破坏不变量。
+        GatewayError::Tonic(t) => unreachable!(
+            "clone_gateway_error not expected for Tonic err (ready_tx 已 take); got: {t}"
+        ),
+    }
+}
+
+fn clone_config_error(e: &ConfigError) -> ConfigError {
+    match e {
+        ConfigError::LoopbackBind(LoopbackBindError::NonLoopback(addr)) => {
+            ConfigError::LoopbackBind(LoopbackBindError::NonLoopback(*addr))
+        }
+        ConfigError::ZeroIdempotencyTtl => ConfigError::ZeroIdempotencyTtl,
+        ConfigError::ZeroIdempotencyMaxEntries => ConfigError::ZeroIdempotencyMaxEntries,
+        ConfigError::EmptyRobotId => ConfigError::EmptyRobotId,
+    }
 }
 
 // ============================================================================
@@ -347,8 +532,10 @@ mod tests {
         let (_tx, rx) = watch::channel(false);
         let result = run_gateway(cfg, Arc::new(ClearEStopHandler::new()), rx).await;
         match result {
-            Err(GatewayError::LoopbackBind(LoopbackBindError::NonLoopback(_))) => {}
-            other => panic!("expected LoopbackBind error, got {other:?}"),
+            Err(GatewayError::Config(ConfigError::LoopbackBind(
+                LoopbackBindError::NonLoopback(_),
+            ))) => {}
+            other => panic!("expected Config(LoopbackBind), got {other:?}"),
         }
     }
 
@@ -358,6 +545,10 @@ mod tests {
 
     /// `127.0.0.1:0` (OS 自动分配端口) bind → tonic server 起来后通过
     /// shutdown_rx 触发 graceful stop；await 应在 1s 内返回 Ok(())。
+    ///
+    /// **A1-3 (2/3-b1) reviewer 残留 #2 修复**：把旧
+    /// `tokio::time::sleep(50ms)` 等 readiness 改成 `ready_rx.await`
+    /// 拿真实绑定的 SocketAddr，强 readiness 信号。
     #[tokio::test]
     async fn run_gateway_loopback_bind_starts_and_graceful_stops_on_shutdown_signal() {
         let cfg = GatewayConfig {
@@ -368,16 +559,24 @@ mod tests {
             rr_timeout_grace_ms: 500,
         };
         let (tx, rx) = watch::channel(false);
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
 
-        let handle =
-            tokio::spawn(
-                async move { run_gateway(cfg, Arc::new(ClearEStopHandler::new()), rx).await },
-            );
+        let handle = tokio::spawn(async move {
+            run_gateway_with_ready(cfg, Arc::new(ClearEStopHandler::new()), rx, Some(ready_tx))
+                .await
+        });
 
-        // 等 server bind 完成（tonic 起来后 spawn task 已经 await
-        // serve_with_shutdown）。50ms 通常足够；如需更稳可改成 retry-poll
-        // listen-addr。
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // 强 readiness：等 server 真 bind 完成 + 拿到 actual_addr
+        let actual_addr = timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("ready signal within 2s")
+            .expect("ready_tx not dropped")
+            .expect("bind succeeds for loopback");
+        assert!(
+            actual_addr.ip().is_loopback(),
+            "actual_addr 应是 loopback；实际 = {actual_addr}"
+        );
+        assert_ne!(actual_addr.port(), 0, "OS 自动分配的 port 不应是 0");
 
         // 触发 shutdown
         tx.send(true).expect("send shutdown");
@@ -388,6 +587,157 @@ mod tests {
             .expect("run_gateway should stop within 1s after shutdown signal")
             .expect("tokio task did not panic");
         assert!(res.is_ok(), "run_gateway returned error: {res:?}");
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // GatewayConfig::validate: A1-3 (2/3-b1) reviewer 残留 #3 拍板
+    // ────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn config_validate_loopback_default_ok() {
+        let cfg = GatewayConfig::loopback_default();
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn config_validate_rejects_zero_idempotency_ttl_secs() {
+        let mut cfg = GatewayConfig::loopback_default();
+        cfg.idempotency_ttl_secs = 0;
+        assert_eq!(cfg.validate(), Err(ConfigError::ZeroIdempotencyTtl));
+    }
+
+    #[test]
+    fn config_validate_rejects_zero_idempotency_max_entries() {
+        let mut cfg = GatewayConfig::loopback_default();
+        cfg.idempotency_max_entries = 0;
+        assert_eq!(cfg.validate(), Err(ConfigError::ZeroIdempotencyMaxEntries));
+    }
+
+    #[test]
+    fn config_validate_rejects_empty_robot_id() {
+        let mut cfg = GatewayConfig::loopback_default();
+        cfg.robot_id = String::new();
+        assert_eq!(cfg.validate(), Err(ConfigError::EmptyRobotId));
+    }
+
+    #[test]
+    fn config_validate_rejects_non_loopback_listen_addr() {
+        let mut cfg = GatewayConfig::loopback_default();
+        cfg.listen_addr = "0.0.0.0:50051".parse().unwrap();
+        match cfg.validate() {
+            Err(ConfigError::LoopbackBind(LoopbackBindError::NonLoopback(_))) => {}
+            other => panic!("expected LoopbackBind, got {other:?}"),
+        }
+    }
+
+    /// `rr_timeout_grace_ms = 0` 是合法的（reviewer 拍板：0 也合理；
+    /// handler 仍按 timeout_ms 等）。
+    #[test]
+    fn config_validate_accepts_zero_rr_timeout_grace_ms() {
+        let mut cfg = GatewayConfig::loopback_default();
+        cfg.rr_timeout_grace_ms = 0;
+        assert!(cfg.validate().is_ok());
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // run_gateway_with_ready: ready_tx 边界 (reviewer 边界 1)
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// **A1-3 (2/3-b1) reviewer 边界 1**：config validation 失败时
+    /// ready_tx 也要 send `Err(GatewayError)`，让 ready_rx 端不会永久
+    /// 阻塞 await。
+    #[tokio::test]
+    async fn ready_tx_receives_err_when_config_validation_fails() {
+        let mut cfg = GatewayConfig::loopback_default();
+        cfg.idempotency_ttl_secs = 0; // 触发 validation fail
+        let (_tx, rx) = watch::channel(false);
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+
+        let _handle = tokio::spawn(async move {
+            run_gateway_with_ready(cfg, Arc::new(ClearEStopHandler::new()), rx, Some(ready_tx))
+                .await
+        });
+
+        let result = timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("ready signal within 2s")
+            .expect("ready_tx not dropped");
+        match result {
+            Err(GatewayError::Config(ConfigError::ZeroIdempotencyTtl)) => {}
+            other => panic!("expected ZeroIdempotencyTtl, got {other:?}"),
+        }
+    }
+
+    /// **A1-3 (2/3-b1) reviewer 边界 1**：bind 失败时 ready_tx 也 send
+    /// `Err(GatewayError::Bind { .. })`。用 dual-bind 制造端口占用。
+    #[tokio::test]
+    async fn ready_tx_receives_err_when_bind_fails() {
+        // 1) 先起一个真 server 占住一个 loopback 端口
+        let cfg_a = GatewayConfig {
+            listen_addr: "127.0.0.1:0".parse().unwrap(),
+            robot_id: "occupy".to_string(),
+            idempotency_ttl_secs: 300,
+            idempotency_max_entries: 4096,
+            rr_timeout_grace_ms: 500,
+        };
+        let (shutdown_a_tx, shutdown_a_rx) = watch::channel(false);
+        let (ready_a_tx, ready_a_rx) = tokio::sync::oneshot::channel();
+        let handle_a = tokio::spawn(async move {
+            run_gateway_with_ready(
+                cfg_a,
+                Arc::new(ClearEStopHandler::new()),
+                shutdown_a_rx,
+                Some(ready_a_tx),
+            )
+            .await
+        });
+        let occupied_addr = timeout(Duration::from_secs(2), ready_a_rx)
+            .await
+            .expect("server A ready within 2s")
+            .expect("ready_tx not dropped")
+            .expect("server A binds successfully");
+
+        // 2) 第二个 server 试图 bind 同一端口 → 应失败
+        let cfg_b = GatewayConfig {
+            listen_addr: occupied_addr,
+            robot_id: "conflict".to_string(),
+            idempotency_ttl_secs: 300,
+            idempotency_max_entries: 4096,
+            rr_timeout_grace_ms: 500,
+        };
+        let (_shutdown_b_tx, shutdown_b_rx) = watch::channel(false);
+        let (ready_b_tx, ready_b_rx) = tokio::sync::oneshot::channel();
+        let handle_b = tokio::spawn(async move {
+            run_gateway_with_ready(
+                cfg_b,
+                Arc::new(ClearEStopHandler::new()),
+                shutdown_b_rx,
+                Some(ready_b_tx),
+            )
+            .await
+        });
+
+        let result = timeout(Duration::from_secs(2), ready_b_rx)
+            .await
+            .expect("server B ready signal within 2s")
+            .expect("ready_tx not dropped");
+        match result {
+            Err(GatewayError::Bind { addr, source: _ }) => {
+                assert_eq!(addr, occupied_addr);
+            }
+            other => panic!("expected Bind err, got {other:?}"),
+        }
+
+        // server B run task 也应返 Bind err
+        let res_b = timeout(Duration::from_secs(2), handle_b)
+            .await
+            .expect("server B task within 2s")
+            .expect("tokio task no panic");
+        assert!(matches!(res_b, Err(GatewayError::Bind { .. })));
+
+        // 收尾 server A
+        shutdown_a_tx.send(true).unwrap();
+        let _ = timeout(Duration::from_secs(2), handle_a).await;
     }
 
     // ────────────────────────────────────────────────────────────────────────

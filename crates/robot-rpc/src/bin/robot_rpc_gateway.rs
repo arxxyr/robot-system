@@ -37,7 +37,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use robot_rpc::gateway::{
-    ClearEStopHandler, GatewayConfig, GatewayError, LoopbackBindError, run_gateway,
+    ClearEStopHandler, ConfigError, GatewayConfig, GatewayError, LoopbackBindError, run_gateway,
 };
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
@@ -197,13 +197,27 @@ async fn main() {
         Ok(()) => {
             tracing::info!("robot_rpc_gateway: clean shutdown");
         }
-        Err(GatewayError::LoopbackBind(LoopbackBindError::NonLoopback(addr))) => {
+        Err(GatewayError::Config(ConfigError::LoopbackBind(LoopbackBindError::NonLoopback(
+            addr,
+        )))) => {
             tracing::error!(
                 %addr,
                 "fatal: --listen-addr must be loopback (127.0.0.0/8 or ::1); v0.3 \
                  fake-token + plain TCP 阶段禁绑外网"
             );
             std::process::exit(2);
+        }
+        Err(GatewayError::Config(e)) => {
+            tracing::error!(error = ?e, "fatal: gateway config validation failed");
+            std::process::exit(2);
+        }
+        Err(GatewayError::Bind { addr, source }) => {
+            tracing::error!(
+                %addr,
+                error = ?source,
+                "fatal: TcpListener::bind failed (端口占用 / 权限不足等)"
+            );
+            std::process::exit(1);
         }
         Err(GatewayError::Tonic(e)) => {
             tracing::error!(error = ?e, "fatal: tonic transport failed");
