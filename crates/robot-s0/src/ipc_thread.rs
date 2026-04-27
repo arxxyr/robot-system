@@ -62,7 +62,7 @@ use robot_transport::{LatestCommandWriter, LatestSubscriber, RtSnapshotPublisher
 use robot_core::executor_ctrl::ExecutorCtrlClient;
 
 use crate::estop_latch::save_estop_latch;
-use crate::ipc_tick::{IpcRetryState, ipc_tick};
+use crate::ipc_tick::{ClearEStopTickOutcome, IpcRetryState, ipc_tick};
 use crate::state_machine::{Event, EventQueue, Guards, S0State, S0StateSnapshot};
 
 // ============================================================================
@@ -405,46 +405,64 @@ fn run_loop(
 
         // ─── 6.5) latch fsync hook ───
         //
-        // **A1-2**：ClearEStop 路径已经在 ipc_tick 内由
+        // **A1-3 (1/3a)**：ClearEStop 路径已在 ipc_tick 内由
         // `clear_estop_action::try_apply_clear_estop` 完成 fsync + clear +
-        // 翻 guard 三步硬顺序；本 hook 通过 `tick_outcome` 决定是否要补 fsync
-        // / 计数 / 同步 prev：
+        // 翻 guard 三步硬顺序；本 hook 通过 `tick_outcome.clear_estop` domain
+        // status enum 决定是否要补 fsync / 计数 / 同步 prev：
         //
-        // - `clear_estop_latch_persisted`：ClearEStop 已成功 fsync；只同步
-        //   prev + 计 latch_writes，**不**再调 save_estop_latch（防二次写）。
-        // - `clear_estop_latch_write_failed`：ClearEStop 在 fsync 阶段失败；
-        //   guard 没翻、executor 没清。仅计 latch_write_errors；prev 不动
-        //   → 下面通用 hook 也不会触发（`guards.estop_latched` 仍为 true）。
-        // - 其它路径（典型 EStop 翻转 false→true 单调）：保留 task #15 阻断 1
-        //   修复的通用 hook，比较 prev != now 即 fsync 双写。
+        // - `Some(Cleared { .. })`：成功 → 计 latch_writes + 同步 prev +
+        //   **跳过**通用 `prev != now` hook 的二次 `save_estop_latch`。
+        // - `Some(FsyncFailed)`：gate 通过但 fsync 失败 → 计
+        //   latch_write_errors；guard 没翻 → prev 不动；通用 hook 也不会
+        //   触发（`guards.estop_latched` 仍为 true）。
+        // - `Some(StateNotSafe { .. } | NotTorqueOffConfirmed { .. })`：
+        //   gate 拒 → 不计数 / 不动盘；guard / executor / latch 全不动。
+        //   gateway / RR response 在 ipc_thread 后续阶段（A1-3 (1/3b)）
+        //   match 这些 variant 生成 FailedPrecondition payload。
+        // - `None`：本 tick 没消费 ClearEStop → 走通用 EStop 翻转 hook
+        //   （false → true 单调；保留 task #15 阻断 1 修复）。
         //
         // 设计 §6.7 不变量 #4：S0 重启不失忆，EStop / fault / 最后 safe 输出
         // 都 fsync 双写。本 hook 是 EStop / ClearEStop 两条的实施点。
-        if tick_outcome.clear_estop_latch_persisted {
-            metrics.latch_writes.fetch_add(1, Ordering::Relaxed);
-            prev_estop_latched = guards.estop_latched; // = false
-        } else if tick_outcome.clear_estop_latch_write_failed {
-            metrics.latch_write_errors.fetch_add(1, Ordering::Relaxed);
-        } else if guards.estop_latched != prev_estop_latched {
-            // 通用 EStop 翻转 hook（false→true 单调；ClearEStop 路径已被
-            // outcome 接管）。`save_estop_latch` 内部双文件 atomic rename +
-            // fsync，几 ms 级阻塞；EStop 是低频事件，对 500us tick 节奏
-            // 影响仅在事件发生瞬间，不持续。
-            if let Some(path) = cfg.latch_path.as_ref() {
-                match save_estop_latch(path, guards.estop_latched) {
-                    Ok(()) => {
-                        metrics.latch_writes.fetch_add(1, Ordering::Relaxed);
+        match tick_outcome.clear_estop {
+            Some(ClearEStopTickOutcome::Cleared { .. }) => {
+                metrics.latch_writes.fetch_add(1, Ordering::Relaxed);
+                prev_estop_latched = guards.estop_latched; // = false
+            }
+            Some(ClearEStopTickOutcome::FsyncFailed) => {
+                metrics.latch_write_errors.fetch_add(1, Ordering::Relaxed);
+                // guard 没翻 → prev 不动；下方通用 hook 走不到
+            }
+            Some(
+                ClearEStopTickOutcome::StateNotSafe { .. }
+                | ClearEStopTickOutcome::NotTorqueOffConfirmed { .. },
+            ) => {
+                // gate 拒：guard / executor / latch 全不动；不计数
+                // RR response 由 A1-3 (1/3b) 的 ipc_thread RR drain 处理
+            }
+            None => {
+                if guards.estop_latched != prev_estop_latched {
+                    // 通用 EStop 翻转 hook（false→true 单调；ClearEStop 路径
+                    // 已被 outcome 接管）。`save_estop_latch` 内部双文件
+                    // atomic rename + fsync，几 ms 级阻塞；EStop 是低频事件，
+                    // 对 500us tick 节奏影响仅在事件发生瞬间，不持续。
+                    if let Some(path) = cfg.latch_path.as_ref() {
+                        match save_estop_latch(path, guards.estop_latched) {
+                            Ok(()) => {
+                                metrics.latch_writes.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Err(_e) => {
+                                metrics.latch_write_errors.fetch_add(1, Ordering::Relaxed);
+                                // **不**中断主循环：即便 IO 失败，state 已进
+                                // Safe，executor 已 safety_stop（client 同步
+                                // 置 latch + emergency_action）。重启读不到
+                                // latch 是分级降级，不阻断 emergency 响应路径。
+                            }
+                        }
                     }
-                    Err(_e) => {
-                        metrics.latch_write_errors.fetch_add(1, Ordering::Relaxed);
-                        // **不**中断主循环：即便 IO 失败，state 已进 Safe，
-                        // executor 已 safety_stop（client 同步置 latch +
-                        // emergency_action）。重启读不到 latch 是分级降级，
-                        // 不阻断 emergency 响应路径。
-                    }
+                    prev_estop_latched = guards.estop_latched;
                 }
             }
-            prev_estop_latched = guards.estop_latched;
         }
 
         // ─── 7) 发布 snapshot ───

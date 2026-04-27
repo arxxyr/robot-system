@@ -39,7 +39,7 @@ use robot_core::executor_ctrl::{ExecutorCtrlClient, OutputSafetyState};
 use robot_core::time::RobotClock;
 
 use crate::estop_latch::save_estop_latch_clear;
-use crate::state_machine::Guards;
+use crate::state_machine::{Guards, S0State};
 
 /// 成功路径返回值。
 ///
@@ -115,7 +115,77 @@ pub(crate) fn try_apply_clear_estop(
 }
 
 // ============================================================================
+// dry_run evaluator (A1-3 (1/3a) reviewer follow-up 2 拍板)
+// ============================================================================
+
+/// dry_run 评估结果（reviewer A1-3 拍板用 enum，不用 `Result`）：
+///
+/// - `WouldClear`：state == Safe + safety_state == TorqueOffConfirmed →
+///   "if you re-send a live ClearEStop now, it would clear latch"。
+/// - `StateNotSafe` / `NotTorqueOffConfirmed`：domain `FailedPrecondition` —
+///   gate 拒，由 ipc_thread / gateway 显式 match 到 RR / gRPC status。
+///
+/// dry_run **不**走 fsync，因此本枚举**不**含 `FsyncFailed` variant。
+/// `would_clear_at_ns` = `clock.now()` 取的 mono raw 时间戳，仅作为
+/// audit / response 字段（不代表硬件真清的时刻——dry_run 不动硬件）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // A1-3 (1/3b) ipc_thread RR drain 接通时消费
+pub(crate) enum ClearEStopDryRunOutcome {
+    WouldClear { would_clear_at_ns: u64 },
+    StateNotSafe { actual: S0State },
+    NotTorqueOffConfirmed { actual: OutputSafetyState },
+}
+
+/// dry_run 评估：read-only 检查 ClearEStop 在当前 state / safety_state /
+/// guards 下是否会成功，**不**触动任何 in-memory / 磁盘 / executor 状态。
+///
+/// reviewer A1-3 follow-up 2 拍板：
+///
+/// - dry_run 必须进 daemon/S0 action layer，**不**能 gateway 短路（gateway
+///   没有权威状态）。
+/// - 不 push `Event::ClearEStop`、不调 [`try_apply_clear_estop`]、不碰
+///   latch / executor / guard。
+/// - 必要时可参考 `guards.estop_latched` 生成更清楚的 response 文案
+///   （由调用方 ipc_thread / gateway 做），但 gate 仍以
+///   `executor_ctrl.safety_state() == TorqueOffConfirmed` 为权威——
+///   不能靠 guard 副本绕过 torque gate。
+///
+/// 调用方契约：本函数只读，可在 `ipc_thread` 主循环 RR drain 阶段直接
+/// 同步调用，不进 events queue / `ipc_tick`。
+#[allow(dead_code)] // A1-3 (1/3b) ipc_thread RR drain 接通时消费
+pub(crate) fn evaluate_clear_estop_dry_run(
+    state: S0State,
+    guards: &Guards,
+    executor_ctrl: &dyn ExecutorCtrlClient,
+    clock: &dyn RobotClock,
+) -> ClearEStopDryRunOutcome {
+    // 1) state machine gate：state != Safe → live ClearEStop 也会被
+    //    `plan_transition(*, ClearEStop)` 返 None continue，dry_run 直接
+    //    返 StateNotSafe。
+    if state != S0State::Safe {
+        return ClearEStopDryRunOutcome::StateNotSafe { actual: state };
+    }
+
+    // 2) hardware torque gate：权威看 executor_ctrl.safety_state()，不看
+    //    guards.estop_latched 副本（reviewer 拍板：不能靠 guard 绕过
+    //    torque gate）。
+    let actual = executor_ctrl.safety_state();
+    if actual != OutputSafetyState::TorqueOffConfirmed {
+        return ClearEStopDryRunOutcome::NotTorqueOffConfirmed { actual };
+    }
+
+    // 3) WouldClear: 两条 gate 都过 → live ClearEStop 此刻会清 latch。
+    //    `guards.estop_latched` 当前值由调用方 ipc_thread 自行参考，本函数
+    //    不携带（保持 read-only 最小返回面）。
+    let _ = guards; // 显式标记未消费（reviewer 拍板留口给调用方做 response 文案）
+    ClearEStopDryRunOutcome::WouldClear {
+        would_clear_at_ns: clock.now().0,
+    }
+}
+
+// ============================================================================
 // Tests —— A1-2 reviewer 拍板锁三条失败路径 + 成功硬顺序
+//          A1-3 (1/3a) 加 dry_run evaluator 三条路径锁测
 // ============================================================================
 
 #[cfg(test)]
@@ -384,5 +454,134 @@ mod tests {
             load_estop_latch(&latch_path).unwrap(),
             "load_estop_latch 必须仍返 latched=true；如果失败说明 backup-first 修复回归了"
         );
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // 5) dry_run evaluator (A1-3 (1/3a) reviewer follow-up 2 拍板锁三条)
+    //
+    //    硬边界：dry_run 必须进 daemon/S0 action layer，gateway 没有权威状态
+    //    不能短路。read-only 检查 state == Safe + safety_state ==
+    //    TorqueOffConfirmed；任何路径都**不**碰 latch 文件 / executor latch /
+    //    guard。
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// **A1-3 (1/3a)**：dry_run gate 全过 → 返 `WouldClear`，副作用全不动。
+    ///
+    /// `state == Safe` & `safety_state == TorqueOffConfirmed` → 评估返
+    /// `WouldClear { would_clear_at_ns }`。预置 latch primary / bak `= "1\n"`、
+    /// `executor.safety_latched = true`、`guards.estop_latched = true`，
+    /// 评估完后**全部**保持原值。
+    #[test]
+    fn dry_run_gate_pass_returns_would_clear_no_side_effects() {
+        let tmp = tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        let bak_path = tmp.path().join("estop_latch.bak");
+        save_estop_latch(&latch_path, true).unwrap(); // 预 provision latch=true
+
+        let inner = make_executor(OutputSafetyState::TorqueOffConfirmed, true);
+        let client = HardRtCtrlClient::new(Arc::clone(&inner));
+
+        let guards = healthy_guards_latched();
+        let clock = MockClock::new(MonoRawNs(98_765));
+
+        let res = evaluate_clear_estop_dry_run(S0State::Safe, &guards, &client, &clock);
+
+        // 1) 评估返 WouldClear，would_clear_at_ns == clock.now()
+        match res {
+            ClearEStopDryRunOutcome::WouldClear { would_clear_at_ns } => {
+                assert_eq!(would_clear_at_ns, 98_765);
+            }
+            other => panic!("expected WouldClear, got {other:?}"),
+        }
+
+        // 2) 副作用全不动：guard / executor / latch 全保持原值
+        assert!(guards.estop_latched, "guard 不得翻（dry_run 不碰 guard）");
+        assert!(
+            inner.safety_latched.load(Ordering::Acquire),
+            "executor.safety_latched 不得清（dry_run 不调 clear_safety_latch）"
+        );
+        assert_eq!(
+            std::fs::read(&latch_path).unwrap(),
+            b"1\n",
+            "latch primary 不得被写（dry_run 不调 fsync）"
+        );
+        assert_eq!(
+            std::fs::read(&bak_path).unwrap(),
+            b"1\n",
+            "latch backup 不得被写"
+        );
+    }
+
+    /// **A1-3 (1/3a)**：dry_run state != Safe → 返 `StateNotSafe`，
+    /// 副作用全不动。
+    #[test]
+    fn dry_run_state_not_safe_returns_state_not_safe_no_side_effects() {
+        let tmp = tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        save_estop_latch(&latch_path, true).unwrap();
+
+        // safety_state = TorqueOffConfirmed（torque gate 通过），但 state = Ready
+        let inner = make_executor(OutputSafetyState::TorqueOffConfirmed, true);
+        let client = HardRtCtrlClient::new(Arc::clone(&inner));
+
+        let guards = healthy_guards_latched();
+        let clock = MockClock::new(MonoRawNs::ZERO);
+
+        let res = evaluate_clear_estop_dry_run(S0State::Ready, &guards, &client, &clock);
+
+        // 1) 评估返 StateNotSafe { actual: Ready }
+        match res {
+            ClearEStopDryRunOutcome::StateNotSafe { actual } => {
+                assert_eq!(actual, S0State::Ready);
+            }
+            other => panic!("expected StateNotSafe, got {other:?}"),
+        }
+
+        // 2) 副作用全不动
+        assert!(guards.estop_latched);
+        assert!(inner.safety_latched.load(Ordering::Acquire));
+        assert_eq!(std::fs::read(&latch_path).unwrap(), b"1\n");
+    }
+
+    /// **A1-3 (1/3a)**：dry_run state == Safe 但 safety_state != TorqueOffConfirmed
+    /// → 返 `NotTorqueOffConfirmed { actual }`，副作用全不动。
+    ///
+    /// reviewer 拍板：torque gate 看 `executor_ctrl.safety_state()` 权威，
+    /// 不看 `guards.estop_latched` 副本——本测试预置 guard.estop_latched=false
+    /// 但 safety_state=TorqueOn，仍必须返 NotTorqueOffConfirmed（不能靠
+    /// guard 副本绕过 torque gate）。
+    #[test]
+    fn dry_run_safety_state_not_torque_off_confirmed_returns_not_torque_off_confirmed() {
+        let tmp = tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        save_estop_latch(&latch_path, true).unwrap();
+
+        // state = Safe，但 safety_state = TorqueOn（电机仍 enabled）
+        let inner = make_executor(OutputSafetyState::TorqueOn, true);
+        let client = HardRtCtrlClient::new(Arc::clone(&inner));
+
+        // 关键：guards.estop_latched = false（被人为清掉），看 dry_run 是否
+        // 仍以 torque gate 为权威拒
+        let mut guards = healthy_guards_latched();
+        guards.estop_latched = false;
+
+        let clock = MockClock::new(MonoRawNs::ZERO);
+
+        let res = evaluate_clear_estop_dry_run(S0State::Safe, &guards, &client, &clock);
+
+        // 1) 评估返 NotTorqueOffConfirmed { actual: TorqueOn }（不靠 guard 绕过）
+        match res {
+            ClearEStopDryRunOutcome::NotTorqueOffConfirmed { actual } => {
+                assert_eq!(actual, OutputSafetyState::TorqueOn);
+            }
+            other => panic!(
+                "expected NotTorqueOffConfirmed (torque gate 必须以 safety_state 为权威，\
+                 不能靠 guards.estop_latched=false 绕过), got {other:?}"
+            ),
+        }
+
+        // 2) 副作用全不动
+        assert!(inner.safety_latched.load(Ordering::Acquire));
+        assert_eq!(std::fs::read(&latch_path).unwrap(), b"1\n");
     }
 }

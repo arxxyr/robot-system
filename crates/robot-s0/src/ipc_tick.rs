@@ -43,7 +43,9 @@
 
 use std::path::Path;
 
-use robot_core::executor_ctrl::{AdapterResp, ExecutorCtrlClient, NormalReqStatus, OutputPolicy};
+use robot_core::executor_ctrl::{
+    AdapterResp, ExecutorCtrlClient, NormalReqStatus, OutputPolicy, OutputSafetyState,
+};
 use robot_core::time::{DurationNs, MonoRawNs, RobotClock};
 
 use crate::clear_estop_action;
@@ -223,6 +225,12 @@ pub fn ipc_tick(
             apply_event_guard_side_effect(event, guards);
         }
         let Some(plan) = plan_transition(*state, event, guards) else {
+            // **A1-3 (1/3a)**：ClearEStop 在非 Safe state 被 plan_transition
+            // 返 None 时，必须把 StateNotSafe domain status 抛给 ipc_thread
+            // 生成 RR response。其它 event 静默 continue 不变。
+            if matches!(event, Event::ClearEStop) {
+                outcome.clear_estop = Some(ClearEStopTickOutcome::StateNotSafe { actual: *state });
+            }
             continue;
         };
         match plan.kind {
@@ -230,11 +238,14 @@ pub fn ipc_tick(
                 if matches!(event, Event::ClearEStop) {
                     // **A1-2 硬顺序**（详 docs/00_design.md §6.6.1 errata）：
                     //   TorqueOffConfirmed gate
-                    //     → save_estop_latch(false)            // primary + bak fsync
+                    //     → save_estop_latch_clear()           // backup-first fsync
                     //     → executor_ctrl.clear_safety_latch()
                     //     → guards.estop_latched = false
                     // 任一步失败 → 不 commit_transition / 不 set_policy，
                     // state 留 Safe（下次 tick 由上层重新发 ClearEStop 重试）。
+                    //
+                    // **A1-3 (1/3a)**：把所有 4 个 domain status 写到
+                    // `outcome.clear_estop` 让 ipc_thread / gateway 显式 match。
                     let Some(path) = latch_path else {
                         // latch_path 未配置（mock 测试场景）→ ClearEStop
                         // 静默丢弃。生产期 strict policy 保证 latch_path
@@ -247,21 +258,22 @@ pub fn ipc_tick(
                         path,
                         clock,
                     ) {
-                        Ok(_) => {
-                            outcome.clear_estop_latch_persisted = true;
+                        Ok(action_outcome) => {
+                            outcome.clear_estop = Some(ClearEStopTickOutcome::Cleared {
+                                cleared_at_ns: action_outcome.cleared_at_ns,
+                            });
                             commit_transition(state, &plan);
                             executor_ctrl.set_policy(plan.new_policy);
                         }
-                        Err(clear_estop_action::ClearEStopError::FsyncFailed(_)) => {
-                            outcome.clear_estop_latch_write_failed = true;
-                            // state 不前进；guard 不翻；executor latch 不动
+                        Err(clear_estop_action::ClearEStopError::FsyncFailed(_e)) => {
+                            // io::Error 细节走 tracing；TickOutcome 只标 variant
+                            outcome.clear_estop = Some(ClearEStopTickOutcome::FsyncFailed);
                         }
                         Err(clear_estop_action::ClearEStopError::NotTorqueOffConfirmed {
-                            ..
+                            actual,
                         }) => {
-                            // gate 拒：state 不前进；guard 不翻；executor 不动
-                            // outcome 不上报（视为 no-op；下次 tick 上层重发
-                            // ClearEStop 重试）
+                            outcome.clear_estop =
+                                Some(ClearEStopTickOutcome::NotTorqueOffConfirmed { actual });
                         }
                     }
                 } else {
@@ -289,29 +301,69 @@ pub fn ipc_tick(
 
 /// `ipc_tick` 单次执行的副作用 outcome。
 ///
-/// **A1-2**：`Event::ClearEStop` 走 [`clear_estop_action::try_apply_clear_estop`]，
-/// 内部已完成 `save_estop_latch(false)` fsync + `clear_safety_latch()` +
-/// `guards.estop_latched=false` 三步。outcome 把信息抛给 `ipc_thread`
-/// run_loop，让它跳过通用 `prev_estop_latched != now` hook 的二次写盘，
-/// 同时同步 `prev_estop_latched` + 计 `latch_writes / latch_write_errors`。
+/// **A1-3 (1/3a)**：撤掉 A1-2 期间的两个 bool（`clear_estop_latch_persisted`
+/// / `clear_estop_latch_write_failed`），换成一个 status enum
+/// [`ClearEStopTickOutcome`]，让 `ipc_thread` 能区分 `Cleared` /
+/// `StateNotSafe` / `NotTorqueOffConfirmed` / `FsyncFailed` 四个 variant
+/// 生成完整的 RR response payload。reviewer 拍板：S0 返回的 domain status
+/// **不**直接 cast 成 tonic code，由 gateway 显式 match。
 ///
-/// `NotTorqueOffConfirmed` 失败不上报 outcome（state / guard / latch 全
-/// 不动；ipc_thread 视为 no-op）；只有 fsync 真失败才 set
-/// `clear_estop_latch_write_failed`，让 ipc_thread 计 `latch_write_errors`。
+/// `clear_estop` 字段：
+///
+/// - `None`：本 tick 没消费 `Event::ClearEStop`（典型的 EStop / Heartbeat /
+///   Effectful pending tick）。
+/// - `Some(ClearEStopTickOutcome::Cleared { cleared_at_ns })`：三步硬顺序
+///   全过；`ipc_thread` 应计 `latch_writes++` + 同步 `prev_estop_latched=
+///   false` + **跳过**通用 `prev != now` hook 的二次 `save_estop_latch`。
+/// - `Some(ClearEStopTickOutcome::FsyncFailed)`：gate 通过但 fsync 失败；
+///   guard / executor / latch 全不动；`ipc_thread` 应计 `latch_write_errors++`。
+/// - `Some(ClearEStopTickOutcome::StateNotSafe { actual })`：state 不在
+///   `Safe`，`plan_transition` 返 `None`；guard / executor / latch 全不动；
+///   `ipc_thread` 不计数（`prev_estop_latched` 也不动）。
+/// - `Some(ClearEStopTickOutcome::NotTorqueOffConfirmed { actual })`：
+///   gate 拒；guard / executor / latch 全不动；`ipc_thread` 不计数。
+///
+/// **dry_run 不进 `ipc_tick`**，因此 [`ClearEStopTickOutcome`] **不**含
+/// `WouldClear` variant；dry_run 由 `ipc_thread` 在 RR drain 阶段直接调
+/// [`clear_estop_action::evaluate_clear_estop_dry_run`] 同步评估，read-only
+/// 检查不触动 state machine（详 reviewer A1-3 follow-up 2 拍板）。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TickOutcome {
-    /// 本 tick 内 ClearEStop action handler 成功 —— 已 fsync `0\n` 到 latch
-    /// primary + bak、调用 `clear_safety_latch()`、翻转 `guards.estop_latched
-    /// = false`。`ipc_thread` 应：(a) 计 `latch_writes++`、(b) 同步
-    /// `prev_estop_latched=false`、(c) **跳过**通用 `prev != now` hook 的
-    /// 二次 `save_estop_latch`。
-    pub clear_estop_latch_persisted: bool,
+    /// 本 tick 是否消费了 `Event::ClearEStop`，及消费结果。详上方 doc。
+    pub clear_estop: Option<ClearEStopTickOutcome>,
+}
 
-    /// 本 tick 内 ClearEStop action handler 在 fsync 阶段失败 —— gate 通过
-    /// 但 `save_estop_latch` 失败；`executor_ctrl.clear_safety_latch()` 未
-    /// 调、`guards.estop_latched` 仍为 true。`ipc_thread` 应计
-    /// `latch_write_errors++`；guard 没翻 → 通用 hook 也不会触发。
-    pub clear_estop_latch_write_failed: bool,
+/// 本 tick 消费 `Event::ClearEStop` 时的 domain status。
+///
+/// 设计原则（reviewer A1-3 follow-up 1 拍板）：
+///
+/// - **不**承担 RPC 语义。`ipc_thread` / gateway 显式 match 把它转成 RR
+///   response / gRPC `tonic::Status`。
+/// - 必须 `Copy`（给 `TickOutcome::default()` 提供 trivial 构造）。`io::Error`
+///   不进 enum；fsync 失败的具体 IO error 走 `tracing` 落 journal，本枚举
+///   只标 `FsyncFailed` 让上层知道是哪类。
+/// - 不含 `WouldClear` —— dry_run 不进 `ipc_tick`，由 ipc_thread 调
+///   [`clear_estop_action::evaluate_clear_estop_dry_run`] 评估。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClearEStopTickOutcome {
+    /// 三步硬顺序全过：fsync(primary+bak) → clear_safety_latch() → 翻 guard。
+    /// `cleared_at_ns` = action handler 完成瞬间的 `clock.now()` mono raw 时间戳。
+    Cleared { cleared_at_ns: u64 },
+
+    /// `*state != S0State::Safe`，`plan_transition` 返 `None`，本 tick 直接
+    /// continue；guard / executor / latch 全不动。
+    StateNotSafe { actual: S0State },
+
+    /// state == Safe，`plan_transition` 通过，但 `executor_ctrl.safety_state()
+    /// != TorqueOffConfirmed`，`try_apply_clear_estop` 在 gate 拒；
+    /// guard / executor / latch 全不动。
+    NotTorqueOffConfirmed { actual: OutputSafetyState },
+
+    /// gate 通过，`save_estop_latch_clear` fsync 失败；`executor_ctrl.
+    /// clear_safety_latch()` 未调、guard 仍 true、磁盘 latch 仍 latched=true
+    /// （`save_estop_latch_clear` backup-first 保证）。具体 `io::Error`
+    /// 走 tracing 落 journal，本 variant 不携带 IO error 细节。
+    FsyncFailed,
 }
 
 /// 按事件类型对 `guards` 做已知副作用。**ipc_tick 内部**逐 event 调用
@@ -846,6 +898,7 @@ mod tests {
     /// （NormalReqStatus::Unsupported），ipc_tick 再走 A3 升 Fault(AdapterErr)，
     /// 测试 fail。
     #[test]
+    #[allow(clippy::too_many_lines)] // A1-3 (1/3a) 加 outcome 断言后跨过 100 行门槛
     fn clear_estop_unblocks_subsequent_enable_via_latch() {
         let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
         let mut state = enabled_active();
@@ -898,8 +951,13 @@ mod tests {
             Some(&latch_path),
         );
         assert!(
-            outcome.clear_estop_latch_persisted,
-            "outcome 应抛 clear_estop_latch_persisted=true 让 ipc_thread 防二次写"
+            matches!(
+                outcome.clear_estop,
+                Some(ClearEStopTickOutcome::Cleared { .. })
+            ),
+            "outcome 应抛 ClearEStopTickOutcome::Cleared 让 ipc_thread 防二次写；\
+             实际 outcome.clear_estop = {:?}",
+            outcome.clear_estop
         );
         assert!(
             !inner.safety_latched.load(Ordering::Acquire),
@@ -1031,10 +1089,15 @@ mod tests {
             !guards.estop_latched,
             "ClearEStop 处理后 guards.estop_latched 应清"
         );
-        // outcome 抛 persisted=true（fsync 三步全过）。
+        // outcome 抛 Cleared（fsync 三步全过）。
         assert!(
-            outcome.clear_estop_latch_persisted,
-            "ClearEStop 成功路径必须抛 outcome.clear_estop_latch_persisted=true"
+            matches!(
+                outcome.clear_estop,
+                Some(ClearEStopTickOutcome::Cleared { .. })
+            ),
+            "ClearEStop 成功路径必须抛 ClearEStopTickOutcome::Cleared；\
+             实际 outcome.clear_estop = {:?}",
+            outcome.clear_estop
         );
         // ClearEStop 走 try_apply_clear_estop 调 clear_safety_latch（即使初始
         // latch=false 也是无副作用 idempotent store）。这里 inner 默认初值
@@ -1109,15 +1172,143 @@ mod tests {
         // 4) guard 不动
         assert!(guards.estop_latched, "guards.estop_latched 仍为 true");
 
-        // 5) outcome 不上报
-        assert!(
-            !outcome.clear_estop_latch_persisted,
-            "non-Safe state 不得抛 persisted"
+        // 5) outcome 抛 StateNotSafe（reviewer A1-3 (1/3a) 拍板：
+        //    plan_transition 拒后必须把 domain status 抛给 ipc_thread / gateway，
+        //    生成 RR FailedPrecondition response）
+        assert_eq!(
+            outcome.clear_estop,
+            Some(ClearEStopTickOutcome::StateNotSafe {
+                actual: S0State::Ready,
+            }),
+            "non-Safe state 必须抛 StateNotSafe domain status；\
+             实际 outcome.clear_estop = {:?}",
+            outcome.clear_estop
         );
-        assert!(
-            !outcome.clear_estop_latch_write_failed,
-            "non-Safe state 不得抛 write_failed（writer 根本没被调）"
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // A1-3 (1/3a) ClearEStopTickOutcome 4 个 variant 锁测
+    //
+    // - Cleared: 已被 clear_estop_unblocks_subsequent_enable_via_latch +
+    //   events_in_same_tick_use_per_event_guard_view 覆盖（live 成功）。
+    // - StateNotSafe: 已被 ipc_tick_clear_estop_blocked_when_state_not_safe 覆盖。
+    // - 本节补 NotTorqueOffConfirmed + FsyncFailed 两条独立锁测。
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// **A1-3 (1/3a)**：state == Safe + safety_state != TorqueOffConfirmed →
+    /// `try_apply_clear_estop` gate 拒；ipc_tick 抛
+    /// `ClearEStopTickOutcome::NotTorqueOffConfirmed { actual }`，
+    /// guard / executor / latch 全不动。
+    #[test]
+    fn ipc_tick_clear_estop_outcome_not_torque_off_confirmed_when_torque_on() {
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
+
+        // state = Safe，但 safety_state = TorqueOn（电机仍 enabled）
+        let mut state = S0State::Safe;
+        guards.estop_latched = true;
+        inner
+            .safety_state
+            .store(OutputSafetyState::TorqueOn.to_u8(), Ordering::Release);
+        inner.safety_latched.store(true, Ordering::Release);
+
+        // 真实 latch_path + 预 provision latched=true
+        let tmp = tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        save_estop_latch(&latch_path, true).unwrap();
+
+        events.push(Event::ClearEStop);
+
+        let outcome = ipc_tick(
+            &mut retry,
+            &mut state,
+            &mut guards,
+            &client,
+            clock.as_ref(),
+            &mut events,
+            Some(&latch_path),
         );
+
+        assert_eq!(
+            outcome.clear_estop,
+            Some(ClearEStopTickOutcome::NotTorqueOffConfirmed {
+                actual: OutputSafetyState::TorqueOn,
+            }),
+            "outcome 必须抛 NotTorqueOffConfirmed {{ actual: TorqueOn }}；\
+             实际 outcome.clear_estop = {:?}",
+            outcome.clear_estop
+        );
+
+        // 副作用全不动
+        assert!(guards.estop_latched, "guard 不得翻");
+        assert!(
+            inner.safety_latched.load(Ordering::Acquire),
+            "executor.safety_latched 不得清"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&latch_path).unwrap(),
+            "1\n",
+            "latch primary 文件不得被写"
+        );
+        assert_eq!(state, S0State::Safe);
+    }
+
+    /// **A1-3 (1/3a)**：gate 通过但 fsync 失败 → ipc_tick 抛
+    /// `ClearEStopTickOutcome::FsyncFailed`；guard / executor 全不动；
+    /// 磁盘 latch 仍 latched=true（backup-first 保证）。
+    #[test]
+    fn ipc_tick_clear_estop_outcome_fsync_failed_on_bad_backup_path() {
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
+
+        // state = Safe + safety_state = TorqueOffConfirmed（gate 全过）
+        let mut state = S0State::Safe;
+        guards.estop_latched = true;
+        inner.safety_state.store(
+            OutputSafetyState::TorqueOffConfirmed.to_u8(),
+            Ordering::Release,
+        );
+        inner.safety_latched.store(true, Ordering::Release);
+
+        // 真实 latch_path + 预 provision latched=true，再把 bak 替换成
+        // 非空目录让 backup-first save_estop_latch_clear 第一步失败
+        let tmp = tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        let bak_path = tmp.path().join("estop_latch.bak");
+        save_estop_latch(&latch_path, true).unwrap();
+        std::fs::remove_file(&bak_path).unwrap();
+        std::fs::create_dir(&bak_path).unwrap();
+        std::fs::write(bak_path.join("nonempty"), b"x").unwrap();
+
+        events.push(Event::ClearEStop);
+
+        let outcome = ipc_tick(
+            &mut retry,
+            &mut state,
+            &mut guards,
+            &client,
+            clock.as_ref(),
+            &mut events,
+            Some(&latch_path),
+        );
+
+        assert_eq!(
+            outcome.clear_estop,
+            Some(ClearEStopTickOutcome::FsyncFailed),
+            "outcome 必须抛 FsyncFailed；实际 outcome.clear_estop = {:?}",
+            outcome.clear_estop
+        );
+
+        // 副作用全不动（A1-2 round 2 backup-first 保证）
+        assert!(guards.estop_latched, "guard 不得翻");
+        assert!(
+            inner.safety_latched.load(Ordering::Acquire),
+            "executor.safety_latched 不得清（fsync 失败时绝不能调）"
+        );
+        assert_eq!(
+            std::fs::read(&latch_path).unwrap(),
+            b"1\n",
+            "primary 必须保持 latched=true（backup-first 保证 partial failure 不动 primary）"
+        );
+        assert_eq!(state, S0State::Safe);
     }
 
     /// emergency event drain 时**没有** in-flight pending，state 仍正确进 Safe。
