@@ -600,6 +600,9 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         state_pub,
         wd_rx,
         Arc::clone(&executor_ctrl),
+        // **A1-3 (1/3c) 起接通**：rr_server_thread 落地后传 `Some(...)`；
+        // 当前 v0.3 A1-3 (1/3a/b) 阶段生产 daemon 仍不接 RR control plane。
+        None,
     ) {
         Ok(h) => h,
         Err(e) => {

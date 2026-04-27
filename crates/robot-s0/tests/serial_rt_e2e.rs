@@ -264,6 +264,9 @@ fn spawn_harness(factory_name: &str) -> Harness {
         state_pub,
         wd_rx,
         Arc::clone(&executor_ctrl),
+        // SerialRT e2e 测试不接 RR control plane（A1-3 (1/3c) 不在本套
+        // harness 范围；A1-3 (3/3) 端到端时另起 harness）。
+        None,
     )
     .expect("spawn_ipc_thread");
 

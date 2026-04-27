@@ -44,6 +44,7 @@
 //! 其他字段由 `rt_thread` 产生的观测（Part 3 加）回填；Part 2 不做。
 
 #![forbid(unused_must_use)]
+#![allow(clippy::doc_markdown)]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -59,11 +60,128 @@ use robot_msg::msg::{ControlMode as FbControlMode, JointCommand as FbJointComman
 use robot_transport::iceoryx2::Iceoryx2Subscriber;
 use robot_transport::{LatestCommandWriter, LatestSubscriber, RtSnapshotPublisher};
 
-use robot_core::executor_ctrl::ExecutorCtrlClient;
+use robot_core::executor_ctrl::{ExecutorCtrlClient, OutputSafetyState};
 
+use crate::clear_estop_action::{self, ClearEStopDryRunOutcome};
 use crate::estop_latch::save_estop_latch;
 use crate::ipc_tick::{ClearEStopTickOutcome, IpcRetryState, ipc_tick};
 use crate::state_machine::{Event, EventQueue, Guards, S0State, S0StateSnapshot};
+
+// ============================================================================
+// RR control plane（A1-3 (1/3b) ClearEStop RR drain；reviewer 拍板）
+// ============================================================================
+
+/// RR control plane: `rr_server_thread` → `ipc_thread` 的 `ClearEStop`
+/// request channel payload（A1-3 (1/3b)）。
+///
+/// reviewer A1-3 拍板线程模型：
+///
+/// - `rr_server_thread`（A1-3 (1/3c) 落地）只做 iceoryx2 RR I/O：收 wire
+///   request → decode → 容量限制 → 转发本结构到 `ipc_thread`。
+/// - `ipc_thread` 是唯一 action executor：持 pending 元数据、决定 dry_run
+///   / live 路径、通过 `ipc_tick` 执行 live ClearEStop 三步硬顺序。
+/// - response 经 channel 回到 `rr_server_thread`，由它 reply 给 gateway。
+///
+/// 字段语义：
+///
+/// - `request_id`：客户端 UUIDv7（每次 retry 重新生成；correlation / audit
+///   only；详 `docs/00_design.md` §6.6.2 errata）。S0 端**仅**用于 RR
+///   response routing，**不**用作幂等 cache key（idempotency cache 在
+///   gateway 不在 S0；详 reviewer A1-3 拍板 3）。
+/// - `dry_run`：true → 走 [`clear_estop_action::evaluate_clear_estop_dry_run`]
+///   read-only 评估（不进 events queue / 不进 `ipc_tick`）；false → 走
+///   live 路径（live 单飞 + 进 events queue + `ipc_tick` 三步硬顺序）。
+/// - `confirmation` / `audit_reason`：gateway 已校过 `confirmation` 非空
+///   （`InvalidArgument`），但 S0 也保留这些字段做 audit trace
+///   （`tracing::info!` 落 journald；A1-3 (3/3) 端到端时再加详细字段）。
+#[derive(Debug, Clone)]
+pub struct ClearEStopRrRequest {
+    /// 客户端 UUIDv7，用于 RR response routing；不用作幂等 key。
+    pub request_id: String,
+    /// `true` → dry_run read-only 评估；`false` → live 三步硬顺序。
+    pub dry_run: bool,
+    /// 人工确认串（gateway 已校非空）。
+    pub confirmation: String,
+    /// 审计原因（"who、why"）。
+    pub audit_reason: String,
+}
+
+/// RR control plane: `ipc_thread` → `rr_server_thread` 的 `ClearEStop`
+/// response channel payload（A1-3 (1/3b)）。
+///
+/// reviewer 拍板：S0 返**domain status**（[`ClearEStopRrPayload`]），gateway
+/// **必须显式 match** 到 `tonic::Code`，**不**直接 cast——这条沿用 A1-1
+/// `RpcStatus` 的 enum 映射约束。
+#[derive(Debug, Clone)]
+pub struct ClearEStopRrResponse {
+    /// 复用 request 的 `request_id` 让 `rr_server_thread` 路由 reply。
+    pub request_id: String,
+    /// Domain status 枚举（详 [`ClearEStopRrPayload`]）。
+    pub payload: ClearEStopRrPayload,
+}
+
+/// `ClearEStop` RR domain status enum（A1-3 (1/3b) reviewer 拍板）。
+///
+/// **不**直接 cast `tonic::Code`；gateway 显式 match 每个 variant 到
+/// `tonic::Status::failed_precondition` / `internal` / `resource_exhausted`
+/// / 等。
+///
+/// `Copy` 友好（无 `String` / `io::Error` 字段）；具体 IO 错误细节走
+/// `tracing::warn!` 落 journald，不进 enum。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClearEStopRrPayload {
+    /// **live 成功**：fsync(primary+bak) → `clear_safety_latch()` → 翻 guard
+    /// 三步全过；`cleared_at_ns` = `clock.now()` mono raw 时间戳。
+    /// gateway 映射到 `tonic::Code::Ok`（gRPC `Ack`）。
+    Cleared { cleared_at_ns: u64 },
+
+    /// **dry_run 成功**：gate 全过（state == Safe + safety_state ==
+    /// TorqueOffConfirmed）；`would_clear_at_ns` = 评估瞬间的 mono raw 时间戳，
+    /// **不**代表硬件真清的时刻——dry_run 不动硬件。
+    /// gateway 映射到 `tonic::Code::Ok`（携带 dry_run 提示字符串）。
+    WouldClear { would_clear_at_ns: u64 },
+
+    /// **gate 拒**：`*state != S0State::Safe`。`actual` 携带具体 state
+    /// 让 gateway 给客户端清楚的诊断。live 路径走 `plan_transition` 返
+    /// `None`，dry_run 路径走 `evaluate_clear_estop_dry_run` 直接拒。
+    /// gateway 映射到 `tonic::Code::FailedPrecondition`。
+    StateNotSafe { actual: S0State },
+
+    /// **gate 拒**：state == Safe 但 `safety_state != TorqueOffConfirmed`
+    /// （硬件断扭未确认）。**reviewer 拍板**：torque gate 看
+    /// `executor_ctrl.safety_state()` 权威，不能靠 `guards.estop_latched`
+    /// 副本绕过。
+    /// gateway 映射到 `tonic::Code::FailedPrecondition`。
+    NotTorqueOffConfirmed { actual: OutputSafetyState },
+
+    /// **live: gate 通过但 fsync 失败**。具体 `io::Error` 走 tracing；
+    /// 磁盘 latch 仍 latched=true（`save_estop_latch_clear` backup-first
+    /// 保证；详 `docs/CHANGELOG.md` 2026-04-27 round 2 登记）。
+    /// gateway 映射到 `tonic::Code::Internal`。
+    FsyncFailed,
+
+    /// **live: 单飞冲突**——`in_flight_live` 已被另一 live request 占用，
+    /// 本 request 直拒不入队。reviewer 拍板：第二个 live 不能排队无限等，
+    /// 防止两个 request 共享一个 `TickOutcome` 搞错 Ack。客户端可在收到
+    /// `Cleared` / 失败 variant 后重试。
+    /// gateway 映射到 `tonic::Code::ResourceExhausted` 或
+    /// `tonic::Code::Aborted`（实现时定）。
+    AlreadyInProgress,
+}
+
+/// RR control plane channels (A1-3 (1/3b))。
+///
+/// `request_rx`：`rr_server_thread` 转发到 `ipc_thread` 的 RR 请求。
+/// `response_tx`：`ipc_thread` 派发回 `rr_server_thread` 的 domain status
+/// payload。
+///
+/// 两条 channel 的 buffer 容量 / 类型由 caller 决定（A1-3 (1/3c)
+/// `rr_server_thread` 实施时确定；reviewer 建议 64 或更小，防 overload）。
+/// `ipc_thread` 用 `try_recv` / `send` 不阻塞主 tick。
+pub struct RrChannels {
+    pub request_rx: Receiver<ClearEStopRrRequest>,
+    pub response_tx: Sender<ClearEStopRrResponse>,
+}
 
 // ============================================================================
 // Config / Metrics / Handle
@@ -254,6 +372,7 @@ pub fn spawn_ipc_thread<F>(
     state_pub: RtSnapshotPublisher<S0StateSnapshot>,
     watchdog_rx: Receiver<Event>,
     executor_ctrl: Arc<dyn ExecutorCtrlClient>,
+    rr_channels: Option<RrChannels>,
 ) -> std::io::Result<IpcThreadHandle>
 where
     F: FnOnce() -> IpcSubscribers + Send + 'static,
@@ -293,6 +412,7 @@ where
                 &join_last_hb,
                 &join_metrics,
                 executor_ctrl.as_ref(),
+                rr_channels.as_ref(),
             );
         })?;
 
@@ -328,7 +448,7 @@ where
 /// - **`ClearEStop` / `EStop` / `ClearError` 等事件的 `guards` 副作用必须在
 ///   `events.push` 之前更新**（reviewer 硬要求 #1）—— 否则 `ipc_tick` 内部
 ///   `plan_transition` 会因 stale guard 拒绝 transition。
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn run_loop(
     cfg: &IpcThreadConfig,
     clock: &dyn RobotClock,
@@ -341,6 +461,7 @@ fn run_loop(
     last_hb_ns: &AtomicU64,
     metrics: &IpcThreadMetrics,
     executor_ctrl: &dyn ExecutorCtrlClient,
+    rr_channels: Option<&RrChannels>,
 ) {
     let mut state = cfg.initial_state;
     let mut guards = cfg.initial_guards;
@@ -351,6 +472,11 @@ fn run_loop(
     // 跟 `guards.estop_latched` 同步，每 tick 比较；翻转时立即 fsync 写
     // latch 文件。`latch_path` 为 `None` 时（单测）整条路径 no-op。
     let mut prev_estop_latched = guards.estop_latched;
+
+    // **A1-3 (1/3b)**：live ClearEStop 单飞插槽。reviewer 拍板：第二个
+    // live request 不能排队无限等，第二个直接拒 `AlreadyInProgress`。
+    // dry_run 不入此槽（同步 read-only 评估，立刻 reply）。
+    let mut in_flight_live: Option<ClearEStopRrRequest> = None;
 
     // 启动即发一次初值快照。
     state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
@@ -392,6 +518,56 @@ fn run_loop(
             events.push(ev);
         }
 
+        // ─── 5.5) RR control plane drain (A1-3 (1/3b)) ───
+        //
+        // reviewer 拍板线程模型：rr_server_thread 做 iceoryx2 RR I/O，
+        // ipc_thread 是唯一 action executor。本步：
+        //
+        // - **dry_run** request：直接同步调
+        //   `clear_estop_action::evaluate_clear_estop_dry_run` (read-only)
+        //   评估，**不**进 events queue / 不进 ipc_tick；立即把 domain
+        //   status 通过 response_tx 回 rr_server_thread。
+        // - **live** request：检查 `in_flight_live` 单飞槽：
+        //     - 槽空 → 占用 + push `Event::ClearEStop` 进 events queue，
+        //       让本 tick 后续 ipc_tick 走三步硬顺序消费
+        //     - 槽已占 → 直拒 `AlreadyInProgress`（reviewer 拍板：第二个
+        //       live 不能排队无限等，防止两个 request 共享一个 TickOutcome
+        //       搞错 Ack）
+        if let Some(rr) = rr_channels {
+            while let Ok(req) = rr.request_rx.try_recv() {
+                if req.dry_run {
+                    let payload = match clear_estop_action::evaluate_clear_estop_dry_run(
+                        state,
+                        &guards,
+                        executor_ctrl,
+                        clock,
+                    ) {
+                        ClearEStopDryRunOutcome::WouldClear { would_clear_at_ns } => {
+                            ClearEStopRrPayload::WouldClear { would_clear_at_ns }
+                        }
+                        ClearEStopDryRunOutcome::StateNotSafe { actual } => {
+                            ClearEStopRrPayload::StateNotSafe { actual }
+                        }
+                        ClearEStopDryRunOutcome::NotTorqueOffConfirmed { actual } => {
+                            ClearEStopRrPayload::NotTorqueOffConfirmed { actual }
+                        }
+                    };
+                    let _ = rr.response_tx.send(ClearEStopRrResponse {
+                        request_id: req.request_id,
+                        payload,
+                    });
+                } else if in_flight_live.is_some() {
+                    let _ = rr.response_tx.send(ClearEStopRrResponse {
+                        request_id: req.request_id,
+                        payload: ClearEStopRrPayload::AlreadyInProgress,
+                    });
+                } else {
+                    in_flight_live = Some(req);
+                    events.push(Event::ClearEStop);
+                }
+            }
+        }
+
         // ─── 6) ipc_tick 三步式：唯一改 state 的路径（硬要求 #2）───
         //
         // guards 现在是 &mut，ipc_tick 内部对每个 event 单独 apply 副作用。
@@ -428,8 +604,8 @@ fn run_loop(
         //   触发（`guards.estop_latched` 仍为 true）。
         // - `Some(StateNotSafe { .. } | NotTorqueOffConfirmed { .. })`：
         //   gate 拒 → 不计数 / 不动盘；guard / executor / latch 全不动。
-        //   gateway / RR response 在 ipc_thread 后续阶段（A1-3 (1/3b)）
-        //   match 这些 variant 生成 FailedPrecondition payload。
+        //   RR response 在 §6.6) 段从 `in_flight_live` 取出原 request 派发
+        //   `FailedPrecondition` payload。
         // - `None`：本 tick 没消费 ClearEStop → 走通用 EStop 翻转 hook
         //   （false → true 单调；保留 task #15 阻断 1 修复）。
         //
@@ -473,6 +649,45 @@ fn run_loop(
                     }
                     prev_estop_latched = guards.estop_latched;
                 }
+            }
+        }
+
+        // ─── 6.6) RR live response 派发 (A1-3 (1/3b)) ───
+        //
+        // 当本 tick 消费了 `Event::ClearEStop` 时（`tick_outcome.clear_estop
+        // == Some(_)`），从 `in_flight_live` 取出原 request，把 4 variant
+        // domain status 映射成 RR response payload，通过 response_tx 回
+        // rr_server_thread。
+        //
+        // **invariant**：`in_flight_live.is_some()` ↔ 上一轮 RR drain 把
+        // `Event::ClearEStop` push 进 events queue（live 单飞）。如果
+        // `tick_outcome.clear_estop == Some(_)` 但 `in_flight_live == None`，
+        // 说明事件来源不是 RR（理论上不会发生：ClearEStop 当前只通过 RR /
+        // 外部 channel 入队，其它入队点都没了；这里 debug_assert 兜底）。
+        if let (Some(rr), Some(status)) = (rr_channels, tick_outcome.clear_estop) {
+            if let Some(req) = in_flight_live.take() {
+                let payload = match status {
+                    ClearEStopTickOutcome::Cleared { cleared_at_ns } => {
+                        ClearEStopRrPayload::Cleared { cleared_at_ns }
+                    }
+                    ClearEStopTickOutcome::StateNotSafe { actual } => {
+                        ClearEStopRrPayload::StateNotSafe { actual }
+                    }
+                    ClearEStopTickOutcome::NotTorqueOffConfirmed { actual } => {
+                        ClearEStopRrPayload::NotTorqueOffConfirmed { actual }
+                    }
+                    ClearEStopTickOutcome::FsyncFailed => ClearEStopRrPayload::FsyncFailed,
+                };
+                let _ = rr.response_tx.send(ClearEStopRrResponse {
+                    request_id: req.request_id,
+                    payload,
+                });
+            } else {
+                debug_assert!(
+                    false,
+                    "tick_outcome.clear_estop = Some(_) but in_flight_live = None; \
+                     ClearEStop event 入队来源应只有 RR drain"
+                );
             }
         }
 
@@ -822,6 +1037,9 @@ mod tests {
             state_pub,
             watchdog_rx,
             executor_ctrl,
+            // 默认 mod tests 不接 RR control plane；RR 单测自己 spawn 时
+            // 显式传 `Some(...)`。
+            None,
         )
         .unwrap();
 
@@ -1174,6 +1392,425 @@ mod tests {
         assert!(
             post_freeze > mid_freeze + 5,
             "freeze 过期后 tick_count 应当恢复增长：mid={mid_freeze} post={post_freeze}",
+        );
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    // ========================================================================
+    // A1-3 (1/3b) RR control plane 单测
+    //
+    // 端到端：测试线程通过 rr_request_tx 发 ClearEStopRrRequest →
+    // ipc_thread RR drain → (dry_run 同步评估 / live 入 events queue +
+    // ipc_tick 三步硬顺序) → response_tx → 测试线程 rr_response_rx 收
+    // ClearEStopRrResponse。
+    // ========================================================================
+
+    /// 起 ipc_thread + 配套 RR control plane channels，预设
+    /// `safety_state` / `safety_latched` 让单测覆盖 dry_run / live / gate
+    /// 拒等多种路径。
+    #[allow(clippy::type_complexity)]
+    fn bring_up_with_rr(
+        initial_state: S0State,
+        initial_guards: Guards,
+        latch_path: Option<std::path::PathBuf>,
+        safety_state: OutputSafetyState,
+        safety_latched: bool,
+    ) -> (
+        IpcThreadHandle,
+        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+        crossbeam_channel::Sender<ClearEStopRrRequest>,
+        crossbeam_channel::Receiver<ClearEStopRrResponse>,
+    ) {
+        use crossbeam_channel::bounded;
+
+        let topics = fresh_topics();
+        let pub_node: &'static _ =
+            Box::leak(Box::new(NodeBuilder::new().create::<IxService>().unwrap()));
+        let _cmd_pub =
+            publisher::<markers::JointCommand>(pub_node, &topics.command, TopicClass::S0Command)
+                .expect("open command publisher");
+        let _hb_pub =
+            publisher::<markers::Heartbeat>(pub_node, &topics.heartbeat, TopicClass::Heartbeat)
+                .expect("open heartbeat publisher");
+        let _estop_pub =
+            publisher::<markers::EStopEvent>(pub_node, &topics.estop, TopicClass::SafetyEvent)
+                .expect("open estop publisher");
+
+        let (cmd_writer, _cmd_reader) =
+            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
+        let (state_pub, _state_rdr) =
+            RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
+        let (_wd_tx, wd_rx) = unbounded::<Event>();
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+
+        let topics_for_factory = topics;
+        let factory = move || {
+            let sub_node = NodeBuilder::new().create::<IxService>().unwrap();
+            let command = subscriber::<markers::JointCommand>(
+                &sub_node,
+                &topics_for_factory.command,
+                TopicClass::S0Command,
+            )
+            .unwrap();
+            let heartbeat = subscriber::<markers::Heartbeat>(
+                &sub_node,
+                &topics_for_factory.heartbeat,
+                TopicClass::Heartbeat,
+            )
+            .unwrap();
+            let estop = subscriber::<markers::EStopEvent>(
+                &sub_node,
+                &topics_for_factory.estop,
+                TopicClass::SafetyEvent,
+            )
+            .unwrap();
+            Box::leak(Box::new(sub_node));
+            IpcSubscribers {
+                command,
+                heartbeat,
+                estop,
+            }
+        };
+
+        let inner = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
+        inner
+            .safety_state
+            .store(safety_state.to_u8(), Ordering::Release);
+        inner
+            .safety_latched
+            .store(safety_latched, Ordering::Release);
+        let executor_ctrl: Arc<dyn ExecutorCtrlClient> = Arc::new(
+            crate::hard_rt_ctrl::HardRtCtrlClient::new(Arc::clone(&inner)),
+        );
+
+        let cfg = IpcThreadConfig {
+            poll_interval_ns: 500_000,
+            initial_guards,
+            initial_state,
+            latch_path,
+        };
+
+        // RR control plane channels：bounded(64) 跟 reviewer 拍板的容量一致。
+        let (req_tx, req_rx) = bounded::<ClearEStopRrRequest>(64);
+        let (resp_tx, resp_rx) = bounded::<ClearEStopRrResponse>(64);
+
+        let handle = spawn_ipc_thread(
+            cfg,
+            clock,
+            factory,
+            cmd_writer,
+            state_pub,
+            wd_rx,
+            executor_ctrl,
+            Some(RrChannels {
+                request_rx: req_rx,
+                response_tx: resp_tx,
+            }),
+        )
+        .unwrap();
+
+        (handle, inner, req_tx, resp_rx)
+    }
+
+    /// 测试 helper：发 RR request → 等 response（最多 1s）→ 返回 payload。
+    fn send_and_recv_rr(
+        req_tx: &crossbeam_channel::Sender<ClearEStopRrRequest>,
+        resp_rx: &crossbeam_channel::Receiver<ClearEStopRrResponse>,
+        request_id: &str,
+        dry_run: bool,
+    ) -> ClearEStopRrPayload {
+        req_tx
+            .send(ClearEStopRrRequest {
+                request_id: request_id.to_string(),
+                dry_run,
+                confirmation: format!("CONFIRM-{request_id}"),
+                audit_reason: "unit-test".to_string(),
+            })
+            .unwrap();
+        let resp = resp_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("response within 1s");
+        assert_eq!(resp.request_id, request_id, "RR response correlation 错位");
+        resp.payload
+    }
+
+    /// **A1-3 (1/3b)**：dry_run 在 ipc_thread RR drain 阶段直接同步评估，
+    /// **不**进 events queue / **不**进 ipc_tick。返 `WouldClear` /
+    /// `StateNotSafe` / `NotTorqueOffConfirmed` domain status。
+    #[test]
+    fn rr_dry_run_short_circuits_with_would_clear_when_gate_passes() {
+        // state=Safe + safety_state=TorqueOffConfirmed → gate 全过
+        let (handle, inner, req_tx, resp_rx) = bring_up_with_rr(
+            S0State::Safe,
+            healthy_guards(),
+            None,
+            OutputSafetyState::TorqueOffConfirmed,
+            true,
+        );
+        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-dry-1", true);
+        match payload {
+            ClearEStopRrPayload::WouldClear { would_clear_at_ns } => {
+                assert!(
+                    would_clear_at_ns > 0,
+                    "would_clear_at_ns 应来自 clock.now()"
+                );
+            }
+            other => panic!("expected WouldClear, got {other:?}"),
+        }
+        // 副作用全不动
+        assert!(
+            inner.safety_latched.load(Ordering::Acquire),
+            "dry_run 不得动 executor.safety_latched"
+        );
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **A1-3 (1/3b)**：dry_run state != Safe → 返 `StateNotSafe`，
+    /// 不进 events queue / ipc_tick。
+    #[test]
+    fn rr_dry_run_returns_state_not_safe_when_state_is_ready() {
+        let (handle, _inner, req_tx, resp_rx) = bring_up_with_rr(
+            S0State::Ready,
+            healthy_guards(),
+            None,
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+        );
+        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-dry-2", true);
+        match payload {
+            ClearEStopRrPayload::StateNotSafe { actual } => {
+                assert_eq!(actual, S0State::Ready);
+            }
+            other => panic!("expected StateNotSafe, got {other:?}"),
+        }
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **A1-3 (1/3b)**：live 端到端成功路径。state=Safe + safety_state=
+    /// TorqueOffConfirmed + 真实 latch_path → ipc_tick 三步硬顺序成功 →
+    /// outcome.clear_estop=Cleared → response 派发 Cleared。
+    #[test]
+    fn rr_live_success_routes_cleared_response() {
+        use crate::estop_latch::save_estop_latch;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        save_estop_latch(&latch_path, true).unwrap(); // 预 provision latched=true
+
+        let mut guards = healthy_guards();
+        guards.estop_latched = true;
+
+        let (handle, inner, req_tx, resp_rx) = bring_up_with_rr(
+            S0State::Safe,
+            guards,
+            Some(latch_path.clone()),
+            OutputSafetyState::TorqueOffConfirmed,
+            true,
+        );
+
+        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-live-1", false);
+        match payload {
+            ClearEStopRrPayload::Cleared { cleared_at_ns } => {
+                assert!(cleared_at_ns > 0);
+            }
+            other => panic!("expected Cleared, got {other:?}"),
+        }
+
+        // 端到端副作用：executor.safety_latched 已清；latch 文件 = "0\n"
+        assert!(!inner.safety_latched.load(Ordering::Acquire));
+        assert_eq!(std::fs::read_to_string(&latch_path).unwrap(), "0\n");
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **A1-3 (1/3b)**：live state != Safe → ipc_tick 抛
+    /// `ClearEStopTickOutcome::StateNotSafe` → response 派发
+    /// `ClearEStopRrPayload::StateNotSafe`。
+    #[test]
+    fn rr_live_state_not_safe_routes_state_not_safe_response() {
+        let (handle, _inner, req_tx, resp_rx) = bring_up_with_rr(
+            S0State::Ready,
+            healthy_guards(),
+            None,
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+        );
+        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-live-2", false);
+        match payload {
+            ClearEStopRrPayload::StateNotSafe { actual } => {
+                assert_eq!(actual, S0State::Ready);
+            }
+            other => panic!("expected StateNotSafe, got {other:?}"),
+        }
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **A1-3 (1/3b)**：live state=Safe 但 safety_state=TorqueOn → ipc_tick
+    /// 走 try_apply_clear_estop gate 拒 → 抛 `NotTorqueOffConfirmed`。
+    #[test]
+    fn rr_live_not_torque_off_confirmed_routes_failed_precondition() {
+        use crate::estop_latch::save_estop_latch;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        save_estop_latch(&latch_path, true).unwrap();
+
+        let mut guards = healthy_guards();
+        guards.estop_latched = true;
+
+        let (handle, _inner, req_tx, resp_rx) = bring_up_with_rr(
+            S0State::Safe,
+            guards,
+            Some(latch_path),
+            OutputSafetyState::TorqueOn,
+            true,
+        );
+        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-live-3", false);
+        match payload {
+            ClearEStopRrPayload::NotTorqueOffConfirmed { actual } => {
+                assert_eq!(actual, OutputSafetyState::TorqueOn);
+            }
+            other => panic!("expected NotTorqueOffConfirmed, got {other:?}"),
+        }
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **A1-3 (1/3b)**：live fsync 失败 → ipc_tick 抛 `FsyncFailed` →
+    /// response 派发 `FsyncFailed` payload。
+    #[test]
+    fn rr_live_fsync_failed_routes_fsync_failed_response() {
+        use crate::estop_latch::{backup_path, save_estop_latch};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        let bak_path = backup_path(&latch_path);
+        save_estop_latch(&latch_path, true).unwrap();
+        // bak 替换成非空目录：让 backup-first save_estop_latch_clear 第一步失败
+        std::fs::remove_file(&bak_path).unwrap();
+        std::fs::create_dir(&bak_path).unwrap();
+        std::fs::write(bak_path.join("nonempty"), b"x").unwrap();
+
+        let mut guards = healthy_guards();
+        guards.estop_latched = true;
+
+        let (handle, inner, req_tx, resp_rx) = bring_up_with_rr(
+            S0State::Safe,
+            guards,
+            Some(latch_path.clone()),
+            OutputSafetyState::TorqueOffConfirmed,
+            true,
+        );
+        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-live-4", false);
+        assert_eq!(payload, ClearEStopRrPayload::FsyncFailed);
+
+        // 副作用：executor.safety_latched 不动；primary 仍 "1\n"
+        assert!(inner.safety_latched.load(Ordering::Acquire));
+        assert_eq!(std::fs::read(&latch_path).unwrap(), b"1\n");
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **A1-3 (1/3b) reviewer 加的硬边界**：active live ClearEStop 单飞——
+    /// 第二个 live 来时 `in_flight_live` 已被占用，必须直接返
+    /// `AlreadyInProgress`，不能排队等。这条挡两个 request 共享一个
+    /// TickOutcome 搞错 Ack 的 race。
+    #[test]
+    fn rr_live_single_flight_second_request_returns_already_in_progress() {
+        use crate::estop_latch::save_estop_latch;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        save_estop_latch(&latch_path, true).unwrap();
+
+        let mut guards = healthy_guards();
+        guards.estop_latched = true;
+
+        let (handle, _inner, req_tx, resp_rx) = bring_up_with_rr(
+            S0State::Safe,
+            guards,
+            Some(latch_path),
+            // safety_state=TorqueOn → live 进 try_apply_clear_estop 后 gate
+            // 拒；这样 in_flight_live 在 ipc_tick 内就被 take，但本测试
+            // 关心的是 "第二个 live 在 in_flight_live 没被 take 之前到达"
+            // 的 race 窗口。为了制造稳定窗口，用 TorqueOn 让 live 走进
+            // ipc_tick 也会 reject，但事件 push + ipc_tick 处理之间有时
+            // 序窗口；并发 send 两条 live 至少一条会撞上 in_flight_live=Some
+            // 窗口。
+            //
+            // 更稳的做法：两条 live 同时挤入 RR drain，第一条占 in_flight，
+            // 第二条立刻拒。crossbeam bounded(64) channel 足以承载并发 64 条
+            // 顺序消息；ipc_thread RR drain 一 tick 内 try_recv 多条循环，
+            // 第一条 push event 后第二条立刻被拒。
+            OutputSafetyState::TorqueOn,
+            true,
+        );
+
+        // 先发两条 live request（一次性塞进 channel；ipc_thread 同 tick
+        // drain 时第一条占 in_flight_live，第二条直拒 AlreadyInProgress）。
+        req_tx
+            .send(ClearEStopRrRequest {
+                request_id: "req-A".to_string(),
+                dry_run: false,
+                confirmation: "CONFIRM-A".to_string(),
+                audit_reason: "unit-test-A".to_string(),
+            })
+            .unwrap();
+        req_tx
+            .send(ClearEStopRrRequest {
+                request_id: "req-B".to_string(),
+                dry_run: false,
+                confirmation: "CONFIRM-B".to_string(),
+                audit_reason: "unit-test-B".to_string(),
+            })
+            .unwrap();
+
+        // 收两条响应（顺序由 ipc_thread 决定）。
+        let mut got_a: Option<ClearEStopRrPayload> = None;
+        let mut got_b: Option<ClearEStopRrPayload> = None;
+        for _ in 0..2 {
+            let resp = resp_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("response within 2s");
+            match resp.request_id.as_str() {
+                "req-A" => got_a = Some(resp.payload),
+                "req-B" => got_b = Some(resp.payload),
+                other => panic!("unexpected request_id: {other}"),
+            }
+        }
+        let pa = got_a.expect("req-A 应有响应");
+        let pb = got_b.expect("req-B 应有响应");
+
+        // **核心断言**：req-A / req-B 至少一条是 AlreadyInProgress（单飞拒），
+        // 另一条是 ipc_tick 处理结果（NotTorqueOffConfirmed，因为 safety_state=TorqueOn）。
+        // 不预设哪条先到（ipc_thread 端 try_recv 顺序虽通常 FIFO，但不依赖）。
+        let (ipc_processed, single_flight_rejected) = match (&pa, &pb) {
+            (ClearEStopRrPayload::AlreadyInProgress, p) => (*p, pa),
+            (p, ClearEStopRrPayload::AlreadyInProgress) => (*p, pb),
+            (a, b) => panic!(
+                "至少一条 live 必须返 AlreadyInProgress（单飞）；\
+                 实际 req-A = {a:?}, req-B = {b:?}"
+            ),
+        };
+        assert!(
+            matches!(
+                ipc_processed,
+                ClearEStopRrPayload::NotTorqueOffConfirmed { .. }
+            ),
+            "ipc_tick 处理的那一条应返 NotTorqueOffConfirmed（safety_state=TorqueOn 时 gate 拒），\
+             实际 = {ipc_processed:?}"
+        );
+        assert_eq!(
+            single_flight_rejected,
+            ClearEStopRrPayload::AlreadyInProgress
         );
 
         handle.request_stop();
