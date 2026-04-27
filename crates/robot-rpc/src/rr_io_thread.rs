@@ -21,7 +21,12 @@
 //!    `oneshot_tx` → handler `oneshot_rx.await` 收 `RecvError` → 返
 //!    `tonic::Code::Unavailable("gateway RR I/O unavailable")`（reviewer
 //!    边界 2 拍板：错误发生在 gateway 本地 RR I/O，**不**说 daemon 失败）。
-//! 2. **poll in-flight**：遍历 `Vec`，`pending.try_recv()` 拿到 reply →
+//! 2. **pre-pass cleanup**：遍历 in-flight，检测 `oneshot_tx.is_closed()`；
+//!    closed（handler 已自身 timeout / gRPC client cancel）→ `swap_remove`
+//!    并 drop `Iceoryx2PendingResponse`（取消 iceoryx2 pending），同时累加
+//!    `handler_drops` metric。**不**等 daemon 永远不回，避免每次 handler
+//!    timeout 都堆 in-flight pending（reviewer (2/3-b2-1) round 2 阻断）。
+//! 3. **poll in-flight**：遍历 `Vec`，`pending.try_recv()` 拿到 reply →
 //!    `oneshot.send(bytes)` + `swap_remove`；`Err` → drop `oneshot` 同样
 //!    走 Unavailable 路径。
 //!
@@ -114,7 +119,8 @@ impl Default for RrIoThreadConfig {
 pub struct RrIoMetrics {
     /// `client.send(bytes)` 成功 + push 进 in-flight 的请求数。
     pub requests_sent: AtomicU64,
-    /// `pending.try_recv()` 拿到 reply + `oneshot.send` 成功的次数。
+    /// `pending.try_recv()` 拿到 daemon reply 的次数（**不论** `oneshot.send`
+    /// 是否成功；rx 已 drop 时 send 失败仍计入，那条 reply 直接丢弃）。
     pub responses_received: AtomicU64,
     /// `client.send(bytes)` 失败的次数（loan_slice / send 内部错；drop
     /// oneshot → handler Unavailable）。
@@ -122,6 +128,12 @@ pub struct RrIoMetrics {
     /// `pending.try_recv()` 返 `Err` 的次数（drop oneshot → handler
     /// Unavailable）。
     pub poll_errors: AtomicU64,
+    /// handler 端提前 drop `oneshot_rx`（自身 `timeout_ms +
+    /// rr_timeout_grace_ms` 触发 / gRPC client cancel）后，rr_io_thread
+    /// 在 poll 前检测 `oneshot_tx.is_closed()` 主动 swap_remove + drop
+    /// pending（取消 iceoryx2 PendingResponse）的次数。**不**等 daemon 回
+    /// 包，避免每次 handler timeout 都堆 in-flight pending。
+    pub handler_drops: AtomicU64,
     /// shutdown 时 in-flight `Vec` drop 释放的请求数（每条 oneshot drop
     /// → handler 收 RecvError → Unavailable）。
     pub orphan_drops_on_shutdown: AtomicU64,
@@ -273,7 +285,28 @@ fn run_loop(
             }
         }
 
-        // ─── 2) poll in-flight → 收到 reply → fire oneshot + remove ───
+        // ─── 2) pre-pass：handler 端提前 drop oneshot_rx（自身 timeout /
+        //     gRPC client cancel）的 in-flight 主动清掉，drop pending 取消
+        //     iceoryx2 PendingResponse，避免堆积等到 daemon 永远不回。
+        //     reviewer (2/3-b2-1) round 2 阻断：handler timeout 跟主动取消
+        //     必须在 rr_io_thread 端真清 in-flight，不能等 shutdown。
+        let mut i = 0;
+        while i < in_flight.len() {
+            if in_flight[i].oneshot_tx.is_closed() {
+                let item = in_flight.swap_remove(i);
+                metrics.handler_drops.fetch_add(1, Ordering::Relaxed);
+                tracing::debug!(
+                    request_id = %item.request_id,
+                    "rr_io_thread: handler oneshot_rx already dropped; cancelling in-flight pending"
+                );
+                drop(item);
+                // swap_remove 把最后一个移到 i；本轮再检查同位置
+            } else {
+                i += 1;
+            }
+        }
+
+        // ─── 3) poll in-flight → 收到 reply → fire oneshot + remove ───
         let mut i = 0;
         while i < in_flight.len() {
             match in_flight[i].pending.try_recv() {
@@ -608,13 +641,23 @@ mod tests {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // 4) handler 端 oneshot_rx 提前 drop（handler timeout / cancel）→
-    //    rr_io_thread oneshot.send 失败被吞，不 panic
+    // 4) handler 端 oneshot_rx 提前 drop（handler timeout / gRPC cancel）→
+    //    rr_io_thread pre-pass 检测 is_closed → swap_remove + drop pending →
+    //    handler_drops += 1；不等 daemon reply 也不堆 in-flight
     // ────────────────────────────────────────────────────────────────────────
 
+    /// reviewer (2/3-b2-1) round 2 阻断锁测：handler 端提前 drop
+    /// `oneshot_rx`（自身 `timeout_ms + rr_timeout_grace_ms` 触发或 gRPC
+    /// client cancel）后，rr_io_thread 必须在下一轮 poll 前 pre-pass
+    /// 检测 `oneshot_tx.is_closed()` → `swap_remove` + drop
+    /// `Iceoryx2PendingResponse`（取消 iceoryx2 pending），**不**等 daemon
+    /// 永远不回 → 累 `handler_drops` metric。shutdown 时 in-flight 已空，
+    /// `orphan_drops_on_shutdown` 应为 0。
     #[test]
-    fn rr_io_thread_handles_handler_dropped_oneshot_rx_gracefully() {
-        let (handle, server, forward_tx) = bring_up(64);
+    fn rr_io_thread_pre_pass_cleans_up_when_handler_drops_oneshot_rx_before_reply() {
+        // mock daemon RR server 创建后**故意**不收 / 不 reply（test 主线程
+        // 不调 mock_daemon_reply）；必须靠 pre-pass 主动清在 daemon 之前。
+        let (handle, _server, forward_tx) = bring_up(64);
 
         let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
         forward_tx
@@ -625,8 +668,7 @@ mod tests {
             })
             .unwrap();
 
-        // 让 rr_io_thread drain + 入 in-flight，但 handler 端**先** drop
-        // oneshot_rx（模拟 timeout 或 client cancel）
+        // 等 rr_io_thread drain + client.send + push in-flight
         let metrics = handle.metrics();
         let start = std::time::Instant::now();
         while metrics.requests_sent.load(Ordering::Acquire) == 0 {
@@ -636,29 +678,44 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(5));
         }
+
+        // handler 端模拟 timeout / cancel：drop oneshot_rx
         drop(oneshot_rx);
 
-        // mock daemon reply → rr_io_thread 收到后 oneshot.send 会失败（rx 已
-        // drop），但**不**应 panic
-        mock_daemon_reply(
-            &server,
-            &build_test_ok_response_bytes("req-cancel", 1),
-            Duration::from_secs(2),
-        );
-
-        // 等 rr_io_thread 处理完 reply
+        // 下一轮 pre-pass 检测 is_closed → swap_remove + drop pending →
+        // handler_drops += 1（daemon 一直不 reply 也不会堆 in-flight）
         let start = std::time::Instant::now();
-        while metrics.responses_received.load(Ordering::Acquire) == 0 {
+        while metrics.handler_drops.load(Ordering::Acquire) == 0 {
             assert!(
                 start.elapsed() <= Duration::from_secs(2),
-                "rr_io_thread did not receive reply within 2s"
+                "rr_io_thread did not pre-pass-drop closed in-flight within 2s"
             );
             thread::sleep(Duration::from_millis(5));
         }
-        // responses_received 计成功（即使 oneshot.send 失败也算 daemon 回了）
-        assert_eq!(metrics.responses_received.load(Ordering::Acquire), 1);
 
         handle.request_stop();
         handle.join().unwrap();
+
+        // 关键断言：
+        //  - handler_drops == 1（pre-pass 清掉一条 closed in-flight）
+        //  - responses_received == 0（daemon 一直没 reply；gateway 也没在
+        //    in-flight Vec 等到 reply）
+        //  - orphan_drops_on_shutdown == 0（pre-pass 已 drop in-flight，
+        //    shutdown 时 Vec 已空，不再 orphan-drop）
+        assert_eq!(
+            metrics.handler_drops.load(Ordering::Acquire),
+            1,
+            "pre-pass 应 drop 一条 closed in-flight"
+        );
+        assert_eq!(
+            metrics.responses_received.load(Ordering::Acquire),
+            0,
+            "daemon 一直没 reply，responses_received 应为 0"
+        );
+        assert_eq!(
+            metrics.orphan_drops_on_shutdown.load(Ordering::Acquire),
+            0,
+            "in-flight 应在 shutdown 前被 pre-pass 清掉，shutdown 时不应再 orphan-drop"
+        );
     }
 }
