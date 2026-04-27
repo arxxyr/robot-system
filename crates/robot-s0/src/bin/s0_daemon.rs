@@ -7,7 +7,11 @@
 //! 2. 读 `EStop` latch 文件 → 若持久化为 `true` 则 `initial_guards.estop_latched = true`
 //! 3. 构造共享 channel / atomic / seqlock / latest-command slot
 //! 4. 按顺序 spawn：
-//!    - `ipc_thread`（iceoryx2 subscribers 在内部构造，factory closure 同步）
+//!    - `ipc_thread`（iceoryx2 subscribers 在内部构造，factory closure 同步；
+//!      接 `Some(RrChannels)` 跟下方 `rr_server_thread` 双向 RR 通信）
+//!    - `rr_server_thread`（A1-3 (1/3c-2)：iceoryx2 RR server 在
+//!      `/<robot_id>/control/clear_estop`；只做 wire I/O，action 仍在
+//!      `ipc_thread` 唯一执行）
 //!    - `watchdog`（读 `ipc_thread`.`last_hb_ns`，超时发 `HeartbeatTimeout` 到 `wd_tx`）
 //!    - `rt_thread`（`SCHED_FIFO` 70 + `mlockall`；`strict_rt` 可选）
 //!    - `pub_thread`（iceoryx2 publishers 在内部构造）
@@ -1248,13 +1252,19 @@ fn graceful_stop(
     io_handle: Option<robot_s0::io_thread::IoThreadHandle>,
     rr_handle: Option<robot_s0::rr_server_thread::RrServerThreadHandle>,
 ) {
-    // 顺序（A1-3 (1/3c-2) 加 rr_server 在最前面）：
-    //   rr_server 先停（不再接新 RR request；in-flight active 通过 ipc_thread
-    //              channel disconnect → ipc_thread 派发 response 给已断开
-    //              rr_server channel = drop，gateway 端按 RR timeout 处理）
+    // 顺序（A1-3 (1/3c-2) round 1 拍板 "shutdown 显式 abort pending"）：
+    //   rr_server 先停 — 不再接新 RR request 入面；run_loop 出循环后
+    //              `abort_pending_on_shutdown` 给所有 in-flight pending
+    //              best-effort 回 `RpcStatus::Aborted` + error_msg
+    //              "s0 daemon shutting down"。**不**伪造 Ack、**不** drain
+    //              等 ipc_thread 真实结果；未送达的 Aborted 由 gateway 按
+    //              RR timeout / retry 兜底。详 `crate::rr_server_thread`
+    //              shutdown 段 doc。
     //   → pub/io 停（不再往外发）
     //   → executor（rt 或 serial_io）停（不再动 adapter）
-    //   → ipc 停（drain in-flight + state machine 收尾）
+    //   → ipc 停（state machine 收尾；rr_server 已停 + rr_response_rx drop
+    //              后 ipc_thread 内 RR drain / 派发跑空的 channel；按
+    //              crossbeam disconnect 语义自然丢弃）
     //   → watchdog 最后停
     if let Some(h) = rr_handle {
         h.request_stop();

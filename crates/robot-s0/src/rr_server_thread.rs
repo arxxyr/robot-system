@@ -23,8 +23,21 @@
 //!
 //! 1. **drain `rr_response_rx`**：先消耗 `ipc_thread` 的 response，释放
 //!    pending 容量再 drain wire request，减少误报 backpressure。
-//! 2. **drain wire request**：循环 `server.try_recv()` 直到 `Ok(None)`
-//!    或 `pending.len() >= max_in_flight`。
+//! 2. **drain wire request**：循环 `server.try_recv()` 一直直到 `Ok(None)`。
+//!    `pending.len() >= max_in_flight` 时**也**消费 active，但走 overflow 路径
+//!    立刻 reply `RpcStatus::ResourceExhausted`（不入 pending；详
+//!    [`handle_pending_overflow`]）—— wire request 不会留在 iceoryx2 队列
+//!    里悬挂到 deadline 超时。
+//!
+//! ## shutdown 行为（reviewer A1-3 (1/3c-2) round 1 拍板）
+//!
+//! `request_stop()` 触发 main loop 退出后，`run_loop` 调
+//! [`abort_pending_on_shutdown`] 遍历 `pending`，给每条 in-flight active
+//! best-effort 回 `RpcStatus::Aborted` + `error_msg = "s0 daemon shutting
+//! down"`。**不**伪造成功 Ack；**不** drain 等 ipc_thread 真实结果（已
+//! 决策：shutdown 路径不做 drain pending，让 gateway 端 timeout/retry）。
+//! ipc_thread 之后产出的 response 由于 `rr_response_rx` 已 drop（rr_server_thread
+//! 退出后 channel disconnected），按 channel 语义丢弃。
 //!
 //! ## decode / forward error 路径（reviewer A1-3 (1/3c) round 1 拍板）
 //!
@@ -296,6 +309,58 @@ fn run_loop(
         }
 
         thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
+    }
+
+    // **A1-3 (1/3c-2) round 1 拍板**：shutdown 路径 best-effort 给所有
+    // in-flight pending 回 `RpcStatus::Aborted`，不 drain 等 ipc_thread 真实
+    // 结果。
+    abort_pending_on_shutdown(&mut pending, metrics);
+}
+
+/// 退出前 best-effort 给 pending 中所有 in-flight active 回
+/// `RpcStatus::Aborted` + `error_msg = "s0 daemon shutting down"`。
+///
+/// reviewer A1-3 (1/3c-2) round 1 拍板（"shutdown 显式 abort pending"，
+/// 不 drain）：
+///
+/// - **不**伪造成功 Ack（cleared_at_ns=0；status=Aborted 让 gateway 区分
+///   shutdown abort vs preempt-by-emergency 无歧义）。
+/// - `error_msg` 固定 `"s0 daemon shutting down"`，gateway 可按 audit
+///   trace 关联到 daemon 退出事件。
+/// - `dry_run` 字段从原 request 复用（保持 wire response 字段语义跟
+///   `clear_estop.fbs` `ClearEStopResponse.dry_run` 一致）。
+/// - `send_response` 失败只 metrics + tracing，**不**阻塞 shutdown
+///   （gateway 端按 RR timeout/retry 兜底；client side 链路断也合理）。
+/// - ipc_thread 之后产出的 response 由于 `rr_response_rx` drop 后 channel
+///   disconnected，按 crossbeam 语义丢弃；ipc_thread 端 `try_send` 也会
+///   返 `Disconnected`（之后 `Internal` 回 wire；但此时 wire 客户端已经
+///   收到 `Aborted`，再 send 也是无效）。
+fn abort_pending_on_shutdown(pending: &mut VecDeque<PendingRr>, metrics: &RrServerMetrics) {
+    if pending.is_empty() {
+        return;
+    }
+    tracing::info!(
+        pending_count = pending.len(),
+        "rr_server_thread: shutting down; aborting pending in-flight requests with RpcStatus::Aborted"
+    );
+    while let Some(p) = pending.pop_front() {
+        let bytes = build_clear_estop_response(
+            &p.request_id,
+            RpcStatus::Aborted,
+            "s0 daemon shutting down",
+            0,
+            p.dry_run,
+        );
+        if let Err(e) = p.active.send_response(&bytes) {
+            tracing::error!(
+                error = ?e,
+                request_id = %p.request_id,
+                "rr_server_thread: shutdown abort send_response failed"
+            );
+            metrics.send_response_errors.fetch_add(1, Ordering::Relaxed);
+        } else {
+            metrics.responses_sent.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -1248,6 +1313,67 @@ mod tests {
     // 9) drain 顺序锁：先 drain rr_response_rx 再 drain wire request
     //    （reviewer 拍板：减少 backpressure 误报）
     // ────────────────────────────────────────────────────────────────────────
+
+    /// **A1-3 (1/3c-2) round 1 拍板锁测**：daemon graceful shutdown 时，
+    /// rr_server_thread 出 main loop 后 best-effort 给所有 in-flight
+    /// pending 回 `RpcStatus::Aborted` + error_msg `"s0 daemon shutting
+    /// down"`。
+    ///
+    /// 场景：发一条 live request，mock ipc_thread **不**回 response（pending
+    /// 持续占着）；调 `handle.request_stop()` → main loop 退出 → run_loop
+    /// 末尾 `abort_pending_on_shutdown` 跑；client 应收到 wire response
+    /// status=Aborted, error_msg="s0 daemon shutting down", cleared_at_ns=0,
+    /// dry_run 沿用原 request 字段；metrics.responses_sent == 1。
+    #[test]
+    fn rr_server_aborts_pending_on_shutdown() {
+        let (handle, client, req_rx, _resp_tx) = bring_up(64, 64, 64);
+
+        // 发 live request（dry_run=true 用于验证 wire response.dry_run 字段沿用）
+        let pending = client
+            .send(&build_clear_estop_request(
+                "abort-on-shutdown",
+                "idem",
+                "src",
+                RpcRole::Maintainer,
+                "confirm",
+                "audit",
+                /* dry_run */ true,
+                u64::MAX,
+                0,
+            ))
+            .unwrap();
+        // mock ipc_thread 收到 forwarded request 但**不**回 response
+        let req = wait_for_request(&req_rx, Duration::from_secs(2));
+        assert_eq!(req.request_id, "abort-on-shutdown");
+        assert!(req.dry_run);
+
+        // 调 handle.request_stop() → main loop 退出 → abort_pending_on_shutdown
+        handle.request_stop();
+
+        // client 应在 2s 内收到 wire response with RpcStatus::Aborted
+        let (status, rid, err_msg, cleared_at_ns, dry_run) =
+            wait_for_response(&pending, Duration::from_secs(2));
+        assert_eq!(status, RpcStatus::Aborted);
+        assert_eq!(rid, "abort-on-shutdown");
+        assert_eq!(err_msg, "s0 daemon shutting down");
+        assert_eq!(cleared_at_ns, 0, "shutdown abort 不伪造 cleared_at_ns");
+        assert!(dry_run, "wire response.dry_run 沿用原 request");
+
+        // join 等线程退出（main loop 已经 break，run_loop 已返回）
+        let metrics_handle = std::thread::spawn({
+            let metrics_arc = handle.metrics();
+            move || {
+                // shutdown 路径走完后 responses_sent 应至少 == 1
+                metrics_arc.responses_sent.load(Ordering::Acquire)
+            }
+        });
+        handle.join().unwrap();
+        let responses_sent = metrics_handle.join().unwrap();
+        assert!(
+            responses_sent >= 1,
+            "shutdown abort send_response 应使 responses_sent >= 1，实际 {responses_sent}"
+        );
+    }
 
     /// **A1-3 (1/3c-1) round 1 阻断锁测**：`pending.len() >= max_in_flight`
     /// 时新 wire request 必须立刻 reply `ResourceExhausted`，**不**等
