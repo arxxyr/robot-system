@@ -1,17 +1,23 @@
 //! # robot-rpc
 //!
-//! v0.3 A1 ClearEStop control-plane slice gateway 骨架。
+//! v0.3 A1 ClearEStop control-plane slice gateway。
 //!
-//! ## A1-1 (3/3) scope（reviewer A1-1 拍板硬边界）
+//! ## 当前 scope（A1-1 (3/3) → A1-3 (2/3-a) 落地后）
 //!
-//! - **仅** lib 导出 [`proto`] 模块（tonic codegen）+ [`auth`] /
-//!   [`idempotency`] / [`clear_estop`] 三块纯函数。
-//! - **全纯单测**；**不**起 server binary（无 `[[bin]]` 入口）。
+//! - **lib**：[`proto`] 模块（tonic codegen）+ [`auth`] /
+//!   [`idempotency`] / [`clear_estop`] 纯函数 + [`gateway`] 模块（A1-3
+//!   (2/3-a) 起加；含 [`gateway::ClearEStopHandler`] +
+//!   [`gateway::run_gateway`] + [`gateway::GatewayConfig`] +
+//!   [`gateway::validate_loopback_bind`]）。
+//! - **bin**：`robot_rpc_gateway` 独立进程（A1-3 (2/3-a) 起加；loopback-only
+//!   tonic gRPC server + A1-3 (2/3-b) 起接 iceoryx2 RR client →
+//!   `s0_daemon`）。
 //! - **不**接 S0 mutation；**不**删 `--allow-empty-latch` /
 //!   `MissingLatchPolicy::AllowEmpty`；**不**宣称 `docs/00_design.md` §6.7
-//!   #3 真锁住。
-//! - tonic / prost / uuid 引入登记走 `docs/CHANGELOG.md`（A1-2 / A1-3 落
-//!   地时一起登记）。
+//!   #3 真锁住（A1 全 land 后由 A1-5 升级真宣称）。
+//! - 依赖白名单登记走 `docs/CHANGELOG.md` 2026-04-27 "A1-1 (3/3) robot-rpc
+//!   skeleton + tonic 引入" + 2026-04-28 "A1-3 (2/3) `robot_rpc_gateway`
+//!   binary 依赖" 偏离登记。
 //!
 //! ## ClearEStop control action 安全边界（reviewer 拍板硬边界）
 //!
@@ -29,15 +35,25 @@
 //! - **`RpcStatus` → `tonic::Code` 转译**：**禁止** `code as i32` cast；
 //!   **必须**用显式 `match` 全枚举（[`clear_estop::rpc_status_to_tonic_code`]
 //!   + 单测覆盖每条映射）。
+//! - **gateway loopback bind 守门**（A1-3 (2/3-a) reviewer 拍板硬边界）：
+//!   plain TCP + fake token 阶段必须 loopback；非 loopback bind 直接拒
+//!   启动（[`gateway::validate_loopback_bind`]）。TLS / mTLS 留 v0.4+。
 //!
-//! ## A1-2 / A1-3 留作业（**不**在 part 3 范围）
+//! ## A1-3 (2/3-b) / (2/3-c) / (3/3) 留作业
 //!
-//! - 真起 tonic server binary（A1-3）。
-//! - S0 端 `Event::ClearEStop` ordering 重写（A1-2，详 v0.3_entry.md §3.3
-//!   端到端动作）。
-//! - 跨进程 `robot-transport` RR client / server 真接 daemon（A1-2）。
-//! - response schema_id attribute 验证（A1-1 part 2 reviewer 非阻断提醒）。
-//! - mTLS / OIDC（A1 接受 fake token；推 v0.5+）。
+//! - **A1-3 (2/3-b)**：[`gateway::ClearEStopHandler`] 接 RR I/O 独立
+//!   `std::thread` + `Iceoryx2RrClient` 跟 daemon 端 `rr_server_thread`
+//!   通信；集成 [`idempotency::IdempotencyCache`] +
+//!   [`clear_estop::validate_clear_estop_command`] + [`auth`] role 查表 +
+//!   deadline 计算 + `rpc_status_to_tonic_code` 显式 match 映射；handler
+//!   通过 `tokio::sync::oneshot` async await wire response。
+//! - **A1-3 (2/3-c)**：完整 graceful shutdown — 已进 handler 的请求继续
+//!   等 RR response 或自身 `timeout_ms + rr_timeout_grace_ms`；尚未 forward
+//!   才返 `tonic::Code::Unavailable`。
+//! - **A1-3 (3/3)**：起两进程跑真 gRPC client → gateway → daemon 端到端
+//!   集成测；CHANGELOG / handoff 升级 §6.7 #3 真宣称登记由 A1-5 闭环。
+//! - **v0.4+**：TLS / mTLS / OIDC（A1 阶段接受 fake token）；response
+//!   schema_id attribute 验证（A1-1 part 2 reviewer 非阻断提醒）。
 
 // 中文 doc 块大量 identifier-like 字串（CommandMeta / RoleTable / RpcStatus
 // / ClearEStop / TTL / UUIDv7 等），robot-rpc 全 crate 走宽松 doc-markdown。
