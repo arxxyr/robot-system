@@ -10,6 +10,73 @@
 
 ---
 
+## 2026-04-28 · v0.3 A1-3 (2/3) `robot_rpc_gateway` binary 依赖白名单更新（**状态：登记**）
+
+### 背景
+
+A1-3 (2/3) 起在 `crates/robot-rpc` 加 `robot_rpc_gateway` 独立进程
+binary（reviewer 拍板：loopback-only tonic gRPC server + iceoryx2 RR
+client → s0_daemon 端 `/<robot_id>/control/clear_estop` topic）。需要
+若干新依赖；按 `docs/CHANGELOG.md` 2026-04-22 "workspace runtime 依赖
+白名单机制" 登记 scope + 边界。
+
+### Scope
+
+- **仅 `robot-rpc` crate** link 以下新依赖：
+  - `tokio` workspace dep（v1，features `["macros", "rt-multi-thread",
+    "signal", "sync", "time", "net"]`）—— tonic transport stack 跑 async
+    server 必须的 runtime。
+  - `tonic` workspace feature 列表加 `transport`（旧 features
+    `["codegen", "prost"]` 扩为 `["codegen", "prost", "transport"]`）——
+    A1-1 (3/3) skeleton 阶段只用 codegen+prost；A1-3 (2/3) 真起 server
+    要 transport stack。
+  - `crossbeam-channel`（已在 workspace；首次进 robot-rpc dep 列表）——
+    RR I/O 独立 `std::thread` 跟 tonic worker 之间转发 request/response。
+  - `iceoryx2`（已在 workspace；首次进 robot-rpc dep 列表）—— gateway
+    端 iceoryx2 Node + rr_client 跨进程 RR。
+  - `robot-transport`（已在 workspace；首次进 robot-rpc dep 列表）——
+    `rr_client` 单端工厂 + 公共 wire wrapper 类型。
+  - `robot-logging`（已在 workspace；首次进 robot-rpc dep 列表）——
+    bin `main` 统一 tracing subscriber init。
+  - `flatbuffers`（已在 workspace；首次进 robot-rpc dep 列表）—— gateway
+    handler decode wire `ClearEStopResponse` 用 `flatbuffers::root::<FbResp>`。
+
+- 其它 crate 仍**禁** link `tonic` / `prost` / `tokio` / `tonic-build`
+  / `protoc-bin-vendored`：daemon (`robot-s0`) / state machine
+  (`robot-msg`) / transport (`robot-transport`) / RT crates 全部不依赖
+  这些 RPC / async 栈。
+- `cargo deny` workspace 配置（如有）相应放行 `robot-rpc` link `tokio`，
+  其它 crate 仍 deny。
+
+### 边界
+
+- **不**改 `docs/00_design.md` §5.5 / §6.7 不变量正文。
+- **不**起非 loopback bind（reviewer 拍板：默认 `127.0.0.1:50051`，
+  `--listen-addr` 可覆盖但必须为 loopback；`0.0.0.0` / 外网地址直接拒
+  启动）。
+- **不**接 TLS / mTLS（v0.3 fake token + plain TCP；TLS 留 v0.4+）。
+- **不**接 §5.3 其它 RPC（task / stream / S1 coordinator 交互；B4 范围）。
+- **不**升 §6.7 #3 真宣称（A1-5 范围）。
+
+### 影响面
+
+- `crates/robot-rpc/Cargo.toml` `[dependencies]` 加 `tokio` /
+  `crossbeam-channel` / `iceoryx2` / `robot-transport` / `robot-logging`
+  / `flatbuffers`；`tonic` 通过 workspace 升 feature `transport`。
+- `Cargo.toml` workspace `tonic` features 加 `transport`；新加 `tokio`
+  workspace dep。
+- `crates/robot-rpc/Cargo.toml` 顶部"无 binary，全纯单测"旧描述同步成
+  "lib + `robot_rpc_gateway` binary（A1-3 (2/3) 起）"。
+- 编译期：`robot-rpc` build 时间增加（tonic transport + tokio +
+  iceoryx2 编译；预期 30s+），其它 crate 不受影响。
+
+### 审阅人
+
+reviewer（用户）— A1-3 (2/3) 拍板"`robot-rpc` 加 transport / tokio +
+binary 启动期；依赖白名单同步登记单独 docs/build commit"。
+
+---
+
 ## 2026-04-27 · A1-3 (1/3b) reviewer round 3 阻断 — RpcStatus 扩 ResourceExhausted/Aborted + deadline 不再事后覆盖 outcome（**状态：登记**）
 
 ### 背景

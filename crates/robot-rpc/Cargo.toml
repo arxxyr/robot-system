@@ -1,6 +1,6 @@
 [package]
 name         = "robot-rpc"
-description  = "v0.3 A1 ClearEStop control-plane slice gateway 骨架（不起 server binary，全纯单测）。"
+description  = "v0.3 A1 ClearEStop control-plane slice gateway。A1-3 (2/3) 起包含 robot_rpc_gateway binary（loopback-only tonic gRPC server + iceoryx2 RR client → s0_daemon）。"
 version    .workspace = true
 edition    .workspace = true
 license    .workspace = true
@@ -9,23 +9,28 @@ repository .workspace = true
 readme     .workspace = true
 publish    .workspace = true
 
-# A1-1 (3/3) scope（reviewer A1-1 拍板硬边界）：
-# - 仅 lib 导出 `proto` 模块（tonic codegen） + `auth` / `idempotency` /
-#   `clear_estop` 三块纯函数。
-# - 全纯单测；**不**起 server binary（无 `[[bin]]`）。
+# Scope（reviewer A1-1 + A1-3 (2/3) 拍板硬边界）：
+# - lib：`proto` 模块（tonic codegen）+ `auth` / `idempotency` / `clear_estop`
+#   纯函数 + `gateway` 模块（A1-3 (2/3-a) 起加；ClearEStopHandler + RR I/O
+#   thread + Gateway 服务端类型）。
+# - bin：`robot_rpc_gateway` 独立进程（A1-3 (2/3-a) 起加）；loopback-only
+#   bind；不暴露外网；fake token + plain TCP（v0.3）；TLS / mTLS 留 v0.4+。
 # - **不**接 S0 mutation；**不**删 `--allow-empty-latch`；**不**宣称 §6.7
-#   #3 真锁住。
+#   #3 真锁住（A1 全 land 后 A1-5 升级）。
 # - tonic / prost / uuid 引入登记见 docs/CHANGELOG.md 2026-04-27
-#   "v0.3 A1-1 (3/3) robot-rpc / tonic / prost / uuid / blake3 依赖白名单登记"。
+#   "v0.3 A1-1 (3/3) robot-rpc / tonic / prost / uuid / blake3 依赖白名单
+#   登记"。tonic transport feature + tokio + crossbeam-channel + iceoryx2
+#   + robot-transport + robot-logging + flatbuffers 见 2026-04-28
+#   "A1-3 (2/3) robot_rpc_gateway binary 依赖" 偏离登记。
 
 [dependencies]
 robot-core = { workspace = true }
 # robot-msg 复用 ClearEStopRequest / ClearEStopResponse / RpcRole / RpcStatus
-# wire types（A1-1 part 1 落地）。robot-rpc 内部把 RPC layer 入参转 wire
-# bytes（A1-2 真接 daemon 时通过 robot-transport RR client publish）。
+# wire types（A1-1 part 1 落地）；A1-3 (2/3) gateway 真接 daemon 时构造
+# wire bytes 用 build_helpers + flatbuffers root。
 robot-msg = { workspace = true }
-# tonic / prost：gRPC server runtime + Protobuf runtime。**仅** A1-1 (3/3)
-# / A1-3 用；其它 crate 禁 link。
+# tonic / prost：gRPC server runtime + Protobuf runtime。**仅** robot-rpc
+# 用；其它 crate 禁 link。A1-3 (2/3) 起开 transport feature 跑 server。
 tonic = { workspace = true }
 prost = { workspace = true }
 # audit log。
@@ -39,6 +44,22 @@ toml  = { workspace = true }
 thiserror = { workspace = true }
 # blake3：idempotency cache 的 payload hash（同 key 不同 payload 检测）。
 blake3 = { workspace = true }
+# A1-3 (2/3-a) 起加：tonic transport stack 跑 async server 必须的 tokio
+# runtime。Async 边界严格在 gateway 进程内，不进 daemon / 其它 crate。
+tokio = { workspace = true }
+# A1-3 (2/3-b) 起 RR I/O 独立 std::thread 转发 wire request / wire response
+# 用 crossbeam-channel；handler 等 RR response 用 tokio::sync::oneshot
+# （在 tokio 自带 sync feature 中）。
+crossbeam-channel = { workspace = true }
+# iceoryx2：跨进程 RR client 端，跟 s0_daemon 端 rr_server_thread 共服务。
+iceoryx2 = { workspace = true }
+# robot-transport：rr_client 单端工厂（A1-1 part 2 spike）。
+robot-transport = { workspace = true }
+# robot-logging：bin main 调一次统一 tracing subscriber init。
+robot-logging = { workspace = true }
+# flatbuffers：handler 端 decode wire ClearEStopResponse 用
+# `flatbuffers::root::<FbResp>(bytes)`；跟 robot-msg::build_helpers 同源。
+flatbuffers = { workspace = true }
 
 [build-dependencies]
 tonic-build         = { workspace = true }
