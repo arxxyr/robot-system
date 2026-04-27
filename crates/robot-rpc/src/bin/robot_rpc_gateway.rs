@@ -1,24 +1,35 @@
-//! `robot_rpc_gateway` —— A1-3 (2/3-a) skeleton bin。
+//! `robot_rpc_gateway` —— A1-3 (2/3-b2-2) ClearEStop control-plane bin。
 //!
 //! ### 角色
 //!
-//! 独立进程，跟 `s0_daemon` 跨进程 iceoryx2 RR 通信（A1-3 (2/3-b) 起接通）。
-//! gRPC client 端通过 tonic transport 进 gateway，gateway 把请求 forward 到
-//! daemon 端 `/<robot_id>/control/clear_estop` topic。
+//! 独立进程，跟 `s0_daemon` 跨进程 iceoryx2 RR 通信。gRPC client 端通过
+//! tonic transport 进 gateway，gateway 把请求 forward 到 daemon 端
+//! `/<robot_id>/control/clear_estop` topic（`robot_rpc::gateway::run_gateway_with_rr_io`
+//! 高层入口内部 spawn `rr_io_thread` 起独立 `std::thread` 持
+//! `Iceoryx2RrClient`）。
 //!
-//! ### A1-3 (2/3-a) skeleton 阶段
+//! ### A1-3 (2/3-b2-2) 已落地
 //!
 //! - 起 tonic gRPC server bind 到 loopback `127.0.0.1:50051`（默认）/
-//!   `--listen-addr` 覆盖（必须 loopback；`0.0.0.0` 等非 loopback 直接拒）
-//! - `ClearEStop` handler 返 `tonic::Code::Unimplemented`（A1-3 (2/3-b) 接
-//!   RR I/O thread + idempotency cache 之前的占位）
+//!   `--listen-addr` 覆盖（必须 loopback；`0.0.0.0` 等非 loopback 直接拒）。
+//! - `ClearEStop` handler 真起 12 步 logic：`validate` → `auth` → `authz`
+//!   (`maintainer+`) → idempotency fingerprint → `IdempotencyCache::decide`
+//!   (`Replay` / `Conflict` / `Capacity` / `FreshInsert`) → 算 wire
+//!   `deadline_ns` 和 `stamp_ns` → 映射 wire `RpcRole` → build wire
+//!   `ClearEStopRequest` bytes → forward via `rr_io_thread` →
+//!   `tokio::time::timeout` 等 oneshot reply → decode wire
+//!   `ClearEStopResponse` → 校验 response `request_id` 跟当前 request
+//!   一致 → `rpc_status_to_tonic_code` 显式 `match` → `Ok` 路径 commit
+//!   cache 加返 `Ack`；非 `Ok` drop `InsertHandle` 不缓存。
 //! - SIGINT / SIGTERM 触发 `tokio::sync::watch` shutdown 信号 → tonic
-//!   `serve_with_shutdown` graceful stop
+//!   `serve_with_incoming_shutdown` graceful stop；tonic 退出后再
+//!   `rr_io_thread` stop / join（reviewer A1-3 (2/3-b2-1) 关键边界）。
 //!
 //! ### CLI
 //!
 //! ```text
 //! robot_rpc_gateway --robot-id <ID> \
+//!                   --rpc-roles-toml <PATH> \
 //!                   --listen-addr 127.0.0.1:50051 \
 //!                   --idempotency-ttl-secs 300 \
 //!                   --idempotency-max-entries 4096 \
@@ -28,10 +39,15 @@
 //! ### 退出码
 //!
 //! - `0`：graceful shutdown（SIGINT/SIGTERM 触发后 tonic server 干净退出）。
-//! - `1`：tonic server 启动失败 / 运行期错（端口占用 / 其它 IO）。
-//! - `2`：CLI 参数解析失败 / `--listen-addr` 非 loopback 拒启动。
+//! - `1`：tonic server 启动失败 / `rr_io_thread` spawn 失败 / 运行期错。
+//! - `2`：CLI 参数解析失败 / `--listen-addr` 非 loopback / `--rpc-roles-toml`
+//!   加载失败。
 
 #![cfg(target_os = "linux")]
+// Bin doc 块中文 identifier-like 字串（ClearEStop / `RpcRole` /
+// `IdempotencyCache` / `RobotControl` / `Iceoryx2RrClient` 等）跟 lib
+// `robot-rpc` 一致走宽松 doc-markdown。
+#![allow(clippy::doc_markdown)]
 
 use std::net::SocketAddr;
 use std::path::PathBuf;

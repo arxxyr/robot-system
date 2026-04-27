@@ -788,7 +788,7 @@ pub async fn run_gateway_with_ready(
         idempotency_ttl_secs = cfg.idempotency_ttl_secs,
         idempotency_max_entries = cfg.idempotency_max_entries,
         rr_timeout_grace_ms = cfg.rr_timeout_grace_ms,
-        "robot_rpc_gateway: starting tonic gRPC server (A1-3 (2/3-a) skeleton; ClearEStop returns Unimplemented)"
+        "robot_rpc_gateway: starting tonic gRPC server (A1-3 (2/3-b2-2) ClearEStop handler with full 12-step logic + rr_io_thread integration)"
     );
 
     // 2) TcpListener bind 主动控制（不依赖 tonic 内部 bind 时机）
