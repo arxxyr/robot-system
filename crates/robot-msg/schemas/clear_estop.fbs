@@ -16,22 +16,43 @@
 // RPC 端（robot-rpc）做 client，daemon 端（robot-s0::ipc_thread）做 server。
 // service name `/<robot_id>/control/clear_estop`（v0.3 控制 namespace）。
 //
-// ### S0 端 action layer ordering（reviewer A1-2 拍板硬契约）
+// ### S0 端 action layer ordering（reviewer A1-2 round 2 + A1-3 (1/3b)
+//   round 2 拍板硬契约）
 //
 // daemon 端收到 ClearEStopRequest 后**严格按序**：
-//   1. check executor_ctrl.safety_state() == TorqueOffConfirmed
+//   1. deadline check：clock.now() > deadline_ns
+//      true → reply DeadlineExceeded；不写 latch / 不清 guards / 不清
+//             executor latch
+//      （A1-3 (1/3b) round 2 阻断 2 拍板：daemon 必须在 RR drain 入口、
+//      执行前 preempt 段、响应前**三处**显式 check deadline；过期请求
+//      不得入队或继续执行；详 docs/CHANGELOG.md 2026-04-27 A1-3 (1/3b)
+//      round 2 登记）
+//   2. emergency preempt check：events queue 有 EStop / SafetyStopFailed
+//      event 且 in_flight_live 已注册 → reply PreemptedByEmergency；
+//      移除 events queue 里的 ClearEStop event；不写 latch / 不清 guards
+//      / 不清 executor latch
+//      （A1-3 (1/3b) round 2 阻断 1 拍板：避免 RR live 在 EventQueue 中
+//      滞留被下一 tick 错误清掉同 tick 新触发的 EStop）
+//   3. check executor_ctrl.safety_state() == TorqueOffConfirmed
 //      false → reply FailedPrecondition；不写 latch / 不清 guards / 不清
 //              executor latch
-//   2. dry_run? reply Ok { cleared_at_ns = clock.now() (placeholder) };
+//   4. dry_run? reply Ok { cleared_at_ns = clock.now() (placeholder) };
 //      不写 latch / 不清 guards / 不清 executor latch
-//   3. (real path) save_estop_latch(false) fsync 双写
+//   5. (real path) save_estop_latch_clear(path) backup-first fsync
+//      （A1-2 round 2 拍板：bak 先写 primary 后写；partial failure 时
+//      primary 保持 latched=true 不动，重启 load_estop_latch 不破坏
+//      §6.7 #4；详 docs/CHANGELOG.md 2026-04-27 A1-2 round 2 登记）
 //      Err → reply Internal；不清 guards / 不清 executor latch
-//   4. guards.estop_latched = false （内存 guard 翻转，**晚于** fsync）
-//   5. executor_ctrl.clear_safety_latch() （硬件层 clear，**晚于** guards）
-//   6. audit log → reply Ok { cleared_at_ns = clock.now() }
+//   6. executor_ctrl.clear_safety_latch() （硬件层 clear，**晚于** fsync；
+//      fsync 失败时本步必须不执行）
+//   7. guards.estop_latched = false （内存 guard 翻转，**晚于**
+//      clear_safety_latch；任一前置步骤失败时本步必须不执行）
+//   8. audit log → reply Ok { cleared_at_ns = clock.now() }
 //
-// fsync 失败时三个翻转都不发生；safety_state != TorqueOffConfirmed 时三个
-// 翻转都不发生；dry_run = true 时三个翻转都不发生。
+// 失败语义不变量：fsync / clear_safety_latch / guards 翻转构成"全有
+// 全无" 三连——任一步失败时三个翻转都不发生；safety_state !=
+// TorqueOffConfirmed / dry_run / deadline / emergency preempt 时
+// 三个翻转都不发生。
 //
 // ### 字段安全边界
 //

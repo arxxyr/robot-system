@@ -10,6 +10,111 @@
 
 ---
 
+## 2026-04-27 · A1-3 (1/3b) reviewer round 2 阻断 — RR live emergency preempt + deadline 语义闭环（**状态：登记**）
+
+### 背景
+
+A1-3 (1/3b) commit `d13ed04`（ipc_thread RR control plane drain + live
+单飞 + dry_run 短路）落地后 reviewer 复核找到两个真实阻断：
+
+#### 阻断 1：emergency preempt 后 RR live ClearEStop 在 EventQueue 滞留
+
+`crates/robot-s0/src/ipc_thread.rs:536` 把 RR live 转成裸
+`Event::ClearEStop` 入 `EventQueue`；`crates/robot-s0/src/ipc_tick.rs:128`
+的 `drain_emergency()` 遇到 `EStop` 会 return，但 `EventQueue` **保留**
+后面的 `Event::ClearEStop`。结果：
+
+```
+t0: RR drain push Event::ClearEStop + in_flight_live = Some(req_X)
+t0: EStop topic event 也进 events queue
+t0: ipc_tick Step 1 drain_emergency 抽 EStop → 处理 → return outcome
+    （ClearEStop 仍在 queue）
+t1: ipc_tick Step 1 没 emergency → Step 3 处理 ClearEStop → 三步硬顺序
+    成功 → outcome.clear_estop = Some(Cleared)
+t1: ipc_thread §6.6) 派发 Cleared 给 req_X
+```
+
+`req_X` 是发送时的客户端语义"我看到上一次 latched=true 想 clear"，但
+emergency 是新触发的（后于 req_X），客户端**不应**清这次新的 emergency
+latch。
+
+#### 阻断 2：内部 RR request 丢了 `deadline_ns`
+
+`docs/00_design.md` §5.2 frozen schema + `clear_estop.fbs:112` 明确要求
+daemon 端在收到 request → 处理完之间任意时刻发现 `clock.now() >
+deadline_ns` 即返 `DeadlineExceeded`。但 `crates/robot-s0/src/
+ipc_thread.rs:98` `ClearEStopRrRequest` 只有 `request_id` / `dry_run` /
+`confirmation` / `audit_reason` 四字段；`ClearEStopRrPayload` enum 也没
+`DeadlineExceeded` variant。这会让过期 clear 在 ipc_thread 排队或
+emergency 后仍可能执行。
+
+### 修复
+
+#### 修复 1：emergency preempt 取消 in-flight live
+
+`ClearEStopRrPayload` 加 `PreemptedByEmergency` variant；ipc_thread 主
+循环加 §5.6) **preempt 段**（在 §5.5 RR drain 之后，§6 ipc_tick 之前）：
+
+```
+if events 有 EStop / SafetyStopFailed event && in_flight_live 是 Some:
+    1. EventQueue::remove_clear_estop_events()  // 防 ipc_tick Step 3 误处理
+    2. take in_flight_live → reply PreemptedByEmergency
+```
+
+`crates/robot-s0/src/state_machine.rs` `EventQueue` 加：
+- `pub fn has_emergency(&self) -> bool`
+- `pub fn remove_clear_estop_events(&mut self) -> usize`
+
+#### 修复 2：deadline 三处 check
+
+`ClearEStopRrRequest` 加 `pub deadline_ns: u64`（CLOCK_MONOTONIC_RAW
+mono raw 时间戳）；`ClearEStopRrPayload` 加 `DeadlineExceeded` variant。
+
+ipc_thread 主循环三处 deadline check（reviewer 拍板"RR drain、执行前、
+响应前都要显式检查"）：
+
+- **§5.5) RR drain 入口**：`clock.now() > req.deadline_ns` → 直接 reply
+  `DeadlineExceeded`，**不**入 in_flight_live、**不**push event。
+- **§5.6) preempt 段**（emergency / deadline 共用）：drain 入队后到
+  ipc_tick 之前的窗口（典型场景：上一 tick 没消费 ClearEStop event，
+  本 tick 才消费，中间隔了 500µs sleep）期间 deadline 过期 → take
+  in_flight_live + remove ClearEStop event + reply `DeadlineExceeded`。
+- **§6.6) RR live response 派发前**：覆盖 ipc_tick 跑期间过期的极端
+  window（debug build 慢 / effectful pending 1s 占用）→ 用
+  `DeadlineExceeded` 覆盖 ipc_tick 计算的 outcome。
+
+#### 顺手修复：fbs:21-34 注释残留
+
+`clear_estop.fbs` "S0 端 action layer ordering" 段：
+- 旧版顺序写 `save_estop_latch(false)` + guards 翻转早于 clear_safety_latch，
+  跟 A1-2 round 2 落地的 `save_estop_latch_clear` backup-first +
+  clear_safety_latch 早于 guards 不一致
+- 重写为 8 步（加 deadline / emergency preempt 两步），跟 ipc_thread
+  实施版对齐
+
+### 测试
+
+- 已加单测覆盖 emergency preempt + deadline 三处 check + dry_run 也走
+  deadline check 路径；详 commit body。
+- 现有 7 条 RR 单测兼容更新（加 `deadline_ns` 字段）。
+
+### 不改变的内容
+
+- 不改 frozen schema (clear_estop.fbs `ClearEStopRequest` /
+  `ClearEStopResponse` table 字段或字段编号)；schema 里 `deadline_ns` /
+  `RpcStatus::DeadlineExceeded` 早就在，本次只是把 S0 内部 RR types
+  跟 schema 对齐。
+- 不改 `docs/00_design.md` §5.2 / §5.3 / §6.7 不变量正文。
+- 不升 §6.7 #3 真宣称（A1 全 land 后；A1-5）。
+- 不接 robot-rpc → S0 RR 入口（A1-3 (1/3c) / A1-3 (2/3)）。
+- 不撤 `--allow-empty-latch`（A1-5）。
+
+### 审阅人
+
+reviewer（用户）— A1-3 (1/3b) round 2 阻断 1 + 2 + fbs:27 注释残留。
+
+---
+
 ## 2026-04-27 · A1-2 reviewer round 2 阻断 — `save_estop_latch_clear` backup-first 修复 ClearEStop 失败原子性（**状态：登记**）
 
 ### 背景
