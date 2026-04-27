@@ -477,6 +477,38 @@ impl EventQueue {
         })?;
         self.inner.remove(pos)
     }
+
+    /// **A1-3 (1/3b) round 2**：peek 队列里是否有 emergency event（不移除）。
+    ///
+    /// `ipc_thread` RR drain 完后用本方法判断"in-flight live ClearEStop
+    /// 是否需要被 emergency preempt 取消"——避免 RR live 进 EventQueue 后
+    /// 被 [`drain_emergency`] 跳过（drain_emergency 只抽 emergency 自己），
+    /// 等下一 tick 仍误执行 ClearEStop 清掉新触发的 EStop。
+    ///
+    /// emergency events 跟 [`drain_emergency`] 同集：
+    /// - `Event::EStop`
+    /// - `Event::AdapterErr(FaultCode::SafetyStopFailed)`
+    #[must_use]
+    pub fn has_emergency(&self) -> bool {
+        self.inner.iter().any(|ev| {
+            matches!(
+                ev,
+                Event::EStop | Event::AdapterErr(FaultCode::SafetyStopFailed)
+            )
+        })
+    }
+
+    /// **A1-3 (1/3b) round 2**：移除队列里**所有** `Event::ClearEStop`，
+    /// 返回移除数量。
+    ///
+    /// 用于 `ipc_thread` 在 emergency preempt / deadline 过期时取消
+    /// in-flight live ClearEStop —— 把对应 event 从 queue 摘掉，避免
+    /// `ipc_tick` Step 3 在下一 tick 误处理已被取消的 RR 请求。
+    pub fn remove_clear_estop_events(&mut self) -> usize {
+        let before = self.inner.len();
+        self.inner.retain(|ev| !matches!(ev, Event::ClearEStop));
+        before - self.inner.len()
+    }
 }
 
 // ============================================================================

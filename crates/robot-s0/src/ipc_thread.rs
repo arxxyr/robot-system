@@ -94,6 +94,11 @@ use crate::state_machine::{Event, EventQueue, Guards, S0State, S0StateSnapshot};
 /// - `confirmation` / `audit_reason`：gateway 已校过 `confirmation` 非空
 ///   （`InvalidArgument`），但 S0 也保留这些字段做 audit trace
 ///   （`tracing::info!` 落 journald；A1-3 (3/3) 端到端时再加详细字段）。
+/// - `deadline_ns`：CLOCK_MONOTONIC_RAW 截止时刻（mono raw ns）。daemon
+///   端在 RR drain 入口 / preempt 段 / response 派发前**三处**显式 check
+///   `clock.now() > deadline_ns`，过期返 `DeadlineExceeded`，不入队 / 不
+///   继续执行（reviewer A1-3 (1/3b) round 2 拍板 + frozen schema
+///   `clear_estop.fbs:112` 要求）。
 #[derive(Debug, Clone)]
 pub struct ClearEStopRrRequest {
     /// 客户端 UUIDv7，用于 RR response routing；不用作幂等 key。
@@ -104,6 +109,8 @@ pub struct ClearEStopRrRequest {
     pub confirmation: String,
     /// 审计原因（"who、why"）。
     pub audit_reason: String,
+    /// CLOCK_MONOTONIC_RAW 截止时刻（mono raw ns）。
+    pub deadline_ns: u64,
 }
 
 /// RR control plane: `ipc_thread` → `rr_server_thread` 的 `ClearEStop`
@@ -167,6 +174,33 @@ pub enum ClearEStopRrPayload {
     /// gateway 映射到 `tonic::Code::ResourceExhausted` 或
     /// `tonic::Code::Aborted`（实现时定）。
     AlreadyInProgress,
+
+    /// **live: 被 emergency preempt**——RR drain 把 live request 入
+    /// `in_flight_live` + push `Event::ClearEStop` 后，本 tick 又收到
+    /// `EStop` / `SafetyStopFailed` 进 events queue。`ipc_thread` 主循环
+    /// §5.6) preempt 段取消 in-flight live：移除 events queue 里的
+    /// `Event::ClearEStop`，reply 本 variant。客户端应重新评估硬件状态
+    /// 后决定是否重发。
+    ///
+    /// reviewer A1-3 (1/3b) round 2 阻断 1 拍板：避免 RR live 滞留
+    /// EventQueue 被下一 tick 误清掉新触发的 EStop。
+    /// gateway 映射到 `tonic::Code::Aborted`。
+    PreemptedByEmergency,
+
+    /// **deadline 过期**——`clock.now() > req.deadline_ns`。三处 check 之一
+    /// 命中：(a) RR drain 入口；(b) §5.6) preempt 段（drain 入队后到
+    /// ipc_tick 之前）；(c) §6.6) RR response 派发前（覆盖 ipc_tick 跑
+    /// 期间过期）。任一命中即 reply 本 variant。
+    ///
+    /// **注意**：(c) 命中时硬件 / 磁盘 latch 已被 ipc_tick 三步硬顺序清掉
+    /// （成功路径），但客户端仍收 `DeadlineExceeded`——重发 ClearEStop
+    /// 会被 `NotTorqueOffConfirmed` 拒（已 clear），可重发其它 RPC（如
+    /// 状态查询）确认。
+    ///
+    /// reviewer A1-3 (1/3b) round 2 阻断 2 拍板 + frozen schema
+    /// `clear_estop.fbs:112` 要求。
+    /// gateway 映射到 `tonic::Code::DeadlineExceeded`。
+    DeadlineExceeded,
 }
 
 /// RR control plane channels (A1-3 (1/3b))。
@@ -523,6 +557,9 @@ fn run_loop(
         // reviewer 拍板线程模型：rr_server_thread 做 iceoryx2 RR I/O，
         // ipc_thread 是唯一 action executor。本步：
         //
+        // - **deadline check**（drain 入口；A1-3 (1/3b) round 2 阻断 2）：
+        //   `clock.now() > req.deadline_ns` → 直接 reply
+        //   `DeadlineExceeded`，**不**入 in_flight_live / **不** push event。
         // - **dry_run** request：直接同步调
         //   `clear_estop_action::evaluate_clear_estop_dry_run` (read-only)
         //   评估，**不**进 events queue / 不进 ipc_tick；立即把 domain
@@ -535,6 +572,13 @@ fn run_loop(
         //       搞错 Ack）
         if let Some(rr) = rr_channels {
             while let Ok(req) = rr.request_rx.try_recv() {
+                if clock.now().0 > req.deadline_ns {
+                    let _ = rr.response_tx.send(ClearEStopRrResponse {
+                        request_id: req.request_id,
+                        payload: ClearEStopRrPayload::DeadlineExceeded,
+                    });
+                    continue;
+                }
                 if req.dry_run {
                     let payload = match clear_estop_action::evaluate_clear_estop_dry_run(
                         state,
@@ -565,6 +609,48 @@ fn run_loop(
                     in_flight_live = Some(req);
                     events.push(Event::ClearEStop);
                 }
+            }
+        }
+
+        // ─── 5.6) RR live preempt (A1-3 (1/3b) round 2 阻断 1+2) ───
+        //
+        // 在 §5.5 drain 入队后、§6 ipc_tick 之前，检查 in-flight live 是否
+        // 应被 emergency preempt 或 deadline 过期取消：
+        //
+        // - **emergency preempt**：events queue 含 `Event::EStop` /
+        //   `Event::AdapterErr(SafetyStopFailed)` → 旧 RR live 不应继续
+        //   执行（emergency 之后硬件可能新 latch；客户端的 ClearEStop
+        //   request 是基于 emergency 之前的状态发的）。
+        // - **deadline preempt**：drain 入队后到 ipc_tick 之间窗口（典型：
+        //   上一 tick 没消费 ClearEStop event，本 tick 才消费，中间隔
+        //   500µs sleep）期间 deadline 过期。
+        //
+        // 两种情况都：(a) `EventQueue::remove_clear_estop_events()` 从
+        // queue 摘掉 ClearEStop event 防 ipc_tick Step 3 误处理；
+        // (b) take in_flight_live + reply `PreemptedByEmergency` /
+        // `DeadlineExceeded`。
+        if let Some(rr) = rr_channels
+            && let Some(req) = in_flight_live.as_ref()
+        {
+            let now = clock.now().0;
+            let preempt_payload = if events.has_emergency() {
+                Some(ClearEStopRrPayload::PreemptedByEmergency)
+            } else if now > req.deadline_ns {
+                Some(ClearEStopRrPayload::DeadlineExceeded)
+            } else {
+                None
+            };
+            if let Some(payload) = preempt_payload {
+                let removed = events.remove_clear_estop_events();
+                debug_assert!(
+                    removed >= 1,
+                    "in_flight_live = Some 时 events queue 应至少有 1 个 ClearEStop event"
+                );
+                let req = in_flight_live.take().expect("just checked is Some");
+                let _ = rr.response_tx.send(ClearEStopRrResponse {
+                    request_id: req.request_id,
+                    payload,
+                });
             }
         }
 
@@ -659,6 +745,14 @@ fn run_loop(
         // domain status 映射成 RR response payload，通过 response_tx 回
         // rr_server_thread。
         //
+        // **A1-3 (1/3b) round 2 阻断 2**：派发前再 check deadline，覆盖
+        // ipc_tick 跑期间过期的极端 window（debug build 慢 / effectful
+        // pending 1s 占用 / freeze hook 等）。命中 → 用 `DeadlineExceeded`
+        // 覆盖 ipc_tick 计算的 outcome。注意：ipc_tick 已经动了硬件 + 磁盘
+        // latch（成功路径），但客户端仍收 `DeadlineExceeded`；重发
+        // ClearEStop 会被 `NotTorqueOffConfirmed` 拒（已 clear），可重发
+        // 状态查询确认。
+        //
         // **invariant**：`in_flight_live.is_some()` ↔ 上一轮 RR drain 把
         // `Event::ClearEStop` push 进 events queue（live 单飞）。如果
         // `tick_outcome.clear_estop == Some(_)` 但 `in_flight_live == None`，
@@ -666,17 +760,21 @@ fn run_loop(
         // 外部 channel 入队，其它入队点都没了；这里 debug_assert 兜底）。
         if let (Some(rr), Some(status)) = (rr_channels, tick_outcome.clear_estop) {
             if let Some(req) = in_flight_live.take() {
-                let payload = match status {
-                    ClearEStopTickOutcome::Cleared { cleared_at_ns } => {
-                        ClearEStopRrPayload::Cleared { cleared_at_ns }
+                let payload = if clock.now().0 > req.deadline_ns {
+                    ClearEStopRrPayload::DeadlineExceeded
+                } else {
+                    match status {
+                        ClearEStopTickOutcome::Cleared { cleared_at_ns } => {
+                            ClearEStopRrPayload::Cleared { cleared_at_ns }
+                        }
+                        ClearEStopTickOutcome::StateNotSafe { actual } => {
+                            ClearEStopRrPayload::StateNotSafe { actual }
+                        }
+                        ClearEStopTickOutcome::NotTorqueOffConfirmed { actual } => {
+                            ClearEStopRrPayload::NotTorqueOffConfirmed { actual }
+                        }
+                        ClearEStopTickOutcome::FsyncFailed => ClearEStopRrPayload::FsyncFailed,
                     }
-                    ClearEStopTickOutcome::StateNotSafe { actual } => {
-                        ClearEStopRrPayload::StateNotSafe { actual }
-                    }
-                    ClearEStopTickOutcome::NotTorqueOffConfirmed { actual } => {
-                        ClearEStopRrPayload::NotTorqueOffConfirmed { actual }
-                    }
-                    ClearEStopTickOutcome::FsyncFailed => ClearEStopRrPayload::FsyncFailed,
                 };
                 let _ = rr.response_tx.send(ClearEStopRrResponse {
                     request_id: req.request_id,
@@ -1410,6 +1508,9 @@ mod tests {
     /// 起 ipc_thread + 配套 RR control plane channels，预设
     /// `safety_state` / `safety_latched` 让单测覆盖 dry_run / live / gate
     /// 拒等多种路径。
+    ///
+    /// 返回值含 `clock` + `metrics` 让 deadline / freeze hook 单测精确
+    /// 控制时序。
     #[allow(clippy::type_complexity)]
     fn bring_up_with_rr(
         initial_state: S0State,
@@ -1422,6 +1523,7 @@ mod tests {
         Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
         crossbeam_channel::Sender<ClearEStopRrRequest>,
         crossbeam_channel::Receiver<ClearEStopRrResponse>,
+        Arc<dyn RobotClock>,
     ) {
         use crossbeam_channel::bounded;
 
@@ -1444,6 +1546,7 @@ mod tests {
             RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
         let (_wd_tx, wd_rx) = unbounded::<Event>();
         let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let clock_for_test = Arc::clone(&clock);
 
         let topics_for_factory = topics;
         let factory = move || {
@@ -1511,15 +1614,28 @@ mod tests {
         )
         .unwrap();
 
-        (handle, inner, req_tx, resp_rx)
+        (handle, inner, req_tx, resp_rx, clock_for_test)
     }
 
     /// 测试 helper：发 RR request → 等 response（最多 1s）→ 返回 payload。
+    /// `deadline_ns` 默认设 `u64::MAX`（永不过期），跑过 RR 通路不被
+    /// deadline 拦截；deadline 单测用 `send_and_recv_rr_with_deadline`。
     fn send_and_recv_rr(
         req_tx: &crossbeam_channel::Sender<ClearEStopRrRequest>,
         resp_rx: &crossbeam_channel::Receiver<ClearEStopRrResponse>,
         request_id: &str,
         dry_run: bool,
+    ) -> ClearEStopRrPayload {
+        send_and_recv_rr_with_deadline(req_tx, resp_rx, request_id, dry_run, u64::MAX)
+    }
+
+    /// 测试 helper：发 RR request 带显式 `deadline_ns`，等 response（最多 1s）。
+    fn send_and_recv_rr_with_deadline(
+        req_tx: &crossbeam_channel::Sender<ClearEStopRrRequest>,
+        resp_rx: &crossbeam_channel::Receiver<ClearEStopRrResponse>,
+        request_id: &str,
+        dry_run: bool,
+        deadline_ns: u64,
     ) -> ClearEStopRrPayload {
         req_tx
             .send(ClearEStopRrRequest {
@@ -1527,6 +1643,7 @@ mod tests {
                 dry_run,
                 confirmation: format!("CONFIRM-{request_id}"),
                 audit_reason: "unit-test".to_string(),
+                deadline_ns,
             })
             .unwrap();
         let resp = resp_rx
@@ -1542,7 +1659,7 @@ mod tests {
     #[test]
     fn rr_dry_run_short_circuits_with_would_clear_when_gate_passes() {
         // state=Safe + safety_state=TorqueOffConfirmed → gate 全过
-        let (handle, inner, req_tx, resp_rx) = bring_up_with_rr(
+        let (handle, inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
             S0State::Safe,
             healthy_guards(),
             None,
@@ -1573,7 +1690,7 @@ mod tests {
     /// 不进 events queue / ipc_tick。
     #[test]
     fn rr_dry_run_returns_state_not_safe_when_state_is_ready() {
-        let (handle, _inner, req_tx, resp_rx) = bring_up_with_rr(
+        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
             S0State::Ready,
             healthy_guards(),
             None,
@@ -1605,7 +1722,7 @@ mod tests {
         let mut guards = healthy_guards();
         guards.estop_latched = true;
 
-        let (handle, inner, req_tx, resp_rx) = bring_up_with_rr(
+        let (handle, inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
             S0State::Safe,
             guards,
             Some(latch_path.clone()),
@@ -1634,7 +1751,7 @@ mod tests {
     /// `ClearEStopRrPayload::StateNotSafe`。
     #[test]
     fn rr_live_state_not_safe_routes_state_not_safe_response() {
-        let (handle, _inner, req_tx, resp_rx) = bring_up_with_rr(
+        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
             S0State::Ready,
             healthy_guards(),
             None,
@@ -1665,7 +1782,7 @@ mod tests {
         let mut guards = healthy_guards();
         guards.estop_latched = true;
 
-        let (handle, _inner, req_tx, resp_rx) = bring_up_with_rr(
+        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
             S0State::Safe,
             guards,
             Some(latch_path),
@@ -1701,7 +1818,7 @@ mod tests {
         let mut guards = healthy_guards();
         guards.estop_latched = true;
 
-        let (handle, inner, req_tx, resp_rx) = bring_up_with_rr(
+        let (handle, inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
             S0State::Safe,
             guards,
             Some(latch_path.clone()),
@@ -1734,7 +1851,7 @@ mod tests {
         let mut guards = healthy_guards();
         guards.estop_latched = true;
 
-        let (handle, _inner, req_tx, resp_rx) = bring_up_with_rr(
+        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
             S0State::Safe,
             guards,
             Some(latch_path),
@@ -1762,6 +1879,7 @@ mod tests {
                 dry_run: false,
                 confirmation: "CONFIRM-A".to_string(),
                 audit_reason: "unit-test-A".to_string(),
+                deadline_ns: u64::MAX,
             })
             .unwrap();
         req_tx
@@ -1770,6 +1888,7 @@ mod tests {
                 dry_run: false,
                 confirmation: "CONFIRM-B".to_string(),
                 audit_reason: "unit-test-B".to_string(),
+                deadline_ns: u64::MAX,
             })
             .unwrap();
 
@@ -1811,6 +1930,126 @@ mod tests {
         assert_eq!(
             single_flight_rejected,
             ClearEStopRrPayload::AlreadyInProgress
+        );
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    // ========================================================================
+    // A1-3 (1/3b) round 2 新加：deadline + emergency preempt 锁测
+    // ========================================================================
+
+    /// **A1-3 (1/3b) round 2 阻断 2**：drain 入口 deadline check 拦截过期
+    /// live request，**不**入 in_flight_live、**不**push event。
+    #[test]
+    fn rr_live_deadline_exceeded_at_drain_time_returns_deadline_exceeded() {
+        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
+            S0State::Safe,
+            healthy_guards(),
+            None,
+            OutputSafetyState::TorqueOffConfirmed,
+            true,
+        );
+        // deadline_ns=1（远小于 SystemClock::now()，drain 入口必命中）
+        let payload = send_and_recv_rr_with_deadline(&req_tx, &resp_rx, "req-deadline-1", false, 1);
+        assert_eq!(payload, ClearEStopRrPayload::DeadlineExceeded);
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **A1-3 (1/3b) round 2 阻断 2**：dry_run 路径同样必须走 deadline check
+    /// （drain 入口）；过期 dry_run 不调 evaluate_clear_estop_dry_run，直接
+    /// reply `DeadlineExceeded`。
+    #[test]
+    fn rr_dry_run_deadline_exceeded_at_drain_time() {
+        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
+            S0State::Safe,
+            healthy_guards(),
+            None,
+            OutputSafetyState::TorqueOffConfirmed,
+            true,
+        );
+        let payload = send_and_recv_rr_with_deadline(&req_tx, &resp_rx, "req-deadline-2", true, 1);
+        assert_eq!(payload, ClearEStopRrPayload::DeadlineExceeded);
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// **A1-3 (1/3b) round 2 阻断 1**：emergency preempt 取消 in-flight live。
+    ///
+    /// 场景：RR live 入 in_flight_live + push `Event::ClearEStop`，但同 tick
+    /// 内 EStop event 也进 events queue。`ipc_thread` §5.6) preempt 段
+    /// 检测 `events.has_emergency() = true` → 移除 events queue 里的
+    /// `Event::ClearEStop` + take in_flight_live + reply
+    /// `PreemptedByEmergency`。
+    ///
+    /// 实施：用 freeze hook 暂停 ipc_thread tick body，期间塞 EStop external
+    /// event + RR live 到 channels；unfreeze 后 ipc_thread 同 tick drain
+    /// 两条 message → §5.6 preempt 命中。
+    ///
+    /// 这条单测端到端覆盖 §5.6 段 "take in_flight_live + remove ClearEStop
+    /// event + reply" 三件事；deadline 路径只是替换 payload variant
+    /// 一行（共用 §5.6 take/remove/reply 代码）。
+    #[test]
+    fn rr_live_emergency_preempt_aborts_in_flight_live() {
+        use crate::estop_latch::save_estop_latch;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        save_estop_latch(&latch_path, true).unwrap();
+
+        let mut guards = healthy_guards();
+        guards.estop_latched = true;
+
+        let (handle, inner, req_tx, resp_rx, clock) = bring_up_with_rr(
+            S0State::Safe,
+            guards,
+            Some(latch_path.clone()),
+            OutputSafetyState::TorqueOffConfirmed,
+            true,
+        );
+
+        // 1) freeze 200ms：ipc_thread tick body 不跑，channels 不被 drain
+        let metrics = Arc::clone(handle.metrics());
+        let freeze_until = clock.now().0 + 200_000_000;
+        metrics
+            .freeze_until_ns
+            .store(freeze_until, Ordering::Release);
+        // 等 freeze 稳定生效
+        std::thread::sleep(Duration::from_millis(40));
+
+        // 2) freeze 期间塞两条 message：EStop external + RR live
+        handle.event_sender().send(Event::EStop).unwrap();
+        req_tx
+            .send(ClearEStopRrRequest {
+                request_id: "req-emerg-1".to_string(),
+                dry_run: false,
+                confirmation: "CONFIRM-emerg-1".to_string(),
+                audit_reason: "unit-test-preempt".to_string(),
+                deadline_ns: u64::MAX,
+            })
+            .unwrap();
+
+        // 3) unfreeze
+        metrics.freeze_until_ns.store(0, Ordering::Release);
+
+        // 4) recv RR response → 必须是 PreemptedByEmergency
+        let resp = resp_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("response within 2s");
+        assert_eq!(resp.request_id, "req-emerg-1");
+        assert_eq!(
+            resp.payload,
+            ClearEStopRrPayload::PreemptedByEmergency,
+            "in-flight live RR ClearEStop 必须被 §5.6 preempt 取消"
+        );
+
+        // 5) 副作用：EStop 路径继续执行 → executor.safety_latched 升 true
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            inner.safety_latched.load(Ordering::Acquire),
+            "EStop 路径应继续执行，executor.safety_latched 应升 true"
         );
 
         handle.request_stop();
