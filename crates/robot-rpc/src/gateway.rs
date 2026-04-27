@@ -520,6 +520,28 @@ impl RobotControl for ClearEStopHandler {
         let cleared_at_ns = view.cleared_at_ns();
         let dry_run = view.dry_run();
         let error_msg = view.error_msg().unwrap_or("");
+        let resp_request_id = view.request_id().unwrap_or("");
+
+        // ─── Step 11.5: 校验 wire response request_id 跟当前 request 一致
+        //     （reviewer (2/3-b2-2) round 2 阻断 2；
+        //     `crates/robot-msg/schemas/clear_estop.fbs:177` 明文 RPC 端用
+        //     response.request_id correlate pending response）。daemon 端 wire
+        //     bug / mock 错配 / 跨 in-flight 路由错位都会让 mismatch 出现，
+        //     若不校验直接 commit cache 会把别的响应当成本请求成功缓存。 ───
+        if resp_request_id != validated.request_id {
+            tracing::error!(
+                request_id = %validated.request_id,
+                resp_request_id,
+                ?wire_status,
+                "ClearEStop wire response request_id mismatch; replying Internal (no cache commit)"
+            );
+            drop(insert_handle);
+            return Err(tonic::Status::internal(format!(
+                "wire ClearEStopResponse.request_id `{resp_request_id}` does not match \
+                 outgoing request `{}`",
+                validated.request_id
+            )));
+        }
 
         // ─── Step 12: map RpcStatus → tonic::Code 显式 match；Ok 路径 commit
         //     cache + 返 Ack；非 Ok drop InsertHandle（**不**缓存失败状态） ───
@@ -876,6 +898,19 @@ pub async fn run_gateway_with_rr_io(
     shutdown_rx: watch::Receiver<bool>,
     ready_tx: Option<tokio::sync::oneshot::Sender<Result<SocketAddr, GatewayReadyError>>>,
 ) -> Result<(), GatewayError> {
+    // ─── 0) cfg.validate() **优先**（reviewer (2/3-b2-2) round 2 阻断 1）：
+    //     无效配置（空 robot_id / 非 loopback bind / 0 TTL / 0 max_entries）
+    //     必须在 spawn rr_io_thread 之前 fail-fast；不能用 iceoryx2 RR client
+    //     创建路径触碰共享 shm，也不能把"配置错"误报成 RrIoSpawn。
+    if let Err(e) = cfg.validate() {
+        let ready_err = GatewayReadyError::Config(e.clone());
+        if let Some(tx) = ready_tx {
+            // 防 ready_rx 端永久阻塞 await。
+            let _ = tx.send(Err(ready_err));
+        }
+        return Err(GatewayError::Config(e));
+    }
+
     // ─── 1) rr_io_thread spawn 优先（在 tonic 起来之前就位） ───
     let topic = format!("/{}/control/clear_estop", cfg.robot_id);
     let topic_for_factory = topic.clone();
@@ -1916,5 +1951,120 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
         assert!(table.role_has_capability(Role::Admin, Capability::ClearEStop));
         assert!(!table.role_has_capability(Role::Operator, Capability::ClearEStop));
         assert!(!table.role_has_capability(Role::Viewer, Capability::ClearEStop));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // **A1-3 (2/3-b2-2) round 2 阻断 2 锁测**：handler 必须验 wire response
+    // request_id 跟当前 request 一致；mismatch → Internal + **不**缓存
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_wire_response_request_id_mismatch_returns_internal_and_does_not_cache() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let cmd = make_cmd("idem-mismatch-1");
+        let cache = Arc::clone(&handler.state().idempotency);
+
+        // mock daemon：拿到 forward 后**故意**用错的 request_id 回 wire
+        // response（同时 wire status = Ok，让 mismatch 校验是唯一拦截点；
+        // 否则 Ok 路径会 commit cache）
+        let mock = tokio::task::spawn_blocking(move || {
+            let req = forward_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("forward request");
+            // assert mock 看到的 wire request_id 跟入参一致（防 test 自身 bug）
+            let view = flatbuffers::root::<FbReq>(&req.wire_bytes).expect("decode wire request");
+            let expected = view.request_id().unwrap_or("").to_string();
+            // 回错的 request_id（"wrong"），status=Ok
+            let resp = build_clear_estop_response("wrong", RpcStatus::Ok, "", 12_345, false);
+            req.oneshot_tx
+                .send(resp)
+                .expect("oneshot recv side dropped");
+            expected
+        });
+
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("mismatched response request_id should fail");
+        assert_eq!(err.code(), tonic::Code::Internal);
+        assert!(
+            err.message().contains("does not match"),
+            "error message 应明确 mismatch；got: {}",
+            err.message()
+        );
+
+        let real_request_id = mock.await.unwrap();
+        assert_ne!(
+            real_request_id, "wrong",
+            "mock 看到的 wire request_id 不该是 'wrong'（防 test 自身 bug）"
+        );
+
+        // 关键不变量：mismatch 路径**不**缓存（drop insert_handle 不 commit）
+        let cache_lock = cache.lock().unwrap();
+        assert_eq!(
+            cache_lock.len(),
+            0,
+            "request_id mismatch 路径**不**应缓存；下次 retry 必须能重新走 fresh"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // **A1-3 (2/3-b2-2) round 2 阻断 1 锁测**：run_gateway_with_rr_io 必须先
+    // cfg.validate() 再 spawn rr_io_thread；invalid config 返 Config(_)
+    // **不**触碰 iceoryx2 RR client 路径
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn run_gateway_with_rr_io_invalid_config_returns_config_before_rr_spawn() {
+        // (a) 空 robot_id：必须返 Config(EmptyRobotId)（**不**RrIoSpawn）
+        {
+            let cfg = GatewayConfig {
+                listen_addr: "127.0.0.1:0".parse().unwrap(),
+                robot_id: String::new(),
+                idempotency_ttl_secs: 300,
+                idempotency_max_entries: 4096,
+                rr_timeout_grace_ms: 500,
+            };
+            let role_table = Arc::new(load_role_table(TEST_RPC_ROLES_TOML).unwrap());
+            let clock: Arc<dyn RobotClock> = Arc::new(SystemClock);
+            let (_tx, rx) = watch::channel(false);
+            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+            let result = run_gateway_with_rr_io(cfg, role_table, clock, rx, Some(ready_tx)).await;
+            match result {
+                Err(GatewayError::Config(ConfigError::EmptyRobotId)) => {}
+                other => panic!("expected Config(EmptyRobotId); got {other:?}"),
+            }
+            // ready_tx 也应送等价错误（防永久阻塞）
+            let ready = timeout(Duration::from_secs(1), ready_rx)
+                .await
+                .expect("ready signal within 1s")
+                .expect("ready_tx not dropped");
+            assert!(matches!(
+                ready,
+                Err(GatewayReadyError::Config(ConfigError::EmptyRobotId))
+            ));
+        }
+
+        // (b) 非 loopback bind：必须返
+        // Config(LoopbackBind(NonLoopback(_)))（**不**走 spawn 路径）
+        {
+            let cfg = GatewayConfig {
+                listen_addr: "0.0.0.0:50051".parse().unwrap(),
+                robot_id: "test".to_string(),
+                idempotency_ttl_secs: 300,
+                idempotency_max_entries: 4096,
+                rr_timeout_grace_ms: 500,
+            };
+            let role_table = Arc::new(load_role_table(TEST_RPC_ROLES_TOML).unwrap());
+            let clock: Arc<dyn RobotClock> = Arc::new(SystemClock);
+            let (_tx, rx) = watch::channel(false);
+            let result = run_gateway_with_rr_io(cfg, role_table, clock, rx, None).await;
+            match result {
+                Err(GatewayError::Config(ConfigError::LoopbackBind(
+                    LoopbackBindError::NonLoopback(_),
+                ))) => {}
+                other => panic!("expected Config(LoopbackBind); got {other:?}"),
+            }
+        }
     }
 }
