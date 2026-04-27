@@ -331,10 +331,10 @@ fn run_loop(
 ///   `clear_estop.fbs` `ClearEStopResponse.dry_run` 一致）。
 /// - `send_response` 失败只 metrics + tracing，**不**阻塞 shutdown
 ///   （gateway 端按 RR timeout/retry 兜底；client side 链路断也合理）。
-/// - ipc_thread 之后产出的 response 由于 `rr_response_rx` drop 后 channel
-///   disconnected，按 crossbeam 语义丢弃；ipc_thread 端 `try_send` 也会
-///   返 `Disconnected`（之后 `Internal` 回 wire；但此时 wire 客户端已经
-///   收到 `Aborted`，再 send 也是无效）。
+/// - ipc_thread 之后产出的 response：`rr_response_rx` drop 后 channel
+///   disconnected → ipc_thread 内 `rr.response_tx.send(...)` 返 `Err`，被
+///   `let _ =` 忽略（**不**会有第二条 wire response 出现；wire 客户端
+///   已经收到 `Aborted` 即终态，gateway 端不应等更多 reply）。
 fn abort_pending_on_shutdown(pending: &mut VecDeque<PendingRr>, metrics: &RrServerMetrics) {
     if pending.is_empty() {
         return;
