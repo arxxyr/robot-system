@@ -23,10 +23,15 @@
 //   1. deadline check：clock.now() > deadline_ns
 //      true → reply DeadlineExceeded；不写 latch / 不清 guards / 不清
 //             executor latch
-//      （A1-3 (1/3b) round 2 阻断 2 拍板：daemon 必须在 RR drain 入口、
-//      执行前 preempt 段、响应前**三处**显式 check deadline；过期请求
-//      不得入队或继续执行；详 docs/CHANGELOG.md 2026-04-27 A1-3 (1/3b)
-//      round 2 登记）
+//      （A1-3 (1/3b) round 3 拍板修订：daemon 在两处显式 check deadline——
+//      (a) RR drain 入口拦截过期请求不入队；(b) drain 入队后到 ipc_tick
+//      之前的 preempt 段（同 emergency preempt 共用 take + remove + reply
+//      三件事）。**响应前不再事后覆盖**真实 outcome——一旦 action 在
+//      deadline 前开始产出 Cleared / FsyncFailed / StateNotSafe /
+//      NotTorqueOffConfirmed，必须返真实结果，避免"硬件已 clear 但客户端
+//      收 DeadlineExceeded 以为没成功"跟"deadline 时三个翻转都不发生"
+//      硬契约冲突。详 docs/CHANGELOG.md 2026-04-27 A1-3 (1/3b) round 3
+//      登记）
 //   2. emergency preempt check：events queue 有 EStop / SafetyStopFailed
 //      event 且 in_flight_live 已注册 → reply PreemptedByEmergency；
 //      移除 events queue 里的 ClearEStop event；不写 latch / 不清 guards
@@ -91,8 +96,14 @@ enum RpcRole : ubyte {
 // `robot-rpc` 把 `RpcStatus` 转 `tonic::Code` 时**必须**用显式 `match`
 // 全枚举所有 variant；**禁止** `code as i32` 之类靠数值对齐的 cast，因
 // 为 `RpcStatus::FailedPrecondition` (=2) 在 gRPC 里是 9，等等都不一致。
-// A1-3 单测必须覆盖每条 `RpcStatus` → `tonic::Code` 映射；新增 variant
-// 时编译期 `match` 非穷举会报错强制更新映射 + 测试。
+//
+// **新增 variant 时的真实防线**：flatc 把 `RpcStatus` 生成成
+// `pub struct RpcStatus(pub u8)` newtype 而**不是** Rust enum——`match`
+// 的非穷举**不**会编译期报错。真正防线是 `crates/robot-rpc/src/clear_estop.rs`
+// 的 `rpc_status_variant_count_matches_explicit_mapping` 单测，把
+// `RpcStatus::ENUM_VALUES.len()` 跟 `rpc_status_to_tonic_code` 显式映射数
+// 硬绑：新增 variant 必须同步 (a) `match` 加 arm；(b) 加 mapping 单测；
+// (c) 升 `EXPECTED_VARIANTS` 数字。任一漏项 → 锁测 fail。
 //
 // ClearEStop 用得到 8 个 + Unknown 兼容旧 writer。后续 control RPC 复用
 // 本 enum 时按需扩 variant，**不**碰已有数值（FlatBuffers append-only）。
@@ -140,8 +151,12 @@ enum RpcStatus : ubyte {
 // - `dry_run`：CommandMeta.dry_run。daemon 端 action layer **必须**真识别
 //   （reviewer A1 拍板硬边界："dry_run 必须进 S0 端 action layer，RPC 端
 //   不能短路返"）。
-// - `deadline_ns`：CLOCK_MONOTONIC_RAW 截止时刻。daemon 端在收到 request →
-//   处理完之间任意时刻发现 clock.now() > deadline_ns 即返 DeadlineExceeded。
+// - `deadline_ns`：CLOCK_MONOTONIC_RAW 截止时刻。daemon 端在 RR drain 入口
+//   + drain 入队后到 ipc_tick 之前的 preempt 段两处显式 check
+//   `clock.now() > deadline_ns` 即返 DeadlineExceeded（A1-3 (1/3b) round 3
+//   修订：响应前不再事后覆盖真实 outcome；详顶部"S0 端 action layer
+//   ordering" 段）。长 fsync 跨 deadline 极端 window 留 A1-3 (3/3) e2e
+//   评估是否把 deadline 传进 action handler 在不可逆步骤前再 check。
 // - `stamp_ns`：RPC 端构造 request 时本机 wall-clock ns。仅 audit。
 table ClearEStopRequest {
     request_id:       string;

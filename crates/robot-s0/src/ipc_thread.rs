@@ -171,8 +171,9 @@ pub enum ClearEStopRrPayload {
     /// 本 request 直拒不入队。reviewer 拍板：第二个 live 不能排队无限等，
     /// 防止两个 request 共享一个 `TickOutcome` 搞错 Ack。客户端可在收到
     /// `Cleared` / 失败 variant 后重试。
-    /// gateway 映射到 `tonic::Code::ResourceExhausted` 或
-    /// `tonic::Code::Aborted`（实现时定）。
+    /// gateway 映射到 `tonic::Code::ResourceExhausted`（A1-3 (1/3b) round 3
+    /// 拍板：fbs `RpcStatus::ResourceExhausted = 7`；详
+    /// `crates/robot-rpc/src/clear_estop.rs::rpc_status_to_tonic_code`）。
     AlreadyInProgress,
 
     /// **live: 被 emergency preempt**——RR drain 把 live request 入
