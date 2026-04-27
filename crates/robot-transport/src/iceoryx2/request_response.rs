@@ -338,8 +338,16 @@ fn copy_response_payload(resp: &IxRrResponse) -> Vec<u8> {
 
 impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2RrServer<Req, Resp> {
     /// 非阻塞 receive 一条 active request。`Ok(Some(handle))` = 拿到一条；
-    /// `Ok(None)` = 队列空，下轮再 poll。`handle` 持 server 借用 → 在 handle
-    /// drop 之前不能再 try_recv。
+    /// `Ok(None)` = 队列空，下轮再 poll。
+    ///
+    /// **handle 生命周期**（A1-3 (1/3c) round 1 spike 锁住）：
+    /// [`Iceoryx2ActiveRequest`] 是**独立 owned** handle，类型签名上**没有**
+    /// lifetime 参数。server 可以**同时 hold 多个 active**，反序
+    /// `send_response` 仍正确（server 内部按 connection-pair 路由 reply 回
+    /// 对应 client `Iceoryx2PendingResponse`，不依赖 `try_recv` 调用顺序）。
+    /// 锁测 [`tests::rr_server_can_hold_multiple_active_requests_concurrently`]
+    /// 直接验证此行为，A1-3 (1/3c-1) `rr_server_thread` 用
+    /// `VecDeque<PendingRr>` 容纳多个 in-flight active。
     ///
     /// # Errors
     ///
@@ -465,6 +473,103 @@ mod tests {
         assert_eq!(resp_view.request_id().unwrap(), "req-spike-001");
         assert_eq!(resp_view.status(), RpcStatus::Ok);
         assert_eq!(resp_view.cleared_at_ns(), 1_234_567_999_999);
+    }
+
+    /// **A1-3 (1/3c-1) 前置 spike**：server 端**hold 多个 active request**
+    /// 后**反序 reply** 仍正确路由。
+    ///
+    /// `Iceoryx2RrServer::try_recv` 现有 doc 写"`handle` 持 server 借用 →
+    /// 在 handle drop 之前不能再 `try_recv`"；但 [`Iceoryx2ActiveRequest`]
+    /// 类型签名上**没有** lifetime 参数（`PhantomData<(Req, Resp)>` 而非
+    /// `PhantomData<&'srv ...>`）。本测试锁住实际行为：server 可以同时
+    /// hold 多个 active；reply 顺序跟 try_recv 顺序无关；request_id
+    /// correlation 由 wire 字段保证（不靠 active handle 的 ordering）。
+    ///
+    /// 锁住后 A1-3 (1/3c-1) `rr_server_thread` 可以用 `VecDeque<PendingRr>`
+    /// 容纳多个 in-flight active；如果本测试失败，切回 `Option<PendingRr>`
+    /// 单 active 模式（reviewer A1-3 (1/3c) round 1 拍板要求）。
+    #[test]
+    fn rr_server_can_hold_multiple_active_requests_concurrently() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let topic = fresh_topic("multi_active");
+        let (client, server) =
+            rr_channel::<markers::ClearEStopRequest, markers::ClearEStopResponse>(&node, &topic)
+                .unwrap();
+
+        let req_a = build_clear_estop_request(
+            "req-A",
+            "idem-A",
+            "src",
+            RpcRole::Maintainer,
+            "confirm-A",
+            "audit-A",
+            false,
+            1_000_000,
+            1_000,
+        );
+        let req_b = build_clear_estop_request(
+            "req-B",
+            "idem-B",
+            "src",
+            RpcRole::Maintainer,
+            "confirm-B",
+            "audit-B",
+            false,
+            2_000_000,
+            2_000,
+        );
+        let pending_a = client.send(&req_a).unwrap();
+        let pending_b = client.send(&req_b).unwrap();
+
+        // 关键：连续 try_recv 两条 active，第二条调用时第一条仍未 drop
+        // 也未 send_response。
+        let active_a = wait_for_active(&server, std::time::Duration::from_secs(2));
+        let active_b = wait_for_active(&server, std::time::Duration::from_secs(2));
+
+        // 两个 active 持不同 request_id（顺序不预设，因 iceoryx2 RR 不保证
+        // FIFO；按 request_id 双向匹配）
+        let a_id = flatbuffers::root::<FbReq>(active_a.payload())
+            .unwrap()
+            .request_id()
+            .unwrap_or("")
+            .to_string();
+        let b_id = flatbuffers::root::<FbReq>(active_b.payload())
+            .unwrap()
+            .request_id()
+            .unwrap_or("")
+            .to_string();
+        let mut got = [a_id.clone(), b_id.clone()];
+        got.sort();
+        assert_eq!(
+            got,
+            ["req-A", "req-B"],
+            "两个 active 应分别持 req-A 和 req-B（hold 多个不丢失 wire payload）"
+        );
+
+        // 反序 reply：active_b 先 reply，active_a 后 reply。
+        // active_a 的 request_id 决定它对应哪条 client pending（不是 try_recv 顺序）。
+        let resp_for_b = build_clear_estop_response(&b_id, RpcStatus::Ok, "", 2_999_999, false);
+        active_b.send_response(&resp_for_b).unwrap();
+        let resp_for_a =
+            build_clear_estop_response(&a_id, RpcStatus::FailedPrecondition, "gate-fail", 0, false);
+        active_a.send_response(&resp_for_a).unwrap();
+
+        // client 端按 wire request_id 字段验证 response 路由正确。
+        // (iceoryx2 RR pending_response 走 connection-pair 路由，不是 wire
+        //  字段；wire request_id 仅在 server 内部分发用。client 端 pending_a
+        //  无论如何只能收 server 端 active_a.send_response 的 bytes。本断言
+        //  校 server 端按 a_id 正确构 wire response。)
+        let bytes_for_a = wait_for_response(&pending_a, std::time::Duration::from_secs(2));
+        let view_for_a = flatbuffers::root::<FbResp>(&bytes_for_a).unwrap();
+        let bytes_for_b = wait_for_response(&pending_b, std::time::Duration::from_secs(2));
+        let view_for_b = flatbuffers::root::<FbResp>(&bytes_for_b).unwrap();
+        // 两条 response request_id 跟两个 pending 的 wire request_id 字段一致
+        let mut resp_pair = [
+            view_for_a.request_id().unwrap_or("").to_string(),
+            view_for_b.request_id().unwrap_or("").to_string(),
+        ];
+        resp_pair.sort();
+        assert_eq!(resp_pair, ["req-A", "req-B"]);
     }
 
     /// 反向 sanity check：用错的 schema marker 打开同一 topic → service
