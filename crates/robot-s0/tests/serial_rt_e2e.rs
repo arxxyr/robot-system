@@ -64,6 +64,7 @@ use robot_s0::state_machine::{Event, Guards, S0State, S0StateSnapshot};
 use robot_transport::iceoryx2::{Iceoryx2Publisher, TopicClass, publisher, subscriber};
 use robot_transport::traits::Publisher;
 use robot_transport::{LatestCommandSlot, RtSnapshotPublisher, RtSnapshotReader};
+use tempfile::TempDir;
 
 // ============================================================================
 // Topic 命名（每测试唯一，避免并行 cargo test 冲突）
@@ -128,6 +129,11 @@ struct Harness {
     /// 但本 harness 走 trait object，不直接持 Arc<MockSerialRTAdapter>；safety
     /// 信号通过 rt_ctrl 原子观察，无需 inner 引用。
     topics: Topics,
+    /// **A1-2**：ClearEStop 走 `clear_estop_action::try_apply_clear_estop`
+    /// 需要 `latch_path`；harness 自动创建 tempdir，drop 时清理。EStop 路径
+    /// 走 ipc_thread 通用 hook fsync `latch=true`；ClearEStop 路径走 action
+    /// handler fsync `latch=false`。
+    _latch_dir: TempDir,
 }
 
 impl Harness {
@@ -208,14 +214,19 @@ fn spawn_harness(factory_name: &str) -> Harness {
             .expect("open estop publisher");
 
     // ── 4) spawn ipc_thread ──
+    //
+    // **A1-2**：ClearEStop 走 `clear_estop_action::try_apply_clear_estop`，
+    // 必须有 `latch_path`，否则会被 `ipc_tick` 的 `latch_path=None` 守门
+    // 静默丢弃。harness 用 tempdir 自动 provision；EStop 路径走 ipc_thread
+    // 通用 hook fsync `latch=true`，ClearEStop 路径走 action handler fsync
+    // `latch=false`。drop 时 `_latch_dir` 自动清理整个临时目录。
+    let latch_dir = tempfile::tempdir().expect("create latch tempdir");
+    let latch_path = latch_dir.path().join("estop_latch");
     let ipc_cfg = IpcThreadConfig {
         poll_interval_ns: 500_000,
         initial_guards: healthy_guards(),
         initial_state: S0State::Safe,
-        // E2E 测试不验 latch IO（lib 锁测
-        // `estop_topic_writes_latch_to_disk_immediately` 已覆盖）；这里
-        // 跳过文件写盘，简化 fixture。
-        latch_path: None,
+        latch_path: Some(latch_path),
     };
     let topics_for_ipc = topics.clone();
     let ipc_factory = move || {
@@ -318,6 +329,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
         hb_pub,
         estop_pub,
         topics,
+        _latch_dir: latch_dir,
     }
 }
 

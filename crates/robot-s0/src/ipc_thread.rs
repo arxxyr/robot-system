@@ -384,35 +384,52 @@ fn run_loop(
         // ─── 6) ipc_tick 三步式：唯一改 state 的路径（硬要求 #2）───
         //
         // guards 现在是 &mut，ipc_tick 内部对每个 event 单独 apply 副作用。
+        // **A1-2**：`latch_path` 透传给 ipc_tick，让 `ClearEStop` action
+        // handler 在 ipc_tick 内完成 fsync + clear_safety_latch + 翻 guard
+        // 三步硬顺序；返回 `TickOutcome` 让本主循环跳过通用 latch hook 的
+        // 二次写盘。
         let prev_state = state;
-        ipc_tick(
+        let tick_outcome = ipc_tick(
             &mut retry,
             &mut state,
             &mut guards,
             executor_ctrl,
             clock,
             &mut events,
+            cfg.latch_path.as_deref(),
         );
         if state != prev_state {
             metrics.state_changes.fetch_add(1, Ordering::Relaxed);
         }
         metrics.ipc_tick_count.fetch_add(1, Ordering::Relaxed);
 
-        // ─── 6.5) **task #15 阻断 1 修复 / EStop latch 触发即落盘** ───
+        // ─── 6.5) latch fsync hook ───
         //
-        // 比较 ipc_tick 之后的 `guards.estop_latched` vs tick 前的快照；
-        // 翻转时立即 fsync 双写 latch 文件。这覆盖 EStop 来源（topic /
-        // watchdog / external channel / 同 tick 多事件 ipc_tick 内部 apply）
-        // 的**所有**路径 —— 不依赖事件来源，只看 guards 翻转。
+        // **A1-2**：ClearEStop 路径已经在 ipc_tick 内由
+        // `clear_estop_action::try_apply_clear_estop` 完成 fsync + clear +
+        // 翻 guard 三步硬顺序；本 hook 通过 `tick_outcome` 决定是否要补 fsync
+        // / 计数 / 同步 prev：
+        //
+        // - `clear_estop_latch_persisted`：ClearEStop 已成功 fsync；只同步
+        //   prev + 计 latch_writes，**不**再调 save_estop_latch（防二次写）。
+        // - `clear_estop_latch_write_failed`：ClearEStop 在 fsync 阶段失败；
+        //   guard 没翻、executor 没清。仅计 latch_write_errors；prev 不动
+        //   → 下面通用 hook 也不会触发（`guards.estop_latched` 仍为 true）。
+        // - 其它路径（典型 EStop 翻转 false→true 单调）：保留 task #15 阻断 1
+        //   修复的通用 hook，比较 prev != now 即 fsync 双写。
         //
         // 设计 §6.7 不变量 #4：S0 重启不失忆，EStop / fault / 最后 safe 输出
-        // 都 fsync 双写。本 hook 是 EStop 这条的实施点。
-        //
-        // 注：ClearEStop 翻转 (true→false) 也写盘，让"ClearEStop 后立即重启
-        // daemon" 也能读到 latch=false。`save_estop_latch` 内部双文件 atomic
-        // rename + fsync，几 ms 级阻塞；EStop 是低频事件，对 500us tick
-        // 节奏影响仅在事件发生瞬间，不持续。
-        if guards.estop_latched != prev_estop_latched {
+        // 都 fsync 双写。本 hook 是 EStop / ClearEStop 两条的实施点。
+        if tick_outcome.clear_estop_latch_persisted {
+            metrics.latch_writes.fetch_add(1, Ordering::Relaxed);
+            prev_estop_latched = guards.estop_latched; // = false
+        } else if tick_outcome.clear_estop_latch_write_failed {
+            metrics.latch_write_errors.fetch_add(1, Ordering::Relaxed);
+        } else if guards.estop_latched != prev_estop_latched {
+            // 通用 EStop 翻转 hook（false→true 单调；ClearEStop 路径已被
+            // outcome 接管）。`save_estop_latch` 内部双文件 atomic rename +
+            // fsync，几 ms 级阻塞；EStop 是低频事件，对 500us tick 节奏
+            // 影响仅在事件发生瞬间，不持续。
             if let Some(path) = cfg.latch_path.as_ref() {
                 match save_estop_latch(path, guards.estop_latched) {
                     Ok(()) => {

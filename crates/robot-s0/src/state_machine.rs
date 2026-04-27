@@ -492,7 +492,7 @@ impl EventQueue {
 ///
 /// 返回 `Rejected` 当 (cur, ev) 不在表中或 guard 不通过。调用方可选择记录到
 /// metrics 或直接忽略（没有匹配的转换 = 没动作）。
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::match_same_arms)]
 pub fn try_transition(cur: S0State, ev: Event, g: &Guards) -> Result<S0State, Rejected> {
     use Event as E;
     use S0State as S;
@@ -530,18 +530,19 @@ pub fn try_transition(cur: S0State, ev: Event, g: &Guards) -> Result<S0State, Re
             }
         }
 
-        // ---- SAFE → SAFE（解除 EStop）----
-        (S::Safe, E::ClearEStop) => {
-            if g.estop_latched {
-                // Part 2：ClearEStop control action（v0.3 A1 落地后由 control-plane slice
-                // 触发；v0.2 期间仅由显式授权的 deploy 流程 + opt-in 守门兼容）在
-                // estop_latch 层已经清理 latch；到这里应该是 false。
-                reject("ClearEStop arrived but estop still latched")
-            } else {
-                // 已经没 latch，什么都不做
-                Ok(S::Safe)
-            }
-        }
+        // ---- SAFE → SAFE（ClearEStop control action）----
+        //
+        // **A1-2**：state_machine 不再假设 latch 已被外层清掉。
+        // (Safe, ClearEStop) 静态允许；真正的清 latch（fsync +
+        // `clear_safety_latch()` + `guards.estop_latched` 翻转）由 ipc_tick
+        // 拿到本 plan 之后调 `clear_estop_action::try_apply_clear_estop`
+        // 完成。action handler 失败时 ipc_tick 不 commit_transition，state
+        // 留 Safe。
+        //
+        // 这条 transition 故意不检查 `g.estop_latched`——真正的硬件断扭
+        // 确认由 action handler 内部通过 `executor_ctrl.safety_state() ==
+        // TorqueOffConfirmed` 完成（看硬件实际，不看软件 guard 副本）。
+        (S::Safe, E::ClearEStop) => Ok(S::Safe),
 
         // ---- READY → ENABLED.ACTIVE ----
         (S::Ready, E::Heartbeat) => {

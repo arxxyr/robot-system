@@ -34,6 +34,7 @@ pub use robot_adapter_mock as _;
 #[allow(unused_imports)]
 pub use robot_adapter_feetech as _;
 
+mod clear_estop_action;
 pub mod config_loader;
 pub mod estop_latch;
 #[cfg(any(test, feature = "test-freeze-hook"))]

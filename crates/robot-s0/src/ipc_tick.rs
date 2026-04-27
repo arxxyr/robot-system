@@ -41,11 +41,12 @@
 
 #![allow(clippy::doc_markdown)]
 
-use robot_core::executor_ctrl::{
-    AdapterResp, ExecutorCtrlClient, NormalReqStatus, OutputPolicy, OutputSafetyState,
-};
+use std::path::Path;
+
+use robot_core::executor_ctrl::{AdapterResp, ExecutorCtrlClient, NormalReqStatus, OutputPolicy};
 use robot_core::time::{DurationNs, MonoRawNs, RobotClock};
 
+use crate::clear_estop_action;
 use crate::state_machine::{
     Event, EventQueue, FaultCode, PlannedTransition, S0State, TransitionKind, commit_fault,
     commit_transition, plan_transition,
@@ -93,12 +94,19 @@ const PENDING_TOTAL_TIMEOUT: DurationNs = DurationNs::from_secs(1);
 /// 阶段批量调用 —— 改为本函数内**每个 event 处理前**逐条 apply。这样
 /// 同 tick 多事件场景下，**每个 event 的 plan_transition 看到的 guards
 /// 是"该事件被处理那一刻的状态"**，不会被同 batch 后续事件提前污染（典型
-/// 反例：`[Enable, ClearEStop]` 同 tick 入队，旧实现会让 Enable 因 ClearEStop
-/// 提前清 estop_latched 而误通过；本修订让 Enable 看到 estop_latched=true →
-/// 拒绝；ClearEStop 自己处理时再清 latch）。
+/// 反例：`[Enable, EStop]` 同 tick 入队，旧实现会让 Enable 因 EStop 提前
+/// 置 estop_latched=true 而误通过反向方向；本修订让 Enable 在 EStop 之
+/// 前用旧 guard 判断；EStop 自己处理时再 latch）。
 ///
-/// 阶段 4 若需要"本 tick 是否做过动作 → 决定 idle sleep"，再加返回 bool（当前
-/// 的 §0.5 三测红灯门槛不依赖此返回值）。
+/// **A1-2**：`Event::ClearEStop` 不再走批量 apply；它的 guard 副作用由
+/// [`clear_estop_action::try_apply_clear_estop`] 在 plan_transition 之后
+/// 单独完成（fsync + clear_safety_latch + 翻转 guard 的三步硬顺序，
+/// 详 `docs/00_design.md` §6.6.1 errata）。`ipc_tick` 把 outcome 抛给
+/// `ipc_thread` 防二次写盘。
+///
+/// 阶段 4 若需要"本 tick 是否做过动作 → 决定 idle sleep"，再加返回字段（当前
+/// 的 §0.5 三测红灯门槛 + A1-2 outcome 已在 [`TickOutcome`] 内）。
+#[allow(clippy::too_many_lines)] // A1-2 把 ClearEStop 三步硬顺序内联到 Pure 分支
 pub fn ipc_tick(
     retry: &mut IpcRetryState,
     state: &mut S0State,
@@ -106,7 +114,10 @@ pub fn ipc_tick(
     executor_ctrl: &dyn ExecutorCtrlClient,
     clock: &dyn RobotClock,
     events: &mut EventQueue,
-) {
+    latch_path: Option<&Path>,
+) -> TickOutcome {
+    let mut outcome = TickOutcome::default();
+
     // ─── Step 1: emergency drain（A1）───
     //
     // 任何 emergency event（EStop / AdapterErr(SafetyStopFailed)）必须**先于**
@@ -125,7 +136,7 @@ pub fn ipc_tick(
         }
         // **A1**：强制清 in-flight pending，让后续 ack 即使到达也无副作用
         retry.clear();
-        return;
+        return outcome;
     }
 
     // ─── Step 2: 推进 in-flight effectful pending ───
@@ -145,7 +156,7 @@ pub fn ipc_tick(
             commit_fault(state, FaultCode::AdapterErr);
             executor_ctrl.set_policy(OutputPolicy::Disabled);
             retry.clear();
-            return;
+            return outcome;
         }
 
         match seq_opt {
@@ -170,7 +181,7 @@ pub fn ipc_tick(
                         retry.clear();
                     }
                 }
-                return;
+                return outcome;
             }
             Some(seq) => {
                 match executor_ctrl.poll_last_normal_resp(seq) {
@@ -193,7 +204,7 @@ pub fn ipc_tick(
                         retry.clear();
                     }
                 }
-                return;
+                return outcome;
             }
         }
     }
@@ -202,42 +213,60 @@ pub fn ipc_tick(
     while let Some(event) = events.pop() {
         // 第 5 条门槛修订：每个 event 的 guard 副作用必须**在它自己 plan
         // 之前**应用，**不**与同 batch 其它 event 共用一份"已被批量更新"的
-        // guards。否则 [Enable, ClearEStop] 这种顺序会让 Enable 看到 ClearEStop
-        // 提前清的 estop_latched=false 而误通过。
-        apply_event_guard_side_effect(event, guards);
+        // guards。
+        //
+        // **A1-2**：`Event::ClearEStop` 不再走批量 apply；它的 guard 副作用
+        // 由 [`clear_estop_action::try_apply_clear_estop`] 在 plan_transition
+        // 之后单独完成（fsync + clear_safety_latch + 翻转 guard 的三步硬
+        // 顺序，详 `docs/00_design.md` §6.6.1 errata）。
+        if !matches!(event, Event::ClearEStop) {
+            apply_event_guard_side_effect(event, guards);
+        }
         let Some(plan) = plan_transition(*state, event, guards) else {
             continue;
         };
         match plan.kind {
             TransitionKind::Pure => {
-                commit_transition(state, &plan);
-                executor_ctrl.set_policy(plan.new_policy);
-                // **finding（M7 阶段 3 收尾）**：`Event::ClearEStop` 的 trait
-                // 契约（`ExecutorCtrlClient::clear_safety_latch` doc）就是
-                // 由 ClearEStop transition 调用，否则 EStop 后 latch 文件 /
-                // guard 即便清了，executor 的 `safety_latched` 仍是 true，
-                // 下一次 `Enable(true)` 会被 client 端 / rt 端二次 latch
-                // check 拒，再被 ipc_tick 升 `Fault(AdapterErr)`，破坏端到端
-                // ClearEStop 恢复链路。
                 if matches!(event, Event::ClearEStop) {
-                    // **task-30 v9 / SerialRT E2E #4 守门**：清 latch 之前
-                    // 必须确认 SerialRT/HardRT 端已 confirm torque off
-                    // （emergency_action 已被消费完 + safety_state 已升
-                    // TorqueOffConfirmed），否则下一 rt/serial tick 兜底
-                    // store(latch, true) 会**覆盖**本次 clear（race window）。
-                    //
-                    // emergency 触发瞬间，client.safety_stop() 同步把
-                    // safety_state 重置为 StopCommanded（不再相信 spawn 初值
-                    // TorqueOffConfirmed），rt/serial 端真断扭后才升回 Confirmed。
-                    //
-                    // 若 safety_state != TorqueOffConfirmed：state 已 commit
-                    // 进 Safe（保持 ClearEStop 的"主态"语义），但**不**调
-                    // clear_safety_latch —— 操作员/RPC 应在看到 wire
-                    // S0SafetyState=TorqueOffConfirmed 后**重新发送** ClearEStop
-                    // 才能真正解 latch。
-                    if executor_ctrl.safety_state() == OutputSafetyState::TorqueOffConfirmed {
-                        executor_ctrl.clear_safety_latch();
+                    // **A1-2 硬顺序**（详 docs/00_design.md §6.6.1 errata）：
+                    //   TorqueOffConfirmed gate
+                    //     → save_estop_latch(false)            // primary + bak fsync
+                    //     → executor_ctrl.clear_safety_latch()
+                    //     → guards.estop_latched = false
+                    // 任一步失败 → 不 commit_transition / 不 set_policy，
+                    // state 留 Safe（下次 tick 由上层重新发 ClearEStop 重试）。
+                    let Some(path) = latch_path else {
+                        // latch_path 未配置（mock 测试场景）→ ClearEStop
+                        // 静默丢弃。生产期 strict policy 保证 latch_path
+                        // 永远 Some（详 estop_latch::MissingLatchPolicy::Strict）。
+                        continue;
+                    };
+                    match clear_estop_action::try_apply_clear_estop(
+                        guards,
+                        executor_ctrl,
+                        path,
+                        clock,
+                    ) {
+                        Ok(_) => {
+                            outcome.clear_estop_latch_persisted = true;
+                            commit_transition(state, &plan);
+                            executor_ctrl.set_policy(plan.new_policy);
+                        }
+                        Err(clear_estop_action::ClearEStopError::FsyncFailed(_)) => {
+                            outcome.clear_estop_latch_write_failed = true;
+                            // state 不前进；guard 不翻；executor latch 不动
+                        }
+                        Err(clear_estop_action::ClearEStopError::NotTorqueOffConfirmed {
+                            ..
+                        }) => {
+                            // gate 拒：state 不前进；guard 不翻；executor 不动
+                            // outcome 不上报（视为 no-op；下次 tick 上层重发
+                            // ClearEStop 重试）
+                        }
                     }
+                } else {
+                    commit_transition(state, &plan);
+                    executor_ctrl.set_policy(plan.new_policy);
                 }
             }
             TransitionKind::Emergency => {
@@ -254,6 +283,35 @@ pub fn ipc_tick(
             }
         }
     }
+
+    outcome
+}
+
+/// `ipc_tick` 单次执行的副作用 outcome。
+///
+/// **A1-2**：`Event::ClearEStop` 走 [`clear_estop_action::try_apply_clear_estop`]，
+/// 内部已完成 `save_estop_latch(false)` fsync + `clear_safety_latch()` +
+/// `guards.estop_latched=false` 三步。outcome 把信息抛给 `ipc_thread`
+/// run_loop，让它跳过通用 `prev_estop_latched != now` hook 的二次写盘，
+/// 同时同步 `prev_estop_latched` + 计 `latch_writes / latch_write_errors`。
+///
+/// `NotTorqueOffConfirmed` 失败不上报 outcome（state / guard / latch 全
+/// 不动；ipc_thread 视为 no-op）；只有 fsync 真失败才 set
+/// `clear_estop_latch_write_failed`，让 ipc_thread 计 `latch_write_errors`。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TickOutcome {
+    /// 本 tick 内 ClearEStop action handler 成功 —— 已 fsync `0\n` 到 latch
+    /// primary + bak、调用 `clear_safety_latch()`、翻转 `guards.estop_latched
+    /// = false`。`ipc_thread` 应：(a) 计 `latch_writes++`、(b) 同步
+    /// `prev_estop_latched=false`、(c) **跳过**通用 `prev != now` hook 的
+    /// 二次 `save_estop_latch`。
+    pub clear_estop_latch_persisted: bool,
+
+    /// 本 tick 内 ClearEStop action handler 在 fsync 阶段失败 —— gate 通过
+    /// 但 `save_estop_latch` 失败；`executor_ctrl.clear_safety_latch()` 未
+    /// 调、`guards.estop_latched` 仍为 true。`ipc_thread` 应计
+    /// `latch_write_errors++`；guard 没翻 → 通用 hook 也不会触发。
+    pub clear_estop_latch_write_failed: bool,
 }
 
 /// 按事件类型对 `guards` 做已知副作用。**ipc_tick 内部**逐 event 调用
@@ -270,7 +328,10 @@ pub fn ipc_tick(
 pub(crate) fn apply_event_guard_side_effect(ev: Event, guards: &mut Guards) {
     match ev {
         Event::EStop => guards.estop_latched = true,
-        Event::ClearEStop => guards.estop_latched = false,
+        // **A1-2**：`Event::ClearEStop` 移出本批量 apply；它的 guard 副作用
+        // 由 [`clear_estop_action::try_apply_clear_estop`] 在 `ipc_tick` 内
+        // plan_transition 之后通过 fsync + `clear_safety_latch()` + 翻 guard
+        // 的三步硬顺序完成（详 `docs/00_design.md` §6.6.1 errata）。
         Event::ClearError => guards.adapter_fault_cleared = true,
         Event::HeartbeatTimeout => guards.heartbeat_ok = false,
         _ => {}
@@ -294,11 +355,13 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     use robot_core::executor_ctrl::{
-        AdapterErr, AdapterNormalReq, ExecutorCtrlClient, NormalReqStatus, emergency_codes,
-        normal_codes, pack_completed,
+        AdapterErr, AdapterNormalReq, ExecutorCtrlClient, NormalReqStatus, OutputSafetyState,
+        emergency_codes, normal_codes, pack_completed,
     };
     use robot_core::time::MockClock;
+    use tempfile::tempdir;
 
+    use crate::estop_latch::save_estop_latch;
     use crate::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
     use crate::state_machine::{ControlLink, EnabledSub, Event, OutputMode};
 
@@ -377,6 +440,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         assert!(
             matches!(retry.pending, Some((_, None))),
@@ -391,6 +455,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         assert!(
             matches!(retry.pending, Some((_, Some(_)))),
@@ -409,6 +474,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
 
         // 4) 同 tick 断言：
@@ -444,6 +510,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         assert_eq!(state, S0State::Safe, "晚到的 ack 不应让 state 离开 Safe");
     }
@@ -481,6 +548,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         assert!(matches!(retry.pending, Some((_, None))));
         let started = retry.pending_started_at.expect("A2: 入队即置 started_at");
@@ -495,6 +563,7 @@ mod tests {
                 &client,
                 clock.as_ref(),
                 &mut events,
+                None,
             );
             // 检查 fault 升级
             if matches!(state, S0State::Fault(FaultCode::AdapterErr)) {
@@ -556,6 +625,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         // tick 2：Step 2 None 分支 → request_normal Submitted{seq}
         ipc_tick(
@@ -565,6 +635,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         let Some((_, Some(pending_seq))) = retry.pending else {
             panic!(
@@ -589,6 +660,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
 
         // 4) 断言
@@ -628,6 +700,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         assert_eq!(state, S0State::Ready);
         assert_eq!(
@@ -651,6 +724,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         assert_eq!(state, S0State::Ready, "Ready 在 ack 前不应离开");
         // tick 2: Step 2 None 分支 → Submitted
@@ -661,6 +735,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         let Some((_, Some(seq))) = retry.pending else {
             panic!("pending should be Submitted")
@@ -677,6 +752,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         assert_eq!(state, enabled_active(), "ack Ok 后 state 进 Enabled.Active");
         assert_eq!(
@@ -733,6 +809,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         // tick 2: request_normal Unsupported → commit_fault
         ipc_tick(
@@ -742,6 +819,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         assert_eq!(state, S0State::Fault(FaultCode::AdapterErr));
         assert_eq!(
@@ -751,24 +829,30 @@ mod tests {
         assert!(retry.pending.is_none());
     }
 
-    /// **finding（阶段 3 收尾）lock**：EStop 后端到端恢复链路。
+    /// **finding（阶段 3 收尾）lock + A1-2 升级**：EStop 后端到端恢复链路。
     ///
-    /// 1) 触发 EStop → safety_latched=true，state=Safe
-    /// 2) 测试方清 estop_latched guard（模拟 latch 文件被清）+ 排
-    ///    `Event::ClearEStop` → ipc_tick Pure 分支调
-    ///    `executor_ctrl.clear_safety_latch()` → safety_latched=false
-    /// 3) 排 `Event::Enable` → SAFE → READY（Pure transition）
-    /// 4) 排 `Event::Heartbeat` → READY → ENABLED.Active 是 Effectful
-    ///    Enable(true) —— 后续 tick 走 Step 2 None 分支，client.request_normal
-    ///    **不**被 latch 拒（client 端 latch 已清），返 Submitted
+    /// 1) 触发 EStop → safety_latched=true，state=Safe，guards.estop_latched=true
+    /// 2) 模拟 ipc_thread 把 latch=true 落盘 + rt/serial 端 confirm torque off →
+    ///    safety_state=TorqueOffConfirmed
+    /// 3) 排 `Event::ClearEStop` → ipc_tick 调
+    ///    `clear_estop_action::try_apply_clear_estop` 走三步硬顺序：
+    ///    fsync(false) → executor_ctrl.clear_safety_latch() → guards.estop_latched=false
+    /// 4) 排 `Event::Enable` → SAFE → READY（Pure transition）
+    /// 5) 排 `Event::Heartbeat` → READY → ENABLED.Active 是 Effectful Enable(true)
+    ///    —— 后续 tick 走 Step 2 None 分支，client.request_normal **不**被
+    ///    latch 拒（client 端 latch 已清），返 Submitted
     ///
-    /// 如果 ipc_tick **不**调 clear_safety_latch，第 4 步 client 端就会拒
+    /// 如果 ipc_tick **不**调 clear_safety_latch，第 5 步 client 端就会拒
     /// （NormalReqStatus::Unsupported），ipc_tick 再走 A3 升 Fault(AdapterErr)，
     /// 测试 fail。
     #[test]
     fn clear_estop_unblocks_subsequent_enable_via_latch() {
         let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
         let mut state = enabled_active();
+
+        // **A1-2**：ClearEStop 走 try_apply_clear_estop，必须有真实 latch_path。
+        let tmp = tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
 
         // 1) EStop
         events.push(Event::EStop);
@@ -779,44 +863,57 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            Some(&latch_path),
         );
         assert_eq!(state, S0State::Safe);
         assert!(
             inner.safety_latched.load(Ordering::Acquire),
             "EStop 后 safety_latched 必须为 true"
         );
+        assert!(
+            guards.estop_latched,
+            "EStop 走 apply_event_guard_side_effect 翻 guard"
+        );
 
-        // 2) 测试方模拟 latch 文件已清 + rt/serial 端 confirm torque off +
-        //    排 ClearEStop。
+        // 2) 模拟 ipc_thread 通用 hook 把 latch=true 落盘 + rt/serial 端
+        //    confirm torque off → safety_state=TorqueOffConfirmed。
         //
-        // **task-30 v9 / SerialRT E2E #4 守门**：ipc_tick 在 ClearEStop Pure
-        // 路径调 clear_safety_latch 之前会 check
-        // executor_ctrl.safety_state() == TorqueOffConfirmed。
-        // 测试里 inner 没有 rt/serial thread 推 safety_state，必须手动
-        // store —— 模拟 SerialRT confirm_torque_off 已完成的场景。
-        guards.estop_latched = false; // estop_latched guard 由外部 latch 文件清
+        // **A1-2**：guards.estop_latched 由 try_apply_clear_estop 内部翻转，
+        // 不再由外部测试方手动清；这里只 provision latch=true。
+        save_estop_latch(&latch_path, true).unwrap();
         inner.safety_state.store(
             OutputSafetyState::TorqueOffConfirmed.to_u8(),
             Ordering::Release,
         );
+
+        // 3) ClearEStop → A1-2 走 try_apply_clear_estop 三步硬顺序
         events.push(Event::ClearEStop);
-        ipc_tick(
+        let outcome = ipc_tick(
             &mut retry,
             &mut state,
             &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
+            Some(&latch_path),
         );
-        // **关键断言**：ipc_tick Pure 分支应调 clear_safety_latch()
+        assert!(
+            outcome.clear_estop_latch_persisted,
+            "outcome 应抛 clear_estop_latch_persisted=true 让 ipc_thread 防二次写"
+        );
         assert!(
             !inner.safety_latched.load(Ordering::Acquire),
             "ClearEStop transition 后 executor safety_latched 必须为 false"
         );
-        // state 仍是 Safe（ClearEStop 不改 state，只清 latch）
+        assert!(!guards.estop_latched, "guard 必须翻为 false");
         assert_eq!(state, S0State::Safe);
+        assert_eq!(
+            std::fs::read_to_string(&latch_path).unwrap(),
+            "0\n",
+            "fsync 必须把 latch 改成 0\\n"
+        );
 
-        // 3) Enable → SAFE → READY（Pure transition）
+        // 4) Enable → SAFE → READY（Pure transition）
         events.push(Event::Enable);
         ipc_tick(
             &mut retry,
@@ -825,10 +922,11 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            Some(&latch_path),
         );
         assert_eq!(state, S0State::Ready);
 
-        // 4) Heartbeat → READY → ENABLED.Active 是 Effectful Enable(true)
+        // 5) Heartbeat → READY → ENABLED.Active 是 Effectful Enable(true)
         events.push(Event::Heartbeat);
         // tick 1: 入 pending(None)
         ipc_tick(
@@ -838,6 +936,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            Some(&latch_path),
         );
         // tick 2: Step 2 None 分支调 request_normal —— 应**不**被 latch 拒
         ipc_tick(
@@ -847,6 +946,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            Some(&latch_path),
         );
         // **关键断言**：pending 应进 Submitted，**不**被 latch 拒升 Fault
         assert!(
@@ -864,21 +964,25 @@ mod tests {
         );
     }
 
-    /// **第 5 条门槛锁测（SerialRT E2E）**：同 tick 内 `[Enable, ClearEStop]`
-    /// 顺序进入 EventQueue（先 Enable 后 ClearEStop），Enable 必须**看不到**
-    /// ClearEStop 提前清的 `estop_latched=false` —— 也就是 Enable 的
-    /// `plan_transition` 看到 `estop_latched=true` 被拒绝；ClearEStop 自己
-    /// 处理时再清 latch。
+    /// **第 5 条门槛锁测（SerialRT E2E）+ A1-2 加固**：同 tick 内
+    /// `[Enable, ClearEStop]` 顺序进入 EventQueue（先 Enable 后 ClearEStop），
+    /// Enable 必须**看不到** ClearEStop 提前清的 `estop_latched=false` ——
+    /// 也就是 Enable 的 `plan_transition` 看到 `estop_latched=true` 被拒绝。
     ///
     /// 旧实现（apply_event_guard_side_effect 在 ipc_thread::run_loop
     /// channel drain 阶段批量调用）会让 ClearEStop 提前改 guards.estop_latched
     /// =false，Enable 紧接其后 plan 时看到 false 就误通过 → state=Ready。
     /// 修订后：apply 移到 ipc_tick 内逐 event 处理时再调，Enable 看到的是
-    /// 旧 guards（estop_latched=true），plan_transition 拒绝；只有 ClearEStop
-    /// 自己处理时才把 estop_latched 改成 false（state 仍留 Safe，因为
-    /// ClearEStop 的 transition 只是 SAFE→SAFE）。
+    /// 旧 guards（estop_latched=true），plan_transition 拒绝。
     ///
-    /// 这条不变量未来如果有人改回 batch update guards 模式，会被本测试钉死。
+    /// **A1-2** 进一步加固：`Event::ClearEStop` 完全移出
+    /// `apply_event_guard_side_effect`，guard 副作用只在
+    /// `clear_estop_action::try_apply_clear_estop` 末尾（fsync +
+    /// `clear_safety_latch` 都成功后）才翻。同 tick 内 Enable 永远看不到
+    /// 提前清的 `estop_latched=false`。
+    ///
+    /// 这条不变量未来如果有人改回 batch update guards 模式 / 或者把 guard
+    /// 翻转挪回 `plan_transition` 之前，会被本测试钉死。
     #[test]
     fn events_in_same_tick_use_per_event_guard_view() {
         let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
@@ -892,18 +996,26 @@ mod tests {
             OutputSafetyState::TorqueOffConfirmed.to_u8(),
             Ordering::Release,
         );
+
+        // **A1-2**：ClearEStop 走 try_apply_clear_estop，必须有真实 latch_path
+        // + 预 provision latch=true。
+        let tmp = tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        save_estop_latch(&latch_path, true).unwrap();
+
         // 同 tick 把 Enable 与 ClearEStop 顺序入队。注意发送顺序：先 Enable
         // 后 ClearEStop —— 这是测试的关键场景。
         events.push(Event::Enable);
         events.push(Event::ClearEStop);
 
-        ipc_tick(
+        let outcome = ipc_tick(
             &mut retry,
             &mut state,
             &mut guards,
             &client,
             clock.as_ref(),
             &mut events,
+            Some(&latch_path),
         );
 
         // **关键断言**：state 必须留在 Safe（Enable 因 estop_latched=true 被拒，
@@ -914,16 +1026,98 @@ mod tests {
             "Enable 不应因 ClearEStop 提前清 estop_latched 而误通过；\
              实际 state={state:?}"
         );
-        // ClearEStop 自己被处理时已把 guards.estop_latched 改成 false。
+        // ClearEStop 走 try_apply_clear_estop 在末尾翻 guard。
         assert!(
             !guards.estop_latched,
             "ClearEStop 处理后 guards.estop_latched 应清"
         );
-        // ClearEStop 走 Pure 分支调 clear_safety_latch（即使初始 latch=false
-        // 也是无副作用 idempotent store）。这里 inner 默认初值 latch=false，
-        // 所以这条只确认 store 被调到（false→false 无变化）；锁测核心不靠
-        // 这条，但保留以确认 Pure 分支真的走通了。
+        // outcome 抛 persisted=true（fsync 三步全过）。
+        assert!(
+            outcome.clear_estop_latch_persisted,
+            "ClearEStop 成功路径必须抛 outcome.clear_estop_latch_persisted=true"
+        );
+        // ClearEStop 走 try_apply_clear_estop 调 clear_safety_latch（即使初始
+        // latch=false 也是无副作用 idempotent store）。这里 inner 默认初值
+        // latch=false，本条只确认 store 被调到。
         assert!(!inner.safety_latched.load(Ordering::Acquire));
+    }
+
+    /// **A1-2 旁路防护**：state != Safe 时收到 `Event::ClearEStop`，
+    /// `plan_transition` 在 (Ready/Enabled/Fault, ClearEStop) 上没有表项，
+    /// 直接返 `None`（continue）。`clear_estop_action::try_apply_clear_estop`
+    /// **绝不**得被调用：latch 文件不得被写（inode/mtime 不动）、executor
+    /// `clear_safety_latch` 仍为 false（未被翻动）、guard / state 全不动。
+    ///
+    /// 这条单测挡的是"action-before-transition"旁路：未来若有人不小心把
+    /// `try_apply_clear_estop` 提前到 `plan_transition` 之前调（错误地"先做
+    /// 副作用再问合法性"），会被本测试钉死。
+    ///
+    /// reviewer A1-2 round 2 收紧补的第 4 条单测：走真实 ipc_tick 生产变体
+    /// （带 latch writer / outcome）+ 真实 latch_path（tempdir，不预 provision），
+    /// 比单纯锁 `plan_transition` 返 `None` 更精准——能挡住"误调用 action
+    /// handler"这类 bug，因为 spy 一旦被调就会写文件。
+    #[test]
+    fn ipc_tick_clear_estop_blocked_when_state_not_safe() {
+        let (inner, client, clock, mut events, mut retry, mut guards) = fixtures();
+
+        // **关键设置**：state = Ready（非 Safe）；guards.estop_latched=true
+        // 模拟"EStop 落 latch 但状态机没退回 Safe"的不一致中间态（生产中
+        // 不会出现，但这是测试要锁的旁路场景）。
+        let mut state = S0State::Ready;
+        guards.estop_latched = true;
+        // safety_state 设成 TorqueOffConfirmed —— 即使 gate 通过，action handler
+        // 也不应该被调；本测试要锁的是"plan_transition 拒绝后整段 continue"，
+        // 不依赖 gate 拒绝。
+        inner.safety_state.store(
+            OutputSafetyState::TorqueOffConfirmed.to_u8(),
+            Ordering::Release,
+        );
+
+        // 真实 latch_path，但**不**预 provision —— 期望测试结束后文件仍不存在
+        // （writer 根本没被调）。
+        let tmp = tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        let bak_path = tmp.path().join("estop_latch.bak");
+        assert!(!latch_path.exists(), "tempdir 起点 latch primary 不存在");
+        assert!(!bak_path.exists(), "tempdir 起点 latch bak 不存在");
+
+        events.push(Event::ClearEStop);
+
+        let outcome = ipc_tick(
+            &mut retry,
+            &mut state,
+            &mut guards,
+            &client,
+            clock.as_ref(),
+            &mut events,
+            Some(&latch_path),
+        );
+
+        // 1) action writer 完全没被调用（plan_transition reject 后 continue）
+        assert!(!latch_path.exists(), "latch primary 文件不得被写");
+        assert!(!bak_path.exists(), "latch bak 文件不得被写");
+
+        // 2) executor 不动（clear_safety_latch 没被调；safety_latched 保持初值）
+        assert!(
+            !inner.safety_latched.load(Ordering::Acquire),
+            "executor.safety_latched 保持初值（false），未被翻动"
+        );
+
+        // 3) state 不动（Ready 仍是 Ready）
+        assert_eq!(state, S0State::Ready);
+
+        // 4) guard 不动
+        assert!(guards.estop_latched, "guards.estop_latched 仍为 true");
+
+        // 5) outcome 不上报
+        assert!(
+            !outcome.clear_estop_latch_persisted,
+            "non-Safe state 不得抛 persisted"
+        );
+        assert!(
+            !outcome.clear_estop_latch_write_failed,
+            "non-Safe state 不得抛 write_failed（writer 根本没被调）"
+        );
     }
 
     /// emergency event drain 时**没有** in-flight pending，state 仍正确进 Safe。
@@ -939,6 +1133,7 @@ mod tests {
             &client,
             clock.as_ref(),
             &mut events,
+            None,
         );
         assert_eq!(state, S0State::Safe);
         assert_eq!(
