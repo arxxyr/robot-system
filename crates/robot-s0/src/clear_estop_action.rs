@@ -38,7 +38,7 @@ use std::path::Path;
 use robot_core::executor_ctrl::{ExecutorCtrlClient, OutputSafetyState};
 use robot_core::time::RobotClock;
 
-use crate::estop_latch::save_estop_latch;
+use crate::estop_latch::save_estop_latch_clear;
 use crate::state_machine::Guards;
 
 /// 成功路径返回值。
@@ -98,8 +98,10 @@ pub(crate) fn try_apply_clear_estop(
         return Err(ClearEStopError::NotTorqueOffConfirmed { actual });
     }
 
-    // 2. fsync(primary + bak) latch=false
-    save_estop_latch(latch_path, false).map_err(ClearEStopError::FsyncFailed)?;
+    // 2. fsync latch=false（backup-first，详 estop_latch::save_estop_latch_clear）：
+    //    partial failure 时保证 primary 不动 → 重启 load 仍读到 latched=true，
+    //    不破坏 §6.7 #4 "S0 重启不失忆" + A1-2 失败不变量"磁盘 latch 不动"。
+    save_estop_latch_clear(latch_path).map_err(ClearEStopError::FsyncFailed)?;
 
     // 3. executor latch（必须在 fsync 持久化之后；fsync 失败时本步必须不执行）
     executor_ctrl.clear_safety_latch();
@@ -132,7 +134,7 @@ mod tests {
     use robot_core::time::{MockClock, MonoRawNs};
     use tempfile::tempdir;
 
-    use crate::estop_latch::save_estop_latch;
+    use crate::estop_latch::{load_estop_latch, save_estop_latch};
     use crate::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
     use crate::state_machine::{EnabledSub, Guards};
 
@@ -319,5 +321,68 @@ mod tests {
         // 5) latch 文件最终内容（primary + bak 都是 "0\n"）
         assert_eq!(std::fs::read_to_string(&latch_path).unwrap(), "0\n");
         assert_eq!(std::fs::read_to_string(&bak_path).unwrap(), "0\n");
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // 4) partial failure 锁测（A1-2 reviewer round 2）：try_apply_clear_estop
+    //    在 fsync partial failure 时磁盘 latch 仍 latched=true，guard /
+    //    executor 全不动；重启 daemon 不会被错误清。
+    //
+    //    旧实现复用 save_estop_latch(_, false) (primary-first) 时这条路径
+    //    会暴露 bug：primary 已写 "0\n"，bak 失败返 Err，但 daemon
+    //    crash/restart 后 load_estop_latch 走 primary 读 "0\n" →
+    //    latched=false → 软件 latch 被错误清掉。本测试钉死 backup-first
+    //    save_estop_latch_clear 修复后，partial failure 不再破坏 §6.7 #4。
+    // ────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn clear_estop_partial_backup_failure_preserves_disk_latched_true() {
+        let tmp = tempdir().unwrap();
+        let latch_path = tmp.path().join("estop_latch");
+        let bak_path = tmp.path().join("estop_latch.bak");
+
+        // 预置 primary + bak = "1\n"（模拟 EStop 已落 latch + ipc_thread
+        // 通用 hook 已 fsync）
+        save_estop_latch(&latch_path, true).unwrap();
+
+        // 把 bak 替换成非空目录（让 backup-first save_single_atomic 第一步失败）
+        std::fs::remove_file(&bak_path).unwrap();
+        std::fs::create_dir(&bak_path).unwrap();
+        std::fs::write(bak_path.join("nonempty"), b"x").unwrap();
+
+        let inner = make_executor(OutputSafetyState::TorqueOffConfirmed, true);
+        let client = HardRtCtrlClient::new(Arc::clone(&inner));
+
+        let mut guards = healthy_guards_latched();
+        let clock = MockClock::new(MonoRawNs::ZERO);
+
+        let res = try_apply_clear_estop(&mut guards, &client, &latch_path, &clock);
+
+        // action 必须返 FsyncFailed
+        match res {
+            Err(ClearEStopError::FsyncFailed(_)) => {}
+            other => panic!("expected FsyncFailed, got {other:?}"),
+        }
+
+        // guard / executor 不动
+        assert!(guards.estop_latched, "guard 不得翻");
+        assert!(
+            inner.safety_latched.load(Ordering::Acquire),
+            "executor.safety_latched 不得清"
+        );
+
+        // **核心断言**：primary 仍 "1\n"（backup-first 保证 partial 时 primary 不动）
+        assert_eq!(
+            std::fs::read(&latch_path).unwrap(),
+            b"1\n",
+            "primary 必须保持 latched=true"
+        );
+
+        // **核心断言**：daemon crash/restart 后 load 仍返 latched=true
+        // （§6.7 #4 "S0 重启不失忆" + A1-2 失败不变量"磁盘 latch 不动"）
+        assert!(
+            load_estop_latch(&latch_path).unwrap(),
+            "load_estop_latch 必须仍返 latched=true；如果失败说明 backup-first 修复回归了"
+        );
     }
 }

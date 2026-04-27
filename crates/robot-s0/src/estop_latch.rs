@@ -208,6 +208,11 @@ pub fn load_estop_latch_with_mode(path: &Path, mode: MissingLatchPolicy) -> io::
 /// 原子写 latch（双文件）。先写 primary 再写 backup —— 中途 crash 时 primary
 /// 必然是新值（rename 原子）。
 ///
+/// **适用场景**：`EStop` 触发（`latched=true` 单调写入）+ S0 启动期 baseline
+/// 恢复 + 任何"latched=true 是更保守的状态"的写入。**不**适用于 `ClearEStop`
+/// 路径——partial failure 时 primary 已写新值，破坏 §6.7 #4 "S0 重启不失忆"
+/// 在 `latched=false` 方向的语义。详 [`save_estop_latch_clear`]。
+///
 /// # Errors
 ///
 /// primary 写入失败：直接返回错误（**不**回退到只写 backup —— 保证调用方知道
@@ -217,6 +222,49 @@ pub fn save_estop_latch(path: &Path, latched: bool) -> io::Result<()> {
     save_single_atomic(path, latched)?;
     let bak = backup_path(path);
     save_single_atomic(&bak, latched)?;
+    Ok(())
+}
+
+/// 专为 `ClearEStop` 设计的 latch 写入：保证 partial failure 时
+/// `docs/00_design.md` §6.7 #4 "S0 重启不失忆" 不被破坏。
+///
+/// **写入顺序：backup 先写完才写 primary**——这是 [`save_estop_latch`]
+/// 的反向。
+///
+/// ### 为什么 `ClearEStop` 不复用 `save_estop_latch(_, false)`
+///
+/// [`save_estop_latch`] 是 primary-first 设计。partial failure（primary
+/// 写成功 + backup 写失败）后磁盘状态：primary `= "0\n"`，backup `= "1\n"`，
+/// 函数返 `Err`。`ClearEStop` 调用方虽然能感知 `Err` 不翻 in-memory guard /
+/// 不调 `executor_ctrl.clear_safety_latch()`，但 daemon crash/restart 后
+/// [`load_estop_latch`] 默认走 primary，读 `"0\n"` → `latched=false` →
+/// **软件 latch 被错误清掉**，违反 A1-2 失败不变量"磁盘 latch 不动"。
+///
+/// `save_estop_latch_clear` 改成 backup-first 后，所有 partial failure
+/// 都安全：
+///
+/// - **backup 写失败** → primary 没动（仍 `"1\n"`）→ 重启 load primary
+///   `latched=true`（安全）。
+/// - **backup 成功 + primary 写失败** → primary 没动（rename 原子；仍
+///   `"1\n"`）→ 重启 load primary `latched=true`。backup 的 `"0\n"` 不会
+///   被 load 读到，因为 [`load_estop_latch`] 默认走 primary，只在 primary
+///   `NotFound` / `InvalidData` 时才 fallback backup。
+/// - **两步全过** → primary + backup 都 `"0\n"` → 重启 load `latched=false`
+///   （正常 `ClearEStop` 成功路径）。
+///
+/// ### 调用方契约
+///
+/// 返回 `Err(_)` 后调用方**不得**翻 in-memory `estop_latched` guard、
+/// **不得**调用 `executor_ctrl.clear_safety_latch()`，让上层重发 `ClearEStop`
+/// 重试。
+///
+/// # Errors
+///
+/// backup 或 primary 任一 `save_single_atomic` 失败时透传 `io::Error`。
+pub fn save_estop_latch_clear(path: &Path) -> io::Result<()> {
+    let bak = backup_path(path);
+    save_single_atomic(&bak, false)?;
+    save_single_atomic(path, false)?;
     Ok(())
 }
 
@@ -585,6 +633,77 @@ mod tests {
         // backup 没有被自愈（设计选择：primary 权威，不主动修 backup；
         // 下次 save_estop_latch 调用会重写 backup）
         assert_eq!(std::fs::read(&bak).unwrap(), b"corrupt");
+    }
+
+    // ============================================================================
+    // save_estop_latch_clear（A1-2 reviewer round 2 — backup-first 失败原子性）
+    // ============================================================================
+
+    #[test]
+    fn save_estop_latch_clear_writes_both_files() {
+        let dir = TempDir::new().unwrap();
+        let p = latch_path(&dir);
+        let bak = backup_path(&p);
+        // 预置 latched=true（模拟 EStop 已落 latch）
+        save_estop_latch(&p, true).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"1\n");
+        assert_eq!(std::fs::read(&bak).unwrap(), b"1\n");
+        // ClearEStop 路径：backup-first 写入 latch=false
+        save_estop_latch_clear(&p).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"0\n");
+        assert_eq!(std::fs::read(&bak).unwrap(), b"0\n");
+        assert!(!load_estop_latch(&p).unwrap());
+    }
+
+    /// **A1-2 reviewer round 2 partial failure 锁测**：backup-first 写入
+    /// 顺序保证 backup 写失败时 primary 不动；重启 [`load_estop_latch`]
+    /// 仍读到 `latched=true`，不破坏 `docs/00_design.md` §6.7 #4 "S0 重启
+    /// 不失忆" + A1-2 失败不变量"磁盘 latch 不动"。
+    ///
+    /// 制造 backup 写失败的方法：把 `<latch>.bak` 替换成非空目录，
+    /// `save_single_atomic` 内部 `rename(tmp, bak_path)` 在 Linux 会因
+    /// `EISDIR` / `ENOTEMPTY` 失败。
+    ///
+    /// 旧实现 `save_estop_latch(_, false)`（primary-first）在这条路径会
+    /// 暴露安全 bug：primary 已写 `"0\n"`，bak 失败返 Err，但 daemon
+    /// crash/restart 后 [`load_estop_latch`] 走 primary 读 `"0\n"` →
+    /// `latched=false` → 软件 latch 被错误清掉。本测试钉死该 bug 不再
+    /// 出现。
+    #[test]
+    fn save_estop_latch_clear_backup_failure_preserves_primary_latched() {
+        let dir = TempDir::new().unwrap();
+        let p = latch_path(&dir);
+        let bak = backup_path(&p);
+
+        // 1) 预置 primary + bak 都 latched=true
+        save_estop_latch(&p, true).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"1\n");
+        assert_eq!(std::fs::read(&bak).unwrap(), b"1\n");
+
+        // 2) 把 bak 替换成非空目录（rename target 是非空目录 → 失败）
+        std::fs::remove_file(&bak).unwrap();
+        std::fs::create_dir(&bak).unwrap();
+        std::fs::write(bak.join("nonempty"), b"x").unwrap();
+
+        // 3) save_estop_latch_clear 必须返 Err（backup 写失败）
+        let res = save_estop_latch_clear(&p);
+        assert!(
+            res.is_err(),
+            "save_estop_latch_clear 应返 Err（backup rename target is non-empty dir）"
+        );
+
+        // 4) primary 必须保持 "1\n"（backup-first 顺序保证 partial failure 不动 primary）
+        assert_eq!(
+            std::fs::read(&p).unwrap(),
+            b"1\n",
+            "primary 必须保持 latched=true；backup-first 顺序：backup 失败前 primary 没动"
+        );
+
+        // 5) **核心断言**：重启 load 仍读到 latched=true（§6.7 #4 不失忆）
+        assert!(
+            load_estop_latch(&p).unwrap(),
+            "daemon crash/restart 后 load_estop_latch 必须仍返 latched=true"
+        );
     }
 
     #[test]
