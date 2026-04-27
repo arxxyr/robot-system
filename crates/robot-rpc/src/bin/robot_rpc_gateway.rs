@@ -34,10 +34,13 @@
 #![cfg(target_os = "linux")]
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use robot_core::time::SystemClock;
+use robot_rpc::auth::load_role_table;
 use robot_rpc::gateway::{
-    ClearEStopHandler, ConfigError, GatewayConfig, GatewayError, LoopbackBindError, run_gateway,
+    ConfigError, GatewayConfig, GatewayError, LoopbackBindError, run_gateway_with_rr_io,
 };
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
@@ -53,6 +56,7 @@ struct Args {
     idempotency_ttl_secs: u64,
     idempotency_max_entries: usize,
     rr_timeout_grace_ms: u64,
+    rpc_roles_toml: PathBuf,
 }
 
 impl Args {
@@ -62,6 +66,7 @@ impl Args {
         let mut idempotency_ttl_secs: u64 = 300;
         let mut idempotency_max_entries: usize = 4096;
         let mut rr_timeout_grace_ms: u64 = 500;
+        let mut rpc_roles_toml: Option<PathBuf> = None;
 
         let raw: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
@@ -102,6 +107,11 @@ impl Args {
                         .parse()
                         .map_err(|e| format!("--rr-timeout-grace-ms parse failed: {e}"))?;
                 }
+                "--rpc-roles-toml" => {
+                    i += 1;
+                    let val = raw.get(i).ok_or("--rpc-roles-toml requires value")?;
+                    rpc_roles_toml = Some(PathBuf::from(val));
+                }
                 "--help" | "-h" => return Err("HELP".to_string()),
                 other => return Err(format!("unknown CLI arg: {other}")),
             }
@@ -112,6 +122,7 @@ impl Args {
         if robot_id.is_empty() {
             return Err("--robot-id must be non-empty".to_string());
         }
+        let rpc_roles_toml = rpc_roles_toml.ok_or("--rpc-roles-toml is required")?;
 
         Ok(Self {
             robot_id,
@@ -119,21 +130,26 @@ impl Args {
             idempotency_ttl_secs,
             idempotency_max_entries,
             rr_timeout_grace_ms,
+            rpc_roles_toml,
         })
     }
 }
 
 fn print_help() {
     eprintln!(
-        "robot_rpc_gateway —— v0.3 A1-3 (2/3-a) ClearEStop control-plane gateway
+        "robot_rpc_gateway —— v0.3 A1-3 (2/3-b2-2) ClearEStop control-plane gateway
 
 USAGE:
-  robot_rpc_gateway --robot-id <ID> [OPTIONS]
+  robot_rpc_gateway --robot-id <ID> --rpc-roles-toml <PATH> [OPTIONS]
 
 OPTIONS:
   --robot-id <ID>                  机器人标识符（必填；用于 iceoryx2 RR
-                                   topic /<robot_id>/control/clear_estop
-                                   A1-3 (2/3-b) 起接通）。
+                                   topic /<robot_id>/control/clear_estop）。
+  --rpc-roles-toml <PATH>          rpc roles TOML 文件路径（必填；fake token
+                                   → role 表 + role → capability 映射）。
+                                   `clear_estop` capability **仅** maintainer
+                                   / admin（reviewer A1-1 拍板硬边界；load
+                                   时 check_clear_estop_invariant 守门）。
   --listen-addr <ADDR>             gRPC server bind 地址。默认 127.0.0.1:50051。
                                    **必须 loopback**（127.0.0.0/8 或 ::1）；
                                    0.0.0.0 / 外网地址直接拒启动（v0.3
@@ -149,8 +165,8 @@ OPTIONS:
 
 退出码:
   0  graceful shutdown
-  1  tonic server 启动失败 / 运行期错
-  2  CLI 参数解析失败 / listen-addr 非 loopback
+  1  tonic server 启动失败 / rr_io_thread spawn 失败 / 运行期错
+  2  CLI 参数解析失败 / listen-addr 非 loopback / rpc-roles-toml 加载失败
 "
     );
 }
@@ -176,6 +192,31 @@ async fn main() {
         }
     };
 
+    // ─── 加载 rpc roles TOML（fail-fast：load_role_table 内部已 check
+    //     `clear_estop` capability 仅 maintainer / admin） ───
+    let role_toml_text = match std::fs::read_to_string(&args.rpc_roles_toml) {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!(
+                path = %args.rpc_roles_toml.display(),
+                error = ?e,
+                "fatal: --rpc-roles-toml read failed"
+            );
+            std::process::exit(2);
+        }
+    };
+    let role_table = match load_role_table(&role_toml_text) {
+        Ok(t) => Arc::new(t),
+        Err(e) => {
+            tracing::error!(
+                path = %args.rpc_roles_toml.display(),
+                error = ?e,
+                "fatal: --rpc-roles-toml load failed (含 check_clear_estop_invariant)"
+            );
+            std::process::exit(2);
+        }
+    };
+
     let cfg = GatewayConfig {
         listen_addr: args.listen_addr,
         robot_id: args.robot_id,
@@ -187,13 +228,13 @@ async fn main() {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     // 注册 SIGINT / SIGTERM handler。tokio::signal::unix 是 Send-friendly
-    // async API；触发后 set shutdown_tx → run_gateway 通过 shutdown_rx
-    // 收到 graceful stop 信号。
+    // async API；触发后 set shutdown_tx → run_gateway_with_rr_io 通过
+    // shutdown_rx 收到 graceful stop 信号。
     spawn_signal_handler(shutdown_tx);
 
-    let handler = Arc::new(ClearEStopHandler::new());
+    let clock = Arc::new(SystemClock);
 
-    match run_gateway(cfg, handler, shutdown_rx).await {
+    match run_gateway_with_rr_io(cfg, role_table, clock, shutdown_rx, None).await {
         Ok(()) => {
             tracing::info!("robot_rpc_gateway: clean shutdown");
         }
@@ -221,6 +262,10 @@ async fn main() {
         }
         Err(GatewayError::Tonic(e)) => {
             tracing::error!(error = ?e, "fatal: tonic transport failed");
+            std::process::exit(1);
+        }
+        Err(GatewayError::RrIoSpawn(e)) => {
+            tracing::error!(error = ?e, "fatal: rr_io_thread spawn failed");
             std::process::exit(1);
         }
     }

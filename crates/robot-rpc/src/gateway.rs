@@ -1,43 +1,83 @@
-//! `robot_rpc_gateway` 服务端核心 —— A1-3 (2/3-a) skeleton。
+//! `robot_rpc_gateway` 服务端核心 —— A1-3 (2/3-b2-2) handler 完整 logic +
+//! `run_gateway_with_rr_io` 集成 rr_io_thread 落地。
 //!
 //! ## 角色
 //!
 //! reviewer A1-3 (2/3-a) 拍板的 binary 薄壳模型：
 //!
 //! - **bin (`src/bin/robot_rpc_gateway.rs`)**：`#[tokio::main]` + CLI parse +
-//!   loopback bind 校验 + 起 [`run_gateway`]；不持业务逻辑。
-//! - **lib (本模块)**：[`ClearEStopHandler`] + [`run_gateway`] + 公共
-//!   [`GatewayConfig`] / [`LoopbackBindError`]。便于 lib 单测覆盖（不依赖
-//!   bin entry）。
+//!   loopback bind 校验 + 加载 role table + 起 [`run_gateway_with_rr_io`]；
+//!   不持业务逻辑。
+//! - **lib (本模块)**：[`ClearEStopHandler`] + [`run_gateway_with_rr_io`]
+//!   加 [`run_gateway`] + 公共 [`GatewayConfig`] / [`LoopbackBindError`]
+//!   / [`GatewayReadyError`]。
 //!
-//! ## A1-3 (2/3-a) scope
+//! ## A1-3 (2/3-b2-2) scope（本轮）
 //!
-//! - tonic gRPC server skeleton 起来（`bind` + `serve_with_shutdown`）。
-//! - [`ClearEStopHandler::clear_e_stop`] 暂返 `tonic::Code::Unimplemented`；
-//!   A1-3 (2/3-b) 接 RR I/O thread + `validate_clear_estop_command` +
-//!   `clear_estop_idempotency_fingerprint` + `IdempotencyCache`；A1-3
-//!   (2/3-c) 接 shutdown handling 完整链路。
-//! - **loopback bind 校验**（reviewer 拍板硬边界）：默认
-//!   `127.0.0.1:50051`；`--listen-addr` 可覆盖但**必须** loopback
-//!   （`IpAddr::is_loopback()` 真）；`0.0.0.0` / `[::]` / 外网地址直接
-//!   拒启动。fake token + plain TCP 阶段禁止暴露外网；TLS / mTLS 留
-//!   v0.4+。
+//! - [`ClearEStopHandler`] 真起 12 步 logic：validate → auth (token →
+//!   role) → authz (role has `clear_estop` cap) → fingerprint →
+//!   `IdempotencyCache::decide` (Replay / Conflict / Capacity / FreshInsert)
+//!   → 计算 deadline_ns → 映射 wire `RpcRole` → build wire `ClearEStopRequest`
+//!   bytes → forward via [`crate::rr_io_thread`]（`crossbeam_channel::try_send`
+//!   Full → `ResourceExhausted`，Disconnected → `Unavailable`）→
+//!   `tokio::time::timeout(timeout_ms + grace_ms)` 等 oneshot reply（Timeout
+//!   → `DeadlineExceeded`，RecvError → `Unavailable`）→ decode wire
+//!   `ClearEStopResponse` → [`crate::clear_estop::rpc_status_to_tonic_code`]
+//!   显式 match → `Ok` 路径 commit cache + 返 `Ack`；非 `Ok` drop
+//!   InsertHandle（**不**缓存失败状态：状态依赖型失败 retry 仍可重新走 fresh）。
+//! - [`run_gateway_with_rr_io`]：高层入口。spawn rr_io_thread → 构造
+//!   handler → 调 [`run_gateway_with_ready`] → tonic 退出后 stop / join
+//!   rr_io_thread（reviewer A1-3 (2/3-b2-1) 关键边界：rr_io_thread 生命周期
+//!   **必须**在 tonic server 退出之后才停）。
 //!
-//! ## 不在 A1-3 (2/3-a) 范围
+//! ## 不在 A1-3 (2/3-b2-2) 范围
 //!
-//! - RR I/O thread + `Iceoryx2RrClient` 跟 daemon 端真接（A1-3 (2/3-b)）
-//! - idempotency cache 集成 + replay/conflict 单测（A1-3 (2/3-b)）
-//! - shutdown handling 完整 graceful（A1-3 (2/3-c)）
-//! - 端到端两进程集成测（A1-3 (3/3)）
+//! - shutdown handling 完整 graceful：已进 handler 的请求等 RR 或 self
+//!   `timeout_ms + grace_ms`，未进 handler 直接返 `Unavailable`（A1-3
+//!   (2/3-c)）。
+//! - 端到端两进程集成测（A1-3 (3/3)）。
+//!
+//! ## 不变量
+//!
+//! - **wire `role` 字段仅 audit**：daemon 端**不**做授权决策；本 module
+//!   完成 token → role → capability 查表，viewer / operator 直接返
+//!   `PermissionDenied`，**不**让 wire request 出门（reviewer A1-1 拍板）。
+//! - **dry_run 不在 gateway 短路**：仅 set wire `dry_run` flag 透传给
+//!   daemon action layer（reviewer A1 拍板硬边界）。
+//! - **`request_id` 不进 idempotency fingerprint**：每次 retry 客户端必须
+//!   生成新 UUIDv7 `request_id` 但用稳定 `idempotency_key`；fingerprint 由
+//!   [`crate::clear_estop::clear_estop_idempotency_fingerprint`] 排除
+//!   `request_id` / `timeout_ms` / `idempotency_key` 自身。
+//! - **失败不缓存**：cache 仅在 wire response `RpcStatus::Ok` 路径 commit
+//!   `InsertHandle`；非 Ok（含 `FailedPrecondition` / `Internal` /
+//!   `DeadlineExceeded` / `ResourceExhausted` / `Aborted` 等）drop handle，
+//!   下次同 key retry 走 FreshInsert（避免把状态依赖失败永久缓存）。
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use crossbeam_channel::{Sender, TrySendError, bounded};
+use iceoryx2::prelude::NodeBuilder;
+use iceoryx2::service::ipc::Service as IxService;
+use robot_core::time::RobotClock;
+use robot_msg::build_helpers::build_clear_estop_request;
+use robot_msg::markers;
+use robot_msg::msg::{ClearEStopResponse as FbResp, RpcRole};
+use robot_transport::iceoryx2::request_response::rr_client;
 use thiserror::Error;
 use tokio::sync::watch;
 
+use crate::auth::{Capability, Role, RoleTable};
+use crate::clear_estop::{
+    clear_estop_idempotency_fingerprint, rpc_status_to_tonic_code, validate_clear_estop_command,
+};
+use crate::idempotency::{CachedAck, Decision, IdempotencyCache};
 use crate::proto::robot_control_server::{RobotControl, RobotControlServer};
 use crate::proto::{Ack, ClearEStopCommand};
+use crate::rr_io_thread::{
+    RrForwardRequest, RrIoThreadConfig, RrIoThreadHandle, spawn_rr_io_thread,
+};
 
 // ============================================================================
 // GatewayConfig
@@ -174,52 +214,362 @@ pub fn validate_loopback_bind(addr: &SocketAddr) -> Result<(), LoopbackBindError
 // ClearEStopHandler
 // ============================================================================
 
-/// gRPC `RobotControl` service 实现。
+/// `ClearEStopHandler` 持有的 gateway 运行期状态。bin / `run_gateway_with_rr_io`
+/// 构造，handler 借用。`Arc` 包好 thread-safe；tonic clone handler 给每个
+/// worker，state 通过 `Arc` 共享。
+pub struct ClearEStopHandlerState {
+    /// 转发 wire request 到 [`crate::rr_io_thread`]。
+    /// `bounded(64)` 跟 daemon 端 `rr_server_thread::max_in_flight` 对齐。
+    pub rr_forward_tx: Sender<RrForwardRequest>,
+    /// fake token → role + role → capability 查表。`Arc` 让多 handler /
+    /// 多 worker 共享。
+    pub role_table: Arc<RoleTable>,
+    /// in-process idempotency cache（TTL + cap）。`Mutex` 因为 `decide` /
+    /// `commit` 都是短临界区（不在 `await` 期间持锁）。
+    pub idempotency: Arc<Mutex<IdempotencyCache>>,
+    /// `RobotClock`：算 wire `deadline_ns` + `stamp_ns`。生产用
+    /// `SystemClock`，测试可用 `MockClock`。CLAUDE.md 禁
+    /// `SystemTime::now()` / `Instant::now()`，时间读取经 trait。
+    pub clock: Arc<dyn RobotClock>,
+    /// 等 RR response 超过 `request.timeout_ms` 后再多等的 grace（ms）。
+    /// daemon 一旦 deadline 前开始 action，可能在 fsync 之后才回真实 outcome；
+    /// gateway 过早 `DeadlineExceeded` 会制造"副作用已发生但客户端以为失败"
+    /// 的歧义（reviewer A1-3 (2/3-b2-2) 拍板边界）。
+    pub rr_timeout_grace_ms: u64,
+}
+
+// `Sender` / `Mutex<IdempotencyCache>` / `dyn RobotClock` 不全 Debug 友好；
+// 手动 impl 只暴露字面字段方便 trace。`#[allow(clippy::missing_fields_in_debug)]`
+// 跟 daemon 端 `rr_server_thread::PendingRr` / `RrForwardRequest` 同模式。
+#[allow(clippy::missing_fields_in_debug)]
+impl core::fmt::Debug for ClearEStopHandlerState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let cache_capacity = self.idempotency.lock().map_or(0, |c| c.capacity());
+        f.debug_struct("ClearEStopHandlerState")
+            .field("rr_timeout_grace_ms", &self.rr_timeout_grace_ms)
+            .field("idempotency_capacity", &cache_capacity)
+            .finish()
+    }
+}
+
+/// gRPC `RobotControl` service 实现。**A1-3 (2/3-b2-2)** 起持完整 state +
+/// 12 步 logic（详 module doc）。
 ///
-/// **A1-3 (2/3-a) skeleton**：本 handler 仅打通 tonic server 链路；
-/// `clear_e_stop` 返 `tonic::Code::Unimplemented`，让 A1-3 (2/3-b) 接 RR I/O
-/// thread + idempotency cache + auth + 完整逻辑。
-///
-/// 设计为 `Arc` 持有：tonic clone handler 给每个 worker；handler 内部
-/// state（A1-3 (2/3-b) 起加 RR forward channel + idempotency cache）走 `Arc`
-/// 共享。
-#[derive(Debug, Default)]
+/// 单测可用 [`ClearEStopHandler::for_test`] 构造一份 placeholder state（仅
+/// 用于不调 `clear_e_stop` 的 server-binding 测试）。
+#[derive(Debug)]
 pub struct ClearEStopHandler {
-    // A1-3 (2/3-b) 起加：
-    //   - rr_forward_tx: crossbeam_channel::Sender<RrForwardRequest>
-    //   - idempotency: Arc<IdempotencyCache>
-    //   - auth_role_table: Arc<RoleTable>
-    //   - clock: Arc<dyn RobotClock>
-    //   - rr_timeout_grace_ms: u64
-    _private: (),
+    state: ClearEStopHandlerState,
 }
 
 impl ClearEStopHandler {
+    /// 用 caller 提供的 state 构造 handler。
     #[must_use]
-    pub fn new() -> Self {
-        Self { _private: () }
+    pub fn new(state: ClearEStopHandlerState) -> Self {
+        Self { state }
+    }
+
+    /// 借出内部 state（诊断 / 测试用，**不**用于线程间转移所有权）。
+    #[must_use]
+    pub fn state(&self) -> &ClearEStopHandlerState {
+        &self.state
+    }
+
+    /// 测试 placeholder：构造一份 minimal handler 用于"只测 server bind /
+    /// shutdown，不调 `clear_e_stop`"的场景。
+    ///
+    /// **不**适合 handler logic 单测（forward channel 容量为 1 + 立即 drop
+    /// rx，role table 空 → 任何 ClearEStop 调用都会 fail 在 auth 步）。handler
+    /// logic 单测应用 `Self::new` 显式提供完整 state（mock daemon 在 test 主
+    /// 线程读 forward channel + 回 oneshot）。
+    #[cfg(test)]
+    #[must_use]
+    pub fn for_test() -> Self {
+        // forward channel 留 1 buf；测试 drop rx 让 handler 看见 Disconnected。
+        let (forward_tx, _forward_rx) = bounded(1);
+        let state = ClearEStopHandlerState {
+            rr_forward_tx: forward_tx,
+            role_table: Arc::new(RoleTable::default()),
+            idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
+                Duration::from_mins(1),
+                64,
+            ))),
+            clock: Arc::new(robot_core::time::SystemClock),
+            rr_timeout_grace_ms: 500,
+        };
+        Self::new(state)
+    }
+}
+
+/// 把 [`Role`] 映射到 wire [`RpcRole`]（仅 audit；daemon 端不依赖）。
+fn role_to_wire(r: Role) -> RpcRole {
+    match r {
+        Role::Viewer => RpcRole::Viewer,
+        Role::Operator => RpcRole::Operator,
+        Role::Maintainer => RpcRole::Maintainer,
+        Role::Admin => RpcRole::Admin,
     }
 }
 
 #[tonic::async_trait]
 impl RobotControl for ClearEStopHandler {
+    #[allow(clippy::too_many_lines)] // 12 步 logic 一条 fn 实现，明确流程
     async fn clear_e_stop(
         &self,
         request: tonic::Request<ClearEStopCommand>,
     ) -> Result<tonic::Response<Ack>, tonic::Status> {
-        // A1-3 (2/3-a) skeleton：返 Unimplemented，让 A1-3 (2/3-b) 接 RR
-        // I/O thread + idempotency 实施。
-        let request_id = request
-            .get_ref()
-            .meta
-            .as_ref()
-            .map_or("<no-meta>", |m| m.request_id.as_str());
-        tracing::warn!(
-            %request_id,
-            "robot_rpc_gateway: ClearEStop received but A1-3 (2/3-a) skeleton stage; replying Unimplemented (A1-3 (2/3-b) 接 RR I/O thread)"
+        let cmd = request.into_inner();
+
+        // ─── Step 1: validate（含 request_id UUIDv7 / confirmation 非空 /
+        //     idempotency_key 非空 / source 非空 / auth.token 非空 / timeout > 0） ───
+        let validated = validate_clear_estop_command(&cmd).map_err(|e| {
+            tracing::warn!(error = %e, "ClearEStop validation failed");
+            tonic::Status::new(e.to_tonic_code(), e.to_string())
+        })?;
+
+        // ─── Step 2: auth — fake token → Role 查表 ───
+        let Some(role) = self.state.role_table.lookup_token(&validated.auth_token) else {
+            tracing::warn!(
+                request_id = %validated.request_id,
+                "ClearEStop auth.token unknown; replying Unauthenticated"
+            );
+            return Err(tonic::Status::unauthenticated(
+                "auth.token not found in role table",
+            ));
+        };
+
+        // ─── Step 3: authz — role 必须含 `clear_estop` capability ───
+        if !self
+            .state
+            .role_table
+            .role_has_capability(role, Capability::ClearEStop)
+        {
+            tracing::warn!(
+                request_id = %validated.request_id,
+                role = role.as_str(),
+                "ClearEStop denied: role lacks `clear_estop` capability"
+            );
+            return Err(tonic::Status::permission_denied(format!(
+                "role `{}` lacks `clear_estop` capability (requires maintainer+)",
+                role.as_str()
+            )));
+        }
+
+        // ─── Step 4: 算 idempotency fingerprint（**排除** request_id /
+        //     timeout_ms / idempotency_key；详 clear_estop module doc） ───
+        let fingerprint = clear_estop_idempotency_fingerprint(&validated);
+
+        // ─── Step 5: cache.decide — Replay / Conflict / Capacity 立刻短路 ───
+        let insert_handle = {
+            let mut cache = self
+                .state
+                .idempotency
+                .lock()
+                .expect("idempotency cache mutex poisoned");
+            match cache.decide(&validated.idempotency_key, fingerprint) {
+                Decision::FreshInsert(h) => h,
+                Decision::Replay(ack) => {
+                    drop(cache);
+                    tracing::info!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        cleared_at_ns = ack.cleared_at_ns,
+                        dry_run = ack.dry_run,
+                        "ClearEStop idempotency replay"
+                    );
+                    return Ok(tonic::Response::new(Ack {
+                        request_id: validated.request_id,
+                        cleared_at_ns: ack.cleared_at_ns,
+                        dry_run: ack.dry_run,
+                    }));
+                }
+                Decision::Conflict {
+                    cached_fingerprint: _,
+                    incoming_fingerprint: _,
+                } => {
+                    drop(cache);
+                    tracing::warn!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        "ClearEStop idempotency conflict: same key, different fingerprint"
+                    );
+                    return Err(tonic::Status::already_exists(format!(
+                        "idempotency_key `{}` already used with a different request fingerprint",
+                        validated.idempotency_key
+                    )));
+                }
+                Decision::Capacity {
+                    current_entries,
+                    max_entries,
+                } => {
+                    drop(cache);
+                    tracing::warn!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        current_entries,
+                        max_entries,
+                        "ClearEStop idempotency cache full"
+                    );
+                    return Err(tonic::Status::resource_exhausted(format!(
+                        "idempotency cache full ({current_entries}/{max_entries}); retry after TTL expiry"
+                    )));
+                }
+            }
+        };
+
+        // ─── Step 6: 算 deadline_ns + stamp_ns（CLOCK_MONOTONIC_RAW；
+        //     gateway 跟 daemon 同机器共享 clock domain） ───
+        let now_ns = self.state.clock.now().0;
+        let timeout_ns = validated.timeout_ms.saturating_mul(1_000_000);
+        let wire_deadline_ns = now_ns.saturating_add(timeout_ns);
+        let stamp_ns = now_ns;
+
+        // ─── Step 7: 映射 Role → wire RpcRole（仅 audit） ───
+        let wire_role = role_to_wire(role);
+
+        // ─── Step 8: build wire ClearEStopRequest bytes ───
+        let wire_bytes = build_clear_estop_request(
+            &validated.request_id,
+            &validated.idempotency_key,
+            &validated.source,
+            wire_role,
+            &validated.confirmation,
+            &validated.audit_reason,
+            validated.dry_run,
+            wire_deadline_ns,
+            stamp_ns,
         );
-        Err(tonic::Status::unimplemented(
-            "robot_rpc_gateway A1-3 (2/3-a) skeleton: ClearEStop handler not yet wired to s0 daemon RR (A1-3 (2/3-b) 范围)",
+
+        // ─── Step 9: forward via rr_io_thread channel + 持 oneshot_rx ───
+        let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
+        let forward = RrForwardRequest {
+            wire_bytes,
+            oneshot_tx,
+            request_id: validated.request_id.clone(),
+        };
+        match self.state.rr_forward_tx.try_send(forward) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => {
+                tracing::warn!(
+                    request_id = %validated.request_id,
+                    "ClearEStop forward channel full; replying ResourceExhausted"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::resource_exhausted(
+                    "gateway RR I/O forward channel full; retry shortly",
+                ));
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                tracing::error!(
+                    request_id = %validated.request_id,
+                    "ClearEStop forward channel disconnected; rr_io_thread already stopped"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::unavailable("gateway RR I/O thread stopped"));
+            }
+        }
+
+        // ─── Step 10: 等 oneshot reply with timeout (timeout_ms + grace_ms) ───
+        let total_timeout_ms = validated
+            .timeout_ms
+            .saturating_add(self.state.rr_timeout_grace_ms);
+        let total_timeout = Duration::from_millis(total_timeout_ms);
+        let reply_bytes = match tokio::time::timeout(total_timeout, oneshot_rx).await {
+            Err(_elapsed) => {
+                tracing::warn!(
+                    request_id = %validated.request_id,
+                    timeout_ms = validated.timeout_ms,
+                    grace_ms = self.state.rr_timeout_grace_ms,
+                    "ClearEStop gateway-side timeout; replying DeadlineExceeded"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::deadline_exceeded(format!(
+                    "no RR response within {total_timeout_ms} ms (timeout_ms + grace_ms)"
+                )));
+            }
+            Ok(Err(_recv_err)) => {
+                // oneshot_tx dropped without send = rr_io_thread shutdown /
+                // send_err / pre-pass cleanup. handler 看到的是 RR I/O 不可
+                // 用，**不**说 daemon 失败（reviewer (2/3-b2-1) 边界 2 拍板）。
+                tracing::error!(
+                    request_id = %validated.request_id,
+                    "ClearEStop oneshot RecvError; gateway RR I/O unavailable"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::unavailable("gateway RR I/O unavailable"));
+            }
+            Ok(Ok(b)) => b,
+        };
+
+        // ─── Step 11: decode wire ClearEStopResponse ───
+        let view = match flatbuffers::root::<FbResp>(&reply_bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(
+                    request_id = %validated.request_id,
+                    error = ?e,
+                    "ClearEStop wire response decode failed; replying Internal"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::internal(format!(
+                    "decode wire ClearEStopResponse: {e}"
+                )));
+            }
+        };
+        let wire_status = view.status();
+        let cleared_at_ns = view.cleared_at_ns();
+        let dry_run = view.dry_run();
+        let error_msg = view.error_msg().unwrap_or("");
+
+        // ─── Step 12: map RpcStatus → tonic::Code 显式 match；Ok 路径 commit
+        //     cache + 返 Ack；非 Ok drop InsertHandle（**不**缓存失败状态） ───
+        let code = rpc_status_to_tonic_code(wire_status);
+        if code == tonic::Code::Ok {
+            // commit cached ack（下次同 key + 同 fingerprint → Replay）
+            let mut cache = self
+                .state
+                .idempotency
+                .lock()
+                .expect("idempotency cache mutex poisoned");
+            insert_handle.commit(
+                &mut cache,
+                CachedAck {
+                    cleared_at_ns,
+                    dry_run,
+                },
+            );
+            drop(cache);
+            tracing::info!(
+                request_id = %validated.request_id,
+                idempotency_key = %validated.idempotency_key,
+                cleared_at_ns,
+                dry_run,
+                role = role.as_str(),
+                source = %validated.source,
+                audit_reason = %validated.audit_reason,
+                "ClearEStop ok"
+            );
+            return Ok(tonic::Response::new(Ack {
+                request_id: validated.request_id,
+                cleared_at_ns,
+                dry_run,
+            }));
+        }
+
+        // 非 Ok：drop handle 让下次同 key retry 重新走 FreshInsert
+        // （状态依赖型失败如 NotTorqueOffConfirmed 不应永久缓存）。
+        drop(insert_handle);
+        tracing::warn!(
+            request_id = %validated.request_id,
+            idempotency_key = %validated.idempotency_key,
+            wire_status = ?wire_status,
+            tonic_code = ?code,
+            error_msg,
+            "ClearEStop non-Ok wire status; dropping insert handle (no cache commit)"
+        );
+        Err(tonic::Status::new(
+            code,
+            format!("daemon returned {wire_status:?}: {error_msg}"),
         ))
     }
 }
@@ -256,6 +606,13 @@ pub enum GatewayError {
     /// tonic transport 启动失败 / 服务运行期出错。
     #[error("tonic transport: {0}")]
     Tonic(#[from] tonic::transport::Error),
+
+    /// **A1-3 (2/3-b2-2)**：[`spawn_rr_io_thread`] 失败（client_factory
+    /// panic 在 ready signal 之前 / `thread::Builder::spawn` 失败）。
+    /// `run_gateway_with_rr_io` 在调 [`run_gateway_with_ready`] 之前必须
+    /// 先起 rr_io_thread，spawn 失败直接 fail-fast。
+    #[error("rr_io_thread spawn failed: {0}")]
+    RrIoSpawn(#[source] std::io::Error),
 }
 
 // 兼容旧 callers (run_gateway_rejects_non_loopback_bind_before_serving 等)：
@@ -268,7 +625,7 @@ impl From<LoopbackBindError> for GatewayError {
 }
 
 /// `ready_tx` 通道送出的错误（pre-serve 阶段失败：config validation /
-/// `TcpListener::bind`）。
+/// `TcpListener::bind` / `rr_io_thread` spawn）。
 ///
 /// 跟 [`GatewayError`] 区别：
 ///
@@ -298,6 +655,16 @@ pub enum GatewayReadyError {
         kind: std::io::ErrorKind,
         message: String,
     },
+
+    /// 同 [`GatewayError::RrIoSpawn`] 但 `source` 拆 kind + message 让整个
+    /// enum 可 Clone。**A1-3 (2/3-b2-2)** 起加，仅
+    /// [`run_gateway_with_rr_io`] 路径会触发；底层 [`run_gateway_with_ready`]
+    /// 不起 rr_io_thread，不会 produce 此 variant。
+    #[error("rr_io_thread spawn failed: {message}")]
+    RrIoSpawn {
+        kind: std::io::ErrorKind,
+        message: String,
+    },
 }
 
 impl GatewayReadyError {
@@ -305,6 +672,14 @@ impl GatewayReadyError {
     fn bind_from_io(addr: SocketAddr, source: &std::io::Error) -> Self {
         Self::Bind {
             addr,
+            kind: source.kind(),
+            message: source.to_string(),
+        }
+    }
+
+    /// 从 `io::Error` 构造 `RrIoSpawn` variant。
+    fn rr_io_spawn_from_io(source: &std::io::Error) -> Self {
+        Self::RrIoSpawn {
             kind: source.kind(),
             message: source.to_string(),
         }
@@ -323,6 +698,9 @@ impl From<GatewayReadyError> for GatewayError {
                 addr,
                 source: std::io::Error::new(kind, message),
             },
+            GatewayReadyError::RrIoSpawn { kind, message } => {
+                Self::RrIoSpawn(std::io::Error::new(kind, message))
+            }
         }
     }
 }
@@ -464,7 +842,109 @@ pub async fn run_gateway_with_ready(
 }
 
 // ============================================================================
-// Tests —— A1-3 (2/3-a) skeleton 锁
+// run_gateway_with_rr_io: 起 rr_io_thread + 起 tonic server（高层入口）
+// ============================================================================
+
+/// **A1-3 (2/3-b2-2)** 高层入口。bin 直接调本函数即可启动整套 ClearEStop
+/// control plane gateway：
+///
+/// 1. spawn [`crate::rr_io_thread`]（factory closure 在新线程内构造
+///    `Iceoryx2RrClient`；topic = `/<robot_id>/control/clear_estop`，跟
+///    daemon 端 `rr_server_thread` 对接）；
+/// 2. 构造 [`IdempotencyCache`]（TTL + cap 取自 `cfg`）；
+/// 3. 构造 [`ClearEStopHandler`] 持完整 state（rr forward channel +
+///    role table + cache + clock + grace）；
+/// 4. 调 [`run_gateway_with_ready`] 起 tonic gRPC server；
+/// 5. tonic server 退出后 `rr_handle.request_stop()` + `rr_handle.join()`
+///    （reviewer A1-3 (2/3-b2-1) 关键边界：rr_io_thread 生命周期**必须**
+///    在 tonic server 退出之后才停，避免 handler 还在等 RR 时 I/O 被掐）。
+///
+/// `forward channel buffer = 64`，跟 daemon 端 `rr_server_thread` 的
+/// `max_in_flight = 64` 对齐（reviewer A1-3 (2/3-b2-1) 拍板）。
+///
+/// `ready_tx`（可选）：tonic server 真 bind 后送 `Ok(actual_addr)`；
+/// pre-serve 任意阶段（rr_io_thread spawn / config validate / bind）失败送
+/// 等价 [`GatewayReadyError`]。
+///
+/// # Errors
+///
+/// 见 [`GatewayError`]。
+pub async fn run_gateway_with_rr_io(
+    cfg: GatewayConfig,
+    role_table: Arc<RoleTable>,
+    clock: Arc<dyn RobotClock>,
+    shutdown_rx: watch::Receiver<bool>,
+    ready_tx: Option<tokio::sync::oneshot::Sender<Result<SocketAddr, GatewayReadyError>>>,
+) -> Result<(), GatewayError> {
+    // ─── 1) rr_io_thread spawn 优先（在 tonic 起来之前就位） ───
+    let topic = format!("/{}/control/clear_estop", cfg.robot_id);
+    let topic_for_factory = topic.clone();
+    let client_factory = move || {
+        let node = NodeBuilder::new()
+            .create::<IxService>()
+            .expect("iceoryx2 NodeBuilder::create");
+        let client = rr_client::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+            &node,
+            &topic_for_factory,
+        )
+        .expect("rr_client create");
+        // node 持 service shm fd；leak 让 client 活到 daemon 进程退出。
+        Box::leak(Box::new(node));
+        client
+    };
+    let (forward_tx, forward_rx) = bounded::<RrForwardRequest>(64);
+
+    let rr_handle: RrIoThreadHandle = match spawn_rr_io_thread(
+        &RrIoThreadConfig {
+            topic: topic.clone(),
+            poll_interval_ns: 500_000,
+        },
+        client_factory,
+        forward_rx,
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            let ready_err = GatewayReadyError::rr_io_spawn_from_io(&e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            return Err(GatewayError::RrIoSpawn(e));
+        }
+    };
+    tracing::info!(
+        topic = %topic,
+        "rr_io_thread started (ClearEStop RR I/O thread; A1-3 (2/3-b2-1))"
+    );
+
+    // ─── 2) idempotency cache ───
+    let cache = Arc::new(Mutex::new(IdempotencyCache::with_capacity(
+        Duration::from_secs(cfg.idempotency_ttl_secs),
+        cfg.idempotency_max_entries,
+    )));
+
+    // ─── 3) handler ───
+    let handler = Arc::new(ClearEStopHandler::new(ClearEStopHandlerState {
+        rr_forward_tx: forward_tx,
+        role_table,
+        idempotency: cache,
+        clock,
+        rr_timeout_grace_ms: cfg.rr_timeout_grace_ms,
+    }));
+
+    // ─── 4) tonic server ───
+    let serve_result = run_gateway_with_ready(cfg, handler, shutdown_rx, ready_tx).await;
+
+    // ─── 5) **关键边界**：tonic server 退出**之后**才停 rr_io_thread ───
+    rr_handle.request_stop();
+    if let Err(panic) = rr_handle.join() {
+        tracing::error!(?panic, "rr_io_thread panicked at join");
+    }
+
+    serve_result
+}
+
+// ============================================================================
+// Tests —— A1-3 (2/3-b2-2) handler logic + run_gateway_with_rr_io 锁
 // ============================================================================
 
 #[cfg(test)]
@@ -563,7 +1043,7 @@ mod tests {
             rr_timeout_grace_ms: 500,
         };
         let (_tx, rx) = watch::channel(false);
-        let result = run_gateway(cfg, Arc::new(ClearEStopHandler::new()), rx).await;
+        let result = run_gateway(cfg, Arc::new(ClearEStopHandler::for_test()), rx).await;
         match result {
             Err(GatewayError::Config(ConfigError::LoopbackBind(
                 LoopbackBindError::NonLoopback(_),
@@ -595,8 +1075,13 @@ mod tests {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
 
         let handle = tokio::spawn(async move {
-            run_gateway_with_ready(cfg, Arc::new(ClearEStopHandler::new()), rx, Some(ready_tx))
-                .await
+            run_gateway_with_ready(
+                cfg,
+                Arc::new(ClearEStopHandler::for_test()),
+                rx,
+                Some(ready_tx),
+            )
+            .await
         });
 
         // 强 readiness：等 server 真 bind 完成 + 拿到 actual_addr
@@ -687,8 +1172,13 @@ mod tests {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
 
         let _handle = tokio::spawn(async move {
-            run_gateway_with_ready(cfg, Arc::new(ClearEStopHandler::new()), rx, Some(ready_tx))
-                .await
+            run_gateway_with_ready(
+                cfg,
+                Arc::new(ClearEStopHandler::for_test()),
+                rx,
+                Some(ready_tx),
+            )
+            .await
         });
 
         let result = timeout(Duration::from_secs(2), ready_rx)
@@ -718,7 +1208,7 @@ mod tests {
         let handle_a = tokio::spawn(async move {
             run_gateway_with_ready(
                 cfg_a,
-                Arc::new(ClearEStopHandler::new()),
+                Arc::new(ClearEStopHandler::for_test()),
                 shutdown_a_rx,
                 Some(ready_a_tx),
             )
@@ -743,7 +1233,7 @@ mod tests {
         let handle_b = tokio::spawn(async move {
             run_gateway_with_ready(
                 cfg_b,
-                Arc::new(ClearEStopHandler::new()),
+                Arc::new(ClearEStopHandler::for_test()),
                 shutdown_b_rx,
                 Some(ready_b_tx),
             )
@@ -778,28 +1268,653 @@ mod tests {
         let _ = timeout(Duration::from_secs(2), handle_a).await;
     }
 
-    // ────────────────────────────────────────────────────────────────────────
-    // ClearEStopHandler skeleton: returns Unimplemented (A1-3 (2/3-a))
-    // ────────────────────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // ClearEStopHandler logic 12 步单测（A1-3 (2/3-b2-2)）
+    //
+    // 模式：用 crossbeam_channel 直接 read forward channel 充当 mock daemon；
+    // 单线程（tokio test 主线程）跑 spawn_blocking 拿 wire request → 回 wire
+    // response（绕开真起 rr_io_thread + iceoryx2 RR client）。
+    // ════════════════════════════════════════════════════════════════════════
+
+    use crossbeam_channel::{Receiver as CrossbeamRecv, bounded};
+    use robot_core::time::SystemClock;
+    use robot_msg::build_helpers::build_clear_estop_response;
+    use robot_msg::msg::{ClearEStopRequest as FbReq, RpcStatus};
+    use uuid::Uuid;
+
+    use crate::auth::{Capability, Role, load_role_table};
+    use crate::idempotency::{CachedAck, IdempotencyCache};
+    use crate::proto::{AuthContext, ClearEStopCommand, CommandMeta};
+
+    const TEST_RPC_ROLES_TOML: &str = r#"
+[tokens]
+"viewer-fake-token-001" = "viewer"
+"operator-fake-token-001" = "operator"
+"maintainer-fake-token-001" = "maintainer"
+"admin-fake-token-001" = "admin"
+
+[roles.viewer]
+description = "viewer"
+capabilities = ["read_state"]
+
+[roles.operator]
+description = "operator"
+capabilities = ["read_state", "set_enabled"]
+
+[roles.maintainer]
+description = "maintainer"
+capabilities = ["read_state", "clear_estop", "set_enabled"]
+
+[roles.admin]
+description = "admin"
+capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
+"#;
+
+    /// 构造完整 handler state；caller 拿走 forward_rx 充当 mock daemon。
+    fn make_handler_with_state(
+        cache_max_entries: usize,
+    ) -> (ClearEStopHandler, CrossbeamRecv<RrForwardRequest>) {
+        let role_table = Arc::new(load_role_table(TEST_RPC_ROLES_TOML).expect("role table parse"));
+        let cache = Arc::new(Mutex::new(IdempotencyCache::with_capacity(
+            Duration::from_mins(1),
+            cache_max_entries,
+        )));
+        let (forward_tx, forward_rx) = bounded::<RrForwardRequest>(64);
+        let state = ClearEStopHandlerState {
+            rr_forward_tx: forward_tx,
+            role_table,
+            idempotency: cache,
+            clock: Arc::new(SystemClock),
+            rr_timeout_grace_ms: 500,
+        };
+        (ClearEStopHandler::new(state), forward_rx)
+    }
+
+    /// 构造一个合法 maintainer ClearEStopCommand。`idempotency_key` 由调用方指定。
+    fn make_cmd(idempotency_key: &str) -> ClearEStopCommand {
+        ClearEStopCommand {
+            meta: Some(CommandMeta {
+                request_id: Uuid::now_v7().to_string(),
+                source: "test.unit".into(),
+                auth: Some(AuthContext {
+                    token: "maintainer-fake-token-001".into(),
+                    mtls_fingerprint: String::new(),
+                }),
+                timeout_ms: 2_000,
+                idempotency_key: idempotency_key.into(),
+                dry_run: false,
+                audit_reason: "unit test".into(),
+            }),
+            confirmation: "operator-loosqk-confirm-001".into(),
+        }
+    }
+
+    /// mock daemon：阻塞等一条 forward request → 用给定 wire response bytes
+    /// 回 oneshot。返回 forward request 的 wire request_id（test 断言用）。
+    fn mock_daemon_reply_with_status(
+        forward_rx: &CrossbeamRecv<RrForwardRequest>,
+        status: RpcStatus,
+        cleared_at_ns: u64,
+        dry_run: bool,
+        error_msg: &str,
+        max_wait: Duration,
+    ) -> String {
+        let req = forward_rx
+            .recv_timeout(max_wait)
+            .expect("mock daemon: forward request not received");
+        let view = flatbuffers::root::<FbReq>(&req.wire_bytes).expect("decode wire request");
+        let request_id = view.request_id().unwrap_or("").to_string();
+        let resp_bytes =
+            build_clear_estop_response(&request_id, status, error_msg, cleared_at_ns, dry_run);
+        req.oneshot_tx
+            .send(resp_bytes)
+            .expect("mock daemon: oneshot recv side already dropped");
+        request_id
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // happy path：daemon 返 Ok → handler 返 Ack + commit cache
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_happy_path_returns_ack_and_caches() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let cmd = make_cmd("idem-happy-1");
+        let cache = Arc::clone(&handler.state().idempotency);
+
+        // mock daemon spawn（阻塞 thread 充当）
+        let mock = tokio::task::spawn_blocking(move || {
+            mock_daemon_reply_with_status(
+                &forward_rx,
+                RpcStatus::Ok,
+                1_234_567,
+                false,
+                "",
+                Duration::from_secs(2),
+            )
+        });
+
+        let resp = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect("ok response");
+        let ack = resp.into_inner();
+        assert_eq!(ack.cleared_at_ns, 1_234_567);
+        assert!(!ack.dry_run);
+
+        let mocked_request_id = mock.await.unwrap();
+        assert_eq!(ack.request_id, mocked_request_id);
+
+        // cache 应已 commit（下次同 key + 同 fingerprint = Replay）
+        let cache_lock = cache.lock().unwrap();
+        assert_eq!(cache_lock.len(), 1);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // idempotency: 同 key + 同 fingerprint → Replay（不再 forward）
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_idempotency_replays_cached_ack_without_forwarding() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let key = "idem-replay-1";
+
+        // 第一次：跑完整 happy path 让 cache commit
+        {
+            let cmd = make_cmd(key);
+            let forward_rx_clone = forward_rx.clone();
+            let mock = tokio::task::spawn_blocking(move || {
+                mock_daemon_reply_with_status(
+                    &forward_rx_clone,
+                    RpcStatus::Ok,
+                    111_111,
+                    false,
+                    "",
+                    Duration::from_secs(2),
+                )
+            });
+            let _ = handler
+                .clear_e_stop(tonic::Request::new(cmd))
+                .await
+                .unwrap();
+            mock.await.unwrap();
+        }
+
+        // 第二次：同 idempotency_key + 等价语义字段（fingerprint 一致）→
+        // 必须 Replay，**不**再 forward。如果 handler 错误地 forward，
+        // forward_rx.recv 会拿到 request 而下面 try_recv 会成功 → 测试失败。
+        let cmd2 = make_cmd(key);
+        let resp2 = handler
+            .clear_e_stop(tonic::Request::new(cmd2))
+            .await
+            .expect("replay should succeed");
+        let ack2 = resp2.into_inner();
+        assert_eq!(ack2.cleared_at_ns, 111_111);
+        assert!(!ack2.dry_run);
+
+        // 验证 forward_rx 没新东西（handler 走 Replay 路径未 forward）
+        assert!(
+            forward_rx.try_recv().is_err(),
+            "Replay 路径不应 forward；forward_rx 应空"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // idempotency: 同 key + 不同 fingerprint → AlreadyExists（不 forward）
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_idempotency_conflict_returns_already_exists() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let key = "idem-conflict-1";
+
+        // 第一次：commit cache with confirmation A
+        let mut cmd_a = make_cmd(key);
+        cmd_a.confirmation = "confirm-A".into();
+        let forward_rx_a = forward_rx.clone();
+        let mock_a = tokio::task::spawn_blocking(move || {
+            mock_daemon_reply_with_status(
+                &forward_rx_a,
+                RpcStatus::Ok,
+                222_222,
+                false,
+                "",
+                Duration::from_secs(2),
+            )
+        });
+        handler
+            .clear_e_stop(tonic::Request::new(cmd_a))
+            .await
+            .unwrap();
+        mock_a.await.unwrap();
+
+        // 第二次：同 key 但 confirmation B（fingerprint 不同）→ Conflict
+        let mut cmd_b = make_cmd(key);
+        cmd_b.confirmation = "confirm-B".into();
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd_b))
+            .await
+            .expect_err("conflict should fail");
+        assert_eq!(err.code(), tonic::Code::AlreadyExists);
+        assert!(forward_rx.try_recv().is_err(), "Conflict 不应 forward");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // idempotency: cache 满 → ResourceExhausted（不 forward）
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_idempotency_capacity_returns_resource_exhausted() {
+        let (handler, forward_rx) = make_handler_with_state(1);
+        // 第一次填 cache
+        let cmd1 = make_cmd("idem-cap-1");
+        let forward_rx_1 = forward_rx.clone();
+        let mock = tokio::task::spawn_blocking(move || {
+            mock_daemon_reply_with_status(
+                &forward_rx_1,
+                RpcStatus::Ok,
+                333_333,
+                false,
+                "",
+                Duration::from_secs(2),
+            )
+        });
+        handler
+            .clear_e_stop(tonic::Request::new(cmd1))
+            .await
+            .unwrap();
+        mock.await.unwrap();
+
+        // 第二次：新 key + cache 已满 → Capacity
+        let cmd2 = make_cmd("idem-cap-2");
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd2))
+            .await
+            .expect_err("capacity should fail");
+        assert_eq!(err.code(), tonic::Code::ResourceExhausted);
+        assert!(forward_rx.try_recv().is_err(), "Capacity 不应 forward");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // validation: missing meta → InvalidArgument
+    // ──────────────────────────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn clear_estop_handler_skeleton_returns_unimplemented() {
-        let handler = ClearEStopHandler::new();
+    async fn handler_validation_missing_meta_returns_invalid_argument() {
+        let (handler, forward_rx) = make_handler_with_state(64);
         let cmd = ClearEStopCommand {
             meta: None,
-            confirmation: "irrelevant".to_string(),
+            confirmation: "irrelevant".into(),
         };
-        let request = tonic::Request::new(cmd);
-        let result = handler.clear_e_stop(request).await;
-        match result {
-            Err(status) => {
-                assert_eq!(
-                    status.code(),
-                    tonic::Code::Unimplemented,
-                    "A1-3 (2/3-a) skeleton 必须返 Unimplemented；A1-3 (2/3-b) 接 RR I/O 后改"
-                );
-            }
-            Ok(resp) => panic!("expected Unimplemented Status, got Ok({resp:?})"),
-        }
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("missing meta should fail");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(
+            forward_rx.try_recv().is_err(),
+            "validation fail 不应 forward"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // auth: token 不在 role table → Unauthenticated
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn handler_auth_unknown_token_returns_unauthenticated() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let mut cmd = make_cmd("idem-auth-1");
+        cmd.meta.as_mut().unwrap().auth.as_mut().unwrap().token = "unknown-token".into();
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("unknown token should fail");
+        assert_eq!(err.code(), tonic::Code::Unauthenticated);
+        assert!(forward_rx.try_recv().is_err(), "auth fail 不应 forward");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // authz: viewer / operator 不得调 ClearEStop → PermissionDenied
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn handler_authz_operator_role_returns_permission_denied() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let mut cmd = make_cmd("idem-authz-1");
+        cmd.meta.as_mut().unwrap().auth.as_mut().unwrap().token = "operator-fake-token-001".into();
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("operator should be denied");
+        assert_eq!(err.code(), tonic::Code::PermissionDenied);
+        assert!(forward_rx.try_recv().is_err(), "authz fail 不应 forward");
+    }
+
+    #[tokio::test]
+    async fn handler_authz_viewer_role_returns_permission_denied() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let mut cmd = make_cmd("idem-authz-2");
+        cmd.meta.as_mut().unwrap().auth.as_mut().unwrap().token = "viewer-fake-token-001".into();
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("viewer should be denied");
+        assert_eq!(err.code(), tonic::Code::PermissionDenied);
+        assert!(forward_rx.try_recv().is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_authz_admin_role_succeeds() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let mut cmd = make_cmd("idem-authz-admin");
+        cmd.meta.as_mut().unwrap().auth.as_mut().unwrap().token = "admin-fake-token-001".into();
+        let mock = tokio::task::spawn_blocking(move || {
+            mock_daemon_reply_with_status(
+                &forward_rx,
+                RpcStatus::Ok,
+                444_444,
+                false,
+                "",
+                Duration::from_secs(2),
+            )
+        });
+        let resp = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect("admin should succeed");
+        assert_eq!(resp.into_inner().cleared_at_ns, 444_444);
+        mock.await.unwrap();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // forward channel: rr_io_thread 已停（rx drop）→ Unavailable
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn handler_forward_channel_disconnected_returns_unavailable() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        // 立即 drop rx 模拟 rr_io_thread 已停
+        drop(forward_rx);
+        let cmd = make_cmd("idem-forward-disc");
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("disconnected should fail");
+        assert_eq!(err.code(), tonic::Code::Unavailable);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // oneshot: rr_io_thread shutdown drops oneshot_tx → handler RecvError →
+    // Unavailable（reviewer 边界 2）
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_oneshot_recv_error_returns_unavailable() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let cmd = make_cmd("idem-oneshot-drop");
+        // mock daemon：拿到 forward 后**不** reply，直接 drop oneshot_tx
+        let mock = tokio::task::spawn_blocking(move || {
+            let req = forward_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("forward request");
+            drop(req.oneshot_tx);
+        });
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("oneshot drop should fail");
+        assert_eq!(err.code(), tonic::Code::Unavailable);
+        assert!(
+            err.message().contains("gateway RR I/O unavailable"),
+            "应明确说 gateway RR I/O 不可用，不暗示 daemon 失败；got: {}",
+            err.message()
+        );
+        mock.await.unwrap();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // timeout: daemon 不 reply → handler tokio::time::timeout 命中 →
+    // DeadlineExceeded
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_timeout_returns_deadline_exceeded() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let mut cmd = make_cmd("idem-timeout-1");
+        cmd.meta.as_mut().unwrap().timeout_ms = 50; // 50ms + grace 500ms = 550ms total
+        // 改 grace 让 timeout 不要太长（默认 grace=500ms）
+        let state = handler.state();
+        let _ = state; // 单独路径调整 grace 不影响：mock daemon 直接 hold oneshot
+        // mock daemon: hold oneshot_tx 永不 reply（超过 timeout_ms + grace）
+        let _hold = tokio::task::spawn_blocking(move || {
+            let req = forward_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            // 持有 oneshot_tx，让 handler tokio::time::timeout 命中
+            std::thread::sleep(Duration::from_secs(2));
+            drop(req); // 测试结束前才 drop
+        });
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("timeout should fire");
+        assert_eq!(err.code(), tonic::Code::DeadlineExceeded);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // wire status non-Ok: 失败状态映射 + **不**缓存
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_wire_failed_precondition_maps_and_does_not_cache() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let cmd = make_cmd("idem-fp-1");
+        let cache = Arc::clone(&handler.state().idempotency);
+
+        let mock = tokio::task::spawn_blocking(move || {
+            mock_daemon_reply_with_status(
+                &forward_rx,
+                RpcStatus::FailedPrecondition,
+                0,
+                false,
+                "safety_state must be TorqueOffConfirmed",
+                Duration::from_secs(2),
+            )
+        });
+
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("failed precondition should fail");
+        assert_eq!(err.code(), tonic::Code::FailedPrecondition);
+        assert!(
+            err.message().contains("FailedPrecondition")
+                || err.message().contains("TorqueOffConfirmed"),
+            "error_msg 应透传 daemon 的人类可读描述；got: {}",
+            err.message()
+        );
+        mock.await.unwrap();
+
+        // **关键不变量**：失败不缓存。下次同 key retry 应是 FreshInsert。
+        let cache_lock = cache.lock().unwrap();
+        assert_eq!(
+            cache_lock.len(),
+            0,
+            "失败状态**不**应缓存；状态依赖型失败 retry 必须能重新走 fresh"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_wire_aborted_maps_to_aborted_and_does_not_cache() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let cmd = make_cmd("idem-aborted-1");
+        let cache = Arc::clone(&handler.state().idempotency);
+        let mock = tokio::task::spawn_blocking(move || {
+            mock_daemon_reply_with_status(
+                &forward_rx,
+                RpcStatus::Aborted,
+                0,
+                false,
+                "preempted by emergency",
+                Duration::from_secs(2),
+            )
+        });
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("aborted should fail");
+        assert_eq!(err.code(), tonic::Code::Aborted);
+        mock.await.unwrap();
+        assert_eq!(cache.lock().unwrap().len(), 0);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // dry_run: gateway **不**短路；wire dry_run flag 透传给 daemon；
+    // daemon 端评估返 Ok（dry_run=true），handler 把 dry_run flag 传回 Ack
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_dry_run_passes_through_to_daemon_and_returns_dry_run_ack() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let mut cmd = make_cmd("idem-dryrun-1");
+        cmd.meta.as_mut().unwrap().dry_run = true;
+
+        // mock daemon：assert wire dry_run=true，回 Ok + dry_run=true
+        let mock = tokio::task::spawn_blocking(move || {
+            let req = forward_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("forward request");
+            let view = flatbuffers::root::<FbReq>(&req.wire_bytes).expect("decode");
+            assert!(view.dry_run(), "wire dry_run flag 必须透传到 daemon");
+            let request_id = view.request_id().unwrap_or("").to_string();
+            let resp = build_clear_estop_response(
+                &request_id,
+                RpcStatus::Ok,
+                "",
+                999_111,
+                true, // dry_run echoed
+            );
+            req.oneshot_tx.send(resp).unwrap();
+        });
+
+        let resp = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect("dry_run ok");
+        let ack = resp.into_inner();
+        assert!(ack.dry_run, "Ack.dry_run 应跟 wire 一致");
+        assert_eq!(ack.cleared_at_ns, 999_111);
+        mock.await.unwrap();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // wire role: 显式 audit 字段映射检查
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn role_to_wire_maps_each_variant_explicitly() {
+        assert_eq!(role_to_wire(Role::Viewer), RpcRole::Viewer);
+        assert_eq!(role_to_wire(Role::Operator), RpcRole::Operator);
+        assert_eq!(role_to_wire(Role::Maintainer), RpcRole::Maintainer);
+        assert_eq!(role_to_wire(Role::Admin), RpcRole::Admin);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // wire request: deadline_ns / stamp_ns / wire role 写入正确
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handler_wire_request_carries_correct_deadline_role_and_dry_run_flag() {
+        let (handler, forward_rx) = make_handler_with_state(64);
+        let mut cmd = make_cmd("idem-wire-1");
+        cmd.meta.as_mut().unwrap().timeout_ms = 1_000;
+
+        let before_ns = SystemClock.now().0;
+        let mock = tokio::task::spawn_blocking(move || {
+            let req = forward_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("forward request");
+            let view = flatbuffers::root::<FbReq>(&req.wire_bytes).expect("decode");
+            let role = view.role();
+            let deadline_ns = view.deadline_ns();
+            let stamp_ns = view.stamp_ns();
+            let dry_run = view.dry_run();
+            // reply Ok 让 handler 干净退出
+            let request_id = view.request_id().unwrap_or("").to_string();
+            req.oneshot_tx
+                .send(build_clear_estop_response(
+                    &request_id,
+                    RpcStatus::Ok,
+                    "",
+                    1,
+                    false,
+                ))
+                .unwrap();
+            (role, deadline_ns, stamp_ns, dry_run)
+        });
+
+        let _ = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .unwrap();
+        let (role, deadline_ns, stamp_ns, dry_run) = mock.await.unwrap();
+
+        assert_eq!(role, RpcRole::Maintainer);
+        assert!(!dry_run);
+        // deadline_ns 应在 [stamp_ns, stamp_ns + 1.5s] 内（timeout=1s + 余量）
+        assert!(
+            deadline_ns >= stamp_ns,
+            "deadline_ns 应不小于 stamp_ns；got deadline={deadline_ns} stamp={stamp_ns}"
+        );
+        assert!(
+            deadline_ns <= stamp_ns.saturating_add(1_500_000_000),
+            "deadline_ns 应在 stamp+timeout_ms+余量 内"
+        );
+        assert!(
+            stamp_ns >= before_ns,
+            "stamp_ns 应不早于调用前快照；got stamp={stamp_ns} before={before_ns}"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // edge: idempotency cache 的 commit/replay 不存 status；只存 cleared_at_ns/dry_run
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn cached_ack_carries_cleared_at_ns_and_dry_run_only() {
+        let ack = CachedAck {
+            cleared_at_ns: 7,
+            dry_run: true,
+        };
+        assert_eq!(ack.cleared_at_ns, 7);
+        assert!(ack.dry_run);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // ClearEStopHandler::for_test：构造合法且 ClearEStop 立刻 fail（auth 步）
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn for_test_handler_rejects_clear_estop_due_to_empty_role_table() {
+        let handler = ClearEStopHandler::for_test();
+        let cmd = make_cmd("idem-fortest-1");
+        let err = handler
+            .clear_e_stop(tonic::Request::new(cmd))
+            .await
+            .expect_err("for_test handler 应在 auth 步直接拒（role table 空）");
+        // for_test 用空 role_table，token 找不到 → Unauthenticated
+        assert_eq!(err.code(), tonic::Code::Unauthenticated);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // wire 不变量：Capability::ClearEStop 仅 maintainer / admin 拥有
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn role_table_clear_estop_invariant_holds_for_test_table() {
+        let table = load_role_table(TEST_RPC_ROLES_TOML).unwrap();
+        assert!(table.role_has_capability(Role::Maintainer, Capability::ClearEStop));
+        assert!(table.role_has_capability(Role::Admin, Capability::ClearEStop));
+        assert!(!table.role_has_capability(Role::Operator, Capability::ClearEStop));
+        assert!(!table.role_has_capability(Role::Viewer, Capability::ClearEStop));
     }
 }
