@@ -1,6 +1,6 @@
 [package]
 name         = "robot-s1"
-description  = "S1（快反射层）：v0.2 Part 2 仅含 mock_s1 二进制，v0.3 起扩成真 coordinator。"
+description  = "S1（快反射层）：v0.3 起 coordinator lib 层 + s1_daemon production binary；mock_s1 保留作 ballet 工具。"
 version    .workspace = true
 edition    .workspace = true
 license    .workspace = true
@@ -8,6 +8,19 @@ authors    .workspace = true
 repository .workspace = true
 readme     .workspace = true
 publish    .workspace = true
+
+# v0.3 B1 (2/3)：mock_s1 / s1_daemon 显式列出 [[bin]]。
+# - mock_s1：v0.2 起 ballet / bench / 真机摆动测试工具（保留；非 production
+#   S1，详 docs/handoffs/v0.3_b1_outline.md §6.2）。
+# - s1_daemon：v0.3 B1 production S1 binary（hold + heartbeat 最小闭环 +
+#   启动锚定 fail-fast）。
+[[bin]]
+name = "mock_s1"
+path = "src/bin/mock_s1.rs"
+
+[[bin]]
+name = "s1_daemon"
+path = "src/bin/s1_daemon.rs"
 
 [dependencies]
 robot-core      = { workspace = true }
