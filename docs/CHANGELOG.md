@@ -10,6 +10,124 @@
 
 ---
 
+## 2026-04-28 · v0.3 A1-5 撤 `--allow-empty-latch` + 升级 §6.7 #3 真宣称（**状态：偏离登记**）
+
+### 背景
+
+A1-1 → A1-4 完整 land + A1-4 milestone handoff（`docs/handoffs/v0.3_a1_4_clear_estop_smoke.md`）
+封存 5/5 PASS 实证之后，Phase A 还差最后一步：撤 v0.2 期间临时引入的
+`--allow-empty-latch` opt-in 守门，让 strict fail-closed 成为 latch 缺失
+的唯一行为，闭合 §6.7 #3 真宣称（v0.2 收尾时降级宣称的两条之一；另一
+条 #2 已由 A2 freeze hook + `freeze_systemd_smoke` land 时升级，详
+2026-04-26 round 4 / 5 / 6 + `docs/handoffs/2026-04-26_6.md`）。
+
+reviewer 拍板形态（A1-5）：
+
+1. `MissingLatchPolicy` enum 整个删（不留 `Strict`-only 单 variant 假
+   接口；`--allow-empty-latch` 撤掉就把逃生门收干净）。
+2. 历史 handoff（`2026-04-26.md` / `_3.md` / `_5.md` /
+   `_bus2_runbook*.md` 等）保留作 pre-A1-5 时间快照，**不**重写。
+3. active runbook + 当前状态文档 + CHANGELOG + A1-4 milestone handoff
+   同步到 A1-5 后状态。
+4. commit 拆两条：行为修复 + 文档宣称升级（**本条**）。
+
+### 行为修复（commit `45df648` 🐛 fix: A1-5 remove allow-empty-latch escape hatch）
+
+- `crates/robot-s0/src/estop_latch.rs`：删 `MissingLatchPolicy { Strict,
+  AllowEmpty }` enum + `load_estop_latch_with_mode(path, mode)` 中间
+  函数。`load_estop_latch(path)` 直接走 strict fail-closed 唯一路径；
+  err 文案改 `"first-deploy: provision \"0\\n\" to both primary +
+  backup before start; runtime clear: ClearEStop control action"`，给
+  运维明确 ① 首次部署 provision + ② 运行期 ClearEStop 两条补救路径。
+- `crates/robot-s0/src/bin/s0_daemon.rs`：删 `--allow-empty-latch` CLI
+  parse arm + Args / ResolvedArgs `allow_empty_latch` 字段 + 帮助文段。
+- `crates/robot-tests/src/bin/crash_restart_smoke.rs`：删两处 `.arg("--allow-empty-latch")`；
+  `run_iteration` 起手势加 latch provision（写 `0\n` 到 primary +
+  backup）跟 `scripts/systemd/README.md` "首次部署" 推荐流程一致。
+- `scripts/systemd/README.md`：删 "替代流程：一次性 `--allow-empty-latch`
+  opt-in" 整段；"推荐流程" 改名 "deploy 流程"；底部不在范围段加 "
+  `--allow-empty-latch` opt-in flag — A1-5 已撤"。
+- `scripts/systemd/xlerobot-s0-bus1.service` / `bus2.service` /
+  `xlerobot-s0-freeze-test.service`：注释删 `--allow-empty-latch` /
+  `MissingLatchPolicy::Strict` 提及，改成 "strict fail-closed（A1-5
+  撤掉 `--allow-empty-latch` opt-in 后唯一行为）"。bus2 安装步骤删
+  "替代 b) drop-in opt-in"（只剩 provision 路径）。
+- `scripts/run_clear_estop_smoke.sh` / `crates/robot-rpc/Cargo.toml`
+  + `lib.rs` / `crates/robot-s0/src/ipc_tick.rs` / `docs/10_verification.md`：
+  注释字面同步。
+
+行为修复验证：
+
+- `cargo fmt --check / clippy --all --all-targets [--features
+  robot-tests/clear-estop-e2e] -- -D warnings`：默认 + feature 两套全过。
+- `cargo test --workspace --all-targets`：27 test groups 全 ok（含
+  estop_latch 14 单测覆盖 strict-only 行为：`load_nonexistent_returns_not_found_err`
+  断言 err 文案含 `"ClearEStop control action"` + `"first-deploy"`）。
+- 直接 daemon 跑：缺 latch → ERROR `"primary AND backup both missing;
+  fail-closed (provision \`0\\n\` ... or use ClearEStop control action
+  ...)"` + `fatal: failed to load EStop latch`，新文案正确。
+- `--allow-empty-latch` 传给 daemon → "unknown arg: --allow-empty-latch"
+  + 退出（flag 已撤）。
+- `scripts/run_clear_estop_smoke.sh`：5/5 PASS 不变（mock_hard_rt 路径
+  不受影响；harness provision latch=`1\n` 也不受 enum 删除影响）。
+
+**已知**：`crash_restart_smoke` 在本机 dev box 5/5 FAIL，**根因跟 A1-5
+无关** —— 是预先存在的 inventory + LTO 交互问题：`xlerobot_bus2_full.toml`
+要求 `feetech_sts3215` adapter，但 `cargo build --release --bin
+s0_daemon`（即使带 `--features xlerobot`）的产物里 `inventory::submit!`
+注册被 fat LTO 剥掉。验证：把 A1-5 改动 stash 后用 commit `9ff22f3`
+同款流程跑也 FAIL（latch primary empty）。这条是独立 follow-up，**不**
+卡 A1-5 ACK；Orin 真机回归留 reviewer 按需。
+
+### §6.7 真宣称升级（**本条 docs commit**）
+
+`docs/00_design.md` §6.7 不变量正文**不动**；本登记锁住 v0.3 Phase A
+收尾后的真宣称状态：
+
+| 不变量 | v0.2 收尾状态 | v0.3 Phase A 收尾状态 |
+|---|---|---|
+| #1 S0 存活 = 软件层安全充分条件 | ✅ | ✅（不变） |
+| #2 systemd 是最外层看门狗 | ⚠️ 代码层面到位（LivenessObserver 4 worker `tick_count`）；未端到端真锁定 | **✅ 真锁住**（v0.3 A2 freeze hook + freeze_systemd_smoke 5/5 PASS + Orin AGX 1 round PASS；详 2026-04-26_6.md） |
+| #3 EStop 不可清为失忆态 | ⚠️ 代码层面到位（`MissingLatchPolicy::Strict` + `--allow-empty-latch` opt-in）；"重设 latch=0" 仍走 deploy 流程 | **✅ 真锁住**（v0.3 A1 ClearEStop control action 端到端真闭环 + A1-4 smoke 5/5 PASS + A1-5 撤 `--allow-empty-latch`；strict fail-closed 是 latch 缺失唯一行为，唯一清 latch 路径 = ClearEStop control action） |
+| #4 S0 重启不失忆 | ✅（fsync 双写 + crash_restart_smoke 5/5 PASS） | ✅（不变） |
+| #5 幂等写 RPC | ✅ 代码层（IdempotencyCache + idempotency_key fingerprint） | ✅ + A1-3 (3/3-b) `idem_replay` e2e case 5/5 PASS（real fsync 只发生一次；Replay 返同 cleared_at_ns） |
+
+### 同步更新的当前状态文档
+
+- `CLAUDE.md` 状态段：A1 进度 A1-1 → A1-5 全 ✅；A2 ✅ 已 land；§6.7
+  真宣称表 5 条全 ✅；Phase B 准备开。
+- `docs/handoffs/v0.3_a1_4_clear_estop_smoke.md` §5 表格 row #3 ⚠️ →
+  ✅；§5.1 改 "A1-1 → A1-5 闭环证据链"；新加 §5.2 "真锁住意味着什么"
+  3 条运维语义。
+
+### Scope / 边界（reviewer 拍板）
+
+- **不**改 `docs/00_design.md` §6.7 不变量正文（升级走 CHANGELOG 偏离
+  登记，跟 v0.2 round 4 / 5 / 6 / 7 降级登记同款机制）。
+- **不**重写历史 daily handoff（`2026-04-26.md` / `_3.md` / `_5.md` /
+  `_bus2_runbook*.md` 等保留作 pre-A1-5 时间快照）。
+- **不**改 `docs/handoffs/v0.3_entry.md` 正文（v0.3 entry milestone 是
+  Phase A 入口锚点；§1.2 降级宣称表 + §3.5 5 步 checklist + §5 禁止项
+  都是 entry 阶段记录，A1-5 land 后不重写；当前真宣称状态以本登记 +
+  A1-4 handoff §5 + CLAUDE.md 状态段为准）。
+- 真宣称升级**不**触碰 §6.7 #1 / #4 / #5（本来就 ✅）。
+
+### 影响面
+
+- 代码：行为 commit `45df648`（12 文件，`+137 -211` —— 删多于加，把逃
+  生门彻底收干净）。
+- 文档：本 docs commit（CHANGELOG 加本条 + CLAUDE.md 状态段 + A1-4
+  handoff §5 升级 ✅）。
+
+### 审阅人
+
+reviewer（用户）— A1-5 拍板：(1) `MissingLatchPolicy` enum 整个删；
+(2) 历史 handoff 不重写；(3) commit 拆两条（行为 + 文档宣称升级）。
+本登记 + A1-4 handoff §5 升级 + CLAUDE.md 状态段同步 land 后由 reviewer
+做 round 复核闭环。
+
+---
+
 ## 2026-04-28 · v0.3 A1-3 (3/3-a) `clear_estop_e2e` smoke binary 依赖白名单更新（**状态：登记**）
 
 ### 背景

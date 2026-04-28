@@ -16,28 +16,42 @@
 
 ```
 设计版本:  v0.1.2（冻结）
-实现阶段:  v0.3 Phase A —— 安全边界闭合（A1 ClearEStop control plane + A2 worker freeze hook）
+实现阶段:  v0.3 Phase A —— A1 ClearEStop control plane 已收尾（A1-1 → A1-5 land；§6.7 #3 真宣称升级）。
+            A2 worker freeze hook 已 land；§6.7 #2 + #3 升级到**真锁住**。Phase B 准备开。
 
 v0.2 收尾:  commit 0fa1d77（2026-04-26 reviewer "复核通过，按降级宣称进入 v0.3"）。
-            §6.7 #4 真锁住；#2/#3 代码层面到位但**未端到端真锁定**——必须 A1+A2 land 后才能升级真宣称。
-            详 docs/handoffs/v0.3_entry.md §1.2 降级宣称表。
+            §6.7 #4 真锁住继承自 v0.2；#2 (A2 land) + #3 (A1-5 land) 在 v0.3 Phase A 升级到真锁住。
+            详 docs/handoffs/v0.3_a1_4_clear_estop_smoke.md §5 + docs/CHANGELOG.md A1-5 升级登记。
 
-A1 进度:    A1-1（schema + 纯函数 + RpcStatus 9 variant 显式 match）✅
+A1 进度:    A1-1 → A1-5 全部 ✅。详 docs/handoffs/v0.3_a1_4_clear_estop_smoke.md §2 commit chain
+            （43 commit 完整时间线）+ A1-5 commit `45df648`（撤 --allow-empty-latch / strict 守门
+            是 latch 缺失唯一行为）。
+
+§6.7 真宣称: #1 ✅ S0 存活 = 软件层安全充分条件
+            #2 ✅ systemd 看门狗（v0.3 A2 freeze hook + freeze_systemd_smoke 端到端真锁）
+            #3 ✅ EStop 不可清为失忆态（v0.3 A1 ClearEStop control action 闭环 + A1-5 撤
+                  --allow-empty-latch；唯一清 latch 路径 = ClearEStop control action）
+            #4 ✅ S0 重启不失忆（v0.2 fsync 双写 + crash_restart_smoke 5/5 PASS）
+            #5 ✅ 幂等写 RPC（IdempotencyCache + idempotency_key fingerprint + idem_replay e2e 真过）
+
+旧 A1 子阶段进度（已合并到 A1-1 → A1-5）:
+            A1-1（schema + 纯函数 + RpcStatus 9 variant 显式 match）✅
             A1-2（ipc_tick action layer + try_apply_clear_estop 三步硬序 + save_estop_latch_clear backup-first）✅
             A1-3 (1/3) rr_server_thread + ipc_thread RR drain ✅
             A1-3 (2/3-a) gateway skeleton + loopback bind ✅
             A1-3 (2/3-b1) IdempotencyCache::with_capacity + GatewayConfig::validate ✅
             A1-3 (2/3-b2-1) rr_io_thread + pre-pass cleanup ✅（待 reviewer ACK；commit a41b1f8 仅本地）
-            A1-3 (2/3-b2-2) handler 完整 logic + run_gateway 集成 + GatewayReadyError 重构 ⬜
-            A1-3 (2/3-c) graceful shutdown 完整语义 ⬜
-            A1-3 (3/3) 两进程端到端集成测 ⬜
-            A1-4 clear_estop_smoke 集成测 + handoff ⬜
-            A1-5 撤 --allow-empty-latch + 升级 §6.7 #3 真宣称 ⬜
+            A1-3 (2/3-b2-2) handler 完整 logic + run_gateway 集成 + GatewayReadyError 重构 ✅
+            A1-3 (2/3-c) graceful shutdown 完整语义 ✅
+            A1-3 (3/3) 两进程端到端集成测 ✅
+            A1-4 clear_estop_smoke 集成测 + handoff ✅
+            A1-5 撤 --allow-empty-latch + 升级 §6.7 #3 真宣称 ✅
 
-A2 进度:    完全未开工（freeze hook 设计 + freeze_systemd_smoke binary）。
+A2 进度:    ✅ 已 land（freeze hook + freeze_systemd_smoke 5/5 PASS + Orin AGX 1 round PASS）。
+            详 docs/handoffs/2026-04-26_6.md。
 
-Phase B:    A1+A2 land 后才开。B1 S1 coordinator → B2 policy/action interface →
-            B3 至少一个 action backend → B4 robot-rpc full gateway。详 v0.3_entry §2.
+Phase B:    Phase A 已收尾，准备开。B1 S1 coordinator → B2 policy/action interface →
+            B3 至少一个 action backend → B4 robot-rpc full gateway。详 v0.3_entry §2。
 
 上游项目:   /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
