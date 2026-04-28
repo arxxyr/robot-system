@@ -43,6 +43,11 @@ serde           = { workspace = true, features = ["derive"] }
 toml            = { workspace = true }
 thiserror       = { workspace = true }
 flatbuffers     = { workspace = true }
+# v0.3 B2 (1/3) action interface lib 层依赖：
+# - uuid：ActionId UUIDv7 生成 + 显示（B2 outline §10 决策 #2 拍板，
+#   跟 RPC CommandMeta.request_id 同款时间排序）。workspace 已有 v7 + std
+#   feature，跟 robot-rpc 共享同一份依赖。
+uuid            = { workspace = true }
 
 [lints]
 workspace = true

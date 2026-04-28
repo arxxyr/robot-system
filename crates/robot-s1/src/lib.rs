@@ -19,13 +19,23 @@
 //!   [`coordinator::build_hold_command`] / [`coordinator::read_anchor_from_s0_state`]。
 //!   零 iceoryx2 / 零 OS 依赖（除测试时透明的 [`robot_core::time`]）；
 //!   binary 层通过 `LatestSubscriber<JointState>` trait object 注入真订阅。
+//! - [`action`]：v0.3 Phase B B2 (1/3) 起 land 的 action interface 类型
+//!   骨架（[`action::ActionRequest`] / [`action::ActionKind`] /
+//!   [`action::ActionBackend`] trait / [`action::JointCommandBody`]
+//!   newtype / 错误枚举）。**B2 (1/3) 仅 lib types**；`BackendRegistry`
+//!   / coordinator state machine / mock_dwell backend 留 B2 (2/3)，
+//!   binary wiring 留 B2 (3/3)。详
+//!   [`docs/handoffs/v0.3_b2_outline.md`](../../../docs/handoffs/v0.3_b2_outline.md)。
 //! - **不**依赖 `robot-s0`（避免 s1 → s0 层级反向依赖；TOML 同格式但
 //!   robot-s1 自反序列化最小子集 [`coordinator::S1Section`]）。
 //! - **不**链接 tokio / tonic（Phase B 全程同步线程模型，对齐 mock_s1）。
+//!   B2 outline §10 决策 #10 + 阻断 1 锁定：B4 跨 sync ↔ async 边界在
+//!   robot-rpc-gateway 端做 adapter thread，不污染 robot-s1。
 
 #![forbid(unused_must_use)]
 // 中文 doc 块大量 identifier-like 字串（tokio / tonic / mock_s1 等），
 // 跟 coordinator 模块走相同的宽松 doc-markdown 口径。
 #![allow(clippy::doc_markdown)]
 
+pub mod action;
 pub mod coordinator;
