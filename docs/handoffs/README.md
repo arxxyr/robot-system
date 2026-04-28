@@ -39,7 +39,7 @@ ls -t docs/handoffs/*.md | head -2 | xargs -I {} less {}
 | **v0.3 entry** | v0.2 → v0.3 边界 + 第一批工作项硬契约（ClearEStop control-plane slice / freeze hook + e2e / 禁止项）；reviewer 先用本 handoff 做文档审核再放第一批实现 | [v0.3_entry.md](v0.3_entry.md) |
 | **v0.3 A1-4 clear_estop smoke** | A1 ClearEStop control plane 端到端 smoke 实证封存 + 可复跑入口（`scripts/run_clear_estop_smoke.sh`）；A1-1 → A1-3 (3/3-b) 完整 43 个 commit chain；§6.7 #3 仍降级宣称（A1-5 闭环时升） | [v0.3_a1_4_clear_estop_smoke.md](v0.3_a1_4_clear_estop_smoke.md) |
 | **v0.3 B1 outline** | Phase B 第一条工作项 outline：`s1_daemon` 替代 `mock_s1` 最小闭环（hold + heartbeat + 启动锚定 fail-fast）；reviewer 7 决策点已拍板（binary 名 / config 入口 / on_timeout / mock_s1 保留 / 等）；commit 拆分 3 条 | [v0.3_b1_outline.md](v0.3_b1_outline.md) |
-| **v0.3 B2 outline** | Phase B 第二条工作项 outline：policy/action interface + robot profile matrix 设计；定义 `ActionRequest` / `ActionBackend` trait / `CoordinatorState`（IDLE/EXECUTING/DEGRADED）；§10 列 11 个待拍板决策点（action 并发 / cancel 语义 / hold 共存 / DEGRADED 行为 / 等）；commit 拆分 3 条；**reviewer 拍板前不写实现代码** | [v0.3_b2_outline.md](v0.3_b2_outline.md) |
+| **v0.3 B2 outline** | Phase B 第二条工作项 outline：policy/action interface + robot profile matrix 设计；定义 `ActionRequest` / `ActionBackend` trait / `CoordinatorState`（IDLE/EXECUTING/DEGRADED）；reviewer 4 阻断 + 11 决策已拍板（2026-04-28，撤 tokio / 撤 `ActionKind::Stop` / DEGRADED 重新定义为 S1 内部状态 / 加双路 smoke 验收门槛）；commit 拆分 3 条 | [v0.3_b2_outline.md](v0.3_b2_outline.md) |
 
 ## 列表（daily session snapshots）
 
