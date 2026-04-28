@@ -1,4 +1,18 @@
-//! `mock_s1` —— v0.2 Part 2 的最小闭环驱动方。
+//! `mock_s1` —— **ballet test tool only, NOT production S1**（B1 (3/3) 起）。
+//!
+//! ### 定位（v0.3 起）
+//!
+//! v0.3 production S1 = `s1_daemon`（[`crates/robot-s1/src/bin/s1_daemon.rs`](
+//! ../s1_daemon/index.html)）：启动期锚定 + 50 Hz `target == anchor` hold
+//! command + 50 Hz heartbeat，无副作用。`mock_s1` 保留是因为它的多关节
+//! 正弦摆动 + `--frozen-joints` mask + `--amplitude` / `--frequency` CLI 是
+//! 真机 ballet 验证（task #15 Stage 1/2 在 Orin 跑 6/9-motor 摆动）的唯一
+//! 入口，`s1_daemon` 的 hold 用例**无法替代**。
+//!
+//! - **production / 默认 smoke**：用 `s1_daemon`；`crash_restart_smoke`
+//!   默认就走它。
+//! - **ballet / bench / 真机摆动测试**：用 `mock_s1`；
+//!   `crash_restart_smoke --use-mock-s1` 是兼容入口。
 //!
 //! ### 职责
 //!
@@ -30,8 +44,10 @@
 //!
 //! ### 非目标
 //!
-//! `mock_s1` **不做** trajectory 规划、IK、`CommandMeta` 幂等；这些是 v0.3 真
-//! coordinator 的事。本 bin 专注"以最低摩擦驱动 S0 state machine 进入 ENABLED.Active"。
+//! `mock_s1` **不做** trajectory 规划、IK、`CommandMeta` 幂等 / hold mode
+//! 安全收敛；这些是 `s1_daemon` (B1) + Phase B B2/B3/B4 后续工作项的事。
+//! 本 bin 专注"以最低摩擦提供多关节 ballet 驱动 + 推 S0 state machine 进入
+//! `ENABLED.Active`"，是测试工具而非生产组件。
 
 #![forbid(unused_must_use)]
 

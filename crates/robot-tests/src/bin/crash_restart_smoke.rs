@@ -10,8 +10,12 @@
 //!    安全。
 //!
 //! 测试场景：`kill_after_estop_fsync_window`
-//!   - spawn `s0_daemon` + `mock_s1` (`--amplitude 0.0`，**不**摆动，只发
-//!     `Heartbeat` 让 `state→Enabled.Active`，避免对真机做 ballet 写入)
+//!   - spawn `s0_daemon` + 一个 S1 实例驱动 state→`Enabled.Active`：
+//!     - 默认 spawn `s1_daemon`（v0.3 production S1，hold + heartbeat
+//!       最小闭环，从 config 的 `[[hardware]].joints` 读关节数）
+//!     - `--use-mock-s1` → 回退老 `mock_s1` ballet 工具入口
+//!       （`--amplitude 0.0` 不摆动，只发 `Heartbeat` 推 state；保留
+//!       `--joints` / `--frozen-joints` 兼容入口）
 //!   - 等 3 s 让 `state` 进入 `Enabled.Active`
 //!   - `robotctl estop` 触发 `EStop`
 //!   - 睡 `--fsync-grace-ms`（默认 500 ms，远大于实测 188-255 ms 的 fsync
@@ -29,16 +33,20 @@
 //! ### 用法
 //!
 //! ```bash
-//! # 默认（dev box 兼容）：5 次迭代，mock_hard_rt 单关节，target/release 已 build
+//! # 默认（dev box 兼容）：5 次迭代，mock_hard_rt 单关节，s1_daemon 路径
 //! cargo run --release -p robot-tests --bin crash_restart_smoke
 //!
-//! # Orin 真机 bus2 9-motor 复跑：
+//! # 老 mock_s1 ballet 路径（B1 (3/3) 兼容入口）：
+//! ./target/release/crash_restart_smoke --use-mock-s1
+//!
+//! # Orin 真机 bus2 9-motor 复跑（mock_s1 路径，多关节 ballet 走
+//! # --joints / --frozen-joints；s1_daemon 路径仍只用同份 --config）：
 //! ./target/release/crash_restart_smoke \
 //!     --bin-dir target/release \
 //!     --robot-id-prefix crash_test \
 //!     --hardware-id right_arm_full_with_base \
 //!     --config configs/xlerobot_bus2_full.toml \
-//!     --joints 9 --frozen-joints 6,7,8 \
+//!     --use-mock-s1 --joints 9 --frozen-joints 6,7,8 \
 //!     --iterations 10 --fsync-grace-ms 500
 //! ```
 //!
@@ -70,6 +78,9 @@
 //!   是更弱的故障模型；power-loss 测试需要专门 fixture）。
 
 #![forbid(unused_must_use)]
+// 中文 doc 块大量 identifier-like 字串（s1_daemon / mock_s1 / s0_daemon /
+// robotctl / fsync / xlerobot 等），跟 robot-s1 同款宽松 doc-markdown。
+#![allow(clippy::doc_markdown)]
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -95,15 +106,27 @@ struct Args {
     /// 也不要用 `/tmp/` 跨进程冲突 —— 默认相对路径 `logs/crash_test/`，
     /// 调用方自行创建可写目录。
     latch_dir: PathBuf,
-    /// `mock_s1 --joints` 个数。默认 1（跟 `configs/crash_restart_smoke.toml`
-    /// 单 joint `smoke_arm` 配对）；Orin 真机 bus2 9-motor 走 `--joints 9`。
+    /// **B1 (3/3)**：默认 `false` → spawn `s1_daemon`（v0.3 production S1：
+    /// 启动锚定 + 50 Hz hold command + 50 Hz heartbeat，从 `--config`
+    /// 的 `[[hardware]].joints` 读关节数，**不**接 `--joints` / `--frozen-joints`）。
+    /// `true` → 回退到老 `mock_s1` 路径（ballet 工具，多关节正弦 +
+    /// `--joints` / `--frozen-joints` 兼容入口）。两种路径都验证 §6.7 #4
+    /// fsync 双写在 SIGKILL 后不退化。
+    use_mock_s1: bool,
+    /// `mock_s1 --joints` 个数（**仅 `--use-mock-s1` 路径生效**；s1_daemon
+    /// 路径下传此 flag 直接 fail，避免误用）。默认 1（跟
+    /// `configs/crash_restart_smoke.toml` 单 joint `smoke_arm` 配对）；
+    /// Orin 真机 bus2 9-motor `--use-mock-s1` 路径走 `--joints 9`。
     mock_s1_joints: u8,
-    /// `mock_s1 --frozen-joints` mask。默认空（单 joint 不需要）；Orin 真机
-    /// bus2 9-motor 走 `--frozen-joints 6,7,8`（base 3 wheel）。
+    /// `mock_s1 --frozen-joints` mask（**仅 `--use-mock-s1` 路径生效**）。
+    /// 默认空（单 joint 不需要）；Orin 真机 bus2 9-motor `--use-mock-s1`
+    /// 走 `--frozen-joints 6,7,8`（base 3 wheel）。
     mock_s1_frozen_joints: Option<String>,
 }
 
 impl Args {
+    // 大段 if-else CLI 解析；分函数会更绕（跟 mock_s1 同款 allow）。
+    #[allow(clippy::too_many_lines)]
     fn parse() -> Result<Self, String> {
         let mut args = Self {
             bin_dir: PathBuf::from("target/release"),
@@ -115,9 +138,15 @@ impl Args {
             pre_estop_settle_ms: 3_000,
             restart_smoke_secs: 3,
             latch_dir: PathBuf::from("logs/crash_test"),
+            use_mock_s1: false,
             mock_s1_joints: 1,
             mock_s1_frozen_joints: None,
         };
+        // 跟踪 --joints / --frozen-joints 是否被显式传过，validate 时配合
+        // --use-mock-s1 决定是否硬错（reviewer B1 (3/3) 硬要求：默认
+        // s1_daemon 路径不接收这两个 flag）。
+        let mut explicit_joints = false;
+        let mut explicit_frozen_joints = false;
         let raw: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
         while i < raw.len() {
@@ -177,6 +206,10 @@ impl Args {
                     i += 1;
                     args.latch_dir = PathBuf::from(raw.get(i).ok_or("--latch-dir requires value")?);
                 }
+                "--use-mock-s1" => {
+                    // 不消费 value：boolean flag。
+                    args.use_mock_s1 = true;
+                }
                 "--joints" => {
                     i += 1;
                     args.mock_s1_joints = raw
@@ -184,16 +217,27 @@ impl Args {
                         .ok_or("--joints requires value")?
                         .parse()
                         .map_err(|e| format!("--joints: {e}"))?;
+                    explicit_joints = true;
                 }
                 "--frozen-joints" => {
                     i += 1;
                     args.mock_s1_frozen_joints =
                         Some(raw.get(i).ok_or("--frozen-joints requires value")?.clone());
+                    explicit_frozen_joints = true;
                 }
                 "-h" | "--help" => return Err("HELP".into()),
                 other => return Err(format!("unknown arg: {other}")),
             }
             i += 1;
+        }
+        // B1 (3/3) reviewer 硬要求：默认 s1_daemon 路径不接 --joints /
+        // --frozen-joints；显式传了说明用户搞错了 S1 入口。直接 fail，
+        // 避免静默忽略 + 后续 PASS 误以为生效。
+        if !args.use_mock_s1 && (explicit_joints || explicit_frozen_joints) {
+            return Err("--joints / --frozen-joints 仅在 --use-mock-s1 路径下有效\n\
+                 默认 s1_daemon 从 --config 的 [[hardware]].joints 读关节数，不接受这两个 flag。\n\
+                 想跑 mock_s1 ballet 路径请加 --use-mock-s1。"
+                .into());
         }
         Ok(args)
     }
@@ -207,16 +251,24 @@ USAGE:
   crash_restart_smoke [OPTIONS]
 
 OPTIONS:
-  --bin-dir <DIR>           target/release（默认）—— 找 s0_daemon / mock_s1 / robotctl
+  --bin-dir <DIR>           target/release（默认）—— 找 s0_daemon / s1_daemon
+                            (默认 S1) 或 mock_s1 (--use-mock-s1) / robotctl
   --config <PATH>           daemon TOML 配置（默认 configs/crash_restart_smoke.toml；
                             mock_hard_rt 单关节，dev box 兼容；Orin 真机 bus2 9-motor
                             走 `--config configs/xlerobot_bus2_full.toml`）
   --robot-id-prefix <STR>   每次迭代的 robot_id 前缀（避 iceoryx2 collision）
   --hardware-id <ID>        匹配 config 的 hardware_id（默认 smoke_arm）
-  --joints <N>              mock_s1 关节数（默认 1，跟默认 config 单 joint 配对；
-                            Orin 真机 bus2 9-motor 走 `--joints 9`）
-  --frozen-joints <CSV>     mock_s1 frozen joints mask（默认空；Orin bus2 走
-                            `--frozen-joints 6,7,8` 防 base 3 wheel 抖动）
+  --use-mock-s1             用 mock_s1 ballet 工具替代默认 s1_daemon production
+                            S1 路径。**仅** mock_s1 路径接受 --joints / --frozen-joints；
+                            s1_daemon 路径从 --config 的 [[hardware]].joints
+                            读关节数，不接这两个 flag。两条路径都验证 §6.7 #4
+                            fsync 双写在 SIGKILL 后不退化。
+  --joints <N>              [仅 --use-mock-s1] mock_s1 关节数（默认 1，跟默认
+                            config 单 joint 配对；Orin 真机 bus2 9-motor 走
+                            `--joints 9`）
+  --frozen-joints <CSV>     [仅 --use-mock-s1] mock_s1 frozen joints mask（默认
+                            空；Orin bus2 走 `--frozen-joints 6,7,8` 防 base
+                            3 wheel 抖动）
   --iterations <N>          迭代次数（默认 5）
   --fsync-grace-ms <MS>     estop 后睡多久才 SIGKILL（默认 500，> 实测 188-255 ms 窗口）
   --pre-estop-settle-ms <MS> daemon 启动后等多久才发 estop（默认 3000）
@@ -310,7 +362,14 @@ fn main() {
 // ============================================================================
 
 fn preflight(args: &Args) -> Result<(), String> {
-    let need = ["s0_daemon", "mock_s1", "robotctl"];
+    // B1 (3/3)：默认走 s1_daemon；--use-mock-s1 走 mock_s1。两条路径都需要
+    // s0_daemon + robotctl。
+    let s1_bin = if args.use_mock_s1 {
+        "mock_s1"
+    } else {
+        "s1_daemon"
+    };
+    let need = ["s0_daemon", s1_bin, "robotctl"];
     for name in need {
         let p = args.bin_dir.join(name);
         if !p.exists() {
@@ -359,12 +418,23 @@ fn run_iteration(args: &Args, seq: u32, robot_id: &str) -> IterResult {
     };
     sleep_ms(500);
 
-    // ---- 2) spawn mock_s1（amplitude 0.0，不摆动，只为驱动 state→Active）----
-    let mut s1 = match spawn_mock_s1(args, robot_id, /*duration_secs=*/ 25) {
+    // ---- 2) spawn S1 实例（默认 s1_daemon production hold + heartbeat；
+    //         --use-mock-s1 回退 mock_s1 ballet 工具，amplitude=0 不摆动）----
+    let s1_kind = if args.use_mock_s1 {
+        "mock_s1"
+    } else {
+        "s1_daemon"
+    };
+    let s1_result = if args.use_mock_s1 {
+        spawn_mock_s1(args, robot_id, /*duration_secs=*/ 25)
+    } else {
+        spawn_s1_daemon(args, robot_id, /*duration_secs=*/ 25)
+    };
+    let mut s1 = match s1_result {
         Ok(c) => c,
         Err(e) => {
             kill_child(&mut daemon);
-            return fail(seq, robot_id, format!("spawn mock_s1: {e}"));
+            return fail(seq, robot_id, format!("spawn {s1_kind}: {e}"));
         }
     };
 
@@ -394,7 +464,7 @@ fn run_iteration(args: &Args, seq: u32, robot_id: &str) -> IterResult {
         );
     }
     let _ = daemon.wait(); // reap zombie
-    kill_child(&mut s1); // clean up mock_s1 too
+    kill_child(&mut s1); // clean up S1 (s1_daemon / mock_s1) too
 
     // ---- 7) 读 latch primary+bak，断言都 = "1" ----
     let primary = std::fs::read_to_string(&latch_path).unwrap_or_default();
@@ -512,6 +582,31 @@ fn spawn_mock_s1(args: &Args, robot_id: &str, duration_secs: u64) -> std::io::Re
         cmd.arg("--frozen-joints").arg(frozen);
     }
     cmd.arg("--duration")
+        .arg(format!("{duration_secs}s"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+}
+
+/// **B1 (3/3)** 默认 S1 路径：spawn `s1_daemon`（v0.3 production S1）。
+///
+/// 跟 `spawn_mock_s1` 故意保持**最小**参数面：只传 `--robot-id` /
+/// `--hardware-id` / `--config` / `--duration`；s1_daemon 自己从
+/// `[[hardware]].joints` 读关节数（B1 outline §9 决策 #6）。**不传**
+/// `--joints` / `--frozen-joints` / `--amplitude` / `--frequency` 等
+/// mock_s1-only flag —— `Args::parse` 已 fail-fast 拒绝默认路径下传这两个。
+///
+/// `s1_daemon` 默认 `on_timeout = Hold` + `target = anchor`，跟
+/// `mock_s1 --amplitude 0.0` 推 state 推到 `Enabled.Active` 的语义等价。
+fn spawn_s1_daemon(args: &Args, robot_id: &str, duration_secs: u64) -> std::io::Result<Child> {
+    Command::new(args.bin_dir.join("s1_daemon"))
+        .arg("--robot-id")
+        .arg(robot_id)
+        .arg("--hardware-id")
+        .arg(&args.hardware_id)
+        .arg("--config")
+        .arg(&args.config)
+        .arg("--duration")
         .arg(format!("{duration_secs}s"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
