@@ -1736,12 +1736,16 @@ dependencies = [
 name = "robot-s1"
 version = "0.1.2"
 dependencies = [
+ "flatbuffers",
  "iceoryx2",
  "libc 1.0.0-alpha.3",
  "robot-core",
  "robot-logging",
  "robot-msg",
  "robot-transport",
+ "serde",
+ "thiserror",
+ "toml 1.1.2+spec-1.1.0",
  "tracing",
 ]
 
