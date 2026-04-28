@@ -46,8 +46,8 @@ required-features = ["freeze-systemd-smoke"]
 # fsync 双写。
 #
 # `required-features = ["clear-estop-e2e"]`：本 bin 用 robot-rpc 的 `client`
-# feature 跑 tonic-build 生成 client stub，再加 tokio + tonic + tempfile 等
-# smoke-only deps。生产 release 构建默认 feature 关，本 bin 不参编译，跟
+# feature 跑 tonic-build 生成 client stub，再加 tokio + tonic 等 smoke-only
+# deps。生产 release 构建默认 feature 关，本 bin 不参编译，跟
 # `freeze_systemd_smoke` 同款 feature 守门。
 [[bin]]
 name = "clear_estop_e2e"
@@ -119,7 +119,7 @@ freeze-systemd-smoke = ["dep:robot-s0"]
 # - 生产 release **不**带本 feature（clear_estop_e2e binary 不参编译）。
 # - 本机跑：`cargo run -p robot-tests --bin clear_estop_e2e --features
 #   clear-estop-e2e -- ...`
-# - 启用 robot-rpc / tonic / tokio / tempfile 4 条 optional dep，跟
+# - 启用 robot-rpc / tonic / tokio 3 条 optional dep，跟
 #   `freeze-systemd-smoke` 同款 feature 守门。
 clear-estop-e2e = [
     "dep:robot-rpc",
