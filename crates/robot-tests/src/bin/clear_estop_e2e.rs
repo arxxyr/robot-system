@@ -10,21 +10,32 @@
 //! 进 `cargo test --workspace`（两进程 + iceoryx2 shm + loopback 端口属于
 //! smoke/e2e，不该默认在 cargo test 里跑）。
 //!
-//! ## A1-3 (3/3-a) scope（本 commit）
+//! ## A1-3 (3/3-a) scope（已落地）
 //!
 //! - robot-rpc 加 `client` feature 让 build.rs 跑
 //!   `tonic_build::build_client(true)` 生成 `RobotControlClient` stub。
 //! - 本 binary：harness 骨架 + 进程辅助 + role table / tempdir / loopback
-//!   port 分配。
-//! - 唯一可跑 case = `selftest`：bring-up → daemon ready (扫 stderr/stdout
-//!   `rr_server_thread started`) → gateway ready (TCP poll loopback) →
-//!   tonic client connect → ClearEStop dry_run=true maintainer 轮询到 Ok →
-//!   tear-down (SIGTERM gateway → SIGTERM daemon → SIGKILL fallback)。
+//!   port 分配 + `selftest` case。
 //!
-//! ## A1-3 (3/3-b) scope（下一 commit）
+//! ## A1-3 (3/3-b) scope（本 commit）
 //!
-//! 加 4 case：`happy_dry_run` / `happy_real` / `reject_viewer` /
-//! `idem_replay`。reviewer 拍板 case 集；reject_state 留 follow-up。
+//! 加 4 个真 case + `--case all` 顺序跑：
+//!
+//! - `happy_dry_run`：maintainer + `dry_run=true` → `Ack(dry_run=true)`；
+//!   latch primary+.bak 仍 `1\n`（dry_run 不写盘）。
+//! - `happy_real`：maintainer + `dry_run=false` → `Ack`；latch
+//!   primary+.bak **都**写 `0\n`（reviewer 拍板：`save_estop_latch_clear`
+//!   backup-first 写 false 后两份都存在且为 `0\n`，**不**是"删除"）。
+//! - `reject_viewer`：viewer fake token + `dry_run=false` → tonic
+//!   `PermissionDenied`（gateway authz 在调 daemon 前拒）；latch 不动。
+//! - `idem_replay`：maintainer 同 `idempotency_key` 调两次 → 第二次
+//!   走 cache Replay 返同 `cleared_at_ns`；gateway 日志含 `ClearEStop
+//!   idempotency replay` 行（handler Step 5 Replay 分支专属 trace）；
+//!   latch 真 fsync 只发生一次。
+//!
+//! reject_state（FailedPrecondition）留 follow-up。dry_run_after_real 暂
+//! 删（reviewer 拍板：当前 evaluator state 仍 Safe 且 torque off 时大概率
+//! 还是 Ok/WouldClear，不提供新安全证据）。
 //!
 //! ## 前置驱动方案（reviewer 拍板）
 //!
@@ -146,14 +157,21 @@ OPTIONS:
   --bin-dir <DIR>     找 s0_daemon / robot_rpc_gateway（默认 target/release）
   --config <PATH>     daemon TOML 配置（默认 configs/clear_estop_e2e.toml）
   --workdir <DIR>     临时工作根目录（默认 /tmp/clear_estop_e2e_<pid>）
-  --case <NAME>       跑哪个 case（A1-3 (3/3-a)：仅 selftest）
+  --case <NAME>       跑哪个 case（默认 selftest；见下）
   -h, --help          显示帮助
 
-可用 case（A1-3 (3/3-a) 阶段）:
-  selftest    bring-up + ready gate + tear-down，**不**做真路径
-
-A1-3 (3/3-b) 之后会加：happy_dry_run / happy_real / reject_viewer /
-                       idem_replay / all
+可用 case:
+  selftest        bring-up + dry_run readiness gate + tear-down，
+                  不做真路径（A1-3 (3/3-a) 锁的 harness sanity）
+  happy_dry_run   maintainer + dry_run=true → Ack(dry_run=true)；
+                  latch 不动
+  happy_real      maintainer + dry_run=false → Ack；latch primary+.bak
+                  都写 `0\n`（save_estop_latch_clear backup-first）
+  reject_viewer   viewer fake token → PermissionDenied；latch 不动
+  idem_replay     maintainer 同 idempotency_key 调两次 → 第二次走
+                  cache Replay 返同 cleared_at_ns；gateway 日志含
+                  `ClearEStop idempotency replay`
+  all             顺序跑上述 5 个；任一 FAIL 不中止后续，最后汇总
 
 退出码: 0 全过；1 CLI/preflight 错；2 ≥ 1 case FAIL。
 "
@@ -200,8 +218,13 @@ fn main() -> std::process::ExitCode {
     let result = runtime.block_on(async move {
         match args.case.as_str() {
             "selftest" => run_selftest(&args).await,
+            "happy_dry_run" => run_happy_dry_run(&args).await,
+            "happy_real" => run_happy_real(&args).await,
+            "reject_viewer" => run_reject_viewer(&args).await,
+            "idem_replay" => run_idem_replay(&args).await,
+            "all" => run_all(&args).await,
             other => Err(format!(
-                "unknown --case {other:?} (A1-3 (3/3-a) 阶段仅 selftest；3/3-b 后加 happy/idem/reject 系列)"
+                "unknown --case {other:?} (有效 case：selftest / happy_dry_run / happy_real / reject_viewer / idem_replay / all)"
             )),
         }
     });
@@ -734,77 +757,38 @@ async fn connect_gateway_client(
 }
 
 // ============================================================================
-// Selftest case
+// Bring-up + tear-down 通用骨架（被 selftest + 4 个真 case 共用）
 // ============================================================================
 
-/// (3/3-a) 唯一 case：bring-up → daemon ready → gateway ready → tonic
-/// client connect → ClearEStop dry_run readiness gate → tear-down。
-///
-/// **不**断言真路径；不读 latch 内容。仅锁住 harness 骨架可工作 +
-/// 子进程协调路径稳定，给 (3/3-b) 4 个真 case 打地基。
-async fn run_selftest(args: &Args) -> Result<(), String> {
-    let ctx = CaseCtx::alloc(args)?;
-    eprintln!(
-        "[selftest] robot_id={} workdir={} gateway_port={}",
-        ctx.robot_id,
-        ctx.case_dir.display(),
-        ctx.gateway_port
-    );
-    ctx.preset_latch_latched()?;
-    eprintln!("[selftest] preset latch primary+bak = `1\\n`");
-
-    // ---- bring up daemon ----
-    let daemon = spawn_daemon(&ctx).map_err(|e| format!("spawn daemon: {e}"))?;
-    eprintln!(
-        "[selftest] daemon spawned pid={}",
-        daemon.pid().unwrap_or(0)
-    );
-
-    let bring_up_res = bring_up_and_probe(&ctx, &daemon).await;
-
-    // ---- tear down 顺序：gateway 先（如果 spawn 成功了），daemon 后 ----
-    match bring_up_res {
-        Ok(gateway) => {
-            eprintln!("[selftest] PASS readiness probe; tearing down");
-            // PASS 路径：shutdown 自身错升级到 case Err（reviewer (3/3-a)
-            // round 2 阻断：必须断言两进程 graceful exit code 0）；FAIL 时
-            // workdir **不** cleanup 留 forensic。
-            if let Err(e) = shutdown_pair(gateway, daemon).await {
-                return Err(format!("shutdown FAIL after readiness PASS:\n{e}"));
-            }
-            ctx.cleanup();
-            Ok(())
-        }
-        Err((maybe_gateway, err_msg)) => {
-            eprintln!("[selftest] FAIL bring-up: {err_msg}");
-            // FAIL 路径：bring-up 已经 Err，shutdown 走 best-effort（不让
-            // 二次错盖掉原始 bring-up err_msg）；workdir 也不 cleanup 留
-            // forensic。
-            if let Some(gw) = maybe_gateway {
-                let _ = shutdown_pair(gw, daemon).await;
-            } else {
-                let _ = daemon.shutdown(Duration::from_secs(2)).await;
-            }
-            Err(err_msg)
-        }
-    }
+/// `bring_up_and_probe` 成功返回值：gateway 子进程 + 已 ready 的 tonic
+/// client（已经过 dry_run readiness gate）。case body 直接借用 client 调
+/// `clear_e_stop`，不再重新 connect。
+struct BringUp {
+    gateway: SubprocessHandle,
+    client: GatewayClient,
 }
 
+/// 类型别名：`RobotControlClient<tonic::transport::Channel>`。case body
+/// 共享。
+type GatewayClient = RobotControlClient<tonic::transport::Channel>;
+
 /// daemon 已起；等 daemon RR server ready → spawn gateway → 等 gateway
-/// TCP ready → tonic connect → poll dry_run readiness gate。
+/// TCP ready → tonic connect → poll dry_run readiness gate；返 `BringUp`
+/// 让 case body 复用同一份 ready 的 client。
 ///
 /// 失败时返 `Err((Option<gateway_handle>, msg))`：caller 用 gateway_handle
 /// 走 shutdown 路径不漏进程。
 #[allow(clippy::type_complexity)]
 async fn bring_up_and_probe(
+    case_label: &str,
     ctx: &CaseCtx,
     daemon: &SubprocessHandle,
-) -> Result<SubprocessHandle, (Option<SubprocessHandle>, String)> {
+) -> Result<BringUp, (Option<SubprocessHandle>, String)> {
     // daemon RR server ready
     if let Err(e) = wait_for_daemon_rr_server_started(daemon, Duration::from_secs(5)).await {
         return Err((None, e));
     }
-    eprintln!("[selftest] daemon RR server started");
+    eprintln!("[{case_label}] daemon RR server started");
 
     // spawn gateway
     let gateway = match spawn_gateway(ctx) {
@@ -812,7 +796,7 @@ async fn bring_up_and_probe(
         Err(e) => return Err((None, format!("spawn gateway: {e}"))),
     };
     eprintln!(
-        "[selftest] gateway spawned pid={}",
+        "[{case_label}] gateway spawned pid={}",
         gateway.pid().unwrap_or(0)
     );
 
@@ -821,7 +805,7 @@ async fn bring_up_and_probe(
         return Err((Some(gateway), e));
     }
     eprintln!(
-        "[selftest] gateway TCP ready on 127.0.0.1:{}",
+        "[{case_label}] gateway TCP ready on 127.0.0.1:{}",
         ctx.gateway_port
     );
 
@@ -830,15 +814,483 @@ async fn bring_up_and_probe(
         Ok(c) => c,
         Err(e) => return Err((Some(gateway), e)),
     };
-    eprintln!("[selftest] tonic client connected");
+    eprintln!("[{case_label}] tonic client connected");
 
     // ClearEStop dry_run=true maintainer readiness gate
     if let Err(e) = poll_clear_estop_dry_run_ready(&mut client, Duration::from_secs(5)).await {
         return Err((Some(gateway), e));
     }
-    eprintln!("[selftest] ClearEStop dry_run readiness gate PASS");
+    eprintln!("[{case_label}] ClearEStop dry_run readiness gate PASS");
 
-    Ok(gateway)
+    Ok(BringUp { gateway, client })
+}
+
+/// PASS-body 后的 tear-down：必须断言两进程 graceful exit 0
+/// （reviewer A1-3 (3/3-a) round 2 阻断）；shutdown 自身错跟 case body
+/// 错合并到一个 `Err` 报给 caller。case PASS 且 shutdown PASS 才 cleanup
+/// workdir；任一 FAIL 都留 forensic。
+async fn tear_down_after_case_body(
+    case_label: &str,
+    ctx: CaseCtx,
+    gateway: SubprocessHandle,
+    daemon: SubprocessHandle,
+    case_result: Result<(), String>,
+) -> Result<(), String> {
+    eprintln!("[{case_label}] tearing down");
+    let shutdown_result = shutdown_pair(gateway, daemon).await;
+    match (case_result, shutdown_result) {
+        (Ok(()), Ok(())) => {
+            ctx.cleanup();
+            Ok(())
+        }
+        (Ok(()), Err(e)) => Err(format!("shutdown FAIL after case PASS:\n{e}")),
+        (Err(e), Ok(())) => Err(format!("case body FAIL:\n{e}")),
+        (Err(case_e), Err(sd_e)) => Err(format!(
+            "case body FAIL:\n{case_e}\n--- shutdown ALSO FAIL:\n{sd_e}"
+        )),
+    }
+}
+
+/// bring-up FAIL 后的 tear-down：bring-up 已 `Err`，shutdown 走 best-effort
+/// 不让二次错盖掉原始 bring-up err_msg；workdir 也不 cleanup 留 forensic。
+async fn tear_down_after_bring_up_fail(
+    case_label: &str,
+    daemon: SubprocessHandle,
+    maybe_gateway: Option<SubprocessHandle>,
+    err_msg: String,
+) -> Result<(), String> {
+    eprintln!("[{case_label}] FAIL bring-up: {err_msg}");
+    if let Some(gw) = maybe_gateway {
+        let _ = shutdown_pair(gw, daemon).await;
+    } else {
+        let _ = daemon.shutdown(Duration::from_secs(2)).await;
+    }
+    Err(err_msg)
+}
+
+/// 共享 case 起手势：分配 `CaseCtx` + 预置 latch + spawn daemon。返回
+/// `(ctx, daemon)`，caller 接 `bring_up_and_probe`。
+fn start_case(case_label: &str, args: &Args) -> Result<(CaseCtx, SubprocessHandle), String> {
+    let ctx = CaseCtx::alloc(args)?;
+    eprintln!(
+        "[{case_label}] robot_id={} workdir={} gateway_port={}",
+        ctx.robot_id,
+        ctx.case_dir.display(),
+        ctx.gateway_port
+    );
+    ctx.preset_latch_latched()?;
+    eprintln!("[{case_label}] preset latch primary+bak = `1\\n`");
+
+    let daemon = spawn_daemon(&ctx).map_err(|e| format!("spawn daemon: {e}"))?;
+    eprintln!(
+        "[{case_label}] daemon spawned pid={}",
+        daemon.pid().unwrap_or(0)
+    );
+    Ok((ctx, daemon))
+}
+
+// ============================================================================
+// Selftest case（A1-3 (3/3-a) 阶段）—— 只锁 harness 骨架
+// ============================================================================
+
+/// (3/3-a) 默认 case：bring-up → daemon ready → gateway ready → tonic
+/// client connect → ClearEStop dry_run readiness gate → tear-down。
+///
+/// **不**断言真路径；不读 latch 内容；不调真 ClearEStop（除 readiness
+/// gate 自带的 dry_run probe）。仅锁住 harness 骨架可工作 + 子进程协调
+/// 路径稳定。
+async fn run_selftest(args: &Args) -> Result<(), String> {
+    let label = "selftest";
+    let (ctx, daemon) = start_case(label, args)?;
+    match bring_up_and_probe(label, &ctx, &daemon).await {
+        Ok(BringUp { gateway, .. }) => {
+            tear_down_after_case_body(label, ctx, gateway, daemon, Ok(())).await
+        }
+        Err((maybe_gw, err_msg)) => {
+            tear_down_after_bring_up_fail(label, daemon, maybe_gw, err_msg).await
+        }
+    }
+}
+
+// ============================================================================
+// 4 个真 case body（A1-3 (3/3-b) 落地）
+//
+// 每个 case 的 outer fn = `start_case` + `bring_up_and_probe` + 调对应
+// `*_body(...)` + `tear_down_after_*`。case body 接 `&CaseCtx + &mut
+// GatewayClient`，做 RPC 调用 + 状态断言。
+// ============================================================================
+
+/// **happy_dry_run**：maintainer + dry_run=true → Ack(dry_run=true,
+/// cleared_at_ns>0)；latch primary+.bak 仍 `1\n`（dry_run **不**写盘）。
+async fn run_happy_dry_run(args: &Args) -> Result<(), String> {
+    let label = "happy_dry_run";
+    let (ctx, daemon) = start_case(label, args)?;
+    match bring_up_and_probe(label, &ctx, &daemon).await {
+        Ok(BringUp {
+            gateway,
+            mut client,
+        }) => {
+            let case_result = run_happy_dry_run_body(&ctx, &mut client).await;
+            tear_down_after_case_body(label, ctx, gateway, daemon, case_result).await
+        }
+        Err((maybe_gw, err_msg)) => {
+            tear_down_after_bring_up_fail(label, daemon, maybe_gw, err_msg).await
+        }
+    }
+}
+
+async fn run_happy_dry_run_body(ctx: &CaseCtx, client: &mut GatewayClient) -> Result<(), String> {
+    let ack = call_clear_estop(
+        client,
+        &BuildCmdArgs {
+            token: "maintainer-fake-token-001",
+            idempotency_key: "happy_dry_run_idem_1",
+            audit_reason: "clear_estop_e2e happy_dry_run",
+            dry_run: true,
+        },
+    )
+    .await
+    .map_err(|s| format!("clear_e_stop dry_run: {:?} {}", s.code(), s.message()))?;
+    if !ack.dry_run {
+        return Err(format!(
+            "Ack.dry_run should be true (dry_run path); got false; ack={ack:?}"
+        ));
+    }
+    if ack.cleared_at_ns == 0 {
+        return Err(format!(
+            "Ack.cleared_at_ns should be > 0 (would-clear timestamp); got 0; ack={ack:?}"
+        ));
+    }
+    let (p, b) = ctx.read_latch_pair();
+    if p != "1" || b != "1" {
+        return Err(format!(
+            "dry_run path should NOT mutate latch; got primary={p:?} bak={b:?} (expected both \"1\")"
+        ));
+    }
+    eprintln!(
+        "[happy_dry_run] PASS Ack(dry_run=true, cleared_at_ns={}); latch primary+bak unchanged",
+        ack.cleared_at_ns
+    );
+    Ok(())
+}
+
+/// **happy_real**：maintainer + dry_run=false → Ack(dry_run=false,
+/// cleared_at_ns>0)；latch primary+.bak **都** `0\n`（reviewer 拍板：
+/// `save_estop_latch_clear` backup-first 写 false 后两份都存在且为 `0\n`，
+/// **不**是"删除"）。
+async fn run_happy_real(args: &Args) -> Result<(), String> {
+    let label = "happy_real";
+    let (ctx, daemon) = start_case(label, args)?;
+    match bring_up_and_probe(label, &ctx, &daemon).await {
+        Ok(BringUp {
+            gateway,
+            mut client,
+        }) => {
+            let case_result = run_happy_real_body(&ctx, &mut client).await;
+            tear_down_after_case_body(label, ctx, gateway, daemon, case_result).await
+        }
+        Err((maybe_gw, err_msg)) => {
+            tear_down_after_bring_up_fail(label, daemon, maybe_gw, err_msg).await
+        }
+    }
+}
+
+async fn run_happy_real_body(ctx: &CaseCtx, client: &mut GatewayClient) -> Result<(), String> {
+    let ack = call_clear_estop(
+        client,
+        &BuildCmdArgs {
+            token: "maintainer-fake-token-001",
+            idempotency_key: "happy_real_idem_1",
+            audit_reason: "clear_estop_e2e happy_real",
+            dry_run: false,
+        },
+    )
+    .await
+    .map_err(|s| format!("clear_e_stop real: {:?} {}", s.code(), s.message()))?;
+    if ack.dry_run {
+        return Err(format!(
+            "Ack.dry_run should be false (real path); got true; ack={ack:?}"
+        ));
+    }
+    if ack.cleared_at_ns == 0 {
+        return Err(format!(
+            "Ack.cleared_at_ns should be > 0 after real clear; got 0; ack={ack:?}"
+        ));
+    }
+    // reviewer 拍板：backup-first save_estop_latch_clear 成功后两份都为 "0\n"
+    let (p, b) = ctx.read_latch_pair();
+    if p != "0" || b != "0" {
+        return Err(format!(
+            "real path should write latch primary+bak both to \"0\"; got primary={p:?} bak={b:?}"
+        ));
+    }
+    eprintln!(
+        "[happy_real] PASS Ack(dry_run=false, cleared_at_ns={}); latch primary+bak both = `0`",
+        ack.cleared_at_ns
+    );
+    Ok(())
+}
+
+/// **reject_viewer**：viewer fake token + dry_run=false → tonic Status
+/// `PermissionDenied`（gateway authz 在调 daemon 前拒）；latch primary+.bak
+/// 仍 `1\n`（**不**应有任何 wire request 出门）。
+async fn run_reject_viewer(args: &Args) -> Result<(), String> {
+    let label = "reject_viewer";
+    let (ctx, daemon) = start_case(label, args)?;
+    match bring_up_and_probe(label, &ctx, &daemon).await {
+        Ok(BringUp {
+            gateway,
+            mut client,
+        }) => {
+            let case_result = run_reject_viewer_body(&ctx, &mut client).await;
+            tear_down_after_case_body(label, ctx, gateway, daemon, case_result).await
+        }
+        Err((maybe_gw, err_msg)) => {
+            tear_down_after_bring_up_fail(label, daemon, maybe_gw, err_msg).await
+        }
+    }
+}
+
+async fn run_reject_viewer_body(ctx: &CaseCtx, client: &mut GatewayClient) -> Result<(), String> {
+    let req = build_cmd(&BuildCmdArgs {
+        token: "viewer-fake-token-001",
+        idempotency_key: "reject_viewer_idem_1",
+        audit_reason: "clear_estop_e2e reject_viewer",
+        dry_run: false,
+    });
+    match client.clear_e_stop(req).await {
+        Ok(resp) => {
+            return Err(format!(
+                "viewer should be rejected with PermissionDenied; got Ok(ack={:?})",
+                resp.into_inner()
+            ));
+        }
+        Err(status) => {
+            if status.code() != tonic::Code::PermissionDenied {
+                return Err(format!(
+                    "expected PermissionDenied for viewer; got {:?}: {}",
+                    status.code(),
+                    status.message()
+                ));
+            }
+        }
+    }
+    // 拒绝路径**不**应触碰 latch
+    let (p, b) = ctx.read_latch_pair();
+    if p != "1" || b != "1" {
+        return Err(format!(
+            "reject path should NOT mutate latch; got primary={p:?} bak={b:?} (expected both \"1\")"
+        ));
+    }
+    eprintln!("[reject_viewer] PASS PermissionDenied; latch primary+bak unchanged");
+    Ok(())
+}
+
+/// **idem_replay**：maintainer + 同 idempotency_key 调两次 → 第二次走 cache
+/// Replay 路径返同一个 cached Ack（`cleared_at_ns` 严格相等）；latch
+/// primary+.bak 都 `0\n`（real fsync **只发生一次**）。
+///
+/// **强断言**：
+/// - `ack1.cleared_at_ns == ack2.cleared_at_ns`（Replay 返 cached 值，
+///   不是新 daemon clock.now()）；
+/// - gateway captured 日志含 `"ClearEStop idempotency replay"`（handler
+///   Step 5 Replay 路径专属 trace 行）；
+/// - 第二次响应 dry_run flag 跟第一次一致。
+async fn run_idem_replay(args: &Args) -> Result<(), String> {
+    let label = "idem_replay";
+    let (ctx, daemon) = start_case(label, args)?;
+    match bring_up_and_probe(label, &ctx, &daemon).await {
+        Ok(BringUp {
+            gateway,
+            mut client,
+        }) => {
+            let case_result = run_idem_replay_body(&ctx, &mut client, &gateway).await;
+            tear_down_after_case_body(label, ctx, gateway, daemon, case_result).await
+        }
+        Err((maybe_gw, err_msg)) => {
+            tear_down_after_bring_up_fail(label, daemon, maybe_gw, err_msg).await
+        }
+    }
+}
+
+async fn run_idem_replay_body(
+    ctx: &CaseCtx,
+    client: &mut GatewayClient,
+    gateway: &SubprocessHandle,
+) -> Result<(), String> {
+    let cmd_args = BuildCmdArgs {
+        token: "maintainer-fake-token-001",
+        idempotency_key: "idem_replay_idem_1",
+        audit_reason: "clear_estop_e2e idem_replay",
+        dry_run: false,
+    };
+    let ack1 = call_clear_estop(client, &cmd_args)
+        .await
+        .map_err(|s| format!("first clear_e_stop: {:?} {}", s.code(), s.message()))?;
+    if ack1.dry_run {
+        return Err(format!("first Ack.dry_run should be false; ack={ack1:?}"));
+    }
+    if ack1.cleared_at_ns == 0 {
+        return Err(format!(
+            "first Ack.cleared_at_ns should be > 0; ack={ack1:?}"
+        ));
+    }
+    // 真路径后 latch 已写 `0\n`
+    let (p, b) = ctx.read_latch_pair();
+    if p != "0" || b != "0" {
+        return Err(format!(
+            "after first real clear, latch primary+bak both should be \"0\"; got primary={p:?} bak={b:?}"
+        ));
+    }
+
+    // 第二次：同 idempotency_key + 同 fingerprint → handler Step 5 走 Replay
+    let ack2 = call_clear_estop(client, &cmd_args)
+        .await
+        .map_err(|s| format!("replay clear_e_stop: {:?} {}", s.code(), s.message()))?;
+    if ack2.cleared_at_ns != ack1.cleared_at_ns {
+        return Err(format!(
+            "Replay should return identical cached cleared_at_ns; ack1={} ack2={} (差 = 新 daemon \
+             clock.now() 说明走了 FreshInsert 路径，不是 Replay)",
+            ack1.cleared_at_ns, ack2.cleared_at_ns
+        ));
+    }
+    if ack2.dry_run != ack1.dry_run {
+        return Err(format!(
+            "Replay should preserve dry_run flag; ack1.dry_run={} ack2.dry_run={}",
+            ack1.dry_run, ack2.dry_run
+        ));
+    }
+    // latch 不应再被改（real fsync 应只发生一次）
+    let (p2, b2) = ctx.read_latch_pair();
+    if p2 != "0" || b2 != "0" {
+        return Err(format!(
+            "after Replay, latch primary+bak should still both be \"0\"; got primary={p2:?} bak={b2:?}"
+        ));
+    }
+
+    // 强断言 gateway 走的是 Replay 路径：handler Step 5 Replay 分支专属
+    // trace 行 `"ClearEStop idempotency replay"`。
+    let saw_replay_trace = gateway
+        .wait_for_marker("ClearEStop idempotency replay", Duration::from_millis(500))
+        .await;
+    if !saw_replay_trace {
+        return Err(
+            "expected gateway to log `ClearEStop idempotency replay` (handler Step 5 Replay \
+             分支专属 trace 行) within 500ms; got none"
+                .into(),
+        );
+    }
+    eprintln!(
+        "[idem_replay] PASS ack1.cleared_at_ns == ack2.cleared_at_ns = {}; gateway 走 Replay 路径",
+        ack1.cleared_at_ns
+    );
+    Ok(())
+}
+
+// ============================================================================
+// Tonic call helper
+// ============================================================================
+
+/// 把 `client.clear_e_stop(req).await` 的 `Result<Response<Ack>, Status>`
+/// unwrap 到 `Result<Ack, Status>`。case body 共用。
+async fn call_clear_estop(
+    client: &mut GatewayClient,
+    args: &BuildCmdArgs<'_>,
+) -> Result<robot_rpc::proto::Ack, tonic::Status> {
+    let req = build_cmd(args);
+    Ok(client.clear_e_stop(req).await?.into_inner())
+}
+
+// ============================================================================
+// `--case all`：顺序跑 4 个真 case + selftest
+// ============================================================================
+
+/// 顺序跑 selftest + 4 个真 case；任一 FAIL 不中止后续 case，最后汇总
+/// 返 `Err` 列出每个 FAIL（让一次跑能拿到全部 case 状态）。
+async fn run_all(args: &Args) -> Result<(), String> {
+    // 顺序：selftest（快速 sanity） → 拒绝路径（不动 latch） → dry_run
+    // → 真 fsync → idem replay。每 case 独立 CaseCtx + 独立 daemon /
+    // gateway 进程，**不**共用。
+    type CaseRunner = fn(&Args) -> CaseFut;
+    let cases: &[(&str, CaseRunner)] = &[
+        ("selftest", run_selftest_boxed),
+        ("reject_viewer", run_reject_viewer_boxed),
+        ("happy_dry_run", run_happy_dry_run_boxed),
+        ("happy_real", run_happy_real_boxed),
+        ("idem_replay", run_idem_replay_boxed),
+    ];
+    let mut fails: Vec<(String, String)> = Vec::new();
+    let mut passes: Vec<&str> = Vec::new();
+    for (name, runner) in cases {
+        eprintln!("\n========== [all] running case={name} ==========");
+        match runner(args).await {
+            Ok(()) => {
+                passes.push(name);
+                eprintln!("========== [all] case={name} PASS ==========");
+            }
+            Err(e) => {
+                eprintln!("========== [all] case={name} FAIL: {e} ==========");
+                fails.push(((*name).to_string(), e));
+            }
+        }
+    }
+    eprintln!(
+        "\n========== [all] summary: pass={} fail={} ==========",
+        passes.len(),
+        fails.len()
+    );
+    for p in &passes {
+        eprintln!("  ✓ {p}");
+    }
+    for (n, e) in &fails {
+        eprintln!("  ✗ {n}: {}", first_line(e));
+    }
+    if fails.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{}/{} case(s) FAILED: {}",
+            fails.len(),
+            cases.len(),
+            fails
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    }
+}
+
+// 把 `async fn` 包成同步签名以便放进 fn pointer 表（不需 Box<Future>）。
+// `'static` 边界靠所有 case fn 都不持有 `&Args` 之外的引用，args 也是借
+// 用整个 main 生命周期。tokio runtime 在 main 里 block_on，这些 future
+// `'static` 实际只要不外溢 main 即可。
+type CaseFut = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>;
+
+fn run_selftest_boxed(args: &Args) -> CaseFut {
+    let args = args.clone();
+    Box::pin(async move { run_selftest(&args).await })
+}
+fn run_happy_dry_run_boxed(args: &Args) -> CaseFut {
+    let args = args.clone();
+    Box::pin(async move { run_happy_dry_run(&args).await })
+}
+fn run_happy_real_boxed(args: &Args) -> CaseFut {
+    let args = args.clone();
+    Box::pin(async move { run_happy_real(&args).await })
+}
+fn run_reject_viewer_boxed(args: &Args) -> CaseFut {
+    let args = args.clone();
+    Box::pin(async move { run_reject_viewer(&args).await })
+}
+fn run_idem_replay_boxed(args: &Args) -> CaseFut {
+    let args = args.clone();
+    Box::pin(async move { run_idem_replay(&args).await })
+}
+
+/// 取多行字串的第一行（summary 列表用，避免长 tail 撑爆）。
+fn first_line(s: &str) -> &str {
+    s.lines().next().unwrap_or(s)
 }
 
 /// shutdown 顺序（reviewer 拍板）：先 SIGTERM gateway，再 SIGTERM daemon；
