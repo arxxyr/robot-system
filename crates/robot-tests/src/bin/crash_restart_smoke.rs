@@ -29,17 +29,32 @@
 //! ### 用法
 //!
 //! ```bash
-//! # 默认：5 次迭代，bus2 9-motor config，target/release 已 build
+//! # 默认（dev box 兼容）：5 次迭代，mock_hard_rt 单关节，target/release 已 build
 //! cargo run --release -p robot-tests --bin crash_restart_smoke
 //!
-//! # 自定义：
+//! # Orin 真机 bus2 9-motor 复跑：
 //! ./target/release/crash_restart_smoke \
 //!     --bin-dir target/release \
 //!     --robot-id-prefix crash_test \
 //!     --hardware-id right_arm_full_with_base \
 //!     --config configs/xlerobot_bus2_full.toml \
+//!     --joints 9 --frozen-joints 6,7,8 \
 //!     --iterations 10 --fsync-grace-ms 500
 //! ```
+//!
+//! ## dev box vs Orin 真机
+//!
+//! 默认 `--config configs/crash_restart_smoke.toml` 走 `mock_hard_rt`
+//! 单关节，**不**依赖 `--features xlerobot-real`（`serialport` /
+//! `libudev` 系统依赖只在 Orin 真机 build）。`crash_restart_smoke` 测的
+//! 是 §6.7 #4 "S0 重启不失忆" 的 fsync 双写 SIGKILL 路径，跟具体
+//! adapter 类型无关 —— `mock_hard_rt` 跟 `feetech_sts3215` 走的是同一
+//! 份 `EStop` event → `save_estop_latch(true)` → `1\n` 写 primary +
+//! bak fsync 双写 path。
+//!
+//! Orin 真机额外验证 9-motor `SerialRT` 路径，需要显式 `--config
+//! configs/xlerobot_bus2_full.toml` + `--joints 9 --frozen-joints 6,7,8`
+//! + binary 用 `--features xlerobot-real` build。
 //!
 //! ### 退出码
 //!
@@ -80,20 +95,28 @@ struct Args {
     /// 也不要用 `/tmp/` 跨进程冲突 —— 默认相对路径 `logs/crash_test/`，
     /// 调用方自行创建可写目录。
     latch_dir: PathBuf,
+    /// `mock_s1 --joints` 个数。默认 1（跟 `configs/crash_restart_smoke.toml`
+    /// 单 joint `smoke_arm` 配对）；Orin 真机 bus2 9-motor 走 `--joints 9`。
+    mock_s1_joints: u8,
+    /// `mock_s1 --frozen-joints` mask。默认空（单 joint 不需要）；Orin 真机
+    /// bus2 9-motor 走 `--frozen-joints 6,7,8`（base 3 wheel）。
+    mock_s1_frozen_joints: Option<String>,
 }
 
 impl Args {
     fn parse() -> Result<Self, String> {
         let mut args = Self {
             bin_dir: PathBuf::from("target/release"),
-            config: PathBuf::from("configs/xlerobot_bus2_full.toml"),
+            config: PathBuf::from("configs/crash_restart_smoke.toml"),
             robot_id_prefix: "crash_test".into(),
-            hardware_id: "right_arm_full_with_base".into(),
+            hardware_id: "smoke_arm".into(),
             iterations: 5,
             fsync_grace_ms: 500,
             pre_estop_settle_ms: 3_000,
             restart_smoke_secs: 3,
             latch_dir: PathBuf::from("logs/crash_test"),
+            mock_s1_joints: 1,
+            mock_s1_frozen_joints: None,
         };
         let raw: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
@@ -154,6 +177,19 @@ impl Args {
                     i += 1;
                     args.latch_dir = PathBuf::from(raw.get(i).ok_or("--latch-dir requires value")?);
                 }
+                "--joints" => {
+                    i += 1;
+                    args.mock_s1_joints = raw
+                        .get(i)
+                        .ok_or("--joints requires value")?
+                        .parse()
+                        .map_err(|e| format!("--joints: {e}"))?;
+                }
+                "--frozen-joints" => {
+                    i += 1;
+                    args.mock_s1_frozen_joints =
+                        Some(raw.get(i).ok_or("--frozen-joints requires value")?.clone());
+                }
                 "-h" | "--help" => return Err("HELP".into()),
                 other => return Err(format!("unknown arg: {other}")),
             }
@@ -172,9 +208,15 @@ USAGE:
 
 OPTIONS:
   --bin-dir <DIR>           target/release（默认）—— 找 s0_daemon / mock_s1 / robotctl
-  --config <PATH>           daemon TOML 配置（默认 configs/xlerobot_bus2_full.toml）
+  --config <PATH>           daemon TOML 配置（默认 configs/crash_restart_smoke.toml；
+                            mock_hard_rt 单关节，dev box 兼容；Orin 真机 bus2 9-motor
+                            走 `--config configs/xlerobot_bus2_full.toml`）
   --robot-id-prefix <STR>   每次迭代的 robot_id 前缀（避 iceoryx2 collision）
-  --hardware-id <ID>        匹配 config 的 hardware_id
+  --hardware-id <ID>        匹配 config 的 hardware_id（默认 smoke_arm）
+  --joints <N>              mock_s1 关节数（默认 1，跟默认 config 单 joint 配对；
+                            Orin 真机 bus2 9-motor 走 `--joints 9`）
+  --frozen-joints <CSV>     mock_s1 frozen joints mask（默认空；Orin bus2 走
+                            `--frozen-joints 6,7,8` 防 base 3 wheel 抖动）
   --iterations <N>          迭代次数（默认 5）
   --fsync-grace-ms <MS>     estop 后睡多久才 SIGKILL（默认 500，> 实测 188-255 ms 窗口）
   --pre-estop-settle-ms <MS> daemon 启动后等多久才发 estop（默认 3000）
@@ -449,25 +491,27 @@ fn spawn_daemon(
 }
 
 fn spawn_mock_s1(args: &Args, robot_id: &str, duration_secs: u64) -> std::io::Result<Child> {
-    Command::new(args.bin_dir.join("mock_s1"))
-        .arg("--robot-id")
+    // 默认 dev box smoke：`--joints 1` 跟 configs/crash_restart_smoke.toml 单
+    // joint smoke_arm 配对；amplitude=0.0 → 不摆动，只发 anchor bias 作为
+    // Goal，加心跳推动 state→Enabled.Active。Orin 真机 bus2 9-motor 走
+    // `--joints 9 --frozen-joints 6,7,8`（base 3 wheel 双重保险）。
+    let mut cmd = Command::new(args.bin_dir.join("mock_s1"));
+    cmd.arg("--robot-id")
         .arg(robot_id)
         .arg("--hardware-id")
         .arg(&args.hardware_id)
-        // joints=9 跟 bus2 9-motor 配；amplitude=0.0 → 不摆动，只发 anchor
-        // bias 作为 Goal，加心跳推动 state→Enabled.Active。
-        // base 三个 wheel 通过 frozen_joints 双重保险。
         .arg("--joints")
-        .arg("9")
+        .arg(args.mock_s1_joints.to_string())
         .arg("--amplitude")
         .arg("0.0")
         .arg("--frequency")
         .arg("0.25")
         .arg("--anchor-timeout-ms")
-        .arg("1000")
-        .arg("--frozen-joints")
-        .arg("6,7,8")
-        .arg("--duration")
+        .arg("1000");
+    if let Some(frozen) = &args.mock_s1_frozen_joints {
+        cmd.arg("--frozen-joints").arg(frozen);
+    }
+    cmd.arg("--duration")
         .arg(format!("{duration_secs}s"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
