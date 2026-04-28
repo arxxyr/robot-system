@@ -837,7 +837,7 @@ async fn tear_down_after_case_body(
     case_result: Result<(), String>,
 ) -> Result<(), String> {
     eprintln!("[{case_label}] tearing down");
-    let shutdown_result = shutdown_pair(gateway, daemon).await;
+    let shutdown_result = shutdown_pair(case_label, gateway, daemon).await;
     match (case_result, shutdown_result) {
         (Ok(()), Ok(())) => {
             ctx.cleanup();
@@ -861,7 +861,7 @@ async fn tear_down_after_bring_up_fail(
 ) -> Result<(), String> {
     eprintln!("[{case_label}] FAIL bring-up: {err_msg}");
     if let Some(gw) = maybe_gateway {
-        let _ = shutdown_pair(gw, daemon).await;
+        let _ = shutdown_pair(case_label, gw, daemon).await;
     } else {
         let _ = daemon.shutdown(Duration::from_secs(2)).await;
     }
@@ -1302,20 +1302,28 @@ fn first_line(s: &str) -> &str {
 /// `Ok(())`，跟 outline / commit 契约（"graceful exit code 0"）不一致。
 ///
 /// **caller 用法**：
-/// - **PASS 路径**（happy / readiness 全过）：`shutdown_pair(gw, dm).await?`
-///   把 shutdown 自身错升级到 case Err。
+/// - **PASS 路径**（happy / readiness 全过）：`shutdown_pair(case_label,
+///   gw, dm).await?` 把 shutdown 自身错升级到 case Err。
 /// - **FAIL 路径**（bring-up 已 Err，要 best-effort cleanup）：
-///   `let _ = shutdown_pair(gw, dm).await;` 忽略二次错；保留原始 bring-up
-///   err_msg。
-async fn shutdown_pair(gateway: SubprocessHandle, daemon: SubprocessHandle) -> Result<(), String> {
+///   `let _ = shutdown_pair(case_label, gw, dm).await;` 忽略二次错；保
+///   留原始 bring-up err_msg。
+///
+/// **A1-3 (3/3-b) round 2 nit 修**：`case_label` 必传，让 `--case all`
+/// 顺序跑时每 case 的 shutdown 退出日志带正确 case 前缀（之前硬编码
+/// `[selftest]` 误导 forensic）。
+async fn shutdown_pair(
+    case_label: &str,
+    gateway: SubprocessHandle,
+    daemon: SubprocessHandle,
+) -> Result<(), String> {
     let (gw_exit, gw_tail) = gateway.shutdown(Duration::from_secs(3)).await;
     eprintln!(
-        "[selftest] gateway exited {gw_exit:?}; tail {} lines",
+        "[{case_label}] gateway exited {gw_exit:?}; tail {} lines",
         gw_tail.len()
     );
     let (dm_exit, dm_tail) = daemon.shutdown(Duration::from_secs(3)).await;
     eprintln!(
-        "[selftest] daemon exited {dm_exit:?}; tail {} lines",
+        "[{case_label}] daemon exited {dm_exit:?}; tail {} lines",
         dm_tail.len()
     );
 
