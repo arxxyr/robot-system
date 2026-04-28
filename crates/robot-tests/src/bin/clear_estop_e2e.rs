@@ -766,18 +766,25 @@ async fn run_selftest(args: &Args) -> Result<(), String> {
     match bring_up_res {
         Ok(gateway) => {
             eprintln!("[selftest] PASS readiness probe; tearing down");
-            shutdown_pair(gateway, daemon).await;
+            // PASS 路径：shutdown 自身错升级到 case Err（reviewer (3/3-a)
+            // round 2 阻断：必须断言两进程 graceful exit code 0）；FAIL 时
+            // workdir **不** cleanup 留 forensic。
+            if let Err(e) = shutdown_pair(gateway, daemon).await {
+                return Err(format!("shutdown FAIL after readiness PASS:\n{e}"));
+            }
             ctx.cleanup();
             Ok(())
         }
         Err((maybe_gateway, err_msg)) => {
             eprintln!("[selftest] FAIL bring-up: {err_msg}");
+            // FAIL 路径：bring-up 已经 Err，shutdown 走 best-effort（不让
+            // 二次错盖掉原始 bring-up err_msg）；workdir 也不 cleanup 留
+            // forensic。
             if let Some(gw) = maybe_gateway {
-                shutdown_pair(gw, daemon).await;
+                let _ = shutdown_pair(gw, daemon).await;
             } else {
                 let _ = daemon.shutdown(Duration::from_secs(2)).await;
             }
-            // FAIL 路径**不** cleanup workdir，留文件给人工 forensic
             Err(err_msg)
         }
     }
@@ -836,17 +843,56 @@ async fn bring_up_and_probe(
 
 /// shutdown 顺序（reviewer 拍板）：先 SIGTERM gateway，再 SIGTERM daemon；
 /// 各自 grace 超时 SIGKILL；都 reap zombie。
-async fn shutdown_pair(gateway: SubprocessHandle, daemon: SubprocessHandle) {
+///
+/// **A1-3 (3/3-a) round 2 阻断 修复**：caller 必须真断言 exit code 0
+/// （`ExitStatus::success()`）。任一进程 None / 非 0 → `Err` 带 tail 日志。
+/// 旧实现仅打印 ExitStatus 不返错，PASS 路径 selftest 即使子进程崩仍返
+/// `Ok(())`，跟 outline / commit 契约（"graceful exit code 0"）不一致。
+///
+/// **caller 用法**：
+/// - **PASS 路径**（happy / readiness 全过）：`shutdown_pair(gw, dm).await?`
+///   把 shutdown 自身错升级到 case Err。
+/// - **FAIL 路径**（bring-up 已 Err，要 best-effort cleanup）：
+///   `let _ = shutdown_pair(gw, dm).await;` 忽略二次错；保留原始 bring-up
+///   err_msg。
+async fn shutdown_pair(gateway: SubprocessHandle, daemon: SubprocessHandle) -> Result<(), String> {
     let (gw_exit, gw_tail) = gateway.shutdown(Duration::from_secs(3)).await;
     eprintln!(
-        "[selftest] gateway exited {:?}; tail {} lines",
-        gw_exit,
+        "[selftest] gateway exited {gw_exit:?}; tail {} lines",
         gw_tail.len()
     );
     let (dm_exit, dm_tail) = daemon.shutdown(Duration::from_secs(3)).await;
     eprintln!(
-        "[selftest] daemon exited {:?}; tail {} lines",
-        dm_exit,
+        "[selftest] daemon exited {dm_exit:?}; tail {} lines",
         dm_tail.len()
     );
+
+    let mut errors: Vec<String> = Vec::new();
+    match gw_exit {
+        Some(s) if s.success() => {}
+        Some(s) => errors.push(format!(
+            "gateway non-zero exit: {s:?}; tail:\n{}",
+            gw_tail.join("\n")
+        )),
+        None => errors.push(format!(
+            "gateway shutdown without ExitStatus; tail:\n{}",
+            gw_tail.join("\n")
+        )),
+    }
+    match dm_exit {
+        Some(s) if s.success() => {}
+        Some(s) => errors.push(format!(
+            "daemon non-zero exit: {s:?}; tail:\n{}",
+            dm_tail.join("\n")
+        )),
+        None => errors.push(format!(
+            "daemon shutdown without ExitStatus; tail:\n{}",
+            dm_tail.join("\n")
+        )),
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("\n---\n"))
+    }
 }
