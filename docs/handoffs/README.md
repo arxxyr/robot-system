@@ -37,6 +37,7 @@ ls -t docs/handoffs/*.md | head -2 | xargs -I {} less {}
 | Milestone | 用途 | 文件 |
 |---|---|---|
 | **v0.3 entry** | v0.2 → v0.3 边界 + 第一批工作项硬契约（ClearEStop control-plane slice / freeze hook + e2e / 禁止项）；reviewer 先用本 handoff 做文档审核再放第一批实现 | [v0.3_entry.md](v0.3_entry.md) |
+| **v0.3 A1-4 clear_estop smoke** | A1 ClearEStop control plane 端到端 smoke 实证封存 + 可复跑入口（`scripts/run_clear_estop_smoke.sh`）；A1-1 → A1-3 (3/3-b) 完整 42 个 commit chain；§6.7 #3 仍降级宣称（A1-5 闭环时升） | [v0.3_a1_4_clear_estop_smoke.md](v0.3_a1_4_clear_estop_smoke.md) |
 
 ## 列表（daily session snapshots）
 
