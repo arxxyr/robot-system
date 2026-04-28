@@ -6,23 +6,21 @@
 # 这条 §6.7 #2 完整路径**留 v0.3** 测试基础设施（详
 # `scripts/systemd/README.md` "验证 systemd 重启路径" 节）。
 #
-# **EStop latch fail-closed**（reviewer round 4 阻断 2 实施 §6.7 #3）：
-# `s0_daemon` 默认 `MissingLatchPolicy::Strict`，latch primary + bak 都
-# 不存在时拒启动。**首次部署必须先 provision 一份 `latch=0\n`**，详
-# `scripts/systemd/README.md` "首次部署 — latch provision" 节，**不要**
-# 直接照下面老式 6 步走（干净机器跑会立即 failed）。
+# **EStop latch fail-closed**（reviewer round 4 阻断 2 实施 §6.7 #3，
+# A1-5 撤 `--allow-empty-latch` opt-in 后锁死为唯一行为）：`s0_daemon`
+# strict fail-closed，latch primary + bak 都不存在时拒启动。**首次部署
+# 必须先 provision 一份 `latch=0\n`**，详 `scripts/systemd/README.md`
+# "首次部署 — latch provision **必读**" 节，**不要**直接照下面安装步
+# 骤跳过 provision（干净机器跑会立即 failed）。
 #
 # ## 安装（必须 follow `scripts/systemd/README.md` 完整流程）
 #
 # 1. 编辑本 unit 的 `User=` / `Group=` / `WorkingDirectory=` / `ExecStart=`
 #    路径填实机用户和 robot-system 仓库位置（`loosqk` 是 Orin 默认 user，
 #    其它机器要改）。
-# 2. 按 README "首次部署 — latch provision **必读**" 节准备 latch
-#    （**两个流程二选一**，**都不能跳过**）：
-#    a) **推荐**：直接 `printf '0\n' | tee` provision primary + bak 双
-#       文件；之后正常 `start` strict 不阻断。
-#    b) **替代**：drop-in `--allow-empty-latch` 一次性启停产生 latch=0，
-#       然后撤掉 drop-in，strict 守门接管 + 验证 rm latch 后真 fail。
+# 2. 按 README "首次部署 — latch provision **必读**" 节 provision latch
+#    （`printf '0\n' | tee` 写 primary + bak 双文件；A1-5 后 strict 是唯
+#    一行为，**没**有 opt-in 跳过 provision 的路径）。
 # 3. `sudo cp scripts/systemd/xlerobot-s0-bus2.service /etc/systemd/system/`
 #    + `sudo systemctl daemon-reload`。
 # 4. `sudo systemctl start xlerobot-s0-bus2`；

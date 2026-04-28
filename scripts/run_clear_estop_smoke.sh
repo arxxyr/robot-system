@@ -18,8 +18,12 @@
 #
 # 不在范围（reviewer A1-4 拍板）：
 #   - reject_state / crash-replay 等 follow-up case；
-#   - GitHub Actions / `.github/workflows/` CI 接入；
-#   - `--allow-empty-latch` 撤销（A1-5 范围）。
+#   - GitHub Actions / `.github/workflows/` CI 接入。
+#
+# A1-5 land 后：`--allow-empty-latch` opt-in 已撤；本 smoke 用的
+# `clear_estop_e2e` harness 自己 provision `1\n` 到 latch primary + bak
+# （走 strict fail-closed 唯一路径），跟 `crash_restart_smoke` provision
+# 模式一致。
 #
 # 退出码：透传 clear_estop_e2e 自身退出码（0 全过；1 CLI/preflight 错；
 # 2 ≥ 1 case FAIL）；build 失败 → exit 1。

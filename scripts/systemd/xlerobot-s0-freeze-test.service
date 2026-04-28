@@ -76,8 +76,9 @@ NotifyAccess=main
 
 WorkingDirectory=@WORKDIR@
 
-# `--allow-empty-latch` 不传：smoke 已经 provision latch=0\n 走 strict
-# 路径（reviewer round 4 阻断 2 实施 §6.7 #3 一致）。
+# smoke 已经 provision latch=0\n 走 strict 路径（reviewer round 4 阻断 2
+# 实施 §6.7 #3；A1-5 撤掉 `--allow-empty-latch` opt-in 后 strict 是唯一
+# 行为）。
 ExecStart=@DAEMON_BIN@ \
     --robot-id @ROBOT_ID@ \
     --hardware-id @HARDWARE_ID@ \

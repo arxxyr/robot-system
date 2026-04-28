@@ -34,20 +34,22 @@ daemon" 部署。两 daemon 用 unique `robot-id`（`xlerobot_bus1_full` /
 
 ## 首次部署 — latch provision **必读**
 
-`s0_daemon` 默认走 `MissingLatchPolicy::Strict`：**latch primary + bak
-两份都不存在时拒启动**（reviewer round 4 阻断 2 实施 §6.7 #3，详
+`s0_daemon` 走 strict fail-closed：**latch primary + bak 两份都不存在
+时拒启动**（reviewer round 4 阻断 2 实施 §6.7 #3，A1-5 撤掉
+`--allow-empty-latch` opt-in 后锁死为唯一行为；详
 `crates/robot-s0/src/estop_latch.rs`）。干净机器只创建目录就 `start`
 unit 会立刻 `failed` —— 所以首次部署必须**先 provision** 一份 latch
 文件（值 = `0`，等价于 "EStop 未触发"）。之后 strict 守门 "rm latch &&
 restart" 就**不**等价于"清空 EStop"。
 
-> v0.2 没有 `ClearEStop` control action 入口（v0.3 A1 control-plane slice
-> 落地；RPC / Web / 本地维护面板都是同一 action 的 transport 入口，详
-> `docs/CHANGELOG.md` 2026-04-26 "v0.3 entry：`ClearEStop RPC` 文案的控制
-> 动作解释"）。目前唯一合法的"重设 latch=0"路径就是 deploy 时一次性手动
-> provision；这是显式授权流程，不等价于 ClearEStop control action。
+> 真清 latch 路径 = (a) 首次部署 deploy 流程显式 provision `0\n`（这是
+> 显式授权流程，不等价于 ClearEStop control action），或 (b) daemon
+> 运行期通过 v0.3 A1 `ClearEStop` control action 真清（gRPC / Web /
+> 本地维护面板都是同一 action 的 transport 入口；详
+> `docs/CHANGELOG.md` 2026-04-26 "v0.3 entry：`ClearEStop RPC` 文案的
+> 控制动作解释"）。
 
-### 推荐流程：直接 provision latch=0（无需 opt-in flag）
+### deploy 流程：provision latch=0
 
 ```bash
 # 1) 编辑 unit 里的 User= / WorkingDirectory= / ExecStart= 路径，填实机
@@ -75,60 +77,20 @@ sudo systemctl enable xlerobot-s0-bus2
 journalctl -u xlerobot-s0-bus2 -f
 ```
 
-### 替代流程：一次性 `--allow-empty-latch` opt-in
-
-如果 deploy 流程不想手写 latch 文件（CI 部署 / Ansible 等），可以**一次
-性**走 drop-in override 加 `--allow-empty-latch` 让 daemon 自动持久化
-`latch=0`，**之后立刻移掉 drop-in** 让 strict 接管：
+### strict 守门验证（可选 sanity）
 
 ```bash
-# (1)~(2) 同上：编辑 unit + 建目录
-
-# 3a) 装 unit
-sudo cp scripts/systemd/xlerobot-s0-bus2.service /etc/systemd/system/
-
-# 3b) drop-in 一次性 opt-in
-sudo install -d /etc/systemd/system/xlerobot-s0-bus2.service.d
-sudo tee /etc/systemd/system/xlerobot-s0-bus2.service.d/10-bootstrap.conf >/dev/null <<'EOF'
-[Service]
-ExecStart=
-ExecStart=/home/loosqk/repo/robot/robot-system/target/release/s0_daemon \
-    --robot-id xlerobot_bus2_full \
-    --hardware-id right_arm_full_with_base \
-    --config /home/loosqk/repo/robot/robot-system/configs/xlerobot_bus2_full.toml \
-    --latch-path /var/lib/robot/xlerobot_bus2_full/estop_latch \
-    --tick-hz 50 \
-    --allow-empty-latch
-EOF
-sudo systemctl daemon-reload
-
-# 3c) start：daemon AllowEmpty 看到 latch 缺失 → 默认 false；graceful shutdown
-#     时 save_estop_latch 写一份 0\n 进 latch + bak
-sudo systemctl start xlerobot-s0-bus2
-sleep 3
-sudo systemctl stop xlerobot-s0-bus2     # 触发 graceful shutdown 的 latch 持久化
-ls -l /var/lib/robot/xlerobot_bus2_full/estop_latch{,.bak}   # 期望两份都在
-cat /var/lib/robot/xlerobot_bus2_full/estop_latch    # 期望 "0"
-
-# 3d) **撤掉** drop-in，恢复 strict
-sudo rm -rf /etc/systemd/system/xlerobot-s0-bus2.service.d
-sudo systemctl daemon-reload
-
-# 3e) strict 模式真启动（latch 已有 = "0"，strict 不阻断）
-sudo systemctl start xlerobot-s0-bus2
-systemctl is-active xlerobot-s0-bus2   # 期望 active
-sudo systemctl enable xlerobot-s0-bus2
-
-# 3f) **strict 守门验证**：手动 rm latch 后再 start 应当 fail
+# 手动 rm latch 后再 start 应当 fail
 sudo systemctl stop xlerobot-s0-bus2
 sudo rm -f /var/lib/robot/xlerobot_bus2_full/estop_latch{,.bak}
 sudo systemctl start xlerobot-s0-bus2 || true
 systemctl is-active xlerobot-s0-bus2   # 期望 failed (NOT active)
-sudo journalctl -u xlerobot-s0-bus2 -n 8 --no-pager -o cat | grep -E "fail-closed|allow-empty"
+sudo journalctl -u xlerobot-s0-bus2 -n 8 --no-pager -o cat | grep -E "fail-closed|both missing"
                                        # 期望看到 ERROR "fail-closed
-                                       # (need --allow-empty-latch opt-in or
-                                       # ClearEStop control action in v0.3)"
-# 验证完后 provision latch=0（按上面"推荐流程" §3 步骤），重启 strict
+                                       # (provision `0\n` to both files for first
+                                       # deploy, or use ClearEStop control action
+                                       # at runtime)"
+# 验证完后再次 provision latch=0（按上面"deploy 流程" §3 步骤）。
 ```
 
 ### 全栈部署（两 bus 一起跑）
@@ -228,7 +190,8 @@ timeout → `Restart=on-failure`）。
   v0.3+ 的 unit —— 跟着相应 crate 一起在那个 milestone 加。
 - 动态生成 unit（unit template `@.service`）—— v0.2 单 robot 部署用静
   态 unit 即可；多机器 / 多 robot 部署再考虑模板化。
-- `ClearEStop` control-plane slice（v0.3 A1）—— 落地后 `--allow-empty-latch`
-  flag 应当移除，latch=0 重设只能走 `ClearEStop` control action（RPC / Web /
-  本地维护面板都是同一 action 的 transport 入口，带 maintainer+ auth +
-  confirmation + audit；详 `docs/handoffs/v0.3_entry.md` §3.5）。
+- `--allow-empty-latch` opt-in flag — A1-5 已撤；唯一守门 = strict
+  fail-closed + 上文 "首次部署" 段的运维 provision 流程；运行期清 latch
+  只能走 v0.3 A1 `ClearEStop` control action（RPC / Web / 本地维护面板
+  都是同一 action 的 transport 入口，带 maintainer+ auth + confirmation
+  + audit）。

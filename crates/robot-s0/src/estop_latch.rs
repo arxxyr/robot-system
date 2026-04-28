@@ -12,16 +12,14 @@
 //! 单行文本：`"1\n"` = latched，`"0\n"` = not latched。其他内容（长度 > 2 /
 //! 首字符不是 `0` 或 `1`）= `InvalidData` 错误。
 //!
-//! **缺失语义按 [`MissingLatchPolicy`] 决定**（reviewer round 4 阻断 2 实施
-//! `docs/00_design.md` §6.7 #3）：
-//!
-//! - `Strict`（[`load_estop_latch`] 默认 / 生产 daemon）：primary + backup
-//!   都不存在时返 `io::ErrorKind::NotFound` 让调用方拒启动 —— "rm latch
-//!   && restart" **不**等价于"清空 EStop"，要等 v0.3 `ClearEStop` control
-//!   action（A1 control-plane slice）真清才算解锁。
-//! - `AllowEmpty`（[`load_estop_latch_with_mode`] + `--allow-empty-latch`
-//!   CLI / 单测 / bring-up 工具走这条）：保留旧 `Ok(false)` 行为，等价于
-//!   "首次部署 / 实验场景"显式 opt-in。
+//! **缺失语义 = strict fail-closed**（reviewer round 4 阻断 2 实施
+//! `docs/00_design.md` §6.7 #3，A1-5 撤掉 `--allow-empty-latch` opt-in 后
+//! 锁死为唯一行为）：primary + backup 都不存在时 [`load_estop_latch`] 返
+//! `io::ErrorKind::NotFound`，调用方拒启动 —— "rm latch && restart" **不**
+//! 等价于"清空 EStop"，要么 (a) 首次部署期间运维显式 provision `0\n` 到
+//! 两份 latch 文件后再起 daemon（详 `scripts/systemd/README.md`），要么
+//! (b) daemon 运行期通过 v0.3 A1 `ClearEStop` control action（gRPC /
+//! Web / 本地维护面板都是同一 action 的 transport）真清。
 //!
 //! ### 原子写（**双文件**）
 //!
@@ -43,13 +41,13 @@
 //!
 //! ### 读 fallback 自愈
 //!
-//! [`load_estop_latch_with_mode`] 读 primary：
+//! [`load_estop_latch`] 读 primary：
 //!
 //! - 合法 `0\n` / `1\n` → 直接用
 //! - **`NotFound`**：尝试读 backup；backup 合法 → 用之 + 把值**回写 primary**
-//!   （自愈）；backup 也 `NotFound` 时按 [`MissingLatchPolicy`] 分流：
-//!   - `Strict` → 返 `NotFound` err（fail-closed，调用方拒启动）
-//!   - `AllowEmpty` → 返 `Ok(false)`（显式 opt-in 后允许"首次部署"语义）
+//!   （自愈）；backup 也 `NotFound` → 返 `NotFound` err（fail-closed，
+//!   调用方拒启动；A1-5 之前曾走 `MissingLatchPolicy::AllowEmpty` opt-in
+//!   返 `Ok(false)`，已撤）
 //! - **`InvalidData`**（文件损坏）：尝试读 backup；backup 合法 → 用之 + 回写
 //!   primary（自愈）；backup 也损坏 → 返回 `InvalidData`（系统级故障，调用方
 //!   应进 Fault 而非默认 not-latched）
@@ -73,47 +71,28 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static TMP_SUFFIX_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// 从 primary `path` 读 `EStop` latch 状态；primary 缺失 / 损坏时 fallback
-/// 到 `<path>.bak` 并自愈回写 primary。**走 [`MissingLatchPolicy::Strict`]**
-/// （生产 daemon 默认；reviewer round 4 阻断 2 实施 §6.7 #3）。
+/// 到 `<path>.bak` 并自愈回写 primary。
 ///
-/// 两份文件都不存在 → **fail-closed**：返 `io::ErrorKind::NotFound`，调用
-/// 方应拒启动 + 报"需 `ClearEStop` control action（v0.3 A1 control-plane
-/// slice）解除，或显式 `--allow-empty-latch` opt-in（首次部署 / bring-up）"。
+/// **strict fail-closed**（A1-5 后唯一行为）：两份文件都不存在 → 返
+/// `io::ErrorKind::NotFound`，调用方应拒启动；运维侧补救路径：
+///
+/// - **首次部署**：手动 provision `0\n` 到 primary + backup 两个文件后再
+///   起 daemon（详 `scripts/systemd/README.md` "首次部署 — latch
+///   provision **必读**" 段）。
+/// - **运行期**：v0.3 A1 `ClearEStop` control action（gRPC / Web / 本地
+///   维护面板都是同一 action 的 transport 入口）真清。
+///
+/// A1-5 之前曾有 `--allow-empty-latch` opt-in / `MissingLatchPolicy::AllowEmpty`
+/// 模式让两份缺失返 `Ok(false)`（首次部署 / bring-up 实验语义），已撤。
 ///
 /// # Errors
 ///
 /// - `io::ErrorKind::NotFound`：primary + backup 都不存在（fail-closed，
-///   §6.7 #3 守门；走 `AllowEmpty` 反而返 `Ok(false)` 见
-///   [`load_estop_latch_with_mode`]）。
+///   §6.7 #3 守门）。
 /// - `io::ErrorKind::InvalidData`：primary **和** backup 都损坏（系统级
 ///   故障，调用方应进 Fault 状态）。
 /// - 底层 IO 错误（权限 / 磁盘满等）：透传。
 pub fn load_estop_latch(path: &Path) -> io::Result<bool> {
-    load_estop_latch_with_mode(path, MissingLatchPolicy::Strict)
-}
-
-/// `load_estop_latch` 行为模式（[`load_estop_latch_with_mode`] 入参）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MissingLatchPolicy {
-    /// **严格模式**（生产默认，`docs/00_design.md` §6.7 #3 实施）：primary
-    /// 跟 backup 都不存在时返 `io::ErrorKind::NotFound`，daemon 启动期拒
-    /// 启动。调用方应当报 "需 `ClearEStop` control action（v0.3 A1
-    /// control-plane slice）解除，或 `--allow-empty-latch` CLI 显式 opt-in"。
-    Strict,
-    /// **opt-in 模式**：primary 跟 backup 都不存在时返 `Ok(false)`，等价
-    /// 于 "首次部署 / 实验场景" 的 `latched=false` 默认。调用方必须显式
-    /// opt-in（CLI flag 或 deploy 脚本走过授权流程）。
-    AllowEmpty,
-}
-
-/// 显式入参 [`MissingLatchPolicy`] 的版本。生产 daemon 走 `Strict`，
-/// `--allow-empty-latch` CLI / 单测 / bring-up 工具走 `AllowEmpty`。
-///
-/// # Errors
-///
-/// 见 [`load_estop_latch`]；区别仅在 `MissingLatchPolicy::AllowEmpty` 模式
-/// 下两份都 `NotFound` 时返 `Ok(false)` 而不是 `Err(NotFound)`。
-pub fn load_estop_latch_with_mode(path: &Path, mode: MissingLatchPolicy) -> io::Result<bool> {
     let bak = backup_path(path);
     match read_single(path) {
         Ok(v) => Ok(v),
@@ -133,42 +112,30 @@ pub fn load_estop_latch_with_mode(path: &Path, mode: MissingLatchPolicy) -> io::
                         Ok(v)
                     }
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                        // 两份都不存在 — 按 mode 分流（reviewer round 4 阻断 2）：
-                        // - Strict（生产默认）：返 NotFound err，daemon 拒启动。
-                        //   "rm latch && restart" 不再等价于 "ClearEStop"；§6.7
-                        //   #3 "只能 ClearEStop control action 解除" 在 v0.3
-                        //   ClearEStop control plane slice 落地前由 "显式
-                        //   --allow-empty-latch opt-in" 守门。control action
-                        //   解释见 docs/CHANGELOG.md 2026-04-26 "v0.3 entry：
-                        //   ClearEStop RPC 文案的控制动作解释"条目。
-                        // - AllowEmpty：保留旧 Ok(false) 行为（首次部署 / 单测 /
-                        //   bring-up 实验场景）。
-                        match mode {
-                            MissingLatchPolicy::Strict => {
-                                tracing::error!(
-                                    primary = %path.display(),
-                                    backup = %bak.display(),
-                                    "estop_latch: primary AND backup both missing; \
-                                     fail-closed (need --allow-empty-latch opt-in or \
-                                     ClearEStop control action in v0.3)"
-                                );
-                                Err(io::Error::new(
-                                    io::ErrorKind::NotFound,
-                                    "estop_latch: primary AND backup both missing \
-                                     (fail-closed; pass --allow-empty-latch on first \
-                                     deploy or wait for ClearEStop control action in v0.3)",
-                                ))
-                            }
-                            MissingLatchPolicy::AllowEmpty => {
-                                tracing::warn!(
-                                    primary = %path.display(),
-                                    backup = %bak.display(),
-                                    "estop_latch: primary AND backup both missing; \
-                                     --allow-empty-latch opt-in → defaulting to false"
-                                );
-                                Ok(false)
-                            }
-                        }
+                        // 两份都不存在 — strict fail-closed（reviewer round 4
+                        // 阻断 2 实施 §6.7 #3；A1-5 撤掉 `--allow-empty-latch`
+                        // opt-in 后锁死为唯一行为）：返 NotFound err，daemon
+                        // 拒启动。"rm latch && restart" 不等价于 "ClearEStop"；
+                        // 真清 latch 路径 = (a) 首次部署运维显式 provision
+                        // `0\n` 到两份文件后再起 daemon，或 (b) 运行期通过
+                        // v0.3 A1 `ClearEStop` control action（gRPC / Web /
+                        // 本地维护面板都是同一 action 的 transport）真清。
+                        // control action 解释见 docs/CHANGELOG.md 2026-04-26
+                        // "v0.3 entry：ClearEStop RPC 文案的控制动作解释" 条目。
+                        tracing::error!(
+                            primary = %path.display(),
+                            backup = %bak.display(),
+                            "estop_latch: primary AND backup both missing; \
+                             fail-closed (provision `0\\n` to both files for first \
+                             deploy, or use ClearEStop control action at runtime)"
+                        );
+                        Err(io::Error::new(
+                            io::ErrorKind::NotFound,
+                            "estop_latch: primary AND backup both missing \
+                             (fail-closed; first-deploy: provision \"0\\n\" to both \
+                             primary + backup before start; runtime clear: ClearEStop \
+                             control action)",
+                        ))
                     }
                     Err(e) => Err(e),
                 }
@@ -379,26 +346,23 @@ mod tests {
         dir.path().join("estop_latch")
     }
 
-    /// **reviewer round 4 阻断 2 实施**：strict 模式（生产默认）下 latch 缺失
-    /// 必须 fail-closed（NotFound err），daemon 拒启动；不再返 Ok(false)。
+    /// **reviewer round 4 阻断 2 实施**（A1-5 锁死为唯一行为）：latch 缺失
+    /// 必须 fail-closed（NotFound err），daemon 拒启动。err 文案必须给运
+    /// 维明确补救路径（首次部署手动 provision 或运行期 `ClearEStop`
+    /// control action），跟 `scripts/systemd/README.md` 的 "首次部署 — latch
+    /// provision **必读**" 段语义对齐。
     #[test]
-    fn load_nonexistent_strict_returns_not_found_err() {
+    fn load_nonexistent_returns_not_found_err() {
         let dir = TempDir::new().unwrap();
         let err = load_estop_latch(&latch_path(&dir)).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
         assert!(
-            err.to_string().contains("--allow-empty-latch"),
-            "err message must hint at the opt-in flag for operator action: {err}"
+            err.to_string().contains("ClearEStop control action"),
+            "err message must hint at runtime ClearEStop control action: {err}"
         );
-    }
-
-    /// `AllowEmpty` 模式 = `--allow-empty-latch` opt-in / bring-up：保留旧
-    /// `Ok(false)` 行为（首次部署 / 单测）。
-    #[test]
-    fn load_nonexistent_allow_empty_returns_false() {
-        let dir = TempDir::new().unwrap();
         assert!(
-            !load_estop_latch_with_mode(&latch_path(&dir), MissingLatchPolicy::AllowEmpty).unwrap()
+            err.to_string().contains("first-deploy"),
+            "err message must hint at first-deploy provision path: {err}"
         );
     }
 
@@ -547,10 +511,10 @@ mod tests {
     }
 
     #[test]
-    fn load_returns_not_found_when_both_missing_strict() {
-        // **reviewer round 4 阻断 2 实施**：strict 模式（生产默认）下 primary +
-        // backup 都不存在不再返 Ok(false)，而是 fail-closed NotFound err。
-        // bring-up 走 AllowEmpty 模式（详 load_nonexistent_allow_empty_returns_false）。
+    fn load_returns_not_found_when_both_missing() {
+        // **reviewer round 4 阻断 2 实施**（A1-5 锁死为唯一行为）：primary
+        // + backup 都不存在 → fail-closed NotFound err，不再返 Ok(false)。
+        // 旧 `MissingLatchPolicy::AllowEmpty` opt-in 路径 A1-5 撤掉。
         let dir = TempDir::new().unwrap();
         let p = latch_path(&dir);
         let err = load_estop_latch(&p).unwrap_err();

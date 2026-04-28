@@ -298,6 +298,18 @@ fn run_iteration(args: &Args, seq: u32, robot_id: &str) -> IterResult {
     let _ = std::fs::remove_file(&latch_path);
     let _ = std::fs::remove_file(&latch_bak);
 
+    // **A1-5**：撤 `--allow-empty-latch` opt-in 后，daemon 默认 strict
+    // fail-closed 拒启动缺 latch；测试自己 provision `0\n` 到 primary +
+    // bak（跟 `scripts/systemd/README.md` "首次部署" 推荐流程一致）。旧
+    // 实现通过 `--allow-empty-latch` 跳过 provision，A1-5 后该 flag 不
+    // 存在，必须显式预写。
+    if let Err(e) = std::fs::write(&latch_path, "0\n") {
+        return fail(seq, robot_id, format!("provision primary latch=0\\n: {e}"));
+    }
+    if let Err(e) = std::fs::write(&latch_bak, "0\n") {
+        return fail(seq, robot_id, format!("provision bak latch=0\\n: {e}"));
+    }
+
     // ---- 1) spawn daemon ----
     let mut daemon = match spawn_daemon(args, robot_id, &latch_path, /*smoke_secs=*/ 30) {
         Ok(c) => c,
@@ -429,7 +441,6 @@ fn spawn_daemon(
         .arg(latch_path)
         .arg("--tick-hz")
         .arg("50")
-        .arg("--allow-empty-latch")
         .arg("--smoke-duration")
         .arg(format!("{smoke_secs}s"))
         .stdout(Stdio::null())
@@ -506,7 +517,6 @@ fn run_daemon_briefly(
         .arg(latch_path)
         .arg("--tick-hz")
         .arg("50")
-        .arg("--allow-empty-latch")
         .arg("--smoke-duration")
         .arg(format!("{secs}s"))
         .env("ROBOT_LOG_FORMAT", "json")

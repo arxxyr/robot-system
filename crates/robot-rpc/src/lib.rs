@@ -12,9 +12,9 @@
 //! - **bin**：`robot_rpc_gateway` 独立进程（A1-3 (2/3-a) 起加；loopback-only
 //!   tonic gRPC server + A1-3 (2/3-b) 起接 iceoryx2 RR client →
 //!   `s0_daemon`）。
-//! - **不**接 S0 mutation；**不**删 `--allow-empty-latch` /
-//!   `MissingLatchPolicy::AllowEmpty`；**不**宣称 `docs/00_design.md` §6.7
-//!   #3 真锁住（A1 全 land 后由 A1-5 升级真宣称）。
+//! - **不**接 S0 mutation。`--allow-empty-latch` opt-in /
+//!   `MissingLatchPolicy::AllowEmpty` 撤销 + `docs/00_design.md` §6.7 #3
+//!   真宣称升级走 A1-5（A1 全链路 land 后的 Phase A 收尾）。
 //! - 依赖白名单登记走 `docs/CHANGELOG.md` 2026-04-27 "A1-1 (3/3) robot-rpc
 //!   skeleton + tonic 引入" + 2026-04-28 "A1-3 (2/3) `robot_rpc_gateway`
 //!   binary 依赖" 偏离登记。

@@ -137,10 +137,11 @@
 - §6 latch=true 重启：`initial estop_latched=true`，state 全程 Safe，hb 进来后仍**不**进 Ready/Enabled
 - §7 删 latch 重启：`estop_latched=false` → 第二次 ballet → 第二次 EStop → motor 全 0
   （**⚠️ pre-strict 历史记录**：reviewer round 4 commit `4222df5` 之后默认
-  `MissingLatchPolicy::Strict` 让 "rm latch && restart" fail-closed 拒启动，
-  此条 baseline 行为不可在当前 v0.2 复现；当前合法 latch=0 重置走
-  `scripts/systemd/README.md` provision 流程，**不**等价于 ClearEStop —
-  详 docs/CHANGELOG.md 2026-04-26 round 4/5 条目）
+  strict fail-closed（A1-5 撤 `--allow-empty-latch` opt-in 后唯一行为）让
+  "rm latch && restart" 拒启动，此条 baseline 行为不可在当前 v0.2 复现；
+  当前合法 latch=0 重置走 `scripts/systemd/README.md` provision 流程，
+  **不**等价于 ClearEStop — 详 docs/CHANGELOG.md 2026-04-26 round 4/5
+  条目 + A1-5 commit）
 
 **未填项**（follow-up）：`read_state` / `write_command` p99 ms-level 量化采样（要在 daemon hot path 加 latency
 计数 + 100 次抽样）；safety_stop_fast / confirm_torque_off 单独 ms-level 计时（当前只验"端到端 < 1s 断扭"，没拆 sync_write

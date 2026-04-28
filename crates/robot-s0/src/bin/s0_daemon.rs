@@ -59,7 +59,7 @@ use robot_core::factory::{AdapterBuildContext, find_factory, registered_factorie
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
 use robot_s0::config_loader::{LoadedConfig, load_robot_config};
-use robot_s0::estop_latch::{MissingLatchPolicy, load_estop_latch_with_mode, save_estop_latch};
+use robot_s0::estop_latch::{load_estop_latch, save_estop_latch};
 use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
 use robot_s0::ipc_thread::{
@@ -120,12 +120,6 @@ struct Args {
     strict_rt: bool,
     joint_count: u8,
     cpu_affinity: Option<usize>,
-    /// `--allow-empty-latch`：primary + bak 两个 latch 都不存在时显式 opt-in
-    /// 走 `latched=false` 启动（等价于"首次部署 / bring-up 实验"语义）。**默认
-    /// false**：daemon fail-closed 拒启动 + 报错（reviewer round 4 阻断 2，
-    /// `docs/00_design.md` §6.7 #3 实施）。`docs/00_design.md` §6.7 #3 真正
-    /// 的 "只能 `ClearEStop` RPC 解除" 在 v0.3 RPC 落地前由这个 flag 守门。
-    allow_empty_latch: bool,
 }
 
 /// CLI 解析完 + `--config` 加载完之后的最终配置（CLI override 优先级已应用）。
@@ -139,7 +133,6 @@ struct ResolvedArgs {
     strict_rt: bool,
     joint_count: u8,
     cpu_affinity: Option<usize>,
-    allow_empty_latch: bool,
     /// `--config` 加载的完整配置（含 ConfigIdentity），无 `--config` 时为 None。
     loaded_config: Option<LoadedConfig>,
     /// v0.2 partial fingerprint：`--config` 模式下来自 TOML，否则按 CLI 现场算
@@ -160,7 +153,6 @@ impl Args {
             strict_rt: false,
             joint_count: 3,
             cpu_affinity: None,
-            allow_empty_latch: false,
         };
 
         let raw: Vec<String> = std::env::args().skip(1).collect();
@@ -217,7 +209,6 @@ impl Args {
                     args.tick_period_ns = 1_000_000_000 / hz;
                 }
                 "--strict-rt" => args.strict_rt = true,
-                "--allow-empty-latch" => args.allow_empty_latch = true,
                 "--joints" => {
                     i += 1;
                     args.joint_count = raw
@@ -302,7 +293,6 @@ impl Args {
             strict_rt: self.strict_rt,
             joint_count: self.joint_count,
             cpu_affinity: self.cpu_affinity,
-            allow_empty_latch: self.allow_empty_latch,
             loaded_config,
             identity,
         })
@@ -339,12 +329,6 @@ OPTIONS:
   --tick-hz <HZ>               rt_thread tick 频率。默认 50。
   --joints <N>                 mock adapter 关节数。默认 3。
   --strict-rt                  RT syscall 失败立即 panic（生产推荐）。
-  --allow-empty-latch          首次部署 / bring-up 实验：primary + bak 两个 latch
-                               都不存在时显式 opt-in 走 latched=false。**默认拒**：
-                               daemon fail-closed 拒启动，因为 \"rm latch && restart\"
-                               不等价于 ClearEStop control action 解除（v0.3 A1
-                               ClearEStop control-plane slice 落地前的守门，详
-                               docs/00_design.md §6.7 #3）。
   --cpu <IDX>                  rt_thread CPU 亲和性。默认不绑核。
   -h, --help                   显示帮助。
 
@@ -465,12 +449,11 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         );
         return Err(1);
     }
-    let latch_policy = if args.allow_empty_latch {
-        MissingLatchPolicy::AllowEmpty
-    } else {
-        MissingLatchPolicy::Strict
-    };
-    let initial_estop_latched = match load_estop_latch_with_mode(&args.latch_path, latch_policy) {
+    // **A1-5**：strict fail-closed 是唯一行为（撤掉 `--allow-empty-latch`
+    // opt-in / `MissingLatchPolicy::AllowEmpty`）。primary + backup 都不
+    // 存在 → `load_estop_latch` 返 NotFound → daemon 拒启动 + 报错指引
+    // 运维 provision `0\n` 或走 ClearEStop control action。
+    let initial_estop_latched = match load_estop_latch(&args.latch_path) {
         Ok(v) => v,
         Err(e) => {
             tracing::error!(

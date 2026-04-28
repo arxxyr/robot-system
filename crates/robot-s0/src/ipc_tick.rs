@@ -248,8 +248,9 @@ pub fn ipc_tick(
                     // `outcome.clear_estop` 让 ipc_thread / gateway 显式 match。
                     let Some(path) = latch_path else {
                         // latch_path 未配置（mock 测试场景）→ ClearEStop
-                        // 静默丢弃。生产期 strict policy 保证 latch_path
-                        // 永远 Some（详 estop_latch::MissingLatchPolicy::Strict）。
+                        // 静默丢弃。生产期 strict fail-closed 保证 latch_path
+                        // 永远 Some（详 estop_latch::load_estop_latch；A1-5
+                        // 撤掉 `MissingLatchPolicy` enum 后 strict 是唯一行为）。
                         continue;
                     };
                     match clear_estop_action::try_apply_clear_estop(

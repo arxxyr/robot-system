@@ -5,8 +5,9 @@
 # §1.2 多 bus 场景说明 + docs/CHANGELOG.md 2026-04-24 "S0 s0_rt_thread 多
 # bus 语义澄清"）。
 #
-# **首次部署**：`s0_daemon` 默认 `MissingLatchPolicy::Strict`，干净机器
-# 没 latch 时 daemon 拒启动 + unit failed。**必须先 provision**
+# **首次部署**：`s0_daemon` 走 strict fail-closed（A1-5 撤掉
+# `--allow-empty-latch` opt-in 后唯一行为），干净机器没 latch 时 daemon
+# 拒启动 + unit failed。**必须先 provision**
 # `/var/lib/robot/xlerobot_bus1_full/estop_latch{,.bak}` = `0\n`，详
 # scripts/systemd/README.md "首次部署 — latch provision **必读**" 节。
 #
