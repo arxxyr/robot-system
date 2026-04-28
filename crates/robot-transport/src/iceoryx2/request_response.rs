@@ -5,14 +5,21 @@
 //! `robot-msg` `[u8]` slice payload + schema attribute verifier 跑得通；
 //! **不**重构现有 `publish_subscribe` 封装（reviewer A1-1 拍板硬边界）。
 //!
-//! ## A1-2 / A1-3 留作业
+//! ## A1 land 后状态 + v0.4+ 留作业
 //!
-//! 真接 S0 daemon / `robot-rpc` 时（A1-2 / A1-3）按需扩：
+//! A1-2（s0_daemon `rr_server_thread`）/ A1-3（`robot-rpc` 端
+//! `rr_io_thread` + `ClearEStopHandler`）已用本 wrapper 真接通跨进程
+//! ClearEStop control plane（详
+//! `docs/handoffs/v0.3_a1_4_clear_estop_smoke.md`）。下面这些仍是 v0.4+
+//! 按需扩展点（**不**卡 A1 收尾，A1 用 schema attribute verifier +
+//! handler 端 deadline + idempotency_key 等已经覆盖核心安全语义）：
 //!
 //! - 双 `schema_id` attribute（当前只挂 request schema_id；response schema_id
 //!   靠 `Resp` 类型参数泛型 + 文档约定，不进 attribute 表）。
 //! - `QoS` profile（当前用 iceoryx2 默认 RR 队列大小 + 单 client 单 server）。
-//! - active request 的 deadline 跟踪 / 超时丢弃。
+//! - active request 的 deadline 跟踪 / 超时丢弃（A1 已在 handler 层走
+//!   `tokio::time::timeout(timeout_ms + grace_ms)` + daemon 端
+//!   `clock.now() > deadline_ns` 两点 check；transport 层不参与）。
 //! - `FrameHeader` 4-byte size prefix wrapping（当前 wire 只是 raw FlatBuffers
 //!   bytes，`Req::SCHEMA_ID` 通过 service attribute verifier 守门）。
 //!

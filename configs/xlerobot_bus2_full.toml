@@ -25,14 +25,18 @@
 # 5. latch 重启 / 第二次 EStop 链路与 Stage 1 同款。
 #
 # ⚠️ Stage 2 真机闭环原始验证（详 `docs/handoffs/2026-04-26_3.md`）发生在
-# `MissingLatchPolicy::Strict` 守门之前；当时的 "手动 ClearEStop" 步骤 =
-# `rm latch + restart`。该路径已不再合法（reviewer round 4 阻断 2 + round
-# 5 后 strict 守门 + `--allow-empty-latch` opt-in；详
-# `crates/robot-s0/src/estop_latch.rs` + `scripts/systemd/README.md` 推荐
-# 流程）。`ClearEStop` 解除完整语义留 v0.3 A1 control-plane slice（RPC /
-# Web / 本地维护面板都是同一 control action 的 transport 入口，详
-# `docs/CHANGELOG.md` 2026-04-26 "v0.3 entry：`ClearEStop RPC` 文案的控制
-# 动作解释"）。
+# strict 守门之前；当时的 "手动 ClearEStop" 步骤 = `rm latch + restart`。
+# 该路径已不再合法 —— reviewer round 4 阻断 2 + round 5 引入 strict
+# fail-closed；A1-5 commit `45df648` 撤掉 `--allow-empty-latch` opt-in
+# 后 strict 是 latch 缺失唯一行为。**A1-5 后唯一解除路径** = v0.3 A1
+# `ClearEStop` control action（gRPC `RobotControl::ClearEStop` / Web /
+# 本地维护面板都是同一 control action 的 transport 入口，带 maintainer+
+# auth + confirmation + idempotency + audit；详
+# `docs/handoffs/v0.3_a1_4_clear_estop_smoke.md` §5 + `docs/CHANGELOG.md`
+# 2026-04-28 "v0.3 A1-5" 偏离登记 + 2026-04-26 "v0.3 entry：`ClearEStop
+# RPC` 文案的控制动作解释"）。首次部署运维流程 = 显式 provision `0\n`
+# 到 latch primary + bak（详 `scripts/systemd/README.md` "首次部署 —
+# latch provision **必读**" 节）。
 #
 # ## bus2 拓扑（dimos `04_踩坑记录.md`）
 #

@@ -2,19 +2,22 @@
 //!
 //! v0.3 A1 ClearEStop control-plane slice gateway。
 //!
-//! ## 当前 scope（A1-1 (3/3) → A1-3 (2/3-a) 落地后）
+//! ## 当前 scope（A1-1 → A1-5 全链路 land 后；Phase A 收尾）
 //!
 //! - **lib**：[`proto`] 模块（tonic codegen）+ [`auth`] /
-//!   [`idempotency`] / [`clear_estop`] 纯函数 + [`gateway`] 模块（A1-3
-//!   (2/3-a) 起加；含 [`gateway::ClearEStopHandler`] +
-//!   [`gateway::run_gateway`] + [`gateway::GatewayConfig`] +
-//!   [`gateway::validate_loopback_bind`]）。
-//! - **bin**：`robot_rpc_gateway` 独立进程（A1-3 (2/3-a) 起加；loopback-only
-//!   tonic gRPC server + A1-3 (2/3-b) 起接 iceoryx2 RR client →
-//!   `s0_daemon`）。
-//! - **不**接 S0 mutation。`--allow-empty-latch` opt-in /
-//!   `MissingLatchPolicy::AllowEmpty` 撤销 + `docs/00_design.md` §6.7 #3
-//!   真宣称升级走 A1-5（A1 全链路 land 后的 Phase A 收尾）。
+//!   [`idempotency`] / [`clear_estop`] 纯函数 + [`gateway`] 模块（含
+//!   [`gateway::ClearEStopHandler`] 12 步 logic + [`gateway::run_gateway_with_rr_io`]
+//!   高层入口 + [`gateway::run_gateway`] / [`gateway::GatewayConfig`] /
+//!   [`gateway::validate_loopback_bind`]）+ [`rr_io_thread`]
+//!   gateway 端 RR I/O 独立 `std::thread`。
+//! - **bin**：`robot_rpc_gateway` 独立进程（loopback-only tonic gRPC
+//!   server + iceoryx2 RR client → `s0_daemon` 端 `rr_server_thread`）。
+//! - **不**接 S0 mutation；S0 状态变更全走 ClearEStop control action
+//!   （`docs/handoffs/v0.3_a1_4_clear_estop_smoke.md` §5 锁住）。
+//! - `--allow-empty-latch` opt-in / `MissingLatchPolicy::AllowEmpty`
+//!   **已由 A1-5 撤销**（commit `45df648`）；strict fail-closed 是
+//!   latch 缺失唯一行为，§6.7 #3 真宣称已升级（详
+//!   `docs/CHANGELOG.md` 2026-04-28 "v0.3 A1-5" 偏离登记）。
 //! - 依赖白名单登记走 `docs/CHANGELOG.md` 2026-04-27 "A1-1 (3/3) robot-rpc
 //!   skeleton + tonic 引入" + 2026-04-28 "A1-3 (2/3) `robot_rpc_gateway`
 //!   binary 依赖" 偏离登记。
@@ -39,21 +42,29 @@
 //!   plain TCP + fake token 阶段必须 loopback；非 loopback bind 直接拒
 //!   启动（[`gateway::validate_loopback_bind`]）。TLS / mTLS 留 v0.4+。
 //!
-//! ## A1-3 (2/3-b) / (2/3-c) / (3/3) 留作业
+//! ## A1 全链路 land 状态（Phase A 收尾）
 //!
-//! - **A1-3 (2/3-b)**：[`gateway::ClearEStopHandler`] 接 RR I/O 独立
-//!   `std::thread` + `Iceoryx2RrClient` 跟 daemon 端 `rr_server_thread`
-//!   通信；集成 [`idempotency::IdempotencyCache`] +
-//!   [`clear_estop::validate_clear_estop_command`] + [`auth`] role 查表 +
-//!   deadline 计算 + `rpc_status_to_tonic_code` 显式 match 映射；handler
-//!   通过 `tokio::sync::oneshot` async await wire response。
-//! - **A1-3 (2/3-c)**：完整 graceful shutdown — 已进 handler 的请求继续
-//!   等 RR response 或自身 `timeout_ms + rr_timeout_grace_ms`；尚未 forward
-//!   才返 `tonic::Code::Unavailable`。
-//! - **A1-3 (3/3)**：起两进程跑真 gRPC client → gateway → daemon 端到端
-//!   集成测；CHANGELOG / handoff 升级 §6.7 #3 真宣称登记由 A1-5 闭环。
+//! - **A1-3 (2/3-b)**：[`gateway::ClearEStopHandler`] 12 步 logic 通过
+//!   [`rr_io_thread`] 独立 `std::thread` 跟 daemon 端
+//!   `rr_server_thread` 通信，集成 [`idempotency::IdempotencyCache`] /
+//!   [`clear_estop::validate_clear_estop_command`] / [`auth`] role 查表
+//!   / deadline 计算 / [`clear_estop::rpc_status_to_tonic_code`] 显式
+//!   match 映射；handler 用 `tokio::sync::oneshot` async await wire
+//!   response。✅ land。
+//! - **A1-3 (2/3-c)**：完整 graceful shutdown — 已进 handler 的请求
+//!   继续等 RR response 或自身 `timeout_ms + rr_timeout_grace_ms`；
+//!   尚未 forward 才返 `tonic::Code::Unavailable`。✅ land。
+//! - **A1-3 (3/3)**：两进程端到端集成测（`crates/robot-tests/src/bin/clear_estop_e2e.rs`），
+//!   `--case all` 5/5 PASS。✅ land。
+//! - **A1-4**：smoke evidence packaging（`scripts/run_clear_estop_smoke.sh`
+//!   + `docs/handoffs/v0.3_a1_4_clear_estop_smoke.md`）。✅ land。
+//! - **A1-5**：撤 `--allow-empty-latch` opt-in + 升级 §6.7 #3 真宣称。
+//!   ✅ land（commit `45df648` + docs commit `cb96e3d`；详
+//!   `docs/CHANGELOG.md` 2026-04-28 偏离登记）。
 //! - **v0.4+**：TLS / mTLS / OIDC（A1 阶段接受 fake token）；response
-//!   schema_id attribute 验证（A1-1 part 2 reviewer 非阻断提醒）。
+//!   schema_id attribute 验证（A1-1 part 2 reviewer 非阻断提醒）；其它
+//!   §5.3 RPC（task / stream / S1 coordinator 交互）走 Phase B B4 full
+//!   gateway。
 
 // 中文 doc 块大量 identifier-like 字串（CommandMeta / RoleTable / RpcStatus
 // / ClearEStop / TTL / UUIDv7 等），robot-rpc 全 crate 走宽松 doc-markdown。

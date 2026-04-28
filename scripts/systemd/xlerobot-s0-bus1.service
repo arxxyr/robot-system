@@ -11,10 +11,14 @@
 # `/var/lib/robot/xlerobot_bus1_full/estop_latch{,.bak}` = `0\n`，详
 # scripts/systemd/README.md "首次部署 — latch provision **必读**" 节。
 #
-# **systemd 重启路径**：本 unit 锁定"进程死亡 → Restart=on-failure"；
-# §6.7 #2 完整真锁定（worker-stall WatchdogSec 真超时重启）留 v0.3
-# `cfg(test)` freeze hook，详 scripts/systemd/README.md "验证 systemd
-# 重启路径" 节。
+# **systemd 重启路径**（**全套已锁** — v0.3 A2 freeze hook 落地后）：
+# (a) 进程死亡 → `Restart=on-failure` 拉起；
+# (b) worker cap-deadlock → liveness-gated watchdog 不喂 ping →
+#     `WatchdogSec` timeout → `Restart=on-failure` 拉新 daemon
+# （A2 freeze hook + freeze_systemd_smoke 端到端真锁住，FRIDAY 5/5 +
+# Orin AGX 1 round PASS；§6.7 #2 真宣称已升级，详 docs/CHANGELOG.md
+# A1-5 升级登记 + scripts/systemd/README.md "验证 systemd 重启路径"
+# 节）。
 #
 # 安装步骤：跟 bus2 同模板，详 `scripts/systemd/README.md`；把
 # `bus2`/`xlerobot_bus2_full`/`right_arm_full_with_base` 替换成
