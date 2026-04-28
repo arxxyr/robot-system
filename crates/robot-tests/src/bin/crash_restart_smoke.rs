@@ -60,9 +60,17 @@
 //! 份 `EStop` event → `save_estop_latch(true)` → `1\n` 写 primary +
 //! bak fsync 双写 path。
 //!
-//! Orin 真机额外验证 9-motor `SerialRT` 路径，需要显式 `--config
-//! configs/xlerobot_bus2_full.toml` + `--joints 9 --frozen-joints 6,7,8`
-//! + binary 用 `--features xlerobot-real` build。
+//! Orin 真机额外验证 9-motor `SerialRT` 路径，binary 用 `--features
+//! xlerobot-real` build；按用哪条 S1 路径分两种调用：
+//!
+//! - **`s1_daemon` 默认 hold 路径**（B1 (3/3) 起的 production 入口）：
+//!   只传 `--config configs/xlerobot_bus2_full.toml`；`s1_daemon` 自己
+//!   从 `[[hardware]].joints` 读 9-motor 列表，**不**接受 `--joints` /
+//!   `--frozen-joints`（默认路径下这两个 flag 会被 `Args::parse`
+//!   fail-fast 拒绝）。
+//! - **`--use-mock-s1` ballet 路径**（多关节正弦摆动验证）：传
+//!   `--use-mock-s1 --joints 9 --frozen-joints 6,7,8`（base 3 wheel
+//!   冻结），保留 `mock_s1` 既有 ballet CLI。
 //!
 //! ### 退出码
 //!
@@ -279,7 +287,8 @@ OPTIONS:
 退出码: 0 = 全过；1 = CLI/env 错；2 = ≥ 1 次迭代 FAIL。
 
 测试场景：kill_after_estop_fsync_window
-  spawn daemon + mock_s1 → settle → robotctl estop → sleep grace → SIGKILL daemon
+  spawn daemon + S1 instance (default s1_daemon; --use-mock-s1 fallback)
+  → settle → robotctl estop → sleep grace → SIGKILL daemon
   → assert latch primary+bak = '1' on disk → restart daemon → assert message
   'initial estop_latched' + structured field latched=true (human + JSON
   tracing 格式都兼容) → cleanup → next iteration。
