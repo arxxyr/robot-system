@@ -7,8 +7,10 @@
 #   2. 跑 `clear_estop_e2e --bin-dir target/release --case all` 顺序跑 5 个
 #      case（selftest / reject_viewer / happy_dry_run / happy_real /
 #      idem_replay），任一 FAIL 不中止后续。
-#   3. stdout/stderr 全捕获到 `logs/clear_estop_smoke_<TS>.log`；末尾打印
-#      日志路径 + final exit code。
+#   3. **全脚本 stdout/stderr** 通过 `exec > >(tee ...)` 重定向，所有输出
+#      （header / build / e2e / final summary）都落 `logs/clear_estop_smoke_<TS>.log`，
+#      evidence 完整可复盘（reviewer A1-4 round 2 nit 修正：旧实现仅
+#      build + e2e 输出 inline tee，header / final summary 不入 log）。
 #
 # 用途：A1-4 milestone evidence 复跑入口。CI / 人工 / Orin 真机都按本脚本
 # 跑；handoff `docs/handoffs/v0.3_a1_4_clear_estop_smoke.md` 引用本脚本
@@ -34,6 +36,13 @@ TS="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_PATH="$LOG_DIR/clear_estop_smoke_${TS}.log"
 mkdir -p "$LOG_DIR"
 
+# ── 全脚本输出重定向：stdout/stderr 都进 log + 仍在终端可见 ──────────────
+# `exec > >(tee -a "$LOG_PATH") 2>&1` 把整个 shell 的 stdout/stderr 都管
+# 到 tee 子进程，从此点起所有 echo / 子命令输出都同时落 log + 屏幕。
+# 子命令退出码不被 tee 改变（不像 `cmd | tee` 形式 PIPESTATUS 才能拿原码），
+# 直接 `$?` 读 e2e binary 的退出码即可。
+exec > >(tee -a "$LOG_PATH") 2>&1
+
 echo "==> repo root      : $REPO_ROOT"
 echo "==> log file       : $LOG_PATH"
 echo "==> hostname       : $(hostname)"
@@ -46,17 +55,16 @@ cargo build --release \
     --bin s0_daemon \
     --bin robot_rpc_gateway \
     --bin clear_estop_e2e \
-    --features "robot-tests/clear-estop-e2e" \
-    2>&1 | tee -a "$LOG_PATH"
+    --features "robot-tests/clear-estop-e2e"
 
 # ── 2) 跑 --case all ─────────────────────────────────────────────────────
 echo
-echo "==> ./target/release/clear_estop_e2e --bin-dir target/release --case all" | tee -a "$LOG_PATH"
-echo | tee -a "$LOG_PATH"
+echo "==> ./target/release/clear_estop_e2e --bin-dir target/release --case all"
+echo
 
 set +e
-./target/release/clear_estop_e2e --bin-dir target/release --case all 2>&1 | tee -a "$LOG_PATH"
-SMOKE_EXIT="${PIPESTATUS[0]}"
+./target/release/clear_estop_e2e --bin-dir target/release --case all
+SMOKE_EXIT=$?
 set -e
 
 # ── 3) summary ───────────────────────────────────────────────────────────
