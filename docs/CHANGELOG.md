@@ -64,7 +64,8 @@ tonic stub + tokio process control + tempdir 等 deps；按 dep 白名单机制
   `tonic_build::build_client(...)`；加 `cargo:rerun-if-env-changed` 让
   cargo 跨 feature toggle 重 build。
 - `crates/robot-tests/Cargo.toml`：加 `[[bin]] clear_estop_e2e`（feature
-  gated）+ 4 条 optional deps + `[features] clear-estop-e2e`。
+  gated）+ 3 条 optional deps（robot-rpc / tonic / tokio；**不**用
+  tempfile workspace dep，详 Scope 段）+ `[features] clear-estop-e2e`。
 - `crates/robot-tests/src/bin/clear_estop_e2e.rs`：新文件，~700 行 harness
   骨架（CLI / preflight / `CaseCtx` 分配 / role table 写出 / loopback
   port 分配 / `SubprocessHandle` / readiness probes / `selftest` case）。
