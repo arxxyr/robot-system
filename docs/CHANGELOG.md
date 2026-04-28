@@ -10,6 +10,75 @@
 
 ---
 
+## 2026-04-28 · v0.3 A1-3 (3/3-a) `clear_estop_e2e` smoke binary 依赖白名单更新（**状态：登记**）
+
+### 背景
+
+A1-3 (3/3) 起在 `crates/robot-tests` 加 `clear_estop_e2e` 端到端 smoke
+binary，跟 `robot_rpc_gateway` + `s0_daemon` 起两进程跑真 gRPC client →
+iceoryx2 RR → daemon ipc_thread → latch fsync 双写。需要 client-side
+tonic stub + tokio process control + tempdir 等 deps；按 dep 白名单机制
+登记 scope + 边界。
+
+### Scope
+
+- **`robot-rpc`** 加 `client` cargo feature：默认仍 `build_client(false)`；
+  开 `client` feature（`CARGO_FEATURE_CLIENT=1`）让 build.rs 跑
+  `tonic_build::configure().build_client(true)` 生成 `RobotControlClient`
+  stub。生产二进制 `robot_rpc_gateway` 默认 features，**不**带 `client`，
+  无 client-only runtime 影响。
+- **`robot-tests`** 加 `clear_estop_e2e` 入口 cargo feature（`required-features
+  = ["clear-estop-e2e"]` 守门，跟 `freeze_systemd_smoke` 同款）：
+  - `robot-rpc = { workspace = true, optional = true, features = ["client"] }`
+    —— smoke 用 client stub 调 `clear_e_stop` RPC。
+  - `tonic = { workspace = true, optional = true }` —— client transport
+    stack（用 transport feature 跟 robot-rpc lib 共享）。
+  - `tokio = { workspace = true, optional = true, features = ["process",
+    "io-util"] }` —— smoke 主 entry `tokio::runtime::Builder` 跑 tonic
+    client + 子进程协调；`process` 让 `tokio::process::{Command, Child}`
+    + `tokio::time::timeout` 干净协调子进程退出，`io-util`
+    让 stderr/stdout 流式 read 等 ready signal。
+- **`configs/clear_estop_e2e.toml`** 新加：单 `mock_hard_rt` hardware +
+  1 joint，smoke 不碰真 serial / 真校准。
+- **不**新加 workspace dep（tonic / tokio / robot-rpc 都已在 workspace）。
+
+### 边界
+
+- **不**改 `docs/00_design.md` §5.5 / §6.7 不变量正文。
+- **不**塞 cargo test --workspace 默认（reviewer 拍板：两进程 + iceoryx2
+  shm + loopback 端口属于 smoke，跟 `crash_restart_smoke` /
+  `freeze_systemd_smoke` 一样 CI / 人工显式跑）。
+- **不**用 `tempfile` workspace dep（workspace 顶层注释明示仅在 dev-deps
+  位置继承；smoke binary 不能 link dev-dep；harness 自己 mkdtemp 风格用
+  `/tmp/clear_estop_e2e_<pid>_<seq>`）。
+- **不**在 `robot-rpc` lib `pub use` client stub —— `client` feature 仅
+  控制 build.rs，调用方走 `robot_rpc::proto::robot_control_client::RobotControlClient`
+  路径直接命中 tonic-generated module（feature off 时该路径不存在，编
+  译期报错）。
+- **不**接非 loopback / TLS（v0.3 fake-token + plain TCP；TLS 留 v0.4+）。
+
+### 影响面
+
+- `crates/robot-rpc/Cargo.toml` `[features]` 加 `client = []`。
+- `crates/robot-rpc/build.rs` 读 `CARGO_FEATURE_CLIENT` 控制
+  `tonic_build::build_client(...)`；加 `cargo:rerun-if-env-changed` 让
+  cargo 跨 feature toggle 重 build。
+- `crates/robot-tests/Cargo.toml`：加 `[[bin]] clear_estop_e2e`（feature
+  gated）+ 4 条 optional deps + `[features] clear-estop-e2e`。
+- `crates/robot-tests/src/bin/clear_estop_e2e.rs`：新文件，~700 行 harness
+  骨架（CLI / preflight / `CaseCtx` 分配 / role table 写出 / loopback
+  port 分配 / `SubprocessHandle` / readiness probes / `selftest` case）。
+- `configs/clear_estop_e2e.toml`：新文件，单 mock_hard_rt hardware。
+
+### 审阅人
+
+reviewer（用户）— A1-3 (3/3) 拍板：robot-rpc 加 `client` feature；
+clear_estop_e2e smoke binary 形态选 `crates/robot-tests/src/bin/`（不普
+通 tests/*.rs），跟 `crash_restart_smoke` / `freeze_systemd_smoke` 同款
+CI/人工显式跑。
+
+---
+
 ## 2026-04-28 · v0.3 A1-3 (2/3) `robot_rpc_gateway` binary 依赖白名单更新（**状态：登记**）
 
 ### 背景

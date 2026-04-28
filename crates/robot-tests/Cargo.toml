@@ -39,6 +39,21 @@ name = "freeze_systemd_smoke"
 path = "src/bin/freeze_systemd_smoke.rs"
 required-features = ["freeze-systemd-smoke"]
 
+# v0.3 A1-3 (3/3) ClearEStop control plane 端到端 smoke binary。
+#
+# 起两进程（`s0_daemon` + `robot_rpc_gateway`）+ 用 tonic gRPC client 真跑
+# RPC → iceoryx2 RR shm → daemon ipc_thread → clear_estop_action → latch
+# fsync 双写。
+#
+# `required-features = ["clear-estop-e2e"]`：本 bin 用 robot-rpc 的 `client`
+# feature 跑 tonic-build 生成 client stub，再加 tokio + tonic + tempfile 等
+# smoke-only deps。生产 release 构建默认 feature 关，本 bin 不参编译，跟
+# `freeze_systemd_smoke` 同款 feature 守门。
+[[bin]]
+name = "clear_estop_e2e"
+path = "src/bin/clear_estop_e2e.rs"
+required-features = ["clear-estop-e2e"]
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -72,6 +87,25 @@ robot-s0 = { path = "../robot-s0", optional = true, default-features = false, fe
     "test-freeze-hook",
 ] }
 
+# v0.3 A1-3 (3/3-a) clear_estop_e2e optional deps（feature-gated）：
+# - robot-rpc：开 `client` feature 让 build.rs 跑 `tonic_build::build_client(true)`，
+#   生成 `RobotControlClient` stub 给 smoke 用。
+# - tonic：跑 client transport stack；client 端只需 transport，**不**需
+#   server。覆盖 features 跟 workspace 默认对齐。
+# - tokio：smoke 主 entry 用 `#[tokio::main]` 跑 tonic client + 子进程协调；
+#   workspace 默认 features 已含 macros / rt-multi-thread / signal / sync
+#   / time / net；本 bin 加 `process` 让 `tokio::process::{Command, Child}`
+#   + `tokio::time::timeout` 协调子进程退出，加 `io-util` 让 stderr 流式
+#   read 等 ready signal。
+# - flatbuffers / robot-msg / robot-core：复用顶层 deps，不重复声明。
+# - **不**用 tempfile workspace dep：workspace 顶层注释明示 tempfile 仅在
+#   dev-dependencies 位置继承；clear_estop_e2e 是 binary 不能 link dev-deps，
+#   tempdir 自己滚（`/tmp/clear_estop_e2e_<pid>_<seq>`，shutdown
+#   `remove_dir_all`），减少 workspace dep surface。
+robot-rpc = { workspace = true, optional = true, features = ["client"] }
+tonic     = { workspace = true, optional = true }
+tokio     = { workspace = true, optional = true, features = ["process", "io-util"] }
+
 [features]
 # v0.3 A2-3 freeze systemd smoke 入口 feature。
 # - 生产 release **不**带本 feature（freeze_systemd_smoke binary 不参编译）。
@@ -80,6 +114,18 @@ robot-s0 = { path = "../robot-s0", optional = true, default-features = false, fe
 # - reviewer 硬边界：本 feature 同时启用 robot-s0 optional dep + 它的
 #   `test-freeze-hook` feature，让 smoke 跟 daemon binary 共享 wire struct。
 freeze-systemd-smoke = ["dep:robot-s0"]
+
+# v0.3 A1-3 (3/3-a) ClearEStop 端到端 smoke 入口 feature。
+# - 生产 release **不**带本 feature（clear_estop_e2e binary 不参编译）。
+# - 本机跑：`cargo run -p robot-tests --bin clear_estop_e2e --features
+#   clear-estop-e2e -- ...`
+# - 启用 robot-rpc / tonic / tokio / tempfile 4 条 optional dep，跟
+#   `freeze-systemd-smoke` 同款 feature 守门。
+clear-estop-e2e = [
+    "dep:robot-rpc",
+    "dep:tonic",
+    "dep:tokio",
+]
 
 [lints]
 workspace = true

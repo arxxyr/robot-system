@@ -65,5 +65,15 @@ flatbuffers = { workspace = true }
 tonic-build         = { workspace = true }
 protoc-bin-vendored = { workspace = true }
 
+[features]
+# **A1-3 (3/3-a)** 拍板：默认**不**生成 tonic gRPC client stub（生产
+# `robot_rpc_gateway` binary 是 server，dimos / Web UI 是 client，client
+# 不在 robot-system workspace 内）。开启 `client` feature 让 build.rs 跑
+# `tonic_build::configure().build_client(true)`，让 robot-tests 端的两进程
+# 端到端 smoke (`crates/robot-tests/src/bin/clear_estop_e2e.rs`) 能直接调
+# `RobotControlClient::clear_e_stop`。生产二进制构建保持默认 features，
+# **不**带 `client`，无 client-only runtime 影响。
+client = []
+
 [lints]
 workspace = true

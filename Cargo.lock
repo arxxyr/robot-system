@@ -1756,8 +1756,11 @@ dependencies = [
  "robot-core",
  "robot-logging",
  "robot-msg",
+ "robot-rpc",
  "robot-s0",
  "robot-transport",
+ "tokio",
+ "tonic",
  "tracing",
 ]
 
