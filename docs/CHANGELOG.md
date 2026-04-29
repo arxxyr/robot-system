@@ -89,10 +89,12 @@ reviewer 拍板形态（B3 outline §7 round 2 表）：
  ) -> Option<JointCommandBody>;
 ```
 
-**(iii)** `run_action_tick_loop` 调用点（`coordinator.rs:865`）：
-`coordinator.tick_action(clock, state.cmd_seq)` —— `state.cmd_seq` 同
-时作 publish frame 的 `FrameHeader.seq`，跨 backend / hold loop 用同
-一 counter。
+**(iii)** `run_action_tick_loop::Executing` 分支调用点（当前行号
+≈ `coordinator.rs:873`，按符号 `coordinator.tick_action(clock,
+state.cmd_seq)` 定位；行号后续重构可能漂，审计时 grep 符号名）：
+`coordinator.tick_action(clock, state.cmd_seq)` —— `state.cmd_seq`
+同时作 publish frame 的 `FrameHeader.seq`，跨 backend / hold loop 用
+同一 counter。
 
 **(iv)** HoldPose backend tick 直接复用：
 `build_hold_command(ctx.config, ctx.layout_id, ctx.anchor_bias,
@@ -171,7 +173,9 @@ reviewer ACK：
 - B3 outline round 1 ACK + round 2 三处 follow-up 全收尾 @ 2026-04-29。
 - B3 (1/2) ACK + feature-off 基线额外验 @ 2026-04-29。
 - B3 (2/2) reviewer round 1（rustfmt）阻断 + fix `d1f5031` ACK @ 2026-04-29。
-- 全 3 实现 commit + 1 fix push 到 origin/master @ 2026-04-30。
+- B3 总 5 commit（outline 2 + 实现/test 2 + reviewer round 1 fmt fix
+  1；commit chain `916202e` → `d1f5031`）push 到 origin/master @
+  2026-04-30；其中 B3 代码侧 = 实现 2 + fix 1 = 3 commit。
 
 详细 commit chain + 关键契约审计 + reviewer 决策表见
 [`docs/handoffs/v0.3_b3_summary.md`](handoffs/v0.3_b3_summary.md)。
