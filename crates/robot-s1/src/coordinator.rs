@@ -1199,6 +1199,13 @@ impl Coordinator {
     ///   [`SubmitError::NoBackendForKind`] / [`SubmitError::UnsupportedSchema`]
     /// - [`ActionBackend::start`] → [`SubmitError::BackendStartFailed`]
     ///
+    /// **状态优先**（reviewer 阻断 1 锁定）：`Booting` / `Executing` /
+    /// `Degraded` / `ShuttingDown` 永远先返对应状态错误，**不**让坏请求 /
+    /// unknown backend 抢先返 [`SubmitError::InvalidRequest`] /
+    /// [`SubmitError::NoBackendForKind`] 等掩盖真实状态语义。只有
+    /// `Idle` 才进入 [`ActionRequest::validate`] / [`BackendRegistry::dispatch`]
+    /// / [`ActionBackend::start`] 路径。
+    ///
     /// `req` 按值传：API 语义上"submit 接管请求所有权"对齐 RPC InvokeTask；
     /// 实际函数体内仅借用引用 + Copy 字段，clippy `needless_pass_by_value`
     /// 误报，allow 掉。
@@ -1208,17 +1215,22 @@ impl Coordinator {
         req: ActionRequest,
         clock: &dyn RobotClock,
     ) -> Result<ActionTicket, SubmitError> {
-        let now_ns = clock.now().0;
-        req.validate(now_ns)?;
-
-        // dispatch + start 在锁外做（registry 不持锁；start 不动 inner）；
-        // 这样把"进入 EXECUTING"的临界区缩到最小。
-        let backend =
-            self.registry
-                .dispatch(&self.enabled_backends, req.kind, req.payload_schema_id)?;
-
-        // 锁 inner 检查状态 + 转移 + 创建 ticket。
+        // 一把锁守住整个临界区：state 检查 → validate → dispatch → start
+        // → 状态转移 + 写 current + 发 Started 事件，全在锁内一气呵成
+        // （reviewer 阻断锁定：为保证单 action 原子转移，start 必须跟状态
+        // 转移在同一临界区。如要锁外 start 需引入额外 reservation 状态，
+        // B2 没必要）。
+        //
+        // **backend.start 不得阻塞 IO**：本路径在普通线程（非 RT），持锁
+        // 期间若有 backend 做磁盘 / 网络等阻塞调用会拖慢整个 coordinator
+        // 入队。B2 的 MockDwell 仅算 `now + duration_ms` + Vec 分配，O(1)
+        // 非阻塞；B3+ 真 backend 落地时同样契约 —— 阻塞资源初始化必须
+        // 提前到 backend 注册期（`inventory::submit!` 静态实例 ctor）或
+        // 显式异步启动路径，**不**进 start hot path。
         let mut inner = self.lock_inner();
+
+        // 状态优先（reviewer 阻断 1）：非 Idle 状态永远先返状态错误，不
+        // 看 req / dispatch 是否合法。
         match &inner.fsm {
             CoordinatorState::Booting => return Err(SubmitError::NotReady),
             CoordinatorState::Executing { action_id, .. } => {
@@ -1228,6 +1240,14 @@ impl Coordinator {
             CoordinatorState::ShuttingDown => return Err(SubmitError::ShuttingDown),
             CoordinatorState::Idle => {}
         }
+
+        // Idle 路径：依次校验 / 路由 / 启动 backend；任一失败 early-return，
+        // 状态保持 Idle 不变。
+        let now_ns = clock.now().0;
+        req.validate(now_ns)?;
+        let backend =
+            self.registry
+                .dispatch(&self.enabled_backends, req.kind, req.payload_schema_id)?;
 
         let ctx = ActionContext {
             clock,
@@ -2571,6 +2591,62 @@ backends = 42
         let clock = SystemClock;
         let err = c
             .submit(sample_request(), &clock)
+            .expect_err("expected Err");
+        assert!(matches!(err, SubmitError::ShuttingDown), "got {err:?}");
+    }
+
+    // ----- 状态优先（reviewer 阻断 1）：非 Idle 状态遇 invalid request
+    //        仍必须先返状态错误，**不**让 InvalidRequest /
+    //        NoBackendForKind 等抢占 -----
+
+    /// 构造一个**明显非法**的请求（多条 validate 规则同时违反 + 哨兵
+    /// schema_id 配非空 payload），让 Idle 路径下 validate 必拒；用于测
+    /// 非 Idle 状态优先 —— state 错误要先于 InvalidRequest 返回。
+    fn obviously_invalid_request() -> ActionRequest {
+        ActionRequest {
+            action_id: ActionId::new_v7(),
+            kind: ActionKind::DwellMs,
+            deadline_ns: 0, // < now_ns，违反 deadline > now
+            priority: 10,
+            payload_schema_id: NO_PAYLOAD_SCHEMA_ID,
+            payload: vec![1, 2, 3], // 哨兵 schema_id 配非空 payload，违反守门
+            idempotency_key: String::new(), // 空 idempotency_key，违反守门
+            source: ActionSource::Internal,
+        }
+    }
+
+    #[test]
+    fn submit_state_priority_booting_returns_not_ready_for_invalid_request() {
+        // Booting 下传明显坏请求：仍必须先返 NotReady，不是 InvalidRequest。
+        let c = make_coordinator();
+        let clock = SystemClock;
+        let err = c
+            .submit(obviously_invalid_request(), &clock)
+            .expect_err("expected Err");
+        assert!(matches!(err, SubmitError::NotReady), "got {err:?}");
+    }
+
+    #[test]
+    fn submit_state_priority_degraded_returns_degraded_for_invalid_request() {
+        let c = coordinator_in_idle();
+        force_degraded(&c, "test");
+        let clock = SystemClock;
+        let err = c
+            .submit(obviously_invalid_request(), &clock)
+            .expect_err("expected Err");
+        assert!(
+            matches!(err, SubmitError::CoordinatorDegraded),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn submit_state_priority_shutting_down_returns_shutting_down_for_invalid_request() {
+        let c = coordinator_in_idle();
+        c.mark_shutting_down();
+        let clock = SystemClock;
+        let err = c
+            .submit(obviously_invalid_request(), &clock)
             .expect_err("expected Err");
         assert!(matches!(err, SubmitError::ShuttingDown), "got {err:?}");
     }
