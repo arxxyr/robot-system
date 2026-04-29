@@ -41,7 +41,7 @@ ls -t docs/handoffs/*.md | head -2 | xargs -I {} less {}
 | **v0.3 B1 outline** | Phase B 第一条工作项 outline：`s1_daemon` 替代 `mock_s1` 最小闭环（hold + heartbeat + 启动锚定 fail-fast）；reviewer 7 决策点已拍板（binary 名 / config 入口 / on_timeout / mock_s1 保留 / 等）；commit 拆分 3 条 | [v0.3_b1_outline.md](v0.3_b1_outline.md) |
 | **v0.3 B2 outline** | Phase B 第二条工作项 outline：policy/action interface + robot profile matrix 设计；定义 `ActionRequest` / `ActionBackend` trait / `CoordinatorState`（IDLE/EXECUTING/DEGRADED）；reviewer 4 阻断 + 11 决策已拍板（2026-04-28，撤 tokio / 撤 `ActionKind::Stop` / DEGRADED 重新定义为 S1 内部状态 / 加双路 smoke 验收门槛）；commit 拆分 3 条 | [v0.3_b2_outline.md](v0.3_b2_outline.md) |
 | **v0.3 B2 summary** | B2 (1/3)+(2/3)+(3/3) 全部 land 后的封存锚点：`Coordinator` 5-state 机 + `BackendRegistry` + `MockDwellBackend` + `run_action_tick_loop` state-aware dispatch + `s1_daemon` wiring 真接入；reviewer 多轮拍板 11 决策 + 4 outline 阻断 + 2+1 实现期 fix（state-priority / NoEnabledBackends / 注释 #3）全闭环；双路 crash_restart_smoke 5/5+5/5 PASS；151 test 全过 | [v0.3_b2_summary.md](v0.3_b2_summary.md) |
-| **v0.3 B3 outline** | Phase B 第三条工作项 outline：第一个真 action backend；默认推进 `HoldPose`（复用 B1 hold builder + 不扩 `ActionKind` enum + 空 payload + 2 commit 节奏）；11 待拍板项已列；reviewer 拍板前**不**进实现 | [v0.3_b3_outline.md](v0.3_b3_outline.md) |
+| **v0.3 B3 outline** | Phase B 第三条工作项 outline：第一个真 action backend；reviewer round 2 后锁定 `HoldPose`（复用 B1 hold builder + 不扩 `ActionKind` enum + 空 payload + 2 commit 节奏 + 最小 lib API 扩 `ActionContext.command_seq` / `tick_action` 签名解 source_task_id 单调阻断）；11 待拍板项 round 2 表完成；reviewer round 3 ACK 前**不**进实现 | [v0.3_b3_outline.md](v0.3_b3_outline.md) |
 
 ## 列表（daily session snapshots）
 
