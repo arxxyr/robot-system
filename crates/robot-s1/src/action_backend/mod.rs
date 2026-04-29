@@ -46,6 +46,9 @@ use crate::action::{ActionBackend, ActionKind, NO_PAYLOAD_SCHEMA_ID, SubmitError
 #[cfg(feature = "backend-mock-dwell")]
 pub mod mock_dwell;
 
+#[cfg(feature = "backend-hold-pose")]
+pub mod hold_pose;
+
 // 链接器收集每个 backend crate 的 `inventory::submit!` 项。
 inventory::collect!(&'static dyn ActionBackend);
 

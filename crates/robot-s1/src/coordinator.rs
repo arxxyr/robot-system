@@ -753,7 +753,9 @@ where
 ///   command 来源：
 ///   * `Idle` / `Degraded`：`build_hold_command(cfg, layout_id, bias, ...)`
 ///     publish hold cmd（target = anchor_bias）。等价 B1 行为。
-///   * `Executing`：`coordinator.tick_action(clock)` 决定输出：
+///   * `Executing`：`coordinator.tick_action(clock, state.cmd_seq)` 决
+///     定输出（B3 round 2 阻断 1 修法：透传当前帧 cmd_seq 给 backend
+///     作 source_task_id，保 S0 ipc_thread 单调契约）：
 ///     - `Some(body)` → publish action backend 自产的 `JointCommand`
 ///       body bytes（reviewer 评审口径："action command 仍能 publish"）。
 ///     - `None` → 本帧不 publish，S0 沿用上一帧 cmd 直到 `deadline_ns`。
@@ -787,8 +789,8 @@ pub fn run_action_tick_loop<HBPub, CmdPub, C>(
 where
     HBPub: Publisher<markers::Heartbeat>,
     CmdPub: Publisher<markers::JointCommand>,
-    // C: Sized 要求来自 `coordinator.tick_action(clock)` 内部要把 `&C`
-    // 转 `&dyn RobotClock`（trait object 需要 vtable，需 C: Sized）。
+    // C: Sized 要求来自 `coordinator.tick_action(clock, ...)` 内部要把
+    // `&C` 转 `&dyn RobotClock`（trait object 需要 vtable，需 C: Sized）。
     // run_tick_loop 没这条约束因为不调 tick_action。
     C: RobotClock,
 {
@@ -862,7 +864,13 @@ where
                 }
                 CoordinatorState::Executing { .. } => {
                     // Override：tick_action 决定本帧是否产新 cmd。
-                    if let Some(body_struct) = coordinator.tick_action(clock) {
+                    // 透传 state.cmd_seq —— backend 产 body bytes 时
+                    // 把它作为 source_task_id，跟下面 publish_body 的
+                    // FrameHeader.seq 同源；S0 ipc_thread 把
+                    // fb.source_task_id() 直接当 JointCommandBuf.seq，
+                    // adapter.rs 要求单调递增（详 B3 outline §3.4 +
+                    // §2.1 #4 round 2 阻断 1 修法）。
+                    if let Some(body_struct) = coordinator.tick_action(clock, state.cmd_seq) {
                         publish_body::<markers::JointCommand, _>(
                             cmd_pub,
                             body_struct.as_bytes(),
@@ -1448,6 +1456,10 @@ impl Coordinator {
             hardware: &self.hardware,
             config: &self.config,
             anchor_bias: &self.anchor_bias,
+            // submit 路径不在 publish frame seq 流上；backend.start 通常
+            // 不产 body bytes（仅返 ActionInstance），用 0 哨兵安全（详
+            // ActionContext::command_seq doc）。
+            command_seq: 0,
         };
         // start 失败：状态不转移，仍 Idle。
         let instance = backend.start(&req, &ctx)?;
@@ -1510,6 +1522,9 @@ impl Coordinator {
             hardware: &self.hardware,
             config: &self.config,
             anchor_bias: &self.anchor_bias,
+            // cancel 路径不在 publish frame seq 流上；backend.cancel 通
+            // 常仅 set flag 不产 body bytes，用 0 哨兵安全。
+            command_seq: 0,
         };
         current.instance.cancel(&mut ctx)?;
         current.pending_cancel = true;
@@ -1564,20 +1579,28 @@ impl Coordinator {
     /// | `SafetyAbort(reason)` | `Degraded { reason }` |
     /// | `AdapterError(reason)` | `Degraded { reason }` |
     /// | `InternalError(reason)` | `Degraded { reason }` |
-    pub fn tick_action(&self, clock: &dyn RobotClock) -> Option<JointCommandBody> {
+    pub fn tick_action(
+        &self,
+        clock: &dyn RobotClock,
+        command_seq: u64,
+    ) -> Option<JointCommandBody> {
         let mut inner = self.lock_inner();
         if !matches!(inner.fsm, CoordinatorState::Executing { .. }) {
             return None;
         }
 
         // 借出 current 让 instance.tick 调用；其它字段保持 inner 锁内。
-        // ActionContext::clock 透传调用方传的 clock。
+        // ActionContext::clock 透传调用方传的 clock；command_seq 透传调
+        // 用方（典型 run_action_tick_loop）传的本帧 cmd_seq —— backend
+        // 产 body bytes 时把它作为 source_task_id（详 ActionContext doc
+        // + B3 outline §3.4 round 2 阻断 1 修法）。
         let mut ctx = ActionContext {
             clock,
             layout_id: self.layout_id,
             hardware: &self.hardware,
             config: &self.config,
             anchor_bias: &self.anchor_bias,
+            command_seq,
         };
 
         let now_ns = clock.now().0;
@@ -2976,7 +2999,7 @@ backends = 42
         c.cancel(ticket.action_id, &clock).expect("cancel ok");
 
         // 第一次 tick：cancelled 标志置位，instance 直接返 Completed(PartialSuccess)。
-        let _ = c.tick_action(&clock);
+        let _ = c.tick_action(&clock, 0);
 
         // 收事件流，跳过 Started + Progress（如有），找 terminal。
         let mut saw_cancelled = false;
@@ -3018,7 +3041,7 @@ backends = 42
 
         let clock = SystemClock;
         c.cancel(ticket.action_id, &clock).expect("cancel ok");
-        let _ = c.tick_action(&clock);
+        let _ = c.tick_action(&clock, 0);
 
         let mut saw_failed = false;
         let mut saw_cancelled = false;
@@ -3049,7 +3072,7 @@ backends = 42
 
         // 推一次 tick 让 last_progress 从 0.0 更新到 0.5。
         let clock = SystemClock;
-        let _ = c.tick_action(&clock);
+        let _ = c.tick_action(&clock, 0);
 
         let st = c.status(ticket.action_id).expect("Some Executing");
         match st {
@@ -3068,7 +3091,7 @@ backends = 42
         let ticket = force_executing(&c, inst);
 
         let clock = SystemClock;
-        let _ = c.tick_action(&clock);
+        let _ = c.tick_action(&clock, 0);
 
         // EXECUTING 完，状态应 Idle，status 应从 finished ring 拿到。
         assert!(matches!(c.current_state(), CoordinatorState::Idle));
@@ -3125,7 +3148,7 @@ backends = 42
         let _ticket = force_executing(&c, inst);
 
         let clock = SystemClock;
-        let _ = c.tick_action(&clock);
+        let _ = c.tick_action(&clock, 0);
         match c.current_state() {
             CoordinatorState::Degraded { reason } => {
                 assert_eq!(reason, "limits exceeded");
@@ -3145,7 +3168,7 @@ backends = 42
         let _ticket = force_executing(&c, inst);
 
         let clock = SystemClock;
-        let _ = c.tick_action(&clock);
+        let _ = c.tick_action(&clock, 0);
         assert!(matches!(c.current_state(), CoordinatorState::Idle));
     }
 
@@ -3175,7 +3198,7 @@ backends = 42
         let clock = SystemClock;
         for (c, label) in cs {
             assert!(
-                c.tick_action(&clock).is_none(),
+                c.tick_action(&clock, 0).is_none(),
                 "{label}: tick_action should return None"
             );
         }
@@ -3221,7 +3244,7 @@ backends = 42
         drop(ticket.events);
 
         let clock = SystemClock;
-        let _ = c.tick_action(&clock);
+        let _ = c.tick_action(&clock, 0);
         assert!(
             matches!(c.current_state(), CoordinatorState::Idle),
             "ticket events drop 不影响状态机收敛"

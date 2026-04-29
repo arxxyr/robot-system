@@ -319,6 +319,7 @@ mod tests {
             hardware: &hardware,
             config: &cfg,
             anchor_bias: &anchor,
+            command_seq: 0,
         };
         let instance = backend.start(&req, &ctx).expect("start ok");
         // 让调用方推 clock 之后再 tick。
@@ -344,6 +345,7 @@ mod tests {
             hardware: &hardware,
             config: &cfg,
             anchor_bias: &anchor,
+            command_seq: 0,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         match out {
@@ -378,6 +380,7 @@ mod tests {
             hardware: &hardware,
             config: &cfg,
             anchor_bias: &anchor,
+            command_seq: 0,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         assert!(matches!(
@@ -403,6 +406,7 @@ mod tests {
             hardware: &hardware,
             config: &cfg,
             anchor_bias: &anchor,
+            command_seq: 0,
         };
         let mut instance = backend.start(&req, &ctx).expect("start ok");
 
@@ -444,6 +448,7 @@ mod tests {
             hardware: &hardware,
             config: &cfg,
             anchor_bias: &anchor,
+            command_seq: 0,
         };
         // Box<dyn ActionInstance> 不 impl Debug，不能 expect_err；走
         // let-else 把 Ok 排除。

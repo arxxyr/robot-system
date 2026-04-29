@@ -416,7 +416,7 @@ fn cancel_during_executing_emits_cancelled_then_idle_resumes() {
 
     // 1. 第一 tick：Continue（MockDwell None）→ emit Progress。
     clock.advance(robot_core::time::DurationNs::from_nanos(20_000_000));
-    let cmd = coordinator.tick_action(&clock);
+    let cmd = coordinator.tick_action(&clock, 0);
     assert!(cmd.is_none(), "MockDwell tick returns None");
     assert!(matches!(
         coordinator.current_state(),
@@ -438,7 +438,7 @@ fn cancel_during_executing_emits_cancelled_then_idle_resumes() {
     // 3. 下次 tick：MockDwell 自查 cancel flag → Completed(PartialSuccess)；
     //    coordinator emit Cancelled（不双发 Completed），状态 → Idle。
     clock.advance(robot_core::time::DurationNs::from_nanos(20_000_000));
-    let cmd = coordinator.tick_action(&clock);
+    let cmd = coordinator.tick_action(&clock, 0);
     assert!(cmd.is_none(), "Completed 帧不产 cmd body");
     assert!(matches!(
         coordinator.current_state(),
@@ -486,7 +486,7 @@ fn safety_abort_transitions_to_degraded_then_clear_error_resumes_idle() {
 
     // 第一 tick → Failed(SafetyAbort) → Degraded { reason: "..." }。
     clock.advance(robot_core::time::DurationNs::from_nanos(20_000_000));
-    let _ = coordinator.tick_action(&clock);
+    let _ = coordinator.tick_action(&clock, 0);
     match coordinator.current_state() {
         CoordinatorState::Degraded { reason } => {
             assert_eq!(reason, "integration test abort");

@@ -330,12 +330,26 @@ pub enum ActionSource {
 ///   `command_hz` / `deadline_ms` / 等）。
 /// - `anchor_bias`：启动锚定的 bias，供 `HoldPose` / 后续真 backend
 ///   计算 target 时用。
+/// - `command_seq`（B3 (1/2) 加，详
+///   [`docs/handoffs/v0.3_b3_outline.md`](../../../docs/handoffs/v0.3_b3_outline.md)
+///   §3.4 reviewer round 2 显式放行）：本 tick 即将 publish 的
+///   `JointCommand` frame 的 `source_task_id` / `FrameHeader.seq`，由
+///   [`crate::coordinator::run_action_tick_loop`] 维护
+///   [`crate::coordinator::TickState::cmd_seq`] 透传到此。Backend
+///   产 body bytes 时（如 `build_hold_command(..., command_seq, ...)`）
+///   **必须**用本字段作 `source_task_id` 参数 —— S0
+///   `ipc_thread::join_command_to_buf` 把 `fb.source_task_id()` 写
+///   成 `JointCommandBuf.seq`，`adapter.rs` 注释要求 `seq` 单调递
+///   增（`rt_thread` 判 `CONTROL_LOST` → `ACTIVE` 恢复用）；如 backend
+///   私有计数从 0 起会让 S0 看到 seq 回退，破坏 wire 协议契约。**不**
+///   是 audit 字段，是契约字段。
 pub struct ActionContext<'a> {
     pub clock: &'a dyn RobotClock,
     pub layout_id: u64,
     pub hardware: &'a HardwareSection,
     pub config: &'a CoordinatorConfig,
     pub anchor_bias: &'a [f64],
+    pub command_seq: u64,
 }
 
 // ============================================================================

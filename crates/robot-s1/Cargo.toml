@@ -16,8 +16,14 @@ publish    .workspace = true
 # link 进 binary）。B3 起加 backend-ik-xlerobot / backend-rl-onnx /
 # backend-scripted；落地对应 backend crate 时同步加 feature flag。
 [features]
-default            = ["backend-mock-dwell"]
+default            = ["backend-mock-dwell", "backend-hold-pose"]
 backend-mock-dwell = []
+# v0.3 B3 (1/2)：HoldPoseBackend 第一个真 action backend（详
+# docs/handoffs/v0.3_b3_outline.md round 2）。Feature off 时整文件
+# 不 link → BackendRegistry::from_inventory 收集不到 hold_pose →
+# `[s1.profile.backends = ["hold_pose"]]` 启动期 fail-fast，符合
+# "配置与编译 profile 不匹配启动期 fail-fast"硬约束。
+backend-hold-pose  = []
 
 # v0.3 B1 (2/3)：mock_s1 / s1_daemon 显式列出 [[bin]]。
 # - mock_s1：v0.2 起 ballet / bench / 真机摆动测试工具（保留；非 production
