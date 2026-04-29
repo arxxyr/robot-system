@@ -1,13 +1,29 @@
-//! `s1_daemon` —— v0.3 Phase B B1 production S1 binary。
+//! `s1_daemon` —— v0.3 Phase B production S1 binary（B1 hold + heartbeat
+//! 闭环 → B2 (3/3) profile + action dispatch）。
 //!
 //! ### 职责
 //!
 //! - 启动期读一次 `/<r>/s0/<hw>/state` 锚定当前位置作 hold bias
 //!   （[`coordinator::read_anchor_from_s0_state`] / fail-fast：超时
 //!   / stale / joint count 错位均退出非 0；不 fallback bias=0）。
-//! - 50 Hz publish [`markers::JointCommand`]：`Position` 模式、
-//!   `target == bias`、`on_timeout = Hold`、`deadline_ns = now + 500 ms`。
-//! - 50 Hz publish [`markers::Heartbeat`]（`source_id = 2`）。
+//! - **B2 (3/3)** 加：parse `[s1.profile]` + 构造
+//!   [`coordinator::Coordinator`]（`BackendRegistry::from_inventory` +
+//!   `validate_profile_section` L2 fail-fast）→ `mark_idle` 转 Idle →
+//!   tick loop 走 [`coordinator::run_action_tick_loop`] state-aware
+//!   dispatch。
+//! - 50 Hz publish [`markers::JointCommand`]：
+//!   * `Idle` / `Degraded` 状态 → B1 hold cmd（`Position` 模式、
+//!     `target == bias`、`on_timeout = Hold`、`deadline_ns = now + 500 ms`）。
+//!   * `Executing` 状态 → action backend `tick()` 自产 cmd body bytes
+//!     （override 策略；backend 返 None 时本帧不 publish）。
+//! - 50 Hz publish [`markers::Heartbeat`]（`source_id = 2`），所有状态
+//!   均不停发（含 Degraded —— S1 内部 degraded 不触发 S0 watchdog
+//!   control-lost，详 outline §6.5 决策 #10d）。
+//!
+//! **B2 (3/3) 默认 profile** = `backends = ["mock_dwell"]` +
+//! `command_mode = "joint_position"`：缺失 `[s1.profile]` 等价 B1 行为
+//! （没人调 `submit` 时永远在 Idle，hold loop 50Hz 跟 B1 sample-by-sample
+//! bit-equivalent；reviewer 阻断 4 锁定的 wiring 回归门槛）。
 //!
 //! 组合效果：S0 收到 heartbeat 把 state 推到 `Enabled.Active`；
 //! 收到 command 写 `LatestCommandSlot`，target=anchor 物理上不动。
@@ -25,17 +41,20 @@
 //! - `0`：正常退出（`--duration` 到期 / SIGINT / SIGTERM）。
 //! - `1`：iceoryx2 publisher / subscriber open 失败。
 //! - `2`：CLI 参数非法。
-//! - `3`：配置 TOML 加载 / 解析失败（`[s1]` / `[[hardware]]`）。
+//! - `3`：配置 TOML 加载 / 解析失败（`[s1]` / `[[hardware]]` / `[s1.profile]`
+//!   L1 + L2 校验：`UnknownBackend` / `UnsupportedCommandMode` /
+//!   `JointCountMismatch` / `NoEnabledBackends` 全归此码 —— 都是 profile
+//!   错配 fail-fast）。
 //! - `4`：启动锚定失败（timeout / stale / joint count 错位）—— B1
 //!   outline §4.2 + §9 决策 #2 锁定，**不**退化到 bias=0。
 //! - `5`：tick loop 内 publish 失败（罕见；transport / iceoryx2 错）。
 //!
-//! ### 非目标（B1 边界，详 outline §1.2 + §9）
+//! ### 非目标（B2 边界，详 outline §1.2 + §9）
 //!
-//! - **不**带 `sd_notify` / systemd watchdog（决策 #7；Type=simple）。
-//! - **不**接 policy / action interface（B2）。
-//! - **不**做 trajectory / IK / scheduler。
-//! - **不**改 `mock_s1`（保留作 ballet 工具）。
+//! - **不**带 `sd_notify` / systemd watchdog（B1 决策 #7；Type=simple）。
+//! - **不**做 trajectory / IK / scheduler / 真 RL backend（→ B3 / B4）。
+//! - **不**起 robot-rpc gateway 进程（→ B4）。
+//! - **不**改 `mock_s1`（保留作 ballet 工具，独立于 B2 wiring）。
 
 #![forbid(unused_must_use)]
 // 中文 doc 块大量 identifier-like 字串；跟 lib 同款宽松 doc-markdown。
@@ -48,7 +67,8 @@ use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
-use robot_s1::coordinator::{self, CoordinatorConfig, HardwareSection, TickError};
+use robot_s1::action_backend::BackendRegistry;
+use robot_s1::coordinator::{self, Coordinator, CoordinatorConfig, HardwareSection, TickError};
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
 
 // ============================================================================
@@ -284,6 +304,17 @@ fn run(args: &Args) -> Result<(), i32> {
         }
     };
 
+    // ---- 加载 [s1.profile]（B2 (3/3) wiring）----
+    // 缺失 [s1.profile] 走 ProfileSection::default_b2 = mock_dwell +
+    // joint_position（reviewer 拍板：等价 B1 no-active-action 路径）。
+    let profile = match coordinator::parse_profile_section_from_toml(&toml_text) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("fatal: parse [s1.profile]: {e}");
+            return Err(3);
+        }
+    };
+
     let joints_count = hardware.joints.len();
     tracing::info!(
         robot_id = %args.robot_id,
@@ -299,6 +330,8 @@ fn run(args: &Args) -> Result<(), i32> {
         topic_state = %topic_state,
         duration = ?args.duration,
         layout_id = format!("{:#x}", args.layout_id),
+        profile_backends = ?profile.backends,
+        profile_command_mode = %profile.command_mode,
         "s1_daemon starting"
     );
 
@@ -339,18 +372,54 @@ fn run(args: &Args) -> Result<(), i32> {
     )?;
     tracing::info!(?bias, "s1_daemon anchored to S0 state");
 
-    // ---- tick loop ----
-    let final_state = match coordinator::run_tick_loop(
-        &cfg,
+    // ---- 构造 BackendRegistry + L2 校验（B2 (3/3) wiring）----
+    // BackendRegistry::from_inventory 永不失败（编译期决定），但
+    // validate_profile_section 会拒：unknown backend / unsupported
+    // command_mode / joint count mismatch / no enabled backends 任一项
+    // → exit 3。
+    let registry = BackendRegistry::from_inventory();
+    if let Err(e) =
+        coordinator::validate_profile_section(&profile, &registry, &hardware, bias.len())
+    {
+        eprintln!("fatal: validate [s1.profile]: {e}");
+        return Err(3);
+    }
+
+    // ---- 构造 Coordinator 并 mark_idle（Booting → Idle）----
+    let coordinator = Coordinator::new(
+        cfg,
+        hardware,
         args.layout_id,
-        &bias,
+        bias,
+        registry,
+        profile.backends.clone(),
+    );
+    if let Err(e) = coordinator.mark_idle() {
+        // Coordinator::new 总是构造在 Booting；mark_idle 仅 Booting → Idle
+        // 接受，理论不可能失败。失败 = 内部状态机 bug。
+        eprintln!("fatal: coordinator.mark_idle() unexpected failure: {e}");
+        return Err(5);
+    }
+    tracing::info!(state = ?coordinator.current_state(), "s1_daemon coordinator ready");
+
+    // ---- tick loop（state-aware：Idle/Degraded → hold；Executing →
+    //      action override；ShuttingDown → break）----
+    let tick_result = coordinator::run_action_tick_loop(
+        &coordinator,
         &mut hb_pub,
         &mut cmd_pub,
         &clock,
         args.poll_interval,
         args.duration,
         &SHUTDOWN,
-    ) {
+    );
+
+    // 退出前先把 coordinator 转 ShuttingDown（让任何持票方收到
+    // RecvError = channel 关闭语义）。即使 tick loop 因 publish 错退出，
+    // 也要做这步清理。
+    coordinator.mark_shutting_down();
+
+    let final_state = match tick_result {
         Ok(s) => s,
         Err(TickError::Publish(msg)) => {
             eprintln!("fatal: tick loop publish failed: {msg}");
@@ -362,6 +431,7 @@ fn run(args: &Args) -> Result<(), i32> {
         cmd_seq = final_state.cmd_seq,
         hb_seq = final_state.hb_seq,
         elapsed_ns = final_state.elapsed_ns(clock.now().0),
+        final_state = ?coordinator.current_state(),
         "s1_daemon clean shutdown"
     );
     Ok(())
