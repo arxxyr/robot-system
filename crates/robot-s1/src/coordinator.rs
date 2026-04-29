@@ -741,6 +741,713 @@ where
 }
 
 // ============================================================================
+// ProfileSection + parse / validate（B2 (2/3) profile matrix L1 + L2）
+// ============================================================================
+
+/// `[s1.profile]` runtime profile section（B2 outline §4.2）。
+///
+/// **B2 单 profile 字段集**（B3 起按 outline §4 扩 joint_delta /
+/// normalized 等）：
+///
+/// - `backends`：编译期 `inventory::submit!` 注册过的 backend 名字，
+///   runtime 选哪些进入
+///   [`crate::action_backend::BackendRegistry`]。
+/// - `command_mode`：B2 仅 `"joint_position"`；其它字面值由
+///   [`validate_profile_section`] L2 拒绝。
+///
+/// **缺失 `[s1.profile]` 走默认**（reviewer 拍板，等价 B1 no-active-action
+/// 路径，B2 (3/3) wiring 不打断现有 config）：[`ProfileSection::default_b2`]。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileSection {
+    pub backends: Vec<String>,
+    pub command_mode: String,
+}
+
+impl ProfileSection {
+    /// reviewer 拍板：缺失 `[s1.profile]` 时的 B2 默认值 ——
+    /// `backends = ["mock_dwell"]` + `command_mode = "joint_position"`。
+    /// 等价 B1 no-active-action 路径 + 默认 feature `backend-mock-dwell`。
+    #[must_use]
+    pub fn default_b2() -> Self {
+        Self {
+            backends: vec!["mock_dwell".to_string()],
+            command_mode: "joint_position".to_string(),
+        }
+    }
+}
+
+/// `[s1.profile]` parse / validate 失败原因。
+///
+/// **L1（[`parse_profile_section_from_toml`]）**：仅 `Toml` —— TOML
+/// 语法错 / unknown field / 类型错 / 默认值非法。
+///
+/// **L2（[`validate_profile_section`]）**：`UnknownBackend` /
+/// `UnsupportedCommandMode` / `JointCountMismatch` —— 需要 registry +
+/// hardware + anchor_bias 才能查的语义级一致性。
+#[derive(Debug, Error)]
+pub enum ProfileError {
+    /// L1：TOML 语法错 / `[s1.profile]` 段含 unknown field / 类型错。
+    #[error("[s1.profile] TOML parse failed: {0}")]
+    Toml(String),
+    /// L2：`profile.backends` 里的 name 不在 `BackendRegistry`
+    /// （编译期没 link / feature 没启用 / 拼写错）。
+    #[error(
+        "[s1.profile.backends] unknown backend {name:?}; \
+         not registered via inventory::submit! (check Cargo features)"
+    )]
+    UnknownBackend { name: String },
+    /// L2：`profile.command_mode` 不在 B2 支持集合 `{joint_position}`。
+    /// B3 起加 `joint_delta` / `normalized` 时一起扩集合 + 加 backend
+    /// 自报 `supported_command_modes()`。
+    #[error("[s1.profile.command_mode] {value:?} not supported in B2 (only \"joint_position\")")]
+    UnsupportedCommandMode { value: String },
+    /// L2：`hardware.joints.len()` 与启动锚定 `anchor_bias.len()` 不一致。
+    /// 典型成因：S0 state schema 漂移 / TOML 配错 hardware id。
+    #[error(
+        "joint count mismatch: hardware section has {hardware_joints} joints, \
+         anchor bias has {anchor_bias_len}"
+    )]
+    JointCountMismatch {
+        hardware_joints: usize,
+        anchor_bias_len: usize,
+    },
+}
+
+/// 顶层 wrapper：daemon `--config` 文件内含 `[s1.profile]` 子段；
+/// 跟 B1 [`parse_s1_section_from_toml`] / [`parse_hardware_section_from_toml`]
+/// 同款"不 deny_unknown_fields 在 wrapper 层"以静默跳过非
+/// `[s1.profile]` 段。
+#[derive(Debug, Default, Deserialize)]
+struct ProfileWrapper {
+    s1: Option<ProfileS1Wrapper>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ProfileS1Wrapper {
+    /// `[s1.profile]` 子段；缺失走 [`ProfileSection::default_b2`]。
+    /// `serde(default)` 不报错；`flatten` 让顶层 `[s1]` 字段（B1 配
+    /// 项）落到 `_other` 里被忽略。
+    profile: Option<ProfileSectionRaw>,
+    /// 容纳 B1 已有的 `[s1]` 字段（heartbeat_hz / 等）。**不**
+    /// 限制内容（不 deny_unknown_fields），跟 B1 路径解耦。
+    #[serde(flatten)]
+    _other: toml::Table,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProfileSectionRaw {
+    /// **缺失** = `[]`；validate 见 `backends` 必须非空（at least 1
+    /// backend 才能跑 action dispatch；B2 默认 mock_dwell）。
+    #[serde(default)]
+    backends: Vec<String>,
+    /// **缺失** = `"joint_position"`（B2 唯一合法值，跟 default_b2 对齐）。
+    #[serde(default = "default_command_mode")]
+    command_mode: String,
+}
+
+fn default_command_mode() -> String {
+    "joint_position".to_string()
+}
+
+/// 把 daemon `--config` TOML 文本中的 `[s1.profile]` 段解出
+/// [`ProfileSection`]（**仅 L1**：TOML 语法 / 字段类型 / unknown field）。
+///
+/// **L2（unknown backend / unsupported command mode / joint count
+/// mismatch）由 [`validate_profile_section`] 单独跑**（reviewer 拍板拆两
+/// 层）。L1 通过不代表 backends 名字一定在 registry 里。
+///
+/// **行为**：
+///
+/// - 文本里没有 `[s1]` section → [`ProfileSection::default_b2`]。
+/// - 有 `[s1]` 但没 `[s1.profile]` → 同上（reviewer 拍板：缺失等价 B1
+///   no-active-action 路径，wiring 不打断现有 config）。
+/// - 有 `[s1.profile]` 且字段缺失 → 各字段走 default（`backends = []` /
+///   `command_mode = "joint_position"`）；B2 默认 `backends = []` 在
+///   validate 阶段会被 "registry 找不到任何匹配" 拒（NoBackendForKind），
+///   但**不**在 L1 报错（保持纯 L1 语义）。
+/// - 有 `[s1.profile]` 含 unknown field → [`ProfileError::Toml`]。
+/// - 文本是 invalid TOML → 同上。
+pub fn parse_profile_section_from_toml(toml_text: &str) -> Result<ProfileSection, ProfileError> {
+    let wrap: ProfileWrapper =
+        toml::from_str(toml_text).map_err(|e| ProfileError::Toml(e.to_string()))?;
+
+    let Some(s1) = wrap.s1 else {
+        return Ok(ProfileSection::default_b2());
+    };
+    let Some(raw) = s1.profile else {
+        return Ok(ProfileSection::default_b2());
+    };
+
+    Ok(ProfileSection {
+        backends: raw.backends,
+        command_mode: raw.command_mode,
+    })
+}
+
+/// L2 语义校验：profile + registry + hardware + anchor_bias 一致性。
+///
+/// **检查项**（reviewer 拍板验收契约 round 1 #6）：
+///
+/// 1. `profile.backends` 中每个 name 必须在 `registry.has(name)`，否则
+///    [`ProfileError::UnknownBackend`]。
+/// 2. `profile.command_mode` 必须 `== "joint_position"`，否则
+///    [`ProfileError::UnsupportedCommandMode`]。reviewer 拍板：B2 仅
+///    一个合法值，**不**给 [`crate::action::ActionBackend`] trait 加
+///    `supported_command_modes()` 方法（B3 引入新 mode 时再扩）。
+/// 3. `hardware.joints.len() == anchor_bias_len`，否则
+///    [`ProfileError::JointCountMismatch`]。
+///
+/// 失败按检查顺序短路返第一个错；多错并存的情况只报第一个 —— 客户端
+/// 修一个再跑就能看到下一个。
+///
+/// **可见性**：`pub(crate)` —— 参数 `BackendRegistry` 是
+/// `pub(crate)`，按 Rust private-in-public 规则本函数也只能 crate 内
+/// 可见。`s1_daemon` binary 与本 lib 同 crate，不受影响（reviewer
+/// 拍板"优先 `pub(crate) mod action_backend;`"，可见性收敛而非外暴）。
+///
+/// `#[allow(dead_code)]`：B2 (2/3) 期间 lib-side 暂无非测试调用方
+/// （B2 (3/3) `s1_daemon` binary 接 wiring 后移除）。
+#[allow(dead_code)]
+pub(crate) fn validate_profile_section(
+    profile: &ProfileSection,
+    registry: &crate::action_backend::BackendRegistry,
+    hardware: &HardwareSection,
+    anchor_bias_len: usize,
+) -> Result<(), ProfileError> {
+    for name in &profile.backends {
+        if !registry.has(name) {
+            return Err(ProfileError::UnknownBackend { name: name.clone() });
+        }
+    }
+    if profile.command_mode != "joint_position" {
+        return Err(ProfileError::UnsupportedCommandMode {
+            value: profile.command_mode.clone(),
+        });
+    }
+    if hardware.joints.len() != anchor_bias_len {
+        return Err(ProfileError::JointCountMismatch {
+            hardware_joints: hardware.joints.len(),
+            anchor_bias_len,
+        });
+    }
+    Ok(())
+}
+
+// ============================================================================
+// CoordinatorState 5-state 机
+// ============================================================================
+//
+// B2 (2/3) 引入的 CoordinatorState / Coordinator / FINISHED_RING_CAPACITY
+// / InnerState / CurrentAction 等由 B2 (3/3) `s1_daemon` binary wiring
+// 接入；B2 (2/3) 期间 lib-side 暂无非测试调用方，clippy `dead_code` 会
+// 误报。下面**每项**加 `#[allow(dead_code)]`（不在文件顶整段 allow，
+// 防把 B1 真死代码也漏过）；B2 (3/3) wiring land 后批量移除。
+
+/// reviewer 拍板：B2 coordinator state 5 显式 variant，**不**吃成隐式 flag。
+///
+/// 转移图（详 outline §5.2）：
+///
+/// ```text
+/// Booting ──[mark_idle / anchor success]──> Idle ──[submit OK]──> Executing
+///                                            │                       │
+///                                            │      ┌────────────────┼─────────────────┐
+///                                            ▼      ▼                ▼                 ▼
+///                              [shutdown]           Completed/      Failed(Pre        Failed(Safety/
+///                                  │              cancelled normally /Deadline)         Adapter/Internal)
+///                                  ▼              │                  │                  │
+///                              ShuttingDown       ▼                  ▼                  ▼
+///                                                Idle               Idle             Degraded
+///                                                                                       │
+///                                                                                       ▼
+///                                                                  [clear_error]      Idle
+/// ```
+///
+/// **不变量**：
+///
+/// - `Executing` 唯一持有 `current` 实例（见 [`InnerState`]）；其它 4 状态 `current = None`。
+/// - `Degraded` 携带 reason 字符串（来自 [`ActionFailure::SafetyAbort`] /
+///   [`ActionFailure::AdapterError`] / [`ActionFailure::InternalError`] 的
+///   message）；唯一出口是 [`Coordinator::clear_error`] → `Idle`。
+/// - `ShuttingDown` 是终态（B2 不复活）；任何状态收 SIGINT/SIGTERM 后都
+///   走 [`Coordinator::mark_shutting_down`]。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoordinatorState {
+    /// 启动期：构造完毕，anchor read 未完。`submit` 返
+    /// [`SubmitError::NotReady`]。
+    Booting,
+    /// 闲态：B1 hold loop 正在跑（hb + hold cmd 50 Hz）；接受 `submit`。
+    Idle,
+    /// 单 action 执行中（B2 单 action 序列化）。
+    Executing {
+        action_id: ActionId,
+        started_at_ns: u64,
+    },
+    /// S1 内部 degraded（reviewer 阻断 2 + 决策 #10 锁定）：B1 hold loop
+    /// **继续**（hb + hold cmd 50 Hz 不变），拒新 `submit`。出口 =
+    /// `clear_error`。**不**触 S0 watchdog / 不宣称 CONTROL_LOST_*。
+    Degraded { reason: String },
+    /// 收到 SIGINT/SIGTERM 后；coordinator 不接受新 submit / 不再走
+    /// tick 推进。binary `run_tick_loop` 检测到此状态后 break。
+    ShuttingDown,
+}
+
+impl CoordinatorState {
+    /// 给错误信息 / debug log 用的人类可读 tag（不暴露具体字段值）。
+    #[allow(dead_code)] // B2 (3/3) wiring 接 mark_idle / clear_error 失败路径后用到
+    fn human_label(&self) -> &'static str {
+        match self {
+            Self::Booting => "Booting",
+            Self::Idle => "Idle",
+            Self::Executing { .. } => "Executing",
+            Self::Degraded { .. } => "Degraded",
+            Self::ShuttingDown => "ShuttingDown",
+        }
+    }
+}
+
+// ============================================================================
+// Coordinator 内部状态 + 4 API + tick_action
+// ============================================================================
+
+use crate::action::{
+    ActionCancelError, ActionContext, ActionEvent, ActionFailure, ActionId, ActionInstance,
+    ActionRequest, ActionStatus, ActionTickOutput, ActionTicket, ClearError, JointCommandBody,
+    SubmitError,
+};
+use crate::action_backend::BackendRegistry;
+use std::collections::VecDeque;
+use std::sync::Mutex;
+
+/// `Coordinator::status` 查询的 finished ring 容量。
+///
+/// reviewer 拍板：terminal 事件发出后保留 cap=128 的 `(ActionId,
+/// ActionStatus)` 环；`status()` 先查 EXECUTING 再查 ring，找不到才
+/// `None`。**不**做无界 map（防 long-running daemon 慢漏内存）；超 128
+/// 淘汰最旧。
+#[allow(dead_code)] // B2 (3/3) binary wiring 后引用
+pub(crate) const FINISHED_RING_CAPACITY: usize = 128;
+
+/// EXECUTING 时 coordinator 持有的"当前 action"上下文。
+///
+/// `instance` + `events_tx` 是 backend 实例 + 事件发送端；`pending_cancel`
+/// 跟踪 `cancel()` 是否被调过；`last_progress` 给 `status()` 查
+/// EXECUTING 时返 [`ActionStatus::Executing { progress }`]。
+#[allow(dead_code)] // B2 (3/3) binary wiring 后构造
+struct CurrentAction {
+    action_id: ActionId,
+    instance: Box<dyn ActionInstance>,
+    events_tx: std::sync::mpsc::Sender<ActionEvent>,
+    /// `cancel()` 调用后置 `true`；下次 `tick_action` 看 backend 收敛
+    /// （`Completed` / `Err`）时决定走 [`ActionEvent::Cancelled`] 还是
+    /// [`ActionEvent::Failed`]。reviewer 拍板：cancel 不是 terminal，
+    /// 收敛 = `Cancelled`，backend 收敛报错 = `Failed`，**不**双发。
+    pending_cancel: bool,
+    last_progress: f32,
+}
+
+/// Coordinator 内部状态（state machine + current action + finished ring）。
+///
+/// 单 [`Mutex`] 守门 = 简单 + 无 ABBA 风险；tick_action 持锁调
+/// `instance.tick()` 是同步的，B2 全程普通线程，`tick()` 不阻塞 IO。
+#[allow(dead_code)] // B2 (3/3) binary wiring 后构造
+struct InnerState {
+    fsm: CoordinatorState,
+    current: Option<CurrentAction>,
+    finished: VecDeque<(ActionId, ActionStatus)>,
+}
+
+#[allow(dead_code)] // B2 (3/3) binary wiring 后调用
+impl InnerState {
+    fn new_booting() -> Self {
+        Self {
+            fsm: CoordinatorState::Booting,
+            current: None,
+            finished: VecDeque::with_capacity(FINISHED_RING_CAPACITY),
+        }
+    }
+
+    /// 把 `(id, status)` 写入 ring；超 128 淘汰最旧。
+    fn push_finished(&mut self, id: ActionId, status: ActionStatus) {
+        if self.finished.len() >= FINISHED_RING_CAPACITY {
+            self.finished.pop_front();
+        }
+        self.finished.push_back((id, status));
+    }
+
+    /// `status(action_id)` 查询：先 EXECUTING，再 finished ring，否则 None。
+    fn lookup_status(&self, action_id: ActionId) -> Option<ActionStatus> {
+        if let Some(ref ca) = self.current
+            && ca.action_id == action_id
+        {
+            return Some(ActionStatus::Executing {
+                progress: ca.last_progress,
+            });
+        }
+        self.finished
+            .iter()
+            .find(|(fid, _)| *fid == action_id)
+            .map(|(_, s)| s.clone())
+    }
+}
+
+/// S1 coordinator：state machine + action dispatch + finished status ring。
+///
+/// **构造**：[`Coordinator::new`] 初始 [`CoordinatorState::Booting`]；
+/// binary 在 anchor read 完成后调 [`Coordinator::mark_idle`] 转 Idle，之
+/// 后接 RPC `InvokeTask` 等。B2 (2/3) 落 lib API + 状态机；binary wiring
+/// 留 B2 (3/3)。
+///
+/// **线程安全**：所有 4 API + `tick_action` 通过 [`Mutex`] 同步；多线程
+/// 并发调用安全（B4 时 robot-rpc-gateway 的 tonic worker 多线程会用得到）。
+///
+/// **不**owns 时钟：调用方传 [`RobotClock`] 给 [`Coordinator::submit`] /
+/// [`Coordinator::tick_action`]。本设计跟 B1 [`tick_once`] 一致，让
+/// binary 决定 system vs mock clock。
+///
+/// **可见性**：本 struct + 关联方法均 `pub(crate)` —— 与
+/// [`crate::action_backend`] 模块保持同等私有度（构造时持有
+/// [`BackendRegistry`] `pub(crate)` 类型，按 Rust private-in-public 规
+/// 则上限只能 `pub(crate)`）。`s1_daemon` binary 与本 lib 同 crate，
+/// 不受影响。后续 B4+ 若需暴露给外部 crate（极少；典型场景是 robot-tests
+/// 跨 crate 集成测），按 outline §4 双层 profile 路径通过 builder
+/// pattern + opaque handle 升级，**不**直接 pub 出来。
+#[allow(dead_code)] // B2 (3/3) binary wiring 接 Coordinator + 4 API 后移除
+pub(crate) struct Coordinator {
+    inner: Mutex<InnerState>,
+    /// `[s1.profile.backends]` 启用列表；dispatch filter。
+    enabled_backends: Vec<String>,
+    /// 全部 link 进 binary 的 backend；dispatch 路由表。
+    registry: BackendRegistry,
+    /// Backend `start` / `tick` 的 [`ActionContext`] 字段集（非 RT，
+    /// 启动期 + tick 期间复用）。
+    config: CoordinatorConfig,
+    hardware: HardwareSection,
+    layout_id: u64,
+    anchor_bias: Vec<f64>,
+}
+
+#[allow(dead_code)] // B2 (3/3) binary wiring 接所有 4 API + tick_action 后移除
+impl Coordinator {
+    /// 构造一个新的 coordinator，初始 `Booting`；binary 在 anchor read
+    /// 完后调 [`Self::mark_idle`] 转 Idle。
+    ///
+    /// `enabled_backends` / `registry` / `config` / `hardware` /
+    /// `layout_id` / `anchor_bias` 已在调用方完成 `validate_profile_section`
+    /// L2 校验（unknown backend / unsupported command mode / joint count
+    /// mismatch 都已通过）；本构造不再二次校验，避免重复昂贵的 registry
+    /// 查表。
+    #[must_use]
+    pub(crate) fn new(
+        config: CoordinatorConfig,
+        hardware: HardwareSection,
+        layout_id: u64,
+        anchor_bias: Vec<f64>,
+        registry: BackendRegistry,
+        enabled_backends: Vec<String>,
+    ) -> Self {
+        Self {
+            inner: Mutex::new(InnerState::new_booting()),
+            enabled_backends,
+            registry,
+            config,
+            hardware,
+            layout_id,
+            anchor_bias,
+        }
+    }
+
+    /// `Booting → Idle`（binary 在 anchor read 完成后调用）。
+    ///
+    /// 仅 `Booting` 状态合法；其它状态返
+    /// [`ClearError::NotDegraded`]（复用枚举；B3+ 若需要单独的
+    /// transition 错误再拆出）。
+    pub(crate) fn mark_idle(&self) -> Result<(), ClearError> {
+        let mut inner = self.lock_inner();
+        match inner.fsm {
+            CoordinatorState::Booting => {
+                inner.fsm = CoordinatorState::Idle;
+                Ok(())
+            }
+            ref other => Err(ClearError::NotDegraded(other.human_label().to_string())),
+        }
+    }
+
+    /// 任意状态 → `ShuttingDown`（binary 收 SIGINT/SIGTERM 后调用）。
+    /// 幂等 + 不可逆；已 `ShuttingDown` 时无副作用。
+    pub(crate) fn mark_shutting_down(&self) {
+        let mut inner = self.lock_inner();
+        // 若当前 EXECUTING，drop current 让 backend instance 析构 + sender
+        // drop（持票方 recv 会拿到 RecvError 表示 channel 关闭）。
+        inner.current = None;
+        inner.fsm = CoordinatorState::ShuttingDown;
+    }
+
+    /// 提交一次 action 请求；`Idle` 时启动 backend 转 `Executing`，其它
+    /// 4 状态返对应 [`SubmitError`]。
+    ///
+    /// **失败映射**（reviewer 验收契约表）：
+    ///
+    /// - `Booting` → [`SubmitError::NotReady`]
+    /// - `Executing(id)` → [`SubmitError::BusyExecuting(id)`]
+    /// - `Degraded` → [`SubmitError::CoordinatorDegraded`]
+    /// - `ShuttingDown` → [`SubmitError::ShuttingDown`]
+    ///
+    /// 路由 / 校验失败：
+    /// - [`ActionRequest::validate`] → [`SubmitError::InvalidRequest`]
+    /// - [`BackendRegistry::dispatch`] →
+    ///   [`SubmitError::NoBackendForKind`] / [`SubmitError::UnsupportedSchema`]
+    /// - [`ActionBackend::start`] → [`SubmitError::BackendStartFailed`]
+    ///
+    /// `req` 按值传：API 语义上"submit 接管请求所有权"对齐 RPC InvokeTask；
+    /// 实际函数体内仅借用引用 + Copy 字段，clippy `needless_pass_by_value`
+    /// 误报，allow 掉。
+    #[allow(clippy::needless_pass_by_value)]
+    pub(crate) fn submit(
+        &self,
+        req: ActionRequest,
+        clock: &dyn RobotClock,
+    ) -> Result<ActionTicket, SubmitError> {
+        let now_ns = clock.now().0;
+        req.validate(now_ns)?;
+
+        // dispatch + start 在锁外做（registry 不持锁；start 不动 inner）；
+        // 这样把"进入 EXECUTING"的临界区缩到最小。
+        let backend =
+            self.registry
+                .dispatch(&self.enabled_backends, req.kind, req.payload_schema_id)?;
+
+        // 锁 inner 检查状态 + 转移 + 创建 ticket。
+        let mut inner = self.lock_inner();
+        match &inner.fsm {
+            CoordinatorState::Booting => return Err(SubmitError::NotReady),
+            CoordinatorState::Executing { action_id, .. } => {
+                return Err(SubmitError::BusyExecuting(*action_id));
+            }
+            CoordinatorState::Degraded { .. } => return Err(SubmitError::CoordinatorDegraded),
+            CoordinatorState::ShuttingDown => return Err(SubmitError::ShuttingDown),
+            CoordinatorState::Idle => {}
+        }
+
+        let ctx = ActionContext {
+            clock,
+            layout_id: self.layout_id,
+            hardware: &self.hardware,
+            config: &self.config,
+            anchor_bias: &self.anchor_bias,
+        };
+        // start 失败：状态不转移，仍 Idle。
+        let instance = backend.start(&req, &ctx)?;
+
+        let action_id = req.action_id;
+        let (tx, rx) = std::sync::mpsc::channel::<ActionEvent>();
+
+        // 第一帧 Started 事件：`send().ok()` 吞 SendError —— ticket 已被
+        // drop 时 sender 仍能 send（mpsc::channel 是 unbuffered 但 sender
+        // 不会因 receiver drop 而 panic；返 Err 即可），coordinator
+        // **不**把 send 失败当 action failure（reviewer 拍板）。
+        let _ = tx.send(ActionEvent::Started { at_ns: now_ns });
+
+        inner.fsm = CoordinatorState::Executing {
+            action_id,
+            started_at_ns: now_ns,
+        };
+        inner.current = Some(CurrentAction {
+            action_id,
+            instance,
+            events_tx: tx,
+            pending_cancel: false,
+            last_progress: 0.0,
+        });
+
+        Ok(ActionTicket {
+            action_id,
+            events: rx,
+        })
+    }
+
+    /// Cooperative cancel：set backend `cancel()` flag + 标记
+    /// `pending_cancel`；下次 [`Self::tick_action`] 收敛 backend 输出。
+    ///
+    /// **失败路径**：
+    ///
+    /// - 当前不在 EXECUTING / `action_id` 不匹配 →
+    ///   [`ActionCancelError::NotExecuting`]。
+    /// - Backend `cancel()` 自身报错 → [`ActionCancelError::BackendError`]。
+    ///
+    /// **reviewer 拍板**：cancel **不**是 terminal —— 即使返 `Ok` 也仍
+    /// `Executing`；下次 tick 收敛后 emit `Cancelled`（正常）或 `Failed`
+    /// （backend 报错）；**不**双发 `Completed + Cancelled`。
+    pub(crate) fn cancel(
+        &self,
+        action_id: ActionId,
+        clock: &dyn RobotClock,
+    ) -> Result<(), ActionCancelError> {
+        let mut inner = self.lock_inner();
+        let Some(current) = inner.current.as_mut() else {
+            return Err(ActionCancelError::NotExecuting);
+        };
+        if current.action_id != action_id {
+            return Err(ActionCancelError::NotExecuting);
+        }
+
+        let mut ctx = ActionContext {
+            clock,
+            layout_id: self.layout_id,
+            hardware: &self.hardware,
+            config: &self.config,
+            anchor_bias: &self.anchor_bias,
+        };
+        current.instance.cancel(&mut ctx)?;
+        current.pending_cancel = true;
+        Ok(())
+    }
+
+    /// 查询 action 状态：先 EXECUTING（返 `Executing { progress }`），
+    /// 再 finished ring（cap 128）；都没找到返 `None`。
+    ///
+    /// reviewer 拍板：**不**做无界 map；超 128 终态淘汰最旧。
+    #[must_use]
+    pub(crate) fn status(&self, action_id: ActionId) -> Option<ActionStatus> {
+        let inner = self.lock_inner();
+        inner.lookup_status(action_id)
+    }
+
+    /// `Degraded → Idle`（B2 (2/3) stub 内部 API；B4 接 RPC `ClearError`）。
+    ///
+    /// 仅 `Degraded` 合法；其它 4 状态返
+    /// [`ClearError::NotDegraded`] 携当前状态 label。
+    pub(crate) fn clear_error(&self) -> Result<(), ClearError> {
+        let mut inner = self.lock_inner();
+        match inner.fsm {
+            CoordinatorState::Degraded { .. } => {
+                inner.fsm = CoordinatorState::Idle;
+                Ok(())
+            }
+            ref other => Err(ClearError::NotDegraded(other.human_label().to_string())),
+        }
+    }
+
+    /// 当前状态快照（debug / 测试用 / B2 (3/3) binary tick loop 分支判断）。
+    #[must_use]
+    pub(crate) fn current_state(&self) -> CoordinatorState {
+        self.lock_inner().fsm.clone()
+    }
+
+    /// **lib-level tick advance**（B2 (3/3) binary `run_tick_loop` 用）：
+    ///
+    /// - 状态 `Executing` → 调 backend.`tick()`；按返回值更新 state /
+    ///   推 [`ActionEvent`] / 写 finished ring；返 `Some(body)` 让 binary
+    ///   publish 这帧 `JointCommand`。
+    /// - 其它 4 状态（`Booting` / `Idle` / `Degraded` / `ShuttingDown`）
+    ///   → 不动 state，返 `None`。binary 自行接管 hold loop / hb 发送。
+    ///
+    /// **失败转移**（outline §6.5 + reviewer 拍板）：
+    ///
+    /// | failure | new state |
+    /// |---|---|
+    /// | `PreconditionFailed` | `Idle` |
+    /// | `DeadlineExceeded` | `Idle` |
+    /// | `SafetyAbort(reason)` | `Degraded { reason }` |
+    /// | `AdapterError(reason)` | `Degraded { reason }` |
+    /// | `InternalError(reason)` | `Degraded { reason }` |
+    pub(crate) fn tick_action(&self, clock: &dyn RobotClock) -> Option<JointCommandBody> {
+        let mut inner = self.lock_inner();
+        if !matches!(inner.fsm, CoordinatorState::Executing { .. }) {
+            return None;
+        }
+
+        // 借出 current 让 instance.tick 调用；其它字段保持 inner 锁内。
+        // ActionContext::clock 透传调用方传的 clock。
+        let mut ctx = ActionContext {
+            clock,
+            layout_id: self.layout_id,
+            hardware: &self.hardware,
+            config: &self.config,
+            anchor_bias: &self.anchor_bias,
+        };
+
+        let now_ns = clock.now().0;
+        let Some(current) = inner.current.as_mut() else {
+            // state 是 Executing 但 current 为空：不一致；防御性回 Idle。
+            inner.fsm = CoordinatorState::Idle;
+            return None;
+        };
+
+        let result = current.instance.tick(&mut ctx);
+        let action_id = current.action_id;
+        let pending_cancel = current.pending_cancel;
+
+        match result {
+            Ok(ActionTickOutput::Continue { progress, command }) => {
+                current.last_progress = progress;
+                // Continue 期间不发 terminal；emit Progress（持续推让 audit
+                // 能看到流式 stream，B3+ scheduler 可加 delta threshold 优化）。
+                let _ = current.events_tx.send(ActionEvent::Progress {
+                    progress,
+                    at_ns: now_ns,
+                });
+                command
+            }
+            Ok(ActionTickOutput::Completed(outcome)) => {
+                // 终态：转 Idle；按 pending_cancel 决定 Cancelled vs Completed；
+                // ring buffer 写一条；drop current（events_tx drop → ticket
+                // 端 RecvError = 流关闭）。
+                if pending_cancel {
+                    let _ = current
+                        .events_tx
+                        .send(ActionEvent::Cancelled { at_ns: now_ns });
+                    inner.push_finished(action_id, ActionStatus::Cancelled);
+                } else {
+                    let _ = current.events_tx.send(ActionEvent::Completed {
+                        outcome: outcome.clone(),
+                        at_ns: now_ns,
+                    });
+                    inner.push_finished(action_id, ActionStatus::Completed(outcome));
+                }
+                inner.current = None;
+                inner.fsm = CoordinatorState::Idle;
+                None
+            }
+            Err(failure) => {
+                // 终态 Failed：emit + ring + 状态转移（按 failure 类型）。
+                let _ = current.events_tx.send(ActionEvent::Failed {
+                    failure: failure.clone(),
+                    at_ns: now_ns,
+                });
+                inner.push_finished(action_id, ActionStatus::Failed(failure.clone()));
+                inner.current = None;
+                inner.fsm = match failure {
+                    ActionFailure::PreconditionFailed(_) | ActionFailure::DeadlineExceeded => {
+                        CoordinatorState::Idle
+                    }
+                    ActionFailure::SafetyAbort(reason)
+                    | ActionFailure::AdapterError(reason)
+                    | ActionFailure::InternalError(reason) => CoordinatorState::Degraded { reason },
+                };
+                None
+            }
+        }
+    }
+
+    /// `Mutex` 拿锁；poison 时降级用 `into_inner()` 继续，记一行 debug log。
+    /// reviewer 拍板：B2 不为 mutex poison 单独引入新错误类型，按"前
+    /// holder panic 是 bug 但不影响 B2 后续 invariant 守门"处理。
+    fn lock_inner(&self) -> std::sync::MutexGuard<'_, InnerState> {
+        match self.inner.lock() {
+            Ok(g) => g,
+            Err(poisoned) => {
+                tracing::warn!(
+                    target: "robot_s1::coordinator",
+                    "Coordinator inner mutex poisoned; recovering with into_inner"
+                );
+                poisoned.into_inner()
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -1348,5 +2055,848 @@ poll_hz     = 200
         assert_eq!(r, TickPublished::default());
         assert_eq!(cmd_ch.publishes(), 1);
         assert_eq!(hb_ch.publishes(), 1);
+    }
+
+    // ----- ProfileSection parse + validate（B2 (2/3) reviewer 验收契约
+    //        round 1 #6：profile 双层校验必须 fail-fast，3 路径有测试）-----
+
+    use crate::action::{
+        ActionBackend, ActionContext, ActionInstance, ActionKind, ActionRequest, ActionStartError,
+        NO_PAYLOAD_SCHEMA_ID,
+    };
+    use crate::action_backend::BackendRegistry;
+
+    /// 测试用 stub backend：声明 `name` / `supported_kinds` /
+    /// `supported_schemas`；start 返 stub error，本测试不走 instance 路径。
+    struct ProfileTestBackend {
+        name: &'static str,
+    }
+
+    impl ActionBackend for ProfileTestBackend {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn supported_kinds(&self) -> &[ActionKind] {
+            const KINDS: &[ActionKind] = &[ActionKind::DwellMs];
+            KINDS
+        }
+        fn supported_schemas(&self) -> &[u32] {
+            const SCHEMAS: &[u32] = &[NO_PAYLOAD_SCHEMA_ID];
+            SCHEMAS
+        }
+        fn start(
+            &self,
+            _req: &ActionRequest,
+            _ctx: &ActionContext<'_>,
+        ) -> Result<Box<dyn ActionInstance>, ActionStartError> {
+            Err(ActionStartError::Rejected("stub".into()))
+        }
+    }
+
+    static PROFILE_STUB_MOCK: ProfileTestBackend = ProfileTestBackend { name: "mock_dwell" };
+    static PROFILE_STUB_OTHER: ProfileTestBackend = ProfileTestBackend { name: "other" };
+
+    fn registry_with_mock_dwell() -> BackendRegistry {
+        BackendRegistry::from_explicit(&[&PROFILE_STUB_MOCK as &'static dyn ActionBackend])
+    }
+
+    fn registry_with_two() -> BackendRegistry {
+        BackendRegistry::from_explicit(&[
+            &PROFILE_STUB_MOCK as &'static dyn ActionBackend,
+            &PROFILE_STUB_OTHER as &'static dyn ActionBackend,
+        ])
+    }
+
+    fn hardware_n(joint_count: usize) -> HardwareSection {
+        HardwareSection {
+            id: "test_arm".into(),
+            joints: (0..joint_count).map(|i| format!("j{i}")).collect(),
+        }
+    }
+
+    // ----- L1 parse_profile_section_from_toml -----
+
+    #[test]
+    fn parse_profile_returns_default_b2_when_section_missing() {
+        // reviewer 拍板：缺失 [s1.profile] 等价 B1 no-active-action 路径，
+        // backends = ["mock_dwell"]，command_mode = "joint_position"。
+        let toml = r#"
+[robot]
+id = "x"
+
+[[hardware]]
+id     = "arm"
+joints = ["j0"]
+"#;
+        let p = parse_profile_section_from_toml(toml).expect("L1 ok");
+        assert_eq!(p, ProfileSection::default_b2());
+        assert_eq!(p.backends, vec!["mock_dwell".to_string()]);
+        assert_eq!(p.command_mode, "joint_position");
+    }
+
+    #[test]
+    fn parse_profile_returns_default_b2_when_s1_present_but_profile_missing() {
+        // [s1] 段在但没 [s1.profile] 子段也走 default_b2（reviewer 拍板）。
+        let toml = "
+[s1]
+heartbeat_hz = 50.0
+";
+        let p = parse_profile_section_from_toml(toml).expect("L1 ok");
+        assert_eq!(p, ProfileSection::default_b2());
+    }
+
+    #[test]
+    fn parse_profile_full_override() {
+        let toml = r#"
+[s1.profile]
+backends     = ["mock_dwell", "other"]
+command_mode = "joint_position"
+"#;
+        let p = parse_profile_section_from_toml(toml).expect("L1 ok");
+        assert_eq!(
+            p.backends,
+            vec!["mock_dwell".to_string(), "other".to_string()]
+        );
+        assert_eq!(p.command_mode, "joint_position");
+    }
+
+    #[test]
+    fn parse_profile_partial_keeps_defaults_for_missing_field() {
+        // 只填 backends，command_mode 走 default。
+        let toml = r#"
+[s1.profile]
+backends = ["mock_dwell"]
+"#;
+        let p = parse_profile_section_from_toml(toml).expect("L1 ok");
+        assert_eq!(p.backends, vec!["mock_dwell".to_string()]);
+        assert_eq!(p.command_mode, "joint_position");
+    }
+
+    #[test]
+    fn parse_profile_rejects_unknown_field_in_profile_section() {
+        let toml = r#"
+[s1.profile]
+backends     = ["mock_dwell"]
+typo_extra   = "boom"
+"#;
+        let err = parse_profile_section_from_toml(toml).expect_err("expected Err");
+        assert!(matches!(err, ProfileError::Toml(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_profile_rejects_invalid_toml_syntax() {
+        let toml = "[s1.profile\nbackends = []\n";
+        let err = parse_profile_section_from_toml(toml).expect_err("expected Err");
+        assert!(matches!(err, ProfileError::Toml(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_profile_rejects_wrong_field_type() {
+        // backends 该是 array of string，给个 number 应 L1 类型错。
+        let toml = "
+[s1.profile]
+backends = 42
+";
+        let err = parse_profile_section_from_toml(toml).expect_err("expected Err");
+        assert!(matches!(err, ProfileError::Toml(_)), "got {err:?}");
+    }
+
+    // ----- L2 validate_profile_section -----
+
+    #[test]
+    fn validate_profile_happy_path() {
+        let p = ProfileSection::default_b2();
+        let r = registry_with_mock_dwell();
+        let hw = hardware_n(2);
+        validate_profile_section(&p, &r, &hw, /* anchor_bias_len */ 2).expect("validate ok");
+    }
+
+    #[test]
+    fn validate_profile_rejects_unknown_backend() {
+        // backends 含 registry 没有的 name → UnknownBackend。
+        let p = ProfileSection {
+            backends: vec!["does_not_exist".into()],
+            command_mode: "joint_position".into(),
+        };
+        let r = registry_with_mock_dwell();
+        let hw = hardware_n(1);
+        let err = validate_profile_section(&p, &r, &hw, 1).expect_err("expected Err");
+        match err {
+            ProfileError::UnknownBackend { name } => {
+                assert_eq!(name, "does_not_exist");
+            }
+            other => panic!("expected UnknownBackend, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_profile_unknown_backend_short_circuits_first_match() {
+        // 多个 unknown 时只报第一个（短路）。
+        let p = ProfileSection {
+            backends: vec!["ghost_a".into(), "ghost_b".into()],
+            command_mode: "joint_position".into(),
+        };
+        let r = registry_with_mock_dwell();
+        let hw = hardware_n(1);
+        let err = validate_profile_section(&p, &r, &hw, 1).expect_err("expected Err");
+        match err {
+            ProfileError::UnknownBackend { name } => {
+                assert_eq!(name, "ghost_a");
+            }
+            other => panic!("got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_profile_rejects_unsupported_command_mode() {
+        // B2 仅 "joint_position"；其它字面值（含 B3 "joint_delta"）拒。
+        let p = ProfileSection {
+            backends: vec!["mock_dwell".into()],
+            command_mode: "joint_delta".into(),
+        };
+        let r = registry_with_mock_dwell();
+        let hw = hardware_n(1);
+        let err = validate_profile_section(&p, &r, &hw, 1).expect_err("expected Err");
+        match err {
+            ProfileError::UnsupportedCommandMode { value } => {
+                assert_eq!(value, "joint_delta");
+            }
+            other => panic!("got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_profile_rejects_joint_count_mismatch() {
+        // hardware.joints = 3，anchor_bias_len = 2 → JointCountMismatch。
+        let p = ProfileSection::default_b2();
+        let r = registry_with_mock_dwell();
+        let hw = hardware_n(3);
+        let err = validate_profile_section(&p, &r, &hw, 2).expect_err("expected Err");
+        match err {
+            ProfileError::JointCountMismatch {
+                hardware_joints,
+                anchor_bias_len,
+            } => {
+                assert_eq!(hardware_joints, 3);
+                assert_eq!(anchor_bias_len, 2);
+            }
+            other => panic!("got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_profile_with_two_enabled_backends_all_in_registry_passes() {
+        let p = ProfileSection {
+            backends: vec!["mock_dwell".into(), "other".into()],
+            command_mode: "joint_position".into(),
+        };
+        let r = registry_with_two();
+        let hw = hardware_n(1);
+        validate_profile_section(&p, &r, &hw, 1).expect("validate ok");
+    }
+
+    // ====================================================================
+    // Coordinator state machine + 4 API + tick_action（B2 (2/3) reviewer
+    // 验收契约：4 条 submit 拒绝 + 5 条 clear_error 转移 + cancel 收敛
+    // 三路 + status ring）
+    // ====================================================================
+
+    use crate::action::{
+        ActionEvent, ActionFailure, ActionId, ActionOutcome, ActionSource, ActionTickOutput,
+        ClearError,
+    };
+    use robot_core::time::SystemClock;
+    use std::sync::Mutex as StdMutex;
+
+    // ----- 测试用可脚本化 backend：每次 tick 返回 script 中下一项 -----
+
+    /// Tick 脚本：N 个预设 [`ActionTickOutput`]/`ActionFailure` 顺序消费。
+    enum TickScriptItem {
+        Continue { progress: f32 },
+        Completed(ActionOutcome),
+        Failed(ActionFailure),
+    }
+
+    struct ScriptedBackend {
+        name: &'static str,
+        kinds: &'static [ActionKind],
+        schemas: &'static [u32],
+    }
+
+    impl ActionBackend for ScriptedBackend {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn supported_kinds(&self) -> &[ActionKind] {
+            self.kinds
+        }
+        fn supported_schemas(&self) -> &[u32] {
+            self.schemas
+        }
+        fn start(
+            &self,
+            _req: &ActionRequest,
+            _ctx: &ActionContext<'_>,
+        ) -> Result<Box<dyn ActionInstance>, ActionStartError> {
+            Ok(Box::new(ScriptedInstance {
+                script: StdMutex::new(Vec::new()),
+                cancelled: false,
+            }))
+        }
+    }
+
+    impl ScriptedBackend {
+        /// 用预置 script 起一个 instance（绕过 backend.start，避免每条
+        /// 测试重新塞 script 进 backend 状态）。
+        fn make_instance(script: Vec<TickScriptItem>) -> Box<dyn ActionInstance> {
+            Box::new(ScriptedInstance {
+                script: StdMutex::new(script),
+                cancelled: false,
+            })
+        }
+    }
+
+    struct ScriptedInstance {
+        script: StdMutex<Vec<TickScriptItem>>,
+        cancelled: bool,
+    }
+
+    impl ActionInstance for ScriptedInstance {
+        fn tick(
+            &mut self,
+            _ctx: &mut ActionContext<'_>,
+        ) -> Result<ActionTickOutput, ActionFailure> {
+            // cancel 优先：直接返 Completed(PartialSuccess { warning })，
+            // 跟 MockDwell 同款 cancel 收敛。
+            if self.cancelled {
+                return Ok(ActionTickOutput::Completed(ActionOutcome::PartialSuccess {
+                    warning: "scripted cancelled".into(),
+                }));
+            }
+            let mut sc = self.script.lock().expect("lock");
+            if sc.is_empty() {
+                // script 用完了：停在最后一帧 Continue 0.99 让 cancel
+                // 测试有"还在跑"的窗口。
+                return Ok(ActionTickOutput::Continue {
+                    progress: 0.99,
+                    command: None,
+                });
+            }
+            match sc.remove(0) {
+                TickScriptItem::Continue { progress } => Ok(ActionTickOutput::Continue {
+                    progress,
+                    command: None,
+                }),
+                TickScriptItem::Completed(o) => Ok(ActionTickOutput::Completed(o)),
+                TickScriptItem::Failed(f) => Err(f),
+            }
+        }
+        fn cancel(&mut self, _ctx: &mut ActionContext<'_>) -> Result<(), ActionCancelError> {
+            self.cancelled = true;
+            Ok(())
+        }
+    }
+
+    static SCRIPTED_BACKEND: ScriptedBackend = ScriptedBackend {
+        name: "scripted",
+        kinds: &[ActionKind::DwellMs],
+        schemas: &[NO_PAYLOAD_SCHEMA_ID],
+    };
+
+    /// 跟 [`ScriptedInstance`] 同款但 `cancel()` **不**置 cancelled flag —— 给
+    /// `cancel_then_tick_failed_emits_failed_not_cancelled` 测"backend 报错
+    /// 覆盖 cancel 意图"路径用：cancel 是协作取消，但 backend 在下个 tick
+    /// 自身故障 → coordinator 应 emit Failed（而不是 Cancelled）。
+    struct ScriptedNoCancelInstance {
+        script: StdMutex<Vec<TickScriptItem>>,
+    }
+
+    impl ActionInstance for ScriptedNoCancelInstance {
+        fn tick(
+            &mut self,
+            _ctx: &mut ActionContext<'_>,
+        ) -> Result<ActionTickOutput, ActionFailure> {
+            let mut sc = self.script.lock().expect("lock");
+            match sc.remove(0) {
+                TickScriptItem::Continue { progress } => Ok(ActionTickOutput::Continue {
+                    progress,
+                    command: None,
+                }),
+                TickScriptItem::Completed(o) => Ok(ActionTickOutput::Completed(o)),
+                TickScriptItem::Failed(f) => Err(f),
+            }
+        }
+        fn cancel(&mut self, _ctx: &mut ActionContext<'_>) -> Result<(), ActionCancelError> {
+            Ok(())
+        }
+    }
+
+    // ----- helpers -----
+
+    /// 构造一个 Coordinator + 强制移到指定状态。
+    fn make_coordinator() -> Coordinator {
+        let cfg = CoordinatorConfig::default();
+        let hardware = HardwareSection {
+            id: "test_arm".into(),
+            joints: vec!["j0".into()],
+        };
+        let registry =
+            BackendRegistry::from_explicit(&[&SCRIPTED_BACKEND as &'static dyn ActionBackend]);
+        Coordinator::new(
+            cfg,
+            hardware,
+            /* layout_id */ 0xCAFE,
+            /* anchor_bias */ vec![0.0],
+            registry,
+            /* enabled_backends */ vec!["scripted".into()],
+        )
+    }
+
+    fn coordinator_in_idle() -> Coordinator {
+        let c = make_coordinator();
+        c.mark_idle().expect("Booting → Idle ok");
+        c
+    }
+
+    fn sample_request() -> ActionRequest {
+        ActionRequest {
+            action_id: ActionId::new_v7(),
+            kind: ActionKind::DwellMs,
+            deadline_ns: u64::MAX, // 远期 deadline，不会被 validate 拒
+            priority: 10,
+            payload_schema_id: NO_PAYLOAD_SCHEMA_ID,
+            payload: Vec::new(),
+            idempotency_key: "test-key".into(),
+            source: ActionSource::Internal,
+        }
+    }
+
+    /// 直接把 coordinator 推到 EXECUTING 状态 + 用注入的 instance（绕
+    /// 开 backend.start，让单测能给任意 script）。返 ticket 给调用方查
+    /// 事件流。
+    fn force_executing(c: &Coordinator, instance: Box<dyn ActionInstance>) -> ActionTicket {
+        let action_id = ActionId::new_v7();
+        let (tx, rx) = std::sync::mpsc::channel::<ActionEvent>();
+        let _ = tx.send(ActionEvent::Started { at_ns: 0 });
+        let mut inner = c.lock_inner();
+        inner.fsm = CoordinatorState::Executing {
+            action_id,
+            started_at_ns: 0,
+        };
+        inner.current = Some(CurrentAction {
+            action_id,
+            instance,
+            events_tx: tx,
+            pending_cancel: false,
+            last_progress: 0.0,
+        });
+        ActionTicket {
+            action_id,
+            events: rx,
+        }
+    }
+
+    fn force_degraded(c: &Coordinator, reason: &str) {
+        let mut inner = c.lock_inner();
+        inner.fsm = CoordinatorState::Degraded {
+            reason: reason.into(),
+        };
+    }
+
+    // ----- mark_idle -----
+
+    #[test]
+    fn mark_idle_from_booting_succeeds() {
+        let c = make_coordinator();
+        assert!(matches!(c.current_state(), CoordinatorState::Booting));
+        c.mark_idle().expect("Booting → Idle ok");
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+    }
+
+    #[test]
+    fn mark_idle_from_idle_rejects() {
+        let c = coordinator_in_idle();
+        let err = c.mark_idle().expect_err("expected Err");
+        assert!(matches!(err, ClearError::NotDegraded(s) if s == "Idle"));
+    }
+
+    // ----- submit 4 条拒绝路径（reviewer 验收契约必测）-----
+
+    #[test]
+    fn submit_rejects_when_booting_returns_not_ready() {
+        let c = make_coordinator();
+        let clock = SystemClock;
+        let err = c
+            .submit(sample_request(), &clock)
+            .expect_err("expected Err");
+        assert!(matches!(err, SubmitError::NotReady), "got {err:?}");
+    }
+
+    #[test]
+    fn submit_rejects_when_executing_returns_busy_with_action_id() {
+        let c = coordinator_in_idle();
+        let inst = ScriptedBackend::make_instance(vec![TickScriptItem::Continue { progress: 0.1 }]);
+        let ticket = force_executing(&c, inst);
+
+        let clock = SystemClock;
+        let err = c
+            .submit(sample_request(), &clock)
+            .expect_err("expected Err");
+        match err {
+            SubmitError::BusyExecuting(id) => {
+                assert_eq!(id, ticket.action_id, "BusyExecuting 应携当前 action_id");
+            }
+            other => panic!("expected BusyExecuting, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn submit_rejects_when_degraded() {
+        let c = coordinator_in_idle();
+        force_degraded(&c, "test reason");
+        let clock = SystemClock;
+        let err = c
+            .submit(sample_request(), &clock)
+            .expect_err("expected Err");
+        assert!(
+            matches!(err, SubmitError::CoordinatorDegraded),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn submit_rejects_when_shutting_down() {
+        let c = coordinator_in_idle();
+        c.mark_shutting_down();
+        let clock = SystemClock;
+        let err = c
+            .submit(sample_request(), &clock)
+            .expect_err("expected Err");
+        assert!(matches!(err, SubmitError::ShuttingDown), "got {err:?}");
+    }
+
+    // ----- clear_error 5 条转移（reviewer 验收契约必测）-----
+
+    #[test]
+    fn clear_error_succeeds_only_from_degraded_to_idle() {
+        let c = coordinator_in_idle();
+        force_degraded(&c, "test");
+        assert!(matches!(
+            c.current_state(),
+            CoordinatorState::Degraded { .. }
+        ));
+        c.clear_error().expect("Degraded → Idle ok");
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+    }
+
+    #[test]
+    fn clear_error_rejects_from_booting_returns_not_degraded() {
+        let c = make_coordinator();
+        let err = c.clear_error().expect_err("expected Err");
+        assert!(matches!(err, ClearError::NotDegraded(s) if s == "Booting"));
+    }
+
+    #[test]
+    fn clear_error_rejects_from_idle_returns_not_degraded() {
+        let c = coordinator_in_idle();
+        let err = c.clear_error().expect_err("expected Err");
+        assert!(matches!(err, ClearError::NotDegraded(s) if s == "Idle"));
+    }
+
+    #[test]
+    fn clear_error_rejects_from_executing_returns_not_degraded() {
+        let c = coordinator_in_idle();
+        let inst = ScriptedBackend::make_instance(vec![TickScriptItem::Continue { progress: 0.1 }]);
+        let _ticket = force_executing(&c, inst);
+        let err = c.clear_error().expect_err("expected Err");
+        assert!(matches!(err, ClearError::NotDegraded(s) if s == "Executing"));
+    }
+
+    #[test]
+    fn clear_error_rejects_from_shutting_down_returns_not_degraded() {
+        let c = coordinator_in_idle();
+        c.mark_shutting_down();
+        let err = c.clear_error().expect_err("expected Err");
+        assert!(matches!(err, ClearError::NotDegraded(s) if s == "ShuttingDown"));
+    }
+
+    // ----- cancel 收敛三路（reviewer 拍板：cancel 不是 terminal）-----
+
+    #[test]
+    fn cancel_unknown_id_returns_not_executing() {
+        let c = coordinator_in_idle();
+        let clock = SystemClock;
+        let err = c
+            .cancel(ActionId::new_v7(), &clock)
+            .expect_err("expected Err");
+        assert!(
+            matches!(err, ActionCancelError::NotExecuting),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn cancel_then_tick_completed_emits_cancelled_not_completed() {
+        // 脚本：第一帧 Continue，cancel 后 ScriptedInstance 自查 cancelled
+        // 标志返 Completed(PartialSuccess) → coordinator 应 emit Cancelled，
+        // 不双发 Completed + Cancelled。
+        let c = coordinator_in_idle();
+        let inst = ScriptedBackend::make_instance(vec![TickScriptItem::Continue { progress: 0.5 }]);
+        let ticket = force_executing(&c, inst);
+
+        let clock = SystemClock;
+        c.cancel(ticket.action_id, &clock).expect("cancel ok");
+
+        // 第一次 tick：cancelled 标志置位，instance 直接返 Completed(PartialSuccess)。
+        let _ = c.tick_action(&clock);
+
+        // 收事件流，跳过 Started + Progress（如有），找 terminal。
+        let mut saw_cancelled = false;
+        let mut saw_completed = false;
+        for ev in ticket.events.try_iter() {
+            match ev {
+                ActionEvent::Cancelled { .. } => saw_cancelled = true,
+                ActionEvent::Completed { .. } => saw_completed = true,
+                _ => {}
+            }
+        }
+        assert!(saw_cancelled, "应 emit Cancelled");
+        assert!(!saw_completed, "**绝不**双发 Completed");
+
+        // 状态 → Idle；finished ring 含 (id, Cancelled)。
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        assert!(matches!(
+            c.status(ticket.action_id),
+            Some(ActionStatus::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn cancel_then_tick_failed_emits_failed_not_cancelled() {
+        // 脚本：cancel 后 backend 报 Err（覆盖 cancel 意图）→ coordinator
+        // 应 emit Failed，不发 Cancelled（reviewer 拍板：backend 失败信
+        // 息更重要）。
+        let c = coordinator_in_idle();
+        // 用 `ScriptedNoCancelInstance`（cancel 不置 flag）让下次 tick
+        // 走 script Failed 路径 —— 验 "cancel 后 backend 报错 → emit
+        // Failed（不发 Cancelled）"。
+        let inst = Box::new(ScriptedNoCancelInstance {
+            script: StdMutex::new(vec![TickScriptItem::Failed(ActionFailure::AdapterError(
+                "post-cancel adapter blew".into(),
+            ))]),
+        }) as Box<dyn ActionInstance>;
+
+        let ticket = force_executing(&c, inst);
+
+        let clock = SystemClock;
+        c.cancel(ticket.action_id, &clock).expect("cancel ok");
+        let _ = c.tick_action(&clock);
+
+        let mut saw_failed = false;
+        let mut saw_cancelled = false;
+        for ev in ticket.events.try_iter() {
+            match ev {
+                ActionEvent::Failed { .. } => saw_failed = true,
+                ActionEvent::Cancelled { .. } => saw_cancelled = true,
+                _ => {}
+            }
+        }
+        assert!(saw_failed, "应 emit Failed（backend 报错覆盖 cancel）");
+        assert!(!saw_cancelled, "**不**双发 Cancelled");
+
+        // AdapterError → Degraded。
+        assert!(matches!(
+            c.current_state(),
+            CoordinatorState::Degraded { .. }
+        ));
+    }
+
+    // ----- status() 查询 + finished ring 容量 -----
+
+    #[test]
+    fn status_returns_executing_for_active_action() {
+        let c = coordinator_in_idle();
+        let inst = ScriptedBackend::make_instance(vec![TickScriptItem::Continue { progress: 0.5 }]);
+        let ticket = force_executing(&c, inst);
+
+        // 推一次 tick 让 last_progress 从 0.0 更新到 0.5。
+        let clock = SystemClock;
+        let _ = c.tick_action(&clock);
+
+        let st = c.status(ticket.action_id).expect("Some Executing");
+        match st {
+            ActionStatus::Executing { progress } => {
+                assert!((progress - 0.5).abs() < 1e-6);
+            }
+            other => panic!("expected Executing, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn status_returns_finished_for_completed_action() {
+        let c = coordinator_in_idle();
+        let inst =
+            ScriptedBackend::make_instance(vec![TickScriptItem::Completed(ActionOutcome::Success)]);
+        let ticket = force_executing(&c, inst);
+
+        let clock = SystemClock;
+        let _ = c.tick_action(&clock);
+
+        // EXECUTING 完，状态应 Idle，status 应从 finished ring 拿到。
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        let st = c.status(ticket.action_id).expect("Some Completed");
+        assert!(matches!(
+            st,
+            ActionStatus::Completed(ActionOutcome::Success)
+        ));
+    }
+
+    #[test]
+    fn status_returns_none_for_unknown_id() {
+        let c = coordinator_in_idle();
+        let unknown = ActionId::new_v7();
+        assert!(c.status(unknown).is_none());
+    }
+
+    #[test]
+    fn status_finished_ring_evicts_oldest_after_capacity() {
+        // 写 cap+1 项 (id_i, Cancelled)，验最旧那条被淘汰。
+        let c = coordinator_in_idle();
+        let mut ids: Vec<ActionId> = Vec::with_capacity(FINISHED_RING_CAPACITY + 1);
+        {
+            let mut inner = c.lock_inner();
+            for i in 0..=FINISHED_RING_CAPACITY {
+                let id = ActionId::new_v7();
+                ids.push(id);
+                inner.push_finished(
+                    id,
+                    ActionStatus::Cancelled, // 任意终态都行
+                );
+                let _ = i;
+            }
+        }
+        // 最早写入的（ids[0]）应被淘汰。
+        assert!(c.status(ids[0]).is_none(), "oldest should be evicted");
+        // 后续 cap 项都该还在 ring 里。
+        for id in &ids[1..] {
+            assert!(
+                c.status(*id).is_some(),
+                "id {id} should still be in finished ring"
+            );
+        }
+    }
+
+    // ----- tick_action transitions -----
+
+    #[test]
+    fn tick_action_safety_abort_transitions_to_degraded() {
+        let c = coordinator_in_idle();
+        let inst = ScriptedBackend::make_instance(vec![TickScriptItem::Failed(
+            ActionFailure::SafetyAbort("limits exceeded".into()),
+        )]);
+        let _ticket = force_executing(&c, inst);
+
+        let clock = SystemClock;
+        let _ = c.tick_action(&clock);
+        match c.current_state() {
+            CoordinatorState::Degraded { reason } => {
+                assert_eq!(reason, "limits exceeded");
+            }
+            other => panic!("expected Degraded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tick_action_precondition_failed_transitions_to_idle() {
+        // outline §6.5：Precondition / DeadlineExceeded → Idle，**不**进
+        // Degraded（hold loop 自动恢复，无需 clear_error）。
+        let c = coordinator_in_idle();
+        let inst = ScriptedBackend::make_instance(vec![TickScriptItem::Failed(
+            ActionFailure::PreconditionFailed("limit too tight".into()),
+        )]);
+        let _ticket = force_executing(&c, inst);
+
+        let clock = SystemClock;
+        let _ = c.tick_action(&clock);
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+    }
+
+    #[test]
+    fn tick_action_returns_none_when_not_executing() {
+        // Booting / Idle / Degraded / ShuttingDown 都不该 tick backend。
+        let cs = vec![
+            (make_coordinator(), "Booting"),
+            (coordinator_in_idle(), "Idle"),
+            (
+                {
+                    let c = coordinator_in_idle();
+                    force_degraded(&c, "x");
+                    c
+                },
+                "Degraded",
+            ),
+            (
+                {
+                    let c = coordinator_in_idle();
+                    c.mark_shutting_down();
+                    c
+                },
+                "ShuttingDown",
+            ),
+        ];
+        let clock = SystemClock;
+        for (c, label) in cs {
+            assert!(
+                c.tick_action(&clock).is_none(),
+                "{label}: tick_action should return None"
+            );
+        }
+    }
+
+    // ----- mark_shutting_down 副作用 -----
+
+    #[test]
+    fn mark_shutting_down_drops_current_action() {
+        let c = coordinator_in_idle();
+        let inst = ScriptedBackend::make_instance(vec![TickScriptItem::Continue { progress: 0.1 }]);
+        let ticket = force_executing(&c, inst);
+
+        c.mark_shutting_down();
+        assert!(matches!(c.current_state(), CoordinatorState::ShuttingDown));
+
+        // ticket.events 端 sender drop → recv 应 Disconnected。
+        match ticket.events.try_recv() {
+            // Started 还在 buffer 里就 ok（drain 之后 disconnected）。
+            Ok(ActionEvent::Started { .. }) | Err(_) => {}
+            other => panic!("unexpected first event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mark_shutting_down_is_idempotent() {
+        let c = coordinator_in_idle();
+        c.mark_shutting_down();
+        c.mark_shutting_down(); // 不 panic / 不副作用。
+        assert!(matches!(c.current_state(), CoordinatorState::ShuttingDown));
+    }
+
+    // ----- ticket drop send 失败不影响状态 -----
+
+    #[test]
+    fn ticket_drop_does_not_break_state_transitions() {
+        let c = coordinator_in_idle();
+        let inst =
+            ScriptedBackend::make_instance(vec![TickScriptItem::Completed(ActionOutcome::Success)]);
+        let ticket = force_executing(&c, inst);
+        // 模拟客户端 drop ticket（reviewer 拍板：events_tx.send 失败时
+        // coordinator 不当 action failure，状态机正常推进到终态）。
+        drop(ticket.events);
+
+        let clock = SystemClock;
+        let _ = c.tick_action(&clock);
+        assert!(
+            matches!(c.current_state(), CoordinatorState::Idle),
+            "ticket events drop 不影响状态机收敛"
+        );
     }
 }
