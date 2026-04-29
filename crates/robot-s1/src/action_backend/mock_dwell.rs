@@ -59,27 +59,31 @@ use crate::action::{
 /// 字段 `duration_ms`：dwell 时长（ms），reviewer 拍板默认 100ms。
 /// `0` 在 [`Self::with_duration_ms`] panic（programmer error）。
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct MockDwellBackend {
+pub struct MockDwellBackend {
     duration_ms: u64,
 }
 
 impl MockDwellBackend {
     /// reviewer 拍板默认值：100 ms。
-    pub(crate) const DEFAULT_DURATION_MS: u64 = 100;
+    pub const DEFAULT_DURATION_MS: u64 = 100;
 
     /// 构造一个**测试用**实例。`duration_ms == 0` panic（不拐弯）。
     ///
     /// 生产路径走 inventory 静态注册的 `MOCK_DWELL_BACKEND`（默认
     /// 100ms）；测试用本入口给自定义 duration。
     ///
+    /// **可见性**（B2 (3/3) 升级）：原 `#[cfg(test)] pub(crate)` 改 `pub`
+    /// 让 `crates/robot-s1/tests/action_dispatch.rs` integration test 跨
+    /// crate 引用。MockDwell 本身就是 B2 mock backend（生产代码也仅靠
+    /// inventory 默认实例），暴露此构造器不增加误用风险。
+    ///
     /// # Panics
     ///
     /// `duration_ms == 0` 直接 `assert!`：MockDwell 0 ms = 永不执行（end_ns
     /// 立即 ≤ now，第一帧 tick 就 Completed），失去测试用 dwell 行为的语
     /// 义；属 programmer error，不是 runtime IO error。
-    #[cfg(test)]
     #[must_use]
-    pub(crate) fn with_duration_ms(duration_ms: u64) -> Self {
+    pub fn with_duration_ms(duration_ms: u64) -> Self {
         assert!(
             duration_ms > 0,
             "MockDwellBackend::with_duration_ms: duration_ms must be > 0 (got 0)"

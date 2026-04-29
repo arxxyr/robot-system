@@ -740,6 +740,166 @@ where
     Ok(state)
 }
 
+/// **B2 (3/3) state-aware tick loop**：包装 [`run_tick_loop`] B1 hold 路径
+/// + 按 [`CoordinatorState`] 分支调度 action backend。
+///
+/// **行为**（与 outline §6.1 override 共存策略 + reviewer 验收契约对齐）：
+///
+/// - **Heartbeat**：永远按 `cfg.heartbeat_hz` 50 Hz 发；不分状态。S0
+///   watchdog 永远看到活跃 hb，**不**触发 control-lost（包括 `Degraded`
+///   状态，符合 outline §6.5 决策 #10d "S1 内部 degraded 不宣称 S0 进
+///   CONTROL_LOST_STOP"）。
+/// - **Command**：按 `cfg.command_hz` 50 Hz 周期门控，state 决定本帧
+///   command 来源：
+///   * `Idle` / `Degraded`：`build_hold_command(cfg, layout_id, bias, ...)`
+///     publish hold cmd（target = anchor_bias）。等价 B1 行为。
+///   * `Executing`：`coordinator.tick_action(clock)` 决定输出：
+///     - `Some(body)` → publish action backend 自产的 `JointCommand`
+///       body bytes（reviewer 评审口径："action command 仍能 publish"）。
+///     - `None` → 本帧不 publish，S0 沿用上一帧 cmd 直到 `deadline_ns`。
+///       cmd_seq 不递增（reviewer 评审口径："hold loop 不再发 B1 hold
+///       command" = cmd_ch.publishes() 不增）。
+///   * `Booting`：防御路径 —— 调用方应在 anchor 完调 [`Coordinator::mark_idle`]
+///     转 Idle；若仍 `Booting` 进入本循环，本帧 skip cmd（防止用未锚
+///     定的 anchor_bias publish），状态机 update last_cmd_ns 防止下一
+///     轮 1 ms poll 立刻 retry。
+///   * `ShuttingDown`：循环顶部检测后 break，正常清理退出。
+///
+/// **退出条件**（按检查顺序）：
+/// 1. `shutdown.load(Acquire)`（信号处理器置位）。
+/// 2. `coordinator.current_state() == ShuttingDown`（[`Coordinator::mark_shutting_down`]
+///    已被外部调用，比如 SIGTERM handler 直接 mark_shutting_down 而非
+///    `shutdown` AtomicBool）。
+/// 3. `duration` 到期（测试用）。
+///
+/// **不**与 [`run_tick_loop`] 替代关系：B1 路径仍由 mock_s1 / 旧
+/// integration test 使用；本函数**仅**给 `s1_daemon` B2 wiring 用。
+#[allow(clippy::too_many_arguments)]
+pub fn run_action_tick_loop<HBPub, CmdPub, C>(
+    coordinator: &Coordinator,
+    hb_pub: &mut HBPub,
+    cmd_pub: &mut CmdPub,
+    clock: &C,
+    poll_interval: Duration,
+    duration: Option<Duration>,
+    shutdown: &AtomicBool,
+) -> Result<TickState, TickError>
+where
+    HBPub: Publisher<markers::Heartbeat>,
+    CmdPub: Publisher<markers::JointCommand>,
+    // C: Sized 要求来自 `coordinator.tick_action(clock)` 内部要把 `&C`
+    // 转 `&dyn RobotClock`（trait object 需要 vtable，需 C: Sized）。
+    // run_tick_loop 没这条约束因为不调 tick_action。
+    C: RobotClock,
+{
+    let cfg = coordinator.config();
+    let layout_id = coordinator.layout_id();
+    let bias = coordinator.anchor_bias();
+
+    let start_ns = clock.now().0;
+    let mut state = TickState::new(start_ns);
+    let duration_ns = duration.map(duration_to_ns_saturating);
+    let poll_ns = duration_to_ns_saturating(poll_interval);
+    let cmd_period_ns = duration_to_ns_saturating(cfg.command_period());
+    let hb_period_ns = duration_to_ns_saturating(cfg.heartbeat_period());
+
+    loop {
+        // 退出 1：信号处理器置位。
+        if shutdown.load(Ordering::Acquire) {
+            break;
+        }
+
+        let now_ns = clock.now().0;
+
+        // 退出 2：duration 到期（测试用）。
+        if let Some(d_ns) = duration_ns
+            && state.elapsed_ns(now_ns) >= d_ns
+        {
+            break;
+        }
+
+        // 退出 3：coordinator 已 mark_shutting_down（即使 shutdown
+        // AtomicBool 没置；典型场景是测试直接调 coordinator.mark_shutting_down
+        // 不走信号路径）。
+        let current_state = coordinator.current_state();
+        if matches!(current_state, CoordinatorState::ShuttingDown) {
+            break;
+        }
+
+        // Heartbeat：永远按周期发，不分状态（reviewer 决策 #10d：Degraded
+        // 也续发 hb，S0 watchdog 不会因 hb stale 触发 control-lost）。
+        if now_ns.saturating_sub(state.last_hb_ns) >= hb_period_ns {
+            let body = build_heartbeat(cfg.source_id, state.hb_seq, cfg.heartbeat_hz, now_ns);
+            publish_body::<markers::Heartbeat, _>(
+                hb_pub,
+                &body,
+                state.hb_seq,
+                cfg.source_id,
+                now_ns,
+            )?;
+            state.hb_seq = state.hb_seq.wrapping_add(1);
+            state.last_hb_ns = now_ns;
+        }
+
+        // Command：按周期 + 按 state 分支。
+        if now_ns.saturating_sub(state.last_cmd_ns) >= cmd_period_ns {
+            // 重新读 state（hb publish 不会动 fsm，但小心起见）。
+            let mut published = false;
+            match coordinator.current_state() {
+                CoordinatorState::Idle | CoordinatorState::Degraded { .. } => {
+                    // B1 hold cmd：target = anchor_bias，sample-by-sample
+                    // bit-equivalent to B1 path（reviewer 阻断 4 锁定的
+                    // "no-active-action 路径必须等价 B1"）。
+                    let body = build_hold_command(cfg, layout_id, bias, state.cmd_seq, now_ns);
+                    publish_body::<markers::JointCommand, _>(
+                        cmd_pub,
+                        &body,
+                        state.cmd_seq,
+                        cfg.source_id,
+                        now_ns,
+                    )?;
+                    published = true;
+                }
+                CoordinatorState::Executing { .. } => {
+                    // Override：tick_action 决定本帧是否产新 cmd。
+                    if let Some(body_struct) = coordinator.tick_action(clock) {
+                        publish_body::<markers::JointCommand, _>(
+                            cmd_pub,
+                            body_struct.as_bytes(),
+                            state.cmd_seq,
+                            cfg.source_id,
+                            now_ns,
+                        )?;
+                        published = true;
+                    }
+                    // None 路径：不 publish；cmd_seq 不递增 —— reviewer
+                    // 评审口径"hold loop 不再发 B1 hold command"通过
+                    // cmd_ch.publishes() 计数验证。
+                }
+                CoordinatorState::Booting => {
+                    // 防御性：anchor 完应已 mark_idle；若仍 Booting，跳
+                    // 过 cmd 一帧，等下次 cmd-period 重试。
+                }
+                CoordinatorState::ShuttingDown => {
+                    // 上面已 break；这里防 race 条件下兜底。
+                    break;
+                }
+            }
+
+            if published {
+                state.cmd_seq = state.cmd_seq.wrapping_add(1);
+            }
+            // 无论是否 publish，都推 last_cmd_ns 维持 50 Hz tick rate
+            // （否则 1 ms poll 间会反复 retry，违反 backend tick 节奏）。
+            state.last_cmd_ns = now_ns;
+        }
+
+        clock.sleep_for(DurationNs::from_nanos(poll_ns));
+    }
+
+    Ok(state)
+}
+
 // ============================================================================
 // ProfileSection + parse / validate（B2 (2/3) profile matrix L1 + L2）
 // ============================================================================
@@ -918,15 +1078,11 @@ pub fn parse_profile_section_from_toml(toml_text: &str) -> Result<ProfileSection
 /// 失败按检查顺序短路返第一个错；多错并存的情况只报第一个 —— 客户端
 /// 修一个再跑就能看到下一个。
 ///
-/// **可见性**：`pub(crate)` —— 参数 `BackendRegistry` 是
-/// `pub(crate)`，按 Rust private-in-public 规则本函数也只能 crate 内
-/// 可见。`s1_daemon` binary 与本 lib 同 crate，不受影响（reviewer
-/// 拍板"优先 `pub(crate) mod action_backend;`"，可见性收敛而非外暴）。
-///
-/// `#[allow(dead_code)]`：B2 (2/3) 期间 lib-side 暂无非测试调用方
-/// （B2 (3/3) `s1_daemon` binary 接 wiring 后移除）。
-#[allow(dead_code)]
-pub(crate) fn validate_profile_section(
+/// **可见性**（B2 (3/3) 升级）：原 `pub(crate)` 改 `pub` —— `BackendRegistry`
+/// 在 B2 (3/3) 同步升级为 `pub`，`s1_daemon` binary 调用本函数；
+/// `crates/robot-s1/tests/action_dispatch.rs` integration test 也跨 test
+/// crate 用本函数验 profile 错配 fail-fast 路径。
+pub fn validate_profile_section(
     profile: &ProfileSection,
     registry: &crate::action_backend::BackendRegistry,
     hardware: &HardwareSection,
@@ -964,9 +1120,8 @@ pub(crate) fn validate_profile_section(
 //
 // B2 (2/3) 引入的 CoordinatorState / Coordinator / FINISHED_RING_CAPACITY
 // / InnerState / CurrentAction 等由 B2 (3/3) `s1_daemon` binary wiring
-// 接入；B2 (2/3) 期间 lib-side 暂无非测试调用方，clippy `dead_code` 会
-// 误报。下面**每项**加 `#[allow(dead_code)]`（不在文件顶整段 allow，
-// 防把 B1 真死代码也漏过）；B2 (3/3) wiring land 后批量移除。
+// 接入。B2 (3/3) land 后所有 `#[allow(dead_code)]` 已批量移除（原 wiring
+// 接入条件已成立）。
 
 /// reviewer 拍板：B2 coordinator state 5 显式 variant，**不**吃成隐式 flag。
 ///
@@ -1018,7 +1173,6 @@ pub enum CoordinatorState {
 
 impl CoordinatorState {
     /// 给错误信息 / debug log 用的人类可读 tag（不暴露具体字段值）。
-    #[allow(dead_code)] // B2 (3/3) wiring 接 mark_idle / clear_error 失败路径后用到
     fn human_label(&self) -> &'static str {
         match self {
             Self::Booting => "Booting",
@@ -1049,7 +1203,6 @@ use std::sync::Mutex;
 /// ActionStatus)` 环；`status()` 先查 EXECUTING 再查 ring，找不到才
 /// `None`。**不**做无界 map（防 long-running daemon 慢漏内存）；超 128
 /// 淘汰最旧。
-#[allow(dead_code)] // B2 (3/3) binary wiring 后引用
 pub(crate) const FINISHED_RING_CAPACITY: usize = 128;
 
 /// EXECUTING 时 coordinator 持有的"当前 action"上下文。
@@ -1057,7 +1210,6 @@ pub(crate) const FINISHED_RING_CAPACITY: usize = 128;
 /// `instance` + `events_tx` 是 backend 实例 + 事件发送端；`pending_cancel`
 /// 跟踪 `cancel()` 是否被调过；`last_progress` 给 `status()` 查
 /// EXECUTING 时返 [`ActionStatus::Executing { progress }`]。
-#[allow(dead_code)] // B2 (3/3) binary wiring 后构造
 struct CurrentAction {
     action_id: ActionId,
     instance: Box<dyn ActionInstance>,
@@ -1074,14 +1226,12 @@ struct CurrentAction {
 ///
 /// 单 [`Mutex`] 守门 = 简单 + 无 ABBA 风险；tick_action 持锁调
 /// `instance.tick()` 是同步的，B2 全程普通线程，`tick()` 不阻塞 IO。
-#[allow(dead_code)] // B2 (3/3) binary wiring 后构造
 struct InnerState {
     fsm: CoordinatorState,
     current: Option<CurrentAction>,
     finished: VecDeque<(ActionId, ActionStatus)>,
 }
 
-#[allow(dead_code)] // B2 (3/3) binary wiring 后调用
 impl InnerState {
     fn new_booting() -> Self {
         Self {
@@ -1129,15 +1279,13 @@ impl InnerState {
 /// [`Coordinator::tick_action`]。本设计跟 B1 [`tick_once`] 一致，让
 /// binary 决定 system vs mock clock。
 ///
-/// **可见性**：本 struct + 关联方法均 `pub(crate)` —— 与
-/// [`crate::action_backend`] 模块保持同等私有度（构造时持有
-/// [`BackendRegistry`] `pub(crate)` 类型，按 Rust private-in-public 规
-/// 则上限只能 `pub(crate)`）。`s1_daemon` binary 与本 lib 同 crate，
-/// 不受影响。后续 B4+ 若需暴露给外部 crate（极少；典型场景是 robot-tests
-/// 跨 crate 集成测），按 outline §4 双层 profile 路径通过 builder
-/// pattern + opaque handle 升级，**不**直接 pub 出来。
-#[allow(dead_code)] // B2 (3/3) binary wiring 接 Coordinator + 4 API 后移除
-pub(crate) struct Coordinator {
+/// **可见性**（B2 (3/3) 升级）：原 `pub(crate)` 改 `pub` —— `s1_daemon`
+/// binary 接 wiring + integration test 在
+/// `crates/robot-s1/tests/action_dispatch.rs` 跨 test crate 用；
+/// `BackendRegistry` 在 B2 (3/3) 同步 pub，private-in-public 限制解除。
+/// 升级仅服务 in-crate binary + integration test，跟"对外部 crate
+/// 暴露"无关（workspace 内目前无外部 crate 把 `robot-s1` 列依赖）。
+pub struct Coordinator {
     inner: Mutex<InnerState>,
     /// `[s1.profile.backends]` 启用列表；dispatch filter。
     enabled_backends: Vec<String>,
@@ -1151,7 +1299,6 @@ pub(crate) struct Coordinator {
     anchor_bias: Vec<f64>,
 }
 
-#[allow(dead_code)] // B2 (3/3) binary wiring 接所有 4 API + tick_action 后移除
 impl Coordinator {
     /// 构造一个新的 coordinator，初始 `Booting`；binary 在 anchor read
     /// 完后调 [`Self::mark_idle`] 转 Idle。
@@ -1162,7 +1309,7 @@ impl Coordinator {
     /// mismatch 都已通过）；本构造不再二次校验，避免重复昂贵的 registry
     /// 查表。
     #[must_use]
-    pub(crate) fn new(
+    pub fn new(
         config: CoordinatorConfig,
         hardware: HardwareSection,
         layout_id: u64,
@@ -1181,12 +1328,34 @@ impl Coordinator {
         }
     }
 
+    /// 借用本 coordinator 的 [`CoordinatorConfig`]（构造期固化，不再变）。
+    /// 给 [`run_action_tick_loop`] 等需要 cfg.heartbeat_period / command_period
+    /// 的路径用。
+    #[must_use]
+    pub fn config(&self) -> &CoordinatorConfig {
+        &self.config
+    }
+
+    /// `JointCommand.layout_id`（构造期传入，不再变）。
+    #[must_use]
+    pub fn layout_id(&self) -> u64 {
+        self.layout_id
+    }
+
+    /// 借用启动锚定的 `anchor_bias`（构造期传入，不再变）。
+    /// `Idle` / `Degraded` 状态下 [`run_action_tick_loop`] 用本值 build
+    /// hold cmd target。
+    #[must_use]
+    pub fn anchor_bias(&self) -> &[f64] {
+        &self.anchor_bias
+    }
+
     /// `Booting → Idle`（binary 在 anchor read 完成后调用）。
     ///
     /// 仅 `Booting` 状态合法；其它状态返
     /// [`ClearError::NotDegraded`]（复用枚举；B3+ 若需要单独的
     /// transition 错误再拆出）。
-    pub(crate) fn mark_idle(&self) -> Result<(), ClearError> {
+    pub fn mark_idle(&self) -> Result<(), ClearError> {
         let mut inner = self.lock_inner();
         match inner.fsm {
             CoordinatorState::Booting => {
@@ -1199,7 +1368,7 @@ impl Coordinator {
 
     /// 任意状态 → `ShuttingDown`（binary 收 SIGINT/SIGTERM 后调用）。
     /// 幂等 + 不可逆；已 `ShuttingDown` 时无副作用。
-    pub(crate) fn mark_shutting_down(&self) {
+    pub fn mark_shutting_down(&self) {
         let mut inner = self.lock_inner();
         // 若当前 EXECUTING，drop current 让 backend instance 析构 + sender
         // drop（持票方 recv 会拿到 RecvError 表示 channel 关闭）。
@@ -1234,7 +1403,7 @@ impl Coordinator {
     /// 实际函数体内仅借用引用 + Copy 字段，clippy `needless_pass_by_value`
     /// 误报，allow 掉。
     #[allow(clippy::needless_pass_by_value)]
-    pub(crate) fn submit(
+    pub fn submit(
         &self,
         req: ActionRequest,
         clock: &dyn RobotClock,
@@ -1322,7 +1491,7 @@ impl Coordinator {
     /// **reviewer 拍板**：cancel **不**是 terminal —— 即使返 `Ok` 也仍
     /// `Executing`；下次 tick 收敛后 emit `Cancelled`（正常）或 `Failed`
     /// （backend 报错）；**不**双发 `Completed + Cancelled`。
-    pub(crate) fn cancel(
+    pub fn cancel(
         &self,
         action_id: ActionId,
         clock: &dyn RobotClock,
@@ -1352,7 +1521,7 @@ impl Coordinator {
     ///
     /// reviewer 拍板：**不**做无界 map；超 128 终态淘汰最旧。
     #[must_use]
-    pub(crate) fn status(&self, action_id: ActionId) -> Option<ActionStatus> {
+    pub fn status(&self, action_id: ActionId) -> Option<ActionStatus> {
         let inner = self.lock_inner();
         inner.lookup_status(action_id)
     }
@@ -1361,7 +1530,7 @@ impl Coordinator {
     ///
     /// 仅 `Degraded` 合法；其它 4 状态返
     /// [`ClearError::NotDegraded`] 携当前状态 label。
-    pub(crate) fn clear_error(&self) -> Result<(), ClearError> {
+    pub fn clear_error(&self) -> Result<(), ClearError> {
         let mut inner = self.lock_inner();
         match inner.fsm {
             CoordinatorState::Degraded { .. } => {
@@ -1374,7 +1543,7 @@ impl Coordinator {
 
     /// 当前状态快照（debug / 测试用 / B2 (3/3) binary tick loop 分支判断）。
     #[must_use]
-    pub(crate) fn current_state(&self) -> CoordinatorState {
+    pub fn current_state(&self) -> CoordinatorState {
         self.lock_inner().fsm.clone()
     }
 
@@ -1395,7 +1564,7 @@ impl Coordinator {
     /// | `SafetyAbort(reason)` | `Degraded { reason }` |
     /// | `AdapterError(reason)` | `Degraded { reason }` |
     /// | `InternalError(reason)` | `Degraded { reason }` |
-    pub(crate) fn tick_action(&self, clock: &dyn RobotClock) -> Option<JointCommandBody> {
+    pub fn tick_action(&self, clock: &dyn RobotClock) -> Option<JointCommandBody> {
         let mut inner = self.lock_inner();
         if !matches!(inner.fsm, CoordinatorState::Executing { .. }) {
             return None;

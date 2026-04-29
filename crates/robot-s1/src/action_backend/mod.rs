@@ -8,12 +8,14 @@
 //! - [`MockDwellBackend`](mock_dwell::MockDwellBackend)：B2 唯一 backend 实现
 //!   （feature `backend-mock-dwell` gate；默认 on）；其它 backend 留 B3+。
 //!
-//! ## 边界（B2 (2/3)）
+//! ## 边界
 //!
-//! - 模块 `pub(crate)` —— **不**暴露给下游 crate（reviewer 拍板"优先
-//!   `pub(crate) mod action_backend;`"）。`coordinator` 模块用
-//!   `BackendRegistry` 中转就够；外部要新增 backend 只能通过新的 backend
-//!   crate `inventory::submit!` 注册。
+//! - 模块 `pub`（B2 (3/3) 起）：integration test 在
+//!   `crates/robot-s1/tests/action_dispatch.rs` 是 separate crate，仅
+//!   看 lib `pub` 表面；`pub` 升级仅服务 in-crate integration test，跟
+//!   "对外部 crate 暴露"无关（workspace 内目前无外部 crate 把
+//!   `robot-s1` 列依赖）。新增 backend 仍走 backend crate
+//!   `inventory::submit!` 注册路径，不直接构造 [`BackendRegistry`]。
 //! - **不**实现 [`crate::action::ActionContext::clock`] / `publisher` 等
 //!   coordinator 端运行时 plumbing；本模块只负责 "知道有哪些 backend、
 //!   按 (kind, schema_id) 路由"。
@@ -36,18 +38,13 @@
 //! `BackendRegistry::from_inventory` 走一次 `inventory::iter` 建查询表。
 
 #![allow(clippy::doc_markdown)]
-// B2 (2/3) 引入的 BackendRegistry / from_inventory / has / get / names
-// 等 lib API 由 B2 (3/3) 的 `s1_daemon` binary wiring 接入；B2 (2/3)
-// 期间 lib-side 暂无非测试调用方，clippy `dead_code` 会误报。整模块加
-// allow 直到 B2 (3/3) wiring land 移除。
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 
 use crate::action::{ActionBackend, ActionKind, NO_PAYLOAD_SCHEMA_ID, SubmitError};
 
 #[cfg(feature = "backend-mock-dwell")]
-pub(crate) mod mock_dwell;
+pub mod mock_dwell;
 
 // 链接器收集每个 backend crate 的 `inventory::submit!` 项。
 inventory::collect!(&'static dyn ActionBackend);
@@ -84,7 +81,7 @@ inventory::collect!(&'static dyn ActionBackend);
 /// inventory；任一 (kind, schema_id) 应仅一个 backend 命中。如多个命中，
 /// dispatch 返**首个**（HashMap 遍历顺序未定，但同 binary 同 link 顺
 /// 序下稳定）；B3+ scheduler 引入 priority 后再升级 deterministic 路由。
-pub(crate) struct BackendRegistry {
+pub struct BackendRegistry {
     /// `name() → &'static dyn ActionBackend`。`name()` 借 backend 自
     /// 报；inventory 注册时 `Sync + 'static` trait bound 保证字节静态。
     by_name: HashMap<&'static str, &'static dyn ActionBackend>,
@@ -100,7 +97,7 @@ impl BackendRegistry {
     /// review 阶段拦），运行期不报错（无显式错误返）—— B3+ 可加
     /// debug-assertion；B2 不引入。
     #[must_use]
-    pub(crate) fn from_inventory() -> Self {
+    pub fn from_inventory() -> Self {
         let mut by_name = HashMap::new();
         for backend in inventory::iter::<&'static dyn ActionBackend> {
             by_name.insert(backend.name(), *backend);
@@ -110,9 +107,14 @@ impl BackendRegistry {
 
     /// **测试 helper**：用显式 backend 列表构建 registry，不走 inventory。
     /// 让单测可以独立于全局 inventory 状态（避免测试间相互影响）。
-    #[cfg(test)]
+    ///
+    /// **可见性**（B2 (3/3) 升级）：原 `#[cfg(test)] pub(crate)` 改 `pub`
+    /// 让 `crates/robot-s1/tests/action_dispatch.rs` integration test 能
+    /// 用（integration test crate 不见 lib `#[cfg(test)]`）。生产路径
+    /// 仍走 [`Self::from_inventory`]；本入口的语义是"测试桥接"而非"动
+    /// 态注册"，仍**不**承诺向 binary 层暴露。
     #[must_use]
-    pub(crate) fn from_explicit(backends: &[&'static dyn ActionBackend]) -> Self {
+    pub fn from_explicit(backends: &[&'static dyn ActionBackend]) -> Self {
         let mut by_name = HashMap::new();
         for &b in backends {
             by_name.insert(b.name(), b);
@@ -124,18 +126,18 @@ impl BackendRegistry {
     /// 给 `validate_profile_section` 检查 `[s1.profile.backends]`
     /// L2 unknown-backend 路径用。
     #[must_use]
-    pub(crate) fn has(&self, name: &str) -> bool {
+    pub fn has(&self, name: &str) -> bool {
         self.by_name.contains_key(name)
     }
 
     /// 注册过的 backend 名字迭代器（debug / 错误信息 / 测试断言）。
-    pub(crate) fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
+    pub fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.by_name.keys().copied()
     }
 
     /// 按 name 查 backend；未注册返 `None`。
     #[must_use]
-    pub(crate) fn get(&self, name: &str) -> Option<&'static dyn ActionBackend> {
+    pub fn get(&self, name: &str) -> Option<&'static dyn ActionBackend> {
         self.by_name.get(name).copied()
     }
 
@@ -148,7 +150,7 @@ impl BackendRegistry {
     /// - `enabled` 中 N 个 backend 支持 `kind`，但其 `supported_schemas()`
     ///   全都不含 `schema_id` → [`SubmitError::UnsupportedSchema`]，
     ///   `name` 字段填首个支持 `kind` 的 backend 名（debug 友好）。
-    pub(crate) fn dispatch(
+    pub fn dispatch(
         &self,
         enabled: &[String],
         kind: ActionKind,

@@ -38,10 +38,17 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod action;
-// reviewer 拍板（B2 (2/3) 文件边界）：BackendRegistry / 各 backend 实现住
-// 在 action_backend/，**优先 pub(crate)**（不暴露给下游 crate；coordinator
-// 模块用 trait object + dispatch fn 的桥连足够）。后续 B3 / B4 起若需要
-// 真把某 backend 类型暴露给 binary（构造时配置），再走 pub re-export 路径
-// 升级，不在 B2 (2/3) 偷塞 `pub` 表面。
-pub(crate) mod action_backend;
+// B2 (3/3) 升级：模块从 `pub(crate)` 改 `pub`，让 `crates/robot-s1/tests/`
+// integration test 能访问 `BackendRegistry` / `MockDwellBackend` /
+// `Coordinator` 等 wiring 必需 API（integration test 是 separate crate
+// from lib's POV，仅看 `pub` 表面）。
+//
+// 与 B2 (2/3) reviewer 拍板"优先 pub(crate) mod action_backend;"的契
+// 约对齐：先前 pub(crate) 是为防"暴露给下游 crate"，但 B2 (3/3) 落
+// integration test 路径需要 lib 显式 pub 才能跨 test crate 引用（B1
+// 同款 precedent：`run_tick_loop` / `read_anchor_from_s0_state` 也是
+// pub，被 `tests/tick_loop_in_process.rs` 用）。可见性升级理由仅源于
+// integration test 工程需要，不增加任何"对外部 crate 暴露"语义 ——
+// workspace 内目前无任何外部 crate 把 robot-s1 列依赖。
+pub mod action_backend;
 pub mod coordinator;
