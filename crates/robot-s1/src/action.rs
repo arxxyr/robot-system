@@ -332,12 +332,24 @@ pub struct ActionContext<'a> {
 /// Backend `tick()` 单帧返回值。
 #[derive(Debug, Clone)]
 pub enum ActionTickOutput {
-    /// 还在跑；可选附本 tick 输出的 `JointCommand` body bytes
-    /// （`None` = 沿用上次或 hold 输出，详 outline §6 共存策略 = override）。
+    /// 还在跑；可选附本 tick 输出的 `JointCommand` body bytes。
+    ///
+    /// **command 语义**（reviewer 阻断 2 锁定 / 与 outline §6 共存策略 =
+    /// override 一致）：
+    ///
+    /// - `Some(body)`：本 tick coordinator publish 这帧 `JointCommand`；
+    ///   S0 的"上次 cmd 直到 deadline"窗口被刷新。Backend 想要持续刷新
+    ///   hold（防 S0 deadline 触发 control-lost）必须周期性返
+    ///   `Some(...)`。
+    /// - `None`：本 tick coordinator **不** publish；S0 沿用**上一帧
+    ///   cmd**直到 [`ActionRequest::deadline_ns`] / S0 自己的 command
+    ///   timeout 触发。**不**走 coordinator 的 hold loop —— EXECUTING
+    ///   状态下 hold loop 已停发（override 策略）；要恢复 hold loop 必
+    ///   须返 [`ActionTickOutput::Completed`] 让 coordinator 回 IDLE。
     Continue {
         /// `[0.0, 1.0]` 进度；不参与控制逻辑，仅给 audit / RPC stream。
         progress: f32,
-        /// 本 tick 是否产生新 cmd；coordinator 决定是否 publish。
+        /// 本 tick 是否产生新 cmd；语义见上方 variant 文档。
         command: Option<JointCommandBody>,
     },
     /// 完成；coordinator 转回 IDLE，恢复 hold loop。
