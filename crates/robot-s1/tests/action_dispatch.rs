@@ -4,7 +4,8 @@
 //! `run_action_tick_loop` state-aware dispatch"端到端流。**不**起子进程 /
 //! 不接 iceoryx2 真服务，全走 [`MockChannel`] + [`MockClock`]。
 //!
-//! ## 8 路径覆盖（reviewer 验收契约 5 + override 二分 + 阻断 2 + B1 回归 baseline）
+//! ## 10 路径覆盖（B2 (3/3) reviewer 验收契约 5 + override 二分 + 阻断 2
+//!     + B1 回归 baseline + B3 (2/2) HoldPose happy + cancel monotonicity）
 //!
 //! 1. `happy_a_mock_dwell_none_override_blocks_hold_loop_cmd`：
 //!    MockDwell 长 dwell + override 策略 → tick_action 返 None →
@@ -32,6 +33,16 @@
 //!    缺失 `[s1.profile]` → default_b2 = `["mock_dwell"]` → validate
 //!    通过（regression baseline，超 reviewer 5 路径但锁住"现有 config
 //!    不带 `[s1.profile]` 部署不会被 B2 (3/3) wiring 打断"）。
+//! 9. `happy_hold_pose_publishes_hold_cmd_bit_equivalent_through_override`
+//!    （B3 (2/2)）：submit `HoldPoseBackend` → 100ms loop →
+//!    cmd_ch.publishes() ≥ 4 + body 跟同源参数调 `build_hold_command`
+//!    构造的 ground truth 字节级相等（reviewer round 2 阻断 1 +
+//!    bit-equivalent 收紧验收）。
+//! 10. `cancel_hold_pose_during_executing_emits_cancelled_then_idle_resumes_hold`
+//!     （B3 (2/2)，含 reviewer 评审重点 cross-segment monotonicity）：
+//!     Idle hold (Phase 1) → submit HoldPose Executing (Phase 2) →
+//!     cancel (Phase 3) → Idle hold resume；3 段后取 cmd_ch.latest()
+//!     source_task_id 严格递增 + emit Cancelled + final state Idle。
 //!
 //! ## 为什么 cancel / safety_abort 不走 run_action_tick_loop
 //!
@@ -46,7 +57,7 @@
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use robot_core::time::{MockClock, MonoRawNs};
+use robot_core::time::{MockClock, MonoRawNs, RobotClock};
 use robot_msg::markers;
 use robot_msg::msg::{ControlMode, JointCommand as FbJointCommand};
 use robot_s1::action::{
@@ -55,7 +66,9 @@ use robot_s1::action::{
     ActionTickOutput, JointCommandBody, NO_PAYLOAD_SCHEMA_ID,
 };
 use robot_s1::action_backend::BackendRegistry;
+use robot_s1::action_backend::hold_pose::HoldPoseBackend;
 use robot_s1::action_backend::mock_dwell::MockDwellBackend;
+use robot_s1::coordinator::build_hold_command;
 use robot_s1::coordinator::{
     Coordinator, CoordinatorConfig, CoordinatorState, HardwareSection, ProfileError,
     ProfileSection, parse_profile_section_from_toml, run_action_tick_loop,
@@ -602,4 +615,433 @@ fn profile_parse_missing_section_yields_default_b2_passes_validation() {
     };
     validate_profile_section(&profile, &registry, &hardware, 1)
         .expect("default_b2 must pass validate (B1 config compat)");
+}
+
+// ============================================================================
+// B3 (2/2) HoldPoseBackend integration tests
+// ============================================================================
+//
+// 跟 B2 (3/3) `happy_b_some_command_backend_publishes_through_override` 的
+// 区别：本段用**真** `HoldPoseBackend`（B3 (1/2) 落地的第一个真 backend），
+// 跑通 ActionContext.command_seq → build_hold_command → publish
+// 端到端字节级 ground truth 对齐 + cross-segment cmd_seq monotonicity
+// （reviewer round 2 阻断 1 修法 + 评审重点）。
+
+/// 测试用 HoldPoseBackend 静态实例（不依赖 lib 内部 `HOLD_POSE_BACKEND`
+/// 全局，避免 inventory 全局污染影响 from_explicit 行为）。
+static TEST_HOLD_POSE_BACKEND: HoldPoseBackend = HoldPoseBackend;
+
+/// 构造 1-joint coordinator + hold_pose-only registry。anchor_bias 用
+/// 一个**非零**值方便后面 ground truth 比对时区别于"全 0 默认"。
+fn make_hold_pose_coordinator(anchor_bias: Vec<f64>) -> Coordinator {
+    let cfg = CoordinatorConfig::default();
+    let hardware = HardwareSection {
+        id: "test_arm".into(),
+        joints: vec!["j0".into()],
+    };
+    let registry =
+        BackendRegistry::from_explicit(&[&TEST_HOLD_POSE_BACKEND as &'static dyn ActionBackend]);
+    Coordinator::new(
+        cfg,
+        hardware,
+        LAYOUT_ID,
+        anchor_bias,
+        registry,
+        vec!["hold_pose".into()],
+    )
+}
+
+/// 构造一个 ActionRequest（kind = HoldPose；远期 deadline）。
+fn hold_pose_request(name_hint: &str) -> ActionRequest {
+    ActionRequest {
+        action_id: ActionId::new_v7(),
+        kind: ActionKind::HoldPose,
+        deadline_ns: u64::MAX,
+        priority: 10,
+        payload_schema_id: NO_PAYLOAD_SCHEMA_ID,
+        payload: Vec::new(),
+        idempotency_key: format!("test-hold-pose-{name_hint}"),
+        source: ActionSource::Internal,
+    }
+}
+
+/// 取 cmd_ch.latest 的 body bytes + 解码 source_task_id / deadline_ns
+/// 反推 publish 时的 now_ns（= deadline_ns - cfg.deadline_offset_ns）。
+/// 返 (body_bytes, source_task_id, now_ns_at_publish)。
+fn read_latest_cmd(
+    cmd_ch: &MockChannel<markers::JointCommand>,
+    cfg: &CoordinatorConfig,
+) -> (Vec<u8>, u64, u64) {
+    let mut sub = cmd_ch.subscriber();
+    let lease = sub.latest().expect("latest").expect("Some sample");
+    let view = lease.view().expect("view");
+    let body = view.body.raw().to_vec();
+    let cmd = flatbuffers::root::<FbJointCommand<'_>>(&body).expect("fbs verify");
+    let seq = cmd.source_task_id();
+    let now_ns = cmd.deadline_ns() - cfg.deadline_offset_ns();
+    (body, seq, now_ns)
+}
+
+/// 测试内单步 publish 模拟（cancel_hold_pose monotonicity 测专用）：
+/// 按 `run_action_tick_loop` 的 cmd-publish 分支语义产 body bytes +
+/// 推 cmd_seq。返 publish 时使用的 seq；`None` 表示本帧不 publish
+/// （Executing tick_action 返 None / Booting / ShuttingDown）。
+///
+/// 同时做字节级 ground truth 对齐验证：Idle 路径 / Executing 路径产
+/// 的 body source_task_id 必须 == 调用方传入的 cmd_seq —— 锁住
+/// reviewer round 2 阻断 1 修法（HoldPose body 用 ctx.command_seq；
+/// Idle hold 同款）。
+fn try_publish_step(
+    coordinator: &Coordinator,
+    clock: &MockClock,
+    cfg: &CoordinatorConfig,
+    layout_id: u64,
+    bias: &[f64],
+    cmd_seq: &mut u64,
+) -> Option<u64> {
+    let now_ns = clock.now().0;
+    match coordinator.current_state() {
+        CoordinatorState::Idle | CoordinatorState::Degraded { .. } => {
+            let body = build_hold_command(cfg, layout_id, bias, *cmd_seq, now_ns);
+            let parsed =
+                flatbuffers::root::<FbJointCommand<'_>>(&body).expect("Idle body fbs verify");
+            assert_eq!(
+                parsed.source_task_id(),
+                *cmd_seq,
+                "Idle hold body source_task_id 必须 == cmd_seq"
+            );
+            let used = *cmd_seq;
+            *cmd_seq = cmd_seq.wrapping_add(1);
+            Some(used)
+        }
+        CoordinatorState::Executing { .. } => {
+            if let Some(body_struct) = coordinator.tick_action(clock, *cmd_seq) {
+                let parsed = flatbuffers::root::<FbJointCommand<'_>>(body_struct.as_bytes())
+                    .expect("Executing body fbs verify");
+                assert_eq!(
+                    parsed.source_task_id(),
+                    *cmd_seq,
+                    "HoldPose body source_task_id 必须 == ctx.command_seq \
+                     (reviewer round 2 阻断 1 修法核心断言)"
+                );
+                let used = *cmd_seq;
+                *cmd_seq = cmd_seq.wrapping_add(1);
+                Some(used)
+            } else {
+                None
+            }
+        }
+        CoordinatorState::Booting | CoordinatorState::ShuttingDown => None,
+    }
+}
+
+/// 跑 run_action_tick_loop 给定 duration（ms），用同一组 hb_pub /
+/// cmd_pub —— 跨段调用复用同一对，让 cmd_ch.publishes() 累加。
+fn run_loop_ms(
+    coordinator: &Coordinator,
+    cmd_pub: &mut robot_transport::mock::MockPublisher<markers::JointCommand>,
+    hb_pub: &mut robot_transport::mock::MockPublisher<markers::Heartbeat>,
+    clock: &MockClock,
+    duration_ms: u64,
+) -> CoordinatorState {
+    let shutdown = AtomicBool::new(false);
+    run_action_tick_loop(
+        coordinator,
+        hb_pub,
+        cmd_pub,
+        clock,
+        Duration::from_millis(1),
+        Some(Duration::from_millis(duration_ms)),
+        &shutdown,
+    )
+    .expect("tick loop ok");
+    coordinator.current_state()
+}
+
+// ============================================================================
+// 9. happy_hold_pose：HoldPose 走 override 路径，body bit-equivalent
+//    to build_hold_command ground truth（reviewer round 2 阻断 1 +
+//    bit-equivalent 收紧验收）
+// ============================================================================
+
+#[test]
+fn happy_hold_pose_publishes_hold_cmd_bit_equivalent_through_override() {
+    // 用非零 anchor_bias 让 ground truth 比对更"实"（非全 0）。
+    let anchor_bias = vec![0.42_f64];
+    let coordinator = make_hold_pose_coordinator(anchor_bias.clone());
+    coordinator.mark_idle().expect("Booting → Idle");
+
+    let clock = MockClock::new(MonoRawNs(1_000_000_000));
+
+    // submit HoldPose 让 coordinator 进 Executing。
+    coordinator
+        .submit(hold_pose_request("happy"), &clock)
+        .expect("submit ok");
+    assert!(matches!(
+        coordinator.current_state(),
+        CoordinatorState::Executing { .. }
+    ));
+
+    let cmd_ch = MockChannel::<markers::JointCommand>::new();
+    let hb_ch = MockChannel::<markers::Heartbeat>::new();
+    let mut cmd_pub = cmd_ch.publisher();
+    let mut hb_pub = hb_ch.publisher();
+    let final_state = run_loop_ms(&coordinator, &mut cmd_pub, &mut hb_pub, &clock, 100);
+
+    // 100ms loop / 20ms cmd_period ≈ 4-5 publish；hb 同款。
+    assert!(
+        cmd_ch.publishes() >= 4,
+        "EXECUTING + HoldPose Some(body): cmd_ch ≥ 4 in 100ms (override 路径下 \
+         action backend 自产 cmd 真 publish), got {}",
+        cmd_ch.publishes()
+    );
+    assert!(
+        hb_ch.publishes() >= 4,
+        "hb 50Hz 不停发: got {}",
+        hb_ch.publishes()
+    );
+    // HoldPose hold-until-cancel：100ms 内未 cancel，仍 Executing。
+    assert!(
+        matches!(final_state, CoordinatorState::Executing { .. }),
+        "still EXECUTING after 100ms (no cancel): got {final_state:?}"
+    );
+
+    // **核心** bit-equivalent 验收（reviewer round 2 收紧版）：
+    // 取 cmd_ch.latest body → 反推 publish 时 cfg / source_task_id /
+    // now_ns → 用 build_hold_command 构造 ground truth → 字节级 assert_eq。
+    let cfg = *coordinator.config();
+    let (body, seq, now_ns) = read_latest_cmd(&cmd_ch, &cfg);
+    let ground_truth = build_hold_command(
+        &cfg,
+        coordinator.layout_id(),
+        coordinator.anchor_bias(),
+        seq,
+        now_ns,
+    );
+    assert_eq!(
+        body,
+        ground_truth.as_slice(),
+        "HoldPose publish body 必须 bit-equivalent to build_hold_command(cfg, \
+         layout_id, anchor_bias, source_task_id, now_ns)"
+    );
+
+    // 附加字段断言：source_task_id 非零（跨过 Executing 进入后已有 publish）+
+    // target == anchor_bias + priority/on_timeout 跟 cfg 一致。
+    let cmd = flatbuffers::root::<FbJointCommand<'_>>(&body).expect("fbs verify");
+    let target: Vec<f64> = cmd.target().expect("target").iter().collect();
+    assert_eq!(target, anchor_bias, "target == anchor_bias");
+    assert_eq!(cmd.layout_id(), LAYOUT_ID);
+    assert_eq!(cmd.mode(), ControlMode::Position);
+    assert_eq!(cmd.priority(), cfg.priority);
+    assert_eq!(cmd.on_timeout(), robot_msg::msg::StaleAction::Hold);
+    assert_eq!(cmd.source_task_id(), seq);
+    assert_eq!(cmd.deadline_ns(), now_ns + cfg.deadline_offset_ns());
+}
+
+// ============================================================================
+// 10. cancel_hold_pose：cross-segment cmd_seq monotonicity（reviewer 评审重点）
+// ============================================================================
+//
+// **设计取舍**：reviewer round 2 要求"覆盖 Idle hold 帧 → HoldPose
+// Executing 帧 → cancel 后 Idle hold 帧，确认 source_task_id 严格递增"。
+// 这要求**单**调用窗口内观察 3 段所有 publish 的 seq —— `run_action_tick_loop`
+// 每次 invoke 重建 `TickState` 让 `cmd_seq` 从 0 起，跨多次 invoke 比对
+// 不能验单调。
+//
+// 解法：**测试内手动 tick 循环**，按 cmd_period 节拍模拟
+// `run_action_tick_loop` 的 cmd-publish 分支（state-aware：Idle/Degraded
+// → `build_hold_command` ground truth；Executing → `coord.tick_action(clock,
+// cmd_seq)`）。本测试的目的是验**契约**：当 Coordinator API + Idle hold
+// 路径用同一份 `cmd_seq` counter 时，跨 state 转移 source_task_id 严格
+// 递增。`run_action_tick_loop` 自身 happy-path 由 `happy_hold_pose_*` /
+// `happy_a` / `happy_b` / `baseline_*` 等覆盖。
+//
+// 如未来 `run_action_tick_loop` 行为变更（如 cmd-period 计算改、cmd_seq
+// 推进规则改），本测试的手动循环需同步更新。
+
+#[test]
+#[allow(clippy::too_many_lines)] // 3 段 monotonicity 验证天然较长；拆 helper
+                                 // 仍需主体保留段间状态机 sequence 注释，
+                                 // 拆出去反而碎；本测试一段连贯叙事更易读。
+fn cancel_hold_pose_during_executing_emits_cancelled_then_idle_resumes_hold() {
+    let anchor_bias = vec![0.42_f64];
+    let coordinator = make_hold_pose_coordinator(anchor_bias);
+    coordinator.mark_idle().expect("Booting → Idle");
+
+    let clock = MockClock::new(MonoRawNs(1_000_000_000));
+    let cfg = *coordinator.config();
+    let layout_id = coordinator.layout_id();
+    let bias_owned: Vec<f64> = coordinator.anchor_bias().to_vec();
+    let cmd_period_ns: u64 = u64::try_from(cfg.command_period().as_nanos()).unwrap();
+
+    // 手动 tick loop 内 cmd_seq counter（模拟 TickState.cmd_seq 行为）。
+    let mut cmd_seq: u64 = 0;
+    let mut last_cmd_ns: u64 = clock.now().0;
+
+    // 记每段 publish 时对应的 source_task_id（即 publish 时的 cmd_seq）。
+    let mut seqs_p1: Vec<u64> = Vec::new(); // Phase 1: Idle hold
+    let mut seqs_p2: Vec<u64> = Vec::new(); // Phase 2: HoldPose Executing
+    let mut seqs_p3: Vec<u64> = Vec::new(); // Phase 3: post-cancel Idle hold
+
+    // Phase 1: Idle hold —— 模拟 50ms = 2-3 个 cmd_period。
+    let phase1_end = clock.now().0 + 50_000_000;
+    while clock.now().0 < phase1_end {
+        let now = clock.now().0;
+        if now.saturating_sub(last_cmd_ns) >= cmd_period_ns {
+            if let Some(seq) = try_publish_step(
+                &coordinator,
+                &clock,
+                &cfg,
+                layout_id,
+                &bias_owned,
+                &mut cmd_seq,
+            ) {
+                seqs_p1.push(seq);
+            }
+            last_cmd_ns = now;
+        }
+        clock.advance(robot_core::time::DurationNs::from_nanos(1_000_000)); // +1ms
+    }
+    assert!(
+        !seqs_p1.is_empty(),
+        "Phase 1 Idle 应至少 1 publish (50ms / 20ms cmd_period)"
+    );
+    assert!(matches!(
+        coordinator.current_state(),
+        CoordinatorState::Idle
+    ));
+
+    // Submit HoldPose → 状态转 Executing。
+    let ticket = coordinator
+        .submit(hold_pose_request("monotonicity"), &clock)
+        .expect("submit ok in Idle");
+    assert!(matches!(
+        coordinator.current_state(),
+        CoordinatorState::Executing { .. }
+    ));
+
+    // Phase 2: Executing 50ms。
+    let phase2_end = clock.now().0 + 50_000_000;
+    while clock.now().0 < phase2_end {
+        let now = clock.now().0;
+        if now.saturating_sub(last_cmd_ns) >= cmd_period_ns {
+            if let Some(seq) = try_publish_step(
+                &coordinator,
+                &clock,
+                &cfg,
+                layout_id,
+                &bias_owned,
+                &mut cmd_seq,
+            ) {
+                seqs_p2.push(seq);
+            }
+            last_cmd_ns = now;
+        }
+        clock.advance(robot_core::time::DurationNs::from_nanos(1_000_000));
+    }
+    assert!(
+        !seqs_p2.is_empty(),
+        "Phase 2 Executing 应至少 1 publish（HoldPose Some(body)）"
+    );
+    assert!(matches!(
+        coordinator.current_state(),
+        CoordinatorState::Executing { .. }
+    ));
+
+    // Cancel（reviewer 拍板 cancel 不是 terminal；状态保 Executing
+    // 等下 tick 收敛）。
+    coordinator
+        .cancel(ticket.action_id, &clock)
+        .expect("cancel ok");
+    assert!(matches!(
+        coordinator.current_state(),
+        CoordinatorState::Executing { .. }
+    ));
+
+    // Phase 3: cancel 收敛 + post-cancel Idle resume，60ms。
+    // 第一帧 tick HoldPose 发现 cancelled flag → Completed(PartialSuccess)
+    // → coordinator 转 Idle，tick_action 返 None；后续帧 Idle hold publish。
+    let phase3_end = clock.now().0 + 60_000_000;
+    while clock.now().0 < phase3_end {
+        let now = clock.now().0;
+        if now.saturating_sub(last_cmd_ns) >= cmd_period_ns {
+            if let Some(seq) = try_publish_step(
+                &coordinator,
+                &clock,
+                &cfg,
+                layout_id,
+                &bias_owned,
+                &mut cmd_seq,
+            ) {
+                seqs_p3.push(seq);
+            }
+            last_cmd_ns = now;
+        }
+        clock.advance(robot_core::time::DurationNs::from_nanos(1_000_000));
+    }
+    assert!(
+        !seqs_p3.is_empty(),
+        "Phase 3 post-cancel Idle 应至少 1 publish"
+    );
+    assert!(
+        matches!(coordinator.current_state(), CoordinatorState::Idle),
+        "Phase 3 cancel 收敛后回 Idle，got {:?}",
+        coordinator.current_state()
+    );
+
+    // **monotonicity 跨段总链验证**（reviewer round 2 评审重点）：
+    // 把 3 段 publish 的 seq 平铺成单链，验**严格递增** —— S0
+    // ipc_thread:903 把 fb.source_task_id() 写 JointCommandBuf.seq；
+    // adapter.rs:119-120 要求单调（rt_thread 判 CONTROL_LOST → ACTIVE
+    // 恢复用）。如本断言挂 = reviewer round 2 阻断 1 修法回退。
+    let all_seqs: Vec<u64> = seqs_p1
+        .iter()
+        .chain(seqs_p2.iter())
+        .chain(seqs_p3.iter())
+        .copied()
+        .collect();
+    for window in all_seqs.windows(2) {
+        assert!(
+            window[1] > window[0],
+            "monotonicity 跨段必须严格递增；all_seqs={all_seqs:?} \
+             (Phase 1 Idle hold = {seqs_p1:?}, Phase 2 HoldPose = {seqs_p2:?}, \
+             Phase 3 post-cancel Idle = {seqs_p3:?})"
+        );
+    }
+
+    // 段间分界明示：last(p1) < first(p2) < last(p2) < first(p3)（前后
+    // 已含在 windows 严格递增里；这里再断言段尾→下段头）。
+    assert!(
+        seqs_p1.last().unwrap() < seqs_p2.first().unwrap(),
+        "Phase 1 Idle 末帧 seq < Phase 2 Executing 首帧 seq: \
+         p1.last={:?} p2.first={:?}",
+        seqs_p1.last(),
+        seqs_p2.first()
+    );
+    assert!(
+        seqs_p2.last().unwrap() < seqs_p3.first().unwrap(),
+        "Phase 2 Executing 末帧 seq < Phase 3 post-cancel Idle 首帧 seq: \
+         p2.last={:?} p3.first={:?}",
+        seqs_p2.last(),
+        seqs_p3.first()
+    );
+
+    // 事件流：Cancelled 必须 emit；Completed 绝不双发（reviewer 拍板）。
+    let mut saw_cancelled = false;
+    let mut saw_completed = false;
+    for ev in ticket.events.try_iter() {
+        match ev {
+            ActionEvent::Cancelled { .. } => saw_cancelled = true,
+            ActionEvent::Completed { .. } => saw_completed = true,
+            _ => {}
+        }
+    }
+    assert!(saw_cancelled, "应 emit Cancelled");
+    assert!(!saw_completed, "**绝不**双发 Completed + Cancelled");
+
+    // status() finished ring 验：Cancelled 入 ring。
+    assert!(matches!(
+        coordinator.status(ticket.action_id),
+        Some(ActionStatus::Cancelled)
+    ));
 }
