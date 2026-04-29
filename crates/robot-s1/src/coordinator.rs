@@ -811,6 +811,20 @@ pub enum ProfileError {
         hardware_joints: usize,
         anchor_bias_len: usize,
     },
+    /// L2（reviewer 阻断 2 锁定）：`profile.backends` 列表为空 ——
+    /// 调用方显式写了 `[s1.profile]` 但没配 `backends`，或 `backends = []`。
+    /// 没有任何 enabled backend 时 coordinator 永远拿不到 dispatch 路由
+    /// 命中，所有 `submit()` 都会返 `NoBackendForKind` —— 这条错误必须
+    /// 在启动期 fail-fast，不能漏到 runtime。
+    ///
+    /// **不影响**缺失 `[s1.profile]` 默认路径：
+    /// [`ProfileSection::default_b2`] 显式含 `backends = ["mock_dwell"]`，
+    /// 不会触发本错误。仅"显式 `[s1.profile]` 段 + 空 backends"才进。
+    #[error(
+        "[s1.profile.backends] is empty; profile must enable at least one backend \
+         (B2 default = [\"mock_dwell\"]; check feature flags + spelling)"
+    )]
+    NoEnabledBackends,
 }
 
 /// 顶层 wrapper：daemon `--config` 文件内含 `[s1.profile]` 子段；
@@ -887,15 +901,18 @@ pub fn parse_profile_section_from_toml(toml_text: &str) -> Result<ProfileSection
 
 /// L2 语义校验：profile + registry + hardware + anchor_bias 一致性。
 ///
-/// **检查项**（reviewer 拍板验收契约 round 1 #6）：
+/// **检查项**（reviewer 拍板验收契约 round 1 #6 + 阻断 2 补强）：
 ///
-/// 1. `profile.backends` 中每个 name 必须在 `registry.has(name)`，否则
+/// 1. `profile.backends` 非空 —— 否则 [`ProfileError::NoEnabledBackends`]
+///    （reviewer 阻断 2 锁定：空 backends 每次 `submit` 都会返
+///    `NoBackendForKind`，必须启动期 fail-fast）。
+/// 2. `profile.backends` 中每个 name 必须在 `registry.has(name)`，否则
 ///    [`ProfileError::UnknownBackend`]。
-/// 2. `profile.command_mode` 必须 `== "joint_position"`，否则
+/// 3. `profile.command_mode` 必须 `== "joint_position"`，否则
 ///    [`ProfileError::UnsupportedCommandMode`]。reviewer 拍板：B2 仅
 ///    一个合法值，**不**给 [`crate::action::ActionBackend`] trait 加
 ///    `supported_command_modes()` 方法（B3 引入新 mode 时再扩）。
-/// 3. `hardware.joints.len() == anchor_bias_len`，否则
+/// 4. `hardware.joints.len() == anchor_bias_len`，否则
 ///    [`ProfileError::JointCountMismatch`]。
 ///
 /// 失败按检查顺序短路返第一个错；多错并存的情况只报第一个 —— 客户端
@@ -915,6 +932,13 @@ pub(crate) fn validate_profile_section(
     hardware: &HardwareSection,
     anchor_bias_len: usize,
 ) -> Result<(), ProfileError> {
+    // 第一项检查（reviewer 阻断 2 锁定）：profile.backends 必须非空。
+    // 顺序在 unknown-backend 之前 —— 空列表本质是"profile 错配"，跟
+    // 单条 name 拼写错的"配置漂移"是不同语义；让客户端先看到这条更
+    // 直观的错。
+    if profile.backends.is_empty() {
+        return Err(ProfileError::NoEnabledBackends);
+    }
     for name in &profile.backends {
         if !registry.has(name) {
             return Err(ProfileError::UnknownBackend { name: name.clone() });
@@ -2313,6 +2337,65 @@ backends = 42
         let r = registry_with_two();
         let hw = hardware_n(1);
         validate_profile_section(&p, &r, &hw, 1).expect("validate ok");
+    }
+
+    // ----- reviewer 阻断 2：[s1.profile.backends] 空列表必须 fail-fast -----
+
+    #[test]
+    fn parse_profile_empty_section_yields_empty_backends_then_validate_rejects() {
+        // [s1.profile] 显式存在但 backends 字段缺失 → parse 走
+        // `serde(default)` 给 backends = []；validate 必须 NoEnabledBackends
+        // 拦下，不能漏到 runtime submit 阶段才报 NoBackendForKind。
+        let toml = "[s1.profile]\n";
+        let p = parse_profile_section_from_toml(toml).expect("L1 ok");
+        assert!(p.backends.is_empty(), "missing field defaults to []");
+        assert_eq!(p.command_mode, "joint_position");
+
+        let r = registry_with_mock_dwell();
+        let hw = hardware_n(1);
+        let err = validate_profile_section(&p, &r, &hw, 1).expect_err("expected Err");
+        assert!(
+            matches!(err, ProfileError::NoEnabledBackends),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_profile_rejects_explicit_empty_backends_with_no_enabled_backends() {
+        // backends = [] 显式空列表（区别于"字段缺失"）→ 同样 NoEnabledBackends。
+        let p = ProfileSection {
+            backends: vec![],
+            command_mode: "joint_position".into(),
+        };
+        let r = registry_with_mock_dwell();
+        let hw = hardware_n(1);
+        let err = validate_profile_section(&p, &r, &hw, 1).expect_err("expected Err");
+        assert!(
+            matches!(err, ProfileError::NoEnabledBackends),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_profile_default_b2_still_passes_after_no_enabled_backends_check() {
+        // 锁住"缺失 [s1.profile] → default_b2"路径不被本检查误伤
+        // —— default_b2 显式含 ["mock_dwell"]，应继续通过。
+        let p = ProfileSection::default_b2();
+        assert_eq!(p.backends, vec!["mock_dwell".to_string()]);
+        let r = registry_with_mock_dwell();
+        let hw = hardware_n(1);
+        validate_profile_section(&p, &r, &hw, 1).expect("default_b2 must pass");
+    }
+
+    #[test]
+    fn no_enabled_backends_display_renders_human_readable_message() {
+        // 锁住 Display 文案 —— B4 RPC 错误码映射 / audit log 都靠这条字
+        // 符串识别。
+        let err = ProfileError::NoEnabledBackends;
+        let s = err.to_string();
+        assert!(s.contains("[s1.profile.backends]"));
+        assert!(s.contains("empty"));
+        assert!(s.contains("at least one backend"));
     }
 
     // ====================================================================
