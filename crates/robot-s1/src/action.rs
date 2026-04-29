@@ -14,7 +14,11 @@
 //!   `Stop` / `MoveToPose` / `FollowTrajectory` / `PolicyAction`
 //!   **不**进 B2 enum。
 //! - [`ActionRequest`] + [`ActionRequest::validate`]：纯字段校验
-//!   （deadline / idempotency_key / payload 长度上限）。
+//!   （deadline / idempotency_key / payload 长度上限 + 哨兵 schema_id
+//!   守门）。
+//! - [`NO_PAYLOAD_SCHEMA_ID`]：`payload_schema_id` 哨兵值（reviewer 阻
+//!   断 1 锁定，去掉 [`ActionBackend::supported_schemas`] 空切片魔法语
+//!   义）。
 //! - [`JointCommandBody`]：`Vec<u8>` newtype，让"这是 JointCommand body
 //!   字节流"在类型上一目了然（§10 决策 #8）。
 //! - [`ActionBackend`] / [`ActionInstance`] trait：B3 起按 feature flag
@@ -64,6 +68,24 @@ pub const MAX_PAYLOAD_LEN: usize = 1024 * 1024;
 /// `ActionRequest.idempotency_key` 字节数上限。RPC `CommandMeta.idempotency_key`
 /// 通常是 UUID 或短哈希；256 字节足够覆盖，超此值视为客户端 bug 拒绝。
 pub const MAX_IDEMPOTENCY_KEY_LEN: usize = 256;
+
+/// "无 payload" 的 schema_id 哨兵值（reviewer 阻断 1 锁定）。
+///
+/// 约定：
+///
+/// - 空 payload backend（如 `MockDwell`）**必须**在
+///   [`ActionBackend::supported_schemas`] 显式返回 `&[NO_PAYLOAD_SCHEMA_ID]`，
+///   不能返回空切片做隐式 "any payload" 处理。
+/// - [`ActionBackend::supported_schemas`] 返回空切片 = 该 backend 不接
+///   受任何 schema（理论上 dispatcher 永远找不到匹配，等价于没注册；
+///   仅作为退化态保留，不应在生产 backend 出现）。
+/// - [`ActionRequest::validate`] 强制 `payload_schema_id == NO_PAYLOAD_SCHEMA_ID`
+///   时 `payload` 必须为空 —— 防止客户端用 schema_id 0 把任意 bytes 偷
+///   渡进来。
+///
+/// 数值固定为 0：跟 RPC `CommandMeta.payload_schema_id` 默认值（未设置
+/// 字段 = 0）天然对齐，零 payload 调用方不需要显式填值。
+pub const NO_PAYLOAD_SCHEMA_ID: u32 = 0;
 
 // ============================================================================
 // ActionId
@@ -184,10 +206,12 @@ impl JointCommandBody {
 ///   决策 #3）所以本字段保留**不**参与决策，B3 scheduler 用。
 /// - `payload_schema_id`：路由二级 key；backend 注册时声明
 ///   [`ActionBackend::supported_schemas`]，dispatcher 按
-///   `(kind, schema_id)` 路由。
+///   `(kind, schema_id)` 路由。**[`NO_PAYLOAD_SCHEMA_ID`] 表示"本请求
+///   无 payload"**，[`ActionRequest::validate`] 强制此时 `payload` 为
+///   空（B2 mock backend / DwellMs / HoldPose 走这条路径）。
 /// - `payload`：`FlatBuffers` body bytes（按 `payload_schema_id`）。
-///   **B2 mock backend 用空**；B4 才引入跨进程 fbs schema（§10 决策
-///   #9）。
+///   **B2 mock backend 用空**（配 [`NO_PAYLOAD_SCHEMA_ID`]）；B4 才引
+///   入跨进程 fbs schema（§10 决策 #9）。
 /// - `idempotency_key`：跨 retry 一致 fingerprint，与 RPC
 ///   `CommandMeta.idempotency_key` 对齐。**B2 仅**声明字段，**不**做
 ///   dedup（B4 gateway 自己有 idempotency cache，详 A1 ClearEStop 边界）。
@@ -211,11 +235,14 @@ impl ActionRequest {
     /// - `deadline_ns > now_ns`（提交时未过期）。
     /// - `idempotency_key` 非空且 ≤ [`MAX_IDEMPOTENCY_KEY_LEN`]。
     /// - `payload.len()` ≤ [`MAX_PAYLOAD_LEN`]。
+    /// - `payload_schema_id == ` [`NO_PAYLOAD_SCHEMA_ID`] 时 `payload`
+    ///   必须为空（reviewer 阻断 1 锁定 —— 防止客户端用哨兵 schema_id
+    ///   偷渡任意 bytes）。
     ///
     /// **不检查**：
     /// - `kind` 是否有匹配 backend（路由查表是 coordinator 的事，留 B2 (2/3)）。
-    /// - `payload_schema_id` 是否在 backend `supported_schemas()` 集合
-    ///   （同上）。
+    /// - 非哨兵 `payload_schema_id` 是否在 backend `supported_schemas()`
+    ///   集合（同上）。
     /// - `action_id` 唯一性（B2 单 action 序列化，state 守门即可）。
     ///
     /// 返 [`SubmitError::InvalidRequest`]，`String` 是 human-readable
@@ -244,6 +271,13 @@ impl ActionRequest {
                 "payload length {} exceeds MAX_PAYLOAD_LEN ({})",
                 self.payload.len(),
                 MAX_PAYLOAD_LEN
+            )));
+        }
+        if self.payload_schema_id == NO_PAYLOAD_SCHEMA_ID && !self.payload.is_empty() {
+            return Err(SubmitError::InvalidRequest(format!(
+                "payload_schema_id == NO_PAYLOAD_SCHEMA_ID ({}) requires empty payload, got {} bytes",
+                NO_PAYLOAD_SCHEMA_ID,
+                self.payload.len()
             )));
         }
         Ok(())
@@ -359,8 +393,21 @@ pub trait ActionBackend: Send + Sync {
     /// 时按 `(kind, schema_id)` 在所有 enabled backend 中找匹配。
     fn supported_kinds(&self) -> &[ActionKind];
 
-    /// 本 backend 接受的 `payload_schema_id` 集合。空切片 = 不接受任
-    /// 何 payload（用空 `payload` 即可，比如 `MockDwell`）。
+    /// 本 backend 接受的 `payload_schema_id` 集合（reviewer 阻断 1 锁定，
+    /// 不做空切片魔法）。
+    ///
+    /// **约定**：
+    ///
+    /// - 空 payload backend（如 `MockDwell` / `HoldPose`）必须显式返
+    ///   `&[NO_PAYLOAD_SCHEMA_ID]`；coordinator dispatch 按
+    ///   `(kind, schema_id)` 精确匹配，**不**对空切片做隐式 "any payload"
+    ///   处理。
+    /// - 返回空切片 = 该 backend 不接受任何 schema_id（dispatcher 永远
+    ///   找不到匹配，等价于没注册）；仅作退化态保留，不应在生产 backend
+    ///   出现。
+    /// - Backend 同时支持有 / 无 payload 两条路径时，把
+    ///   `NO_PAYLOAD_SCHEMA_ID` 跟具体 schema_id 一起列出（如
+    ///   `&[NO_PAYLOAD_SCHEMA_ID, 0xCAFE_0001]`）。
     fn supported_schemas(&self) -> &[u32];
 
     /// 创建 action instance；coordinator 之后调
@@ -550,7 +597,7 @@ mod tests {
             kind: ActionKind::DwellMs,
             deadline_ns: now_ns + 500_000_000, // +500 ms
             priority: 10,
-            payload_schema_id: 0,
+            payload_schema_id: NO_PAYLOAD_SCHEMA_ID,
             payload: Vec::new(),
             idempotency_key: "client-retry-key-001".into(),
             source: ActionSource::Internal,
@@ -630,6 +677,9 @@ mod tests {
     fn validate_accepts_payload_at_max_len() {
         let now_ns: u64 = 1_000_000_000;
         let mut req = sample_request(now_ns);
+        // 显式给非哨兵 schema_id —— 新 reviewer 规则要求
+        // `schema_id == NO_PAYLOAD_SCHEMA_ID` 时 payload 必须为空。
+        req.payload_schema_id = 0xCAFE_0001;
         req.payload = vec![0u8; MAX_PAYLOAD_LEN];
         req.validate(now_ns).expect("len == MAX must pass");
     }
@@ -640,6 +690,48 @@ mod tests {
         let mut req = sample_request(now_ns);
         req.idempotency_key = "x".repeat(MAX_IDEMPOTENCY_KEY_LEN);
         req.validate(now_ns).expect("len == MAX must pass");
+    }
+
+    #[test]
+    fn validate_rejects_no_payload_schema_id_with_non_empty_payload() {
+        // reviewer 阻断 1 锁定：客户端不能用哨兵 schema_id 偷渡 bytes。
+        let now_ns: u64 = 1_000_000_000;
+        let mut req = sample_request(now_ns);
+        assert_eq!(req.payload_schema_id, NO_PAYLOAD_SCHEMA_ID);
+        req.payload = vec![1, 2, 3];
+        let err = req.validate(now_ns).unwrap_err();
+        assert!(
+            matches!(err, SubmitError::InvalidRequest(ref s)
+                if s.contains("NO_PAYLOAD_SCHEMA_ID") && s.contains("empty payload")),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_no_payload_schema_id_with_empty_payload() {
+        // 哨兵 schema_id + 空 payload 是 MockDwell / HoldPose 的合法路径。
+        let now_ns: u64 = 1_000_000_000;
+        let req = sample_request(now_ns);
+        assert_eq!(req.payload_schema_id, NO_PAYLOAD_SCHEMA_ID);
+        assert!(req.payload.is_empty());
+        req.validate(now_ns).expect("must pass");
+    }
+
+    #[test]
+    fn validate_accepts_non_sentinel_schema_id_with_non_empty_payload() {
+        // 真 backend（B3 起 trajectory / policy chunk）的合法路径。
+        let now_ns: u64 = 1_000_000_000;
+        let mut req = sample_request(now_ns);
+        req.payload_schema_id = 0xCAFE_0001;
+        req.payload = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        req.validate(now_ns).expect("must pass");
+    }
+
+    #[test]
+    fn no_payload_schema_id_is_zero() {
+        // 锁住 "默认 / unset = 哨兵" 跟 RPC `CommandMeta.payload_schema_id`
+        // 字段未设置默认值的对齐关系；改这个常量等于改 wire 协议。
+        assert_eq!(NO_PAYLOAD_SCHEMA_ID, 0);
     }
 
     // ----- ActionOutcome / ActionFailure / SubmitError Display -----
