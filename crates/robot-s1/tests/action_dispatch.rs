@@ -859,10 +859,11 @@ fn happy_hold_pose_publishes_hold_cmd_bit_equivalent_through_override() {
 // 如未来 `run_action_tick_loop` 行为变更（如 cmd-period 计算改、cmd_seq
 // 推进规则改），本测试的手动循环需同步更新。
 
+// `#[allow(clippy::too_many_lines)]` rationale：3 段 monotonicity 验证
+// 天然较长；拆 helper 仍需主体保留段间状态机 sequence 注释，拆出去反
+// 而碎；本测试一段连贯叙事更易读。
 #[test]
-#[allow(clippy::too_many_lines)] // 3 段 monotonicity 验证天然较长；拆 helper
-                                 // 仍需主体保留段间状态机 sequence 注释，
-                                 // 拆出去反而碎；本测试一段连贯叙事更易读。
+#[allow(clippy::too_many_lines)]
 fn cancel_hold_pose_during_executing_emits_cancelled_then_idle_resumes_hold() {
     let anchor_bias = vec![0.42_f64];
     let coordinator = make_hold_pose_coordinator(anchor_bias);
