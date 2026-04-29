@@ -10,12 +10,12 @@
 
 ---
 
-## 2026-04-29 · v0.3 B2 §1.5 状态机扩展真落地（IDLE / EXECUTING / DEGRADED / BOOTING / SHUTTINGDOWN）（**状态：偏离登记**）
+## 2026-04-29 · v0.3 B2 §1.5 状态机扩展真落地（IDLE / EXECUTING / DEGRADED / BOOTING / SHUTTING_DOWN）（**状态：偏离登记**）
 
 ### 背景
 
 `docs/00_design.md` §1.5 定义 S1 状态机包含 IDLE / EXECUTING / DEGRADED
-（+ 启动 BOOTING / 停机 SHUTTINGDOWN）共 5 个 variant；v0.2 + v0.3 B1
+（+ 启动 BOOTING / 停机 SHUTTING_DOWN）共 5 个 variant；v0.2 + v0.3 B1
 期间 S1 仅落地"hold + heartbeat"单态闭环（隐式 IDLE），其余 4 个 state
 留作设计文档冻结概念，**未**进 Rust 类型系统。B2 outline 拍板（详
 [`docs/handoffs/v0.3_b2_outline.md`](handoffs/v0.3_b2_outline.md)
@@ -55,7 +55,7 @@ B2 是 **S1 内部 degraded**（继续 hold + heartbeat，拒新 submit，等
 | IDLE | `Idle` | mark_idle / Executing 终态 / clear_error 出口 | submit OK → Executing；mark_shutting_down → ShuttingDown | B1 hold cmd 50Hz + hb 50Hz |
 | EXECUTING | `Executing { action_id, started_at_ns }` | submit Idle → OK | tick_action Completed → Idle；Failed Pre/Deadline → Idle；Failed Safety/Adapter/Internal → Degraded；mark_shutting_down → ShuttingDown | hb 50Hz；cmd = `tick_action()` 输出（Some publish；None 跳过本帧） |
 | DEGRADED | `Degraded { reason }` | tick_action 收 Failed Safety/Adapter/Internal | clear_error → Idle；mark_shutting_down → ShuttingDown | 续 B1 hold cmd 50Hz + hb 50Hz（**S1 内部 degraded**，不触 S0 watchdog） |
-| SHUTTINGDOWN | `ShuttingDown` | 任意状态 mark_shutting_down | 终态（B2 不复活） | tick loop 检测到此状态 break；coord drop current → ticket 端 RecvError |
+| SHUTTING_DOWN | `ShuttingDown` | 任意状态 mark_shutting_down | 终态（B2 不复活） | tick loop 检测到此状态 break；coord drop current → ticket 端 RecvError |
 
 ### submit / cancel / clear_error / status API 落地
 
