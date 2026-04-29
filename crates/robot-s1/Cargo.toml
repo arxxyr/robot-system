@@ -9,6 +9,16 @@ repository .workspace = true
 readme     .workspace = true
 publish    .workspace = true
 
+# v0.3 B2 (2/3) feature wiring：每个 backend 一个 feature；profile.backends
+# = [...] 只能选 enabled feature 编进 binary 的 backend 名。Default 把
+# `backend-mock-dwell` 打开 = B1 no-active-action 路径默认配置（reviewer 拍
+# 板：缺失 [s1.profile] 时 backends = ["mock_dwell"]，需要 mock_dwell 真
+# link 进 binary）。B3 起加 backend-ik-xlerobot / backend-rl-onnx /
+# backend-scripted；落地对应 backend crate 时同步加 feature flag。
+[features]
+default            = ["backend-mock-dwell"]
+backend-mock-dwell = []
+
 # v0.3 B1 (2/3)：mock_s1 / s1_daemon 显式列出 [[bin]]。
 # - mock_s1：v0.2 起 ballet / bench / 真机摆动测试工具（保留；非 production
 #   S1，详 docs/handoffs/v0.3_b1_outline.md §6.2）。
@@ -48,6 +58,12 @@ flatbuffers     = { workspace = true }
 #   跟 RPC CommandMeta.request_id 同款时间排序）。workspace 已有 v7 + std
 #   feature，跟 robot-rpc 共享同一份依赖。
 uuid            = { workspace = true }
+# v0.3 B2 (2/3) backend registry 静态注册（与 robot-core::factory adapter
+# 注册同款）。inventory 把链接进 binary 的每个 `submit!` 项收到一个 array
+# section，BackendRegistry::from_inventory 启动期一次性扫描，无 alloc 无
+# IO。白名单沿用 workspace 顶层登记（已记 docs/CHANGELOG.md 2026-04-24
+# "Step 7 task 27b matrix + inventory adapter 自注册"）。
+inventory       = { workspace = true }
 
 [lints]
 workspace = true

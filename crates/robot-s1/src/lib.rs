@@ -38,4 +38,10 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod action;
+// reviewer 拍板（B2 (2/3) 文件边界）：BackendRegistry / 各 backend 实现住
+// 在 action_backend/，**优先 pub(crate)**（不暴露给下游 crate；coordinator
+// 模块用 trait object + dispatch fn 的桥连足够）。后续 B3 / B4 起若需要
+// 真把某 backend 类型暴露给 binary（构造时配置），再走 pub re-export 路径
+// 升级，不在 B2 (2/3) 偷塞 `pub` 表面。
+pub(crate) mod action_backend;
 pub mod coordinator;

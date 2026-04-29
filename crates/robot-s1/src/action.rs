@@ -1,10 +1,21 @@
-//! v0.3 Phase B B2 (1/3) action interface 类型骨架。
+//! v0.3 Phase B B2 action interface 类型骨架 + Coordinator API 表层类型。
 //!
-//! 本模块**只**含 lib 纯类型 + trait 定义；**不**引入 backend 实现 /
-//! `BackendRegistry` / `Coordinator` wiring / iceoryx2 / tokio / tonic
-//! （reviewer B2 (1/3) 6 闸硬约束，详
-//! [`docs/handoffs/v0.3_b2_outline.md`](../../../docs/handoffs/v0.3_b2_outline.md)
-//! §10 拍板 + B2 (2/3) / (3/3) 实现 commit）。
+//! **变更历史**：
+//!
+//! - **B2 (1/3)** (`4b9d4de` + reviewer fix `54521ed` / `8508c3d`)：lib 纯
+//!   类型 + trait 定义初版（[`ActionId`] / [`ActionKind`] /
+//!   [`ActionRequest`] / [`ActionBackend`] / [`ActionInstance`] /
+//!   [`JointCommandBody`] / 错误枚举）。
+//! - **B2 (2/3)**：[`SubmitError::NotReady`]（Booting 拒 submit）+
+//!   [`ActionTicket`] / [`ActionEvent`] / [`ActionStatus`] coordinator API
+//!   表层（详
+//!   [`docs/handoffs/v0.3_b2_outline.md`](../../../docs/handoffs/v0.3_b2_outline.md)
+//!   §7 + reviewer 拍板补充）。
+//!
+//! 本模块仍**只**含 lib 类型 + trait 定义；backend 实现 /
+//! `BackendRegistry` / `Coordinator` wiring 在
+//! [`crate::action_backend`] / [`crate::coordinator`] 落地，**不**进本文件
+//! （B2 (2/3) reviewer 文件边界锁定）。
 //!
 //! ## 模块入口
 //!
@@ -21,27 +32,29 @@
 //!   义）。
 //! - [`JointCommandBody`]：`Vec<u8>` newtype，让"这是 JointCommand body
 //!   字节流"在类型上一目了然（§10 决策 #8）。
-//! - [`ActionBackend`] / [`ActionInstance`] trait：B3 起按 feature flag
-//!   注册具体 backend；B2 (2/3) 加 `BackendRegistry` 静态注册。
+//! - [`ActionBackend`] / [`ActionInstance`] trait：B2 (2/3) 起按
+//!   `inventory::submit!` 静态注册到
+//!   [`crate::action_backend::BackendRegistry`]。
 //! - [`ActionContext`]：tick 时由 coordinator 借给 backend 的上下文
 //!   （`RobotClock` / `HardwareSection` / `CoordinatorConfig` /
 //!   `anchor_bias`）；B2 **不**暴露 publisher trait object（§10 决策
 //!   #8 + outline §2.5 注释）。
 //! - 错误枚举：[`SubmitError`] / [`ActionStartError`] / [`ActionCancelError`]
-//!   / [`ClearError`] / [`ActionFailure`]。
+//!   / [`ClearError`] / [`ActionFailure`]。`SubmitError::NotReady` =
+//!   B2 (2/3) 加，对应 `Booting` 状态拒 submit（reviewer 拍板补充：
+//!   不复用 `ShuttingDown`，因两阶段生命周期相反）。
+//! - [`ActionTicket`] / [`ActionEvent`] / [`ActionStatus`]：coordinator
+//!   `submit()` 表层类型；事件 channel 用 `std::sync::mpsc::Receiver`
+//!   （reviewer 阻断 1 锁定，**不**用 tokio；B4 时 robot-rpc-gateway 起
+//!   adapter thread 桥到 tokio）。
 //!
-//! ## 不做（B2 (1/3) 边界）
+//! ## 不做（B2 边界）
 //!
-//! - **不**引入 `BackendRegistry` / `parse_profile_section_from_toml` /
-//!   `inventory::submit!` 注册（→ B2 (2/3)）。
-//! - **不**引入 `MockDwellBackend` 真实现（→ B2 (2/3)）。
-//! - **不**改 [`coordinator`](crate::coordinator)：`CoordinatorState` /
-//!   `Coordinator::submit/cancel/status/clear_error` 都留 B2 (2/3)。
+//! - **不**实现 backend / [`crate::action_backend::BackendRegistry`] /
+//!   `parse_profile_section_from_toml` 自身：这些落
+//!   [`crate::coordinator`] + [`crate::action_backend`] 模块（B2 (2/3)
+//!   同 commit chain，**不**进本文件）。
 //! - **不**改 `s1_daemon` binary（→ B2 (3/3)）。
-//! - **不**引入 `ActionTicket` / `ActionEvent` / `ActionStatus`：这些
-//!   是 coordinator-side API（接收事件流 / 查状态），跟 backend trait
-//!   层无直接耦合，留 B2 (2/3) 跟 `Coordinator::submit` 一起加，且**必须**
-//!   用 `std::sync::mpsc::Receiver`（reviewer 阻断 1 锁定，不 tokio）。
 //! - **不**引入跨进程 fbs schema：`payload: Vec<u8>` 字段先占位，B4
 //!   真接 RPC `InvokeTask` 时再引入 `action_request.fbs` /
 //!   `action_status.fbs`（§10 决策 #9）。
@@ -480,6 +493,21 @@ pub enum SubmitError {
     /// 收到 SIGINT / SIGTERM 后；coordinator 不接收新 submit。
     #[error("coordinator is shutting down")]
     ShuttingDown,
+    /// **reviewer 拍板补充**：`Booting` 状态拒 submit 用 `NotReady`，
+    /// **不**复用 `ShuttingDown`（两阶段生命周期相反，复用会让 B4 RPC
+    /// 错误码映射和 audit 日志难看）。Display 文案由 reviewer 给定，
+    /// 照搬不改：`coordinator is not ready; startup anchor has not completed`。
+    #[error("coordinator is not ready; startup anchor has not completed")]
+    NotReady,
+    /// **B2 (2/3) 实现期发现的扩展**：dispatch 通过、状态可接受，但
+    /// [`ActionBackend::start`] 自身返 [`ActionStartError`] —— 比如
+    /// payload decode 失败 / hardware mismatch / backend 自报 precondition
+    /// 拒绝。`SubmitError` 既有变体不覆盖这条路径，纯加 variant 桥接
+    /// `submit` 返回类型，不动既有变体语义（reviewer 拍板 "如确实需要补
+    /// ActionTicket/ActionEvent/ActionStatus 直接相关 action API 类型"
+    /// 范围内）。
+    #[error("backend start failed: {0}")]
+    BackendStartFailed(#[from] ActionStartError),
 }
 
 /// `ActionBackend::start` 失败原因。**变体非穷举**（B3 起 backend 自
@@ -519,6 +547,95 @@ pub enum ClearError {
     /// 极少；保留兜底（state lock poison / 等）。
     #[error("internal error: {0}")]
     InternalError(String),
+}
+
+// ============================================================================
+// ActionTicket / ActionEvent / ActionStatus（B2 (2/3) Coordinator API 表层）
+// ============================================================================
+
+/// 一次 [`crate::coordinator`] 端 `submit()` 成功后返回的执行凭证。
+///
+/// **持有方典型路径**：
+///
+/// 1. 调 `submit(req) → Ok(ticket)`，保留 `ticket.action_id` 跟踪状态。
+/// 2. 调 `ticket.events.try_recv()` / `recv()` 拉事件流（B2 内 in-process
+///    同步 channel；B4 时 robot-rpc-gateway 起 adapter thread 桥到 tonic
+///    `StreamTaskEvents`，sync ↔ async 边界**不**进 robot-s1）。
+/// 3. terminal 事件（[`ActionEvent::Completed`] / [`ActionEvent::Failed`]
+///    / [`ActionEvent::Cancelled`]）后 sender drop，`recv()` 返
+///    `Err(RecvError)` = 事件流关闭。
+///
+/// **不**实现 [`Clone`]：`std::sync::mpsc::Receiver` 是 single-consumer，
+/// 复制 ticket 会让事件流半边丢；ticket 持有方应**唯一**。`Debug` 因
+/// `Receiver<T>` 不实现 `Debug`，手写以保 `Coordinator` API 周围日志友好。
+///
+/// **ticket drop 行为**：reviewer 阻断锁定 —— 持有方提前 drop ticket 导致
+/// coordinator 内部 `events_tx.send(...)` 返 `Err(SendError)` 时，coordinator
+/// **不**把它当 action failure；记一行 debug log 后 swallow，状态机继续按
+/// backend tick 输出推进。
+pub struct ActionTicket {
+    pub action_id: ActionId,
+    /// 同步事件 channel（reviewer 阻断 1 锁定：**不**用 tokio）。
+    pub events: std::sync::mpsc::Receiver<ActionEvent>,
+}
+
+impl core::fmt::Debug for ActionTicket {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ActionTicket")
+            .field("action_id", &self.action_id)
+            .field("events", &"<Receiver<ActionEvent>>")
+            .finish()
+    }
+}
+
+/// Coordinator 推到 [`ActionTicket::events`] 的事件流。
+///
+/// **保序**：单 ticket 内事件按时间顺序到达；**不**跨 ticket 保序。
+/// **终止**：每个 ticket 至多收到**一条**终态事件
+/// （[`ActionEvent::Completed`] / [`ActionEvent::Failed`] /
+/// [`ActionEvent::Cancelled`]）；之后 sender drop。reviewer 拍板锁定：
+/// 取消后正常收敛 = `Cancelled`；取消后 backend 报错 = `Failed`；
+/// **绝不**双发 `Completed + Cancelled`。
+///
+/// `at_ns` 全部用 `u64`（与 [`ActionRequest::deadline_ns`] 对齐，不裹
+/// `MonoRawNs` newtype）。
+#[derive(Debug, Clone)]
+pub enum ActionEvent {
+    /// Backend `start()` 成功 + 状态转 EXECUTING；`at_ns` = 转移时刻。
+    Started { at_ns: u64 },
+    /// Backend tick 返 [`ActionTickOutput::Continue`]；coordinator 按
+    /// `progress` 变化推（B2 mock：每次 tick 都推；B3+ scheduler 优化
+    /// 为 progress delta > threshold 才推）。
+    Progress { progress: f32, at_ns: u64 },
+    /// Backend tick 返 [`ActionTickOutput::Completed`]；终态事件。
+    Completed { outcome: ActionOutcome, at_ns: u64 },
+    /// Backend tick 返 `Err(failure)` 或 cancel 后 backend 报错；终态事件。
+    Failed { failure: ActionFailure, at_ns: u64 },
+    /// `Coordinator::cancel()` 调用 + backend cancel 路径正常收敛后；
+    /// 终态事件（不会跟 `Completed` 同时发）。
+    Cancelled { at_ns: u64 },
+}
+
+/// `Coordinator::status(action_id)` 查询返值。
+///
+/// **B2 单 action 序列化**：`Pending` 在 B2 **不构造**（`submit` 即转
+/// EXECUTING，无 queue 缓冲）；保留 variant 是为对齐 B3 scheduler 引入
+/// queue 后的语义，让 RPC `GetTaskStatus` 字段集 stable。
+///
+/// **finished ring**（reviewer 拍板）：terminal 事件发出后 coordinator
+/// 把 `(ActionId, ActionStatus)` 写入 cap=128 的 `VecDeque` ring buffer；
+/// `status(id)` 先查 EXECUTING 再查 ring，找不到才返 `None`。超 128 淘汰
+/// 最旧。**不**做无界 map（防 long-running daemon 慢漏内存）。
+#[derive(Debug, Clone)]
+pub enum ActionStatus {
+    /// 已接收但 backend 未 start；**B2 不构造**（B3 scheduler queue 时进入）。
+    Pending,
+    Executing {
+        progress: f32,
+    },
+    Completed(ActionOutcome),
+    Failed(ActionFailure),
+    Cancelled,
 }
 
 // ============================================================================
@@ -803,6 +920,17 @@ mod tests {
                 "coordinator is in DEGRADED state; clear_error required",
             ),
             (SubmitError::ShuttingDown, "coordinator is shutting down"),
+            // reviewer 拍板补充：Booting 拒 submit 用 NotReady（不复用
+            // ShuttingDown）；Display 文案逐字符照搬。
+            (
+                SubmitError::NotReady,
+                "coordinator is not ready; startup anchor has not completed",
+            ),
+            // B2 (2/3) 实现期扩展：backend.start 透传 ActionStartError。
+            (
+                SubmitError::BackendStartFailed(ActionStartError::Rejected("usb timeout".into())),
+                "backend start failed: backend rejected request: usb timeout",
+            ),
         ];
         for (err, expected) in cases {
             assert_eq!(err.to_string(), *expected);
@@ -828,5 +956,108 @@ mod tests {
             "expected UUID in display, got {s}"
         );
         assert!(s.contains("single-action"));
+    }
+
+    // ----- ActionTicket / ActionEvent / ActionStatus -----
+
+    #[test]
+    fn action_ticket_holds_action_id_and_receiver() {
+        let id = ActionId::new_v7();
+        let (tx, rx) = std::sync::mpsc::channel::<ActionEvent>();
+        let ticket = ActionTicket {
+            action_id: id,
+            events: rx,
+        };
+        assert_eq!(ticket.action_id, id);
+        // Receiver 端 try_recv 空 channel 返 Empty。
+        assert!(matches!(
+            ticket.events.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        // Sender 端 drop 后 try_recv 返 Disconnected。
+        drop(tx);
+        assert!(matches!(
+            ticket.events.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Disconnected)
+        ));
+    }
+
+    #[test]
+    fn action_ticket_debug_does_not_leak_receiver_internals() {
+        let id = ActionId::new_v7();
+        let (_tx, rx) = std::sync::mpsc::channel::<ActionEvent>();
+        let ticket = ActionTicket {
+            action_id: id,
+            events: rx,
+        };
+        let s = format!("{ticket:?}");
+        assert!(s.contains("ActionTicket"));
+        assert!(s.contains(&id.to_string()));
+        assert!(s.contains("<Receiver<ActionEvent>>"));
+    }
+
+    #[test]
+    fn action_event_round_trip_through_channel() {
+        // 锁住"发 / 收 / Clone"路径都通；ActionFailure / ActionOutcome 已 Clone。
+        let (tx, rx) = std::sync::mpsc::channel::<ActionEvent>();
+        let evs = [
+            ActionEvent::Started { at_ns: 1 },
+            ActionEvent::Progress {
+                progress: 0.5,
+                at_ns: 2,
+            },
+            ActionEvent::Cancelled { at_ns: 3 },
+        ];
+        for e in &evs {
+            tx.send(e.clone()).expect("send");
+        }
+        for expected in &evs {
+            let got = rx.recv().expect("recv");
+            // Debug + Clone 路径都 round trip。
+            assert_eq!(format!("{got:?}"), format!("{expected:?}"));
+        }
+    }
+
+    #[test]
+    fn action_event_terminal_variants_carry_payload() {
+        let completed = ActionEvent::Completed {
+            outcome: ActionOutcome::Success,
+            at_ns: 100,
+        };
+        match completed {
+            ActionEvent::Completed { outcome, at_ns } => {
+                assert_eq!(outcome, ActionOutcome::Success);
+                assert_eq!(at_ns, 100);
+            }
+            _ => panic!("variant mismatch"),
+        }
+        let failed = ActionEvent::Failed {
+            failure: ActionFailure::DeadlineExceeded,
+            at_ns: 200,
+        };
+        match failed {
+            ActionEvent::Failed { failure, at_ns } => {
+                assert!(matches!(failure, ActionFailure::DeadlineExceeded));
+                assert_eq!(at_ns, 200);
+            }
+            _ => panic!("variant mismatch"),
+        }
+    }
+
+    #[test]
+    fn action_status_five_variants_clone_and_debug() {
+        // 锁住 5 variant 形状 + Clone + Debug；Pending 在 B2 不构造但
+        // 类型上必须可用（B3 scheduler 用）。
+        let cases = [
+            ActionStatus::Pending,
+            ActionStatus::Executing { progress: 0.25 },
+            ActionStatus::Completed(ActionOutcome::Success),
+            ActionStatus::Failed(ActionFailure::AdapterError("usb timeout".into())),
+            ActionStatus::Cancelled,
+        ];
+        for s in &cases {
+            let cloned = s.clone();
+            assert_eq!(format!("{s:?}"), format!("{cloned:?}"));
+        }
     }
 }

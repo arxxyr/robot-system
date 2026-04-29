@@ -1738,6 +1738,7 @@ version = "0.1.2"
 dependencies = [
  "flatbuffers",
  "iceoryx2",
+ "inventory",
  "libc 1.0.0-alpha.3",
  "robot-core",
  "robot-logging",
