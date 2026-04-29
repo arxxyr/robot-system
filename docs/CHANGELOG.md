@@ -10,6 +10,174 @@
 
 ---
 
+## 2026-04-30 · v0.3 B3 第一个真 action backend `HoldPoseBackend` + `ActionContext.command_seq` lib API 扩展（**状态：偏离登记**）
+
+### 背景
+
+B2 (1/3) → (3/3) 全部 land 后（详 2026-04-29 B2 §1.5 状态机扩展登
+记），Phase B 进度推到"至少一个真 action backend"门槛（详
+[`docs/handoffs/v0.3_entry.md`](handoffs/v0.3_entry.md) §2 Phase B
+路线）。B3 选 `HoldPose` 作第一个真 backend：复用 B1 落地的
+`build_hold_command(cfg, layout_id, anchor_bias, source_task_id,
+now_ns)`，hold-until-cancel 语义；走 EXECUTING 路径但 wire 输出跟
+Idle 状态 hold loop 字节级等价。
+
+reviewer round 2 阻断 1 锁定核心契约（详
+[`docs/handoffs/v0.3_b3_summary.md`](handoffs/v0.3_b3_summary.md)
+§3）：HoldPose body 的 `source_task_id` **必须**等于
+`run_action_tick_loop` 当前 `TickState.cmd_seq`，**不**得 backend
+私有计数。证据链：
+
+- `crates/robot-s0/src/ipc_thread.rs:903`：`buf.seq =
+  fb.source_task_id();` —— S0 把 fbs body 的 `source_task_id` 直接
+  写成 `JointCommandBuf.seq`（**不**是 FrameHeader.seq）。
+- `crates/robot-core/src/adapter.rs:119-120`：`pub seq: u64` "命令
+  seq 号，单调递增；rt_thread 判 CONTROL_LOST → ACTIVE 恢复时用"。
+- 私有 counter 反例：daemon 先 Idle hold N 帧（seq 0..N），进入
+  EXECUTING（私有 counter 0..M），S0 看到 `..., N, 0` → 破坏单调
+  契约 + rt_thread 误触 CONTROL_LOST 恢复路径风险。
+
+reviewer round 2 §3.4 显式放行 B3 做最小 lib API 调整：
+`ActionContext` 加 `command_seq: u64` 字段 + `Coordinator::tick_action`
+签名加 `command_seq: u64` 参数。不解锁 trait 方法签名 / enum variant
+扩展边界（B2 round 1 reviewer 锁定的两条仍按 B2 边界走）。
+
+reviewer 拍板形态（B3 outline §7 round 2 表）：
+
+1. #1=A `HoldPose` / #2=hold-until-cancel / #3=每 tick 读 ctx /
+   #5=不扩 `ActionKind` enum / #7=空 payload + `NO_PAYLOAD_SCHEMA_ID`
+   / #9=unit + 2 integration + 双路 smoke / #10=progress 永远 0.0 +
+   doc 不语义化 / #11=两 commit 节奏。全部 round 2 ACK。
+2. #4 source_task_id：round 1 默认"backend 私有 counter"被 round 2
+   阻断 1 打回；改 "复用 `TickState.cmd_seq` via ActionContext +
+   tick_action 签名"。
+3. commit 拆分：outline 2 + 实现 2 + reviewer round 1 fmt fix 1 =
+   总 5 commit。
+
+### 行为落地（B3 commit chain 概览）
+
+| commit | 段 | 内容 |
+|---|---|---|
+| `916202e` | B3 outline | round 1 草稿 + 11 待拍板项 + 默认推进 |
+| `2e9fc79` | B3 outline | round 2 三处 follow-up（阻断 1 source_task_id + 中度 bit-equivalent 收紧 + 低度 feature 口径） |
+| `cc6b2df` | B3 (1/2) | **`HoldPoseBackend` 落地** + `ActionContext.command_seq` 字段 + `Coordinator::tick_action` 签名加参数 + `backend-hold-pose` Cargo feature 默认 on + 8 条 lib 单测 |
+| `f4561bf` | B3 (2/2) | `tests/action_dispatch.rs` 加 2 条 integration test（happy_hold_pose bit-equivalent + cancel_hold_pose cross-segment monotonicity）+ 双路 crash_restart_smoke 5/5+5/5 PASS |
+| `d1f5031` | reviewer round 1 fix | rustfmt `clippy::too_many_lines` 注释位置（attribute 后 inline + 续 2 行被 fmt 顶列首产生孤儿；改 leading comment block） |
+
+### lib API 扩展点（reviewer round 2 §3.4 显式放行）
+
+**(i)** `crates/robot-s1/src/action.rs::ActionContext`：
+
+```diff
+ pub struct ActionContext<'a> {
+     pub clock: &'a dyn RobotClock,
+     pub layout_id: u64,
+     pub hardware: &'a HardwareSection,
+     pub config: &'a CoordinatorConfig,
+     pub anchor_bias: &'a [f64],
++    pub command_seq: u64,
+ }
+```
+
+**(ii)** `crates/robot-s1/src/coordinator.rs::Coordinator::tick_action`：
+
+```diff
+ pub fn tick_action(
+     &self,
+     clock: &dyn RobotClock,
++    command_seq: u64,
+ ) -> Option<JointCommandBody>;
+```
+
+**(iii)** `run_action_tick_loop` 调用点（`coordinator.rs:865`）：
+`coordinator.tick_action(clock, state.cmd_seq)` —— `state.cmd_seq` 同
+时作 publish frame 的 `FrameHeader.seq`，跨 backend / hold loop 用同
+一 counter。
+
+**(iv)** HoldPose backend tick 直接复用：
+`build_hold_command(ctx.config, ctx.layout_id, ctx.anchor_bias,
+ctx.command_seq, ctx.clock.now().0)`。
+
+**`submit` / `cancel` 路径**：构造 `ActionContext` 时填 `command_seq:
+0`（这两路径不在 publish frame seq 流上；`backend.start` /
+`backend.cancel` 通常不产 body bytes）。
+
+### Cargo feature wiring
+
+- `crates/robot-s1/Cargo.toml`：`[features]` 加 `backend-hold-pose
+  = []`；`default = ["backend-mock-dwell", "backend-hold-pose"]`。
+- 整 `hold_pose.rs` 文件 `#[cfg(feature = "backend-hold-pose")]` gate；
+  feature off 时 `mod hold_pose` 不 link → `BackendRegistry::from_inventory`
+  收不到 `hold_pose` → `[s1.profile.backends = ["hold_pose"]]` 启动期
+  fail-fast（符合 entry §2 "配置与编译 profile 不匹配启动期 fail-fast"
+  硬约束）。
+
+### 验收证据封存
+
+- `cargo fmt --all -- --check` ✅
+- `cargo clippy --all --all-targets -- -D warnings` ✅ 零警告
+- `cargo test -p robot-s1 --all-targets` → **161/161 PASS**
+  - lib 134（B2 (3/3) 收尾 126 → +8 hold_pose 单测 = 134）
+  - mock_s1 bin 6 / s1_daemon bin 8（不变）
+  - action_dispatch integration **10**（B2 (3/3) 8 → +2 hold_pose
+    integration test = 10）
+  - tick_loop_in_process integration 3（不变）
+- feature-off 基线（reviewer 额外验）：
+  - `cargo test -p robot-s1 --no-default-features --lib` ✅ 116/116 PASS
+  - `cargo test -p robot-s1 --no-default-features --bin s1_daemon` ✅ 8/8 PASS
+- `./target/release/crash_restart_smoke --iterations 5`（默认 s1_daemon
+  路径）→ **5 PASS / 0 FAIL**
+- `./target/release/crash_restart_smoke --use-mock-s1 --iterations 5`
+  → **5 PASS / 0 FAIL**
+- 双路 smoke 互证："no-active-action 路径外部可观测行为完全等价 B2
+  (3/3)"（reviewer 阻断 4 锁定的 wiring 回归门槛沿用；B3 wiring 接入
+  `HoldPoseBackend` inventory + Cargo feature 默认 on，**不**退化既
+  有路径）。
+
+### §6.7 不变量保持
+
+5 条 invariant **全部不动**（v0.3 Phase A 收尾后状态延续 B2 → B3 不变）：
+
+| # | 状态 | 说明 |
+|---|---|---|
+| #1 | ✅ | S0 存活 = 软件层安全充分条件（B3 不触 S0） |
+| #2 | ✅ | systemd 看门狗（A2 freeze hook 真锁；B3 不触） |
+| #3 | ✅ | EStop 不可清为失忆态（A1-5 撤 `--allow-empty-latch`；B3 不触） |
+| #4 | ✅ | S0 重启不失忆（v0.2 fsync 双写；B3 双路 smoke 5/5 沿用 B2 证据形状） |
+| #5 | ✅ | 幂等写 RPC（A1 IdempotencyCache；B3 仍走 in-process Rust API，无 RPC 路径） |
+
+**额外观察**（B4 接班需注意）：B3 引入的"`source_task_id` 必须 ==
+`TickState.cmd_seq`"虽不属 §6.7 invariant，但属 wire 协议契约。B4
+做 RPC adapter 时不得在 gateway 端重写 frame seq（详
+[`docs/handoffs/v0.3_b3_summary.md`](handoffs/v0.3_b3_summary.md)
+§3.7）。后续如需提升为 §6.7 第 6 条不变量，走 errata + reviewer 拍板。
+
+### 影响面
+
+- **`docs/00_design.md` 不动**：§1.5 状态机 5 variant B2 已扩 + 登
+  记；B3 仅在 EXECUTING 路径加第一个真 backend，跟设计文档既有描述
+  对齐。
+- **下一阶段 B4 接班点**：B4 robot-rpc gateway 起 adapter thread 把
+  `ActionTicket.events: std::sync::mpsc::Receiver<ActionEvent>` 桥
+  到 `tokio::sync::mpsc::Sender` → tonic `StreamTaskEvents`；B4 涉
+  及 wire / 状态机 / 错误码映射等单独走 B4 outline + reviewer 拍板。
+- **CLAUDE.md 状态块同步**：`实现阶段` 改 "v0.3 Phase B —— B1 + B2 +
+  B3 全部 land。B4 准备开"；`Phase B 进度` 段 B3 ⬜ 改 ✅，加 commit
+  chain 锚点 + 关键契约引用 + B4 wire 契约提醒。
+
+### 审阅人
+
+reviewer ACK：
+- B3 outline round 1 ACK + round 2 三处 follow-up 全收尾 @ 2026-04-29。
+- B3 (1/2) ACK + feature-off 基线额外验 @ 2026-04-29。
+- B3 (2/2) reviewer round 1（rustfmt）阻断 + fix `d1f5031` ACK @ 2026-04-29。
+- 全 3 实现 commit + 1 fix push 到 origin/master @ 2026-04-30。
+
+详细 commit chain + 关键契约审计 + reviewer 决策表见
+[`docs/handoffs/v0.3_b3_summary.md`](handoffs/v0.3_b3_summary.md)。
+
+---
+
 ## 2026-04-29 · v0.3 B2 §1.5 状态机扩展真落地（IDLE / EXECUTING / DEGRADED / BOOTING / SHUTTING_DOWN）（**状态：偏离登记**）
 
 ### 背景

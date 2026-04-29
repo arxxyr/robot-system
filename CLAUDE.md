@@ -16,7 +16,7 @@
 
 ```
 设计版本:  v0.1.2（冻结）
-实现阶段:  v0.3 Phase B —— B1 + B2 全部 land。B3 准备开（"至少一个 action backend"）。
+实现阶段:  v0.3 Phase B —— B1 + B2 + B3 全部 land。B4 准备开（robot-rpc full gateway）。
 
 v0.2 收尾:  commit 0fa1d77（2026-04-26 reviewer "复核通过，按降级宣称进入 v0.3"）。
             §6.7 #4 真锁住继承自 v0.2；#2 (A2 land) + #3 (A1-5 land) 在 v0.3 Phase A 升级到真锁住。
@@ -41,10 +41,17 @@ Phase B 进度:
                 wiring 共 12 commit；双路 crash_restart_smoke 5/5+5/5 PASS；151 test 全过；
                 commit chain `4b9d4de` → `4b17e29`（origin/master 已 push）。
                 详 docs/handoffs/v0.3_b2_summary.md。
-            B3 ⬜ 准备开（"至少一个真 action backend"；选 HoldPose/scripted/IK 等待 outline 拍板）。
-            B4 ⬜（robot-rpc full gateway：tonic InvokeTask/StreamTaskEvents 等；
-                B2 lib 已埋好 ActionTicket.events: std::sync::mpsc::Receiver 同步 channel，
-                B4 仅补 sync↔async adapter thread）。
+            B3 ✅（第一个真 action backend = HoldPoseBackend；零字段 struct + hold-until-cancel
+                + 复用 B1 build_hold_command + ActionContext 加 command_seq 字段 + tick_action
+                签名加 cmd_seq 参数解 source_task_id 单调阻断；outline 2 commit + 实现 2 commit
+                + reviewer round 1 fix 1 commit 共 5 commit；双路 crash_restart_smoke 5/5+5/5
+                PASS；161 test 全过；commit chain `916202e` → `d1f5031`（origin/master 已 push）。
+                **关键契约**：source_task_id == TickState.cmd_seq（详 v0.3_b3_summary §3，B4
+                接 RPC adapter 必读）。
+            B4 ⬜ 准备开（robot-rpc full gateway：tonic InvokeTask/CancelTask/GetTaskStatus/
+                StreamTaskEvents/ClearError 5 method；B2 lib 已埋好 ActionTicket.events:
+                std::sync::mpsc::Receiver 同步 channel，B4 仅补 sync↔async adapter thread；
+                wire 契约：gateway **不**改 JointCommand.source_task_id / FrameHeader.seq）。
 
 上游项目:   /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
