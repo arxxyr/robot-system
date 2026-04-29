@@ -10,6 +10,127 @@
 
 ---
 
+## 2026-04-29 · v0.3 B2 §1.5 状态机扩展真落地（IDLE / EXECUTING / DEGRADED / BOOTING / SHUTTINGDOWN）（**状态：偏离登记**）
+
+### 背景
+
+`docs/00_design.md` §1.5 定义 S1 状态机包含 IDLE / EXECUTING / DEGRADED
+（+ 启动 BOOTING / 停机 SHUTTINGDOWN）共 5 个 variant；v0.2 + v0.3 B1
+期间 S1 仅落地"hold + heartbeat"单态闭环（隐式 IDLE），其余 4 个 state
+留作设计文档冻结概念，**未**进 Rust 类型系统。B2 outline 拍板（详
+[`docs/handoffs/v0.3_b2_outline.md`](handoffs/v0.3_b2_outline.md)
+§5 + §10 决策 #11）："CHANGELOG 仅登记 §1.5 状态机扩展（IDLE /
+EXECUTING / DEGRADED 真落地）；**不**动 §6.7 invariant"。
+
+B2 (1/3) → (3/3) 12 commit 全部 land + push 到 origin/master 之后
+（终点 commit `4b17e29`），登记本条偏离：5 个 state variant 已经在
+`crates/robot-s1/src/coordinator.rs::CoordinatorState` 显式建模，
+runtime 端 transition / submit 拒绝路径 / clear_error / tick_action
+state-aware dispatch 全部按 §1.5 设计执行。
+
+reviewer 拍板形态（B2 outline §10 决策 #10d + 阻断 2）：DEGRADED 在
+B2 是 **S1 内部 degraded**（继续 hold + heartbeat，拒新 submit，等
+`clear_error()` 解除），**不**触发 S0 control-lost / 不宣称 §6.7 #2
+回退。这跟 `docs/00_design.md` §1.5 / §6.3 既有 DEGRADED 描述一致
+（DEGRADED 不等于 control-lost），无 errata 需求。
+
+### 行为落地（B2 commit chain 概览）
+
+| commit | 段 | 内容 |
+|---|---|---|
+| `4b9d4de` | B2 (1/3) | `ActionId` / `ActionKind` / `ActionRequest` / `ActionBackend` / `ActionInstance` / `JointCommandBody` / 错误枚举 lib types |
+| `54521ed` + `8508c3d` | B2 (1/3) reviewer fix | `NO_PAYLOAD_SCHEMA_ID` 哨兵 + `ActionTickOutput::Continue::command` doc override 语义修订 |
+| `ae1c4cc` | B2 (2/3) | `SubmitError::NotReady` + `BackendStartFailed` + `ActionTicket` / `ActionEvent` / `ActionStatus` + `BackendRegistry` + `MockDwellBackend` |
+| `89628b9` | B2 (2/3) | **`CoordinatorState` 5-variant 显式建模** + `Coordinator` 4 API + `tick_action` + `ProfileSection` L1+L2 校验 |
+| `3c9eaae` + `2841c44` | B2 (2/3) reviewer fix | `submit()` state-priority + `NoEnabledBackends` profile fail-fast |
+| `96fb757` | B2 (3/3) | `run_action_tick_loop` state-aware tick dispatch + visibility 升级 + dead_code 清空 |
+| `8d39afa` | B2 (3/3) | `s1_daemon` binary wiring（profile + registry + Coordinator + run_action_tick_loop） |
+| `4b17e29` | B2 (3/3) | `tests/action_dispatch.rs` 8 路径 in-process integration 验收 |
+
+### CoordinatorState 5 variant 落地映射
+
+| §1.5 / outline §5.2 状态 | Rust enum variant | 入口转移 | 出口转移 | tick 期间行为 |
+|---|---|---|---|---|
+| BOOTING | `Booting` | `Coordinator::new()` 构造期 | `mark_idle()` → Idle | 防御性不发 cmd（anchor 完应已 mark_idle） |
+| IDLE | `Idle` | mark_idle / Executing 终态 / clear_error 出口 | submit OK → Executing；mark_shutting_down → ShuttingDown | B1 hold cmd 50Hz + hb 50Hz |
+| EXECUTING | `Executing { action_id, started_at_ns }` | submit Idle → OK | tick_action Completed → Idle；Failed Pre/Deadline → Idle；Failed Safety/Adapter/Internal → Degraded；mark_shutting_down → ShuttingDown | hb 50Hz；cmd = `tick_action()` 输出（Some publish；None 跳过本帧） |
+| DEGRADED | `Degraded { reason }` | tick_action 收 Failed Safety/Adapter/Internal | clear_error → Idle；mark_shutting_down → ShuttingDown | 续 B1 hold cmd 50Hz + hb 50Hz（**S1 内部 degraded**，不触 S0 watchdog） |
+| SHUTTINGDOWN | `ShuttingDown` | 任意状态 mark_shutting_down | 终态（B2 不复活） | tick loop 检测到此状态 break；coord drop current → ticket 端 RecvError |
+
+### submit / cancel / clear_error / status API 落地
+
+- `submit(req, clock)`：状态优先 4 路拒（`NotReady` / `BusyExecuting(id)`
+  / `CoordinatorDegraded` / `ShuttingDown`），仅 Idle 才走 validate /
+  dispatch / start。reviewer round 3 阻断 1 拍板把全部 4 路放 lock
+  内一气呵成（不让坏请求 / unknown backend 抢先返 `InvalidRequest` 等
+  掩盖状态语义）。
+- `cancel(action_id, clock)`：cooperative —— 调 backend `cancel()` +
+  set `pending_cancel`；状态保持 Executing 等下次 tick 收敛
+  （Cancelled / Failed），**不**双发 Completed + Cancelled。
+- `clear_error()`：仅 Degraded → Idle 合法；其它 4 状态返
+  `ClearError::NotDegraded(state_label)`。
+- `status(action_id)`：先查当前 Executing，再查 cap=128 finished
+  ring；找不到返 None。reviewer 拍板**不**做无界 map（防 long-running
+  daemon 慢漏内存）。
+
+### 验收证据封存
+
+- `cargo test -p robot-s1 --all-targets` → **151/151 PASS**（lib 126 +
+  mock_s1 bin 6 + s1_daemon bin 8 + action_dispatch integration 8 +
+  tick_loop_in_process integration 3）。
+- `cargo clippy --all --all-targets -- -D warnings` → 零警告。
+- `cargo fmt --all -- --check` → clean。
+- `./target/release/crash_restart_smoke --iterations 5`（默认 s1_daemon）
+  → **5 PASS / 0 FAIL**（latch primary='1' bak='1' + restart daemon
+  initial estop_latched latched=true 证据形状不变）。
+- `./target/release/crash_restart_smoke --use-mock-s1 --iterations 5`
+  → **5 PASS / 0 FAIL**。
+- 双路 smoke 互证："no-active-action 路径外部可观测行为完全等价 B1"
+  （reviewer 阻断 4 锁定的 wiring 回归门槛）。
+- `rg -n "allow\(dead_code\)" crates/robot-s1/src` → 0 实代码命中
+  （仅 1 注释引用说"已批量移除"）。
+- `rg "tokio|tonic|ActionKind::Stop|MoveToPose|FollowTrajectory|PolicyAction" crates/robot-s1/src` →
+  全部命中在注释 / doc 的禁止语境（"不引"/"不放"/"B4 时桥接"）。
+
+### §6.7 不变量保持
+
+5 条 invariant **全部不动**（v0.3 Phase A 收尾后状态延续）：
+
+| # | 状态 | 说明 |
+|---|---|---|
+| #1 | ✅ | S0 存活 = 软件层安全充分条件（B2 不触 S0） |
+| #2 | ✅ | systemd 看门狗（A2 freeze hook + freeze_systemd_smoke 真锁；B2 不触） |
+| #3 | ✅ | EStop 不可清为失忆态（A1-5 撤 `--allow-empty-latch`；B2 不触） |
+| #4 | ✅ | S0 重启不失忆（v0.2 fsync 双写；B2 双路 smoke 5/5 沿用 B1 证据形状） |
+| #5 | ✅ | 幂等写 RPC（A1 IdempotencyCache；B2 仍走 in-process Rust API，无 RPC 路径） |
+
+### 影响面
+
+- **`docs/00_design.md` 不动**：§1.5 状态机文字版已经提了 IDLE /
+  EXECUTING / DEGRADED 等 variant；B2 实现层只是把它们从概念变成 Rust
+  enum，无 errata 需求。
+- **下一阶段 B3 / B4 接班点**：B3 加新 backend 时 `ActionKind` enum
+  按需扩 variant（B2 仅 `DwellMs` / `HoldPose`）；B4 robot-rpc gateway
+  起 adapter thread 把 `ActionTicket.events` 桥到 `tonic::StreamTaskEvents`
+  （B2 lib 已用 `std::sync::mpsc::Receiver` 埋好接口）。
+- **CLAUDE.md 状态块同步**：`实现阶段` 改 "v0.3 Phase B —— B1 + B2 全
+  部 land。B3 准备开"；`Phase B 进度` 段加 B2 commit chain 锚点 +
+  B2 summary handoff 路径。
+
+### 审阅人
+
+reviewer ACK：
+- B2 (1/3) ACK push 3 commit @ 2026-04-28（B1 收尾后第 2 天）。
+- B2 (2/3) ACK push 4 commit @ 2026-04-29（含 reviewer 2 阻断 + 1 注
+  释 fix）。
+- B2 (3/3) ACK push 3 commit @ 2026-04-29（双路 crash_restart_smoke
+  本机 5/5+5/5 实跑通过；nit 修留下次 docs 整理）。
+
+详细 commit chain + 拍板表见
+[`docs/handoffs/v0.3_b2_summary.md`](handoffs/v0.3_b2_summary.md)。
+
+---
+
 ## 2026-04-28 · v0.3 A1-5 撤 `--allow-empty-latch` + 升级 §6.7 #3 真宣称（**状态：偏离登记**）
 
 ### 背景

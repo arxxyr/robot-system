@@ -4,7 +4,7 @@
 //! `run_action_tick_loop` state-aware dispatch"端到端流。**不**起子进程 /
 //! 不接 iceoryx2 真服务，全走 [`MockChannel`] + [`MockClock`]。
 //!
-//! ## 7 路径覆盖（reviewer 验收契约 + override 二分 + 阻断 2 + B1 回归 baseline）
+//! ## 8 路径覆盖（reviewer 验收契约 5 + override 二分 + 阻断 2 + B1 回归 baseline）
 //!
 //! 1. `happy_a_mock_dwell_none_override_blocks_hold_loop_cmd`：
 //!    MockDwell 长 dwell + override 策略 → tick_action 返 None →
@@ -28,6 +28,10 @@
 //!    name → ProfileError::UnknownBackend。
 //! 7. `profile_validation_no_enabled_backends_fails_fast`：空 backends
 //!    列表 → ProfileError::NoEnabledBackends（reviewer 阻断 2 验收）。
+//! 8. `profile_parse_missing_section_yields_default_b2_passes_validation`：
+//!    缺失 `[s1.profile]` → default_b2 = `["mock_dwell"]` → validate
+//!    通过（regression baseline，超 reviewer 5 路径但锁住"现有 config
+//!    不带 `[s1.profile]` 部署不会被 B2 (3/3) wiring 打断"）。
 //!
 //! ## 为什么 cancel / safety_abort 不走 run_action_tick_loop
 //!
