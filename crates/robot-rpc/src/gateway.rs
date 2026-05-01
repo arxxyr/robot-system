@@ -93,7 +93,10 @@ use crate::clear_estop::{
 };
 use crate::idempotency::{CachedAck, Decision, IdempotencyCache};
 use crate::proto::robot_control_server::{RobotControl, RobotControlServer};
-use crate::proto::{Ack, ClearEStopCommand};
+use crate::proto::{
+    Ack, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, InvokeTaskCommand, TaskEvent,
+    TaskHandle, TaskHandleRef, TaskStatus,
+};
 use crate::rr_io_thread::{
     RrForwardRequest, RrIoThreadConfig, RrIoThreadHandle, spawn_rr_io_thread,
 };
@@ -646,6 +649,71 @@ impl RobotControl for ClearEStopHandler {
         Err(tonic::Status::new(
             code,
             format!("daemon returned {wire_status:?}: {error_msg}"),
+        ))
+    }
+
+    // ------------------------------------------------------------------------
+    // v0.3 B4 task control plane stubs（B4 (1/3-a) codegen glue）
+    //
+    // 5 个 RPC 仅返 `Unimplemented`，让 lib 通过 trait 完整性检查。真正
+    // 的 handler 实现 + sync↔async adapter + IdempotencyCache + auth /
+    // capability 校验落 B4 (2/3) commit；s1 端 RR server thread + events
+    // drain pubsub 落 B4 (1/3-b) / (1/3-c) commit。
+    //
+    // 沿 A1-1 (3/3) 阶段同款"先生成 server trait + 占位 impl，后续 commit
+    // 替换"模式（详 docs/handoffs/v0.3_b4_outline.md §11.1 拆分计划）。
+    // ------------------------------------------------------------------------
+
+    type StreamTaskEventsStream = std::pin::Pin<
+        Box<
+            dyn tonic::codegen::tokio_stream::Stream<Item = Result<TaskEvent, tonic::Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
+    async fn invoke_task(
+        &self,
+        _request: tonic::Request<InvokeTaskCommand>,
+    ) -> Result<tonic::Response<TaskHandle>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "InvokeTask: B4 (1/3-a) schema only; handler lands B4 (2/3)",
+        ))
+    }
+
+    async fn cancel_task(
+        &self,
+        _request: tonic::Request<CancelTaskCommand>,
+    ) -> Result<tonic::Response<Ack>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "CancelTask: B4 (1/3-a) schema only; handler lands B4 (2/3)",
+        ))
+    }
+
+    async fn get_task_status(
+        &self,
+        _request: tonic::Request<TaskHandleRef>,
+    ) -> Result<tonic::Response<TaskStatus>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "GetTaskStatus: B4 (1/3-a) schema only; handler lands B4 (2/3)",
+        ))
+    }
+
+    async fn stream_task_events(
+        &self,
+        _request: tonic::Request<TaskHandleRef>,
+    ) -> Result<tonic::Response<Self::StreamTaskEventsStream>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "StreamTaskEvents: B4 (1/3-a) schema only; handler lands B4 (2/3)",
+        ))
+    }
+
+    async fn clear_error(
+        &self,
+        _request: tonic::Request<ClearErrorCommand>,
+    ) -> Result<tonic::Response<Ack>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "ClearError: B4 (1/3-a) schema only; handler lands B4 (2/3)",
         ))
     }
 }

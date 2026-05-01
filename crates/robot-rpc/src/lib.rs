@@ -91,9 +91,11 @@ pub mod proto {
         clippy::derive_partial_eq_without_eq,
         clippy::missing_const_for_fn,
         clippy::module_name_repetitions,
+        clippy::must_use_candidate,
         clippy::needless_lifetimes,
         clippy::redundant_pub_crate,
         clippy::similar_names,
+        clippy::too_many_lines,
         clippy::wildcard_imports,
         unreachable_pub
     )]

@@ -57,8 +57,9 @@ pub const SCHEMA_HEARTBEAT: u32 = 0x0000_0301;
 
 // ------------------------ 0x400..0x4FF · control -----------------------------
 //
-// v0.3 A1 ClearEStop control-plane slice（`docs/handoffs/v0.3_entry.md` §3）。
-// 后续 v0.5+ 完整 robot-rpc gateway 落地时其它 §5.3 RPC payload 也分配本段。
+// v0.3 A1 ClearEStop control-plane slice（`docs/handoffs/v0.3_entry.md` §3）+
+// v0.3 B4 task control plane（`docs/handoffs/v0.3_b4_outline.md`）。后续
+// v0.5+ 其它 §5.3 RPC payload 也分配本段。
 
 /// `robot.msg.ClearEStopRequest` —— v0.3 A1 `ClearEStop` control action 跨
 /// 进程 wire format（iceoryx2 `RequestResponse` client → server payload）。
@@ -66,6 +67,31 @@ pub const SCHEMA_CLEAR_ESTOP_REQUEST: u32 = 0x0000_0400;
 /// `robot.msg.ClearEStopResponse` —— v0.3 A1 `ClearEStop` control action 跨
 /// 进程 wire format（iceoryx2 `RequestResponse` server → client reply payload）。
 pub const SCHEMA_CLEAR_ESTOP_RESPONSE: u32 = 0x0000_0401;
+
+// ----- v0.3 B4 task control plane（`docs/handoffs/v0.3_b4_outline.md`）-----
+//
+// 4 个 RR 一对 request/response（task_invoke / task_status / task_cancel /
+// clear_error）+ 1 个 pubsub event envelope = 9 个 schema_id。
+
+/// `robot.msg.InvokeTaskRequest` —— B4 `InvokeTask` RR client → s1 payload。
+pub const SCHEMA_INVOKE_TASK_REQUEST: u32 = 0x0000_0402;
+/// `robot.msg.InvokeTaskResponse` —— B4 `InvokeTask` RR s1 → client reply。
+pub const SCHEMA_INVOKE_TASK_RESPONSE: u32 = 0x0000_0403;
+/// `robot.msg.GetTaskStatusRequest` —— B4 `GetTaskStatus` RR client → s1 payload。
+pub const SCHEMA_GET_TASK_STATUS_REQUEST: u32 = 0x0000_0404;
+/// `robot.msg.GetTaskStatusResponse` —— B4 `GetTaskStatus` RR s1 → client reply。
+pub const SCHEMA_GET_TASK_STATUS_RESPONSE: u32 = 0x0000_0405;
+/// `robot.msg.CancelTaskRequest` —— B4 `CancelTask` RR client → s1 payload。
+pub const SCHEMA_CANCEL_TASK_REQUEST: u32 = 0x0000_0406;
+/// `robot.msg.CancelTaskResponse` —— B4 `CancelTask` RR s1 → client reply。
+pub const SCHEMA_CANCEL_TASK_RESPONSE: u32 = 0x0000_0407;
+/// `robot.msg.ClearErrorRequest` —— B4 `ClearError` RR client → s1 payload。
+pub const SCHEMA_CLEAR_ERROR_REQUEST: u32 = 0x0000_0408;
+/// `robot.msg.ClearErrorResponse` —— B4 `ClearError` RR s1 → client reply。
+pub const SCHEMA_CLEAR_ERROR_RESPONSE: u32 = 0x0000_0409;
+/// `robot.msg.ActionEventEnvelope` —— B4 `StreamTaskEvents` per-ActionId
+/// pubsub topic payload（**不**走 RR；详 `schemas/action_event.fbs`）。
+pub const SCHEMA_ACTION_EVENT_ENVELOPE: u32 = 0x0000_040A;
 
 // -----------------------------------------------------------------------------
 // deprecated 登记
@@ -99,6 +125,24 @@ pub const SCHEMA_REGISTRY: &[(u32, &str)] = &[
     (SCHEMA_HEARTBEAT, "robot.msg.Heartbeat"),
     (SCHEMA_CLEAR_ESTOP_REQUEST, "robot.msg.ClearEStopRequest"),
     (SCHEMA_CLEAR_ESTOP_RESPONSE, "robot.msg.ClearEStopResponse"),
+    (SCHEMA_INVOKE_TASK_REQUEST, "robot.msg.InvokeTaskRequest"),
+    (SCHEMA_INVOKE_TASK_RESPONSE, "robot.msg.InvokeTaskResponse"),
+    (
+        SCHEMA_GET_TASK_STATUS_REQUEST,
+        "robot.msg.GetTaskStatusRequest",
+    ),
+    (
+        SCHEMA_GET_TASK_STATUS_RESPONSE,
+        "robot.msg.GetTaskStatusResponse",
+    ),
+    (SCHEMA_CANCEL_TASK_REQUEST, "robot.msg.CancelTaskRequest"),
+    (SCHEMA_CANCEL_TASK_RESPONSE, "robot.msg.CancelTaskResponse"),
+    (SCHEMA_CLEAR_ERROR_REQUEST, "robot.msg.ClearErrorRequest"),
+    (SCHEMA_CLEAR_ERROR_RESPONSE, "robot.msg.ClearErrorResponse"),
+    (
+        SCHEMA_ACTION_EVENT_ENVELOPE,
+        "robot.msg.ActionEventEnvelope",
+    ),
 ];
 
 /// 按 `schema_id` 查规范名；未知返回 `None`。

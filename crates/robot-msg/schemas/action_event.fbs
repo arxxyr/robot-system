@@ -1,0 +1,106 @@
+// action_event.fbs — v0.3 B4 task event stream pubsub wire format
+// （`StreamTaskEvents` RPC 跨进程 body）。
+//
+// 对应 docs/00_design.md §5.3 `StreamTaskEvents` frozen RPC + 本仓库
+// `crates/robot-rpc/proto/robot_control.proto::TaskEvent` 跨网络 wire
+// 平行版本（详 action_status.fbs 顶部双层 schema 分工解释）。
+//
+// ### 跨进程通道（B4 outline §5 拍板，**关键差异**）
+//
+// `StreamTaskEvents` **不**走 iceoryx2 RR（RR 是 single-shot
+// request-response，不支持 server streaming）；走 iceoryx2 **pubsub**
+// per-ActionId 动态 topic：
+//
+//   `/<robot_id>/s1/action_events/<action_id_hex>`
+//
+// s1 端 `events_drain_thread`（B4 (1/3-c) 落地）持
+// `ActionTicket.events: std::sync::mpsc::Receiver<ActionEvent>`，
+// loop `recv()` → encode 本 table（`ActionEventEnvelope`）→ publish。
+// gateway 端 `events_subscribe_thread`（B4 (2/3) 落地）按 ActionId
+// 订阅同款 topic → decode → 转发到 gateway-local
+// `tokio::sync::mpsc::Sender<ActionEvent>` → tonic streaming response。
+//
+// **本地 tokio channel 仅作 subscribe 线程跟 async runtime 的桥**
+// （**不**是 `ActionTicket.events`；那个 Receiver 在 s1 进程内，从
+// 未跨进程）。
+//
+// ### Lifecycle / cleanup（B4 outline §5.5 + §5.6 待拍板 #4b）
+//
+// 每个 ActionTicket 一个独立 pubsub topic（动态创建）。终态后
+// （Completed / Failed / Cancelled）s1 `events_drain_thread`：
+//   1. publish 终态事件；
+//   2. sleep 100 ms grace window（让 gateway sub catch up）；
+//   3. unregister iceoryx2 pubsub service；
+//   4. thread 退出。
+//
+// 100 ms grace 是 outline 默认值；B4 (1/3) impl 期实测 iceoryx2
+// keep-last + reader catch-up 延迟后回填。进程崩溃 leftover topic
+// 清理留 (1/3-b)/(1/3-c) 实现期评估。
+//
+// ### 引用关系
+//
+// 复用 action_status.fbs 里的 `ActionOutcomeFb` / `ActionFailureFb`
+// table（终态事件 payload 跟 `GetTaskStatusResponse` 共享语义）。
+include "action_status.fbs";
+
+namespace robot.msg;
+
+// ============================================================================
+// ActionEventKindFb
+// ============================================================================
+
+// `ActionEvent` 的 kind tag（对齐 lib `robot_s1::action::ActionEvent`
+// + proto `TaskEvent.event` 的 EVENT_KIND_*）。
+//
+// **保序**：单 ticket 内事件按时间顺序到达；**不**跨 ticket 保序。
+// **终止**：每个 ticket 至多收到**一条**终态事件（Completed /
+// Failed / Cancelled）；之后 sender drop。reviewer 拍板锁定：取消后
+// 正常收敛 = `Cancelled`；取消后 backend 报错 = `Failed`；**绝不**
+// 双发 `Completed + Cancelled`。
+enum ActionEventKindFb : ubyte {
+    Unknown = 0,
+    Started = 1,
+    Progress = 2,
+    Completed = 3,
+    Failed = 4,
+    Cancelled = 5,
+}
+
+// ============================================================================
+// ActionEventEnvelope
+// ============================================================================
+
+// pubsub 单帧 payload。
+//
+// ### 字段语义
+//
+// - `action_id`：UUIDv7 hex（`robot_s1::action::ActionId` 的
+//   canonical string 形式）。冗余写到 envelope（topic name 已含
+//   action_id_hex）方便 gateway 端 audit / debug **不**依赖 topic
+//   name 解析。
+// - `at_ns`：事件时刻（CLOCK_MONOTONIC_RAW；s1 端 `clock.now()`）。
+// - `kind`：事件类型 tag。
+// - `progress`：仅 `kind == Progress` 有意义；`Started` / `Completed`
+//   / `Failed` / `Cancelled` 留 0.0（fbs 没 `optional` 关键字，沿
+//   default 值约定；gateway 端按 kind 决定是否透传给 client）。
+// - `outcome`：仅 `kind == Completed` 时存在。
+// - `failure`：仅 `kind == Failed` 时存在。
+//
+// ### 不在范围
+//
+// - **不**带 `request_id`（client 已通过 `InvokeTask` reply 拿到
+//   `ActionId`，pubsub 帧只跟 ActionId 相关；request_id 仅 RR 路径
+//   correlation 用）。
+// - **不**带跨段 source_task_id（B3 落地的 wire 契约 = 走
+//   `JointCommand.source_task_id`，跟 ActionEvent 流是不同的字段、
+//   不同语义；B4 outline §10 锁住 gateway **不**碰 source_task_id）。
+table ActionEventEnvelope {
+    action_id: string;
+    at_ns:     ulong;
+    kind:      ActionEventKindFb = Unknown;
+    progress:  float = 0.0;
+    outcome:   ActionOutcomeFb;
+    failure:   ActionFailureFb;
+}
+
+root_type ActionEventEnvelope;

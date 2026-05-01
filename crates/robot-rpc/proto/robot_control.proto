@@ -1,17 +1,26 @@
-// v0.3 A1 ClearEStop control-plane slice proto schema。
+// v0.3 A1 ClearEStop + v0.3 B4 task control plane proto schema。
 //
-// 对应 docs/00_design.md §5.2 (CommandMeta + AuthContext) + §5.3 (rpc
-// ClearEStop) frozen schema。**字段 / 字段编号不可改**；只可 append。
+// 对应 docs/00_design.md §5.2 (CommandMeta + AuthContext) + §5.3 frozen
+// RPC schema。**字段 / 字段编号不可改**；只可 append。
 //
-// **A1-1 (3/3) scope**：仅 ClearEStop 一个 RPC + 配套 message。其它 §5.3
-// RPC（SetEnabled / EStop / ClearError / InvokeTask / ReloadCalibration /
-// SetPolicy / 等）留 v0.5+ Phase B B3 完整 robot-rpc gateway 落地，**不**
-// 在本 proto 出现（tonic 生成 server trait 只暴露 ClearEStop 方法）。
+// **当前 scope**（v0.3 B4 land 后）：6 条 RPC =
+//   - `ClearEStop`           (A1 land；safety-critical maintainer-only)
+//   - `InvokeTask`           (B4)
+//   - `CancelTask`           (B4)
+//   - `GetTaskStatus`        (B4)
+//   - `StreamTaskEvents`     (B4 server-streaming via per-ActionId pubsub)
+//   - `ClearError`           (B4)
+//
+// 其它 §5.3 RPC（SetEnabled / EStop / ListHardware / ListJoints /
+// ListTasks / GetState / StreamState / StreamLogs / ReloadCalibration /
+// SetPolicy）留 v0.5+ Phase B 后续 outline 拍板，**不**在本 proto 出现。
 //
 // **跟 robot-msg 关系**：本 proto 是 RPC 边界 wire format（client →
-// gateway）；gateway 内部转换为 `robot-msg`
-// `ClearEStopRequest`（FlatBuffers, A1-1 part 1）发到 daemon。两份 schema
-// 平行存在 v0.3 A1 期间；**不**等价 / **不**自动转换。
+// gateway, HTTP/2）；gateway 内部转换为 `robot-msg` 平行 fbs 表
+// （`clear_estop.fbs` / `action_request.fbs` / `action_status.fbs` /
+// `action_event.fbs`）发到 daemon（iceoryx2 zero-copy）。两份 schema
+// 平行存在；**不**等价 / **不**自动转换。详
+// docs/handoffs/v0.3_b4_outline.md §6.1 双层 schema 分工。
 
 syntax = "proto3";
 
@@ -75,11 +84,198 @@ message Ack {
     bool   dry_run       = 3;
 }
 
-// v0.3 A1 ClearEStop control-plane slice 仅暴露一条 RPC。
+// v0.3 A1 ClearEStop + v0.3 B4 task control plane RPCs。
 //
-// **A1-1 (3/3) 阶段**：tonic 生成 server trait，但**不**起 server binary。
-// `auth.rs` / `idempotency.rs` / `clear_estop.rs` 提供 validation / cache /
-// status mapping 纯函数；A1-3 真起 server 时注入到 trait impl。
+// **method 数 = 6**（外部 tonic / HTTP/2 wire；内部 s1 RR server 仅 4
+// 条 RR topic = task_invoke / task_cancel / task_status / clear_error；
+// `StreamTaskEvents` **不**走 RR，走 per-ActionId pubsub topic
+// `/<robot_id>/s1/action_events/<action_id_hex>`，详
+// docs/handoffs/v0.3_b4_outline.md §5.2 拍板）。
 service RobotControl {
-    rpc ClearEStop (ClearEStopCommand) returns (Ack);
+    // v0.3 A1 land。safety-critical maintainer-only；详 clear_estop.fbs。
+    rpc ClearEStop       (ClearEStopCommand)  returns (Ack);
+
+    // v0.3 B4 task control plane。
+    rpc InvokeTask       (InvokeTaskCommand)  returns (TaskHandle);
+    rpc CancelTask       (CancelTaskCommand)  returns (Ack);
+    rpc GetTaskStatus    (TaskHandleRef)      returns (TaskStatus);
+    rpc StreamTaskEvents (TaskHandleRef)      returns (stream TaskEvent);
+    rpc ClearError       (ClearErrorCommand)  returns (Ack);
+}
+
+// ===========================================================================
+// v0.3 B4 task control plane messages
+// ===========================================================================
+//
+// **跟 lib (`robot-s1::action`) 类型关系**：proto 字段语义跟 lib
+// `ActionKind` / `ActionStatus` / `ActionEvent` / `ActionOutcome` /
+// `ActionFailure` 一一对应；gateway 端做 proto ↔ lib 转换 + lib ↔ fbs
+// （RR / pubsub）转换。三层 variant 集**严格同步**：lib 改 enum 必须
+// 同步改 proto + fbs（详 docs/handoffs/v0.3_b4_outline.md §6.3 拍板）。
+
+// `ActionKind` 的 typed enum 形态（reviewer round 4 拍板 #5a：typed
+// 而**非** string，避免客户端拼错）。每加新 ActionKind 必须同步改
+// proto + lib + fbs `ActionKindFb`。
+enum ActionKindProto {
+    ACTION_KIND_UNSPECIFIED = 0;
+    ACTION_KIND_DWELL_MS    = 1;  // lib `ActionKind::DwellMs`（B2 mock）
+    ACTION_KIND_HOLD_POSE   = 2;  // lib `ActionKind::HoldPose`（B3 land）
+}
+
+// 任务生命周期状态（对齐 lib `ActionStatus` enum + fbs `TaskStateFb`）。
+//
+// **B2 单 action 序列化**：`TASK_STATE_PENDING` 在 B2/B3 **不构造**
+// （submit 即转 EXECUTING，无 queue 缓冲）；保留 variant 是为对齐
+// B3+ scheduler 引入 queue 后的语义，让 RPC 字段集 stable。
+enum TaskState {
+    TASK_STATE_UNSPECIFIED = 0;
+    TASK_STATE_PENDING     = 1;
+    TASK_STATE_EXECUTING   = 2;
+    TASK_STATE_COMPLETED   = 3;
+    TASK_STATE_FAILED      = 4;
+    TASK_STATE_CANCELLED   = 5;
+}
+
+// `ActionEvent` 的 typed enum 形态（对齐 fbs `ActionEventKindFb`）。
+//
+// 终止事件（COMPLETED / FAILED / CANCELLED）后 `StreamTaskEvents` 流
+// 关闭；具体字段在 `TaskEvent.outcome` / `TaskEvent.failure`。
+enum TaskEventKind {
+    TASK_EVENT_KIND_UNSPECIFIED = 0;
+    TASK_EVENT_KIND_STARTED     = 1;
+    TASK_EVENT_KIND_PROGRESS    = 2;
+    TASK_EVENT_KIND_COMPLETED   = 3;
+    TASK_EVENT_KIND_FAILED      = 4;
+    TASK_EVENT_KIND_CANCELLED   = 5;
+}
+
+// `ActionOutcome` (`Success` / `PartialSuccess { warning }`) 的 proto
+// 形态。`PARTIAL_SUCCESS` 时 `warning` 必须非空字符串；`SUCCESS` 时
+// `warning` 留空。
+message ActionOutcomeProto {
+    enum Kind {
+        KIND_UNSPECIFIED     = 0;
+        KIND_SUCCESS         = 1;
+        KIND_PARTIAL_SUCCESS = 2;
+    }
+    Kind   kind    = 1;
+    string warning = 2;
+}
+
+// `ActionFailure` 的 proto 形态（5 个 variant 对齐 lib 端）。
+//
+// `KIND_DEADLINE_EXCEEDED` 时 `reason` 留空；其它 4 个 variant 都带
+// 具体 reason 字符串（gateway 端透传给 client）。
+message ActionFailureProto {
+    enum Kind {
+        KIND_UNSPECIFIED         = 0;
+        KIND_DEADLINE_EXCEEDED   = 1;
+        KIND_PRECONDITION_FAILED = 2;
+        KIND_ADAPTER_ERROR       = 3;
+        KIND_SAFETY_ABORT        = 4;
+        KIND_INTERNAL_ERROR      = 5;
+    }
+    Kind   kind   = 1;
+    string reason = 2;
+}
+
+// `InvokeTaskCommand` —— client → gateway 提交 action。
+//
+// **字段语义**（reviewer round 2/3/4 拍板 + outline §6.2 锁定）：
+// - `meta`：CommandMeta envelope；`meta.request_id` UUIDv7 直接转
+//   `ActionId`（B2 outline §2.1 锁定，gateway 端无需翻译）。
+// - `kind`：typed `ActionKindProto`（reviewer round 4 #5a 锁定）。
+// - `deadline_ns`：CLOCK_MONOTONIC_RAW 截止时刻；gateway 端按
+//   `now_ns + meta.timeout_ms * 1e6` 算（client 也可显式传，二选一）。
+// - `priority`：B2 单 action 序列化下保留**不**参与决策；B3+ scheduler 用。
+// - `payload_schema_id`：路由二级 key；`0` (= `NO_PAYLOAD_SCHEMA_ID`)
+//   表示无 payload，此时 `payload` 必须为空。
+// - `payload`：FlatBuffers body bytes（按 `payload_schema_id`）。B3
+//   期间 HoldPose / MockDwell 都用空 payload。
+message InvokeTaskCommand {
+    CommandMeta     meta              = 1;
+    ActionKindProto kind              = 2;
+    uint64          deadline_ns       = 3;
+    uint32          priority          = 4;
+    uint32          payload_schema_id = 5;
+    bytes           payload           = 6;
+}
+
+// `TaskHandle` —— `InvokeTask` reply。`action_id` UUIDv7 hex string
+// （`robot_s1::action::ActionId` canonical form），client 用以发起
+// `GetTaskStatus` / `CancelTask` / `StreamTaskEvents`。
+message TaskHandle {
+    string request_id = 1;
+    string action_id  = 2;
+}
+
+// `TaskHandleRef` —— `GetTaskStatus` / `StreamTaskEvents` 共用 request
+// 形态。**`request_id` 跟 `meta.request_id` 是同一个值**（GetTaskStatus
+// / StreamTaskEvents 是只读 RPC，不带 CommandMeta；只用 request_id
+// 做 audit + correlation）。
+message TaskHandleRef {
+    string request_id = 1;
+    string action_id  = 2;
+}
+
+// `CancelTaskCommand` —— client → gateway 取消 action。`action_id`
+// UUIDv7 hex string。cancel 是 cooperative；返 `Ack` 后**不保证** action
+// 已停（事件流 `Cancelled` 走 `StreamTaskEvents`）。
+message CancelTaskCommand {
+    CommandMeta meta      = 1;
+    string      action_id = 2;
+}
+
+// `ClearErrorCommand` —— client → gateway 清 coordinator `Degraded`
+// 状态（B2 outline §10 决策 #5）。**maintainer+** 权限（reviewer round
+// 2 阻断 4 + outline §8.1 #7c：rpc_roles.toml `[roles.operator]` 删
+// `clear_error`，`[roles.maintainer]` / `[roles.admin]` 保留）。
+//
+// **跟 ClearEStop 不同**：`ClearError` 仅清内存状态，**不**碰磁盘
+// EStop latch / **不**触发硬件 clear / **不**改 §6.7 任何不变量。
+message ClearErrorCommand {
+    CommandMeta meta = 1;
+}
+
+// `TaskStatus` —— `GetTaskStatus` reply / `StreamTaskEvents` 之外
+// 的快照查询。
+//
+// 字段语义：
+// - `request_id` / `action_id`：echo 回填 client correlation。
+// - `state`：当前 task 生命周期。
+// - `progress`：[0.0, 1.0]；仅 `state == TASK_STATE_EXECUTING` 有意义；
+//   其它 state 填 0.0。
+// - `outcome`：仅 `state == TASK_STATE_COMPLETED` 有意义（kind != UNSPECIFIED）。
+// - `failure`：仅 `state == TASK_STATE_FAILED` 有意义（kind != UNSPECIFIED）。
+message TaskStatus {
+    string             request_id = 1;
+    string             action_id  = 2;
+    TaskState          state      = 3;
+    float              progress   = 4;
+    ActionOutcomeProto outcome    = 5;
+    ActionFailureProto failure    = 6;
+}
+
+// `TaskEvent` —— `StreamTaskEvents` server-streaming 单帧。
+//
+// **保序**：单 ticket 内事件按时间顺序到达；**不**跨 ticket 保序。
+// **终止**：每个 ticket 至多收到**一条**终态事件（COMPLETED / FAILED
+// / CANCELLED）；流随后关闭。
+//
+// 字段语义：
+// - `request_id` / `action_id`：correlation。
+// - `at_ns`：事件时刻（CLOCK_MONOTONIC_RAW；s1 端 `clock.now()`）。
+// - `event`：事件类型 tag。
+// - `progress`：仅 `event == TASK_EVENT_KIND_PROGRESS` 有意义；其它
+//   留 0.0。
+// - `outcome`：仅 `event == TASK_EVENT_KIND_COMPLETED` 有意义。
+// - `failure`：仅 `event == TASK_EVENT_KIND_FAILED` 有意义。
+message TaskEvent {
+    string             request_id = 1;
+    string             action_id  = 2;
+    uint64             at_ns      = 3;
+    TaskEventKind      event      = 4;
+    float              progress   = 5;
+    ActionOutcomeProto outcome    = 6;
+    ActionFailureProto failure    = 7;
 }

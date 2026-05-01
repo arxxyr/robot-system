@@ -118,6 +118,43 @@ pub struct ClearEStopRequest;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ClearEStopResponse;
 
+/// Marker for [`msg::InvokeTaskRequest`]（v0.3 B4 `InvokeTask` RR payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct InvokeTaskRequest;
+
+/// Marker for [`msg::InvokeTaskResponse`]（v0.3 B4 `InvokeTask` RR reply）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct InvokeTaskResponse;
+
+/// Marker for [`msg::GetTaskStatusRequest`]（v0.3 B4 `GetTaskStatus` RR payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GetTaskStatusRequest;
+
+/// Marker for [`msg::GetTaskStatusResponse`]（v0.3 B4 `GetTaskStatus` RR reply）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GetTaskStatusResponse;
+
+/// Marker for [`msg::CancelTaskRequest`]（v0.3 B4 `CancelTask` RR payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CancelTaskRequest;
+
+/// Marker for [`msg::CancelTaskResponse`]（v0.3 B4 `CancelTask` RR reply）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CancelTaskResponse;
+
+/// Marker for [`msg::ClearErrorRequest`]（v0.3 B4 `ClearError` RR payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClearErrorRequest;
+
+/// Marker for [`msg::ClearErrorResponse`]（v0.3 B4 `ClearError` RR reply）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClearErrorResponse;
+
+/// Marker for [`msg::ActionEventEnvelope`]（v0.3 B4 `StreamTaskEvents`
+/// per-ActionId pubsub topic payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ActionEventEnvelope;
+
 // ---------------------------------------------------------------------------
 // BodyMarker 实现
 // ---------------------------------------------------------------------------
@@ -209,6 +246,69 @@ impl BodyMarker for ClearEStopResponse {
     const SCHEMA_NAME: &'static str = "robot.msg.ClearEStopResponse";
     const BLOB_EMBEDDED: bool = false;
     type Root<'a> = msg::ClearEStopResponse<'a>;
+}
+
+impl BodyMarker for InvokeTaskRequest {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_INVOKE_TASK_REQUEST;
+    const SCHEMA_NAME: &'static str = "robot.msg.InvokeTaskRequest";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::InvokeTaskRequest<'a>;
+}
+
+impl BodyMarker for InvokeTaskResponse {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_INVOKE_TASK_RESPONSE;
+    const SCHEMA_NAME: &'static str = "robot.msg.InvokeTaskResponse";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::InvokeTaskResponse<'a>;
+}
+
+impl BodyMarker for GetTaskStatusRequest {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_GET_TASK_STATUS_REQUEST;
+    const SCHEMA_NAME: &'static str = "robot.msg.GetTaskStatusRequest";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::GetTaskStatusRequest<'a>;
+}
+
+impl BodyMarker for GetTaskStatusResponse {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_GET_TASK_STATUS_RESPONSE;
+    const SCHEMA_NAME: &'static str = "robot.msg.GetTaskStatusResponse";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::GetTaskStatusResponse<'a>;
+}
+
+impl BodyMarker for CancelTaskRequest {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_CANCEL_TASK_REQUEST;
+    const SCHEMA_NAME: &'static str = "robot.msg.CancelTaskRequest";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::CancelTaskRequest<'a>;
+}
+
+impl BodyMarker for CancelTaskResponse {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_CANCEL_TASK_RESPONSE;
+    const SCHEMA_NAME: &'static str = "robot.msg.CancelTaskResponse";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::CancelTaskResponse<'a>;
+}
+
+impl BodyMarker for ClearErrorRequest {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_CLEAR_ERROR_REQUEST;
+    const SCHEMA_NAME: &'static str = "robot.msg.ClearErrorRequest";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::ClearErrorRequest<'a>;
+}
+
+impl BodyMarker for ClearErrorResponse {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_CLEAR_ERROR_RESPONSE;
+    const SCHEMA_NAME: &'static str = "robot.msg.ClearErrorResponse";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::ClearErrorResponse<'a>;
+}
+
+impl BodyMarker for ActionEventEnvelope {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_ACTION_EVENT_ENVELOPE;
+    const SCHEMA_NAME: &'static str = "robot.msg.ActionEventEnvelope";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::ActionEventEnvelope<'a>;
 }
 
 // ---------------------------------------------------------------------------
