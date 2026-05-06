@@ -69,6 +69,7 @@ use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
 use robot_s1::action_backend::BackendRegistry;
 use robot_s1::coordinator::{self, Coordinator, CoordinatorConfig, HardwareSection, TickError};
+use robot_s1::events_drain_thread::EventsDrainRegistry;
 use robot_s1::rr_server_thread::{
     RrServerThreadConfig, S1RrServerHandles, spawn_clear_error_server, spawn_task_cancel_server,
     spawn_task_invoke_server, spawn_task_status_server,
@@ -428,6 +429,22 @@ fn run(args: &Args) -> Result<(), i32> {
         "s1_daemon rr_server_threads ready (B4 (1/3-b) skeleton)"
     );
 
+    // ---- 起 events drain pubsub registry（B4 (1/3-c) skeleton）----
+    //
+    // **本 commit 期 registry 留空**：rr_server 仍 skeleton（每条 wire
+    // request 同步 reply Unimplemented，**不**调 Coordinator::submit），
+    // **不**起 drain thread，registry.len() 永远 = 0；shutdown 路径
+    // stop_and_join_all() 是 no-op。B4 (2/3) gateway InvokeTask
+    // handler land 后，handler 调 Coordinator::submit 拿 ActionTicket，
+    // spawn_events_drain_thread 起 drain → 调 events_registry.register(handle)
+    // 进表。详 crates/robot-s1/src/events_drain_thread.rs::EventsDrainRegistry
+    // doc。
+    let events_registry = EventsDrainRegistry::new();
+    tracing::info!(
+        active_drains = events_registry.len(),
+        "s1_daemon events drain registry ready (B4 (1/3-c) skeleton; empty until B4 (2/3) handler lands)"
+    );
+
     // ---- tick loop（state-aware：Idle/Degraded → hold；Executing →
     //      action override；ShuttingDown → break）----
     let tick_result = coordinator::run_action_tick_loop(
@@ -444,6 +461,18 @@ fn run(args: &Args) -> Result<(), i32> {
     // RecvError = channel 关闭语义）。即使 tick loop 因 publish 错退出，
     // 也要做这步清理。
     coordinator.mark_shutting_down();
+
+    // ---- 关停 events drain 线程（在 RR server 之前；events drain 持
+    //      ActionTicket.events Receiver，coordinator.mark_shutting_down 已
+    //      让 sender 端 drop → drain thread 自然 disconnect 退出，但
+    //      stop signal 路径覆盖兜底——即使有 drain thread 还活着 stop
+    //      也直接断开它）----
+    if let Err(panic_payload) = events_registry.stop_and_join_all() {
+        tracing::error!(
+            ?panic_payload,
+            "s1_daemon: events_drain thread join returned panic; continuing shutdown"
+        );
+    }
 
     // ---- 关停 RR server 线程（不悬挂；详 rr_server_thread::S1RrServerHandles
     //      doc）----

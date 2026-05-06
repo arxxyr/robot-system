@@ -27,12 +27,13 @@
 use flatbuffers::FlatBufferBuilder;
 
 use crate::msg::{
-    ActionFailureFb, ActionFailureFbArgs, ActionFailureKindFb, ActionKindFb, ActionOutcomeFb,
-    ActionOutcomeFbArgs, ActionOutcomeKindFb, ActionRpcStatus, CancelTaskRequest,
-    CancelTaskRequestArgs, CancelTaskResponse, CancelTaskResponseArgs, ClearEStopRequest,
-    ClearEStopRequestArgs, ClearEStopResponse, ClearEStopResponseArgs, ClearErrorRequest,
-    ClearErrorRequestArgs, ClearErrorResponse, ClearErrorResponseArgs, ControlMode, EStopEvent,
-    EStopEventArgs, GetTaskStatusRequest, GetTaskStatusRequestArgs, GetTaskStatusResponse,
+    ActionEventEnvelope, ActionEventEnvelopeArgs, ActionEventKindFb, ActionFailureFb,
+    ActionFailureFbArgs, ActionFailureKindFb, ActionKindFb, ActionOutcomeFb, ActionOutcomeFbArgs,
+    ActionOutcomeKindFb, ActionRpcStatus, CancelTaskRequest, CancelTaskRequestArgs,
+    CancelTaskResponse, CancelTaskResponseArgs, ClearEStopRequest, ClearEStopRequestArgs,
+    ClearEStopResponse, ClearEStopResponseArgs, ClearErrorRequest, ClearErrorRequestArgs,
+    ClearErrorResponse, ClearErrorResponseArgs, ControlMode, EStopEvent, EStopEventArgs,
+    GetTaskStatusRequest, GetTaskStatusRequestArgs, GetTaskStatusResponse,
     GetTaskStatusResponseArgs, Heartbeat, HeartbeatArgs, InvokeTaskRequest, InvokeTaskRequestArgs,
     InvokeTaskResponse, InvokeTaskResponseArgs, JointCommand, JointCommandArgs, JointState,
     JointStateArgs, RpcRole, RpcStatus, S0ControlLink, S0FaultCode, S0Mode, S0OutputMode,
@@ -598,6 +599,73 @@ pub fn build_cancel_task_response(
         },
     );
     fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造 `ActionEventEnvelope` body bytes（per-ActionId pubsub 单帧 payload）。
+///
+/// 字段语义详 [`crate::markers::ActionEventEnvelope`] +
+/// `crates/robot-msg/schemas/action_event.fbs`：
+///
+/// - `action_id_hex`：`UUIDv7` canonical hex string（`robot_s1::action::ActionId`
+///   的 `Display` 形式）；冗余写到 envelope，gateway 端 audit / debug **不**
+///   依赖 topic name 解析。
+/// - `at_ns`：事件时刻（`CLOCK_MONOTONIC_RAW`；s1 端 `clock.now()`）。
+/// - `kind`：事件类型 tag（5 个 variant：Started / Progress / Completed /
+///   Failed / Cancelled）；`Unknown` 兼容旧 writer。
+/// - `progress`：仅 `kind == Progress` 有意义；其它 kind 留 `0.0`。
+/// - `outcome`：`Some((kind, warning))` 仅 `kind == Completed` 时填；其它
+///   kind 传 `None`（fbs vtable 不写该字段）。`Success` 时 warning 留空字
+///   符串，`PartialSuccess` 时 warning 必须非空。
+/// - `failure`：`Some((kind, reason))` 仅 `kind == Failed` 时填；其它 kind
+///   传 `None`。`DeadlineExceeded` 时 reason 留空，其它 4 个 variant 都带
+///   具体 reason。
+///
+/// 跟 `build_get_task_status_response` 的 `outcome` / `failure` 入参形态
+/// 一致。
+#[must_use]
+pub fn build_action_event_envelope(
+    action_id_hex: &str,
+    at_ns: u64,
+    kind: ActionEventKindFb,
+    progress: f32,
+    outcome: Option<(ActionOutcomeKindFb, &str)>,
+    failure: Option<(ActionFailureKindFb, &str)>,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(160);
+    let action_id_off = fbb.create_string(action_id_hex);
+    let outcome_off = outcome.map(|(k, warning)| {
+        let warning_off = fbb.create_string(warning);
+        ActionOutcomeFb::create(
+            &mut fbb,
+            &ActionOutcomeFbArgs {
+                kind: k,
+                warning: Some(warning_off),
+            },
+        )
+    });
+    let failure_off = failure.map(|(k, reason)| {
+        let reason_off = fbb.create_string(reason);
+        ActionFailureFb::create(
+            &mut fbb,
+            &ActionFailureFbArgs {
+                kind: k,
+                reason: Some(reason_off),
+            },
+        )
+    });
+    let env = ActionEventEnvelope::create(
+        &mut fbb,
+        &ActionEventEnvelopeArgs {
+            action_id: Some(action_id_off),
+            at_ns,
+            kind,
+            progress,
+            outcome: outcome_off,
+            failure: failure_off,
+        },
+    );
+    fbb.finish(env, None);
     fbb.finished_data().to_vec()
 }
 
