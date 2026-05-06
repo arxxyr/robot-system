@@ -27,10 +27,16 @@
 use flatbuffers::FlatBufferBuilder;
 
 use crate::msg::{
-    ClearEStopRequest, ClearEStopRequestArgs, ClearEStopResponse, ClearEStopResponseArgs,
-    ControlMode, EStopEvent, EStopEventArgs, Heartbeat, HeartbeatArgs, JointCommand,
-    JointCommandArgs, JointState, JointStateArgs, RpcRole, RpcStatus, S0ControlLink, S0FaultCode,
-    S0Mode, S0OutputMode, S0SafetyState, StaleAction,
+    ActionFailureFb, ActionFailureFbArgs, ActionFailureKindFb, ActionKindFb, ActionOutcomeFb,
+    ActionOutcomeFbArgs, ActionOutcomeKindFb, ActionRpcStatus, CancelTaskRequest,
+    CancelTaskRequestArgs, CancelTaskResponse, CancelTaskResponseArgs, ClearEStopRequest,
+    ClearEStopRequestArgs, ClearEStopResponse, ClearEStopResponseArgs, ClearErrorRequest,
+    ClearErrorRequestArgs, ClearErrorResponse, ClearErrorResponseArgs, ControlMode, EStopEvent,
+    EStopEventArgs, GetTaskStatusRequest, GetTaskStatusRequestArgs, GetTaskStatusResponse,
+    GetTaskStatusResponseArgs, Heartbeat, HeartbeatArgs, InvokeTaskRequest, InvokeTaskRequestArgs,
+    InvokeTaskResponse, InvokeTaskResponseArgs, JointCommand, JointCommandArgs, JointState,
+    JointStateArgs, RpcRole, RpcStatus, S0ControlLink, S0FaultCode, S0Mode, S0OutputMode,
+    S0SafetyState, StaleAction, TaskStateFb,
 };
 
 // ============================================================================
@@ -302,6 +308,321 @@ pub fn build_clear_estop_response(
             error_msg: Some(error_msg_off),
             cleared_at_ns,
             dry_run,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+// ============================================================================
+// v0.3 B4 task control plane RR response builders
+// ============================================================================
+//
+// 4 个 RR topic 一对 request/response：
+//   - `task_invoke`  → `InvokeTaskResponse`
+//   - `task_status`  → `GetTaskStatusResponse`
+//   - `task_cancel`  → `CancelTaskResponse`
+//   - `clear_error`  → `ClearErrorResponse`
+//
+// 字段语义详 `crates/robot-msg/schemas/action_status.fbs` +
+// `action_request.fbs`。本节 builder 对调用方暴露**全字段**入参；skeleton
+// 路径（B4 (1/3-b) `crates/robot-s1/src/rr_server_thread.rs`）传 status =
+// `ActionRpcStatus::Unimplemented` + 其它字段空值；真 handler 路径（B4
+// (2/3) `crates/robot-rpc/src/...`）按 `Coordinator::*` 返回值填实际字段。
+//
+// **`outcome` / `failure` Option 语义**：fbs 没有 `optional` 关键字；
+// builder 用 `Option<(kind, text)>` 入参映射到 fbs sub-table：
+//   - `None` → fbs vtable 不写该字段；reader `Option<TableType<'_>>` 返
+//     `None`。
+//   - `Some((Unknown, ""))` → 写空 sub-table（kind=Unknown / text 空串），
+//     reader 拿到 `Some(...)` 但 kind=Unknown。**本 builder 把
+//     `Some((Unknown, ""))` 当退化态语义跟 `None` 等价；调用方建议用
+//     `None`。**
+
+/// 构造 `InvokeTaskRequest` body bytes（gateway → s1 RR call body）。
+#[must_use]
+#[allow(clippy::too_many_arguments)] // wire schema 字段集即如此；不再裹一层 struct 增加间接。
+pub fn build_invoke_task_request(
+    request_id: &str,
+    idempotency_key: &str,
+    source: &str,
+    role: RpcRole,
+    audit_reason: &str,
+    kind: ActionKindFb,
+    deadline_ns: u64,
+    priority: u32,
+    payload_schema_id: u32,
+    payload: &[u8],
+    stamp_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(192);
+    let request_id_off = fbb.create_string(request_id);
+    let idempotency_key_off = fbb.create_string(idempotency_key);
+    let source_off = fbb.create_string(source);
+    let audit_reason_off = fbb.create_string(audit_reason);
+    let payload_off = fbb.create_vector(payload);
+    let req = InvokeTaskRequest::create(
+        &mut fbb,
+        &InvokeTaskRequestArgs {
+            request_id: Some(request_id_off),
+            idempotency_key: Some(idempotency_key_off),
+            source: Some(source_off),
+            role,
+            audit_reason: Some(audit_reason_off),
+            kind,
+            deadline_ns,
+            priority,
+            payload_schema_id,
+            payload: Some(payload_off),
+            stamp_ns,
+        },
+    );
+    fbb.finish(req, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造 `GetTaskStatusRequest` body bytes（gateway → s1 RR call body）。
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn build_get_task_status_request(
+    request_id: &str,
+    idempotency_key: &str,
+    source: &str,
+    role: RpcRole,
+    audit_reason: &str,
+    action_id: &str,
+    deadline_ns: u64,
+    stamp_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(160);
+    let request_id_off = fbb.create_string(request_id);
+    let idempotency_key_off = fbb.create_string(idempotency_key);
+    let source_off = fbb.create_string(source);
+    let audit_reason_off = fbb.create_string(audit_reason);
+    let action_id_off = fbb.create_string(action_id);
+    let req = GetTaskStatusRequest::create(
+        &mut fbb,
+        &GetTaskStatusRequestArgs {
+            request_id: Some(request_id_off),
+            idempotency_key: Some(idempotency_key_off),
+            source: Some(source_off),
+            role,
+            audit_reason: Some(audit_reason_off),
+            action_id: Some(action_id_off),
+            deadline_ns,
+            stamp_ns,
+        },
+    );
+    fbb.finish(req, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造 `CancelTaskRequest` body bytes（gateway → s1 RR call body）。
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn build_cancel_task_request(
+    request_id: &str,
+    idempotency_key: &str,
+    source: &str,
+    role: RpcRole,
+    audit_reason: &str,
+    action_id: &str,
+    deadline_ns: u64,
+    stamp_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(160);
+    let request_id_off = fbb.create_string(request_id);
+    let idempotency_key_off = fbb.create_string(idempotency_key);
+    let source_off = fbb.create_string(source);
+    let audit_reason_off = fbb.create_string(audit_reason);
+    let action_id_off = fbb.create_string(action_id);
+    let req = CancelTaskRequest::create(
+        &mut fbb,
+        &CancelTaskRequestArgs {
+            request_id: Some(request_id_off),
+            idempotency_key: Some(idempotency_key_off),
+            source: Some(source_off),
+            role,
+            audit_reason: Some(audit_reason_off),
+            action_id: Some(action_id_off),
+            deadline_ns,
+            stamp_ns,
+        },
+    );
+    fbb.finish(req, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造 `ClearErrorRequest` body bytes（gateway → s1 RR call body）。
+#[must_use]
+pub fn build_clear_error_request(
+    request_id: &str,
+    idempotency_key: &str,
+    source: &str,
+    role: RpcRole,
+    audit_reason: &str,
+    deadline_ns: u64,
+    stamp_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(160);
+    let request_id_off = fbb.create_string(request_id);
+    let idempotency_key_off = fbb.create_string(idempotency_key);
+    let source_off = fbb.create_string(source);
+    let audit_reason_off = fbb.create_string(audit_reason);
+    let req = ClearErrorRequest::create(
+        &mut fbb,
+        &ClearErrorRequestArgs {
+            request_id: Some(request_id_off),
+            idempotency_key: Some(idempotency_key_off),
+            source: Some(source_off),
+            role,
+            audit_reason: Some(audit_reason_off),
+            deadline_ns,
+            stamp_ns,
+        },
+    );
+    fbb.finish(req, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造 `InvokeTaskResponse` body bytes。
+///
+/// 字段语义详 [`crate::markers::InvokeTaskResponse`] +
+/// `crates/robot-msg/schemas/action_request.fbs`。
+#[must_use]
+pub fn build_invoke_task_response(
+    request_id: &str,
+    status: ActionRpcStatus,
+    error_msg: &str,
+    action_id: &str,
+    accepted_at_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let action_id_off = fbb.create_string(action_id);
+    let resp = InvokeTaskResponse::create(
+        &mut fbb,
+        &InvokeTaskResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            action_id: Some(action_id_off),
+            accepted_at_ns,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造 `GetTaskStatusResponse` body bytes。
+///
+/// `outcome` / `failure` 用 `Option<(kind, text)>` —— `None` 不写 sub-table；
+/// `Some((kind, reason_or_warning))` 写完整 sub-table。详
+/// [`crate::markers::GetTaskStatusResponse`] +
+/// `crates/robot-msg/schemas/action_status.fbs`。
+#[must_use]
+#[allow(clippy::too_many_arguments)] // wire schema 字段集即如此；不再裹一层 struct 增加间接。
+pub fn build_get_task_status_response(
+    request_id: &str,
+    status: ActionRpcStatus,
+    error_msg: &str,
+    action_id: &str,
+    state: TaskStateFb,
+    progress: f32,
+    outcome: Option<(ActionOutcomeKindFb, &str)>,
+    failure: Option<(ActionFailureKindFb, &str)>,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(192);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let action_id_off = fbb.create_string(action_id);
+    let outcome_off = outcome.map(|(kind, warning)| {
+        let warning_off = fbb.create_string(warning);
+        ActionOutcomeFb::create(
+            &mut fbb,
+            &ActionOutcomeFbArgs {
+                kind,
+                warning: Some(warning_off),
+            },
+        )
+    });
+    let failure_off = failure.map(|(kind, reason)| {
+        let reason_off = fbb.create_string(reason);
+        ActionFailureFb::create(
+            &mut fbb,
+            &ActionFailureFbArgs {
+                kind,
+                reason: Some(reason_off),
+            },
+        )
+    });
+    let resp = GetTaskStatusResponse::create(
+        &mut fbb,
+        &GetTaskStatusResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            action_id: Some(action_id_off),
+            state,
+            progress,
+            outcome: outcome_off,
+            failure: failure_off,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造 `CancelTaskResponse` body bytes。
+#[must_use]
+pub fn build_cancel_task_response(
+    request_id: &str,
+    status: ActionRpcStatus,
+    error_msg: &str,
+    action_id: &str,
+    cancel_at_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let action_id_off = fbb.create_string(action_id);
+    let resp = CancelTaskResponse::create(
+        &mut fbb,
+        &CancelTaskResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            action_id: Some(action_id_off),
+            cancel_at_ns,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造 `ClearErrorResponse` body bytes。
+///
+/// **跟 `ClearEStopResponse` 不同**：`ClearError` 仅清 coordinator
+/// `Degraded` 内存状态（B2 outline §10 决策 #5），**不**碰磁盘 `EStop`
+/// latch；本 builder 跟 `build_clear_estop_response` 字段集刻意分开。
+#[must_use]
+pub fn build_clear_error_response(
+    request_id: &str,
+    status: ActionRpcStatus,
+    error_msg: &str,
+    cleared_at_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let resp = ClearErrorResponse::create(
+        &mut fbb,
+        &ClearErrorResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            cleared_at_ns,
         },
     );
     fbb.finish(resp, None);

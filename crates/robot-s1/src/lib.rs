@@ -52,3 +52,4 @@ pub mod action;
 // workspace 内目前无任何外部 crate 把 robot-s1 列依赖。
 pub mod action_backend;
 pub mod coordinator;
+pub mod rr_server_thread;

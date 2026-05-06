@@ -69,6 +69,11 @@ use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
 use robot_s1::action_backend::BackendRegistry;
 use robot_s1::coordinator::{self, Coordinator, CoordinatorConfig, HardwareSection, TickError};
+use robot_s1::rr_server_thread::{
+    RrServerThreadConfig, S1RrServerHandles, spawn_clear_error_server, spawn_task_cancel_server,
+    spawn_task_invoke_server, spawn_task_status_server,
+};
+use robot_transport::iceoryx2::request_response::rr_server;
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
 
 // ============================================================================
@@ -402,6 +407,27 @@ fn run(args: &Args) -> Result<(), i32> {
     }
     tracing::info!(state = ?coordinator.current_state(), "s1_daemon coordinator ready");
 
+    // ---- spawn 4 个 RR server 线程（B4 (1/3-b) skeleton）----
+    //
+    // 每个 RR topic 一个独立 std::thread + 独立 Iceoryx2RrServer。skeleton
+    // 阶段所有 reply 都是 ActionRpcStatus::Unimplemented + error_msg
+    // = "B4 (1/3-b) skeleton; handler lands B4 (2/3)"，**不**接 coordinator
+    // API、**不**改 wire 协议契约 —— B4 (2/3) gateway handler land 后
+    // 替换为真正的 Coordinator::{submit, cancel, status, clear_error} 调
+    // 用 + auth + idempotency 校验。详
+    // crates/robot-s1/src/rr_server_thread.rs 顶部 module doc。
+    let rr_handles = spawn_s1_rr_server_threads(&args.robot_id).map_err(|e| {
+        eprintln!("fatal: spawn s1 rr_server_threads: {e}");
+        5
+    })?;
+    tracing::info!(
+        topic_invoke = rr_handles.task_invoke.topic(),
+        topic_cancel = rr_handles.task_cancel.topic(),
+        topic_status = rr_handles.task_status.topic(),
+        topic_clear = rr_handles.clear_error.topic(),
+        "s1_daemon rr_server_threads ready (B4 (1/3-b) skeleton)"
+    );
+
     // ---- tick loop（state-aware：Idle/Degraded → hold；Executing →
     //      action override；ShuttingDown → break）----
     let tick_result = coordinator::run_action_tick_loop(
@@ -419,6 +445,20 @@ fn run(args: &Args) -> Result<(), i32> {
     // 也要做这步清理。
     coordinator.mark_shutting_down();
 
+    // ---- 关停 RR server 线程（不悬挂；详 rr_server_thread::S1RrServerHandles
+    //      doc）----
+    rr_handles.request_stop_all();
+    if let Err(panic_payload) = rr_handles.join_all() {
+        // 任一 RR server 线程内部 panic：不阻塞 daemon shutdown，仅 log。
+        // tick loop 已退出 + coordinator 已 mark_shutting_down，主路径
+        // 仍按正常 Ok 返；非 0 exit 仅留给 tick loop publish 失败 (5) /
+        // anchor 失败 (4) 等真硬错。
+        tracing::error!(
+            ?panic_payload,
+            "s1_daemon: rr_server thread join returned panic; continuing shutdown"
+        );
+    }
+
     let final_state = match tick_result {
         Ok(s) => s,
         Err(TickError::Publish(msg)) => {
@@ -435,6 +475,105 @@ fn run(args: &Args) -> Result<(), i32> {
         "s1_daemon clean shutdown"
     );
     Ok(())
+}
+
+/// Spawn 4 个 S1 RR server 线程（task_invoke / task_cancel / task_status
+/// / clear_error），返回聚合 handle。每个 topic 一个独立 iceoryx2 Node +
+/// server，跟 A1 `crates/robot-s0/src/bin/s0_daemon.rs::run` 同款 server
+/// factory 模式（service SingleThreaded → server `!Send`，必须在 owner
+/// 线程内 create）。
+fn spawn_s1_rr_server_threads(robot_id: &str) -> std::io::Result<S1RrServerHandles> {
+    let topic_invoke = format!("/{robot_id}/control/task_invoke");
+    let topic_cancel = format!("/{robot_id}/control/task_cancel");
+    let topic_status = format!("/{robot_id}/control/task_status");
+    let topic_clear = format!("/{robot_id}/control/clear_error");
+
+    let task_invoke = {
+        let topic = topic_invoke.clone();
+        let cfg = RrServerThreadConfig {
+            topic: topic.clone(),
+            poll_interval_ns: 500_000,
+            max_in_flight: 64,
+        };
+        spawn_task_invoke_server(cfg, move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .expect("rr task_invoke node create");
+            let server =
+                rr_server::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(&node, &topic)
+                    .expect("rr task_invoke server create");
+            // node 持 server 内部 shm fd；leak 让 server 整个生命周期内
+            // node 不被 drop（同 A1 s0_daemon 同款）。
+            Box::leak(Box::new(node));
+            server
+        })?
+    };
+
+    let task_cancel = {
+        let topic = topic_cancel.clone();
+        let cfg = RrServerThreadConfig {
+            topic: topic.clone(),
+            poll_interval_ns: 500_000,
+            max_in_flight: 64,
+        };
+        spawn_task_cancel_server(cfg, move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .expect("rr task_cancel node create");
+            let server =
+                rr_server::<markers::CancelTaskRequest, markers::CancelTaskResponse>(&node, &topic)
+                    .expect("rr task_cancel server create");
+            Box::leak(Box::new(node));
+            server
+        })?
+    };
+
+    let task_status = {
+        let topic = topic_status.clone();
+        let cfg = RrServerThreadConfig {
+            topic: topic.clone(),
+            poll_interval_ns: 500_000,
+            max_in_flight: 64,
+        };
+        spawn_task_status_server(cfg, move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .expect("rr task_status node create");
+            let server =
+                rr_server::<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>(
+                    &node, &topic,
+                )
+                .expect("rr task_status server create");
+            Box::leak(Box::new(node));
+            server
+        })?
+    };
+
+    let clear_error = {
+        let topic = topic_clear.clone();
+        let cfg = RrServerThreadConfig {
+            topic: topic.clone(),
+            poll_interval_ns: 500_000,
+            max_in_flight: 64,
+        };
+        spawn_clear_error_server(cfg, move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .expect("rr clear_error node create");
+            let server =
+                rr_server::<markers::ClearErrorRequest, markers::ClearErrorResponse>(&node, &topic)
+                    .expect("rr clear_error server create");
+            Box::leak(Box::new(node));
+            server
+        })?
+    };
+
+    Ok(S1RrServerHandles {
+        task_invoke,
+        task_cancel,
+        task_status,
+        clear_error,
+    })
 }
 
 /// 启动锚定专属包装：把 [`AnchorError`] 三条 fail-fast 路径映射到 exit
