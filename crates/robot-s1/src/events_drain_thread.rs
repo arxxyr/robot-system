@@ -224,11 +224,25 @@ impl EventsDrainThreadHandle {
 /// [`Self::register`] 进表；daemon 退出时调 [`Self::request_stop_all`]
 /// + [`Self::join_all`] 一并关停所有。
 ///
-/// **B4 (1/3-c) 边界**：本 registry 已落地但**未启用** —— rr_server
-/// 仍 skeleton（每条 wire request 同步 reply Unimplemented，**不**调
-/// `Coordinator::submit`，**不**起 drain thread）。s1_daemon binary
-/// 创建空 registry + 退出时 `stop_and_join_all` 是 no-op，但接线在
-/// 位让 B4 (2/3) handler land 时只需 `register(handle)`。
+/// **方法签名 by ref**（B4 (2/3-a) reviewer round 6 阻断锁定）：
+/// `request_stop_all` / `join_all` / `stop_and_join_all` 都接 `&self` —— 内
+/// 部 `Mutex<Vec<Handle>>` 通过 `mem::take` 拿 owned `Vec<Handle>` 后释放
+/// 锁、再逐个 join。`s1_daemon` 把 registry 包 `Arc<EventsDrainRegistry>`
+/// 跟 [`crate::rr_server::handler::RealHandlerCtx`] 共享，shutdown 路径**不**
+/// 依赖 `Arc::try_unwrap`（避免 RR thread 残留 closure ref-leak 时打破 join
+/// 确定性，把"未 join 线程悬挂到 process exit"当 fallback —— 本 daemon
+/// 可能跑在测试 / 嵌入式 runner 里 `run` 返回但不立刻 process exit）。
+///
+/// **并发语义**：`register` / `request_stop_all` / `join_all` 都靠同一把
+/// `Mutex` 序列化；`join_all` 内 `mem::take` 在锁内完成 + 锁释放 + 锁外逐个
+/// join，避免持锁阻塞（join 阻塞时间 ≈ drain thread `terminal_grace`）。
+///
+/// **典型 shutdown 顺序**（详 [`crate::rr_server`] 顶部 module doc）：
+/// `coordinator.mark_shutting_down → rr.request_stop_all → rr.join_all →
+/// events_registry.stop_and_join_all`。RR thread 完全 join 后才进
+/// `events_registry.stop_and_join_all`，保证此时**不**会有新 register 调用
+/// （所有 RR handler closure 已 drop）。重复调 `stop_and_join_all` 是 no-op
+/// （`mem::take` 返空 `Vec`）。
 #[derive(Default)]
 pub struct EventsDrainRegistry {
     inner: Mutex<Vec<EventsDrainThreadHandle>>,
@@ -261,7 +275,8 @@ impl EventsDrainRegistry {
             .push(handle);
     }
 
-    /// 给所有 in-flight drain thread 发停止信号（不等 join；不消费 self）。
+    /// 给所有 in-flight drain thread 发停止信号（不等 join；**不**消费
+    /// `self`）。
     ///
     /// 典型用法：daemon shutdown 顺序里"先发 stop 让所有线程并发退出 ..
     /// .. 再 `join_all` 等收敛"，比挨个 stop+join 串行快。
@@ -275,13 +290,19 @@ impl EventsDrainRegistry {
         }
     }
 
-    /// 阻塞 join 所有 in-flight drain thread；消费 self。**不**短路：即使
-    /// 某条 join 返 panic 也继续 join 剩下的，最后才返第一个 `Err`。
+    /// 阻塞 join 所有 in-flight drain thread；接 `&self`（**不**消费 self），
+    /// daemon 可在 `Arc<EventsDrainRegistry>` 上直接调，**不**需要
+    /// `Arc::try_unwrap`。
+    ///
+    /// **行为**：内部 `Mutex` 锁 → `mem::take` 拿 owned `Vec<Handle>` →
+    /// 释放锁 → 锁外逐个 join。**不**短路：即使某条 join 返 panic 也继续
+    /// join 剩下的，最后才返第一个 `Err`。重复调 = no-op（`mem::take` 返
+    /// 空 `Vec`）。
     ///
     /// # Errors
     ///
     /// 任一线程内部 panic → `Err(Box<dyn Any + Send>)`（首个 panic 优先）。
-    pub fn join_all(self) -> std::thread::Result<()> {
+    pub fn join_all(&self) -> std::thread::Result<()> {
         let handles = self
             .inner
             .lock()
@@ -301,12 +322,13 @@ impl EventsDrainRegistry {
         }
     }
 
-    /// 一键 stop + join（典型 daemon shutdown 路径调本方法即可）。
+    /// 一键 stop + join（典型 daemon shutdown 路径调本方法即可）；接
+    /// `&self`，daemon 可在 `Arc<EventsDrainRegistry>` 上直接调。
     ///
     /// # Errors
     ///
     /// 同 [`Self::join_all`]。
-    pub fn stop_and_join_all(self) -> std::thread::Result<()> {
+    pub fn stop_and_join_all(&self) -> std::thread::Result<()> {
         self.request_stop_all();
         self.join_all()
     }

@@ -53,4 +53,7 @@ pub mod action;
 pub mod action_backend;
 pub mod coordinator;
 pub mod events_drain_thread;
-pub mod rr_server_thread;
+// B4 (2/3-a) 拆 1/3-b 的 `rr_server_thread.rs` (921L) 成 wire/handler/runtime
+// 三段子模块，并同时把 1/3-b skeleton handler 升级为真 Coordinator forwarding。
+// 详 [`rr_server`] 顶部 module doc。
+pub mod rr_server;

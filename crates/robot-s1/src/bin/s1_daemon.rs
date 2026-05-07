@@ -60,6 +60,7 @@
 // 中文 doc 块大量 identifier-like 字串；跟 lib 同款宽松 doc-markdown。
 #![allow(clippy::doc_markdown)]
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -70,12 +71,16 @@ use robot_msg::markers;
 use robot_s1::action_backend::BackendRegistry;
 use robot_s1::coordinator::{self, Coordinator, CoordinatorConfig, HardwareSection, TickError};
 use robot_s1::events_drain_thread::EventsDrainRegistry;
-use robot_s1::rr_server_thread::{
-    RrServerThreadConfig, S1RrServerHandles, spawn_clear_error_server, spawn_task_cancel_server,
-    spawn_task_invoke_server, spawn_task_status_server,
+use robot_s1::rr_server::{
+    RealHandlerCtx, RrServerThreadConfig, S1RrServerHandles, spawn_clear_error_server,
+    spawn_task_cancel_server, spawn_task_invoke_server, spawn_task_status_server,
 };
 use robot_transport::iceoryx2::request_response::rr_server;
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
+
+/// `events_drain` 入 `FrameHeader.source_id`：与 v0.2 `JointCommand` /
+/// `Heartbeat` 一致约定 = 2（s1 daemon 写出的所有 frame 用此值）。
+const S1_FRAME_SOURCE_ID: u32 = 2;
 
 // ============================================================================
 // Signal handling
@@ -407,17 +412,36 @@ fn run(args: &Args) -> Result<(), i32> {
         return Err(5);
     }
     tracing::info!(state = ?coordinator.current_state(), "s1_daemon coordinator ready");
+    let coordinator = Arc::new(coordinator);
 
-    // ---- spawn 4 个 RR server 线程（B4 (1/3-b) skeleton）----
+    // ---- 起 events drain pubsub registry + RealHandlerCtx ----
     //
-    // 每个 RR topic 一个独立 std::thread + 独立 Iceoryx2RrServer。skeleton
-    // 阶段所有 reply 都是 ActionRpcStatus::Unimplemented + error_msg
-    // = "B4 (1/3-b) skeleton; handler lands B4 (2/3)"，**不**接 coordinator
-    // API、**不**改 wire 协议契约 —— B4 (2/3) gateway handler land 后
-    // 替换为真正的 Coordinator::{submit, cancel, status, clear_error} 调
-    // 用 + auth + idempotency 校验。详
-    // crates/robot-s1/src/rr_server_thread.rs 顶部 module doc。
-    let rr_handles = spawn_s1_rr_server_threads(&args.robot_id).map_err(|e| {
+    // B4 (2/3-a) wire-up：rr_server handler 闭包真调 Coordinator::{submit,
+    // cancel, status, clear_error}，invoke 路径成功时 spawn_events_drain_thread
+    // + 调 events_registry.register(handle)。详
+    // crates/robot-s1/src/rr_server/handler.rs 顶部 module doc。
+    let events_registry = Arc::new(EventsDrainRegistry::new());
+    let handler_clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+    let ctx = Arc::new(RealHandlerCtx {
+        coordinator: Arc::clone(&coordinator),
+        events_registry: Arc::clone(&events_registry),
+        clock: Arc::clone(&handler_clock),
+        source_id: S1_FRAME_SOURCE_ID,
+        robot_id: args.robot_id.clone(),
+    });
+    tracing::info!(
+        active_drains = events_registry.len(),
+        "s1_daemon events drain registry ready"
+    );
+
+    // ---- spawn 4 个 RR server 线程（B4 (2/3-a) 真 handler）----
+    //
+    // 每个 RR topic 一个独立 std::thread + 独立 Iceoryx2RrServer + 独立
+    // handler 闭包（捕获 Arc<RealHandlerCtx>）。handler 调
+    // Coordinator::{submit, cancel, status, clear_error} in-process API；
+    // invoke 路径成功 → spawn events_drain_thread + register（详
+    // rr_server::handler::handle_invoke）。
+    let rr_handles = spawn_s1_rr_server_threads(&args.robot_id, &ctx).map_err(|e| {
         eprintln!("fatal: spawn s1 rr_server_threads: {e}");
         5
     })?;
@@ -426,29 +450,13 @@ fn run(args: &Args) -> Result<(), i32> {
         topic_cancel = rr_handles.task_cancel.topic(),
         topic_status = rr_handles.task_status.topic(),
         topic_clear = rr_handles.clear_error.topic(),
-        "s1_daemon rr_server_threads ready (B4 (1/3-b) skeleton)"
-    );
-
-    // ---- 起 events drain pubsub registry（B4 (1/3-c) skeleton）----
-    //
-    // **本 commit 期 registry 留空**：rr_server 仍 skeleton（每条 wire
-    // request 同步 reply Unimplemented，**不**调 Coordinator::submit），
-    // **不**起 drain thread，registry.len() 永远 = 0；shutdown 路径
-    // stop_and_join_all() 是 no-op。B4 (2/3) gateway InvokeTask
-    // handler land 后，handler 调 Coordinator::submit 拿 ActionTicket，
-    // spawn_events_drain_thread 起 drain → 调 events_registry.register(handle)
-    // 进表。详 crates/robot-s1/src/events_drain_thread.rs::EventsDrainRegistry
-    // doc。
-    let events_registry = EventsDrainRegistry::new();
-    tracing::info!(
-        active_drains = events_registry.len(),
-        "s1_daemon events drain registry ready (B4 (1/3-c) skeleton; empty until B4 (2/3) handler lands)"
+        "s1_daemon rr_server_threads ready (B4 (2/3-a) real handler)"
     );
 
     // ---- tick loop（state-aware：Idle/Degraded → hold；Executing →
     //      action override；ShuttingDown → break）----
     let tick_result = coordinator::run_action_tick_loop(
-        &coordinator,
+        coordinator.as_ref(),
         &mut hb_pub,
         &mut cmd_pub,
         &clock,
@@ -457,25 +465,28 @@ fn run(args: &Args) -> Result<(), i32> {
         &SHUTDOWN,
     );
 
-    // 退出前先把 coordinator 转 ShuttingDown（让任何持票方收到
-    // RecvError = channel 关闭语义）。即使 tick loop 因 publish 错退出，
-    // 也要做这步清理。
+    // ---- shutdown 顺序契约（reviewer round 6 阻断锁定）----
+    //
+    // 1. coordinator.mark_shutting_down → 拒新 submit（Coordinator::submit
+    //    返 SubmitError::ShuttingDown → handler 编 ActionRpcStatus::Unavailable
+    //    response，不调 EventsDrainRegistry::register）。
+    // 2. rr.request_stop_all → 通知所有 RR thread 不接新 wire request。
+    // 3. rr.join_all → 等所有 in-flight handler 跑完（含已经在 submit 路
+    //    径上的 invoke handler 完成 spawn_events_drain_thread + register）。
+    // 4. events_registry.stop_and_join_all → 等所有 drain thread 跑完。
+    //    通过 `Arc::deref` 直接调用（registry 方法接 `&self`），**不**走
+    //    `Arc::try_unwrap` —— 避免 ref-leak 编程 bug 时打破 join 确定性
+    //    （reviewer round 6：daemon `run` 可能在测试 / 嵌入式 runner 里
+    //    返回而不是立刻 process exit，未 join 线程会悬挂）。`mark_shutting_down`
+    //    + 第 3 步 `rr.join_all` 已保证此时不再有新 `register` 调用进来。
+    //
+    // 关键 invariant：第 3 步 `rr.join_all` 必须先于第 4 步 `events_registry.
+    // stop_and_join_all` —— 避免 RR thread stop-but-not-join 期间 in-flight
+    // invoke 走 submit 成功路径并调 `events_registry.register`，跟
+    // `events_registry.stop_and_join_all` 撞 late register。详
+    // `crates/robot-s1/src/rr_server/mod.rs` 顶部 "shutdown 顺序契约" 段。
     coordinator.mark_shutting_down();
 
-    // ---- 关停 events drain 线程（在 RR server 之前；events drain 持
-    //      ActionTicket.events Receiver，coordinator.mark_shutting_down 已
-    //      让 sender 端 drop → drain thread 自然 disconnect 退出，但
-    //      stop signal 路径覆盖兜底——即使有 drain thread 还活着 stop
-    //      也直接断开它）----
-    if let Err(panic_payload) = events_registry.stop_and_join_all() {
-        tracing::error!(
-            ?panic_payload,
-            "s1_daemon: events_drain thread join returned panic; continuing shutdown"
-        );
-    }
-
-    // ---- 关停 RR server 线程（不悬挂；详 rr_server_thread::S1RrServerHandles
-    //      doc）----
     rr_handles.request_stop_all();
     if let Err(panic_payload) = rr_handles.join_all() {
         // 任一 RR server 线程内部 panic：不阻塞 daemon shutdown，仅 log。
@@ -487,6 +498,20 @@ fn run(args: &Args) -> Result<(), i32> {
             "s1_daemon: rr_server thread join returned panic; continuing shutdown"
         );
     }
+
+    // RR thread 全 join 完后 handler 闭包均已 drop；ctx 不再被任何 RR
+    // 线程持有（仅 main + events_registry 内 Arc clone）。registry 方法接
+    // `&self`，可在 Arc 上直接调，不依赖 try_unwrap。
+    if let Err(panic_payload) = events_registry.stop_and_join_all() {
+        tracing::error!(
+            ?panic_payload,
+            "s1_daemon: events_drain thread join returned panic; continuing shutdown"
+        );
+    }
+    // ctx / events_registry / coordinator / handler_clock 的 Arc 在 main
+    // 函数返回时按 RAII 顺序 drop；`stop_and_join_all` 已保证所有 drain
+    // 线程被 join，drop 自身不再触发任何线程同步等待。
+    drop(ctx);
 
     let final_state = match tick_result {
         Ok(s) => s,
@@ -510,8 +535,15 @@ fn run(args: &Args) -> Result<(), i32> {
 /// / clear_error），返回聚合 handle。每个 topic 一个独立 iceoryx2 Node +
 /// server，跟 A1 `crates/robot-s0/src/bin/s0_daemon.rs::run` 同款 server
 /// factory 模式（service SingleThreaded → server `!Send`，必须在 owner
-/// 线程内 create）。
-fn spawn_s1_rr_server_threads(robot_id: &str) -> std::io::Result<S1RrServerHandles> {
+/// 线程内 create）。每个 topic 的 handler 闭包从
+/// [`RealHandlerCtx`] 派生（`ctx.invoke_handler()` / `cancel_handler()` /
+/// `status_handler()` / `clear_error_handler()`），各自捕获
+/// `Arc<RealHandlerCtx>` clone。
+#[allow(clippy::too_many_lines)] // 4 个 RR topic 各自 cfg + factory closure 一气呵成；拆 helper 反而让 reviewer 跨函数对账每个 topic 的连线。
+fn spawn_s1_rr_server_threads(
+    robot_id: &str,
+    ctx: &Arc<RealHandlerCtx>,
+) -> std::io::Result<S1RrServerHandles> {
     let topic_invoke = format!("/{robot_id}/control/task_invoke");
     let topic_cancel = format!("/{robot_id}/control/task_cancel");
     let topic_status = format!("/{robot_id}/control/task_status");
@@ -524,18 +556,23 @@ fn spawn_s1_rr_server_threads(robot_id: &str) -> std::io::Result<S1RrServerHandl
             poll_interval_ns: 500_000,
             max_in_flight: 64,
         };
-        spawn_task_invoke_server(cfg, move || {
-            let node = NodeBuilder::new()
-                .create::<IxService>()
-                .expect("rr task_invoke node create");
-            let server =
-                rr_server::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(&node, &topic)
-                    .expect("rr task_invoke server create");
-            // node 持 server 内部 shm fd；leak 让 server 整个生命周期内
-            // node 不被 drop（同 A1 s0_daemon 同款）。
-            Box::leak(Box::new(node));
-            server
-        })?
+        spawn_task_invoke_server(
+            cfg,
+            move || {
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .expect("rr task_invoke node create");
+                let server = rr_server::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
+                    &node, &topic,
+                )
+                .expect("rr task_invoke server create");
+                // node 持 server 内部 shm fd；leak 让 server 整个生命周期内
+                // node 不被 drop（同 A1 s0_daemon 同款）。
+                Box::leak(Box::new(node));
+                server
+            },
+            ctx.invoke_handler(),
+        )?
     };
 
     let task_cancel = {
@@ -545,16 +582,21 @@ fn spawn_s1_rr_server_threads(robot_id: &str) -> std::io::Result<S1RrServerHandl
             poll_interval_ns: 500_000,
             max_in_flight: 64,
         };
-        spawn_task_cancel_server(cfg, move || {
-            let node = NodeBuilder::new()
-                .create::<IxService>()
-                .expect("rr task_cancel node create");
-            let server =
-                rr_server::<markers::CancelTaskRequest, markers::CancelTaskResponse>(&node, &topic)
-                    .expect("rr task_cancel server create");
-            Box::leak(Box::new(node));
-            server
-        })?
+        spawn_task_cancel_server(
+            cfg,
+            move || {
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .expect("rr task_cancel node create");
+                let server = rr_server::<markers::CancelTaskRequest, markers::CancelTaskResponse>(
+                    &node, &topic,
+                )
+                .expect("rr task_cancel server create");
+                Box::leak(Box::new(node));
+                server
+            },
+            ctx.cancel_handler(),
+        )?
     };
 
     let task_status = {
@@ -564,18 +606,22 @@ fn spawn_s1_rr_server_threads(robot_id: &str) -> std::io::Result<S1RrServerHandl
             poll_interval_ns: 500_000,
             max_in_flight: 64,
         };
-        spawn_task_status_server(cfg, move || {
-            let node = NodeBuilder::new()
-                .create::<IxService>()
-                .expect("rr task_status node create");
-            let server =
-                rr_server::<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>(
-                    &node, &topic,
-                )
+        spawn_task_status_server(
+            cfg,
+            move || {
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .expect("rr task_status node create");
+                let server = rr_server::<
+                    markers::GetTaskStatusRequest,
+                    markers::GetTaskStatusResponse,
+                >(&node, &topic)
                 .expect("rr task_status server create");
-            Box::leak(Box::new(node));
-            server
-        })?
+                Box::leak(Box::new(node));
+                server
+            },
+            ctx.status_handler(),
+        )?
     };
 
     let clear_error = {
@@ -585,16 +631,21 @@ fn spawn_s1_rr_server_threads(robot_id: &str) -> std::io::Result<S1RrServerHandl
             poll_interval_ns: 500_000,
             max_in_flight: 64,
         };
-        spawn_clear_error_server(cfg, move || {
-            let node = NodeBuilder::new()
-                .create::<IxService>()
-                .expect("rr clear_error node create");
-            let server =
-                rr_server::<markers::ClearErrorRequest, markers::ClearErrorResponse>(&node, &topic)
-                    .expect("rr clear_error server create");
-            Box::leak(Box::new(node));
-            server
-        })?
+        spawn_clear_error_server(
+            cfg,
+            move || {
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .expect("rr clear_error node create");
+                let server = rr_server::<markers::ClearErrorRequest, markers::ClearErrorResponse>(
+                    &node, &topic,
+                )
+                .expect("rr clear_error server create");
+                Box::leak(Box::new(node));
+                server
+            },
+            ctx.clear_error_handler(),
+        )?
     };
 
     Ok(S1RrServerHandles {

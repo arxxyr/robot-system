@@ -1,83 +1,52 @@
-//! `rr_server_thread` —— v0.3 B4 (1/3-b) S1 task control plane RR server
-//! skeleton。
+//! `rr_server` 运行时层 —— 4 个 RR topic 的线程生命周期 / 主循环 /
+//! `Iceoryx2RrServer` I/O 调度。
 //!
 //! ## 角色
 //!
-//! 沿 A1-3 (1/3c-1) `crates/robot-s0/src/rr_server_thread.rs` 同款"`rr_server_thread`
-//! 只做 iceoryx2 RR I/O"线程模型，但**不**接 coordinator —— B4 (1/3-b)
-//! 仅落地：
+//! 沿 A1-3 (1/3c-1) `crates/robot-s0/src/rr_server_thread.rs` 同款
+//! "rr_server_thread 只做 iceoryx2 RR I/O" 模型。本模块**不**接
+//! [`crate::coordinator::Coordinator`] / **不**做 fbs encode/decode；handler
+//! 闭包（来自 [`crate::rr_server::handler`]）拿 `payload: &[u8]` 自行 decode
+//! + 调 coordinator API + 编 response bytes 返回。
 //!
-//! 1. iceoryx2 RR server 起停 / join（生命周期接线 + 主循环退出不悬挂）。
-//! 2. 4 个 RR topic 的类型分发（task_invoke / task_cancel / task_status /
-//!    clear_error；每条 topic 一个独立线程，monomorphic over `(ReqMarker,
-//!    RespMarker)`）。
-//! 3. 每个 active request 立刻同步 reply
-//!    [`robot_msg::msg::ActionRpcStatus::Unimplemented`] +
-//!    `error_msg = "B4 (1/3-b) skeleton; handler lands B4 (2/3)"`
-//!    （**不**走 coordinator API，**不**改
-//!    [`crate::action::ActionTicket`]，**不**碰
-//!    `JointCommand.source_task_id` / `FrameHeader.seq` —— 不破坏 B3 wire
-//!    契约 §3.7）。
+//! ## 不在范围（runtime 边界）
 //!
-//! 真 handler（auth / capability / idempotency / Coordinator::submit /
-//! Coordinator::cancel / Coordinator::status / Coordinator::clear_error）
-//! 落 B4 (2/3) commit；events drain pubsub 落 B4 (1/3-c) commit；
-//! 跨进程 integration test 落 B4 (3/3) commit。详
-//! [`docs/handoffs/v0.3_b4_outline.md`](../../../docs/handoffs/v0.3_b4_outline.md)
-//! §11.1 拆分计划。
-//!
-//! ## 不在范围（B4 (1/3-b) 边界）
-//!
-//! - **不**接 [`crate::coordinator::Coordinator`] API：skeleton 反应**不**碰
-//!   coordinator state machine。
-//! - **不**起 events drain / per-ActionId pubsub publisher（→ B4 (1/3-c)）。
-//! - **不**起 robot-rpc gateway 进程（→ B4 (2/3)）。
-//! - **不**做 idempotency cache / auth / capability 校验（gateway 端 →
-//!   B4 (2/3)）。
-//! - **不**接 `tokio` / `tonic`（与 `crates/robot-s1/src/lib.rs` 顶部"不
-//!   链接 tokio / tonic"边界对齐；async gateway adapter 在 robot-rpc，**不**
-//!   塞进 robot-s1）。
+//! - **不**做 fbs root verifier 之外的 decode；handler 内部自己 decode。
+//! - **不**接业务语义（B4 (2/3-a) handler 才接 [`crate::coordinator::Coordinator`]）。
+//! - **不**做 idempotency cache / auth / capability 校验（gateway 端做）。
 //!
 //! ## 线程语义
 //!
-//! - **非 RT** 普通优先级线程；每个 RR topic 一个独立 `std::thread`，
-//!   独立 [`Iceoryx2RrServer`] 单 owner（iceoryx2 service 是
-//!   SingleThreaded，server 不跨线程；同 A1-3 模式）。
-//! - 主循环：drain `try_recv()` →（每条 active）build skeleton reply →
-//!   `send_response` → 继续 drain 直到 `Ok(None)` → sleep
-//!   `poll_interval_ns`。
-//! - **同步 reply**（skeleton 不 forward 到任何 channel）→ shutdown 路径
-//!   极简：循环退出即结束，无 in-flight pending 队列要 abort。真 handler
-//!   landing 后引入 channel forward + pending VecDeque + shutdown abort，
-//!   届时跟 A1 s0 模式对齐。
+//! - **非 RT** 普通优先级线程；每个 RR topic 一个独立 `std::thread`，独立
+//!   [`Iceoryx2RrServer`] 单 owner（iceoryx2 service `SingleThreaded`，
+//!   server `!Send`，必须在 owner 线程内构造；同 A1-3 模式）。
+//! - 主循环：drain `try_recv()` →（每条 active）fbs root verify → handler
+//!   产 response bytes → `send_response` → 继续 drain 直到 `Ok(None)` →
+//!   sleep `poll_interval_ns`。
+//! - **同步 reply**（handler 闭包调用即返 response bytes）：handler 闭包必
+//!   须不阻塞 IO（B4 (2/3-a) handler 调 [`crate::coordinator::Coordinator`]
+//!   in-process API + spawn 普通线程，无网络 / 文件 / 长锁）。
 //! - 退出靠 `Arc<AtomicBool>` stop signal（沿 A1 同款）。
 //! - `s1_daemon` 主循环退出时**逐个** [`RrServerThreadHandle::request_stop`]
 //!   + [`RrServerThreadHandle::join`]；所有 RR server 线程都 join 完才返
 //!     main —— **不**悬挂线程到 process exit。详 [`S1RrServerHandles`]。
 //!
-//! ## decode error 路径（skeleton）
+//! ## decode error 路径
 //!
-//! FlatBuffers root verifier 失败 / 必填字段缺失 → reply
-//! `ActionRpcStatus::InvalidArgument` + `error_msg = "wire decode failed"`。
-//! 跟 A1 s0 同款：消费 active handle、**不**让 wire request 留在 iceoryx2
-//! 队列里悬挂到客户端 deadline 超时。
+//! `flatbuffers::root::<Req::Root<'_>>` 失败 → 调 `decode_error_reply`
+//! （**静态 fn pointer，零捕获**；每 topic 一份）reply
+//! [`robot_msg::msg::ActionRpcStatus::InvalidArgument`] + `error_msg = "wire
+//! decode failed"`。跟 A1 s0 同款：消费 active handle、**不**让 wire request
+//! 留在 iceoryx2 队列里悬挂到客户端 deadline 超时。
 //!
-//! ## 真 handler landing 时的 evolution（B4 (2/3) 接班 reference）
+//! ## handler 边界（B4 (2/3-a) 落地）
 //!
-//! - 引入 `(rr_request_tx, rr_response_rx)` channel pair forward 给
-//!   coordinator / handler thread；同 A1 s0 `RrChannels` 双向 pattern。
-//! - 引入 `VecDeque<PendingRr>` 管理 in-flight active；按
-//!   `request_id` 跟 handler response 对账。
-//! - 引入 shutdown abort 路径：给 pending 中所有 in-flight active 回
-//!   `ActionRpcStatus::Unavailable` + `error_msg = "s1 daemon shutting
-//!   down"`（沿 A1 `abort_pending_on_shutdown` 同款，但 status 改
-//!   `Unavailable`，跟 outline §7.1 ShuttingDown → Unavailable 映射对
-//!   齐）。
-//! - 引入 backpressure（`max_in_flight` 满 → `Unavailable` 直拒）。
-//!
-//! 本 skeleton 的 [`RrServerThreadConfig::max_in_flight`] 字段已声明但
-//! **未生效**（skeleton 同步 reply 不入 pending 队列；字段保留是为 B4
-//! (2/3) 真 handler 落地时**不**改 binary wiring 的 config 调用点）。
+//! handler 闭包签名 `Fn(&[u8]) -> Vec<u8> + Send + 'static`，由 caller 通
+//! 过 [`crate::rr_server::handler::RealHandlerCtx`] 构造。runtime 接受闭
+//! 包是为锁住"runtime 不知道 coordinator API"边界 —— `RealHandlerCtx` 持
+//! `Arc<Coordinator>` / `Arc<EventsDrainRegistry>` / `Arc<dyn RobotClock>` /
+//! `source_id` / `robot_id`，闭包捕获后由 spawn fn 一并 move 进 RR server
+//! 线程。
 
 #![allow(clippy::doc_markdown)]
 
@@ -86,28 +55,38 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use robot_msg::build_helpers::{
-    build_cancel_task_response, build_clear_error_response, build_get_task_status_response,
-    build_invoke_task_response,
-};
 use robot_msg::markers;
 use robot_msg::markers::BodyMarker;
-use robot_msg::msg::{
-    ActionRpcStatus, CancelTaskRequest as FbCancelReq, ClearErrorRequest as FbClearErrorReq,
-    GetTaskStatusRequest as FbStatusReq, InvokeTaskRequest as FbInvokeReq, TaskStateFb,
-};
+use robot_msg::msg::ActionRpcStatus;
 use robot_transport::iceoryx2::request_response::{Iceoryx2ActiveRequest, Iceoryx2RrServer};
 
+use super::wire::{
+    encode_cancel_response_err, encode_clear_error_response_err, encode_invoke_response_err,
+    encode_status_response_err,
+};
+
 // ============================================================================
-// Skeleton reply error message
+// decode-error reply 静态 fn pointer
 // ============================================================================
 
-/// skeleton 路径所有 RR topic 共用的 `error_msg`。B4 (2/3) 真 handler 落
-/// 地后此常量被 handler 真路径替换；skeleton 期间所有 reply 都带此字串
-/// 让 client / audit log 一眼看出当前 daemon 处于 skeleton 形态。
-pub const SKELETON_REPLY_ERROR_MSG: &str = "B4 (1/3-b) skeleton; handler lands B4 (2/3)";
-
+/// fbs root verifier 失败时通用 `error_msg`。
 const DECODE_ERROR_MSG: &str = "wire decode failed";
+
+fn invoke_decode_error_reply(_payload: &[u8]) -> Vec<u8> {
+    encode_invoke_response_err("", "", ActionRpcStatus::InvalidArgument, DECODE_ERROR_MSG)
+}
+
+fn cancel_decode_error_reply(_payload: &[u8]) -> Vec<u8> {
+    encode_cancel_response_err("", "", ActionRpcStatus::InvalidArgument, DECODE_ERROR_MSG)
+}
+
+fn status_decode_error_reply(_payload: &[u8]) -> Vec<u8> {
+    encode_status_response_err("", "", ActionRpcStatus::InvalidArgument, DECODE_ERROR_MSG)
+}
+
+fn clear_error_decode_error_reply(_payload: &[u8]) -> Vec<u8> {
+    encode_clear_error_response_err("", ActionRpcStatus::InvalidArgument, DECODE_ERROR_MSG)
+}
 
 // ============================================================================
 // Config / Metrics / Handle
@@ -125,10 +104,9 @@ pub struct RrServerThreadConfig {
     /// 主循环 idle sleep（纳秒）。默认 500µs（2 kHz），跟 A1
     /// `crates/robot-s0/src/rr_server_thread.rs` 同款。
     pub poll_interval_ns: u64,
-    /// 同时 in-flight 的 active request 上限。**B4 (1/3-b) skeleton 期
-    /// 未生效**（同步 reply 不入 pending 队列）；保留是为 B4 (2/3) 真
-    /// handler 引入 pending VecDeque + backpressure 时**不**改 binary
-    /// 调用点。
+    /// 同时 in-flight 的 active request 上限。**B4 (2/3-a) 真 handler 期
+    /// 仍未生效**（同步 reply 不入 pending 队列）；保留是为后续真 backpressure
+    /// 引入 pending VecDeque 时**不**改 binary 调用点。
     pub max_in_flight: usize,
 }
 
@@ -145,7 +123,8 @@ impl Default for RrServerThreadConfig {
 /// `rr_server_thread` 运行期 metrics（每 topic 一份独立计数）。
 #[derive(Default, Debug)]
 pub struct RrServerMetrics {
-    /// `server.try_recv()` 成功收到的 wire request 数（含 decode 失败）。
+    /// `server.try_recv()` 成功收到的 wire request 数（含 decode 失败那条
+    /// 的入口计数）。
     pub requests_received: AtomicU64,
     /// 成功 `active.send_response()` 的 response 数。
     pub responses_sent: AtomicU64,
@@ -153,12 +132,11 @@ pub struct RrServerMetrics {
     pub send_response_errors: AtomicU64,
     /// FlatBuffers root verifier 失败 / 必填字段缺失：reply InvalidArgument。
     pub decode_errors: AtomicU64,
-    /// skeleton reply 路径的 reply 数（status = `Unimplemented`）。
-    /// **`responses_sent` ⊇ `skeleton_replies`**：skeleton 期间几乎所有
-    /// reply 都走此路径（除 decode 失败那几条）；本字段单列让 B4 (2/3)
-    /// 真 handler land 后能从 metrics 看到"skeleton reply 数 → 0 / 真
-    /// reply 数 ↑"过渡。
-    pub skeleton_replies: AtomicU64,
+    /// handler closure 实际被调用的次数（`requests_received`
+    /// `-` `decode_errors`）。`responses_sent` 仍包含 decode 失败那条 reply，
+    /// `handler_replies` 单列让运维一眼看出"真 handler 路径"和"runtime 直
+    /// 接拒"的比例。
+    pub handler_replies: AtomicU64,
 }
 
 /// `rr_server_thread` 句柄。caller 通过 [`Self::request_stop`] +
@@ -236,7 +214,7 @@ impl S1RrServerHandles {
 }
 
 // ============================================================================
-// spawn API
+// 4 个 typed spawn fn（per RR topic）
 // ============================================================================
 
 /// 起 `task_invoke` RR server 线程（监听 `/<robot>/control/task_invoke`）。
@@ -244,144 +222,145 @@ impl S1RrServerHandles {
 /// `server_factory` closure 在新线程内执行（iceoryx2 RR server `!Send`，
 /// 必须在 owner 线程内构造；同 A1 `spawn_rr_server_thread` factory 模式）。
 ///
-/// **B4 (1/3-b) 实现**：每条 wire request 同步 reply
-/// [`InvokeTaskResponse`] with `status =
-/// ActionRpcStatus::Unimplemented` + `action_id = ""` +
-/// `accepted_at_ns = 0`。
+/// `handler` closure 接每条已通过 fbs root verifier 的 wire payload bytes，
+/// 返编完的 response bytes。**B4 (2/3-a)** 真 handler 由
+/// [`crate::rr_server::handler::RealHandlerCtx::invoke_handler`] 提供，
+/// 内部调 `Coordinator::submit` + spawn `events_drain_thread` + register
+/// 入 `EventsDrainRegistry` + 编 `InvokeTaskResponse` body bytes。
 ///
 /// # Errors
 ///
 /// - `server_factory` panic（factory 起 iceoryx2 service 失败 / port 耗
 ///   尽等）。
 /// - `thread::Builder::spawn` 失败（极罕见）。
-///
-/// [`InvokeTaskResponse`]: robot_msg::markers::InvokeTaskResponse
-pub fn spawn_task_invoke_server<F>(
+pub fn spawn_task_invoke_server<F, H>(
     cfg: RrServerThreadConfig,
     server_factory: F,
+    handler: H,
 ) -> std::io::Result<RrServerThreadHandle>
 where
     F: FnOnce() -> Iceoryx2RrServer<markers::InvokeTaskRequest, markers::InvokeTaskResponse>
         + Send
         + 'static,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     spawn_typed(
         "s1_rr_task_invoke",
         cfg,
         server_factory,
-        invoke_skeleton_reply,
+        handler,
         invoke_decode_error_reply,
     )
 }
 
 /// 起 `task_cancel` RR server 线程（监听 `/<robot>/control/task_cancel`）。
 ///
-/// **B4 (1/3-b) 实现**：每条 wire request 同步 reply
-/// [`CancelTaskResponse`] with `status =
-/// ActionRpcStatus::Unimplemented` + `action_id = ""` +
-/// `cancel_at_ns = 0`。
+/// **B4 (2/3-a)** 真 handler：
+/// [`crate::rr_server::handler::RealHandlerCtx::cancel_handler`] 内部调
+/// `Coordinator::cancel`。
 ///
 /// # Errors
 ///
 /// 同 [`spawn_task_invoke_server`]。
-///
-/// [`CancelTaskResponse`]: robot_msg::markers::CancelTaskResponse
-pub fn spawn_task_cancel_server<F>(
+pub fn spawn_task_cancel_server<F, H>(
     cfg: RrServerThreadConfig,
     server_factory: F,
+    handler: H,
 ) -> std::io::Result<RrServerThreadHandle>
 where
     F: FnOnce() -> Iceoryx2RrServer<markers::CancelTaskRequest, markers::CancelTaskResponse>
         + Send
         + 'static,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     spawn_typed(
         "s1_rr_task_cancel",
         cfg,
         server_factory,
-        cancel_skeleton_reply,
+        handler,
         cancel_decode_error_reply,
     )
 }
 
 /// 起 `task_status` RR server 线程（监听 `/<robot>/control/task_status`）。
 ///
-/// **B4 (1/3-b) 实现**：每条 wire request 同步 reply
-/// [`GetTaskStatusResponse`] with `status =
-/// ActionRpcStatus::Unimplemented` + `state = TaskStateFb::Unknown` +
-/// 全部 progress / outcome / failure 都空。
+/// **B4 (2/3-a)** 真 handler：
+/// [`crate::rr_server::handler::RealHandlerCtx::status_handler`] 内部调
+/// `Coordinator::status`。
 ///
 /// # Errors
 ///
 /// 同 [`spawn_task_invoke_server`]。
-///
-/// [`GetTaskStatusResponse`]: robot_msg::markers::GetTaskStatusResponse
-pub fn spawn_task_status_server<F>(
+pub fn spawn_task_status_server<F, H>(
     cfg: RrServerThreadConfig,
     server_factory: F,
+    handler: H,
 ) -> std::io::Result<RrServerThreadHandle>
 where
     F: FnOnce() -> Iceoryx2RrServer<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>
         + Send
         + 'static,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     spawn_typed(
         "s1_rr_task_status",
         cfg,
         server_factory,
-        status_skeleton_reply,
+        handler,
         status_decode_error_reply,
     )
 }
 
 /// 起 `clear_error` RR server 线程（监听 `/<robot>/control/clear_error`）。
 ///
-/// **B4 (1/3-b) 实现**：每条 wire request 同步 reply
-/// [`ClearErrorResponse`] with `status =
-/// ActionRpcStatus::Unimplemented` + `cleared_at_ns = 0`。
+/// **B4 (2/3-a)** 真 handler：
+/// [`crate::rr_server::handler::RealHandlerCtx::clear_error_handler`] 内
+/// 部调 `Coordinator::clear_error`。
 ///
 /// # Errors
 ///
 /// 同 [`spawn_task_invoke_server`]。
-///
-/// [`ClearErrorResponse`]: robot_msg::markers::ClearErrorResponse
-pub fn spawn_clear_error_server<F>(
+pub fn spawn_clear_error_server<F, H>(
     cfg: RrServerThreadConfig,
     server_factory: F,
+    handler: H,
 ) -> std::io::Result<RrServerThreadHandle>
 where
     F: FnOnce() -> Iceoryx2RrServer<markers::ClearErrorRequest, markers::ClearErrorResponse>
         + Send
         + 'static,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     spawn_typed(
         "s1_rr_clear_error",
         cfg,
         server_factory,
-        clear_error_skeleton_reply,
+        handler,
         clear_error_decode_error_reply,
     )
 }
 
 // ============================================================================
-// 通用 spawn / 主循环（generic over (Req, Resp) marker）
+// 通用 spawn / 主循环（generic over (Req, Resp) marker + handler closure）
 // ============================================================================
 
-/// `(payload bytes) -> reply bytes`。skeleton / decode-error 路径分别有
-/// 各自实现；真 handler 路径（B4 (2/3)）不通过此 fn pointer。
-type ReplyBuilder = fn(&[u8]) -> Vec<u8>;
+/// `decode_error_reply` 是静态 fn pointer：fbs root verifier 失败时**不**进
+/// handler，由 runtime 直接构造 InvalidArgument response。每 topic 一份独立
+/// fn pointer（4 个 [`spawn_*_server`](spawn_task_invoke_server) 入口各自传）。
+type DecodeErrorReply = fn(&[u8]) -> Vec<u8>;
 
-fn spawn_typed<Req, Resp, F>(
+fn spawn_typed<Req, Resp, F, H>(
     thread_name: &'static str,
     cfg: RrServerThreadConfig,
     server_factory: F,
-    skeleton_reply: ReplyBuilder,
-    decode_error_reply: ReplyBuilder,
+    handler: H,
+    decode_error_reply: DecodeErrorReply,
 ) -> std::io::Result<RrServerThreadHandle>
 where
     Req: BodyMarker,
     Resp: BodyMarker,
     F: FnOnce() -> Iceoryx2RrServer<Req, Resp> + Send + 'static,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     let stop = Arc::new(AtomicBool::new(false));
     let metrics = Arc::new(RrServerMetrics::default());
@@ -400,10 +379,10 @@ where
             let server = server_factory();
             let _ = ready_tx.send(());
             drop(ready_tx);
-            run_skeleton_loop(
+            run_handler_loop(
                 &cfg,
                 &server,
-                skeleton_reply,
+                &handler,
                 decode_error_reply,
                 &stop_clone,
                 &metrics_clone,
@@ -424,22 +403,26 @@ where
     })
 }
 
-fn run_skeleton_loop<Req: BodyMarker, Resp: BodyMarker>(
+fn run_handler_loop<Req, Resp, H>(
     cfg: &RrServerThreadConfig,
     server: &Iceoryx2RrServer<Req, Resp>,
-    skeleton_reply: ReplyBuilder,
-    decode_error_reply: ReplyBuilder,
+    handler: &H,
+    decode_error_reply: DecodeErrorReply,
     stop: &AtomicBool,
     metrics: &RrServerMetrics,
-) {
+) where
+    Req: BodyMarker,
+    Resp: BodyMarker,
+    H: Fn(&[u8]) -> Vec<u8>,
+{
     while !stop.load(Ordering::Acquire) {
         // drain 所有 pending wire request：循环 try_recv 直到 Ok(None) /
-        // Err。skeleton 同步 reply，无 pending 队列。
+        // Err。同步 reply，无 pending 队列。
         loop {
             match server.try_recv() {
                 Ok(Some(active)) => {
                     metrics.requests_received.fetch_add(1, Ordering::Relaxed);
-                    handle_active(active, skeleton_reply, decode_error_reply, cfg, metrics);
+                    handle_active(active, handler, decode_error_reply, cfg, metrics);
                 }
                 Ok(None) => break,
                 Err(e) => {
@@ -456,19 +439,24 @@ fn run_skeleton_loop<Req: BodyMarker, Resp: BodyMarker>(
     }
 }
 
-fn handle_active<Req: BodyMarker, Resp: BodyMarker>(
+fn handle_active<Req, Resp, H>(
     active: Iceoryx2ActiveRequest<Req, Resp>,
-    skeleton_reply: ReplyBuilder,
-    decode_error_reply: ReplyBuilder,
+    handler: &H,
+    decode_error_reply: DecodeErrorReply,
     cfg: &RrServerThreadConfig,
     metrics: &RrServerMetrics,
-) {
+) where
+    Req: BodyMarker,
+    Resp: BodyMarker,
+    H: Fn(&[u8]) -> Vec<u8>,
+{
     let payload = active.payload();
-    // 校验 fbs root：失败 → decode_error_reply（status = InvalidArgument）。
+    // 校验 fbs root：失败 → decode_error_reply（status = InvalidArgument）；
+    // 成功 → handler closure。
     let bytes = match flatbuffers::root::<Req::Root<'_>>(payload) {
         Ok(_view) => {
-            metrics.skeleton_replies.fetch_add(1, Ordering::Relaxed);
-            skeleton_reply(payload)
+            metrics.handler_replies.fetch_add(1, Ordering::Relaxed);
+            handler(payload)
         }
         Err(e) => {
             tracing::warn!(
@@ -496,147 +484,26 @@ fn handle_active<Req: BodyMarker, Resp: BodyMarker>(
 }
 
 // ============================================================================
-// per-topic skeleton / decode-error reply builders
-// ============================================================================
-//
-// 每 topic 一对 reply builder：
-//   - `*_skeleton_reply`：fbs decode 成功 → echo `request_id` + status =
-//     `Unimplemented` + `error_msg = SKELETON_REPLY_ERROR_MSG`。
-//   - `*_decode_error_reply`：fbs decode 失败 → `request_id = ""` +
-//     status = `InvalidArgument` + `error_msg = DECODE_ERROR_MSG`。
-//
-// 两类都是 `fn(&[u8]) -> Vec<u8>` 静态 fn pointer，零捕获 / 零 alloc 开
-// 销（除 reply bytes 自身的 FlatBufferBuilder）。
-
-fn invoke_skeleton_reply(payload: &[u8]) -> Vec<u8> {
-    let request_id = flatbuffers::root::<FbInvokeReq>(payload)
-        .ok()
-        .and_then(|v| v.request_id().map(str::to_owned))
-        .unwrap_or_default();
-    build_invoke_task_response(
-        &request_id,
-        ActionRpcStatus::Unimplemented,
-        SKELETON_REPLY_ERROR_MSG,
-        "",
-        0,
-    )
-}
-
-fn invoke_decode_error_reply(_payload: &[u8]) -> Vec<u8> {
-    build_invoke_task_response(
-        "",
-        ActionRpcStatus::InvalidArgument,
-        DECODE_ERROR_MSG,
-        "",
-        0,
-    )
-}
-
-fn cancel_skeleton_reply(payload: &[u8]) -> Vec<u8> {
-    let view = flatbuffers::root::<FbCancelReq>(payload).ok();
-    let request_id = view
-        .as_ref()
-        .and_then(|v| v.request_id().map(str::to_owned))
-        .unwrap_or_default();
-    let action_id = view
-        .as_ref()
-        .and_then(|v| v.action_id().map(str::to_owned))
-        .unwrap_or_default();
-    build_cancel_task_response(
-        &request_id,
-        ActionRpcStatus::Unimplemented,
-        SKELETON_REPLY_ERROR_MSG,
-        &action_id,
-        0,
-    )
-}
-
-fn cancel_decode_error_reply(_payload: &[u8]) -> Vec<u8> {
-    build_cancel_task_response(
-        "",
-        ActionRpcStatus::InvalidArgument,
-        DECODE_ERROR_MSG,
-        "",
-        0,
-    )
-}
-
-fn status_skeleton_reply(payload: &[u8]) -> Vec<u8> {
-    let view = flatbuffers::root::<FbStatusReq>(payload).ok();
-    let request_id = view
-        .as_ref()
-        .and_then(|v| v.request_id().map(str::to_owned))
-        .unwrap_or_default();
-    let action_id = view
-        .as_ref()
-        .and_then(|v| v.action_id().map(str::to_owned))
-        .unwrap_or_default();
-    build_get_task_status_response(
-        &request_id,
-        ActionRpcStatus::Unimplemented,
-        SKELETON_REPLY_ERROR_MSG,
-        &action_id,
-        TaskStateFb::Unknown,
-        0.0,
-        None,
-        None,
-    )
-}
-
-fn status_decode_error_reply(_payload: &[u8]) -> Vec<u8> {
-    build_get_task_status_response(
-        "",
-        ActionRpcStatus::InvalidArgument,
-        DECODE_ERROR_MSG,
-        "",
-        TaskStateFb::Unknown,
-        0.0,
-        None,
-        None,
-    )
-}
-
-fn clear_error_skeleton_reply(payload: &[u8]) -> Vec<u8> {
-    let request_id = flatbuffers::root::<FbClearErrorReq>(payload)
-        .ok()
-        .and_then(|v| v.request_id().map(str::to_owned))
-        .unwrap_or_default();
-    build_clear_error_response(
-        &request_id,
-        ActionRpcStatus::Unimplemented,
-        SKELETON_REPLY_ERROR_MSG,
-        0,
-    )
-}
-
-fn clear_error_decode_error_reply(_payload: &[u8]) -> Vec<u8> {
-    build_clear_error_response("", ActionRpcStatus::InvalidArgument, DECODE_ERROR_MSG, 0)
-}
-
-// ============================================================================
 // Tests
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
-    //! Round-trip lib unit tests:
+    //! Round-trip lib unit tests（runtime 层）：用 `rr_channel`（同进程
+    //! client + server pair）跑端到端 wire request → handler 产 reply →
+    //! response 解析。锁住 4 个 topic 的生命周期 (spawn / request_stop / join)
+    //! + decode-error 路径 + handler 回填。
     //!
-    //! 用 `rr_channel`（同进程 client + server pair）跑端到端 wire
-    //! request → skeleton reply → response 解析；锁住 4 个 topic 的
-    //! lifecycle (spawn / request_stop / join) 跟 reply 字段值（status =
-    //! `Unimplemented` + `error_msg = SKELETON_REPLY_ERROR_MSG` +
-    //! `request_id` echo）。
-    //!
-    //! 跨进程 integration test 留 B4 (3/3) commit（`crates/robot-rpc/tests/...`
-    //! task_rpc_e2e.rs，沿 A1-3 (3/3) 跨进程 spawn s1_daemon binary 同款
-    //! 模式）。
+    //! 真 handler 接 [`crate::coordinator::Coordinator`] 的端到端测试在
+    //! [`crate::rr_server::handler::tests`] 里覆盖；本模块只测 runtime 路
+    //! 径（用 stub handler closure）。
 
     use super::*;
     use iceoryx2::prelude::NodeBuilder;
     use iceoryx2::service::ipc::Service as IxService;
     use robot_msg::build_helpers::{
         build_cancel_task_request, build_clear_error_request, build_get_task_status_request,
-        build_invoke_task_request,
+        build_invoke_task_request, build_invoke_task_response,
     };
     use robot_msg::msg::{
         ActionKindFb, CancelTaskResponse as FbCancelResp, ClearErrorResponse as FbClearResp,
@@ -646,16 +513,13 @@ mod tests {
         Iceoryx2PendingResponse, rr_client, rr_server,
     };
 
-    // skeleton 测试统一用的 stub 入参（除 request_id / action_id 外所有字段
-    // 不参与 skeleton 行为；real handler 在 B4 (2/3) 落地时由 gateway 端
-    // 真填）。
     fn invoke_req(request_id: &str) -> Vec<u8> {
         build_invoke_task_request(
             request_id,
             "idem-001",
-            "skeleton_test",
+            "rt_test",
             RpcRole::Maintainer,
-            "rr_server skeleton test",
+            "rr_server runtime test",
             ActionKindFb::DwellMs,
             /* deadline_ns */ 0,
             /* priority */ 0,
@@ -668,9 +532,9 @@ mod tests {
         build_cancel_task_request(
             request_id,
             "idem-001",
-            "skeleton_test",
+            "rt_test",
             RpcRole::Maintainer,
-            "rr_server skeleton test",
+            "rr_server runtime test",
             action_id,
             0,
             0,
@@ -680,9 +544,9 @@ mod tests {
         build_get_task_status_request(
             request_id,
             "idem-001",
-            "skeleton_test",
+            "rt_test",
             RpcRole::Viewer,
-            "rr_server skeleton test",
+            "rr_server runtime test",
             action_id,
             0,
             0,
@@ -692,9 +556,9 @@ mod tests {
         build_clear_error_request(
             request_id,
             "idem-001",
-            "skeleton_test",
+            "rt_test",
             RpcRole::Maintainer,
-            "rr_server skeleton test",
+            "rr_server runtime test",
             0,
             0,
         )
@@ -704,7 +568,7 @@ mod tests {
         use std::sync::atomic::AtomicU32;
         static SEQ: AtomicU32 = AtomicU32::new(0);
         let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-        format!("/s1_rr_skel_{}_{}_{suffix}", std::process::id(), seq)
+        format!("/s1_rr_rt_{}_{}_{suffix}", std::process::id(), seq)
     }
 
     fn wait_for_response<R: BodyMarker>(
@@ -726,11 +590,6 @@ mod tests {
         }
     }
 
-    /// 测试主线程持的 client（独立 Node + leak），跟 server_factory 内
-    /// 独立 Node + leak 的 server 通过 iceoryx2 service name 串通。
-    /// 沿 A1 `crates/robot-s0/src/rr_server_thread.rs::tests::bring_up`
-    /// 同款"两端独立 Node"模式（service SingleThreaded → server `!Send`，
-    /// 不能从 test 主线程跨线程 move 进 spawn closure）。
     fn make_client<Req: BodyMarker, Resp: BodyMarker>(
         topic: &str,
     ) -> robot_transport::iceoryx2::request_response::Iceoryx2RrClient<Req, Resp> {
@@ -758,30 +617,39 @@ mod tests {
         }
     }
 
+    /// stub handler：echo `request_id` + status = `Ok` + accepted_at_ns = 7。
+    /// 用于锁住 runtime 把 verified payload 透传给 handler 的路径。
+    fn invoke_stub_handler(payload: &[u8]) -> Vec<u8> {
+        let req = flatbuffers::root::<robot_msg::msg::InvokeTaskRequest>(payload).unwrap();
+        let request_id = req.request_id().unwrap_or_default();
+        build_invoke_task_response(request_id, ActionRpcStatus::Ok, "", request_id, 7)
+    }
+
     #[test]
-    fn invoke_task_skeleton_round_trip() {
+    fn invoke_runtime_round_trip_invokes_handler() {
         let topic = fresh_topic("invoke");
         let client = make_client::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(&topic);
         let factory = make_server_factory::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
             topic.clone(),
         );
 
-        let handle = spawn_task_invoke_server(cfg_for(&topic), factory).unwrap();
+        let handle =
+            spawn_task_invoke_server(cfg_for(&topic), factory, invoke_stub_handler).unwrap();
 
-        let req_bytes = invoke_req("inv-skel-001");
+        let req_bytes = invoke_req("inv-rt-001");
         let pending = client.send(&req_bytes).unwrap();
         let bytes = wait_for_response(&pending, Duration::from_secs(2));
         let resp = flatbuffers::root::<FbInvokeResp>(&bytes).unwrap();
-        assert_eq!(resp.request_id().unwrap(), "inv-skel-001");
-        assert_eq!(resp.status(), ActionRpcStatus::Unimplemented);
-        assert_eq!(resp.error_msg().unwrap(), SKELETON_REPLY_ERROR_MSG);
-        assert_eq!(resp.action_id().unwrap(), "");
-        assert_eq!(resp.accepted_at_ns(), 0);
+        assert_eq!(resp.request_id().unwrap(), "inv-rt-001");
+        assert_eq!(resp.status(), ActionRpcStatus::Ok);
+        assert_eq!(resp.error_msg().unwrap(), "");
+        assert_eq!(resp.action_id().unwrap(), "inv-rt-001");
+        assert_eq!(resp.accepted_at_ns(), 7);
 
         let metrics = handle.metrics();
         assert_eq!(metrics.requests_received.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.responses_sent.load(Ordering::Relaxed), 1);
-        assert_eq!(metrics.skeleton_replies.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.handler_replies.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.decode_errors.load(Ordering::Relaxed), 0);
         assert_eq!(handle.topic(), topic);
 
@@ -790,92 +658,31 @@ mod tests {
     }
 
     #[test]
-    fn cancel_task_skeleton_round_trip() {
-        let topic = fresh_topic("cancel");
-        let client = make_client::<markers::CancelTaskRequest, markers::CancelTaskResponse>(&topic);
-        let factory = make_server_factory::<markers::CancelTaskRequest, markers::CancelTaskResponse>(
-            topic.clone(),
-        );
-
-        let handle = spawn_task_cancel_server(cfg_for(&topic), factory).unwrap();
-
-        let req_bytes = cancel_req("cnl-skel-001", "act-uuid-7");
-        let pending = client.send(&req_bytes).unwrap();
-        let bytes = wait_for_response(&pending, Duration::from_secs(2));
-        let resp = flatbuffers::root::<FbCancelResp>(&bytes).unwrap();
-        assert_eq!(resp.request_id().unwrap(), "cnl-skel-001");
-        assert_eq!(resp.action_id().unwrap(), "act-uuid-7");
-        assert_eq!(resp.status(), ActionRpcStatus::Unimplemented);
-        assert_eq!(resp.error_msg().unwrap(), SKELETON_REPLY_ERROR_MSG);
-        assert_eq!(resp.cancel_at_ns(), 0);
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    #[test]
-    fn task_status_skeleton_round_trip() {
-        let topic = fresh_topic("status");
-        let client =
-            make_client::<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>(&topic);
-        let factory = make_server_factory::<
-            markers::GetTaskStatusRequest,
-            markers::GetTaskStatusResponse,
-        >(topic.clone());
-
-        let handle = spawn_task_status_server(cfg_for(&topic), factory).unwrap();
-
-        let req_bytes = status_req("sta-skel-001", "act-uuid-9");
-        let pending = client.send(&req_bytes).unwrap();
-        let bytes = wait_for_response(&pending, Duration::from_secs(2));
-        let resp = flatbuffers::root::<FbStatusResp>(&bytes).unwrap();
-        assert_eq!(resp.request_id().unwrap(), "sta-skel-001");
-        assert_eq!(resp.action_id().unwrap(), "act-uuid-9");
-        assert_eq!(resp.status(), ActionRpcStatus::Unimplemented);
-        assert_eq!(resp.error_msg().unwrap(), SKELETON_REPLY_ERROR_MSG);
-        assert_eq!(resp.state(), TaskStateFb::Unknown);
-        assert!((resp.progress() - 0.0).abs() < f32::EPSILON);
-        assert!(resp.outcome().is_none());
-        assert!(resp.failure().is_none());
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    #[test]
-    fn clear_error_skeleton_round_trip() {
-        let topic = fresh_topic("clearerr");
-        let client = make_client::<markers::ClearErrorRequest, markers::ClearErrorResponse>(&topic);
-        let factory = make_server_factory::<markers::ClearErrorRequest, markers::ClearErrorResponse>(
-            topic.clone(),
-        );
-
-        let handle = spawn_clear_error_server(cfg_for(&topic), factory).unwrap();
-
-        let req_bytes = clear_req("clr-skel-001");
-        let pending = client.send(&req_bytes).unwrap();
-        let bytes = wait_for_response(&pending, Duration::from_secs(2));
-        let resp = flatbuffers::root::<FbClearResp>(&bytes).unwrap();
-        assert_eq!(resp.request_id().unwrap(), "clr-skel-001");
-        assert_eq!(resp.status(), ActionRpcStatus::Unimplemented);
-        assert_eq!(resp.error_msg().unwrap(), SKELETON_REPLY_ERROR_MSG);
-        assert_eq!(resp.cleared_at_ns(), 0);
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    #[test]
-    fn invoke_task_decode_error_returns_invalid_argument() {
+    fn invoke_decode_error_returns_invalid_argument_without_handler_call() {
+        // 验 runtime 在 fbs root verifier 失败时**不**调 handler；改走静态
+        // decode_error_reply。stub handler 返一个明显可识别的 sentinel
+        // accepted_at_ns，拿到 sentinel 就说明 handler 被错误调用了。
         let topic = fresh_topic("decode_err");
         let client = make_client::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(&topic);
         let factory = make_server_factory::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
             topic.clone(),
         );
+        let sentinel_handler = |payload: &[u8]| -> Vec<u8> {
+            // 不应被调到（runtime decode_error_reply 拦截）。
+            let req = flatbuffers::root::<robot_msg::msg::InvokeTaskRequest>(payload).unwrap();
+            let request_id = req.request_id().unwrap_or_default();
+            build_invoke_task_response(
+                request_id,
+                ActionRpcStatus::Ok,
+                "",
+                request_id,
+                /* sentinel */ 999,
+            )
+        };
 
-        let handle = spawn_task_invoke_server(cfg_for(&topic), factory).unwrap();
+        let handle = spawn_task_invoke_server(cfg_for(&topic), factory, sentinel_handler).unwrap();
 
-        // 故意发非 fbs bytes（4 个 dummy 字节，不会通过 root verifier）。
+        // 故意发非 fbs bytes（4 个 dummy 字节，过不了 root verifier）。
         let bad_bytes: Vec<u8> = vec![0xAA, 0xBB, 0xCC, 0xDD];
         let pending = client.send(&bad_bytes).unwrap();
         let bytes = wait_for_response(&pending, Duration::from_secs(2));
@@ -883,11 +690,13 @@ mod tests {
         assert_eq!(resp.request_id().unwrap(), "");
         assert_eq!(resp.status(), ActionRpcStatus::InvalidArgument);
         assert_eq!(resp.error_msg().unwrap(), DECODE_ERROR_MSG);
+        // sentinel 验：handler 没被调用。
+        assert_ne!(resp.accepted_at_ns(), 999);
 
         let metrics = handle.metrics();
         assert_eq!(metrics.requests_received.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.responses_sent.load(Ordering::Relaxed), 1);
-        assert_eq!(metrics.skeleton_replies.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.handler_replies.load(Ordering::Relaxed), 0);
         assert_eq!(metrics.decode_errors.load(Ordering::Relaxed), 1);
 
         handle.request_stop();
@@ -895,7 +704,113 @@ mod tests {
     }
 
     #[test]
-    fn handle_request_stop_join_idempotent_when_no_traffic() {
+    fn cancel_runtime_round_trip_invokes_handler() {
+        let topic = fresh_topic("cancel");
+        let client = make_client::<markers::CancelTaskRequest, markers::CancelTaskResponse>(&topic);
+        let factory = make_server_factory::<markers::CancelTaskRequest, markers::CancelTaskResponse>(
+            topic.clone(),
+        );
+        let handler = |payload: &[u8]| -> Vec<u8> {
+            use robot_msg::build_helpers::build_cancel_task_response;
+            let req = flatbuffers::root::<robot_msg::msg::CancelTaskRequest>(payload).unwrap();
+            build_cancel_task_response(
+                req.request_id().unwrap_or_default(),
+                ActionRpcStatus::Ok,
+                "",
+                req.action_id().unwrap_or_default(),
+                42,
+            )
+        };
+
+        let handle = spawn_task_cancel_server(cfg_for(&topic), factory, handler).unwrap();
+
+        let req_bytes = cancel_req("cnl-rt-001", "act-uuid-7");
+        let pending = client.send(&req_bytes).unwrap();
+        let bytes = wait_for_response(&pending, Duration::from_secs(2));
+        let resp = flatbuffers::root::<FbCancelResp>(&bytes).unwrap();
+        assert_eq!(resp.request_id().unwrap(), "cnl-rt-001");
+        assert_eq!(resp.action_id().unwrap(), "act-uuid-7");
+        assert_eq!(resp.status(), ActionRpcStatus::Ok);
+        assert_eq!(resp.cancel_at_ns(), 42);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn status_runtime_round_trip_invokes_handler() {
+        let topic = fresh_topic("status");
+        let client =
+            make_client::<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>(&topic);
+        let factory = make_server_factory::<
+            markers::GetTaskStatusRequest,
+            markers::GetTaskStatusResponse,
+        >(topic.clone());
+        let handler = |payload: &[u8]| -> Vec<u8> {
+            use robot_msg::build_helpers::build_get_task_status_response;
+            use robot_msg::msg::TaskStateFb;
+            let req = flatbuffers::root::<robot_msg::msg::GetTaskStatusRequest>(payload).unwrap();
+            build_get_task_status_response(
+                req.request_id().unwrap_or_default(),
+                ActionRpcStatus::Ok,
+                "",
+                req.action_id().unwrap_or_default(),
+                TaskStateFb::Executing,
+                0.5,
+                None,
+                None,
+            )
+        };
+
+        let handle = spawn_task_status_server(cfg_for(&topic), factory, handler).unwrap();
+
+        let req_bytes = status_req("sta-rt-001", "act-uuid-9");
+        let pending = client.send(&req_bytes).unwrap();
+        let bytes = wait_for_response(&pending, Duration::from_secs(2));
+        let resp = flatbuffers::root::<FbStatusResp>(&bytes).unwrap();
+        assert_eq!(resp.request_id().unwrap(), "sta-rt-001");
+        assert_eq!(resp.action_id().unwrap(), "act-uuid-9");
+        assert_eq!(resp.status(), ActionRpcStatus::Ok);
+        assert!((resp.progress() - 0.5).abs() < f32::EPSILON);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn clear_error_runtime_round_trip_invokes_handler() {
+        let topic = fresh_topic("clearerr");
+        let client = make_client::<markers::ClearErrorRequest, markers::ClearErrorResponse>(&topic);
+        let factory = make_server_factory::<markers::ClearErrorRequest, markers::ClearErrorResponse>(
+            topic.clone(),
+        );
+        let handler = |payload: &[u8]| -> Vec<u8> {
+            use robot_msg::build_helpers::build_clear_error_response;
+            let req = flatbuffers::root::<robot_msg::msg::ClearErrorRequest>(payload).unwrap();
+            build_clear_error_response(
+                req.request_id().unwrap_or_default(),
+                ActionRpcStatus::Ok,
+                "",
+                /* cleared_at_ns */ 13,
+            )
+        };
+
+        let handle = spawn_clear_error_server(cfg_for(&topic), factory, handler).unwrap();
+
+        let req_bytes = clear_req("clr-rt-001");
+        let pending = client.send(&req_bytes).unwrap();
+        let bytes = wait_for_response(&pending, Duration::from_secs(2));
+        let resp = flatbuffers::root::<FbClearResp>(&bytes).unwrap();
+        assert_eq!(resp.request_id().unwrap(), "clr-rt-001");
+        assert_eq!(resp.status(), ActionRpcStatus::Ok);
+        assert_eq!(resp.cleared_at_ns(), 13);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn idle_request_stop_join_clean_exit() {
         // 锁住"主循环退出不悬挂线程"语义：spawn 起来不发任何 wire request，
         // 直接 request_stop + join 应在 ~poll_interval 内 clean exit。
         let topic = fresh_topic("idle_stop");
@@ -904,15 +819,13 @@ mod tests {
         let factory = make_server_factory::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
             topic.clone(),
         );
+        let handle =
+            spawn_task_invoke_server(cfg_for(&topic), factory, invoke_stub_handler).unwrap();
 
-        let handle = spawn_task_invoke_server(cfg_for(&topic), factory).unwrap();
-
-        // 直接 stop + join。
         let start = std::time::Instant::now();
         handle.request_stop();
         handle.join().unwrap();
         let elapsed = start.elapsed();
-        // poll_interval=100us；允许宽松 500ms 上限（CI 调度抖动）。
         assert!(
             elapsed < Duration::from_millis(500),
             "join took {elapsed:?}, expected < 500ms"
