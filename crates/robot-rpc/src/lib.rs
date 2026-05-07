@@ -6,7 +6,7 @@
 //!
 //! - **lib**：[`proto`] 模块（tonic codegen）+ [`auth`] /
 //!   [`idempotency`] / [`clear_estop`] 纯函数 + [`gateway`] 模块（含
-//!   [`gateway::ClearEStopHandler`] 12 步 logic + [`gateway::run_gateway_with_rr_io`]
+//!   [`gateway::GatewayHandler`] 12 步 logic + [`gateway::run_gateway_with_rr_io`]
 //!   高层入口 + [`gateway::run_gateway`] / [`gateway::GatewayConfig`] /
 //!   [`gateway::validate_loopback_bind`]）+ [`rr_io_thread`]
 //!   gateway 端 RR I/O 独立 `std::thread`。
@@ -44,7 +44,7 @@
 //!
 //! ## A1 全链路 land 状态（Phase A 收尾）
 //!
-//! - **A1-3 (2/3-b)**：[`gateway::ClearEStopHandler`] 12 步 logic 通过
+//! - **A1-3 (2/3-b)**：[`gateway::GatewayHandler`] 12 步 logic 通过
 //!   [`rr_io_thread`] 独立 `std::thread` 跟 daemon 端
 //!   `rr_server_thread` 通信，集成 [`idempotency::IdempotencyCache`] /
 //!   [`clear_estop::validate_clear_estop_command`] / [`auth`] role 查表
@@ -75,6 +75,7 @@ pub mod clear_estop;
 pub mod gateway;
 pub mod idempotency;
 pub mod rr_io_thread;
+pub mod task_handlers;
 
 /// gRPC tonic 生成代码（`robot.control.v1` namespace）。包含
 /// `AuthContext` / `CommandMeta` / `ClearEStopCommand` / `Ack` /

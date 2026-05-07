@@ -1,18 +1,25 @@
-//! `rr_io_thread` —— A1-3 (2/3-b2-1) gateway 端 ClearEStop RR I/O 线程。
+//! `rr_io_thread` —— gateway 端 RR I/O 线程（B4 (2/3-b) 起泛型 over
+//! `(Req, Resp)` body marker，5 个 RPC 各一条线程：ClearEStop（A1 落地）+
+//! 4 个 task control plane（task_invoke / task_cancel / task_status /
+//! clear_error；B4 (2/3-b)）+ `StreamTaskEvents` 走 pubsub 不经此模块）。
 //!
 //! ## 角色
 //!
 //! reviewer A1-3 (2/3-a) 拍板的 RR I/O 隔离模型，跟 daemon 端
-//! [`robot_s0::rr_server_thread`] 对称：
+//! [`robot_s0::rr_server_thread`] / [`robot_s1::rr_server::runtime`] 对称。
+//! 每个 RR topic 一个独立 `std::thread` + 一个独立
+//! [`Iceoryx2RrClient<Req, Resp>`]（`!Send`，必须 single-owner）。
 //!
-//! - **本模块（gateway 端 client）**：独立 `std::thread` 持
-//!   [`Iceoryx2RrClient`]（`!Send`，必须 single-owner）。从 tokio gRPC
-//!   handler 那边收 [`RrForwardRequest`]（含 `wire_bytes` +
+//! - **本模块（gateway 端 client）**：泛型 spawn fn
+//!   [`spawn_rr_io_thread`] 接 `Req: BodyMarker` / `Resp: BodyMarker`；
+//!   typed 入参由 caller 闭包返 `Iceoryx2RrClient<Req, Resp>` 决定。从
+//!   tokio gRPC handler 那边收 [`RrForwardRequest`]（含 `wire_bytes` +
 //!   `oneshot::Sender<Vec<u8>>`）→ `client.send(bytes)` 拿
-//!   [`Iceoryx2PendingResponse`] → 入 in-flight `Vec`；每轮 poll
+//!   [`Iceoryx2PendingResponse<Resp>`] → 入 in-flight `Vec`；每轮 poll
 //!   `pending.try_recv()` → 收到 reply 通过 `oneshot.send` 回 handler。
-//! - **daemon 端 server**：[`robot_s0::rr_server_thread`] 落地（A1-3
-//!   (1/3c)）；本模块不直接接它，跨进程通过 iceoryx2 RR shm。
+//! - **daemon 端 server**：[`robot_s0::rr_server_thread`] (ClearEStop) +
+//!   [`robot_s1::rr_server::runtime`] (4 个 task control plane) 落地；本
+//!   模块不直接接它们，跨进程通过 iceoryx2 RR shm。
 //!
 //! ## 主循环顺序（500µs poll）
 //!
@@ -52,7 +59,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crossbeam_channel::Receiver;
-use robot_msg::markers;
+use robot_msg::markers::BodyMarker;
 use robot_transport::iceoryx2::request_response::{Iceoryx2PendingResponse, Iceoryx2RrClient};
 
 // ============================================================================
@@ -176,8 +183,13 @@ impl RrIoThreadHandle {
 
 /// in-flight 请求的元数据。`pending` 跟 `oneshot_tx` 一对一绑定（client.send
 /// 返 pending；handler 持 oneshot_rx）。`request_id` 仅 tracing 用。
-struct InFlight {
-    pending: Iceoryx2PendingResponse<markers::ClearEStopResponse>,
+///
+/// **泛型 over `Resp: BodyMarker`**（B4 (2/3-b)）：5 个 RR topic 各自一
+/// 个 typed `Iceoryx2PendingResponse<Resp>`；wire bytes 在 `oneshot_tx`
+/// 端仍是 `Vec<u8>`（解码留给 handler 内部 `flatbuffers::root::<FbResp>`
+/// 做）。
+struct InFlight<Resp: BodyMarker> {
+    pending: Iceoryx2PendingResponse<Resp>,
     oneshot_tx: tokio::sync::oneshot::Sender<Vec<u8>>,
     request_id: String,
 }
@@ -186,29 +198,39 @@ struct InFlight {
 // spawn API
 // ============================================================================
 
-/// 起 `rr_io_thread`。
+/// 起 `rr_io_thread`，**泛型 over `(Req, Resp)` body marker**（B4 (2/3-b)）。
 ///
 /// `client_factory` closure 在新线程内执行（iceoryx2 RR client `!Send`，
 /// 必须在 owner 线程内构造；同 daemon 端 `rr_server_thread` factory 模式）。
+/// 返 `Iceoryx2RrClient<Req, Resp>` 决定 `Req` / `Resp` 类型：
 ///
-/// `forward_rx` 跟 [`crate::gateway::ClearEStopHandler`] 持的
-/// `Sender<RrForwardRequest>` 是同对：handler async 收 gRPC 后 `try_send`
-/// 转发；rr_io_thread `try_recv` drain。channel buffer 由 caller 决定
-/// （reviewer 拍板 `bounded(64)` 跟 daemon 端一致）。
+/// - `(ClearEStopRequest, ClearEStopResponse)` → ClearEStop RR 通道（A1）
+/// - `(InvokeTaskRequest, InvokeTaskResponse)` → task_invoke（B4）
+/// - `(CancelTaskRequest, CancelTaskResponse)` → task_cancel（B4）
+/// - `(GetTaskStatusRequest, GetTaskStatusResponse)` → task_status（B4）
+/// - `(ClearErrorRequest, ClearErrorResponse)` → clear_error（B4）
+///
+/// `forward_rx` 跟 handler 持的 `Sender<RrForwardRequest>` 是同对：handler
+/// async 收 gRPC 后 `try_send` 转发；rr_io_thread `try_recv` drain。channel
+/// buffer 由 caller 决定（reviewer 拍板 `bounded(64)` 跟 daemon 端一致）。
+///
+/// `cfg.topic` 决定线程名 (`gw_rr_io_<topic-safe>`)，方便 audit 日志区分
+/// 5 条 RR I/O 线程。`topic` 串以 `/` 开头会被替换成 `_`（thread name 不
+/// 接 `/`）。
 ///
 /// # Errors
 ///
 /// - `client_factory` panic（factory 起 iceoryx2 service 失败 / port 耗尽）
 /// - `thread::Builder::spawn` 失败（极罕见）
-pub fn spawn_rr_io_thread<F>(
+pub fn spawn_rr_io_thread<Req, Resp, F>(
     cfg: &RrIoThreadConfig,
     client_factory: F,
     forward_rx: Receiver<RrForwardRequest>,
 ) -> std::io::Result<RrIoThreadHandle>
 where
-    F: FnOnce() -> Iceoryx2RrClient<markers::ClearEStopRequest, markers::ClearEStopResponse>
-        + Send
-        + 'static,
+    Req: BodyMarker,
+    Resp: BodyMarker,
+    F: FnOnce() -> Iceoryx2RrClient<Req, Resp> + Send + 'static,
 {
     let stop = Arc::new(AtomicBool::new(false));
     let metrics = Arc::new(RrIoMetrics::default());
@@ -220,20 +242,22 @@ where
     // 同步 ready signal：spawn 返回前确认 client_factory 已成功执行。
     let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<()>(0);
 
-    let join = thread::Builder::new()
-        .name("gw_rr_io_thread".into())
-        .spawn(move || {
-            let client = client_factory();
-            let _ = ready_tx.send(());
-            drop(ready_tx);
-            run_loop(
-                &cfg_clone,
-                &client,
-                &forward_rx,
-                &stop_clone,
-                &metrics_clone,
-            );
-        })?;
+    // thread name 从 topic 串派生，方便多 RR 通道并存时 audit 日志区分
+    // （per-process 唯一性：5 条 RR topic 串各不同）。
+    let thread_name = thread_name_for(&cfg.topic);
+
+    let join = thread::Builder::new().name(thread_name).spawn(move || {
+        let client = client_factory();
+        let _ = ready_tx.send(());
+        drop(ready_tx);
+        run_loop::<Req, Resp>(
+            &cfg_clone,
+            &client,
+            &forward_rx,
+            &stop_clone,
+            &metrics_clone,
+        );
+    })?;
 
     if ready_rx.recv().is_err() {
         return Err(std::io::Error::other(
@@ -248,18 +272,37 @@ where
     })
 }
 
+/// 把 iceoryx2 service topic 串转 thread name。`/` 替成 `_`，前缀
+/// `gw_rr_io_`，截断到 14 字符（pthread thread name 上限 16 含 NUL；
+/// `gw_rr_io_` 9 + 上限 7 字符即 16 截断）。
+fn thread_name_for(topic: &str) -> String {
+    // pthread name 上限是 16（含 NUL），gw_rr_io_ 9 字符；剩 6 字符后缀。
+    // topic 串末尾通常是 method 名（如 "task_invoke"），直接截后缀几乎一定
+    // 撞名（"task_i"），所以用 hash 后缀更稳。但为了 debuggable 优先取
+    // topic 末尾 method 名截断 —— prod 5 条 topic 末尾不重复（clear_estop /
+    // task_invoke / task_cancel / task_status / clear_error）。
+    let suffix = topic
+        .rsplit('/')
+        .next()
+        .unwrap_or(topic)
+        .chars()
+        .take(6)
+        .collect::<String>();
+    format!("gw_rr_io_{suffix}")
+}
+
 // ============================================================================
 // 主循环
 // ============================================================================
 
-fn run_loop(
+fn run_loop<Req: BodyMarker, Resp: BodyMarker>(
     cfg: &RrIoThreadConfig,
-    client: &Iceoryx2RrClient<markers::ClearEStopRequest, markers::ClearEStopResponse>,
+    client: &Iceoryx2RrClient<Req, Resp>,
     forward_rx: &Receiver<RrForwardRequest>,
     stop: &AtomicBool,
     metrics: &RrIoMetrics,
 ) {
-    let mut in_flight: Vec<InFlight> = Vec::new();
+    let mut in_flight: Vec<InFlight<Resp>> = Vec::new();
 
     while !stop.load(Ordering::Acquire) {
         // ─── 1) drain forward_rx → client.send → push 进 in-flight ───
@@ -374,6 +417,7 @@ mod tests {
     use iceoryx2::prelude::NodeBuilder;
     use iceoryx2::service::ipc::Service as IxService;
     use robot_msg::build_helpers::{build_clear_estop_request, build_clear_estop_response};
+    use robot_msg::markers;
     use robot_msg::msg::{ClearEStopResponse as FbResp, RpcRole, RpcStatus};
     use robot_transport::iceoryx2::request_response::{Iceoryx2RrServer, rr_client, rr_server};
 

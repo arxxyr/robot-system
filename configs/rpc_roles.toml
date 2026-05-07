@@ -1,17 +1,31 @@
-# v0.3 A1 RPC 角色 → capability 映射表。
+# v0.3 A1 + B4 RPC 角色 → capability 映射表。
 #
 # 对应 docs/00_design.md §5.4 权限模型（4 roles + 9 capabilities）。
 #
 # **A1-1 (3/3) scope**：本表只被 robot-rpc::auth::load_role_table 加载用
-# 于 viewer / operator / maintainer / admin → capability 查表。`clear_estop`
-# 是 A1-1 阶段唯一被 robot-rpc 真正使用的 capability；其它 capability 在
-# 本文件占位列出，是为 v0.5+ Phase B B3 完整 robot-rpc gateway 落地时一次
-# 性 check-in（避免那时改 schema 又改 role 表两边对不齐）。
+# 于 viewer / operator / maintainer / admin → capability 查表。
+#
+# **B4 (2/3-b) scope 升级**（outline §8.1 #7c 拍板）：robot-rpc gateway
+# 上线 4 个 task control plane RPC + ClearError，复用现有 capability：
+# - `Capability::InvokeTask`：InvokeTask / CancelTask（写 task）
+# - `Capability::ReadState`：GetTaskStatus / StreamTaskEvents（读 task 状态）
+# - `Capability::ClearError`：ClearError（清 coordinator Degraded 内存状态）
+# - `Capability::ClearEStop`：ClearEStop（A1，清磁盘 latch；safety-critical）
+# **不**扩 capability enum（outline §8.1 #7a 拍板 (a) 复用现有）。
 #
 # **`clear_estop` 必须 `(maintainer+)`**（reviewer A1-1 拍板硬边界）：
 # viewer / operator 不得拥有此 capability；任何修改本文件让 viewer /
 # operator 拿到 `clear_estop` 的 PR 都视为 §6.7 #3 "EStop 不可清为失忆态"
 # 阻断。
+#
+# **B4 (2/3-b) 收紧：`clear_error` 改 `(maintainer+)`**（outline §8.1 #7c
+# 拍板）：v0.3 A1 时 operator 拿了 `clear_error`，B4 上线 ClearError RPC
+# 时跟 ClearEStop 同款分级（错误恢复操作必须 maintainer+ 才能触发；
+# operator 仅能"提交 / 取消任务 / 查状态"，不接错误恢复）。本变更**是
+# 收紧**：viewer 不变 / operator 删 `clear_error` / maintainer / admin
+# 保留。注意跟 `clear_estop` 分级不同语义：clear_estop 清磁盘 latch
+# (safety-critical)；`clear_error` 仅清内存 Degraded 态（不碰 §6.7 任何
+# invariant）。
 
 # v0.3 A1 fake token → role 映射（mTLS / OIDC v0.5+）。**仅** dev /
 # staging 用；生产部署必须改成真 token store。token 字串内容自由（gateway
@@ -32,12 +46,15 @@ description = "只读：list / get / stream"
 capabilities = ["read_state"]
 
 [roles.operator]
-description = "操作员：可控但不可清 EStop / 改配置"
+description = "操作员：可提交/取消任务但不可清 EStop / 不可清 Error / 改配置"
+# B4 (2/3-b) 收紧（outline §8.1 #7c）：原 v0.3 A1 阶段 operator 含
+# `clear_error`；B4 上线 ClearError RPC 时统一改 `(maintainer+)` 跟
+# `clear_estop` 同款级别。operator 仅保留 task 写权限 + read + estop（紧
+# 急停止）；错误恢复必须 maintainer+ 触发。viewer 不变。
 capabilities = [
     "read_state",
     "invoke_task",
     "set_enabled",
-    "clear_error",
     "estop",
 ]
 

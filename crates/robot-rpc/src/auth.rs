@@ -277,13 +277,16 @@ mod tests {
 capabilities = ["read_state"]
 
 [roles.operator]
-capabilities = ["read_state", "invoke_task", "set_enabled", "clear_error", "estop"]
+# B4 (2/3-b) 收紧：operator 删 clear_error；ClearError 改 maintainer+。
+capabilities = ["read_state", "invoke_task", "set_enabled", "estop"]
 
 [roles.maintainer]
-capabilities = ["read_state", "clear_estop", "reload_calibration"]
+# B4 (2/3-b)：maintainer / admin 保留 clear_error（错误恢复 = maintainer+）；
+# invoke_task 跟 production rpc_roles.toml 对齐（maintainer 也能提交任务）。
+capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error", "reload_calibration"]
 
 [roles.admin]
-capabilities = ["read_state", "clear_estop", "set_policy", "shutdown"]
+capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error", "set_policy", "shutdown"]
 "#;
 
     #[test]
@@ -352,6 +355,65 @@ capabilities = ["read_state", "clear_estop", "set_policy", "shutdown"]
     fn operator_does_not_have_clear_estop() {
         let t = load_role_table(VALID_TOML).unwrap();
         assert!(!t.role_has_capability(Role::Operator, Capability::ClearEStop));
+    }
+
+    /// B4 (2/3-b) 收紧锁测：operator 不再拥有 `clear_error`（outline §8.1
+    /// #7c）。viewer 同样不拥有；maintainer / admin 保留。
+    ///
+    /// 跟 `clear_estop` 分级语义不同：`clear_estop` 清磁盘 latch
+    /// (safety-critical)，**不可** operator；`clear_error` 仅清内存
+    /// Degraded 态（不碰 §6.7 invariant），但同款收紧 = `(maintainer+)`，
+    /// 让"错误恢复"权限上限齐到 maintainer。
+    #[test]
+    fn b4_clear_error_tightened_to_maintainer_plus() {
+        let t = load_role_table(VALID_TOML).unwrap();
+        assert!(
+            !t.role_has_capability(Role::Viewer, Capability::ClearError),
+            "viewer 不应拥有 clear_error"
+        );
+        assert!(
+            !t.role_has_capability(Role::Operator, Capability::ClearError),
+            "B4 (2/3-b) 收紧（outline §8.1 #7c）：operator 不再拥有 clear_error"
+        );
+        assert!(
+            t.role_has_capability(Role::Maintainer, Capability::ClearError),
+            "maintainer 必须保留 clear_error（错误恢复入口）"
+        );
+        assert!(
+            t.role_has_capability(Role::Admin, Capability::ClearError),
+            "admin 必须保留 clear_error"
+        );
+    }
+
+    /// B4 (2/3-b) capability 复用锁测：4 个 task control plane RPC 均
+    /// 复用现有 capability，**不**扩 enum（outline §8.1 #7a 拍板 (a)）。
+    ///
+    /// - `InvokeTask` / `CancelTask` → `Capability::InvokeTask` (operator+)
+    /// - `GetTaskStatus` / `StreamTaskEvents` → `Capability::ReadState` (viewer+)
+    /// - `ClearError` → `Capability::ClearError` (maintainer+；上一条锁测)
+    #[test]
+    fn b4_task_rpc_capabilities_reuse_existing_enum() {
+        let t = load_role_table(VALID_TOML).unwrap();
+
+        // InvokeTask / CancelTask = operator+ (复用 InvokeTask capability)
+        assert!(
+            !t.role_has_capability(Role::Viewer, Capability::InvokeTask),
+            "viewer 不能 InvokeTask"
+        );
+        for r in [Role::Operator, Role::Maintainer, Role::Admin] {
+            assert!(
+                t.role_has_capability(r, Capability::InvokeTask),
+                "{r:?} 必须能 InvokeTask"
+            );
+        }
+
+        // GetTaskStatus / StreamTaskEvents = viewer+ (复用 ReadState capability)
+        for r in [Role::Viewer, Role::Operator, Role::Maintainer, Role::Admin] {
+            assert!(
+                t.role_has_capability(r, Capability::ReadState),
+                "{r:?} 必须能 ReadState（含 GetTaskStatus / StreamTaskEvents）"
+            );
+        }
     }
 
     /// 硬不变量回归锁：viewer 拿到 clear_estop → load 必须拒绝。

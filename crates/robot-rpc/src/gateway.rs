@@ -10,13 +10,13 @@
 //! - **bin (`src/bin/robot_rpc_gateway.rs`)**：`#[tokio::main]` + CLI parse +
 //!   loopback bind 校验 + 加载 role table + 起 [`run_gateway_with_rr_io`]；
 //!   不持业务逻辑。
-//! - **lib (本模块)**：[`ClearEStopHandler`] + [`run_gateway_with_rr_io`]
+//! - **lib (本模块)**：[`GatewayHandler`] + [`run_gateway_with_rr_io`]
 //!   加 [`run_gateway`] + 公共 [`GatewayConfig`] / [`LoopbackBindError`]
 //!   / [`GatewayReadyError`]。
 //!
 //! ## A1-3 (2/3-b2-2) scope（本轮）
 //!
-//! - [`ClearEStopHandler`] 真起 12 步 logic：validate → auth (token →
+//! - [`GatewayHandler`] 真起 12 步 logic：validate → auth (token →
 //!   role) → authz (role has `clear_estop` cap) → fingerprint →
 //!   `IdempotencyCache::decide` (Replay / Conflict / Capacity / FreshInsert)
 //!   → 计算 deadline_ns → 映射 wire `RpcRole` → build wire `ClearEStopRequest`
@@ -76,14 +76,14 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crossbeam_channel::{Sender, TrySendError, bounded};
+use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::time::RobotClock;
 use robot_msg::build_helpers::build_clear_estop_request;
 use robot_msg::markers;
 use robot_msg::msg::{ClearEStopResponse as FbResp, RpcRole};
-use robot_transport::iceoryx2::request_response::rr_client;
+use robot_transport::iceoryx2::request_response::{Iceoryx2RrClient, rr_client};
 use thiserror::Error;
 use tokio::sync::watch;
 
@@ -91,7 +91,7 @@ use crate::auth::{Capability, Role, RoleTable};
 use crate::clear_estop::{
     clear_estop_idempotency_fingerprint, rpc_status_to_tonic_code, validate_clear_estop_command,
 };
-use crate::idempotency::{CachedAck, Decision, IdempotencyCache};
+use crate::idempotency::{CachedResponse, Decision, IdempotencyCache, Method};
 use crate::proto::robot_control_server::{RobotControl, RobotControlServer};
 use crate::proto::{
     Ack, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, InvokeTaskCommand, TaskEvent,
@@ -233,16 +233,34 @@ pub fn validate_loopback_bind(addr: &SocketAddr) -> Result<(), LoopbackBindError
 }
 
 // ============================================================================
-// ClearEStopHandler
+// GatewayHandler
 // ============================================================================
 
-/// `ClearEStopHandler` 持有的 gateway 运行期状态。bin / `run_gateway_with_rr_io`
+/// `GatewayHandler` 持有的 gateway 运行期状态。bin / `run_gateway_with_rr_io`
 /// 构造，handler 借用。`Arc` 包好 thread-safe；tonic clone handler 给每个
 /// worker，state 通过 `Arc` 共享。
-pub struct ClearEStopHandlerState {
-    /// 转发 wire request 到 [`crate::rr_io_thread`]。
+///
+/// **B4 (2/3-b) 起持 5 个 RR forward channel**（5 RPC 各一条 iceoryx2 RR
+/// 通道，对应 5 个 rr_io_thread）：
+/// - `rr_forward_tx_clear_estop`（A1 ClearEStop；改名加 method 后缀避免
+///   跟 4 个 task forward 混淆）
+/// - `rr_forward_tx_task_invoke` / `_task_cancel` / `_task_status` /
+///   `_clear_error`（B4 task control plane）
+///
+/// `StreamTaskEvents` 不经此 forward channel 走 pubsub，留 2/3-c 接。
+pub struct GatewayHandlerState {
+    /// ClearEStop 转发 wire request 到 [`crate::rr_io_thread`]（A1 落地）。
     /// `bounded(64)` 跟 daemon 端 `rr_server_thread::max_in_flight` 对齐。
-    pub rr_forward_tx: Sender<RrForwardRequest>,
+    pub rr_forward_tx_clear_estop: Sender<RrForwardRequest>,
+    /// `InvokeTask` 转发 wire request（B4 (2/3-b)）。
+    pub rr_forward_tx_task_invoke: Sender<RrForwardRequest>,
+    /// `CancelTask` 转发 wire request（B4 (2/3-b)）。
+    pub rr_forward_tx_task_cancel: Sender<RrForwardRequest>,
+    /// `GetTaskStatus` 转发 wire request（B4 (2/3-b)；只读 RPC，**不**进
+    /// idempotency cache）。
+    pub rr_forward_tx_task_status: Sender<RrForwardRequest>,
+    /// `ClearError` 转发 wire request（B4 (2/3-b)）。
+    pub rr_forward_tx_clear_error: Sender<RrForwardRequest>,
     /// fake token → role + role → capability 查表。`Arc` 让多 handler /
     /// 多 worker 共享。
     pub role_table: Arc<RoleTable>,
@@ -273,10 +291,10 @@ pub struct ClearEStopHandlerState {
 // 手动 impl 只暴露字面字段方便 trace。`#[allow(clippy::missing_fields_in_debug)]`
 // 跟 daemon 端 `rr_server_thread::PendingRr` / `RrForwardRequest` 同模式。
 #[allow(clippy::missing_fields_in_debug)]
-impl core::fmt::Debug for ClearEStopHandlerState {
+impl core::fmt::Debug for GatewayHandlerState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let cache_capacity = self.idempotency.lock().map_or(0, |c| c.capacity());
-        f.debug_struct("ClearEStopHandlerState")
+        f.debug_struct("GatewayHandlerState")
             .field("rr_timeout_grace_ms", &self.rr_timeout_grace_ms)
             .field("idempotency_capacity", &cache_capacity)
             .finish()
@@ -286,23 +304,23 @@ impl core::fmt::Debug for ClearEStopHandlerState {
 /// gRPC `RobotControl` service 实现。**A1-3 (2/3-b2-2)** 起持完整 state +
 /// 12 步 logic（详 module doc）。
 ///
-/// 单测可用 [`ClearEStopHandler::for_test`] 构造一份 placeholder state（仅
+/// 单测可用 [`GatewayHandler::for_test`] 构造一份 placeholder state（仅
 /// 用于不调 `clear_e_stop` 的 server-binding 测试）。
 #[derive(Debug)]
-pub struct ClearEStopHandler {
-    state: ClearEStopHandlerState,
+pub struct GatewayHandler {
+    state: GatewayHandlerState,
 }
 
-impl ClearEStopHandler {
+impl GatewayHandler {
     /// 用 caller 提供的 state 构造 handler。
     #[must_use]
-    pub fn new(state: ClearEStopHandlerState) -> Self {
+    pub fn new(state: GatewayHandlerState) -> Self {
         Self { state }
     }
 
     /// 借出内部 state（诊断 / 测试用，**不**用于线程间转移所有权）。
     #[must_use]
-    pub fn state(&self) -> &ClearEStopHandlerState {
+    pub fn state(&self) -> &GatewayHandlerState {
         &self.state
     }
 
@@ -316,14 +334,25 @@ impl ClearEStopHandler {
     #[cfg(test)]
     #[must_use]
     pub fn for_test() -> Self {
-        // forward channel 留 1 buf；测试 drop rx 让 handler 看见 Disconnected。
-        let (forward_tx, _forward_rx) = bounded(1);
+        // 5 个 forward channel 各留 1 buf；测试 drop rx 让 handler 看见
+        // Disconnected。**RX 端不存**（让 sender 在第一次 send 时立刻
+        // Disconnected），用于"只测 server bind / shutdown，不真调
+        // handler"的 placeholder 场景。
+        let (forward_tx_clear_estop, _rx0) = bounded(1);
+        let (forward_tx_task_invoke, _rx1) = bounded(1);
+        let (forward_tx_task_cancel, _rx2) = bounded(1);
+        let (forward_tx_task_status, _rx3) = bounded(1);
+        let (forward_tx_clear_error, _rx4) = bounded(1);
         // shutdown_rx 始终 false（测试不模拟 shutdown）；保留 sender leak 让
         // receiver borrow 永远拿到 false。
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Box::leak(Box::new(shutdown_tx));
-        let state = ClearEStopHandlerState {
-            rr_forward_tx: forward_tx,
+        let state = GatewayHandlerState {
+            rr_forward_tx_clear_estop: forward_tx_clear_estop,
+            rr_forward_tx_task_invoke: forward_tx_task_invoke,
+            rr_forward_tx_task_cancel: forward_tx_task_cancel,
+            rr_forward_tx_task_status: forward_tx_task_status,
+            rr_forward_tx_clear_error: forward_tx_clear_error,
             role_table: Arc::new(RoleTable::default()),
             idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
                 Duration::from_mins(1),
@@ -348,7 +377,7 @@ fn role_to_wire(r: Role) -> RpcRole {
 }
 
 #[tonic::async_trait]
-impl RobotControl for ClearEStopHandler {
+impl RobotControl for GatewayHandler {
     #[allow(clippy::too_many_lines)] // 12 步 logic 一条 fn 实现，明确流程
     async fn clear_e_stop(
         &self,
@@ -402,22 +431,40 @@ impl RobotControl for ClearEStopHandler {
                 .idempotency
                 .lock()
                 .expect("idempotency cache mutex poisoned");
-            match cache.decide(&validated.idempotency_key, fingerprint) {
+            match cache.decide(Method::ClearEStop, &validated.idempotency_key, fingerprint) {
                 Decision::FreshInsert(h) => h,
-                Decision::Replay(ack) => {
+                Decision::Replay(CachedResponse::ClearEStop {
+                    cleared_at_ns,
+                    dry_run,
+                }) => {
                     drop(cache);
                     tracing::info!(
                         request_id = %validated.request_id,
                         idempotency_key = %validated.idempotency_key,
-                        cleared_at_ns = ack.cleared_at_ns,
-                        dry_run = ack.dry_run,
+                        cleared_at_ns,
+                        dry_run,
                         "ClearEStop idempotency replay"
                     );
                     return Ok(tonic::Response::new(Ack {
                         request_id: validated.request_id,
-                        cleared_at_ns: ack.cleared_at_ns,
-                        dry_run: ack.dry_run,
+                        cleared_at_ns,
+                        dry_run,
                     }));
+                }
+                Decision::Replay(other) => {
+                    // method namespace 已确保 cache key 不跨 method；同一
+                    // method 命中 wrong variant 是 BUG（cache 内部状态不一
+                    // 致）。fail-fast Internal 让运维一眼看见。
+                    drop(cache);
+                    tracing::error!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        cached_variant = ?other,
+                        "BUG: ClearEStop method namespace 命中非 ClearEStop variant 的 cached response"
+                    );
+                    return Err(tonic::Status::internal(
+                        "idempotency cache namespace inconsistency",
+                    ));
                 }
                 Decision::Conflict {
                     cached_fingerprint: _,
@@ -504,7 +551,7 @@ impl RobotControl for ClearEStopHandler {
             oneshot_tx,
             request_id: validated.request_id.clone(),
         };
-        match self.state.rr_forward_tx.try_send(forward) {
+        match self.state.rr_forward_tx_clear_estop.try_send(forward) {
             Ok(()) => {}
             Err(TrySendError::Full(_)) => {
                 tracing::warn!(
@@ -612,7 +659,7 @@ impl RobotControl for ClearEStopHandler {
                 .expect("idempotency cache mutex poisoned");
             insert_handle.commit(
                 &mut cache,
-                CachedAck {
+                CachedResponse::ClearEStop {
                     cleared_at_ns,
                     dry_run,
                 },
@@ -653,15 +700,15 @@ impl RobotControl for ClearEStopHandler {
     }
 
     // ------------------------------------------------------------------------
-    // v0.3 B4 task control plane stubs（B4 (1/3-a) codegen glue）
+    // v0.3 B4 (2/3-b) task control plane handlers
     //
-    // 5 个 RPC 仅返 `Unimplemented`，让 lib 通过 trait 完整性检查。真正
-    // 的 handler 实现 + sync↔async adapter + IdempotencyCache + auth /
-    // capability 校验落 B4 (2/3) commit；s1 端 RR server thread + events
-    // drain pubsub 落 B4 (1/3-b) / (1/3-c) commit。
+    // 4 个 task RPC + ClearError 真 handler 实现走 [`crate::task_handlers`]
+    // module（12 步骨架共享 helper + 每 method 独立 fingerprint / wire
+    // codec）。trait 方法本身是薄壳，仅做 trait 完整性 +
+    // `tonic::Request → 内部 helper` 路由。
     //
-    // 沿 A1-1 (3/3) 阶段同款"先生成 server trait + 占位 impl，后续 commit
-    // 替换"模式（详 docs/handoffs/v0.3_b4_outline.md §11.1 拆分计划）。
+    // `StreamTaskEvents` 留 Unimplemented 占位 → B4 (2/3-c) 接 per-ActionId
+    // pubsub adapter（events drain → tokio::sync::mpsc → tonic stream）。
     // ------------------------------------------------------------------------
 
     type StreamTaskEventsStream = std::pin::Pin<
@@ -674,47 +721,43 @@ impl RobotControl for ClearEStopHandler {
 
     async fn invoke_task(
         &self,
-        _request: tonic::Request<InvokeTaskCommand>,
+        request: tonic::Request<InvokeTaskCommand>,
     ) -> Result<tonic::Response<TaskHandle>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "InvokeTask: B4 (1/3-a) schema only; handler lands B4 (2/3)",
-        ))
+        crate::task_handlers::handle_invoke_task(&self.state, request).await
     }
 
     async fn cancel_task(
         &self,
-        _request: tonic::Request<CancelTaskCommand>,
+        request: tonic::Request<CancelTaskCommand>,
     ) -> Result<tonic::Response<Ack>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "CancelTask: B4 (1/3-a) schema only; handler lands B4 (2/3)",
-        ))
+        crate::task_handlers::handle_cancel_task(&self.state, request).await
     }
 
     async fn get_task_status(
         &self,
-        _request: tonic::Request<TaskHandleRef>,
+        request: tonic::Request<TaskHandleRef>,
     ) -> Result<tonic::Response<TaskStatus>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "GetTaskStatus: B4 (1/3-a) schema only; handler lands B4 (2/3)",
-        ))
+        crate::task_handlers::handle_get_task_status(&self.state, request).await
     }
 
     async fn stream_task_events(
         &self,
         _request: tonic::Request<TaskHandleRef>,
     ) -> Result<tonic::Response<Self::StreamTaskEventsStream>, tonic::Status> {
+        // **B4 (2/3-c)** 接 per-ActionId pubsub adapter；本轮（2/3-b）仅
+        // 占位让 trait 完整。详 docs/handoffs/v0.3_b4_outline.md §5.2 拍板
+        // 拓扑（s1 events_drain → pubsub → gateway sub → tokio::mpsc →
+        // tonic stream）。
         Err(tonic::Status::unimplemented(
-            "StreamTaskEvents: B4 (1/3-a) schema only; handler lands B4 (2/3)",
+            "StreamTaskEvents: B4 (2/3-b) handler lands; pubsub stream adapter lands B4 (2/3-c)",
         ))
     }
 
     async fn clear_error(
         &self,
-        _request: tonic::Request<ClearErrorCommand>,
+        request: tonic::Request<ClearErrorCommand>,
     ) -> Result<tonic::Response<Ack>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "ClearError: B4 (1/3-a) schema only; handler lands B4 (2/3)",
-        ))
+        crate::task_handlers::handle_clear_error(&self.state, request).await
     }
 }
 
@@ -850,7 +893,7 @@ impl From<GatewayReadyError> for GatewayError {
 }
 
 /// 起 tonic gRPC server，bind 到 [`GatewayConfig::listen_addr`]，挂
-/// [`ClearEStopHandler`]，等 `shutdown_rx` 收到 `true` 后 graceful stop。
+/// [`GatewayHandler`]，等 `shutdown_rx` 收到 `true` 后 graceful stop。
 ///
 /// **配置校验**先行：[`GatewayConfig::validate`] 通过（含 loopback bind /
 /// idempotency TTL/max > 0 / robot_id 非空）才往下走（reviewer 拍板硬边界）。
@@ -867,7 +910,7 @@ impl From<GatewayReadyError> for GatewayError {
 /// 见 [`GatewayError`]。
 pub async fn run_gateway(
     cfg: GatewayConfig,
-    handler: Arc<ClearEStopHandler>,
+    handler: Arc<GatewayHandler>,
     shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), GatewayError> {
     run_gateway_with_ready(cfg, handler, shutdown_rx, None).await
@@ -890,7 +933,7 @@ pub async fn run_gateway(
 /// 见 [`GatewayError`]。
 pub async fn run_gateway_with_ready(
     cfg: GatewayConfig,
-    handler: Arc<ClearEStopHandler>,
+    handler: Arc<GatewayHandler>,
     mut shutdown_rx: watch::Receiver<bool>,
     ready_tx: Option<tokio::sync::oneshot::Sender<Result<SocketAddr, GatewayReadyError>>>,
 ) -> Result<(), GatewayError> {
@@ -1000,7 +1043,7 @@ pub async fn run_gateway_with_ready(
 ///    `Iceoryx2RrClient`；topic = `/<robot_id>/control/clear_estop`，跟
 ///    daemon 端 `rr_server_thread` 对接）；
 /// 2. 构造 [`IdempotencyCache`]（TTL + cap 取自 `cfg`）；
-/// 3. 构造 [`ClearEStopHandler`] 持完整 state（rr forward channel +
+/// 3. 构造 [`GatewayHandler`] 持完整 state（rr forward channel +
 ///    role table + cache + clock + grace + **`shutdown_rx` clone**）；
 /// 4. 调 [`run_gateway_with_ready`] 起 tonic gRPC server（同一份
 ///    `shutdown_rx` 也喂给 tonic shutdown signal future，独立 receiver
@@ -1023,6 +1066,7 @@ pub async fn run_gateway_with_ready(
 /// # Errors
 ///
 /// 见 [`GatewayError`]。
+#[allow(clippy::too_many_lines)] // 5 个 rr_io_thread spawn + cache + handler + tonic 起 + cleanup；拆 helper 反而让阅读跳函数。
 pub async fn run_gateway_with_rr_io(
     cfg: GatewayConfig,
     role_table: Arc<RoleTable>,
@@ -1043,31 +1087,22 @@ pub async fn run_gateway_with_rr_io(
         return Err(GatewayError::Config(e));
     }
 
-    // ─── 1) rr_io_thread spawn 优先（在 tonic 起来之前就位） ───
-    let topic = format!("/{}/control/clear_estop", cfg.robot_id);
-    let topic_for_factory = topic.clone();
-    let client_factory = move || {
-        let node = NodeBuilder::new()
-            .create::<IxService>()
-            .expect("iceoryx2 NodeBuilder::create");
-        let client = rr_client::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
-            &node,
-            &topic_for_factory,
-        )
-        .expect("rr_client create");
-        // node 持 service shm fd；leak 让 client 活到 daemon 进程退出。
-        Box::leak(Box::new(node));
-        client
-    };
-    let (forward_tx, forward_rx) = bounded::<RrForwardRequest>(64);
+    // ─── 1) 5 个 rr_io_thread spawn（B4 (2/3-b)）。每个 RR topic 一条
+    //     独立线程 + 独立 typed Iceoryx2RrClient + 独立 forward channel。
+    //     任一 spawn 失败 → 把先前已 spawn 的 stop/join 后回滚 → 返
+    //     RrIoSpawn 错。tonic 还没起，不需要 graceful 等。 ───
+    let topics = RrTopics::for_robot(&cfg.robot_id);
+    let mut spawned = SpawnedRrIo::default();
 
-    let rr_handle: RrIoThreadHandle = match spawn_rr_io_thread(
+    let rr_clear_estop = match spawn_rr_io_thread(
         &RrIoThreadConfig {
-            topic: topic.clone(),
+            topic: topics.clear_estop.clone(),
             poll_interval_ns: 500_000,
         },
-        client_factory,
-        forward_rx,
+        client_factory_for::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+            topics.clear_estop.clone(),
+        ),
+        spawned.clear_estop_rx(),
     ) {
         Ok(h) => h,
         Err(e) => {
@@ -1075,15 +1110,111 @@ pub async fn run_gateway_with_rr_io(
             if let Some(tx) = ready_tx {
                 let _ = tx.send(Err(ready_err));
             }
+            spawned.stop_and_join_all();
             return Err(GatewayError::RrIoSpawn(e));
         }
     };
+    spawned.handles.push(rr_clear_estop);
+
+    let rr_task_invoke = match spawn_rr_io_thread(
+        &RrIoThreadConfig {
+            topic: topics.task_invoke.clone(),
+            poll_interval_ns: 500_000,
+        },
+        client_factory_for::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
+            topics.task_invoke.clone(),
+        ),
+        spawned.task_invoke_rx(),
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            let ready_err = GatewayReadyError::rr_io_spawn_from_io(&e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            spawned.stop_and_join_all();
+            return Err(GatewayError::RrIoSpawn(e));
+        }
+    };
+    spawned.handles.push(rr_task_invoke);
+
+    let rr_task_cancel = match spawn_rr_io_thread(
+        &RrIoThreadConfig {
+            topic: topics.task_cancel.clone(),
+            poll_interval_ns: 500_000,
+        },
+        client_factory_for::<markers::CancelTaskRequest, markers::CancelTaskResponse>(
+            topics.task_cancel.clone(),
+        ),
+        spawned.task_cancel_rx(),
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            let ready_err = GatewayReadyError::rr_io_spawn_from_io(&e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            spawned.stop_and_join_all();
+            return Err(GatewayError::RrIoSpawn(e));
+        }
+    };
+    spawned.handles.push(rr_task_cancel);
+
+    let rr_task_status = match spawn_rr_io_thread(
+        &RrIoThreadConfig {
+            topic: topics.task_status.clone(),
+            poll_interval_ns: 500_000,
+        },
+        client_factory_for::<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>(
+            topics.task_status.clone(),
+        ),
+        spawned.task_status_rx(),
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            let ready_err = GatewayReadyError::rr_io_spawn_from_io(&e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            spawned.stop_and_join_all();
+            return Err(GatewayError::RrIoSpawn(e));
+        }
+    };
+    spawned.handles.push(rr_task_status);
+
+    let rr_clear_error = match spawn_rr_io_thread(
+        &RrIoThreadConfig {
+            topic: topics.clear_error.clone(),
+            poll_interval_ns: 500_000,
+        },
+        client_factory_for::<markers::ClearErrorRequest, markers::ClearErrorResponse>(
+            topics.clear_error.clone(),
+        ),
+        spawned.clear_error_rx(),
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            let ready_err = GatewayReadyError::rr_io_spawn_from_io(&e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            spawned.stop_and_join_all();
+            return Err(GatewayError::RrIoSpawn(e));
+        }
+    };
+    spawned.handles.push(rr_clear_error);
+
     tracing::info!(
-        topic = %topic,
-        "rr_io_thread started (ClearEStop RR I/O thread; A1-3 (2/3-b2-1))"
+        topic_clear_estop = %topics.clear_estop,
+        topic_task_invoke = %topics.task_invoke,
+        topic_task_cancel = %topics.task_cancel,
+        topic_task_status = %topics.task_status,
+        topic_clear_error = %topics.clear_error,
+        "rr_io_threads started (5 RR I/O threads; B4 (2/3-b))"
     );
 
-    // ─── 2) idempotency cache ───
+    // ─── 2) idempotency cache（5 个 method 共用一个 cache 实例 + namespace
+    //     key；详 idempotency::Method）───
     let cache = Arc::new(Mutex::new(IdempotencyCache::with_capacity(
         Duration::from_secs(cfg.idempotency_ttl_secs),
         cfg.idempotency_max_entries,
@@ -1094,8 +1225,12 @@ pub async fn run_gateway_with_rr_io(
     //     （由 run_gateway_with_ready 内部消费）；两路独立 receiver borrow
     //     不冲突。 ───
     let handler_shutdown_rx = shutdown_rx.clone();
-    let handler = Arc::new(ClearEStopHandler::new(ClearEStopHandlerState {
-        rr_forward_tx: forward_tx,
+    let handler = Arc::new(GatewayHandler::new(GatewayHandlerState {
+        rr_forward_tx_clear_estop: spawned.forward_txs.clear_estop.clone(),
+        rr_forward_tx_task_invoke: spawned.forward_txs.task_invoke.clone(),
+        rr_forward_tx_task_cancel: spawned.forward_txs.task_cancel.clone(),
+        rr_forward_tx_task_status: spawned.forward_txs.task_status.clone(),
+        rr_forward_tx_clear_error: spawned.forward_txs.clear_error.clone(),
         role_table,
         idempotency: cache,
         clock,
@@ -1107,12 +1242,154 @@ pub async fn run_gateway_with_rr_io(
     let serve_result = run_gateway_with_ready(cfg, handler, shutdown_rx, ready_tx).await;
 
     // ─── 5) **关键边界**：tonic server 退出**之后**才停 rr_io_thread ───
-    rr_handle.request_stop();
-    if let Err(panic) = rr_handle.join() {
-        tracing::error!(?panic, "rr_io_thread panicked at join");
-    }
+    spawned.stop_and_join_all();
 
     serve_result
+}
+
+/// 5 个 RR topic 串汇总（per-robot 派生）。
+struct RrTopics {
+    clear_estop: String,
+    task_invoke: String,
+    task_cancel: String,
+    task_status: String,
+    clear_error: String,
+}
+
+impl RrTopics {
+    fn for_robot(robot_id: &str) -> Self {
+        Self {
+            clear_estop: format!("/{robot_id}/control/clear_estop"),
+            task_invoke: format!("/{robot_id}/control/task_invoke"),
+            task_cancel: format!("/{robot_id}/control/task_cancel"),
+            task_status: format!("/{robot_id}/control/task_status"),
+            clear_error: format!("/{robot_id}/control/clear_error"),
+        }
+    }
+}
+
+/// 5 个 RR topic 各自的 forward channel sender pair。给 handler state 用。
+struct ForwardTxs {
+    clear_estop: Sender<RrForwardRequest>,
+    task_invoke: Sender<RrForwardRequest>,
+    task_cancel: Sender<RrForwardRequest>,
+    task_status: Sender<RrForwardRequest>,
+    clear_error: Sender<RrForwardRequest>,
+}
+
+/// rr_io_thread spawn 进度跟踪 + 错误回滚 + shutdown 时一键 stop+join。
+///
+/// 5 个 forward channel 一次性构造（forward_tx 给 handler，forward_rx
+/// 给对应 spawn fn）；handles 增量 push（任一 spawn 失败时 stop_and_join_all
+/// 把已 spawn 的回滚清掉）。
+struct SpawnedRrIo {
+    forward_txs: ForwardTxs,
+    /// 5 个 forward_rx 分别 take 进 spawn fn 之前临时存这里。`take` 后
+    /// `Option::None` 占位；spawn 失败的回滚路径不需要 forward_rx。
+    forward_rxs: ForwardRxs,
+    handles: Vec<RrIoThreadHandle>,
+}
+
+#[allow(clippy::struct_field_names)]
+struct ForwardRxs {
+    clear_estop: Option<Receiver<RrForwardRequest>>,
+    task_invoke: Option<Receiver<RrForwardRequest>>,
+    task_cancel: Option<Receiver<RrForwardRequest>>,
+    task_status: Option<Receiver<RrForwardRequest>>,
+    clear_error: Option<Receiver<RrForwardRequest>>,
+}
+
+impl Default for SpawnedRrIo {
+    fn default() -> Self {
+        let (tx0, rx0) = bounded::<RrForwardRequest>(64);
+        let (tx1, rx1) = bounded::<RrForwardRequest>(64);
+        let (tx2, rx2) = bounded::<RrForwardRequest>(64);
+        let (tx3, rx3) = bounded::<RrForwardRequest>(64);
+        let (tx4, rx4) = bounded::<RrForwardRequest>(64);
+        Self {
+            forward_txs: ForwardTxs {
+                clear_estop: tx0,
+                task_invoke: tx1,
+                task_cancel: tx2,
+                task_status: tx3,
+                clear_error: tx4,
+            },
+            forward_rxs: ForwardRxs {
+                clear_estop: Some(rx0),
+                task_invoke: Some(rx1),
+                task_cancel: Some(rx2),
+                task_status: Some(rx3),
+                clear_error: Some(rx4),
+            },
+            handles: Vec::new(),
+        }
+    }
+}
+
+impl SpawnedRrIo {
+    fn clear_estop_rx(&mut self) -> Receiver<RrForwardRequest> {
+        self.forward_rxs
+            .clear_estop
+            .take()
+            .expect("clear_estop forward_rx already taken")
+    }
+    fn task_invoke_rx(&mut self) -> Receiver<RrForwardRequest> {
+        self.forward_rxs
+            .task_invoke
+            .take()
+            .expect("task_invoke forward_rx already taken")
+    }
+    fn task_cancel_rx(&mut self) -> Receiver<RrForwardRequest> {
+        self.forward_rxs
+            .task_cancel
+            .take()
+            .expect("task_cancel forward_rx already taken")
+    }
+    fn task_status_rx(&mut self) -> Receiver<RrForwardRequest> {
+        self.forward_rxs
+            .task_status
+            .take()
+            .expect("task_status forward_rx already taken")
+    }
+    fn clear_error_rx(&mut self) -> Receiver<RrForwardRequest> {
+        self.forward_rxs
+            .clear_error
+            .take()
+            .expect("clear_error forward_rx already taken")
+    }
+
+    /// 给所有已 spawn 的 rr_io_thread 发 stop + join。回滚 / shutdown 共用。
+    /// 任一 join panic 仅 log，不中断剩余 join（避免 thread leak）。
+    fn stop_and_join_all(self) {
+        for h in &self.handles {
+            h.request_stop();
+        }
+        for h in self.handles {
+            if let Err(panic) = h.join() {
+                tracing::error!(?panic, "rr_io_thread panicked at join");
+            }
+        }
+    }
+}
+
+/// 构造一个 typed `client_factory` closure（move topic 进闭包；闭包内构
+/// 造独立 iceoryx2 Node + RR client + leak Node 让 client 活到进程退出）。
+fn client_factory_for<Req, Resp>(
+    topic: String,
+) -> impl FnOnce() -> Iceoryx2RrClient<Req, Resp> + Send + 'static
+where
+    Req: robot_msg::markers::BodyMarker,
+    Resp: robot_msg::markers::BodyMarker,
+{
+    move || {
+        let node = NodeBuilder::new()
+            .create::<IxService>()
+            .expect("iceoryx2 NodeBuilder::create");
+        let client = rr_client::<Req, Resp>(&node, &topic).expect("rr_client create");
+        // node 持 service shm fd；leak 让 client 活到 daemon 进程退出。
+        Box::leak(Box::new(node));
+        client
+    }
 }
 
 // ============================================================================
@@ -1215,7 +1492,7 @@ mod tests {
             rr_timeout_grace_ms: 500,
         };
         let (_tx, rx) = watch::channel(false);
-        let result = run_gateway(cfg, Arc::new(ClearEStopHandler::for_test()), rx).await;
+        let result = run_gateway(cfg, Arc::new(GatewayHandler::for_test()), rx).await;
         match result {
             Err(GatewayError::Config(ConfigError::LoopbackBind(
                 LoopbackBindError::NonLoopback(_),
@@ -1249,7 +1526,7 @@ mod tests {
         let handle = tokio::spawn(async move {
             run_gateway_with_ready(
                 cfg,
-                Arc::new(ClearEStopHandler::for_test()),
+                Arc::new(GatewayHandler::for_test()),
                 rx,
                 Some(ready_tx),
             )
@@ -1346,7 +1623,7 @@ mod tests {
         let _handle = tokio::spawn(async move {
             run_gateway_with_ready(
                 cfg,
-                Arc::new(ClearEStopHandler::for_test()),
+                Arc::new(GatewayHandler::for_test()),
                 rx,
                 Some(ready_tx),
             )
@@ -1380,7 +1657,7 @@ mod tests {
         let handle_a = tokio::spawn(async move {
             run_gateway_with_ready(
                 cfg_a,
-                Arc::new(ClearEStopHandler::for_test()),
+                Arc::new(GatewayHandler::for_test()),
                 shutdown_a_rx,
                 Some(ready_a_tx),
             )
@@ -1405,7 +1682,7 @@ mod tests {
         let handle_b = tokio::spawn(async move {
             run_gateway_with_ready(
                 cfg_b,
-                Arc::new(ClearEStopHandler::for_test()),
+                Arc::new(GatewayHandler::for_test()),
                 shutdown_b_rx,
                 Some(ready_b_tx),
             )
@@ -1441,7 +1718,7 @@ mod tests {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    // ClearEStopHandler logic 12 步单测（A1-3 (2/3-b2-2)）
+    // GatewayHandler logic 12 步单测（A1-3 (2/3-b2-2)）
     //
     // 模式：用 crossbeam_channel 直接 read forward channel 充当 mock daemon；
     // 单线程（tokio test 主线程）跑 spawn_blocking 拿 wire request → 回 wire
@@ -1455,7 +1732,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::auth::{Capability, Role, load_role_table};
-    use crate::idempotency::{CachedAck, IdempotencyCache};
+    use crate::idempotency::{CachedResponse, IdempotencyCache};
     use crate::proto::{AuthContext, ClearEStopCommand, CommandMeta};
 
     const TEST_RPC_ROLES_TOML: &str = r#"
@@ -1486,7 +1763,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
     /// shutdown_rx 始终 false。
     fn make_handler_with_state(
         cache_max_entries: usize,
-    ) -> (ClearEStopHandler, CrossbeamRecv<RrForwardRequest>) {
+    ) -> (GatewayHandler, CrossbeamRecv<RrForwardRequest>) {
         let (handler, _shutdown_tx, forward_rx) = make_handler_with_shutdown_tx(cache_max_entries);
         (handler, forward_rx)
     }
@@ -1499,7 +1776,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
     fn make_handler_with_shutdown_tx(
         cache_max_entries: usize,
     ) -> (
-        ClearEStopHandler,
+        GatewayHandler,
         watch::Sender<bool>,
         CrossbeamRecv<RrForwardRequest>,
     ) {
@@ -1509,16 +1786,31 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
             cache_max_entries,
         )));
         let (forward_tx, forward_rx) = bounded::<RrForwardRequest>(64);
+        // 4 个 task forward channel 在 ClearEStop 单测里不参与；构造 (tx, rx)
+        // pair 后立刻 leak rx 让 sender 永久"连着"（防 Disconnected 误触发
+        // 其它路径），测试 ClearEStop 路径不被错误打扰。
+        let (task_invoke_tx, task_invoke_rx) = bounded::<RrForwardRequest>(1);
+        let (task_cancel_tx, task_cancel_rx) = bounded::<RrForwardRequest>(1);
+        let (task_status_tx, task_status_rx) = bounded::<RrForwardRequest>(1);
+        let (clear_error_tx, clear_error_rx) = bounded::<RrForwardRequest>(1);
+        Box::leak(Box::new(task_invoke_rx));
+        Box::leak(Box::new(task_cancel_rx));
+        Box::leak(Box::new(task_status_rx));
+        Box::leak(Box::new(clear_error_rx));
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let state = ClearEStopHandlerState {
-            rr_forward_tx: forward_tx,
+        let state = GatewayHandlerState {
+            rr_forward_tx_clear_estop: forward_tx,
+            rr_forward_tx_task_invoke: task_invoke_tx,
+            rr_forward_tx_task_cancel: task_cancel_tx,
+            rr_forward_tx_task_status: task_status_tx,
+            rr_forward_tx_clear_error: clear_error_tx,
             role_table,
             idempotency: cache,
             clock: Arc::new(SystemClock),
             rr_timeout_grace_ms: 500,
             shutdown_rx,
         };
-        (ClearEStopHandler::new(state), shutdown_tx, forward_rx)
+        (GatewayHandler::new(state), shutdown_tx, forward_rx)
     }
 
     /// 构造一个合法 maintainer ClearEStopCommand。`idempotency_key` 由调用方指定。
@@ -2067,26 +2359,36 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // edge: idempotency cache 的 commit/replay 不存 status；只存 cleared_at_ns/dry_run
+    // edge: idempotency cache 的 ClearEStop variant 仅存
+    // cleared_at_ns/dry_run；request_id 不入 cache（每次重试不同，重建时
+    // 由 handler 用 incoming request 的值 echo）。
     // ──────────────────────────────────────────────────────────────────────
 
     #[test]
-    fn cached_ack_carries_cleared_at_ns_and_dry_run_only() {
-        let ack = CachedAck {
+    fn cached_clear_estop_response_carries_cleared_at_ns_and_dry_run_only() {
+        let resp = CachedResponse::ClearEStop {
             cleared_at_ns: 7,
             dry_run: true,
         };
-        assert_eq!(ack.cleared_at_ns, 7);
-        assert!(ack.dry_run);
+        match resp {
+            CachedResponse::ClearEStop {
+                cleared_at_ns,
+                dry_run,
+            } => {
+                assert_eq!(cleared_at_ns, 7);
+                assert!(dry_run);
+            }
+            other => panic!("expected ClearEStop variant, got {other:?}"),
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // ClearEStopHandler::for_test：构造合法且 ClearEStop 立刻 fail（auth 步）
+    // GatewayHandler::for_test：构造合法且 ClearEStop 立刻 fail（auth 步）
     // ──────────────────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn for_test_handler_rejects_clear_estop_due_to_empty_role_table() {
-        let handler = ClearEStopHandler::for_test();
+        let handler = GatewayHandler::for_test();
         let cmd = make_cmd("idem-fortest-1");
         let err = handler
             .clear_e_stop(tonic::Request::new(cmd))
