@@ -72,6 +72,7 @@
 
 pub mod auth;
 pub mod clear_estop;
+pub mod events_subscribe;
 pub mod gateway;
 pub mod idempotency;
 pub mod rr_io_thread;

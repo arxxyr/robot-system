@@ -261,6 +261,9 @@ pub struct GatewayHandlerState {
     pub rr_forward_tx_task_status: Sender<RrForwardRequest>,
     /// `ClearError` 转发 wire request（B4 (2/3-b)）。
     pub rr_forward_tx_clear_error: Sender<RrForwardRequest>,
+    /// 机器人 ID，`StreamTaskEvents` handler 用以构造 per-ActionId pubsub
+    /// topic `/<robot_id>/s1/action_events/<action_id>`（B4 (2/3-c)）。
+    pub robot_id: String,
     /// fake token → role + role → capability 查表。`Arc` 让多 handler /
     /// 多 worker 共享。
     pub role_table: Arc<RoleTable>,
@@ -353,6 +356,7 @@ impl GatewayHandler {
             rr_forward_tx_task_cancel: forward_tx_task_cancel,
             rr_forward_tx_task_status: forward_tx_task_status,
             rr_forward_tx_clear_error: forward_tx_clear_error,
+            robot_id: "for_test".to_string(),
             role_table: Arc::new(RoleTable::default()),
             idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
                 Duration::from_mins(1),
@@ -742,15 +746,16 @@ impl RobotControl for GatewayHandler {
 
     async fn stream_task_events(
         &self,
-        _request: tonic::Request<TaskHandleRef>,
+        request: tonic::Request<TaskHandleRef>,
     ) -> Result<tonic::Response<Self::StreamTaskEventsStream>, tonic::Status> {
-        // **B4 (2/3-c)** 接 per-ActionId pubsub adapter；本轮（2/3-b）仅
-        // 占位让 trait 完整。详 docs/handoffs/v0.3_b4_outline.md §5.2 拍板
-        // 拓扑（s1 events_drain → pubsub → gateway sub → tokio::mpsc →
-        // tonic stream）。
-        Err(tonic::Status::unimplemented(
-            "StreamTaskEvents: B4 (2/3-b) handler lands; pubsub stream adapter lands B4 (2/3-c)",
-        ))
+        // B4 (2/3-c) 真 handler：spawn per-ActionId pubsub subscribe thread →
+        // 拿 tokio::sync::mpsc::Receiver → 包成 EventsSubscribeStream → Box::pin
+        // 进 trait associated type。详 task_handlers::handle_stream_task_events
+        // + crate::events_subscribe 模块 doc。
+        let resp = crate::task_handlers::handle_stream_task_events(&self.state, request)?;
+        let (metadata, stream, extensions) = resp.into_parts();
+        let pinned: Self::StreamTaskEventsStream = Box::pin(stream);
+        Ok(tonic::Response::from_parts(metadata, pinned, extensions))
     }
 
     async fn clear_error(
@@ -1231,6 +1236,7 @@ pub async fn run_gateway_with_rr_io(
         rr_forward_tx_task_cancel: spawned.forward_txs.task_cancel.clone(),
         rr_forward_tx_task_status: spawned.forward_txs.task_status.clone(),
         rr_forward_tx_clear_error: spawned.forward_txs.clear_error.clone(),
+        robot_id: cfg.robot_id.clone(),
         role_table,
         idempotency: cache,
         clock,
@@ -1804,6 +1810,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
             rr_forward_tx_task_cancel: task_cancel_tx,
             rr_forward_tx_task_status: task_status_tx,
             rr_forward_tx_clear_error: clear_error_tx,
+            robot_id: "test_robot".to_string(),
             role_table,
             idempotency: cache,
             clock: Arc::new(SystemClock),

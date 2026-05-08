@@ -52,7 +52,10 @@ pub mod action;
 // workspace 内目前无任何外部 crate 把 robot-s1 列依赖。
 pub mod action_backend;
 pub mod coordinator;
-pub mod events_drain_thread;
+// B4 (2/3-c) 拆 1/3-c 的 `events_drain_thread.rs` (1001L) 成 wire/runtime
+// 两段子模块（同 (2/3-a) `rr_server` 拆分模式）。详 [`events_drain`] 顶部
+// module doc。
+pub mod events_drain;
 // B4 (2/3-a) 拆 1/3-b 的 `rr_server_thread.rs` (921L) 成 wire/handler/runtime
 // 三段子模块，并同时把 1/3-b skeleton handler 升级为真 Coordinator forwarding。
 // 详 [`rr_server`] 顶部 module doc。

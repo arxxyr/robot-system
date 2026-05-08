@@ -70,7 +70,7 @@ use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
 use robot_s1::action_backend::BackendRegistry;
 use robot_s1::coordinator::{self, Coordinator, CoordinatorConfig, HardwareSection, TickError};
-use robot_s1::events_drain_thread::EventsDrainRegistry;
+use robot_s1::events_drain::EventsDrainRegistry;
 use robot_s1::rr_server::{
     RealHandlerCtx, RrServerThreadConfig, S1RrServerHandles, spawn_clear_error_server,
     spawn_task_cancel_server, spawn_task_invoke_server, spawn_task_status_server,

@@ -1185,6 +1185,82 @@ async fn handle_clear_error_inner(
 }
 
 // ============================================================================
+// StreamTaskEvents handler（B4 (2/3-c)；不进 idempotency cache）
+// ============================================================================
+
+/// `StreamTaskEvents` handler。
+///
+/// 跟其它 4 个 RPC 不同：
+/// - **不**进 idempotency cache（streaming RPC，幂等天然不适用）。
+/// - **不**走 rr_io_thread（pubsub 而不是 RR）。
+/// - **不**做 auth（proto frozen `TaskHandleRef` 无 CommandMeta；v0.3 仅
+///   按 audit-only 处理 read RPC，跟 GetTaskStatus 同款；v0.5+ 加 metadata
+///   auth）。
+///
+/// **shutdown 路径**：handler 入口 check `shutdown_rx`；shutdown=true →
+/// `Unavailable`。已 in-flight stream 由 [`crate::events_subscribe::EventsSubscribeStream::drop`]
+/// 自然 unsubscribe（client 超时 / cancel 触发 stream drop；tonic graceful
+/// shutdown 不主动 cancel in-flight stream）。
+///
+/// # Errors
+///
+/// - validation 失败 → `InvalidArgument`
+/// - shutdown_rx=true → `Unavailable`
+/// - `events_subscribe` spawn 失败（iceoryx2 资源问题）→ `Internal`
+pub fn handle_stream_task_events(
+    state: &crate::gateway::GatewayHandlerState,
+    request: tonic::Request<crate::proto::TaskHandleRef>,
+) -> Result<tonic::Response<crate::events_subscribe::EventsSubscribeStream>, tonic::Status> {
+    let req = request.into_inner();
+    let v = validate_task_handle_ref(&req).map_err(|e| {
+        tracing::warn!(error = %e, "StreamTaskEvents validation failed");
+        tonic::Status::new(e.to_tonic_code(), e.to_string())
+    })?;
+
+    if *state.shutdown_rx.borrow() {
+        tracing::warn!(
+            request_id = %v.request_id,
+            "StreamTaskEvents rejected during shutdown"
+        );
+        return Err(tonic::Status::unavailable(
+            "gateway is shutting down; new requests rejected",
+        ));
+    }
+
+    let cfg = crate::events_subscribe::EventsSubscribeConfig {
+        robot_id: state.robot_id.clone(),
+        action_id_hex: v.action_id.clone(),
+        request_id: v.request_id.clone(),
+        poll_interval: Duration::from_millis(50),
+        channel_buf: 16,
+    };
+    let (handle, rx) = match crate::events_subscribe::spawn_events_subscribe_thread(cfg) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!(
+                request_id = %v.request_id,
+                action_id = %v.action_id,
+                error = ?e,
+                "StreamTaskEvents: spawn_events_subscribe_thread failed"
+            );
+            return Err(tonic::Status::internal(format!(
+                "failed to subscribe pubsub for action_id={}: {e}",
+                v.action_id
+            )));
+        }
+    };
+    tracing::info!(
+        request_id = %v.request_id,
+        action_id = %v.action_id,
+        topic = %handle.topic(),
+        "StreamTaskEvents subscribe thread started"
+    );
+
+    let stream = crate::events_subscribe::EventsSubscribeStream::new(rx, handle);
+    Ok(tonic::Response::new(stream))
+}
+
+// ============================================================================
 // Decision routing helper
 // ============================================================================
 

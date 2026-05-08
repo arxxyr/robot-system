@@ -62,7 +62,7 @@ use robot_transport::iceoryx2::qos::TopicClass;
 
 use crate::action::{ActionId, ActionKind, ActionRequest, ActionSource};
 use crate::coordinator::Coordinator;
-use crate::events_drain_thread::{
+use crate::events_drain::{
     EventsDrainRegistry, EventsDrainThreadConfig, spawn_events_drain_thread,
 };
 

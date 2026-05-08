@@ -6,7 +6,7 @@
 //! 模型，B4 (2/3-a) 把 1/3-b skeleton "每条 wire request 同步 reply
 //! `Unimplemented`" 替换为真 [`crate::coordinator::Coordinator`] in-process
 //! 调用 + spawn `events_drain_thread` + register 入
-//! [`crate::events_drain_thread::EventsDrainRegistry`]。
+//! [`crate::events_drain::EventsDrainRegistry`]。
 //!
 //! 4 个 RR topic（沿 1/3-b skeleton 同款）：
 //!
