@@ -1692,6 +1692,7 @@ dependencies = [
  "crossbeam-channel",
  "flatbuffers",
  "iceoryx2",
+ "libc 1.0.0-alpha.3",
  "prost",
  "protoc-bin-vendored",
  "robot-core",

@@ -69,6 +69,25 @@ flatbuffers = { workspace = true }
 tonic-build         = { workspace = true }
 protoc-bin-vendored = { workspace = true }
 
+[dev-dependencies]
+# B4 (3/3) cross-process integration test (`tests/task_rpc_e2e.rs`) 需 spawn
+# s1_daemon + robot_rpc_gateway 双子进程 + drain stderr / stdout + forensic
+# dump 到 `/tmp/b4_e2e/<robot_id>/`：
+# - tokio `process` feature：tokio::process::Command spawn + Child + kill_on_drop
+# - tokio `fs` feature：forensic dump 到磁盘
+# - tokio `io-util` feature：AsyncBufReadExt / Lines drain stderr / stdout
+# 生产 lib dep 仍走 workspace 默认 features；本 dev-deps 仅 e2e harness 用。
+tokio = { workspace = true, features = ["process", "fs", "io-util"] }
+# libc::kill(pid, SIGTERM) 给子进程发软停止信号（tokio::process::Child::kill
+# 是硬 SIGKILL，没 grace；e2e harness 必须先 SIGTERM 让子进程 graceful
+# shutdown）。沿 A1 e2e clear_estop_e2e.rs 同款。
+libc = { workspace = true }
+# robot-core: FakeStatePublisher 用 SystemClock::now() 拿 monotonic ns 填
+# JointState.stamp_ns，跟 s1_daemon `read_anchor_from_s0_state` 比较的
+# clock domain 一致（CLOCK_MONOTONIC_RAW）；否则 stamp_ns=0 会立即被
+# `max_stale_ms=200ms` 判 stale，s1 anchor exit 4。
+robot-core = { workspace = true }
+
 [features]
 # **A1-3 (3/3-a)** 拍板：默认**不**生成 tonic gRPC client stub（生产
 # `robot_rpc_gateway` binary 是 server，dimos / Web UI 是 client，client
@@ -77,7 +96,22 @@ protoc-bin-vendored = { workspace = true }
 # 端到端 smoke (`crates/robot-tests/src/bin/clear_estop_e2e.rs`) 能直接调
 # `RobotControlClient::clear_e_stop`。生产二进制构建保持默认 features，
 # **不**带 `client`，无 client-only runtime 影响。
+#
+# **B4 (3/3)** 同款：`crates/robot-rpc/tests/task_rpc_e2e.rs` 用
+# `RobotControlClient::{invoke_task, cancel_task, get_task_status,
+# stream_task_events, clear_error}` 5 method；通过下方 `[[test]]
+# required-features = ["client"]` 让 `cargo test --workspace --all-targets`
+# 默认 **跳过** task_rpc_e2e（生产路径不破坏），CI / dev 显式
+# `cargo test --features client --test task_rpc_e2e -- --test-threads=1`
+# 才跑 6 cross-process。
 client = []
+
+[[test]]
+# B4 (3/3) cross-process e2e：required-features = ["client"] 锁住"默认
+# 跳过、显式才跑"语义；详上方 `client` feature 注释。
+name = "task_rpc_e2e"
+path = "tests/task_rpc_e2e.rs"
+required-features = ["client"]
 
 [lints]
 workspace = true

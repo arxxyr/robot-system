@@ -1660,4 +1660,115 @@ mod tests {
             cancel_task_idempotency_fingerprint(&validate_cancel_task_command(&cmd_b).unwrap());
         assert_ne!(fp_a, fp_b);
     }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // AC-7 lib/in-process: ClearError handler 字面层（B4 (3/3) Spec § AC-7）
+    //
+    // **不**测真 Coordinator Degraded → Idle 转换（已被 s1
+    // tests/action_dispatch.rs::safety_abort_transitions_to_degraded_then_clear_error_resumes_idle
+    // 覆盖；本 RPC handler 字面层仅锁住"validate → auth → cache.decide
+    // → forward → tokio.timeout → 错误返回"完整流程不 panic 不破坏 12
+    // 步骨架"）。
+    //
+    // 流程：GatewayHandler::for_test() 用 leak rx 让 forward channel sender
+    // 永久"连着"（非 disconnected）；handler 调 forward_to_rr_io.try_send →
+    // 进 tokio.timeout 等 oneshot reply（无 daemon 端 reply）→ 100ms 后
+    // tokio::time::timeout 触发 → 返 tonic::Code::DeadlineExceeded。
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// AC-7：ClearError handler 字面层 12 步骨架走通；mock RR 路径无 daemon
+    /// 回 reply → tokio.timeout 触发 → 返 DeadlineExceeded。
+    #[tokio::test]
+    async fn handle_clear_error_handler_literal_layer_deadline_exceeded() {
+        use crate::auth::load_role_table;
+        use crate::idempotency::IdempotencyCache;
+        use crossbeam_channel::bounded;
+        use robot_core::time::SystemClock;
+        use std::sync::{Arc, Mutex};
+        use std::time::Duration as StdDuration;
+        use tokio::sync::watch;
+
+        // 用 in-mem TOML 构造 role table（含 maintainer-fake-token-001 → maintainer
+        // → clear_error capability）；不读 configs/rpc_roles.toml（lib unit
+        // 不依赖 workspace 外部文件）。
+        const TEST_TOML: &str = r#"
+[tokens]
+"maintainer-fake-token-001" = "maintainer"
+
+[roles.viewer]
+capabilities = ["read_state"]
+[roles.operator]
+capabilities = ["read_state", "invoke_task"]
+[roles.maintainer]
+capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
+[roles.admin]
+capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
+"#;
+        let role_table = Arc::new(load_role_table(TEST_TOML).expect("role table parse"));
+
+        // forward channel：leak rx 让 sender 不见 Disconnected（try_send 成功
+        // 后 handler oneshot.await 永等不到 reply → tokio.timeout 触发）。
+        let (clear_error_tx, clear_error_rx) = bounded(1);
+        Box::leak(Box::new(clear_error_rx));
+        // 4 个 sibling forward channel 不参与本测；同款 leak rx。
+        let (clear_estop_tx, clear_estop_rx) = bounded(1);
+        let (task_invoke_tx, task_invoke_rx) = bounded(1);
+        let (task_cancel_tx, task_cancel_rx) = bounded(1);
+        let (task_status_tx, task_status_rx) = bounded(1);
+        Box::leak(Box::new(clear_estop_rx));
+        Box::leak(Box::new(task_invoke_rx));
+        Box::leak(Box::new(task_cancel_rx));
+        Box::leak(Box::new(task_status_rx));
+
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        Box::leak(Box::new(shutdown_tx));
+
+        let state = crate::gateway::GatewayHandlerState {
+            rr_forward_tx_clear_estop: clear_estop_tx,
+            rr_forward_tx_task_invoke: task_invoke_tx,
+            rr_forward_tx_task_cancel: task_cancel_tx,
+            rr_forward_tx_task_status: task_status_tx,
+            rr_forward_tx_clear_error: clear_error_tx,
+            robot_id: "ac7_lit".to_string(),
+            role_table,
+            idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
+                StdDuration::from_mins(1),
+                64,
+            ))),
+            clock: Arc::new(SystemClock),
+            rr_timeout_grace_ms: 50, // 跟 timeout_ms 一起 ≤ 200ms 让 await 快速 timeout
+            shutdown_rx,
+        };
+
+        // 构造合法 maintainer ClearErrorCommand，timeout_ms=100ms 让 handler
+        // 等 oneshot reply 100+50=150ms 后触发 DeadlineExceeded。
+        let cmd = ClearErrorCommand {
+            meta: Some(CommandMeta {
+                request_id: uuid::Uuid::now_v7().to_string(),
+                source: "ac7.lit".to_string(),
+                auth: Some(AuthContext {
+                    token: "maintainer-fake-token-001".to_string(),
+                    mtls_fingerprint: String::new(),
+                }),
+                timeout_ms: 100,
+                idempotency_key: "ac7-lit-key".to_string(),
+                dry_run: false,
+                audit_reason: "AC-7 literal layer test".to_string(),
+            }),
+        };
+        let request = tonic::Request::new(cmd);
+        let result = handle_clear_error(&state, request).await;
+
+        // 期望 DeadlineExceeded（forward 成功 + 无 daemon → tokio.timeout 触发）
+        match result {
+            Err(status) if status.code() == tonic::Code::DeadlineExceeded => {
+                // PASS
+            }
+            Err(other) => panic!("AC-7 expected DeadlineExceeded, got {other:?}"),
+            Ok(resp) => panic!(
+                "AC-7 expected Err(DeadlineExceeded), got Ok: {:?}",
+                resp.into_inner()
+            ),
+        }
+    }
 }
