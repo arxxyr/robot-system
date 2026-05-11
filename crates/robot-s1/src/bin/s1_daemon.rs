@@ -502,12 +502,30 @@ fn run(args: &Args) -> Result<(), i32> {
     // RR thread 全 join 完后 handler 闭包均已 drop；ctx 不再被任何 RR
     // 线程持有（仅 main + events_registry 内 Arc clone）。registry 方法接
     // `&self`，可在 Arc 上直接调，不依赖 try_unwrap。
+    //
+    // v0.4 候选 3 Plan §P.2.1.d: shutdown_pre log（关停前 registry 当前
+    // len，smoke binary 端 stderr scrape 用），跟 handler register 时的
+    // 即时 log 对称。
+    tracing::info!(
+        events_registry_len = events_registry.len(),
+        op = "shutdown_pre",
+        "s1_daemon events_registry.stop_and_join_all starting"
+    );
     if let Err(panic_payload) = events_registry.stop_and_join_all() {
         tracing::error!(
             ?panic_payload,
             "s1_daemon: events_drain thread join returned panic; continuing shutdown"
         );
     }
+    // v0.4 候选 3 Plan §P.2.1.d: shutdown_post log。stop_and_join_all
+    // 内部 mem::take 拿走整个 Vec 后逐个 join → 返回时 inner Vec 为空，
+    // events_registry.len() 必为 0；本 log 是事后验证锚点（smoke binary
+    // 用本行确认 shutdown 路径走完）。
+    tracing::info!(
+        events_registry_len = events_registry.len(),
+        op = "shutdown_post",
+        "s1_daemon events_registry shutdown complete"
+    );
     // ctx / events_registry / coordinator / handler_clock 的 Arc 在 main
     // 函数返回时按 RAII 顺序 drop；`stop_and_join_all` 已保证所有 drain
     // 线程被 join，drop 自身不再触发任何线程同步等待。

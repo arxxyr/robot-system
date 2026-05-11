@@ -54,6 +54,23 @@ name = "clear_estop_e2e"
 path = "src/bin/clear_estop_e2e.rs"
 required-features = ["clear-estop-e2e"]
 
+# v0.4 候选 3 (1/2) pubsub cleanup smoke binary。
+#
+# 起两进程（`s1_daemon` + `robot_rpc_gateway`）+ tonic gRPC client 真跑
+# task control plane RPC (InvokeTask / StreamTaskEvents) → iceoryx2 RR
+# shm → s1 coordinator → per-ActionId pubsub topic → gateway subscribe
+# → client。AC-A1/A2/A3 实测套件（长跑 + grace + leftover）留 (2/2)。
+#
+# `required-features = ["pubsub-cleanup-smoke"]`：跟 `clear-estop-e2e`
+# 同款 feature 守门 —— 生产 release 默认 feature 关，本 bin 不参编译。
+# 复用 robot-rpc/client + tonic + tokio(process,io-util) 三条 optional
+# dep，跟 clear-estop-e2e feature 完全等价（仅 feature 名 + binary 名
+# 不同）。
+[[bin]]
+name = "pubsub_cleanup_smoke"
+path = "src/bin/pubsub_cleanup_smoke.rs"
+required-features = ["pubsub-cleanup-smoke"]
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -122,6 +139,18 @@ freeze-systemd-smoke = ["dep:robot-s0"]
 # - 启用 robot-rpc / tonic / tokio 3 条 optional dep，跟
 #   `freeze-systemd-smoke` 同款 feature 守门。
 clear-estop-e2e = [
+    "dep:robot-rpc",
+    "dep:tonic",
+    "dep:tokio",
+]
+
+# v0.4 候选 3 (1/2) pubsub cleanup smoke 入口 feature。
+# - 生产 release 不带本 feature（pubsub_cleanup_smoke binary 不参编译）。
+# - 本机跑：cargo run -p robot-tests --bin pubsub_cleanup_smoke
+#   --features pubsub-cleanup-smoke -- ...
+# - 启用 robot-rpc / tonic / tokio 3 条 optional dep（跟 clear-estop-e2e
+#   完全等价 —— 同款 feature gate 模式）。
+pubsub-cleanup-smoke = [
     "dep:robot-rpc",
     "dep:tonic",
     "dep:tokio",

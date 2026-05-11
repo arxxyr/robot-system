@@ -239,6 +239,17 @@ pub fn handle_invoke(payload: &[u8], ctx: &RealHandlerCtx) -> Vec<u8> {
             ) {
                 Ok(handle) => {
                     ctx.events_registry.register(handle);
+                    // v0.4 候选 3 Plan §P.2.1.d: register 即时 log。
+                    // smoke binary 端 stderr scrape 这行抓
+                    // `events_registry_len=N` 增长曲线；shutdown 期 final
+                    // log 在 s1_daemon::main 内对称打。注销路径 log 留
+                    // AC-C1 触发（reap_finished outline）。
+                    tracing::info!(
+                        events_registry_len = ctx.events_registry.len(),
+                        action_id = %action_id,
+                        op = "register",
+                        "s1_daemon events_drain registered"
+                    );
                     let action_id_hex = action_id.to_string();
                     encode_invoke_response_ok(&decoded.request_id, &action_id_hex, accepted_at_ns)
                 }
