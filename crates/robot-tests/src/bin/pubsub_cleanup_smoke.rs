@@ -147,20 +147,18 @@ struct Args {
     joints: usize,
     layout_id: u64,
     /// (2/2) AC-A1 用；(1/2) 不消费。Plan v3 Q1 拍板 N=1000。
-    #[allow(dead_code)]
     iterations: u32,
     /// (2/2) AC-A1 用。
-    #[allow(dead_code)]
     metric_sample_every: u32,
-    /// (2/2) 各 phase 用。
+    /// (2/2) 留作 CLI 兼容；实际 server-side DwellMs duration 由 s1
+    /// config (`MockDwellBackend::with_duration_ms`) 决定，client 不能
+    /// 直接控制 (Plan v3 §P.2.2 注释 + B2 frozen lib API)。
     #[allow(dead_code)]
     invoke_dwell_ms: u64,
     phase: Phase,
     /// (2/2) AC-A3 用。
-    #[allow(dead_code)]
     leftover_grace_ms: u64,
     /// (2/2) 用。
-    #[allow(dead_code)]
     output_csv: Option<PathBuf>,
     workdir: PathBuf,
 }
@@ -372,14 +370,69 @@ async fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
-        Phase::A1 | Phase::A2 | Phase::A3 | Phase::All => {
-            eprintln!(
-                "phase {:?} not implemented in v0.4 候选 3 (1/2); see Plan v3 §P.2.2 \
-                 (team-swe/specs/v0_4_pubsub_cleanup.md)",
-                args.phase
-            );
-            ExitCode::from(1)
-        }
+        Phase::A1 => match run_phase_a1(&args).await {
+            Ok(report) => {
+                if report.triggered_c1 || report.triggered_c2 {
+                    eprintln!(
+                        "[main] A1 PASS but triggered conditional AC: \
+                         triggered_c1={} triggered_c2={}",
+                        report.triggered_c1, report.triggered_c2
+                    );
+                    ExitCode::from(2)
+                } else {
+                    eprintln!("[main] A1 PASS (0 conditional AC triggered)");
+                    ExitCode::SUCCESS
+                }
+            }
+            Err(e) => {
+                eprintln!("[main] A1 FAIL: {e}");
+                ExitCode::from(2)
+            }
+        },
+        Phase::A2 => match run_phase_a2(&args).await {
+            Ok(_report) => {
+                eprintln!("[main] A2 PASS");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("[main] A2 FAIL: {e}");
+                ExitCode::from(2)
+            }
+        },
+        Phase::A3 => match run_phase_a3(&args).await {
+            Ok(report) => {
+                if report.triggered_c3 {
+                    eprintln!("[main] A3 PASS but triggered AC-C3 (leftover blocks restart)");
+                    ExitCode::from(2)
+                } else {
+                    eprintln!("[main] A3 PASS (0 conditional AC triggered)");
+                    ExitCode::SUCCESS
+                }
+            }
+            Err(e) => {
+                eprintln!("[main] A3 FAIL: {e}");
+                ExitCode::from(2)
+            }
+        },
+        Phase::All => match run_phase_all(&args).await {
+            Ok(report) => {
+                if report.any_triggered() {
+                    eprintln!(
+                        "[main] all PASS but conditional AC triggered: \
+                         c1={} c2={} c3={}",
+                        report.a1.triggered_c1, report.a1.triggered_c2, report.a3.triggered_c3,
+                    );
+                    ExitCode::from(2)
+                } else {
+                    eprintln!("[main] all PASS (0 conditional AC triggered)");
+                    ExitCode::SUCCESS
+                }
+            }
+            Err(e) => {
+                eprintln!("[main] all FAIL: {e}");
+                ExitCode::from(2)
+            }
+        },
     }
 }
 
@@ -547,6 +600,8 @@ const FAKE_S0_SOURCE_ID: u32 = 1; // s0 约定 source_id = 1（s1 = 2）
 struct FakeStatePublisher {
     handle: Option<StdJoinHandle<()>>,
     stop: Arc<AtomicBool>,
+    /// 仅 audit / debug 用；当前 caller 不读，留字段方便后续 forensic
+    /// 扩展（沿 `crates/robot-rpc/tests/common/fake_state.rs` 同款 field）。
     #[allow(dead_code)]
     topic: String,
 }
@@ -698,6 +753,8 @@ impl SubprocessHandle {
         })
     }
 
+    /// 取子进程 pid（diagnostic）。caller 也可直接 `.pid` 字段访问，
+    /// 二选一；保留 method 给未来扩展。
     #[allow(dead_code)]
     fn pid(&self) -> Option<u32> {
         self.pid
@@ -761,6 +818,39 @@ impl SubprocessHandle {
                 let _ = child.kill().await;
                 let s = child.wait().await.ok();
                 Ok(s)
+            }
+        }
+    }
+
+    /// AC-A3 SIGKILL 路径：直接发 SIGKILL → wait `timeout`（**不**走
+    /// SIGTERM grace）。模拟生产环境 OOM kill / 强制 reset。
+    ///
+    /// SubprocessHandle 自身被 `mut self` 消费 + `child.take()`，调完
+    /// 后 handle drop；`kill_on_drop(true)` 不会再触发（child 已 dead）。
+    async fn sigkill_and_wait(
+        mut self,
+        timeout: Duration,
+    ) -> Result<Option<std::process::ExitStatus>, String> {
+        let label = self.label;
+        let Some(mut child) = self.child.take() else {
+            return Ok(None);
+        };
+        if let Some(pid) = self.pid {
+            let pid_i32 = i32::try_from(pid).unwrap_or(0);
+            // SAFETY: pid 来自 Child::id()；signal 是 async-signal-safe。
+            unsafe {
+                libc::kill(pid_i32, libc::SIGKILL);
+            }
+        }
+        match tokio::time::timeout(timeout, child.wait()).await {
+            Ok(Ok(status)) => Ok(Some(status)),
+            Ok(Err(e)) => Err(format!("{label}: SIGKILL wait err: {e}")),
+            Err(_elapsed) => {
+                eprintln!(
+                    "[{label}] SIGKILL wait timeout {}ms; child may be zombie",
+                    timeout.as_millis()
+                );
+                Ok(None)
             }
         }
     }
@@ -987,7 +1077,6 @@ fn uuidv7_compat() -> String {
 /// 读 `/proc/<pid>/status::VmRSS` 行返 KB 数值。
 ///
 /// `VmRSS` 行格式：`VmRSS:\t12345 kB`。
-#[allow(dead_code)]
 fn read_proc_vmrss_kb(pid: u32) -> Result<u64, String> {
     let path = format!("/proc/{pid}/status");
     let content = std::fs::read_to_string(&path).map_err(|e| format!("read {path}: {e}"))?;
@@ -1005,7 +1094,6 @@ fn read_proc_vmrss_kb(pid: u32) -> Result<u64, String> {
 /// Glob `/dev/shm/iceoryx2_*` 文件 / 目录数。Plan v3 §P.3 #3 ACK 默认
 /// `/dev/shm` + 实测 fallback；如 iceoryx2 0.8.1 真 storage path 不在
 /// `/dev/shm` → (2/2-b) 实测期 reviewer round 复核调整。
-#[allow(dead_code)]
 fn count_iceoryx2_storage_files() -> Result<u64, String> {
     let dir = std::path::Path::new("/dev/shm");
     if !dir.exists() {
@@ -1024,7 +1112,6 @@ fn count_iceoryx2_storage_files() -> Result<u64, String> {
 }
 
 /// 读 `/proc/<pid>/task` 子目录数 = 进程线程数（含主线程）。
-#[allow(dead_code)]
 fn count_proc_threads(pid: u32) -> Result<u64, String> {
     let path = format!("/proc/{pid}/task");
     let entries = std::fs::read_dir(&path).map_err(|e| format!("read_dir {path}: {e}"))?;
@@ -1039,7 +1126,6 @@ fn count_proc_threads(pid: u32) -> Result<u64, String> {
 /// `handle_invoke` register / s1_daemon shutdown_pre/post 时打这字段；
 /// 倒序取最近值反映当前 in-flight registry 长度。captured 内一行都没
 /// 匹配 → `None`。
-#[allow(dead_code)]
 async fn scrape_events_registry_len(captured: &Arc<TokioMutex<Vec<String>>>) -> Option<u64> {
     let lines = captured.lock().await;
     let needle = "events_registry_len";
@@ -1068,7 +1154,6 @@ async fn scrape_events_registry_len(captured: &Arc<TokioMutex<Vec<String>>>) -> 
 
 /// (2/2) AC-A1 metric 行 —— 每 `--metric-sample-every K` task 一档 + final。
 /// 5 类字段对应 Plan v3 §P.2.2.c 拍板曲线。
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct MetricRow {
     /// task iter 索引（0..N，N=`args.iterations`，default 1000）。
@@ -1089,7 +1174,6 @@ struct MetricRow {
 }
 
 /// (2/2) AC-A1 report。
-#[allow(dead_code)]
 #[derive(Debug, Default)]
 struct A1Report {
     /// 每 100 task + final 共 ~11 行。
@@ -1103,11 +1187,13 @@ struct A1Report {
 }
 
 /// (2/2) AC-A2 report —— terminal_grace 真延迟 + 终态成功率。
-#[allow(dead_code)]
 #[derive(Debug, Default)]
 struct A2Report {
-    /// `--iterations` task 拿到终态帧 → latency_ns 样本（client_receive_ns
-    /// - event.at_ns；Plan v3 §P.2.2.b 拍板）。
+    /// `--iterations` task 拿到终态帧 → latency_ns 样本（`client_receive_ns
+    /// minus event.at_ns`；Plan v3 §P.2.2.b 拍板）。当前 caller 仅读
+    /// p50/p95/p99；samples_ns 字段保留供未来 CSV 输出或 reviewer
+    /// round 期手动复核 raw 数据。
+    #[allow(dead_code)]
     samples_ns: Vec<u64>,
     p50_ns: u64,
     p95_ns: u64,
@@ -1119,9 +1205,11 @@ struct A2Report {
 }
 
 /// (2/2) AC-A3 单个 SIGKILL 子 case 结果（A3a/b/c 各一份）。
-#[allow(dead_code)]
 #[derive(Debug, Default)]
 struct A3CaseResult {
+    /// `"A3a"` / `"A3b"` / `"A3c"`。当前 caller 直接 eprintln! literal
+    /// label 不读结构体字段；留字段供未来 CSV / report 序列化。
+    #[allow(dead_code)]
     label: &'static str,
     /// SIGKILL 前 `/dev/shm/iceoryx2_*` 文件数（基线）。
     storage_before: u64,
@@ -1136,7 +1224,6 @@ struct A3CaseResult {
 }
 
 /// (2/2) AC-A3 report（3 子 case + 触发判定）。
-#[allow(dead_code)]
 #[derive(Debug, Default)]
 struct A3Report {
     case_a: A3CaseResult,
@@ -1151,7 +1238,6 @@ struct A3Report {
 /// + 每行。
 ///
 /// `events_registry_len = None` 时写 `"NA"`（CSV 标准缺失值）。
-#[allow(dead_code)]
 fn write_csv(path: &Path, rows: &[MetricRow]) -> std::io::Result<()> {
     use std::fmt::Write as _;
     let mut out = String::new();
@@ -1194,7 +1280,6 @@ fn write_csv(path: &Path, rows: &[MetricRow]) -> std::io::Result<()> {
 /// 端**不**直接控制。`timeout_ms` 参数是 client `CommandMeta.timeout_ms`
 /// = RPC 请求-响应超时上限（gateway 端 `tokio::time::timeout` 用），
 /// **不**是 server-side dwell duration。
-#[allow(dead_code)]
 fn build_invoke_task_cmd(
     request_id: &str,
     idempotency_key: &str,
@@ -1231,7 +1316,6 @@ fn build_invoke_task_cmd(
 
 /// 构造 `tonic::Request<TaskHandleRef>`（`GetTaskStatus` / `StreamTaskEvents`
 /// 共用 wire 形态）。
-#[allow(dead_code)]
 fn build_task_handle_ref_req(request_id: &str, action_id: &str) -> tonic::Request<TaskHandleRef> {
     tonic::Request::new(TaskHandleRef {
         request_id: request_id.to_string(),
@@ -1254,7 +1338,6 @@ fn build_task_handle_ref_req(request_id: &str, action_id: &str) -> tonic::Reques
 ///
 /// 调用方典型：AC-A1 长跑（丢 `latency_ns`，关心 throughput / leak）+
 /// AC-A2 grace 实测（收集 `latency_ns` 算 p50/p95/p99）。
-#[allow(dead_code)]
 async fn invoke_and_wait_terminal(
     client: &mut RobotControlClient<tonic::transport::Channel>,
     auth_token: &str,
@@ -1356,7 +1439,6 @@ async fn invoke_and_wait_terminal(
 /// 兜底 SIGKILL）；PASS 路径 caller 必须显式调 [`tear_down_pair`] 走
 /// SIGTERM grace + warn-on-error，沿 [`run_selftest`] / B4 (3/3) 同款
 /// 模式。
-#[allow(dead_code)]
 struct BringUp {
     fake_s0: FakeStatePublisher,
     s1: SubprocessHandle,
@@ -1519,6 +1601,734 @@ async fn run_selftest(args: &Args) -> Result<(), String> {
     // 式 shutdown；PASS 走 ctx.cleanup() 清空）
     ctx.cleanup();
     Ok(())
+}
+
+// ============================================================================
+// Metric sampling helper + 触发判定 + percentile (2/2-b)
+// ============================================================================
+
+/// 单次 metric 采样：构造 [`MetricRow`]。
+///
+/// 各字段读取失败（极罕见 / 子进程刚死）→ 用 0 填充 + warn 转发；
+/// scrape `events_registry_len` 失败用 `None`。**不** propagate err（让
+/// 长跑不被瞬时采样错误打断）。
+async fn sample_metric(
+    iter: u32,
+    s1_pid: u32,
+    gw_pid: u32,
+    s1_captured: &Arc<TokioMutex<Vec<String>>>,
+) -> MetricRow {
+    let vmrss_s1_kb = read_proc_vmrss_kb(s1_pid).unwrap_or_else(|e| {
+        eprintln!("[metric] read_proc_vmrss_kb(s1={s1_pid}) err: {e}");
+        0
+    });
+    let vmrss_gw_kb = read_proc_vmrss_kb(gw_pid).unwrap_or_else(|e| {
+        eprintln!("[metric] read_proc_vmrss_kb(gw={gw_pid}) err: {e}");
+        0
+    });
+    let iceoryx2_storage_count = count_iceoryx2_storage_files().unwrap_or_else(|e| {
+        eprintln!("[metric] count_iceoryx2_storage_files err: {e}");
+        0
+    });
+    let gw_subscribe_threads = count_proc_threads(gw_pid).unwrap_or_else(|e| {
+        eprintln!("[metric] count_proc_threads(gw={gw_pid}) err: {e}");
+        0
+    });
+    let events_registry_len = scrape_events_registry_len(s1_captured).await;
+    MetricRow {
+        iter,
+        vmrss_s1_kb,
+        vmrss_gw_kb,
+        events_registry_len,
+        iceoryx2_storage_count,
+        gw_subscribe_threads,
+    }
+}
+
+/// 判定 AC-C1 触发条件（Plan v3 Q2）：`events_registry_len` 在 final
+/// sample（task 全跑完 + grace 期之后）仍 > 阈值 → 视为线性增长不收敛。
+///
+/// 顺序跑 in-flight ≤ 1（每条 task 等终态再开下一条 + 0ms 间隔，详
+/// `invoke_and_wait_terminal` + Q9 拍板）。final 时 in-flight 应 = 0；
+/// `events_registry_len > 10` 留 10 倍宽容度，仍提示 leak。
+///
+/// 阈值 10 是启发式（Plan v3 不设硬阈值）；reviewer 看完整曲线后人工
+/// 拍板是否触发 AC-C1。
+fn judge_triggered_c1(rows: &[MetricRow]) -> bool {
+    rows.last()
+        .and_then(|r| r.events_registry_len)
+        .is_some_and(|n| n > 10)
+}
+
+/// 判定 AC-C2 触发条件（Plan v3 Q2）：`gw_subscribe_threads` 在 final
+/// sample 减 baseline 仍 > 阈值 → 视为线性增长不收敛。
+///
+/// `baseline` = iter=0 时 gateway 进程线程数（含 tokio worker 等基础
+/// 线程，无 stream subscribe thread）。final - baseline > 100 留 100
+/// 倍宽容度（N=1000 task / 10x leak 才命中）。
+///
+/// 阈值同样是启发式，reviewer 看曲线后人工拍板。
+fn judge_triggered_c2(rows: &[MetricRow], baseline_threads: u64) -> bool {
+    rows.last()
+        .is_some_and(|r| r.gw_subscribe_threads.saturating_sub(baseline_threads) > 100)
+}
+
+/// 算排序后 slice 的 p 百分位（p in 0..=100）。空 slice 返 0。
+fn percentile(sorted: &[u64], p: u8) -> u64 {
+    if sorted.is_empty() {
+        return 0;
+    }
+    let n = sorted.len();
+    let idx = (n * usize::from(p) / 100).min(n - 1);
+    sorted[idx]
+}
+
+// ============================================================================
+// run_phase_a1 / a2 / a3 / all (2/2-b)
+// ============================================================================
+
+/// (2/2-b) AC-A1：长跑 1000 task 顺序 + 等终态 + 0ms（Q1 + Q9 拍板）；
+/// 每 100 task + final 采样 [`MetricRow`]；最终判定 `triggered_c1` /
+/// `triggered_c2`；可选 CSV 输出（`--output-csv`）。
+///
+/// 失败路径：任一 task `invoke_and_wait_terminal` 返 Err 立即 break loop +
+/// tear_down + return Err（forensic 已由 bring_up_pair / 各 helper 写到
+/// case_dir）。leak 检测**不**返 Err — `triggered_c1/c2 = true` 时
+/// Ok(report)，main 据此设退出码（沿 Plan v3 §P.2.1.b "退出码 2 = AC
+/// FAIL 含触发条件性 AC"）。
+async fn run_phase_a1(args: &Args) -> Result<A1Report, String> {
+    let ctx = CaseCtx::alloc(args)?;
+    eprintln!(
+        "[A1] start robot_id={} iterations={} sample_every={}",
+        ctx.robot_id, args.iterations, args.metric_sample_every
+    );
+    let bring_up = bring_up_pair(&ctx).await?;
+    let BringUp {
+        fake_s0,
+        s1,
+        gw,
+        mut client,
+    } = bring_up;
+    let s1_pid = s1.pid.unwrap_or(0);
+    let gw_pid = gw.pid.unwrap_or(0);
+
+    let mut report = A1Report::default();
+
+    // 初始 sample（iter=0，bring_up 完成、task 还没跑）作为 baseline。
+    let row0 = sample_metric(0, s1_pid, gw_pid, &s1.captured).await;
+    eprintln!(
+        "[A1] iter=0 vmrss_s1={} vmrss_gw={} registry_len={:?} \
+         storage={} gw_threads={}",
+        row0.vmrss_s1_kb,
+        row0.vmrss_gw_kb,
+        row0.events_registry_len,
+        row0.iceoryx2_storage_count,
+        row0.gw_subscribe_threads,
+    );
+    let baseline_threads = row0.gw_subscribe_threads;
+    report.rows.push(row0);
+
+    let rpc_timeout_ms: u64 = 5_000;
+    let stream_timeout = Duration::from_secs(5);
+
+    let mut last_err: Option<String> = None;
+    let mut completed_iters: u32 = 0;
+    for i in 1..=args.iterations {
+        match invoke_and_wait_terminal(
+            &mut client,
+            "maintainer-fake-token-001",
+            rpc_timeout_ms,
+            stream_timeout,
+        )
+        .await
+        {
+            Ok((action_id, kind, _latency_ns)) => {
+                if !matches!(kind, TaskEventKind::Completed) {
+                    eprintln!(
+                        "[A1] iter={i} non-completed terminal: {kind:?} action_id={action_id}"
+                    );
+                }
+                completed_iters = i;
+            }
+            Err(e) => {
+                eprintln!("[A1] iter={i} FAIL: {e}");
+                last_err = Some(format!("iter={i}: {e}"));
+                break;
+            }
+        }
+        if i % args.metric_sample_every == 0 {
+            let row = sample_metric(i, s1_pid, gw_pid, &s1.captured).await;
+            eprintln!(
+                "[A1] iter={i} vmrss_s1={} vmrss_gw={} registry_len={:?} \
+                 storage={} gw_threads={}",
+                row.vmrss_s1_kb,
+                row.vmrss_gw_kb,
+                row.events_registry_len,
+                row.iceoryx2_storage_count,
+                row.gw_subscribe_threads,
+            );
+            report.rows.push(row);
+        }
+    }
+
+    // final sample（task 全跑完 + 500ms grace 让 events_drain thread
+    // terminal_grace=100ms 后退；500ms 留 5x margin）。`iter` 字段填
+    // `iterations + 1` 标示 final（CSV 末行可识别）。
+    if last_err.is_none() {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let final_row = sample_metric(args.iterations + 1, s1_pid, gw_pid, &s1.captured).await;
+        eprintln!(
+            "[A1] final (after 500ms grace) vmrss_s1={} vmrss_gw={} registry_len={:?} \
+             storage={} gw_threads={}",
+            final_row.vmrss_s1_kb,
+            final_row.vmrss_gw_kb,
+            final_row.events_registry_len,
+            final_row.iceoryx2_storage_count,
+            final_row.gw_subscribe_threads,
+        );
+        report.rows.push(final_row);
+    }
+
+    // 触发判定（Plan v3 Q2 启发式；reviewer 看曲线后人工复核）。
+    report.triggered_c1 = judge_triggered_c1(&report.rows);
+    report.triggered_c2 = judge_triggered_c2(&report.rows, baseline_threads);
+    eprintln!(
+        "[A1] judge: triggered_c1={} triggered_c2={} baseline_threads={}",
+        report.triggered_c1, report.triggered_c2, baseline_threads
+    );
+
+    // Plan v3 §P.2.2.d 拍板：失败时 dump s1 / gw captured stderr 到
+    // case_dir 留 forensic（tear_down_pair 消费 owned 后无法再读
+    // captured）。dump 仅 FAIL 路径触发；PASS 路径 ctx.cleanup() 清空
+    // 整 case_dir，dump 也会被一并删除（无谓 IO）。
+    let dump_needed = last_err.is_some();
+    if dump_needed {
+        let _ = s1.dump_captured_to(&ctx.case_dir).await;
+        let _ = gw.dump_captured_to(&ctx.case_dir).await;
+        eprintln!(
+            "[A1] FAIL forensic dump → {} (s1_daemon.log + gateway.log)",
+            ctx.case_dir.display()
+        );
+    }
+
+    tear_down_pair(BringUp {
+        fake_s0,
+        s1,
+        gw,
+        client,
+    })
+    .await;
+
+    if let Some(csv_path) = &args.output_csv {
+        match write_csv(csv_path, &report.rows) {
+            Ok(()) => eprintln!("[A1] wrote CSV to {}", csv_path.display()),
+            Err(e) => eprintln!("[A1] write_csv failed: {e}"),
+        }
+    }
+
+    if let Some(msg) = last_err {
+        // FAIL 路径不 cleanup（留 forensic dump + case_dir 给人工排查）。
+        return Err(format!(
+            "A1 task FAIL at iter {} (completed {} / {}); forensic at {}: {msg}",
+            completed_iters + 1,
+            completed_iters,
+            args.iterations,
+            ctx.case_dir.display()
+        ));
+    }
+
+    ctx.cleanup();
+    Ok(report)
+}
+
+/// AC-A2 task 数（Plan v3 §P.2.2.a + Spec §AC-A2 + Q3 拍板硬定 100）。
+/// `--iterations` 仅 AC-A1 用；A2 独立常量，不让 CLI 影响 grace 实测的
+/// 样本规模（reviewer 改 A2 量级走 Spec round + Plan-Execute diff）。
+const A2_ITERATIONS: u32 = 100;
+
+/// (2/2-b) AC-A2：100 task 顺序 + 等终态；收集 `latency_ns` 样本（=
+/// `client_receive_ns - event.at_ns`，Plan v3 §P.2.2.b 写死时钟域）；
+/// 计算 p50/p95/p99；终态成功率硬性 100%（任一漏 = FAIL）。
+///
+/// p99 > 100ms (= grace 当前 default) → warn + reviewer round N+1（Q3
+/// 拍板"不自动改 grace default"）；本路径**不**自动 propagate err。
+async fn run_phase_a2(args: &Args) -> Result<A2Report, String> {
+    let ctx = CaseCtx::alloc(args)?;
+    let expected = A2_ITERATIONS;
+    eprintln!(
+        "[A2] start robot_id={} expected={} (Plan v3 §P.2.2.a + Q3 \
+         拍板硬定 100；--iterations 不生效)",
+        ctx.robot_id, expected
+    );
+    let bring_up = bring_up_pair(&ctx).await?;
+    let BringUp {
+        fake_s0,
+        s1,
+        gw,
+        mut client,
+    } = bring_up;
+
+    let mut samples: Vec<u64> = Vec::with_capacity(expected as usize);
+    let mut success: u32 = 0;
+    let mut last_err: Option<String> = None;
+
+    let rpc_timeout_ms: u64 = 5_000;
+    let stream_timeout = Duration::from_secs(5);
+
+    for i in 1..=expected {
+        match invoke_and_wait_terminal(
+            &mut client,
+            "maintainer-fake-token-001",
+            rpc_timeout_ms,
+            stream_timeout,
+        )
+        .await
+        {
+            Ok((_action_id, kind, latency_ns)) => {
+                if !matches!(kind, TaskEventKind::Completed) {
+                    eprintln!("[A2] iter={i} non-completed terminal: {kind:?}");
+                }
+                samples.push(latency_ns);
+                success += 1;
+            }
+            Err(e) => {
+                eprintln!("[A2] iter={i} FAIL: {e}");
+                last_err.get_or_insert_with(|| format!("iter={i}: {e}"));
+                // 继续跑剩余 iter（数据完整性）；最终按 success != expected 标 FAIL
+            }
+        }
+    }
+
+    let mut sorted = samples.clone();
+    sorted.sort_unstable();
+    let p50 = percentile(&sorted, 50);
+    let p95 = percentile(&sorted, 95);
+    let p99 = percentile(&sorted, 99);
+
+    // Plan v3 §P.2.2.d 拍板：失败时 dump s1 / gw captured stderr 到
+    // case_dir 留 forensic（tear_down_pair 消费 owned 前先 dump）。
+    let dump_needed = last_err.is_some() || success != expected;
+    if dump_needed {
+        let _ = s1.dump_captured_to(&ctx.case_dir).await;
+        let _ = gw.dump_captured_to(&ctx.case_dir).await;
+        eprintln!(
+            "[A2] FAIL forensic dump → {} (s1_daemon.log + gateway.log)",
+            ctx.case_dir.display()
+        );
+    }
+
+    tear_down_pair(BringUp {
+        fake_s0,
+        s1,
+        gw,
+        client,
+    })
+    .await;
+
+    let report = A2Report {
+        samples_ns: samples,
+        p50_ns: p50,
+        p95_ns: p95,
+        p99_ns: p99,
+        success_count: success,
+        expected_count: expected,
+    };
+
+    // ns → ms 用整数 + 余数显示三位小数（避 u64 → f64 精度 lint）。
+    let p50_ms_int = report.p50_ns / 1_000_000;
+    let p50_ms_frac = (report.p50_ns % 1_000_000) / 1_000;
+    let p95_ms_int = report.p95_ns / 1_000_000;
+    let p95_ms_frac = (report.p95_ns % 1_000_000) / 1_000;
+    let p99_ms_int = report.p99_ns / 1_000_000;
+    let p99_ms_frac = (report.p99_ns % 1_000_000) / 1_000;
+    eprintln!(
+        "[A2] terminal frame latency: success {}/{}; p50={}ns ({}.{:03}ms) \
+         p95={}ns ({}.{:03}ms) p99={}ns ({}.{:03}ms)",
+        report.success_count,
+        report.expected_count,
+        report.p50_ns,
+        p50_ms_int,
+        p50_ms_frac,
+        report.p95_ns,
+        p95_ms_int,
+        p95_ms_frac,
+        report.p99_ns,
+        p99_ms_int,
+        p99_ms_frac,
+    );
+
+    if report.p99_ns > 100_000_000 {
+        eprintln!(
+            "[A2] WARN: p99 {}ns ({}.{:03}ms) > grace default 100ms; \
+             reviewer round N+1 required (Plan v3 Q3) — 不自动改 grace default",
+            report.p99_ns, p99_ms_int, p99_ms_frac,
+        );
+    }
+
+    if let Some(msg) = last_err {
+        return Err(format!(
+            "A2 FAIL: terminal frame success {success}/{expected} \
+             (硬性 100% required); forensic at {}; first err: {msg}",
+            ctx.case_dir.display()
+        ));
+    }
+    if success != expected {
+        return Err(format!(
+            "A2 FAIL: terminal frame success {success}/{expected} mismatch \
+             (no err recorded?); forensic at {}",
+            ctx.case_dir.display()
+        ));
+    }
+
+    ctx.cleanup();
+    Ok(report)
+}
+
+/// (2/2-b) AC-A3 单子 case：spawn pair → 1 task pre-kill probe → SIGKILL
+/// `which`（s1 / gateway / both）→ grace → restart `which` → N=10
+/// InvokeTask 探活 → tear_down 剩余进程。
+///
+/// `which` 取值：`A3aSigkill::S1Only` / `Gateway` / `Both`。
+async fn run_phase_a3_case(args: &Args, which: A3aSigkill) -> Result<A3CaseResult, String> {
+    let label: &'static str = match which {
+        A3aSigkill::S1Only => "A3a",
+        A3aSigkill::Gateway => "A3b",
+        A3aSigkill::Both => "A3c",
+    };
+    let ctx = CaseCtx::alloc(args)?;
+    eprintln!(
+        "[{label}] start robot_id={} which={:?}",
+        ctx.robot_id, which
+    );
+    let bring_up = bring_up_pair(&ctx).await?;
+    let BringUp {
+        fake_s0,
+        s1,
+        gw,
+        mut client,
+    } = bring_up;
+
+    let rpc_timeout_ms: u64 = 5_000;
+    let stream_timeout = Duration::from_secs(5);
+
+    // pre-kill probe
+    if let Err(e) = invoke_and_wait_terminal(
+        &mut client,
+        "maintainer-fake-token-001",
+        rpc_timeout_ms,
+        stream_timeout,
+    )
+    .await
+    {
+        let _ = s1.dump_captured_to(&ctx.case_dir).await;
+        let _ = gw.dump_captured_to(&ctx.case_dir).await;
+        let _ = gw.shutdown(Duration::from_secs(3)).await;
+        let _ = s1.shutdown(Duration::from_secs(3)).await;
+        fake_s0.shutdown();
+        return Err(format!(
+            "{label} pre-kill probe failed: {e}; forensic at {}",
+            ctx.case_dir.display()
+        ));
+    }
+    eprintln!("[{label}] pre-kill probe passed");
+
+    let storage_before = count_iceoryx2_storage_files().unwrap_or(0);
+
+    // SIGKILL according to `which`。SIGKILL 完后被 kill 的 handle 已
+    // owned 走 `sigkill_and_wait` 消费，未 kill 的进入 `kept_*` owned
+    // `Option`。gateway 被 kill → 旧 `client` 失效（gateway 重启后
+    // reconnect）；s1 被 kill → 旧 `client` 仍指向 gateway，restart 重
+    // 启 s1 后 client 自然恢复（同 robot_id 命名空间下 iceoryx2 RR topic
+    // 重连）。fake_s0 不在 SIGKILL 范围（smoke 进程内 thread，不是子进
+    // 程），整 case 持续存活。
+    let (kept_s1, kept_gw, client_after_kill): (
+        Option<SubprocessHandle>,
+        Option<SubprocessHandle>,
+        Option<RobotControlClient<tonic::transport::Channel>>,
+    ) = match which {
+        A3aSigkill::S1Only => {
+            eprintln!("[{label}] SIGKILL s1 pid={:?}", s1.pid);
+            let _ = s1.sigkill_and_wait(Duration::from_secs(3)).await;
+            (None, Some(gw), Some(client))
+        }
+        A3aSigkill::Gateway => {
+            eprintln!("[{label}] SIGKILL gateway pid={:?}", gw.pid);
+            let _ = gw.sigkill_and_wait(Duration::from_secs(3)).await;
+            (Some(s1), None, None)
+        }
+        A3aSigkill::Both => {
+            eprintln!(
+                "[{label}] SIGKILL both s1 pid={:?} + gateway pid={:?}",
+                s1.pid, gw.pid
+            );
+            let _ = s1.sigkill_and_wait(Duration::from_secs(3)).await;
+            let _ = gw.sigkill_and_wait(Duration::from_secs(3)).await;
+            (None, None, None)
+        }
+    };
+
+    tokio::time::sleep(Duration::from_millis(args.leftover_grace_ms)).await;
+    let storage_after = count_iceoryx2_storage_files().unwrap_or(0);
+    eprintln!("[{label}] storage before={storage_before} after={storage_after}");
+
+    // Restart killed processes。`restart_after_sigkill` 接 owned
+    // `Option` 返新 owned `Option`：未被 kill 的进程 pass-through，被
+    // kill 的尝试 restart（成功 → `Some(new)`；失败 → `None`）。
+    let (final_s1, final_gw, mut final_client, restart_ok) =
+        restart_after_sigkill(&ctx, kept_s1, kept_gw, client_after_kill, label).await;
+
+    let mut probe_ok: u32 = 0;
+    let total: u32 = 10;
+    if let (true, Some(client_ref)) = (restart_ok, final_client.as_mut()) {
+        for i in 1..=total {
+            match invoke_and_wait_terminal(
+                client_ref,
+                "maintainer-fake-token-001",
+                rpc_timeout_ms,
+                stream_timeout,
+            )
+            .await
+            {
+                Ok(_) => probe_ok += 1,
+                Err(e) => {
+                    eprintln!("[{label}] probe {i}/{total} FAIL: {e}");
+                }
+            }
+        }
+    } else {
+        eprintln!("[{label}] restart failed or no client; skip {total}x probe");
+    }
+
+    // Plan v3 §P.2.2.d 拍板：probe fail / restart fail 时 dump final_s1
+    // / final_gw captured 到 case_dir 留 forensic（shutdown 消费 owned
+    // 前先 dump）。
+    let dump_needed = probe_ok < total || !restart_ok;
+    if dump_needed {
+        if let Some(gw_ref) = final_gw.as_ref() {
+            let _ = gw_ref.dump_captured_to(&ctx.case_dir).await;
+        }
+        if let Some(s1_ref) = final_s1.as_ref() {
+            let _ = s1_ref.dump_captured_to(&ctx.case_dir).await;
+        }
+        eprintln!(
+            "[{label}] FAIL forensic dump → {} (s1_daemon.log + gateway.log; \
+             restart_ok={restart_ok} probe_ok={probe_ok}/{total})",
+            ctx.case_dir.display()
+        );
+    }
+
+    // Tear down: gateway → s1 → fake_s0（沿 B4 (3/3) 同款顺序）。
+    if let Some(gw) = final_gw {
+        let _ = gw.shutdown(Duration::from_secs(3)).await;
+    }
+    if let Some(s1) = final_s1 {
+        let _ = s1.shutdown(Duration::from_secs(3)).await;
+    }
+    fake_s0.shutdown();
+
+    if probe_ok == total && restart_ok {
+        ctx.cleanup();
+    }
+
+    Ok(A3CaseResult {
+        label,
+        storage_before,
+        storage_after,
+        restart_ok,
+        post_restart_invoke_ok: probe_ok,
+        post_restart_invoke_total: total,
+    })
+}
+
+/// AC-A3 三子 case 区分。
+#[derive(Debug, Clone, Copy)]
+enum A3aSigkill {
+    /// A3a: SIGKILL s1 only。
+    S1Only,
+    /// A3b: SIGKILL gateway only。
+    Gateway,
+    /// A3c: SIGKILL both。
+    Both,
+}
+
+/// 把 SIGKILL 后被 kill 的进程 restart 起来；未被 kill 的进程
+/// pass-through（owned `Option` 模式避 caller 用 owned + restart 双
+/// borrow 冲突）。
+///
+/// 返：`(final_s1, final_gw, final_client, restart_ok)`：
+/// - `final_s1`: 若 `kept_s1.is_some()` pass-through；若 `is_none()`
+///   尝试 restart → `Some(new)` 或 `None`（restart 失败）
+/// - `final_gw`: 同上
+/// - `final_client`: 若 `kept_gw.is_some()` pass-through `kept_client`；
+///   若 `is_none()` reconnect → 新 client 或 `None`
+/// - `restart_ok`: 所有被 kill 进程都 restart 成功（含 ready signal +
+///   GetTaskStatus 探活）
+async fn restart_after_sigkill(
+    ctx: &CaseCtx,
+    kept_s1: Option<SubprocessHandle>,
+    kept_gw: Option<SubprocessHandle>,
+    kept_client: Option<RobotControlClient<tonic::transport::Channel>>,
+    label: &'static str,
+) -> (
+    Option<SubprocessHandle>,
+    Option<SubprocessHandle>,
+    Option<RobotControlClient<tonic::transport::Channel>>,
+    bool,
+) {
+    let mut all_ok = true;
+
+    // s1: pass-through 或 restart
+    let final_s1: Option<SubprocessHandle> = if let Some(h) = kept_s1 {
+        Some(h)
+    } else {
+        match spawn_s1_daemon(ctx) {
+            Ok(mut h) => match wait_for_s1_marker(&mut h, Duration::from_secs(5)).await {
+                Ok(()) => {
+                    eprintln!("[{label}] s1 restart + marker ok pid={:?}", h.pid);
+                    Some(h)
+                }
+                Err(e) => {
+                    eprintln!("[{label}] s1 restart marker fail: {e}");
+                    let _ = h.dump_captured_to(&ctx.case_dir).await;
+                    let _ = h.shutdown(Duration::from_secs(3)).await;
+                    all_ok = false;
+                    None
+                }
+            },
+            Err(e) => {
+                eprintln!("[{label}] s1 restart spawn fail: {e}");
+                all_ok = false;
+                None
+            }
+        }
+    };
+
+    // gateway + client: pass-through 或 restart + reconnect
+    let (final_gw, final_client) = if let Some(h) = kept_gw {
+        // gateway 未被 kill；client pass-through（caller 保证 gateway
+        // 未 kill 时 kept_client = Some(c) 仍连通）。
+        (Some(h), kept_client)
+    } else {
+        // gateway 被 kill：丢弃 kept_client（旧 channel 失效）+ restart。
+        drop(kept_client);
+        match spawn_gateway(ctx) {
+            Ok(h) => {
+                match wait_for_gateway_tcp_ready(ctx.gateway_port, Duration::from_secs(5)).await {
+                    Ok(()) => {
+                        eprintln!("[{label}] gateway restart + TCP ok pid={:?}", h.pid);
+                        match connect_gateway_client(ctx.gateway_port, Duration::from_secs(2)).await
+                        {
+                            Ok(mut c) => {
+                                match poll_get_task_status_ready(&mut c, Duration::from_secs(5))
+                                    .await
+                                {
+                                    Ok(()) => (Some(h), Some(c)),
+                                    Err(e) => {
+                                        eprintln!("[{label}] gw restart RPC probe fail: {e}");
+                                        let _ = h.dump_captured_to(&ctx.case_dir).await;
+                                        let _ = h.shutdown(Duration::from_secs(3)).await;
+                                        all_ok = false;
+                                        (None, None)
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[{label}] gw restart tonic connect fail: {e}");
+                                let _ = h.dump_captured_to(&ctx.case_dir).await;
+                                let _ = h.shutdown(Duration::from_secs(3)).await;
+                                all_ok = false;
+                                (None, None)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[{label}] gw restart TCP fail: {e}");
+                        let _ = h.dump_captured_to(&ctx.case_dir).await;
+                        let _ = h.shutdown(Duration::from_secs(3)).await;
+                        all_ok = false;
+                        (None, None)
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[{label}] gw restart spawn fail: {e}");
+                all_ok = false;
+                (None, None)
+            }
+        }
+    };
+
+    (final_s1, final_gw, final_client, all_ok)
+}
+
+/// (2/2-b) AC-A3：3 SIGKILL 子 case (a/b/c) + 触发判定 `triggered_c3`。
+async fn run_phase_a3(args: &Args) -> Result<A3Report, String> {
+    eprintln!("[A3] start (3 SIGKILL sub-cases: a/b/c)");
+    let case_a = run_phase_a3_case(args, A3aSigkill::S1Only).await?;
+    let case_b = run_phase_a3_case(args, A3aSigkill::Gateway).await?;
+    let case_c = run_phase_a3_case(args, A3aSigkill::Both).await?;
+
+    let triggered_c3 = [&case_a, &case_b, &case_c]
+        .iter()
+        .any(|c| !c.restart_ok || c.post_restart_invoke_ok < c.post_restart_invoke_total);
+    let report = A3Report {
+        case_a,
+        case_b,
+        case_c,
+        triggered_c3,
+    };
+
+    eprintln!(
+        "[A3] case_a (SIGKILL s1): storage {}->{}; restart={}; probes={}/{}",
+        report.case_a.storage_before,
+        report.case_a.storage_after,
+        report.case_a.restart_ok,
+        report.case_a.post_restart_invoke_ok,
+        report.case_a.post_restart_invoke_total,
+    );
+    eprintln!(
+        "[A3] case_b (SIGKILL gw): storage {}->{}; restart={}; probes={}/{}",
+        report.case_b.storage_before,
+        report.case_b.storage_after,
+        report.case_b.restart_ok,
+        report.case_b.post_restart_invoke_ok,
+        report.case_b.post_restart_invoke_total,
+    );
+    eprintln!(
+        "[A3] case_c (SIGKILL both): storage {}->{}; restart={}; probes={}/{}",
+        report.case_c.storage_before,
+        report.case_c.storage_after,
+        report.case_c.restart_ok,
+        report.case_c.post_restart_invoke_ok,
+        report.case_c.post_restart_invoke_total,
+    );
+    eprintln!("[A3] triggered_c3={}", report.triggered_c3);
+    Ok(report)
+}
+
+/// (2/2-b) AC `all`：顺序跑 A1 → A2 → A3。任一 phase Err 立即 return；
+/// PASS 路径返触发判定汇总（含各 phase 的 triggered_*）。
+struct AllReport {
+    a1: A1Report,
+    /// AC-A2 报告留 audit log；触发判定只用 a1/a3 字段（A2 通过即视为成功，
+    /// 不进 triggered_c1/c2/c3 计算）。
+    #[allow(dead_code)]
+    a2: A2Report,
+    a3: A3Report,
+}
+
+impl AllReport {
+    fn any_triggered(&self) -> bool {
+        self.a1.triggered_c1 || self.a1.triggered_c2 || self.a3.triggered_c3
+    }
+}
+
+async fn run_phase_all(args: &Args) -> Result<AllReport, String> {
+    eprintln!("[all] start A1 → A2 → A3");
+    let a1 = run_phase_a1(args).await.map_err(|e| format!("A1: {e}"))?;
+    let a2 = run_phase_a2(args).await.map_err(|e| format!("A2: {e}"))?;
+    let a3 = run_phase_a3(args).await.map_err(|e| format!("A3: {e}"))?;
+    Ok(AllReport { a1, a2, a3 })
 }
 
 // ============================================================================
