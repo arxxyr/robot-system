@@ -98,8 +98,10 @@ use iceoryx2::service::ipc::Service as IxService;
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::build_helpers::build_joint_state;
 use robot_msg::markers;
-use robot_rpc::proto::TaskHandleRef;
 use robot_rpc::proto::robot_control_client::RobotControlClient;
+use robot_rpc::proto::{
+    ActionKindProto, AuthContext, CommandMeta, InvokeTaskCommand, TaskEventKind, TaskHandleRef,
+};
 use robot_transport::Publisher;
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -976,45 +978,420 @@ fn uuidv7_compat() -> String {
 }
 
 // ============================================================================
-// run_selftest
+// Metric helpers + Report struct (2/2-a)
+// ============================================================================
+//
+// AC-A1/A2/A3 (2/2-b) 用；(2/2-a) 仅 land helper + struct，**无** caller
+// → 全 `#[allow(dead_code)]`。
+
+/// 读 `/proc/<pid>/status::VmRSS` 行返 KB 数值。
+///
+/// `VmRSS` 行格式：`VmRSS:\t12345 kB`。
+#[allow(dead_code)]
+fn read_proc_vmrss_kb(pid: u32) -> Result<u64, String> {
+    let path = format!("/proc/{pid}/status");
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("read {path}: {e}"))?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("VmRSS:") {
+            let trimmed = rest.trim().trim_end_matches("kB").trim();
+            return trimmed
+                .parse::<u64>()
+                .map_err(|e| format!("parse VmRSS value {trimmed:?}: {e}"));
+        }
+    }
+    Err(format!("VmRSS not found in {path}"))
+}
+
+/// Glob `/dev/shm/iceoryx2_*` 文件 / 目录数。Plan v3 §P.3 #3 ACK 默认
+/// `/dev/shm` + 实测 fallback；如 iceoryx2 0.8.1 真 storage path 不在
+/// `/dev/shm` → (2/2-b) 实测期 reviewer round 复核调整。
+#[allow(dead_code)]
+fn count_iceoryx2_storage_files() -> Result<u64, String> {
+    let dir = std::path::Path::new("/dev/shm");
+    if !dir.exists() {
+        return Ok(0);
+    }
+    let mut count: u64 = 0;
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("read_dir /dev/shm: {e}"))?;
+    for entry in entries.flatten() {
+        if let Some(name) = entry.file_name().to_str()
+            && name.starts_with("iceoryx2_")
+        {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// 读 `/proc/<pid>/task` 子目录数 = 进程线程数（含主线程）。
+#[allow(dead_code)]
+fn count_proc_threads(pid: u32) -> Result<u64, String> {
+    let path = format!("/proc/{pid}/task");
+    let entries = std::fs::read_dir(&path).map_err(|e| format!("read_dir {path}: {e}"))?;
+    let count = u64::try_from(entries.count()).unwrap_or(u64::MAX);
+    Ok(count)
+}
+
+/// 从 captured 日志行（s1_daemon stderr）倒序扫最近一条
+/// `events_registry_len=N` 数值（兼容 JSON `"events_registry_len":N` +
+/// human `events_registry_len=N` 两种 tracing format）。
+///
+/// `handle_invoke` register / s1_daemon shutdown_pre/post 时打这字段；
+/// 倒序取最近值反映当前 in-flight registry 长度。captured 内一行都没
+/// 匹配 → `None`。
+#[allow(dead_code)]
+async fn scrape_events_registry_len(captured: &Arc<TokioMutex<Vec<String>>>) -> Option<u64> {
+    let lines = captured.lock().await;
+    let needle = "events_registry_len";
+    for line in lines.iter().rev() {
+        if let Some(idx) = line.rfind(needle) {
+            // 跳过 needle 之后所有非数字字符（`":` / `=` / 空格 / 引号）
+            let mut pos = idx + needle.len();
+            let bytes = line.as_bytes();
+            while pos < bytes.len() && !bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+            let start = pos;
+            while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+            if start < pos
+                && let Ok(s) = std::str::from_utf8(&bytes[start..pos])
+                && let Ok(n) = s.parse::<u64>()
+            {
+                return Some(n);
+            }
+        }
+    }
+    None
+}
+
+/// (2/2) AC-A1 metric 行 —— 每 `--metric-sample-every K` task 一档 + final。
+/// 5 类字段对应 Plan v3 §P.2.2.c 拍板曲线。
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+struct MetricRow {
+    /// task iter 索引（0..N，N=`args.iterations`，default 1000）。
+    iter: u32,
+    /// s1_daemon `/proc/<pid>/status::VmRSS` KB。
+    vmrss_s1_kb: u64,
+    /// gateway `/proc/<pid>/status::VmRSS` KB。
+    vmrss_gw_kb: u64,
+    /// 从 s1_daemon stderr scrape 的最近一条 `events_registry_len`（如
+    /// 当前还没打任一 register/shutdown event log → `None`，CSV 写
+    /// `"NA"`）。
+    events_registry_len: Option<u64>,
+    /// `/dev/shm/iceoryx2_*` 文件 / 目录数。
+    iceoryx2_storage_count: u64,
+    /// gateway `/proc/<pid>/task` 数（含 tokio worker + subscribe thread
+    /// 等所有线程）。
+    gw_subscribe_threads: u64,
+}
+
+/// (2/2) AC-A1 report。
+#[allow(dead_code)]
+#[derive(Debug, Default)]
+struct A1Report {
+    /// 每 100 task + final 共 ~11 行。
+    rows: Vec<MetricRow>,
+    /// Plan v3 Q2 触发条件 #1：`events_registry_len` 在 N task + grace 期
+    /// 后线性增长不收敛 → 触发 AC-C1。
+    triggered_c1: bool,
+    /// Plan v3 Q2 触发条件 #2：gateway subscribe thread count 线性增长
+    /// 不收敛 → 触发 AC-C2。
+    triggered_c2: bool,
+}
+
+/// (2/2) AC-A2 report —— terminal_grace 真延迟 + 终态成功率。
+#[allow(dead_code)]
+#[derive(Debug, Default)]
+struct A2Report {
+    /// `--iterations` task 拿到终态帧 → latency_ns 样本（client_receive_ns
+    /// - event.at_ns；Plan v3 §P.2.2.b 拍板）。
+    samples_ns: Vec<u64>,
+    p50_ns: u64,
+    p95_ns: u64,
+    p99_ns: u64,
+    /// 拿到终态帧的 task 数。
+    success_count: u32,
+    /// 预期总 task 数（=`args.iterations` for AC-A2，default 100）。
+    expected_count: u32,
+}
+
+/// (2/2) AC-A3 单个 SIGKILL 子 case 结果（A3a/b/c 各一份）。
+#[allow(dead_code)]
+#[derive(Debug, Default)]
+struct A3CaseResult {
+    label: &'static str,
+    /// SIGKILL 前 `/dev/shm/iceoryx2_*` 文件数（基线）。
+    storage_before: u64,
+    /// SIGKILL 后 + `--leftover-grace-ms` 之后文件数（看 OS 是否回收）。
+    storage_after: u64,
+    /// 重启 daemon / gateway 是否成功（ready signal 三段都过）。
+    restart_ok: bool,
+    /// 重启后 N=10 InvokeTask 探活成功数（Plan v3 Q5）。
+    post_restart_invoke_ok: u32,
+    /// 探活总数（恒 10）。
+    post_restart_invoke_total: u32,
+}
+
+/// (2/2) AC-A3 report（3 子 case + 触发判定）。
+#[allow(dead_code)]
+#[derive(Debug, Default)]
+struct A3Report {
+    case_a: A3CaseResult,
+    case_b: A3CaseResult,
+    case_c: A3CaseResult,
+    /// 任一子 case 重启被阻塞 / 新 task 失败 → 触发 AC-C3（Plan v3 Q2
+    /// 触发条件 #3）。
+    triggered_c3: bool,
+}
+
+/// 把 `A1Report.rows` 写到 CSV `path`，沿 `MetricRow` 字段顺序输出 header
+/// + 每行。
+///
+/// `events_registry_len = None` 时写 `"NA"`（CSV 标准缺失值）。
+#[allow(dead_code)]
+fn write_csv(path: &Path, rows: &[MetricRow]) -> std::io::Result<()> {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    out.push_str(
+        "iter,vmrss_s1_kb,vmrss_gw_kb,events_registry_len,\
+         iceoryx2_storage_count,gw_subscribe_threads\n",
+    );
+    for r in rows {
+        let er = r
+            .events_registry_len
+            .map_or_else(|| "NA".to_string(), |v| v.to_string());
+        // writeln! into String 不会真失败（String::write_fmt 永远
+        // Ok）；用 writeln! 避开 clippy `format_push_string`。
+        let _ = writeln!(
+            &mut out,
+            "{},{},{},{},{},{}",
+            r.iter,
+            r.vmrss_s1_kb,
+            r.vmrss_gw_kb,
+            er,
+            r.iceoryx2_storage_count,
+            r.gw_subscribe_threads,
+        );
+    }
+    std::fs::write(path, out)
+}
+
+// ============================================================================
+// Task RPC helpers (2/2-a)
 // ============================================================================
 
-/// (1/2) selftest case：spawn fake_s0 → s1_daemon → wait marker →
-/// gateway → wait TCP → tonic connect → GetTaskStatus 探活 → shutdown
-/// (gateway → s1 → fake_s0) → cleanup。
+/// 构造 `InvokeTaskCommand` for `DwellMs` action（沿
+/// `crates/robot-rpc/tests/common/client.rs::build_invoke_task_command`
+/// 同款；本地 `request_id` 接 `&str`（uuidv7_compat 返字串），不引
+/// `uuid` crate）。
 ///
-/// **不**调任何 InvokeTask / StreamTaskEvents 真实测（留 (2/2)）；
-/// 仅验证 spawn + ready + shutdown 整套 harness 通。
-async fn run_selftest(args: &Args) -> Result<(), String> {
-    let ctx = CaseCtx::alloc(args)?;
-    eprintln!(
-        "[selftest] start robot_id={} hardware_id={} joints={} layout_id={:#018x} \
-         gateway_port={} workdir={}",
-        ctx.robot_id,
-        ctx.hardware_id,
-        ctx.joints,
-        ctx.layout_id,
-        ctx.gateway_port,
-        ctx.case_dir.display()
-    );
+/// **`server-side DwellMs duration_ms` 由 s1_daemon `--config` 注入的
+/// `MockDwellBackend::with_duration_ms` 决定**（B2 frozen lib API；详
+/// `crates/robot-s1/src/action_backend/mock_dwell.rs:60-67`），client
+/// 端**不**直接控制。`timeout_ms` 参数是 client `CommandMeta.timeout_ms`
+/// = RPC 请求-响应超时上限（gateway 端 `tokio::time::timeout` 用），
+/// **不**是 server-side dwell duration。
+#[allow(dead_code)]
+fn build_invoke_task_cmd(
+    request_id: &str,
+    idempotency_key: &str,
+    source: &str,
+    auth_token: &str,
+    kind: ActionKindProto,
+    timeout_ms: u64,
+    audit_reason: &str,
+) -> tonic::Request<InvokeTaskCommand> {
+    let cmd = InvokeTaskCommand {
+        meta: Some(CommandMeta {
+            request_id: request_id.to_string(),
+            source: source.to_string(),
+            auth: Some(AuthContext {
+                token: auth_token.to_string(),
+                mtls_fingerprint: String::new(),
+            }),
+            timeout_ms,
+            idempotency_key: idempotency_key.to_string(),
+            dry_run: false,
+            audit_reason: audit_reason.to_string(),
+        }),
+        kind: kind.into(),
+        // `deadline_ns` = 0 让 gateway 端用 `clock.now() + timeout_ms*1e6`
+        // 主导 deadline 计算（详 task_handlers.rs:206 注释 + B4 (3/3)
+        // `tests/common/client.rs:88-95`）。
+        deadline_ns: 0,
+        priority: 0,
+        payload_schema_id: 0,
+        payload: Vec::new(),
+    };
+    tonic::Request::new(cmd)
+}
 
-    // 1. fake S0（放 s1 spawn 之前，保证 anchor 可用）
+/// 构造 `tonic::Request<TaskHandleRef>`（`GetTaskStatus` / `StreamTaskEvents`
+/// 共用 wire 形态）。
+#[allow(dead_code)]
+fn build_task_handle_ref_req(request_id: &str, action_id: &str) -> tonic::Request<TaskHandleRef> {
+    tonic::Request::new(TaskHandleRef {
+        request_id: request_id.to_string(),
+        action_id: action_id.to_string(),
+    })
+}
+
+/// 单 task：调 `InvokeTask` → 拿 `action_id` → `StreamTaskEvents` 等终
+/// 态帧 → 返 `(action_id, terminal_kind, latency_ns)`。
+///
+/// **`latency_ns` 时钟域**（Plan v3 §P.2.2.b 写死硬约束）：
+/// - `client_receive_ns` = `robot_core::time::SystemClock::new().now().0`
+///   （`CLOCK_MONOTONIC_RAW`；跟 s1 端 `event.at_ns` 同 clock domain）
+/// - 反向 (`client_receive_ns < event.at_ns`) → 显式 fail
+///   (`clock_domain_violation`)，**不**用 `saturating_sub` 掩盖时钟域
+///   假设破裂
+///
+/// smoke binary 跟 s1_daemon / gateway 必须**同机器**跑（跨机器跨 clock
+/// domain 不在候选 3 范围）。
+///
+/// 调用方典型：AC-A1 长跑（丢 `latency_ns`，关心 throughput / leak）+
+/// AC-A2 grace 实测（收集 `latency_ns` 算 p50/p95/p99）。
+#[allow(dead_code)]
+async fn invoke_and_wait_terminal(
+    client: &mut RobotControlClient<tonic::transport::Channel>,
+    auth_token: &str,
+    rpc_timeout_ms: u64,
+    stream_timeout: Duration,
+) -> Result<(String, TaskEventKind, u64), String> {
+    let request_id = uuidv7_compat();
+    let ik = format!("ik-{request_id}");
+    let invoke_req = build_invoke_task_cmd(
+        &request_id,
+        &ik,
+        "pubsub_cleanup_smoke",
+        auth_token,
+        ActionKindProto::ActionKindDwellMs,
+        rpc_timeout_ms,
+        "pubsub_cleanup_smoke task",
+    );
+    let resp = client
+        .invoke_task(invoke_req)
+        .await
+        .map_err(|s| format!("invoke_task: {:?}: {}", s.code(), s.message()))?
+        .into_inner();
+    let action_id = resp.action_id;
+    if action_id.is_empty() {
+        return Err("invoke_task returned empty action_id".into());
+    }
+
+    let stream_req = build_task_handle_ref_req(&request_id, &action_id);
+    let stream_resp = client
+        .stream_task_events(stream_req)
+        .await
+        .map_err(|s| format!("stream_task_events: {:?}: {}", s.code(), s.message()))?;
+    let mut stream = stream_resp.into_inner();
+
+    let clock = SystemClock::new();
+    let deadline = Instant::now() + stream_timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(format!(
+                "stream terminal event timeout ({}ms) for action_id={action_id}",
+                stream_timeout.as_millis()
+            ));
+        }
+        match tokio::time::timeout(remaining, stream.message()).await {
+            Ok(Ok(Some(event))) => {
+                let kind =
+                    TaskEventKind::try_from(event.event).unwrap_or(TaskEventKind::Unspecified);
+                if matches!(
+                    kind,
+                    TaskEventKind::Completed | TaskEventKind::Failed | TaskEventKind::Cancelled
+                ) {
+                    let client_receive_ns: u64 = clock.now().0;
+                    let event_at_ns: u64 = event.at_ns;
+                    // 时钟域显式检查（Plan v3 §P.2.2.b 拍板）。
+                    let latency_ns = if client_receive_ns >= event_at_ns {
+                        client_receive_ns - event_at_ns
+                    } else {
+                        return Err(format!(
+                            "clock_domain_violation: client_receive_ns={client_receive_ns} \
+                             < event_at_ns={event_at_ns} (action_id={action_id}, kind={kind:?})"
+                        ));
+                    };
+                    return Ok((action_id, kind, latency_ns));
+                }
+                // 非终态（Started / Progress）继续等
+            }
+            Ok(Ok(None)) => {
+                return Err(format!(
+                    "stream closed before terminal event (action_id={action_id})"
+                ));
+            }
+            Ok(Err(status)) => {
+                return Err(format!(
+                    "stream error: {:?}: {} (action_id={action_id})",
+                    status.code(),
+                    status.message()
+                ));
+            }
+            Err(_elapsed) => {
+                return Err(format!(
+                    "stream terminal event timeout ({}ms) for action_id={action_id}",
+                    stream_timeout.as_millis()
+                ));
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Bring-up / tear-down 共用骨架 (2/2-a)
+// ============================================================================
+
+/// `bring_up_pair` 成功返回值：fake_s0 + s1 + gateway + 已 ready 的
+/// tonic client（已通过 3 段 ready signal）。caller 借用 `client` 字段
+/// 调 RPC，无需再 connect。
+///
+/// **不**走 RAII shutdown（`Drop` 仅靠 `SubprocessHandle::kill_on_drop`
+/// 兜底 SIGKILL）；PASS 路径 caller 必须显式调 [`tear_down_pair`] 走
+/// SIGTERM grace + warn-on-error，沿 [`run_selftest`] / B4 (3/3) 同款
+/// 模式。
+#[allow(dead_code)]
+struct BringUp {
+    fake_s0: FakeStatePublisher,
+    s1: SubprocessHandle,
+    gw: SubprocessHandle,
+    client: RobotControlClient<tonic::transport::Channel>,
+}
+
+/// Bring up s1_daemon + gateway 双进程 + fake S0 + 三段式 ready signal。
+///
+/// 顺序：
+/// 1. spawn `FakeStatePublisher`（50Hz JointState publisher；放 s1 spawn
+///    之前保证 anchor 可用）
+/// 2. spawn s1_daemon → wait marker `"rr_server_threads ready"` (5s)
+/// 3. spawn gateway → wait TCP `127.0.0.1:<port>` (2s)
+/// 4. tonic connect → `GetTaskStatus` zero-UUID 探活（5s）→ 期 NotFound
+///
+/// FAIL 路径：partial-up 已 spawn 的子进程**显式** dump_captured_to +
+/// shutdown（不靠 `kill_on_drop` RAII，因为 caller 拿不到 BringUp 没法
+/// 触发显式清理；inline 收尾避免悬挂）。case_dir 留 forensic（PASS
+/// 路径由 caller 调 `ctx.cleanup()`）。
+async fn bring_up_pair(ctx: &CaseCtx) -> Result<BringUp, String> {
     let fake_s0 =
         FakeStatePublisher::spawn(&ctx.robot_id, &ctx.hardware_id, ctx.joints, ctx.layout_id)
             .map_err(|e| format!("FakeStatePublisher::spawn: {e}"))?;
-    eprintln!("[selftest] fake_s0 spawned (50Hz JointState publisher)");
+    eprintln!("[bring_up] fake_s0 spawned (50Hz JointState publisher)");
 
-    // 2. spawn s1_daemon
-    let mut s1 = match spawn_s1_daemon(&ctx) {
+    let mut s1 = match spawn_s1_daemon(ctx) {
         Ok(h) => h,
         Err(e) => {
             fake_s0.shutdown();
             return Err(format!("spawn s1_daemon: {e}"));
         }
     };
-    eprintln!("[selftest] s1_daemon spawned pid={:?}", s1.pid);
+    eprintln!("[bring_up] s1_daemon spawned pid={:?}", s1.pid);
 
-    // 3. Phase 1: wait s1 marker
     if let Err(e) = wait_for_s1_marker(&mut s1, Duration::from_secs(5)).await {
         let _ = s1.dump_captured_to(&ctx.case_dir).await;
         fake_s0.shutdown();
@@ -1024,10 +1401,9 @@ async fn run_selftest(args: &Args) -> Result<(), String> {
             ctx.case_dir.display()
         ));
     }
-    eprintln!("[selftest] Phase 1 PASS: s1_daemon rr_server_threads ready");
+    eprintln!("[bring_up] Phase 1 PASS: s1_daemon rr_server_threads ready");
 
-    // 4. spawn gateway
-    let gw = match spawn_gateway(&ctx) {
+    let gw = match spawn_gateway(ctx) {
         Ok(h) => h,
         Err(e) => {
             let _ = s1.dump_captured_to(&ctx.case_dir).await;
@@ -1039,9 +1415,8 @@ async fn run_selftest(args: &Args) -> Result<(), String> {
             ));
         }
     };
-    eprintln!("[selftest] gateway spawned pid={:?}", gw.pid);
+    eprintln!("[bring_up] gateway spawned pid={:?}", gw.pid);
 
-    // 5. Phase 2: wait gateway TCP
     if let Err(e) = wait_for_gateway_tcp_ready(ctx.gateway_port, Duration::from_secs(2)).await {
         let _ = gw.dump_captured_to(&ctx.case_dir).await;
         let _ = s1.dump_captured_to(&ctx.case_dir).await;
@@ -1053,9 +1428,8 @@ async fn run_selftest(args: &Args) -> Result<(), String> {
             ctx.case_dir.display()
         ));
     }
-    eprintln!("[selftest] Phase 2 PASS: gateway TCP connectable");
+    eprintln!("[bring_up] Phase 2 PASS: gateway TCP connectable");
 
-    // 6. tonic connect + Phase 3 RPC probe
     let mut client = match connect_gateway_client(ctx.gateway_port, Duration::from_secs(2)).await {
         Ok(c) => c,
         Err(e) => {
@@ -1081,19 +1455,68 @@ async fn run_selftest(args: &Args) -> Result<(), String> {
             ctx.case_dir.display()
         ));
     }
-    eprintln!("[selftest] Phase 3 PASS: GetTaskStatus zero-UUID → NotFound");
+    eprintln!("[bring_up] Phase 3 PASS: GetTaskStatus zero-UUID → NotFound");
 
-    // 7. PASS 路径 shutdown：gateway → daemon → fake_s0
-    eprintln!("[selftest] all 3 ready phases passed; tearing down");
+    Ok(BringUp {
+        fake_s0,
+        s1,
+        gw,
+        client,
+    })
+}
+
+/// Tear down pair：gateway → daemon → fake_s0（沿 B4 (3/3) 同款顺序）。
+/// shutdown 错仅 warn 不返 Err，让 caller 主路径不被 shutdown 噪音
+/// 干扰；shutdown 调用本身已经处理 SIGTERM grace → SIGKILL fallback。
+async fn tear_down_pair(bring_up: BringUp) {
+    let BringUp {
+        fake_s0,
+        s1,
+        gw,
+        client: _,
+    } = bring_up;
     if let Err(e) = gw.shutdown(Duration::from_secs(3)).await {
-        eprintln!("[selftest] gateway shutdown warn: {e}");
+        eprintln!("[tear_down] gateway shutdown warn: {e}");
     }
     if let Err(e) = s1.shutdown(Duration::from_secs(3)).await {
-        eprintln!("[selftest] s1_daemon shutdown warn: {e}");
+        eprintln!("[tear_down] s1_daemon shutdown warn: {e}");
     }
     fake_s0.shutdown();
+}
 
-    // PASS path cleanup（FAIL 已 dump 到 case_dir，PASS 走清空）
+// ============================================================================
+// run_selftest
+// ============================================================================
+
+/// (1/2) selftest case：spawn fake_s0 → s1_daemon → wait marker →
+/// gateway → wait TCP → tonic connect → GetTaskStatus 探活 → shutdown
+/// (gateway → s1 → fake_s0) → cleanup。
+///
+/// **不**调任何 InvokeTask / StreamTaskEvents 真实测（留 (2/2-b)）；
+/// 仅验证 spawn + ready + shutdown 整套 harness 通。
+///
+/// (2/2-a) refactor 后用 [`bring_up_pair`] + [`tear_down_pair`] 共用骨架
+/// （3 phase ready signal + shutdown 顺序）；selftest 本身退化到
+/// "alloc CaseCtx + bring_up + tear_down + cleanup" 一条直路。
+async fn run_selftest(args: &Args) -> Result<(), String> {
+    let ctx = CaseCtx::alloc(args)?;
+    eprintln!(
+        "[selftest] start robot_id={} hardware_id={} joints={} layout_id={:#018x} \
+         gateway_port={} workdir={}",
+        ctx.robot_id,
+        ctx.hardware_id,
+        ctx.joints,
+        ctx.layout_id,
+        ctx.gateway_port,
+        ctx.case_dir.display()
+    );
+
+    let bring_up = bring_up_pair(&ctx).await?;
+    eprintln!("[selftest] all 3 ready phases passed; tearing down");
+    tear_down_pair(bring_up).await;
+
+    // PASS path cleanup（FAIL 已在 bring_up_pair 内 dump 到 case_dir + 显
+    // 式 shutdown；PASS 走 ctx.cleanup() 清空）
     ctx.cleanup();
     Ok(())
 }
