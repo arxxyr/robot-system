@@ -489,6 +489,459 @@ path），回滚 = revert 实测 commit；不影响生产代码。
 
 ---
 
+## Plan
+
+> Plan v3（reviewer Plan round 3 ACK · 2026-05-11）。基于 Spec §AC +
+> §Reviewer 拍板硬输入；**不**重新决策 Q1-Q10 / AC 边界 / hard boundary。
+> Plan round 1 → round 2 → round 3 三轮 reviewer 拍板归档详 §P.3。
+
+### P.0 工作基线
+
+- 起点：`master` HEAD = `e3f99a1`（含 Spec round 1 完整 + Q1-Q10
+  拍板 + 6 AC 边界）。
+- 不开新分支（沿 B4 模式直接 commit 到 master + 每段 reviewer ACK）。
+- 全 Plan 严格基于 Spec §AC + §Reviewer 拍板；**不**重新决策任何
+  Q1-Q10 / AC 边界 / hard boundary。
+
+### P.1 commit 节奏总览
+
+**Happy path**（基础 AC 全过 + 零条件性 AC 触发）：
+
+```
+✨ feat: v0.4 候选 3 (1/2) pubsub cleanup smoke binary 骨架 + log
+        scrape（feature-gated；含 fake S0 actor + register/shutdown
+        events_registry_len log）
+✨ feat: v0.4 候选 3 (2/2) AC-A1/A2/A3 实测 + 5 类 metric 曲线
+📝 docs: v0.4 候选 3 summary 归档 + Phase 候选 3 完结
+```
+
+**触发条件性 AC**（任一）：(2/2) 跟 summary 之间各开**独立 reviewer
+round**（每个 AC outline 拍板后再实施 + commit）：
+
+```
+✨ feat: v0.4 候选 3 AC-C1 EventsDrainRegistry::reap_finished()
+        （outline pending；touch 前另开 round）
+✨ feat: v0.4 候选 3 AC-C2 events_subscribe global leak counter
+✨ feat: v0.4 候选 3 AC-C3 leftover 策略 <c1|c2|c3>
+```
+
+### P.2 工作流（按阶段顺序）
+
+#### P.2.1 [commit (1/2)] smoke binary 骨架 + log scrape
+
+##### P.2.1.a Cargo.toml 变更（feature-gated，沿 `clear_estop_e2e` 模式）
+
+`crates/robot-tests/Cargo.toml` 追加：
+
+```toml
+[[bin]]
+name = "pubsub_cleanup_smoke"
+path = "src/bin/pubsub_cleanup_smoke.rs"
+required-features = ["pubsub-cleanup-smoke"]
+
+# optional deps（robot-rpc / tonic / tokio 已有，沿 clear-estop-e2e 同款）
+# tokio 已含 process / io-util；本 bin 直接复用
+
+[features]
+# v0.4 候选 3 pubsub cleanup smoke 入口 feature。
+# - 生产 release 不带本 feature（pubsub_cleanup_smoke binary 不参编译）。
+# - 本机跑：cargo run -p robot-tests --bin pubsub_cleanup_smoke
+#   --features pubsub-cleanup-smoke -- ...
+# - 跟 clear-estop-e2e 同款 feature 守门：启用 robot-rpc/client + tonic
+#   + tokio(process,io-util)
+pubsub-cleanup-smoke = [
+    "dep:robot-rpc",
+    "dep:tonic",
+    "dep:tokio",
+]
+```
+
+**Build gate**：
+
+```bash
+cargo build -p robot-tests --release --bin pubsub_cleanup_smoke \
+    --features pubsub-cleanup-smoke
+```
+
+##### P.2.1.b CLI args（沿 `crash_restart_smoke` / `clear_estop_e2e` 同款风格）
+
+- `--bin-dir target/release`（默认）
+- `--robot-id-prefix pubsub_cleanup`（默认）
+- `--hardware-id <id>`（必填）/ `--config <toml>`（必填）
+- `--iterations N`（默认 1000，Q1）
+- `--metric-sample-every K`（默认 100，每 K task 一档曲线）
+- `--invoke-dwell-ms <ms>`（默认 10，每条 InvokeTask = DwellMs(10ms)）
+- `--phase A1|A2|A3|all`（默认 all）
+- `--leftover-grace-ms <ms>`（默认 200，A3 SIGKILL 后等 storage 稳定）
+- `--output-csv <path>`（可选；默认 stderr only）
+
+##### P.2.1.c smoke 内置 fake S0 actor
+
+pubsub_cleanup_smoke 必须复用 B4 (3/3) harness `FakeStatePublisher`
+模式（`crates/robot-rpc/tests/common/fake_state.rs:39-153`）：
+
+- **不**起真 s0_daemon（避免 `S0Command max_subscribers=1` 撞配额；
+  同 B4 (3/3) Spec § Q3 拍板）
+- 50Hz publish `JointState` 到 `/<robot_id>/s0/<hardware_id>/state`
+- **必须**用 `robot_core::time::SystemClock::new()` 填 `stamp_ns`
+  （跟 s1_daemon `read_anchor_from_s0_state` 同 clock domain；否则
+  `max_stale_ms=200ms` 判 stale → s1 anchor exit 4）
+- 一条 std::thread + `Box::leak(Node)` + RAII shutdown
+
+**复用方式**：smoke binary 直接 inline 等价实现（沿 `clear_estop_e2e`
+不复用 `tests/common` 的同款独立模式；具体实施期定，**不**改
+`fake_state.rs` 公共可见性）。
+
+##### P.2.1.d s1_daemon `events_registry_len` log（不碰 tick loop）
+
+reviewer 拍板（Plan round 1 阻断 3）：**不**改
+`run_action_tick_loop` 阻塞函数；register 即时 + shutdown final。
+
+| 位置 | log 形态 |
+|---|---|
+| `crates/robot-s1/src/rr_server/handler.rs::handle_invoke` line 241 之后 | `tracing::info!(events_registry_len = ctx.events_registry.len(), action_id = %action_id, op = "register", ...)` |
+| `crates/robot-s1/src/bin/s1_daemon.rs:505` `events_registry.stop_and_join_all()` 之前 / 之后各一行 | `tracing::info!(events_registry_len = events_registry.len(), op = "shutdown_pre" / "shutdown_post", ...)` |
+| **可选** 独立 diagnostics thread | s1_daemon 启动期 spawn 一条 `std::thread`（**不**碰 tick loop），1s 周期打 `events_registry_len`；实施期判断是否必须（happy path 仅靠 register/shutdown event log 是否够 smoke 抓增长曲线）→ 如够则不加 thread；否则加 1s diagnostics thread |
+
+**注销路径 log 本 commit 不加**（AC-C1 触发才有，等
+`reap_finished` outline）。
+
+**回归**：本改动只新增 `tracing::info!` 行，**不**改
+`EventsDrainRegistry::register` API 签名 / 不改 `stop_and_join_all`
+/ 不改 shutdown 顺序契约。现有 lib unit + integration test 全保。
+
+##### P.2.1.e Quality Gate
+
+- `cargo fmt --all --check` clean
+- `cargo clippy --workspace --all-targets -- -D warnings` clean
+- `cargo build -p robot-tests --release --bin pubsub_cleanup_smoke
+  --features pubsub-cleanup-smoke` 过
+- 生产构建（无 feature）`cargo build -p robot-tests --release`
+  不 link 本 binary
+- 现有 lib unit + integration test 全过（B4 6 cross-process AC +
+  s1_daemon 134/188 lib unit + 双路 crash_restart_smoke 5/5+5/5）
+
+#### P.2.2 [commit (2/2)] AC-A1/A2/A3 实测 + 曲线输出
+
+##### P.2.2.a smoke binary 实现
+
+| 阶段 | 范围 | Q 引用 |
+|---|---|---|
+| AC-A1 | 1000 task 顺序 + 等终态 + 0ms；每 100 task + final 输出 5 类 metric 行 | Q1 + Q2 + Q9 |
+| AC-A2 | 100 task + 等终态；测**端到端 client 视角延迟** = `client_receive_ns - event.at_ns`，p50/p95/p99 报告；终态成功率硬性 = 100% | Q3 |
+| AC-A3 | A3a/b/c 三 SIGKILL 子 case + 重启后 N=10 InvokeTask 探活 | Q4 + Q5 |
+
+##### P.2.2.b AC-A2 时延口径（Plan v3 修订；reviewer round 2 阻断 1 修复）
+
+`crates/robot-rpc/src/events_subscribe.rs:403` 的
+`envelope_to_task_event` 只填 `at_ns`（事件**语义**时刻，由 s1 端
+events_drain 透传 `ActionEvent::{Started/Completed/...}.at_ns`）。
+gateway forward 时刻**未**进 proto，client 无法直接拿。
+
+**client 视角端到端延迟测量**（reviewer Plan round 2/3 写死硬约束）：
+
+```rust
+use robot_core::time::{RobotClock, SystemClock};
+
+// tonic stream poll 拿到 TaskEvent 立即记录 client_receive_ns
+let clock = SystemClock::new();
+let client_receive_ns: u64 = clock.now().0;
+let event_at_ns: u64 = task_event.at_ns;
+
+// 时钟域一致性显式检查（不用 saturating_sub 掩盖）
+let latency_ns: u64 = if client_receive_ns >= event_at_ns {
+    client_receive_ns - event_at_ns
+} else {
+    // 反向 = 时钟域假设破裂；forensic dump + smoke fail
+    dump_forensic_and_fail("clock_domain_violation", ...);
+    return Err(...);
+};
+```
+
+**关键约束**（reviewer 写死 · Plan round 3 ACK）：
+
+- `client_receive_ns` **必须**用 `robot_core::time::SystemClock::new().now().0`
+  （封装 `CLOCK_MONOTONIC_RAW`，跟 s1 端 `event.at_ns` 同 clock
+  domain）
+- **禁用** `tokio::time::Instant::now()` / `std::time::Instant::now()`
+  / `SystemTime::now()`（全局 CLAUDE.md §1 + §8 + smoke binary 内
+  `-D warnings` 守门；clippy 拦截）
+- 反向 (`client_receive_ns < event_at_ns`) → **forensic dump + smoke
+  fail**（直接报 `"clock_domain_violation"`）；**不**用 `saturating_sub`
+  掩盖时钟域假设破裂
+- smoke binary 跟 s1_daemon / gateway **必须同机器**跑（跨机器跨
+  clock domain 不在候选 3 范围）
+
+**测量与判定**：
+
+- 100 task × 终态帧 = 100 个 `latency_ns` 样本（如终态帧丢一帧 = 任一
+  task FAIL）
+- p50 / p95 / p99 报告
+- 终态成功率硬性 = 100%（任一漏终态 = FAIL）
+- p99 > 100ms（grace 当前 default）→ 触发 reviewer round N+1，**不**
+  自动改 grace default（Q3 拍板）
+
+**不改 frozen schema**：**不**改 `events_subscribe.rs` /
+`TaskEvent` proto 加 forward timestamp 字段（避免改 frozen
+schema）；如未来真需要 forward timestamp → 走另立 outline。
+
+##### P.2.2.c 5 类 metric 字段（Q2 拍板曲线模式）
+
+- `vmrss_s1_kb` / `vmrss_gw_kb`（`/proc/<pid>/status::VmRSS` 行解析）
+- `events_registry_len`（s1_daemon stderr log scrape，正则
+  `events_registry_len=(\d+)` 取最近值；register/shutdown event log
+  之间用 expected value 推断；如启用 1s diagnostics thread 则直接取
+  最近一行）
+- `iceoryx2_storage_count`（先 `/dev/shm/iceoryx2_*` glob；实测如
+  iceoryx2 0.8.1 真路径不在 `/dev/shm` → 按实测调整 + reviewer
+  round N 复核，P.3 #3 已 ACK fallback 路径）
+- `gw_subscribe_threads`（`/proc/<gw_pid>/task` count - 基线 thread
+  数）
+
+##### P.2.2.d forensic dump + 退出码
+
+forensic dump 沿 B4 (3/3) `Stdio::piped` 模式 binary 化：
+
+- `Stdio::piped()` + 2 drain task → `Arc<Mutex<Vec<String>>>` 全程
+  捕获
+- 失败时 dump `/tmp/pubsub_cleanup_smoke/<robot_id>/{daemon,gateway}.{stdout,stderr}`
+  + metric CSV
+- 路径 P.3 #7 已 ACK
+
+退出码沿 `crash_restart_smoke` 同款：
+
+- `0` = AC-A1/A2/A3 全过 + 零条件性 AC 触发
+- `1` = CLI / 环境错（binary 找不到 / config 缺）
+- `2` = AC 至少一条 FAIL（含触发条件性 AC，需走后续 commit）
+
+##### P.2.2.e Quality Gate
+
+- smoke `--iterations 1000 --phase all` 全过（happy path）或退出码
+  2 + metric 输出指明触发的条件性 AC
+- 双路 `crash_restart_smoke` 5/5+5/5 不退化
+- 现有 lib unit + integration test 全过
+- 本 commit **不**应触发任何代码改动（仅 smoke binary 内部 + 输出
+  CSV/metric），若实测过程中发现 race / non-deterministic 行为需要
+  lib 改动 → 走 reviewer round N+1
+
+#### P.2.3 [conditional commit] AC-C1（触发后另开 reviewer round）
+
+**触发条件**：P.2.2 metric 显示 `events_registry_len` 在 N=1000 +
+grace 期后线性增长不收敛。
+
+**reviewer 拍板（P.3 #4）**：**本 Plan 不预批 AC-C1 调用点**。触发后
+outline + reviewer round 拍板后才进实施 commit。
+
+**默认研究候选**（outline 期 first reading；实施期可能改）：
+
+- **`EventsDrainRegistry::reap_finished()`**：registry 内用
+  `JoinHandle::is_finished()` 找已结束 handle，**锁外 join 并移除**。
+  具体形态：
+  - `pub fn reap_finished(&self) -> usize`：返回本次 reap 数；锁内
+    swap_remove 出已 `is_finished()` 的 handle 进 owned Vec，锁外
+    逐个 `join()`
+  - 调用点：smoke binary / s1_daemon 周期 thread / `register` 路径
+    前置；具体调用 cadence outline 期定
+  - 保 `Mutex<Vec<Handle>>` ownership 模型（drain thread **不**自
+    unregister；JoinHandle 由 registry 单一 ownership 持有 →
+    `join_all` 确定性不破）
+
+**禁止的方案**（reviewer 已拍板拒绝）：
+
+- (a) `run_drain_loop` 退出路径自 unregister
+- (b) watcher thread 持 JoinHandle 单独 join
+- 任何让 drain thread 端 drop JoinHandle 的路径
+
+**outline 阶段必须钉死**：
+
+- `reap_finished` 跟 `stop_and_join_all` 的协作语义（reap 后
+  `stop_and_join_all` 对剩余 handle 仍 no-op 兼容；reap 后
+  registry.len() 减小）
+- shutdown 顺序契约保不变（4 步顺序 + reviewer round 6 阻断契约）
+- lib unit 扩 3+ 测：`reap_finished_empty_returns_zero` /
+  `reap_finished_after_terminal_returns_one` /
+  `reap_finished_then_stop_and_join_all_is_noop_for_reaped` 等
+
+**回归 Quality Gate**：
+
+- `shutdown_in_flight_invoke_rejected_no_register` /
+  `registry_stop_and_join_all_*` 全过
+- 双路 `crash_restart_smoke` 5/5+5/5
+- 重跑 P.2.2 smoke AC-A1：`events_registry_len` 收敛到稳态（如周期
+  reap → 趋近 in-flight task 数）
+
+#### P.2.4 [conditional commit] AC-C2 events_subscribe thread-alive counter（Plan v3 修订；reviewer round 2 阻断 2 修复）
+
+**触发条件**：P.2.2 metric 显示 `gw_subscribe_threads`
+(`/proc/<gw_pid>/task` count) 线性增长不收敛 + reviewer round 拍板
+触发 C2。
+
+**改动**（P.3 #5 拍板 + Plan round 2 阻断 2 修复）：
+
+`crates/robot-rpc/src/events_subscribe.rs` 加：
+
+```rust
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// 活 subscribe thread 数（**不**是活 stream 数）。
+/// thread closure 进入 run_subscribe_loop 前 += 1；thread 真退出时
+/// RAII guard -= 1。EventsSubscribeStream::drop 不动 counter（仅
+/// signal stop=true）—— 防止 drop 立即减计数但 thread 还活着的
+/// leak 假阳性。
+pub static EVENTS_SUBSCRIBE_THREADS_ALIVE: AtomicU64 = AtomicU64::new(0);
+
+struct ThreadAliveGuard;
+impl ThreadAliveGuard {
+    #[inline]
+    fn enter() -> Self {
+        EVENTS_SUBSCRIBE_THREADS_ALIVE.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+impl Drop for ThreadAliveGuard {
+    fn drop(&mut self) {
+        EVENTS_SUBSCRIBE_THREADS_ALIVE.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+```
+
+`spawn_events_subscribe_thread` thread closure 内（line 223-242
+附近），**在** `run_subscribe_loop` 调用前**起 guard**：
+
+```rust
+let join = thread::Builder::new().name(thread_name).spawn(move || {
+    let node = NodeBuilder::new().create::<IxService>().expect(...);
+    let mut subscriber = open_sub(...).expect(...);
+    Box::leak(Box::new(node));
+    let _ = ready_tx.send(());
+    drop(ready_tx);
+
+    let _alive_guard = ThreadAliveGuard::enter();  // ← thread 真启动时 +=1
+    run_subscribe_loop(&cfg, &mut subscriber, &tx, &stop_clone, &metrics_clone);
+    // _alive_guard drop here = thread 真退出时 -=1
+})?;
+```
+
+**硬约束**（reviewer Plan round 2 + round 3 写死）：
+
+- counter 语义 = **活 subscribe thread 数**（**不**是活 stream
+  数）；名字 `EVENTS_SUBSCRIBE_THREADS_ALIVE` 显式
+- counter 加减**只在** thread closure 内 RAII guard 完成
+- `EventsSubscribeStream::drop` **不**碰 counter（保 Drop join
+  语义；仍**仅** set stop=true；可选加
+  `tracing::debug!("requested_stop", topic=...)` log）
+- **不**改 `spawn_events_subscribe_thread` API 签名 / 不改
+  `EventsSubscribeConfig`
+
+**smoke binary 端读取**：
+
+- 通过 gateway stderr log scrape（gateway 启动期 / shutdown / 周期
+  diagnostics 打 `EVENTS_SUBSCRIBE_THREADS_ALIVE` 当前值）
+- 或直接读 `/proc/<gw_pid>/task` count（已是 P.2.2 metric 字段
+  `gw_subscribe_threads`；本 counter 是 lib 内一致性验证，跟
+  OS-level thread count 应一致）
+
+**lib unit 扩**：
+
+- `thread_alive_counter_increments_on_spawn_decrements_on_thread_exit`：
+  spawn → counter +=1；request_stop + join → counter -=1
+- `events_subscribe_stream_drop_alone_does_not_decrement_counter`：
+  仅 drop stream（不 join thread）→ counter 不变（直到 thread 真
+  退出 RAII guard drop 才 -=1）
+
+**回归 Quality Gate**：
+
+- `drop_stream_signals_stop_to_thread` lib unit 不退化（drop 信号
+  stop 行为不变）
+- 重跑 P.2.2 smoke AC-A1：counter 在 N=1000 stream drop + 各 thread
+  真退出后收敛到 0（或稳态低值）
+- 如收敛到 N（接近 1000）但 OS thread count 也收敛到 0 → counter 实
+  现 bug；如 OS thread count 线性增长但 counter 收敛 0 → 真 leak
+  （thread 没退出但 counter 未 +=1），两种情况 reviewer 拍板
+
+#### P.2.5 [conditional commit] AC-C3 leftover 策略 land
+
+**触发条件**：P.2.2 AC-A3 任一子 case 实测重启被 leftover 阻塞 +
+reviewer round 拍板三选一（Q6 现状 = Spec 阶段不预选）。
+
+**改动按三选一**（详 Spec §AC-C3）：
+
+| 路径 | 改动 |
+|---|---|
+| **(c1)** systemd ExecStartPre | `scripts/systemd/*.service` 加 `ExecStartPre=...` + `scripts/iceoryx2_sweep.sh`（纯 shell + 文件系统） |
+| **(c2)** 独立 sweep 脚本 | `scripts/iceoryx2_sweep.{sh,ps1}` + `scripts/systemd/README.md` 加调用说明 |
+| **(c3)** 都不做 + 文档约束 | `scripts/systemd/README.md` + daemon CLI help 加 `--robot-id` 不复用约束 + `docs/CHANGELOG.md` v0.4 候选 3 实测条目 |
+
+**全 3 路径硬约束**：**不**调 `robot_transport::iceoryx2/*` wrapper
+API。
+
+**回归 Quality Gate**：
+
+- 重跑 P.2.2 AC-A3：重启后 InvokeTask 100% 成功
+- 双路 `crash_restart_smoke` 5/5+5/5
+
+#### P.2.6 [commit summary] summary 归档
+
+**新增文件**：`docs/handoffs/v0.4_pubsub_cleanup_summary.md`（沿
+`v0.3_b4_summary.md` 模式）：
+
+- §1 范围 / 不在范围（实测什么 + 触发了哪些条件性 AC）
+- §2 commit chain（含本 Plan 全部 commit hash + 任何 reviewer round
+  拍板）
+- §3 关键契约审计（§6.7 5 条不变量真宣称保持 + shutdown 顺序契约
+  保持 + Box::leak 模式不动）
+- §4 实测证据（5 类 metric 曲线 + p50/p95/p99 报告 + A3 三子 case
+  结果 + 重启探活结果）
+- §5 跟其它 milestone handoff 的链接
+- §6 开工前必读（候选 1 接班）
+
+`docs/handoffs/README.md` milestone anchor 表追加 v0.4 候选 3
+summary 行。
+
+**Quality Gate**：
+
+- 全部 commit chain push 后 reviewer ACK
+- 候选 1 不开（Q10 拍板）
+
+### P.3 reviewer Plan round 1/2/3 拍板（已 ACK）
+
+| # | 项目 | 拍板 |
+|---|---|---|
+| 1 | (1/2) + (2/2) 拆分 vs 一段成形 | **ACK** (1/2) + (2/2) |
+| 2 | s1_daemon `events_registry_len` log cadence | **改为 register 即时 + shutdown final**；周期日志如保留则 1s 独立 diagnostics thread；**禁动** `run_action_tick_loop` |
+| 3 | iceoryx2 storage path | **ACK** `/dev/shm/iceoryx2_*` + 实测 fallback |
+| 4 | AC-C1 调用点 | **不预批**；C1 触发后另开 reviewer round；默认研究 `reap_finished()` 模式；**禁** drain thread 自 unregister / watcher thread |
+| 5 | AC-C2 leak metric 形态 | **ACK** global `AtomicU64` + **活 subscribe thread 数**语义 + RAII guard 加减；**禁** 改 `EventsSubscribeStream::drop` join 语义 / **禁** drop 端碰 counter |
+| 6 | commit message format | **ACK** 沿 B3 / B4 同款 `✨ feat: v0.4 候选 3 (x/y) ...` |
+| 7 | forensic dump path | **ACK** `/tmp/pubsub_cleanup_smoke/<robot_id>/` |
+
+**Plan round 2 阻断（已修进 Plan v3）**：
+
+| # | 阻断 | 修复 |
+|---|---|---|
+| Plan v2 阻断 1 | AC-A2 时间口径用 `tokio::time::Instant::now()` 不能跨 clock domain | 改为 `robot_core::time::SystemClock::new().now().0`（详 §P.2.2.b） |
+| Plan v2 阻断 2 | AC-C2 counter 在 Drop 里 decrement 会掩盖 thread leak | counter 名 `EVENTS_SUBSCRIBE_THREADS_ALIVE`（活 thread 数）+ thread closure 内 RAII guard +=1/-=1；Drop 不碰 counter（详 §P.2.4） |
+
+**Plan round 1 阻断（已修进 Plan v2/v3）**：
+
+| # | 阻断 | 修复 |
+|---|---|---|
+| Plan v1 阻断 1 | smoke binary 缺 Cargo 变更 | §P.2.1.a feature-gated `[[bin]] + required-features = ["pubsub-cleanup-smoke"]` + optional deps |
+| Plan v1 阻断 2 | smoke 拓扑漏 fake S0 actor | §P.2.1.c 复用 `FakeStatePublisher` 模式（50Hz JointState publish + SystemClock + leak Node） |
+| Plan v1 阻断 3 | `events_registry_len` 不能写成 "tick loop 每 100ms" | §P.2.1.d register 即时 + shutdown final + 可选 1s 独立 diagnostics thread；**禁动** `run_action_tick_loop` |
+| Plan v1 阻断 4 | AC-C1 调用点不能选 (a) `run_drain_loop` 自 unregister | §P.2.3 触发后另开 reviewer round；默认研究 `reap_finished()` |
+
+### P.4 Plan-Execute diff 登记位置
+
+> 实施期任何对 Plan 的偏离（增加 commit / 改 commit message / 调
+> default 值 / 等）登记在本节，沿 b4_3_3 spec 同款 "Plan-Execute X
+> 处 diff" 段。Plan reviewer ACK 后实施才能进；实施期 reviewer round
+> N+1 fix 触发改 Plan 走 Spec round N+1。
+
+（实施期开始后累积）
+
+---
+
 ## 跟其它 milestone handoff / spec 的链接
 
 - [`docs/handoffs/v0.4_entry.md`](../../docs/handoffs/v0.4_entry.md)
