@@ -1151,9 +1151,17 @@ fn count_proc_threads(pid: u32) -> Result<u64, String> {
 /// `events_registry_len=N` 数值（兼容 JSON `"events_registry_len":N` +
 /// human `events_registry_len=N` 两种 tracing format）。
 ///
-/// `handle_invoke` register / s1_daemon shutdown_pre/post 时打这字段；
-/// 倒序取最近值反映当前 in-flight registry 长度。captured 内一行都没
-/// 匹配 → `None`。
+/// **打点位置**（s1_daemon info 级 log，反映当前 in-flight registry 长
+/// 度，倒序取最近值即可）：
+///
+/// - `handle_invoke` 成功 register 后即时打（每条新 task）
+/// - s1_daemon shutdown `shutdown_pre` / `shutdown_post`（关停前 / 后）
+/// - **v0.4 候选 3 AC-C1**：s1_daemon reaper thread 每次 `reaped > 0`
+///   时打 `op="reap"` + `reaped` + `events_registry_len`，让 C1 收敛
+///   曲线在 long-run sample 间隙也有更新；reaper.stop 之后打
+///   `op="reaper_stopped"`
+///
+/// captured 内一行都没匹配 → `None`。
 async fn scrape_events_registry_len(captured: &Arc<TokioMutex<Vec<String>>>) -> Option<u64> {
     let lines = captured.lock().await;
     let needle = "events_registry_len";
@@ -1819,14 +1827,22 @@ async fn run_phase_a1(args: &Args) -> Result<A1Report, String> {
         }
     }
 
-    // final sample（task 全跑完 + 500ms grace 让 events_drain thread
-    // terminal_grace=100ms 后退；500ms 留 5x margin）。`iter` 字段填
-    // `iterations + 1` 标示 final（CSV 末行可识别）。
+    // final sample（task 全跑完 + 2000ms grace 让 events_drain thread
+    // terminal_grace=100ms 后退 + s1_daemon reaper thread (AC-C1 outline
+    // §3) 1s cadence reap 已退 handle）。
+    //
+    // **强耦合**（Plan-Execute diff #3）：本 grace 跟 reaper 1s cadence +
+    // `EventsDrainThreadConfig.terminal_grace` 100ms + 调度抖动 margin
+    // 强耦合。改 reaper cadence 必须同步改本 grace（或反过来）；
+    // 2000ms = 2× reaper cycle + grace + margin，保留 2x 余量保证
+    // `events_registry_len final == 0` 硬 gate 稳定（AC-C1 outline §6.1）。
+    //
+    // `iter` 字段填 `iterations + 1` 标示 final（CSV 末行可识别）。
     if last_err.is_none() {
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         let final_row = sample_metric(args.iterations + 1, s1_pid, gw_pid, &s1.captured).await;
         eprintln!(
-            "[A1] final (after 500ms grace) vmrss_s1={} vmrss_gw={} registry_len={:?} \
+            "[A1] final (after 2000ms grace) vmrss_s1={} vmrss_gw={} registry_len={:?} \
              storage={} gw_threads={}",
             final_row.vmrss_s1_kb,
             final_row.vmrss_gw_kb,

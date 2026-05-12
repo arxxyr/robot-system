@@ -453,6 +453,46 @@ fn run(args: &Args) -> Result<(), i32> {
         "s1_daemon rr_server_threads ready (B4 (2/3-a) real handler)"
     );
 
+    // ---- v0.4 候选 3 AC-C1 reaper thread（1s cadence；AC-C1 outline
+    //      §3 拍板）----
+    //
+    // 周期调 events_registry.reap_finished() 回收已 self-exit 的 drain
+    // thread handle（terminal+grace / disconnect / stop signal 三路退出
+    // 之一）。`reaped > 0` 时 info 级 log `events_registry_len` 让
+    // smoke binary 通过 stderr scrape 看 C1 收敛曲线（AC-C1 outline
+    // §3 reviewer round 1 阻断 2 拍板）。
+    //
+    // **不**碰 hot path：handler::handle_invoke / events_drain
+    // run_drain_loop 不动。**不**改 EventsDrainRegistry::register API。
+    //
+    // 接 Arc<EventsDrainRegistry>（跟 ctx / main 共享同一 registry；
+    // shutdown 顺序保证 reaper 先 stop+join，再走 events_registry.
+    // stop_and_join_all）。
+    let events_registry_for_reaper = Arc::clone(&events_registry);
+    let reaper_stop = Arc::new(AtomicBool::new(false));
+    let reaper_stop_clone = Arc::clone(&reaper_stop);
+    let reaper_handle = std::thread::Builder::new()
+        .name("s1_events_reaper".into())
+        .spawn(move || {
+            while !reaper_stop_clone.load(Ordering::Acquire) {
+                let reaped = events_registry_for_reaper.reap_finished();
+                if reaped > 0 {
+                    tracing::info!(
+                        reaped,
+                        events_registry_len = events_registry_for_reaper.len(),
+                        op = "reap",
+                        "s1_daemon events_drain reaper: reaped finished handles"
+                    );
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        })
+        .map_err(|e| {
+            eprintln!("fatal: spawn s1 events reaper thread: {e}");
+            5
+        })?;
+    tracing::info!("s1_daemon events_drain reaper thread spawned (1s cadence)");
+
     // ---- tick loop（state-aware：Idle/Degraded → hold；Executing →
     //      action override；ShuttingDown → break）----
     let tick_result = coordinator::run_action_tick_loop(
@@ -465,7 +505,8 @@ fn run(args: &Args) -> Result<(), i32> {
         &SHUTDOWN,
     );
 
-    // ---- shutdown 顺序契约（reviewer round 6 阻断锁定）----
+    // ---- shutdown 顺序契约（reviewer round 6 阻断锁定 + v0.4 候选 3
+    //      AC-C1 outline §4 加 step 4 reaper.stop+join）----
     //
     // 1. coordinator.mark_shutting_down → 拒新 submit（Coordinator::submit
     //    返 SubmitError::ShuttingDown → handler 编 ActionRpcStatus::Unavailable
@@ -473,18 +514,29 @@ fn run(args: &Args) -> Result<(), i32> {
     // 2. rr.request_stop_all → 通知所有 RR thread 不接新 wire request。
     // 3. rr.join_all → 等所有 in-flight handler 跑完（含已经在 submit 路
     //    径上的 invoke handler 完成 spawn_events_drain_thread + register）。
-    // 4. events_registry.stop_and_join_all → 等所有 drain thread 跑完。
-    //    通过 `Arc::deref` 直接调用（registry 方法接 `&self`），**不**走
-    //    `Arc::try_unwrap` —— 避免 ref-leak 编程 bug 时打破 join 确定性
-    //    （reviewer round 6：daemon `run` 可能在测试 / 嵌入式 runner 里
-    //    返回而不是立刻 process exit，未 join 线程会悬挂）。`mark_shutting_down`
-    //    + 第 3 步 `rr.join_all` 已保证此时不再有新 `register` 调用进来。
+    // 4. (v0.4 候选 3 AC-C1) reaper.stop + join → 停 reaper thread 让
+    //    shutdown 串行化。reaper 跟 stop_and_join_all 的**并发互斥本质**
+    //    是 registry 内部同一把 `Mutex`（reap_finished 锁内 swap_remove
+    //    + stop_and_join_all 锁内 mem::take 互斥；详
+    //    `EventsDrainRegistry` 顶部 doc "并发语义" 段）；step 4 在 step
+    //    5 之前调 reaper_handle.join() 已彻底等 reaper thread 退出，
+    //    step 5 看到的 registry inner Vec 状态稳定。cadence (reaper 1s
+    //    sleep) 仅影响 shutdown 最坏等待时间（reaper 在下一次轮询 stop
+    //    signal 时退出，≤ 1s），**不**是互斥保证。
+    // 5. events_registry.stop_and_join_all → 等所有剩余 (未被 reap
+    //    回收) drain thread 跑完。通过 `Arc::deref` 直接调用（registry
+    //    方法接 `&self`），**不**走 `Arc::try_unwrap` —— 避免 ref-leak
+    //    编程 bug 时打破 join 确定性（reviewer round 6：daemon `run`
+    //    可能在测试 / 嵌入式 runner 里返回而不是立刻 process exit，未
+    //    join 线程会悬挂）。`mark_shutting_down` + 第 3 步 `rr.join_all`
+    //    已保证此时不再有新 `register` 调用进来。
     //
-    // 关键 invariant：第 3 步 `rr.join_all` 必须先于第 4 步 `events_registry.
-    // stop_and_join_all` —— 避免 RR thread stop-but-not-join 期间 in-flight
-    // invoke 走 submit 成功路径并调 `events_registry.register`，跟
-    // `events_registry.stop_and_join_all` 撞 late register。详
-    // `crates/robot-s1/src/rr_server/mod.rs` 顶部 "shutdown 顺序契约" 段。
+    // 关键 invariant：第 3 步 `rr.join_all` 必须先于第 4 步 reaper.stop
+    // —— 避免 RR thread stop-but-not-join 期间 in-flight invoke 走
+    // submit 成功路径并调 `events_registry.register`，reaper 锁内 reap
+    // 跟 stop_and_join_all 撞 late register（沿 reviewer round 6 同款
+    // late register race 推理；详 `crates/robot-s1/src/rr_server/mod.rs`
+    // 顶部 "shutdown 顺序契约" 段）。
     coordinator.mark_shutting_down();
 
     rr_handles.request_stop_all();
@@ -499,9 +551,27 @@ fn run(args: &Args) -> Result<(), i32> {
         );
     }
 
-    // RR thread 全 join 完后 handler 闭包均已 drop；ctx 不再被任何 RR
-    // 线程持有（仅 main + events_registry 内 Arc clone）。registry 方法接
-    // `&self`，可在 Arc 上直接调，不依赖 try_unwrap。
+    // v0.4 候选 3 AC-C1: step 4 stop reaper + join。reaper 在下一次 1s
+    // 轮询 stop signal 时退出；最坏延迟 ≤ 1s。reaper 内部 reap 完成的
+    // handle 已 owned 走 join，不在 inner Vec 内；剩余活 handle 由 step
+    // 5 events_registry.stop_and_join_all 接管。
+    reaper_stop.store(true, Ordering::Release);
+    if let Err(panic_payload) = reaper_handle.join() {
+        tracing::error!(
+            ?panic_payload,
+            "s1_daemon: events reaper thread join returned panic; continuing shutdown"
+        );
+    }
+    tracing::info!(
+        events_registry_len = events_registry.len(),
+        op = "reaper_stopped",
+        "s1_daemon events_drain reaper thread stopped + joined"
+    );
+
+    // RR thread 全 join 完 + reaper 已 stop+join 后 handler 闭包均已
+    // drop；ctx 不再被任何 RR 线程持有（仅 main + events_registry 内
+    // Arc clone）。registry 方法接 `&self`，可在 Arc 上直接调，不依赖
+    // try_unwrap。
     //
     // v0.4 候选 3 Plan §P.2.1.d: shutdown_pre log（关停前 registry 当前
     // len，smoke binary 端 stderr scrape 用），跟 handler register 时的

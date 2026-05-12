@@ -153,14 +153,25 @@ impl EventsDrainThreadHandle {
 /// 依赖 `Arc::try_unwrap`（避免 RR thread 残留 closure ref-leak 时打破 join
 /// 确定性）。
 ///
-/// **并发语义**：`register` / `request_stop_all` / `join_all` 都靠同一把
-/// `Mutex` 序列化；`join_all` 内 `mem::take` 在锁内完成 + 锁释放 + 锁外逐个
-/// join，避免持锁阻塞。
+/// **并发语义**：`register` / `request_stop_all` / `join_all` /
+/// [`Self::reap_finished`] 都靠同一把 `Mutex` 序列化；`join_all` 内
+/// `mem::take` 在锁内完成 + 锁释放 + 锁外逐个 join，避免持锁阻塞；
+/// `reap_finished` 内锁内 `swap_remove` 已 `is_finished()` handle 进
+/// owned `Vec` + 锁释放 + 锁外 join，同款"锁内 owned + 锁外 join" 模式。
 ///
 /// **典型 shutdown 顺序**（详 [`crate::rr_server`] 顶部 module doc）：
 /// `coordinator.mark_shutting_down → rr.request_stop_all → rr.join_all →
 /// events_registry.stop_and_join_all`。重复调 `stop_and_join_all` 是 no-op
 /// （`mem::take` 返空 `Vec`）。
+///
+/// **v0.4 候选 3 AC-C1 daemon path 扩展**：`s1_daemon` 在 `rr.join_all`
+/// 和 `events_registry.stop_and_join_all` 之间额外停 + join 1s 周期的
+/// reaper thread（reaper 调 [`Self::reap_finished`] 回收已自然退出的
+/// drain handle）。registry **API 语义不变** —— `reap_finished` 跟
+/// `stop_and_join_all` 互斥靠同一把 `Mutex`；daemon shutdown 顺序加
+/// reaper.stop 步骤仅是为了让 reaper 在 `stop_and_join_all` 之前彻底
+/// 停下，让 shutdown 路径串行化（详 `crates/robot-s1/src/bin/s1_daemon.rs`
+/// shutdown 段）。
 #[derive(Default)]
 pub struct EventsDrainRegistry {
     inner: Mutex<Vec<EventsDrainThreadHandle>>,
@@ -246,6 +257,83 @@ impl EventsDrainRegistry {
     pub fn stop_and_join_all(&self) -> std::thread::Result<()> {
         self.request_stop_all();
         self.join_all()
+    }
+
+    /// v0.4 候选 3 AC-C1：周期性 reap 已结束的 drain thread handle。
+    ///
+    /// 锁内用 [`std::thread::JoinHandle::is_finished`] 扫
+    /// `Mutex<Vec<Handle>>`，`swap_remove` 已退出 thread 的 handle 进
+    /// owned `Vec`；锁外逐个 `join()` 回收 OS thread 资源 + drop
+    /// [`EventsDrainThreadHandle`] 内的 `Arc<AtomicBool>` /
+    /// `Arc<EventsDrainMetrics>` / `JoinHandle` / `topic` String /
+    /// `action_id`。
+    ///
+    /// 返回值：本次从 registry 移除并 join 尝试的 handle 数。**含
+    /// drain thread panic 路径**（沿 `join_all` 同款，panic 也 counted
+    /// as reaped；详下方 "panic 处理" 段）；不区分 join Ok / Err。caller
+    /// (如 `s1_daemon` reaper thread) 可用此值打 info log 让 smoke
+    /// binary 通过 stderr scrape 看 `events_registry_len` 收敛曲线
+    /// （AC-C1 outline §3 reaped > 0 必须 log）。
+    ///
+    /// ## 跟 [`Self::stop_and_join_all`] 协作语义
+    ///
+    /// `reap_finished` 仅处理 `is_finished() == true` 的 handle（drain
+    /// thread 已自然退出：terminal+grace / disconnect / stop signal 三
+    /// 路退出之一）；还活着的 drain thread **不**动。
+    ///
+    /// `stop_and_join_all` 后续接管 reap 后剩余的全部活 handle
+    /// （`mem::take` 整个 `Vec` → 锁外逐个 stop+join）。reap 后 Vec
+    /// 仅含活 handle，`stop_and_join_all` 行为跟 reap 前后完全等价；
+    /// 重复调任意组合 = no-op（空 `Vec` 路径现有契约保不变）。
+    ///
+    /// ## panic 处理（AC-C1 outline §10 #1 拍板）
+    ///
+    /// 沿 [`Self::join_all`] 同款策略：drain thread 内 panic →
+    /// `JoinHandle::join` 返 `Err(Box<dyn Any + Send>)`；本路径**不**
+    /// 向调用方传播 panic（接 `&self` + 返 `usize` 是 diagnostic 路径，
+    /// caller 不需要处理 panic），但 `tracing::warn!` 显式记录 panic
+    /// payload 让 forensic 能看见。返回值仍 += 1（panic 也算"已退出"
+    /// = 已 reap）。
+    #[must_use]
+    pub fn reap_finished(&self) -> usize {
+        // step 1: 锁内 swap_remove 已 is_finished() 的 handle 进 owned Vec
+        let to_join: Vec<EventsDrainThreadHandle> = {
+            let mut guard = self
+                .inner
+                .lock()
+                .expect("EventsDrainRegistry mutex poisoned");
+            let mut taken = Vec::new();
+            let mut i = 0;
+            while i < guard.len() {
+                if guard[i].join.is_finished() {
+                    taken.push(guard.swap_remove(i));
+                    // swap_remove 不递增 i；新 i 位置是原 last 元素，
+                    // 下一轮重新判定。
+                } else {
+                    i += 1;
+                }
+            }
+            taken
+        };
+
+        // step 2: 锁外逐个 join（`is_finished() == true` 时 join 几乎
+        // 立即返；但写共享状态的 fence 仍可能 wait 几 ns）。panic 记录
+        // 不传播。
+        let n = to_join.len();
+        for handle in to_join {
+            let action_id = handle.action_id;
+            let topic = handle.topic.clone();
+            if let Err(payload) = handle.join() {
+                tracing::warn!(
+                    action_id = %action_id,
+                    topic = %topic,
+                    ?payload,
+                    "EventsDrainRegistry::reap_finished: drain thread panicked; \
+                     panic swallowed but counted as reaped"
+                );
+            }
+        }
+        n
     }
 
     /// 当前已注册的 in-flight handle 数（diagnostic）。
@@ -795,6 +883,165 @@ mod tests {
             "stop_and_join_all took {elapsed:?}, expected < 500ms"
         );
         // 重复调 = no-op（mem::take 后 Vec 已空）。
+        registry.stop_and_join_all().unwrap();
+    }
+
+    // ========================================================================
+    // v0.4 候选 3 AC-C1 `reap_finished` 锁测（AC-C1 outline §5 拍板 4 测）
+    // ========================================================================
+
+    /// AC-C1 outline §5：空 registry reap 返 0 + len 不变；重复调 no-op。
+    #[test]
+    fn reap_finished_empty_returns_zero() {
+        let registry = EventsDrainRegistry::new();
+        assert_eq!(registry.reap_finished(), 0);
+        assert_eq!(registry.len(), 0);
+        // 重复调 no-op
+        assert_eq!(registry.reap_finished(), 0);
+    }
+
+    /// AC-C1 outline §5：drain thread 终态退出后 reap 返 1 + len 归零。
+    #[test]
+    fn reap_finished_after_terminal_returns_one() {
+        let topic = fresh_topic("reap_terminal");
+        let _sub = make_subscriber(&topic);
+        let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
+        let action_id = fresh_action_id();
+        let handle = spawn_events_drain_thread(
+            cfg_for(action_id, &topic),
+            events_rx,
+            make_publisher_factory(topic.clone()),
+            Arc::new(SystemClock::new()),
+            2,
+        )
+        .unwrap();
+        let registry = EventsDrainRegistry::new();
+        registry.register(handle);
+        assert_eq!(registry.len(), 1);
+
+        events_tx
+            .send(ActionEvent::Completed {
+                outcome: ActionOutcome::Success,
+                at_ns: 1,
+            })
+            .unwrap();
+        // 等 thread 真退出：terminal_grace 20ms (test cfg) + 安全 margin。
+        // 用循环轮询 is_finished 提早收敛（避免固定 sleep 不稳定）。
+        let deadline = std::time::Instant::now() + Duration::from_millis(500);
+        loop {
+            if registry.reap_finished() == 1 {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "drain thread did not finish within 500ms"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(registry.len(), 0);
+    }
+
+    /// AC-C1 outline §5 (reviewer round 1 §10 #4 测试名硬约束)：
+    /// active drain thread (idle, 没发任何事件) **不**被 reap；handle
+    /// 仍在 registry。
+    #[test]
+    fn reap_finished_active_handle_not_reaped() {
+        let topic = fresh_topic("reap_active_not_reaped");
+        let _sub = make_subscriber(&topic);
+        let (_events_tx, events_rx) = mpsc::channel::<ActionEvent>();
+        let action_id = fresh_action_id();
+        let handle = spawn_events_drain_thread(
+            cfg_for(action_id, &topic),
+            events_rx,
+            make_publisher_factory(topic.clone()),
+            Arc::new(SystemClock::new()),
+            2,
+        )
+        .unwrap();
+        let registry = EventsDrainRegistry::new();
+        registry.register(handle);
+
+        // drain thread idle (没发任何事件 + 没发 stop signal) →
+        // is_finished() = false → reap 返 0；handle 仍在。
+        assert_eq!(registry.reap_finished(), 0);
+        assert_eq!(registry.len(), 1, "active handle MUST stay in registry");
+
+        // cleanup: stop_and_join_all 走正常关停路径。
+        registry.stop_and_join_all().unwrap();
+        assert_eq!(registry.len(), 0);
+    }
+
+    /// AC-C1 outline §5：reap 已退出 handle 后，`stop_and_join_all` 对
+    /// 已 reap 的部分**no-op**（reap 已 owned 走 join，stop_and_join_all
+    /// 处理剩余活 handle）。
+    #[test]
+    #[allow(clippy::similar_names)] // `events_tx_a` / `events_rx_a` 跟
+    // `events_tx_b` / `events_rx_b` 是两 channel pair；测试可读性优先
+    // 用 `_a` / `_b` 后缀；clippy similar_names 在测试代码是噪音。
+    fn reap_finished_then_stop_and_join_all_is_noop_for_reaped() {
+        let topic_a = fresh_topic("reap_noop_a");
+        let topic_b = fresh_topic("reap_noop_b");
+        let _sub_a = make_subscriber(&topic_a);
+        let _sub_b = make_subscriber(&topic_b);
+        let (events_tx_a, events_rx_a) = mpsc::channel::<ActionEvent>();
+        let (_events_tx_b, events_rx_b) = mpsc::channel::<ActionEvent>();
+        let action_id_a = fresh_action_id();
+        let action_id_b = fresh_action_id();
+        let handle_a = spawn_events_drain_thread(
+            cfg_for(action_id_a, &topic_a),
+            events_rx_a,
+            make_publisher_factory(topic_a.clone()),
+            Arc::new(SystemClock::new()),
+            2,
+        )
+        .unwrap();
+        let handle_b = spawn_events_drain_thread(
+            cfg_for(action_id_b, &topic_b),
+            events_rx_b,
+            make_publisher_factory(topic_b.clone()),
+            Arc::new(SystemClock::new()),
+            2,
+        )
+        .unwrap();
+
+        let registry = EventsDrainRegistry::new();
+        registry.register(handle_a);
+        registry.register(handle_b);
+        assert_eq!(registry.len(), 2);
+
+        // 终态 A（保留 B active）+ 等 thread 真退出。
+        events_tx_a
+            .send(ActionEvent::Completed {
+                outcome: ActionOutcome::Success,
+                at_ns: 1,
+            })
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_millis(500);
+        loop {
+            if registry.reap_finished() == 1 {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "handle_a did not finish within 500ms"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(registry.len(), 1, "only B should remain after reap");
+
+        // stop_and_join_all 接管 B；不重复处理 A（A 已 reap，不在
+        // inner Vec 内）。
+        let start = std::time::Instant::now();
+        registry.stop_and_join_all().unwrap();
+        assert!(
+            start.elapsed() < Duration::from_millis(500),
+            "stop_and_join_all after reap took {:?}, expected < 500ms",
+            start.elapsed()
+        );
+        assert_eq!(registry.len(), 0);
+
+        // 重复 reap / stop_and_join_all 全 no-op。
+        assert_eq!(registry.reap_finished(), 0);
         registry.stop_and_join_all().unwrap();
     }
 }
