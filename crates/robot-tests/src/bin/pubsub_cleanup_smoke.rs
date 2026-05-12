@@ -1091,24 +1091,52 @@ fn read_proc_vmrss_kb(pid: u32) -> Result<u64, String> {
     Err(format!("VmRSS not found in {path}"))
 }
 
-/// Glob `/dev/shm/iceoryx2_*` 文件 / 目录数。Plan v3 §P.3 #3 ACK 默认
-/// `/dev/shm` + 实测 fallback；如 iceoryx2 0.8.1 真 storage path 不在
-/// `/dev/shm` → (2/2-b) 实测期 reviewer round 复核调整。
-fn count_iceoryx2_storage_files() -> Result<u64, String> {
-    let dir = std::path::Path::new("/dev/shm");
+/// iceoryx2 0.8.1 默认 storage root（Linux）。
+///
+/// 来源：`iceoryx2-pal-configuration-0.8.1/src/lib.rs:40` 定义
+/// `pub const ICEORYX2_ROOT_PATH: &[u8] = b"/tmp/iceoryx2/";`
+/// （详 AC-C1 outline §7.1）。Mac 同 `/tmp/iceoryx2/`；Windows
+/// `C:\\Temp\\iceoryx2\\`；Android `/data/iceoryx2/`。
+///
+/// 本 smoke binary `#![cfg(target_os = "linux")]` 守门，只硬编码 Linux
+/// 路径；如 host 不跑过 iceoryx2 (路径不存在) → 返 (0, "")。
+const ICEORYX2_STORAGE_ROOT: &str = "/tmp/iceoryx2";
+
+/// `/tmp/iceoryx2/` 递归计文件数。AC-C1 outline §7.2 修正：
+/// 之前 glob `/dev/shm/iceoryx2_*` 永远 0 是错路径（Plan v3 §P.2.2.c
+/// 拍板时未实测；Plan-Execute diff #2，详 AC-C1 outline §8.3）。
+///
+/// 返 `(count, root_hit)`：
+/// - `root_hit` = `"/tmp/iceoryx2"` 如目录存在；否则 `""`
+/// - caller 在第一次 sample 时 eprintln 命中 root，让 forensic 能确认
+///   smoke 真扫到正确根；后续 sample 仅取 count
+///
+/// 如 root 不存在 (host 不跑过 iceoryx2 / OS 已清) → 返 (0, "")
+/// 降级 informational only（AC-A3 探活 30/30 是主判定）。
+fn count_iceoryx2_storage_files() -> (u64, &'static str) {
+    let dir = std::path::Path::new(ICEORYX2_STORAGE_ROOT);
     if !dir.exists() {
-        return Ok(0);
+        return (0, "");
     }
+    (count_files_recursive(dir), ICEORYX2_STORAGE_ROOT)
+}
+
+/// 递归 walk `dir` 计文件数（含子目录）。read_dir 失败 (权限 / 不存在)
+/// 返 0，**不**propagate err（让 smoke 长跑不被瞬时采样错误打断）。
+fn count_files_recursive(dir: &std::path::Path) -> u64 {
     let mut count: u64 = 0;
-    let entries = std::fs::read_dir(dir).map_err(|e| format!("read_dir /dev/shm: {e}"))?;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
     for entry in entries.flatten() {
-        if let Some(name) = entry.file_name().to_str()
-            && name.starts_with("iceoryx2_")
-        {
-            count += 1;
+        let path = entry.path();
+        if path.is_file() {
+            count = count.saturating_add(1);
+        } else if path.is_dir() {
+            count = count.saturating_add(count_files_recursive(&path));
         }
     }
-    Ok(count)
+    count
 }
 
 /// 读 `/proc/<pid>/task` 子目录数 = 进程线程数（含主线程）。
@@ -1166,7 +1194,10 @@ struct MetricRow {
     /// 当前还没打任一 register/shutdown event log → `None`，CSV 写
     /// `"NA"`）。
     events_registry_len: Option<u64>,
-    /// `/dev/shm/iceoryx2_*` 文件 / 目录数。
+    /// `/tmp/iceoryx2/` 递归文件计数（iceoryx2 0.8.1 Linux 默认 storage
+    /// root；详 [`ICEORYX2_STORAGE_ROOT`] + AC-C1 outline §7）。root
+    /// 不存在时为 0，仅作 informational metric（AC-A3 探活 30/30 是
+    /// 主判定）。
     iceoryx2_storage_count: u64,
     /// gateway `/proc/<pid>/task` 数（含 tokio worker + subscribe thread
     /// 等所有线程）。
@@ -1211,9 +1242,12 @@ struct A3CaseResult {
     /// label 不读结构体字段；留字段供未来 CSV / report 序列化。
     #[allow(dead_code)]
     label: &'static str,
-    /// SIGKILL 前 `/dev/shm/iceoryx2_*` 文件数（基线）。
+    /// SIGKILL 前 `/tmp/iceoryx2/` 递归文件数（基线；详
+    /// [`ICEORYX2_STORAGE_ROOT`]）。informational only。
     storage_before: u64,
-    /// SIGKILL 后 + `--leftover-grace-ms` 之后文件数（看 OS 是否回收）。
+    /// SIGKILL 后 + `--leftover-grace-ms` 之后 `/tmp/iceoryx2/` 递归文件
+    /// 数（看 OS / iceoryx2 是否回收）。informational only；AC-A3 主判
+    /// 定看 `restart_ok` + `post_restart_invoke_ok`。
     storage_after: u64,
     /// 重启 daemon / gateway 是否成功（ready signal 三段都过）。
     restart_ok: bool,
@@ -1626,10 +1660,24 @@ async fn sample_metric(
         eprintln!("[metric] read_proc_vmrss_kb(gw={gw_pid}) err: {e}");
         0
     });
-    let iceoryx2_storage_count = count_iceoryx2_storage_files().unwrap_or_else(|e| {
-        eprintln!("[metric] count_iceoryx2_storage_files err: {e}");
-        0
-    });
+    let (iceoryx2_storage_count, iceoryx2_root_hit) = count_iceoryx2_storage_files();
+    // 第一次 sample (iter == 0) eprintln 命中 root，让 forensic 能确认
+    // smoke 真扫到 iceoryx2 0.8.1 默认 storage path
+    // (/tmp/iceoryx2 on Linux)；后续 sample 仅取 count 不重复打。
+    if iter == 0 {
+        if iceoryx2_root_hit.is_empty() {
+            eprintln!(
+                "[metric] iceoryx2_storage_root not found (host 未跑过 \
+                 iceoryx2 或 OS 已清；count=0 informational only，详 \
+                 AC-C1 outline §7)"
+            );
+        } else {
+            eprintln!(
+                "[metric] iceoryx2_storage_root hit: {iceoryx2_root_hit} \
+                 (baseline count={iceoryx2_storage_count})"
+            );
+        }
+    }
     let gw_subscribe_threads = count_proc_threads(gw_pid).unwrap_or_else(|e| {
         eprintln!("[metric] count_proc_threads(gw={gw_pid}) err: {e}");
         0
@@ -2032,7 +2080,10 @@ async fn run_phase_a3_case(args: &Args, which: A3aSigkill) -> Result<A3CaseResul
     }
     eprintln!("[{label}] pre-kill probe passed");
 
-    let storage_before = count_iceoryx2_storage_files().unwrap_or(0);
+    // AC-C1 outline §7.2: count_iceoryx2_storage_files 返
+    // (count, root_hit)；A3 子 case 只需 count，root_hit 由
+    // sample_metric (iter=0) eprintln 打印；这里丢 root_hit 兼容。
+    let (storage_before, _root_hit) = count_iceoryx2_storage_files();
 
     // SIGKILL according to `which`。SIGKILL 完后被 kill 的 handle 已
     // owned 走 `sigkill_and_wait` 消费，未 kill 的进入 `kept_*` owned
@@ -2068,7 +2119,7 @@ async fn run_phase_a3_case(args: &Args, which: A3aSigkill) -> Result<A3CaseResul
     };
 
     tokio::time::sleep(Duration::from_millis(args.leftover_grace_ms)).await;
-    let storage_after = count_iceoryx2_storage_files().unwrap_or(0);
+    let (storage_after, _root_hit) = count_iceoryx2_storage_files();
     eprintln!("[{label}] storage before={storage_before} after={storage_after}");
 
     // Restart killed processes。`restart_after_sigkill` 接 owned
