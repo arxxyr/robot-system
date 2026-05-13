@@ -937,8 +937,91 @@ summary 行。
 > default 值 / 等）登记在本节，沿 b4_3_3 spec 同款 "Plan-Execute X
 > 处 diff" 段。Plan reviewer ACK 后实施才能进；实施期 reviewer round
 > N+1 fix 触发改 Plan 走 Spec round N+1。
+>
+> 候选 3 完结归档于 [`docs/handoffs/v0.4_pubsub_cleanup_summary.md`](../../docs/handoffs/v0.4_pubsub_cleanup_summary.md)
+> （commit `2518fc0` AC-C1 reaper land 之后）。4 处偏离全归档如下：
 
-（实施期开始后累积）
+#### diff #1: (2/2) 拆 (2/2-a) + (2/2-b)
+
+- **原 Plan**：Plan v3 §P.1 拍板 (2/2) 单 commit
+  `✨ feat: v0.4 候选 3 (2/2) AC-A1/A2/A3 实测 + 5 类 metric 曲线`
+- **实际偏离**：reviewer 实施期拍板拆 2 子 commit
+  * (2/2-a) 共用基础设施（metric helpers / RPC helpers / report struct
+    / BringUp + bring_up_pair / tear_down_pair / CSV writer）— commit
+    `244249e` `✨ feat: v0.4 候选 3 (2/2-a) 共用基础设施
+    (metric/RPC/BringUp helpers)`
+  * (2/2-b) AC-A1/A2/A3 实测 + 触发判定 — commit `976da62`
+    `✨ feat: v0.4 候选 3 (2/2-b) AC-A1/A2/A3 实测 + 触发判定`
+- **拍板**：reviewer 实施期拍板（commit message 内登记 "reviewer 实施
+  期拍板拆 (2/2) = (2/2-a) 共用基础设施 + (2/2-b) 3 AC 一起"）
+- **理由**：(2/2) 量级 ~700-900 行；拆开让 reviewer 复审基础设施 +
+  AC 实施分两轮，每段 commit diff 可控
+- **影响**：实施 commit chain 多 1 个 commit；commit message 内说明
+  Plan-Execute diff；其它路径不变
+
+#### diff #2: smoke `count_iceoryx2_storage_files` storage path 修正
+
+- **原 Plan**：Plan v3 §P.2.2.c 拍板 `iceoryx2_storage_count` glob
+  `/dev/shm/iceoryx2_*`
+- **实际偏离**：候选 3 (2/2-b) 实测发现 `/dev/shm/iceoryx2_*` glob
+  永远 0（错路径）；AC-C1 outline §7 bounded research 实测 iceoryx2
+  0.8.1 真 storage = `/tmp/iceoryx2/`（来源
+  `iceoryx2-pal-configuration-0.8.1/src/lib.rs:40` Linux 默认
+  `ICEORYX2_ROOT_PATH = "/tmp/iceoryx2/"`）；修复进 commit
+  `6e0033b` `📝 fix: v0.4 候选 3 smoke
+  count_iceoryx2_storage_files storage path 修正`
+- **拍板**：AC-C1 outline §7 / §8.1 reviewer round 1 拍板
+- **理由**：Plan v3 §P.2.2.c 拍板时未实测真路径；实测期才发现
+- **影响**：smoke binary `count_iceoryx2_storage_files` 签名
+  `() -> Result<u64, String>` → `() -> (u64, &'static str)`；返
+  `(count, root_hit)` tuple；iter=0 eprintln 命中 root；A3 sub-case
+  内 2 处 caller 同步解构兼容；root 不存在返 `(0, "")` 降级
+  informational only
+
+#### diff #3: smoke `run_phase_a1` final sample sleep 500ms → 2000ms
+
+- **原 Plan**：Plan v3 §P.2.2 拍板候选 3 (2/2-b) 实施 `run_phase_a1`
+  final sample 前 sleep 500ms（= 5x `terminal_grace` margin）
+- **实际偏离**：AC-C1 加 1s cadence reaper thread 后，final 收敛延迟
+  ≈ `reaper_period + terminal_grace + 调度抖动` ≈ 1100ms；500ms 不够会
+  刚好采在下一次 reap 前误判 C1。改 2000ms（= 2× reaper cycle +
+  terminal_grace + margin，保留 2x 余量）；修进 commit
+  `2518fc0` `✨ feat: v0.4 候选 3 AC-C1
+  EventsDrainRegistry::reap_finished()`（跟 AC-C1 reaper 行为同 commit）
+- **拍板**：AC-C1 outline §3.1 + reviewer round 1 阻断 1
+- **理由**：reaper cadence + smoke final sleep 强耦合，必须一起改
+- **影响**：smoke 端 `events_registry_len final == 0` 硬 gate 稳定；
+  注释明示改 reaper cadence 必须同步改 grace（或反之）
+
+#### diff #4: AC-C1 实施 + smoke storage path fix 拆 2 commit
+
+- **原 Plan**：AC-C1 outline 初版 §8 拍板单 commit
+  `✨ feat: v0.4 候选 3 AC-C1 ... + iceoryx2 storage path fallback`
+- **实际偏离**：reviewer round 1 §10 #7 拍板拆 2 commit
+  * commit (i) `📝 fix: ... storage path 修正`（`6e0033b`）—
+    纯 smoke binary 范围、informational fix、可单独 ACK push
+  * commit (ii) `✨ feat: AC-C1 EventsDrainRegistry::reap_finished()`
+    （`2518fc0`）— s1 lib + s1 binary + smoke final sleep
+    联动；依赖 commit (i) land
+- **拍板**：AC-C1 outline §8 reviewer round 1 §10 #7
+- **理由**：commit (i) 是 informational fix（纯 smoke binary 端，错路径
+  改对路径）；commit (ii) 才是 AC-C1 reaper 行为改动（s1 lib API 扩
+  `reap_finished` + s1 binary 加 reaper thread + shutdown step 4）；
+  拆开让 reviewer 分两段 ACK，每段 diff 可控
+- **影响**：实施 commit chain 多 1 个 commit；reviewer 分两轮 ACK
+  push；两 commit 都 push 后才一起重跑 phase all 验收
+
+---
+
+### P.4 总结
+
+候选 3 完结时点：commit `2518fc0` AC-C1 reaper land + push。Plan-Execute
+diff 累计 4 项全部归档完成。AC-C1 outline §6.1 硬 gate 全过
+（`events_registry_len final == 0` + `triggered_c1 == false` + smoke
+`--phase all` exit code 0）；软指标 `VmRSS s1` 仍线性 = `Box::leak(node)`
+residual，**不**升级本轮 blocker（reviewer round 1 §10 #5 拍板；详
+[`docs/handoffs/v0.4_pubsub_cleanup_summary.md`](../../docs/handoffs/v0.4_pubsub_cleanup_summary.md)
+§3.7）。
 
 ---
 
