@@ -526,12 +526,349 @@ cancel 语义已经把 backend PartialSuccess 收敛后转 `ActionEvent::Cancell
 ## 后续：reviewer round 2 + Plan
 
 reviewer round 1 已表态 5 核心 Q + Q17 倾向（详 §Reviewer 待拍板表）；
-round 2 必拍：
+round 2 reviewer ACK 之后进 Plan 阶段：commit 拆分 + 每段验收 +
+Plan-Execute diff 登记位置（沿候选 3 Plan v3 同款模板）。
 
-- 5 核心 Q（Q1-Q5）+ 12 风险细节 Q（Q6-Q17）= **17 拍板项**
-- 7 个 AC 形态（AC-1 至 AC-7 + AC-Q Quality Gate）
-- "影响范围"必改文件清单（~14 项）
-- 严禁改动 hard boundary 列表
+---
 
-reviewer ACK 之后进 Plan 阶段：commit 拆分 + 每段验收 + Plan-Execute
-diff 登记位置（沿候选 3 Plan v3 同款模板）。
+## Plan
+
+> Plan outline draft v1（reviewer ACK pending）。基于 Spec §AC + Q
+> 拍板硬输入；**不**重新决策 Q1-Q17 / AC 边界 / hard boundary。
+> Spec round 2 commit `5efe987` push 后开 Plan round 1。
+
+### P.0 工作基线
+
+- 起点：`master` HEAD = `5efe987`（Spec round 1+2 amend land）。
+- Q 拍板硬输入：Q1(a) 最小集 fbs / Q2(a) 三层 enforcement / Q3(c) 组合
+  progress / Q4(a) PartialSuccess（Cancelled outcome out-of-scope）/
+  Q5(a) inline 复制 helper / Q17(a) `backend-scripted` 进 default；
+  Q6-Q16 reviewer 倾向默认（详 §风险细节 Q 表）。
+- 不开新分支（沿候选 3 Plan v3 + B4 模式直接 commit 到 master + 每段
+  reviewer ACK）。
+- 全 Plan 严格基于 Spec §AC + §Reviewer 拍板；**不**重新决策任何
+  Q1-Q17 / AC 边界 / hard boundary。
+
+### P.1 commit 节奏总览
+
+**Happy path**（AC-1 至 AC-7 全过 + Quality Gate 全过）：
+
+```
+✨ feat: v0.4 候选 1 (1/3) Scripted backend schema 注册链 land
+        （proto + .fbs + schema_id + markers + size_tier + build.rs
+        + ActionKindProto/Fb/ActionKind 三层 append）
+✨ feat: v0.4 候选 1 (2/3) Scripted backend lib impl + 三层 payload
+        enforcement land（ScriptedBackend + ScriptedInstance + 8+ lib
+        unit + s1 handler ActionKindFb 映射 + gateway 两道 byte gate
+        + backend fbs decode/semantic validate）
+✨ feat: v0.4 候选 1 (3/3) scripted_backend_smoke binary + cross-process
+        e2e（AC-4/5/6/7 全过 + scripted-backend-smoke feature gate）
+📝 docs: v0.4 候选 1 summary 归档 + Phase 候选 1 完结
+```
+
+粗估 3 commit + summary = 4 commit chain；如 reviewer round 内出现
+拆分诉求，沿候选 3 同款拆为 (X/3-a) + (X/3-b) 模式（Plan-Execute
+diff 登记）。
+
+### P.2 工作流（按阶段顺序）
+
+#### P.2.1 [commit (1/3)] schema 注册链 + 三层 ActionKind append
+
+##### P.2.1.a `crates/robot-msg` schema 注册链 6 步（5 必改 + 1 可选）
+
+| # | 改动 | 文件 + 行号 |
+|---|---|---|
+| 1 | 新 `.fbs` schema 定义 | `crates/robot-msg/schemas/scripted_payload.fbs`（新） |
+| 2 | `current_schemas` 数组扩容 + 入注册 | `crates/robot-msg/build.rs:57` `[&str; 12]` → `[&str; 13]` + append `"scripted_payload.fbs"` |
+| 3 | `SCHEMA_SCRIPTED_PAYLOAD` const + REGISTRY entry | `crates/robot-msg/src/schema_id.rs` 加 `pub const SCHEMA_SCRIPTED_PAYLOAD: u32 = 0x0000_040B;` + `SCHEMA_REGISTRY` 升序数组 append |
+| 4 | 手写 `BodyMarker` impl | `crates/robot-msg/src/markers.rs` 加 `#[derive(Debug, Clone, Copy, Default)] pub struct ScriptedPayload;` + `impl BodyMarker`（`SCHEMA_ID = SCHEMA_SCRIPTED_PAYLOAD` + `BLOB_EMBEDDED = false` + `type Root<'a> = scripted_payload_generated::ScriptedPayload<'a>` + 默认 `read_blob_desc`） |
+| 5 | `default_tier_of` arm + 穷举测试 | `crates/robot-msg/src/size_tier.rs:62-95` match arm 加 `SCHEMA_SCRIPTED_PAYLOAD => SizeTier::Control`（payload 本身 ≤ ~4 KiB 落 Control 8 KiB；wire 外层走 `SCHEMA_INVOKE_TASK_REQUEST` size tier 不动）+ `tests::default_tier_of` 穷举测试加 arm |
+| 6 | **可选** `build_scripted_payload` helper | `crates/robot-msg/src/build_helpers.rs`（**§Q5 拍板 (a) inline 复制 → 本步骤跳过**，smoke binary 内 inline 构 fbs；如 reviewer round 改诉求可补） |
+
+**`scripted_payload.fbs` 字段集（Q1(a) 最小集拍板）**：
+
+```fbs
+namespace robot.msg.scripted_payload;
+
+// joint-space 单 waypoint target + dwell + 段 duration（Q1(a) 最小集）
+table WaypointTarget {
+  positions: [double];           // 长度 == hardware.joints.len()
+  dwell_ms: uint32;              // 到位后停留 ms（0 = 不 dwell 直接进下一段）
+  segment_duration_ms: uint32;   // 当前段线性插值时长 ms（> 0 必须）
+}
+
+table ScriptedPayload {
+  waypoints: [WaypointTarget];   // 非空数组（empty → backend Rejected）
+}
+
+root_type ScriptedPayload;
+```
+
+**严禁改动**：现有 `action_request.fbs` / `command.fbs` / `state.fbs`
+等任一现有 schema 字段编号 / table layout / blob layout；仅 append
+`ActionKindFb::Scripted = 3`。
+
+##### P.2.1.b proto + ActionKindFb + ActionKind 三层 append
+
+| 层 | 改动 |
+|---|---|
+| `crates/robot-rpc/proto/robot_control.proto:119-123` | `ActionKindProto` enum append `ACTION_KIND_SCRIPTED = 3`（prost 生成名 `ActionKindProto::ActionKindScripted`，沿 `ActionKindDwellMs` / `ActionKindHoldPose` 同款 CamelCase + enum prefix） |
+| `crates/robot-msg/schemas/action_request.fbs` | `ActionKindFb` enum append `Scripted = 3`（不动现有 variant 编号） |
+| `crates/robot-s1/src/action.rs` | `ActionKind` enum append `Scripted` variant（沿 `DwellMs` / `HoldPose` 同款） |
+
+##### P.2.1.c Quality Gate（commit (1/3)）
+
+- `cargo fmt --all --check` clean
+- `cargo clippy --workspace --all-targets -- -D warnings` clean
+- `cargo build --workspace --release` 过（无 `--features scripted-backend-smoke`）
+- `cargo test -p robot-msg` 全过（schema_lint + default_tier_of 穷举）
+- `cargo run -p robot-msg --bin schema_lint` 过（SCHEMA_SCRIPTED_PAYLOAD
+  唯一 + 升序 + 未与 deprecated 冲突）
+- `cargo test --workspace --tests` 全过（注册链 land 但 ActionKind 映射
+  unimplemented 状态：commit (2/3) 才补；本步骤如出现 unreachable 分支
+  panic，拆 (1/3-a) (1/3-b) 处理）
+
+##### P.2.1.d 风险锚点
+
+- **`SCHEMA_SCRIPTED_PAYLOAD` size_tier 选 Control vs SensorSmall**：
+  Q1(a) 最小集字段 + 100 waypoint 上限下 fbs payload ≤ 4 KiB，落
+  `SizeTier::Control` 8 KiB 充裕；如 reviewer round 内决定提升 waypoint
+  上限 / 加 metadata（§Q1 (b)/(c)）触发 Plan-Execute diff 改 size_tier
+- **build.rs 数组长度漂移**：`current_schemas: [&str; 12 → 13]` 必须
+  跟 `.fbs` 文件个数一致；漏改 build 直接 fail-fast
+
+#### P.2.2 [commit (2/3)] ScriptedBackend lib + 三层 payload enforcement
+
+##### P.2.2.a `ScriptedBackend` impl（沿 hold_pose 模板）
+
+新文件：`crates/robot-s1/src/action_backend/scripted.rs`
+
+| 模块 | 改动 |
+|---|---|
+| `ScriptedBackend` | 零字段 struct + `inventory::submit!`；`ActionBackend` impl: `name = "scripted"` + `supported_kinds = &[ActionKind::Scripted]` + `supported_schemas = &[SCHEMA_SCRIPTED_PAYLOAD]`（**不**含 NO_PAYLOAD） |
+| `ScriptedBackend::start()` | `flatbuffers::root::<ScriptedPayload>(payload)` verify + 语义校验（`waypoints` 非空 + 每段 `positions.len() == hardware.joints.len()` + `segment_duration_ms > 0`）→ 失败返 `BackendStartFailed(ActionStartError::Rejected(_))` 或 `PayloadDecode(_)`；成功构 `ScriptedInstance { decoded_waypoints: Vec<DecodedWaypoint>, current_idx: 0, phase: Interp{start_ns}, total_action_duration_ns, ... }`（**start() 期一次性 owned decode**；tick 期不再解 fbs，Q11 拍板） |
+| `ScriptedInstance` | 字段含 `cancelled: bool` + `decoded_waypoints: Vec<DecodedWaypoint>`（含 owned positions Vec + dwell_ms + segment_duration_ms）+ `phase: enum { Interp { start_ns }, Dwell { start_ns } }` + `current_idx: usize` + `total_action_duration_ns: u64` + `tick_buf: Vec<f64>`（with_capacity(joints) 复用避 per-tick alloc，Q7 拍板）|
+| `ScriptedInstance::tick(ctx)` | (1) cancelled 短路返 `Completed(PartialSuccess { warning: "cancelled_at_waypoint_N" })`（Q4(a)）；(2) phase 状态机推进（Interp → Dwell → next waypoint）；(3) 当前 phase 算 target positions（Interp 期 `α = elapsed_in_segment / segment_duration_ms` lerp `from→to`；Dwell 期 target = waypoint.positions 不变）；(4) Q3(c) 组合 progress = `(current_idx + segment_progress) / total_waypoints`；(5) `build_hold_command(ctx.command_seq, target_positions, &hardware.joints)` 复用 B1/B3 builder（**source_task_id == ctx.command_seq 单调契约，B3 §3.7**）；(6) 末段 Dwell 完返 `Completed(Success)`；(7) 中间段返 `Continue { command: Some(...), progress: Some(...) }` |
+| `ScriptedInstance::cancel()` | `self.cancelled = true` 不返终态（沿 hold_pose 同款；下次 tick 收敛） |
+
+##### P.2.2.b ScriptedBackend lib unit（AC-3 8+ unit）
+
+8+ unit 沿 hold_pose 8 测模板 + Scripted-specific：
+
+| # | 测试名 | 验证 |
+|---|---|---|
+| 1 | `name_is_scripted` | `backend.name() == "scripted"` |
+| 2 | `supported_kinds_is_scripted_only` | `[ActionKind::Scripted]` |
+| 3 | `supported_schemas_is_scripted_payload_only` | `[SCHEMA_SCRIPTED_PAYLOAD]`，**不**含 NO_PAYLOAD |
+| 4 | `start_rejects_empty_waypoints` | empty waypoints → `BackendStartFailed(Rejected)` |
+| 5 | `start_rejects_payload_schema_id_mismatch` | `payload_schema_id != SCHEMA_SCRIPTED_PAYLOAD` → `BackendStartFailed(Rejected)` |
+| 6 | `tick_segment_returns_command_with_source_task_id_eq_ctx_command_seq` | **bit-equivalent test** + 连续 N tick 跨 segment `source_task_id` 严格单调递增 |
+| 7 | `tick_interp_phase_lerps_between_waypoints` | α=0.5 时 target 介于 `from`/`to` |
+| 8 | `tick_dwell_phase_holds_at_waypoint_target` | dwell 期 target == waypoint.positions 不变 |
+| 9 | `tick_completed_after_last_dwell` | 末 waypoint dwell 完返 `Completed(Success)` |
+| 10 | `tick_after_cancel_returns_completed_partial_success` | cancel 后下次 tick 返 `Completed(PartialSuccess { warning: "cancelled_at_waypoint_N" })`（backend lib 层；coordinator 转 `ActionEvent::Cancelled` 不在 lib unit 验证） |
+| 11 | `inventory_default_instance_present` | `BackendRegistry::names()` 集含 `"scripted"`（沿 Q15 拍板 (a) 改现有测） |
+
+##### P.2.2.c s1 handler `ActionKindFb::Scripted` → `ActionKind::Scripted` 映射
+
+`crates/robot-s1/src/rr_server/handler.rs:174-193`：现有 match 加
+`ActionKindFb::Scripted => ActionKind::Scripted`；lib unit
+`action_kind_fb_variant_count_matches_explicit_mapping`（Q14 拍板）
+锁住 enum variant 数 == 显式映射 arm 数。
+
+##### P.2.2.d gateway `ActionKindProto::ActionKindScripted` → `ActionKindFb::Scripted` 映射 + 三层 payload enforcement
+
+`crates/robot-rpc/src/task_handlers.rs`：
+
+| 步骤 | 改动 |
+|---|---|
+| 1 | `action_kind_proto_to_fb` match arm 加 `ActionKindProto::ActionKindScripted => ActionKindFb::Scripted` + lib unit variant count 锁测（沿 B4 (3/3) AC-C 同款 `rpc_status_variant_count_matches_explicit_mapping` 模式）|
+| 2 | **gate 1（payload precheck）**：`handle_invoke_task` validate 阶段，当 `kind == Scripted` 时加 `cmd.payload.len() > MAX_SCRIPTED_PAYLOAD_BYTES` 拒 → 返 `tonic::Code::InvalidArgument`（`MAX_SCRIPTED_PAYLOAD_BYTES` const = 4 KiB；定义位置 task_handlers.rs 内；Q6 拍板上限 100 waypoint × 1 joint ≤ ~1.6 KiB + fbs overhead，4 KiB 充裕）|
+| 3 | **gate 2（final wire-size guard）**：`build_invoke_task_request(...)` 后、`forward_to_rr_io(...)` 前检查 `wire_bytes.len() > CONTROL_TIER_MAX_BYTES` 拒 → 返 `tonic::Code::InvalidArgument`。**常量来源**（reviewer ACK 期注意点）：定义 `const CONTROL_TIER_MAX_BYTES: usize = SizeTier::Control.max_bytes();`（**单源**绑定 `robot_msg::size_tier::SizeTier::Control.max_bytes()`，**不**硬编码 8192，避免常量漂移；命名统一 `CONTROL_TIER_MAX_BYTES`，删除 Spec 内 `ICEORYX2_CONTROL_TIER_MAX_BYTES` 别名）|
+| 4 | **不**解 payload fbs bytes（保 B4 outline §6.1 双层 schema 分工） |
+
+##### P.2.2.e backend feature gate
+
+`crates/robot-s1/Cargo.toml`：
+
+```toml
+[features]
+default = ["backend-mock-dwell", "backend-hold-pose", "backend-scripted"]  # Q17(a)
+backend-scripted = []  # Q10 拍板：沿 backend-hold-pose 同款连字符
+```
+
+`crates/robot-s1/src/action_backend/mod.rs`：
+
+```rust
+#[cfg(feature = "backend-scripted")]
+pub mod scripted;
+```
+
+##### P.2.2.f Quality Gate（commit (2/3)）
+
+- `cargo fmt --all --check` clean
+- `cargo clippy --workspace --all-targets -- -D warnings` 双路 clean
+  （含 / 不含 `backend-scripted` feature）
+- `cargo test --workspace --tests --features "robot-rpc/client" --
+  --test-threads=1`：现有 940 PASS + 新加 AC-3 11 lib unit + AC-2
+  variant count + gateway 2 byte gate lib unit 全过
+- 双路 `crash_restart_smoke` 5/5 + 5/5（沿候选 3 同款回归门槛）
+- §6.7 5 条不变量真宣称保持
+
+##### P.2.2.g 风险锚点
+
+- **`CONTROL_TIER_MAX_BYTES` 单源绑定**：reviewer ACK 期注意点（直接
+  绑 `SizeTier::Control.max_bytes()` 不硬编码 8192）；如 `size_tier.rs`
+  扩展加新 tier 或常量值漂移，本 const 自动跟随
+- **`MAX_SCRIPTED_PAYLOAD_BYTES` 选值**：4 KiB 充裕兜底 100 waypoint
+  × 1 joint × ~16 bytes/waypoint + fbs overhead；如 Q1 后续扩字段 / Q6
+  上限改大需 reviewer round 改 const
+- **`Vec<f64> tick_buf` 复用**：`with_capacity(joints)` + `clear()`
+  避 per-tick alloc；如 hardware.joints 数 runtime 变化要重 grow
+  （目前 hardware.joints 是 backend start 期 owned 不变；Q11 拍板）
+
+#### P.2.3 [commit (3/3)] scripted_backend_smoke binary + cross-process e2e
+
+##### P.2.3.a Cargo.toml 变更
+
+`crates/robot-tests/Cargo.toml` 追加：
+
+```toml
+[[bin]]
+name = "scripted_backend_smoke"
+path = "src/bin/scripted_backend_smoke.rs"
+required-features = ["scripted-backend-smoke"]
+
+[features]
+# v0.4 候选 1 Scripted backend smoke 入口 feature（沿 pubsub-cleanup-smoke
+# / clear-estop-e2e 同款 feature 守门）。
+scripted-backend-smoke = [
+    "dep:robot-rpc",
+    "dep:tonic",
+    "dep:tokio",
+]
+```
+
+##### P.2.3.b CLI args（沿 `pubsub_cleanup_smoke` 同款）
+
+- `--bin-dir target/release`（默认）
+- `--robot-id-prefix scripted_backend`（默认）
+- `--hardware-id <id>`（必填）/ `--config <toml>`（必填）
+- `--phase selftest | happy_multi_waypoint | source_task_id_monotonic |
+  cancel_mid | payload_boundary | all`（默认 all；Q13 拍板）
+- `--waypoint-count N`（默认 3，AC-4 happy 用）
+- `--segment-duration-ms <ms>`（默认 500，AC-4 用）
+- `--cancel-delay-ms <ms>`（默认 50，AC-6 用）
+- `--output-csv <path>`（可选）
+
+##### P.2.3.c smoke binary 复制 ~500-700 行 harness（Q5(a) 路径 A）
+
+inline 复制候选 3 `pubsub_cleanup_smoke.rs` helper（Q12 拍板全复制；
+CodeMap §7.2 表对齐）：
+
+| helper | 来源 |
+|---|---|
+| `FakeStatePublisher` | `crates/robot-rpc/tests/common/fake_state.rs:39-153` 等价 inline |
+| `SubprocessHandle` + `bring_up_pair` + `tear_down_pair` | `pubsub_cleanup_smoke.rs` inline 等价 |
+| `invoke_and_wait_terminal` | `pubsub_cleanup_smoke.rs` inline 等价 |
+| `sample_metric` + CSV writer | `pubsub_cleanup_smoke.rs` inline 等价 |
+| `build_scripted_payload(waypoints) -> Vec<u8>` | **新增** inline fbs builder（构 `ScriptedPayload` fbs bytes；Q5(a) 路径 A 拍板 → 不抽公共 helper） |
+
+**复用边界**：smoke binary 直接 inline 等价实现（沿
+`pubsub_cleanup_smoke` 不复用 `tests/common` 同款独立模式；**不**改
+`fake_state.rs` 公共可见性）。
+
+##### P.2.3.d AC 实施序列（5 phase）
+
+| Phase | 验证 | Q 引用 |
+|---|---|---|
+| `selftest` | smoke binary 自检（gateway 通 + fake S0 publish + scripted_payload fbs build → root verify）| - |
+| `happy_multi_waypoint` | AC-4：N=3 waypoint → `InvokeTask` + Stream Started + ≥N Progress（单调 ≤ 1.0）+ `Completed(Success)` 终态 | AC-4 |
+| `source_task_id_monotonic` | AC-5：iceoryx2 subscriber 收集 `JointCommand.source_task_id` 全程严格单调递增 | AC-5 + B3 §3.7 |
+| `cancel_mid` | AC-6：N=5 waypoint × 1000ms → 50ms 后 `CancelTask` → stream 终态 = `Cancelled` only（**不**是 `Completed{PartialSuccess}`；coordinator 路径转换契约）| AC-6 + Q4(a) |
+| `payload_boundary` | AC-7：(7a) empty waypoints → `FailedPrecondition` ; (7b) `payload_schema_id=0` + `kind=Scripted` → `InvalidArgument`（dispatch 层） ; (7c-i) payload bytes 超 `MAX_SCRIPTED_PAYLOAD_BYTES` → gateway precheck `InvalidArgument` ; (7c-ii) payload bytes 通过 precheck 但 wire 超 `CONTROL_TIER_MAX_BYTES` → gateway final guard `InvalidArgument` ; (7c-iii) 通过两道 gate 但 fbs decode fail → backend `FailedPrecondition` | AC-7 + Q2(a) 三层 + Q9 |
+
+##### P.2.3.e Quality Gate（commit (3/3)）
+
+- `cargo fmt --all --check` clean
+- `cargo clippy --workspace --all-targets -- -D warnings` 双路 clean
+  （含 / 不含 `scripted-backend-smoke` feature）
+- `cargo test -p robot-tests --bin scripted_backend_smoke --features
+  scripted-backend-smoke`：smoke binary compile + 内置 `#[test]` 模
+  块（如有）全过
+- `cargo build -p robot-tests --release --bin scripted_backend_smoke
+  --features scripted-backend-smoke` 过；生产构建（无 feature）
+  `cargo build -p robot-tests --release` 不 link 本 binary
+- `./target/release/scripted_backend_smoke --phase all`：AC-4/5/6/7
+  5 phase 全过；exit code 0
+- 双路 `crash_restart_smoke` 5/5 + 5/5（沿候选 3 同款回归门槛）
+- `pubsub_cleanup_smoke --phase all` 不退化（候选 1 改动**不**触发
+  候选 3 任一 AC-C1/C2/C3）
+
+##### P.2.3.f 风险锚点
+
+- **gateway final wire-size guard 单测可观测性**：(7c-ii) 子 case 构
+  造 payload bytes 通过 precheck 但 wire 撞 8 KiB 的边界 payload 难
+  调（依赖 `idempotency_key` / `audit_reason` 等外层字段长度的精确膨
+  胀）；smoke 期可用 dummy 长 `audit_reason` 拼到 wire 超限；如难复
+  现，留 lib unit `build_wire_bytes_over_control_tier_returns_invalid_argument`
+  在 task_handlers.rs 内构造 mock cmd → assert guard 拒，作为 AC-7
+  (7c-ii) 子 case 补充
+- **smoke binary harness 复制后维护漂移**：候选 3 `pubsub_cleanup_smoke`
+  和候选 1 `scripted_backend_smoke` 两个 binary 同套 helper 后续如
+  修需双 binary 同步；Q5(b) 路径 B 抽 lib 留 v0.5+ 多 binary 时机
+
+#### P.2.4 [commit summary] summary 归档
+
+新文件：`docs/handoffs/v0.4_scripted_backend_summary.md`（沿候选 3
+`v0.4_pubsub_cleanup_summary.md` 同款模板）
+
+| 段 | 内容 |
+|---|---|
+| §1 范围 | 候选 1 Scripted backend = joint-space 线性插值 + waypoint dwell |
+| §2 commit chain | (1/3) → (2/3) → (3/3) → summary（含 hash + 文件统计）|
+| §3 关键契约 | (a) B3 §3.7 `source_task_id == ctx.command_seq` ; (b) Q2(a) 三层 enforcement ; (c) Q4(a) PartialSuccess + coordinator 转 `Cancelled` ; (d) `CONTROL_TIER_MAX_BYTES` 单源绑 `SizeTier::Control.max_bytes()` ; (e) Q5(a) inline 复制边界 |
+| §4 AC + Quality Gate 实测 | AC-1 至 AC-7 + AC-Q 全过记录 ; 双路 `crash_restart_smoke` + `pubsub_cleanup_smoke --phase all` 不退化 |
+| §5 §6.7 5 不变量真宣称 | **0** 降级 / **0** 升级 / **0** 偏移 |
+| §6 后续接班 | 候选 2 (robot-kinematics IK trait) Pre-Research / CodeMap 入口 |
+| §7 Reviewer Plan round 归档 | Plan round 1/2/... ACK 节点 + Plan-Execute diff 列表 |
+
+同步更新：
+
+- `docs/handoffs/README.md` 加 anchor
+- `docs/CHANGELOG.md` 加 2026-05-14 候选 1 land 行
+- `CLAUDE.md` 状态段更新（v0.4 候选 1 ✅；候选 2 准备开）
+
+### P.3 reviewer Plan round 拍板（pending）
+
+| Round | 状态 | 内容 |
+|---|---|---|
+| Plan round 1 | pending | 本 outline + Q1-Q17 reviewer 倾向 ACK |
+| Plan round 2 | pending | round 1 阻断 fix（如有）+ ACK |
+| Plan round N | pending | 最终 Approved 进入实施 |
+
+### P.4 Plan-Execute diff 登记位置
+
+沿候选 3 Plan v3 §P.4 同款模板。实施期偏离 Plan 任何决策 → 登记本节
+（不**回退** Plan，appendix-only），含：
+
+- 触发条件（哪个 Plan 决策被偏离）
+- 实际选择（实施期做了什么）
+- 理由（reviewer ACK / 实施期发现）
+- 验证回归（双路 crash_restart_smoke + AC-Q 全过）
+
+预期可能 diff：
+
+- diff #1：smoke binary harness 复制行数实际 vs 预估（~500-700 行）
+- diff #2：`MAX_SCRIPTED_PAYLOAD_BYTES` 常量选值如调整
+- diff #3：lib unit 数量实际 vs 预估（AC-3 11 unit）
+- diff #4：AC-7 (7c-ii) wire 撞限子 case 难复现 → 改 lib unit 补 +
+  smoke phase only run (7c-i/iii)
+
+---
+
+## 后续：reviewer Plan round + 实施
+
+Plan outline draft v1 commit 后开 Plan round 1；ACK 后进 (1/3) 实施。
+沿候选 3 Plan v3 同款 reviewer round 模式（outline → ACK → 实施 →
+reviewer ACK push → 下一 commit）。
