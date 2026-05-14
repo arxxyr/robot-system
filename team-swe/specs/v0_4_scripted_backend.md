@@ -658,9 +658,12 @@ root_type ScriptedPayload;
 ##### P.2.1.d 风险锚点
 
 - **`SCHEMA_SCRIPTED_PAYLOAD` size_tier 选 Control vs SensorSmall**：
-  Q1(a) 最小集字段 + 100 waypoint 上限下 fbs payload ≤ 4 KiB，落
-  `SizeTier::Control` 8 KiB 充裕；如 reviewer round 内决定提升 waypoint
-  上限 / 加 metadata（§Q1 (b)/(c)）触发 Plan-Execute diff 改 size_tier
+  `SCHEMA_SCRIPTED_PAYLOAD` 本身落 `SizeTier::Control` 8 KiB；实际
+  接收上限由 **`MAX_SCRIPTED_PAYLOAD_BYTES = 4 KiB`** gateway byte
+  cap 控制（Q6 拍死本轮 only byte cap）。"100 waypoint" 仅作 1 joint
+  估算示例，**不**是 schema / semantic 上限，**不**进 `start()` count
+  check。如 Q1 后续扩字段（(b)/(c)）撑爆 4 KiB → 走 Plan-Execute diff
+  改 size_tier / byte cap
 - **build.rs 数组长度漂移**：`current_schemas: [&str; 12 → 13]` 必须
   跟 `.fbs` 文件个数一致；漏改 build 直接 fail-fast
 - **三层 enum append 同 commit 一起 land**：reviewer Plan round 1 阻断
@@ -780,14 +783,19 @@ pub mod scripted;
 - **`CONTROL_TIER_MAX_BYTES` 单源绑定**：reviewer ACK 期注意点（直接
   绑 `SizeTier::Control.max_bytes()` 不硬编码 8192）；如 `size_tier.rs`
   扩展加新 tier 或常量值漂移，本 const 自动跟随
-- **`MAX_SCRIPTED_PAYLOAD_BYTES` 选值 + Q6 100 waypoint 语义**
-  （reviewer Plan round 1 非阻断 2 修法）：4 KiB 是**byte 级硬上限**
-  （任何 fbs payload 超此值必拒）；Q6 "100 waypoint" 是**语义上限**
-  （backend `start()` 内 `decoded_waypoints.len() > 100` 视情况拒，
-  本轮拍板**只 cap byte 不 cap count**简化判断），**实际**多关节场
-  景下 100 waypoint × N joint × ~8 bytes/double + fbs overhead 可
-  超过 4 KiB，**以 byte cap 为准** → 多关节配置下用户拿到的 waypoint
-  上限会少于 100。如未来需要按关节数动态算上限，走 Plan-Execute diff
+- **`MAX_SCRIPTED_PAYLOAD_BYTES` 选值 + Q6 容量边界**
+  （reviewer Plan round 2 非阻断 1 拍死）：`MAX_SCRIPTED_PAYLOAD_BYTES
+  = 4 KiB` 是本轮**唯一**容量上限（gateway byte cap）。
+  `ScriptedBackend::start()` 内**只**做四项 semantic check：(a)
+  `flatbuffers::root::<ScriptedPayload>(payload)` decode 成功；(b)
+  `waypoints` 非空；(c) 每段 `positions.len() == hardware.joints.len()`；
+  (d) `segment_duration_ms > 0`；**严禁**加 `decoded_waypoints.len()`
+  count check / `> 100` 拒绝路径 —— 容量只由 gateway byte cap 控制。
+  "100 waypoint" 仅作**1 joint 估算示例**（非 schema / semantic 上限），
+  不进任何运行时判断。多关节配置下用户能塞的 waypoint 个数自然由
+  4 KiB byte cap 限制（N joint × waypoint × ~8 bytes/double + fbs
+  overhead ≤ 4 KiB）。如未来需要按关节数动态算上限 / 拒超大 waypoint
+  count，走 Plan-Execute diff
 - **`Vec<f64> tick_buf` 复用**：`with_capacity(joints)` + `clear()`
   避 per-tick alloc；如 hardware.joints 数 runtime 变化要重 grow
   （目前 hardware.joints 是 backend start 期 owned 不变；Q11 拍板）
