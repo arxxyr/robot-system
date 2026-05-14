@@ -170,10 +170,14 @@ pub fn handle_invoke(payload: &[u8], ctx: &RealHandlerCtx) -> Vec<u8> {
         }
     };
 
-    // 3. ActionKindFb → ActionKind（B2/B3 仅 2 个 variant）。
+    // 3. ActionKindFb → ActionKind（v0.4 候选 1 land 后 3 个 variant：
+    //    DwellMs / HoldPose / Scripted）。`other` 兜底 catch-all 保留：
+    //    forward-compat 拦截"客户端用了 daemon 二进制还不识别的 fbs 变体"
+    //    场景（fbs enum 是 open-ended ubyte）。
     let kind = match decoded.kind {
         ActionKindFb::DwellMs => ActionKind::DwellMs,
         ActionKindFb::HoldPose => ActionKind::HoldPose,
+        ActionKindFb::Scripted => ActionKind::Scripted,
         ActionKindFb::Unknown => {
             return encode_invoke_response_err(
                 &decoded.request_id,
@@ -635,6 +639,76 @@ mod tests {
         let resp = flatbuffers::root::<FbInvokeResp>(&resp_bytes).unwrap();
         assert_eq!(resp.status(), ActionRpcStatus::InvalidArgument);
         assert!(resp.error_msg().unwrap().contains("Unknown"));
+        assert_eq!(ctx.events_registry.len(), 0);
+    }
+
+    /// `ActionKindFb` → [`ActionKind`] 显式映射全 variant 锁测（v0.4
+    /// 候选 1 Plan round 1 阻断 1 拍板：proto / fbs / lib 三层 enum
+    /// append 必须同 commit 一起 land；本测在 (1/3) 阶段断言 ActionKindFb
+    /// 已知 variant 集 + 每个 variant 都被 handler match 接受）。
+    ///
+    /// `ActionKindFb` 是 fbs ubyte enum，wire 上可携任意 0..=255 值；
+    /// `ENUM_VALUES` 包含 schema 文件里显式声明的 variant（含
+    /// `Unknown = 0`）。新增 variant → 本断言失败 → 强制更新
+    /// `handle_invoke` 内 `ActionKindFb → ActionKind` match。
+    #[test]
+    fn action_kind_fb_variant_count_matches_explicit_mapping() {
+        // v0.4 候选 1 land 后：Unknown / DwellMs / HoldPose / Scripted
+        // = 4 variant。新增 variant 时本断言失败强制更新 handler match。
+        const EXPECTED_VARIANT_COUNT: usize = 4;
+        assert_eq!(
+            ActionKindFb::ENUM_VALUES.len(),
+            EXPECTED_VARIANT_COUNT,
+            "新增 ActionKindFb variant 必须同步更新 handle_invoke 内的 \
+             ActionKindFb → ActionKind match + 本断言数字（v0.4 候选 1 \
+             Plan round 1 阻断 1）"
+        );
+
+        // 已知 variant 集 = 显式声明的 4 个（数值 0..=3）。
+        let expected: std::collections::HashSet<ActionKindFb> = [
+            ActionKindFb::Unknown,
+            ActionKindFb::DwellMs,
+            ActionKindFb::HoldPose,
+            ActionKindFb::Scripted,
+        ]
+        .into_iter()
+        .collect();
+        let registered: std::collections::HashSet<ActionKindFb> =
+            ActionKindFb::ENUM_VALUES.iter().copied().collect();
+        assert_eq!(
+            registered, expected,
+            "ActionKindFb ENUM_VALUES 集合跟显式断言集合不一致；新增 \
+             variant 时必须同步本测断言集合 + handler match"
+        );
+    }
+
+    /// `ActionKindFb::Scripted` → [`ActionKind::Scripted`] 映射在 handler
+    /// 里命中（v0.4 候选 1 (1/3) land）。本测进 dispatch 后因 registry
+    /// 不含 scripted backend → `Coordinator::submit()` 走
+    /// `BackendRegistry::dispatch` 返
+    /// [`SubmitError::NoBackendForKind`]（详 Spec Plan P.2.1.b 表 #7 +
+    /// reviewer Plan round 2 阻断 3 拍板：(1/3) **不**加手工 dispatch
+    /// arm，靠 (2/3) `inventory::submit!` 让 dispatch 自动命中）。
+    #[test]
+    fn invoke_scripted_kind_without_backend_returns_unimplemented() {
+        let coord = make_coordinator();
+        let ctx = make_ctx(coord);
+        let request_id = ActionId::new_v7().to_string();
+        let payload = build_invoke_payload(&request_id, ActionKindFb::Scripted);
+
+        let resp_bytes = handle_invoke(&payload, &ctx);
+        let resp = flatbuffers::root::<FbInvokeResp>(&resp_bytes).unwrap();
+        // BackendRegistry::dispatch 找不到任何支持 Scripted kind 的
+        // backend → SubmitError::NoBackendForKind → wire mapping
+        // (crates/robot-s1/src/rr_server/wire.rs) → ActionRpcStatus::Unimplemented。
+        assert_eq!(
+            resp.status(),
+            ActionRpcStatus::Unimplemented,
+            "ActionKindFb::Scripted 在 (1/3) 阶段（无 ScriptedBackend）应走 \
+             NoBackendForKind 路径返 Unimplemented；error_msg = {:?}",
+            resp.error_msg()
+        );
+        // events drain 不应注册（submit 失败路径）。
         assert_eq!(ctx.events_registry.len(), 0);
     }
 

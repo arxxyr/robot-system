@@ -93,6 +93,18 @@ pub const SCHEMA_CLEAR_ERROR_RESPONSE: u32 = 0x0000_0409;
 /// pubsub topic payload（**不**走 RR；详 `schemas/action_event.fbs`）。
 pub const SCHEMA_ACTION_EVENT_ENVELOPE: u32 = 0x0000_040A;
 
+// ----- v0.4 候选 1 Scripted backend payload -----
+//
+// 详 `docs/handoffs/v0.4_entry.md` §3.2 + `team-swe/specs/v0_4_scripted_backend.md`。
+// 落 `SizeTier::Control`（详 `crates/robot-msg/src/size_tier.rs`）；
+// 实际接收上限由 gateway `MAX_SCRIPTED_PAYLOAD_BYTES` byte cap 控制
+// （reviewer Plan round 3 拍板 only byte cap，不做 waypoint count
+// semantic check）。
+
+/// `robot.msg.ScriptedPayload` —— v0.4 候选 1 `ScriptedBackend` `InvokeTask`
+/// payload（joint-space 线性插值 + waypoint dwell 序列）。
+pub const SCHEMA_SCRIPTED_PAYLOAD: u32 = 0x0000_040B;
+
 // -----------------------------------------------------------------------------
 // deprecated 登记
 // -----------------------------------------------------------------------------
@@ -143,6 +155,7 @@ pub const SCHEMA_REGISTRY: &[(u32, &str)] = &[
         SCHEMA_ACTION_EVENT_ENVELOPE,
         "robot.msg.ActionEventEnvelope",
     ),
+    (SCHEMA_SCRIPTED_PAYLOAD, "robot.msg.ScriptedPayload"),
 ];
 
 /// 按 `schema_id` 查规范名；未知返回 `None`。

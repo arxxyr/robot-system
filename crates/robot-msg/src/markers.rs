@@ -155,6 +155,11 @@ pub struct ClearErrorResponse;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ActionEventEnvelope;
 
+/// Marker for [`msg::ScriptedPayload`]（v0.4 候选 1 `ScriptedBackend`
+/// `InvokeTask` payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ScriptedPayload;
+
 // ---------------------------------------------------------------------------
 // BodyMarker 实现
 // ---------------------------------------------------------------------------
@@ -309,6 +314,13 @@ impl BodyMarker for ActionEventEnvelope {
     const SCHEMA_NAME: &'static str = "robot.msg.ActionEventEnvelope";
     const BLOB_EMBEDDED: bool = false;
     type Root<'a> = msg::ActionEventEnvelope<'a>;
+}
+
+impl BodyMarker for ScriptedPayload {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_SCRIPTED_PAYLOAD;
+    const SCHEMA_NAME: &'static str = "robot.msg.ScriptedPayload";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::ScriptedPayload<'a>;
 }
 
 // ---------------------------------------------------------------------------

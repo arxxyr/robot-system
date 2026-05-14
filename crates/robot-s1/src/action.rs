@@ -153,6 +153,12 @@ pub enum ActionKind {
     /// state machine 转移而不动 wire 输出）。B2 mock backend 唯一支持
     /// 值之一。
     HoldPose,
+    /// joint-space 线性插值 + waypoint dwell 序列（v0.4 候选 1 land）。
+    /// 详 `docs/handoffs/v0.4_entry.md` §3.2 +
+    /// `team-swe/specs/v0_4_scripted_backend.md`。Payload 走
+    /// `SCHEMA_SCRIPTED_PAYLOAD` (= `0x0000_040B`)；backend impl 落
+    /// `crates/robot-s1/src/action_backend/scripted.rs` (2/3 land)。
+    Scripted,
 }
 
 // ============================================================================
@@ -686,19 +692,21 @@ mod tests {
     // ----- ActionKind -----
 
     #[test]
-    fn action_kind_only_two_b2_variants() {
-        // 锁住"B2 enum 仅 DwellMs / HoldPose"边界 —— 任何加新 variant
-        // 的实现 commit 必须先回到 outline reviewer 复核（§10 决策 #1）。
-        // 用 match 穷举 + 编译期检查：如果有人加新 variant，下面
-        // exhaustive 的 unit test 会编不过。
+    fn action_kind_three_v04_variants() {
+        // 锁住"v0.4 候选 1 land 后 enum = DwellMs / HoldPose / Scripted"
+        // 边界 —— 任何加新 variant 的实现 commit 必须先回到 outline
+        // reviewer 复核。用 match 穷举 + 编译期检查：如果有人加新
+        // variant，下面 exhaustive 的 unit test 会编不过。
         fn cover(k: ActionKind) -> u8 {
             match k {
                 ActionKind::DwellMs => 0,
                 ActionKind::HoldPose => 1,
+                ActionKind::Scripted => 2,
             }
         }
         assert_eq!(cover(ActionKind::DwellMs), 0);
         assert_eq!(cover(ActionKind::HoldPose), 1);
+        assert_eq!(cover(ActionKind::Scripted), 2);
     }
 
     #[test]
@@ -707,9 +715,12 @@ mod tests {
         let mut set = HashSet::new();
         set.insert(ActionKind::DwellMs);
         set.insert(ActionKind::HoldPose);
+        set.insert(ActionKind::Scripted);
         set.insert(ActionKind::DwellMs); // dup
-        assert_eq!(set.len(), 2);
+        assert_eq!(set.len(), 3);
         assert!(set.contains(&ActionKind::DwellMs));
+        assert!(set.contains(&ActionKind::HoldPose));
+        assert!(set.contains(&ActionKind::Scripted));
     }
 
     // ----- JointCommandBody -----

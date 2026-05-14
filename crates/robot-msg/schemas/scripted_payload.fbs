@@ -1,0 +1,47 @@
+// scripted_payload.fbs — v0.4 候选 1 Scripted backend payload wire format.
+//
+// 对应 docs/handoffs/v0.4_entry.md §3.2 拍板（joint-space 线性插值 +
+// waypoint dwell）+ team-swe/specs/v0_4_scripted_backend.md Q1(a) 最小集。
+//
+// ### 字段语义
+//
+// - `WaypointTarget.positions`：目标关节位置（rad）；**长度必须 ==
+//   `ActionContext.hardware.joints.len()`**，否则 backend 拒
+//   `ActionStartError::Rejected`。
+// - `WaypointTarget.dwell_ms`：到位后停留时长（ms）；0 = 不 dwell，
+//   插值完直接进下一段。
+// - `WaypointTarget.segment_duration_ms`：当前段线性插值总时长（ms）；
+//   必须 > 0，否则 backend 拒。
+// - `ScriptedPayload.waypoints`：非空数组（empty → backend 拒）。
+//
+// ### segment 0 的 `from` 来源
+//
+// segment 0 的起点 `from` = `start()` 期 snapshot 的 `initial_pose =
+// ctx.anchor_bias.to_vec()`；segment i>0 的 `from` =
+// `waypoints[i-1].positions`，`to` = `waypoints[i].positions`。
+//
+// 详 `crates/robot-s1/src/action_backend/scripted.rs` ScriptedInstance
+// `initial_pose: Vec<f64>` 字段（v0.4 候选 1 (2/3) 落地）。
+//
+// ### 容量边界
+//
+// 本 schema 落 `SizeTier::Control` 8 KiB。实际接收上限由 gateway
+// `MAX_SCRIPTED_PAYLOAD_BYTES = 4 KiB` byte cap 控制（详
+// `crates/robot-rpc/src/task_handlers.rs` v0.4 候选 1 (2/3) 落地）。
+// "100 waypoint" 仅作 1 joint 估算示例，**不**是 schema / semantic
+// 上限，**不**进 `start()` count check（reviewer Plan round 3 拍板
+// only byte cap）。
+
+namespace robot.msg;
+
+table WaypointTarget {
+    positions:            [double];
+    dwell_ms:             uint;
+    segment_duration_ms:  uint;
+}
+
+table ScriptedPayload {
+    waypoints: [WaypointTarget];
+}
+
+root_type ScriptedPayload;

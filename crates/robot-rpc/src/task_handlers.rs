@@ -1311,6 +1311,7 @@ fn action_kind_proto_to_fb(kind: ActionKindProto) -> ActionKindFb {
         ActionKindProto::ActionKindUnspecified => ActionKindFb::Unknown,
         ActionKindProto::ActionKindDwellMs => ActionKindFb::DwellMs,
         ActionKindProto::ActionKindHoldPose => ActionKindFb::HoldPose,
+        ActionKindProto::ActionKindScripted => ActionKindFb::Scripted,
     }
 }
 
@@ -1450,6 +1451,58 @@ mod tests {
         assert_eq!(
             action_rpc_status_to_tonic_code(ActionRpcStatus::Unavailable),
             Code::Unavailable
+        );
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // ActionKindProto → ActionKindFb 显式映射全 variant 锁测
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// `action_kind_proto_to_fb` 的 exhaustive match 必须穷举
+    /// [`ActionKindProto`] 所有 variant。新增 variant 让本测断言失败 →
+    /// 强制同步映射 helper（沿
+    /// [`action_rpc_status_variant_count_matches_explicit_mapping`] 同款
+    /// variant count 锁测模式；v0.4 候选 1 Plan round 1 阻断 1 拍板：
+    /// proto / fbs / lib 三层 enum append 必须同 commit 一起 land）。
+    #[test]
+    fn action_kind_proto_to_fb_variant_count_matches_explicit_mapping() {
+        // v0.4 候选 1 land 后：Unspecified / DwellMs / HoldPose /
+        // Scripted = 4 variant。新增 variant 时本断言失败强制更新
+        // helper。
+        const EXPECTED_VARIANT_COUNT: usize = 4;
+        // prost 给 proto enum 生成 `from_repr` API；用所有合法 repr
+        // 验证 helper 是 total（不依赖 exhaustive match 自身的“编译期
+        // 兜底”机制，因为 helper 已经是 exhaustive；这里额外断言
+        // variant 个数没漂移）。
+        let variants = [
+            ActionKindProto::ActionKindUnspecified,
+            ActionKindProto::ActionKindDwellMs,
+            ActionKindProto::ActionKindHoldPose,
+            ActionKindProto::ActionKindScripted,
+        ];
+        assert_eq!(
+            variants.len(),
+            EXPECTED_VARIANT_COUNT,
+            "新增 ActionKindProto variant 必须同步更新 \
+             action_kind_proto_to_fb + 本断言数字（v0.4 候选 1 Plan \
+             round 1 阻断 1）"
+        );
+        // 穷举映射：每个 variant 都能被 helper 接受（不 panic）。
+        assert_eq!(
+            action_kind_proto_to_fb(ActionKindProto::ActionKindUnspecified),
+            ActionKindFb::Unknown
+        );
+        assert_eq!(
+            action_kind_proto_to_fb(ActionKindProto::ActionKindDwellMs),
+            ActionKindFb::DwellMs
+        );
+        assert_eq!(
+            action_kind_proto_to_fb(ActionKindProto::ActionKindHoldPose),
+            ActionKindFb::HoldPose
+        );
+        assert_eq!(
+            action_kind_proto_to_fb(ActionKindProto::ActionKindScripted),
+            ActionKindFb::Scripted
         );
     }
 

@@ -30,15 +30,16 @@ namespace robot.msg;
 // `ActionKind` 的 fbs 形态（对齐 lib `robot_s1::action::ActionKind` +
 // proto `ActionKindProto`）。
 //
-// **B2/B3 锁定 2 个 variant**（见
-// `crates/robot-s1/src/action.rs::ActionKind`）：DwellMs / HoldPose；
-// **不**放 Stop（混淆 task cancel / S1 degraded / S0 control-lost
+// **v0.4 候选 1 land 后 3 个 variant**（见
+// `crates/robot-s1/src/action.rs::ActionKind`）：DwellMs / HoldPose /
+// Scripted；**不**放 Stop（混淆 task cancel / S1 degraded / S0 control-lost
 // stop / EStop 4 个语义层）。B3+ 落地新 backend 时 lib + proto + fbs
 // 三处 variant **同步扩**，不允许只动一处。
 enum ActionKindFb : ubyte {
     Unknown = 0,
     DwellMs = 1,
     HoldPose = 2,
+    Scripted = 3,
 }
 
 // ============================================================================
