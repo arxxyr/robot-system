@@ -71,6 +71,26 @@ name = "pubsub_cleanup_smoke"
 path = "src/bin/pubsub_cleanup_smoke.rs"
 required-features = ["pubsub-cleanup-smoke"]
 
+# v0.4 候选 1 (3/3) ScriptedBackend cross-process e2e smoke binary。
+#
+# 起两进程（s1_daemon + robot_rpc_gateway）+ tonic gRPC client 真跑
+# InvokeTask(kind=Scripted, payload=ScriptedPayload) → iceoryx2 RR shm
+# → s1 coordinator → ScriptedBackend.tick() 50Hz → JointCommand
+# publish → gateway StreamTaskEvents 收 Started/Progress/终态。覆盖
+# AC-4 happy multi-waypoint / AC-5 source_task_id 跨 segment 严格单调
+# / AC-6 cancel mid stream 终态 = Cancelled only / AC-7 payload boundary
+# 四子 case。详 team-swe/specs/v0_4_scripted_backend.md §Plan P.2.3 +
+# AC-4..AC-7。
+#
+# `required-features = ["scripted-backend-smoke"]`：跟 pubsub-cleanup-
+# smoke / clear-estop-e2e 同款 feature 守门 —— 生产 release 默认
+# feature 关，本 bin 不参编译。复用 robot-rpc/client + tonic + tokio
+# 三条 optional dep，跟其它 smoke binary 完全等价。
+[[bin]]
+name = "scripted_backend_smoke"
+path = "src/bin/scripted_backend_smoke.rs"
+required-features = ["scripted-backend-smoke"]
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -151,6 +171,18 @@ clear-estop-e2e = [
 # - 启用 robot-rpc / tonic / tokio 3 条 optional dep（跟 clear-estop-e2e
 #   完全等价 —— 同款 feature gate 模式）。
 pubsub-cleanup-smoke = [
+    "dep:robot-rpc",
+    "dep:tonic",
+    "dep:tokio",
+]
+
+# v0.4 候选 1 (3/3) Scripted backend cross-process smoke 入口 feature。
+# - 生产 release 不带本 feature（scripted_backend_smoke binary 不参编译）。
+# - 本机跑：cargo run -p robot-tests --bin scripted_backend_smoke
+#   --features scripted-backend-smoke -- --phase all ...
+# - 启用 robot-rpc / tonic / tokio 3 条 optional dep（跟 clear-estop-e2e
+#   / pubsub-cleanup-smoke 完全等价 —— 同款 feature gate 模式）。
+scripted-backend-smoke = [
     "dep:robot-rpc",
     "dep:tonic",
     "dep:tokio",

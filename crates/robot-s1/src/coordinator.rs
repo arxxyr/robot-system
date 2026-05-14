@@ -183,7 +183,13 @@ struct Wrapper {
 /// [`CoordinatorConfig::default`]；显式覆盖才校验。
 ///
 /// `deny_unknown_fields` 防 `[s1]` 段内拼错字段名（`heartbeat_hz`
-/// 写成 `heartbeatHz` 这种）静默走默认值导致部署事故。
+/// 写成 `heartbeatHz` 这种）静默走默认值导致部署事故。**例外**：
+/// B2 (3/3) 加的 `[s1.profile]` 子段被 [`parse_profile_section_from_toml`]
+/// 单独消费；S1 parser 必须把它当成"已知字段"放行（**不** propagate 进
+/// `CoordinatorConfig`，因为 profile 不属于 B1 `[s1]` runtime 配置），
+/// 否则 `[s1.profile]` 存在时 S1 parser 会因 `deny_unknown_fields` 报
+/// `unknown field profile` —— 这是 v0.4 候选 1 (3/3) 启动期 scripted
+/// backend 配置入口的硬约束。
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct S1Section {
@@ -198,6 +204,14 @@ struct S1Section {
     /// B1 唯一支持值 `"anchor"`（启动期读一次 S0 state）。B2 加
     /// `"zero"` / `"neutral"` / `"from_config"`。
     hold_strategy: Option<String>,
+    /// B2 (3/3) `[s1.profile]` 子段。本 parser **不**消费其内容；
+    /// [`parse_profile_section_from_toml`] 单独消费同一份 TOML。在
+    /// 这里显式列出仅为绕开 `deny_unknown_fields` ——
+    /// `#[serde(default)]` + 接受 `toml::Value` 让 serde 允许它存在
+    /// 但不施加任何字段级 schema。
+    #[serde(default)]
+    #[allow(dead_code)]
+    profile: Option<toml::Value>,
 }
 
 /// 把 TOML 文本（daemon `--config` 同款）解析成 [`CoordinatorConfig`]。
