@@ -69,7 +69,7 @@
 | `crates/robot-msg/src/size_tier.rs:62-95` | `default_tier_of` match arm 加 `SCHEMA_SCRIPTED_PAYLOAD` + `tests::default_tier_of` 穷举测试加 arm |
 | `crates/robot-msg/src/build_helpers.rs` | **可选**：加 `build_scripted_payload(waypoints) -> Vec<u8>` helper（Spec §Q5 拍板是否抽公共 builder vs binary inline） |
 | `crates/robot-rpc/proto/robot_control.proto:119-123` | `ActionKindProto` enum append `ACTION_KIND_SCRIPTED = 3` |
-| `crates/robot-rpc/src/task_handlers.rs` | `ActionKindProto::ActionKindScripted` → `ActionKindFb::Scripted` 映射扩展（gateway 透传 payload bytes 不变）+ **Q2(a) 两道 byte gate**：(1) `cmd.payload.len() > MAX_SCRIPTED_PAYLOAD_BYTES` precheck（kind=Scripted only）+ (2) `build_invoke_task_request(...)` 后 / `forward_to_rr_io(...)` 前 `wire_bytes.len() > ICEORYX2_CONTROL_TIER_MAX_BYTES` final guard，两道均返 tonic `Code::InvalidArgument` 不进 RR/s1 |
+| `crates/robot-rpc/src/task_handlers.rs` | `ActionKindProto::ActionKindScripted` → `ActionKindFb::Scripted` 映射扩展（gateway 透传 payload bytes 不变）+ **Q2(a) 两道 byte gate**：(1) `cmd.payload.len() > MAX_SCRIPTED_PAYLOAD_BYTES` precheck（kind=Scripted only）+ (2) `build_invoke_task_request(...)` 后 / `forward_to_rr_io(...)` 前 `wire_bytes.len() > CONTROL_TIER_MAX_BYTES` final guard，两道均返 tonic `Code::InvalidArgument` 不进 RR/s1 |
 | `crates/robot-s1/src/action.rs` | `ActionKind` enum append `Scripted` variant（同 `DwellMs` / `HoldPose`） |
 | `crates/robot-s1/src/rr_server/handler.rs:174-193` | `ActionKindFb::Scripted` → `ActionKind::Scripted` 映射扩展 + lib unit `variant count match` 锁测 |
 | `crates/robot-s1/src/action_backend/scripted.rs`（新） | `ScriptedBackend` + `ScriptedInstance` impl + inventory submit + lib unit |
@@ -390,7 +390,7 @@ follow-up issue，不回滚整 commit（沿候选 3 同款）。
      schema 分工）
   2. **gateway final wire-size guard**（reviewer round 2 阻断 1 拍板
      补充）：`build_invoke_task_request(...)` 后、`forward_to_rr_io(...)`
-     前检查 `wire_bytes.len() <= ICEORYX2_CONTROL_TIER_MAX_BYTES`
+     前检查 `wire_bytes.len() <= CONTROL_TIER_MAX_BYTES`
      （= 8 KiB；`size_tier::SizeTier::Control.max_bytes()`），超限直
      接返 `tonic::Code::InvalidArgument`，**不**进 RR / s1。这才**真正**
      避免 iceoryx2 `loan_slice_uninit` 撞 `SampleTooLarge`（任一外层
@@ -450,7 +450,7 @@ cancel 语义已经把 backend PartialSuccess 收敛后转 `ActionEvent::Cancell
 
 | # | Q | 默认倾向（reviewer 复核） |
 |---|---|---|
-| Q6 | waypoint 上限 N | (Q2 (a) 路径) 100；具体 reviewer 拍 |
+| Q6 | waypoint 上限 N | (Q2 (a) 路径) 100 是**语义上限**（1 joint 场景下宽裕；多关节时实际拿到的上限受 `MAX_SCRIPTED_PAYLOAD_BYTES` 4 KiB byte cap 限制 → N joint × ~8 bytes/double × waypoint 总长 + fbs overhead 必须 ≤ 4 KiB，**以 byte cap 为准**）；reviewer 复核确认本轮 only cap byte 不 cap count，简化 backend `start()` 判断 |
 | Q7 | runtime alloc 在 tick path | `Vec<f64>` 用 `Vec::with_capacity(joints)` 复用 + `clear()`（沿 hold_pose 模式）；尝试避 per-tick 分配 |
 | Q8 | 插值 cadence vs tick_loop 50Hz | tick_loop 内调 backend.tick；segment_duration_ms 非 20ms 整数倍时 lerp alpha 落点不均匀；本轮**接受**（v0.5+ 评估 100Hz 内部插值） |
 | Q9 | gateway payload schema 强校验 + 错误码口径 | gateway **不**解 payload bytes（沿 B4 outline §6.1 双层 schema 分工）；Q2(a) 三层 enforcement 拍板下 gateway 仅做 **两道 byte 长度 gate**：(1) `cmd.payload.len() > MAX_SCRIPTED_PAYLOAD_BYTES` precheck + (2) build wire 后 `wire_bytes.len() > CONTROL_TIER_MAX_BYTES` final guard，超限均返 tonic `Code::InvalidArgument`（**不**解 payload bytes）。s1 backend `start()` 内 `flatbuffers::root::<ScriptedPayload>(payload)` decode + semantic validate fail → `BackendStartFailed(ActionStartError::Rejected/PayloadDecode)` → `submit_err_to_rpc_status` → wire `ActionRpcStatus::FailedPrecondition` → tonic `Code::FailedPrecondition`（**不**是 InvalidArgument；详 `crates/robot-s1/src/rr_server/wire.rs:320-340` 错误码映射；`InvalidRequest` / `UnsupportedSchema` 才映 `InvalidArgument`，那是 dispatch 层语义） |
@@ -554,13 +554,19 @@ Plan-Execute diff 登记位置（沿候选 3 Plan v3 同款模板）。
 **Happy path**（AC-1 至 AC-7 全过 + Quality Gate 全过）：
 
 ```
-✨ feat: v0.4 候选 1 (1/3) Scripted backend schema 注册链 land
-        （proto + .fbs + schema_id + markers + size_tier + build.rs
-        + ActionKindProto/Fb/ActionKind 三层 append）
-✨ feat: v0.4 候选 1 (2/3) Scripted backend lib impl + 三层 payload
-        enforcement land（ScriptedBackend + ScriptedInstance + 8+ lib
-        unit + s1 handler ActionKindFb 映射 + gateway 两道 byte gate
-        + backend fbs decode/semantic validate）
+✨ feat: v0.4 候选 1 (1/3) Scripted backend schema 注册链 + 三层
+        ActionKind 映射闭环 land（proto + .fbs + schema_id + markers
+        + size_tier + build.rs + ActionKindProto/Fb/ActionKind 三层
+        append + gateway action_kind_proto_to_fb 扩展 + s1
+        ActionKindFb → ActionKind 扩展 + 3 variant count 锁测；
+        reviewer Plan round 1 阻断 1：enum append + dispatch 映射
+        atomic 一次 land 避免 (1/3) 编译 fail）
+✨ feat: v0.4 候选 1 (2/3) Scripted backend lib impl + gateway 两道
+        byte gate land（ScriptedBackend + ScriptedInstance + 8+ lib
+        unit + gateway MAX_SCRIPTED_PAYLOAD_BYTES precheck +
+        CONTROL_TIER_MAX_BYTES final wire-size guard 单源绑定
+        SizeTier::Control.max_bytes() + 2 gateway lib unit +
+        backend feature gate Q17(a) 进 default）
 ✨ feat: v0.4 候选 1 (3/3) scripted_backend_smoke binary + cross-process
         e2e（AC-4/5/6/7 全过 + scripted-backend-smoke feature gate）
 📝 docs: v0.4 候选 1 summary 归档 + Phase 候选 1 完结
@@ -581,16 +587,20 @@ diff 登记）。
 | 1 | 新 `.fbs` schema 定义 | `crates/robot-msg/schemas/scripted_payload.fbs`（新） |
 | 2 | `current_schemas` 数组扩容 + 入注册 | `crates/robot-msg/build.rs:57` `[&str; 12]` → `[&str; 13]` + append `"scripted_payload.fbs"` |
 | 3 | `SCHEMA_SCRIPTED_PAYLOAD` const + REGISTRY entry | `crates/robot-msg/src/schema_id.rs` 加 `pub const SCHEMA_SCRIPTED_PAYLOAD: u32 = 0x0000_040B;` + `SCHEMA_REGISTRY` 升序数组 append |
-| 4 | 手写 `BodyMarker` impl | `crates/robot-msg/src/markers.rs` 加 `#[derive(Debug, Clone, Copy, Default)] pub struct ScriptedPayload;` + `impl BodyMarker`（`SCHEMA_ID = SCHEMA_SCRIPTED_PAYLOAD` + `BLOB_EMBEDDED = false` + `type Root<'a> = scripted_payload_generated::ScriptedPayload<'a>` + 默认 `read_blob_desc`） |
+| 4 | 手写 `BodyMarker` impl | `crates/robot-msg/src/markers.rs` 加 `#[derive(Debug, Clone, Copy, Default)] pub struct ScriptedPayload;` + `impl BodyMarker`（`SCHEMA_ID = schema_id::SCHEMA_SCRIPTED_PAYLOAD` + `SCHEMA_NAME = "robot.msg.ScriptedPayload"` + `BLOB_EMBEDDED = false` + `type Root<'a> = msg::ScriptedPayload<'a>` + 默认 `read_blob_desc`；沿现有 `impl BodyMarker for JointState` / `InvokeTaskRequest` 同款风格，引用通过 `crates/robot-msg/src/markers.rs:26 use crate::msg;` 直接拿到 generated module） |
 | 5 | `default_tier_of` arm + 穷举测试 | `crates/robot-msg/src/size_tier.rs:62-95` match arm 加 `SCHEMA_SCRIPTED_PAYLOAD => SizeTier::Control`（payload 本身 ≤ ~4 KiB 落 Control 8 KiB；wire 外层走 `SCHEMA_INVOKE_TASK_REQUEST` size tier 不动）+ `tests::default_tier_of` 穷举测试加 arm |
 | 6 | **可选** `build_scripted_payload` helper | `crates/robot-msg/src/build_helpers.rs`（**§Q5 拍板 (a) inline 复制 → 本步骤跳过**，smoke binary 内 inline 构 fbs；如 reviewer round 改诉求可补） |
 
 **`scripted_payload.fbs` 字段集（Q1(a) 最小集拍板）**：
 
 ```fbs
-namespace robot.msg.scripted_payload;
+namespace robot.msg;
 
-// joint-space 单 waypoint target + dwell + 段 duration（Q1(a) 最小集）
+// joint-space 单 waypoint target + dwell + 段 duration（Q1(a) 最小集）。
+// reviewer Plan round 1 阻断 2 修法：namespace 统一 `robot.msg;`（沿
+// action_request.fbs / state.fbs / command.fbs 等所有现有 schema），
+// 不引入 sub-namespace。BodyMarker `SCHEMA_NAME = "robot.msg.ScriptedPayload"`
+// 跟 namespace 一致。
 table WaypointTarget {
   positions: [double];           // 长度 == hardware.joints.len()
   dwell_ms: uint32;              // 到位后停留 ms（0 = 不 dwell 直接进下一段）
@@ -608,25 +618,42 @@ root_type ScriptedPayload;
 等任一现有 schema 字段编号 / table layout / blob layout；仅 append
 `ActionKindFb::Scripted = 3`。
 
-##### P.2.1.b proto + ActionKindFb + ActionKind 三层 append
+##### P.2.1.b proto + ActionKindFb + ActionKind 三层 append + 映射闭环
 
-| 层 | 改动 |
-|---|---|
-| `crates/robot-rpc/proto/robot_control.proto:119-123` | `ActionKindProto` enum append `ACTION_KIND_SCRIPTED = 3`（prost 生成名 `ActionKindProto::ActionKindScripted`，沿 `ActionKindDwellMs` / `ActionKindHoldPose` 同款 CamelCase + enum prefix） |
-| `crates/robot-msg/schemas/action_request.fbs` | `ActionKindFb` enum append `Scripted = 3`（不动现有 variant 编号） |
-| `crates/robot-s1/src/action.rs` | `ActionKind` enum append `Scripted` variant（沿 `DwellMs` / `HoldPose` 同款） |
+> reviewer Plan round 1 阻断 1 修法：三层 enum append **必须**跟下游
+> exhaustive match 映射改动同 commit 一起 land，否则 (1/3) 编译过不去
+> （`ActionKindProto` 新 variant 撞 `task_handlers.rs::action_kind_proto_to_fb`
+> 现有 exhaustive match；`ActionKind::Scripted` 撞现有
+> `action_kind_only_two_b2_variants` 测试断言）。本步骤把 enum append +
+> gateway/s1 dispatch + variant count 锁测**全并入 (1/3)**；只有
+> backend impl / 8+ lib unit / gateway payload byte gate 留 (2/3)。
+
+| # | 层 / 文件 | 改动 |
+|---|---|---|
+| 1 | `crates/robot-rpc/proto/robot_control.proto:119-123` | `ActionKindProto` enum append `ACTION_KIND_SCRIPTED = 3`（prost 生成名 `ActionKindProto::ActionKindScripted`，沿 `ActionKindDwellMs` / `ActionKindHoldPose` 同款 CamelCase + enum prefix） |
+| 2 | `crates/robot-msg/schemas/action_request.fbs` | `ActionKindFb` enum append `Scripted = 3`（不动现有 variant 编号） |
+| 3 | `crates/robot-s1/src/action.rs` | `ActionKind` enum append `Scripted` variant（沿 `DwellMs` / `HoldPose` 同款） |
+| 4 | `crates/robot-rpc/src/task_handlers.rs:1309` `action_kind_proto_to_fb` | match arm 加 `ActionKindProto::ActionKindScripted => ActionKindFb::Scripted`；exhaustive match 不留 `_` 兜底；新增 lib unit `action_kind_proto_to_fb_variant_count_matches_explicit_mapping`（沿 B4 (3/3) `rpc_status_variant_count_matches_explicit_mapping` 同款 variant count 锁测）|
+| 5 | `crates/robot-s1/src/rr_server/handler.rs:174-193` `ActionKindFb` → `ActionKind` 映射 | match arm 加 `ActionKindFb::Scripted => ActionKind::Scripted`；exhaustive；新增 lib unit `action_kind_fb_variant_count_matches_explicit_mapping`（Q14 拍板）|
+| 6 | `crates/robot-s1/src/action.rs` 现有 `action_kind_only_two_b2_variants` 测 | 更新断言：variant 集 = `{DwellMs, HoldPose, Scripted}` 三项 + HashSet 长度断言 3；测名同步改成 `action_kind_three_v04_variants`（避免误导 "two_b2"）|
+| 7 | s1 daemon `handle_invoke` dispatch path | `ActionKind::Scripted` arm dispatch 到 `BackendRegistry::resolve("scripted")`；本 commit 因 (2/3) 才 land `ScriptedBackend`，dispatch arm 暂返 `SubmitError::NoBackendForKind(ActionKind::Scripted)`（沿 hold_pose / mock_dwell 未开 feature 时同款 fallback）；(2/3) backend impl land 后自动解锁 |
 
 ##### P.2.1.c Quality Gate（commit (1/3)）
 
 - `cargo fmt --all --check` clean
-- `cargo clippy --workspace --all-targets -- -D warnings` clean
+- `cargo clippy --workspace --all-targets -- -D warnings` clean（**不**留
+  `_ => unreachable!()` / `_ => unimplemented!()` 兜底；任一 exhaustive
+  match 漏接 variant 直接 build fail）
 - `cargo build --workspace --release` 过（无 `--features scripted-backend-smoke`）
 - `cargo test -p robot-msg` 全过（schema_lint + default_tier_of 穷举）
-- `cargo run -p robot-msg --bin schema_lint` 过（SCHEMA_SCRIPTED_PAYLOAD
+- `cargo run -p robot-msg --bin schema_lint` 过（`SCHEMA_SCRIPTED_PAYLOAD`
   唯一 + 升序 + 未与 deprecated 冲突）
-- `cargo test --workspace --tests` 全过（注册链 land 但 ActionKind 映射
-  unimplemented 状态：commit (2/3) 才补；本步骤如出现 unreachable 分支
-  panic，拆 (1/3-a) (1/3-b) 处理）
+- `cargo test --workspace --tests` 全过：
+  * `action_kind_three_v04_variants` PASS（替换 `action_kind_only_two_b2_variants`）
+  * `action_kind_proto_to_fb_variant_count_matches_explicit_mapping` PASS（新加）
+  * `action_kind_fb_variant_count_matches_explicit_mapping` PASS（新加）
+  * 现有 940 PASS 全保
+- 双路 `crash_restart_smoke` 5/5 + 5/5（沿候选 3 同款回归门槛）
 
 ##### P.2.1.d 风险锚点
 
@@ -636,20 +663,50 @@ root_type ScriptedPayload;
   上限 / 加 metadata（§Q1 (b)/(c)）触发 Plan-Execute diff 改 size_tier
 - **build.rs 数组长度漂移**：`current_schemas: [&str; 12 → 13]` 必须
   跟 `.fbs` 文件个数一致；漏改 build 直接 fail-fast
+- **三层 enum append 同 commit 一起 land**：reviewer Plan round 1 阻断
+  1 修法已锁；任一层 append 而 dispatch 映射未 land → 编译 fail；
+  本 (1/3) 必须 atomic 一次过
 
-#### P.2.2 [commit (2/3)] ScriptedBackend lib + 三层 payload enforcement
+#### P.2.2 [commit (2/3)] ScriptedBackend lib + gateway 两道 byte gate
+
+> reviewer Plan round 1 阻断 1 修法：三层 enum append + dispatch 映射
+> + variant count 锁测**已在 (1/3) atomic land**；本 (2/3) 只剩 backend
+> impl / 8+ lib unit / gateway payload byte gate / backend feature gate
+> / `MAX_SCRIPTED_PAYLOAD_BYTES` 常量。
 
 ##### P.2.2.a `ScriptedBackend` impl（沿 hold_pose 模板）
 
 新文件：`crates/robot-s1/src/action_backend/scripted.rs`
+
+`tick` 期签名 + ActionContext 字段对照（来自
+`crates/robot-s1/src/action.rs:346-353` + `:376-381`，reviewer Plan
+round 1 阻断 4/5 修法锁住）：
+
+```rust
+// ActionContext 字段（&'a 借用，tick 时由 coordinator 注入）
+pub struct ActionContext<'a> {
+    pub clock: &'a dyn RobotClock,             // ctx.clock.now().0 → now_ns
+    pub layout_id: u64,                         // build_hold_command 参数
+    pub hardware: &'a HardwareSection,          // joint count / positions 长度校验
+    pub config: &'a CoordinatorConfig,          // build_hold_command 参数（含 deadline_offset_ns / priority / on_timeout）
+    pub anchor_bias: &'a [f64],                 // **不**用于 Scripted target；仅 HoldPose 用
+    pub command_seq: u64,                       // build_hold_command 参数（source_task_id 契约）
+}
+
+// ActionTickOutput::Continue 字段（progress: f32 必填，**不**是 Option<f32>）
+ActionTickOutput::Continue {
+    progress: f32,                              // [0.0, 1.0]；必填
+    command: Option<JointCommandBody>,          // Some(body) = 本 tick publish 这帧
+}
+```
 
 | 模块 | 改动 |
 |---|---|
 | `ScriptedBackend` | 零字段 struct + `inventory::submit!`；`ActionBackend` impl: `name = "scripted"` + `supported_kinds = &[ActionKind::Scripted]` + `supported_schemas = &[SCHEMA_SCRIPTED_PAYLOAD]`（**不**含 NO_PAYLOAD） |
 | `ScriptedBackend::start()` | `flatbuffers::root::<ScriptedPayload>(payload)` verify + 语义校验（`waypoints` 非空 + 每段 `positions.len() == hardware.joints.len()` + `segment_duration_ms > 0`）→ 失败返 `BackendStartFailed(ActionStartError::Rejected(_))` 或 `PayloadDecode(_)`；成功构 `ScriptedInstance { decoded_waypoints: Vec<DecodedWaypoint>, current_idx: 0, phase: Interp{start_ns}, total_action_duration_ns, ... }`（**start() 期一次性 owned decode**；tick 期不再解 fbs，Q11 拍板） |
 | `ScriptedInstance` | 字段含 `cancelled: bool` + `decoded_waypoints: Vec<DecodedWaypoint>`（含 owned positions Vec + dwell_ms + segment_duration_ms）+ `phase: enum { Interp { start_ns }, Dwell { start_ns } }` + `current_idx: usize` + `total_action_duration_ns: u64` + `tick_buf: Vec<f64>`（with_capacity(joints) 复用避 per-tick alloc，Q7 拍板）|
-| `ScriptedInstance::tick(ctx)` | (1) cancelled 短路返 `Completed(PartialSuccess { warning: "cancelled_at_waypoint_N" })`（Q4(a)）；(2) phase 状态机推进（Interp → Dwell → next waypoint）；(3) 当前 phase 算 target positions（Interp 期 `α = elapsed_in_segment / segment_duration_ms` lerp `from→to`；Dwell 期 target = waypoint.positions 不变）；(4) Q3(c) 组合 progress = `(current_idx + segment_progress) / total_waypoints`；(5) `build_hold_command(ctx.command_seq, target_positions, &hardware.joints)` 复用 B1/B3 builder（**source_task_id == ctx.command_seq 单调契约，B3 §3.7**）；(6) 末段 Dwell 完返 `Completed(Success)`；(7) 中间段返 `Continue { command: Some(...), progress: Some(...) }` |
-| `ScriptedInstance::cancel()` | `self.cancelled = true` 不返终态（沿 hold_pose 同款；下次 tick 收敛） |
+| `ScriptedInstance::tick(ctx)` | (1) `self.cancelled` 短路返 `Completed(ActionOutcome::PartialSuccess { warning: format!("cancelled_at_waypoint_{}", self.current_idx) })`（Q4(a)，沿 hold_pose `crates/robot-s1/src/action_backend/hold_pose.rs:130-136` 同款 cancel 收敛模式）；(2) phase 状态机推进（Interp → Dwell → next waypoint）；(3) 当前 phase 算 target positions（Interp 期 `α = elapsed_in_segment / segment_duration_ms` lerp `from→to` 写入 `self.tick_buf`；Dwell 期 `tick_buf.clear()` + extend `waypoint.positions`）；(4) Q3(c) 组合 progress = `(self.current_idx as f32 + segment_progress) / total_waypoints as f32`（**`progress: f32` 必填**，**不**是 `Option<f32>`，沿 hold_pose:152 `progress: 0.0` 同款）；(5) 复用 `coordinator::build_hold_command(ctx.config, ctx.layout_id, &self.tick_buf, ctx.command_seq, ctx.clock.now().0)` 构 body bytes（**签名严格按 `crates/robot-s1/src/coordinator.rs:348-365`**：`cfg / layout_id / bias / source_task_id / now_ns`；`bias` 槽位塞 Scripted 当前 target positions，函数本身只是 `build_joint_command` 包装 + `deadline_ns = now_ns.saturating_add(cfg.deadline_offset_ns())`，复用合理；alt 直接调 `robot_msg::build_helpers::build_joint_command` 但需自行算 deadline_ns / 拿 cfg.priority / cfg.on_timeout，多 5 行代码无收益）；**source_task_id == ctx.command_seq 单调契约 B3 §3.7**；(6) 末段 Dwell 完返 `Completed(ActionOutcome::Success)`；(7) 中间段返 `Continue { progress, command: Some(JointCommandBody::new(body)) }` |
+| `ScriptedInstance::cancel()` | `self.cancelled = true` + `Ok(())`，**不**返终态（沿 hold_pose `:157-161` 同款；下次 tick 收敛走 step (1)） |
 
 ##### P.2.2.b ScriptedBackend lib unit（AC-3 8+ unit）
 
@@ -669,25 +726,25 @@ root_type ScriptedPayload;
 | 10 | `tick_after_cancel_returns_completed_partial_success` | cancel 后下次 tick 返 `Completed(PartialSuccess { warning: "cancelled_at_waypoint_N" })`（backend lib 层；coordinator 转 `ActionEvent::Cancelled` 不在 lib unit 验证） |
 | 11 | `inventory_default_instance_present` | `BackendRegistry::names()` 集含 `"scripted"`（沿 Q15 拍板 (a) 改现有测） |
 
-##### P.2.2.c s1 handler `ActionKindFb::Scripted` → `ActionKind::Scripted` 映射
+##### P.2.2.c gateway 两道 byte gate（Q2(a) 三层 enforcement 的前两层）
 
-`crates/robot-s1/src/rr_server/handler.rs:174-193`：现有 match 加
-`ActionKindFb::Scripted => ActionKind::Scripted`；lib unit
-`action_kind_fb_variant_count_matches_explicit_mapping`（Q14 拍板）
-锁住 enum variant 数 == 显式映射 arm 数。
-
-##### P.2.2.d gateway `ActionKindProto::ActionKindScripted` → `ActionKindFb::Scripted` 映射 + 三层 payload enforcement
+> reviewer Plan round 1 阻断 1 修法：`action_kind_proto_to_fb` /
+> `ActionKindFb → ActionKind` 映射已在 (1/3) land；本 (2/3) 只 land
+> payload byte gate（依赖 (1/3) 的 `ActionKindProto::ActionKindScripted`
+> 已识别）。第三层 backend fbs decode/semantic validate 已在
+> §P.2.2.a `ScriptedBackend::start()` cover。
 
 `crates/robot-rpc/src/task_handlers.rs`：
 
 | 步骤 | 改动 |
 |---|---|
-| 1 | `action_kind_proto_to_fb` match arm 加 `ActionKindProto::ActionKindScripted => ActionKindFb::Scripted` + lib unit variant count 锁测（沿 B4 (3/3) AC-C 同款 `rpc_status_variant_count_matches_explicit_mapping` 模式）|
-| 2 | **gate 1（payload precheck）**：`handle_invoke_task` validate 阶段，当 `kind == Scripted` 时加 `cmd.payload.len() > MAX_SCRIPTED_PAYLOAD_BYTES` 拒 → 返 `tonic::Code::InvalidArgument`（`MAX_SCRIPTED_PAYLOAD_BYTES` const = 4 KiB；定义位置 task_handlers.rs 内；Q6 拍板上限 100 waypoint × 1 joint ≤ ~1.6 KiB + fbs overhead，4 KiB 充裕）|
-| 3 | **gate 2（final wire-size guard）**：`build_invoke_task_request(...)` 后、`forward_to_rr_io(...)` 前检查 `wire_bytes.len() > CONTROL_TIER_MAX_BYTES` 拒 → 返 `tonic::Code::InvalidArgument`。**常量来源**（reviewer ACK 期注意点）：定义 `const CONTROL_TIER_MAX_BYTES: usize = SizeTier::Control.max_bytes();`（**单源**绑定 `robot_msg::size_tier::SizeTier::Control.max_bytes()`，**不**硬编码 8192，避免常量漂移；命名统一 `CONTROL_TIER_MAX_BYTES`，删除 Spec 内 `ICEORYX2_CONTROL_TIER_MAX_BYTES` 别名）|
-| 4 | **不**解 payload fbs bytes（保 B4 outline §6.1 双层 schema 分工） |
+| 1 | **MAX_SCRIPTED_PAYLOAD_BYTES 常量**：`task_handlers.rs` 顶 / 或 `crates/robot-rpc/src/lib.rs` 加 `pub(crate) const MAX_SCRIPTED_PAYLOAD_BYTES: usize = 4 * 1024;`（Q6 100 waypoint × N joint × ~8 bytes/double + fbs overhead，多关节场景以 byte cap 为准，详 §Q6 修法）|
+| 2 | **CONTROL_TIER_MAX_BYTES 常量（单源绑定）**：同位置加 `pub(crate) const CONTROL_TIER_MAX_BYTES: usize = robot_msg::size_tier::SizeTier::Control.max_bytes();`（**严禁**硬编码 `8 * 1024` / `8192`；命名统一 `CONTROL_TIER_MAX_BYTES`，**不**用 `ICEORYX2_*` 前缀，reviewer Plan 期注意点已锁）|
+| 3 | **gate 1（payload precheck）**：`handle_invoke_task` validate 阶段，当 `kind == ActionKindProto::ActionKindScripted` 时加 `if cmd.payload.len() > MAX_SCRIPTED_PAYLOAD_BYTES { return tonic_invalid_argument(...); }` 拒 → 返 `tonic::Code::InvalidArgument`（**不**进 RR / s1）|
+| 4 | **gate 2（final wire-size guard）**：`build_invoke_task_request(...)` 后、`forward_to_rr_io(...)` 前加 `if wire_bytes.len() > CONTROL_TIER_MAX_BYTES { return tonic_invalid_argument(...); }` 拒 → 返 `tonic::Code::InvalidArgument`。兜底外层 `CommandMeta` (`request_id` / `idempotency_key` / `source` / `audit_reason`) + FlatBuffers vtable overhead 撞 Control 8 KiB；**不**解 payload bytes |
+| 5 | 新加 2 lib unit：(a) `invoke_task_payload_over_max_scripted_bytes_returns_invalid_argument`（mock cmd payload = `[0u8; MAX_SCRIPTED_PAYLOAD_BYTES + 1]`）+ (b) `invoke_task_wire_over_control_tier_returns_invalid_argument`（mock cmd payload 通过 gate 1 + 长 `audit_reason` 撞 8 KiB；assert gate 2 拒）|
 
-##### P.2.2.e backend feature gate
+##### P.2.2.d backend feature gate
 
 `crates/robot-s1/Cargo.toml`：
 
@@ -704,28 +761,43 @@ backend-scripted = []  # Q10 拍板：沿 backend-hold-pose 同款连字符
 pub mod scripted;
 ```
 
-##### P.2.2.f Quality Gate（commit (2/3)）
+##### P.2.2.e Quality Gate（commit (2/3)）
 
 - `cargo fmt --all --check` clean
 - `cargo clippy --workspace --all-targets -- -D warnings` 双路 clean
   （含 / 不含 `backend-scripted` feature）
 - `cargo test --workspace --tests --features "robot-rpc/client" --
-  --test-threads=1`：现有 940 PASS + 新加 AC-3 11 lib unit + AC-2
-  variant count + gateway 2 byte gate lib unit 全过
+  --test-threads=1`：(1/3) 现有 940 + variant count (3 测) PASS 之上
+  + 本 (2/3) 新加 AC-3 11 lib unit + gateway 2 byte gate lib unit
+  （`invoke_task_payload_over_max_scripted_bytes_returns_invalid_argument`
+  + `invoke_task_wire_over_control_tier_returns_invalid_argument`）
+  全过
 - 双路 `crash_restart_smoke` 5/5 + 5/5（沿候选 3 同款回归门槛）
 - §6.7 5 条不变量真宣称保持
 
-##### P.2.2.g 风险锚点
+##### P.2.2.f 风险锚点
 
 - **`CONTROL_TIER_MAX_BYTES` 单源绑定**：reviewer ACK 期注意点（直接
   绑 `SizeTier::Control.max_bytes()` 不硬编码 8192）；如 `size_tier.rs`
   扩展加新 tier 或常量值漂移，本 const 自动跟随
-- **`MAX_SCRIPTED_PAYLOAD_BYTES` 选值**：4 KiB 充裕兜底 100 waypoint
-  × 1 joint × ~16 bytes/waypoint + fbs overhead；如 Q1 后续扩字段 / Q6
-  上限改大需 reviewer round 改 const
+- **`MAX_SCRIPTED_PAYLOAD_BYTES` 选值 + Q6 100 waypoint 语义**
+  （reviewer Plan round 1 非阻断 2 修法）：4 KiB 是**byte 级硬上限**
+  （任何 fbs payload 超此值必拒）；Q6 "100 waypoint" 是**语义上限**
+  （backend `start()` 内 `decoded_waypoints.len() > 100` 视情况拒，
+  本轮拍板**只 cap byte 不 cap count**简化判断），**实际**多关节场
+  景下 100 waypoint × N joint × ~8 bytes/double + fbs overhead 可
+  超过 4 KiB，**以 byte cap 为准** → 多关节配置下用户拿到的 waypoint
+  上限会少于 100。如未来需要按关节数动态算上限，走 Plan-Execute diff
 - **`Vec<f64> tick_buf` 复用**：`with_capacity(joints)` + `clear()`
   避 per-tick alloc；如 hardware.joints 数 runtime 变化要重 grow
   （目前 hardware.joints 是 backend start 期 owned 不变；Q11 拍板）
+- **`build_hold_command` 名字误导**（reviewer Plan round 1 阻断 5 修法
+  附注）：函数语义是 `build_joint_command` + auto deadline 包装（详
+  `crates/robot-s1/src/coordinator.rs:348-365`），不仅限 hold；
+  ScriptedBackend 拿当前 target positions 当 `bias` 参数复用合理；
+  alt 方案直接调 `robot_msg::build_helpers::build_joint_command` 见
+  §P.2.2.a，本轮 land 用 `build_hold_command` 保持跟 hold_pose 同款
+  风格
 
 #### P.2.3 [commit (3/3)] scripted_backend_smoke binary + cross-process e2e
 
