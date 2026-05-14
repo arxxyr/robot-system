@@ -49,6 +49,9 @@ pub mod mock_dwell;
 #[cfg(feature = "backend-hold-pose")]
 pub mod hold_pose;
 
+#[cfg(feature = "backend-scripted")]
+pub mod scripted;
+
 // 链接器收集每个 backend crate 的 `inventory::submit!` 项。
 inventory::collect!(&'static dyn ActionBackend);
 

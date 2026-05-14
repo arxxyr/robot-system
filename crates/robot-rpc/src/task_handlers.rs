@@ -83,6 +83,34 @@ use crate::proto::{
 use crate::rr_io_thread::RrForwardRequest;
 
 // ============================================================================
+// Q2(a) byte gate 常量（v0.4 候选 1）
+// ============================================================================
+
+/// Gate 1 上限：`InvokeTaskCommand.payload.len()` 当 `kind ==
+/// ActionKindProto::ActionKindScripted` 时的字节数硬上限。
+///
+/// Q2(a) gate 1（reviewer Plan round 1 阻断 4 拍板）：保守上限快速拒
+/// 明显超大 payload，**不**解 fbs bytes（保 B4 outline §6.1 双层
+/// schema 分工）。`MAX_SCRIPTED_PAYLOAD_BYTES = 4 KiB`：1 joint × 100
+/// waypoint × ~16 bytes + fbs overhead ≈ 1.6 KiB，4 KiB 充裕兜底；多
+/// 关节场景下用户可塞的 waypoint 数自然受 byte cap 限制（Q6 拍死本
+/// 轮 only byte cap，不做 count semantic check）。
+pub(crate) const MAX_SCRIPTED_PAYLOAD_BYTES: usize = 4 * 1024;
+
+/// Gate 2 上限：`build_invoke_task_request(...)` 后实测 wire bytes 长
+/// 度的字节数硬上限。**单源**绑定 [`robot_msg::size_tier::SizeTier::Control`]
+/// 的 [`robot_msg::size_tier::SizeTier::max_bytes`]（= 8 KiB），**严禁**
+/// 硬编码 `8192` / `8 * 1024`，避免常量漂移（reviewer Plan 期注意点
+/// + Plan round 2 阻断 1 拍板）。
+///
+/// Gate 1 仅看 `payload.len()`，**不**覆盖外层 `CommandMeta`
+/// (`request_id` / `idempotency_key` / `source` / `audit_reason`) +
+/// FlatBuffers vtable / padding 的累计开销；gate 2 在 build wire 后
+/// 实测兜底，防止 iceoryx2 `loan_slice_uninit` 撞 `SampleTooLarge`。
+pub(crate) const CONTROL_TIER_MAX_BYTES: usize =
+    robot_msg::size_tier::SizeTier::Control.max_bytes();
+
+// ============================================================================
 // Validated structs（meta 字段 owned，跟 proto 解耦）
 // ============================================================================
 
@@ -163,6 +191,17 @@ pub enum TaskValidationError {
     EmptyTaskHandleRefActionId,
     #[error("TaskHandleRef.action_id 不是合法 UUID: {0}")]
     InvalidTaskHandleRefActionId(String),
+    /// v0.4 候选 1 Q2(a) gate 1：`kind == ActionKindProto::ActionKindScripted`
+    /// 时 `InvokeTaskCommand.payload.len() > MAX_SCRIPTED_PAYLOAD_BYTES`
+    /// → 拒；reviewer Plan round 1 阻断 4 + round 2 阻断 1 拍板。
+    #[error("ScriptedPayload bytes {len} 超 MAX_SCRIPTED_PAYLOAD_BYTES ({max})")]
+    ScriptedPayloadTooLarge { len: usize, max: usize },
+    /// v0.4 候选 1 Q2(a) gate 2：`build_invoke_task_request` 后实测
+    /// wire bytes 超 `CONTROL_TIER_MAX_BYTES` → 拒；reviewer Plan
+    /// round 2 阻断 1 拍板兜底外层 `CommandMeta` + FlatBuffers
+    /// overhead 撞 Control 8 KiB。
+    #[error("InvokeTaskRequest wire bytes {len} 超 CONTROL_TIER_MAX_BYTES ({max})")]
+    InvokeWireBytesTooLarge { len: usize, max: usize },
 }
 
 impl TaskValidationError {
@@ -556,6 +595,24 @@ async fn handle_invoke_task_inner(
         tonic::Status::new(e.to_tonic_code(), e.to_string())
     })?;
 
+    // 1.5. Q2(a) gate 1：Scripted payload precheck（v0.4 候选 1 (2/3)
+    // land；reviewer Plan round 1 阻断 4 拍板）。仅当 kind == Scripted 时
+    // 触发；其它 kind（DwellMs / HoldPose）无 payload 路径不受影响。
+    if v.kind == ActionKindProto::ActionKindScripted && v.payload.len() > MAX_SCRIPTED_PAYLOAD_BYTES
+    {
+        let e = TaskValidationError::ScriptedPayloadTooLarge {
+            len: v.payload.len(),
+            max: MAX_SCRIPTED_PAYLOAD_BYTES,
+        };
+        tracing::warn!(
+            request_id = %v.meta.request_id,
+            payload_bytes = v.payload.len(),
+            max_bytes = MAX_SCRIPTED_PAYLOAD_BYTES,
+            "InvokeTask Scripted payload byte cap exceeded (gate 1)"
+        );
+        return Err(tonic::Status::new(e.to_tonic_code(), e.to_string()));
+    }
+
     // 2. auth
     let role = lookup_role(&state.role_table, &v.meta.auth_token)?;
 
@@ -631,6 +688,27 @@ async fn handle_invoke_task_inner(
         &v.payload,
         now_ns,
     );
+
+    // 8.5. Q2(a) gate 2：final wire-size guard（v0.4 候选 1 (2/3) land；
+    // reviewer Plan round 2 阻断 1 拍板）。在 build_invoke_task_request 后
+    // 实测 wire bytes 长度；超 CONTROL_TIER_MAX_BYTES 直接拒 →
+    // InvalidArgument，**不**进 RR / s1，避免 iceoryx2 `loan_slice_uninit`
+    // 撞 `SampleTooLarge`。本 gate 兜底外层 CommandMeta + FlatBuffers
+    // overhead 撞 8 KiB；对 kind != Scripted 同样生效（防御性）。
+    if wire_bytes.len() > CONTROL_TIER_MAX_BYTES {
+        let e = TaskValidationError::InvokeWireBytesTooLarge {
+            len: wire_bytes.len(),
+            max: CONTROL_TIER_MAX_BYTES,
+        };
+        tracing::warn!(
+            request_id = %v.meta.request_id,
+            wire_bytes = wire_bytes.len(),
+            max_bytes = CONTROL_TIER_MAX_BYTES,
+            "InvokeTask wire-size guard exceeded (gate 2)"
+        );
+        drop(insert_handle);
+        return Err(tonic::Status::new(e.to_tonic_code(), e.to_string()));
+    }
 
     // 9. forward
     let oneshot_rx = match forward_to_rr_io(
@@ -1712,6 +1790,238 @@ mod tests {
         let fp_b =
             cancel_task_idempotency_fingerprint(&validate_cancel_task_command(&cmd_b).unwrap());
         assert_ne!(fp_a, fp_b);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // v0.4 候选 1 (2/3) Q2(a) byte gate 锁测
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// `MAX_SCRIPTED_PAYLOAD_BYTES` + `CONTROL_TIER_MAX_BYTES` 字面值
+    /// 锁测（reviewer Plan 期注意点 + Plan round 2 阻断 1 拍板：单源
+    /// 绑定 `SizeTier::Control.max_bytes()`，**严禁**硬编码 8192）。
+    ///
+    /// Gate 1 < Gate 2 的编译期断言放在 module 级（详 `_GATE_BOUNDARY`
+    /// 编译期常量；两个 const 都是编译期决定，clippy 不让 runtime
+    /// assert 它们的比较，所以走 `const _: () = assert!(...)`）。
+    #[test]
+    fn byte_gate_constants_match_single_source_of_truth() {
+        // Gate 1 = 4 KiB（Q6 拍死本轮 only byte cap）。
+        assert_eq!(
+            MAX_SCRIPTED_PAYLOAD_BYTES,
+            4 * 1024,
+            "MAX_SCRIPTED_PAYLOAD_BYTES 必须 = 4 KiB"
+        );
+        // Gate 2 = SizeTier::Control.max_bytes() = 8 KiB（单源绑定）。
+        assert_eq!(
+            CONTROL_TIER_MAX_BYTES,
+            robot_msg::size_tier::SizeTier::Control.max_bytes(),
+            "CONTROL_TIER_MAX_BYTES 必须单源绑定 SizeTier::Control.max_bytes()，\
+             不能硬编码 8192"
+        );
+    }
+
+    /// 编译期常量：Gate 1 < Gate 2（语义边界：payload cap 应严格 <
+    /// wire cap，留 `CommandMeta` + fbs overhead 头空间）。两个常量都
+    /// 是 `const`，比较在编译期就能解；断错连编译都过不去。
+    const _GATE_BOUNDARY_CONST: () = assert!(
+        MAX_SCRIPTED_PAYLOAD_BYTES < CONTROL_TIER_MAX_BYTES,
+        "Gate 1 必须 < Gate 2，留 CommandMeta + fbs overhead 头空间"
+    );
+
+    /// v0.4 候选 1 (2/3) AC-7 (7c-i)：Scripted payload bytes 超
+    /// MAX_SCRIPTED_PAYLOAD_BYTES → gateway gate 1 precheck → tonic
+    /// `Code::InvalidArgument`，**不**进 RR / s1。
+    #[tokio::test]
+    async fn invoke_task_payload_over_max_scripted_bytes_returns_invalid_argument() {
+        use crate::auth::load_role_table;
+        use crate::idempotency::IdempotencyCache;
+        use crate::proto::AuthContext;
+        use crossbeam_channel::bounded;
+        use robot_core::time::SystemClock;
+        use std::sync::{Arc, Mutex};
+        use std::time::Duration as StdDuration;
+        use tokio::sync::watch;
+
+        const TEST_TOML: &str = r#"
+[tokens]
+"operator-fake-token-001" = "operator"
+[roles.viewer]
+capabilities = ["read_state"]
+[roles.operator]
+capabilities = ["read_state", "invoke_task"]
+[roles.maintainer]
+capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
+[roles.admin]
+capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
+"#;
+        let role_table = Arc::new(load_role_table(TEST_TOML).expect("role table parse"));
+
+        let (task_invoke_tx, task_invoke_rx) = bounded(1);
+        let (clear_estop_tx, clear_estop_rx) = bounded(1);
+        let (task_cancel_tx, task_cancel_rx) = bounded(1);
+        let (task_status_tx, task_status_rx) = bounded(1);
+        let (clear_error_tx, clear_error_rx) = bounded(1);
+        Box::leak(Box::new(task_invoke_rx));
+        Box::leak(Box::new(clear_estop_rx));
+        Box::leak(Box::new(task_cancel_rx));
+        Box::leak(Box::new(task_status_rx));
+        Box::leak(Box::new(clear_error_rx));
+
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        Box::leak(Box::new(shutdown_tx));
+
+        let state = crate::gateway::GatewayHandlerState {
+            rr_forward_tx_clear_estop: clear_estop_tx,
+            rr_forward_tx_task_invoke: task_invoke_tx,
+            rr_forward_tx_task_cancel: task_cancel_tx,
+            rr_forward_tx_task_status: task_status_tx,
+            rr_forward_tx_clear_error: clear_error_tx,
+            robot_id: "gate1_test".to_string(),
+            role_table,
+            idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
+                StdDuration::from_mins(1),
+                64,
+            ))),
+            clock: Arc::new(SystemClock),
+            rr_timeout_grace_ms: 50,
+            shutdown_rx,
+        };
+
+        // payload = MAX_SCRIPTED_PAYLOAD_BYTES + 1 byte（刚好超 gate 1）。
+        let oversized_payload = vec![0u8; MAX_SCRIPTED_PAYLOAD_BYTES + 1];
+        let cmd = InvokeTaskCommand {
+            meta: Some(CommandMeta {
+                request_id: uuid::Uuid::now_v7().to_string(),
+                source: "gate1.test".to_string(),
+                auth: Some(AuthContext {
+                    token: "operator-fake-token-001".to_string(),
+                    mtls_fingerprint: String::new(),
+                }),
+                timeout_ms: 100,
+                idempotency_key: "gate1-oversize-key".to_string(),
+                dry_run: false,
+                audit_reason: "gate 1 test".to_string(),
+            }),
+            kind: ActionKindProto::ActionKindScripted.into(),
+            deadline_ns: 100,
+            priority: 10,
+            payload_schema_id: robot_msg::schema_id::SCHEMA_SCRIPTED_PAYLOAD,
+            payload: oversized_payload,
+        };
+        let request = tonic::Request::new(cmd);
+        let result = handle_invoke_task(&state, request).await;
+        match result {
+            Err(status) if status.code() == tonic::Code::InvalidArgument => {
+                assert!(
+                    status.message().contains("MAX_SCRIPTED_PAYLOAD_BYTES"),
+                    "gate 1 error_msg should mention MAX_SCRIPTED_PAYLOAD_BYTES; got: {:?}",
+                    status.message()
+                );
+            }
+            Err(other) => panic!("expected InvalidArgument from gate 1, got {other:?}"),
+            Ok(resp) => panic!("expected Err from gate 1, got Ok: {:?}", resp.into_inner()),
+        }
+    }
+
+    /// v0.4 候选 1 (2/3) AC-7 (7c-ii)：payload 通过 gate 1（或 kind !=
+    /// Scripted 不走 gate 1）但 `build_invoke_task_request` 后 wire
+    /// bytes 超 `CONTROL_TIER_MAX_BYTES` → gateway gate 2 final guard
+    /// → tonic `Code::InvalidArgument`，**不**进 RR / s1。
+    ///
+    /// 构造场景：kind = HoldPose（**不**触发 gate 1），payload =
+    /// 9000 bytes（虚拟 payload；HoldPose 不解 payload，gateway 只看
+    /// 字节数）→ wire 实测必然 > 8 KiB。
+    #[tokio::test]
+    async fn invoke_task_wire_over_control_tier_returns_invalid_argument() {
+        use crate::auth::load_role_table;
+        use crate::idempotency::IdempotencyCache;
+        use crate::proto::AuthContext;
+        use crossbeam_channel::bounded;
+        use robot_core::time::SystemClock;
+        use std::sync::{Arc, Mutex};
+        use std::time::Duration as StdDuration;
+        use tokio::sync::watch;
+
+        const TEST_TOML: &str = r#"
+[tokens]
+"operator-fake-token-001" = "operator"
+[roles.viewer]
+capabilities = ["read_state"]
+[roles.operator]
+capabilities = ["read_state", "invoke_task"]
+[roles.maintainer]
+capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
+[roles.admin]
+capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
+"#;
+        let role_table = Arc::new(load_role_table(TEST_TOML).expect("role table parse"));
+
+        let (task_invoke_tx, task_invoke_rx) = bounded(1);
+        let (clear_estop_tx, clear_estop_rx) = bounded(1);
+        let (task_cancel_tx, task_cancel_rx) = bounded(1);
+        let (task_status_tx, task_status_rx) = bounded(1);
+        let (clear_error_tx, clear_error_rx) = bounded(1);
+        Box::leak(Box::new(task_invoke_rx));
+        Box::leak(Box::new(clear_estop_rx));
+        Box::leak(Box::new(task_cancel_rx));
+        Box::leak(Box::new(task_status_rx));
+        Box::leak(Box::new(clear_error_rx));
+
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        Box::leak(Box::new(shutdown_tx));
+
+        let state = crate::gateway::GatewayHandlerState {
+            rr_forward_tx_clear_estop: clear_estop_tx,
+            rr_forward_tx_task_invoke: task_invoke_tx,
+            rr_forward_tx_task_cancel: task_cancel_tx,
+            rr_forward_tx_task_status: task_status_tx,
+            rr_forward_tx_clear_error: clear_error_tx,
+            robot_id: "gate2_test".to_string(),
+            role_table,
+            idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
+                StdDuration::from_mins(1),
+                64,
+            ))),
+            clock: Arc::new(SystemClock),
+            rr_timeout_grace_ms: 50,
+            shutdown_rx,
+        };
+
+        // kind = HoldPose（NOT Scripted）→ 不触发 gate 1 payload cap。
+        // payload = 9000 bytes 让 wire 必超 8 KiB。
+        let bloat_payload = vec![0u8; 9000];
+        let cmd = InvokeTaskCommand {
+            meta: Some(CommandMeta {
+                request_id: uuid::Uuid::now_v7().to_string(),
+                source: "gate2.test".to_string(),
+                auth: Some(AuthContext {
+                    token: "operator-fake-token-001".to_string(),
+                    mtls_fingerprint: String::new(),
+                }),
+                timeout_ms: 100,
+                idempotency_key: "gate2-bloat-key".to_string(),
+                dry_run: false,
+                audit_reason: "gate 2 test".to_string(),
+            }),
+            kind: ActionKindProto::ActionKindHoldPose.into(),
+            deadline_ns: 100,
+            priority: 10,
+            payload_schema_id: 0xCAFE_0001, // 任意非零；不解码
+            payload: bloat_payload,
+        };
+        let request = tonic::Request::new(cmd);
+        let result = handle_invoke_task(&state, request).await;
+        match result {
+            Err(status) if status.code() == tonic::Code::InvalidArgument => {
+                assert!(
+                    status.message().contains("CONTROL_TIER_MAX_BYTES"),
+                    "gate 2 error_msg should mention CONTROL_TIER_MAX_BYTES; got: {:?}",
+                    status.message()
+                );
+            }
+            Err(other) => panic!("expected InvalidArgument from gate 2, got {other:?}"),
+            Ok(resp) => panic!("expected Err from gate 2, got Ok: {:?}", resp.into_inner()),
+        }
     }
 
     // ────────────────────────────────────────────────────────────────────────
