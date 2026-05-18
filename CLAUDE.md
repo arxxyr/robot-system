@@ -16,7 +16,8 @@
 
 ```
 设计版本:  v0.1.2（冻结）
-实现阶段:  v0.3 Phase B —— B1 + B2 + B3 全部 land。B4 准备开（robot-rpc full gateway）。
+实现阶段:  v0.4 —— 候选 3 (per-ActionId pubsub cleanup) ✅ + 候选 1 (Scripted backend) ✅。
+           候选 2 (robot-kinematics + IK trait) 准备开。
 
 v0.2 收尾:  commit 0fa1d77（2026-04-26 reviewer "复核通过，按降级宣称进入 v0.3"）。
             §6.7 #4 真锁住继承自 v0.2；#2 (A2 land) + #3 (A1-5 land) 在 v0.3 Phase A 升级到真锁住。
@@ -33,25 +34,40 @@ Phase A 收尾: A1 ClearEStop control plane（A1-1 → A1-5）+ A2 worker freeze
             #4 ✅ S0 重启不失忆（v0.2 fsync 双写 + crash_restart_smoke 5/5 PASS）
             #5 ✅ 幂等写 RPC（IdempotencyCache + idempotency_key fingerprint + idem_replay e2e 真过）
 
-Phase B 进度:
+Phase B 进度（已完结，commit `cac4515` Phase B 收尾）:
             B1 ✅（s1_daemon hold + heartbeat 闭环 + 启动锚定 fail-fast；commit `f9b0764`）。
-                详 docs/handoffs/v0.3_b1_outline.md + B1 (1/3)→(3/3) 3 commit。
-            B2 ✅（policy/action interface + S1 coordinator state machine + binary wiring）。
-                outline 拍板 11 决策 + 4 阻断；(1/3) lib types + (2/3) state machine + (3/3)
-                wiring 共 12 commit；双路 crash_restart_smoke 5/5+5/5 PASS；151 test 全过；
-                commit chain `4b9d4de` → `4b17e29`（origin/master 已 push）。
-                详 docs/handoffs/v0.3_b2_summary.md。
-            B3 ✅（第一个真 action backend = HoldPoseBackend；零字段 struct + hold-until-cancel
-                + 复用 B1 build_hold_command + ActionContext 加 command_seq 字段 + tick_action
-                签名加 cmd_seq 参数解 source_task_id 单调阻断；outline 2 commit + 实现 2 commit
-                + reviewer round 1 fix 1 commit 共 5 commit；双路 crash_restart_smoke 5/5+5/5
-                PASS；161 test 全过；commit chain `916202e` → `d1f5031`（origin/master 已 push）。
-                **关键契约**：source_task_id == TickState.cmd_seq（详 v0.3_b3_summary §3，B4
-                接 RPC adapter 必读）。
-            B4 ⬜ 准备开（robot-rpc full gateway：tonic InvokeTask/CancelTask/GetTaskStatus/
-                StreamTaskEvents/ClearError 5 method；B2 lib 已埋好 ActionTicket.events:
-                std::sync::mpsc::Receiver 同步 channel，B4 仅补 sync↔async adapter thread；
-                wire 契约：gateway **不**改 JointCommand.source_task_id / FrameHeader.seq）。
+            B2 ✅（policy/action interface + S1 coordinator state machine + binary wiring；
+                commit chain `4b9d4de` → `4b17e29`；详 docs/handoffs/v0.3_b2_summary.md）。
+            B3 ✅（第一个真 action backend = HoldPoseBackend；source_task_id == TickState.cmd_seq
+                单调契约锁；commit chain `916202e` → `d1f5031`；详 docs/handoffs/v0.3_b3_summary.md）。
+            B4 ✅（robot-rpc full gateway 5 task method + s1 4 RR server + per-ActionId events
+                drain pubsub + gateway 5 rr_io_thread + sync↔async 桥 + 6 cross-process e2e；
+                详 docs/handoffs/v0.3_b4_summary.md §3 7 条契约 + §4 e2e harness 工程经验）。
+
+v0.4 进度:
+            候选 3 ✅（per-ActionId pubsub cleanup + AC-C1 reap_finished；11 commit + summary）。
+                EventsDrainRegistry::reap_finished(&self) -> usize 锁内 swap_remove + 锁外 join
+                + panic 不传播但 warn + 1s reaper thread + shutdown step 4 reaper.stop+join；
+                events_registry_len final == 0 + triggered_c1 == false + smoke --phase all
+                exit 0；commit chain `cf8ddd8` → `2518fc0`；详
+                docs/handoffs/v0.4_pubsub_cleanup_summary.md。
+            候选 1 ✅（Scripted backend = joint-space 线性插值 + waypoint dwell；第二个真
+                action backend；6 docs/spec/plan 前置 + 3 实施 commit = 9 commit，加 summary
+                = 10 commit）。
+                schema 注册链 6 步 atomic + ActionKindProto/Fb/ActionKind 三层 append +
+                ScriptedBackend lib + gateway 两道 byte gate (MAX_SCRIPTED_PAYLOAD_BYTES =
+                4 KiB + CONTROL_TIER_MAX_BYTES = SizeTier::Control.max_bytes() 单源绑定) +
+                scripted_backend_smoke cross-process e2e AC-4/5/6/7 全过；commit chain
+                `d8ba207` → `70dcb25`（origin/master 已 push）；详
+                docs/handoffs/v0.4_scripted_backend_summary.md。
+                **关键契约**：source_task_id == ctx.command_seq 跨 segment 严格单调（沿 B3
+                §3.7）+ Dwell start_ns 锚定 Interp 自然完成时刻（覆盖大步推 clock 收敛）+
+                cancel 两层分离（backend lib PartialSuccess ↔ coordinator ActionEvent::
+                Cancelled 终态 only）。
+            候选 2 ⬜ 准备开（robot-kinematics + IK trait：新 workspace crate robot-
+                kinematics 定义 ArmIkSolver / BaseKinematics trait + 第一个 per-机器人实现
+                robot-kinematics-xlerobot；按 feature flag 挂在 robot-s1；IK 住在 S1，**不**进
+                S0 / adapter）。
 
 上游项目:   /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```

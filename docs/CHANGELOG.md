@@ -10,6 +10,180 @@
 
 ---
 
+## 2026-05-14 · v0.4 候选 1 第二个真 action backend `ScriptedBackend` + 新 fbs body `ScriptedPayload` (schema_id 0x040B) + gateway 两道 byte gate（**状态：偏离登记**）
+
+### 背景
+
+v0.4 候选 3 (per-ActionId pubsub cleanup + AC-C1 reap_finished) 完结
+后（详 2026-05-13 候选 3 §1.1；
+[`docs/handoffs/v0.4_pubsub_cleanup_summary.md`](handoffs/v0.4_pubsub_cleanup_summary.md)），
+按 v0.4_entry §3.1 优先级 3 → 1 → 2 → 4 排序开候选 1：第二个真
+action backend = Scripted（joint-space 线性插值 + waypoint dwell；
+reviewer v0.4_entry §3.2 拍板插值策略；不选直接跳点 / 不选 cubic）。
+B3 `HoldPoseBackend` 是第一个真 backend，本轮加 Scripted 是第二个。
+
+### 行为落地
+
+**6 docs/spec/plan 前置 + 3 实施 commit + 1 summary = 10 commit**（详
+[`docs/handoffs/v0.4_scripted_backend_summary.md`](handoffs/v0.4_scripted_backend_summary.md)
+§2 commit chain）：
+
+| commit | 段 | 内容 |
+|---|---|---|
+| `9d91260` | docs | CodeMap：v0.4 候选 1 scripted backend pre-research |
+| `5efe987` | docs | Spec round 1+2 amend：影响范围 / 风险 / AC-1..AC-Q / Q1-Q17 reviewer 拍板表 |
+| `737fde6` | docs | Plan outline draft v1（commit 节奏 + P.0..P.4） |
+| `eca84e4` | docs | Plan round 1 amend（5 阻断 + 2 非阻断） |
+| `910c8a4` | docs | Plan round 2 amend（3 阻断 + 1 非阻断：两层 error / `anchor_bias` snapshot / `BackendRegistry::dispatch` 路径 / Q6 only byte cap） |
+| `8c39f9b` | docs | Plan round 3 amend（Q6 count-check 表述清零；2 处反弹清理） |
+| `d8ba207` | 候选 1 (1/3) | **schema 注册链 6 步 atomic land** + **三层 ActionKind append** + 下游映射 + variant count 锁测（atomic 一个 commit；reviewer Plan round 1 阻断 1） |
+| `5c07206` | 候选 1 (2/3) | **`ScriptedBackend` lib impl** + 13 lib unit + **gateway 两道 byte gate** (`MAX_SCRIPTED_PAYLOAD_BYTES` + `CONTROL_TIER_MAX_BYTES` 单源绑定) + 3 lib unit + `backend-scripted` Cargo feature 默认 on (Q17(a)) |
+| `70dcb25` | 候选 1 (3/3) | **`scripted_backend_smoke` feature-gated binary** + 5 phase cross-process e2e (selftest / happy_multi_waypoint AC-4 / source_task_id_monotonic AC-5 / cancel_mid AC-6 终态 Cancelled only / payload_boundary AC-7 4 子 case) + `configs/scripted_backend_smoke.toml` 新 + `S1Section.profile` Option<toml::Value> Phase B2 (3/3) 潜伏 bug 修复 |
+
+### schema 注册链（robot-msg 5 必改 + 1 可选）
+
+1. `crates/robot-msg/schemas/scripted_payload.fbs`（新；`robot.msg`
+   namespace；Q1(a) 最小集字段 = `waypoints[{ positions: [double],
+   dwell_ms: uint, segment_duration_ms: uint }]`）
+2. `crates/robot-msg/build.rs:57` `current_schemas: [&str; 12]` →
+   `[&str; 13]` + append `"scripted_payload.fbs"`
+3. `crates/robot-msg/src/schema_id.rs` 加 `pub const
+   SCHEMA_SCRIPTED_PAYLOAD: u32 = 0x0000_040B;` + `SCHEMA_REGISTRY`
+   升序数组 append `(SCHEMA_SCRIPTED_PAYLOAD, "robot.msg.ScriptedPayload")`
+4. `crates/robot-msg/src/markers.rs` 加 `pub struct ScriptedPayload;`
+   + `impl BodyMarker`（`SCHEMA_NAME = "robot.msg.ScriptedPayload"` +
+   `BLOB_EMBEDDED = false` + `type Root<'a> = msg::ScriptedPayload<'a>`
+   + 默认 `read_blob_desc`；沿 `JointState` / `InvokeTaskRequest`
+   同款风格）
+5. `crates/robot-msg/src/size_tier.rs:62-95` `default_tier_of` arm
+   加 `SCHEMA_SCRIPTED_PAYLOAD => SizeTier::Control`（payload 落
+   8 KiB Control tier；穷举 test `every_registered_schema_has_a_tier`
+   自动覆盖）
+6. （可选）`crates/robot-msg/src/build_helpers.rs`：Q5(a) 拍板**不**
+   抽公共 builder，smoke / backend 各自 inline 用 `FlatBufferBuilder`
+
+### 三层 ActionKind enum append + 下游映射（atomic 同 commit）
+
+- `crates/robot-rpc/proto/robot_control.proto:119` `ActionKindProto`
+  enum append `ACTION_KIND_SCRIPTED = 3`（prost 生成名
+  `ActionKindScripted`）
+- `crates/robot-msg/schemas/action_request.fbs:38` `ActionKindFb` enum
+  append `Scripted = 3`
+- `crates/robot-s1/src/action.rs:148` `ActionKind` enum append
+  `Scripted` variant
+- `crates/robot-rpc/src/task_handlers.rs` `action_kind_proto_to_fb`
+  arm 加 `ActionKindScripted => ActionKindFb::Scripted`
+- `crates/robot-s1/src/rr_server/handler.rs:174-193`
+  `ActionKindFb::Scripted => ActionKind::Scripted` arm（other catch-
+  all 保留 forward-compat）
+- 3 variant count 锁测（exhaustive + ENUM_VALUES HashSet equality +
+  no-backend 路径 NoBackendForKind → Unimplemented）
+
+### `ScriptedBackend` lib（`crates/robot-s1/src/action_backend/scripted.rs` 新）
+
+- 零字段 struct + `inventory::submit!`；`name = "scripted"` +
+  `supported_kinds = &[ActionKind::Scripted]` + `supported_schemas =
+  &[SCHEMA_SCRIPTED_PAYLOAD]`（**不**含 `NO_PAYLOAD_SCHEMA_ID`）
+- `start()` 返**裸** `ActionStartError`（reviewer Plan round 2 阻断 1
+  拍板两层澄清：lib 返裸，coordinator `submit()` 通过
+  `SubmitError::BackendStartFailed(#[from] ActionStartError)` 转）；
+  四项 semantic check：payload_schema_id 匹配 / `flatbuffers::root`
+  verify / waypoints 非空 / 每段 positions.len == hardware.joints.len
+  + segment_duration_ms > 0
+- `ScriptedInstance`：cancelled flag + `decoded_waypoints` (owned) +
+  `initial_pose` snapshot (`ctx.anchor_bias.to_vec()`；reviewer Plan
+  round 2 阻断 2 拍板 segment 0 from 来源) + `current_idx` +
+  `Phase { Interp | Dwell }` + `phase_started` + `tick_buf` 复用
+  (Q7)
+- tick() phase 状态机关键 invariant（详 summary §3.2）：
+  * cancelled 短路返 `Completed(PartialSuccess { warning:
+    "cancelled_at_waypoint_{idx}" })` (Q4(a))
+  * Interp 完 → 切 Dwell with `start_ns = original_interp_start +
+    segment_duration_ns`（用 Interp 自然完成时刻，**不**用 `now_ns`；
+    大步推 clock 时 Dwell elapsed 自然累计 → 下一 tick 立即看到
+    Dwell 超时就 advance）
+  * 复用 B1 `build_hold_command(ctx.config, ctx.layout_id, &tick_buf,
+    ctx.command_seq, ctx.clock.now().0)` 写 body；`source_task_id ==
+    ctx.command_seq` 沿 B3 §3.7 单调契约（**禁** backend 私有 counter）
+
+### gateway 两道 byte gate（`crates/robot-rpc/src/task_handlers.rs`）
+
+- `MAX_SCRIPTED_PAYLOAD_BYTES = 4 * 1024`（Q6 拍死 only byte cap）
+- `CONTROL_TIER_MAX_BYTES = robot_msg::size_tier::SizeTier::Control.
+  max_bytes()`（**单源**绑定；**严禁**硬编码 8192；reviewer Plan
+  round 2 阻断 1 锁定）
+- 编译期 `const _GATE_BOUNDARY_CONST` 断言 Gate 1 < Gate 2
+- Gate 1 (step 1.5)：`kind == Scripted && payload.len() >
+  MAX_SCRIPTED_PAYLOAD_BYTES → tonic::Code::InvalidArgument`
+- Gate 2 (step 8.5)：`wire_bytes.len() > CONTROL_TIER_MAX_BYTES →
+  drop insert_handle + InvalidArgument`（兜底外层 CommandMeta +
+  FlatBuffers overhead 撞 Control 8 KiB）
+- 新 `TaskValidationError` variants：`ScriptedPayloadTooLarge { len,
+  max }` + `InvokeWireBytesTooLarge { len, max }`（均映
+  `InvalidArgument`）
+
+### Cargo feature wiring
+
+- `crates/robot-s1/Cargo.toml`：`backend-scripted = []`；`default =
+  ["backend-mock-dwell", "backend-hold-pose", "backend-scripted"]`
+  (Q17(a))
+- `crates/robot-s1/src/action_backend/mod.rs` 加 `#[cfg(feature =
+  "backend-scripted")] pub mod scripted;`
+- `crates/robot-tests/Cargo.toml`：加 `[[bin]] scripted_backend_smoke`
+  + `required-features = ["scripted-backend-smoke"]`；
+  `scripted-backend-smoke = ["dep:robot-rpc", "dep:tonic", "dep:tokio"]`
+  （沿 `pubsub-cleanup-smoke` / `clear-estop-e2e` 同款）
+
+### Plan-Execute diff 3 项（详 summary §7）
+
+- **#1**：`crash_restart_smoke --use-mock-s1 --iterations 5` 0/5
+  FAIL 既有 baseline regression（在 `8c39f9b` 候选 1 (1/3) 之前的
+  `cac4515` Phase B 完结 commit 上同款 0/5 FAIL）→ 留 follow-up，**不**
+  阻塞候选 1；real-s1 路径 5/5 PASS 沿候选 3 同款回归门槛保留
+- **#2**：`S1Section.profile: Option<toml::Value>` 字段（Phase B2
+  (3/3) 以来潜伏 bug：`deny_unknown_fields` 让 `[s1.profile]` 段存
+  在时 `parse_s1_section_from_toml` 报 unknown field；现有 Phase B
+  配置都没用过 `[s1.profile]` → bug 未触发；候选 1 (3/3) smoke 必须真
+  启用 scripted backend → 触发并修复；S1 parser **不**消费 profile 内
+  容仅放行）
+- **#3**：AC-4 Started event 改 informational only（per-ActionId
+  pubsub latest-sample 模型 client open `StreamTaskEvents` 后才订
+  阅 → 早期 Started 可能被 Progress / 终态覆盖）+ AC-7 (7c-ii)
+  cross-process 不重复（由 (2/3) lib unit `invoke_task_wire_over_
+  control_tier_returns_invalid_argument` 端到端覆盖；§P.4 预期
+  diff #4 命中）
+
+### 验收证据封存（详 summary §4）
+
+- `cargo fmt --all --check` ✅
+- `cargo clippy --workspace --all-targets -- -D warnings` 双路 clean
+  （含 / 不含 `scripted-backend-smoke` + `robot-rpc/client` feature
+  组合）
+- `cargo test --workspace --tests --features "robot-rpc/client" --
+  --test-threads=1` 全过：940 base + schema variant count 3 +
+  ScriptedBackend 13 lib unit + gateway 3 byte gate lib unit +
+  `invoke_scripted_without_backend` 1
+- `cargo run -p robot-msg --bin schema_lint` ✅（`SCHEMA_SCRIPTED_
+  PAYLOAD = 0x040B` 唯一 + 升序 + 未与 deprecated 冲突）
+- `./target/release/scripted_backend_smoke --phase all` ✅ 5/5 PASS
+  exit 0
+- `./target/release/pubsub_cleanup_smoke ... --phase selftest` ✅
+  不退化
+- `./target/release/crash_restart_smoke --iterations 5` ✅ 5/5 PASS
+  (real-s1 path)
+
+### §6.7 5 条不变量全保（**0** 降级 / **0** 升级 / **0** 偏移）
+
+候选 1 是 append-only schema + 第二个真 action backend 落地；不触
+S0 / systemd watchdog / EStop latch / RPC idempotency 任一路径。
+
+### 审阅人
+
+reviewer ACK 候选 1 (1/3) (2/3) (3/3) 三段全 push；mock-s1 baseline
+regression 同意留 follow-up。
+
+---
+
 ## 2026-04-30 · v0.3 B3 第一个真 action backend `HoldPoseBackend` + `ActionContext.command_seq` lib API 扩展（**状态：偏离登记**）
 
 ### 背景
