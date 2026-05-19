@@ -10,6 +10,149 @@
 
 ---
 
+## 2026-05-19 · v0.4 候选 2 round 1 `robot-kinematics` `ArmIkSolver` trait crate first release（**状态：偏离登记**）
+
+### 背景
+
+v0.4 候选 1 (Scripted backend) 完结后（详 2026-05-14 候选 1 §1.1；
+[`docs/handoffs/v0.4_scripted_backend_summary.md`](handoffs/v0.4_scripted_backend_summary.md)），
+按 v0.4_entry §3.1 优先级 3 → 1 → 2 → 4 排序开候选 2（robot-
+kinematics + IK trait）。v0.4_entry §3.3 reviewer 拍板候选 2 **拆两
+轮 reviewer round**：**round 1** = trait crate first release（trait +
+纯类型，零 runtime 依赖；零 robot-s1 改动）；**round 2** =
+`robot-kinematics-xlerobot` impl + `IkBackend` 第三个真 action backend
++ S1 wiring + cross-process e2e（**独立** reviewer round + 独立
+CodeMap / Spec / Plan）。本日志记录 **round 1 完结**。
+
+### 行为落地（round 1）
+
+**3 docs/spec/plan 前置 + 1 实施 commit + 1 summary = 5 commit**
+（详 [`docs/handoffs/v0.4_robot_kinematics_round1_summary.md`](handoffs/v0.4_robot_kinematics_round1_summary.md)
+§2 commit chain）：
+
+| commit | 段 | 内容 |
+|---|---|---|
+| `557e354` | docs | CodeMap：v0.4 候选 2 robot-kinematics pre-research（8 段 + Q1-Q20 待拍板表）|
+| `64cf312` | docs | Spec round 1 land：AC-1..AC-7 + AC-Q + Q1-Q10 reviewer 拍板表 + 14 路径 hard boundary + reviewer 审查重点 4 条 design-in 双写 |
+| `98b6033` | docs | Plan outline draft v1 + reviewer Plan round 2/3 amend 合并 land：P.0..P.4 + §P.3 7 拍板项 + §P.3.3a 重型 smoke 拍板 #3 (b) 5 条命令 |
+| `6caf0ee` | feat | (1/1) `robot-kinematics` `ArmIkSolver` trait crate first release land |
+
+**round 1 落地范围**（Q1-Q10 ACK 锁定）：
+
+- **新 workspace member** `crates/robot-kinematics`：`Cargo.toml`
+  workspace `members` 按字母序 append（`robot-health` 之后；
+  `Cargo.toml:25` "未来 crate" 注释段 `robot-kinematics` 行同 commit
+  清理）+ `Cargo.lock` 新增 `[[package]] name = "robot-kinematics"`
+  stanza
+- **`crates/robot-kinematics/Cargo.toml`**（23 L）：`[package]`
+  workspace 继承 + `description` 含 AC-6 双写锚句 "trait 层不预钉
+  XLeRobot clamp 行为（AC-6）" + `[dependencies] thiserror = {
+  workspace = true }` 唯一 runtime dep + `[lints] workspace = true`
+- **`crates/robot-kinematics/src/lib.rs`**（313 L 单文件）：5 共享
+  类型（`Pose` / `Twist` / `Jacobian` / `KinematicInfo` /
+  `IkSolution`；自带 POD 零 nalgebra）+ `JointLimit` POD（嵌套于
+  `KinematicInfo::joint_limits: Vec<JointLimit>`）+ `IkError`
+  5 variant
+  （`InvalidInput { reason }` + `NoSolution` + `OutOfReach
+  { distance_m }` + `SingularityTooClose { condition_number }` +
+  `DeadlineExceeded`；`thiserror::Error` derive；exhaustive match
+  锁）+ `ArmIkSolver: Send + Sync` trait（`info()` + `solve(target:
+  &Pose, seed: Option<&[f64]>, deadline_ns: Option<u64>)`；严格
+  dyn-safe；多臂靠 `Box<dyn ArmIkSolver>` 多 instance）+ 4 lib unit
+  （exhaustive + POD constructable + `assert_dyn_safe::<dyn
+  ArmIkSolver>()` 编译期 monomorphize + trait object callable stub）
+
+### Quality Gate 实测
+
+- `cargo fmt --all --check` clean
+- `cargo clippy --workspace --all-targets -- -D warnings` 双路（含 /
+  不含 `robot-rpc/client`）clean
+- `cargo build --workspace --release` 全过（既有 12 crate + 新
+  `robot-kinematics`）
+- `cargo build -p robot-kinematics --release` 1.07s
+- `cargo test -p robot-kinematics --lib` 4 PASS / 0 FAIL
+- `cargo test --workspace --tests --features "robot-rpc/client" --
+  --test-threads=1` **963 PASS / 0 FAIL**（既有 940+ baseline + 4
+  new robot-kinematics lib unit + 19 prior delta）
+- `cargo tree -p robot-kinematics --edges normal,no-proc-macro`：
+  直接 dep == `{thiserror v2.0.18}`
+- `cargo doc -p robot-kinematics --no-deps` clean，**0** warning
+- `cargo run -p robot-msg --bin schema_lint` 过（**0** schema 改动；
+  14 .fbs 沿用既有锁测）
+- `crash_restart_smoke --iterations 5`（real-s1 硬 gate）**5/5
+  PASS** ✅
+- `crash_restart_smoke --use-mock-s1 --iterations 5` **5/5 PASS**
+  （informational only；实测优于 Spec AC-Q baseline regression 预
+  期；**不**升级为新硬 gate；详 round 1 summary §7 diff #2）
+- §P.3.3a (i)-(v) 5 命令（拍板 #3 (b) compile gate + selftest only）
+  全过：pubsub_cleanup_smoke + scripted_backend_smoke 双 compile
+  gate + 双 selftest PASS + per-bin `cargo test --bin` 6 + 0 PASS
+- `cargo deny check`：**未新增 violation**；overall `licenses
+  FAILED` 是**既有 baseline**（`assert_no_alloc` `BSD-1-Clause` /
+  `serialport` `MPL-2.0` / `unescaper` 标识符 warning；全部跟
+  `robot-kinematics` round 1 无关；baseline 已在 HEAD = `98b6033`
+  存在；reviewer ACK 路径 (a) follow-up 独立处理；详 round 1
+  summary §4.3 + §7 diff #1）
+
+### 关键契约（round 1 引入 / 维护的硬约束）
+
+详 round 1 summary §3：
+
+1. **trait dyn-safe**：方法签名不含 generic param / 不返 `Self`；
+   `assert_dyn_safe::<dyn ArmIkSolver>()` 编译期 monomorphize 锁；
+   违反编译 fail
+2. **`IkError` exhaustive match**：5 variant `match` 漏 variant 编
+   译 fail（沿候选 1 `action_kind_three_v04_variants` 同款）
+3. **不预钉 `XLeRobot` clamp 行为**：`IkSolution` 最小字段（不含
+   `clamped: bool` / `iterations` / `residual_error` metadata）+
+   `IkError::OutOfReach` trait 层可选返回；四处双写防漂移
+   （`Cargo.toml` `description` + lib.rs 模块 doc + trait doc +
+   Spec AC-6）
+4. **`deadline_ns: Option<u64>`**：跟 `robot-core::time::MonoRawNs
+   (u64)` + `Deadline(MonoRawNs)` + `ActionRequest.deadline_ns: u64`
+   仓库统一时间模型对齐；trait crate **不** dep `robot-core`，仅值
+   语义对齐避免 signed conversion 损失精度
+5. **零 runtime 依赖**：仅 `thiserror`；trait crate **永远不**扩
+   `[dependencies]`；新 dep 走独立 reviewer round
+6. **零 `robot-s1` 改动 + 零 wire schema 改动**：`git diff
+   98b6033..6caf0ee --name-only` 仅 4 文件（`Cargo.toml` /
+   `Cargo.lock` / `crates/robot-kinematics/Cargo.toml` /
+   `crates/robot-kinematics/src/lib.rs`）；`crates/robot-s1/**` /
+   `robot-rpc/**` / `robot-msg/**` / `robot-s0/**` / `robot-adapters/
+   **` / `robot-tests/**` / `configs/**` / `docs/00_design.md`
+   全部 **0** 触
+
+### §6.7 5 不变量
+
+**0** 降级 / **0** 升级 / **0** 偏移（trait crate first release 零
+runtime 代码路径 + 零 wire schema + 零 s0/s1 改动）。
+
+### round 2 触发条件
+
+候选 2 **round 2** 范围（`robot-kinematics-xlerobot` impl + `IkBackend`
++ S1 wiring + `ik_backend_smoke` cross-process e2e）必须走**独立
+reviewer round + 独立 CodeMap / Spec / Plan**，**不**直接开实现。
+触发：本 round 1 summary push（本 commit）+ reviewer round 2 entry
+ACK。详 round 1 summary §6 接班 10 步 checklist。
+
+### 影响面
+
+- 新 workspace member `crates/robot-kinematics` workspace lint
+  基线沿用（`[lints] workspace = true`）；后续 round 2
+  `robot-kinematics-xlerobot` impl crate 沿同款模板
+- AC-Q `cargo deny check` 措辞约定：**严禁**写"过"；统一写"未新增
+  violation；overall fail = 既有 baseline；follow-up 独立处理"
+- AC-Q mock-s1 `crash_restart_smoke` 沿候选 1 同款 baseline
+  regression 表述（与 (1/3) `d8ba207` 实测 0/5 FAIL 锚点对齐）；本
+  轮单次正 reversal **不**改写 Spec AC-Q
+
+### 审阅人
+
+reviewer ACK Plan round 1+2+3 + (1/1) ACK + summary 待 ACK
+（本 commit）。
+
+---
+
 ## 2026-05-14 · v0.4 候选 1 第二个真 action backend `ScriptedBackend` + 新 fbs body `ScriptedPayload` (schema_id 0x040B) + gateway 两道 byte gate（**状态：偏离登记**）
 
 ### 背景

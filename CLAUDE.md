@@ -64,10 +64,43 @@ v0.4 进度:
                 §3.7）+ Dwell start_ns 锚定 Interp 自然完成时刻（覆盖大步推 clock 收敛）+
                 cancel 两层分离（backend lib PartialSuccess ↔ coordinator ActionEvent::
                 Cancelled 终态 only）。
-            候选 2 ⬜ 准备开（robot-kinematics + IK trait：新 workspace crate robot-
-                kinematics 定义 ArmIkSolver / BaseKinematics trait + 第一个 per-机器人实现
-                robot-kinematics-xlerobot；按 feature flag 挂在 robot-s1；IK 住在 S1，**不**进
-                S0 / adapter）。
+            候选 2 round 1 ✅（robot-kinematics trait crate first release；3 docs/spec/plan
+                前置 + 1 实施 commit = 4 commit，加 summary = 5 commit）。
+                新 workspace member crates/robot-kinematics（Cargo.toml workspace 继承 +
+                [lints] workspace = true + [dependencies] thiserror 唯一 runtime dep；
+                cargo tree --edges normal,no-proc-macro = {thiserror v2.0.18}）+ src/lib.rs
+                313 L 单文件（5 共享类型 Pose / Twist / Jacobian / KinematicInfo /
+                IkSolution + JointLimit POD 嵌套于 KinematicInfo.joint_limits；自带 POD
+                零 nalgebra）+ IkError 5 variant
+                (InvalidInput / NoSolution / OutOfReach / SingularityTooClose /
+                DeadlineExceeded；thiserror::Error derive；exhaustive match 编译期锁)+
+                ArmIkSolver: Send + Sync trait (info() + solve(target: &Pose, seed:
+                Option<&[f64]>, deadline_ns: Option<u64>) -> Result<IkSolution, IkError>;
+                dyn-safe + assert_dyn_safe::<dyn ArmIkSolver>() 编译期 monomorphize 锁)+
+                4 lib unit + AC-6 "trait 层不预钉 XLeRobot clamp 行为" 四处双写防漂移
+                (Cargo.toml description + lib.rs 模块 doc + trait doc + Spec AC-6)+ 零
+                robot-s1/rpc/msg/s0/adapters/tests 改动 + 零 wire schema 改动；commit chain
+                `557e354` → `64cf312` → `98b6033` → `6caf0ee`（origin/master 已 push）+
+                summary 本日 land；详 docs/handoffs/v0.4_robot_kinematics_round1_summary.md。
+                **关键契约**：trait dyn-safe 编译期锁 + IkError exhaustive match 锁 + 不预钉
+                XLeRobot clamp 行为（四处双写）+ deadline_ns: Option<u64> 仓库统一时间模型对齐
+                （robot-core::time::MonoRawNs(u64) + Deadline + ActionRequest.deadline_ns;
+                trait crate 不 dep robot-core）+ 零 runtime 依赖（trait crate 永远不扩
+                [dependencies]）+ 零 robot-s1 改动。
+                **不在范围**（推到 round 2）：BaseKinematics trait（Q5(b) ACK 推迟）+
+                robot-kinematics-xlerobot impl + IkBackend 第三个真 action backend + S1
+                coordinator 持 Box<dyn ArmIkSolver> + IkPayload fbs body (SCHEMA_IK_PAYLOAD
+                = 0x040C) + ActionKindProto::Ik / ActionKindFb::Ik / ActionKind::Ik 三层
+                enum append + ik_backend_smoke cross-process e2e。
+                **cargo deny check 状态**：未新增 violation；overall licenses FAILED 是既有
+                baseline（assert_no_alloc BSD-1-Clause + serialport MPL-2.0 + unescaper
+                标识符 warning；全部跟 robot-kinematics 无关；baseline 已在 HEAD = 98b6033
+                存在）；follow-up 独立 commit / PR 处理，不进 round 1。
+            候选 2 round 2 ⬜ 准备开（robot-kinematics-xlerobot impl + IkBackend 第三个真
+                action backend + S1 wiring + ik_backend_smoke cross-process e2e + summary）。
+                **必须**独立 reviewer round + 独立 CodeMap / Spec / Plan，**不**直接开实现。
+                触发：本 round 1 summary push + reviewer round 2 entry ACK；详 round 1
+                summary §6 接班 10 步 checklist。
 
 上游项目:   /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
