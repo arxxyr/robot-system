@@ -1668,6 +1668,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "robot-kinematics"
+version = "0.1.2"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "robot-logging"
 version = "0.1.2"
 dependencies = [

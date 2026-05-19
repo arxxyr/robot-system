@@ -1,0 +1,23 @@
+[package]
+name         = "robot-kinematics"
+description  = "通用机器人运动学 trait + 纯类型；零 runtime 依赖。trait 层不预钉 XLeRobot clamp 行为（AC-6）。"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+publish    .workspace = true
+
+[dependencies]
+# IkError derive thiserror::Error；trait crate 仅此一项 runtime dep。
+# 严禁加 nalgebra / urchin / pinocchio / placo / kinpy / urdfpy 等 IK /
+# 矩阵 / URDF 第三方依赖（Q3(i) ACK，AC-1 锁）。
+# 严禁加 robot-core / robot-msg / robot-s0 / robot-s1 / robot-rpc /
+# robot-transport / robot-adapters 等 robot-system 内部 crate dep（保
+# §4.1 trait crate 顶层独立性 + §4.2 零 runtime 依赖原则；trait crate
+# 跟 robot-core 平级，不互相 dep）。
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
