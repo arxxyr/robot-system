@@ -159,6 +159,13 @@ pub enum ActionKind {
     /// `SCHEMA_SCRIPTED_PAYLOAD` (= `0x0000_040B`)；backend impl 落
     /// `crates/robot-s1/src/action_backend/scripted.rs` (2/3 land)。
     Scripted,
+    /// 笛卡尔 pose IK 解算 + 关节位置输出（v0.4 候选 2 round 2 land）。
+    /// 详 `team-swe/specs/v0_4_robot_kinematics_round2.md` Q-IK1..Q-IK17。
+    /// Payload 走 `SCHEMA_IK_PAYLOAD` (= `0x0000_040C`)；backend impl
+    /// 落 `crates/robot-s1/src/action_backend/ik.rs`（round 2 (3/4)
+    /// 待 land）；solver impl 走 `crates/robot-kinematics-xlerobot`
+    /// (round 2 (1/4) land)。
+    Ik,
 }
 
 // ============================================================================
@@ -692,21 +699,23 @@ mod tests {
     // ----- ActionKind -----
 
     #[test]
-    fn action_kind_three_v04_variants() {
-        // 锁住"v0.4 候选 1 land 后 enum = DwellMs / HoldPose / Scripted"
-        // 边界 —— 任何加新 variant 的实现 commit 必须先回到 outline
-        // reviewer 复核。用 match 穷举 + 编译期检查：如果有人加新
-        // variant，下面 exhaustive 的 unit test 会编不过。
+    fn action_kind_four_v04_variants() {
+        // 锁住"v0.4 候选 2 round 2 (2/4) land 后 enum = DwellMs / HoldPose /
+        // Scripted / Ik" 边界 —— 任何加新 variant 的实现 commit 必须先
+        // 回到 outline reviewer 复核。用 match 穷举 + 编译期检查：如果
+        // 有人加新 variant，下面 exhaustive 的 unit test 会编不过。
         fn cover(k: ActionKind) -> u8 {
             match k {
                 ActionKind::DwellMs => 0,
                 ActionKind::HoldPose => 1,
                 ActionKind::Scripted => 2,
+                ActionKind::Ik => 3,
             }
         }
         assert_eq!(cover(ActionKind::DwellMs), 0);
         assert_eq!(cover(ActionKind::HoldPose), 1);
         assert_eq!(cover(ActionKind::Scripted), 2);
+        assert_eq!(cover(ActionKind::Ik), 3);
     }
 
     #[test]

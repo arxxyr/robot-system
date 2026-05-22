@@ -105,6 +105,14 @@ pub const SCHEMA_ACTION_EVENT_ENVELOPE: u32 = 0x0000_040A;
 /// payload（joint-space 线性插值 + waypoint dwell 序列）。
 pub const SCHEMA_SCRIPTED_PAYLOAD: u32 = 0x0000_040B;
 
+/// `robot.msg.IkPayload` —— v0.4 候选 2 round 2 `IkBackend` `InvokeTask`
+/// payload（笛卡尔 pose + 5-DOF IK 解算入口；Q-IK4 (a) 最小集 +
+/// Q-IK7 (a) frame 占位字符串）。
+///
+/// 详 `crates/robot-msg/schemas/ik_payload.fbs` + `team-swe/specs/
+/// v0_4_robot_kinematics_round2.md` Q-IK4..Q-IK7 拍板。
+pub const SCHEMA_IK_PAYLOAD: u32 = 0x0000_040C;
+
 // -----------------------------------------------------------------------------
 // deprecated 登记
 // -----------------------------------------------------------------------------
@@ -156,6 +164,7 @@ pub const SCHEMA_REGISTRY: &[(u32, &str)] = &[
         "robot.msg.ActionEventEnvelope",
     ),
     (SCHEMA_SCRIPTED_PAYLOAD, "robot.msg.ScriptedPayload"),
+    (SCHEMA_IK_PAYLOAD, "robot.msg.IkPayload"),
 ];
 
 /// 按 `schema_id` 查规范名；未知返回 `None`。

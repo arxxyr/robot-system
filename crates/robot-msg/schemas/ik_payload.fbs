@@ -1,0 +1,63 @@
+// ik_payload.fbs — v0.4 候选 2 round 2 IK backend payload wire format.
+//
+// 对应 team-swe/specs/v0_4_robot_kinematics_round2.md Q-IK4 (a) 最小
+// 集 + Q-IK6 (a) yaw != 0 拒绝路径 + Q-IK7 (a) frame 字段纳入（占位
+// 字符串，round 2 不做实际 frame 变换）。
+//
+// ### 字段语义
+//
+// - `IkPayload.target_xyz`：目标末端位置（m）；**长度必须 == 3**
+//   `[x, y, z]`，否则 backend 拒 `ActionStartError::Rejected`。坐标
+//   系跟 solver 实现约定（XLeRobot 默认肩基座 frame；详
+//   `crates/robot-kinematics-xlerobot/src/lib.rs` crate-level doc）。
+// - `IkPayload.target_quat_xyzw`：目标末端姿态四元数 XYZW 顺序；
+//   **长度必须 == 4** `[x, y, z, w]`，调用方保证 normalize（trait
+//   `ArmIkSolver::solve` 内会校验 `(|q|-1).abs() <= 1e-3`；超容差
+//   返 `IkError::InvalidInput`）。**5-DOF 手臂场景**（如
+//   `XLeRobotArmIkSolver`）quaternion 解出的 yaw 必须 ≈ 0（容差
+//   `1e-3` rad）；超容差 → `IkError::InvalidInput`（Q-IK6 (a)）。
+// - `IkPayload.seed_joints_rad`：可选数值法 seed；空 = 无 seed；
+//   非空时长度必须 == `ArmIkSolver::info().joint_count`，违反返
+//   `IkError::InvalidInput`。**闭式 solver**（如 `XLeRobotArmIk
+//   Solver`）忽略 seed。
+// - `IkPayload.frame`：frame 标识占位字符串；round 2 trait 层**不**
+//   钉死 frame 抽象（Q-IK7 (a)）；空字符串 = solver default frame；
+//   实际 frame 变换 / `FrameName` enum / `TransformTree` 推未来
+//   reviewer round（详 Spec §"不在范围"）。
+//
+// ### 容量边界
+//
+// 本 schema 落 `SizeTier::Control` 8 KiB（Q-IK5 (a)；Plan §P.3.2 #7
+// 不落 IK 专用 byte cap，沿候选 1 `CONTROL_TIER_MAX_BYTES` gate 2
+// 兜底）。IK 单 pose payload ~50-100 B 远低于 8 KiB；如未来 Q-IK4
+// 字段集扩展撑爆 Control → 走 Plan-Execute diff 重新拍 size_tier。
+//
+// ### 错误映射边界
+//
+// `IkBackend::start()` decode/校验 fail → `ActionStartError`：
+// - `payload_schema_id != SCHEMA_IK_PAYLOAD` / `flatbuffers::root::
+//   <IkPayload>(payload)` verify fail / 字段读 fail → `ActionStart
+//   Error::PayloadDecode` → `ActionRpcStatus::FailedPrecondition`
+// - `target_xyz.len() != 3` / `target_quat_xyzw.len() != 4` /
+//   `seed_joints_rad.len() != info().joint_count` 等 semantic
+//   reject → `ActionStartError::Rejected` → `ActionRpcStatus::
+//   FailedPrecondition`
+//
+// 详 Plan §P.2.3.d 两层错误分类 + §P.2.3.e error mapping table。
+
+namespace robot.msg;
+
+table IkPayload {
+    /// 目标末端位置 `[x, y, z]` (m)；长度必须 == 3。
+    target_xyz:        [double];
+    /// 目标末端姿态四元数 XYZW 顺序 `[x, y, z, w]`；长度必须 == 4。
+    target_quat_xyzw:  [double];
+    /// 可选数值法 seed；空 = 无 seed；非空时长度必须 == joint_count。
+    /// 闭式 solver 忽略本字段。
+    seed_joints_rad:   [double];
+    /// frame 标识占位字符串；round 2 不做实际 frame 变换。
+    /// 空 = solver default frame。
+    frame:             string;
+}
+
+root_type IkPayload;

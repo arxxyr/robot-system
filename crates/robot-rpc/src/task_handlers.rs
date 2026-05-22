@@ -1390,6 +1390,7 @@ fn action_kind_proto_to_fb(kind: ActionKindProto) -> ActionKindFb {
         ActionKindProto::ActionKindDwellMs => ActionKindFb::DwellMs,
         ActionKindProto::ActionKindHoldPose => ActionKindFb::HoldPose,
         ActionKindProto::ActionKindScripted => ActionKindFb::Scripted,
+        ActionKindProto::ActionKindIk => ActionKindFb::Ik,
     }
 }
 
@@ -1544,10 +1545,10 @@ mod tests {
     /// proto / fbs / lib 三层 enum append 必须同 commit 一起 land）。
     #[test]
     fn action_kind_proto_to_fb_variant_count_matches_explicit_mapping() {
-        // v0.4 候选 1 land 后：Unspecified / DwellMs / HoldPose /
-        // Scripted = 4 variant。新增 variant 时本断言失败强制更新
-        // helper。
-        const EXPECTED_VARIANT_COUNT: usize = 4;
+        // v0.4 候选 2 round 2 (2/4) land 后：Unspecified / DwellMs /
+        // HoldPose / Scripted / Ik = 5 variant。新增 variant 时本断言
+        // 失败强制更新 helper。
+        const EXPECTED_VARIANT_COUNT: usize = 5;
         // prost 给 proto enum 生成 `from_repr` API；用所有合法 repr
         // 验证 helper 是 total（不依赖 exhaustive match 自身的“编译期
         // 兜底”机制，因为 helper 已经是 exhaustive；这里额外断言
@@ -1557,6 +1558,7 @@ mod tests {
             ActionKindProto::ActionKindDwellMs,
             ActionKindProto::ActionKindHoldPose,
             ActionKindProto::ActionKindScripted,
+            ActionKindProto::ActionKindIk,
         ];
         assert_eq!(
             variants.len(),
@@ -1581,6 +1583,10 @@ mod tests {
         assert_eq!(
             action_kind_proto_to_fb(ActionKindProto::ActionKindScripted),
             ActionKindFb::Scripted
+        );
+        assert_eq!(
+            action_kind_proto_to_fb(ActionKindProto::ActionKindIk),
+            ActionKindFb::Ik
         );
     }
 

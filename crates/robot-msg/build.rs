@@ -54,7 +54,7 @@ fn main() {
     let schemas_dir = manifest_dir.join("schemas");
     let old_dir = schemas_dir.join("old");
 
-    let current_schemas: [&str; 13] = [
+    let current_schemas: [&str; 14] = [
         "blob.fbs",
         "frame_header.fbs",
         "joint.fbs",
@@ -68,6 +68,7 @@ fn main() {
         "action_request.fbs",
         "action_event.fbs",
         "scripted_payload.fbs",
+        "ik_payload.fbs",
     ];
     let v0_schemas: [&str; 1] = ["joint_v0.fbs"];
 

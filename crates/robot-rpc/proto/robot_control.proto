@@ -121,6 +121,7 @@ enum ActionKindProto {
     ACTION_KIND_DWELL_MS    = 1;  // lib `ActionKind::DwellMs`（B2 mock）
     ACTION_KIND_HOLD_POSE   = 2;  // lib `ActionKind::HoldPose`（B3 land）
     ACTION_KIND_SCRIPTED    = 3;  // lib `ActionKind::Scripted`（v0.4 候选 1 land）
+    ACTION_KIND_IK          = 4;  // lib `ActionKind::Ik`（v0.4 候选 2 round 2 land）
 }
 
 // 任务生命周期状态（对齐 lib `ActionStatus` enum + fbs `TaskStateFb`）。

@@ -170,14 +170,15 @@ pub fn handle_invoke(payload: &[u8], ctx: &RealHandlerCtx) -> Vec<u8> {
         }
     };
 
-    // 3. ActionKindFb → ActionKind（v0.4 候选 1 land 后 3 个 variant：
-    //    DwellMs / HoldPose / Scripted）。`other` 兜底 catch-all 保留：
-    //    forward-compat 拦截"客户端用了 daemon 二进制还不识别的 fbs 变体"
+    // 3. ActionKindFb → ActionKind（v0.4 候选 2 round 2 (2/4) land 后 4 个
+    //    variant：DwellMs / HoldPose / Scripted / Ik）。`other` 兜底 catch-all
+    //    保留：forward-compat 拦截"客户端用了 daemon 二进制还不识别的 fbs 变体"
     //    场景（fbs enum 是 open-ended ubyte）。
     let kind = match decoded.kind {
         ActionKindFb::DwellMs => ActionKind::DwellMs,
         ActionKindFb::HoldPose => ActionKind::HoldPose,
         ActionKindFb::Scripted => ActionKind::Scripted,
+        ActionKindFb::Ik => ActionKind::Ik,
         ActionKindFb::Unknown => {
             return encode_invoke_response_err(
                 &decoded.request_id,
@@ -653,9 +654,10 @@ mod tests {
     /// `handle_invoke` 内 `ActionKindFb → ActionKind` match。
     #[test]
     fn action_kind_fb_variant_count_matches_explicit_mapping() {
-        // v0.4 候选 1 land 后：Unknown / DwellMs / HoldPose / Scripted
-        // = 4 variant。新增 variant 时本断言失败强制更新 handler match。
-        const EXPECTED_VARIANT_COUNT: usize = 4;
+        // v0.4 候选 2 round 2 (2/4) land 后：Unknown / DwellMs / HoldPose /
+        // Scripted / Ik = 5 variant。新增 variant 时本断言失败强制更新
+        // handler match。
+        const EXPECTED_VARIANT_COUNT: usize = 5;
         assert_eq!(
             ActionKindFb::ENUM_VALUES.len(),
             EXPECTED_VARIANT_COUNT,
@@ -664,12 +666,13 @@ mod tests {
              Plan round 1 阻断 1）"
         );
 
-        // 已知 variant 集 = 显式声明的 4 个（数值 0..=3）。
+        // 已知 variant 集 = 显式声明的 5 个（数值 0..=4）。
         let expected: std::collections::HashSet<ActionKindFb> = [
             ActionKindFb::Unknown,
             ActionKindFb::DwellMs,
             ActionKindFb::HoldPose,
             ActionKindFb::Scripted,
+            ActionKindFb::Ik,
         ]
         .into_iter()
         .collect();
