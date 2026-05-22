@@ -1,0 +1,22 @@
+[package]
+name         = "robot-kinematics-xlerobot"
+description  = "XLeRobot 5-DOF 手臂 IK 实现 (dimos arm_ik.py 闭式解 Rust 移植)。clamp 路径: Ok(IkSolution { joints_rad: clamped }) + 外部 informational metric (Q-IK16 (a))。solve() 实现仅响应 deadline_ns = None 路径; caller 走 backend layer guard (Plan §P.3.2 #12 (a))。"
+version    .workspace = true
+edition    .workspace = true
+license    .workspace = true
+authors    .workspace = true
+repository .workspace = true
+readme     .workspace = true
+publish    .workspace = true
+
+[dependencies]
+# round 1 trait crate 唯一内部 dep。
+robot-kinematics = { workspace = true }
+# 严禁加 nalgebra / urchin / pinocchio / placo / kinpy / urdfpy 等
+# IK / 矩阵 / URDF 第三方依赖 (Q-IK2 (a) 零 runtime 依赖原则)。
+# 严禁加 robot-core / robot-msg / robot-s0 / robot-s1 / robot-rpc /
+# robot-transport / robot-adapters 等其它内部 crate dep (Plan §P.2.1.b
+# 设计原则)。
+
+[lints]
+workspace = true
