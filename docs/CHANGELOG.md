@@ -10,6 +10,223 @@
 
 ---
 
+## 2026-05-27 · v0.4 候选 2 round 2 `robot-kinematics-xlerobot` impl + `IkBackend` 第三个真 action backend + S1 wiring + `ik_backend_smoke` cross-process e2e（**状态：偏离登记**）
+
+### 背景
+
+v0.4 候选 2 **round 1**（trait crate first release）完结后（详
+2026-05-19 候选 2 round 1 §1.1；
+[`docs/handoffs/v0.4_robot_kinematics_round1_summary.md`](handoffs/v0.4_robot_kinematics_round1_summary.md)），
+按 round 1 §6 接班 10 步 checklist 开 **round 2** = impl crate +
+`IkBackend` 第三个真 action backend + S1 coordinator solver wiring +
+cross-process e2e（**独立** reviewer round + 独立 CodeMap / Spec /
+Plan，沿 round 1 拍板节奏）。本日志记录 **round 2 完结**。
+
+### 行为落地（round 2）
+
+**3 docs/spec/plan 前置 + 4 实施 commit + 1 summary = 8 commit**
+（详 [`docs/handoffs/v0.4_robot_kinematics_round2_summary.md`](handoffs/v0.4_robot_kinematics_round2_summary.md)
+§2 commit chain）：
+
+| commit | 段 | 内容 |
+|---|---|---|
+| `a42ef73` | docs | CodeMap：v0.4 候选 2 round 2 IK backend pre-research（含 Q-IK1..Q-IK15 + dimos `arm_ik.py` 移植对照 + XLeRobot 5-DOF 数学推导）|
+| `7fd0756` | docs | Spec round 2 land：AC-1..AC-7 + Q-IK1..Q-IK17 reviewer 拍板表 + 14 路径 hard boundary（含 §"严禁改动" #1 round 1 trait crate 0 改动）|
+| `266191f` | docs | Plan outline draft v1 + reviewer Plan round 1/2 amend 合并 land：P.0..P.4 + §P.3.2 12 拍板项 + §P.3.3 重型 smoke 拍板 (a) 5-phase full `--phase all` 硬 gate |
+| `19a3f43` | feat | (1/4) `robot-kinematics-xlerobot` impl crate first release land |
+| `ce2f498` | feat | (2/4) IK schema 注册链 + 三层 `ActionKind::Ik` atomic land |
+| `13ecde8` | feat | (3/4) `IkBackend` + S1 coordinator solver wiring |
+| `c0ef8e1` | feat | (4/4) `ik_backend_smoke` cross-process e2e |
+
+**round 2 落地范围**（Q-IK1..Q-IK17 ACK 锁定）：
+
+- **新 workspace member** `crates/robot-kinematics-xlerobot`（(1/4)
+  `19a3f43`）：`Cargo.toml`（22 L）workspace 继承 + description 含
+  AC-6 双写锚句 + 唯一 runtime dep `robot-kinematics = { workspace =
+  true }`；`src/lib.rs`（763 L）= 5-DOF 闭式 IK 沿 dimos `arm_ik.py`
+  + `Side { Right, Left }` + `XLeRobotArmIkSolver` struct + `ArmIkSolver`
+  trait impl + 9 lib unit（含 `solve_yaw_nonzero_rejects` Q-IK6 (a)
+  + `solve_out_of_reach_returns_ok_clamped` Q-IK16 (a)）
+- **IK schema 注册链 6 步 atomic**（(2/4) `ce2f498`）：`SCHEMA_IK_
+  PAYLOAD = 0x0000_040C` + `IkPayload` fbs body + `build.rs current_
+  schemas [&str; 13] → [&str; 14]` + `BodyMarker` impl + `SizeTier::
+  Control` 映射 + `build_helpers` IkPayload helper
+- **三层 `ActionKind::Ik` enum append**（同 (2/4) atomic）：proto
+  `ACTION_KIND_IK = 4` + fbs `ActionKindFb::Ik = 4` + lib `ActionKind
+  ::Ik` + 三个 variant count 锁测同步 4 → 5
+- **`IkBackend` + S1 coordinator solver wiring**（(3/4) `13ecde8`）：
+  `crates/robot-s1/Cargo.toml` 新 `backend-ik` feature 进 default +
+  `robot-kinematics` 永久 link（零 runtime dep）+ `robot-kinematics-
+  xlerobot` optional gate；`ActionContext::solver: Option<&dyn
+  ArmIkSolver>` 字段（Q-IK3 (a)）；`Coordinator` 加 `solver: Option<
+  Box<dyn ArmIkSolver>>` 字段 + `Coordinator::new` 新增参数 4 处
+  callsite；新 `validate_solver_for_profile` + `ProfileError::Missing
+  Solver` variant（Q-IK10b (i)）；`crates/robot-s1/src/action_backend/
+  ik.rs`（1066 L）= `IkBackend` 8 步 semantic check + `IkInstance`
+  single-shot + `map_ik_error_to_start_error` 5 variant exhaustive +
+  `inventory::submit!` + 17 lib unit；s1_daemon feature-gated
+  `XLeRobotArmIkSolver::new(Side::Right)` 构造 + 注入
+- **`ik_backend_smoke` cross-process e2e**（(4/4) `c0ef8e1`）：
+  `configs/ik_backend_smoke.toml` 5-DOF XLeRobot 配置；`crates/robot-
+  tests/Cargo.toml` 新 `[[bin]] ik_backend_smoke` + feature `ik-backend-
+  smoke`；`crates/robot-tests/src/bin/ik_backend_smoke.rs`（1410 L）
+  5-phase 跨进程 e2e（selftest / happy Q-IK17 (a) single-shot /
+  monotonic B3 §3.7 / unreachable_clamp Q-IK16 (a) / invalid_input
+  iva yaw≠0 + ivb garbage payload）；**reviewer 拍板"smoke 不抽公共
+  helper"** —— 沿 candidate 1 / 3 同款 inline 复制（不动既有 smoke
+  binary）
+
+### Quality Gate 实测
+
+- `cargo fmt --all --check` clean
+- `cargo clippy --workspace --all-targets -- -D warnings` clean
+- `cargo clippy -p robot-tests --bin ik_backend_smoke --features
+  ik-backend-smoke -- -D warnings` clean
+- `cargo build --workspace --release` 10.90s（incremental；首次
+  23.13s）
+- `cargo build --release -p robot-tests --bin ik_backend_smoke
+  --features ik-backend-smoke` 19.78s
+- `cargo run -p robot-msg --bin schema_lint` 15 .fbs 全过（14 active
+  + 1 v0 deprecated；本轮新加 `ik_payload.fbs`）
+- `cargo test --workspace` **989 PASS / 0 FAIL**（既有 940+ baseline
+  + 候选 1 + 候选 3 + round 1 + round 2 新增；本 round 2 净加 30
+  test：17 IkBackend lib unit + 4 validate solver + 9 xlerobot lib
+  unit）
+- `crash_restart_smoke --iterations 5`（real-s1 硬 gate）**5/5 PASS**
+- `crash_restart_smoke --use-mock-s1 --iterations 5` **5/5 PASS**
+  （informational only；沿 round 1 §7 diff #2 同款，本 round 2
+  实测不退化）
+- `scripted_backend_smoke --phase all`（候选 1 regression）**5/5
+  PASS**
+- `pubsub_cleanup_smoke --phase all`（候选 3 regression）**all PASS
+  + `triggered_c3 = false`**
+- **`ik_backend_smoke --phase all`（本 round 2 硬 gate）5/5 PASS**
+- `cargo tree -p robot-kinematics-xlerobot --edges normal,no-proc-
+  macro`：唯一 normal dep `robot-kinematics`（trait crate）；trait
+  crate 唯一 dep `thiserror v2.0.18`（沿 round 1 hard boundary）
+- `cargo deny check`：**未新增 violation；overall fail 为既有
+  baseline**（`assert_no_alloc` `BSD-1-Clause` + `serialport` `MPL-
+  2.0` 两条 `error[rejected]`；`unescaper` `GPL-3.0/MIT` 一条
+  `warning[parse-error]`；3 处全部跟 round 2 本轮改动无关；reviewer
+  ACK 路径 (a) follow-up 独立处理；详 round 2 summary §4.1 + §7 diff
+  #1）
+
+### 关键契约（round 2 引入 / 维护的硬约束）
+
+详 round 2 summary §3：
+
+1. **round 1 trait crate `crates/robot-kinematics/` 0 改动**（Spec
+   §"严禁改动" #1；`git diff round-1-end..(4/4) -- crates/robot-
+   kinematics/` empty diff）
+2. **`IkBackend::start()` 8 步顺序 semantic check**：payload_schema
+   _id / solver injected / deadline pre-guard / fbs decode / 字段长
+   度 / hardware joint count / solver.solve(None) / deadline post-
+   guard；短路顺序锁定语义不拆 helper
+3. **`ActionStartError` 3 类映射严格分离**：`PayloadDecode` (fbs verify
+   fail) / `HardwareMismatch` (solver joint_count != hardware.joints.
+   len()) / `Rejected` (其它全部含 5 个 `IkError` variant)；全部
+   → tonic `Code::FailedPrecondition`（沿 wire.rs:340 B4 既有路径）
+4. **`source_task_id == ctx.command_seq` bit-equivalent 锁**（B3 §3.7
+   + 候选 1 scripted 同款）：lib unit `tick_emits_command_with_source
+   _task_id_eq_ctx_command_seq` body bytes 全字节级 `assert_eq!` +
+   cross-process smoke `monotonic` phase 27+ unique seq 严格单调
+5. **Q-IK10 三层 fail-fast**：(a-i) `validate_profile_section`
+   `UnknownBackend`（feature off + profile 启用）/ (b-i) `validate_
+   solver_for_profile` `MissingSolver`（feature on + profile 启用 +
+   solver 漏注入）/ (a-ii) `BackendRegistry::dispatch` `NoBackend
+   ForKind`（feature on + solver 注入 OK + profile 不含 `"ik"` 但客
+   户端 InvokeTask kind=Ik）
+6. **Q-IK16 (a) clamp 路径不预钉 trait crate 语义**：XLeRobot impl
+   选路径 A 走 `Ok(clamped)`（沿 dimos `arm_ik.py`）；trait crate
+   AC-6 四处双写防漂移沿 round 1 不动；cross-process smoke `unreach
+   able_clamp` phase 终态 = Completed（**不**是 Failed）
+7. **deadline 单一权威 = backend pre/post guard**：solver 收 `None`
+   永不返 `IkError::DeadlineExceeded`（Plan §P.3.2 #12 (a)）；3 处
+   独立 check（`ActionRequest::validate` + IkBackend pre-guard +
+   IkBackend post-guard）
+8. **frozen schema / B4 wire 契约不动**：`action_status.fbs` /
+   `clear_estop.fbs` 0 改动；`action_request.fbs` 仅 `ActionKindFb`
+   enum **append** `Ik = 4`（enum append 是 B4 outline §6 允许的兼
+   容路径）；gateway 5 task method wire 字段 0 改动；**0 新增 IK 专
+   用 byte cap**（Plan §P.3.2 #7 沿 Control tier 8 KiB wire gate 2
+   兜底）
+
+### §6.7 5 不变量
+
+**0** 降级 / **0** 升级 / **0** 偏移：
+
+| # | 不变量 | round 2 改动路径 |
+|---|---|---|
+| 1 | S0 存活 = 软件层安全充分条件 | 0 触（IK 在 S1，不进 S0/adapter） |
+| 2 | systemd 是最外层看门狗 | 0 触 |
+| 3 | EStop 不可被软件清除为失忆态 | 0 触 |
+| 4 | S0 重启不失忆 | 0 触 |
+| 5 | 幂等写 RPC | 0 触（沿 B4 既有 idempotency 路径） |
+
+round 2 净改动 16 文件；全部落在 S1 coordinator / backend / wire enum
+/ IK 专用 fbs body / S1 daemon binary / smoke binary / config TOML /
+Cargo.toml + Cargo.lock；不进 S0 / adapter / EStop / fsync 双写 /
+idempotency cache 路径。
+
+### Plan-Execute diff 5 项
+
+详 round 2 summary §7：
+
+1. **`cargo deny check` overall FAIL = 既有 baseline 不退化** 沿
+   round 1 §7 diff #1 同款；本 round 2 **0** 新增 license violation；
+   3 处 baseline reject / parse warning 跟 round 2 本轮改动无关；
+   reviewer ACK 路径 (a) follow-up 独立处理；措辞约定**严禁** 写
+   "`cargo deny check` 过"
+2. **mock-s1 `crash_restart_smoke --use-mock-s1` 实测 5/5 PASS** 沿
+   round 1 §7 diff #2 同款 informational only；real-s1 路径仍硬 gate
+   （5/5 PASS）；本 round 2 不退化反向不退化
+3. **`Coordinator::new` 签名加 `solver` 参数 4 处 callsite 同步更新**
+   （s1_daemon + action_dispatch.rs × 2 + rr_server/handler.rs +
+   coordinator.rs tests）；hard boundary §"严禁改动" #1 round 1 trait
+   crate 0 改动守住
+4. **28 处 `ActionContext { ... }` 测试 site 补 `solver: None` 字段**
+   （hold_pose / mock_dwell / scripted 三个既有 backend test 文件）
+   + 4 处 `Coordinator::new(..., None)` 既有 backend 行为 **0** 改
+   动（`solver` 字段不读 → 不感知）
+5. **(4/4) `happy` / `unreachable_clamp` phase `progress_count == 0`
+   触发 → informational only** 沿候选 1 `Started` 是 informational
+   同款路径；single-shot + per-ActionId pubsub latest-sample 可能
+   skip 早期非终态事件；bit-level `progress = 1.0` 由 ik.rs lib unit
+   严格锁住
+
+### 下一候选触发条件
+
+候选 2 round 2 完结后下一步走 **v0.4 候选 4 (dimos 切换 light
+Research)** 或 **v0.5 入口**（待 v0.4_entry §3.1 reviewer 拍板）。
+触发：本 round 2 summary push（本 commit）+ reviewer 候选 4 entry
+ACK。**不**捆绑本 round 2 trait crate / impl crate 改动；不改候选
+1/3 既有 smoke binary 行为（本 round 2 (4/4) 已守住此边界）。
+
+### 影响面
+
+- 新 workspace member `crates/robot-kinematics-xlerobot` workspace
+  lint 基线沿用（`[lints] workspace = true`）；后续如有其它机器人
+  impl（`robot-kinematics-piper` 等）沿同款模板
+- `Coordinator::new` 签名加 `solver` 参数 = breaking change（仅 lib
+  内部；workspace 外无 dep）；4 处 callsite 同步更新 + 测试 site 28
+  处 `solver: None` 字段已闭环；未来 v0.5+ 如继续扩 `Coordinator::
+  new` 参数沿同款"运行时所需 → 可选"参数顺序原则
+- `ActionContext::solver: Option<&dyn ArmIkSolver>` 字段为 `Action
+  Context` struct 的不向后兼容扩展（既有 3 个 backend 不读，行为不
+  变；未来扩 backend `IkBackend` / 后续机器人 backend 可读取）
+- AC-Q `cargo deny check` 措辞约定沿 round 1 + 候选 1 同款：**严禁**
+  写"过"；统一写"未新增 violation；overall fail 为既有 baseline；
+  follow-up 独立处理"
+- AC-Q mock-s1 `crash_restart_smoke` 沿 round 1 + 候选 1 同款 baseline
+  regression 表述；本轮单次正 reversal **不**改写 Spec AC-Q
+
+### 审阅人
+
+reviewer ACK Plan round 1+2 + (1/4)..(4/4) 全部 ACK + summary 待 ACK
+（本 commit）。
+
+---
+
 ## 2026-05-19 · v0.4 候选 2 round 1 `robot-kinematics` `ArmIkSolver` trait crate first release（**状态：偏离登记**）
 
 ### 背景
