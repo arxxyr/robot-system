@@ -197,7 +197,15 @@ fn make_coordinator(registry: BackendRegistry, enabled: Vec<String>) -> Coordina
         joints: vec!["j0".into()],
     };
     let anchor_bias = vec![0.0_f64];
-    Coordinator::new(cfg, hardware, LAYOUT_ID, anchor_bias, registry, enabled)
+    Coordinator::new(
+        cfg,
+        hardware,
+        LAYOUT_ID,
+        anchor_bias,
+        registry,
+        enabled,
+        /* solver */ None,
+    )
 }
 
 /// 构造一个 registry 含 MockDwellBackend with 自定义 duration_ms（leak 到
@@ -648,6 +656,7 @@ fn make_hold_pose_coordinator(anchor_bias: Vec<f64>) -> Coordinator {
         anchor_bias,
         registry,
         vec!["hold_pose".into()],
+        /* solver */ None,
     )
 }
 

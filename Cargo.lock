@@ -1756,6 +1756,8 @@ dependencies = [
  "inventory",
  "libc 1.0.0-alpha.3",
  "robot-core",
+ "robot-kinematics",
+ "robot-kinematics-xlerobot",
  "robot-logging",
  "robot-msg",
  "robot-transport",

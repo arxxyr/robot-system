@@ -1007,6 +1007,21 @@ pub enum ProfileError {
          (B2 default = [\"mock_dwell\"]; check feature flags + spelling)"
     )]
     NoEnabledBackends,
+    /// L2（v0.4 候选 2 round 2 (3/4) Q-IK10b (i) ACK）：`profile.backends`
+    /// 启用 `backend` 但 `Coordinator::new(solver = None)` —— 即编译进
+    /// `backend-ik` feature + profile 写 `ik`，但 binary 漏注入 solver。
+    /// 典型成因：feature 拼写错 / s1_daemon 漏 feature-gated 构造路径 /
+    /// 多臂场景 hardware id 不匹配。必须 startup 期 fail-fast，不能漏到
+    /// runtime `submit()` 才报 `BackendStartFailed`。
+    ///
+    /// 检查由 [`validate_solver_for_profile`] 在 [`Coordinator::new`] 之
+    /// 前调用；详同名函数 doc。
+    #[error(
+        "[s1.profile.backends] includes {backend:?} but Coordinator was constructed without \
+         solver injection; check that the corresponding feature flag is enabled and \
+         s1_daemon constructs the solver (Q-IK10b (i))"
+    )]
+    MissingSolver { backend: String },
 }
 
 /// 顶层 wrapper：daemon `--config` 文件内含 `[s1.profile]` 子段；
@@ -1131,6 +1146,40 @@ pub fn validate_profile_section(
         return Err(ProfileError::JointCountMismatch {
             hardware_joints: hardware.joints.len(),
             anchor_bias_len,
+        });
+    }
+    Ok(())
+}
+
+/// v0.4 候选 2 round 2 (3/4) Q-IK10b (i) startup 期校验：profile 启用的
+/// 每个 backend 都必须有对应资源（目前仅 `"ik"` 需要 solver 注入）。
+///
+/// **何时调用**：s1_daemon binary 在 `Coordinator::new` 之前调（接着
+/// [`validate_profile_section`]）；任一错都 exit 3 fail-fast。
+///
+/// **检查项**：
+///
+/// - `profile.backends.contains("ik")` 且 `solver_present == false` →
+///   [`ProfileError::MissingSolver { backend: "ik" }`]。
+///
+/// **不检查**：
+///
+/// - 其它 backend（`hold_pose` / `mock_dwell` / `scripted` 都无 solver
+///   依赖）—— 留空集合，未来加新 backend 资源时扩本函数。
+/// - feature on + profile 未启用 `"ik"` + 注了 solver —— 允许（多余资
+///   源不报错，只防漏注入）。
+///
+/// **测试形态**（Plan §P.3.2 Q-IK10 (a-i) 路径）：用
+/// `BackendRegistry::from_explicit(&[ik_stub])` 模拟 feature on 场景，
+/// 然后 `solver_present = false` → MissingSolver；feature off 路径由
+/// [`validate_profile_section`] 自身 `UnknownBackend` 拦下，不进本函数。
+pub fn validate_solver_for_profile(
+    profile: &ProfileSection,
+    solver_present: bool,
+) -> Result<(), ProfileError> {
+    if profile.backends.iter().any(|b| b == "ik") && !solver_present {
+        return Err(ProfileError::MissingSolver {
+            backend: "ik".to_string(),
         });
     }
     Ok(())
@@ -1319,6 +1368,25 @@ pub struct Coordinator {
     hardware: HardwareSection,
     layout_id: u64,
     anchor_bias: Vec<f64>,
+    /// IK solver instance（v0.4 候选 2 round 2 (3/4) 加；Q-IK3 (a) ACK
+    /// `Option<Box<dyn ArmIkSolver>>` 持有所有权，**不** `Arc`）。
+    ///
+    /// **构造期注入** ：由 [`Self::new`] 接 `solver` 参数。s1_daemon
+    /// binary 按 `backend-ik` feature 决定是否构造 `XLeRobotArmIkSolver`：
+    ///
+    /// - feature off → solver 类型不在 binary，传 `None`。
+    /// - feature on → 启动期构造 `Box::new(XLeRobotArmIkSolver::new(Side::Right))`
+    ///   传 `Some(_)`。
+    ///
+    /// **startup 期校验**：profile 启用 `"ik"` + solver `None` →
+    /// [`validate_solver_for_profile`] fail-fast（Q-IK10b (i)）。
+    /// validate 由 binary 在 `Coordinator::new` 之前调用。
+    ///
+    /// **借出语义**：[`Self::submit`] / [`Self::cancel`] / [`Self::tick_action`]
+    /// 构 [`ActionContext`] 时用 `.as_deref()` 借为 `Option<&dyn ArmIkSolver>`；
+    /// `dyn ArmIkSolver` 自带 `Send + Sync`，跨线程持 `Coordinator` 锁
+    /// 安全。
+    solver: Option<Box<dyn robot_kinematics::ArmIkSolver>>,
 }
 
 impl Coordinator {
@@ -1338,6 +1406,7 @@ impl Coordinator {
         anchor_bias: Vec<f64>,
         registry: BackendRegistry,
         enabled_backends: Vec<String>,
+        solver: Option<Box<dyn robot_kinematics::ArmIkSolver>>,
     ) -> Self {
         Self {
             inner: Mutex::new(InnerState::new_booting()),
@@ -1347,6 +1416,7 @@ impl Coordinator {
             hardware,
             layout_id,
             anchor_bias,
+            solver,
         }
     }
 
@@ -1474,6 +1544,10 @@ impl Coordinator {
             // 不产 body bytes（仅返 ActionInstance），用 0 哨兵安全（详
             // ActionContext::command_seq doc）。
             command_seq: 0,
+            // v0.4 候选 2 round 2 (3/4) IK solver borrow plumb
+            // （Q-IK3 (a) ACK `Option<&dyn ArmIkSolver>`，**不** Arc /
+            // **不** clone；详 ActionContext::solver doc）。
+            solver: self.solver.as_deref(),
         };
         // start 失败：状态不转移，仍 Idle。
         let instance = backend.start(&req, &ctx)?;
@@ -1539,6 +1613,8 @@ impl Coordinator {
             // cancel 路径不在 publish frame seq 流上；backend.cancel 通
             // 常仅 set flag 不产 body bytes，用 0 哨兵安全。
             command_seq: 0,
+            // IK solver borrow（v0.4 候选 2 round 2 (3/4)；详 submit 同款）。
+            solver: self.solver.as_deref(),
         };
         current.instance.cancel(&mut ctx)?;
         current.pending_cancel = true;
@@ -1615,6 +1691,10 @@ impl Coordinator {
             config: &self.config,
             anchor_bias: &self.anchor_bias,
             command_seq,
+            // IK solver borrow（v0.4 候选 2 round 2 (3/4)；详 submit 同款；
+            // tick_action 路径上 IkBackend 自己用 ctx.solver 调 solve()，
+            // hold_pose / scripted backend 不读本字段）。
+            solver: self.solver.as_deref(),
         };
 
         let now_ns = clock.now().0;
@@ -2604,6 +2684,81 @@ backends = 42
         assert!(s.contains("at least one backend"));
     }
 
+    // ----- v0.4 候选 2 round 2 (3/4) Q-IK10 双层 fail-fast -----
+
+    #[test]
+    fn validate_profile_rejects_ik_when_backend_feature_off() {
+        // **Q-IK10 (a-i) 测试形态**：用 `from_explicit(&[])` 模拟 "整个
+        // binary 没有 link 任何 backend"（**不**走 `--no-default-features`，
+        // 因 default features 已 include backend-ik）。profile 写
+        // `["ik"]` → registry 无 "ik" → validate_profile_section 报
+        // `UnknownBackend { name: "ik" }`，跟 feature off 路径行为一致。
+        let p = ProfileSection {
+            backends: vec!["ik".into()],
+            command_mode: "joint_position".into(),
+        };
+        let r = BackendRegistry::from_explicit(&[]);
+        let hw = hardware_n(5);
+        let err = validate_profile_section(&p, &r, &hw, /* anchor_bias_len */ 5)
+            .expect_err("expected Err");
+        match err {
+            ProfileError::UnknownBackend { name } => {
+                assert_eq!(name, "ik", "feature off 路径应报 UnknownBackend(\"ik\")");
+            }
+            other => panic!("expected UnknownBackend(\"ik\"), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_solver_for_profile_rejects_missing_solver_when_ik_enabled() {
+        // **Q-IK10b (i) 测试形态**：profile 启用 `"ik"` 但 solver_present
+        // = false（典型 wiring bug：feature on + s1_daemon 漏构造 solver）
+        // → `MissingSolver { backend: "ik" }`。
+        let p = ProfileSection {
+            backends: vec!["ik".into()],
+            command_mode: "joint_position".into(),
+        };
+        let err =
+            validate_solver_for_profile(&p, /* solver_present */ false).expect_err("expected Err");
+        match err {
+            ProfileError::MissingSolver { backend } => {
+                assert_eq!(backend, "ik");
+            }
+            other => panic!("expected MissingSolver(\"ik\"), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_solver_for_profile_accepts_ik_with_solver_present() {
+        // profile 启用 `"ik"` + solver 注入 OK → Ok(()) 通过。
+        let p = ProfileSection {
+            backends: vec!["ik".into()],
+            command_mode: "joint_position".into(),
+        };
+        validate_solver_for_profile(&p, /* solver_present */ true).expect("validate ok");
+    }
+
+    #[test]
+    fn validate_solver_for_profile_accepts_no_ik_in_profile() {
+        // profile 未启用 `"ik"`（如默认 default_b2 = ["mock_dwell"]）→
+        // solver 可注可不注，恒 Ok(())（不允许"多余资源"报错）。
+        let p = ProfileSection::default_b2();
+        validate_solver_for_profile(&p, /* solver_present */ false).expect("ok without solver");
+        validate_solver_for_profile(&p, /* solver_present */ true)
+            .expect("ok with redundant solver");
+    }
+
+    #[test]
+    fn missing_solver_display_renders_human_readable_message() {
+        let err = ProfileError::MissingSolver {
+            backend: "ik".into(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("\"ik\""));
+        assert!(s.contains("solver injection"));
+        assert!(s.contains("Q-IK10b"));
+    }
+
     // ====================================================================
     // Coordinator state machine + 4 API + tick_action（B2 (2/3) reviewer
     // 验收契约：4 条 submit 拒绝 + 5 条 clear_error 转移 + cancel 收敛
@@ -2758,6 +2913,7 @@ backends = 42
             /* anchor_bias */ vec![0.0],
             registry,
             /* enabled_backends */ vec!["scripted".into()],
+            /* solver */ None,
         )
     }
 

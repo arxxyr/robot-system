@@ -320,6 +320,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor,
             command_seq: 0,
+            solver: None,
         };
         let instance = backend.start(&req, &ctx).expect("start ok");
         // 让调用方推 clock 之后再 tick。
@@ -346,6 +347,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor,
             command_seq: 0,
+            solver: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         match out {
@@ -381,6 +383,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor,
             command_seq: 0,
+            solver: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         assert!(matches!(
@@ -407,6 +410,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor,
             command_seq: 0,
+            solver: None,
         };
         let mut instance = backend.start(&req, &ctx).expect("start ok");
 
@@ -449,6 +453,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor,
             command_seq: 0,
+            solver: None,
         };
         // Box<dyn ActionInstance> 不 impl Debug，不能 expect_err；走
         // let-else 把 Ok 排除。

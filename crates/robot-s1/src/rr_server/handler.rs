@@ -502,6 +502,7 @@ mod tests {
             vec![0.0_f64],
             registry,
             vec!["mock_dwell".into()],
+            /* solver */ None,
         );
         coord.mark_idle().unwrap();
         Arc::new(coord)

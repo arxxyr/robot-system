@@ -236,6 +236,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            solver: None,
         };
         let instance = backend.start(&req, &ctx).expect("start ok");
         (instance, cfg, hardware, anchor_bias)
@@ -291,6 +292,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            solver: None,
         };
         // Box<dyn ActionInstance> 不 impl Debug，不能 expect_err；走
         // let-else（跟 mock_dwell 同款）。
@@ -327,6 +329,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq,
+            solver: None,
         };
         let mut instance = backend.start(&req, &ctx).expect("start ok");
 
@@ -401,6 +404,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            solver: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         assert!(matches!(out, ActionTickOutput::Continue { .. }));
@@ -441,6 +445,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            solver: None,
         };
         let mut instance = backend.start(&req, &ctx_initial).expect("start ok");
 
@@ -454,6 +459,7 @@ mod tests {
                 config: &cfg,
                 anchor_bias: &anchor_bias,
                 command_seq: i + 1,
+                solver: None,
             };
             let out = instance.tick(&mut ctx).expect("tick ok");
             match out {

@@ -572,6 +572,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            solver: None,
         };
         let instance = backend.start(&req, &ctx).expect("start ok");
         (instance, cfg, hardware, anchor_bias, clock)
@@ -636,6 +637,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            solver: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -675,6 +677,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            solver: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -713,6 +716,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            solver: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -751,6 +755,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            solver: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -788,6 +793,7 @@ mod tests {
                 config: &cfg,
                 anchor_bias: &anchor_bias,
                 command_seq: (i + 1) * 100, // 100, 200, 300, ...
+                solver: None,
             };
             let out = instance.tick(&mut ctx).expect("tick ok");
             let body = match out {
@@ -858,6 +864,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            solver: None,
         };
         let ActionTickOutput::Continue {
             command: Some(body),
@@ -881,6 +888,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 2,
+            solver: None,
         };
         let ActionTickOutput::Continue {
             command: Some(body),
@@ -920,6 +928,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            solver: None,
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
 
@@ -932,6 +941,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 2,
+            solver: None,
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
 
@@ -945,6 +955,7 @@ mod tests {
                 config: &cfg,
                 anchor_bias: &anchor_bias,
                 command_seq: 10 + i,
+                solver: None,
             };
             let ActionTickOutput::Continue {
                 command: Some(body),
@@ -984,6 +995,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            solver: None,
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
 
@@ -997,6 +1009,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 2,
+            solver: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         match out {
@@ -1026,6 +1039,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            solver: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         assert!(matches!(out, ActionTickOutput::Continue { .. }));

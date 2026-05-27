@@ -16,7 +16,7 @@ publish    .workspace = true
 # link 进 binary）。B3 起加 backend-ik-xlerobot / backend-rl-onnx /
 # backend-scripted；落地对应 backend crate 时同步加 feature flag。
 [features]
-default            = ["backend-mock-dwell", "backend-hold-pose", "backend-scripted"]
+default            = ["backend-mock-dwell", "backend-hold-pose", "backend-scripted", "backend-ik"]
 backend-mock-dwell = []
 # v0.3 B3 (1/2)：HoldPoseBackend 第一个真 action backend（详
 # docs/handoffs/v0.3_b3_outline.md round 2）。Feature off 时整文件
@@ -32,6 +32,25 @@ backend-hold-pose  = []
 # `[s1.profile.backends = ["scripted"]]` 启动期 fail-fast，符合
 # "配置与编译 profile 不匹配启动期 fail-fast"硬约束。
 backend-scripted   = []
+# v0.4 候选 2 round 2 (3/4)：IkBackend（笛卡尔 pose IK 解算 + 关节
+# 位置一次性输出；详 team-swe/specs/v0_4_robot_kinematics_round2.md
+# Q-IK1..Q-IK17 + Plan §P.3.2）。Q-IK11 (a) 拍板：进 default features，
+# 沿 hold_pose / mock_dwell / scripted 同款策略。Feature off 时整文
+# 件不 link → BackendRegistry::from_inventory 收集不到 ik →
+# `[s1.profile.backends = ["ik"]]` 启动期 fail-fast (validate_
+# profile_section UnknownBackend；Q-IK10 (a-i))，符合"配置与编译
+# profile 不匹配启动期 fail-fast"硬约束。
+#
+# **双 workspace dep**（Q-IK1 ACK）：feature on 时把 `robot-kinematics`
+# (trait crate) + `robot-kinematics-xlerobot` (impl crate) 一起拉进
+# binary；不允许只 link trait 而漏 impl（会导致 s1_daemon 编不出 solver
+# 注入路径）。
+# **dep policy**：`robot-kinematics`（trait crate）**永远**链接（零 runtime
+# 依赖，仅 `ArmIkSolver` trait + POD 共享类型；让 `ActionContext::solver` /
+# `Coordinator::solver` 字段不必 cfg gate）；只 `robot-kinematics-xlerobot`
+# （impl crate）由本 feature optional gate（XLeRobotArmIkSolver 实例化
+# 只在 s1_daemon binary，按 backend-ik feature 走 cfg 路径）。
+backend-ik         = ["dep:robot-kinematics-xlerobot"]
 
 # v0.3 B1 (2/3)：mock_s1 / s1_daemon 显式列出 [[bin]]。
 # - mock_s1：v0.2 起 ballet / bench / 真机摆动测试工具（保留；非 production
@@ -78,6 +97,17 @@ uuid            = { workspace = true }
 # IO。白名单沿用 workspace 顶层登记（已记 docs/CHANGELOG.md 2026-04-24
 # "Step 7 task 27b matrix + inventory adapter 自注册"）。
 inventory       = { workspace = true }
+# v0.4 候选 2 round 2 (3/4) IkBackend 依赖（Q-IK1 ACK 双 workspace
+# dep；optional 由 backend-ik feature 启用 dep:robot-kinematics +
+# dep:robot-kinematics-xlerobot）：
+# - robot-kinematics：trait crate（ArmIkSolver trait + Pose / IkSolution /
+#   IkError 共享类型）；Coordinator 持 Option<Box<dyn ArmIkSolver>>，
+#   ActionContext 透传 Option<&dyn ArmIkSolver>。
+# - robot-kinematics-xlerobot：XLeRobotArmIkSolver impl（5-DOF 闭式
+#   IK；s1_daemon binary 启动期按 backend-ik feature 创建实例注入
+#   Coordinator）。
+robot-kinematics          = { workspace = true }
+robot-kinematics-xlerobot = { workspace = true, optional = true }
 
 [lints]
 workspace = true

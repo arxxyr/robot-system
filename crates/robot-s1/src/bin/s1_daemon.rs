@@ -396,6 +396,39 @@ fn run(args: &Args) -> Result<(), i32> {
         return Err(3);
     }
 
+    // ---- 构造 IK solver（v0.4 候选 2 round 2 (3/4) Q-IK11 (a) backend-ik
+    //      default-on + Q-IK3 (a) Option<Box<dyn ArmIkSolver>>）----
+    //
+    // feature on + profile 启用 `"ik"` → 构造 XLeRobotArmIkSolver(Side::Right)
+    // 注入 Coordinator。feature off → solver 类型不存在，传 None；
+    // validate_profile_section 会先 UnknownBackend 拦下 `profile = ["ik"]`，
+    // 不会漏到这里。feature on + profile 没启 ik → solver 注 None 即可。
+    //
+    // Q-IK10b (i) startup 期校验：validate_solver_for_profile 在 Coordinator::new
+    // 之前调，profile 写 `"ik"` 但 solver = None 直接 exit 3。
+    #[cfg(feature = "backend-ik")]
+    let solver: Option<Box<dyn robot_kinematics::ArmIkSolver>> = {
+        if profile.backends.iter().any(|b| b == "ik") {
+            Some(Box::new(
+                robot_kinematics_xlerobot::XLeRobotArmIkSolver::new(
+                    robot_kinematics_xlerobot::Side::Right,
+                ),
+            ))
+        } else {
+            None
+        }
+    };
+    #[cfg(not(feature = "backend-ik"))]
+    let solver: Option<Box<dyn robot_kinematics::ArmIkSolver>> = None;
+
+    if let Err(e) = coordinator::validate_solver_for_profile(
+        &profile,
+        /* solver_present */ solver.is_some(),
+    ) {
+        eprintln!("fatal: validate solver injection: {e}");
+        return Err(3);
+    }
+
     // ---- 构造 Coordinator 并 mark_idle（Booting → Idle）----
     let coordinator = Coordinator::new(
         cfg,
@@ -404,6 +437,7 @@ fn run(args: &Args) -> Result<(), i32> {
         bias,
         registry,
         profile.backends.clone(),
+        solver,
     );
     if let Err(e) = coordinator.mark_idle() {
         // Coordinator::new 总是构造在 Booting；mark_idle 仅 Booting → Idle

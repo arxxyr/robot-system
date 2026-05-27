@@ -64,6 +64,7 @@
 #![allow(clippy::doc_markdown)]
 
 use robot_core::time::RobotClock;
+use robot_kinematics::ArmIkSolver;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -363,6 +364,30 @@ pub struct ActionContext<'a> {
     pub config: &'a CoordinatorConfig,
     pub anchor_bias: &'a [f64],
     pub command_seq: u64,
+    /// IK solver borrow（v0.4 候选 2 round 2 (3/4) 加；Q-IK3 (a) ACK
+    /// `Option<&dyn ArmIkSolver>` 引用 plumb，**不** `Arc` / **不** clone）。
+    ///
+    /// **存在性**：`Some(_)` 仅当 `backend-ik` feature 启用 + `s1_daemon`
+    /// 启动期成功构造 [`robot_kinematics_xlerobot::XLeRobotArmIkSolver`]
+    /// 并注入 [`crate::coordinator::Coordinator::new`]。Coordinator 借用
+    /// 内部 `Option<Box<dyn ArmIkSolver>>` 透传到本字段。
+    ///
+    /// **None 路径**：
+    ///
+    /// - `backend-ik` feature off → `s1_daemon` 永不构造 solver，注入
+    ///   `None`；本字段恒为 `None`（trait crate 永远 link，类型仍存在）。
+    /// - feature on 但 profile 未启用 `"ik"` → coordinator submit 永远
+    ///   走 [`crate::action::SubmitError::NoBackendForKind`] 早拦掉，本
+    ///   字段是否 `Some` 不可见。
+    /// - feature on + profile 启用 `"ik"` + `s1_daemon` 漏注入 →
+    ///   [`crate::coordinator::validate_solver_for_profile`] 在 startup
+    ///   期 fail-fast（Q-IK10b (i) ACK；详 coordinator 同名函数 doc）。
+    ///
+    /// **lifetime `'a`**：跟 [`Self::hardware`] / [`Self::config`] /
+    /// [`Self::anchor_bias`] 同一 borrow window；coordinator 持锁内构
+    /// 造 `ActionContext` 时短暂借出，tick 结束即归还。`dyn ArmIkSolver`
+    /// 内部 `Send + Sync` 保证跨线程访问安全（B4 RR server 多线程场景）。
+    pub solver: Option<&'a dyn ArmIkSolver>,
 }
 
 // ============================================================================
