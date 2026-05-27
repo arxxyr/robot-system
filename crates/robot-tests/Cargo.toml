@@ -91,6 +91,19 @@ name = "scripted_backend_smoke"
 path = "src/bin/scripted_backend_smoke.rs"
 required-features = ["scripted-backend-smoke"]
 
+# v0.4 候选 2 round 2 (4/4) IkBackend cross-process smoke。
+# `required-features = ["ik-backend-smoke"]`：跟 scripted-backend-smoke
+# 同款 feature 守门 —— 生产 release 默认 feature 关，本 bin 不参编译。
+# 复用 robot-rpc/client + tonic + tokio 三条 optional dep + 新增
+# robot-kinematics / robot-kinematics-xlerobot 两条 optional dep（仅本
+# bin 用，用作 IkPayload builder 时 cross-check / selftest solver
+# round-trip）。**不**抽公共 helper（reviewer 拍板"smoke 不把 helper
+# 抽公共库"），inline 同款 scripted_backend_smoke 模式。
+[[bin]]
+name = "ik_backend_smoke"
+path = "src/bin/ik_backend_smoke.rs"
+required-features = ["ik-backend-smoke"]
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -143,6 +156,20 @@ robot-rpc = { workspace = true, optional = true, features = ["client"] }
 tonic     = { workspace = true, optional = true }
 tokio     = { workspace = true, optional = true, features = ["process", "io-util"] }
 
+# v0.4 候选 2 round 2 (4/4) ik_backend_smoke optional deps：
+# - robot-kinematics：trait crate（ArmIkSolver / Pose / IkError 等共享
+#   类型）。selftest 期跟 binary 端构造 XLeRobotArmIkSolver 算 expected
+#   joints（用作 ground truth 比对）；同时验"IkPayload builder bytes
+#   能让 trait 层 root::<IkPayload> verify 通过"路径。
+# - robot-kinematics-xlerobot：impl crate（XLeRobotArmIkSolver）。
+#   smoke 端构造一个 Side::Right solver 实例（**不** spawn 进 daemon ——
+#   daemon 已自带；这里仅是 ground truth）。
+# - **optional + ik-backend-smoke feature gate**：生产 release 不带本
+#   feature → robot-kinematics / robot-kinematics-xlerobot 都不 link
+#   进 robot-tests crate。
+robot-kinematics          = { workspace = true, optional = true }
+robot-kinematics-xlerobot = { workspace = true, optional = true }
+
 [features]
 # v0.3 A2-3 freeze systemd smoke 入口 feature。
 # - 生产 release **不**带本 feature（freeze_systemd_smoke binary 不参编译）。
@@ -186,6 +213,20 @@ scripted-backend-smoke = [
     "dep:robot-rpc",
     "dep:tonic",
     "dep:tokio",
+]
+
+# v0.4 候选 2 round 2 (4/4) IkBackend cross-process smoke 入口 feature。
+# - 生产 release 不带本 feature（ik_backend_smoke binary 不参编译）。
+# - 本机跑：cargo run -p robot-tests --bin ik_backend_smoke
+#   --features ik-backend-smoke -- --phase all ...
+# - 启用 robot-rpc / tonic / tokio（跟其它 smoke 同款）+ robot-kinematics /
+#   robot-kinematics-xlerobot（selftest ground truth solver）。
+ik-backend-smoke = [
+    "dep:robot-rpc",
+    "dep:tonic",
+    "dep:tokio",
+    "dep:robot-kinematics",
+    "dep:robot-kinematics-xlerobot",
 ]
 
 [lints]
