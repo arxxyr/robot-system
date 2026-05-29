@@ -1640,13 +1640,20 @@ dependencies = [
 name = "robot-cli"
 version = "0.1.2"
 dependencies = [
+ "flatbuffers",
  "iceoryx2",
  "libc 1.0.0-alpha.3",
  "robot-core",
  "robot-logging",
  "robot-msg",
+ "robot-rpc",
  "robot-transport",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tonic",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

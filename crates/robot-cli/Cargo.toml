@@ -19,5 +19,21 @@ libc            = { workspace = true }
 # task-32 (2026-04-25)：日志骨架统一到 tracing。
 tracing         = { workspace = true }
 
+# v0.5 候选 A operator CLI（(1/5)）：robotctl 扩 7 个 tonic gRPC 子命令需要
+# 的 client-side 依赖。robot-cli 是 **client 端 consumer**：只 import
+# robot-rpc 的 client feature + 生成的 proto 类型，不接 server / 不动 wire
+# 契约 / 不改任何 frozen schema。这条 **超越** 2026-04-27 A1-1 (3/3)
+# "仅 robot-rpc link tonic/prost/tokio" 白名单——候选 A 经 Spec round 1-3
+# reviewer ACK（AC-1）显式把 robot-cli 加入 tonic/tokio consumer；白名单
+# 偏离登记见 docs/CHANGELOG.md 2026-05-29 "v0.5 候选 A (1/5) robot-cli
+# tonic client 依赖白名单更新"。
+robot-rpc       = { workspace = true, features = ["client"] }
+tonic           = { workspace = true }
+tokio           = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "io-util"] }
+flatbuffers     = { workspace = true }
+uuid            = { workspace = true }
+serde           = { workspace = true, features = ["derive"] }
+serde_json      = { workspace = true }
+
 [lints]
 workspace = true
