@@ -19,6 +19,23 @@
 
 ---
 
+## Round 2 amend 记录（2026-05-28；reviewer round 1 复审后）
+
+reviewer round 1 复审给出 5 阻断 + 2 非阻断修订；本 round 2 amend 全部
+吸收（**AC 编号 / Q-CLI 拍板不变**；仅修内部不一致 + 去未拍板依赖）：
+
+| # | 类别 | 修订 | 落点 |
+|---|---|---|---|
+| 1 | 阻断 | `--token` 语义统一：**`--token` 优先 → 否则 env `ROBOT_TOKEN` → 两者都缺 exit 2**；7 子命令表述同步（撤"--token 必填"措辞）| AC-3 #3 + AC-4 表 + AC-6 |
+| 2 | 阻断 | 去未拍板依赖 / 未定义 helper：**不**加 `whoami` / `rand` / `getrandom`；`source` 默认走 `USER`/`USERNAME` env fallback；`idempotency_key` 自动生成复用本次 UUIDv7 = `cli-<request_id>`（撤 `unix_ms()` + `random_hex_8()`）| AC-6 + Q-CLI5 行 |
+| 3 | 阻断 | 撤未拍板 `--joints` 参数：`positions` 长度由 `--waypoints-file` JSON 内容决定 + CLI 仅做 ragged 等长检查；关节数与 hardware 匹配交 server 端 backend（mismatch → exit 4）| AC-8 |
+| 4 | 阻断 | smoke `stream_events_sigint` 实测信号 `SIGTERM` → **`SIGINT`**（对齐 Q-CLI10 (c) + AC-10 只处理 `ctrl_c()`）| AC-12 phase 7 |
+| 5 | 阻断 | smoke `clear_estop_happy` 改名 **`clear_estop_auth_denied_after_local_gate`** + 语义澄清（验"CLI 四道闸通过 → RPC 已发 → server 权限拒绝"，**非** happy path）| AC-3 smoke (1) + AC-12 phase 2 |
+| 6 | 非阻断 | dep 数对齐：AC-1"新加 6 条"→"新加 **7** 条"；回滚段"删 5 行 dep"→"删 **7** 行 dep" | AC-1 + 回滚 |
+| 7 | 非阻断 | Plan P.0 工作基线 HEAD `0491f58` → **`ee4b47f`**（Spec round 1 land）| §P.0 |
+
+---
+
 ## What
 
 为 v0.5 候选 A 落地 maintainer 本地 operator CLI 真实接入所需最小可
@@ -171,7 +188,7 @@ round 中止 / 走独立 reviewer round 单独拍板：
 候选 A 实施期间任一阶段失败 / reviewer 拍板撤回：
 
 1. **`crates/robot-cli/` 改动整体 revert**：
-   - `Cargo.toml` 改动撤回（删 5 行 dep）
+   - `Cargo.toml` 改动撤回（删 7 行新增 dep；详 AC-1）
    - `src/lib.rs` 撤回（回到 15 LoC 空 lib）
    - `src/bin/robotctl.rs` 撤回（回到 426 LoC 3 子命令版）
    - 既有 3 个 iceoryx2 子命令行为 **0** 影响
@@ -227,10 +244,14 @@ round 中止 / 走独立 reviewer round 单独拍板：
 
 ### AC-1: `crates/robot-cli/Cargo.toml` 扩 dep 合规
 
-- `[dependencies]` 段新加 6 条：`robot-rpc` (with `features =
+- `[dependencies]` 段新加 **7** 条：`robot-rpc` (with `features =
   ["client"]`) + `tonic` + `tokio` (with `features = ["macros",
   "rt-multi-thread", "signal", "io-util"]`) + `flatbuffers` + `uuid`
   + `serde` + `serde_json`
+- **不**新增 `whoami` / `rand` / `getrandom` 直接 dep（round 2 amend #2；
+  `source` 走 `std::env`，`idempotency_key` 复用 `uuid` 已生成的
+  request_id）；`uuid` 的 `v7` feature 传递引入的 `getrandom` 是既有
+  workspace dep 子树，非候选 A 新增直接依赖
 - 全部走 `{ workspace = true }`（沿 v0.3 / v0.4 既有约定；不显式
   pin minor 版本）
 - 既有 6 条 dep（`robot-core` / `robot-logging` / `robot-msg` /
@@ -264,7 +285,9 @@ round 中止 / 走独立 reviewer round 单独拍板：
      版本等）
   2. `--audit-reason <STR>` 必填；空字符串 / 仅含空白字符的字符
      串 / 缺失参数 **全部**拒绝
-  3. `--token <TOKEN>` 必填（CLI 层；缺 token exit 2；不发 RPC）
+  3. token 必须可解析（CLI 层）：**`--token <TOKEN>` 优先，否则
+     回退 env `ROBOT_TOKEN`；两者都缺 exit 2 + 不发 RPC**（Q-CLI3
+     (a) 锁定；**不**是"--token 必填"）
 - 任一条件失败：**CLI 端早拒** → stderr 打具体错误 + exit 2
   （**不**发 RPC，避免 gateway audit log 被无效请求污染）
 - 通过 CLI 早拒后再发 RPC；server 端**仍**做 confirmation 校验（沿
@@ -280,10 +303,12 @@ round 中止 / 走独立 reviewer round 单独拍板：
   * 缺 `--token`：`error: --token (or env ROBOT_TOKEN) is required`
 - lib unit 覆盖 6 个失败路径（缺/匹配错/空白 confirmation × 缺/
   空 audit-reason 笛卡尔积去重）
-- smoke phase 覆盖：(1) happy 完整 4 参数 → server 端 PermissionDenied
-  （viewer token；当前 latch 未 set；验 wire 链路通）；(2) 缺
-  confirmation → exit 2；(3) confirmation 不匹配 → exit 2；(4) 空
-  audit-reason → exit 2
+- smoke phase 覆盖：(1) `auth_denied_after_local_gate`（**非** happy
+  path —— round 2 amend #5）：viewer token + 完整合法 4 参数 → **CLI
+  四道闸全过 → RPC 已发出 → server 端 PermissionDenied**（viewer 无
+  maintainer cap）→ exit 3（验"CLI 早拒通过 + wire 链路通 + server
+  端权限拒绝"全链路）；(2) 缺 confirmation → exit 2；(3) confirmation
+  不匹配 → exit 2；(4) 空 audit-reason → exit 2
 
 ### AC-4: 7 个 tonic 子命令 RPC 调用 + 错误码透传（CodeMap §3.5）
 
@@ -292,12 +317,12 @@ round 中止 / 走独立 reviewer round 单独拍板：
 | 子命令 | RPC | 必填参数验证 | 服务器返回处理 |
 |---|---|---|---|
 | `clear-estop` | `ClearEStop` | 见 AC-3 | Ok → exit 0 + stdout `cleared_at_ns=<ns> dry_run=<bool>`；error → exit code per §6.5 + stderr `error: <code>: <message>` |
-| `clear-error` | `ClearError` | `--audit-reason` 必填非空；`--token` 必填 | 同上 |
-| `get-task-status` | `GetTaskStatus` | `<action-id>` UUIDv7 hex 校验；`--token` 必填 | Ok → exit 0 + 状态行；NotFound → exit 4 |
-| `cancel-task` | `CancelTask` | `<action-id>` UUIDv7 hex；`--audit-reason` 必填非空；`--token` 必填 | Ok → exit 0 + `cleared_at_ns=<ns>`；error → 透传 |
-| `stream-events` | `StreamTaskEvents` | `<action-id>` UUIDv7 hex；`--token` 必填 | 每帧一行 stdout；终态自动关闭 exit 0；FAILED 终态仍 exit 0；SIGINT → exit 0 + stderr warning (AC-7) |
-| `invoke scripted` | `InvokeTask` kind=Scripted | `--waypoints-file <PATH>` 必填存在；JSON 合法（AC-12）；`--audit-reason` 必填；`--token` 必填 | Ok → exit 0 + `action_id=<uuid>`；`--follow` → 加 stream-events 跟到终态；error → 透传 |
-| `invoke ik` | `InvokeTask` kind=Ik | `--target-x` / `--target-y` / `--target-z` 必填 f64 解析过；`--target-qx/qy/qz/qw` 可选默认 `0 0 0 1`；`--audit-reason` 必填；`--token` 必填 | 同 invoke scripted |
+| `clear-error` | `ClearError` | `--audit-reason` 必填非空；token 可解析（`--token` 或 env `ROBOT_TOKEN`，两者缺 exit 2） | 同上 |
+| `get-task-status` | `GetTaskStatus` | `<action-id>` UUIDv7 hex 校验；token 可解析（`--token` 或 env `ROBOT_TOKEN`，两者缺 exit 2） | Ok → exit 0 + 状态行；NotFound → exit 4 |
+| `cancel-task` | `CancelTask` | `<action-id>` UUIDv7 hex；`--audit-reason` 必填非空；token 可解析（`--token` 或 env `ROBOT_TOKEN`，两者缺 exit 2） | Ok → exit 0 + `cleared_at_ns=<ns>`；error → 透传 |
+| `stream-events` | `StreamTaskEvents` | `<action-id>` UUIDv7 hex；token 可解析（`--token` 或 env `ROBOT_TOKEN`，两者缺 exit 2） | 每帧一行 stdout；终态自动关闭 exit 0；FAILED 终态仍 exit 0；SIGINT → exit 0 + stderr warning (AC-7) |
+| `invoke scripted` | `InvokeTask` kind=Scripted | `--waypoints-file <PATH>` 必填存在；JSON 合法（AC-12）；`--audit-reason` 必填；token 可解析（`--token` 或 env `ROBOT_TOKEN`，两者缺 exit 2） | Ok → exit 0 + `action_id=<uuid>`；`--follow` → 加 stream-events 跟到终态；error → 透传 |
+| `invoke ik` | `InvokeTask` kind=Ik | `--target-x` / `--target-y` / `--target-z` 必填 f64 解析过；`--target-qx/qy/qz/qw` 可选默认 `0 0 0 1`；`--audit-reason` 必填；token 可解析（`--token` 或 env `ROBOT_TOKEN`，两者缺 exit 2） | 同 invoke scripted |
 
 ### AC-5: `tonic::Code` → CLI exit code 完整映射表（Q6 (a) 拍板 + Q15 (a) Spec 必拍透）
 
@@ -340,34 +365,45 @@ round 中止 / 走独立 reviewer round 单独拍板：
 
 - `lib::meta::build_command_meta(...)` 构造逻辑：
   ```rust
+  // round 2 amend #2：request_id 先生成一次，idempotency_key 自动
+  // 生成时复用它 —— 不引 rand / getrandom 直接 dep。
+  let request_id = uuid::Uuid::now_v7().hyphenated().to_string();
+  //   ^ uuid（既有 workspace dep）；hyphenated 默认 lowercase
+  let token = resolve_token(&args);  // --token 优先 → 否则 env ROBOT_TOKEN
+  //   ^ 调用前已 CLI 早拒：两者都缺 → exit 2（见下）
   CommandMeta {
-      request_id: uuid_v7_new(),  // 每次调用都新生成
-      source: args.source.clone(),  // 默认 "cli.<unix_user>"；--source 覆盖
+      request_id: request_id.clone(),  // 每次调用都新生成
+      source: args.source.clone().unwrap_or_else(default_cli_source),
+      //   default_cli_source() = format!("cli.{}", USER/USERNAME/"unknown")
       auth: Some(AuthContext {
-          token: args.token.clone(),  // 必填；CLI 早拒空
+          token,                            // 已解析非空
           mtls_fingerprint: String::new(),  // 占位；mTLS v0.5+
       }),
       timeout_ms: args.timeout_ms,  // 默认 2000；--timeout-ms 覆盖
-      idempotency_key: args.idempotency_key.clone().unwrap_or_else(
-          || format!("cli-{}-{}", unix_ms(), random_hex_8())
-      ),  // Q5 (b) 拍板自动生成
+      idempotency_key: args.idempotency_key.clone()
+          .unwrap_or_else(|| format!("cli-{request_id}")),
+      //   ^ Q-CLI5 (b) 自动生成；round 2 amend 复用 request_id（不再 rand）
       dry_run: args.dry_run,  // flag；默认 false
       audit_reason: args.audit_reason.clone().unwrap_or_default(),
       // (CLI 早拒：5 个写 RPC 必填非空；2 个读 RPC 不必填)
   }
   ```
-- `source` 默认值：`format!("cli.{}", whoami::username())`（`whoami`
-  crate；如未引入则 `env::var("USER").unwrap_or("unknown")`）；
-  `--source <STR>` 覆盖
+- `source` 默认值（`default_cli_source()`；**不**引 `whoami` dep —
+  round 2 amend #2）：`format!("cli.{}", user)`，其中 `user =
+  std::env::var("USER").or_else(|_| std::env::var("USERNAME"))
+  .unwrap_or_else(|_| "unknown".into())`（Linux 用 `USER`，Windows 用
+  `USERNAME`，都缺回退 `"unknown"`）；`--source <STR>` 覆盖
 - `idempotency_key` 自动生成时**必须** stderr 提示一行：
   `info: auto-generated idempotency_key=<key>; for retry pass
   --idempotency-key <key>`（Q5 (b) 锁定）
 - `--token` 缺失：先查 env `ROBOT_TOKEN`；env 也缺 exit 2 + stderr
   `error: --token (or env ROBOT_TOKEN) is required`（Q3 (a) 锁定）
-- `request_id` 用 `uuid::Uuid::now_v7().hyphenated().to_string().
-  to_lowercase()` 生成；**不**自己写 `uuidv7_compat()` inline
-  （Q14 (b) 锁定 robot-cli 不复制 smoke 实现；用 `uuid` crate 直接
-  API）
+- `request_id` 用 `uuid::Uuid::now_v7().hyphenated().to_string()`
+  生成（`hyphenated` 默认 lowercase，无需再 `.to_lowercase()`）；
+  **每次 `build_command_meta` 调用生成一次并复用**（idempotency_key
+  自动生成时拼 `cli-<request_id>`）；**不**自己写 `uuidv7_compat()`
+  inline（Q-CLI14 (b) 锁定 robot-cli 不复制 smoke 实现；用 `uuid`
+  crate 直接 API）
 
 ### AC-7: 输出格式（默认 human-readable + `--json` 切换）
 
@@ -448,9 +484,15 @@ round 中止 / 走独立 reviewer round 单独拍板：
 - 字段对应 `ScriptedPayload` fbs body 的 `WaypointTarget`
   table（`positions: [f64]` + `dwell_ms: u32` + `segment_duration
   _ms: u32`）
-- `positions` 长度 = `--joints` 参数或 config（首版固定 `--joints
-  5` 默认，跟 IkPayload + XLeRobot 5-DOF 对齐；reviewer Plan 期决
-  定是否扩 `--joints <N>` 参数）
+- `positions` 长度**由 `--waypoints-file` JSON 内容决定**（首版
+  **不**引入 `--joints` 参数 —— round 2 amend #3；该参数未拍板）：
+  CLI 仅做 ragged 检查（所有 waypoint 的 `positions` 必须等长，否则
+  exit 2 + stderr `error: waypoint positions length mismatch
+  (waypoint[<i>] has <n>, expected <m>)`）；具体关节数与 hardware
+  匹配**交 server 端** `ScriptedBackend` 对 `hardware.joints.len()`
+  校验（mismatch → `HardwareMismatch` → `FailedPrecondition` →
+  exit 4）；CLI 仅透传 JSON 提供的 `positions`（沿 `invoke ik` 同款
+  "CLI 透传 + server 校验"哲学）
 - JSON parse fail → exit 2 + stderr 行号 / 字段名报错（`serde_json`
   默认错误信息）
 - 字段长度 / 类型校验 fail → exit 2 + stderr 详细描述
@@ -520,10 +562,13 @@ round 中止 / 走独立 reviewer round 单独拍板：
 - phase 集合（首版；Plan 期定最终）：
   1. `selftest`：bring-up gateway + s1_daemon + 不调 CLI 子命令；验
      harness 通
-  2. `clear_estop_happy`：viewer token 调 `clear-estop --confirmation
-     CONFIRM_CLEAR_ESTOP --audit-reason "test"` → server 端
-     PermissionDenied → exit 3（验 safety contract 通过 CLI 早拒
-     + server 端权限拒绝路径）
+  2. `clear_estop_auth_denied_after_local_gate`（round 2 amend #5；
+     **非** happy path —— 改名前为 `clear_estop_happy`）：viewer token
+     调 `clear-estop --confirmation CONFIRM_CLEAR_ESTOP --audit-reason
+     "test"` → **CLI 四道闸已通过 + RPC 已发出 → server 端
+     PermissionDenied**（viewer 无 maintainer cap）→ exit 3（验"本地
+     gate 通过 + wire 链路通 + server 端权限拒绝"；真 happy path 需
+     maintainer token + 已 set latch，留独立拍板/后续 phase）
   3. `clear_estop_safety_contract_violations`：4 个失败 case（缺
      confirmation / confirmation 不匹配 / 缺 audit-reason / 空
      audit-reason）→ 全部 exit 2 + 无 RPC 调用（实测 gateway 日志
@@ -538,8 +583,11 @@ round 中止 / 走独立 reviewer round 单独拍板：
      <id>` → 终态 COMPLETED → exit 0；stdout 最后一行含
      `event=COMPLETED`
   7. `stream_events_sigint`：`stream-events` 长 stream 启动 → 50ms
-     后 SIGTERM 子进程 → exit 0；stderr 含 `warning: stream
-     interrupted before terminal event`
+     后给子进程发 **`SIGINT`**（`kill -INT <pid>` / `nix::sys::
+     signal::kill(pid, SIGINT)`；**不**用 `SIGTERM` —— round 2 amend
+     #4，对齐 Q-CLI10 (c) + AC-10 实现只 `select!` `tokio::signal::
+     ctrl_c()`，`SIGTERM` 默认走进程终止不触发 warning 路径）→ exit 0；
+     stderr 含 `warning: stream interrupted before terminal event`
   8. `invoke_scripted_happy`：`invoke scripted --waypoints-file
      <tmpfile>` happy JSON → exit 0 + `action_id=<uuid>`
   9. `invoke_ik_happy`：`invoke ik --target-x 0.20 --target-y 0.0
@@ -594,7 +642,7 @@ Q-CLI15；**不**重新开 Q16。
 | Q-CLI2 | `robotctl` async runtime 模型 | **(b)** `main()` 入口分流；既有 status/watch/estop 保持 sync 路径；7 个新子命令走 tokio runtime block_on | AC-2 |
 | Q-CLI3 | auth token 输入方式 | **(a)** `--token <TOKEN>` + env `ROBOT_TOKEN` fallback；缺 token exit 2 | AC-6 |
 | Q-CLI4 | gateway 地址默认 | **(a)** 默认 `127.0.0.1:50051` + env `ROBOT_GATEWAY_ADDR` | §6.5 共享参数 |
-| Q-CLI5 | `--idempotency-key` 默认行为 | **(b)** 自动生成 `cli-<unix_ms>-<random_hex_8>`；显式 retry 由用户传同 key；stderr 提示行 | AC-6 |
+| Q-CLI5 | `--idempotency-key` 默认行为 | **(b)** 自动生成 `cli-<request_id>`（复用本次 UUIDv7 request_id；**round 2 amend #2** 改此形以避免引 `rand`/`getrandom`，原 `cli-<unix_ms>-<random_hex_8>` 作废）；显式 retry 由用户传同 key；stderr 提示行 | AC-6 |
 | Q-CLI6 | `tonic::Code` → exit code 映射详细度 | **(a)** 详细映射；Spec 必须列完整表 | AC-5 |
 | Q-CLI7 | helper 抽到哪里 | **(b)** helper 抽到 `crates/robot-cli/src/lib.rs`；不污染 `crates/robot-rpc/`；不新增 helper crate | §影响范围 + AC-1 |
 | Q-CLI8 | `--json` 输出范围 | 新 7 个 gateway 子命令支持 `--json`；既有 3 个 iceoryx2 子命令**不**改输出 | AC-7 + AC-2 |
@@ -739,8 +787,10 @@ Q-CLI15；**不**重新开 Q16。
 
 ### P.0 工作基线
 
-- master HEAD = `0491f58`（v0.5_entry 事实修订 + CodeMap + 本 Spec
-  round 1 land 之后；Plan round 1 进入前对齐）
+- master HEAD = `ee4b47f`（Spec round 1 land；round 2 amend #7）+
+  本 round 2 amend commit（docs-only，**代码基线不变**）；Plan round 1
+  正式进入前再对齐到当时 master HEAD（round 2 amend 自身无法自引其
+  commit hash，故此处锚 round 1 land 的 `ee4b47f`）
 - `crates/robot-cli/` 23 + 15 + 426 = 464 LoC 既有；候选 A 扩 ~600-
   900 LoC（lib client harness + 7 子命令 + 入口分流）
 - 工作目录：`crates/robot-cli/` + `crates/robot-tests/src/bin/robotctl
