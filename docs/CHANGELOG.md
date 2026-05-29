@@ -10,6 +10,73 @@
 
 ---
 
+## 2026-05-29 · v0.5 候选 A (1/5) robot-cli tonic client 依赖白名单更新（**状态：登记**）
+
+### 背景
+
+v0.5 候选 A operator CLI（`robotctl` 扩 7 个 tonic gRPC 子命令）经 Spec
+round 1-3 + Plan round 1-2 reviewer ACK（AC-1 列定 7 dep）。(1/5)
+脚手架 commit 给 `crates/robot-cli` 加 client-side RPC 依赖。本条登记
+**超越** 2026-04-27 "A1-1 (3/3) robot-rpc / tonic / prost / uuid /
+blake3 依赖白名单登记"中 "仅 robot-rpc crate link tonic/prost/tokio；
+其它 crate（…robot-cli…）一律不允许直接 link" 的约束——该约束写于 v0.3
+（robot-rpc 是唯一 RPC 参与者时），候选 A 显式让 robot-cli 成为
+client-side consumer。
+
+### Scope
+
+- **robot-cli 新增直接 dep**：`robot-rpc`（`features = ["client"]`）+
+  `tonic` + `tokio`（features `macros` / `rt-multi-thread` / `signal` /
+  `io-util`）+ `flatbuffers` + `uuid` + `serde`（derive）+ `serde_json`。
+- robot-cli 只作 **client 端 consumer**：import robot-rpc `client` feature
+  的 `RobotControlClient` + 生成 proto 类型（`CommandMeta` / `AuthContext`
+  / `InvokeTaskCommand` / `TaskHandleRef` 等）；**不**接 server /
+  gateway / handler / dispatcher，**不**改任何 frozen FlatBuffers schema
+  / proto / wire 契约 / `rpc_roles.toml`。
+- **precedent**：`robot-tests` 已在 `client` / `*-smoke` feature 下 link
+  tonic / tokio（A1-3 (3/3-a) `clear_estop_e2e` + B4 / 候选 1/2 smoke）；
+  candidate A 把 robot-cli 纳入同类 client consumer。
+- **生产 release `s0_daemon` / `s1_daemon` binary 不受影响**：robot-cli 是
+  独立 binary（`robotctl`）；s0/s1 的 release 构建 0 robot_rpc / tonic /
+  prost 符号边界不变（A1-1 已验证，本条不动 s0/s1）。
+
+### 白名单更新后约束（candidate A 后生效）
+
+- **允许 link tonic / prost / tokio 的 crate**：`robot-rpc`（server +
+  client）+ `robot-tests`（client/smoke feature）+ **`robot-cli`
+  （client feature；本条新增）**。
+- 其它 crate（`robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`
+  / `robot-core` / `robot-adapters/*` / `robot-kinematics*` 等）**仍**
+  一律不允许直接 link tonic / prost / tokio / 跨 crate 复用 RPC 类型。
+- candidate A land 后任何"在上述允许清单之外的 crate link tonic/prost"
+  的 PR 仍视为白名单违反，按 reviewer 复核流程否决。
+
+### 不引入
+
+- mTLS / OIDC / JWT / keychain token store（candidate A 接受 fake
+  token；推 v0.5+ 真 auth 单独 outline）。
+- `clap` —— robotctl 沿既有**手写** parser（Plan round 1 P1-2）；候选 A
+  **不**引 clap。
+- `whoami` / `rand` / `getrandom` 直接 dep（round 2 amend #2；`source`
+  走 `std::env`，`idempotency_key` 复用 `uuid` 已生成的 request_id；
+  `uuid` 的 `v7` feature 传递引入的 `getrandom` 是既有 workspace dep
+  子树，非候选 A 新增直接依赖）。
+
+### 影响面
+
+- 不改 `docs/00_design.md` §4.2 robot-core 零 runtime 依赖原则。
+- 不改 frozen FlatBuffers schema / proto / iceoryx2 服务 attribute 体系。
+- `crates/robot-cli/Cargo.toml` 顶部注释跟本条登记互相引用。
+- 既有 `robotctl` 3 个 iceoryx2 子命令（`status` / `watch` / `estop`）
+  行为 0 改动（(1/5) parser 不扩新子命令；新名仍 → unknown subcommand
+  exit 2）。
+
+### 审阅人
+
+reviewer（用户）— v0.5 候选 A Plan round 2 Approved（进入 (1/5) 实施）。
+
+---
+
 ## 2026-05-27 · v0.4 候选 2 round 2 `robot-kinematics-xlerobot` impl + `IkBackend` 第三个真 action backend + S1 wiring + `ik_backend_smoke` cross-process e2e（**状态：偏离登记**）
 
 ### 背景
