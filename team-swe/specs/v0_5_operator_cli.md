@@ -36,6 +36,26 @@ reviewer round 1 复审给出 5 阻断 + 2 非阻断修订；本 round 2 amend �
 
 ---
 
+## Plan round 1 amend 记录（2026-05-29；reviewer Plan round 1 复审后）
+
+reviewer Plan round 1 **不批准进入 (1/5)**，给出 3 阻断 + 1 非阻断；本
+轮吸收。**阻断 1 触及 AC-2 语义** —— 按 reviewer "必须先回修 Spec" 路径
+做 **Spec round 3 amend**（非在 Plan 里偷改 AC 语义）；阻断 2/3 是 Plan
+层修订：
+
+| # | 类别 | 层级 | 修订 | 落点 |
+|---|---|---|---|---|
+| P1-1 | 阻断 | **Spec round 3** | regression 等价判据不在 Plan 用"mask volatile ts"改 AC；**回修 Spec 为可达成的精确判据**：`status`/`watch` = **deterministic byte-level diff = 0**（FakeStatePublisher 喂固定 published state；二者输出只回显 published stamp、无自生 clock，robotctl.rs:372-426 → 真 byte 稳定）；`estop` = **exit code + 发布的 EStopEvent body 字段等价**（reason/source/latched）—— estop 输出含自生 wall-clock `stamp_ns`（`SystemClock::now()`，robotctl.rs:335-336/358），**无 byte 稳定产物 → 不做 byte-diff**（不是对 status/watch 的 mask，是对"自带时间戳命令"的诚实契约）| AC-2 + AC-12 phase 11 + reviewer 审查重点 1 + Plan D1 / §P.2.5.d |
+| P1-2 | 阻断 | Plan | **撤 clap**：(1/5) 不引 clap；沿既有**手写 parser**（`crates/robot-cli/src/bin/robotctl.rs:96 Args::parse`）append；真要 clap 须回 Spec/Q/AC 扩依赖范围（本轮不做，AC-1 dep 集不含 clap）| §P.2.1.a + §P.1 commit chain |
+| P1-3 | 阻断 | Plan | **(1/5) 不落可达 7 子命令 `unimplemented!()` stub**（会让已暴露 CLI 路径 panic / 违 AC-5 exit code 契约）：parser variant 随**各自 impl commit** 落地；(1/5) 只落共享 lib + 纯路由函数(by-name) + 内部测试脚手架；parser 不动 → `robotctl clear-estop` 在 (1/5) = "unknown subcommand" **exit 2**（既有行为 robotctl.rs:110 → :210-213，不 panic / 不违 AC-5）| §交付 + §P.1 + §P.2.1 + §P.2.2/2.3/2.4 |
+| P1-4 | 非阻断 | Spec | AC-1 "既有 6 条 dep"（实列 7 个）→ "既有 dep" | AC-1 |
+
+> reviewer 对 D2-D5 方向无异议（仅 D1 需先解决 Spec/Plan 层级）。设计版本
+> 仍 v0.1.2 冻结；本 amend 只动 team-swe Spec/Plan 工作文档，**不**触
+> `docs/00_design.md` / frozen schema / `rpc_roles.toml`。
+
+---
+
 ## What
 
 为 v0.5 候选 A 落地 maintainer 本地 operator CLI 真实接入所需最小可
@@ -222,13 +242,16 @@ round 中止 / 走独立 reviewer round 单独拍板：
 - 分支：`master`（沿 v0.4 4 个候选 + light Research 同款；候选 A
   不分长期 feature branch）
 - 交付：~5-8 commit + 1 summary commit（Plan 期细化拆段）
-  * commit ~1：`crates/robot-cli/Cargo.toml` 扩 dep + 入口分流脚手
-    架 + lib client harness module（fmt + clippy + 编译过；既有 3
-    子命令回归过；7 新子命令 stub `unimplemented!()`）
-  * commit ~2..7：7 个新子命令 land（顺序由 Plan 期定；建议沿 Q
-    顺序：clear-estop → clear-error → get-task-status → cancel-task
-    → stream-events → invoke scripted → invoke ik；每段独立 commit
-    + 对应 lib unit）
+  * commit ~1：`crates/robot-cli/Cargo.toml` 扩 dep + 入口 async
+    dispatch 脚手架 + lib client harness module + 纯路由函数(by-name)
+    （fmt + clippy + 编译过；既有 3 子命令回归过；**不**落任何可达新
+    子命令 —— parser 不识别新名 → unknown subcommand exit 2，**无**
+    `unimplemented!()` stub，Plan round 1 P1-3）
+  * commit ~2..N：新子命令按 RPC 家族分组 land（每子命令的 parser
+    识别 + arg 解析 + dispatch arm + 实现 + lib unit **同 commit**，
+    保证 master 上任一被 parser 识别的子命令都已完整实现；建议家族
+    顺序：clear-estop + clear-error → get-task-status + cancel-task +
+    stream-events → invoke scripted + invoke ik；详 §Plan）
   * commit ~8：`robotctl_smoke` binary + feature gate + 7 个子命令
     cross-process e2e
   * summary：`docs/handoffs/v0.5_operator_cli_summary.md`
@@ -254,7 +277,7 @@ round 中止 / 走独立 reviewer round 单独拍板：
   workspace dep 子树，非候选 A 新增直接依赖
 - 全部走 `{ workspace = true }`（沿 v0.3 / v0.4 既有约定；不显式
   pin minor 版本）
-- 既有 6 条 dep（`robot-core` / `robot-logging` / `robot-msg` /
+- 既有 dep（`robot-core` / `robot-logging` / `robot-msg` /
   `robot-transport` / `iceoryx2` / `libc` / `tracing`）**0** 改动
 - `[lints] workspace = true` 不动
 - `cargo build -p robot-cli --release` 编译过
@@ -270,9 +293,23 @@ round 中止 / 走独立 reviewer round 单独拍板：
     StreamEvents, InvokeScripted, InvokeIk}` 走 `tokio::runtime::
     Builder::new_multi_thread().enable_all().build()?.block_on(
     async_run(&args))`
-- 既有 3 子命令 stdout / stderr / exit code **0** 改动；任一既有子
-  命令在 `robotctl_smoke` regression phase 实测 round-trip 等价（输
-  出 byte-level diff = 0）
+- 既有 3 子命令 stdout / stderr / exit code **0** 改动；regression
+  等价判据**按子命令精确分两类**（Spec round 3 amend / Plan round 1
+  P1-1；因 `estop` 输出含自生 wall-clock 无 byte 稳定产物，原"任一既
+  有子命令 byte-level diff=0"对 estop 不可达成）：
+  * **`status` / `watch`：deterministic byte-level diff = 0** ——
+    `robotctl_smoke` 用 `FakeStatePublisher` 喂**固定 published
+    state**（固定 `stamp_ns` / `seq` / positions）；二者 `print_
+    snapshot` 只回显 published stamp、**无自生 clock 调用**
+    （robotctl.rs:372-426）→ stdout 真 byte 稳定，对 golden 字面 diff
+    = 0
+  * **`estop`：exit code + 发布的 `EStopEvent` body 字段等价** ——
+    estop 用 `SystemClock::now()` 生成 `stamp_ns` 并打进 stderr
+    （robotctl.rs:335-336 / :358），**无 byte 稳定产物**；regression
+    判据 = exit 0（Linux `libc::_exit(0)`）+ 收到的 `EStopEvent`
+    body `reason` / `source`(=`"robotctl"`) / `latched`(=`true`) 字
+    段等价（`stamp_ns` 是 volatile，不进等价判据）。**这不是对
+    status/watch 的 mask，是对"命令自带时间戳"的诚实行为契约**
 - SIGSEGV-mitigation signal handler 路径保持（既有 sync 路径不变；
   async 路径用 `tokio::signal::ctrl_c()` 不走 `libc::_exit(0)`）
 
@@ -595,9 +632,12 @@ round 中止 / 走独立 reviewer round 单独拍板：
   10. `json_output_round_trip`：每个 happy phase 加 `--json` flag →
      stdout 行 `serde_json::from_str` parse 通过 + 字段集 cover
      AC-7 schema
-  11. `existing_subcommands_regression`：跑既有 `status` / `watch`
-     / `estop` 子命令 → 输出 + exit code byte-level diff vs baseline
-     = 0
+  11. `existing_subcommands_regression`（按 AC-2 精确判据分两类）：
+     真起 s0_daemon（mock）+ `FakeStatePublisher` 固定 published
+     state →（i）`status` / `watch` stdout 对 golden 字面 **byte-level
+     diff = 0**（deterministic）；（ii）`estop` → exit 0 + 收到的
+     `EStopEvent` body `reason`/`source`/`latched` 字段等价（`stamp_ns`
+     volatile 不比）
 - `--phase all` 跑全部；exit 0 = 全 PASS；exit 2 = ≥1 phase FAIL
 - 沿 candidate 1 / 2 / 3 / 4 同款 spawn subprocess + workdir / role
   table / FakeStatePublisher 模板
@@ -665,8 +705,11 @@ Q-CLI15；**不**重新开 Q16。
 ## reviewer 审查重点 (候选 A 实施期硬 gate)
 
 1. **既有 3 个 iceoryx2 子命令行为 0 改动**（AC-2）：smoke phase 11
-   `existing_subcommands_regression` byte-level diff = 0 强 gate；
-   任何 reviewer round 中觉得有漂移直接 block
+   `existing_subcommands_regression` 强 gate —— `status`/`watch`
+   **deterministic byte-level diff = 0**（固定 published state）+
+   `estop` exit code + `EStopEvent` body 字段等价（AC-2 精确判据；
+   estop 自带时间戳不 byte-diff）；任何 reviewer round 中觉得有漂移
+   直接 block
 2. **`clear-estop` safety contract**（AC-3）：4 个失败路径（缺/匹配
    错/空白 confirmation × 缺/空 audit-reason）必须 **CLI 端早拒**
    `exit 2`，**不**发 RPC；smoke phase 3 `clear_estop_safety_
@@ -822,10 +865,11 @@ Q-CLI15；**不**重新开 Q16。
 ✨ feat: v0.5 候选 A (1/5) robotctl 扩 tonic 脚手架 + 共享 client lib
         harness land（Cargo.toml 扩 7 dep + main 入口 sync/async 分流
         Q-CLI2(b) + lib mod gateway_client/meta/exit_code/validate/
-        payload/json_out/uuid_v7 + 7 子命令 clap stub(unimplemented!)
+        payload/json_out/uuid_v7 + 纯路由函数 subcommand_lane(by-name)
         + 共享 lib unit：exit_code exhaustive 映射 / token 解析三态 /
         source env / idempotency cli-<request_id> / uuid_v7 / action-id
-        UUIDv7 校验 AC-11 / 入口路由；既有 3 子命令路由 + 回归锁）
+        UUIDv7 校验 AC-11 / 路由全表；**手写 parser 不动**、**不落可达
+        新子命令 stub**，既有 3 子命令回归锁）
 ✨ feat: v0.5 候选 A (2/5) clear-estop safety contract + clear-error
         land（AC-3 四道闸 CLI 早拒 6 fail-path lib unit **先于 e2e** +
         clear-error 写 RPC + Ack 输出 human/--json）
@@ -854,7 +898,7 @@ reviewer 进 Plan 时点名的 5 项，逐条映射落点（**实施期硬 gate*
 
 | # | reviewer 审查重点 | Plan 落点 | 怎么满足 |
 |---|---|---|---|
-| 1 | commit 拆分让既有 3 子命令**始终**可回归 | §P.2.1 (入口分流 + 路由 lib unit) + 每段 §Quality Gate + §P.2.5 phase 11 | (1/5) 入口分流是唯一触碰既有路径的改动；该 commit 落"路由 lib unit"（`{Status,Watch,Estop}`→sync、7 新→async）+ 既有 robotctl unit 全保；(2/5)..(4/5) 仅 **append** 新 arm 不碰 sync 路径；(5/5) `existing_subcommands_regression` phase 真起 s0 跑 3 子命令验输出/exit；**每个 commit 的 Quality Gate 都重跑既有子命令冒烟**（机制详 §P.3 拍板 D1 等价判据）|
+| 1 | commit 拆分让既有 3 子命令**始终**可回归 | §P.2.1 (async dispatch 脚手架 + 纯路由函数 + lib unit) + 每段 §Quality Gate + §P.2.5 phase 11 | (1/5) **手写 parser 不动**（仍只识别 status/watch/estop；新名 → unknown subcommand exit 2，robotctl.rs:110→:210），唯一新增是 main 顶 async dispatch 脚手架 + 纯路由函数 `subcommand_lane(name)`（lib unit 覆盖 10 名全表：3 sync + 7 async）+ 既有 robotctl unit 全保；(2/5)..(4/5) 每子命令**同 commit** append { parser 识别 + dispatch arm + 实现 + lib unit }，不碰既有 sync 路径；(5/5) `existing_subcommands_regression` phase 真起 s0 跑 3 子命令（判据 AC-2 精确两类）；**每个 commit 的 Quality Gate 都重跑既有子命令冒烟** |
 | 2 | clear-estop 四道闸**先 lib unit 再 e2e** | §P.2.2 (lib unit, commit 2) **严格早于** §P.2.5 (e2e, commit 5) | 四道闸（confirmation 字面值 / audit-reason 非空 / token 可解析 / 缺任一）的 6 fail-path lib unit 在 (2/5) land 并过；e2e `clear_estop_safety_contract_violations` phase 在 (5/5) 才 land；commit 顺序保证 lib unit 先行 3 个 commit |
 | 3 | robotctl_smoke **真测 CLI 子进程**不绕过 | §P.2.5 hard contract | smoke 只通过 `tokio::process::Command::new(bin_dir.join("robotctl"))` spawn CLI 子进程 + 读 stdout/stderr/exit code；**严禁** smoke 内 `import` robot-rpc client 直接调 tonic（CLI 才是 unit-under-test）；该约束写进 (5/5) 模块 doc + reviewer round gate |
 | 4 | stream-events SIGINT **稳定复现** | §P.2.3 (handler) + §P.2.5 phase 7 (readiness-gated repro) | handler 用 `tokio::select!` { stream.next() , ctrl_c() }；smoke 复现去 race：先 invoke 一个**长** action（scripted 多段 total ≥ 数秒）→ stream-events 启动 → **读到首行 `event=` 才确认 stream 已开**（readiness gate）→ 再发 SIGINT → 有界等待 exit 0 + stderr warning；不靠固定 sleep 赌时序 |
@@ -868,9 +912,9 @@ reviewer 进 Plan 时点名的 5 项，逐条映射落点（**实施期硬 gate*
 
 | # | 改动 | 说明 |
 |---|---|---|
-| 1 | `[dependencies]` append 7 条 | `robot-rpc = { workspace = true, features = ["client"] }` + `tonic` + `tokio`(features macros/rt-multi-thread/signal/io-util) + `flatbuffers` + `uuid` + `serde`(derive) + `serde_json`（全 `{ workspace = true }`；既有 6 dep 0 动；AC-1）|
-| 2 | `src/bin/robotctl.rs` `fn main()` 顶部分流 | parse subcommand 后：`Command::{Status,Watch,Estop}` 走原 sync `run()`；`Command::{ClearEStop,ClearError,GetTaskStatus,CancelTask,StreamEvents,InvokeScripted,InvokeIk}` 走 `tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(async_dispatch(&args))`（Q-CLI2(b)；AC-2）|
-| 3 | clap parser append 7 个新 variant | 既有 3 variant + run path **0 动**；新 7 variant + 共享 flag（`--gateway-addr` / `--token` / `--source` / `--idempotency-key` / `--timeout-ms` / `--dry-run` / `--json`）；help/usage 文本同步扩 |
+| 1 | `[dependencies]` append 7 条 | `robot-rpc = { workspace = true, features = ["client"] }` + `tonic` + `tokio`(features macros/rt-multi-thread/signal/io-util) + `flatbuffers` + `uuid` + `serde`(derive) + `serde_json`（全 `{ workspace = true }`；既有 dep 0 动；**不含 clap**，P1-2；AC-1）|
+| 2 | `src/bin/robotctl.rs` `fn main()` 顶部 async dispatch **脚手架** | parse 后：`Command::{Status,Watch,Estop}` 走原 sync `run()`（不变）；其余走 `tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(async_dispatch(&args))`（Q-CLI2(b)；AC-2）。**(1/5) async 分支为空骨架**（无任何新 `Command` variant；新 variant 随各自 impl commit 加，P1-3）|
+| 3 | 纯路由函数 `subcommand_lane(name: &str) -> Lane`（**手写**，不引 clap，P1-2）| **(1/5) 手写 parser（robotctl.rs:96 `Args::parse`）不扩新 variant**；`subcommand_lane` 是纯数据表函数（10 名 → Sync/Async lane），(1/5) 即可单测全表；新子命令的 parser 识别 + arg 解析 + 共享 flag（`--gateway-addr`/`--token`/`--source`/`--idempotency-key`/`--timeout-ms`/`--dry-run`/`--json`）+ help/usage 随**各自 impl commit**(2/5..4/5) append，**不在 (1/5)**（P1-3：避免可达 stub）|
 
 ##### P.2.1.b `crates/robot-cli/src/lib.rs` 共享 harness module
 
@@ -894,7 +938,7 @@ reviewer 进 Plan 时点名的 5 项，逐条映射落点（**实施期硬 gate*
 - `meta::build_command_meta`：idempotency 自动 = `cli-<request_id>` / 显式 `--idempotency-key` 覆盖 / request_id 与 idempotency 同源
 - `uuid_v7::new_request_id`：格式 + version=7 + variant 校验
 - `validate::validate_action_id`：空 / 非 UUID / 非 v7 / happy（AC-11 4 path）
-- 入口路由：`{Status,Watch,Estop}`→sync、7 新→async（reviewer 审查重点 1）
+- 路由函数 `subcommand_lane(name)`：10 名全表（`status`/`watch`/`estop`→Sync、7 新名→Async）纯函数单测（reviewer 审查重点 1；parser 不需识别新名即可测路由决策）
 
 ##### P.2.1.d Quality Gate（commit (1/5)）
 
@@ -911,7 +955,7 @@ reviewer 进 Plan 时点名的 5 项，逐条映射落点（**实施期硬 gate*
 
 - **入口分流是唯一碰既有路径的改动**：sync 路径绝不进 tokio runtime；既有 SIGSEGV-mitigation signal handler（`libc::_exit(0)`）不动；async 路径独立用 `tokio::signal::ctrl_c()`
 - **`uuid` v7 feature 传递引入 `getrandom`**：是既有 workspace dep 子树（robot-rpc 已用），非候选 A 新增直接依赖；`cargo tree` 验无意外 transitive
-- **stub 子命令**：(1/5) 7 新子命令 body 走 `unimplemented!()` 或返"not yet"占位；本 commit 只锁脚手架 + 共享 lib，不发任何 RPC（避免 (1/5) 即需 gateway）
+- **不落可达 stub（P1-3）**：(1/5) **不**加任何新 `Command` variant、**不**写 `unimplemented!()`；parser 不识别新名 → `robotctl clear-estop` 等 = "unknown subcommand" **exit 2**（既有行为 robotctl.rs:110→:210-213，不 panic / 不违 AC-5 exit code 契约）。(1/5) 只锁脚手架 + 共享 lib + 纯路由函数，不发任何 RPC（也不需 gateway）；新子命令首次"可达"即其完整实现 land 之时（2/5..4/5）
 
 #### P.2.2 [commit (2/5)] clear-estop safety contract + clear-error
 
@@ -1041,22 +1085,24 @@ loop {
 ##### P.2.5.d 风险锚点
 
 - **既有子命令需 s0**：regression phase 比前 4 个 smoke 多起一个 s0_daemon（mock adapter）；bring_up 扩 s0 spawn
-- **byte-level diff 现实性**：status 输出含 live heartbeat ts；§P.3 拍板 D1 定等价判据（结构 + 关键字段 vs 严格 byte）
+- **regression 判据（AC-2 精确两类，P1-1）**：`status`/`watch` 在固定 published state 下输出真 byte 稳定（无自生 clock）→ **deterministic byte-level diff=0** 对 golden 字面；`estop` 自带 wall-clock `stamp_ns` 无 byte 稳定产物 → exit code + `EStopEvent` body 字段等价（不 byte-diff、不 mask）。golden 字面捕获机制走 §P.4 diff（实现细节）
 - **SIGINT 复现**：靠 readiness gate（读首 `event=` 行）去 race，不靠固定 sleep
 
 ### P.3 reviewer Plan round 拍板（pending）
 
 | Round | 状态 | 内容 |
 |---|---|---|
-| Plan round 1 | pending | 本 outline draft v1 + 5 审查重点对账 + D1..D5 拍板项 |
-| Plan round 2 | pending | round 1 阻断 fix（如有）+ ACK |
+| Plan round 1 | **复审完（不批准进入 (1/5)）** | 3 阻断（D1/AC-2 语义 → Spec round 3、clap、可达 stub）+ 1 非阻断（dep 数）；reviewer 对 D2-D5 方向无异议 |
+| Plan round 1 amend | **本轮** | P1-1..P1-4 全吸收（详顶部 "Plan round 1 amend 记录"）；待 reviewer round 2 复审 |
+| Plan round 2 | pending | amend 复审；ACK 后进 (1/5) |
 | Plan round N | pending | 最终 Approved 进入 (1/5) 实施 |
 
-**Plan 拍板项（D1..D5；reviewer Plan round 决定）**：
+**Plan 拍板项（D2..D5 待 reviewer Plan round 决定；D1 已由 Spec round 3
+amend 在 AC-2 闭）**：
 
 | # | 拍板项 | 候选 | 倾向 |
 |---|---|---|---|
-| D1 | `existing_subcommands_regression` 等价判据（AC-2 "byte-level diff=0" 操作化）| (a) 结构判据（输出 key 集 + exit code + 关键字段值校验，volatile ts 字段 mask）；(b) FakeStatePublisher 喂固定 clock+state 真 byte diff；(c) 自比稳定性 only | **(a)**（status 含 live ts，严格 byte 不现实；mask ts 后结构 + 关键字段最稳）|
+| D1（已闭）| `existing_subcommands_regression` 等价判据 | **已由 Spec round 3 amend（P1-1）在 AC-2 定死**：`status`/`watch` deterministic byte-level diff=0（FakeStatePublisher 固定 published state）+ `estop` exit code + `EStopEvent` body 字段等价；**非** mask 方案 | 不再 Plan 层拍板（语义归 AC-2）；golden 捕获 = 实现细节走 §P.4 |
 | D2 | lib module 切分粒度 | (a) 7 module（gateway_client/meta/exit_code/validate/payload/json_out/uuid_v7）；(b) 合并为 3-4 个 | **(a)**（职责清晰；单测边界干净）|
 | D3 | robotctl_smoke phase 最终集 | (a) 11 phase（§P.2.5.b）；(b) 增删 | **(a)**（已覆盖 7 子命令 + 4 reviewer 重点 + regression）|
 | D4 | lib unit 数量目标 | (a) ≥30；(b) 更高门槛 | **(a)**（粗估 35-40；最终以实现为准）|
