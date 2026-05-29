@@ -783,27 +783,309 @@ Q-CLI15；**不**重新开 Q16。
 
 ---
 
-## Plan（占位；待 reviewer Plan round 1 进入）
+## Plan
+
+> Plan outline draft v1（reviewer Plan round 1 ACK pending）。基于
+> Spec §AC + §Reviewer 审查重点 + Q-CLI1..Q-CLI15 拍板 + round 2 amend
+> 7 项**硬输入**；**不**重新决策任何 AC 边界 / Q-CLI 拍板 / hard
+> boundary / §6.7 不变量。Spec round 2 amend commit `12cc834`
+> (reviewer ACK) 之上开 Plan round 1。
 
 ### P.0 工作基线
 
-- master HEAD = `ee4b47f`（Spec round 1 land；round 2 amend #7）+
-  本 round 2 amend commit（docs-only，**代码基线不变**）；Plan round 1
-  正式进入前再对齐到当时 master HEAD（round 2 amend 自身无法自引其
-  commit hash，故此处锚 round 1 land 的 `ee4b47f`）
-- `crates/robot-cli/` 23 + 15 + 426 = 464 LoC 既有；候选 A 扩 ~600-
-  900 LoC（lib client harness + 7 子命令 + 入口分流）
-- 工作目录：`crates/robot-cli/` + `crates/robot-tests/src/bin/robotctl
-  _smoke.rs`（新）+ `crates/robot-tests/Cargo.toml`（扩 feature）+
-  `configs/robotctl_smoke.toml`（如新建）
+- 起点：`master` HEAD = `12cc834`（Spec round 1 + round 2 amend land；
+  reviewer round 2 ACK）。
+- `crates/robot-cli/` 23 + 15 + 426 = 464 LoC 既有（Cargo.toml + 空
+  lib.rs + 3 iceoryx2 子命令 `status` / `watch` / `estop`）；候选 A
+  扩 ~600-900 LoC（lib client harness + 7 子命令 + 入口分流 +
+  robotctl_smoke）。
+- 不开新分支（沿候选 1-4 / round 1 / round 2 同款直接 commit 到
+  master + 每段 reviewer ACK 后 push 再开下一 commit）。
+- Q 拍板硬输入（详 §Reviewer round 1 拍板表）：Q-CLI1(a) estop offline
+  fallback 保留 / Q-CLI2(b) main 入口分流 / Q-CLI3(a) `--token` >
+  `ROBOT_TOKEN` > exit 2 / Q-CLI4(a) `127.0.0.1:50051` + env / Q-CLI5(b)
+  `cli-<request_id>` / Q-CLI6(a) 详细 exit code 表 / Q-CLI7(b) helper
+  入 robot-cli lib / Q-CLI8 新 7 子命令 `--json` / Q-CLI9(a) 新
+  robotctl_smoke / Q-CLI10(c) SIGINT exit 0 + warning / Q-CLI11(b)
+  默认不 follow / Q-CLI12(a) cancel + stream 独立 / Q-CLI13(a) waypoints
+  JSON / Q-CLI14(b) 不清理 smoke uuidv7_compat / Q-CLI15(a) Spec 拍透。
+- 全程 docs-only baseline 不动（`deny.toml` / `00_design.md` / frozen
+  schema / rpc_roles.toml；详 §严禁改动）。
 
-### P.1..P.4 待 Plan round 1 写
+### P.1 commit 节奏总览
 
-按 reviewer round 1 拍板顺序展开：
+**Happy path**（AC-1..AC-12 全过 + AC-Q Quality Gate 全过）：5 commit +
+1 summary。按 **RPC 家族**分组（同族 helper / 校验 / 输出复用度高，且
+每段独立可回归）：
 
-- §P.1 commit 节奏总览（拆段；最终 §P.3 拍板）
-- §P.2 工作流（按拆段顺序展开）
-- §P.3 Plan 拍板项（粗估 ~7-12 项；含 commit 拆分 / lib unit 数 /
-  smoke phase 集合最终拍板 / `--config <PATH>` 是否进首版 / etc.）
-- §P.4 Plan-Execute diff 登记位置（沿 candidate 1-4 / round 1 / round
-  2 同款 appendix-only 模板）
+```
+✨ feat: v0.5 候选 A (1/5) robotctl 扩 tonic 脚手架 + 共享 client lib
+        harness land（Cargo.toml 扩 7 dep + main 入口 sync/async 分流
+        Q-CLI2(b) + lib mod gateway_client/meta/exit_code/validate/
+        payload/json_out/uuid_v7 + 7 子命令 clap stub(unimplemented!)
+        + 共享 lib unit：exit_code exhaustive 映射 / token 解析三态 /
+        source env / idempotency cli-<request_id> / uuid_v7 / action-id
+        UUIDv7 校验 AC-11 / 入口路由；既有 3 子命令路由 + 回归锁）
+✨ feat: v0.5 候选 A (2/5) clear-estop safety contract + clear-error
+        land（AC-3 四道闸 CLI 早拒 6 fail-path lib unit **先于 e2e** +
+        clear-error 写 RPC + Ack 输出 human/--json）
+✨ feat: v0.5 候选 A (3/5) get-task-status + cancel-task + stream-events
+        land（TaskHandleRef 族 3 子命令 + action-id 复用 AC-11 校验 +
+        TaskStatus 三态输出 AC-7 + stream-events SIGINT exit 0 + warning
+        AC-10 + NDJSON 帧输出）
+✨ feat: v0.5 候选 A (4/5) invoke scripted + invoke ik land（waypoints
+        JSON parse + ragged 检查 AC-8 + IkPayload/ScriptedPayload fbs
+        build inline 入 robot-cli lib Q-CLI7(b) + --follow Q-CLI11(b)
+        默认关 + InvokeTask 路径）
+✨ feat: v0.5 候选 A (5/5) robotctl_smoke cross-process e2e land（真
+        spawn robotctl 子进程 + 11 phase 含 clear_estop_auth_denied_
+        after_local_gate + safety_contract_violations + stream_events_
+        sigint(SIGINT) + existing_subcommands_regression；feature gate）
+📝 docs: v0.5 候选 A operator CLI summary 归档 + 候选 A 完结
+```
+
+粗估 5 commit + summary = 6 commit chain（Spec §交付 ~5-8 区间内）；如
+reviewer round 出现拆分诉求，沿候选 1/3 同款拆为 (X/5-a)+(X/5-b)（走
+§P.4 Plan-Execute diff 登记）。
+
+#### P.1.1 reviewer Plan round 1 审查 5 重点对账
+
+reviewer 进 Plan 时点名的 5 项，逐条映射落点（**实施期硬 gate**）：
+
+| # | reviewer 审查重点 | Plan 落点 | 怎么满足 |
+|---|---|---|---|
+| 1 | commit 拆分让既有 3 子命令**始终**可回归 | §P.2.1 (入口分流 + 路由 lib unit) + 每段 §Quality Gate + §P.2.5 phase 11 | (1/5) 入口分流是唯一触碰既有路径的改动；该 commit 落"路由 lib unit"（`{Status,Watch,Estop}`→sync、7 新→async）+ 既有 robotctl unit 全保；(2/5)..(4/5) 仅 **append** 新 arm 不碰 sync 路径；(5/5) `existing_subcommands_regression` phase 真起 s0 跑 3 子命令验输出/exit；**每个 commit 的 Quality Gate 都重跑既有子命令冒烟**（机制详 §P.3 拍板 D1 等价判据）|
+| 2 | clear-estop 四道闸**先 lib unit 再 e2e** | §P.2.2 (lib unit, commit 2) **严格早于** §P.2.5 (e2e, commit 5) | 四道闸（confirmation 字面值 / audit-reason 非空 / token 可解析 / 缺任一）的 6 fail-path lib unit 在 (2/5) land 并过；e2e `clear_estop_safety_contract_violations` phase 在 (5/5) 才 land；commit 顺序保证 lib unit 先行 3 个 commit |
+| 3 | robotctl_smoke **真测 CLI 子进程**不绕过 | §P.2.5 hard contract | smoke 只通过 `tokio::process::Command::new(bin_dir.join("robotctl"))` spawn CLI 子进程 + 读 stdout/stderr/exit code；**严禁** smoke 内 `import` robot-rpc client 直接调 tonic（CLI 才是 unit-under-test）；该约束写进 (5/5) 模块 doc + reviewer round gate |
+| 4 | stream-events SIGINT **稳定复现** | §P.2.3 (handler) + §P.2.5 phase 7 (readiness-gated repro) | handler 用 `tokio::select!` { stream.next() , ctrl_c() }；smoke 复现去 race：先 invoke 一个**长** action（scripted 多段 total ≥ 数秒）→ stream-events 启动 → **读到首行 `event=` 才确认 stream 已开**（readiness gate）→ 再发 SIGINT → 有界等待 exit 0 + stderr warning；不靠固定 sleep 赌时序 |
+| 5 | cargo deny 措辞 | 每段 §Quality Gate + §P.2.5.d | 一律写 **"未新增 violation；overall fail 为既有 baseline"**（assert_no_alloc BSD-1-Clause + serialport MPL-2.0 + unescaper GPL-3.0/MIT 三条既有）；**严禁**写"过 / 通过" |
+
+### P.2 工作流（按 commit 顺序）
+
+#### P.2.1 [commit (1/5)] 脚手架 + 共享 client lib harness
+
+##### P.2.1.a `crates/robot-cli/Cargo.toml` 扩 7 dep + 入口分流
+
+| # | 改动 | 说明 |
+|---|---|---|
+| 1 | `[dependencies]` append 7 条 | `robot-rpc = { workspace = true, features = ["client"] }` + `tonic` + `tokio`(features macros/rt-multi-thread/signal/io-util) + `flatbuffers` + `uuid` + `serde`(derive) + `serde_json`（全 `{ workspace = true }`；既有 6 dep 0 动；AC-1）|
+| 2 | `src/bin/robotctl.rs` `fn main()` 顶部分流 | parse subcommand 后：`Command::{Status,Watch,Estop}` 走原 sync `run()`；`Command::{ClearEStop,ClearError,GetTaskStatus,CancelTask,StreamEvents,InvokeScripted,InvokeIk}` 走 `tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(async_dispatch(&args))`（Q-CLI2(b)；AC-2）|
+| 3 | clap parser append 7 个新 variant | 既有 3 variant + run path **0 动**；新 7 variant + 共享 flag（`--gateway-addr` / `--token` / `--source` / `--idempotency-key` / `--timeout-ms` / `--dry-run` / `--json`）；help/usage 文本同步扩 |
+
+##### P.2.1.b `crates/robot-cli/src/lib.rs` 共享 harness module
+
+从空 lib 扩（模块切分为 §P.3 拍板 D2，可微调）：
+
+| module | 职责 | 关键 API |
+|---|---|---|
+| `gateway_client` | 连接 + readiness | `connect_gateway(addr, connect_timeout, timeout) -> Result<RobotControlClient<Channel>, ExitCode>`（默认 `127.0.0.1:50051` + env `ROBOT_GATEWAY_ADDR`，Q-CLI4(a)；connect_timeout=2s 沿候选 1-4）|
+| `meta` | CommandMeta 构造 + token | `build_command_meta(args) -> CommandMeta`（round 2 amend #2：request_id 一次生成复用、`cli-<request_id>`、`default_cli_source()` 走 USER/USERNAME）+ `resolve_token(args) -> Result<String, ExitCode>`（`--token` > `ROBOT_TOKEN` > exit 2）|
+| `exit_code` | tonic Code → exit | `map_tonic_code_to_exit(code: tonic::Code) -> ExitCode` **exhaustive 不留 `_`**（AC-5 全表；新 Code variant 编译 fail 强制更新）|
+| `validate` | 早拒校验 | `validate_action_id(&str) -> Result<(), ExitCode>`（UUIDv7：空/非 UUID/非 v7，AC-11；复用 `robot_rpc::auth::validate_request_id`）+ `check_clear_estop_gates(args) -> Result<(), ExitCode>`（AC-3 四道闸）|
+| `payload` | fbs body 构造 | `build_scripted_payload(&[Waypoint]) -> Vec<u8>` + `build_ik_payload(target, quat, seed, frame) -> Vec<u8>`（inline 自 smoke 模式复制，Q-CLI7(b)；**不**入 `robot-msg/build_helpers`）|
+| `json_out` | 输出 schema 化 | 各子命令 `#[derive(Serialize)]` 输出 struct + `print_human()` / `print_json()`（snake_case + `<key>_ns` 整数 + ALL_CAPS enum + 空字段不省略，AC-7）|
+| `uuid_v7` | request_id 生成 | `new_request_id() -> String = Uuid::now_v7().hyphenated().to_string()`（Q-CLI14(b)；不复制 smoke `uuidv7_compat`）|
+
+##### P.2.1.c 共享 lib unit（本 commit land）
+
+- `exit_code`：每个 tonic::Code → 期望 exit code（AC-5 全表 exhaustive 覆盖）
+- `meta::resolve_token`：3 态（`--token` 优先 / 回退 `ROBOT_TOKEN` / 都缺 → exit 2）
+- `meta::default_cli_source`：USER 命中 / USERNAME 回退 / 都缺 `"unknown"`
+- `meta::build_command_meta`：idempotency 自动 = `cli-<request_id>` / 显式 `--idempotency-key` 覆盖 / request_id 与 idempotency 同源
+- `uuid_v7::new_request_id`：格式 + version=7 + variant 校验
+- `validate::validate_action_id`：空 / 非 UUID / 非 v7 / happy（AC-11 4 path）
+- 入口路由：`{Status,Watch,Estop}`→sync、7 新→async（reviewer 审查重点 1）
+
+##### P.2.1.d Quality Gate（commit (1/5)）
+
+- `cargo fmt --all --check` clean
+- `cargo clippy -p robot-cli --all-targets -- -D warnings` clean（exhaustive match 不留 `_` 兜底）
+- `cargo clippy --workspace --all-targets -- -D warnings` clean
+- `cargo build -p robot-cli --release` 过 + `cargo build --workspace --release` 过
+- `cargo tree -p robot-cli --edges normal,no-proc-macro` **不**含 `nalgebra`/`urdf-rs` 等非必须 dep（AC-Q）
+- `cargo test -p robot-cli` 全过（本 commit 新 lib unit + 既有保）
+- 既有 3 子命令冒烟（机制 §P.3 拍板 D1）：`status`/`watch`/`estop` exit code + 输出结构不变
+- `cargo deny check`：未新增 violation；overall fail 为既有 baseline
+
+##### P.2.1.e 风险锚点
+
+- **入口分流是唯一碰既有路径的改动**：sync 路径绝不进 tokio runtime；既有 SIGSEGV-mitigation signal handler（`libc::_exit(0)`）不动；async 路径独立用 `tokio::signal::ctrl_c()`
+- **`uuid` v7 feature 传递引入 `getrandom`**：是既有 workspace dep 子树（robot-rpc 已用），非候选 A 新增直接依赖；`cargo tree` 验无意外 transitive
+- **stub 子命令**：(1/5) 7 新子命令 body 走 `unimplemented!()` 或返"not yet"占位；本 commit 只锁脚手架 + 共享 lib，不发任何 RPC（避免 (1/5) 即需 gateway）
+
+#### P.2.2 [commit (2/5)] clear-estop safety contract + clear-error
+
+> **reviewer 审查重点 2 核心**：四道闸 lib unit 在本 commit land 且过，
+> **早于** (5/5) e2e 3 个 commit。
+
+##### P.2.2.a clear-estop 四道闸（AC-3）
+
+- `validate::check_clear_estop_gates(args)` 顺序短路：
+  1. token 可解析（`--token` > `ROBOT_TOKEN`；缺 → exit 2）
+  2. `--confirmation` **精确** `CONFIRM_CLEAR_ESTOP`（全大写 ASCII；任何变体/前后空白拒 → exit 2）
+  3. `--audit-reason` 必填 + 非空 + 非纯空白（拒 → exit 2）
+- 任一闸失败：stderr 打 AC-3 精确文案 + exit 2 + **不发 RPC**（不污染 gateway audit log）
+- 全过 → `build_command_meta` + `ClearEStop` RPC；server 端仍校验 confirmation（CLI first defense / server last defense）；server 拒透传 exit per AC-5
+
+##### P.2.2.b clear-error（AC-4）
+
+- 必填：`--audit-reason` 非空 + token 可解析；`ClearError` RPC；Ack 输出（`cleared_at_ns` + `dry_run`）human + `--json`
+
+##### P.2.2.c lib unit（本 commit land；reviewer 审查重点 2）
+
+- clear-estop 6 fail-path（缺/匹配错/空白 confirmation × 缺/空 audit-reason 笛卡尔去重，AC-3）
+- clear-estop happy gate（4 参数齐 → gate 过，**不**真发 RPC，纯校验函数返 Ok）
+- clear-error：缺 audit-reason / 空 audit-reason / 缺 token（3 path）
+- Ack 输出 round-trip：固定 Ack → human + `--json` 精确 byte（AC-7）
+
+##### P.2.2.d Quality Gate
+
+- 同 P.2.1.d 全套 + 本 commit 新 lib unit 过 + 既有子命令冒烟不变 + cargo deny 措辞照旧
+
+#### P.2.3 [commit (3/5)] get-task-status + cancel-task + stream-events
+
+> TaskHandleRef 家族（`<action-id>` 位置参数 + AC-11 校验复用）。
+
+##### P.2.3.a 三子命令（AC-4 / AC-7 / AC-10 / AC-11）
+
+| 子命令 | RPC | 关键 |
+|---|---|---|
+| `get-task-status <id>` | `GetTaskStatus` | action-id 校验 → 单次 RPC → TaskStatus 三态输出（EXECUTING/COMPLETED{outcome}/FAILED{failure}，AC-7）；NotFound → exit 4 |
+| `cancel-task <id>` | `CancelTask` | action-id 校验 + `--audit-reason` 非空 → Ack 输出 |
+| `stream-events <id>` | `StreamTaskEvents` | action-id 校验 → server-streaming 每帧一行 stdout（human / NDJSON）；终态(COMPLETED/FAILED/CANCELLED)自动关 exit 0；SIGINT → exit 0 + stderr warning（AC-10）；`--timeout-ms` 整流总时长到期 → exit 6 |
+
+##### P.2.3.b stream-events SIGINT handler（reviewer 审查重点 4）
+
+```rust
+loop {
+    tokio::select! {
+        item = stream.message() => match item { ... 终态 break exit 0 / 帧 print / err exit per AC-5 },
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("warning: stream interrupted before terminal event");
+            return ExitCode::from(0);
+        }
+    }
+}
+```
+
+- 只处理 SIGINT（`ctrl_c()`）；SIGTERM 不接管（round 2 amend #4 已同步 smoke 发 SIGINT）
+
+##### P.2.3.c lib unit
+
+- TaskStatus 三态 → human + `--json`（固定 proto 入 → 精确 byte，AC-7）
+- 帧事件 STARTED/PROGRESS/COMPLETED/FAILED/CANCELLED → 一行格式（human + NDJSON）
+- action-id 校验复用 P.2.1.c（不重复，引用）
+- timeout 计算（`--timeout-ms` → Deadline）
+
+> SIGINT 路径本身（信号触发）不在 lib unit 覆盖（信号难单测）；放 (5/5) smoke
+> phase 7 readiness-gated 复现（reviewer 审查重点 4）。
+
+##### P.2.3.d Quality Gate — 同上全套
+
+#### P.2.4 [commit (4/5)] invoke scripted + invoke ik
+
+##### P.2.4.a invoke scripted（AC-8）
+
+- `--waypoints-file <PATH>` 必填存在 → `serde_json` parse → struct `{ waypoints: [{ positions: [f64], dwell_ms: u32, segment_duration_ms: u32 }] }`
+- **round 2 amend #3**：positions 长度由 JSON 决定；CLI 仅 ragged 等长检查（不等 → exit 2）；关节数交 server `ScriptedBackend`（mismatch → exit 4）
+- `payload::build_scripted_payload` 构 fbs → `InvokeTask` kind=Scripted；Ok → `action_id`；`--follow`(Q-CLI11(b) 默认关) → 接 stream-events 到终态
+
+##### P.2.4.b invoke ik（AC-9）
+
+- 必填 `--target-x/y/z`(f64) + `--audit-reason` + token；可选 `--target-qx/qy/qz/qw`(默认 `0 0 0 1`) + `--seed-joints` + `--frame` + `--follow`
+- quaternion **CLI 不校验**（透传 4 f64，server IkBackend 校验）
+- `payload::build_ik_payload` 构 fbs（SCHEMA_IK_PAYLOAD 0x040C）→ `InvokeTask` kind=Ik
+
+##### P.2.4.c lib unit
+
+- waypoints JSON：happy + 5 fail（文件缺/JSON 语法/缺 waypoints/ragged/类型错，AC-8）
+- scripted payload fbs build → round_trip verify（root + 字段读回）
+- ik payload fbs build：happy + invalid f64（AC-9）+ default quat（`0 0 0 1`）+ round_trip verify
+
+##### P.2.4.d Quality Gate — 同上全套
+
+#### P.2.5 [commit (5/5)] robotctl_smoke cross-process e2e
+
+##### P.2.5.a hard contract（reviewer 审查重点 3）
+
+- 新 `crates/robot-tests/src/bin/robotctl_smoke.rs` + feature `robotctl-smoke`（feature-gated；`[[bin]]` required-features）
+- inline 复制 `scripted_backend_smoke.rs`/`ik_backend_smoke.rs` 同款 CaseCtx / FakeStatePublisher / SubprocessHandle / bring_up / tear_down（**不**抽公共库；Q-CLI14(b) 不清理既有 uuidv7_compat）
+- **唯一被测路径 = spawn `robotctl` 子进程**：`tokio::process::Command::new(args.bin_dir.join("robotctl"))`；**严禁** smoke 内直接调 tonic client（CLI 才是 unit-under-test）；模块 doc 顶部明文写此约束
+
+##### P.2.5.b phase 集合（首版 11；最终 §P.3 拍板 D3）
+
+1. `selftest` — bring-up gateway + s1_daemon（+ s0 for regression phase）；不调 CLI；验 harness
+2. `clear_estop_auth_denied_after_local_gate`（round 2 amend #5）— viewer token + 合法 4 参数 → CLI 四道闸过 → RPC 发出 → server PermissionDenied → exit 3
+3. `clear_estop_safety_contract_violations` — 4 fail case 全 exit 2 + **gateway audit log 无对应 clear_estop invocation**（验 CLI 早拒不发 RPC，reviewer 审查重点 2 e2e 侧）
+4. `get_task_status_happy` — invoke ik 拿 action_id → get-task-status → exit 0 + state ∈ {EXECUTING, COMPLETED}
+5. `cancel_task_happy` — invoke scripted 长 action → cancel-task → exit 0 → get-task-status = CANCELLED
+6. `stream_events_terminal_completed` — invoke ik → stream-events → 终态 COMPLETED → exit 0 + 末行 `event=COMPLETED`
+7. `stream_events_sigint`（reviewer 审查重点 4）— invoke 长 scripted → stream-events → **读到首 `event=` 行（readiness gate）** → 发 **SIGINT** → 有界等待 exit 0 + stderr warning
+8. `invoke_scripted_happy` — `--waypoints-file <tmpfile>` happy JSON → exit 0 + `action_id`
+9. `invoke_ik_happy` — `invoke ik --target-x 0.20 --target-y 0.0 --target-z 0.10` → exit 0 + `action_id`
+10. `json_output_round_trip` — 各 happy phase 加 `--json` → stdout `serde_json::from_str` 过 + 字段集 cover AC-7
+11. `existing_subcommands_regression`（reviewer 审查重点 1）— 真起 s0_daemon → 跑 `status`/`watch`/`estop` → exit code + 输出判据（§P.3 拍板 D1）
+
+- `--phase all` 跑全部；exit 0 = 全 PASS / exit 2 = ≥1 FAIL
+
+##### P.2.5.c Quality Gate（候选 A 完结硬 gate；AC-Q 全集）
+
+- fmt / clippy(workspace + robot-cli + robotctl_smoke feature) / build(workspace release) 全 clean
+- `cargo test --workspace` PASS 计数 > 989（候选 A ≥ +30 lib unit；最终数 §P.3 拍板 D4）
+- `robotctl_smoke --phase all` 全 PASS（**本候选硬 gate**）
+- 4 既有 smoke regression 0 退化：`crash_restart_smoke` 5/5（real-s1）+ `scripted_backend_smoke` 5/5 + `ik_backend_smoke` 5/5 + `pubsub_cleanup_smoke` all PASS + `triggered_c3=false`
+- schema_lint 15 .fbs 全过（候选 A 0 改 schema）
+- `cargo tree -p robot-cli` 无意外 dep
+- `cargo deny check`：**未新增 violation；overall fail 为既有 baseline**（严禁写"过"）
+
+##### P.2.5.d 风险锚点
+
+- **既有子命令需 s0**：regression phase 比前 4 个 smoke 多起一个 s0_daemon（mock adapter）；bring_up 扩 s0 spawn
+- **byte-level diff 现实性**：status 输出含 live heartbeat ts；§P.3 拍板 D1 定等价判据（结构 + 关键字段 vs 严格 byte）
+- **SIGINT 复现**：靠 readiness gate（读首 `event=` 行）去 race，不靠固定 sleep
+
+### P.3 reviewer Plan round 拍板（pending）
+
+| Round | 状态 | 内容 |
+|---|---|---|
+| Plan round 1 | pending | 本 outline draft v1 + 5 审查重点对账 + D1..D5 拍板项 |
+| Plan round 2 | pending | round 1 阻断 fix（如有）+ ACK |
+| Plan round N | pending | 最终 Approved 进入 (1/5) 实施 |
+
+**Plan 拍板项（D1..D5；reviewer Plan round 决定）**：
+
+| # | 拍板项 | 候选 | 倾向 |
+|---|---|---|---|
+| D1 | `existing_subcommands_regression` 等价判据（AC-2 "byte-level diff=0" 操作化）| (a) 结构判据（输出 key 集 + exit code + 关键字段值校验，volatile ts 字段 mask）；(b) FakeStatePublisher 喂固定 clock+state 真 byte diff；(c) 自比稳定性 only | **(a)**（status 含 live ts，严格 byte 不现实；mask ts 后结构 + 关键字段最稳）|
+| D2 | lib module 切分粒度 | (a) 7 module（gateway_client/meta/exit_code/validate/payload/json_out/uuid_v7）；(b) 合并为 3-4 个 | **(a)**（职责清晰；单测边界干净）|
+| D3 | robotctl_smoke phase 最终集 | (a) 11 phase（§P.2.5.b）；(b) 增删 | **(a)**（已覆盖 7 子命令 + 4 reviewer 重点 + regression）|
+| D4 | lib unit 数量目标 | (a) ≥30；(b) 更高门槛 | **(a)**（粗估 35-40；最终以实现为准）|
+| D5 | commit 是否 5 段 | (a) 5 段（按 RPC 家族）；(b) 7 段（每子命令一段）；(c) 3 段（粗合并）| **(a)**（家族内 helper/校验/输出复用度高；段数适中且每段可回归）|
+
+> `--config <PATH>` 客户端配置文件：Spec §不在范围已拍 **defer**（v0.5+
+> 独立 outline）；**不**进 D 拍板项。
+
+### P.4 Plan-Execute diff 登记位置
+
+沿候选 1-4 / round 1 / round 2 §P.4 同款 appendix-only 模板。实施期偏离
+Plan 任一决策 → 登记本节（**不**回退 Plan 正文），含：触发条件（哪个
+Plan 决策被偏离）+ 实际选择 + 理由（reviewer ACK / 实施期发现）+ 验证
+回归（4 既有 smoke + robotctl_smoke + AC-Q 全过）。
+
+预期可能 diff：
+
+- diff #1：smoke harness inline 复制行数实际 vs 预估
+- diff #2：lib module 切分实际 vs D2（合并/再拆）
+- diff #3：lib unit 数实际 vs D4（≥30）
+- diff #4：`existing_subcommands_regression` 等价判据实现细节（D1 落地）
+- diff #5：stream-events SIGINT 复现 readiness gate 实现（如固定 sleep 仍 flaky → 改 stdout 行读 gate）
+- diff #6：commit 段数如 reviewer round 改 D5（5 → 拆/合）
+
+---
+
+## 后续：reviewer Plan round + 实施
+
+Plan outline draft v1 commit 后开 Plan round 1；reviewer ACK（+ 必要时
+round 2-N 阻断 fix）后进 (1/5) 实施。沿候选 1-4 / round 1 / round 2 同款
+reviewer round 模式（outline → ACK → (1/5) → reviewer ACK push → (2/5)
+→ ... → (5/5) → summary）。
