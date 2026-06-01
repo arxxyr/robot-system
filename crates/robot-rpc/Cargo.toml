@@ -99,16 +99,22 @@ robot-core = { workspace = true }
 #
 # **B4 (3/3)** 同款：`crates/robot-rpc/tests/task_rpc_e2e.rs` 用
 # `RobotControlClient::{invoke_task, cancel_task, get_task_status,
-# stream_task_events, clear_error}` 5 method；通过下方 `[[test]]
-# required-features = ["client"]` 让 `cargo test --workspace --all-targets`
-# 默认 **跳过** task_rpc_e2e（生产路径不破坏），CI / dev 显式
-# `cargo test --features client --test task_rpc_e2e -- --test-threads=1`
-# 才跑 6 cross-process。
+# stream_task_events, clear_error}` 5 method，由下方 `[[test]]
+# required-features = ["client"]` 守门。
+#
+# **v0.5 候选 A (1/5) 起更新（workspace feature unification）**：robot-cli
+# 无条件依赖 `robot-rpc = { features = ["client"] }`，故 `cargo test
+# --workspace` 解析时 robot-rpc 必带 `client` → required-features 被满足
+# → task_rpc_e2e **默认随 workspace 跑**（不再"默认跳过"）。这是测试覆盖
+# 增加、非生产路径放宽：`robot_rpc_gateway` 等生产二进制单独构建仍不带
+# `client`（不依赖 robot-cli），0 client-only runtime 影响。详
+# team-swe/specs/v0_5_operator_cli.md §P.4 diff #A4。
 client = []
 
 [[test]]
-# B4 (3/3) cross-process e2e：required-features = ["client"] 锁住"默认
-# 跳过、显式才跑"语义；详上方 `client` feature 注释。
+# B4 (3/3) cross-process e2e：required-features = ["client"] 守门。自 v0.5
+# 候选 A (1/5) workspace feature unification 起，`cargo test --workspace`
+# 默认带 client → 本 e2e 默认随 workspace 跑（详上方 `client` feature 注释）。
 name = "task_rpc_e2e"
 path = "tests/task_rpc_e2e.rs"
 required-features = ["client"]
