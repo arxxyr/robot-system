@@ -200,6 +200,18 @@ fn main() {
     // task-32：统一 tracing subscriber 初始化。
     let _ = robot_logging::init();
 
+    // v0.5 候选 A：入口分流（Q-CLI2(b) / AC-2）。已落地的 gateway 子命令
+    // （async lane，见 robot_cli::dispatch::is_dispatchable_async）走 tokio
+    // runtime；其余（既有 sync 3 子命令 status/watch/estop + 未落地 async 名
+    // + 未知名 + 无参）落到下面既有手写 parser，行为 0 改动。
+    let cmdline: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(name) = cmdline.first()
+        && robot_cli::dispatch::is_dispatchable_async(name)
+    {
+        let code = robot_cli::block_on_async(robot_cli::dispatch::run_async(name, &cmdline[1..]));
+        std::process::exit(i32::from(code));
+    }
+
     let args = match Args::parse() {
         Ok(a) => a,
         Err(msg) => {

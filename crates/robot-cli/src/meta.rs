@@ -8,6 +8,11 @@ use robot_rpc::proto::{AuthContext, CommandMeta};
 
 use crate::uuid_v7::new_request_id;
 
+/// `--token` 缺失时的统一 stderr 文案（AC-3 / AC-6）。token 解析失败
+/// （[`TokenError`]）+ clear-estop 四道闸 + 通用 write-RPC gate 三处复用
+/// 同一句，避免文案漂移。
+pub const TOKEN_REQUIRED_MSG: &str = "--token (or env ROBOT_TOKEN) is required";
+
 /// token 解析失败（`--token` 与 env `ROBOT_TOKEN` 都缺/空）。
 #[derive(Debug, PartialEq, Eq)]
 pub enum TokenError {
@@ -18,7 +23,7 @@ pub enum TokenError {
 impl std::fmt::Display for TokenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Missing => write!(f, "--token (or env ROBOT_TOKEN) is required"),
+            Self::Missing => write!(f, "{TOKEN_REQUIRED_MSG}"),
         }
     }
 }

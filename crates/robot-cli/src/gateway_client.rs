@@ -18,21 +18,24 @@ pub fn resolve_gateway_addr(flag: Option<&str>, env_addr: Option<&str>) -> Strin
         .to_owned()
 }
 
-/// 连接 gateway（loopback；`http://<addr>`）。`connect_timeout` 控制建链、
-/// `timeout` 控制单 RPC 上限。失败返回人类可读消息（CLI 走 exit 5）。
+/// 连接 gateway（loopback；`http://<addr>`）。`connect_timeout` 只控制**建链**
+/// 上限；失败返回人类可读消息（CLI 走 exit 5）。
+///
+/// **单 RPC deadline 不在此设**（(2/5) amend）：endpoint 的 per-request
+/// `.timeout` 超时码不稳定（tonic 可能落 `Cancelled` → exit 7，而 AC-5 要
+/// client timeout → exit 6）。请求 deadline 改由调用方用 `tokio::time::
+/// timeout` 包裹 RPC（见 [`crate::dispatch`]）独占，超时稳定 exit 6。
 ///
 /// (1/5) 作为共享 lib 落地（pub API）；binary 从 (2/5) 第一个 async 子命令
 /// 起调用。连接真链路由 `robotctl_smoke` cross-process e2e 覆盖（(5/5)）。
 pub async fn connect_gateway(
     addr: &str,
     connect_timeout: Duration,
-    timeout: Duration,
 ) -> Result<RobotControlClient<Channel>, String> {
     let url = format!("http://{addr}");
     let endpoint = Endpoint::try_from(url.clone())
         .map_err(|e| format!("invalid gateway endpoint {url}: {e}"))?
-        .connect_timeout(connect_timeout)
-        .timeout(timeout);
+        .connect_timeout(connect_timeout);
     let channel = endpoint
         .connect()
         .await

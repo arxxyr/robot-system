@@ -30,9 +30,34 @@ pub fn print_output<T: CliOutput>(value: &T, json: bool) {
     }
 }
 
+/// `clear-estop` / `clear-error` 的 `Ack` 输出（AC-7）。两条 RPC 都返
+/// proto `Ack`，输出形态一致。
+///
+/// JSON 字段序 = `cleared_at_ns` / `dry_run` / `request_id`（serde 按声明
+/// 序，对齐 AC-7 schema）；human 省略 `request_id`
+/// （`cleared_at_ns=<ns> dry_run=<bool>`）。
+#[derive(Debug, Serialize)]
+pub struct AckOutput {
+    /// daemon 端 clear 完成时刻（`dry_run` 时为"would clear at"评估时刻）。
+    pub cleared_at_ns: u64,
+    /// 回传 `request.dry_run`，client audit 不需 lookup request。
+    pub dry_run: bool,
+    /// 回传 `CommandMeta.request_id`（client correlation）。
+    pub request_id: String,
+}
+
+impl CliOutput for AckOutput {
+    fn human(&self) -> String {
+        format!(
+            "cleared_at_ns={} dry_run={}",
+            self.cleared_at_ns, self.dry_run
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::CliOutput;
+    use super::{AckOutput, CliOutput};
     use serde::Serialize;
 
     #[derive(Serialize)]
@@ -70,5 +95,44 @@ mod tests {
             event: "STARTED",
         };
         assert_eq!(d.human(), "at_ns=123 event=STARTED request_id=rid");
+    }
+
+    #[test]
+    fn ack_output_human_omits_request_id() {
+        let a = AckOutput {
+            cleared_at_ns: 1_234_567_890,
+            dry_run: false,
+            request_id: "rid-1".to_owned(),
+        };
+        assert_eq!(a.human(), "cleared_at_ns=1234567890 dry_run=false");
+    }
+
+    #[test]
+    fn ack_output_json_is_schema_stable() {
+        let a = AckOutput {
+            cleared_at_ns: 1_234_567_890,
+            dry_run: false,
+            request_id: "rid-1".to_owned(),
+        };
+        let s = serde_json::to_string(&a).expect("serialize");
+        assert_eq!(
+            s,
+            r#"{"cleared_at_ns":1234567890,"dry_run":false,"request_id":"rid-1"}"#
+        );
+    }
+
+    #[test]
+    fn ack_output_dry_run_true_renders_both() {
+        let a = AckOutput {
+            cleared_at_ns: 42,
+            dry_run: true,
+            request_id: "rid-2".to_owned(),
+        };
+        assert_eq!(a.human(), "cleared_at_ns=42 dry_run=true");
+        let s = serde_json::to_string(&a).expect("serialize");
+        assert_eq!(
+            s,
+            r#"{"cleared_at_ns":42,"dry_run":true,"request_id":"rid-2"}"#
+        );
     }
 }

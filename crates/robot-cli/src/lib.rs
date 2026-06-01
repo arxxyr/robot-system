@@ -17,23 +17,33 @@
 //! - [`exit_code`] —— `tonic::Code` → CLI exit code 完整映射（AC-5）。
 //! - [`uuid_v7`] —— `request_id` 生成（`UUIDv7`）。
 //! - [`meta`] —— `CommandMeta` 构造 + token 解析 + source 默认（AC-6）。
-//! - [`validate`] —— `action-id` `UUIDv7` 早拒校验（AC-11）。
+//! - [`validate`] —— `action-id` `UUIDv7` 校验 + clear-estop 四道闸（AC-3 / AC-11）。
 //! - [`gateway_client`] —— gateway 地址解析 + 连接。
 //! - [`json_out`] —— 输出格式（human + `--json`，AC-7）。
+//! - [`cli_args`] —— gateway 子命令手写参数 parser（不引 clap，P1-2）。
+//! - [`dispatch`] —— async-lane 子命令 dispatch + 各 RPC handler。
 //! - [`subcommand_lane`] —— 纯路由函数（既有 3 走 sync、新 gateway 子命令走 async）。
 //! - [`block_on_async`] —— async 子命令的 tokio runtime 入口（Q-CLI2(b)）。
 //!
-//! ## (1/5) 边界（Plan round 1 P1-3）
+//! ## 增量边界（Plan round 1 P1-3）
 //!
-//! 本 commit 只落上述共享 lib + 纯路由 + runtime 脚手架；`bin/robotctl.rs`
-//! 的**手写** parser **不**扩新子命令（新名仍 → "unknown subcommand"
-//! exit 2，不可达 / 不 panic）。每个新子命令的 parser 识别 + dispatch +
-//! 实现随**各自 impl commit**（2/5..4/5）落地，避免可达 stub。`payload`
-//! 模块（`ScriptedPayload` / `IkPayload` fbs 构造）随 (4/5) invoke 子命令
-//! 落地（invoke-only，非 7 子命令共享）。
+//! 每个新子命令的 parser 识别 + dispatch + 实现随**各自 impl commit**
+//! 落地，避免可达 stub：[`dispatch::is_dispatchable_async`] 是"已落地、
+//! 入口分流会接管"的权威来源（随 commit 增长），`main()` 只把命中
+//! 它的名字交给 [`block_on_async`]；未落地的 async-lane 名仍走
+//! `bin/robotctl.rs` 手写 parser → "unknown subcommand" exit 2（不可达 /
+//! 不 panic）。
+//!
+//! - (1/5)：共享 lib + 纯路由 + runtime 脚手架；bin **0 改动**。
+//! - (2/5)：`clear-estop` + `clear-error` 落地（首次接入 async parser/dispatch
+//!   + main 入口分流）。
+//! - (4/5)：`payload`（`ScriptedPayload` / `IkPayload` fbs 构造）随 invoke
+//!   落地（invoke-only，非共享）。
 
 #![forbid(unused_must_use)]
 
+pub mod cli_args;
+pub mod dispatch;
 pub mod exit_code;
 pub mod gateway_client;
 pub mod json_out;
