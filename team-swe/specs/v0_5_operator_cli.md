@@ -898,9 +898,9 @@ RPC 家族 commit 旁如带**计划外 docs commit**（依赖白名单 / diff �
 
 | 段 | feat commit | 附带 docs commit | 备注 |
 |---|---|---|---|
-| (1/5) | `809575f` | `44375a4`（计划外：tonic client 依赖白名单登记，§P.4 diff #A1）| 2 commit |
-| 登记 | — | （本次 docs：§P.4 (1/5) diff 归档）| 1 commit |
-| (2/5) | pending | — | |
+| (1/5) | `809575f` | `44375a4`（计划外：tonic client 依赖白名单登记，§P.4 #A1）| 2 commit |
+| (1/5) 登记 | — | `3c664fc`（§P.4 (1/5) diff #A1-A4 归档 + 本表）| 1 commit |
+| (2/5) | `2abde1d`（amend 自 055ca36）| `d107762`（非阻断：robot-rpc task_rpc_e2e stale 注释）+ 本登记 docs（§P.4 #B1-B5 + 本表）| feat 1 + docs 2 |
 
 #### P.1.1 reviewer Plan round 1 审查 5 重点对账
 
@@ -932,7 +932,7 @@ reviewer 进 Plan 时点名的 5 项，逐条映射落点（**实施期硬 gate*
 
 | module | 职责 | 关键 API |
 |---|---|---|
-| `gateway_client` | 连接 + readiness | `connect_gateway(addr, connect_timeout, timeout) -> Result<RobotControlClient<Channel>, ExitCode>`（默认 `127.0.0.1:50051` + env `ROBOT_GATEWAY_ADDR`，Q-CLI4(a)；connect_timeout=2s 沿候选 1-4）|
+| `gateway_client` | 连接 + readiness | `connect_gateway(addr, connect_timeout, timeout) -> Result<RobotControlClient<Channel>, ExitCode>`（默认 `127.0.0.1:50051` + env `ROBOT_GATEWAY_ADDR`，Q-CLI4(a)；connect_timeout=2s 沿候选 1-4）。**⚠ (2/5) 已偏离此签名 → §P.4 #B3**：实际为 `connect_gateway(addr, connect_timeout) -> Result<_, String>`（去 per-request `timeout` 参），单 RPC deadline 改由 `dispatch::complete_ack_rpc` 的 `tokio::time::timeout` 独占（稳定 exit 6）|
 | `meta` | CommandMeta 构造 + token | `build_command_meta(args) -> CommandMeta`（round 2 amend #2：request_id 一次生成复用、`cli-<request_id>`、`default_cli_source()` 走 USER/USERNAME）+ `resolve_token(args) -> Result<String, ExitCode>`（`--token` > `ROBOT_TOKEN` > exit 2）|
 | `exit_code` | tonic Code → exit | `map_tonic_code_to_exit(code: tonic::Code) -> ExitCode` **exhaustive 不留 `_`**（AC-5 全表；新 Code variant 编译 fail 强制更新）|
 | `validate` | 早拒校验 | `validate_action_id(&str) -> Result<(), ExitCode>`（UUIDv7：空/非 UUID/非 v7，AC-11；复用 `robot_rpc::auth::validate_request_id`）+ `check_clear_estop_gates(args) -> Result<(), ExitCode>`（AC-3 四道闸）|
@@ -1151,6 +1151,20 @@ Plan 决策被偏离）+ 实际选择 + 理由（reviewer ACK / 实施期发现�
 
 > **A4 → 最终 summary 必带**：候选 A summary 的 Plan-Execute diff 段必须
 > 复述本条（task_rpc_e2e 默认运行）；A1（`44375a4`）计入 commit chain 计数。
+
+**(2/5)（commit `2abde1d`，amend 自 055ca36；reviewer 2026-05-31 代码层 ACK，
+条件：本 (2/5) diff 登记后方可 push）：**
+
+| # | 触发（被偏离的 Plan 决策）| 实际选择 | 理由 / reviewer | 验证回归 |
+|---|---|---|---|---|
+| B1 | §P.2.1.b / D2 列 7 lib module | 实际 8 landed + payload 待 = 最终 **9**：新增 `cli_args`（gateway 子命令手写 parser）+ `dispatch`（async 分发 + handler + 编排 helper）| parser / 路由 / 编排分模块利于单测 + bin 极薄；同 #A3 逻辑（testability）| robot-cli 60 lib unit；clippy/fmt clean |
+| B2 | §P.2.1.a item 3：新子命令 arg 解析 append 进 `bin/robotctl.rs` 手写 parser | gateway parser + dispatch + handler 全落 **lib**；bin 仅得 `main()` 入口分流 peek（既有 `Args`/`parse`/`run` 0 改）| 同 #A3：bin 字节最小化 + lib 最大可测；强化 AC-2"既有 3 子命令 0 改动"| 既有路由实测不变；`status` 仍走 sync banner exit 0 |
+| **B3** | **§P.2.1.b `gateway_client` 行旧签名 `connect_gateway(addr, connect_timeout, timeout) -> Result<_, ExitCode>`**（本文件该行已加 ⚠ 内联标记）| 实际 `connect_gateway(addr, connect_timeout) -> Result<_, String>`：去 per-request `.timeout`，只留 connect timeout；单 RPC deadline 由 `dispatch::complete_ack_rpc` 的 `tokio::time::timeout` **独占** | reviewer 阻断 2：endpoint timeout 超时 code 不稳定（可能 `Cancelled`→exit 7）；CLI 层 tokio timeout 兜死 **exit 6**（AC-5 client timeout 语义）。`String` 错误由 call site 映射 exit 5(connect) | `complete_ack_rpc` 3 lib unit（含 `pending` future + 10 ms → 确定性 exit 6）；CLI connect-fail exit 5 实测 |
+| B4 | （非 Plan 列）clear-error 共享 parser 收下 clear-estop 专属 `--confirmation` | `cli_args::reject_confirmation` 早拒（exit 2 `--confirmation is not valid for clear-error`），**不静默吞** | reviewer 阻断 1 | 4 lib unit + CLI 实测；clear-estop 仍接受 --confirmation |
+| B5（in-commit 解决）| 前次 (2/5) 报告 diff #4「client-timeout→exit-6 推 (5/5)」| reviewer 拒推 → (2/5) 即用 `complete_ack_rpc` 锁 exit 6（见 B3）| reviewer 阻断 2：`--timeout-ms` 已在 (2/5) 暴露给 clear-estop/clear-error，exit 6 语义须同 commit 锁 | 见 B3 |
+
+> **B3 审计提示**：读 §P.2.1.b `gateway_client` 行时**以本 #B3 为准**；Plan
+> 正文旧签名（`timeout` 第三参 + `ExitCode` 返回）已废，不再是实现契约。
 
 ---
 
