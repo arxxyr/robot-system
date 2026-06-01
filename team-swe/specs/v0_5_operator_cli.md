@@ -907,6 +907,9 @@ RPC 家族 commit 旁如带**计划外 docs commit**（依赖白名单 / diff �
 | (2/5) | `2abde1d`（amend 自 055ca36）| `d107762`（非阻断：robot-rpc task_rpc_e2e stale 注释）+ `2dc5b32`（§P.4 #B1-B5 + 本表）| feat 1 + docs 2 |
 | (3/5) | `239f2e0` | 本登记 docs（§P.4 #C1-C3 + §What line 70/73 viewer+ 措辞 + 本表）| feat 1 + docs 1 |
 | (4/5) | `d2ceb12` | `7bab8b7`（🐛 fix：拒 wire 不支持的 --dry-run，#D6）+ 本登记 docs（§P.4 #D1-D6 + 本表）| feat 1 + fix 1 + docs 1 |
+| 接班 | — | `202185a`（(5/5) entry handoff spec + reviewer 3 约束）| docs 1 |
+| (5/5) | `25c2feb` | 本 summary docs（§P.4 #E1-E5 + summary 归档 + CLAUDE.md 状态 + README）| feat 1 + docs 1 |
+| **候选 A 完结** | — | 5 feat + 1 fix + 7 docs = **13 commit**（`809575f` → 本 docs）| — |
 
 #### P.1.1 reviewer Plan round 1 审查 5 重点对账
 
@@ -1201,6 +1204,20 @@ ACK，D3/D4/D6 ACK）：**
 > **D6 不变量提示**：新增任何 gateway 写/读子命令时，**默认拒 `--dry-run`**，
 > 除非其 wire fbs 真带 dry_run 字段 + daemon action layer 真识别（当前仅
 > clear-estop）。robotctl_smoke 安全矩阵 phase 是该不变量的回归守卫。
+
+**(5/5)（commit `25c2feb` feat + 本 summary docs；候选 A 完结）：**
+
+| # | 类别 | 内容 | 边界 / 依据 |
+|---|---|---|---|
+| E1 | **判据适配（AC-2 status）** | §P.2.5.d 设想 status/watch 都 deterministic byte-diff=0；实测 `robotctl status` 单发 `latest()` 读受 iceoryx2 **late-subscriber 投递时机竞态**（投递在订阅者连接后下一次 publish；status 立即读 → 通常 "no sample yet"），非 robotctl bug。故 AC-2 byte-diff **主证走 `watch`**（persistent subscriber 循环 reliable 读 fixed sample → sample-block byte-identical + 含 layout）；status 只断言 exit 0 + 跨运行 byte-identical | status / watch 共用同一 `print_snapshot`（robotctl.rs:425）—— watch 证渲染 determinism 即覆盖 status 同路径 |
+| E2 | 结构化审查重点 3 | robotctl_smoke **只** `dep:tokio + serde_json`，**不**引 robot-rpc/tonic → "smoke 不调 tonic client" 从纪律变编译期边界（物理上无法 import client）；serde_json 仅 json_output phase 真 parse | 比 Plan 设想更强（结构锁）|
+| E3 | regression 不起 s0_daemon | §P.2.5.b 设想"真起 s0_daemon"；实际 status/watch/estop 全 iceoryx2-direct（不经 gateway/s1），用 **fixed-stamp `FakeStatePublisher`**（deterministic）+ `EStopCapture` 订阅验 body 即可，**无需 s0_daemon binary** | AC-2 fixed-state determinism 落地；preflight 只需 robotctl + gateway + s1 |
+| E4 | dry_run 安全矩阵 phase | D6 的 (5/5) 跟进落地 = phase 12 `dry_run_safety_matrix`（6 非 clear-estop 子命令 + 不可达 gateway → 全 exit 2）| reviewer D6 建议的回归守卫 |
+| E5 | 新 config | `configs/robotctl_smoke.toml`（5-DOF + backends = [mock_dwell, hold_pose, scripted, ik]）—— scripted happy + ik phase 都可 dispatch | 测试 fixture（非 frozen / 非 §6.7）|
+
+> **候选 A 完结**：(1/5)–(5/5) + dry-run fix 全 land + pushed。AC-1..AC-12 +
+> AC-Q 全过；§6.7 / design.md / B4 frozen schema / rpc_roles **0 触动**。详
+> [`docs/handoffs/v0.5_operator_cli_summary.md`](../../docs/handoffs/v0.5_operator_cli_summary.md)。
 
 ---
 

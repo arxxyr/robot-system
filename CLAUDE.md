@@ -16,10 +16,22 @@
 
 ```
 设计版本:  v0.1.2（冻结）
-实现阶段:  v0.4 —— 候选 3 (per-ActionId pubsub cleanup) ✅ + 候选 1 (Scripted backend) ✅
+实现阶段:  v0.5 —— 候选 A (operator CLI `robotctl` 工具化) ✅ **完结**（(1/5)-(5/5)
+           + dry-run fix；5 feat + 1 fix + 7 docs = 13 commit，`809575f` → `25c2feb`）。
+           crates/robot-cli 从 3 个 iceoryx2 直连子命令扩成 +7 个 tonic gRPC operator
+           子命令（clear-estop 四道闸 / clear-error / get-task-status / cancel-task /
+           stream-events / invoke scripted / invoke ik）+ robotctl_smoke 12-phase
+           cross-process e2e（--phase all 12/12 PASS）。**0 改 frozen schema / 0 改
+           §6.7 / 0 改 B4 wire 契约**。详 docs/handoffs/v0.5_operator_cli_summary.md。
+           **三条非安全保证必读**：A4（robot-cli dep robot-rpc/client → task_rpc_e2e
+           默认随 workspace 跑）/ C1（read RPC token gate 仅 client-side、不上 wire、
+           服务端 v0.3 unauthenticated）/ D6（--dry-run 仅 clear-estop 端到端支持）。
+           下一步 = 候选 B (GetState/StreamState RPC)，A→B→C→D→E 硬序（v0.5_entry.md）。
+
+v0.4 收口:  候选 3 (per-ActionId pubsub cleanup) ✅ + 候选 1 (Scripted backend) ✅
            + 候选 2 round 1 (robot-kinematics trait crate) ✅
-           + 候选 2 round 2 (robot-kinematics-xlerobot impl + IkBackend + S1 wiring + e2e) ✅。
-           候选 4 (dimos 切换 light Research) 准备开。
+           + 候选 2 round 2 (robot-kinematics-xlerobot impl + IkBackend + S1 wiring + e2e) ✅
+           + 候选 4 (dimos 切换 light Research) ✅（commit e6178f2）。
 
 v0.2 收尾:  commit 0fa1d77（2026-04-26 reviewer "复核通过，按降级宣称进入 v0.3"）。
             §6.7 #4 真锁住继承自 v0.2；#2 (A2 land) + #3 (A1-5 land) 在 v0.3 Phase A 升级到真锁住。
