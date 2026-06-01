@@ -21,6 +21,8 @@
 //! - [`gateway_client`] —— gateway 地址解析 + 连接。
 //! - [`json_out`] —— 输出格式（human + `--json`，AC-7）。
 //! - [`cli_args`] —— gateway 子命令手写参数 parser（不引 clap，P1-2）。
+//! - [`payload`] —— invoke 的 `ScriptedPayload` / `IkPayload` fbs 构造 +
+//!   waypoints/ik 输入解析（Q-CLI7(b) inline；(4/5)）。
 //! - [`dispatch`] —— async-lane 子命令 dispatch + 各 RPC handler。
 //! - [`subcommand_lane`] —— 纯路由函数（既有 3 走 sync、新 gateway 子命令走 async）。
 //! - [`block_on_async`] —— async 子命令的 tokio runtime 入口（Q-CLI2(b)）。
@@ -50,6 +52,7 @@ pub mod exit_code;
 pub mod gateway_client;
 pub mod json_out;
 pub mod meta;
+pub mod payload;
 pub mod uuid_v7;
 pub mod validate;
 

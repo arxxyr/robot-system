@@ -31,7 +31,30 @@ pub struct GatewayArgs {
     pub audit_reason: Option<String>,
     /// `--confirmation`（clear-estop 专属；AC-3 四道闸）。
     pub confirmation: Option<String>,
-    /// 非 flag 位置参数（clear-estop / clear-error 无；handler 校验为空）。
+    /// `--waypoints-file <PATH>`（invoke scripted 专属；AC-8）。
+    pub waypoints_file: Option<String>,
+    /// `--follow`（invoke 专属；默认 off，Q-CLI11(b)）。
+    pub follow: bool,
+    /// `--target-x`（invoke ik 专属；原样字符串，handler parse f64）。
+    pub target_x: Option<String>,
+    /// `--target-y`（invoke ik 专属）。
+    pub target_y: Option<String>,
+    /// `--target-z`（invoke ik 专属）。
+    pub target_z: Option<String>,
+    /// `--target-qx`（invoke ik 专属；默认 0）。
+    pub target_qx: Option<String>,
+    /// `--target-qy`（invoke ik 专属；默认 0）。
+    pub target_qy: Option<String>,
+    /// `--target-qz`（invoke ik 专属；默认 0）。
+    pub target_qz: Option<String>,
+    /// `--target-qw`（invoke ik 专属；默认 1）。
+    pub target_qw: Option<String>,
+    /// `--seed-joints`（invoke ik 专属；逗号列表）。
+    pub seed_joints: Option<String>,
+    /// `--frame`（invoke ik 专属）。
+    pub frame: Option<String>,
+    /// 非 flag 位置参数（clear-estop / clear-error 无；TaskHandleRef 族取一个
+    /// action-id；invoke 取 kind 子类型 scripted/ik）。
     pub positional: Vec<String>,
 }
 
@@ -47,6 +70,17 @@ impl Default for GatewayArgs {
             json: false,
             audit_reason: None,
             confirmation: None,
+            waypoints_file: None,
+            follow: false,
+            target_x: None,
+            target_y: None,
+            target_z: None,
+            target_qx: None,
+            target_qy: None,
+            target_qz: None,
+            target_qw: None,
+            seed_joints: None,
+            frame: None,
             positional: Vec::new(),
         }
     }
@@ -120,6 +154,21 @@ pub fn parse_gateway_args(raw: &[String]) -> Result<GatewayArgs, ArgError> {
             }
             "--dry-run" => args.dry_run = true,
             "--json" => args.json = true,
+            // invoke 专属 flag（(4/5)）；各子命令由 reject_invoke_flags_except
+            // 按白名单拒（不静默吞，沿阻断 1）。
+            "--waypoints-file" => {
+                args.waypoints_file = Some(take_value(raw, &mut i, "--waypoints-file")?);
+            }
+            "--follow" => args.follow = true,
+            "--target-x" => args.target_x = Some(take_value(raw, &mut i, "--target-x")?),
+            "--target-y" => args.target_y = Some(take_value(raw, &mut i, "--target-y")?),
+            "--target-z" => args.target_z = Some(take_value(raw, &mut i, "--target-z")?),
+            "--target-qx" => args.target_qx = Some(take_value(raw, &mut i, "--target-qx")?),
+            "--target-qy" => args.target_qy = Some(take_value(raw, &mut i, "--target-qy")?),
+            "--target-qz" => args.target_qz = Some(take_value(raw, &mut i, "--target-qz")?),
+            "--target-qw" => args.target_qw = Some(take_value(raw, &mut i, "--target-qw")?),
+            "--seed-joints" => args.seed_joints = Some(take_value(raw, &mut i, "--seed-joints")?),
+            "--frame" => args.frame = Some(take_value(raw, &mut i, "--frame")?),
             "-h" | "--help" => return Err(ArgError::Help),
             other if other.starts_with('-') => return Err(ArgError::Unknown(other.to_owned())),
             other => args.positional.push(other.to_owned()),
@@ -174,11 +223,47 @@ pub fn expect_one_positional(subcommand: &str, args: &GatewayArgs) -> Result<Str
     }
 }
 
+/// 拒绝不在 `allowed` 白名单内的 invoke-family flag（沿阻断 1：**不静默吞**）。
+/// invoke-family = {`--waypoints-file`, `--follow`, `--target-*`,
+/// `--seed-joints`, `--frame`}。共享 parser 收下它们；各子命令按白名单拒：
+/// 非 invoke 子命令 `allowed = []`（全拒）；`invoke scripted` 放
+/// `--waypoints-file` / `--follow`；`invoke ik` 放 `--target-*` /
+/// `--seed-joints` / `--frame` / `--follow`。
+///
+/// # Errors
+///
+/// 任一被设置的 invoke-family flag 不在 `allowed` 内（报第一个命中的）。
+pub fn reject_invoke_flags_except(
+    subcommand: &str,
+    args: &GatewayArgs,
+    allowed: &[&str],
+) -> Result<(), String> {
+    let invoke_flags: [(bool, &str); 11] = [
+        (args.waypoints_file.is_some(), "--waypoints-file"),
+        (args.follow, "--follow"),
+        (args.target_x.is_some(), "--target-x"),
+        (args.target_y.is_some(), "--target-y"),
+        (args.target_z.is_some(), "--target-z"),
+        (args.target_qx.is_some(), "--target-qx"),
+        (args.target_qy.is_some(), "--target-qy"),
+        (args.target_qz.is_some(), "--target-qz"),
+        (args.target_qw.is_some(), "--target-qw"),
+        (args.seed_joints.is_some(), "--seed-joints"),
+        (args.frame.is_some(), "--frame"),
+    ];
+    for (set, name) in invoke_flags {
+        if set && !allowed.contains(&name) {
+            return Err(format!("{name} is not valid for {subcommand}"));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ArgError, DEFAULT_TIMEOUT_MS, expect_one_positional, parse_gateway_args,
-        reject_confirmation, reject_positional,
+        reject_confirmation, reject_invoke_flags_except, reject_positional,
     };
 
     fn v(args: &[&str]) -> Vec<String> {
@@ -352,6 +437,98 @@ mod tests {
         assert_eq!(
             expect_one_positional("stream-events", &a),
             Err("stream-events takes exactly one <action-id>".to_owned())
+        );
+    }
+
+    #[test]
+    fn parses_invoke_flags() {
+        let a = parse_gateway_args(&v(&[
+            "--waypoints-file",
+            "/tmp/wp.json",
+            "--follow",
+            "--target-x",
+            "0.2",
+            "--target-y",
+            "0.0",
+            "--target-z",
+            "0.1",
+            "--target-qw",
+            "1.0",
+            "--seed-joints",
+            "0.1,0.2",
+            "--frame",
+            "base",
+        ]))
+        .expect("parse");
+        assert_eq!(a.waypoints_file.as_deref(), Some("/tmp/wp.json"));
+        assert!(a.follow);
+        assert_eq!(a.target_x.as_deref(), Some("0.2"));
+        assert_eq!(a.target_z.as_deref(), Some("0.1"));
+        assert_eq!(a.target_qw.as_deref(), Some("1.0"));
+        assert_eq!(a.seed_joints.as_deref(), Some("0.1,0.2"));
+        assert_eq!(a.frame.as_deref(), Some("base"));
+    }
+
+    #[test]
+    fn reject_invoke_flags_non_invoke_allows_none() {
+        let a = parse_gateway_args(&v(&["--token", "t"])).expect("parse");
+        assert_eq!(reject_invoke_flags_except("clear-estop", &a, &[]), Ok(()));
+    }
+
+    /// 非 invoke 子命令带 invoke flag 必须拒（allowed=[]，不静默吞，沿阻断 1）。
+    #[test]
+    fn reject_invoke_flags_non_invoke_errs() {
+        let a = parse_gateway_args(&v(&["--waypoints-file", "/x"])).expect("parse");
+        assert_eq!(
+            reject_invoke_flags_except("clear-estop", &a, &[]),
+            Err("--waypoints-file is not valid for clear-estop".to_owned())
+        );
+        let b = parse_gateway_args(&v(&["--follow"])).expect("parse");
+        assert_eq!(
+            reject_invoke_flags_except("get-task-status", &b, &[]),
+            Err("--follow is not valid for get-task-status".to_owned())
+        );
+    }
+
+    /// invoke scripted 放 --waypoints-file / --follow，但拒 ik flag。
+    #[test]
+    fn reject_invoke_flags_scripted_whitelist() {
+        let a = parse_gateway_args(&v(&["--waypoints-file", "/x", "--follow"])).expect("parse");
+        assert_eq!(
+            reject_invoke_flags_except("invoke scripted", &a, &["--waypoints-file", "--follow"]),
+            Ok(())
+        );
+        let b = parse_gateway_args(&v(&["--target-x", "0.1"])).expect("parse");
+        assert_eq!(
+            reject_invoke_flags_except("invoke scripted", &b, &["--waypoints-file", "--follow"]),
+            Err("--target-x is not valid for invoke scripted".to_owned())
+        );
+    }
+
+    /// invoke ik 放 --target-* / --follow，但拒 --waypoints-file。
+    #[test]
+    fn reject_invoke_flags_ik_whitelist() {
+        let allowed = [
+            "--target-x",
+            "--target-y",
+            "--target-z",
+            "--target-qx",
+            "--target-qy",
+            "--target-qz",
+            "--target-qw",
+            "--seed-joints",
+            "--frame",
+            "--follow",
+        ];
+        let a = parse_gateway_args(&v(&["--target-x", "0.1", "--frame", "base"])).expect("parse");
+        assert_eq!(
+            reject_invoke_flags_except("invoke ik", &a, &allowed),
+            Ok(())
+        );
+        let b = parse_gateway_args(&v(&["--waypoints-file", "/x"])).expect("parse");
+        assert_eq!(
+            reject_invoke_flags_except("invoke ik", &b, &allowed),
+            Err("--waypoints-file is not valid for invoke ik".to_owned())
         );
     }
 }

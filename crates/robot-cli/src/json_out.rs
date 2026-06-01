@@ -249,6 +249,22 @@ impl CliOutput for CancelAckOutput {
     }
 }
 
+/// `invoke scripted` / `invoke ik` 输出（无 `--follow`；AC-7）：`InvokeTask`
+/// 返 `TaskHandle { request_id, action_id }`。
+#[derive(Debug, Serialize)]
+pub struct InvokeOutput {
+    /// 新建 task 的 `action_id`（后续 get-task-status / cancel / stream 用）。
+    pub action_id: String,
+    /// echo 回填。
+    pub request_id: String,
+}
+
+impl CliOutput for InvokeOutput {
+    fn human(&self) -> String {
+        format!("action_id={}", self.action_id)
+    }
+}
+
 /// `stream-events` 单帧输出（AC-7 / AC-10；NDJSON 一行一帧）。
 ///
 /// 条件字段同 [`TaskStatusOutput`]：`progress` 仅 PROGRESS、`outcome` 仅
@@ -353,7 +369,9 @@ mod tests {
     };
     use serde::Serialize;
 
-    use super::{AckOutput, CancelAckOutput, CliOutput, TaskEventOutput, TaskStatusOutput};
+    use super::{
+        AckOutput, CancelAckOutput, CliOutput, InvokeOutput, TaskEventOutput, TaskStatusOutput,
+    };
 
     #[derive(Serialize)]
     struct Dummy {
@@ -511,6 +529,19 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&a).expect("json"),
             r#"{"cleared_at_ns":42,"request_id":"rid"}"#
+        );
+    }
+
+    #[test]
+    fn invoke_output_human_and_json() {
+        let o = InvokeOutput {
+            action_id: "aid".to_owned(),
+            request_id: "rid".to_owned(),
+        };
+        assert_eq!(o.human(), "action_id=aid");
+        assert_eq!(
+            serde_json::to_string(&o).expect("json"),
+            r#"{"action_id":"aid","request_id":"rid"}"#
         );
     }
 

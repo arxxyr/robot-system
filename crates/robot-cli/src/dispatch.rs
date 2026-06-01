@@ -14,28 +14,48 @@ use std::future::Future;
 use std::io::Write;
 use std::time::Duration;
 
+use robot_msg::schema_id::{SCHEMA_IK_PAYLOAD, SCHEMA_SCRIPTED_PAYLOAD};
 use robot_rpc::proto::robot_control_client::RobotControlClient;
 use robot_rpc::proto::{
-    Ack, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, CommandMeta, TaskEvent,
-    TaskHandleRef,
+    Ack, ActionKindProto, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, CommandMeta,
+    InvokeTaskCommand, TaskEvent, TaskHandleRef,
 };
 use tonic::Streaming;
 use tonic::transport::Channel;
 
 use crate::cli_args::{
     ArgError, GatewayArgs, expect_one_positional, parse_gateway_args, reject_confirmation,
-    reject_positional,
+    reject_invoke_flags_except, reject_positional,
 };
 use crate::exit_code::{code_label, map_tonic_code_to_exit};
 use crate::gateway_client::{connect_gateway, resolve_gateway_addr};
 use crate::json_out::{
-    AckOutput, CancelAckOutput, TaskEventOutput, TaskStatusOutput, print_output,
+    AckOutput, CancelAckOutput, InvokeOutput, TaskEventOutput, TaskStatusOutput, print_output,
 };
 use crate::meta::{
     MetaInputs, TOKEN_REQUIRED_MSG, build_command_meta, default_cli_source, resolve_token,
 };
+use crate::payload::{
+    build_ik_payload, build_scripted_payload, parse_ik_target, parse_waypoints_json,
+};
 use crate::uuid_v7::new_request_id;
 use crate::validate::{check_clear_estop_gates, check_write_rpc_gates, validate_action_id};
+
+/// `invoke scripted` 允许的 invoke-family flag 白名单（其余 ik flag 拒）。
+const INVOKE_SCRIPTED_ALLOWED: [&str; 2] = ["--waypoints-file", "--follow"];
+/// `invoke ik` 允许的 invoke-family flag 白名单（`--waypoints-file` 拒）。
+const INVOKE_IK_ALLOWED: [&str; 10] = [
+    "--target-x",
+    "--target-y",
+    "--target-z",
+    "--target-qx",
+    "--target-qy",
+    "--target-qz",
+    "--target-qw",
+    "--seed-joints",
+    "--frame",
+    "--follow",
+];
 
 /// CLI 参数错 / safety contract 早拒（AC-5）。
 const EXIT_CLI_ARGS: u8 = 2;
@@ -58,7 +78,12 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 pub fn is_dispatchable_async(name: &str) -> bool {
     matches!(
         name,
-        "clear-estop" | "clear-error" | "get-task-status" | "cancel-task" | "stream-events"
+        "clear-estop"
+            | "clear-error"
+            | "get-task-status"
+            | "cancel-task"
+            | "stream-events"
+            | "invoke"
     )
 }
 
@@ -71,6 +96,7 @@ pub async fn run_async(subcommand: &str, raw: &[String]) -> u8 {
         "get-task-status" => run_get_task_status(raw).await,
         "cancel-task" => run_cancel_task(raw).await,
         "stream-events" => run_stream_events(raw).await,
+        "invoke" => run_invoke(raw).await,
         // is_dispatchable_async 已在 main 入口 gate；防御性兜底（不 panic）。
         other => {
             eprintln!("error: unknown subcommand: {other}");
@@ -162,6 +188,46 @@ OPTIONS:
   --timeout-ms <MS>            整流总时长上限（默认 2000；到期 exit 6）
   --json                       stdout 每帧一行 JSON（NDJSON）";
 
+const INVOKE_USAGE: &str = "\
+robotctl invoke <KIND> [OPTIONS]
+
+提交一个 action。KIND ∈ {scripted, ik}：
+  robotctl invoke scripted --waypoints-file <PATH> --audit-reason <STR> ...
+  robotctl invoke ik --target-x <F> --target-y <F> --target-z <F> --audit-reason <STR> ...
+
+各 KIND 详见 robotctl invoke <KIND> --help。";
+
+const INVOKE_SCRIPTED_USAGE: &str = "\
+robotctl invoke scripted --waypoints-file <PATH> --audit-reason <STR> [OPTIONS]
+
+joint-space 线性插值 + waypoint dwell（kind=Scripted）。
+
+REQUIRED:
+  --waypoints-file <PATH>      JSON {\"waypoints\":[{\"positions\":[..],\"dwell_ms\":N,\"segment_duration_ms\":N},..]}
+  --audit-reason <STR>         非空
+  --token <TOKEN>              operator+ token（或 env ROBOT_TOKEN）
+
+OPTIONS:
+  --gateway-addr / --source / --idempotency-key / --timeout-ms / --dry-run / --json
+  --follow                     提交后接 stream-events 跟到终态（默认 off，Q-CLI11(b)）";
+
+const INVOKE_IK_USAGE: &str = "\
+robotctl invoke ik --target-x <F> --target-y <F> --target-z <F> --audit-reason <STR> [OPTIONS]
+
+逆运动学求解到目标位姿（kind=Ik）。
+
+REQUIRED:
+  --target-x/-y/-z <F>         目标位置（m，f64）
+  --audit-reason <STR>         非空
+  --token <TOKEN>              operator+ token（或 env ROBOT_TOKEN）
+
+OPTIONS:
+  --target-qx/-qy/-qz/-qw <F>  目标四元数（默认 0 0 0 1；CLI 不校验 normalization）
+  --seed-joints <j0,j1,..>     IK seed（逗号列表；默认无）
+  --frame <STR>                frame（默认空）
+  --gateway-addr / --source / --idempotency-key / --timeout-ms / --dry-run / --json
+  --follow                     提交后接 stream-events 跟到终态（默认 off，Q-CLI11(b)）";
+
 /// `clear-estop`（AC-3 四道闸 + `ClearEStop` RPC）。
 async fn run_clear_estop(raw: &[String]) -> u8 {
     let args = match parse_gateway_args(raw) {
@@ -175,7 +241,9 @@ async fn run_clear_estop(raw: &[String]) -> u8 {
             return EXIT_CLI_ARGS;
         }
     };
-    if let Err(e) = reject_positional("clear-estop", &args) {
+    if let Err(e) = reject_positional("clear-estop", &args)
+        .and_then(|()| reject_invoke_flags_except("clear-estop", &args, &[]))
+    {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
     }
@@ -225,6 +293,7 @@ async fn run_clear_error(raw: &[String]) -> u8 {
     // --confirmation（阻断 1：不静默吞）。
     if let Err(e) = reject_positional("clear-error", &args)
         .and_then(|()| reject_confirmation("clear-error", &args))
+        .and_then(|()| reject_invoke_flags_except("clear-error", &args, &[]))
     {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
@@ -263,7 +332,9 @@ async fn run_get_task_status(raw: &[String]) -> u8 {
             return EXIT_CLI_ARGS;
         }
     };
-    if let Err(e) = reject_confirmation("get-task-status", &args) {
+    if let Err(e) = reject_confirmation("get-task-status", &args)
+        .and_then(|()| reject_invoke_flags_except("get-task-status", &args, &[]))
+    {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
     }
@@ -304,7 +375,9 @@ async fn run_cancel_task(raw: &[String]) -> u8 {
             return EXIT_CLI_ARGS;
         }
     };
-    if let Err(e) = reject_confirmation("cancel-task", &args) {
+    if let Err(e) = reject_confirmation("cancel-task", &args)
+        .and_then(|()| reject_invoke_flags_except("cancel-task", &args, &[]))
+    {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
     }
@@ -371,7 +444,9 @@ async fn run_stream_events(raw: &[String]) -> u8 {
             return EXIT_CLI_ARGS;
         }
     };
-    if let Err(e) = reject_confirmation("stream-events", &args) {
+    if let Err(e) = reject_confirmation("stream-events", &args)
+        .and_then(|()| reject_invoke_flags_except("stream-events", &args, &[]))
+    {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
     }
@@ -379,36 +454,188 @@ async fn run_stream_events(raw: &[String]) -> u8 {
         Ok(id) => id,
         Err(code) => return code,
     };
-
-    let mut client = match connect(&args).await {
+    let client = match connect(&args).await {
         Ok(c) => c,
         Err(code) => return code,
     };
-    let req = TaskHandleRef {
-        request_id: new_request_id(),
-        action_id,
-    };
     let total = Duration::from_millis(args.timeout_ms);
-    let json = args.json;
-    let stream_work = async move {
-        match client.stream_task_events(req).await {
-            Ok(resp) => consume_stream(resp.into_inner(), json).await,
-            Err(status) => render_status_err(&status),
-        }
-    };
-    // AC-10：SIGINT 提前退 exit 0 + warning；整流总时长到期 exit 6。
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            eprintln!("warning: stream interrupted before terminal event");
+    stream_to_terminal(client, action_id, total, args.json).await
+}
+
+/// `invoke` —— 顶层 token，按位置子类型 `scripted` / `ik` 再分发（(4/5)）。
+async fn run_invoke(raw: &[String]) -> u8 {
+    match raw.first().map(String::as_str) {
+        Some("scripted") => run_invoke_scripted(&raw[1..]).await,
+        Some("ik") => run_invoke_ik(&raw[1..]).await,
+        Some("-h" | "--help") => {
+            eprintln!("{INVOKE_USAGE}");
             0
         }
-        r = tokio::time::timeout(total, stream_work) => match r {
-            Ok(code) => code,
-            Err(_elapsed) => {
-                eprintln!("error: stream timed out after {}ms", total.as_millis());
-                EXIT_TIMEOUT
-            }
+        Some(other) => {
+            eprintln!("error: unknown invoke kind: {other} (expected 'scripted' or 'ik')");
+            EXIT_CLI_ARGS
         }
+        None => {
+            eprintln!("error: invoke requires a kind ('scripted' or 'ik')");
+            eprintln!("{INVOKE_USAGE}");
+            EXIT_CLI_ARGS
+        }
+    }
+}
+
+/// `invoke scripted --waypoints-file <PATH>`（AC-8；写 RPC kind=Scripted）。
+async fn run_invoke_scripted(raw: &[String]) -> u8 {
+    let args = match parse_gateway_args(raw) {
+        Ok(a) => a,
+        Err(ArgError::Help) => {
+            eprintln!("{INVOKE_SCRIPTED_USAGE}");
+            return 0;
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+    if let Err(e) = reject_confirmation("invoke scripted", &args).and_then(|()| {
+        reject_invoke_flags_except("invoke scripted", &args, &INVOKE_SCRIPTED_ALLOWED)
+    }) {
+        eprintln!("error: {e}");
+        return EXIT_CLI_ARGS;
+    }
+    if !args.positional.is_empty() {
+        eprintln!("error: invoke scripted takes no positional arguments");
+        return EXIT_CLI_ARGS;
+    }
+    let Some(path) = args.waypoints_file.as_deref() else {
+        eprintln!("error: --waypoints-file <PATH> is required for invoke scripted");
+        return EXIT_CLI_ARGS;
+    };
+    let json_text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("error: cannot read --waypoints-file {path}: {e}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+    let waypoints = match parse_waypoints_json(&json_text) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+
+    let env_token = std::env::var("ROBOT_TOKEN").ok();
+    let resolved = resolve_token(args.token.as_deref(), env_token.as_deref());
+    if let Err(e) = check_write_rpc_gates(resolved.as_deref().ok(), args.audit_reason.as_deref()) {
+        eprintln!("error: {e}");
+        return EXIT_CLI_ARGS;
+    }
+    let token = resolved.expect("gate ensured token resolvable");
+    let meta = build_meta(&args, &token);
+    maybe_emit_idempotency_info(&args, &meta);
+
+    let cmd = InvokeTaskCommand {
+        meta: Some(meta),
+        kind: ActionKindProto::ActionKindScripted as i32,
+        deadline_ns: 0,
+        priority: 0,
+        payload_schema_id: SCHEMA_SCRIPTED_PAYLOAD,
+        payload: build_scripted_payload(&waypoints),
+    };
+    run_invoke_rpc(&args, cmd).await
+}
+
+/// `invoke ik --target-x/y/z ...`（AC-9；写 RPC kind=Ik）。
+async fn run_invoke_ik(raw: &[String]) -> u8 {
+    let args = match parse_gateway_args(raw) {
+        Ok(a) => a,
+        Err(ArgError::Help) => {
+            eprintln!("{INVOKE_IK_USAGE}");
+            return 0;
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+    if let Err(e) = reject_confirmation("invoke ik", &args)
+        .and_then(|()| reject_invoke_flags_except("invoke ik", &args, &INVOKE_IK_ALLOWED))
+    {
+        eprintln!("error: {e}");
+        return EXIT_CLI_ARGS;
+    }
+    if !args.positional.is_empty() {
+        eprintln!("error: invoke ik takes no positional arguments");
+        return EXIT_CLI_ARGS;
+    }
+    let target = match parse_ik_target(
+        args.target_x.as_deref(),
+        args.target_y.as_deref(),
+        args.target_z.as_deref(),
+        args.target_qx.as_deref(),
+        args.target_qy.as_deref(),
+        args.target_qz.as_deref(),
+        args.target_qw.as_deref(),
+        args.seed_joints.as_deref(),
+        args.frame.as_deref(),
+    ) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+
+    let env_token = std::env::var("ROBOT_TOKEN").ok();
+    let resolved = resolve_token(args.token.as_deref(), env_token.as_deref());
+    if let Err(e) = check_write_rpc_gates(resolved.as_deref().ok(), args.audit_reason.as_deref()) {
+        eprintln!("error: {e}");
+        return EXIT_CLI_ARGS;
+    }
+    let token = resolved.expect("gate ensured token resolvable");
+    let meta = build_meta(&args, &token);
+    maybe_emit_idempotency_info(&args, &meta);
+
+    let cmd = InvokeTaskCommand {
+        meta: Some(meta),
+        kind: ActionKindProto::ActionKindIk as i32,
+        deadline_ns: 0,
+        priority: 0,
+        payload_schema_id: SCHEMA_IK_PAYLOAD,
+        payload: build_ik_payload(&target),
+    };
+    run_invoke_rpc(&args, cmd).await
+}
+
+/// invoke scripted / ik 公共 RPC 收尾：`InvokeTask` → 打 `action_id` →
+/// （`--follow`）接 stream-events 到终态（AC-7 / Q-CLI11(b)）。
+async fn run_invoke_rpc(args: &GatewayArgs, cmd: InvokeTaskCommand) -> u8 {
+    let mut client = match connect(args).await {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+    let rpc_timeout = Duration::from_millis(args.timeout_ms);
+    let handle = match with_deadline(client.invoke_task(cmd), rpc_timeout).await {
+        None => return EXIT_TIMEOUT,
+        Some(Ok(resp)) => resp.into_inner(),
+        Some(Err(status)) => return render_status_err(&status),
+    };
+    let action_id = handle.action_id.clone();
+    print_output(
+        &InvokeOutput {
+            action_id: handle.action_id,
+            request_id: handle.request_id,
+        },
+        args.json,
+    );
+    let _ = std::io::stdout().flush();
+    if args.follow {
+        // --follow：用同 client 接 stream-events 到终态（独立整流 deadline）。
+        let total = Duration::from_millis(args.timeout_ms);
+        stream_to_terminal(client, action_id, total, args.json).await
+    } else {
+        0
     }
 }
 
@@ -489,6 +716,41 @@ async fn consume_stream(mut stream: Streaming<TaskEvent>, json: bool) -> u8 {
     }
 }
 
+/// 开 `StreamTaskEvents` 流并消费到终态（`run_stream_events` + invoke
+/// `--follow` 复用）。SIGINT → `warning` + exit 0；整流总时长 `total` 到期 →
+/// exit 6（AC-10）。
+async fn stream_to_terminal(
+    mut client: RobotControlClient<Channel>,
+    action_id: String,
+    total: Duration,
+    json: bool,
+) -> u8 {
+    let req = TaskHandleRef {
+        request_id: new_request_id(),
+        action_id,
+    };
+    let stream_work = async move {
+        match client.stream_task_events(req).await {
+            Ok(resp) => consume_stream(resp.into_inner(), json).await,
+            Err(status) => render_status_err(&status),
+        }
+    };
+    // AC-10：SIGINT 提前退 exit 0 + warning；整流总时长到期 exit 6。
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("warning: stream interrupted before terminal event");
+            0
+        }
+        r = tokio::time::timeout(total, stream_work) => match r {
+            Ok(code) => code,
+            Err(_elapsed) => {
+                eprintln!("error: stream timed out after {}ms", total.as_millis());
+                EXIT_TIMEOUT
+            }
+        }
+    }
+}
+
 /// 连接 gateway（地址走 `--gateway-addr` > env > 默认；失败 → exit 5）。
 async fn connect(args: &GatewayArgs) -> Result<RobotControlClient<Channel>, u8> {
     let env_addr = std::env::var("ROBOT_GATEWAY_ADDR").ok();
@@ -565,42 +827,35 @@ mod tests {
     use super::{EXIT_TIMEOUT, complete_ack_rpc, is_dispatchable_async};
     use crate::{Lane, subcommand_lane};
 
-    /// (3/5) landed set = clear-estop / clear-error / get-task-status /
-    /// cancel-task / stream-events（invoke 待 (4/5)）。
+    /// (4/5) landed set = 全部 6 个 async-lane gateway 子命令（invoke 落地）。
     #[test]
-    fn dispatchable_set_is_five_gateway_subcommands() {
+    fn dispatchable_set_is_all_six_gateway_subcommands() {
         for n in [
             "clear-estop",
             "clear-error",
             "get-task-status",
             "cancel-task",
             "stream-events",
+            "invoke",
         ] {
             assert!(is_dispatchable_async(n), "{n}");
         }
     }
 
-    /// 不变量：landed ⊆ async-lane（dispatch 的名字必在 async lane）。
+    /// 不变量：dispatchable set == async-lane set（(4/5) 起全等）。
     #[test]
-    fn dispatchable_implies_async_lane() {
+    fn dispatchable_equals_async_lane_set() {
         for n in [
             "clear-estop",
             "clear-error",
             "get-task-status",
             "cancel-task",
             "stream-events",
+            "invoke",
         ] {
             assert!(is_dispatchable_async(n), "{n}");
             assert_eq!(subcommand_lane(n), Some(Lane::Async), "{n}");
         }
-    }
-
-    /// (3/5) 边界：`invoke` 仍未落地 → 不可 dispatch（main 落 legacy →
-    /// "unknown subcommand" exit 2，沿 P1-3）；但已在 async lane。
-    #[test]
-    fn invoke_not_yet_landed_but_in_async_lane() {
-        assert!(!is_dispatchable_async("invoke"));
-        assert_eq!(subcommand_lane("invoke"), Some(Lane::Async));
     }
 
     #[test]
