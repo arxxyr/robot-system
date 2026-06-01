@@ -906,6 +906,7 @@ RPC 家族 commit 旁如带**计划外 docs commit**（依赖白名单 / diff �
 | (1/5) 登记 | — | `3c664fc`（§P.4 (1/5) diff #A1-A4 归档 + 本表）| 1 commit |
 | (2/5) | `2abde1d`（amend 自 055ca36）| `d107762`（非阻断：robot-rpc task_rpc_e2e stale 注释）+ `2dc5b32`（§P.4 #B1-B5 + 本表）| feat 1 + docs 2 |
 | (3/5) | `239f2e0` | 本登记 docs（§P.4 #C1-C3 + §What line 70/73 viewer+ 措辞 + 本表）| feat 1 + docs 1 |
+| (4/5) | `d2ceb12` | `7bab8b7`（🐛 fix：拒 wire 不支持的 --dry-run，#D6）+ 本登记 docs（§P.4 #D1-D6 + 本表）| feat 1 + fix 1 + docs 1 |
 
 #### P.1.1 reviewer Plan round 1 审查 5 重点对账
 
@@ -1184,6 +1185,22 @@ Plan 决策被偏离）+ 实际选择 + 理由（reviewer ACK / 实施期发现�
 > 认为 read RPC 已 viewer+ 鉴权；服务端 read auth 留 v0.5+ metadata 路径
 > （proto `TaskHandleRef` 加字段或走 tonic metadata）才落地。本段无模块数
 > diff、无新依赖（D2 最终仍 9 = 8 landed + payload 待 (4/5)）。
+
+**(4/5)（commit `d2ceb12` feat + `7bab8b7` fix；reviewer 2026-05-31 代码层
+ACK，D3/D4/D6 ACK）：**
+
+| # | 类别 | 内容 | 边界 / 依据 |
+|---|---|---|---|
+| D1 | 模块/parser 扩 | `GatewayArgs` +11 invoke 字段（共享 parser grows，§P.2.1.a item 3）+ `reject_invoke_flags_except(allowed)` 跨子命令白名单拒（非 invoke `allowed=[]`；scripted 放 `--waypoints-file`/`--follow`；ik 放 `--target-*`/`--seed-joints`/`--frame`/`--follow`）| 把阻断 1（不静默吞）推广到全 invoke-family flag |
+| D2 | 模块落地 | `payload` 模块 land —— **解决 A2 推迟**（(1/5) payload 推到 (4/5)）| 最终模块数 **9**（与 B1 一致）；payload-only inline（Q-CLI7(b)），不抽 robot-msg |
+| **D3**（ACK）| 安全本地校验 | `parse_waypoints_json` 额外拒空 waypoints（`waypoints must not be empty`），略超 AC-8"仅 ragged" | 避免 `[0]` index panic + 不发空 payload 的无意义 RPC（reviewer ACK：安全本地语义校验）|
+| **D4**（ACK）| 边界澄清 | CLI **不**预 gate scripted payload 字节数（`MAX_SCRIPTED_PAYLOAD_BYTES`）；超限交 server → `FailedPrecondition` → exit 4 | 保持"CLI 构造透传，gateway/backend 负责容量与语义"边界（reviewer ACK）|
+| D5 | 内部 refactor | `stream_to_terminal` 从 `run_stream_events` 抽出，stream-events + invoke `--follow` 复用 | 无行为变化 |
+| **D6**（ACK）| **⚠ 非安全保证澄清 + 安全修复（同 C1 风格）** | `--dry-run` **仅 `clear-estop` 端到端支持**（`clear_estop.fbs` 带 dry_run + S0 action layer 真识别）；其余 6 子命令（clear-error / get-task-status / cancel-task / stream-events / invoke scripted / invoke ik）的 wire fbs **不带** dry_run（`grep dry_run schemas/` 仅 clear_estop），故 `reject_dry_run` 一律 exit 2 + 解释文案，**防"flag 接受但 wire 不携带 → 实发真实动作"的危险误导**。附：`run_invoke_scripted` 读文件改 `tokio::fs`（async 阻塞边界）；tokio + `fs` feature（Cargo.lock 未变）| commit `7bab8b7`（行为 + usage 字面同步，明文标注）。**(5/5) 跟进**：robotctl_smoke 加一组"6 非 clear-estop --dry-run → exit 2"安全矩阵 phase，防后续新子命令重开此洞（reviewer 建议）|
+
+> **D6 不变量提示**：新增任何 gateway 写/读子命令时，**默认拒 `--dry-run`**，
+> 除非其 wire fbs 真带 dry_run 字段 + daemon action layer 真识别（当前仅
+> clear-estop）。robotctl_smoke 安全矩阵 phase 是该不变量的回归守卫。
 
 ---
 
