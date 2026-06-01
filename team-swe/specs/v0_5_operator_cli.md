@@ -892,6 +892,16 @@ Q-CLI15；**不**重新开 Q16。
 reviewer round 出现拆分诉求，沿候选 1/3 同款拆为 (X/5-a)+(X/5-b)（走
 §P.4 Plan-Execute diff 登记）。
 
+**实际 commit chain（实施期追加，reviewer (1/5) 复审要求登记）**：每个
+RPC 家族 commit 旁如带**计划外 docs commit**（依赖白名单 / diff 归档
+等），都在此累计，避免最终"5 commit + summary"计数失真。已落：
+
+| 段 | feat commit | 附带 docs commit | 备注 |
+|---|---|---|---|
+| (1/5) | `809575f` | `44375a4`（计划外：tonic client 依赖白名单登记，§P.4 diff #A1）| 2 commit |
+| 登记 | — | （本次 docs：§P.4 (1/5) diff 归档）| 1 commit |
+| (2/5) | pending | — | |
+
 #### P.1.1 reviewer Plan round 1 审查 5 重点对账
 
 reviewer 进 Plan 时点名的 5 项，逐条映射落点（**实施期硬 gate**）：
@@ -1126,6 +1136,21 @@ Plan 决策被偏离）+ 实际选择 + 理由（reviewer ACK / 实施期发现�
 - diff #4：`existing_subcommands_regression` 等价判据实现细节（D1 落地）
 - diff #5：stream-events SIGINT 复现 readiness gate 实现（如固定 sleep 仍 flaky → 改 stdout 行读 gate）
 - diff #6：commit 段数如 reviewer round 改 D5（5 → 拆/合）
+
+#### 实际 diff（实施期登记；reviewer ACK 后归档，**不**回退 Plan 正文）
+
+**(1/5)（commit `809575f` + `44375a4`；reviewer 2026-05-30 复审 ACK，diff
+#A3 裁决"接受"）：**
+
+| # | 触发（被偏离的 Plan 决策）| 实际选择 | 理由 / reviewer | 验证回归 |
+|---|---|---|---|---|
+| A1 | §交付未列依赖白名单 docs commit；2026-04-27 A1-1 "仅 robot-rpc link tonic/prost/tokio" 白名单 | (1/5) 追加 docs commit `44375a4` 把 robot-cli 登记进 tonic/tokio/prost consumer 白名单（docs/CHANGELOG.md 2026-05-29）| robot-cli 经 AC-1 reviewer ACK 成 client consumer，超越 A1-1 旧白名单，必须显式登记；reviewer 要求计入 commit chain（§P.1 实际表）| 1021 workspace test + s0/s1 release 不受影响（0 tonic 符号边界不变）|
+| A2 | §P.2.1.b `payload` 列为 (1/5) 7 module 之一 | `payload` 推到 (4/5) invoke 子命令同 commit | payload 是 invoke-only（非 7 子命令共享），fbs build 宜跟 invoke 实现同 commit 验证；(1/5) 落 6 module，最终仍 7 module（D2 不变）| (1/5) 26 lib unit + clippy/build clean |
+| A3 | §P.2.1.a item 2：async dispatch 脚手架落 `bin/robotctl.rs` main() | 脚手架（`block_on_async` + `subcommand_lane`）落 **lib**（已单测），bin main **0 改动** | main 内加 async 分支要么 dead code 要么让新名可达（违 P1-3）；落 lib 反而强化 P1-3（bin 字节未变 = 新命令 provably 不可达 exit 2）| 既有 3 子命令 + unknown 路径字节级不变；26 lib unit |
+| A4 | **diff #3（reviewer 点名接受）**：workspace feature unification | robot-cli 无条件启用 `robot-rpc/client` → `cargo test --workspace` 默认跑 `task_rpc_e2e` 6 cross-process（之前需 `--features client`）；test 计数 1021 = 989 + 26(robot-cli) + 6(task_rpc_e2e) | reviewer 裁决"接受"：测试覆盖增加非生产路径放宽；**不**为保留"默认跳过"去 feature-gate robot-cli client dep（与候选 A "operator CLI 默认可用"冲突）；**要求写入最终 summary 的 Plan-Execute diff** | s0/s1 生产二进制单独构建不依赖 robot-rpc，0 影响 |
+
+> **A4 → 最终 summary 必带**：候选 A summary 的 Plan-Execute diff 段必须
+> 复述本条（task_rpc_e2e 默认运行）；A1（`44375a4`）计入 commit chain 计数。
 
 ---
 
