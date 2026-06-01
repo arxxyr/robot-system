@@ -29,7 +29,7 @@ tracing         = { workspace = true }
 # tonic client 依赖白名单更新"。
 robot-rpc       = { workspace = true, features = ["client"] }
 tonic           = { workspace = true }
-tokio           = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "io-util"] }
+tokio           = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "io-util", "fs"] }
 flatbuffers     = { workspace = true }
 uuid            = { workspace = true }
 serde           = { workspace = true, features = ["derive"] }

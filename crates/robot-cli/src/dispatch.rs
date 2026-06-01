@@ -25,7 +25,7 @@ use tonic::transport::Channel;
 
 use crate::cli_args::{
     ArgError, GatewayArgs, expect_one_positional, parse_gateway_args, reject_confirmation,
-    reject_invoke_flags_except, reject_positional,
+    reject_dry_run, reject_invoke_flags_except, reject_positional,
 };
 use crate::exit_code::{code_label, map_tonic_code_to_exit};
 use crate::gateway_client::{connect_gateway, resolve_gateway_addr};
@@ -139,7 +139,6 @@ OPTIONS:
   --source <STR>               默认 cli.<USER>
   --idempotency-key <STR>      默认 cli-<request_id>
   --timeout-ms <MS>            默认 2000
-  --dry-run                    回传 dry_run（语义同 clear-estop）
   --json                       stdout 输出 JSON";
 
 const GET_TASK_STATUS_USAGE: &str = "\
@@ -208,7 +207,7 @@ REQUIRED:
   --token <TOKEN>              operator+ token（或 env ROBOT_TOKEN）
 
 OPTIONS:
-  --gateway-addr / --source / --idempotency-key / --timeout-ms / --dry-run / --json
+  --gateway-addr / --source / --idempotency-key / --timeout-ms / --json
   --follow                     提交后接 stream-events 跟到终态（默认 off，Q-CLI11(b)）";
 
 const INVOKE_IK_USAGE: &str = "\
@@ -225,7 +224,7 @@ OPTIONS:
   --target-qx/-qy/-qz/-qw <F>  目标四元数（默认 0 0 0 1；CLI 不校验 normalization）
   --seed-joints <j0,j1,..>     IK seed（逗号列表；默认无）
   --frame <STR>                frame（默认空）
-  --gateway-addr / --source / --idempotency-key / --timeout-ms / --dry-run / --json
+  --gateway-addr / --source / --idempotency-key / --timeout-ms / --json
   --follow                     提交后接 stream-events 跟到终态（默认 off，Q-CLI11(b)）";
 
 /// `clear-estop`（AC-3 四道闸 + `ClearEStop` RPC）。
@@ -294,6 +293,7 @@ async fn run_clear_error(raw: &[String]) -> u8 {
     if let Err(e) = reject_positional("clear-error", &args)
         .and_then(|()| reject_confirmation("clear-error", &args))
         .and_then(|()| reject_invoke_flags_except("clear-error", &args, &[]))
+        .and_then(|()| reject_dry_run("clear-error", &args))
     {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
@@ -334,6 +334,7 @@ async fn run_get_task_status(raw: &[String]) -> u8 {
     };
     if let Err(e) = reject_confirmation("get-task-status", &args)
         .and_then(|()| reject_invoke_flags_except("get-task-status", &args, &[]))
+        .and_then(|()| reject_dry_run("get-task-status", &args))
     {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
@@ -377,6 +378,7 @@ async fn run_cancel_task(raw: &[String]) -> u8 {
     };
     if let Err(e) = reject_confirmation("cancel-task", &args)
         .and_then(|()| reject_invoke_flags_except("cancel-task", &args, &[]))
+        .and_then(|()| reject_dry_run("cancel-task", &args))
     {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
@@ -446,6 +448,7 @@ async fn run_stream_events(raw: &[String]) -> u8 {
     };
     if let Err(e) = reject_confirmation("stream-events", &args)
         .and_then(|()| reject_invoke_flags_except("stream-events", &args, &[]))
+        .and_then(|()| reject_dry_run("stream-events", &args))
     {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
@@ -496,9 +499,12 @@ async fn run_invoke_scripted(raw: &[String]) -> u8 {
             return EXIT_CLI_ARGS;
         }
     };
-    if let Err(e) = reject_confirmation("invoke scripted", &args).and_then(|()| {
-        reject_invoke_flags_except("invoke scripted", &args, &INVOKE_SCRIPTED_ALLOWED)
-    }) {
+    if let Err(e) = reject_confirmation("invoke scripted", &args)
+        .and_then(|()| {
+            reject_invoke_flags_except("invoke scripted", &args, &INVOKE_SCRIPTED_ALLOWED)
+        })
+        .and_then(|()| reject_dry_run("invoke scripted", &args))
+    {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;
     }
@@ -510,7 +516,8 @@ async fn run_invoke_scripted(raw: &[String]) -> u8 {
         eprintln!("error: --waypoints-file <PATH> is required for invoke scripted");
         return EXIT_CLI_ARGS;
     };
-    let json_text = match std::fs::read_to_string(path) {
+    // async 边界：用 tokio::fs（内部 spawn_blocking）读文件，不阻塞 worker。
+    let json_text = match tokio::fs::read_to_string(path).await {
         Ok(t) => t,
         Err(e) => {
             eprintln!("error: cannot read --waypoints-file {path}: {e}");
@@ -561,6 +568,7 @@ async fn run_invoke_ik(raw: &[String]) -> u8 {
     };
     if let Err(e) = reject_confirmation("invoke ik", &args)
         .and_then(|()| reject_invoke_flags_except("invoke ik", &args, &INVOKE_IK_ALLOWED))
+        .and_then(|()| reject_dry_run("invoke ik", &args))
     {
         eprintln!("error: {e}");
         return EXIT_CLI_ARGS;

@@ -259,11 +259,31 @@ pub fn reject_invoke_flags_except(
     Ok(())
 }
 
+/// 拒绝 wire **不支持**的 `--dry-run`。当前仅 `clear-estop` 端到端支持
+/// `dry_run`（`clear_estop.fbs` 带 `dry_run` 字段 + S0 action layer 真识别）；
+/// 其它子命令的 wire fbs（`InvokeTaskRequest` / `CancelTaskRequest` /
+/// `ClearErrorRequest`）**不带** `dry_run`，`TaskHandleRef` 读 RPC 更无 meta ——
+/// 若接受 `--dry-run`，operator 会误以为 dry-run 生效但实发真实动作（危险）。
+/// 真正支持需 schema + daemon 语义扩展（v0.5+），不在候选 A。
+///
+/// # Errors
+///
+/// `args.dry_run` 为 true。
+pub fn reject_dry_run(subcommand: &str, args: &GatewayArgs) -> Result<(), String> {
+    if args.dry_run {
+        Err(format!(
+            "--dry-run is not supported for {subcommand} (wire schema carries dry_run only for clear-estop)"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ArgError, DEFAULT_TIMEOUT_MS, expect_one_positional, parse_gateway_args,
-        reject_confirmation, reject_invoke_flags_except, reject_positional,
+        reject_confirmation, reject_dry_run, reject_invoke_flags_except, reject_positional,
     };
 
     fn v(args: &[&str]) -> Vec<String> {
@@ -502,6 +522,22 @@ mod tests {
         assert_eq!(
             reject_invoke_flags_except("invoke scripted", &b, &["--waypoints-file", "--follow"]),
             Err("--target-x is not valid for invoke scripted".to_owned())
+        );
+    }
+
+    #[test]
+    fn reject_dry_run_ok_when_absent() {
+        let a = parse_gateway_args(&v(&["--token", "t"])).expect("parse");
+        assert_eq!(reject_dry_run("clear-error", &a), Ok(()));
+    }
+
+    /// wire 不支持 `dry_run` 的子命令带 --dry-run 必须拒（防误导危险动作）。
+    #[test]
+    fn reject_dry_run_errs_when_set() {
+        let a = parse_gateway_args(&v(&["--dry-run"])).expect("parse");
+        assert_eq!(
+            reject_dry_run("invoke scripted", &a),
+            Err("--dry-run is not supported for invoke scripted (wire schema carries dry_run only for clear-estop)".to_owned())
         );
     }
 
