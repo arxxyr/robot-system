@@ -67,11 +67,15 @@ reviewer Plan round 1 **不批准进入 (1/5)**，给出 3 阻断 + 1 非阻断�
    - `robotctl clear-estop`（maintainer+；`ClearEStop` RPC；safety-
      critical；§6.5 contract 严格锁）
    - `robotctl clear-error`（maintainer+；`ClearError` RPC）
-   - `robotctl get-task-status <action-id>`（viewer+；`GetTaskStatus`
-     RPC）
-   - `robotctl cancel-task <action-id>`（operator+；`CancelTask` RPC）
-   - `robotctl stream-events <action-id>`（viewer+；`StreamTaskEvents`
-     RPC；server-streaming）
+   - `robotctl get-task-status <action-id>`（CLI 本地要求 token；
+     `GetTaskStatus` RPC。**read RPC：服务端当前 unauthenticated、token
+     不上 wire** —— "viewer+" 仅未来 metadata auth 目标 / operator UX，
+     **非服务端 enforcement**，详 §P.4 #C1）
+   - `robotctl cancel-task <action-id>`（operator+；`CancelTask` RPC；
+     写 RPC 带 `CommandMeta`，服务端真做 authz）
+   - `robotctl stream-events <action-id>`（CLI 本地要求 token；
+     `StreamTaskEvents` RPC，server-streaming。**read RPC：服务端当前
+     unauthenticated、token 不上 wire**，同 get-task-status，详 §P.4 #C1）
    - `robotctl invoke scripted --waypoints-file <PATH>`（operator+；
      `InvokeTask` kind=Scripted；`ScriptedPayload` fbs build）
    - `robotctl invoke ik --target-x ... --target-y ... --target-z ...`
@@ -900,7 +904,8 @@ RPC 家族 commit 旁如带**计划外 docs commit**（依赖白名单 / diff �
 |---|---|---|---|
 | (1/5) | `809575f` | `44375a4`（计划外：tonic client 依赖白名单登记，§P.4 #A1）| 2 commit |
 | (1/5) 登记 | — | `3c664fc`（§P.4 (1/5) diff #A1-A4 归档 + 本表）| 1 commit |
-| (2/5) | `2abde1d`（amend 自 055ca36）| `d107762`（非阻断：robot-rpc task_rpc_e2e stale 注释）+ 本登记 docs（§P.4 #B1-B5 + 本表）| feat 1 + docs 2 |
+| (2/5) | `2abde1d`（amend 自 055ca36）| `d107762`（非阻断：robot-rpc task_rpc_e2e stale 注释）+ `2dc5b32`（§P.4 #B1-B5 + 本表）| feat 1 + docs 2 |
+| (3/5) | `239f2e0` | 本登记 docs（§P.4 #C1-C3 + §What line 70/73 viewer+ 措辞 + 本表）| feat 1 + docs 1 |
 
 #### P.1.1 reviewer Plan round 1 审查 5 重点对账
 
@@ -1165,6 +1170,20 @@ Plan 决策被偏离）+ 实际选择 + 理由（reviewer ACK / 实施期发现�
 
 > **B3 审计提示**：读 §P.2.1.b `gateway_client` 行时**以本 #B3 为准**；Plan
 > 正文旧签名（`timeout` 第三参 + `ExitCode` 返回）已废，不再是实现契约。
+
+**(3/5)（commit `239f2e0`；reviewer 2026-05-31 代码层 ACK，条件：本 (3/5)
+登记 + §What line 70/73 viewer+ 措辞修正后方可 push）：**
+
+| # | 类别 | 内容 | 边界 / 依据 |
+|---|---|---|---|
+| **C1** | **⚠ 非安全保证澄清** | read RPC（`get-task-status` / `stream-events`）的 `--token` / `ROBOT_TOKEN` gate 是 **CLI 本地策略 gate**：缺 token → exit 2（AC-4 client-side），但 token **不上 wire**，CLI 不做 role / authz | `TaskHandleRef`（proto `robot_control.proto`）**无 auth 字段**；gateway `task_handlers::validate_task_handle_ref` 明确 v0.3 read RPC 服务端 **unauthenticated**（`GetTaskStatus` / `StreamTaskEvents` 当前任何 token 都能读）。**因此不能宣称 viewer+ 已被服务端强制**——"viewer+" 仅 (a) 未来 metadata auth 目标 或 (b) operator UX 语义。§What line 70/73 已同步改为"CLI requires token locally; server auth deferred to metadata path"措辞 |
+| C2 | 口径澄清 | `stream-events --timeout-ms` = **开流 + 消费整流总时长**（`tokio::time::timeout` 包 stream_work；到期 `stream timed out after <MS>ms` → exit 6）；connect 独立走 `CONNECT_TIMEOUT` → exit 5 | AC-10"整流总时长（不是单帧）"落地口径 |
+| C3 | 内部 refactor | `with_deadline<T,F>` 从 (2/5) `complete_ack_rpc` 泛型化（exit-6 语义不变）；get-task-status / cancel-task / clear-* 共用 | 无行为变化；沿 #B3 |
+
+> **C1 不变量提示**：审计 / 后续 reviewer 看到 CLI 要求 token 时，**不得**据此
+> 认为 read RPC 已 viewer+ 鉴权；服务端 read auth 留 v0.5+ metadata 路径
+> （proto `TaskHandleRef` 加字段或走 tonic metadata）才落地。本段无模块数
+> diff、无新依赖（D2 最终仍 9 = 8 landed + payload 待 (4/5)）。
 
 ---
 
