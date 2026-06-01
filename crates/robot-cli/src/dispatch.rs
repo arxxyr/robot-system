@@ -11,20 +11,31 @@
 //! `robotctl_smoke` cross-process e2e 覆盖（(5/5)）。
 
 use std::future::Future;
+use std::io::Write;
 use std::time::Duration;
 
 use robot_rpc::proto::robot_control_client::RobotControlClient;
-use robot_rpc::proto::{Ack, ClearEStopCommand, ClearErrorCommand, CommandMeta};
+use robot_rpc::proto::{
+    Ack, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, CommandMeta, TaskEvent,
+    TaskHandleRef,
+};
+use tonic::Streaming;
 use tonic::transport::Channel;
 
 use crate::cli_args::{
-    ArgError, GatewayArgs, parse_gateway_args, reject_confirmation, reject_positional,
+    ArgError, GatewayArgs, expect_one_positional, parse_gateway_args, reject_confirmation,
+    reject_positional,
 };
 use crate::exit_code::{code_label, map_tonic_code_to_exit};
 use crate::gateway_client::{connect_gateway, resolve_gateway_addr};
-use crate::json_out::{AckOutput, print_output};
-use crate::meta::{MetaInputs, build_command_meta, default_cli_source, resolve_token};
-use crate::validate::{check_clear_estop_gates, check_write_rpc_gates};
+use crate::json_out::{
+    AckOutput, CancelAckOutput, TaskEventOutput, TaskStatusOutput, print_output,
+};
+use crate::meta::{
+    MetaInputs, TOKEN_REQUIRED_MSG, build_command_meta, default_cli_source, resolve_token,
+};
+use crate::uuid_v7::new_request_id;
+use crate::validate::{check_clear_estop_gates, check_write_rpc_gates, validate_action_id};
 
 /// CLI 参数错 / safety contract 早拒（AC-5）。
 const EXIT_CLI_ARGS: u8 = 2;
@@ -37,15 +48,18 @@ const EXIT_TIMEOUT: u8 = 6;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// 已落地、可经 async lane dispatch 的 gateway 子命令（随 impl commit 增长）。
-/// 候选 A (2/5) = `clear-estop` + `clear-error`。
+/// 候选 A (3/5) = `clear-estop` / `clear-error` / `get-task-status` /
+/// `cancel-task` / `stream-events`。
 ///
 /// `main()` 只把这些名字分流进 tokio runtime；未落地的 async-lane 名
-/// （`get-task-status` / `cancel-task` / `stream-events` / `invoke`）继续走
-/// `bin/robotctl.rs` 既有手写 parser → "unknown subcommand" exit 2（不可达
-/// / 不 panic，沿 (1/5) Plan round 1 P1-3 同款保证）。
+/// （`invoke`，待 (4/5)）继续走 `bin/robotctl.rs` 既有手写 parser →
+/// "unknown subcommand" exit 2（不可达 / 不 panic，沿 (1/5) P1-3 同款保证）。
 #[must_use]
 pub fn is_dispatchable_async(name: &str) -> bool {
-    matches!(name, "clear-estop" | "clear-error")
+    matches!(
+        name,
+        "clear-estop" | "clear-error" | "get-task-status" | "cancel-task" | "stream-events"
+    )
 }
 
 /// dispatch 一个已落地的 async-lane 子命令到对应 handler，返回 CLI exit code。
@@ -54,6 +68,9 @@ pub async fn run_async(subcommand: &str, raw: &[String]) -> u8 {
     match subcommand {
         "clear-estop" => run_clear_estop(raw).await,
         "clear-error" => run_clear_error(raw).await,
+        "get-task-status" => run_get_task_status(raw).await,
+        "cancel-task" => run_cancel_task(raw).await,
+        "stream-events" => run_stream_events(raw).await,
         // is_dispatchable_async 已在 main 入口 gate；防御性兜底（不 panic）。
         other => {
             eprintln!("error: unknown subcommand: {other}");
@@ -98,6 +115,52 @@ OPTIONS:
   --timeout-ms <MS>            默认 2000
   --dry-run                    回传 dry_run（语义同 clear-estop）
   --json                       stdout 输出 JSON";
+
+const GET_TASK_STATUS_USAGE: &str = "\
+robotctl get-task-status <action-id> [OPTIONS]
+
+读取单个 task 当前状态（EXECUTING / COMPLETED / FAILED / ...）。
+
+REQUIRED:
+  <action-id>                  UUIDv7 hex（invoke 返回的 action_id）
+  --token <TOKEN>              token（或 env ROBOT_TOKEN；client-side 要求）
+
+OPTIONS:
+  --gateway-addr <HOST:PORT>   默认 127.0.0.1:50051（或 env ROBOT_GATEWAY_ADDR）
+  --timeout-ms <MS>            默认 2000
+  --json                       stdout 输出 JSON";
+
+const CANCEL_TASK_USAGE: &str = "\
+robotctl cancel-task <action-id> --audit-reason <STR> [OPTIONS]
+
+协作式取消 task（返 Ack 不保证已停；终态走 stream-events）。
+
+REQUIRED:
+  <action-id>                  UUIDv7 hex
+  --audit-reason <STR>         非空
+  --token <TOKEN>              token（或 env ROBOT_TOKEN）
+
+OPTIONS:
+  --gateway-addr <HOST:PORT>   默认 127.0.0.1:50051（或 env ROBOT_GATEWAY_ADDR）
+  --source <STR>               默认 cli.<USER>
+  --idempotency-key <STR>      默认 cli-<request_id>
+  --timeout-ms <MS>            默认 2000
+  --json                       stdout 输出 JSON";
+
+const STREAM_EVENTS_USAGE: &str = "\
+robotctl stream-events <action-id> [OPTIONS]
+
+server-streaming task 事件，每帧一行 stdout；终态自动关闭 exit 0；Ctrl+C
+（SIGINT）提前退出 exit 0 + warning。
+
+REQUIRED:
+  <action-id>                  UUIDv7 hex
+  --token <TOKEN>              token（或 env ROBOT_TOKEN）
+
+OPTIONS:
+  --gateway-addr <HOST:PORT>   默认 127.0.0.1:50051（或 env ROBOT_GATEWAY_ADDR）
+  --timeout-ms <MS>            整流总时长上限（默认 2000；到期 exit 6）
+  --json                       stdout 每帧一行 JSON（NDJSON）";
 
 /// `clear-estop`（AC-3 四道闸 + `ClearEStop` RPC）。
 async fn run_clear_estop(raw: &[String]) -> u8 {
@@ -187,6 +250,168 @@ async fn run_clear_error(raw: &[String]) -> u8 {
     complete_ack_rpc(client.clear_error(cmd), rpc_timeout, args.json).await
 }
 
+/// `get-task-status <action-id>`（只读 RPC；`TaskHandleRef`，无 `CommandMeta`）。
+async fn run_get_task_status(raw: &[String]) -> u8 {
+    let args = match parse_gateway_args(raw) {
+        Ok(a) => a,
+        Err(ArgError::Help) => {
+            eprintln!("{GET_TASK_STATUS_USAGE}");
+            return 0;
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+    if let Err(e) = reject_confirmation("get-task-status", &args) {
+        eprintln!("error: {e}");
+        return EXIT_CLI_ARGS;
+    }
+    let action_id = match read_rpc_action_id("get-task-status", &args) {
+        Ok(id) => id,
+        Err(code) => return code,
+    };
+
+    let mut client = match connect(&args).await {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+    let req = TaskHandleRef {
+        request_id: new_request_id(),
+        action_id,
+    };
+    let rpc_timeout = Duration::from_millis(args.timeout_ms);
+    match with_deadline(client.get_task_status(req), rpc_timeout).await {
+        None => EXIT_TIMEOUT,
+        Some(Ok(resp)) => {
+            print_output(&TaskStatusOutput::from_proto(&resp.into_inner()), args.json);
+            0
+        }
+        Some(Err(status)) => render_status_err(&status),
+    }
+}
+
+/// `cancel-task <action-id>`（写 RPC；`CommandMeta` + token + audit-reason）。
+async fn run_cancel_task(raw: &[String]) -> u8 {
+    let args = match parse_gateway_args(raw) {
+        Ok(a) => a,
+        Err(ArgError::Help) => {
+            eprintln!("{CANCEL_TASK_USAGE}");
+            return 0;
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+    if let Err(e) = reject_confirmation("cancel-task", &args) {
+        eprintln!("error: {e}");
+        return EXIT_CLI_ARGS;
+    }
+    let action_id = match expect_one_positional("cancel-task", &args) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+    if let Err(e) = validate_action_id(&action_id) {
+        eprintln!("error: {e}");
+        return EXIT_CLI_ARGS;
+    }
+
+    // 写 RPC：token + audit-reason 必填（AC-4）。
+    let env_token = std::env::var("ROBOT_TOKEN").ok();
+    let resolved = resolve_token(args.token.as_deref(), env_token.as_deref());
+    if let Err(e) = check_write_rpc_gates(resolved.as_deref().ok(), args.audit_reason.as_deref()) {
+        eprintln!("error: {e}");
+        return EXIT_CLI_ARGS;
+    }
+    let token = resolved.expect("gate ensured token resolvable");
+    let meta = build_meta(&args, &token);
+    maybe_emit_idempotency_info(&args, &meta);
+
+    let mut client = match connect(&args).await {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+    let cmd = CancelTaskCommand {
+        meta: Some(meta),
+        action_id,
+    };
+    let rpc_timeout = Duration::from_millis(args.timeout_ms);
+    match with_deadline(client.cancel_task(cmd), rpc_timeout).await {
+        None => EXIT_TIMEOUT,
+        Some(Ok(resp)) => {
+            let ack = resp.into_inner();
+            print_output(
+                &CancelAckOutput {
+                    cleared_at_ns: ack.cleared_at_ns,
+                    request_id: ack.request_id,
+                },
+                args.json,
+            );
+            0
+        }
+        Some(Err(status)) => render_status_err(&status),
+    }
+}
+
+/// `stream-events <action-id>`（server-streaming；SIGINT exit 0 + 整流 timeout
+/// exit 6，AC-10）。
+async fn run_stream_events(raw: &[String]) -> u8 {
+    let args = match parse_gateway_args(raw) {
+        Ok(a) => a,
+        Err(ArgError::Help) => {
+            eprintln!("{STREAM_EVENTS_USAGE}");
+            return 0;
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+    if let Err(e) = reject_confirmation("stream-events", &args) {
+        eprintln!("error: {e}");
+        return EXIT_CLI_ARGS;
+    }
+    let action_id = match read_rpc_action_id("stream-events", &args) {
+        Ok(id) => id,
+        Err(code) => return code,
+    };
+
+    let mut client = match connect(&args).await {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+    let req = TaskHandleRef {
+        request_id: new_request_id(),
+        action_id,
+    };
+    let total = Duration::from_millis(args.timeout_ms);
+    let json = args.json;
+    let stream_work = async move {
+        match client.stream_task_events(req).await {
+            Ok(resp) => consume_stream(resp.into_inner(), json).await,
+            Err(status) => render_status_err(&status),
+        }
+    };
+    // AC-10：SIGINT 提前退 exit 0 + warning；整流总时长到期 exit 6。
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("warning: stream interrupted before terminal event");
+            0
+        }
+        r = tokio::time::timeout(total, stream_work) => match r {
+            Ok(code) => code,
+            Err(_elapsed) => {
+                eprintln!("error: stream timed out after {}ms", total.as_millis());
+                EXIT_TIMEOUT
+            }
+        }
+    }
+}
+
 // ============================================================================
 // 共享编排 helper（clear-estop / clear-error 复用；后续写 RPC 继续复用）
 // ============================================================================
@@ -219,6 +444,51 @@ fn maybe_emit_idempotency_info(args: &GatewayArgs, meta: &CommandMeta) {
     }
 }
 
+/// read RPC（get-task-status / stream-events）公共早拒：恰好一个 action-id +
+/// `UUIDv7` 校验（AC-11）+ token 可解析（AC-4 client-side gate）。
+///
+/// **token 不上 wire**：`TaskHandleRef` 无 auth 字段，v0.3 read RPC 服务端不
+/// 强制 auth（详 `robot_rpc` `task_handlers::validate_task_handle_ref` doc，
+/// 留 v0.5+ metadata 路径）；此处仅作 client-side 策略 gate（缺 → exit 2）。
+fn read_rpc_action_id(subcommand: &str, args: &GatewayArgs) -> Result<String, u8> {
+    let action_id = expect_one_positional(subcommand, args).map_err(|e| {
+        eprintln!("error: {e}");
+        EXIT_CLI_ARGS
+    })?;
+    validate_action_id(&action_id).map_err(|e| {
+        eprintln!("error: {e}");
+        EXIT_CLI_ARGS
+    })?;
+    let env_token = std::env::var("ROBOT_TOKEN").ok();
+    if resolve_token(args.token.as_deref(), env_token.as_deref()).is_err() {
+        eprintln!("error: {TOKEN_REQUIRED_MSG}");
+        return Err(EXIT_CLI_ARGS);
+    }
+    Ok(action_id)
+}
+
+/// 消费 server-streaming：每帧一行 stdout（human / NDJSON）+ flush；终态帧
+/// （COMPLETED / FAILED / CANCELLED）→ exit 0；server 关流（无更多帧）→ exit 0；
+/// stream error → 错误码透传（AC-10）。
+async fn consume_stream(mut stream: Streaming<TaskEvent>, json: bool) -> u8 {
+    loop {
+        match stream.message().await {
+            Ok(Some(ev)) => {
+                let out = TaskEventOutput::from_proto(&ev);
+                print_output(&out, json);
+                // 流式实时性：每帧后冲刷 stdout（readiness gate / 实时帧；
+                // 不依赖 LineWriter 内部行为）。
+                let _ = std::io::stdout().flush();
+                if out.is_terminal() {
+                    return 0;
+                }
+            }
+            Ok(None) => return 0,
+            Err(status) => return render_status_err(&status),
+        }
+    }
+}
+
 /// 连接 gateway（地址走 `--gateway-addr` > env > 默认；失败 → exit 5）。
 async fn connect(args: &GatewayArgs) -> Result<RobotControlClient<Channel>, u8> {
     let env_addr = std::env::var("ROBOT_GATEWAY_ADDR").ok();
@@ -247,27 +517,42 @@ fn render_status_err(status: &tonic::Status) -> u8 {
     map_tonic_code_to_exit(status.code())
 }
 
-/// 在 client-side deadline 内 await 一个返 `Ack` 的 RPC future（阻断 2）。
+/// 在 client-side deadline 内 await 一个 RPC future（阻断 2 的统一实现）。
 ///
 /// `--timeout-ms` 经此**独占**请求 deadline 语义：超时 → 稳定
-/// `error: DEADLINE_EXCEEDED: ...` + **exit 6**（不依赖 tonic endpoint
-/// timeout 那个可能落 `Cancelled`(→7) 的不稳定 code）；server `Status` →
-/// 错误码透传；Ok → 渲染 `Ack` exit 0。
-async fn complete_ack_rpc<F>(rpc: F, timeout: Duration, json: bool) -> u8
+/// `error: DEADLINE_EXCEEDED: ...` + 返 `None`（caller 返 [`EXIT_TIMEOUT`]；
+/// 不依赖 tonic endpoint timeout 那个可能落 `Cancelled`(→7) 的不稳定 code）；
+/// 否则返 `Some(rpc 结果)`。
+async fn with_deadline<T, F>(
+    rpc: F,
+    timeout: Duration,
+) -> Option<Result<tonic::Response<T>, tonic::Status>>
 where
-    F: Future<Output = Result<tonic::Response<Ack>, tonic::Status>>,
+    F: Future<Output = Result<tonic::Response<T>, tonic::Status>>,
 {
     match tokio::time::timeout(timeout, rpc).await {
+        Ok(r) => Some(r),
         Err(_elapsed) => {
             eprintln!(
                 "error: {}: client timeout after {} ms",
                 code_label(tonic::Code::DeadlineExceeded),
                 timeout.as_millis()
             );
-            EXIT_TIMEOUT
+            None
         }
-        Ok(Ok(resp)) => render_ack(resp.into_inner(), json),
-        Ok(Err(status)) => render_status_err(&status),
+    }
+}
+
+/// `clear-estop` / `clear-error` 收尾：deadline 内拿 `Ack` → 渲染 exit 0 /
+/// 错误码透传 / 超时 exit 6。
+async fn complete_ack_rpc<F>(rpc: F, timeout: Duration, json: bool) -> u8
+where
+    F: Future<Output = Result<tonic::Response<Ack>, tonic::Status>>,
+{
+    match with_deadline(rpc, timeout).await {
+        None => EXIT_TIMEOUT,
+        Some(Ok(resp)) => render_ack(resp.into_inner(), json),
+        Some(Err(status)) => render_status_err(&status),
     }
 }
 
@@ -280,29 +565,42 @@ mod tests {
     use super::{EXIT_TIMEOUT, complete_ack_rpc, is_dispatchable_async};
     use crate::{Lane, subcommand_lane};
 
+    /// (3/5) landed set = clear-estop / clear-error / get-task-status /
+    /// cancel-task / stream-events（invoke 待 (4/5)）。
     #[test]
-    fn dispatchable_set_is_clear_estop_and_clear_error() {
-        assert!(is_dispatchable_async("clear-estop"));
-        assert!(is_dispatchable_async("clear-error"));
+    fn dispatchable_set_is_five_gateway_subcommands() {
+        for n in [
+            "clear-estop",
+            "clear-error",
+            "get-task-status",
+            "cancel-task",
+            "stream-events",
+        ] {
+            assert!(is_dispatchable_async(n), "{n}");
+        }
     }
 
     /// 不变量：landed ⊆ async-lane（dispatch 的名字必在 async lane）。
     #[test]
     fn dispatchable_implies_async_lane() {
-        for n in ["clear-estop", "clear-error"] {
+        for n in [
+            "clear-estop",
+            "clear-error",
+            "get-task-status",
+            "cancel-task",
+            "stream-events",
+        ] {
             assert!(is_dispatchable_async(n), "{n}");
             assert_eq!(subcommand_lane(n), Some(Lane::Async), "{n}");
         }
     }
 
-    /// (2/5) 边界：async lane 中尚未落地的名字**不**可 dispatch（main 落
-    /// legacy → "unknown subcommand" exit 2，沿 P1-3）。
+    /// (3/5) 边界：`invoke` 仍未落地 → 不可 dispatch（main 落 legacy →
+    /// "unknown subcommand" exit 2，沿 P1-3）；但已在 async lane。
     #[test]
-    fn not_yet_landed_async_names_not_dispatchable() {
-        for n in ["get-task-status", "cancel-task", "stream-events", "invoke"] {
-            assert!(!is_dispatchable_async(n), "{n}");
-            assert_eq!(subcommand_lane(n), Some(Lane::Async), "{n}");
-        }
+    fn invoke_not_yet_landed_but_in_async_lane() {
+        assert!(!is_dispatchable_async("invoke"));
+        assert_eq!(subcommand_lane("invoke"), Some(Lane::Async));
     }
 
     #[test]

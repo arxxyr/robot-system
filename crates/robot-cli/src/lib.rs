@@ -37,6 +37,8 @@
 //! - (1/5)：共享 lib + 纯路由 + runtime 脚手架；bin **0 改动**。
 //! - (2/5)：`clear-estop` + `clear-error` 落地（首次接入 async parser/dispatch
 //!   + main 入口分流）。
+//! - (3/5)：`get-task-status` / `cancel-task` / `stream-events` 落地（action-id
+//!   校验复用 + stream SIGINT / 整流 timeout）。
 //! - (4/5)：`payload`（`ScriptedPayload` / `IkPayload` fbs 构造）随 invoke
 //!   落地（invoke-only，非共享）。
 

@@ -158,10 +158,27 @@ pub fn reject_confirmation(subcommand: &str, args: &GatewayArgs) -> Result<(), S
     }
 }
 
+/// 提取**恰好一个**位置参数（`<action-id>`：get-task-status / cancel-task /
+/// stream-events 各取一个 action-id）。值合法性（UUIDv7）由
+/// [`crate::validate::validate_action_id`] 另校验（AC-11）。
+///
+/// # Errors
+///
+/// 0 个 → `<subcommand> requires <action-id>`；>1 个 →
+/// `<subcommand> takes exactly one <action-id>`。
+pub fn expect_one_positional(subcommand: &str, args: &GatewayArgs) -> Result<String, String> {
+    match args.positional.as_slice() {
+        [one] => Ok(one.clone()),
+        [] => Err(format!("{subcommand} requires <action-id>")),
+        _ => Err(format!("{subcommand} takes exactly one <action-id>")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        ArgError, DEFAULT_TIMEOUT_MS, parse_gateway_args, reject_confirmation, reject_positional,
+        ArgError, DEFAULT_TIMEOUT_MS, expect_one_positional, parse_gateway_args,
+        reject_confirmation, reject_positional,
     };
 
     fn v(args: &[&str]) -> Vec<String> {
@@ -308,6 +325,33 @@ mod tests {
         assert_eq!(
             reject_confirmation("clear-error", &a),
             Err("--confirmation is not valid for clear-error".to_owned())
+        );
+    }
+
+    #[test]
+    fn expect_one_positional_ok() {
+        let a = parse_gateway_args(&v(&["the-id"])).expect("parse");
+        assert_eq!(
+            expect_one_positional("get-task-status", &a),
+            Ok("the-id".to_owned())
+        );
+    }
+
+    #[test]
+    fn expect_one_positional_missing() {
+        let a = parse_gateway_args(&v(&["--json"])).expect("parse");
+        assert_eq!(
+            expect_one_positional("cancel-task", &a),
+            Err("cancel-task requires <action-id>".to_owned())
+        );
+    }
+
+    #[test]
+    fn expect_one_positional_too_many() {
+        let a = parse_gateway_args(&v(&["a", "b"])).expect("parse");
+        assert_eq!(
+            expect_one_positional("stream-events", &a),
+            Err("stream-events takes exactly one <action-id>".to_owned())
         );
     }
 }
