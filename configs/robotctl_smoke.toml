@@ -1,0 +1,32 @@
+# robotctl_smoke dev box 配置（v0.5 候选 A 5/5）。
+#
+# 用途：`crates/robot-tests/src/bin/robotctl_smoke.rs` 起 s1_daemon 时
+# `--config configs/robotctl_smoke.toml` 喂入。
+#
+# 跟 `configs/ik_backend_smoke.toml` 同款 5-DOF XLeRobot mock_hard_rt 骨架
+# （joint 名顺序锁定 = `XLeRobotArmIkSolver::new(Side::Right).info()
+# .joint_names`，详 crates/robot-kinematics-xlerobot/src/lib.rs），但
+# **额外把 `scripted` 加进 backends** —— robotctl_smoke 的 happy / cancel /
+# stream phase 用 `robotctl invoke scripted`（5-joint waypoints），
+# invoke_ik_happy phase 用 `robotctl invoke ik`（5-DOF）。两者都要可 dispatch。
+#
+# backends 列表语义（沿 ik_backend_smoke.toml）：
+# - mock_dwell：selftest / GetTaskStatus 探活兼容（避免 startup
+#   validate_profile_section 抱怨）。
+# - hold_pose：action 完成后的 hold loop。
+# - scripted：robotctl_smoke 多数 happy phase 的真 backend。
+# - ik：invoke_ik_happy phase 的真 backend。
+
+[robot]
+id             = "robotctl_smoke"
+config_version = "0.3.0"
+
+[[hardware]]
+id      = "ik_arm"
+adapter = "mock_hard_rt"
+# 5-DOF：跟 XLeRobotArmIkSolver.info().joint_names 完全一致（顺序锁定）。
+joints  = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+
+[s1.profile]
+backends     = ["mock_dwell", "hold_pose", "scripted", "ik"]
+command_mode = "joint_position"

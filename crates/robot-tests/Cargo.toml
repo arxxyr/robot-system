@@ -104,6 +104,19 @@ name = "ik_backend_smoke"
 path = "src/bin/ik_backend_smoke.rs"
 required-features = ["ik-backend-smoke"]
 
+# v0.5 候选 A (5/5) robotctl operator CLI cross-process e2e smoke。
+# 起 gateway + s1_daemon + FakeStatePublisher（fake s0），**唯一被测路径 =
+# spawn `robotctl` 真子进程**（reviewer 审查重点 3：严禁 smoke 内调 tonic
+# client）。结构上不依赖 robot-rpc / tonic —— 只需 tokio（process/io-util/net
+# 协调子进程 + TCP readiness）+ 既有 iceoryx2 / robot-msg / robot-transport
+# （FakeStatePublisher + EStop 订阅验证）；readiness 走 TCP connect + s1 stderr
+# marker + robotctl get-task-status NotFound 探针（不走 tonic）。
+# `required-features = ["robotctl-smoke"]` 守门，生产 release 不参编译。
+[[bin]]
+name = "robotctl_smoke"
+path = "src/bin/robotctl_smoke.rs"
+required-features = ["robotctl-smoke"]
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -155,6 +168,10 @@ robot-s0 = { path = "../robot-s0", optional = true, default-features = false, fe
 robot-rpc = { workspace = true, optional = true, features = ["client"] }
 tonic     = { workspace = true, optional = true }
 tokio     = { workspace = true, optional = true, features = ["process", "io-util"] }
+
+# v0.5 候选 A (5/5) robotctl_smoke optional dep：json_output_round_trip phase
+# 真 parse robotctl `--json` stdout（AC-7）。**仅** robotctl-smoke feature 用。
+serde_json = { workspace = true, optional = true }
 
 # v0.4 候选 2 round 2 (4/4) ik_backend_smoke optional deps：
 # - robot-kinematics：trait crate（ArmIkSolver / Pose / IkError 等共享
@@ -228,6 +245,17 @@ ik-backend-smoke = [
     "dep:robot-kinematics",
     "dep:robot-kinematics-xlerobot",
 ]
+
+# v0.5 候选 A (5/5) robotctl operator CLI cross-process e2e smoke 入口 feature。
+# - 生产 release 不带本 feature（robotctl_smoke binary 不参编译）。
+# - 本机跑：cargo run -p robot-tests --bin robotctl_smoke
+#   --features robotctl-smoke -- --phase all --bin-dir target/debug ...
+# - **只**启用 tokio（process/io-util/net + workspace 默认）；**不**启用
+#   robot-rpc / tonic —— 结构上保证"smoke 不调 tonic client"（审查重点 3）。
+# - 加 serde_json：json_output_round_trip phase 真 parse robotctl `--json`
+#   stdout（AC-7：serde_json::from_str 过 + 字段集）。serde_json 已在 lock
+#   （robot-cli 用），加 optional dep 不改 Cargo.lock。
+robotctl-smoke = ["dep:tokio", "dep:serde_json"]
 
 [lints]
 workspace = true

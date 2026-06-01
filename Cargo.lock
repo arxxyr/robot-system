@@ -1791,6 +1791,7 @@ dependencies = [
  "robot-rpc",
  "robot-s0",
  "robot-transport",
+ "serde_json",
  "tokio",
  "tonic",
  "tracing",
