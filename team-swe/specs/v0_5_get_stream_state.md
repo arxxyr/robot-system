@@ -1,10 +1,11 @@
-# Spec · v0.5 候选 B — `GetState` / `StreamState` RPC（round 2）
+# Spec · v0.5 候选 B — `GetState` / `StreamState` RPC（round 3）
 
-> RIPER Spec round 2（round 1 方向 ACK + reviewer 5 项拍板已吸收）。前置 =
-> [`team-swe/codemap/v0_5_get_stream_state.md`](../codemap/v0_5_get_stream_state.md)
+> RIPER Spec round 3（round 2 方向 ACK + reviewer 3 阻断 + 2 同步修订已吸收）。
+> 前置 = [`team-swe/codemap/v0_5_get_stream_state.md`](../codemap/v0_5_get_stream_state.md)
 > （reviewer CodeMap 方向 ACK + 4 收紧点 + 8 问题默认方向 + proto 缺口
-> additive 结论）。本 round 把 round 1 全部待拍板项落到拍定 + **1 条
-> design-freeze diff（Q3 GetState 签名）**。待 reviewer round 2 复核 → Plan。
+> additive 结论）。round 2 把 round 1 全部待拍板项落到拍定；round 3 补齐
+> **gateway hardware 列表来源（D10）** + 清掉 StreamState / e2e 残留旧口径 +
+> 写实 AC-3 Unavailable / AC-6 auth。待 reviewer round 3 复核 → Plan。
 
 ## Spec round 2 amend 记录（2026-06-03；reviewer round 1 复核后）
 
@@ -17,6 +18,18 @@ reviewer round 1 ACK 方向但要 5 项拍板/修订后再进 round 2。已全�
 | 3 | D5a ACK | min_interval_ms==0→默认 50ms；0<x<20→clamp 20ms（不拒）；keep-last + interval tick；不保证每 S0 sample 送达。**D5 拍定**|
 | 4 | D1a 不含 heartbeat rate ACK | RobotState 最小字段；rate 后续 additive 加。**D1a 拍定（不含）**|
 | 5 | D3b 错误码拆口径 | hardware_id 缺/空→**InvalidArgument**；unknown→**NotFound**；已知但 cache 无首帧→**Unavailable**；FailedPrecondition **不**做默认。+ **新 AC-9**：gateway 只订阅 config 声明 hardware，请求未声明 → NotFound，**禁默默 fallback**。**D3b 重写**|
+
+## Spec round 3 amend 记录（2026-06-03；reviewer round 2 复核后）
+
+reviewer round 2 认可 D3/D4a/D5a/D1a/D3b 方向，但 3 阻断 + 2 同步修订须回修：
+
+| # | round 2 复核点 | 修订 |
+|---|---|---|
+| 阻断 1 | gateway hardware 列表来源未定义（`robot_rpc_gateway.rs` / `gateway.rs` 无 config/hardware 输入，AC-9 无法实施）| **新 D10**：gateway 加 `--config <PATH>`（**可选**；缺省 = 空 state 池，state RPC 全 NotFound，B4 既有调用不破）；present 时 minimal local 解析 `[[hardware]].id`（复用 robot-rpc 既有 serde+toml，**不** dep robot-s0、**不**抽共享 crate）。§影响范围 + AC-9 引 D10 |
+| 阻断 2 | StreamState 残留"per-RPC spawn 订阅线程"口径（§影响范围 line 52），与 D4a"常驻池 + per-RPC tick"冲突 | §影响范围 StreamState bullet 重写：底层 iceoryx2 state subscriber **只**在常驻池建；每 StreamState RPC 只建**轻量 async stream/tick task**，**不**新建底层 subscriber |
+| 阻断 3 | e2e 清单残留"多 hardware FailedPrecondition"（§影响范围 line 58），与 round 2 D9 冲突 | e2e bullet 重写：unknown hardware → **NotFound** / no first frame → **Unavailable**；首版无 export-disabled flag，**FP 不进 e2e 主路径** |
+| 同步 4 | AC-3 Unavailable 场景要写实 | AC-3：config 声明 hardware_id 但**测试不启对应 FakeStatePublisher** → 常驻池 cache 无首帧 → GetState 返 `Unavailable` |
+| 同步 5 | AC-6 auth 表述别写得像 token 真上 wire | AC-6 + D7 重写：request **无 auth 字段**，无 token / 任意 metadata token **都不影响结果**（服务端不读不校验）；**不得**宣称 `read_state` cap 已 enforce |
 
 ## What
 
@@ -42,21 +55,36 @@ coordinator，不持权威硬件 state）。gateway **首次**订阅 S0 state to
   `StreamState` rpc + `RobotState` / `GetStateRequest` / `StreamRequest`
   message + `S0Mode` / `S0ControlLink` / `S0OutputMode` / `S0SafetyState`
   proto 镜像 enum（最小，仅 RobotState 实际用到的字段）。头注 method 数 6→8。
+- `crates/robot-rpc/src/bin/robot_rpc_gateway.rs`（**阻断 1 / D10**）：加
+  **可选** `--config <PATH>` flag（robot config TOML）→ minimal local 解析
+  `[[hardware]].id` → 把 hardware id 列表喂进 `GatewayConfig`（新字段
+  `state_hardware_ids: Vec<String>`）。缺省（无 `--config`）= 空列表 = state
+  订阅池为空 = 所有 GetState/StreamState 返 `NotFound`（**B4 既有 gateway
+  调用 0 破**，clear-estop 等照常）。
 - `crates/robot-rpc/src/gateway.rs`：`GetState` / `StreamState` 两个 trait
-  method impl。
+  method impl + `GatewayConfig.state_hardware_ids` 字段 + 常驻 state 订阅池
+  启停（沿 B4 shutdown 顺序）。
 - `crates/robot-rpc/src/`（新模块或扩既有）：
-  - gateway 端 **S0 state topic 订阅**（`open_sub::<JointState>` +
-    `TopicClass::S0State`）。
+  - gateway 端 **常驻 per-hardware S0 state 订阅池**（每个 config
+    `[[hardware]].id` 一条 `open_sub::<JointState>` on
+    `/<robot_id>/s0/<hardware_id>/state` + `TopicClass::S0State`，循环读 →
+    更新该 hardware 的 latest-state cache；详 D4）。
   - **`JointState`-fbs → `RobotState`-proto 转换器**（类比 B4
     `events_subscribe.rs::action_*_fb_to_proto`）。
-  - `StreamState` 的 **state_subscribe sync↔async 桥**（复用
-    `events_subscribe.rs` 范式：per-RPC spawn 订阅线程 + `mpsc::Receiver` +
-    `Box::pin` Stream + drop→stop）+ **节流**（keep-last + `min_interval_ms`
-    tick，**不**逐 S0 sample 转发）。
+  - `StreamState` 的 sync↔async 桥（**阻断 2 修正**）：底层 iceoryx2 state
+    subscriber **只**在常驻池里建；**每个 StreamState RPC 只 spawn 一条轻量
+    async stream/tick task**（按 `min_interval_ms` 读 cache + `mpsc` →
+    `Box::pin` Stream + drop→stop request），**绝不**为单 RPC 新建底层
+    iceoryx2 subscriber。**节流**（keep-last + interval tick，**不**逐 S0
+    sample 转发；详 D5）。
 - `docs/CHANGELOG.md`：登记 **design-freeze diff**（Q3 GetState 签名，见 §
-  设计决策 D3）+ C1 延续（read RPC 非安全保证）。
-- `crates/robot-rpc/tests/`：cross-process e2e（GetState happy + StreamState
-  节流 + 多 hardware FailedPrecondition / hardware_id 选择）。
+  设计决策 D3）+ C1 延续（read RPC 非安全保证）+ D10 gateway `--config`
+  加法（B4 既有调用兼容）。
+- `crates/robot-rpc/tests/`：cross-process e2e（**阻断 3 修正**）：GetState
+  happy + StreamState 节流 + 错误码 D9 三条（缺/空 `InvalidArgument` /
+  unknown hardware → **`NotFound`** / 已知但无首帧 → **`Unavailable`**）+
+  AC-9 多 hardware 选择。**首版无 export-disabled flag，`FailedPrecondition`
+  不进 e2e 主路径**（仅 D9 表留预留语义）。
 
 ### 严禁改动（hard boundary）
 
@@ -133,9 +161,10 @@ rpc GetState (GetStateRequest) returns (RobotState);
 
 - **topic 形式**：`/<robot_id>/s0/<hardware_id>/state`（`TopicClass::S0State`，
   跟 robotctl status / s1 anchor 同一 topic）。
-- **常驻订阅池（D4a 拍定，不临时+重试）**：gateway **启动时**按 config 声明的
-  每个 `[[hardware]].id` 建一条**常驻** state subscription（持久 iceoryx2
-  subscriber 线程，循环读 → 更新该 hardware 的 **latest-state cache**）。
+- **常驻订阅池（D4a 拍定，不临时+重试）**：gateway **启动时**按 `--config`
+  声明的每个 `[[hardware]].id`（来源见 **D10**）建一条**常驻** state
+  subscription（持久 iceoryx2 subscriber 线程，循环读 → 更新该 hardware 的
+  **latest-state cache**）。
   - **解决候选 A E1 竞态**：常驻订阅持续读，可靠拿 S0 sample（沿候选 A "watch
     persistent subscriber reliable" 同理）；GetState 作为 RPC **不**靠临时订阅
     碰运气。
@@ -169,10 +198,12 @@ rpc GetState (GetStateRequest) returns (RobotState);
 
 ### D7 auth（reviewer 收紧 2 + Q5）= 延续 C1，**显式标非安全保证**
 
-- GetState/StreamState **首版延续 C1**：服务端 **不**做 auth（沿 TaskHandleRef
-  read RPC 现状），任何 token 都能读。
+- GetState/StreamState **首版延续 C1**：`GetStateRequest` / `StreamRequest`
+  **不含 auth / token 字段**；服务端 **不读、不校验**任何 metadata token（沿
+  TaskHandleRef read RPC 现状）。**无 token 与任意 token 结果完全一致**——
+  token 根本不参与 read 路径（reviewer round 2 同步 5：别写得像 token 真上 wire）。
 - **Spec / CHANGELOG 必须写清**（reviewer 收紧 2）：
-  - CLI / client token gate **≠ 服务端鉴权**。
+  - CLI / client 任何 token gate **≠ 服务端鉴权**（read 路径无 token 概念）。
   - `read_state` cap **暂不 enforce**（design §5.4 写了 cap，但本版不实现该安全
     属性）。
   - 后续 metadata auth 是**独立候选 / round**（不在候选 B）。
@@ -199,7 +230,33 @@ GetState（+ StreamState 开流时同口径）的 tonic `Status` code：
 - **FailedPrecondition 不做默认口径**（reviewer 收紧 5）—— 只在"请求语义满足
   但配置明确禁止该 hardware state export"时用。
 
-## Acceptance Criteria（round 2 拍定）
+### D10 gateway hardware 列表来源（reviewer round 2 阻断 1）= `--config <PATH>`
+
+round 2 D4 写"按 config 每个 `[[hardware]].id` 建常驻订阅池"，但当前
+`robot_rpc_gateway`（`bin/robot_rpc_gateway.rs` `Args` = robot-id / listen-addr /
+idempotency-* / rr-timeout-grace / rpc-roles-toml）**没有 config/hardware 输入**
+→ AC-9 无法实施。**拍定来源 = `--config <PATH>`（robot config TOML，即 s1_daemon
+已吃的同一份）**，理由：
+
+- **单一真相**：gateway 订阅的 hardware 集 = robot 实际 `[[hardware]]` 声明，
+  AC-9"只订 config 声明的 hardware"直接对齐；不选 `--hardware-id` 多次传（要手动
+  跟 config 同步，易漂移）。
+- **零新依赖 / 零越层**：`robot-rpc` **已**有 `serde` + `toml`（rpc_roles.toml
+  用）→ minimal local 解析一个**宽松** struct（`{ robot: {id}, hardware:
+  [{id}] }`，未知字段忽略），只取 `[[hardware]].id`。**不** dep `robot-s0`
+  （避免把 RT daemon crate 拖进 gateway 树）、**不**把 `config_loader` 抽成共享
+  crate（避免动 `robot-s0` → 守"S0/S1 daemon 0 改"硬边界）。
+- **`--config` 可选（B4 兼容）**：缺省（无 `--config`）→ `state_hardware_ids`
+  空 → state 订阅池空 → 所有 GetState/StreamState 返 `NotFound`；既有
+  clear-estop-only gateway 调用（`clear_estop_e2e` 等不传 `--config`）**0 破**。
+  present → 按 `[[hardware]].id` 建常驻池。
+- **topic prefix 权威仍 `--robot-id`**：state topic =
+  `/<robot_id>/s0/<hardware_id>/state`（实测 `robotctl.rs:239` 同款；`robot_id`
+  取 `--robot-id`，`hardware_id` 取 config 列表）。**fail-fast**：`--config`
+  present 且 `[robot].id != --robot-id` → 启动拒（exit 2），防 config / flag
+  错配静默订错 topic。
+
+## Acceptance Criteria（round 3）
 
 - **AC-1**：proto additive —— `service RobotControl` append GetState/StreamState
   2 rpc + RobotState/GetStateRequest/StreamRequest message + 4 镜像 enum；既有
@@ -209,22 +266,30 @@ GetState（+ StreamState 开流时同口径）的 tonic `Status` code：
   **常驻 cache**（D4 pool，**非**临时订阅）→ `JointState`-fbs→`RobotState`-proto
   → 返。字段等价（mode/control_link/output_mode/safety/fault/positions/layout/
   stamp 跟 published JointState 一致）。
-- **AC-3**：错误码口径（D9）—— `hardware_id` 缺/空 → `InvalidArgument`；unknown
-  → `NotFound`；已知但 cache 无首帧 → `Unavailable`。三条各一 e2e case。
+- **AC-3**：错误码口径（D9）—— 三条各一 e2e case：
+  - `hardware_id` 缺/空 → `InvalidArgument`。
+  - `hardware_id` unknown（不在 `--config` 声明池）→ `NotFound`。
+  - **`Unavailable` 写实场景（reviewer round 2 同步 4）**：`--config` 声明某
+    `hardware_id`（gateway 建了该 hardware 的常驻订阅），但 e2e **故意不启动**
+    对应 `FakeStatePublisher` → 常驻池 cache **无首帧** → `GetState(该 id)` 返
+    `Unavailable`（**非** `NotFound`：hardware 已知，只是还没数据）。
 - **AC-4**：`StreamState(StreamRequest{hardware_id, min_interval_ms})` →
   server-streaming RobotState；**节流实测**：min_interval_ms=50 时输出间隔
   ≥ ~50ms（不是 S0 的 500Hz）；client cancel / gateway shutdown → 流清理
   （沿 events_subscribe drop→stop）。
 - **AC-5**：`min_interval_ms < floor(20)` → clamp 到 20ms（D5a）。
-- **AC-6**：auth —— 任意 token（viewer/operator/maintainer）都能 GetState/
-  StreamState（C1 unauthenticated read；D7）；e2e 注释 + CHANGELOG 标"非安全
-  保证"。
+- **AC-6**：auth（reviewer round 2 同步 5）—— **无 token** 与**任意 metadata
+  token**（viewer/operator/maintainer，甚至垃圾串）调 GetState/StreamState
+  **结果完全一致**：request 无 auth 字段、服务端不读不校验 token（C1
+  unauthenticated read；D7）。e2e 至少跑"无 token"+"有 token"两路断言**同结果**；
+  e2e 注释 + CHANGELOG 明标**非安全保证**，**不得**宣称 `read_state` cap 已
+  enforce、**不得**写得像 token 真上 wire 影响鉴权。
 - **AC-7**：stamp_ns 透传 S0 published 值（**非** gateway 自生 clock）—— 同一
   fixed published state 下 RobotState.stamp_ns 确定（沿候选 A E1 无 self-clock）。
 - **AC-8**：robotctl **0 改动**（hard boundary；diff = 0）。
-- **AC-9**：config 有 N hardware 时，gateway **只订阅 config 声明的
+- **AC-9**：`--config`（D10）声明 N hardware 时，gateway **只订阅 config 声明的
   `hardware_id`**；请求未声明的 hardware → `NotFound`，**禁默默 fallback 到第一个**
-  （hard；e2e：2 hardware config，请求第 3 个不存在的 id → NotFound）。
+  （hard；e2e：2 hardware `--config`，请求第 3 个不存在的 id → NotFound）。
 - **AC-Q**：fmt + clippy(-D warnings) + workspace test + 4 既有 smoke 0 退化 +
   GetState/StreamState cross-process e2e + cargo deny baseline + schema_compat。
 
@@ -244,14 +309,17 @@ GetState（+ StreamState 开流时同口径）的 tonic `Status` code：
 ## hard boundaries（实施期不破）
 
 B4 frozen 6-RPC schema 0 改（additive）· §6.7 0 触动（只读）· robotctl 0 改动
-（D7 CLI hard）· design.md 0 改（GetState 签名走 CHANGELOG 登记）· S0/S1 daemon
-0 改 · 候选 A 三条固定前置（A4 / **C1 延续并显式标非安全保证** / D6 不涉）·
-auth 不得宣称 read_state 已 enforce。
+（D7 CLI hard）· design.md 0 改（GetState 签名走 CHANGELOG 登记）· **S0/S1
+daemon 0 改**（D10 gateway minimal local 解析 config，**不**抽 `robot-s0`
+`config_loader`、**不** dep robot-s0）· **gateway `--config` 加法兼容**（D10 可选；
+缺省不破 B4 既有 clear-estop-only 调用）· 候选 A 三条固定前置（A4 / **C1 延续并
+显式标非安全保证** / D6 不涉）· auth 不得宣称 read_state 已 enforce。
 
 ## 后续（RIPER）
 
 Spec round 1 → reviewer round 1（D3/D1a/D4a/D5a/D3b 5 项拍板）✅ →
-**Spec round 2（本文，全吸收）→ 待 reviewer round 2 复核** → Plan → 实施
-（倾向 commit 拆分：proto+enum+转换器 / GetState handler+gateway 常驻订阅池 /
-StreamState bridge+节流 / e2e + summary）。**本 round 不开实现；reviewer 明确
-"不批准直接进 Plan"，round 2 ACK 后才进 Plan。**
+Spec round 2 → reviewer round 2（3 阻断 + 2 同步修订）✅ →
+**Spec round 3（本文，全吸收）→ 待 reviewer round 3 复核** → Plan → 实施
+（倾向 commit 拆分：proto+enum mirror+转换器 / `--config` + GetState handler +
+gateway 常驻订阅池 / StreamState bridge+节流 / e2e + summary）。**本 round 不开
+实现；reviewer round 2 明确"目前不建议直接进入 Plan"，round 3 ACK 后才进 Plan。**
