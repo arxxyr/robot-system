@@ -25,6 +25,27 @@ rpc StreamState  (StreamRequest)  returns (stream RobotState);
   任何代码里都未定义**（只有 §5.3 service 签名一行）—— 候选 B 的 Spec 要
   定义这两个 message（新 proto message，待拍板字段集）。
 
+### 0.1 proto 现状 + 缺口（reviewer 复核点：补 message vs additive method）
+
+`crates/robot-rpc/proto/robot_control.proto`：
+
+- `service RobotControl` block = **lines 94-104**，当前 **= 6 条 B4 method**：
+  - `rpc ClearEStop (ClearEStopCommand) returns (Ack);`（line 96）
+  - `rpc InvokeTask (InvokeTaskCommand) returns (TaskHandle);`（line 99）
+  - `rpc CancelTask (CancelTaskCommand) returns (Ack);`（line 100）
+  - `rpc GetTaskStatus (TaskHandleRef) returns (TaskStatus);`（line 101）
+  - `rpc StreamTaskEvents (TaskHandleRef) returns (stream TaskEvent);`（line 102）
+  - `rpc ClearError (ClearErrorCommand) returns (Ack);`（line 103）
+- **缺口**：service 里**没有** `GetState` / `StreamState` rpc 声明（proto
+  comment **line 14-16** 明示"… GetState / StreamState … 留 v0.5+ Phase B
+  后续 outline 拍板，**不在本 proto 出现**"）；**没有** `RobotState` /
+  `StreamRequest` / `GetStateRequest` message。
+- **结论：候选 B = additive method + message**（`service RobotControl`
+  **append** 2 rpc + 新增 RobotState / 请求 message + enum mirror），**不是
+  "补 message"**。proto 头注（line ~6 "当前 scope … 6 条 RPC" + §method 数
+  = 6）需同步改 8。**additive** = 既有 6 method 字段 / 字段号 0 改（B4 frozen
+  schema hard boundary 不破）。
+
 ## 1. reviewer 点名 5 块勘探结果
 
 ### ① robot-msg/schema 当前 state sample 与 Get/StreamState 可复用面
