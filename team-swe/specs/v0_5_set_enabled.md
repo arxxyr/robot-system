@@ -278,8 +278,9 @@ Spec round 1 → reviewer round 1（D2/D4/D5 ACK + 4 语义阻断 B1-B4）✅ �
 Spec round 2 → reviewer round 2（2 执行级阻断 B5/B6）✅ →
 Spec round 3 → reviewer round 3（B7 enable Ack point 缺口）✅ →
 Spec round 4 → reviewer round 4 **ACK 全 D1-D8**（+ 非阻断 D8 deadline 去"或
-Internal"，`425dd62`）✅ → **Plan outline draft v1（本文 §Plan）→ 待 reviewer
-Plan round 复核** → 实施。**Plan ACK 前不开实现。**
+Internal"，`425dd62`）✅ → Plan outline draft v1 → Plan round 1（PB1-3）→ Plan
+round 2（PB4-6）→ **Plan round 3 executable（本文 §Plan，PB7 展开 P.2.1-2.5）→ 待
+reviewer Plan Approved** → 实施。**Plan Approved 前不开实现。**
 
 ## Plan（outline draft v1）
 
@@ -307,9 +308,20 @@ PB1/PB3 ACK；D-P1 又 3 执行级阻断（RpcStatus 语义），已回修（**0
 | PB5 | Stop/shutdown 写 `Unavailable`，但 `RpcStatus` 无此 variant（B5 不扩 A1 enum）| D-P1 条 3：Stop/shutdown preempt → **`Aborted`**（复用 in-flight-preempt 语义，domain `SetEnabledStatus` 区分 EStop vs shutdown）；**不** append Unavailable |
 | PB6 | 同 key in-flight "gateway replay 不进 S0" 不成立（`decide` in-flight 仍 `FreshInsert`，`idempotency.rs:303`）| D-P1 条 1 + D-P4：**replay 只在第一个 commit 后**；in-flight 同 key 仍 FreshInsert→forward→**S0 single-flight ResourceExhausted**；**不**加 gateway in-flight guard（S0 single-flight 即防线）|
 
+#### Plan round 3 amend 记录（2026-06-08；reviewer Plan round 2 复核后）
+
+reviewer：D-P1/PB4-6 ACK，但 Plan 停在 outline 级，未 Approved。**展开 P.2 到
+文件/函数/测试名级**（1 阻断）+ HEAD baseline 同步（1 非阻断）：
+
+| # | 阻断 | 修订 |
+|---|---|---|
+| PB7 | Plan 仍 outline（"Plan round 定字段"），未到可执行粒度 | **P.2 重写为 P.2.1-P.2.5 executable**：每段补 set_enabled.fbs 字段表 / schema_id 常量 / markers / build_helpers / `resolve_hardware_section` 签名 / `Event::Disable` transition / `PendingSetEnabled` 字段 + single-flight + resolve 分支 / `Method::SetEnabled` + `CachedResponse::SetEnabled` / gateway `set_enabled` handler+mapper+rr thread / e2e case 名（含 ResourceExhausted/Aborted/DeadlineExceeded/adapter-fail/dry-run/auto_enable/viewer 拒）+ 锁测名 |
+| 非阻断 | P.0 HEAD `425dd62` stale | HEAD = 本 Plan round 3 commit，Execute 前同步实际 HEAD |
+
 ### P.0 工作基线
 
-- **HEAD = `425dd62`**（Spec round 4 final）。候选 B 完结 = `b795339`。
+- **HEAD = 本 Plan round 3 amend land 的 commit**（**Execute (1/5) 前同步实际 HEAD**，
+  不写 stale hash；非阻断）。Spec final = `425dd62`；候选 B 完结 = `b795339`。
 - 全程 nightly；每 commit 前 `cargo fmt --all` + `cargo clippy --workspace
   --all-targets -- -D warnings` 零警告。
 - **0 新依赖**（proto/tonic/iceoryx2/flatbuffers/serde/toml 全已在）。
@@ -324,13 +336,123 @@ PB1/PB3 ACK；D-P1 又 3 执行级阻断（RpcStatus 语义），已回修（**0
 | (4/5) | **gateway（PB1：proto method 在此 atomic）**：proto append `SetEnabled` + `SetEnabledCommand`（method 8→9）+ `SetEnabled` tonic handler（proto+impl 同 commit，无需 stub）+ 第 6 条 rr_io_thread + auth/role/capability + **idempotency（`IdempotencyCache`，PB3）** + `complete_ack_rpc` 桥 | proto + robot-rpc gateway/bin |
 | (5/5) | **e2e + summary**：cross-process（s0 + heartbeat 源 + gateway）覆盖 AC-2/2b/2c/3/3b/4/5/6/7/8/8b/9 + summary + CHANGELOG + CLAUDE + README | robot-rpc tests + docs |
 
-### P.2 工作流（draft；Plan round 细化）
+### P.2 工作流（executable，按 commit 顺序）
 
-- 顺序硬约束：(1/5) **fbs schema 链**先（S0 RR drain 编译依赖）→ (2/5) S0 核心 →
-  (3/5) S0 RR+action → (4/5) **proto method + gateway**（proto 在此，PB1）→ (5/5)
-  e2e。每段独立过 Quality Gate（fmt + clippy + 相关 unit + 既有 0 退化）。
-- (3/5) 是**最重难点**（D-P1 观测机制）；(2/5) build_adapter 改 matched section
-  须**既有 adapter 路径 0 退化回归**。
+顺序硬约束：(1/5) fbs 先（S0 RR drain 编译依赖）→ (2/5) S0 核心 → (3/5) S0 RR+
+action → (4/5) proto + gateway → (5/5) e2e。每段独立过 Quality Gate。命名沿
+ClearEStop（A1）先例。
+
+#### P.2.1 [commit (1/5)] robot-msg fbs schema 链（atomic）
+
+- **`crates/robot-msg/schemas/set_enabled.fbs`**（新）：
+  - `table SetEnabledRequest { request_id:string; idempotency_key:string;
+    source:string; role:RpcRole=Unknown; enabled:bool=false; dry_run:bool=false;
+    deadline_ns:ulong; audit_reason:string; stamp_ns:ulong; }`（复用 `clear_estop.fbs`
+    的 `RpcRole`；drop `confirmation`，加 `enabled`）。
+  - `enum SetEnabledStatus:ubyte { Unknown=0; Ok=1; GuardRejected=2; LatchBlocked=3;
+    AdapterError=4; AlreadyInProgress=5; PreemptedByEStop=6; PreemptedByShutdown=7;
+    WouldAccept=8; }`（domain 审计 enum；wire `RpcStatus` 另带，PB3/PB5）。
+  - `table SetEnabledResponse { status:RpcStatus=Unknown; domain:SetEnabledStatus=
+    Unknown; completed_at_ns:ulong; }`。
+- **`schema_id.rs`**：`SCHEMA_SET_ENABLED_REQUEST: u32 = 0x0000_040D;` +
+  `SCHEMA_SET_ENABLED_RESPONSE: u32 = 0x0000_040E;` + `SCHEMA_REGISTRY` 末尾 append
+  `(SCHEMA_SET_ENABLED_REQUEST, "robot.msg.SetEnabledRequest")` /
+  `(…RESPONSE, "robot.msg.SetEnabledResponse")`（升序）。
+- **`markers.rs`**：`pub struct SetEnabledRequest;` / `pub struct SetEnabledResponse;`
+  + `impl BodyMarker`（`SCHEMA_ID` / `SCHEMA_NAME` / `Root`）。
+- **`build_helpers.rs`**：`build_set_enabled_request(request_id, idempotency_key,
+  source, role, enabled, dry_run, deadline_ns, audit_reason, stamp_ns) -> Vec<u8>` +
+  `build_set_enabled_response(status, domain, completed_at_ns) -> Vec<u8>`。
+- **锁测**：`cargo run -p robot-msg --bin schema_lint`（升序+唯一）+ `cargo test -p
+  robot-msg`（registry roundtrip）+ build_helpers roundtrip unit
+  `set_enabled_request_roundtrip` / `set_enabled_response_roundtrip`。
+- **Quality Gate**：fmt + clippy + robot-msg test + schema_lint；**proto 不动**
+  （PB1）→ 下游 gateway/s0 不强制改。
+
+#### P.2.2 [commit (2/5)] S0 config + 状态机
+
+- **`config_loader.rs`**：`HardwareSection` 加 `#[serde(default)] pub auto_enable:
+  Option<bool>`（typed，B2）+ `pub fn resolve_hardware_section<'a>(cfg:
+  &'a RobotConfigToml, hardware_id: &str) -> Option<&'a HardwareSection>`（match
+  `.id == hardware_id`，B6）。
+- **`s0_daemon.rs`**：`build_adapter` 与 auto_enable 改用 `resolve_hardware_section`
+  （非 `.first()`，B6）；无匹配 → `std::process::exit` fail-fast。
+- **`state_machine.rs`**：`Event` enum 加 `Disable`；transition `(Enabled, Disable)
+  → Safe` / `(Ready, Disable) → Safe`（effectful，policy `OutputPolicy::Disabled`）；
+  `(Safe/Fault, Disable)` no-op（幂等）。
+- **unit**：`disable_from_enabled_to_safe` / `disable_from_ready_to_safe` /
+  `disable_from_safe_noop` / `resolve_hardware_section_by_id` /
+  `resolve_hardware_section_no_match_none` / `auto_enable_typed_default_true`。
+- **回归（D-P5）**：单 hardware config（first==matched）adapter 构造 0 变化——
+  既有 state_machine + s0 unit 全过。
+
+#### P.2.3 [commit (3/5)] S0 RR server + set_enabled action（**最重难点 D-P1**）
+
+- **`set_enabled_rr_server.rs`**（新，**copy** rr_server_thread.rs 范式，SetEnabled-
+  typed；**ClearEStop `rr_server_thread.rs` 0 改**，D5）：`spawn_set_enabled_rr_server_
+  thread(config)`，topic `/<robot_id>/control/set_enabled`，decode `markers::
+  SetEnabledRequest` → forward `SetEnabledRrRequest` → encode `SetEnabledResponse`。
+- **`ipc_thread.rs`**：`pub struct SetEnabledRrRequest { request_id, enabled,
+  dry_run, deadline_ns, role, … }` + `pub struct SetEnabledRrResponse { request_id,
+  payload: SetEnabledRrPayload }` + `pub enum SetEnabledRrPayload { Enabled{
+  completed_at_ns }, Disabled{ completed_at_ns }, WouldAccept{ at_ns }, GuardRejected
+  { actual }, LatchBlocked, AdapterError, AlreadyInProgress, PreemptedByEStop,
+  PreemptedByShutdown }`（沿 `ClearEStopRrPayload` 范式）。
+- **`set_enabled_action.rs`**（新，沿 `clear_estop_action.rs`）：`evaluate_set_enabled
+  _dry_run(state, guards, enabled) -> SetEnabledDryRunOutcome`（D7 precondition-only）。
+- **D-P1 pending 观测**（ipc_thread）：`Option<PendingSetEnabled { deadline_ns:u64,
+  target: PendingTarget〔EnabledActive|Safe〕, reply: <oneshot/handle> }>`；single-
+  flight check = `pending.is_some()` → 拒 `AlreadyInProgress`（条 1）；每 tick：
+  commit 到 target → resolve `Enabled/Disabled{completed_at_ns}`；EStop/Stop/fault
+  preempt → resolve `PreemptedByEStop/Shutdown`/`AdapterError`（条 3）；
+  `clock.now() > deadline_ns` → resolve `DeadlineExceeded`（条 5，不回滚副作用）。
+- **`s0_daemon.rs`**：spawn 第 2 rr_server（set_enabled）+ 接 RR channels 到 ipc_thread。
+- **unit**：`set_enabled_dry_run_precondition_only` / `pending_single_flight_rejects
+  _second` / `pending_resolves_on_enabled_active` / `pending_preempt_estop_resolves
+  _aborted` / `pending_deadline_resolves` / `disable_pending_resolves_on_safe`。
+
+#### P.2.4 [commit (4/5)] proto method + gateway（atomic，PB1）
+
+- **`robot_control.proto`**：append `rpc SetEnabled (SetEnabledCommand) returns
+  (Ack);`（service 末尾，method 8→9）+ `message SetEnabledCommand { CommandMeta
+  meta=1; bool enabled=2; }`（头注 8→9）。
+- **`idempotency.rs`**：`Method::SetEnabled`（as_str `"set_enabled"`）+
+  `CachedResponse::SetEnabled { completed_at_ns: u64, dry_run: bool }`（沿
+  `CachedResponse::ClearEStop`）。
+- **`gateway.rs`** + **新 `set_enabled.rs`**（handler 纯函数，沿 `clear_estop.rs`）：
+  `GatewayHandlerState` 加 `rr_forward_tx_set_enabled: Sender<RrForwardRequest>`；
+  `async fn set_enabled(&self, req) -> Result<Response<Ack>, Status>`（prost trait
+  method）；handler 步：`validate_request_id` → auth `lookup_token` → authz
+  `Capability::SetEnabled`（viewer→PermissionDenied）→ idempotency `decide`
+  （Method::SetEnabled）→ deadline → build wire `SetEnabledRequest` → forward via
+  `spawn_rr_io_thread`（topic set_enabled，`client_factory_for::<markers::
+  SetEnabledRequest, markers::SetEnabledResponse>`）→ await oneshot → decode
+  `SetEnabledResponse` → `rpc_status_to_tonic_code`（**复用**，无新 mapper）→ Ok
+  commit cache。
+- **`bin/robot_rpc_gateway.rs`**：起第 6 rr_io_thread（set_enabled topic）。
+- **unit**：`set_enabled_viewer_denied` / `set_enabled_status_mapping`（复用
+  rpc_status mapper 覆盖 ResourceExhausted/Aborted/Internal/DeadlineExceeded）/
+  `cached_response_set_enabled_roundtrip`。
+
+#### P.2.5 [commit (5/5)] cross-process e2e + summary
+
+- **`tests/set_enabled_e2e.rs`**（新，沿 `state_rpc_e2e` harness + s0/fake-heartbeat）：
+  起 **s0_daemon + fake heartbeat publisher（`/<robot_id>/s1/heartbeat`，D-P3）+
+  gateway**。
+- **case 名**：`enable_happy_observes_enabled_active`（AC-2）/
+  `enable_deadline_no_heartbeat_returns_deadline_exceeded`（AC-2b）/
+  `enable_adapter_fail_returns_internal_adapter_error`（AC-2c）/ `disable_happy_to
+  _safe_no_latch_change`（AC-3）/ `disable_adapter_fail_returns_internal`（AC-3b）/
+  `enable_latch_blocked_failed_precondition`（AC-4）/ `latched_disable_allowed_no
+  _clear_latch`（AC-5）/ `dry_run_precondition_no_side_effect`（AC-6）/
+  `viewer_denied`（AC-7）/ `auto_enable_false_stays_safe` + `cli_hardware_id_no
+  _match_fail_fast`（AC-8/8b）/ `concurrent_second_resource_exhausted`（D-P1 条 1）/
+  `fault_rejects_enable`（AC-9）。
+- **summary** + CHANGELOG（design §5.3 SetEnabled 实现，Q1 不加 hardware_id 不触
+  design-freeze diff；auto_enable typed additive）+ CLAUDE + handoffs README。
+- **Quality Gate（候选 C 完结）**：fmt + clippy + `cargo test --workspace` + **4
+  既有 smoke 0 退化**（含 D-P5 build_adapter 回归）+ cargo deny baseline +
+  schema_lint。
 
 ### P.3 Plan 拍板项（reviewer Plan round 决定）
 
