@@ -1,8 +1,17 @@
-# Spec · v0.5 候选 C — `SetEnabled` RPC（round 3）
+# Spec · v0.5 候选 C — `SetEnabled` RPC（round 4）
 
-> RIPER Spec round 3（round 1 D2/D4/D5 ACK + round 2 4 语义阻断 + round 3 2 执行级
-> 阻断回修）。前置 = [`team-swe/codemap/v0_5_set_enabled.md`](../codemap/v0_5_set_enabled.md)。
-> **不开实现。**
+> RIPER Spec round 4（r1 D2/D4/D5 ACK + r2 4 语义阻断 + r3 2 执行级阻断 + r4
+> enable Ack point 缺口回修）。前置 =
+> [`team-swe/codemap/v0_5_set_enabled.md`](../codemap/v0_5_set_enabled.md)。**不开实现。**
+
+## Spec round 4 amend 记录（2026-06-08；reviewer Spec round 3 复核后）
+
+reviewer：B5/B6 已修；新关键语义缺口 **B7 = `SetEnabled(true)` 成功 Ack point
+未定义**（Ready accepted vs Enabled.Active actually enabled）。已回修：
+
+| # | round 3 阻断 | 修订 |
+|---|---|---|
+| B7 | AC-2 `SetEnabled(true)→Ack` 没锁 Ack 在 Safe→Ready accepted 即返、还是 Ready+Heartbeat→Enabled.Active effectful `Enable(true)` ack 后返（`state_machine.rs:580/1124`）| **新 D8：Ack only after actual enable/disable completes**（reviewer 倾向，采纳；不选 accepted-only）。`SetEnabled(true)` 成功 Ack = **Enabled.Active commit + adapter `Enable(true)` ack**；Ready 但 deadline 内未到 Enabled.Active → `DeadlineExceeded`；adapter ack fail → `commit_fault(AdapterErr)` + `Internal` + domain `AdapterError`（与 disable 对称）。AC-2 改"观测 Enabled.Active 才算 success" + 加 AC-2b/2c；e2e 需 heartbeat 源 |
 
 ## Spec round 3 amend 记录（2026-06-08；reviewer Spec round 2 复核后）
 
@@ -67,9 +76,11 @@ transport；范围限定见 D1）：
   改用同一 matched section**（修现有 `.first()` 错配，`s0_daemon.rs:1061`，B6）。
 - `docs/CHANGELOG.md`：登记（Q1 不加 hardware_id 故**不**触 design-freeze diff；
   SetEnabled write-RPC idempotency；auto_enable typed 字段 additive）。
-- e2e：cross-process（enable/disable happy + **disable adapter 失败→Fault** +
-  latch-blocked enable + latched-disable not-clear-latch + dry_run precondition +
-  auth + auto_enable resolution）。
+- e2e：cross-process（**s0 + heartbeat 源〔s1_daemon 或 fake heartbeat〕+ gateway**，
+  D8：enable-happy 观测 **Enabled.Active** 才算 success + enable deadline〔无
+  heartbeat〕+ enable/disable adapter 失败→Fault + latch-blocked enable +
+  latched-disable not-clear-latch + dry_run precondition + auth + auto_enable
+  resolution + AC-8b adapter 同段）。
 
 ### 严禁改动（hard boundary）
 
@@ -175,19 +186,54 @@ transport；范围限定见 D1）：
   范式，`clear_estop_action.rs:156`）。response 文案须写"precondition would accept"
   不写"would succeed"，避免误导。
 
+### D8（B7 — enable/disable 成功 Ack point）⚠ **拍板**：Ack only after actual completes
+
+- **采纳 reviewer 倾向 = Ack 仅在真正 enable/disable 完成后返**（**不**选
+  accepted-only，避免 operator 误以为已上扭）。
+- **`SetEnabled(true)` 成功 Ack** = state 已 commit **Enabled.Active** + adapter
+  `Enable(true)` ack 成功。S0 action emit `Event::Enable`（Safe→Ready）后**在
+  request deadline 内观测** heartbeat 驱动的 Ready→Enabled.Active（effectful
+  `Enable(true)`，`state_machine.rs:580/1124`）：
+  - latch/guards 不满足（Safe→Ready 拒）→ `RpcStatus::FailedPrecondition`（即时）+
+    domain `GuardRejected`/`LatchBlocked`。
+  - 到 Ready 但 Enabled.Active **未在 deadline 内完成**（无 heartbeat 等）→ 非 Ack；
+    `RpcStatus::DeadlineExceeded`（或 Internal）+ domain status。
+  - adapter `Enable(true)` ack fail（Ready→Enabled effectful）→ `commit_fault
+    (AdapterErr)` + `RpcStatus::Internal` + domain `SetEnabledStatus::AdapterError`
+    （**与 disable D3d 对称**）。
+  - 成功 → `Ack` + `SetEnabledStatus::Ok`。
+- **`SetEnabled(false)` 成功 Ack** = state 已 commit **Safe** + adapter
+  `Enable(false)` ack 成功（单 effectful transition，无 heartbeat 依赖）；失败 D3d。
+- **dry_run 不变**（D7）：只 precondition `would_accept`，**不**代表 adapter ack /
+  不等 Enabled.Active。
+- **实现含义**：set_enabled action **非一次性**（区别 ClearEStop `try_apply` 即时）
+  ——emit event 后**多 tick 观测** Enabled.Active/Safe 或 deadline/fault 才产 RR
+  response（Plan 期细化观测机制 + deadline 来源 = `CommandMeta.timeout_ms` 转
+  wire deadline）。
+- **e2e 依赖**：enable-happy 观测 Enabled.Active **需 heartbeat 源**（Ready→Enabled
+  靠 heartbeat）→ SetEnabled e2e 起 **s0 + heartbeat 源（s1_daemon 或 fake
+  heartbeat）+ gateway**（区别候选 B gateway-only）。
+
 ### 其它（非拍板）
 
 - **idempotency**（§6.7 #5 write RPC）：SetEnabled 走 gateway `IdempotencyCache`
   （`idempotency_key` fingerprint，沿 ClearEStop）；enable/disable 本身幂等，cache
   防重放副作用歧义。
 
-## Acceptance Criteria（round 3）
+## Acceptance Criteria（round 4）
 
 - **AC-1**：proto additive —— append `SetEnabled` + `SetEnabledCommand`（method
   8→9）；既有 8 method diff=0；fbs 0 退化（`schema_lint` + `cargo test -p
   robot-msg`）；既有 RPC e2e（`task_rpc_e2e` / `state_rpc_e2e`）0 退化。
-- **AC-2（enable happy）**：Safe + guards-ok → `SetEnabled(true)` → `Event::Enable`
-  → Ready（heartbeat 后 Enabled.Active）；`Ack`。
+- **AC-2（enable happy，D8）**：Safe + guards-ok + **heartbeat 源在跑** →
+  `SetEnabled(true)` → 观测状态机到 **Enabled.Active**（Safe→Ready→Enabled.Active）+
+  adapter `Enable(true)` ack → **才返 `Ack`**（`SetEnabledStatus::Ok`）。**RPC success
+  ⟺ 观测到 Enabled.Active**（非 Ready-accepted）。
+- **AC-2b（enable deadline，D8）**：到 Ready 但 deadline 内无 heartbeat/Enabled.Active
+  → 非 Ack；`RpcStatus::DeadlineExceeded` + domain status。
+- **AC-2c（enable adapter 失败，D8，与 AC-3b 对称）**：Ready→Enabled 的 adapter
+  `Enable(true)` ack 失败 → `commit_fault(AdapterErr)` + wire `RpcStatus::Internal` +
+  domain `SetEnabledStatus::AdapterError`。
 - **AC-3（disable happy + D3）**：Enabled → `SetEnabled(false)` → `Event::Disable`
   → adapter `Enable(false)` ack → Safe（OutputPolicy Disabled）；`Ack`；**estop_latch
   文件 0 改**（disable 不清/不置 latch）。
@@ -228,6 +274,7 @@ A→B→C→D→E 硬序（候选 D EStop 不提前）。
 ## 后续（RIPER）
 
 Spec round 1 → reviewer round 1（D2/D4/D5 ACK + 4 语义阻断 B1-B4）✅ →
-Spec round 2 → reviewer round 2（2 执行级阻断 B5 RpcStatus / B6 adapter 选段）✅ →
-**Spec round 3（本文，全吸收）→ 待 reviewer round 3 复核** → Plan → 实施。
+Spec round 2 → reviewer round 2（2 执行级阻断 B5/B6）✅ →
+Spec round 3 → reviewer round 3（B7 enable Ack point 缺口）✅ →
+**Spec round 4（本文，全吸收 D8）→ 待 reviewer round 4 复核** → Plan → 实施。
 **本 round 不开实现。**
