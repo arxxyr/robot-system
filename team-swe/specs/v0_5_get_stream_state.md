@@ -327,7 +327,147 @@ daemon 0 改**（D10 gateway minimal local 解析 config，**不**抽 `robot-s0`
 
 Spec round 1 → reviewer round 1（D3/D1a/D4a/D5a/D3b 5 项拍板）✅ →
 Spec round 2 → reviewer round 2（3 阻断 + 2 同步修订）✅ →
-**Spec round 3（本文，全吸收）→ 待 reviewer round 3 复核** → Plan → 实施
-（倾向 commit 拆分：proto+enum mirror+转换器 / `--config` + GetState handler +
-gateway 常驻订阅池 / StreamState bridge+节流 / e2e + summary）。**本 round 不开
-实现；reviewer round 2 明确"目前不建议直接进入 Plan"，round 3 ACK 后才进 Plan。**
+Spec round 3 → reviewer round 3 **ACK 进 Plan**（+ 非阻断文案收窄已修，commit
+`5df51ff`）✅ → **Plan round 1（本文 §Plan）→ 待 reviewer Plan round 复核** →
+(1/4)..(4/4) 实施。**reviewer 明确"批准 Plan 后才进实现"**——Plan round ACK 前
+不开 (1/4)。
+
+## Plan
+
+> RIPER Plan round 1。reviewer round 3 **ACK 进 Plan**（复核 `91bf6d8`：3 阻断
+> 实质收口）+ 5 锁点 + 4 段 commit 拆分。本节把 Spec 落成可执行 commit 序列。
+> **待 reviewer Plan round 复核**；不批准则 amend，批准后才进 (1/4)。
+
+### P.0 工作基线
+
+- **HEAD = `5df51ff`**（Spec round 3 + 文案收窄 land）。candidate B docs 前缀：
+  CodeMap `d19a92c`/`f282384` + Spec r1 `84edc5f` / r2 `d08bd09` / r3 `91bf6d8`
+  / 文案 `5df51ff`。candidate A 完结 = `25c2feb`。
+- 全程 nightly；**每 commit 前** `cargo fmt --all` + `cargo clippy --all
+  --all-targets -- -D warnings` 零警告。
+- **0 新依赖**：proto（tonic build）/ iceoryx2 / tokio / std::thread / serde +
+  toml 全部已在 robot-rpc dep；候选 B 不扩 `[dependencies]`、不引新 crate
+  → cargo deny **未新增 violation**。
+
+### P.1 commit 节奏总览
+
+4 段 feat + 1 summary（reviewer ACK 拆分；每段独立过 Quality Gate）：
+
+| 段 | 内容 | 主要文件 | 交付 |
+|---|---|---|---|
+| (1/4) | proto additive + 4 enum mirror + fbs→proto 转换器 | `proto/robot_control.proto` + 新 `src/state_convert.rs` | feat 1 |
+| (2/4) | `--config` + `GatewayConfig.state_hardware_ids` + 常驻 state 订阅池 + GetState handler | `bin/robot_rpc_gateway.rs` + `gateway.rs` + 新 `src/state_pool.rs` | feat 1 |
+| (3/4) | StreamState bridge + 节流（per-RPC tick task，无底层 subscriber）| `gateway.rs` + `src/state_pool.rs`（stream 侧）| feat 1 |
+| (4/4) | cross-process e2e（`tests/state_rpc_e2e.rs`）+ summary + CHANGELOG + CLAUDE.md | `tests/` + `docs/` | feat 1 + docs 1 |
+
+commit chain（hash 实施期填）：(1/4) `TBD` / (2/4) `TBD` / (3/4) `TBD` /
+(4/4) feat `TBD` + summary docs `TBD`。
+
+#### P.1.1 reviewer Plan round 锁点对账（5 锁点）
+
+| # | reviewer 锁点 | Plan 落点 |
+|---|---|---|
+| 1 | `--config` 解析精确到错误码/exit code（invalid TOML / 缺 `[robot].id` / `[robot].id != --robot-id` 都 exit 2）+ `[[hardware]]` 空是否允许"明确" | §P.2.2.a（全部 → **exit 2** config 类，沿既有 rpc-roles-toml load fail 同路径）+ **决策：`[[hardware]]` 空 = 允许**（`config_loader` 既有 `empty_hardware_and_sensor_arrays_default_ok` 已证空 hardware 合法）→ P.3 D-P1 |
+| 2 | 常驻 pool = 底层 subscriber 唯一来源；StreamState per-RPC 只 tick/stream task | §P.2.2.c（pool 建唯一 subscriber）+ §P.2.3.a（per-RPC 只 spawn tick task，**0** iceoryx2 subscriber）|
+| 3 | e2e 覆盖三错误码（缺/空 InvalidArgument / unknown NotFound / 无首帧 Unavailable）；首版不测 FP | §P.2.4.b AC-3 三 case + **无 FP case** |
+| 4 | AC-6 按"无 token / 任意 metadata token 同结果"测，不写 read_state cap enforce | §P.2.4.b AC-6 两路断言同结果 + 注释/CHANGELOG 标非安全保证 |
+| 5 | hard boundary：robotctl 0改 / S0/S1 daemon 0改 / design.md 0改 / 既有 6 RPC 0改 | 每段 §Quality Gate + §风险锚点逐项断言 diff=0 |
+
+### P.2 工作流（按 commit 顺序）
+
+#### P.2.1 [commit (1/4)] proto additive + enum mirror + fbs→proto 转换器
+
+##### P.2.1.a `proto/robot_control.proto` append（AC-1）
+- `service RobotControl`（L94-103 当前 6 method）**末尾 append** 2 rpc（**不改既有 6 行**）：
+  `rpc GetState (GetStateRequest) returns (RobotState);` +
+  `rpc StreamState (StreamRequest) returns (stream RobotState);`。
+- append 3 message：`RobotState`（D1 字段）/ `GetStateRequest{string hardware_id=1}`（D3）/ `StreamRequest{string hardware_id=1; uint32 min_interval_ms=2}`（D2）。
+- append 4 enum（**number 与 fbs 1:1**；proto 零值约定 `*_UNSPECIFIED=0` 对齐 fbs `Unknown=0` / `TorqueUnknown=0`）：`S0Mode`(UNSPECIFIED/SAFE/READY/ENABLED/FAULT/STOPPING) / `S0ControlLink`(UNSPECIFIED/OK/LOST) / `S0OutputMode`(UNSPECIFIED/ACTIVE/HOLD/ZERO/STOP) / `S0SafetyState`(TORQUE_UNKNOWN=0/TORQUE_ON/STOP_COMMANDED/TORQUE_OFF_CONFIRMED/STOP_FAILED/ADAPTER_UNCERTAIN)。
+- **头注 method 数 6→8**。
+
+##### P.2.1.b 新 `src/state_convert.rs` — fbs→proto 纯转换器（D6）
+- 4 enum 转换器（沿 `events_subscribe.rs:419/433/448` exhaustive-match 范式）：fbs enum → proto enum，**exhaustive match**（fbs 加 variant 不更新 → 编译失败，编译期锁）。
+- `joint_state_fb_to_robot_state(fb: &JointState, robot_id: &str, hardware_id: &str) -> RobotState`：position_rad（fbs vector→Vec<f64>）/ layout_id / **stamp_ns 透传 S0 published 值**（非自生 clock，AC-7）/ mode·control_link·output_mode·safety_state（经 4 转换器）/ **fault_code = `s0_fault_code()` ubyte `as u32` 透传**（**不** mirror `S0FaultCode` enum，D6）/ robot_id·hardware_id（调用方传入）。
+
+##### P.2.1.c lib unit（本 commit land）
+- 4 enum 转换器逐 variant（含 UNSPECIFIED 边界）+ `joint_state_fb_to_robot_state` 手搓 fbs（`build_helpers`）断言字段等价 + stamp 透传 + fault_code 数值透传。
+
+##### P.2.1.d Quality Gate
+- fmt + clippy(-D warnings) clean；`cargo test --workspace` 不退化；**schema_compat 0 退化**（proto additive 不动既有）。
+
+##### P.2.1.e 风险锚点（锁点 5）
+- 既有 6 method/message diff=0（只 append）；4 enum 全新（不改既有 proto enum）；robotctl/S0/S1/design.md 0 改。
+
+#### P.2.2 [commit (2/4)] `--config` + GetState handler + 常驻订阅池
+
+##### P.2.2.a `bin/robot_rpc_gateway.rs` 加 `--config <PATH>`（锁点 1 / D10）
+- `Args` 加 `config: Option<PathBuf>`；help + 头注 CLI/退出码块同步。
+- present 时 minimal local 解析（宽松 struct `{ robot:{id}, hardware:[{id}] }`，未知字段忽略；复用既有 serde+toml）。
+- **错误码（全 exit 2，沿既有 rpc-roles-toml load fail 同路径）**：`--config` 读失败 / invalid TOML / 缺 `[robot].id`（serde 必填解析失败）/ **`[robot].id != --robot-id`（fail-fast）** 均 exit 2。
+- **`[[hardware]]` 空 = 允许**（合法；`state_hardware_ids` 空 → 池空 → 非空 hardware_id 请求 NotFound；缺/空 hardware_id 仍先 InvalidArgument）→ **P.3 D-P1**。
+- 提取 `state_hardware_ids: Vec<String>` 喂进 `GatewayConfig`。
+
+##### P.2.2.b `GatewayConfig.state_hardware_ids` 字段 + validate
+- `GatewayConfig` 加 `state_hardware_ids: Vec<String>`（`loopback_default` 给空）；`validate`：每 id 非空（空 id 拒，`ConfigError` 新 variant），允许整体空。
+
+##### P.2.2.c 新 `src/state_pool.rs` — 常驻 per-hardware 订阅池（锁点 2 / D4）
+- 启动：每个 id 一条 `open_sub::<JointState>` on `/<robot_id>/s0/<id>/state`（`TopicClass::S0State`）+ 一条 std::thread 循环读 → 更新该 hardware 的 **keep-last cache（owned JointState sample bytes）**。**唯一底层 subscriber 来源**。
+- 读路径（GetState/tick）：从 cache 取 owned bytes → `flatbuffers::root::<JointState>` → `joint_state_fb_to_robot_state`（convert-on-read，省 500Hz 转换）。
+- 生命周期：startup 建 / shutdown stop+join（沿 B4 shutdown 顺序 mark_shutting_down → ... → pool stop+join）。
+
+##### P.2.2.d `gateway.rs` GetState handler（错误码顺序硬锁 / D9 / AC-3）
+- **顺序即口径**：① `hardware_id` 空 → `InvalidArgument`（校验**早于**池查找）② 不在 `state_hardware_ids` → `NotFound`（**禁 fallback**，AC-9）③ 池中但 cache 无首帧 → `Unavailable` ④ 有首帧 → convert → `Ok(RobotState)`。
+- auth：**不读不校验 token**（D7）。
+
+##### P.2.2.e lib unit（config 解析 4 错误码 + GetState 4 分支）
+##### P.2.2.f Quality Gate（同 P.2.1.d 全套）
+##### P.2.2.g 风险锚点：既有 clear-estop handler / RR I/O 链 0 改（锁点 5）。
+
+#### P.2.3 [commit (3/4)] StreamState bridge + 节流
+
+##### P.2.3.a `gateway.rs` StreamState handler（锁点 2 / D5）
+- per-RPC **只** spawn 一条轻量 async tick task（tokio）：按 clamp 后 interval 读 pool cache → convert → mpsc → `Box::pin` Stream（沿 `events_subscribe.rs` Stream 范式）；**绝不**新建底层 iceoryx2 subscriber。
+- 开流前校验同 GetState：`hardware_id` 空 → InvalidArgument；不在池 → NotFound（D9）。
+
+##### P.2.3.b 节流（D5a）
+- `min_interval_ms==0` → 50ms；`0<x<20` → clamp 20ms（不拒）；`>=20` → 原值。keep-last（丢中间帧，不逐 S0 sample）。
+
+##### P.2.3.c 清理
+- client cancel / gateway shutdown → tick task stop（drop→stop，沿 events_subscribe）；**底层 pool 订阅不随单 RPC 关**。
+
+##### P.2.3.d unit + e Quality Gate + f 风险锚点（同上全套）
+
+#### P.2.4 [commit (4/4)] cross-process e2e + summary
+
+##### P.2.4.a harness（复用 `tests/common/`）
+- 新 `tests/state_rpc_e2e.rs`（`[[test]] required-features=["client"]`，**A4 默认随 workspace 跑**）。
+- 复用 `common/`：`subprocess`（spawn s0/s1/gateway——**扩 gateway spawn helper 传 `--config`**）+ `fake_state::FakeStatePublisher::spawn`（AC-2 happy；AC-3 Unavailable = **不** spawn）+ `ready` + `case_ctx`。
+- **进程隔离（锁点 5 + 防 flake）**：distinct robot_id（`state_e2e`）+ distinct gateway port（`127.0.0.1:50061`，避 task_rpc_e2e 50051）+ GLOBAL_LOCK 串行 + `--test-threads=1`（沿 task_rpc_e2e）→ **P.3 D-P3**。
+
+##### P.2.4.b 测例（AC-2..AC-9）
+- AC-2 happy：FakeStatePublisher 喂固定 state → GetState → 字段等价（+ AC-7 stamp 透传）。
+- AC-3 三错误码（锁点 3）：缺/空 `InvalidArgument` / unknown `NotFound` / **声明但不启 FakeStatePublisher → `Unavailable`**（写实，同步 4）。**无 FP case**。
+- AC-4 节流 + AC-5 clamp：StreamState min_interval_ms=50 → 实测间隔判据（**P.3 D-P2 容差**）；<20 → clamp 20ms。
+- AC-6 auth（锁点 4）：**无 token + 有 token 两路断言同结果**；注释 + CHANGELOG 标非安全保证；**不**宣称 read_state cap enforce。
+- AC-9 多 hardware：2 hardware `--config`，请求第 3 个不存在 id → `NotFound`（禁 fallback）。
+
+##### P.2.4.c summary + CHANGELOG + CLAUDE.md
+- `docs/handoffs/v0.5_get_stream_state_summary.md` + CHANGELOG（design-freeze diff D3 + D10 `--config` 加法 + C1 延续）+ CLAUDE.md 状态 + handoffs README。
+
+##### P.2.4.d Quality Gate（候选 B 完结硬 gate；AC-Q 全集）
+- fmt + clippy + `cargo test --workspace`（含新 state_rpc_e2e 默认跑）+ 4 既有 smoke 0 退化 + cargo deny baseline（未新增 violation）+ schema_compat。
+
+##### P.2.4.e 风险锚点
+- robotctl 0 改（AC-8）/ S0·S1·design.md 0 改 / 既有 6 RPC + task_rpc_e2e 0 退化。
+
+### P.3 Plan 拍板项（reviewer Plan round 决定）
+
+| # | 拍板项 | 倾向 |
+|---|---|---|
+| D-P1 | config present 但 `[[hardware]]` 空是否允许 | **允许**（合法空配置；等价空池，非空 hardware_id 请求 NotFound；不 fail-fast）|
+| D-P2 | StreamState 节流 e2e 判据容差 | 固定窗口（如 600ms）内帧数 ≤ ⌈window/interval⌉+1，且相邻帧间隔 ≥ ~interval×0.8（吸收调度抖动）；具体数值 reviewer 拍 |
+| D-P3 | state_rpc_e2e 进程隔离值 | robot_id=`state_e2e` + port `127.0.0.1:50061`（避 task_rpc_e2e）+ GLOBAL_LOCK + --test-threads=1 |
+
+### P.4 Plan-Execute diff 登记（实施期填）
+
+（占位：实施中任何偏离 Plan 的点按 `#N | 阻断/非阻断 | 落点 | 描述` 登记，沿候选 A §P.4 体例。）
