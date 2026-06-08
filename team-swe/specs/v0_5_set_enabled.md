@@ -1,8 +1,17 @@
-# Spec · v0.5 候选 C — `SetEnabled` RPC（round 2）
+# Spec · v0.5 候选 C — `SetEnabled` RPC（round 3）
 
-> RIPER Spec round 2（round 1 D2/D4/D5 ACK + 4 语义阻断回修）。前置 =
-> [`team-swe/codemap/v0_5_set_enabled.md`](../codemap/v0_5_set_enabled.md)。
+> RIPER Spec round 3（round 1 D2/D4/D5 ACK + round 2 4 语义阻断 + round 3 2 执行级
+> 阻断回修）。前置 = [`team-swe/codemap/v0_5_set_enabled.md`](../codemap/v0_5_set_enabled.md)。
 > **不开实现。**
+
+## Spec round 3 amend 记录（2026-06-08；reviewer Spec round 2 复核后）
+
+reviewer：round 2 大方向已修；新暴露 2 执行级阻断（Plan/实施期直撞），已回修：
+
+| # | round 2 阻断 | 修订 |
+|---|---|---|
+| B5（D3d）| `RpcStatus::AdapterError` **不存在**（control-plane `RpcStatus` 只有 Unknown/Ok/FailedPrecondition/PermissionDenied/InvalidArgument/Internal/DeadlineExceeded/ResourceExhausted/Aborted，`clear_estop.fbs:118`，A1 锁）| disable adapter 失败 wire `RpcStatus = **Internal**`（adapter ack fail = daemon 内部执行失败，非 precondition）；`SetEnabledResponse` 另带 **domain `SetEnabledStatus`**（候选 C 自有 fbs enum，如 `AdapterError`）供审计；gateway `Internal → tonic::Code::Internal`。**不扩 A1 共享 `RpcStatus`** |
+| B6（D6）| auto_enable 按 resolved hardware_id，但 build_adapter 仍取 `.first()`（`s0_daemon.rs:1061`）→ CLI `--hardware-id right_arm` 时 auto_enable 读 right_arm 但 adapter 按 first（left_arm）→ D1/D6 不一致 | 加**单一 helper `resolve_hardware_section(cfg, hardware_id)`**：build_adapter + auto_enable **同段**；无匹配 → **fail-fast**。§影响范围 + AC-8 纳入 |
 
 ## Spec round 2 amend 记录（2026-06-08；reviewer Spec round 1 复核后）
 
@@ -18,7 +27,8 @@ reviewer ACK D2/D4/D5；D1/D3/D6/D7 各 1 语义阻断，已回修：
 ## What
 
 实现 design §5.3 的 `SetEnabled` 控制 RPC —— operator 显式 **enable/disable
-机器人**（S0 enable 状态机的首个 operator/RPC transport）：
+当前 S0 daemon / selected hardware instance**（S0 enable 状态机的首个 operator/RPC
+transport；范围限定见 D1）：
 
 - `SetEnabled(SetEnabledCommand{ meta, bool enabled })` → `Ack`（design §5.3 frozen）。
 - **additive**：proto method 8→9（既有 8 method 0 改）；归 **S0 control action**
@@ -34,8 +44,11 @@ reviewer ACK D2/D4/D5；D1/D3/D6/D7 各 1 语义阻断，已回修：
   `SetEnabledCommand{ CommandMeta meta = 1; bool enabled = 2; }`（头注 method 8→9）。
 - `crates/robot-msg/schemas/set_enabled.fbs`（**新**）：`SetEnabledRequest`（meta
   派生字段 + `role`〔audit〕+ `deadline_ns` + `idempotency`〔gateway 用〕+ **`dry_run`** +
-  `bool enabled`）+ `SetEnabledResponse`（`RpcStatus` + domain status）。沿
-  `clear_estop.fbs` 字段范式（`role` 仅 audit、S0 不授权）。
+  `bool enabled`）+ `SetEnabledResponse`（wire `RpcStatus`〔**复用 A1 共享 enum，
+  不扩**〕+ **domain `SetEnabledStatus`**〔候选 C 自有 enum：如 `Ok` /
+  `AdapterError` / `GuardRejected` / `LatchBlocked`，供审计区分，B5〕）。沿
+  `clear_estop.fbs` 字段范式（`role` 仅 audit、S0 不授权）。`SetEnabledStatus` 也
+  进 `schema_id`/`schema_lint` 不涉（它是 response 内 enum，非独立 schema_id）。
 - `crates/robot-msg/src/schema_id.rs`：`SCHEMA_SET_ENABLED_REQUEST = 0x0000_040D` /
   `SCHEMA_SET_ENABLED_RESPONSE = 0x0000_040E`（当前 max `SCHEMA_IK_PAYLOAD=0x040C`
   之后）+ 加进 **`SCHEMA_REGISTRY`**（`(u32,&str)` 升序列表，`schema_lint` 锁唯一
@@ -48,8 +61,10 @@ reviewer ACK D2/D4/D5；D1/D3/D6/D7 各 1 语义阻断，已回修：
   `Event::Disable`（effectful `Enable(false)`，**失败沿现有 `commit_fault(AdapterErr)`**
   机制，D3d/B1）+ **状态机 `Event::Disable` + transition**（state_machine.rs）+
   set_enabled action handler（含 dry_run precondition evaluator，D7/B4）+
-  `config_loader.rs` 加 **typed `auto_enable: Option<bool>`**（D6/B2）+ **s0_daemon
-  启动 auto-enable 按 resolved hardware_id 绑定 + 无匹配 fail-fast（D6/B2）**。
+  `config_loader.rs` 加 **typed `auto_enable: Option<bool>`**（D6/B2）+ **单一 helper
+  `resolve_hardware_section(cfg, hardware_id)`**（按 resolved hardware_id match
+  `[[hardware]].id`，无匹配 → fail-fast，B6）+ **`build_adapter` 与 auto-enable
+  改用同一 matched section**（修现有 `.first()` 错配，`s0_daemon.rs:1061`，B6）。
 - `docs/CHANGELOG.md`：登记（Q1 不加 hardware_id 故**不**触 design-freeze diff；
   SetEnabled write-RPC idempotency；auto_enable typed 字段 additive）。
 - e2e：cross-process（enable/disable happy + **disable adapter 失败→Fault** +
@@ -102,7 +117,7 @@ reviewer ACK D2/D4/D5；D1/D3/D6/D7 各 1 语义阻断，已回修：
 | (a) | 目标态 | **→ Safe**（复用 Safe，**不**新增 `Disabled` 子态；Safe 已是 torque-off 无运动态）|
 | (b) | OutputPolicy | **Disabled**（torque off；Safe 的 output policy）|
 | (c) | `AdapterNormalReq::Enable(false)` | **发**（disable 是 effectful，沿 enable 上扭对称；真 torque-off）|
-| (d) | adapter 失败映射（**B1 收紧**）| 沿**现有 effectful 机制**（`ipc_tick.rs:199`）：adapter `Enable(false)` ack 失败 → `commit_fault(FaultCode::AdapterErr)` + `OutputPolicy::Disabled` → S0 domain status → `RpcStatus::AdapterError`（/ `Internal`）→ tonic Code。**不返 Ack success**；**不**留原态、**不**自定义 handler（沿 plan_transition/pending，不扩范围）|
+| (d) | adapter 失败映射（**B1 + B5 收紧**）| 沿**现有 effectful 机制**（`ipc_tick.rs:199`）：adapter `Enable(false)` ack 失败 → `commit_fault(FaultCode::AdapterErr)` + `OutputPolicy::Disabled`。wire **`RpcStatus = Internal`**（adapter ack fail = daemon 内部执行失败，**非** precondition；`RpcStatus` **无** AdapterError，不扩 A1 共享 enum）+ `SetEnabledResponse` 带 **domain `SetEnabledStatus::AdapterError`** 供审计区分 → gateway `Internal → tonic::Code::Internal`。**不返 Ack success**；**不**留原态、**不**自定义 handler（沿 plan_transition/pending，不扩范围）|
 | (e) | latched-disable | **允许**（`hard_rt_ctrl:390` latch 下 `Enable(false)` 仍 `Submitted`；disable 一个 latched 机器人安全 + 显式；**不清 latch**）|
 
 - **transition 加**：`(Enabled, Disable)`→Safe（effectful `Enable(false)`）/
@@ -130,15 +145,22 @@ reviewer ACK D2/D4/D5；D1/D3/D6/D7 各 1 语义阻断，已回修：
 - **resolution 定义（B2）**：
   1. 加 **typed `auto_enable: Option<bool>`** 到 `HardwareSection`（`config_loader.rs`，
      additive 字段，**不**再走 extras）。
-  2. startup 按 **resolved `hardware_id`** match `[[hardware]].id` → 读该段
-     `auto_enable`。**缺省（None / 无字段）= true**（保留当前行为，既有 config 0
-     行为变化）。
+  2. **单一 helper `resolve_hardware_section(cfg, hardware_id)`**（B6）：按 resolved
+     `hardware_id` match `[[hardware]].id` → 返该段。startup 读该段 `auto_enable`，
+     **缺省（None）= true**（既有 config 0 行为变化）。
   3. **无匹配段**（CLI `--hardware-id` 不在 config）→ **启动 fail-fast**（exit，
      config/CLI mismatch；不静默 fallback）。
+- **B6 同步修 `build_adapter` 错配**：现有 `build_adapter` 在 --config 模式取
+  `.first()`（`s0_daemon.rs:1061`），与 resolved hardware_id 可能不一致（CLI
+  `--hardware-id right_arm` 但 adapter 按 first `left_arm`）。**`build_adapter` 改
+  用同一 `resolve_hardware_section` matched section** → adapter_kind / joints /
+  address / auto_enable **全来自同一段**，D1"selected hardware instance"与 D6
+  自洽。
 - `auto_enable=false` → 启动**不**自动 emit `Event::Enable`，留 Safe 等 operator
   `SetEnabled(true)`。让 SetEnabled 有意义（operator disable 后不被启动再 auto-enable）。
-- **风险低**：default-true 保既有；唯一 behavior 变化是 `auto_enable=false` 段
-  （当前无）。
+- **风险**：default-true 保既有 auto_enable 行为；`build_adapter` 改 matched section
+  对单 hardware config（first == matched）0 行为变化，仅多 hardware + CLI 选非 first
+  时修正错配（**新增回归须覆盖**）。
 
 ### D7（Q7 dry_run）⚠ **拍板**：**端到端**（杜绝候选 A "假 dry-run" 洞）
 
@@ -159,7 +181,7 @@ reviewer ACK D2/D4/D5；D1/D3/D6/D7 各 1 语义阻断，已回修：
   （`idempotency_key` fingerprint，沿 ClearEStop）；enable/disable 本身幂等，cache
   防重放副作用歧义。
 
-## Acceptance Criteria（round 2）
+## Acceptance Criteria（round 3）
 
 - **AC-1**：proto additive —— append `SetEnabled` + `SetEnabledCommand`（method
   8→9）；既有 8 method diff=0；fbs 0 退化（`schema_lint` + `cargo test -p
@@ -169,9 +191,10 @@ reviewer ACK D2/D4/D5；D1/D3/D6/D7 各 1 语义阻断，已回修：
 - **AC-3（disable happy + D3）**：Enabled → `SetEnabled(false)` → `Event::Disable`
   → adapter `Enable(false)` ack → Safe（OutputPolicy Disabled）；`Ack`；**estop_latch
   文件 0 改**（disable 不清/不置 latch）。
-- **AC-3b（disable adapter 失败，D3d / B1）**：Enabled → `SetEnabled(false)` →
+- **AC-3b（disable adapter 失败，D3d / B1 / B5）**：Enabled → `SetEnabled(false)` →
   adapter `Enable(false)` **ack 失败** → `commit_fault(AdapterErr)` + `Disabled` →
-  **返 `RpcStatus::AdapterError`（非 Ack success）**；state = Fault(AdapterErr)。
+  **wire `RpcStatus::Internal` + domain `SetEnabledStatus::AdapterError`（非 Ack
+  success）**→ gateway `tonic::Code::Internal`；state = Fault(AdapterErr)。
 - **AC-4（§6.7 #3 latch-blocked enable）**：estop_latched=true → `SetEnabled(true)`
   → `ready_guards_pass` 拒 → 留 Safe → 返 domain status（FailedPrecondition 类）；
   **latch 文件不变**。
@@ -187,6 +210,10 @@ reviewer ACK D2/D4/D5；D1/D3/D6/D7 各 1 语义阻断，已回修：
 - **AC-8（auto_enable resolution，D6 / B2）**：(i) `auto_enable=false` 的 resolved
   hardware 段 → 启动留 Safe（不自动 enable）；(ii) 缺省/true → 启动 auto-enable
   （既有行为）；(iii) CLI `--hardware-id` 无匹配 `[[hardware]].id` → **启动 fail-fast**。
+- **AC-8b（adapter section 一致，B6）**：多 hardware config + CLI `--hardware-id`
+  选**非 first** 段 → `build_adapter` 的 adapter_kind / joints / address **与**
+  auto_enable **来自同一 matched 段**（非 `.first()` 错配）；单 hardware（first ==
+  matched）0 行为变化。
 - **AC-9（Fault 拒 enable）**：Fault → `SetEnabled(true)` → 拒（需先 ClearError）。
 - **AC-Q**：fmt + clippy(-D warnings) + `cargo test --workspace` + 4 既有 smoke 0
   退化 + cross-process e2e + cargo deny baseline + fbs schema_lint。
@@ -201,5 +228,6 @@ A→B→C→D→E 硬序（候选 D EStop 不提前）。
 ## 后续（RIPER）
 
 Spec round 1 → reviewer round 1（D2/D4/D5 ACK + 4 语义阻断 B1-B4）✅ →
-**Spec round 2（本文，全吸收）→ 待 reviewer round 2 复核** → Plan → 实施。
+Spec round 2 → reviewer round 2（2 执行级阻断 B5 RpcStatus / B6 adapter 选段）✅ →
+**Spec round 3（本文，全吸收）→ 待 reviewer round 3 复核** → Plan → 实施。
 **本 round 不开实现。**
