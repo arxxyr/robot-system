@@ -10,6 +10,62 @@
 
 ---
 
+## 2026-06-08 · v0.5 候选 B GetState/StreamState（**状态：偏离登记**）
+
+### 背景
+
+候选 B 在 B4 frozen 6-RPC schema 上 **additive** 实现 design §5.3 的两条**只读**
+RPC（`GetState` / `StreamState`），method 6 → 8。经 RIPER Spec round 1-3 + Plan
+round 1-2 reviewer ACK + 4 段 feat land。封存详
+[`docs/handoffs/v0.5_get_stream_state_summary.md`](handoffs/v0.5_get_stream_state_summary.md)。
+
+### 偏离 1：design §5.3 `GetState(Empty)` → `GetState(GetStateRequest{hardware_id})`
+
+- **涉及小节**：design §5.3 frozen RPC schema（`rpc GetState (Empty) returns
+  (RobotState);`）。
+- **偏离**：实现期按**多 hardware 语义**把 `Empty` 改为**显式 hardware selector**
+  `GetState(GetStateRequest{ string hardware_id = 1; })`（必填非空）。多 hardware
+  下 `Empty` 歧义（返哪个 hardware？）；显式 selector 无歧义。
+- **约束**：`docs/00_design.md` §5.3 **文字不改**（走"要改走 CHANGELOG"路径）；实现
+  以本条 + `team-swe/specs/v0_5_get_stream_state.md` 为准。`StreamState` 同理
+  （`StreamRequest{hardware_id, min_interval_ms}`）。
+- **影响面**：proto additive（既有 6 method 0 改）；robotctl 0 改（候选 B 不加
+  get-state/stream-state 子命令）。
+
+### 偏离 2：gateway `--config <PATH>`（additive，D10）
+
+- gateway 加**可选** `--config`（robot config TOML）→ minimal local 解析
+  `[[hardware]].id` 建常驻 state 订阅池（GetState/StreamState 读源）。**缺省 = 空
+  state 池**（非空 hardware_id 请求 `NotFound`，缺/空 `InvalidArgument`）→ **B4
+  既有 clear-estop-only gateway 调用 0 破**。`[robot].id != --robot-id` 启动
+  fail-fast exit 2。**不** dep robot-s0、**不**抽共享 crate（守 S0/S1 daemon 0 改）。
+
+### 非安全保证延续（C1）
+
+- `GetStateRequest` / `StreamRequest` **不含 auth 字段**；服务端 **不读不校验**任何
+  metadata token（沿 TaskHandleRef read RPC 现状）。**无 token 与任意 token 结果
+  完全一致**。**不得**宣称 read RPC 已鉴权；`read_state` cap（design §5.4）**本版
+  不实现该安全属性**；后续 metadata auth 是独立候选 / round。
+
+### follow-up（PE3）
+
+- `crates/robot-rpc/src/state_pool.rs` subscriber 线程退出 `std::mem::forget(sub)`
+  **故意有界泄漏** iceoryx2 subscriber handle（iceoryx2 0.8.1 subscriber `Drop`
+  在 publisher 先退时访问已释放 shm SIGSEGV 的 workaround；每 config hardware 一个，
+  非 per-RPC；线程仍 stop+join）。**iceoryx2 升级后复核是否撤销**。
+
+### 不变量
+
+§6.7 五条**全保**（GetState/StreamState 只读，0 改任何 safety state / latch /
+EStop / output mode / fault）。B4 frozen 6-RPC wire schema 0 改。
+
+### 审阅人
+
+reviewer（RIPER：Spec round 1-3 + Plan round 1-2 + (1/4)-(4/4) 逐段 ACK；PE1/PE2/
+PE3 逐条登记复核）。
+
+---
+
 ## 2026-05-29 · v0.5 候选 A (1/5) robot-cli tonic client 依赖白名单更新（**状态：登记**）
 
 ### 背景

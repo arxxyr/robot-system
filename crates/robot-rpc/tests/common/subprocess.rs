@@ -289,13 +289,16 @@ pub fn build_s1_daemon_command(
     cmd
 }
 
-/// `robot_rpc_gateway` Command：4 args + `RUST_LOG=info`。
+/// `robot_rpc_gateway` Command：base 3 args + `RUST_LOG=info`；可选 `--config`
+/// （v0.5 候选 B (2/4) state 订阅池来源，D10）。`config_path = None` → 不传
+/// `--config`（B4 既有 task_rpc_e2e 行为不变）。
 #[must_use]
 pub fn build_gateway_command(
     bin_path: &Path,
     robot_id: &str,
     listen_addr: std::net::SocketAddr,
     roles_toml_path: &Path,
+    config_path: Option<&Path>,
 ) -> Command {
     let mut cmd = Command::new(bin_path);
     cmd.arg("--robot-id")
@@ -304,6 +307,9 @@ pub fn build_gateway_command(
         .arg(listen_addr.to_string())
         .arg("--rpc-roles-toml")
         .arg(roles_toml_path);
+    if let Some(cfg) = config_path {
+        cmd.arg("--config").arg(cfg);
+    }
     cmd.env("RUST_LOG", "info");
     cmd
 }

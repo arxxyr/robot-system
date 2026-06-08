@@ -345,11 +345,12 @@ daemon 0 改**（D10 gateway minimal local 解析 config，**不**抽 `robot-s0`
 
 Spec round 1 → reviewer round 1（D3/D1a/D4a/D5a/D3b 5 项拍板）✅ →
 Spec round 2 → reviewer round 2（3 阻断 + 2 同步修订）✅ →
-Spec round 3 → reviewer round 3 **ACK 进 Plan**（+ 非阻断文案收窄已修，commit
-`5df51ff`）✅ → Plan round 1 → reviewer Plan round 1（1 阻断 PB1 + 3 拍板
-PD1-3 + 1 非阻断 PN1）✅ → **Plan round 1 amend（本文，全吸收）→ 待 reviewer
-Plan Approved** → (1/4)..(4/4) 实施。**reviewer 明确"批准 Plan 后才进实现"**——
-Plan Approved 前不开 (1/4)。
+Spec round 3 → reviewer round 3 **ACK 进 Plan**（+ 非阻断文案收窄，`5df51ff`）✅ →
+Plan round 1 → reviewer Plan round 1（1 阻断 PB1 + 3 拍板 PD1-3 + 1 非阻断 PN1）✅ →
+Plan round 1 amend → reviewer **Plan Approved** ✅ →
+(1/4) `a010fe7` → (2/4) `f9728fa` → (3/4) `5e12096` → (4/4) `c3a2804`（逐段 ACK）✅
+→ **候选 B 完结**（summary/CHANGELOG/CLAUDE/README 收口）。`cargo test --workspace`
+1117 passed / 0 failed。**下一步 = 候选 C**（v0.5_entry.md A→B→C→D→E 硬序）。
 
 ## Plan
 
@@ -380,8 +381,11 @@ Plan Approved 前不开 (1/4)。
 | (3/4) | StreamState bridge + 节流（per-RPC tick task，无底层 subscriber）| `gateway.rs` + `src/state_pool.rs`（stream 侧）| feat 1 |
 | (4/4) | cross-process e2e（`tests/state_rpc_e2e.rs`）+ summary + CHANGELOG + CLAUDE.md | `tests/` + `docs/` | feat 1 + docs 1 |
 
-commit chain（hash 实施期填）：(1/4) `TBD` / (2/4) `TBD` / (3/4) `TBD` /
-(4/4) feat `TBD` + summary docs `TBD`。
+commit chain（实测 hash）：(1/4) feat `a010fe7`（+ PE1 `996864c` / PE2 `a43e580`
+docs）/ (2/4) feat `f9728fa`（+ PE3 `4220017` docs）/ (3/4) feat `5e12096` /
+(4/4) feat `c3a2804` + summary/CHANGELOG/CLAUDE/README 收口 docs。**候选 B
+完结** —— `cargo test --workspace` 1117 passed / 0 failed（state_rpc_e2e 6 +
+task_rpc_e2e 6）；详 [`docs/handoffs/v0.5_get_stream_state_summary.md`](../../docs/handoffs/v0.5_get_stream_state_summary.md)。
 
 #### P.1.1 reviewer Plan round 锁点对账（5 锁点）
 

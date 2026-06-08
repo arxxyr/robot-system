@@ -132,8 +132,9 @@ impl CaseCtx {
             .map_err(|e| BringUpError::Config(format!("write rpc_roles.toml: {e}")))?;
 
         // 1. spawn fake state（**先于** s1，保 anchor 5s 内拿到 stable bias）
-        let fake_state = FakeStatePublisher::spawn(&robot_id, HARDWARE_ID, JOINTS_COUNT, LAYOUT_ID)
-            .map_err(|e| BringUpError::FakeState(e.to_string()))?;
+        let fake_state =
+            FakeStatePublisher::spawn(&robot_id, HARDWARE_ID, JOINTS_COUNT, LAYOUT_ID, None)
+                .map_err(|e| BringUpError::FakeState(e.to_string()))?;
 
         // 2. locate s1_daemon binary
         let s1_bin = locate_test_bin("s1_daemon").map_err(BringUpError::LocateBin)?;
@@ -146,7 +147,9 @@ impl CaseCtx {
         let gateway_bin = locate_test_bin("robot_rpc_gateway").map_err(BringUpError::LocateBin)?;
         let mut gateway = SubprocessHandle::spawn(
             "gateway",
-            build_gateway_command(&gateway_bin, &robot_id, listen_addr, &roles_toml_path),
+            // task_rpc_e2e 不需 state 订阅池 → config_path = None（gateway --config
+            // 缺省，state RPC 全 NotFound，B4 行为不变）。
+            build_gateway_command(&gateway_bin, &robot_id, listen_addr, &roles_toml_path, None),
         )?;
 
         // 4. wait_ready 三段式

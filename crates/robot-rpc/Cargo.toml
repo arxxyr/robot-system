@@ -119,5 +119,14 @@ name = "task_rpc_e2e"
 path = "tests/task_rpc_e2e.rs"
 required-features = ["client"]
 
+[[test]]
+# v0.5 候选 B (4/4) GetState/StreamState cross-process e2e：同 task_rpc_e2e
+# 由 required-features = ["client"] 守门 → workspace feature unification 下
+# 默认随 `cargo test --workspace` 跑（A4）。gateway-only（不起 s1）：state
+# RPC 读 gateway 常驻 state 池（FakeStatePublisher 喂），不经 s1。
+name = "state_rpc_e2e"
+path = "tests/state_rpc_e2e.rs"
+required-features = ["client"]
+
 [lints]
 workspace = true

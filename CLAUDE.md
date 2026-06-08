@@ -16,17 +16,32 @@
 
 ```
 设计版本:  v0.1.2（冻结）
-实现阶段:  v0.5 —— 候选 A (operator CLI `robotctl` 工具化) ✅ **完结**（(1/5)-(5/5)
-           + dry-run fix；5 feat + 1 fix + 7 docs = 13 commit，`809575f` → `25c2feb`）。
-           crates/robot-cli 从 3 个 iceoryx2 直连子命令扩成 +7 个 tonic gRPC operator
-           子命令（clear-estop 四道闸 / clear-error / get-task-status / cancel-task /
-           stream-events / invoke scripted / invoke ik）+ robotctl_smoke 12-phase
-           cross-process e2e（--phase all 12/12 PASS）。**0 改 frozen schema / 0 改
-           §6.7 / 0 改 B4 wire 契约**。详 docs/handoffs/v0.5_operator_cli_summary.md。
-           **三条非安全保证必读**：A4（robot-cli dep robot-rpc/client → task_rpc_e2e
-           默认随 workspace 跑）/ C1（read RPC token gate 仅 client-side、不上 wire、
-           服务端 v0.3 unauthenticated）/ D6（--dry-run 仅 clear-estop 端到端支持）。
-           下一步 = 候选 B (GetState/StreamState RPC)，A→B→C→D→E 硬序（v0.5_entry.md）。
+实现阶段:  v0.5 —— 候选 B (GetState/StreamState 只读 RPC) ✅ **完结**（RIPER：CodeMap
+           + Spec r1-3 + Plan r1-2 + 4 段 feat；method 6→8 additive，`a010fe7` →
+           `c3a2804`）。proto append 2 rpc + 3 message + 4 enum mirror（state_convert.rs
+           fbs→proto 纯转换器）+ gateway 常驻 per-hardware S0 state 订阅池 + cache
+           （state_pool.rs；**唯一**底层 subscriber，GetState/StreamState 只读 cache、
+           **不**新建 per-RPC subscriber）+ `--config` 解析 [[hardware]].id（D10，0 dep
+           robot-s0）+ StreamState 节流（D5a：0→50ms / <20→20ms floor）+ state_rpc_e2e
+           6 test（gateway-only，不起 s1）。**0 改 B4 wire 6 method / 0 触 §6.7（只读）/
+           0 改 robotctl / 0 改 design.md / 0 改 S0·S1 daemon**。详
+           docs/handoffs/v0.5_get_stream_state_summary.md。
+           **design-freeze diff + 4 PE 必读**：D3（`GetState(Empty)`→`GetStateRequest
+           {hardware_id}` 走 CHANGELOG）/ PE1（fbs enum newtype struct → variant-count
+           lock 防漂移）/ PE2（proto-additive 强制 gateway graceful unimplemented 占位
+           → 真 handler 2/4+3/4）/ PE3（⚠ state_pool `mem::forget(sub)` 有界泄漏 =
+           iceoryx2 0.8.1 Drop SIGSEGV workaround，**iceoryx2 升级后复核撤销**）。
+           **C1 延续非安全保证**：read RPC 无 auth 字段、服务端不读不校验 token、
+           read_state cap 不实现。cargo test --workspace 1117 PASS / 0 FAIL
+           （state_rpc_e2e 6 + task_rpc_e2e 6）。下一步 = 候选 C，A→B→C→D→E 硬序
+           （v0.5_entry.md）。
+
+v0.5 候选 A: operator CLI (`robotctl`) ✅ 完结（5 feat + 1 fix + 7 docs = 13 commit，
+           `809575f` → `25c2feb`）；crates/robot-cli +7 tonic gRPC operator 子命令 +
+           robotctl_smoke 12/12。三条非安全保证：A4（robot-cli dep robot-rpc/client →
+           task_rpc_e2e 默认随 workspace 跑）/ C1（read RPC token gate 仅 client-side）/
+           D6（--dry-run 仅 clear-estop 端到端）。详
+           docs/handoffs/v0.5_operator_cli_summary.md。
 
 v0.4 收口:  候选 3 (per-ActionId pubsub cleanup) ✅ + 候选 1 (Scripted backend) ✅
            + 候选 2 round 1 (robot-kinematics trait crate) ✅

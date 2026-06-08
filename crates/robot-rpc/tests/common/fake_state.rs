@@ -55,6 +55,10 @@ impl FakeStatePublisher {
         hardware_id: &str,
         joints: usize,
         layout_id: u64,
+        // **v0.5 候选 B (4/4)**：`Some(ns)` → 每帧用固定 stamp（GetState/StreamState
+        // 确定性断言 stamp 透传，AC-7）；`None` → `clock.now()`（task_rpc_e2e 既有
+        // 行为，s1 anchor 需 fresh stamp）。
+        fixed_stamp_ns: Option<u64>,
     ) -> std::io::Result<Self> {
         let topic = format!("/{robot_id}/s0/{hardware_id}/state");
         let topic_owned = topic.clone();
@@ -99,7 +103,7 @@ impl FakeStatePublisher {
                 let clock = SystemClock::new();
                 let mut seq: u64 = 0;
                 while !stop_clone.load(Ordering::Acquire) {
-                    let stamp_ns = clock.now().0;
+                    let stamp_ns = fixed_stamp_ns.unwrap_or_else(|| clock.now().0);
                     let body = build_joint_state(layout_id, stamp_ns, &positions, &[], &[], "");
                     if let Ok(mut writer) = publisher.loan(body.len() + 1024) {
                         writer.set_seq(seq);
