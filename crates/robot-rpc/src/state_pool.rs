@@ -1,0 +1,271 @@
+//! `robot-rpc::state_pool` —— v0.5 候选 B (2/4)：gateway 常驻 per-hardware S0
+//! state 订阅池 + latest-state cache。
+//!
+//! ## 角色（D4 常驻订阅池）
+//!
+//! gateway 启动时按 `--config` 声明的每个 `[[hardware]].id`（D10）建一条
+//! **常驻** iceoryx2 subscriber 线程，订阅 `/<robot_id>/s0/<hardware_id>/state`
+//! 上 S0 发布的 fbs `JointState`，循环读 → 把最新一帧的 **owned body bytes**
+//! 写进 [`StateCache`]（keep-last）。
+//!
+//! - **唯一底层 subscriber 来源**（reviewer Plan round 1 锁点 2）：`GetState`
+//!   ((2/4)) 与 `StreamState` ((3/4)) 都**只读 cache**，**不**为每 RPC 新建
+//!   底层 iceoryx2 subscriber。
+//! - **convert-on-read（省高频转换）**：cache 存 owned body bytes（`Vec<u8>`），
+//!   读路径才 `flatbuffers::root::<JointState>` + `state_convert`（不在 publish
+//!   rate 上转换）。
+//! - **错误码三态**（D9）：cache 区分"未知 hardware"（key 不在池 → NotFound）
+//!   / "已知但无首帧"（key 在但值 None → Unavailable）/ "有首帧"（Frame → Ok）。
+//!
+//! ## 生命周期
+//!
+//! [`StatePool::spawn`] 在 gateway 启动时建；[`StatePool::stop`] 在 tonic
+//! server 退出**之后**调（沿 B4 shutdown 顺序，与 5 个 rr_io_thread 一并
+//! stop+join）。
+//!
+//! ## 线程模型（沿 `tests/common/fake_state.rs` + s0 daemon 先例）
+//!
+//! 每 hardware 一条 std::thread，**线程内** create iceoryx2 Node + subscriber
+//! （iceoryx2 句柄 !Send，必须 owner 线程内 create + `Box::leak` Node 保活）。
+//! `stop` AtomicBool 触发退出。退出时 `mem::forget` subscriber 跳过 iceoryx2
+//! 0.8.1 的 subscriber Drop（publisher 可能已先退 → 访问已释放 shm SIGSEGV；
+//! 同 `robotctl watch` 已记录的规避；gateway shutdown ≈ 进程退出，OS 回收 shm）。
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
+
+use iceoryx2::prelude::NodeBuilder;
+use iceoryx2::service::ipc::Service as IxService;
+use robot_msg::markers;
+use robot_transport::iceoryx2::{TopicClass, subscriber as open_sub};
+use robot_transport::traits::LatestSubscriber;
+
+/// subscriber 线程 poll 间隔。keep-last 语义下只取最新帧，2ms（500Hz）poll
+/// 远高于 S0 publish rate，cache 至多 2ms 陈旧（vs StreamState 默认 50ms tick
+/// 可忽略），CPU 占用低。
+const POLL_INTERVAL: Duration = Duration::from_millis(2);
+
+/// `StateCache::snapshot` 结果——直接对应 D9 三态错误码口径。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateLookup {
+    /// `hardware_id` 不在 `--config` 声明的 hardware 池 → `NotFound`（禁
+    /// fallback，AC-9）。
+    UnknownHardware,
+    /// `hardware_id` 已知但常驻订阅尚未拿到首帧 → `Unavailable`。
+    NoFrame,
+    /// 有首帧——owned `JointState` body bytes（读路径再 root + convert）。
+    Frame(Vec<u8>),
+}
+
+/// per-hardware latest-state cache。key 集在 [`StateCache::new`] 时按 config
+/// 固定（之后不增删 key）；每 value 是 keep-last owned body bytes 的内部可变槽。
+#[derive(Debug, Default)]
+pub struct StateCache {
+    per_hw: HashMap<String, Mutex<Option<Vec<u8>>>>,
+}
+
+impl StateCache {
+    /// 按 config 声明的 hardware id 列表建固定 key 集（每 key 初值 = 无首帧）。
+    #[must_use]
+    pub fn new(hardware_ids: &[String]) -> Self {
+        let per_hw = hardware_ids
+            .iter()
+            .map(|id| (id.clone(), Mutex::new(None)))
+            .collect();
+        Self { per_hw }
+    }
+
+    /// subscriber 线程调：把某 hardware 的最新 body bytes 写进 cache（keep-last
+    /// 覆盖）。`hardware_id` 不在池则静默忽略（不会发生——线程只为池内 id 建）。
+    pub fn store(&self, hardware_id: &str, body_bytes: Vec<u8>) {
+        if let Some(slot) = self.per_hw.get(hardware_id) {
+            let mut guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
+            *guard = Some(body_bytes);
+        }
+    }
+
+    /// `GetState` / `StreamState` 读路径调：按 D9 三态返回。
+    #[must_use]
+    pub fn snapshot(&self, hardware_id: &str) -> StateLookup {
+        match self.per_hw.get(hardware_id) {
+            None => StateLookup::UnknownHardware,
+            Some(slot) => {
+                let guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
+                match &*guard {
+                    Some(bytes) => StateLookup::Frame(bytes.clone()),
+                    None => StateLookup::NoFrame,
+                }
+            }
+        }
+    }
+}
+
+/// 常驻 per-hardware state 订阅池 handle。owner = [`crate::gateway`]；shutdown
+/// 时 [`StatePool::stop`] 一键 stop+join 全部 subscriber 线程。
+pub struct StatePool {
+    handles: Vec<JoinHandle<()>>,
+    stop: Arc<AtomicBool>,
+}
+
+impl StatePool {
+    /// 按 `hardware_ids` 起 N 条常驻 subscriber 线程，写进 `cache`。
+    ///
+    /// 每条线程 ready（subscriber open 成功）后才登记；任一 hardware 的
+    /// subscriber open 失败 → stop+join 已起线程 → 返 `Err`（gateway 启动
+    /// fail-fast，沿 rr_io_thread spawn 回滚先例）。`hardware_ids` 空 → 返
+    /// 空池（合法，D-P1：`--config` 无 hardware 等价无 state 池）。
+    ///
+    /// # Errors
+    ///
+    /// - 某 hardware subscriber open 失败（iceoryx2 service create / 配额等）。
+    /// - 线程 spawn 失败（罕见）。
+    pub fn spawn(
+        robot_id: &str,
+        hardware_ids: &[String],
+        cache: &Arc<StateCache>,
+    ) -> std::io::Result<Self> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut handles: Vec<JoinHandle<()>> = Vec::with_capacity(hardware_ids.len());
+
+        for hw in hardware_ids {
+            let topic = format!("/{robot_id}/s0/{hw}/state");
+            let topic_for_thread = topic.clone();
+            let hw_owned = hw.clone();
+            let stop_clone = Arc::clone(&stop);
+            let cache_clone = Arc::clone(cache);
+            let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<bool>(0);
+
+            let handle = thread::Builder::new()
+                .name(format!("state_pool_{hw}"))
+                .spawn(move || {
+                    let node = match NodeBuilder::new().create::<IxService>() {
+                        Ok(n) => n,
+                        Err(e) => {
+                            eprintln!("[state_pool] NodeBuilder create failed ({hw_owned}): {e:?}");
+                            let _ = ready_tx.send(false);
+                            return;
+                        }
+                    };
+                    let mut sub = match open_sub::<markers::JointState>(
+                        &node,
+                        &topic_for_thread,
+                        TopicClass::S0State,
+                    ) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("[state_pool] open_sub failed for {topic_for_thread}: {e:?}");
+                            let _ = ready_tx.send(false);
+                            return;
+                        }
+                    };
+                    // node 持 subscriber 内部 shm fd；leak 让其整生命周期不被 drop
+                    // （同 fake_state / daemon leak 模式）。
+                    Box::leak(Box::new(node));
+                    let _ = ready_tx.send(true);
+                    drop(ready_tx);
+
+                    while !stop_clone.load(Ordering::Acquire) {
+                        // 有新帧 → 拷贝 raw body bytes（= FrameHeader.body_size）进
+                        // cache（读路径再 root + convert，convert-on-read）；无新帧 /
+                        // 读错误 → 不进 if → 保留旧 cache（keep-last 持久）。
+                        if let Ok(Some(lease)) = sub.latest()
+                            && let Ok(view) = lease.view()
+                        {
+                            cache_clone.store(&hw_owned, view.body.raw().to_vec());
+                        }
+                        thread::sleep(POLL_INTERVAL);
+                    }
+                    // 跳过 iceoryx2 0.8.1 subscriber Drop（publisher 可能已先退 →
+                    // SIGSEGV 规避；进程退出时 OS 回收 shm）。
+                    std::mem::forget(sub);
+                })?;
+
+            if let Ok(true) = ready_rx.recv() {
+                handles.push(handle);
+            } else {
+                // 该 hardware subscriber open 失败 → 回滚已起线程 → fail-fast。
+                stop.store(true, Ordering::Release);
+                for h in handles {
+                    let _ = h.join();
+                }
+                let _ = handle.join();
+                return Err(std::io::Error::other(format!(
+                    "state_pool: failed to open subscriber for hardware '{hw}' (topic {topic})"
+                )));
+            }
+        }
+
+        Ok(Self { handles, stop })
+    }
+
+    /// 信号 stop + join 全部 subscriber 线程。tonic server 退出**之后**调
+    /// （沿 B4 shutdown 顺序）。
+    pub fn stop(self) {
+        self.stop.store(true, Ordering::Release);
+        for h in self.handles {
+            let _ = h.join();
+        }
+    }
+}
+
+// ============================================================================
+// Tests（StateCache 纯逻辑；StatePool 线程 + iceoryx2 由 (4/4) cross-process
+// e2e 覆盖）
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_hardware_when_not_in_pool() {
+        let cache = StateCache::new(&["arm".to_string()]);
+        assert_eq!(cache.snapshot("base"), StateLookup::UnknownHardware);
+    }
+
+    #[test]
+    fn no_frame_before_first_store() {
+        let cache = StateCache::new(&["arm".to_string()]);
+        assert_eq!(cache.snapshot("arm"), StateLookup::NoFrame);
+    }
+
+    #[test]
+    fn frame_after_store() {
+        let cache = StateCache::new(&["arm".to_string()]);
+        cache.store("arm", vec![1, 2, 3]);
+        assert_eq!(cache.snapshot("arm"), StateLookup::Frame(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn store_keeps_last() {
+        let cache = StateCache::new(&["arm".to_string()]);
+        cache.store("arm", vec![1]);
+        cache.store("arm", vec![2, 2]);
+        assert_eq!(cache.snapshot("arm"), StateLookup::Frame(vec![2, 2]));
+    }
+
+    #[test]
+    fn store_unknown_hardware_is_noop() {
+        let cache = StateCache::new(&["arm".to_string()]);
+        cache.store("base", vec![9]);
+        assert_eq!(cache.snapshot("base"), StateLookup::UnknownHardware);
+        assert_eq!(cache.snapshot("arm"), StateLookup::NoFrame);
+    }
+
+    #[test]
+    fn empty_pool_all_unknown() {
+        let cache = StateCache::new(&[]);
+        assert_eq!(cache.snapshot("anything"), StateLookup::UnknownHardware);
+    }
+
+    #[test]
+    fn multi_hardware_isolated() {
+        let cache = StateCache::new(&["arm".to_string(), "base".to_string()]);
+        cache.store("arm", vec![7]);
+        assert_eq!(cache.snapshot("arm"), StateLookup::Frame(vec![7]));
+        assert_eq!(cache.snapshot("base"), StateLookup::NoFrame);
+    }
+}

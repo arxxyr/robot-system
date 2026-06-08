@@ -1891,6 +1891,7 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
             clock: Arc::new(SystemClock),
             rr_timeout_grace_ms: 50,
             shutdown_rx,
+            state_cache: std::sync::Arc::new(crate::state_pool::StateCache::new(&[])),
         };
 
         // payload = MAX_SCRIPTED_PAYLOAD_BYTES + 1 byte（刚好超 gate 1）。
@@ -1991,6 +1992,7 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
             clock: Arc::new(SystemClock),
             rr_timeout_grace_ms: 50,
             shutdown_rx,
+            state_cache: std::sync::Arc::new(crate::state_pool::StateCache::new(&[])),
         };
 
         // kind = HoldPose（NOT Scripted）→ 不触发 gate 1 payload cap。
@@ -2107,6 +2109,7 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
             clock: Arc::new(SystemClock),
             rr_timeout_grace_ms: 50, // 跟 timeout_ms 一起 ≤ 200ms 让 await 快速 timeout
             shutdown_rx,
+            state_cache: std::sync::Arc::new(crate::state_pool::StateCache::new(&[])),
         };
 
         // 构造合法 maintainer ClearErrorCommand，timeout_ms=100ms 让 handler

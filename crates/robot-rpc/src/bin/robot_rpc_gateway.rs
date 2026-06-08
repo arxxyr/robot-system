@@ -35,6 +35,7 @@
 //! ```text
 //! robot_rpc_gateway --robot-id <ID> \
 //!                   --rpc-roles-toml <PATH> \
+//!                   [--config <PATH>] \           # v0.5 候选 B：state 订阅池来源
 //!                   --listen-addr 127.0.0.1:50051 \
 //!                   --idempotency-ttl-secs 300 \
 //!                   --idempotency-max-entries 4096 \
@@ -44,9 +45,10 @@
 //! ### 退出码
 //!
 //! - `0`：graceful shutdown（SIGINT/SIGTERM 触发后 tonic server 干净退出）。
-//! - `1`：tonic server 启动失败 / `rr_io_thread` spawn 失败 / 运行期错。
+//! - `1`：tonic server 启动失败 / `rr_io_thread` spawn 失败 / `state_pool`
+//!   spawn 失败 / 运行期错。
 //! - `2`：CLI 参数解析失败 / `--listen-addr` 非 loopback / `--rpc-roles-toml`
-//!   加载失败。
+//!   加载失败 / `--config` 加载解析失败 / `[robot].id` != `--robot-id`。
 
 #![cfg(target_os = "linux")]
 // Bin doc 块中文 identifier-like 字串（ClearEStop / `RpcRole` /
@@ -55,7 +57,7 @@
 #![allow(clippy::doc_markdown)]
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use robot_core::time::SystemClock;
@@ -78,6 +80,61 @@ struct Args {
     idempotency_max_entries: usize,
     rr_timeout_grace_ms: u64,
     rpc_roles_toml: PathBuf,
+    /// **v0.5 候选 B (2/4)**：`--config <PATH>` robot config TOML（可选）。
+    /// present → minimal local 解析 `[[hardware]].id` 喂进 state 订阅池（D10）；
+    /// 缺省 → 空 state 池（GetState/StreamState **非空** hardware_id 请求返
+    /// `NotFound`，缺/空 hardware_id 仍先 `InvalidArgument`；B4 既有调用 0 破）。
+    config: Option<PathBuf>,
+}
+
+/// **v0.5 候选 B (2/4)**：`--config` 的**宽松** minimal 视图——只取 `[robot].id`
+/// 与 `[[hardware]].id` 两项。serde 默认忽略未知字段，故同一份 robot config TOML
+/// （s1_daemon 已吃的那份）可直接喂入，其余字段（adapter / joints / s1.profile
+/// 等）全忽略。**不** dep robot-s0、**不**抽共享 crate（D10 / 守 S0/S1 0 改）。
+#[derive(Debug, serde::Deserialize)]
+struct GatewayRobotConfig {
+    robot: RobotIdSection,
+    #[serde(default)]
+    hardware: Vec<HardwareIdSection>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RobotIdSection {
+    id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct HardwareIdSection {
+    id: String,
+}
+
+/// 读 `--config` → 解析 → 校验 `[robot].id == --robot-id` → 返
+/// `[[hardware]].id` 列表（state 订阅池来源，D10）。
+///
+/// 全部错误（读失败 / TOML 语法错 / 缺 `[robot].id` / id 错配）→ `Err(String)`
+/// → main 退出码 **2**（config 类，沿 `--rpc-roles-toml` load fail 同路径）。
+/// `[[hardware]]` 空 → 返空列表（合法，D-P1）。
+fn load_state_hardware_ids(config_path: &Path, robot_id: &str) -> Result<Vec<String>, String> {
+    let text = std::fs::read_to_string(config_path)
+        .map_err(|e| format!("--config read failed ({}): {e}", config_path.display()))?;
+    parse_state_hardware_ids(&text, robot_id)
+        .map_err(|e| format!("--config ({}): {e}", config_path.display()))
+}
+
+/// 纯解析（无文件 I/O，可单测）：TOML text + robot_id → `[[hardware]].id` 列表。
+///
+/// 错误：TOML 语法错 / 缺 `[robot].id` / `[robot].id != robot_id`。`[[hardware]]`
+/// 空 → 空列表（合法，D-P1）。
+fn parse_state_hardware_ids(toml_text: &str, robot_id: &str) -> Result<Vec<String>, String> {
+    let parsed: GatewayRobotConfig =
+        toml::from_str(toml_text).map_err(|e| format!("TOML parse failed: {e}"))?;
+    if parsed.robot.id != robot_id {
+        return Err(format!(
+            "[robot].id '{}' != --robot-id '{}' (config/flag mismatch; 会订阅错 topic)",
+            parsed.robot.id, robot_id
+        ));
+    }
+    Ok(parsed.hardware.into_iter().map(|h| h.id).collect())
 }
 
 impl Args {
@@ -88,6 +145,7 @@ impl Args {
         let mut idempotency_max_entries: usize = 4096;
         let mut rr_timeout_grace_ms: u64 = 500;
         let mut rpc_roles_toml: Option<PathBuf> = None;
+        let mut config: Option<PathBuf> = None;
 
         let raw: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
@@ -133,6 +191,11 @@ impl Args {
                     let val = raw.get(i).ok_or("--rpc-roles-toml requires value")?;
                     rpc_roles_toml = Some(PathBuf::from(val));
                 }
+                "--config" => {
+                    i += 1;
+                    let val = raw.get(i).ok_or("--config requires value")?;
+                    config = Some(PathBuf::from(val));
+                }
                 "--help" | "-h" => return Err("HELP".to_string()),
                 other => return Err(format!("unknown CLI arg: {other}")),
             }
@@ -152,6 +215,7 @@ impl Args {
             idempotency_max_entries,
             rr_timeout_grace_ms,
             rpc_roles_toml,
+            config,
         })
     }
 }
@@ -171,6 +235,12 @@ OPTIONS:
                                    `clear_estop` capability **仅** maintainer
                                    / admin（reviewer A1-1 拍板硬边界；load
                                    时 check_clear_estop_invariant 守门）。
+  --config <PATH>                  robot config TOML（可选；v0.5 候选 B）。present
+                                   → minimal 解析 [[hardware]].id 建常驻 S0 state
+                                   订阅池（GetState/StreamState 读源）。[robot].id
+                                   必须 == --robot-id（错配拒启动 exit 2）。缺省
+                                   → 空 state 池（GetState/StreamState 非空
+                                   hardware_id 请求返 NotFound；B4 既有调用 0 破）。
   --listen-addr <ADDR>             gRPC server bind 地址。默认 127.0.0.1:50051。
                                    **必须 loopback**（127.0.0.0/8 或 ::1）；
                                    0.0.0.0 / 外网地址直接拒启动（v0.3
@@ -186,8 +256,8 @@ OPTIONS:
 
 退出码:
   0  graceful shutdown
-  1  tonic server 启动失败 / rr_io_thread spawn 失败 / 运行期错
-  2  CLI 参数解析失败 / listen-addr 非 loopback / rpc-roles-toml 加载失败
+  1  tonic server 启动失败 / rr_io_thread spawn 失败 / state_pool spawn 失败 / 运行期错
+  2  CLI 参数解析失败 / listen-addr 非 loopback / rpc-roles-toml 加载失败 / --config 加载解析失败 / [robot].id != --robot-id
 "
     );
 }
@@ -196,6 +266,7 @@ OPTIONS:
 // main
 // ============================================================================
 
+#[allow(clippy::too_many_lines)] // main 含 8-variant GatewayError exit-code 大 match
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let _ = robot_logging::init();
@@ -238,12 +309,38 @@ async fn main() {
         }
     };
 
+    // ─── v0.5 候选 B (2/4)：--config → state 订阅池 hardware id 列表（D10）。
+    //     用 &args.robot_id（cfg 构造后 robot_id 被 move）。 ───
+    let state_hardware_ids = if let Some(path) = &args.config {
+        match load_state_hardware_ids(path, &args.robot_id) {
+            Ok(ids) => {
+                tracing::info!(
+                    config = %path.display(),
+                    hardware_count = ids.len(),
+                    "loaded state subscription pool hardware ids from --config"
+                );
+                ids
+            }
+            Err(msg) => {
+                tracing::error!(error = %msg, "fatal: --config load failed");
+                std::process::exit(2);
+            }
+        }
+    } else {
+        tracing::info!(
+            "no --config; state subscription pool empty (GetState/StreamState \
+             非空 hardware_id 请求返 NotFound)"
+        );
+        Vec::new()
+    };
+
     let cfg = GatewayConfig {
         listen_addr: args.listen_addr,
         robot_id: args.robot_id,
         idempotency_ttl_secs: args.idempotency_ttl_secs,
         idempotency_max_entries: args.idempotency_max_entries,
         rr_timeout_grace_ms: args.rr_timeout_grace_ms,
+        state_hardware_ids,
     };
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -289,6 +386,10 @@ async fn main() {
             tracing::error!(error = ?e, "fatal: rr_io_thread spawn failed");
             std::process::exit(1);
         }
+        Err(GatewayError::StatePoolSpawn(e)) => {
+            tracing::error!(error = ?e, "fatal: state_pool spawn failed");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -316,4 +417,63 @@ fn spawn_signal_handler(shutdown_tx: watch::Sender<bool>) {
         }
         let _ = shutdown_tx.send(true);
     });
+}
+
+// ============================================================================
+// Tests（--config 纯解析；exit code 路径 + state_pool 由 (4/4) e2e 覆盖）
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::parse_state_hardware_ids;
+
+    const SAMPLE: &str = r#"
+[robot]
+id = "rid"
+config_version = "0.3.0"
+
+[[hardware]]
+id = "arm"
+adapter = "mock_hard_rt"
+joints = ["j1", "j2"]
+
+[[hardware]]
+id = "base"
+adapter = "mock_omni3"
+
+[s1.profile]
+backends = ["mock_dwell"]
+"#;
+
+    #[test]
+    fn parses_hardware_ids_in_order_ignoring_unknown_fields() {
+        let ids = parse_state_hardware_ids(SAMPLE, "rid").unwrap();
+        assert_eq!(ids, vec!["arm".to_string(), "base".to_string()]);
+    }
+
+    #[test]
+    fn empty_hardware_is_ok_empty_list() {
+        let toml = "[robot]\nid = \"rid\"\nconfig_version = \"0.3.0\"\n";
+        let ids = parse_state_hardware_ids(toml, "rid").unwrap();
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn robot_id_mismatch_is_err() {
+        let err = parse_state_hardware_ids(SAMPLE, "other").unwrap_err();
+        assert!(err.contains("!= --robot-id"), "got: {err}");
+    }
+
+    #[test]
+    fn missing_robot_section_is_toml_err() {
+        let toml = "[[hardware]]\nid = \"arm\"\nadapter = \"x\"\n";
+        let err = parse_state_hardware_ids(toml, "rid").unwrap_err();
+        assert!(err.contains("TOML parse failed"), "got: {err}");
+    }
+
+    #[test]
+    fn invalid_toml_is_err() {
+        let err = parse_state_hardware_ids("not = valid = toml", "rid").unwrap_err();
+        assert!(err.contains("TOML parse failed"), "got: {err}");
+    }
 }

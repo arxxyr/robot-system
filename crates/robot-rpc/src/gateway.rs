@@ -82,7 +82,7 @@ use iceoryx2::service::ipc::Service as IxService;
 use robot_core::time::RobotClock;
 use robot_msg::build_helpers::build_clear_estop_request;
 use robot_msg::markers;
-use robot_msg::msg::{ClearEStopResponse as FbResp, RpcRole};
+use robot_msg::msg::{ClearEStopResponse as FbResp, JointState, RpcRole};
 use robot_transport::iceoryx2::request_response::{Iceoryx2RrClient, rr_client};
 use thiserror::Error;
 use tokio::sync::watch;
@@ -100,6 +100,8 @@ use crate::proto::{
 use crate::rr_io_thread::{
     RrForwardRequest, RrIoThreadConfig, RrIoThreadHandle, spawn_rr_io_thread,
 };
+use crate::state_convert::joint_state_fb_to_robot_state;
+use crate::state_pool::{StateCache, StateLookup, StatePool};
 
 // ============================================================================
 // GatewayConfig
@@ -131,6 +133,13 @@ pub struct GatewayConfig {
     /// gateway 过早 `DeadlineExceeded` 会制造"副作用已发生但客户端以为
     /// 失败"的歧义。CLI `--rr-timeout-grace-ms` 覆盖。
     pub rr_timeout_grace_ms: u64,
+
+    /// **v0.5 候选 B (2/4)**：要建常驻 state 订阅池的 hardware id 列表（来源 =
+    /// bin `--config <PATH>` 解析的 `[[hardware]].id`，D10）。每个 id 对应一条
+    /// `/<robot_id>/s0/<id>/state` 常驻 subscriber。**空列表合法**（D-P1：无
+    /// `--config` / 无 `[[hardware]]` → 空 state 池 → 所有非空 hardware_id 请求
+    /// `NotFound`；B4 既有 clear-estop-only 调用 0 破）。
+    pub state_hardware_ids: Vec<String>,
 }
 
 impl GatewayConfig {
@@ -144,6 +153,7 @@ impl GatewayConfig {
             idempotency_ttl_secs: 300,
             idempotency_max_entries: 4096,
             rr_timeout_grace_ms: 500,
+            state_hardware_ids: Vec::new(),
         }
     }
 
@@ -174,6 +184,11 @@ impl GatewayConfig {
         if self.robot_id.is_empty() {
             return Err(ConfigError::EmptyRobotId);
         }
+        // state_hardware_ids 整体空合法（D-P1）；但单个 id 不得为空串（会构出
+        // 非法 topic `/<robot_id>/s0//state`）。
+        if self.state_hardware_ids.iter().any(String::is_empty) {
+            return Err(ConfigError::EmptyStateHardwareId);
+        }
         Ok(())
     }
 }
@@ -196,6 +211,9 @@ pub enum ConfigError {
 
     #[error("robot_id must be non-empty (用于构造 iceoryx2 RR topic)")]
     EmptyRobotId,
+
+    #[error("state_hardware_ids 含空 id (会构出非法 topic /<robot_id>/s0//state)")]
+    EmptyStateHardwareId,
 }
 
 // ============================================================================
@@ -288,6 +306,12 @@ pub struct GatewayHandlerState {
     /// rr_io_thread 在 tonic 退出之后才 stop/join（reviewer (2/3-b2-1)
     /// 关键边界）。
     pub shutdown_rx: watch::Receiver<bool>,
+
+    /// **v0.5 候选 B (2/4)**：常驻 per-hardware S0 state cache（[`StatePool`]
+    /// 的 subscriber 线程写，`GetState` / `StreamState` handler 只读）。`Arc`
+    /// 让 handler 与 pool 线程共享同一份 cache。**唯一**底层 subscriber 来源
+    /// 在 [`StatePool`]；handler **不**新建 subscriber（reviewer Plan 锁点 2）。
+    pub state_cache: Arc<StateCache>,
 }
 
 // `Sender` / `Mutex<IdempotencyCache>` / `dyn RobotClock` 不全 Debug 友好；
@@ -337,6 +361,14 @@ impl GatewayHandler {
     #[cfg(test)]
     #[must_use]
     pub fn for_test() -> Self {
+        Self::for_test_with_state_cache(Arc::new(StateCache::new(&[])))
+    }
+
+    /// 同 [`Self::for_test`] 但注入指定 state cache（v0.5 候选 B：测
+    /// `GetState` / `StreamState` handler 4 分支用）。
+    #[cfg(test)]
+    #[must_use]
+    pub fn for_test_with_state_cache(state_cache: Arc<StateCache>) -> Self {
         // 5 个 forward channel 各留 1 buf；测试 drop rx 让 handler 看见
         // Disconnected。**RX 端不存**（让 sender 在第一次 send 时立刻
         // Disconnected），用于"只测 server bind / shutdown，不真调
@@ -365,6 +397,7 @@ impl GatewayHandler {
             clock: Arc::new(robot_core::time::SystemClock),
             rr_timeout_grace_ms: 500,
             shutdown_rx,
+            state_cache,
         };
         Self::new(state)
     }
@@ -766,15 +799,13 @@ impl RobotControl for GatewayHandler {
     }
 
     // ------------------------------------------------------------------------
-    // v0.5 候选 B read-only state plane（PE2）。
+    // v0.5 候选 B read-only state plane。
     //
-    // (1/4) 只落 proto additive + `state_convert.rs` 转换器；proto-additive
-    // 强制本 trait 补 3 个成员，否则 robot-rpc 不编译。这里落 **graceful**
-    // `tonic::Status::unimplemented` 占位（client 拿 Unimplemented code，不
-    // panic），真 handler：
-    //   - `get_state`    → (2/4)（gateway 常驻 S0 state 订阅池 + 错误码 D9）
-    //   - `stream_state` → (3/4)（per-RPC tick task + 节流 D5）
-    // `StreamStateStream` 关联类型按 (3/4) 最终形态提前定（Box::pin RobotState 流）。
+    // - `get_state`    → **(2/4) 真 handler**（读常驻 [`StatePool`] cache +
+    //   错误码顺序硬锁 D9）。
+    // - `stream_state` → (3/4) 占位（graceful `unimplemented`，PE2；真 handler
+    //   per-RPC tick task + 节流 D5）。
+    // `StreamStateStream` 关联类型按 (3/4) 最终形态定（Box::pin RobotState 流）。
     // ------------------------------------------------------------------------
 
     type StreamStateStream = std::pin::Pin<
@@ -787,11 +818,36 @@ impl RobotControl for GatewayHandler {
 
     async fn get_state(
         &self,
-        _request: tonic::Request<GetStateRequest>,
+        request: tonic::Request<GetStateRequest>,
     ) -> Result<tonic::Response<RobotState>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "GetState not yet implemented (v0.5 候选 B (2/4))",
-        ))
+        // 错误码顺序即口径（D9 / AC-3）：① 空 hardware_id → InvalidArgument
+        // （校验**早于**池查找）② 不在池 → NotFound（禁 fallback，AC-9）③ 已知
+        // 但无首帧 → Unavailable ④ 有首帧 → convert → Ok。auth：read RPC
+        // **不读不校验** token（D7 / C1 非安全保证）。
+        let hardware_id = request.into_inner().hardware_id;
+        if hardware_id.is_empty() {
+            return Err(tonic::Status::invalid_argument(
+                "GetStateRequest.hardware_id must be non-empty",
+            ));
+        }
+        match self.state.state_cache.snapshot(&hardware_id) {
+            StateLookup::UnknownHardware => Err(tonic::Status::not_found(format!(
+                "hardware_id '{hardware_id}' is not a config-declared hardware (gateway state pool)"
+            ))),
+            StateLookup::NoFrame => Err(tonic::Status::unavailable(format!(
+                "hardware_id '{hardware_id}' has no S0 state sample yet"
+            ))),
+            StateLookup::Frame(bytes) => match flatbuffers::root::<JointState>(&bytes) {
+                Ok(fb) => Ok(tonic::Response::new(joint_state_fb_to_robot_state(
+                    fb,
+                    &self.state.robot_id,
+                    &hardware_id,
+                ))),
+                Err(e) => Err(tonic::Status::internal(format!(
+                    "state body flatbuffers decode failed: {e}"
+                ))),
+            },
+        }
     }
 
     async fn stream_state(
@@ -843,6 +899,12 @@ pub enum GatewayError {
     /// 先起 rr_io_thread，spawn 失败直接 fail-fast。
     #[error("rr_io_thread spawn failed: {0}")]
     RrIoSpawn(#[source] std::io::Error),
+
+    /// **v0.5 候选 B (2/4)**：[`StatePool::spawn`] 失败（某 config 声明的
+    /// hardware subscriber open 失败 / 线程 spawn 失败）。在 5 个 rr_io_thread
+    /// 起好之后、tonic server 起之前 fail-fast（沿 RrIoSpawn 回滚先例）。
+    #[error("state_pool spawn failed: {0}")]
+    StatePoolSpawn(#[source] std::io::Error),
 }
 
 // 兼容旧 callers (run_gateway_rejects_non_loopback_bind_before_serving 等)：
@@ -895,6 +957,14 @@ pub enum GatewayReadyError {
         kind: std::io::ErrorKind,
         message: String,
     },
+
+    /// 同 [`GatewayError::StatePoolSpawn`] 但 `source` 拆 kind + message 让整个
+    /// enum 可 Clone（v0.5 候选 B (2/4)）。
+    #[error("state_pool spawn failed: {message}")]
+    StatePoolSpawn {
+        kind: std::io::ErrorKind,
+        message: String,
+    },
 }
 
 impl GatewayReadyError {
@@ -910,6 +980,14 @@ impl GatewayReadyError {
     /// 从 `io::Error` 构造 `RrIoSpawn` variant。
     fn rr_io_spawn_from_io(source: &std::io::Error) -> Self {
         Self::RrIoSpawn {
+            kind: source.kind(),
+            message: source.to_string(),
+        }
+    }
+
+    /// 从 `io::Error` 构造 `StatePoolSpawn` variant（v0.5 候选 B (2/4)）。
+    fn state_pool_spawn_from_io(source: &std::io::Error) -> Self {
+        Self::StatePoolSpawn {
             kind: source.kind(),
             message: source.to_string(),
         }
@@ -930,6 +1008,9 @@ impl From<GatewayReadyError> for GatewayError {
             },
             GatewayReadyError::RrIoSpawn { kind, message } => {
                 Self::RrIoSpawn(std::io::Error::new(kind, message))
+            }
+            GatewayReadyError::StatePoolSpawn { kind, message } => {
+                Self::StatePoolSpawn(std::io::Error::new(kind, message))
             }
         }
     }
@@ -1263,6 +1344,23 @@ pub async fn run_gateway_with_rr_io(
         cfg.idempotency_max_entries,
     )));
 
+    // ─── 2.5) **v0.5 候选 B (2/4)**：常驻 per-hardware S0 state 订阅池 + cache。
+    //     在 5 个 rr_io_thread 起好之后、tonic server 起之前建；spawn 失败
+    //     回滚已起 rr_io_thread → fail-fast（沿 RrIoSpawn 先例）。空
+    //     state_hardware_ids → 空池（D-P1，合法）。 ───
+    let state_cache = Arc::new(StateCache::new(&cfg.state_hardware_ids));
+    let state_pool = match StatePool::spawn(&cfg.robot_id, &cfg.state_hardware_ids, &state_cache) {
+        Ok(p) => p,
+        Err(e) => {
+            let ready_err = GatewayReadyError::state_pool_spawn_from_io(&e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            spawned.stop_and_join_all();
+            return Err(GatewayError::StatePoolSpawn(e));
+        }
+    };
+
     // ─── 3) handler（**A1-3 (2/3-c)**：handler clone 一份 shutdown_rx，
     //     同 watch::channel 的 sender 也喂给 tonic shutdown_signal future
     //     （由 run_gateway_with_ready 内部消费）；两路独立 receiver borrow
@@ -1280,13 +1378,16 @@ pub async fn run_gateway_with_rr_io(
         clock,
         rr_timeout_grace_ms: cfg.rr_timeout_grace_ms,
         shutdown_rx: handler_shutdown_rx,
+        state_cache: Arc::clone(&state_cache),
     }));
 
     // ─── 4) tonic server ───
     let serve_result = run_gateway_with_ready(cfg, handler, shutdown_rx, ready_tx).await;
 
-    // ─── 5) **关键边界**：tonic server 退出**之后**才停 rr_io_thread ───
+    // ─── 5) **关键边界**：tonic server 退出**之后**才停 rr_io_thread +
+    //     state_pool（沿 B4 shutdown 顺序：in-flight handler 跑完 → 停后台线程）。
     spawned.stop_and_join_all();
+    state_pool.stop();
 
     serve_result
 }
@@ -1448,6 +1549,80 @@ mod tests {
     use tokio::time::timeout;
 
     // ────────────────────────────────────────────────────────────────────────
+    // v0.5 候选 B (2/4)：GatewayConfig.state_hardware_ids 校验
+    // ────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn validate_allows_empty_state_hardware_list() {
+        // loopback_default 的 state_hardware_ids 为空 → 合法（D-P1）。
+        assert!(GatewayConfig::loopback_default().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_empty_state_hardware_id() {
+        let mut cfg = GatewayConfig::loopback_default();
+        cfg.state_hardware_ids = vec!["ok".to_string(), String::new()];
+        assert!(matches!(
+            cfg.validate(),
+            Err(ConfigError::EmptyStateHardwareId)
+        ));
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // v0.5 候选 B (2/4)：GetState handler 错误码顺序（D9 / AC-3）+ Ok 转换
+    // ────────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    #[allow(clippy::float_cmp)] // position_rad 透传精确字面值，float_cmp 误报
+    async fn get_state_error_code_ordering_and_ok() {
+        // ① 空 hardware_id → InvalidArgument（校验**早于**池查找，即使空池）。
+        let h_empty = GatewayHandler::for_test();
+        let err = h_empty
+            .get_state(tonic::Request::new(GetStateRequest {
+                hardware_id: String::new(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+
+        // ② 未知 hardware（不在池）→ NotFound（禁 fallback，AC-9）。
+        let err = h_empty
+            .get_state(tonic::Request::new(GetStateRequest {
+                hardware_id: "nope".to_string(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), tonic::Code::NotFound);
+
+        // ③ 已知 hardware 但无首帧 → Unavailable。
+        let cache = Arc::new(StateCache::new(&["arm".to_string()]));
+        let h = GatewayHandler::for_test_with_state_cache(Arc::clone(&cache));
+        let err = h
+            .get_state(tonic::Request::new(GetStateRequest {
+                hardware_id: "arm".to_string(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), tonic::Code::Unavailable);
+
+        // ④ 有首帧 → Ok + 字段转换正确（robot_id 来自 handler state）。
+        let body = robot_msg::build_helpers::build_joint_state(7, 123, &[1.0, 2.0], &[], &[], "");
+        cache.store("arm", body);
+        let rs = h
+            .get_state(tonic::Request::new(GetStateRequest {
+                hardware_id: "arm".to_string(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(rs.robot_id, "for_test");
+        assert_eq!(rs.hardware_id, "arm");
+        assert_eq!(rs.layout_id, 7);
+        assert_eq!(rs.stamp_ns, 123);
+        assert_eq!(rs.position_rad, vec![1.0, 2.0]);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
     // loopback bind 校验：accept loopback / reject 非 loopback
     // ────────────────────────────────────────────────────────────────────────
 
@@ -1534,6 +1709,7 @@ mod tests {
             idempotency_ttl_secs: 300,
             idempotency_max_entries: 4096,
             rr_timeout_grace_ms: 500,
+            state_hardware_ids: Vec::new(),
         };
         let (_tx, rx) = watch::channel(false);
         let result = run_gateway(cfg, Arc::new(GatewayHandler::for_test()), rx).await;
@@ -1563,6 +1739,7 @@ mod tests {
             idempotency_ttl_secs: 300,
             idempotency_max_entries: 4096,
             rr_timeout_grace_ms: 500,
+            state_hardware_ids: Vec::new(),
         };
         let (tx, rx) = watch::channel(false);
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
@@ -1695,6 +1872,7 @@ mod tests {
             idempotency_ttl_secs: 300,
             idempotency_max_entries: 4096,
             rr_timeout_grace_ms: 500,
+            state_hardware_ids: Vec::new(),
         };
         let (shutdown_a_tx, shutdown_a_rx) = watch::channel(false);
         let (ready_a_tx, ready_a_rx) = tokio::sync::oneshot::channel();
@@ -1720,6 +1898,7 @@ mod tests {
             idempotency_ttl_secs: 300,
             idempotency_max_entries: 4096,
             rr_timeout_grace_ms: 500,
+            state_hardware_ids: Vec::new(),
         };
         let (_shutdown_b_tx, shutdown_b_rx) = watch::channel(false);
         let (ready_b_tx, ready_b_rx) = tokio::sync::oneshot::channel();
@@ -1854,6 +2033,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
             clock: Arc::new(SystemClock),
             rr_timeout_grace_ms: 500,
             shutdown_rx,
+            state_cache: Arc::new(StateCache::new(&[])),
         };
         (GatewayHandler::new(state), shutdown_tx, forward_rx)
     }
@@ -2527,6 +2707,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
                 idempotency_ttl_secs: 300,
                 idempotency_max_entries: 4096,
                 rr_timeout_grace_ms: 500,
+                state_hardware_ids: Vec::new(),
             };
             let role_table = Arc::new(load_role_table(TEST_RPC_ROLES_TOML).unwrap());
             let clock: Arc<dyn RobotClock> = Arc::new(SystemClock);
@@ -2557,6 +2738,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
                 idempotency_ttl_secs: 300,
                 idempotency_max_entries: 4096,
                 rr_timeout_grace_ms: 500,
+                state_hardware_ids: Vec::new(),
             };
             let role_table = Arc::new(load_role_table(TEST_RPC_ROLES_TOML).unwrap());
             let clock: Arc<dyn RobotClock> = Arc::new(SystemClock);
