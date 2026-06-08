@@ -19,7 +19,7 @@ reviewer ACK D2/D4/D5；D1/D3/D6/D7 各 1 语义阻断，已回修：
 
 | # | round 1 阻断 | 修订 |
 |---|---|---|
-| B1（D3）| "disable adapter 失败留原态" 与现有 effectful 机制冲突（`ipc_tick.rs:199` 失败 → `commit_fault(AdapterErr)` + `Disabled`）| **disable 失败 → Fault(AdapterErr) + `RpcStatus::AdapterError`/`Internal`，不返 Ack success**（沿现有 plan_transition/pending effectful 机制，**不**自定义 handler 扩范围）+ 补 AC 失败路径 |
+| B1（D3）| "disable adapter 失败留原态" 与现有 effectful 机制冲突（`ipc_tick.rs:199` 失败 → `commit_fault(AdapterErr)` + `Disabled`）| **disable 失败 → Fault(AdapterErr) + wire `RpcStatus`（round 3 B5 收窄为 `Internal`，`AdapterError` 不存在）+ domain status，不返 Ack success**（沿现有 plan_transition/pending effectful 机制，**不**自定义 handler 扩范围）+ 补 AC 失败路径 |
 | B2（D6）| auto_enable 绑定未按 resolved hardware_id 定义（hardware_id = CLI 或 `[[hardware]].first()`，`s0_daemon.rs:260`；build_adapter 取 `.first()` `:1061`；auto_enable 在 untyped `extras` `config_loader.rs:72`）| **D6 定义 resolution**：match `[[hardware]].id == resolved hardware_id` → 读该段 `auto_enable`（**加 typed `auto_enable: Option<bool>`**，缺省 true）；**无匹配 → 启动 fail-fast**（config/CLI mismatch）|
 | B3（D1）| "whole-robot enable" 越过当前模型（单 RR service 做不到多 S0 fanout）| **D1 改"单 S0 daemon 实例 / selected hardware instance enable/disable"**；多 S0 / per-hardware / whole-robot fanout **推后** → `bool enabled` 不加 hardware_id 自洽 |
 | B4（D7）| dry_run "would-succeed" 过度承诺（不执行 `Enable(false)` 无法知 adapter ack）| **dry_run 返 "would_accept / precondition result"**（状态机/guard/precondition 接受性，**明确不代表 adapter 会 ack**）；AC-6 锁 0 state / 0 adapter request / 0 latch + response 文案不误导 |
