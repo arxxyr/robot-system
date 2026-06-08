@@ -197,7 +197,8 @@ transport；范围限定见 D1）：
   - latch/guards 不满足（Safe→Ready 拒）→ `RpcStatus::FailedPrecondition`（即时）+
     domain `GuardRejected`/`LatchBlocked`。
   - 到 Ready 但 Enabled.Active **未在 deadline 内完成**（无 heartbeat 等）→ 非 Ack；
-    `RpcStatus::DeadlineExceeded`（或 Internal）+ domain status。
+    **`RpcStatus::DeadlineExceeded` + domain status**（与 AC-2b 统一；deadline 路径
+    **不**用 Internal——Internal 专留 adapter ack fail，B7 收窄）。
   - adapter `Enable(true)` ack fail（Ready→Enabled effectful）→ `commit_fault
     (AdapterErr)` + `RpcStatus::Internal` + domain `SetEnabledStatus::AdapterError`
     （**与 disable D3d 对称**）。
