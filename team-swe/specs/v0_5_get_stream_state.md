@@ -417,11 +417,13 @@ commit chain（hash 实施期填）：(1/4) `TBD` / (2/4) `TBD` / (3/4) `TBD` /
   ```
   转换 fn 一律 `s0_mode_fb_to_proto` / `s0_control_link_fb_to_proto` /
   `s0_output_mode_fb_to_proto` / `s0_safety_state_fb_to_proto`（`*Fb -> *Proto`）。
-- 4 enum 转换器（沿 `events_subscribe.rs:419/433/448` exhaustive-match 范式）：`*Fb` enum → `*Proto` enum，**exhaustive match**（fbs 加 variant 不更新 → 编译失败，编译期锁）。
+- 4 enum 转换器（沿 `events_subscribe.rs:419/433/448` 范式）：`*Fb` → `*Proto`，列全已知 variant + **`_ => *_UNSPECIFIED` 前向兼容 arm**（**PE1**：fbs enum 生成为 newtype struct `pub struct S0Mode(pub u8)`，**非** Rust 真 enum → match 必带 `_`，加 fbs variant **不**编译失败）。**防漂移锁 = variant-count lock 测**（沿 ActionKind `三层 count 锁` 先例，§P.2.1.c），**非**编译期 exhaustive。
 - `joint_state_fb_to_robot_state(fb: &JointState, robot_id: &str, hardware_id: &str) -> RobotState`：position_rad（fbs vector→Vec<f64>）/ layout_id / **stamp_ns 透传 S0 published 值**（非自生 clock，AC-7）/ mode·control_link·output_mode·safety_state（经 4 转换器）/ **fault_code = `s0_fault_code()` ubyte `as u32` 透传**（**不** mirror `S0FaultCode` enum，D6）/ robot_id·hardware_id（调用方传入）。
 
 ##### P.2.1.c lib unit（本 commit land）
-- 4 enum 转换器逐 variant（含 UNSPECIFIED 边界）+ `joint_state_fb_to_robot_state` 手搓 fbs（`build_helpers`）断言字段等价 + stamp 透传 + fault_code 数值透传。
+- 4 enum 转换器逐 variant（含 `Unknown`/`TorqueUnknown` → `*_UNSPECIFIED` 边界）。
+- **variant-count lock 测（PE1 防漂移锁）**：`assert_eq!(S0ModeFb::ENUM_VALUES.len(), 6)` / `S0ControlLinkFb` 3 / `S0OutputModeFb` 5 / `S0SafetyStateFb` 6 —— 加 fbs variant → count 测挂 → 强制更新转换器（沿 ActionKind count-lock 先例）。
+- `joint_state_fb_to_robot_state` 手搓 fbs（`build_helpers`）断言字段等价 + stamp 透传 + fault_code 数值透传。
 
 ##### P.2.1.d Quality Gate
 - fmt + clippy(-D warnings) clean；`cargo test --workspace` 不退化；fbs 未改 → `cargo run -p robot-msg --bin schema_lint` + `cargo test -p robot-msg` 0 退化；proto additive 兼容由 prost build + 既有 RPC e2e 覆盖（PN1）。
@@ -503,4 +505,6 @@ commit chain（hash 实施期填）：(1/4) `TBD` / (2/4) `TBD` / (3/4) `TBD` /
 
 ### P.4 Plan-Execute diff 登记（实施期填）
 
-（占位：实施中任何偏离 Plan 的点按 `#N | 阻断/非阻断 | 落点 | 描述` 登记，沿候选 A §P.4 体例。）
+| # | 段 | 类型 | 描述 | 落点 |
+|---|---|---|---|---|
+| PE1 | (1/4) | 机制修正 | Plan round 1 原写"fbs→proto exhaustive match 加 variant 编译失败"，实测 flatbuffers Rust codegen 把 enum 生成为 **newtype struct** `pub struct S0Mode(pub u8)`（`target/.../s0_mode_generated.rs:22`），**非** Rust 真 enum → match 必带 `_` arm（沿 `events_subscribe.rs` 先例），加 fbs variant **不**编译失败。**改用 variant-count lock 测**（`*Fb::ENUM_VALUES.len()` 断言，沿 ActionKind count-lock 先例）防漂移。**不**改协议/AC，只修 Plan 机制描述 + 转换器实现策略 | §P.2.1.b + §P.2.1.c |
