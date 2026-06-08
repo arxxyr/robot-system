@@ -18,7 +18,7 @@
 设计版本:  v0.1.2（冻结）
 实现阶段:  v0.5 —— 候选 B (GetState/StreamState 只读 RPC) ✅ **完结**（RIPER：CodeMap
            + Spec r1-3 + Plan r1-2 + 4 段 feat；method 6→8 additive，`a010fe7` →
-           `c3a2804`）。proto append 2 rpc + 3 message + 4 enum mirror（state_convert.rs
+           `ea69be7`）。proto append 2 rpc + 3 message + 4 enum mirror（state_convert.rs
            fbs→proto 纯转换器）+ gateway 常驻 per-hardware S0 state 订阅池 + cache
            （state_pool.rs；**唯一**底层 subscriber，GetState/StreamState 只读 cache、
            **不**新建 per-RPC subscriber）+ `--config` 解析 [[hardware]].id（D10，0 dep

@@ -348,7 +348,7 @@ Spec round 2 → reviewer round 2（3 阻断 + 2 同步修订）✅ →
 Spec round 3 → reviewer round 3 **ACK 进 Plan**（+ 非阻断文案收窄，`5df51ff`）✅ →
 Plan round 1 → reviewer Plan round 1（1 阻断 PB1 + 3 拍板 PD1-3 + 1 非阻断 PN1）✅ →
 Plan round 1 amend → reviewer **Plan Approved** ✅ →
-(1/4) `a010fe7` → (2/4) `f9728fa` → (3/4) `5e12096` → (4/4) `c3a2804`（逐段 ACK）✅
+(1/4) `a010fe7` → (2/4) `f9728fa` → (3/4) `5e12096` → (4/4) `ea69be7`（逐段 ACK）✅
 → **候选 B 完结**（summary/CHANGELOG/CLAUDE/README 收口）。`cargo test --workspace`
 1117 passed / 0 failed。**下一步 = 候选 C**（v0.5_entry.md A→B→C→D→E 硬序）。
 
@@ -383,7 +383,7 @@ Plan round 1 amend → reviewer **Plan Approved** ✅ →
 
 commit chain（实测 hash）：(1/4) feat `a010fe7`（+ PE1 `996864c` / PE2 `a43e580`
 docs）/ (2/4) feat `f9728fa`（+ PE3 `4220017` docs）/ (3/4) feat `5e12096` /
-(4/4) feat `c3a2804` + summary/CHANGELOG/CLAUDE/README 收口 docs。**候选 B
+(4/4) feat `ea69be7` + summary/CHANGELOG/CLAUDE/README 收口 docs。**候选 B
 完结** —— `cargo test --workspace` 1117 passed / 0 failed（state_rpc_e2e 6 +
 task_rpc_e2e 6）；详 [`docs/handoffs/v0.5_get_stream_state_summary.md`](../../docs/handoffs/v0.5_get_stream_state_summary.md)。
 
