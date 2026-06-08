@@ -277,5 +277,62 @@ A→B→C→D→E 硬序（候选 D EStop 不提前）。
 Spec round 1 → reviewer round 1（D2/D4/D5 ACK + 4 语义阻断 B1-B4）✅ →
 Spec round 2 → reviewer round 2（2 执行级阻断 B5/B6）✅ →
 Spec round 3 → reviewer round 3（B7 enable Ack point 缺口）✅ →
-**Spec round 4（本文，全吸收 D8）→ 待 reviewer round 4 复核** → Plan → 实施。
-**本 round 不开实现。**
+Spec round 4 → reviewer round 4 **ACK 全 D1-D8**（+ 非阻断 D8 deadline 去"或
+Internal"，`425dd62`）✅ → **Plan outline draft v1（本文 §Plan）→ 待 reviewer
+Plan round 复核** → 实施。**Plan ACK 前不开实现。**
+
+## Plan（outline draft v1）
+
+> reviewer ACK Spec D1-D8 → 授权 Plan outline draft v1（**不直接实现**）。本 outline
+> 给 commit 拆分 + 关键 Plan 拍板项；待 reviewer Plan round 收紧后定稿。
+
+### P.0 工作基线
+
+- **HEAD = `425dd62`**（Spec round 4 final）。候选 B 完结 = `b795339`。
+- 全程 nightly；每 commit 前 `cargo fmt --all` + `cargo clippy --workspace
+  --all-targets -- -D warnings` 零警告。
+- **0 新依赖**（proto/tonic/iceoryx2/flatbuffers/serde/toml 全已在）。
+
+### P.1 commit 节奏（5 feat + 1 summary，draft）
+
+| 段 | 内容 | 主要文件 |
+|---|---|---|
+| (1/5) | **schema 链 atomic**：proto `SetEnabled`+`SetEnabledCommand`（method 8→9）+ `set_enabled.fbs`（`SetEnabledRequest`/`SetEnabledResponse`/`SetEnabledStatus`）+ `schema_id` `0x040D/0x040E` + `SCHEMA_REGISTRY` + `build_helpers` + `markers`（**单 commit 避中间编译 fail**，沿候选 1/2）| proto + robot-msg |
+| (2/5) | **S0 config + 状态机**：`config_loader` typed `auto_enable` + `resolve_hardware_section` helper + `build_adapter` 改 matched section（B6）+ `state_machine` `Event::Disable` + transitions（Enabled/Ready→Safe effectful `Enable(false)`）| robot-s0 config/state_machine |
+| (3/5) | **S0 RR server + action**：第 2 个 `rr_server_thread`（set_enabled topic，D5）+ `ipc_thread` set_enabled RR drain + **set_enabled action（多 tick 观测 Enabled.Active/Safe + deadline + fault + dry_run evaluator，D7/D8）** + `s0_daemon` wiring（2nd rr_server + auto_enable 绑定 D6）| robot-s0 rr_server/ipc/bin |
+| (4/5) | **gateway**：`SetEnabled` tonic handler + 第 6 条 rr_io_thread + auth/role/capability + idempotency + `complete_ack_rpc` 桥 | robot-rpc gateway/bin |
+| (5/5) | **e2e + summary**：cross-process（s0 + heartbeat 源 + gateway）覆盖 AC-2/2b/2c/3/3b/4/5/6/7/8/8b/9 + summary + CHANGELOG + CLAUDE + README | robot-rpc tests + docs |
+
+### P.2 工作流（draft；Plan round 细化）
+
+- 顺序硬约束：(1/5) schema 先（下游编译依赖）→ (2/5) S0 核心 → (3/5) S0 RR+action
+  → (4/5) gateway → (5/5) e2e。每段独立过 Quality Gate（fmt + clippy + 相关 unit
+  + 既有 0 退化）。
+- (3/5) 是**最重难点**（D-P1 观测机制）；(2/5) build_adapter 改 matched section
+  须**既有 adapter 路径 0 退化回归**。
+
+### P.3 Plan 拍板项（reviewer Plan round 决定）
+
+- **D-P1（enable Ack 观测机制）⚠ 核心**：set_enabled action 须在 emit `Event::Enable`
+  后**延迟 RR response** 直到 Enabled.Active（success）/ Safe→Ready 拒（FailedPrecond）/
+  deadline（DeadlineExceeded）/ adapter fault（Internal+AdapterError）。ipc_thread
+  已有 `IpcRetryState`/pending（effectful Ready→Enabled 等 `Enable(true)` ack）——
+  方案倾向**复用 pending 机制 + 加 "pending RR response" 在目标态/deadline/fault
+  达成时 resolve**（区别 ClearEStop one-shot）。具体观测点 + RR response 何时发由
+  Plan round 拍。
+- **D-P2（deadline 源/追踪）**：`CommandMeta.timeout_ms` → gateway 转 wire
+  `deadline_ns`（沿 ClearEStop）→ S0 action 用 `clock.now() > deadline` 判
+  DeadlineExceeded。
+- **D-P3（e2e heartbeat 源）**：`s1_daemon`（真，沿 task_rpc_e2e）vs fake heartbeat
+  publisher（轻、确定）。倾向 fake heartbeat（隔离 S1，专测 SetEnabled）；待拍。
+- **D-P4（idempotency）**：SetEnabled write RPC → gateway `IdempotencyCache`
+  （沿 ClearEStop）？倾向 yes（§6.7 #5），但 enable/disable 天然幂等——cache 必要性
+  待拍。
+- **D-P5（build_adapter 重构风险）**：`.first()`→`resolve_hardware_section` 改动
+  adapter 构造路径（所有 config 走）；单 hardware（first==matched）0 变化，多
+  hardware + CLI 选非 first 才变 → 回归须覆盖既有 smoke（crash_restart /
+  scripted / ik 用单/多 hardware config）。
+
+### P.4 Plan-Execute diff 登记（实施期填）
+
+（占位：沿候选 A/B §P.4 体例。）
