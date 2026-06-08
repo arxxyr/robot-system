@@ -31,6 +31,12 @@ reviewer round 2 认可 D3/D4a/D5a/D1a/D3b 方向，但 3 阻断 + 2 同步修�
 | 同步 4 | AC-3 Unavailable 场景要写实 | AC-3：config 声明 hardware_id 但**测试不启对应 FakeStatePublisher** → 常驻池 cache 无首帧 → GetState 返 `Unavailable` |
 | 同步 5 | AC-6 auth 表述别写得像 token 真上 wire | AC-6 + D7 重写：request **无 auth 字段**，无 token / 任意 metadata token **都不影响结果**（服务端不读不校验）；**不得**宣称 `read_state` cap 已 enforce |
 
+> **round 3 文案收窄（reviewer ACK-into-Plan 非阻断）**：空池口径精确化——无
+> `--config` 时**非空 `hardware_id`** 请求返 `NotFound`，但**缺/空 `hardware_id`
+> 仍先按 D9/AC-3 返 `InvalidArgument`**（校验早于池查找；D9 主口径本就正确，此处
+> 只把 §影响范围 D10 两处概述对齐）。错误码顺序在 Plan §P.2.2 GetState handler
+> 步骤里硬锁。
+
 ## What
 
 实现 design §5.3 两条**只读** RPC，让**远程 client**（dimos / web UI，gRPC
@@ -59,7 +65,8 @@ coordinator，不持权威硬件 state）。gateway **首次**订阅 S0 state to
   **可选** `--config <PATH>` flag（robot config TOML）→ minimal local 解析
   `[[hardware]].id` → 把 hardware id 列表喂进 `GatewayConfig`（新字段
   `state_hardware_ids: Vec<String>`）。缺省（无 `--config`）= 空列表 = state
-  订阅池为空 = 所有 GetState/StreamState 返 `NotFound`（**B4 既有 gateway
+  订阅池为空 = 所有**非空 `hardware_id`** 请求返 `NotFound`（**缺/空 `hardware_id`
+  仍先按 D9/AC-3 返 `InvalidArgument`**——校验早于池查找）（**B4 既有 gateway
   调用 0 破**，clear-estop 等照常）。
 - `crates/robot-rpc/src/gateway.rs`：`GetState` / `StreamState` 两个 trait
   method impl + `GatewayConfig.state_hardware_ids` 字段 + 常驻 state 订阅池
@@ -247,7 +254,8 @@ idempotency-* / rr-timeout-grace / rpc-roles-toml）**没有 config/hardware 输
   （避免把 RT daemon crate 拖进 gateway 树）、**不**把 `config_loader` 抽成共享
   crate（避免动 `robot-s0` → 守"S0/S1 daemon 0 改"硬边界）。
 - **`--config` 可选（B4 兼容）**：缺省（无 `--config`）→ `state_hardware_ids`
-  空 → state 订阅池空 → 所有 GetState/StreamState 返 `NotFound`；既有
+  空 → state 订阅池空 → 所有**非空 `hardware_id`** 请求返 `NotFound`（**缺/空
+  `hardware_id` 仍先按 D9/AC-3 返 `InvalidArgument`**——校验早于池查找）；既有
   clear-estop-only gateway 调用（`clear_estop_e2e` 等不传 `--config`）**0 破**。
   present → 按 `[[hardware]].id` 建常驻池。
 - **topic prefix 权威仍 `--robot-id`**：state topic =
