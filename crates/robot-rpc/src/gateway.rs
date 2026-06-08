@@ -94,8 +94,8 @@ use crate::clear_estop::{
 use crate::idempotency::{CachedResponse, Decision, IdempotencyCache, Method};
 use crate::proto::robot_control_server::{RobotControl, RobotControlServer};
 use crate::proto::{
-    Ack, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, InvokeTaskCommand, TaskEvent,
-    TaskHandle, TaskHandleRef, TaskStatus,
+    Ack, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, GetStateRequest,
+    InvokeTaskCommand, RobotState, StreamRequest, TaskEvent, TaskHandle, TaskHandleRef, TaskStatus,
 };
 use crate::rr_io_thread::{
     RrForwardRequest, RrIoThreadConfig, RrIoThreadHandle, spawn_rr_io_thread,
@@ -763,6 +763,44 @@ impl RobotControl for GatewayHandler {
         request: tonic::Request<ClearErrorCommand>,
     ) -> Result<tonic::Response<Ack>, tonic::Status> {
         crate::task_handlers::handle_clear_error(&self.state, request).await
+    }
+
+    // ------------------------------------------------------------------------
+    // v0.5 候选 B read-only state plane（PE2）。
+    //
+    // (1/4) 只落 proto additive + `state_convert.rs` 转换器；proto-additive
+    // 强制本 trait 补 3 个成员，否则 robot-rpc 不编译。这里落 **graceful**
+    // `tonic::Status::unimplemented` 占位（client 拿 Unimplemented code，不
+    // panic），真 handler：
+    //   - `get_state`    → (2/4)（gateway 常驻 S0 state 订阅池 + 错误码 D9）
+    //   - `stream_state` → (3/4)（per-RPC tick task + 节流 D5）
+    // `StreamStateStream` 关联类型按 (3/4) 最终形态提前定（Box::pin RobotState 流）。
+    // ------------------------------------------------------------------------
+
+    type StreamStateStream = std::pin::Pin<
+        Box<
+            dyn tonic::codegen::tokio_stream::Stream<Item = Result<RobotState, tonic::Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
+    async fn get_state(
+        &self,
+        _request: tonic::Request<GetStateRequest>,
+    ) -> Result<tonic::Response<RobotState>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "GetState not yet implemented (v0.5 候选 B (2/4))",
+        ))
+    }
+
+    async fn stream_state(
+        &self,
+        _request: tonic::Request<StreamRequest>,
+    ) -> Result<tonic::Response<Self::StreamStateStream>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "StreamState not yet implemented (v0.5 候选 B (3/4))",
+        ))
     }
 }
 

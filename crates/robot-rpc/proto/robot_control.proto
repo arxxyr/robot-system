@@ -3,17 +3,24 @@
 // 对应 docs/00_design.md §5.2 (CommandMeta + AuthContext) + §5.3 frozen
 // RPC schema。**字段 / 字段编号不可改**；只可 append。
 //
-// **当前 scope**（v0.3 B4 land 后）：6 条 RPC =
+// **当前 scope**（v0.5 候选 B land 后）：8 条 RPC =
 //   - `ClearEStop`           (A1 land；safety-critical maintainer-only)
 //   - `InvokeTask`           (B4)
 //   - `CancelTask`           (B4)
 //   - `GetTaskStatus`        (B4)
 //   - `StreamTaskEvents`     (B4 server-streaming via per-ActionId pubsub)
 //   - `ClearError`           (B4)
+//   - `GetState`             (v0.5 候选 B；只读 state 快照，additive)
+//   - `StreamState`          (v0.5 候选 B；只读 state server-streaming，additive)
+//
+// **v0.5 候选 B GetState/StreamState 设计-freeze diff**：design §5.3 写
+// `rpc GetState (Empty)`，实现期按多 hardware 语义改 `GetState(GetStateRequest
+// { hardware_id })`（显式 hardware selector）；design.md §5.3 文字**不**改，以
+// docs/CHANGELOG.md + team-swe Spec v0_5_get_stream_state 为准。
 //
 // 其它 §5.3 RPC（SetEnabled / EStop / ListHardware / ListJoints /
-// ListTasks / GetState / StreamState / StreamLogs / ReloadCalibration /
-// SetPolicy）留 v0.5+ Phase B 后续 outline 拍板，**不**在本 proto 出现。
+// ListTasks / StreamLogs / ReloadCalibration / SetPolicy）留 v0.5+ 后续
+// 拍板，**不**在本 proto 出现。
 //
 // **跟 robot-msg 关系**：本 proto 是 RPC 边界 wire format（client →
 // gateway, HTTP/2）；gateway 内部转换为 `robot-msg` 平行 fbs 表
@@ -84,13 +91,16 @@ message Ack {
     bool   dry_run       = 3;
 }
 
-// v0.3 A1 ClearEStop + v0.3 B4 task control plane RPCs。
+// v0.3 A1 ClearEStop + v0.3 B4 task control plane + v0.5 候选 B read-only
+// state plane RPCs。
 //
-// **method 数 = 6**（外部 tonic / HTTP/2 wire；内部 s1 RR server 仅 4
+// **method 数 = 8**（外部 tonic / HTTP/2 wire；内部 s1 RR server 仍仅 4
 // 条 RR topic = task_invoke / task_cancel / task_status / clear_error；
-// `StreamTaskEvents` **不**走 RR，走 per-ActionId pubsub topic
-// `/<robot_id>/s1/action_events/<action_id_hex>`，详
-// docs/handoffs/v0.3_b4_outline.md §5.2 拍板）。
+// `StreamTaskEvents` 走 per-ActionId pubsub topic
+// `/<robot_id>/s1/action_events/<action_id_hex>`；v0.5 候选 B `GetState` /
+// `StreamState` **既不走 RR 也不走 s1**，gateway 直接读常驻 S0 state 订阅池
+// （topic `/<robot_id>/s0/<hardware_id>/state`），详 team-swe Spec
+// v0_5_get_stream_state §D4）。
 service RobotControl {
     // v0.3 A1 land。safety-critical maintainer-only；详 clear_estop.fbs。
     rpc ClearEStop       (ClearEStopCommand)  returns (Ack);
@@ -101,6 +111,11 @@ service RobotControl {
     rpc GetTaskStatus    (TaskHandleRef)      returns (TaskStatus);
     rpc StreamTaskEvents (TaskHandleRef)      returns (stream TaskEvent);
     rpc ClearError       (ClearErrorCommand)  returns (Ack);
+
+    // v0.5 候选 B read-only state plane（additive；gateway 读常驻 S0 state
+    // 订阅池，不走 s1 RR）。
+    rpc GetState         (GetStateRequest)    returns (RobotState);
+    rpc StreamState      (StreamRequest)      returns (stream RobotState);
 }
 
 // ===========================================================================
@@ -280,4 +295,98 @@ message TaskEvent {
     float              progress   = 5;
     ActionOutcomeProto outcome    = 6;
     ActionFailureProto failure    = 7;
+}
+
+// ===========================================================================
+// v0.5 候选 B read-only state plane messages（additive）
+// ===========================================================================
+//
+// design §5.3 两条只读 RPC `GetState` / `StreamState` 的 wire 形态。权威数据源
+// = S0 state topic（gateway 订阅 `/<robot_id>/s0/<hardware_id>/state` 上 S0
+// 发布的 fbs `JointState`），gateway 进程内转 proto `RobotState`（robot-rpc
+// `state_convert.rs`，fbs→proto 单向；**不**进 robot-msg schema registry / 不
+// 加 fbs 平行表）。
+//
+// **enum 镜像（三层同步纪律）**：以下 4 个 enum number 与 robot-msg
+// `joint.fbs` 同名 enum 严格 1:1（`S0Mode` / `S0ControlLink` / `S0OutputMode`
+// / `S0SafetyState`）；proto3 零值约定 `*_UNSPECIFIED = 0` 对齐 fbs
+// `Unknown = 0` / `TorqueUnknown = 0`。fbs↔proto 转换在 `state_convert.rs`
+// 逐 variant + variant-count 锁测防漂移（team-swe Spec §P.2.1）。
+
+// 镜像 fbs `S0Mode`（joint.fbs）。S0 主状态机 5 主态。
+enum S0Mode {
+    S0_MODE_UNSPECIFIED = 0;  // fbs Unknown（兼容旧 writer）
+    S0_MODE_SAFE        = 1;
+    S0_MODE_READY       = 2;
+    S0_MODE_ENABLED     = 3;
+    S0_MODE_FAULT       = 4;
+    S0_MODE_STOPPING    = 5;
+}
+
+// 镜像 fbs `S0ControlLink`（joint.fbs）。控制链路（S1 心跳）状态。
+enum S0ControlLink {
+    S0_CONTROL_LINK_UNSPECIFIED = 0;  // fbs Unknown
+    S0_CONTROL_LINK_OK          = 1;
+    S0_CONTROL_LINK_LOST        = 2;
+}
+
+// 镜像 fbs `S0OutputMode`（joint.fbs）。输出模式（与 S0 子态对应）。
+enum S0OutputMode {
+    S0_OUTPUT_MODE_UNSPECIFIED = 0;  // fbs Unknown
+    S0_OUTPUT_MODE_ACTIVE      = 1;
+    S0_OUTPUT_MODE_HOLD        = 2;
+    S0_OUTPUT_MODE_ZERO        = 3;
+    S0_OUTPUT_MODE_STOP        = 4;
+}
+
+// 镜像 fbs `S0SafetyState`（joint.fbs）。输出 safety 状态；number 与
+// robot_core::executor_ctrl::OutputSafetyState 1:1（fbs 注释锁定，禁错位）。
+enum S0SafetyState {
+    S0_SAFETY_STATE_TORQUE_UNKNOWN       = 0;  // fbs TorqueUnknown
+    S0_SAFETY_STATE_TORQUE_ON            = 1;
+    S0_SAFETY_STATE_STOP_COMMANDED       = 2;
+    S0_SAFETY_STATE_TORQUE_OFF_CONFIRMED = 3;
+    S0_SAFETY_STATE_STOP_FAILED          = 4;
+    S0_SAFETY_STATE_ADAPTER_UNCERTAIN    = 5;
+}
+
+// `GetState` request —— 显式 hardware selector。`hardware_id` 必填非空：
+// 缺/空 → InvalidArgument；未知（不在 gateway `--config` 声明的 hardware 池）
+// → NotFound；已知但常驻池无首帧 → Unavailable（详 team-swe Spec §D9）。
+message GetStateRequest {
+    string hardware_id = 1;
+}
+
+// `StreamState` request —— hardware selector + 节流下限。
+// `min_interval_ms`：0 = gateway 默认下限（50ms）；0 < x < 20 → clamp 20ms；
+// >= 20 → 原值（详 team-swe Spec §D5）。
+message StreamRequest {
+    string hardware_id     = 1;
+    uint32 min_interval_ms = 2;
+}
+
+// `GetState` reply / `StreamState` 单帧 —— 单个 hardware 的 S0 state 快照
+// （per-hardware，**不**聚合）。字段镜像 fbs `JointState` 的 s0_* +
+// position/layout/stamp（gateway `state_convert.rs` 转换）。
+//
+// 字段语义：
+// - robot_id / hardware_id：本快照所属（gateway 注入，来自订阅 topic）。
+// - layout_id：JointState.layout_id 透传。
+// - stamp_ns：JointState.stamp_ns 透传（S0 published，CLOCK_MONOTONIC_RAW；
+//   **非** gateway 自生 clock）。
+// - position_rad：JointState.position_rad 透传。
+// - mode / control_link / output_mode / safety_state：经 4 enum 转换器。
+// - fault_code：JointState.s0_fault_code 的数值 uint32 透传（**不** enum 化；
+//   保留 design D6 决策，避免预钉 fault 码表）。
+message RobotState {
+    string          robot_id     = 1;
+    string          hardware_id  = 2;
+    uint64          layout_id    = 3;
+    uint64          stamp_ns     = 4;
+    repeated double position_rad = 5;
+    S0Mode          mode         = 6;
+    S0ControlLink   control_link = 7;
+    S0OutputMode    output_mode  = 8;
+    S0SafetyState   safety_state = 9;
+    uint32          fault_code   = 10;
 }

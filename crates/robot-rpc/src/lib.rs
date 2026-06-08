@@ -76,6 +76,7 @@ pub mod events_subscribe;
 pub mod gateway;
 pub mod idempotency;
 pub mod rr_io_thread;
+pub mod state_convert;
 pub mod task_handlers;
 
 /// gRPC tonic 生成代码（`robot.control.v1` namespace）。包含
