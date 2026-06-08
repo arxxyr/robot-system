@@ -297,6 +297,16 @@ reviewer 3 阻断 + 1 非阻断，已回修：
 | PB3 | D-P4 idempotency 不能待拍 | **锁定 SetEnabled write RPC → gateway `IdempotencyCache`**（§6.7 #5）+ replay = cached Ack；**Ack 语义定义**：SetEnabled 返**通用 Ack**（frozen §5.3），`cleared_at_ns` = **set-enabled 完成时刻**（Enabled.Active/Safe commit 的 daemon clock.now()；dry_run → would-act eval；status≠Ok → 0），名保留语义文档化 |
 | 非阻断 | D-P3 fake heartbeat | fake heartbeat **走真实 heartbeat topic `/<robot_id>/s1/heartbeat`**（S0 订阅，`s0_daemon.rs:354`）驱动真 S0 heartbeat 路径 → Ready→Enabled，**不**直接调 S0 内部函数 |
 
+#### Plan round 2 amend 记录（2026-06-08；reviewer Plan round 2 复核后）
+
+PB1/PB3 ACK；D-P1 又 3 执行级阻断（RpcStatus 语义），已回修（**0 扩 A1 共享 enum**）：
+
+| # | 阻断 | 修订 |
+|---|---|---|
+| PB4 | 并发第二个 distinct 写 `Aborted` 冲突锁定语义（`clear_estop.fbs:111`：`ResourceExhausted`=live 单飞、`Aborted`=EStop preempt）| D-P1 条 1：并发第二个（同/异 key）→ **`ResourceExhausted`**（AlreadyInProgress），非 Aborted |
+| PB5 | Stop/shutdown 写 `Unavailable`，但 `RpcStatus` 无此 variant（B5 不扩 A1 enum）| D-P1 条 3：Stop/shutdown preempt → **`Aborted`**（复用 in-flight-preempt 语义，domain `SetEnabledStatus` 区分 EStop vs shutdown）；**不** append Unavailable |
+| PB6 | 同 key in-flight "gateway replay 不进 S0" 不成立（`decide` in-flight 仍 `FreshInsert`，`idempotency.rs:303`）| D-P1 条 1 + D-P4：**replay 只在第一个 commit 后**；in-flight 同 key 仍 FreshInsert→forward→**S0 single-flight ResourceExhausted**；**不**加 gateway in-flight guard（S0 single-flight 即防线）|
+
 ### P.0 工作基线
 
 - **HEAD = `425dd62`**（Spec round 4 final）。候选 B 完结 = `b795339`。
@@ -326,17 +336,25 @@ reviewer 3 阻断 + 1 非阻断，已回修：
 
 - **D-P1（enable Ack 观测机制）⚠ 核心（PB2 执行级展开）**：set_enabled action emit
   `Event::Enable` 后**延迟 RR response** 直到目标态/deadline/fault。**6 条须拍清**：
-  1. **single-flight**：S0 同时只允许 **1 个** pending SetEnabled 观测。并发**第二个
-     distinct**（不同 idempotency_key）→ 即时拒 `RpcStatus::Aborted`（"another
-     SetEnabled in flight"）；**同 key** → gateway idempotency replay（不进 S0）。
+  1. **single-flight（PB4/PB6 收紧）**：S0 同时只允许 **1 个** pending SetEnabled
+     观测。**任何并发第二个**（同/异 key）在 in-flight 窗口 → 即时拒
+     **`RpcStatus::ResourceExhausted`**（= `AlreadyInProgress` 锁定语义，
+     `clear_estop.fbs:111`；**非** Aborted）。**idempotency replay 只在第一个 commit
+     后成立**：同 key 在 in-flight 窗口 `IdempotencyCache::decide` 仍返 `FreshInsert`
+     （`idempotency.rs:303`，未 commit 无 entry）→ forward 到 S0 → S0 single-flight
+     拒 ResourceExhausted；同 key **commit 后** → cache `Replay`（cached Ack）。
+     **不**新增 gateway in-flight guard——**S0 single-flight 即 in-flight 防线**。
   2. **与 `IpcRetryState`/pending 所有权**：现有 pending 处理 effectful adapter ack
      （Ready→Enabled 等 `Enable(true)`）。set_enabled 的 "pending RR response" **独立
      于** IpcRetryState 但**观测同一状态机**：RR response 持有直到 state commit
      Enabled.Active/Safe（读 commit 结果），**不**抢 IpcRetryState 所有权。
-  3. **preempt resolve（不悬挂）**：pending 期间 EStop → resolve `Aborted`（EStop
-     preempt）；adapter fault（commit_fault AdapterErr）→ resolve `Internal` + domain
-     `AdapterError`；Stop/shutdown → resolve `Unavailable`（daemon shutting down）。
-     **任何终态/preempt 事件必 resolve，绝不悬挂**。
+  3. **preempt resolve（不悬挂，PB5 收紧）**：pending 期间 EStop → resolve
+     **`Aborted`**（PreemptedByEmergency，`clear_estop.fbs:111`）；Stop/shutdown
+     （daemon 关停）→ resolve **`Aborted`**（in-flight 被关停中止；**`RpcStatus` 无
+     `Unavailable`** 故复用 `Aborted` 的 in-flight-preempt 语义，domain
+     `SetEnabledStatus` 区分 EStop vs shutdown）；adapter fault（commit_fault
+     AdapterErr）→ resolve `Internal` + domain `AdapterError`。**任何终态/preempt
+     事件必 resolve，绝不悬挂**。
   4. **dry_run**：**不占 pending、不 emit event**（即时 precondition evaluate +
      respond，D7）。
   5. **deadline 边界**：`clock.now() > deadline` → RR response `DeadlineExceeded`；
@@ -356,7 +374,10 @@ reviewer 3 阻断 + 1 非阻断，已回修：
   （比 s1_daemon 确定、专测 SetEnabled ack 点）。
 - **D-P4（idempotency）= 锁定（PB3，非待拍）**：SetEnabled 是写 RPC（§6.7 #5）→
   **走 gateway `IdempotencyCache`**（`idempotency_key` fingerprint，沿 ClearEStop）；
-  replay（同 key）→ 返 **cached `Ack`**（不重进 S0）。**Ack 语义**：SetEnabled 返
+  replay（同 key）→ 返 **cached `Ack`**（不重进 S0）。**⚠ replay 只在第一个 commit
+  后成立（PB6）**：in-flight 窗口同 key 仍 `FreshInsert`→forward→S0 single-flight
+  ResourceExhausted（详 D-P1 条 1）；**不**加 gateway in-flight guard。**Ack 语义**：
+  SetEnabled 返
   **frozen 通用 `Ack`**（design §5.3），`cleared_at_ns` = **set-enabled 完成时刻**
   （Enabled.Active/Safe commit 的 daemon `clock.now()`；`dry_run=true` → "would-act
   at" eval 时刻；`status != Ok` → 0）。**名沿用 frozen Ack，语义文档化**（避免 e2e
