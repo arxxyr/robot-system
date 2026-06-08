@@ -86,6 +86,7 @@ use robot_msg::msg::{ClearEStopResponse as FbResp, JointState, RpcRole};
 use robot_transport::iceoryx2::request_response::{Iceoryx2RrClient, rr_client};
 use thiserror::Error;
 use tokio::sync::watch;
+use tonic::codegen::tokio_stream::wrappers::ReceiverStream;
 
 use crate::auth::{Capability, Role, RoleTable};
 use crate::clear_estop::{
@@ -410,6 +411,31 @@ fn role_to_wire(r: Role) -> RpcRole {
         Role::Operator => RpcRole::Operator,
         Role::Maintainer => RpcRole::Maintainer,
         Role::Admin => RpcRole::Admin,
+    }
+}
+
+// ============================================================================
+// v0.5 候选 B (3/4)：StreamState 节流（D5a / reviewer Plan PD2）
+// ============================================================================
+
+/// `StreamState` 节流默认下限（D5a）：`min_interval_ms == 0` 用此值。
+const STREAM_STATE_DEFAULT_INTERVAL_MS: u64 = 50;
+/// `StreamState` 节流 floor（D5a）：`0 < min_interval_ms < 20` clamp 到此值。
+const STREAM_STATE_FLOOR_INTERVAL_MS: u64 = 20;
+/// per-RPC tick → mpsc 缓冲。keep-last + 节流下小 buffer 足够；满则 backpressure
+/// 让 tick task 等 client，自然降到 client 消费速率（不无界堆积）。
+const STREAM_STATE_CHANNEL_BUFFER: usize = 8;
+
+/// `StreamState` 节流 interval 计算（D5a，reviewer Plan PD2 拍定）：
+/// `0 → 50ms`（默认）；`0 < x < 20 → 20ms`（floor，不拒）；`>= 20 → 原值`。
+fn clamp_stream_interval_ms(min_interval_ms: u32) -> u64 {
+    let v = u64::from(min_interval_ms);
+    if v == 0 {
+        STREAM_STATE_DEFAULT_INTERVAL_MS
+    } else if v < STREAM_STATE_FLOOR_INTERVAL_MS {
+        STREAM_STATE_FLOOR_INTERVAL_MS
+    } else {
+        v
     }
 }
 
@@ -799,13 +825,11 @@ impl RobotControl for GatewayHandler {
     }
 
     // ------------------------------------------------------------------------
-    // v0.5 候选 B read-only state plane。
+    // v0.5 候选 B read-only state plane（**(2/4)+(3/4) 真 handler**）。
     //
-    // - `get_state`    → **(2/4) 真 handler**（读常驻 [`StatePool`] cache +
-    //   错误码顺序硬锁 D9）。
-    // - `stream_state` → (3/4) 占位（graceful `unimplemented`，PE2；真 handler
-    //   per-RPC tick task + 节流 D5）。
-    // `StreamStateStream` 关联类型按 (3/4) 最终形态定（Box::pin RobotState 流）。
+    // - `get_state`    → 读常驻 [`StatePool`] cache + 错误码顺序硬锁 D9（(2/4)）。
+    // - `stream_state` → 开流前同 D9 校验 + **per-RPC tick task 读同一 cache**
+    //   （**不**新建底层 subscriber，锁点 2）+ 节流 D5a（(3/4)）。
     // ------------------------------------------------------------------------
 
     type StreamStateStream = std::pin::Pin<
@@ -852,11 +876,69 @@ impl RobotControl for GatewayHandler {
 
     async fn stream_state(
         &self,
-        _request: tonic::Request<StreamRequest>,
+        request: tonic::Request<StreamRequest>,
     ) -> Result<tonic::Response<Self::StreamStateStream>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "StreamState not yet implemented (v0.5 候选 B (3/4))",
-        ))
+        let req = request.into_inner();
+        let hardware_id = req.hardware_id;
+
+        // 开流前校验**同 GetState 口径**（D9）：① 空 → InvalidArgument ② 不在池
+        // → NotFound（禁 fallback）③ 已知但无首帧 → Unavailable。auth：read RPC
+        // **不读不校验** token（D7）。
+        if hardware_id.is_empty() {
+            return Err(tonic::Status::invalid_argument(
+                "StreamRequest.hardware_id must be non-empty",
+            ));
+        }
+        match self.state.state_cache.snapshot(&hardware_id) {
+            StateLookup::UnknownHardware => {
+                return Err(tonic::Status::not_found(format!(
+                    "hardware_id '{hardware_id}' is not a config-declared hardware (gateway state pool)"
+                )));
+            }
+            StateLookup::NoFrame => {
+                return Err(tonic::Status::unavailable(format!(
+                    "hardware_id '{hardware_id}' has no S0 state sample yet"
+                )));
+            }
+            // 有首帧 → 开流（keep-last 永不清，后续 tick 恒有帧）。
+            StateLookup::Frame(_) => {}
+        }
+
+        // 节流 interval（D5a）。per-RPC **轻量 tokio tick task**：每 interval 读
+        // **同一常驻 cache**（**绝不**新建底层 iceoryx2 subscriber，锁点 2）→
+        // convert → mpsc。client drop response stream → Receiver drop →
+        // `tx.send().await` Err → task break（drop→stop，沿 events_subscribe 精神，
+        // 但更轻：无 std::thread / 无 iceoryx2 句柄）。
+        let interval_ms = clamp_stream_interval_ms(req.min_interval_ms);
+        let cache = Arc::clone(&self.state.state_cache);
+        let robot_id = self.state.robot_id.clone();
+        let hw = hardware_id;
+        let (tx, rx) = tokio::sync::mpsc::channel(STREAM_STATE_CHANNEL_BUFFER);
+
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_millis(interval_ms));
+            // 不 burst 补偿漏掉的 tick（节流是"最新观察流"，不保证每 tick 一帧）。
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                ticker.tick().await;
+                let item = match cache.snapshot(&hw) {
+                    StateLookup::Frame(bytes) => match flatbuffers::root::<JointState>(&bytes) {
+                        Ok(fb) => Ok(joint_state_fb_to_robot_state(fb, &robot_id, &hw)),
+                        // 解码错单 tick 跳过（不杀流；理论不发生——bytes 来自合法帧）。
+                        Err(_) => continue,
+                    },
+                    // 开流后理论不再 NoFrame（keep-last）；UnknownHardware 不会发生。
+                    StateLookup::NoFrame | StateLookup::UnknownHardware => continue,
+                };
+                if tx.send(item).await.is_err() {
+                    // client 已 drop response stream → 停 tick task。
+                    break;
+                }
+            }
+        });
+
+        let stream: Self::StreamStateStream = Box::pin(ReceiverStream::new(rx));
+        Ok(tonic::Response::new(stream))
     }
 }
 
@@ -1620,6 +1702,89 @@ mod tests {
         assert_eq!(rs.layout_id, 7);
         assert_eq!(rs.stamp_ns, 123);
         assert_eq!(rs.position_rad, vec![1.0, 2.0]);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // v0.5 候选 B (3/4)：StreamState 节流 clamp（D5a）+ 开流校验 + 帧转换
+    // ────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn clamp_stream_interval_d5a() {
+        assert_eq!(clamp_stream_interval_ms(0), 50); // 默认
+        assert_eq!(clamp_stream_interval_ms(1), 20); // floor
+        assert_eq!(clamp_stream_interval_ms(19), 20); // floor
+        assert_eq!(clamp_stream_interval_ms(20), 20); // 边界原值
+        assert_eq!(clamp_stream_interval_ms(100), 100); // 原值
+    }
+
+    #[tokio::test]
+    async fn stream_state_open_time_error_codes() {
+        // ① 空 hardware_id → InvalidArgument。
+        let h_empty = GatewayHandler::for_test();
+        let err = h_empty
+            .stream_state(tonic::Request::new(StreamRequest {
+                hardware_id: String::new(),
+                min_interval_ms: 0,
+            }))
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+
+        // ② 未知 hardware → NotFound。
+        let err = h_empty
+            .stream_state(tonic::Request::new(StreamRequest {
+                hardware_id: "nope".to_string(),
+                min_interval_ms: 0,
+            }))
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.code(), tonic::Code::NotFound);
+
+        // ③ 已知但无首帧 → Unavailable（开流时同 GetState 口径）。
+        let cache = Arc::new(StateCache::new(&["arm".to_string()]));
+        let h = GatewayHandler::for_test_with_state_cache(cache);
+        let err = h
+            .stream_state(tonic::Request::new(StreamRequest {
+                hardware_id: "arm".to_string(),
+                min_interval_ms: 0,
+            }))
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.code(), tonic::Code::Unavailable);
+    }
+
+    #[tokio::test]
+    #[allow(clippy::float_cmp)] // position_rad 透传精确字面值
+    async fn stream_state_emits_converted_frame() {
+        use tonic::codegen::tokio_stream::StreamExt;
+
+        let cache = Arc::new(StateCache::new(&["arm".to_string()]));
+        let body = robot_msg::build_helpers::build_joint_state(7, 123, &[1.0, 2.0], &[], &[], "");
+        cache.store("arm", body);
+        let h = GatewayHandler::for_test_with_state_cache(Arc::clone(&cache));
+
+        let resp = h
+            .stream_state(tonic::Request::new(StreamRequest {
+                hardware_id: "arm".to_string(),
+                min_interval_ms: 20,
+            }))
+            .await
+            .unwrap();
+        let mut stream = resp.into_inner();
+
+        // interval 首 tick 立即 → 首帧很快到达；字段转换正确。
+        let first = stream.next().await.unwrap().unwrap();
+        assert_eq!(first.robot_id, "for_test");
+        assert_eq!(first.hardware_id, "arm");
+        assert_eq!(first.layout_id, 7);
+        assert_eq!(first.stamp_ns, 123);
+        assert_eq!(first.position_rad, vec![1.0, 2.0]);
+
+        // drop response stream → tick task 下次 send 失败后退出（不 panic / 不挂）。
+        drop(stream);
     }
 
     // ────────────────────────────────────────────────────────────────────────
