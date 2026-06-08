@@ -7,6 +7,18 @@
 > 最小行为。结论 = **additive**（proto method 8→9 + 新 RR envelope + S0 状态机
 > 加 `Event::Disable`），开放问题留 Spec 拍板。
 
+## amend 记录（2026-06-08；reviewer CodeMap review 后）
+
+reviewer 4 阻断（事实错误）+ 1 非阻断收紧，已全回修：
+
+| # | 原错误 | 实测纠正 |
+|---|---|---|
+| B1 | "set_enabled role 待拍/候选 C 新增" | `set_enabled` **已映射 operator/maintainer/admin**（`configs/rpc_roles.toml:54`，viewer 无）+ `Capability::SetEnabled` 已存在（`auth.rs:66`）→ 候选 C **复核锁定现有 operator+**，非新增 |
+| B2 | "Event::Enable 当前无 production 触发器" | s0_daemon **启动时已自动发 `Event::Enable`**（`s0_daemon.rs:868`，尊重 estop_latched）+ ipc_thread drain 外部 event_rx（`ipc_thread.rs:554`）→ SetEnabled 是首个 **operator/RPC 显式** enable transport，**非首个 production enable** |
+| B3 | "SCHEMA_SET_ENABLED = 0x0402/0x0403" | 0x0402/0x0403 已被 **InvokeTask** 占（`schema_id.rs:76`）；当前 max = `SCHEMA_IK_PAYLOAD=0x040C`（`:114`）→ SET_ENABLED 推 **0x040D/0x040E**（registry 升序 + schema_lint 锁）|
+| B4 | "SetEnabled(false) 只加 Event::Disable" | enable **两层**：`Event::Enable` 只 Safe→Ready（`state_machine.rs:557`，无上扭）；真上扭是 `Ready+Heartbeat→Enabled.Active` 的 **effectful `AdapterNormalReq::Enable(true)`**（`:1124`）。disable 须拆清目标态 / OutputPolicy / 是否发 `Enable(false)` / 失败映射 / latched 时是否允许（hard_rt_ctrl：`Enable(true)` latched 拒、`Enable(false)` 仍可，`hard_rt_ctrl.rs:390`）|
+| 非阻断 | §6.7 #3 disable 边界 | 补"disable 也不得清 latch，硬件侧必须是 torque-off/disabled path，**不是** EStop" |
+
 ---
 
 ## ① design §5.3/§5.4 frozen 语义 + capability
@@ -17,11 +29,12 @@
   `message SetEnabledCommand { CommandMeta meta = 1; bool enabled = 2; }`
   —— 单 bool `enabled`，无 per-hardware selector（**多 hardware 语义是开放问题**，
   类比候选 B 的 `GetState(Empty)` 歧义；见 §7 Q1）。
-- **capability（design §5.4，L960）**：`set_enabled` —— **无** `maintainer+` /
-  `admin` / `any` 限定符（对比 `clear_estop (maintainer+)` / `estop (any)` /
-  `reload_calibration (maintainer+)` / `set_policy (admin)`）。落在**默认 tier**
-  （与 `read_state` / `invoke_task` / `clear_error` 同列）→ **倾向 operator+**，
-  确切 role 由 `configs/rpc_roles.toml` 拍（候选 C 新增映射；§7 Q2）。
+- **capability（design §5.4，L960）= 已落地 operator+（B1 纠正）**：
+  `Capability::SetEnabled` **已存在**（`crates/robot-rpc/src/auth.rs:66`）；
+  `configs/rpc_roles.toml:54` `[roles.operator].capabilities` **已含 `set_enabled`**
+  （+ maintainer/admin 继承，**viewer 无**）。design §5.4 也无 maintainer+ 限定符
+  （对比 `clear_estop (maintainer+)`）→ **operator+ 已是现状**。候选 C = **复核并
+  锁现有映射**（确认 viewer 拒 + operator+ 准），**非新增/待拍**。
 - **§5.5 路由**：`EStop` / `ClearEStop` 等 safety-critical control action **直接落
   S0 action handler，S1 不参与**；普通 task/policy/config 才转 S1。**SetEnabled 改
   S0 enable 状态（非 task）→ 归 S0 control action**（同 ClearEStop 侧，**非** S1）。
@@ -47,16 +60,34 @@
   CONTROL_LOST。**operator 主动 disable 无对应 transition** → 候选 C 需 **加
   `Event::Disable` + transition**（additive，目标态语义 §7 Q3）。
 
-### `Event::Enable` 当前**无 production 触发器**
+### `Event::Enable` 已有 production 触发器（启动 auto-enable 占位；**B2 纠正**）
 
-- `ipc_thread.rs` 模块 doc（L8-16）明写：运行期只真正发 `Enable`/`Heartbeat`/
-  `EStop`，且 **`Enable` 来源 = "测试或 RPC 注入"**（表格 L13）。
-- production `ipc_thread`（L535/548/552）只 push `Heartbeat` / `EStop` / 转发的
-  `ev`；**无自动 push `Enable`**。`Event::Enable` 的全部 `events.push` 都在
-  `ipc_tick.rs` **单测**里（748/976/1067…）+ `state_machine.rs` 单测。
-- **结论**：今天 S0 production **没有 Safe→Ready 的 enable 触发器**；**SetEnabled
-  是 `Event::Enable` 的首个 production transport**（与 ipc_thread doc"RPC 注入"
-  的预留口对齐）。
+- **s0_daemon 启动时已自动发一次 `Event::Enable`**（`s0_daemon.rs:868`，注释
+  "自动 Event::Enable（Part 2 无 RPC，由 daemon 启动时替代 RPC 源）"）：配合
+  all-true `initial_guards` 推 Safe→Ready，再由首个 heartbeat 推 Ready→Enabled。
+  **尊重 estop_latched**（latched → `try_transition` 拒进 Ready，留 Safe）。
+- `ipc_thread` 还 drain 外部 event channel（`event_rx.try_recv`，`ipc_thread.rs:554`）
+  → `Event::Enable` 可被外部注入。
+- s0_daemon 注释明写 "v0.3 起由 **RPC 网关**发；Part 2 简化：daemon 启动时立即发
+  一次" —— **启动 auto-enable 是 RPC 源的临时占位**。
+- **结论（纠正）**：`Event::Enable` **已有 production 触发器**（启动 auto-enable）；
+  **SetEnabled 是首个 operator/RPC 显式 enable/disable transport**，把"daemon 无
+  条件启动 auto-enable"升级成"operator 可控 + （§7 Q6）config `auto_enable` 绑定"。
+
+### enable **两层**：状态机 event vs adapter 上扭（**B4 纠正**）
+
+- **层 1（状态机）**：`Event::Enable` 只做 `Safe→Ready`（`state_machine.rs:557`，
+  **Pure transition，无上扭**）。
+- **层 2（硬件）**：真正上扭在 `Ready + Heartbeat → Enabled.Active` —— 这是
+  **Effectful transition**，先排 `AdapterNormalReq::Enable(true)` 等 ack 才 commit
+  Enabled（`state_machine.rs:1124` "finding M7：决定上扭后必须先排 adapter
+  Enable(true) 等 ack，避免汇报 Enabled 但硬件未真上扭的窗口"）。
+- **adapter latch 语义**（`hard_rt_ctrl.rs:390`）：`safety_latched` 时
+  `Enable(true)` → `Unsupported`（拒）；`Enable(false)` → `Submitted`（仍可）。
+- **对 SetEnabled 的含义**：`SetEnabled(true)` 走层 1 `Event::Enable`（latch 时层 1
+  guard 已先拒）；`SetEnabled(false)`（新 `Event::Disable`）**不只是状态机 event**，
+  必须明确**是否发 `AdapterNormalReq::Enable(false)`（torque-off）+ 目标态 +
+  OutputPolicy + 失败映射 + latched 时是否允许 disable**（§7 Q3 收紧）。
 
 ### ClearEStop control action = 复用模板（`clear_estop_action.rs` + RR drain）
 
@@ -90,9 +121,11 @@
   `tonic::Code` 显式 match，newtype struct + count-lock 防漂移，**同候选 B PE1
   教训**）。**SetEnabled 需新 `set_enabled.fbs`**（`SetEnabledRequest{ meta 字段 +
   bool enabled }` + `SetEnabledResponse{ RpcStatus + domain status }`）+ schema_id
-  注册：现 `SCHEMA_CLEAR_ESTOP_REQUEST=0x0400` / `_RESPONSE=0x0401`（`schema_id.rs:
-  66-69`）→ 新增 `SCHEMA_SET_ENABLED_REQUEST/RESPONSE`（如 `0x0402`/`0x0403`），
-  走 6 步 atomic 注册链（沿候选 1/2 schema 链先例）。
+  注册（**B3 纠正**）：`0x0400`/`0x0401` = ClearEStop，`0x0402`/`0x0403` 已被
+  **InvokeTask** 占（`schema_id.rs:76`），当前 **max = `SCHEMA_IK_PAYLOAD =
+  0x040C`**（`schema_id.rs:114`）→ 新增 `SCHEMA_SET_ENABLED_REQUEST = 0x040D` /
+  `_RESPONSE = 0x040E`（**registry 升序**，`SCHEMA_ID_NAMES` 表同步 + `schema_lint`
+  锁），走 6 步 atomic 注册链（沿候选 1/2 schema 链先例）。
 - **gateway handler**：reuse A1 `rr_io_thread` + `complete_ack_rpc` 桥范式（候选 A
   已熟）；SetEnabled 返 `Ack`（design §5.3）。
 
@@ -109,8 +142,11 @@
     时被 guard 拒（留 Safe），无法 enable**。
   - **SetEnabled 全程不碰 `estop_latch` 文件**（只有 ClearEStop control action 能清
     latch，design §6.6.1 + §6.7 #3）→ §6.7 #3 **天然守住**。
-  - `SetEnabled(false)`（新 `E::Disable`）**也必须不清 latch**（只 torque off）；
-    且不能从 Fault 直接 enable（Fault→Ready 只能 `ClearError`，`E::Enable` 从 Fault
+  - `SetEnabled(false)`（新 `E::Disable`）**也必须不清 latch**：硬件侧必须走
+    **torque-off / disabled path**（`AdapterNormalReq::Enable(false)`，latch 下仍
+    `Submitted`，`hard_rt_ctrl.rs:390`），**不是** EStop（EStop 会置
+    `estop_latched=true` + StopCommanded；disable 不置 latch）。
+  - 不能从 Fault 直接 enable（Fault→Ready 只能 `ClearError`，`E::Enable` 从 Fault
     无 transition → 自然拒）。
 - **hard boundary（候选 C 实施期不破）**：SetEnabled **不**清 estop_latch / **不**
   绕 FAULT / **不**改 ClearEStop·ClearError 语义 / **不**改 §6.7 任何不变量 /
@@ -124,13 +160,16 @@
   `[disable] write_enable(false) on shutdown` —— 这是 **adapter 硬件 enable**
   （`AdapterNormalReq::Enable(true/false)`，`rt_thread`/`hard_rt_ctrl` 已调），跟
   状态机 `Event::Enable`（Safe→Ready）是**两层**。
-- **design §7.2 config（L1217）**：`auto_enable = true` per `[[hardware]]` ——
-  dimos 语义 = 启动即 enable。robot-system 等价 = 启动时自动 emit `Event::Enable`
-  （guards 满足时）**或** operator 显式 `SetEnabled(true)`。
-- **候选 C 提供 operator/RPC enable 路径**；**config `auto_enable` 自动 enable
-  是否本候选做**是开放问题（§7 Q6：倾向先做 RPC 路径，config auto_enable 可同候选
-  或推后）。dimos-deploy 实际 auto_enable 行为需开 Spec 前抽查
-  `/Users` 侧 dimos（[[dimos_paths]] 移植参考源）确认最小动作 = enable-on-start。
+- **design §7.2 config（L1217）+ 现状**：`auto_enable = true` per `[[hardware]]`
+  （`configs/xlerobot.toml:28` 已有）。**但 s0_daemon 启动 auto-enable 当前
+  无条件**（`s0_daemon.rs:868` 不读 `auto_enable`，总发一次 `Event::Enable`）→
+  **config `auto_enable` 字段目前未被 daemon 消费**（gap）。
+- **候选 C 现状 vs 目标**：`Event::Enable` 已有启动 auto-enable 占位（B2）；候选 C
+  提供 **operator/RPC 显式 enable/disable** 路径。**开放问题**（§7 Q6）= 候选 C
+  是否**把现有无条件启动 auto-enable 绑定到 config `auto_enable`**（auto_enable=false
+  的 hardware 启动不自动上扭，等 operator `SetEnabled(true)`），**非从零实现**。
+  dimos-deploy 实际 auto_enable 行为开 Spec 前抽查 `/Users` 侧 dimos（[[dimos_paths]]
+  移植参考源）确认最小动作 = enable-on-start。
 
 ---
 
@@ -147,12 +186,17 @@
    SetEnabled handler（auth/role/capability 校验 + `complete_ack_rpc` 桥）。
 4. **S0**：第 2 个 rr_server（或泛化单 rr_server 多 topic）+ `ipc_thread` set_enabled
    RR drain → `ipc_tick` emit `Event::Enable`/新 `Event::Disable` → 状态机。
-5. **状态机**：加 `Event::Disable` + transition（Enabled/Ready→Safe，**不清 latch**）
-   ；`Event::Enable` 复用现有（已 guard `!estop_latched`）。
-6. **capability**：`configs/rpc_roles.toml` 加 `set_enabled` → role（operator+ 倾向）。
+5. **状态机 + 硬件两层**：`Event::Enable` 复用现有（Safe→Ready，已 guard
+   `!estop_latched`；上扭仍在 Ready→Enabled effectful 步）；**加 `Event::Disable`
+   + transition**（目标态 / OutputPolicy / `AdapterNormalReq::Enable(false)` /
+   失败映射 / latched-disable 由 §7 Q3 拍）。
+6. **capability**：`set_enabled`→operator+ **已在** `configs/rpc_roles.toml:54` +
+   `Capability::SetEnabled` 已存在 → 候选 C **复核锁定**（确认 viewer 拒），**非新增**。
+7. **config（Q6）**：候选 C 是否把 s0_daemon 无条件启动 auto-enable 绑定到 config
+   `auto_enable`（已有字段未被消费），待拍。
 
-**不在候选 C**（推后/独立）：`EStop` RPC（候选 D）/ config `auto_enable` 自动路径
-（§7 Q6 待拍）/ S1 任何改动（SetEnabled 是 S0 控制，S1 0 改）。
+**不在候选 C**（推后/独立）：`EStop` RPC（候选 D）/ S1 任何改动（SetEnabled 是 S0
+控制，S1 0 改）。
 
 ---
 
@@ -162,17 +206,24 @@
   selector。多 hardware 下 enable/disable **哪些**？（a）全 hardware；（b）加
   hardware_id（design-freeze diff，类比候选 B D3 `GetState(Empty)`→
   `GetStateRequest`，走 CHANGELOG）。倾向需 reviewer 拍。
-- **Q2（role）**：`set_enabled` capability → 哪个 role？design §5.4 非 maintainer+
-  tier → 倾向 operator+；`configs/rpc_roles.toml` 落地。
-- **Q3（Disable 目标态语义）**：`SetEnabled(false)` = `Event::Disable` →
-  Enabled/Ready **回哪态**？倾向 → Safe（torque off，**不**置 estop_latched，区别于
-  EStop）。是否需新 `Disabled` 子态 vs 复用 Safe，reviewer 拍。
+- **~~Q2（role）~~ 已锁（B1）**：`set_enabled` **已是 operator+**
+  （`rpc_roles.toml:54` operator/maintainer/admin，viewer 无 + `auth.rs:66`
+  `Capability::SetEnabled`）→ 候选 C **复核确认现状**，非开放问题。
+- **Q3（Disable 硬件侧语义收紧，B4）**：`SetEnabled(false)` = `Event::Disable` 须
+  Spec 拍**五项**：(a) 目标态（→ Safe？复用 Safe vs 新 `Disabled` 子态）+ (b)
+  `OutputPolicy`（Disabled / Hold？）+ (c) 是否发 `AdapterNormalReq::Enable(false)`
+  torque-off + (d) adapter 失败如何映射 RpcStatus + (e) **latched 时是否允许
+  disable**（hard_rt_ctrl 允许 `Enable(false)` latched）。共识：**不**置 estop_latched
+  （区别 EStop）、**不**清 latch。
 - **Q4（S0 vs S1 确认）**：SetEnabled 归 **S0 control action**（§5.5 + 改 S0 enable
   状态）→ 确认**不**走 B4 S1 task RR；S1 0 改。
 - **Q5（S0 rr_server 选型）**：第 2 个 rr_server_thread（set_enabled 专用）vs 单
   rr_server_thread 泛化成多 topic（clear_estop + set_enabled）。
-- **Q6（config auto_enable 范围）**：候选 C 是否含 config `auto_enable` 自动 emit
-  `Event::Enable`，还是只做 RPC 路径、auto_enable 推后？
+- **Q6（startup auto-enable 绑定 config，B2 重写）**：现状 = s0_daemon **无条件**
+  启动 auto-enable（`s0_daemon.rs:868` 不读 config）+ config `auto_enable=true` 已
+  存在但**未被消费**（`xlerobot.toml:28`）。候选 C 是否**把启动 auto-enable 绑定到
+  config `auto_enable`**（false 的 hardware 启动不自动上扭，等 `SetEnabled(true)`）？
+  还是只做 RPC 路径、config 绑定推后？**非从零实现 auto-enable**（已存在）。
 - **Q7（dry_run）**：`CommandMeta.dry_run` 对 SetEnabled 语义（evaluate-only？）—
   ClearEStop 有 dry_run 先例，SetEnabled 是否支持端到端。
 
