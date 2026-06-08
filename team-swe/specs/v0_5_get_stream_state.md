@@ -37,6 +37,19 @@ reviewer round 2 认可 D3/D4a/D5a/D1a/D3b 方向，但 3 阻断 + 2 同步修�
 > 只把 §影响范围 D10 两处概述对齐）。错误码顺序在 Plan §P.2.2 GetState handler
 > 步骤里硬锁。
 
+## Plan round 1 amend 记录（2026-06-03；reviewer Plan round 1 复核后）
+
+reviewer Plan round 1 **不批准直接进 (1/4)**，给 1 阻断 + 3 拍板 + 1 非阻断；本
+amend 全吸收，预期下轮 **Plan Approved**：
+
+| # | 类型 | reviewer 点 | 落点 |
+|---|---|---|---|
+| PB1 | **阻断** | proto 4 enum 与 fbs 4 enum **同名**（`S0Mode` 等），`state_convert.rs` 同时 import 两个 → 未锁别名易混乱/clippy 噪声 | §P.2.1.b 硬约束：`use robot_msg::msg::{S0Mode as S0ModeFb, ...}` + `use crate::proto::{S0Mode as S0ModeProto, ...}`；四 enum 全 `*Fb`/`*Proto`；转换 fn `s0_*_fb_to_proto`；**禁裸用同名** |
+| PD1 | 拍板 | D-P1 ACK | §P.3：`[[hardware]]` 空 = 空 state 池；非空 hardware_id NotFound，缺/空仍先 InvalidArgument；兼容 B4 |
+| PD2 | 拍板 | D-P2 拍定数值 | §P.3 + §P.2.4.b：`interval=50`→ window=600ms 帧 ≤13 + 相邻 ≥40ms；clamp(<20)→ window=240ms 帧 ≤13 + 相邻 ≥16ms（测试判据，不改协议）|
+| PD3 | 拍板 | D-P3 ACK + 改进 | §P.3 + §P.2.4.a：robot_id=`state_e2e_<pid>_<case>`（避残留 topic 互扰）+ port 50061 + GLOBAL_LOCK + --test-threads=1 |
+| PN1 | 非阻断 | AC-Q `schema_compat` 措辞（本轮不改 fbs，别误读成有独立命令）| AC-Q + §P.2.1.d + §P.2.4.d：写实 `cargo run -p robot-msg --bin schema_lint` + `cargo test -p robot-msg`（fbs 0 退化）；proto additive 兼容由 prost build + `task_rpc_e2e` 覆盖 |
+
 ## What
 
 实现 design §5.3 两条**只读** RPC，让**远程 client**（dimos / web UI，gRPC
@@ -268,8 +281,9 @@ idempotency-* / rr-timeout-grace / rpc-roles-toml）**没有 config/hardware 输
 
 - **AC-1**：proto additive —— `service RobotControl` append GetState/StreamState
   2 rpc + RobotState/GetStateRequest/StreamRequest message + 4 镜像 enum；既有
-  6 method diff = 0（字段/字段号/语义不变）；`schema_compat` / 既有 6 RPC e2e
-  0 退化。
+  6 method diff = 0（字段/字段号/语义不变）；fbs 0 退化（`schema_lint` +
+  `cargo test -p robot-msg`）+ 既有 6 RPC e2e（`task_rpc_e2e`）0 退化（PN1：
+  **无**独立 `schema_compat` 命令）。
 - **AC-2**：`GetState(GetStateRequest{hardware_id})` → gateway 读该 hardware 的
   **常驻 cache**（D4 pool，**非**临时订阅）→ `JointState`-fbs→`RobotState`-proto
   → 返。字段等价（mode/control_link/output_mode/safety/fault/positions/layout/
@@ -298,8 +312,12 @@ idempotency-* / rr-timeout-grace / rpc-roles-toml）**没有 config/hardware 输
 - **AC-9**：`--config`（D10）声明 N hardware 时，gateway **只订阅 config 声明的
   `hardware_id`**；请求未声明的 hardware → `NotFound`，**禁默默 fallback 到第一个**
   （hard；e2e：2 hardware `--config`，请求第 3 个不存在的 id → NotFound）。
-- **AC-Q**：fmt + clippy(-D warnings) + workspace test + 4 既有 smoke 0 退化 +
-  GetState/StreamState cross-process e2e + cargo deny baseline + schema_compat。
+- **AC-Q**（PN1 措辞具体化）：fmt + clippy(-D warnings) + `cargo test --workspace`
+  + 4 既有 smoke 0 退化 + GetState/StreamState cross-process e2e + cargo deny
+  baseline（未新增 violation）。**fbs schema 本轮不改** → 用
+  `cargo run -p robot-msg --bin schema_lint` + `cargo test -p robot-msg` 确认
+  fbs **0 退化**（**非**独立 `schema_compat` 命令）；**proto additive 兼容**由
+  prost build 成功 + 既有 6 RPC e2e（`task_rpc_e2e` 0 退化）覆盖。
 
 ## round 1 拍板结果（reviewer round 1 拍定；2026-06-03）
 
@@ -328,15 +346,17 @@ daemon 0 改**（D10 gateway minimal local 解析 config，**不**抽 `robot-s0`
 Spec round 1 → reviewer round 1（D3/D1a/D4a/D5a/D3b 5 项拍板）✅ →
 Spec round 2 → reviewer round 2（3 阻断 + 2 同步修订）✅ →
 Spec round 3 → reviewer round 3 **ACK 进 Plan**（+ 非阻断文案收窄已修，commit
-`5df51ff`）✅ → **Plan round 1（本文 §Plan）→ 待 reviewer Plan round 复核** →
-(1/4)..(4/4) 实施。**reviewer 明确"批准 Plan 后才进实现"**——Plan round ACK 前
-不开 (1/4)。
+`5df51ff`）✅ → Plan round 1 → reviewer Plan round 1（1 阻断 PB1 + 3 拍板
+PD1-3 + 1 非阻断 PN1）✅ → **Plan round 1 amend（本文，全吸收）→ 待 reviewer
+Plan Approved** → (1/4)..(4/4) 实施。**reviewer 明确"批准 Plan 后才进实现"**——
+Plan Approved 前不开 (1/4)。
 
 ## Plan
 
-> RIPER Plan round 1。reviewer round 3 **ACK 进 Plan**（复核 `91bf6d8`：3 阻断
-> 实质收口）+ 5 锁点 + 4 段 commit 拆分。本节把 Spec 落成可执行 commit 序列。
-> **待 reviewer Plan round 复核**；不批准则 amend，批准后才进 (1/4)。
+> RIPER Plan round 1（+ Plan round 1 amend：reviewer 1 阻断 PB1 + 3 拍板
+> PD1-3 + 1 非阻断 PN1 全吸收，详顶部「Plan round 1 amend 记录」）。4 段 commit
+> 拆分。本节把 Spec 落成可执行 commit 序列。**待 reviewer Plan Approved**；批准
+> 后才进 (1/4)。
 
 ### P.0 工作基线
 
@@ -386,14 +406,25 @@ commit chain（hash 实施期填）：(1/4) `TBD` / (2/4) `TBD` / (3/4) `TBD` /
 - **头注 method 数 6→8**。
 
 ##### P.2.1.b 新 `src/state_convert.rs` — fbs→proto 纯转换器（D6）
-- 4 enum 转换器（沿 `events_subscribe.rs:419/433/448` exhaustive-match 范式）：fbs enum → proto enum，**exhaustive match**（fbs 加 variant 不更新 → 编译失败，编译期锁）。
+- **别名硬约束（reviewer Plan round 1 阻断 PB1）**：proto 4 enum 与 fbs 4 enum
+  **同名**（都叫 `S0Mode` 等，fbs 来自 `robot_msg::msg`，proto 来自
+  `crate::proto`）。**禁裸用同名**；import 一律加后缀别名：
+  ```rust
+  use robot_msg::msg::{S0Mode as S0ModeFb, S0ControlLink as S0ControlLinkFb,
+                       S0OutputMode as S0OutputModeFb, S0SafetyState as S0SafetyStateFb};
+  use crate::proto::{S0Mode as S0ModeProto, S0ControlLink as S0ControlLinkProto,
+                     S0OutputMode as S0OutputModeProto, S0SafetyState as S0SafetyStateProto};
+  ```
+  转换 fn 一律 `s0_mode_fb_to_proto` / `s0_control_link_fb_to_proto` /
+  `s0_output_mode_fb_to_proto` / `s0_safety_state_fb_to_proto`（`*Fb -> *Proto`）。
+- 4 enum 转换器（沿 `events_subscribe.rs:419/433/448` exhaustive-match 范式）：`*Fb` enum → `*Proto` enum，**exhaustive match**（fbs 加 variant 不更新 → 编译失败，编译期锁）。
 - `joint_state_fb_to_robot_state(fb: &JointState, robot_id: &str, hardware_id: &str) -> RobotState`：position_rad（fbs vector→Vec<f64>）/ layout_id / **stamp_ns 透传 S0 published 值**（非自生 clock，AC-7）/ mode·control_link·output_mode·safety_state（经 4 转换器）/ **fault_code = `s0_fault_code()` ubyte `as u32` 透传**（**不** mirror `S0FaultCode` enum，D6）/ robot_id·hardware_id（调用方传入）。
 
 ##### P.2.1.c lib unit（本 commit land）
 - 4 enum 转换器逐 variant（含 UNSPECIFIED 边界）+ `joint_state_fb_to_robot_state` 手搓 fbs（`build_helpers`）断言字段等价 + stamp 透传 + fault_code 数值透传。
 
 ##### P.2.1.d Quality Gate
-- fmt + clippy(-D warnings) clean；`cargo test --workspace` 不退化；**schema_compat 0 退化**（proto additive 不动既有）。
+- fmt + clippy(-D warnings) clean；`cargo test --workspace` 不退化；fbs 未改 → `cargo run -p robot-msg --bin schema_lint` + `cargo test -p robot-msg` 0 退化；proto additive 兼容由 prost build + 既有 RPC e2e 覆盖（PN1）。
 
 ##### P.2.1.e 风险锚点（锁点 5）
 - 既有 6 method/message diff=0（只 append）；4 enum 全新（不改既有 proto enum）；robotctl/S0/S1/design.md 0 改。
@@ -442,12 +473,14 @@ commit chain（hash 实施期填）：(1/4) `TBD` / (2/4) `TBD` / (3/4) `TBD` /
 ##### P.2.4.a harness（复用 `tests/common/`）
 - 新 `tests/state_rpc_e2e.rs`（`[[test]] required-features=["client"]`，**A4 默认随 workspace 跑**）。
 - 复用 `common/`：`subprocess`（spawn s0/s1/gateway——**扩 gateway spawn helper 传 `--config`**）+ `fake_state::FakeStatePublisher::spawn`（AC-2 happy；AC-3 Unavailable = **不** spawn）+ `ready` + `case_ctx`。
-- **进程隔离（锁点 5 + 防 flake）**：distinct robot_id（`state_e2e`）+ distinct gateway port（`127.0.0.1:50061`，避 task_rpc_e2e 50051）+ GLOBAL_LOCK 串行 + `--test-threads=1`（沿 task_rpc_e2e）→ **P.3 D-P3**。
+- **进程隔离（锁点 5 + 防 flake；D-P3 拍定）**：robot_id = **`state_e2e_<pid>_<case>`**（按 pid + case 唯一化，避残留 iceoryx2 topic 互扰）+ distinct gateway port `127.0.0.1:50061`（避 task_rpc_e2e 50051）+ GLOBAL_LOCK 串行 + `--test-threads=1`（沿 task_rpc_e2e）。
 
 ##### P.2.4.b 测例（AC-2..AC-9）
 - AC-2 happy：FakeStatePublisher 喂固定 state → GetState → 字段等价（+ AC-7 stamp 透传）。
 - AC-3 三错误码（锁点 3）：缺/空 `InvalidArgument` / unknown `NotFound` / **声明但不启 FakeStatePublisher → `Unavailable`**（写实，同步 4）。**无 FP case**。
-- AC-4 节流 + AC-5 clamp：StreamState min_interval_ms=50 → 实测间隔判据（**P.3 D-P2 容差**）；<20 → clamp 20ms。
+- AC-4 节流 + AC-5 clamp（**D-P2 拍定数值**，测试判据不改协议）：
+  - `min_interval_ms=50`：固定 **window=600ms** 内帧数 **≤ ⌈600/50⌉+1 = 13** 且相邻帧间隔 **≥ 40ms**。
+  - clamp 路径 `min_interval_ms<20`（如 10→clamp 20）：固定 **window=240ms** 内帧数 **≤ 13** 且相邻帧间隔 **≥ 16ms**。
 - AC-6 auth（锁点 4）：**无 token + 有 token 两路断言同结果**；注释 + CHANGELOG 标非安全保证；**不**宣称 read_state cap enforce。
 - AC-9 多 hardware：2 hardware `--config`，请求第 3 个不存在 id → `NotFound`（禁 fallback）。
 
@@ -455,18 +488,18 @@ commit chain（hash 实施期填）：(1/4) `TBD` / (2/4) `TBD` / (3/4) `TBD` /
 - `docs/handoffs/v0.5_get_stream_state_summary.md` + CHANGELOG（design-freeze diff D3 + D10 `--config` 加法 + C1 延续）+ CLAUDE.md 状态 + handoffs README。
 
 ##### P.2.4.d Quality Gate（候选 B 完结硬 gate；AC-Q 全集）
-- fmt + clippy + `cargo test --workspace`（含新 state_rpc_e2e 默认跑）+ 4 既有 smoke 0 退化 + cargo deny baseline（未新增 violation）+ schema_compat。
+- fmt + clippy + `cargo test --workspace`（含新 state_rpc_e2e 默认跑）+ 4 既有 smoke 0 退化 + cargo deny baseline（未新增 violation）+ fbs 0 退化（`schema_lint` + `cargo test -p robot-msg`）+ proto additive 兼容（prost build + `task_rpc_e2e` 0 退化）（PN1）。
 
 ##### P.2.4.e 风险锚点
 - robotctl 0 改（AC-8）/ S0·S1·design.md 0 改 / 既有 6 RPC + task_rpc_e2e 0 退化。
 
-### P.3 Plan 拍板项（reviewer Plan round 决定）
+### P.3 Plan 拍板项（reviewer Plan round 1 全部拍定）
 
-| # | 拍板项 | 倾向 |
+| # | 拍板项 | 拍定 |
 |---|---|---|
-| D-P1 | config present 但 `[[hardware]]` 空是否允许 | **允许**（合法空配置；等价空池，非空 hardware_id 请求 NotFound；不 fail-fast）|
-| D-P2 | StreamState 节流 e2e 判据容差 | 固定窗口（如 600ms）内帧数 ≤ ⌈window/interval⌉+1，且相邻帧间隔 ≥ ~interval×0.8（吸收调度抖动）；具体数值 reviewer 拍 |
-| D-P3 | state_rpc_e2e 进程隔离值 | robot_id=`state_e2e` + port `127.0.0.1:50061`（避 task_rpc_e2e）+ GLOBAL_LOCK + --test-threads=1 |
+| D-P1 | config present 但 `[[hardware]]` 空是否允许 | **ACK 允许**（合法空配置 = 空 state 池；非空 hardware_id → NotFound，缺/空 hardware_id 仍先 InvalidArgument；兼容 B4 既有 gateway 调用）|
+| D-P2 | StreamState 节流 e2e 判据 | **拍定**（测试判据，不改协议）：`interval=50`→ window=600ms 帧 ≤13 + 相邻 ≥40ms；clamp 路径（<20）→ window=240ms 帧 ≤13 + 相邻 ≥16ms |
+| D-P3 | state_rpc_e2e 进程隔离 | **ACK + 改进**：robot_id=`state_e2e_<pid>_<case>`（避残留 topic 互扰）+ port `127.0.0.1:50061` + GLOBAL_LOCK + --test-threads=1 |
 
 ### P.4 Plan-Execute diff 登记（实施期填）
 
