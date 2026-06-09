@@ -78,10 +78,26 @@ pub struct HardwareSection {
     pub joints: Vec<String>,
     #[serde(default)]
     pub calibration: Option<String>,
+    /// **v0.5 候选 C**：启动是否自动 enable（design §7.2 `auto_enable`，B2 typed 化，
+    /// 不再走 extras）。`None`（缺省）= **true**（保留 `s0_daemon` 既有无条件启动
+    /// auto-enable 行为）；`Some(false)` → 启动留 Safe 等 operator `SetEnabled(true)`。
+    #[serde(default)]
+    pub auto_enable: Option<bool>,
     /// adapter-specific 整数字段（`baud` / `poll_hz` / ...）。v0.4 按 adapter 名
     /// 拆 enum；v0.2 通用 map 兜底。
     #[serde(flatten, default)]
     pub extras: toml::Table,
+}
+
+/// 按 resolved `hardware_id` 在 config 里 match `[[hardware]].id`（v0.5 候选 C B6：
+/// `build_adapter` + `auto_enable` 用**同一** matched 段，修既有 `.first()` 错配）。
+/// 无匹配返 `None`（调用方 fail-fast；CLI `--hardware-id` 与 config 错配）。
+#[must_use]
+pub fn resolve_hardware_section<'a>(
+    cfg: &'a RobotConfigToml,
+    hardware_id: &str,
+) -> Option<&'a HardwareSection> {
+    cfg.hardware.iter().find(|h| h.id == hardware_id)
 }
 
 /// `[monitor]` 段（task-31 B'b）：`robot-health` 采样配置。
@@ -410,5 +426,44 @@ streams = ["color", "depth"]
         assert_eq!(id.config_version, "1.2.3");
         assert_eq!(id.config_hash, *blake3::hash(raw).as_bytes());
         assert!(id.is_fully_partial());
+    }
+
+    // ---- v0.5 候选 C：按 hardware_id 选段 + auto_enable typed ----
+
+    #[test]
+    fn resolve_hardware_section_by_id() {
+        let f = write_temp(SAMPLE_TOML);
+        let cfg = load_robot_config(f.path()).unwrap();
+        // 命中第二段（**非** first）：证明 build_adapter 不再 .first() 盲取。
+        let hw = resolve_hardware_section(&cfg.parsed, "base").unwrap();
+        assert_eq!(hw.id, "base");
+        assert_eq!(hw.adapter, "mock_omni3");
+    }
+
+    #[test]
+    fn resolve_hardware_section_no_match_none() {
+        let f = write_temp(SAMPLE_TOML);
+        let cfg = load_robot_config(f.path()).unwrap();
+        assert!(resolve_hardware_section(&cfg.parsed, "nonexistent").is_none());
+    }
+
+    #[test]
+    fn auto_enable_typed_parsed_false() {
+        // auto_enable 走 typed 字段（不落 extras），可显式关掉启动自动上使能。
+        let toml = "[robot]\nid = \"r\"\nconfig_version = \"0.1\"\n\n\
+                    [[hardware]]\nid = \"arm\"\nadapter = \"mock_hard_rt\"\nauto_enable = false\n";
+        let f = write_temp(toml);
+        let cfg = load_robot_config(f.path()).unwrap();
+        assert_eq!(cfg.parsed.hardware[0].auto_enable, Some(false));
+        // typed 字段不应漏进 flatten extras。
+        assert!(!cfg.parsed.hardware[0].extras.contains_key("auto_enable"));
+    }
+
+    #[test]
+    fn auto_enable_absent_is_none() {
+        // SAMPLE_TOML 不写 auto_enable → None（s0_daemon 缺省语义 = true）。
+        let f = write_temp(SAMPLE_TOML);
+        let cfg = load_robot_config(f.path()).unwrap();
+        assert_eq!(cfg.parsed.hardware[0].auto_enable, None);
     }
 }

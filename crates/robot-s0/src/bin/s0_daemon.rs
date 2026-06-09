@@ -58,7 +58,7 @@ use robot_core::executor_ctrl::ExecutorCtrlClient;
 use robot_core::factory::{AdapterBuildContext, find_factory, registered_factories};
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
-use robot_s0::config_loader::{LoadedConfig, load_robot_config};
+use robot_s0::config_loader::{LoadedConfig, load_robot_config, resolve_hardware_section};
 use robot_s0::estop_latch::{load_estop_latch, save_estop_latch};
 use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
@@ -872,10 +872,25 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     // 推进到 READY。之后 ipc_thread 收到第一个 heartbeat 会把 READY 推到
     // ENABLED.Active。跳过 EStop latch 时 estop_latched=true → try_transition 拒绝
     // 进 READY，state 留在 SAFE —— 期望行为。
+    // **v0.5 候选 C D6**：启动 auto-enable 绑定 config `auto_enable`（B6：从
+    // resolved hardware 段读，**缺省 true** 保既有无条件行为；CLI-only 无 config
+    // 也 = true）。`auto_enable=false` → 启动留 Safe，等 operator `SetEnabled(true)`。
+    let auto_enable = args
+        .loaded_config
+        .as_ref()
+        .and_then(|c| resolve_hardware_section(&c.parsed, &args.hardware_id))
+        .and_then(|hw| hw.auto_enable)
+        .unwrap_or(true);
+
     if initial_estop_latched {
         tracing::info!("estop_latched=true → not auto-sending Event::Enable");
-    } else {
+    } else if auto_enable {
         let _ = event_tx.send(Event::Enable);
+    } else {
+        tracing::info!(
+            hardware_id = %args.hardware_id,
+            "auto_enable=false → not auto-sending Event::Enable; awaiting SetEnabled(true)"
+        );
     }
 
     // ---- 8c) systemd `Type=notify` 握手 + watchdog ping 线程 ----
@@ -1058,7 +1073,10 @@ fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
         Vec<u8>,
         Vec<String>,
     ) = if let Some(cfg) = &args.loaded_config {
-        if let Some(hw) = cfg.parsed.hardware.first() {
+        // **v0.5 候选 C B6**：按 resolved hardware_id match `[[hardware]].id`
+        // （非 `.first()`），与 auto_enable 同段——避免 CLI `--hardware-id` 选非
+        // first 段时 adapter 按 first 构造的错配。
+        if let Some(hw) = resolve_hardware_section(&cfg.parsed, &args.hardware_id) {
             // motor_ids 从 [[hardware]] extras["motor_ids"] 数组读（task 28 扩展）
             let ids = hw
                 .extras
@@ -1094,7 +1112,9 @@ fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
         } else {
             tracing::error!(
                 config_path = %cfg.source_path.display(),
-                "fatal: config 内无 [[hardware]] 段，无 adapter 可启动"
+                hardware_id = %args.hardware_id,
+                "fatal: config 内无匹配 [[hardware]].id == hardware_id（B6：CLI \
+                 --hardware-id 与 config 错配；fail-fast）"
             );
             return Err(2);
         }

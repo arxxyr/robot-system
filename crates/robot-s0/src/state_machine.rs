@@ -121,6 +121,9 @@ impl Default for S0State {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Event {
     Enable,
+    /// **v0.5 候选 C**：operator `SetEnabled(false)` —— Enabled/Ready → Safe
+    /// （torque-off，**不**置 estop_latched，区别 EStop）；Safe/Fault no-op 幂等。
+    Disable,
     Heartbeat,
     HeartbeatTimeout,
     AdapterErr(FaultCode),
@@ -371,8 +374,18 @@ fn classify_transition(
         );
     }
 
-    // ENABLED → Safe（非 EStop 路径）应是 Effectful Enable(false)，但当前
-    // try_transition 表里没有这条 transition；留 M7 后续扩展。
+    // ENABLED → SAFE（v0.5 候选 C `SetEnabled(false)` = Disable）：Effectful
+    // `Enable(false)`（真 torque-off，沿 enable 上扭对称）。Ready/Safe/Fault 的
+    // Disable 落默认 Pure + new_state policy（Ready 未上扭；Safe/Fault no-op，无需
+    // adapter action）。
+    if matches!(cur, S::Enabled { .. }) && matches!(ev, E::Disable) {
+        return (
+            TransitionKind::Effectful {
+                action: AdapterNormalReq::Enable(false),
+            },
+            OutputPolicy::Disabled,
+        );
+    }
 
     // 决定 new_policy：按 new_state 选典型 policy
     let policy = match new_state {
@@ -639,6 +652,18 @@ pub fn try_transition(cur: S0State, ev: Event, g: &Guards) -> Result<S0State, Re
                 reject("FAULT→READY needs !estop_latched && adapter_fault_cleared")
             }
         }
+
+        // ---- Enabled/Ready → SAFE（v0.5 候选 C `SetEnabled(false)` = Disable）----
+        //
+        // torque-off path（Enabled 走 effectful `Enable(false)`，见
+        // `classify_transition`）；**不**置 `estop_latched`（区别 EStop）、**不**
+        // 清 latch。Disable **不**检查 `estop_latched`：disable 一个 latched
+        // 机器人是安全 + 显式的（hard_rt_ctrl `Enable(false)` latch 下仍 Submitted）。
+        (S::Enabled { .. } | S::Ready, E::Disable) => Ok(S::Safe),
+
+        // ---- Safe / Fault → no-op（已非 enabled，幂等）----
+        (S::Safe, E::Disable) => Ok(S::Safe),
+        (S::Fault(fc), E::Disable) => Ok(S::Fault(fc)),
 
         // ---- 默认拒绝 ----
         _ => reject("no transition for (state, event)"),
@@ -1240,5 +1265,61 @@ mod tests {
         );
         assert_eq!(q.drain_emergency(), None);
         assert_eq!(q.pop(), Some(Event::Heartbeat));
+    }
+
+    // ---- v0.5 候选 C：`SetEnabled(false)` = Disable ----
+
+    #[test]
+    fn disable_from_enabled_to_safe() {
+        let g = healthy_guards();
+        assert_eq!(
+            try_transition(enabled_active(), Event::Disable, &g),
+            Ok(S0State::Safe)
+        );
+        // plan：Effectful `Enable(false)`（真 torque-off）+ Disabled policy。
+        let plan = plan_transition(enabled_active(), Event::Disable, &g).unwrap();
+        assert_eq!(plan.new_state, S0State::Safe);
+        assert!(matches!(
+            plan.kind,
+            TransitionKind::Effectful {
+                action: AdapterNormalReq::Enable(false)
+            }
+        ));
+        assert_eq!(plan.new_policy, OutputPolicy::Disabled);
+    }
+
+    #[test]
+    fn disable_from_ready_to_safe_is_pure() {
+        let g = healthy_guards();
+        assert_eq!(
+            try_transition(S0State::Ready, Event::Disable, &g),
+            Ok(S0State::Safe)
+        );
+        // Ready 未上扭 → Pure（无 adapter action）。
+        let plan = plan_transition(S0State::Ready, Event::Disable, &g).unwrap();
+        assert!(matches!(plan.kind, TransitionKind::Pure));
+    }
+
+    #[test]
+    fn disable_from_safe_and_fault_is_noop() {
+        let g = healthy_guards();
+        assert_eq!(
+            try_transition(S0State::Safe, Event::Disable, &g),
+            Ok(S0State::Safe)
+        );
+        let fault = S0State::Fault(FaultCode::AdapterErr);
+        assert_eq!(try_transition(fault, Event::Disable, &g), Ok(fault));
+    }
+
+    #[test]
+    fn disable_allowed_when_latched_does_not_check_estop() {
+        // Disable 一个 latched 机器人是安全 + 显式的；transition **不**检查
+        // estop_latched、**不**清 latch（state machine 不碰 latch 文件）。
+        let mut g = healthy_guards();
+        g.estop_latched = true;
+        assert_eq!(
+            try_transition(enabled_active(), Event::Disable, &g),
+            Ok(S0State::Safe)
+        );
     }
 }
