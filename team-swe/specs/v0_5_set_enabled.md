@@ -332,6 +332,16 @@ reviewer：P.2 接近可执行，3 执行级阻断（response/pending correlatio
 | PB9 | `PendingSetEnabled` 字段/reply 机制不够执行级 | (3/5) 字段定死 `{ request_id, deadline_ns, target: PendingTarget{EnabledActive\|Safe}, requested_enabled }`；**reply = 复用 set_enabled RR response channel + request_id 路由**（非 per-pending oneshot，沿 `ClearEStopRrResponse{request_id}` `ipc_thread.rs:123`）；resolve 构造 `SetEnabledRrResponse{request_id, payload}` |
 | PB10 | e2e `enable_adapter_fail` 无可执行 fault 触发（mock_hard_rt enable_rt 只在 latch/disconnect 失败）| **adapter-fail（AC-2c/AC-3b）移 (3/5) 集成 unit** `pending_adapter_fault_resolves_internal_adapter_error`（fault-inject mock adapter）；(5/5) cross-process e2e 去掉 2 个 adapter-fail case |
 
+#### Plan round 5 amend 记录（2026-06-09；reviewer Plan round 4 复核后）
+
+reviewer：PB8-10 方向对，3 执行级阻断（domain payload / 防线 / stale），已回修：
+
+| # | 阻断 | 修订 |
+|---|---|---|
+| PB11 | `SetEnabledRrPayload` 无 `DeadlineExceeded` variant，但 deadline 路径要 `RpcStatus::DeadlineExceeded` → 无可编码 domain | (1/5) `SetEnabledStatus += DeadlineExceeded=9`；(3/5) `SetEnabledRrPayload += DeadlineExceeded` + 补**全 payload→wire encode 映射表**（含 `DeadlineExceeded → RpcStatus::DeadlineExceeded + domain DeadlineExceeded`）|
+| PB12 | (4/5) handler 缺 ClearEStop 的 `response.request_id == request_id` 防线（mismatch → Internal + 不缓存，`gateway.rs:698`）| (4/5) handler 步加 mismatch 防线 + unit `set_enabled_wire_response_request_id_mismatch_returns_internal_and_does_not_cache` |
+| PB13 | P.3 残留旧 `PendingSetEnabled{ deadline, target, rr_reply }` + "Plan round 定字段"，与 PB9/P.2.3 矛盾 | P.3 D-P1 观测落点改"**以 P.2.3 为执行权威**"，同步 PB9 字段 + response channel 机制 |
+
 ### P.0 工作基线
 
 - **HEAD = 本 Plan round 3 amend land 的 commit**（**Execute (1/5) 前同步实际 HEAD**，
@@ -365,7 +375,8 @@ ClearEStop（A1）先例。
     的 `RpcRole`；drop `confirmation`，加 `enabled`）。
   - `enum SetEnabledStatus:ubyte { Unknown=0; Ok=1; GuardRejected=2; LatchBlocked=3;
     AdapterError=4; AlreadyInProgress=5; PreemptedByEStop=6; PreemptedByShutdown=7;
-    WouldAccept=8; }`（domain 审计 enum；wire `RpcStatus` 另带，PB3/PB5）。
+    WouldAccept=8; DeadlineExceeded=9; }`（domain 审计 enum；wire `RpcStatus` 另带，
+    PB3/PB5；**`DeadlineExceeded=9` PB11**）。
   - `table SetEnabledResponse { request_id:string; status:RpcStatus=Unknown;
     domain:SetEnabledStatus=Unknown; completed_at_ns:ulong; error_msg:string; }`
     （**PB8**：`request_id` 与 request 一致——gateway correlate pending response +
@@ -415,7 +426,13 @@ ClearEStop（A1）先例。
   payload: SetEnabledRrPayload }` + `pub enum SetEnabledRrPayload { Enabled{
   completed_at_ns }, Disabled{ completed_at_ns }, WouldAccept{ at_ns }, GuardRejected
   { actual }, LatchBlocked, AdapterError, AlreadyInProgress, PreemptedByEStop,
-  PreemptedByShutdown }`（沿 `ClearEStopRrPayload` 范式）。
+  PreemptedByShutdown, DeadlineExceeded }`（沿 `ClearEStopRrPayload` 范式；
+  **`DeadlineExceeded` PB11**）。**encode 映射**（payload → wire）：`Enabled`/`Disabled`
+  → `RpcStatus::Ok` + domain `Ok`；`WouldAccept` → `Ok` + domain `WouldAccept`；
+  `GuardRejected`/`LatchBlocked` → `FailedPrecondition` + domain 对应；`AdapterError`
+  → `Internal` + domain `AdapterError`；`AlreadyInProgress` → `ResourceExhausted`；
+  `PreemptedByEStop`/`PreemptedByShutdown` → `Aborted` + domain 对应；**`DeadlineExceeded`
+  → `RpcStatus::DeadlineExceeded` + domain `DeadlineExceeded`（PB11）**。
 - **`set_enabled_action.rs`**（新，沿 `clear_estop_action.rs`）：`evaluate_set_enabled
   _dry_run(state, guards, enabled) -> SetEnabledDryRunOutcome`（D7 precondition-only）。
 - **D-P1 pending 观测**（ipc_thread，**PB9 字段定死**）：
@@ -464,12 +481,16 @@ ClearEStop（A1）先例。
   （Method::SetEnabled）→ deadline → build wire `SetEnabledRequest` → forward via
   `spawn_rr_io_thread`（topic set_enabled，`client_factory_for::<markers::
   SetEnabledRequest, markers::SetEnabledResponse>`）→ await oneshot → decode
-  `SetEnabledResponse` → `rpc_status_to_tonic_code`（**复用**，无新 mapper）→ Ok
-  commit cache。
+  `SetEnabledResponse` → **校验 `response.request_id == validated.request_id`，
+  mismatch → `tonic::Code::Internal` + `InsertHandle` drop 不 commit cache（沿
+  ClearEStop "Step 11.5" 防线，`gateway.rs:698`，PB12）** → `rpc_status_to_tonic_code`
+  （**复用**，无新 mapper）→ Ok 路径 commit cache（非 Ok drop handle 不缓存）。
 - **`bin/robot_rpc_gateway.rs`**：起第 6 rr_io_thread（set_enabled topic）。
 - **unit**：`set_enabled_viewer_denied` / `set_enabled_status_mapping`（复用
   rpc_status mapper 覆盖 ResourceExhausted/Aborted/Internal/DeadlineExceeded）/
-  `cached_response_set_enabled_roundtrip`。
+  `cached_response_set_enabled_roundtrip` /
+  **`set_enabled_wire_response_request_id_mismatch_returns_internal_and_does_not_cache`**
+  （PB12 防线）。
 
 #### P.2.5 [commit (5/5)] cross-process e2e + summary
 
@@ -523,8 +544,10 @@ ClearEStop（A1）先例。
      后经 heartbeat 仍完成；沿 ClearEStop deadline+grace 精神）。
   6. **success**：state commit Enabled.Active（enable）/ Safe（disable）+ adapter ack
      → `Ack`（`cleared_at_ns` = commit 时刻，D-P4）+ domain `Ok`。
-  - 观测落点：ipc_thread 持 `Option<PendingSetEnabled{ deadline, target, rr_reply }>`，
-    每 tick check commit 结果 → resolve（Plan round 定字段）。
+  - **观测落点字段 + reply 机制见 §P.2.3**（`PendingSetEnabled{ request_id,
+    deadline_ns, target: PendingTarget, requested_enabled }` + 复用 set_enabled RR
+    response channel + request_id 路由；PB9/PB13——**以 P.2.3 为执行权威**，本 D-P1
+    只锁语义口径）。
 - **D-P2（deadline 源/追踪）**：`CommandMeta.timeout_ms` → gateway 转 wire
   `deadline_ns`（沿 ClearEStop）→ S0 action 用 `clock.now() > deadline` 判
   DeadlineExceeded。
