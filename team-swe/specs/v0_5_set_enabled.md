@@ -344,8 +344,8 @@ reviewer：PB8-10 方向对，3 执行级阻断（domain payload / 防线 / stal
 
 ### P.0 工作基线
 
-- **HEAD = 本 Plan round 3 amend land 的 commit**（**Execute (1/5) 前同步实际 HEAD**，
-  不写 stale hash；非阻断）。Spec final = `425dd62`；候选 B 完结 = `b795339`。
+- **Plan 定稿 = `1f0bca1`（Plan round 5 land；reviewer Plan Approved）**；(1/5) 起在
+  此之上 land。Spec final = `425dd62`；候选 B 完结 = `b795339`。
 - 全程 nightly；每 commit 前 `cargo fmt --all` + `cargo clippy --workspace
   --all-targets -- -D warnings` 零警告。
 - **0 新依赖**（proto/tonic/iceoryx2/flatbuffers/serde/toml 全已在）。
