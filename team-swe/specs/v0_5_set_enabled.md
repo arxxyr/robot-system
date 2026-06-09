@@ -572,4 +572,6 @@ ClearEStop（A1）先例。
 
 ### P.4 Plan-Execute diff 登记（实施期填）
 
-（占位：沿候选 A/B §P.4 体例。）
+| # | 段 | 类型 | 描述 | 落点 |
+|---|---|---|---|---|
+| PE1 | (2/5) | 测试命名细化（assertion/scope 0 变，纯命名 + 覆盖增） | Plan §P.2.2 列 6 个 unit 名；实施期为 assertion 精确性 + 覆盖完备做如下 refine：① `disable_from_ready_to_safe` → **`disable_from_ready_to_safe_is_pure`**（多断 `TransitionKind::Pure`——Ready 未上扭无 adapter action，与 Enabled 的 `Effectful{Enable(false)}` 对称区分）；② `disable_from_safe_noop` → **`disable_from_safe_and_fault_is_noop`**（合并覆盖 `(Fault, Disable)→Fault` 幂等 arm，原 Plan 名只点 Safe、漏 Fault arm 的测试）；③ `auto_enable_typed_default_true` 拆为 **`auto_enable_typed_parsed_false`**（`Some(false)` 解析 + 断言 typed 字段不漏进 flatten `extras`）+ **`auto_enable_absent_is_none`**（缺省 → `None`，缺省 true 语义在 s0_daemon 而非 config_loader，故 config 层只断 `None`）。④ 新增 **`disable_allowed_when_latched_does_not_check_estop`**（文档化 Disable transition guard-independent + **不**清 estop latch 的安全属性——torque-off 任何时候安全；清 latch 仍唯一走 ClearEStop）。8 个 unit 全 PASS，assertion 语义与 §P.2.2 一致 | `state_machine.rs` tests + `config_loader.rs` tests |
