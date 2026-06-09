@@ -1056,8 +1056,10 @@ enum SpawnPlan {
     SerialRt(Box<dyn SerialRtAdapter + Send>),
 }
 
-/// 按 `--config` TOML 第一段 hardware（或 fallback `mock_hard_rt`）走
-/// `robot_core::factory::find_factory` 拿 factory + build。
+/// 按 resolved `hardware_id` match `--config` 的 `[[hardware]].id` 段（无
+/// `--config` 时 fallback `mock_hard_rt`）走 `robot_core::factory::find_factory`
+/// 拿 factory + build。**v0.5 候选 C B6**：与 `auto_enable` 同段（`resolve_
+/// hardware_section`，非 `.first()`），无匹配 → fail-fast。
 ///
 /// **task-30 v9 finding #3**：先试 `build_hard_rt`（`HardRT` factory 必返综合
 /// 类型）；若返 `Unsupported` → 走 `build` 普通路径。两条路径各自封装在
