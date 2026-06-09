@@ -234,14 +234,17 @@ transport；范围限定见 D1）：
   → 非 Ack；`RpcStatus::DeadlineExceeded` + domain status。
 - **AC-2c（enable adapter 失败，D8，与 AC-3b 对称）**：Ready→Enabled 的 adapter
   `Enable(true)` ack 失败 → `commit_fault(AdapterErr)` + wire `RpcStatus::Internal` +
-  domain `SetEnabledStatus::AdapterError`。
+  domain `SetEnabledStatus::AdapterError`。**验证 = (3/5) 集成 unit
+  `pending_adapter_fault_resolves_internal_adapter_error`（fault-inject mock
+  adapter），非 cross-process e2e（PB10：mock_hard_rt 无可控 ack-fail 开关）**。
 - **AC-3（disable happy + D3）**：Enabled → `SetEnabled(false)` → `Event::Disable`
   → adapter `Enable(false)` ack → Safe（OutputPolicy Disabled）；`Ack`；**estop_latch
   文件 0 改**（disable 不清/不置 latch）。
 - **AC-3b（disable adapter 失败，D3d / B1 / B5）**：Enabled → `SetEnabled(false)` →
   adapter `Enable(false)` **ack 失败** → `commit_fault(AdapterErr)` + `Disabled` →
   **wire `RpcStatus::Internal` + domain `SetEnabledStatus::AdapterError`（非 Ack
-  success）**→ gateway `tonic::Code::Internal`；state = Fault(AdapterErr)。
+  success）**→ gateway `tonic::Code::Internal`；state = Fault(AdapterErr)。**验证同
+  AC-2c = (3/5) 集成 unit（PB10），非 cross-process e2e**。
 - **AC-4（§6.7 #3 latch-blocked enable）**：estop_latched=true → `SetEnabled(true)`
   → `ready_guards_pass` 拒 → 留 Safe → 返 domain status（FailedPrecondition 类）；
   **latch 文件不变**。
@@ -318,6 +321,17 @@ reviewer：D-P1/PB4-6 ACK，但 Plan 停在 outline 级，未 Approved。**展�
 | PB7 | Plan 仍 outline（"Plan round 定字段"），未到可执行粒度 | **P.2 重写为 P.2.1-P.2.5 executable**：每段补 set_enabled.fbs 字段表 / schema_id 常量 / markers / build_helpers / `resolve_hardware_section` 签名 / `Event::Disable` transition / `PendingSetEnabled` 字段 + single-flight + resolve 分支 / `Method::SetEnabled` + `CachedResponse::SetEnabled` / gateway `set_enabled` handler+mapper+rr thread / e2e case 名（含 ResourceExhausted/Aborted/DeadlineExceeded/adapter-fail/dry-run/auto_enable/viewer 拒）+ 锁测名 |
 | 非阻断 | P.0 HEAD `425dd62` stale | HEAD = 本 Plan round 3 commit，Execute 前同步实际 HEAD |
 
+#### Plan round 4 amend 记录（2026-06-09；reviewer Plan round 3 复核后）
+
+reviewer：P.2 接近可执行，3 执行级阻断（response/pending correlation + e2e fault
+触发），已回修：
+
+| # | 阻断 | 修订 |
+|---|---|---|
+| PB8 | `SetEnabledResponse` 无 `request_id`（丢 RR correlation + gateway mismatch 防线，沿 `clear_estop.fbs:177`）| (1/5) `SetEnabledResponse` 加 **`request_id:string`** + **`error_msg:string`**（非 Ok human reason）；`build_set_enabled_response(request_id, …, error_msg)` 同步 |
+| PB9 | `PendingSetEnabled` 字段/reply 机制不够执行级 | (3/5) 字段定死 `{ request_id, deadline_ns, target: PendingTarget{EnabledActive\|Safe}, requested_enabled }`；**reply = 复用 set_enabled RR response channel + request_id 路由**（非 per-pending oneshot，沿 `ClearEStopRrResponse{request_id}` `ipc_thread.rs:123`）；resolve 构造 `SetEnabledRrResponse{request_id, payload}` |
+| PB10 | e2e `enable_adapter_fail` 无可执行 fault 触发（mock_hard_rt enable_rt 只在 latch/disconnect 失败）| **adapter-fail（AC-2c/AC-3b）移 (3/5) 集成 unit** `pending_adapter_fault_resolves_internal_adapter_error`（fault-inject mock adapter）；(5/5) cross-process e2e 去掉 2 个 adapter-fail case |
+
 ### P.0 工作基线
 
 - **HEAD = 本 Plan round 3 amend land 的 commit**（**Execute (1/5) 前同步实际 HEAD**，
@@ -352,8 +366,11 @@ ClearEStop（A1）先例。
   - `enum SetEnabledStatus:ubyte { Unknown=0; Ok=1; GuardRejected=2; LatchBlocked=3;
     AdapterError=4; AlreadyInProgress=5; PreemptedByEStop=6; PreemptedByShutdown=7;
     WouldAccept=8; }`（domain 审计 enum；wire `RpcStatus` 另带，PB3/PB5）。
-  - `table SetEnabledResponse { status:RpcStatus=Unknown; domain:SetEnabledStatus=
-    Unknown; completed_at_ns:ulong; }`。
+  - `table SetEnabledResponse { request_id:string; status:RpcStatus=Unknown;
+    domain:SetEnabledStatus=Unknown; completed_at_ns:ulong; error_msg:string; }`
+    （**PB8**：`request_id` 与 request 一致——gateway correlate pending response +
+    mismatch 防线，沿 `clear_estop.fbs:177`；`error_msg` 非 Ok 时携带 human reason
+    供 gateway 直接转 tonic message，不靠 domain 合成）。
 - **`schema_id.rs`**：`SCHEMA_SET_ENABLED_REQUEST: u32 = 0x0000_040D;` +
   `SCHEMA_SET_ENABLED_RESPONSE: u32 = 0x0000_040E;` + `SCHEMA_REGISTRY` 末尾 append
   `(SCHEMA_SET_ENABLED_REQUEST, "robot.msg.SetEnabledRequest")` /
@@ -362,7 +379,8 @@ ClearEStop（A1）先例。
   + `impl BodyMarker`（`SCHEMA_ID` / `SCHEMA_NAME` / `Root`）。
 - **`build_helpers.rs`**：`build_set_enabled_request(request_id, idempotency_key,
   source, role, enabled, dry_run, deadline_ns, audit_reason, stamp_ns) -> Vec<u8>` +
-  `build_set_enabled_response(status, domain, completed_at_ns) -> Vec<u8>`。
+  `build_set_enabled_response(request_id, status, domain, completed_at_ns, error_msg)
+  -> Vec<u8>`（PB8）。
 - **锁测**：`cargo run -p robot-msg --bin schema_lint`（升序+唯一）+ `cargo test -p
   robot-msg`（registry roundtrip）+ build_helpers roundtrip unit
   `set_enabled_request_roundtrip` / `set_enabled_response_roundtrip`。
@@ -400,16 +418,35 @@ ClearEStop（A1）先例。
   PreemptedByShutdown }`（沿 `ClearEStopRrPayload` 范式）。
 - **`set_enabled_action.rs`**（新，沿 `clear_estop_action.rs`）：`evaluate_set_enabled
   _dry_run(state, guards, enabled) -> SetEnabledDryRunOutcome`（D7 precondition-only）。
-- **D-P1 pending 观测**（ipc_thread）：`Option<PendingSetEnabled { deadline_ns:u64,
-  target: PendingTarget〔EnabledActive|Safe〕, reply: <oneshot/handle> }>`；single-
-  flight check = `pending.is_some()` → 拒 `AlreadyInProgress`（条 1）；每 tick：
-  commit 到 target → resolve `Enabled/Disabled{completed_at_ns}`；EStop/Stop/fault
-  preempt → resolve `PreemptedByEStop/Shutdown`/`AdapterError`（条 3）；
-  `clock.now() > deadline_ns` → resolve `DeadlineExceeded`（条 5，不回滚副作用）。
+- **D-P1 pending 观测**（ipc_thread，**PB9 字段定死**）：
+  `ipc_thread` 持 `Option<PendingSetEnabled>` +
+  ```rust
+  pub struct PendingSetEnabled {
+      pub request_id: String,        // resolve 时回填 SetEnabledRrResponse（rr_server 按此路由，rr_server_thread.rs:558）
+      pub deadline_ns: u64,          // CommandMeta.timeout_ms → wire deadline_ns（D-P2）
+      pub target: PendingTarget,     // enum { EnabledActive, Safe }（enable→Active / disable→Safe）
+      pub requested_enabled: bool,   // 原 SetEnabledRequest.enabled（audit + 对称性）
+  }
+  ```
+  **reply 机制 = 复用 set_enabled RR response channel + request_id 路由**（非 per-
+  pending oneshot；沿 `ClearEStopRrResponse{request_id}` 范式，`ipc_thread.rs:123`）：
+  resolve 时 ipc_thread 发 `SetEnabledRrResponse{ request_id, payload }` 到
+  set_enabled `rr_response_tx` → rr_server 按 request_id 找 active 回 wire。
+- **single-flight check** = `self.pending_set_enabled.is_some()` → 新请求即拒
+  `SetEnabledRrPayload::AlreadyInProgress`（条 1，不入 pending）。
+- **resolve 分支**（每 tick check）：commit 到 `target` → `Enabled/Disabled
+  {completed_at_ns = clock.now()}` ；EStop → `PreemptedByEStop` / Stop·shutdown →
+  `PreemptedByShutdown` / fault commit(AdapterErr) → `AdapterError`（条 3）；
+  `clock.now() > deadline_ns` → `DeadlineExceeded`（条 5，**不**回滚副作用）。每
+  resolve 后 `pending_set_enabled = None`（释放 single-flight）。
 - **`s0_daemon.rs`**：spawn 第 2 rr_server（set_enabled）+ 接 RR channels 到 ipc_thread。
 - **unit**：`set_enabled_dry_run_precondition_only` / `pending_single_flight_rejects
   _second` / `pending_resolves_on_enabled_active` / `pending_preempt_estop_resolves
-  _aborted` / `pending_deadline_resolves` / `disable_pending_resolves_on_safe`。
+  _aborted` / `pending_deadline_resolves` / `disable_pending_resolves_on_safe` /
+  **`pending_adapter_fault_resolves_internal_adapter_error`**（PB10：用 fault-inject
+  mock adapter〔`enable_rt`/`Enable(*)` 返 `Err`〕→ state commit Fault(AdapterErr) →
+  pending resolve `AdapterError`；覆盖 AC-2c/AC-3b 的 adapter-fail 路径，**不**走
+  cross-process e2e〔mock_hard_rt 无 connected+non-latched 的可控 ack-fail 开关〕）。
 
 #### P.2.4 [commit (4/5)] proto method + gateway（atomic，PB1）
 
@@ -439,15 +476,16 @@ ClearEStop（A1）先例。
 - **`tests/set_enabled_e2e.rs`**（新，沿 `state_rpc_e2e` harness + s0/fake-heartbeat）：
   起 **s0_daemon + fake heartbeat publisher（`/<robot_id>/s1/heartbeat`，D-P3）+
   gateway**。
-- **case 名**：`enable_happy_observes_enabled_active`（AC-2）/
-  `enable_deadline_no_heartbeat_returns_deadline_exceeded`（AC-2b）/
-  `enable_adapter_fail_returns_internal_adapter_error`（AC-2c）/ `disable_happy_to
-  _safe_no_latch_change`（AC-3）/ `disable_adapter_fail_returns_internal`（AC-3b）/
-  `enable_latch_blocked_failed_precondition`（AC-4）/ `latched_disable_allowed_no
-  _clear_latch`（AC-5）/ `dry_run_precondition_no_side_effect`（AC-6）/
-  `viewer_denied`（AC-7）/ `auto_enable_false_stays_safe` + `cli_hardware_id_no
-  _match_fail_fast`（AC-8/8b）/ `concurrent_second_resource_exhausted`（D-P1 条 1）/
-  `fault_rejects_enable`（AC-9）。
+- **case 名**（cross-process）：`enable_happy_observes_enabled_active`（AC-2）/
+  `enable_deadline_no_heartbeat_returns_deadline_exceeded`（AC-2b）/ `disable_happy
+  _to_safe_no_latch_change`（AC-3）/ `enable_latch_blocked_failed_precondition`
+  （AC-4）/ `latched_disable_allowed_no_clear_latch`（AC-5）/ `dry_run_precondition
+  _no_side_effect`（AC-6）/ `viewer_denied`（AC-7）/ `auto_enable_false_stays_safe`
+  + `cli_hardware_id_no_match_fail_fast`（AC-8/8b）/ `concurrent_second_resource
+  _exhausted`（D-P1 条 1）/ `fault_rejects_enable`（AC-9）。
+  - **AC-2c / AC-3b（adapter-fail）不在此**（PB10）：mock_hard_rt 无 connected+
+    non-latched 可控 ack-fail 开关 → 由 **(3/5) `pending_adapter_fault_resolves
+    _internal_adapter_error` 集成 unit** 覆盖（fault-inject mock adapter）。
 - **summary** + CHANGELOG（design §5.3 SetEnabled 实现，Q1 不加 hardware_id 不触
   design-freeze diff；auto_enable typed additive）+ CLAUDE + handoffs README。
 - **Quality Gate（候选 C 完结）**：fmt + clippy + `cargo test --workspace` + **4
