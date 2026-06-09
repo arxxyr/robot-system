@@ -37,7 +37,8 @@ use crate::msg::{
     GetTaskStatusResponseArgs, Heartbeat, HeartbeatArgs, InvokeTaskRequest, InvokeTaskRequestArgs,
     InvokeTaskResponse, InvokeTaskResponseArgs, JointCommand, JointCommandArgs, JointState,
     JointStateArgs, RpcRole, RpcStatus, S0ControlLink, S0FaultCode, S0Mode, S0OutputMode,
-    S0SafetyState, StaleAction, TaskStateFb,
+    S0SafetyState, SetEnabledRequest, SetEnabledRequestArgs, SetEnabledResponse,
+    SetEnabledResponseArgs, SetEnabledStatus, StaleAction, TaskStateFb,
 };
 
 // ============================================================================
@@ -309,6 +310,78 @@ pub fn build_clear_estop_response(
             error_msg: Some(error_msg_off),
             cleared_at_ns,
             dry_run,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+// ============================================================================
+// SetEnabledRequest / SetEnabledResponse（`robot.msg.SetEnabled*`）—— v0.5 候选 C
+// ============================================================================
+
+/// 构造 `SetEnabledRequest` body bytes（gateway → S0 `set_enabled` RR request）。
+/// 字段语义详 [`crate::markers::SetEnabledRequest`] +
+/// `crates/robot-msg/schemas/set_enabled.fbs`。
+///
+/// 调用方：`robot-rpc` gateway `set_enabled` handler / 单测 / 集成测。
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn build_set_enabled_request(
+    request_id: &str,
+    idempotency_key: &str,
+    source: &str,
+    role: RpcRole,
+    enabled: bool,
+    dry_run: bool,
+    deadline_ns: u64,
+    audit_reason: &str,
+    stamp_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(256);
+    let request_id_off = fbb.create_string(request_id);
+    let idempotency_off = fbb.create_string(idempotency_key);
+    let source_off = fbb.create_string(source);
+    let audit_off = fbb.create_string(audit_reason);
+    let req = SetEnabledRequest::create(
+        &mut fbb,
+        &SetEnabledRequestArgs {
+            request_id: Some(request_id_off),
+            idempotency_key: Some(idempotency_off),
+            source: Some(source_off),
+            role,
+            enabled,
+            dry_run,
+            deadline_ns,
+            audit_reason: Some(audit_off),
+            stamp_ns,
+        },
+    );
+    fbb.finish(req, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造 `SetEnabledResponse` body bytes（S0 → gateway `set_enabled` RR reply）。
+/// `domain` = 细粒度 [`SetEnabledStatus`]；`status` = wire [`RpcStatus`]。
+#[must_use]
+pub fn build_set_enabled_response(
+    request_id: &str,
+    status: RpcStatus,
+    domain: SetEnabledStatus,
+    completed_at_ns: u64,
+    error_msg: &str,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let resp = SetEnabledResponse::create(
+        &mut fbb,
+        &SetEnabledResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            domain,
+            completed_at_ns,
+            error_msg: Some(error_msg_off),
         },
     );
     fbb.finish(resp, None);
@@ -858,5 +931,84 @@ mod tests {
         assert_eq!(resp.status(), RpcStatus::FailedPrecondition);
         assert_eq!(resp.cleared_at_ns(), 0);
         assert!(resp.error_msg().unwrap().contains("TorqueOffConfirmed"));
+    }
+
+    // ---- v0.5 候选 C SetEnabled ----
+
+    #[test]
+    fn set_enabled_request_round_trip() {
+        let bytes = build_set_enabled_request(
+            "req-se-aaaa",
+            "idem-se-bbbb",
+            "cli.loosqk",
+            RpcRole::Operator,
+            /* enabled */ true,
+            /* dry_run */ false,
+            /* deadline_ns */ 2_000_000_000_000,
+            "operator enable robot",
+            /* stamp_ns */ 1_999_000_000_000,
+        );
+        let req = root::<SetEnabledRequest>(&bytes).unwrap();
+        assert_eq!(req.request_id().unwrap(), "req-se-aaaa");
+        assert_eq!(req.idempotency_key().unwrap(), "idem-se-bbbb");
+        assert_eq!(req.source().unwrap(), "cli.loosqk");
+        assert_eq!(req.role(), RpcRole::Operator);
+        assert!(req.enabled());
+        assert!(!req.dry_run());
+        assert_eq!(req.deadline_ns(), 2_000_000_000_000);
+        assert_eq!(req.audit_reason().unwrap(), "operator enable robot");
+        assert_eq!(req.stamp_ns(), 1_999_000_000_000);
+    }
+
+    #[test]
+    fn set_enabled_request_disable_dry_run_default_role_unknown() {
+        let bytes = build_set_enabled_request(
+            "req-se-2",
+            "idem-se-2",
+            "smoke",
+            RpcRole::Unknown,
+            /* enabled */ false,
+            /* dry_run */ true,
+            0,
+            "test only",
+            0,
+        );
+        let req = root::<SetEnabledRequest>(&bytes).unwrap();
+        assert!(!req.enabled());
+        assert!(req.dry_run());
+        assert_eq!(req.role(), RpcRole::Unknown);
+    }
+
+    #[test]
+    fn set_enabled_response_round_trip_ok() {
+        let bytes = build_set_enabled_response(
+            "req-se-aaaa",
+            RpcStatus::Ok,
+            SetEnabledStatus::Ok,
+            /* completed_at_ns */ 2_000_000_000_123,
+            "",
+        );
+        let resp = root::<SetEnabledResponse>(&bytes).unwrap();
+        assert_eq!(resp.request_id().unwrap(), "req-se-aaaa");
+        assert_eq!(resp.status(), RpcStatus::Ok);
+        assert_eq!(resp.domain(), SetEnabledStatus::Ok);
+        assert_eq!(resp.completed_at_ns(), 2_000_000_000_123);
+        assert_eq!(resp.error_msg().unwrap(), "");
+    }
+
+    #[test]
+    fn set_enabled_response_round_trip_adapter_error() {
+        let bytes = build_set_enabled_response(
+            "req-se-3",
+            RpcStatus::Internal,
+            SetEnabledStatus::AdapterError,
+            0,
+            "adapter Enable(true) ack failed",
+        );
+        let resp = root::<SetEnabledResponse>(&bytes).unwrap();
+        assert_eq!(resp.status(), RpcStatus::Internal);
+        assert_eq!(resp.domain(), SetEnabledStatus::AdapterError);
+        assert_eq!(resp.completed_at_ns(), 0);
+        assert!(resp.error_msg().unwrap().contains("ack failed"));
     }
 }

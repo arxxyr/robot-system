@@ -113,6 +113,15 @@ pub const SCHEMA_SCRIPTED_PAYLOAD: u32 = 0x0000_040B;
 /// v0_4_robot_kinematics_round2.md` Q-IK4..Q-IK7 拍板。
 pub const SCHEMA_IK_PAYLOAD: u32 = 0x0000_040C;
 
+/// `robot.msg.SetEnabledRequest` —— v0.5 候选 C `SetEnabled` control-plane RR
+/// request（gateway → S0 `/<robot_id>/control/set_enabled`）。详
+/// `crates/robot-msg/schemas/set_enabled.fbs` + `team-swe/specs/v0_5_set_enabled.md`。
+pub const SCHEMA_SET_ENABLED_REQUEST: u32 = 0x0000_040D;
+
+/// `robot.msg.SetEnabledResponse` —— v0.5 候选 C `SetEnabled` RR response
+/// （S0 → gateway；wire `RpcStatus` + domain `SetEnabledStatus`）。
+pub const SCHEMA_SET_ENABLED_RESPONSE: u32 = 0x0000_040E;
+
 // -----------------------------------------------------------------------------
 // deprecated 登记
 // -----------------------------------------------------------------------------
@@ -165,6 +174,8 @@ pub const SCHEMA_REGISTRY: &[(u32, &str)] = &[
     ),
     (SCHEMA_SCRIPTED_PAYLOAD, "robot.msg.ScriptedPayload"),
     (SCHEMA_IK_PAYLOAD, "robot.msg.IkPayload"),
+    (SCHEMA_SET_ENABLED_REQUEST, "robot.msg.SetEnabledRequest"),
+    (SCHEMA_SET_ENABLED_RESPONSE, "robot.msg.SetEnabledResponse"),
 ];
 
 /// 按 `schema_id` 查规范名；未知返回 `None`。

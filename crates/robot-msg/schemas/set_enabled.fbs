@@ -1,0 +1,95 @@
+// SetEnabled control-plane RR envelope —— v0.5 候选 C `SetEnabled` RPC。
+//
+// operator 显式 enable/disable 当前 S0 daemon / selected hardware instance
+// （design §5.3 `rpc SetEnabled (SetEnabledCommand) returns (Ack)`）。归 S0
+// control action（沿 A1 ClearEStop transport 范式），RR service name
+// `/<robot_id>/control/set_enabled`。
+//
+// **复用 clear_estop.fbs 的 `RpcRole` / `RpcStatus`**（`include`，沿
+// action_status.fbs / action_request.fbs 同款；**不**重定义，避免双 RpcStatus
+// 类型）。wire 用既有 `RpcStatus`（**不扩** A1 共享 enum，Spec B5）；候选 C 的
+// 细粒度审计走自有 `SetEnabledStatus`。
+include "clear_estop.fbs";
+
+namespace robot.msg;
+
+// SetEnabled domain 审计状态（候选 C 自有；wire `RpcStatus` 另带，Spec PB3/PB5）。
+// 第一个 variant `Unknown=0` 兼容旧 writer；各值唯一升序，append-only。
+//
+// wire `RpcStatus` 映射（gateway 显式 match）：
+//   Ok                 → RpcStatus::Ok
+//   GuardRejected      → RpcStatus::FailedPrecondition
+//   LatchBlocked       → RpcStatus::FailedPrecondition
+//   AdapterError       → RpcStatus::Internal
+//   AlreadyInProgress  → RpcStatus::ResourceExhausted（live 单飞冲突）
+//   PreemptedByEStop   → RpcStatus::Aborted
+//   PreemptedByShutdown→ RpcStatus::Aborted
+//   WouldAccept        → RpcStatus::Ok（dry_run precondition 通过）
+//   DeadlineExceeded   → RpcStatus::DeadlineExceeded
+enum SetEnabledStatus : ubyte {
+    Unknown = 0,
+    Ok = 1,
+    GuardRejected = 2,
+    LatchBlocked = 3,
+    AdapterError = 4,
+    AlreadyInProgress = 5,
+    PreemptedByEStop = 6,
+    PreemptedByShutdown = 7,
+    WouldAccept = 8,
+    DeadlineExceeded = 9,
+}
+
+// SetEnabledRequest —— RPC 端验证完 auth / role / capability / idempotency 后
+// 通过 iceoryx2 RequestResponse publish 进来。daemon (S0) 端订阅 → set_enabled
+// RR server → ipc_thread action layer。
+//
+// **字段语义**（沿 clear_estop.fbs；drop `confirmation`，加 `enabled`）：
+// - `request_id`：RPC 端 UUIDv7（design §5.2 CommandMeta.request_id），RR
+//   correlation + audit。
+// - `idempotency_key`：CommandMeta.idempotency_key。RPC 端 in-process TTL cache
+//   去重；daemon 端**不**做 idempotency check，仅 audit。
+// - `source`：调用源（仅 audit）。
+// - `role`：调用方角色（**仅 audit**；S0 不授权，沿 A1 拍板）。
+// - `enabled`：true → enable（`Event::Enable`，Safe→Ready，latch-guarded）；
+//   false → disable（`Event::Disable`，torque-off，不清 latch）。
+// - `dry_run`：CommandMeta.dry_run。daemon 端 action layer **必须**真识别
+//   （Spec D7：dry_run 进 S0 read-only precondition evaluate，gateway 不短路）。
+// - `deadline_ns`：CLOCK_MONOTONIC_RAW 截止时刻（gateway 由 timeout_ms 转）。
+//   daemon 端 pending 观测 `clock.now() > deadline_ns` → DeadlineExceeded。
+// - `audit_reason`：CommandMeta.audit_reason，"谁/为什么调" human context（audit）。
+// - `stamp_ns`：RPC 端构造 request 时本机 wall-clock ns（仅 audit）。
+table SetEnabledRequest {
+    request_id:      string;
+    idempotency_key: string;
+    source:          string;
+    role:            RpcRole = Unknown;
+    enabled:         bool = false;
+    dry_run:         bool = false;
+    deadline_ns:     ulong;
+    audit_reason:    string;
+    stamp_ns:        ulong;
+}
+
+// SetEnabledResponse —— daemon (S0) 端 ipc_thread action layer pending 观测
+// 完成后回 RR reply。
+//
+// **字段语义**：
+// - `request_id`：跟 SetEnabledRequest.request_id 一致，RPC 端 correlate pending
+//   response（多 in-flight）+ mismatch 防线（沿 ClearEStop "Step 11.5"）。
+// - `status`：wire `RpcStatus`（gateway 转 tonic::Code）。
+// - `domain`：`SetEnabledStatus` 细粒度审计（区分 EStop vs shutdown preempt 等）。
+// - `completed_at_ns`：`status == Ok && !dry_run` 时填 daemon `clock.now().0`
+//   （Enabled.Active / Safe commit 时刻）；`Ok && dry_run` 填 evaluate 时刻
+//   （语义 "would-act at"）；`status != Ok` 填 0。
+// - `error_msg`：`status != Ok` 时人类可读错误（max ~256 chars）；Ok 时空串。
+table SetEnabledResponse {
+    request_id:      string;
+    status:          RpcStatus = Unknown;
+    domain:          SetEnabledStatus = Unknown;
+    completed_at_ns: ulong;
+    error_msg:       string;
+}
+
+// 两个 table 都是 root 候选，按 schema_id 路由（同 clear_estop.fbs 风格）。
+// flatc 需要一个顶层 root_type；选 SetEnabledRequest 占位，不影响 Response 解析。
+root_type SetEnabledRequest;

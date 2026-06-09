@@ -118,6 +118,16 @@ pub struct ClearEStopRequest;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ClearEStopResponse;
 
+/// Marker for [`msg::SetEnabledRequest`]（v0.5 候选 C `SetEnabled` control-plane
+/// RR request payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SetEnabledRequest;
+
+/// Marker for [`msg::SetEnabledResponse`]（v0.5 候选 C `SetEnabled` RR response
+/// payload）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SetEnabledResponse;
+
 /// Marker for [`msg::InvokeTaskRequest`]（v0.3 B4 `InvokeTask` RR payload）。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct InvokeTaskRequest;
@@ -256,6 +266,20 @@ impl BodyMarker for ClearEStopResponse {
     const SCHEMA_NAME: &'static str = "robot.msg.ClearEStopResponse";
     const BLOB_EMBEDDED: bool = false;
     type Root<'a> = msg::ClearEStopResponse<'a>;
+}
+
+impl BodyMarker for SetEnabledRequest {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_SET_ENABLED_REQUEST;
+    const SCHEMA_NAME: &'static str = "robot.msg.SetEnabledRequest";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::SetEnabledRequest<'a>;
+}
+
+impl BodyMarker for SetEnabledResponse {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_SET_ENABLED_RESPONSE;
+    const SCHEMA_NAME: &'static str = "robot.msg.SetEnabledResponse";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::SetEnabledResponse<'a>;
 }
 
 impl BodyMarker for InvokeTaskRequest {
