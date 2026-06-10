@@ -3,7 +3,7 @@
 // 对应 docs/00_design.md §5.2 (CommandMeta + AuthContext) + §5.3 frozen
 // RPC schema。**字段 / 字段编号不可改**；只可 append。
 //
-// **当前 scope**（v0.5 候选 C land 后）：9 条 RPC =
+// **当前 scope**（v0.5 候选 D land 后）：10 条 RPC =
 //   - `ClearEStop`           (A1 land；safety-critical maintainer-only)
 //   - `InvokeTask`           (B4)
 //   - `CancelTask`           (B4)
@@ -13,15 +13,15 @@
 //   - `GetState`             (v0.5 候选 B；只读 state 快照，additive)
 //   - `StreamState`          (v0.5 候选 B；只读 state server-streaming，additive)
 //   - `SetEnabled`           (v0.5 候选 C；enable/disable，operator+，additive)
+//   - `EStop`                (v0.5 候选 D；紧急停止触发，operator+，additive)
 //
 // **v0.5 候选 B GetState/StreamState 设计-freeze diff**：design §5.3 写
 // `rpc GetState (Empty)`，实现期按多 hardware 语义改 `GetState(GetStateRequest
 // { hardware_id })`（显式 hardware selector）；design.md §5.3 文字**不**改，以
 // docs/CHANGELOG.md + team-swe Spec v0_5_get_stream_state 为准。
 //
-// 其它 §5.3 RPC（EStop / ListHardware / ListJoints / ListTasks /
-// StreamLogs / ReloadCalibration / SetPolicy）留 v0.5+ 后续拍板，**不**在
-// 本 proto 出现。
+// 其它 §5.3 RPC（ListHardware / ListJoints / ListTasks / StreamLogs /
+// ReloadCalibration / SetPolicy）留 v0.5+ 后续拍板，**不**在本 proto 出现。
 //
 // **跟 robot-msg 关系**：本 proto 是 RPC 边界 wire format（client →
 // gateway, HTTP/2）；gateway 内部转换为 `robot-msg` 平行 fbs 表
@@ -111,12 +111,40 @@ message SetEnabledCommand {
     bool        enabled = 2;
 }
 
+// v0.5 候选 D `EStop` —— client → gateway 紧急停止触发。design §5.3 frozen
+// 字面（:909）。**operator+**（`Capability::EStop`；触发 operator+ / 清除
+// maintainer+ 分权）。**无 confirmation 字段**：EStop 是安全方向（上锁），
+// 不需要人工确认串（区别 ClearEStopCommand）。
+//
+// **路由（D1，design §6.6 字面）**：gateway 验证后 publish `EStopEvent` 到
+// `/<robot_id>/events/estop` topic（**非** RR control plane）——S0 既有
+// poll_estop → emergency drain → safety_stop + latch fsync 链消费，S0 0 改。
+//
+// **Ack 弱语义（D2，明文非保证）**：`Ack.cleared_at_ns` = **published_at_ns**
+// （publish 成功时刻，gateway mono raw clock）。Ack **不**证 S0 已消费、
+// **不**证 latch 已 fsync（pub/sub 无回执；`RobotState` 无 estop_latched
+// 字段，latch fsync 远程不可观测）。远程客户端可观测面 = `GetState` 运行态
+// （mode=SAFE + safety_state）。**S0 不在时本 RPC 仍 Ack**（published 语义）
+// ——EStop RPC 不是 S0 死亡场景的救命索，该场景由硬件 fail-safe 兜底
+// （design §6.7 #1）。
+//
+// 字段语义：
+// - `meta`：CommandMeta envelope。**`meta.dry_run` 不支持**（D4：EStop 无
+//   precondition gate，无可评估物）→ `dry_run=true` 即拒 InvalidArgument。
+// - `estop_reason`：机器侧原因（透传 wire `EStopEvent.reason`，event log /
+//   recorder / UI alert 上下文）。**空串合法**（按钮也没 reason）。
+message EStopCommand {
+    CommandMeta meta         = 1;
+    string      estop_reason = 2;
+}
+
 // v0.3 A1 ClearEStop + v0.3 B4 task control plane + v0.5 候选 B read-only
 // state plane RPCs。
 //
-// **method 数 = 9**（外部 tonic / HTTP/2 wire；内部 s1 RR server 仍仅 4
+// **method 数 = 10**（外部 tonic / HTTP/2 wire；内部 s1 RR server 仍仅 4
 // 条 RR topic = task_invoke / task_cancel / task_status / clear_error；
 // `SetEnabled` 走 S0 control RR `/<robot_id>/control/set_enabled`，**不**经 s1；
+// `EStop` 走 pubsub publish `/<robot_id>/events/estop`，**不**经 RR / s1；
 // `StreamTaskEvents` 走 per-ActionId pubsub topic
 // `/<robot_id>/s1/action_events/<action_id_hex>`；v0.5 候选 B `GetState` /
 // `StreamState` **既不走 RR 也不走 s1**，gateway 直接读常驻 S0 state 订阅池
@@ -141,6 +169,11 @@ service RobotControl {
     // v0.5 候选 C control plane（additive；gateway 第 6 条 rr_io_thread →
     // S0 set_enabled RR server `/<robot_id>/control/set_enabled`）。operator+。
     rpc SetEnabled       (SetEnabledCommand)  returns (Ack);
+
+    // v0.5 候选 D 紧急停止触发（additive；gateway publish EStopEvent →
+    // `/<robot_id>/events/estop` topic，**非** RR；S0 0 改）。operator+；
+    // Ack = published 弱语义（详 EStopCommand 注释）。
+    rpc EStop            (EStopCommand)       returns (Ack);
 }
 
 // ===========================================================================

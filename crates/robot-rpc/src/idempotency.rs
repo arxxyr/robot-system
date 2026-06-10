@@ -1,5 +1,5 @@
 //! In-process TTL idempotency cache（A1-1 (3/3) 起；B4 (2/3-b) 加 method
-//! namespace + `CachedResponse` enum 支持 5 个 method 共用同一 cache）。
+//! namespace + `CachedResponse` enum 支持 6 个 method 共用同一 cache）。
 //!
 //! ## 安全边界（reviewer A1 第 3 个拍板硬边界 + A1-1 (3/3) round 2 阻断 +
 //! B4 (2/3-b) outline §8 #7b）
@@ -48,6 +48,8 @@
 //! - [`CachedResponse::SetEnabled`]：`{ completed_at_ns, dry_run }`（v0.5 候选 C；
 //!   `fbs::SetEnabledResponse.completed_at_ns` = enable/disable 完成时刻，跟
 //!   ClearEStop `cleared_at_ns` 不同语义，cached 字段名跟 fbs 对齐）。
+//! - [`CachedResponse::EStop`]：`{ published_at_ns }`（v0.5 候选 D；publish
+//!   成功时刻 = D2 弱 Ack。无 dry_run 字段——D4 validate 即拒）。
 //!
 //! **不**把 InvokeTask / CancelTask 硬塞同一 `Task` variant：reviewer 拍
 //! 板"除非 wire response 字段完全一致；写 RPC 的 cached response 应该
@@ -68,8 +70,9 @@ use std::time::{Duration, Instant};
 /// clear_estop_idempotency_fingerprint`] 一类 helper。
 pub type Fingerprint = [u8; 32];
 
-/// 5 个进 cache 的写 RPC method 标识（B4 (2/3-b)）。`GetTaskStatus` 不进
-/// cache 故未列出；`StreamTaskEvents` 同。
+/// 6 个进 cache 的写 RPC method 标识（B4 (2/3-b) 4 个 + v0.5 候选 C
+/// SetEnabled + 候选 D EStop）。`GetTaskStatus` / `GetState` / `StreamState`
+/// 只读不进 cache；`StreamTaskEvents` 同。
 ///
 /// `as_str` 返回 cache key 前缀；保证全 ASCII / 不含 `:`，跟
 /// `idempotency_key` 用 `:` 拼接不会歧义。
@@ -85,6 +88,8 @@ pub enum Method {
     ClearError,
     /// v0.5 候选 C SetEnabled（`operator+`，`Capability::SetEnabled`）。
     SetEnabled,
+    /// v0.5 候选 D EStop 触发（`operator+`，`Capability::EStop`）。
+    EStop,
 }
 
 impl Method {
@@ -98,6 +103,7 @@ impl Method {
             Self::CancelTask => "cancel_task",
             Self::ClearError => "clear_error",
             Self::SetEnabled => "set_enabled",
+            Self::EStop => "estop",
         }
     }
 }
@@ -165,7 +171,7 @@ impl InsertHandle {
 /// 不同；客户端 correlation 走自己的 request_id，handler 在 Replay 路径
 /// 用 incoming request 的 request_id 重建 proto response）。
 ///
-/// 5 个 method 各自一个 variant；按写 RPC wire response 字段集设计，
+/// 6 个 method 各自一个 variant；按写 RPC wire response 字段集设计，
 /// 保证 cached representation 能无损重建原响应。详 module doc "CachedResponse
 /// enum 形态" 段。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,6 +199,12 @@ pub enum CachedResponse {
     /// `dry_run` 透传 `meta.dry_run`（dry-run precondition 评估也走 cache，
     /// fingerprint 含 `dry_run` 故 dry/live 不串）。
     SetEnabled { completed_at_ns: u64, dry_run: bool },
+    /// v0.5 候选 D EStop 触发路径：返 `proto::Ack`，语义字段是
+    /// **`published_at_ns`**（publish 成功时刻，D2 弱 Ack——非 latched_at；
+    /// pub/sub 无回执）。**无 dry_run 字段**：D4 在 validate 步即拒
+    /// `dry_run=true`，cache 形态不留死字段（replay 重建 Ack 时 dry_run
+    /// 恒 false）。
+    EStop { published_at_ns: u64 },
 }
 
 #[derive(Debug, Clone)]
@@ -205,7 +217,7 @@ struct CacheEntry {
 /// In-process TTL idempotency cache。
 ///
 /// **B4 (2/3-b) namespace key**：`decide(method, key, fingerprint)` 内部把
-/// `method` 跟 `idempotency_key` 拼成 namespace key，5 个 method 共用同
+/// `method` 跟 `idempotency_key` 拼成 namespace key，6 个 method 共用同
 /// 一 `IdempotencyCache` 实例（vs 每 RPC 一个 typed cache）。详 outline
 /// §8 #7b 拍板。
 #[derive(Debug)]
@@ -766,17 +778,46 @@ mod tests {
     /// `Method::as_str` 不含 `:`，namespace key 拼接无歧义。
     #[test]
     fn method_as_str_does_not_contain_colon() {
+        // 全 6 个 Method（B4 4 + 候选 C SetEnabled + 候选 D EStop）；加新
+        // variant 须同步本列表（reviewer 候选 D (1/3) 非阻断：旧列表停在
+        // ClearError，漏 SetEnabled/EStop）。
         for m in [
             Method::ClearEStop,
             Method::InvokeTask,
             Method::CancelTask,
             Method::ClearError,
+            Method::SetEnabled,
+            Method::EStop,
         ] {
             assert!(
                 !m.as_str().contains(':'),
                 "Method::{m:?}::as_str() = {:?} 含 ':'，会跟 namespace 拼接歧义",
                 m.as_str()
             );
+        }
+    }
+
+    /// **候选 D**：`CachedResponse::EStop` commit → replay 无损 roundtrip
+    /// （gateway 端 `estop_idem_replay_returns_cached_ack_without_second_
+    /// forward` 是 handler 层锚点；本测锁 cache 层本身）。
+    #[test]
+    fn cached_response_estop_roundtrip() {
+        let mut cache = IdempotencyCache::with_capacity(Duration::from_secs(60), 64);
+        let fp = [9u8; 32];
+        let Decision::FreshInsert(h) = cache.decide(Method::EStop, "k-es-1", fp) else {
+            panic!("expected FreshInsert");
+        };
+        h.commit(
+            &mut cache,
+            CachedResponse::EStop {
+                published_at_ns: 8_888,
+            },
+        );
+        match cache.decide(Method::EStop, "k-es-1", fp) {
+            Decision::Replay(CachedResponse::EStop { published_at_ns }) => {
+                assert_eq!(published_at_ns, 8_888);
+            }
+            other => panic!("expected Replay(EStop), got {other:?}"),
         }
     }
 }

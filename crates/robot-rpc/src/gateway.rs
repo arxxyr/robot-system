@@ -80,7 +80,9 @@ use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::time::RobotClock;
-use robot_msg::build_helpers::{build_clear_estop_request, build_set_enabled_request};
+use robot_msg::build_helpers::{
+    build_clear_estop_request, build_estop_event, build_set_enabled_request,
+};
 use robot_msg::markers;
 use robot_msg::msg::{
     ClearEStopResponse as FbResp, JointState, RpcRole, SetEnabledResponse as FbSetEnabledResp,
@@ -94,10 +96,14 @@ use crate::auth::{Capability, Role, RoleTable};
 use crate::clear_estop::{
     clear_estop_idempotency_fingerprint, rpc_status_to_tonic_code, validate_clear_estop_command,
 };
+use crate::estop::{estop_idempotency_fingerprint, validate_estop_command};
+use crate::estop_pub_thread::{
+    EStopPubForward, EStopPubThreadConfig, EStopPubThreadHandle, spawn_estop_pub_thread,
+};
 use crate::idempotency::{CachedResponse, Decision, IdempotencyCache, Method};
 use crate::proto::robot_control_server::{RobotControl, RobotControlServer};
 use crate::proto::{
-    Ack, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, GetStateRequest,
+    Ack, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, EStopCommand, GetStateRequest,
     InvokeTaskCommand, RobotState, SetEnabledCommand, StreamRequest, TaskEvent, TaskHandle,
     TaskHandleRef, TaskStatus,
 };
@@ -288,6 +294,9 @@ pub struct GatewayHandlerState {
     /// `SetEnabled` 转发 wire request（v0.5 候选 C；第 6 条 rr_io_thread →
     /// S0 `/<robot_id>/control/set_enabled`）。
     pub rr_forward_tx_set_enabled: Sender<RrForwardRequest>,
+    /// `EStop` publish 转发（v0.5 候选 D；estop_pub_thread →
+    /// `/<robot_id>/events/estop` topic，**非** RR）。`bounded(64)`（PB2）。
+    pub estop_pub_tx: Sender<EStopPubForward>,
     /// 机器人 ID，`StreamTaskEvents` handler 用以构造 per-ActionId pubsub
     /// topic `/<robot_id>/s1/action_events/<action_id>`（B4 (2/3-c)）。
     pub robot_id: String,
@@ -388,6 +397,7 @@ impl GatewayHandler {
         let (forward_tx_task_status, _rx3) = bounded(1);
         let (forward_tx_clear_error, _rx4) = bounded(1);
         let (forward_tx_set_enabled, _rx5) = bounded(1);
+        let (estop_pub_tx, _rx6) = bounded(1);
         // shutdown_rx 始终 false（测试不模拟 shutdown）；保留 sender leak 让
         // receiver borrow 永远拿到 false。
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -399,6 +409,7 @@ impl GatewayHandler {
             rr_forward_tx_task_status: forward_tx_task_status,
             rr_forward_tx_clear_error: forward_tx_clear_error,
             rr_forward_tx_set_enabled: forward_tx_set_enabled,
+            estop_pub_tx,
             robot_id: "for_test".to_string(),
             role_table: Arc::new(RoleTable::default()),
             idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
@@ -1075,6 +1086,243 @@ impl RobotControl for GatewayHandler {
     }
 
     // ------------------------------------------------------------------------
+    // v0.5 候选 D EStop 触发 handler（D1 路由 (a)：publish estop topic，非 RR；
+    // 12 步骨架裁剪——**无** Step 11/11.5：publish 无 wire response，无 decode
+    // / request_id-mismatch 防线〔属 RR 回包路径〕）。operator+。
+    // Ack 弱语义（D2）：cleared_at_ns = published_at_ns；不证 S0 消费 / latch
+    // fsync。失败映射 = PD2 表（estop_pub_thread 模块 doc）。
+    // ------------------------------------------------------------------------
+    #[allow(clippy::too_many_lines)]
+    async fn e_stop(
+        &self,
+        request: tonic::Request<EStopCommand>,
+    ) -> Result<tonic::Response<Ack>, tonic::Status> {
+        let cmd = request.into_inner();
+
+        // ─── Step 1: validate（含 dry_run 拒，D4——先于 cache，不入 cache）
+        let validated = validate_estop_command(&cmd).map_err(|e| {
+            tracing::warn!(error = %e, "EStop validation failed");
+            tonic::Status::new(e.to_tonic_code(), e.to_string())
+        })?;
+
+        // ─── Step 2: auth — fake token → Role 查表
+        let Some(role) = self.state.role_table.lookup_token(&validated.auth_token) else {
+            tracing::warn!(
+                request_id = %validated.request_id,
+                "EStop auth.token unknown; replying Unauthenticated"
+            );
+            return Err(tonic::Status::unauthenticated(
+                "auth.token not found in role table",
+            ));
+        };
+
+        // ─── Step 3: authz — `estop` capability（operator+；viewer 拒）
+        if !self
+            .state
+            .role_table
+            .role_has_capability(role, Capability::EStop)
+        {
+            tracing::warn!(
+                request_id = %validated.request_id,
+                role = role.as_str(),
+                "EStop denied: role lacks `estop` capability"
+            );
+            return Err(tonic::Status::permission_denied(format!(
+                "role `{}` lacks `estop` capability (requires operator+)",
+                role.as_str()
+            )));
+        }
+
+        // ─── Step 4: 算 idempotency fingerprint
+        let fingerprint = estop_idempotency_fingerprint(&validated);
+
+        // ─── Step 5: cache.decide — Replay / Conflict / Capacity 立刻短路
+        let insert_handle = {
+            let mut cache = self
+                .state
+                .idempotency
+                .lock()
+                .expect("idempotency cache mutex poisoned");
+            match cache.decide(Method::EStop, &validated.idempotency_key, fingerprint) {
+                Decision::FreshInsert(h) => h,
+                Decision::Replay(CachedResponse::EStop { published_at_ns }) => {
+                    drop(cache);
+                    tracing::info!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        published_at_ns,
+                        "EStop idempotency replay (no re-publish)"
+                    );
+                    return Ok(tonic::Response::new(Ack {
+                        request_id: validated.request_id,
+                        cleared_at_ns: published_at_ns,
+                        dry_run: false,
+                    }));
+                }
+                Decision::Replay(other) => {
+                    drop(cache);
+                    tracing::error!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        cached_variant = ?other,
+                        "BUG: EStop method namespace inconsistency"
+                    );
+                    return Err(tonic::Status::internal(
+                        "idempotency cache namespace inconsistency",
+                    ));
+                }
+                Decision::Conflict { .. } => {
+                    drop(cache);
+                    tracing::warn!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        "EStop idempotency conflict"
+                    );
+                    return Err(tonic::Status::already_exists(format!(
+                        "idempotency_key `{}` already used with a different request fingerprint",
+                        validated.idempotency_key
+                    )));
+                }
+                Decision::Capacity {
+                    current_entries,
+                    max_entries,
+                } => {
+                    drop(cache);
+                    tracing::warn!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        current_entries,
+                        max_entries,
+                        "EStop idempotency cache full"
+                    );
+                    return Err(tonic::Status::resource_exhausted(format!(
+                        "idempotency cache full ({current_entries}/{max_entries})"
+                    )));
+                }
+            }
+        };
+
+        // ─── Step 5.5: shutdown gate
+        if *self.state.shutdown_rx.borrow() {
+            tracing::warn!(
+                request_id = %validated.request_id,
+                "EStop rejected during shutdown"
+            );
+            drop(insert_handle);
+            return Err(tonic::Status::unavailable(
+                "gateway is shutting down; new requests rejected",
+            ));
+        }
+
+        // ─── Step 6: stamp + build wire EStopEvent body（D3/D6：source="rpc"
+        //     固定 + reason 透传〔空串合法〕+ **latched=false**——publish 时刻
+        //     fsync 不可知，不在 wire 上说尚未发生的事实）
+        let stamp_ns = self.state.clock.now().0;
+        let body_bytes = build_estop_event(&validated.estop_reason, stamp_ns, "rpc", false);
+
+        // ─── Step 7: forward 到 estop_pub_thread + 持 oneshot_rx（PD2 映射）
+        let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
+        let forward = EStopPubForward {
+            body_bytes,
+            stamp_ns,
+            oneshot_tx,
+            request_id: validated.request_id.clone(),
+        };
+        match self.state.estop_pub_tx.try_send(forward) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => {
+                tracing::warn!(
+                    request_id = %validated.request_id,
+                    "EStop publish forward channel full"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::resource_exhausted(
+                    "gateway EStop publish forward channel full; retry shortly",
+                ));
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                tracing::error!(
+                    request_id = %validated.request_id,
+                    "EStop publish forward channel disconnected"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::unavailable(
+                    "gateway EStop publish thread stopped",
+                ));
+            }
+        }
+
+        // ─── Step 8: 等 publish 结果（timeout_ms + grace；超时 →
+        //     DeadlineExceeded〔gateway 侧；publish 路径无 wire deadline〕）
+        let total_timeout_ms = validated
+            .timeout_ms
+            .saturating_add(self.state.rr_timeout_grace_ms);
+        let total_timeout = Duration::from_millis(total_timeout_ms);
+        let publish_result = match tokio::time::timeout(total_timeout, oneshot_rx).await {
+            Err(_elapsed) => {
+                tracing::warn!(
+                    request_id = %validated.request_id,
+                    "EStop gateway-side publish timeout"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::deadline_exceeded(format!(
+                    "no publish confirmation within {total_timeout_ms} ms"
+                )));
+            }
+            Ok(Err(_recv_err)) => {
+                tracing::error!(
+                    request_id = %validated.request_id,
+                    "EStop publish oneshot RecvError"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::unavailable(
+                    "gateway EStop publish thread unavailable",
+                ));
+            }
+            Ok(Ok(r)) => r,
+        };
+
+        // ─── Step 9: publish 成败 → commit / Internal
+        match publish_result {
+            Ok(published_at_ns) => {
+                let mut cache = self
+                    .state
+                    .idempotency
+                    .lock()
+                    .expect("idempotency cache mutex poisoned");
+                insert_handle.commit(&mut cache, CachedResponse::EStop { published_at_ns });
+                drop(cache);
+                tracing::info!(
+                    request_id = %validated.request_id,
+                    idempotency_key = %validated.idempotency_key,
+                    published_at_ns,
+                    role = role.as_str(),
+                    source = %validated.source,
+                    estop_reason = %validated.estop_reason,
+                    audit_reason = %validated.audit_reason,
+                    "EStop published (Ack = published 弱语义；不证 S0 消费 / latch fsync)"
+                );
+                Ok(tonic::Response::new(Ack {
+                    request_id: validated.request_id,
+                    cleared_at_ns: published_at_ns,
+                    dry_run: false,
+                }))
+            }
+            Err(pub_err) => {
+                drop(insert_handle);
+                tracing::error!(
+                    request_id = %validated.request_id,
+                    error = %pub_err,
+                    "EStop publish failed; replying Internal (no cache commit)"
+                );
+                Err(tonic::Status::internal(format!(
+                    "EStopEvent publish failed: {pub_err}"
+                )))
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
     // v0.3 B4 (2/3-b) task control plane handlers
     //
     // 4 个 task RPC + ClearError 真 handler 实现走 [`crate::task_handlers`]
@@ -1747,6 +1995,46 @@ pub async fn run_gateway_with_rr_io(
     };
     spawned.handles.push(rr_set_enabled);
 
+    // **v0.5 候选 D（PB1）**：estop_pub_thread 在 "rr_io_threads started"
+    // marker **之前** spawn——spawn 同步 ready 握手 → marker 打出时 estop
+    // publisher 已 attach（e2e 等 marker 即可保证 publisher ready；AC-7 顺序
+    // 判定依赖此序）。publisher open_or_create **不依赖** S0 subscriber 存在。
+    let (estop_pub_tx, estop_pub_rx) = bounded::<EStopPubForward>(64);
+    let estop_topic = format!("/{}/events/estop", cfg.robot_id);
+    let estop_topic_for_factory = estop_topic.clone();
+    let estop_factory = move || {
+        let node = NodeBuilder::new()
+            .create::<IxService>()
+            .expect("iceoryx2 NodeBuilder::create (estop_pub)");
+        let publisher = robot_transport::iceoryx2::publisher::<markers::EStopEvent>(
+            &node,
+            &estop_topic_for_factory,
+            robot_transport::iceoryx2::TopicClass::SafetyEvent,
+        )
+        .expect("open estop publisher");
+        Box::leak(Box::new(node));
+        publisher
+    };
+    let estop_pub_handle: EStopPubThreadHandle = match spawn_estop_pub_thread(
+        &EStopPubThreadConfig {
+            topic: estop_topic.clone(),
+            poll_interval_ns: 500_000,
+        },
+        Arc::clone(&clock),
+        estop_factory,
+        estop_pub_rx,
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            let ready_err = GatewayReadyError::rr_io_spawn_from_io(&e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            spawned.stop_and_join_all();
+            return Err(GatewayError::RrIoSpawn(e));
+        }
+    };
+
     tracing::info!(
         topic_clear_estop = %topics.clear_estop,
         topic_task_invoke = %topics.task_invoke,
@@ -1754,10 +2042,11 @@ pub async fn run_gateway_with_rr_io(
         topic_task_status = %topics.task_status,
         topic_clear_error = %topics.clear_error,
         topic_set_enabled = %topics.set_enabled,
-        "rr_io_threads started (6 RR I/O threads; B4 + v0.5 候选 C set_enabled)"
+        topic_estop_pub = %estop_topic,
+        "rr_io_threads started (6 RR I/O threads + estop_pub; B4 + v0.5 候选 C/D)"
     );
 
-    // ─── 2) idempotency cache（5 个 method 共用一个 cache 实例 + namespace
+    // ─── 2) idempotency cache（6 个 method 共用一个 cache 实例 + namespace
     //     key；详 idempotency::Method）───
     let cache = Arc::new(Mutex::new(IdempotencyCache::with_capacity(
         Duration::from_secs(cfg.idempotency_ttl_secs),
@@ -1765,8 +2054,10 @@ pub async fn run_gateway_with_rr_io(
     )));
 
     // ─── 2.5) **v0.5 候选 B (2/4)**：常驻 per-hardware S0 state 订阅池 + cache。
-    //     在 6 个 rr_io_thread 起好之后、tonic server 起之前建；spawn 失败
-    //     回滚已起 rr_io_thread → fail-fast（沿 RrIoSpawn 先例）。空
+    //     在 6 个 rr_io_thread + estop_pub_thread 起好之后、tonic server 起之
+    //     前建；spawn 失败回滚已起 rr_io_thread + estop_pub_thread →
+    //     fail-fast（沿 RrIoSpawn 先例；候选 D reviewer (1/3) 阻断：回滚必须
+    //     含 estop_pub，否则半失败路径遗留 publisher 线程）。空
     //     state_hardware_ids → 空池（D-P1，合法）。 ───
     let state_cache = Arc::new(StateCache::new(&cfg.state_hardware_ids));
     let state_pool = match StatePool::spawn(&cfg.robot_id, &cfg.state_hardware_ids, &state_cache) {
@@ -1777,6 +2068,10 @@ pub async fn run_gateway_with_rr_io(
                 let _ = tx.send(Err(ready_err));
             }
             spawned.stop_and_join_all();
+            estop_pub_handle.request_stop();
+            if let Err(panic) = estop_pub_handle.join() {
+                tracing::error!(?panic, "estop_pub_thread panicked at rollback join");
+            }
             return Err(GatewayError::StatePoolSpawn(e));
         }
     };
@@ -1793,6 +2088,7 @@ pub async fn run_gateway_with_rr_io(
         rr_forward_tx_task_status: spawned.forward_txs.task_status.clone(),
         rr_forward_tx_clear_error: spawned.forward_txs.clear_error.clone(),
         rr_forward_tx_set_enabled: spawned.forward_txs.set_enabled.clone(),
+        estop_pub_tx: estop_pub_tx.clone(),
         robot_id: cfg.robot_id.clone(),
         role_table,
         idempotency: cache,
@@ -1806,8 +2102,13 @@ pub async fn run_gateway_with_rr_io(
     let serve_result = run_gateway_with_ready(cfg, handler, shutdown_rx, ready_tx).await;
 
     // ─── 5) **关键边界**：tonic server 退出**之后**才停 rr_io_thread +
-    //     state_pool（沿 B4 shutdown 顺序：in-flight handler 跑完 → 停后台线程）。
+    //     estop_pub_thread + state_pool（沿 B4 shutdown 顺序：in-flight
+    //     handler 跑完 → 停后台线程）。
     spawned.stop_and_join_all();
+    estop_pub_handle.request_stop();
+    if let Err(panic) = estop_pub_handle.join() {
+        tracing::error!(?panic, "estop_pub_thread panicked at join");
+    }
     state_pool.stop();
 
     serve_result
@@ -2488,15 +2789,15 @@ capabilities = ["read_state"]
 
 [roles.operator]
 description = "operator"
-capabilities = ["read_state", "set_enabled"]
+capabilities = ["read_state", "set_enabled", "estop"]
 
 [roles.maintainer]
 description = "maintainer"
-capabilities = ["read_state", "clear_estop", "set_enabled"]
+capabilities = ["read_state", "clear_estop", "set_enabled", "estop"]
 
 [roles.admin]
 description = "admin"
-capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
+capabilities = ["read_state", "clear_estop", "set_enabled", "estop", "shutdown"]
 "#;
 
     /// 构造完整 handler state；caller 拿走 forward_rx 充当 mock daemon。
@@ -2534,11 +2835,13 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
         let (task_status_tx, task_status_rx) = bounded::<RrForwardRequest>(1);
         let (clear_error_tx, clear_error_rx) = bounded::<RrForwardRequest>(1);
         let (set_enabled_tx, set_enabled_rx) = bounded::<RrForwardRequest>(1);
+        let (estop_pub_tx, estop_pub_rx) = bounded::<EStopPubForward>(1);
         Box::leak(Box::new(task_invoke_rx));
         Box::leak(Box::new(task_cancel_rx));
         Box::leak(Box::new(task_status_rx));
         Box::leak(Box::new(clear_error_rx));
         Box::leak(Box::new(set_enabled_rx));
+        Box::leak(Box::new(estop_pub_rx));
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let state = GatewayHandlerState {
             rr_forward_tx_clear_estop: forward_tx,
@@ -2547,6 +2850,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
             rr_forward_tx_task_status: task_status_tx,
             rr_forward_tx_clear_error: clear_error_tx,
             rr_forward_tx_set_enabled: set_enabled_tx,
+            estop_pub_tx,
             robot_id: "test_robot".to_string(),
             role_table,
             idempotency: cache,
@@ -3486,11 +3790,13 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
         let (task_cancel_tx, tc_rx) = bounded::<RrForwardRequest>(1);
         let (task_status_tx, ts_rx) = bounded::<RrForwardRequest>(1);
         let (clear_error_tx, cer_rx) = bounded::<RrForwardRequest>(1);
+        let (estop_pub_tx, ep_rx) = bounded::<EStopPubForward>(1);
         Box::leak(Box::new(ce_rx));
         Box::leak(Box::new(ti_rx));
         Box::leak(Box::new(tc_rx));
         Box::leak(Box::new(ts_rx));
         Box::leak(Box::new(cer_rx));
+        Box::leak(Box::new(ep_rx));
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Box::leak(Box::new(shutdown_tx));
         let state = GatewayHandlerState {
@@ -3500,6 +3806,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
             rr_forward_tx_task_status: task_status_tx,
             rr_forward_tx_clear_error: clear_error_tx,
             rr_forward_tx_set_enabled: set_enabled_tx,
+            estop_pub_tx,
             robot_id: "test_robot".to_string(),
             role_table,
             idempotency: cache,
@@ -3678,5 +3985,223 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
             0,
             "request_id mismatch 路径**不**应缓存"
         );
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // v0.5 候选 D EStop handler 单测
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// 构造 handler，estop_pub = active forward channel（返 rx 充当 mock
+    /// publish 线程）；其它 6 条 leak rx。`estop_buf` 控制容量（PB2 Full
+    /// unit 用 1）。
+    fn make_estop_handler(estop_buf: usize) -> (GatewayHandler, CrossbeamRecv<EStopPubForward>) {
+        let role_table = Arc::new(load_role_table(TEST_RPC_ROLES_TOML).expect("role table parse"));
+        let cache = Arc::new(Mutex::new(IdempotencyCache::with_capacity(
+            Duration::from_mins(1),
+            64,
+        )));
+        let (estop_pub_tx, estop_pub_rx) = bounded::<EStopPubForward>(estop_buf);
+        let (clear_estop_tx, ce_rx) = bounded::<RrForwardRequest>(1);
+        let (task_invoke_tx, ti_rx) = bounded::<RrForwardRequest>(1);
+        let (task_cancel_tx, tc_rx) = bounded::<RrForwardRequest>(1);
+        let (task_status_tx, ts_rx) = bounded::<RrForwardRequest>(1);
+        let (clear_error_tx, cer_rx) = bounded::<RrForwardRequest>(1);
+        let (set_enabled_tx, se_rx) = bounded::<RrForwardRequest>(1);
+        Box::leak(Box::new(ce_rx));
+        Box::leak(Box::new(ti_rx));
+        Box::leak(Box::new(tc_rx));
+        Box::leak(Box::new(ts_rx));
+        Box::leak(Box::new(cer_rx));
+        Box::leak(Box::new(se_rx));
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        Box::leak(Box::new(shutdown_tx));
+        let state = GatewayHandlerState {
+            rr_forward_tx_clear_estop: clear_estop_tx,
+            rr_forward_tx_task_invoke: task_invoke_tx,
+            rr_forward_tx_task_cancel: task_cancel_tx,
+            rr_forward_tx_task_status: task_status_tx,
+            rr_forward_tx_clear_error: clear_error_tx,
+            rr_forward_tx_set_enabled: set_enabled_tx,
+            estop_pub_tx,
+            robot_id: "test_robot".to_string(),
+            role_table,
+            idempotency: cache,
+            clock: Arc::new(SystemClock),
+            rr_timeout_grace_ms: 500,
+            shutdown_rx,
+            state_cache: Arc::new(StateCache::new(&[])),
+        };
+        (GatewayHandler::new(state), estop_pub_rx)
+    }
+
+    fn make_estop_cmd(idempotency_key: &str, token: &str) -> crate::proto::EStopCommand {
+        crate::proto::EStopCommand {
+            meta: Some(CommandMeta {
+                request_id: Uuid::now_v7().to_string(),
+                source: "test.unit".into(),
+                auth: Some(AuthContext {
+                    token: token.into(),
+                    mtls_fingerprint: String::new(),
+                }),
+                timeout_ms: 2_000,
+                idempotency_key: idempotency_key.into(),
+                dry_run: false,
+                audit_reason: "unit test".into(),
+            }),
+            estop_reason: "unit estop".into(),
+        }
+    }
+
+    /// mock publish 线程：收一条 forward → oneshot 回 Ok(at_ns)。
+    fn mock_publish_ok(
+        rx: CrossbeamRecv<EStopPubForward>,
+        at_ns: u64,
+    ) -> tokio::task::JoinHandle<EStopPubForward> {
+        tokio::task::spawn_blocking(move || {
+            let fwd = rx.recv_timeout(Duration::from_secs(2)).expect("forward");
+            let (reply_tx, fwd_back) = {
+                // 拆 oneshot 出来回 Ok；fwd 其余字段回传给断言。
+                let EStopPubForward {
+                    body_bytes,
+                    stamp_ns,
+                    oneshot_tx,
+                    request_id,
+                } = fwd;
+                (
+                    oneshot_tx,
+                    EStopPubForward {
+                        body_bytes,
+                        stamp_ns,
+                        oneshot_tx: tokio::sync::oneshot::channel().0,
+                        request_id,
+                    },
+                )
+            };
+            reply_tx.send(Ok(at_ns)).expect("oneshot recv dropped");
+            fwd_back
+        })
+    }
+
+    /// **AC-4（gateway 层）**：viewer → PermissionDenied（不 forward）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn estop_viewer_denied() {
+        let (handler, _rx) = make_estop_handler(64);
+        let err = handler
+            .e_stop(tonic::Request::new(make_estop_cmd(
+                "idem-es-viewer",
+                "viewer-fake-token-001",
+            )))
+            .await
+            .expect_err("viewer 应被拒");
+        assert_eq!(err.code(), tonic::Code::PermissionDenied);
+    }
+
+    /// publish Ok → Ack（cleared_at_ns = published_at_ns）+ cache commit +
+    /// wire body 字段（reason 透传 / source="rpc" / latched=false，D3/D6）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn estop_publish_ok_acks_and_commits_cache() {
+        let (handler, rx) = make_estop_handler(64);
+        let cache = Arc::clone(&handler.state().idempotency);
+        let mock = mock_publish_ok(rx, 424_242);
+
+        let ack = handler
+            .e_stop(tonic::Request::new(make_estop_cmd(
+                "idem-es-ok",
+                "operator-fake-token-001",
+            )))
+            .await
+            .expect("publish ok 应 Ack")
+            .into_inner();
+        assert_eq!(ack.cleared_at_ns, 424_242, "Ack 应携 published_at_ns");
+        assert!(!ack.dry_run);
+
+        // wire body 字段断言（mock 收到的 forward）。
+        let fwd = mock.await.unwrap();
+        let view =
+            flatbuffers::root::<robot_msg::msg::EStopEvent>(&fwd.body_bytes).expect("decode");
+        assert_eq!(view.reason().unwrap_or(""), "unit estop");
+        assert_eq!(view.source().unwrap_or(""), "rpc");
+        assert!(!view.latched(), "RPC 路径 latched 必须 false（D3）");
+
+        // cache committed（同 key 二发走 Replay 的前提）。
+        assert_eq!(cache.lock().unwrap().len(), 1, "Ok 路径应 commit cache");
+    }
+
+    /// **PD2**：forward channel Disconnected（publish 线程死）→ Unavailable。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn estop_forward_disconnected_returns_unavailable() {
+        let (handler, rx) = make_estop_handler(64);
+        drop(rx); // 模拟 estop_pub_thread 已死
+        let err = handler
+            .e_stop(tonic::Request::new(make_estop_cmd(
+                "idem-es-disc",
+                "operator-fake-token-001",
+            )))
+            .await
+            .expect_err("Disconnected 应 Unavailable");
+        assert_eq!(err.code(), tonic::Code::Unavailable);
+    }
+
+    /// **PB2**：forward channel Full（bounded(1) 预塞满不消费）→
+    /// ResourceExhausted。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn estop_forward_channel_full_returns_resource_exhausted() {
+        let (handler, rx) = make_estop_handler(1);
+        // 预塞满容量 1 的 channel（rx 持着不消费）。
+        let (dummy_tx, _dummy_rx) = tokio::sync::oneshot::channel();
+        handler
+            .state()
+            .estop_pub_tx
+            .try_send(EStopPubForward {
+                body_bytes: vec![0u8; 4],
+                stamp_ns: 0,
+                oneshot_tx: dummy_tx,
+                request_id: "filler".into(),
+            })
+            .expect("filler 应入队");
+
+        let err = handler
+            .e_stop(tonic::Request::new(make_estop_cmd(
+                "idem-es-full",
+                "operator-fake-token-001",
+            )))
+            .await
+            .expect_err("Full 应 ResourceExhausted");
+        assert_eq!(err.code(), tonic::Code::ResourceExhausted);
+        drop(rx);
+    }
+
+    /// **D5/AC-5（handler 层）**：同 key 二发 → Replay 返缓存 Ack（同
+    /// published_at_ns），**不**二次 forward（mock 端 forward_rx 只收到 1 条）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn estop_idem_replay_returns_cached_ack_without_second_forward() {
+        let (handler, rx) = make_estop_handler(64);
+
+        // 第一发：mock 回 Ok(777)。fingerprint 字段须与第二发一致 →
+        // 固定 source/reason/audit/token，仅 request_id 变（不进 fp）。
+        let mut cmd1 = make_estop_cmd("idem-es-replay", "operator-fake-token-001");
+        cmd1.meta.as_mut().unwrap().source = "replay.test".into();
+        let mut cmd2 = make_estop_cmd("idem-es-replay", "operator-fake-token-001");
+        cmd2.meta.as_mut().unwrap().source = "replay.test".into();
+
+        let mock = mock_publish_ok(rx, 777);
+        let ack1 = handler
+            .e_stop(tonic::Request::new(cmd1))
+            .await
+            .expect("第一发应 Ack")
+            .into_inner();
+        let fwd = mock.await.unwrap();
+        assert_eq!(ack1.cleared_at_ns, 777);
+
+        // 第二发：mock 线程已退出（rx 已被 mock 消费后 drop）——若 handler 误
+        // 走第二次 forward 会 Disconnected/超时而非 Replay；Replay 路径不碰
+        // channel，直接返缓存。
+        let ack2 = handler
+            .e_stop(tonic::Request::new(cmd2))
+            .await
+            .expect("第二发应 Replay Ack")
+            .into_inner();
+        assert_eq!(ack2.cleared_at_ns, 777, "Replay 应返同 published_at_ns");
+        drop(fwd);
     }
 }

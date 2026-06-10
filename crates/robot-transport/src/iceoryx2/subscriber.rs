@@ -38,6 +38,29 @@ impl<T: BodyMarker> core::fmt::Debug for Iceoryx2Subscriber<T> {
 }
 
 impl<T: BodyMarker> Iceoryx2Subscriber<T> {
+    /// 取**一条** sample（FIFO，不 drain 到最新）；无 sample 返 `Ok(None)`。
+    ///
+    /// **v0.5 候选 D（PE1）**：事件**计数**场景用（如 e2e 验"同 idempotency
+    /// key 两发恰好 1 条 `EStopEvent`"）——`LatestSubscriber::latest()` 会把
+    /// buffer drain 到只剩最后一条，多条事件被塌缩，计数判据失真。keep-last
+    /// 的 state 类订阅仍用 `latest()`，**不要**混用两种语义。
+    ///
+    /// inherent method（不进 `LatestSubscriber` trait）：mock 后端无此需求，
+    /// trait 0 改。
+    ///
+    /// # Errors
+    ///
+    /// iceoryx2 `receive()` 失败 → `TransportError::Backend`。
+    pub fn try_recv(&mut self) -> Result<Option<crate::SampleLease<T>>, TransportError> {
+        match self.inner.receive() {
+            Ok(Some(sample)) => Ok(Some(crate::SampleLease::from_iceoryx2(
+                Iceoryx2SampleLease { sample },
+            ))),
+            Ok(None) => Ok(None),
+            Err(e) => Err(TransportError::Backend(format!("iceoryx2 receive: {e:?}"))),
+        }
+    }
+
     /// 取最新可用 sample；drain iceoryx2 buffer 至只剩一条。
     ///
     /// 错误路径只来自 iceoryx2 `receive()` 本身 → `TransportError::Backend`。

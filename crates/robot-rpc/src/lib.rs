@@ -72,6 +72,8 @@
 
 pub mod auth;
 pub mod clear_estop;
+pub mod estop;
+pub mod estop_pub_thread;
 pub mod events_subscribe;
 pub mod gateway;
 pub mod idempotency;
