@@ -61,7 +61,9 @@ const LAYOUT_ID: u64 = 0x0BAD_F00D_1234_5678;
 /// AC-7：固定 stamp 让 GetState 确定性断言 stamp 透传（非 gateway 自生 clock）。
 const FIXED_STAMP_NS: u64 = 1_700_000_000_000;
 const JOINTS: usize = 2;
-const GATEWAY_READY_MARKER: &str = "rr_io_threads started (5 RR I/O threads; B4 (2/3-b))";
+// count-independent 前缀（v0.5 候选 C 修，同 common/ready.rs：计数随 method
+// append 变化，全串硬编码会 timeout 假死）。
+const GATEWAY_READY_MARKER: &str = "rr_io_threads started";
 const MARKER_TIMEOUT: Duration = Duration::from_secs(5);
 const READY_TIMEOUT: Duration = Duration::from_secs(5);
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(3);

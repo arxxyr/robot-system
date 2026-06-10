@@ -25,7 +25,11 @@ use tonic::transport::{Channel, Endpoint};
 use crate::common::subprocess::{MarkerError, SubprocessHandle};
 
 const S1_READY_MARKER: &str = "s1_daemon rr_server_threads ready";
-const GATEWAY_READY_MARKER: &str = "rr_io_threads started (5 RR I/O threads; B4 (2/3-b))";
+/// **count-independent 前缀**（v0.5 候选 C 修）：gateway 该行带 rr_io_thread
+/// 计数（B4 时 5 → 候选 C 6），全串硬编码会在每次 method append 后 timeout
+/// 假死（marker 永不匹配）。readiness 只需"全部 rr_io_thread 已 spawn"信号
+/// （任一 spawn 失败 gateway fail-fast 退出，不会打出此行），计数不增加安全性。
+const GATEWAY_READY_MARKER: &str = "rr_io_threads started";
 
 const MARKER_TIMEOUT: Duration = Duration::from_secs(5);
 const TCP_TOTAL: Duration = Duration::from_millis(500);
@@ -54,7 +58,8 @@ pub enum ReadyError {
 /// 等三段式 ready 完成。
 ///
 /// 1. wait s1 marker `"s1_daemon rr_server_threads ready"` (5s timeout)
-/// 2. wait gateway marker `"rr_io_threads started (5 RR I/O threads; B4 (2/3-b))"` (5s timeout)
+/// 2. wait gateway marker `"rr_io_threads started"`（count-independent 前缀，
+///    5s timeout）
 /// 3. TCP probe gateway listen_addr (500ms total / 50ms retry)
 /// 4. RPC probe `GetTaskStatus { unknown action_id }` 期 `NotFound` (5s total / 100ms retry)
 ///
