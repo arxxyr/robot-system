@@ -133,6 +133,17 @@ transport；范围限定见 D1）：
 
 - **transition 加**：`(Enabled, Disable)`→Safe（effectful `Enable(false)`）/
   `(Ready, Disable)`→Safe；`(Safe/Fault, Disable)` = no-op（幂等，已非 enabled）。
+- **no-op 幂等的 live RR 形态（Reverse Sync r1 拍清，语义 A）**：`SetEnabled(false)`
+  在 `state ∈ {Safe, Fault(_)}`（**含 `Fault(AdapterErr)` 与其它 `Fault(_)`**）时，
+  S0 RR drain **即时**回 `domain Disabled`(Ok / `RpcStatus::Ok`)，**不** push
+  `Event::Disable`、**不**建 pending、**不**动 adapter、**不**清 Fault、**不**改
+  latch。`Ok` 仅表"已非 enabled"（disable 目标达成），**不**代表 Fault 被清除
+  （Fault 仍唯一由 `ClearError` 清，operator 经 `GetState` 另见）。理由：与本 D3
+  "(Safe/Fault, Disable)=no-op 幂等"、AC-5"disable 是安全方向"自洽；dry-run 对
+  Fault+disable 早返 `WouldAccept`，本条令 **live 与 dry-run 一致**。**区别**
+  `Enabled`/`Ready` → disable 仍走 effectful/pending 观测真 torque-off；后者中途
+  adapter `Enable(false)` ack **真**失败才 `commit_fault(AdapterErr)` → domain
+  `AdapterError`（D3d / AC-3b），与"请求**前**就在 Fault"的幂等成功严格区分。
 - `SetEnabled(true)` = 现有 `Event::Enable`（Safe→Ready，latch-guarded）；`(Enabled,
   Enable)` no-op 幂等 / `(Fault, Enable)` 拒（需先 ClearError）。
 
@@ -245,6 +256,12 @@ transport；范围限定见 D1）：
   **wire `RpcStatus::Internal` + domain `SetEnabledStatus::AdapterError`（非 Ack
   success）**→ gateway `tonic::Code::Internal`；state = Fault(AdapterErr)。**验证同
   AC-2c = (3/5) 集成 unit（PB10），非 cross-process e2e**。
+- **AC-3c（Fault + disable 幂等成功，Reverse Sync r1 / 语义 A）**：`state ∈ {Safe,
+  Fault(_)}`（**含 `Fault(AdapterErr)`**）+ `SetEnabled(false)` → S0 **即时**
+  `domain Disabled`(Ok)，**不**进 pending、**不**清 Fault、**不**动 adapter / latch；
+  `state` 仍原 Fault（`Ok` ≠ 清 Fault）。dry-run 与 live 对 Fault+disable 一致（都
+  `WouldAccept`/`Ok` 类）。验证 = (3/5) unit `disable_from_fault_adapter_err_is_
+  idempotent_ok` + `disable_from_fault_other_is_idempotent_ok`（断 state 仍 Fault）。
 - **AC-4（§6.7 #3 latch-blocked enable）**：estop_latched=true → `SetEnabled(true)`
   → `ready_guards_pass` 拒 → 留 Safe → 返 domain status（FailedPrecondition 类）；
   **latch 文件不变**。
@@ -576,3 +593,4 @@ ClearEStop（A1）先例。
 |---|---|---|---|---|
 | PE1 | (2/5) | 测试命名细化（assertion/scope 0 变，纯命名 + 覆盖增） | Plan §P.2.2 列 6 个 unit 名；实施期为 assertion 精确性 + 覆盖完备做如下 refine：① `disable_from_ready_to_safe` → **`disable_from_ready_to_safe_is_pure`**（多断 `TransitionKind::Pure`——Ready 未上扭无 adapter action，与 Enabled 的 `Effectful{Enable(false)}` 对称区分）；② `disable_from_safe_noop` → **`disable_from_safe_and_fault_is_noop`**（合并覆盖 `(Fault, Disable)→Fault` 幂等 arm，原 Plan 名只点 Safe、漏 Fault arm 的测试）；③ `auto_enable_typed_default_true` 拆为 **`auto_enable_typed_parsed_false`**（`Some(false)` 解析 + 断言 typed 字段不漏进 flatten `extras`）+ **`auto_enable_absent_is_none`**（缺省 → `None`，缺省 true 语义在 s0_daemon 而非 config_loader，故 config 层只断 `None`）。④ 新增 **`disable_allowed_when_latched_does_not_check_estop`**（文档化 Disable transition guard-independent + **不**清 estop latch 的安全属性——torque-off 任何时候安全；清 latch 仍唯一走 ClearEStop）。8 个 unit 全 PASS，assertion 语义与 §P.2.2 一致 | `state_machine.rs` tests + `config_loader.rs` tests |
 | PE2 | (3/5) | 测试加项（additive 覆盖，0 改协议/语义） | Plan §P.2.3 列 7 个 unit（dry-run 1 + pending 6）全数交付；额外加 **`encode_payload_locks_plan_mapping_table`**（set_enabled_rr_server.rs）—— 穷举 10 个 `SetEnabledRrPayload` variant → 锁 §P.2.3 encode 映射表 `(RpcStatus, SetEnabledStatus, completed_at_ns)` + 成功态 `error_msg` 空。理由：encode 表是 wire 契约，纯 fn 可确定性单测（沿 ClearEStop rr_server 也带 unit），防 (4/5) gateway 接线前映射漂移。(3/5) 共 **8 unit** = Plan 7（6 ipc pending + 1 dry-run）+ 1 added encode | `set_enabled_rr_server.rs` tests |
+| RS1 | (3/5) | **Reverse Sync**（bug → 回到已拍 Spec，非改需求） | reviewer (3/5) review 抓阻断：`Fault + SetEnabled(false)` 的 dry-run/live 不一致 —— dry-run 返 `WouldAccept`，但 live 硬挂 `PendingTarget::Safe` + resolve 优先级把 `Fault(AdapterErr)` 无条件映射 `AdapterError`，导致 Fault(AdapterErr)+disable 误报 `AdapterError`、其它 `Fault(_)`+disable 滞留到 `DeadlineExceeded`，**违背 D3 `(Safe/Fault,Disable)=no-op 幂等`**。**拍板语义 A**（idempotent 成功，含 `Fault(AdapterErr)`）。**修**：§5.5b live disable 当 `state ∈ {Safe, Fault(_)}` 即时回 `Disabled`(Ok)，不 push Event / 不建 pending / 不清 Fault / 不动 adapter（根因双修：不挂 Safe target + 不建 pending → Fault(AdapterErr) 误判线不触发）；Enabled/Ready→disable 维持 effectful/pending（中途 ack 真 fail 才 AdapterError）。Stopping+disable 保持 live `PreemptedByShutdown`（shutdown race，dry-run 不为 transient 收紧）。**Spec**：D3 加 no-op 幂等 live RR 形态 bullet + AC-3c。**+2 unit**（`disable_from_fault_adapter_err_is_idempotent_ok` + `disable_from_fault_other_is_idempotent_ok`，断 state 仍原 Fault）→ (3/5) 共 **10 unit**。feat commit **amend**（fix 折进 (3/5)，非 fixup 尾commit） | `ipc_thread.rs` §5.5b + tests |
