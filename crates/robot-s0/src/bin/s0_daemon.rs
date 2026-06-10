@@ -64,7 +64,7 @@ use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
 use robot_s0::ipc_thread::{
     ClearEStopRrRequest, ClearEStopRrResponse, IpcSubscribers, IpcThreadConfig, IpcThreadHandle,
-    RrChannels, spawn_ipc_thread,
+    RrChannels, SetEnabledRrChannels, SetEnabledRrRequest, SetEnabledRrResponse, spawn_ipc_thread,
 };
 use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread};
 use robot_s0::rr_server_thread::{RrServerThreadConfig, spawn_rr_server_thread};
@@ -72,6 +72,7 @@ use robot_s0::rt_thread::{RtThreadConfig, RtThreadHandle, spawn_rt_thread};
 use robot_s0::serial_io_thread::{
     SerialIoThreadConfig, SerialIoThreadHandle, spawn_serial_io_thread,
 };
+use robot_s0::set_enabled_rr_server::spawn_set_enabled_rr_server_thread;
 use robot_s0::state_machine::{Event, Guards, S0State, S0StateSnapshot};
 use robot_s0::watchdog::{WatchdogConfig, spawn_watchdog};
 use robot_transport::iceoryx2::request_response::rr_server;
@@ -358,6 +359,9 @@ fn topics(args: &ResolvedArgs) -> Topics {
         // **A1-3 (1/3c-2)**：ClearEStop RR control plane topic（reviewer
         // A1-3 (1/3b) 拍板 namespace）。
         rr_clear_estop: format!("/{r}/control/clear_estop"),
+        // **v0.5 候选 C（D5）**：SetEnabled RR control plane topic（第 2 个专用
+        // rr_server；与 clear_estop 同 namespace）。
+        rr_set_enabled: format!("/{r}/control/set_enabled"),
     }
 }
 
@@ -368,6 +372,7 @@ struct Topics {
     pub_state: String,
     pub_heartbeat: String,
     rr_clear_estop: String,
+    rr_set_enabled: String,
 }
 
 // ============================================================================
@@ -596,6 +601,11 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     let (rr_request_tx, rr_request_rx) = bounded::<ClearEStopRrRequest>(64);
     let (rr_response_tx, rr_response_rx) = bounded::<ClearEStopRrResponse>(64);
 
+    // **v0.5 候选 C（D5）**：SetEnabled RR control plane channels（第 2 个专用
+    // rr_server ↔ ipc_thread；同 bounded(64)）。
+    let (se_request_tx, se_request_rx) = bounded::<SetEnabledRrRequest>(64);
+    let (se_response_tx, se_response_rx) = bounded::<SetEnabledRrResponse>(64);
+
     let ipc = match spawn_ipc_thread(
         ipc_cfg,
         Arc::clone(&clock),
@@ -609,6 +619,12 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         Some(RrChannels {
             request_rx: rr_request_rx,
             response_tx: rr_response_tx,
+        }),
+        // **v0.5 候选 C**：SetEnabled RR channels（set_enabled_rr_server 在下方
+        // spawn 后通过同一对 channel 跟 ipc_thread 双向通信）。
+        Some(SetEnabledRrChannels {
+            request_rx: se_request_rx,
+            response_tx: se_response_tx,
         }),
     ) {
         Ok(h) => h,
@@ -662,6 +678,50 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     tracing::info!(
         topic = %rr_topic,
         "rr_server_thread started (ClearEStop RR control plane; A1-3 (1/3c-2))"
+    );
+
+    // ---- 3.6) spawn set_enabled_rr_server (v0.5 候选 C，D5) ----
+    //
+    // 第 2 个专用 rr_server（topic `/<robot_id>/control/set_enabled`），与
+    // ClearEStop rr_server 同 factory + leak Node 模式；**ClearEStop
+    // rr_server_thread 0 改**。spawn 失败 → 先 stop 已起的 clear_estop
+    // rr_server + ipc，再 return。
+    let se_topic = t.rr_set_enabled.clone();
+    let se_topic_for_factory = se_topic.clone();
+    let se_factory = move || {
+        let server_node = NodeBuilder::new().create::<IxService>().unwrap();
+        let server = rr_server::<markers::SetEnabledRequest, markers::SetEnabledResponse>(
+            &server_node,
+            &se_topic_for_factory,
+        )
+        .expect("set_enabled rr_server create");
+        Box::leak(Box::new(server_node));
+        server
+    };
+    let se_rr_handle = match spawn_set_enabled_rr_server_thread(
+        RrServerThreadConfig {
+            topic: se_topic.clone(),
+            poll_interval_ns: 500_000,
+            max_in_flight: 64,
+        },
+        Arc::clone(&clock),
+        se_factory,
+        se_request_tx,
+        se_response_rx,
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::error!(?e, "fatal: spawn_set_enabled_rr_server_thread failed");
+            rr_handle.request_stop();
+            let _ = rr_handle.join();
+            ipc.request_stop();
+            let _ = ipc.join();
+            return Err(1);
+        }
+    };
+    tracing::info!(
+        topic = %se_topic,
+        "set_enabled_rr_server started (SetEnabled RR control plane; v0.5 候选 C)"
     );
 
     // ---- 4) spawn watchdog ----
@@ -731,7 +791,16 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
                 Ok(h) => ExecutorHandle::HardRt(h),
                 Err(e) => {
                     tracing::error!(?e, "fatal: spawn_rt_thread failed");
-                    graceful_stop(ipc, &wd_stop, wd_handle, None, None, None, Some(rr_handle));
+                    graceful_stop(
+                        ipc,
+                        &wd_stop,
+                        wd_handle,
+                        None,
+                        None,
+                        None,
+                        Some(rr_handle),
+                        Some(se_rr_handle),
+                    );
                     return Err(1);
                 }
             }
@@ -749,7 +818,16 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
                 Ok(h) => ExecutorHandle::SerialRt(h),
                 Err(e) => {
                     tracing::error!(?e, "fatal: spawn_serial_io_thread failed");
-                    graceful_stop(ipc, &wd_stop, wd_handle, None, None, None, Some(rr_handle));
+                    graceful_stop(
+                        ipc,
+                        &wd_stop,
+                        wd_handle,
+                        None,
+                        None,
+                        None,
+                        Some(rr_handle),
+                        Some(se_rr_handle),
+                    );
                     return Err(1);
                 }
             }
@@ -799,6 +877,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
                 None,
                 None,
                 Some(rr_handle),
+                Some(se_rr_handle),
             );
             return Err(1);
         }
@@ -817,6 +896,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
                 Some(pub_handle),
                 None,
                 Some(rr_handle),
+                Some(se_rr_handle),
             );
             return Err(1);
         }
@@ -997,6 +1077,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         Some(pub_handle),
         Some(io_handle),
         Some(rr_handle),
+        Some(se_rr_handle),
     );
 
     // ---- 12) 保存 EStop latch ----
@@ -1256,6 +1337,7 @@ fn graceful_stop(
     pub_handle: Option<robot_s0::pub_thread::PubThreadHandle>,
     io_handle: Option<robot_s0::io_thread::IoThreadHandle>,
     rr_handle: Option<robot_s0::rr_server_thread::RrServerThreadHandle>,
+    se_rr_handle: Option<robot_s0::set_enabled_rr_server::SetEnabledRrServerHandle>,
 ) {
     // 顺序（A1-3 (1/3c-2) round 1 拍板 "shutdown 显式 abort pending"）：
     //   rr_server 先停 — 不再接新 RR request 入面；run_loop 出循环后
@@ -1272,6 +1354,13 @@ fn graceful_stop(
     //              crossbeam disconnect 语义自然丢弃）
     //   → watchdog 最后停
     if let Some(h) = rr_handle {
+        h.request_stop();
+        let _ = h.join();
+    }
+    // **v0.5 候选 C**：第 2 个 rr_server（set_enabled）同 rr_server 阶段先停 —
+    // 出循环后 `abort_pending_on_shutdown` 给 in-flight SetEnabled best-effort 回
+    // `RpcStatus::Aborted` + domain `PreemptedByShutdown`。
+    if let Some(h) = se_rr_handle {
         h.request_stop();
         let _ = h.join();
     }

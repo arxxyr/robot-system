@@ -49,6 +49,8 @@ pub mod pub_thread;
 pub mod rr_server_thread;
 pub mod serial_io_ctrl;
 pub mod serial_io_thread;
+mod set_enabled_action;
+pub mod set_enabled_rr_server;
 pub mod state_machine;
 pub mod systemd_notify;
 pub mod watchdog;
