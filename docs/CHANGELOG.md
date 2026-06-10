@@ -10,6 +10,63 @@
 
 ---
 
+## 2026-06-09 · v0.5 候选 C SetEnabled（**状态：实现登记 + 偏离登记**）
+
+### 背景
+
+候选 C 在候选 B 后的 8-method proto 上 **additive** 实现 design §5.3
+`SetEnabled`（method 8 → 9，`rpc SetEnabled (SetEnabledCommand) returns (Ack)`，
+operator+）。经 RIPER CodeMap(+amend) + Spec round 1-4 + Plan round 1-5 reviewer
+ACK + 5 段 feat + 1 Reverse Sync land。**D1 保留 frozen `bool enabled` 不加
+hardware_id（范围 = 单 S0 daemon）→ proto 形态无 design-freeze diff**。封存详
+[`docs/handoffs/v0.5_set_enabled_summary.md`](handoffs/v0.5_set_enabled_summary.md)
++ 审计全表 `team-swe/specs/v0_5_set_enabled.md` §P.4。
+
+### 偏离 1：state machine 事件集 §1.4 12 种 → +`Event::Disable`（13 种）
+
+- **涉及小节**：design §1.4 状态机事件表（12 种）。
+- **偏离**：加 `Event::Disable` = `SetEnabled(false)`：`(Enabled, Disable)→Safe`
+  （Effectful `Enable(false)` 真 torque-off，与 enable 上扭对称）/
+  `(Ready, Disable)→Safe`（Pure）/ `(Safe/Fault, Disable)` no-op 幂等。**不**碰
+  `estop_latched`（disable 不查不清 latch；清 latch 仍唯一走 `ClearEStop`，
+  §6.7 #3 不变）。
+- **Reverse Sync r1 收紧**（实施期 bug 修回已拍 Spec）：no-op 幂等的 live RR 形态
+  = `state ∈ {Safe, Fault(_)}`（含 `Fault(AdapterErr)`）时 S0 **即时**回
+  `Disabled`(Ok)，不动 adapter / 不清 Fault / 不建 pending；`Ok` 仅表"已非
+  enabled"。
+- **影响面**：robot-s0 state_machine / ipc_thread；S1 0 改；design.md 文字不改。
+
+### 登记 2：config `auto_enable` typed 化 + `build_adapter` matched-section（B2/B6）
+
+- `HardwareSection` 加 typed `auto_enable: Option<bool>`（additive，不再走
+  untyped extras）；**缺省（None）= true** 保既有无条件启动 auto-enable 行为。
+- `resolve_hardware_section(cfg, hardware_id)` 单一 helper：`build_adapter` 与
+  启动 auto-enable 改用**同一** matched `[[hardware]]` 段（修既有 `.first()`
+  错配）；CLI `--hardware-id` 无匹配段 → 启动 fail-fast exit 2。
+- 单 hardware config（first == matched）0 行为变化；e2e
+  `auto_enable_false_stays_safe`（双 hardware decoy-first）+
+  `cli_hardware_id_no_match_fail_fast` 锁住。
+
+### 登记 3：S0 第 2 个专用 RR server + gateway 第 6 条 rr_io_thread
+
+- topic `/<robot_id>/control/set_enabled`（D5：**专用** rr_server，ClearEStop
+  rr_server 0 改）；wire = `set_enabled.fbs`（schema id `0x040D`/`0x040E`，
+  `SetEnabledStatus` 10-variant domain enum；`RpcStatus` A1 共享 enum **不扩**）。
+- SetEnabled 是**多 tick** control action（区别 ClearEStop 单 tick）：D8 Ack ⟺
+  观测到 `Enabled.Active`（enable，heartbeat 依赖）/ `Safe`（disable）；deadline
+  过期不回滚副作用。dry_run = precondition-only（D7，进 S0 action layer 真评估，
+  gateway 不短路）。
+
+### 登记 4：toolchain pin `nightly-2026-06-08`（基建，非 design 语义）
+
+- channel="nightly" 2026-06-09 滚到 rustc 1.98.0-nightly (beae78130) 后
+  **iceoryx2 0.8.1 编译失败**（iceoryx2-bb-container `StaticString<256>` 无
+  `as_str`，E0599；上游 dep 不可改）。按既定处方（pin 具体日期 + 原地回滚上一
+  已验证日期）pin `nightly-2026-06-08`（rustc f20a92ec0）。
+- **解除条件**：iceoryx2 升级适配新 nightly 后复核回 `channel = "nightly"`；与
+  候选 B PE3（`state_pool` `mem::forget` workaround）同入 iceoryx2-upgrade
+  复核清单。
+
 ## 2026-06-08 · v0.5 候选 B GetState/StreamState（**状态：偏离登记**）
 
 ### 背景

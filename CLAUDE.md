@@ -16,7 +16,38 @@
 
 ```
 设计版本:  v0.1.2（冻结）
-实现阶段:  v0.5 —— 候选 B (GetState/StreamState 只读 RPC) ✅ **完结**（RIPER：CodeMap
+实现阶段:  v0.5 —— 候选 C (SetEnabled RPC) ✅ **完结**（RIPER：CodeMap+amend + Spec
+           r1-4 + Plan outline+r1-5 + 5 段 feat + 1 Reverse Sync + 2 fix；method
+           8→9 additive；feat 链 `f92bcec`→`dceebcc`→`e9bac70`→`b53ae1a`→
+           `a75f9bc` (5/5 e2e)，加 fix `4e56834` marker + 🔨 `79e0c02` nightly
+           pin + docs 若干，summary 为候选 C 最后一个 docs commit）。
+           set_enabled.fbs（0x040D/0x040E +
+           SetEnabledStatus 10-variant domain）+ S0 Event::Disable（§1.4 12→13，
+           走 CHANGELOG）+ config auto_enable typed + resolve_hardware_section
+           （B6 修 build_adapter .first() 错配 + fail-fast exit 2）+ 第 2 个专用
+           set_enabled_rr_server（D5，ClearEStop rr_server 0 改）+ ipc_thread
+           §5.5b drain / §6.6b 多 tick pending resolve（D8：enable Ack ⟺ 观测
+           Enabled.Active，heartbeat 依赖；disable ⟺ Safe；deadline 不回滚）+
+           dry-run/live 共用 evaluator（D7 precondition-only）+ gateway 12 步
+           handler（operator+ / PB12 request_id-mismatch 防线 / Method::SetEnabled
+           idempotency）+ 第 6 条 rr_io_thread + set_enabled_e2e 10 case
+           （s0 真 daemon + fake heartbeat + gateway）。**0 改 B4 frozen 8 method
+           wire / §6.7 全保（#3：disable 不查不清 latch）/ 0 改 ClearEStop·
+           ClearError rr_server / 0 改 S1 / 0 改 design.md**。详
+           docs/handoffs/v0.5_set_enabled_summary.md。
+           **审计必读（§P.4 全表）**：RS1（Fault+disable 幂等语义 A Reverse Sync，
+           Safe/Fault(_) disable 即时 Disabled(Ok) 不清 Fault）/ RS2（gate 漏报
+           修正：e2e marker 改 count-independent 前缀 "rr_io_threads started"，
+           release rebuild 必须先于 e2e gate）/ PE4（AC-9 + AC-5 cross-process
+           不可达 → unit 覆盖，PB10 同根因）/ PB10（adapter-fail = fault-inject
+           unit 非 e2e）。
+           **基建 ⚠**：rust-toolchain pin **nightly-2026-06-08**（2026-06-09
+           nightly 滚动后 iceoryx2 0.8.1 编译失败 E0599；iceoryx2 升级后复核
+           解除，与候选 B PE3 mem::forget 同清单）。cargo test --workspace
+           **1160 PASS / 0 FAIL**（set_enabled_e2e 10 + state 6 + task 6）。
+           下一步 = 候选 D（EStop 触发 RPC），A→B→C→D→E 硬序（v0.5_entry.md）。
+
+v0.5 候选 B: GetState/StreamState 只读 RPC ✅ **完结**（RIPER：CodeMap
            + Spec r1-3 + Plan r1-2 + 4 段 feat；method 6→8 additive，`a010fe7` →
            `ea69be7`）。proto append 2 rpc + 3 message + 4 enum mirror（state_convert.rs
            fbs→proto 纯转换器）+ gateway 常驻 per-hardware S0 state 订阅池 + cache
@@ -32,9 +63,7 @@
            → 真 handler 2/4+3/4）/ PE3（⚠ state_pool `mem::forget(sub)` 有界泄漏 =
            iceoryx2 0.8.1 Drop SIGSEGV workaround，**iceoryx2 升级后复核撤销**）。
            **C1 延续非安全保证**：read RPC 无 auth 字段、服务端不读不校验 token、
-           read_state cap 不实现。cargo test --workspace 1117 PASS / 0 FAIL
-           （state_rpc_e2e 6 + task_rpc_e2e 6）。下一步 = 候选 C，A→B→C→D→E 硬序
-           （v0.5_entry.md）。
+           read_state cap 不实现。封存时 workspace 1117 PASS / 0 FAIL。
 
 v0.5 候选 A: operator CLI (`robotctl`) ✅ 完结（5 feat + 1 fix + 7 docs = 13 commit，
            `809575f` → `25c2feb`）；crates/robot-cli +7 tonic gRPC operator 子命令 +
