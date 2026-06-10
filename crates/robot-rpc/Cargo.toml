@@ -128,5 +128,13 @@ name = "state_rpc_e2e"
 path = "tests/state_rpc_e2e.rs"
 required-features = ["client"]
 
+[[test]]
+# v0.5 候选 C (5/5) SetEnabled cross-process e2e：s0_daemon（真）+ fake
+# heartbeat（扮演 s1 心跳源，D-P3）+ gateway。required-features = ["client"]
+# 守门 → workspace feature unification 下默认随 `cargo test --workspace` 跑。
+name = "set_enabled_e2e"
+path = "tests/set_enabled_e2e.rs"
+required-features = ["client"]
+
 [lints]
 workspace = true

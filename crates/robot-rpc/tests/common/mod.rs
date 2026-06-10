@@ -25,6 +25,7 @@
 
 pub mod case_ctx;
 pub mod client;
+pub mod fake_heartbeat;
 pub mod fake_state;
 pub mod ready;
 pub mod subprocess;
