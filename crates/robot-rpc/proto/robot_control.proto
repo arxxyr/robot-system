@@ -3,7 +3,7 @@
 // 对应 docs/00_design.md §5.2 (CommandMeta + AuthContext) + §5.3 frozen
 // RPC schema。**字段 / 字段编号不可改**；只可 append。
 //
-// **当前 scope**（v0.5 候选 B land 后）：8 条 RPC =
+// **当前 scope**（v0.5 候选 C land 后）：9 条 RPC =
 //   - `ClearEStop`           (A1 land；safety-critical maintainer-only)
 //   - `InvokeTask`           (B4)
 //   - `CancelTask`           (B4)
@@ -12,15 +12,16 @@
 //   - `ClearError`           (B4)
 //   - `GetState`             (v0.5 候选 B；只读 state 快照，additive)
 //   - `StreamState`          (v0.5 候选 B；只读 state server-streaming，additive)
+//   - `SetEnabled`           (v0.5 候选 C；enable/disable，operator+，additive)
 //
 // **v0.5 候选 B GetState/StreamState 设计-freeze diff**：design §5.3 写
 // `rpc GetState (Empty)`，实现期按多 hardware 语义改 `GetState(GetStateRequest
 // { hardware_id })`（显式 hardware selector）；design.md §5.3 文字**不**改，以
 // docs/CHANGELOG.md + team-swe Spec v0_5_get_stream_state 为准。
 //
-// 其它 §5.3 RPC（SetEnabled / EStop / ListHardware / ListJoints /
-// ListTasks / StreamLogs / ReloadCalibration / SetPolicy）留 v0.5+ 后续
-// 拍板，**不**在本 proto 出现。
+// 其它 §5.3 RPC（EStop / ListHardware / ListJoints / ListTasks /
+// StreamLogs / ReloadCalibration / SetPolicy）留 v0.5+ 后续拍板，**不**在
+// 本 proto 出现。
 //
 // **跟 robot-msg 关系**：本 proto 是 RPC 边界 wire format（client →
 // gateway, HTTP/2）；gateway 内部转换为 `robot-msg` 平行 fbs 表
@@ -91,11 +92,31 @@ message Ack {
     bool   dry_run       = 3;
 }
 
+// v0.5 候选 C `SetEnabled` —— client → gateway 改单 S0 daemon 的 enable 态。
+// design §5.3 frozen（Q1 保留 `bool enabled`，**不**加 hardware_id：范围 = 单
+// S0 daemon 的 selected hardware instance，**不**宣称 whole-robot；详 team-swe
+// Spec v0_5_set_enabled D1）。**operator+**（`Capability::SetEnabled`，viewer 拒）。
+//
+// 字段语义：
+// - `meta`：CommandMeta envelope；`meta.dry_run` 进 S0 action layer **真**评估
+//   precondition（**不** gateway 短路，沿 ClearEStop A1 拍板；D7）。
+// - `enabled`：`true` = enable（Safe→Ready→Enabled.Active，观测 heartbeat 驱动）；
+//   `false` = disable（→ Safe，torque-off）。
+//
+// reply = 通用 `Ack`：`Ack.cleared_at_ns` 复用为 enable/disable **完成时刻**
+// （fbs `SetEnabledResponse.completed_at_ns`；Ack 是 design §5.3 通用回执，字段
+// 名沿 ClearEStop 不另造）；dry_run 回传 `meta.dry_run`。
+message SetEnabledCommand {
+    CommandMeta meta    = 1;
+    bool        enabled = 2;
+}
+
 // v0.3 A1 ClearEStop + v0.3 B4 task control plane + v0.5 候选 B read-only
 // state plane RPCs。
 //
-// **method 数 = 8**（外部 tonic / HTTP/2 wire；内部 s1 RR server 仍仅 4
+// **method 数 = 9**（外部 tonic / HTTP/2 wire；内部 s1 RR server 仍仅 4
 // 条 RR topic = task_invoke / task_cancel / task_status / clear_error；
+// `SetEnabled` 走 S0 control RR `/<robot_id>/control/set_enabled`，**不**经 s1；
 // `StreamTaskEvents` 走 per-ActionId pubsub topic
 // `/<robot_id>/s1/action_events/<action_id_hex>`；v0.5 候选 B `GetState` /
 // `StreamState` **既不走 RR 也不走 s1**，gateway 直接读常驻 S0 state 订阅池
@@ -116,6 +137,10 @@ service RobotControl {
     // 订阅池，不走 s1 RR）。
     rpc GetState         (GetStateRequest)    returns (RobotState);
     rpc StreamState      (StreamRequest)      returns (stream RobotState);
+
+    // v0.5 候选 C control plane（additive；gateway 第 6 条 rr_io_thread →
+    // S0 set_enabled RR server `/<robot_id>/control/set_enabled`）。operator+。
+    rpc SetEnabled       (SetEnabledCommand)  returns (Ack);
 }
 
 // ===========================================================================

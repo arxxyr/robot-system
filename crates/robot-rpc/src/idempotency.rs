@@ -45,6 +45,9 @@
 //!   对齐）。
 //! - [`CachedResponse::ClearError`]：`{ cleared_at_ns, dry_run }`
 //!   （`fbs::ClearErrorResponse.cleared_at_ns`）。
+//! - [`CachedResponse::SetEnabled`]：`{ completed_at_ns, dry_run }`（v0.5 候选 C；
+//!   `fbs::SetEnabledResponse.completed_at_ns` = enable/disable 完成时刻，跟
+//!   ClearEStop `cleared_at_ns` 不同语义，cached 字段名跟 fbs 对齐）。
 //!
 //! **不**把 InvokeTask / CancelTask 硬塞同一 `Task` variant：reviewer 拍
 //! 板"除非 wire response 字段完全一致；写 RPC 的 cached response 应该
@@ -80,6 +83,8 @@ pub enum Method {
     CancelTask,
     /// B4 ClearError（`maintainer+`）。
     ClearError,
+    /// v0.5 候选 C SetEnabled（`operator+`，`Capability::SetEnabled`）。
+    SetEnabled,
 }
 
 impl Method {
@@ -92,6 +97,7 @@ impl Method {
             Self::InvokeTask => "invoke_task",
             Self::CancelTask => "cancel_task",
             Self::ClearError => "clear_error",
+            Self::SetEnabled => "set_enabled",
         }
     }
 }
@@ -181,6 +187,12 @@ pub enum CachedResponse {
     /// `fbs::ClearErrorResponse.cleared_at_ns` 同语义；**不**碰 §6.7
     /// invariant（仅清 coordinator Degraded 内存状态）。
     ClearError { cleared_at_ns: u64, dry_run: bool },
+    /// v0.5 候选 C SetEnabled 路径：返 `proto::Ack`，语义字段是
+    /// `fbs::SetEnabledResponse.completed_at_ns`（enable/disable **完成时刻**，
+    /// 跟 ClearEStop `cleared_at_ns` 不同语义；cached 字段名跟 fbs 对齐）。
+    /// `dry_run` 透传 `meta.dry_run`（dry-run precondition 评估也走 cache，
+    /// fingerprint 含 `dry_run` 故 dry/live 不串）。
+    SetEnabled { completed_at_ns: u64, dry_run: bool },
 }
 
 #[derive(Debug, Clone)]

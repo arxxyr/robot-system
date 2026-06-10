@@ -76,6 +76,7 @@ pub mod events_subscribe;
 pub mod gateway;
 pub mod idempotency;
 pub mod rr_io_thread;
+pub mod set_enabled;
 pub mod state_convert;
 pub mod state_pool;
 pub mod task_handlers;

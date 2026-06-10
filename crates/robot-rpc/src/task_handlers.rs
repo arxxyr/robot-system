@@ -1867,11 +1867,13 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
         let (task_cancel_tx, task_cancel_rx) = bounded(1);
         let (task_status_tx, task_status_rx) = bounded(1);
         let (clear_error_tx, clear_error_rx) = bounded(1);
+        let (set_enabled_tx, set_enabled_rx) = bounded(1);
         Box::leak(Box::new(task_invoke_rx));
         Box::leak(Box::new(clear_estop_rx));
         Box::leak(Box::new(task_cancel_rx));
         Box::leak(Box::new(task_status_rx));
         Box::leak(Box::new(clear_error_rx));
+        Box::leak(Box::new(set_enabled_rx));
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Box::leak(Box::new(shutdown_tx));
@@ -1882,6 +1884,7 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
             rr_forward_tx_task_cancel: task_cancel_tx,
             rr_forward_tx_task_status: task_status_tx,
             rr_forward_tx_clear_error: clear_error_tx,
+            rr_forward_tx_set_enabled: set_enabled_tx,
             robot_id: "gate1_test".to_string(),
             role_table,
             idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
@@ -1968,11 +1971,13 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
         let (task_cancel_tx, task_cancel_rx) = bounded(1);
         let (task_status_tx, task_status_rx) = bounded(1);
         let (clear_error_tx, clear_error_rx) = bounded(1);
+        let (set_enabled_tx, set_enabled_rx) = bounded(1);
         Box::leak(Box::new(task_invoke_rx));
         Box::leak(Box::new(clear_estop_rx));
         Box::leak(Box::new(task_cancel_rx));
         Box::leak(Box::new(task_status_rx));
         Box::leak(Box::new(clear_error_rx));
+        Box::leak(Box::new(set_enabled_rx));
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Box::leak(Box::new(shutdown_tx));
@@ -1983,6 +1988,7 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
             rr_forward_tx_task_cancel: task_cancel_tx,
             rr_forward_tx_task_status: task_status_tx,
             rr_forward_tx_clear_error: clear_error_tx,
+            rr_forward_tx_set_enabled: set_enabled_tx,
             robot_id: "gate2_test".to_string(),
             role_table,
             idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
@@ -2090,6 +2096,8 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
         Box::leak(Box::new(task_invoke_rx));
         Box::leak(Box::new(task_cancel_rx));
         Box::leak(Box::new(task_status_rx));
+        let (set_enabled_tx, set_enabled_rx) = bounded(1);
+        Box::leak(Box::new(set_enabled_rx));
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Box::leak(Box::new(shutdown_tx));
@@ -2100,6 +2108,7 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
             rr_forward_tx_task_cancel: task_cancel_tx,
             rr_forward_tx_task_status: task_status_tx,
             rr_forward_tx_clear_error: clear_error_tx,
+            rr_forward_tx_set_enabled: set_enabled_tx,
             robot_id: "ac7_lit".to_string(),
             role_table,
             idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(

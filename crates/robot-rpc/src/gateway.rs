@@ -80,9 +80,11 @@ use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::time::RobotClock;
-use robot_msg::build_helpers::build_clear_estop_request;
+use robot_msg::build_helpers::{build_clear_estop_request, build_set_enabled_request};
 use robot_msg::markers;
-use robot_msg::msg::{ClearEStopResponse as FbResp, JointState, RpcRole};
+use robot_msg::msg::{
+    ClearEStopResponse as FbResp, JointState, RpcRole, SetEnabledResponse as FbSetEnabledResp,
+};
 use robot_transport::iceoryx2::request_response::{Iceoryx2RrClient, rr_client};
 use thiserror::Error;
 use tokio::sync::watch;
@@ -96,11 +98,13 @@ use crate::idempotency::{CachedResponse, Decision, IdempotencyCache, Method};
 use crate::proto::robot_control_server::{RobotControl, RobotControlServer};
 use crate::proto::{
     Ack, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, GetStateRequest,
-    InvokeTaskCommand, RobotState, StreamRequest, TaskEvent, TaskHandle, TaskHandleRef, TaskStatus,
+    InvokeTaskCommand, RobotState, SetEnabledCommand, StreamRequest, TaskEvent, TaskHandle,
+    TaskHandleRef, TaskStatus,
 };
 use crate::rr_io_thread::{
     RrForwardRequest, RrIoThreadConfig, RrIoThreadHandle, spawn_rr_io_thread,
 };
+use crate::set_enabled::{set_enabled_idempotency_fingerprint, validate_set_enabled_command};
 use crate::state_convert::joint_state_fb_to_robot_state;
 use crate::state_pool::{StateCache, StateLookup, StatePool};
 
@@ -259,12 +263,13 @@ pub fn validate_loopback_bind(addr: &SocketAddr) -> Result<(), LoopbackBindError
 /// 构造，handler 借用。`Arc` 包好 thread-safe；tonic clone handler 给每个
 /// worker，state 通过 `Arc` 共享。
 ///
-/// **B4 (2/3-b) 起持 5 个 RR forward channel**（5 RPC 各一条 iceoryx2 RR
-/// 通道，对应 5 个 rr_io_thread）：
+/// **B4 (2/3-b) 起持 RR forward channel（v0.5 候选 C 后共 6 个）**（每 RPC
+/// 一条 iceoryx2 RR 通道，对应 6 个 rr_io_thread）：
 /// - `rr_forward_tx_clear_estop`（A1 ClearEStop；改名加 method 后缀避免
 ///   跟 4 个 task forward 混淆）
 /// - `rr_forward_tx_task_invoke` / `_task_cancel` / `_task_status` /
 ///   `_clear_error`（B4 task control plane）
+/// - `rr_forward_tx_set_enabled`（v0.5 候选 C；→ S0 set_enabled RR server）
 ///
 /// `StreamTaskEvents` 不经此 forward channel 走 pubsub，留 2/3-c 接。
 pub struct GatewayHandlerState {
@@ -280,6 +285,9 @@ pub struct GatewayHandlerState {
     pub rr_forward_tx_task_status: Sender<RrForwardRequest>,
     /// `ClearError` 转发 wire request（B4 (2/3-b)）。
     pub rr_forward_tx_clear_error: Sender<RrForwardRequest>,
+    /// `SetEnabled` 转发 wire request（v0.5 候选 C；第 6 条 rr_io_thread →
+    /// S0 `/<robot_id>/control/set_enabled`）。
+    pub rr_forward_tx_set_enabled: Sender<RrForwardRequest>,
     /// 机器人 ID，`StreamTaskEvents` handler 用以构造 per-ActionId pubsub
     /// topic `/<robot_id>/s1/action_events/<action_id>`（B4 (2/3-c)）。
     pub robot_id: String,
@@ -370,7 +378,7 @@ impl GatewayHandler {
     #[cfg(test)]
     #[must_use]
     pub fn for_test_with_state_cache(state_cache: Arc<StateCache>) -> Self {
-        // 5 个 forward channel 各留 1 buf；测试 drop rx 让 handler 看见
+        // 6 个 forward channel 各留 1 buf；测试 drop rx 让 handler 看见
         // Disconnected。**RX 端不存**（让 sender 在第一次 send 时立刻
         // Disconnected），用于"只测 server bind / shutdown，不真调
         // handler"的 placeholder 场景。
@@ -379,6 +387,7 @@ impl GatewayHandler {
         let (forward_tx_task_cancel, _rx2) = bounded(1);
         let (forward_tx_task_status, _rx3) = bounded(1);
         let (forward_tx_clear_error, _rx4) = bounded(1);
+        let (forward_tx_set_enabled, _rx5) = bounded(1);
         // shutdown_rx 始终 false（测试不模拟 shutdown）；保留 sender leak 让
         // receiver borrow 永远拿到 false。
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -389,6 +398,7 @@ impl GatewayHandler {
             rr_forward_tx_task_cancel: forward_tx_task_cancel,
             rr_forward_tx_task_status: forward_tx_task_status,
             rr_forward_tx_clear_error: forward_tx_clear_error,
+            rr_forward_tx_set_enabled: forward_tx_set_enabled,
             robot_id: "for_test".to_string(),
             role_table: Arc::new(RoleTable::default()),
             idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
@@ -763,6 +773,308 @@ impl RobotControl for GatewayHandler {
     }
 
     // ------------------------------------------------------------------------
+    // v0.5 候选 C SetEnabled handler（沿 ClearEStop 12 步骨架；operator+）。
+    // 第 6 条 rr_io_thread → S0 `/<robot_id>/control/set_enabled`。
+    // ------------------------------------------------------------------------
+    #[allow(clippy::too_many_lines)]
+    async fn set_enabled(
+        &self,
+        request: tonic::Request<SetEnabledCommand>,
+    ) -> Result<tonic::Response<Ack>, tonic::Status> {
+        let cmd = request.into_inner();
+
+        // ─── Step 1: validate
+        let validated = validate_set_enabled_command(&cmd).map_err(|e| {
+            tracing::warn!(error = %e, "SetEnabled validation failed");
+            tonic::Status::new(e.to_tonic_code(), e.to_string())
+        })?;
+
+        // ─── Step 2: auth — fake token → Role 查表
+        let Some(role) = self.state.role_table.lookup_token(&validated.auth_token) else {
+            tracing::warn!(
+                request_id = %validated.request_id,
+                "SetEnabled auth.token unknown; replying Unauthenticated"
+            );
+            return Err(tonic::Status::unauthenticated(
+                "auth.token not found in role table",
+            ));
+        };
+
+        // ─── Step 3: authz — role 必须含 `set_enabled` capability（operator+；
+        //     viewer 拒）
+        if !self
+            .state
+            .role_table
+            .role_has_capability(role, Capability::SetEnabled)
+        {
+            tracing::warn!(
+                request_id = %validated.request_id,
+                role = role.as_str(),
+                "SetEnabled denied: role lacks `set_enabled` capability"
+            );
+            return Err(tonic::Status::permission_denied(format!(
+                "role `{}` lacks `set_enabled` capability (requires operator+)",
+                role.as_str()
+            )));
+        }
+
+        // ─── Step 4: 算 idempotency fingerprint
+        let fingerprint = set_enabled_idempotency_fingerprint(&validated);
+
+        // ─── Step 5: cache.decide — Replay / Conflict / Capacity 立刻短路
+        let insert_handle = {
+            let mut cache = self
+                .state
+                .idempotency
+                .lock()
+                .expect("idempotency cache mutex poisoned");
+            match cache.decide(Method::SetEnabled, &validated.idempotency_key, fingerprint) {
+                Decision::FreshInsert(h) => h,
+                Decision::Replay(CachedResponse::SetEnabled {
+                    completed_at_ns,
+                    dry_run,
+                }) => {
+                    drop(cache);
+                    tracing::info!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        completed_at_ns,
+                        dry_run,
+                        "SetEnabled idempotency replay"
+                    );
+                    return Ok(tonic::Response::new(Ack {
+                        request_id: validated.request_id,
+                        cleared_at_ns: completed_at_ns,
+                        dry_run,
+                    }));
+                }
+                Decision::Replay(other) => {
+                    drop(cache);
+                    tracing::error!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        cached_variant = ?other,
+                        "BUG: SetEnabled method namespace inconsistency"
+                    );
+                    return Err(tonic::Status::internal(
+                        "idempotency cache namespace inconsistency",
+                    ));
+                }
+                Decision::Conflict { .. } => {
+                    drop(cache);
+                    tracing::warn!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        "SetEnabled idempotency conflict"
+                    );
+                    return Err(tonic::Status::already_exists(format!(
+                        "idempotency_key `{}` already used with a different request fingerprint",
+                        validated.idempotency_key
+                    )));
+                }
+                Decision::Capacity {
+                    current_entries,
+                    max_entries,
+                } => {
+                    drop(cache);
+                    tracing::warn!(
+                        request_id = %validated.request_id,
+                        idempotency_key = %validated.idempotency_key,
+                        current_entries,
+                        max_entries,
+                        "SetEnabled idempotency cache full"
+                    );
+                    return Err(tonic::Status::resource_exhausted(format!(
+                        "idempotency cache full ({current_entries}/{max_entries})"
+                    )));
+                }
+            }
+        };
+
+        // ─── Step 5.5: shutdown gate
+        if *self.state.shutdown_rx.borrow() {
+            tracing::warn!(
+                request_id = %validated.request_id,
+                "SetEnabled rejected during shutdown"
+            );
+            drop(insert_handle);
+            return Err(tonic::Status::unavailable(
+                "gateway is shutting down; new requests rejected",
+            ));
+        }
+
+        // ─── Step 6: 算 deadline_ns + stamp_ns
+        let now_ns = self.state.clock.now().0;
+        let timeout_ns = validated.timeout_ms.saturating_mul(1_000_000);
+        let wire_deadline_ns = now_ns.saturating_add(timeout_ns);
+        let stamp_ns = now_ns;
+
+        // ─── Step 7: 映射 Role → wire RpcRole（仅 audit）
+        let wire_role = role_to_wire(role);
+
+        // ─── Step 8: build wire SetEnabledRequest bytes
+        let wire_bytes = build_set_enabled_request(
+            &validated.request_id,
+            &validated.idempotency_key,
+            &validated.source,
+            wire_role,
+            validated.enabled,
+            validated.dry_run,
+            wire_deadline_ns,
+            &validated.audit_reason,
+            stamp_ns,
+        );
+
+        // ─── Step 9: forward via rr_io_thread channel + 持 oneshot_rx
+        let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
+        let forward = RrForwardRequest {
+            wire_bytes,
+            oneshot_tx,
+            request_id: validated.request_id.clone(),
+        };
+        match self.state.rr_forward_tx_set_enabled.try_send(forward) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => {
+                tracing::warn!(
+                    request_id = %validated.request_id,
+                    "SetEnabled forward channel full"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::resource_exhausted(
+                    "gateway RR I/O forward channel full; retry shortly",
+                ));
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                tracing::error!(
+                    request_id = %validated.request_id,
+                    "SetEnabled forward channel disconnected"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::unavailable("gateway RR I/O thread stopped"));
+            }
+        }
+
+        // ─── Step 10: 等 oneshot reply with timeout (timeout_ms + grace_ms)
+        let total_timeout_ms = validated
+            .timeout_ms
+            .saturating_add(self.state.rr_timeout_grace_ms);
+        let total_timeout = Duration::from_millis(total_timeout_ms);
+        let reply_bytes = match tokio::time::timeout(total_timeout, oneshot_rx).await {
+            Err(_elapsed) => {
+                tracing::warn!(
+                    request_id = %validated.request_id,
+                    grace_ms = self.state.rr_timeout_grace_ms,
+                    "SetEnabled gateway-side timeout"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::deadline_exceeded(format!(
+                    "no RR response within {total_timeout_ms} ms"
+                )));
+            }
+            Ok(Err(_recv_err)) => {
+                tracing::error!(
+                    request_id = %validated.request_id,
+                    "SetEnabled oneshot RecvError"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::unavailable("gateway RR I/O unavailable"));
+            }
+            Ok(Ok(b)) => b,
+        };
+
+        // ─── Step 11: decode wire SetEnabledResponse
+        let view = match flatbuffers::root::<FbSetEnabledResp>(&reply_bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(
+                    request_id = %validated.request_id,
+                    error = ?e,
+                    "SetEnabled wire response decode failed"
+                );
+                drop(insert_handle);
+                return Err(tonic::Status::internal(format!(
+                    "decode wire SetEnabledResponse: {e}"
+                )));
+            }
+        };
+        let wire_status = view.status();
+        let wire_domain = view.domain();
+        let completed_at_ns = view.completed_at_ns();
+        let error_msg = view.error_msg().unwrap_or("");
+        let resp_request_id = view.request_id().unwrap_or("");
+
+        // ─── Step 11.5: **PB12 防线** — 校验 wire response request_id 跟当前一致；
+        //     mismatch → Internal + drop handle 不 commit cache（沿 ClearEStop）
+        if resp_request_id != validated.request_id {
+            tracing::error!(
+                request_id = %validated.request_id,
+                resp_request_id,
+                ?wire_status,
+                "SetEnabled wire response request_id mismatch; replying Internal (no cache commit)"
+            );
+            drop(insert_handle);
+            return Err(tonic::Status::internal(format!(
+                "wire SetEnabledResponse.request_id `{resp_request_id}` does not match \
+                 outgoing request `{}`",
+                validated.request_id
+            )));
+        }
+
+        // ─── Step 12: map RpcStatus → tonic::Code（**复用** ClearEStop mapper）；
+        //     Ok commit cache，non-Ok drop handle 不缓存。dry_run 透传
+        //     request.dry_run（SetEnabledResponse 无 dry_run 字段）。
+        let code = rpc_status_to_tonic_code(wire_status);
+        if code == tonic::Code::Ok {
+            let mut cache = self
+                .state
+                .idempotency
+                .lock()
+                .expect("idempotency cache mutex poisoned");
+            insert_handle.commit(
+                &mut cache,
+                CachedResponse::SetEnabled {
+                    completed_at_ns,
+                    dry_run: validated.dry_run,
+                },
+            );
+            drop(cache);
+            tracing::info!(
+                request_id = %validated.request_id,
+                idempotency_key = %validated.idempotency_key,
+                enabled = validated.enabled,
+                dry_run = validated.dry_run,
+                completed_at_ns,
+                role = role.as_str(),
+                source = %validated.source,
+                audit_reason = %validated.audit_reason,
+                "SetEnabled ok"
+            );
+            return Ok(tonic::Response::new(Ack {
+                request_id: validated.request_id,
+                cleared_at_ns: completed_at_ns,
+                dry_run: validated.dry_run,
+            }));
+        }
+
+        // 非 Ok：drop handle 让下次同 key retry 重新走 FreshInsert（状态依赖型
+        // 失败如 GuardRejected / LatchBlocked / AdapterError 不应永久缓存）。
+        drop(insert_handle);
+        tracing::warn!(
+            request_id = %validated.request_id,
+            idempotency_key = %validated.idempotency_key,
+            wire_status = ?wire_status,
+            wire_domain = ?wire_domain,
+            tonic_code = ?code,
+            error_msg,
+            "SetEnabled non-Ok wire status; dropping insert handle (no cache commit)"
+        );
+        Err(tonic::Status::new(
+            code,
+            format!("daemon returned {wire_status:?}: {error_msg}"),
+        ))
+    }
+
+    // ------------------------------------------------------------------------
     // v0.3 B4 (2/3-b) task control plane handlers
     //
     // 4 个 task RPC + ClearError 真 handler 实现走 [`crate::task_handlers`]
@@ -983,7 +1295,7 @@ pub enum GatewayError {
     RrIoSpawn(#[source] std::io::Error),
 
     /// **v0.5 候选 B (2/4)**：[`StatePool::spawn`] 失败（某 config 声明的
-    /// hardware subscriber open 失败 / 线程 spawn 失败）。在 5 个 rr_io_thread
+    /// hardware subscriber open 失败 / 线程 spawn 失败）。在 6 个 rr_io_thread
     /// 起好之后、tonic server 起之前 fail-fast（沿 RrIoSpawn 回滚先例）。
     #[error("state_pool spawn failed: {0}")]
     StatePoolSpawn(#[source] std::io::Error),
@@ -1272,7 +1584,7 @@ pub async fn run_gateway_with_ready(
 /// # Errors
 ///
 /// 见 [`GatewayError`]。
-#[allow(clippy::too_many_lines)] // 5 个 rr_io_thread spawn + cache + handler + tonic 起 + cleanup；拆 helper 反而让阅读跳函数。
+#[allow(clippy::too_many_lines)] // 6 个 rr_io_thread spawn + cache + handler + tonic 起 + cleanup；拆 helper 反而让阅读跳函数。
 pub async fn run_gateway_with_rr_io(
     cfg: GatewayConfig,
     role_table: Arc<RoleTable>,
@@ -1293,10 +1605,11 @@ pub async fn run_gateway_with_rr_io(
         return Err(GatewayError::Config(e));
     }
 
-    // ─── 1) 5 个 rr_io_thread spawn（B4 (2/3-b)）。每个 RR topic 一条
-    //     独立线程 + 独立 typed Iceoryx2RrClient + 独立 forward channel。
-    //     任一 spawn 失败 → 把先前已 spawn 的 stop/join 后回滚 → 返
-    //     RrIoSpawn 错。tonic 还没起，不需要 graceful 等。 ───
+    // ─── 1) 6 个 rr_io_thread spawn（B4 (2/3-b) 5 条 + v0.5 候选 C
+    //     set_enabled 第 6 条）。每个 RR topic 一条独立线程 + 独立 typed
+    //     Iceoryx2RrClient + 独立 forward channel。任一 spawn 失败 → 把先前
+    //     已 spawn 的 stop/join 后回滚 → 返 RrIoSpawn 错。tonic 还没起，
+    //     不需要 graceful 等。 ───
     let topics = RrTopics::for_robot(&cfg.robot_id);
     let mut spawned = SpawnedRrIo::default();
 
@@ -1410,13 +1723,38 @@ pub async fn run_gateway_with_rr_io(
     };
     spawned.handles.push(rr_clear_error);
 
+    // **v0.5 候选 C**：第 6 条 rr_io_thread —— set_enabled（gateway → S0
+    // `/<robot_id>/control/set_enabled` RR server）。
+    let rr_set_enabled = match spawn_rr_io_thread(
+        &RrIoThreadConfig {
+            topic: topics.set_enabled.clone(),
+            poll_interval_ns: 500_000,
+        },
+        client_factory_for::<markers::SetEnabledRequest, markers::SetEnabledResponse>(
+            topics.set_enabled.clone(),
+        ),
+        spawned.set_enabled_rx(),
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            let ready_err = GatewayReadyError::rr_io_spawn_from_io(&e);
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(ready_err));
+            }
+            spawned.stop_and_join_all();
+            return Err(GatewayError::RrIoSpawn(e));
+        }
+    };
+    spawned.handles.push(rr_set_enabled);
+
     tracing::info!(
         topic_clear_estop = %topics.clear_estop,
         topic_task_invoke = %topics.task_invoke,
         topic_task_cancel = %topics.task_cancel,
         topic_task_status = %topics.task_status,
         topic_clear_error = %topics.clear_error,
-        "rr_io_threads started (5 RR I/O threads; B4 (2/3-b))"
+        topic_set_enabled = %topics.set_enabled,
+        "rr_io_threads started (6 RR I/O threads; B4 + v0.5 候选 C set_enabled)"
     );
 
     // ─── 2) idempotency cache（5 个 method 共用一个 cache 实例 + namespace
@@ -1427,7 +1765,7 @@ pub async fn run_gateway_with_rr_io(
     )));
 
     // ─── 2.5) **v0.5 候选 B (2/4)**：常驻 per-hardware S0 state 订阅池 + cache。
-    //     在 5 个 rr_io_thread 起好之后、tonic server 起之前建；spawn 失败
+    //     在 6 个 rr_io_thread 起好之后、tonic server 起之前建；spawn 失败
     //     回滚已起 rr_io_thread → fail-fast（沿 RrIoSpawn 先例）。空
     //     state_hardware_ids → 空池（D-P1，合法）。 ───
     let state_cache = Arc::new(StateCache::new(&cfg.state_hardware_ids));
@@ -1454,6 +1792,7 @@ pub async fn run_gateway_with_rr_io(
         rr_forward_tx_task_cancel: spawned.forward_txs.task_cancel.clone(),
         rr_forward_tx_task_status: spawned.forward_txs.task_status.clone(),
         rr_forward_tx_clear_error: spawned.forward_txs.clear_error.clone(),
+        rr_forward_tx_set_enabled: spawned.forward_txs.set_enabled.clone(),
         robot_id: cfg.robot_id.clone(),
         role_table,
         idempotency: cache,
@@ -1474,13 +1813,14 @@ pub async fn run_gateway_with_rr_io(
     serve_result
 }
 
-/// 5 个 RR topic 串汇总（per-robot 派生）。
+/// 6 个 RR topic 串汇总（per-robot 派生；v0.5 候选 C +set_enabled）。
 struct RrTopics {
     clear_estop: String,
     task_invoke: String,
     task_cancel: String,
     task_status: String,
     clear_error: String,
+    set_enabled: String,
 }
 
 impl RrTopics {
@@ -1491,27 +1831,29 @@ impl RrTopics {
             task_cancel: format!("/{robot_id}/control/task_cancel"),
             task_status: format!("/{robot_id}/control/task_status"),
             clear_error: format!("/{robot_id}/control/clear_error"),
+            set_enabled: format!("/{robot_id}/control/set_enabled"),
         }
     }
 }
 
-/// 5 个 RR topic 各自的 forward channel sender pair。给 handler state 用。
+/// 6 个 RR topic 各自的 forward channel sender pair。给 handler state 用。
 struct ForwardTxs {
     clear_estop: Sender<RrForwardRequest>,
     task_invoke: Sender<RrForwardRequest>,
     task_cancel: Sender<RrForwardRequest>,
     task_status: Sender<RrForwardRequest>,
     clear_error: Sender<RrForwardRequest>,
+    set_enabled: Sender<RrForwardRequest>,
 }
 
 /// rr_io_thread spawn 进度跟踪 + 错误回滚 + shutdown 时一键 stop+join。
 ///
-/// 5 个 forward channel 一次性构造（forward_tx 给 handler，forward_rx
+/// 6 个 forward channel 一次性构造（forward_tx 给 handler，forward_rx
 /// 给对应 spawn fn）；handles 增量 push（任一 spawn 失败时 stop_and_join_all
 /// 把已 spawn 的回滚清掉）。
 struct SpawnedRrIo {
     forward_txs: ForwardTxs,
-    /// 5 个 forward_rx 分别 take 进 spawn fn 之前临时存这里。`take` 后
+    /// 6 个 forward_rx 分别 take 进 spawn fn 之前临时存这里。`take` 后
     /// `Option::None` 占位；spawn 失败的回滚路径不需要 forward_rx。
     forward_rxs: ForwardRxs,
     handles: Vec<RrIoThreadHandle>,
@@ -1524,6 +1866,7 @@ struct ForwardRxs {
     task_cancel: Option<Receiver<RrForwardRequest>>,
     task_status: Option<Receiver<RrForwardRequest>>,
     clear_error: Option<Receiver<RrForwardRequest>>,
+    set_enabled: Option<Receiver<RrForwardRequest>>,
 }
 
 impl Default for SpawnedRrIo {
@@ -1533,6 +1876,7 @@ impl Default for SpawnedRrIo {
         let (tx2, rx2) = bounded::<RrForwardRequest>(64);
         let (tx3, rx3) = bounded::<RrForwardRequest>(64);
         let (tx4, rx4) = bounded::<RrForwardRequest>(64);
+        let (tx5, rx5) = bounded::<RrForwardRequest>(64);
         Self {
             forward_txs: ForwardTxs {
                 clear_estop: tx0,
@@ -1540,6 +1884,7 @@ impl Default for SpawnedRrIo {
                 task_cancel: tx2,
                 task_status: tx3,
                 clear_error: tx4,
+                set_enabled: tx5,
             },
             forward_rxs: ForwardRxs {
                 clear_estop: Some(rx0),
@@ -1547,6 +1892,7 @@ impl Default for SpawnedRrIo {
                 task_cancel: Some(rx2),
                 task_status: Some(rx3),
                 clear_error: Some(rx4),
+                set_enabled: Some(rx5),
             },
             handles: Vec::new(),
         }
@@ -1583,6 +1929,12 @@ impl SpawnedRrIo {
             .clear_error
             .take()
             .expect("clear_error forward_rx already taken")
+    }
+    fn set_enabled_rx(&mut self) -> Receiver<RrForwardRequest> {
+        self.forward_rxs
+            .set_enabled
+            .take()
+            .expect("set_enabled forward_rx already taken")
     }
 
     /// 给所有已 spawn 的 rr_io_thread 发 stop + join。回滚 / shutdown 共用。
@@ -2115,13 +2467,13 @@ mod tests {
 
     use crossbeam_channel::{Receiver as CrossbeamRecv, bounded};
     use robot_core::time::SystemClock;
-    use robot_msg::build_helpers::build_clear_estop_response;
-    use robot_msg::msg::{ClearEStopRequest as FbReq, RpcStatus};
+    use robot_msg::build_helpers::{build_clear_estop_response, build_set_enabled_response};
+    use robot_msg::msg::{ClearEStopRequest as FbReq, RpcStatus, SetEnabledStatus};
     use uuid::Uuid;
 
     use crate::auth::{Capability, Role, load_role_table};
-    use crate::idempotency::{CachedResponse, IdempotencyCache};
-    use crate::proto::{AuthContext, ClearEStopCommand, CommandMeta};
+    use crate::idempotency::{CachedResponse, IdempotencyCache, Method};
+    use crate::proto::{AuthContext, ClearEStopCommand, CommandMeta, SetEnabledCommand};
 
     const TEST_RPC_ROLES_TOML: &str = r#"
 [tokens]
@@ -2181,10 +2533,12 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
         let (task_cancel_tx, task_cancel_rx) = bounded::<RrForwardRequest>(1);
         let (task_status_tx, task_status_rx) = bounded::<RrForwardRequest>(1);
         let (clear_error_tx, clear_error_rx) = bounded::<RrForwardRequest>(1);
+        let (set_enabled_tx, set_enabled_rx) = bounded::<RrForwardRequest>(1);
         Box::leak(Box::new(task_invoke_rx));
         Box::leak(Box::new(task_cancel_rx));
         Box::leak(Box::new(task_status_rx));
         Box::leak(Box::new(clear_error_rx));
+        Box::leak(Box::new(set_enabled_rx));
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let state = GatewayHandlerState {
             rr_forward_tx_clear_estop: forward_tx,
@@ -2192,6 +2546,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
             rr_forward_tx_task_cancel: task_cancel_tx,
             rr_forward_tx_task_status: task_status_tx,
             rr_forward_tx_clear_error: clear_error_tx,
+            rr_forward_tx_set_enabled: set_enabled_tx,
             robot_id: "test_robot".to_string(),
             role_table,
             idempotency: cache,
@@ -3109,5 +3464,219 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "shutdown"]
 
         let no_second_forward = mock.await.unwrap();
         assert!(no_second_forward, "B 不应 forward（被 shutdown gate 拦下）");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // v0.5 候选 C SetEnabled handler 单测
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// 构造 handler，set_enabled = active forward channel（返 rx 充当 mock
+    /// daemon）；其它 5 条 leak rx。
+    fn make_set_enabled_handler(
+        cache_max_entries: usize,
+    ) -> (GatewayHandler, CrossbeamRecv<RrForwardRequest>) {
+        let role_table = Arc::new(load_role_table(TEST_RPC_ROLES_TOML).expect("role table parse"));
+        let cache = Arc::new(Mutex::new(IdempotencyCache::with_capacity(
+            Duration::from_mins(1),
+            cache_max_entries,
+        )));
+        let (set_enabled_tx, set_enabled_rx) = bounded::<RrForwardRequest>(64);
+        let (clear_estop_tx, ce_rx) = bounded::<RrForwardRequest>(1);
+        let (task_invoke_tx, ti_rx) = bounded::<RrForwardRequest>(1);
+        let (task_cancel_tx, tc_rx) = bounded::<RrForwardRequest>(1);
+        let (task_status_tx, ts_rx) = bounded::<RrForwardRequest>(1);
+        let (clear_error_tx, cer_rx) = bounded::<RrForwardRequest>(1);
+        Box::leak(Box::new(ce_rx));
+        Box::leak(Box::new(ti_rx));
+        Box::leak(Box::new(tc_rx));
+        Box::leak(Box::new(ts_rx));
+        Box::leak(Box::new(cer_rx));
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        Box::leak(Box::new(shutdown_tx));
+        let state = GatewayHandlerState {
+            rr_forward_tx_clear_estop: clear_estop_tx,
+            rr_forward_tx_task_invoke: task_invoke_tx,
+            rr_forward_tx_task_cancel: task_cancel_tx,
+            rr_forward_tx_task_status: task_status_tx,
+            rr_forward_tx_clear_error: clear_error_tx,
+            rr_forward_tx_set_enabled: set_enabled_tx,
+            robot_id: "test_robot".to_string(),
+            role_table,
+            idempotency: cache,
+            clock: Arc::new(SystemClock),
+            rr_timeout_grace_ms: 500,
+            shutdown_rx,
+            state_cache: Arc::new(StateCache::new(&[])),
+        };
+        (GatewayHandler::new(state), set_enabled_rx)
+    }
+
+    fn make_set_enabled_cmd(
+        idempotency_key: &str,
+        enabled: bool,
+        token: &str,
+    ) -> SetEnabledCommand {
+        SetEnabledCommand {
+            meta: Some(CommandMeta {
+                request_id: Uuid::now_v7().to_string(),
+                source: "test.unit".into(),
+                auth: Some(AuthContext {
+                    token: token.into(),
+                    mtls_fingerprint: String::new(),
+                }),
+                timeout_ms: 2_000,
+                idempotency_key: idempotency_key.into(),
+                dry_run: false,
+                audit_reason: "unit test".into(),
+            }),
+            enabled,
+        }
+    }
+
+    /// 跑一次 SetEnabled，mock daemon 用**正确** request_id 回指定
+    /// `(status, domain)`。返 handler 结果。
+    async fn run_set_enabled_with(
+        status: RpcStatus,
+        domain: SetEnabledStatus,
+    ) -> Result<tonic::Response<Ack>, tonic::Status> {
+        let (handler, rx) = make_set_enabled_handler(64);
+        let cmd = make_set_enabled_cmd("idem-statusmap", true, "operator-fake-token-001");
+        let mock = tokio::task::spawn_blocking(move || {
+            let req = rx.recv_timeout(Duration::from_secs(2)).expect("forward");
+            let resp = build_set_enabled_response(&req.request_id, status, domain, 7_777, "");
+            req.oneshot_tx.send(resp).expect("oneshot recv dropped");
+        });
+        let res = handler.set_enabled(tonic::Request::new(cmd)).await;
+        mock.await.unwrap();
+        res
+    }
+
+    /// **AC-7**：viewer `SetEnabled` → PermissionDenied（auth 步拒，不 forward）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn set_enabled_viewer_denied() {
+        let (handler, _rx) = make_set_enabled_handler(64);
+        let cmd = make_set_enabled_cmd("idem-viewer", true, "viewer-fake-token-001");
+        let err = handler
+            .set_enabled(tonic::Request::new(cmd))
+            .await
+            .expect_err("viewer 应被拒");
+        assert_eq!(err.code(), tonic::Code::PermissionDenied);
+    }
+
+    /// **复用 rpc_status mapper**：Ok → Ack；ResourceExhausted / Aborted /
+    /// Internal / DeadlineExceeded / FailedPrecondition → 对应 tonic code。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn set_enabled_status_mapping() {
+        // Ok → Ack（cleared_at_ns 携 completed_at_ns）。
+        let ok = run_set_enabled_with(RpcStatus::Ok, SetEnabledStatus::Ok).await;
+        assert_eq!(ok.expect("Ok 应 Ack").into_inner().cleared_at_ns, 7_777);
+
+        for (status, domain, code) in [
+            (
+                RpcStatus::ResourceExhausted,
+                SetEnabledStatus::AlreadyInProgress,
+                tonic::Code::ResourceExhausted,
+            ),
+            (
+                RpcStatus::Aborted,
+                SetEnabledStatus::PreemptedByEStop,
+                tonic::Code::Aborted,
+            ),
+            (
+                RpcStatus::Internal,
+                SetEnabledStatus::AdapterError,
+                tonic::Code::Internal,
+            ),
+            (
+                RpcStatus::DeadlineExceeded,
+                SetEnabledStatus::DeadlineExceeded,
+                tonic::Code::DeadlineExceeded,
+            ),
+            (
+                RpcStatus::FailedPrecondition,
+                SetEnabledStatus::LatchBlocked,
+                tonic::Code::FailedPrecondition,
+            ),
+        ] {
+            let err = run_set_enabled_with(status, domain)
+                .await
+                .expect_err("非 Ok 应 Err");
+            assert_eq!(err.code(), code, "status {status:?} 应映射 {code:?}");
+        }
+    }
+
+    /// `CachedResponse::SetEnabled` 经 cache commit → replay 无损 roundtrip。
+    #[test]
+    fn cached_response_set_enabled_roundtrip() {
+        let mut cache = IdempotencyCache::with_capacity(Duration::from_mins(1), 64);
+        let fp = [7u8; 32];
+        let Decision::FreshInsert(h) = cache.decide(Method::SetEnabled, "k-se-1", fp) else {
+            panic!("expected FreshInsert");
+        };
+        h.commit(
+            &mut cache,
+            CachedResponse::SetEnabled {
+                completed_at_ns: 4_242,
+                dry_run: true,
+            },
+        );
+        match cache.decide(Method::SetEnabled, "k-se-1", fp) {
+            Decision::Replay(CachedResponse::SetEnabled {
+                completed_at_ns,
+                dry_run,
+            }) => {
+                assert_eq!(completed_at_ns, 4_242);
+                assert!(dry_run);
+            }
+            other => panic!("expected Replay(SetEnabled), got {other:?}"),
+        }
+    }
+
+    /// **PB12**：wire response request_id 跟 outgoing 不一致 → Internal +
+    /// **不**缓存（沿 ClearEStop Step 11.5）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn set_enabled_wire_response_request_id_mismatch_returns_internal_and_does_not_cache() {
+        let (handler, rx) = make_set_enabled_handler(64);
+        let cmd = make_set_enabled_cmd("idem-se-mismatch", true, "operator-fake-token-001");
+        let cache = Arc::clone(&handler.state().idempotency);
+
+        // mock daemon：**故意**回错 request_id（"wrong"），status=Ok，让 mismatch
+        // 校验是唯一拦截点（否则 Ok 会 commit cache）。
+        let mock = tokio::task::spawn_blocking(move || {
+            let req = rx.recv_timeout(Duration::from_secs(2)).expect("forward");
+            let resp = build_set_enabled_response(
+                "wrong",
+                RpcStatus::Ok,
+                SetEnabledStatus::Ok,
+                12_345,
+                "",
+            );
+            req.oneshot_tx.send(resp).expect("oneshot recv dropped");
+            req.request_id
+        });
+
+        let err = handler
+            .set_enabled(tonic::Request::new(cmd))
+            .await
+            .expect_err("mismatched response request_id should fail");
+        assert_eq!(err.code(), tonic::Code::Internal);
+        assert!(
+            err.message().contains("does not match"),
+            "error message 应明确 mismatch；got: {}",
+            err.message()
+        );
+
+        let real_request_id = mock.await.unwrap();
+        assert_ne!(
+            real_request_id, "wrong",
+            "mock 看到的 wire request_id 防 test bug"
+        );
+
+        // 关键不变量：mismatch 路径**不**缓存。
+        assert_eq!(
+            cache.lock().unwrap().len(),
+            0,
+            "request_id mismatch 路径**不**应缓存"
+        );
     }
 }
