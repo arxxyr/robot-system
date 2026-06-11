@@ -304,4 +304,8 @@ reviewer round 1 复核 ✅ ACK（0 阻断；2 非阻断钉进 Plan §P.3 PD1/PD
 
 ## P.4 Plan-Execute diff 登记（实施期填）
 
-（占位：沿候选 C §P.4 体例。）
+| # | 段 | 类型 | 描述 | 落点 |
+|---|---|---|---|---|
+| PE1 | (1/3) | **scope 微扩**（robot-transport additive API；Plan 文件清单只列 robot-rpc） | PD1 要求的"drain 循环逐条计数（禁 latest()）"对公共 wrapper **不可执行**：`Iceoryx2Subscriber` 公共面只有 `LatestSubscriber::latest()`（drain buffer 后只留最后一条，`subscriber.rs` 模块 doc 字面）——多条 EStopEvent 会被塌缩，恰 1 条/恰 2 条判据无法落。绕开 wrapper 用 raw iceoryx2 subscriber 需复刻 qos/attributes（attributes 不匹配 open 失败），重复脆弱。**修**：`Iceoryx2Subscriber<T>` 加 **inherent additive** `pub fn try_recv(&mut self) -> Result<Option<SampleLease<T>>, TransportError>`（单条 receive，不 drain；`LatestSubscriber` trait 0 改、mock 0 改、既有调用者 0 影响）。消费者 = estop_pub_thread 单测 + (2/3) e2e 计数判据 | `crates/robot-transport/src/iceoryx2/subscriber.rs` |
+| PE2 | (1/3) | 测试加项（additive，0 改协议/语义） | Plan §P.2.1 列 10 unit；实施 **13**：① estop.rs +`rejects_missing_required_fields`（缺 meta / 空 key / 0 timeout 三拒并测，沿 set_enabled.rs 覆盖惯例）；② estop_pub_thread.rs +2 模块测（`estop_pub_round_trip_publishes_and_acks`——真 iceoryx2 订阅者验 envelope `source_id=98` + body reason/source="rpc"/latched=false + oneshot Ok；`estop_pub_spawn_then_stop_cleanly`——ready 握手 + 干净退出；沿 rr_io_thread 自带模块测先例，PE1 `try_recv` 的首个消费者）| `estop.rs` + `estop_pub_thread.rs` tests |
+| PE3 | (1/3) | **gate 覆盖盘点修正**（reviewer 场外问题 "全部 gateway 都验证了吗" 触发） | spawn gateway 的 robot-tests harness 共 **5 个**（scripted / ik / pubsub / **clear_estop_e2e** / **robotctl_smoke**），既有 "4 smoke" gate 只覆盖前 3（crash_restart 不起 gateway）。本段 gateway 启动序变更（estop_pub spawn + marker 行文本扩注）→ **补跑后两个**：clear_estop_e2e `--case all` **5/5 PASS** + robotctl_smoke（feature-gated bin 单独 build）**12/12 PASS**。另 grep 实证 robot-tests 5 harness **均不依赖** marker 全串（各自 RPC probe readiness），marker 扩注全兼容。**后续口径**：gateway 改动段的 AC-Q 把 clear_estop_e2e + robotctl_smoke 纳入（"4 smoke" → "4 smoke + 2 gateway harness"）| gate 流程 |
