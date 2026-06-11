@@ -136,5 +136,13 @@ name = "set_enabled_e2e"
 path = "tests/set_enabled_e2e.rs"
 required-features = ["client"]
 
+[[test]]
+# v0.5 候选 D (2/3) EStop 触发 RPC cross-process e2e：s0_daemon（真）+
+# gateway + harness estop-topic 订阅计数线程（PD1）+ fake heartbeat（按需）。
+# required-features = ["client"] 守门 → 默认随 `cargo test --workspace` 跑。
+name = "estop_e2e"
+path = "tests/estop_e2e.rs"
+required-features = ["client"]
+
 [lints]
 workspace = true
