@@ -10,6 +10,93 @@
 
 ---
 
+## 2026-06-24 · v0.5 候选 D EStop 触发 RPC（**状态：实现登记 + 勘误登记 + 债务登记**）
+
+### 背景
+
+候选 D 在候选 C 后的 9-method proto 上 **additive** 实现 design §5.3 已冻结但
+未 land 的 `rpc EStop (EStopCommand) returns (Ack)`（method 9 → 10，
+`EStopCommand{ CommandMeta meta; string estop_reason }`，operator+
+`Capability::EStop`）。经 RIPER CodeMap(+amend) + Spec round 1 + Plan
+outline+round 1 reviewer ACK + 2 段 feat + 1 段 docs land。**路由 (a)：gateway
+publish `EStopEvent` 到 `/<robot>/events/estop` topic → S0 既有 `poll_estop`
+消费链**（design §6.6 字面）——**S0 0 改，proto 形态无 design-freeze diff**。
+封存详 [`docs/handoffs/v0.5_estop_summary.md`](handoffs/v0.5_estop_summary.md)
++ 审计全表 `team-swe/specs/v0_5_estop.md` §P.3/§P.4。
+
+### 实现登记：第 10 method（additive，无 design-freeze diff）
+
+- proto `EStop` 9 → 10 + `EStopCommand`；gateway 专用**常驻** `estop_pub`
+  线程（`GATEWAY_ESTOP_SOURCE_ID=98`）+ 12 步精简 handler（**无 wire 回执步**——
+  publish 非 RR）；`Method::EStop` + `CachedResponse::EStop{published_at_ns}`
+  idempotency（第 6 method）；`robot-transport::Iceoryx2Subscriber::try_recv`
+  inherent additive（PE1，e2e 逐条计数用，trait/mock 0 改）。
+- **弱 Ack**（D2）：`Ack.cleared_at_ns = published_at_ns`，**明文不证** S0 已消费 /
+  latch 已 fsync（`RobotState` 无 `estop_latched` 字段，latch fsync 远程不可观测）。
+  S0 不在时 RPC 仍 Ack——`EStop RPC` **不是** S0 死亡场景救命索（该场景靠硬件
+  fail-safe，§6.7 #1），AC-7 e2e 锁此诚实语义。
+- `dry_run=true` → 拒 `InvalidArgument`（D4）；`source="rpc"` 固定 + `estop_reason`
+  透传（空合法，D6）。
+
+### 登记：`event.fbs:9` 注释澄清（comment-only，wire 0 改）
+
+- `EStopEvent.latched` 字面 = "S0 已把 latch fsync 到磁盘"，但 producer 在
+  publish 时刻**不可知** S0 是否已 fsync（publish 早于 S0 消费）。澄清注释明确：
+  **producer 不可知时必须填 `false`**（语义 = "触发请求，未确认 latch"）。
+- gateway RPC 路由（候选 D）即填 **`latched=false`**（Q8 (i)）——消费面实测无破坏：
+  生产订阅者**只有** s0_daemon `poll_estop`，**不读** `.latched()`（只 parse 计数）；
+  `.latched()` 读者全在测试侧。`//` 注释不进 flatc codegen，**wire 字段 0 改**。
+
+### 债务登记：robotctl 直连 `latched=true` / `source="robotctl"`（既有，只登记不修）
+
+- `robotctl.rs:351` 直连 publish 路径填 `latched=true`（publish 早于 S0 消费/fsync，
+  同样不可知）+ `source="robotctl"`（**不在** event.fbs:13 "button/rpc/s1_detect"
+  三枚举内）= **既有语义债**，先于候选 D 存在。
+- 候选 D gateway 路由选**诚实** `latched=false` + `source="rpc"`，**不**沿用
+  robotctl 现状；**robot-cli 0 改**（D7：robotctl `estop-rpc` 子命令推后，直连
+  `estop` 已覆盖本地紧急）。robotctl 债务收敛为 follow-up，**不捆绑**本候选。
+
+### 勘误：`docs/handoffs/v0.5_entry.md` §2.4 三处（实现期发现）
+
+1. **schema_id 笔误**：entry:143 写 "fbs body 复用既有 EStop event schema（已
+   frozen schema_id 0x0405）"——`0x0405` 系笔误（= `SCHEMA_GET_TASK_STATUS_RESPONSE`
+   /B4，不属 EStopEvent）。正确 = **`0x0000_0300`**（`schema_id.rs:53-54`）。已就地
+   校正 + 标 **勘误**。
+2. **"对称 control plane" 表述**：entry:142/144 写 EStop 触发"沿 A1 ClearEStop
+   同款 / 对称的 control plane"——与 D1 拍板**不符**。EStop 走 **route (a) gateway
+   publish**（非 RR control plane）；安全方向（上锁，无 gate/确认）不必与危险方向
+   （ClearEStop 解锁，需 gate+confirmation+强 Ack）对称。已就地校正 §2.4 两 cell
+   的 control-plane 表述。
+
+3. **触发角色（reviewer (3/3) 阻断，§P.4 PE5）**：entry:142 范围 cell 把 EStop 触发角色误写为 **maintainer+**，与本候选
+   实现的 **operator+**
+   （`Capability::EStop`；触发 operator+ / 清除 maintainer+ 的分权模型）冲突——
+   属**安全/权限语义**（会误导候选 E 接班），**已就地校正** maintainer+ →
+   operator+。
+
+### 约束 / 影响面
+
+- **S0 0 改**（route (a) 下 poll_estop → emergency drain → latch fsync 链全既有）；
+  **§6.7 全保**（#3 EStop 不可清为失忆态**增强**：多一条 operator+ RPC 触发入口，
+  清除仍唯一走 ClearEStop maintainer+）；**B4 frozen + 既有 9 method wire 0 改**；
+  **ClearEStop/SetEnabled rr_server 0 改**；**S1 0 改**；**design.md 0 改**；
+  **robot-cli 0 改**；**0 新依赖**。
+- 影响面：`robot-rpc`（proto + gateway + estop.rs + estop_pub_thread.rs +
+  idempotency）+ `robot-transport`（try_recv additive）+ `robot-msg/event.fbs`
+  （comment-only）+ `robot-rpc/tests/estop_e2e.rs`（6 case）。
+- Quality Gate：workspace **1180 PASS / 0 FAIL**（estop_e2e 6 + 既有全绿）+ 4 smoke
+  + clear_estop_e2e 5/5 + robotctl_smoke 12/12（PE3）。`cargo deny check` 未新增
+  violation，overall licenses FAILED 为既有 baseline（与候选 D 无关）。
+
+### 审阅人
+
+reviewer（用户）✓ —— RIPER 全程 ACK-gated（CodeMap `f52ccfe` / Spec `a278529` /
+Plan `67b1eea` / feat (1/3) `4c8a6b3` + (2/3) `27cc80b`）。(2/3) reviewer 阻断
+（`EStopTopicCounter` `!Send` subscriber Drop 撞 publisher-gone SIGSEGV → 加
+`mem::forget(sub)`，PE4）闭环后 push `27cc80b`。
+
+---
+
 ## 2026-06-09 · v0.5 候选 C SetEnabled（**状态：实现登记 + 偏离登记**）
 
 ### 背景

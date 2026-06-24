@@ -189,7 +189,7 @@ reviewer round 1 复核 ✅ ACK（0 阻断；2 非阻断钉进 Plan §P.3 PD1/PD
 - **0 新依赖**；**Quality Gate 顺序硬性 = `cargo build --release --workspace`
   在前 → workspace test → 4 smoke**（候选 C RS2 流程教训）。
 
-## P.1 commit 节奏（2 feat + 1 docs + summary）
+## P.1 commit 节奏（3 commit = 2 feat + 1 docs〔含 summary〕）
 
 | 段 | 内容 | 主要文件 |
 |---|---|---|
@@ -309,3 +309,5 @@ reviewer round 1 复核 ✅ ACK（0 阻断；2 非阻断钉进 Plan §P.3 PD1/PD
 | PE1 | (1/3) | **scope 微扩**（robot-transport additive API；Plan 文件清单只列 robot-rpc） | PD1 要求的"drain 循环逐条计数（禁 latest()）"对公共 wrapper **不可执行**：`Iceoryx2Subscriber` 公共面只有 `LatestSubscriber::latest()`（drain buffer 后只留最后一条，`subscriber.rs` 模块 doc 字面）——多条 EStopEvent 会被塌缩，恰 1 条/恰 2 条判据无法落。绕开 wrapper 用 raw iceoryx2 subscriber 需复刻 qos/attributes（attributes 不匹配 open 失败），重复脆弱。**修**：`Iceoryx2Subscriber<T>` 加 **inherent additive** `pub fn try_recv(&mut self) -> Result<Option<SampleLease<T>>, TransportError>`（单条 receive，不 drain；`LatestSubscriber` trait 0 改、mock 0 改、既有调用者 0 影响）。消费者 = estop_pub_thread 单测 + (2/3) e2e 计数判据 | `crates/robot-transport/src/iceoryx2/subscriber.rs` |
 | PE2 | (1/3) | 测试加项（additive，0 改协议/语义） | Plan §P.2.1 列 10 unit；实施 **13**：① estop.rs +`rejects_missing_required_fields`（缺 meta / 空 key / 0 timeout 三拒并测，沿 set_enabled.rs 覆盖惯例）；② estop_pub_thread.rs +2 模块测（`estop_pub_round_trip_publishes_and_acks`——真 iceoryx2 订阅者验 envelope `source_id=98` + body reason/source="rpc"/latched=false + oneshot Ok；`estop_pub_spawn_then_stop_cleanly`——ready 握手 + 干净退出；沿 rr_io_thread 自带模块测先例，PE1 `try_recv` 的首个消费者）| `estop.rs` + `estop_pub_thread.rs` tests |
 | PE3 | (1/3) | **gate 覆盖盘点修正**（reviewer 场外问题 "全部 gateway 都验证了吗" 触发） | spawn gateway 的 robot-tests harness 共 **5 个**（scripted / ik / pubsub / **clear_estop_e2e** / **robotctl_smoke**），既有 "4 smoke" gate 只覆盖前 3（crash_restart 不起 gateway）。本段 gateway 启动序变更（estop_pub spawn + marker 行文本扩注）→ **补跑后两个**：clear_estop_e2e `--case all` **5/5 PASS** + robotctl_smoke（feature-gated bin 单独 build）**12/12 PASS**。另 grep 实证 robot-tests 5 harness **均不依赖** marker 全串（各自 RPC probe readiness），marker 扩注全兼容。**后续口径**：gateway 改动段的 AC-Q 把 clear_estop_e2e + robotctl_smoke 纳入（"4 smoke" → "4 smoke + 2 gateway harness"）| gate 流程 |
+| PE4 | (2/3) | **reviewer (2/3) 阻断**（harness 生命周期） | `EStopTopicCounter` 持 `!Send` subscriber，其 `join` 排在 gateway（publisher）退出**之后**（shutdown 顺序 gateway 先、counter 后）→ publisher 先退撞 iceoryx2 0.8.1 subscriber-Drop 访问已释放 shm 的 SIGSEGV。**修**：counter loop 正常退出后 `std::mem::forget(sub)`（同 `state_pool.rs` PE3 / `robotctl.rs` 既有锚点）。**口径**：**仅**覆盖正常 stop 退出路径；counter 线程自身 panic 时 unwind 仍 drop sub（测试路径不应让本线程 panic，summary/注释不宣称 panic 规避）。reviewer ACK 后 push `27cc80b` | `tests/estop_e2e.rs` |
+| PE5 | (3/3) | **reviewer (3/3) 阻断**（安全/权限语义） | entry §2.4 范围 cell 把 EStop 触发角色误写为 **maintainer+**，与本候选实现的 **operator+**（`Capability::EStop`；触发 operator+ / 清除 maintainer+ 分权模型）冲突——属安全/权限语义，会误导候选 E 接班。**已就地校正** maintainer+ → operator+（超 §P.2.3 圈定"两处勘误"的第 3 处，reviewer (3/3) 追加；CHANGELOG 同步 两处→三处）| `docs/handoffs/v0.5_entry.md` §2.4 |

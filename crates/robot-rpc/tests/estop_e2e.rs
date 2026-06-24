@@ -142,8 +142,8 @@ impl EStopTopicCounter {
                 // （publisher）退出之后才 join（shutdown 顺序 gateway 先退、counter
                 // 后退），publisher 先退 → subscriber Drop 访问已释放 shm 会 SIGSEGV。
                 // 同 state_pool.rs / robotctl.rs 既有锚点（进程退出 OS 回收 shm，无
-                // leak 影响）；走 forget 而非只调 shutdown 顺序，panic/正常退出两条
-                // drop 路径都规避。
+                // leak 影响）。**仅**覆盖 counter 收到 stop 后正常退出这条路径；counter
+                // 线程自身若 panic，unwind 仍会 drop sub——测试路径不应让本线程 panic。
                 std::mem::forget(sub);
             })
             .expect("spawn estop_counter");

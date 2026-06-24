@@ -6,12 +6,17 @@
 
 namespace robot.msg;
 
-// EStop 事件。`latched` 告诉订阅者 S0 已经把 latch 持久化到磁盘（§6.6）。
+// EStop 事件。`latched` = **S0 侧确认语义**：S0 已经把 latch 持久化到磁盘
+// （§6.6）。**producer 在 publish 时刻通常不可知 S0 是否已 fsync**（publish 早于
+// S0 消费），此时**必须填 `false`**（语义 = "触发请求，未确认 latch"）——gateway
+// EStop RPC 路由即如此（候选 D，`source="rpc"`，弱 Ack）。仅当 producer 确有 S0
+// 确认依据才填 `true`；robotctl 直连历史填 `true` 是既有语义债（CHANGELOG
+// 2026-06-24）。`//` 注释不进 flatc codegen，wire 0 改。
 table EStopEvent {
     reason:   string;
     stamp_ns: ulong;
-    source:   string;      // "button" / "rpc" / "s1_detect"
-    latched:  bool;
+    source:   string;      // "button" / "rpc" / "s1_detect"（robotctl 直连填 "robotctl"，债务见 CHANGELOG）
+    latched:  bool;        // producer 不可知 S0 fsync 时填 false（见上）
 }
 
 // 心跳。S1 → S0 每 20 ms 一次（50 Hz，§6.2）；S0 RT 循环也以自身 tick 对外暴露。

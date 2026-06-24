@@ -16,7 +16,43 @@
 
 ```
 设计版本:  v0.1.2（冻结）
-实现阶段:  v0.5 —— 候选 C (SetEnabled RPC) ✅ **完结**（RIPER：CodeMap+amend + Spec
+实现阶段:  v0.5 —— 候选 D (EStop 触发 RPC) ✅ **完结**（RIPER：CodeMap+amend +
+           Spec r1 + Plan outline+r1 + 2 段 feat + 1 docs；method 9→10 additive；
+           **路由 (a) gateway publish EStopEvent → S0 既有 poll_estop 链〔S0 0 改〕**；
+           feat 链 `4c8a6b3`(1/3 proto+gateway) → `27cc80b`(2/3 estop_e2e 6 case)，
+           加 docs `1521bd0`〔§P.4 PE1-3〕+ 本 docs〔summary+CHANGELOG+entry 勘误×3
+           +event.fbs 注释澄清〕）。
+           proto EStop 9→10 + EStopCommand + estop.rs（validate 含 dry_run 拒〔D4〕
+           + fingerprint，estop_reason 空合法）+ 常驻 estop_pub 专用线程
+           （GATEWAY_ESTOP_SOURCE_ID=98 + bounded(64) + oneshot Ack）+ 12 步精简
+           handler（**无 wire 回执步**——publish 非 RR）+ Method::EStop idempotency
+           （第 6 method）+ try_recv inherent additive（PE1，trait/mock 0 改）+
+           estop_e2e 6 case（EStopTopicCounter PD1 逐条计数禁 latest() + AC-7
+           s0-dead 仍 Ack）。
+           **弱 Ack = published_at_ns**（D2，明文不证 S0 消费/latch fsync；RobotState
+           无 estop_latched 字段，latch fsync 远程不可观测）+ **latched=false**
+           （D3/Q8(i)，producer 不可知 S0 fsync 时填 false）+ source="rpc" 固定 +
+           estop_reason 透传（D6）。
+           **0 改 B4 frozen 9 method wire / §6.7 全保（#3 增强：多 operator+ RPC
+           触发入口，清除仍唯一 ClearEStop maintainer+）/ 0 改 ClearEStop·SetEnabled
+           rr_server / 0 改 S1 / 0 改 design.md / 0 改 robot-cli / 0 新依赖**。详
+           docs/handoffs/v0.5_estop_summary.md。
+           **审计必读（§P.4）**：PE1（try_recv additive）/ PE2（unit 10→13）/ PE3
+           （gate 盘点：4 smoke → +clear_estop_e2e 5/5 + robotctl_smoke 12/12）/
+           PE4（reviewer (2/3) 阻断：EStopTopicCounter !Send subscriber Drop 撞
+           publisher-gone SIGSEGV → mem::forget(sub)；**仅**覆盖正常退出路径，**非**
+           panic unwind）。
+           **债务/勘误（CHANGELOG 2026-06-24）**：robotctl 直连 latched=true /
+           source="robotctl" 既有语义债（只登记不修，robot-cli 0 改）；entry §2.4
+           勘误×3（schema_id 0x0405→0x0000_0300 笔误；"对称 control plane"→route (a)
+           非对称；触发角色 maintainer+→operator+〔reviewer (3/3) 阻断〕）。
+           **基建 ⚠**：rust-toolchain pin **nightly-2026-06-08**（沿候选 C，未变；
+           iceoryx2 升级后复核解除）。cargo test --workspace **1180 PASS / 0 FAIL**
+           （estop_e2e 6 + set_enabled 10 + state 6 + task 6）。
+           下一步 = 候选 E（dimos integration restart），A→B→C→D→E 硬序末环（前置
+           = operator workflow handoff + dimos-deploy buy-in；v0.5_entry.md）。
+
+v0.5 候选 C: SetEnabled RPC ✅ **完结**（RIPER：CodeMap+amend + Spec
            r1-4 + Plan outline+r1-5 + 5 段 feat + 1 Reverse Sync + 2 fix；method
            8→9 additive；feat 链 `f92bcec`→`dceebcc`→`e9bac70`→`b53ae1a`→
            `a75f9bc` (5/5 e2e)，加 fix `4e56834` marker + 🔨 `79e0c02` nightly
@@ -45,7 +81,6 @@
            nightly 滚动后 iceoryx2 0.8.1 编译失败 E0599；iceoryx2 升级后复核
            解除，与候选 B PE3 mem::forget 同清单）。cargo test --workspace
            **1160 PASS / 0 FAIL**（set_enabled_e2e 10 + state 6 + task 6）。
-           下一步 = 候选 D（EStop 触发 RPC），A→B→C→D→E 硬序（v0.5_entry.md）。
 
 v0.5 候选 B: GetState/StreamState 只读 RPC ✅ **完结**（RIPER：CodeMap
            + Spec r1-3 + Plan r1-2 + 4 段 feat；method 6→8 additive，`a010fe7` →
