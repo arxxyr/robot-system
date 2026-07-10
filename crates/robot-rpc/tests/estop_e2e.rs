@@ -138,13 +138,11 @@ impl EStopTopicCounter {
                     }
                     std::thread::sleep(Duration::from_millis(5));
                 }
-                // 跳过 iceoryx2 0.8.1 subscriber Drop：本 counter 线程在 gateway
-                // （publisher）退出之后才 join（shutdown 顺序 gateway 先退、counter
-                // 后退），publisher 先退 → subscriber Drop 访问已释放 shm 会 SIGSEGV。
-                // 同 state_pool.rs / robotctl.rs 既有锚点（进程退出 OS 回收 shm，无
-                // leak 影响）。**仅**覆盖 counter 收到 stop 后正常退出这条路径；counter
-                // 线程自身若 panic，unwind 仍会 drop sub——测试路径不应让本线程 panic。
-                std::mem::forget(sub);
+                // subscriber 正常 Drop。本线程在 gateway（publisher）退出之后才
+                // join（shutdown 顺序 gateway 先退、counter 后退），此 Drop 即
+                // "publisher 先退→存活端 drop subscriber"路径——0.8.1 时代此处
+                // `mem::forget` 规避 SIGSEGV，iceoryx2 0.9.3〔上游 #1629 同根因
+                // 修复〕升级后撤销，本 drop 兼作该崩溃类的回归探针。
             })
             .expect("spawn estop_counter");
         ready_rx

@@ -27,9 +27,10 @@
 //!
 //! 每 hardware 一条 std::thread，**线程内** create iceoryx2 Node + subscriber
 //! （iceoryx2 句柄 !Send，必须 owner 线程内 create + `Box::leak` Node 保活）。
-//! `stop` AtomicBool 触发退出。退出时 `mem::forget` subscriber 跳过 iceoryx2
-//! 0.8.1 的 subscriber Drop（publisher 可能已先退 → 访问已释放 shm SIGSEGV；
-//! 同 `robotctl watch` 已记录的规避；gateway shutdown ≈ 进程退出，OS 回收 shm）。
+//! `stop` AtomicBool 触发退出，subscriber 正常 Drop（0.8.1 时代此处曾
+//! `mem::forget` 规避 publisher 先退 → Drop 访问已释放 shm SIGSEGV；iceoryx2
+//! 0.9.3〔上游 #1629 同根因修复〕升级后撤销，estop_e2e / state_rpc_e2e 复现无
+//! SIGSEGV）。
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -178,9 +179,6 @@ impl StatePool {
                         }
                         thread::sleep(POLL_INTERVAL);
                     }
-                    // 跳过 iceoryx2 0.8.1 subscriber Drop（publisher 可能已先退 →
-                    // SIGSEGV 规避；进程退出时 OS 回收 shm）。
-                    std::mem::forget(sub);
                 })?;
 
             if let Ok(true) = ready_rx.recv() {

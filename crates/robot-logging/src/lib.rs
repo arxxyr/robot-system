@@ -224,8 +224,11 @@ pub fn init() -> bool {
 ///
 /// 测试 / embedded 场景不走 ctor：`#[cfg(not(test))]` 避免测试进程启动时
 /// 抢先 install subscriber（测试用 `tracing-test` / 手动 init）。
+// ctor 1.0 起要求显式 `(unsafe)` 确认：pre-main 构造函数运行在 Rust
+// runtime 初始化保证之外（std 未完全就绪 / 不得 panic 逃逸）。本函数体
+// 只调 init()（安装 tracing subscriber），语义与 0.x 时代一致。
 #[cfg(not(test))]
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn auto_init() {
     // ctor 路径 void-ignore return；init() `#[must_use]` warning 用 let 绑定
     // 明确"有意忽略"。

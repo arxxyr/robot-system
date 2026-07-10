@@ -63,13 +63,13 @@ flatbuffers = "=25.12.19"
 blake3 = "1.8.5"
 # iceoryx2：本机零拷贝 pub-sub（§2.1）。精确 pin 仿 flatbuffers，防 minor 破坏性变更。
 # 烟测见 docs/CHANGELOG.md 2026-04-22 "Step 5 开工决策与 iceoryx2 依赖登记"。
-iceoryx2 = "=0.8.1"
+iceoryx2 = "=0.9.3"
 # arc-swap：Step 6 Part 1 latest-command slot 的同步原语（ipc_thread → rt_thread 方向）。
 # RT 侧 load() 返回 Guard 不 bump refcount（hazard pointer），满足 §4.9 RT 铁律。
-arc-swap = "1.7"
+arc-swap = "1.9"
 # tempfile：dev-dependency，给 estop_latch / 其他涉及文件系统的单测用临时目录。
 # 只在 dev-dependencies 位置继承（`tempfile = { workspace = true }` 出现在子 crate 的 dev-deps 段）。
-tempfile = "3.10"
+tempfile = "3.27"
 # crossbeam-channel：Step 6 Part 2 非 RT 线程间事件队列（watchdog → ipc_thread，SIGINT → ipc_thread）。
 # MPMC + bounded + try_recv，零依赖无 unsafe。成熟 3.5+ SLoC 库。
 crossbeam-channel = "0.5"
@@ -101,6 +101,12 @@ criterion = { version = "0.8.2", default-features = false, features = ["cargo_be
 # serialport：跨平台串口 crate（Linux 走 libudev，需 libudev-dev / libudev1）。
 # Step 7 task 28 feetech `real-hw` feature 必需；mock-only 编译路径不 link。
 serialport = "4"
+# assert_no_alloc：RT 线程 alloc 守卫（robot-core rt-alloc-guard feature +
+# feetech / mock adapter 的 RT 路径断言）。子 crate 一律 `workspace = true`
+# 继承，版本单源在此。
+assert_no_alloc = "1.1"
+# trybuild：robot-transport 编译期负向测试（UI test snapshot）。dev-only。
+trybuild = "1.0.117"
 # tracing + tracing-subscriber：Rust 生态标准结构化日志（相当于 C++ spdlog）。
 # task-32 (2026-04-25) 日志骨架：所有 bin（s0_daemon / mock_s1 / robotctl /
 # policy_host 等）启动时 `init_tracing()`，RT thread 内严格**禁用**（带 format
@@ -113,7 +119,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 # 让所有 bin 只要依赖 `robot-logging` 就自动 init tracing subscriber，不用
 # 每个 main 写 `robot_logging::init()`。白名单登记见 docs/CHANGELOG.md 2026-04-25
 # "task-32 日志骨架"。
-ctor               = "0.10.1"
+ctor               = "1.0.8"
 
 # v0.3 A1 ClearEStop control-plane slice 网关依赖（**仅** robot-rpc 用；
 # 其它 crate **不**得 link tonic / prost / tokio / 跨 crate 复用 RPC 类型）。
@@ -121,14 +127,21 @@ ctor               = "0.10.1"
 # 加 transport feature 跑 tonic transport stack。白名单登记走
 # docs/CHANGELOG.md 2026-04-27 "v0.3 A1-1 (3/3) robot-rpc skeleton + tonic
 # 引入" + 2026-04-28 "A1-3 (2/3) robot_rpc_gateway binary 依赖" 偏离登记。
-tonic = { version = "0.12", default-features = false, features = ["codegen", "prost", "transport"] }
-prost = "0.13"
+# tonic 0.14 feature 重排：`router`（`Server::add_service` 所在的 Routes
+# 构建器）从 transport 拆出，需显式启用。
+tonic = { version = "0.14", default-features = false, features = ["codegen", "transport", "router"] }
+# tonic 0.14 起 prost 集成剥离为独立 crate：runtime codec = tonic-prost，
+# codegen = tonic-prost-build（原 tonic feature "prost" / tonic-build 的
+# prost 路径均已移除）。
+tonic-prost = { version = "0.14", default-features = false }
+prost = "0.14"
 # UUIDv7 生成 + parse（CommandMeta.request_id）。robot-rpc auth + idempotency
 # 用此 crate 校验 request_id 格式。
-uuid = { version = "1.10", default-features = false, features = ["v7", "std"] }
-# tonic-build：A1-1 (3/3) robot-rpc proto 代码生成。仅 robot-rpc/build.rs 用
-# （`[build-dependencies] tonic-build = { workspace = true }`）。
-tonic-build = { version = "0.12", default-features = false, features = ["prost"] }
+uuid = { version = "1.23", default-features = false, features = ["v7", "std"] }
+# tonic-prost-build：A1-1 (3/3) robot-rpc proto 代码生成（tonic 0.14 起替代
+# tonic-build 的 prost 路径）。仅 robot-rpc/build.rs 用
+# （`[build-dependencies] tonic-prost-build = { workspace = true }`）。
+tonic-prost-build = { version = "0.14", default-features = false }
 # protoc-bin-vendored：vendored protoc binary（避免 host 必须装 protoc）。
 # 跟 vendored flatc 同款隔离策略：编译期一致性 + 跨开发机不依赖系统包。
 protoc-bin-vendored = "3"

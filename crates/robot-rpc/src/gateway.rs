@@ -1691,7 +1691,8 @@ pub async fn run_gateway(
 ///   send；让单测能精确分辨 "ready 可发 gRPC client" vs "bind 失败"。
 /// - 配置校验失败 / bind 失败 → 把 `Err(GatewayError)` 发出 `ready_tx`
 ///   后再 return Err（让 ready_rx 端不会永久阻塞 `await`）。
-/// - tonic `serve_with_incoming_shutdown` 走 [`TcpIncoming::from_listener`]，
+/// - tonic `serve_with_incoming_shutdown` 走 [`TcpIncoming::from`]
+///   （tonic 0.14 起 `from_listener` 改 `From<TcpListener>` + builder），
 ///   bind 时机由本函数控制（不是 tonic 内部）。
 ///
 /// # Errors
@@ -1756,16 +1757,11 @@ pub async fn run_gateway_with_ready(
         let _ = tx.send(Ok(actual_addr));
     }
 
-    let incoming = tonic::transport::server::TcpIncoming::from_listener(listener, true, None)
-        .map_err(|e| {
-            // TcpIncoming::from_listener 在已经 bind 成功的 TcpListener 上
-            // 几乎不会失败；万一失败包成 GatewayError::Bind（保留原错误
-            // 字符串到 io::Error message）。
-            GatewayError::Bind {
-                addr: actual_addr,
-                source: std::io::Error::other(format!("{e}")),
-            }
-        })?;
+    // tonic 0.14：`from_listener(listener, nodelay, keepalive)` 改
+    // `From<TcpListener>` + builder（infallible——原 from_listener 在已
+    // bind 成功的 listener 上本就几乎不会失败）。语义保持：nodelay=true /
+    // keepalive 默认。
+    let incoming = tonic::transport::server::TcpIncoming::from(listener).with_nodelay(Some(true));
 
     let svc = RobotControlServer::from_arc(handler);
 
@@ -3842,6 +3838,9 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "estop", "shutdown"]
 
     /// 跑一次 SetEnabled，mock daemon 用**正确** request_id 回指定
     /// `(status, domain)`。返 handler 结果。
+    // tonic handler 签名固定 `Result<Response<T>, Status>`（Status ≥176B 在框架
+    // 侧），helper 必须同签名转发，Box 不可行。
+    #[allow(clippy::result_large_err)]
     async fn run_set_enabled_with(
         status: RpcStatus,
         domain: SetEnabledStatus,

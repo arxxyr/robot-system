@@ -69,6 +69,26 @@ impl<T: BodyMarker> Iceoryx2Publisher<T> {
     pub(crate) fn split_for_loan(&mut self) -> (&mut IxPubSubPublisher, &mut u8) {
         (&mut self.inner, &mut self.loan_tok)
     }
+
+    /// 显式刷新 subscriber 连接并向**新连上的** subscriber 补发 history。
+    ///
+    /// iceoryx2 只在 `publish` / `update_connections` 时把 history 投递给
+    /// 新 subscriber——publisher 发完最后一帧后才连上的 subscriber，若没
+    /// 有人再调本方法，将**永远**收不到 history（0.9.3 实测；上游
+    /// `port/update_connections.rs` doc 示例即此场景）。短命 per-topic
+    /// publisher（如 s1 `events_drain` terminal grace 窗口）必须周期调用，
+    /// 否则晚连订阅者空等。长命持续发布的 topic 不需要（每次 publish 自带
+    /// connection update）。
+    ///
+    /// # Errors
+    ///
+    /// `TransportError::Backend`：iceoryx2 建立连接失败（shm 资源耗尽等）。
+    pub fn update_connections(&self) -> Result<(), TransportError> {
+        use iceoryx2::port::update_connections::UpdateConnections;
+        self.inner.update_connections().map_err(|e| {
+            TransportError::Backend(format!("iceoryx2 publisher update_connections: {e:?}"))
+        })
+    }
 }
 
 /// 发布侧的 sample writer。`'a` 来自 `&'a mut Iceoryx2Publisher` 的 borrow。

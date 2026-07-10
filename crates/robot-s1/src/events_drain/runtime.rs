@@ -56,6 +56,18 @@ pub struct EventsDrainThreadConfig {
     /// 拉走最后一帧后再 drop publisher / unregister service）。outline
     /// §5.5 拍板默认 100 ms；具体行为 / iceoryx2 动态 service 路径留
     /// B4 (3/3) integration test 回填。
+    ///
+    /// **iceoryx2 0.9.3 升级改 1 s**：0.8.1 时代最后一个 port 退出后
+    /// service 惰性清理，晚连 subscriber 常能靠残留 service + history
+    /// 意外补课；0.9.x 及时销毁 service，100 ms 变成真窗口——
+    /// pubsub_cleanup_smoke A1 千轮压测在 ~116 s 处相位漂移击穿该窗
+    /// （gateway subscribe 晚于 publisher drop → 打开全新空 service →
+    /// terminal 永不到达）。1 s = 旧窗 10 倍，覆盖 gateway 侧
+    /// open_or_create 竞态重试最坏 500 ms（robot-transport
+    /// `CREATE_RACE_*`）+ 调度抖动；同时保持 A1 稳态 registry 长度
+    /// （~7 action/s × 1 s ≈ 7-9）低于 C1 金丝雀阈值
+    /// `events_registry_len > 10`。grace 期间 stop 信号可打断
+    /// （见 `run_drain_loop` 分片睡眠），s1 shutdown 不为 grace 买单。
     pub terminal_grace: Duration,
 }
 
@@ -70,7 +82,7 @@ impl EventsDrainThreadConfig {
             action_id,
             topic: format!("/{robot_id}/s1/action_events/{action_id}"),
             poll_interval: Duration::from_millis(50),
-            terminal_grace: Duration::from_millis(100),
+            terminal_grace: Duration::from_millis(1000),
         }
     }
 }
@@ -499,10 +511,32 @@ fn run_drain_loop(
         return; // **不**等 grace（外部 stop 不发 terminal）
     }
 
-    // terminal event 已发：sleep grace 让 gateway sub catch up，然后 publisher /
+    // terminal event 已发：等 grace 让 gateway sub catch up，然后 publisher /
     // node 在本函数返回时 drop（caller spawn closure 拥有它们）。
+    //
+    // **每片必须调 `update_connections()`**：iceoryx2 只在 publish /
+    // update_connections 时向新 subscriber 补发 history（TaskEvent
+    // history_size = 64）——terminal 是最后一次 publish，之后连上的
+    // gateway subscriber 若无人再触发 connection update 将**永远**收不到
+    // terminal（0.9.3 实测：pubsub_cleanup A1 千轮压测 ~116 s 相位漂移
+    // 处，subscribe 晚于最后一帧 → 空等 5 s 超时）。分片睡眠、stop 可
+    // 打断：s1 shutdown 不为 grace 买单。
     if terminal_seen {
-        thread::sleep(cfg.terminal_grace);
+        const GRACE_SLICE: Duration = Duration::from_millis(20);
+        let mut remaining = cfg.terminal_grace;
+        while !remaining.is_zero() && !stop.load(Ordering::Acquire) {
+            if let Err(e) = publisher.update_connections() {
+                tracing::warn!(
+                    action_id = %action_id_hex,
+                    topic = %cfg.topic,
+                    error = ?e,
+                    "events_drain_thread: update_connections failed in terminal grace"
+                );
+            }
+            let chunk = remaining.min(GRACE_SLICE);
+            thread::sleep(chunk);
+            remaining -= chunk;
+        }
     }
 }
 

@@ -101,6 +101,7 @@ pub mod proto {
         clippy::must_use_candidate,
         clippy::needless_lifetimes,
         clippy::redundant_pub_crate,
+        clippy::result_large_err,
         clippy::similar_names,
         clippy::too_many_lines,
         clippy::wildcard_imports,

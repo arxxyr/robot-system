@@ -56,14 +56,58 @@ pub use subscriber::{Iceoryx2SampleLease, Iceoryx2Subscriber};
 // 端各走一半；本 MVP 给一个对称 helper 方便单测。
 
 use core::marker::PhantomData;
+use std::time::Duration;
 
 use iceoryx2::prelude::Node;
+use iceoryx2::service::builder::publish_subscribe::{
+    PublishSubscribeCreateError, PublishSubscribeOpenError, PublishSubscribeOpenOrCreateError,
+};
 use iceoryx2::service::ipc::Service as IxService;
 use iceoryx2::service::port_factory::publish_subscribe::PortFactory;
 use robot_msg::markers::BodyMarker;
 use robot_msg::size_tier::default_tier_of;
 
 use crate::error::TransportError;
+
+/// 并发 `open_or_create` 竞态重试参数（pub/sub 与 RR 共用）。
+///
+/// 两进程同时首建同一 service 时（s0 / s1 / gateway 并发 boot），
+/// `open_or_create` 输家会**瞬时**报 `ServiceInCorruptedState` /
+/// `HangsInCreation` / `AlreadyExists` / `SystemInFlux` 等瞬态错——赢家的
+/// create 尚未完成，输家看到半成品。iceoryx2 0.8.1 与 0.9.3 实测同在
+/// （`tests/iox2_sub_first_repro.rs` 并发变体 iter 0 即中）。有界重试跨过
+/// 赢家的创建窗口；重试耗尽（真损坏 / 创建者真死）按原错误上抛。
+///
+/// 上限 = 10 ms × 50 = 500 ms，覆盖 daemon 启动期一次 service 创建的最坏
+/// 情况；本路径**只在启动期**走（RT 约束见模块 doc），不影响运行期热路径。
+pub(crate) const CREATE_RACE_RETRY_INTERVAL: Duration = Duration::from_millis(10);
+pub(crate) const CREATE_RACE_MAX_ATTEMPTS: u32 = 50;
+
+/// 判定 pub/sub `open_or_create` 错误是否为并发创建竞态的瞬态错（可重试）。
+///
+/// 穷举 match：上游加 variant 时编译期报警，重新分类而不是静默落 `false`。
+fn is_transient_pubsub_race(e: PublishSubscribeOpenOrCreateError) -> bool {
+    match e {
+        // 上游文档明言：另一进程高频 create/remove 同名 service 时出现。
+        PublishSubscribeOpenOrCreateError::SystemInFlux => true,
+        PublishSubscribeOpenOrCreateError::PublishSubscribeOpenError(oe) => matches!(
+            oe,
+            // 存在性判定与 open 之间赢家半成品 / 已销毁的 TOCTOU 相。
+            PublishSubscribeOpenError::DoesNotExist
+                | PublishSubscribeOpenError::ServiceInCorruptedState
+                | PublishSubscribeOpenError::HangsInCreation
+                | PublishSubscribeOpenError::IsMarkedForDestruction
+        ),
+        PublishSubscribeOpenOrCreateError::PublishSubscribeCreateError(ce) => matches!(
+            ce,
+            // create 输家：service 刚被赢家建出 / 正在被建。
+            PublishSubscribeCreateError::AlreadyExists
+                | PublishSubscribeCreateError::IsBeingCreatedByAnotherInstance
+                | PublishSubscribeCreateError::HangsInCreation
+                | PublishSubscribeCreateError::ServiceInCorruptedState
+        ),
+    }
+}
 
 /// 同进程对称 pub/sub 创建：返回已配置好 service attributes / `QoS` / tier
 /// 的一对发布者 + 订阅者。跨进程场景下也可以调用这个函数（每一端各拿自己要
@@ -185,13 +229,30 @@ fn build_service<T: BodyMarker>(
     let profile = profile_of(class);
     let verifier = schema_attribute_verifier(T::SCHEMA_ID, 1)?;
 
-    node.service_builder(&service_name)
-        .publish_subscribe::<[u8]>()
-        .history_size(profile.history_size)
-        .subscriber_max_buffer_size(profile.subscriber_max_buffer_size)
-        .max_publishers(profile.max_publishers)
-        .max_subscribers(profile.max_subscribers)
-        .enable_safe_overflow(profile.safe_overflow)
-        .open_or_create_with_attributes(&verifier)
-        .map_err(|e| TransportError::Backend(format!("iceoryx2 service open_or_create: {e:?}")))
+    // builder 链每次 attempt 被消费，循环内重建（构造本身零成本）。
+    let mut attempt: u32 = 0;
+    loop {
+        match node
+            .service_builder(&service_name)
+            .publish_subscribe::<[u8]>()
+            .history_size(profile.history_size)
+            .subscriber_max_buffer_size(profile.subscriber_max_buffer_size)
+            .max_publishers(profile.max_publishers)
+            .max_subscribers(profile.max_subscribers)
+            .enable_safe_overflow(profile.safe_overflow)
+            .open_or_create_with_attributes(&verifier)
+        {
+            Ok(service) => return Ok(service),
+            Err(e) if attempt < CREATE_RACE_MAX_ATTEMPTS && is_transient_pubsub_race(e) => {
+                attempt += 1;
+                std::thread::sleep(CREATE_RACE_RETRY_INTERVAL);
+            }
+            Err(e) => {
+                return Err(TransportError::Backend(format!(
+                    "iceoryx2 service open_or_create: {e:?} (attempts={})",
+                    attempt + 1
+                )));
+            }
+        }
+    }
 }

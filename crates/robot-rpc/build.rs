@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //    client stub，给 `robot-tests/src/bin/clear_estop_e2e.rs` 端到端
     //    smoke 用。生产二进制构建不带 `client`，无 client-only runtime 影响。
     let build_client = std::env::var_os("CARGO_FEATURE_CLIENT").is_some();
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(true)
         .build_client(build_client)
         .compile_protos(&["proto/robot_control.proto"], &["proto"])?;

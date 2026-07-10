@@ -45,6 +45,9 @@ use iceoryx2::port::client::Client as IxClient;
 use iceoryx2::port::server::Server as IxServer;
 use iceoryx2::prelude::Node;
 use iceoryx2::response::Response as IxResponse;
+use iceoryx2::service::builder::request_response::{
+    RequestResponseCreateError, RequestResponseOpenError, RequestResponseOpenOrCreateError,
+};
 use iceoryx2::service::ipc::Service as IxService;
 use robot_msg::markers::BodyMarker;
 use robot_msg::size_tier::default_tier_of;
@@ -52,6 +55,7 @@ use robot_msg::size_tier::default_tier_of;
 use crate::error::TransportError;
 use crate::iceoryx2::attributes::schema_attribute_verifier;
 use crate::iceoryx2::service_name::topic_to_service_name;
+use crate::iceoryx2::{CREATE_RACE_MAX_ATTEMPTS, CREATE_RACE_RETRY_INTERVAL};
 
 // 别名跟 publish_subscribe 风格对齐：服务侧 payload + UserHeader 都是
 // `[u8]` + `()`。`PendingResponse` / `ActiveRequest` 是 5 个泛型（service +
@@ -266,10 +270,50 @@ fn build_rr_service<Req: BodyMarker>(
         ))
     })?;
     let verifier = schema_attribute_verifier(Req::SCHEMA_ID, 1)?;
-    node.service_builder(&service_name)
-        .request_response::<[u8], [u8]>()
-        .open_or_create_with_attributes(&verifier)
-        .map_err(|e| TransportError::Backend(format!("iceoryx2 RR service open_or_create: {e:?}")))
+    // 并发 open_or_create 竞态有界重试，语义同 pub/sub 侧 `build_service`
+    // （参数/根因见 mod.rs `CREATE_RACE_*` doc）。
+    let mut attempt: u32 = 0;
+    loop {
+        match node
+            .service_builder(&service_name)
+            .request_response::<[u8], [u8]>()
+            .open_or_create_with_attributes(&verifier)
+        {
+            Ok(service) => return Ok(service),
+            Err(e) if attempt < CREATE_RACE_MAX_ATTEMPTS && is_transient_rr_race(e) => {
+                attempt += 1;
+                std::thread::sleep(CREATE_RACE_RETRY_INTERVAL);
+            }
+            Err(e) => {
+                return Err(TransportError::Backend(format!(
+                    "iceoryx2 RR service open_or_create: {e:?} (attempts={})",
+                    attempt + 1
+                )));
+            }
+        }
+    }
+}
+
+/// 判定 RR `open_or_create` 错误是否为并发创建竞态的瞬态错（可重试）。
+/// 分类原则同 mod.rs `is_transient_pubsub_race`（穷举 match 锁上游漂移）。
+fn is_transient_rr_race(e: RequestResponseOpenOrCreateError) -> bool {
+    match e {
+        RequestResponseOpenOrCreateError::SystemInFlux => true,
+        RequestResponseOpenOrCreateError::RequestResponseOpenError(oe) => matches!(
+            oe,
+            RequestResponseOpenError::DoesNotExist
+                | RequestResponseOpenError::ServiceInCorruptedState
+                | RequestResponseOpenError::HangsInCreation
+                | RequestResponseOpenError::IsMarkedForDestruction
+        ),
+        RequestResponseOpenOrCreateError::RequestResponseCreateError(ce) => matches!(
+            ce,
+            RequestResponseCreateError::AlreadyExists
+                | RequestResponseCreateError::IsBeingCreatedByAnotherInstance
+                | RequestResponseCreateError::HangsInCreation
+                | RequestResponseCreateError::ServiceInCorruptedState
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------------

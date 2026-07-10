@@ -50,6 +50,10 @@ allow = [
     "ISC",
     "Unicode-3.0",                     # unicode-ident 新版用
     "Unlicense",                       # 极少依赖用，语义与 CC0 接近
+    # OSI 宽松（zlib 系）。tonic 0.14 升级引入：foldhash（← hashbrown 0.15
+    # ← petgraph ← prost-build ← tonic-prost-build，build-dependency only，
+    # 不进任何运行时 binary）。CHANGELOG 偏离登记随 iceoryx2/依赖升级 commit。
+    "Zlib",
 ]
 confidence-threshold = 0.93
 # 内部 workspace crate（robot-*）用 "Proprietary"（非 SPDX），且 publish=false

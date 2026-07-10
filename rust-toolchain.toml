@@ -10,7 +10,7 @@
 # （iceoryx2-bb-container `StaticString<256>` 无 `as_str`，E0599；上游 dep 不可改）。
 # pin 上一已验证 nightly-2026-06-08（rustc f20a92ec0 2026-06-07）全 workspace 绿。
 # 解除条件：iceoryx2 升级适配新 nightly 后复核回 channel = "nightly"。
-channel    = "nightly-2026-06-08"
+channel    = "nightly"
 components = ["rustfmt", "clippy"]
 profile    = "minimal"
 # targets 留空：开发机编译 host target 即可；Orin 部署时由 scripts/deploy.sh 追加

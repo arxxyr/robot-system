@@ -36,6 +36,7 @@ robot-msg = { workspace = true }
 # tonic / prost：gRPC server runtime + Protobuf runtime。**仅** robot-rpc
 # 用；其它 crate 禁 link。A1-3 (2/3) 起开 transport feature 跑 server。
 tonic = { workspace = true }
+tonic-prost = { workspace = true }
 prost = { workspace = true }
 # audit log。
 tracing = { workspace = true }
@@ -66,7 +67,7 @@ robot-logging = { workspace = true }
 flatbuffers = { workspace = true }
 
 [build-dependencies]
-tonic-build         = { workspace = true }
+tonic-prost-build   = { workspace = true }
 protoc-bin-vendored = { workspace = true }
 
 [dev-dependencies]
