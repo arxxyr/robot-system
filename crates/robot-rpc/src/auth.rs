@@ -501,6 +501,37 @@ capabilities = ["delete_universe"]
         assert!(!table.role_has_capability(Role::Operator, Capability::ClearEStop));
     }
 
+    /// **回归锁**：仓库的 `configs/rpc_roles.toml` 里 `set_enabled` /
+    /// `estop` 必须是 operator+（候选 C SetEnabled / 候选 D EStop 的授权
+    /// 语义）。授权是显式 capability 列表**非层级继承**
+    /// （`role_has_capability` = `caps.contains`）——"operator+" 成立的前
+    /// 提是 operator / maintainer / admin **三处都显式列出**该 capability，
+    /// 任何一处漏列 = 该 role 静默被拒（e2e 只覆盖 operator token，漏列
+    /// maintainer / admin 不会被 e2e 抓到）。任何 PR 改这个 toml 漏列三处
+    /// 之一、或让 viewer 拿到 `set_enabled` / `estop`，本测试都会失败。
+    #[test]
+    fn repo_rpc_roles_toml_set_enabled_estop_are_operator_plus() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/rpc_roles.toml");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let table = load_role_table(&text).unwrap_or_else(|e| {
+            panic!("configs/rpc_roles.toml load failed: {e}");
+        });
+        for cap in [Capability::SetEnabled, Capability::EStop] {
+            for role in [Role::Operator, Role::Maintainer, Role::Admin] {
+                assert!(
+                    table.role_has_capability(role, cap),
+                    "{role:?} 必须显式拥有 {cap:?}（capability 列表非层级，漏列即拒）"
+                );
+            }
+            assert!(
+                !table.role_has_capability(Role::Viewer, cap),
+                "viewer 不得拥有 {cap:?}"
+            );
+        }
+    }
+
     // ---- request_id (UUIDv7) validation ----
 
     #[test]
