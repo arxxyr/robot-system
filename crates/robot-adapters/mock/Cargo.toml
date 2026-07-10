@@ -17,7 +17,7 @@ inventory  = { workspace = true }
 [dev-dependencies]
 # task-30 v9 / M2：验证 RtSafeCtrl 实现在 RT 路径里不分配堆。
 # 仅 test 链接，不影响 release binary global_allocator。
-assert_no_alloc = "1.1"
+assert_no_alloc = { workspace = true }
 
 [lints]
 workspace = true

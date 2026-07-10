@@ -83,8 +83,8 @@ rt_guard = ["robot-core/rt_guard", "dep:assert_no_alloc"]
 test-freeze-hook = []
 
 [dependencies.assert_no_alloc]
-version  = "1.1"
-optional = true
+workspace = true
+optional  = true
 
 [lints]
 workspace = true

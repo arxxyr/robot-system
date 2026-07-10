@@ -33,7 +33,7 @@ iceoryx2 = ["dep:iceoryx2"]
 # 编译期负向测试：验证 `SampleLease::view()` 借用 / `SampleWriter::publish(self)`
 # move 语义在误用时产生 compile error。nightly 诊断格式变动可能要求
 # `TRYBUILD=overwrite` 刷一次 snapshot，见 tests/trybuild.rs 注释。
-trybuild = "1.0.116"
+trybuild = { workspace = true }
 
 [lints]
 workspace = true

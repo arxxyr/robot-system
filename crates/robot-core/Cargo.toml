@@ -21,7 +21,7 @@ thiserror = { workspace = true }
 inventory = { workspace = true }
 # Step 6 Part 1：RT 铁律守卫（rt_guard feature）。
 # 默认 off 避免给所有依赖方强制替换 global allocator；rt_guard on 时打开 scope 宏。
-assert_no_alloc = { version = "1.1", optional = true }
+assert_no_alloc = { workspace = true, optional = true }
 
 [features]
 default = []
