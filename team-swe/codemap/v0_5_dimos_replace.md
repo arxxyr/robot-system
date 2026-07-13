@@ -41,6 +41,15 @@ reviewer 4 阻断（P0 ×2 + P1 ×2）+ 非阻断 ×2，已回修：
 
 非阻断同步 ×2：M4 "唯一硬缺口"→"唯一 **RPC/method** 硬缺口"；§5.1 "现有三款"→"现有可组成 E 双臂权威配置的方案"。
 
+### round 3（reviewer 复核后）
+
+reviewer 2 阻断（P0 ×1 + P1 ×1），已回修：
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| B9 | P0 | **Q10 缺 S0 command-side 防错位闭环**：S0 解析 `JointCommand` 时**完全丢弃** `fb.layout_id()`、按数组索引直写（`ipc_thread.rs:1177-1192` `parse_joint_command` 无任何 layout 比对）——S1 配置错序仍可驱动错误电机，违反 design §3.5.1 "未知 layout 不得解析数组"（`00_design.md:524`） | Q10 增**两方案共同硬约束**：S0 非 RT IPC 路径比对 command layout_id 与本机权威 ID，不一致丢弃、不写 `LatestCommandSlot` + metric/state/失败语义；(a) 哈希明确 **joint_names + joint_ids + order** 全入、S1 由 config 派生或对显式 CLI 值 fail-fast（撤"对齐"模糊词） |
+| B10 | P1 | **Q12 未登记共享 anchor_bias 对 HoldPose 的影响**：`ActionContext.anchor_bias` 同时是 HoldPose **每 tick 真实输出目标**（`hold_pose.rs:117-121`，每 tick 读共享值；注释留"扩动态 anchor 扩展点"但语义变更未披露）——动态化共享 anchor = HoldPose 从"保持启动锚点"变"跟随动态值" | Q12 增**执行边界**：优先拆分 `scripted_start_pose` / `idle_hold_target` 与启动 anchor_bias（HoldPose 不动）；若动共享 anchor，须显式拍 HoldPose 新语义 + 回归 AC；§1.2 G1 段登记共享面 |
+
 ---
 
 ## 0. 冻结基线执行面剖面（映射的"源"语义）
@@ -192,7 +201,10 @@ G1（anchor/hold）；名序权威缺口 = Q10**。"10 RPC 够用"在字面调�
    hold-last-commanded / Idle hold 策略），不是 client 侧转换能绕过的；且
    S1 今日**无当前位来源**——启动锚定 subscriber 在 `anchor_or_fail` 函数内
    建、读完即弃（`s1_daemon.rs:783-812`），coordinator 亦无动态 state cache
-   / last-commanded 权威（round 2 B6）→ **Q12**。附加约束：Idle hold ≡ B1
+   / last-commanded 权威（round 2 B6）→ **Q12**。共享面注意（round 3 B10）：
+   `anchor_bias` 同时是 **HoldPose 每 tick 输出目标**
+   （`hold_pose.rs:117-121`）——修复若动共享 anchor 即牵连 HoldPose 语义
+   （Q12 执行边界）。附加约束：Idle hold ≡ B1
    路径是 v0.3 reviewer 阻断锁定的等价语义（`coordinator.rs:866-868` 注释），
    改动须 Spec 显式拍板解锁。
 
@@ -424,9 +436,9 @@ gateway 侧扩多 robot（架构改动）→ **Q1**。夹爪与 head 关节在 b
 | Q7 | 真机完结 gate 驱动方式 | (a) 专用验收 binary（沿 smoke 先例，脚本化"读状态→双臂→双夹爪"）/ (b) robotctl 补 get-state 等子命令后人工驱动 / (c) a+b（binary 为主 robotctl 为证据面） |
 | Q8 | 夹爪 [0,1]↔rad 换算权威层 | (a) client/adapter 层换算，wire 全程 rad（S0 0 改）/ (b) 若 Q3 选新增 RPC，RPC 语义定 [0,1]（S0 侧需换算） |
 | Q9 | S1/gateway systemd unit + 新 runbook | E 部署段范围确认（unit ×3~4 + runbook 替代 pre-strict 档案；deploy.sh 是否一并落）。**若 Q11 选 (ii) full config，必须含底盘 mode 断扭 / 解锁 / 写入 / readback fail-fast 全链**（round 1 B1） |
-| Q10 | joint 名→index 权威源（**禁止裸固定索引**，round 1 B3 + round 2 B5 重写） | **现状三事实（(a) 原样不可执行的原因）**：S0 wire `layout_id` = 固定占位 `0xCAFE_BABE_DEAD_BEEF`（`s0_daemon.rs:858`）；S1 `--layout-id` 独立传入、无一致性闭环；唯一计算函数 = 私有 lint helper 且 **sorted names 顺序无关**哈希（`schema_lint.rs:190`，证不了顺序），未实现 design §3.5.1 的 `sorted_joint_ids + order` 入哈希与 1 Hz `JointLayout` 广播/RR（`docs/00_design.md:522`）。**选项**：(a) TOML 名序权威 + **补齐 layout_id 一致性链**——真实计算（含 order 入哈希）→ S0 撤占位 → S1 `--layout-id` 对齐 → client 校验（= design §3.5.1 部分落地，工作量非零）/ (b) 新增 layout 可观测面（S0 广播 `JointLayout` 或 gateway layout 查询，additive）。**任一闭环前 M1/M2 停留"向量载体存在"** |
+| Q10 | joint 名→index 权威源（**禁止裸固定索引**，round 1 B3 + round 2 B5 重写） | **现状三事实（(a) 原样不可执行的原因）**：S0 wire `layout_id` = 固定占位 `0xCAFE_BABE_DEAD_BEEF`（`s0_daemon.rs:858`）；S1 `--layout-id` 独立传入、无一致性闭环；唯一计算函数 = 私有 lint helper 且 **sorted names 顺序无关**哈希（`schema_lint.rs:190`，证不了顺序），未实现 design §3.5.1 的 `sorted_joint_ids + order` 入哈希与 1 Hz `JointLayout` 广播/RR（`docs/00_design.md:522`）。**选项**：(a) TOML 名序权威 + **补齐 layout_id 一致性链**——真实计算（**joint_names + joint_ids + order 全部入哈希**）→ S0 撤占位 → S1 layout_id **由 config 派生**、显式 `--layout-id` 与派生值不一致即 **fail-fast**（round 3 B9 撤"对齐"模糊词）→ client 校验（= design §3.5.1 部分落地，工作量非零）/ (b) 新增 layout 可观测面（S0 广播 `JointLayout` 或 gateway layout 查询，additive）。**两方案共同硬约束（round 3 B9）**：S0 须在**非 RT IPC 路径**（parse / 写 slot 之前）比对 `JointCommand.layout_id` 与本机权威 ID——不一致则**丢弃、不写 `LatestCommandSlot`**，并定义 metric（§3.5.1 `unknown_layout_count`）/ state / 失败升级语义（DEGRADED 阈值）；现状缺口 = `parse_joint_command` **完全丢弃** `fb.layout_id()`、按索引直写（`ipc_thread.rs:1177-1192`），S1 错序配置可驱动错误电机，违反 design §3.5.1 "未知 layout 不得解析数组"（`00_design.md:524`）。**任一闭环前 M1/M2 停留"向量载体存在"** |
 | Q11 | E 权威 config 方案（round 1 B1，P0） | (i) arm-only 6-motor × 2 bus（右臂已有 `xlerobot_bus2_right_arm_full.toml`，**左臂 config 需新增**；底盘/头出向量，mode 风险消失）/ (ii) full 8/9 joint + 底盘 mode 硬化全链（与 Q5/Q9 联锁） |
-| Q12 | **G1**：S1 anchor/hold 语义缺口修复方向（round 1 B2 + round 2 B6 重写，P0） | **(a)/(b) 均为局部机制、非完整终态**：(a) per-action anchor 刷新只修 action 起点，Idle 仍回拉；(b) hold-last-commanded 只修 Idle 回拉，新 action 仍从启动 anchor 起插值；**闭合 G1 = (c) 两半兼修或等价统一方案**。**必答子项**：① "提交时当前位"来源——S1 今日**无**常驻 state 订阅（anchor subscriber 在 `anchor_or_fail` 函数内建、读完即弃，`s1_daemon.rs:783-812`），coordinator 亦无动态 state cache / last-commanded 权威，须新建其一；② 该来源的 freshness（stale 阈值）+ layout 校验（与 Q10 联动）；③ 取不到/过期时的失败语义（拒 start / 降级 / fallback 到何值）。**约束**：Idle hold ≡ B1 等价路径是 v0.3 reviewer 阻断锁定的语义（`coordinator.rs:866-868`），任一改动须 Spec 显式拍板解锁 + e2e 锁新行为 |
+| Q12 | **G1**：S1 anchor/hold 语义缺口修复方向（round 1 B2 + round 2 B6 重写，P0） | **(a)/(b) 均为局部机制、非完整终态**：(a) per-action anchor 刷新只修 action 起点，Idle 仍回拉；(b) hold-last-commanded 只修 Idle 回拉，新 action 仍从启动 anchor 起插值；**闭合 G1 = (c) 两半兼修或等价统一方案**。**必答子项**：① "提交时当前位"来源——S1 今日**无**常驻 state 订阅（anchor subscriber 在 `anchor_or_fail` 函数内建、读完即弃，`s1_daemon.rs:783-812`），coordinator 亦无动态 state cache / last-commanded 权威，须新建其一；② 该来源的 freshness（stale 阈值）+ layout 校验（与 Q10 联动）；③ 取不到/过期时的失败语义（拒 start / 降级 / fallback 到何值）。**约束**：Idle hold ≡ B1 等价路径是 v0.3 reviewer 阻断锁定的语义（`coordinator.rs:866-868`），任一改动须 Spec 显式拍板解锁 + e2e 锁新行为。**执行边界（round 3 B10）**：`ActionContext.anchor_bias` 同时是 **HoldPose 每 tick 真实输出目标**（`hold_pose.rs:117-121`，每 tick 读共享值；注释虽留"扩动态 anchor 扩展点"，机械扩展点存在 ≠ 语义变更免拍）——**优先拆分**新概念 `scripted_start_pose`（action 起点）与 `idle_hold_target`（Idle hold），既有启动 `anchor_bias` 与 HoldPose 语义**不动**；若选择动态化共享 anchor，**必须显式拍 HoldPose 新语义**（"保持启动锚点"→"跟随动态值"）**+ 回归 AC**，不得留到实现阶段发现 |
 
 ---
 
