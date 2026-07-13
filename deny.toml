@@ -52,7 +52,7 @@ allow = [
     "Unlicense",                       # 极少依赖用，语义与 CC0 接近
     # OSI 宽松（zlib 系）。tonic 0.14 升级引入：foldhash（← hashbrown 0.15
     # ← petgraph ← prost-build ← tonic-prost-build，build-dependency only，
-    # 不进任何运行时 binary）。CHANGELOG 偏离登记随 iceoryx2/依赖升级 commit。
+    # 不进任何运行时 binary）。CHANGELOG 偏离登记见 2026-07-12 条。
     "Zlib",
 ]
 confidence-threshold = 0.93
@@ -79,10 +79,11 @@ highlight = "all"
 deny = []
 
 # skip-tree：允许某依赖子树里出现重复版本。
-# iceoryx2 0.8.1 依赖 toml 0.9 (→ winnow 0.7)，trybuild 1.0.116 依赖
-# toml 1.1 (→ winnow 1.0)。两棵独立子树，dup 不在我们控制面；升级 iceoryx2
-# 新版 / 等上游对齐后再清。仅标 iceoryx2 不够（因为 trybuild 那棵也贡献）；
-# 标 toml 会把整个 toml 生态豁免过粗。务实折中：标两端。
+# iceoryx2 0.9.3 仍依赖 toml 0.9 (→ winnow 0.7)；trybuild 1.0.117（连同
+# robot-rpc / robot-s0 直依）依赖 toml 1.1 (→ winnow 1.0)。两棵独立子树，
+# dup 不在我们控制面；2026-07-12 升 0.9.3 后复核 dup 仍在，继续等上游对齐
+# 后再清。仅标 iceoryx2 不够（因为 trybuild 那棵也贡献）；标 toml 会把整个
+# toml 生态豁免过粗。务实折中：标两端。
 skip-tree = [
     { crate = "iceoryx2" },
     { crate = "trybuild" },

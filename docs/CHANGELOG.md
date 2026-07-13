@@ -10,6 +10,116 @@
 
 ---
 
+## 2026-07-12 · 基建：iceoryx2 0.9.3 + 全依赖升级（**状态：实现登记 + 债务解除 ×3 + 偏离登记 + 教训修订**）
+
+### 背景
+
+iceoryx2 `=0.8.1` → `=0.9.3` + `cargo upgrade --incompatible` 全依赖升级。
+commit 🔨 `fd58e67`（build + fix + remove 混提，body 分节 ①-⑤ 明文标注；
+Cargo.lock 在各变更集间不可分割且每个中间态须独立过 fmt/clippy/test gate）
++ 🔨 `08dc594`（子 crate 版本上收 workspace 根单源，纯声明移动 lock 0 变化）。
+业务调用面 0 改（0.9.0 九项 rename 级 breaking 本仓 grep 0 命中）。2026-06-24
+"登记 4" 与候选 B PE3 约定的 iceoryx2-upgrade 复核清单本条**全部闭环**。
+
+### 解除 1：toolchain pin `nightly-2026-06-08`（闭 2026-06-24 登记 4）
+
+- 解除条件达成：iceoryx2 0.9.3 在 rustc 1.99.0-nightly (af3d95584 2026-07-09)
+  全 workspace 绿，0.8.1 时代 E0599（iceoryx2-bb-container `StaticString` 无
+  `as_str`）消失。`rust-toolchain.toml` 回 `channel = "nightly"`。
+- 新 nightly 带 clippy `result_large_err` ×11：10 处 tonic OUT_DIR 生成代码走
+  既有 module allow 列表 +1，1 处 gateway 测试 helper 针对性 allow（tonic
+  签名固定，返回类型不可 Box）。
+
+### 解除 2 + 3：`mem::forget(sub)` workaround ×2 撤销（闭候选 B PE3 + 候选 D PE4）
+
+- 根因（iceoryx2 0.8.1 subscriber `Drop` 在 publisher 先退时访问已释放 shm →
+  SIGSEGV）已被上游 #1629 修复（0.9.0 起）。
+- 撤销两处：`state_pool.rs` subscriber 线程退出路径（候选 B PE3 登记的故意
+  有界泄漏）+ `estop_e2e.rs` `EStopTopicCounter`（候选 D PE4 同根因）。
+  estop_e2e 处的正常 drop 兼作"publisher 先退"回归探针。
+- 复核实测：estop_e2e ×5 + state_rpc_e2e ×3 + 全 workspace 0 SIGSEGV。
+- **robotctl `_exit` 跳 Drop 模式（第 3 锚点）不撤**：兼有短命 CLI 快退出的
+  独立理由；是否回归 graceful Drop 另行决策（登记为 open，非本条范围）。
+
+### 登记：robot-transport 并发 `open_or_create` 竞态有界重试（additive）
+
+- 两进程同时首建同一 service 时输家瞬报 `ServiceInCorruptedState` /
+  `HangsInCreation`（合成复现 iter 0 即中；0.8.1 / 0.9.3 双实测同在，**非
+  0.9 回归**）。`build_service` / `build_rr_service` 加 10ms×50 有界重试；
+  瞬态错穷举 match 分类（上游加 variant 编译期报警），耗尽按原错上抛带
+  attempts。
+- 新增 `robot-transport/tests/iox2_sub_first_repro.rs`：sub-first / pub-first
+  / 裸 API / 30 轮并发竞态 4 条锁测 + 1 条 `#[ignore]` 诊断（spawn 真
+  s1_daemon）。
+
+### 登记：s1 events_drain terminal grace 修复（pubsub A1 千轮压测根因）
+
+- **根因**：iceoryx2 只在 publish / `update_connections()` 时向新连 subscriber
+  补发 history（上游 port 模块文档明文）；terminal 是最后一次 publish，之后
+  连上的 gateway subscriber 永远收不到 terminal event。0.8.1 靠惰性 service
+  清理意外兜底；0.9.3 及时清理后 pubsub_cleanup A1 在 ~116s 相位漂移处稳定
+  复现超时（iter 849/858/862）。
+- **修复**：`Iceoryx2Publisher::update_connections()` 透传（robot-transport
+  additive API）+ events_drain terminal grace 100ms → 1s（稳态 registry ≈
+  7-9，在 C1 金丝雀阈 `events_registry_len > 10` 预算内）+ 分片 20ms 可被
+  stop 打断 + 每片调 `update_connections`。
+- pubsub_cleanup_smoke --phase all 两轮 all PASS（0 conditional AC）。
+
+### 登记：依赖白名单更新（tonic 0.14 拆分 + 兼容位）
+
+- 延伸 2026-04-22 "workspace runtime 依赖白名单机制" + 2026-04-27 robot-rpc
+  白名单：tonic 0.12 → 0.14 把 prost 集成剥离——robot-rpc **新增 runtime dep
+  `tonic-prost`**（codec，替代 tonic 的 `prost` feature）+ build-dep
+  `tonic-build` → **`tonic-prost-build`**（codegen）；tonic 需显式 `router`
+  feature（`Server::add_service` 拆出）。scope 不变：仍仅 robot-rpc /
+  robot-cli link tonic 家族。
+- `TcpIncoming::from_listener` → `From<TcpListener>` + `with_nodelay` builder
+  （语义保持 nodelay=true）；prost 0.13 → 0.14；ctor 0.10 → 1.0
+  （`#[ctor(unsafe)]` 显式确认 pre-main 语义，行为不变，robot-logging）；
+  arc-swap 1.7→1.9 / tempfile 3.10→3.27 / uuid 1.10→1.23 / trybuild
+  →1.0.117。flatbuffers `=25.12.19` / iceoryx2 `=0.9.3` 已为最新。
+- 版本单源：assert_no_alloc ×4 + trybuild ×1 子 crate 直写版本上收根
+  `[workspace.dependencies]`（`08dc594`，纯声明移动）。
+
+### 偏离登记：deny.toml licenses allow + `Zlib`（foldhash，build-dep only）
+
+- **涉及**：deny.toml 许可证白名单（2026-04-22 白名单机制条的机械闸门）。
+- **理由**：tonic-prost-build → prost-build → petgraph → hashbrown 0.15 →
+  foldhash（Zlib）。build-dependency only，不进任何运行时 binary；Zlib 为
+  OSI 宽松许可（zlib 系），与 Apache-2.0 兼容。
+- **复审触发**：foldhash（或其他 Zlib crate）进入 runtime 依赖树时重审本条。
+- deny 终态：未新增 violation；licenses FAILED 为既有 baseline
+  （assert_no_alloc BSD-1-Clause + serialport MPL-2.0 + unescaper
+  parse-error）。
+
+### 教训修订（RS2 家族）：release rebuild 必须含 required-features smoke bins
+
+- 候选 C RS2 写"release rebuild 必须先于 e2e gate"，本轮补一刀：robot-tests
+  的 smoke bin 带 `required-features`，`cargo build --release --workspace`
+  **不会**重建它们。升级后 4 个 smoke 曾因 6 月 8 日 0.8.1 陈旧二进制与
+  0.9.3 daemon 混版本 IPC 假失败（0.8.1 node 无 node_monitor_context →
+  0.9.3 侧判 `ServiceInCorruptedState`）；另 robotctl_smoke 缺省
+  bin_dir=target/debug 同吃陈旧 debug robotctl。
+- **修订后处方**：任何 smoke gate 前必须执行
+  `cargo build --release -p robot-tests --features
+  "pubsub-cleanup-smoke,scripted-backend-smoke,ik-backend-smoke,robotctl-smoke"`
+  （robotctl_smoke 另需重建 debug robotctl）。
+
+### 影响面 / Gate
+
+- S0 daemon 0 改；S1 仅 events_drain terminal grace（行为参数，wire 0 改）；
+  gateway 仅 TcpIncoming builder 迁移（行为等价）；B4/C/D frozen wire 全 0
+  改；§6.7 五条全保。
+- fmt/clippy 零警告（nightly 1.99.0）+ cargo test --workspace **1185 PASS /
+  0 FAIL**（+4 竞态锁测）+ 6 smoke 全绿（crash 5/5 + pubsub all PASS ×2 +
+  scripted 5/5 + ik 5/5 + robotctl 12/12 + clear_estop all）。
+
+### 审阅人
+
+reviewer（2026-07-12 session："iceoryx2 按两闸门开跑" + "按 (a) 先把 pubsub
+A1 修掉再合入" + 依赖全量升级 + 版本上收规则逐条指令；`fd58e67` + `08dc594`
+reviewer 本人 push origin/master）。
+
 ## 2026-06-24 · v0.5 候选 D EStop 触发 RPC（**状态：实现登记 + 勘误登记 + 债务登记**）
 
 ### 背景

@@ -41,16 +41,43 @@
            （gate 盘点：4 smoke → +clear_estop_e2e 5/5 + robotctl_smoke 12/12）/
            PE4（reviewer (2/3) 阻断：EStopTopicCounter !Send subscriber Drop 撞
            publisher-gone SIGSEGV → mem::forget(sub)；**仅**覆盖正常退出路径，**非**
-           panic unwind）。
+           panic unwind；workaround **已于 2026-07-12 v0.5 基建段撤销**）。
            **债务/勘误（CHANGELOG 2026-06-24）**：robotctl 直连 latched=true /
            source="robotctl" 既有语义债（只登记不修，robot-cli 0 改）；entry §2.4
            勘误×3（schema_id 0x0405→0x0000_0300 笔误；"对称 control plane"→route (a)
            非对称；触发角色 maintainer+→operator+〔reviewer (3/3) 阻断〕）。
-           **基建 ⚠**：rust-toolchain pin **nightly-2026-06-08**（沿候选 C，未变；
-           iceoryx2 升级后复核解除）。cargo test --workspace **1180 PASS / 0 FAIL**
-           （estop_e2e 6 + set_enabled 10 + state 6 + task 6）。
+           **基建**：rust-toolchain pin **nightly-2026-06-08**（沿候选 C；**已于
+           2026-07-12 v0.5 基建段解除**）。cargo test --workspace **1180 PASS /
+           0 FAIL**（estop_e2e 6 + set_enabled 10 + state 6 + task 6，封存时）。
            下一步 = 候选 E（dimos integration restart），A→B→C→D→E 硬序末环（前置
            = operator workflow handoff + dimos-deploy buy-in；v0.5_entry.md）。
+
+v0.5 基建:  iceoryx2 0.9.3 + 全依赖升级 ✅ **完结**（2026-07-12；🔨 `fd58e67`
+           升级+行为适配〔build/fix/remove 混提，body 分节 ①-⑤ 标注〕+ 🔨
+           `08dc594` 子 crate 版本上收 workspace 单源，均已 push；CHANGELOG
+           2026-07-12 条全量登记）。
+           iceoryx2 =0.8.1→=0.9.3（业务调用面 0 改）+ rust-toolchain 解 pin 回
+           channel="nightly"（E0599 消失，候选 C/D 基建 ⚠ 解除）+ 撤
+           mem::forget(sub) ×2（候选 B PE3 state_pool + 候选 D PE4 estop_e2e；
+           上游 #1629 修复，estop×5/state×3/全 workspace 0 SIGSEGV）+
+           robot-transport open_or_create 并发竞态 10ms×50 有界重试（0.8.1/
+           0.9.3 双实测同在非回归，+4 锁测）+ **pubsub A1 根因修复**（iceoryx2
+           仅在 publish/update_connections 时向新 subscriber 补发 history；
+           events_drain terminal grace 100ms→1s 分片可打断 + 每片
+           update_connections；pubsub_cleanup --phase all 两轮 all PASS）+
+           tonic 0.12→0.14（+tonic-prost runtime / tonic-build→
+           tonic-prost-build build-dep / +router feature）+ prost 0.14 +
+           ctor 1.0 (unsafe) + 兼容位若干 + deny allow +Zlib（foldhash
+           build-dep only，CHANGELOG 偏离登记）。
+           **RS2 修订**：release rebuild 必须显式带 required-features smoke
+           bins（cargo build --release -p robot-tests --features
+           "pubsub-cleanup-smoke,scripted-backend-smoke,ik-backend-smoke,
+           robotctl-smoke" + debug robotctl 重建）——本轮 4 smoke 曾因 6 月
+           8 日 0.8.1 陈旧二进制混版本 IPC 假失败。
+           cargo test --workspace **1185 PASS / 0 FAIL** + 6 smoke 全绿 +
+           deny 未新增 violation（licenses FAILED 仍既有 baseline）。**遗留
+           open**：robotctl _exit 跳 Drop（第 3 锚点）保留，是否回归 graceful
+           Drop 另行决策。
 
 v0.5 候选 C: SetEnabled RPC ✅ **完结**（RIPER：CodeMap+amend + Spec
            r1-4 + Plan outline+r1-5 + 5 段 feat + 1 Reverse Sync + 2 fix；method
@@ -77,10 +104,11 @@ v0.5 候选 C: SetEnabled RPC ✅ **完结**（RIPER：CodeMap+amend + Spec
            release rebuild 必须先于 e2e gate）/ PE4（AC-9 + AC-5 cross-process
            不可达 → unit 覆盖，PB10 同根因）/ PB10（adapter-fail = fault-inject
            unit 非 e2e）。
-           **基建 ⚠**：rust-toolchain pin **nightly-2026-06-08**（2026-06-09
-           nightly 滚动后 iceoryx2 0.8.1 编译失败 E0599；iceoryx2 升级后复核
-           解除，与候选 B PE3 mem::forget 同清单）。cargo test --workspace
-           **1160 PASS / 0 FAIL**（set_enabled_e2e 10 + state 6 + task 6）。
+           **基建**：rust-toolchain pin **nightly-2026-06-08**（2026-06-09
+           nightly 滚动后 iceoryx2 0.8.1 编译失败 E0599；**已于 2026-07-12
+           v0.5 基建段解除**，与候选 B PE3 mem::forget 同清单同批闭环）。
+           cargo test --workspace **1160 PASS / 0 FAIL**（set_enabled_e2e 10
+           + state 6 + task 6，封存时）。
 
 v0.5 候选 B: GetState/StreamState 只读 RPC ✅ **完结**（RIPER：CodeMap
            + Spec r1-3 + Plan r1-2 + 4 段 feat；method 6→8 additive，`a010fe7` →
@@ -95,8 +123,9 @@ v0.5 候选 B: GetState/StreamState 只读 RPC ✅ **完结**（RIPER：CodeMap
            **design-freeze diff + 4 PE 必读**：D3（`GetState(Empty)`→`GetStateRequest
            {hardware_id}` 走 CHANGELOG）/ PE1（fbs enum newtype struct → variant-count
            lock 防漂移）/ PE2（proto-additive 强制 gateway graceful unimplemented 占位
-           → 真 handler 2/4+3/4）/ PE3（⚠ state_pool `mem::forget(sub)` 有界泄漏 =
-           iceoryx2 0.8.1 Drop SIGSEGV workaround，**iceoryx2 升级后复核撤销**）。
+           → 真 handler 2/4+3/4）/ PE3（state_pool `mem::forget(sub)` 有界泄漏 =
+           iceoryx2 0.8.1 Drop SIGSEGV workaround，**已于 2026-07-12 v0.5 基建
+           段撤销**〔上游 #1629〕）。
            **C1 延续非安全保证**：read RPC 无 auth 字段、服务端不读不校验 token、
            read_state cap 不实现。封存时 workspace 1117 PASS / 0 FAIL。
 
