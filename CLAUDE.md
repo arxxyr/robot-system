@@ -49,8 +49,16 @@
            **基建**：rust-toolchain pin **nightly-2026-06-08**（沿候选 C；**已于
            2026-07-12 v0.5 基建段解除**）。cargo test --workspace **1180 PASS /
            0 FAIL**（estop_e2e 6 + set_enabled 10 + state 6 + task 6，封存时）。
-           下一步 = 候选 E（dimos integration restart），A→B→C→D→E 硬序末环（前置
-           = operator workflow handoff + dimos-deploy buy-in；v0.5_entry.md）。
+           下一步 = 候选 E（**替换 dimos-deploy 机器人控制执行面**），A→B→C→D→E
+           硬序末环；**三前置已齐**（2026-07-13：#1 B/C/D ✅ / #2 workflow
+           handoff ✅ / #3 buy-in 决策单拍板 ✅——D-BI0 控制执行面〔冻结基线
+           executor.py:72 12 维 action/双臂/双夹爪；policy 推理·相机·Web UI
+           不在 E〕/ D-BI1 (i) 无 Python client / D-BI2 (i) Rust e2e 自动 +
+           Orin 真机"读状态→双臂→双夹爪"完结双 gate / D-BI3 冻结 `9ece6bd` +
+           退役顺序锁〔验收后退役、验收前不 disable 不删 unit 可回滚〕；经
+           r1+r2 修订，v0.5_dimos_buyin_decision.md + CHANGELOG 2026-07-13）
+           → **E CodeMap Pre-Research 可开工**（gripper 复用 InvokeTask/
+           Scripted vs 新增 RPC = CodeMap 必答不预钉，若新增仅 additive）。
 
 v0.5 基建:  iceoryx2 0.9.3 + 全依赖升级 ✅ **完结**（2026-07-12；🔨 `fd58e67`
            升级+行为适配〔build/fix/remove 混提，body 分节 ①-⑤ 标注〕+ 🔨

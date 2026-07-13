@@ -10,6 +10,61 @@
 
 ---
 
+## 2026-07-13 · v0.5 候选 E premise 变更 + dimos buy-in 决策单拍板（**状态：premise 变更登记 + 拍板登记**）
+
+### 背景
+
+reviewer 2026-07-10 两条口头输入改变候选 E premise：**(1)** dimos-deploy 为
+reviewer 本人仓库、仅 demo 验证使用、后续不用、以当前为基础；**(2)** 系统目标 =
+完全替换 dimos-deploy。原 workflow handoff §3 "dimos-deploy 团队 buy-in"框架
+（外部团队）**消解**，三类输入改由
+[`handoffs/v0.5_dimos_buyin_decision.md`](handoffs/v0.5_dimos_buyin_decision.md)
+D-BI0~3 逐条拍板。决策单经 **r1**（reviewer 3 阻断：D-BI0 范围收窄 + 撤"10 RPC
+够用"预设 / D-BI2 真机 gate + 退役顺序 / §5 同步范围五项）+ **r2**（reviewer 3
+执行级：拍板表权威同步 / disable 措辞收紧 / 撤"gripper additive"预钉）两轮修正
+后，2026-07-13 按 reviewer 建议值拍板。
+
+### premise 变更登记
+
+- **dimos-deploy 冻结**：master `9ece6bd` 冻结 = 只读移植参考源 + 功能基线；
+  不收 PR / 不跑回归；**跨仓 0 PR 永久**（entry §5 禁止项 #6 边界由"E 重启
+  之前"升为永久，已就地增强标注）。
+- **候选 E 语义**："dimos integration（给 dimos-deploy 接 gateway）"→
+  **替换机器人控制执行面**（原生移植；冻结基线 =
+  `src/xlerobot_dimos/policy/executor.py:72` `execute_step()` 一圈：12 维
+  action〔5/11 位为夹爪〕→ 双臂 trajectory〔traj_left_arm / traj_right_arm，
+  各 5 臂关节〕→ 双夹爪独立下发）。**policy 推理 / 相机采集 / Web UI 不在
+  E**，纳入须另行列单拍板。"完全替换"为系统级长期目标，非 E 单候选范围。
+- **过时文档处理**：`v0.5_entry.md` 为活文档，沿其 §2.4 勘误惯例就地标注
+  （§2.5 六 cell + §3.4 前置 #3 + §5 禁止项 #6 增强 / #4 核对）；
+  `v0.4_dimos_research.md` §5 Python client 三选项**作废**（不改本体，本条
+  登记）；workflow handoff §3.1/§3.4 buy-in premise 过时（不改本体，指回
+  决策单）。
+
+### 拍板登记（2026-07-13，reviewer 建议值）
+
+| 决策 | 值 |
+|---|---|
+| D-BI0 | **确认**（r1/r2 修正后）：E = 替换机器人控制执行面 |
+| D-BI1 | **(i)** E 不含 Python client（推迟至 robot-s2-bridge 真实需求，届时住 robot-system 仓内） |
+| D-BI2 | **(i)** Rust cross-process e2e 自动 gate + **Orin 真机"读状态→双臂→双夹爪"完结 gate**（纯 Rust 不能替代真机验收） |
+| D-BI3 | **确认**：维护归一 + 冻结声明 + **退役顺序锁**（真机完结 gate 通过后退役；验收前不执行 systemctl disable、不删除 unit、不做其他破坏性操作） |
+
+### 影响面
+
+- **候选 E 前置 #3 ✅ → 三前置齐（#1 B/C/D ✅ / #2 workflow handoff ✅ /
+  #3 本条 ✅）→ E CodeMap Pre-Research 可开工**（实现仍走 RIPER 逐段 ACK）。
+- gripper 缺口 = E CodeMap 必答：**比较复用 InvokeTask/Scripted vs 新增
+  Gripper RPC，不预钉**；若新增 method/schema 仅能 additive（禁止项 #4）。
+- `JointTrajectory → ScriptedPayload` adapter 归属 robot-system 侧（D-BI3），
+  形态 = E CodeMap 定位题。LCM = 非目标（控制执行面替换下不接，随仓退役）。
+- pure docs：0 code / 0 proto / 0 §6.7 / 0 dimos-deploy 改动 / 0 design.md。
+
+### 审阅人
+
+reviewer（r1 三阻断 + r2 三执行级修正逐条验收；"修完上述三点后即可按建议值
+拍板并 push"，2026-07-13）。
+
 ## 2026-07-12 · 基建：iceoryx2 0.9.3 + 全依赖升级（**状态：实现登记 + 债务解除 ×3 + 偏离登记 + 教训修订**）
 
 ### 背景
