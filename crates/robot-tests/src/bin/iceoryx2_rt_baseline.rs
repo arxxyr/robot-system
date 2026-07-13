@@ -238,11 +238,7 @@ fn main() {
     match run(&args) {
         Ok(report) => {
             println!("{report}");
-            if report.pass {
-                std::process::exit(0);
-            } else {
-                std::process::exit(1);
-            }
+            std::process::exit(i32::from(!report.pass));
         }
         Err(e) => {
             eprintln!("fatal: {e}");
