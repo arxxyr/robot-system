@@ -28,6 +28,19 @@ reviewer 4 阻断（P0 ×2 + P1 ×2），已回修：
 
 reviewer 已核实成立（保留不动）：双 robot_id / 双 gateway / BusyExecuting→AlreadyExists / 4 个 CI cross-process e2e / 0x040F 为下一空闲**起点** / 两外部仓基线干净。
 
+### round 2（reviewer 复核后）
+
+reviewer 4 阻断（P0 ×2 + P1 ×2）+ 非阻断 ×2，已回修：
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| B5 | P0 | **Q10(a) layout_id 校验不可执行、也证不了顺序**：S0 固定发布占位 `0xCAFE_BABE_DEAD_BEEF`（`s0_daemon.rs:858`）；S1 `--layout-id` 独立传入无一致性闭环；唯一计算函数是私有 lint helper 且 **sorted names 顺序无关**哈希（`schema_lint.rs:190`），未实现 design §3.5.1 的 `sorted_joint_ids + order` 入哈希与 1 Hz `JointLayout` 广播/RR（`docs/00_design.md:522`） | Q10(a) 重写为"TOML 名序权威 + **补齐 layout_id 一致性链**"（order 入哈希 + S0 撤占位 + S1 对齐 + client 校验）；M1/M2 判定降"**向量载体存在，name→index 待 Q10 闭环**" |
+| B6 | P0 | **Q12 非可执行决策**：(a) 需"提交时当前位"，但 S1 无常驻 state 订阅（anchor subscriber 在 `anchor_or_fail` 函数内建、读完即弃，`s1_daemon.rs:783-812`），coordinator 亦无动态 state cache / last-commanded 权威；且 (a) 单选 Idle 仍回拉、(b) 单选新 action 仍从启动 anchor 起 | Q12 重写：(a)/(b) 标**局部机制**，闭合 G1 = (c) 或等价统一方案；必答子项 = 当前位来源 / freshness+layout 校验 / 失败语义；Q2 前置改"**G1 两半全部闭合**" |
+| B7 | P1 | **FeetechAdapter 事实写错**：adapter **有** `set_mode()` 且确实写 `Operating_Mode`（`adapter.rs:603-633`）；真问题 = 启用链从不调用它 + 现有 set_mode 无断扭/解锁/写入/readback 事务（裸寄存器写循环） | §5.1 事实改准 + 登记 config 注释（"不触碰 Operating_Mode"句）为陈旧勘误对象；风险结论保留 |
+| B8 | P1 | **Gripper (b) "1:1" 过度宣称**：dimos `set_gripper_position` 同步返回实际 adapter 写结果；publish/弱 Ack 只证 publish，不证 S0 消费与硬件写入 | §2.2 语义收益拆 **(b1) 强 RR / (b2) publish 弱 Ack（非 1:1）**；§2.3 行拆分；Q3 改"须同时拍路由与 Ack 语义" |
+
+非阻断同步 ×2：M4 "唯一硬缺口"→"唯一 **RPC/method** 硬缺口"；§5.1 "现有三款"→"现有可组成 E 双臂权威配置的方案"。
+
 ---
 
 ## 0. 冻结基线执行面剖面（映射的"源"语义）
@@ -124,15 +137,16 @@ reviewer 已核实成立（保留不动）：双 robot_id / 双 gateway / BusyEx
 
 | # | dimos 调用面 | robot-system 映射 | 判定 |
 |---|---|---|---|
-| M1 | `get_joint_positions()` → `{joint: rad}`（不含夹爪） | `GetState(hardware_id)` → `RobotState.position_rad`（`robot_control.proto:444`；源 = S0 `JointState.position_rad`，`joint.fbs:103`） | ✅ **覆盖且更全**（本仓 gripper 在 joints 数组内，见 M2） |
-| M2 | `get_gripper_position(hw_id)` → `[0,1]`（观测链） | 同 `GetState`——gripper 就是 `position_rad[i]` 的一项（`configs/xlerobot_task29_right_gripper.toml:21-30`），**单位 rad 非 [0,1]** | ✅ 覆盖；🟡 单位差（§3 换算，Q8） |
+| M1 | `get_joint_positions()` → `{joint: rad}`（不含夹爪） | `GetState(hardware_id)` → `RobotState.position_rad`（`robot_control.proto:444`；源 = S0 `JointState.position_rad`，`joint.fbs:103`） | 🟡 **向量载体存在**（含 gripper 位，见 M2）；**name→index 待 Q10 闭环**（round 2 B5：wire 无关节名 + layout_id 现为占位常量） |
+| M2 | `get_gripper_position(hw_id)` → `[0,1]`（观测链） | 同 `GetState`——gripper 就是 `position_rad[i]` 的一项（`configs/xlerobot_task29_right_gripper.toml:21-30`），**单位 rad 非 [0,1]** | 🟡 **向量载体存在**（同 M1，待 Q10）；单位差 rad vs [0,1]（§3/Q8） |
 | M3 | `task_invoke(traj_*_arm, "execute", 2 点 0.1s 轨迹)` ×2 臂，10 Hz 抢占覆盖 | `InvokeTask(Scripted{waypoints})`（`scripted_payload.fbs:37-47`） | 🟠 **未闭环**（round 1 B2）：四重语义差（§1.2），第 4 条 G1 = P0 级 S1 语义缺口 |
-| M4 | `set_gripper_position(hw_id, [0,1])`，绕仲裁直写 | **无对应 RPC**（10 RPC 无 gripper 下发） | ❌ **唯一硬缺口** → §2 两方案 |
+| M4 | `set_gripper_position(hw_id, [0,1])`，绕仲裁直写 | **无对应 RPC**（10 RPC 无 gripper 下发） | ❌ **唯一 RPC/method 硬缺口** → §2 两方案 |
 
-**核对结论（round 1 B2 修订）**：10 RPC 覆盖 M1/M2（读面完整）；M3 **载体
-存在但映射未闭环**（四重语义差，第 4 条 G1 为 P0 级）；**RPC 面缺口 = M4
-夹爪下发；S1 语义缺口 = G1（anchor/hold）**。"10 RPC 够用"在字面调用面上
-**不成立**（M4）；且即便补齐 M4，连续运动仍压在 G1 上。
+**核对结论（round 1 B2 + round 2 B5 修订）**：M1/M2 **向量载体存在**（读面
+载体完整，name→index 待 Q10 闭环）；M3 **载体存在但映射未闭环**（四重语义
+差，第 4 条 G1 为 P0 级）；**RPC/method 面缺口 = M4 夹爪下发；S1 语义缺口 =
+G1（anchor/hold）；名序权威缺口 = Q10**。"10 RPC 够用"在字面调用面上
+**不成立**（M4）；且即便补齐 M4，连续运动仍压在 G1 与 Q10 上。
 
 ### 1.2 M3 的四重语义差（Spec 必答的真问题；第 4 条 = P0 缺口 G1）
 
@@ -175,9 +189,12 @@ reviewer 已核实成立（保留不动）：双 robot_id / 双 gateway / BusyEx
    （`coordinator.rs:865-871`）——连续 chunk 场景下，chunk 间隙 S1 把臂
    **回拉到启动姿态**，且下一条 Scripted 从启动 anchor 起插值（当前位 ≠
    启动位即跳变）。**修复必然触 S1 语义**（per-action anchor 刷新 /
-   hold-last-commanded / Idle hold 策略），不是 client 侧转换能绕过的 →
-   **Q12**。附加约束：Idle hold ≡ B1 路径是 v0.3 reviewer 阻断锁定的等价
-   语义（`coordinator.rs:866-868` 注释），改动须 Spec 显式拍板解锁。
+   hold-last-commanded / Idle hold 策略），不是 client 侧转换能绕过的；且
+   S1 今日**无当前位来源**——启动锚定 subscriber 在 `anchor_or_fail` 函数内
+   建、读完即弃（`s1_daemon.rs:783-812`），coordinator 亦无动态 state cache
+   / last-commanded 权威（round 2 B6）→ **Q12**。附加约束：Idle hold ≡ B1
+   路径是 v0.3 reviewer 阻断锁定的等价语义（`coordinator.rs:866-868` 注释），
+   改动须 Spec 显式拍板解锁。
 
 ### 1.3 M1/M2 的次要差异（登记不阻塞）
 
@@ -230,8 +247,13 @@ reviewer 已核实成立（保留不动）：双 robot_id / 双 gateway / BusyEx
   S0 侧**没有现成通路**，需要新 control RR（沿 SetEnabled 第 2 rr_server 先例）
   或部分向量命令语义，外加 gateway rr_io_thread、e2e、idempotency method 注册。
   即 (b) 不是"proto append 一下"，是一个完整 additive 候选。
-- **语义收益**：与 dimos 直写并行语义 1:1 对齐（不占 action 槽、不受臂轨迹
-  串行化影响）；单位可在 RPC 语义里定为 [0,1] 归一化（与 dimos client 面对齐）。
+- **语义收益（round 2 B8 拆分）**："不占 action 槽、不受臂轨迹串行化影响"
+  两条路由皆成立；但 **Ack 语义分岔**——dimos `set_gripper_position` 是同步
+  RPC、**返回即代表 adapter 串口写已执行**（§0.2）：
+  - **(b1) 强 RR 路径**：response 可携带写结果 → 与 dimos "写返回"语义对齐；
+  - **(b2) publish/弱 Ack 路径**：只证 publish、**不证 S0 消费与硬件写入**
+    （EStop D2 弱 Ack 先例同款诚实边界）→ **非 1:1**。
+  单位可在 RPC 语义里定为 [0,1] 归一化（与 dimos client 面对齐）。
 
 ### 2.3 比较表（事实汇总）
 
@@ -240,7 +262,7 @@ reviewer 已核实成立（保留不动）：双 robot_id / 双 gateway / BusyEx
 | wire 改动 | 0 | +1 method（append）+ S0 RR 成对 schema（0x040F/0x0410）**或** publish/弱 Ack 路由 + capability（B4） |
 | S0 改动 | 0 | 新 RR server 或部分命令语义（无现成通路） |
 | S1 改动 | 0（**但共通前置 G1 = S1 语义修复**，Q12） | 0（若走 S0 direct）或 action 化（另议）；臂侧连续运动同受 G1 前置 |
-| 与 dimos 并行语义 | 🟡 同车下发等价；独立下发受单 action 串行限制 | ✅ 1:1（绕 action 槽） |
+| 与 dimos 并行/Ack 语义 | 🟡 同车下发等价；独立下发受单 action 串行限制 | (b1) 强 RR：并行 + "写返回"均对齐 / (b2) publish 弱 Ack：并行对齐但只证 publish，**非 1:1**（round 2 B8） |
 | 单位 | client 层 [0,1]→rad 换算 | 可在 RPC 定义 [0,1] |
 | 与验收环契合 | "双臂动作 + 双夹爪"一条 chunk 载荷即达成 | 需三路调用编排 |
 | 工程量 | client/adapter 侧小 | B/C/D 级 additive 候选 |
@@ -349,8 +371,8 @@ gateway 侧扩多 robot（架构改动）→ **Q1**。夹爪与 head 关节在 b
 
 ## 5. 跨面系统性发现（登记）
 
-1. **E 权威 config 现状 = 现有三款皆不可直接用（round 1 B1 修订，原
-   "bus_full 才对"表述撤回）**：
+1. **E 权威 config 现状 = 现有可组成 E 双臂权威配置的方案皆不可直接用
+   （round 1 B1 修订 + round 2 非阻断收窄，原"bus_full 才对"表述撤回）**：
    - `xlerobot.toml` 陈旧：每臂 5 joint（4 臂关节+夹爪，`xlerobot.toml:16-49`）
      与 12 维基线（每臂 5 臂关节+1 夹爪）不符。
    - `xlerobot_bus{1,2}_full.toml` 电机表虽与 blueprint 对齐（8/9 motor），
@@ -358,9 +380,16 @@ gateway 侧扩多 robot（架构改动）→ **Q1**。夹爪与 head 关节在 b
      dimos 时代 `Operating_Mode=1`（wheel/velocity 模式，dimos stop 不切回，
      电机自持上次设置），此时 `Goal_Position` 被解释为 `Goal_Speed`——
      "填当前位"= 持续速度命令 = 整车移动（config 自带必读警告
-     `xlerobot_bus2_full.toml:49-58`）。`FeetechAdapter` 只写 `Goal_Position`
-     **不碰** `Operating_Mode`；S0 启用路径 Ready→Enabled 仅 Effectful
-     `Enable(true)`、**无 set_mode(Position)**（`state_machine.rs:367-374`）。
+     `xlerobot_bus2_full.toml:49-58`）。
+   - **adapter 侧事实（round 2 B7 改准）**：`FeetechAdapter` **有**
+     `set_mode()` 且确实写 `Operating_Mode` 寄存器（`adapter.rs:603-633`：
+     Position/ServoPosition→0、Velocity→1，逐 joint 裸写循环）。真实缺口
+     有二：**(1)** 启用链 Ready→Enabled 仅 Effectful `Enable(true)`、
+     **从不调用 set_mode**（`state_machine.rs:367-374`）；**(2)** 现有
+     `set_mode()` **没有**断扭、解锁、写入、readback 的完整事务。附带勘误
+     登记：`xlerobot_bus2_full.toml` 警告块内"FeetechAdapter 只写
+     Goal_Position、不触碰 Operating_Mode"一句系**陈旧表述**（与
+     `adapter.rs:603` 不符），该 config 注释是 E Spec 期勘误对象。
    - **配置方案比较（→ Q11）**：
      **(i) arm-only 6-motor per bus**——右臂已有
      `configs/xlerobot_bus2_right_arm_full.toml`（ID 1-6 = 5 臂 + 夹爪）；
@@ -377,7 +406,8 @@ gateway 侧扩多 robot（架构改动）→ **Q1**。夹爪与 head 关节在 b
 4. **两份 executor 并存**（独立进程版 + Module 版）语义一致——移植对照以
    `executor.py` 为准即可覆盖两者。
 5. 观测链的夹爪读（`get_gripper_position`）与执行链的夹爪写各自独立于
-   trajectory——本仓 GetState 一次读全向量天然合并读面（M2 ✅）。
+   trajectory——本仓 GetState 一次读全向量天然合并读面（M2，🟡 载体存在、
+   name→index 待 Q10 闭环）。
 
 ---
 
@@ -386,17 +416,17 @@ gateway 侧扩多 robot（架构改动）→ **Q1**。夹爪与 head 关节在 b
 | # | 问题 | 选项（事实基础见节） |
 |---|---|---|
 | Q1 | 双臂拓扑 | (a) 双 robot_id 双栈 + 双 gateway（0 架构改动，先例 task29 + Orin 双 S0 unit；client 侧编排两连接）/ (b) gateway 或 s1 多 hardware 化（架构改动，触 §1.2-3 全链） |
-| Q2 | 10 Hz 抢占语义映射（**G1/Q12 为前置**：chunk 间隙 Idle 回拉未修复前任一选项都不构成连续运动） | (a) per-chunk 折叠：一次推理 = 一条 10-waypoint Scripted（1 Hz action 粒度；chunk 间 Cancel+Invoke 或等终态）/ (b) 每步 Cancel+Invoke 抢占对（10 Hz RPC ×2，竞态面）/ (c) 新增抢占/streaming 语义（架构改动，默认不选） |
-| Q3 | gripper 方案 | (a) 复用 Scripted 全向量同车（§2.1）/ (b) 新增 Gripper RPC（§2.2，B/C/D 级）——比较表 §2.3 |
+| Q2 | 10 Hz 抢占语义映射（**前置 = G1 两半全部闭合**〔action 起点 + Idle 回拉，即 Q12(c) 或等价统一方案〕：任一半未修，下列任一选项都不构成连续运动，round 2 B6） | (a) per-chunk 折叠：一次推理 = 一条 10-waypoint Scripted（1 Hz action 粒度；chunk 间 Cancel+Invoke 或等终态）/ (b) 每步 Cancel+Invoke 抢占对（10 Hz RPC ×2，竞态面）/ (c) 新增抢占/streaming 语义（架构改动，默认不选） |
+| Q3 | gripper 方案（**含路由与 Ack 语义拆分**，round 2 B8） | (a) 复用 Scripted 全向量同车（§2.1）/ (b) 新增 Gripper RPC（§2.2，B/C/D 级）——**选 (b) 须同时拍**：(b1) 强 RR（成对 schema，response 携写结果，与 dimos "写返回"对齐）或 (b2) publish/弱 Ack（仅证 publish，非 1:1）——比较表 §2.3 |
 | Q4 | adapter 形态/位置 | §3.2 (i)-(iv) |
 | Q5 | 非目标关节填充策略（round 1 B1 收窄：**仅对 position-mode 关节成立**，受 Q11 约束） | head/臂填 GetState 当前位（波形不动语义）+ 读写间隙漂移容差归属（Spec AC）。**底盘轮不得按此处理**——Operating_Mode=1 残留下"填当前位"= 速度命令（§5.1）：Q11(i) 下轮子不在向量、问题消失；Q11(ii) 下依赖 Q9 mode 硬化链 |
 | Q6 | E workflow e2e 放置 | (a) `robot-rpc/tests/`（CI 自动跑，沿 4 e2e 先例）/ (b) robot-tests smoke bin（required-features，人工）/ (c) 双轨：e2e 进 CI + 真机 smoke bin 复用同 case 库 |
 | Q7 | 真机完结 gate 驱动方式 | (a) 专用验收 binary（沿 smoke 先例，脚本化"读状态→双臂→双夹爪"）/ (b) robotctl 补 get-state 等子命令后人工驱动 / (c) a+b（binary 为主 robotctl 为证据面） |
 | Q8 | 夹爪 [0,1]↔rad 换算权威层 | (a) client/adapter 层换算，wire 全程 rad（S0 0 改）/ (b) 若 Q3 选新增 RPC，RPC 语义定 [0,1]（S0 侧需换算） |
 | Q9 | S1/gateway systemd unit + 新 runbook | E 部署段范围确认（unit ×3~4 + runbook 替代 pre-strict 档案；deploy.sh 是否一并落）。**若 Q11 选 (ii) full config，必须含底盘 mode 断扭 / 解锁 / 写入 / readback fail-fast 全链**（round 1 B1） |
-| Q10 | joint 名→index 权威源（**禁止裸固定索引**，round 1 B3） | (a) client 从本地 TOML 读有序 joints + 对 `GetState.layout_id` 校验一致性（wire 无名，TOML 为名序权威）/ (b) 新增 layout 可观测面（S0 真广播 `JointLayout` topic 或 gateway 暴露 layout 查询——additive 新工作，S0 今日不 publish） |
+| Q10 | joint 名→index 权威源（**禁止裸固定索引**，round 1 B3 + round 2 B5 重写） | **现状三事实（(a) 原样不可执行的原因）**：S0 wire `layout_id` = 固定占位 `0xCAFE_BABE_DEAD_BEEF`（`s0_daemon.rs:858`）；S1 `--layout-id` 独立传入、无一致性闭环；唯一计算函数 = 私有 lint helper 且 **sorted names 顺序无关**哈希（`schema_lint.rs:190`，证不了顺序），未实现 design §3.5.1 的 `sorted_joint_ids + order` 入哈希与 1 Hz `JointLayout` 广播/RR（`docs/00_design.md:522`）。**选项**：(a) TOML 名序权威 + **补齐 layout_id 一致性链**——真实计算（含 order 入哈希）→ S0 撤占位 → S1 `--layout-id` 对齐 → client 校验（= design §3.5.1 部分落地，工作量非零）/ (b) 新增 layout 可观测面（S0 广播 `JointLayout` 或 gateway layout 查询，additive）。**任一闭环前 M1/M2 停留"向量载体存在"** |
 | Q11 | E 权威 config 方案（round 1 B1，P0） | (i) arm-only 6-motor × 2 bus（右臂已有 `xlerobot_bus2_right_arm_full.toml`，**左臂 config 需新增**；底盘/头出向量，mode 风险消失）/ (ii) full 8/9 joint + 底盘 mode 硬化全链（与 Q5/Q9 联锁） |
-| Q12 | **G1**：S1 anchor/hold 语义缺口修复方向（round 1 B2，P0） | (a) per-action anchor 刷新（segment0 from = 提交时当前位）/ (b) Idle hold 改 hold-last-commanded（完成后不回拉）/ (c) a+b（连续 chunk 完整语义）。**约束**：Idle hold ≡ B1 等价路径是 v0.3 reviewer 阻断锁定的语义（`coordinator.rs:866-868`），任一改动须 Spec 显式拍板解锁 + e2e 锁新行为 |
+| Q12 | **G1**：S1 anchor/hold 语义缺口修复方向（round 1 B2 + round 2 B6 重写，P0） | **(a)/(b) 均为局部机制、非完整终态**：(a) per-action anchor 刷新只修 action 起点，Idle 仍回拉；(b) hold-last-commanded 只修 Idle 回拉，新 action 仍从启动 anchor 起插值；**闭合 G1 = (c) 两半兼修或等价统一方案**。**必答子项**：① "提交时当前位"来源——S1 今日**无**常驻 state 订阅（anchor subscriber 在 `anchor_or_fail` 函数内建、读完即弃，`s1_daemon.rs:783-812`），coordinator 亦无动态 state cache / last-commanded 权威，须新建其一；② 该来源的 freshness（stale 阈值）+ layout 校验（与 Q10 联动）；③ 取不到/过期时的失败语义（拒 start / 降级 / fallback 到何值）。**约束**：Idle hold ≡ B1 等价路径是 v0.3 reviewer 阻断锁定的语义（`coordinator.rs:866-868`），任一改动须 Spec 显式拍板解锁 + e2e 锁新行为 |
 
 ---
 
