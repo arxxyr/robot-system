@@ -5,11 +5,13 @@
 #       确需启用时在 crate 顶部注释列出。
 
 [toolchain]
-# **2026-06-09 原地回滚 pin**（CLAUDE.md 处方：pin 具体日期 + 回滚上一已验证日期）：
-# nightly 2026-06-09（rustc 1.98.0-nightly beae78130）下 iceoryx2 0.8.1 编译失败
-# （iceoryx2-bb-container `StaticString<256>` 无 `as_str`，E0599；上游 dep 不可改）。
-# pin 上一已验证 nightly-2026-06-08（rustc f20a92ec0 2026-06-07）全 workspace 绿。
-# 解除条件：iceoryx2 升级适配新 nightly 后复核回 channel = "nightly"。
+# **浮动最新 nightly，不锁定日期**（reviewer 2026-07-13 指令）。
+# 历史：2026-06-09 nightly 下 iceoryx2 0.8.1 编译失败（E0599）曾原地回滚
+# pin nightly-2026-06-08；2026-07-12 升 iceoryx2 0.9.3 后解除
+# （CHANGELOG 2026-07-12 条"解除 1"）。
+# 处方：nightly 滚动带来的新 clippy lint 就地 fix-forward（如 f54e19e）；
+# pin 具体日期仅留给真编译破坏（CLAUDE.md §Rust 规范逃生舱，用后必须
+# 登记解除条件）。
 channel    = "nightly"
 components = ["rustfmt", "clippy"]
 profile    = "minimal"
