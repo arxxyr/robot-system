@@ -1,11 +1,13 @@
-# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 2）
+# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 3）
 
 > CodeMap：[`team-swe/codemap/v0_5_dimos_replace.md`](../codemap/v0_5_dimos_replace.md)
 > （round 4 **Approved**，amend 记录 round 1-3 = B1-B10 全闭）。Spec round 1
 > 按 reviewer 指示**先拍 Q10/Q11/Q12 三项 P0**（D1/D2/D3），再 D4-D12 覆盖
 > 其余 Q + AC 草案 + hard boundaries；round 1 复核 = **方向拍定（D1 (a)+(i) /
-> D2 (i) / D3 (c)，条件生效）+ 4 P0 阻断 + 3 执行语义阻断**，本 round 2 逐条
-> 回修（见"Spec round 记录"）。**0 代码改动 / 不开 Plan / 不实施**。
+> D2 (i) / D3 (c)，条件生效）+ 4 P0 阻断 + 3 执行语义阻断**，round 2 逐条
+> 回修；round 2 复核再出 **7 执行级阻断（T1-T7，P0 ×4 + P1 ×3）**，本
+> round 3 逐条回修（均见"Spec round 记录"）。**0 代码改动 / 不开 Plan /
+> 不实施**。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -23,6 +25,18 @@
 | S7 | 执行 | **D12 Type=notify 不可留 Plan**：design 冻结明确 S1/gateway sd_notify + watchdog（`00_design.md` §9 表），S1 现状显式 Type=simple（`s1_daemon.rs:54` B1 决策 #7） | D12 r2 **直接拍：纳入** S1/gateway liveness-aware sd_notify + watchdog（`Type=notify` + `WatchdogSec=5s`）；B1 决策 #7 显式解锁登记 |
 
 非阻断 ×2（已落字）：D9 共享 case 库住 **robot-rpc client helper**、robot-rpc/tests 与 robot-tests 同向消费（**禁** robot-rpc 反向 dep robot-tests）；D3 新常驻线程正常 **stop+join+Drop**（iceoryx2 0.9.3，**禁** mem::forget 回潮）。
+
+### round 2 → round 3（reviewer 复核：7 执行级阻断〔P0 ×4 + P1 ×3〕）
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| T1 | P0 | **新 robot_id 的 EStop latch 迁移未定义**：D2 引入全新 latch 路径，照搬既有 runbook `0\n` provision（`scripts/systemd/README.md:37` 区块）= 借更换 robot_id 丢掉旧 EStop 记忆 | D2 增 **latch provision 锁**：首次 `1\n`（latched）primary+bak 双写 / 已存在绝不覆盖 / 首启 latched Safe 仅 maintainer+ ClearEStop 清 + AC-E21（迁移/幂等/损坏文件） |
+| T2 | P0 | **D13 只是 runbook 约束可被绕过**：六 unit 可独立启动且带 Conflicts=，`systemctl start xlerobot-s0-left-arm` 停旧栈并绕过 preflight | D13 增 **systemd 强制**：fresh one-shot preflight unit + S0 `Requires=`/`After=` 绑定，失败 → 新栈全 inactive；"systemctl start 即回"改**保留人工回滚能力**（硬件 I/O 已失败不承诺旧栈必然安全恢复）+ AC-E22 |
+| T3 | P0 | **D3 "非成功不更新"与矩阵"回启动 anchor"矛盾**：一次 Success 把 target 改成末点后两条不能同时成立 | 拍定：非 Success 终态**显式 reset idle_hold_target = 启动 anchor**（严格维持旧观测语义；"保留 last-success"备选未采）；AC-E18 必测"先 Success 再分别 cancel/fail/IK"序列 |
+| T4 | P0 | **D12 watchdog 误判合法空闲**：LivenessObserver 要求计数每周期增长（`systemd_notify.rs:139` 语义），RR metrics 只计真实请求（`rr_io_thread.rs:124`），tonic serve 无进度计数 | D12 锁：request-driven worker 用**独立 loop_tick_count**（空闲 poll 也推进）/ tonic 用 **loopback health probe** / `READY=1` 仅全 observer ready 后 / shutdown 先 `STOPPING=1` 再停 watchdog + AC-E19 双向（零请求不重启 + 冻结每类 worker 必重启） |
+| T5 | P1 | **双臂协议缺执行期不对称终态**："Completed 家族"不精确（实际终态 = Completed/Failed/Cancelled，`action_status.fbs:57`）；启动偏差无观测点（proto TaskHandle 无 accepted_at_ns，`task_handlers.rs:760` 仅 audit） | D5 重写：pair success = 双侧 `Completed(Success)` / 执行期一侧 Failed/Cancelled/Deadline → cancel 另侧 / 一侧 Success 后另侧失败 = partial completion 显式报告 / stream 断开 → `GetTaskStatus` 收敛 / **双拒绝不自动重试**（chunk FAIL 确定性终止）/ 偏差 = 两侧 `Started.at_ns` 差 |
+| T6 | P1 | **D11 依赖事实不成立**：robot-tests 无 feetech 依赖（`robot-tests/Cargo.toml` [dependencies]）；`raw_to_rad`/`rad_to_raw` 是私有 fn（`adapter.rs:92`） | D11 更正：feetech **暴露纯公共换算 API**（adapter 自身复用）；robot-tests **optional 依赖挂 real-hw**；依赖变化进 Plan `cargo --timings` + deny gate |
+| T7 | P1 | **D1 统一 exit 2 冲突 B1 冻结口径**：S1 配置加载/解析失败 = exit 3（`s1_daemon.rs:39` 文档 + `:294` 实现） | D1 exit 口径拆分：**CLI 身份/参数冲突 = exit 2**；**config 内容错误沿各 daemon 既有码**（S1 = exit 3）——避免第三处 B1 解锁 |
 
 ## What
 
@@ -77,7 +91,8 @@ S1 语义补全（G1 + sd_notify）+ gateway sd_notify + configs（新双 config
    字面"sorted_…+order"的可执行化解读，解读差异走 CHANGELOG，design.md 0 改）。
    `schema_lint.rs` sorted-names helper（`:190`）改调新函数。
 2. **config typed 化 + 全套 fail-fast 校验（r2，撤静默丢弃）**：`motor_ids`
-   从 extras 提升为 **typed 字段**；校验（违者 exit 2）：
+   从 extras 提升为 **typed 字段**；校验（违者 fail-fast，exit 码见第 3'
+   条 r3 口径）：
    `len(motor_ids) == len(joints)`、两者非空、joints 名唯一、motor_ids 唯一
    且 ∈ u8 域、**任何非法值拒绝**（撤 `filter_map` 静默丢弃，
    `s0_daemon.rs:1163`）、**缺 motor_ids = fail-fast**（无默认推导）。
@@ -88,6 +103,11 @@ S1 语义补全（G1 + sd_notify）+ gateway sd_notify + configs（新双 config
    给且不等 → fail-fast exit 2，沿 gateway 先例）——**禁止 CLI 与 TOML 身份
    分叉后各算不同 layout**。hardware_id 沿既有 resolve（`--hardware-id` 是
    section 选择器，选中段 id 即 hash 入参）。
+   **3'. exit 码口径（r3，T7——避免第三处 B1 解锁）**：**CLI 身份/参数冲突**
+   （`[robot].id ≠ --robot-id`、显式 `--layout-id` ≠ 派生值）= **exit 2**
+   （参数族）；**config 内容错误**（缺/非法 motor_ids、长度不等、重名等）
+   沿**各 daemon 既有配置错误码**——S1 = **exit 3**（B1 冻结口径
+   `s1_daemon.rs:39` 文档 + `:294` 实现），S0 沿其既有 config fail-fast 码。
 4. **S0**：启动期由选中 `[[hardware]]` 算 authoritative layout_id，撤
    `0xCAFE_BABE_DEAD_BEEF` 占位（`s0_daemon.rs:858`）→ `JointState.layout_id`
    变真值（wire 字段既有，**值语义变更**登记 CHANGELOG）。**command 侧硬约束
@@ -141,9 +161,21 @@ CHANGELOG）**：§3.5.1 的 JointLayout 1 Hz 广播 / RR 请求 / 阈值→状�
   config + mode 硬化链（CodeMap §5.1 (ii) 封存备查）。
 - `xlerobot.toml`（陈旧）与两 full config **保留不删**；E 权威 = 本表两
   config。
+- **latch 首次 provision（r3，T1——新 robot_id 的 EStop 记忆迁移）**：两个
+  新 latch 路径是**全新身份**，照搬既有 runbook 的 `0\n` provision
+  （`scripts/systemd/README.md:37` 区块）= 借更换 robot_id **丢掉旧 EStop
+  记忆**。锁定：
+  1. 新路径首次初始化 = **`1\n`（latched）**，primary + bak **双写**；
+  2. **已存在文件绝不覆盖**（provision 幂等：存在即跳过）；
+  3. 新身份首次启动进入 **latched Safe**（"出厂态 = 上锁"），只能经
+     **maintainer+ `ClearEStop`** 清除（§6.7 #3 唯一路径，人工确认后解锁）；
+  4. provision 步序：D12 runbook 内、preflight（D13）之后、S0 启动之前
+     （载体 Plan 定）。
 
 **AC 钩子**：AC-E5（双新 config 载入 + typed 校验 + 派生 layout_id + mock
-双栈 e2e 全通）。
+双栈 e2e 全通）/ AC-E21（latch provision：新身份首启 latched Safe →
+ClearEStop 后 Ready；重复 provision 幂等不覆盖；损坏文件沿 strict
+fail-closed 拒启动）。
 
 ### D3（Q12，P0）⚠ **方向已拍 (c)**（2026-07-13，条件生效）：G1 = `scripted_start_pose` + `idle_hold_target`，HoldPose 0 改
 
@@ -169,13 +201,18 @@ CHANGELOG）**：§3.5.1 的 JointLayout 1 Hz 广播 / RR 请求 / 阈值→状�
    Continue（target = 末 waypoint）**，**下一 tick 才返 Completed**——保证
    "末 target 已成功 publish"先于任何 idle_hold_target 提交。dwell_ms > 0
    路径（Dwell 期已反复发末 target）统一走同一保证，行为不变。
-3. **`idle_hold_target` 更新规则（r2 收窄）**：**仅** Scripted 以
-   `Completed(Success)` 收束**且**末 waypoint target 已按第 2 条发布后，
-   coordinator 提交 `idle_hold_target = 末 waypoint target`。**其余一切路径
-   不更新**。**撤回 r1 "每次 publish 更新"**（会连带改 IK 完成后行为——
-   `ik.rs:315` 首 tick 即发 target hold 帧）；**撤回 r1 "Idle / Degraded
-   一起改"**（hard boundary 只解锁 Idle）。初值 = 启动 anchor_bias → boot
-   后首个 Success-Scripted 之前 Idle hold 与今日 **bit 等价**。
+3. **`idle_hold_target` 更新规则（r2 收窄 + r3 T3 矛盾修正）**：**仅**
+   Scripted 以 `Completed(Success)` 收束**且**末 waypoint target 已按第 2 条
+   发布后，coordinator 提交 `idle_hold_target = 末 waypoint target`；
+   **任何非 Success 终态（cancel / failure / deadline / IK 任意结局）→
+   显式 reset `idle_hold_target = 启动 anchor_bias`**（r3 拍定——"非成功不
+   更新"与矩阵"回启动 anchor"在"先 Success 后非成功"序列下矛盾，取**严格
+   维持旧观测语义**：非成功终态后 hold = 启动 anchor 在**任意历史序列**下
+   成立；备选"保留 last-success target" = 新行为，**未采**）。**撤回 r1
+   "每次 publish 更新"**（会连带改 IK 完成后行为——`ik.rs:315` 首 tick 即发
+   target hold 帧）；**撤回 r1 "Idle / Degraded 一起改"**（hard boundary
+   只解锁 Idle）。初值 = 启动 anchor_bias → boot 后首个 Success-Scripted
+   之前 Idle hold 与今日 **bit 等价**。
    - **B1 等价语义解锁（收窄版）**：Idle hold ≡ B1（`coordinator.rs:865-871`，
      v0.3 锁定）按本条**显式解锁**——形态（build_hold_command 路径）不变，
      **target 源仅在 Success-Scripted 后变更**；登记 CHANGELOG + AC 锁。
@@ -190,8 +227,11 @@ CHANGELOG）**：§3.5.1 的 JointLayout 1 Hz 广播 / RR 请求 / 阈值→状�
    | HoldPose（一切结局） | anchor_bias（0 改，CodeMap B10 边界） |
    | **Degraded 态 hold** | 启动 anchor_bias（**不解锁**——Idle 与 Degraded 自此分源） |
 
-   cancel / failure 维持"回拉启动 anchor"= 既有行为原样；改为"hold 当前位"
-   属独立语义变更，**不在 E**（登记不在范围）。
+   cancel / failure 维持"回拉启动 anchor"= 既有行为原样（经 r3 显式 reset
+   机制在任意序列下成立）；改为"hold 当前位/last-success"属独立语义变更，
+   **不在 E**（登记不在范围）。**AC-E18 必测序列（r3）**：先 Success 一次
+   （idle_hold_target 已 = 末点）→ 再分别 cancel / failure / IK，断言 hold
+   回到启动 anchor——**不得只测 boot 初态**。
 5. **HoldPose 0 改（B10 边界，r1 不变）**：继续每 tick 读 `anchor_bias`
    （启动值，构造期固化）；`hold_pose.rs` 不动；两个新概念与共享 anchor
    **物理隔离**（字段/传参形态 Plan 定；语义边界本条锁死）。
@@ -231,13 +271,32 @@ hold 在末位无回拉。mid-chunk 抢占（Cancel+Invoke 对）= **非 E 目�
 1. 每 chunk：双臂各读 state → 两 payload 就绪后**并发提交**（两 gateway
    同时 `InvokeTask`，并发 join 形态）；**最大启动偏差**上限进 AC-E14
    （实测锁数值）。
-2. **等待双终态**（两侧 Completed 家族）后才进下一 chunk。
-3. **部分失败**：一侧 accepted、另侧 rejected → **立即 `CancelTask` 已接收
-   侧** → 等 cancel 终态；**cancel 不收敛（超时）→ 双侧 `EStop`**
-   （operator+ RPC 既有，安全方向，弱 Ack 语义照旧）。双侧 rejected →
-   本 chunk 中止，验收脚本判定重试/终止。
-4. 全部路径进 AC-E14（并发偏差 / 双终态 / 部分失败 cancel / 不收敛双
-   EStop）。
+2. **等待双终态（r3 精确化）**：终态精确集 = `Completed / Failed /
+   Cancelled`（`action_status.fbs:57` TaskStateFb；r2 "Completed 家族"表述
+   撤回）；**pair success 判定 = 两侧均 `Completed(Success)`**，其余任意
+   组合 = pair 非成功。
+3. **提交期部分失败**（一收一拒）：立即 `CancelTask` 已接收侧 → 等其终态；
+   cancel 不收敛（超时）→ **双侧 `EStop`**（operator+ RPC 既有，安全方向，
+   弱 Ack 语义照旧）。
+4. **执行期不对称终态（r3，T5）**：两侧均 accepted 后，一侧先到
+   `Failed / Cancelled / deadline` 而另一侧仍 Executing → **立即
+   `CancelTask` 仍运行侧** → 等其终态（不收敛 → 双侧 EStop）；一侧已
+   `Completed(Success)`、另一侧随后失败 → pair 结果 = **partial
+   completion**（验收报告显式记录成功侧终态 + 失败侧终态，pair 判 FAIL）。
+5. **stream 断开 / 事件超时收敛（r3）**：`StreamTaskEvents` 断开或超时 →
+   轮询 `GetTaskStatus` 收敛终态（read RPC 无 auth 现状照旧），收敛超时
+   上限进 AC-E14。
+6. **双拒绝（r3 拍定）**：**不自动重试**——chunk 判 FAIL、验收确定性终止
+   （非零退出）；自动重试策略若未来需要走独立拍板，**不留验收脚本临场
+   决定**。
+7. **最大启动偏差观测点（r3）**：proto `TaskHandle` **不暴露**
+   `accepted_at_ns`（wire 有、proto 无，`task_handlers.rs:760` 仅 audit）——
+   偏差定义 = 两侧 `StreamTaskEvents` 的 **`Started.at_ns` 之差**（server
+   侧时钟）；Started 不可得时退化记录 RPC Ack 往返偏差并**如实标注**为
+   Ack 偏差（不冒称启动偏差）。
+8. 全部路径进 AC-E14（并发偏差〔Started.at_ns〕/ 双终态精确集 / 提交期与
+   执行期部分失败 cancel / partial completion 报告 / stream 断开收敛 /
+   双拒绝确定性 FAIL / 不收敛双 EStop）。
 
 ### D6（Q3）拍板：gripper = (a) 复用 Scripted 全向量同车
 
@@ -293,9 +352,14 @@ post-E robotctl 候选）。
   语义），镜像其换算：臂 `× π/180`；gripper `/100 → [0,1] → rad`（
   `rad = rad_lo + v × (rad_hi − rad_lo)`），**rad_lo/rad_hi 由调用方显式
   传入**。越界镜像 dimos clamp（[0,100] clamp + 计数 warn）。
-- **换算权威唯一（r2）**：`raw↔rad` 公式**只住 robot-adapter-feetech**
-  （`adapter.rs:83-103`）；**robot-rpc 不得复制该公式**——验收 bin
-  （robot-tests，已 dep feetech crate）用 feetech 公式从标定 JSON raw
+- **换算权威唯一（r2 + r3 T6 事实更正）**：`raw↔rad` 现为 feetech adapter
+  **私有 fn**（`adapter.rs:92-103`），且 **robot-tests 现无 feetech 依赖**
+  （`robot-tests/Cargo.toml` [dependencies] 无该 crate）——r2 "已 dep"表述
+  **更正**。锁定：feetech crate **暴露纯公共换算 API**（pub 纯函数；
+  adapter 自身改为复用同一 API，公式单源）；robot-tests 以 **optional
+  依赖挂 `real-hw` feature**（仅 preflight / 验收 bin 消费）；该依赖变化
+  进 Plan 的 `cargo build --timings` 对照 + cargo deny gate。
+  **robot-rpc 仍不得复制公式**——验收 bin 用公共 API 从标定 JSON raw
   `range_min/max` 算 rad_lo/rad_hi，再作参数传给 shim。
 - **失败语义（r2）**：NaN/Inf → reject（helper 与 shim 均）；长度不匹配 →
   reject；标定 `range_min >= range_max` → 派生期 **fail-fast**；rad-native
@@ -319,6 +383,17 @@ post-E robotctl 候选）。
   （D3）；gateway = rr_io_threads / estop_pub / state pool / tonic serve。
   unit `Type=notify` + `WatchdogSec=5s`。**B1 决策 #7（"不带 sd_notify"）
   按本条显式解锁**，登记 CHANGELOG。
+- **liveness 语义防误判（r3，T4）**：既有 LivenessObserver = 计数不增长即
+  跳 ping（`systemd_notify.rs:139` 区块语义）；RR metrics 只计**真实请求**
+  （`rr_io_thread.rs:124` `requests_sent` 族），tonic serve 无进度计数——
+  直接复用会把**合法空闲**判成停滞。锁定四条：
+  1. request-driven worker（rr_io_threads / estop_pub / rr servers 等）
+     观测**独立 `loop_tick_count`**（空闲 poll 轮询也推进），**不用**请求
+     计数作 liveness 源；
+  2. tonic serve 用 **loopback health probe**（或等价响应性指标）作
+     observer；
+  3. `READY=1` 仅在**全部 observer ready** 后发送；
+  4. shutdown 先发 `STOPPING=1`、再停 watchdog ping。
 - **unit ×6**：S0 arm-only ×2（D2 表）+ S1 ×2 + gateway ×2；全部
   `Conflicts=` dimos 两 unit；S0 新 unit 另 `Conflicts=` 旧 full S0 unit
   （D2）。旧 unit 全部保留（回滚）。
@@ -348,14 +423,33 @@ head/wheels 在切换窗口的扭矩/速度状态**未知**。
    `Goal_Velocity` 读回 == 0 **且** `Torque_Enable` 读回 == 0（同款写后
    读回）；
 3. **任一读 / 写 / readback 失败或值不安全 → 禁止切换**（不起任何新栈），
-   旧栈回滚能力保留（unit 未 disable，`systemctl start` 即回）。
+   **保留人工回滚能力**（旧 unit 未 disable、未删；是否回启由人工判断，
+   见下"回滚表述修正"）。
 
-**载体**：验收 bin（D10）preflight phase（feature `real-hw`，直连 feetech
-transport 读写寄存器——此窗口串口无人占用：旧栈已停、新栈未起）；runbook
-把 preflight 列为**硬步序**（跳过 = 违规）。
+**systemd 强制（r3，T2——runbook 约束可被直启 unit 绕过）**：六个 unit 可
+独立启动且带 `Conflicts=`，`systemctl start xlerobot-s0-left-arm` 会停旧栈
+并绕过 preflight——preflight **不能只靠 runbook**。锁定：
+
+- 新增 **one-shot preflight unit**（`xlerobot-preflight.service`，
+  `Type=oneshot`、**不设 `RemainAfterExit`**——每次启动链拉起都 fresh 真跑）；
+- 两个 arm-only S0 unit **`Requires=` + `After=`** preflight unit——
+  preflight 失败 → 依赖链失败，**所有新栈 unit 保持 inactive**（S1/gateway
+  经既有对 S0 的依赖链传导，形态 Plan 定）；
+- `ExecStart` = 独立可执行 preflight 入口（验收 bin 复用**同一实现**，
+  bin/子命令形态 Plan 定）。
+
+**回滚表述修正（r3）**：r2 "`systemctl start` 即回"**撤回**，改为**保留
+人工回滚能力**（旧 unit 未 disable、未删）——硬件 I/O 已失败的场景**不承诺**
+旧栈必然安全恢复；是否回启旧栈与残余风险由**人工判断**。
+
+**载体**：preflight 独立入口（feature `real-hw`，直连 feetech transport 读
+写寄存器——此窗口串口无人占用：旧栈已停、新栈未起）+ preflight unit 强制
++ runbook 硬步序（三层同向）。
 
 **AC 钩子**：AC-E16（fail-closed 三路径：读失败 / 写失败 / readback 值不
-安全 → 均不起新栈；mock transport unit + 真机 gate 实测）。
+安全 → 均不起新栈；mock transport unit + 真机 gate 实测）/ AC-E22
+（systemd 强制：preflight 失败时直接 `systemctl start` 任一 arm-only S0
+→ unit 不进入 active）。
 
 ---
 
@@ -376,13 +470,15 @@ transport 读写寄存器——此窗口串口无人占用：旧栈已停、新�
 | AC-E11 | 对照移植清单三调用面 e2e 全绿（M1/M2/M3+M4 经 D6 同车） | e2e |
 | AC-E12 | Orin 真机三步（读状态→双臂→双夹爪）验收 runbook 化 | 真机 gate |
 | AC-E13 | 既有 1185 基线 + 6 smoke 0 退化 | workspace |
-| AC-E14 | 双臂并发提交最大启动偏差 + 双终态 + 部分失败 cancel + 不收敛双 EStop | e2e |
+| AC-E14 | 双臂协议全路径（r3）：Started.at_ns 启动偏差上限 / 终态精确集与 pair success 定义 / 提交期与执行期部分失败 cancel / partial completion 报告 / stream 断开 GetTaskStatus 收敛（含超时上限）/ 双拒绝确定性 FAIL / 不收敛双 EStop | e2e |
 | AC-E15 | gripper 阶跃→插值语义变化：终点一致 + 轨迹单调（非等价宣称） | e2e |
 | AC-E16 | D13 preflight fail-closed 三路径（读失败/写失败/readback 不安全 → 不起新栈） | unit + 真机 gate |
 | AC-E17 | 末 waypoint 先 Continue（target=末位）后 Completed（dwell=0 路径发布保证） | unit + e2e |
-| AC-E18 | D3 行为矩阵全行（Success 新 hold；cancel/failure/IK/Degraded 回拉现状） | e2e |
-| AC-E19 | S1/gateway sd_notify watchdog（worker 停滞 → 跳 ping → systemd 重启） | smoke |
+| AC-E18 | D3 行为矩阵全行 + **序列测试**（r3：先 Success 一次再分别 cancel/failure/IK，断言 reset 回启动 anchor；不得只测 boot 初态） | e2e |
+| AC-E19 | S1/gateway sd_notify watchdog 双向（r3）：**长时间零请求不重启**（空闲 ≥ 数个 WatchdogSec 周期）+ **冻结每类 worker 均触发重启** | smoke |
 | AC-E20 | state cache 线程 stop+join 正常 Drop（无 mem::forget） | unit |
+| AC-E21 | latch provision（r3）：新身份首启 latched Safe → ClearEStop 后 Ready；重复 provision 幂等不覆盖；损坏文件 strict fail-closed 拒启动 | unit + e2e |
+| AC-E22 | preflight systemd 强制（r3）：preflight 失败时直接 `systemctl start` arm-only S0 → unit 不进入 active | 真机 gate（+unit 级依赖声明检查） |
 
 ## 严禁改动（hard boundaries）
 
@@ -415,10 +511,10 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | # | 决策 | 拍板 | 日期 | 备注 |
 |---|---|---|---|---|
 | D1 | Q10 layout 链 (a)+硬约束 + 子拍板 (i) | **方向已拍 (a)+(i)**；r2 条件落字待确认 | 2026-07-13 | P0；§3.5.1 部分落地登记 |
-| D2 | Q11 config (i) arm-only ×2 + 身份全表 | **方向已拍 (i)**；r2 条件落字待确认 | 2026-07-13 | P0；units/交接经 D12/D13 |
-| D3 | Q12 G1 (c) + 发布保证 + 行为矩阵 | **方向已拍 (c)**；r2 条件落字待确认 | 2026-07-13 | P0 |
+| D2 | Q11 config (i) arm-only ×2 + 身份全表 + latch provision（r3） | **方向已拍 (i)**；r2/r3 条件落字待确认 | 2026-07-13 | P0；units/交接经 D12/D13 |
+| D3 | Q12 G1 (c) + 发布保证 + 行为矩阵 + 非成功显式 reset（r3） | **方向已拍 (c)**；r2/r3 条件落字待确认 | 2026-07-13 | P0 |
 | D4 | Q1 双栈双 gateway (a) | 待 | | |
-| D5 | Q2 per-chunk + 等终态 (a) + 双臂成对协议（r2） | 待 | | |
+| D5 | Q2 per-chunk + 等终态 (a) + 双臂成对协议（r2；r3 终态精确集/不对称/partial/双拒/Started.at_ns） | 待 | | |
 | D6 | Q3 gripper 同车 (a) + 插值语义变化登记（r2） | 待 | | |
 | D7 | Q4 adapter = robot-rpc client helper (iii) | 待 | | |
 | D8 | Q5 填当前位（仅臂向量） | 待 | | |
@@ -426,4 +522,4 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | D10 | Q7 验收 bin 为主 (c) + preflight phase 宿主（D13） | 待 | | |
 | D11 | Q8 单位分层：helper rad-native + 原始 12 维 shim（r2） | 待 | | |
 | D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + unit ×6 + runbook；deploy.sh 不进 E（r2） | 待 | | B1 决策 #7 解锁 |
-| D13 | 真机交接 fail-closed preflight（r2 新增） | 待 | | **P0 安全** |
+| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制 + 人工回滚表述） | 待 | | **P0 安全** |
