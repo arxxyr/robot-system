@@ -785,6 +785,21 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | PC3 | P1 | **PD-E3 只有题目无方案**；段 (7) "双栈三真 daemon" 易误读 | PD-E3 按 reviewer 方案落值（见 P.3）；段 (7) 锁 **2×(s0+s1+gateway) = 6 个子进程** |
 | PC4 | P1 | **PD-E5 (b) 与已拍 D1 冲突**：一切 command producer 从 config 派生 layout；mock_s1 现无 `--config` 入口（实测 0 命中） | PD-E5 拍 (a)；段 (4) 明确 **mock_s1 补 `--config` 入口 + 既有 crash-smoke 等调用方迁移**；显式 `--layout-id` 仅一致性断言、冲突 fail-fast |
 
+## Plan round 2 amend 记录（reviewer 复核后）
+
+6 项（QA1-QA3 P0 + QA4-QA6 P1）+ 非阻断同步 ×3，已回修：
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| QA1 | P0 | **段(9) 重新引入 ExecStartPre，违反 Y1 终拍**：退出码 86 只有 guard 作主进程才被 `RestartPreventExitStatus=86` 捕获 | P.2.9 改准：arm S0 unit **无 ExecStartPre**；`ExecStart=xlerobot_deploy guard --arm … --config … --s0-bin <绝对路径> -- <s0 args>`；handoff unit `ExecStart=xlerobot_deploy preflight --scope handoff`；**unit ×7**（撤"六件"笔误） |
+| QA2 | P0 | **D3 终态数据通路未定义**：`ActionTickOutput` 只携 `ActionOutcome`（`action.rs:397` 区块），`CurrentAction` 不存 backend kind / 末点 / final_published（`coordinator.rs:1284`）——idle_hold_target 无法实现 | 拍死机制（reviewer 案）：**`ActionInstance` trait += `fn successful_hold_target(&self) -> Option<Vec<f64>>`（默认 None）**；仅 Scripted 在末点已发布后返 Some(末点)；coordinator 于 `Completed(Success)` 时取用，None/其余终态天然 reset anchor——kind 无需另存 |
+| QA3 | P0 | **PD-E6 推荐前提错误**：`systemd_notify.rs` 用 tracing 非纯 std，上移 robot-core 破坏零依赖边界；**`robot-health` 已存在**且定位"非 RT、robot-rpc 等 daemon 可复用"（`robot-health/Cargo.toml` 注释原文），S0 已依赖、无循环 | **PD-E6 拍 (c)：`robot-health::systemd` 单一实现**（S0 实现迁入，S0 改调；S1/robot-rpc 各加一条 workspace 依赖边）；P.0 改口"**0 新外部 crate**" + 依赖边变更段随跑 `cargo --timings` + `cargo tree` + deny |
+| QA4 | P1 | **gateway probe 把 S1 健康绑进 gateway**：`GetTaskStatus(unknown)` 真 forward S1 RR 并等 ≤5s（`task_handlers.rs:1045` step 9）——S1 重启 → gateway 停喂 watchdog，违反 Wants= 终拍语义 | probe 改 **本地 `GetStateRequest { hardware_id: "" }` → `InvalidArgument`**（经 tonic transport/handler，不依赖 S0/S1/cache 首帧） |
+| QA5 | P1 | **client helper 签名不足**：`load_hardware_layout` 无 Result、`HardwareLayout` 未定义；`raw12_to_rad -> [f64;12]` 表达不了 NaN/range 反转/clamp 计数，且**左右夹爪标定范围不同**；`dual_arm_workflow` "段 6 骨架段 7 填"违反跨段禁半成品 | 签名 typed 化（见 P.2.4/P.2.6）；shim 携**双 gripper range** + `clamp_count` 返 `Result`；**dual_arm_workflow 完整模块原子放段(7)**，段(6) 不留 stub |
+| QA6 | P1 | **三个 e2e case 不可执行**：六进程拓扑是真 S0 无 FakeState 可停；S1 错 layout 会启动期 fail-fast；Scripted 运行期只 Continue/Completed、IK 错误在 start 阶段——failure / 执行期 partial-failure 无生产触发器 | stale case = **SIGSTOP 对应 S0 + 等 freshness 超时**；E2 跨进程 = **独立 raw `JointCommand` 注入器**（test 工具直发错 layout 帧到 S0 command topic）；failure 触发 = **test-only fault backend**（robot-s1 feature 守门，**入 P.0 活清单**；"Reverse Sync 降 AC 验证层级"备选未采） |
+
+非阻断同步 ×3（已落字）：S1 `HardwareSection` 实际在 `coordinator.rs:301`（P.2.2 更正）；`unknown_layout_count` 明确 `AtomicU64::fetch_add(1, Relaxed)`（P.2.3）；schema_lint 用**硬编码 fixture 直接补 (name,id)**，撤"读取段 2 config census"描述（P.2.1）。
+
 ## P.0 工作基线
 
 - Spec 定稿 = `3f49230`（round 12 Approved + 终拍）；CodeMap = `dbbba7b`
@@ -801,7 +816,10 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
   feature 与 `xlerobot-real` guard bin 落地时，**必须同步加入本显式
   release build 清单**（漏加 = RS2 家族回归）。
 - **0 新 wire**（D1-D13 终拍口径：0 新 method / 0 新 schema）；**0 新
-  runtime 依赖预期**（如实施期发现必须新增 → 白名单登记 + reviewer 拍板）。
+  外部 crate**（QA3 改口：工作区**内部**依赖边允许按拍新增——已拍两条 =
+  S1 / robot-rpc → robot-health〔PD-E6(c)〕；依赖边变更段随跑
+  `cargo build --timings` 对照 + `cargo tree` + cargo deny；外部 crate
+  确需新增 → 白名单登记 + reviewer 拍板）。
 - cargo deny：未新增 violation 口径逐段核。
 
 ## P.1 commit 节奏（预估 9 feat + 1 真机段 + 逐段 docs；**PD-E1 已拍：
@@ -822,18 +840,253 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | (10) | **真机完结段**（非 repo commit 为主）：Orin 本地 build → handoff transaction → 双栈起 → 验收 bin 三步（读状态→双臂→双夹爪）→ AC-E12 → D-BI3 退役（disable 旧栈）+ 证据 docs | Orin + docs | E12/E16/E21/E22（真机侧） | (1)-(9) |
 | 逐段 docs | CHANGELOG 登记分布（PD-E4）+ 段间 summary 增量 + 收口 summary/CLAUDE/README | docs | E13 全程 | 随段 |
 
-## P.2 工作流（outline 级；Plan round 展开 per-段 executable 细节）
+## P.2 工作流（函数级，round 1 后展开）
 
-- 每段 = 独立 feat commit（或同段 ≤2 commit），段内 unit/e2e 同 commit；
-  跨段禁半成品（编译绿 + gate 全绿才落段）。
-- **CHANGELOG 登记点清单**（随对应段落地）：JointState.layout_id 值语义
-  变更 + §3.5.1 部分落地边界（段 3）；B1 等价语义解锁〔Idle hold target
-  源〕（段 5）；gripper 阶跃→插值语义变化（段 7）；B1 决策 #7 解锁
-  〔S1 Type=simple→notify〕（段 8）；86 永久保留码 + guard 机制 +
-  RuntimeDirectory 契约（段 9）；feetech 公共 API + robot-tests optional
-  dep 白名单（段 6）。
-- 真机段前置：段 (9) runbook 即真机操作权威；真机证据（journal 摘录 +
-  验收 bin 输出）进收口 docs。
+通则：每段 = 独立 feat commit（同段 ≤2）；段内 unit/e2e 同 commit；跨段禁
+半成品；**CHANGELOG 随语义所在段登记（PD-E4(a)）**：段 3〔JointState.
+layout_id 值语义 + §3.5.1 部分落地边界〕/ 段 5〔B1 等价解锁：Idle hold
+target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单〕/
+段 7〔gripper 阶跃→插值语义变化〕/ 段 8〔B1 决策 #7 解锁〕/ 段 9〔86 永久
+保留 + guard 机制 + RuntimeDirectory 契约〕。
+
+### P.2.1 段(1) layout 计算权威（robot-msg）
+
+- 新 `crates/robot-msg/src/joint_layout.rs`（lib pub）：
+  `pub fn compute_layout_id(robot_id: &str, hardware_id: &str,
+  joints: &[(&str, u32)]) -> u64`——编码严格按 D1.1（`lp("robot-layout-v1")
+  ‖ lp(robot_id) ‖ lp(hardware_id) ‖ u32_le(count) ‖ ∀ lp(name_i) ‖
+  u32_le(id_i)`，`u64::from_le_bytes(blake3[0..8])`）。
+- blake3 依赖位核实：schema_lint（robot-msg bin）已用 blake3——若现为
+  bin-only 依赖则提升为 lib 依赖（同 crate 内移动，白名单登记一句）。
+- `schema_lint.rs:190` 私有 helper 删除、改调新 fn；**lint 调用面适配
+  （round 2 非阻断更正）**：lint 用**硬编码 fixture**——直接给 fixture 补
+  (name,id) 对即可，与段 2 config census 无关。
+- unit（AC-E1，`joint_layout.rs` tests）：`deterministic` /
+  `order_sensitive`（交换两 joint → 不同值）/ `id_sensitive` /
+  `name_boundary_injective`（`("ab",1),("c",2)` vs `("a",1),("bc",2)`
+  不同值——长度前缀单射）/ `domain_version_isolated`（改常量 → 不同值）/
+  `lint_same_source`（lint 路径与直调同值）。
+
+### P.2.2 段(2) config typed + 身份锁 + 全仓 census（PC1 原子）
+
+- **S0** `config_loader.rs` `HardwareSection` += `pub motor_ids: Vec<u8>`
+  （**必填**，无 `#[serde(default)]`——缺失 = parse 错误，走 S0 exit 2）；
+  resolve 校验：`len(motor_ids)==len(joints)` / 两者非空 / joints 名唯一 /
+  motor_ids 唯一（u8 域由类型承担）。**S1** 侧 `HardwareSection`（
+  **`coordinator.rs:301` 本地定义**，round 2 非阻断更正）同步 += 同校验
+  （违者 S1 exit 3——config 内容错误族）。
+- **消费端同 commit 迁移**：`s0_daemon.rs:1163` `build_adapter` 撤
+  `extras["motor_ids"]` `filter_map` → 读 typed `hw.motor_ids`。
+- **身份锁**：S0 `Args::resolve` + S1 `Args::parse` 后：`--robot-id` 与
+  TOML `[robot].id` 同给且不等 → exit 2（沿 gateway 先例文案）。
+- **census 逐一补显式 `motor_ids = [1..=n]`**（PC1 名单）：
+  `tests/common/case_ctx.rs:306` 模板 / `set_enabled_e2e.rs:264` /
+  `estop_e2e.rs:369` / `state_rpc_e2e.rs` builder / `gateway.rs` 测试
+  helper / `crash_restart_smoke.rs`・`freeze_systemd_smoke.rs`・
+  `scripted_backend_smoke.rs`・`pubsub_cleanup_smoke.rs` 动态 builder /
+  configs 12 TOML / S0・S1 config_loader 测试 fixture 全数；**消费定义面
+  核对**（gateway `--config` minimal 解析、`state_pool.rs`、
+  `coordinator.rs`、`factory.rs`——只读 id/joints 的面确认不受必填新字段
+  影响：若共用完整 struct 反序列化则同步）。
+- unit：loader 校验 6 拒路径 + 身份锁 2 路径（S0/S1 各自 error 类型断言；
+  exit 码 bin 层由既有 smoke/e2e 间接锁 + AC-E3 unit 断言 error→码映射
+  函数）。
+
+### P.2.3 段(3) S0 layout 落地 + command gate
+
+- `s0_daemon.rs`：`let authoritative = compute_layout_id(&robot_id,
+  &hw.id, zip(joints, motor_ids))`；`pub_cfg.joint_layout_id =
+  authoritative`（撤 `:858` 占位）；authoritative 传入 ipc_thread cfg。
+- `ipc_thread.rs`：`parse_joint_command` 调用点**之前**加
+  `if fb.layout_id() != cfg.authoritative_layout {
+  metrics.unknown_layout_count.fetch_add(1, Ordering::Relaxed)
+  〔AtomicU64，round 2 非阻断明确〕; 限频 warn（沿仓内 every-N 模式）;
+  continue（不写 LatestCommandSlot）}`。
+- unit：`command_layout_mismatch_dropped_not_written`（构造 mismatch fb
+  bytes → slot 不变 + 计数 +1）/ `command_layout_match_written`；
+  cross-process AC-E2 判据落段(7) e2e case（S1 侧注入错 layout 由
+  workflow harness 做）。
+
+### P.2.4 段(4) S1 layout + mock_s1 `--config` + client 校验
+
+- `s1_daemon.rs`：撤 `:133` 占位默认；layout_id = config 派生（同 fn）；
+  显式 `--layout-id` ≠ 派生 → exit 2（参数冲突族）；help 文本同步。
+- **mock_s1 补 `--config`（PC4）**：必填化（joints 数从 config 派生可与
+  `--joints` 一致性断言）；调用方迁移 census：`crash_restart_smoke.rs` +
+  runbook 档案不改（pre-strict banner）+ 其余 grep `mock_s1` 命中逐一。
+- robot-rpc client：`src/client/layout.rs`（QA5 typed 化）：
+  `pub struct HardwareLayout { pub joints: Vec<String>, pub motor_ids:
+  Vec<u8>, pub layout_id: u64 }` +
+  `pub fn load_hardware_layout(config_path: &Path, hardware_id: &str)
+  -> Result<HardwareLayout, LayoutError>`（`LayoutError` typed：读失败 /
+  parse / 无该 hardware / 校验失败）+
+  `pub fn validate_state_layout(expected: &HardwareLayout,
+  state: &RobotState) -> Result<(), LayoutMismatch>`；task_rpc_e2e /
+  state_rpc_e2e harness stamping 改派生值。
+- unit + e2e：S1 fail-fast case（bin 层走既有 e2e 启动失败断言模式）；
+  AC-E4 = state_rpc_e2e 增 `layout_validate_mismatch_hard_fail` case。
+
+### P.2.5 段(5) G1 语义段（robot-s1）
+
+- 新 `state_cache.rs`：`spawn_state_cache_thread(factory, topic,
+  expected_joints, expected_layout, max_stale_ms) -> StateCacheHandle`
+  （`latest_fresh(now) -> Result<Vec<f64>, StaleOrMissing>`；校验 =
+  joint_count + layout（D1 联动）+ 新鲜度；stop+join+正常 Drop，
+  **禁 mem::forget**〔AC-E20〕；锚定校验逻辑与
+  `read_anchor_from_s0_state` 共享私有 fn 抽取）。
+- `coordinator.rs`：持 `Option<StateCacheHandle>`；`submit` Scripted 路径
+  取 `scripted_start_pose = cache.latest_fresh()`，失败 →
+  `ActionStartError::Rejected`（既有 → FailedPrecondition 映射）**不
+  fallback**；`ActionContext` += `scripted_start_pose: Option<&[f64]>`
+  （HoldPose 仍读 `anchor_bias`，`hold_pose.rs` 0 改）。
+- `scripted.rs`：`:186` initial_pose 改取 `ctx.scripted_start_pose`
+  （Scripted 必需，缺 → start 拒）；**末点发布保证**：
+  `advance_waypoint_and_emit` 末段路径改两拍——先返
+  `Continue{target=末 waypoint}`（`FinalEmitted` phase），下 tick 返
+  `Completed(Success)`；dwell>0 路径在首个 dwell 帧置 `final_published`
+  同一保证。
+- **终态数据通路（QA2 拍死）**：`ActionInstance` trait +=
+  `fn successful_hold_target(&self) -> Option<Vec<f64>> { None }`
+  （默认 None，既有 backend 0 改）；**仅** `ScriptedInstance` 在
+  `final_published == true` 时返 `Some(末 waypoint target)`。
+  coordinator 终态处（`tick_action` Completed 分支）：
+  `outcome == Success` 时取 `instance.successful_hold_target()`——
+  `Some(t)` → `idle_hold_target = t`；`None` 或非 Success →
+  `idle_hold_target = anchor_bias.to_vec()`（**穷尽式单一规则由类型
+  承担**：其他 backend / 终态天然 reset，无需另存 kind）。
+- `run_action_tick_loop`：`InnerState` += `idle_hold_target: Vec<f64>`
+  （init = anchor_bias）；Idle 分支 `build_hold_command` bias 参数 →
+  `idle_hold_target`；Degraded 分支保 anchor_bias 不动。
+- unit：AC-E17（dwell=0 序列：Continue(末位) 后 Completed）/ AC-E8
+  （HoldPose target == anchor_bias 回归）/ 矩阵单机维（每终态 →
+  idle_hold_target 断言）；跨进程 AC-E6/E7/E18 落段(7)。
+
+### P.2.6 段(6) 转换 helper + shim + case 库骨架
+
+- feetech：`raw_to_rad` / `rad_to_raw`（`adapter.rs:92-103`）提升
+  `pub`（挪 `convert.rs` 模块，adapter 内部改调——公式单源，无 feature
+  gate 纯函数）。
+- robot-rpc `src/client/trajectory.rs`：
+  `to_scripted_waypoints(traj: &TrajectoryInput, layout:
+  &HardwareLayout, current: &[f64]) -> Result<Vec<Waypoint>, ConvertError>`
+  （name→index / 时长差分→`segment_duration_ms` / 首点宽容校验〔≈current
+  容差 AC 定值，超差 reject〕/ NaN・Inf・长度 reject / 缺位填 current
+  〔D8〕）。
+- `src/client/baseline_shim.rs`（QA5 typed 化——**左右夹爪标定范围不同，
+  双 range 必填**）：
+  `pub struct Shim12 { pub values: [f64; 12], pub clamp_count: u32 }` +
+  `pub fn raw12_to_rad(raw: &[f64; 12], left_gripper_rad: (f64, f64),
+  right_gripper_rad: (f64, f64)) -> Result<Shim12, ShimError>`
+  （`ShimError` typed：NaN/Inf / range 反转〔lo >= hi〕；[0,100] clamp
+  镜像 dimos 并计入 `clamp_count`；idx 5 用 left、idx 11 用 right）。
+- **`dual_arm_workflow` 不在本段**（QA5：跨段禁半成品——完整模块原子放
+  段(7)，本段 0 stub）。
+- robot-tests `Cargo.toml`：`robot-adapter-feetech = { workspace = true,
+  optional = true }` 挂 `real-hw`（timings + deny 逐段核）。
+- unit：AC-E10 全路径（差分/首点/reject 族/shim 镜像换算 + clamp 计数 +
+  range 反转 fail-fast——反转在标定派生处，段 9 真机侧再锁）。
+
+### P.2.7 段(8) sd_notify 段（S1 + gateway）
+
+- **PD-E6 已拍 (c)（round 2，reviewer 更正前提后拍板）**：
+  **`robot-health::systemd` 单一实现**——S0 `systemd_notify.rs` 实现
+  迁入 robot-health（其定位明文"非 RT、robot-rpc 等 daemon 可复用"，
+  S0 已依赖、无循环；tracing 依赖在 robot-health 合法），S0 改调；
+  S1 与 robot-rpc 各加一条 **workspace 内部依赖边**（P.0 口径 = 0 新
+  外部 crate；本段随跑 `--timings` + `cargo tree` + deny）。(a) robot-
+  core 上移**不选**（systemd_notify 用 tracing 非纯 std，破坏零依赖
+  边界）；(b) 各自副本**不选**（违单源）。
+- S1 observers：tick loop / heartbeat pub / 4 rr server / state cache
+  （段 5）——各 `loop_tick_count`（空闲推进）；gateway observers：6
+  rr_io + estop_pub + state pool 线程 `loop_tick_count` + **tonic
+  loopback probe（QA4 改准）**：本地 `GetState(GetStateRequest {
+  hardware_id: "" })` 期望 **`InvalidArgument`** 计成功——经 tonic
+  transport/handler 但**不依赖 S0/S1/cache 首帧**（原
+  `GetTaskStatus(unknown)` 会真 forward S1 RR 等 ≤5s，S1 重启即拖停
+  gateway watchdog，违反 Wants= 语义，**撤回**）；`READY=1` 全
+  observer ready 后；shutdown `STOPPING=1` 先行。
+- 新 smoke（robot-tests bin + feature，**入 P.0 活清单**——PC2 条款首次
+  触发）：冻结每类 worker → 重启；空闲 ≥ 数个 WatchdogSec 不重启
+  （AC-E19 双向）。
+
+### P.2.8 段(7) 双臂协议 + workflow e2e
+
+- **`src/client/dual_arm_workflow.rs` 完整模块本段原子落**（QA5：段 6
+  0 stub）：类型 + `submit_pair` / `await_pair_terminal` /
+  `cancel_surviving` / 错误域 + 实现——并发 join 提交 / Ack 偏差测量 /
+  终态精确集 / partial-failure `CancelTask` / 不收敛双 `EStop` /
+  `GetTaskStatus` 收敛（超时上限 AC 定值）/ 双拒 FAIL。
+- **failure 触发器（QA6）**：Scripted 运行期只 Continue/Completed、IK
+  错误全在 start 阶段——执行期 failure / partial-failure **无生产触发
+  器**。新增 **test-only fault backend**（robot-s1 feature
+  `test-fault-backend` 守门：`FaultInjectBackend`，N tick 后返
+  `Err(ActionFailure)`；inventory 注册同款链），**feature 入 P.0 活
+  清单**（release build 显式列）；"Reverse Sync 降 AC 验证层级"备选
+  **未采**。
+- **raw `JointCommand` 注入器（QA6）**：S1 错 layout 会启动期
+  fail-fast，AC-E2 跨进程判据改用**独立注入工具**（robot-rpc tests
+  helper：直建 iceoryx2 publisher 向 S0 command topic 发错 layout_id
+  帧）→ 断言 S0 state 不动 + （可观测时）计数上升。
+- `tests/common/dual_ctx.rs`：PD-E3 全套（`dimos_e2e_<pid>_<seq>_{left,
+  right}` / `left_arm`・`right_arm` / `127.0.0.1:0` ×2 断言不同 /
+  GLOBAL_LOCK / RAII 清理）；bring-up = 2×(s0+s1+gateway) 6 子进程
+  （readiness 沿 marker→TCP→RPC probe 三段式 ×2）。
+- `tests/dimos_workflow_e2e.rs` case 集（AC 映射）：
+  `read_state_both_arms_layout_validated`（E4/E11-M1M2）/
+  `chunk_pair_scripted_with_gripper`（E11-M3M4 + E15 终点一致+单调）/
+  `consecutive_chunks_no_pullback_no_jump`（E7）/
+  `post_success_reset_matrix`（E18 序列：Success 后 cancel/failure/IK/
+  HoldPose-cancel 各回启动 anchor；failure 用 `test-fault-backend`）/
+  `start_pose_stale_rejected`（E6；QA6 改准：**SIGSTOP 对应臂真 S0
+  进程 + 等 `max_stale_ms` 超时** → Scripted start 拒
+  FailedPrecondition → SIGCONT 恢复——六进程拓扑无 FakeState 可停）/
+  `pair_partial_failure_paths`（E14 全路径；执行期失败注入 =
+  `test-fault-backend`）/ `nontarget_fill_current`（E9 容差）/
+  `s0_drops_wrong_layout_commands`（E2 跨进程；**raw 注入器**直发错
+  layout 帧，QA6 改准——S1 配错序会启动期 fail-fast 故不可用）。
+- watchdog 语义已由段(8) 落 → 6 子进程按 notify 形态起（e2e 无 systemd，
+  `NOTIFY_SOCKET` 未设 no-op 路径沿 S0 先例）。
+
+### P.2.9 段(9) 部署件段（PD-E2(a) 宿主）
+
+- robot-s0 lib 新模块（`xlerobot-real` feature 域内）：
+  `deploy/guard.rs`（pre-increment 六步 + 86 + `flock(<robot_id>.lock)`
+  + RuntimeDirectory 路径契约 + exec `s0_daemon`〔`std::process::
+  Command::exec`〕）/ `deploy/preflight.rs`（ensure-safe：电机集参数化
+  〔本臂 omitted / handoff 全 17〕+ 无条件写→readback→聚合）/
+  `deploy/provision.rs`（三分支 + 统一 dir-fsync 严格版——复用
+  `estop_latch::save_single_atomic` 私有件抽 pub(crate)）。
+- robot-s0 新 bin `xlerobot_deploy.rs`（`required-features =
+  ["xlerobot-real"]`，**入 P.0 活清单**）：子命令
+  `guard --arm left|right --config … --s0-bin <绝对路径> -- <s0 args>`
+  （六步后 `exec <s0-bin>`）/ `preflight --scope arm|handoff` /
+  `provision`。**unit 接线（QA1 改准——Y1 终拍：guard 必须是主进程，
+  86 才被 `RestartPreventExitStatus=86` 捕获）**：arm S0 unit **无
+  ExecStartPre**，`ExecStart=xlerobot_deploy guard …`（preflight +
+  provision 在 guard 内部两步）；handoff unit
+  `ExecStart=xlerobot_deploy preflight --scope handoff`；S1/gateway
+  unit `ExecStart` 各自 daemon 原样。**unit ×7**（r6 W4 清单口径，
+  撤"六件"笔误）。
+- `scripts/systemd/`：`xlerobot-handoff.service` +
+  `xlerobot-s0-{left,right}-arm.service` + `xlerobot-s1-{left,right}.
+  service` + `xlerobot-gateway-{left,right}.service`（D2/D12/D13 全部
+  指令字面：Requires/After/Conflicts/Wants/RuntimeDirectory 三件套/
+  `RestartPreventExitStatus=86`/60s/5/`WatchdogSec`）+ 新 runbook
+  `scripts/systemd/README_dimos_replace.md`（handoff transaction 权威
+  入口 + D-BI3 步序 + 人工恢复）。
+- unit：AC-E16（mock transport 注入三路径 + 两档电机集）/ AC-E21（三
+  分支 + 损坏方向 ×2 + dir-fsync 序列 + truth table，tempdir）/
+  AC-E22 unit 级（unit 文件指令文本断言）+ guard 计数全路径（NotFound=0
+  / 0..=5 / 越界 / flock 冲突 / pre-increment 崩溃模拟〔kill 子进程〕）。
+
+### P.2.10 段(10) 真机完结段
+
+- Orin 本地 build（`xlerobot-real` + release + 活清单 features）→ 装
+  unit ×7 → `systemctl start` 目标臂（handoff transaction 自动链）→
+  验收 bin 三步（读状态→双臂 chunk→双夹爪）→ AC-E12 判据 + AC-E16/E21/
+  E22 真机侧 → 通过后 D-BI3 退役（disable 旧栈）。
+- 证据（journal 摘录 + 验收 bin 输出 + 拍板核对表）进收口 docs
+  （summary + CHANGELOG 收口条 + CLAUDE 状态块 + handoffs README）。
 
 ## P.3 Plan 拍板项（round 1 全部已拍，2026-07-14）
 
@@ -844,6 +1097,7 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | PD-E3 | workflow e2e 资源分配 | 每 case 派生 **`dimos_e2e_<pid>_<seq>_{left,right}`**；hardware 固定 `left_arm`/`right_arm`；**两端口均由 `127.0.0.1:0` 分配并断言不同**；单 test `GLOBAL_LOCK` + RAII 清理；共享语义模块 = **`robot_rpc::client::dual_arm_workflow`**，子进程 harness 留在 robot-rpc/tests |
 | PD-E4 | CHANGELOG 节奏 | **(a) 随语义所在段登记**（P.2 清单） |
 | PD-E5 | mock_s1 layout 对齐方式 | **(a) config 派生是唯一权威**；mock_s1 补 `--config` 入口 + 既有调用迁移（段 4）；显式 `--layout-id` 仅作一致性断言、冲突 fail-fast |
+| PD-E6 | sd_notify / LivenessObserver 共享位置 | **(c) `robot-health::systemd` 单一实现**（round 2 拍，reviewer 更正 (a) 前提：systemd_notify 用 tracing 非纯 std、上移 robot-core 破坏依赖边界；robot-health 定位可复用且 S0 已依赖无循环）；S1/robot-rpc 各 +1 workspace 依赖边，P.0 口径改"0 新外部 crate" |
 
 ## P.4 Plan-Execute diff 登记（实施期填）
 
