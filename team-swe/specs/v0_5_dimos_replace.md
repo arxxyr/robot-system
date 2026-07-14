@@ -765,10 +765,97 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | D11 | Q8 单位分层：rad-native helper + 原始 12 维 shim | **确认** | 2026-07-14 | raw↔rad 唯一权威 = feetech crate |
 | D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + 运行时 unit ×6 + handoff ×1 + runbook〔handoff transaction 权威入口〕；deploy.sh 不纳入 | **确认** | 2026-07-14 | B1 决策 #7 解锁 |
 | D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分〔infinity 撤回〕；r9 计数硬契约 + dir-fsync 统一最终步骤；r10 RuntimeDirectory 三件套 + 稳定锁文件 + NotFound=0/0..=5/86 永久保留；r11 pre-increment 未成功尝试计数；**r12 掉电边界**〔同 boot 保留、掉电/重启清零重跑 handoff+guard〕） | **确认（含 r2-r12 全部 fail-closed、计数及重启契约）** | 2026-07-14 | **P0 安全** |
+| D14 | SAFE-B1 执行链检测器缺位（deadline/on_timeout/RtOverrun 无生产触发器）——(i) E 增段 5b 最小集 / (ii) 独立候选先 land；未闭合不得退役 | 待 | | **P0**；推荐 (i) |
+| D15 | SAFE-B2 硬件 fail-safe blocking gap（10_verification:103）——kill -9 <500ms 真机证明；(a) 电机侧 watchdog 核实 / (b) 继电器・硬件 watchdog / (c) 等价 | 待 | | **P0**；退役硬前置 |
+| D16 | SAFE-B3 物理急停（<5ms，10_verification:100）+ E 收口性质——(i) E 实现 / (ii) 受监督 demo 定性 + CHANGELOG premise 补登记 | 待 | | **P0**；推荐 (ii) |
+| D17 | SAFE-B4 跨臂 daemon-independent 联锁——(i) 纳入 E / (ii) 明确延期 + 登记不可无人值守 | 待 | | P1；推荐 (ii) 与 D16 联动 |
 
 ---
 
-# Plan（outline draft v1 → round 1 回修）
+# 安全架构横切审查回写（2026-07-14，reviewer SAFE-B1..B4 + 资源裁决）
+
+> 触发：reviewer 横切审查否定"驱动/心跳看门狗已齐"与"资源门闩纯可用性"两个
+> 本人先前表述，并把三项 P0 升为 Spec 级拍板位。**D14-D17 待拍**；D15/D16
+> 直接约束段(10) 退役 gate。
+
+### D14（SAFE-B1，P0）⚠ 待拍：执行链检测器缺位——Reverse Sync
+
+**实证现状**（"看门狗已齐"表述**撤回**）：`JointCommand.deadline_ns` 只进
+buffer、执行路径不检查；`on_timeout` 未进 `JointCommandBuf`、运行时固定
+`CtrlLostHold`（`ipc_tick.rs:461` 仅 hint）；`CmdDeadlineExpired /
+RtOverrun / LimitViolation / WatchdogTimeout` 只有状态机转移
+（`state_machine.rs:645`）无生产事件触发器——RtOverrun 现仅
+`metrics.overruns.fetch_add(1)`（`rt_thread.rs:292`）。**两套语义严格分离
+不混写**：deadline 过期 → `Fault(CmdDeadlineExpired)`（命令失效）；
+heartbeat 超时 → `CONTROL_LOST_*` 子态（链路失效）。
+
+- **(i)（推荐）E 增"安全检测器最小集段"（段 5b，插段 5 与 6 之间）**：
+  ① 执行路径检查 `deadline_ns` 过期 → `Event::CmdDeadlineExpired` →
+  `Fault`；② `on_timeout` 进 `JointCommandBuf` 并运行时生效；③ RtOverrun
+  事件化（`:292` 检测点超阈〔单次超限比例 X% 或连续 N 次，AC 定值〕→
+  `Event::RtOverrun` → `Fault`）。`LimitViolation`（需 per-joint limits
+  配置面）与 `WatchdogTimeout`（进程级已由 systemd 层覆盖）**延后独立
+  候选**。
+- (ii) 四类全部独立候选先 land，E 段(10) 等它。
+- **共同硬约束**：本项未闭合前**不得退役旧栈**（D-BI3 gate 追加条件）。
+- AC 预留：AC-E23（deadline 过期 → Fault，与 heartbeat 路径区分 case）/
+  AC-E24（RtOverrun 注入 → Fault）。
+
+### D15（SAFE-B2，P0）⚠ 待拍：硬件 fail-safe blocking gap（退役硬前置）
+
+**实证**：`docs/10_verification.md:103` 原文 "kill -9 s0 → torque
+disable/zero/brake <500ms = **⏳ blocking gap**"。Feetech 1s 超时 = **主机
+串口读超时**（`registers.rs:43`）**非电机侧 command watchdog**；adapter
+未配置电机侧 watchdog；"失联 hold-last-position 且持续带扭" ≠ 冻结要求的
+torque disable/zero/brake——本人先前"登记为语义澄清"表述**撤回**。
+
+- **锁定**：D-BI3 退役前必须**真机 Enabled 态 `kill -9 s0_daemon`** 并证明
+  **<500ms** 进入规定 fail-safe。实施路径三选：(a) STS3215 电机侧
+  watchdog 能力核实（寄存器表/datasheet = CodeMap 级核实件；若有 →
+  adapter connect 期配置 + 真机实测）/ (b) 外部方案（断扭继电器 / 独立
+  硬件 watchdog 断电——硬件工程项）/ (c) 等价方案。
+- **E 期内不闭合 → E 收口性质按 D16 降级**。AC-E25（kill -9 <500ms 真机
+  实测）。
+
+### D16（SAFE-B3 + 收口性质，P0）⚠ 待拍：物理急停 与 E 终点宣称
+
+**实证**：`10_verification.md:100` physical estop button → latched
+**<5ms = ⏳** 未实现；双 robot_id 后一颗物理按钮需同时覆盖两臂并持久化
+**两侧** latch。
+
+- (i) E 实现物理急停（<5ms 硬件级路径 + 双 topic/双 latch 扇出）——硬件
+  工程项，E scope 大增。
+- **(ii)（推荐）E 收口定性 = "受监督 demo 替换"**：功能基线达成 + 旧栈
+  disable 照做（对比事实：dimos 旧栈同样无电机侧 watchdog、无 <5ms 物理
+  按钮——退役不降低现有安全水位），但**不宣称"生产替换完成"**；SAFE-B2 /
+  SAFE-B3（+ D17(ii) 时的跨臂联锁）构成后续**"无人值守生产化"独立候选的
+  硬前置**；`10_verification` 两行 ⏳ 登记**原样保留不销**。此定性触
+  D-BI0 "完全替换"宣称面 → **CHANGELOG premise 补充登记** + 监督条件明文
+  （真机运行必须有人值守 + 硬件断电手段在手）。
+
+### D17（SAFE-B4，P1）⚠ 待拍：跨臂联动精确化
+
+已有 = client 侧 pair 编排（单侧失败 → cancel 另侧 → 不收敛双 EStop）。
+**真缺口** = client 死亡或一侧 S0 自主 Fault/EStop 时，无
+daemon-independent 跨臂联锁。
+
+- (i) 纳入 E：双侧 state 监测（互订对侧 estop/state 或独立监督进程），
+  一侧 Fault/EStop → 自动双 EStop + 故障注入 e2e（AC-E26）。
+- **(ii)（推荐，与 D16(ii) 一致）明确延期**：受监督 demo 限制 + 登记
+  **"不可用于无人值守双臂运行"**。
+
+### 资源门闩裁决（reviewer 落定，本节照录执行）
+
+- robot-health 现状 = 只采样/日志、无阈值执法（实证 lib 零 threshold/
+  enforce）；**暂不给 S0 加 `CPUQuota`/`MemoryMax` 合理**（错误限额可能
+  主动杀死安全进程）。
+- **E 内做两件**：① 段(10) 真机工作流**记录 S0/S1/gateway 的 CPU / RSS /
+  调度抖动基线**（robot-health 采样 + runbook 采集步 + 收口 docs 附）；
+  ② 段(9) 新 unit 注释**明文记录"资源策略为何暂不设限"**（CPUQuota vs
+  SCHED_FIFO throttling / MemoryMax vs mlockall OOM-kill）。
+- **阈值执法另开 Spec**（S0 与 S1/gateway 分开评估）。本人先前两处表述
+  撤回：不得笼统称"纯可用性优化"；不得以尚未闭合的硬件 fail-safe 作延期
+  依据。
 
 > Spec round 12 Approved + D1-D13 终拍（2026-07-14，`3f49230`）后授权。
 > **outline 级**：定段序 / 每段 scope 与 gate / 拍板项；P.2 细化随 Plan
@@ -800,6 +887,20 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 
 非阻断同步 ×3（已落字）：S1 `HardwareSection` 实际在 `coordinator.rs:301`（P.2.2 更正）；`unknown_layout_count` 明确 `AtomicU64::fetch_add(1, Relaxed)`（P.2.3）；schema_lint 用**硬编码 fixture 直接补 (name,id)**，撤"读取段 2 config census"描述（P.2.1）。
 
+## Plan round 3 amend 记录（reviewer 复核后；SAFE-B1..B4 回写 Spec 主体 D14-D17）
+
+5 项 Plan 阻断（R3-B1..B3 P0 + R3-B4/B5 P1）+ 非阻断 ×2，已回修：
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| R3-B1 | P0 | **FaultInjectBackend 无可执行分发键/构建链**：backend 按 (kind, schema_id) 分发（`mod.rs:162` enabled 列表机制），"N tick 后失败"缺 supported_kinds/schemas、profile、冲突消除、失败变体、release 命令 | P.2.8 锁死：`ActionKind::DwellMs + NO_PAYLOAD_SCHEMA_ID`（既有 wire 键 0 新增）/ test profile 启用 `fault_inject` **显式移除 `mock_dwell`** / `fail_after_ticks = 3` 固定 / 失败 = `Err(ActionFailure::InternalError("fault_inject"))`（实证枚举域）/ feature `test-fault-backend` **永不进 default** / e2e 前显式 `cargo build --release -p robot-s1 --bin s1_daemon --features test-fault-backend`（入 P.0 活清单） |
+| R3-B2 | P0 | **sd_notify 段未达函数级**：robot-health::systemd API 未定（线程名硬编码 `s0_systemd_wd`）；gateway ready 顺序错位（现 ready_tx 在 bind 后 serve 前）；freeze hook/WorkerKind/feature 未定义；release 命令缺 | P.2.7 补齐：API 签名（thread_name 参数化）/ 顺序锁死 **worker ready → bind → tonic serve → probe 首成 → READY=1 → watchdog enforce**、shutdown **STOPPING=1 → 停 probe/watchdog → 原 graceful**、**既有 bind-ready `ready_tx` 原样保留另建 systemd-ready 通路** / `WorkerKind` + `ROBOT_TEST_FREEZE` env + feature `test-freeze-hooks`（default-off，入活清单）/ release 命令两条入 P.0 |
+| R3-B3 | P0 | **state cache spawn 契约缺失败路径**：factory 无类型、创建可失败却不返 Result | P.2.5 锁死：`spawn_state_cache_thread(cfg, clock) -> Result<StateCacheHandle, StateCacheSpawnError>`（typed 四变体）/ node+subscriber 线程内建 / sync ready 握手（超时 → 回滚 stop+join）/ **cache ready 前 daemon 不得打 ready marker** / Handle stop/join/Drop 职责精确（模板 `StatePool::spawn`，**禁 mem::forget**） |
+| R3-B4 | P1 | **wrong-layout e2e 矛盾与竞态**：P.2.3 残留"S1 侧注入"与 P.2.8 注入器冲突；六进程下正常 S1 持续发合法命令 + latest() 塌缩 → 假 PASS；"计数可观测时断言"非确定性 | P.2.3 残句删；case 锁**独立 mini 场景**：不起对应 S1（s0 + FakeHeartbeat 维持 Enabled + raw 注入器）→ baseline target → 注入 ≥3 帧错 layout 明显不同 target → 断言 state/output 不变；`unknown_layout_count +1` **仅 unit 锁**；模糊口径删除 |
+| R3-B5 | P1 | **部署段缺函数签名**：safety-critical 启动链不能留 Execute 自行设计 | P.2.9 补齐 `GuardConfig`/`run_guard`/count-lock API/`PreflightScope`/`DeployTransport` trait/`ensure_safe`/`provision_latch`/s0_bin 绝对路径校验/`exec` 失败路径/聚合报告结构（全签名见 P.2.9） |
+
+非阻断 ×2（已落字）：P.1 段(6) "case 库骨架"措辞改具体 helper 名（dual_arm_workflow 全在段 7）；AC-E1 `domain_version_isolated`（"改常量"不可执行）→ **golden vector**（固定输入 → 固定 u64 快照）。
+
 ## P.0 工作基线
 
 - Spec 定稿 = `3f49230`（round 12 Approved + 终拍）；CodeMap = `dbbba7b`
@@ -814,7 +915,14 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
   bins；PC2 补 `clear-estop-e2e`）→ workspace test（1185 基线 0 退化 =
   AC-E13 每段随跑）→ 相关 smoke。**活清单条款（PC2）**：后续新增验收
   feature 与 `xlerobot-real` guard bin 落地时，**必须同步加入本显式
-  release build 清单**（漏加 = RS2 家族回归）。
+  release build 清单**（漏加 = RS2 家族回归）。**round 3 首批入清单**
+  （各自段落地即生效）：
+  `cargo build --release -p robot-s1 --bin s1_daemon --features
+  test-fault-backend`（段 7 e2e 前）/ `cargo build --release -p robot-s1
+  --features test-freeze-hooks` + `cargo build --release -p robot-rpc
+  --features test-freeze-hooks`（段 8 smoke 前）/ `cargo build --release
+  -p robot-s0 --features xlerobot-real`（段 9/10，含 `xlerobot_deploy`
+  bin）/ 新 smoke feature（段 8 落地时具名补）。
 - **0 新 wire**（D1-D13 终拍口径：0 新 method / 0 新 schema）；**0 新
   外部 crate**（QA3 改口：工作区**内部**依赖边允许按拍新增——已拍两条 =
   S1 / robot-rpc → robot-health〔PD-E6(c)〕；依赖边变更段随跑
@@ -833,11 +941,11 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | (3) | **S0 layout 落地**：撤 `0xCAFE…` 占位（config 派生）+ command 侧 layout gate（丢弃不写 slot + `unknown_layout_count` + 限频 warn） | robot-s0 | E2 | (1)(2) |
 | (4) | **S1 layout 落地 + client 校验**：S1 config 派生 / `--layout-id` 仅一致性断言、冲突 fail-fast（PD-E5(a)）/ **mock_s1 补 `--config` 入口 + crash-smoke 等既有调用方迁移**（PC4）；robot-rpc client 模块骨架 + `GetState.layout_id` 校验 | robot-s1（含 mock_s1）+ robot-rpc client + 调用方 | E3/E4 | (3) |
 | (5) | **G1 语义段**：S1 常驻 state cache（stop+join+Drop）+ `scripted_start_pose`（拒绝语义）+ 末点发布保证（先 Continue 后 Completed）+ `idle_hold_target` 穷尽规则与行为矩阵 + HoldPose 回归 | robot-s1 | E6/E7/E8/E17/E18/E20 | (4) |
-| (6) | **转换 helper + shim + case 库**：JointTrajectory 形→ScriptedPayload（name→index / 时长差分 / 首点宽容校验）+ rad-native 校验 + 原始 12 维 shim（feetech 公共换算 API + robot-tests optional dep）+ 共享 case 库骨架 | robot-rpc client + robot-adapter-feetech（pub 纯函数）+ robot-tests | E10 | (1)(4) |
+| (6) | **转换 helper + shim**（round 3 非阻断改准：撤"case 库骨架"——`dual_arm_workflow` 全在段 7）：`client::trajectory` + `client::baseline_shim` 两 helper（name→index / 时长差分 / 首点宽容校验 / rad-native 校验 / 原始 12 维 shim）+ feetech 公共换算 API + robot-tests optional dep | robot-rpc client + robot-adapter-feetech（pub 纯函数）+ robot-tests | E10 | (1)(4) |
 | (7) | **双臂协议 + workflow e2e**：并发提交 / 双终态 / partial / cancel / 双 EStop / GetTaskStatus 收敛编排 + **2×(s0+s1+gateway) = 6 子进程** e2e（PC3 口径；新 config 对 mock 路径全通） | robot-rpc tests | E5/E9/E11/E14/E15 | (2)-(6)(8) |
 | (8) | **sd_notify 段**：S1 + gateway liveness-aware notify/watchdog（loop_tick_count / tonic loopback probe / READY / STOPPING）+ smoke | robot-s1 + robot-rpc + robot-tests | E19 | (6) 后、(7) 前（PD-E1：先落最终 daemon liveness，旗舰 e2e 覆盖它） |
 | (9) | **部署件段**：guard bin（pre-increment 六步 / 86 / 稳定锁 / RuntimeDirectory 契约）+ preflight/handoff 入口（17 电机 ensure-safe，mock transport unit）+ latch provision + unit ×7 + 新 runbook | **robot-s0 `xlerobot-real` bin + robot-s0 lib 共享实现（PD-E2(a) 已拍）**+ scripts/systemd | E16/E21/E22（unit 侧） | (7) |
-| (10) | **真机完结段**（非 repo commit 为主）：Orin 本地 build → handoff transaction → 双栈起 → 验收 bin 三步（读状态→双臂→双夹爪）→ AC-E12 → D-BI3 退役（disable 旧栈）+ 证据 docs | Orin + docs | E12/E16/E21/E22（真机侧） | (1)-(9) |
+| (10) | **真机完结段**（非 repo commit 为主）：Orin 本地 build → handoff transaction → 双栈起 → 验收 bin 三步（读状态→双臂→双夹爪）→ AC-E12 → **资源基线采集**（CPU/RSS/调度抖动，资源裁决）→ D-BI3 退役 + 证据 docs。**退役 gate 追加条件（安全横切）：D14 检测器闭合 + D15 kill -9 <500ms 证明；收口宣称按 D16 定性** | Orin + docs | E12/E16/E21/E22（真机侧）+ E23-E25（视 D14/D15 拍） | (1)-(9) + **D14/D15/D16 拍定** |
 | 逐段 docs | CHANGELOG 登记分布（PD-E4）+ 段间 summary 增量 + 收口 summary/CLAUDE/README | docs | E13 全程 | 随段 |
 
 ## P.2 工作流（函数级，round 1 后展开）
@@ -864,8 +972,9 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
 - unit（AC-E1，`joint_layout.rs` tests）：`deterministic` /
   `order_sensitive`（交换两 joint → 不同值）/ `id_sensitive` /
   `name_boundary_injective`（`("ab",1),("c",2)` vs `("a",1),("bc",2)`
-  不同值——长度前缀单射）/ `domain_version_isolated`（改常量 → 不同值）/
-  `lint_same_source`（lint 路径与直调同值）。
+  不同值——长度前缀单射）/ `golden_vector`（round 3 非阻断改准——"改常量"
+  不可执行：**固定输入 → 固定 u64 快照**锁编码稳定性，域/版本变更必然
+  打破快照）/ `lint_same_source`（lint 路径与直调同值）。
 
 ### P.2.2 段(2) config typed + 身份锁 + 全仓 census（PC1 原子）
 
@@ -903,9 +1012,10 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
   〔AtomicU64，round 2 非阻断明确〕; 限频 warn（沿仓内 every-N 模式）;
   continue（不写 LatestCommandSlot）}`。
 - unit：`command_layout_mismatch_dropped_not_written`（构造 mismatch fb
-  bytes → slot 不变 + 计数 +1）/ `command_layout_match_written`；
-  cross-process AC-E2 判据落段(7) e2e case（S1 侧注入错 layout 由
-  workflow harness 做）。
+  bytes → slot 不变 + **`unknown_layout_count` 恰 +1**——计数断言**仅在
+  本 unit**，R3-B4）/ `command_layout_match_written`；cross-process
+  AC-E2 = 段(7) 的**独立 mini 场景**（raw 注入器，见 P.2.8——R3-B4 删
+  "S1 侧注入"残句）。
 
 ### P.2.4 段(4) S1 layout + mock_s1 `--config` + client 校验
 
@@ -928,12 +1038,28 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
 
 ### P.2.5 段(5) G1 语义段（robot-s1）
 
-- 新 `state_cache.rs`：`spawn_state_cache_thread(factory, topic,
-  expected_joints, expected_layout, max_stale_ms) -> StateCacheHandle`
-  （`latest_fresh(now) -> Result<Vec<f64>, StaleOrMissing>`；校验 =
-  joint_count + layout（D1 联动）+ 新鲜度；stop+join+正常 Drop，
-  **禁 mem::forget**〔AC-E20〕；锚定校验逻辑与
-  `read_anchor_from_s0_state` 共享私有 fn 抽取）。
+- 新 `state_cache.rs`（R3-B3 契约锁死，模板 = `StatePool::spawn` 的
+  `io::Result` 先例，**禁 mem::forget**）：
+  ```rust
+  pub struct StateCacheConfig { pub topic: String, pub expected_joints:
+      usize, pub expected_layout: u64, pub max_stale_ms: u64,
+      pub poll_interval: Duration }
+  pub enum StateCacheSpawnError { NodeCreate(TransportError),
+      SubscriberOpen(TransportError), ThreadSpawn(std::io::Error),
+      ReadyTimeout }
+  pub fn spawn_state_cache_thread<C: RobotClock + 'static>(
+      cfg: StateCacheConfig, clock: Arc<C>,
+  ) -> Result<StateCacheHandle, StateCacheSpawnError>
+  ```
+  ——node + subscriber **线程内创建**（iceoryx2 `!Send`）；`sync_channel`
+  **同步 ready 握手**（线程内建成后回 Ok；建失败回 Err；握手超时 →
+  `ReadyTimeout`，两失败路径均 **stop + join 回滚**后返 Err）；
+  `StateCacheHandle`：`latest_fresh(now) -> Result<Vec<f64>,
+  StaleOrMissing>`（校验 = joint_count + layout〔D1 联动〕+ 新鲜度）/
+  `stop()`（Release flag）/ `join()`（一次性，消费 handle）/ `Drop` =
+  stop + join best-effort。**s1_daemon 在 cache spawn 成功之后才打
+  ready marker**（失败 = 启动失败 fail-fast，不降级）。锚定校验逻辑与
+  `read_anchor_from_s0_state` 共享私有 fn 抽取。〔AC-E20〕
 - `coordinator.rs`：持 `Option<StateCacheHandle>`；`submit` Scripted 路径
   取 `scripted_start_pose = cache.latest_fresh()`，失败 →
   `ActionStartError::Rejected`（既有 → FailedPrecondition 映射）**不
@@ -961,7 +1087,7 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
   （HoldPose target == anchor_bias 回归）/ 矩阵单机维（每终态 →
   idle_hold_target 断言）；跨进程 AC-E6/E7/E18 落段(7)。
 
-### P.2.6 段(6) 转换 helper + shim + case 库骨架
+### P.2.6 段(6) 转换 helper + shim（round 3 非阻断：撤"case 库骨架"）
 
 - feetech：`raw_to_rad` / `rad_to_raw`（`adapter.rs:92-103`）提升
   `pub`（挪 `convert.rs` 模块，adapter 内部改调——公式单源，无 feature
@@ -996,6 +1122,34 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
   外部 crate；本段随跑 `--timings` + `cargo tree` + deny）。(a) robot-
   core 上移**不选**（systemd_notify 用 tracing 非纯 std，破坏零依赖
   边界）；(b) 各自副本**不选**（违单源）。
+- **robot-health::systemd 公共 API（R3-B2 签名锁死；线程名撤
+  `"s0_systemd_wd"` 硬编码改参数）**：
+  ```rust
+  pub struct WatchdogConfig { pub thread_name: String,
+      pub startup_grace_ping: bool /* 沿 S0 首周期无条件喂 */ }
+  pub struct LivenessObserver { pub label: &'static str,
+      pub tick: Box<dyn Fn() -> u64 + Send> }
+  pub fn notify_ready();        // READY=1（NOTIFY_SOCKET 未设 = no-op）
+  pub fn notify_stopping();     // STOPPING=1
+  pub fn spawn_watchdog(observers: Vec<LivenessObserver>,
+      cfg: WatchdogConfig) -> Option<WatchdogHandle>  // None=非 systemd
+  impl WatchdogHandle { pub fn stop(self) /* 停喂+join */ }
+  ```
+  S0 迁移传 `thread_name = "s0_systemd_wd"` 原值——**行为 bit 等价**；
+  S1 = `"s1_systemd_wd"`、gateway = `"gw_systemd_wd"`。
+- **gateway ready 顺序锁死（R3-B2）**：workers ready → bind →
+  **tonic serve 启动** → loopback probe **首次成功** → `notify_ready()`
+  （systemd READY=1）→ watchdog enforce；shutdown =
+  `notify_stopping()` → 停 probe/watchdog → 既有 graceful 链原样。
+  **既有测试用 bind-ready `ready_tx` 原样保留**（bind 后即回，测试语义
+  0 改）；systemd-ready 为**独立通路**，不复用不移动 ready_tx。
+- **test-only freeze hooks（R3-B2，AC-E19 冻结注入面）**：
+  `pub enum WorkerKind`（S1：`Tick / HeartbeatPub / RrServer(u8) /
+  StateCache`；gateway：`RrIo(u8) / EstopPub / StatePool / TonicProbe`）；
+  控制入口 = env **`ROBOT_TEST_FREEZE=<kind-str>`**（进程启动时读取，
+  命中的 worker 在 loop 顶 park）；全部包在 feature
+  **`test-freeze-hooks`**（default-off，**永不进 default features**；
+  release 命令已入 P.0 活清单）。
 - S1 observers：tick loop / heartbeat pub / 4 rr server / state cache
   （段 5）——各 `loop_tick_count`（空闲推进）；gateway observers：6
   rr_io + estop_pub + state pool 线程 `loop_tick_count` + **tonic
@@ -1016,17 +1170,32 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
   `cancel_surviving` / 错误域 + 实现——并发 join 提交 / Ack 偏差测量 /
   终态精确集 / partial-failure `CancelTask` / 不收敛双 `EStop` /
   `GetTaskStatus` 收敛（超时上限 AC 定值）/ 双拒 FAIL。
-- **failure 触发器（QA6）**：Scripted 运行期只 Continue/Completed、IK
-  错误全在 start 阶段——执行期 failure / partial-failure **无生产触发
-  器**。新增 **test-only fault backend**（robot-s1 feature
-  `test-fault-backend` 守门：`FaultInjectBackend`，N tick 后返
-  `Err(ActionFailure)`；inventory 注册同款链），**feature 入 P.0 活
-  清单**（release build 显式列）；"Reverse Sync 降 AC 验证层级"备选
-  **未采**。
-- **raw `JointCommand` 注入器（QA6）**：S1 错 layout 会启动期
-  fail-fast，AC-E2 跨进程判据改用**独立注入工具**（robot-rpc tests
-  helper：直建 iceoryx2 publisher 向 S0 command topic 发错 layout_id
-  帧）→ 断言 S0 state 不动 + （可观测时）计数上升。
+- **failure 触发器（QA6 + R3-B1 锁死）**：Scripted 运行期只
+  Continue/Completed、IK 错误全在 start 阶段——执行期 failure /
+  partial-failure **无生产触发器**。新增 **`FaultInjectBackend`**
+  （robot-s1 feature `test-fault-backend` 守门，**永不进 default
+  features**；inventory 注册同款链）：
+  - **分发键 = 既有 wire 键 0 新增**：`name = "fault_inject"`、
+    `supported_kinds = [ActionKind::DwellMs]`、`supported_schemas =
+    [NO_PAYLOAD_SCHEMA_ID]`；
+  - **冲突消除**：e2e config `[s1]` **test profile 启用 `fault_inject`
+    并显式移除 `mock_dwell`**（DwellMs 分发唯一化——dispatch 按
+    enabled 列表 × (kind, schema)，`mod.rs:162`）；
+  - **固定行为**：`fail_after_ticks = 3`；失败 =
+    `Err(ActionFailure::InternalError("fault_inject"))`（实证枚举域
+    `action.rs:442-453` 内既有变体，0 新 variant）；
+  - **release-first**：e2e 前显式 `cargo build --release -p robot-s1
+    --bin s1_daemon --features test-fault-backend`（P.0 活清单）。
+  "Reverse Sync 降 AC 验证层级"备选**未采**。
+- **raw `JointCommand` 注入器（QA6 + R3-B4 场景锁死）**：S1 错 layout
+  会启动期 fail-fast，AC-E2 跨进程判据 = **独立 mini 场景**（不进六
+  进程拓扑——正常 S1 持续发合法命令会经 latest() 塌缩造成假 PASS）：
+  **不起对应 S1**，拓扑 = s0 + FakeHeartbeatPublisher（维持 Enabled）
+  + raw 注入器（robot-rpc tests helper 直建 iceoryx2 publisher 向 S0
+  command topic 发帧）；步骤 = 读 baseline target/position → 注入
+  **≥3 帧错 layout、target = baseline + 明显偏移** → settle → 断言
+  **state/输出不变**。`unknown_layout_count +1` 断言**仅在段(3) unit**
+  （"计数可观测时断言"模糊口径**删除**）。
 - `tests/common/dual_ctx.rs`：PD-E3 全套（`dimos_e2e_<pid>_<seq>_{left,
   right}` / `left_arm`・`right_arm` / `127.0.0.1:0` ×2 断言不同 /
   GLOBAL_LOCK / RAII 清理）；bring-up = 2×(s0+s1+gateway) 6 子进程
@@ -1049,13 +1218,47 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
 
 ### P.2.9 段(9) 部署件段（PD-E2(a) 宿主）
 
-- robot-s0 lib 新模块（`xlerobot-real` feature 域内）：
-  `deploy/guard.rs`（pre-increment 六步 + 86 + `flock(<robot_id>.lock)`
-  + RuntimeDirectory 路径契约 + exec `s0_daemon`〔`std::process::
-  Command::exec`〕）/ `deploy/preflight.rs`（ensure-safe：电机集参数化
-  〔本臂 omitted / handoff 全 17〕+ 无条件写→readback→聚合）/
-  `deploy/provision.rs`（三分支 + 统一 dir-fsync 严格版——复用
-  `estop_latch::save_single_atomic` 私有件抽 pub(crate)）。
+- robot-s0 lib 新模块（`xlerobot-real` feature 域内；**R3-B5 签名锁死
+  ——safety-critical 启动链不留 Execute 自行设计**）：
+  ```rust
+  // deploy/guard.rs
+  pub struct GuardConfig { pub arm: Side, pub config_path: PathBuf,
+      pub s0_bin: PathBuf /* 必须 is_absolute() + exists()，违者退 86 */,
+      pub runtime_dir: PathBuf /* RuntimeDirectory 注入 */,
+      pub robot_id: String }
+  pub enum GuardExit { ExecFailed /* exec 返回即失败：ENOENT/EACCES
+      配置级，不可自动恢复 → 86 */, BudgetExhausted, CounterIo,
+      LockConflict, PreStepFailed(u8 /* 普通非零码 */) }
+  pub fn run_guard(cfg: &GuardConfig) -> !  // 成功 = exec 不返回；
+      // 失败按 GuardExit → process::exit(86 或普通码) 映射表
+  // 计数/锁 API（deploy/counter.rs）
+  pub fn read_count(path: &Path) -> Result<u8, CountError>
+      // NotFound = Ok(0)；严格解析 0..=5；其余 → CountError
+  pub fn write_count_atomic(path: &Path, n: u8) -> Result<(), CountError>
+      // tmp + rename，只动 .count
+  pub fn acquire_instance_lock(lock_path: &Path)
+      -> Result<InstanceLock, LockError>  // flock 稳定 inode；
+      // InstanceLock: exec 前显式 close/CLOEXEC
+  // deploy/preflight.rs
+  pub enum PreflightScope { Arm(Side), Handoff }
+  pub trait DeployTransport { fn write_register(&mut self, motor: u8,
+      reg: &'static str, value: i32) -> Result<(), TransportErr>;
+      fn read_register(&mut self, motor: u8, reg: &'static str)
+      -> Result<i32, TransportErr>; }  // feetech 真实现 + mock 测试实现
+  pub struct MotorFailure { pub motor: u8, pub reg: &'static str,
+      pub op: OpKind, pub err: String }
+  pub struct EnsureSafeReport { pub failures: Vec<MotorFailure> }
+  pub fn ensure_safe(scope: PreflightScope,
+      t: &mut dyn DeployTransport) -> Result<(), EnsureSafeReport>
+      // 无条件写全集（bus2 先零速后断扭）→ 逐项 readback →
+      // 单项失败继续 → 末尾聚合
+  // deploy/provision.rs
+  pub enum ProvisionOutcome { WroteBoth, RepairedMissing, Untouched }
+  pub fn provision_latch(latch_path: &Path)
+      -> Result<ProvisionOutcome, ProvisionError>
+      // 三分支 + 统一最终步骤 parent-dir open+fsync 严格版；
+      // 复用 estop_latch::save_single_atomic（私有件抽 pub(crate)）
+  ```
 - robot-s0 新 bin `xlerobot_deploy.rs`（`required-features =
   ["xlerobot-real"]`，**入 P.0 活清单**）：子命令
   `guard --arm left|right --config … --s0-bin <绝对路径> -- <s0 args>`
