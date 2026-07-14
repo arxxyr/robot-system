@@ -1,4 +1,4 @@
-# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 6）
+# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 7）
 
 > CodeMap：[`team-swe/codemap/v0_5_dimos_replace.md`](../codemap/v0_5_dimos_replace.md)
 > （round 4 **Approved**，amend 记录 round 1-3 = B1-B10 全闭）。Spec round 1
@@ -9,8 +9,9 @@
 > 逐条回修；round 3 复核（T4/T6 闭环）再出 **6 项（U1-U6，P0 ×3 + P1 ×3）**，
 > round 4 逐条回修；round 4 复核（U3/U5/U6 闭环）再出 **4 项（V1 P0 +
 > V2-V4 P1）**，round 5 逐条回修；round 5 复核（V3/V4 闭环）再出 **4 项
-> （W1 P0 + W2-W4 P1）**，本 round 6 逐条回修（均见"Spec round 记录"）。
-> **0 代码改动 / 不开 Plan / 不实施**。
+> （W1 P0 + W2-W4 P1）**，round 6 逐条回修；round 6 复核（W1/W2/W4 闭环）
+> 再出 **2 项（X1/X2 P1）+ 非阻断 1**，本 round 7 逐条回修（均见"Spec
+> round 记录"）。**0 代码改动 / 不开 Plan / 不实施**。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -69,6 +70,15 @@
 | W2 | P1 | **provision "单份缺失"未限定现存副本合法**：primary 损坏 + backup 缺失同属"单份缺失"但无可复制合法值 | 分支收紧：唯一现存副本**严格解析为 0/1** 才原子写 + fsync 缺失副本；现存损坏/不可读/值非法 → provision **失败且不得创建另一份**；只写缺失文件、**不经 `save_estop_latch` 重写现存副本**；AC-E21 增两个"损坏 + 对侧缺失"方向 |
 | W3 | P1 | **"失败保持 inactive"与 systemd 语义冲突**：`Restart=` 同样作用于 ExecStartPre 失败 → 自动重试而非稳定 inactive | 沿 S0 既有策略拍定：`RestartSec=2s` + `StartLimitIntervalSec=60s` + `StartLimitBurst=5`；失败期间**绝不执行 ExecStart**、有限重试后进入 **failed**；AC-E21/E22 覆盖瞬态恢复 + 持续失败限流 |
 | W4 | P1 | **部署清单仍写 unit ×6**：新增 handoff 后三处清单 + 拍板表未更新；runbook 仍写独立"stop 旧栈 → preflight" | 统一为**运行时 unit ×6 + `xlerobot-handoff.service` ×1（共 7）**；runbook 以 **handoff transaction 为旧栈停止与首次全总线安全交接的权威入口** |
+
+### round 6 → round 7（reviewer 复核：W1/W2/W4 闭环；X1/X2 P1 + 非阻断 1）
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| X1 | P1 | **`StartLimitIntervalSec=60s` 保证不了"五次后稳定停止"**：Feetech 单包默认超时 1s（`registers.rs:43` + `bus.rs:199` 逐电机），右臂 preflight 最坏 ~12 次串口操作 ≈ 单次尝试 ~12s，加 `RestartSec=2s` 后第 6 次启动可能滚出 60s 窗口 → 永远达不到 start-limit、无限重试 | 拍定推荐案：**`StartLimitIntervalSec=infinity` + `StartLimitBurst=5`**——第 5 次失败后下一次启动被拒，人工修复后 `systemctl reset-failed`；**与既有 S0 unit 60s 值偏离 → CHANGELOG 登记**；备选"给 preflight 可证明总时限"未采（`TimeoutStartSec` 中途杀 helper 破坏聚合语义） |
+| X2 | P1 | **两处生效中的旧 AC 钩子**（非历史记录）：D2 钩子仍"unit inactive → 重启后补写"（缺自动重试/start-limit/损坏单副本路径）；D13 钩子仍 r4 四场景（缺 17 电机场景与重试终态） | 两处节内钩子改为**引用 AC 草案总表对应行为唯一判据**（不再复写，防双源漂移；总表已含全部 r5-r7 修订） |
+
+非阻断（已落字）：W2 "原子写 + fsync" 细则明确 = **tmp 写入 → file fsync → rename → parent-dir fsync**（与既有 latch 持久化契约一致，新建缺失副本后掉电不丢目录项）。
 
 ## What
 
@@ -203,8 +213,10 @@ CHANGELOG）**：§3.5.1 的 JointLayout 1 Hz 广播 / RR 请求 / 阈值→状�
   1. **provision 规则（r4 收窄 + r5 V2 partial-failure 闭环）三分支**：
      - primary 与 backup **双缺失** → 写入 **`1\n`（latched）双份**；
      - **单份缺失（r6 W2 收紧：以合法性为前提，非仅存在性）**：唯一现存
-       副本**严格解析为 0/1** → **只写缺失文件**（原子写 + fsync，值 =
-       现存副本值，**不经 `save_estop_latch` 重写现存副本**）；现存副本
+       副本**严格解析为 0/1** → **只写缺失文件**（值 = 现存副本值，**不经
+       `save_estop_latch` 重写现存副本**；原子写细则〔r7 非阻断落字〕=
+       **tmp 写入 → file fsync → rename → parent-dir fsync**，与既有
+       latch 持久化契约一致——新建缺失副本后掉电不丢目录项）；现存副本
        **损坏 / 不可读 / 值非法 → provision 直接失败且不得创建另一份**
        （交给限流 → failed，人工介入）。（依据：既有双写允许"primary
        成功、backup 失败并返 Err"〔`estop_latch.rs:183` 区块文档〕，r4
@@ -231,11 +243,9 @@ CHANGELOG）**：§3.5.1 的 JointLayout 1 Hz 广播 / RR 请求 / 阈值→状�
      `ExecStart` S0 之前，systemd 事务内——r4 U1，详 D13）。
 
 **AC 钩子**：AC-E5（双新 config 载入 + typed 校验 + 派生 layout_id + mock
-双栈 e2e 全通）/ AC-E21（r4 对齐 + r5 三分支：新身份首启 latched Safe →
-ClearEStop → 仍 Safe → SetEnabled(true) → Ready 全链；provision 三分支
-各一 case〔双缺失写入 / 单份缺失补写既存值 / 双份存在不动〕；**backup 写
-失败 → provision Err → unit inactive → 重启后补写成双份 → 启动**；truth
-table 四行各一 case）。
+双栈 e2e 全通）/ AC-E21——**判据以 §AC 草案总表 AC-E21 行为唯一权威**
+（r7 X2：本节不再复写细则，防双源漂移；总表行已含 provision 三分支
+〔含 r6 损坏单副本失败方向 ×2〕+ r7 start-limit 重试终态 + truth table）。
 
 ### D3（Q12，P0）⚠ **方向已拍 (c)**（2026-07-13，条件生效）：G1 = `scripted_start_pose` + `idle_hold_target`，HoldPose 0 改
 
@@ -535,16 +545,24 @@ head ID 7,8；右 = bus2 wheels ID 7,8,9）：
   bus2，任何时刻不碰另一臂串口）→
   `ExecStartPre=② 本臂 latch provision`（D2 三分支规则）→
   `ExecStart=s0_daemon`。同 unit 事务内顺序执行；**失败/重试语义
-  （r6 W3 修正——`Restart=` 同样作用于 ExecStartPre 失败，"稳定 inactive"
-  表述撤回）**：沿 S0 unit 既有策略 `Restart=on-failure` +
-  **`RestartSec=2s` + `StartLimitIntervalSec=60s` + `StartLimitBurst=5`**——
-  ExecStartPre 失败 → 自动重试（每次重试重跑两步 Pre，**失败期间绝不执行
-  ExecStart**）→ 60s 内 5 次仍失败 → **进入 failed（start-limit-hit）**
-  稳定停止；watchdog 重启同样重跑两步 Pre（handoff unit 因
-  RemainAfterExit 不重跑；restart 窗口本臂只守本 bus——另一 bus 的安全由
-  handoff 首次切换建立〔全 17 电机〕，之后由其自身 S0 生命周期接管，
-  **单臂运行期间另一臂电机保持 handoff 断扭态**，r5 "归另一臂管辖"表述
-  更正）。
+  （r6 W3 + r7 X1 修正）**：`Restart=on-failure` + `RestartSec=2s` +
+  **`StartLimitIntervalSec=infinity` + `StartLimitBurst=5`**——
+  ExecStartPre 失败 → 自动重试（每次重跑两步 Pre，**失败期间绝不执行
+  ExecStart**）→ **第 5 次失败后下一次启动被拒（start-limit-hit →
+  failed），人工修复后须 `systemctl reset-failed` 方可再启**。
+  r6 "60s 内 5 次"**撤回**（X1）：Feetech 单包默认超时 1s
+  （`registers.rs:43` `DEFAULT_TIMEOUT_MS=1000` + `bus.rs:199` 逐电机
+  读写），右臂 preflight 最坏 ~12 次串口操作 ≈ 单次尝试 ~12s，叠加
+  `RestartSec=2s` 后第 6 次启动可能滚出 60s 窗口 → **永远达不到
+  start-limit、无限重试**；`infinity` 使计数窗口不滚动、5 次上限确定性
+  生效。**与既有 S0 unit `StartLimitIntervalSec=60s` 值偏离 → CHANGELOG
+  登记**（实现期随 unit 落地）；备选"给 preflight 定义可证明总时限使
+  5 次必落 60s"**未采**（`TimeoutStartSec` 中途杀 helper 破坏"全部电机
+  继续处理、末尾聚合"语义）。watchdog 重启同样重跑两步 Pre（handoff
+  unit 因 RemainAfterExit 不重跑；restart 窗口本臂只守本 bus——另一 bus
+  的安全由 handoff 首次切换建立〔全 17 电机〕，之后由其自身 S0 生命周期
+  接管，**单臂运行期间另一臂电机保持 handoff 断扭态**，r5 "归另一臂管辖"
+  表述更正）。
 - **旧栈 Conflicts 兜底**：arm-only S0 unit 保留对 dimos / 旧 full unit
   的 `Conflicts=` + `After=` 声明（防绕过 handoff 的边缘路径，与 handoff
   unit 双保险）。
@@ -565,13 +583,9 @@ head ID 7,8；右 = bus2 wheels ID 7,8,9）：
 写寄存器——ExecStartPre 窗口本臂串口无人占用：旧栈已停〔Conflicts+After〕、
 本臂 S0 未起）+ **每臂 ExecStartPre 强制** + runbook 硬步序（三层同向）。
 
-**AC 钩子**：AC-E16（r4 语义：无条件安全写全部 omitted motors〔bus2 先零速
-后断扭〕+ 单项失败继续 + 末尾聚合 FAIL 禁启；写失败 / readback 失败 /
-readback 值不安全三路径均不起新栈；mock transport unit + 真机 gate 实测）/
-AC-E22（r4 四场景：**同时启动**双臂〔各自 preflight 只碰本 bus 无串口冲突〕
-/ **错峰启动**第二臂〔不碰第一臂已占串口〕/ **直接 `systemctl start`**
-〔ExecStartPre 失败 → unit 不进 active〕/ **watchdog 自动重启**
-〔ExecStartPre 重跑仍 fail-closed〕）。
+**AC 钩子**：AC-E16 与 AC-E22——**判据以 §AC 草案总表对应行为唯一权威**
+（r7 X2：本节不再复写细则，防双源漂移；总表行已含 r6 handoff 全 17 电机
+精确 ID 集场景与 r7 start-limit 重试终态）。
 
 ---
 
@@ -599,8 +613,8 @@ AC-E22（r4 四场景：**同时启动**双臂〔各自 preflight 只碰本 bus 
 | AC-E18 | D3 穷尽式规则 + **序列测试**（r3+r4：先 Success 一次再分别 cancel/failure/IK/**HoldPose cancel**，逐一断言 reset 回启动 anchor；不得只测 boot 初态） | e2e |
 | AC-E19 | S1/gateway sd_notify watchdog 双向（r3）：**长时间零请求不重启**（空闲 ≥ 数个 WatchdogSec 周期）+ **冻结每类 worker 均触发重启** | smoke |
 | AC-E20 | state cache 线程 stop+join 正常 Drop（无 mem::forget） | unit |
-| AC-E21 | latch provision（r5 三分支 + r6 合法性收紧）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；分支 case = 双缺失写入 / 单份缺失且现存合法补写 / **primary 损坏+backup 缺失 → provision 失败不创建**（+ 反方向 backup 损坏+primary 缺失）/ 双份存在不动；backup 写失败重启补写路径；**瞬态失败自动重试恢复 + 持续失败 60s×5 进 failed**；loader truth table 四行各一 case | unit + e2e |
-| AC-E22 | 启动拓扑强制（r4 四场景 + r5/r6 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（Pre 失败 → 限流重试期不执行 ExecStart → 5 次后 failed）/ watchdog 自动重启（Pre 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9，"或启动被拒"歧义删除） | 真机 gate（+unit 级依赖声明检查） |
+| AC-E21 | latch provision（r5 三分支 + r6 合法性收紧 + r7 start-limit）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；分支 case = 双缺失写入（tmp→fsync→rename→dir-fsync）/ 单份缺失且现存合法补写 / **primary 损坏+backup 缺失 → provision 失败不创建**（+ 反方向）/ 双份存在不动；backup 写失败 → 自动重试补写成双份；**瞬态失败重试恢复 + 持续失败第 5 次后 start-limit 拒启（infinity 窗口），`reset-failed` 后可再启** | unit + e2e |
+| AC-E22 | 启动拓扑强制（r4 四场景 + r5-r7 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（Pre 失败 → 重试期不执行 ExecStart → **第 5 次后 start-limit 拒启〔infinity 窗口〕，`reset-failed` 后可再启**）/ watchdog 自动重启（Pre 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9） | 真机 gate（+unit 级依赖声明检查） |
 
 ## 严禁改动（hard boundaries）
 
@@ -644,4 +658,4 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | D10 | Q7 验收 bin 为主 (c) + preflight phase 宿主（D13） | 待 | | |
 | D11 | Q8 单位分层：helper rad-native + 原始 12 维 shim（r2） | 待 | | |
 | D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + 运行时 unit ×6 + handoff ×1 + runbook〔handoff transaction 权威入口，r6〕；deploy.sh 不进 E | 待 | | B1 决策 #7 解锁 |
-| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 每臂 ExecStartPre + 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死 + 限流语义） | 待 | | **P0 安全** |
+| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 每臂 ExecStartPre + 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 start-limit=infinity×5 + reset-failed〔60s 值偏离走 CHANGELOG〕） | 待 | | **P0 安全** |
