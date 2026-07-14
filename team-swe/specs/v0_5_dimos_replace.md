@@ -1,4 +1,4 @@
-# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 11）
+# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 12）
 
 > CodeMap：[`team-swe/codemap/v0_5_dimos_replace.md`](../codemap/v0_5_dimos_replace.md)
 > （round 4 **Approved**，amend 记录 round 1-3 = B1-B10 全闭）。Spec round 1
@@ -112,6 +112,12 @@
 | # | 级别 | 阻断 | 修订 |
 |---|---|---|---|
 | AB1 | P1 | **失败后才递增可被崩溃绕过**：guard 在慢 preflight 中 panic / SIGKILL / 异常退出时计数不变——~12s/次 + `RestartSec=2s` 仍滚出 60s/5 窗口无限重试，**X1 问题重新暴露** | 改**"未成功 guard 尝试计数"（pre-increment）六步**：持锁读 n〔n==5 即退 86〕→ **执行任何 preflight/provision 前原子写 n+1** → 两步成功后清零再 exec → 正常失败且值==5 退 86、不足 5 普通非零退出 → **中途崩溃保留已递增值下次继续累计**；AC-E22 增"递增后、完成前连续崩溃"注入 |
+
+### round 11 → round 12（reviewer 复核：AB1 六步/分支/注入闭合；1 项 P1 措辞冲突）
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| AB2 | P1 | **掉电语义与 /run 契约冲突**：AB1 步骤 ⑤ 写"掉电内保留已递增值"，与 AA1 "reboot 因 /run tmpfs 清零"矛盾——计数不具备掉电持久性 | 步骤 ⑤ 更正为 reviewer 句式：**同一 boot 内进程终止保留已递增值；掉电/重启按 RuntimeDirectory 契约清零，并重新执行 handoff 与 guard** |
 
 ## What
 
@@ -646,8 +652,11 @@ head ID 7,8；右 = bus2 wheels ID 7,8,9）：
        s0_daemon`；
        ④ 正常失败：当前值 == 5 → 退 86；不足 5 → 普通非零码退出（走
        预算 1 的 `RestartSec=2s` 重试）；
-       ⑤ **中途崩溃（panic / SIGKILL / 掉电内）保留已递增值**，下一次
-       启动从 ① 继续累计——崩溃与正常失败同额计入预算；
+       ⑤ **同一 boot 内的进程终止（panic / SIGKILL / 异常退出）保留已
+       递增值**，下一次启动从 ① 继续累计——与正常失败同额计入预算；
+       **掉电/重启按 RuntimeDirectory 契约清零（AA1，/run tmpfs），并
+       重新执行 handoff 与 guard**——计数**不**具备掉电持久性（r12 更正
+       r11 "掉电内保留"与 AA1 的冲突表述）；
        ⑥ 计数语义 = **未成功尝试数**（非"已完成失败数"）。
   3. **人工恢复路径**：修复硬件 → 清计数文件 → `systemctl start`
      （runbook 硬步序；`reset-failed` 仅在同时触发预算 1 时另需）。
