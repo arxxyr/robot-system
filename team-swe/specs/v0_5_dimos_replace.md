@@ -765,3 +765,72 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | D11 | Q8 单位分层：rad-native helper + 原始 12 维 shim | **确认** | 2026-07-14 | raw↔rad 唯一权威 = feetech crate |
 | D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + 运行时 unit ×6 + handoff ×1 + runbook〔handoff transaction 权威入口〕；deploy.sh 不纳入 | **确认** | 2026-07-14 | B1 决策 #7 解锁 |
 | D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分〔infinity 撤回〕；r9 计数硬契约 + dir-fsync 统一最终步骤；r10 RuntimeDirectory 三件套 + 稳定锁文件 + NotFound=0/0..=5/86 永久保留；r11 pre-increment 未成功尝试计数；**r12 掉电边界**〔同 boot 保留、掉电/重启清零重跑 handoff+guard〕） | **确认（含 r2-r12 全部 fail-closed、计数及重启契约）** | 2026-07-14 | **P0 安全** |
+
+---
+
+# Plan（outline draft v1）
+
+> Spec round 12 Approved + D1-D13 终拍（2026-07-14，`3f49230`）后授权。
+> **outline 级**：定段序 / 每段 scope 与 gate / 拍板项；P.2 细化随 Plan
+> round 展开。**0 代码改动直至 Plan ACK**。
+
+## P.0 工作基线
+
+- Spec 定稿 = `3f49230`（round 12 Approved + 终拍）；CodeMap = `dbbba7b`
+  （round 4 Approved）。
+- toolchain：`channel = "nightly"` **浮动最新、不锁定**（2026-07-13 政策）；
+  新 lint fix-forward。
+- 每 commit 前 `cargo fmt --all` + `cargo clippy --workspace --all-targets
+  -- -D warnings` 零警告；**Quality Gate 顺序硬性**（RS2 全链教训）=
+  `cargo build --release --workspace` → **`cargo build --release -p
+  robot-tests --features "pubsub-cleanup-smoke,scripted-backend-smoke,
+  ik-backend-smoke,robotctl-smoke"`**（required-features bins）→ workspace
+  test（1185 基线 0 退化 = AC-E13 每段随跑）→ 相关 smoke。
+- **0 新 wire**（D1-D13 终拍口径：0 新 method / 0 新 schema）；**0 新
+  runtime 依赖预期**（如实施期发现必须新增 → 白名单登记 + reviewer 拍板）。
+- cargo deny：未新增 violation 口径逐段核。
+
+## P.1 commit 节奏（预估 9 feat + 1 真机段 + 逐段 docs；硬序 ↓ 可并 ∥）
+
+| 段 | 内容 | 主要落点 | AC | 依赖 |
+|---|---|---|---|---|
+| (1) | **layout 计算权威**：`compute_layout_id` 规范编码 pub fn + schema_lint 迁移 | robot-msg | E1 | — |
+| (2) | **config typed + 身份锁**：motor_ids typed 全套校验 + `[robot].id==--robot-id`（S0/S1）+ exit 码口径 + e2e 模板与 6 config 补显式 motor_ids | config loader + s0/s1 args + case_ctx + configs | E3 部分 | — |
+| (3) | **S0 layout 落地**：撤 `0xCAFE…` 占位（config 派生）+ command 侧 layout gate（丢弃不写 slot + `unknown_layout_count` + 限频 warn） | robot-s0 | E2 | (1)(2) |
+| (4) | **S1 layout 落地 + client 校验**：S1 config 派生 / `--layout-id` fail-fast / mock_s1 对齐；robot-rpc client 模块骨架 + `GetState.layout_id` 校验 | robot-s1 + robot-rpc client | E3/E4 | (1)(2) ∥(3) |
+| (5) | **G1 语义段**：S1 常驻 state cache（stop+join+Drop）+ `scripted_start_pose`（拒绝语义）+ 末点发布保证（先 Continue 后 Completed）+ `idle_hold_target` 穷尽规则与行为矩阵 + HoldPose 回归 | robot-s1 | E6/E7/E8/E17/E18/E20 | (4) |
+| (6) | **转换 helper + shim + case 库**：JointTrajectory 形→ScriptedPayload（name→index / 时长差分 / 首点宽容校验）+ rad-native 校验 + 原始 12 维 shim（feetech 公共换算 API + robot-tests optional dep）+ 共享 case 库骨架 | robot-rpc client + robot-adapter-feetech（pub 纯函数）+ robot-tests | E10 | (1)(4) |
+| (7) | **双臂协议 + workflow e2e**：并发提交 / 双终态 / partial / cancel / 双 EStop / GetTaskStatus 收敛编排 + 双栈三真 daemon e2e（新 config 对 mock 路径全通） | robot-rpc tests | E5/E9/E11/E14/E15 | (2)-(6) |
+| (8) | **sd_notify 段**：S1 + gateway liveness-aware notify/watchdog（loop_tick_count / tonic loopback probe / READY / STOPPING）+ smoke | robot-s1 + robot-rpc + robot-tests | E19 | ∥（5）后任意 |
+| (9) | **部署件段**：guard bin（pre-increment 六步 / 86 / 稳定锁 / RuntimeDirectory 契约）+ preflight/handoff 入口（17 电机 ensure-safe，mock transport unit）+ latch provision + unit ×7 + 新 runbook | 宿主待拍（PD-E2）+ scripts/systemd | E16/E21/E22（unit 侧） | (2) |
+| (10) | **真机完结段**（非 repo commit 为主）：Orin 本地 build → handoff transaction → 双栈起 → 验收 bin 三步（读状态→双臂→双夹爪）→ AC-E12 → D-BI3 退役（disable 旧栈）+ 证据 docs | Orin + docs | E12/E16/E21/E22（真机侧） | (1)-(9) |
+| 逐段 docs | CHANGELOG 登记分布（PD-E4）+ 段间 summary 增量 + 收口 summary/CLAUDE/README | docs | E13 全程 | 随段 |
+
+## P.2 工作流（outline 级；Plan round 展开 per-段 executable 细节）
+
+- 每段 = 独立 feat commit（或同段 ≤2 commit），段内 unit/e2e 同 commit；
+  跨段禁半成品（编译绿 + gate 全绿才落段）。
+- **CHANGELOG 登记点清单**（随对应段落地）：JointState.layout_id 值语义
+  变更 + §3.5.1 部分落地边界（段 3）；B1 等价语义解锁〔Idle hold target
+  源〕（段 5）；gripper 阶跃→插值语义变化（段 7）；B1 决策 #7 解锁
+  〔S1 Type=simple→notify〕（段 8）；86 永久保留码 + guard 机制 +
+  RuntimeDirectory 契约（段 9）；feetech 公共 API + robot-tests optional
+  dep 白名单（段 6）。
+- 真机段前置：段 (9) runbook 即真机操作权威；真机证据（journal 摘录 +
+  验收 bin 输出）进收口 docs。
+
+## P.3 Plan 拍板项（round 1 待 reviewer）
+
+| # | 项 | 待拍 |
+|---|---|---|
+| PD-E1 | 段序与并行度 | 上表依赖列：(3)∥(4)、(8) 可与 (6)(7) 并行——是否强制全串行 |
+| PD-E2 | guard / preflight / handoff 可执行入口宿主 | (a) robot-s0 第二 bin（feature `xlerobot-real`，生产 ExecStart 指向 robot-s0 产物，语义最正）/ (b) robot-tests bin（与验收 bin 同 crate 复用最短，但生产 unit 指向测试 crate 产物） |
+| PD-E3 | workflow e2e 资源分配 | 双栈 robot_id/port 派生规则 + 共享 case 库模块路径命名 |
+| PD-E4 | CHANGELOG 节奏 | (a) 随段登记（P.2 清单）/ (b) 收口统一一条 |
+| PD-E5 | mock_s1 layout 对齐方式 | (a) mock_s1 同走 config 派生 / (b) 保留显式 CLI（e2e 模板注入派生值） |
+
+## P.4 Plan-Execute diff 登记（实施期填）
+
+| # | 段 | 类型 | 描述 | 落点 |
+|---|---|---|---|---|
+| （待实施期） | | | | |
