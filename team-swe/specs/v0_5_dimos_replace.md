@@ -1,4 +1,4 @@
-# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 8）
+# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 9）
 
 > CodeMap：[`team-swe/codemap/v0_5_dimos_replace.md`](../codemap/v0_5_dimos_replace.md)
 > （round 4 **Approved**，amend 记录 round 1-3 = B1-B10 全闭）。Spec round 1
@@ -12,8 +12,9 @@
 > （W1 P0 + W2-W4 P1）**，round 6 逐条回修；round 6 复核（W1/W2/W4 闭环）
 > 再出 **2 项（X1/X2 P1）+ 非阻断 1**，round 7 逐条回修；round 7 复核
 > （X2 闭环）再出 **2 项（Y1 P0 + Y2 P1）**——含 reviewer 对自身 r7
-> infinity 推荐的更正——本 round 8 逐条回修（均见"Spec round 记录"）。
-> **0 代码改动 / 不开 Plan / 不实施**。
+> infinity 推荐的更正——round 8 逐条回修；round 8 复核（Y1/Y2 方向确认）
+> 再出 **2 项（Z1/Z2 P1，无新 P0）**，本 round 9 逐条回修（均见"Spec
+> round 记录"）。**0 代码改动 / 不开 Plan / 不实施**。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -88,6 +89,13 @@
 |---|---|---|---|
 | Y1 | P0 | **`StartLimitIntervalSec=infinity` 累计所有启动而非只累计失败**（systemd 定义 = 限制启动尝试**总数**；reviewer 本机实测：初次成功 + 4 次成功 restart 后第 6 次启动即 start-limit-hit）——若干次正常 watchdog 恢复后 S0 **永久拒绝下一次恢复，违反 §6.7 #2**。r7 推荐系 reviewer 审查错误，本轮更正 | **预算拆分**：① 运行期崩溃/watchdog 风暴 = unit 级 `60s/5`（**维持既有 S0 值，r7 偏离登记撤销**）；② preflight/provision 连败预算 = **ExecStart guard wrapper 自管独立连续失败计数**（成功清零 + exec s0_daemon；第 5 次失败退**专用退出码** + `RestartPreventExitStatus=` 阻止自动重启——该指令只作用于主进程，故 preflight/provision 从 ExecStartPre **迁入 ExecStart guard**）；AC 四锁 |
 | Y2 | P1 | **parent-dir fsync 宣称强于现有实现**：`estop_latch.rs:333-335` 目录 open + `sync_all()` 均 best-effort 忽略错误——r7 "掉电不丢目录项"保证无依据 | 拍定 **provision 专用严格语义**：目录 open / fsync 任一步失败 → 返回错误、禁止启动 S0（强于运行期路径并明示对比；运行期 latch 写 **0 改**） |
+
+### round 8 → round 9（reviewer 复核：Y1/Y2 方向确认；Z1/Z2 P1，无新 P0）
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| Z1 | P1 | **guard 计数状态未达可执行级**：缺实例隔离路径、owner/mode、跨 restart 保留方式、I/O 异常 fail-closed、原子更新与单实例锁、专用退出码具体值（不得与 s0_daemon 0/1/2 重叠，`s0_daemon.rs:36-41`）；AC "6 次成功"未注明与独立 60s/5 的关系 | 计数硬契约六条落字（路径 `/run/robot-system/preflight/<robot_id>.count` / guard 自建目录不用 `RuntimeDirectory=` / 0750/0640 owner=unit User / 读损坏、更新失败、清零失败全部退停止码 / tmp+rename 原子 + flock 单实例 / **专用码拍 86**）；AC-E22 六次成功注明只断言 guard 计数、须避开独立 60s/5 正常限流 |
+| Z2 | P1 | **严格 dir-fsync 可被重试绕过**：write+rename 成功 → dir-fsync 失败 → 重试命中"双份存在不动"→ 未确认的目录持久化被绕过 | **统一最终步骤**：严格 parent-dir open+fsync 移到三分支收敛后必经（含"双份均存在"路径）；AC-E21 增"首次 dir-fsync 注入失败 → 第二次重试仍必须执行并成功 dir-fsync 后才 exec"序列测试 |
 
 ## What
 
@@ -235,7 +243,12 @@ CHANGELOG）**：§3.5.1 的 JointLayout 1 Hz 广播 / RR 请求 / 阈值→状�
        成功、backup 失败并返 Err"〔`estop_latch.rs:183` 区块文档〕，r4
        "任一份存在即跳过"会单副本起跑；而 r5 按存在性补写在"primary 损坏
        + backup 缺失"时无合法值可复制——本分支两面都闭）；
-     - 双份均存在 → **不动任何文件**，交给 loader 既有语义（下表）。
+     - 双份均存在 → **文件内容不动**，交给 loader 既有语义（下表）。
+     **统一最终步骤（r9 Z2——所有分支收敛后必经，含"双份均存在"路径）**：
+     **parent-dir open + fsync（严格：任一步失败 → provision 返回错误、
+     禁止 exec）**。闭掉绕过序列："file fsync + rename 成功 → dir-fsync
+     失败 → 重试命中双份存在 → 上一次未确认的目录持久化被跳过"；目录
+     fsync 幂等、primary/backup 同 parent 一次即可。
   2. **loader truth table（r4，对齐 `estop_latch.rs:95` 现行为，0 改）**：
 
      | primary | backup | 结果 |
@@ -569,15 +582,28 @@ head ID 7,8；右 = bus2 wheels ID 7,8,9）：
      `StartLimitIntervalSec=60s` + `StartLimitBurst=5`（**维持既有 S0
      值，r7 偏离登记撤销**）+ `Restart=on-failure` + `RestartSec=2s`。
   2. **preflight/provision 连败预算** = guard 自管**独立连续失败计数**
-     （`/run` 下计数文件，boot 清零；与墙钟无关——X1 定量依据仍成立：
-     单次 pre 尝试最坏 ~12s〔Feetech 单包 1s 超时 ×~12 次串口操作，
-     `registers.rs:43` + `bus.rs:199`〕滚出 60s 窗口，unit 级限流抓不住
-     慢失败循环）：pre 步失败 → 计数 +1 → 普通非零码退出（走预算 1 的
-     RestartSec=2s 重试）；**计数达 5 → 退专用退出码，unit
-     `RestartPreventExitStatus=<该码>` 阻止继续自动重启**（该指令**只
-     作用于主进程**——guard 即主进程，这正是从 ExecStartPre 迁入
-     ExecStart guard 的原因，不能在 Pre 上补一行解决）；**任一次成功 →
-     计数清零**。
+     （与墙钟无关——X1 定量依据仍成立：单次 pre 尝试最坏 ~12s〔Feetech
+     单包 1s 超时 ×~12 次串口操作，`registers.rs:43` + `bus.rs:199`〕
+     滚出 60s 窗口，unit 级限流抓不住慢失败循环）。**计数状态硬契约
+     （r9 Z1 六条）**：
+     - **路径按实例隔离**：`/run/robot-system/preflight/<robot_id>.count`
+       （双臂各自预算，互不消耗）；
+     - **目录由 guard 自建**（`mkdir -p`；**不用 `RuntimeDirectory=`**，
+       避免 stop/restart 清理语义纠缠）；dir `0750` / file `0640`，
+       owner = unit `User`；/run tmpfs → **boot 天然清零**，自动 restart
+       与手工 stop/start 之间**均保留**；
+     - **I/O 异常全部 fail-closed**：计数读损坏 / 更新失败 / 成功清零
+       失败 → 一律**退停止码 86**（**禁止默认归零、禁止继续 exec**）；
+     - **原子更新 + 单实例锁**：更新 = tmp 写 + rename；对 count 文件持
+       `flock`（获取失败 = 同实例并发 → 退 86）；
+     - **专用退出码拍死 = 86**（预算耗尽与计数状态异常共用）：不与
+       s0_daemon 既有 `0/1/2` 重叠（`s0_daemon.rs:36-41`），也避开 S1
+       侧 `3/4/5`；unit 配 `RestartPreventExitStatus=86`（该指令**只
+       作用于主进程**——guard 即主进程，这正是从 ExecStartPre 迁入
+       ExecStart guard 的原因）；
+     - **语义流**：pre 步失败 → 计数 +1 → 普通非零码退出（走预算 1 的
+       `RestartSec=2s` 重试）；**计数达 5 → 退 86 停止自动重启**；
+       **任一次成功 → 计数清零（清零失败同样退 86，不 exec）**。
   3. **人工恢复路径**：修复硬件 → 清计数文件 → `systemctl start`
      （runbook 硬步序；`reset-failed` 仅在同时触发预算 1 时另需）。
   备选"给 preflight 定义可证明总时限"仍**未采**（`TimeoutStartSec` 中途
@@ -637,8 +663,8 @@ s0_daemon 尚未 exec）+ **每臂 ExecStart guard 强制** + runbook 硬步序
 | AC-E18 | D3 穷尽式规则 + **序列测试**（r3+r4：先 Success 一次再分别 cancel/failure/IK/**HoldPose cancel**，逐一断言 reset 回启动 anchor；不得只测 boot 初态） | e2e |
 | AC-E19 | S1/gateway sd_notify watchdog 双向（r3）：**长时间零请求不重启**（空闲 ≥ 数个 WatchdogSec 周期）+ **冻结每类 worker 均触发重启** | smoke |
 | AC-E20 | state cache 线程 stop+join 正常 Drop（无 mem::forget） | unit |
-| AC-E21 | latch provision（r5 三分支 + r6 合法性收紧 + r8）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；分支 case = 双缺失写入（tmp→fsync→rename→**dir-fsync 严格失败路径含目录 open/fsync 失败 → 拒启**，r8 Y2）/ 单份缺失且现存合法补写 / **primary 损坏+backup 缺失 → provision 失败不创建**（+ 反方向）/ 双份存在不动；backup 写失败 → 自动重试补写成双份；连败预算联动见 AC-E22 | unit + e2e |
-| AC-E22 | 启动拓扑强制（r4 四场景 + r5-r8 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（guard pre 失败 → 重试期绝不 exec s0_daemon）/ watchdog 自动重启（guard 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9）/ **guard 预算四锁（r8 Y1）**：①连续 5 次 pre 失败 → 专用退出码 + `RestartPreventExitStatus` 停止自动重启 ②一次成功清零连败计数 ③连续 6 次成功启动/restart **不**触发该预算 ④运行期快速崩溃仍由 unit 级 60s/5 限流 | 真机 gate（+unit 级依赖声明检查） |
+| AC-E21 | latch provision（r5 三分支 + r6 合法性收紧 + r8/r9）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；分支 case = 双缺失写入（tmp→fsync→rename）/ 单份缺失且现存合法补写 / **primary 损坏+backup 缺失 → provision 失败不创建**（+ 反方向）/ 双份存在内容不动；**dir-fsync 统一最终步骤序列测试（r9 Z2）：首次注入 dir-fsync 失败 → 第二次重试命中"双份存在"仍必须执行并成功 dir-fsync 后才 exec**（严格失败路径含目录 open/fsync → 拒启）；backup 写失败 → 自动重试补写成双份；连败预算联动见 AC-E22 | unit + e2e |
+| AC-E22 | 启动拓扑强制（r4 四场景 + r5-r8 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（guard pre 失败 → 重试期绝不 exec s0_daemon）/ watchdog 自动重启（guard 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9）/ **guard 预算四锁（r8 Y1 + r9 Z1 判据收窄）**：①连续 5 次 pre 失败 → 退 86 + `RestartPreventExitStatus=86` 停止自动重启 ②一次成功清零连败计数 ③连续 6 次成功启动/restart 不触发该预算——**只断言 guard 计数保持清零**，执行上相邻启动须留足间隔/分组避开独立 unit 级 60s/5（快速六连被 60s/5 拦是预算 ① 正确行为非缺陷，**不得写成同一条无间隔 systemd e2e**）④运行期快速崩溃仍由 unit 级 60s/5 限流；计数 I/O 异常（读损坏/更新失败/清零失败）与 flock 冲突 → 均退 86 不 exec | 真机 gate（+unit 级依赖声明检查） |
 
 ## 严禁改动（hard boundaries）
 
@@ -682,4 +708,4 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | D10 | Q7 验收 bin 为主 (c) + preflight phase 宿主（D13） | 待 | | |
 | D11 | Q8 单位分层：helper rad-native + 原始 12 维 shim（r2） | 待 | | |
 | D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + 运行时 unit ×6 + handoff ×1 + runbook〔handoff transaction 权威入口，r6〕；deploy.sh 不进 E | 待 | | B1 决策 #7 解锁 |
-| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分 = unit 60s/5〔维持既有值〕+ ExecStart guard 独立连败计数 + RestartPreventExitStatus〔infinity 撤回〕） | 待 | | **P0 安全** |
+| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分〔infinity 撤回〕；r9 计数硬契约六条〔退出码 86〕+ dir-fsync 统一最终步骤） | 待 | | **P0 安全** |
