@@ -1,4 +1,4 @@
-# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 9）
+# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 10）
 
 > CodeMap：[`team-swe/codemap/v0_5_dimos_replace.md`](../codemap/v0_5_dimos_replace.md)
 > （round 4 **Approved**，amend 记录 round 1-3 = B1-B10 全闭）。Spec round 1
@@ -13,8 +13,9 @@
 > 再出 **2 项（X1/X2 P1）+ 非阻断 1**，round 7 逐条回修；round 7 复核
 > （X2 闭环）再出 **2 项（Y1 P0 + Y2 P1）**——含 reviewer 对自身 r7
 > infinity 推荐的更正——round 8 逐条回修；round 8 复核（Y1/Y2 方向确认）
-> 再出 **2 项（Z1/Z2 P1，无新 P0）**，本 round 9 逐条回修（均见"Spec
-> round 记录"）。**0 代码改动 / 不开 Plan / 不实施**。
+> 再出 **2 项（Z1/Z2 P1）**，round 9 逐条回修；round 9 复核（Z2 闭环）再出
+> **3 项（AA1 P0 + AA2/AA3 P1）**，本 round 10 逐条回修（均见"Spec round
+> 记录"）。**0 代码改动 / 不开 Plan / 不实施**。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -96,6 +97,14 @@
 |---|---|---|---|
 | Z1 | P1 | **guard 计数状态未达可执行级**：缺实例隔离路径、owner/mode、跨 restart 保留方式、I/O 异常 fail-closed、原子更新与单实例锁、专用退出码具体值（不得与 s0_daemon 0/1/2 重叠，`s0_daemon.rs:36-41`）；AC "6 次成功"未注明与独立 60s/5 的关系 | 计数硬契约六条落字（路径 `/run/robot-system/preflight/<robot_id>.count` / guard 自建目录不用 `RuntimeDirectory=` / 0750/0640 owner=unit User / 读损坏、更新失败、清零失败全部退停止码 / tmp+rename 原子 + flock 单实例 / **专用码拍 86**）；AC-E22 六次成功注明只断言 guard 计数、须避开独立 60s/5 正常限流 |
 | Z2 | P1 | **严格 dir-fsync 可被重试绕过**：write+rename 成功 → dir-fsync 失败 → 重试命中"双份存在不动"→ 未确认的目录持久化被绕过 | **统一最终步骤**：严格 parent-dir open+fsync 移到三分支收敛后必经（含"双份均存在"路径）；AC-E21 增"首次 dir-fsync 注入失败 → 第二次重试仍必须执行并成功 dir-fsync 后才 exec"序列测试 |
+
+### round 9 → round 10（reviewer 复核：Z2 闭环；AA1 P0 + AA2/AA3 P1）
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| AA1 | P0 | **guard 无权创建 /run 一级目录**：S0 unit 以普通 User 运行（`xlerobot-s0-bus1.service:50` / `bus2:110`），/run 为 root:root 0755——`mkdir -p` 首启即退 86 | r9 "guard 自建、不用 RuntimeDirectory="**撤回**；改 systemd 原生 **`RuntimeDirectory=robot-system/preflight` + `RuntimeDirectoryMode=0750` + `RuntimeDirectoryPreserve=yes`**（restart 与 stop/start 均保留、reboot tmpfs 清零）；AC 覆盖首次创建/restart 保留/stop-start 保留/reboot 清零四态 |
+| AA2 | P1 | **flock(count)+rename(count) 不成锁**：flock 绑旧 inode，rename 后竞争进程对新 inode 拿锁同时成功（reviewer 本机最小实测复现） | 改**稳定锁文件** `<robot_id>.lock`（永不 rename/删除）：flock(lock) → 持锁读/跑/原子更新仅 count → **exec 前显式关锁 fd 或 CLOEXEC**；只 rename count 绝不替换 lock inode |
+| AA3 | P1 | **计数初态与 86 永久保留缺失**：/run 开机必然无文件；`RestartPreventExitStatus=86` 在 exec 后同样作用于 s0_daemon | **NotFound = 0**（正常初态）；canonical 范围 **0..=5**，其余读取错误/非法格式/越界 → 退 86；读到 count==5 → 直接停止态；**86 声明为 s0_daemon 退出码契约永久保留码** + AC-E3 回归锁（防未来 daemon 误用 86 失去 watchdog 重启） |
 
 ## What
 
@@ -587,20 +596,38 @@ head ID 7,8；右 = bus2 wheels ID 7,8,9）：
      滚出 60s 窗口，unit 级限流抓不住慢失败循环）。**计数状态硬契约
      （r9 Z1 六条）**：
      - **路径按实例隔离**：`/run/robot-system/preflight/<robot_id>.count`
-       （双臂各自预算，互不消耗）；
-     - **目录由 guard 自建**（`mkdir -p`；**不用 `RuntimeDirectory=`**，
-       避免 stop/restart 清理语义纠缠）；dir `0750` / file `0640`，
-       owner = unit `User`；/run tmpfs → **boot 天然清零**，自动 restart
-       与手工 stop/start 之间**均保留**；
-     - **I/O 异常全部 fail-closed**：计数读损坏 / 更新失败 / 成功清零
-       失败 → 一律**退停止码 86**（**禁止默认归零、禁止继续 exec**）；
-     - **原子更新 + 单实例锁**：更新 = tmp 写 + rename；对 count 文件持
-       `flock`（获取失败 = 同实例并发 → 退 86）；
-     - **专用退出码拍死 = 86**（预算耗尽与计数状态异常共用）：不与
-       s0_daemon 既有 `0/1/2` 重叠（`s0_daemon.rs:36-41`），也避开 S1
-       侧 `3/4/5`；unit 配 `RestartPreventExitStatus=86`（该指令**只
-       作用于主进程**——guard 即主进程，这正是从 ExecStartPre 迁入
-       ExecStart guard 的原因）；
+       + 同目录**稳定锁文件** `<robot_id>.lock`（双臂各自预算，互不
+       消耗）；
+     - **目录归属（r10 AA1 修正——r9 "guard 自建 + 不用 RuntimeDirectory"
+       撤回）**：S0 unit 以普通 `User` 运行（`xlerobot-s0-bus1.service:50`
+       / `bus2:110` 先例），/run 为 root:root 0755，**普通用户无权自建
+       一级目录、首启即退 86**。改 systemd 原生三件套：
+       **`RuntimeDirectory=robot-system/preflight` +
+       `RuntimeDirectoryMode=0750` + `RuntimeDirectoryPreserve=yes`**
+       （两臂 unit 同款声明；`yes` 精确给出"自动 restart 与手工
+       stop/start 均保留、reboot 因 /run tmpfs 清零"）；count/lock 文件
+       `0640` owner = unit `User`（guard 创建文件时置）；
+     - **计数初态与 canonical 范围（r10 AA3）**：count 文件 **NotFound
+       = 0**（/run 每次开机必然无文件，属正常初态、非异常）；可解析值
+       canonical 范围 **0..=5**；**其他读取错误 / 非法格式 / 越界值 →
+       退 86**；guard 启动读到 **count == 5 → 直接进入停止态退 86**
+       （人工恢复 = 修复 + 清 count 文件 + `systemctl start`）；
+     - **I/O 异常全部 fail-closed**：更新失败 / 成功清零失败 → 一律
+       **退 86**（**禁止默认归零、禁止继续 exec**）；
+     - **原子更新 + 单实例锁（r10 AA2 修正——r9 "flock(count)"撤回：
+       flock 绑定 inode，rename 换新 inode 后竞争进程可同时拿锁，
+       reviewer 本机最小实测复现）**：`flock(<robot_id>.lock)`——锁文件
+       **永不 rename / 删除**；持锁期间：读 count → 跑
+       preflight/provision → tmp+rename 原子更新/清零**仅** count；
+       **exec 前显式关闭锁 fd（或置 CLOEXEC）**；flock 获取失败 = 同
+       实例并发 → 退 86；
+     - **专用退出码拍死 = 86 + 永久保留（r10 AA3）**：不与 s0_daemon
+       既有 `0/1/2` 重叠（`s0_daemon.rs:36-41`），避开 S1 侧 `3/4/5`；
+       unit 配 `RestartPreventExitStatus=86`——**exec 后同样作用于
+       s0_daemon**，故 **86 进入 s0_daemon 退出码契约作永久保留码**
+       （daemon 任何路径不得以 86 退出；回归锁进 AC-E3，防未来误用后
+       失去 watchdog 重启）；该指令只作用于主进程——guard 即主进程
+       （从 ExecStartPre 迁入 ExecStart 的原因）；
      - **语义流**：pre 步失败 → 计数 +1 → 普通非零码退出（走预算 1 的
        `RestartSec=2s` 重试）；**计数达 5 → 退 86 停止自动重启**；
        **任一次成功 → 计数清零（清零失败同样退 86，不 exec）**。
@@ -645,7 +672,7 @@ s0_daemon 尚未 exec）+ **每臂 ExecStart guard 强制** + runbook 硬步序
 |---|---|---|
 | AC-E1 | `compute_layout_id` 确定性 / 顺序敏感 / id 敏感 / lint 同源 | unit |
 | AC-E2 | S0 layout mismatch command → 丢弃不写 slot + 计数 | unit + e2e |
-| AC-E3 | exit 码全表（r4）：CLI 身份/`--layout-id` 冲突 → S0/S1 均 exit 2；config 内容错误 → S1 exit 3 / S0 exit 2；S0 adapter 构建失败 exit 1 区分 | unit |
+| AC-E3 | exit 码全表（r4 + r10）：CLI 身份/`--layout-id` 冲突 → S0/S1 均 exit 2；config 内容错误 → S1 exit 3 / S0 exit 2；S0 adapter 构建失败 exit 1 区分；**86 = guard 永久保留码回归锁（s0_daemon 任何路径不得以 86 退出，防 `RestartPreventExitStatus=86` 误吞 watchdog 重启）** | unit |
 | AC-E4 | client layout 校验不匹配硬失败 | e2e |
 | AC-E5 | 左臂新 config 载入 + 双栈（2×s0+s1+gateway）mock e2e 全通 | e2e |
 | AC-E6 | scripted_start_pose = 提交时当前位；stale/layout 失败 → FailedPrecondition 不 fallback | e2e |
@@ -664,7 +691,7 @@ s0_daemon 尚未 exec）+ **每臂 ExecStart guard 强制** + runbook 硬步序
 | AC-E19 | S1/gateway sd_notify watchdog 双向（r3）：**长时间零请求不重启**（空闲 ≥ 数个 WatchdogSec 周期）+ **冻结每类 worker 均触发重启** | smoke |
 | AC-E20 | state cache 线程 stop+join 正常 Drop（无 mem::forget） | unit |
 | AC-E21 | latch provision（r5 三分支 + r6 合法性收紧 + r8/r9）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；分支 case = 双缺失写入（tmp→fsync→rename）/ 单份缺失且现存合法补写 / **primary 损坏+backup 缺失 → provision 失败不创建**（+ 反方向）/ 双份存在内容不动；**dir-fsync 统一最终步骤序列测试（r9 Z2）：首次注入 dir-fsync 失败 → 第二次重试命中"双份存在"仍必须执行并成功 dir-fsync 后才 exec**（严格失败路径含目录 open/fsync → 拒启）；backup 写失败 → 自动重试补写成双份；连败预算联动见 AC-E22 | unit + e2e |
-| AC-E22 | 启动拓扑强制（r4 四场景 + r5-r8 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（guard pre 失败 → 重试期绝不 exec s0_daemon）/ watchdog 自动重启（guard 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9）/ **guard 预算四锁（r8 Y1 + r9 Z1 判据收窄）**：①连续 5 次 pre 失败 → 退 86 + `RestartPreventExitStatus=86` 停止自动重启 ②一次成功清零连败计数 ③连续 6 次成功启动/restart 不触发该预算——**只断言 guard 计数保持清零**，执行上相邻启动须留足间隔/分组避开独立 unit 级 60s/5（快速六连被 60s/5 拦是预算 ① 正确行为非缺陷，**不得写成同一条无间隔 systemd e2e**）④运行期快速崩溃仍由 unit 级 60s/5 限流；计数 I/O 异常（读损坏/更新失败/清零失败）与 flock 冲突 → 均退 86 不 exec | 真机 gate（+unit 级依赖声明检查） |
+| AC-E22 | 启动拓扑强制（r4 四场景 + r5-r8 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（guard pre 失败 → 重试期绝不 exec s0_daemon）/ watchdog 自动重启（guard 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9）/ **guard 预算四锁（r8 Y1 + r9 Z1 判据收窄）**：①连续 5 次 pre 失败 → 退 86 + `RestartPreventExitStatus=86` 停止自动重启 ②一次成功清零连败计数 ③连续 6 次成功启动/restart 不触发该预算——**只断言 guard 计数保持清零**，执行上相邻启动须留足间隔/分组避开独立 unit 级 60s/5（快速六连被 60s/5 拦是预算 ① 正确行为非缺陷，**不得写成同一条无间隔 systemd e2e**）④运行期快速崩溃仍由 unit 级 60s/5 限流；计数 I/O 异常（非法格式/越界/更新失败/清零失败）与 flock 冲突 → 均退 86 不 exec（**NotFound = 0 正常初态**；count==5 → 停止态）；**RuntimeDirectory 四态（r10 AA1）**：首次启动自动创建 / restart 保留 / 手工 stop-start 保留 / reboot 清零；**锁语义（r10 AA2）**：rename count 期间竞争进程对 `<robot_id>.lock` 不得同时拿锁成功（稳定 inode 反向复现 case） | 真机 gate（+unit 级依赖声明检查） |
 
 ## 严禁改动（hard boundaries）
 
@@ -708,4 +735,4 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | D10 | Q7 验收 bin 为主 (c) + preflight phase 宿主（D13） | 待 | | |
 | D11 | Q8 单位分层：helper rad-native + 原始 12 维 shim（r2） | 待 | | |
 | D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + 运行时 unit ×6 + handoff ×1 + runbook〔handoff transaction 权威入口，r6〕；deploy.sh 不进 E | 待 | | B1 决策 #7 解锁 |
-| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分〔infinity 撤回〕；r9 计数硬契约六条〔退出码 86〕+ dir-fsync 统一最终步骤） | 待 | | **P0 安全** |
+| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分〔infinity 撤回〕；r9 计数硬契约 + dir-fsync 统一最终步骤；r10 RuntimeDirectory 三件套〔自建撤回〕+ 稳定锁文件〔flock(count) 撤回〕+ NotFound=0/0..=5/86 永久保留） | 待 | | **P0 安全** |
