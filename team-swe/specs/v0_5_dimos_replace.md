@@ -14,9 +14,11 @@
 > （X2 闭环）再出 **2 项（Y1 P0 + Y2 P1）**——含 reviewer 对自身 r7
 > infinity 推荐的更正——round 8 逐条回修；round 8 复核（Y1/Y2 方向确认）
 > 再出 **2 项（Z1/Z2 P1）**，round 9 逐条回修；round 9 复核（Z2 闭环）再出
-> **3 项（AA1 P0 + AA2/AA3 P1）**，round 10 逐条回修；round 10 复核
-> （AA1-AA3 + Z2 全闭环，无新 P0）再出 **1 项（AB1 P1）**，本 round 11
-> 回修（均见"Spec round 记录"）。**0 代码改动 / 不开 Plan / 不实施**。
+> **3 项（AA1 P0 + AA2/AA3 P1）**，round 10 逐条回修；round 10 复核再出
+> **1 项（AB1 P1）**，round 11 回修；round 11 复核再出 **1 项（AB2 P1
+> 措辞冲突）**，round 12 回修后 **Approved**（均见"Spec round 记录"）。
+> **状态：round 12 Approved + D1-D13 终拍 ✅（2026-07-14，记录见拍板表）**；
+> 下一阶段 = **Plan**（仍不实施代码）。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -750,16 +752,16 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 
 | # | 决策 | 拍板 | 日期 | 备注 |
 |---|---|---|---|---|
-| D1 | Q10 layout 链 (a)+硬约束 + 子拍板 (i) | **方向已拍 (a)+(i)**；r2 条件落字待确认 | 2026-07-13 | P0；§3.5.1 部分落地登记 |
-| D2 | Q11 config (i) arm-only ×2 + 身份全表 + latch provision（r3；r4 truth table + 状态链更正） | **方向已拍 (i)**；r2-r4 条件落字待确认 | 2026-07-13 | P0；units/交接经 D12/D13 |
-| D3 | Q12 G1 (c) + 发布保证 + 行为矩阵 + 穷尽式单一规则（r3 reset；r4 穷尽化） | **方向已拍 (c)**；r2-r4 条件落字待确认 | 2026-07-13 | P0 |
-| D4 | Q1 双栈双 gateway (a) | 待 | | |
-| D5 | Q2 per-chunk + 等终态 (a) + 双臂成对协议（r2；r3 终态精确集/不对称/partial/双拒；r4 偏差 gate 降级 Ack、Started 仅诊断） | 待 | | |
-| D6 | Q3 gripper 同车 (a) + 插值语义变化登记（r2） | 待 | | |
-| D7 | Q4 adapter = robot-rpc client helper (iii) | 待 | | |
-| D8 | Q5 填当前位（仅臂向量） | 待 | | |
-| D9 | Q6 e2e 双轨 (c) + case 库落位 robot-rpc（r2） | 待 | | |
-| D10 | Q7 验收 bin 为主 (c) + preflight phase 宿主（D13） | 待 | | |
-| D11 | Q8 单位分层：helper rad-native + 原始 12 维 shim（r2） | 待 | | |
-| D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + 运行时 unit ×6 + handoff ×1 + runbook〔handoff transaction 权威入口，r6〕；deploy.sh 不进 E | 待 | | B1 决策 #7 解锁 |
-| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分〔infinity 撤回〕；r9 计数硬契约 + dir-fsync 统一最终步骤；r10 RuntimeDirectory 三件套〔自建撤回〕+ 稳定锁文件〔flock(count) 撤回〕+ NotFound=0/0..=5/86 永久保留；r11 pre-increment 未成功尝试计数〔失败后才 +1 撤回〕） | 待 | | **P0 安全** |
+| D1 | Q10 layout 链 (a)+硬约束 + 子拍板 (i) | **确认 (a)+(i)** | 2026-07-14 | P0；§3.5.1 部分落地登记；方向初拍 2026-07-13 |
+| D2 | Q11 config (i) arm-only ×2 + 身份全表 + latch provision（r3-r12 全链） | **确认 (i)** | 2026-07-14 | P0；units/交接经 D12/D13；方向初拍 2026-07-13 |
+| D3 | Q12 G1 (c) + 发布保证 + 行为矩阵 + 穷尽式单一规则 | **确认 (c)** | 2026-07-14 | P0；方向初拍 2026-07-13 |
+| D4 | Q1 双栈双 gateway (a) | **确认 (a)** | 2026-07-14 | |
+| D5 | Q2 per-chunk + 等终态 (a) + 双臂成对协议（r2-r5 全链） | **确认 (a)** | 2026-07-14 | 偏差 gate = Ack、Started 仅诊断 |
+| D6 | Q3 gripper 同车 (a) + 插值语义变化登记 | **确认 (a)** | 2026-07-14 | (b) 封存备查 |
+| D7 | Q4 adapter = robot-rpc client helper (iii) | **确认 (iii)** | 2026-07-14 | |
+| D8 | Q5 填当前位（仅臂向量） | **确认** | 2026-07-14 | 仅 position-mode 臂向量 |
+| D9 | Q6 e2e 双轨 (c) + case 库落位 robot-rpc | **确认 (c)** | 2026-07-14 | 禁反向 dep |
+| D10 | Q7 验收 bin 为主 (c) + preflight/guard 入口宿主 | **确认 (c)** | 2026-07-14 | robotctl 仅旁证 |
+| D11 | Q8 单位分层：rad-native helper + 原始 12 维 shim | **确认** | 2026-07-14 | raw↔rad 唯一权威 = feetech crate |
+| D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + 运行时 unit ×6 + handoff ×1 + runbook〔handoff transaction 权威入口〕；deploy.sh 不纳入 | **确认** | 2026-07-14 | B1 决策 #7 解锁 |
+| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分〔infinity 撤回〕；r9 计数硬契约 + dir-fsync 统一最终步骤；r10 RuntimeDirectory 三件套 + 稳定锁文件 + NotFound=0/0..=5/86 永久保留；r11 pre-increment 未成功尝试计数；**r12 掉电边界**〔同 boot 保留、掉电/重启清零重跑 handoff+guard〕） | **确认（含 r2-r12 全部 fail-closed、计数及重启契约）** | 2026-07-14 | **P0 安全** |
