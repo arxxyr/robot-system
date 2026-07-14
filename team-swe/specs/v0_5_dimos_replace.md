@@ -1,4 +1,4 @@
-# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 5）
+# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 6）
 
 > CodeMap：[`team-swe/codemap/v0_5_dimos_replace.md`](../codemap/v0_5_dimos_replace.md)
 > （round 4 **Approved**，amend 记录 round 1-3 = B1-B10 全闭）。Spec round 1
@@ -8,8 +8,9 @@
 > 回修；round 2 复核再出 **7 执行级阻断（T1-T7，P0 ×4 + P1 ×3）**，round 3
 > 逐条回修；round 3 复核（T4/T6 闭环）再出 **6 项（U1-U6，P0 ×3 + P1 ×3）**，
 > round 4 逐条回修；round 4 复核（U3/U5/U6 闭环）再出 **4 项（V1 P0 +
-> V2-V4 P1）**，本 round 5 逐条回修（均见"Spec round 记录"）。**0 代码改动 /
-> 不开 Plan / 不实施**。
+> V2-V4 P1）**，round 5 逐条回修；round 5 复核（V3/V4 闭环）再出 **4 项
+> （W1 P0 + W2-W4 P1）**，本 round 6 逐条回修（均见"Spec round 记录"）。
+> **0 代码改动 / 不开 Plan / 不实施**。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -60,6 +61,15 @@
 | V3 | P1 | **Ack 降级残留三处旧口径**：D5 item 1 仍"最大启动偏差"、item 8 仍 Started.at_ns 作偏差；且错过 Started 的真实机制 = gateway `latest()` 把缓冲历史塌缩到最后一帧（`events_subscribe.rs:281` + `subscriber.rs:9`），非 QoS history_size=1 | 三处口径统一为 **Ack 偏差**；机制表述更正（latest() 塌缩）；增**边界声明**：Ack gate 只约束 RPC 接受完成偏差，**不证明实际动作启动偏差** |
 | V4 | P1 | **gateway 对 S1 只 After= 不拉起**：直启 gateway 会 READY 但 task RPC 无后端 | 依赖图修正：gateway = `Requires=`+`After=` 同臂 S0 + **`Wants=`+`After=` 同臂 S1**（自动拉起 S1、S1 重启不停 gateway） |
 
+### round 5 → round 6（reviewer 复核：V3/V4 闭环；4 项〔W1 P0 + W2-W4 P1〕）
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| W1 | P0 | **handoff 仍未闭合单臂启动空窗**：r5 "双 bus 全量"实际只覆盖 omitted motors（bus1 7-8 + bus2 7-9）；旧 coordinator 管**两臂全部电机**且退出断扭吞错——仅启动左臂时**右臂 ID 1-6 可能仍带扭且无人接管**（反向同理）；"另一 bus 归另一臂 S0 管辖"在单臂场景不成立 | **拍死**：handoff 首次切换安全写并 readback **全部 17 电机**（bus1 ID 1-8 断扭；bus2 ID 1-6 断扭；bus2 ID 7-9 先零速后断扭）；"禁单臂强制成对"备选未采；AC-E22 场景五删"或启动被拒"歧义、断言精确 ID 集 |
+| W2 | P1 | **provision "单份缺失"未限定现存副本合法**：primary 损坏 + backup 缺失同属"单份缺失"但无可复制合法值 | 分支收紧：唯一现存副本**严格解析为 0/1** 才原子写 + fsync 缺失副本；现存损坏/不可读/值非法 → provision **失败且不得创建另一份**；只写缺失文件、**不经 `save_estop_latch` 重写现存副本**；AC-E21 增两个"损坏 + 对侧缺失"方向 |
+| W3 | P1 | **"失败保持 inactive"与 systemd 语义冲突**：`Restart=` 同样作用于 ExecStartPre 失败 → 自动重试而非稳定 inactive | 沿 S0 既有策略拍定：`RestartSec=2s` + `StartLimitIntervalSec=60s` + `StartLimitBurst=5`；失败期间**绝不执行 ExecStart**、有限重试后进入 **failed**；AC-E21/E22 覆盖瞬态恢复 + 持续失败限流 |
+| W4 | P1 | **部署清单仍写 unit ×6**：新增 handoff 后三处清单 + 拍板表未更新；runbook 仍写独立"stop 旧栈 → preflight" | 统一为**运行时 unit ×6 + `xlerobot-handoff.service` ×1（共 7）**；runbook 以 **handoff transaction 为旧栈停止与首次全总线安全交接的权威入口** |
+
 ## What
 
 **E = 替换 dimos-deploy 的机器人控制执行面**：demo workflow 控制执行链在
@@ -73,7 +83,7 @@ proto method、0 新 fbs schema、0 改 frozen 字段（r2 各阻断回修后结
 全部工作落在 robot-msg lib 函数 + config typed 校验 + S0 command 防错位 +
 S1 语义补全（G1 + sd_notify）+ gateway sd_notify + configs（新双 config +
 既有 config/模板补 motor_ids）+ client 侧 helpers/shim + e2e + 部署件
-（unit ×6 + preflight + runbook）。
+（运行时 unit ×6 + handoff oneshot ×1 + preflight + runbook）。
 
 ## 影响范围
 
@@ -86,7 +96,8 @@ S1 语义补全（G1 + sd_notify）+ gateway sd_notify + configs（新双 config
   与 e2e 模板补显式 motor_ids）；robot-rpc client 侧 helpers（轨迹转换 +
   layout 校验 + 基线导入 shim + 共享 case 库）；robot-rpc/tests workflow
   e2e；robot-tests 真机验收 bin（含 **D13 preflight phase**）；
-  scripts/systemd **unit ×6** + 新 runbook。
+  scripts/systemd **运行时 unit ×6 + `xlerobot-handoff.service` ×1** +
+  新 runbook。
 - **Out（hard boundaries 镜像，详 §"严禁改动"）**：proto/fbs wire 0 改；
   design.md 0 改；dimos-deploy 0 改；robotctl 0 改；HoldPose 行为 0 改；
   IkBackend / kinematics 两 crate 0 改；候选 A-D 已 land 行为 0 退化。
@@ -191,11 +202,14 @@ CHANGELOG）**：§3.5.1 的 JointLayout 1 Hz 广播 / RR 请求 / 阈值→状�
   记忆**。锁定：
   1. **provision 规则（r4 收窄 + r5 V2 partial-failure 闭环）三分支**：
      - primary 与 backup **双缺失** → 写入 **`1\n`（latched）双份**；
-     - **单份缺失 → 以既存一份的值补写缺失份**（**只复制现值、绝不改值**。
-       依据：既有双写允许"primary 成功、backup 失败并返 Err"
-       （`estop_latch.rs:183` 区块文档），若沿 r4"任一份存在即跳过"，下次
-       ExecStartPre 会因 primary 已存在而跳过 → **单副本起跑**，与"首次
-       写入双份"宣称不符；本分支使重试自动修复缺失份）；
+     - **单份缺失（r6 W2 收紧：以合法性为前提，非仅存在性）**：唯一现存
+       副本**严格解析为 0/1** → **只写缺失文件**（原子写 + fsync，值 =
+       现存副本值，**不经 `save_estop_latch` 重写现存副本**）；现存副本
+       **损坏 / 不可读 / 值非法 → provision 直接失败且不得创建另一份**
+       （交给限流 → failed，人工介入）。（依据：既有双写允许"primary
+       成功、backup 失败并返 Err"〔`estop_latch.rs:183` 区块文档〕，r4
+       "任一份存在即跳过"会单副本起跑；而 r5 按存在性补写在"primary 损坏
+       + backup 缺失"时无合法值可复制——本分支两面都闭）；
      - 双份均存在 → **不动任何文件**，交给 loader 既有语义（下表）。
   2. **loader truth table（r4，对齐 `estop_latch.rs:95` 现行为，0 改）**：
 
@@ -430,7 +444,7 @@ post-E robotctl 候选）。
 **AC 钩子**：AC-E10（shim 度/[0,100] 镜像换算 + clamp 计数 + rad_lo/hi 参数
 化；helper reject 全路径；range 反转 fail-fast）。
 
-### D12（Q9）⚠ 拍板（r2 重写，S7 阻断：不留 Plan）：S1/gateway 纳入 sd_notify + watchdog；unit ×6 + 新 runbook；deploy.sh 不进 E
+### D12（Q9）⚠ 拍板（r2 重写，S7 阻断：不留 Plan）：S1/gateway 纳入 sd_notify + watchdog；运行时 unit ×6 + handoff ×1 + 新 runbook；deploy.sh 不进 E
 
 - **Type=notify 直接拍（推荐 = 纳入）**：design 冻结明确 S1 / gateway 走
   sd_notify + watchdog（`00_design.md` §9 心跳表：S1 `sd_notify` 2 Hz /
@@ -454,12 +468,16 @@ post-E robotctl 候选）。
      observer；
   3. `READY=1` 仅在**全部 observer ready** 后发送；
   4. shutdown 先发 `STOPPING=1`、再停 watchdog ping。
-- **unit ×6**：S0 arm-only ×2（D2 表）+ S1 ×2 + gateway ×2；全部
-  `Conflicts=` dimos 两 unit；S0 新 unit 另 `Conflicts=` 旧 full S0 unit
-  （D2）。旧 unit 全部保留（回滚）。
-- 新真机 runbook（替代两份 pre-strict 档案；步序 = D-BI3 顺序锁 + **D13
-  preflight 硬步序**：stop 旧栈 → preflight → 起新栈 → 验收 → 通过后才
-  disable 旧栈）。
+- **unit 清单（r6 W4 统一）= 运行时 unit ×6 + `xlerobot-handoff.service`
+  ×1（共 7）**：S0 arm-only ×2（D2 表）+ S1 ×2 + gateway ×2 + handoff
+  oneshot ×1（D13）；旧栈停止顺序第一责任人 = handoff unit（Conflicts+
+  After），运行时 unit 保留 Conflicts 兜底。旧 unit 全部保留（回滚）。
+- 新真机 runbook（替代两份 pre-strict 档案；r6 W4：**以 handoff
+  transaction 为旧栈停止与首次全总线安全交接的权威入口**——步序 =
+  `systemctl start` 目标臂 unit → systemd 依赖链自动执行〔handoff：停
+  旧栈 + 全 17 电机 ensure-safe〕→〔本臂 ExecStartPre：preflight +
+  provision〕→ S0 起 → 验收 → 通过后才 disable 旧栈〔D-BI3 顺序锁〕；
+  手工 `systemctl stop` 旧栈仍可作前置动作但**不再是安全交接的依据**）。
 - **deploy.sh 不进 E**（登记独立 follow-up；Orin 本地 build 惯例沿用）。
 - D2(i) 下**无底盘 mode 硬化链**（但有 D13 preflight）。
 
@@ -500,20 +518,33 @@ head ID 7,8；右 = bus2 wheels ID 7,8,9）：
   `xlerobot-handoff.service`（`Type=oneshot` + **`RemainAfterExit=yes`**）：
   ① 对 dimos 两 unit + 旧 full S0 unit 声明 `Conflicts=` + `After=`
   （**旧栈停止顺序的第一责任人**：conflict 目标的 stop job 按 After 排序
-  在本 unit start 前完成）；② `ExecStart` = **双 bus 全量 ensure-safe**
-  （bus1 head + bus2 wheels，语义同上 fail-closed 段）。两个 arm-only S0
-  unit **`Requires=` + `After=`** handoff unit → **仅启动一臂也先保双 bus
-  安全**；同 boot 内第二臂启动时 handoff 已 active（RemainAfterExit）
-  **不再重跑**（不碰第一臂已占串口）；reboot 后自动重新验证（断电后扭矩
-  本就复位，重验无害且 fail-closed）。
+  在本 unit start 前完成）；② `ExecStart` = **全部 17 电机安全写并
+  readback（r6 W1 拍死——旧 coordinator 管两臂全部电机且退出断扭吞错，
+  仅启动一臂时另一臂 ID 1-6 可能仍带扭且无人接管）**：
+  **bus1 ID 1-8 `Torque_Enable=0`；bus2 ID 1-6 `Torque_Enable=0`；
+  bus2 ID 7-9 先 `Goal_Velocity=0` 再 `Torque_Enable=0`**——写/readback
+  聚合语义同上 fail-closed 段（单项失败继续、末尾聚合 FAIL）；"禁止单臂、
+  强制成对启动"备选**未采**。两个 arm-only S0 unit **`Requires=` +
+  `After=`** handoff unit → **仅启动一臂也先保全部 17 电机安全**（随后
+  该臂 S0 的 enable 序列只重新上扭自己的 6 电机）；同 boot 内第二臂启动
+  时 handoff 已 active（RemainAfterExit）**不再重跑**（不碰第一臂已占
+  串口）；reboot 后自动重新验证（断电后扭矩本就复位，重验无害且
+  fail-closed）。
 - **每臂 `ExecStartPre` 两步（restart 路径守门，r5 定位收窄）**：
   `ExecStartPre=① 本臂 bus preflight`（**只触本臂 bus**——左碰 bus1、右碰
   bus2，任何时刻不碰另一臂串口）→
   `ExecStartPre=② 本臂 latch provision`（D2 三分支规则）→
-  `ExecStart=s0_daemon`。同 unit 事务内顺序执行，任一失败 unit 保持
-  inactive；**watchdog `Restart=on-failure` 重启重跑两步**（handoff unit
-  因 RemainAfterExit 不重跑；restart 窗口另一 bus 归另一臂 S0 管辖，
-  由本臂守门不触碰即正确）。
+  `ExecStart=s0_daemon`。同 unit 事务内顺序执行；**失败/重试语义
+  （r6 W3 修正——`Restart=` 同样作用于 ExecStartPre 失败，"稳定 inactive"
+  表述撤回）**：沿 S0 unit 既有策略 `Restart=on-failure` +
+  **`RestartSec=2s` + `StartLimitIntervalSec=60s` + `StartLimitBurst=5`**——
+  ExecStartPre 失败 → 自动重试（每次重试重跑两步 Pre，**失败期间绝不执行
+  ExecStart**）→ 60s 内 5 次仍失败 → **进入 failed（start-limit-hit）**
+  稳定停止；watchdog 重启同样重跑两步 Pre（handoff unit 因
+  RemainAfterExit 不重跑；restart 窗口本臂只守本 bus——另一 bus 的安全由
+  handoff 首次切换建立〔全 17 电机〕，之后由其自身 S0 生命周期接管，
+  **单臂运行期间另一臂电机保持 handoff 断扭态**，r5 "归另一臂管辖"表述
+  更正）。
 - **旧栈 Conflicts 兜底**：arm-only S0 unit 保留对 dimos / 旧 full unit
   的 `Conflicts=` + `After=` 声明（防绕过 handoff 的边缘路径，与 handoff
   unit 双保险）。
@@ -563,13 +594,13 @@ AC-E22（r4 四场景：**同时启动**双臂〔各自 preflight 只碰本 bus 
 | AC-E13 | 既有 1185 基线 + 6 smoke 0 退化 | workspace |
 | AC-E14 | 双臂协议全路径（r3+r4）：**Ack 偏差上限 gate**（Started.at_ns 若收到仅诊断记录，缺失不判失败）/ 终态精确集与 pair success 定义 / 提交期与执行期部分失败 cancel / partial completion 报告 / stream 断开 GetTaskStatus 收敛（含超时上限）/ 双拒绝确定性 FAIL / 不收敛双 EStop | e2e |
 | AC-E15 | gripper 阶跃→插值语义变化：终点一致 + 轨迹单调（非等价宣称） | e2e |
-| AC-E16 | D13 ensure-safe（r4）：无条件安全写全部 omitted motors（bus2 先零速后断扭）+ 单项失败继续 + 末尾聚合；写失败/readback 失败/值不安全 → 均不起新栈 | unit + 真机 gate |
+| AC-E16 | D13 ensure-safe（r4+r6）：无条件安全写 + 单项失败继续 + 末尾聚合；写失败/readback 失败/值不安全 → 均不起新栈；**范围两档各一 case**——handoff 全 17 电机（bus1 1-8 断扭 / bus2 1-6 断扭 / bus2 7-9 先零速后断扭）+ per-arm restart 子集（本 bus omitted motors） | unit + 真机 gate |
 | AC-E17 | 末 waypoint 先 Continue（target=末位）后 Completed（dwell=0 路径发布保证） | unit + e2e |
 | AC-E18 | D3 穷尽式规则 + **序列测试**（r3+r4：先 Success 一次再分别 cancel/failure/IK/**HoldPose cancel**，逐一断言 reset 回启动 anchor；不得只测 boot 初态） | e2e |
 | AC-E19 | S1/gateway sd_notify watchdog 双向（r3）：**长时间零请求不重启**（空闲 ≥ 数个 WatchdogSec 周期）+ **冻结每类 worker 均触发重启** | smoke |
 | AC-E20 | state cache 线程 stop+join 正常 Drop（无 mem::forget） | unit |
-| AC-E21 | latch provision（r5 三分支）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；三分支各一 case（双缺失写入/单份缺失补写既存值/双份存在不动）+ backup 写失败重启补写路径；loader truth table 四行各一 case | unit + e2e |
-| AC-E22 | 启动拓扑强制（r4 四场景 + r5 第五场景）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（ExecStartPre 失败 → 不进 active）/ watchdog 自动重启（ExecStartPre 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂**（断言另一 bus 经 handoff unit 已 ensure-safe，或启动被拒） | 真机 gate（+unit 级依赖声明检查） |
+| AC-E21 | latch provision（r5 三分支 + r6 合法性收紧）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；分支 case = 双缺失写入 / 单份缺失且现存合法补写 / **primary 损坏+backup 缺失 → provision 失败不创建**（+ 反方向 backup 损坏+primary 缺失）/ 双份存在不动；backup 写失败重启补写路径；**瞬态失败自动重试恢复 + 持续失败 60s×5 进 failed**；loader truth table 四行各一 case | unit + e2e |
+| AC-E22 | 启动拓扑强制（r4 四场景 + r5/r6 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（Pre 失败 → 限流重试期不执行 ExecStart → 5 次后 failed）/ watchdog 自动重启（Pre 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9，"或启动被拒"歧义删除） | 真机 gate（+unit 级依赖声明检查） |
 
 ## 严禁改动（hard boundaries）
 
@@ -612,5 +643,5 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | D9 | Q6 e2e 双轨 (c) + case 库落位 robot-rpc（r2） | 待 | | |
 | D10 | Q7 验收 bin 为主 (c) + preflight phase 宿主（D13） | 待 | | |
 | D11 | Q8 单位分层：helper rad-native + 原始 12 维 shim（r2） | 待 | | |
-| D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + unit ×6 + runbook；deploy.sh 不进 E（r2） | 待 | | B1 决策 #7 解锁 |
-| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制 + 人工回滚表述；r4 每臂 ExecStartPre + 无条件安全写；r5 全局 handoff unit 双 bus + gateway Wants=S1） | 待 | | **P0 安全** |
+| D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + 运行时 unit ×6 + handoff ×1 + runbook〔handoff transaction 权威入口，r6〕；deploy.sh 不进 E | 待 | | B1 决策 #7 解锁 |
+| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 每臂 ExecStartPre + 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死 + 限流语义） | 待 | | **P0 安全** |
