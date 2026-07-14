@@ -1,4 +1,4 @@
-# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 4）
+# Spec · v0.5 候选 E — 替换 dimos-deploy 机器人控制执行面（round 5）
 
 > CodeMap：[`team-swe/codemap/v0_5_dimos_replace.md`](../codemap/v0_5_dimos_replace.md)
 > （round 4 **Approved**，amend 记录 round 1-3 = B1-B10 全闭）。Spec round 1
@@ -7,8 +7,9 @@
 > D2 (i) / D3 (c)，条件生效）+ 4 P0 阻断 + 3 执行语义阻断**，round 2 逐条
 > 回修；round 2 复核再出 **7 执行级阻断（T1-T7，P0 ×4 + P1 ×3）**，round 3
 > 逐条回修；round 3 复核（T4/T6 闭环）再出 **6 项（U1-U6，P0 ×3 + P1 ×3）**，
-> 本 round 4 逐条回修（均见"Spec round 记录"）。**0 代码改动 / 不开 Plan /
-> 不实施**。
+> round 4 逐条回修；round 4 复核（U3/U5/U6 闭环）再出 **4 项（V1 P0 +
+> V2-V4 P1）**，本 round 5 逐条回修（均见"Spec round 记录"）。**0 代码改动 /
+> 不开 Plan / 不实施**。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -49,6 +50,15 @@
 | U4 | P1 | **AC-E14 启动偏差可被降级判据绕过**：Started 晚订阅可错过是设计内（keep-last 单 slot + GetTaskStatus catch-up，`task_rpc_e2e.rs:124` 注释） | 正式**降级**：偏差 gate = **InvokeTask Ack 偏差**（client 并发 join 提交，可控可测）；Started.at_ns 双侧**若收到仅作诊断记录**，缺失不判失败、不得充当启动偏差 gate |
 | U5 | P1 | **D3 更新规则非穷尽式**："任何非 Success"+"IK 任意结局"+矩阵 HoldPose 行三处并列易漏 | 锁**单一穷尽规则**：仅 `Scripted × Completed(Success)` 提交末点；**其余所有 backend × 终态组合一律 reset 启动 anchor**；AC-E18 序列加 HoldPose cancel |
 | U6 | P1 | **S0 退出码未锁死**：Args parse/resolve 失败 = exit 2（`s0_daemon.rs:396-405`），adapter 构建失败 = exit 1 | D1 3' 补 S0 明码：config/CLI 错误 = **exit 2**（parse/resolve 路径），adapter 构建失败 = **exit 1**（区分）；进 AC-E3 |
+
+### round 4 → round 5（reviewer 复核：U3/U5/U6 闭环、U2 主链对齐；4 项〔V1 P0 + V2-V4 P1〕）
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| V1 | P0 | **单臂直启留下另一 bus 安全空窗**：旧 coordinator 同占两 bus，启动任一新 S0 即 Conflicts 停整个旧栈，但每臂 ExecStartPre 只查本 bus——仅启动左臂时 bus2 wheels 长期遗留旧栈状态 | 新增**全局 handoff unit**（oneshot + `RemainAfterExit=yes`，每 boot 首次激活跑一次**双 bus 全量 ensure-safe**，并作旧栈停止顺序第一责任人）；两 S0 unit `Requires=`+`After=` 之；每臂 ExecStartPre 降为 **restart 路径守门**（只触本 bus）；AC-E22 增"旧栈 active → 仅启动一臂"场景 |
+| V2 | P1 | **latch 双写 partial failure 无闭环**：既有双写允许"primary 成功、backup 失败返 Err"（`estop_latch.rs:183` 区块）；r4"任一份存在即跳过"→ 重启后单副本起跑，与"双份"宣称不符 | provision 规则改**三分支**：双缺失写 `1\n` 双份 / **单份缺失以既存值补写缺失份**（只复制不改值）/ 双份存在不动；AC-E21 增"backup 写失败 → 重启补写成双份"路径 |
+| V3 | P1 | **Ack 降级残留三处旧口径**：D5 item 1 仍"最大启动偏差"、item 8 仍 Started.at_ns 作偏差；且错过 Started 的真实机制 = gateway `latest()` 把缓冲历史塌缩到最后一帧（`events_subscribe.rs:281` + `subscriber.rs:9`），非 QoS history_size=1 | 三处口径统一为 **Ack 偏差**；机制表述更正（latest() 塌缩）；增**边界声明**：Ack gate 只约束 RPC 接受完成偏差，**不证明实际动作启动偏差** |
+| V4 | P1 | **gateway 对 S1 只 After= 不拉起**：直启 gateway 会 READY 但 task RPC 无后端 | 依赖图修正：gateway = `Requires=`+`After=` 同臂 S0 + **`Wants=`+`After=` 同臂 S1**（自动拉起 S1、S1 重启不停 gateway） |
 
 ## What
 
@@ -179,9 +189,14 @@ CHANGELOG）**：§3.5.1 的 JointLayout 1 Hz 广播 / RR 请求 / 阈值→状�
   **全新身份**，照搬既有 runbook 的 `0\n` provision
   （`scripts/systemd/README.md:37` 区块）= 借更换 robot_id **丢掉旧 EStop
   记忆**。锁定：
-  1. **provision 触发条件（r4 收窄）= 仅 primary 与 backup 双缺失**时写入
-     **`1\n`（latched）双份**；任一份存在 → **provision 不动任何文件**，
-     后续行为完全交给 loader 既有恢复语义（下表）。
+  1. **provision 规则（r4 收窄 + r5 V2 partial-failure 闭环）三分支**：
+     - primary 与 backup **双缺失** → 写入 **`1\n`（latched）双份**；
+     - **单份缺失 → 以既存一份的值补写缺失份**（**只复制现值、绝不改值**。
+       依据：既有双写允许"primary 成功、backup 失败并返 Err"
+       （`estop_latch.rs:183` 区块文档），若沿 r4"任一份存在即跳过"，下次
+       ExecStartPre 会因 primary 已存在而跳过 → **单副本起跑**，与"首次
+       写入双份"宣称不符；本分支使重试自动修复缺失份）；
+     - 双份均存在 → **不动任何文件**，交给 loader 既有语义（下表）。
   2. **loader truth table（r4，对齐 `estop_latch.rs:95` 现行为，0 改）**：
 
      | primary | backup | 结果 |
@@ -202,9 +217,11 @@ CHANGELOG）**：§3.5.1 的 JointLayout 1 Hz 广播 / RR 请求 / 阈值→状�
      `ExecStart` S0 之前，systemd 事务内——r4 U1，详 D13）。
 
 **AC 钩子**：AC-E5（双新 config 载入 + typed 校验 + 派生 layout_id + mock
-双栈 e2e 全通）/ AC-E21（r4 对齐：新身份首启 latched Safe → ClearEStop →
-仍 Safe → SetEnabled(true) → Ready 全链；provision 仅双缺失写入、任一份
-存在不动；truth table 四行各一 case）。
+双栈 e2e 全通）/ AC-E21（r4 对齐 + r5 三分支：新身份首启 latched Safe →
+ClearEStop → 仍 Safe → SetEnabled(true) → Ready 全链；provision 三分支
+各一 case〔双缺失写入 / 单份缺失补写既存值 / 双份存在不动〕；**backup 写
+失败 → provision Err → unit inactive → 重启后补写成双份 → 启动**；truth
+table 四行各一 case）。
 
 ### D3（Q12，P0）⚠ **方向已拍 (c)**（2026-07-13，条件生效）：G1 = `scripted_start_pose` + `idle_hold_target`，HoldPose 0 改
 
@@ -303,8 +320,8 @@ hold 在末位无回拉。mid-chunk 抢占（Cancel+Invoke 对）= **非 E 目�
 返回 = 两臂**实际并行**（`executor.py:95-107`）。E 锁定：
 
 1. 每 chunk：双臂各读 state → 两 payload 就绪后**并发提交**（两 gateway
-   同时 `InvokeTask`，并发 join 形态）；**最大启动偏差**上限进 AC-E14
-   （实测锁数值）。
+   同时 `InvokeTask`，并发 join 形态）；**Ack 偏差**上限进 AC-E14
+   （实测锁数值；口径统一见第 7 条，r5 V3）。
 2. **等待双终态（r3 精确化）**：终态精确集 = `Completed / Failed /
    Cancelled`（`action_status.fbs:57` TaskStateFb；r2 "Completed 家族"表述
    撤回）；**pair success 判定 = 两侧均 `Completed(Success)`**，其余任意
@@ -323,18 +340,23 @@ hold 在末位无回拉。mid-chunk 抢占（Cancel+Invoke 对）= **非 E 目�
 6. **双拒绝（r3 拍定）**：**不自动重试**——chunk 判 FAIL、验收确定性终止
    （非零退出）；自动重试策略若未来需要走独立拍板，**不留验收脚本临场
    决定**。
-7. **最大启动偏差观测点（r3 + r4 U4 正式降级）**：Started 事件**设计上可能
-   被晚订阅错过**（events pubsub keep-last 单 slot，client 订阅在 invoke
-   返回后才起；`task_rpc_e2e.rs:124` 注释明文"不强制收到 Started，用
-   GetTaskStatus catch up"）——强制收到 Started 会与既有 QoS 设计冲突。
+7. **偏差观测点（r3 + r4 U4 降级 + r5 V3 机制更正与边界声明）**：Started
+   事件可能被错过的**真实机制** = gateway events 桥以 `latest()` 拉流，把
+   subscriber 缓冲内历史**塌缩到最后一帧**（`events_subscribe.rs:281` 循环
+   + `subscriber.rs:9` "拿到 buffer 里所有 sample 后保留最后一条，其他
+   drop"）——**并非 QoS history_size=1**（r4 表述更正）；叠加 client 订阅
+   晚于 invoke 返回（`task_rpc_e2e.rs:124` 注释"不强制收到 Started，用
+   GetTaskStatus catch up"）。强制收到 Started 会与该桥设计冲突。
    **拍定**：偏差 **gate = InvokeTask Ack 偏差**（client 并发 join 提交，
    两侧 Ack 返回时刻之差，client 侧可控可测，上限进 AC-E14）；两侧
-   `Started.at_ns` **若收到仅作诊断记录**（缺失不判失败、**不得充当**启动
-   偏差 gate）。proto `TaskHandle` 无 `accepted_at_ns`（`task_handlers.rs:760`
-   仅 audit）维持不暴露。
-8. 全部路径进 AC-E14（并发偏差〔Started.at_ns〕/ 双终态精确集 / 提交期与
-   执行期部分失败 cancel / partial completion 报告 / stream 断开收敛 /
-   双拒绝确定性 FAIL / 不收敛双 EStop）。
+   `Started.at_ns` **若收到仅作诊断记录**（缺失不判失败、不得充当 gate）。
+   **边界声明（r5）**：Ack gate 只约束 **RPC 接受完成**的偏差，**不证明
+   实际动作启动偏差**（动作起动时刻在 S1 tick 侧，现无可靠双侧观测面；
+   如需真启动偏差属后续观测面候选，不在 E）。proto `TaskHandle` 无
+   `accepted_at_ns`（`task_handlers.rs:760` 仅 audit）维持不暴露。
+8. 全部路径进 AC-E14（**Ack 偏差 gate**〔Started.at_ns 仅诊断〕/ 双终态
+   精确集 / 提交期与执行期部分失败 cancel / partial completion 报告 /
+   stream 断开收敛 / 双拒绝确定性 FAIL / 不收敛双 EStop）。
 
 ### D6（Q3）拍板：gripper = (a) 复用 Scripted 全向量同车
 
@@ -469,30 +491,40 @@ head ID 7,8；右 = bus2 wheels ID 7,8,9）：
    r3 "先读非零才写"**撤回**（首读失败会跳过断扭尝试且可能中断其余电机——
    安全方向必须先写后验）。
 
-**启动拓扑 systemd 强制（r3 T2 + r4 U1 重写——单一共享 oneshot 三漏洞：
-Conflicts= 不保证旧栈先停 / 错峰启动时共享 preflight 会再开已被第一臂 S0
-占用的串口 / latch provision 不在 systemd 事务内）**：
+**启动拓扑 systemd 强制（r3 T2 + r4 U1 + r5 V1 重写）**：
 
-- **每臂 `ExecStartPre` 两步**（写进各自 arm-only S0 unit，撤共享
-  `xlerobot-preflight.service`）：
-  `ExecStartPre=① 本臂 preflight`（**只触本臂 bus**——左碰 bus1、右碰
-  bus2，错峰启动时不会碰另一臂已占用的串口）→
-  `ExecStartPre=② 本臂 latch provision`（D2 规则：仅双缺失写 `1\n` 双份）
-  → `ExecStart=s0_daemon`。三步同一 unit **事务内顺序执行**，任一
-  ExecStartPre 失败 → unit 启动失败保持 inactive；**watchdog
-  `Restart=on-failure` 重启同样重跑两步 ExecStartPre**（fresh 语义天然
-  保留）。
-- **旧栈停止顺序锁**：新 S0 unit 对 dimos 两 unit 与旧 full S0 unit 同时
-  声明 **`Conflicts=` + `After=`**——systemd 对 conflict 目标的 stop job
-  按 After 排序在本 unit start 之前完成（裸 `Conflicts=` 不保证顺序，
-  r3 表述补强）。
-- **S1/gateway 依赖图锁定**：`xlerobot-s1-<arm>.service` =
+- **全局 handoff unit（r5 V1——单臂直启不得留下另一 bus 安全空窗）**：旧
+  coordinator **同时占两条 bus**（CodeMap §0.3 blueprint），启动任一新 S0
+  都会经 Conflicts 停掉**整个旧栈**——per-bus preflight 只保本 bus，仅启动
+  左臂时 bus2 wheels 会长期遗留旧栈状态。新增
+  `xlerobot-handoff.service`（`Type=oneshot` + **`RemainAfterExit=yes`**）：
+  ① 对 dimos 两 unit + 旧 full S0 unit 声明 `Conflicts=` + `After=`
+  （**旧栈停止顺序的第一责任人**：conflict 目标的 stop job 按 After 排序
+  在本 unit start 前完成）；② `ExecStart` = **双 bus 全量 ensure-safe**
+  （bus1 head + bus2 wheels，语义同上 fail-closed 段）。两个 arm-only S0
+  unit **`Requires=` + `After=`** handoff unit → **仅启动一臂也先保双 bus
+  安全**；同 boot 内第二臂启动时 handoff 已 active（RemainAfterExit）
+  **不再重跑**（不碰第一臂已占串口）；reboot 后自动重新验证（断电后扭矩
+  本就复位，重验无害且 fail-closed）。
+- **每臂 `ExecStartPre` 两步（restart 路径守门，r5 定位收窄）**：
+  `ExecStartPre=① 本臂 bus preflight`（**只触本臂 bus**——左碰 bus1、右碰
+  bus2，任何时刻不碰另一臂串口）→
+  `ExecStartPre=② 本臂 latch provision`（D2 三分支规则）→
+  `ExecStart=s0_daemon`。同 unit 事务内顺序执行，任一失败 unit 保持
+  inactive；**watchdog `Restart=on-failure` 重启重跑两步**（handoff unit
+  因 RemainAfterExit 不重跑；restart 窗口另一 bus 归另一臂 S0 管辖，
+  由本臂守门不触碰即正确）。
+- **旧栈 Conflicts 兜底**：arm-only S0 unit 保留对 dimos / 旧 full unit
+  的 `Conflicts=` + `After=` 声明（防绕过 handoff 的边缘路径，与 handoff
+  unit 双保险）。
+- **S1/gateway 依赖图锁定（r5 V4 修正）**：`xlerobot-s1-<arm>.service` =
   `Requires=` + `After=` 同臂 S0 unit（S1 启动锚定硬依赖 S0 state）；
-  `robot-rpc gateway unit` = `Requires=` + `After=` 同臂 S0（state 池 +
-  estop 链）+ `After=` 同臂 S1（task RPC 功能依赖，**不** Requires——
-  gateway 在 S1 重启窗口仍可服务 estop/state）。
-- preflight / provision 可执行入口：独立 bin/子命令（验收 bin 复用
-  **同一实现**，形态 Plan 定）。
+  gateway unit = `Requires=` + `After=` 同臂 S0（state 池 + estop 链）+
+  **`Wants=` + `After=` 同臂 S1**（r4 只 `After=` 不会拉起 S1——直启
+  gateway 会 READY 但 task RPC 无后端；`Wants=` 自动拉起 S1，且 S1 重启
+  **不**连带停 gateway）。
+- preflight / provision / handoff 可执行入口：独立 bin/子命令（验收 bin
+  复用**同一实现**，形态 Plan 定）。
 
 **回滚表述修正（r3）**：r2 "`systemctl start` 即回"**撤回**，改为**保留
 人工回滚能力**（旧 unit 未 disable、未删）——硬件 I/O 已失败的场景**不承诺**
@@ -536,8 +568,8 @@ AC-E22（r4 四场景：**同时启动**双臂〔各自 preflight 只碰本 bus 
 | AC-E18 | D3 穷尽式规则 + **序列测试**（r3+r4：先 Success 一次再分别 cancel/failure/IK/**HoldPose cancel**，逐一断言 reset 回启动 anchor；不得只测 boot 初态） | e2e |
 | AC-E19 | S1/gateway sd_notify watchdog 双向（r3）：**长时间零请求不重启**（空闲 ≥ 数个 WatchdogSec 周期）+ **冻结每类 worker 均触发重启** | smoke |
 | AC-E20 | state cache 线程 stop+join 正常 Drop（无 mem::forget） | unit |
-| AC-E21 | latch provision（r4 对齐）：新身份链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；provision 仅双缺失写入、任一份存在不动；loader truth table 四行各一 case | unit + e2e |
-| AC-E22 | 启动拓扑强制（r4 四场景）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（ExecStartPre 失败 → 不进 active）/ watchdog 自动重启（ExecStartPre 重跑仍 fail-closed） | 真机 gate（+unit 级依赖声明检查） |
+| AC-E21 | latch provision（r5 三分支）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；三分支各一 case（双缺失写入/单份缺失补写既存值/双份存在不动）+ backup 写失败重启补写路径；loader truth table 四行各一 case | unit + e2e |
+| AC-E22 | 启动拓扑强制（r4 四场景 + r5 第五场景）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（ExecStartPre 失败 → 不进 active）/ watchdog 自动重启（ExecStartPre 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂**（断言另一 bus 经 handoff unit 已 ensure-safe，或启动被拒） | 真机 gate（+unit 级依赖声明检查） |
 
 ## 严禁改动（hard boundaries）
 
@@ -581,4 +613,4 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | D10 | Q7 验收 bin 为主 (c) + preflight phase 宿主（D13） | 待 | | |
 | D11 | Q8 单位分层：helper rad-native + 原始 12 维 shim（r2） | 待 | | |
 | D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + unit ×6 + runbook；deploy.sh 不进 E（r2） | 待 | | B1 决策 #7 解锁 |
-| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制 + 人工回滚表述；r4 每臂 ExecStartPre 拓扑 + 无条件安全写 ensure-safe） | 待 | | **P0 安全** |
+| D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制 + 人工回滚表述；r4 每臂 ExecStartPre + 无条件安全写；r5 全局 handoff unit 双 bus + gateway Wants=S1） | 待 | | **P0 安全** |
