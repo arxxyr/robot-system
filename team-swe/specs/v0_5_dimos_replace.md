@@ -716,11 +716,14 @@ s0_daemon 尚未 exec）+ **每臂 ExecStart guard 强制** + runbook 硬步序
 | AC-E15 | gripper 阶跃→插值语义变化：终点一致 + 轨迹单调（非等价宣称） | e2e |
 | AC-E16 | D13 ensure-safe（r4+r6）：无条件安全写 + 单项失败继续 + 末尾聚合；写失败/readback 失败/值不安全 → 均不起新栈；**范围两档各一 case**——handoff 全 17 电机（bus1 1-8 断扭 / bus2 1-6 断扭 / bus2 7-9 先零速后断扭）+ per-arm restart 子集（本 bus omitted motors） | unit + 真机 gate |
 | AC-E17 | 末 waypoint 先 Continue（target=末位）后 Completed（dwell=0 路径发布保证） | unit + e2e |
-| AC-E18 | D3 穷尽式规则 + **序列测试**（r3+r4：先 Success 一次再分别 cancel/failure/IK/**HoldPose cancel**，逐一断言 reset 回启动 anchor；不得只测 boot 初态） | e2e |
-| AC-E19 | S1/gateway sd_notify watchdog 双向（r3）：**长时间零请求不重启**（空闲 ≥ 数个 WatchdogSec 周期）+ **冻结每类 worker 均触发重启** | smoke |
+| AC-E18 | D3 穷尽式规则 + **序列测试**（RB5：**各分支独立 case 上下文**——先 Success 再分别 cancel/failure/IK/HoldPose-cancel，逐一断言 reset 回启动 anchor；failure 分支追加 **Degraded hold == anchor + ClearError 回 Idle**；不得只测 boot 初态、不得同上下文串测） | e2e |
+| AC-E19 | S1/gateway sd_notify watchdog 双向（RB3 时序锁死）：**长时间零请求不重启** + **freeze topic 运行时注入每类 worker**——PID0 READY → 注入一次 → withholding → watchdog 重启 → **PID1 无再注入且恢复 READY**（bin `sd_watchdog_smoke` / feature `sd-watchdog-smoke`） | smoke |
 | AC-E20 | state cache 线程 stop+join 正常 Drop（无 mem::forget） | unit |
 | AC-E21 | latch provision（r5 三分支 + r6 合法性收紧 + r8/r9）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；分支 case = 双缺失写入（tmp→fsync→rename）/ 单份缺失且现存合法补写 / **primary 损坏+backup 缺失 → provision 失败不创建**（+ 反方向）/ 双份存在内容不动；**dir-fsync 统一最终步骤序列测试（r9 Z2）：首次注入 dir-fsync 失败 → 第二次重试命中"双份存在"仍必须执行并成功 dir-fsync 后才 exec**（严格失败路径含目录 open/fsync → 拒启）；backup 写失败 → 自动重试补写成双份；连败预算联动见 AC-E22 | unit + e2e |
 | AC-E22 | 启动拓扑强制（r4 四场景 + r5-r8 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（guard pre 失败 → 重试期绝不 exec s0_daemon）/ watchdog 自动重启（guard 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9）/ **guard 预算四锁（r8 Y1 + r9 Z1 判据收窄）**：①连续 5 次 pre 失败 → 退 86 + `RestartPreventExitStatus=86` 停止自动重启 ②一次成功清零连败计数 ③连续 6 次成功启动/restart 不触发该预算——**只断言 guard 计数保持清零**，执行上相邻启动须留足间隔/分组避开独立 unit 级 60s/5（快速六连被 60s/5 拦是预算 ① 正确行为非缺陷，**不得写成同一条无间隔 systemd e2e**）④运行期快速崩溃仍由 unit 级 60s/5 限流；计数 I/O 异常（非法格式/越界/更新失败/清零失败）与 flock 冲突 → 均退 86 不 exec（**NotFound = 0 正常初态**；count==5 → 停止态）；**RuntimeDirectory 四态（r10 AA1）**：首次启动自动创建 / restart 保留 / 手工 stop-start 保留 / reboot 清零；**锁语义（r10 AA2）**：rename count 期间竞争进程对 `<robot_id>.lock` 不得同时拿锁成功（稳定 inode 反向复现 case）；**pre-increment 崩溃注入（r11 AB1）**：连续"递增后、完成前崩溃"（kill guard 于 preflight 中）→ 第 5 次后退 86 停止且 **s0_daemon 从未执行**；成功路径仍清零 | 真机 gate（+unit 级依赖声明检查） |
+| AC-E23 | D14：deadline 过期 → `Fault(CmdDeadlineExpired)`，与 heartbeat→CtrlLost 路径**双 case 区分**（unit + 段 7 跨进程） | unit + e2e |
+| AC-E24 | D14：**HardRT 与 SerialRT 双路**各测 overrun（连续 3 / 单次 300% 两判据）与 executor stall（10ms / 5×周期）→ Fault；on_timeout 三值生效 | unit + e2e |
+| AC-E25 | D15：真机 Enabled 态 `kill -9 s0_daemon` → **<500ms** torque disable/zero/brake 实测（退役硬门；journal + 测量方法进证据 docs） | 真机 gate |
 
 ## 严禁改动（hard boundaries）
 
@@ -765,10 +768,10 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 | D11 | Q8 单位分层：rad-native helper + 原始 12 维 shim | **确认** | 2026-07-14 | raw↔rad 唯一权威 = feetech crate |
 | D12 | Q9 S1/gateway sd_notify+watchdog 纳入 + 运行时 unit ×6 + handoff ×1 + runbook〔handoff transaction 权威入口〕；deploy.sh 不纳入 | **确认** | 2026-07-14 | B1 决策 #7 解锁 |
 | D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分〔infinity 撤回〕；r9 计数硬契约 + dir-fsync 统一最终步骤；r10 RuntimeDirectory 三件套 + 稳定锁文件 + NotFound=0/0..=5/86 永久保留；r11 pre-increment 未成功尝试计数；**r12 掉电边界**〔同 boot 保留、掉电/重启清零重跑 handoff+guard〕） | **确认（含 r2-r12 全部 fail-closed、计数及重启契约）** | 2026-07-14 | **P0 安全** |
-| D14 | SAFE-B1 执行链检测器缺位（deadline/on_timeout/RtOverrun 无生产触发器）——(i) E 增段 5b 最小集 / (ii) 独立候选先 land；未闭合不得退役 | 待 | | **P0**；推荐 (i) |
-| D15 | SAFE-B2 硬件 fail-safe blocking gap（10_verification:103）——kill -9 <500ms 真机证明；(a) 电机侧 watchdog 核实 / (b) 继电器・硬件 watchdog / (c) 等价 | 待 | | **P0**；退役硬前置 |
-| D16 | SAFE-B3 物理急停（<5ms，10_verification:100）+ E 收口性质——(i) E 实现 / (ii) 受监督 demo 定性 + CHANGELOG premise 补登记 | 待 | | **P0**；推荐 (ii) |
-| D17 | SAFE-B4 跨臂 daemon-independent 联锁——(i) 纳入 E / (ii) 明确延期 + 登记不可无人值守 | 待 | | P1；推荐 (ii) 与 D16 联动 |
+| D14 | SAFE-B1 执行链检测器——**(i+) 纳入 E 段 5b 全闭环**（deadline + on_timeout + 内部 executor stall〔HardRT 10ms + SerialRT 周期自适应〕+ 双路 overrun；阈值 Plan 落值） | **确认 (i+)**（(i) 不批准） | 2026-07-14 | **P0**；未闭合不得退役 |
+| D15 | SAFE-B2 硬件 fail-safe——kill -9 <500ms 真机证明为**退役硬门**；先 (a) CodeMap/台架核实，STS3215 不支持 → **回 Spec 在 (b)/(c) 重拍，不得静默降级** | **确认** | 2026-07-14 | **P0**；design:1110 规则 3/4 依据 |
+| D16 | SAFE-B3 + 收口性质——**(ii) 受监督 demo 修正版**：D14/D15 未闭合可软件段+受监督验证但**不得退役不得 disable**；通过后才 D-BI3；物理急停未闭不得宣称生产/无人值守 | **确认 (ii) 修正版**（"未闭合仍 disable"删除） | 2026-07-14 | **P0**；CHANGELOG premise 补登记 |
+| D17 | SAFE-B4 跨臂联锁——**(ii) 明确延期**：登记"不可无人值守双臂运行"；client cancel + 双 EStop = 受监督边界 | **确认 (ii)** | 2026-07-14 | P1 |
 
 ---
 
@@ -789,17 +792,22 @@ RtOverrun / LimitViolation / WatchdogTimeout` 只有状态机转移
 不混写**：deadline 过期 → `Fault(CmdDeadlineExpired)`（命令失效）；
 heartbeat 超时 → `CONTROL_LOST_*` 子态（链路失效）。
 
-- **(i)（推荐）E 增"安全检测器最小集段"（段 5b，插段 5 与 6 之间）**：
-  ① 执行路径检查 `deadline_ns` 过期 → `Event::CmdDeadlineExpired` →
-  `Fault`；② `on_timeout` 进 `JointCommandBuf` 并运行时生效；③ RtOverrun
-  事件化（`:292` 检测点超阈〔单次超限比例 X% 或连续 N 次，AC 定值〕→
-  `Event::RtOverrun` → `Fault`）。`LimitViolation`（需 per-joint limits
-  配置面）与 `WatchdogTimeout`（进程级已由 systemd 层覆盖）**延后独立
-  候选**。
-- (ii) 四类全部独立候选先 land，E 段(10) 等它。
+- **已拍 (i+)（round 4；(i) 不批准——两处纠正）**：① 本人"WatchdogTimeout
+  进程级已由 systemd 覆盖"表述**撤回**——design §6.2 心跳表（`00_design.md:
+  1023` 区块）明确区分 **S0 RT→IPC 内部 watchdog（1 kHz / 10 ms → FAULT +
+  safe hold）** 与 **systemd watchdog（2 s → 重启进程）**，两者不可互代；
+  ② 现 RtOverrun 检测只在 HardRT（`rt_thread.rs:290`），**XLeRobot 走
+  SerialRT，`SerialIoThreadMetrics` 无 overrun 指标**（`serial_io_thread.
+  rs:128-136` 实证）——原 (i) 保护不到 E 真机路径。
+  **(i+) 范围 = E 段 5b（插段 5 与 6 之间）四件全闭环**：deadline /
+  `on_timeout` 运行时生效 / **内部 executor stall（WatchdogTimeout，
+  HardRT 10ms 设计字面 + SerialRT 周期自适应）** / **HardRT + SerialRT
+  双路 overrun 事件化**。X%/N、SerialRT stall 阈值、重复事件抑制**在
+  Plan P.2.5b 落具体值**（不留 Execute）。`LimitViolation`（需 per-joint
+  limits 配置面）延后独立候选。
 - **共同硬约束**：本项未闭合前**不得退役旧栈**（D-BI3 gate 追加条件）。
-- AC 预留：AC-E23（deadline 过期 → Fault，与 heartbeat 路径区分 case）/
-  AC-E24（RtOverrun 注入 → Fault）。
+- AC：AC-E23（deadline 过期 → Fault，与 heartbeat 路径区分 case）/
+  AC-E24（HardRT + SerialRT overrun / stall 注入 → Fault，双路各测）。
 
 ### D15（SAFE-B2，P0）⚠ 待拍：硬件 fail-safe blocking gap（退役硬前置）
 
@@ -809,13 +817,16 @@ disable/zero/brake <500ms = **⏳ blocking gap**"。Feetech 1s 超时 = **主机
 未配置电机侧 watchdog；"失联 hold-last-position 且持续带扭" ≠ 冻结要求的
 torque disable/zero/brake——本人先前"登记为语义澄清"表述**撤回**。
 
-- **锁定**：D-BI3 退役前必须**真机 Enabled 态 `kill -9 s0_daemon`** 并证明
-  **<500ms** 进入规定 fail-safe。实施路径三选：(a) STS3215 电机侧
-  watchdog 能力核实（寄存器表/datasheet = CodeMap 级核实件；若有 →
-  adapter connect 期配置 + 真机实测）/ (b) 外部方案（断扭继电器 / 独立
-  硬件 watchdog 断电——硬件工程项）/ (c) 等价方案。
-- **E 期内不闭合 → E 收口性质按 D16 降级**。AC-E25（kill -9 <500ms 真机
-  实测）。
+- **已拍（round 4）：确认为退役硬门**。执行序 = **先 (a) CodeMap/台架
+  可行性核实**（STS3215 寄存器表 / datasheet + 台架实测：电机侧 command
+  watchdog 能力；若有 → adapter connect 期配置 + 真机 kill -9 实测）；
+  **若 STS3215 不支持 → 必须回 Spec 在 (b) 继电器・独立硬件 watchdog /
+  (c) 等价方案中重新拍，不得静默降级**。
+- 根本依据补录（design 冻结字面，`00_design.md:1110` 规则 3/4）：**不支持
+  硬件 timeout 的电机不得进入 `ENABLED.ACTIVE` 自动控制**；systemd
+  Restart 是恢复机制非安全机制。
+- **D-BI3 退役前必须**真机 Enabled 态 `kill -9 s0_daemon` 证明 **<500ms**
+  进入 torque disable / zero / brake。AC-E25（真机实测）。
 
 ### D16（SAFE-B3 + 收口性质，P0）⚠ 待拍：物理急停 与 E 终点宣称
 
@@ -824,14 +835,22 @@ torque disable/zero/brake——本人先前"登记为语义澄清"表述**撤回
 **两侧** latch。
 
 - (i) E 实现物理急停（<5ms 硬件级路径 + 双 topic/双 latch 扇出）——硬件
-  工程项，E scope 大增。
-- **(ii)（推荐）E 收口定性 = "受监督 demo 替换"**：功能基线达成 + 旧栈
-  disable 照做（对比事实：dimos 旧栈同样无电机侧 watchdog、无 <5ms 物理
-  按钮——退役不降低现有安全水位），但**不宣称"生产替换完成"**；SAFE-B2 /
-  SAFE-B3（+ D17(ii) 时的跨臂联锁）构成后续**"无人值守生产化"独立候选的
-  硬前置**；`10_verification` 两行 ⏳ 登记**原样保留不销**。此定性触
-  D-BI0 "完全替换"宣称面 → **CHANGELOG premise 补充登记** + 监督条件明文
-  （真机运行必须有人值守 + 硬件断电手段在手）。
+  工程项，E scope 大增。**未采**。
+- **已拍 (ii) 修正版（round 4——"未闭合仍 disable"删除）**：E 收口定性 =
+  **"受监督 demo 替换"**，但退役与 disable 服从硬门：
+  1. **D14 / D15 未闭合时**：软件段（1-9）与**受监督真机验证**可以完成，
+     **不得执行 D-BI3 退役、不得 `disable` 旧 unit**（决策单 :139 已定义
+     disable = 正式退役动作，与"未闭合不得退役"三处权威口径一致）；
+  2. **仅 D14 + D15 全部通过后**才允许 D-BI3 退役（disable 旧栈）；
+  3. 物理急停（<5ms）未闭合 → **不得宣称生产可用或无人值守可用**——收口
+     宣称 = "受监督 demo 替换完成"，监督条件明文（真机运行必须有人值守 +
+     硬件断电手段在手）；
+  4. 本人原"dimos 旧栈同样没有——退役不降低安全水位"豁免论证**撤回**
+     （design `00_design.md:1110` 规则 3/4 是**冻结不变量**，不因对比
+     豁免）。
+  SAFE-B2 / SAFE-B3（+ D17(ii) 跨臂联锁）构成后续**"无人值守生产化"独立
+  候选硬前置**；`10_verification` 两行 ⏳ 登记**原样保留不销**；触 D-BI0
+  宣称面 → **CHANGELOG premise 补充登记**。
 
 ### D17（SAFE-B4，P1）⚠ 待拍：跨臂联动精确化
 
@@ -840,9 +859,10 @@ torque disable/zero/brake——本人先前"登记为语义澄清"表述**撤回
 daemon-independent 跨臂联锁。
 
 - (i) 纳入 E：双侧 state 监测（互订对侧 estop/state 或独立监督进程），
-  一侧 Fault/EStop → 自动双 EStop + 故障注入 e2e（AC-E26）。
-- **(ii)（推荐，与 D16(ii) 一致）明确延期**：受监督 demo 限制 + 登记
-  **"不可用于无人值守双臂运行"**。
+  一侧 Fault/EStop → 自动双 EStop + 故障注入 e2e。**未采**。
+- **已拍 (ii)（round 4，与 D16(ii) 联动）**：明确延期——登记**"不可用于
+  无人值守双臂运行"**；**client 侧 cancel + 双 EStop 保留为当前受监督
+  运行边界**（受监督 demo 定性的组成部分）。
 
 ### 资源门闩裁决（reviewer 落定，本节照录执行）
 
@@ -901,6 +921,19 @@ daemon-independent 跨臂联锁。
 
 非阻断 ×2（已落字）：P.1 段(6) "case 库骨架"措辞改具体 helper 名（dual_arm_workflow 全在段 7）；AC-E1 `domain_version_isolated`（"改常量"不可执行）→ **golden vector**（固定输入 → 固定 u64 快照）。
 
+## Plan round 4 amend 记录（reviewer 复核后；D14-D17 + 资源全部落拍）
+
+6 项（RB1-RB4 P0 + RB5/RB6 P1），已回修：
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| RB1 | P0 | **D14 漏内部 WatchdogTimeout 且不覆盖 SerialRT**：design §6.2 双看门狗（内部 1kHz/10ms→FAULT vs systemd 2s 重启）不可互代；RtOverrun 只在 HardRT（`rt_thread.rs:290`），XLeRobot 走 SerialRT 无 overrun 指标（`serial_io_thread.rs:128-136`） | D14 改拍 **(i+)** 四件全闭环（deadline / on_timeout / 内部 stall〔双 RT 类〕/ 双路 overrun）；**P.2.5b 落具体值**（X%/N / SerialRT stall 阈值 / 重复抑制） |
+| RB2 | P0 | **D16 "未闭合仍 disable"与三处权威口径冲突**：D14/D15/段(10) 均"未闭合不得退役"，决策单 :139 定义 disable = 正式退役；"dimos 同样没有"不能豁免冻结不变量（design:1110 规则 3/4） | D16 修正版落拍：未闭合可软件段 + 受监督验证，**不得退役不得 disable**；豁免论证撤回 |
+| RB3 | P0 | **env freeze 证明不了 watchdog 重启**：`ROBOT_TEST_FREEZE` 启动时读取——TonicProbe 会在首次 probe 前冻结（测到启动失败非 watchdog 超时）；env 跨 systemd 重启存续 → PID1 再冻结 | 撤 env 方案；沿 **S0 `freeze_control.rs` 先例 = test-only iceoryx2 topic 运行时注入**（feature 名对齐 S0 现名 **`test-freeze-hook`** 单数）；smoke 时序锁死 **PID0 READY → 注入一次 → withholding → PID1 切换 → PID1 无再注入 + 恢复 READY**；smoke **bin/feature 现在锁名**：`sd_watchdog_smoke` / `sd-watchdog-smoke` |
+| RB4 | P0 | **loopback probe 不可编译 + 缺并发拓扑**：`RobotControlClient` 仅 `client` feature 生成（`build.rs:26`）；`serve_with_incoming_shutdown` await 到停机（`gateway.rs:1781`）不能线性 serve→probe | 锁 **低层 unary probe**（`tonic::client::Grpc<Channel>` + 既有 prost message + 显式 PathAndQuery，**不开 client feature 不改生产边界**）+ **并发拓扑/所有权/早退/shutdown 顺序全锁**（P.2.7） |
+| RB5 | P1 | **两 e2e 判据可假通过**：`InternalError` → coordinator **Degraded**（`coordinator.rs:1746-1754` 实证）——矩阵后续分支会被拒；wrong-layout case 缺正向对照 | 矩阵**各分支独立 case 上下文** + failure 分支追加 Degraded hold 断言 + maintainer `ClearError` 回 Idle；wrong-layout 先 Enabled.Active 确认 → **matching-layout 命令观察输出确实变化** → 再错帧证明保持前值 |
+| RB6 | P1 | **"调度抖动"无数据源**：robot-health 只采 CPU/RSS（`lib.rs:56-62`） | 数据源改 = **段 5b 新增 tick 用时直方图指标**（HardRT/SerialRT 各自测量点；RT 侧仅 fetch_add 固定桶）；窗口/percentile/归档格式 P.2.10 落死 |
+
 ## P.0 工作基线
 
 - Spec 定稿 = `3f49230`（round 12 Approved + 终拍）；CodeMap = `dbbba7b`
@@ -919,10 +952,13 @@ daemon-independent 跨臂联锁。
   （各自段落地即生效）：
   `cargo build --release -p robot-s1 --bin s1_daemon --features
   test-fault-backend`（段 7 e2e 前）/ `cargo build --release -p robot-s1
-  --features test-freeze-hooks` + `cargo build --release -p robot-rpc
-  --features test-freeze-hooks`（段 8 smoke 前）/ `cargo build --release
-  -p robot-s0 --features xlerobot-real`（段 9/10，含 `xlerobot_deploy`
-  bin）/ 新 smoke feature（段 8 落地时具名补）。
+  --features test-freeze-hook` + `cargo build --release -p robot-rpc
+  --features test-freeze-hook`（段 8 smoke 前；feature 名对齐 S0 既有
+  `test-freeze-hook` 单数，RB3）/ `cargo build --release -p robot-tests
+  --features sd-watchdog-smoke`（段 8 新 smoke，bin =
+  `sd_watchdog_smoke`——RB3 现在锁名，撤"落地时具名"）/ `cargo build
+  --release -p robot-s0 --features xlerobot-real`（段 9/10，含
+  `xlerobot_deploy` bin）。
 - **0 新 wire**（D1-D13 终拍口径：0 新 method / 0 新 schema）；**0 新
   外部 crate**（QA3 改口：工作区**内部**依赖边允许按拍新增——已拍两条 =
   S1 / robot-rpc → robot-health〔PD-E6(c)〕；依赖边变更段随跑
@@ -941,6 +977,7 @@ daemon-independent 跨臂联锁。
 | (3) | **S0 layout 落地**：撤 `0xCAFE…` 占位（config 派生）+ command 侧 layout gate（丢弃不写 slot + `unknown_layout_count` + 限频 warn） | robot-s0 | E2 | (1)(2) |
 | (4) | **S1 layout 落地 + client 校验**：S1 config 派生 / `--layout-id` 仅一致性断言、冲突 fail-fast（PD-E5(a)）/ **mock_s1 补 `--config` 入口 + crash-smoke 等既有调用方迁移**（PC4）；robot-rpc client 模块骨架 + `GetState.layout_id` 校验 | robot-s1（含 mock_s1）+ robot-rpc client + 调用方 | E3/E4 | (3) |
 | (5) | **G1 语义段**：S1 常驻 state cache（stop+join+Drop）+ `scripted_start_pose`（拒绝语义）+ 末点发布保证（先 Continue 后 Completed）+ `idle_hold_target` 穷尽规则与行为矩阵 + HoldPose 回归 | robot-s1 | E6/E7/E8/E17/E18/E20 | (4) |
+| (5b) | **安全检测器段（D14(i+) 已拍）**：deadline 过期 → Fault + `on_timeout` 运行时生效 + 内部 executor stall（HardRT 10ms / SerialRT 周期自适应）+ **双路 overrun 事件化**（SerialIoThreadMetrics 补 overruns）；阈值详 P.2.5b | robot-s0 | E23/E24 | (5) |
 | (6) | **转换 helper + shim**（round 3 非阻断改准：撤"case 库骨架"——`dual_arm_workflow` 全在段 7）：`client::trajectory` + `client::baseline_shim` 两 helper（name→index / 时长差分 / 首点宽容校验 / rad-native 校验 / 原始 12 维 shim）+ feetech 公共换算 API + robot-tests optional dep | robot-rpc client + robot-adapter-feetech（pub 纯函数）+ robot-tests | E10 | (1)(4) |
 | (7) | **双臂协议 + workflow e2e**：并发提交 / 双终态 / partial / cancel / 双 EStop / GetTaskStatus 收敛编排 + **2×(s0+s1+gateway) = 6 子进程** e2e（PC3 口径；新 config 对 mock 路径全通） | robot-rpc tests | E5/E9/E11/E14/E15 | (2)-(6)(8) |
 | (8) | **sd_notify 段**：S1 + gateway liveness-aware notify/watchdog（loop_tick_count / tonic loopback probe / READY / STOPPING）+ smoke | robot-s1 + robot-rpc + robot-tests | E19 | (6) 后、(7) 前（PD-E1：先落最终 daemon liveness，旗舰 e2e 覆盖它） |
@@ -1087,6 +1124,38 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
   （HoldPose target == anchor_bias 回归）/ 矩阵单机维（每终态 →
   idle_hold_target 断言）；跨进程 AC-E6/E7/E18 落段(7)。
 
+### P.2.5b 段(5b) 安全检测器段（D14(i+) 已拍；robot-s0；阈值本节落死不留 Execute）
+
+- **deadline 检查**：执行路径取 command 处（HardRT `hard_rt_ctrl` 取
+  slot / SerialRT executor 取 slot）：`cmd.deadline_ns != 0 && now >
+  deadline_ns` → `Event::CmdDeadlineExpired` → `Fault(CmdDeadlineExpired)`
+  （既有转移 `state_machine.rs` 字面）；**语义与 heartbeat→CtrlLost 子态
+  严格分离**（AC-E23 双路径区分 case）。
+- **`on_timeout` 运行时生效**：`JointCommandBuf` += `on_timeout:
+  StaleAction`（fb 透传）；stale 分支按其值执行（缺省 Hold = 现行为
+  bit 等价）。
+- **内部 executor stall（WatchdogTimeout，design §6.2 内部看门狗，与
+  systemd 层不可互代）**：HardRT = RT→IPC atomic counter，IPC 侧
+  **10 ms**（design 字面）无进展 → `Event::WatchdogTimeout` →
+  `Fault(WatchdogTimeout)` + safe hold 输出；SerialRT（E 真机路径）=
+  serial tick counter，IPC 侧阈值 = **`max(10ms, 5 × tick 周期)`**
+  （50 Hz → 100 ms）无 tick 完成 → 同 Event。
+- **双路 overrun 事件化**：HardRT 沿既有计数点（`rt_thread.rs:290`）；
+  SerialRT **新增 `overruns: AtomicU64`** 进 `SerialIoThreadMetrics`
+  （`serial_io_thread.rs:128-136` 区，判定点 = tick 起止用时）。**判定
+  与升级（具体值）**：单 tick 用时 > **150% 周期** → overrun 计数 +1；
+  **连续 3 次 overrun** 或 **单次 > 300% 周期** →
+  `Event::RtOverrun` → `Fault(RtOverrun)`（既有转移 `:645`）。
+- **重复事件抑制**：进 Fault 后状态机天然不重复转移；事件/日志发射端
+  限频 = **同类每秒 ≤ 1**（沿仓内 every-N 模式）。
+- **tick 用时直方图（RB6 数据源，为段 10 抖动基线服务）**：HardRT /
+  SerialRT 各自 tick 起止测量；**RT 侧仅 `fetch_add` 固定桶**
+  （AtomicU64 ×8 桶：≤50%/75%/100%/150%/200%/300%/500%/>500% 周期），
+  聚合与日志在 ipc/pub 侧（每秒一行结构化）。
+- unit：deadline 过期（与 heartbeat 区分双 case）/ on_timeout 三值 /
+  stall 双 RT 类模拟 / overrun 连续 3 与单次 300% 两判据 / 限频。
+  cross-process AC-E23/E24 落段(7)（fault 注入 + SIGSTOP 组合）。
+
 ### P.2.6 段(6) 转换 helper + shim（round 3 非阻断：撤"case 库骨架"）
 
 - feetech：`raw_to_rad` / `rad_to_raw`（`adapter.rs:92-103`）提升
@@ -1137,19 +1206,45 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
   ```
   S0 迁移传 `thread_name = "s0_systemd_wd"` 原值——**行为 bit 等价**；
   S1 = `"s1_systemd_wd"`、gateway = `"gw_systemd_wd"`。
-- **gateway ready 顺序锁死（R3-B2）**：workers ready → bind →
-  **tonic serve 启动** → loopback probe **首次成功** → `notify_ready()`
-  （systemd READY=1）→ watchdog enforce；shutdown =
-  `notify_stopping()` → 停 probe/watchdog → 既有 graceful 链原样。
-  **既有测试用 bind-ready `ready_tx` 原样保留**（bind 后即回，测试语义
-  0 改）；systemd-ready 为**独立通路**，不复用不移动 ready_tx。
-- **test-only freeze hooks（R3-B2，AC-E19 冻结注入面）**：
+- **gateway ready 顺序 + 并发拓扑锁死（R3-B2 + RB4）**：
+  `serve_with_incoming_shutdown(...).await` 会阻塞到停机
+  （`gateway.rs:1781` 实证）——**server 必须 `tokio::spawn` 为独立
+  task**，不能线性 "serve → probe"。锁定：
+  1. workers ready → bind（**既有测试用 bind-ready `ready_tx` 原样
+     保留**，bind 后即回，测试语义 0 改；systemd-ready 为独立通路）；
+  2. `let server = tokio::spawn(serve_with_incoming_shutdown(incoming,
+     shutdown_rx))`；
+  3. **probe task**：低层 unary 循环（间隔 500ms，首成上限 10s——超时 =
+     启动失败按既有启动错误路径退出）→ 首次成功 → `notify_ready()` →
+     `spawn_watchdog`（enforce 开始）；
+  4. **probe 实现（RB4——`RobotControlClient` 仅 `client` feature 生成，
+     `build.rs:26`，生产不开）**：`tonic::client::Grpc<Channel>` +
+     **既有 prost message 类型**（server-only build 亦生成）+ 显式
+     `PathAndQuery("/robot.RobotControl/GetState")` + tonic-prost
+     codec——**不开 `client` feature、不改生产 client 边界**；请求 =
+     `GetStateRequest { hardware_id: "" }`，判成功 = 收到
+     `InvalidArgument`；
+  5. **早退错误**：server task 在 READY 前 Err → 触发 shutdown + 启动
+     失败退出（沿既有码）；READY 后 Err → `notify_stopping()` → 停
+     probe/watchdog → join 全部 → 按既有错误退出；
+  6. **shutdown 正常序（所有权 = main async fn 持 server JoinHandle +
+     probe/watchdog handle + shutdown_tx）**：`notify_stopping()` →
+     停 probe/watchdog → `shutdown_tx` 触发 server graceful → join
+     server task → 既有 rr_io / estop_pub / state_pool 停链原样。
+- **test-only freeze hooks（R3-B2 + RB3 重写——env 方案撤回**：启动时
+  读取会把 TonicProbe 冻在首次 probe 前〔测到启动失败非 watchdog 超
+  时〕，且 env 跨 systemd 重启存续 → PID1 再冻结**）**：沿 **S0
+  `freeze_control.rs` 先例 = test-only iceoryx2 freeze topic 运行时
+  注入**（raw API、与生产 schema/拓扑隔离，cfg 守门同款）：
   `pub enum WorkerKind`（S1：`Tick / HeartbeatPub / RrServer(u8) /
-  StateCache`；gateway：`RrIo(u8) / EstopPub / StatePool / TonicProbe`）；
-  控制入口 = env **`ROBOT_TEST_FREEZE=<kind-str>`**（进程启动时读取，
-  命中的 worker 在 loop 顶 park）；全部包在 feature
-  **`test-freeze-hooks`**（default-off，**永不进 default features**；
-  release 命令已入 P.0 活清单）。
+  StateCache`；gateway：`RrIo(u8) / EstopPub / StatePool / TonicProbe`）
+  → 路由到各 worker `freeze_check` 原子（loop 顶检查 park）。feature
+  名**对齐 S0 既有 `test-freeze-hook`（单数）**，default-off 永不进
+  default。**smoke 时序锁死（AC-E19）**：PID0 达 READY → smoke 注入
+  一次 freeze（指定 WorkerKind）→ 观察 withholding ping → systemd
+  watchdog 重启 → **PID1 无再次注入且恢复 READY**。新 smoke **现在
+  锁名**：bin = `sd_watchdog_smoke`、feature = `sd-watchdog-smoke`
+  （robot-tests，required-features，P.0 活清单已具名）。
 - S1 observers：tick loop / heartbeat pub / 4 rr server / state cache
   （段 5）——各 `loop_tick_count`（空闲推进）；gateway observers：6
   rr_io + estop_pub + state pool 线程 `loop_tick_count` + **tonic
@@ -1192,10 +1287,12 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
   进程拓扑——正常 S1 持续发合法命令会经 latest() 塌缩造成假 PASS）：
   **不起对应 S1**，拓扑 = s0 + FakeHeartbeatPublisher（维持 Enabled）
   + raw 注入器（robot-rpc tests helper 直建 iceoryx2 publisher 向 S0
-  command topic 发帧）；步骤 = 读 baseline target/position → 注入
-  **≥3 帧错 layout、target = baseline + 明显偏移** → settle → 断言
-  **state/输出不变**。`unknown_layout_count +1` 断言**仅在段(3) unit**
-  （"计数可观测时断言"模糊口径**删除**）。
+  command topic 发帧）；**步骤（RB5 补正向对照）**：① 确认
+  `Enabled.Active` → ② 注入 **matching-layout** 命令（明显 target）→
+  **断言输出确实变化**（正向控制：注入器与判据通路先自证有效）→
+  ③ 注入 **≥3 帧错 layout、target = 前值 + 明显偏移** → settle →
+  断言**保持 ② 后的值不变**。`unknown_layout_count +1` 断言**仅在
+  段(3) unit**（"计数可观测时断言"模糊口径**删除**）。
 - `tests/common/dual_ctx.rs`：PD-E3 全套（`dimos_e2e_<pid>_<seq>_{left,
   right}` / `left_arm`・`right_arm` / `127.0.0.1:0` ×2 断言不同 /
   GLOBAL_LOCK / RAII 清理）；bring-up = 2×(s0+s1+gateway) 6 子进程
@@ -1204,8 +1301,12 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
   `read_state_both_arms_layout_validated`（E4/E11-M1M2）/
   `chunk_pair_scripted_with_gripper`（E11-M3M4 + E15 终点一致+单调）/
   `consecutive_chunks_no_pullback_no_jump`（E7）/
-  `post_success_reset_matrix`（E18 序列：Success 后 cancel/failure/IK/
-  HoldPose-cancel 各回启动 anchor；failure 用 `test-fault-backend`）/
+  `post_success_reset_matrix`（E18；RB5 改准：**各分支独立 case 上下文**
+  ——`InternalError` 会把 coordinator 打进 **Degraded**〔`coordinator.rs:
+  1746-1754` 实证〕，同上下文串测会让后续 IK/HoldPose 被拒；failure
+  分支自身断言链 = fault 注入 → Failed → **Degraded hold == anchor** →
+  maintainer `ClearError` → 回 Idle〔顺带锁 Degraded 矩阵行〕；其余分支
+  各自 fresh bring-up 后"先 Success 再 X"）/
   `start_pose_stale_rejected`（E6；QA6 改准：**SIGSTOP 对应臂真 S0
   进程 + 等 `max_stale_ms` 超时** → Scripted start 拒
   FailedPrecondition → SIGCONT 恢复——六进程拓扑无 FakeState 可停）/
@@ -1287,7 +1388,15 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名单�
 - Orin 本地 build（`xlerobot-real` + release + 活清单 features）→ 装
   unit ×7 → `systemctl start` 目标臂（handoff transaction 自动链）→
   验收 bin 三步（读状态→双臂 chunk→双夹爪）→ AC-E12 判据 + AC-E16/E21/
-  E22 真机侧 → 通过后 D-BI3 退役（disable 旧栈）。
+  E22 真机侧 + **AC-E25（D15：Enabled 态 kill -9 → <500ms fail-safe
+  实测）** → **仅当 D14 段 5b 已落 + D15 通过**才执行 D-BI3 退役
+  （disable 旧栈；D16 修正版硬门）。
+- **资源/抖动基线（资源裁决 + RB6 落死）**：窗口 = 验收三步全程；
+  CPU/RSS = robot-health 采样（S0/S1/gateway 三进程，`[monitor]` 既有
+  面）；**调度抖动 = 段 5b tick 用时直方图**（HardRT / SerialRT 各自
+  测量点，8 固定桶）——验收 bin 结束时从日志聚合出 **p50/p95/p99/max**
+  （按桶上界保守估计）；归档格式 = 收口 docs 表格（每进程一行 CPU%/RSS
+  峰值 + 每 RT 类一行 p50/p95/p99/max）+ journal 摘录附件。
 - 证据（journal 摘录 + 验收 bin 输出 + 拍板核对表）进收口 docs
   （summary + CHANGELOG 收口条 + CLAUDE 状态块 + handoffs README）。
 
