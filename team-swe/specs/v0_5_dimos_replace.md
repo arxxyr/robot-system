@@ -768,11 +768,22 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 
 ---
 
-# Plan（outline draft v1）
+# Plan（outline draft v1 → round 1 回修）
 
 > Spec round 12 Approved + D1-D13 终拍（2026-07-14，`3f49230`）后授权。
 > **outline 级**：定段序 / 每段 scope 与 gate / 拍板项；P.2 细化随 Plan
 > round 展开。**0 代码改动直至 Plan ACK**。
+
+## Plan round 1 amend 记录（reviewer 复核后）
+
+4 项（PC1 P0 + PC2-PC4 P1）+ P.3 五项拍板，已回修/落值：
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| PC1 | P0 | **段 (2) 不能独立落地**：`motor_ids` 一旦成 serde 已知字段就不再进 extras（`config_loader.rs:68-78` HardwareSection typed 结构），但 `build_adapter` 仍读 `extras["motor_ids"]`（`s0_daemon.rs:1163`）——只改 loader 段 (2) 即破 S0 | 段 (2) **原子包含消费端迁移** + **S0/S1 两套 `HardwareSection`** + 全部 struct fixture 与 TOML producer；**全仓 `[[hardware]]` producer census 入 P.1**（实测名单：`case_ctx.rs` / `set_enabled_e2e.rs:264` / `estop_e2e.rs:369` / `state_rpc_e2e.rs` / `gateway.rs` 测试 helper / `crash_restart_smoke.rs` / `freeze_systemd_smoke.rs` / `scripted_backend_smoke.rs` / `pubsub_cleanup_smoke.rs` / `s1_daemon.rs`+`coordinator.rs`+`state_pool.rs`+`robot_rpc_gateway.rs` 各自 HardwareSection 消费/定义面 / configs 12 个 TOML） |
+| PC2 | P1 | **release-first feature 集漏 `clear-estop-e2e`**（`robot-tests/Cargo.toml:52` required-features 守门）——stale/missing binary 风险 | P.0 命令补 `clear-estop-e2e`；**后续新增验收 feature 与 `xlerobot-real` guard bin 时必须同步加入显式 release build 清单**（P.0 落为活清单条款） |
+| PC3 | P1 | **PD-E3 只有题目无方案**；段 (7) "双栈三真 daemon" 易误读 | PD-E3 按 reviewer 方案落值（见 P.3）；段 (7) 锁 **2×(s0+s1+gateway) = 6 个子进程** |
+| PC4 | P1 | **PD-E5 (b) 与已拍 D1 冲突**：一切 command producer 从 config 派生 layout；mock_s1 现无 `--config` 入口（实测 0 命中） | PD-E5 拍 (a)；段 (4) 明确 **mock_s1 补 `--config` 入口 + 既有 crash-smoke 等调用方迁移**；显式 `--layout-id` 仅一致性断言、冲突 fail-fast |
 
 ## P.0 工作基线
 
@@ -784,25 +795,30 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
   -- -D warnings` 零警告；**Quality Gate 顺序硬性**（RS2 全链教训）=
   `cargo build --release --workspace` → **`cargo build --release -p
   robot-tests --features "pubsub-cleanup-smoke,scripted-backend-smoke,
-  ik-backend-smoke,robotctl-smoke"`**（required-features bins）→ workspace
-  test（1185 基线 0 退化 = AC-E13 每段随跑）→ 相关 smoke。
+  ik-backend-smoke,robotctl-smoke,clear-estop-e2e"`**（required-features
+  bins；PC2 补 `clear-estop-e2e`）→ workspace test（1185 基线 0 退化 =
+  AC-E13 每段随跑）→ 相关 smoke。**活清单条款（PC2）**：后续新增验收
+  feature 与 `xlerobot-real` guard bin 落地时，**必须同步加入本显式
+  release build 清单**（漏加 = RS2 家族回归）。
 - **0 新 wire**（D1-D13 终拍口径：0 新 method / 0 新 schema）；**0 新
   runtime 依赖预期**（如实施期发现必须新增 → 白名单登记 + reviewer 拍板）。
 - cargo deny：未新增 violation 口径逐段核。
 
-## P.1 commit 节奏（预估 9 feat + 1 真机段 + 逐段 docs；硬序 ↓ 可并 ∥）
+## P.1 commit 节奏（预估 9 feat + 1 真机段 + 逐段 docs；**PD-E1 已拍：
+全串行落 commit，顺序 (1)→(2)→(3)→(4)→(5)→(6)→(8)→(7)→(9)→(10)**——
+先落最终 daemon liveness〔段 8〕，再让旗舰 workflow e2e〔段 7〕覆盖它）
 
 | 段 | 内容 | 主要落点 | AC | 依赖 |
 |---|---|---|---|---|
 | (1) | **layout 计算权威**：`compute_layout_id` 规范编码 pub fn + schema_lint 迁移 | robot-msg | E1 | — |
-| (2) | **config typed + 身份锁**：motor_ids typed 全套校验 + `[robot].id==--robot-id`（S0/S1）+ exit 码口径 + e2e 模板与 6 config 补显式 motor_ids | config loader + s0/s1 args + case_ctx + configs | E3 部分 | — |
+| (2) | **config typed + 身份锁（PC1 原子扩）**：motor_ids typed 全套校验 + **消费端迁移同 commit**（`build_adapter` 从 typed 字段读，撤 `extras["motor_ids"]`，`s0_daemon.rs:1163`）+ **S0/S1 两套 `HardwareSection` 同步** + `[robot].id==--robot-id`（S0/S1）+ exit 码口径 + **全仓 `[[hardware]]` producer census 逐一补显式 motor_ids**（PC1 名单：case_ctx / set_enabled_e2e:264 / estop_e2e:369 / state_rpc_e2e / gateway.rs 测试 helper / 4 smoke bin 动态 builder + freeze_systemd_smoke / configs 12 TOML；struct fixture 全数） | config loader（S0+S1）+ s0/s1 args + 全仓 producer | E3 部分 | (1) |
 | (3) | **S0 layout 落地**：撤 `0xCAFE…` 占位（config 派生）+ command 侧 layout gate（丢弃不写 slot + `unknown_layout_count` + 限频 warn） | robot-s0 | E2 | (1)(2) |
-| (4) | **S1 layout 落地 + client 校验**：S1 config 派生 / `--layout-id` fail-fast / mock_s1 对齐；robot-rpc client 模块骨架 + `GetState.layout_id` 校验 | robot-s1 + robot-rpc client | E3/E4 | (1)(2) ∥(3) |
+| (4) | **S1 layout 落地 + client 校验**：S1 config 派生 / `--layout-id` 仅一致性断言、冲突 fail-fast（PD-E5(a)）/ **mock_s1 补 `--config` 入口 + crash-smoke 等既有调用方迁移**（PC4）；robot-rpc client 模块骨架 + `GetState.layout_id` 校验 | robot-s1（含 mock_s1）+ robot-rpc client + 调用方 | E3/E4 | (3) |
 | (5) | **G1 语义段**：S1 常驻 state cache（stop+join+Drop）+ `scripted_start_pose`（拒绝语义）+ 末点发布保证（先 Continue 后 Completed）+ `idle_hold_target` 穷尽规则与行为矩阵 + HoldPose 回归 | robot-s1 | E6/E7/E8/E17/E18/E20 | (4) |
 | (6) | **转换 helper + shim + case 库**：JointTrajectory 形→ScriptedPayload（name→index / 时长差分 / 首点宽容校验）+ rad-native 校验 + 原始 12 维 shim（feetech 公共换算 API + robot-tests optional dep）+ 共享 case 库骨架 | robot-rpc client + robot-adapter-feetech（pub 纯函数）+ robot-tests | E10 | (1)(4) |
-| (7) | **双臂协议 + workflow e2e**：并发提交 / 双终态 / partial / cancel / 双 EStop / GetTaskStatus 收敛编排 + 双栈三真 daemon e2e（新 config 对 mock 路径全通） | robot-rpc tests | E5/E9/E11/E14/E15 | (2)-(6) |
-| (8) | **sd_notify 段**：S1 + gateway liveness-aware notify/watchdog（loop_tick_count / tonic loopback probe / READY / STOPPING）+ smoke | robot-s1 + robot-rpc + robot-tests | E19 | ∥（5）后任意 |
-| (9) | **部署件段**：guard bin（pre-increment 六步 / 86 / 稳定锁 / RuntimeDirectory 契约）+ preflight/handoff 入口（17 电机 ensure-safe，mock transport unit）+ latch provision + unit ×7 + 新 runbook | 宿主待拍（PD-E2）+ scripts/systemd | E16/E21/E22（unit 侧） | (2) |
+| (7) | **双臂协议 + workflow e2e**：并发提交 / 双终态 / partial / cancel / 双 EStop / GetTaskStatus 收敛编排 + **2×(s0+s1+gateway) = 6 子进程** e2e（PC3 口径；新 config 对 mock 路径全通） | robot-rpc tests | E5/E9/E11/E14/E15 | (2)-(6)(8) |
+| (8) | **sd_notify 段**：S1 + gateway liveness-aware notify/watchdog（loop_tick_count / tonic loopback probe / READY / STOPPING）+ smoke | robot-s1 + robot-rpc + robot-tests | E19 | (6) 后、(7) 前（PD-E1：先落最终 daemon liveness，旗舰 e2e 覆盖它） |
+| (9) | **部署件段**：guard bin（pre-increment 六步 / 86 / 稳定锁 / RuntimeDirectory 契约）+ preflight/handoff 入口（17 电机 ensure-safe，mock transport unit）+ latch provision + unit ×7 + 新 runbook | **robot-s0 `xlerobot-real` bin + robot-s0 lib 共享实现（PD-E2(a) 已拍）**+ scripts/systemd | E16/E21/E22（unit 侧） | (7) |
 | (10) | **真机完结段**（非 repo commit 为主）：Orin 本地 build → handoff transaction → 双栈起 → 验收 bin 三步（读状态→双臂→双夹爪）→ AC-E12 → D-BI3 退役（disable 旧栈）+ 证据 docs | Orin + docs | E12/E16/E21/E22（真机侧） | (1)-(9) |
 | 逐段 docs | CHANGELOG 登记分布（PD-E4）+ 段间 summary 增量 + 收口 summary/CLAUDE/README | docs | E13 全程 | 随段 |
 
@@ -819,15 +835,15 @@ JointLayout 广播/RR（D1 部分落地边界登记）。
 - 真机段前置：段 (9) runbook 即真机操作权威；真机证据（journal 摘录 +
   验收 bin 输出）进收口 docs。
 
-## P.3 Plan 拍板项（round 1 待 reviewer）
+## P.3 Plan 拍板项（round 1 全部已拍，2026-07-14）
 
-| # | 项 | 待拍 |
+| # | 项 | 拍板 |
 |---|---|---|
-| PD-E1 | 段序与并行度 | 上表依赖列：(3)∥(4)、(8) 可与 (6)(7) 并行——是否强制全串行 |
-| PD-E2 | guard / preflight / handoff 可执行入口宿主 | (a) robot-s0 第二 bin（feature `xlerobot-real`，生产 ExecStart 指向 robot-s0 产物，语义最正）/ (b) robot-tests bin（与验收 bin 同 crate 复用最短，但生产 unit 指向测试 crate 产物） |
-| PD-E3 | workflow e2e 资源分配 | 双栈 robot_id/port 派生规则 + 共享 case 库模块路径命名 |
-| PD-E4 | CHANGELOG 节奏 | (a) 随段登记（P.2 清单）/ (b) 收口统一一条 |
-| PD-E5 | mock_s1 layout 对齐方式 | (a) mock_s1 同走 config 派生 / (b) 保留显式 CLI（e2e 模板注入派生值） |
+| PD-E1 | 段序与并行度 | **全串行落 commit**：(1)→(2)→(3)→(4)→(5)→(6)→(8)→(7)→(9)→(10)——先落最终 daemon liveness（段 8），再让旗舰 workflow e2e（段 7）覆盖它 |
+| PD-E2 | guard / preflight / handoff 可执行入口宿主 | **(a)**：生产 guard/handoff 入口放 **robot-s0 的 `xlerobot-real` bin**，共享实现放 **robot-s0 lib**；验收 bin 仍在 robot-tests；**不得让生产 unit 指向测试 crate** |
+| PD-E3 | workflow e2e 资源分配 | 每 case 派生 **`dimos_e2e_<pid>_<seq>_{left,right}`**；hardware 固定 `left_arm`/`right_arm`；**两端口均由 `127.0.0.1:0` 分配并断言不同**；单 test `GLOBAL_LOCK` + RAII 清理；共享语义模块 = **`robot_rpc::client::dual_arm_workflow`**，子进程 harness 留在 robot-rpc/tests |
+| PD-E4 | CHANGELOG 节奏 | **(a) 随语义所在段登记**（P.2 清单） |
+| PD-E5 | mock_s1 layout 对齐方式 | **(a) config 派生是唯一权威**；mock_s1 补 `--config` 入口 + 既有调用迁移（段 4）；显式 `--layout-id` 仅作一致性断言、冲突 fail-fast |
 
 ## P.4 Plan-Execute diff 登记（实施期填）
 
