@@ -10,6 +10,68 @@
 
 ---
 
+## 2026-07-15 · 候选 E 受监督 demo 例外（§6.5.1 硬件 fail-safe）+ D15-R (c1+) 拍定（**状态：偏离登记**）
+
+### 背景与能力核实
+
+候选 E Plan round 6 完成 D15 ① 能力核实：**STS3215 无已文档化、可配置的
+command watchdog，且当前真机失联持续带扭**。证据链三锚点：dimos-deploy
+`feetech_io/registers.py`（表头自证完整表在 lerobot 源码）无该类寄存器 /
+lerobot `STS_SMS_SERIES_CONTROL_TABLE` 完整 58 项逐一核对无该类寄存器
+（`Protection_Time(35)` / `Over_Current_Protection_Time(38)` 为过载/过流
+保护时长非通信看门狗）/ 真机失联 hold-last-position 持续带扭行为；≥10 s
+台架观察保留为行为证据。依候选 E Spec D15 已拍"不支持"分支回 Spec 重拍 →
+**D15-R 拍 (c1+)（reviewer，E Plan round 7，2026-07-15）：受监督 demo
+豁免 + fail-safe 接口预留**——按最新目标收缩：先跑通受监督功能 demo，
+生产级安全闭环后置。
+
+### 偏离内容（demo 例外）
+
+- **偏离对象**：`00_design.md` §6.5.1（`:1107` 区块）规则 3 "不支持硬件
+  timeout 的电机不得进入 `ENABLED.ACTIVE` 自动控制" + `:1114` CI 验收
+  "kill -9 → <500ms fail-safe"。
+- **例外范围**：仅候选 E **受监督功能 demo**（AC-E12），执行前置 = 安全
+  边界五条全满足：① 机械隔离、工作区无人、无负载，操作者全程在场且可
+  立即切断总电源；② 新 unit 不设开机自动控制（权威 config
+  `auto_enable = false`），每次上扭均显式 `SetEnabled(true)`；③ 先单臂
+  低速/低扭矩再双臂，单侧异常立即 cancel 双侧并双发 EStop；④ 旧栈保留
+  可恢复启动路径；⑤ kill -9 后持续带扭不得描述成通过——仅残余风险证据。
+- **不改 `00_design.md`**；`10_verification.md:100` / `:103` 两行 ⏳
+  原样保留不销。
+
+### 约束
+
+- **D15 保持 OPEN 不得写成闭环**；AC-E25 <500ms 保持未完成，**不计入
+  候选 E demo 完结 gate**。
+- **D-BI3 正式退役推迟**：demo 期间旧 unit 可 `stop`，不得 disable/
+  删除/破坏回滚（`v0.5_dimos_buyin_decision.md` r3 同步修订）。
+- 收口宣称唯一口径 = **"机器人控制执行面受监督功能 demo 跑通"**；不得
+  宣称生产替换 / 无人值守 / 硬件 fail-safe 完成。
+- **无人值守生产化前必须补硬件 fail-safe 并撤销本例外**（post-E 硬件
+  CodeMap → (b) 断电 watchdog / (c2) 独立监督进程再拍）。
+- 同步收缩（同轮）：D14 四检测器（deadline/on_timeout/stall/overrun）
+  移出候选 E，归档 post-E "生产安全硬化候选"，开工前须先解两 P0 前置
+  阻断——① CtrlLostStop 已断扭后 heartbeat 恢复走 Pure 转移回
+  `Enabled.Active` 不重新 `Enable(true)`（`state_machine.rs:621-636`，
+  "状态 Active、硬件断扭"）；② deadline Fault 消费后 `ClearError` 可借
+  `cmd_deadline_valid` guard（`state_machine.rs:202` +
+  `ipc_tick.rs:456` 硬编码 true）再进 Active 而信号抑制又禁止旧命令重
+  Fault——须锁"新鲜、未过期命令才重新武装并允许 Ready→Active"。
+- 预留接口 = **仅文档级集成契约**（arm / heartbeat(kick) /
+  request_safe(disarm) / status+readback；集成点 = handoff/guard 与
+  允许 `SetEnabled(true)` 之间；缺失/失联/readback 失败 fail-closed）；
+  不写假 no-op watchdog trait。
+
+### 影响面与审阅
+
+- 影响面：候选 E Spec/Plan（round 7 范围收缩，执行序收敛
+  (1)→(2)→(3)→(4)→(5)→(6)→(8)→(7)→(9)→(10-demo)）、
+  `v0.5_dimos_buyin_decision.md` D-BI3（r3）、后续 summary / CLAUDE
+  宣称口径统一"受监督功能 demo"。
+- 审阅人：reviewer（E Plan round 7 复核意见原文拍定）；登记人：Claude。
+
+---
+
 ## 2026-07-13 · v0.5 候选 E premise 变更 + dimos buy-in 决策单拍板（**状态：premise 变更登记 + 拍板登记**）
 
 ### 背景
