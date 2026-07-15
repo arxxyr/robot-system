@@ -29,13 +29,19 @@ lerobot `STS_SMS_SERIES_CONTROL_TABLE` 完整 58 项逐一核对无该类寄存�
 
 - **偏离对象**：`00_design.md` §6.5.1（`:1107` 区块）规则 3 "不支持硬件
   timeout 的电机不得进入 `ENABLED.ACTIVE` 自动控制" + `:1114` CI 验收
-  "kill -9 → <500ms fail-safe"。
+  "kill -9 → <500ms fail-safe"；**以及 §6.7 核心不变量 #1 的后半句**
+  （round 8 补点名："S0 不在时靠硬件 fail-safe"——S0-dead 硬件保证部分
+  作 demo 例外并保持 OPEN；**#1 的 S0-alive 软件保证不变，#2-#5 全保**。
+  后续 summary/CLAUDE 不得再写"§6.7 全保"，只能用本拆分口径）。
 - **例外范围**：仅候选 E **受监督功能 demo**（AC-E12），执行前置 = 安全
   边界五条全满足：① 机械隔离、工作区无人、无负载，操作者全程在场且可
   立即切断总电源；② 新 unit 不设开机自动控制（权威 config
   `auto_enable = false`），每次上扭均显式 `SetEnabled(true)`；③ 先单臂
-  低速/低扭矩再双臂，单侧异常立即 cancel 双侧并双发 EStop；④ 旧栈保留
-  可恢复启动路径；⑤ kill -9 后持续带扭不得描述成通过——仅残余风险证据。
+  低速/小幅再双臂（round 8 可判定数值：单臂探针 |target−anchor| ≤
+  0.087 rad、轨迹最大斜率 ≤ 0.14 rad/s——既有 ±5°、0.25 Hz 真机验证
+  量级；撤"低扭矩"宣称，无可 readback 的 torque/current 限制面），
+  单侧异常立即 cancel 双侧并双发 EStop；④ 旧栈保留可恢复启动路径；
+  ⑤ kill -9 后持续带扭不得描述成通过——仅残余风险证据。
 - **不改 `00_design.md`**；`10_verification.md:100` / `:103` 两行 ⏳
   原样保留不销。
 
@@ -61,6 +67,15 @@ lerobot `STS_SMS_SERIES_CONTROL_TABLE` 完整 58 项逐一核对无该类寄存�
   request_safe(disarm) / status+readback；集成点 = handoff/guard 与
   允许 `SetEnabled(true)` 之间；缺失/失联/readback 失败 fail-closed）；
   不写假 no-op watchdog trait。
+- **配套硬化（round 8）**：`auto_enable=false` 不消除崩溃残留扭矩
+  （Feetech `connect()` 不写 `Torque_Enable=0`，`adapter.rs:475-514`）
+  → per-arm guard **每次启动/restart 对本 bus 全量电机 ensure-safe**
+  （左 bus1 ID 1-8 断扭；右 bus2 ID 1-6 断扭、7-9 先零速后断扭；全部
+  readback；仍只碰本臂 bus）；demo **应急协议** = Enabled 期间任一 S0
+  死亡/重启 → 立即人工切总电源并中止本轮（不得只依赖 EStop 弱 Ack——
+  S0-dead 时 Ack 不证明事件已消费）；kill -9 带扭 ≥10s 观察移出 demo
+  必经步（机械隔离 + 关自动 restart 的一次性 characterization，不计
+  gate，已有证据可不重跑）。
 
 ### 影响面与审阅
 

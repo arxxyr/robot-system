@@ -22,8 +22,11 @@
 > = 受监督功能 demo，生产级安全闭环后置**——段(5b)/(9b) 移出（D14 四检测
 > 器归档 post-E "生产安全硬化候选"），**D15 保持 OPEN**，AC-E25 不入
 > demo gate，D-BI3 正式退役推迟；执行序收敛
-> **(1)→(2)→(3)→(4)→(5)→(6)→(8)→(7)→(9)→(10-demo)**。当前阶段 =
-> **Plan round 7 收缩完成待复核（未 Approved，仍不实施代码）**。
+> **(1)→(2)→(3)→(4)→(5)→(6)→(8)→(7)→(9)→(10-demo)**。**round 8 闭环
+> 回修：§6.7 拆分口径（#2-#5 全保 + #1 S0-dead 半句 demo 例外）/
+> per-arm guard 本 bus 全量 ensure-safe / 旧退役指令清零 / demo 数值
+> 判据 + baseline 宣称收窄**。当前阶段 = **Plan round 8 回修完成待复核
+> （未 Approved，仍不实施代码）**。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -543,8 +546,9 @@ post-E robotctl 候选）。
   transaction 为旧栈停止与首次全总线安全交接的权威入口**——步序 =
   `systemctl start` 目标臂 unit → systemd 依赖链自动执行〔handoff：停
   旧栈 + 全 17 电机 ensure-safe〕→〔本臂 ExecStart guard：preflight +
-  provision → exec s0_daemon〕→ 验收 → 通过后才 disable 旧栈〔D-BI3
-  顺序锁〕；
+  provision → exec s0_daemon〕→ demo 验收；**round 8 同步（P1-1）：
+  demo 后旧栈仍保留——只允许为释放硬件而 `stop`，正式退役 / disable /
+  删除全部等 post-E 生产安全候选闭环〔D-BI3 r3〕**；
   手工 `systemctl stop` 旧栈仍可作前置动作但**不再是安全交接的依据**）。
 - **deploy.sh 不进 E**（登记独立 follow-up；Orin 本地 build 惯例沿用）。
 - D2(i) 下**无底盘 mode 硬化链**（但有 D13 preflight）。
@@ -560,15 +564,23 @@ head/base 电机；旧栈退出只 best-effort 断扭且吞失败
 `except: pass`；`bus2_base.py:166+` 轮子 `Goal_Velocity=0` 同款）——
 head/wheels 在切换窗口的扭矩/速度状态**未知**。
 
-**fail-closed preflight（锁定；r4 U3 ensure-safe 语义重写）**：真机启动
-任一 arm-only S0 **之前**，对该臂所属 bus 的 **omitted motors**（左 = bus1
-head ID 7,8；右 = bus2 wheels ID 7,8,9）：
+**fail-closed preflight（锁定；r4 U3 ensure-safe 语义重写；round 8 P0-2
+扩程 = 本 bus 全量）**：真机启动任一 arm-only S0 **之前**（含 systemd
+watchdog / crash 自动 restart 的每一次 guard 重跑），对该臂所属 bus 的
+**全部电机**——左 = bus1 **ID 1-8**（6 臂 + 2 head）；右 = bus2
+**ID 1-9**（6 臂 + 3 wheels）。**扩程根因（P0-2）**：`auto_enable=false`
+只防新 S0 自动上扭，**不消除崩溃残留扭矩**——Feetech `connect()` 只建
+连接/翻译 id/缓存，**不写 `Torque_Enable=0`**（`adapter.rs:475-514`
+实证）；S0 Enabled 崩溃 → 电机持续带扭 → 若 guard 只处理 omitted
+motors，则本臂 ID 1-6 在新 S0 起后仍保持上次带扭状态。**仍只碰本臂
+bus**（错峰启动不触另一臂已占串口）：
 
 1. （审计步，可选）预读当前值——**仅记录，不决定是否执行安全写**；
-2. **无条件 best-effort 安全写全部 omitted motors**：bus1 head 逐电机
-   `Torque_Enable = 0`；bus2 wheels 逐电机**先 `Goal_Velocity = 0` 后
-   `Torque_Enable = 0`**（顺序锁定：先零速再断扭）；**单电机/单寄存器写
-   失败不中断**，继续处理其余电机；
+2. **无条件 best-effort 安全写本 bus 全部电机**：bus1 ID 1-8 逐电机
+   `Torque_Enable = 0`；bus2 ID 1-6 逐电机 `Torque_Enable = 0`、
+   ID 7-9 **先 `Goal_Velocity = 0` 后 `Torque_Enable = 0`**（顺序
+   锁定：先零速再断扭）；**单电机/单寄存器写失败不中断**，继续处理
+   其余电机；
 3. **逐项 readback**：每电机每安全寄存器读回并断言安全值；单项失败同样
    继续其余项；
 4. **末尾聚合**：任一写 / readback 失败或值不安全 → preflight 整体
@@ -717,17 +729,17 @@ s0_daemon 尚未 exec）+ **每臂 ExecStart guard 强制** + runbook 硬步序
 | AC-E9 | 非目标关节填当前位 + 漂移容差数值 | e2e |
 | AC-E10 | 转换 helper：差分时长 / 首点宽容校验 / gripper [0,1]→rad 导入 | unit |
 | AC-E11 | 对照移植清单三调用面 e2e 全绿（M1/M2/M3+M4 经 D6 同车） | e2e |
-| AC-E12 | Orin 真机三步（读状态→双臂→双夹爪）受监督 demo runbook 化——**D15-R (c1+) 显式豁免下执行，安全边界五条全满足**：① 机械隔离/工作区无人/无负载/操作者在场可立即断总电源 ② auto_enable=false、每次上扭显式 SetEnabled(true) ③ 先单臂低速低扭矩再双臂、单侧异常立即 cancel 双侧+双 EStop ④ 旧栈保留可恢复启动路径 ⑤ kill -9 带扭仅残余风险证据不得称通过 | 真机 demo gate |
+| AC-E12 | Orin 真机三步（读状态→双臂→双夹爪）受监督 demo runbook 化——**D15-R (c1+) 显式豁免下执行，安全边界五条全满足**：① 机械隔离/工作区无人/无负载/操作者在场可立即断总电源 ② auto_enable=false、每次上扭显式 SetEnabled(true) ③ 先单臂**低速/小幅**（|target−anchor| ≤ 0.087 rad、斜率 ≤ 0.14 rad/s；撤"低扭矩"宣称）再双臂、单侧异常立即 cancel 双侧+双 EStop ④ 旧栈保留可恢复启动路径 ⑤ kill -9 带扭仅残余风险证据不得称通过；**应急协议：Enabled 期间任一 S0 死亡/重启 → 立即人工切总电源并中止本轮（不得只依赖 EStop 弱 Ack）** | 真机 demo gate |
 | AC-E13 | 既有 1185 基线 + 6 smoke 0 退化 | workspace |
 | AC-E14 | 双臂协议全路径（r3+r4）：**Ack 偏差上限 gate**（Started.at_ns 若收到仅诊断记录，缺失不判失败）/ 终态精确集与 pair success 定义 / 提交期与执行期部分失败 cancel / partial completion 报告 / stream 断开 GetTaskStatus 收敛（含超时上限）/ 双拒绝确定性 FAIL / 不收敛双 EStop | e2e |
 | AC-E15 | gripper 阶跃→插值语义变化：终点一致 + 轨迹单调（非等价宣称） | e2e |
-| AC-E16 | D13 ensure-safe（r4+r6）：无条件安全写 + 单项失败继续 + 末尾聚合；写失败/readback 失败/值不安全 → 均不起新栈；**范围两档各一 case**——handoff 全 17 电机（bus1 1-8 断扭 / bus2 1-6 断扭 / bus2 7-9 先零速后断扭）+ per-arm restart 子集（本 bus omitted motors） | unit + 真机 gate |
+| AC-E16 | D13 ensure-safe（r4+r6）：无条件安全写 + 单项失败继续 + 末尾聚合；写失败/readback 失败/值不安全 → 均不起新栈；**范围两档各一 case**——handoff 全 17 电机（bus1 1-8 断扭 / bus2 1-6 断扭 / bus2 7-9 先零速后断扭）+ **per-arm 本 bus 全量（round 8 P0-2 扩程：左 bus1 ID 1-8 断扭；右 bus2 ID 1-6 断扭、7-9 先零速后断扭；全部 readback——`auto_enable=false` 不消除崩溃残留扭矩，Feetech `connect()` 不写 Torque_Enable〔`adapter.rs:475-514`〕）** | unit + 真机 gate |
 | AC-E17 | 末 waypoint 先 Continue（target=末位）后 Completed（dwell=0 路径发布保证） | unit + e2e |
 | AC-E18 | D3 穷尽式规则 + **序列测试**（RB5：**各分支独立 case 上下文**——先 Success 再分别 cancel/failure/IK/HoldPose-cancel，逐一断言 reset 回启动 anchor；failure 分支追加 **Degraded hold == anchor + ClearError 回 Idle**；不得只测 boot 初态、不得同上下文串测） | e2e |
 | AC-E19 | S1/gateway sd_notify watchdog 双向（RB3 时序锁死）：**长时间零请求不重启** + **freeze topic 运行时注入每类 worker**——PID0 READY → 注入一次 → withholding → watchdog 重启 → **PID1 无再注入且恢复 READY**；**反向步（R5-5）**：PID1 READY 后 driver 显式再发一条 `target_pid` = PID0（已死 pid）命令 → 断言 PID1 打 "stale freeze ignored" 日志且无二次 withholding；**多 hardware case（R6-5）**：gateway 双 hardware 冻 `StatePool(1)` 单线程 → withholding（健康线程不掩蔽）（bin `sd_watchdog_smoke` / feature `sd-watchdog-smoke`） | smoke |
 | AC-E20 | state cache 线程 stop+join 正常 Drop（无 mem::forget） | unit |
 | AC-E21 | latch provision（r5 三分支 + r6 合法性收紧 + r8/r9）：状态链 latched Safe → ClearEStop → 仍 Safe → SetEnabled(true) → Ready；分支 case = 双缺失写入（tmp→fsync→rename）/ 单份缺失且现存合法补写 / **primary 损坏+backup 缺失 → provision 失败不创建**（+ 反方向）/ 双份存在内容不动；**dir-fsync 统一最终步骤序列测试（r9 Z2）：首次注入 dir-fsync 失败 → 第二次重试命中"双份存在"仍必须执行并成功 dir-fsync 后才 exec**（严格失败路径含目录 open/fsync → 拒启）；backup 写失败 → 自动重试补写成双份；连败预算联动见 AC-E22 | unit + e2e |
-| AC-E22 | 启动拓扑强制（r4 四场景 + r5-r8 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（guard pre 失败 → 重试期绝不 exec s0_daemon）/ watchdog 自动重启（guard 重跑仍 fail-closed）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9）/ **guard 预算四锁（r8 Y1 + r9 Z1 判据收窄）**：①连续 5 次 pre 失败 → 退 86 + `RestartPreventExitStatus=86` 停止自动重启 ②一次成功清零连败计数 ③连续 6 次成功启动/restart 不触发该预算——**只断言 guard 计数保持清零**，执行上相邻启动须留足间隔/分组避开独立 unit 级 60s/5（快速六连被 60s/5 拦是预算 ① 正确行为非缺陷，**不得写成同一条无间隔 systemd e2e**）④运行期快速崩溃仍由 unit 级 60s/5 限流；计数 I/O 异常（非法格式/越界/更新失败/清零失败）与 flock 冲突 → 均退 86 不 exec（**NotFound = 0 正常初态**；count==5 → 停止态）；**RuntimeDirectory 四态（r10 AA1）**：首次启动自动创建 / restart 保留 / 手工 stop-start 保留 / reboot 清零；**锁语义（r10 AA2）**：rename count 期间竞争进程对 `<robot_id>.lock` 不得同时拿锁成功（稳定 inode 反向复现 case）；**pre-increment 崩溃注入（r11 AB1）**：连续"递增后、完成前崩溃"（kill guard 于 preflight 中）→ 第 5 次后退 86 停止且 **s0_daemon 从未执行**；成功路径仍清零 | 真机 gate（+unit 级依赖声明检查） |
+| AC-E22 | 启动拓扑强制（r4 四场景 + r5-r8 修订）：同时启动双臂 / 错峰启动第二臂（不碰已占串口）/ 直接 `systemctl start`（guard pre 失败 → 重试期绝不 exec s0_daemon）/ watchdog 自动重启（guard 重跑仍 fail-closed **且每次重跑断言本 bus 全量 ensure-safe——覆盖 Enabled 崩溃残留扭矩场景，round 8 P0-2**）/ **旧栈 active 时仅启动一臂 → 唯一结果 = handoff 对全部 17 电机 ensure-safe 后该臂启动**（断言精确 ID 集：bus1 1-8 / bus2 1-6 / bus2 7-9）/ **guard 预算四锁（r8 Y1 + r9 Z1 判据收窄）**：①连续 5 次 pre 失败 → 退 86 + `RestartPreventExitStatus=86` 停止自动重启 ②一次成功清零连败计数 ③连续 6 次成功启动/restart 不触发该预算——**只断言 guard 计数保持清零**，执行上相邻启动须留足间隔/分组避开独立 unit 级 60s/5（快速六连被 60s/5 拦是预算 ① 正确行为非缺陷，**不得写成同一条无间隔 systemd e2e**）④运行期快速崩溃仍由 unit 级 60s/5 限流；计数 I/O 异常（非法格式/越界/更新失败/清零失败）与 flock 冲突 → 均退 86 不 exec（**NotFound = 0 正常初态**；count==5 → 停止态）；**RuntimeDirectory 四态（r10 AA1）**：首次启动自动创建 / restart 保留 / 手工 stop-start 保留 / reboot 清零；**锁语义（r10 AA2）**：rename count 期间竞争进程对 `<robot_id>.lock` 不得同时拿锁成功（稳定 inode 反向复现 case）；**pre-increment 崩溃注入（r11 AB1）**：连续"递增后、完成前崩溃"（kill guard 于 preflight 中）→ 第 5 次后退 86 停止且 **s0_daemon 从未执行**；成功路径仍清零 | 真机 gate（+unit 级依赖声明检查） |
 | AC-E23 | **随 D14 移出候选 E（round 7）**——归档 post-E 生产安全硬化候选（deadline 过期 → Fault，与 heartbeat 路径双 case 区分） | 移出（post-E） |
 | AC-E24 | **随 D14 移出候选 E（round 7）**——归档 post-E 生产安全硬化候选（双路 overrun / stall / on_timeout 三值输出；R6 方案为历史记录，开工前须先解两 P0 前置阻断） | 移出（post-E） |
 | AC-E25 | D15：真机 Enabled 态 `kill -9 s0_daemon` → **<500ms** 进入 fail-safe——**保持 OPEN 未完成，不计入候选 E demo 完结 gate**（D15-R (c1+)）；kill -9 后持续带扭 ≥10s 台架观察**仅作残余风险证据，不得描述成通过**；判据待 post-E 硬件 CodeMap 拍 (b)/(c2) 后定 | OPEN（post-E 正式退役硬门） |
@@ -737,8 +749,12 @@ s0_daemon 尚未 exec）+ **每臂 ExecStart guard 强制** + runbook 硬步序
 1. **wire 0 改**：0 新 proto method / 0 新 fbs schema / frozen 字段 0 改
    （`JointState.layout_id` / `JointCommand.layout_id` 字段既有，仅**值语义**
    变更走 CHANGELOG）。
-2. §6.7 五条全保（D1 的 S0 command gate = 防错位**强化**，不触 latch/EStop
-   链）。
+2. **§6.7 #2-#5 全保；#1 拆分口径（round 8 P0-1）**：#1 的 **S0-alive
+   软件保证不变**（D1 的 S0 command gate = 防错位**强化**，不触
+   latch/EStop 链）；#1 的 **S0-dead "靠硬件/驱动 fail-safe" 半句按
+   D15-R (c1+) 作显式受监督 demo 例外并保持 OPEN**（CHANGELOG
+   2026-07-15 条偏离对象含 §6.7 #1）。后续 summary/CLAUDE **不得再写
+   "§6.7 全保"**，只能用本拆分口径。
 3. design.md 0 改（§3.5.1 落地差异 / 解读全走 CHANGELOG）。
 4. dimos-deploy 0 改（冻结 `9ece6bd`，跨仓 0 PR 永久）。
 5. robotctl 0 改（辅助定位；子命令补齐 = post-E 登记）。
@@ -939,8 +955,11 @@ round 7 原文条款照录；按最新目标收缩：先跑通受监督功能 de
   1. 机械隔离、工作区无人、无负载，操作者全程在场且可立即切断总电源；
   2. 新 unit 不设开机自动控制——`auto_enable = false`，每次上扭均显式
      `SetEnabled(true)`；
-  3. 先单臂低速/低扭矩验证，再双臂；任何单侧异常立即 cancel 双侧并
-     双发 EStop；
+  3. 先单臂**低速/小幅**验证（round 8 P1-2 可判定数值：单臂探针
+     |target−anchor| ≤ **0.087 rad**、轨迹最大斜率 ≤ **0.14 rad/s**——
+     对应既有 ±5°、0.25 Hz 真机验证量级；**撤"低扭矩"宣称**：Feetech
+     路径无可 readback 的 torque/current 限制面），再双臂；任何单侧
+     异常立即 cancel 双侧并双发 EStop；
   4. 旧栈保留可恢复启动路径；
   5. kill -9 后持续带扭**不得描述成通过**——只能作为残余风险证据。
 - **预留接口 = 仅文档级集成契约（不写假 no-op watchdog trait）**：
@@ -1015,7 +1034,10 @@ daemon-independent 跨臂联锁。
   enforce）；**暂不给 S0 加 `CPUQuota`/`MemoryMax` 合理**（错误限额可能
   主动杀死安全进程）。
 - **E 内做两件**：① 段(10-demo) 真机工作流**记录 S0/S1/gateway 的 CPU / RSS /
-  调度抖动基线**（robot-health 采样 + runbook 采集步 + 收口 docs 附）；
+  调度抖动基线**（robot-health 采样 + runbook 采集步 + 收口 docs 附）
+  〔round 8 P1-2 收窄：抖动项改称 **synthetic iceoryx2 transport
+  latency baseline**（既有 bin，非生产线程调度抖动）；生产线程真实
+  调度抖动留 post-E——权威细则 P.2.10〕；
   ② 段(9) 新 unit 注释**明文记录"资源策略为何暂不设限"**（CPUQuota vs
   SCHED_FIFO throttling / MemoryMax vs mlockall OOM-kill）。
 - **阈值执法另开 Spec**（S0 与 S1/gateway 分开评估）。本人先前两处表述
@@ -1119,6 +1141,17 @@ reviewer 裁决全文照录执行（auto_enable=false / R6-5 接线 / R6-6 序�
 | R7-5 | **预留接口边界**：仅文档级集成契约（arm / heartbeat(kick) / request_safe(disarm) / status+readback；集成点 = handoff/guard 与 SetEnabled(true) 之间；缺失/失联/readback 失败 fail-closed）；**不写假 no-op trait，禁止凭空抽象** | ✅ 执行 | D15-R 节 + P.2.9b 墓碑 |
 | R7-6 | **文档一次性 Reverse Sync**：Spec 顶部/D14-D17/D15-R/AC/P.1/P.2.5b/P.2.9b/P.2.10 + 决策单 D-BI3 + CHANGELOG freeze-diff + 后续 summary/CLAUDE 口径统一"受监督功能 demo" | ✅ 执行 | 本 commit 三文件 |
 
+## Plan round 8 amend 记录（reviewer 复核后；收缩方向通过，修四项闭环点）
+
+2 P0 + 2 P1，已回修（其余 round 7 收缩接受）：
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| R8-1 | P0 | **"§6.7 五条全保"与 demo 例外直接冲突**：(c1+) 无法保证 #1 后半句"S0 不在时靠硬件 fail-safe" | 严禁改动 #2 改**拆分口径**：#2-#5 全保；#1 S0-alive 软件保证不变、S0-dead 硬件半句按 D15-R (c1+) 显式 demo 例外并保持 OPEN；CHANGELOG 偏离对象**补点名 §6.7 #1**；后续 summary/CLAUDE 禁写"§6.7 全保" |
+| R8-2 | P0 | **auto_enable=false ≠ restart 后已断扭**：Feetech `connect()` 只建连/翻译 id/缓存不写 `Torque_Enable=0`（`adapter.rs:475-514` 实证）——S0 Enabled 崩溃 → 电机持续带扭 → guard 只处理 omitted → 新 S0 起后本臂 1-6 仍带扭 | per-arm guard **每次启动/restart 对本 bus 全量 ensure-safe**（左 bus1 ID 1-8 断扭；右 bus2 ID 1-6 断扭、7-9 先零速后断扭；全部 readback；仍只碰本臂 bus）——D13/AC-E16/AC-E22/P.2.9/mock unit 判据全同步；runbook 增**应急协议**（Enabled 期间任一 S0 死亡/重启 → 立即人工切总电源中止本轮；不得只依赖 EStop 弱 Ack——S0-dead 时 Ack 不证明事件已消费）；kill -9 带扭 ≥10s **移出必经步** → 机械隔离+关自动 restart 的一次性 characterization（不计 gate，已有证据可不重跑） |
+| R8-3 | P1 | **生效中的旧退役指令**：D12 runbook "验收通过后才 disable 旧栈"（:546）/ P.2.9 runbook "D-BI3 步序" / 决策单 LCM 行"随仓退役" | 统一改：demo 后旧栈仍保留；只允许为释放硬件而 `stop`；正式退役 / disable / 删除 / LCM 随仓退出**全部等 post-E 生产安全候选闭环**（决策单 r4 同步） |
+| R8-4 | P1 | **demo 数值与 baseline 宣称不可判定**："低速/低扭矩"无 torque-limit 配置面不可验收；`iceoryx2_rt_baseline` 测的是 synthetic 同进程 pub/sub 延迟非生产线程调度抖动 | 改"**低速/小幅**"：单臂探针 \|target−anchor\| ≤ **0.087 rad** + 轨迹斜率 ≤ **0.14 rad/s**（既有 ±5°、0.25 Hz 量级），撤"低扭矩"宣称；bin 改称 **synthetic iceoryx2 transport latency baseline**，归档 p50/p99/p999/max + drops/overruns + 完整参数 + SCHED_FIFO/mlockall/affinity 是否成功；只采样不执法、阈值失败登记不阻断 demo；生产线程 tick 用时与真实调度抖动留 post-E |
+
 ## P.0 工作基线
 
 - Spec 定稿 = `3f49230`（round 12 Approved + 终拍）；CodeMap = `dbbba7b`
@@ -1170,7 +1203,7 @@ liveness〔段 8〕，再让旗舰 workflow e2e〔段 7〕覆盖它；段(5b)/(9
 | (7) | **双臂协议 + workflow e2e**：并发提交 / 双终态 / partial / cancel / 双 EStop / GetTaskStatus 收敛编排 + **2×(s0+s1+gateway) = 6 子进程** e2e（PC3 口径；新 config 对 mock 路径全通） | robot-rpc tests | E5/E9/E11/E14/E15 | (2)-(6)(8) |
 | (8) | **sd_notify 段**：S1 + gateway liveness-aware notify/watchdog（loop_tick_count / tonic loopback probe / READY / STOPPING）+ smoke | robot-s1 + robot-rpc + robot-tests | E19 | (6) 后、(7) 前（PD-E1：先落最终 daemon liveness，旗舰 e2e 覆盖它） |
 | (9) | **部署件段**：guard bin（pre-increment 六步 / 86 / 稳定锁 / RuntimeDirectory 契约）+ preflight/handoff 入口（17 电机 ensure-safe，mock transport unit）+ latch provision + unit ×7 + 新 runbook | **robot-s0 `xlerobot-real` bin + robot-s0 lib 共享实现（PD-E2(a) 已拍）**+ scripts/systemd | E16/E21/E22（unit 侧） | (7) |
-| (10-demo) | **真机受监督 demo 段**（非 repo commit 为主；**D15-R (c1+) 显式豁免 + 安全边界五条**）：Orin 本地 build → handoff transaction → 双栈起（auto_enable=false 不自动上扭；旧 unit 可 `stop` 不 disable 不删）→ 读状态（只读）→ 安全边界 checklist → 单臂低速/低扭矩（显式 SetEnabled(true)）→ 双臂 chunk → 双夹爪（**AC-E12**）+ AC-E16/E21/E22 真机侧 → 台架残余风险证据步（kill -9 带扭 ≥10s 观察，仅证据）→ **资源基线采集**（CPU/RSS + 调度/IPC 抖动，细则 P.2.10）→ 证据 docs。**无 D-BI3 退役步（正式退役推迟 post-E）；收口宣称 = "受监督功能 demo 跑通"** | Orin + docs | E12/E16/E21/E22（真机侧） | (1)-(9) |
+| (10-demo) | **真机受监督 demo 段**（非 repo commit 为主；**D15-R (c1+) 显式豁免 + 安全边界五条**）：Orin 本地 build → handoff transaction → 双栈起（auto_enable=false 不自动上扭；旧 unit 可 `stop` 不 disable 不删）→ 读状态（只读）→ 安全边界 checklist → 单臂低速/小幅（|target−anchor| ≤ 0.087 rad、斜率 ≤ 0.14 rad/s，显式 SetEnabled(true)）→ 双臂 chunk → 双夹爪（**AC-E12**）+ AC-E16/E21/E22 真机侧 → **资源基线采集**（CPU/RSS + synthetic transport latency baseline，细则 P.2.10）→ 证据 docs；**应急协议 = S0 死亡立即断电中止**；kill -9 characterization 移出必经步（可选一次性，不计 gate）。**无 D-BI3 退役步（正式退役推迟 post-E）；收口宣称 = "受监督功能 demo 跑通"** | Orin + docs | E12/E16/E21/E22（真机侧） | (1)-(9) |
 | 逐段 docs | CHANGELOG 登记分布（PD-E4）+ 段间 summary 增量 + 收口 summary/CLAUDE/README | docs | E13 全程 | 随段 |
 
 ## P.2 工作流（函数级，round 1 后展开）
@@ -1331,8 +1364,9 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
   `cmd_deadline_valid` 借道 + 信号抑制 = Active 持续 timeout 输出——
   须锁"新鲜、未过期命令才重新武装并允许 Ready→Active"）**登记于
   D14 节**，硬化候选开工前必须先解。
-- 生产线程 tick 用时直方图（RB6 数据源）随本段移出；demo 调度/IPC
-  抖动基线改用既有 `iceoryx2_rt_baseline` bin（见 P.2.10）。
+- 生产线程 tick 用时直方图（RB6 数据源）随本段移出；demo 改用既有
+  `iceoryx2_rt_baseline` bin 作 **synthetic iceoryx2 transport
+  latency baseline**（宣称收窄——非生产线程调度抖动，见 P.2.10）。
 
 ### P.2.6 段(6) 转换 helper + shim（round 3 非阻断：撤"case 库骨架"）
 
@@ -1570,7 +1604,8 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
       -> Result<InstanceLock, LockError>  // flock 稳定 inode；
       // InstanceLock: exec 前显式 close/CLOEXEC
   // deploy/preflight.rs
-  pub enum PreflightScope { Arm(Side), Handoff }
+  pub enum PreflightScope { Arm(Side) /* round 8 P0-2：= 本臂 bus 全量
+      （左 bus1 ID 1-8；右 bus2 ID 1-9），非 omitted-only */, Handoff }
   pub trait DeployTransport { fn write_register(&mut self, motor: u8,
       reg: &'static str, value: i32) -> Result<(), TransportErr>;
       fn read_register(&mut self, motor: u8, reg: &'static str)
@@ -1606,8 +1641,11 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
   指令字面：Requires/After/Conflicts/Wants/RuntimeDirectory 三件套/
   `RestartPreventExitStatus=86`/60s/5/`WatchdogSec`）+ 新 runbook
   `scripts/systemd/README_dimos_replace.md`（handoff transaction 权威
-  入口 + D-BI3 步序 + 人工恢复）。
-- unit：AC-E16（mock transport 注入三路径 + 两档电机集）/ AC-E21（三
+  入口 + **demo 期间旧栈 stop-only 处置**〔正式退役/disable/删除等
+  post-E，D-BI3 r3——round 8 P1-1〕+ 人工恢复 + **S0 死亡应急协议**
+  〔权威文本 P.2.10〕）。
+- unit：AC-E16（mock transport 注入三路径 + 两档电机集——handoff 17 /
+  **per-arm 本 bus 全量〔左 8 / 右 9，含 7-9 先零速〕，round 8 P0-2**）/ AC-E21（三
   分支 + 损坏方向 ×2 + dir-fsync 序列 + truth table，tempdir）/
   AC-E22 unit 级（unit 文件指令文本断言）+ guard 计数全路径（NotFound=0
   / 0..=5 / 越界 / flock 冲突 / pre-increment 崩溃模拟〔kill 子进程〕）。
@@ -1631,8 +1669,12 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
   1. 机械隔离、工作区无人、无负载，操作者全程在场且可立即切断总电源；
   2. 新 unit 不设开机自动控制——权威 config `auto_enable = false`
      （P.2.2），每次上扭均显式 `SetEnabled(true)`；
-  3. **先单臂低速/低扭矩验证，再双臂**；任何单侧异常立即 cancel 双侧
-     并双发 EStop（client 侧协议，D17 (ii) 受监督边界）；
+  3. **先单臂低速/小幅验证，再双臂**（round 8 P1-2 可判定数值：单臂
+     探针 |target−anchor| ≤ **0.087 rad**、轨迹最大斜率 ≤
+     **0.14 rad/s**——既有 ±5°、0.25 Hz 真机验证量级；**撤"低扭矩"
+     宣称**，Feetech 路径无可 readback 的 torque/current 限制面）；
+     任何单侧异常立即 cancel 双侧并双发 EStop（client 侧协议，
+     D17 (ii) 受监督边界）；
   4. 旧栈保留可恢复启动路径（可 `stop`，不 `disable`、不删除 unit）；
   5. kill -9 后持续带扭**不得描述成通过**——仅残余风险证据。
 - **步序**：
@@ -1640,14 +1682,22 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
      装 unit ×7 → `systemctl start` 目标臂（handoff transaction 自动
      链）；
   2. 读状态（只读；不自动上扭）；
-  3. 安全边界 checklist 确认 → 单臂低速/低扭矩（显式 SetEnabled）→
-     双臂 chunk → 双夹爪 = **AC-E12** + AC-E16/E21/E22 真机侧；
-  4. **台架残余风险证据步**：机械隔离下 Enabled → `kill -9 s0_daemon`
-     → 观察扭矩持续 ≥10 s（journal + 记录）——**仅作 D15 OPEN 的残余
-     风险证据**；
-  5. 资源基线采集（下）→ 证据 docs；**无退役步**（D-BI3 正式退役推迟
+  3. 安全边界 checklist 确认 → 单臂低速/小幅（显式 SetEnabled，数值
+     判据同上）→ 双臂 chunk → 双夹爪 = **AC-E12** + AC-E16/E21/E22
+     真机侧；
+  4. 资源基线采集（下）→ 证据 docs；**无退役步**（D-BI3 正式退役推迟
      post-E）；收口宣称 = **"机器人控制执行面受监督功能 demo 跑通"**
      （不得宣称生产替换 / 无人值守 / 硬件 fail-safe 完成）。
+- **应急协议（round 8 P0-2，进 runbook）**：Enabled 期间**任一 S0 进程
+  死亡/重启 → 立即人工切断总电源并中止本轮**；**不得只依赖 EStop 弱
+  Ack**——S0-dead 时 Ack = published_at_ns（候选 D D2 弱 Ack 语义）
+  **不证明事件已被消费**；恢复 = 断电确认 → 排查根因 → 重新走安全边界
+  checklist 从步 1 起。
+- **一次性 characterization（可选，不计 gate，round 8 移出必经步）**：
+  kill -9 带扭 ≥10 s 行为证据——条件 = **机械隔离 + 关闭自动 restart**
+  （临时 stop/mask 对应 guard unit，防 systemd 拉起干扰观察）+ 人值守
+  断电在手；**已有证据足够时可直接不重跑**（D15 节 2026-07-15 桌面 +
+  行为证据链已在档）。
 - **资源基线（只采不执法，资源裁决沿用）**：
   - CPU/RSS：权威 arm config ×2 `[monitor]`（`interval_secs = 1` +
     `interested_processes = ["s0_daemon", "s1_daemon",
@@ -1655,13 +1705,17 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
     精确 comm 匹配 `lib.rs:210`）；(comm,pid) 归档 + 6 unit
     `systemctl show -p MainPID` join 映射左右臂；**warmup = 丢每进程
     首帧；最小样本 ≥30 帧/进程**，不足延长尾窗。
-  - **调度/IPC 抖动基线 = 既有 `iceoryx2_rt_baseline` bin**
-    （robot-tests；SCHED_FIFO 双线程 pub/sub 端到端延迟直方图，v0.2
-    Step 6 验收工具）Orin demo 窗口跑 `--duration 10m --hz 50`，
-    p50/p99/p999 进归档表——**0 新生产代码**；生产线程 tick 用时直方
-    图随段(5b) 移出归 post-E。
-  - 归档格式 = 收口 docs 表格（每进程一行 CPU%/RSS 峰值 + 抖动一行
-    p50/p99/p999）+ journal 摘录附件。
+  - **synthetic iceoryx2 transport latency baseline = 既有
+    `iceoryx2_rt_baseline` bin**（robot-tests，v0.2 Step 6 验收工具）
+    ——**宣称收窄（round 8 P1-2）**：它测的是**同进程双线程 synthetic
+    iceoryx2 pub/sub 端到端延迟**，**不是 S0/S1/gateway 生产线程调度
+    抖动**；Orin demo 窗口跑 `--duration 10m --hz 50`，**0 新生产
+    代码**；**只采样不执法——bin 自带阈值失败如实登记但不阻断受监督
+    demo**；生产线程 tick 用时与真实调度抖动留 post-E。
+  - 归档格式 = 收口 docs 表格（每进程一行 CPU%/RSS 峰值 + latency
+    baseline 一行 **p50/p99/p999/max + drops/overruns + 完整运行参数
+    + SCHED_FIFO/mlockall/CPU affinity 是否成功**）+ journal 摘录
+    附件。
 - 证据（journal 摘录 + 验收 bin 输出 + 安全边界 checklist 记录）进收口
   docs（summary + CHANGELOG demo 执行补录 + CLAUDE 状态块 + handoffs
   README——**口径统一"受监督功能 demo"**）。
