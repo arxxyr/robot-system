@@ -32,8 +32,13 @@
 > 与 D2 权威名统一（`/etc/robot/xlerobot_{left,right}_arm.toml` 三处
 > 一致 + 安装映射 + unit 字面锁）/ 右 bus 写数改准 12 条（合计 20）+
 > 有序序列断言 / `PreflightFailure::{Connect,Operation}` 类型契约
-> （FailedTransport 方案撤回）**。当前阶段 = **Plan round 10 回修
-> 待复核（未 Approved，仍不实施代码）**。
+> （FailedTransport 方案撤回）**。
+> **当前阶段：✅ Plan Approved — supervised-demo scope（reviewer，
+> 2026-07-15，round 10 复核零新增阻断）**。批准边界：① D15 硬件
+> fail-safe 继续 OPEN，AC-E25 不属于 demo gate；② 不执行旧栈正式退役 /
+> disable / 删除，不宣称生产级或无人值守完成；③ 执行严格串行
+> (1)→(2)→(3)→(4)→(5)→(6)→(8)→(7)→(9)→(10-demo)；④ **实施期任何语义
+> 偏离先 Reverse Sync，不直接改 Spec 或继续执行**。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -1182,6 +1187,22 @@ reviewer 裁决全文照录执行（auto_enable=false / R6-5 接线 / R6-6 序�
 | R10-1 | P0 | **systemd 配置路径与 D2 权威文件名不一致**：D2 锁 `configs/xlerobot_{left,right}_arm.toml`（身份表），handoff unit 却写 `/etc/robot/xlerobot_{left,right}.toml`（漏 `_arm`）；且无安装重命名映射 | 统一 **`/etc/robot/xlerobot_{left,right}_arm.toml`**（仓库 configs/ 同名安装，runbook 增 `install -D` 步）；**三处同一绝对路径** = handoff 双 `--config` / arm guard `--config` / guard **自动追加** `--config <GuardConfig.config_path>` 到 s0 args（`--` 后再带 --config = 配置错误退 86，单源结构性保证）；AC-E22 增 unit 字面三处一致锁 + 拒绝 case |
 | R10-2 | P1 | **右 bus 写次数算错**："9 条写"实际 = ID 1-6 断扭 6 条 + ID 7-9 每轮 V+T 共 6 条 = **12 条**；handoff 合计左 8 + 右 12 = **20 条** | 计数全改准；测试**断言完整有序序列**（右 = `[T1..T6, V7,T7, V8,T8, V9,T9]`，**每轮零速先于同轮断扭**，非只断数量）——签名块注释 / AC-E16 表行 / P.2.9 unit 清单三处同步 |
 | R10-3 | P1 | **FailedTransport → op=Connect 无类型契约**：`TransportErr` 无来源信息，正常实现按调用点分类 Write/Readback，"自然得到 Connect"不成立 | 采 reviewer 推荐形态：**`PreflightFailure::Connect { arm, err }` + `PreflightFailure::Operation { arm, motor, reg, op, err }`**（`OpKind` 撤 Connect 只留 Write/Readback）；`ensure_safe_handoff` 签名改收 `Result<&mut dyn DeployTransport, String>` ——构造失败**签名级显式**聚合 `Connect{arm}` 并跳过该侧写序，**Ok 侧照常完整执行 12 条写 + readback 后聚合失败**；FailedTransport 方案撤回 |
+
+## Plan round 10 复核结论（reviewer，2026-07-15）：✅ Plan Approved — supervised-demo scope
+
+- 未发现新增阻断；R10-1/2/3 闭环确认（路径与参数来源统一 + 重复
+  `--config` fail-closed 退 86 / 左 8・右 12・合计 20 条写且右轮严格
+  V→T / Connect 与 Operation 类型分离、一侧连接失败不阻断另一侧、
+  FailedTransport 仅剩历史记录合法）。
+- **批准边界**：① D15 硬件 fail-safe 继续 OPEN，AC-E25 不属于 demo
+  gate；② 不执行旧栈正式退役 / disable / 删除，不宣称生产级或无人值守
+  完成；③ 执行严格串行 (1)→(2)→(3)→(4)→(5)→(6)→(8)→(7)→(9)→(10-demo)；
+  ④ 实施期任何语义偏离**先 Reverse Sync**，不直接改 Spec 或继续执行。
+- 复核验证：`git diff --check` / `cargo fmt --check` / workspace
+  clippy `-D warnings` 均通过；本轮全为文档改动，未重复运行 workspace
+  tests。
+- 下一步指令：登记本结论 → push 本地 docs commit 链 → **只进入
+  Execute 段(1)**。
 
 ## P.0 工作基线
 
