@@ -25,8 +25,11 @@
 > **(1)→(2)→(3)→(4)→(5)→(6)→(8)→(7)→(9)→(10-demo)**。**round 8 闭环
 > 回修：§6.7 拆分口径（#2-#5 全保 + #1 S0-dead 半句 demo 例外）/
 > per-arm guard 本 bus 全量 ensure-safe / 旧退役指令清零 / demo 数值
-> 判据 + baseline 宣称收窄**。当前阶段 = **Plan round 8 回修完成待复核
-> （未 Approved，仍不实施代码）**。
+> 判据 + baseline 宣称收窄**（round 9 对账全过）。**round 9 回修：
+> 部署 preflight API 改 per-bus 形态（本地 `DeployArm`、
+> `ensure_safe_arm`/`ensure_safe_handoff` 双 transport 聚合、
+> 双 config CLI 写死、反向测试两条）**。当前阶段 =
+> **Plan round 9 回修待复核（未 Approved，仍不实施代码）**。
 > 前置链：D-BI0~3 拍板（2026-07-13）+ CHANGELOG 2026-07-13 premise 登记。
 
 ## Spec round 记录
@@ -603,8 +606,12 @@ bus**（错峰启动不触另一臂已占串口）：
   仅启动一臂时另一臂 ID 1-6 可能仍带扭且无人接管）**：
   **bus1 ID 1-8 `Torque_Enable=0`；bus2 ID 1-6 `Torque_Enable=0`；
   bus2 ID 7-9 先 `Goal_Velocity=0` 再 `Torque_Enable=0`**——写/readback
-  聚合语义同上 fail-closed 段（单项失败继续、末尾聚合 FAIL）；"禁止单臂、
-  强制成对启动"备选**未采**。两个 arm-only S0 unit **`Requires=` +
+  聚合语义同上 fail-closed 段（单项失败继续、末尾聚合 FAIL）；
+  **R9-1 双 bus 形态**：`preflight-handoff --left-config …
+  --right-config …`（双份 config 显式传入、各构造独立 transport——
+  两 bus motor ID 重叠均有 1..6，失败按 `MotorFailure.arm` 归属）；
+  **一侧失败（含串口构造失败）不阻断另一侧完整执行，末尾双侧聚合**；
+  "禁止单臂、强制成对启动"备选**未采**。两个 arm-only S0 unit **`Requires=` +
   `After=`** handoff unit → **仅启动一臂也先保全部 17 电机安全**（随后
   该臂 S0 的 enable 序列只重新上扭自己的 6 电机）；同 boot 内第二臂启动
   时 handoff 已 active（RemainAfterExit）**不再重跑**（不碰第一臂已占
@@ -733,7 +740,7 @@ s0_daemon 尚未 exec）+ **每臂 ExecStart guard 强制** + runbook 硬步序
 | AC-E13 | 既有 1185 基线 + 6 smoke 0 退化 | workspace |
 | AC-E14 | 双臂协议全路径（r3+r4）：**Ack 偏差上限 gate**（Started.at_ns 若收到仅诊断记录，缺失不判失败）/ 终态精确集与 pair success 定义 / 提交期与执行期部分失败 cancel / partial completion 报告 / stream 断开 GetTaskStatus 收敛（含超时上限）/ 双拒绝确定性 FAIL / 不收敛双 EStop | e2e |
 | AC-E15 | gripper 阶跃→插值语义变化：终点一致 + 轨迹单调（非等价宣称） | e2e |
-| AC-E16 | D13 ensure-safe（r4+r6）：无条件安全写 + 单项失败继续 + 末尾聚合；写失败/readback 失败/值不安全 → 均不起新栈；**范围两档各一 case**——handoff 全 17 电机（bus1 1-8 断扭 / bus2 1-6 断扭 / bus2 7-9 先零速后断扭）+ **per-arm 本 bus 全量（round 8 P0-2 扩程：左 bus1 ID 1-8 断扭；右 bus2 ID 1-6 断扭、7-9 先零速后断扭；全部 readback——`auto_enable=false` 不消除崩溃残留扭矩，Feetech `connect()` 不写 Torque_Enable〔`adapter.rs:475-514`〕）** | unit + 真机 gate |
+| AC-E16 | D13 ensure-safe（r4+r6）：无条件安全写 + 单项失败继续 + 末尾聚合；写失败/readback 失败/值不安全 → 均不起新栈；**范围两档各一 case**——handoff 全 17 电机（bus1 1-8 断扭 / bus2 1-6 断扭 / bus2 7-9 先零速后断扭）+ **per-arm 本 bus 全量（round 8 P0-2 扩程：左 bus1 ID 1-8 断扭；右 bus2 ID 1-6 断扭、7-9 先零速后断扭；全部 readback——`auto_enable=false` 不消除崩溃残留扭矩，Feetech `connect()` 不写 Torque_Enable〔`adapter.rs:475-514`〕）**；**R9-1 反向两条**：双 bus 同号 motor 失败按 `MotorFailure.arm` 区分 / bus1 全失败〔FailedTransport〕→ bus2 仍全部执行 → 聚合 Err | unit + 真机 gate |
 | AC-E17 | 末 waypoint 先 Continue（target=末位）后 Completed（dwell=0 路径发布保证） | unit + e2e |
 | AC-E18 | D3 穷尽式规则 + **序列测试**（RB5：**各分支独立 case 上下文**——先 Success 再分别 cancel/failure/IK/HoldPose-cancel，逐一断言 reset 回启动 anchor；failure 分支追加 **Degraded hold == anchor + ClearError 回 Idle**；不得只测 boot 初态、不得同上下文串测） | e2e |
 | AC-E19 | S1/gateway sd_notify watchdog 双向（RB3 时序锁死）：**长时间零请求不重启** + **freeze topic 运行时注入每类 worker**——PID0 READY → 注入一次 → withholding → watchdog 重启 → **PID1 无再注入且恢复 READY**；**反向步（R5-5）**：PID1 READY 后 driver 显式再发一条 `target_pid` = PID0（已死 pid）命令 → 断言 PID1 打 "stale freeze ignored" 日志且无二次 withholding；**多 hardware case（R6-5）**：gateway 双 hardware 冻 `StatePool(1)` 单线程 → withholding（健康线程不掩蔽）（bin `sd_watchdog_smoke` / feature `sd-watchdog-smoke`） | smoke |
@@ -1033,11 +1040,11 @@ daemon-independent 跨臂联锁。
 - robot-health 现状 = 只采样/日志、无阈值执法（实证 lib 零 threshold/
   enforce）；**暂不给 S0 加 `CPUQuota`/`MemoryMax` 合理**（错误限额可能
   主动杀死安全进程）。
-- **E 内做两件**：① 段(10-demo) 真机工作流**记录 S0/S1/gateway 的 CPU / RSS /
-  调度抖动基线**（robot-health 采样 + runbook 采集步 + 收口 docs 附）
-  〔round 8 P1-2 收窄：抖动项改称 **synthetic iceoryx2 transport
-  latency baseline**（既有 bin，非生产线程调度抖动）；生产线程真实
-  调度抖动留 post-E——权威细则 P.2.10〕；
+- **E 内做两件**：① 段(10-demo) 真机工作流**记录 S0/S1/gateway 的
+  CPU / RSS + synthetic iceoryx2 transport latency baseline**
+  （robot-health 采样 + 既有 bin + runbook 采集步 + 收口 docs 附；
+  round 9 非阻断改准——首句直接用收窄口径防摘要/grep 误取；生产线程
+  真实调度抖动留 post-E，权威细则 P.2.10）；
   ② 段(9) 新 unit 注释**明文记录"资源策略为何暂不设限"**（CPUQuota vs
   SCHED_FIFO throttling / MemoryMax vs mlockall OOM-kill）。
 - **阈值执法另开 Spec**（S0 与 S1/gateway 分开评估）。本人先前两处表述
@@ -1151,6 +1158,15 @@ reviewer 裁决全文照录执行（auto_enable=false / R6-5 接线 / R6-6 序�
 | R8-2 | P0 | **auto_enable=false ≠ restart 后已断扭**：Feetech `connect()` 只建连/翻译 id/缓存不写 `Torque_Enable=0`（`adapter.rs:475-514` 实证）——S0 Enabled 崩溃 → 电机持续带扭 → guard 只处理 omitted → 新 S0 起后本臂 1-6 仍带扭 | per-arm guard **每次启动/restart 对本 bus 全量 ensure-safe**（左 bus1 ID 1-8 断扭；右 bus2 ID 1-6 断扭、7-9 先零速后断扭；全部 readback；仍只碰本臂 bus）——D13/AC-E16/AC-E22/P.2.9/mock unit 判据全同步；runbook 增**应急协议**（Enabled 期间任一 S0 死亡/重启 → 立即人工切总电源中止本轮；不得只依赖 EStop 弱 Ack——S0-dead 时 Ack 不证明事件已消费）；kill -9 带扭 ≥10s **移出必经步** → 机械隔离+关自动 restart 的一次性 characterization（不计 gate，已有证据可不重跑） |
 | R8-3 | P1 | **生效中的旧退役指令**：D12 runbook "验收通过后才 disable 旧栈"（:546）/ P.2.9 runbook "D-BI3 步序" / 决策单 LCM 行"随仓退役" | 统一改：demo 后旧栈仍保留；只允许为释放硬件而 `stop`；正式退役 / disable / 删除 / LCM 随仓退出**全部等 post-E 生产安全候选闭环**（决策单 r4 同步） |
 | R8-4 | P1 | **demo 数值与 baseline 宣称不可判定**："低速/低扭矩"无 torque-limit 配置面不可验收；`iceoryx2_rt_baseline` 测的是 synthetic 同进程 pub/sub 延迟非生产线程调度抖动 | 改"**低速/小幅**"：单臂探针 \|target−anchor\| ≤ **0.087 rad** + 轨迹斜率 ≤ **0.14 rad/s**（既有 ±5°、0.25 Hz 量级），撤"低扭矩"宣称；bin 改称 **synthetic iceoryx2 transport latency baseline**，归档 p50/p99/p999/max + drops/overruns + 完整参数 + SCHED_FIFO/mlockall/affinity 是否成功；只采样不执法、阈值失败登记不阻断 demo；生产线程 tick 用时与真实调度抖动留 post-E |
+
+## Plan round 9 amend 记录（reviewer 复核后；round 8 四项对账全过）
+
+1 P0 + 1 非阻断，已回修：
+
+| # | 级别 | 阻断 | 修订 |
+|---|---|---|---|
+| R9-1 | P0 | **部署 preflight API 无法表达双 bus handoff**：签名块用未定义的 `Side`（全仓唯一定义在 `robot-kinematics-xlerobot/src/lib.rs:208`，robot-s0 不依赖该 crate 且不规划此依赖边）；`ensure_safe(scope, t)` 只收一个 `DeployTransport`，而 handoff 必须同时区分 bus1/bus2——**两 bus motor ID 重叠（均有 1..6），trait 只有 motor 参数无从判归属**；Execute 将被迫临时定类型/依赖/双 bus 路由，违反函数级 Plan 门禁 | **per-bus 形态重写（P.2.9）**：robot-s0 本地 `DeployArm { Left, Right }`（禁依赖 kinematics `Side`）；撤 `PreflightScope`，改 **`ensure_safe_arm(arm, bus)` + `ensure_safe_handoff(left_bus, right_bus)`**（一侧任何失败**不阻断**另一侧完整执行、末尾双侧聚合；`MotorFailure` += `arm` 归属字段 + `OpKind::Connect`；串口构造失败以 **FailedTransport** 替位进聚合，无特判分支）；**CLI 配置来源锁定**：arm 路径单份 config、handoff 显式 `--left-config` + `--right-config`（handoff unit `ExecStart` systemd 字面写死）；**反向测试两条**（双 bus 同号 motor 按 arm 区分 / bus1 全失败 → bus2 仍全部执行 → 聚合失败）——D13 ②/AC-E16/子命令表全同步 |
+| R9-2 | 非阻断 | 资源门闩节 ① 首句仍"调度抖动基线"，后文才更正——摘要/grep 会误取旧口径 | 首句直接改 "CPU / RSS + synthetic iceoryx2 transport latency baseline" |
 
 ## P.0 工作基线
 
@@ -1585,8 +1601,13 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
 - robot-s0 lib 新模块（`xlerobot-real` feature 域内；**R3-B5 签名锁死
   ——safety-critical 启动链不留 Execute 自行设计**）：
   ```rust
-  // deploy/guard.rs
-  pub struct GuardConfig { pub arm: Side, pub config_path: PathBuf,
+  // deploy/types.rs（R9-1：robot-s0 本地定义，禁止依赖
+  // robot-kinematics-xlerobot::Side——全仓唯一 Side 在该 crate
+  // lib.rs:208，robot-s0 不依赖（Cargo.toml 实证）且不得新增该依赖边）
+  #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+  pub enum DeployArm { Left, Right }
+  // deploy/guard.rs（arm 路径 = 单份 config）
+  pub struct GuardConfig { pub arm: DeployArm, pub config_path: PathBuf,
       pub s0_bin: PathBuf /* 必须 is_absolute() + exists()，违者退 86 */,
       pub runtime_dir: PathBuf /* RuntimeDirectory 注入 */,
       pub robot_id: String }
@@ -1603,20 +1624,31 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
   pub fn acquire_instance_lock(lock_path: &Path)
       -> Result<InstanceLock, LockError>  // flock 稳定 inode；
       // InstanceLock: exec 前显式 close/CLOEXEC
-  // deploy/preflight.rs
-  pub enum PreflightScope { Arm(Side) /* round 8 P0-2：= 本臂 bus 全量
-      （左 bus1 ID 1-8；右 bus2 ID 1-9），非 omitted-only */, Handoff }
+  // deploy/preflight.rs（R9-1 per-bus 形态重写；撤 PreflightScope——
+  // 单 transport 的 ensure_safe(scope, t) 无法表达双 bus handoff：
+  // 两 bus motor ID 重叠（均有 1..6），trait 只有 motor 参数无从区分）
   pub trait DeployTransport { fn write_register(&mut self, motor: u8,
       reg: &'static str, value: i32) -> Result<(), TransportErr>;
       fn read_register(&mut self, motor: u8, reg: &'static str)
       -> Result<i32, TransportErr>; }  // feetech 真实现 + mock 测试实现
-  pub struct MotorFailure { pub motor: u8, pub reg: &'static str,
+  pub enum OpKind { Connect, Write, Readback }
+  pub struct MotorFailure { pub arm: DeployArm /* R9-1：双 bus 同号
+      motor 失败必须可归属 */, pub motor: u8, pub reg: &'static str,
       pub op: OpKind, pub err: String }
   pub struct EnsureSafeReport { pub failures: Vec<MotorFailure> }
-  pub fn ensure_safe(scope: PreflightScope,
-      t: &mut dyn DeployTransport) -> Result<(), EnsureSafeReport>
-      // 无条件写全集（bus2 先零速后断扭）→ 逐项 readback →
-      // 单项失败继续 → 末尾聚合
+  pub fn ensure_safe_arm(arm: DeployArm,
+      bus: &mut dyn DeployTransport) -> Result<(), EnsureSafeReport>
+      // 本 bus 全量（round 8 P0-2 计划表：Left = bus1 ID 1-8 断扭；
+      // Right = bus2 ID 1-6 断扭、ID 7-9 先零速后断扭）→ 逐项
+      // readback → 单项失败继续 → 末尾聚合
+  pub fn ensure_safe_handoff(left_bus: &mut dyn DeployTransport,
+      right_bus: &mut dyn DeployTransport) -> Result<(), EnsureSafeReport>
+      // = 左右两侧完整写序的聚合：一侧任何失败**不阻断**另一侧全部
+      // 执行；两侧 report 合并（MotorFailure.arm 区分同号 motor）；
+      // 任一侧有 failure → 整体 Err。bin 层某侧串口构造失败 → 以
+      // FailedTransport（恒返 TransportErr 的 DeployTransport 实现）
+      // 替位传入——该侧写序自然全失败进聚合（op=Connect 归因），
+      // 另一侧照常，无特判分支
   // deploy/provision.rs
   pub enum ProvisionOutcome { WroteBoth, RepairedMissing, Untouched }
   pub fn provision_latch(latch_path: &Path)
@@ -1625,16 +1657,24 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
       // 复用 estop_latch::save_single_atomic（私有件抽 pub(crate)）
   ```
 - robot-s0 新 bin `xlerobot_deploy.rs`（`required-features =
-  ["xlerobot-real"]`，**入 P.0 活清单**）：子命令
-  `guard --arm left|right --config … --s0-bin <绝对路径> -- <s0 args>`
-  （六步后 `exec <s0-bin>`）/ `preflight --scope arm|handoff` /
+  ["xlerobot-real"]`，**入 P.0 活清单**）：子命令（R9-1 CLI 配置来源
+  锁定）
+  `guard --arm left|right --config <单份 arm config> --s0-bin
+  <绝对路径> -- <s0 args>`（六步后 `exec <s0-bin>`；内部 arm
+  preflight 从这份 config 解析本臂串口）/
+  `preflight-arm --arm left|right --config <单份 arm config>` /
+  **`preflight-handoff --left-config <path> --right-config <path>`**
+  （双份显式传入，各自解析对应 bus 串口 → 构造两 transport →
+  `ensure_safe_handoff`；构造失败侧以 FailedTransport 替位）/
   `provision`。**unit 接线（QA1 改准——Y1 终拍：guard 必须是主进程，
   86 才被 `RestartPreventExitStatus=86` 捕获）**：arm S0 unit **无
   ExecStartPre**，`ExecStart=xlerobot_deploy guard …`（preflight +
   provision 在 guard 内部两步）；handoff unit
-  `ExecStart=xlerobot_deploy preflight --scope handoff`；S1/gateway
-  unit `ExecStart` 各自 daemon 原样。**unit ×7**（r6 W4 清单口径，
-  撤"六件"笔误）。
+  **`ExecStart=xlerobot_deploy preflight-handoff
+  --left-config /etc/robot/xlerobot_left.toml
+  --right-config /etc/robot/xlerobot_right.toml`（systemd 字面写死，
+  R9-1）**；S1/gateway unit `ExecStart` 各自 daemon 原样。
+  **unit ×7**（r6 W4 清单口径，撤"六件"笔误）。
 - `scripts/systemd/`：`xlerobot-handoff.service` +
   `xlerobot-s0-{left,right}-arm.service` + `xlerobot-s1-{left,right}.
   service` + `xlerobot-gateway-{left,right}.service`（D2/D12/D13 全部
@@ -1645,7 +1685,11 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
   post-E，D-BI3 r3——round 8 P1-1〕+ 人工恢复 + **S0 死亡应急协议**
   〔权威文本 P.2.10〕）。
 - unit：AC-E16（mock transport 注入三路径 + 两档电机集——handoff 17 /
-  **per-arm 本 bus 全量〔左 8 / 右 9，含 7-9 先零速〕，round 8 P0-2**）/ AC-E21（三
+  **per-arm 本 bus 全量〔左 8 / 右 9，含 7-9 先零速〕，round 8 P0-2**；
+  **R9-1 反向测试两条**：① bus1/bus2 各注入同号 motor〔如 ID 3〕失败 →
+  report 两条按 `arm` 字段分别归属不混淆；② bus1 侧注入全失败
+  〔FailedTransport〕→ 断言 bus2 计划写序**全部执行**〔mock 记录 9 条
+  写全在〕→ 最终聚合 Err 含左侧 Connect 归因）/ AC-E21（三
   分支 + 损坏方向 ×2 + dir-fsync 序列 + truth table，tempdir）/
   AC-E22 unit 级（unit 文件指令文本断言）+ guard 计数全路径（NotFound=0
   / 0..=5 / 越界 / flock 冲突 / pre-increment 崩溃模拟〔kill 子进程〕）。
