@@ -21,6 +21,7 @@
 
 pub mod build_helpers;
 pub mod capability;
+pub mod joint_layout;
 pub mod markers;
 pub mod schema_id;
 pub mod size_tier;

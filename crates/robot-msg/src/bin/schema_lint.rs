@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::{env, fs};
 
+use robot_msg::joint_layout::compute_layout_id;
 use robot_msg::schema_id::{
     DEPRECATED_SCHEMA_IDS, SCHEMA_REGISTRY, SCHEMA_UNSPECIFIED, lookup_name,
 };
@@ -122,48 +123,32 @@ fn check_schema_registry() -> Vec<String> {
 
 fn check_layout_id_fixture() -> Vec<String> {
     // 代表性组合：同机器人不同总线、不同机器人同硬件 kind、不同 joint 数量。
-    let fixtures: &[(&str, &str, &[&str])] = &[
+    // v0.5 候选 E 段(1)：编码权威迁至 robot_msg::joint_layout（D1.1 长度
+    // 前缀 + motor_id + config 顺序敏感），fixture 补显式 (name, id) 对。
+    type LayoutFixture = (&'static str, &'static str, &'static [(&'static str, u32)]);
+    let fixtures: &[LayoutFixture] = &[
         (
             "xlerobot_01",
             "bus1_arms",
-            &[
-                "left_shoulder_pan",
-                "left_shoulder_lift",
-                "left_elbow_flex",
-                "left_wrist_flex",
-                "left_wrist_roll",
-                "right_shoulder_pan",
-                "right_shoulder_lift",
-                "right_elbow_flex",
-                "right_wrist_flex",
-                "right_wrist_roll",
-            ],
+            LINT_FIXTURE_BUS1_ARMS, // 首条与 lib 侧 lint_same_source 锁同一 golden
         ),
         (
             "xlerobot_01",
             "bus2_base",
-            &["wheel_1", "wheel_2", "wheel_3"],
+            &[("wheel_1", 1), ("wheel_2", 2), ("wheel_3", 3)],
         ),
-        (
-            "xlerobot_02",
-            "bus1_arms",
-            &[
-                "left_shoulder_pan",
-                "left_shoulder_lift",
-                "left_elbow_flex",
-                "left_wrist_flex",
-                "left_wrist_roll",
-                "right_shoulder_pan",
-                "right_shoulder_lift",
-                "right_elbow_flex",
-                "right_wrist_flex",
-                "right_wrist_roll",
-            ],
-        ),
+        ("xlerobot_02", "bus1_arms", LINT_FIXTURE_BUS1_ARMS),
         (
             "piper_01",
             "arm",
-            &["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"],
+            &[
+                ("joint1", 1),
+                ("joint2", 2),
+                ("joint3", 3),
+                ("joint4", 4),
+                ("joint5", 5),
+                ("joint6", 6),
+            ],
         ),
     ];
 
@@ -187,27 +172,25 @@ fn check_layout_id_fixture() -> Vec<String> {
     errs
 }
 
-/// `layout_id = blake3(robot_id || 0x00 || hardware_id || 0x00 || sorted_names).truncate(8)` → u64 LE。
-///
-/// 与 `docs/00_design.md` §3.5.1 对齐。名字列表**排序后**拼接以保证顺序无关。
-fn compute_layout_id(robot_id: &str, hardware_id: &str, joint_names: &[&str]) -> u64 {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(robot_id.as_bytes());
-    hasher.update(&[0x00]);
-    hasher.update(hardware_id.as_bytes());
-    hasher.update(&[0x00]);
-    let mut sorted: Vec<&&str> = joint_names.iter().collect();
-    sorted.sort();
-    for n in sorted {
-        hasher.update(n.as_bytes());
-        hasher.update(&[0x00]);
-    }
-    let h = hasher.finalize();
-    let bytes = h.as_bytes();
-    u64::from_le_bytes([
-        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-    ])
-}
+/// lint fixture 双臂 10 关节条目（首条 + `xlerobot_02` 复用；显式 motor id
+/// 1..=10）。与 `robot_msg::joint_layout` lib 测 `lint_same_source` 用
+/// **同字面输入、同 golden 常量**——任一侧漂移必红。
+const LINT_FIXTURE_BUS1_ARMS: &[(&str, u32)] = &[
+    ("left_shoulder_pan", 1),
+    ("left_shoulder_lift", 2),
+    ("left_elbow_flex", 3),
+    ("left_wrist_flex", 4),
+    ("left_wrist_roll", 5),
+    ("right_shoulder_pan", 6),
+    ("right_shoulder_lift", 7),
+    ("right_elbow_flex", 8),
+    ("right_wrist_flex", 9),
+    ("right_wrist_roll", 10),
+];
+
+// 候选 E 段(1)：本 bin 原 NUL 分隔 + sorted-names 私有 helper 已删除——
+// layout_id 编码唯一权威 = `robot_msg::joint_layout::compute_layout_id`
+// （D1.1；lint 与运行时同源，杜绝双实现漂移）。
 
 // ---------------------------------------------------------------------------
 // Check #3 · .fbs 字段 id 单调 + deprecated 记录
@@ -484,4 +467,19 @@ fn find_repo_root() -> std::io::Result<PathBuf> {
 
 fn read_is_workspace(path: &Path) -> bool {
     fs::read_to_string(path).is_ok_and(|s| s.contains("[workspace]"))
+}
+
+#[cfg(test)]
+mod layout_fixture_tests {
+    use super::LINT_FIXTURE_BUS1_ARMS;
+    use robot_msg::joint_layout::compute_layout_id;
+
+    /// 与 lib 侧 `joint_layout::tests::lint_same_source` 锁同一常量。
+    #[test]
+    fn lint_same_source_golden() {
+        assert_eq!(
+            compute_layout_id("xlerobot_01", "bus1_arms", LINT_FIXTURE_BUS1_ARMS),
+            0x73d3_5e2d_536a_7374,
+        );
+    }
 }
