@@ -10,6 +10,46 @@
 
 ---
 
+## 2026-07-16 · 候选 E 段(3)：`JointState.layout_id` 值语义 + §3.5.1 部分落地边界（**状态：偏离登记〔解读/部分落地〕**）
+
+### 值语义变化
+
+- `JointState.layout_id` / command gate 的权威值从占位
+  `0xCAFE_BABE_DEAD_BEEF` 变为 **config 派生真值**：
+  `robot_msg::joint_layout::compute_layout_id(robot_id, hardware_id,
+  zip(joints, motor_ids))`（Spec D1.1 长度前缀规范编码，
+  `u64::from_le_bytes(blake3[0..8])` 端序显式 LE；**config 顺序敏感**）。
+  wire 字段既有（v0.1.2 冻结 `ulong`），**仅值语义变化**——本条即该登记。
+- **§3.5.1 字面解读**：design 原文 "sorted_joint_names+order" 自相含混，
+  可执行化解读 = **名字 + motor id + config 顺序三成分入编码**（不排序；
+  排序会丢 order 成分）。design.md 0 改，解读差异以本条为准。
+
+### 部分落地边界（D1 拍定口径）
+
+- **command 侧 gate（S0 `ipc_thread::poll_command`）**：帧
+  `layout_id != authoritative` → **丢弃不写 `LatestCommandSlot`** +
+  `unknown_layout_count` `AtomicU64` +1 + 限频 warn（首条必报 + 每 64
+  条一报）。**不做**：阈值→状态升级、`JointLayout` 广播/RR 握手
+  （Spec "不在范围" 登记，post-E）。
+- **CLI-only 边界**：无 `--config`（无 name/id 表）时 authoritative 保留
+  既有占位 `0xCAFE_BABE_DEAD_BEEF`（行为与段(3) 前 bit 等价）。
+- **段(3)→段(4) 过渡窗口**：S1 / mock_s1 默认仍发 `--layout-id` 占位
+  （`s1_daemon.rs` 默认 `0xCAFE_BABE_DEAD_BEEF`），config 模式 S0 的
+  authoritative 为派生真值 → **其命令帧在 gate 处被丢弃**（既有 e2e /
+  smoke 不断言 S0 命令消费，全绿实测；hold/action 命令的 S0 侧生效在
+  段(4) S1 config 派生落地后闭合）。窗口内 **CLI-only 路径**（无 config）
+  不受影响。
+
+### 影响面与审阅
+
+- 影响面：robot-s0（`pub_thread` 值源 / `ipc_thread` gate /
+  `s0_daemon` resolve 派生）；robot-msg 0 改（段(1) 已 land 编码权威）；
+  S1 / gateway 段(4) 接。
+- 审阅人：reviewer（候选 E Plan Approved 范围内段(3) 执行）；登记人：
+  Claude。
+
+---
+
 ## 2026-07-15 · 候选 E 受监督 demo 例外（§6.5.1 硬件 fail-safe）+ D15-R (c1+) 拍定（**状态：偏离登记**）
 
 ### 背景与能力核实
