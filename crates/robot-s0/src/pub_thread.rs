@@ -22,9 +22,11 @@
 //!
 //! ### `layout_id`
 //!
-//! Part 2 没接真 adapter，`JointState.layout_id` 是 `cfg.joint_layout_id` 占位
-//! （默认 `0xCAFE_BABE_DEAD_BEEF` 对齐 `hello_pubsub`）。Part 3 接真 adapter 时，
-//! `layout_id` 由 adapter 的 `JointLayout` 提供，通过 `cfg` 或额外 reader 传入。
+//! `JointState.layout_id` = `cfg.joint_layout_id`——**生产权威值由
+//! `s0_daemon::resolve()` 从 config 派生**（`compute_layout_id`，v0.5
+//! 候选 E 段(3)），`PubThreadConfig` 仅承载该值；struct Default 的
+//! `0xCAFE_BABE_DEAD_BEEF` 占位只服务 CLI-only 边界与单测（对齐
+//! `hello_pubsub`）。**adapter 不是也不得成为第二权威源**。
 
 #![forbid(unused_must_use)]
 
@@ -56,8 +58,9 @@ pub struct PubThreadConfig {
     pub heartbeat_hz: f64,
     /// `Heartbeat.source_id`：S0 固定 1（§3.5 约定）。
     pub s0_source_id: u32,
-    /// `JointState.layout_id` 占位（Part 2 无真 adapter；Part 3 接真 adapter 时从
-    /// `JointLayout` 取）。
+    /// `JointState.layout_id`。生产权威值 = `s0_daemon::resolve()` config
+    /// 派生（段(3)，与 ipc gate 同一 `ResolvedArgs.authoritative_layout`
+    /// 单源）；Default 占位只服务 CLI-only 与单测。
     pub joint_layout_id: u64,
     /// 主循环 busy-poll 间隔（纳秒）。默认 1 ms，对应最细的"发布边界检查"精度。
     pub poll_interval_ns: u64,
@@ -128,7 +131,7 @@ impl PubThreadHandle {
 
 /// 启动 `pub_thread`。
 ///
-/// - `cfg`：发布频率 + `source_id` + `layout_id` 占位。
+/// - `cfg`：发布频率 + `source_id` + `layout_id`（`resolve()` 派生权威值）。
 /// - `clock`：`SystemClock` 生产 / `MockClock` 测试。
 /// - `publishers_factory`：`FnOnce` 闭包，在 `pub_thread` 内部 open iceoryx2
 ///   publisher（对齐 `ipc_thread` 的 subscriber factory；同理 `!Send` 绕过）。

@@ -227,6 +227,9 @@ fn spawn_harness(factory_name: &str) -> Harness {
         initial_guards: healthy_guards(),
         initial_state: S0State::Safe,
         latch_path: Some(latch_path),
+        // 段(3)：本 e2e 不发 command 帧（cmd_pub 仅保持 publisher 存活，
+        // 驱动全走 heartbeat/estop）——值仅满足必填字段，沿测试惯例。
+        authoritative_layout: 0xCAFE_0001,
     };
     let topics_for_ipc = topics.clone();
     let ipc_factory = move || {

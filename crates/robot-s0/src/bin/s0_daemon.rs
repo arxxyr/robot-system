@@ -57,6 +57,7 @@ use robot_core::config::IdentityFingerprint;
 use robot_core::executor_ctrl::ExecutorCtrlClient;
 use robot_core::factory::{AdapterBuildContext, find_factory, registered_factories};
 use robot_core::time::{RobotClock, SystemClock};
+use robot_msg::joint_layout::compute_layout_id;
 use robot_msg::markers;
 use robot_s0::config_loader::{
     LoadedConfig, load_robot_config, resolve_hardware_section, validate_hardware_section,
@@ -138,6 +139,13 @@ struct ResolvedArgs {
     cpu_affinity: Option<usize>,
     /// `--config` 加载的完整配置（含 ConfigIdentity），无 `--config` 时为 None。
     loaded_config: Option<LoadedConfig>,
+    /// **v0.5 候选 E 段(3)**：本实例权威 `layout_id`。config 模式 =
+    /// `compute_layout_id(robot_id, hardware_id, zip(joints, motor_ids))`
+    /// 派生（`resolve()` 内与段校验同点算出）；CLI-only 保留既有占位
+    /// `0xCAFE_BABE_DEAD_BEEF`（§3.5.1 部分落地边界——无 name/id 表可派生，
+    /// 走 `CHANGELOG` 登记）。`pub_thread`（`JointState.layout_id`）与
+    /// `ipc_thread`（command gate）共用此单源。
+    authoritative_layout: u64,
     /// v0.2 partial fingerprint：`--config` 模式下来自 TOML，否则按 CLI 现场算
     /// 一个不带 hash 的 stub（仅 Display 用，跨进程 handshake 推 v0.3）。
     identity: IdentityFingerprint,
@@ -285,14 +293,26 @@ impl Args {
         // fail-fast（AC-E3 exit 2 族）；"非法 motor_ids + latch 缺失"不得
         // 先报 latch。unknown hardware 同罪同码。build_adapter 保留同校验
         // 作防御断言，但不再是首次校验点。
-        if let Some(cfg) = &loaded_config {
+        let authoritative_layout = if let Some(cfg) = &loaded_config {
             let Some(hw) = resolve_hardware_section(&cfg.parsed, &hardware_id) else {
                 return Err(format!(
                     "--hardware-id '{hardware_id}' 在 --config 中无匹配 [[hardware]] 段"
                 ));
             };
             validate_hardware_section(hw).map_err(|e| e.to_string())?;
-        }
+            // v0.5 候选 E 段(3)：与校验同点派生权威 layout（joints 与
+            // motor_ids 等长/唯一已由上行校验保证）。
+            let pairs: Vec<(&str, u32)> = hw
+                .joints
+                .iter()
+                .map(String::as_str)
+                .zip(hw.motor_ids.iter().map(|&m| u32::from(m)))
+                .collect();
+            compute_layout_id(&robot_id, &hw.id, &pairs)
+        } else {
+            // §3.5.1 部分落地边界：CLI-only 无 name/id 表，保留既有占位。
+            0xCAFE_BABE_DEAD_BEEF
+        };
 
         let latch_path = self
             .latch_path_cli
@@ -317,6 +337,7 @@ impl Args {
             robot_id,
             hardware_id,
             latch_path,
+            authoritative_layout,
             heartbeat_timeout_ns: self.heartbeat_timeout_ns,
             smoke_duration: self.smoke_duration,
             tick_period_ns: self.tick_period_ns,
@@ -600,6 +621,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         // 触发即 fsync 落盘（不等 graceful shutdown）。daemon 退出时仍会再
         // 写一次 final 值（§12 graceful save），但不再依赖那次写。
         latch_path: Some(args.latch_path.clone()),
+        authoritative_layout: args.authoritative_layout,
     };
 
     let sub_cmd_topic = t.sub_command.clone();
@@ -884,7 +906,9 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         state_hz: 50.0,
         heartbeat_hz: 50.0,
         s0_source_id: 1,
-        joint_layout_id: 0xCAFE_BABE_DEAD_BEEF,
+        // v0.5 候选 E 段(3)：撤占位——config 派生单源（CLI-only 时该
+        // resolved 值本身即占位）。
+        joint_layout_id: args.authoritative_layout,
         poll_interval_ns: 1_000_000,
     };
     let pub_handle = match spawn_pub_thread(

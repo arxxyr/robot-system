@@ -383,6 +383,12 @@ pub struct IpcThreadConfig {
     /// `None` 仅供单测：跳过 latch IO，保持测试纯类型路径。生产 daemon 必须
     /// 传 `Some(args.latch_path.clone())`。
     pub latch_path: Option<PathBuf>,
+    /// **v0.5 候选 E 段(3)（D1 command 侧 layout gate，§3.5.1 部分落地）**：
+    /// 本 S0 实例的权威 `layout_id`（config 模式 = `compute_layout_id(
+    /// robot_id, hardware_id, zip(joints, motor_ids))` 派生；CLI-only 沿
+    /// 既有占位）。`poll_command` 对每帧 `JointCommand.layout_id` 比对：
+    /// **不等 → 丢弃不写 slot** + `unknown_layout_count` +1 + 限频 warn。
+    pub authoritative_layout: u64,
 }
 
 impl Default for IpcThreadConfig {
@@ -392,6 +398,9 @@ impl Default for IpcThreadConfig {
             initial_guards: Guards::default(),
             initial_state: S0State::Safe,
             latch_path: None,
+            // 与 CLI-only 生产路径同占位（§3.5.1 部分落地边界）；单测显式
+            // 覆盖为各自 fixture 的 layout。
+            authoritative_layout: 0xCAFE_BABE_DEAD_BEEF,
         }
     }
 }
@@ -405,6 +414,10 @@ pub struct IpcThreadMetrics {
     pub tick_count: AtomicU64,
     /// 成功解析并写入 `LatestCommandWriter` 的 `JointCommand` 数。
     pub commands_applied: AtomicU64,
+    /// **v0.5 候选 E 段(3)**：`layout_id` 不等于权威值被丢弃的
+    /// `JointCommand` 帧数（`AtomicU64::fetch_add(1, Relaxed)`；丢弃 =
+    /// 不写 `LatestCommandSlot`，防错位命令驱动错关节集）。
+    pub unknown_layout_count: AtomicU64,
     /// `JointCommand` 解析失败（schema mismatch / verify 失败）次数。
     pub command_parse_errors: AtomicU64,
     /// `Heartbeat` 成功接收数。
@@ -654,7 +667,12 @@ fn run_loop(
         crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock, stop);
 
         // ─── 1) data plane: JointCommand → cmd_writer (不进 EventQueue) ───
-        poll_command(&mut subs.command, cmd_writer, metrics);
+        poll_command(
+            &mut subs.command,
+            cmd_writer,
+            cfg.authoritative_layout,
+            metrics,
+        );
 
         // ─── 2) Heartbeat：本 event 没有"反向 guard 副作用"（只在收到时
         //       置 heartbeat_ok=true，未收到时由 watchdog HeartbeatTimeout
@@ -1111,6 +1129,7 @@ fn run_loop(
 fn poll_command(
     cmd_sub: &mut Iceoryx2Subscriber<markers::JointCommand>,
     cmd_writer: &LatestCommandWriter<JointCommandBuf>,
+    authoritative_layout: u64,
     metrics: &IpcThreadMetrics,
 ) {
     let Ok(Some(lease)) = cmd_sub.latest() else {
@@ -1121,6 +1140,22 @@ fn poll_command(
         return;
     };
     let fb_cmd: FbJointCommand<'_> = view.body.get();
+    // v0.5 候选 E 段(3)：command 侧 layout gate（D1，§3.5.1 部分落地）——
+    // 错 layout 帧**丢弃不写 slot**（防错位命令驱动错关节集）。warn 限频 =
+    // 首条必报 + 每 64 条一报（无既有 every-N 先例，本处定此规则）；计数
+    // 不限频。
+    if fb_cmd.layout_id() != authoritative_layout {
+        let n = metrics.unknown_layout_count.fetch_add(1, Ordering::Relaxed) + 1;
+        if n == 1 || n.is_multiple_of(64) {
+            tracing::warn!(
+                got = format_args!("{:#018x}", fb_cmd.layout_id()),
+                want = format_args!("{authoritative_layout:#018x}"),
+                dropped_total = n,
+                "JointCommand layout_id mismatch; dropped (not written to slot)"
+            );
+        }
+        return;
+    }
     let stamp_ns = view.header.stamp_ns();
     let buf = parse_joint_command(&fb_cmd, stamp_ns);
     cmd_writer.store(buf);
@@ -1381,6 +1416,8 @@ mod tests {
             initial_guards,
             initial_state,
             latch_path,
+            // 段(3)：与 publish_command fixture layout（0xCAFE_0001）对齐。
+            authoritative_layout: 0xCAFE_0001,
         };
 
         let topics_for_factory = Topics {
@@ -1478,8 +1515,18 @@ mod tests {
         seq: u64,
         target: &[f64],
     ) {
+        publish_command_with_layout(pub_, seq, target, 0xCAFE_0001);
+    }
+
+    /// 段(3) layout gate 测试用：显式 layout 变体。
+    fn publish_command_with_layout(
+        pub_: &mut robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
+        seq: u64,
+        target: &[f64],
+        layout_id: u64,
+    ) {
         let body = build_joint_command(
-            0xCAFE_0001,
+            layout_id,
             robot_msg::msg::ControlMode::Position,
             target,
             999_999_999_999,
@@ -1543,6 +1590,73 @@ mod tests {
         assert!((loaded.positions[2] - 0.3).abs() < 1e-3);
         assert_eq!(loaded.mode, ControlModeRepr::Position);
         assert_eq!(loaded.seq, 7);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// 段(3) AC-E2 unit：mismatch 帧 → **slot 不变** + `unknown_layout_count`
+    /// 恰 +1（计数断言仅本 unit，R3-B4）。
+    #[test]
+    fn command_layout_mismatch_dropped_not_written() {
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let (_wd_tx, wd_rx) = unbounded();
+        let (handle, cmd_reader, _state_rdr, mut cmd_pub, _hp, _ep, _inner) =
+            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
+
+        publish_command_with_layout(&mut cmd_pub, 9, &[0.9], 0xDEAD_0002);
+
+        wait_until(
+            || {
+                handle
+                    .metrics()
+                    .unknown_layout_count
+                    .load(Ordering::Relaxed)
+                    == 1
+            },
+            Duration::from_secs(2),
+        );
+
+        let loaded = cmd_reader.load();
+        assert_eq!(
+            loaded.seq, 0,
+            "mismatch 帧不得写 slot（应保持初值 default）"
+        );
+        assert_eq!(loaded.joint_count, 0);
+        assert_eq!(
+            handle
+                .metrics()
+                .unknown_layout_count
+                .load(Ordering::Relaxed),
+            1
+        );
+        assert_eq!(handle.metrics().commands_applied.load(Ordering::Relaxed), 0);
+
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    /// 段(3) 对照：match 帧照常写 slot（gate 放行路径回归）。
+    #[test]
+    fn command_layout_match_written() {
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let (_wd_tx, wd_rx) = unbounded();
+        let (handle, cmd_reader, _state_rdr, mut cmd_pub, _hp, _ep, _inner) =
+            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
+
+        publish_command_with_layout(&mut cmd_pub, 11, &[0.5, 0.6], 0xCAFE_0001);
+
+        wait_until(|| cmd_reader.load().seq == 11, Duration::from_secs(2));
+
+        let loaded = cmd_reader.load();
+        assert_eq!(loaded.joint_count, 2);
+        assert_eq!(
+            handle
+                .metrics()
+                .unknown_layout_count
+                .load(Ordering::Relaxed),
+            0
+        );
 
         handle.request_stop();
         handle.join().unwrap();
@@ -1901,6 +2015,8 @@ mod tests {
             initial_guards,
             initial_state,
             latch_path,
+            // 段(3)：与 publish_command fixture layout（0xCAFE_0001）对齐。
+            authoritative_layout: 0xCAFE_0001,
         };
 
         // RR control plane channels：bounded(64) 跟 reviewer 拍板的容量一致。
@@ -2462,6 +2578,7 @@ mod tests {
             initial_guards,
             initial_state,
             latch_path: None,
+            authoritative_layout: 0xCAFE_0001,
         };
 
         let (se_req_tx, se_req_rx) = bounded::<SetEnabledRrRequest>(64);
