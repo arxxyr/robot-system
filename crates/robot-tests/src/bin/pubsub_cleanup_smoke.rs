@@ -55,7 +55,6 @@
 //!   --hardware-id <ID>               必填（跟 --config TOML 的 [[hardware]].id 一致）
 //!   --config <TOML>                  必填（s1_daemon --config）
 //!   --joints <N>                     默认 1（跟 config [[hardware]].joints 一致）
-//!   --layout-id <U64>                默认 0xCAFEBABEDEADBEEF（跟 task_rpc_e2e 同款）
 //!   --iterations <N>                 (2/2) 用；默认 1000（Q1 拍板）
 //!   --metric-sample-every <K>        (2/2) 用；默认 100
 //!   --invoke-dwell-ms <MS>           (2/2) 用；默认 10
@@ -145,7 +144,6 @@ struct Args {
     hardware_id: String,
     config: PathBuf,
     joints: usize,
-    layout_id: u64,
     /// (2/2) AC-A1 用；(1/2) 不消费。Plan v3 Q1 拍板 N=1000。
     iterations: u32,
     /// (2/2) AC-A1 用。
@@ -170,7 +168,6 @@ impl Args {
         let mut hardware_id: Option<String> = None;
         let mut config: Option<PathBuf> = None;
         let mut joints: usize = 1;
-        let mut layout_id: u64 = 0xCAFE_BABE_DEAD_BEEF;
         let mut iterations: u32 = 1000;
         let mut metric_sample_every: u32 = 100;
         let mut invoke_dwell_ms: u64 = 10;
@@ -210,11 +207,6 @@ impl Args {
                         .ok_or("--joints requires value")?
                         .parse::<usize>()
                         .map_err(|e| format!("--joints parse: {e}"))?;
-                }
-                "--layout-id" => {
-                    i += 1;
-                    let v = raw.get(i).ok_or("--layout-id requires value")?;
-                    layout_id = parse_layout_id(v)?;
                 }
                 "--iterations" => {
                     i += 1;
@@ -277,7 +269,6 @@ impl Args {
             hardware_id,
             config,
             joints,
-            layout_id,
             iterations,
             metric_sample_every,
             invoke_dwell_ms,
@@ -286,20 +277,6 @@ impl Args {
             output_csv,
             workdir,
         })
-    }
-}
-
-fn parse_layout_id(s: &str) -> Result<u64, String> {
-    let trimmed = s.trim();
-    if let Some(hex) = trimmed
-        .strip_prefix("0x")
-        .or_else(|| trimmed.strip_prefix("0X"))
-    {
-        u64::from_str_radix(hex, 16).map_err(|e| format!("--layout-id hex parse: {e}"))
-    } else {
-        trimmed
-            .parse::<u64>()
-            .map_err(|e| format!("--layout-id dec parse: {e}"))
     }
 }
 
@@ -318,7 +295,6 @@ OPTIONS (defaulted):
     --bin-dir <DIR>                  默认 target/release
     --robot-id-prefix <STR>          默认 pubsub_cleanup
     --joints <N>                     默认 1
-    --layout-id <U64|0xHEX>          默认 0xCAFEBABEDEADBEEF
     --workdir <DIR>                  默认 /tmp/pubsub_cleanup_smoke
     --phase selftest|A1|A2|A3|all    默认 selftest（(1/2) 唯一支持）
     --iterations <N>                 (2/2) AC-A1 用；默认 1000
@@ -489,8 +465,7 @@ struct CaseCtx {
     /// 同 fake S0 publish JointState 的关节数（必须跟 `--config`
     /// `[[hardware]].joints` 长度一致）。
     joints: usize,
-    /// 同 s1 anchor schema 一致的 `layout_id`（默认 `0xCAFEBABEDEADBEEF`
-    /// 跟 `crates/robot-rpc/tests/common/case_ctx.rs::LAYOUT_ID` 等价）。
+    /// per-case 物化 config 派生的 `layout_id`（段(4)，与 s0/s1 同源）。
     layout_id: u64,
     /// daemon `--config` TOML 路径。
     config: PathBuf,
@@ -524,12 +499,19 @@ impl CaseCtx {
             &case_dir,
         )
         .map_err(|e| format!("materialize per-case config: {e}"))?;
+        // 段(4)：layout 由物化 config 派生（PD-E5(a) 单源，与 s0/s1 同值）。
+        // 进程级 --layout-id 已删——per-case robot_id 入编码，进程级值不可能
+        // 同时匹配多个 case（reviewer 段(4) 复核 P1-1）。
+        let derived_layout =
+            robot_rpc::client::layout::load_hardware_layout(&config, &args.hardware_id)
+                .map_err(|e| format!("derive layout: {e}"))?
+                .layout_id;
         let gateway_port = allocate_loopback_port()?;
         Ok(Self {
             robot_id,
             hardware_id: args.hardware_id.clone(),
             joints: args.joints,
-            layout_id: args.layout_id,
+            layout_id: derived_layout,
             config,
             bin_dir: args.bin_dir.clone(),
             case_dir,
@@ -2414,27 +2396,6 @@ async fn run_phase_all(args: &Args) -> Result<AllReport, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_layout_id_decimal() {
-        assert_eq!(parse_layout_id("123").unwrap(), 123);
-        assert_eq!(parse_layout_id("  42  ").unwrap(), 42);
-    }
-
-    #[test]
-    fn parse_layout_id_hex() {
-        assert_eq!(parse_layout_id("0xff").unwrap(), 255);
-        assert_eq!(
-            parse_layout_id("0XCAFEBABEDEADBEEF").unwrap(),
-            0xCAFE_BABE_DEAD_BEEF
-        );
-    }
-
-    #[test]
-    fn parse_layout_id_invalid() {
-        assert!(parse_layout_id("not_a_number").is_err());
-        assert!(parse_layout_id("0xZZ").is_err());
-    }
 
     #[test]
     fn phase_parse_all_variants() {

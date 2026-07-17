@@ -133,7 +133,6 @@ struct Args {
     hardware_id: String,
     config: PathBuf,
     joints: usize,
-    layout_id: u64,
     phase: Phase,
     workdir: PathBuf,
 }
@@ -145,7 +144,6 @@ impl Args {
         let mut hardware_id: Option<String> = None;
         let mut config: Option<PathBuf> = None;
         let mut joints: usize = 5;
-        let mut layout_id: u64 = 0xCAFE_BABE_DEAD_BEEF;
         let mut phase = Phase::All;
         let mut workdir = PathBuf::from("/tmp/robotctl_smoke");
 
@@ -178,10 +176,6 @@ impl Args {
                         .parse()
                         .map_err(|e| format!("--joints: {e}"))?;
                 }
-                "--layout-id" => {
-                    i += 1;
-                    layout_id = parse_layout_id(raw.get(i).ok_or("--layout-id requires value")?)?;
-                }
                 "--phase" => {
                     i += 1;
                     phase = Phase::parse(raw.get(i).ok_or("--phase requires value")?)?;
@@ -202,21 +196,10 @@ impl Args {
             hardware_id: hardware_id.ok_or("--hardware-id required")?,
             config: config.ok_or("--config required")?,
             joints,
-            layout_id,
             phase,
             workdir,
         })
     }
-}
-
-fn parse_layout_id(s: &str) -> Result<u64, String> {
-    let s = s.trim();
-    let parsed = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        u64::from_str_radix(hex, 16)
-    } else {
-        s.parse::<u64>()
-    };
-    parsed.map_err(|e| format!("--layout-id parse {s:?}: {e}"))
 }
 
 fn print_help() {
@@ -229,7 +212,6 @@ options:\n  \
 --hardware-id <ID>               必填\n  \
 --config <TOML>                  必填\n  \
 --joints <N>                     默认 5\n  \
---layout-id <U64|0xHEX>          默认 0xCAFEBABEDEADBEEF\n  \
 --phase <P>                      默认 all（见源码 Phase::parse 全表）\n  \
 --workdir <DIR>                  默认 /tmp/robotctl_smoke\n  \
 -h | --help                      打印帮助\n"
@@ -379,12 +361,19 @@ impl CaseCtx {
             &case_dir,
         )
         .map_err(|e| format!("materialize per-case config: {e}"))?;
+        // 段(4)：layout 由物化 config 派生（PD-E5(a) 单源，与 s0/s1 同值）。
+        // 进程级 --layout-id 已删——per-case robot_id 入编码，进程级值不可能
+        // 同时匹配多个 case（reviewer 段(4) 复核 P1-1）。
+        let derived_layout =
+            robot_rpc::client::layout::load_hardware_layout(&config, &args.hardware_id)
+                .map_err(|e| format!("derive layout: {e}"))?
+                .layout_id;
         let gateway_port = allocate_loopback_port()?;
         Ok(Self {
             robot_id,
             hardware_id: args.hardware_id.clone(),
             joints: args.joints,
-            layout_id: args.layout_id,
+            layout_id: derived_layout,
             config,
             bin_dir: args.bin_dir.clone(),
             case_dir,

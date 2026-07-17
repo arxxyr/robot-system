@@ -119,7 +119,8 @@ struct Args {
     config_path: String,
     duration: Option<Duration>,
     poll_interval: Duration,
-    layout_id: u64,
+    /// 段(4)：显式传值仅一致性断言（PD-E5(a)）；None = config 派生。
+    layout_id: Option<u64>,
 }
 
 impl Args {
@@ -130,7 +131,7 @@ impl Args {
         let mut config_path = String::new();
         let mut duration: Option<Duration> = None;
         let mut poll_interval = Duration::from_millis(1);
-        let mut layout_id: u64 = 0xCAFE_BABE_DEAD_BEEF;
+        let mut layout_id: Option<u64> = None;
 
         let raw: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
@@ -174,8 +175,9 @@ impl Args {
                 "--layout-id" => {
                     i += 1;
                     let v = raw.get(i).ok_or("--layout-id requires value")?;
-                    layout_id =
-                        parse_u64_maybe_hex(v).map_err(|e| format!("--layout-id {v:?}: {e}"))?;
+                    layout_id = Some(
+                        parse_u64_maybe_hex(v).map_err(|e| format!("--layout-id {v:?}: {e}"))?,
+                    );
                 }
                 "--help" | "-h" => return Err("HELP".into()),
                 other => return Err(format!("unknown arg: {other}")),
@@ -254,7 +256,8 @@ REQUIRED:
 OPTIONS:
   --duration <DUR>          运行时长（3s / 500ms / 10）。省略 = 无限。
   --poll-interval-ms <MS>   tick loop 轮询周期（默认 1 ms）。
-  --layout-id <ID>          JointLayout layout_id（默认 0xCAFEBABEDEADBEEF）。
+  --layout-id <ID>          仅一致性断言：与 config 派生值不等 → exit 2
+                            （段(4) PD-E5(a)；缺省 = config 派生唯一权威）。
   -h, --help                显示此帮助。
 
 TOPICS:
@@ -335,6 +338,27 @@ fn run(args: &Args) -> Result<(), i32> {
                 return Err(e.exit_code());
             }
         };
+    // v0.5 候选 E 段(4)（PD-E5(a)）：layout 由 config 派生（唯一权威；
+    // 段(1) 编码单源）。显式 --layout-id 仅一致性断言，冲突 = exit 2。
+    let derived_layout = {
+        let pairs: Vec<(&str, u32)> = hardware
+            .joints
+            .iter()
+            .map(String::as_str)
+            .zip(hardware.motor_ids.iter().map(|&m| u32::from(m)))
+            .collect();
+        robot_msg::joint_layout::compute_layout_id(&args.robot_id, &args.hardware_id, &pairs)
+    };
+    if let Some(cli) = args.layout_id
+        && cli != derived_layout
+    {
+        eprintln!(
+            "fatal: --layout-id {cli:#018x} != config 派生 {derived_layout:#018x}\
+             （PD-E5(a)：config 派生唯一权威，显式传值仅一致性断言）"
+        );
+        return Err(2);
+    }
+
     let cfg = match coordinator::parse_s1_section_from_toml(&toml_text) {
         Ok(c) => c,
         Err(e) => {
@@ -368,7 +392,7 @@ fn run(args: &Args) -> Result<(), i32> {
         topic_hb = %topic_hb,
         topic_state = %topic_state,
         duration = ?args.duration,
-        layout_id = format!("{:#x}", args.layout_id),
+        layout_id = format!("{derived_layout:#x}"),
         profile_backends = ?profile.backends,
         profile_command_mode = %profile.command_mode,
         "s1_daemon starting"
@@ -461,7 +485,7 @@ fn run(args: &Args) -> Result<(), i32> {
     let coordinator = Coordinator::new(
         cfg,
         hardware,
-        args.layout_id,
+        derived_layout,
         bias,
         registry,
         profile.backends.clone(),

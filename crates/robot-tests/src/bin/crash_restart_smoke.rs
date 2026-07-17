@@ -461,7 +461,7 @@ fn run_iteration(args: &Args, seq: u32, robot_id: &str) -> IterResult {
         "s1_daemon"
     };
     let s1_result = if args.use_mock_s1 {
-        spawn_mock_s1(args, robot_id, /*duration_secs=*/ 25)
+        spawn_mock_s1(args, robot_id, &config, /*duration_secs=*/ 25)
     } else {
         spawn_s1_daemon(args, robot_id, &config, /*duration_secs=*/ 25)
     };
@@ -601,12 +601,20 @@ fn spawn_daemon(
         .spawn()
 }
 
-fn spawn_mock_s1(args: &Args, robot_id: &str, duration_secs: u64) -> std::io::Result<Child> {
+fn spawn_mock_s1(
+    args: &Args,
+    robot_id: &str,
+    config: &Path,
+    duration_secs: u64,
+) -> std::io::Result<Child> {
     // 默认 dev box smoke：`--joints 1` 跟 configs/crash_restart_smoke.toml 单
     // joint smoke_arm 配对；amplitude=0.0 → 不摆动，只发 anchor bias 作为
     // Goal，加心跳推动 state→Enabled.Active。Orin 真机 bus2 9-motor 走
     // `--joints 9 --frozen-joints 6,7,8`（base 3 wheel 双重保险）。
     let mut cmd = Command::new(args.bin_dir.join("mock_s1"));
+    // 段(4) PC4：mock_s1 --config 必填（joints/layout 由 per-case 物化
+    // config 派生；显式 --joints 降级为一致性断言）。
+    cmd.arg("--config").arg(config);
     cmd.arg("--robot-id")
         .arg(robot_id)
         .arg("--hardware-id")

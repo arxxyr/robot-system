@@ -72,6 +72,7 @@
 
 pub mod auth;
 pub mod clear_estop;
+pub mod client;
 pub mod estop;
 pub mod estop_pub_thread;
 pub mod events_subscribe;

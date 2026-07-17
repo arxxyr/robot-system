@@ -28,7 +28,7 @@
 //! ```text
 //! mock_s1 --robot-id xlerobot \
 //!         --hardware-id right_arm \
-//!         --joints 3 \
+//!         --config configs/<robot>.toml \
 //!         --amplitude 0.3 \
 //!         --frequency 0.5 \
 //!         --duration 10s
@@ -58,10 +58,14 @@ use std::time::Duration;
 
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
+use std::path::PathBuf;
+
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::build_helpers::{build_heartbeat, build_joint_command};
+use robot_msg::joint_layout::compute_layout_id;
 use robot_msg::markers;
 use robot_msg::msg::{ControlMode, StaleAction};
+use robot_s1::coordinator;
 use robot_transport::iceoryx2::{
     Iceoryx2Publisher, Iceoryx2Subscriber, TopicClass, publisher as open_pub,
     subscriber as open_sub,
@@ -99,6 +103,9 @@ fn install_signal_handlers() {
 struct Args {
     robot_id: String,
     hardware_id: String,
+    /// 段(4) PC4：--config 必填——joints 数与 layout 均由 config 派生
+    /// （PD-E5(a) 唯一权威）。
+    config: PathBuf,
     joints: usize,
     amplitude: f64,
     frequency: f64,
@@ -128,6 +135,7 @@ impl Args {
         let mut args = Self {
             robot_id: env_robot_id.unwrap_or_else(|| "default".into()),
             hardware_id: "default_arm".into(),
+            config: PathBuf::new(),
             joints: 3,
             amplitude: 0.3,
             frequency: 0.5,
@@ -140,6 +148,8 @@ impl Args {
             frozen_joints: Vec::new(),
         };
 
+        // 段(4)：--joints 显式传值仅与 config 派生数做一致性断言。
+        let mut explicit_joints = false;
         let raw: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
         while i < raw.len() {
@@ -155,6 +165,10 @@ impl Args {
                     args.hardware_id
                         .clone_from(raw.get(i).ok_or("--hardware-id requires value")?);
                 }
+                "--config" => {
+                    i += 1;
+                    args.config = PathBuf::from(raw.get(i).ok_or("--config requires value")?);
+                }
                 "--joints" => {
                     i += 1;
                     args.joints = raw
@@ -162,6 +176,7 @@ impl Args {
                         .ok_or("--joints requires value")?
                         .parse()
                         .map_err(|e| format!("--joints: {e}"))?;
+                    explicit_joints = true;
                 }
                 "--amplitude" => {
                     i += 1;
@@ -219,6 +234,41 @@ impl Args {
             }
             i += 1;
         }
+
+        // ---- 段(4) PC4：--config 必填 + config 派生（joints / layout）----
+        //
+        // mock_s1 是测试工具：本块所有失败统一走 parse Err → exit 2（不细分
+        // config 错误码族；生产语义在 s1_daemon）。
+        if args.config.as_os_str().is_empty() {
+            return Err("--config is required（段(4) PC4：joints/layout 由 config 派生）".into());
+        }
+        let toml_text = std::fs::read_to_string(&args.config)
+            .map_err(|e| format!("read --config {}: {e}", args.config.display()))?;
+        let cfg_robot_id = coordinator::parse_robot_id_from_toml(&toml_text)
+            .map_err(|e| format!("parse [robot].id: {e}"))?;
+        if cfg_robot_id != args.robot_id {
+            return Err(format!(
+                "[robot].id '{cfg_robot_id}' != --robot-id '{}' (config/flag mismatch; 会订阅错 topic)",
+                args.robot_id
+            ));
+        }
+        let hardware = coordinator::parse_hardware_section_from_toml(&toml_text, &args.hardware_id)
+            .map_err(|e| format!("parse [[hardware]]: {e}"))?;
+        if explicit_joints && args.joints != hardware.joints.len() {
+            return Err(format!(
+                "--joints {} != config 派生关节数 {}（显式传值仅一致性断言）",
+                args.joints,
+                hardware.joints.len()
+            ));
+        }
+        args.joints = hardware.joints.len();
+        let pairs: Vec<(&str, u32)> = hardware
+            .joints
+            .iter()
+            .map(String::as_str)
+            .zip(hardware.motor_ids.iter().map(|&m| u32::from(m)))
+            .collect();
+        args.layout_id = compute_layout_id(&args.robot_id, &args.hardware_id, &pairs);
 
         // --frozen-joints 越界 / 重复检查（必须在 --joints 之后做；CLI 解析顺
         // 序由用户决定，这里在 parse 完后统一校验）。
@@ -284,7 +334,9 @@ USAGE:
 OPTIONS:
   --robot-id <ID>          Robot identifier。优先级：CLI > env ROBOT_ID > \"default\"。
   --hardware-id <ID>       匹配 S0 的 --hardware-id。默认 \"default_arm\"。
-  --joints <N>             关节数（默认 3）。
+  --config <PATH>          必填（段(4) PC4）：与 daemon 同款 TOML；joints 数
+                           与 layout_id 由 config 派生（PD-E5(a) 唯一权威）。
+  --joints <N>             显式传值仅与 config 派生数一致性断言（不等 = 报错）。
   --amplitude <RAD>        正弦幅值（弧度，默认 0.3）。
   --frequency <HZ>         正弦频率（Hz，默认 0.5 = 2 秒一周期）。
   --state-hz <HZ>          JointCommand 发布频率（默认 50）。

@@ -71,6 +71,8 @@ tonic-prost-build   = { workspace = true }
 protoc-bin-vendored = { workspace = true }
 
 [dev-dependencies]
+# 段(4) client::layout 单测临时 config 文件。
+tempfile = { workspace = true }
 # B4 (3/3) cross-process integration test (`tests/task_rpc_e2e.rs`) 需 spawn
 # s1_daemon + robot_rpc_gateway 双子进程 + drain stderr / stdout + forensic
 # dump 到 `/tmp/b4_e2e/<robot_id>/`：

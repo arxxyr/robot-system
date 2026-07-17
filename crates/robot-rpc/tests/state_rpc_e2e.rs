@@ -57,7 +57,9 @@ static GLOBAL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 static CASE_SEQ: AtomicU32 = AtomicU32::new(0);
 
-const LAYOUT_ID: u64 = 0x0BAD_F00D_1234_5678;
+// 段(4)：layout 撤固定常量——由 per-case config 派生（PD-E5(a) 单源；
+// `robot_rpc::client::layout::load_hardware_layout`），FakeState stamping
+// 与断言同源。
 /// AC-7：固定 stamp 让 GetState 确定性断言 stamp 透传（非 gateway 自生 clock）。
 const FIXED_STAMP_NS: u64 = 1_700_000_000_000;
 const JOINTS: usize = 2;
@@ -71,12 +73,20 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
 /// readiness / AC-9 用：永不出现在任何 `--config` 的 hardware id。
 const NEVER_HARDWARE: &str = "never_declared_hw";
 
+/// 段(4)：per-case config 派生 layout（与 s1/s0/gateway 同源）。
+fn derived_layout(config_path: &Path, hw: &str) -> u64 {
+    robot_rpc::client::layout::load_hardware_layout(config_path, hw)
+        .expect("derive layout from per-case config")
+        .layout_id
+}
+
 // ============================================================================
 // gateway-only e2e 环境
 // ============================================================================
 
 struct StateEnv {
     robot_id: String,
+    config_path: PathBuf,
     channel: Channel,
     gateway: Option<SubprocessHandle>,
     publishers: Vec<FakeStatePublisher>,
@@ -87,6 +97,17 @@ impl StateEnv {
     /// `declared` = gateway `--config` 的 `[[hardware]]` 全集；`published` =
     /// 其中起 `FakeStatePublisher`（固定 stamp）的子集。
     async fn bring_up(test_name: &str, declared: &[&str], published: &[&str]) -> Self {
+        Self::bring_up_inner(test_name, declared, published, 0).await
+    }
+
+    /// `layout_xor`：FakeState stamping = 派生值 ^ xor（0 = 正常；非 0 供
+    /// AC-E4 `layout_validate_mismatch_hard_fail` 注入错 layout）。
+    async fn bring_up_inner(
+        test_name: &str,
+        declared: &[&str],
+        published: &[&str],
+        layout_xor: u64,
+    ) -> Self {
         let pid = std::process::id();
         let seq = CASE_SEQ.fetch_add(1, Ordering::Relaxed);
         let robot_id = format!("state_rpc_e2e_{pid}_{seq}_{test_name}");
@@ -109,7 +130,8 @@ impl StateEnv {
         let publishers = published
             .iter()
             .map(|hw| {
-                FakeStatePublisher::spawn(&robot_id, hw, JOINTS, LAYOUT_ID, Some(FIXED_STAMP_NS))
+                let stamped = derived_layout(&config_path, hw) ^ layout_xor;
+                FakeStatePublisher::spawn(&robot_id, hw, JOINTS, stamped, Some(FIXED_STAMP_NS))
                     .expect("spawn FakeStatePublisher")
             })
             .collect();
@@ -144,6 +166,7 @@ impl StateEnv {
 
         Self {
             robot_id,
+            config_path,
             channel,
             gateway: Some(gateway),
             publishers,
@@ -326,6 +349,7 @@ fn assert_throttle(arrivals: &[tokio::time::Instant], max_frames: usize, min_gap
 #[tokio::test]
 #[allow(clippy::float_cmp)] // position_rad 是精确发布的 0.0 字面值
 async fn get_state_happy_field_equivalence_and_stamp_passthrough() {
+    // （helper 见文件顶 derived_layout；本行注仅锚定 diff）
     let _guard = GLOBAL_LOCK.lock().await;
     let env = StateEnv::bring_up("happy", &["arm"], &["arm"]).await;
     let mut client = env.client();
@@ -334,7 +358,11 @@ async fn get_state_happy_field_equivalence_and_stamp_passthrough() {
 
     assert_eq!(rs.robot_id, env.robot_id);
     assert_eq!(rs.hardware_id, "arm");
-    assert_eq!(rs.layout_id, LAYOUT_ID);
+    assert_eq!(rs.layout_id, derived_layout(&env.config_path, "arm"));
+    // 段(4) 顺带正向：client 硬校验放行。
+    let expected = robot_rpc::client::layout::load_hardware_layout(&env.config_path, "arm")
+        .expect("load layout");
+    robot_rpc::client::layout::validate_state_layout(&expected, &rs).expect("layout validate ok");
     // AC-7：stamp 透传 S0 published 固定值（非 gateway 自生 clock）。
     assert_eq!(rs.stamp_ns, FIXED_STAMP_NS);
     assert_eq!(rs.position_rad.len(), JOINTS);
@@ -538,6 +566,26 @@ async fn stream_state_clamp_below_floor_to_20ms() {
     let arrivals = collect_stream_arrivals(stream, Duration::from_millis(240)).await;
     // D-P2 clamp 路径：interval=20 → window=240ms 帧 ≤ ⌈240/20⌉+1 = 13，相邻 ≥ 16ms。
     assert_throttle(&arrivals, 13, Duration::from_millis(16));
+
+    env.shutdown().await;
+}
+
+/// AC-E4（段(4)）：`RobotState.layout_id` 与 config 派生不一致 → client
+/// `validate_state_layout` **硬失败**（`LayoutMismatch` 携 expected/got）。
+#[tokio::test]
+async fn layout_validate_mismatch_hard_fail() {
+    let _guard = GLOBAL_LOCK.lock().await;
+    let env = StateEnv::bring_up_inner("layout_mismatch", &["arm"], &["arm"], 0x1).await;
+    let mut client = env.client();
+
+    let rs = get_state_until_ok(&mut client, "arm").await;
+
+    let expected = robot_rpc::client::layout::load_hardware_layout(&env.config_path, "arm")
+        .expect("load layout");
+    let err = robot_rpc::client::layout::validate_state_layout(&expected, &rs)
+        .expect_err("mismatch 必须硬失败");
+    assert_eq!(err.expected, expected.layout_id);
+    assert_eq!(err.got, expected.layout_id ^ 0x1);
 
     env.shutdown().await;
 }

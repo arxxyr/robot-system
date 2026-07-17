@@ -42,7 +42,8 @@ use crate::common::subprocess::{
 
 const HARDWARE_ID: &str = "test_arm";
 const JOINTS_COUNT: usize = 1;
-const LAYOUT_ID: u64 = 0xCAFE_BABE_DEAD_BEEF;
+// 段(4)：layout 撤固定常量——由 per-case config 派生（PD-E5(a) 单源），
+// FakeState stamping / ctx 值与 s1_daemon 派生值天然一致（过渡窗口闭合）。
 
 /// `CASE_SEQ` 给每个 test fn 派生唯一 `robot_id`，避免 iceoryx2 service
 /// 名 / loopback port 在并发 spawn 时撞车（即使 `--test-threads=1` 串行
@@ -131,9 +132,13 @@ impl CaseCtx {
             .await
             .map_err(|e| BringUpError::Config(format!("write rpc_roles.toml: {e}")))?;
 
+        // 段(4)：layout 由 per-case config 派生（client::layout 单源）。
+        let layout = robot_rpc::client::layout::load_hardware_layout(&config_path, HARDWARE_ID)
+            .map_err(|e| BringUpError::Config(format!("derive layout: {e}")))?;
+
         // 1. spawn fake state（**先于** s1，保 anchor 5s 内拿到 stable bias）
         let fake_state =
-            FakeStatePublisher::spawn(&robot_id, HARDWARE_ID, JOINTS_COUNT, LAYOUT_ID, None)
+            FakeStatePublisher::spawn(&robot_id, HARDWARE_ID, JOINTS_COUNT, layout.layout_id, None)
                 .map_err(|e| BringUpError::FakeState(e.to_string()))?;
 
         // 2. locate s1_daemon binary
@@ -186,7 +191,7 @@ impl CaseCtx {
         Ok(Self {
             robot_id,
             hardware_id: HARDWARE_ID,
-            layout_id: LAYOUT_ID,
+            layout_id: layout.layout_id,
             joints: JOINTS_COUNT,
             listen_addr,
             config_path,

@@ -54,7 +54,6 @@
 //!   --hardware-id <ID>               必填（跟 --config TOML 一致；默认配置 `ik_arm`）
 //!   --config <TOML>                  必填（s1_daemon --config）
 //!   --joints <N>                     默认 5（XLeRobot 5-DOF；不可改）
-//!   --layout-id <U64>                默认 0xCAFEBABEDEADBEEF
 //!   --phase <PHASE>                  默认 all
 //!     selftest | happy | monotonic | unreachable_clamp | invalid_input | all
 //!   --target-x <F64>                 默认 0.20（happy + monotonic 用）
@@ -163,7 +162,6 @@ struct Args {
     hardware_id: String,
     config: PathBuf,
     joints: usize,
-    layout_id: u64,
     phase: Phase,
     target_x: f64,
     target_y: f64,
@@ -178,7 +176,6 @@ impl Args {
         let mut hardware_id: Option<String> = None;
         let mut config: Option<PathBuf> = None;
         let mut joints: usize = XLEROBOT_JOINTS;
-        let mut layout_id: u64 = 0xCAFE_BABE_DEAD_BEEF;
         let mut phase = Phase::All;
         let mut target_x: f64 = 0.20;
         let mut target_y: f64 = 0.0;
@@ -213,11 +210,6 @@ impl Args {
                         .ok_or("--joints requires value")?
                         .parse::<usize>()
                         .map_err(|e| format!("--joints parse: {e}"))?;
-                }
-                "--layout-id" => {
-                    i += 1;
-                    let v = raw.get(i).ok_or("--layout-id requires value")?;
-                    layout_id = parse_layout_id(v)?;
                 }
                 "--phase" => {
                     i += 1;
@@ -275,7 +267,6 @@ impl Args {
             hardware_id,
             config,
             joints,
-            layout_id,
             phase,
             target_x,
             target_y,
@@ -283,16 +274,6 @@ impl Args {
             workdir,
         })
     }
-}
-
-fn parse_layout_id(s: &str) -> Result<u64, String> {
-    let s = s.trim();
-    let parsed = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        u64::from_str_radix(hex, 16)
-    } else {
-        s.parse::<u64>()
-    };
-    parsed.map_err(|e| format!("--layout-id parse {s:?}: {e}"))
 }
 
 fn print_help() {
@@ -305,7 +286,6 @@ options:\n  \
 --hardware-id <ID>               必填\n  \
 --config <TOML>                  必填\n  \
 --joints <N>                     默认 5（XLeRobot 5-DOF；不可改）\n  \
---layout-id <U64|0xHEX>          默认 0xCAFEBABEDEADBEEF\n  \
 --phase <P>                      默认 all\n    \
 P = selftest|happy|monotonic|unreachable_clamp|invalid_input|all\n  \
 --target-x <F64>                 默认 0.20（happy + monotonic 用）\n  \
@@ -337,13 +317,12 @@ async fn main() -> ExitCode {
     }
     eprintln!(
         "[ik_backend_smoke] start phase={} bin_dir={} config={} hardware_id={} \
-         joints={} layout_id={:#018x} target=({:.3},{:.3},{:.3}) workdir={}",
+         joints={} target=({:.3},{:.3},{:.3}) workdir={}",
         args.phase.label(),
         args.bin_dir.display(),
         args.config.display(),
         args.hardware_id,
         args.joints,
-        args.layout_id,
         args.target_x,
         args.target_y,
         args.target_z,
@@ -464,12 +443,19 @@ impl CaseCtx {
             &case_dir,
         )
         .map_err(|e| format!("materialize per-case config: {e}"))?;
+        // 段(4)：layout 由物化 config 派生（PD-E5(a) 单源，与 s0/s1 同值）。
+        // 进程级 --layout-id 已删——per-case robot_id 入编码，进程级值不可能
+        // 同时匹配多个 case（reviewer 段(4) 复核 P1-1）。
+        let derived_layout =
+            robot_rpc::client::layout::load_hardware_layout(&config, &args.hardware_id)
+                .map_err(|e| format!("derive layout: {e}"))?
+                .layout_id;
         let gateway_port = allocate_loopback_port()?;
         Ok(Self {
             robot_id,
             hardware_id: args.hardware_id.clone(),
             joints: args.joints,
-            layout_id: args.layout_id,
+            layout_id: derived_layout,
             config,
             bin_dir: args.bin_dir.clone(),
             case_dir,
