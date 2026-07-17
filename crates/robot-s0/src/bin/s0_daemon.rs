@@ -58,7 +58,9 @@ use robot_core::executor_ctrl::ExecutorCtrlClient;
 use robot_core::factory::{AdapterBuildContext, find_factory, registered_factories};
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
-use robot_s0::config_loader::{LoadedConfig, load_robot_config, resolve_hardware_section};
+use robot_s0::config_loader::{
+    LoadedConfig, load_robot_config, resolve_hardware_section, validate_hardware_section,
+};
 use robot_s0::estop_latch::{load_estop_latch, save_estop_latch};
 use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
@@ -249,6 +251,19 @@ impl Args {
             None => None,
         };
 
+        // v0.5 候选 E 段(2) 身份锁（P.2.2；沿 robot_rpc_gateway.rs:133 先例
+        // 文案）：`--robot-id` 与 TOML `[robot].id` **同给且不等** → fail-fast
+        // （main 的 resolve 错误路径，exit 2）。CLI 静默 override TOML 身份会
+        // 让 topic / layout / latch 路径与 config 派生面分裂。
+        if let (Some(cli), Some(cfg)) = (&self.robot_id_cli, &loaded_config)
+            && cli != &cfg.parsed.robot.id
+        {
+            return Err(format!(
+                "[robot].id '{}' != --robot-id '{}' (config/flag mismatch; 会订阅错 topic)",
+                cfg.parsed.robot.id, cli
+            ));
+        }
+
         let env_robot_id = std::env::var("ROBOT_ID").ok();
 
         let robot_id = self
@@ -264,6 +279,20 @@ impl Args {
                 .and_then(|c| c.parsed.hardware.first().map(|h| h.id.clone()))
                 .unwrap_or_else(|| "default_arm".into())
         });
+
+        // v0.5 候选 E 段(2) 回修 P0-2：resolved 段查找 + 内容校验**前移到
+        // resolve()**——必须先于 run() 的 latch 加载（exit 1 族）完成 config
+        // fail-fast（AC-E3 exit 2 族）；"非法 motor_ids + latch 缺失"不得
+        // 先报 latch。unknown hardware 同罪同码。build_adapter 保留同校验
+        // 作防御断言，但不再是首次校验点。
+        if let Some(cfg) = &loaded_config {
+            let Some(hw) = resolve_hardware_section(&cfg.parsed, &hardware_id) else {
+                return Err(format!(
+                    "--hardware-id '{hardware_id}' 在 --config 中无匹配 [[hardware]] 段"
+                ));
+            };
+            validate_hardware_section(hw).map_err(|e| e.to_string())?;
+        }
 
         let latch_path = self
             .latch_path_cli
@@ -1160,17 +1189,14 @@ fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
         // （非 `.first()`），与 auto_enable 同段——避免 CLI `--hardware-id` 选非
         // first 段时 adapter 按 first 构造的错配。
         if let Some(hw) = resolve_hardware_section(&cfg.parsed, &args.hardware_id) {
-            // motor_ids 从 [[hardware]] extras["motor_ids"] 数组读（task 28 扩展）
-            let ids = hw
-                .extras
-                .get("motor_ids")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_integer().and_then(|i| u8::try_from(i).ok()))
-                        .collect::<Vec<u8>>()
-                })
-                .unwrap_or_default();
+            // v0.5 候选 E 段(2)（PC1）：motor_ids typed 化——撤 extras
+            // `filter_map` 静默丢弃（缺失已在 TOML parse 层 fail-fast）；
+            // resolved 段内容校验（等长/非空/唯一）违者 config 错误族 exit 2。
+            if let Err(e) = validate_hardware_section(hw) {
+                tracing::error!(error = %e, "fatal: [[hardware]] 内容校验失败");
+                return Err(e.exit_code());
+            }
+            let ids = hw.motor_ids.clone();
             // calibration_paths 从 [[hardware]] extras["calibration_paths"] 数组
             // 读（task 29 commit 3 扩展）：dimos bus1 = left_arm.json + head.json
             // 双文件，bus2 = right_arm.json + base.json。空数组 / 未设置 =
@@ -1399,5 +1425,93 @@ mod tests {
 
         assert!(latch.parent().unwrap().is_dir());
         assert!(!latch.exists());
+    }
+
+    // ---- v0.5 候选 E 段(2)：身份锁（P.2.2，沿 gateway 先例）----
+
+    fn base_args() -> Args {
+        Args {
+            robot_id_cli: None,
+            hardware_id_cli: None,
+            latch_path_cli: None,
+            config_path: None,
+            heartbeat_timeout_ns: 200_000_000,
+            smoke_duration: None,
+            tick_period_ns: 20_000_000,
+            strict_rt: false,
+            joint_count: 3,
+            cpu_affinity: None,
+        }
+    }
+
+    fn write_identity_cfg(robot_id: &str) -> tempfile::NamedTempFile {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            "[robot]\nid = \"{robot_id}\"\nconfig_version = \"0.1\"\n\n\
+             [[hardware]]\nid = \"arm\"\nadapter = \"mock_hard_rt\"\n\
+             joints = [\"j1\"]\nmotor_ids = [1]\n"
+        )
+        .unwrap();
+        f
+    }
+
+    #[test]
+    fn resolve_identity_lock_mismatch_err() {
+        let f = write_identity_cfg("cfg_id");
+        let mut args = base_args();
+        args.robot_id_cli = Some("cli_id".into());
+        args.config_path = Some(f.path().to_path_buf());
+        let Err(err) = args.resolve() else {
+            panic!("expected identity mismatch error");
+        };
+        assert!(err.contains("config/flag mismatch"), "{err}");
+    }
+
+    #[test]
+    fn resolve_identity_lock_match_ok() {
+        let f = write_identity_cfg("same_id");
+        let mut args = base_args();
+        args.robot_id_cli = Some("same_id".into());
+        args.config_path = Some(f.path().to_path_buf());
+        let resolved = args.resolve().unwrap();
+        assert_eq!(resolved.robot_id, "same_id");
+    }
+
+    // ---- v0.5 段(2) 回修 P0-2：内容校验前移 resolve()，不受 latch 影响 ----
+
+    #[test]
+    fn resolve_rejects_invalid_motor_ids_before_any_latch_io() {
+        use std::io::Write;
+        // len(motor_ids)=2 != len(joints)=1；robot_id 的 latch 路径不存在——
+        // 校验在 resolve() 完成（config 错误族 exit 2），latch（run() 内
+        // exit 1 族）根本不被触碰。
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            "[robot]\nid = \"no_latch_robot\"\nconfig_version = \"0.1\"\n\n\
+             [[hardware]]\nid = \"arm\"\nadapter = \"mock_hard_rt\"\n\
+             joints = [\"j1\"]\nmotor_ids = [1, 2]\n"
+        )
+        .unwrap();
+        let mut args = base_args();
+        args.config_path = Some(f.path().to_path_buf());
+        let Err(err) = args.resolve() else {
+            panic!("expected LenMismatch resolve error");
+        };
+        assert!(err.contains("len(motor_ids)=2"), "{err}");
+    }
+
+    #[test]
+    fn resolve_rejects_unknown_hardware_id() {
+        let f = write_identity_cfg("r1");
+        let mut args = base_args();
+        args.hardware_id_cli = Some("nonexistent".into());
+        args.config_path = Some(f.path().to_path_buf());
+        let Err(err) = args.resolve() else {
+            panic!("expected unknown-hardware resolve error");
+        };
+        assert!(err.contains("无匹配 [[hardware]] 段"), "{err}");
     }
 }

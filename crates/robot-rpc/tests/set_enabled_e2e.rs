@@ -272,12 +272,12 @@ fn build_config_toml(robot_id: &str, auto_enable: Option<bool>, decoy_first: boo
         let _ = write!(
             s,
             "[[hardware]]\nid = \"decoy_arm\"\nadapter = \"mock_hard_rt\"\n\
-             joints = [\"j0\", \"j1\"]\nauto_enable = true\n\n"
+             joints = [\"j0\", \"j1\"]\nmotor_ids = [1, 2]\nauto_enable = true\n\n"
         );
     }
     let _ = write!(
         s,
-        "[[hardware]]\nid = \"{HW}\"\nadapter = \"mock_hard_rt\"\njoints = [\"j0\", \"j1\"]\n"
+        "[[hardware]]\nid = \"{HW}\"\nadapter = \"mock_hard_rt\"\njoints = [\"j0\", \"j1\"]\nmotor_ids = [1, 2]\n"
     );
     if let Some(v) = auto_enable {
         let _ = writeln!(s, "auto_enable = {v}");

@@ -400,6 +400,33 @@ fn preflight(args: &Args) -> Result<(), String> {
 // 单次迭代
 // ============================================================================
 
+/// per-iteration 前置文件：latch 双写 provision + config 物化。
+///
+/// - **A1-5**：撤 `--allow-empty-latch` opt-in 后，daemon 默认 strict
+///   fail-closed 拒启动缺 latch；测试自己 provision `0\n` 到 primary +
+///   bak（跟 `scripts/systemd/README.md` "首次部署" 推荐流程一致）。
+/// - **v0.5 候选 E 段(2) 回修 P0-1**：per-iteration 物化 config——结构化
+///   重写 `[robot].id` = 本 iter 唯一 robot_id（身份锁；共享 helper 详
+///   `robot_tests::config_fixture` + Spec P.4 登记）。
+fn provision_iteration_files(
+    args: &Args,
+    robot_id: &str,
+    latch_path: &Path,
+    latch_bak: &Path,
+) -> Result<PathBuf, String> {
+    std::fs::write(latch_path, "0\n").map_err(|e| format!("provision primary latch=0\\n: {e}"))?;
+    std::fs::write(latch_bak, "0\n").map_err(|e| format!("provision bak latch=0\\n: {e}"))?;
+    robot_tests::config_fixture::materialize_config_with_robot_id(
+        &args.config,
+        robot_id,
+        &args.latch_dir,
+    )
+    .map_err(|e| format!("materialize per-case config: {e}"))
+}
+
+// 单迭代全链编排（spawn ×2 → estop → SIGKILL → 断言 → 重启验证）；再拆
+// 反而割裂时序叙事（跟 Args::parse 同款 allow）。
+#[allow(clippy::too_many_lines)]
 fn run_iteration(args: &Args, seq: u32, robot_id: &str) -> IterResult {
     let latch_path = args.latch_dir.join(format!("estop_latch_{robot_id}"));
     let latch_bak = args.latch_dir.join(format!("estop_latch_{robot_id}.bak"));
@@ -408,20 +435,19 @@ fn run_iteration(args: &Args, seq: u32, robot_id: &str) -> IterResult {
     let _ = std::fs::remove_file(&latch_path);
     let _ = std::fs::remove_file(&latch_bak);
 
-    // **A1-5**：撤 `--allow-empty-latch` opt-in 后，daemon 默认 strict
-    // fail-closed 拒启动缺 latch；测试自己 provision `0\n` 到 primary +
-    // bak（跟 `scripts/systemd/README.md` "首次部署" 推荐流程一致）。旧
-    // 实现通过 `--allow-empty-latch` 跳过 provision，A1-5 后该 flag 不
-    // 存在，必须显式预写。
-    if let Err(e) = std::fs::write(&latch_path, "0\n") {
-        return fail(seq, robot_id, format!("provision primary latch=0\\n: {e}"));
-    }
-    if let Err(e) = std::fs::write(&latch_bak, "0\n") {
-        return fail(seq, robot_id, format!("provision bak latch=0\\n: {e}"));
-    }
+    let config = match provision_iteration_files(args, robot_id, &latch_path, &latch_bak) {
+        Ok(p) => p,
+        Err(e) => return fail(seq, robot_id, e),
+    };
 
     // ---- 1) spawn daemon ----
-    let mut daemon = match spawn_daemon(args, robot_id, &latch_path, /*smoke_secs=*/ 30) {
+    let mut daemon = match spawn_daemon(
+        args,
+        robot_id,
+        &config,
+        &latch_path,
+        /*smoke_secs=*/ 30,
+    ) {
         Ok(c) => c,
         Err(e) => return fail(seq, robot_id, format!("spawn daemon: {e}")),
     };
@@ -437,7 +463,7 @@ fn run_iteration(args: &Args, seq: u32, robot_id: &str) -> IterResult {
     let s1_result = if args.use_mock_s1 {
         spawn_mock_s1(args, robot_id, /*duration_secs=*/ 25)
     } else {
-        spawn_s1_daemon(args, robot_id, /*duration_secs=*/ 25)
+        spawn_s1_daemon(args, robot_id, &config, /*duration_secs=*/ 25)
     };
     let mut s1 = match s1_result {
         Ok(c) => c,
@@ -501,8 +527,13 @@ fn run_iteration(args: &Args, seq: u32, robot_id: &str) -> IterResult {
     // 旧 grep "initial estop_latched = true" 在两种格式下都失效。
     // 这里改成"按行匹配 message + 结构化字段"（兼容 human + JSON），由 reviewer
     // 在 commit 8e5a238 阻断后修。
-    let restart_log = match run_daemon_briefly(args, robot_id, &latch_path, args.restart_smoke_secs)
-    {
+    let restart_log = match run_daemon_briefly(
+        args,
+        robot_id,
+        &config,
+        &latch_path,
+        args.restart_smoke_secs,
+    ) {
         Ok(s) => s,
         Err(e) => return fail(seq, robot_id, format!("restart daemon: {e}")),
     };
@@ -548,6 +579,7 @@ fn fail(seq: u32, robot_id: &str, reason: String) -> IterResult {
 fn spawn_daemon(
     args: &Args,
     robot_id: &str,
+    config: &Path,
     latch_path: &Path,
     smoke_secs: u64,
 ) -> std::io::Result<Child> {
@@ -557,7 +589,7 @@ fn spawn_daemon(
         .arg("--hardware-id")
         .arg(&args.hardware_id)
         .arg("--config")
-        .arg(&args.config)
+        .arg(config)
         .arg("--latch-path")
         .arg(latch_path)
         .arg("--tick-hz")
@@ -607,14 +639,19 @@ fn spawn_mock_s1(args: &Args, robot_id: &str, duration_secs: u64) -> std::io::Re
 ///
 /// `s1_daemon` 默认 `on_timeout = Hold` + `target = anchor`，跟
 /// `mock_s1 --amplitude 0.0` 推 state 推到 `Enabled.Active` 的语义等价。
-fn spawn_s1_daemon(args: &Args, robot_id: &str, duration_secs: u64) -> std::io::Result<Child> {
+fn spawn_s1_daemon(
+    args: &Args,
+    robot_id: &str,
+    config: &Path,
+    duration_secs: u64,
+) -> std::io::Result<Child> {
     Command::new(args.bin_dir.join("s1_daemon"))
         .arg("--robot-id")
         .arg(robot_id)
         .arg("--hardware-id")
         .arg(&args.hardware_id)
         .arg("--config")
-        .arg(&args.config)
+        .arg(config)
         .arg("--duration")
         .arg(format!("{duration_secs}s"))
         .stdout(Stdio::null())
@@ -651,6 +688,7 @@ fn run_robotctl_estop(args: &Args, robot_id: &str) -> bool {
 fn run_daemon_briefly(
     args: &Args,
     robot_id: &str,
+    config: &Path,
     latch_path: &Path,
     secs: u64,
 ) -> Result<String, String> {
@@ -660,7 +698,7 @@ fn run_daemon_briefly(
         .arg("--hardware-id")
         .arg(&args.hardware_id)
         .arg("--config")
-        .arg(&args.config)
+        .arg(config)
         .arg("--latch-path")
         .arg(latch_path)
         .arg("--tick-hz")

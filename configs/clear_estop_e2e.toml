@@ -22,3 +22,4 @@ config_version = "0.3.0"
 id      = "smoke_arm"
 adapter = "mock_hard_rt"
 joints  = ["smoke_j0"]
+motor_ids = [1]

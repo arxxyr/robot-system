@@ -120,6 +120,10 @@ required-features = ["robotctl-smoke"]
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
+# v0.5 候选 E 段(2) 回修 P0-1：lib config_fixture 结构化重写 [robot].id
+# （身份锁下六 harness 的"静态 config + 动态 robot_id"消费面；新依赖边
+# robot-tests → toml，timings/tree/deny 随段跑）。
+toml            = { workspace = true }
 iceoryx2        = { workspace = true }
 robot-core      = { workspace = true }
 robot-msg       = { workspace = true }

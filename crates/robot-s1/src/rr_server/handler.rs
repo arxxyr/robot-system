@@ -493,6 +493,7 @@ mod tests {
         let hardware = HardwareSection {
             id: "test_arm".into(),
             joints: vec!["j0".into()],
+            motor_ids: vec![1],
         };
         let registry = registry_with_mock_dwell();
         let coord = Coordinator::new(

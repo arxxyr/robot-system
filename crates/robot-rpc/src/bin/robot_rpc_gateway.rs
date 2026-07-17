@@ -436,10 +436,12 @@ config_version = "0.3.0"
 id = "arm"
 adapter = "mock_hard_rt"
 joints = ["j1", "j2"]
+motor_ids = [1, 2]
 
 [[hardware]]
 id = "base"
 adapter = "mock_omni3"
+motor_ids = [7, 8, 9]
 
 [s1.profile]
 backends = ["mock_dwell"]

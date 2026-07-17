@@ -24,6 +24,7 @@ joints      = [
     "left_arm_wrist",
     "left_arm_gripper",
 ]
+motor_ids   = [1, 2, 3, 4, 5]
 calibration = "calibration/left_arm.json"
 auto_enable = true
 
@@ -38,6 +39,7 @@ joints      = [
     "right_arm_wrist",
     "right_arm_gripper",
 ]
+motor_ids   = [1, 2, 3, 4, 5]
 calibration = "calibration/right_arm.json"
 auto_enable = true
 
@@ -47,6 +49,7 @@ id           = "base"
 adapter      = "mock_omni3"
 address      = "/dev/ttyACM2"
 joints       = ["wheel_1", "wheel_2", "wheel_3"]
+motor_ids    = [7, 8, 9]
 wheel_radius = 0.05
 base_radius  = 0.125
 

@@ -210,6 +210,7 @@ mod tests {
         HardwareSection {
             id: "test_arm".into(),
             joints: vec!["j0".into(), "j1".into(), "j2".into()],
+            motor_ids: vec![1, 2, 3],
         }
     }
 

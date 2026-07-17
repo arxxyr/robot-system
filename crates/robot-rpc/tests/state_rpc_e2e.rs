@@ -188,7 +188,7 @@ fn build_config_toml(robot_id: &str, declared: &[&str]) -> String {
     for hw in declared {
         let _ = write!(
             s,
-            "[[hardware]]\nid = \"{hw}\"\nadapter = \"mock_hard_rt\"\njoints = [\"j0\", \"j1\"]\n\n"
+            "[[hardware]]\nid = \"{hw}\"\nadapter = \"mock_hard_rt\"\njoints = [\"j0\", \"j1\"]\nmotor_ids = [1, 2]\n\n"
         );
     }
     s

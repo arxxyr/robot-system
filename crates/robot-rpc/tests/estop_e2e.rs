@@ -371,7 +371,7 @@ fn build_config_toml(robot_id: &str, auto_enable: Option<bool>) -> String {
     let mut s = format!(
         "# v0.5 候选 D (2/3) estop_e2e 共用 config（s0 + gateway）\n\
          [robot]\nid = \"{robot_id}\"\nconfig_version = \"0.5.0\"\n\n\
-         [[hardware]]\nid = \"{HW}\"\nadapter = \"mock_hard_rt\"\njoints = [\"j0\", \"j1\"]\n"
+         [[hardware]]\nid = \"{HW}\"\nadapter = \"mock_hard_rt\"\njoints = [\"j0\", \"j1\"]\nmotor_ids = [1, 2]\n"
     );
     if let Some(v) = auto_enable {
         let _ = writeln!(s, "auto_enable = {v}");

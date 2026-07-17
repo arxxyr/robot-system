@@ -204,6 +204,19 @@ impl Args {
     }
 }
 
+/// 身份锁纯比较（v0.5 候选 E 段(2) 回修 P1-2）：不等 → `Err(先例文案)`
+/// （沿 `robot_rpc_gateway.rs:133`）。抽纯函数让 exit 2 分支可 bin unit
+/// 直测（match / mismatch 双路）。
+fn check_robot_identity(cfg_robot_id: &str, cli_robot_id: &str) -> Result<(), String> {
+    if cfg_robot_id == cli_robot_id {
+        Ok(())
+    } else {
+        Err(format!(
+            "[robot].id '{cfg_robot_id}' != --robot-id '{cli_robot_id}' (config/flag mismatch; 会订阅错 topic)"
+        ))
+    }
+}
+
 fn parse_duration(s: &str) -> Result<Duration, String> {
     if let Some(rest) = s.strip_suffix("ms") {
         let ms: u64 = rest.parse().map_err(|e| format!("ms: {e}"))?;
@@ -252,8 +265,8 @@ TOPICS:
 EXIT CODES:
   0  正常退出（duration / SIGINT / SIGTERM）。
   1  iceoryx2 open publisher / subscriber 失败。
-  2  CLI 参数非法。
-  3  配置 TOML 加载 / 解析失败。
+  2  CLI 参数非法（含 --robot-id 与 [robot].id 冲突，v0.5 候选 E 段(2) 身份锁）。
+  3  配置 TOML 加载 / 解析失败（含 motor_ids 必填/等长/唯一校验）。
   4  启动锚定失败（timeout / stale / joint count）—— fail-fast。
   5  tick loop publish 失败（transport / iceoryx2）。
 "
@@ -299,12 +312,27 @@ fn run(args: &Args) -> Result<(), i32> {
             return Err(3);
         }
     };
+    // v0.5 候选 E 段(2) 身份锁（P.2.2；沿 robot_rpc_gateway.rs:133 先例
+    // 文案）：`--robot-id`（必填 CLI）与 TOML `[robot].id` 不等 → exit 2
+    // （flag/config 冲突族）；`[robot]` 缺失/语法错 → exit 3（config 族）。
+    match coordinator::parse_robot_id_from_toml(&toml_text) {
+        Ok(cfg_robot_id) => {
+            if let Err(msg) = check_robot_identity(&cfg_robot_id, &args.robot_id) {
+                eprintln!("fatal: {msg}");
+                return Err(2);
+            }
+        }
+        Err(e) => {
+            eprintln!("fatal: parse [robot].id: {e}");
+            return Err(e.exit_code());
+        }
+    }
     let hardware =
         match coordinator::parse_hardware_section_from_toml(&toml_text, &args.hardware_id) {
             Ok(h) => h,
             Err(e) => {
                 eprintln!("fatal: parse [[hardware]]: {e}");
-                return Err(3);
+                return Err(e.exit_code());
             }
         };
     let cfg = match coordinator::parse_s1_section_from_toml(&toml_text) {
@@ -866,5 +894,24 @@ mod tests {
     fn parse_duration_invalid() {
         assert!(parse_duration("abc").is_err());
         assert!(parse_duration("10x").is_err());
+    }
+
+    // ---- v0.5 段(2) 回修 P1-2：身份锁纯比较双路 ----
+
+    #[test]
+    fn robot_identity_mismatch_err() {
+        let Err(msg) = check_robot_identity("cfg_id", "cli_id") else {
+            panic!("expected identity mismatch");
+        };
+        assert!(msg.contains("config/flag mismatch"), "{msg}");
+        assert!(
+            msg.contains("'cfg_id'") && msg.contains("'cli_id'"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn robot_identity_match_ok() {
+        check_robot_identity("same", "same").unwrap();
     }
 }

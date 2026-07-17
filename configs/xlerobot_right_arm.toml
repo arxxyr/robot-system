@@ -1,0 +1,43 @@
+# XLeRobot 右臂 arm-only 权威配置（v0.5 候选 E；Spec D2 身份表逐行对应；
+# 与 xlerobot_left_arm.toml 对称——注释详见左臂文件）。
+#
+# 身份：robot_id = xlerobot_right / hardware_id = right_arm / bus2
+# （…5A7C122340）。latch = /var/lib/robot/xlerobot_right/estop_latch；
+# gateway listen = 127.0.0.1:50052（unit 侧字面）。
+# 旧 xlerobot_bus2_right_arm_full.toml 保留不动作历史件（D2）。
+#
+# 安装（R10-1）：install -D -m 0644 本文件 → /etc/robot/xlerobot_right_arm.toml
+
+[robot]
+id             = "xlerobot_right"
+config_version = "0.5.0-e-demo"
+
+[[hardware]]
+id          = "right_arm"
+adapter     = "feetech_sts3215"
+address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00"
+joints      = [
+    "right_arm_shoulder_pan",
+    "right_arm_shoulder_lift",
+    "right_arm_elbow_flex",
+    "right_arm_wrist_flex",
+    "right_arm_wrist_roll",
+    "right_arm_gripper",
+]
+motor_ids   = [1, 2, 3, 4, 5, 6]
+# arm-only：只给 right_arm.json（D2——不给 base.json）。
+calibration_paths = [
+    "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",
+]
+auto_enable = false
+
+# S1 action profile（P0 回修：候选 E 真机工作流走 Scripted backend——
+# 缺省 profile 只启用 mock_dwell〔coordinator.rs default_b2〕，Scripted 请求
+# 会落 NoBackendForKind）。gripper 复用 Scripted（D6）。
+[s1.profile]
+backends     = ["scripted"]
+command_mode = "joint_position"
+
+[monitor]
+interval_secs        = 1
+interested_processes = ["s0_daemon", "s1_daemon", "robot_rpc_gatew"]

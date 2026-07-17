@@ -812,6 +812,7 @@ fn minimal_mock_config(robot_id: &str, hardware_id: &str) -> String {
          adapter     = \"mock_hard_rt\"\n\
          address     = \"mock://freeze_smoke\"\n\
          joints      = [\"j0\"]\n\
+         motor_ids   = [1]\n\
          auto_enable = true\n",
     )
 }

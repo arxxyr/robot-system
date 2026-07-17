@@ -16,10 +16,11 @@
 //!   `[[hardware]]` 多段 + `[[sensor]]` 多段。
 //! - `[robot]` 段必须含 `id` + `config_version`（设计 §7.3 `ConfigIdentity`
 //!   的 plain 字段源）。
-//! - `[[hardware]]` / `[[sensor]]` 字段宽松接收：`id` + `adapter` 必填，
-//!   其他（`address` / `baud` / `joints` / `calibration` / `wheel_radius` /
-//!   ...）按需出现，未知字段不报错（v0.4 接 hardware-specific
-//!   adapter 时再按 adapter type cast）。
+//! - `[[hardware]]` / `[[sensor]]` 字段宽松接收：`id` + `adapter` +
+//!   `motor_ids`（v0.5 候选 E 段(2) typed 必填）必填，其他（`address` /
+//!   `baud` / `joints` / `calibration` / `wheel_radius` / ...）按需出现，
+//!   未知字段不报错（v0.4 接 hardware-specific adapter 时再按 adapter
+//!   type cast）。
 //! - `IdentityFingerprint` 的 `config_hash = blake3(原始 TOML bytes)`。其余 3 hash
 //!   留 placeholder（详 [`robot_core::config`] module-level docs）。
 //!
@@ -76,6 +77,12 @@ pub struct HardwareSection {
     pub address: Option<String>,
     #[serde(default)]
     pub joints: Vec<String>,
+    /// **v0.5 候选 E 段(2)（D1/PC1）**：显式 motor id 表，与 `joints` 按
+    /// config 顺序一一对应（`layout_id` 编码输入之一）。**必填、无
+    /// default**——缺失 = TOML parse 错误（S0 config 错误族 exit 2，撤
+    /// extras `filter_map` 静默丢弃）；内容校验（等长/非空/唯一）见
+    /// [`validate_hardware_section`]。
+    pub motor_ids: Vec<u8>,
     #[serde(default)]
     pub calibration: Option<String>,
     /// **v0.5 候选 C**：启动是否自动 enable（design §7.2 `auto_enable`，B2 typed 化，
@@ -98,6 +105,92 @@ pub fn resolve_hardware_section<'a>(
     hardware_id: &str,
 ) -> Option<&'a HardwareSection> {
     cfg.hardware.iter().find(|h| h.id == hardware_id)
+}
+
+/// resolved `[[hardware]]` 段内容校验错误（v0.5 候选 E 段(2)，PC1）。
+///
+/// 全族 fail-fast：S0 侧统一 config 错误族 **exit 2**（映射单测锁
+/// [`Self::exit_code`]，AC-E3）。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum HardwareSectionError {
+    /// `joints` 为空（无法派生 layout / 驱动任何关节）。
+    #[error("[[hardware]] id={id}: joints 为空")]
+    EmptyJoints { id: String },
+    /// `motor_ids` 为空（typed 必填字段内容为空数组）。
+    #[error("[[hardware]] id={id}: motor_ids 为空")]
+    EmptyMotorIds { id: String },
+    /// `motor_ids` 与 `joints` 长度不等（一一对应关系破坏）。
+    #[error("[[hardware]] id={id}: len(motor_ids)={motor_ids} != len(joints)={joints}")]
+    LenMismatch {
+        id: String,
+        joints: usize,
+        motor_ids: usize,
+    },
+    /// joint 名重复（layout 编码 / by-name 寻址二义）。
+    #[error("[[hardware]] id={id}: joint 名重复 {name:?}")]
+    DupJointName { id: String, name: String },
+    /// motor id 重复（总线寻址冲突）。
+    #[error("[[hardware]] id={id}: motor_id 重复 {motor_id}")]
+    DupMotorId { id: String, motor_id: u8 },
+}
+
+impl HardwareSectionError {
+    /// error → 退出码映射（AC-E3）：S0 config 内容错误族 = **2**。
+    #[must_use]
+    pub const fn exit_code(&self) -> i32 {
+        2
+    }
+}
+
+impl ConfigLoadError {
+    /// error → 退出码映射（AC-E3）：S0 config 加载错误族 = **2**。
+    #[must_use]
+    pub const fn exit_code(&self) -> i32 {
+        2
+    }
+}
+
+/// resolved `[[hardware]]` 段内容校验（v0.5 候选 E 段(2)，Spec P.2.2）：
+/// `joints` 非空 / `motor_ids` 非空 / 两表等长 / joint 名唯一 / motor id 唯一
+/// （u8 域由类型承担）。首个 violation 即返回。
+///
+/// # Errors
+///
+/// 见 [`HardwareSectionError`] 五 variant。
+pub fn validate_hardware_section(hw: &HardwareSection) -> Result<(), HardwareSectionError> {
+    if hw.joints.is_empty() {
+        return Err(HardwareSectionError::EmptyJoints { id: hw.id.clone() });
+    }
+    if hw.motor_ids.is_empty() {
+        return Err(HardwareSectionError::EmptyMotorIds { id: hw.id.clone() });
+    }
+    if hw.motor_ids.len() != hw.joints.len() {
+        return Err(HardwareSectionError::LenMismatch {
+            id: hw.id.clone(),
+            joints: hw.joints.len(),
+            motor_ids: hw.motor_ids.len(),
+        });
+    }
+    let mut seen_names = std::collections::HashSet::with_capacity(hw.joints.len());
+    for name in &hw.joints {
+        if !seen_names.insert(name.as_str()) {
+            return Err(HardwareSectionError::DupJointName {
+                id: hw.id.clone(),
+                name: name.clone(),
+            });
+        }
+    }
+    let mut seen_ids = [false; 256];
+    for &motor_id in &hw.motor_ids {
+        if seen_ids[usize::from(motor_id)] {
+            return Err(HardwareSectionError::DupMotorId {
+                id: hw.id.clone(),
+                motor_id,
+            });
+        }
+        seen_ids[usize::from(motor_id)] = true;
+    }
+    Ok(())
 }
 
 /// `[monitor]` 段（task-31 B'b）：`robot-health` 采样配置。
@@ -264,12 +357,14 @@ id = "left_arm"
 adapter = "mock_hard_rt"
 address = "/dev/ttyACM0"
 joints = ["j1", "j2", "j3"]
+motor_ids = [1, 2, 3]
 baud = 1000000
 
 [[hardware]]
 id = "base"
 adapter = "mock_omni3"
 joints = ["wheel_1", "wheel_2", "wheel_3"]
+motor_ids = [7, 8, 9]
 wheel_radius = 0.05
 
 [[sensor]]
@@ -451,7 +546,8 @@ streams = ["color", "depth"]
     fn auto_enable_typed_parsed_false() {
         // auto_enable 走 typed 字段（不落 extras），可显式关掉启动自动上使能。
         let toml = "[robot]\nid = \"r\"\nconfig_version = \"0.1\"\n\n\
-                    [[hardware]]\nid = \"arm\"\nadapter = \"mock_hard_rt\"\nauto_enable = false\n";
+                    [[hardware]]\nid = \"arm\"\nadapter = \"mock_hard_rt\"\n\
+                    motor_ids = []\nauto_enable = false\n";
         let f = write_temp(toml);
         let cfg = load_robot_config(f.path()).unwrap();
         assert_eq!(cfg.parsed.hardware[0].auto_enable, Some(false));
@@ -465,5 +561,97 @@ streams = ["color", "depth"]
         let f = write_temp(SAMPLE_TOML);
         let cfg = load_robot_config(f.path()).unwrap();
         assert_eq!(cfg.parsed.hardware[0].auto_enable, None);
+    }
+
+    // ---- v0.5 候选 E 段(2)：motor_ids typed + validate（AC-E3 拒路径）----
+
+    /// 便捷构造：合法段基线，各拒路径在其上单点破坏。
+    fn valid_hw() -> HardwareSection {
+        let f = write_temp(SAMPLE_TOML);
+        let cfg = load_robot_config(f.path()).unwrap();
+        cfg.parsed.hardware[0].clone()
+    }
+
+    #[test]
+    fn motor_ids_typed_parsed_not_in_extras() {
+        let f = write_temp(SAMPLE_TOML);
+        let cfg = load_robot_config(f.path()).unwrap();
+        assert_eq!(cfg.parsed.hardware[0].motor_ids, vec![1, 2, 3]);
+        assert_eq!(cfg.parsed.hardware[1].motor_ids, vec![7, 8, 9]);
+        assert!(!cfg.parsed.hardware[0].extras.contains_key("motor_ids"));
+    }
+
+    #[test]
+    fn missing_motor_ids_is_parse_error() {
+        // 必填无 default：缺失 = TOML parse 错误（config 错误族 exit 2）。
+        let toml = "[robot]\nid = \"r\"\nconfig_version = \"0.1\"\n\n\
+                    [[hardware]]\nid = \"arm\"\nadapter = \"mock_hard_rt\"\n\
+                    joints = [\"j1\"]\n";
+        let f = write_temp(toml);
+        let err = load_robot_config(f.path()).unwrap_err();
+        assert!(matches!(err, ConfigLoadError::Toml { .. }), "{err:?}");
+        assert_eq!(err.exit_code(), 2);
+    }
+
+    #[test]
+    fn validate_rejects_empty_joints() {
+        let mut hw = valid_hw();
+        hw.joints.clear();
+        let err = validate_hardware_section(&hw).unwrap_err();
+        assert!(matches!(err, HardwareSectionError::EmptyJoints { .. }));
+        assert_eq!(err.exit_code(), 2);
+    }
+
+    #[test]
+    fn validate_rejects_empty_motor_ids() {
+        let mut hw = valid_hw();
+        hw.motor_ids.clear();
+        assert!(matches!(
+            validate_hardware_section(&hw).unwrap_err(),
+            HardwareSectionError::EmptyMotorIds { .. }
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_len_mismatch() {
+        let mut hw = valid_hw();
+        hw.motor_ids.push(4);
+        assert!(matches!(
+            validate_hardware_section(&hw).unwrap_err(),
+            HardwareSectionError::LenMismatch {
+                joints: 3,
+                motor_ids: 4,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_dup_joint_name() {
+        let mut hw = valid_hw();
+        hw.joints[2] = hw.joints[0].clone();
+        assert!(matches!(
+            validate_hardware_section(&hw).unwrap_err(),
+            HardwareSectionError::DupJointName { .. }
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_dup_motor_id() {
+        let mut hw = valid_hw();
+        hw.motor_ids[2] = hw.motor_ids[0];
+        assert!(matches!(
+            validate_hardware_section(&hw).unwrap_err(),
+            HardwareSectionError::DupMotorId { motor_id: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn validate_accepts_sample() {
+        let f = write_temp(SAMPLE_TOML);
+        let cfg = load_robot_config(f.path()).unwrap();
+        for hw in &cfg.parsed.hardware {
+            validate_hardware_section(hw).unwrap();
+        }
     }
 }

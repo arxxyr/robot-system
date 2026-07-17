@@ -26,6 +26,7 @@ id      = "ik_arm"
 adapter = "mock_hard_rt"
 # 5-DOF：跟 XLeRobotArmIkSolver.info().joint_names 完全一致（顺序锁定）。
 joints  = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+motor_ids = [1, 2, 3, 4, 5]
 
 [s1.profile]
 backends     = ["mock_dwell", "hold_pose", "scripted", "ik"]

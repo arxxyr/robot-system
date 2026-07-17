@@ -289,7 +289,8 @@ struct CaseCtx {
     /// gateway loopback 端口。allocate_loopback_port() 取 OS 自动分配；race
     /// 窗口 < 100ms 通常够（dev box / CI）。
     gateway_port: u16,
-    /// daemon `--config` TOML 路径（共享 case 间，复用 `args.config`）。
+    /// daemon `--config` TOML 路径——**per-case 物化件**（段(2) 回修
+    /// P0-1：`config_fixture` 以 `args.config` 为样板重写 `[robot].id`）。
     config: PathBuf,
     /// daemon / gateway binary 目录（共享 case 间，复用 `args.bin_dir`）。
     bin_dir: PathBuf,
@@ -310,6 +311,15 @@ impl CaseCtx {
         let latch_bak = latch_dir.join("estop_latch.bak");
         let role_table_path = case_dir.join("rpc_roles.toml");
         write_role_table(&role_table_path)?;
+        // v0.5 候选 E 段(2) 回修 P0-1：样板 config 结构化重写 [robot].id =
+        // 本 case 唯一 robot_id（身份锁下"静态 config + 动态 robot_id"消费
+        // 面；共享 helper 详 robot_tests::config_fixture + Spec P.4 登记）。
+        let config = robot_tests::config_fixture::materialize_config_with_robot_id(
+            &args.config,
+            &robot_id,
+            &case_dir,
+        )
+        .map_err(|e| format!("materialize per-case config: {e}"))?;
         let gateway_port = allocate_loopback_port()?;
         Ok(Self {
             robot_id,
@@ -318,7 +328,7 @@ impl CaseCtx {
             latch_bak,
             role_table_path,
             gateway_port,
-            config: args.config.clone(),
+            config,
             bin_dir: args.bin_dir.clone(),
         })
     }

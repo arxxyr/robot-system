@@ -291,6 +291,11 @@ fn build_s1_toml(robot_id: &str, hardware_id: &str, joints: &[String]) -> String
         .map(|j| format!("\"{j}\""))
         .collect::<Vec<_>>()
         .join(", ");
+    // v0.5 候选 E 段(2)（PC1）：motor_ids typed 必填——显式 [1..=n] 策略。
+    let motor_ids_csv = (1..=joints.len())
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
     // **不**写 [s1] 段：parse_s1_section_from_toml 含 deny_unknown_fields，
     // [s1] + [s1.profile] 共存会被 serde 当 [s1] 子字段 profile 拒（详
     // s1/coordinator.rs::S1Section）。**全 default**：CoordinatorConfig::default
@@ -304,9 +309,10 @@ id             = "{robot_id}"
 config_version = "0.3.0"
 
 [[hardware]]
-id      = "{hardware_id}"
-adapter = "mock_hard_rt"
-joints  = [{joints_csv}]
+id        = "{hardware_id}"
+adapter   = "mock_hard_rt"
+joints    = [{joints_csv}]
+motor_ids = [{motor_ids_csv}]
 "#
     )
 }

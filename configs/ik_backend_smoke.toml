@@ -32,6 +32,7 @@ adapter = "mock_hard_rt"
 # 完全一致（顺序锁定，详 crates/robot-kinematics-xlerobot/src/lib.rs
 # `KinematicInfo.joint_names`）。
 joints  = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+motor_ids = [1, 2, 3, 4, 5]
 
 [s1.profile]
 backends     = ["mock_dwell", "hold_pose", "ik"]

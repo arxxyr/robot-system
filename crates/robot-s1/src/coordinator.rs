@@ -168,6 +168,31 @@ pub enum ConfigError {
     /// 匹配到的 `[[hardware]]` section 里 `joints = []`（B1 至少要 1 关节）。
     #[error("hardware section {0:?} has no joints (B1 requires >= 1 joint)")]
     EmptyJoints(String),
+    /// v0.5 候选 E 段(2)：匹配段 `motor_ids = []`。
+    #[error("hardware section {0:?} has empty motor_ids")]
+    EmptyMotorIds(String),
+    /// v0.5 候选 E 段(2)：`motor_ids` 与 `joints` 长度不等。
+    #[error("hardware section {id:?}: len(motor_ids)={motor_ids} != len(joints)={joints}")]
+    MotorIdsLenMismatch {
+        id: String,
+        joints: usize,
+        motor_ids: usize,
+    },
+    /// v0.5 候选 E 段(2)：joint 名重复。
+    #[error("hardware section {id:?}: duplicate joint name {name:?}")]
+    DupJointName { id: String, name: String },
+    /// v0.5 候选 E 段(2)：motor id 重复。
+    #[error("hardware section {id:?}: duplicate motor_id {motor_id}")]
+    DupMotorId { id: String, motor_id: u8 },
+}
+
+impl ConfigError {
+    /// error → 退出码映射（AC-E3）：S1 config 加载/内容错误族 = **3**
+    /// （`s1_daemon` exit 码表；身份锁 flag/config 冲突走 2，不经本类型）。
+    #[must_use]
+    pub const fn exit_code(&self) -> i32 {
+        3
+    }
 }
 
 /// TOML 顶层 wrapper：daemon 同款 `--config` 文件含 `[robot]` /
@@ -302,6 +327,10 @@ pub struct HardwareSection {
     pub id: String,
     #[serde(default)]
     pub joints: Vec<String>,
+    /// v0.5 候选 E 段(2)（PC1，与 S0 侧同步）：显式 motor id 表，与
+    /// `joints` 按 config 顺序一一对应。**必填无 default**——缺失 = TOML
+    /// parse 错误（S1 config 错误族 exit 3）。
+    pub motor_ids: Vec<u8>,
 }
 
 /// `[[hardware]]` 段的 wrapper（同一 TOML 可有多个 hardware section）。
@@ -337,7 +366,67 @@ pub fn parse_hardware_section_from_toml(
     if section.joints.is_empty() {
         return Err(ConfigError::EmptyJoints(section.id));
     }
+    // v0.5 候选 E 段(2)：与 S0 `validate_hardware_section` 同判据（非空 /
+    // 等长 / 唯一；u8 域由类型承担）——S1 侧独立实现，守 s1 → s0 0 依赖边
+    // （B1 outline §9 决策 #6）。
+    if section.motor_ids.is_empty() {
+        return Err(ConfigError::EmptyMotorIds(section.id));
+    }
+    if section.motor_ids.len() != section.joints.len() {
+        return Err(ConfigError::MotorIdsLenMismatch {
+            id: section.id,
+            joints: section.joints.len(),
+            motor_ids: section.motor_ids.len(),
+        });
+    }
+    let mut seen_names = std::collections::HashSet::with_capacity(section.joints.len());
+    for name in &section.joints {
+        if !seen_names.insert(name.as_str()) {
+            return Err(ConfigError::DupJointName {
+                id: section.id.clone(),
+                name: name.clone(),
+            });
+        }
+    }
+    let mut seen_ids = [false; 256];
+    for &motor_id in &section.motor_ids {
+        if seen_ids[usize::from(motor_id)] {
+            return Err(ConfigError::DupMotorId {
+                id: section.id.clone(),
+                motor_id,
+            });
+        }
+        seen_ids[usize::from(motor_id)] = true;
+    }
     Ok(section)
+}
+
+// ============================================================================
+// [robot].id minimal parser（v0.5 候选 E 段(2) 身份锁用）
+// ============================================================================
+
+/// `[robot]` 段 minimal 视图（只取 `id`；其余字段 serde 静默忽略——与
+/// `HardwareSection` 同款"不复用 robot-s0 schema"边界）。
+#[derive(Debug, Deserialize)]
+struct RobotIdOnly {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RobotIdWrapper {
+    robot: RobotIdOnly,
+}
+
+/// 从 daemon `--config` 同款 TOML 取 `[robot].id`（身份锁比对用，
+/// P.2.2；缺 `[robot]`/缺 `id`/语法错 → [`ConfigError::Toml`]）。
+///
+/// # Errors
+///
+/// [`ConfigError::Toml`]。
+pub fn parse_robot_id_from_toml(toml_text: &str) -> Result<String, ConfigError> {
+    let wrap: RobotIdWrapper =
+        toml::from_str(toml_text).map_err(|e| ConfigError::Toml(e.to_string()))?;
+    Ok(wrap.robot.id)
 }
 
 // ============================================================================
@@ -1823,9 +1912,10 @@ id             = "smoke"
 config_version = "0.3.0"
 
 [[hardware]]
-id      = "smoke_arm"
-adapter = "mock_hard_rt"
-joints  = ["smoke_j0"]
+id        = "smoke_arm"
+adapter   = "mock_hard_rt"
+joints    = ["smoke_j0"]
+motor_ids = [1]
 "#;
         let cfg = parse_s1_section_from_toml(toml).unwrap();
         assert_eq!(cfg, CoordinatorConfig::default());
@@ -2230,14 +2320,16 @@ id             = "rb"
 config_version = "0.3.0"
 
 [[hardware]]
-id      = "left_arm"
-adapter = "mock_hard_rt"
-joints  = ["a", "b"]
+id        = "left_arm"
+adapter   = "mock_hard_rt"
+joints    = ["a", "b"]
+motor_ids = [1, 2]
 
 [[hardware]]
-id      = "right_arm"
-adapter = "feetech_sts3215"
-joints  = ["r1", "r2", "r3"]
+id        = "right_arm"
+adapter   = "feetech_sts3215"
+joints    = ["r1", "r2", "r3"]
+motor_ids = [1, 2, 3]
 "#;
         let section = parse_hardware_section_from_toml(toml, "right_arm").unwrap();
         assert_eq!(section.id, "right_arm");
@@ -2251,9 +2343,10 @@ joints  = ["r1", "r2", "r3"]
     fn parse_hardware_returns_not_found_for_missing_id() {
         let toml = r#"
 [[hardware]]
-id      = "left_arm"
-adapter = "mock_hard_rt"
-joints  = ["a"]
+id        = "left_arm"
+adapter   = "mock_hard_rt"
+joints    = ["a"]
+motor_ids = [1]
 "#;
         let err = parse_hardware_section_from_toml(toml, "right_arm").unwrap_err();
         assert!(
@@ -2266,9 +2359,10 @@ joints  = ["a"]
     fn parse_hardware_rejects_empty_joints() {
         let toml = r#"
 [[hardware]]
-id      = "smoke_arm"
-adapter = "mock_hard_rt"
-joints  = []
+id        = "smoke_arm"
+adapter   = "mock_hard_rt"
+joints    = []
+motor_ids = []
 "#;
         let err = parse_hardware_section_from_toml(toml, "smoke_arm").unwrap_err();
         assert!(
@@ -2288,12 +2382,118 @@ adapter     = "feetech_sts3215"
 address     = "/dev/ttyUSB0"
 calibration = "configs/calib.json"
 joints      = ["j0"]
+motor_ids   = [1]
 baud        = 1_000_000
 poll_hz     = 200
 "#;
         let section = parse_hardware_section_from_toml(toml, "bus2").unwrap();
         assert_eq!(section.id, "bus2");
         assert_eq!(section.joints, vec!["j0".to_string()]);
+        assert_eq!(section.motor_ids, vec![1]);
+    }
+
+    // ----- v0.5 候选 E 段(2)：motor_ids typed + 身份锁 parser（AC-E3）-----
+
+    #[test]
+    fn parse_hardware_missing_motor_ids_is_toml_error() {
+        // 必填无 default：缺失 = TOML parse 错误（S1 config 错误族 exit 3）。
+        let toml = r#"
+[[hardware]]
+id      = "arm"
+adapter = "mock_hard_rt"
+joints  = ["j0"]
+"#;
+        let err = parse_hardware_section_from_toml(toml, "arm").unwrap_err();
+        assert!(matches!(err, ConfigError::Toml(_)), "got {err:?}");
+        assert_eq!(err.exit_code(), 3);
+    }
+
+    #[test]
+    fn parse_hardware_rejects_empty_motor_ids() {
+        let toml = "[[hardware]]\nid = \"arm\"\nadapter = \"m\"\n\
+                    joints = [\"j0\"]\nmotor_ids = []\n";
+        let err = parse_hardware_section_from_toml(toml, "arm").unwrap_err();
+        assert!(
+            matches!(err, ConfigError::EmptyMotorIds(ref s) if s == "arm"),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_hardware_rejects_len_mismatch() {
+        let toml = "[[hardware]]\nid = \"arm\"\nadapter = \"m\"\n\
+                    joints = [\"j0\", \"j1\"]\nmotor_ids = [1]\n";
+        let err = parse_hardware_section_from_toml(toml, "arm").unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ConfigError::MotorIdsLenMismatch {
+                    joints: 2,
+                    motor_ids: 1,
+                    ..
+                }
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_hardware_rejects_dup_joint_name() {
+        let toml = "[[hardware]]\nid = \"arm\"\nadapter = \"m\"\n\
+                    joints = [\"j0\", \"j0\"]\nmotor_ids = [1, 2]\n";
+        let err = parse_hardware_section_from_toml(toml, "arm").unwrap_err();
+        assert!(
+            matches!(err, ConfigError::DupJointName { ref name, .. } if name == "j0"),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_hardware_rejects_dup_motor_id() {
+        let toml = "[[hardware]]\nid = \"arm\"\nadapter = \"m\"\n\
+                    joints = [\"j0\", \"j1\"]\nmotor_ids = [1, 1]\n";
+        let err = parse_hardware_section_from_toml(toml, "arm").unwrap_err();
+        assert!(
+            matches!(err, ConfigError::DupMotorId { motor_id: 1, .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_robot_id_ok_and_missing_section_err() {
+        let ok =
+            parse_robot_id_from_toml("[robot]\nid = \"xlerobot_left\"\nconfig_version = \"0.5\"\n")
+                .unwrap();
+        assert_eq!(ok, "xlerobot_left");
+        let err = parse_robot_id_from_toml("[s1]\nheartbeat_hz = 50.0\n").unwrap_err();
+        assert!(matches!(err, ConfigError::Toml(_)), "got {err:?}");
+    }
+
+    /// PX-3（段(2) 复核 P0 回修）：仓库两份**权威 arm config** 必须启用
+    /// Scripted backend——缺省 profile 只有 mock_dwell
+    /// （[`ProfileSection::default_b2`]），Scripted 请求会落
+    /// NoBackendForKind，候选 E 真机工作流直接失败。顺带锁 pair 的 D2
+    /// 身份与 hardware 段可解析（motor_ids 全套校验路径）。
+    #[test]
+    fn authoritative_arm_configs_enable_scripted() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../configs");
+        for (file, robot_id, hardware_id) in [
+            ("xlerobot_left_arm.toml", "xlerobot_left", "left_arm"),
+            ("xlerobot_right_arm.toml", "xlerobot_right", "right_arm"),
+        ] {
+            let text = std::fs::read_to_string(format!("{root}/{file}")).unwrap();
+            let profile = parse_profile_section_from_toml(&text).unwrap();
+            assert!(
+                profile.backends.iter().any(|b| b == "scripted"),
+                "{file}: profile 缺 scripted，backends={:?}",
+                profile.backends
+            );
+            assert_eq!(profile.command_mode, "joint_position", "{file}");
+            assert_eq!(parse_robot_id_from_toml(&text).unwrap(), robot_id, "{file}");
+            let hw = parse_hardware_section_from_toml(&text, hardware_id).unwrap();
+            assert_eq!(hw.joints.len(), 6, "{file}");
+            assert_eq!(hw.motor_ids, vec![1, 2, 3, 4, 5, 6], "{file}");
+        }
     }
 
     // ----- TickState / tick_once -----
@@ -2441,6 +2641,7 @@ poll_hz     = 200
         HardwareSection {
             id: "test_arm".into(),
             joints: (0..joint_count).map(|i| format!("j{i}")).collect(),
+            motor_ids: (1..=u8::try_from(joint_count).expect("test joint_count fits u8")).collect(),
         }
     }
 
@@ -2903,6 +3104,7 @@ backends = 42
         let hardware = HardwareSection {
             id: "test_arm".into(),
             joints: vec!["j0".into()],
+            motor_ids: vec![1],
         };
         let registry =
             BackendRegistry::from_explicit(&[&SCRIPTED_BACKEND as &'static dyn ActionBackend]);
