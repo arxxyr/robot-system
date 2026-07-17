@@ -10,6 +10,28 @@
 
 ---
 
+## 2026-07-17 · 候选 E 段(4)：段(3)→(4) layout 过渡窗口正式关闭（**状态：闭合登记**）
+
+- **S1 / mock_s1 改为 config 派生**：`s1_daemon` 撤 `--layout-id` 占位
+  默认（`0xCAFE_BABE_DEAD_BEEF`），layout 一律由 config 派生
+  （`compute_layout_id`，PD-E5(a) 唯一权威）；`mock_s1` `--config` 必填
+  化（PC4），joints 数与 layout 同源派生。
+- **显式 `--layout-id` 仅保留在 `s1_daemon` 作一致性断言**（≠ 派生 →
+  exit 2）；四个 smoke harness（scripted / ik / pubsub_cleanup /
+  robotctl）的进程级 `--layout-id` **整体删除**——`compute_layout_id`
+  含 per-case robot_id，进程级单值不可能同时匹配 `--phase all` 的多个
+  case（不可执行接口，reviewer 段(4) 复核 P1-1）。
+- **client layout 硬校验落地**：`robot_rpc::client::layout`
+  （`load_hardware_layout` + `validate_state_layout`，`LayoutMismatch`
+  硬失败不得降级；AC-E4 e2e `layout_validate_mismatch_hard_fail`）。
+- **段(3) 条目"过渡窗口"段自本条起正式关闭**（历史原文保留不改）：
+  S1/mock_s1/harness stamping 全部派生同源，config 模式 S0 的 command
+  gate 不再丢弃自家 S1 命令帧。
+
+审阅人：reviewer（段(4) 复核意见闭合）；登记人：Claude。
+
+---
+
 ## 2026-07-16 · 候选 E 段(3)：`JointState.layout_id` 值语义 + §3.5.1 部分落地边界（**状态：偏离登记〔解读/部分落地〕**）
 
 ### 值语义变化

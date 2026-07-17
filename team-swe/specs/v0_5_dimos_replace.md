@@ -1211,7 +1211,10 @@ reviewer 裁决全文照录执行（auto_enable=false / R6-5 接线 / R6-6 序�
 - toolchain：`channel = "nightly"` **浮动最新、不锁定**（2026-07-13 政策）；
   新 lint fix-forward。
 - 每 commit 前 `cargo fmt --all` + `cargo clippy --workspace --all-targets
-  -- -D warnings` 零警告；**Quality Gate 顺序硬性**（RS2 全链教训）=
+  -- -D warnings` 零警告 + **feature 面 clippy（PX-5 永久追加；
+  `--all-features` 全覆盖含 freeze-systemd-smoke，不随 feature 增补
+  漂移）**：`cargo clippy -p robot-tests --all-features --all-targets
+  -- -D warnings`；**Quality Gate 顺序硬性**（RS2 全链教训）=
   `cargo build --release --workspace` → **`cargo build --release -p
   robot-tests --features "pubsub-cleanup-smoke,scripted-backend-smoke,
   ik-backend-smoke,robotctl-smoke,clear-estop-e2e"`**（required-features
@@ -1469,6 +1472,9 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
   impl WatchdogHandle { pub fn stop(self) /* 停喂+join */ }
   ```
   S0 迁移传 `thread_name = "s0_systemd_wd"` 原值——**行为 bit 等价**；
+  **迁移同步任务（PX-4）**：`watchdog_withholds_ping_when_observer_
+  stalled` 确定性化——同步等待 grace ping 与 enforce evaluation
+  （握手/事件驱动），不依赖固定 50ms 墙钟窗口；
   S1 = `"s1_systemd_wd"`、gateway = `"gw_systemd_wd"`。
 - **gateway ready 顺序 + 并发拓扑锁死（R3-B2 + RB4）**：
   `serve_with_incoming_shutdown(...).await` 会阻塞到停机
@@ -1844,3 +1850,5 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
 | PX-1 | (2) | 计划口径勘误（reviewer 段(2) 复核 P0-1） | PC1 名单把 crash_restart / scripted / ik / pubsub_cleanup / clear_estop_e2e / robotctl_smoke 归为"动态 builder"——实为**"静态样板 config + 动态唯一 robot_id"消费面**（样板 `[robot].id` 写死、harness 每 case 生成唯一 `--robot-id`），段(2) 身份锁下六者直接 exit 2 | 六 harness 改 **per-case 物化 config**：共享 helper `robot_tests::config_fixture::materialize_config_with_robot_id`（robot-tests 首立 lib；结构化重写 `[robot].id`，其余字段**语义值保留**〔toml 重序列化会重排格式、注释不保留〕；**保住唯一 ID 隔离，不放宽身份锁不回固定 id**，禁六份字符串替换）；新依赖边 **robot-tests → toml**（timings / cargo tree / deny 随段跑） |
 | PX-3 | (2) | 计划缺口（reviewer 段(2) 复核二 P0） | 两份权威 arm config 未启用 Scripted backend——S1 缺省 profile 只有 mock_dwell（`ProfileSection::default_b2`，`coordinator.rs:1038` 区），Scripted 请求落 NoBackendForKind，候选 E 真机工作流会失败；既有 gate 全绿只因新权威配置尚未被 smoke 消费 | 两 config 增 `[s1.profile] backends = ["scripted"] + command_mode = "joint_position"`；新增 unit `authoritative_arm_configs_enable_scripted`（读仓库两份权威配置，锁 profile 含 scripted + D2 身份 + hardware 段可解析） |
 | PX-2 | (2) | 实现偏差回正（reviewer 段(2) 复核 P0-2） | 首版把 resolved 段内容校验放 `build_adapter`（run() 内）——晚于 latch 加载（exit 1 族），"非法 motor_ids + latch 缺失"先报 latch，违 AC-E3 exit 2；P.2.2 原文"resolve 校验"本就应在 resolve() | 校验（含 unknown hardware）前移 `Args::resolve()`，run() 前 exit 2；`build_adapter` 保留同校验作防御断言非首次校验点；新增"非法段不受 latch 状态影响"+ unknown-hardware 两 bin 测 |
+| PX-4 | (4) | 既有 flaky 测试登记（reviewer 段(4) 裁决：不在段(4) 修生产代码） | robot-s0 `systemd_notify::tests::watchdog_withholds_ping_when_observer_stalled`（2026-04-26 起未动）真时序：真 socket + 50ms 墙钟窗，满载（与编译并行）间歇 FAIL（grace ping 计 2），空载 50/50 过；其一挂会中止 workspace 后续套件 | **确定性化列入段(8) 迁移任务**（sd_notify 迁 robot-health 时同步改：测试同步等待 grace ping 与 enforce evaluation，不依赖固定 50ms 墙钟窗口） |
+| PX-5 | (4) | gate 口径扩充（永久） | workspace `--all-targets` clippy 不编 optional-feature bins——feature 面 lint 盲区（段(4) 首暴 `result_large_err` latent） | **P.0 永久 gate 追加**：`cargo clippy -p robot-tests --all-features --all-targets -- -D warnings`（`--all-features` 全覆盖含 freeze-systemd-smoke，不随 feature 增补漂移；随既有 workspace clippy 每段跑） |
