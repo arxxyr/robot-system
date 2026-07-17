@@ -788,7 +788,9 @@ type GatewayClient = RobotControlClient<tonic::transport::Channel>;
 ///
 /// 失败时返 `Err((Option<gateway_handle>, msg))`：caller 用 gateway_handle
 /// 走 shutdown 路径不漏进程。
-#[allow(clippy::type_complexity)]
+// result_large_err：Err 携 SubprocessHandle 交还调用方 cleanup（错误路径
+// 一次性、非热路径），boxing 徒增调用面噪音——测试 harness 定点 allow。
+#[allow(clippy::type_complexity, clippy::result_large_err)]
 async fn bring_up_and_probe(
     case_label: &str,
     ctx: &CaseCtx,
