@@ -1841,4 +1841,6 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
 
 | # | 段 | 类型 | 描述 | 落点 |
 |---|---|---|---|---|
-| （待实施期） | | | | |
+| PX-1 | (2) | 计划口径勘误（reviewer 段(2) 复核 P0-1） | PC1 名单把 crash_restart / scripted / ik / pubsub_cleanup / clear_estop_e2e / robotctl_smoke 归为"动态 builder"——实为**"静态样板 config + 动态唯一 robot_id"消费面**（样板 `[robot].id` 写死、harness 每 case 生成唯一 `--robot-id`），段(2) 身份锁下六者直接 exit 2 | 六 harness 改 **per-case 物化 config**：共享 helper `robot_tests::config_fixture::materialize_config_with_robot_id`（robot-tests 首立 lib；结构化重写 `[robot].id`，其余字段**语义值保留**〔toml 重序列化会重排格式、注释不保留〕；**保住唯一 ID 隔离，不放宽身份锁不回固定 id**，禁六份字符串替换）；新依赖边 **robot-tests → toml**（timings / cargo tree / deny 随段跑） |
+| PX-3 | (2) | 计划缺口（reviewer 段(2) 复核二 P0） | 两份权威 arm config 未启用 Scripted backend——S1 缺省 profile 只有 mock_dwell（`ProfileSection::default_b2`，`coordinator.rs:1038` 区），Scripted 请求落 NoBackendForKind，候选 E 真机工作流会失败；既有 gate 全绿只因新权威配置尚未被 smoke 消费 | 两 config 增 `[s1.profile] backends = ["scripted"] + command_mode = "joint_position"`；新增 unit `authoritative_arm_configs_enable_scripted`（读仓库两份权威配置，锁 profile 含 scripted + D2 身份 + hardware 段可解析） |
+| PX-2 | (2) | 实现偏差回正（reviewer 段(2) 复核 P0-2） | 首版把 resolved 段内容校验放 `build_adapter`（run() 内）——晚于 latch 加载（exit 1 族），"非法 motor_ids + latch 缺失"先报 latch，违 AC-E3 exit 2；P.2.2 原文"resolve 校验"本就应在 resolve() | 校验（含 unknown hardware）前移 `Args::resolve()`，run() 前 exit 2；`build_adapter` 保留同校验作防御断言非首次校验点；新增"非法段不受 latch 状态影响"+ unknown-hardware 两 bin 测 |
