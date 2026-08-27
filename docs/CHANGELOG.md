@@ -10,6 +10,89 @@
 
 ---
 
+## 2026-08-27 · 候选 E 段(5)：G1 语义闭环——Idle hold target 源显式解锁 + 末点发布保证 + Scripted 起点改源（**状态：偏离登记〔B1 等价语义收窄版解锁〕+ 行为登记**）
+
+### B1 等价语义显式解锁（Spec D3 第 3 条，收窄版）
+
+- v0.3 B2 reviewer 阻断 4 锁定 "no-active-action 路径必须 sample-by-sample
+  等价 B1"（`coordinator.rs` Idle hold ≡ `build_hold_command(anchor_bias)`）。
+  本段**显式解锁**（CodeMap Q12 (c) / Spec D3）：`Idle` hold target 源改为
+  `Coordinator::idle_hold_target`——初值 = 启动 `anchor_bias`（boot 后首个
+  Success-Scripted 之前与 B1 **bit 等价**，`g1_hold_target::
+  boot_idle_hold_bit_equivalent_to_anchor` 锁）；**唯一**更新路径 =
+  `(backend == Scripted) ∧ Completed(Success) ∧ 末 waypoint target 已发布`
+  → `idle_hold_target = 末 waypoint`；其余所有 backend × 终态（Scripted
+  cancel / failure、IK / HoldPose / DwellMs 一切结局、未来 backend 缺省）
+  显式 reset = `anchor_bias`。终态数据通路 = `ActionInstance::
+  successful_hold_target()` 默认 `None`、仅 `ScriptedInstance` override
+  （穷尽式单一规则由类型承担；coordinator 只在 `Success ∧ !pending_cancel`
+  时问 backend）。形态（`build_hold_command` 路径）不变。
+- **Degraded 不解锁**：`run_action_tick_loop` Idle / Degraded 分臂，
+  Degraded 永远 `anchor_bias`（Idle 与 Degraded 自此分源）。HoldPose 0 改
+  （每 tick 仍读 `ctx.anchor_bias`；AC-E8 bit 等价回归锁）。
+
+### 末点发布保证（Spec D3 第 2 条，S1 阻断根修；行为登记）
+
+- v0.4 候选 1 现状：`dwell_ms == 0`（及大步推 clock 跳过 Dwell）时末
+  waypoint 完成即 `Completed(Success)`，该 tick 不产命令帧，coordinator 对
+  Completed 帧不 publish → 末 target 可能从未上线。段(5) 起：末 waypoint
+  完成且末 target 尚未发布 → 先返一帧 `Continue { target = 末 waypoint,
+  progress = 1.0 }`（`Phase::FinalEmitted`），**下一 tick** 才
+  `Completed(Success)`；dwell>0 正常节奏路径 Dwell 帧已发末 target（首个
+  dwell 帧置 `final_published`）→ dwell 完成直接 Completed，**行为不变**。
+- **可观测差异**：dwell=0 / 跳过 Dwell 路径的 Completed 事件晚一个 cmd
+  周期（20 ms）且多一帧末 target 命令；`idle_hold_target` 提交严格晚于
+  末 target 上线（G1 回拉半闭合，无跳变）。
+
+### Scripted 起点改源 + 拒绝语义（Spec D3 第 1 条）
+
+- `ScriptedBackend::start` segment0 `from` = `ctx.scripted_start_pose`
+  （提交时当前位，新 `ActionContext` 字段）而非启动期 `anchor_bias`；来源
+  = 新 S1 **常驻** state cache 线程（`robot_s1::state_cache`，同
+  `/<r>/s0/<hw>/state` topic，keep-last body bytes，convert-on-read）。
+  `Coordinator::submit` 的 Scripted 路径经 `StateCacheHandle::latest_fresh
+  (now)` 三重校验（joint_count / `layout_id == config 派生值`〔D1 联动〕/
+  `max_stale_ms` 新鲜度，沿既有 `[s1].max_stale_ms`，不新增配置面）；无帧
+  / stale / layout 不匹配 / joint count 错位 / 未注入 cache →
+  `SubmitError::BackendStartFailed(ActionStartError::Rejected)`（既有 wire
+  映射 `FailedPrecondition`），**绝不 fallback** 到 `anchor_bias`。
+- **运行时可观测变化**：S0 state 不新鲜（S0 停发 > 200 ms）或 layout 与
+  S1 config 不一致时，`InvokeTask(Scripted)` 从"接受并从启动锚点重放"
+  变为 `FailedPrecondition` 拒绝；HoldPose / DwellMs / IK 提交不受影响。
+
+### 线程卫生与启动 / 关停（AC-E20）
+
+- `s1_daemon`：锚定成功后 spawn state cache 线程（线程内建 iceoryx2 node +
+  subscriber，`sync_channel` 同步 ready 握手，5 s 超时回滚），**先于**
+  `rr_server_threads ready` marker；spawn 失败 = 启动失败 fail-fast（exit
+  1 = node / subscriber open / 握手超时族；exit 5 = 线程 spawn 族，沿
+  rr_server / reaper 先例；Spec P.4 PX-6）。shutdown 序列新增 step 6：
+  `take_state_cache → stop → join`（在 RR / drain 线程 join 之后）。
+  subscriber 与 node 线程内按 RAII 正常 Drop（iceoryx2 0.9.3），**无**
+  `mem::forget` / `Box::leak`。
+- state topic QoS `max_subscribers=8`：S1 锚定 subscriber 在锚定函数返回时
+  已 Drop，常驻 cache 是 S1 唯一持久 subscriber（不与 gateway StatePool /
+  robotctl 争配额）。
+
+### 边界（本段不动）
+
+- 启动锚定 `read_anchor_from_s0_state` **不**校 layout（`expected_layout =
+  None`，语义 0 改；共享校验 fn `check_state_frame` 抽取）——layout 不一
+  致在段(5) 起由 Scripted submit 拒绝面暴露、由 S0 command gate（段(3)）
+  丢弃面暴露；锚定期 fail-fast 未纳入 AC-E3 exit 码表，登记为 post-E 观测
+  面候选（Spec P.4 PX-9）。
+- wire 0 改 / S0 0 改 / robot-rpc 0 改 / config 0 改 / design.md 0 改；
+  robot-kinematics 与 IkBackend 0 改（`ik.rs` 终态仍走缺省 `None` → reset）。
+- 影响面：robot-s1（`action.rs` / `coordinator.rs` / `state_cache.rs`
+  〔新〕/ `action_backend/scripted.rs` / `bin/s1_daemon.rs` +
+  `tests/g1_hold_target.rs`〔新〕）。gate：workspace test 1272 PASS /
+  0 FAIL（基线 1222 + 新增 50）+ 六 smoke 全绿 + crash
+  `--use-mock-s1 --iterations 2`。
+
+审阅人：待 reviewer 段(5) 复核；登记人：Claude。
+
+---
+
 ## 2026-07-17 · 候选 E 段(4)：段(3)→(4) layout 过渡窗口正式关闭（**状态：闭合登记**）
 
 - **S1 / mock_s1 改为 config 派生**：`s1_daemon` 撤 `--layout-id` 占位
