@@ -117,6 +117,24 @@ name = "robotctl_smoke"
 path = "src/bin/robotctl_smoke.rs"
 required-features = ["robotctl-smoke"]
 
+# v0.5 候选 E 段(8) S1 / gateway systemd watchdog 双向 e2e smoke（Spec P.2.7 +
+# AC-E19 + R5-5 / R6-5）。起 user-mode systemd unit（Type=notify +
+# WatchdogSec=2s + Restart=on-failure）→ 经 test-only freeze topic（S1
+# `/<robot_id>/s1/test/freeze` / gateway `/<robot_id>/gateway/test/freeze`）
+# 逐类 worker 注入 freeze → withholding → 真重启 PID 切换 → 反向步（PID0
+# 定向命令 → PID1 stale-ignored 且无二次 withholding）→ 空闲 ≥ 3 ×
+# WatchdogSec 不重启。S1 case 进程内起 FakeStatePublisher；gateway case 双
+# hardware config 冻 StatePool(1) 单线程。
+#
+# `required-features = ["sd-watchdog-smoke"]` 守门：启用 robot-s1（path +
+# default-features=false + test-freeze-hook）与 robot-rpc（含其
+# test-freeze-hook）两条 optional dep，只为 import 两侧 cfg-gated wire struct
+# （`TestFreezeCommandV2` / `WorkerKind`，单源沿 freeze_systemd_smoke 先例）。
+[[bin]]
+name = "sd_watchdog_smoke"
+path = "src/bin/sd_watchdog_smoke.rs"
+required-features = ["sd-watchdog-smoke"]
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -151,6 +169,15 @@ libc            = { workspace = true }
 #   default-features"）。直接 path 跳过继承。
 robot-s0 = { path = "../robot-s0", optional = true, default-features = false, features = [
     "mock-only",
+    "test-freeze-hook",
+] }
+
+# v0.5 候选 E 段(8) sd_watchdog_smoke optional dep（Spec P.2.7 feature 传播
+# 第 3 份）：复用 `robot_s1::freeze_control::{TestFreezeCommandV2, WorkerKind}`
+# wire struct，**不**复制；path + `default-features = false` 沿上面 robot-s0
+# 先例（workspace 继承不允许 override default-features）；`test-freeze-hook`
+# 启用 cfg-gated freeze_control 模块 pub 导出。默认 / 生产构建不 link。
+robot-s1 = { path = "../robot-s1", optional = true, default-features = false, features = [
     "test-freeze-hook",
 ] }
 
@@ -270,6 +297,21 @@ robotctl-smoke = ["dep:tokio", "dep:serde_json"]
 # features 宿主）——拉 feetech 公共换算 API + 其 `real-hw`（serialport 真串口）。
 # CI / dev 默认 off；`cargo clippy -p robot-tests --all-features` 永久 gate
 # （PX-5）覆盖本 feature 编译面。
+# v0.5 候选 E 段(8) sd_watchdog_smoke 入口 feature（Spec P.2.7 锁名）。
+# - 生产 release 不带本 feature（sd_watchdog_smoke binary 不参编译）。
+# - 本机跑：先 `cargo build --release -p robot-s1 --features test-freeze-hook`
+#   + `cargo build --release -p robot-rpc --features test-freeze-hook`，再
+#   `cargo run -p robot-tests --bin sd_watchdog_smoke --features
+#   sd-watchdog-smoke -- --s1-bin target/release/s1_daemon --gateway-bin
+#   target/release/robot_rpc_gateway --phase all`。
+# - `robot-rpc/test-freeze-hook` 仅在本 feature 启用，不污染 clear-estop-e2e
+#   等其它 feature 的构建面；与既有 optional dep 自带的 `client` feature
+#   并存 additive 无害。
+sd-watchdog-smoke = [
+    "dep:robot-s1",
+    "dep:robot-rpc",
+    "robot-rpc/test-freeze-hook",
+]
 real-hw = ["dep:robot-adapter-feetech", "robot-adapter-feetech/real-hw"]
 
 [lints]

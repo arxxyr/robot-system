@@ -1,0 +1,86 @@
+# XLeRobot gateway（robot_rpc_gateway）freeze hook systemd e2e 测试 unit 模板
+# （v0.5 候选 E 段(8)，Spec P.2.7 + AC-E19 + R6-5）。
+#
+# **本文件不要直接 `systemctl --user start`**：它是
+# `crates/robot-tests/src/bin/sd_watchdog_smoke.rs` 渲染时用的占位符模板，
+# smoke 每 case 把占位符替换成真实路径后写到
+# `$XDG_RUNTIME_DIR/systemd/user/<unit_name>.service`，再 `systemctl --user
+# daemon-reload + start <unit_name>`。占位符表见本文件末尾"占位符"注释。
+#
+# ## 跟 S0 / S1 模板的关系
+#
+# 同款 user-service 兼容边界：无 `User=` / `Requires=dev-tty*` /
+# `ReadWritePaths=` / `Conflicts=`；保留 `Type=notify` + `NotifyAccess=main`
+# + `WatchdogSec=2s` + `Restart=on-failure` + `StartLimit*`。
+#
+# gateway 特有：
+# - **READY 门槛 = loopback 探针首成**（`crates/robot-rpc/src/systemd_probe.rs`）：
+#   bind 后 tonic 本地 unary `GetState(hardware_id="")` 收到 `InvalidArgument`
+#   才 `READY=1`（500 ms 一次，上限 10 s；超时 = 启动失败 exit 1）。
+# - **观测面**（`gateway.rs` 段(8)）：6 rr_io + estop_pub + **每 hardware 一条
+#   state_pool 线程（R6-5 禁聚合）** + tonic 探针 success_count；任一停滞 →
+#   `withholding sd_notify(WATCHDOG=1)` → `WatchdogSec=2s` 超时 → SIGABRT →
+#   `Restart=on-failure`。
+# - **双 hardware config**：smoke 生成 2 段 `[[hardware]]`，`StatePool(1)`
+#   单线程冻结 case 证明健康线程 `StatePool(0)` 的推进不掩蔽卡死线程。
+# - **freeze 注入**：test-only topic `/<robot_id>/gateway/test/freeze`
+#   （`robot_rpc::freeze_control::TestFreezeCommandV2`，`target_pid` 精确匹配，
+#   R5-5）；daemon 必须带 `--features test-freeze-hook` 编译。
+# - **不需要 S0 / S1 在跑**：探针不依赖 state 首帧（QA4）；state_pool
+#   subscriber 空转亦推进 `loop_tick_count`。
+#
+# ## 占位符（smoke binary 在渲染时替换）
+#
+# - `@ROBOT_ID@`      smoke 每 case 唯一（`<prefix>_<pid>_<seq>`）
+# - `@WORKDIR@`       smoke 每 case 工作目录
+# - `@DAEMON_BIN@`    预编译的 `target/.../robot_rpc_gateway`（必须带
+#                     `--features test-freeze-hook`）
+# - `@CONFIG_PATH@`   smoke 每 case 生成的双 hardware config（`[robot].id ==
+#                     @ROBOT_ID@` 身份锁；gateway 只做 minimal 解析）
+# - `@ROLES_PATH@`    rpc roles TOML（默认仓库 `configs/rpc_roles.toml`）
+# - `@LISTEN_ADDR@`   每 case 分配的 loopback 端口（`127.0.0.1:<port>`；
+#                     watchdog 重启后 PID1 重绑同一端口）
+#
+# ## 不在本 unit 范围内的事
+#
+# - S0 / S1：本模板只测 gateway 自身 worker + 探针的 liveness。
+# - 生产 gateway unit：段(9) 部署件另立，本模板仅测试。
+
+[Unit]
+Description=XLeRobot gateway freeze hook systemd e2e test (@ROBOT_ID@)
+Documentation=file://@WORKDIR@/../../../team-swe/specs/v0_5_dimos_replace.md
+
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+# `Type=notify`：systemd 等 gateway 探针首成后的 sd_notify(READY=1) 才认为
+# active；详 crates/robot-rpc/src/gateway.rs `serve_with_liveness`。
+Type=notify
+NotifyAccess=main
+
+WorkingDirectory=@WORKDIR@
+
+ExecStart=@DAEMON_BIN@ \
+    --robot-id @ROBOT_ID@ \
+    --rpc-roles-toml @ROLES_PATH@ \
+    --config @CONFIG_PATH@ \
+    --listen-addr @LISTEN_ADDR@
+
+# Watchdog 2s：gateway 内按 WATCHDOG_USEC/2 = 1s 周期 ping（探针 500 ms 一次，
+# 每个 1s 评估窗内 ≥ 1 次成功）；任一 observer 停滞即不喂 → 2s 处 SIGABRT。
+WatchdogSec=2s
+
+Restart=on-failure
+RestartSec=2s
+
+StandardOutput=journal
+StandardError=journal
+
+Environment=ROBOT_LOG_FORMAT=json
+Environment=NO_COLOR=1
+Environment=RUST_LOG=info
+
+NoNewPrivileges=yes
+
+# **不**加 [Install] 节：smoke 不 enable / 不 boot start，只 start。
