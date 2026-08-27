@@ -9,6 +9,14 @@
 | `xlerobot-s0-bus1.service` | bus1 8-motor S0 daemon（左臂 6 + 头部 2） | ttyACM0 / 5A7C121427 | `docs/handoffs/2026-04-26_3.md` §5 |
 | `xlerobot-s0-bus2.service` | bus2 9-motor S0 daemon（右臂 6 + 底盘 3） | ttyACM1 / 5A7C122340 | `docs/handoffs/2026-04-26_3.md` §5 |
 
+### 测试 unit 模板（**不要直接 start**；由 smoke 渲染占位符后装进 `$XDG_RUNTIME_DIR/systemd/user/`）
+
+| 模板 | daemon | smoke driver | 落地 |
+|---|---|---|---|
+| `xlerobot-s0-freeze-test.service` | `s0_daemon`（`--features mock-only,test-freeze-hook`） | `crates/robot-tests/src/bin/freeze_systemd_smoke.rs` | v0.3 A2-3 |
+| `xlerobot-s1-freeze-test.service` | `s1_daemon`（`--features test-freeze-hook`） | `crates/robot-tests/src/bin/sd_watchdog_smoke.rs`（`--phase s1`） | v0.5 候选 E 段(8) |
+| `xlerobot-gateway-freeze-test.service` | `robot_rpc_gateway`（`--features test-freeze-hook`） | 同上（`--phase gateway`） | v0.5 候选 E 段(8) |
+
 XLeRobot 全栈部署 = 两个 unit 同时跑，daemon 各管一根串口；v0.2 骨架
 M=1 单 daemon 多 bus 还没落地（详 `docs/00_design.md` §1.2 + CHANGELOG
 2026-04-24 "S0 s0_rt_thread 多 bus 语义澄清"），所以 v0.2 走 "每 bus 一
@@ -24,6 +32,14 @@ daemon" 部署。两 daemon 用 unique `robot-id`（`xlerobot_bus1_full` /
   [`LivenessObserver`](../../crates/robot-health/src/systemd.rs)）。
 - `Restart=on-failure` —— `kill -9` / panic / watchdog timeout 自动拉起；
   graceful shutdown（`SIGTERM` + clean exit code 0）**不**拉起。
+- **v0.5 候选 E 段(8) 起 S1 / gateway 同款**（Spec D12 / P.2.7）：`s1_daemon`
+  与 `robot_rpc_gateway` 走同一 `robot-health::systemd` 实现——全部 worker
+  就绪后 `READY=1`（gateway 额外要求 tonic loopback 探针首成，
+  `crates/robot-rpc/src/systemd_probe.rs`）、liveness-gated `WATCHDOG=1`
+  （S1：tick loop / heartbeat / 4 rr / state cache；gateway：6 rr_io /
+  estop_pub / **每 hardware 一条** state_pool / 探针 success_count）、退出
+  先 `STOPPING=1`。生产 S1 / gateway unit 属段(9) 部署件；本目录当前只
+  有二者的**测试模板**（上表）。
 - 日志统一走 journald + JSON（`ROBOT_LOG_FORMAT=json`），方便 vector /
   fluentbit 采集到 Loki / Elastic。
 - `User=` / `Group=` 跑 user mode（避 sudo↔user 模式 ownership 残留，详
@@ -151,6 +167,34 @@ cargo run -p robot-tests --bin freeze_systemd_smoke \
 #   withholding=1 starting=2 freeze_ready=2 state_ready=2
 ```
 
+### 跑 S1 / gateway watchdog **双向** smoke（v0.5 候选 E 段(8)，AC-E19）
+
+```bash
+# 1) 编两个 daemon（必须显式带 test-freeze-hook；release 与 gate 同款产物）
+cargo build --release -p robot-s1  --bin s1_daemon         --features test-freeze-hook
+cargo build --release -p robot-rpc --bin robot_rpc_gateway --features test-freeze-hook
+
+# 2) 跑 smoke（--user 域，不需要 sudo；默认 8 case = S1 ×4 + gateway ×4）
+cargo run -p robot-tests --bin sd_watchdog_smoke --features sd-watchdog-smoke -- \
+    --s1-bin target/release/s1_daemon \
+    --gateway-bin target/release/robot_rpc_gateway \
+    --phase all
+# 期望：每 case ✓ READY → 注入 freeze（target_pid = PID0）→ withholding →
+#   PID 切换 + is-active → journal（withholding ≥1 / banner ≥2 / "READY=1
+#   sent" ≥2 / "freeze_control thread ready" ≥2 / applied ≥1）→ 反向步
+#   （PID0 定向命令 → PID1 "stale freeze ignored (pid mismatch)"，applied
+#   不变）→ 空闲 3 × WatchdogSec 不重启、无二次 withholding；total 8 PASS。
+
+# 3) 跑完后恢复不带 hook 的 release 产物（避免混版本，RS2 教训）
+cargo build --release --workspace
+```
+
+默认 worker 集：S1 `tick,heartbeat_pub,rr_server:0,state_cache`；gateway
+`rr_io:0,estop_pub,state_pool:1,tonic_probe`（`state_pool:1` = 双 hardware
+config 冻**第二条** state_pool 线程，证明健康线程不掩蔽卡死线程，R6-5）。
+`--s1-workers` / `--gateway-workers` 可改集合（`rr_server:<0-3>` /
+`rr_io:<0-5>` / `state_pool:<0-1>`）。
+
 **注意**：本 unit **只**启 S0，**不**启 S1 coordinator。S0 daemon 没有
 `Heartbeat` 输入源时最多走到 `state=Ready`，**不**会自己进
 `Enabled.Active`（Active 必须 S1 发心跳）。
@@ -186,8 +230,9 @@ timeout → `Restart=on-failure`）。
 
 ## 不在本目录范围内的事
 
-- `xlerobot-s1.service`（S1 coordinator）、`xlerobot-policy.service` 等
-  v0.3+ 的 unit —— 跟着相应 crate 一起在那个 milestone 加。
+- 生产 `xlerobot-s1-*.service`（S1 coordinator）/ gateway unit ——
+  v0.5 候选 E 段(9) 部署件（daemon 侧 sd_notify 已在段(8) 落地，见上）；
+  `xlerobot-policy.service` 等更后 milestone 的 unit 跟着相应 crate 加。
 - 动态生成 unit（unit template `@.service`）—— v0.2 单 robot 部署用静
   态 unit 即可；多机器 / 多 robot 部署再考虑模板化。
 - `--allow-empty-latch` opt-in flag — A1-5 已撤；唯一守门 = strict

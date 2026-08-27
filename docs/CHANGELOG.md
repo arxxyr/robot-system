@@ -10,6 +10,121 @@
 
 ---
 
+## 2026-08-27 · 候选 E 段(8)：sd_notify 段——S1 / gateway liveness-gated systemd watchdog + 单一实现迁移 + 双向 smoke（**状态：偏离登记〔B1 决策 #7 解锁〕+ 依赖边登记 + PX-4 闭合**）
+
+### B1 决策 #7 显式解锁（S1 / gateway sd_notify；Spec D12 + P.2.7）
+
+- v0.3 B1 冻结 "#7 S1 不做 sd_notify"（`s1_daemon.rs` 模块 doc 决策表）。
+  段(8) **显式解锁**：`s1_daemon` 全部 worker 就绪（锚定 + state cache +
+  4 rr server 线程 + tick loop metrics 即将由主线程推进）后 `READY=1`；
+  liveness-gated `WATCHDOG=1`（7 observer：tick loop / heartbeat pub /
+  rr task_invoke / task_cancel / task_status / clear_error / state cache，
+  各自**独立 `loop_tick_count`**、空闲亦推进——D12 r3 T4 第 1 条，不用请求
+  计数）；shutdown 首步 `STOPPING=1` → 停 watchdog → 既有 stop 链原样。
+  `NOTIFY_SOCKET` 未设 = no-op（既有 e2e / smoke 0 感知）。生产 S1 unit
+  属段(9) 部署件。
+- gateway（`robot_rpc_gateway`）同段落地：bind-ready **原样转发**既有
+  `ready_tx`（4 个 cross-process e2e 语义 0 改，255 / 255 PASS）；
+  **READY=1 门槛 = tonic loopback 探针首成**（`systemd_probe.rs`：500 ms
+  一次 `GetState(hardware_id="")` 期望 `InvalidArgument`，QA4——只经
+  transport + handler 入口，不依赖 S0 / S1 / cache 首帧；path 带 package
+  前缀〔R5-4〕；`tonic::client::Grpc<Channel>` + `tonic_prost::ProstCodec`
+  + 既有 prost message，**不开 `client` feature**〔RB4〕；首成上限 10 s →
+  超时 = 新 `GatewayError::ReadyProbeTimeout` exit 1）；observer = 6
+  rr_io + estop_pub + **每 hardware 一条** `state_pool:<hardware_id>`
+  （R6-5 禁聚合求和）+ 探针 `success_count`；停机 `STOPPING=1` → 停
+  watchdog / 探针 → 内部 serve-shutdown → join server（D12 第 4 条）。
+
+### 单一实现迁移（PD-E6(c)）+ PX-4 闭合
+
+- S0 `systemd_notify.rs` 迁入 `robot-health::systemd`（R3-B2 API：
+  `notify_ready / notify_stopping / notify_watchdog / notify_status` +
+  `LivenessObserver { label, tick }` + `WatchdogConfig { thread_name,
+  startup_grace_ping }` + `spawn_watchdog(observers, cfg) ->
+  Option<WatchdogHandle>` + `WatchdogHandle::stop(self)`）；S0 传
+  `"s0_systemd_wd"` 原值，ping 节奏 / grace / 判停 **bit 等价**；S1
+  `"s1_systemd_wd"`、gateway `"gw_systemd_wd"`。
+- **PX-4 闭合**：watchdog 内核拆为纯函数 `evaluate_cycle(observers, prev)
+  -> bool` + `WatchdogIo { ping, sleep_interval }` trait（生产 `SdNotifyIo`
+  分片 sleep ≤ 50 ms 响应 stop）；单测以 ScriptedIo 逐周期驱动，判停 /
+  grace / 恢复全部确定性，不依赖真 socket + 50 ms 墙钟窗（原
+  `watchdog_withholds_ping_when_observer_stalled` 满载 flake 根因消除；
+  workspace test 可满载跑）。
+
+### test-only freeze hook（R5-5 wire / 生命周期契约落地）
+
+- robot-s1 / robot-rpc 各新增 feature `test-freeze-hook = []`（默认关，
+  生产 release 0 编译）：cfg 守门 `liveness::freeze_check`（loop 顶单次
+  load，非 0 且未过期 busy-spin；tonic 探针 task 走 5 ms 分片 sleep 不占
+  runtime worker）+ `freeze_control` 线程（**独立 topic** S1
+  `/<robot_id>/s1/test/freeze` / gateway `/<robot_id>/gateway/test/freeze`，
+  QoS 沿 S0 字面 1 pub / 1 sub / history 1 / buffer 2 / safe_overflow）；
+  `#[repr(C)] TestFreezeCommandV2 { target_pid: u32, kind: u8, index: u8,
+  pad: [u8; 2], duration_ms: u64 }` + `WorkerKind`（S1 Tick /
+  HeartbeatPub / RrServer(0..4) / StateCache；gateway RrIo(0..6) /
+  EstopPub / StatePool(i < hardware 数) / TonicProbe）；`target_pid` 不匹配
+  → "stale freeze ignored (pid mismatch)" warn 忽略；kind / index 非法 →
+  warn 忽略。
+- 新 smoke `sd_watchdog_smoke`（robot-tests，feature `sd-watchdog-smoke`，
+  required-features）+ 两份 user-service 模板
+  `scripts/systemd/xlerobot-{s1,gateway}-freeze-test.service`
+  （`WatchdogSec=2s`，沿 S0 模板边界）：每 (daemon, worker) 一 case——READY
+  → 注入（target_pid = PID0）→ withholding → 真重启 PID 切换 + is-active
+  → journal 硬断言（withholding ≥ 1 / banner ≥ 2 / "READY=1 sent" ≥ 2 /
+  "freeze_control thread ready" ≥ 2 / applied ≥ 1）→ **反向步**（PID0
+  定向命令 → PID1 stale-ignored、applied 不变）→ **空闲 3 × WatchdogSec**
+  不重启 / 无二次 withholding（AC-E19 双向）；默认 8 case（S1 ×4 +
+  gateway ×4，含 R6-5 双 hardware 冻 `StatePool(1)` 单线程）。S1 case 进程
+  内 FakeStatePublisher（派生 layout，50 Hz）供锚定 + state cache。
+
+### 依赖边登记（P.0 "依赖边变更段" gate）
+
+- 工作区内部边 **robot-s1 → robot-health**、**robot-rpc → robot-health**
+  （PD-E6(c) 已拍两条；0 新外部 crate）；robot-tests += optional
+  `robot-s1`（path + `default-features = false` + `test-freeze-hook`）与
+  feature `sd-watchdog-smoke = ["dep:robot-s1", "dep:robot-rpc",
+  "robot-rpc/test-freeze-hook"]`；P.0 活清单三条 release build
+  （robot-s1 / robot-rpc `test-freeze-hook` + robot-tests
+  `sd-watchdog-smoke`）自本段生效。
+- `cargo tree -p robot-tests --edges normal,no-proc-macro`：默认 feature 顶层
+  **0 新边**（10 条既有）；`--features sd-watchdog-smoke` 顶层 +2 直接边
+  （`robot-s1` 新 optional + `robot-rpc` 既有 optional 被本 feature 拉入）；
+  `cargo tree -p robot-s1 / -p robot-rpc --depth 1` 各含 `robot-health`
+  内部边。`cargo build -p robot-tests --timings`：默认 feature **177 units**
+  （与段(6) 基线同，0 新 unit）；`--features sd-watchdog-smoke` 274 units
+  （+97 = robot-s1 / robot-rpc / tonic 链，仅该 smoke feature 承担）。
+  `cargo deny check`：与段(6) 基线**逐条一致**（licenses FAILED 既有
+  baseline〔assert_no_alloc / serialport MPL / unescaper parse-error〕+
+  advisories FAILED `RUSTSEC-2026-0258` h2 既有 + bans ok〔duplicate
+  warning base64 / hashbrown / wit-bindgen 既有〕；Cargo.lock 仅增
+  robot-tests → robot-s1 workspace 边，0 版本变更），**0 新 violation**。
+
+### 边界
+
+- 0 新 wire（V2 POD 仅 test-only topic，不进 robot_msg / frozen schema）；
+  S0 行为 bit 等价（仅调用面迁移）；robotctl 0 改；design.md 0 改；
+  `run_gateway_with_ready` 既有 bind-ready 语义 0 改。
+- 既有缺陷登记（**独立 🐛，不混本段**；Spec P.4 PX-19）：robot-tests
+  `robotctl-smoke` 单 feature 不可编译（`robotctl_smoke.rs` 段(4) 起用
+  `robot_rpc::client::layout`，feature 表未含 `dep:robot-rpc`；gate 走合并
+  feature 集掩蔽）。
+- gate：cargo fmt / clippy workspace `--all-targets` + robot-tests
+  `--all-features`（PX-5）0 警告；release 重建（workspace + 6 smoke feature
+  bins 含 `sd-watchdog-smoke`）；workspace test **1328 PASS / 0 FAIL**
+  （基线 1305 + 23：robot-health watchdog 确定性单测 + S1 / gateway
+  liveness · freeze_control · probe 单测 + gateway bin）；七 smoke 全绿
+  （crash 5/5 + `--use-mock-s1` 2/2 / scripted 5/5 / ik 5/5 / pubsub all
+  PASS〔c3=false〕/ clear_estop all / robotctl 12/12 / freeze_systemd 1/1）
+  + **新 `sd_watchdog_smoke --phase all` 8/8 PASS ×2**（debug 首跑 +
+  release bin 复跑；每 case PID 真切换 + is-active、withholding 1-2 /
+  banner 2 / READY sent 2 / freeze_ready 2 / applied 1，反向步 stale
+  0→1 且 applied 不变，空闲 6 s 无重启无二次 withholding）；hook 产物
+  跑完后 `cargo build --release --workspace` 恢复。
+
+审阅人：待 reviewer 段(8) 复核；登记人：Claude。
+
+---
+
 ## 2026-08-27 · 候选 E 段(6)：转换 helper + 基线导入 shim + feetech 换算公共 API（**状态：契约落地登记〔D7 / D8 / D11〕+ 依赖边登记**）
 
 ### 单位契约分层落地（Spec D11：helper rad-native + 基线导入 shim；换算权威唯一）

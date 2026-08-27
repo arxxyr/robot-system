@@ -1237,7 +1237,9 @@ reviewer 裁决全文照录执行（auto_enable=false / R6-5 接线 / R6-6 序�
   --release -p robot-s0 --features xlerobot-real`（段 9/10-demo，含
   `xlerobot_deploy` bin）。〔round 7：撤 robot-s0 test-freeze-hook
   构建条——段(5b) stall case 随 D14 移出候选 E；robot-s1 / robot-rpc
-  test-freeze-hook 与 sd-watchdog-smoke 两条**保留**（段 8 在 E 内）〕
+  test-freeze-hook 与 sd-watchdog-smoke 两条**保留**（段 8 在 E 内）〕〔**段(8) 落地 2026-08-27：robot-s1 / robot-rpc `test-freeze-hook` +
+  robot-tests `sd-watchdog-smoke` 三条自本段起生效**；gate 命令见
+  `scripts/systemd/README.md` "跑 S1 / gateway watchdog 双向 smoke" 节〕
 - **0 新 wire**（D1-D13 终拍口径：0 新 method / 0 新 schema）；**0 新
   外部 crate**（QA3 改口：工作区**内部**依赖边允许按拍新增——已拍两条 =
   S1 / robot-rpc → robot-health〔PD-E6(c)〕；依赖边变更段随跑
@@ -1864,3 +1866,9 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
 | PX-11 | (6) | 形态补充（P.2.6 "robot-tests optional dep 挂 `real-hw`"） | robot-tests `real-hw` 同时启用 feetech 自身 `real-hw`（serialport 真串口）——段(9) preflight / ensure-safe 需真串口，feature 名与含义对齐；代价 = `--all-features` 永久 gate（PX-5）纳入 serialport 编译面（本机 dev 已验可编）；timings 仅该 feature +11 units / 7.1 s，默认 feature 0 新 unit；deny 0 新 violation | robot-tests Cargo.toml + CHANGELOG 2026-08-27 段(6) 条 |
 | PX-12 | (6) | 并存登记（非偏离） | `client::trajectory::build_scripted_payload` 与 robotctl `payload.rs::build_scripted_payload` fbs 构造同构并存（硬边界 #5 robotctl 0 改；两者均纯 fbs 拼装无语义分叉；post-E 可让 robotctl 反向消费 client 模块） | robot-rpc / robot-cli |
 | PX-13 | (6) | 语义收紧（reviewer 段(6) 阻断 1） | 首点时刻**必须严格 == 0.0**：`points[0].time_from_start_s > 0` → `ConvertError::FirstPointTimeNonZero`（冻结基线 `executor.py:99` current @ t=0；dimos `JointTrajectory.py:87` 对非零首点 hold 到该时刻——丢弃非零首点会吞掉该 hold 并缩短总时长，故拒绝而非"只用差分"；冻结三调用面均满足，E 范围无损）；校验序 = 非有限/负（InvalidTime）→ 首点非零 → 单调；并补 PX-10 **边界含等**回归锁（current=0、首点精确 = 0.05 接受；+1e-12 拒） | trajectory.rs + unit |
+| PX-14 | (8) | 形态补充（P.2.7 POD 字段名） | wire POD 字段 `_pad` → `pad`（clippy `pub_underscore_fields` 拒 pub 下划线字段；`#[repr(C)]` 16 字节 / 8 对齐布局与语义 0 变；`TestFreezeCommandV2::new` 恒写 `[0; 2]`） | robot-s1 / robot-rpc `freeze_control.rs` |
+| PX-15 | (8) | 实现口径补充（Spec 未定 gateway READY 失败退出码） | 新 `GatewayError::ReadyProbeTimeout { waited_ms }`（探针 10 s 未首成，READY 未发）与 `GatewayError::ServerTask(String)`（server task 在 READY 前 / 后异常结束、join 失败；`GatewayReadyError::ServerTask` 同步转发 bind-ready 通道）→ bin **exit 1**（沿 transport 族，`Restart=on-failure` 可拉起）；AC-E3 exit 码表不扩（非 config / CLI 族） | gateway.rs + `robot_rpc_gateway.rs` |
+| PX-16 | (8) | 测试参数 vs 生产口径（P.2.7 smoke） | 两份测试模板 `WatchdogSec=2s`（沿 S0 `xlerobot-s0-freeze-test.service`，case 秒级完成）；D12 原文 "2 Hz / 5 s" 是生产 unit 口径（段(9) 部署件定值）——daemon 侧 ping 周期永远 = systemd 注入的 `WATCHDOG_USEC / 2`，无硬编码；空闲保持窗 = 3 × WatchdogSec = 6 s | scripts/systemd 两模板 + `sd_watchdog_smoke` |
+| PX-17 | (8) | 工程化补充（watchdog 停机响应） | `SdNotifyIo::sleep_interval` 分片 sleep（50 ms）响应 stop：`WatchdogHandle::stop` 最长阻塞 ≈ 50 ms + 1 次 ping；gateway 停机把 `stop` 放 `spawn_blocking` 不占 tokio worker；内核 `evaluate_cycle` 纯函数 + `WatchdogIo` trait 使 PX-4 测试确定性（ScriptedIo 逐周期驱动） | `robot-health/src/systemd.rs` |
+| PX-18 | (8) | 探针语义补充（QA4 落地细节） | 成功判据 = 收到 `InvalidArgument`（handler 对空 hardware_id 早拒，早于池查找）；`Ok` / 其它 status / transport 错均计 failure（限频 warn：首条 + 每 20 条）；observer 源 = `success_count`（非 attempts），500 ms 周期保证每 1 s 评估窗 ≥ 1 次成功；探针 task 冻结走 5 ms 分片 `tokio::time::sleep`（不 spin runtime worker） | `robot-rpc/src/systemd_probe.rs` |
+| PX-19 | (8) | 既有缺陷登记（**独立 🐛，不混段(8)**） | robot-tests `robotctl-smoke` **单 feature 不可编译**：`robotctl_smoke.rs` 自段(4) 起用 `robot_rpc::client::layout::load_hardware_layout`，但 feature 表 `robotctl-smoke = ["dep:tokio", "dep:serde_json"]` 未含 `dep:robot-rpc`（`cargo check -p robot-tests --features robotctl-smoke --bin robotctl_smoke` → E0433）；P.0 gate 走合并 feature 集（其它 smoke feature 拉进 robot-rpc）掩蔽。候选 A 硬边界"robotctl_smoke 结构上不依赖 robot-rpc / tonic"已被段(4) 事实打破，修法（feature 加 `dep:robot-rpc` vs layout helper 下移非 robot-rpc crate）待 reviewer 拍板 | 独立 🐛 commit；CHANGELOG 2026-08-27 段(8) 条登记 |
