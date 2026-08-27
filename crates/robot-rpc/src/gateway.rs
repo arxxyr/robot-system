@@ -2234,13 +2234,20 @@ pub async fn run_gateway_with_rr_io(
 ///    incoming_shutdown(...).await` 阻塞到停机，不能线性 "serve → probe"）；
 ///    bind-ready 经内部 oneshot 接收后**原样转发**外部 `ready_tx`（既有测试
 ///    bind-ready 语义 0 改；systemd-ready 为独立通路）——[`await_bind_ready`]。
-/// 2. probe task：500 ms loopback unary，首成上限 10 s——超时 = 触发内部
-///    serve-shutdown + join server → [`GatewayError::ReadyProbeTimeout`]；
-///    server 在 READY 前自行结束 → 其错误按既有码退出——[`ready_gate`]。
+/// 2. probe task：500 ms loopback unary（单次 attempt ≤ 400 ms 有界），首成上限
+///    10 s——超时 = 触发内部 serve-shutdown + 有界收 probe / server →
+///    [`GatewayError::ReadyProbeTimeout`]；server 在 READY 前自行结束 → 其错误
+///    按既有码退出——[`ready_gate`]。
 /// 3. 首成 → `READY=1` → `spawn_watchdog(observers, "gw_systemd_wd")`。
 /// 4. 运行期：外部 `shutdown_rx` 触发 → `STOPPING=1` → 停 watchdog / probe →
 ///    内部 serve-shutdown → join server；server READY 后自行结束（错误）→
 ///    同序收尾后按其错误返回。
+///
+/// **READY 前的外部 shutdown（round 2 阻断 2）**：阶段 1 / 2 都 `select!` 外部
+/// `shutdown_rx`——收到即内部 serve-shutdown → 有界收 probe
+/// （[`crate::systemd_probe::ProbeHandle::join`] ≤ 2 s 否则 abort）+ server
+/// （[`join_server`] ≤ [`SERVER_JOIN_TIMEOUT`] 否则 abort）→ 返 `Ok(())` 正常
+/// 退出（不发 READY、不起 watchdog）。运行期停机同用有界 join。
 ///
 /// 所有权：本 fn 持 server `JoinHandle` + probe handle + watchdog handle +
 /// 内部 `serve_shutdown_tx`；外部 `shutdown_rx` 只读转发。`JoinHandle` 完成后
@@ -2262,10 +2269,22 @@ async fn serve_with_liveness(
         Some(bind_tx),
     ));
 
-    // 1) bind-ready（失败路径已在 helper 内 join server）。
-    let actual_addr = await_bind_ready(bind_rx, &mut server, ready_tx).await?;
+    // 1) bind-ready（失败路径已在 helper 内 join server；READY 前外部 shutdown
+    //    → `None` → 正常退出）。
+    let Some(actual_addr) = await_bind_ready(
+        bind_rx,
+        &mut server,
+        ready_tx,
+        &serve_shutdown_tx,
+        &mut shutdown_rx,
+    )
+    .await?
+    else {
+        return Ok(());
+    };
 
-    // 2) probe 首成 ≤ FIRST_SUCCESS_TIMEOUT（失败路径 helper 内收 probe / server）。
+    // 2) probe 首成 ≤ FIRST_SUCCESS_TIMEOUT（失败 / shutdown 路径 helper 内有界
+    //    收 probe / server）。
     let (first_tx, first_rx) = tokio::sync::oneshot::channel::<()>();
     let probe = spawn_tonic_probe(
         actual_addr,
@@ -2273,17 +2292,19 @@ async fn serve_with_liveness(
         serve_shutdown_rx,
         first_tx,
     );
-    let probe = ready_gate(
-        first_rx,
-        &mut server,
-        probe,
-        &serve_shutdown_tx,
-        &probe_metrics,
+    let gate = ReadyGateCtx {
+        server: &mut server,
+        serve_shutdown_tx: &serve_shutdown_tx,
+        shutdown_rx: &mut shutdown_rx,
+        probe_metrics: &probe_metrics,
         actual_addr,
-    )
-    .await?;
+        ready_deadline: FIRST_SUCCESS_TIMEOUT,
+    };
+    let Some(probe) = ready_gate(first_rx, probe, gate).await? else {
+        return Ok(());
+    };
 
-    // 3) READY=1 → watchdog（enforce 自 grace 周期后开始）。
+    // 3) READY=1 → watchdog（cycle 0 grace 喂 + 即刻 snapshot，cycle 1 起 enforce）。
     let observer_count = observers.len();
     notify_ready();
     let watchdog = spawn_watchdog(observers, WatchdogConfig::new("gw_systemd_wd"));
@@ -2324,18 +2345,39 @@ async fn serve_with_liveness(
 }
 
 /// 段(8) 编排阶段 1：等 server task 的 bind-ready 回执并**原样转发**外部
-/// `ready_tx`；失败 → join server（其结果为权威错误）→ `Err`。
+/// `ready_tx`；失败 → join server（其结果为权威错误）→ `Err`。**外部 shutdown
+/// 先到**（round 2 阻断 2）→ 内部 serve-shutdown → 有界 join server →
+/// `Ok(None)`（外部 `ready_tx` 收 `ServerTask` 拒绝，不再有 bind 语义）。
 async fn await_bind_ready(
     bind_rx: tokio::sync::oneshot::Receiver<Result<SocketAddr, GatewayReadyError>>,
     server: &mut tokio::task::JoinHandle<Result<(), GatewayError>>,
     ready_tx: Option<tokio::sync::oneshot::Sender<Result<SocketAddr, GatewayReadyError>>>,
-) -> Result<SocketAddr, GatewayError> {
-    match bind_rx.await {
+    serve_shutdown_tx: &watch::Sender<bool>,
+    shutdown_rx: &mut watch::Receiver<bool>,
+) -> Result<Option<SocketAddr>, GatewayError> {
+    tokio::pin!(bind_rx);
+    let bind = tokio::select! {
+        b = &mut bind_rx => b,
+        () = wait_shutdown(shutdown_rx) => {
+            tracing::info!(
+                "robot_rpc_gateway: shutdown requested before bind-ready; stopping server task"
+            );
+            let _ = serve_shutdown_tx.send(true);
+            let joined = join_server(server).await;
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(GatewayReadyError::ServerTask {
+                    message: "shutdown requested before bind-ready".into(),
+                }));
+            }
+            return joined.map(|()| None);
+        }
+    };
+    match bind {
         Ok(Ok(addr)) => {
             if let Some(tx) = ready_tx {
                 let _ = tx.send(Ok(addr));
             }
-            Ok(addr)
+            Ok(Some(addr))
         }
         Ok(Err(ready_err)) => {
             if let Some(tx) = ready_tx {
@@ -2360,32 +2402,58 @@ async fn await_bind_ready(
     }
 }
 
-/// 段(8) 编排阶段 2：等 probe 首成（READY 门槛）。三路失败（probe task 早退 /
-/// 超时 / server 早退）均在本 fn 内收尾：内部 serve-shutdown → join probe →
-/// join server（server 已自行结束的分支不再 poll）。成功返还 `probe`。
+/// [`ready_gate`] 参数包（借用 server / 外部 shutdown_rx 各一次；避免 8 参）。
+struct ReadyGateCtx<'a> {
+    server: &'a mut tokio::task::JoinHandle<Result<(), GatewayError>>,
+    serve_shutdown_tx: &'a watch::Sender<bool>,
+    shutdown_rx: &'a mut watch::Receiver<bool>,
+    probe_metrics: &'a TonicProbeMetrics,
+    actual_addr: SocketAddr,
+    /// 首成上限（生产 = [`FIRST_SUCCESS_TIMEOUT`]；单测缩短）。
+    ready_deadline: Duration,
+}
+
+/// [`ready_gate`] 首成之外的四路退出。
+enum GateExit {
+    Fail {
+        err: GatewayError,
+        server_done: bool,
+    },
+    Shutdown,
+}
+
+/// 段(8) 编排阶段 2：等 probe 首成（READY 门槛）。首成 → `Ok(Some(probe))`；
+/// **外部 shutdown 先到** → 内部 serve-shutdown → 有界收 probe + server →
+/// `Ok(None)`（round 2 阻断 2）；三路失败（probe task 早退 / 超时 / server 早退）
+/// 同序收尾后 `Err`（server 已自行结束的分支不再 poll）。
 async fn ready_gate(
     first_rx: tokio::sync::oneshot::Receiver<()>,
-    server: &mut tokio::task::JoinHandle<Result<(), GatewayError>>,
     probe: crate::systemd_probe::ProbeHandle,
-    serve_shutdown_tx: &watch::Sender<bool>,
-    probe_metrics: &TonicProbeMetrics,
-    actual_addr: SocketAddr,
-) -> Result<crate::systemd_probe::ProbeHandle, GatewayError> {
-    let ready_deadline = tokio::time::sleep(FIRST_SUCCESS_TIMEOUT);
-    tokio::pin!(ready_deadline);
+    ctx: ReadyGateCtx<'_>,
+) -> Result<Option<crate::systemd_probe::ProbeHandle>, GatewayError> {
+    let ReadyGateCtx {
+        server,
+        serve_shutdown_tx,
+        shutdown_rx,
+        probe_metrics,
+        actual_addr,
+        ready_deadline,
+    } = ctx;
+    let deadline = tokio::time::sleep(ready_deadline);
+    tokio::pin!(deadline);
     tokio::pin!(first_rx);
-    let (err, server_done) = tokio::select! {
+    let exit = tokio::select! {
         first = &mut first_rx => {
             if first.is_ok() {
-                return Ok(probe);
+                return Ok(Some(probe));
             }
-            (
-                GatewayError::ServerTask("tonic probe task exited before first success".into()),
-                false,
-            )
+            GateExit::Fail {
+                err: GatewayError::ServerTask("tonic probe task exited before first success".into()),
+                server_done: false,
+            }
         }
-        () = &mut ready_deadline => {
-            let waited_ms = u64::try_from(FIRST_SUCCESS_TIMEOUT.as_millis()).unwrap_or(u64::MAX);
+        () = &mut deadline => {
+            let waited_ms = u64::try_from(ready_deadline.as_millis()).unwrap_or(u64::MAX);
             tracing::error!(
                 %actual_addr,
                 waited_ms,
@@ -2393,16 +2461,31 @@ async fn ready_gate(
                 failures = probe_metrics.failure_count.load(Ordering::Relaxed),
                 "robot_rpc_gateway: loopback probe never succeeded; READY withheld → startup failure"
             );
-            (GatewayError::ReadyProbeTimeout { waited_ms }, false)
+            GateExit::Fail { err: GatewayError::ReadyProbeTimeout { waited_ms }, server_done: false }
         }
-        r = &mut *server => (server_result_to_error(r, "server task exited before READY"), true),
+        () = wait_shutdown(shutdown_rx) => {
+            tracing::info!(
+                %actual_addr,
+                "robot_rpc_gateway: shutdown requested before READY; stopping without READY"
+            );
+            GateExit::Shutdown
+        }
+        r = &mut *server => GateExit::Fail {
+            err: server_result_to_error(r, "server task exited before READY"),
+            server_done: true,
+        },
     };
     let _ = serve_shutdown_tx.send(true);
     probe.join().await;
-    if !server_done {
-        let _ = join_server(server).await;
+    match exit {
+        GateExit::Shutdown => join_server(server).await.map(|()| None),
+        GateExit::Fail { err, server_done } => {
+            if !server_done {
+                let _ = join_server(server).await;
+            }
+            Err(err)
+        }
     }
-    Err(err)
 }
 
 /// [`serve_with_liveness`] 运行期两种退出路径。
@@ -2435,16 +2518,31 @@ fn server_result_to_error(
     }
 }
 
-/// join server task（**只可在其尚未完成时调**）：`JoinError` →
-/// [`GatewayError::ServerTask`]。
+/// server task join 上限（内部 serve-shutdown 后 tonic graceful drain：probe
+/// 连接随 probe 退出关闭；其它 client 长连接最长等此值后 abort）。
+const SERVER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// **有界** join server task（**只可在其尚未完成时调**）：超时 → `abort()` +
+/// [`GatewayError::ServerTask`]；`JoinError` → 同 variant。
 async fn join_server(
     server: &mut tokio::task::JoinHandle<Result<(), GatewayError>>,
 ) -> Result<(), GatewayError> {
-    match server.await {
-        Ok(r) => r,
-        Err(join) => Err(GatewayError::ServerTask(format!(
+    match tokio::time::timeout(SERVER_JOIN_TIMEOUT, &mut *server).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(join)) => Err(GatewayError::ServerTask(format!(
             "server task join: {join}"
         ))),
+        Err(_elapsed) => {
+            tracing::error!(
+                timeout = ?SERVER_JOIN_TIMEOUT,
+                "robot_rpc_gateway: server task did not stop in time; aborting"
+            );
+            server.abort();
+            let _ = (&mut *server).await;
+            Err(GatewayError::ServerTask(format!(
+                "server task did not stop within {SERVER_JOIN_TIMEOUT:?}; aborted"
+            )))
+        }
     }
 }
 
@@ -4540,5 +4638,161 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "estop", "shutdown"]
             .into_inner();
         assert_eq!(ack2.cleared_at_ns, 777, "Replay 应返同 published_at_ns");
         drop(fwd);
+    }
+}
+
+// ============================================================================
+// v0.5 候选 E 段(8) round 2 阻断 2：READY 门槛有界性（hung probe / 提前 shutdown）
+// ============================================================================
+
+#[cfg(test)]
+mod liveness_gate_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    type HeldStreams = Arc<std::sync::Mutex<Vec<tokio::net::TcpStream>>>;
+
+    /// 只 accept 不响应的 TCP 端（不回 h2 preface）：探针 attempt 若无上限即永挂。
+    async fn spawn_hung_acceptor() -> (SocketAddr, tokio::task::JoinHandle<()>, HeldStreams) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind hung acceptor");
+        let addr = listener.local_addr().expect("local_addr");
+        let held: HeldStreams = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let held_in = Arc::clone(&held);
+        let task = tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.expect("accept");
+                held_in.lock().unwrap().push(stream);
+            }
+        });
+        (addr, task, held)
+    }
+
+    /// 假 server task：等内部 serve-shutdown 置位后 `Ok(())`（模拟 tonic graceful）。
+    fn spawn_fake_server(
+        mut serve_shutdown_rx: watch::Receiver<bool>,
+    ) -> tokio::task::JoinHandle<Result<(), GatewayError>> {
+        tokio::spawn(async move {
+            while !*serve_shutdown_rx.borrow() {
+                if serve_shutdown_rx.changed().await.is_err() {
+                    break;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    #[tokio::test]
+    async fn ready_gate_hung_probe_times_out_and_collects_bounded() {
+        let (hung_addr, acceptor, _held) = spawn_hung_acceptor().await;
+        let (serve_shutdown_tx, serve_shutdown_rx) = watch::channel(false);
+        let (_shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let mut server = spawn_fake_server(serve_shutdown_rx.clone());
+        let metrics = Arc::new(TonicProbeMetrics::default());
+        let (first_tx, first_rx) = tokio::sync::oneshot::channel::<()>();
+        let probe = spawn_tonic_probe(hung_addr, Arc::clone(&metrics), serve_shutdown_rx, first_tx);
+
+        let t0 = Instant::now();
+        let r = ready_gate(
+            first_rx,
+            probe,
+            ReadyGateCtx {
+                server: &mut server,
+                serve_shutdown_tx: &serve_shutdown_tx,
+                shutdown_rx: &mut shutdown_rx,
+                probe_metrics: &metrics,
+                actual_addr: hung_addr,
+                ready_deadline: Duration::from_secs(1),
+            },
+        )
+        .await;
+        let elapsed = t0.elapsed();
+        match r {
+            Err(GatewayError::ReadyProbeTimeout { waited_ms }) => assert_eq!(waited_ms, 1000),
+            Err(e) => panic!("expected ReadyProbeTimeout, got {e:?}"),
+            Ok(_) => panic!("expected Err, got Ok"),
+        }
+        assert!(
+            elapsed < Duration::from_secs(4),
+            "deadline 1 s + probe join ≤ 2 s + server join 须有界，实际 {elapsed:?}"
+        );
+        assert!(server.is_finished(), "server task 必须已 join 完成");
+        assert!(
+            metrics.failure_count.load(Ordering::Relaxed) >= 1,
+            "hung attempt 经 ATTEMPT_TIMEOUT 计 failure"
+        );
+        acceptor.abort();
+    }
+
+    #[tokio::test]
+    async fn ready_gate_external_shutdown_before_ready_returns_none_bounded() {
+        let (hung_addr, acceptor, _held) = spawn_hung_acceptor().await;
+        let (serve_shutdown_tx, serve_shutdown_rx) = watch::channel(false);
+        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let mut server = spawn_fake_server(serve_shutdown_rx.clone());
+        let metrics = Arc::new(TonicProbeMetrics::default());
+        let (first_tx, first_rx) = tokio::sync::oneshot::channel::<()>();
+        let probe = spawn_tonic_probe(hung_addr, Arc::clone(&metrics), serve_shutdown_rx, first_tx);
+        // READY 永远到不了（hung probe）；200 ms 后外部停机。
+        let trigger = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let _ = shutdown_tx.send(true);
+            shutdown_tx
+        });
+
+        let t0 = Instant::now();
+        let r = ready_gate(
+            first_rx,
+            probe,
+            ReadyGateCtx {
+                server: &mut server,
+                serve_shutdown_tx: &serve_shutdown_tx,
+                shutdown_rx: &mut shutdown_rx,
+                probe_metrics: &metrics,
+                actual_addr: hung_addr,
+                ready_deadline: Duration::from_secs(30),
+            },
+        )
+        .await;
+        let elapsed = t0.elapsed();
+        assert!(
+            matches!(r, Ok(None)),
+            "READY 前外部 shutdown 须返 Ok(None)（正常退出，不发 READY）"
+        );
+        assert!(
+            elapsed < Duration::from_secs(4),
+            "shutdown → 有界收 probe + server，实际 {elapsed:?}"
+        );
+        assert!(server.is_finished(), "server task 必须已 join 完成");
+        let _keep = trigger.await.expect("trigger task");
+        acceptor.abort();
+    }
+
+    #[tokio::test]
+    async fn await_bind_ready_external_shutdown_first_returns_none_and_rejects_ready_tx() {
+        let (serve_shutdown_tx, serve_shutdown_rx) = watch::channel(false);
+        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let mut server = spawn_fake_server(serve_shutdown_rx);
+        // bind_tx 永不发送（server 尚未 bind）；外部先 shutdown。
+        let (_bind_tx, bind_rx) = tokio::sync::oneshot::channel();
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let _ = shutdown_tx.send(true);
+        let r = await_bind_ready(
+            bind_rx,
+            &mut server,
+            Some(ready_tx),
+            &serve_shutdown_tx,
+            &mut shutdown_rx,
+        )
+        .await;
+        assert!(matches!(r, Ok(None)));
+        assert!(server.is_finished());
+        match ready_rx.await {
+            Ok(Err(GatewayReadyError::ServerTask { message })) => {
+                assert!(message.contains("shutdown requested"), "{message}");
+            }
+            other => panic!("expected ServerTask rejection, got {other:?}"),
+        }
     }
 }

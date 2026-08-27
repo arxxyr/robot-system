@@ -17,11 +17,16 @@
 //!   `tonic_prost::ProstCodec`（RB4：**不开 `client` feature**、不改生产
 //!   client 边界——`RobotControlClient` 仅 `client` feature 生成）。
 //!
-//! ## 节奏
+//! ## 节奏与有界性（round 2 阻断 2）
 //!
 //! [`PROBE_INTERVAL`] = 500 ms；首次成功经 `first_success_tx` 回执 gateway
 //! （READY=1 门槛；上限 [`FIRST_SUCCESS_TIMEOUT`] = 10 s，超时 = 启动失败按
-//! 既有错误路径退出）。`stop_rx`（gateway 内部 serve-shutdown watch）置位即退。
+//! 既有错误路径退出）。**每次 attempt 有界**：`ready()` + `unary()` 整体包
+//! [`ATTEMPT_TIMEOUT`] = 400 ms（原先只有 connect 超时——服务端 accept 后不
+//! 响应 h2 preface / 不回响应时 attempt 永挂，10 s 外层超时后 join 也永挂）；
+//! attempt 期间与 `stop_rx` `select!`，stop 置位即中断。`stop_rx`（gateway 内部
+//! serve-shutdown watch）置位即退；[`ProbeHandle::join`] 有界（[`JOIN_TIMEOUT`]
+//! 超时 → abort）。
 //!
 //! ## 冻结（test-only）
 //!
@@ -47,6 +52,11 @@ use crate::proto::{GetStateRequest, RobotState};
 
 /// 探针周期。
 pub const PROBE_INTERVAL: Duration = Duration::from_millis(500);
+/// 单次 attempt（`ready()` + `unary()`）上限；< [`PROBE_INTERVAL`]（round 2 阻断 2）。
+pub const ATTEMPT_TIMEOUT: Duration = Duration::from_millis(400);
+/// [`ProbeHandle::join`] 上限：attempt ≤ 400 ms + 冻结分片 5 ms + select 即时，
+/// 正常 < 1 s；超过即 abort（不让停机被探针拖死）。
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// 首次成功上限（超时 = gateway 启动失败）。
 pub const FIRST_SUCCESS_TIMEOUT: Duration = Duration::from_secs(10);
 /// `RobotControl.GetState` 完整 gRPC path（package = `robot.control.v1`，
@@ -75,10 +85,20 @@ pub struct ProbeHandle {
 }
 
 impl ProbeHandle {
-    /// 等 task 退出（task panic 仅 log，不传播）。
-    pub async fn join(self) {
-        if let Err(e) = self.task.await {
-            tracing::error!(error = ?e, "tonic_probe: task join error");
+    /// 等 task 退出，**有界**：超过 [`JOIN_TIMEOUT`] → `abort()`（task panic /
+    /// 超时仅 log，不传播）。调用方须先置位 `stop_rx`。
+    pub async fn join(mut self) {
+        match tokio::time::timeout(JOIN_TIMEOUT, &mut self.task).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => tracing::error!(error = ?e, "tonic_probe: task join error"),
+            Err(_elapsed) => {
+                tracing::error!(
+                    timeout = ?JOIN_TIMEOUT,
+                    "tonic_probe: task did not stop in time; aborting"
+                );
+                self.task.abort();
+                let _ = (&mut self.task).await;
+            }
         }
     }
 }
@@ -121,7 +141,20 @@ pub fn spawn_tonic_probe(
                 }
             }
             metrics.attempts.fetch_add(1, Ordering::Relaxed);
-            match probe_once(&mut grpc).await {
+            // attempt 有界 + 可被 stop 打断（round 2 阻断 2）。
+            let outcome = tokio::select! {
+                r = tokio::time::timeout(ATTEMPT_TIMEOUT, probe_once(&mut grpc)) => match r {
+                    Ok(inner) => inner,
+                    Err(_elapsed) => Err(format!("attempt exceeded {ATTEMPT_TIMEOUT:?}")),
+                },
+                changed = stop_rx.changed() => {
+                    if changed.is_err() || *stop_rx.borrow() {
+                        break;
+                    }
+                    continue;
+                }
+            };
+            match outcome {
                 Ok(()) => {
                     metrics.success_count.fetch_add(1, Ordering::Release);
                     if let Some(tx) = first.take() {
@@ -188,6 +221,45 @@ mod tests {
         assert_eq!(m.attempts.load(Ordering::Relaxed), 0);
         assert_eq!(m.success_count.load(Ordering::Relaxed), 0);
         assert_eq!(m.failure_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn hung_server_attempts_time_out_and_stop_join_is_bounded() {
+        // 服务端只 accept **不响应**（不回 h2 preface / SETTINGS）：无 attempt 上限
+        // 时 `ready()` 永挂，stop 后 join 也永挂（round 2 阻断 2 回归锁）。
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let held: Arc<std::sync::Mutex<Vec<tokio::net::TcpStream>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let held_in = Arc::clone(&held);
+        let acceptor = tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.expect("accept");
+                held_in.lock().unwrap().push(stream);
+            }
+        });
+        let metrics = Arc::new(TonicProbeMetrics::default());
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let (first_tx, first_rx) = oneshot::channel();
+        let handle = spawn_tonic_probe(addr, Arc::clone(&metrics), stop_rx, first_tx);
+        tokio::time::sleep(ATTEMPT_TIMEOUT + Duration::from_millis(400)).await;
+        assert!(metrics.attempts.load(Ordering::Relaxed) >= 1);
+        assert!(
+            metrics.failure_count.load(Ordering::Relaxed) >= 1,
+            "hung attempt 必须经 ATTEMPT_TIMEOUT 计 failure"
+        );
+        assert_eq!(metrics.success_count.load(Ordering::Relaxed), 0);
+        let _ = stop_tx.send(true);
+        let t0 = std::time::Instant::now();
+        handle.join().await;
+        assert!(
+            t0.elapsed() < Duration::from_secs(1),
+            "stop → join 必须有界（attempt 超时 + select stop），实际 {:?}",
+            t0.elapsed()
+        );
+        assert!(first_rx.await.is_err(), "hung server 不得回执首成");
+        acceptor.abort();
+        assert!(!held.lock().unwrap().is_empty(), "探针至少建过一条连接");
     }
 
     #[tokio::test]
