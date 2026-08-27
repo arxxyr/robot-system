@@ -92,9 +92,10 @@ use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as
 /// `Heartbeat` 一致约定 = 2（s1 daemon 写出的所有 frame 用此值）。
 const S1_FRAME_SOURCE_ID: u32 = 2;
 
-/// v0.5 候选 E 段(5)：常驻 state cache 线程 poll 间隔（沿
-/// `robot-rpc::state_pool` 500 Hz 口径：远高于 S0 50 Hz publish，cache 至多
-/// 2 ms 陈旧；与 `--poll-interval-ms`（tick loop）无关）。
+/// v0.5 候选 E 段(5)：常驻 state cache 线程**标称** polling cadence（2 ms，
+/// 沿 `robot-rpc::state_pool` 口径）；普通线程调度无硬上界，不构成新鲜度
+/// 保证——数据安全由帧 `stamp_ns` + `[s1].max_stale_ms` 在 `latest_fresh`
+/// 守门；与 `--poll-interval-ms`（tick loop）无关。
 const STATE_CACHE_POLL_INTERVAL: Duration = Duration::from_millis(2);
 
 /// 段(5) state cache spawn 失败 → exit code 族：transport 族（node /

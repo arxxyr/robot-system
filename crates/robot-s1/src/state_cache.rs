@@ -26,7 +26,10 @@
 //! - [`spawn_state_cache_thread`]：`sync_channel` **同步 ready 握手**——
 //!   线程内 node + subscriber 建成后回 `Ok`；建失败回 `Err`；握手超时
 //!   （[`READY_TIMEOUT`]）→ [`StateCacheSpawnError::ReadyTimeout`]。**两失败
-//!   路径均 stop + join 回滚**后返 `Err`（不留孤儿线程）。
+//!   路径均 stop + join 回滚**后返 `Err`（不留孤儿线程）。**[`READY_TIMEOUT`]
+//!   仅是握手超时的检测点，不是 spawn 返回的硬上限**：ready / error 在超时
+//!   前到达则立即返回；若先触发超时，则置 stop 并等待 factory / 线程结束后
+//!   join——因此超时路径可能超过 5 s，不承诺返回时延硬上限。
 //! - [`StateCacheHandle::stop`]（Release flag，幂等）/
 //!   [`StateCacheHandle::join`]（一次性，消费 handle）/ `Drop` = stop + join
 //!   best-effort。subscriber 与 node 在线程内按 RAII 顺序正常 Drop
@@ -67,9 +70,12 @@ use crate::coordinator::{FrameCheckError, check_state_frame};
 // 常量
 // ============================================================================
 
-/// ready 握手超时（[`spawn_state_cache_thread`]）。iceoryx2 node create +
-/// subscriber open 在 anchor 成功后是毫秒级；5 s 只防"卡死"（如 shm 配额
-/// 耗尽的异常路径），超时 → [`StateCacheSpawnError::ReadyTimeout`] + 回滚。
+/// ready 握手超时**检测点**（[`spawn_state_cache_thread`]）——**不是** spawn
+/// 返回的硬上限。iceoryx2 node create + subscriber open 在 anchor 成功后是
+/// 毫秒级：ready / error 在超时前到达则立即返回；若先触发超时，则返
+/// [`StateCacheSpawnError::ReadyTimeout`] 之前置 stop 并等待 factory / 线程
+/// 结束后 `join`（保证无孤儿线程）——因此超时路径可能超过 5 s，不承诺返回
+/// 时延硬上限。
 pub const READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 线程内 transport / view 错误的限频日志：首条必报 + 每 256 条一报
@@ -86,9 +92,10 @@ const ERROR_LOG_EVERY: u64 = 256;
 /// - `expected_joints`：`hardware.joints.len()`。
 /// - `expected_layout`：S1 config 派生 `layout_id`（段(4) 唯一权威）。
 /// - `max_stale_ms`：沿既有 `[s1].max_stale_ms`（D3 子拍板：不新增配置面）。
-/// - `poll_interval`：subscriber 线程 poll 间隔（s1_daemon 用 2 ms，沿
-///   `robot-rpc::state_pool` 500 Hz 口径：远高于 S0 50 Hz publish，cache
-///   至多 2 ms 陈旧）。
+/// - `poll_interval`：subscriber 线程**标称** polling cadence（s1_daemon 用
+///   2 ms，沿 `robot-rpc::state_pool` 口径）；普通线程调度无硬上界，**不**
+///   构成新鲜度保证——数据安全由帧 `stamp_ns` + `max_stale_ms` 在读路径
+///   （[`StateCacheHandle::latest_fresh`]）守门。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateCacheConfig {
     pub topic: String,
@@ -125,7 +132,8 @@ pub enum StateCacheSpawnError {
     #[error("state cache: thread spawn failed: {0}")]
     ThreadSpawn(std::io::Error),
     /// ready 握手在 [`READY_TIMEOUT`]（或测试入口显式传入的超时）内未收到
-    /// 线程回执。
+    /// 线程回执。返回前已 join 线程（等 factory 返回），故 spawn 实际耗时
+    /// 可能远超该超时（检测点，非硬上限）。
     #[error(
         "state cache: ready handshake timed out (thread did not report subscriber open in time)"
     )]
@@ -319,8 +327,9 @@ impl StateCacheHandle {
         }
     }
 
-    /// 信号线程退出（Release flag；幂等、不阻塞）。线程在下一次 poll
-    /// 周期（≤ `cfg.poll_interval`）内退出。
+    /// 信号线程退出（Release flag；幂等、不阻塞）。线程在下一次 poll 检查
+    /// flag 时退出（标称 ≤ `cfg.poll_interval` + 一次 `latest()`；普通线程
+    /// 调度无硬上界）；需要确定性等待用 [`Self::join`]。
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Release);
     }
@@ -368,8 +377,9 @@ impl Drop for StateCacheHandle {
 ///
 /// - `Ok(Ok(()))` → 返 handle（线程进入 poll loop）。
 /// - `Ok(Err(e))` → 线程已自行退出；join 后返 `Err(e)`。
-/// - `Err(Timeout)` → `stop` + drop 接收端（线程回执 `send` 立即失败不阻塞）
-///   + join → [`StateCacheSpawnError::ReadyTimeout`]。
+/// - `Err(Timeout)` → `stop` → drop 接收端（线程回执 `send` 立即失败不阻塞）
+///   → `join` → [`StateCacheSpawnError::ReadyTimeout`]。**`join` 等 factory
+///   返回**：本函数总耗时不受 `ready_timeout` 硬约束（无孤儿线程优先）。
 /// - `Err(Disconnected)`（线程在回执前 panic）→ join 拿 panic 后按
 ///   `ReadyTimeout` 同路径回滚（线程已死，无需 stop）。
 ///
@@ -512,7 +522,8 @@ impl LatestSubscriber<markers::JointState> for Iceoryx2StateSubscriber {
 }
 
 /// 生产入口：线程内创建 iceoryx2 Node + `TopicClass::S0State` subscriber，
-/// ready 握手超时 = [`READY_TIMEOUT`]。
+/// ready 握手超时检测点 = [`READY_TIMEOUT`]（回滚 join 等 factory 返回，
+/// 总耗时非 5 s 硬上限）。
 ///
 /// # Errors
 ///

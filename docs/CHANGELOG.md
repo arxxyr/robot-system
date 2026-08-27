@@ -63,16 +63,22 @@
 ### 线程卫生与启动 / 关停（AC-E20）
 
 - `s1_daemon`：锚定成功后 spawn state cache 线程（线程内建 iceoryx2 node +
-  subscriber，`sync_channel` 同步 ready 握手，5 s 超时回滚），**先于**
+  subscriber，`sync_channel` 同步 ready 握手；`READY_TIMEOUT` = 5 s **仅为
+  握手超时检测点，不是 spawn 返回的硬上限**——ready / error 在超时前到达
+  则立即返回；若先触发超时，则置 stop 并等待 factory / 线程结束后 join，
+  因此超时路径可能超过 5 s，不承诺返回时延硬上限），**先于**
   `rr_server_threads ready` marker；spawn 失败 = 启动失败 fail-fast（exit
   1 = node / subscriber open / 握手超时族；exit 5 = 线程 spawn 族，沿
   rr_server / reaper 先例；Spec P.4 PX-6）。shutdown 序列新增 step 6：
   `take_state_cache → stop → join`（在 RR / drain 线程 join 之后）。
   subscriber 与 node 线程内按 RAII 正常 Drop（iceoryx2 0.9.3），**无**
-  `mem::forget` / `Box::leak`。
-- state topic QoS `max_subscribers=8`：S1 锚定 subscriber 在锚定函数返回时
-  已 Drop，常驻 cache 是 S1 唯一持久 subscriber（不与 gateway StatePool /
-  robotctl 争配额）。
+  `mem::forget` / `Box::leak`。线程 poll 为**标称** 2 ms cadence（调度无
+  硬上界，不构成新鲜度保证）；数据安全由 `stamp_ns` + `max_stale_ms` 在
+  `latest_fresh` 守门。
+- state topic QoS `max_subscribers=8`（同一 S0State service，所有订阅方
+  共享）：S1 锚定 subscriber 在锚定函数返回时已释放；S1 cache **长期占 1
+  个 slot**，gateway `StatePool` 常驻另占 1 个，robotctl watch 临时占用——
+  当前仍有 headroom（段(5) 前 S1 无长期 slot，本段净增 1）。
 
 ### 边界（本段不动）
 
@@ -89,7 +95,7 @@
   0 FAIL（基线 1222 + 新增 50）+ 六 smoke 全绿 + crash
   `--use-mock-s1 --iterations 2`。
 
-审阅人：待 reviewer 段(5) 复核；登记人：Claude。
+审阅人：reviewer（段(5) 复核通过，2026-08-27；ACK 链 `5ceaf61` → `f01da8b` → 回修）；登记人：Claude。
 
 ---
 
