@@ -107,10 +107,13 @@ required-features = ["ik-backend-smoke"]
 # v0.5 候选 A (5/5) robotctl operator CLI cross-process e2e smoke。
 # 起 gateway + s1_daemon + FakeStatePublisher（fake s0），**唯一被测路径 =
 # spawn `robotctl` 真子进程**（reviewer 审查重点 3：严禁 smoke 内调 tonic
-# client）。结构上不依赖 robot-rpc / tonic —— 只需 tokio（process/io-util/net
-# 协调子进程 + TCP readiness）+ 既有 iceoryx2 / robot-msg / robot-transport
-# （FakeStatePublisher + EStop 订阅验证）；readiness 走 TCP connect + s1 stderr
-# marker + robotctl get-task-status NotFound 探针（不走 tonic）。
+# client）。**不依赖 tonic / 不生成 tonic client stub**（feature 不含
+# `robot-rpc/client`）—— 只需 tokio（process/io-util/net 协调子进程 + TCP
+# readiness）+ 既有 iceoryx2 / robot-msg / robot-transport（FakeStatePublisher
+# + EStop 订阅验证）+ robot-rpc **仅**取 `client::layout` 派生 layout（段(4)
+# 起；段(8) round 2 PX-19 修正：候选 A "零 robot-rpc 依赖"表述作废，边界收窄为
+# "不启用 `client` feature、不调 tonic client"）；readiness 走 TCP connect +
+# s1 stderr marker + robotctl get-task-status NotFound 探针（不走 tonic）。
 # `required-features = ["robotctl-smoke"]` 守门，生产 release 不参编译。
 [[bin]]
 name = "robotctl_smoke"
@@ -182,8 +185,11 @@ robot-s1 = { path = "../robot-s1", optional = true, default-features = false, fe
 ] }
 
 # v0.3 A1-3 (3/3-a) clear_estop_e2e optional deps（feature-gated）：
-# - robot-rpc：开 `client` feature 让 build.rs 跑 `tonic_build::build_client(true)`，
-#   生成 `RobotControlClient` stub 给 smoke 用。
+# - robot-rpc：**不**在依赖声明上全局挂 `client` feature（段(8) round 2 PX-19
+#   修正）——真用 tonic client 的 smoke feature 各自显式 `"robot-rpc/client"`
+#   （让 build.rs 跑 `tonic_build::build_client(true)` 生成 `RobotControlClient`
+#   stub）；`robotctl-smoke` / `sd-watchdog-smoke` 只 `dep:robot-rpc` 不开
+#   client（结构上保证"不生成、不调 tonic client"）。
 # - tonic：跑 client transport stack；client 端只需 transport，**不**需
 #   server。覆盖 features 跟 workspace 默认对齐。
 # - tokio：smoke 主 entry 用 `#[tokio::main]` 跑 tonic client + 子进程协调；
@@ -196,7 +202,7 @@ robot-s1 = { path = "../robot-s1", optional = true, default-features = false, fe
 #   dev-dependencies 位置继承；clear_estop_e2e 是 binary 不能 link dev-deps，
 #   tempdir 自己滚（`/tmp/clear_estop_e2e_<pid>_<seq>`，shutdown
 #   `remove_dir_all`），减少 workspace dep surface。
-robot-rpc = { workspace = true, optional = true, features = ["client"] }
+robot-rpc = { workspace = true, optional = true }
 tonic     = { workspace = true, optional = true }
 tokio     = { workspace = true, optional = true, features = ["process", "io-util"] }
 
@@ -241,6 +247,7 @@ freeze-systemd-smoke = ["dep:robot-s0"]
 #   `freeze-systemd-smoke` 同款 feature 守门。
 clear-estop-e2e = [
     "dep:robot-rpc",
+    "robot-rpc/client",
     "dep:tonic",
     "dep:tokio",
 ]
@@ -253,6 +260,7 @@ clear-estop-e2e = [
 #   完全等价 —— 同款 feature gate 模式）。
 pubsub-cleanup-smoke = [
     "dep:robot-rpc",
+    "robot-rpc/client",
     "dep:tonic",
     "dep:tokio",
 ]
@@ -265,6 +273,7 @@ pubsub-cleanup-smoke = [
 #   / pubsub-cleanup-smoke 完全等价 —— 同款 feature gate 模式）。
 scripted-backend-smoke = [
     "dep:robot-rpc",
+    "robot-rpc/client",
     "dep:tonic",
     "dep:tokio",
 ]
@@ -277,6 +286,7 @@ scripted-backend-smoke = [
 #   robot-kinematics-xlerobot（selftest ground truth solver）。
 ik-backend-smoke = [
     "dep:robot-rpc",
+    "robot-rpc/client",
     "dep:tonic",
     "dep:tokio",
     "dep:robot-kinematics",
@@ -287,12 +297,15 @@ ik-backend-smoke = [
 # - 生产 release 不带本 feature（robotctl_smoke binary 不参编译）。
 # - 本机跑：cargo run -p robot-tests --bin robotctl_smoke
 #   --features robotctl-smoke -- --phase all --bin-dir target/debug ...
-# - **只**启用 tokio（process/io-util/net + workspace 默认）；**不**启用
-#   robot-rpc / tonic —— 结构上保证"smoke 不调 tonic client"（审查重点 3）。
+# - 启用 tokio（process/io-util/net + workspace 默认）+ `dep:robot-rpc`（仅
+#   `client::layout` 派生 layout，段(4) 起）；**不**启用 `robot-rpc/client` /
+#   tonic —— 结构上保证"smoke 不生成、不调 tonic client"（审查重点 3；段(8)
+#   round 2 PX-19：此前 feature 表漏 `dep:robot-rpc`，单 feature 构建 E0433，
+#   被 gate 的合并 feature 集掩蔽）。
 # - 加 serde_json：json_output_round_trip phase 真 parse robotctl `--json`
 #   stdout（AC-7：serde_json::from_str 过 + 字段集）。serde_json 已在 lock
 #   （robot-cli 用），加 optional dep 不改 Cargo.lock。
-robotctl-smoke = ["dep:tokio", "dep:serde_json"]
+robotctl-smoke = ["dep:tokio", "dep:serde_json", "dep:robot-rpc"]
 # v0.5 候选 E 段(6)：真机侧 feature（段(9) preflight / 验收 bin 的 required-
 # features 宿主）——拉 feetech 公共换算 API + 其 `real-hw`（serialport 真串口）。
 # CI / dev 默认 off；`cargo clippy -p robot-tests --all-features` 永久 gate
@@ -305,8 +318,8 @@ robotctl-smoke = ["dep:tokio", "dep:serde_json"]
 #   sd-watchdog-smoke -- --s1-bin target/release/s1_daemon --gateway-bin
 #   target/release/robot_rpc_gateway --phase all`。
 # - `robot-rpc/test-freeze-hook` 仅在本 feature 启用，不污染 clear-estop-e2e
-#   等其它 feature 的构建面；与既有 optional dep 自带的 `client` feature
-#   并存 additive 无害。
+#   等其它 feature 的构建面；**不**开 `robot-rpc/client`（smoke 只 import
+#   freeze_control wire struct）；与其它 feature 合并构建时 additive 无害。
 sd-watchdog-smoke = [
     "dep:robot-s1",
     "dep:robot-rpc",
