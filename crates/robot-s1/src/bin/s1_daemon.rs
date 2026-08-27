@@ -701,7 +701,7 @@ fn run(args: &Args) -> Result<(), i32> {
     //
     // 顺序：全部 observer 已就绪（rr ×4 spawn 成功、state cache ready 握手
     // 已过、tick loop metrics 即将由本线程推进）→ READY=1 → 起 watchdog
-    // （enforce 自 grace 周期后开始）。observer 全部读 `loop_tick_count` 族
+    // （cycle 0 grace 喂 + 即刻 snapshot，cycle 1 起 enforce）。observer 全部读 `loop_tick_count` 族
     // （空闲亦推进），不用请求计数（D12 r3 T4 第 1 条）。非 systemd 环境
     // 两者均 no-op / None。
     let observers: Vec<LivenessObserver> = {

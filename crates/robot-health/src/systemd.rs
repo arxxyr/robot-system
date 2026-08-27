@@ -5,7 +5,8 @@
 //! `systemd_notify.rs`（v0.2 task 24-29 / v0.3 A2 端到端锁定）迁入本 crate，
 //! 作 S0 / S1 / robot-rpc gateway 三 daemon 的**单一实现**（robot-health 定位
 //! "非 RT、daemon 可复用"，tracing 依赖合法；S0 已依赖无循环）。S0 迁移传
-//! `thread_name = "s0_systemd_wd"` 原值，ping 节奏 / grace / 判停语义 bit 等价。
+//! `thread_name = "s0_systemd_wd"` 原值，判停语义等价；**ping 节奏经段(8) round 2
+//! 修正**（首个 enforce 间隔，见下 "启动 grace"），不再宣称 bit 等价。
 //!
 //! ## 协议
 //!
@@ -35,8 +36,15 @@
 //! sd_notify(WATCHDOG=1)`）→ systemd `WatchdogSec` 超时 → `Restart=on-failure`
 //! 拉起新 daemon。
 //!
-//! - **启动 grace**（`WatchdogConfig::startup_grace_ping`）：第一周期固定喂一次
-//!   （无 observer 比较），让 worker 完成 spawn + first tick；之后 enforce。
+//! - **启动 grace**（`WatchdogConfig::startup_grace_ping`）：cycle 0（spawn 即刻）
+//!   固定喂一次（无 observer 比较）并**同时**取初始 snapshot；cycle 1（一个
+//!   `usec / 2` 间隔后）起每周期比较 → enforce。首个 enforce ping 距 grace ping
+//!   恰 `usec / 2`，systemd 侧始终保有 50% 余量。**继承缺陷修正（段(8) round 2，
+//!   CHANGELOG Reverse Sync）**：v0.2 S0 原实现 grace 后先 sleep 一个间隔才取
+//!   snapshot、再 sleep 一个间隔才首次 enforce——首个间隔 = `WATCHDOG_USEC`
+//!   整、无余量，健康进程启动期可能被 systemd 误杀。
+//! - **间隔下限**：[`ping_interval`] = `max(usec / 2, 1 µs)`（`WATCHDOG_USEC = 1`
+//!   极端配置下 `usec / 2 == 0` 会退化成 busy-loop）。
 //! - **判停内核** [`evaluate_cycle`] 是纯函数（与 IO / 时序解耦）；主循环经
 //!   [`WatchdogIo`] 注入 ping / sleep——生产 = sd_notify + 分片 `thread::sleep`
 //!   （≤ 50 ms 一片、片间查 stop，**ping 节奏不变**、`stop()` 响应 ≤ 50 ms），
@@ -185,6 +193,13 @@ pub fn spawn_watchdog(
     spawn_watchdog_with_usec(observers, cfg, usec)
 }
 
+/// ping 间隔 = `usec / 2`（systemd 留 50% 余量吸收 jitter），下限 1 µs（极端
+/// 配置 `WATCHDOG_USEC = 1` 时 `usec / 2 == 0` 会退化成 busy-loop）。
+#[must_use]
+pub fn ping_interval(usec: u64) -> Duration {
+    Duration::from_micros((usec / 2).max(1))
+}
+
 /// 显式 `usec` 入参版（不读 env）：`spawn_watchdog` 经它实现；测试 / 嵌入
 /// 场景直接用。`usec == 0` → `None`。
 ///
@@ -201,8 +216,7 @@ pub fn spawn_watchdog_with_usec(
     if usec == 0 {
         return None;
     }
-    // ping 间隔 = usec / 2，给 systemd 留 50% 余量吸收 jitter。
-    let interval = Duration::from_micros(usec / 2);
+    let interval = ping_interval(usec);
     let stop = Arc::new(AtomicBool::new(false));
     let stop_for_thread = Arc::clone(&stop);
     let WatchdogConfig {
@@ -287,8 +301,15 @@ impl WatchdogIo for SdNotifyIo {
     }
 }
 
-/// 主循环：`grace` → 首周期固定喂；sleep 一周期后取初始 snapshot；之后
-/// **每周期先 sleep 再比较**（反过来第一次 iteration 必然 now == prev 误报）。
+/// 主循环：cycle 0 = `grace` 固定喂 + **即刻**取初始 snapshot；之后每周期
+/// **先 sleep 一个间隔再比较**（cycle 1 起 enforce）。首个 enforce ping 距
+/// grace ping 恰一个间隔。
+///
+/// **round 2 修正**：原先 grace 后 sleep 一个间隔才取 snapshot、再 sleep 一个
+/// 间隔才首次比较——首个 ping 间隔 = 2 × `usec / 2` = `WATCHDOG_USEC` 整，
+/// 注释宣称的 50% 余量不存在。即刻 snapshot 的前提 = `READY=1` 只在全部
+/// observer 就绪后发（D12 第 3 条），此刻 worker 已在跑，cycle 1 前推进 ≥ 1
+/// 次即视为存活。
 pub fn run_watchdog_loop<IO: WatchdogIo>(
     stop: &AtomicBool,
     interval: Duration,
@@ -296,13 +317,11 @@ pub fn run_watchdog_loop<IO: WatchdogIo>(
     grace: bool,
     io: &mut IO,
 ) {
-    if grace && !stop.load(Ordering::Acquire) {
-        io.ping();
-    }
-    // 初始 snapshot：第一个间隔之后再读，避免启动期 worker 还没跑第一个
-    // tick 就被判停滞。
-    if !io.sleep_interval(interval, stop) {
+    if stop.load(Ordering::Acquire) {
         return;
+    }
+    if grace {
+        io.ping();
     }
     let mut prev: Vec<u64> = observers.iter().map(|o| (o.tick)()).collect();
 
@@ -377,8 +396,10 @@ mod tests {
 
     /// 脚本化 IO：每次 `sleep_interval` = 一个周期；`on_cycle(n)` 让测试在
     /// 第 n 周期推进 / 冻结 observer；超过 `max_cycles` 返 false（= stop）。
+    /// **每次 ping 记录所在 cycle**（round 2：锁 grace 在 cycle 0、首次 enforce
+    /// 在 cycle 1，而非只数总次数）。
     struct ScriptedIo<F: FnMut(usize)> {
-        pings: usize,
+        pings: Vec<usize>,
         cycles: usize,
         max_cycles: usize,
         on_cycle: F,
@@ -386,7 +407,7 @@ mod tests {
 
     impl<F: FnMut(usize)> WatchdogIo for ScriptedIo<F> {
         fn ping(&mut self) {
-            self.pings += 1;
+            self.pings.push(self.cycles);
         }
         fn sleep_interval(&mut self, _interval: Duration, _stop: &AtomicBool) -> bool {
             self.cycles += 1;
@@ -398,15 +419,16 @@ mod tests {
         }
     }
 
+    /// 返回各 ping 所在 cycle（cycle 0 = spawn 即刻，cycle n = 第 n 个间隔后）。
     fn run_scripted<F: FnMut(usize)>(
         observers: &[LivenessObserver],
         grace: bool,
         max_cycles: usize,
         on_cycle: F,
-    ) -> usize {
+    ) -> Vec<usize> {
         let stop = AtomicBool::new(false);
         let mut io = ScriptedIo {
-            pings: 0,
+            pings: Vec::new(),
             cycles: 0,
             max_cycles,
             on_cycle,
@@ -443,11 +465,40 @@ mod tests {
         let t = Arc::new(AtomicU64::new(0));
         let observers = vec![LivenessObserver::from_atomic("w", Arc::clone(&t))];
         let bump = Arc::clone(&t);
-        // 周期 1 = 初始 snapshot；周期 2..=5 各 evaluate 一次 → 4 ping；+ grace 1。
+        // cycle 0 grace + 即刻 snapshot；cycle 1..=5 各 evaluate 一次 → 5 enforce。
         let pings = run_scripted(&observers, true, 5, move |_| {
             bump.fetch_add(1, Ordering::Relaxed);
         });
-        assert_eq!(pings, 5, "grace 1 + enforce 4");
+        assert_eq!(pings, vec![0, 1, 2, 3, 4, 5], "grace@0 + enforce@1..=5");
+    }
+
+    #[test]
+    fn first_enforce_ping_lands_on_cycle_one_after_grace_on_cycle_zero() {
+        // round 2 阻断 1 回归锁：observer 仅在 cycle 1 的间隔内推进一次，之后停滞。
+        // 即刻 snapshot → cycle 1 看到推进 → ping@1；cycle 2+ 停滞 → withholding。
+        // 旧实现（cycle 1 才取 snapshot）会把这次推进吞进 snapshot，永远不 enforce
+        // ping（结果 [0]）——本测试即区分新旧时序。
+        let t = Arc::new(AtomicU64::new(5));
+        let observers = vec![LivenessObserver::from_atomic("w", Arc::clone(&t))];
+        let bump = Arc::clone(&t);
+        let pings = run_scripted(&observers, true, 4, move |cycle| {
+            if cycle == 1 {
+                bump.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+        assert_eq!(pings, vec![0, 1], "grace@0；首次 enforce 恰在 cycle 1");
+    }
+
+    #[test]
+    fn ping_interval_is_half_usec_with_one_micro_floor() {
+        assert_eq!(ping_interval(2_000_000), Duration::from_secs(1));
+        assert_eq!(ping_interval(4_000_000), Duration::from_secs(2));
+        assert_eq!(ping_interval(3), Duration::from_micros(1));
+        assert_eq!(
+            ping_interval(1),
+            Duration::from_micros(1),
+            "usec/2 == 0 → 下限 1 µs"
+        );
     }
 
     #[test]
@@ -456,7 +507,7 @@ mod tests {
         let observers = vec![LivenessObserver::from_atomic("dead", Arc::clone(&t))];
         // tick 永不推进（模拟 worker 死锁）→ 只有 grace ping。
         let pings = run_scripted(&observers, true, 6, |_| {});
-        assert_eq!(pings, 1, "仅 grace；enforce 周期全部 withholding");
+        assert_eq!(pings, vec![0], "仅 grace@0；enforce 周期全部 withholding");
     }
 
     #[test]
@@ -468,16 +519,16 @@ mod tests {
             LivenessObserver::from_atomic("b", Arc::clone(&b)),
         ];
         let (ba, bb) = (Arc::clone(&a), Arc::clone(&b));
-        // a 每周期推进；b 在周期 3、4 停滞（其余推进）。
-        // 周期 1 snapshot；2 → ping；3 → b 停 → 无；4 → b 停 → 无；5 → b 恢复
-        // → ping；6 → ping。共 grace 1 + 3 = 4。
+        // a 每周期推进；b 在 cycle 3、4 停滞（其余推进）。
+        // cycle 0 grace + snapshot；1 → ping；2 → ping；3 → b 停 → 无；4 → b 停
+        // → 无；5 → b 恢复 → ping；6 → ping。
         let pings = run_scripted(&observers, true, 6, move |cycle| {
             ba.fetch_add(1, Ordering::Relaxed);
             if !(3..=4).contains(&cycle) {
                 bb.fetch_add(1, Ordering::Relaxed);
             }
         });
-        assert_eq!(pings, 4);
+        assert_eq!(pings, vec![0, 1, 2, 5, 6]);
     }
 
     #[test]
@@ -488,13 +539,17 @@ mod tests {
         let pings = run_scripted(&observers, false, 5, move |_| {
             bump.fetch_add(1, Ordering::Relaxed);
         });
-        assert_eq!(pings, 4, "无 grace：仅 enforce 4");
+        assert_eq!(pings, vec![1, 2, 3, 4, 5], "无 grace：仅 enforce@1..=5");
     }
 
     #[test]
     fn no_observers_degrades_to_unconditional_ping() {
         let pings = run_scripted(&[], true, 3, |_| {});
-        assert_eq!(pings, 3, "grace 1 + 2 enforce（空 observer 集恒 alive）");
+        assert_eq!(
+            pings,
+            vec![0, 1, 2, 3],
+            "grace@0 + enforce@1..=3（空 observer 集恒 alive）"
+        );
     }
 
     #[test]
@@ -511,7 +566,27 @@ mod tests {
         let stop = AtomicBool::new(false);
         let mut io = StopIo(0);
         run_watchdog_loop(&stop, Duration::from_millis(1), &[], true, &mut io);
-        assert_eq!(io.0, 1, "grace ping 后首个 sleep 即 stop → 退出");
+        assert_eq!(
+            io.0, 1,
+            "grace ping + 即刻 snapshot 后首个 sleep 即 stop → 退出"
+        );
+    }
+
+    #[test]
+    fn stop_set_before_start_pings_nothing() {
+        struct CountIo(usize);
+        impl WatchdogIo for CountIo {
+            fn ping(&mut self) {
+                self.0 += 1;
+            }
+            fn sleep_interval(&mut self, _: Duration, _: &AtomicBool) -> bool {
+                true
+            }
+        }
+        let stop = AtomicBool::new(true);
+        let mut io = CountIo(0);
+        run_watchdog_loop(&stop, Duration::from_millis(1), &[], true, &mut io);
+        assert_eq!(io.0, 0, "spawn 前已 stop → 连 grace 都不喂");
     }
 
     // ------------------------------------------------------------------

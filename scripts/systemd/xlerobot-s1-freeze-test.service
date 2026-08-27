@@ -68,8 +68,9 @@ ExecStart=@DAEMON_BIN@ \
     --hardware-id @HARDWARE_ID@ \
     --config @CONFIG_PATH@
 
-# Watchdog 2s：daemon 内按 WATCHDOG_USEC/2 = 1s 周期 ping；首周期 grace 固定
-# 喂一次，之后任一 observer 停滞即不喂 → systemd 在 2s 处 SIGABRT。
+# Watchdog 2s：daemon 内按 WATCHDOG_USEC/2 = 1s 周期 ping；READY 即刻 grace 喂
+# 一次 + 取 snapshot，1s 后起每周期比较，任一 observer 停滞即不喂 → 自上次
+# ping 起 2s 无 ping → systemd 发 SIGABRT。
 WatchdogSec=2s
 
 # Restart=on-failure：watchdog timeout / SIGABRT 触发；clean exit (0) 不触发

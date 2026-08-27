@@ -86,9 +86,10 @@ ExecStart=@DAEMON_BIN@ \
     --latch-path @LATCH_PATH@ \
     --tick-hz @TICK_HZ@
 
-# Watchdog 2s：daemon 内按 WATCHDOG_USEC/2 = 1s 周期 ping。freeze ipc_thread
-# 5s → 第 1 次 1s ping 走 grace（首周期固定喂 1 次），第 2 次 2s 时
-# LivenessObserver 看到 ipc_tick_count 停滞 → 不喂 → systemd 在
+# Watchdog 2s：daemon 内按 WATCHDOG_USEC/2 = 1s 周期 ping（READY 即刻 grace
+# 喂一次 + 取 snapshot，之后每 1s 比较一次；段(8) round 2 修正前首个 enforce
+# 间隔曾为 2s 整）。freeze ipc_thread 5s → 下一个 1s 评估点 LivenessObserver
+# 看到 ipc_tick_count 停滞 → 不喂 → 自上次 ping 起 2s 无 ping → systemd 在
 # WatchdogSec=2s 处发 SIGABRT。
 WatchdogSec=2s
 
