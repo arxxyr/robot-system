@@ -550,7 +550,7 @@ fn run_iteration(
     // ---- 10) journalctl 硬断言（reviewer A2-3 round 2 阻断 2 收紧）----
     //
     // 原实现："watchdog ping started" 这条 log 在 daemon 源码里**不存在**，
-    // 只是数 `freeze_control thread ready`。而后者发生在 `systemd_notify::ready()`
+    // 只是数 `freeze_control thread ready`。而后者发生在 `robot_health::systemd::notify_ready()`
     // 之前，**不能**替代"新 daemon active / state=Ready"语义。
     //
     // 收紧后断言（**全 journal 视角**，不切窗口；ready/start 至少第二轮覆盖）：

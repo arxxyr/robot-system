@@ -18,10 +18,10 @@ daemon" 部署。两 daemon 用 unique `robot-id`（`xlerobot_bus1_full` /
 ## 通用约定
 
 - 所有 S0 daemon unit 都用 `Type=notify` + `WatchdogSec=2s`，daemon 内
-  `crates/robot-s0/src/systemd_notify.rs` 模块按 `WATCHDOG_USEC / 2 = 1s`
+  `crates/robot-health/src/systemd.rs` 模块（段(8) 起单一实现，原 `crates/robot-s0/src/systemd_notify.rs`）按 `WATCHDOG_USEC / 2 = 1s`
   周期 ping，**且**只有 `ipc / rt-or-serial / pub / io` 4 个 worker
   `tick_count` 都还在增长才喂 ping（liveness-gated；详
-  [`LivenessObserver`](../../crates/robot-s0/src/systemd_notify.rs)）。
+  [`LivenessObserver`](../../crates/robot-health/src/systemd.rs)）。
 - `Restart=on-failure` —— `kill -9` / panic / watchdog timeout 自动拉起；
   graceful shutdown（`SIGTERM` + clean exit code 0）**不**拉起。
 - 日志统一走 journald + JSON（`ROBOT_LOG_FORMAT=json`），方便 vector /
@@ -118,7 +118,7 @@ sudo systemctl enable xlerobot-s0-bus1 xlerobot-s0-bus2
 >
 > v0.3 A2 闭合的具体证据：
 >
-> - 代码：[`LivenessObserver`](../../crates/robot-s0/src/systemd_notify.rs)
+> - 代码：[`LivenessObserver`](../../crates/robot-health/src/systemd.rs)
 >   观测 `ipc / rt-or-serial / pub / io` 4 worker `tick_count`；任一停
 >   滞就跳 `sd_notify(WATCHDOG=1)`。
 > - 端到端 smoke：`crates/robot-tests/src/bin/freeze_systemd_smoke.rs`

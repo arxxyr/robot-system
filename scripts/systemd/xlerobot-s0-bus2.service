@@ -40,7 +40,7 @@
 #     `freeze_systemd_smoke` 端到端真锁住覆盖）。
 #
 # 当前代码 watchdog 是 liveness-gated（详
-# `crates/robot-s0/src/systemd_notify.rs::LivenessObserver`），观测 4
+# `crates/robot-health/src/systemd.rs::LivenessObserver`），观测 4
 # worker `tick_count`，任一停滞就**不**喂 ping。完整证据 +
 # 自动化 smoke 调用方式见 `scripts/systemd/README.md` "验证 systemd
 # 重启路径" 节。
@@ -102,7 +102,7 @@ StartLimitBurst=5
 
 [Service]
 # `Type=notify` 让 systemd 等 daemon 调 sd_notify(READY=1) 才认为 active；
-# 详 crates/robot-s0/src/systemd_notify.rs。
+# 详 crates/robot-health/src/systemd.rs。
 Type=notify
 NotifyAccess=main
 

@@ -1874,7 +1874,7 @@ mod tests {
 
     /// **A2 freeze hook 单测**：设 `freeze_until_ns` 后，`ipc_thread` 的
     /// `tick_count` 在 spin 期间不增长；过期后恢复 →
-    /// [`crate::systemd_notify::LivenessObserver`] 看到停滞，watchdog 主循环
+    /// `robot_health::systemd::LivenessObserver` 看到停滞，watchdog 主循环
     /// 跳 `sd_notify(WATCHDOG=1)`。详 [`crate::freeze_hook`] 模块 doc。
     #[test]
     fn freeze_hook_holds_tick_count() {

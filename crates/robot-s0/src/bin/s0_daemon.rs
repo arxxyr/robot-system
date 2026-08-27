@@ -1035,37 +1035,37 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     // 线程按 `usec / 2` 间隔 ping，daemon 卡死 / 死锁就让 systemd 按
     // `Restart=on-failure` 自动拉起。**不在 systemd 下跑时**（NOTIFY_SOCKET /
     // WATCHDOG_USEC 都未设置）这两条都 silent no-op，跟 runbook / crash_restart_smoke
-    // 等场景零差异。详 `crates/robot-s0/src/systemd_notify.rs`。
-    robot_s0::systemd_notify::ready();
-    let systemd_wd_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // 等场景零差异。详 `crates/robot-health/src/systemd.rs`（v0.5 候选 E
+    // 段(8) 起单一实现；S0 传 thread_name = "s0_systemd_wd" 原值，行为 bit 等价）。
+    robot_health::systemd::notify_ready();
     // **liveness-gated watchdog**（reviewer round 4 阻断 1）：把 4 个 worker
     // 的 `tick_count` 暴露给 watchdog 线程；任一停滞就**不**喂 systemd，
     // WatchdogSec 超时让 systemd 真把 daemon 重启。详
-    // `crates/robot-s0/src/systemd_notify.rs::LivenessObserver`。
+    // `robot_health::systemd::LivenessObserver`。
     let observers = vec![
         {
             let m = Arc::clone(ipc.metrics());
-            robot_s0::systemd_notify::LivenessObserver::from_fn("ipc_thread", move || {
+            robot_health::systemd::LivenessObserver::from_fn("ipc_thread", move || {
                 m.ipc_tick_count.load(Ordering::Relaxed)
             })
         },
         executor.make_tick_observer(),
         {
             let m = Arc::clone(pub_handle.metrics());
-            robot_s0::systemd_notify::LivenessObserver::from_fn("pub_thread", move || {
+            robot_health::systemd::LivenessObserver::from_fn("pub_thread", move || {
                 m.tick_count.load(Ordering::Relaxed)
             })
         },
         {
             let m = Arc::clone(io_handle.metrics());
-            robot_s0::systemd_notify::LivenessObserver::from_fn("io_thread", move || {
+            robot_health::systemd::LivenessObserver::from_fn("io_thread", move || {
                 m.tick_count.load(Ordering::Relaxed)
             })
         },
     ];
-    let systemd_wd_handle = robot_s0::systemd_notify::spawn_watchdog_thread(
-        std::sync::Arc::clone(&systemd_wd_stop),
+    let systemd_wd_handle = robot_health::systemd::spawn_watchdog(
         observers,
+        robot_health::systemd::WatchdogConfig::new("s0_systemd_wd"),
     );
 
     // ---- 9) 主 loop：等 shutdown flag / smoke 超时 / state = STOPPING ----
@@ -1106,10 +1106,9 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     // 顺序很关键：先 STOPPING= 让 systemd 切到 deactivating（停 watchdog
     // timeout），再 stop ping 线程。如果反过来，watchdog 线程已经停但 systemd
     // 还按 `WatchdogSec` 计时，graceful 期间稍长一点就被 systemd 误杀。
-    robot_s0::systemd_notify::stopping();
-    systemd_wd_stop.store(true, std::sync::atomic::Ordering::Release);
+    robot_health::systemd::notify_stopping();
     if let Some(h) = systemd_wd_handle {
-        let _ = h.join();
+        h.stop();
     }
 
     // ---- 10b) **test-only** stop freeze_control thread（A2-2，cfg-gated）。
@@ -1341,17 +1340,17 @@ impl ExecutorHandle {
     /// systemd watchdog 的 liveness observer：执行 thread `tick_count` 取值。
     /// 在 `spawn_watchdog_thread` 闭包里调用，**不能** RT-thread-aware 加锁
     /// 或 alloc，只用 `AtomicU64::load(Relaxed)`。
-    fn make_tick_observer(&self) -> robot_s0::systemd_notify::LivenessObserver {
+    fn make_tick_observer(&self) -> robot_health::systemd::LivenessObserver {
         match self {
             Self::HardRt(h) => {
                 let m = Arc::clone(h.metrics());
-                robot_s0::systemd_notify::LivenessObserver::from_fn("rt_thread", move || {
+                robot_health::systemd::LivenessObserver::from_fn("rt_thread", move || {
                     m.tick_count.load(Ordering::Relaxed)
                 })
             }
             Self::SerialRt(h) => {
                 let m = Arc::clone(h.metrics());
-                robot_s0::systemd_notify::LivenessObserver::from_fn("serial_io_thread", move || {
+                robot_health::systemd::LivenessObserver::from_fn("serial_io_thread", move || {
                     m.tick_count.load(Ordering::Relaxed)
                 })
             }

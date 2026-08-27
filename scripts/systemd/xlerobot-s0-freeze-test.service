@@ -70,7 +70,7 @@ StartLimitBurst=5
 
 [Service]
 # `Type=notify` 让 systemd 等 daemon 调 sd_notify(READY=1) 才认为 active；
-# 详 crates/robot-s0/src/systemd_notify.rs。
+# 详 crates/robot-health/src/systemd.rs（段(8) 起单一实现）。
 Type=notify
 NotifyAccess=main
 

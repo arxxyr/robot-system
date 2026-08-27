@@ -54,6 +54,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 pub mod proc;
+// v0.5 候选 E 段(8)（Spec PD-E6(c)）：sd_notify + liveness-gated watchdog
+// 单一实现，自 robot-s0 迁入；S0 / S1 / gateway 三 daemon 共用。
+pub mod systemd;
 
 /// 单进程健康快照（差分 CPU% + 实时 RSS）。
 #[derive(Debug, Clone, PartialEq)]

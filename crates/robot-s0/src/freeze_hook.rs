@@ -11,7 +11,7 @@
 //!
 //! v0.2 收尾把 §6.7 #2 降级宣称为"代码层面到位 / 没端到端测过"
 //! （详 [`docs/handoffs/2026-04-26_5.md`](../../../../docs/handoffs/2026-04-26_5.md)）：
-//! [`crate::systemd_notify::LivenessObserver`] 真接 4 worker `tick_count`，watchdog
+//! `robot_health::systemd::LivenessObserver`（段(8) 前 = `crate::systemd_notify`）真接 4 worker `tick_count`，watchdog
 //! 主循环 liveness-gated 不喂 `sd_notify(WATCHDOG=1)`，但缺一条端到端测试证
 //! 明 worker-stall → `WatchdogSec` → systemd `Restart=on-failure` 拉起新 PID 真
 //! 跑通。A2 freeze hook + A2-3 `freeze_systemd_smoke` 集成测试就是补这条 e2e。

@@ -21,7 +21,7 @@
 //! ## 不进 watchdog observer
 //!
 //! 本 control thread 是测试注入器，**不**是 daemon worker：
-//! - 不参与 [`crate::systemd_notify::LivenessObserver`] `tick_count` 报告。
+//! - 不参与 `robot_health::systemd::LivenessObserver` `tick_count` 报告。
 //! - watchdog 主循环不查它（reviewer 硬边界："control thread 不进 watchdog
 //!   observer；它只是测试注入器"）。
 //! - daemon graceful_stop 时单独 `request_stop` + `join`（跟 4 worker 平行）。

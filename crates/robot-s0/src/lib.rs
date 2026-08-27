@@ -52,7 +52,8 @@ pub mod serial_io_thread;
 mod set_enabled_action;
 pub mod set_enabled_rr_server;
 pub mod state_machine;
-pub mod systemd_notify;
+// v0.5 候选 E 段(8)：`systemd_notify` 迁入 `robot_health::systemd`（单一实现），
+// 本 crate 不再持副本；s0_daemon 直接调 robot_health。
 pub mod watchdog;
 
 #[cfg(test)]
