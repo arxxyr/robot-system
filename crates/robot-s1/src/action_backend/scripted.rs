@@ -9,14 +9,20 @@
 //!   **不**含 `NO_PAYLOAD_SCHEMA_ID`，跟 hold_pose 显著区分）。
 //! - `start(req, ctx)`：四项 semantic check（详 ## semantic check 段）→
 //!   一次性解码 `ScriptedPayload` 到 `Vec<DecodedWaypoint>` + snapshot
-//!   `ctx.anchor_bias.to_vec()` 作 `initial_pose` → 构造 [`ScriptedInstance`]
-//!   返 `Box<dyn ActionInstance>`。
-//! - `tick(ctx)`：phase 状态机推进（Interp → Dwell → next waypoint）+
-//!   线性插值算 target positions → 复用
+//!   `ctx.scripted_start_pose`（**提交时当前位**，v0.5 候选 E 段(5)）作
+//!   `initial_pose` → 构造 [`ScriptedInstance`] 返 `Box<dyn ActionInstance>`。
+//!   `scripted_start_pose == None` → `ActionStartError::Rejected`（**不**
+//!   fallback 到 `ctx.anchor_bias`）。
+//! - `tick(ctx)`：phase 状态机推进（Interp → Dwell → next waypoint →
+//!   FinalEmitted）+ 线性插值算 target positions → 复用
 //!   [`crate::coordinator::build_hold_command`] 构 body bytes（
-//!   source_task_id == `ctx.command_seq`，B3 §3.7 单调契约）→ 末段 Dwell
-//!   完返 `Completed(ActionOutcome::Success)`，中间段返
+//!   source_task_id == `ctx.command_seq`，B3 §3.7 单调契约）→ 末 waypoint
+//!   target **已发布一帧**后下一 tick 返 `Completed(ActionOutcome::Success)`
+//!   （详 ## 末点发布保证 段），中间段返
 //!   `Continue { progress, command: Some(body) }`。
+//! - `successful_hold_target()`：`final_published == true` 时返
+//!   `Some(末 waypoint positions)`——coordinator 仅在 `Completed(Success)`
+//!   且非 cancel 收敛时读，作 Idle hold target（Spec D3 第 3 条）。
 //! - `cancel()`：cooperative，set flag；下次 tick 返
 //!   `Completed(ActionOutcome::PartialSuccess { warning: "cancelled_at_waypoint_N" })`
 //!   （Q4(a) 拍板：backend lib 返 PartialSuccess，coordinator
@@ -46,16 +52,39 @@
 //! `fb.source_task_id()` 写到 `JointCommandBuf.seq` 时看到 seq 回退，
 //! 破坏 `adapter.rs` 单调递增契约。沿 hold_pose B3 round 2 阻断 1 修法。
 //!
-//! ## segment from/to 来源（reviewer Plan round 2 阻断 2 拍板）
+//! ## segment from/to 来源（reviewer Plan round 2 阻断 2 拍板 → v0.5 候选 E
+//!    段(5) D3 第 1 条改源）
 //!
 //! - segment 0 的 `from` = `start()` 期 snapshot 的
-//!   `initial_pose = ctx.anchor_bias.to_vec()`
+//!   `initial_pose = ctx.scripted_start_pose.to_vec()`（**提交时当前位**，
+//!   coordinator 自常驻 state cache 取，已校 joint_count / layout / 新鲜度；
+//!   v0.4 候选 1 原为启动期 `ctx.anchor_bias`——CodeMap G1 P0 缺口：连续
+//!   chunk 从启动姿态重放）
 //! - segment i>0 的 `from` = `decoded_waypoints[i-1].positions`
 //! - 任一 segment 的 `to` = `decoded_waypoints[i].positions`
 //!
-//! `anchor_bias` 仅用作启动期 initial pose 来源；tick 期不再使用
-//! `ctx.anchor_bias`，每次 tick 复用 `self.initial_pose` /
-//! `self.decoded_waypoints` 内部 owned 数据。
+//! `ctx.anchor_bias` 本 backend **不再读**（HoldPose 专用，Spec D3 第 5 条
+//! 物理隔离）；tick 期复用 `self.initial_pose` / `self.decoded_waypoints`
+//! 内部 owned 数据。
+//!
+//! ## 末点发布保证（v0.5 候选 E 段(5)，Spec D3 第 2 条 S1 阻断根修）
+//!
+//! v0.4 现状：`dwell_ms == 0` 时末 waypoint 填 `tick_buf` 后直接 advance
+//! → `Completed(Success)`，**该 tick 不产命令帧**；coordinator 对 Completed
+//! 帧不 publish → 末 target 可能从未上线。修法锁定：
+//!
+//! - `final_published: bool` = "末 waypoint target 已作为一帧
+//!   `Continue { command: Some }` 交给 coordinator publish"。
+//! - 末 waypoint 完成（`advance_waypoint_and_emit` 走到 `current_idx ==
+//!   len`）时：`final_published == false` → **先返一帧 Continue（target =
+//!   末 waypoint，progress 1.0）** 并进 [`Phase::FinalEmitted`]，**下一
+//!   tick** 才返 `Completed(Success)`；`final_published == true`（dwell>0
+//!   路径 Dwell 期已反复发末 target）→ 直接 `Completed(Success)`，行为不变。
+//! - dwell>0 路径：末 waypoint 进入 / 处于 Dwell 的每一帧（target = 末
+//!   waypoint）都置 `final_published = true`（首个 dwell 帧即置）。
+//! - 效果：`Completed(Success)` 严格晚于"末 target 已 publish"，保证
+//!   coordinator 提交 `idle_hold_target = 末 waypoint` 时该 target 已上线，
+//!   Idle hold 无跳变（G1 回拉半闭合）。
 //!
 //! ## progress 语义化（Q3(c) 组合拍板）
 //!
@@ -183,18 +212,26 @@ impl ActionBackend for ScriptedBackend {
             });
         }
 
-        // segment 0 from = snapshot 自 ctx.anchor_bias.to_vec()
-        // （reviewer Plan round 2 阻断 2 修法：anchor_bias 是启动期
-        // initial pose 来源，不作 tick 持续动态 target）。
-        // 长度必须跟 hardware.joints.len() 一致（coordinator 启动期
-        // anchor 同款约束；此处 defensive 断言）。
-        let initial_pose: Vec<f64> = ctx.anchor_bias.to_vec();
-        if initial_pose.len() != expected_joints {
+        // (5) segment 0 from = snapshot 自 ctx.scripted_start_pose（v0.5
+        // 候选 E 段(5) D3 第 1 条：提交时当前位，coordinator 自常驻 state
+        // cache 取；缺失 = coordinator 未取到 / 路由漂移 → 拒绝，**绝不**
+        // fallback 到 ctx.anchor_bias——静默跳变危险）。
+        let Some(start_pose) = ctx.scripted_start_pose else {
+            return Err(ActionStartError::Rejected(
+                "ScriptedBackend: ctx.scripted_start_pose missing (submit-time current \
+                 position unavailable; D3: no fallback to anchor_bias)"
+                    .into(),
+            ));
+        };
+        // 长度必须跟 hardware.joints.len() 一致（cache latest_fresh 已校
+        // joint_count；此处 defensive 断言）。
+        if start_pose.len() != expected_joints {
             return Err(ActionStartError::Rejected(format!(
-                "ScriptedBackend: ctx.anchor_bias length {} != hardware.joints.len() {expected_joints}",
-                initial_pose.len()
+                "ScriptedBackend: ctx.scripted_start_pose length {} != hardware.joints.len() {expected_joints}",
+                start_pose.len()
             )));
         }
+        let initial_pose: Vec<f64> = start_pose.to_vec();
 
         let instance = ScriptedInstance {
             cancelled: false,
@@ -203,6 +240,7 @@ impl ActionBackend for ScriptedBackend {
             current_idx: 0,
             phase: Phase::Interp { start_ns: 0 },
             phase_started: false,
+            final_published: false,
             tick_buf: Vec::with_capacity(expected_joints),
         };
         Ok(Box::new(instance))
@@ -233,7 +271,8 @@ struct DecodedWaypoint {
 /// `ScriptedInstance` 当前 segment 内的 phase。
 ///
 /// 每个 waypoint 经历 `Interp` → `Dwell` → next waypoint（如果不是末
-/// 段）；末段 `Dwell` 完后返 `Completed(Success)`。
+/// 段）；末段完成后若末 target 尚未发布，先进 `FinalEmitted`（本 tick 发
+/// 末 target 帧）、下一 tick 才返 `Completed(Success)`（末点发布保证）。
 #[derive(Debug, Clone, Copy)]
 enum Phase {
     /// 线性插值阶段：从 `from` 到 `to` 走 `segment_duration_ms`。
@@ -246,6 +285,10 @@ enum Phase {
         /// 进入本 phase 的 monotonic ns（首次 tick 时填）。
         start_ns: u64,
     },
+    /// 末 waypoint 已完成且末 target 帧已于上一 tick 返回（v0.5 候选 E
+    /// 段(5)）；下一 tick 直接 `Completed(Success)`，不再索引
+    /// `decoded_waypoints[current_idx]`（此时 `current_idx == len`）。
+    FinalEmitted,
 }
 
 // ============================================================================
@@ -263,8 +306,8 @@ struct ScriptedInstance {
     cancelled: bool,
     /// `start()` 期一次性 owned decode；tick 期不再解 fbs。
     decoded_waypoints: Vec<DecodedWaypoint>,
-    /// segment 0 的 `from`（snapshot 自 `ctx.anchor_bias.to_vec()`；
-    /// reviewer Plan round 2 阻断 2 修法）。
+    /// segment 0 的 `from`（snapshot 自 `ctx.scripted_start_pose`——提交时
+    /// 当前位，v0.5 候选 E 段(5) D3 第 1 条；v0.4 原为 `ctx.anchor_bias`）。
     initial_pose: Vec<f64>,
     /// 当前正在跑的 waypoint index（segment 完成后 += 1；末段 dwell
     /// 完后等于 `decoded_waypoints.len()` 即 Completed 触发条件）。
@@ -276,6 +319,11 @@ struct ScriptedInstance {
     /// 替换成 `ctx.clock.now()`；Phase enum 用 sentinel 而非 `Option`
     /// 避免每 tick match 多一层 unwrap）。
     phase_started: bool,
+    /// 末 waypoint target 是否已作为一帧 `Continue { command: Some }` 返给
+    /// coordinator（v0.5 候选 E 段(5) 末点发布保证）。置位路径：末
+    /// waypoint 的 Dwell 帧（含 Interp→Dwell 过渡帧）/ `FinalEmitted` 帧。
+    /// `successful_hold_target()` 仅在本 flag 为 true 时返 `Some`。
+    final_published: bool,
     /// tick 期目标位置缓冲（`with_capacity(hardware.joints.len())` 预
     /// 分配，tick 期 `clear()` + extend 复用；Q7 拍板避 per-tick alloc）。
     tick_buf: Vec<f64>,
@@ -298,6 +346,18 @@ impl ScriptedInstance {
             warning: format!("cancelled_at_waypoint_{}", self.current_idx),
         }
     }
+
+    /// 当前 waypoint 是否为末 waypoint（`start()` 守门 waypoints 非空）。
+    fn on_last_waypoint(&self) -> bool {
+        self.current_idx + 1 == self.decoded_waypoints.len()
+    }
+
+    /// 末 waypoint positions（`start()` 守门 waypoints 非空 → 必有）。
+    fn last_waypoint_positions(&self) -> &[f64] {
+        self.decoded_waypoints
+            .last()
+            .map_or(&[], |wp| wp.positions.as_slice())
+    }
 }
 
 impl ActionInstance for ScriptedInstance {
@@ -309,6 +369,14 @@ impl ActionInstance for ScriptedInstance {
             return Ok(ActionTickOutput::Completed(self.cancel_outcome()));
         }
 
+        // (1b) 末点发布保证收敛（v0.5 候选 E 段(5)）：上一 tick 已返末
+        // target 帧（FinalEmitted）→ 本 tick 返 Completed(Success)。必须
+        // 先于下面的 decoded_waypoints[current_idx] 索引（此时 idx == len）。
+        if matches!(self.phase, Phase::FinalEmitted) {
+            debug_assert!(self.final_published, "FinalEmitted 必伴随 final_published");
+            return Ok(ActionTickOutput::Completed(ActionOutcome::Success));
+        }
+
         let now_ns = ctx.clock.now().0;
 
         // (2) phase start_ns 延迟初始化（首次 tick 拿真 clock 填）。
@@ -316,6 +384,7 @@ impl ActionInstance for ScriptedInstance {
             self.phase = match self.phase {
                 Phase::Interp { .. } => Phase::Interp { start_ns: now_ns },
                 Phase::Dwell { .. } => Phase::Dwell { start_ns: now_ns },
+                Phase::FinalEmitted => Phase::FinalEmitted,
             };
             self.phase_started = true;
         }
@@ -397,7 +466,19 @@ impl ActionInstance for ScriptedInstance {
                 }
                 1.0
             }
+            Phase::FinalEmitted => {
+                // (1b) 已提前返回；此臂仅为 match 穷尽（不可达）。
+                return Ok(ActionTickOutput::Completed(ActionOutcome::Success));
+            }
         };
+
+        // (3b) 末点发布保证（v0.5 候选 E 段(5)）：本帧处于末 waypoint 的
+        // Dwell（含刚从 Interp 过渡进 Dwell 的这一帧）→ target 即末
+        // waypoint → 记"末 target 已发布"；dwell 完成后 advance 可直接
+        // Completed（dwell>0 路径行为不变，无额外帧）。
+        if self.on_last_waypoint() && matches!(self.phase, Phase::Dwell { .. }) {
+            self.final_published = true;
+        }
 
         // (4) build_hold_command 复用（B3 §3.7 source_task_id 单调契约：
         // source_task_id == ctx.command_seq，**不**用私有 counter）。
@@ -420,14 +501,31 @@ impl ActionInstance for ScriptedInstance {
         self.cancelled = true;
         Ok(())
     }
+
+    /// v0.5 候选 E 段(5) D3 第 3 条终态数据通路：末 waypoint target 已发布
+    /// （`final_published`）→ `Some(末 waypoint positions)`；否则 `None`
+    /// （coordinator reset 回 anchor_bias）。coordinator 仅在
+    /// `Completed(Success) ∧ !pending_cancel` 时调用；cancel 收敛（即使
+    /// 发生在末帧之后）走 Cancelled → reset，本方法返值不参与。
+    fn successful_hold_target(&self) -> Option<Vec<f64>> {
+        self.final_published
+            .then(|| self.last_waypoint_positions().to_vec())
+    }
 }
 
 impl ScriptedInstance {
-    /// 推进到下一 waypoint；末段完成则返 `Completed(Success)`。
+    /// 推进到下一 waypoint；末段完成则按**末点发布保证**收敛。
     ///
     /// 中间段：重置 `phase = Interp { start_ns: now_ns }` + 构 hold cmd
     /// body（target = 刚完成的 waypoint.positions，保 cmd 输出连续不
     /// 跳变）返 `Continue`。
+    ///
+    /// 末段（`current_idx == len`）：
+    /// - `final_published == true`（Dwell 期已发末 target）→ 直接
+    ///   `Completed(Success)`（dwell>0 正常节奏路径，行为不变）。
+    /// - `final_published == false`（dwell=0 / 大步推 clock 跳过 Dwell）→
+    ///   返一帧 `Continue { target = 末 waypoint, progress = 1.0 }` 并进
+    ///   `FinalEmitted`；下一 tick 才 `Completed(Success)`。
     ///
     /// 不返 `Result` 因本路径永远成功 ——`tick()` 调用方包 `Ok(...)`
     /// 投回 trait 签名。
@@ -440,8 +538,33 @@ impl ScriptedInstance {
         self.current_idx += 1;
 
         if self.current_idx >= self.decoded_waypoints.len() {
-            // 末段 Dwell（或 dwell_ms == 0 时末段 Interp）完成 → Success。
-            return ActionTickOutput::Completed(ActionOutcome::Success);
+            if self.final_published {
+                // 末 target 已在 Dwell 期发布 → Success（行为不变）。
+                return ActionTickOutput::Completed(ActionOutcome::Success);
+            }
+            // 末 target 从未上线（dwell=0 / 大步跳过 Dwell）→ 先发一帧
+            // Continue（tick_buf 已由调用方填成末 waypoint.positions），
+            // 下一 tick 才 Completed（Spec D3 第 2 条）。
+            debug_assert_eq!(
+                self.tick_buf.as_slice(),
+                self.last_waypoint_positions(),
+                "末帧 tick_buf 必须 == 末 waypoint positions"
+            );
+            self.final_published = true;
+            self.phase = Phase::FinalEmitted;
+            self.phase_started = true;
+            let body = build_hold_command(
+                ctx.config,
+                ctx.layout_id,
+                &self.tick_buf,
+                /* source_task_id */ ctx.command_seq,
+                /* now_ns */ now_ns,
+            );
+            // current_idx == len → progress(0.0) == 1.0（末帧 progress 封顶）。
+            return ActionTickOutput::Continue {
+                progress: self.progress(0.0),
+                command: Some(JointCommandBody::new(body)),
+            };
         }
 
         // 进入下一段 Interp。phase_started = true（已用真 now_ns 填）。
@@ -482,38 +605,21 @@ inventory::submit! {
 }
 
 // ============================================================================
-// Tests
+// 测试支撑（crate 内共享：本模块单测 + coordinator 单测复用同一 payload builder）
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::action::{ActionId, ActionKind, ActionRequest, ActionSource};
-    use crate::coordinator::{CoordinatorConfig, HardwareSection};
-    use flatbuffers::{FlatBufferBuilder, root};
-    use robot_core::time::{MockClock, MonoRawNs};
+pub(crate) mod test_support {
+    use flatbuffers::FlatBufferBuilder;
     use robot_msg::msg::{
-        ControlMode, JointCommand as FbJointCommand, ScriptedPayload as FbScriptedPayloadTable,
-        ScriptedPayloadArgs, WaypointTarget, WaypointTargetArgs,
+        ScriptedPayload as FbScriptedPayloadTable, ScriptedPayloadArgs, WaypointTarget,
+        WaypointTargetArgs,
     };
-
-    const TEST_LAYOUT_ID: u64 = 0xCAFE_BABE_DEAD_BEEF;
-
-    // ----- helpers -----
-
-    fn sample_hardware() -> HardwareSection {
-        HardwareSection {
-            id: "test_arm".into(),
-            joints: vec!["j0".into(), "j1".into(), "j2".into()],
-            motor_ids: vec![1, 2, 3],
-        }
-    }
 
     /// 构造一个最小合法 `ScriptedPayload` fbs payload bytes。
     ///
     /// `waypoints` = `[(positions, dwell_ms, segment_duration_ms)]`。
-    fn build_scripted_payload_bytes(waypoints: &[(Vec<f64>, u32, u32)]) -> Vec<u8> {
+    pub(crate) fn build_scripted_payload_bytes(waypoints: &[(Vec<f64>, u32, u32)]) -> Vec<u8> {
         let mut fbb = FlatBufferBuilder::with_capacity(256);
         let wp_offsets: Vec<_> = waypoints
             .iter()
@@ -539,11 +645,45 @@ mod tests {
         fbb.finish(payload, None);
         fbb.finished_data().to_vec()
     }
+}
 
-    /// 用给定 payload + clock_now_ns 构造 backend instance。
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::test_support::build_scripted_payload_bytes;
+    use super::*;
+
+    use crate::action::{ActionId, ActionKind, ActionRequest, ActionSource};
+    use crate::coordinator::{CoordinatorConfig, HardwareSection};
+    use flatbuffers::root;
+    use robot_core::time::{MockClock, MonoRawNs};
+    use robot_msg::msg::{ControlMode, JointCommand as FbJointCommand};
+
+    const TEST_LAYOUT_ID: u64 = 0xCAFE_BABE_DEAD_BEEF;
+
+    // ----- helpers -----
+
+    fn sample_hardware() -> HardwareSection {
+        HardwareSection {
+            id: "test_arm".into(),
+            joints: vec!["j0".into(), "j1".into(), "j2".into()],
+            motor_ids: vec![1, 2, 3],
+        }
+    }
+
+    /// `anchor_bias` 哨兵：与任何测试 start_pose 都不同——证明 segment0
+    /// from 来自 `scripted_start_pose` 而非 `anchor_bias`（D3 第 1 条）。
+    const ANCHOR_SENTINEL: f64 = 99.0;
+
+    /// 用给定 payload + `start_pose`（作 `ctx.scripted_start_pose`）+
+    /// clock_now_ns 构造 backend instance。返回的第 4 项是 tick 期 ctx 用的
+    /// `anchor_bias`（全 [`ANCHOR_SENTINEL`]，与 start_pose 无关）。
     fn fresh_instance_with_payload(
         payload: Vec<u8>,
-        anchor_bias: Vec<f64>,
+        start_pose: &[f64],
         clock_now_ns: u64,
     ) -> (
         Box<dyn ActionInstance>,
@@ -555,6 +695,7 @@ mod tests {
         let backend = ScriptedBackend;
         let cfg = CoordinatorConfig::default();
         let hardware = sample_hardware();
+        let anchor_bias = vec![ANCHOR_SENTINEL; hardware.joints.len()];
         let clock = MockClock::new(MonoRawNs(clock_now_ns));
         let req = ActionRequest {
             action_id: ActionId::new_v7(),
@@ -573,6 +714,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: Some(start_pose),
             solver: None,
         };
         let instance = backend.start(&req, &ctx).expect("start ok");
@@ -638,6 +780,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: Some(&anchor_bias),
             solver: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -678,6 +821,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: Some(&anchor_bias),
             solver: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -717,6 +861,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: Some(&anchor_bias),
             solver: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -756,6 +901,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: Some(&anchor_bias),
             solver: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -782,7 +928,7 @@ mod tests {
         let anchor_bias = vec![0.0_f64, 0.0, 0.0];
         let now_ns: u64 = 1_000_000_000;
         let (mut instance, cfg, hardware, _anchor, clock) =
-            fresh_instance_with_payload(payload, anchor_bias.clone(), now_ns);
+            fresh_instance_with_payload(payload, &anchor_bias, now_ns);
 
         // 6 个 tick：每次 advance clock 100ms，命令 seq 严格单调。
         let mut last_seq: Option<u64> = None;
@@ -794,6 +940,7 @@ mod tests {
                 config: &cfg,
                 anchor_bias: &anchor_bias,
                 command_seq: (i + 1) * 100, // 100, 200, 300, ...
+                scripted_start_pose: None,
                 solver: None,
             };
             let out = instance.tick(&mut ctx).expect("tick ok");
@@ -855,7 +1002,7 @@ mod tests {
         let anchor_bias = vec![0.0_f64, 0.0, 0.0];
         let start_ns: u64 = 1_000_000_000;
         let (mut instance, cfg, hardware, _anchor, clock) =
-            fresh_instance_with_payload(payload, anchor_bias.clone(), start_ns);
+            fresh_instance_with_payload(payload, &anchor_bias, start_ns);
 
         // 第一帧：α = 0（刚启动，phase_started 之后 elapsed = 0）。
         let mut ctx = ActionContext {
@@ -865,6 +1012,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            scripted_start_pose: None,
             solver: None,
         };
         let ActionTickOutput::Continue {
@@ -889,6 +1037,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 2,
+            scripted_start_pose: None,
             solver: None,
         };
         let ActionTickOutput::Continue {
@@ -919,7 +1068,7 @@ mod tests {
         let anchor_bias = vec![0.0_f64; 3];
         let start_ns: u64 = 1_000_000_000;
         let (mut instance, cfg, hardware, _anchor, clock) =
-            fresh_instance_with_payload(payload, anchor_bias.clone(), start_ns);
+            fresh_instance_with_payload(payload, &anchor_bias, start_ns);
 
         // 第一帧：进入 phase_started + Interp α=0。
         let mut ctx = ActionContext {
@@ -929,6 +1078,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            scripted_start_pose: None,
             solver: None,
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
@@ -942,6 +1092,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 2,
+            scripted_start_pose: None,
             solver: None,
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
@@ -956,6 +1107,7 @@ mod tests {
                 config: &cfg,
                 anchor_bias: &anchor_bias,
                 command_seq: 10 + i,
+                scripted_start_pose: None,
                 solver: None,
             };
             let ActionTickOutput::Continue {
@@ -976,17 +1128,19 @@ mod tests {
         }
     }
 
-    // ----- 9. tick_completed_after_last_dwell -----
+    // ----- 9. tick_completed_after_last_dwell（v0.5 候选 E 段(5) 末点发布
+    //          保证改写：大步推 clock 跳过 Dwell → 先末帧 Continue 后 Completed）-----
 
     #[test]
-    fn tick_completed_after_last_dwell() {
-        // 单 waypoint，short interp + short dwell；推过 total duration
-        // 后返 Completed(Success)。
+    fn tick_completed_after_last_dwell_via_final_frame() {
+        // 单 waypoint，short interp + short dwell；一帧推过 total duration：
+        // v0.4 现状直接 Completed（末 target 从未上线）；段(5) 起先返一帧
+        // Continue{target=末 waypoint, progress=1.0}，下一 tick 才 Completed。
         let payload = build_scripted_payload_bytes(&[(vec![1.0, 1.0, 1.0], 100, 100)]);
-        let anchor_bias = vec![0.0_f64; 3];
+        let start_pose = vec![0.0_f64; 3];
         let start_ns: u64 = 1_000_000_000;
-        let (mut instance, cfg, hardware, _anchor, clock) =
-            fresh_instance_with_payload(payload, anchor_bias.clone(), start_ns);
+        let (mut instance, cfg, hardware, anchor_bias, clock) =
+            fresh_instance_with_payload(payload, &start_pose, start_ns);
 
         // Tick 1：phase_started + Interp α=0。
         let mut ctx = ActionContext {
@@ -995,13 +1149,18 @@ mod tests {
             hardware: &hardware,
             config: &cfg,
             anchor_bias: &anchor_bias,
+            scripted_start_pose: None,
             command_seq: 1,
             solver: None,
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
+        assert!(
+            instance.successful_hold_target().is_none(),
+            "末帧未发布前 None"
+        );
 
-        // 推 1000ms（> 100ms interp + 100ms dwell）→ 末段 Dwell 完 →
-        // Completed(Success)。
+        // 推 1000ms（> 100ms interp + 100ms dwell）→ 末段 Dwell 被整体跳过
+        // → 末 target 尚未发布 → 本 tick 必须先返 Continue(末 waypoint)。
         clock.advance(robot_core::time::DurationNs::from_nanos(1_000_000_000));
         let mut ctx = ActionContext {
             clock: &clock,
@@ -1009,7 +1168,46 @@ mod tests {
             hardware: &hardware,
             config: &cfg,
             anchor_bias: &anchor_bias,
+            scripted_start_pose: None,
             command_seq: 2,
+            solver: None,
+        };
+        let out = instance.tick(&mut ctx).expect("tick ok");
+        let ActionTickOutput::Continue {
+            progress,
+            command: Some(body),
+        } = out
+        else {
+            panic!("末 waypoint 完成帧必须是 Continue(Some(body))，got {out:?}");
+        };
+        assert!(
+            (progress - 1.0).abs() < f32::EPSILON,
+            "末帧 progress == 1.0，got {progress}"
+        );
+        let cmd = root::<FbJointCommand<'_>>(body.as_bytes()).expect("fbs verify");
+        let target: Vec<f64> = cmd.target().expect("target").iter().collect();
+        assert_eq!(target, vec![1.0, 1.0, 1.0], "末帧 target == 末 waypoint");
+        assert_eq!(
+            cmd.source_task_id(),
+            2,
+            "末帧 source_task_id == ctx.command_seq"
+        );
+        assert_eq!(
+            instance.successful_hold_target(),
+            Some(vec![1.0, 1.0, 1.0]),
+            "末帧返回后 successful_hold_target == Some(末 waypoint)"
+        );
+
+        // Tick 3：Completed(Success)（不再产帧）。
+        clock.advance(robot_core::time::DurationNs::from_nanos(20_000_000));
+        let mut ctx = ActionContext {
+            clock: &clock,
+            layout_id: TEST_LAYOUT_ID,
+            hardware: &hardware,
+            config: &cfg,
+            anchor_bias: &anchor_bias,
+            scripted_start_pose: None,
+            command_seq: 3,
             solver: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
@@ -1017,6 +1215,7 @@ mod tests {
             ActionTickOutput::Completed(ActionOutcome::Success) => {}
             other => panic!("expected Completed(Success), got {other:?}"),
         }
+        assert_eq!(instance.successful_hold_target(), Some(vec![1.0, 1.0, 1.0]));
     }
 
     // ----- 10. tick_after_cancel_returns_completed_partial_success -----
@@ -1030,7 +1229,7 @@ mod tests {
         let anchor_bias = vec![0.0_f64; 3];
         let start_ns: u64 = 1_000_000_000;
         let (mut instance, cfg, hardware, _anchor, clock) =
-            fresh_instance_with_payload(payload, anchor_bias.clone(), start_ns);
+            fresh_instance_with_payload(payload, &anchor_bias, start_ns);
 
         // 先 tick 一帧（验状态确实在跑）。
         let mut ctx = ActionContext {
@@ -1040,6 +1239,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            scripted_start_pose: None,
             solver: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
@@ -1077,5 +1277,383 @@ mod tests {
             names.contains(&"hold_pose"),
             "hold_pose 仍应在 inventory；names = {names:?}"
         );
+    }
+
+    // ====================================================================
+    // v0.5 候选 E 段(5)：scripted_start_pose 改源 + 末点发布保证（AC-E17）
+    // ====================================================================
+
+    /// tick 期 ctx（起点只在 start() 期读，tick ctx 恒 None）。
+    fn tick_ctx<'a>(
+        clock: &'a MockClock,
+        hardware: &'a HardwareSection,
+        cfg: &'a CoordinatorConfig,
+        anchor_bias: &'a [f64],
+        command_seq: u64,
+    ) -> ActionContext<'a> {
+        ActionContext {
+            clock,
+            layout_id: TEST_LAYOUT_ID,
+            hardware,
+            config: cfg,
+            anchor_bias,
+            scripted_start_pose: None,
+            command_seq,
+            solver: None,
+        }
+    }
+
+    fn decode_target(body: &JointCommandBody) -> Vec<f64> {
+        let cmd = root::<FbJointCommand<'_>>(body.as_bytes()).expect("fbs verify");
+        cmd.target().expect("target").iter().collect()
+    }
+
+    // ----- 12. start_rejects_missing_scripted_start_pose -----
+
+    #[test]
+    fn start_rejects_missing_scripted_start_pose() {
+        // D3 第 1 条：起点缺失 → Rejected（→ wire FailedPrecondition），
+        // **不** fallback 到 ctx.anchor_bias（anchor 明明合法长度也不用）。
+        let backend = ScriptedBackend;
+        let cfg = CoordinatorConfig::default();
+        let hardware = sample_hardware();
+        let anchor_bias = vec![0.0_f64; 3];
+        let clock = MockClock::new(MonoRawNs(1_000_000_000));
+        let payload = build_scripted_payload_bytes(&[(vec![0.1, 0.2, 0.3], 100, 500)]);
+        let req = ActionRequest {
+            action_id: ActionId::new_v7(),
+            kind: ActionKind::Scripted,
+            deadline_ns: u64::MAX,
+            priority: 10,
+            payload_schema_id: SCHEMA_SCRIPTED_PAYLOAD,
+            payload,
+            idempotency_key: "test-no-start-pose".into(),
+            source: ActionSource::Internal,
+        };
+        let ctx = ActionContext {
+            clock: &clock,
+            layout_id: TEST_LAYOUT_ID,
+            hardware: &hardware,
+            config: &cfg,
+            anchor_bias: &anchor_bias,
+            scripted_start_pose: None,
+            command_seq: 0,
+            solver: None,
+        };
+        let Err(err) = backend.start(&req, &ctx) else {
+            panic!("expected Err");
+        };
+        assert!(
+            matches!(err, ActionStartError::Rejected(ref s)
+                if s.contains("scripted_start_pose") && s.contains("no fallback")),
+            "got {err:?}"
+        );
+    }
+
+    // ----- 13. start_rejects_scripted_start_pose_length_mismatch -----
+
+    #[test]
+    fn start_rejects_scripted_start_pose_length_mismatch() {
+        let backend = ScriptedBackend;
+        let cfg = CoordinatorConfig::default();
+        let hardware = sample_hardware(); // 3 joints
+        let anchor_bias = vec![0.0_f64; 3];
+        let start_pose = vec![0.0_f64; 2]; // 错长
+        let clock = MockClock::new(MonoRawNs(1_000_000_000));
+        let payload = build_scripted_payload_bytes(&[(vec![0.1, 0.2, 0.3], 100, 500)]);
+        let req = ActionRequest {
+            action_id: ActionId::new_v7(),
+            kind: ActionKind::Scripted,
+            deadline_ns: u64::MAX,
+            priority: 10,
+            payload_schema_id: SCHEMA_SCRIPTED_PAYLOAD,
+            payload,
+            idempotency_key: "test-start-pose-len".into(),
+            source: ActionSource::Internal,
+        };
+        let ctx = ActionContext {
+            clock: &clock,
+            layout_id: TEST_LAYOUT_ID,
+            hardware: &hardware,
+            config: &cfg,
+            anchor_bias: &anchor_bias,
+            scripted_start_pose: Some(&start_pose),
+            command_seq: 0,
+            solver: None,
+        };
+        let Err(err) = backend.start(&req, &ctx) else {
+            panic!("expected Err");
+        };
+        assert!(
+            matches!(err, ActionStartError::Rejected(ref s)
+                if s.contains("scripted_start_pose length 2")),
+            "got {err:?}"
+        );
+    }
+
+    // ----- 14. segment0 from == scripted_start_pose（≠ anchor_bias）-----
+
+    #[test]
+    fn segment0_from_is_scripted_start_pose_not_anchor_bias() {
+        // start_pose = [2,4,6]，anchor = 哨兵 99；α=0 帧 target 必 == start_pose，
+        // α=0.5 帧 == (start_pose + wp)/2。
+        let payload = build_scripted_payload_bytes(&[(vec![4.0, 8.0, 12.0], 0, 1000)]);
+        let start_pose = vec![2.0_f64, 4.0, 6.0];
+        let start_ns: u64 = 1_000_000_000;
+        let (mut instance, cfg, hardware, anchor_bias, clock) =
+            fresh_instance_with_payload(payload, &start_pose, start_ns);
+        assert!(
+            anchor_bias
+                .iter()
+                .all(|v| (*v - ANCHOR_SENTINEL).abs() < 1e-12)
+        );
+
+        let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor_bias, 1);
+        let ActionTickOutput::Continue {
+            command: Some(body),
+            ..
+        } = instance.tick(&mut ctx).expect("tick ok")
+        else {
+            panic!("alpha=0: expected Continue Some(body)");
+        };
+        assert_eq!(
+            decode_target(&body),
+            start_pose,
+            "α=0 target == scripted_start_pose"
+        );
+
+        clock.advance(robot_core::time::DurationNs::from_nanos(500_000_000));
+        let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor_bias, 2);
+        let ActionTickOutput::Continue {
+            command: Some(body),
+            ..
+        } = instance.tick(&mut ctx).expect("tick ok")
+        else {
+            panic!("alpha=0.5: expected Continue Some(body)");
+        };
+        let target = decode_target(&body);
+        for (i, (got, want)) in target.iter().zip([3.0, 6.0, 9.0]).enumerate() {
+            assert!(
+                (got - want).abs() < 1e-9,
+                "α=0.5 target[{i}] = {got}, want {want}"
+            );
+        }
+    }
+
+    // ----- 15. AC-E17：dwell=0 末 waypoint 先 Continue(末位) 后 Completed -----
+
+    #[test]
+    fn final_waypoint_dwell_zero_emits_continue_then_completed() {
+        // 2 waypoint，dwell 均 0，seg 100ms；50ms 步进：
+        // t=0 α0 | t=50 α.5 | t=100 wp0 完成→advance→Continue(wp0, 新段起点)
+        // | t=150 α.5 | t=200 wp1 完成→advance→**Continue(wp1) 末帧** |
+        // t=250 Completed(Success)。
+        let wp0 = vec![1.0_f64, 1.0, 1.0];
+        let wp1 = vec![2.0_f64, 2.0, 2.0];
+        let payload = build_scripted_payload_bytes(&[(wp0.clone(), 0, 100), (wp1.clone(), 0, 100)]);
+        let start_ns: u64 = 1_000_000_000;
+        let (mut instance, cfg, hardware, anchor_bias, clock) =
+            fresh_instance_with_payload(payload, &[0.0; 3], start_ns);
+
+        let mut frames: Vec<(u64, ActionTickOutput)> = Vec::new();
+        for step in 0_u64..6 {
+            if step > 0 {
+                clock.advance(robot_core::time::DurationNs::from_nanos(50_000_000));
+            }
+            let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor_bias, 100 + step);
+            let out = instance.tick(&mut ctx).expect("tick ok");
+            frames.push((step, out));
+        }
+
+        // 前 5 帧全 Continue Some；第 6 帧 Completed(Success)。
+        for (step, out) in &frames[..5] {
+            assert!(
+                matches!(
+                    out,
+                    ActionTickOutput::Continue {
+                        command: Some(_),
+                        ..
+                    }
+                ),
+                "step {step}: expected Continue Some, got {out:?}"
+            );
+        }
+        assert!(
+            matches!(
+                frames[5].1,
+                ActionTickOutput::Completed(ActionOutcome::Success)
+            ),
+            "step 5: expected Completed(Success), got {:?}",
+            frames[5].1
+        );
+        // 第 5 帧（t=200）= 末帧：target == wp1，progress == 1.0。
+        let ActionTickOutput::Continue {
+            progress,
+            command: Some(body),
+        } = &frames[4].1
+        else {
+            unreachable!()
+        };
+        assert_eq!(decode_target(body), wp1, "末帧 target == 末 waypoint");
+        assert!((progress - 1.0).abs() < f32::EPSILON);
+        // 第 3 帧（t=100）= wp0 段界帧：target == wp0（既有行为不变）。
+        let ActionTickOutput::Continue {
+            command: Some(body),
+            ..
+        } = &frames[2].1
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            decode_target(body),
+            wp0,
+            "段界帧 target == 刚完成的 waypoint"
+        );
+        assert_eq!(instance.successful_hold_target(), Some(wp1));
+    }
+
+    // ----- 16. dwell>0 正常节奏：首个 dwell 帧即置 final_published，dwell
+    //          完成后直接 Completed（无额外帧，行为不变）-----
+
+    #[test]
+    fn final_waypoint_dwell_positive_normal_cadence_completes_without_extra_frame() {
+        // 单 waypoint，seg 100ms + dwell 100ms；50ms 步进：
+        // t=0 α0 | t=50 α.5 | t=100 Interp 完→Dwell 过渡帧(target=wp) ←
+        // final_published 置位 | t=150 Dwell 帧 | t=200 Dwell 完→advance→
+        // final_published 已 true → **直接 Completed**（不多发一帧）。
+        let wp = vec![7.0_f64, 7.0, 7.0];
+        let payload = build_scripted_payload_bytes(&[(wp.clone(), 100, 100)]);
+        let start_ns: u64 = 1_000_000_000;
+        let (mut instance, cfg, hardware, anchor_bias, clock) =
+            fresh_instance_with_payload(payload, &[0.0; 3], start_ns);
+
+        let mut outs: Vec<ActionTickOutput> = Vec::new();
+        let mut hold_after: Vec<Option<Vec<f64>>> = Vec::new();
+        for step in 0_u64..5 {
+            if step > 0 {
+                clock.advance(robot_core::time::DurationNs::from_nanos(50_000_000));
+            }
+            let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor_bias, 10 + step);
+            outs.push(instance.tick(&mut ctx).expect("tick ok"));
+            hold_after.push(instance.successful_hold_target());
+        }
+        // t=0 / t=50：Interp 帧，末 target 未发布。
+        assert!(hold_after[0].is_none() && hold_after[1].is_none());
+        // t=100：Interp→Dwell 过渡帧 target == wp → 已发布。
+        let ActionTickOutput::Continue {
+            command: Some(body),
+            ..
+        } = &outs[2]
+        else {
+            panic!("t=100 expected Continue Some, got {:?}", outs[2]);
+        };
+        assert_eq!(decode_target(body), wp);
+        assert_eq!(
+            hold_after[2],
+            Some(wp.clone()),
+            "首个 dwell 帧即置 final_published"
+        );
+        // t=150：Dwell 帧。
+        assert!(matches!(
+            outs[3],
+            ActionTickOutput::Continue {
+                command: Some(_),
+                ..
+            }
+        ));
+        // t=200：Completed(Success)，**无**额外末帧。
+        assert!(
+            matches!(outs[4], ActionTickOutput::Completed(ActionOutcome::Success)),
+            "dwell>0 正常节奏 dwell 完成即 Completed，got {:?}",
+            outs[4]
+        );
+        assert_eq!(hold_after[4], Some(wp));
+    }
+
+    // ----- 17. 多 waypoint dwell=0，大步推 clock：仍必须先末帧后 Completed -----
+
+    #[test]
+    fn multi_waypoint_big_step_still_emits_final_frame_before_completed() {
+        let wp_last = vec![3.0_f64, 3.0, 3.0];
+        let payload = build_scripted_payload_bytes(&[
+            (vec![1.0, 1.0, 1.0], 0, 100),
+            (vec![2.0, 2.0, 2.0], 0, 100),
+            (wp_last.clone(), 0, 100),
+        ]);
+        let start_ns: u64 = 1_000_000_000;
+        let (mut instance, cfg, hardware, anchor_bias, clock) =
+            fresh_instance_with_payload(payload, &[0.0; 3], start_ns);
+
+        let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor_bias, 1);
+        let _ = instance.tick(&mut ctx).expect("tick ok");
+        // 每 tick 推 10s（远超段时长）：每 tick advance 一段（段界帧 target
+        // = 刚完成 waypoint；新段 Interp 起点 = 本 tick now），末段完成的
+        // 那一 tick 直接产末帧 → 下一 tick Completed。Completed 之前最后一帧
+        // target 必须 == 末 waypoint（既有"advance 只推进一段"语义不变：
+        // 段界帧 ×2 + 末帧 + Completed = 4 tick，i = 0..=3）。
+        let mut last_target: Option<Vec<f64>> = None;
+        let mut completed_at: Option<u64> = None;
+        for i in 0_u64..10 {
+            clock.advance(robot_core::time::DurationNs::from_nanos(10_000_000_000));
+            let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor_bias, 10 + i);
+            match instance.tick(&mut ctx).expect("tick ok") {
+                ActionTickOutput::Continue {
+                    command: Some(body),
+                    ..
+                } => last_target = Some(decode_target(&body)),
+                ActionTickOutput::Continue { command: None, .. } => {
+                    panic!("Scripted 永不返 Continue(None)")
+                }
+                ActionTickOutput::Completed(ActionOutcome::Success) => {
+                    completed_at = Some(i);
+                    break;
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        assert_eq!(
+            completed_at,
+            Some(3),
+            "段界帧 ×2 + 末帧后第 4 tick（i=3）Completed"
+        );
+        assert_eq!(
+            last_target.as_deref(),
+            Some(wp_last.as_slice()),
+            "Completed 之前最后一帧 target 必须 == 末 waypoint"
+        );
+        assert_eq!(instance.successful_hold_target(), Some(wp_last));
+    }
+
+    // ----- 18. cancel 于末帧之后：backend 仍返 PartialSuccess（coordinator
+    //          走 Cancelled → reset；successful_hold_target 返值不参与）-----
+
+    #[test]
+    fn cancel_after_final_frame_still_converges_partial_success() {
+        let payload = build_scripted_payload_bytes(&[(vec![1.0, 1.0, 1.0], 0, 100)]);
+        let start_ns: u64 = 1_000_000_000;
+        let (mut instance, cfg, hardware, anchor_bias, clock) =
+            fresh_instance_with_payload(payload, &[0.0; 3], start_ns);
+        let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor_bias, 1);
+        let _ = instance.tick(&mut ctx).expect("tick ok");
+        clock.advance(robot_core::time::DurationNs::from_nanos(500_000_000));
+        let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor_bias, 2);
+        let out = instance.tick(&mut ctx).expect("tick ok");
+        assert!(matches!(
+            out,
+            ActionTickOutput::Continue {
+                command: Some(_),
+                ..
+            }
+        ));
+        assert!(instance.successful_hold_target().is_some());
+
+        instance.cancel(&mut ctx).expect("cancel ok");
+        let out = instance.tick(&mut ctx).expect("tick ok");
+        match out {
+            ActionTickOutput::Completed(ActionOutcome::PartialSuccess { warning }) => {
+                assert_eq!(warning, "cancelled_at_waypoint_1");
+            }
+            other => panic!("expected Completed(PartialSuccess), got {other:?}"),
+        }
     }
 }

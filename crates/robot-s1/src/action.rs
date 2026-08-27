@@ -37,8 +37,12 @@
 //!   [`crate::action_backend::BackendRegistry`]。
 //! - [`ActionContext`]：tick 时由 coordinator 借给 backend 的上下文
 //!   （`RobotClock` / `HardwareSection` / `CoordinatorConfig` /
-//!   `anchor_bias`）；B2 **不**暴露 publisher trait object（§10 决策
-//!   #8 + outline §2.5 注释）。
+//!   `anchor_bias` / v0.5 候选 E 段(5) 起的 `scripted_start_pose`）；B2
+//!   **不**暴露 publisher trait object（§10 决策 #8 + outline §2.5 注释）。
+//! - [`ActionInstance::successful_hold_target`]（v0.5 候选 E 段(5)，Spec
+//!   D3 第 3 条 + QA2）：终态数据通路——**仅** Scripted 在末 waypoint
+//!   target 已发布后返 `Some`；默认 `None` 让其余 backend 天然走
+//!   `idle_hold_target = anchor_bias` reset（穷尽式单一规则由类型承担）。
 //! - 错误枚举：[`SubmitError`] / [`ActionStartError`] / [`ActionCancelError`]
 //!   / [`ClearError`] / [`ActionFailure`]。`SubmitError::NotReady` =
 //!   B2 (2/3) 加，对应 `Booting` 状态拒 submit（reviewer 拍板补充：
@@ -342,8 +346,16 @@ pub enum ActionSource {
 /// - `hardware`：B1 (1/3) [`HardwareSection`]（`id` + `joints`）。
 /// - `config`：B1 (1/3) [`CoordinatorConfig`]（`heartbeat_hz` /
 ///   `command_hz` / `deadline_ms` / 等）。
-/// - `anchor_bias`：启动锚定的 bias，供 `HoldPose` / 后续真 backend
-///   计算 target 时用。
+/// - `anchor_bias`：启动锚定的 bias（构造期固化，**不再变**），供
+///   `HoldPose` 每 tick 读作真实输出目标（v0.5 候选 E Spec D3 第 5 条 /
+///   CodeMap B10 边界：HoldPose 0 改）。
+/// - `scripted_start_pose`（v0.5 候选 E 段(5) 加，Spec D3 第 1 条）：
+///   **仅** `submit` Scripted 路径由 coordinator 从常驻 state cache
+///   （[`crate::state_cache`]）取"提交时当前位"填 `Some`；其余路径
+///   （cancel / tick / 非 Scripted submit）恒 `None`。Scripted `start()`
+///   缺此值 → `ActionStartError::Rejected`，**绝不** fallback 到
+///   `anchor_bias`（静默跳变危险）。与 `anchor_bias` 物理隔离：两者
+///   同时存在但语义不同——前者是 per-action 起点，后者是启动锚点。
 /// - `command_seq`（B3 (1/2) 加，详
 ///   [`docs/handoffs/v0.3_b3_outline.md`](../../../docs/handoffs/v0.3_b3_outline.md)
 ///   §3.4 reviewer round 2 显式放行）：本 tick 即将 publish 的
@@ -363,6 +375,13 @@ pub struct ActionContext<'a> {
     pub hardware: &'a HardwareSection,
     pub config: &'a CoordinatorConfig,
     pub anchor_bias: &'a [f64],
+    /// Scripted segment0 `from` = 提交时当前位（v0.5 候选 E 段(5)，Spec
+    /// D3 第 1 条）。仅 `Coordinator::submit` 的 `ActionKind::Scripted`
+    /// 路径填 `Some`（来源 = `StateCacheHandle::latest_fresh`，校验
+    /// joint_count + layout_id + 新鲜度）；cancel / tick_action / 其它
+    /// kind 恒 `None`。长度 == `hardware.joints.len()`（cache 已校验；
+    /// backend 再防御断言）。
+    pub scripted_start_pose: Option<&'a [f64]>,
     pub command_seq: u64,
     /// IK solver borrow（v0.4 候选 2 round 2 (3/4) 加；Q-IK3 (a) ACK
     /// `Option<&dyn ArmIkSolver>` 引用 plumb，**不** `Arc` / **不** clone）。
@@ -514,6 +533,25 @@ pub trait ActionInstance: Send {
     /// 返 `Err` 仅当 backend 内部 cancel 路径出错（极少；典型实现总
     /// 返 `Ok`）。
     fn cancel(&mut self, ctx: &mut ActionContext<'_>) -> Result<(), ActionCancelError>;
+
+    /// 终态数据通路（v0.5 候选 E 段(5)，Spec D3 第 3 条 + QA2 拍死）：
+    /// action 以 `Completed(Success)` 收敛时，coordinator 调本方法决定
+    /// Idle hold target——`Some(t)` → `idle_hold_target = t`；`None`
+    /// → 显式 reset `idle_hold_target = 启动 anchor_bias`。
+    ///
+    /// **契约**：
+    ///
+    /// - 默认 `None`（既有 backend 0 改：HoldPose / MockDwell / IK 全部
+    ///   天然 reset，无需另存 kind——穷尽式单一规则由类型承担）。
+    /// - **仅** `ScriptedInstance` override：`final_published == true`
+    ///   （末 waypoint target 已作为一帧 `Continue { command: Some }`
+    ///   交给 coordinator publish）时返 `Some(末 waypoint target)`。
+    /// - coordinator **只在** `outcome == Success ∧ !pending_cancel`
+    ///   时调用；cancel / failure / PartialSuccess 路径不调、直接 reset。
+    /// - 返 `Some` 的长度必须 == `hardware.joints.len()`（backend 自保）。
+    fn successful_hold_target(&self) -> Option<Vec<f64>> {
+        None
+    }
 }
 
 // ============================================================================

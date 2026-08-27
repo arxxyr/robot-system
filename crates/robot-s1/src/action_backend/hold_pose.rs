@@ -237,6 +237,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: None,
         };
         let instance = backend.start(&req, &ctx).expect("start ok");
@@ -293,6 +294,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: None,
         };
         // Box<dyn ActionInstance> 不 impl Debug，不能 expect_err；走
@@ -330,6 +332,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq,
+            scripted_start_pose: None,
             solver: None,
         };
         let mut instance = backend.start(&req, &ctx).expect("start ok");
@@ -405,6 +408,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            scripted_start_pose: None,
             solver: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
@@ -446,6 +450,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: None,
         };
         let mut instance = backend.start(&req, &ctx_initial).expect("start ok");
@@ -460,6 +465,7 @@ mod tests {
                 config: &cfg,
                 anchor_bias: &anchor_bias,
                 command_seq: i + 1,
+                scripted_start_pose: None,
                 solver: None,
             };
             let out = instance.tick(&mut ctx).expect("tick ok");

@@ -18,7 +18,9 @@
 //!   `deadline_ns = now_ns + cfg.deadline_ms * 1e6`）。
 //! - [`parse_anchor_from_state_bytes`]：纯字节解码 + fail-fast 断言
 //!   （fbs verify 失败 / position_rad 缺失 / joint count 错位 / state
-//!   stamp 过期）。
+//!   stamp 过期）。v0.5 候选 E 段(5) 起内部委托 crate 私有
+//!   `check_state_frame`（同一份校验逻辑与 [`crate::state_cache`] 的
+//!   `latest_fresh` 共享；cache 路径额外带 `expected_layout` 校验）。
 //! - [`read_anchor_from_s0_state`]：泛型 over `LatestSubscriber<JointState>`
 //!   的 polling loop；测试用 `MockSubscriber`，binary 用
 //!   `Iceoryx2Subscriber`。三条 fail-fast 错误路径：超时 / stale /
@@ -501,6 +503,13 @@ pub enum AnchorError {
     /// state.`position_rad` 长度跟 hardware section 配的 joint 数不一致。
     #[error("joint count mismatch: hardware section expects {expected}, S0 state has {got}")]
     JointCountMismatch { expected: usize, got: usize },
+    /// `JointState.layout_id` 与 S1 config 派生值不等（v0.5 候选 E 段(5)
+    /// 加；D1 联动）。**启动锚定路径不产**本 variant（
+    /// [`read_anchor_from_s0_state`] 传 `expected_layout = None`，锚定
+    /// 语义 0 改）；仅 crate 私有 `check_state_frame` 带 `Some(expected)`
+    /// 时（state cache 路径）可能产生，经 `From` 保留类型完整性。
+    #[error("layout_id mismatch: S1 config derives {expected:#018x}, S0 state carries {got:#018x}")]
+    LayoutMismatch { expected: u64, got: u64 },
     /// state body 完全没 `position_rad` 字段（publisher bug）。
     #[error("S0 state sample has no position_rad field")]
     MissingPositionField,
@@ -529,11 +538,98 @@ pub fn parse_anchor_from_state_bytes(
     now_ns: u64,
     max_stale_ns: u64,
 ) -> Result<Vec<f64>, AnchorError> {
-    let js = root::<FbJointState<'_>>(bytes).map_err(|e| AnchorError::Decode(e.to_string()))?;
+    // 启动锚定语义 0 改（v0.5 候选 E 段(5)）：`expected_layout = None`
+    // —— 锚定不校 layout（AC-E3 exit 码表未含 layout 路径）；layout 校验
+    // 仅 state cache 路径（`latest_fresh`）启用。
+    check_state_frame(bytes, expected_joints, None, now_ns, max_stale_ns).map_err(AnchorError::from)
+}
+
+// ============================================================================
+// check_state_frame（v0.5 候选 E 段(5)：锚定 / state cache 共享校验）
+// ============================================================================
+
+/// `check_state_frame` 失败原因——crate 私有的**单一校验 taxonomy**；
+/// [`AnchorError`]（启动锚定）与 [`crate::state_cache::StaleOrMissing`]
+/// （常驻 cache）各自 `From` 映射（exhaustive match：任一侧新增 variant
+/// 编译期锁）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FrameCheckError {
+    /// fbs verify / root 解码失败。
+    Decode(String),
+    /// `JointState.layout_id != expected`（仅 `expected_layout = Some` 时）。
+    LayoutMismatch { expected: u64, got: u64 },
+    /// `stamp_ns == 0` 或 `now_ns - stamp_ns > max_stale_ns`。
+    Stale {
+        stamp_ns: u64,
+        now_ns: u64,
+        max_stale_ns: u64,
+    },
+    /// body 无 `position_rad` 字段。
+    MissingPositionField,
+    /// `position_rad.len() != expected_joints`。
+    JointCountMismatch { expected: usize, got: usize },
+}
+
+impl From<FrameCheckError> for AnchorError {
+    fn from(e: FrameCheckError) -> Self {
+        match e {
+            FrameCheckError::Decode(s) => Self::Decode(s),
+            FrameCheckError::LayoutMismatch { expected, got } => {
+                Self::LayoutMismatch { expected, got }
+            }
+            FrameCheckError::Stale {
+                stamp_ns,
+                now_ns,
+                max_stale_ns,
+            } => Self::Stale {
+                stamp_ns,
+                now_ns,
+                max_stale_ns,
+            },
+            FrameCheckError::MissingPositionField => Self::MissingPositionField,
+            FrameCheckError::JointCountMismatch { expected, got } => {
+                Self::JointCountMismatch { expected, got }
+            }
+        }
+    }
+}
+
+/// 一帧 `JointState` body bytes 的共享校验 + 关节位置提取（v0.5 候选 E
+/// 段(5)，Spec P.2.5 "锚定校验逻辑与 `read_anchor_from_s0_state` 共享
+/// 私有 fn 抽取"）。
+///
+/// **校验顺序**（单因短路）：
+///
+/// 1. fbs `root::<JointState>` verify → [`FrameCheckError::Decode`]
+/// 2. `expected_layout = Some(l)` 且 `layout_id != l` →
+///    [`FrameCheckError::LayoutMismatch`]（D1 联动；配置级错误优先于
+///    时序级错误）
+/// 3. `stamp_ns == 0 || now_ns - stamp_ns > max_stale_ns` →
+///    [`FrameCheckError::Stale`]
+/// 4. 无 `position_rad` → [`FrameCheckError::MissingPositionField`]
+/// 5. `position_rad.len() != expected_joints` →
+///    [`FrameCheckError::JointCountMismatch`]
+///
+/// `expected_layout = None` 跳过第 2 步 = 启动锚定既有语义（bit 等价）。
+pub(crate) fn check_state_frame(
+    bytes: &[u8],
+    expected_joints: usize,
+    expected_layout: Option<u64>,
+    now_ns: u64,
+    max_stale_ns: u64,
+) -> Result<Vec<f64>, FrameCheckError> {
+    let js = root::<FbJointState<'_>>(bytes).map_err(|e| FrameCheckError::Decode(e.to_string()))?;
+
+    if let Some(expected) = expected_layout {
+        let got = js.layout_id();
+        if got != expected {
+            return Err(FrameCheckError::LayoutMismatch { expected, got });
+        }
+    }
 
     let stamp_ns = js.stamp_ns();
     if stamp_ns == 0 || now_ns.saturating_sub(stamp_ns) > max_stale_ns {
-        return Err(AnchorError::Stale {
+        return Err(FrameCheckError::Stale {
             stamp_ns,
             now_ns,
             max_stale_ns,
@@ -541,18 +637,18 @@ pub fn parse_anchor_from_state_bytes(
     }
 
     let Some(pos_vec) = js.position_rad() else {
-        return Err(AnchorError::MissingPositionField);
+        return Err(FrameCheckError::MissingPositionField);
     };
 
     if pos_vec.len() != expected_joints {
-        return Err(AnchorError::JointCountMismatch {
+        return Err(FrameCheckError::JointCountMismatch {
             expected: expected_joints,
             got: pos_vec.len(),
         });
     }
 
-    let bias: Vec<f64> = pos_vec.iter().collect();
-    Ok(bias)
+    let positions: Vec<f64> = pos_vec.iter().collect();
+    Ok(positions)
 }
 
 // ============================================================================
@@ -854,8 +950,17 @@ where
 ///   CONTROL_LOST_STOP"）。
 /// - **Command**：按 `cfg.command_hz` 50 Hz 周期门控，state 决定本帧
 ///   command 来源：
-///   * `Idle` / `Degraded`：`build_hold_command(cfg, layout_id, bias, ...)`
-///     publish hold cmd（target = anchor_bias）。等价 B1 行为。
+///   * `Idle`：`build_hold_command(cfg, layout_id, idle_hold_target, ...)`
+///     publish hold cmd。**v0.5 候选 E 段(5)（Spec D3 第 3 条，B1 等价
+///     语义收窄版显式解锁）**：target 源 = [`Coordinator::idle_hold_target`]
+///     ——初值 = 启动 `anchor_bias`（boot 后首个 Success-Scripted 之前与
+///     B1 **bit 等价**）；**仅** Scripted `Completed(Success)` 且末
+///     waypoint 已发布后更新为末 waypoint target；其余一切 backend ×
+///     终态显式 reset 回 `anchor_bias`。形态（build_hold_command 路径）
+///     不变。
+///   * `Degraded`：`build_hold_command(cfg, layout_id, anchor_bias, ...)`
+///     ——**不解锁**（D3 行为矩阵末行：Idle 与 Degraded 自此分源，
+///     Degraded 永远回启动锚点）。
 ///   * `Executing`：`coordinator.tick_action(clock, state.cmd_seq)` 决
 ///     定输出（B3 round 2 阻断 1 修法：透传当前帧 cmd_seq 给 backend
 ///     作 source_task_id，保 S0 ipc_thread 单调契约）：
@@ -951,10 +1056,26 @@ where
             // 重新读 state（hb publish 不会动 fsm，但小心起见）。
             let mut published = false;
             match coordinator.current_state() {
-                CoordinatorState::Idle | CoordinatorState::Degraded { .. } => {
-                    // B1 hold cmd：target = anchor_bias，sample-by-sample
+                CoordinatorState::Idle => {
+                    // Idle hold cmd：target = idle_hold_target（v0.5 候选 E
+                    // 段(5) D3 第 3 条显式解锁）。初值 = anchor_bias →
+                    // 首个 Success-Scripted 之前 sample-by-sample
                     // bit-equivalent to B1 path（reviewer 阻断 4 锁定的
-                    // "no-active-action 路径必须等价 B1"）。
+                    // "no-active-action 路径必须等价 B1"仍成立）。
+                    let target = coordinator.idle_hold_target();
+                    let body = build_hold_command(cfg, layout_id, &target, state.cmd_seq, now_ns);
+                    publish_body::<markers::JointCommand, _>(
+                        cmd_pub,
+                        &body,
+                        state.cmd_seq,
+                        cfg.source_id,
+                        now_ns,
+                    )?;
+                    published = true;
+                }
+                CoordinatorState::Degraded { .. } => {
+                    // Degraded hold cmd：target = 启动 anchor_bias，**不**
+                    // 解锁（D3 行为矩阵末行；Idle 与 Degraded 自此分源）。
                     let body = build_hold_command(cfg, layout_id, bias, state.cmd_seq, now_ns);
                     publish_body::<markers::JointCommand, _>(
                         cmd_pub,
@@ -1350,10 +1471,11 @@ impl CoordinatorState {
 
 use crate::action::{
     ActionCancelError, ActionContext, ActionEvent, ActionFailure, ActionId, ActionInstance,
-    ActionRequest, ActionStatus, ActionTickOutput, ActionTicket, ClearError, JointCommandBody,
-    SubmitError,
+    ActionKind, ActionOutcome, ActionRequest, ActionStartError, ActionStatus, ActionTickOutput,
+    ActionTicket, ClearError, JointCommandBody, SubmitError,
 };
 use crate::action_backend::BackendRegistry;
+use crate::state_cache::{StaleOrMissing, StateCacheHandle};
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
@@ -1390,15 +1512,50 @@ struct InnerState {
     fsm: CoordinatorState,
     current: Option<CurrentAction>,
     finished: VecDeque<(ActionId, ActionStatus)>,
+    /// `Idle` 状态 hold cmd 的 target（v0.5 候选 E 段(5)，Spec D3 第 3
+    /// 条穷尽式单一规则）。初值 = 启动 `anchor_bias`；`tick_action`
+    /// 终态处按 [`InnerState::apply_terminal_hold_target`] 更新 / reset。
+    /// `Degraded` 路径**不**读本字段（永远 anchor_bias）。
+    idle_hold_target: Vec<f64>,
 }
 
 impl InnerState {
-    fn new_booting() -> Self {
+    fn new_booting(anchor_bias: &[f64]) -> Self {
         Self {
             fsm: CoordinatorState::Booting,
             current: None,
             finished: VecDeque::with_capacity(FINISHED_RING_CAPACITY),
+            idle_hold_target: anchor_bias.to_vec(),
         }
+    }
+
+    /// 终态 hold target 单一规则（Spec D3 第 3 条）：`Some(t)`（仅
+    /// Success-Scripted 末 waypoint 已发布）→ `idle_hold_target = t`；
+    /// `None`（其余所有 backend × 终态组合）→ 显式 reset =
+    /// `anchor_bias`。`Some(t)` 长度与 `anchor_bias` 不等 = backend 契约
+    /// 违反 → warn + reset（防御：绝不让错长 target 上线）。
+    fn apply_terminal_hold_target(&mut self, hold_target: Option<Vec<f64>>, anchor_bias: &[f64]) {
+        match hold_target {
+            Some(t) if t.len() == anchor_bias.len() => {
+                self.idle_hold_target = t;
+            }
+            Some(t) => {
+                tracing::warn!(
+                    target: "robot_s1::coordinator",
+                    got = t.len(),
+                    expected = anchor_bias.len(),
+                    "successful_hold_target length mismatch; resetting idle_hold_target to anchor_bias"
+                );
+                self.reset_idle_hold_target(anchor_bias);
+            }
+            None => self.reset_idle_hold_target(anchor_bias),
+        }
+    }
+
+    /// 显式 reset `idle_hold_target = anchor_bias`（复用容量，不重分配）。
+    fn reset_idle_hold_target(&mut self, anchor_bias: &[f64]) {
+        self.idle_hold_target.clear();
+        self.idle_hold_target.extend_from_slice(anchor_bias);
     }
 
     /// 把 `(id, status)` 写入 ring；超 128 淘汰最旧。
@@ -1476,6 +1633,23 @@ pub struct Coordinator {
     /// `dyn ArmIkSolver` 自带 `Send + Sync`，跨线程持 `Coordinator` 锁
     /// 安全。
     solver: Option<Box<dyn robot_kinematics::ArmIkSolver>>,
+    /// S1 常驻 state cache handle（v0.5 候选 E 段(5)，Spec D3 第 1 条 +
+    /// P.2.5）：`submit` 的 Scripted 路径经 [`StateCacheHandle::latest_fresh`]
+    /// 取 `scripted_start_pose`（joint_count + layout + 新鲜度校验；失败
+    /// → `ActionStartError::Rejected` → wire `FailedPrecondition`，**不**
+    /// fallback）。
+    ///
+    /// **注入**：[`Self::with_state_cache`]（s1_daemon 在 cache spawn 成功
+    /// 后注入；缺省 `None` = 未接 cache，一切 Scripted submit 被拒——测试 /
+    /// 无 cache 场景显式可见，非静默降级）。
+    ///
+    /// **线程卫生**：[`Self::take_state_cache`] 让 daemon shutdown 序列显式
+    /// `stop + join`；未 take 时随 `Coordinator` Drop 走
+    /// `StateCacheHandle::drop` best-effort stop+join（AC-E20，禁
+    /// mem::forget）。`Mutex` 仅为 `take` 的内部可变性；锁序 = `inner` →
+    /// `state_cache`（submit 持 inner 时短暂取 state_cache），`take` /
+    /// `probe` 只取 `state_cache`，无 ABBA。
+    state_cache: Mutex<Option<StateCacheHandle>>,
 }
 
 impl Coordinator {
@@ -1498,7 +1672,7 @@ impl Coordinator {
         solver: Option<Box<dyn robot_kinematics::ArmIkSolver>>,
     ) -> Self {
         Self {
-            inner: Mutex::new(InnerState::new_booting()),
+            inner: Mutex::new(InnerState::new_booting(&anchor_bias)),
             enabled_backends,
             registry,
             config,
@@ -1506,7 +1680,49 @@ impl Coordinator {
             layout_id,
             anchor_bias,
             solver,
+            state_cache: Mutex::new(None),
         }
+    }
+
+    /// 注入 S1 常驻 state cache handle（v0.5 候选 E 段(5)；builder 形态，
+    /// 保持 [`Self::new`] 7 参签名 0 改）。s1_daemon 在
+    /// `spawn_state_cache_thread` 成功后调；注入后 `submit` 的 Scripted
+    /// 路径才可能通过（详 [`Self::submit`]）。
+    #[must_use]
+    pub fn with_state_cache(self, cache: StateCacheHandle) -> Self {
+        *self.lock_state_cache() = Some(cache);
+        self
+    }
+
+    /// 是否已注入 state cache（诊断 / 测试）。
+    #[must_use]
+    pub fn has_state_cache(&self) -> bool {
+        self.lock_state_cache().is_some()
+    }
+
+    /// 取走 state cache handle（一次性；之后 `has_state_cache() == false`，
+    /// Scripted submit 全拒）。s1_daemon shutdown 序列用：tick loop 退出 +
+    /// RR / drain 线程全 join 后 `take` → `stop()` → `join()` 显式收线程，
+    /// 不依赖 `Coordinator` Drop 时机（AC-E20 线程卫生）。
+    pub fn take_state_cache(&self) -> Option<StateCacheHandle> {
+        self.lock_state_cache().take()
+    }
+
+    /// 只读探针：以 `now` 评估 cache 当前帧（与 `submit` Scripted 路径
+    /// **同一**校验）。`None` = 未注入 cache。给 in-process 测试等待
+    /// cache 线程收到首帧 / 诊断用；**不**改变任何状态。
+    pub fn probe_state_cache(&self, now: MonoRawNs) -> Option<Result<Vec<f64>, StaleOrMissing>> {
+        self.lock_state_cache()
+            .as_ref()
+            .map(|cache| cache.latest_fresh(now))
+    }
+
+    /// 当前 `Idle` hold target 快照（v0.5 候选 E 段(5) D3 第 3 条）。
+    /// [`run_action_tick_loop`] `Idle` 分支每 cmd 周期读；初值 = 启动
+    /// `anchor_bias`，仅 Success-Scripted 终态后变更，其余终态 reset。
+    #[must_use]
+    pub fn idle_hold_target(&self) -> Vec<f64> {
+        self.lock_inner().idle_hold_target.clone()
     }
 
     /// 借用本 coordinator 的 [`CoordinatorConfig`]（构造期固化，不再变）。
@@ -1571,6 +1787,13 @@ impl Coordinator {
     /// - [`ActionRequest::validate`] → [`SubmitError::InvalidRequest`]
     /// - [`BackendRegistry::dispatch`] →
     ///   [`SubmitError::NoBackendForKind`] / [`SubmitError::UnsupportedSchema`]
+    /// - **Scripted 起点（v0.5 候选 E 段(5)，Spec D3 第 1 条）**：
+    ///   `kind == Scripted` 时先取 `scripted_start_pose =
+    ///   state_cache.latest_fresh(now)`——未注入 cache / 无帧 / stale /
+    ///   layout 不匹配 / joint count 错位 →
+    ///   [`SubmitError::BackendStartFailed`]`(`[`ActionStartError::Rejected`]`)`
+    ///   （既有 wire 映射 → `FailedPrecondition`），**绝不** fallback 到
+    ///   `anchor_bias`；状态保持 Idle。
     /// - [`ActionBackend::start`] → [`SubmitError::BackendStartFailed`]
     ///
     /// **状态优先**（reviewer 阻断 1 锁定）：`Booting` / `Executing` /
@@ -1623,12 +1846,21 @@ impl Coordinator {
             self.registry
                 .dispatch(&self.enabled_backends, req.kind, req.payload_schema_id)?;
 
+        // v0.5 候选 E 段(5) D3 第 1 条：Scripted 起点 = 提交时当前位
+        // （state cache 最新鲜帧）；其余 kind 恒 None（穷举 match 让新增
+        // ActionKind 编译期显式表态）。
+        let scripted_start_pose: Option<Vec<f64>> = match req.kind {
+            ActionKind::Scripted => Some(self.fetch_scripted_start_pose(now_ns)?),
+            ActionKind::DwellMs | ActionKind::HoldPose | ActionKind::Ik => None,
+        };
+
         let ctx = ActionContext {
             clock,
             layout_id: self.layout_id,
             hardware: &self.hardware,
             config: &self.config,
             anchor_bias: &self.anchor_bias,
+            scripted_start_pose: scripted_start_pose.as_deref(),
             // submit 路径不在 publish frame seq 流上；backend.start 通常
             // 不产 body bytes（仅返 ActionInstance），用 0 哨兵安全（详
             // ActionContext::command_seq doc）。
@@ -1699,6 +1931,8 @@ impl Coordinator {
             hardware: &self.hardware,
             config: &self.config,
             anchor_bias: &self.anchor_bias,
+            // cancel 路径不取起点（仅 submit Scripted 路径填 Some）。
+            scripted_start_pose: None,
             // cancel 路径不在 publish frame seq 流上；backend.cancel 通
             // 常仅 set flag 不产 body bytes，用 0 哨兵安全。
             command_seq: 0,
@@ -1758,6 +1992,15 @@ impl Coordinator {
     /// | `SafetyAbort(reason)` | `Degraded { reason }` |
     /// | `AdapterError(reason)` | `Degraded { reason }` |
     /// | `InternalError(reason)` | `Degraded { reason }` |
+    ///
+    /// **终态 hold target（v0.5 候选 E 段(5)，Spec D3 第 3 条穷尽式单一
+    /// 规则）**：每个终态分支都显式落 `idle_hold_target`——
+    /// `Completed(Success) ∧ !pending_cancel` →
+    /// `instance.successful_hold_target()`（`Some(t)` → `t`；`None` →
+    /// reset anchor_bias）；`Completed(PartialSuccess)` / cancel 收敛 /
+    /// `Err(_)` 全部 reset = anchor_bias。行为矩阵（D3 第 4 条）各行 =
+    /// 本规则实例化：Scripted Success → 末 waypoint；Scripted cancel /
+    /// failure、IK / HoldPose / DwellMs 一切结局 → 启动 anchor。
     pub fn tick_action(
         &self,
         clock: &dyn RobotClock,
@@ -1779,6 +2022,8 @@ impl Coordinator {
             hardware: &self.hardware,
             config: &self.config,
             anchor_bias: &self.anchor_bias,
+            // tick 路径不取起点（Scripted 已在 start() 期 snapshot）。
+            scripted_start_pose: None,
             command_seq,
             // IK solver borrow（v0.4 候选 2 round 2 (3/4)；详 submit 同款；
             // tick_action 路径上 IkBackend 自己用 ctx.solver 调 solve()，
@@ -1788,8 +2033,10 @@ impl Coordinator {
 
         let now_ns = clock.now().0;
         let Some(current) = inner.current.as_mut() else {
-            // state 是 Executing 但 current 为空：不一致；防御性回 Idle。
+            // state 是 Executing 但 current 为空：不一致；防御性回 Idle
+            // （非 Success 路径 → idle_hold_target reset = anchor_bias）。
             inner.fsm = CoordinatorState::Idle;
+            inner.reset_idle_hold_target(&self.anchor_bias);
             return None;
         };
 
@@ -1812,6 +2059,17 @@ impl Coordinator {
                 // 终态：转 Idle；按 pending_cancel 决定 Cancelled vs Completed；
                 // ring buffer 写一条；drop current（events_tx drop → ticket
                 // 端 RecvError = 流关闭）。
+                //
+                // D3 第 3 条：hold target 仅在 `Success ∧ !pending_cancel` 问
+                // backend（successful_hold_target）；其余路径 None → reset。
+                let hold_target: Option<Vec<f64>> = if pending_cancel {
+                    None
+                } else {
+                    match &outcome {
+                        ActionOutcome::Success => current.instance.successful_hold_target(),
+                        ActionOutcome::PartialSuccess { .. } => None,
+                    }
+                };
                 if pending_cancel {
                     let _ = current
                         .events_tx
@@ -1826,10 +2084,13 @@ impl Coordinator {
                 }
                 inner.current = None;
                 inner.fsm = CoordinatorState::Idle;
+                inner.apply_terminal_hold_target(hold_target, &self.anchor_bias);
                 None
             }
             Err(failure) => {
-                // 终态 Failed：emit + ring + 状态转移（按 failure 类型）。
+                // 终态 Failed：emit + ring + 状态转移（按 failure 类型）；
+                // hold target 一律 reset = anchor_bias（Idle 与 Degraded
+                // 两个去向都回启动锚点，D3 行为矩阵 failure 行 + 末行）。
                 let _ = current.events_tx.send(ActionEvent::Failed {
                     failure: failure.clone(),
                     at_ns: now_ns,
@@ -1844,6 +2105,7 @@ impl Coordinator {
                     | ActionFailure::AdapterError(reason)
                     | ActionFailure::InternalError(reason) => CoordinatorState::Degraded { reason },
                 };
+                inner.reset_idle_hold_target(&self.anchor_bias);
                 None
             }
         }
@@ -1863,6 +2125,40 @@ impl Coordinator {
                 poisoned.into_inner()
             }
         }
+    }
+
+    /// `state_cache` 锁；poison 语义同 [`Self::lock_inner`]。
+    fn lock_state_cache(&self) -> std::sync::MutexGuard<'_, Option<StateCacheHandle>> {
+        match self.state_cache.lock() {
+            Ok(g) => g,
+            Err(poisoned) => {
+                tracing::warn!(
+                    target: "robot_s1::coordinator",
+                    "Coordinator state_cache mutex poisoned; recovering with into_inner"
+                );
+                poisoned.into_inner()
+            }
+        }
+    }
+
+    /// Scripted 起点取值（v0.5 候选 E 段(5)，Spec D3 第 1 条失败语义）：
+    /// 未注入 cache / `latest_fresh` 任一校验失败 →
+    /// `SubmitError::BackendStartFailed(ActionStartError::Rejected(..))`
+    /// （既有 wire 映射 → `FailedPrecondition`），**不** fallback。
+    fn fetch_scripted_start_pose(&self, now_ns: u64) -> Result<Vec<f64>, SubmitError> {
+        let guard = self.lock_state_cache();
+        let Some(cache) = guard.as_ref() else {
+            return Err(SubmitError::BackendStartFailed(ActionStartError::Rejected(
+                "scripted_start_pose unavailable: no S1 state cache attached \
+                 (D3: no fallback to anchor_bias)"
+                    .into(),
+            )));
+        };
+        cache.latest_fresh(MonoRawNs(now_ns)).map_err(|e| {
+            SubmitError::BackendStartFailed(ActionStartError::Rejected(format!(
+                "scripted_start_pose unavailable: {e} (D3: no fallback to anchor_bias)"
+            )))
+        })
     }
 }
 
@@ -3006,6 +3302,7 @@ backends = 42
             Ok(Box::new(ScriptedInstance {
                 script: StdMutex::new(Vec::new()),
                 cancelled: false,
+                hold_target: None,
             }))
         }
     }
@@ -3017,6 +3314,20 @@ backends = 42
             Box::new(ScriptedInstance {
                 script: StdMutex::new(script),
                 cancelled: false,
+                hold_target: None,
+            })
+        }
+
+        /// 同上，但 `successful_hold_target()` 返 `Some(target)`（模拟真
+        /// Scripted 末帧已发布；v0.5 候选 E 段(5) D3 第 3 条矩阵单机维）。
+        fn make_instance_with_hold(
+            script: Vec<TickScriptItem>,
+            target: Vec<f64>,
+        ) -> Box<dyn ActionInstance> {
+            Box::new(ScriptedInstance {
+                script: StdMutex::new(script),
+                cancelled: false,
+                hold_target: Some(target),
             })
         }
     }
@@ -3024,6 +3335,8 @@ backends = 42
     struct ScriptedInstance {
         script: StdMutex<Vec<TickScriptItem>>,
         cancelled: bool,
+        /// `successful_hold_target()` 返值（默认 None = 既有 backend 行为）。
+        hold_target: Option<Vec<f64>>,
     }
 
     impl ActionInstance for ScriptedInstance {
@@ -3060,6 +3373,9 @@ backends = 42
             self.cancelled = true;
             Ok(())
         }
+        fn successful_hold_target(&self) -> Option<Vec<f64>> {
+            self.hold_target.clone()
+        }
     }
 
     static SCRIPTED_BACKEND: ScriptedBackend = ScriptedBackend {
@@ -3074,6 +3390,8 @@ backends = 42
     /// 自身故障 → coordinator 应 emit Failed（而不是 Cancelled）。
     struct ScriptedNoCancelInstance {
         script: StdMutex<Vec<TickScriptItem>>,
+        /// `successful_hold_target()` 返值（cancel 收敛路径应被 coordinator 忽略）。
+        hold_target: Option<Vec<f64>>,
     }
 
     impl ActionInstance for ScriptedNoCancelInstance {
@@ -3093,6 +3411,9 @@ backends = 42
         }
         fn cancel(&mut self, _ctx: &mut ActionContext<'_>) -> Result<(), ActionCancelError> {
             Ok(())
+        }
+        fn successful_hold_target(&self) -> Option<Vec<f64>> {
+            self.hold_target.clone()
         }
     }
 
@@ -3407,6 +3728,7 @@ backends = 42
             script: StdMutex::new(vec![TickScriptItem::Failed(ActionFailure::AdapterError(
                 "post-cancel adapter blew".into(),
             ))]),
+            hold_target: None,
         }) as Box<dyn ActionInstance>;
 
         let ticket = force_executing(&c, inst);
@@ -3621,5 +3943,453 @@ backends = 42
             matches!(c.current_state(), CoordinatorState::Idle),
             "ticket events drop 不影响状态机收敛"
         );
+    }
+
+    // ====================================================================
+    // v0.5 候选 E 段(5) D3 第 3 条：idle_hold_target 穷尽式单一规则（矩阵
+    // 单机维；RB5：各分支独立 case，先 Success 再分别 ...；跨进程
+    // AC-E6/E7/E18 落段(7)）
+    // ====================================================================
+
+    /// 前置：一次"Scripted 式" Success（instance 报 Some(末点)）→
+    /// `idle_hold_target = 末点`（≠ anchor_bias）。每个分支 case 从本前置出发。
+    fn success_with_hold_target(c: &Coordinator) -> Vec<f64> {
+        let target = vec![0.75];
+        let inst = ScriptedBackend::make_instance_with_hold(
+            vec![TickScriptItem::Completed(ActionOutcome::Success)],
+            target.clone(),
+        );
+        let _ticket = force_executing(c, inst);
+        let _ = c.tick_action(&SystemClock, 0);
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        assert_eq!(
+            c.idle_hold_target(),
+            target,
+            "前置：Success + Some(末点) 后 idle_hold_target = 末点"
+        );
+        assert_ne!(target, c.anchor_bias().to_vec());
+        target
+    }
+
+    #[test]
+    fn idle_hold_target_initial_equals_anchor_bias() {
+        let c = coordinator_in_idle();
+        assert_eq!(c.idle_hold_target(), c.anchor_bias().to_vec());
+    }
+
+    #[test]
+    fn success_with_hold_target_updates_idle_hold_target() {
+        let c = coordinator_in_idle();
+        let t = success_with_hold_target(&c);
+        assert_eq!(c.idle_hold_target(), t);
+    }
+
+    #[test]
+    fn success_without_hold_target_resets_idle_hold_target() {
+        // 先 Success(Some) 再 Success(None)（= HoldPose / DwellMs / IK 缺省
+        // successful_hold_target）→ 显式 reset = anchor_bias。
+        let c = coordinator_in_idle();
+        success_with_hold_target(&c);
+        let inst =
+            ScriptedBackend::make_instance(vec![TickScriptItem::Completed(ActionOutcome::Success)]);
+        let _t = force_executing(&c, inst);
+        let _ = c.tick_action(&SystemClock, 0);
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        assert_eq!(c.idle_hold_target(), c.anchor_bias().to_vec());
+    }
+
+    #[test]
+    fn partial_success_resets_even_if_instance_reports_hold_target() {
+        let c = coordinator_in_idle();
+        success_with_hold_target(&c);
+        let inst = ScriptedBackend::make_instance_with_hold(
+            vec![TickScriptItem::Completed(ActionOutcome::PartialSuccess {
+                warning: "clamped".into(),
+            })],
+            vec![0.5],
+        );
+        let _t = force_executing(&c, inst);
+        let _ = c.tick_action(&SystemClock, 0);
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        assert_eq!(c.idle_hold_target(), c.anchor_bias().to_vec());
+    }
+
+    #[test]
+    fn cancel_convergence_resets_even_if_instance_reports_hold_target() {
+        // cancel 后 instance 收敛 Completed(Success)（模拟末帧之后 cancel），
+        // pending_cancel → Cancelled → reset；successful_hold_target 不问。
+        let c = coordinator_in_idle();
+        success_with_hold_target(&c);
+        let inst = Box::new(ScriptedNoCancelInstance {
+            script: StdMutex::new(vec![TickScriptItem::Completed(ActionOutcome::Success)]),
+            hold_target: Some(vec![0.5]),
+        }) as Box<dyn ActionInstance>;
+        let ticket = force_executing(&c, inst);
+        c.cancel(ticket.action_id, &SystemClock).expect("cancel ok");
+        let _ = c.tick_action(&SystemClock, 0);
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        assert!(
+            ticket
+                .events
+                .try_iter()
+                .any(|ev| matches!(ev, ActionEvent::Cancelled { .. })),
+            "应 emit Cancelled"
+        );
+        assert_eq!(c.idle_hold_target(), c.anchor_bias().to_vec());
+    }
+
+    #[test]
+    fn failure_precondition_resets_idle_hold_target() {
+        let c = coordinator_in_idle();
+        success_with_hold_target(&c);
+        let inst = ScriptedBackend::make_instance_with_hold(
+            vec![TickScriptItem::Failed(ActionFailure::PreconditionFailed(
+                "limit".into(),
+            ))],
+            vec![0.5],
+        );
+        let _t = force_executing(&c, inst);
+        let _ = c.tick_action(&SystemClock, 0);
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        assert_eq!(c.idle_hold_target(), c.anchor_bias().to_vec());
+    }
+
+    #[test]
+    fn failure_safety_abort_resets_idle_hold_target_and_survives_clear_error() {
+        // failure → Degraded：Degraded hold 本就读 anchor_bias（不解锁），
+        // 且 idle_hold_target 已 reset；clear_error 回 Idle 后仍 = anchor。
+        let c = coordinator_in_idle();
+        success_with_hold_target(&c);
+        let inst = ScriptedBackend::make_instance_with_hold(
+            vec![TickScriptItem::Failed(ActionFailure::SafetyAbort(
+                "abort".into(),
+            ))],
+            vec![0.5],
+        );
+        let _t = force_executing(&c, inst);
+        let _ = c.tick_action(&SystemClock, 0);
+        assert!(matches!(
+            c.current_state(),
+            CoordinatorState::Degraded { .. }
+        ));
+        assert_eq!(c.idle_hold_target(), c.anchor_bias().to_vec());
+        c.clear_error().expect("Degraded → Idle");
+        assert_eq!(c.idle_hold_target(), c.anchor_bias().to_vec());
+    }
+
+    #[test]
+    fn hold_target_length_mismatch_resets_defensively() {
+        // coordinator 1 joint；instance 报 2 维 target → 契约违反 → reset。
+        let c = coordinator_in_idle();
+        success_with_hold_target(&c);
+        let inst = ScriptedBackend::make_instance_with_hold(
+            vec![TickScriptItem::Completed(ActionOutcome::Success)],
+            vec![1.0, 2.0],
+        );
+        let _t = force_executing(&c, inst);
+        let _ = c.tick_action(&SystemClock, 0);
+        assert_eq!(c.idle_hold_target(), c.anchor_bias().to_vec());
+    }
+
+    #[test]
+    fn executing_without_current_resets_idle_hold_target() {
+        // 防御分支：fsm Executing 但 current None → Idle + reset。
+        let c = coordinator_in_idle();
+        success_with_hold_target(&c);
+        {
+            let mut inner = c.lock_inner();
+            inner.fsm = CoordinatorState::Executing {
+                action_id: ActionId::new_v7(),
+                started_at_ns: 0,
+            };
+            inner.current = None;
+        }
+        assert!(c.tick_action(&SystemClock, 0).is_none());
+        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        assert_eq!(c.idle_hold_target(), c.anchor_bias().to_vec());
+    }
+
+    #[test]
+    fn state_cache_absent_by_default_and_take_returns_none() {
+        let c = coordinator_in_idle();
+        assert!(!c.has_state_cache());
+        assert!(c.take_state_cache().is_none());
+        assert!(c.probe_state_cache(MonoRawNs(0)).is_none());
+    }
+
+    // ====================================================================
+    // submit Scripted 路径（真 ScriptedBackend + mock transport state cache）
+    // ====================================================================
+
+    #[cfg(feature = "backend-scripted")]
+    mod scripted_submit {
+        use super::*;
+
+        use crate::action::ActionStartError;
+        use crate::action_backend::scripted::ScriptedBackend as RealScriptedBackend;
+        use crate::action_backend::scripted::test_support::build_scripted_payload_bytes;
+        use crate::state_cache::{READY_TIMEOUT, StateCacheConfig, spawn_state_cache_thread_with};
+        use robot_core::time::MockClock;
+        use robot_msg::build_helpers::build_joint_state;
+        use robot_msg::msg::JointCommand as FbJointCommand;
+        use robot_msg::schema_id::SCHEMA_SCRIPTED_PAYLOAD;
+        use robot_transport::mock::MockChannel;
+        use robot_transport::traits::Publisher;
+        use std::sync::Arc;
+
+        static REAL_SCRIPTED: RealScriptedBackend = RealScriptedBackend;
+        const LAYOUT: u64 = 0x5EED_0000_0000_0001;
+        const JOINTS: usize = 2;
+        const ANCHOR: [f64; JOINTS] = [9.0, 9.0];
+
+        fn scripted_coordinator() -> Coordinator {
+            let c = Coordinator::new(
+                CoordinatorConfig::default(),
+                HardwareSection {
+                    id: "arm".into(),
+                    joints: vec!["j0".into(), "j1".into()],
+                    motor_ids: vec![1, 2],
+                },
+                LAYOUT,
+                ANCHOR.to_vec(),
+                BackendRegistry::from_explicit(&[&REAL_SCRIPTED as &'static dyn ActionBackend]),
+                vec!["scripted".into()],
+                None,
+            );
+            c.mark_idle().expect("Booting → Idle");
+            c
+        }
+
+        fn scripted_request(waypoints: &[Vec<f64>]) -> ActionRequest {
+            let wps: Vec<(Vec<f64>, u32, u32)> =
+                waypoints.iter().map(|p| (p.clone(), 0, 100)).collect();
+            ActionRequest {
+                action_id: ActionId::new_v7(),
+                kind: ActionKind::Scripted,
+                deadline_ns: u64::MAX,
+                priority: 10,
+                payload_schema_id: SCHEMA_SCRIPTED_PAYLOAD,
+                payload: build_scripted_payload_bytes(&wps),
+                idempotency_key: "scripted-submit".into(),
+                source: ActionSource::Internal,
+            }
+        }
+
+        fn publish_state(
+            ch: &MockChannel<markers::JointState>,
+            layout: u64,
+            positions: &[f64],
+            stamp_ns: u64,
+        ) {
+            let body = build_joint_state(layout, stamp_ns, positions, &[], &[], "");
+            let mut pub_ = ch.publisher();
+            let mut w = pub_.loan(body.len() + 1024).expect("loan");
+            w.set_body_bytes(&body);
+            w.set_stamp_ns(stamp_ns);
+            w.set_seq(0);
+            w.set_source_id(1);
+            w.publish().expect("publish");
+        }
+
+        fn attach_cache(c: Coordinator, ch: &MockChannel<markers::JointState>) -> Coordinator {
+            let ch2 = ch.clone();
+            let handle = spawn_state_cache_thread_with(
+                StateCacheConfig {
+                    topic: "/t/s0/arm/state".into(),
+                    expected_joints: JOINTS,
+                    expected_layout: LAYOUT,
+                    max_stale_ms: 200,
+                    poll_interval: Duration::from_millis(1),
+                },
+                Arc::new(SystemClock::new()),
+                READY_TIMEOUT,
+                move || Ok(ch2.subscriber()),
+            )
+            .expect("spawn cache");
+            c.with_state_cache(handle)
+        }
+
+        /// 等 cache 线程（真线程 1 ms poll）观测到 `want`（同判据探针）。
+        fn wait_probe(c: &Coordinator, now: MonoRawNs, want: &[f64]) {
+            for _ in 0..2000 {
+                if let Some(Ok(got)) = c.probe_state_cache(now)
+                    && got == want
+                {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            panic!(
+                "state cache never observed {want:?}: {:?}",
+                c.probe_state_cache(now)
+            );
+        }
+
+        fn rejected_reason(err: &SubmitError) -> &str {
+            match err {
+                SubmitError::BackendStartFailed(ActionStartError::Rejected(s)) => s.as_str(),
+                other => panic!("expected BackendStartFailed(Rejected), got {other:?}"),
+            }
+        }
+
+        fn decode_target(body: &JointCommandBody) -> Vec<f64> {
+            let cmd = flatbuffers::root::<FbJointCommand<'_>>(body.as_bytes()).expect("verify");
+            cmd.target().expect("target").iter().collect()
+        }
+
+        #[test]
+        fn scripted_without_cache_is_rejected_not_fallback() {
+            let c = scripted_coordinator();
+            assert!(!c.has_state_cache());
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            let err = c
+                .submit(scripted_request(&[vec![1.0, 1.0]]), &clock)
+                .expect_err("must reject");
+            let reason = rejected_reason(&err);
+            assert!(reason.contains("no S1 state cache"), "{reason}");
+            assert!(reason.contains("no fallback"), "{reason}");
+            assert!(matches!(c.current_state(), CoordinatorState::Idle));
+            assert_eq!(c.idle_hold_target(), ANCHOR.to_vec());
+        }
+
+        #[test]
+        fn scripted_no_frame_is_rejected() {
+            let ch = MockChannel::<markers::JointState>::new();
+            let c = attach_cache(scripted_coordinator(), &ch);
+            assert!(c.has_state_cache());
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            let err = c
+                .submit(scripted_request(&[vec![1.0, 1.0]]), &clock)
+                .expect_err("must reject");
+            assert!(rejected_reason(&err).contains("no frame"), "{err}");
+            assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        }
+
+        #[test]
+        fn scripted_fresh_frame_becomes_start_pose() {
+            let ch = MockChannel::<markers::JointState>::new();
+            let c = attach_cache(scripted_coordinator(), &ch);
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            let now = clock.now();
+            let pose = vec![0.25, -0.25];
+            publish_state(&ch, LAYOUT, &pose, now.0);
+            wait_probe(&c, now, &pose);
+
+            c.submit(scripted_request(&[vec![1.0, 1.0]]), &clock)
+                .expect("submit ok with fresh frame");
+            assert!(matches!(
+                c.current_state(),
+                CoordinatorState::Executing { .. }
+            ));
+            // α=0 首帧 target == cache pose（≠ anchor [9,9]）。
+            let body = c
+                .tick_action(&clock, 7)
+                .expect("scripted first tick emits body");
+            assert_eq!(decode_target(&body), pose);
+            let cmd = flatbuffers::root::<FbJointCommand<'_>>(body.as_bytes()).expect("verify");
+            assert_eq!(cmd.source_task_id(), 7);
+        }
+
+        #[test]
+        fn scripted_stale_frame_is_rejected_without_fallback() {
+            let ch = MockChannel::<markers::JointState>::new();
+            let c = attach_cache(scripted_coordinator(), &ch);
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            let now = clock.now();
+            let pose = vec![0.25, -0.25];
+            publish_state(&ch, LAYOUT, &pose, now.0);
+            wait_probe(&c, now, &pose);
+            // 推 201 ms > max_stale 200 ms → stale。
+            clock.advance(DurationNs::from_nanos(201_000_000));
+            let err = c
+                .submit(scripted_request(&[vec![1.0, 1.0]]), &clock)
+                .expect_err("must reject stale");
+            let reason = rejected_reason(&err);
+            assert!(reason.contains("stale"), "{reason}");
+            assert!(matches!(c.current_state(), CoordinatorState::Idle));
+            assert_eq!(c.idle_hold_target(), ANCHOR.to_vec());
+        }
+
+        #[test]
+        fn scripted_layout_mismatch_is_rejected() {
+            let ch = MockChannel::<markers::JointState>::new();
+            let c = attach_cache(scripted_coordinator(), &ch);
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            let now = clock.now();
+            publish_state(&ch, LAYOUT ^ 0x1, &[0.0, 0.0], now.0);
+            // 等线程收到（探针会因 layout 错返 Err；用 stats 等首帧）。
+            for _ in 0..2000 {
+                if matches!(
+                    c.probe_state_cache(now),
+                    Some(Err(
+                        crate::state_cache::StaleOrMissing::LayoutMismatch { .. }
+                    ))
+                ) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let err = c
+                .submit(scripted_request(&[vec![1.0, 1.0]]), &clock)
+                .expect_err("must reject layout mismatch");
+            assert!(
+                rejected_reason(&err).contains("layout_id mismatch"),
+                "{err}"
+            );
+            assert!(matches!(c.current_state(), CoordinatorState::Idle));
+        }
+
+        #[test]
+        fn take_state_cache_then_scripted_rejected() {
+            let ch = MockChannel::<markers::JointState>::new();
+            let c = attach_cache(scripted_coordinator(), &ch);
+            let cache = c.take_state_cache().expect("Some");
+            assert!(!c.has_state_cache());
+            cache.join().expect("join ok");
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            let err = c
+                .submit(scripted_request(&[vec![1.0, 1.0]]), &clock)
+                .expect_err("must reject");
+            assert!(rejected_reason(&err).contains("no S1 state cache"));
+        }
+
+        #[test]
+        fn ac_e17_final_frame_then_completed_then_idle_hold_is_last_waypoint() {
+            // coordinator 层末点发布保证：末帧 Continue(Some) 时仍 Executing；
+            // 下一 tick Completed → Idle + idle_hold_target = 末 waypoint。
+            let ch = MockChannel::<markers::JointState>::new();
+            let c = attach_cache(scripted_coordinator(), &ch);
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            let now = clock.now();
+            let pose = vec![0.0, 0.0];
+            publish_state(&ch, LAYOUT, &pose, now.0);
+            wait_probe(&c, now, &pose);
+            let last = vec![1.0, -1.0];
+            c.submit(scripted_request(std::slice::from_ref(&last)), &clock)
+                .expect("submit ok");
+
+            let first = c.tick_action(&clock, 1).expect("α=0 帧");
+            assert_eq!(decode_target(&first), pose);
+
+            clock.advance(DurationNs::from_nanos(1_000_000_000));
+            let fin = c
+                .tick_action(&clock, 2)
+                .expect("末帧必须是 Some(body)（先发布再 Completed）");
+            assert_eq!(decode_target(&fin), last);
+            assert!(
+                matches!(c.current_state(), CoordinatorState::Executing { .. }),
+                "末帧 tick 后仍 Executing（Completed 推迟到下一 tick）"
+            );
+            assert_eq!(
+                c.idle_hold_target(),
+                ANCHOR.to_vec(),
+                "末帧 tick 后 idle_hold_target 尚未提交"
+            );
+
+            clock.advance(DurationNs::from_nanos(20_000_000));
+            assert!(c.tick_action(&clock, 3).is_none(), "Completed 帧不产 cmd");
+            assert!(matches!(c.current_state(), CoordinatorState::Idle));
+            assert_eq!(c.idle_hold_target(), last);
+        }
     }
 }

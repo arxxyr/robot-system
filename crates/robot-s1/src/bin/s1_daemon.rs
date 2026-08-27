@@ -6,14 +6,21 @@
 //! - 启动期读一次 `/<r>/s0/<hw>/state` 锚定当前位置作 hold bias
 //!   （[`coordinator::read_anchor_from_s0_state`] / fail-fast：超时
 //!   / stale / joint count 错位均退出非 0；不 fallback bias=0）。
+//! - **v0.5 候选 E 段(5)** 加：锚定成功后起**常驻** state cache 线程
+//!   （[`robot_s1::state_cache`]，同 topic；Scripted `scripted_start_pose`
+//!   = 提交时当前位的唯一来源；spawn 失败 = 启动失败 fail-fast，**先于**
+//!   `rr_server_threads ready` marker）；shutdown 末步 `take → stop →
+//!   join` 显式收线程（AC-E20）。
 //! - **B2 (3/3)** 加：parse `[s1.profile]` + 构造
 //!   [`coordinator::Coordinator`]（`BackendRegistry::from_inventory` +
 //!   `validate_profile_section` L2 fail-fast）→ `mark_idle` 转 Idle →
 //!   tick loop 走 [`coordinator::run_action_tick_loop`] state-aware
 //!   dispatch。
 //! - 50 Hz publish [`markers::JointCommand`]：
-//!   * `Idle` / `Degraded` 状态 → B1 hold cmd（`Position` 模式、
-//!     `target == bias`、`on_timeout = Hold`、`deadline_ns = now + 500 ms`）。
+//!   * `Idle` 状态 → hold cmd（`Position` 模式、`target ==
+//!     idle_hold_target`〔初值 = 启动 bias；仅 Success-Scripted 后 = 末
+//!     waypoint，Spec D3 第 3 条〕、`on_timeout = Hold`、`deadline_ns = now
+//!     + 500 ms`）；`Degraded` 状态 → `target == 启动 bias`（不解锁）。
 //!   * `Executing` 状态 → action backend `tick()` 自产 cmd body bytes
 //!     （override 策略；backend 返 None 时本帧不 publish）。
 //! - 50 Hz publish [`markers::Heartbeat`]（`source_id = 2`），所有状态
@@ -39,7 +46,8 @@
 //! ### 退出码
 //!
 //! - `0`：正常退出（`--duration` 到期 / SIGINT / SIGTERM）。
-//! - `1`：iceoryx2 publisher / subscriber open 失败。
+//! - `1`：iceoryx2 publisher / subscriber open 失败（含段(5) state cache
+//!   线程 node create / subscriber open / ready 握手超时）。
 //! - `2`：CLI 参数非法。
 //! - `3`：配置 TOML 加载 / 解析失败（`[s1]` / `[[hardware]]` / `[s1.profile]`
 //!   L1 + L2 校验：`UnknownBackend` / `UnsupportedCommandMode` /
@@ -47,7 +55,8 @@
 //!   错配 fail-fast）。
 //! - `4`：启动锚定失败（timeout / stale / joint count 错位）—— B1
 //!   outline §4.2 + §9 决策 #2 锁定，**不**退化到 bias=0。
-//! - `5`：tick loop 内 publish 失败（罕见；transport / iceoryx2 错）。
+//! - `5`：tick loop 内 publish 失败（罕见；transport / iceoryx2 错）；
+//!   线程 spawn 失败族（rr_server / reaper / state cache 线程）。
 //!
 //! ### 非目标（B2 边界，详 outline §1.2 + §9）
 //!
@@ -75,12 +84,30 @@ use robot_s1::rr_server::{
     RealHandlerCtx, RrServerThreadConfig, S1RrServerHandles, spawn_clear_error_server,
     spawn_task_cancel_server, spawn_task_invoke_server, spawn_task_status_server,
 };
+use robot_s1::state_cache::{StateCacheConfig, StateCacheSpawnError, spawn_state_cache_thread};
 use robot_transport::iceoryx2::request_response::rr_server;
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
 
 /// `events_drain` 入 `FrameHeader.source_id`：与 v0.2 `JointCommand` /
 /// `Heartbeat` 一致约定 = 2（s1 daemon 写出的所有 frame 用此值）。
 const S1_FRAME_SOURCE_ID: u32 = 2;
+
+/// v0.5 候选 E 段(5)：常驻 state cache 线程 poll 间隔（沿
+/// `robot-rpc::state_pool` 500 Hz 口径：远高于 S0 50 Hz publish，cache 至多
+/// 2 ms 陈旧；与 `--poll-interval-ms`（tick loop）无关）。
+const STATE_CACHE_POLL_INTERVAL: Duration = Duration::from_millis(2);
+
+/// 段(5) state cache spawn 失败 → exit code 族：transport 族（node /
+/// subscriber open / ready 握手超时）= 1（沿 "iceoryx2 open 失败"）；线程
+/// spawn 失败 = 5（沿 rr_server / reaper 线程 spawn 先例）。
+fn state_cache_spawn_exit_code(e: &StateCacheSpawnError) -> i32 {
+    match e {
+        StateCacheSpawnError::NodeCreate(_)
+        | StateCacheSpawnError::SubscriberOpen(_)
+        | StateCacheSpawnError::ReadyTimeout => 1,
+        StateCacheSpawnError::ThreadSpawn(_) => 5,
+    }
+}
 
 // ============================================================================
 // Signal handling
@@ -261,17 +288,18 @@ OPTIONS:
   -h, --help                显示此帮助。
 
 TOPICS:
-  sub /<robot_id>/s0/<hardware_id>/state   (启动期一次性锚定)
+  sub /<robot_id>/s0/<hardware_id>/state   (启动期一次性锚定 + 段(5) 常驻 state cache)
   pub /<robot_id>/s1/<hardware_id>/command (50 Hz hold)
   pub /<robot_id>/s1/heartbeat             (50 Hz)
 
 EXIT CODES:
   0  正常退出（duration / SIGINT / SIGTERM）。
-  1  iceoryx2 open publisher / subscriber 失败。
+  1  iceoryx2 open publisher / subscriber 失败（含 state cache 线程 node /
+     subscriber open / ready 握手超时，v0.5 候选 E 段(5)）。
   2  CLI 参数非法（含 --robot-id 与 [robot].id 冲突，v0.5 候选 E 段(2) 身份锁）。
   3  配置 TOML 加载 / 解析失败（含 motor_ids 必填/等长/唯一校验）。
   4  启动锚定失败（timeout / stale / joint count）—— fail-fast。
-  5  tick loop publish 失败（transport / iceoryx2）。
+  5  tick loop publish 失败（transport / iceoryx2）；线程 spawn 失败族。
 "
     );
 }
@@ -435,6 +463,38 @@ fn run(args: &Args) -> Result<(), i32> {
     )?;
     tracing::info!(?bias, "s1_daemon anchored to S0 state");
 
+    // ---- v0.5 候选 E 段(5)：常驻 state cache 线程（Spec D3 第 1 条 +
+    //      P.2.5；AC-E20 线程卫生）----
+    //
+    // 锚定已证 S0 在发 state；此处起常驻 subscriber 线程（线程内建 node +
+    // subscriber，sync_channel ready 握手）。失败 = 启动失败 fail-fast（不
+    // 降级为"无 cache 仍启动"——那会让每个 Scripted submit 都被拒，且静默）；
+    // 成功后才走后续 rr_server 线程 + `rr_server_threads ready` marker。
+    let state_cache = match spawn_state_cache_thread(
+        StateCacheConfig {
+            topic: topic_state.clone(),
+            expected_joints: joints_count,
+            expected_layout: derived_layout,
+            max_stale_ms: cfg.max_stale_ms,
+            poll_interval: STATE_CACHE_POLL_INTERVAL,
+        },
+        Arc::new(SystemClock::new()),
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("fatal: spawn state cache thread: {e}");
+            return Err(state_cache_spawn_exit_code(&e));
+        }
+    };
+    tracing::info!(
+        topic_state = %topic_state,
+        expected_joints = joints_count,
+        expected_layout = format!("{derived_layout:#x}"),
+        max_stale_ms = cfg.max_stale_ms,
+        poll_interval_ms = STATE_CACHE_POLL_INTERVAL.as_millis(),
+        "s1_daemon state cache thread ready"
+    );
+
     // ---- 构造 BackendRegistry + L2 校验（B2 (3/3) wiring）----
     // BackendRegistry::from_inventory 永不失败（编译期决定），但
     // validate_profile_section 会拒：unknown backend / unsupported
@@ -490,7 +550,8 @@ fn run(args: &Args) -> Result<(), i32> {
         registry,
         profile.backends.clone(),
         solver,
-    );
+    )
+    .with_state_cache(state_cache);
     if let Err(e) = coordinator.mark_idle() {
         // Coordinator::new 总是构造在 Booting；mark_idle 仅 Booting → Idle
         // 接受，理论不可能失败。失败 = 内部状态机 bug。
@@ -592,7 +653,8 @@ fn run(args: &Args) -> Result<(), i32> {
     );
 
     // ---- shutdown 顺序契约（reviewer round 6 阻断锁定 + v0.4 候选 3
-    //      AC-C1 outline §4 加 step 4 reaper.stop+join）----
+    //      AC-C1 outline §4 加 step 4 reaper.stop+join + v0.5 候选 E 段(5)
+    //      加 step 6 state cache take+stop+join）----
     //
     // 1. coordinator.mark_shutting_down → 拒新 submit（Coordinator::submit
     //    返 SubmitError::ShuttingDown → handler 编 ActionRpcStatus::Unavailable
@@ -682,9 +744,36 @@ fn run(args: &Args) -> Result<(), i32> {
         op = "shutdown_post",
         "s1_daemon events_registry shutdown complete"
     );
+
+    // 6. (v0.5 候选 E 段(5) AC-E20) state cache 线程 take → stop → join：
+    //    所有会调 `submit`（唯一读 cache 的路径）的 RR 线程已在 step 3 join，
+    //    cache 不再被读；此处显式收线程，不依赖 Coordinator Drop 时机。
+    //    `take` 后 `has_state_cache() == false`，coordinator 已
+    //    mark_shutting_down 不会再有 submit。
+    if let Some(cache) = coordinator.take_state_cache() {
+        let stats = cache.stats();
+        match cache.join() {
+            Ok(()) => tracing::info!(
+                frames_received = stats.frames_received,
+                transport_errors = stats.transport_errors,
+                op = "state_cache_stopped",
+                "s1_daemon state cache thread stopped + joined"
+            ),
+            Err(panic_payload) => tracing::error!(
+                ?panic_payload,
+                "s1_daemon: state cache thread join returned panic; continuing shutdown"
+            ),
+        }
+    } else {
+        tracing::warn!(
+            "s1_daemon: state cache handle already taken before shutdown step 6 (unexpected)"
+        );
+    }
+
     // ctx / events_registry / coordinator / handler_clock 的 Arc 在 main
     // 函数返回时按 RAII 顺序 drop；`stop_and_join_all` 已保证所有 drain
-    // 线程被 join，drop 自身不再触发任何线程同步等待。
+    // 线程被 join，state cache 已 step 6 join，drop 自身不再触发任何线程
+    // 同步等待。
     drop(ctx);
 
     let final_state = match tick_result {
@@ -937,5 +1026,31 @@ mod tests {
     #[test]
     fn robot_identity_match_ok() {
         check_robot_identity("same", "same").unwrap();
+    }
+
+    // ---- v0.5 候选 E 段(5)：state cache spawn 失败 exit code 族 ----
+
+    #[test]
+    fn state_cache_spawn_exit_code_families() {
+        use robot_transport::error::TransportError;
+        let backend = || TransportError::Backend("x".into());
+        assert_eq!(
+            state_cache_spawn_exit_code(&StateCacheSpawnError::NodeCreate(backend())),
+            1
+        );
+        assert_eq!(
+            state_cache_spawn_exit_code(&StateCacheSpawnError::SubscriberOpen(backend())),
+            1
+        );
+        assert_eq!(
+            state_cache_spawn_exit_code(&StateCacheSpawnError::ReadyTimeout),
+            1
+        );
+        assert_eq!(
+            state_cache_spawn_exit_code(&StateCacheSpawnError::ThreadSpawn(std::io::Error::other(
+                "no threads"
+            ))),
+            5
+        );
     }
 }

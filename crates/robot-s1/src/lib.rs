@@ -19,6 +19,10 @@
 //!   [`coordinator::build_hold_command`] / [`coordinator::read_anchor_from_s0_state`]。
 //!   零 iceoryx2 / 零 OS 依赖（除测试时透明的 [`robot_core::time`]）；
 //!   binary 层通过 `LatestSubscriber<JointState>` trait object 注入真订阅。
+//! - [`state_cache`]（v0.5 候选 E 段(5)）：S1 常驻 S0 state cache 线程
+//!   —— Scripted `scripted_start_pose`（提交时当前位）唯一来源；
+//!   `latest_fresh` 三重校验（joint_count / layout_id / 新鲜度）失败即拒
+//!   Scripted submit（`FailedPrecondition`），不 fallback 到启动 anchor。
 //! - [`action`]：v0.3 Phase B B2 (1/3) 起 land 的 action interface 类型
 //!   骨架（[`action::ActionRequest`] / [`action::ActionKind`] /
 //!   [`action::ActionBackend`] trait / [`action::JointCommandBody`]
@@ -52,6 +56,10 @@ pub mod action;
 // workspace 内目前无任何外部 crate 把 robot-s1 列依赖。
 pub mod action_backend;
 pub mod coordinator;
+// v0.5 候选 E 段(5)（Spec D3 第 1 条 + P.2.5）：S1 常驻 S0 state cache 线程
+// （`scripted_start_pose` 来源；stop + join + 正常 Drop，禁 mem::forget）。
+// 详 [`state_cache`] 顶部 module doc。
+pub mod state_cache;
 // B4 (2/3-c) 拆 1/3-c 的 `events_drain_thread.rs` (1001L) 成 wire/runtime
 // 两段子模块（同 (2/3-a) `rr_server` 拆分模式）。详 [`events_drain`] 顶部
 // module doc。

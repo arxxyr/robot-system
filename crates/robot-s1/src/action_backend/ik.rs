@@ -487,6 +487,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: Some(solver),
         };
         let instance = backend.start(&req, &ctx).expect("start ok");
@@ -548,6 +549,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -585,6 +587,7 @@ mod tests {
             hardware: &hardware,
             config: &cfg,
             anchor_bias: &anchor_bias,
+            scripted_start_pose: None,
             command_seq: 0,
             solver: None, // <-- 漏注入兜底
         };
@@ -625,6 +628,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -668,6 +672,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -710,6 +715,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -755,6 +761,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -800,6 +807,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -843,6 +851,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 0,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let Err(err) = backend.start(&req, &ctx) else {
@@ -879,6 +888,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: TEST_CMD_SEQ,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
@@ -953,6 +963,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         // first tick: Continue
@@ -973,6 +984,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 2,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
@@ -1000,6 +1012,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         instance.cancel(&mut ctx).expect("cancel ok");
@@ -1031,6 +1044,7 @@ mod tests {
             config: &cfg,
             anchor_bias: &anchor_bias,
             command_seq: 1,
+            scripted_start_pose: None,
             solver: Some(&solver),
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
