@@ -24,9 +24,13 @@
   → typed `ConvertError` 拒绝（整条轨迹不提交，不降级）。name→index 权威
   = config 派生 `HardwareLayout::joints`（D1 链，禁裸固定索引）。
 - **首点语义**（D7 承接 D3）：`points[0]`（提交时当前位形）**丢弃**（S1
-  段(5) `scripted_start_pose` 自 state cache 承接起点），但逐命名关节断言
-  `|points[0][j] − current[idx_j]| ≤ FIRST_POINT_TOLERANCE_RAD = 0.05 rad`
-  （AC-E10 定值，Spec P.4 PX-10；依据：STS3215 hold 噪声 ±10 tick ≈ 0.015
+  段(5) `scripted_start_pose` 自 state cache 承接起点）；首点时刻**必须严格
+  == 0.0**（冻结基线 `executor.py:99` current @ t=0；非零 →
+  `ConvertError::FirstPointTimeNonZero` 拒绝——dimos `JointTrajectory.py:87`
+  对非零首点会 hold 到该时刻，丢弃即吞掉该 hold 并缩短总时长；PX-13）；逐
+  命名关节断言 `|points[0][j] − current[idx_j]| ≤ FIRST_POINT_TOLERANCE_RAD
+  = 0.05 rad`（**边界含等**，回归锁 current=0 / 首点=0.05 接受、+1e-12 拒；
+  AC-E10 定值，Spec P.4 PX-10；依据：STS3215 hold 噪声 ±10 tick ≈ 0.015
   rad 的 3× 余量，且小于 demo 小幅运动上界 0.087 rad〔AC-E12 ③〕）。
 - **缺位填充**（D8）：layout 中未在 `joint_names` 出现的关节，每个
   waypoint 填同 chunk 一次读的 `current[idx]`（只动夹爪 = 5 臂关节填当前
@@ -34,8 +38,11 @@
 - **基线导入 shim** `robot_rpc::client::baseline_shim`（**测试侧**，QA5
   typed 化）：`raw12_to_rad(&[f64; 12], left (lo, hi), right (lo, hi)) ->
   Result<Shim12 { values, clamp_count }, ShimError>`——臂 `deg × π/180`；
-  夹爪 `[0,100]` 越界 clamp + 计数（镜像 dimos `np.clip` + warn）→ `/100`
-  → `rad_lo + u × (rad_hi − rad_lo)`；左右夹爪范围**必填**且 `lo < hi`
+  夹爪 `[0,100]` 越界 max/min clamp（镜像 dimos adapter 写入前最终 clamp
+  `_manipulator_base.py:546`——冻结入口 `executor.py:63` 仅 `/100`，dimos
+  两处均不告警）+ 本 shim **新增** `clamp_count` 可观测返回供调用方告警 →
+  `/100`（`[0,1]` 仅内部归一化中间值，非输入）→ `rad_lo + u × (rad_hi −
+  rad_lo)`；左右夹爪范围**必填**且 `lo < hi`
   （否则 `RangeInverted` fail-fast），NaN / Inf reject；`Shim12::{left_arm,
   right_arm}` 拆 D2(i) 6 维臂向量。"度" / `[0,100]` **只存在于 shim 输入
   层**，E 运行时全程 rad。

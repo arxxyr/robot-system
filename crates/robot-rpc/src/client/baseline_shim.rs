@@ -14,9 +14,12 @@
 //! ## 镜像换算（1:1 dimos，非等价宣称范围之外）
 //!
 //! - 臂：`rad = deg × π/180`。
-//! - 夹爪：`v ∈ [0,100]` 越界 **clamp 到 [0,100]**（镜像 dimos `np.clip` +
-//!   warn，本 shim 以 [`Shim12::clamp_count`] 计数）→ `u = v / 100` →
-//!   `rad = rad_lo + u × (rad_hi − rad_lo)`。**左右夹爪标定范围不同**，两组
+//! - 夹爪：冻结入口仅 `/100`（`executor.py:63`，不 clamp 不告警）；写入前
+//!   adapter 以 max/min clamp 到标定范围且**不告警**（`_manipulator_base.py:546`）。
+//!   本 shim 镜像该最终 max/min clamp（在 `[0,100]` 域做，与 `[0,1]` 域等价），
+//!   并**额外**返回 [`Shim12::clamp_count`]（本 shim 新增的可观测值，供调用方
+//!   告警；dimos 无此告警）→ `u = v / 100`（`[0,1]` 仅为内部归一化中间值，
+//!   非输入）→ `rad = rad_lo + u × (rad_hi − rad_lo)`。**左右夹爪标定范围不同**，两组
 //!   `(rad_lo, rad_hi)` 必填（QA5）——由调用方用 feetech 公共换算 API
 //!   （`robot_adapter_feetech::raw_to_rad`）从标定 JSON `range_min/max` 派生，
 //!   **本 crate 不复制 raw↔rad 公式**（D11 换算权威唯一）。

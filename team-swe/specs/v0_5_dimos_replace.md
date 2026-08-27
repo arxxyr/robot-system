@@ -503,9 +503,12 @@ post-E robotctl 候选）。
   权威 = S0 calibration clamp 既有路径，不在 client 复制第二道）。
 - **基线导入 shim（测试侧，r2 新增）**：输入 = **冻结 12 维原始形态 = 臂
   "度" + gripper [0,100]**（`executor.py:55-68` `action_to_positions` 入参
-  语义），镜像其换算：臂 `× π/180`；gripper `/100 → [0,1] → rad`（
-  `rad = rad_lo + v × (rad_hi − rad_lo)`），**rad_lo/rad_hi 由调用方显式
-  传入**。越界镜像 dimos clamp（[0,100] clamp + 计数 warn）。
+  语义），镜像其换算：臂 `× π/180`；gripper `/100 → [0,1]〔shim 内部归一化
+  中间值，非输入〕→ rad`（`rad = rad_lo + v × (rad_hi − rad_lo)`），
+  **rad_lo/rad_hi 由调用方显式传入**。越界镜像 dimos adapter 写入前最终
+  max/min clamp（`_manipulator_base.py:546`，dimos 不告警；冻结入口
+  `executor.py:63` 仅 `/100`）；shim **额外**返回 `clamp_count` 供调用方告警
+  （段(6) 实施更正：非"计数 warn"镜像）。
 - **换算权威唯一（r2 + r3 T6 事实更正）**：`raw↔rad` 现为 feetech adapter
   **私有 fn**（`adapter.rs:92-103`），且 **robot-tests 现无 feetech 依赖**
   （`robot-tests/Cargo.toml` [dependencies] 无该 crate）——r2 "已 dep"表述
@@ -518,8 +521,9 @@ post-E robotctl 候选）。
 - **失败语义（r2）**：NaN/Inf → reject（helper 与 shim 均）；长度不匹配 →
   reject；标定 `range_min >= range_max` → 派生期 **fail-fast**；rad-native
   路径无 clamp（垃圾值由 S0 calibration clamp 兜底 + AC 锁 reject 面）。
-- r1 结论保持：**"[0,1]"（连同"度"/[0,100]）不进 E 运行时**，仅存在于 shim
-  输入层（CodeMap §5.2 之问的完整答案）。
+- r1 结论保持：**"度" / [0,100] 不进 E 运行时**，仅存在于 shim 输入层；
+  "[0,1]" 仅为 shim 内部归一化中间值（非输入，亦不进运行时；段(6) 措辞更正）
+  （CodeMap §5.2 之问的完整答案）。
 
 **AC 钩子**：AC-E10（shim 度/[0,100] 镜像换算 + clamp 计数 + rad_lo/hi 参数
 化；helper reject 全路径；range 反转 fail-fast）。
@@ -744,7 +748,7 @@ s0_daemon 尚未 exec）+ **每臂 ExecStart guard 强制** + runbook 硬步序
 | AC-E7 | 连续两 chunk 无回拉、无跳变（G1 闭合） | e2e |
 | AC-E8 | HoldPose 回归 bit 等价（target == anchor_bias） | unit + e2e |
 | AC-E9 | 非目标关节填当前位 + 漂移容差数值 | e2e |
-| AC-E10 | 转换 helper：差分时长 / 首点宽容校验 / gripper [0,1]→rad 导入 | unit |
+| AC-E10 | 转换 helper：差分时长 / 首点严格 t=0 + 宽容校验（≤ 0.05 rad 含等）/ gripper [0,100] clamp+计数→rad 导入 | unit |
 | AC-E11 | 对照移植清单三调用面 e2e 全绿（M1/M2/M3+M4 经 D6 同车） | e2e |
 | AC-E12 | Orin 真机三步（读状态→双臂→双夹爪）受监督 demo runbook 化——**D15-R (c1+) 显式豁免下执行，安全边界五条全满足**：① 机械隔离/工作区无人/无负载/操作者在场可立即断总电源 ② auto_enable=false、每次上扭显式 SetEnabled(true) ③ 先单臂**低速/小幅**（|target−anchor| ≤ 0.087 rad、斜率 ≤ 0.14 rad/s；撤"低扭矩"宣称）再双臂、单侧异常立即 cancel 双侧+双 EStop ④ 旧栈保留可恢复启动路径 ⑤ kill -9 带扭仅残余风险证据不得称通过；**应急协议：Enabled 期间任一 S0 死亡/重启 → 立即人工切总电源并中止本轮（不得只依赖 EStop 弱 Ack）** | 真机 demo gate |
 | AC-E13 | 既有 1185 基线 + 6 smoke 0 退化 | workspace |
@@ -1859,3 +1863,4 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
 | PX-10 | (6) | AC 定值（P.2.6 "首点宽容校验容差 AC 定值"） | `client::trajectory::FIRST_POINT_TOLERANCE_RAD = 0.05 rad`（≈ 2.9°）：STS3215 1 tick ≈ 0.0015 rad、真机 hold 噪声 ±10 tick ≈ 0.015 rad（`adapter.rs` `SYNC_GOAL_TOLERANCE` 注）的 3× 余量，且 **<** demo 小幅运动上界 0.087 rad（AC-E12 ③）——首点偏差达"一次 demo 运动"量级即拒；边界含等（≤）；仅校验 `joint_names` 命名关节（缺位关节无首点列）| trajectory.rs const + unit（边界 / 超差） |
 | PX-11 | (6) | 形态补充（P.2.6 "robot-tests optional dep 挂 `real-hw`"） | robot-tests `real-hw` 同时启用 feetech 自身 `real-hw`（serialport 真串口）——段(9) preflight / ensure-safe 需真串口，feature 名与含义对齐；代价 = `--all-features` 永久 gate（PX-5）纳入 serialport 编译面（本机 dev 已验可编）；timings 仅该 feature +11 units / 7.1 s，默认 feature 0 新 unit；deny 0 新 violation | robot-tests Cargo.toml + CHANGELOG 2026-08-27 段(6) 条 |
 | PX-12 | (6) | 并存登记（非偏离） | `client::trajectory::build_scripted_payload` 与 robotctl `payload.rs::build_scripted_payload` fbs 构造同构并存（硬边界 #5 robotctl 0 改；两者均纯 fbs 拼装无语义分叉；post-E 可让 robotctl 反向消费 client 模块） | robot-rpc / robot-cli |
+| PX-13 | (6) | 语义收紧（reviewer 段(6) 阻断 1） | 首点时刻**必须严格 == 0.0**：`points[0].time_from_start_s > 0` → `ConvertError::FirstPointTimeNonZero`（冻结基线 `executor.py:99` current @ t=0；dimos `JointTrajectory.py:87` 对非零首点 hold 到该时刻——丢弃非零首点会吞掉该 hold 并缩短总时长，故拒绝而非"只用差分"；冻结三调用面均满足，E 范围无损）；校验序 = 非有限/负（InvalidTime）→ 首点非零 → 单调；并补 PX-10 **边界含等**回归锁（current=0、首点精确 = 0.05 接受；+1e-12 拒） | trajectory.rs + unit |
