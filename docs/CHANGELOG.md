@@ -10,6 +10,76 @@
 
 ---
 
+## 2026-08-27 · 候选 E 段(6)：转换 helper + 基线导入 shim + feetech 换算公共 API（**状态：契约落地登记〔D7 / D8 / D11〕+ 依赖边登记**）
+
+### 单位契约分层落地（Spec D11：helper rad-native + 基线导入 shim；换算权威唯一）
+
+- **E 运行时 helper** `robot_rpc::client::trajectory`（D7 (iii) client 侧
+  模块）：`TrajectoryInput { joint_names, points[{ time_from_start_s,
+  positions }] }` → `Vec<Waypoint>`（全向量 rad；`dwell_ms = 0`；
+  `segment_duration_ms = round(Δt × 1000)`；`velocities` / `timestamp`
+  丢弃——两侧皆分段线性，CodeMap §3.1）。**rad-native、不 clamp**（硬件保护
+  clamp 唯一权威 = S0 calibration clamp，client 不复制第二道）；NaN / Inf、
+  长度不匹配、未知 / 重名关节、时间非有限 / 非单调、段 < 1 ms 或溢出 u32
+  → typed `ConvertError` 拒绝（整条轨迹不提交，不降级）。name→index 权威
+  = config 派生 `HardwareLayout::joints`（D1 链，禁裸固定索引）。
+- **首点语义**（D7 承接 D3）：`points[0]`（提交时当前位形）**丢弃**（S1
+  段(5) `scripted_start_pose` 自 state cache 承接起点），但逐命名关节断言
+  `|points[0][j] − current[idx_j]| ≤ FIRST_POINT_TOLERANCE_RAD = 0.05 rad`
+  （AC-E10 定值，Spec P.4 PX-10；依据：STS3215 hold 噪声 ±10 tick ≈ 0.015
+  rad 的 3× 余量，且小于 demo 小幅运动上界 0.087 rad〔AC-E12 ③〕）。
+- **缺位填充**（D8）：layout 中未在 `joint_names` 出现的关节，每个
+  waypoint 填同 chunk 一次读的 `current[idx]`（只动夹爪 = 5 臂关节填当前
+  位，反之同理）。
+- **基线导入 shim** `robot_rpc::client::baseline_shim`（**测试侧**，QA5
+  typed 化）：`raw12_to_rad(&[f64; 12], left (lo, hi), right (lo, hi)) ->
+  Result<Shim12 { values, clamp_count }, ShimError>`——臂 `deg × π/180`；
+  夹爪 `[0,100]` 越界 clamp + 计数（镜像 dimos `np.clip` + warn）→ `/100`
+  → `rad_lo + u × (rad_hi − rad_lo)`；左右夹爪范围**必填**且 `lo < hi`
+  （否则 `RangeInverted` fail-fast），NaN / Inf reject；`Shim12::{left_arm,
+  right_arm}` 拆 D2(i) 6 维臂向量。"度" / `[0,100]` **只存在于 shim 输入
+  层**，E 运行时全程 rad。
+- **换算权威唯一**：feetech `raw_to_rad` / `rad_to_raw` / `RAD_PER_TICK`
+  自 `adapter.rs` 私有 fn 提升为 `convert.rs` **pub 纯函数**（adapter 热路径
+  改调同一份实现；`cargo test -p robot-adapter-feetech` 126 / 126，新增
+  0..=4095 逐 tick 往返恒等锁）；robot-rpc **不复制公式**（shim 只收调用方
+  算好的 rad 范围；真机验收 bin 经公共 API 从标定 JSON `range_min/max`
+  派生）。
+- `client::trajectory::build_scripted_payload` 与 robotctl `payload.rs` 的
+  fbs 构造同构**并存**（robotctl 0 改硬边界；PX-12）。
+
+### 依赖边登记（P.0 "依赖边变更段" gate）
+
+- robot-tests += `robot-adapter-feetech`（optional），新 feature
+  `real-hw = ["dep:robot-adapter-feetech", "robot-adapter-feetech/real-hw"]`
+  （段(9) preflight / 真机验收 bin 宿主；PX-11）。
+- `cargo tree -p robot-tests`：默认 feature **0 新边**；`--all-features`
+  +1 直接边（子树 serialport 4.9 / libudev / nix 0.26 均已在 lock 内——
+  robot-s0 `xlerobot-real` 先例）。
+- `cargo build --timings`：默认 feature 177 units / 1.8 s（无新 unit）；
+  `--features real-hw` 188 units / 7.1 s（+11 = serialport 链，仅真机
+  feature 承担）。
+- `cargo deny check`：与段前基线**逐条一致**（licenses FAILED 既有
+  baseline〔assert_no_alloc / serialport MPL / unescaper parse-error〕+
+  advisories FAILED `RUSTSEC-2026-0258` h2 既有〔Cargo.lock 未升级任何
+  版本，本段仅记录 optional 边〕），**0 新 violation**。
+- `cargo clippy -p robot-tests --all-features` 永久 gate（PX-5）自本段起
+  覆盖 serialport 编译面（本机 dev 已验可编）。
+
+### 边界
+
+- `dual_arm_workflow` **0 stub**（QA5：段(7) 原子落）；robotctl 0 改；wire /
+  S0 / S1 / config / design.md 0 改；IK / kinematics 0 改。
+- unit 侧 AC-E10 全路径：trajectory 17 + shim 9 + convert 7；跨进程
+  E9 / E11 / E15 落段(7)。
+- gate：workspace test 1305 PASS / 0 FAIL（基线 1272 + 33）+
+  七 smoke 全绿（crash 5/5 + mock_s1 2/2 / scripted / ik / pubsub /
+  clear_estop / robotctl / freeze_systemd）。
+
+审阅人：待 reviewer 段(6) 复核；登记人：Claude。
+
+---
+
 ## 2026-08-27 · 候选 E 段(5)：G1 语义闭环——Idle hold target 源显式解锁 + 末点发布保证 + Scripted 起点改源（**状态：偏离登记〔B1 等价语义收窄版解锁〕+ 行为登记**）
 
 ### B1 等价语义显式解锁（Spec D3 第 3 条，收窄版）
