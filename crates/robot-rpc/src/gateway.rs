@@ -2155,8 +2155,10 @@ pub async fn run_gateway_with_rr_io(
         }));
     }
     for m in state_pool.thread_metrics() {
-        // label 带 hardware_id（R6-5）；LivenessObserver.label 为 &'static str，
-        // 进程生命周期内一次性 leak（每 hardware 一条，开销可忽略）。
+        // label 带 hardware_id（R6-5）；LivenessObserver.label 为 &'static str
+        // （R3-B2 锁定签名）→ 每 hardware 一次 Box::leak，进程生命周期内有界
+        // （= 配置 hardware 数）但**不**视为可忽略：Spec P.4 PX-20 登记，撤销
+        // 条件 = R3-B2 签名修订 label: Cow<'static, str> 后删除本 leak。
         let label: &'static str =
             Box::leak(format!("state_pool:{}", m.hardware_id).into_boxed_str());
         let m = Arc::clone(m);

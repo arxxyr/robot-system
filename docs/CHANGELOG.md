@@ -99,16 +99,68 @@
   warning base64 / hashbrown / wit-bindgen 既有〕；Cargo.lock 仅增
   robot-tests → robot-s1 workspace 边，0 版本变更），**0 新 violation**。
 
+### round 2 回修（reviewer 段(8) round 1：阻断 1-3 + 拍板 ×2 + 非阻断 1）
+
+- **Reverse Sync ①——继承缺陷修正（阻断 1，P0）**：`robot-health::systemd`
+  （沿 v0.2 S0 `systemd_notify.rs` 原实现）grace ping 后先 sleep 一个
+  `usec / 2` 才取初始 snapshot、再 sleep 一个才首次 enforce——首个 ping 间隔
+  = `WATCHDOG_USEC` 整，注释宣称的 "50% 余量" 从未成立，健康进程启动期可能
+  被 systemd 误杀（v0.2 task 24-29 / v0.3 A2 freeze smoke 均未暴露：只看
+  withholding 路径，不看首个间隔）。修正：cycle 0 grace 喂 + **即刻**
+  snapshot，cycle 1 起每 `usec / 2` 比较 → ping；`ping_interval = max(usec
+  / 2, 1 µs)`（`WATCHDOG_USEC = 1` 不再 busy-loop）。**S0 行为随之变化**
+  （首个 enforce ping 提前一个间隔）——上文 "S0 bit 等价" 宣称**撤回**，改为
+  "判停语义等价 + ping 节奏修正"；单测改记录每次 ping 所在 cycle（grace@0 /
+  首次 enforce@1 回归锁）。`5510dc3`；Spec P.4 PX-21。
+- **阻断 2（P0）探针有界性**：`ATTEMPT_TIMEOUT` 400 ms 包 `ready()` +
+  `unary()` 并与 stop `select!`（原仅 connect 超时——服务端 accept 后不响应
+  即永挂）；`ProbeHandle::join` ≤ 2 s 否则 abort；gateway `await_bind_ready`
+  / `ready_gate` 监听外部 `shutdown_rx`——READY 前停机 → 内部 serve-shutdown
+  → 有界收 probe + server → `Ok(())` 正常退出（不发 READY、不起 watchdog；
+  exit 0）；`join_server` ≤ `SERVER_JOIN_TIMEOUT` 5 s 否则 abort + `ServerTask`
+  （运行期停机同用）。新单测 4：hung-acceptor（只 accept 不回 h2 preface）
+  attempt 经超时计 failure、stop → join < 1 s；`ready_gate` deadline 1 s →
+  `ReadyProbeTimeout{1000}` 总耗时 < 4 s 且 server 已 join；READY 前外部
+  shutdown → `Ok(None)`；bind 前 shutdown → `Ok(None)` + `ready_tx` 收
+  `ServerTask`。`798f0c2`；Spec P.4 PX-22。
+- **阻断 3（P1）smoke 握手**：publish 前有界等 journal "freeze_control
+  thread ready"（PID0 ≥ 1 / PID1 ≥ 2；`--freeze-ready-wait-ms` 默认 5 s）——
+  spawn 返回 / READY 都不等于 subscriber attach，history_size=1 + 固定
+  sleep 非确定性。`6ddbe33`；Spec P.4 PX-23。
+- **Reverse Sync ②——候选 A 边界收窄（PX-19 拍板 = feature 隔离，不下移
+  helper）**：候选 A summary / Spec P.4 E2 "robotctl_smoke 只 dep:tokio +
+  serde_json、不引 robot-rpc/tonic" 自段(4) 起已被 `robot_rpc::client::
+  layout` 使用打破（单 feature 构建 E0433，gate 合并 feature 集掩蔽）。本次
+  撤 optional `robot-rpc` 声明上的全局 `client` feature，四个真用 tonic
+  client 的 smoke feature 各自显式 `robot-rpc/client`，`robotctl-smoke` 补
+  `dep:robot-rpc`（不开 client、不拉 tonic）——边界改述为"**不生成、不调
+  tonic client**"（编译期仍锁：feature 不含 `robot-rpc/client` 即无 stub）；
+  候选 A summary + `v0_5_operator_cli.md` P.4 E2 行追加 Reverse Sync 注。
+  8 feature 各自独立 `cargo check --all-targets` 全过。`38412ec`。
+- **拍板 ②**：测试模板 `WatchdogSec=2s` / 生产 5 s 口径保留（PX-16），前提
+  = 阻断 1 已修（daemon 侧永远从 `WATCHDOG_USEC` 派生）。
+- **非阻断登记（PX-20）**：gateway 每 hardware 一次 `Box::leak` 生成
+  `state_pool:<hardware_id>` label（`LivenessObserver.label: &'static str`，
+  R3-B2 签名锁）——进程内有界，但**不**视为"可忽略"；撤销条件 = label 改
+  `Cow<'static, str>` / `String`（R3-B2 签名修订，独立 commit）。
+
 ### 边界
 
 - 0 新 wire（V2 POD 仅 test-only topic，不进 robot_msg / frozen schema）；
-  S0 行为 bit 等价（仅调用面迁移）；robotctl 0 改；design.md 0 改；
-  `run_gateway_with_ready` 既有 bind-ready 语义 0 改。
-- 既有缺陷登记（**独立 🐛，不混本段**；Spec P.4 PX-19）：robot-tests
-  `robotctl-smoke` 单 feature 不可编译（`robotctl_smoke.rs` 段(4) 起用
-  `robot_rpc::client::layout`，feature 表未含 `dep:robot-rpc`；gate 走合并
-  feature 集掩蔽）。
-- gate：cargo fmt / clippy workspace `--all-targets` + robot-tests
+  S0 仅调用面迁移 + round 2 ping 节奏修正（见上 Reverse Sync ①）；robotctl
+  0 改；design.md 0 改；`run_gateway_with_ready` 既有 bind-ready 语义 0 改。
+- 既有缺陷 PX-19（robot-tests `robotctl-smoke` 单 feature 不可编译）已按
+  reviewer 拍板以独立 🐛 `38412ec` 修复（见上 Reverse Sync ②）。
+- round 2 gate：fmt / clippy workspace（re-check health·rpc·s1·s0·cli）+ robot-tests
+  `--all-features` 0 警告；8 smoke feature 各自独立 `cargo check` 全过；
+  release 重建 ×2；workspace test **1335 PASS / 0 FAIL**（round 1 1328 +
+  7：watchdog cycle 锁 3 + 探针 / ready_gate 有界性 4）；七 smoke 全绿
+  （crash 5/5 + mock_s1 2/2 / scripted 5/5 / ik 5/5 / pubsub all〔c3=false〕
+  / clear_estop all / robotctl 12/12 / freeze_systemd 1/1〔S0 新 ping 时序
+  下 withholding=2〕）+ **`sd_watchdog_smoke --phase all` 8/8 ×2**（每
+  case 先命中 freeze_control ready 握手再注入）；tree / timings（默认 177
+  units、sd-watchdog-smoke 274）/ deny 与 round 1 逐条一致。
+- round 1 gate：cargo fmt / clippy workspace `--all-targets` + robot-tests
   `--all-features`（PX-5）0 警告；release 重建（workspace + 6 smoke feature
   bins 含 `sd-watchdog-smoke`）；workspace test **1328 PASS / 0 FAIL**
   （基线 1305 + 23：robot-health watchdog 确定性单测 + S1 / gateway
