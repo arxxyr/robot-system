@@ -11,7 +11,9 @@
 //! 1. 起 user-mode systemd unit (Type=notify + WatchdogSec=2s + Restart=on-failure)
 //!    S1 case：smoke 进程内先起 FakeStatePublisher（派生 layout_id，50 Hz）
 //!    gateway case：双 hardware config + 每 case 分配 loopback 端口
-//! 2. 等 unit active（= daemon 已发 READY=1）+ 抓 PID0
+//! 2. 等 unit active（= daemon 已发 READY=1）+ 抓 PID0 + **有界等 journal
+//!    "freeze_control thread ready" 出现**（subscriber 已 attach 的握手；
+//!    round 2 阻断 3：spawn 返回 / READY 都不等于 subscriber 就绪）
 //! 3. 经 test-only 独立 topic（S1 `/<robot_id>/s1/test/freeze` / gateway
 //!    `/<robot_id>/gateway/test/freeze`）publish
 //!    TestFreezeCommandV2 { target_pid = PID0, worker, duration_ms = 5000 }
@@ -21,7 +23,8 @@
 //! 5. Restart=on-failure 拉起新 daemon → PID1 ≠ PID0 且 is-active（第二次 READY）
 //! 6. journal 硬断言：withholding ≥ 1 / 启动 banner ≥ 2 / "READY=1 sent" ≥ 2 /
 //!    "freeze_control thread ready" ≥ 2 / "freeze_control: applied" ≥ 1
-//! 7. 反向步（R5-5）：显式再发一条 target_pid = PID0（已死）的命令 → PID1 打
+//! 7. 反向步（R5-5）：等 PID1 的 "freeze_control thread ready"（计数 ≥ 2）后
+//!    显式再发一条 target_pid = PID0（已死）的命令 → PID1 打
 //!    "stale freeze ignored (pid mismatch)"，applied 计数不变
 //! 8. 空闲保持 ≥ 3 × WatchdogSec：PID 仍 = PID1、仍 active、withholding /
 //!    applied / banner 计数全部不变（零请求不重启 = AC-E19 的另一向）
@@ -289,6 +292,9 @@ struct Args {
     /// freeze 后等多久看 PID 切换（毫秒）。
     /// 默认 8s = WatchdogSec(2s) + RestartSec(2s) + 新 daemon READY(≤ 3s) + jitter。
     restart_wait_ms: u64,
+    /// 等 "freeze_control thread ready" journal marker 的上限（毫秒；round 2
+    /// 阻断 3：publish 前的 subscriber attach 握手）。
+    freeze_ready_wait_ms: u64,
     /// 反向步 publish 后等 PID1 消费 + 打 stale 日志的余量（毫秒）。
     stale_settle_ms: u64,
     /// 空闲保持窗（毫秒；默认 3 × WatchdogSec）。
@@ -315,6 +321,7 @@ impl Args {
             freeze_duration_ms: 5_000,
             daemon_active_wait_ms: 20_000,
             restart_wait_ms: 8_000,
+            freeze_ready_wait_ms: 5_000,
             stale_settle_ms: 1_000,
             idle_hold_ms: 3 * WATCHDOG_SEC_MS,
         };
@@ -344,6 +351,7 @@ impl Args {
                     args.daemon_active_wait_ms = parse_u64(a, value(i)?)?;
                 }
                 "--restart-wait-ms" => args.restart_wait_ms = parse_u64(a, value(i)?)?,
+                "--freeze-ready-wait-ms" => args.freeze_ready_wait_ms = parse_u64(a, value(i)?)?,
                 "--stale-settle-ms" => args.stale_settle_ms = parse_u64(a, value(i)?)?,
                 "--idle-hold-ms" => args.idle_hold_ms = parse_u64(a, value(i)?)?,
                 "-h" | "--help" => return Err("HELP".into()),
@@ -398,6 +406,7 @@ OPTIONS:
   --freeze-duration-ms <MS>    默认 5000（必须 > WatchdogSec=2000）
   --daemon-active-wait-ms <MS> 等 active（READY）超时，默认 20000
   --restart-wait-ms <MS>       freeze 后等 PID 切换，默认 8000
+  --freeze-ready-wait-ms <MS>  等 freeze_control thread ready journal 握手，默认 5000
   --stale-settle-ms <MS>       反向步后等 stale 日志，默认 1000
   --idle-hold-ms <MS>          空闲保持窗，默认 6000（3 × WatchdogSec）
   -h, --help                   显示帮助
@@ -795,6 +804,18 @@ fn run_case(args: &Args, env: &EnvCtx, ctx: &CaseCtx) -> Result<(), String> {
     let pid0 = wait_for_active_pid_with(&ctx.unit_name, args.daemon_active_wait_ms, |_| true)
         .map_err(|e| format!("waiting for daemon active (READY): {e}"))?;
     eprintln!("  ✓ daemon active (READY=1 received by systemd), PID0={pid0}");
+    // round 2 阻断 3：READY / spawn 返回都不等于 freeze subscriber 已 attach；
+    // 以 daemon 在 subscriber 建成后打的 "freeze_control thread ready" 作握手
+    // （history_size=1 + 固定 sleep 不构成确定性）。
+    let markers = ctx.target.markers();
+    wait_for_journal_count(
+        &ctx.unit_name,
+        markers.freeze_ready,
+        1,
+        args.freeze_ready_wait_ms,
+    )
+    .map_err(|e| format!("PID0 freeze_control ready handshake: {e}"))?;
+    eprintln!("  ✓ PID0 freeze_control subscriber attached (journal marker)");
 
     // ---- 4) 注入 freeze（target_pid = PID0）----
     publish_freeze(&ctx.robot_id, ctx.target, pid0, args.freeze_duration_ms)?;
@@ -813,8 +834,14 @@ fn run_case(args: &Args, env: &EnvCtx, ctx: &CaseCtx) -> Result<(), String> {
         "  ✓ PID switched: PID0={pid0} → PID1={pid1} (systemd watchdog restart, is-active confirmed)"
     );
 
-    // ---- 6) journal 硬断言 ----
-    let markers = ctx.target.markers();
+    // ---- 6) journal 硬断言（含 PID1 的 freeze_control ready 握手 ≥ 2）----
+    wait_for_journal_count(
+        &ctx.unit_name,
+        markers.freeze_ready,
+        2,
+        args.freeze_ready_wait_ms,
+    )
+    .map_err(|e| format!("PID1 freeze_control ready handshake: {e}"))?;
     let j1 = JournalCounts::query(&ctx.unit_name, markers)?;
     j1.assert_after_restart()?;
     eprintln!("  ✓ journal after restart: {}", j1.summary());
@@ -986,6 +1013,30 @@ fn journalctl_user(unit_name: &str) -> Result<String, String> {
         ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// 有界等待 journal 中 `needle` 出现次数 ≥ `min_count`（round 2 阻断 3：以
+/// daemon 在 subscriber 建成后打的 ready marker 作 publish 前握手）。
+fn wait_for_journal_count(
+    unit_name: &str,
+    needle: &str,
+    min_count: usize,
+    timeout_ms: u64,
+) -> Result<usize, String> {
+    let start = Instant::now();
+    let timeout = Duration::from_millis(timeout_ms);
+    loop {
+        let n = count_substring(&journalctl_user(unit_name)?, needle);
+        if n >= min_count {
+            return Ok(n);
+        }
+        if start.elapsed() >= timeout {
+            return Err(format!(
+                "journal marker {needle:?} count={n} < {min_count} within {timeout_ms}ms"
+            ));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
 }
 
 fn cleanup_case(env: &EnvCtx, unit_name: &str) {
