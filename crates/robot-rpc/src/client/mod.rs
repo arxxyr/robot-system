@@ -4,5 +4,15 @@
 //! 后续 `dual_arm_workflow`〔段(7)〕都从这里 import，禁止各自复制）。
 //! 本模块**不**依赖 tonic `client` feature——只消费 prost message 类型
 //! （server-only build 亦生成）+ toml + `robot_msg::joint_layout`。
+//!
+//! - [`layout`]（段(4)）：config 派生关节表 + `RobotState.layout_id` 硬校验。
+//! - [`trajectory`]（段(6)，D7/D8/D11）：`JointTrajectory` 形状 →
+//!   `ScriptedPayload` waypoints（rad-native；name→index / 时长差分 / 首点
+//!   宽容校验 / 缺位填 current）+ fbs 构造。
+//! - [`baseline_shim`]（段(6)，D11）：冻结 12 维原始形态（臂 度 + 夹爪
+//!   `[0,100]`）→ rad 导入 shim（测试侧；左右夹爪 rad 范围由调用方经
+//!   feetech 公共换算 API 派生后传入，本 crate 不复制公式）。
 
+pub mod baseline_shim;
 pub mod layout;
+pub mod trajectory;

@@ -1695,6 +1695,7 @@ dependencies = [
  "hdrhistogram",
  "iceoryx2",
  "libc 1.0.0-alpha.3",
+ "robot-adapter-feetech",
  "robot-core",
  "robot-kinematics",
  "robot-kinematics-xlerobot",

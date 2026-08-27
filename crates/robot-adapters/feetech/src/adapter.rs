@@ -22,7 +22,6 @@
 //! - velocity / torque：raw 单位定义随固件版本变（lerobot 也未做精确转换），
 //!   v0.2 直接 raw 透传到 f32（精度足够 50 Hz observation）。
 
-use std::f32::consts::TAU;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -35,8 +34,9 @@ use robot_core::executor_ctrl::OutputSafetyProbe;
 
 use crate::bus::FeetechBus;
 use crate::calibration_io::clamp_raw;
+use crate::convert::{rad_to_raw, raw_to_rad};
 use crate::error::FeetechError;
-use crate::registers::{STS3215_MAX_POSITION, STS3215_RESOLUTION, TorqueMode};
+use crate::registers::TorqueMode;
 use crate::transport::SerialTransport;
 use crate::types::MotorCalibration;
 
@@ -80,27 +80,8 @@ const SYNC_GOAL_MAX_ATTEMPTS: u32 = 3;
 /// 比噪声宽一倍，远小于 "跳到 center" 的失效幅度（600+ tick）。
 const SYNC_GOAL_TOLERANCE: i32 = 20;
 
-/// 12-bit tick → rad：`tick / 4096 * 2π`。
-const RAD_PER_TICK: f32 = TAU / (STS3215_RESOLUTION as f32);
-
-/// rad → 12-bit tick（绝对值，未加中点偏移）。
-#[inline]
-fn rad_to_tick_offset(rad: f32) -> f32 {
-    rad / RAD_PER_TICK
-}
-
-/// raw_position（带符号 sign-magnitude 解码后的值，可为负）→ rad。
-#[inline]
-fn raw_to_rad(raw: i32) -> f32 {
-    (raw - i32::from(STS3215_MAX_POSITION)) as f32 * RAD_PER_TICK
-}
-
-/// rad → raw_position（带符号；写到 sync_write 前由 bus 自动 sign-magnitude 编码）。
-#[inline]
-fn rad_to_raw(rad: f32) -> i32 {
-    let tick = rad_to_tick_offset(rad).round() as i32;
-    tick + i32::from(STS3215_MAX_POSITION)
-}
+// raw ↔ rad 换算：v0.5 候选 E 段(6) 起挪到 `crate::convert`（pub 纯函数，
+// 公式单源；本 adapter 热路径与外部消费者〔真机验收 bin〕调同一份实现）。
 
 // ============================================================================
 // FeetechAdapter
@@ -733,10 +714,12 @@ impl<T: SerialTransport + 'static> OutputSafetyProbe for FeetechAdapter<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // 换算常量已挪 `crate::convert`；本模块测试仍以 TAU/4096 手算 ground truth。
     use crate::protocol::checksum;
     use crate::transport::{MockHandle, MockTransport};
     use crate::types::Motor;
     use std::collections::HashMap;
+    use std::f32::consts::TAU;
 
     /// 构造 + connected 状态的 adapter。喂 handshake 回包（每 motor 2 包：
     /// PING ack + Model_Number 777）让 `connect()` 内部 handshake + populate

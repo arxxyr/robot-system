@@ -190,6 +190,12 @@ serde_json = { workspace = true, optional = true }
 #   进 robot-tests crate。
 robot-kinematics          = { workspace = true, optional = true }
 robot-kinematics-xlerobot = { workspace = true, optional = true }
+# v0.5 候选 E 段(6)（Spec D11 换算权威唯一 + P.2.6）：feetech 公共换算 API
+# （`raw_to_rad` / `rad_to_raw`）供段(9) preflight / 真机验收 bin 从标定 JSON
+# `range_min/max` 派生 gripper rad_lo/rad_hi，再传 `robot_rpc::client::
+# baseline_shim`。optional 挂 `real-hw` feature（含 feetech `real-hw` →
+# serialport，真机 bin 才拉）；默认构建 0 影响（timings / tree / deny 段(6) 核）。
+robot-adapter-feetech = { workspace = true, optional = true }
 
 [features]
 # v0.3 A2-3 freeze systemd smoke 入口 feature。
@@ -260,6 +266,11 @@ ik-backend-smoke = [
 #   stdout（AC-7：serde_json::from_str 过 + 字段集）。serde_json 已在 lock
 #   （robot-cli 用），加 optional dep 不改 Cargo.lock。
 robotctl-smoke = ["dep:tokio", "dep:serde_json"]
+# v0.5 候选 E 段(6)：真机侧 feature（段(9) preflight / 验收 bin 的 required-
+# features 宿主）——拉 feetech 公共换算 API + 其 `real-hw`（serialport 真串口）。
+# CI / dev 默认 off；`cargo clippy -p robot-tests --all-features` 永久 gate
+# （PX-5）覆盖本 feature 编译面。
+real-hw = ["dep:robot-adapter-feetech", "robot-adapter-feetech/real-hw"]
 
 [lints]
 workspace = true

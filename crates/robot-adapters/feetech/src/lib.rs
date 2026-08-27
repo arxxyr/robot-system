@@ -26,6 +26,8 @@
 //! 7. `types` —— Motor / MotorCalibration 强类型
 //! 8. `error` —— `FeetechError` enum（thiserror）
 //! 9. `adapter` —— `FeetechAdapter` 实现 `ManipulatorAdapter` trait
+//! 10. `convert` —— STS3215 `raw ↔ rad` 纯换算（v0.5 候选 E 段(6) 自 adapter
+//!     私有 fn 提升为 pub；公式单源，外部消费者〔真机验收 bin〕禁复制）
 //!
 //! 单元测试覆盖 1-7（mock transport 喂虚假回包，验证字节级正确性 + 编解码
 //! roundtrip）。
@@ -64,6 +66,7 @@ pub mod adapter;
 pub mod bus;
 pub mod calibration;
 pub mod calibration_io;
+pub mod convert;
 pub mod encoding;
 pub mod error;
 #[cfg(feature = "real-hw")]
@@ -76,6 +79,7 @@ pub mod types;
 pub use adapter::FeetechAdapter;
 pub use bus::FeetechBus;
 pub use calibration_io::{clamp_raw, load_and_merge, load_file};
+pub use convert::{RAD_PER_TICK, rad_to_raw, raw_to_rad};
 pub use error::FeetechError;
 #[cfg(feature = "real-hw")]
 pub use factory::FeetechFactory;
