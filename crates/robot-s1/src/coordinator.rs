@@ -1005,6 +1005,7 @@ where
     let cfg = coordinator.config();
     let layout_id = coordinator.layout_id();
     let bias = coordinator.anchor_bias();
+    let loop_metrics = coordinator.loop_metrics();
 
     let start_ns = clock.now().0;
     let mut state = TickState::new(start_ns);
@@ -1018,6 +1019,12 @@ where
         if shutdown.load(Ordering::Acquire) {
             break;
         }
+
+        // v0.5 候选 E 段(8)：liveness 计数（空闲亦推进）+ test-only freeze hook
+        // （Tick 槽位：loop 顶端 park）。
+        loop_metrics.loop_tick_count.fetch_add(1, Ordering::Relaxed);
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::liveness::freeze_check(&loop_metrics.freeze_until_ns_tick, clock, shutdown);
 
         let now_ns = clock.now().0;
 
@@ -1039,6 +1046,10 @@ where
         // Heartbeat：永远按周期发，不分状态（reviewer 决策 #10d：Degraded
         // 也续发 hb，S0 watchdog 不会因 hb stale 触发 control-lost）。
         if now_ns.saturating_sub(state.last_hb_ns) >= hb_period_ns {
+            // test-only freeze hook（HeartbeatPub 槽位：hb publish 前 park；与
+            // Tick 同线程，仅 park 点不同）。
+            #[cfg(any(test, feature = "test-freeze-hook"))]
+            crate::liveness::freeze_check(&loop_metrics.freeze_until_ns_heartbeat, clock, shutdown);
             let body = build_heartbeat(cfg.source_id, state.hb_seq, cfg.heartbeat_hz, now_ns);
             publish_body::<markers::Heartbeat, _>(
                 hb_pub,
@@ -1049,6 +1060,9 @@ where
             )?;
             state.hb_seq = state.hb_seq.wrapping_add(1);
             state.last_hb_ns = now_ns;
+            loop_metrics
+                .heartbeat_published
+                .fetch_add(1, Ordering::Relaxed);
         }
 
         // Command：按周期 + 按 state 分支。
@@ -1120,6 +1134,9 @@ where
 
             if published {
                 state.cmd_seq = state.cmd_seq.wrapping_add(1);
+                loop_metrics
+                    .command_published
+                    .fetch_add(1, Ordering::Relaxed);
             }
             // 无论是否 publish，都推 last_cmd_ns 维持 50 Hz tick rate
             // （否则 1 ms poll 间会反复 retry，违反 backend tick 节奏）。
@@ -1475,9 +1492,10 @@ use crate::action::{
     ActionTicket, ClearError, JointCommandBody, SubmitError,
 };
 use crate::action_backend::BackendRegistry;
-use crate::state_cache::{StaleOrMissing, StateCacheHandle};
+use crate::liveness::TickLoopMetrics;
+use crate::state_cache::{StaleOrMissing, StateCacheHandle, StateCacheLiveness};
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// `Coordinator::status` 查询的 finished ring 容量。
 ///
@@ -1650,6 +1668,10 @@ pub struct Coordinator {
     /// `state_cache`（submit 持 inner 时短暂取 state_cache），`take` /
     /// `probe` 只取 `state_cache`，无 ABBA。
     state_cache: Mutex<Option<StateCacheHandle>>,
+    /// tick loop 进度计数（v0.5 候选 E 段(8)）：[`run_action_tick_loop`] 每次
+    /// 迭代 / 每帧 hb 推进；s1_daemon 把它挂 systemd watchdog observer，
+    /// test-only freeze control 写其 `freeze_until_ns_*`。
+    loop_metrics: Arc<TickLoopMetrics>,
 }
 
 impl Coordinator {
@@ -1681,7 +1703,22 @@ impl Coordinator {
             anchor_bias,
             solver,
             state_cache: Mutex::new(None),
+            loop_metrics: Arc::new(TickLoopMetrics::default()),
         }
+    }
+
+    /// tick loop 进度计数 `Arc`（watchdog observer / freeze control / 诊断）。
+    #[must_use]
+    pub fn loop_metrics(&self) -> Arc<TickLoopMetrics> {
+        Arc::clone(&self.loop_metrics)
+    }
+
+    /// state cache 线程 liveness 面（`None` = 未注入 cache）。
+    #[must_use]
+    pub fn state_cache_liveness(&self) -> Option<Arc<StateCacheLiveness>> {
+        self.lock_state_cache()
+            .as_ref()
+            .map(StateCacheHandle::liveness)
     }
 
     /// 注入 S1 常驻 state cache handle（v0.5 候选 E 段(5)；builder 形态，

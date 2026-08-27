@@ -11,6 +11,14 @@
 //!   = 提交时当前位的唯一来源；spawn 失败 = 启动失败 fail-fast，**先于**
 //!   `rr_server_threads ready` marker）；shutdown 末步 `take → stop →
 //!   join` 显式收线程（AC-E20）。
+//! - **v0.5 候选 E 段(8)**（Spec D12，**显式解锁 B1 决策 #7 "不带
+//!   sd_notify"**）：全部 worker 就绪后 `READY=1` + liveness-gated systemd
+//!   watchdog（`robot_health::systemd`，线程 `s1_systemd_wd`；observer =
+//!   tick loop / heartbeat pub / 4 rr server / state cache，各自
+//!   `loop_tick_count` 空闲亦推进）；shutdown 先 `STOPPING=1` 再停 ping。
+//!   `NOTIFY_SOCKET` / `WATCHDOG_USEC` 未设 = no-op（非 systemd 零差异）。
+//!   test-only `--features test-freeze-hook`：`/<robot_id>/s1/test/freeze`
+//!   注入线程（`sd_watchdog_smoke` 用）。
 //! - **B2 (3/3)** 加：parse `[s1.profile]` + 构造
 //!   [`coordinator::Coordinator`]（`BackendRegistry::from_inventory` +
 //!   `validate_profile_section` L2 fail-fast）→ `mark_idle` 转 Idle →
@@ -60,7 +68,8 @@
 //!
 //! ### 非目标（B2 边界，详 outline §1.2 + §9）
 //!
-//! - **不**带 `sd_notify` / systemd watchdog（B1 决策 #7；Type=simple）。
+//! - ~~**不**带 `sd_notify` / systemd watchdog（B1 决策 #7；Type=simple）~~
+//!   ——v0.5 候选 E 段(8) 起 **带**（D12 显式解锁，unit `Type=notify`）。
 //! - **不**做 trajectory / IK / scheduler / 真 RL backend（→ B3 / B4）。
 //! - **不**起 robot-rpc gateway 进程（→ B4）。
 //! - **不**改 `mock_s1`（保留作 ballet 工具，独立于 B2 wiring）。
@@ -76,6 +85,9 @@ use std::time::Duration;
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::time::{RobotClock, SystemClock};
+use robot_health::systemd::{
+    LivenessObserver, WatchdogConfig, notify_ready, notify_stopping, spawn_watchdog,
+};
 use robot_msg::markers;
 use robot_s1::action_backend::BackendRegistry;
 use robot_s1::coordinator::{self, Coordinator, CoordinatorConfig, HardwareSection, TickError};
@@ -292,6 +304,11 @@ TOPICS:
   sub /<robot_id>/s0/<hardware_id>/state   (启动期一次性锚定 + 段(5) 常驻 state cache)
   pub /<robot_id>/s1/<hardware_id>/command (50 Hz hold)
   pub /<robot_id>/s1/heartbeat             (50 Hz)
+
+SYSTEMD (v0.5 候选 E 段(8), unit Type=notify):
+  NOTIFY_SOCKET / WATCHDOG_USEC 由 systemd 注入：全部 worker 就绪后
+  READY=1；liveness-gated WATCHDOG=1（tick loop / heartbeat / 4 rr / state
+  cache 任一停滞即停喂）；退出先 STOPPING=1。未设置 = no-op。
 
 EXIT CODES:
   0  正常退出（duration / SIGINT / SIGTERM）。
@@ -641,6 +658,95 @@ fn run(args: &Args) -> Result<(), i32> {
         })?;
     tracing::info!("s1_daemon events_drain reaper thread spawned (1s cadence)");
 
+    // ---- v0.5 候选 E 段(8)：test-only freeze control（仅 `--features
+    //      test-freeze-hook`；沿 s0_daemon 只 gate feature 不带 test）----
+    //
+    // 所有 worker（tick loop metrics / 4 rr server / state cache）都已存在后
+    // 起注入线程；它**不**进 watchdog observer（测试注入器非 worker）。
+    #[cfg(feature = "test-freeze-hook")]
+    let freeze_control_handle: Option<robot_s1::freeze_control::FreezeControlHandle> =
+        if let Some(state_cache) = coordinator.state_cache_liveness() {
+            let ctx = robot_s1::freeze_control::FreezeControlContext {
+                robot_id: args.robot_id.clone(),
+                clock: Arc::clone(&handler_clock),
+                tick_loop: coordinator.loop_metrics(),
+                rr_servers: vec![
+                    rr_handles.task_invoke.metrics(),
+                    rr_handles.task_cancel.metrics(),
+                    rr_handles.task_status.metrics(),
+                    rr_handles.clear_error.metrics(),
+                ],
+                state_cache,
+            };
+            match robot_s1::freeze_control::spawn_freeze_control_thread(ctx) {
+                Ok(h) => {
+                    tracing::info!("s1 freeze_control thread spawned (test-freeze-hook feature)");
+                    Some(h)
+                }
+                Err(e) => {
+                    tracing::error!(
+                        error = ?e,
+                        "s1 freeze_control thread spawn failed; freeze hook control inactive"
+                    );
+                    None
+                }
+            }
+        } else {
+            tracing::error!("s1 freeze_control: state cache not attached; control inactive");
+            None
+        };
+
+    // ---- v0.5 候选 E 段(8)：systemd READY=1 + liveness-gated watchdog
+    //      （Spec D12；B1 决策 #7 显式解锁，登记 CHANGELOG）----
+    //
+    // 顺序：全部 observer 已就绪（rr ×4 spawn 成功、state cache ready 握手
+    // 已过、tick loop metrics 即将由本线程推进）→ READY=1 → 起 watchdog
+    // （enforce 自 grace 周期后开始）。observer 全部读 `loop_tick_count` 族
+    // （空闲亦推进），不用请求计数（D12 r3 T4 第 1 条）。非 systemd 环境
+    // 两者均 no-op / None。
+    let observers: Vec<LivenessObserver> = {
+        let tick = coordinator.loop_metrics();
+        let hb = coordinator.loop_metrics();
+        let rr_invoke = rr_handles.task_invoke.metrics();
+        let rr_cancel = rr_handles.task_cancel.metrics();
+        let rr_status = rr_handles.task_status.metrics();
+        let rr_clear = rr_handles.clear_error.metrics();
+        let mut v = vec![
+            LivenessObserver::from_fn("tick_loop", move || {
+                tick.loop_tick_count.load(Ordering::Relaxed)
+            }),
+            LivenessObserver::from_fn("heartbeat_pub", move || {
+                hb.heartbeat_published.load(Ordering::Relaxed)
+            }),
+            LivenessObserver::from_fn("rr_task_invoke", move || {
+                rr_invoke.loop_tick_count.load(Ordering::Relaxed)
+            }),
+            LivenessObserver::from_fn("rr_task_cancel", move || {
+                rr_cancel.loop_tick_count.load(Ordering::Relaxed)
+            }),
+            LivenessObserver::from_fn("rr_task_status", move || {
+                rr_status.loop_tick_count.load(Ordering::Relaxed)
+            }),
+            LivenessObserver::from_fn("rr_clear_error", move || {
+                rr_clear.loop_tick_count.load(Ordering::Relaxed)
+            }),
+        ];
+        if let Some(cache) = coordinator.state_cache_liveness() {
+            v.push(LivenessObserver::from_fn("state_cache", move || {
+                cache.loop_tick_count.load(Ordering::Relaxed)
+            }));
+        }
+        v
+    };
+    let observer_count = observers.len();
+    notify_ready();
+    let systemd_wd_handle = spawn_watchdog(observers, WatchdogConfig::new("s1_systemd_wd"));
+    tracing::info!(
+        watchdog_active = systemd_wd_handle.is_some(),
+        observers = observer_count,
+        "s1_daemon systemd READY=1 sent (no-op when NOTIFY_SOCKET unset)"
+    );
+
     // ---- tick loop（state-aware：Idle/Degraded → hold；Executing →
     //      action override；ShuttingDown → break）----
     let tick_result = coordinator::run_action_tick_loop(
@@ -653,9 +759,29 @@ fn run(args: &Args) -> Result<(), i32> {
         &SHUTDOWN,
     );
 
+    // ---- v0.5 候选 E 段(8) D12 第 4 条：先 STOPPING=1 让 systemd 切
+    //      deactivating（停 WatchdogSec 计时），再停 watchdog ping 线程；顺序
+    //      反过来 graceful 期间稍长会被 systemd 误杀。test-only freeze control
+    //      随后 stop + join（测试注入器，不在 worker 停链内）。----
+    notify_stopping();
+    if let Some(h) = systemd_wd_handle {
+        h.stop();
+    }
+    #[cfg(feature = "test-freeze-hook")]
+    if let Some(h) = freeze_control_handle {
+        h.request_stop();
+        if let Err(panic_payload) = h.join() {
+            tracing::error!(
+                ?panic_payload,
+                "s1_daemon: freeze_control thread join returned panic; continuing shutdown"
+            );
+        }
+    }
+
     // ---- shutdown 顺序契约（reviewer round 6 阻断锁定 + v0.4 候选 3
     //      AC-C1 outline §4 加 step 4 reaper.stop+join + v0.5 候选 E 段(5)
-    //      加 step 6 state cache take+stop+join）----
+    //      加 step 6 state cache take+stop+join；段(8) 前置 STOPPING=1 +
+    //      watchdog stop）----
     //
     // 1. coordinator.mark_shutting_down → 拒新 submit（Coordinator::submit
     //    返 SubmitError::ShuttingDown → handler 编 ActionRpcStatus::Unavailable

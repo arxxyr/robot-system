@@ -214,6 +214,18 @@ struct CacheSlot {
     transport_errors: AtomicU64,
 }
 
+/// state cache 线程 liveness 面（v0.5 候选 E 段(8)，Spec D12）：`Arc` 由
+/// handle 与线程共享，watchdog observer / test-only freeze control 经
+/// [`StateCacheHandle::liveness`] 取得。
+#[derive(Debug, Default)]
+pub struct StateCacheLiveness {
+    /// 每次 poll 迭代 +1（空闲亦推进；liveness 源）。
+    pub loop_tick_count: AtomicU64,
+    /// test-only：loop 顶端 freeze 截止（absolute ns，0 = 未冻结）。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
+}
+
 impl CacheSlot {
     fn lock_latest(&self) -> MutexGuard<'_, Option<CachedFrame>> {
         self.latest.lock().unwrap_or_else(PoisonError::into_inner)
@@ -265,6 +277,7 @@ pub struct StateCacheStats {
 pub struct StateCacheHandle {
     cfg: StateCacheConfig,
     slot: Arc<CacheSlot>,
+    liveness: Arc<StateCacheLiveness>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -314,6 +327,13 @@ impl StateCacheHandle {
             self.cfg.max_stale_ns(),
         )
         .map_err(StaleOrMissing::from)
+    }
+
+    /// 线程 liveness 面（watchdog observer 读 `loop_tick_count`；test-only
+    /// freeze control 写 `freeze_until_ns`）。
+    #[must_use]
+    pub fn liveness(&self) -> Arc<StateCacheLiveness> {
+        Arc::clone(&self.liveness)
     }
 
     /// 计数快照（诊断 / 测试等待首帧）。
@@ -398,10 +418,12 @@ where
     C: RobotClock + 'static,
 {
     let slot = Arc::new(CacheSlot::default());
+    let liveness = Arc::new(StateCacheLiveness::default());
     let stop = Arc::new(AtomicBool::new(false));
     let (ready_tx, ready_rx) = sync_channel::<Result<(), StateCacheSpawnError>>(1);
 
     let slot_for_thread = Arc::clone(&slot);
+    let liveness_for_thread = Arc::clone(&liveness);
     let stop_for_thread = Arc::clone(&stop);
     let poll_ns = u64::try_from(cfg.poll_interval.as_nanos()).unwrap_or(u64::MAX);
     let topic_for_thread = cfg.topic.clone();
@@ -425,6 +447,7 @@ where
             run_cache_loop(
                 &mut sub,
                 &slot_for_thread,
+                &liveness_for_thread,
                 &stop_for_thread,
                 clock.as_ref(),
                 poll_ns,
@@ -438,6 +461,7 @@ where
         Ok(Ok(())) => Ok(StateCacheHandle {
             cfg,
             slot,
+            liveness,
             stop,
             thread: Some(handle),
         }),
@@ -463,6 +487,7 @@ where
 fn run_cache_loop<S>(
     sub: &mut S,
     slot: &CacheSlot,
+    liveness: &StateCacheLiveness,
     stop: &AtomicBool,
     clock: &dyn RobotClock,
     poll_ns: u64,
@@ -471,6 +496,10 @@ fn run_cache_loop<S>(
     S: LatestSubscriber<markers::JointState>,
 {
     while !stop.load(Ordering::Acquire) {
+        // v0.5 候选 E 段(8)：liveness 计数（空闲亦推进）+ test-only freeze hook。
+        liveness.loop_tick_count.fetch_add(1, Ordering::Relaxed);
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::liveness::freeze_check(&liveness.freeze_until_ns, clock, stop);
         match sub.latest() {
             Ok(Some(lease)) => store_lease(&lease, slot, clock, topic),
             Ok(None) => {}

@@ -60,6 +60,11 @@ pub mod coordinator;
 // （`scripted_start_pose` 来源；stop + join + 正常 Drop，禁 mem::forget）。
 // 详 [`state_cache`] 顶部 module doc。
 pub mod state_cache;
+// v0.5 候选 E 段(8)（Spec D12 + P.2.7）：worker liveness 计数（生产）+ test-only
+// freeze hook / control（cfg 守门，永不进 default features）。
+#[cfg(any(test, feature = "test-freeze-hook"))]
+pub mod freeze_control;
+pub mod liveness;
 // B4 (2/3-c) 拆 1/3-c 的 `events_drain_thread.rs` (1001L) 成 wire/runtime
 // 两段子模块（同 (2/3-a) `rr_server` 拆分模式）。详 [`events_drain`] 顶部
 // module doc。

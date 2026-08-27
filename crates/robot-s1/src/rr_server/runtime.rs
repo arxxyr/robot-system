@@ -137,6 +137,12 @@ pub struct RrServerMetrics {
     /// `handler_replies` 单列让运维一眼看出"真 handler 路径"和"runtime 直
     /// 接拒"的比例。
     pub handler_replies: AtomicU64,
+    /// v0.5 候选 E 段(8)：主循环每次 poll 迭代 +1（**空闲亦推进**）——
+    /// systemd watchdog liveness 源（D12 r3 T4 第 1 条：不用请求计数）。
+    pub loop_tick_count: AtomicU64,
+    /// test-only：loop 顶端 freeze 截止（absolute ns，0 = 未冻结）。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
 }
 
 /// `rr_server_thread` 句柄。caller 通过 [`Self::request_stop`] +
@@ -416,6 +422,14 @@ fn run_handler_loop<Req, Resp, H>(
     H: Fn(&[u8]) -> Vec<u8>,
 {
     while !stop.load(Ordering::Acquire) {
+        // v0.5 候选 E 段(8)：liveness 计数（空闲亦推进）+ test-only freeze hook。
+        metrics.loop_tick_count.fetch_add(1, Ordering::Relaxed);
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::liveness::freeze_check(
+            &metrics.freeze_until_ns,
+            &robot_core::time::SystemClock::new(),
+            stop,
+        );
         // drain 所有 pending wire request：循环 try_recv 直到 Ok(None) /
         // Err。同步 reply，无 pending 队列。
         loop {

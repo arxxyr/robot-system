@@ -51,6 +51,12 @@ backend-scripted   = []
 # （impl crate）由本 feature optional gate（XLeRobotArmIkSolver 实例化
 # 只在 s1_daemon binary，按 backend-ik feature 走 cfg 路径）。
 backend-ik         = ["dep:robot-kinematics-xlerobot"]
+# v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
+# `liveness::freeze_check` + `freeze_control`（`/<robot_id>/s1/test/freeze`
+# 注入线程 + `TestFreezeCommandV2` / `WorkerKind` pub 导出给 sd_watchdog_smoke
+# import）。**永不进 default features / 生产 release**（沿 S0 `test-freeze-hook`
+# 单数命名与硬边界）。
+test-freeze-hook   = []
 
 # v0.3 B1 (2/3)：mock_s1 / s1_daemon 显式列出 [[bin]]。
 # - mock_s1：v0.2 起 ballet / bench / 真机摆动测试工具（保留；非 production
@@ -108,6 +114,9 @@ inventory       = { workspace = true }
 #   Coordinator）。
 robot-kinematics          = { workspace = true }
 robot-kinematics-xlerobot = { workspace = true, optional = true }
+# v0.5 候选 E 段(8)（Spec PD-E6(c) + D12）：sd_notify + liveness-gated watchdog
+# 单一实现（自 robot-s0 迁入 robot-health；工作区内部依赖边，0 新外部 crate）。
+robot-health              = { workspace = true }
 
 [lints]
 workspace = true
