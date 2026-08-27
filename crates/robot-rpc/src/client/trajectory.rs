@@ -16,8 +16,12 @@
 //!   逐命名关节 `|points[0][j] − current[idx_j]| ≤` [`FIRST_POINT_TOLERANCE_RAD`]，
 //!   超差 reject（`current` 与首点来自两次独立读取，容差吸收读写间隙漂移）。
 //! - **时长差分**：`segment_duration_ms = round((tfs[i] − tfs[i−1]) × 1000)`；
-//!   `time_from_start_s` 必须有限、非负、严格递增，且每段 ≥ 1 ms（把
-//!   `ScriptedBackend` "`segment_duration_ms > 0`" 守门前移到 client）；
+//!   **`points[0].time_from_start_s` 必须严格 == 0.0**（冻结基线
+//!   `executor.py:99` current @ t=0；dimos `JointTrajectory.py:87` 对非零首点
+//!   会 hold 到该时刻——丢弃非零首点会吞掉该 hold 并缩短总时长，故**拒绝**
+//!   而非"只用差分"，PX-13）；其余 `time_from_start_s` 有限、严格递增，且每段
+//!   ≥ 1 ms（把 `ScriptedBackend` "`segment_duration_ms > 0`" 守门前移到
+//!   client）；
 //!   `dwell_ms = 0`；`velocities` / `timestamp` 丢弃（两侧皆分段线性）。
 //! - **缺位填充**（D8）：layout 中未出现在 `joint_names` 的关节 → 每个
 //!   waypoint 填 `current[idx]`（"同 chunk 一次读"：整条轨迹用同一份
@@ -55,7 +59,7 @@ pub struct TrajectoryInput {
 /// 轨迹点（`TrajectoryPoint{time_from_start, positions}`；`velocities` 不收）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrajectoryPoint {
-    /// 自轨迹起点的绝对时刻（s）；有限、非负、严格递增。
+    /// 自轨迹起点的绝对时刻（s）；`points[0]` 严格 0.0，其余有限、严格递增。
     pub time_from_start_s: f64,
     /// 各命名关节目标位（rad）；长度 == `joint_names.len()`。
     pub positions: Vec<f64>,
@@ -102,6 +106,11 @@ pub enum ConvertError {
     },
     #[error("points[{point}].time_from_start_s invalid ({value}): must be finite and >= 0")]
     InvalidTime { point: usize, value: f64 },
+    #[error(
+        "points[0].time_from_start_s = {value}: must be exactly 0.0 (frozen baseline: current pose \
+         @ t=0; dropping a non-zero first point would silently discard the initial hold)"
+    )]
+    FirstPointTimeNonZero { value: f64 },
     #[error(
         "points[{point}].time_from_start_s {cur} <= previous {prev}: must be strictly increasing"
     )]
@@ -197,6 +206,10 @@ pub fn to_scripted_waypoints(
         let t = pt.time_from_start_s;
         if !t.is_finite() || t < 0.0 {
             return Err(ConvertError::InvalidTime { point: p, value: t });
+        }
+        // 首点时刻严格 0（PX-13）：t 已有限且 ≥ 0，`> 0.0` 即非零（-0.0 视为 0）。
+        if p == 0 && t > 0.0 {
+            return Err(ConvertError::FirstPointTimeNonZero { value: t });
         }
         if p > 0 {
             let prev = traj.points[p - 1].time_from_start_s;
@@ -447,28 +460,65 @@ mod tests {
     }
 
     #[test]
-    fn first_point_time_need_not_be_zero_only_differences_matter() {
+    fn first_point_time_must_be_exactly_zero() {
+        // PX-13：冻结基线 current @ t=0（executor.py:99）；dimos 对非零首点
+        // hold 到该时刻（JointTrajectory.py:87）——丢弃非零首点会吞掉该 hold
+        // 并缩短总时长，故拒绝而非容忍。
         let layout = arm_layout();
-        let traj = TrajectoryInput {
-            joint_names: names(&["left_arm_shoulder_pan"]),
-            points: vec![pt(2.0, &[CURRENT[0]]), pt(2.3, &[0.1])],
-        };
-        let wps = to_scripted_waypoints(&traj, &layout, &CURRENT).unwrap();
-        assert_eq!(wps[0].segment_duration_ms, 300);
+        for t0 in [2.0, 1e-9, 0.1] {
+            let traj = TrajectoryInput {
+                joint_names: names(&["left_arm_shoulder_pan"]),
+                points: vec![pt(t0, &[CURRENT[0]]), pt(t0 + 0.3, &[0.1])],
+            };
+            assert!(
+                matches!(
+                    to_scripted_waypoints(&traj, &layout, &CURRENT).unwrap_err(),
+                    ConvertError::FirstPointTimeNonZero { value } if value == t0
+                ),
+                "t0 = {t0}"
+            );
+        }
+        // 严格 0.0（及 -0.0）接受。
+        for t0 in [0.0, -0.0] {
+            let ok = TrajectoryInput {
+                joint_names: names(&["left_arm_shoulder_pan"]),
+                points: vec![pt(t0, &[CURRENT[0]]), pt(0.3, &[0.1])],
+            };
+            assert_eq!(
+                to_scripted_waypoints(&ok, &layout, &CURRENT).unwrap()[0].segment_duration_ms,
+                300
+            );
+        }
     }
 
     // ----- 首点宽容校验：边界接受、超差 reject（AC-E10） -----
 
     #[test]
     fn first_point_within_tolerance_accepted_at_boundary() {
+        // PX-10 边界含等：current = 0，首点精确 = FIRST_POINT_TOLERANCE_RAD →
+        // deviation == tolerance → 接受（实现判据 `deviation > tolerance`）。
         let layout = arm_layout();
-        let mut first = CURRENT[..5].to_vec();
-        first[2] += FIRST_POINT_TOLERANCE_RAD - 1e-9;
-        let traj = TrajectoryInput {
-            joint_names: two_point_arm_traj([0.0; 5]).joint_names,
-            points: vec![pt(0.0, &first), pt(0.1, &[0.0; 5])],
+        let current = [0.0; 6];
+        let joint_names = two_point_arm_traj([0.0; 5]).joint_names;
+        let at_boundary = TrajectoryInput {
+            joint_names: joint_names.clone(),
+            points: vec![pt(0.0, &[FIRST_POINT_TOLERANCE_RAD; 5]), pt(0.1, &[0.0; 5])],
         };
-        to_scripted_waypoints(&traj, &layout, &CURRENT).expect("within tolerance");
+        let wps = to_scripted_waypoints(&at_boundary, &layout, &current)
+            .expect("deviation == tolerance 必须接受（含等）");
+        assert_eq!(wps.len(), 1);
+        // 反向：首点 = tolerance + 1e-12（> 1 ulp）→ 拒绝。
+        let just_over = TrajectoryInput {
+            joint_names,
+            points: vec![
+                pt(0.0, &[FIRST_POINT_TOLERANCE_RAD + 1e-12; 5]),
+                pt(0.1, &[0.0; 5]),
+            ],
+        };
+        assert!(matches!(
+            to_scripted_waypoints(&just_over, &layout, &current).unwrap_err(),
+            ConvertError::FirstPointDeviation { .. }
+        ));
     }
 
     #[test]
@@ -604,6 +654,7 @@ mod tests {
     fn rejects_invalid_and_non_monotonic_time() {
         let layout = arm_layout();
         let base = two_point_arm_traj([0.0; 5]);
+        // 非有限 / 负首点 → InvalidTime（先于严格 0 检查：NaN 亦归此族）。
         for bad_t in [f64::NAN, f64::INFINITY, -0.1] {
             let mut traj = base.clone();
             traj.points[0].time_from_start_s = bad_t;
@@ -612,15 +663,32 @@ mod tests {
                 ConvertError::InvalidTime { point: 0, .. }
             ));
         }
-        for (t0, t1) in [(0.1, 0.1), (0.2, 0.1)] {
-            let mut traj = base.clone();
-            traj.points[0].time_from_start_s = t0;
-            traj.points[1].time_from_start_s = t1;
-            assert!(matches!(
-                to_scripted_waypoints(&traj, &layout, &CURRENT).unwrap_err(),
-                ConvertError::NonMonotonicTime { point: 1, .. }
-            ));
-        }
+        // 非首点非有限 → InvalidTime{point: 1}。
+        let mut traj = base.clone();
+        traj.points[1].time_from_start_s = f64::NEG_INFINITY;
+        assert!(matches!(
+            to_scripted_waypoints(&traj, &layout, &CURRENT).unwrap_err(),
+            ConvertError::InvalidTime { point: 1, .. }
+        ));
+        // 非单调：首点 0 后等时；三点回退。
+        let mut traj = base.clone();
+        traj.points[1].time_from_start_s = 0.0;
+        assert!(matches!(
+            to_scripted_waypoints(&traj, &layout, &CURRENT).unwrap_err(),
+            ConvertError::NonMonotonicTime { point: 1, .. }
+        ));
+        let three = TrajectoryInput {
+            joint_names: base.joint_names.clone(),
+            points: vec![
+                pt(0.0, &CURRENT[..5]),
+                pt(0.2, &[0.0; 5]),
+                pt(0.1, &[0.0; 5]),
+            ],
+        };
+        assert!(matches!(
+            to_scripted_waypoints(&three, &layout, &CURRENT).unwrap_err(),
+            ConvertError::NonMonotonicTime { point: 2, .. }
+        ));
     }
 
     #[test]
