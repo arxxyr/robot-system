@@ -144,6 +144,12 @@ pub struct RrIoMetrics {
     /// shutdown 时 in-flight `Vec` drop 释放的请求数（每条 oneshot drop
     /// → handler 收 RecvError → Unavailable）。
     pub orphan_drops_on_shutdown: AtomicU64,
+    /// v0.5 候选 E 段(8)：主循环每次 poll 迭代 +1（**空闲亦推进**）——systemd
+    /// watchdog liveness 源（D12 r3 T4 第 1 条：不用 `requests_sent` 等请求计数）。
+    pub loop_tick_count: AtomicU64,
+    /// test-only：loop 顶端 freeze 截止（absolute ns，0 = 未冻结）。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
 }
 
 /// `rr_io_thread` 句柄。caller（`run_gateway_with_ready`）通过
@@ -305,6 +311,14 @@ fn run_loop<Req: BodyMarker, Resp: BodyMarker>(
     let mut in_flight: Vec<InFlight<Resp>> = Vec::new();
 
     while !stop.load(Ordering::Acquire) {
+        // v0.5 候选 E 段(8)：liveness 计数（空闲亦推进）+ test-only freeze hook。
+        metrics.loop_tick_count.fetch_add(1, Ordering::Relaxed);
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::liveness::freeze_check(
+            &metrics.freeze_until_ns,
+            &robot_core::time::SystemClock::new(),
+            stop,
+        );
         // ─── 1) drain forward_rx → client.send → push 进 in-flight ───
         while let Ok(req) = forward_rx.try_recv() {
             match client.send(&req.wire_bytes) {

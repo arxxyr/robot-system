@@ -65,6 +65,9 @@ robot-logging = { workspace = true }
 # flatbuffers：handler 端 decode wire ClearEStopResponse 用
 # `flatbuffers::root::<FbResp>(bytes)`；跟 robot-msg::build_helpers 同源。
 flatbuffers = { workspace = true }
+# v0.5 候选 E 段(8)（Spec PD-E6(c) + D12）：sd_notify + liveness-gated watchdog
+# 单一实现（工作区内部依赖边，0 新外部 crate）。
+robot-health = { workspace = true }
 
 [build-dependencies]
 tonic-prost-build   = { workspace = true }
@@ -113,6 +116,12 @@ robot-core = { workspace = true }
 # `client`（不依赖 robot-cli），0 client-only runtime 影响。详
 # team-swe/specs/v0_5_operator_cli.md §P.4 diff #A4。
 client = []
+# v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
+# `liveness::freeze_check` + `freeze_control`（`/<robot_id>/gateway/test/freeze`
+# 注入线程 + `TestFreezeCommandV2` / `WorkerKind` pub 导出给 sd_watchdog_smoke
+# import）。**永不进 default features / 生产 release**；与 `client` 并存 additive
+# 无害（robot-tests `sd-watchdog-smoke` 同时启用两者）。
+test-freeze-hook = []
 
 [[test]]
 # B4 (3/3) cross-process e2e：required-features = ["client"] 守门。自 v0.5

@@ -115,6 +115,12 @@ pub struct EStopPubMetrics {
     /// shutdown 时 channel 残留 forward 丢弃数（oneshot drop → handler
     /// Unavailable）。
     pub orphan_drops_on_shutdown: AtomicU64,
+    /// v0.5 候选 E 段(8)：主循环每次 poll 迭代 +1（空闲亦推进）——watchdog
+    /// liveness 源。
+    pub loop_tick_count: AtomicU64,
+    /// test-only：loop 顶端 freeze 截止（absolute ns，0 = 未冻结）。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
 }
 
 /// `estop_pub_thread` 句柄。
@@ -217,6 +223,10 @@ fn run_loop(
     let mut seq: u64 = 0;
 
     while !stop.load(Ordering::Acquire) {
+        // v0.5 候选 E 段(8)：liveness 计数（空闲亦推进）+ test-only freeze hook。
+        metrics.loop_tick_count.fetch_add(1, Ordering::Relaxed);
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::liveness::freeze_check(&metrics.freeze_until_ns, clock, stop);
         while let Ok(fwd) = forward_rx.try_recv() {
             let result = publish_one(publisher, clock, &mut seq, &fwd);
             match &result {

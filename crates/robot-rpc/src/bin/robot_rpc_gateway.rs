@@ -254,9 +254,16 @@ OPTIONS:
                                    过早 DeadlineExceeded 制造副作用歧义）。
   -h, --help                       显示帮助。
 
+SYSTEMD (v0.5 候选 E 段(8), unit Type=notify):
+  NOTIFY_SOCKET / WATCHDOG_USEC 由 systemd 注入：bind 后再经 loopback 探针
+  （GetState(\"\") → InvalidArgument，500 ms 一次，首成上限 10 s）才 READY=1；
+  liveness-gated WATCHDOG=1（6 rr_io / estop_pub / 每 hardware state_pool /
+  tonic 探针任一停滞即停喂）；退出先 STOPPING=1。未设置 = no-op。
+
 退出码:
   0  graceful shutdown
   1  tonic server 启动失败 / rr_io_thread spawn 失败 / state_pool spawn 失败 / 运行期错
+     / loopback 探针 10 s 内未首成（READY 未发）/ server task 异常结束（段(8)）
   2  CLI 参数解析失败 / listen-addr 非 loopback / rpc-roles-toml 加载失败 / --config 加载解析失败 / [robot].id != --robot-id
 "
     );
@@ -388,6 +395,19 @@ async fn main() {
         }
         Err(GatewayError::StatePoolSpawn(e)) => {
             tracing::error!(error = ?e, "fatal: state_pool spawn failed");
+            std::process::exit(1);
+        }
+        // v0.5 候选 E 段(8)：READY 门槛 probe 超时 / server task 异常 → 沿
+        // transport 族 exit 1（systemd Restart=on-failure 可拉起）。
+        Err(GatewayError::ReadyProbeTimeout { waited_ms }) => {
+            tracing::error!(
+                waited_ms,
+                "fatal: tonic loopback probe never succeeded before READY deadline"
+            );
+            std::process::exit(1);
+        }
+        Err(GatewayError::ServerTask(msg)) => {
+            tracing::error!(error = %msg, "fatal: tonic server task ended abnormally");
             std::process::exit(1);
         }
     }

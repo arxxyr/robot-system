@@ -82,6 +82,12 @@ pub mod rr_io_thread;
 pub mod set_enabled;
 pub mod state_convert;
 pub mod state_pool;
+// v0.5 候选 E 段(8)（Spec D12 + P.2.7）：tonic loopback probe（READY 门槛 +
+// watchdog observer）/ worker liveness 面 + test-only freeze hook / control。
+#[cfg(any(test, feature = "test-freeze-hook"))]
+pub mod freeze_control;
+pub mod liveness;
+pub mod systemd_probe;
 pub mod task_handlers;
 
 /// gRPC tonic 生成代码（`robot.control.v1` namespace）。包含

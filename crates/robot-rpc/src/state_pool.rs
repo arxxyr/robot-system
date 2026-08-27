@@ -33,7 +33,7 @@
 //! SIGSEGV）。
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -104,11 +104,39 @@ impl StateCache {
     }
 }
 
+/// 单条 state pool 线程的 liveness 面（v0.5 候选 E 段(8)；R6-5：**per-hardware
+/// 一线程各一 observer**，禁聚合求和——健康线程推进会掩蔽卡死线程）。
+#[derive(Debug)]
+pub struct StatePoolThreadMetrics {
+    /// 该线程订阅的 hardware id（observer label 用）。
+    pub hardware_id: String,
+    /// 每次 poll 迭代 +1（空闲亦推进）——watchdog liveness 源。
+    pub loop_tick_count: AtomicU64,
+    /// test-only：loop 顶端 freeze 截止（absolute ns，0 = 未冻结）。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub freeze_until_ns: AtomicU64,
+}
+
+impl StatePoolThreadMetrics {
+    /// 新建（计数全 0）。
+    #[must_use]
+    pub fn new(hardware_id: &str) -> Self {
+        Self {
+            hardware_id: hardware_id.to_string(),
+            loop_tick_count: AtomicU64::new(0),
+            #[cfg(any(test, feature = "test-freeze-hook"))]
+            freeze_until_ns: AtomicU64::new(0),
+        }
+    }
+}
+
 /// 常驻 per-hardware state 订阅池 handle。owner = [`crate::gateway`]；shutdown
 /// 时 [`StatePool::stop`] 一键 stop+join 全部 subscriber 线程。
 pub struct StatePool {
     handles: Vec<JoinHandle<()>>,
     stop: Arc<AtomicBool>,
+    /// 顺序 = `hardware_ids` 顺序（`WorkerKind::StatePool(index)` 索引域）。
+    metrics: Vec<Arc<StatePoolThreadMetrics>>,
 }
 
 impl StatePool {
@@ -130,6 +158,7 @@ impl StatePool {
     ) -> std::io::Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let mut handles: Vec<JoinHandle<()>> = Vec::with_capacity(hardware_ids.len());
+        let mut metrics: Vec<Arc<StatePoolThreadMetrics>> = Vec::with_capacity(hardware_ids.len());
 
         for hw in hardware_ids {
             let topic = format!("/{robot_id}/s0/{hw}/state");
@@ -137,6 +166,8 @@ impl StatePool {
             let hw_owned = hw.clone();
             let stop_clone = Arc::clone(&stop);
             let cache_clone = Arc::clone(cache);
+            let thread_metrics = Arc::new(StatePoolThreadMetrics::new(hw));
+            let metrics_clone = Arc::clone(&thread_metrics);
             let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<bool>(0);
 
             let handle = thread::Builder::new()
@@ -169,6 +200,17 @@ impl StatePool {
                     drop(ready_tx);
 
                     while !stop_clone.load(Ordering::Acquire) {
+                        // v0.5 候选 E 段(8)：liveness 计数（空闲亦推进）+ test-only
+                        // freeze hook（per-hardware 线程各自槽位）。
+                        metrics_clone
+                            .loop_tick_count
+                            .fetch_add(1, Ordering::Relaxed);
+                        #[cfg(any(test, feature = "test-freeze-hook"))]
+                        crate::liveness::freeze_check(
+                            &metrics_clone.freeze_until_ns,
+                            &robot_core::time::SystemClock::new(),
+                            &stop_clone,
+                        );
                         // 有新帧 → 拷贝 raw body bytes（= FrameHeader.body_size）进
                         // cache（读路径再 root + convert，convert-on-read）；无新帧 /
                         // 读错误 → 不进 if → 保留旧 cache（keep-last 持久）。
@@ -183,6 +225,7 @@ impl StatePool {
 
             if let Ok(true) = ready_rx.recv() {
                 handles.push(handle);
+                metrics.push(thread_metrics);
             } else {
                 // 该 hardware subscriber open 失败 → 回滚已起线程 → fail-fast。
                 stop.store(true, Ordering::Release);
@@ -196,7 +239,17 @@ impl StatePool {
             }
         }
 
-        Ok(Self { handles, stop })
+        Ok(Self {
+            handles,
+            stop,
+            metrics,
+        })
+    }
+
+    /// 每条 subscriber 线程的 liveness 面（顺序 = spawn 时 `hardware_ids` 顺序）。
+    #[must_use]
+    pub fn thread_metrics(&self) -> &[Arc<StatePoolThreadMetrics>] {
+        &self.metrics
     }
 
     /// 信号 stop + join 全部 subscriber 线程。tonic server 退出**之后**调
