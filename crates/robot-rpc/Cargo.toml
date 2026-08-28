@@ -126,6 +126,20 @@ client = []
 test-freeze-hook = []
 
 [[test]]
+# v0.5 候选 E 段(7)：双臂 workflow cross-process e2e（2×(s0+s1+gateway) = 6
+# 子进程；三真同堂首例，D9）。`required-features = ["client"]` 守门，跟既有
+# 四个 e2e 同款——workspace feature unification 下 robot-cli 无条件启用
+# `robot-rpc/client`，故 `cargo test --workspace` 默认会跑。
+#
+# **运行前置**（P.0 活清单）：`cargo build --release --workspace` +
+# `cargo build --release -p robot-s1 --bin s1_daemon --features
+# test-fault-backend`（AC-E14 执行期 failure / AC-E18 failure 分支需要
+# test-only fault backend；漏编时仅这两个 case bring-up 失败）。
+name = "dimos_workflow_e2e"
+path = "tests/dimos_workflow_e2e.rs"
+required-features = ["client"]
+
+[[test]]
 # B4 (3/3) cross-process e2e：required-features = ["client"] 守门。自 v0.5
 # 候选 A (1/5) workspace feature unification 起，`cargo test --workspace`
 # 默认带 client → 本 e2e 默认随 workspace 跑（详上方 `client` feature 注释）。

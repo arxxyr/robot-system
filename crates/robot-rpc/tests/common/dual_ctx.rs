@@ -309,6 +309,13 @@ pub struct DualCtx {
     _lock: MutexGuard<'static, ()>,
 }
 
+/// 取全局串行锁（6 进程拓扑极重）。`DualCtx` 内部已持有；**不经 `DualCtx`
+/// 的重量级场景**（如 AC-E2 的 s0-only mini 拓扑）也应显式取，避免与双臂
+/// case 抢 CPU / iceoryx2 资源。
+pub async fn global_lock() -> MutexGuard<'static, ()> {
+    GLOBAL_LOCK.lock().await
+}
+
 impl DualCtx {
     /// 默认选项（6 维臂 + scripted/hold_pose/fault_inject）。
     ///
