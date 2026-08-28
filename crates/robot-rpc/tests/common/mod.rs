@@ -7,7 +7,11 @@
 //! ## 子 module 依赖图
 //!
 //! ```text
-//! task_rpc_e2e.rs (#[tokio::test] × 6)
+//! task_rpc_e2e.rs (#[tokio::test] × 6)          dimos_workflow_e2e.rs（段(7)）
+//!         │                                              │
+//!         │                                              └── common::dual_ctx
+//!         │                                                    （2×(s0+s1+gateway)=6 子进程；
+//!         │                                                     复用 subprocess / ready）
 //!         │
 //!         └── common::case_ctx
 //!                   ├── common::fake_state    (独立 std::thread + iceoryx2 publisher)
@@ -25,7 +29,10 @@
 
 pub mod case_ctx;
 pub mod client;
+pub mod dual_ctx;
 pub mod fake_heartbeat;
 pub mod fake_state;
+pub mod pair_endpoint;
+pub mod raw_s0;
 pub mod ready;
 pub mod subprocess;

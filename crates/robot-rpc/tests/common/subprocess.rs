@@ -268,6 +268,30 @@ fn spawn_stream_drain(
 // Command builders
 // ============================================================================
 
+/// `s0_daemon` Command（v0.5 候选 E 段(7) 六进程拓扑）：`--config` /
+/// `--robot-id` / `--hardware-id` / `--latch-path`；latch 必须已 provision
+/// 为 `0\n`（strict fail-closed，见 `DualCtx` bring-up 顺序）。
+#[must_use]
+pub fn build_s0_daemon_command(
+    bin_path: &Path,
+    robot_id: &str,
+    hardware_id: &str,
+    config_path: &Path,
+    latch_path: &Path,
+) -> Command {
+    let mut cmd = Command::new(bin_path);
+    cmd.arg("--robot-id")
+        .arg(robot_id)
+        .arg("--hardware-id")
+        .arg(hardware_id)
+        .arg("--config")
+        .arg(config_path)
+        .arg("--latch-path")
+        .arg(latch_path);
+    cmd.env("RUST_LOG", "info");
+    cmd
+}
+
 /// `s1_daemon` Command：5 args + `RUST_LOG=info` 让 ready marker 必出现。
 #[must_use]
 pub fn build_s1_daemon_command(
