@@ -57,6 +57,16 @@ backend-ik         = ["dep:robot-kinematics-xlerobot"]
 # import）。**永不进 default features / 生产 release**（沿 S0 `test-freeze-hook`
 # 单数命名与硬边界）。
 test-freeze-hook   = []
+# v0.5 候选 E 段(7)（Spec QA6 + R3-B1）：test-only `FaultInjectBackend`
+# （`fault_inject`；分发键 = DwellMs + NO_PAYLOAD_SCHEMA_ID，0 新 wire；
+# 3 tick 后 `ActionFailure::InternalError("fault_inject")`）——生产 backend
+# 无执行期 failure 触发器（Scripted 运行期只 Continue/Completed，IK 错误全在
+# start 阶段），AC-E14 执行期不对称终态 / AC-E18 failure 分支靠它驱动。
+# **永不进 default features**；e2e 前显式 `cargo build --release -p robot-s1
+# --bin s1_daemon --features test-fault-backend`（P.0 活清单）。
+# **profile 冲突消除**：启用它的 config 必须从 `[s1.profile] backends` 移除
+# `mock_dwell`（分发键重合，dispatch 取首个命中）。
+test-fault-backend = []
 
 # v0.3 B1 (2/3)：mock_s1 / s1_daemon 显式列出 [[bin]]。
 # - mock_s1：v0.2 起 ballet / bench / 真机摆动测试工具（保留；非 production

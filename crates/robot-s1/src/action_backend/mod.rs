@@ -55,6 +55,12 @@ pub mod scripted;
 #[cfg(feature = "backend-ik")]
 pub mod ik;
 
+// v0.5 候选 E 段(7)（Spec QA6 + R3-B1）：test-only 执行期 failure 触发器。
+// **永不进 default features**——生产 binary 不 link，profile 引用它会在
+// validate_profile_section 启动期 UnknownBackend fail-fast。
+#[cfg(feature = "test-fault-backend")]
+pub mod fault_inject;
+
 // 链接器收集每个 backend crate 的 `inventory::submit!` 项。
 inventory::collect!(&'static dyn ActionBackend);
 
