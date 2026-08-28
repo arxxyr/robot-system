@@ -3,8 +3,11 @@
 //! 起 `robot_rpc_gateway` + `s1_daemon` + `FakeStatePublisher`（fake s0，给
 //! s1 anchor + status/watch 订阅），**唯一被测路径 = spawn `robotctl` 真子
 //! 进程**（reviewer 审查重点 3：严禁 smoke 内调 tonic client）。本 binary
-//! 结构上**不依赖 tonic / 不启用 `robot-rpc/client`**（robot-rpc 仅取
-//! `client::layout` 派生 layout，段(4) 起）—— readiness 走 TCP connect + s1 stderr
+//! **不显式启用 `robot-rpc/client`、也不直接启用 `dep:tonic`**——单 feature
+//! 构建不生成 `RobotControlClient`，本文件不调用 tonic client（robot-rpc 仅取
+//! `client::layout` 派生 layout，段(4) 起；tonic **server** 栈随 robot-rpc 普通
+//! 依赖必编，合并 feature 构建亦可能经 unification 生成 client——边界 = 单
+//! feature gate + 源码纪律，段(8) round 2 事实更正）—— readiness 走 TCP connect + s1 stderr
 //! marker + `robotctl get-task-status` NotFound 探针；action_id 由解析
 //! `robotctl invoke` stdout 得到。
 //!

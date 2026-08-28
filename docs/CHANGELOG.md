@@ -114,11 +114,13 @@
   首次 enforce@1 回归锁）。`5510dc3`；Spec P.4 PX-21。
 - **阻断 2（P0）探针有界性**：`ATTEMPT_TIMEOUT` 400 ms 包 `ready()` +
   `unary()` 并与 stop `select!`（原仅 connect 超时——服务端 accept 后不响应
-  即永挂）；`ProbeHandle::join` ≤ 2 s 否则 abort；gateway `await_bind_ready`
+  即永挂）；`ProbeHandle::join` 两级有界（正常 2 s → abort → 确认 500 ms → detach，
+  round 3 补正）；gateway `await_bind_ready`
   / `ready_gate` 监听外部 `shutdown_rx`——READY 前停机 → 内部 serve-shutdown
   → 有界收 probe + server → `Ok(())` 正常退出（不发 READY、不起 watchdog；
   exit 0）；`join_server` ≤ `SERVER_JOIN_TIMEOUT` 5 s 否则 abort + `ServerTask`
-  （运行期停机同用）。新单测 4：hung-acceptor（只 accept 不回 h2 preface）
+  （运行期停机同用；两处 join 的 abort 确认上限见下 round 3）。新单测 4：
+  hung-acceptor（只 accept 不回 h2 preface）
   attempt 经超时计 failure、stop → join < 1 s；`ready_gate` deadline 1 s →
   `ReadyProbeTimeout{1000}` 总耗时 < 4 s 且 server 已 join；READY 前外部
   shutdown → `Ok(None)`；bind 前 shutdown → `Ok(None)` + `ready_tx` 收
@@ -133,16 +135,52 @@
   layout` 使用打破（单 feature 构建 E0433，gate 合并 feature 集掩蔽）。本次
   撤 optional `robot-rpc` 声明上的全局 `client` feature，四个真用 tonic
   client 的 smoke feature 各自显式 `robot-rpc/client`，`robotctl-smoke` 补
-  `dep:robot-rpc`（不开 client、不拉 tonic）——边界改述为"**不生成、不调
-  tonic client**"（编译期仍锁：feature 不含 `robot-rpc/client` 即无 stub）；
-  候选 A summary + `v0_5_operator_cli.md` P.4 E2 行追加 Reverse Sync 注。
-  8 feature 各自独立 `cargo check --all-targets` 全过。`38412ec`。
+  `dep:robot-rpc`。**准确口径（round 2 复核事实更正——"不拉 tonic" 不成立：
+  `dep:robot-rpc` 的普通依赖本身会编译 tonic server 栈，`cargo tree -p
+  robot-tests --features robotctl-smoke` 实证）**：robotctl-smoke **不显式
+  启用 `robot-rpc/client`、也不直接启用 `dep:tonic`**；**单 feature 构建**不
+  生成 `RobotControlClient`，源码不调用 tonic client；合并 feature 构建可能因
+  feature unification 生成 client——边界由**单 feature gate（PX-24）+ 源码
+  纪律**共同锁定。候选 A summary + `v0_5_operator_cli.md` P.4 E2 行追加同口径
+  Reverse Sync 注；`robot-rpc/Cargo.toml` 中"`sd-watchdog-smoke` 同时启用
+  `client`"的旧述一并更正。8 feature 各自独立 `cargo check --all-targets`
+  全过，并按 **PX-24 写入 P.0 永久 gate**。`38412ec`。
 - **拍板 ②**：测试模板 `WatchdogSec=2s` / 生产 5 s 口径保留（PX-16），前提
   = 阻断 1 已修（daemon 侧永远从 `WATCHDOG_USEC` 派生）。
 - **非阻断登记（PX-20）**：gateway 每 hardware 一次 `Box::leak` 生成
   `state_pool:<hardware_id>` label（`LivenessObserver.label: &'static str`，
   R3-B2 签名锁）——进程内有界，但**不**视为"可忽略"；撤销条件 = label 改
   `Cow<'static, str>` / `String`（R3-B2 签名修订，独立 commit）。
+
+### round 3 回修（reviewer 段(8) round 2：P1 ×3；watchdog / probe / 握手 / PX-19 方向已确认闭合）
+
+- **P1-1 `abort()` 后仍是无界 await**：tokio `abort()` 是协作取消——任务未
+  再次 yield 时 `JoinHandle` 不会完成，故 round 2 的 "join ≤ 2 s / 5 s" 并非
+  硬上界。改为**两级有界**：正常 join 上限（probe `JOIN_TIMEOUT` 2 s /
+  server `SERVER_JOIN_TIMEOUT` 5 s）→ `abort()` → **取消确认上限**（新
+  `ABORT_JOIN_TIMEOUT` / `SERVER_ABORT_JOIN_TIMEOUT`，均 500 ms）→ 仍未确认
+  则**严重日志 + detach 返回，不再阻塞退出**（server 侧错误串区分 aborted /
+  detached）。两处各抽可注入超时的内部版（`join_with_timeouts` /
+  `join_server_with_timeouts`）并加回归单测：任务体为**阻塞** sleep（永不
+  yield）时 join 必须在两窗之和量级返回。Spec P.4 PX-22 改写为"正常 join 上限
+  + abort 确认上限 + 硬上界 = 两者之和"。
+- **P1-2 Reverse Sync 未覆盖生效中的权威文本**：`v0_5_dimos_replace.md`
+  P.2.7 与 `s0_daemon.rs` 的 systemd 调用点仍写 "S0 行为 bit 等价"——两处改为
+  "**调用面单源迁移**：判停语义保持，首次 enforce 节奏按 PX-21 修正"。
+  CHANGELOG round 1 历史记述保留（round 2 已明文撤回）。
+- **P1-3 "不拉 / 不依赖 tonic" 与依赖树不符**：见上 Reverse Sync ② 的准确
+  口径（`cargo tree` 实证 `dep:robot-rpc` 必编 tonic server 栈）；同时更正
+  `robot-rpc/Cargo.toml` 中 "`sd-watchdog-smoke` 同时启用 `client`" 的旧述
+  （该 feature **不**启用 client）。**新 PX-24 = 8 项独立 feature check 写入
+  P.0 永久 gate**（合并 feature 集会掩蔽单 feature 构建失败，PX-19 根因；
+  新增 feature 必须同步入列）。
+- round 3 gate（reviewer 指定范围，未重跑全部 smoke）：cargo fmt / clippy workspace `--all-targets` + robot-tests
+  `--all-features` 0 警告；**PX-24 8 项独立 feature check 全过**（+ 默认）；
+  robot-rpc 232 PASS（default / test-freeze-hook）· 261（`--features
+  client`，4 cross-process e2e 0 回归）/ robot-health 66 / robot-s0 231；
+  workspace test **1337 PASS / 0 FAIL**（round 2 1335 + 2 = 两处 abort
+  确认上限回归锁）。按 reviewer 指定范围**未重跑 smoke**（本轮无行为面
+  改动触及 smoke 路径：probe / server join 仅在超时分支加第二级上限）。
 
 ### 边界
 

@@ -107,12 +107,15 @@ required-features = ["ik-backend-smoke"]
 # v0.5 候选 A (5/5) robotctl operator CLI cross-process e2e smoke。
 # 起 gateway + s1_daemon + FakeStatePublisher（fake s0），**唯一被测路径 =
 # spawn `robotctl` 真子进程**（reviewer 审查重点 3：严禁 smoke 内调 tonic
-# client）。**不依赖 tonic / 不生成 tonic client stub**（feature 不含
-# `robot-rpc/client`）—— 只需 tokio（process/io-util/net 协调子进程 + TCP
-# readiness）+ 既有 iceoryx2 / robot-msg / robot-transport（FakeStatePublisher
-# + EStop 订阅验证）+ robot-rpc **仅**取 `client::layout` 派生 layout（段(4)
-# 起；段(8) round 2 PX-19 修正：候选 A "零 robot-rpc 依赖"表述作废，边界收窄为
-# "不启用 `client` feature、不调 tonic client"）；readiness 走 TCP connect +
+# client）。**不显式启用 `robot-rpc/client`、也不直接启用 `dep:tonic`**：独立
+# feature 构建不生成 `RobotControlClient`，源码不调用 tonic client；**但
+# `dep:robot-rpc` 的普通依赖本身会编译 tonic server 栈**（`cargo tree` 实证），
+# 合并 feature 构建亦可能经 feature unification 生成 client——边界由**单
+# feature gate + 源码纪律**共同锁定（段(8) round 2 事实更正，PX-19）。依赖面 =
+# tokio（process/io-util/net 协调子进程 + TCP readiness）+ 既有 iceoryx2 /
+# robot-msg / robot-transport（FakeStatePublisher + EStop 订阅验证）+ robot-rpc
+# **仅**取 `client::layout` 派生 layout（段(4) 起；候选 A "零 robot-rpc 依赖"
+# 表述作废）；readiness 走 TCP connect +
 # s1 stderr marker + robotctl get-task-status NotFound 探针（不走 tonic）。
 # `required-features = ["robotctl-smoke"]` 守门，生产 release 不参编译。
 [[bin]]
@@ -189,7 +192,9 @@ robot-s1 = { path = "../robot-s1", optional = true, default-features = false, fe
 #   修正）——真用 tonic client 的 smoke feature 各自显式 `"robot-rpc/client"`
 #   （让 build.rs 跑 `tonic_build::build_client(true)` 生成 `RobotControlClient`
 #   stub）；`robotctl-smoke` / `sd-watchdog-smoke` 只 `dep:robot-rpc` 不开
-#   client（结构上保证"不生成、不调 tonic client"）。
+#   client——**单 feature 构建**不生成 `RobotControlClient`（合并 feature 构建
+#   仍可能经 unification 生成；tonic server 栈则随 robot-rpc 普通依赖必编，
+#   段(8) round 2 事实更正）。
 # - tonic：跑 client transport stack；client 端只需 transport，**不**需
 #   server。覆盖 features 跟 workspace 默认对齐。
 # - tokio：smoke 主 entry 用 `#[tokio::main]` 跑 tonic client + 子进程协调；
@@ -298,10 +303,13 @@ ik-backend-smoke = [
 # - 本机跑：cargo run -p robot-tests --bin robotctl_smoke
 #   --features robotctl-smoke -- --phase all --bin-dir target/debug ...
 # - 启用 tokio（process/io-util/net + workspace 默认）+ `dep:robot-rpc`（仅
-#   `client::layout` 派生 layout，段(4) 起）；**不**启用 `robot-rpc/client` /
-#   tonic —— 结构上保证"smoke 不生成、不调 tonic client"（审查重点 3；段(8)
-#   round 2 PX-19：此前 feature 表漏 `dep:robot-rpc`，单 feature 构建 E0433，
-#   被 gate 的合并 feature 集掩蔽）。
+#   `client::layout` 派生 layout，段(4) 起）；**不显式启用 `robot-rpc/client`、
+#   也不直接启用 `dep:tonic`** —— 单 feature 构建不生成 `RobotControlClient`，
+#   源码不调用 tonic client（审查重点 3 = 单 feature gate + 源码纪律共同锁定；
+#   tonic server 栈随 robot-rpc 普通依赖必编，合并 feature 构建可能经
+#   unification 生成 client，段(8) round 2 事实更正）。段(8) round 2 PX-19：
+#   此前 feature 表漏 `dep:robot-rpc`，单 feature 构建 E0433，被 gate 的合并
+#   feature 集掩蔽。
 # - 加 serde_json：json_output_round_trip phase 真 parse robotctl `--json`
 #   stdout（AC-7：serde_json::from_str 过 + 字段集）。serde_json 已在 lock
 #   （robot-cli 用），加 optional dep 不改 Cargo.lock。

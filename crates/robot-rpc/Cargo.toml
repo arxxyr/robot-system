@@ -119,8 +119,10 @@ client = []
 # v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
 # `liveness::freeze_check` + `freeze_control`（`/<robot_id>/gateway/test/freeze`
 # 注入线程 + `TestFreezeCommandV2` / `WorkerKind` pub 导出给 sd_watchdog_smoke
-# import）。**永不进 default features / 生产 release**；与 `client` 并存 additive
-# 无害（robot-tests `sd-watchdog-smoke` 同时启用两者）。
+# import）。**永不进 default features / 生产 release**；与 `client` 正交、并存
+# additive 无害——robot-tests `sd-watchdog-smoke` **只**启用本 feature，**不**
+# 启用 `client`（合并 feature 构建时 client 可能被其它 smoke feature 经 feature
+# unification 拉起，与本 feature 无关；段(8) round 2 更正原"同时启用两者"表述）。
 test-freeze-hook = []
 
 [[test]]

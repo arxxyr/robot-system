@@ -1036,7 +1036,10 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     // `Restart=on-failure` 自动拉起。**不在 systemd 下跑时**（NOTIFY_SOCKET /
     // WATCHDOG_USEC 都未设置）这两条都 silent no-op，跟 runbook / crash_restart_smoke
     // 等场景零差异。详 `crates/robot-health/src/systemd.rs`（v0.5 候选 E
-    // 段(8) 起单一实现；S0 传 thread_name = "s0_systemd_wd" 原值，行为 bit 等价）。
+    // 段(8) 起单一实现；S0 传 thread_name = "s0_systemd_wd" 原值 = **调用面单源
+    // 迁移**，判停语义保持；**首次 enforce 节奏按 PX-21 修正**——cycle 0 grace
+    // 喂一次 + 即刻取 snapshot，cycle 1（一个 usec/2 后）起 enforce（原实现首个
+    // 间隔 = WATCHDOG_USEC 整、无 50% 余量；段(8) round 2 继承缺陷修正）。）
     robot_health::systemd::notify_ready();
     // **liveness-gated watchdog**（reviewer round 4 阻断 1）：把 4 个 worker
     // 的 `tick_count` 暴露给 watchdog 线程；任一停滞就**不**喂 systemd，
