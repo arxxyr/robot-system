@@ -1039,7 +1039,7 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     // 段(8) 起单一实现；S0 传 thread_name = "s0_systemd_wd" 原值 = **调用面单源
     // 迁移**，判停语义保持；**首次 enforce 节奏按 PX-21 修正**——cycle 0 grace
     // 喂一次 + 即刻取 snapshot，cycle 1（一个 usec/2 后）起 enforce（原实现首个
-    // 间隔 = WATCHDOG_USEC 整、无 50% 余量；段(8) round 2 继承缺陷修正）。）
+    // 间隔 = WATCHDOG_USEC 整、无 50% 余量；段(8) round 2 继承缺陷修正）。
     robot_health::systemd::notify_ready();
     // **liveness-gated watchdog**（reviewer round 4 阻断 1）：把 4 个 worker
     // 的 `tick_count` 暴露给 watchdog 线程；任一停滞就**不**喂 systemd，
