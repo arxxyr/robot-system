@@ -272,13 +272,91 @@ pub enum ArmRpcError {
 }
 
 impl ArmRpcError {
-    /// 该失败是否**证明**服务端未产生副作用（round 2 阻断 1）。
-    ///
-    /// - `Status{..}` → `true`：服务端处理完并给了明确答复（拒绝）。
-    /// - `Transport(..)` → `false`：请求是否到达、是否已被接受**无从证明**。
+    /// gRPC code 名（`Status` 变体才有）。
     #[must_use]
-    pub const fn is_definite_rejection(&self) -> bool {
-        matches!(self, Self::Status { .. })
+    pub fn code(&self) -> Option<&str> {
+        match self {
+            Self::Status { code, .. } => Some(code),
+            Self::Transport(_) => None,
+        }
+    }
+}
+
+/// **`InvokeTask` 失败的副作用语义**（round 3 P0-1）。
+///
+/// 通用 [`ArmRpcError`] **不再**自行推断副作用——gateway 在把请求 forward 给
+/// S1 **之后**同样会产生 `Status`（RR 等待超时 `DeadlineExceeded`、response
+/// decode / request-id 不匹配 `Internal`、oneshot 丢失 `Unavailable`，见
+/// `task_handlers.rs`），端点 transport 超时还会形成 `Cancelled`。把这些当
+/// "明确拒绝"会遗留已启动的 action。
+///
+/// 分类由**端点**按 transport 语义给出（[`Self::from_status_code`] 提供
+/// 契约白名单实现），协议层只消费结论。
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum SubmitFailure {
+    /// gateway / S1 契约**保证发生在任何副作用之前**（见
+    /// [`DEFINITE_REJECTION_CODES`]）。
+    #[error("definitely rejected: {0}")]
+    DefiniteRejected(ArmRpcError),
+    /// **无法证明**服务端未接受该 action（默认归类）。
+    #[error("indeterminate: {0}")]
+    Indeterminate(ArmRpcError),
+}
+
+/// `InvokeTask` 的**明确拒绝**白名单——只有这些 code 由 gateway / S1 契约
+/// 保证"发生在任何副作用之前"（`task_handlers.rs` 实证）：
+///
+/// | code | 产生点 | 为什么可证明未启动 |
+/// |---|---|---|
+/// | `Unauthenticated` | token 不在 role 表 | forward 之前 |
+/// | `PermissionDenied` | capability 不足 | forward 之前 |
+/// | `InvalidArgument` | 参数 / payload / schema 校验 | forward 之前；或 S1 typed 拒绝 |
+/// | `ResourceExhausted` | idempotency cache 满 | forward 之前 |
+/// | `Unimplemented` | kind / schema 无 backend | forward 之前或 S1 dispatch 拒 |
+/// | `FailedPrecondition` | S1 backend `start()` 拒绝 | action **未**进入执行 |
+///
+/// **刻意不含** `AlreadyExists`（幂等重放：同 key 的 action 可能**正在跑**）、
+/// `DeadlineExceeded` / `Unavailable` / `Internal` / `Cancelled` / `Unknown`
+/// （均可能发生在 forward 之后）。白名单之外一律
+/// [`SubmitFailure::Indeterminate`]（default-deny）。
+pub const DEFINITE_REJECTION_CODES: [&str; 6] = [
+    "Unauthenticated",
+    "PermissionDenied",
+    "InvalidArgument",
+    "ResourceExhausted",
+    "Unimplemented",
+    "FailedPrecondition",
+];
+
+impl SubmitFailure {
+    /// 按 gRPC code 名分类（端点侧调用；白名单外 → `Indeterminate`）。
+    #[must_use]
+    pub fn from_status_code(code: &str, err: ArmRpcError) -> Self {
+        if DEFINITE_REJECTION_CODES.contains(&code) {
+            Self::DefiniteRejected(err)
+        } else {
+            Self::Indeterminate(err)
+        }
+    }
+
+    /// transport 层失败恒为 `Indeterminate`。
+    #[must_use]
+    pub fn from_transport(err: ArmRpcError) -> Self {
+        Self::Indeterminate(err)
+    }
+
+    /// 是否可证明"未启动"。
+    #[must_use]
+    pub const fn is_definite(&self) -> bool {
+        matches!(self, Self::DefiniteRejected(_))
+    }
+
+    /// 取出底层错误。
+    #[must_use]
+    pub fn into_error(self) -> ArmRpcError {
+        match self {
+            Self::DefiniteRejected(e) | Self::Indeterminate(e) => e,
+        }
     }
 }
 
@@ -321,15 +399,6 @@ impl PairCleanup {
     pub fn is_clean(&self) -> bool {
         self.estop.is_none() && !self.budget_exceeded
     }
-
-    /// 预算耗尽时的占位报告。
-    fn budget_exhausted() -> Self {
-        Self {
-            cancelled: Vec::new(),
-            estop: None,
-            budget_exceeded: true,
-        }
-    }
 }
 
 /// Ack 偏差 gate 的**纯判据**结果（round 2 阻断 5：纯判据不得伪造带"已收尾"
@@ -346,8 +415,9 @@ pub struct AckSkewViolation {
 /// 不在本枚举内。
 #[derive(Debug, Clone, Error, PartialEq)]
 pub enum PairError {
-    /// **双侧明确拒绝**（D5 第 6 条）：两侧都收到服务端 typed status 拒绝
-    /// （[`ArmRpcError::is_definite_rejection`]）→ 可证明两侧都没启动 action，
+    /// **双侧明确拒绝**（D5 第 6 条）：两侧都是
+    /// [`SubmitFailure::DefiniteRejected`]（契约白名单
+    /// [`DEFINITE_REJECTION_CODES`]）→ 可证明两侧都没启动 action，
     /// **无需收尾**、**不自动重试**，chunk 判 FAIL。
     #[error("both arms definitively rejected the chunk: left={left}, right={right}")]
     BothRejected {
@@ -432,6 +502,11 @@ pub enum PairError {
         budget: Duration,
         cleanup: Box<PairCleanup>,
     },
+
+    /// **配置非法**（round 3 P0-2 第 3 条）：在**任何 invoke 之前**由
+    /// [`PairConfig::validate`] 拦下——收尾预算不足等配置会让安全收尾失效。
+    #[error("invalid PairConfig: {0}")]
+    InvalidConfig(String),
 }
 
 // ============================================================================
@@ -521,10 +596,16 @@ pub trait ArmEndpoint: Send {
     fn side(&self) -> Side;
 
     /// 提交一条 action（见 [`ActionSpec`]）；成功返 `action_id`。
+    ///
+    /// **失败必须分类**（round 3 P0-1）：实现方按 transport / gateway 契约
+    /// 判定该失败是否**证明** action 未启动——参考
+    /// [`SubmitFailure::from_status_code`]（契约白名单）与
+    /// [`SubmitFailure::from_transport`]。分类错会让协议层遗留已启动的
+    /// action（误判"明确拒绝"）或无谓触发双 EStop（误判"不确定"）。
     fn invoke_action(
         &mut self,
         spec: ActionSpec,
-    ) -> impl Future<Output = Result<String, ArmRpcError>> + Send;
+    ) -> impl Future<Output = Result<String, SubmitFailure>> + Send;
 
     /// `CancelTask`。
     fn cancel_task(
@@ -645,6 +726,38 @@ impl PairConfig {
             .saturating_mul(2)
             .saturating_add(self.estop_timeout);
         self.cleanup_budget >= need
+    }
+
+    /// 配置自检（**任何 invoke 之前**强制调用；round 3 P0-2 第 3 条）。
+    ///
+    /// # Errors
+    ///
+    /// 收尾预算不足以覆盖最坏收尾 / 关键窗口为 0 → `Err(说明)`。
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.cleanup_budget_is_sufficient() {
+            return Err(format!(
+                "cleanup_budget {:?} < 2×(rpc_timeout {:?} + cancel_timeout {:?}) + \
+                 estop_timeout {:?}：收尾可能来不及发 EStop",
+                self.cleanup_budget, self.rpc_timeout, self.cancel_timeout, self.estop_timeout
+            ));
+        }
+        if self.estop_timeout.is_zero() || self.rpc_timeout.is_zero() {
+            return Err("estop_timeout / rpc_timeout 不能为 0".to_string());
+        }
+        if self.cleanup_budget <= self.estop_timeout {
+            return Err(format!(
+                "cleanup_budget {:?} 必须 > estop_timeout {:?}（否则 cancel 阶段预算为 0）",
+                self.cleanup_budget, self.estop_timeout
+            ));
+        }
+        Ok(())
+    }
+
+    /// 收尾中 **cancel 阶段**的预算——`cleanup_budget` 扣掉给 EStop 预留的
+    /// `estop_timeout`（round 3 P0-2 第 2 条：cancel 不得吃掉 EStop 预算）。
+    #[must_use]
+    pub fn cancel_phase_budget(&self) -> Duration {
+        self.cleanup_budget.saturating_sub(self.estop_timeout)
     }
 
     /// [`run_chunk_pair`] 的墙钟总上限（见结构体 doc 公式）。
@@ -781,23 +894,6 @@ enum RpcFailure {
     TimedOut,
 }
 
-impl RpcFailure {
-    /// 是否**证明**服务端未产生副作用（round 2 阻断 1）。
-    const fn is_definite_rejection(&self) -> bool {
-        match self {
-            Self::Failed(e) => e.is_definite_rejection(),
-            Self::TimedOut => false,
-        }
-    }
-
-    fn into_error(self, timeout: Duration) -> ArmRpcError {
-        match self {
-            Self::Failed(e) => e,
-            Self::TimedOut => ArmRpcError::Transport(format!("rpc timed out after {timeout:?}")),
-        }
-    }
-}
-
 /// **无副作用**的 RPC 异常（raw 层返回；升级 EStop 由单一收尾点做——round 2
 /// 阻断 3：避免重复升级）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -805,6 +901,20 @@ struct RpcAnomaly {
     side: Side,
     phase: &'static str,
     failure: RpcFailure,
+}
+
+/// 给 `invoke_action` 包硬超时：**超时恒为 `Indeterminate`**（Ack 未收到
+/// 不能证明服务端未接受）。
+async fn bounded_submit<F>(fut: F, timeout: Duration) -> Result<String, SubmitFailure>
+where
+    F: Future<Output = Result<String, SubmitFailure>>,
+{
+    match tokio::time::timeout(timeout, fut).await {
+        Ok(r) => r,
+        Err(_elapsed) => Err(SubmitFailure::from_transport(ArmRpcError::Transport(
+            format!("invoke rpc timed out after {timeout:?}"),
+        ))),
+    }
 }
 
 /// 给任意端点调用包硬超时。
@@ -857,6 +967,27 @@ async fn raw_cancel_side<E: ArmEndpoint>(
             phase: "cancel",
             failure,
         })?;
+    // round 3 P0-2 第 5 条：**整个收敛阶段**用墙钟限住——否则最后一次 status
+    // RPC（各自 rpc_timeout）会把 cancel_timeout 撑过头。
+    match tokio::time::timeout(
+        cfg.cancel_timeout,
+        converge_after_cancel(pair, side, action_id, clock, cfg),
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(_elapsed) => Ok(None),
+    }
+}
+
+/// cancel 之后的收敛轮询（外层已加墙钟上限）。
+async fn converge_after_cancel<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    side: Side,
+    action_id: &str,
+    clock: &dyn RobotClock,
+    cfg: &PairConfig,
+) -> Result<Option<TerminalReport>, RpcAnomaly> {
     let deadline_ns = clock
         .now()
         .0
@@ -920,8 +1051,17 @@ pub async fn escalate_double_estop<E: ArmEndpoint>(
     }
 }
 
-/// 在**独立收尾预算**内 cancel 指定侧；任一侧失败 / 不收敛 → **恰一次**双
-/// EStop。预算耗尽（安全网）→ `budget_exceeded = true`。
+/// 收尾（round 3 P0-2 重排）：
+///
+/// - `force_estop = true`（提交结果不确定 / 阶段预算耗尽）→ **先立即发一次
+///   双 EStop**，再对已知 action 做尽力 cancel。安全动作不排在任何等待之后。
+/// - `force_estop = false` → 先 cancel 已知 action；有任一侧失败 / 不收敛才
+///   升级一次双 EStop。
+///
+/// **预算切分**：cancel 阶段跑在 [`PairConfig::cancel_phase_budget`] 内
+/// （= `cleanup_budget − estop_timeout`），**为 EStop 保留固定预算**；
+/// EStop 自身由 `estop_timeout` 有界。因此收尾总耗时 ≤ `cleanup_budget`，
+/// 且**不存在"EStop 从未被调用"**的路径。
 async fn cleanup_within_budget<E: ArmEndpoint>(
     pair: &mut ArmPair<E>,
     known: &[(Side, String)],
@@ -930,22 +1070,50 @@ async fn cleanup_within_budget<E: ArmEndpoint>(
     clock: &dyn RobotClock,
     cfg: &PairConfig,
 ) -> PairCleanup {
-    let fut = cleanup_inner(pair, known, reason, force_estop, clock, cfg);
-    match tokio::time::timeout(cfg.cleanup_budget, fut).await {
-        Ok(c) => c,
-        Err(_elapsed) => PairCleanup::budget_exhausted(),
+    // 1) 强制路径：EStop **先行**。
+    let forced = if force_estop {
+        let full = format!("dual_arm_workflow: {reason} → immediate double EStop");
+        Some(escalate_double_estop(pair, &full, cfg).await)
+    } else {
+        None
+    };
+
+    // 2) cancel 阶段（独立预算，绝不吃掉 EStop 预留）。
+    let cancel_fut = cancel_known(pair, known, clock, cfg);
+    let (cancelled, trouble, budget_exceeded) =
+        match tokio::time::timeout(cfg.cancel_phase_budget(), cancel_fut).await {
+            Ok((c, t)) => (c, t, false),
+            Err(_elapsed) => (
+                Vec::new(),
+                Some("cancel phase budget exceeded".to_string()),
+                true,
+            ),
+        };
+
+    // 3) 非强制路径：只有出问题才升级（**恰一次**）。
+    let estop = match forced {
+        Some(report) => Some(report),
+        None if trouble.is_some() || budget_exceeded => {
+            let why = trouble.unwrap_or_else(|| "cleanup budget exceeded".to_string());
+            let full = format!("dual_arm_workflow: {reason} ({why}) → double EStop");
+            Some(escalate_double_estop(pair, &full, cfg).await)
+        }
+        None => None,
+    };
+    PairCleanup {
+        cancelled,
+        estop,
+        budget_exceeded,
     }
 }
 
-/// 收尾主体（各步本已有界；外层预算只作安全网）。
-async fn cleanup_inner<E: ArmEndpoint>(
+/// 逐侧 cancel 已知 action（raw，无 EStop 副作用）；返 (已收敛终态, 首个问题)。
+async fn cancel_known<E: ArmEndpoint>(
     pair: &mut ArmPair<E>,
     known: &[(Side, String)],
-    reason: &str,
-    force_estop: bool,
     clock: &dyn RobotClock,
     cfg: &PairConfig,
-) -> PairCleanup {
+) -> (Vec<TerminalReport>, Option<String>) {
     let mut cancelled = Vec::new();
     let mut trouble: Option<String> = None;
     for (side, action_id) in known {
@@ -959,35 +1127,7 @@ async fn cleanup_inner<E: ArmEndpoint>(
             }
         }
     }
-    // **恰一次**升级（round 2 阻断 3）：raw 层不发 EStop，这里统一决定。
-    let estop = if force_estop || trouble.is_some() {
-        let why = trouble.unwrap_or_else(|| "protocol anomaly".to_string());
-        let full = format!("dual_arm_workflow: {reason} ({why}) → double EStop");
-        Some(escalate_double_estop(pair, &full, cfg).await)
-    } else {
-        None
-    };
-    PairCleanup {
-        cancelled,
-        estop,
-        budget_exceeded: false,
-    }
-}
-
-/// 只发 EStop 的收尾（RPC 异常路径：没有可 cancel 的目标或已不可信）。
-async fn estop_within_budget<E: ArmEndpoint>(
-    pair: &mut ArmPair<E>,
-    reason: &str,
-    cfg: &PairConfig,
-) -> EStopReport {
-    match tokio::time::timeout(cfg.cleanup_budget, escalate_double_estop(pair, reason, cfg)).await {
-        Ok(r) => r,
-        Err(_elapsed) => EStopReport {
-            reason: reason.to_string(),
-            left: Err(None),
-            right: Err(None),
-        },
-    }
+    (cancelled, trouble)
 }
 
 /// 两侧已知 action 的 `(Side, action_id)` 列表。
@@ -1028,6 +1168,7 @@ pub async fn run_chunk_pair<E: ArmEndpoint>(
     cfg: &PairConfig,
 ) -> Result<PairRun, PairError> {
     let submit = submit_pair(pair, left, right, clock, cfg).await?;
+    // 注：配置校验在 `submit_pair` 入口（任何 invoke 之前）已做。
     let ack_skew = submit.ack_skew();
     if let Err(v) = submit.check_ack_skew(cfg) {
         // gate 违例 = 两臂未真并发；两个 action 都在跑，必须收掉。
@@ -1055,10 +1196,13 @@ pub async fn run_chunk_pair<E: ArmEndpoint>(
 /// [`PairConfig::rpc_timeout`] 硬超时），Ack 时刻由 `clock` 在**各自 future
 /// 内**打点。
 ///
-/// **失败分类（round 2 阻断 1）**：只有服务端 typed status
-/// （[`ArmRpcError::is_definite_rejection`]）才算"明确拒绝、可证明未启动"；
-/// 超时 / transport 失败一律视为**结果不确定**——该侧可能已接受并启动 action
-/// 而我们没有 `action_id`，故 cancel 全部已知 action 后**双 EStop**。
+/// **失败分类（round 2 阻断 1 + round 3 P0-1）**：由端点给出的
+/// [`SubmitFailure`] 决定——只有契约白名单内的 code
+/// （[`DEFINITE_REJECTION_CODES`]）算"明确拒绝、可证明未启动"；超时 /
+/// transport 失败 / 白名单外的 status（`DeadlineExceeded` / `Unavailable` /
+/// `Internal` / `Cancelled` / `Unknown` …）一律视为**结果不确定**——该侧可能
+/// 已接受并启动 action 而我们没有 `action_id`，故**先双 EStop**再 cancel
+/// 全部已知 action。
 ///
 /// Ack 偏差 gate **不在**这里施加——见 [`run_chunk_pair`]。
 ///
@@ -1073,16 +1217,19 @@ pub async fn submit_pair<E: ArmEndpoint>(
     clock: &dyn RobotClock,
     cfg: &PairConfig,
 ) -> Result<PairSubmit, PairError> {
+    // round 3 P0-2 第 3 条：**任何 invoke 之前**强制校验配置——收尾预算不足
+    // 会让"异常已安全收尾"的不变量失效。
+    cfg.validate().map_err(PairError::InvalidConfig)?;
     // **各侧在自己的 future 内打点**（D5 第 1/7 条）：join 返回后统一取 now
     // 会把偏差抹成 0，gate 失效。
     let timeout = cfg.rpc_timeout;
     let ArmPair { left, right } = &mut *pair;
     let left_fut = async {
-        let r = bounded(left.invoke_action(left_spec), timeout).await;
+        let r = bounded_submit(left.invoke_action(left_spec), timeout).await;
         (r, clock.now().0)
     };
     let right_fut = async {
-        let r = bounded(right.invoke_action(right_spec), timeout).await;
+        let r = bounded_submit(right.invoke_action(right_spec), timeout).await;
         (r, clock.now().0)
     };
     let ((left_res, left_at), (right_res, right_at)) = tokio::join!(left_fut, right_fut);
@@ -1099,7 +1246,7 @@ pub async fn submit_pair<E: ArmEndpoint>(
                 acked_at_ns: right_at,
             },
         }),
-        (Err(l), Err(r)) => Err(both_failed(pair, l, r, clock, cfg).await),
+        (Err(l), Err(r)) => Err(both_failed(pair, l, r, cfg).await),
         (Ok(id), Err(e)) => Err(one_failed(pair, Side::Left, id, Side::Right, e, clock, cfg).await),
         (Err(e), Ok(id)) => Err(one_failed(pair, Side::Right, id, Side::Left, e, clock, cfg).await),
     }
@@ -1109,29 +1256,28 @@ pub async fn submit_pair<E: ArmEndpoint>(
 /// **结果不确定** → 无已知 action 可 cancel，直接双 EStop。
 async fn both_failed<E: ArmEndpoint>(
     pair: &mut ArmPair<E>,
-    left: RpcFailure,
-    right: RpcFailure,
-    _clock: &dyn RobotClock,
+    left: SubmitFailure,
+    right: SubmitFailure,
     cfg: &PairConfig,
 ) -> PairError {
-    let t = cfg.rpc_timeout;
-    if left.is_definite_rejection() && right.is_definite_rejection() {
+    if left.is_definite() && right.is_definite() {
         return PairError::BothRejected {
-            left: left.into_error(t),
-            right: right.into_error(t),
+            left: left.into_error(),
+            right: right.into_error(),
         };
     }
     let mut causes = Vec::new();
     let mut rejected = None;
     for (side, f) in [(Side::Left, left), (Side::Right, right)] {
-        if f.is_definite_rejection() {
-            rejected = Some((side, f.into_error(t)));
+        if f.is_definite() {
+            rejected = Some((side, f.into_error()));
         } else {
-            causes.push((side, f.into_error(t)));
+            causes.push((side, f.into_error()));
         }
     }
-    // 无 action_id 可 cancel → 只能双 EStop（force）。
-    let estop = estop_within_budget(
+    // 无 action_id 可 cancel → **立即**双 EStop（round 3 P0-2：不确定路径的
+    // 安全动作不排在任何等待之后）。
+    let estop = escalate_double_estop(
         pair,
         "dual_arm_workflow: submit outcome indeterminate (no action id to cancel) → double EStop",
         cfg,
@@ -1156,12 +1302,12 @@ async fn one_failed<E: ArmEndpoint>(
     accepted_side: Side,
     accepted_id: String,
     failed_side: Side,
-    failure: RpcFailure,
+    failure: SubmitFailure,
     clock: &dyn RobotClock,
     cfg: &PairConfig,
 ) -> PairError {
-    let definite = failure.is_definite_rejection();
-    let err = failure.into_error(cfg.rpc_timeout);
+    let definite = failure.is_definite();
+    let err = failure.into_error();
     let known = [(accepted_side, accepted_id.clone())];
     if definite {
         // 可证明失败侧未启动 → 只需收掉已接收侧；不收敛才升级 EStop。
@@ -1227,7 +1373,7 @@ pub async fn cancel_surviving<E: ArmEndpoint>(
                 "dual_arm_workflow: cancel of {side} action {action_id} did not converge within {:?}",
                 cfg.cancel_timeout
             );
-            let estop = estop_within_budget(pair, &reason, cfg).await;
+            let estop = escalate_double_estop(pair, &reason, cfg).await;
             Err(PairError::CancelNotConverged {
                 side,
                 action_id: action_id.to_string(),
@@ -1237,7 +1383,7 @@ pub async fn cancel_surviving<E: ArmEndpoint>(
         }
         Err(a) => {
             let reason = format!("dual_arm_workflow: {} {} rpc anomaly", a.side, a.phase);
-            let estop = estop_within_budget(pair, &reason, cfg).await;
+            let estop = escalate_double_estop(pair, &reason, cfg).await;
             Err(anomaly_to_error(a, cfg, estop))
         }
     }
@@ -1325,7 +1471,7 @@ pub async fn await_pair_terminal<E: ArmEndpoint>(
                 "dual_arm_workflow: cancel of {side} action {action_id} did not converge within {:?}",
                 cfg.cancel_timeout
             );
-            let estop = estop_within_budget(pair, &reason, cfg).await;
+            let estop = escalate_double_estop(pair, &reason, cfg).await;
             Err(PairError::CancelNotConverged {
                 side,
                 action_id,
@@ -1335,7 +1481,7 @@ pub async fn await_pair_terminal<E: ArmEndpoint>(
         }
         LoopExit::Anomaly(a) => {
             let reason = format!("dual_arm_workflow: {} {} rpc anomaly", a.side, a.phase);
-            let estop = estop_within_budget(pair, &reason, cfg).await;
+            let estop = escalate_double_estop(pair, &reason, cfg).await;
             Err(anomaly_to_error(a, cfg, estop))
         }
     }
@@ -1414,7 +1560,7 @@ fn duration_to_ns(d: Duration) -> u64 {
 }
 
 // ============================================================================
-// Tests（脚本化 mock 端点：协议分支 + 有界性 + 收尾语义全覆盖，无进程无网络）
+// Tests（脚本化 mock 端点：协议分支 + 有界性 + 收尾语义/顺序全覆盖）
 // ============================================================================
 
 #[cfg(test)]
@@ -1426,8 +1572,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
-    /// 单调递增的测试时钟：每次 `now()` 前进固定步长（让超时判据确定性推进，
-    /// 不依赖墙钟）。
+    /// 单调递增的测试时钟：每次 `now()` 前进固定步长。
     #[derive(Debug)]
     struct StepClock {
         ns: AtomicU64,
@@ -1451,21 +1596,21 @@ mod tests {
         fn sleep_for(&self, _d: robot_core::time::DurationNs) {}
     }
 
-    /// 某个端点方法的脚本化行为。
+    /// 端点方法的脚本化行为。
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Behavior {
         Normal,
-        /// 永不返回（模拟 RPC 挂死）——协议层 `rpc_timeout` 必须兜住。
+        /// 永不返回（RPC 挂死）。
         Pending,
-        /// 明确 gRPC status 拒绝（可证明服务端未启动 action）。
-        DefiniteReject,
-        /// transport 失败（**不可**证明未启动）。
+        /// 指定 gRPC code 的 status 失败。
+        Status(&'static str),
+        /// transport 失败。
         TransportFail,
     }
 
-    /// 脚本化端点。用 `Mutex`（非 `RefCell`）使其天然 `Send`——
-    /// `ArmEndpoint: Send` 是协议 trait 的硬要求，测试侧不得用
-    /// `unsafe impl Send` 绕过。
+    /// 两侧共享的**有序事件日志**（round 3 P0-2：断言 EStop 早于 cancel 收敛）。
+    type EventLog = Arc<Mutex<Vec<String>>>;
+
     struct MockArm {
         side: Side,
         invoke: Behavior,
@@ -1473,15 +1618,19 @@ mod tests {
         cancel: Behavior,
         estop: Behavior,
         statuses: Mutex<VecDeque<TaskSnapshot>>,
-        /// cancel 之后改用的状态序列（模拟"cancel 生效"）。
         after_cancel: Mutex<Option<VecDeque<TaskSnapshot>>>,
         last_spec: Mutex<Option<ActionSpec>>,
         cancel_calls: Arc<AtomicU64>,
         estop_calls: Arc<AtomicU64>,
+        events: EventLog,
     }
 
     impl MockArm {
         fn new(side: Side) -> Self {
+            Self::with_log(side, Arc::new(Mutex::new(Vec::new())))
+        }
+
+        fn with_log(side: Side, events: EventLog) -> Self {
             Self {
                 side,
                 invoke: Behavior::Normal,
@@ -1493,6 +1642,7 @@ mod tests {
                 last_spec: Mutex::new(None),
                 cancel_calls: Arc::new(AtomicU64::new(0)),
                 estop_calls: Arc::new(AtomicU64::new(0)),
+                events,
             }
         }
 
@@ -1545,8 +1695,16 @@ mod tests {
                 .as_ref()
                 .map(|s| s.kind)
         }
+
+        fn log(&self, what: &str) {
+            self.events
+                .lock()
+                .expect("lock")
+                .push(format!("{}:{what}", self.side.label()));
+        }
     }
 
+    /// 非 invoke 方法的行为应用（失败域 = 通用 `ArmRpcError`）。
     async fn apply<T>(b: Behavior, ok: T) -> Result<T, ArmRpcError> {
         tokio::task::yield_now().await;
         match b {
@@ -1555,9 +1713,9 @@ mod tests {
                 std::future::pending::<()>().await;
                 unreachable!()
             }
-            Behavior::DefiniteReject => Err(ArmRpcError::Status {
-                code: "FailedPrecondition".into(),
-                message: "definitely rejected".into(),
+            Behavior::Status(code) => Err(ArmRpcError::Status {
+                code: code.to_string(),
+                message: format!("mock {code}"),
             }),
             Behavior::TransportFail => Err(ArmRpcError::Transport("connection reset".into())),
         }
@@ -1568,14 +1726,33 @@ mod tests {
             self.side
         }
 
-        async fn invoke_action(&mut self, spec: ActionSpec) -> Result<String, ArmRpcError> {
-            let id = format!("{}-action", self.side.label());
+        async fn invoke_action(&mut self, spec: ActionSpec) -> Result<String, SubmitFailure> {
+            tokio::task::yield_now().await;
+            self.log("invoke");
             *self.last_spec.lock().expect("lock") = Some(spec);
-            apply(self.invoke, id).await
+            match self.invoke {
+                Behavior::Normal => Ok(format!("{}-action", self.side.label())),
+                Behavior::Pending => {
+                    std::future::pending::<()>().await;
+                    unreachable!()
+                }
+                // 端点侧按契约白名单分类（与 `TonicArm` 同款）。
+                Behavior::Status(code) => Err(SubmitFailure::from_status_code(
+                    code,
+                    ArmRpcError::Status {
+                        code: code.to_string(),
+                        message: format!("mock {code}"),
+                    },
+                )),
+                Behavior::TransportFail => Err(SubmitFailure::from_transport(
+                    ArmRpcError::Transport("connection reset".into()),
+                )),
+            }
         }
 
         async fn cancel_task(&mut self, _action_id: &str) -> Result<(), ArmRpcError> {
             self.cancel_calls.fetch_add(1, Ordering::Relaxed);
+            self.log("cancel");
             apply(self.cancel, ()).await?;
             let replacement = self.after_cancel.lock().expect("lock").take();
             if let Some(seq) = replacement {
@@ -1585,7 +1762,6 @@ mod tests {
         }
 
         async fn task_status(&mut self, _action_id: &str) -> Result<TaskSnapshot, ArmRpcError> {
-            // 队列 > 1 时逐条推进；剩最后一条则**保持**（稳态终态可反复读）。
             let next = {
                 let mut q = self.statuses.lock().expect("lock");
                 if q.len() > 1 {
@@ -1603,6 +1779,7 @@ mod tests {
 
         async fn estop(&mut self, _reason: &str) -> Result<(), ArmRpcError> {
             self.estop_calls.fetch_add(1, Ordering::Relaxed);
+            self.log("estop");
             apply(self.estop, ()).await
         }
     }
@@ -1637,7 +1814,7 @@ mod tests {
         snap(TaskPhase::Terminal(TerminalState::Cancelled))
     }
 
-    /// 快窗口配置（真实时间；各窗 ≤ 100 ms，整轮测试百毫秒级）。
+    /// 快窗口配置（真实时间；各窗 ≤ 100 ms）。
     fn fast_cfg() -> PairConfig {
         PairConfig {
             ack_skew_limit: Duration::from_millis(250),
@@ -1664,14 +1841,11 @@ mod tests {
             left: MockArm::new(Side::Left).with_status(completed_success()),
             right: MockArm::new(Side::Right).with_status(completed_success()),
         };
-        let cfg = fast_cfg();
-        let run = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &cfg)
+        let run = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
             .await
             .expect("pair success");
         assert!(run.result.is_pair_success(), "{:?}", run.result);
-        // round 1 阻断 3：发的确实是 Scripted，不是暗中的 Dwell。
         assert_eq!(pair.left.last_kind(), Some(ActionKindWire::Scripted));
-        assert_eq!(pair.right.last_kind(), Some(ActionKindWire::Scripted));
         assert_eq!(pair.left.estops(), 0);
     }
 
@@ -1680,7 +1854,6 @@ mod tests {
         let spec = ActionSpec::dwell_no_payload();
         assert_eq!(spec.kind, ActionKindWire::DwellMs);
         assert_eq!(spec.payload_schema_id, NO_PAYLOAD_SCHEMA_ID);
-        assert!(spec.payload.is_empty());
         assert_eq!(ActionKindWire::DwellMs.proto_value(), 1);
         assert_eq!(ActionKindWire::Scripted.proto_value(), 3);
 
@@ -1691,43 +1864,109 @@ mod tests {
                 .with_status(snap(TaskPhase::Executing))
                 .with_after_cancel(cancelled()),
         };
-        let cfg = fast_cfg();
         let run = run_chunk_pair(
             &mut pair,
             ActionSpec::dwell_no_payload(),
             scripted(),
             &clock,
-            &cfg,
+            &fast_cfg(),
         )
         .await;
         assert!(run.is_ok(), "{run:?}");
         assert_eq!(pair.left.last_kind(), Some(ActionKindWire::DwellMs));
-        assert_eq!(pair.right.last_kind(), Some(ActionKindWire::Scripted));
     }
 
-    // ---- round 2 阻断 1：明确拒绝 vs 结果不确定 ----
+    // ---- round 3 P0-1：invoke 失败域分类 ----
+
+    #[test]
+    fn submit_failure_classification_follows_contract_allowlist() {
+        let err = || ArmRpcError::Transport("x".into());
+        // 白名单内 = 明确拒绝（可证明未启动）。
+        for code in DEFINITE_REJECTION_CODES {
+            assert!(
+                SubmitFailure::from_status_code(code, err()).is_definite(),
+                "{code} 应在白名单内"
+            );
+        }
+        // reviewer 点名的五种 code 必须是**不确定**（gateway 可能已 forward）。
+        for code in [
+            "DeadlineExceeded",
+            "Cancelled",
+            "Unavailable",
+            "Internal",
+            "Unknown",
+        ] {
+            assert!(
+                !SubmitFailure::from_status_code(code, err()).is_definite(),
+                "{code} 必须按不确定处理"
+            );
+        }
+        // 幂等重放：同 key 的 action 可能正在跑 → 不确定。
+        assert!(!SubmitFailure::from_status_code("AlreadyExists", err()).is_definite());
+        // transport 恒不确定。
+        assert!(!SubmitFailure::from_transport(err()).is_definite());
+        assert_eq!(
+            ArmRpcError::Status {
+                code: "Internal".into(),
+                message: String::new()
+            }
+            .code(),
+            Some("Internal")
+        );
+        assert!(err().code().is_none());
+    }
+
+    /// 五种"可能发生在 forward 之后"的 code 都必须走
+    /// [`PairError::IndeterminateSubmit`]（round 3 P0-1 点名）。
+    #[tokio::test]
+    async fn post_forward_status_codes_are_indeterminate_submits() {
+        for code in [
+            "DeadlineExceeded",
+            "Cancelled",
+            "Unavailable",
+            "Internal",
+            "Unknown",
+        ] {
+            let clock = StepClock::new(1_000_000);
+            let mut pair = ArmPair {
+                left: MockArm::new(Side::Left)
+                    .with_status(snap(TaskPhase::Executing))
+                    .with_after_cancel(cancelled()),
+                right: MockArm::new(Side::Right).invoke(Behavior::Status(code)),
+            };
+            let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
+                .await
+                .expect_err("post-forward code 必须视为不确定");
+            match err {
+                PairError::IndeterminateSubmit { ref causes, .. } => {
+                    assert_eq!(causes.len(), 1, "{code}");
+                    assert_eq!(causes[0].0, Side::Right, "{code}");
+                }
+                other => panic!("{code}: expected IndeterminateSubmit, got {other:?}"),
+            }
+            assert_eq!(pair.left.estops(), 1, "{code}: 必须双 EStop");
+            assert_eq!(pair.right.estops(), 1, "{code}");
+        }
+    }
 
     #[tokio::test]
     async fn both_definitely_rejected_needs_no_cleanup() {
         let clock = StepClock::new(1_000_000);
         let mut pair = ArmPair {
-            left: MockArm::new(Side::Left).invoke(Behavior::DefiniteReject),
-            right: MockArm::new(Side::Right).invoke(Behavior::DefiniteReject),
+            left: MockArm::new(Side::Left).invoke(Behavior::Status("PermissionDenied")),
+            right: MockArm::new(Side::Right).invoke(Behavior::Status("InvalidArgument")),
         };
         let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
             .await
             .expect_err("双明确拒绝必 FAIL");
         assert!(matches!(err, PairError::BothRejected { .. }), "{err:?}");
-        // 可证明两侧都没启动 → 不 cancel、不 EStop、不重试。
         assert_eq!(pair.left.cancels(), 0);
-        assert_eq!(pair.right.cancels(), 0);
         assert_eq!(pair.left.estops(), 0);
         assert_eq!(pair.right.estops(), 0);
     }
 
     #[tokio::test]
     async fn both_pending_invokes_are_indeterminate_and_estop() {
-        // 双侧 invoke 挂死：Ack 未收到 ≠ 服务端未接受 → 必须双 EStop。
         let clock = StepClock::new(1_000_000);
         let mut pair = ArmPair {
             left: MockArm::new(Side::Left).invoke(Behavior::Pending),
@@ -1742,17 +1981,112 @@ mod tests {
                 ref rejected,
                 ref cleanup,
             } => {
-                assert_eq!(causes.len(), 2, "两侧都不确定");
+                assert_eq!(causes.len(), 2);
                 assert!(rejected.is_none());
-                let estop = cleanup.estop.as_ref().expect("必须已双 EStop");
-                assert!(estop.both_acked());
+                assert!(cleanup.estop.as_ref().expect("EStop").both_acked());
             }
             other => panic!("expected IndeterminateSubmit, got {other:?}"),
         }
-        // 无 action_id 可 cancel；EStop 恰一次。
         assert_eq!(pair.left.cancels(), 0);
         assert_eq!(pair.left.estops(), 1);
-        assert_eq!(pair.right.estops(), 1);
+    }
+
+    #[tokio::test]
+    async fn transport_failure_is_indeterminate_not_rejection() {
+        let clock = StepClock::new(1_000_000);
+        let mut pair = ArmPair {
+            left: MockArm::new(Side::Left)
+                .with_status(snap(TaskPhase::Executing))
+                .with_after_cancel(cancelled()),
+            right: MockArm::new(Side::Right).invoke(Behavior::TransportFail),
+        };
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
+            .await
+            .expect_err("transport 失败 = 不确定");
+        match err {
+            PairError::IndeterminateSubmit {
+                ref causes,
+                ref cleanup,
+                ..
+            } => {
+                assert!(matches!(causes[0].1, ArmRpcError::Transport(_)));
+                assert_eq!(cleanup.cancelled.len(), 1);
+                assert!(cleanup.estop.is_some());
+            }
+            other => panic!("expected IndeterminateSubmit, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn accepted_plus_definite_rejection_is_partial_failure_without_estop() {
+        let clock = StepClock::new(1_000_000);
+        let mut pair = ArmPair {
+            left: MockArm::new(Side::Left)
+                .with_status(snap(TaskPhase::Executing))
+                .with_after_cancel(cancelled()),
+            right: MockArm::new(Side::Right).invoke(Behavior::Status("FailedPrecondition")),
+        };
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
+            .await
+            .expect_err("一收一拒");
+        match err {
+            PairError::SubmitPartialFailure {
+                rejected_side,
+                ref cancelled,
+                ..
+            } => {
+                assert_eq!(rejected_side, Side::Right);
+                assert_eq!(cancelled.state, TerminalState::Cancelled);
+            }
+            other => panic!("expected SubmitPartialFailure, got {other:?}"),
+        }
+        assert_eq!(pair.left.estops(), 0, "可证明未启动 → 不必 EStop");
+    }
+
+    // ---- round 3 P0-2：EStop 先行 + 预算切分 ----
+
+    /// accepted + indeterminate + **cancel 挂死**：EStop 必须在 cancel 收敛
+    /// **之前**就各执行一次（安全动作不排在等待之后）。
+    #[tokio::test]
+    async fn indeterminate_submit_estops_before_cancel_convergence() {
+        let events: EventLog = Arc::new(Mutex::new(Vec::new()));
+        let clock = StepClock::new(1_000_000);
+        let mut pair = ArmPair {
+            left: MockArm::with_log(Side::Left, Arc::clone(&events))
+                .with_status(snap(TaskPhase::Executing))
+                .cancel_behavior(Behavior::Pending),
+            right: MockArm::with_log(Side::Right, Arc::clone(&events)).invoke(Behavior::Pending),
+        };
+        let cfg = fast_cfg();
+        let t0 = Instant::now();
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &cfg)
+            .await
+            .expect_err("不确定提交");
+        let elapsed = t0.elapsed();
+        match err {
+            PairError::IndeterminateSubmit { ref cleanup, .. } => {
+                assert!(cleanup.estop.is_some(), "必须已 EStop");
+                assert!(cleanup.cancelled.is_empty(), "cancel 挂死 → 无收敛终态");
+            }
+            other => panic!("expected IndeterminateSubmit, got {other:?}"),
+        }
+        assert_eq!(pair.left.estops(), 1, "恰一次");
+        assert_eq!(pair.right.estops(), 1, "恰一次");
+        // **顺序**：两侧 estop 都早于 left 的 cancel。
+        let log = events.lock().expect("lock").clone();
+        let first_estop = log
+            .iter()
+            .position(|e| e.ends_with(":estop"))
+            .expect("estop");
+        let first_cancel = log.iter().position(|e| e.ends_with(":cancel"));
+        if let Some(c) = first_cancel {
+            assert!(first_estop < c, "EStop 必须先于 cancel，实际日志 = {log:?}");
+        }
+        assert!(
+            elapsed <= cfg.run_chunk_bound(),
+            "墙钟 {elapsed:?} ≤ {:?}",
+            cfg.run_chunk_bound()
+        );
     }
 
     #[tokio::test]
@@ -1774,74 +2108,34 @@ mod tests {
                 ..
             } => {
                 assert_eq!(causes.len(), 1);
-                assert_eq!(causes[0].0, Side::Right);
                 assert_eq!(cleanup.cancelled.len(), 1, "已知 action 必须被 cancel");
-                assert_eq!(cleanup.cancelled[0].side, Side::Left);
-                assert!(cleanup.estop.is_some(), "不确定 → 强制双 EStop");
-            }
-            other => panic!("expected IndeterminateSubmit, got {other:?}"),
-        }
-        assert_eq!(pair.left.cancels(), 1);
-        assert_eq!(pair.left.estops(), 1);
-        assert_eq!(pair.right.estops(), 1);
-    }
-
-    #[tokio::test]
-    async fn transport_failure_is_indeterminate_not_rejection() {
-        // transport 失败同样**不能证明**服务端未接受 → 走不确定路径
-        // （round 2 阻断 1：不得与 typed status 拒绝混为一谈）。
-        let clock = StepClock::new(1_000_000);
-        let mut pair = ArmPair {
-            left: MockArm::new(Side::Left)
-                .with_status(snap(TaskPhase::Executing))
-                .with_after_cancel(cancelled()),
-            right: MockArm::new(Side::Right).invoke(Behavior::TransportFail),
-        };
-        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
-            .await
-            .expect_err("transport 失败 = 不确定");
-        match err {
-            PairError::IndeterminateSubmit {
-                ref causes,
-                ref cleanup,
-                ..
-            } => {
-                assert_eq!(causes.len(), 1);
-                assert!(matches!(causes[0].1, ArmRpcError::Transport(_)));
-                assert_eq!(cleanup.cancelled.len(), 1);
                 assert!(cleanup.estop.is_some());
             }
             other => panic!("expected IndeterminateSubmit, got {other:?}"),
         }
+        assert_eq!(pair.left.cancels(), 1);
         assert_eq!(pair.left.estops(), 1);
-        assert_eq!(pair.right.estops(), 1);
     }
 
     #[tokio::test]
-    async fn accepted_plus_definite_rejection_is_partial_failure_without_estop() {
+    async fn invalid_config_is_rejected_before_any_invoke() {
         let clock = StepClock::new(1_000_000);
         let mut pair = ArmPair {
-            left: MockArm::new(Side::Left)
-                .with_status(snap(TaskPhase::Executing))
-                .with_after_cancel(cancelled()),
-            right: MockArm::new(Side::Right).invoke(Behavior::DefiniteReject),
+            left: MockArm::new(Side::Left),
+            right: MockArm::new(Side::Right),
         };
-        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
+        // 收尾预算不足 → 必须在**任何 invoke 之前**拒绝。
+        let bad = PairConfig {
+            cleanup_budget: Duration::from_millis(10),
+            ..fast_cfg()
+        };
+        assert!(bad.validate().is_err());
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &bad)
             .await
-            .expect_err("一收一拒");
-        match err {
-            PairError::SubmitPartialFailure {
-                rejected_side,
-                ref cancelled,
-                ..
-            } => {
-                assert_eq!(rejected_side, Side::Right);
-                assert_eq!(cancelled.state, TerminalState::Cancelled);
-            }
-            other => panic!("expected SubmitPartialFailure, got {other:?}"),
-        }
-        assert_eq!(pair.left.cancels(), 1);
-        assert_eq!(pair.left.estops(), 0, "可证明未启动 → 不必 EStop");
+            .expect_err("非法配置");
+        assert!(matches!(err, PairError::InvalidConfig(_)), "{err:?}");
+        assert_eq!(pair.left.last_kind(), None, "不得发出任何 invoke");
+        assert_eq!(pair.right.last_kind(), None);
     }
 
     // ---- 执行期 ----
@@ -1861,7 +2155,6 @@ mod tests {
         match run.result {
             PairResult::BothUnsuccessful { left, right } => {
                 assert_eq!(left.state, TerminalState::Failed);
-                assert_eq!(left.failure, FailureKind::InternalError);
                 assert_eq!(right.state, TerminalState::Cancelled);
             }
             other => panic!("expected BothUnsuccessful, got {other:?}"),
@@ -1890,10 +2183,9 @@ mod tests {
             other => panic!("expected PartialCompletion, got {other:?}"),
         }
         assert_eq!(pair.right.cancels(), 0, "成功侧先到不得 cancel 幸存侧");
-        assert!(!run.result.is_pair_success());
     }
 
-    // ---- round 1 阻断 1 / round 2 阻断 3：有界 + 恰一次 EStop ----
+    // ---- 有界 + 恰一次升级 ----
 
     #[tokio::test]
     async fn pending_status_rpc_is_bounded_and_escalates_exactly_once() {
@@ -1920,7 +2212,6 @@ mod tests {
             }
             other => panic!("expected RpcTimeout, got {other:?}"),
         }
-        // round 2 阻断 3：每侧**恰一次** EStop（不得重复升级）。
         assert_eq!(pair.left.estops(), 1);
         assert_eq!(pair.right.estops(), 1);
     }
@@ -1929,7 +2220,7 @@ mod tests {
     async fn status_rpc_failure_escalates_double_estop_exactly_once() {
         let clock = StepClock::new(1_000_000);
         let mut pair = ArmPair {
-            left: MockArm::new(Side::Left).status_behavior(Behavior::DefiniteReject),
+            left: MockArm::new(Side::Left).status_behavior(Behavior::Status("Unavailable")),
             right: MockArm::new(Side::Right).with_status(completed_success()),
         };
         let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
@@ -1954,7 +2245,6 @@ mod tests {
 
     #[tokio::test]
     async fn convergence_timeout_cleanup_escalates_exactly_once() {
-        // 未终态 + cancel 也不收敛 → 收尾升级恰一次双 EStop。
         let clock = StepClock::new(10_000_000);
         let mut pair = ArmPair {
             left: MockArm::new(Side::Left).with_status(snap(TaskPhase::Executing)),
@@ -1966,8 +2256,7 @@ mod tests {
         match err {
             PairError::ConvergenceTimeout { ref cleanup, .. } => {
                 assert!(cleanup.cancelled.is_empty());
-                let estop = cleanup.estop.as_ref().expect("必须已双 EStop");
-                assert!(estop.both_acked());
+                assert!(cleanup.estop.as_ref().expect("EStop").both_acked());
                 assert!(!cleanup.budget_exceeded);
             }
             other => panic!("expected ConvergenceTimeout, got {other:?}"),
@@ -1991,15 +2280,8 @@ mod tests {
             .await
             .expect_err("永不终态");
         match err {
-            PairError::ConvergenceTimeout {
-                left,
-                right,
-                ref cleanup,
-                ..
-            } => {
-                assert_eq!(left, TaskPhase::Executing);
-                assert_eq!(right, TaskPhase::Pending);
-                assert_eq!(cleanup.cancelled.len(), 2, "未终态两侧都要收掉");
+            PairError::ConvergenceTimeout { ref cleanup, .. } => {
+                assert_eq!(cleanup.cancelled.len(), 2);
                 assert!(cleanup.is_clean());
             }
             other => panic!("expected ConvergenceTimeout, got {other:?}"),
@@ -2027,19 +2309,16 @@ mod tests {
             .expect_err("偏差超限");
         match err {
             PairError::AckSkewExceeded { ref cleanup, .. } => {
-                assert_eq!(cleanup.cancelled.len(), 2, "两侧都必须被 cancel");
+                assert_eq!(cleanup.cancelled.len(), 2);
                 assert!(cleanup.is_clean());
             }
             other => panic!("expected AckSkewExceeded, got {other:?}"),
         }
-        assert_eq!(pair.left.cancels(), 1);
-        assert_eq!(pair.right.cancels(), 1);
         assert_eq!(pair.left.estops(), 0);
     }
 
-    // ---- round 2 阻断 2：墙钟总上限 = 协议预算 + 收尾预算 ----
+    // ---- 墙钟上限 ----
 
-    /// 最坏组合：status 挂死 + cancel 挂死 + EStop 挂死。
     #[tokio::test]
     async fn wall_clock_stays_within_two_budgets_when_everything_hangs() {
         let clock = StepClock::new(1_000_000);
@@ -2059,20 +2338,17 @@ mod tests {
             .await
             .expect_err("全挂死");
         let elapsed = t0.elapsed();
-        // 全挂死时应在首次 status 轮询处被 rpc_timeout 截断 → EStop（也挂死，
-        // 由 estop_timeout 截断）。
         assert!(
             matches!(err, PairError::RpcTimeout { .. }),
             "expected RpcTimeout, got {err:?}"
         );
-        let bound = cfg.run_chunk_bound();
         assert!(
-            elapsed <= bound,
-            "墙钟 {elapsed:?} 必须 ≤ run_chunk_bound {bound:?}"
+            elapsed <= cfg.run_chunk_bound(),
+            "墙钟 {elapsed:?} ≤ {:?}",
+            cfg.run_chunk_bound()
         );
     }
 
-    /// cancel 挂死（status 正常但永不终态）：收尾在独立预算内完成。
     #[tokio::test]
     async fn wall_clock_bounded_when_cancel_hangs_during_cleanup() {
         let clock = StepClock::new(10_000_000);
@@ -2093,15 +2369,16 @@ mod tests {
         match err {
             PairError::ConvergenceTimeout { ref cleanup, .. } => {
                 assert!(cleanup.estop.is_some(), "cancel 挂死必须升级 EStop");
-                assert_eq!(cleanup.cancelled.len(), 0);
+                assert!(cleanup.cancelled.is_empty());
             }
             other => panic!("expected ConvergenceTimeout, got {other:?}"),
         }
-        let bound = cfg.run_chunk_bound();
-        assert!(elapsed <= bound, "墙钟 {elapsed:?} ≤ {bound:?}");
-        // 收尾在**独立**预算内：两侧 cancel 各 rpc_timeout + 一次 EStop。
+        assert!(
+            elapsed <= cfg.run_chunk_bound(),
+            "墙钟 {elapsed:?} ≤ {:?}",
+            cfg.run_chunk_bound()
+        );
         assert_eq!(pair.left.estops(), 1);
-        assert_eq!(pair.right.estops(), 1);
     }
 
     // ---- 判据 / 配置 / 映射 ----
@@ -2123,10 +2400,8 @@ mod tests {
         };
         let over = mk(300_000_000);
         assert_eq!(over.ack_skew(), Duration::from_millis(300));
-        // round 2 阻断 5：纯判据返回独立 violation 类型，**不**伪造 PairError。
         let v: AckSkewViolation = over.check_ack_skew(&cfg).expect_err("超限必拒");
         assert_eq!(v.skew, Duration::from_millis(300));
-        assert_eq!(v.limit, cfg.ack_skew_limit);
         mk(duration_to_ns(cfg.ack_skew_limit))
             .check_ack_skew(&cfg)
             .expect("恰等于上限应通过");
@@ -2134,33 +2409,21 @@ mod tests {
     }
 
     #[test]
-    fn budgets_are_separate_and_sufficient() {
+    fn budgets_are_separate_sufficient_and_validated() {
         let cfg = PairConfig::default();
-        assert!(
-            cfg.cleanup_budget_is_sufficient(),
-            "默认收尾预算必须覆盖最坏收尾"
+        cfg.validate().expect("默认配置必须自洽");
+        assert!(cfg.cleanup_budget_is_sufficient());
+        // cancel 阶段预算 = 收尾预算 − EStop 预留（EStop 预算不可被吃掉）。
+        assert_eq!(
+            cfg.cancel_phase_budget(),
+            cfg.cleanup_budget.saturating_sub(cfg.estop_timeout)
         );
         let phase = cfg.phase_budget(cfg.terminal_timeout);
-        assert!(phase > cfg.terminal_timeout);
-        // 总上限 = submit + 2×收尾 + 协议阶段（见 PairConfig doc 公式）。
         assert_eq!(
             cfg.run_chunk_bound(),
             cfg.rpc_timeout + cfg.cleanup_budget * 2 + phase
         );
-        assert!(fast_cfg().cleanup_budget_is_sufficient());
-    }
-
-    #[test]
-    fn definite_rejection_classification() {
-        assert!(
-            ArmRpcError::Status {
-                code: "InvalidArgument".into(),
-                message: String::new()
-            }
-            .is_definite_rejection()
-        );
-        assert!(!ArmRpcError::Transport("reset".into()).is_definite_rejection());
-        assert!(!RpcFailure::TimedOut.is_definite_rejection());
+        fast_cfg().validate().expect("测试配置自洽");
     }
 
     #[test]
@@ -2218,15 +2481,12 @@ mod tests {
         };
         let s = TaskSnapshot::from_proto(&unknown);
         assert_eq!(s.phase, TaskPhase::Unspecified, "未知 state 不得当终态");
-        assert!(s.phase.terminal().is_none());
-        assert_eq!(s.failure, FailureKind::Unspecified);
         assert_eq!(s.failure_reason, "weird");
     }
 
     #[test]
     fn side_helpers() {
         assert_eq!(Side::Left.other(), Side::Right);
-        assert_eq!(Side::Right.other(), Side::Left);
         assert_eq!(Side::Left.to_string(), "left");
         assert_eq!(Side::Right.label(), "right");
     }

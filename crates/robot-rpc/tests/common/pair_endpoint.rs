@@ -19,11 +19,19 @@
 //! 顺序若反（协议层最短）会让**明确拒绝被误判成"结果不确定"**，进而触发
 //! 本不必要的双 EStop（round 2 阻断 1 相关）。
 //!
-//! ## action seam
+//! ## action seam + 失败分类（round 3 P0-1）
 //!
 //! 实现 [`ArmEndpoint::invoke_action`]（通用 `ActionSpec`），**不**假定
 //! kind——`ActionSpec::scripted` 与 `ActionSpec::dwell_no_payload`
 //! （test profile 下路由到 `fault_inject`）在调用点显式区分。
+//!
+//! invoke 失败按 **gRPC code 契约白名单**（`SubmitFailure::from_status_code`
+//! / `DEFINITE_REJECTION_CODES`）分成"明确拒绝"与"结果不确定"：gateway 在
+//! forward 给 S1 **之后**仍可能返 `DeadlineExceeded`（RR 等待超时）/
+//! `Internal`（response decode / request-id 不匹配）/ `Unavailable`
+//! （oneshot 丢失），tonic 的 transport 失败也表现为 `Cancelled` /
+//! `Unavailable` / `Unknown`——这些**都不能**证明 S1 未接受 action，一律
+//! 归 `Indeterminate`。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -31,7 +39,7 @@ use std::time::Duration;
 use tonic::transport::Channel;
 
 use robot_rpc::client::dual_arm_workflow::{
-    ActionSpec, ArmEndpoint, ArmRpcError, Side, TaskSnapshot,
+    ActionSpec, ArmEndpoint, ArmRpcError, Side, SubmitFailure, TaskSnapshot,
 };
 use robot_rpc::proto::robot_control_client::RobotControlClient;
 use robot_rpc::proto::{
@@ -111,7 +119,7 @@ impl ArmEndpoint for TonicArm {
         self.side
     }
 
-    async fn invoke_action(&mut self, spec: ActionSpec) -> Result<String, ArmRpcError> {
+    async fn invoke_action(&mut self, spec: ActionSpec) -> Result<String, SubmitFailure> {
         let cmd = InvokeTaskCommand {
             meta: Some(self.meta("invoke")),
             kind: spec.kind.proto_value(),
@@ -125,7 +133,11 @@ impl ArmEndpoint for TonicArm {
             .client
             .invoke_task(with_timeout(cmd))
             .await
-            .map_err(|s| map_status(&s))?
+            // **按 code 分类**（round 3 P0-1）：tonic 的 `Code` Debug 名与
+            // `DEFINITE_REJECTION_CODES` 同字面；白名单外一律 Indeterminate。
+            .map_err(|s| {
+                SubmitFailure::from_status_code(&format!("{:?}", s.code()), map_status(&s))
+            })?
             .into_inner();
         Ok(handle.action_id)
     }
