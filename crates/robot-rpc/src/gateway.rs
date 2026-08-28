@@ -2246,10 +2246,12 @@ pub async fn run_gateway_with_rr_io(
 ///    同序收尾后按其错误返回。
 ///
 /// **READY 前的外部 shutdown（round 2 阻断 2）**：阶段 1 / 2 都 `select!` 外部
-/// `shutdown_rx`——收到即内部 serve-shutdown → 有界收 probe
-/// （[`crate::systemd_probe::ProbeHandle::join`] ≤ 2 s 否则 abort）+ server
-/// （[`join_server`] ≤ [`SERVER_JOIN_TIMEOUT`] 否则 abort）→ 返 `Ok(())` 正常
-/// 退出（不发 READY、不起 watchdog）。运行期停机同用有界 join。
+/// `shutdown_rx`——收到即内部 serve-shutdown → **两级有界**收 probe
+/// （[`crate::systemd_probe::ProbeHandle::join`]：正常 ≤ 2 s → abort → 取消
+/// 确认 ≤ 500 ms → detach）+ server（[`join_server`]：≤
+/// [`SERVER_JOIN_TIMEOUT`] → abort → 确认 ≤ [`SERVER_ABORT_JOIN_TIMEOUT`] →
+/// detach）→ 返 `Ok(())` 正常退出（不发 READY、不起 watchdog）。运行期停机同
+/// 用两级有界 join。
 ///
 /// 所有权：本 fn 持 server `JoinHandle` + probe handle + watchdog handle +
 /// 内部 `serve_shutdown_tx`；外部 `shutdown_rx` 只读转发。`JoinHandle` 完成后
@@ -2520,32 +2522,61 @@ fn server_result_to_error(
     }
 }
 
-/// server task join 上限（内部 serve-shutdown 后 tonic graceful drain：probe
-/// 连接随 probe 退出关闭；其它 client 长连接最长等此值后 abort）。
+/// server task **正常** join 上限（内部 serve-shutdown 后 tonic graceful drain：
+/// probe 连接随 probe 退出关闭；其它 client 长连接最长等此值后 abort）。
 const SERVER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+/// `abort()` 后等**取消确认**的上限（tokio abort 协作取消，任务未 yield 时不会
+/// 立刻完成）；再超时 = 放弃等待并 detach，返回不阻塞停机（round 2 P1-1：原
+/// 实现 abort 后直接无界 await，仍非硬上界）。
+const SERVER_ABORT_JOIN_TIMEOUT: Duration = Duration::from_millis(500);
 
-/// **有界** join server task（**只可在其尚未完成时调**）：超时 → `abort()` +
-/// [`GatewayError::ServerTask`]；`JoinError` → 同 variant。
+/// **两级有界** join server task（**只可在其尚未完成时调**）：正常 join ≤
+/// [`SERVER_JOIN_TIMEOUT`]；超时 → `abort()` + 取消确认 ≤
+/// [`SERVER_ABORT_JOIN_TIMEOUT`]；确认再超时 → 严重日志 + detach 返回。三种
+/// 异常均 → [`GatewayError::ServerTask`]（错误串区分 aborted / detached）。
+/// **返回时延硬上界 ≈ 两常量之和**。
 async fn join_server(
     server: &mut tokio::task::JoinHandle<Result<(), GatewayError>>,
 ) -> Result<(), GatewayError> {
-    match tokio::time::timeout(SERVER_JOIN_TIMEOUT, &mut *server).await {
-        Ok(Ok(r)) => r,
-        Ok(Err(join)) => Err(GatewayError::ServerTask(format!(
-            "server task join: {join}"
-        ))),
-        Err(_elapsed) => {
-            tracing::error!(
-                timeout = ?SERVER_JOIN_TIMEOUT,
-                "robot_rpc_gateway: server task did not stop in time; aborting"
-            );
-            server.abort();
-            let _ = (&mut *server).await;
-            Err(GatewayError::ServerTask(format!(
-                "server task did not stop within {SERVER_JOIN_TIMEOUT:?}; aborted"
-            )))
+    join_server_with_timeouts(server, SERVER_JOIN_TIMEOUT, SERVER_ABORT_JOIN_TIMEOUT).await
+}
+
+/// [`join_server`] 的可注入超时版（单测缩短窗口；生产走常量）。
+async fn join_server_with_timeouts(
+    server: &mut tokio::task::JoinHandle<Result<(), GatewayError>>,
+    join_timeout: Duration,
+    abort_timeout: Duration,
+) -> Result<(), GatewayError> {
+    match tokio::time::timeout(join_timeout, &mut *server).await {
+        Ok(Ok(r)) => return r,
+        Ok(Err(join)) => {
+            return Err(GatewayError::ServerTask(format!(
+                "server task join: {join}"
+            )));
         }
+        Err(_elapsed) => tracing::error!(
+            timeout = ?join_timeout,
+            "robot_rpc_gateway: server task did not stop in time; aborting"
+        ),
     }
+    server.abort();
+    if tokio::time::timeout(abort_timeout, &mut *server)
+        .await
+        .is_err()
+    {
+        tracing::error!(
+            timeout = ?abort_timeout,
+            "robot_rpc_gateway: server task abort not confirmed (task never yielded); \
+             detaching and continuing shutdown"
+        );
+        return Err(GatewayError::ServerTask(format!(
+            "server task did not stop within {join_timeout:?} and abort was not confirmed \
+             within {abort_timeout:?}; detached"
+        )));
+    }
+    Err(GatewayError::ServerTask(format!(
+        "server task did not stop within {join_timeout:?}; aborted"
+    )))
 }
 
 /// 6 个 RR topic 串汇总（per-robot 派生；v0.5 候选 C +set_enabled）。
@@ -4683,6 +4714,36 @@ mod liveness_gate_tests {
             }
             Ok(())
         })
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn join_server_returns_even_when_abort_is_not_confirmed() {
+        // 任务体是**阻塞** sleep（永不 yield）→ `abort()` 不会立刻生效。
+        // round 2 P1-1 回归锁：join_server 必须在 join_timeout + abort_timeout
+        // 量级返回并显式报 detached，而不是无界等任务跑完。
+        let mut server: tokio::task::JoinHandle<Result<(), GatewayError>> = tokio::spawn(async {
+            std::thread::sleep(Duration::from_millis(400));
+            Ok(())
+        });
+        let t0 = Instant::now();
+        let r = join_server_with_timeouts(
+            &mut server,
+            Duration::from_millis(50),
+            Duration::from_millis(50),
+        )
+        .await;
+        let elapsed = t0.elapsed();
+        match r {
+            Err(GatewayError::ServerTask(msg)) => assert!(
+                msg.contains("abort was not confirmed") && msg.contains("detached"),
+                "{msg}"
+            ),
+            other => panic!("expected ServerTask(detached), got {other:?}"),
+        }
+        assert!(
+            elapsed < Duration::from_millis(300),
+            "join_server 必须两级有界返回，实际 {elapsed:?}"
+        );
     }
 
     #[tokio::test]

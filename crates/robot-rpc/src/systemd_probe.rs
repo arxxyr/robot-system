@@ -25,8 +25,11 @@
 //! [`ATTEMPT_TIMEOUT`] = 400 ms（原先只有 connect 超时——服务端 accept 后不
 //! 响应 h2 preface / 不回响应时 attempt 永挂，10 s 外层超时后 join 也永挂）；
 //! attempt 期间与 `stop_rx` `select!`，stop 置位即中断。`stop_rx`（gateway 内部
-//! serve-shutdown watch）置位即退；[`ProbeHandle::join`] 有界（[`JOIN_TIMEOUT`]
-//! 超时 → abort）。
+//! serve-shutdown watch）置位即退；[`ProbeHandle::join`] **两级有界**——正常
+//! join 上限 [`JOIN_TIMEOUT`]，超时后 `abort()` 再以 [`ABORT_JOIN_TIMEOUT`]
+//! 有界等**取消确认**（tokio abort 是协作取消，任务只在下一个 await 点才真正
+//! 结束；round 2 P1-1：原实现 abort 后直接无界 await，仍非硬上界）；确认再
+//! 超时 → 严重日志 + 返回（task detach，**不**阻塞停机）。
 //!
 //! ## 冻结（test-only）
 //!
@@ -54,9 +57,12 @@ use crate::proto::{GetStateRequest, RobotState};
 pub const PROBE_INTERVAL: Duration = Duration::from_millis(500);
 /// 单次 attempt（`ready()` + `unary()`）上限；< [`PROBE_INTERVAL`]（round 2 阻断 2）。
 pub const ATTEMPT_TIMEOUT: Duration = Duration::from_millis(400);
-/// [`ProbeHandle::join`] 上限：attempt ≤ 400 ms + 冻结分片 5 ms + select 即时，
-/// 正常 < 1 s；超过即 abort（不让停机被探针拖死）。
+/// [`ProbeHandle::join`] **正常** join 上限：attempt ≤ 400 ms + 冻结分片 5 ms +
+/// select 即时，正常 < 1 s；超过即 abort（不让停机被探针拖死）。
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(2);
+/// `abort()` 后等**取消确认**的上限（tokio abort 协作取消，任务未 yield 时不会
+/// 立刻完成）；再超时 = 放弃等待并 detach，返回不阻塞停机（round 2 P1-1）。
+pub const ABORT_JOIN_TIMEOUT: Duration = Duration::from_millis(500);
 /// 首次成功上限（超时 = gateway 启动失败）。
 pub const FIRST_SUCCESS_TIMEOUT: Duration = Duration::from_secs(10);
 /// `RobotControl.GetState` 完整 gRPC path（package = `robot.control.v1`，
@@ -85,20 +91,37 @@ pub struct ProbeHandle {
 }
 
 impl ProbeHandle {
-    /// 等 task 退出，**有界**：超过 [`JOIN_TIMEOUT`] → `abort()`（task panic /
-    /// 超时仅 log，不传播）。调用方须先置位 `stop_rx`。
-    pub async fn join(mut self) {
-        match tokio::time::timeout(JOIN_TIMEOUT, &mut self.task).await {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => tracing::error!(error = ?e, "tonic_probe: task join error"),
-            Err(_elapsed) => {
-                tracing::error!(
-                    timeout = ?JOIN_TIMEOUT,
-                    "tonic_probe: task did not stop in time; aborting"
-                );
-                self.task.abort();
-                let _ = (&mut self.task).await;
+    /// 等 task 退出，**两级有界**：正常 join ≤ [`JOIN_TIMEOUT`]；超时 →
+    /// `abort()` + 取消确认 ≤ [`ABORT_JOIN_TIMEOUT`]；确认再超时 → 严重日志 +
+    /// 返回（detach）。task panic / 超时仅 log，不传播。调用方须先置位
+    /// `stop_rx`。**返回时延硬上界 ≈ `JOIN_TIMEOUT + ABORT_JOIN_TIMEOUT`**。
+    pub async fn join(self) {
+        self.join_with_timeouts(JOIN_TIMEOUT, ABORT_JOIN_TIMEOUT)
+            .await;
+    }
+
+    /// [`Self::join`] 的可注入超时版（单测缩短窗口；生产走常量）。
+    async fn join_with_timeouts(mut self, join_timeout: Duration, abort_timeout: Duration) {
+        match tokio::time::timeout(join_timeout, &mut self.task).await {
+            Ok(Ok(())) => return,
+            Ok(Err(e)) => {
+                tracing::error!(error = ?e, "tonic_probe: task join error");
+                return;
             }
+            Err(_elapsed) => tracing::error!(
+                timeout = ?join_timeout,
+                "tonic_probe: task did not stop in time; aborting"
+            ),
+        }
+        self.task.abort();
+        if tokio::time::timeout(abort_timeout, &mut self.task)
+            .await
+            .is_err()
+        {
+            tracing::error!(
+                timeout = ?abort_timeout,
+                "tonic_probe: abort not confirmed (task never yielded); detaching and continuing shutdown"
+            );
         }
     }
 }
@@ -221,6 +244,27 @@ mod tests {
         assert_eq!(m.attempts.load(Ordering::Relaxed), 0);
         assert_eq!(m.success_count.load(Ordering::Relaxed), 0);
         assert_eq!(m.failure_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn join_returns_even_when_abort_is_not_confirmed() {
+        // 任务体是**阻塞** sleep（永不 yield）→ `abort()` 不会立刻生效（tokio
+        // 协作取消）。round 2 P1-1 回归锁：join 必须在 join_timeout +
+        // abort_timeout 量级返回，而不是等任务自己跑完。
+        let handle = ProbeHandle {
+            task: tokio::spawn(async {
+                std::thread::sleep(Duration::from_millis(400));
+            }),
+        };
+        let t0 = std::time::Instant::now();
+        handle
+            .join_with_timeouts(Duration::from_millis(50), Duration::from_millis(50))
+            .await;
+        let elapsed = t0.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(300),
+            "join 必须两级有界返回（不等任务跑完），实际 {elapsed:?}"
+        );
     }
 
     #[tokio::test]
