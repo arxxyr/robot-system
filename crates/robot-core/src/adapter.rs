@@ -238,6 +238,17 @@ pub trait ManipulatorAdapter: Send {
     fn disconnect(&mut self) -> Result<(), RobotError>;
 
     /// RT hot-path。HardRT 实现禁 alloc / lock / blocking。
+    ///
+    /// # `stamp_ns` 归属（v0.5 候选 E 段(7) 固化）
+    ///
+    /// - **adapter 不负责 `out.stamp_ns`**（adapter 不持时钟）；实现方只填
+    ///   `positions` / `velocities` / `torques` / `joint_count`。
+    /// - **调用方（S0 tick 线程）只在读取成功后**才提交时间戳：读进临时副本
+    ///   → `Ok(())` 时打 `clock.now()` 并整体提交；`Err` 时**保留上一次成功的
+    ///   状态与时间戳**。
+    /// - 因此**失败时的输出不得被当作新样本**：即使某实现在返回 `Err` 之前
+    ///   已部分写入 `out`，调用方也不会把它并入正式快照。下游（S1 启动锚定 /
+    ///   段(5) state cache）据 `stamp_ns` 判新鲜度，失败期必须能正常判 stale。
     fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError>;
 
     /// RT hot-path。HardRT 实现禁 alloc / lock / blocking。

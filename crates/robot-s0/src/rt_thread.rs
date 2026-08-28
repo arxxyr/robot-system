@@ -409,8 +409,30 @@ fn run_rt_loop<A: HardRtAdapter>(
                 }
             }
 
-            if adapter.read_state(&mut state_buf).is_err() {
-                metrics.read_errors.fetch_add(1, Ordering::Relaxed);
+            // **采样时刻的事务式提交**（v0.5 候选 E 段(7) round 1 P0）：
+            //
+            // `JointStateBuf.stamp_ns` 的填写责任在**调用方**——adapter 不持
+            // 时钟（`robot_core::adapter::ManipulatorAdapter::read_state` 契约
+            // + feetech `adapter.rs` 同址注释）。此前本处**完全漏填**，S0 发布
+            // 的 `JointState` body 采样时刻恒 0（mock 路径），真 S1 锚定 /
+            // 段(5) state cache 一律判 stale（"三真同堂"六进程 e2e 首次暴露）。
+            //
+            // **失败路径不得刷新时间戳**：读失败时若仍打新戳，会把持续串口故障
+            // 伪装成新鲜数据，消费方永远看不到 stale。故读进**临时副本**，仅
+            // 成功时连同新戳整体提交；失败时保留 last-known-good 的状态**与
+            // 旧戳**（即便某 adapter 在失败前部分写坏了 out，也污染不到正式
+            // 快照）。时钟读复用既有 `RobotClock` 热路径，无分配 / 无锁等待 /
+            // 无阻塞 IO。
+            let sample_started_ns = clock.now().0;
+            let mut next_state = state_buf;
+            match adapter.read_state(&mut next_state) {
+                Ok(()) => {
+                    next_state.stamp_ns = sample_started_ns;
+                    state_buf = next_state;
+                }
+                Err(_) => {
+                    metrics.read_errors.fetch_add(1, Ordering::Relaxed);
+                }
             }
 
             tick_seq = tick_seq.wrapping_add(1);
@@ -582,6 +604,166 @@ mod tests {
             Duration::from_millis(500),
             || metrics.tick_count.load(Ordering::Relaxed) > 0
         ));
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    // ------------------------------------------------------------------
+    // round 1 P0 回归锁（v0.5 候选 E 段(7)）：读失败不得刷新采样时间戳
+    // ------------------------------------------------------------------
+
+    /// `read_fail` 模式下写入 `positions[0]` 的哨兵值。
+    const READ_FAIL_POISON: f32 = 999.0;
+
+    /// 两份快照的 positions 是否逐位相同（clippy 禁 f32 数组整体 `==`）。
+    fn positions_identical(
+        a: &robot_core::adapter::JointStateBuf,
+        b: &robot_core::adapter::JointStateBuf,
+    ) -> bool {
+        a.positions
+            .iter()
+            .zip(b.positions.iter())
+            .all(|(x, y)| x.to_bits() == y.to_bits())
+    }
+
+    /// 失败前**部分写坏** `out` 的 adapter（trait 未禁止该行为，故调用方
+    /// 必须整体丢弃这次读）。
+    struct FlakyReadAdapter {
+        inner: MockHardRTAdapter,
+        fail: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl robot_core::adapter::ManipulatorAdapter for FlakyReadAdapter {
+        fn info(&self) -> robot_core::adapter::AdapterInfo {
+            robot_core::adapter::AdapterInfo {
+                name: "flaky_read",
+                kind: robot_core::adapter::AdapterKind::Manipulator,
+                rt_class: robot_core::adapter::RtClass::HardRT,
+                vendor_sdk: false,
+            }
+        }
+        fn connect(&mut self) -> Result<(), robot_core::error::RobotError> {
+            self.inner.connect()
+        }
+        fn disconnect(&mut self) -> Result<(), robot_core::error::RobotError> {
+            self.inner.disconnect()
+        }
+        fn read_state(
+            &mut self,
+            out: &mut robot_core::adapter::JointStateBuf,
+        ) -> Result<(), robot_core::error::RobotError> {
+            if self.fail.load(Ordering::Acquire) {
+                out.positions[0] = READ_FAIL_POISON;
+                out.stamp_ns = 0;
+                return Err(robot_core::error::RobotError::HardwareFault(
+                    "simulated read failure",
+                ));
+            }
+            self.inner.read_state(out)
+        }
+        fn write_command(
+            &mut self,
+            cmd: &robot_core::adapter::JointCommandView,
+        ) -> Result<(), robot_core::error::RobotError> {
+            self.inner.write_command(cmd)
+        }
+        fn set_mode(
+            &mut self,
+            mode: robot_core::adapter::ControlMode,
+        ) -> Result<(), robot_core::error::RobotError> {
+            self.inner.set_mode(mode)
+        }
+        fn enable(&mut self, on: bool) -> Result<(), robot_core::error::RobotError> {
+            self.inner.enable(on)
+        }
+        fn safety_stop(&mut self) -> Result<(), robot_core::error::RobotError> {
+            self.inner.safety_stop()
+        }
+        fn limits(&self) -> &robot_core::adapter::JointLimits {
+            self.inner.limits()
+        }
+    }
+
+    impl robot_core::adapter::RtSafeCtrl for FlakyReadAdapter {
+        fn safety_stop_rt(&mut self) -> Result<(), robot_core::error::RobotError> {
+            self.inner.safety_stop_rt()
+        }
+        fn enable_rt(&mut self, on: bool) -> Result<(), robot_core::error::RobotError> {
+            self.inner.enable_rt(on)
+        }
+        fn set_mode_rt(
+            &mut self,
+            mode: robot_core::adapter::ControlMode,
+        ) -> Result<(), robot_core::error::RobotError> {
+            self.inner.set_mode_rt(mode)
+        }
+    }
+
+    /// `read_state` 失败时**不得刷新采样时间戳**，也不得把失败前的部分写入
+    /// 并进正式快照。
+    ///
+    /// 序列：① 正常读若干 tick（stamp 推进）→ ② adapter 转失败模式**并故意
+    /// 部分改写 out** → 断言快照**冻结**在最后一次成功值、`read_errors`
+    /// 增长 → ③ 恢复成功 → 断言 stamp 再次推进。
+    #[test]
+    fn read_failure_freezes_state_and_stamp() {
+        let fail = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let adapter = FlakyReadAdapter {
+            inner: MockHardRTAdapter::with_unlimited_limits(3),
+            fail: Arc::clone(&fail),
+        };
+        // SystemClock + 100 µs tick（沿 FailingSafetyAdapter 同款：MockClock
+        // 在多线程下时序不稳）。
+        let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::SystemClock::new());
+        let (_cmd_writer, cmd_reader) =
+            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
+        let (snap_pub, snap_rdr) = RtSnapshotPublisher::new(RtSnapshot::default());
+        let cfg = RtThreadConfig {
+            tick_period_ns: 100_000,
+            strict_rt: false,
+            ..RtThreadConfig::default()
+        };
+        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, ctrl).unwrap();
+        let metrics = Arc::clone(handle.metrics());
+
+        // ① 正常读：等 stamp 真正推进。
+        assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+            snap_rdr.load().state.stamp_ns > 0 && metrics.tick_count.load(Ordering::Relaxed) > 2
+        }));
+        let errors_before = metrics.read_errors.load(Ordering::Relaxed);
+
+        // ② 失败模式：等错误累积后取两次快照，断言**完全冻结**。
+        fail.store(true, Ordering::Release);
+        assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+            metrics.read_errors.load(Ordering::Relaxed) >= errors_before + 3
+        }));
+        let frozen_a = snap_rdr.load().state;
+        assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+            metrics.read_errors.load(Ordering::Relaxed) >= errors_before + 20
+        }));
+        let frozen_b = snap_rdr.load().state;
+        assert_eq!(
+            frozen_a.stamp_ns, frozen_b.stamp_ns,
+            "读失败期间采样时间戳必须冻结（否则持续故障会被伪装成新鲜数据）"
+        );
+        assert!(
+            positions_identical(&frozen_a, &frozen_b),
+            "读失败期间状态必须冻结在 last-known-good"
+        );
+        assert!(
+            (frozen_b.positions[0] - READ_FAIL_POISON).abs() > f32::EPSILON,
+            "失败前的部分写入不得进入正式快照：positions[0] = {}",
+            frozen_b.positions[0]
+        );
+        assert!(frozen_b.stamp_ns > 0, "冻结的是**旧戳**，不是 0");
+
+        // ③ 恢复：stamp 必须再次推进。
+        fail.store(false, Ordering::Release);
+        assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+            snap_rdr.load().state.stamp_ns > frozen_b.stamp_ns
+        }));
+
         handle.request_stop();
         handle.join().unwrap();
     }

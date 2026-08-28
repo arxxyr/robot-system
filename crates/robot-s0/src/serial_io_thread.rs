@@ -481,8 +481,30 @@ fn run_serial_io_loop<A: SerialRtAdapter>(
             }
         }
 
-        if adapter.read_state(&mut state_buf).is_err() {
-            metrics.read_errors.fetch_add(1, Ordering::Relaxed);
+        // **采样时刻的事务式提交**（v0.5 候选 E 段(7) round 1 P0）：
+        //
+        // `JointStateBuf.stamp_ns` 的填写责任在**调用方**——adapter 不持
+        // 时钟（`robot_core::adapter::ManipulatorAdapter::read_state` 契约
+        // + feetech `adapter.rs` 同址注释）。此前本处**完全漏填**，S0 发布
+        // 的 `JointState` body 采样时刻恒 0（mock 路径），真 S1 锚定 /
+        // 段(5) state cache 一律判 stale（"三真同堂"六进程 e2e 首次暴露）。
+        //
+        // **失败路径不得刷新时间戳**：读失败时若仍打新戳，会把持续串口故障
+        // 伪装成新鲜数据，消费方永远看不到 stale。故读进**临时副本**，仅
+        // 成功时连同新戳整体提交；失败时保留 last-known-good 的状态**与
+        // 旧戳**（即便某 adapter 在失败前部分写坏了 out，也污染不到正式
+        // 快照）。时钟读复用既有 `RobotClock` 热路径，无分配 / 无锁等待 /
+        // 无阻塞 IO。
+        let sample_started_ns = clock.now().0;
+        let mut next_state = state_buf;
+        match adapter.read_state(&mut next_state) {
+            Ok(()) => {
+                next_state.stamp_ns = sample_started_ns;
+                state_buf = next_state;
+            }
+            Err(_) => {
+                metrics.read_errors.fetch_add(1, Ordering::Relaxed);
+            }
         }
 
         tick_seq = tick_seq.wrapping_add(1);
@@ -596,6 +618,20 @@ mod tests {
     struct SerialMockWrapper {
         inner: MockHardRTAdapter,
         probe_mode: Arc<std::sync::atomic::AtomicU8>,
+        /// 置位后 `read_state` **失败前故意部分写坏 out**（段(7) round 1 P0
+        /// 回归锁用；trait 未禁止该行为，调用方必须防住）。
+        read_fail: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    /// `read_fail` 模式下写入 `positions[0]` 的哨兵值。
+    const READ_FAIL_POISON: f32 = 999.0;
+
+    /// 两份快照的 positions 是否逐位相同（clippy 禁 f32 数组整体 `==`）。
+    fn positions_identical(a: &JointStateBuf, b: &JointStateBuf) -> bool {
+        a.positions
+            .iter()
+            .zip(b.positions.iter())
+            .all(|(x, y)| x.to_bits() == y.to_bits())
     }
 
     impl SerialMockWrapper {
@@ -603,11 +639,16 @@ mod tests {
             Self {
                 inner,
                 probe_mode: Arc::new(std::sync::atomic::AtomicU8::new(ProbeMode::Normal as u8)),
+                read_fail: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             }
         }
 
         fn probe_handle(&self) -> Arc<std::sync::atomic::AtomicU8> {
             Arc::clone(&self.probe_mode)
+        }
+
+        fn read_fail_handle(&self) -> Arc<std::sync::atomic::AtomicBool> {
+            Arc::clone(&self.read_fail)
         }
     }
 
@@ -632,6 +673,12 @@ mod tests {
             self.inner.disconnect()
         }
         fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
+            if self.read_fail.load(Ordering::Acquire) {
+                // 失败前污染输出：调用方必须整体丢弃这次读。
+                out.positions[0] = READ_FAIL_POISON;
+                out.stamp_ns = 0;
+                return Err(RobotError::HardwareFault("simulated serial read failure"));
+            }
             self.inner.read_state(out)
         }
         fn write_command(&mut self, cmd: &JointCommandView) -> Result<(), RobotError> {
@@ -719,8 +766,9 @@ mod tests {
     struct SerialIoTestKit {
         handle: SerialIoThreadHandle,
         ctrl: Arc<SerialIoCtrlInner>,
-        _snap_rdr: robot_transport::RtSnapshotReader<RtSnapshot>,
+        snap_rdr: robot_transport::RtSnapshotReader<RtSnapshot>,
         probe_mode: Arc<std::sync::atomic::AtomicU8>,
+        read_fail: Arc<std::sync::atomic::AtomicBool>,
     }
 
     fn setup(joint_count: u8) -> SerialIoTestKit {
@@ -732,6 +780,7 @@ mod tests {
         // 用 wrapper 让 rt_class=SerialRT，过 spawn 的 RtClass guard。
         let adapter = SerialMockWrapper::new(MockHardRTAdapter::with_unlimited_limits(joint_count));
         let probe_mode = adapter.probe_handle();
+        let read_fail = adapter.read_fail_handle();
         let (_cmd_writer, cmd_reader) =
             LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
         let (snap_pub, snap_rdr) = RtSnapshotPublisher::new(RtSnapshot::default());
@@ -751,9 +800,61 @@ mod tests {
         SerialIoTestKit {
             handle,
             ctrl,
-            _snap_rdr: snap_rdr,
+            snap_rdr,
             probe_mode,
+            read_fail,
         }
+    }
+
+    /// **round 1 P0 回归锁**（v0.5 候选 E 段(7)，与 `rt_thread` 同款）：
+    /// `read_state` 失败时**不得刷新采样时间戳**，也不得把失败前的部分写入
+    /// 并进正式快照。
+    #[test]
+    fn read_failure_freezes_state_and_stamp() {
+        use crate::test_util::wait_until;
+        let kit = setup(3);
+        let metrics = Arc::clone(kit.handle.metrics());
+        let snap_rdr = &kit.snap_rdr;
+
+        // ① 正常读：等 stamp 推进。
+        assert!(wait_until(Duration::from_secs(2), || {
+            snap_rdr.load().state.stamp_ns > 0 && metrics.tick_count.load(Ordering::Relaxed) > 2
+        }));
+        let errors_before = metrics.read_errors.load(Ordering::Relaxed);
+
+        // ② 失败模式：快照必须完全冻结。
+        kit.read_fail.store(true, Ordering::Release);
+        assert!(wait_until(Duration::from_secs(3), || {
+            metrics.read_errors.load(Ordering::Relaxed) >= errors_before + 3
+        }));
+        let frozen_a = snap_rdr.load().state;
+        assert!(wait_until(Duration::from_secs(3), || {
+            metrics.read_errors.load(Ordering::Relaxed) >= errors_before + 10
+        }));
+        let frozen_b = snap_rdr.load().state;
+        assert_eq!(
+            frozen_a.stamp_ns, frozen_b.stamp_ns,
+            "读失败期间采样时间戳必须冻结"
+        );
+        assert!(
+            positions_identical(&frozen_a, &frozen_b),
+            "读失败期间状态必须冻结在 last-known-good"
+        );
+        assert!(
+            (frozen_b.positions[0] - READ_FAIL_POISON).abs() > f32::EPSILON,
+            "失败前的部分写入不得进入正式快照：positions[0] = {}",
+            frozen_b.positions[0]
+        );
+        assert!(frozen_b.stamp_ns > 0, "冻结的是**旧戳**，不是 0");
+
+        // ③ 恢复：stamp 再次推进。
+        kit.read_fail.store(false, Ordering::Release);
+        assert!(wait_until(Duration::from_secs(3), || {
+            snap_rdr.load().state.stamp_ns > frozen_b.stamp_ns
+        }));
+
+        kit.handle.request_stop();
+        kit.handle.join().unwrap();
     }
 
     /// 启动 + 跑稳态 + tick_count > 0 + clean shutdown。
