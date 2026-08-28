@@ -10,14 +10,16 @@
 //!
 //! 内 → 外**严格递增**，让最内层先给出**语义最丰富**的答复：
 //!
-//! | 层 | 值 | 谁先响应 |
-//! |---|---|---|
-//! | gateway RR 等待（`CommandMeta.timeout_ms`） | 2 s | 返 typed status（如 `DeadlineExceeded`）——协议层据此判"明确拒绝" |
-//! | 端点 transport（`Request::set_timeout`） | 3 s | tonic 断连 → `Status(Cancelled)` |
-//! | 协议兜底（`PairConfig::rpc_timeout`） | 4 s（lib 默认） | 端点漏设超时时的最后一道 |
+//! | 层 | 值 | 谁先响应 | 副作用语义 |
+//! |---|---|---|---|
+//! | gateway RR 等待（`CommandMeta.timeout_ms`） | 2 s | 返 typed status | 视 code 而定：白名单内（如 `FailedPrecondition`）= 明确拒绝；**`DeadlineExceeded` = 结果不确定**（请求已 forward 给 S1） |
+//! | 端点 transport（`Request::set_timeout`） | 3 s | tonic 断连 → `Status(Cancelled)` | **结果不确定** |
+//! | 协议兜底（`PairConfig::rpc_timeout`） | 4 s（lib 默认） | 端点漏设超时时的最后一道 | **结果不确定** |
 //!
-//! 顺序若反（协议层最短）会让**明确拒绝被误判成"结果不确定"**，进而触发
-//! 本不必要的双 EStop（round 2 阻断 1 相关）。
+//! 顺序**递增**的收益是：保留拿到**白名单内明确拒绝**与更丰富诊断信息的
+//! 机会（最内层先答复）。它**不会**把 `DeadlineExceeded` 之类变成明确拒绝
+//! ——分类只看 `DEFINITE_REJECTION_CODES` 白名单；顺序反了则连"可证明未
+//! 启动"的拒绝也拿不到，一律退化成不确定 + 双 EStop。
 //!
 //! ## action seam + 失败分类（round 3 P0-1）
 //!

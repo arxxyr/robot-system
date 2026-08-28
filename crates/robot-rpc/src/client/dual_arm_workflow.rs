@@ -45,9 +45,11 @@
 //!
 //! ## 安全语义两条硬规矩
 //!
-//! 1. **超时 ≠ 明确拒绝**（round 2 阻断 1）：只有服务端 typed status 才证明
-//!    "未启动"；超时 / transport 失败一律按**结果不确定**处理——cancel 全部
-//!    已知 action 后**双 EStop**。
+//! 1. **超时 ≠ 明确拒绝**（round 2 阻断 1 / round 3 P0-1）：**只有
+//!    [`DEFINITE_REJECTION_CODES`] 白名单内的 status** 才证明"未启动"——
+//!    gateway 在 forward 之后同样会返 typed status（`DeadlineExceeded` /
+//!    `Internal` / `Unavailable`），它们与超时 / transport 失败一样按**结果
+//!    不确定**处理：**先双 EStop**，再 cancel 全部已知 action。
 //! 2. **每次收尾至多一次双 EStop**（round 2 阻断 3）：raw 调用层
 //!    （`raw_poll_once` / `raw_cancel_side`）**不**产生副作用，升级只在单一
 //!    收尾点发生。
@@ -265,8 +267,12 @@ pub enum ArmRpcError {
     /// 连接 / 传输层失败。**副作用不可证伪**——请求可能已到达服务端。
     #[error("transport: {0}")]
     Transport(String),
-    /// gRPC status（`code` 用 `tonic::Code` 的 Debug 名，避免本模块 dep tonic 类型）。
-    /// 服务端**已处理并明确拒绝**。
+    /// gRPC status（`code` 用 `tonic::Code` 的 Debug 名，避免本模块 dep tonic
+    /// 类型）。**注意：`Status` 本身不代表"明确拒绝"**——gateway 在把请求
+    /// forward 给 S1 之后同样会产生 status（`DeadlineExceeded` /
+    /// `Internal` / `Unavailable`）。副作用语义**只**由
+    /// [`SubmitFailure::from_status_code`] 按 [`DEFINITE_REJECTION_CODES`]
+    /// 白名单判定。
     #[error("status {code}: {message}")]
     Status { code: String, message: String },
 }
@@ -2072,16 +2078,22 @@ mod tests {
         }
         assert_eq!(pair.left.estops(), 1, "恰一次");
         assert_eq!(pair.right.estops(), 1, "恰一次");
-        // **顺序**：两侧 estop 都早于 left 的 cancel。
+        // **顺序**：**两侧** EStop 都早于**第一次** cancel（round 4 P2：取
+        // last EStop 与 first cancel，且两者都必须存在——cancel 不存在时断言
+        // 必须失败，不能悄悄通过）。
         let log = events.lock().expect("lock").clone();
-        let first_estop = log
+        let first_cancel = log
             .iter()
-            .position(|e| e.ends_with(":estop"))
-            .expect("estop");
-        let first_cancel = log.iter().position(|e| e.ends_with(":cancel"));
-        if let Some(c) = first_cancel {
-            assert!(first_estop < c, "EStop 必须先于 cancel，实际日志 = {log:?}");
-        }
+            .position(|e| e.ends_with(":cancel"))
+            .expect("已知 action 必须被 cancel");
+        let last_estop = log
+            .iter()
+            .rposition(|e| e.ends_with(":estop"))
+            .expect("两侧 EStop 都必须已发出");
+        assert!(
+            last_estop < first_cancel,
+            "两侧 EStop 必须都先于 cancel，实际日志 = {log:?}"
+        );
         assert!(
             elapsed <= cfg.run_chunk_bound(),
             "墙钟 {elapsed:?} ≤ {:?}",

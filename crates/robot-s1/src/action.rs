@@ -508,6 +508,26 @@ pub trait ActionBackend: Send + Sync {
 
     /// 创建 action instance；coordinator 之后调
     /// [`ActionInstance::tick`] / [`ActionInstance::cancel`]。
+    ///
+    /// # 硬契约：`Err` ⇒ **零副作用**（v0.5 候选 E 段(7) round 4）
+    ///
+    /// 返回 `Err(ActionStartError)` 时，backend **不得**：
+    ///
+    /// - 产生任何 action 执行状态——coordinator 在 `start` **成功之后**才写
+    ///   `Executing` / `current`（`coordinator.rs::submit`：`let instance =
+    ///   backend.start(&req, &ctx)?;` 之后才转移状态）；
+    /// - 发布任何 `JointCommand`——命令**只能**由 [`ActionInstance::tick`]
+    ///   在 instance 被 coordinator 收下之后产生；
+    /// - 触碰任何硬件 / 外设副作用。
+    ///
+    /// **为什么这条必须长期成立**：`ActionStartError::Rejected` 经 RR →
+    /// gateway 映射成 gRPC `FailedPrecondition`，而
+    /// `robot_rpc::client::dual_arm_workflow::DEFINITE_REJECTION_CODES` 把
+    /// 该码列为"**可证明 action 未启动**"，据此**不**触发双臂 EStop 收尾
+    /// （对照：submit 成功后的 events_drain 失败映射 `Internal`、执行中重复
+    /// 提交映射 `AlreadyExists`，两者都**不在**白名单）。一旦某个 backend
+    /// 在 `start` 失败前留下副作用，双臂协议就会遗留一个已启动的 action
+    /// ——新增 / 修改 backend 时务必守住本契约。
     fn start(
         &self,
         req: &ActionRequest,
