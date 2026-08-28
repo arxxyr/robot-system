@@ -6,12 +6,18 @@
 //! schema id 全在本文件，e2e 与真机验收 bin 各自实现一份同款适配即可
 //! （D9 "同向消费"）。
 //!
-//! ## 超时（round 1 阻断 1）
+//! ## 超时层级（round 1 阻断 1；round 2 修正顺序与数值）
 //!
-//! **每个** RPC 都设 `tonic::Request::set_timeout`（transport 层硬超时），
-//! 与协议层的 `PairConfig::rpc_timeout` 构成**两道**上限：端点侧先断，
-//! 协议侧兜底。二者都不设时，一次挂起的 RPC 会让 `terminal_timeout` /
-//! `cancel_timeout` 全部失效。
+//! 内 → 外**严格递增**，让最内层先给出**语义最丰富**的答复：
+//!
+//! | 层 | 值 | 谁先响应 |
+//! |---|---|---|
+//! | gateway RR 等待（`CommandMeta.timeout_ms`） | 2 s | 返 typed status（如 `DeadlineExceeded`）——协议层据此判"明确拒绝" |
+//! | 端点 transport（`Request::set_timeout`） | 3 s | tonic 断连 → `Status(Cancelled)` |
+//! | 协议兜底（`PairConfig::rpc_timeout`） | 4 s（lib 默认） | 端点漏设超时时的最后一道 |
+//!
+//! 顺序若反（协议层最短）会让**明确拒绝被误判成"结果不确定"**，进而触发
+//! 本不必要的双 EStop（round 2 阻断 1 相关）。
 //!
 //! ## action seam
 //!
@@ -35,10 +41,11 @@ use robot_rpc::proto::{
 use crate::common::client::MAINTAINER_TOKEN;
 
 /// 单次 RPC 的 `CommandMeta.timeout_ms`（gateway 侧 RR 等待上限；留足
-/// s1 tick 周期 + RR 往返）。
-const RPC_TIMEOUT_MS: u64 = 3_000;
-/// **transport 层**硬超时（round 1 阻断 1）：略大于 `RPC_TIMEOUT_MS`，让
-/// gateway 有机会先返 typed status；再超即由 tonic 断开返 `Cancelled`。
+/// s1 tick 周期 + RR 往返）。**最内层**——先于 transport / 协议超时给出
+/// typed status。
+const RPC_TIMEOUT_MS: u64 = 2_000;
+/// **transport 层**硬超时：> `RPC_TIMEOUT_MS`，让 gateway 有机会先返 typed
+/// status；再超才由 tonic 断开。仍 < 协议 `PairConfig::rpc_timeout`（4 s）。
 const TRANSPORT_TIMEOUT: Duration = Duration::from_millis(RPC_TIMEOUT_MS + 1_000);
 
 /// 一条臂的 tonic 端点。

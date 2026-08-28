@@ -33,6 +33,8 @@ use tokio::sync::Mutex;
 const STREAM_TAG_STDOUT: &str = "stdout";
 const STREAM_TAG_STDERR: &str = "stderr";
 const MARKER_POLL_INTERVAL: Duration = Duration::from_millis(50);
+/// forensic dump 前有界等 drain task 收尾的上限（round 2 P1-4）。
+const DRAIN_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct SubprocessHandle {
     pub label: &'static str,
@@ -41,6 +43,11 @@ pub struct SubprocessHandle {
     /// stdout + stderr 合并行（带 `[label/stream]` prefix 已在 drain task 里
     /// 转发，captured 这里只存 raw line）。
     captured: Arc<Mutex<Vec<String>>>,
+    /// 两个 drain task 的 handle（v0.5 候选 E 段(7) round 2 P1-4）：
+    /// 子进程退出后 pipe 会 EOF，drain task 随之结束——**dump 前必须有界
+    /// join 它们**，否则管道尾部（如 SIGTERM handler 的收尾日志）可能还没
+    /// 被消费就被快照。
+    drains: Vec<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Debug, Error)]
@@ -99,14 +106,17 @@ impl SubprocessHandle {
         let stderr = child.stderr.take().expect("Stdio::piped stderr");
 
         let captured = Arc::new(Mutex::new(Vec::<String>::with_capacity(512)));
-        spawn_stream_drain(label, STREAM_TAG_STDOUT, stdout, Arc::clone(&captured));
-        spawn_stream_drain(label, STREAM_TAG_STDERR, stderr, Arc::clone(&captured));
+        let drains = vec![
+            spawn_stream_drain(label, STREAM_TAG_STDOUT, stdout, Arc::clone(&captured)),
+            spawn_stream_drain(label, STREAM_TAG_STDERR, stderr, Arc::clone(&captured)),
+        ];
 
         Ok(Self {
             label,
             pid,
             child: Some(child),
             captured,
+            drains,
         })
     }
 
@@ -196,22 +206,40 @@ impl SubprocessHandle {
         }
     }
 
-    /// [`Self::shutdown`] + **停机后** forensic dump（v0.5 候选 E 段(7)
-    /// round 1 issue 6）：先克隆 `captured` 的 `Arc`，`shutdown` 消费 `self`
-    /// 之后再写盘，故 dump 里包含 SIGTERM 之后的收尾输出。dump 失败只
-    /// `eprintln!`，不掩盖 shutdown 的结果。
+    /// [`Self::shutdown`] + **停机后** forensic dump（段(7) round 1 issue 6，
+    /// round 2 P1-4 补齐 drain join）：
+    ///
+    /// 1. 取出两个 drain task handle 与 `captured` 的 `Arc`；
+    /// 2. `shutdown`（SIGTERM → grace → SIGKILL）；
+    /// 3. **有界 join 两个 drain task**（子进程退出后 pipe EOF，task 自然
+    ///    结束）——不 join 就快照会漏掉管道里尚未被消费的尾部日志；
+    /// 4. 写盘。dump 失败只 `eprintln!`，不掩盖 shutdown 的结果。
     ///
     /// # Errors
     ///
     /// 同 [`Self::shutdown`]。
     pub async fn shutdown_with_dump(
-        self,
+        mut self,
         grace: Duration,
         path: PathBuf,
     ) -> Result<std::process::ExitStatus, ShutdownError> {
         let label = self.label;
         let captured = Arc::clone(&self.captured);
+        let drains = std::mem::take(&mut self.drains);
         let result = self.shutdown(grace).await;
+        // round 2 P1-4：子进程退出 → pipe EOF → drain task 结束。**有界**
+        // join 两个 drain，保证 SIGTERM handler 打的收尾行已进 captured；
+        // 超时只告警（不掩盖 shutdown 结果），随后照常快照。
+        for d in drains {
+            match tokio::time::timeout(DRAIN_JOIN_TIMEOUT, d).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => eprintln!("[{label}/forensic] drain task join error: {e}"),
+                Err(_elapsed) => eprintln!(
+                    "[{label}/forensic] drain task did not finish within {DRAIN_JOIN_TIMEOUT:?}; \
+                     dump may miss trailing lines"
+                ),
+            }
+        }
         let lines = captured.lock().await;
         let content = lines.join("\n");
         drop(lines);
@@ -272,7 +300,7 @@ fn spawn_stream_drain(
     stream_tag: &'static str,
     handle: impl tokio::io::AsyncRead + Unpin + Send + 'static,
     captured: Arc<Mutex<Vec<String>>>,
-) {
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut reader = BufReader::new(handle).lines();
         loop {
@@ -289,7 +317,7 @@ fn spawn_stream_drain(
                 }
             }
         }
-    });
+    })
 }
 
 // ============================================================================
@@ -414,4 +442,48 @@ pub fn locate_test_bin(name: &str) -> Result<PathBuf, String> {
          请先 `cargo build --release --workspace`",
         target_dir.display()
     ))
+}
+
+// ============================================================================
+// Tests（round 2 P1-4：dump 必须含停机期输出）
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// SIGTERM handler 打尾部 marker 的子进程：验证 `shutdown_with_dump` 的
+    /// dump 里**确实包含**停机期输出（不 join drain task 时该行会丢）。
+    #[tokio::test]
+    async fn shutdown_dump_contains_sigterm_handler_output() {
+        const MARKER: &str = "E2E_SIGTERM_TAIL_MARKER";
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(format!(
+            "trap 'echo {MARKER}; exit 0' TERM; echo started; while true; do sleep 0.05; done"
+        ));
+        let mut child = SubprocessHandle::spawn("dump_test", cmd).expect("spawn sh");
+        child
+            .wait_for_marker("started", Duration::from_secs(5))
+            .await
+            .expect("child started");
+
+        let dir = std::env::temp_dir().join(format!("dimos_dump_test_{}", std::process::id()));
+        tokio::fs::create_dir_all(&dir).await.expect("mkdir");
+        let path = dir.join("dump.log");
+        let status = child
+            .shutdown_with_dump(Duration::from_secs(3), path.clone())
+            .await
+            .expect("graceful shutdown");
+        assert!(
+            status.success(),
+            "SIGTERM handler 应 exit 0，实得 {status:?}"
+        );
+
+        let dumped = tokio::fs::read_to_string(&path).await.expect("read dump");
+        assert!(
+            dumped.contains(MARKER),
+            "dump 必须含 SIGTERM handler 的尾部输出；实得:\n{dumped}"
+        );
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
 }

@@ -33,10 +33,24 @@
 //! | 7 偏差观测点 = **Ack 偏差**（`Started.at_ns` 仅诊断） | 本模块**不**消费 `Started` 事件；Ack 时刻由 [`RobotClock`] 打点 |
 //! | 8 全部路径进 AC-E14 | `tests/dimos_workflow_e2e.rs::pair_partial_failure_paths` |
 //!
-//! ## 时间源
+//! ## 时间源与预算
 //!
 //! 所有时刻取自调用方传入的 [`RobotClock`]（业务代码禁 `Instant::now()`，
 //! 全局 §"业务代码禁用的 API"）；超时窗口用 `tokio::time` 驱动。
+//!
+//! **墙钟上限 = 协议预算 + 收尾预算**（round 2 阻断 2）：协议阶段被
+//! [`PairConfig::phase_budget`] 截断后，cancel / EStop 在独立的
+//! [`PairConfig::cleanup_budget`] 内执行，总上限见
+//! [`PairConfig::run_chunk_bound`]。
+//!
+//! ## 安全语义两条硬规矩
+//!
+//! 1. **超时 ≠ 明确拒绝**（round 2 阻断 1）：只有服务端 typed status 才证明
+//!    "未启动"；超时 / transport 失败一律按**结果不确定**处理——cancel 全部
+//!    已知 action 后**双 EStop**。
+//! 2. **每次收尾至多一次双 EStop**（round 2 阻断 3）：raw 调用层
+//!    （`raw_poll_once` / `raw_cancel_side`）**不**产生副作用，升级只在单一
+//!    收尾点发生。
 
 #![allow(clippy::doc_markdown)]
 
@@ -248,12 +262,24 @@ impl TerminalReport {
 /// 单臂 RPC 失败（transport 或 gRPC status）；由 [`ArmEndpoint`] 实现方构造。
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum ArmRpcError {
-    /// 连接 / 传输层失败。
+    /// 连接 / 传输层失败。**副作用不可证伪**——请求可能已到达服务端。
     #[error("transport: {0}")]
     Transport(String),
     /// gRPC status（`code` 用 `tonic::Code` 的 Debug 名，避免本模块 dep tonic 类型）。
+    /// 服务端**已处理并明确拒绝**。
     #[error("status {code}: {message}")]
     Status { code: String, message: String },
+}
+
+impl ArmRpcError {
+    /// 该失败是否**证明**服务端未产生副作用（round 2 阻断 1）。
+    ///
+    /// - `Status{..}` → `true`：服务端处理完并给了明确答复（拒绝）。
+    /// - `Transport(..)` → `false`：请求是否到达、是否已被接受**无从证明**。
+    #[must_use]
+    pub const fn is_definite_rejection(&self) -> bool {
+        matches!(self, Self::Status { .. })
+    }
 }
 
 /// 双 EStop 升级的执行记录（**弱 Ack 语义照旧**：单侧失败只记录不冒泡——
@@ -274,38 +300,78 @@ impl EStopReport {
     }
 }
 
-/// **异常收尾报告**（round 1 阻断 2）：任何异常路径返回前，本模块已经把两侧
-/// 收拾干净——收敛的侧给终态报告，未收敛 / RPC 失败的侧已触发**双侧 EStop**。
-/// 调用方（e2e / 真机 bin）**不需要**再补 catch 逻辑。
+/// **异常收尾报告**（round 1 阻断 2 + round 2 阻断 2/3）：任何异常路径返回前，
+/// 本模块已在**独立的收尾预算**（[`PairConfig::cleanup_budget`]）内把两侧收拾
+/// 干净——收敛的侧给终态报告；有任一侧未收敛 / RPC 异常则**恰发一次**双侧
+/// EStop。调用方（e2e / 真机 bin）**不需要**再补 catch 逻辑。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PairCleanup {
     /// 成功 cancel 收敛的侧（0..=2 条）。
     pub cancelled: Vec<TerminalReport>,
-    /// 有任一侧未能收敛 / RPC 失败时的双 EStop 记录。
+    /// 有任一侧未能收敛 / RPC 失败时的双 EStop 记录（**每次收尾至多一次**）。
     pub estop: Option<EStopReport>,
+    /// 收尾预算耗尽（安全网触发）：`cancel_both` 内部各步本已有界，本位为
+    /// `true` 说明实现或环境异常，**收尾可能不完整**。
+    pub budget_exceeded: bool,
 }
 
 impl PairCleanup {
-    /// 收尾是否"干净"（两侧都 cancel 收敛、未触发 EStop）。
+    /// 收尾是否"干净"（两侧都 cancel 收敛、未触发 EStop、未超预算）。
     #[must_use]
     pub fn is_clean(&self) -> bool {
-        self.estop.is_none()
+        self.estop.is_none() && !self.budget_exceeded
+    }
+
+    /// 预算耗尽时的占位报告。
+    fn budget_exhausted() -> Self {
+        Self {
+            cancelled: Vec::new(),
+            estop: None,
+            budget_exceeded: true,
+        }
     }
 }
 
+/// Ack 偏差 gate 的**纯判据**结果（round 2 阻断 5：纯判据不得伪造带"已收尾"
+/// 语义的 [`PairError`]）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("ack skew {skew:?} exceeds limit {limit:?}")]
+pub struct AckSkewViolation {
+    pub skew: Duration,
+    pub limit: Duration,
+}
+
 /// 成对提交 / 收敛协议的失败域。**每个变体都已完成安全收尾**（见
-/// [`PairCleanup`] / `estop` 字段）。
+/// [`PairCleanup`] / `estop` 字段）——[`AckSkewViolation`] 是独立的纯判据类型，
+/// 不在本枚举内。
 #[derive(Debug, Clone, Error, PartialEq)]
 pub enum PairError {
-    /// **双拒绝**（D5 第 6 条）：两侧 `InvokeTask` 都失败 → **不自动重试**，
-    /// chunk 判 FAIL。两侧都没接受 action，**无需收尾**。
-    #[error("both arms rejected the chunk: left={left}, right={right}")]
+    /// **双侧明确拒绝**（D5 第 6 条）：两侧都收到服务端 typed status 拒绝
+    /// （[`ArmRpcError::is_definite_rejection`]）→ 可证明两侧都没启动 action，
+    /// **无需收尾**、**不自动重试**，chunk 判 FAIL。
+    #[error("both arms definitively rejected the chunk: left={left}, right={right}")]
     BothRejected {
         left: ArmRpcError,
         right: ArmRpcError,
     },
 
-    /// **提交期部分失败**（D5 第 3 条）：一侧被拒，已接收侧已成功 cancel 收敛。
+    /// **提交结果不确定**（round 2 阻断 1）：至少一侧超时 / transport 失败——
+    /// **Ack 未收到 ≠ 服务端未接受**，该侧可能已经启动 action 且我们拿不到
+    /// `action_id`（无法 cancel）。已 cancel 全部**已知** action，并**双 EStop**。
+    #[error("submit outcome indeterminate for {}: {}; known actions cancelled + double EStop (clean={})",
+        causes.iter().map(|(s, _)| s.label()).collect::<Vec<_>>().join(","),
+        causes.iter().map(|(s, e)| format!("{s}={e}")).collect::<Vec<_>>().join("; "),
+        cleanup.is_clean())]
+    IndeterminateSubmit {
+        /// 结果不确定的侧及其原因（1..=2 条）。
+        causes: Vec<(Side, ArmRpcError)>,
+        /// 同时**明确**被拒的侧（若有）。
+        rejected: Option<(Side, ArmRpcError)>,
+        cleanup: Box<PairCleanup>,
+    },
+
+    /// **提交期部分失败**（D5 第 3 条）：一侧**明确**被拒（可证明未启动），
+    /// 已接收侧已成功 cancel 收敛。
     #[error("submit-phase partial failure: {rejected_side} rejected ({rejected}); accepted side cancelled → {:?}", cancelled.state)]
     SubmitPartialFailure {
         rejected_side: Side,
@@ -358,12 +424,12 @@ pub enum PairError {
         estop: Box<EStopReport>,
     },
 
-    /// 整体收敛**硬上限**超出（`PairConfig::hard_bound`）——最后一道保险，
-    /// 已尽力 cancel + EStop。
-    #[error("phase {phase} exceeded hard bound {bound:?}; cleaned up (clean={})", cleanup.is_clean())]
-    HardBoundExceeded {
+    /// 协议阶段预算（[`PairConfig::phase_budget`]）耗尽——最后一道保险，
+    /// 已在独立收尾预算内 cancel + EStop。
+    #[error("phase {phase} exceeded budget {budget:?}; cleaned up (clean={})", cleanup.is_clean())]
+    PhaseBudgetExceeded {
         phase: &'static str,
-        bound: Duration,
+        budget: Duration,
         cleanup: Box<PairCleanup>,
     },
 }
@@ -443,6 +509,11 @@ impl ActionSpec {
 /// 超时等细节；本模块只编排协议，并**在协议层再加一道硬超时**
 /// （[`PairConfig::rpc_timeout`]），使端点实现漏设超时时协议仍有界。
 ///
+/// **超时层级（内 → 外，端点实现须遵守）**：gateway typed status 窗
+/// （`CommandMeta.timeout_ms`）< 端点 transport 超时 < 协议
+/// [`PairConfig::rpc_timeout`]——顺序反了会让协议层先断、拿不到服务端的
+/// typed 拒绝，进而把"明确拒绝"误判成"结果不确定"（round 2 阻断 1 相关）。
+///
 /// **并发形态**：[`submit_pair`] 用 `tokio::join!` 同时 poll 两侧的
 /// future——两侧是**不同对象**的可变借用，借用检查天然放行。
 pub trait ArmEndpoint: Send {
@@ -490,10 +561,24 @@ impl<E: ArmEndpoint> ArmPair<E> {
 }
 
 // ============================================================================
-// 配置 / 结果类型
+// 配置：协议预算 + 独立收尾预算（round 2 阻断 2）
 // ============================================================================
 
 /// 协议时间窗（AC-E14 定值；e2e 与验收 bin 共用同一默认值）。
+///
+/// ## 总硬上限 = **协议预算 + 收尾预算**
+///
+/// 收尾（cancel / EStop）**不占**协议预算：协议阶段被
+/// [`Self::phase_budget`] 截断后，收尾在独立的 [`Self::cleanup_budget`] 内
+/// 执行。因此
+///
+/// ```text
+/// run_chunk_pair 墙钟上限 ≈ rpc_timeout            (submit 并发 join)
+///                        + cleanup_budget         (submit 异常收尾)
+///                        + phase_budget(terminal_timeout)
+///                        + cleanup_budget         (terminal 异常收尾)
+///                        = PairConfig::run_chunk_bound()
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PairConfig {
     /// **Ack 偏差 gate 上限**（D5 第 1/7 条）：两侧 `InvokeTask` 返回时刻之差。
@@ -505,11 +590,15 @@ pub struct PairConfig {
     /// `GetTaskStatus` 轮询周期。
     pub poll_interval: Duration,
     /// **单次 RPC 硬超时**（round 1 阻断 1）：协议层对每次
-    /// invoke / cancel / status 调用都包一层，端点实现漏设 transport 超时时
-    /// 收敛窗口不会被无限挂起拖垮。
+    /// invoke / cancel / status 调用都包一层。**须大于端点自身的 transport
+    /// 超时**（见 [`ArmEndpoint`] 超时层级）。
     pub rpc_timeout: Duration,
     /// EStop RPC 硬超时（安全方向也不允许永久挂）。
     pub estop_timeout: Duration,
+    /// **收尾预算**（round 2 阻断 2）：一次收尾（至多 2 侧 cancel + 各自收敛
+    /// 轮询 + 一次双 EStop）的独立墙钟上限。必须满足
+    /// [`Self::cleanup_budget_is_sufficient`]；作为安全网，正常不应触发。
+    pub cleanup_budget: Duration,
 }
 
 impl Default for PairConfig {
@@ -527,25 +616,49 @@ impl Default for PairConfig {
             // "确实不收敛"的判据而非正常等待。
             cancel_timeout: Duration::from_secs(3),
             poll_interval: Duration::from_millis(20),
-            // gateway RR 默认 timeout + grace 量级；超过即认定该 RPC 挂死。
-            rpc_timeout: Duration::from_secs(3),
+            // > 端点 transport 超时（`TonicArm` = 3 s）> gateway meta 窗（2 s）。
+            rpc_timeout: Duration::from_secs(4),
             estop_timeout: Duration::from_secs(2),
+            // ≥ 2×(rpc_timeout + cancel_timeout) + estop_timeout = 16 s。
+            cleanup_budget: Duration::from_secs(20),
         }
     }
 }
 
 impl PairConfig {
-    /// 某阶段的**整体硬上限**（最后一道保险）：阶段窗口 + 一次 cancel 收敛 +
-    /// 若干次 RPC 超时的余量。任何单点挂死都会先被 `rpc_timeout` 截断，本值
-    /// 只在"多点连环慢"时兜底。
+    /// 某协议阶段的预算（**不含**收尾）：阶段窗 + 一次在环内 cancel 收敛 +
+    /// 两次 RPC 超时余量。
     #[must_use]
-    pub fn hard_bound(&self, phase_window: Duration) -> Duration {
+    pub fn phase_budget(&self, phase_window: Duration) -> Duration {
         phase_window
             .saturating_add(self.cancel_timeout)
-            .saturating_add(self.rpc_timeout.saturating_mul(4))
-            .saturating_add(self.estop_timeout.saturating_mul(2))
+            .saturating_add(self.rpc_timeout.saturating_mul(2))
+    }
+
+    /// 收尾预算是否足够覆盖最坏收尾（2 侧 × (cancel RPC + 收敛轮询) +
+    /// 一次双 EStop）。
+    #[must_use]
+    pub fn cleanup_budget_is_sufficient(&self) -> bool {
+        let need = self
+            .rpc_timeout
+            .saturating_add(self.cancel_timeout)
+            .saturating_mul(2)
+            .saturating_add(self.estop_timeout);
+        self.cleanup_budget >= need
+    }
+
+    /// [`run_chunk_pair`] 的墙钟总上限（见结构体 doc 公式）。
+    #[must_use]
+    pub fn run_chunk_bound(&self) -> Duration {
+        self.rpc_timeout
+            .saturating_add(self.cleanup_budget.saturating_mul(2))
+            .saturating_add(self.phase_budget(self.terminal_timeout))
     }
 }
+
+// ============================================================================
+// 结果类型
+// ============================================================================
 
 /// 单侧提交 Ack。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -572,23 +685,18 @@ impl PairSubmit {
         Duration::from_nanos(a.abs_diff(b))
     }
 
-    /// 纯判据（不做收尾）：偏差是否在上限内（`≤` 语义）。**生产路径请用
-    /// [`run_chunk_pair`]**——它在超限时会 cancel 双侧（round 1 阻断 2）。
+    /// **纯判据**（不做任何收尾，round 2 阻断 5）：偏差是否在上限内（`≤`）。
+    /// 生产路径用 [`run_chunk_pair`]——它在超限时会 cancel 双侧。
     ///
     /// # Errors
     ///
-    /// 偏差 > `cfg.ack_skew_limit` → [`PairError::AckSkewExceeded`]（`cleanup`
-    /// 为空壳，表示"本判据未做收尾"）。
-    pub fn check_ack_skew(&self, cfg: &PairConfig) -> Result<(), PairError> {
+    /// 偏差 > `cfg.ack_skew_limit` → [`AckSkewViolation`]。
+    pub fn check_ack_skew(&self, cfg: &PairConfig) -> Result<(), AckSkewViolation> {
         let skew = self.ack_skew();
         if skew > cfg.ack_skew_limit {
-            return Err(PairError::AckSkewExceeded {
+            return Err(AckSkewViolation {
                 skew,
                 limit: cfg.ack_skew_limit,
-                cleanup: Box::new(PairCleanup {
-                    cancelled: Vec::new(),
-                    estop: None,
-                }),
             });
         }
         Ok(())
@@ -663,13 +771,40 @@ pub struct PairRun {
 }
 
 // ============================================================================
-// RPC 硬超时原语（round 1 阻断 1）
+// RPC 硬超时原语 + 无副作用（raw）调用层
 // ============================================================================
 
 /// 单次 RPC 的失败形态。
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum RpcFailure {
     Failed(ArmRpcError),
     TimedOut,
+}
+
+impl RpcFailure {
+    /// 是否**证明**服务端未产生副作用（round 2 阻断 1）。
+    const fn is_definite_rejection(&self) -> bool {
+        match self {
+            Self::Failed(e) => e.is_definite_rejection(),
+            Self::TimedOut => false,
+        }
+    }
+
+    fn into_error(self, timeout: Duration) -> ArmRpcError {
+        match self {
+            Self::Failed(e) => e,
+            Self::TimedOut => ArmRpcError::Transport(format!("rpc timed out after {timeout:?}")),
+        }
+    }
+}
+
+/// **无副作用**的 RPC 异常（raw 层返回；升级 EStop 由单一收尾点做——round 2
+/// 阻断 3：避免重复升级）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RpcAnomaly {
+    side: Side,
+    phase: &'static str,
+    failure: RpcFailure,
 }
 
 /// 给任意端点调用包硬超时。
@@ -684,26 +819,72 @@ where
     }
 }
 
-/// RPC 异常 → **双 EStop 收尾** → typed 错误（安全入口，round 1 阻断 2）。
-async fn fail_with_estop<E: ArmEndpoint>(
+/// **raw** 单次 `GetTaskStatus`（有界；**不**做 EStop 升级）。
+async fn raw_poll_once<E: ArmEndpoint>(
     pair: &mut ArmPair<E>,
     side: Side,
-    phase: &'static str,
-    failure: RpcFailure,
+    action_id: &str,
+    clock: &dyn RobotClock,
     cfg: &PairConfig,
-) -> PairError {
-    let reason = format!("dual_arm_workflow: {side} {phase} rpc anomaly → double EStop");
-    let estop = Box::new(escalate_double_estop(pair, &reason, cfg).await);
-    match failure {
-        RpcFailure::Failed(source) => PairError::Rpc {
+) -> Result<(TaskPhase, Option<TerminalReport>), RpcAnomaly> {
+    let snap = bounded(pair.side_mut(side).task_status(action_id), cfg.rpc_timeout)
+        .await
+        .map_err(|failure| RpcAnomaly {
             side,
-            phase,
+            phase: "poll",
+            failure,
+        })?;
+    let phase = snap.phase;
+    let report = phase
+        .terminal()
+        .map(|t| TerminalReport::from_snapshot(side, action_id, snap, t, clock.now().0));
+    Ok((phase, report))
+}
+
+/// **raw** 单侧 cancel + 等终态（有界；**不**做 EStop 升级）。
+/// `Ok(None)` = `cancel_timeout` 内未收敛。
+async fn raw_cancel_side<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    side: Side,
+    action_id: &str,
+    clock: &dyn RobotClock,
+    cfg: &PairConfig,
+) -> Result<Option<TerminalReport>, RpcAnomaly> {
+    bounded(pair.side_mut(side).cancel_task(action_id), cfg.rpc_timeout)
+        .await
+        .map_err(|failure| RpcAnomaly {
+            side,
+            phase: "cancel",
+            failure,
+        })?;
+    let deadline_ns = clock
+        .now()
+        .0
+        .saturating_add(duration_to_ns(cfg.cancel_timeout));
+    loop {
+        if let (_, Some(report)) = raw_poll_once(pair, side, action_id, clock, cfg).await? {
+            return Ok(Some(report));
+        }
+        if clock.now().0 >= deadline_ns {
+            return Ok(None);
+        }
+        tokio::time::sleep(cfg.poll_interval).await;
+    }
+}
+
+/// [`RpcAnomaly`] + 已完成的 EStop → typed 错误。
+fn anomaly_to_error(a: RpcAnomaly, cfg: &PairConfig, estop: EStopReport) -> PairError {
+    let estop = Box::new(estop);
+    match a.failure {
+        RpcFailure::Failed(source) => PairError::Rpc {
+            side: a.side,
+            phase: a.phase,
             source,
             estop,
         },
         RpcFailure::TimedOut => PairError::RpcTimeout {
-            side,
-            phase,
+            side: a.side,
+            phase: a.phase,
             timeout: cfg.rpc_timeout,
             estop,
         },
@@ -711,244 +892,8 @@ async fn fail_with_estop<E: ArmEndpoint>(
 }
 
 // ============================================================================
-// run_chunk_pair —— **单一安全入口**
+// 收尾（独立预算；每次至多一次双 EStop —— round 2 阻断 2/3）
 // ============================================================================
-
-/// 跑完一对 chunk：提交 → Ack 偏差 gate → 等双终态。**所有异常路径都在本
-/// 模块内完成安全收尾**（round 1 阻断 2）：
-///
-/// | 异常 | 收尾 |
-/// |---|---|
-/// | 一收一拒 | cancel 已接收侧（不收敛 → 双 EStop） |
-/// | 双拒 | 无副作用，直接 FAIL（不重试，D5 第 6 条） |
-/// | **Ack 偏差超限** | **cancel 双侧**（不让两个 action 继续跑） |
-/// | cancel / status RPC 失败或超时 | **双 EStop** |
-/// | 终态不收敛 | cancel 未终态侧 → 失败则**双 EStop** |
-/// | 整体硬上限超出 | 尽力 cancel + **双 EStop** |
-///
-/// 调用方（e2e / 真机验收 bin）**不需要**再写 catch/cleanup。
-///
-/// # Errors
-///
-/// 见 [`PairError`]——每个变体都带收尾记录。
-pub async fn run_chunk_pair<E: ArmEndpoint>(
-    pair: &mut ArmPair<E>,
-    left: ActionSpec,
-    right: ActionSpec,
-    clock: &dyn RobotClock,
-    cfg: &PairConfig,
-) -> Result<PairRun, PairError> {
-    let submit = submit_pair(pair, left, right, clock, cfg).await?;
-    let ack_skew = submit.ack_skew();
-    if ack_skew > cfg.ack_skew_limit {
-        // gate 违例 = 两臂未真并发；两个 action 都在跑，必须收掉。
-        let cleanup = cancel_both(pair, &submit, &[Side::Left, Side::Right], clock, cfg).await;
-        return Err(PairError::AckSkewExceeded {
-            skew: ack_skew,
-            limit: cfg.ack_skew_limit,
-            cleanup: Box::new(cleanup),
-        });
-    }
-    let result = await_pair_terminal(pair, &submit, clock, cfg).await?;
-    Ok(PairRun {
-        submit,
-        result,
-        ack_skew,
-    })
-}
-
-// ============================================================================
-// submit_pair（D5 第 1 / 3 / 6 条）
-// ============================================================================
-
-/// **并发**提交一对 action：两侧同时 `InvokeTask`（每次调用带
-/// [`PairConfig::rpc_timeout`] 硬超时），Ack 时刻由 `clock` 在**各自 future
-/// 内**打点。
-///
-/// Ack 偏差 gate **不在**这里施加——见 [`run_chunk_pair`]（它在超限时 cancel
-/// 双侧）。低层调用方若直接用本 fn，须自行调 [`PairSubmit::check_ack_skew`]
-/// **并自行收尾**。
-///
-/// # Errors
-///
-/// 见 [`PairError::BothRejected`] / [`PairError::SubmitPartialFailure`] 等。
-pub async fn submit_pair<E: ArmEndpoint>(
-    pair: &mut ArmPair<E>,
-    left_spec: ActionSpec,
-    right_spec: ActionSpec,
-    clock: &dyn RobotClock,
-    cfg: &PairConfig,
-) -> Result<PairSubmit, PairError> {
-    // **各侧在自己的 future 内打点**（D5 第 1/7 条）：join 返回后统一取 now
-    // 会把偏差抹成 0，gate 失效。两个 async block 各持一侧的 `&mut E`
-    // （字段级不相交借用）+ 共享 `&dyn RobotClock`（只读）。
-    let timeout = cfg.rpc_timeout;
-    let ArmPair { left, right } = &mut *pair;
-    let left_fut = async {
-        let r = bounded(left.invoke_action(left_spec), timeout).await;
-        (r, clock.now().0)
-    };
-    let right_fut = async {
-        let r = bounded(right.invoke_action(right_spec), timeout).await;
-        (r, clock.now().0)
-    };
-    let ((left_res, left_at), (right_res, right_at)) = tokio::join!(left_fut, right_fut);
-    match (left_res, right_res) {
-        (Ok(left_id), Ok(right_id)) => Ok(PairSubmit {
-            left: SubmitAck {
-                side: Side::Left,
-                action_id: left_id,
-                acked_at_ns: left_at,
-            },
-            right: SubmitAck {
-                side: Side::Right,
-                action_id: right_id,
-                acked_at_ns: right_at,
-            },
-        }),
-        (Err(left_err), Err(right_err)) => Err(PairError::BothRejected {
-            left: rpc_failure_to_error(left_err, timeout),
-            right: rpc_failure_to_error(right_err, timeout),
-        }),
-        (Ok(accepted_id), Err(rejected)) => {
-            handle_submit_partial(
-                pair,
-                Side::Left,
-                accepted_id,
-                Side::Right,
-                rejected,
-                clock,
-                cfg,
-            )
-            .await
-        }
-        (Err(rejected), Ok(accepted_id)) => {
-            handle_submit_partial(
-                pair,
-                Side::Right,
-                accepted_id,
-                Side::Left,
-                rejected,
-                clock,
-                cfg,
-            )
-            .await
-        }
-    }
-}
-
-/// 提交失败（含超时）→ 可报告的 [`ArmRpcError`]。
-fn rpc_failure_to_error(f: RpcFailure, timeout: Duration) -> ArmRpcError {
-    match f {
-        RpcFailure::Failed(e) => e,
-        RpcFailure::TimedOut => {
-            ArmRpcError::Transport(format!("invoke rpc timed out after {timeout:?}"))
-        }
-    }
-}
-
-/// 提交期部分失败收尾（D5 第 3 条）：cancel 已接收侧 → 收敛 /
-/// 不收敛则双 EStop。
-async fn handle_submit_partial<E: ArmEndpoint>(
-    pair: &mut ArmPair<E>,
-    accepted_side: Side,
-    accepted_id: String,
-    rejected_side: Side,
-    rejected: RpcFailure,
-    clock: &dyn RobotClock,
-    cfg: &PairConfig,
-) -> Result<PairSubmit, PairError> {
-    let cancelled = cancel_surviving(pair, accepted_side, &accepted_id, clock, cfg).await?;
-    Err(PairError::SubmitPartialFailure {
-        rejected_side,
-        rejected: rpc_failure_to_error(rejected, cfg.rpc_timeout),
-        cancelled: Box::new(cancelled),
-    })
-}
-
-// ============================================================================
-// cancel / EStop（D5 第 3/4 条 + round 1 阻断 2）
-// ============================================================================
-
-/// cancel 指定侧并等其终态；**cancel / status RPC 失败或不收敛都升级为双侧
-/// EStop**（安全方向）。
-///
-/// # Errors
-///
-/// [`PairError::Rpc`] / [`PairError::RpcTimeout`] / [`PairError::CancelNotConverged`]
-/// ——三者都已完成 EStop 收尾。
-pub async fn cancel_surviving<E: ArmEndpoint>(
-    pair: &mut ArmPair<E>,
-    side: Side,
-    action_id: &str,
-    clock: &dyn RobotClock,
-    cfg: &PairConfig,
-) -> Result<TerminalReport, PairError> {
-    if let Err(f) = bounded(pair.side_mut(side).cancel_task(action_id), cfg.rpc_timeout).await {
-        return Err(fail_with_estop(pair, side, "cancel", f, cfg).await);
-    }
-    match poll_until_terminal(pair, side, action_id, clock, cfg.cancel_timeout, cfg).await {
-        Ok(Some(report)) => Ok(report),
-        Ok(None) => {
-            // 不收敛 = 安全方向升级：双侧 EStop（D5 第 3/4 条）。
-            let reason = format!(
-                "dual_arm_workflow: cancel of {side} action {action_id} did not converge within {:?}",
-                cfg.cancel_timeout
-            );
-            let estop = escalate_double_estop(pair, &reason, cfg).await;
-            Err(PairError::CancelNotConverged {
-                side,
-                action_id: action_id.to_string(),
-                timeout: cfg.cancel_timeout,
-                estop: Box::new(estop),
-            })
-        }
-        Err(e) => Err(e),
-    }
-}
-
-/// cancel 指定的若干侧（**收尾用，不返回 Err**）：逐侧 cancel + 等终态；
-/// 任一侧失败 / 不收敛 → 触发一次双 EStop 并记进 [`PairCleanup`]。
-async fn cancel_both<E: ArmEndpoint>(
-    pair: &mut ArmPair<E>,
-    submit: &PairSubmit,
-    sides: &[Side],
-    clock: &dyn RobotClock,
-    cfg: &PairConfig,
-) -> PairCleanup {
-    let mut cancelled = Vec::new();
-    let mut trouble: Option<String> = None;
-    for &side in sides {
-        let action_id = submit.action_id(side).to_string();
-        if let Err(f) = bounded(pair.side_mut(side).cancel_task(&action_id), cfg.rpc_timeout).await
-        {
-            trouble.get_or_insert_with(|| match f {
-                RpcFailure::Failed(e) => format!("{side} cancel rpc failed: {e}"),
-                RpcFailure::TimedOut => format!("{side} cancel rpc timed out"),
-            });
-            continue;
-        }
-        match poll_until_terminal(pair, side, &action_id, clock, cfg.cancel_timeout, cfg).await {
-            Ok(Some(report)) => cancelled.push(report),
-            Ok(None) => {
-                trouble.get_or_insert_with(|| format!("{side} cancel did not converge"));
-            }
-            Err(_) => {
-                // poll 期 RPC 异常：`poll_until_terminal` 已在内部发过 EStop，
-                // 这里只记录（避免重复升级）。
-                trouble.get_or_insert_with(|| format!("{side} status rpc anomaly during cleanup"));
-            }
-        }
-    }
-    let estop = match trouble {
-        None => None,
-        Some(why) => {
-            let reason = format!("dual_arm_workflow: cleanup incomplete ({why}) → double EStop");
-            Some(escalate_double_estop(pair, &reason, cfg).await)
-        }
-    };
-    PairCleanup { cancelled, estop }
-}
 
 /// 双侧 `EStop`（并发下发 + 各自硬超时；**弱 Ack 语义**——单侧失败只进报告
 /// 不冒泡）。
@@ -975,22 +920,361 @@ pub async fn escalate_double_estop<E: ArmEndpoint>(
     }
 }
 
+/// 在**独立收尾预算**内 cancel 指定侧；任一侧失败 / 不收敛 → **恰一次**双
+/// EStop。预算耗尽（安全网）→ `budget_exceeded = true`。
+async fn cleanup_within_budget<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    known: &[(Side, String)],
+    reason: &str,
+    force_estop: bool,
+    clock: &dyn RobotClock,
+    cfg: &PairConfig,
+) -> PairCleanup {
+    let fut = cleanup_inner(pair, known, reason, force_estop, clock, cfg);
+    match tokio::time::timeout(cfg.cleanup_budget, fut).await {
+        Ok(c) => c,
+        Err(_elapsed) => PairCleanup::budget_exhausted(),
+    }
+}
+
+/// 收尾主体（各步本已有界；外层预算只作安全网）。
+async fn cleanup_inner<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    known: &[(Side, String)],
+    reason: &str,
+    force_estop: bool,
+    clock: &dyn RobotClock,
+    cfg: &PairConfig,
+) -> PairCleanup {
+    let mut cancelled = Vec::new();
+    let mut trouble: Option<String> = None;
+    for (side, action_id) in known {
+        match raw_cancel_side(pair, *side, action_id, clock, cfg).await {
+            Ok(Some(report)) => cancelled.push(report),
+            Ok(None) => {
+                trouble.get_or_insert_with(|| format!("{side} cancel did not converge"));
+            }
+            Err(a) => {
+                trouble.get_or_insert_with(|| format!("{} {} rpc anomaly", a.side, a.phase));
+            }
+        }
+    }
+    // **恰一次**升级（round 2 阻断 3）：raw 层不发 EStop，这里统一决定。
+    let estop = if force_estop || trouble.is_some() {
+        let why = trouble.unwrap_or_else(|| "protocol anomaly".to_string());
+        let full = format!("dual_arm_workflow: {reason} ({why}) → double EStop");
+        Some(escalate_double_estop(pair, &full, cfg).await)
+    } else {
+        None
+    };
+    PairCleanup {
+        cancelled,
+        estop,
+        budget_exceeded: false,
+    }
+}
+
+/// 只发 EStop 的收尾（RPC 异常路径：没有可 cancel 的目标或已不可信）。
+async fn estop_within_budget<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    reason: &str,
+    cfg: &PairConfig,
+) -> EStopReport {
+    match tokio::time::timeout(cfg.cleanup_budget, escalate_double_estop(pair, reason, cfg)).await {
+        Ok(r) => r,
+        Err(_elapsed) => EStopReport {
+            reason: reason.to_string(),
+            left: Err(None),
+            right: Err(None),
+        },
+    }
+}
+
+/// 两侧已知 action 的 `(Side, action_id)` 列表。
+fn known_actions(submit: &PairSubmit, sides: &[Side]) -> Vec<(Side, String)> {
+    sides
+        .iter()
+        .map(|&s| (s, submit.action_id(s).to_string()))
+        .collect()
+}
+
+// ============================================================================
+// run_chunk_pair —— **单一安全入口**
+// ============================================================================
+
+/// 跑完一对 chunk：提交 → Ack 偏差 gate → 等双终态。**所有异常路径都在本
+/// 模块内、在独立收尾预算里完成安全收尾**：
+///
+/// | 异常 | 收尾 |
+/// |---|---|
+/// | 双侧**明确**拒绝 | 无副作用，直接 FAIL（不重试，D5 第 6 条） |
+/// | 任一侧**超时 / transport 失败**（结果不确定） | cancel 全部已知 action + **双 EStop** |
+/// | 一侧明确被拒、另一侧接受 | cancel 已接收侧（不收敛 → 双 EStop） |
+/// | **Ack 偏差超限** | **cancel 双侧** |
+/// | cancel / status RPC 失败或超时 | **双 EStop**（恰一次） |
+/// | 终态不收敛 | cancel 未终态侧 → 失败则**双 EStop** |
+/// | 协议预算耗尽 | 独立收尾预算内 cancel + EStop |
+///
+/// 墙钟总上限 = [`PairConfig::run_chunk_bound`]。
+///
+/// # Errors
+///
+/// 见 [`PairError`]——每个变体都带收尾记录。
+pub async fn run_chunk_pair<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    left: ActionSpec,
+    right: ActionSpec,
+    clock: &dyn RobotClock,
+    cfg: &PairConfig,
+) -> Result<PairRun, PairError> {
+    let submit = submit_pair(pair, left, right, clock, cfg).await?;
+    let ack_skew = submit.ack_skew();
+    if let Err(v) = submit.check_ack_skew(cfg) {
+        // gate 违例 = 两臂未真并发；两个 action 都在跑，必须收掉。
+        let known = known_actions(&submit, &[Side::Left, Side::Right]);
+        let cleanup = cleanup_within_budget(pair, &known, "ack skew gate", false, clock, cfg).await;
+        return Err(PairError::AckSkewExceeded {
+            skew: v.skew,
+            limit: v.limit,
+            cleanup: Box::new(cleanup),
+        });
+    }
+    let result = await_pair_terminal(pair, &submit, clock, cfg).await?;
+    Ok(PairRun {
+        submit,
+        result,
+        ack_skew,
+    })
+}
+
+// ============================================================================
+// submit_pair（D5 第 1 / 3 / 6 条 + round 2 阻断 1）
+// ============================================================================
+
+/// **并发**提交一对 action：两侧同时 `InvokeTask`（每次调用带
+/// [`PairConfig::rpc_timeout`] 硬超时），Ack 时刻由 `clock` 在**各自 future
+/// 内**打点。
+///
+/// **失败分类（round 2 阻断 1）**：只有服务端 typed status
+/// （[`ArmRpcError::is_definite_rejection`]）才算"明确拒绝、可证明未启动"；
+/// 超时 / transport 失败一律视为**结果不确定**——该侧可能已接受并启动 action
+/// 而我们没有 `action_id`，故 cancel 全部已知 action 后**双 EStop**。
+///
+/// Ack 偏差 gate **不在**这里施加——见 [`run_chunk_pair`]。
+///
+/// # Errors
+///
+/// [`PairError::BothRejected`] / [`PairError::IndeterminateSubmit`] /
+/// [`PairError::SubmitPartialFailure`] 等。
+pub async fn submit_pair<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    left_spec: ActionSpec,
+    right_spec: ActionSpec,
+    clock: &dyn RobotClock,
+    cfg: &PairConfig,
+) -> Result<PairSubmit, PairError> {
+    // **各侧在自己的 future 内打点**（D5 第 1/7 条）：join 返回后统一取 now
+    // 会把偏差抹成 0，gate 失效。
+    let timeout = cfg.rpc_timeout;
+    let ArmPair { left, right } = &mut *pair;
+    let left_fut = async {
+        let r = bounded(left.invoke_action(left_spec), timeout).await;
+        (r, clock.now().0)
+    };
+    let right_fut = async {
+        let r = bounded(right.invoke_action(right_spec), timeout).await;
+        (r, clock.now().0)
+    };
+    let ((left_res, left_at), (right_res, right_at)) = tokio::join!(left_fut, right_fut);
+    match (left_res, right_res) {
+        (Ok(left_id), Ok(right_id)) => Ok(PairSubmit {
+            left: SubmitAck {
+                side: Side::Left,
+                action_id: left_id,
+                acked_at_ns: left_at,
+            },
+            right: SubmitAck {
+                side: Side::Right,
+                action_id: right_id,
+                acked_at_ns: right_at,
+            },
+        }),
+        (Err(l), Err(r)) => Err(both_failed(pair, l, r, clock, cfg).await),
+        (Ok(id), Err(e)) => Err(one_failed(pair, Side::Left, id, Side::Right, e, clock, cfg).await),
+        (Err(e), Ok(id)) => Err(one_failed(pair, Side::Right, id, Side::Left, e, clock, cfg).await),
+    }
+}
+
+/// 两侧提交都失败：都是明确拒绝 → `BothRejected`（无副作用）；否则
+/// **结果不确定** → 无已知 action 可 cancel，直接双 EStop。
+async fn both_failed<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    left: RpcFailure,
+    right: RpcFailure,
+    _clock: &dyn RobotClock,
+    cfg: &PairConfig,
+) -> PairError {
+    let t = cfg.rpc_timeout;
+    if left.is_definite_rejection() && right.is_definite_rejection() {
+        return PairError::BothRejected {
+            left: left.into_error(t),
+            right: right.into_error(t),
+        };
+    }
+    let mut causes = Vec::new();
+    let mut rejected = None;
+    for (side, f) in [(Side::Left, left), (Side::Right, right)] {
+        if f.is_definite_rejection() {
+            rejected = Some((side, f.into_error(t)));
+        } else {
+            causes.push((side, f.into_error(t)));
+        }
+    }
+    // 无 action_id 可 cancel → 只能双 EStop（force）。
+    let estop = estop_within_budget(
+        pair,
+        "dual_arm_workflow: submit outcome indeterminate (no action id to cancel) → double EStop",
+        cfg,
+    )
+    .await;
+    PairError::IndeterminateSubmit {
+        causes,
+        rejected,
+        cleanup: Box::new(PairCleanup {
+            cancelled: Vec::new(),
+            estop: Some(estop),
+            budget_exceeded: false,
+        }),
+    }
+}
+
+/// 一侧接受、另一侧失败：另一侧**明确拒绝** → 提交期部分失败（cancel 已接收
+/// 侧）；否则**结果不确定** → cancel 已接收侧 + 双 EStop。
+#[allow(clippy::too_many_arguments)]
+async fn one_failed<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    accepted_side: Side,
+    accepted_id: String,
+    failed_side: Side,
+    failure: RpcFailure,
+    clock: &dyn RobotClock,
+    cfg: &PairConfig,
+) -> PairError {
+    let definite = failure.is_definite_rejection();
+    let err = failure.into_error(cfg.rpc_timeout);
+    let known = [(accepted_side, accepted_id.clone())];
+    if definite {
+        // 可证明失败侧未启动 → 只需收掉已接收侧；不收敛才升级 EStop。
+        let cleanup =
+            cleanup_within_budget(pair, &known, "submit partial failure", false, clock, cfg).await;
+        return match (cleanup.cancelled.first(), cleanup.estop.clone()) {
+            (Some(report), None) => PairError::SubmitPartialFailure {
+                rejected_side: failed_side,
+                rejected: err,
+                cancelled: Box::new(report.clone()),
+            },
+            _ => PairError::CancelNotConverged {
+                side: accepted_side,
+                action_id: accepted_id,
+                timeout: cfg.cancel_timeout,
+                estop: Box::new(cleanup.estop.unwrap_or_else(|| EStopReport {
+                    reason: "cleanup budget exceeded".into(),
+                    left: Err(None),
+                    right: Err(None),
+                })),
+            },
+        };
+    }
+    // 结果不确定：cancel 已知的一侧，并**强制**双 EStop。
+    let cleanup = cleanup_within_budget(
+        pair,
+        &known,
+        "submit outcome indeterminate",
+        true,
+        clock,
+        cfg,
+    )
+    .await;
+    PairError::IndeterminateSubmit {
+        causes: vec![(failed_side, err)],
+        rejected: None,
+        cleanup: Box::new(cleanup),
+    }
+}
+
+// ============================================================================
+// cancel_surviving（D5 第 3/4 条；公开入口 = raw + 单次升级）
+// ============================================================================
+
+/// cancel 指定侧并等其终态；**cancel / status RPC 失败或不收敛都升级为双侧
+/// EStop**（安全方向，恰一次）。
+///
+/// # Errors
+///
+/// [`PairError::Rpc`] / [`PairError::RpcTimeout`] / [`PairError::CancelNotConverged`]
+/// ——三者都已完成 EStop 收尾。
+pub async fn cancel_surviving<E: ArmEndpoint>(
+    pair: &mut ArmPair<E>,
+    side: Side,
+    action_id: &str,
+    clock: &dyn RobotClock,
+    cfg: &PairConfig,
+) -> Result<TerminalReport, PairError> {
+    match raw_cancel_side(pair, side, action_id, clock, cfg).await {
+        Ok(Some(report)) => Ok(report),
+        Ok(None) => {
+            let reason = format!(
+                "dual_arm_workflow: cancel of {side} action {action_id} did not converge within {:?}",
+                cfg.cancel_timeout
+            );
+            let estop = estop_within_budget(pair, &reason, cfg).await;
+            Err(PairError::CancelNotConverged {
+                side,
+                action_id: action_id.to_string(),
+                timeout: cfg.cancel_timeout,
+                estop: Box::new(estop),
+            })
+        }
+        Err(a) => {
+            let reason = format!("dual_arm_workflow: {} {} rpc anomaly", a.side, a.phase);
+            let estop = estop_within_budget(pair, &reason, cfg).await;
+            Err(anomaly_to_error(a, cfg, estop))
+        }
+    }
+}
+
 // ============================================================================
 // await_pair_terminal（D5 第 2/4/5 条）
 // ============================================================================
 
+/// 主循环的退出形态（**不含**任何收尾副作用——收尾统一由
+/// [`await_pair_terminal`] 在独立预算内做）。
+enum LoopExit {
+    Done(PairResult),
+    /// `terminal_timeout` 内未双终态。
+    Converge {
+        last: [TaskPhase; 2],
+        pending: Vec<Side>,
+    },
+    /// 环内 cancel 幸存侧未收敛。
+    CancelStuck {
+        side: Side,
+        action_id: String,
+    },
+    /// 环内 RPC 异常（raw，未升级）。
+    Anomaly(RpcAnomaly),
+}
+
 /// 轮询两侧 `GetTaskStatus` 直到**双终态**（D5 第 5 条：stream 断开 / 事件
 /// 超时的收敛通路；本模块全程只用轮询，不依赖 stream）。
 ///
-/// 执行期不对称（D5 第 4 条）：
+/// 执行期不对称（D5 第 4 条）：一侧先到 `Failed` / `Cancelled`、另一侧仍非
+/// 终态 → **立即 cancel 幸存侧**；一侧已 `Completed(Success)` → **不 cancel**，
+/// 继续等另一侧自然收敛。
 ///
-/// - 一侧先到 `Failed` / `Cancelled`、另一侧仍非终态 → **立即 cancel 幸存侧**；
-/// - 一侧已 `Completed(Success)`、另一侧仍在跑 → **不 cancel**，继续等它自然
-///   收敛（其后失败即 [`PairResult::PartialCompletion`]）。
-///
-/// **有界性**（round 1 阻断 1/2）：每次 status RPC 带 `rpc_timeout`；整段带
-/// `cfg.hard_bound(terminal_timeout)` 外层硬上限；收敛超时 / 硬上限触发时
-/// **先 cancel 未终态侧**（失败则双 EStop）再返错。
+/// **有界性**（round 2 阻断 2）：每次 RPC 带 `rpc_timeout`；主循环整体带
+/// [`PairConfig::phase_budget`]；**收尾在独立的
+/// [`PairConfig::cleanup_budget`] 内执行**，故墙钟上限 = 两段预算之和。
 ///
 /// # Errors
 ///
@@ -1001,28 +1285,69 @@ pub async fn await_pair_terminal<E: ArmEndpoint>(
     clock: &dyn RobotClock,
     cfg: &PairConfig,
 ) -> Result<PairResult, PairError> {
-    let bound = cfg.hard_bound(cfg.terminal_timeout);
-    let outcome = tokio::time::timeout(bound, terminal_loop(pair, submit, clock, cfg)).await;
-    match outcome {
-        Ok(inner) => inner,
+    let budget = cfg.phase_budget(cfg.terminal_timeout);
+    let exit = match tokio::time::timeout(budget, terminal_loop(pair, submit, clock, cfg)).await {
+        Ok(e) => e,
         Err(_elapsed) => {
-            let cleanup = cancel_both(pair, submit, &[Side::Left, Side::Right], clock, cfg).await;
-            Err(PairError::HardBoundExceeded {
+            let known = known_actions(submit, &[Side::Left, Side::Right]);
+            let cleanup =
+                cleanup_within_budget(pair, &known, "phase budget exceeded", true, clock, cfg)
+                    .await;
+            return Err(PairError::PhaseBudgetExceeded {
                 phase: "await_pair_terminal",
-                bound,
+                budget,
+                cleanup: Box::new(cleanup),
+            });
+        }
+    };
+    match exit {
+        LoopExit::Done(result) => Ok(result),
+        LoopExit::Converge { last, pending } => {
+            let known = known_actions(submit, &pending);
+            let cleanup = cleanup_within_budget(
+                pair,
+                &known,
+                "terminal convergence timeout",
+                false,
+                clock,
+                cfg,
+            )
+            .await;
+            Err(PairError::ConvergenceTimeout {
+                timeout: cfg.terminal_timeout,
+                left: last[0],
+                right: last[1],
                 cleanup: Box::new(cleanup),
             })
+        }
+        LoopExit::CancelStuck { side, action_id } => {
+            let reason = format!(
+                "dual_arm_workflow: cancel of {side} action {action_id} did not converge within {:?}",
+                cfg.cancel_timeout
+            );
+            let estop = estop_within_budget(pair, &reason, cfg).await;
+            Err(PairError::CancelNotConverged {
+                side,
+                action_id,
+                timeout: cfg.cancel_timeout,
+                estop: Box::new(estop),
+            })
+        }
+        LoopExit::Anomaly(a) => {
+            let reason = format!("dual_arm_workflow: {} {} rpc anomaly", a.side, a.phase);
+            let estop = estop_within_budget(pair, &reason, cfg).await;
+            Err(anomaly_to_error(a, cfg, estop))
         }
     }
 }
 
-/// [`await_pair_terminal`] 的主循环（外层已加硬上限）。
+/// [`await_pair_terminal`] 的主循环（外层已加阶段预算；**无收尾副作用**）。
 async fn terminal_loop<E: ArmEndpoint>(
     pair: &mut ArmPair<E>,
     submit: &PairSubmit,
     clock: &dyn RobotClock,
     cfg: &PairConfig,
-) -> Result<PairResult, PairError> {
+) -> LoopExit {
     let deadline_ns = clock
         .now()
         .0
@@ -1033,27 +1358,43 @@ async fn terminal_loop<E: ArmEndpoint>(
     loop {
         for (idx, side) in [Side::Left, Side::Right].into_iter().enumerate() {
             if done[idx].is_none() {
-                let (phase, report) =
-                    poll_once(pair, side, submit.action_id(side), clock, cfg).await?;
-                last[idx] = phase;
-                done[idx] = report;
+                match raw_poll_once(pair, side, submit.action_id(side), clock, cfg).await {
+                    Ok((phase, report)) => {
+                        last[idx] = phase;
+                        done[idx] = report;
+                    }
+                    Err(a) => return LoopExit::Anomaly(a),
+                }
             }
         }
         if let (Some(l), Some(r)) = (done[0].as_ref(), done[1].as_ref()) {
-            return Ok(PairResult::classify(l.clone(), r.clone()));
+            return LoopExit::Done(PairResult::classify(l.clone(), r.clone()));
         }
-        // 不对称：恰一侧终态。非成功侧先到 → cancel 幸存侧收尾；成功侧先到 →
-        // 不 cancel，继续等另一侧自然收敛（D5 第 4 条）。
         let asymmetric = match (done[0].as_ref(), done[1].as_ref()) {
             (Some(first), None) => Some((first.clone(), Side::Right)),
             (None, Some(first)) => Some((first.clone(), Side::Left)),
             _ => None,
         };
         if let Some((first, pending_side)) = asymmetric
-            && let Some(res) =
-                settle_asymmetric(pair, submit, first, pending_side, clock, cfg).await?
+            && !first.is_success()
         {
-            return Ok(res);
+            // 非成功侧先到 → cancel 幸存侧收尾（成功侧先到则不 cancel，
+            // 继续等另一侧自然收敛，D5 第 4 条）。
+            let pending_id = submit.action_id(pending_side).to_string();
+            return match raw_cancel_side(pair, pending_side, &pending_id, clock, cfg).await {
+                Ok(Some(other)) => {
+                    let (l, r) = match first.side {
+                        Side::Left => (first, other),
+                        Side::Right => (other, first),
+                    };
+                    LoopExit::Done(PairResult::classify(l, r))
+                }
+                Ok(None) => LoopExit::CancelStuck {
+                    side: pending_side,
+                    action_id: pending_id,
+                },
+                Err(a) => LoopExit::Anomaly(a),
+            };
         }
         if clock.now().0 >= deadline_ns {
             let pending: Vec<Side> = [Side::Left, Side::Right]
@@ -1062,77 +1403,7 @@ async fn terminal_loop<E: ArmEndpoint>(
                 .filter(|(i, _)| done[*i].is_none())
                 .map(|(_, s)| s)
                 .collect();
-            let cleanup = cancel_both(pair, submit, &pending, clock, cfg).await;
-            return Err(PairError::ConvergenceTimeout {
-                timeout: cfg.terminal_timeout,
-                left: last[0],
-                right: last[1],
-                cleanup: Box::new(cleanup),
-            });
-        }
-        tokio::time::sleep(cfg.poll_interval).await;
-    }
-}
-
-/// 执行期不对称处理：`first` 已终态、`pending_side` 仍在跑。
-///
-/// - `first` **不成功** → cancel 幸存侧并等终态 → 返 `Some(结果)`；
-/// - `first` 成功 → 返 `None`（调用方继续等另一侧自然收敛）。
-async fn settle_asymmetric<E: ArmEndpoint>(
-    pair: &mut ArmPair<E>,
-    submit: &PairSubmit,
-    first: TerminalReport,
-    pending_side: Side,
-    clock: &dyn RobotClock,
-    cfg: &PairConfig,
-) -> Result<Option<PairResult>, PairError> {
-    if first.is_success() {
-        return Ok(None);
-    }
-    let pending_id = submit.action_id(pending_side).to_string();
-    let other = cancel_surviving(pair, pending_side, &pending_id, clock, cfg).await?;
-    let (left, right) = match first.side {
-        Side::Left => (first, other),
-        Side::Right => (other, first),
-    };
-    Ok(Some(PairResult::classify(left, right)))
-}
-
-/// 单次 `GetTaskStatus`（带硬超时；异常 → 双 EStop + typed 错误）。
-async fn poll_once<E: ArmEndpoint>(
-    pair: &mut ArmPair<E>,
-    side: Side,
-    action_id: &str,
-    clock: &dyn RobotClock,
-    cfg: &PairConfig,
-) -> Result<(TaskPhase, Option<TerminalReport>), PairError> {
-    let snap = match bounded(pair.side_mut(side).task_status(action_id), cfg.rpc_timeout).await {
-        Ok(s) => s,
-        Err(f) => return Err(fail_with_estop(pair, side, "poll", f, cfg).await),
-    };
-    let phase = snap.phase;
-    let report = phase
-        .terminal()
-        .map(|t| TerminalReport::from_snapshot(side, action_id, snap, t, clock.now().0));
-    Ok((phase, report))
-}
-
-/// 在 `timeout` 内轮询单侧直到终态；超时返 `Ok(None)`。
-async fn poll_until_terminal<E: ArmEndpoint>(
-    pair: &mut ArmPair<E>,
-    side: Side,
-    action_id: &str,
-    clock: &dyn RobotClock,
-    timeout: Duration,
-    cfg: &PairConfig,
-) -> Result<Option<TerminalReport>, PairError> {
-    let deadline_ns = clock.now().0.saturating_add(duration_to_ns(timeout));
-    loop {
-        if let (_, Some(report)) = poll_once(pair, side, action_id, clock, cfg).await? {
-            return Ok(Some(report));
-        }
-        if clock.now().0 >= deadline_ns {
-            return Ok(None);
+            return LoopExit::Converge { last, pending };
         }
         tokio::time::sleep(cfg.poll_interval).await;
     }
@@ -1143,7 +1414,7 @@ fn duration_to_ns(d: Duration) -> u64 {
 }
 
 // ============================================================================
-// Tests（脚本化 mock 端点：协议分支 + 有界性 + 收尾全覆盖，无进程无网络）
+// Tests（脚本化 mock 端点：协议分支 + 有界性 + 收尾语义全覆盖，无进程无网络）
 // ============================================================================
 
 #[cfg(test)]
@@ -1153,6 +1424,7 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::time::Instant;
 
     /// 单调递增的测试时钟：每次 `now()` 前进固定步长（让超时判据确定性推进，
     /// 不依赖墙钟）。
@@ -1179,20 +1451,30 @@ mod tests {
         fn sleep_for(&self, _d: robot_core::time::DurationNs) {}
     }
 
+    /// 某个端点方法的脚本化行为。
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Behavior {
+        Normal,
+        /// 永不返回（模拟 RPC 挂死）——协议层 `rpc_timeout` 必须兜住。
+        Pending,
+        /// 明确 gRPC status 拒绝（可证明服务端未启动 action）。
+        DefiniteReject,
+        /// transport 失败（**不可**证明未启动）。
+        TransportFail,
+    }
+
     /// 脚本化端点。用 `Mutex`（非 `RefCell`）使其天然 `Send`——
     /// `ArmEndpoint: Send` 是协议 trait 的硬要求，测试侧不得用
     /// `unsafe impl Send` 绕过。
     struct MockArm {
         side: Side,
-        invoke: Mutex<VecDeque<Result<String, ArmRpcError>>>,
-        status: Mutex<VecDeque<TaskSnapshot>>,
+        invoke: Behavior,
+        status: Behavior,
+        cancel: Behavior,
+        estop: Behavior,
+        statuses: Mutex<VecDeque<TaskSnapshot>>,
         /// cancel 之后改用的状态序列（模拟"cancel 生效"）。
         after_cancel: Mutex<Option<VecDeque<TaskSnapshot>>>,
-        /// `task_status` 永不返回（模拟 RPC 挂死；round 1 阻断 1）。
-        status_pending: bool,
-        /// `task_status` 直接返错。
-        status_error: Option<ArmRpcError>,
-        /// 记录最后一次 invoke 的 spec（阻断 3：断言发的是哪种 kind）。
         last_spec: Mutex<Option<ActionSpec>>,
         cancel_calls: Arc<AtomicU64>,
         estop_calls: Arc<AtomicU64>,
@@ -1202,24 +1484,40 @@ mod tests {
         fn new(side: Side) -> Self {
             Self {
                 side,
-                invoke: Mutex::new(VecDeque::new()),
-                status: Mutex::new(VecDeque::new()),
+                invoke: Behavior::Normal,
+                status: Behavior::Normal,
+                cancel: Behavior::Normal,
+                estop: Behavior::Normal,
+                statuses: Mutex::new(VecDeque::new()),
                 after_cancel: Mutex::new(None),
-                status_pending: false,
-                status_error: None,
                 last_spec: Mutex::new(None),
                 cancel_calls: Arc::new(AtomicU64::new(0)),
                 estop_calls: Arc::new(AtomicU64::new(0)),
             }
         }
 
-        fn with_invoke(self, r: Result<String, ArmRpcError>) -> Self {
-            self.invoke.lock().expect("lock").push_back(r);
+        fn invoke(mut self, b: Behavior) -> Self {
+            self.invoke = b;
+            self
+        }
+
+        fn status_behavior(mut self, b: Behavior) -> Self {
+            self.status = b;
+            self
+        }
+
+        fn cancel_behavior(mut self, b: Behavior) -> Self {
+            self.cancel = b;
+            self
+        }
+
+        fn estop_behavior(mut self, b: Behavior) -> Self {
+            self.estop = b;
             self
         }
 
         fn with_status(self, s: TaskSnapshot) -> Self {
-            self.status.lock().expect("lock").push_back(s);
+            self.statuses.lock().expect("lock").push_back(s);
             self
         }
 
@@ -1229,16 +1527,6 @@ mod tests {
                 .expect("lock")
                 .get_or_insert_with(VecDeque::new)
                 .push_back(s);
-            self
-        }
-
-        fn with_status_pending(mut self) -> Self {
-            self.status_pending = true;
-            self
-        }
-
-        fn with_status_error(mut self, e: ArmRpcError) -> Self {
-            self.status_error = Some(e);
             self
         }
 
@@ -1259,53 +1547,63 @@ mod tests {
         }
     }
 
+    async fn apply<T>(b: Behavior, ok: T) -> Result<T, ArmRpcError> {
+        tokio::task::yield_now().await;
+        match b {
+            Behavior::Normal => Ok(ok),
+            Behavior::Pending => {
+                std::future::pending::<()>().await;
+                unreachable!()
+            }
+            Behavior::DefiniteReject => Err(ArmRpcError::Status {
+                code: "FailedPrecondition".into(),
+                message: "definitely rejected".into(),
+            }),
+            Behavior::TransportFail => Err(ArmRpcError::Transport("connection reset".into())),
+        }
+    }
+
     impl ArmEndpoint for MockArm {
         fn side(&self) -> Side {
             self.side
         }
 
         async fn invoke_action(&mut self, spec: ActionSpec) -> Result<String, ArmRpcError> {
-            // 让出一次：使 `tokio::join!` 的两侧真正交错（而非顺序求值）。
-            tokio::task::yield_now().await;
+            let id = format!("{}-action", self.side.label());
             *self.last_spec.lock().expect("lock") = Some(spec);
-            let popped = self.invoke.lock().expect("lock").pop_front();
-            popped.unwrap_or_else(|| Ok(format!("{}-action", self.side.label())))
+            apply(self.invoke, id).await
         }
 
         async fn cancel_task(&mut self, _action_id: &str) -> Result<(), ArmRpcError> {
-            tokio::task::yield_now().await;
             self.cancel_calls.fetch_add(1, Ordering::Relaxed);
+            apply(self.cancel, ()).await?;
             let replacement = self.after_cancel.lock().expect("lock").take();
             if let Some(seq) = replacement {
-                *self.status.lock().expect("lock") = seq;
+                *self.statuses.lock().expect("lock") = seq;
             }
             Ok(())
         }
 
         async fn task_status(&mut self, _action_id: &str) -> Result<TaskSnapshot, ArmRpcError> {
-            tokio::task::yield_now().await;
-            if self.status_pending {
-                // 永不返回：协议层的 `rpc_timeout` 必须兜住（阻断 1 回归锁）。
-                std::future::pending::<()>().await;
-            }
-            if let Some(e) = self.status_error.clone() {
-                return Err(e);
-            }
             // 队列 > 1 时逐条推进；剩最后一条则**保持**（稳态终态可反复读）。
-            let mut q = self.status.lock().expect("lock");
-            let front = if q.len() > 1 {
-                q.pop_front()
-            } else {
-                q.front().cloned()
+            let next = {
+                let mut q = self.statuses.lock().expect("lock");
+                if q.len() > 1 {
+                    q.pop_front()
+                } else {
+                    q.front().cloned()
+                }
             };
-            drop(q);
-            Ok(front.unwrap_or_else(|| snap(TaskPhase::Executing)))
+            apply(
+                self.status,
+                next.unwrap_or_else(|| snap(TaskPhase::Executing)),
+            )
+            .await
         }
 
         async fn estop(&mut self, _reason: &str) -> Result<(), ArmRpcError> {
-            tokio::task::yield_now().await;
             self.estop_calls.fetch_add(1, Ordering::Relaxed);
-            Ok(())
+            apply(self.estop, ()).await
         }
     }
 
@@ -1339,6 +1637,7 @@ mod tests {
         snap(TaskPhase::Terminal(TerminalState::Cancelled))
     }
 
+    /// 快窗口配置（真实时间；各窗 ≤ 100 ms，整轮测试百毫秒级）。
     fn fast_cfg() -> PairConfig {
         PairConfig {
             ack_skew_limit: Duration::from_millis(250),
@@ -1347,6 +1646,8 @@ mod tests {
             poll_interval: Duration::from_millis(1),
             rpc_timeout: Duration::from_millis(80),
             estop_timeout: Duration::from_millis(50),
+            // ≥ 2×(80+100)+50 = 410 ms。
+            cleanup_budget: Duration::from_millis(500),
         }
     }
 
@@ -1368,14 +1669,14 @@ mod tests {
             .await
             .expect("pair success");
         assert!(run.result.is_pair_success(), "{:?}", run.result);
-        // 阻断 3：发的确实是 Scripted，不是暗中的 Dwell。
+        // round 1 阻断 3：发的确实是 Scripted，不是暗中的 Dwell。
         assert_eq!(pair.left.last_kind(), Some(ActionKindWire::Scripted));
         assert_eq!(pair.right.last_kind(), Some(ActionKindWire::Scripted));
+        assert_eq!(pair.left.estops(), 0);
     }
 
     #[tokio::test]
     async fn dwell_spec_is_explicit_at_call_site() {
-        // fault_inject 触发通路 = 显式 DwellMs + NO_PAYLOAD（阻断 3）。
         let spec = ActionSpec::dwell_no_payload();
         assert_eq!(spec.kind, ActionKindWire::DwellMs);
         assert_eq!(spec.payload_schema_id, NO_PAYLOAD_SCHEMA_ID);
@@ -1391,7 +1692,7 @@ mod tests {
                 .with_after_cancel(cancelled()),
         };
         let cfg = fast_cfg();
-        let err = run_chunk_pair(
+        let run = run_chunk_pair(
             &mut pair,
             ActionSpec::dwell_no_payload(),
             scripted(),
@@ -1399,41 +1700,131 @@ mod tests {
             &cfg,
         )
         .await;
-        assert!(err.is_ok(), "{err:?}");
+        assert!(run.is_ok(), "{run:?}");
         assert_eq!(pair.left.last_kind(), Some(ActionKindWire::DwellMs));
         assert_eq!(pair.right.last_kind(), Some(ActionKindWire::Scripted));
     }
 
+    // ---- round 2 阻断 1：明确拒绝 vs 结果不确定 ----
+
     #[tokio::test]
-    async fn both_rejected_is_deterministic_fail_without_retry() {
+    async fn both_definitely_rejected_needs_no_cleanup() {
         let clock = StepClock::new(1_000_000);
         let mut pair = ArmPair {
-            left: MockArm::new(Side::Left)
-                .with_invoke(Err(ArmRpcError::Transport("left down".into()))),
-            right: MockArm::new(Side::Right).with_invoke(Err(ArmRpcError::Status {
-                code: "ResourceExhausted".into(),
-                message: "full".into(),
-            })),
+            left: MockArm::new(Side::Left).invoke(Behavior::DefiniteReject),
+            right: MockArm::new(Side::Right).invoke(Behavior::DefiniteReject),
         };
         let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
             .await
-            .expect_err("双拒必 FAIL");
+            .expect_err("双明确拒绝必 FAIL");
         assert!(matches!(err, PairError::BothRejected { .. }), "{err:?}");
-        // 双拒无副作用：不 cancel、不 EStop。
+        // 可证明两侧都没启动 → 不 cancel、不 EStop、不重试。
         assert_eq!(pair.left.cancels(), 0);
+        assert_eq!(pair.right.cancels(), 0);
         assert_eq!(pair.left.estops(), 0);
         assert_eq!(pair.right.estops(), 0);
     }
 
     #[tokio::test]
-    async fn submit_partial_failure_cancels_accepted_side() {
+    async fn both_pending_invokes_are_indeterminate_and_estop() {
+        // 双侧 invoke 挂死：Ack 未收到 ≠ 服务端未接受 → 必须双 EStop。
+        let clock = StepClock::new(1_000_000);
+        let mut pair = ArmPair {
+            left: MockArm::new(Side::Left).invoke(Behavior::Pending),
+            right: MockArm::new(Side::Right).invoke(Behavior::Pending),
+        };
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
+            .await
+            .expect_err("双超时 = 结果不确定");
+        match err {
+            PairError::IndeterminateSubmit {
+                ref causes,
+                ref rejected,
+                ref cleanup,
+            } => {
+                assert_eq!(causes.len(), 2, "两侧都不确定");
+                assert!(rejected.is_none());
+                let estop = cleanup.estop.as_ref().expect("必须已双 EStop");
+                assert!(estop.both_acked());
+            }
+            other => panic!("expected IndeterminateSubmit, got {other:?}"),
+        }
+        // 无 action_id 可 cancel；EStop 恰一次。
+        assert_eq!(pair.left.cancels(), 0);
+        assert_eq!(pair.left.estops(), 1);
+        assert_eq!(pair.right.estops(), 1);
+    }
+
+    #[tokio::test]
+    async fn accepted_plus_pending_cancels_known_and_estops() {
         let clock = StepClock::new(1_000_000);
         let mut pair = ArmPair {
             left: MockArm::new(Side::Left)
                 .with_status(snap(TaskPhase::Executing))
                 .with_after_cancel(cancelled()),
-            right: MockArm::new(Side::Right)
-                .with_invoke(Err(ArmRpcError::Transport("right down".into()))),
+            right: MockArm::new(Side::Right).invoke(Behavior::Pending),
+        };
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
+            .await
+            .expect_err("一侧不确定");
+        match err {
+            PairError::IndeterminateSubmit {
+                ref causes,
+                ref cleanup,
+                ..
+            } => {
+                assert_eq!(causes.len(), 1);
+                assert_eq!(causes[0].0, Side::Right);
+                assert_eq!(cleanup.cancelled.len(), 1, "已知 action 必须被 cancel");
+                assert_eq!(cleanup.cancelled[0].side, Side::Left);
+                assert!(cleanup.estop.is_some(), "不确定 → 强制双 EStop");
+            }
+            other => panic!("expected IndeterminateSubmit, got {other:?}"),
+        }
+        assert_eq!(pair.left.cancels(), 1);
+        assert_eq!(pair.left.estops(), 1);
+        assert_eq!(pair.right.estops(), 1);
+    }
+
+    #[tokio::test]
+    async fn transport_failure_is_indeterminate_not_rejection() {
+        // transport 失败同样**不能证明**服务端未接受 → 走不确定路径
+        // （round 2 阻断 1：不得与 typed status 拒绝混为一谈）。
+        let clock = StepClock::new(1_000_000);
+        let mut pair = ArmPair {
+            left: MockArm::new(Side::Left)
+                .with_status(snap(TaskPhase::Executing))
+                .with_after_cancel(cancelled()),
+            right: MockArm::new(Side::Right).invoke(Behavior::TransportFail),
+        };
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
+            .await
+            .expect_err("transport 失败 = 不确定");
+        match err {
+            PairError::IndeterminateSubmit {
+                ref causes,
+                ref cleanup,
+                ..
+            } => {
+                assert_eq!(causes.len(), 1);
+                assert!(matches!(causes[0].1, ArmRpcError::Transport(_)));
+                assert_eq!(cleanup.cancelled.len(), 1);
+                assert!(cleanup.estop.is_some());
+            }
+            other => panic!("expected IndeterminateSubmit, got {other:?}"),
+        }
+        assert_eq!(pair.left.estops(), 1);
+        assert_eq!(pair.right.estops(), 1);
+    }
+
+    #[tokio::test]
+    async fn accepted_plus_definite_rejection_is_partial_failure_without_estop() {
+        let clock = StepClock::new(1_000_000);
+        let mut pair = ArmPair {
+            left: MockArm::new(Side::Left)
+                .with_status(snap(TaskPhase::Executing))
+                .with_after_cancel(cancelled()),
+            right: MockArm::new(Side::Right).invoke(Behavior::DefiniteReject),
         };
         let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
             .await
@@ -1445,39 +1836,15 @@ mod tests {
                 ..
             } => {
                 assert_eq!(rejected_side, Side::Right);
-                assert_eq!(cancelled.side, Side::Left);
                 assert_eq!(cancelled.state, TerminalState::Cancelled);
             }
             other => panic!("expected SubmitPartialFailure, got {other:?}"),
         }
         assert_eq!(pair.left.cancels(), 1);
-        assert_eq!(pair.left.estops(), 0);
+        assert_eq!(pair.left.estops(), 0, "可证明未启动 → 不必 EStop");
     }
 
-    #[tokio::test]
-    async fn cancel_not_converging_escalates_to_double_estop() {
-        let clock = StepClock::new(1_000_000);
-        let mut pair = ArmPair {
-            // cancel 后仍恒 Executing → 不收敛。
-            left: MockArm::new(Side::Left).with_status(snap(TaskPhase::Executing)),
-            right: MockArm::new(Side::Right)
-                .with_invoke(Err(ArmRpcError::Transport("right down".into()))),
-        };
-        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
-            .await
-            .expect_err("cancel 不收敛");
-        match err {
-            PairError::CancelNotConverged {
-                side, ref estop, ..
-            } => {
-                assert_eq!(side, Side::Left);
-                assert!(estop.both_acked());
-            }
-            other => panic!("expected CancelNotConverged, got {other:?}"),
-        }
-        assert_eq!(pair.left.estops(), 1);
-        assert_eq!(pair.right.estops(), 1);
-    }
+    // ---- 执行期 ----
 
     #[tokio::test]
     async fn exec_phase_failure_cancels_surviving_side() {
@@ -1500,6 +1867,7 @@ mod tests {
             other => panic!("expected BothUnsuccessful, got {other:?}"),
         }
         assert_eq!(pair.right.cancels(), 1);
+        assert_eq!(pair.right.estops(), 0);
     }
 
     #[tokio::test]
@@ -1517,29 +1885,21 @@ mod tests {
         match &run.result {
             PairResult::PartialCompletion { succeeded, other } => {
                 assert_eq!(succeeded.side, Side::Left);
-                assert_eq!(other.side, Side::Right);
                 assert_eq!(other.state, TerminalState::Failed);
             }
             other => panic!("expected PartialCompletion, got {other:?}"),
         }
-        // 成功侧先到不得 cancel 幸存侧（D5 第 4 条）。
-        assert_eq!(pair.right.cancels(), 0);
+        assert_eq!(pair.right.cancels(), 0, "成功侧先到不得 cancel 幸存侧");
         assert!(!run.result.is_pair_success());
     }
 
-    // ---- round 1 阻断 1：硬超时 ----
-    //
-    // 注：不用 `#[tokio::test(start_paused)]`（需 tokio `test-util` feature，
-    // 不为测试扩 dev-dep 面）；`fast_cfg` 的 rpc_timeout = 80 ms，真实时间
-    // 开销可忽略。
+    // ---- round 1 阻断 1 / round 2 阻断 3：有界 + 恰一次 EStop ----
 
     #[tokio::test]
-    async fn pending_status_rpc_is_bounded_and_escalates() {
-        // 端点 `task_status` 永不返回：若协议层没有 rpc_timeout，
-        // terminal_timeout / cancel_timeout 全部失效（阻断 1）。
+    async fn pending_status_rpc_is_bounded_and_escalates_exactly_once() {
         let clock = StepClock::new(1_000_000);
         let mut pair = ArmPair {
-            left: MockArm::new(Side::Left).with_status_pending(),
+            left: MockArm::new(Side::Left).status_behavior(Behavior::Pending),
             right: MockArm::new(Side::Right).with_status(completed_success()),
         };
         let cfg = fast_cfg();
@@ -1556,100 +1916,20 @@ mod tests {
                 assert_eq!(side, Side::Left);
                 assert_eq!(phase, "poll");
                 assert_eq!(timeout, cfg.rpc_timeout);
-                assert!(estop.both_acked(), "异常必须已双 EStop 收尾");
+                assert!(estop.both_acked());
             }
             other => panic!("expected RpcTimeout, got {other:?}"),
         }
+        // round 2 阻断 3：每侧**恰一次** EStop（不得重复升级）。
         assert_eq!(pair.left.estops(), 1);
         assert_eq!(pair.right.estops(), 1);
     }
 
     #[tokio::test]
-    async fn pending_invoke_rpc_is_bounded_by_rpc_timeout() {
-        // invoke 侧挂死 → 视为该侧未接受；另一侧已接受 → 走提交期部分失败收尾。
-        struct PendingInvoke(Side, Arc<AtomicU64>);
-        impl ArmEndpoint for PendingInvoke {
-            fn side(&self) -> Side {
-                self.0
-            }
-            async fn invoke_action(&mut self, _spec: ActionSpec) -> Result<String, ArmRpcError> {
-                std::future::pending::<()>().await;
-                unreachable!()
-            }
-            async fn cancel_task(&mut self, _action_id: &str) -> Result<(), ArmRpcError> {
-                tokio::task::yield_now().await;
-                Ok(())
-            }
-            async fn task_status(&mut self, _action_id: &str) -> Result<TaskSnapshot, ArmRpcError> {
-                tokio::task::yield_now().await;
-                Ok(snap(TaskPhase::Executing))
-            }
-            async fn estop(&mut self, _reason: &str) -> Result<(), ArmRpcError> {
-                tokio::task::yield_now().await;
-                self.1.fetch_add(1, Ordering::Relaxed);
-                Ok(())
-            }
-        }
-        let estops = Arc::new(AtomicU64::new(0));
+    async fn status_rpc_failure_escalates_double_estop_exactly_once() {
         let clock = StepClock::new(1_000_000);
         let mut pair = ArmPair {
-            left: PendingInvoke(Side::Left, Arc::clone(&estops)),
-            right: PendingInvoke(Side::Right, Arc::clone(&estops)),
-        };
-        let cfg = fast_cfg();
-        let err = submit_pair(&mut pair, scripted(), scripted(), &clock, &cfg)
-            .await
-            .expect_err("双侧 invoke 挂死 → 双拒（超时形态）");
-        match err {
-            PairError::BothRejected { left, right } => {
-                assert!(matches!(left, ArmRpcError::Transport(ref m) if m.contains("timed out")));
-                assert!(matches!(right, ArmRpcError::Transport(ref m) if m.contains("timed out")));
-            }
-            other => panic!("expected BothRejected(timeout), got {other:?}"),
-        }
-    }
-
-    // ---- round 1 阻断 2：统一安全收尾 ----
-
-    #[tokio::test]
-    async fn ack_skew_violation_cancels_both_sides() {
-        // 上限设 0 → 任何非零偏差都违例；断言**两侧都被 cancel**（不留在跑）。
-        let clock = StepClock::new(1_000_000);
-        let mut pair = ArmPair {
-            left: MockArm::new(Side::Left)
-                .with_status(snap(TaskPhase::Executing))
-                .with_after_cancel(cancelled()),
-            right: MockArm::new(Side::Right)
-                .with_status(snap(TaskPhase::Executing))
-                .with_after_cancel(cancelled()),
-        };
-        let cfg = PairConfig {
-            ack_skew_limit: Duration::ZERO,
-            ..fast_cfg()
-        };
-        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &cfg)
-            .await
-            .expect_err("偏差超限");
-        match err {
-            PairError::AckSkewExceeded { ref cleanup, .. } => {
-                assert_eq!(cleanup.cancelled.len(), 2, "两侧都必须被 cancel");
-                assert!(cleanup.is_clean(), "收敛正常时不应升级 EStop");
-            }
-            other => panic!("expected AckSkewExceeded, got {other:?}"),
-        }
-        assert_eq!(pair.left.cancels(), 1);
-        assert_eq!(pair.right.cancels(), 1);
-        assert_eq!(pair.left.estops(), 0);
-    }
-
-    #[tokio::test]
-    async fn status_rpc_failure_escalates_double_estop() {
-        let clock = StepClock::new(1_000_000);
-        let mut pair = ArmPair {
-            left: MockArm::new(Side::Left).with_status_error(ArmRpcError::Status {
-                code: "Unavailable".into(),
-                message: "gateway gone".into(),
-            }),
+            left: MockArm::new(Side::Left).status_behavior(Behavior::DefiniteReject),
             right: MockArm::new(Side::Right).with_status(completed_success()),
         };
         let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
@@ -1673,8 +1953,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn convergence_timeout_cleanup_escalates_exactly_once() {
+        // 未终态 + cancel 也不收敛 → 收尾升级恰一次双 EStop。
+        let clock = StepClock::new(10_000_000);
+        let mut pair = ArmPair {
+            left: MockArm::new(Side::Left).with_status(snap(TaskPhase::Executing)),
+            right: MockArm::new(Side::Right).with_status(snap(TaskPhase::Executing)),
+        };
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
+            .await
+            .expect_err("永不终态且 cancel 无效");
+        match err {
+            PairError::ConvergenceTimeout { ref cleanup, .. } => {
+                assert!(cleanup.cancelled.is_empty());
+                let estop = cleanup.estop.as_ref().expect("必须已双 EStop");
+                assert!(estop.both_acked());
+                assert!(!cleanup.budget_exceeded);
+            }
+            other => panic!("expected ConvergenceTimeout, got {other:?}"),
+        }
+        assert_eq!(pair.left.estops(), 1, "恰一次");
+        assert_eq!(pair.right.estops(), 1, "恰一次");
+    }
+
+    #[tokio::test]
     async fn convergence_timeout_cancels_pending_sides() {
-        let clock = StepClock::new(10_000_000); // 10 ms / 次读，快速逼近上限
+        let clock = StepClock::new(10_000_000);
         let mut pair = ArmPair {
             left: MockArm::new(Side::Left)
                 .with_status(snap(TaskPhase::Executing))
@@ -1683,8 +1987,7 @@ mod tests {
                 .with_status(snap(TaskPhase::Pending))
                 .with_after_cancel(cancelled()),
         };
-        let cfg = fast_cfg();
-        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &cfg)
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
             .await
             .expect_err("永不终态");
         match err {
@@ -1701,35 +2004,110 @@ mod tests {
             }
             other => panic!("expected ConvergenceTimeout, got {other:?}"),
         }
+        assert_eq!(pair.left.estops(), 0);
     }
 
     #[tokio::test]
-    async fn convergence_timeout_with_stuck_cancel_escalates_estop() {
-        // 未终态 + cancel 也不收敛 → 收尾必须升级双 EStop。
+    async fn ack_skew_violation_cancels_both_sides() {
+        let clock = StepClock::new(1_000_000);
+        let mut pair = ArmPair {
+            left: MockArm::new(Side::Left)
+                .with_status(snap(TaskPhase::Executing))
+                .with_after_cancel(cancelled()),
+            right: MockArm::new(Side::Right)
+                .with_status(snap(TaskPhase::Executing))
+                .with_after_cancel(cancelled()),
+        };
+        let cfg = PairConfig {
+            ack_skew_limit: Duration::ZERO,
+            ..fast_cfg()
+        };
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &cfg)
+            .await
+            .expect_err("偏差超限");
+        match err {
+            PairError::AckSkewExceeded { ref cleanup, .. } => {
+                assert_eq!(cleanup.cancelled.len(), 2, "两侧都必须被 cancel");
+                assert!(cleanup.is_clean());
+            }
+            other => panic!("expected AckSkewExceeded, got {other:?}"),
+        }
+        assert_eq!(pair.left.cancels(), 1);
+        assert_eq!(pair.right.cancels(), 1);
+        assert_eq!(pair.left.estops(), 0);
+    }
+
+    // ---- round 2 阻断 2：墙钟总上限 = 协议预算 + 收尾预算 ----
+
+    /// 最坏组合：status 挂死 + cancel 挂死 + EStop 挂死。
+    #[tokio::test]
+    async fn wall_clock_stays_within_two_budgets_when_everything_hangs() {
+        let clock = StepClock::new(1_000_000);
+        let mut pair = ArmPair {
+            left: MockArm::new(Side::Left)
+                .status_behavior(Behavior::Pending)
+                .cancel_behavior(Behavior::Pending)
+                .estop_behavior(Behavior::Pending),
+            right: MockArm::new(Side::Right)
+                .status_behavior(Behavior::Pending)
+                .cancel_behavior(Behavior::Pending)
+                .estop_behavior(Behavior::Pending),
+        };
+        let cfg = fast_cfg();
+        let t0 = Instant::now();
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &cfg)
+            .await
+            .expect_err("全挂死");
+        let elapsed = t0.elapsed();
+        // 全挂死时应在首次 status 轮询处被 rpc_timeout 截断 → EStop（也挂死，
+        // 由 estop_timeout 截断）。
+        assert!(
+            matches!(err, PairError::RpcTimeout { .. }),
+            "expected RpcTimeout, got {err:?}"
+        );
+        let bound = cfg.run_chunk_bound();
+        assert!(
+            elapsed <= bound,
+            "墙钟 {elapsed:?} 必须 ≤ run_chunk_bound {bound:?}"
+        );
+    }
+
+    /// cancel 挂死（status 正常但永不终态）：收尾在独立预算内完成。
+    #[tokio::test]
+    async fn wall_clock_bounded_when_cancel_hangs_during_cleanup() {
         let clock = StepClock::new(10_000_000);
         let mut pair = ArmPair {
-            left: MockArm::new(Side::Left).with_status(snap(TaskPhase::Executing)),
-            right: MockArm::new(Side::Right).with_status(snap(TaskPhase::Executing)),
+            left: MockArm::new(Side::Left)
+                .with_status(snap(TaskPhase::Executing))
+                .cancel_behavior(Behavior::Pending),
+            right: MockArm::new(Side::Right)
+                .with_status(snap(TaskPhase::Executing))
+                .cancel_behavior(Behavior::Pending),
         };
-        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &fast_cfg())
+        let cfg = fast_cfg();
+        let t0 = Instant::now();
+        let err = run_chunk_pair(&mut pair, scripted(), scripted(), &clock, &cfg)
             .await
-            .expect_err("永不终态且 cancel 无效");
+            .expect_err("cancel 挂死");
+        let elapsed = t0.elapsed();
         match err {
             PairError::ConvergenceTimeout { ref cleanup, .. } => {
-                assert!(cleanup.cancelled.is_empty());
-                let estop = cleanup.estop.as_ref().expect("必须已双 EStop");
-                assert!(estop.both_acked());
+                assert!(cleanup.estop.is_some(), "cancel 挂死必须升级 EStop");
+                assert_eq!(cleanup.cancelled.len(), 0);
             }
             other => panic!("expected ConvergenceTimeout, got {other:?}"),
         }
-        assert!(pair.left.estops() >= 1);
-        assert!(pair.right.estops() >= 1);
+        let bound = cfg.run_chunk_bound();
+        assert!(elapsed <= bound, "墙钟 {elapsed:?} ≤ {bound:?}");
+        // 收尾在**独立**预算内：两侧 cancel 各 rpc_timeout + 一次 EStop。
+        assert_eq!(pair.left.estops(), 1);
+        assert_eq!(pair.right.estops(), 1);
     }
 
-    // ---- 判据 / 映射 ----
+    // ---- 判据 / 配置 / 映射 ----
 
     #[test]
-    fn ack_skew_gate_rejects_beyond_limit() {
+    fn ack_skew_check_is_pure_and_returns_violation_type() {
         let cfg = PairConfig::default();
         let mk = |right_ns: u64| PairSubmit {
             left: SubmitAck {
@@ -1743,26 +2121,46 @@ mod tests {
                 acked_at_ns: right_ns,
             },
         };
-        let over = mk(300_000_000); // 300 ms > 250 ms
+        let over = mk(300_000_000);
         assert_eq!(over.ack_skew(), Duration::from_millis(300));
-        let err = over.check_ack_skew(&cfg).expect_err("超限必拒");
-        assert!(matches!(err, PairError::AckSkewExceeded { .. }), "{err:?}");
-        // 边界：恰等于上限 → 通过（≤ 语义）。
+        // round 2 阻断 5：纯判据返回独立 violation 类型，**不**伪造 PairError。
+        let v: AckSkewViolation = over.check_ack_skew(&cfg).expect_err("超限必拒");
+        assert_eq!(v.skew, Duration::from_millis(300));
+        assert_eq!(v.limit, cfg.ack_skew_limit);
         mk(duration_to_ns(cfg.ack_skew_limit))
             .check_ack_skew(&cfg)
             .expect("恰等于上限应通过");
         assert_eq!(over.action_id(Side::Left), "l");
-        assert_eq!(over.action_id(Side::Right), "r");
     }
 
     #[test]
-    fn hard_bound_covers_phase_plus_cleanup_windows() {
+    fn budgets_are_separate_and_sufficient() {
         let cfg = PairConfig::default();
-        let bound = cfg.hard_bound(cfg.terminal_timeout);
         assert!(
-            bound > cfg.terminal_timeout + cfg.cancel_timeout,
-            "硬上限必须覆盖阶段窗 + 收尾窗，实得 {bound:?}"
+            cfg.cleanup_budget_is_sufficient(),
+            "默认收尾预算必须覆盖最坏收尾"
         );
+        let phase = cfg.phase_budget(cfg.terminal_timeout);
+        assert!(phase > cfg.terminal_timeout);
+        // 总上限 = submit + 2×收尾 + 协议阶段（见 PairConfig doc 公式）。
+        assert_eq!(
+            cfg.run_chunk_bound(),
+            cfg.rpc_timeout + cfg.cleanup_budget * 2 + phase
+        );
+        assert!(fast_cfg().cleanup_budget_is_sufficient());
+    }
+
+    #[test]
+    fn definite_rejection_classification() {
+        assert!(
+            ArmRpcError::Status {
+                code: "InvalidArgument".into(),
+                message: String::new()
+            }
+            .is_definite_rejection()
+        );
+        assert!(!ArmRpcError::Transport("reset".into()).is_definite_rejection());
+        assert!(!RpcFailure::TimedOut.is_definite_rejection());
     }
 
     #[test]
@@ -1778,7 +2176,6 @@ mod tests {
             observed_at_ns: 0,
         };
         assert!(base.is_success());
-        // Completed(PartialSuccess) = cancel 收敛形态，不算 pair success。
         let partial = TerminalReport {
             outcome: OutcomeKind::PartialSuccess,
             outcome_warning: "cancelled".into(),
