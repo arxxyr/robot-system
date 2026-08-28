@@ -38,11 +38,21 @@
 //! AC-E18 的 **IK 分支**就测不到"终态后 reset 回 anchor"。RB5 已要求矩阵
 //! **各分支独立 case 上下文**，故 IK 分支用 5 维 ctx，其余分支用 6 维。
 //!
+//! **IK 分支的宣称边界（round 1 issue 5，务必照此读结果）**：
+//!
+//! 1. `s1_daemon` 目前**固定**构造 `XLeRobotArmIkSolver::new(Side::Right)`
+//!    （`s1_daemon.rs`，无左右开关）——因此 IK 分支**只在右臂执行**，左臂
+//!    即便配 5 维也是拿右臂运动学在算；
+//! 2. 该分支**只验证 D3 的 reset 规则**（IK 终态后 Idle hold target 回启动
+//!    anchor），**不**代表权威 6 维配置支持 IK，**不**证明左臂 IK 正确，
+//!    **不**是 IK 数值精度的验收（那属 v0.4 候选 2 的 unit / smoke 面）。
+//!
 //! ## 清理
 //!
-//! `shutdown()` 逆序（gateway → s1 → s0）SIGTERM + grace；任一子进程非 0
-//! 退出 → forensic dump + `Err`。`Drop` 由 `SubprocessHandle` 的
-//! `kill_on_drop(true)` 兜底（test panic 路径）。
+//! `shutdown()` 逆序（gateway → s1 → s0）SIGTERM + grace；**每个子进程的
+//! stdout/stderr 都 dump 到 `forensic_dir/<side>_<label>.log`**（`shutdown`
+//! 后写，含停机期输出），任一子进程非 0 退出 → `Err`。`Drop` 由
+//! `SubprocessHandle` 的 `kill_on_drop(true)` 兜底（test panic 路径）。
 
 use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
@@ -152,7 +162,36 @@ impl Default for DualCtxOptions {
     }
 }
 
+/// `fault_inject` 与 `mock_dwell` 分发键完全重合（`DwellMs` +
+/// `NO_PAYLOAD_SCHEMA_ID`），共存时 dispatch 只看 enabled 列表**首个命中**
+/// ——failure 分支会静默失效。启动前拦掉（round 1 issue 4）。
+const FAULT_BACKEND: &str = "fault_inject";
+const CONFLICTING_BACKEND: &str = "mock_dwell";
+
 impl DualCtxOptions {
+    /// profile 合法性（bring-up 前调）。
+    ///
+    /// # Errors
+    ///
+    /// `fault_inject` 与 `mock_dwell` 同时出现 → `Err`（R3-B1 冲突消除）。
+    pub fn validate(&self) -> Result<(), String> {
+        let has_fault = self.backends.contains(&FAULT_BACKEND);
+        let has_mock = self.backends.contains(&CONFLICTING_BACKEND);
+        if has_fault && has_mock {
+            return Err(format!(
+                "[s1.profile] backends 同时含 {FAULT_BACKEND:?} 与 {CONFLICTING_BACKEND:?}：\
+                 两者 (DwellMs, NO_PAYLOAD_SCHEMA_ID) 分发键重合，dispatch 取首个命中，\
+                 failure 分支会静默失效（Spec R3-B1）。请移除 {CONFLICTING_BACKEND:?}。\
+                 实得 {:?}",
+                self.backends
+            ));
+        }
+        if self.backends.is_empty() {
+            return Err("[s1.profile] backends 不能为空".to_string());
+        }
+        Ok(())
+    }
+
     /// IK 分支专用：5 维 solver 谱 + 启用 `ik`（不含 `fault_inject`）。
     #[must_use]
     pub fn ik_branch() -> Self {
@@ -193,6 +232,9 @@ pub enum DualBringUpError {
     Ready { side: Side, source: ReadyError },
     #[error("layout derive ({side}): {reason}")]
     Layout { side: Side, reason: String },
+    /// `DualCtxOptions::validate` 失败（如 fault_inject / mock_dwell 共存）。
+    #[error("invalid options: {0}")]
+    InvalidOptions(String),
 }
 
 #[derive(Debug, Error)]
@@ -286,6 +328,9 @@ impl DualCtx {
         test_name: &'static str,
         options: DualCtxOptions,
     ) -> Result<Self, DualBringUpError> {
+        options
+            .validate()
+            .map_err(DualBringUpError::InvalidOptions)?;
         let lock = GLOBAL_LOCK.lock().await;
         let pid = std::process::id();
         let seq = CASE_SEQ.fetch_add(1, Ordering::Relaxed);
@@ -359,7 +404,12 @@ impl DualCtx {
                 ("s0_daemon", arm.s0.take()),
             ] {
                 let Some(h) = handle else { continue };
-                match h.shutdown(SHUTDOWN_GRACE).await {
+                // forensic：dump 到 <forensic_dir>/<side>_<label>.log（含停机
+                // 期输出——`shutdown_with_dump` 在 wait 之后才写）。
+                let dump_path = self
+                    .forensic_dir
+                    .join(format!("{}_{label}.log", side.label()));
+                match h.shutdown_with_dump(SHUTDOWN_GRACE, dump_path).await {
                     Ok(status) if status.success() => {}
                     Ok(status) => {
                         first_err.get_or_insert(DualShutdownError::ExitNonZero {

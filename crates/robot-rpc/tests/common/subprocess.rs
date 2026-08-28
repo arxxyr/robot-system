@@ -196,6 +196,34 @@ impl SubprocessHandle {
         }
     }
 
+    /// [`Self::shutdown`] + **停机后** forensic dump（v0.5 候选 E 段(7)
+    /// round 1 issue 6）：先克隆 `captured` 的 `Arc`，`shutdown` 消费 `self`
+    /// 之后再写盘，故 dump 里包含 SIGTERM 之后的收尾输出。dump 失败只
+    /// `eprintln!`，不掩盖 shutdown 的结果。
+    ///
+    /// # Errors
+    ///
+    /// 同 [`Self::shutdown`]。
+    pub async fn shutdown_with_dump(
+        self,
+        grace: Duration,
+        path: PathBuf,
+    ) -> Result<std::process::ExitStatus, ShutdownError> {
+        let label = self.label;
+        let captured = Arc::clone(&self.captured);
+        let result = self.shutdown(grace).await;
+        let lines = captured.lock().await;
+        let content = lines.join("\n");
+        drop(lines);
+        if let Some(parent) = path.parent() {
+            let _ = tokio::fs::create_dir_all(parent).await;
+        }
+        if let Err(e) = tokio::fs::write(&path, content.as_bytes()).await {
+            eprintln!("[{label}/forensic] dump to {} failed: {e}", path.display());
+        }
+        result
+    }
+
     /// Forensic：把 captured 行（含 stdout + stderr）写到 `path`，每行一行。
     ///
     /// # Errors

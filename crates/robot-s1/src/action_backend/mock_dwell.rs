@@ -67,6 +67,16 @@ impl MockDwellBackend {
     /// reviewer 拍板默认值：100 ms。
     pub const DEFAULT_DURATION_MS: u64 = 100;
 
+    /// `const` 默认实例（供 `static` 上下文用；v0.5 候选 E 段(7) round 1
+    /// issue 4：`fault_inject` 的共存冲突测试要把**真** mock_dwell 放进
+    /// registry，需要一个 `'static` 实例）。
+    #[must_use]
+    pub const fn const_default() -> Self {
+        Self {
+            duration_ms: Self::DEFAULT_DURATION_MS,
+        }
+    }
+
     /// 构造一个**测试用**实例。`duration_ms == 0` panic（不拐弯）。
     ///
     /// 生产路径走 inventory 静态注册的 `MOCK_DWELL_BACKEND`（默认

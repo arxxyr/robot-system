@@ -3,19 +3,33 @@
 //!
 //! 协议编排住 lib（`client::dual_arm_workflow`，不依赖 tonic `client`
 //! feature）；**transport 细节住这里**——`CommandMeta` / token / deadline /
-//! 超时 / schema id 全在本文件，e2e 与真机验收 bin 各自实现一份同款适配即可
+//! schema id 全在本文件，e2e 与真机验收 bin 各自实现一份同款适配即可
 //! （D9 "同向消费"）。
+//!
+//! ## 超时（round 1 阻断 1）
+//!
+//! **每个** RPC 都设 `tonic::Request::set_timeout`（transport 层硬超时），
+//! 与协议层的 `PairConfig::rpc_timeout` 构成**两道**上限：端点侧先断，
+//! 协议侧兜底。二者都不设时，一次挂起的 RPC 会让 `terminal_timeout` /
+//! `cancel_timeout` 全部失效。
+//!
+//! ## action seam
+//!
+//! 实现 [`ArmEndpoint::invoke_action`]（通用 `ActionSpec`），**不**假定
+//! kind——`ActionSpec::scripted` 与 `ActionSpec::dwell_no_payload`
+//! （test profile 下路由到 `fault_inject`）在调用点显式区分。
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use tonic::transport::Channel;
 
-use robot_msg::schema_id::SCHEMA_SCRIPTED_PAYLOAD;
-use robot_rpc::client::dual_arm_workflow::{ArmEndpoint, ArmRpcError, Side, TaskSnapshot};
+use robot_rpc::client::dual_arm_workflow::{
+    ActionSpec, ArmEndpoint, ArmRpcError, Side, TaskSnapshot,
+};
 use robot_rpc::proto::robot_control_client::RobotControlClient;
 use robot_rpc::proto::{
-    ActionKindProto, AuthContext, CancelTaskCommand, CommandMeta, EStopCommand, InvokeTaskCommand,
-    TaskHandleRef,
+    AuthContext, CancelTaskCommand, CommandMeta, EStopCommand, InvokeTaskCommand, TaskHandleRef,
 };
 
 use crate::common::client::MAINTAINER_TOKEN;
@@ -23,6 +37,9 @@ use crate::common::client::MAINTAINER_TOKEN;
 /// 单次 RPC 的 `CommandMeta.timeout_ms`（gateway 侧 RR 等待上限；留足
 /// s1 tick 周期 + RR 往返）。
 const RPC_TIMEOUT_MS: u64 = 3_000;
+/// **transport 层**硬超时（round 1 阻断 1）：略大于 `RPC_TIMEOUT_MS`，让
+/// gateway 有机会先返 typed status；再超即由 tonic 断开返 `Cancelled`。
+const TRANSPORT_TIMEOUT: Duration = Duration::from_millis(RPC_TIMEOUT_MS + 1_000);
 
 /// 一条臂的 tonic 端点。
 pub struct TonicArm {
@@ -67,6 +84,13 @@ impl TonicArm {
     }
 }
 
+/// 包 tonic `Request` 并设 **transport 硬超时**（round 1 阻断 1）。
+fn with_timeout<T>(msg: T) -> tonic::Request<T> {
+    let mut req = tonic::Request::new(msg);
+    req.set_timeout(TRANSPORT_TIMEOUT);
+    req
+}
+
 /// tonic `Status` / transport 错 → 协议侧 [`ArmRpcError`]。
 fn map_status(status: &tonic::Status) -> ArmRpcError {
     ArmRpcError::Status {
@@ -80,19 +104,19 @@ impl ArmEndpoint for TonicArm {
         self.side
     }
 
-    async fn invoke_scripted(&mut self, payload: Vec<u8>) -> Result<String, ArmRpcError> {
+    async fn invoke_action(&mut self, spec: ActionSpec) -> Result<String, ArmRpcError> {
         let cmd = InvokeTaskCommand {
             meta: Some(self.meta("invoke")),
-            kind: ActionKindProto::ActionKindScripted as i32,
+            kind: spec.kind.proto_value(),
             // 0 = 不设 deadline（chunk 时长由 waypoint 段时长决定）。
             deadline_ns: 0,
             priority: 10,
-            payload_schema_id: SCHEMA_SCRIPTED_PAYLOAD,
-            payload,
+            payload_schema_id: spec.payload_schema_id,
+            payload: spec.payload,
         };
         let handle = self
             .client
-            .invoke_task(cmd)
+            .invoke_task(with_timeout(cmd))
             .await
             .map_err(|s| map_status(&s))?
             .into_inner();
@@ -105,7 +129,7 @@ impl ArmEndpoint for TonicArm {
             action_id: action_id.to_string(),
         };
         self.client
-            .cancel_task(cmd)
+            .cancel_task(with_timeout(cmd))
             .await
             .map_err(|s| map_status(&s))?;
         Ok(())
@@ -118,7 +142,7 @@ impl ArmEndpoint for TonicArm {
         };
         let status = self
             .client
-            .get_task_status(req)
+            .get_task_status(with_timeout(req))
             .await
             .map_err(|s| map_status(&s))?
             .into_inner();
@@ -130,7 +154,10 @@ impl ArmEndpoint for TonicArm {
             meta: Some(self.meta("estop")),
             estop_reason: reason.to_string(),
         };
-        self.client.e_stop(cmd).await.map_err(|s| map_status(&s))?;
+        self.client
+            .e_stop(with_timeout(cmd))
+            .await
+            .map_err(|s| map_status(&s))?;
         Ok(())
     }
 }

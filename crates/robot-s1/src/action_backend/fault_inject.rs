@@ -333,22 +333,45 @@ mod tests {
 
     #[test]
     fn fault_inject_and_mock_dwell_must_not_coexist() {
-        // R3-B1 冲突消除的可执行证据：两者分发键完全重合，同时 enable 时
-        // dispatch 取 enabled 列表里的首个命中——e2e config 必须移除
-        // mock_dwell，否则 DwellMs 会落到 mock_dwell（100 ms 后 Success），
-        // failure 分支永不触发。
+        // R3-B1 冲突消除的**可执行证据**：把两者**真的**放进同一 registry，
+        // 锁两种 enabled 排列——dispatch 取列表首个命中，因此共存时 DwellMs
+        // 落到谁完全由 profile 列表顺序决定（= 不可接受的隐式依赖）。
+        // e2e config 必须移除 mock_dwell（`DualCtxOptions::validate` 启动前拦）。
+        use crate::action_backend::mock_dwell::MockDwellBackend;
+        static MOCK: MockDwellBackend = MockDwellBackend::const_default();
         let fault: &'static dyn ActionBackend = &FAULT_INJECT_BACKEND;
+        let mock: &'static dyn ActionBackend = &MOCK;
+        assert_eq!(fault.supported_kinds(), mock.supported_kinds());
+        assert_eq!(fault.supported_schemas(), mock.supported_schemas());
+
+        let r = BackendRegistry::from_explicit(&[fault, mock]);
+        let fault_first = vec!["fault_inject".to_string(), "mock_dwell".to_string()];
+        let mock_first = vec!["mock_dwell".to_string(), "fault_inject".to_string()];
         assert_eq!(
-            fault.supported_kinds(),
-            &[ActionKind::DwellMs],
-            "分发键与 mock_dwell 重合是有意的（0 新 wire）"
+            r.dispatch(&fault_first, ActionKind::DwellMs, NO_PAYLOAD_SCHEMA_ID)
+                .expect("dispatch")
+                .name(),
+            "fault_inject",
+            "共存时命中首个 enabled 项"
         );
-        let r = BackendRegistry::from_explicit(&[fault]);
-        let enabled = vec!["fault_inject".to_string()];
-        let b = r
-            .dispatch(&enabled, ActionKind::DwellMs, NO_PAYLOAD_SCHEMA_ID)
-            .expect("单独启用时 DwellMs 唯一落到 fault_inject");
-        assert_eq!(b.name(), "fault_inject");
+        assert_eq!(
+            r.dispatch(&mock_first, ActionKind::DwellMs, NO_PAYLOAD_SCHEMA_ID)
+                .expect("dispatch")
+                .name(),
+            "mock_dwell",
+            "顺序一换就落到 mock_dwell——failure 分支静默失效"
+        );
+        // 唯一安全形态：只启用 fault_inject。
+        assert_eq!(
+            r.dispatch(
+                std::slice::from_ref(&"fault_inject".to_string()),
+                ActionKind::DwellMs,
+                NO_PAYLOAD_SCHEMA_ID
+            )
+            .expect("dispatch")
+            .name(),
+            "fault_inject"
+        );
         assert!(profile_conflict_note().contains(CONFLICTING_BACKEND));
     }
 
