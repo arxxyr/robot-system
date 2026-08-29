@@ -10,6 +10,120 @@
 
 ---
 
+## 2026-08-29 · 候选 E 段(7)：双臂协议 + workflow cross-process e2e（**状态：契约落地登记〔D4/D5/D6/D9〕+ 既有缺陷发现与修复登记〔S0 采样时刻〕+ 新硬契约 ×2**）
+
+### 双臂成对提交协议落地（Spec D4/D5 + AC-E14）
+
+- 新 `robot_rpc::client::dual_arm_workflow`（PD-E3 共享语义单源：e2e 与真机
+  验收 bin **同向消费**，禁止各自复制）。RPC 通路经 `ArmEndpoint` trait 注入
+  ——**不依赖 tonic `client` feature**（RB4 边界延续），协议分支全部可在无
+  进程环境下确定性单测（25 条）。
+- D5 八条逐条落位：并发 join 提交 + **各侧在自己 future 内打点**的 Ack 偏差
+  （join 后统一取 now 会把偏差抹成 0）/ 终态精确集 `Completed·Failed·
+  Cancelled` + pair success = 两侧 `Completed(Success)` / 提交期部分失败 →
+  cancel 已接收侧 / 执行期不对称 → cancel 幸存侧（成功侧先到则**不** cancel
+  → partial completion）/ stream 断开走 `GetTaskStatus` 轮询收敛 / 双拒
+  **不重试** / Ack 偏差为**唯一** gate 量（`Started.at_ns` 仅诊断）。
+- **安全语义（reviewer round 1-4 收紧后的不变量，Spec P.4 PX-28）**：单一
+  安全入口 `run_chunk_pair`；两级硬超时（协议 `rpc_timeout` + 端点 transport，
+  层级内→外递增）；**协议预算 + 独立收尾预算**（`cleanup_budget` 为 EStop
+  预留固定份额，总上限 `run_chunk_bound()`）；**超时 ≠ 明确拒绝**（仅
+  `DEFINITE_REJECTION_CODES` 白名单证明未启动；`DeadlineExceeded` /
+  `Cancelled` / `Unavailable` / `Internal` / `Unknown` 与 transport 失败一律
+  `IndeterminateSubmit` → **先双 EStop** 再 cancel 已知 action）；每次收尾
+  **至多一次**双 EStop；纯判据 `AckSkewViolation` 不伪造"已收尾"错误。
+
+### test-only fault backend（QA6 + R3-B1）
+
+- 新 `robot-s1` feature `test-fault-backend` + `FaultInjectBackend`
+  （`fault_inject`；分发键 `DwellMs + NO_PAYLOAD_SCHEMA_ID` = **0 新 wire**；
+  3 tick 后 `ActionFailure::InternalError("fault_inject")`；cancel 优先于
+  failure）。生产 backend 无执行期 failure 触发器（Scripted 运行期只
+  Continue/Completed、IK 错误全在 start 阶段），AC-E14 执行期不对称终态 /
+  AC-E18 failure 分支靠它驱动。**冲突消除**：启用它的 profile 必须移除
+  `mock_dwell`（分发键重合，dispatch 取首个命中），由
+  `DualCtxOptions::validate()` 在 bring-up 前拦 + 单测锁两种排列。
+
+### 六进程 e2e（D9"三真同堂首例"）
+
+- `tests/common/dual_ctx.rs`：**2×(s0+s1+gateway)** bring-up（PD-E3 全套：
+  `dimos_e2e_<pid>_<seq>_{left,right}` / 固定 `left_arm`・`right_arm` /
+  两端口 `127.0.0.1:0` 断言不同 / `GLOBAL_LOCK` 串行 / latch provision /
+  s0 marker 后再起 s1 / 逆序停机 + **停机后** forensic dump）。
+- `tests/dimos_workflow_e2e.rs` 11 case 覆盖 AC-E2/E4/E6/E7/E9/E11/E14/E15/
+  E18（含 E18 矩阵四分支各自独立 ctx、E6 SIGSTOP 真 s0、E2 独立 mini 拓扑 +
+  raw 注入器 + 正向对照）。
+
+### **既有缺陷发现与修复**：S0 采样时刻（Spec P.4 PX-26）
+
+- **现象**：真 S0 + 真 S1 首次同堂时，S1 启动锚定必失败——
+  `fatal: startup anchor failed: S0 state sample is stale: stamp_ns=0`。
+- **根因**：`JointStateBuf.stamp_ns` 契约规定由**调用方**填（adapter 不持
+  时钟），但 S0 两条 tick 路径（`rt_thread` / `serial_io_thread`）在
+  `adapter.read_state()` 后**完全漏填** → `pub_thread` 拿它当 body 采样时刻。
+  **旧行为准确口径**：S0 未提交权威采样时刻——Feetech 及 mock 启动期为 0；
+  旧 mock 在命令生效后还可能**回显命令戳**（`write_command` 把
+  `cmd.stamp_ns` 抄进 state）。两者都不是可信采样时刻。修复后仅在成功读取
+  时提交采样开始时刻，失败保留最后成功戳。既有 e2e/smoke 用
+  `FakeStatePublisher`（自己 stamp）或 `mock_s1`（不锚定）顶替 S0，故长期
+  未暴露。
+- **修法（事务式提交）**：读进临时副本，仅 `Ok(())` 时打 `clock.now()` 并
+  整体提交；`Err` 只计数并**保留 last-known-good 的状态与旧戳**——读失败若
+  仍打新戳，会把持续串口故障伪装成新鲜数据；且 trait 不保证失败时不写
+  `out`，临时副本同时挡住"失败前部分写入"污染快照。
+- **配套**：`ManipulatorAdapter::read_state` 契约固化（stamp 归属调用方 /
+  失败输出不得当新样本）；`MockHardRTAdapter` 对齐（`read_state` 保留调用方
+  戳、`write_command` 不再抄命令戳，`MockSerialRTAdapter` 委托同源）；两条
+  tick 路径各一条 `read_failure_freezes_state_and_stamp` 回归锁 + mock
+  `read_state_preserves_caller_stamp`。
+- **影响面（部署侧留意）**：所有 S0 部署的 `JointState` body `stamp_ns` 从
+  **缺失或错误语义**（0 / 命令戳）变为**采样开始时刻**；仓内 grep 无依赖
+  旧语义（恒 0 或命令戳回显）的代码。
+
+### 新硬契约 ×2（Spec P.4 PX-27 / PX-26）
+
+1. `ActionBackend::start`：**`Err` ⇒ 零副作用**（不产生执行状态 / 不发布
+   `JointCommand` / 不触碰硬件）——`FailedPrecondition` 被列入"可证明未启动"
+   白名单、据此**不**触发双臂 EStop，该分类的长期正确性依赖本契约。
+2. `ManipulatorAdapter::read_state`：adapter 不负责 `stamp_ns`；调用方只在
+   **成功读取后**提交；失败输出不得被当作新样本。
+
+### 边界
+
+- 0 新 wire（fault backend 复用既有分发键；IK/Scripted payload 均既有
+  schema）；robotctl 0 改；design.md 0 改；`run_gateway_with_ready` 与既有
+  四个 e2e 的 bind-ready 语义 0 改。
+- IK 分支只在**右臂**执行且只验 D3 reset 规则（PX-25 宣称边界）。
+- 段(7) 未做：真机验收 bin（段(9)/(10)）；mid-chunk 抢占（非 E 目标）。
+- gate：cargo fmt / clippy workspace `--all-targets` + robot-tests
+  `--all-features` 0 警告；**PX-24 八项独立 feature check 全过**（+ 默认）；
+  release 重建（workspace + 6 smoke feature bins + hook 产物
+  `robot-s1 --features test-freeze-hook,test-fault-backend` /
+  `robot-rpc --features test-freeze-hook`）；workspace test
+  **1381 PASS / 0 FAIL**（1390 listed − 9 ignored；段(8) 基线 1337 + 44 =
+  dual_arm 协议 25 + e2e case 11 + `common::subprocess` dump 测试在 5 个
+  e2e target 各跑一次 5 + S0 读失败冻结锁 2 + mock stamp 契约锁 1；**新
+  e2e 随 `cargo test --workspace` 默认跑到**）。`fault_inject` 的 7 条**不在**
+  默认 workspace 计数内（`test-fault-backend` 默认未启用）——单列 feature
+  gate 复核：`cargo test -p robot-s1 --features test-fault-backend`
+  **330 passed / 0 failed**；七 smoke 全绿（crash 5/5 +
+  `--use-mock-s1` 2/2 / scripted 5/5 / ik 5/5 / pubsub all〔c3=false〕/
+  clear_estop all / robotctl 12/12 / freeze_systemd 1/1）+
+  `sd_watchdog_smoke --phase all` **8/8 ×2** + `dimos_workflow_e2e`
+  **12/12**（单跑 42.5 s）。依赖边：**0 新 crate**（robot-rpc /
+  robot-s1 / robot-tests 顶层直接边与段(8) 后一致，本段只加
+  robot-s1 内部 feature 与 test target）；`cargo build -p robot-rpc
+  --timings` 252 units / 4.5 s；`cargo deny check` 与基线**逐条一致**
+  （licenses FAILED 既有 baseline + advisories FAILED
+  `RUSTSEC-2026-0258` h2 既有 + bans ok〔3 条 duplicate warning 既有〕），
+  **0 新 violation**。hook 产物跑完后 `cargo build --release --workspace`
+  恢复。
+
+审阅人：待 reviewer 段(7) 复核（round 1-4 阻断均已闭合并实质 ACK）；
+登记人：Claude。
+
+---
+
 ## 2026-08-27 · 候选 E 段(8)：sd_notify 段——S1 / gateway liveness-gated systemd watchdog + 单一实现迁移 + 双向 smoke（**状态：偏离登记〔B1 决策 #7 解锁〕+ 依赖边登记 + PX-4 闭合**）
 
 ### B1 决策 #7 显式解锁（S1 / gateway sd_notify；Spec D12 + P.2.7）
