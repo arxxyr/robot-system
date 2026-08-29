@@ -125,8 +125,13 @@ impl ManipulatorAdapter for MockHardRTAdapter {
         if !self.connected {
             return Err(RobotError::NotConnected);
         }
-        // POD memcpy；`JointStateBuf: Copy` 保证零分配。
+        // **adapter 不填 `stamp_ns`**（`ManipulatorAdapter::read_state` 契约，
+        // v0.5 候选 E 段(7) 固化）：整块 POD memcpy 会连调用方的时间戳一起
+        // 覆盖，故先存后还——采样时刻由调用方（S0 tick 线程）在**读取成功后**
+        // 提交。`JointStateBuf: Copy` 保证零分配。
+        let caller_stamp_ns = out.stamp_ns;
         *out = self.state;
+        out.stamp_ns = caller_stamp_ns;
         Ok(())
     }
 
@@ -148,7 +153,8 @@ impl ManipulatorAdapter for MockHardRTAdapter {
         self.state.velocities[..nv].copy_from_slice(&cmd.velocities[..nv]);
         let nt = cmd.torques.len().min(self.state.joint_count as usize);
         self.state.torques[..nt].copy_from_slice(&cmd.torques[..nt]);
-        self.state.stamp_ns = cmd.stamp_ns;
+        // **不**把命令的 `stamp_ns` 抄进 state：时间戳不是 adapter 的职责
+        // （契约见 `ManipulatorAdapter::read_state`），命令戳更不是采样时刻。
         Ok(())
     }
 
@@ -487,11 +493,45 @@ mod tests {
         a.enable(true).unwrap();
         let cmd = sample_view(&[1.0, 2.0, 3.0], &[0.1, 0.2, 0.3], &[]);
         a.write_command(&cmd).unwrap();
-        let mut out = JointStateBuf::default();
+        // 调用方预置的时间戳必须被**原样保留**（adapter 不碰 stamp_ns）。
+        let mut out = JointStateBuf {
+            stamp_ns: 4_242_424_242,
+            ..JointStateBuf::default()
+        };
         a.read_state(&mut out).unwrap();
         assert_eq!(&out.positions[..3], &[1.0, 2.0, 3.0]);
         assert_eq!(&out.velocities[..3], &[0.1, 0.2, 0.3]);
-        assert_eq!(out.stamp_ns, 1_000_000);
+        assert_eq!(
+            out.stamp_ns, 4_242_424_242,
+            "adapter 不得覆盖调用方时间戳（命令戳更不是采样时刻）"
+        );
+    }
+
+    /// 契约锁：连续两次 `read_state` 都保留各自调用方预置的 `stamp_ns`
+    /// （v0.5 候选 E 段(7)：时间戳单一权威 = 调用方）。
+    #[test]
+    fn read_state_preserves_caller_stamp() {
+        let mut a = MockHardRTAdapter::with_unlimited_limits(2);
+        a.connect().unwrap();
+        a.enable(true).unwrap();
+        a.write_command(&sample_view(&[1.0, 2.0], &[], &[]))
+            .unwrap();
+
+        let mut first = JointStateBuf {
+            stamp_ns: 111,
+            ..JointStateBuf::default()
+        };
+        a.read_state(&mut first).unwrap();
+        assert_eq!(first.stamp_ns, 111);
+
+        let mut second = JointStateBuf {
+            stamp_ns: 222,
+            ..JointStateBuf::default()
+        };
+        a.read_state(&mut second).unwrap();
+        assert_eq!(second.stamp_ns, 222);
+        // 状态本身照常 echo。
+        assert_eq!(&second.positions[..2], &[1.0, 2.0]);
     }
 
     #[test]
