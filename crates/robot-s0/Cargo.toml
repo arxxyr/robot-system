@@ -42,6 +42,14 @@ thiserror           = { workspace = true }
 # 跟 robot-msg 的 build_helpers 同源（依赖白名单同 robot-msg 一致）。
 flatbuffers         = { workspace = true }
 
+# 段(9) 部署件 CLI：真串口读写要 serialport / libudev，故 required-features
+# 锁死在 xlerobot-real——dev / CI 默认 build 不拉这条系统依赖。
+# （s0_daemon 仍走 src/bin/ 自动发现，显式列一个 bin 不影响其余自动发现。）
+[[bin]]
+name              = "xlerobot_deploy"
+path              = "src/bin/xlerobot_deploy.rs"
+required-features = ["xlerobot-real"]
+
 [dev-dependencies]
 # estop_latch 单测用 tempfile 做临时目录。版本 pin 在 workspace Cargo.toml。
 tempfile = { workspace = true }
