@@ -269,7 +269,11 @@ mod tests {
         t.write_all(&[4, 5]).unwrap();
         assert_eq!(h.drain_tx(), vec![1, 2, 3, 4, 5]);
         // drain 之后再 peek 应空
-        assert!(h.peek_tx().is_empty());
+        assert!(
+            h.peek_tx().is_empty(),
+            "expected empty tx, got {:?}",
+            h.peek_tx()
+        );
     }
 
     #[test]

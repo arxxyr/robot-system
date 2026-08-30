@@ -296,7 +296,7 @@ mod tests {
         let schemas = b.supported_schemas();
         assert_eq!(schemas, &[NO_PAYLOAD_SCHEMA_ID]);
         // 强证非空切片（防 review 时混淆）。
-        assert!(!schemas.is_empty());
+        assert!(!schemas.is_empty(), "expected at least one schema");
     }
 
     #[test]

@@ -477,7 +477,7 @@ backends = ["mock_dwell"]
     fn empty_hardware_is_ok_empty_list() {
         let toml = "[robot]\nid = \"rid\"\nconfig_version = \"0.3.0\"\n";
         let ids = parse_state_hardware_ids(toml, "rid").unwrap();
-        assert!(ids.is_empty());
+        assert!(ids.is_empty(), "expected no hardware ids, got {ids:?}");
     }
 
     #[test]

@@ -590,7 +590,11 @@ fn profile_validation_no_enabled_backends_fails_fast() {
     // [s1.profile] 显式存在但 backends 缺失 → parse 给 [] → validate 必拦。
     let toml = "[s1.profile]\n";
     let profile = parse_profile_section_from_toml(toml).expect("L1 ok");
-    assert!(profile.backends.is_empty());
+    assert!(
+        profile.backends.is_empty(),
+        "expected no backends, got {:?}",
+        profile.backends
+    );
 
     let registry = registry_with_mock_dwell_duration_ms(100);
     let hardware = HardwareSection {

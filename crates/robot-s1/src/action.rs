@@ -959,7 +959,11 @@ mod tests {
         let now_ns: u64 = 1_000_000_000;
         let req = sample_request(now_ns);
         assert_eq!(req.payload_schema_id, NO_PAYLOAD_SCHEMA_ID);
-        assert!(req.payload.is_empty());
+        assert!(
+            req.payload.is_empty(),
+            "expected empty payload, got {} bytes",
+            req.payload.len()
+        );
         req.validate(now_ns).expect("must pass");
     }
 

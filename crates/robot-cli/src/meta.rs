@@ -177,7 +177,11 @@ mod tests {
         let meta = build_command_meta(&inputs(None));
         let auth = meta.auth.expect("auth set");
         assert_eq!(auth.token, "tok");
-        assert!(auth.mtls_fingerprint.is_empty());
+        assert!(
+            auth.mtls_fingerprint.is_empty(),
+            "expected empty fingerprint, got {:?}",
+            auth.mtls_fingerprint
+        );
     }
 
     #[test]

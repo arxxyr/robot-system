@@ -1220,10 +1220,10 @@ fn parse_joint_command(fb: &FbJointCommand<'_>, stamp_ns: u64) -> JointCommandBu
         buf.joint_count = n as u8;
     }
     if let Some(v) = target {
-        for i in 0..n {
+        for (i, slot) in buf.positions.iter_mut().enumerate().take(n) {
             #[allow(clippy::cast_possible_truncation)]
             {
-                buf.positions[i] = v.get(i) as f32;
+                *slot = v.get(i) as f32;
             }
         }
     }

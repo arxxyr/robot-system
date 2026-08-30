@@ -431,7 +431,11 @@ mod tests {
         let cfg = MonitorConfig::default();
         assert_eq!(cfg.interval, Duration::from_secs(5));
         assert_eq!(cfg.top_n, 5);
-        assert!(cfg.interested_processes.is_empty());
+        assert!(
+            cfg.interested_processes.is_empty(),
+            "expected empty, got {:?}",
+            cfg.interested_processes
+        );
     }
 
     #[test]

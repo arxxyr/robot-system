@@ -302,7 +302,11 @@ mod tests {
         assert!(a.idempotency_key.is_none());
         assert!(a.audit_reason.is_none());
         assert!(a.confirmation.is_none());
-        assert!(a.positional.is_empty());
+        assert!(
+            a.positional.is_empty(),
+            "expected no positionals, got {:?}",
+            a.positional
+        );
     }
 
     #[test]
@@ -335,7 +339,11 @@ mod tests {
         assert_eq!(a.confirmation.as_deref(), Some("CONFIRM_CLEAR_ESTOP"));
         assert!(a.dry_run);
         assert!(a.json);
-        assert!(a.positional.is_empty());
+        assert!(
+            a.positional.is_empty(),
+            "expected no positionals, got {:?}",
+            a.positional
+        );
     }
 
     #[test]

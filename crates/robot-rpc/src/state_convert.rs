@@ -290,7 +290,11 @@ mod tests {
 
         assert_eq!(rs.layout_id, 7);
         assert_eq!(rs.stamp_ns, 99);
-        assert!(rs.position_rad.is_empty());
+        assert!(
+            rs.position_rad.is_empty(),
+            "expected empty positions, got {:?}",
+            rs.position_rad
+        );
         assert_eq!(rs.mode, S0ModeProto::Unspecified as i32);
         assert_eq!(rs.control_link, S0ControlLinkProto::Unspecified as i32);
         assert_eq!(rs.output_mode, S0OutputModeProto::Unspecified as i32);

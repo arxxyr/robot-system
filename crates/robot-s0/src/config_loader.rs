@@ -503,8 +503,16 @@ streams = ["color", "depth"]
     fn empty_hardware_and_sensor_arrays_default_ok() {
         let f = write_temp("[robot]\nid = \"only_robot\"\nconfig_version = \"0.1\"\n");
         let cfg = load_robot_config(f.path()).unwrap();
-        assert!(cfg.parsed.hardware.is_empty());
-        assert!(cfg.parsed.sensor.is_empty());
+        assert!(
+            cfg.parsed.hardware.is_empty(),
+            "expected no [[hardware]], got {}",
+            cfg.parsed.hardware.len()
+        );
+        assert!(
+            cfg.parsed.sensor.is_empty(),
+            "expected no [[sensor]], got {}",
+            cfg.parsed.sensor.len()
+        );
         assert!(cfg.identity.is_fully_partial());
     }
 

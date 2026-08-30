@@ -549,7 +549,11 @@ mod tests {
         let pkt = parse_status(&buf).unwrap();
         assert_eq!(pkt.id, 7);
         assert_eq!(pkt.error, Instruction::Ping as u8);
-        assert!(pkt.params.is_empty());
+        assert!(
+            pkt.params.is_empty(),
+            "expected empty params, got {:?}",
+            pkt.params
+        );
         assert_eq!(pkt.consumed, 6);
     }
 }

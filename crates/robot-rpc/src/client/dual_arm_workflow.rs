@@ -2267,7 +2267,11 @@ mod tests {
             .expect_err("永不终态且 cancel 无效");
         match err {
             PairError::ConvergenceTimeout { ref cleanup, .. } => {
-                assert!(cleanup.cancelled.is_empty());
+                assert!(
+                    cleanup.cancelled.is_empty(),
+                    "expected no cancels, got {:?}",
+                    cleanup.cancelled
+                );
                 assert!(cleanup.estop.as_ref().expect("EStop").both_acked());
                 assert!(!cleanup.budget_exceeded);
             }
@@ -2381,7 +2385,11 @@ mod tests {
         match err {
             PairError::ConvergenceTimeout { ref cleanup, .. } => {
                 assert!(cleanup.estop.is_some(), "cancel 挂死必须升级 EStop");
-                assert!(cleanup.cancelled.is_empty());
+                assert!(
+                    cleanup.cancelled.is_empty(),
+                    "expected no cancels, got {:?}",
+                    cleanup.cancelled
+                );
             }
             other => panic!("expected ConvergenceTimeout, got {other:?}"),
         }

@@ -288,7 +288,11 @@ mod tests {
         .expect("parse");
         assert_eq!(t.xyz, [0.2, 0.0, 0.1]);
         assert_eq!(t.quat_xyzw, [0.0, 0.0, 0.0, 1.0]); // identity 默认
-        assert!(t.seed_joints.is_empty());
+        assert!(
+            t.seed_joints.is_empty(),
+            "expected no seed joints, got {:?}",
+            t.seed_joints
+        );
         assert_eq!(t.frame, "");
     }
 
