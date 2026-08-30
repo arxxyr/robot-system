@@ -17,6 +17,7 @@
 //! | [`identity`] | **D2 身份绑定校验**（arm ↔ config；打开串口前 fail-closed，round 1 P0-1） |
 //! | [`counter`] | guard 连败预算：`<robot_id>.count` 原子读写 + `<robot_id>.lock` **稳定 inode** flock（r10 AA2/AA3） |
 //! | [`provision`] | latch 三分支 provision + 统一 dir-fsync 最终步骤（D2 第 1 条 / AC-E21） |
+//! | [`preflight`] | `DeployTransport` trait + `ensure_safe_arm` / `ensure_safe_handoff`（AC-E16） |
 //!
 //! ## feature 边界（段(9) 形态补充，登记 Spec P.4）
 //!
@@ -31,6 +32,7 @@
 
 pub mod counter;
 pub mod identity;
+pub mod preflight;
 pub mod provision;
 pub mod types;
 
