@@ -18,6 +18,7 @@
 //! | [`counter`] | guard 连败预算：`<robot_id>.count` 原子读写 + `<robot_id>.lock` **稳定 inode** flock（r10 AA2/AA3） |
 //! | [`provision`] | latch 三分支 provision + 统一 dir-fsync 最终步骤（D2 第 1 条 / AC-E21） |
 //! | [`preflight`] | `DeployTransport` trait + `ensure_safe_arm` / `ensure_safe_handoff`（AC-E16） |
+//! | [`guard`] | pre-increment 六步 + 退出码映射（AC-E22） |
 //!
 //! ## feature 边界（段(9) 形态补充，登记 Spec P.4）
 //!
@@ -31,6 +32,7 @@
 //! `xlerobot-real` 拉入。
 
 pub mod counter;
+pub mod guard;
 pub mod identity;
 pub mod preflight;
 pub mod provision;
