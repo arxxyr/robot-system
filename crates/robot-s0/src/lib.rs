@@ -36,6 +36,10 @@ pub use robot_adapter_feetech as _;
 
 mod clear_estop_action;
 pub mod config_loader;
+// v0.5 候选 E 段(9)：真机部署件（guard / preflight / provision）。纯逻辑不加
+// feature 门——AC-E16/E21/E22 的 unit 判据必须在默认 gate 内跑到；真串口实现
+// 与 `xlerobot_deploy` bin 才由 `xlerobot-real` 守门（详 deploy/mod.rs doc）。
+pub mod deploy;
 pub mod estop_latch;
 #[cfg(any(test, feature = "test-freeze-hook"))]
 pub mod freeze_control;
