@@ -10,6 +10,123 @@
 
 ---
 
+## 2026-08-29 · 候选 E 段(9)：部署件段——handoff / guard / preflight / provision + systemd unit ×7（**状态：契约落地登记〔D2 第 1 条 / D12 / D13〕+ 形态偏差登记 ×1 + 实现口径补充 ×4**）
+
+### 为什么需要部署件（D13 根因，非新增语义）
+
+arm-only S0 **不驱动也不能 `EStop`** head / base 电机，旧栈退出只
+best-effort 断扭且吞失败——切换窗口内 head / wheels 的扭矩与速度状态
+**未知**。更关键的是 `auto_enable = false` **只防新 S0 自动上扭，不消除
+崩溃残留扭矩**：Feetech `connect()` 只建连接 / 翻译 id / 建缓存，**不写
+`Torque_Enable = 0`**；S0 在 Enabled 崩溃后本臂 ID 1-6 在新 S0 起来时仍
+带扭。故真机启动任一 arm-only S0**之前**必须对该 bus 全部电机 ensure-safe，
+失败即 **fail-closed 禁止切换**。
+
+### 落地形态
+
+- **`robot-s0::deploy`**（新模块，5 文件）：`types`（`DeployArm` +
+  D13 精确 ID 集：左 bus1 ID 1-8 仅断扭 / 右 bus2 ID 1-6 断扭 + 7-9 先零速
+  再断扭；写条数 左 8 / 右 12 / handoff 20）、`counter`（连败预算 0..=5 +
+  稳定 inode `.lock`）、`provision`（latch 三分支 + 统一 dir fsync）、
+  `preflight`（`DeployTransport` trait + `ensure_safe_arm` /
+  `ensure_safe_handoff`）、`guard`（pre-increment 六步 + 退出码表）。
+- **`xlerobot_deploy` bin**（`required-features = ["xlerobot-real"]`）：
+  `guard` / `preflight-arm` / `preflight-handoff` / `provision`。
+- **systemd unit ×7** + runbook `scripts/systemd/README_dimos_replace.md`。
+
+### 硬契约（本段新锁）
+
+1. **写序有序且逐条可断言**：左 `[T1..T8]`、右
+   `[T1..T6, V7,T7, V8,T8, V9,T9]`——**每轮零速严格先于同轮断扭**；单项
+   失败继续、末尾聚合；一侧串口构造失败**不阻断**另一侧完整执行。
+2. **guard 是 `ExecStart` 主进程**（unit **无 `ExecStartPre`**）：
+   `RestartPreventExitStatus=86` 只作用于主进程。
+3. **计数 = 未成功 guard 尝试数**（pre-increment）：递增早于任何 pre 步，
+   慢 preflight 中被 SIGKILL 也保留已递增值。
+4. **锁打在稳定 `.lock` 上，永不 rename / 删除**：`flock` 绑定 inode，
+   锁在会被 rename 的 `.count` 上时竞争进程能同时"持锁"（反向复现已入
+   单测）。
+5. **R10-1 config 单源**：guard 自动追加 `--config <config_path>`；`--`
+   之后自带 `--config` = 配置错误退 86。三处引用同一绝对路径，
+   `crates/robot-s0/tests/deploy_units.rs` 用**真的 `build_s0_args`**
+   跑一遍锁死（非字符串比对）。
+6. **86 是 `s0_daemon` 永久保留退出码**（AC-E3）：`exec` 后
+   `RestartPreventExitStatus=86` 同样作用于 daemon，误用即失去 watchdog
+   重启。源级回归锁断言 `s0_daemon` 退出码表 = {0, 1, 2}。
+
+### 形态偏差登记（Spec P.4 PX-30）
+
+Spec P.2.9 写"robot-s0 lib 新模块（`xlerobot-real` feature 域内）"。实施
+**只把真串口实现与 bin 放进该 feature**（`preflight::feetech` /
+`[[bin]] xlerobot_deploy`），**纯逻辑不加 feature 门**——否则
+AC-E16 / E21 / E22 的 unit 判据在默认 gate（`cargo test --workspace`，
+default = `xlerobot`，不含 `real-hw`）里根本不编译、更不会跑到。真硬件
+依赖（serialport / libudev）仍只由 `xlerobot-real` 拉入。
+
+### 实现口径补充（Spec 未定，PX-31..PX-33 + PX-35）
+
+- **前置校验归属**：`s0_bin` 非绝对 / 不存在、`--` 后重复 `--config` →
+  归 `GuardExit::ExecFailed`（Spec 已定义其为"配置级、不可自动恢复 →
+  86"同族），**不新增 enum 变体**；且两项校验放在**取锁之前**——必然
+  重现的配置错误不该消耗连败预算，86 本身已停自动重启。
+- **普通失败码定值**：preflight **70** / provision **71**（避开 86 与
+  `s0_daemon` 0/1/2、S1 3/4/5）。
+- **latch 路径单源**：guard provision 的目标**跟随 s0 args 的
+  `--latch-path`**，缺省才按 `robot_id` 回填
+  `/var/lib/robot/<id>/estop_latch`（与 `s0_daemon` 默认规则逐字一致）
+  ——保证 provision 的正是 daemon 将读的那一份。
+- **readback 覆盖面**：D13 第 3 步"每电机每安全寄存器读回"——写失败的项
+  **仍执行 readback**（写失败已单独记账，readback 只作补充证据）；
+  feetech 真实现 `connect(false)` **不做 handshake**，因为 handshake 会在
+  任一电机失联时整体失败，与"单项失败继续"冲突。
+
+### 边界（本段**不**做的事）
+
+- **不执行段(10-demo) 的任何真机动作**：本段只交付部署件、unit 与
+  runbook；上电、`SetEnabled(true)`、单臂 / 双臂动作全部留在段(10-demo)。
+- **旧栈 demo 期间 stop-only**：正式退役 / `disable` / 删除 / LCM 随仓
+  退出全部等 post-E 生产安全候选闭环（D-BI3 r3）。
+- **D15 仍 OPEN**：AC-E25 不属于 demo gate；`§6.7 #1` 的 S0-dead 硬件
+  半句仍按 D15-R (c1+) 显式 demo 例外。
+
+### round 1 回修（reviewer 复核，2026-08-30；3 P0 + 3 P1 + 1 同轮修正）
+
+| # | 缺陷 | 修法 |
+|---|---|---|
+| P0-1 | **`arm` 与 config 未绑定 → 可能静默操作错 bus**：`--arm` 决定安全写序、config 决定物理串口，两者互不校验；`--arm left --config …right_arm.toml` 打开 bus2 却跑左侧 `[T1..T8]`，干扰在跑的右臂且漏掉 wheel ID 9 | 新增 **`deploy::identity`**（D2 身份表代码侧唯一副本）：**打开串口之前**逐字校验 `[robot].id` / `[[hardware]].id` / adapter / by-id 串号 / `motor_ids` / joints / `auto_enable=false`；guard 另加 argv 侧校验（`robot_id` 与转发给 `s0_daemon` 的 `--robot-id` / `--hardware-id` 必须存在且 == D2）→ **argv 身份 == D2 == config 身份**三方闭环，两级都在取锁之前 |
+| P0-2 | **有限 `TimeoutStartSec` 中途截断 fail-closed 聚合**：`180s` / `120s` 与 D13"可证明总时限"**未采**的拍板冲突，可能在部分电机已写时杀进程 | handoff + 两条 arm S0 显式 **`TimeoutStartSec=infinity`**，`deploy_units` 锁定 |
+| P0-3 | **latch 单源在重复参数下不成立**：`s0_daemon` 对重复取**最后一个**且不认等号写法，guard 取**第一个**且接受等号 → provision A、daemon 读 B | guard 与 daemon **同 tokenize 规则**，并对 `--latch-path` / `--robot-id` / `--hardware-id` **拒绝重复 / 缺值 / 等号写法**；`latch_path()` → `resolve_latch_path() -> Result`，在取锁前先行解析 |
+| P1-4 | **生产 S1 / gateway 误用测试 watchdog 值 2s**（D12 拍板 5s，PX-16 已区分） | 四份生产 unit 改 **5s**；S0 arm 与 `*-freeze-test` 模板保持 2s，正反双锁 |
+| P1-5 | **AC-E21 dir-fsync 重试序列未被测**：原测试第一段在写文件阶段就失败，第二段只测成功侧 | 抽 **`ProvisionIo` seam**（生产实现全委托 `estop_latch`，测试实现在**真文件系统**上按次注入失败）→ 补两条序列：dir-fsync 失败后重试命中 `Untouched` **仍必须再 fsync 且 0 写**；backup 写失败后重试补齐且 primary inode 不变 |
+| P1-6 | **AC-E22 kill-guard 判据缺失**：同进程单测证明不了 SIGKILL 之后的性质 | 新集成 target `deploy_guard_kill`：父测试用 `current_exe()` 重执行本测试二进制作子进程（**不新增 bin**），在"已递增、未完成"窗口 `SIGKILL` ×5 → 计数逐次保留 + flock 每次由内核释放 + 第 6 次退 86，`s0_daemon` **全程从未 exec** |
+| 同轮 | `read_count` 的 `trim().parse()` 放行空白 / 多余换行 / 前导零 / 无换行裸值，与"含多余内容即 malformed"注释自相矛盾 | **有界读 ≤ 3 字节** + 只接受 writer 唯一输出形态 `N\n`（6..=9 归 `OutOfRange`，其余 `Malformed`） |
+
+reviewer 同轮 PX 裁决：**PX-30 / PX-31 / PX-33 / PX-34 / PX-35 ACK**；
+**PX-32 方向 ACK、实现按 P0-3 收紧**（见 Spec P.4 PX-38）。
+
+### round 2 回修（reviewer 复核，2026-08-30；2 P0 + 1 文档冲突）
+
+| # | 缺陷 | 修法 |
+|---|---|---|
+| P0-1 | **D2 身份闭环仍不完整**：串口只做 `address.contains(bus_serial)`——**伪后缀**（`…_5A7C121427-if01`）、**更长伪串号**（`…_5A7C1214270-if00`）都能过；且**完全没校验 `calibration_paths`**。后者住 `extras`，`s0_daemon` 的读法把「缺失 / 非数组 / 元素非字符串」一律静默折叠成空数组，而空数组在 feetech factory 里等价于「无标定照常启动」——整条链零报错 | `ArmIdentity` 增 `address`（**完整 by-id 路径逐字相等**）与 `calibration_file`；`calibration_paths` 必须**恰好一项、绝对路径、文件名 == 本臂标定文件**（D2 arm-only 明确不需要 head/base.json）。新增反向：伪 by-id 路径 4 档 + `calibration_paths` 7 档 |
+| P0-2 | **「clippy 全绿」无法复现**：判据用 `grep -cE '^(error\|warning)'`，而 `cargo clippy` 对**已 fresh 的编译单元不重放诊断**——缓存命中输出为空、计数恒 0。实测 rustc 1.100.0-nightly (2026-08-29) 下 workspace 有 **21 处新 lint**（`assert_is_empty` ×20 + `needless_range_loop` ×1） | 21 处机械 fix-forward（既有路径 17 处走**独立 🎨 commit**，段(9) 自有 4 处折回本段）；**永久 gate 口径**：clippy 判定一律**以退出码为准** + 强制重新检查 + `--keep-going` 一次汇总全部 crate |
+| P1-3 | **PX-32 与 PX-38 给出相反的有效契约**：PX-32 仍称接受 `--latch-path=<p>`、不新增禁止项，并引用已不存在的 `GuardConfig::latch_path` | PX-32 标注 **已被 PX-38 取代**，原文划删除线并写明不成立的理由；当前有效契约与 API（`resolve_latch_path() -> Result`）统一指向 PX-38 |
+
+reviewer 同轮确认闭合：校验位于取锁前、`TimeoutStartSec=infinity`、生产
+watchdog 5 s、真文件系统 fsync 重试、SIGKILL 计数保留、canonical counter。
+
+### 测试增量
+
+`robot-s0` lib **223 → 277**（+54：types 3 / counter 8 / provision 8 /
+preflight 10 / identity 7 / guard 18）+ 新集成 target `deploy_units`
+**15** 与 `deploy_guard_kill` **2**（后者含一个父进程模式空转的子进程入口
+case）。`systemd-analyze verify` 七份 unit 全部无语法告警。
+
+审阅人：待 reviewer 段(9) round 3 复核（round 1 的 3 P0 + 3 P1 + 同轮修正、
+round 2 的 2 P0 + 1 文档冲突已全部回修）；登记人：Claude。
+
+---
+
 ## 2026-08-29 · 候选 E 段(7)：双臂协议 + workflow cross-process e2e（**状态：契约落地登记〔D4/D5/D6/D9〕+ 既有缺陷发现与修复登记〔S0 采样时刻〕+ 新硬契约 ×2**）
 
 ### 双臂成对提交协议落地（Spec D4/D5 + AC-E14）
@@ -119,7 +236,7 @@
   **0 新 violation**。hook 产物跑完后 `cargo build --release --workspace`
   恢复。
 
-审阅人：待 reviewer 段(7) 复核（round 1-4 阻断均已闭合并实质 ACK）；
+审阅人：reviewer（段(7) 复核通过，2026-08-29；基线锁定 1381 PASS / 0 FAIL）；
 登记人：Claude。
 
 ---

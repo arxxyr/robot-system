@@ -2,6 +2,11 @@
 
 `docs/00_design.md` §6.4 + §6.7 不变量 #2 "systemd 是最外层看门狗" 的实施。
 
+> **v0.5 候选 E 的 arm-only 双栈部署（unit ×7 + handoff transaction +
+> guard 启动链）在 [`README_dimos_replace.md`](README_dimos_replace.md)。**
+> 本文件继续覆盖旧 full-bus unit（`xlerobot-s0-bus{1,2}.service`）与各
+> smoke 模板——旧 unit **保留不删不改**作回滚路径。
+
 ## 文件
 
 | Unit | 用途 | bus | docs |
