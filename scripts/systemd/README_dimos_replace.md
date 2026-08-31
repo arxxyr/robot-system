@@ -272,6 +272,12 @@ sudo systemctl reset-failed xlerobot-s0-left-arm.service
 
 **Enabled 期间任一 S0 进程死亡 / 重启 → 立即人工切断总电源并中止本轮。**
 
+**同款人工协议扩到整条链（D17 已登记的 client 死亡风险 + 通信韧性评估
+§6.1）**：Enabled 期间 `supervised_demo`（验收 bin）/ gateway / S1 任一
+**死亡或挂起** → 同样立即人工切断总电源并中止本轮——协议侧的 cancel /
+双 EStop 依赖 client 与 gateway 存活，client 死了没有任何软件路径会去收尾；
+跨臂也没有 daemon 级联锁（一臂 Fault 不会自动断另一臂的扭）。
+
 **不得只依赖 EStop 弱 Ack**——S0-dead 时 Ack = `published_at_ns`，**不证明
 事件已被消费**。
 
@@ -292,3 +298,113 @@ sudo systemctl reset-failed xlerobot-s0-left-arm.service
 | `crates/robot-s0/src/deploy/` | identity / guard / preflight / provision / counter 实现 |
 | `crates/robot-s0/tests/deploy_units.rs` | unit 指令文本 + 三处 config 路径一致锁 |
 | `crates/robot-s0/tests/deploy_guard_kill.rs` | pre-increment 崩溃注入（真 SIGKILL） |
+
+---
+
+## 9. 受监督 demo（段(10-demo)；权威步序 = Spec P.2.10）
+
+> **本节只是命令面。执行门槛 = AC-E12 安全边界五条 + 操作者在场 + 明确
+> 放行**；`supervised_demo` 的上扭 phase 都要求 `--ack-safety-checklist`，
+> 不带即打印五条并退 2、绝不 `SetEnabled`。
+
+```bash
+# 0) demo 驱动件（PX-45；required-features 未满足时 cargo 静默跳过该 bin）
+cargo build --release -p robot-tests --features supervised-demo --bin supervised_demo
+
+# 1) 证据基线时刻（5c 取证窗起点）——在起臂之前记录一次：
+DEMO_T0=$(date -Is)
+
+#    起目标臂（handoff transaction 自动链：全 17 电机 ensure-safe → guard →
+#    s0 → s1 → gateway）。⚠ 物理效应：旧栈被 Conflicts 停掉 + 全部电机断扭
+#    ——若此刻有臂被扭矩撑着，会失力下垂。操作者必须在场。
+sudo systemctl start xlerobot-gateway-left.service
+sudo systemctl start xlerobot-gateway-right.service
+
+# 2) 读状态（只读；不上扭）。附 robotctl 旁路证据（D10）。
+ROBOT_TOKEN=operator-fake-token-001 \
+  ./target/release/supervised_demo --phase read-state
+
+# 3) 首启 latch 是 latched（guard provision 写 1\n，D2 状态链）：
+#    ClearEStop（maintainer+）后仍 Safe，等 SetEnabled。左右各一次。
+ROBOT_TOKEN=maintainer-fake-token-001 ./target/release/robotctl clear-estop \
+  --confirmation CONFIRM_CLEAR_ESTOP --gateway-addr 127.0.0.1:50051 \
+  --audit-reason "demo first-boot latch clear"
+ROBOT_TOKEN=maintainer-fake-token-001 ./target/release/robotctl clear-estop \
+  --confirmation CONFIRM_CLEAR_ESTOP --gateway-addr 127.0.0.1:50052 \
+  --audit-reason "demo first-boot latch clear"
+
+# 4) 安全边界五条逐条确认并记录（证据 docs）→ 单臂 → 双臂 → 双夹爪。
+#    每个 phase 独立调用 = operator 显式；phase 内 SetEnabled(true)，
+#    phase 末 SetEnabled(false)。
+ROBOT_TOKEN=operator-fake-token-001 ./target/release/supervised_demo \
+  --phase single-arm --side left  --ack-safety-checklist
+ROBOT_TOKEN=operator-fake-token-001 ./target/release/supervised_demo \
+  --phase single-arm --side right --ack-safety-checklist
+ROBOT_TOKEN=operator-fake-token-001 ./target/release/supervised_demo \
+  --phase dual-arm  --ack-safety-checklist
+ROBOT_TOKEN=operator-fake-token-001 ./target/release/supervised_demo \
+  --phase grippers  --ack-safety-checklist
+
+# 5) 资源基线 + 现状证据（只采不执法；P.2.10 + 通信韧性评估 §6.1）：demo 窗口内
+./target/release/iceoryx2_rt_baseline --duration 10m --hz 50   # synthetic transport latency
+for u in xlerobot-s0-left-arm xlerobot-s1-left xlerobot-gateway-left \
+         xlerobot-s0-right-arm xlerobot-s1-right xlerobot-gateway-right; do
+  systemctl show -p MainPID $u.service; done                    # (comm,pid) join 映射
+
+# 5b) 评估 §6.1 记录项（不改生产代码，只留证据）：
+#     USB 拓扑 / 控制器归属（"不同 by-id ≠ 不同 root hub"）——从**权威
+#     by-id 串号**解析，任何一步失败即中止（不吞错误）：
+set -e
+for ser in 5A7C121427 5A7C122340; do
+  link=/dev/serial/by-id/usb-1a86_USB_Single_Serial_${ser}-if00
+  dev=$(readlink -f "$link")
+  syspath=$(udevadm info -q path -n "$dev")
+  echo "== serial=$ser dev=$dev"
+  echo "   syspath=$syspath"          # usbN 段 = root hub / 控制器归属
+done
+lsusb -t
+#     控制器级 IRQ：cdc_acm 是 USB 类驱动，无独立 IRQ 行——有意义的记录是
+#     xHCI 控制器的 IRQ 分布（两串口若同 xHCI 即同 IRQ 故障域）。
+grep -iE 'xhci' /proc/interrupts
+set +e
+#     每 S0 的调度落点（左右各一次，保存对照）
+for side in left right; do
+  systemctl show xlerobot-s0-$side-arm.service \
+    -p MainPID -p AllowedCPUs -p CPUAffinity -p CPUWeight \
+    -p MemoryCurrent -p MemoryMin -p MemoryMax -p OOMScoreAdjust
+  ps -L -p "$(systemctl show -p MainPID --value xlerobot-s0-$side-arm.service)" \
+    -o pid,tid,psr,cls,rtprio,pri,ni,comm
+done
+
+# 5c) CPU/RSS 采样归档（Spec P.2.10：warmup 丢首帧后 ≥ 30 帧/进程）。
+#     数据源事实：health 帧只由**两个 S0** 的 monitor 线程产生（robot-health
+#     挂在 s0_daemon；S1/gateway 自身不发），日志正文是 "system health"，
+#     interested 字段形如 `<pid>:<comm>@<cpu>%[<rss>M]`——每个 S0 的 monitor
+#     按 comm 全局匹配，六个进程的 (pid,comm) 都出现在任一 S0 的 journal 里。
+#     **权威采样源固定为左臂 S0 单条 journal**：两条合并时每个 monitor 各有
+#     独立的 CPU 差分首帧，"减一帧"会计数膨胀（round 3 修正）。
+#     [monitor] interval_secs = 1 → 尾窗 ≥ 40 s（丢首帧后仍 ≥ 30 帧）。
+: "${DEMO_T0:?DEMO_T0 must be set before demo (§9 step 1)}"  # 守门：步 1 已记录，此处**不再赋值**
+sleep 40
+journalctl -b -u xlerobot-s0-left-arm.service \
+  --since "$DEMO_T0" --no-pager -o cat | grep -F "system health" \
+  > /tmp/demo_health.log
+fail=0
+for u in xlerobot-s0-left-arm xlerobot-s1-left xlerobot-gateway-left \
+         xlerobot-s0-right-arm xlerobot-s1-right xlerobot-gateway-right; do
+  pid=$(systemctl show -p MainPID --value $u.service)
+  [ -n "$pid" ] && [ "$pid" != 0 ] || { echo "FAIL: $u no MainPID"; fail=1; continue; }
+  # 按**当前 MainPID** 逐进程计帧（interested= 里 `<pid>:` 前界 = '=' 或 ','）
+  frames=$(grep -cE "interested=([^ ]*,)?${pid}:" /tmp/demo_health.log)
+  usable=$((frames > 0 ? frames - 1 : 0))   # 丢首帧（单一 monitor 源 → 恰一帧 CPU 差分无效）
+  echo "$u pid=$pid frames=$frames usable=$usable"
+  [ "$usable" -ge 30 ] || { echo "FAIL: $u usable=$usable < 30 —— 延长尾窗重跑本节"; fail=1; }
+done
+test "$fail" -eq 0   # ← 本节退出码（非零 = 取证不合格；归档前必须重跑，round 3 修正）
+```
+
+- 判据数值（AC-E12 ③，bin 内双层强制）：|target−anchor| ≤ 0.087 rad、
+  斜率 ≤ 0.14 rad/s；缺省探针 = `*wrist_roll*` ±0.05 rad、出→回各 0.5 s。
+- **应急协议**（§7 同文）：Enabled 期间 **S0 / S1 / gateway /
+  `supervised_demo` 任一死亡或挂起** → 立即人工切断总电源并中止本轮。
+- demo 结束宣称唯一口径 = **"受监督功能 demo 跑通"**。

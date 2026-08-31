@@ -122,8 +122,9 @@ preflight 10 / identity 7 / guard 18）+ 新集成 target `deploy_units`
 **15** 与 `deploy_guard_kill` **2**（后者含一个父进程模式空转的子进程入口
 case）。`systemd-analyze verify` 七份 unit 全部无语法告警。
 
-审阅人：待 reviewer 段(9) round 3 复核（round 1 的 3 P0 + 3 P1 + 同轮修正、
-round 2 的 2 P0 + 1 文档冲突已全部回修）；登记人：Claude。
+审阅人：reviewer（段(9) round 3 复核通过，2026-08-31；D2 闭合 + PX-32 废止
+确认 + 强制重检三面 clippy exit 0 + 基线锁定 1452 PASS / 0 FAIL）；
+登记人：Claude。
 
 ---
 
