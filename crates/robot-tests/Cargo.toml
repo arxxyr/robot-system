@@ -141,6 +141,14 @@ name = "sd_watchdog_smoke"
 path = "src/bin/sd_watchdog_smoke.rs"
 required-features = ["sd-watchdog-smoke"]
 
+# v0.5 候选 E 段(10-demo)：真机受监督 demo 验收 bin（Spec D10 拍板 (c)）。
+# phase 化：read-state → single-arm → dual-arm → grippers → 汇总；上扭
+# phase 硬性要求 --ack-safety-checklist（AC-E12 安全边界五条）。
+[[bin]]
+name = "supervised_demo"
+path = "src/bin/supervised_demo.rs"
+required-features = ["supervised-demo"]
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -333,6 +341,14 @@ sd-watchdog-smoke = [
     "dep:robot-rpc",
     "robot-rpc/test-freeze-hook",
 ]
+# v0.5 候选 E 段(10-demo) supervised_demo 入口 feature（D10 (c)）。
+# - 生产 release 不带本 feature（bin 不参编译）；真机跑法见
+#   scripts/systemd/README_dimos_replace.md 与 Spec P.2.10。
+# - `robot-rpc/client` 生成 tonic RobotControlClient（GetState / SetEnabled /
+#   InvokeTask / EStop 全走 gateway loopback）；协议语义单源消费
+#   `client::dual_arm_workflow`，端点适配为本 bin 内纯 I/O 第二份（PX-12
+#   同款并存先例）。
+supervised-demo = ["dep:tokio", "dep:tonic", "dep:robot-rpc", "robot-rpc/client"]
 real-hw = ["dep:robot-adapter-feetech", "robot-adapter-feetech/real-hw"]
 
 [lints]
