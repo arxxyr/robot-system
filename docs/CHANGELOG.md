@@ -10,6 +10,99 @@
 
 ---
 
+## 2026-09-01 · 候选 E 段(10-demo) 真机执行补录 + F1–F3 / F7 / F8 Reverse Sync 拍板（**状态：执行记录 ×1 + 拍板 ×3；本轮不实施代码、不改 00_design.md**）
+
+### 段(10-demo) 真机执行补录（2026-09-01，操作者全程在场逐步放行）
+
+- **AC-E12 三步真机全过**：handoff 17 电机 ensure-safe → read-state →
+  双侧 clear-estop（AC-E21 状态链实证）→ 单臂左/右（+0.0399 / +0.0430
+  rad 运动证据）→ 双臂（ack_skew 10.75 µs）→ 双夹爪。收口宣称唯一口径
+  = **"机器人控制执行面受监督功能 demo 跑通"**（D15 保持 OPEN）。
+- **4L-① FAIL（fail-closed 正确，零运动）**：SetEnabled → AdapterError；
+  **候选路径**（非唯一）= `ipc_tick.rs` `PENDING_TOTAL_TIMEOUT` 1 s 总
+  超时分支；归因开放（相机 hub 竞争 vs 首次上扭瞬态，后者已有两反例）。
+  停相机重测通过，此后全部上扭 phase 零超时。
+- 发现登记 F1–F8：F1–F3/F7/F8 本条拍板（下述）；F4/F5 已随 runbook
+  修正 closed；F6（wrist_roll ~0.006 rad/轮单向残余，容差内）观察项。
+- 同日 RT 三层加固与 §4.6 偏离见上一条；资源基线（六进程 CPU 峰
+  ≤13.4% / RSS ≤12 MiB）与全部证据 = Orin `~/deploy_p10/` +
+  `docs/handoffs/v0.5_demo_run_2026-09-01_summary.md`（权威执行记录）。
+
+### Reverse Sync ① F1–F3 合并 → post-E "通信故障硬化"候选输入
+
+**F1 预算倒挂核算**（拍板：CodeMap 必须从本核算出发，**禁止直接拍一个
+经验 timeout**）：
+
+| 项 | 值 | 出处 |
+|---|---|---|
+| 单次底层等待预算 `T_wait` | 1000 ms | feetech `registers.rs:43` `DEFAULT_TIMEOUT_MS`（serialport open 直传；底层读**与写**的每次操作共用） |
+| 外层 ack 预算 | 1 s | `ipc_tick.rs:86` `PENDING_TOTAL_TIMEOUT` |
+| 高层 `read_exact` 调用数（N=6 臂） | 1 + 3 + 6×3 = **22** | sync_read Present ×1 + Goal readback ×`SYNC_GOAL_MAX_ATTEMPTS`(3) + Torque ACK ×N×`TORQUE_ENABLE_MAX_ATTEMPTS`(3)；`bus.write` 逐包等 6 字节 ACK |
+| 固定 sleep | 3×20 + 50 + 6×2×150 = **1910 ms** | `SYNC_GOAL_READBACK_WAIT` / `ENABLE_SYNC_SETTLE` / `TORQUE_ENABLE_RETRY_DELAY` |
+| **名义窗口合计（非上界）** | `T(N) = T_wait×(1+A_goal+N×A_tq) + A_goal×20ms + 50ms + N×(A_tq−1)×150ms` → N=6 时 **= 23.91 s（名义值）** | 22 次高层 `read_exact` **各按一次底层等待名义计** + 固定 sleep；重试打满 |
+| 排队前置 | 两次高层 `read_exact`；**名义计 2 s，无已证明硬上界** | action 在 serial 线程排队于当前 tick 的 read_state 之后（Present_Position + Present_Velocity） |
+
+**核算性质（P0 修正，codex Reverse Sync round 2/3）**：上表是**名义窗口
+核算 / 倒挂见证**，**不是可证明的最坏时长**——`read_exact` 与
+`write_all` 都可能包含**多次底层带超时操作**（`T_wait` 只约束每次底层
+等待；字节滴流下单次高层调用可超过 1 s 而不触发超时），且**没有覆盖
+整包或事务的统一 deadline**。`write_all` **未纳入 23.91 s 核算**（其
+底层 write 同样按 per-operation timeout 等待可写，同样无事务级
+deadline；round 3 勘正原"write_all 无超时"错误表述，transport.rs
+契约注释同步修正）→ **当前不存在可证明的事务级硬上界**，这本身就是
+CodeMap 必须解决的输入之一。
+
+**结构性结论**（不受上述修正影响，反而更强）：倒挂不是"重试尾巴"
+问题——**单次合法慢调用（或排队前置的两次高层 `read_exact`）即可击穿
+1 s 外层预算**，此时序列仍在合法执行中；且由于无事务级上界，外层 1 s
+预算在任何意义上都不成立。
+
+**F3 三元契约（CodeMap 必答，不预钉答案）**：① Ack 超时的语义（超时 ≠
+未执行）；② 副作用继续（enable 序列在 serial 线程不可中断地跑完）；
+③ 最终扭矩态（硬件可能已上扭而状态机在 `Fault`——由谁、以何种动作
+收敛：EStop / disable / readback 校验）。三者的契约必须一次拍清。
+
+**F2**：`PENDING_TOTAL_TIMEOUT` 分支 `commit_fault` 零日志 → 补结构化
+ERROR（elapsed / seq / 请求类型），**与 F1 同候选落地**。
+
+**不预钉**："仅放大 1 s timeout"、"必须可中断"均不预设——放大预算 /
+分步 ack / 可中断 enable 三路留 post-E 通信故障硬化 **CodeMap 比较**。
+
+### Reverse Sync ② F7 baseline 判据
+
+- **拍板：现有 `iceoryx2_rt_baseline` p99 ≤ 100 µs / p999 ≤ 500 µs
+  阈值在发布频率 ≥ 50 Hz 下无效，即日起不再作为调度 gate**——变频判别
+  （hz=10/50/100）已证尾部为速率相关错拍伪影（三种调度配置同形、max ≈
+  恰一个发布周期、hz=10 时与样本缺口同时消失）。
+- 原始数据全部保留（`~/deploy_p10/evidence_latency_*.log` ×3 + 判别
+  实验；summary 附录 A/A.1）。
+- **新判据须等 baseline harness 错拍机制定位后另拍**；本轮**不私设
+  新阈值**。→ 独立"baseline 判据小件"。
+
+### Reverse Sync ③ F8 iceoryx2 运行用户运维契约
+
+- **拍定：同一部署内所有 iceoryx2 进程必须使用同一个非 root 运行用户**
+  （本机 = `loosqk`）；**sudo/root 运行 baseline（及任何 iceoryx2 程序）
+  明确禁止**。
+- 依据（2026-09-01 实际事故）：root 跑 baseline 创建 root 属主
+  `/tmp/iceoryx2/`（750）与 `/dev/shm/iox2_*_global_mgmt`（700）→ 此后
+  非 root 结点创建裸报 `InternalError`（trace 级无细节）→ 新栈 s0 每侧
+  连崩 5 次。
+- 污染处置步骤（停栈 → 清理 → 重启）写入 runbook §10。
+- **是否增加程序级 root fail-fast = 后续独立小件**，不在本轮实现。
+
+### 出口与后续硬序
+
+- F1–F3 → **post-E 通信故障硬化 CodeMap**（与评估文档 §6.2 P0-2 合并
+  输入）；F7 → **独立 baseline 判据小件**；F8 → **运维契约先闭合**，
+  代码防线另立。
+- 后续硬序：**① 通信故障硬化 → ② D15 退役决策 → ③ robot-viz Rerun 桥
+  → ④ F7 baseline 判据小件**；在 F1/F3 副作用语义拍清前**不开通信
+  实现**。
+- 本条已按 Reverse Sync round 2/3 修正折入，随段(10) 统一 docs 收口 commit 提交。
+
+---
+
 ## 2026-09-01 · SerialRT 线程调度类 opt-in FIFO（XLeRobot 部署）——§4.6 偏离登记 + D-BI3 r5 旧栈 disable 拍板（**状态：偏离 ×1 + 决策修订 ×1 + 认知修正 ×1**）
 
 ### 偏离 1：SerialRT 线程调度类 opt-in FIFO（不改 00_design.md）

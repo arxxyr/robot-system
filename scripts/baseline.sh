@@ -27,7 +27,11 @@ MODE="${1:-local}"
 DURATION="${2:-}"
 
 # 宽阈值：CI 同款，仅作 harness 不退化 + sample_ratio 把关。
-# 改严要走 docs/CHANGELOG.md（Orin 真门槛是 100 µs / 500 µs）。
+# 改严要走 docs/CHANGELOG.md。
+# F7（Reverse Sync 拍板 2026-09-01，PX-59）：bin 内置 100 µs / 500 µs
+# 阈值在发布频率 ≥50 Hz 下已宣告无效（速率错拍伪影，非调度延迟）——
+# 其默认 FAIL/exit 1 在 F7 判据小件完成前仅是 legacy 诊断输出，
+# 不作调度 gate；"Orin 真门槛 100/500 µs" 的旧说法作废。
 P99_US="${BASELINE_P99_US:-50000}"   # 50 ms
 P999_US="${BASELINE_P999_US:-100000}" # 100 ms
 
@@ -40,7 +44,7 @@ usage() {
 环境变量：
   BASELINE_P99_US    p99 阈值（µs），默认 50000
   BASELINE_P999_US   p999 阈值（µs），默认 100000
-  ORIN_HOST          Orin ssh 目标，默认 loosqk@10.0.1.41
+  ORIN_HOST          Orin ssh 目标，默认 loosqk@10.0.1.40
   ORIN_REPO          Orin 上仓库路径，默认 ~/repo/robot/robot-system
 EOF
 }
@@ -60,7 +64,7 @@ case "$MODE" in
         ;;
     orin)
         DURATION="${DURATION:-60s}"
-        ORIN_HOST="${ORIN_HOST:-loosqk@10.0.1.41}"
+        ORIN_HOST="${ORIN_HOST:-loosqk@10.0.1.40}"
         ORIN_REPO="${ORIN_REPO:-~/repo/robot/robot-system}"
         echo "[baseline] ssh $ORIN_HOST → cargo build + run duration=$DURATION cpu=4 strict-rt"
         # shellcheck disable=SC2029  # 变量在远端 shell 展开是预期行为

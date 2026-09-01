@@ -65,8 +65,14 @@
 | 512 B message p99 (same host) | baseline | — | — | — | 🟡 Step 5 已具备测试入口，数值待 bench |
 | 3 MiB blob p99 | baseline | — | — | — | ⏳ Step 6 加 blob 类 topic 后 |
 | 1 h soak command topic drop | `== 0` (hard) | — | — | — | ⏳ Step 9 soak harness 落地 |
-| **iceoryx2 publish→receive p99**（RT 内核 + `SCHED_FIFO 70` + CPU pin + mlockall，50 Hz × 10 min）| **< 100 µs** (hard) | — | — | — | ⏳ **Step 6 必产**；不过 → block Step 7 |
-| **iceoryx2 publish→receive p999**（同上）| **< 500 µs** (hard) | — | — | — | ⏳ **Step 6 必产**；不过 → block Step 7 |
+| **iceoryx2 publish→receive p99**（RT 内核 + `SCHED_FIFO 70` + CPU pin + mlockall，50 Hz × 10 min）| ~~< 100 µs (hard)~~ | — | — | — | ❌ **hz≥50 判据无效（F7 拍板 2026-09-01，PX-59）**：该场景实测尾部为速率错拍伪影非调度延迟，不 block、不作 gate；新判据待 F7 判据小件 |
+| **iceoryx2 publish→receive p999**（同上）| ~~< 500 µs (hard)~~ | — | — | — | ❌ 同上（F7 / PX-59） |
+
+**F7 拍板（2026-09-01，PX-59）**：上两行阈值在发布频率 ≥ 50 Hz 下测得
+的是 harness 速率错拍伪影（变频判别实证，见 demo summary 附录 A.1），
+**不再作为调度 gate**。`iceoryx2_rt_baseline` bin 仍按内置阈值默认输出
+FAIL / exit 1——在 F7 判据小件完成前**该输出仅是 legacy 诊断**，不得
+用于 ≥50 Hz 的调度判定；原始数据保留，新判据等错拍机制定位后另拍。
 
 **iceoryx2 RT baseline 指标出处**：`docs/CHANGELOG.md` 2026-04-24 "§4.7 policy_host 调度等价 inline" 条目第 2 项决定。测试需在 Linux RT 内核（5.10 RT / 6.1 RT）+ `chrt -f 70` + `taskset` CPU pin + publisher / subscriber 两端均 `mlockall` 下完成，非 RT 或 macOS 测的数据不作 baseline。
 
@@ -382,6 +388,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 | 2026-04-22 | §10.2.3 CI 1–6 步接入 `.github/workflows/ci.yml`；`deny.toml` 落地（allow 0BSD；workspace path wildcard + private crate 豁免；iceoryx2 / trybuild winnow dup 走 skip-tree）；`scripts/collect_env_id.sh` 兼容 macOS + Linux。TODO 1/3/4 划掉，只剩 2（assert-no-alloc） | Claude Code |
 | 2026-04-24 | §10.2.1 加 3 个 task 27c harness（`feetech_bench` criterion / `feetech::integration_smoke` / `scripts/feetech_flamegraph.sh`）+ 附录加 feetech bench baseline 实测数值。结论：协议层零瓶颈，task 28 真机延迟瓶颈在 USB-RS485 wire RTT。 | Claude Code |
 | 2026-09-01 | 附录加 SerialRT FIFO opt-in 验证与回滚口径（§4.6 偏离 PX-56/57 的验证面；默认普通优先级不变） | Claude Code (codex 复审要求) / loosqk (拍板) |
+| 2026-09-01 | F7 拍板同步：p99/p999 两行 hard gate 在 hz≥50 宣告无效（PX-59）；bin 默认 FAIL 降级为 legacy 诊断（判据小件前） | Claude Code (Reverse Sync) / loosqk (拍板) |
 
 ---
 

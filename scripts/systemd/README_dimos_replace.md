@@ -255,13 +255,18 @@ sudo systemctl reset-failed xlerobot-s0-left-arm.service
 
 ---
 
-## 6. 旧栈处置（demo 期间：**stop-only**）
+## 6. 旧栈处置（D-BI3 r5 现行口径，2026-09-01）
 
 - 允许：为释放硬件而 `systemctl stop`（handoff 的 `Conflicts=` 也会自动做
   这件事）。
-- **禁止**：`disable` / 删除 unit / 移除 LCM 等运行时。
-- 正式退役、`disable`、删除、LCM 随仓退出——**全部等 post-E 生产安全候选
-  闭环**（决策单 D-BI3 r3）。
+- **r5（2026-09-01，用户拍板）：coordinator / web 已 `systemctl disable`**
+  （仅关自启，unit 文件保留；触发事实 = isolcpus 重启后旧栈 enabled 自启
+  占双串口）。回滚 = 显式 `systemctl enable`（如需自启）+ `start`。
+- **仍然禁止**：删除 unit / `mask` / 移除 LCM 等运行时——即任何破坏
+  回滚路径的动作。
+- 正式退役、删除、LCM 随仓退出——**全部等 post-E 生产安全候选闭环**
+  （决策单 D-BI3 r3 时点不变；r5 只解除 disable 禁令，见 CHANGELOG
+  2026-09-01 + 决策单 r5 修订块）。
 
 旧栈 unit：`xlerobot-coordinator.service` / `xlerobot-web.service` /
 `xlerobot-s0-bus1.service` / `xlerobot-s0-bus2.service`。
@@ -386,16 +391,20 @@ done
 #     [monitor] interval_secs = 1 → 尾窗 ≥ 40 s（丢首帧后仍 ≥ 30 帧）。
 : "${DEMO_T0:?DEMO_T0 must be set before demo (§9 step 1)}"  # 守门：步 1 已记录，此处**不再赋值**
 sleep 40
+# F4（真机实测）：旧 journalctl 不认带时区的 ISO —— 用 date -d 转本地格式
+T0_J=$(date -d "$DEMO_T0" "+%Y-%m-%d %H:%M:%S")
 journalctl -b -u xlerobot-s0-left-arm.service \
-  --since "$DEMO_T0" --no-pager -o cat | grep -F "system health" \
+  --since "$T0_J" --no-pager -o cat | grep -F "system health" \
   > /tmp/demo_health.log
 fail=0
 for u in xlerobot-s0-left-arm xlerobot-s1-left xlerobot-gateway-left \
          xlerobot-s0-right-arm xlerobot-s1-right xlerobot-gateway-right; do
   pid=$(systemctl show -p MainPID --value $u.service)
   [ -n "$pid" ] && [ "$pid" != 0 ] || { echo "FAIL: $u no MainPID"; fail=1; continue; }
-  # 按**当前 MainPID** 逐进程计帧（interested= 里 `<pid>:` 前界 = '=' 或 ','）
-  frames=$(grep -cE "interested=([^ ]*,)?${pid}:" /tmp/demo_health.log)
+  # 按**当前 MainPID** 逐进程计帧。F5（真机实测）：生产 unit 用
+  # ROBOT_LOG_FORMAT=json，interested 是 JSON 字段 "interested":"<pid>:…"
+  # ——不是控制台的 interested=<pid>:；前界 = 引号或 ','（防 12340 误配 1234）
+  frames=$(grep -cE "\"interested\":\"([^\"]*,)?${pid}:" /tmp/demo_health.log)
   usable=$((frames > 0 ? frames - 1 : 0))   # 丢首帧（单一 monitor 源 → 恰一帧 CPU 差分无效）
   echo "$u pid=$pid frames=$frames usable=$usable"
   [ "$usable" -ge 30 ] || { echo "FAIL: $u usable=$usable < 30 —— 延长尾窗重跑本节"; fail=1; }
@@ -408,3 +417,88 @@ test "$fail" -eq 0   # ← 本节退出码（非零 = 取证不合格；归档�
 - **应急协议**（§7 同文）：Enabled 期间 **S0 / S1 / gateway /
   `supervised_demo` 任一死亡或挂起** → 立即人工切断总电源并中止本轮。
 - demo 结束宣称唯一口径 = **"受监督功能 demo 跑通"**。
+
+
+---
+
+## 10. iceoryx2 运行用户契约与 root 污染处置（F8，PX-60）
+
+**契约（Reverse Sync 拍板 2026-09-01）**：
+
+- 同一部署内**所有 iceoryx2 进程用同一个非 root 用户**（本机 = `loosqk`；
+  七件 unit 的 `User=` 已如此）。
+- **禁止 sudo/root 运行任何 iceoryx2 程序**——含 `iceoryx2_rt_baseline`
+  等测量工具。RT 权限走 unit 的 `LimitRTPRIO`（服务）或给用户配
+  rtprio rlimit（手跑工具），不走 sudo。
+- 程序级 root fail-fast（启动时检出 euid=0 即拒）为后续独立小件，
+  未实现前本节流程是唯一防线。
+
+**污染症状**：非 root 进程结点创建裸报 `InternalError`
+（`IOX2_LOG_LEVEL=trace` 也无路径细节）；s0 表现为
+`s0_ipc_thread panicked ... InternalError` 连崩（guard 连败预算不受
+影响——崩点在 exec 之后，成功 guard 已把计数写回 0）。
+
+**处置步骤**（root 属主残留清理；实证 2026-09-01 15:36–15:40 事故）：
+
+```bash
+# 0) 预检：工具与权限缺失立即退出（fail-closed 的前提，错误不吞 stderr）
+command -v fuser >/dev/null || { echo "ABORT: fuser 不存在（先装 psmisc）"; exit 1; }
+sudo -n true || { echo "ABORT: sudo 不可用（需免密或先 sudo -v）"; exit 1; }
+
+# 1) 停栈（六件；handoff 是 oneshot 无常驻）
+sudo systemctl stop xlerobot-gateway-{left,right} xlerobot-s1-{left,right} \
+  xlerobot-s0-{left,right}-arm
+
+# 2) 三态存活判定——只有"已加载且 ActiveState ∈ {inactive, failed}"才算
+#    通过；unknown / activating / deactivating / 查询失败一律退出。
+#    注意：三个 daemon 的进程名都不含 "iceoryx2"，`pgrep iceoryx2` 证明
+#    不了无人持有共享资源，必须按已知持有者逐一检查。
+for u in xlerobot-s0-left-arm xlerobot-s0-right-arm xlerobot-s1-left \
+         xlerobot-s1-right xlerobot-gateway-left xlerobot-gateway-right; do
+  load="$(systemctl show -p LoadState --value "$u.service")" \
+    || { echo "ABORT: $u LoadState 查询失败"; exit 1; }
+  [ "$load" = "loaded" ] || { echo "ABORT: $u 未加载（LoadState=$load）"; exit 1; }
+  state="$(systemctl show -p ActiveState --value "$u.service")" \
+    || { echo "ABORT: $u ActiveState 查询失败"; exit 1; }
+  case "$state" in
+    inactive|failed) ;;
+    *) echo "ABORT: $u ActiveState=$state（非 inactive/failed）"; exit 1 ;;
+  esac
+done
+pgrep -a -f 's0_daemon|s1_daemon|robot_rpc_gateway|iceoryx2_rt_baseline|supervised_demo'
+case $? in
+  0) echo "ABORT: 疑似 iceoryx2 持有者进程仍存活（见上方列表）"; exit 1 ;;
+  1) ;;   # 无匹配 = 通过
+  *) echo "ABORT: pgrep 自身出错（退出码 $?）"; exit 1 ;;
+esac
+# shm 句柄三分支（不吞 stderr；命令放 if 条件里兼容 set -e）：
+#   rc=0            → 有持有者，退出；
+#   rc=1 且无输出    → 唯一放行分支：确认无持有者；
+#   其余一切（rc=2/126/137…、或 rc=1 带输出）→ 检查失败，退出。
+for f in /dev/shm/iox2_*; do
+  [ -e "$f" ] || continue
+  if out="$(sudo -n fuser -v "$f" 2>&1)"; then
+    echo "ABORT: $f 仍被进程持有："; echo "$out"; exit 1
+  else
+    rc=$?
+    if [ "$rc" -eq 1 ] && [ -z "$out" ]; then
+      :   # 确认无持有者，继续
+    else
+      echo "ABORT: fuser 检查 $f 失败（rc=$rc）："; echo "$out"; exit 1
+    fi
+  fi
+done
+
+# 3) 确认无持有者后，单独执行清理
+sudo rm -rf /tmp/iceoryx2 /dev/shm/iox2_*
+
+# 4) 复位可能触发的 start-limit 并重启
+sudo systemctl reset-failed 'xlerobot-*'
+sudo systemctl start xlerobot-gateway-left xlerobot-gateway-right
+
+# 5) 核验：非 root 结点创建恢复（任一 loosqk 身份 iceoryx2 程序可启）
+```
+
+> 污染点两处：`/tmp/iceoryx2/`（目录 750 root——`ls` 会报 Permission
+> denied，**不要**用 `2>/dev/null` 吞掉它，会误判成"目录不存在"）与
+> `/dev/shm/iox2_*_global_mgmt`（700 root）。

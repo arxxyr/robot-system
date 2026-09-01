@@ -24,10 +24,14 @@ use crate::error::FeetechError;
 ///
 /// 调用约定：
 /// - `write_all` 不应拆包（一个 instruction packet 一次写完）。
-/// - `read_exact` 阻塞直到收到 `buf.len()` 字节或 [`SerialTransport::timeout`]
-///   超时。
-/// - `set_timeout` 影响 `read_exact` 的超时；`write_all` 不超时（仅依赖 OS
-///   write buffer）。
+/// - `read_exact` 阻塞直到收齐 `buf.len()` 字节；[`SerialTransport::timeout`]
+///   约束的是**每次底层读**的等待——字节陆续到达时会执行多次底层读，
+///   单次高层调用**没有整包统一 deadline**。
+/// - `set_timeout` 作用于单次底层操作等待；**生产 `RealSerialTransport`
+///   中**底层写同样按该 timeout 等待可写（serialport 行为；Mock 的
+///   write 不模拟等待）。读写都**没有事务级 deadline**（F1 Reverse
+///   Sync 2026-09-01 勘正：原"`write_all` 不超时（仅依赖 OS write
+///   buffer）"表述不成立）。
 pub trait SerialTransport: Send {
     /// # Errors
     /// 写失败 → [`FeetechError::TransportWrite`]。
