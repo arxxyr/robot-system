@@ -229,6 +229,38 @@ fn ensure_safe_units_never_time_out_mid_aggregation() {
     }
 }
 
+/// **调度硬化（2026-09-01）**：arm unit 必须放行 RT——`RestrictRealtime`
+/// 不得存在（seccomp 拦 RT 调度类，与 `--serial-fifo` 互斥）、
+/// `LimitRTPRIO=99` + `LimitMEMLOCK=infinity`、进程掩码 `CPUAffinity=0-3`
+/// （普通线程圈定杂务核；线程可 `sched_setaffinity` 越出继承掩码，serial
+/// 线程自行钉隔离核——继承掩码是初值不是上限，硬上限只有 cgroup cpuset，
+/// 故不得设 `AllowedCPUs=`）；s0 args 携 `--serial-fifo 70` + 本侧
+/// `--cpu 4|5` + `--strict-rt`。
+#[test]
+fn arm_units_grant_rt_and_pass_serial_fifo_flags() {
+    for (side, name, cpu) in [
+        ("left", ARM_UNITS[0].1, "4"),
+        ("right", ARM_UNITS[1].1, "5"),
+    ] {
+        assert!(
+            directives(name, "RestrictRealtime").is_empty(),
+            "{name}: RestrictRealtime 与 --serial-fifo 互斥，必须移除"
+        );
+        assert_eq!(single(name, "LimitRTPRIO"), "99", "{name}");
+        assert_eq!(single(name, "LimitMEMLOCK"), "infinity", "{name}");
+        assert_eq!(single(name, "CPUAffinity"), "0-3", "{name}");
+        let argv = exec_start_argv(name);
+        let s0_args = s0_args_of(&argv);
+        let has = |flag: &str| s0_args.iter().any(|a| a == flag);
+        assert!(has("--serial-fifo"), "{name}");
+        assert!(has("--strict-rt"), "{name}");
+        let cpu_idx = s0_args.iter().position(|a| a == "--cpu").expect("--cpu");
+        assert_eq!(s0_args[cpu_idx + 1], cpu, "{name}: {side} 应钉 {cpu} 号核");
+        let fifo_idx = s0_args.iter().position(|a| a == "--serial-fifo").unwrap();
+        assert_eq!(s0_args[fifo_idx + 1], "70", "{name}");
+    }
+}
+
 /// **round 1 P1-4**：生产 S1 / gateway `WatchdogSec=5s`（Spec D12 拍板 +
 /// PX-16 "测试模板 2s / 生产 5s"）；S0 arm unit 与 freeze 测试模板保持 2s。
 #[test]

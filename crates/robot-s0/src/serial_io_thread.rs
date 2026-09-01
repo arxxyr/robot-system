@@ -116,6 +116,17 @@ pub struct SerialIoThreadConfig {
     /// `confirm_torque_off` 连续多少 tick 仍全 torque-on 才升 `StopFailed`。
     /// 默认 5（5 × 5ms = 25ms 上限给硬件断扭）。
     pub confirm_max_attempts: u32,
+    /// **opt-in** `SCHED_FIFO` 优先级（2026-09-01 调度硬化）。`None`（默认）
+    /// = 维持既有普通优先级——"`SerialRT` 不进 SCHED_FIFO"仍是缺省语义，
+    /// 本字段是显式 opt-in（CLI `--serial-fifo <prio>`），偏离登记走
+    /// CHANGELOG。`Some(p)` 同时触发 `mlockall`。
+    pub sched_fifo_priority: Option<u8>,
+    /// opt-in 绑核（CLI `--cpu`；配合 `isolcpus` 内核参数把本线程放上
+    /// 隔离核）。`None` = 不绑。
+    pub cpu_affinity: Option<usize>,
+    /// RT setup（FIFO / mlockall / pin）失败时 fail-fast（true）还是
+    /// warn-and-continue（false，默认；开发机无 rtprio 时可降级跑）。
+    pub strict_rt: bool,
 }
 
 impl Default for SerialIoThreadConfig {
@@ -123,6 +134,9 @@ impl Default for SerialIoThreadConfig {
         Self {
             tick_period_ns: 5_000_000, // 5 ms = 200 Hz
             confirm_max_attempts: 5,
+            sched_fifo_priority: None,
+            cpu_affinity: None,
+            strict_rt: false,
         }
     }
 }
@@ -287,6 +301,48 @@ where
 // 主循环
 // ============================================================================
 
+/// opt-in 调度硬化（2026-09-01）：`sched_fifo_priority = Some(p)` 时依次
+/// `set_sched_fifo(p)` + `mlockall`；`cpu_affinity = Some(n)` 时 `pin_to_cpu`。
+/// 失败按 `strict_rt` 决定 panic（生产 fail-fast，unit 拉起重试）或降级继续。
+/// 全部 `None`（默认）= 本函数零操作，既有"普通优先级 `SerialRT`"语义不变。
+fn apply_serial_rt_setup(cfg: &SerialIoThreadConfig) {
+    if let Some(prio) = cfg.sched_fifo_priority {
+        match robot_core::thread::set_sched_fifo(i32::from(prio)) {
+            Ok(()) => tracing::info!(prio, "serial_io_thread: SCHED_FIFO applied"),
+            Err(e) => {
+                assert!(
+                    !cfg.strict_rt,
+                    "serial SCHED_FIFO({prio}) failed in strict mode: {e}"
+                );
+                tracing::warn!(
+                    prio,
+                    ?e,
+                    "serial SCHED_FIFO failed — continuing at normal priority"
+                );
+            }
+        }
+        match robot_core::thread::mlockall() {
+            Ok(()) => tracing::info!("serial_io_thread: mlockall applied"),
+            Err(e) => {
+                assert!(!cfg.strict_rt, "serial mlockall failed in strict mode: {e}");
+                tracing::warn!(?e, "serial mlockall failed — continuing without memlock");
+            }
+        }
+    }
+    if let Some(cpu) = cfg.cpu_affinity {
+        match robot_core::thread::pin_to_cpu(cpu) {
+            Ok(()) => tracing::info!(cpu, "serial_io_thread: pinned to cpu"),
+            Err(e) => {
+                assert!(
+                    !cfg.strict_rt,
+                    "serial pin_to_cpu({cpu}) failed in strict mode: {e}"
+                );
+                tracing::warn!(cpu, ?e, "serial pin_to_cpu failed — continuing unpinned");
+            }
+        }
+    }
+}
+
 #[allow(
     clippy::needless_pass_by_value,
     clippy::too_many_lines,
@@ -302,6 +358,9 @@ fn run_serial_io_loop<A: SerialRtAdapter>(
     metrics: &Arc<SerialIoThreadMetrics>,
     ctrl: &Arc<SerialIoCtrlInner>,
 ) {
+    // opt-in 调度硬化（默认零操作）——必须在任何 tick 之前、本线程内应用。
+    apply_serial_rt_setup(&cfg);
+
     let mut state_buf = JointStateBuf::default();
     let mut tick_seq: u64 = 0;
     let mut deadline = Deadline(clock.now());
@@ -787,6 +846,7 @@ mod tests {
         let cfg = SerialIoThreadConfig {
             tick_period_ns: 1_000_000, // 1 ms
             confirm_max_attempts,
+            ..SerialIoThreadConfig::default()
         };
         let ctrl = Arc::new(SerialIoCtrlInner::new());
         // **finding #2 修复后**：spawn-time **不**调 enable；mock 默认

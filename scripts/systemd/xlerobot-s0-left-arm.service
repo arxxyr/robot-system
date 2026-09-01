@@ -67,6 +67,16 @@ RuntimeDirectory=robot-system/preflight
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
 
+# ── 调度硬化（2026-09-01；配合 --serial-fifo/--cpu 与内核 isolcpus=4,5）──
+# RestrictRealtime 已移除：它以 seccomp 拦掉 RT 调度类，与 --serial-fifo 互斥。
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+# 普通线程圈定杂务核 0-3。线程可用 sched_setaffinity 越出继承掩码
+# （继承掩码是初值不是上限；硬上限只有 cgroup cpuset），serial 线程由
+# daemon 内 pin_to_cpu 自行钉到 4 号隔离核。刻意不设 AllowedCPUs=
+# —— 那是 cpuset 硬上限，会真拦住 serial 线程进 4/5。
+CPUAffinity=0-3
+
 ExecStart=/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy guard \
     --arm left \
     --config /etc/robot/xlerobot_left_arm.toml \
@@ -75,7 +85,10 @@ ExecStart=/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy gu
     --robot-id xlerobot_left \
     --hardware-id left_arm \
     --latch-path /var/lib/robot/xlerobot_left/estop_latch \
-    --tick-hz 50
+    --tick-hz 50 \
+    --serial-fifo 70 \
+    --cpu 4 \
+    --strict-rt
 
 # **TimeoutStartSec=infinity 是硬要求**（round 1 P0-2）：有限值会在"部分
 # 电机已写、其余尚未处理"时截断 ensure-safe 的末尾聚合（D13 备选"可证明
@@ -108,7 +121,6 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 RestrictNamespaces=yes
 LockPersonality=yes
-RestrictRealtime=yes
 RestrictSUIDSGID=yes
 SystemCallArchitectures=native
 

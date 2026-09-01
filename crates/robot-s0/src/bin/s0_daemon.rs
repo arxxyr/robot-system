@@ -122,6 +122,11 @@ struct Args {
     smoke_duration: Option<Duration>,
     tick_period_ns: u64,
     strict_rt: bool,
+    /// `--serial-fifo <prio>`：**opt-in** 给 `SerialRT` `s0_serial_io_thread`
+    /// 上 `SCHED_FIFO`（含 mlockall）。缺省 None = 维持既有普通优先级
+    /// （"`SerialRT` 不进 `SCHED_FIFO`"仍是缺省语义；偏离登记 CHANGELOG
+    /// 2026-09-01）。`--cpu` / `--strict-rt` 同时作用于 `SerialRT` 路径。
+    serial_fifo_priority: Option<u8>,
     joint_count: u8,
     cpu_affinity: Option<usize>,
 }
@@ -137,6 +142,7 @@ struct ResolvedArgs {
     strict_rt: bool,
     joint_count: u8,
     cpu_affinity: Option<usize>,
+    serial_fifo_priority: Option<u8>,
     /// `--config` 加载的完整配置（含 ConfigIdentity），无 `--config` 时为 None。
     loaded_config: Option<LoadedConfig>,
     /// **v0.5 候选 E 段(3)**：本实例权威 `layout_id`。config 模式 =
@@ -152,6 +158,7 @@ struct ResolvedArgs {
 }
 
 impl Args {
+    #[allow(clippy::too_many_lines)]
     fn parse() -> Result<Self, String> {
         let mut args = Self {
             robot_id_cli: None,
@@ -162,6 +169,7 @@ impl Args {
             smoke_duration: None,
             tick_period_ns: 20_000_000, // 50 Hz
             strict_rt: false,
+            serial_fifo_priority: None,
             joint_count: 3,
             cpu_affinity: None,
         };
@@ -220,6 +228,18 @@ impl Args {
                     args.tick_period_ns = 1_000_000_000 / hz;
                 }
                 "--strict-rt" => args.strict_rt = true,
+                "--serial-fifo" => {
+                    i += 1;
+                    let prio: u8 = raw
+                        .get(i)
+                        .ok_or("--serial-fifo requires value")?
+                        .parse()
+                        .map_err(|e| format!("--serial-fifo: {e}"))?;
+                    if !(1..=99).contains(&prio) {
+                        return Err("--serial-fifo: priority must be 1..=99".into());
+                    }
+                    args.serial_fifo_priority = Some(prio);
+                }
                 "--joints" => {
                     i += 1;
                     args.joint_count = raw
@@ -342,6 +362,7 @@ impl Args {
             smoke_duration: self.smoke_duration,
             tick_period_ns: self.tick_period_ns,
             strict_rt: self.strict_rt,
+            serial_fifo_priority: self.serial_fifo_priority,
             joint_count: self.joint_count,
             cpu_affinity: self.cpu_affinity,
             loaded_config,
@@ -817,7 +838,8 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
     //   state_machine `Safe → Ready → Enabled.Active` 走两阶段 transition 通过
     //   client.request_normal(Enable(true)) 走 ctrl 路径，rt_thread 主循环 Step
     //   2 真上扭后 ipc_tick Pure/Effectful 分支才 set_policy(ActiveForward)。
-    // - SerialRT：spawn_serial_io_thread（普通优先级；SerialRT 不进 SCHED_FIFO，
+    // - SerialRT：spawn_serial_io_thread（**缺省**普通优先级；`--serial-fifo`
+    //   opt-in 后进 SCHED_FIFO + mlockall、`--cpu` 绑核——2026-09-01 调度硬化，
     //   串口 RTT 决定 tick 周期 5-20 ms）。同样走两阶段 transition；
     //   serial_io_thread 在 Step 3 consume normal action 时调
     //   `adapter.enable(true)`，emergency 后下 tick `read_torque_enable_mask`
@@ -857,7 +879,13 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
             }
         }
         SpawnPlan::SerialRt(adapter) => {
-            let serial_cfg = SerialIoThreadConfig::default();
+            let serial_cfg = SerialIoThreadConfig {
+                // opt-in 调度硬化（2026-09-01；缺省三 None/false = 行为不变）。
+                sched_fifo_priority: args.serial_fifo_priority,
+                cpu_affinity: args.cpu_affinity,
+                strict_rt: args.strict_rt,
+                ..SerialIoThreadConfig::default()
+            };
             match spawn_serial_io_thread(
                 serial_cfg,
                 Arc::clone(&clock),
@@ -1465,6 +1493,7 @@ mod tests {
             smoke_duration: None,
             tick_period_ns: 20_000_000,
             strict_rt: false,
+            serial_fifo_priority: None,
             joint_count: 3,
             cpu_affinity: None,
         }
