@@ -820,8 +820,8 @@ D14 四检测器（deadline / on_timeout / stall / overrun——R6-1/2/3 方案�
 | D13 | 真机交接 fail-closed preflight（r2 新增；r3 systemd 强制；r4 无条件安全写；r5 全局 handoff + gateway Wants=S1；r6 handoff 全 17 电机拍死；r7 X1 定量依据；r8 预算拆分〔infinity 撤回〕；r9 计数硬契约 + dir-fsync 统一最终步骤；r10 RuntimeDirectory 三件套 + 稳定锁文件 + NotFound=0/0..=5/86 永久保留；r11 pre-increment 未成功尝试计数；**r12 掉电边界**〔同 boot 保留、掉电/重启清零重跑 handoff+guard〕） | **确认（含 r2-r12 全部 fail-closed、计数及重启契约）** | 2026-07-14 | **P0 安全** |
 | D14 | SAFE-B1 执行链检测器——**round 7 改拍：四检测器（deadline/on_timeout/stall/overrun）移出候选 E，归档 post-E "生产安全硬化候选"**；两 P0 前置阻断登记（CtrlLostStop 恢复 Pure 不重 Enable〔`state_machine.rs:621-636`〕/ cmd_deadline_valid 借道 + 信号抑制 = Active 持续 timeout 输出〔`:202` + `ipc_tick.rs:456`〕→ 须锁"新鲜未过期命令才 rearm"）；R6-1/2/3 方案保留为历史记录非 Execute 权威 | **↻ round 7 移出 E**（原 (i+) 拍定 2026-07-14 归档） | 2026-07-15 | **P0**（post-E）；未闭合不得**正式**退役 |
 | D15 | SAFE-B2 硬件 fail-safe——kill -9 <500ms 真机证明为**退役硬门**；**round 5 顺序硬门：能力核实 → 配置 + readback（条件段 9b）→ 机械隔离 AC-E25 → 才 AC-E12**；STS3215 不支持 → **任何完整真机 Enabled 动作前回 Spec 在 (b)/(c) 重拍，不得静默降级**（**① 已出"不支持"结论 → 走下行 D15-R；round 7 后顺序硬门保留为生产替换/正式退役前的门，demo 按 (c1+) 显式豁免**） | **确认；状态 OPEN 不得写成闭环** | 2026-07-14 | **P0**；design:1111-1112 规则 3/4 依据 |
-| **D15-R** | 无电机侧 watchdog 下的 fail-safe 处置——**(c1+) 受监督 demo 豁免 + 接口预留**：不采购继电器/不实现监督进程/不预选 (b)(c2)；D15 保持 OPEN；AC-E25 不入 demo gate；D-BI3 正式退役推迟（旧 unit 可 stop 不得 disable/删除/破坏回滚）；收口宣称 = "受监督功能 demo 跑通"；design:1107 显式 demo 例外走 CHANGELOG freeze-diff；预留接口 = 文档级契约（arm/kick/request_safe/status+readback；handoff/guard 与 SetEnabled(true) 之间；fail-closed；不写 no-op trait） | **确认 (c1+)** | 2026-07-15 | **P0**；能力核实收窄口径 = "无已文档化、可配置的 command watchdog" |
-| D16 | SAFE-B3 + 收口性质——**(ii) 受监督 demo 修正版（round 7 同步）**：真机 Enabled 动作按 D15-R (c1+) 显式豁免执行（round 5 "先过 D15 全链"收紧由豁免取代）；**正式退役推迟 post-E**（demo 期间旧 unit 可 stop 不得 disable/删除/破坏回滚）；收口宣称唯一口径 = "机器人控制执行面受监督功能 demo 跑通" | **确认 (ii) 修正版** | 2026-07-14/15 | **P0**；CHANGELOG premise 补登记 |
+| **D15-R** | 无电机侧 watchdog 下的 fail-safe 处置——**(c1+) 受监督 demo 豁免 + 接口预留**：不采购继电器/不实现监督进程/不预选 (b)(c2)；D15 保持 OPEN；AC-E25 不入 demo gate；D-BI3 正式退役推迟（旧 unit 可 stop 不得 disable/删除/破坏回滚（**r5 2026-09-01：disable 禁令已解除**〔用户拍板，重启自启占串口触发〕——仅关自启 **≠ 正式退役**，D15 仍 OPEN，**删除/mask 仍禁止**；详 CHANGELOG 2026-09-01 + 决策单 r5））；收口宣称 = "受监督功能 demo 跑通"；design:1107 显式 demo 例外走 CHANGELOG freeze-diff；预留接口 = 文档级契约（arm/kick/request_safe/status+readback；handoff/guard 与 SetEnabled(true) 之间；fail-closed；不写 no-op trait） | **确认 (c1+)** | 2026-07-15 | **P0**；能力核实收窄口径 = "无已文档化、可配置的 command watchdog" |
+| D16 | SAFE-B3 + 收口性质——**(ii) 受监督 demo 修正版（round 7 同步）**：真机 Enabled 动作按 D15-R (c1+) 显式豁免执行（round 5 "先过 D15 全链"收紧由豁免取代）；**正式退役推迟 post-E**（demo 期间旧 unit 可 stop 不得 disable/删除/破坏回滚（**r5 2026-09-01：disable 禁令已解除**〔用户拍板，重启自启占串口触发〕——仅关自启 **≠ 正式退役**，D15 仍 OPEN，**删除/mask 仍禁止**；详 CHANGELOG 2026-09-01 + 决策单 r5））；收口宣称唯一口径 = "机器人控制执行面受监督功能 demo 跑通" | **确认 (ii) 修正版** | 2026-07-14/15 | **P0**；CHANGELOG premise 补登记 |
 | D17 | SAFE-B4 跨臂联锁——**(ii) 明确延期**：登记"不可无人值守双臂运行"；client cancel + 双 EStop = 受监督边界 | **确认 (ii)** | 2026-07-14 | P1 |
 
 ---
@@ -896,7 +896,8 @@ heartbeat 超时 → `CONTROL_LOST_*` 子态（链路失效）。
   `LimitViolation`（需 per-joint limits 配置面）延后独立候选。
 - **共同硬约束（round 7 仍有效）**：本项未闭合前**不得正式退役旧栈**
   （D-BI3 正式退役推迟至生产安全候选闭环；demo 期间旧 unit 可 `stop`，
-  **不得 disable/删除/破坏回滚**）。
+  **不得 disable/删除/破坏回滚**。**r5 2026-09-01：disable 禁令已解除**
+  〔用户拍板〕——仅关自启 ≠ 正式退役，D15 仍 OPEN，删除/mask 仍禁止）。
 - AC：AC-E23 / AC-E24 **随本项移出候选 E**（表行保留标注归档）。
 
 ### D15（SAFE-B2，P0）✅ 已拍（顺序硬门）· ⚠ 状态 OPEN 不得写成闭环：硬件 fail-safe blocking gap（正式退役硬前置）
@@ -967,6 +968,9 @@ round 7 原文条款照录；按最新目标收缩：先跑通受监督功能 de
   候选 E demo 完结 gate**。
 - **D-BI3 正式退役推迟**：旧 unit demo 期间可 `stop`，**不得 disable、
   删除或破坏回滚能力**（决策单同步修订，见 CHANGELOG 2026-07-15 条）。
+  **r5（2026-09-01）：disable 禁令已解除**〔用户拍板，重启自启占串口〕——
+  旧 unit 已 disable（仅关自启，unit 保留），**≠ 正式退役**，D15 仍
+  OPEN，删除/mask 仍禁止，回滚 = 显式 `enable`+`start`。
 - **收口宣称唯一口径**："机器人控制执行面**受监督功能 demo 跑通**"——
   **不得宣称生产替换、无人值守或硬件 fail-safe 完成**。
 - **freeze-diff**：本项 = 对 design `00_design.md:1107`（§6.5.1）冻结
@@ -1021,8 +1025,10 @@ round 7 原文条款照录；按最新目标收缩：先跑通受监督功能 de
      规则 3 的 demo 例外走 CHANGELOG freeze-diff 登记——round 5 的
      "先过 D15 全链才可 Enabled"收紧由该显式豁免**取代**）；
      **不得执行 D-BI3 正式退役**——demo 期间旧 unit 可 `stop`，
-     **不得 `disable`、删除或破坏回滚能力**（决策单 :139 已定义
-     disable = 正式退役动作）；
+     **不得 `disable`、删除或破坏回滚能力**（决策单 :139 曾定义
+     disable = 正式退役动作；**r5 2026-09-01 重定义**：disable〔仅关
+     自启，unit 保留〕不再等同正式退役——已按用户拍板执行，正式退役
+     〔删除/mask/放弃回滚〕仍禁止，D15 仍 OPEN）；
   2. **正式退役推迟至 post-E**：D14 两 P0 前置阻断 + D15 硬件
      fail-safe（生产安全硬化候选）闭环后才允许 D-BI3 退役
      （disable 旧栈）；
@@ -1929,3 +1935,5 @@ target 源〕/ 段 6〔feetech 公共 API + robot-tests optional dep 白名
 | PX-53 | (10-demo) | **Execute 缺陷（round 2 P0-3）** | **只有单 RPC 有界，阶段级上限不成立**：enable 的 5 s 轮询窗在 SetEnabled 返回后才起算且可被最后一次 4 s RPC 穿透；disable 2 s readback 同穿；执行期逐次 Instant 检查最坏被 sample+status 穿 ~8 s。修法 = **`StageBudgets` + `staged()` 外层 `tokio::time::timeout`**：enable 9 s / disable 6 s / settle 10 s（= 内层健康路径 + 一次 `CLIENT_HARD_TIMEOUT` 穿透余量）；执行期轮询整段包 `exec_budget` 且**超时保留 `action_id` 走 cancel → EStop**；`pair_enable`/`pair_finalize` 同款 | `Scripted::Hang`（RPC 永挂）注入 ×3：`enable_stage_hang_is_wall_clock_bounded_and_estopped` / `exec_stage_hang_keeps_action_id_for_cancel`（断言 `cancel:action-1` 在调用序内）/ `disable_stage_hang_is_wall_clock_bounded_and_estopped`——均断言真实墙钟 < 1 s（预算 50–80 ms）|
 | PX-54 | (10-demo) | Execute 缺陷（round 2 P1-4） | **sampler join 超时 = detach**：`timeout(_, handle)` 超时丢弃 `JoinHandle` 在 Tokio 语义上是 detach，任务继续跑；且左侧 `?` 短路会连右侧 handle 一起丢弃（`SAMPLER_JOIN` 2 s < RPC 4 s，实际可触发）。修法 = `join_sampler`：stop → **两侧 `tokio::join!` 同时**有界 join → 超时 `abort()` → `SAMPLER_ABORT_JOIN` 1 s 有界等取消确认（确认/未确认分别报告）；结果合并不经 `?` 短路 | `join_sampler` + `phase_pair` 收线改造 |
 | PX-55 | (10-demo) | docs 缺陷（round 2 P1-5） | runbook 5c 不可执行：日志正文是 **"system health"** 不是 "monitor"，且 health 帧**只由两个 S0** 的 monitor 线程产生（robot-health 挂 s0_daemon，S1/gateway 自身不发；`interested=<pid>:<comm>@…` 每 S0 按 comm 全局匹配 → 六进程 (pid,comm) 都在两条 S0 journal 里）；脚本未丢首帧、未对 <30 判失败。修法 = 5c 重写：`DEMO_T0`（起臂前记录）→ `journalctl -b -u 两 S0 --since $DEMO_T0 | grep -F "system health"` → 按**六个当前 MainPID** 逐进程 `grep -cE "interested=([^ ]*,)?<pid>:"` 计帧（前界 `=`/`,` 防 12340 误配 1234，已样例验证）→ 丢首帧 → `usable ≥ 30` 否则 FAIL；§9 末尾应急摘要同步为 **S0/S1/gateway/`supervised_demo` 任一死亡或挂起**。**round 3 修正 ×3**：① 5c 内曾二次赋值 `DEMO_T0`（只采 demo 后空闲窗，丢步 1 运动窗）→ 删除赋值，改 `: "${DEMO_T0:?…}"` 守门；② 曾合并两条 S0 journal 却只减一帧（每个 monitor 各有独立 CPU 差分首帧 → 计数膨胀）→ **权威采样源固定左臂 S0 单条 journal**；③ 失败分支只 echo、节退出码仍 0 → 末尾显式 `test "$fail" -eq 0`；**29/30 usable 双 fixture 已验**（30 帧→usable 29→exit 1 / 31 帧→usable 30→exit 0）+ 缺 `DEMO_T0` 守门 exit 1 | runbook §9 步 1（DEMO_T0 唯一赋值点）+ 5c + 末尾 bullet |
+| PX-56 | (10-demo) 后 | **设计偏离登记（用户拍板 RT 加固）** | SerialRT 线程调度类：§4.6 钉死 `s0_serial_io_thread`（普通优先级）→ **opt-in 可配 FIFO**（`SerialIoThreadConfig` += `sched_fifo_priority`/`cpu_affinity`/`strict_rt`；`s0_daemon --serial-fifo <1..=99>`）。**缺省不传 = 普通优先级与设计一致**；启用面仅 XLeRobot 双臂 unit（FIFO 70 钉 4\|5 隔离核，配合 isolcpus）。执法点"adapter 挂错线程拒启"未动（SerialRT 仍不挂 `s0_rt_thread`）。依据 = 用户拍板 + 三组 600s 基线 p50 10.2→4.1µs；尾部 10–20ms 经变频判别为速率错拍伪影**不作依据**（commit body 已 amend 撤错误因果）。freeze-diff = CHANGELOG 2026-09-01，**不改 00_design.md**；验证/回滚口径 = 10_verification 附录。commit `48cc4a9` | `deploy_units` 第 16 测（unit 面）+ Orin `ps -L` 双 S0 `s0_serial_io_th` FF70@4/5 + read-state 回归 PASS + 运动四相回归 PASS |
+| PX-57 | (10-demo) 后 | **Execute 缺陷（codex round 1 阻断 1）** | arm unit `CPUAffinity=0-5` 基于错误认知"进程掩码不含目标核则线程 `pthread_setaffinity` EINVAL"——**继承掩码是初值不是上限**（`taskset -c 0 taskset -c 1 true` 退出 0 实证；本 session 基线进程继承 0-3 掩码仍钉 4/5 成功），硬上限只有 cgroup cpuset。0-5 使普通线程掩码含隔离核（isolcpus 下默认均衡虽不排上去，但语义错误且失去圈定保证）。修法 = `CPUAffinity=0-3` 圈普通线程 + serial 线程自行钉核 + **禁设 `AllowedCPUs=`**（cpuset 硬上限会真拦 pin）+ unit 注释/测试/commit body/总结 §7.2 同步更正 | `deploy_units` 第 16 测断言 `CPUAffinity=0-3`；Orin 重部署后 `ps -L` 复核普通线程掩码 0-3 + serial FF70@4/5 |

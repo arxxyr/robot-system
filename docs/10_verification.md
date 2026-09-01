@@ -336,6 +336,37 @@ criterion     0.5.1
 **几乎全部在 wire RTT**（1 Mbps × packet ~50 B / motor → 几 ms 量级），不在 Rust
 协议层。这是上 Orin 真机前的"协议层无回归"基线。
 
+### SerialRT FIFO opt-in（XLeRobot 部署）——验证与回滚口径（2026-09-01）
+
+§4.6 偏离登记见 `CHANGELOG.md` 2026-09-01（Spec P.4 PX-56/57）。
+**默认口径：不传 `--serial-fifo` 时 SerialRT 线程仍为普通优先级，与
+00_design.md §4.6 逐字一致**；FIFO 仅 XLeRobot 双臂 unit opt-in。
+
+**验证**（Orin，栈起后；`pid=$(systemctl show -p MainPID --value
+xlerobot-s0-<side>-arm.service)`，两层取证）：
+
+1. 调度类 / 落核：`ps -L -p "$pid" -o pid,tid,comm,cls,rtprio,psr`
+   → `s0_serial_io_th` 行 `cls=FF rtprio=70 psr=4|5`；其余线程 `TS`。
+   （默认 `ps -Lp` 不显示这三列，必须带 `-o`。）
+2. 每线程亲和掩码：遍历 `/proc/$pid/task/*/status` 读
+   `Cpus_allowed_list` → serial 线程 = `4`（左）/ `5`（右），
+   其余线程全部 `0-3`（unit `CPUAffinity=0-3` 继承）。
+3. `supervised_demo --phase read-state` PASS + 起栈窗口
+   `journalctl -b` 无 `TransportTimeout`。
+4. guard 计数 `/run/robot-system/preflight/*.count` 保持 `0\n`。
+
+**回滚**（不动代码，unit 面即可）：
+
+1. 最小回滚（只撤 FIFO）：双臂 unit ExecStart 撤 `--serial-fifo 70`
+   （`--cpu`/`--strict-rt` 可留；strict 检查只对已启用项执法）→
+   `daemon-reload` + 重启栈 → serial 线程回普通优先级（TS）。
+2. 完整回退（还原 `48cc4a9` 前 unit 全文）：ExecStart 撤
+   `--serial-fifo 70`、`--cpu 4|5`、`--strict-rt` **三个参数**；删
+   `LimitRTPRIO=99`、`LimitMEMLOCK=infinity`、`CPUAffinity=0-3` 三行；
+   恢复 `RestrictRealtime=yes`；`daemon-reload` + 重启栈。
+3. 内核侧独立回滚：`/boot/extlinux/extlinux.conf.bak-20260901` 还原
+   isolcpus（与本偏离正交，非必需）。
+
 ### 待登记
 
 - `linux-x86_64-nightly-YYYYMMDD`：Step 6 开工用
@@ -350,6 +381,7 @@ criterion     0.5.1
 | 2026-04-22 | 骨架初稿：§10.1/§10.2/§10.3 三级结构 + 状态标签 + env_id 机制；所有数值行占位。Step 5 完成时刻快照 | Claude Code (提议) / loosqk (拍板) |
 | 2026-04-22 | §10.2.3 CI 1–6 步接入 `.github/workflows/ci.yml`；`deny.toml` 落地（allow 0BSD；workspace path wildcard + private crate 豁免；iceoryx2 / trybuild winnow dup 走 skip-tree）；`scripts/collect_env_id.sh` 兼容 macOS + Linux。TODO 1/3/4 划掉，只剩 2（assert-no-alloc） | Claude Code |
 | 2026-04-24 | §10.2.1 加 3 个 task 27c harness（`feetech_bench` criterion / `feetech::integration_smoke` / `scripts/feetech_flamegraph.sh`）+ 附录加 feetech bench baseline 实测数值。结论：协议层零瓶颈，task 28 真机延迟瓶颈在 USB-RS485 wire RTT。 | Claude Code |
+| 2026-09-01 | 附录加 SerialRT FIFO opt-in 验证与回滚口径（§4.6 偏离 PX-56/57 的验证面；默认普通优先级不变） | Claude Code (codex 复审要求) / loosqk (拍板) |
 
 ---
 

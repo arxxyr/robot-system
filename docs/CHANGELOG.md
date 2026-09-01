@@ -10,6 +10,61 @@
 
 ---
 
+## 2026-09-01 · SerialRT 线程调度类 opt-in FIFO（XLeRobot 部署）——§4.6 偏离登记 + D-BI3 r5 旧栈 disable 拍板（**状态：偏离 ×1 + 决策修订 ×1 + 认知修正 ×1**）
+
+### 偏离 1：SerialRT 线程调度类 opt-in FIFO（不改 00_design.md）
+
+- **设计原文**（§4.6）：SerialRT adapter 挂 `s0_serial_io_thread`
+  （**普通优先级** + select! 主循环）；"SoftRT / SerialRT 试图挂 RT
+  线程即拒绝启动"。执法点针对 **adapter→线程分配**——本偏离**未动**
+  （SerialRT 仍只挂 `s0_serial_io_thread`，不挂 `s0_rt_thread`）。
+- **偏离内容**：`s0_serial_io_thread` 自身的调度类由钉死"普通"改为
+  **opt-in 可配**：`SerialIoThreadConfig` += `sched_fifo_priority` /
+  `cpu_affinity` / `strict_rt`（`s0_daemon --serial-fifo <1..=99>` +
+  既有 `--cpu` / `--strict-rt` 透传）。**缺省不传 = 普通优先级，
+  与设计逐字一致**；启用面仅 XLeRobot 双臂部署 unit
+  （`--serial-fifo 70 --cpu 4|5 --strict-rt`，配合 Orin
+  `isolcpus=4,5`）。commit `48cc4a9`。
+- **依据**：用户拍板 RT 加固（2026-09-01"①②③都做"）+ 三组 600 s
+  基线对照 p50 10.2 → 4.1 µs（2.5×）。**p99/p999/max 的 10–20 ms
+  尾部不作依据**——经变频判别（hz=10/50/100）证为速率相关错拍伪影
+  （三种调度配置同形、max ≈ 恰一个发布周期、hz=10 时消失）；曾误判
+  "调度尾延迟"，commit body 已 amend 更正（codex round 1 阻断 3）。
+- **验证与回滚口径**：落 `10_verification.md` 附录（ps -L 验
+  FF70@4|5 / read-state 回归 / 回滚 = unit 撤三 flag 即回普通优先级）。
+- **Spec 登记**：P.4 PX-56 / PX-57。
+
+### 认知修正（codex round 1 阻断 1）：CPUAffinity 继承掩码不是上限
+
+- 原 unit 写 `CPUAffinity=0-5`，依据"进程掩码不含目标核则线程
+  `pthread_setaffinity` EINVAL"——**该认知错误**：继承掩码是初值不是
+  上限，线程可 `sched_setaffinity` 越出（`taskset -c 0 taskset -c 1
+  true` 返回 0 实证；本 session 基线进程继承 0-3 掩码仍成功钉 4/5）。
+  硬上限只有 cgroup cpuset（systemd `AllowedCPUs=`）。
+- 修正：unit `CPUAffinity=0-3`（普通线程圈定杂务核），serial 线程
+  自行钉 4|5；**刻意不设 `AllowedCPUs=`**（cpuset 是硬上限，会真拦
+  serial 线程进隔离核）。
+
+### 决策修订：D-BI3 r5——旧栈 coordinator/web `systemctl disable`（用户拍板覆盖 r3）
+
+- **r3 原文**：demo 跑通后旧栈仍 stop-only；disable / 删除 / 破坏回滚
+  的禁令延长到"post-E 生产安全硬化候选闭环前"。
+- **触发事实**：2026-09-01 isolcpus 重启后旧栈按 enabled 状态开机自启
+  占用双串口——r3 的 stop-only 假设了无重启场景；每次重启需人工
+  stop 才能恢复受监督运行。
+- **用户拍板（2026-09-01）**：`systemctl disable
+  xlerobot-coordinator.service xlerobot-web.service`。**覆盖 r3 的
+  disable 禁令**；unit 文件保留、不删除、不 mask。
+- **回滚路径显式收窄（本条即登记，不以"unit 保留"含糊）**：回滚由
+  r3 时代的"直接 `systemctl start`"变为**"显式 `systemctl enable`（如
+  需自启）+ `systemctl start`"**——多一步显式操作。
+- **不变项**：正式退役时点不变（post-E 生产安全硬化候选闭环后）；
+  **D15 保持 OPEN**；收口宣称口径仍为"受监督功能 demo 跑通"。
+- 同步：`v0.5_dimos_buyin_decision.md` r5 修订块。
+- 审阅人：codex（round 1 阻断 4 要求登记）/ loosqk（拍板）。
+
+---
+
 ## 2026-08-29 · 候选 E 段(9)：部署件段——handoff / guard / preflight / provision + systemd unit ×7（**状态：契约落地登记〔D2 第 1 条 / D12 / D13〕+ 形态偏差登记 ×1 + 实现口径补充 ×4**）
 
 ### 为什么需要部署件（D13 根因，非新增语义）
