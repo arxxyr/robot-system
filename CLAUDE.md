@@ -14,148 +14,34 @@
 
 ## 状态
 
+> 已完结阶段的流水账（commit 链 / 审计条目 / 测试计数）整段归档至
+> `docs/handoffs/v0.5_status_archive.md`，逐字保留未删改。本节只留当前态——
+> AGENTS.md 每轮都整份进模型上下文，历史留在这里等于每次请求重复付费。
+
 ```
 设计版本:  v0.1.2（冻结）
-实现阶段:  v0.5 —— 候选 D (EStop 触发 RPC) ✅ **完结**（RIPER：CodeMap+amend +
-           Spec r1 + Plan outline+r1 + 2 段 feat + 1 docs；method 9→10 additive；
-           **路由 (a) gateway publish EStopEvent → S0 既有 poll_estop 链〔S0 0 改〕**；
-           feat 链 `4c8a6b3`(1/3 proto+gateway) → `27cc80b`(2/3 estop_e2e 6 case)，
-           加 docs `1521bd0`〔§P.4 PE1-3〕+ 本 docs〔summary+CHANGELOG+entry 勘误×3
-           +event.fbs 注释澄清〕）。
-           proto EStop 9→10 + EStopCommand + estop.rs（validate 含 dry_run 拒〔D4〕
-           + fingerprint，estop_reason 空合法）+ 常驻 estop_pub 专用线程
-           （GATEWAY_ESTOP_SOURCE_ID=98 + bounded(64) + oneshot Ack）+ 12 步精简
-           handler（**无 wire 回执步**——publish 非 RR）+ Method::EStop idempotency
-           （第 6 method）+ try_recv inherent additive（PE1，trait/mock 0 改）+
-           estop_e2e 6 case（EStopTopicCounter PD1 逐条计数禁 latest() + AC-7
-           s0-dead 仍 Ack）。
-           **弱 Ack = published_at_ns**（D2，明文不证 S0 消费/latch fsync；RobotState
-           无 estop_latched 字段，latch fsync 远程不可观测）+ **latched=false**
-           （D3/Q8(i)，producer 不可知 S0 fsync 时填 false）+ source="rpc" 固定 +
-           estop_reason 透传（D6）。
-           **0 改 B4 frozen 9 method wire / §6.7 全保（#3 增强：多 operator+ RPC
-           触发入口，清除仍唯一 ClearEStop maintainer+）/ 0 改 ClearEStop·SetEnabled
-           rr_server / 0 改 S1 / 0 改 design.md / 0 改 robot-cli / 0 新依赖**。详
-           docs/handoffs/v0.5_estop_summary.md。
-           **审计必读（§P.4）**：PE1（try_recv additive）/ PE2（unit 10→13）/ PE3
-           （gate 盘点：4 smoke → +clear_estop_e2e 5/5 + robotctl_smoke 12/12）/
-           PE4（reviewer (2/3) 阻断：EStopTopicCounter !Send subscriber Drop 撞
-           publisher-gone SIGSEGV → mem::forget(sub)；**仅**覆盖正常退出路径，**非**
-           panic unwind；workaround **已于 2026-07-12 v0.5 基建段撤销**）。
-           **债务/勘误（CHANGELOG 2026-06-24）**：robotctl 直连 latched=true /
-           source="robotctl" 既有语义债（只登记不修，robot-cli 0 改）；entry §2.4
-           勘误×3（schema_id 0x0405→0x0000_0300 笔误；"对称 control plane"→route (a)
-           非对称；触发角色 maintainer+→operator+〔reviewer (3/3) 阻断〕）。
-           **基建**：rust-toolchain pin **nightly-2026-06-08**（沿候选 C；**已于
-           2026-07-12 v0.5 基建段解除**）。cargo test --workspace **1180 PASS /
-           0 FAIL**（estop_e2e 6 + set_enabled 10 + state 6 + task 6，封存时）。
-           下一步 = 候选 E（**替换 dimos-deploy 机器人控制执行面**），A→B→C→D→E
-           硬序末环；**三前置已齐**（2026-07-13：#1 B/C/D ✅ / #2 workflow
-           handoff ✅ / #3 buy-in 决策单拍板 ✅——D-BI0 控制执行面〔冻结基线
-           executor.py:72 12 维 action/双臂/双夹爪；policy 推理·相机·Web UI
-           不在 E〕/ D-BI1 (i) 无 Python client / D-BI2 (i) Rust e2e 自动 +
-           Orin 真机"读状态→双臂→双夹爪"完结双 gate / D-BI3 冻结 `9ece6bd` +
-           退役顺序锁〔验收后退役、验收前不 disable 不删 unit 可回滚〕；经
-           r1+r2 修订，v0.5_dimos_buyin_decision.md + CHANGELOG 2026-07-13）
-           → **E CodeMap Pre-Research 可开工**（gripper 复用 InvokeTask/
-           Scripted vs 新增 RPC = CodeMap 必答不预钉，若新增仅 additive）。
 
-v0.5 基建:  iceoryx2 0.9.3 + 全依赖升级 ✅ **完结**（2026-07-12；🔨 `fd58e67`
-           升级+行为适配〔build/fix/remove 混提，body 分节 ①-⑤ 标注〕+ 🔨
-           `08dc594` 子 crate 版本上收 workspace 单源，均已 push；CHANGELOG
-           2026-07-12 条全量登记）。
-           iceoryx2 =0.8.1→=0.9.3（业务调用面 0 改）+ rust-toolchain 解 pin 回
-           channel="nightly"（E0599 消失，候选 C/D 基建 ⚠ 解除）+ 撤
-           mem::forget(sub) ×2（候选 B PE3 state_pool + 候选 D PE4 estop_e2e；
-           上游 #1629 修复，estop×5/state×3/全 workspace 0 SIGSEGV）+
-           robot-transport open_or_create 并发竞态 10ms×50 有界重试（0.8.1/
-           0.9.3 双实测同在非回归，+4 锁测）+ **pubsub A1 根因修复**（iceoryx2
-           仅在 publish/update_connections 时向新 subscriber 补发 history；
-           events_drain terminal grace 100ms→1s 分片可打断 + 每片
-           update_connections；pubsub_cleanup --phase all 两轮 all PASS）+
-           tonic 0.12→0.14（+tonic-prost runtime / tonic-build→
-           tonic-prost-build build-dep / +router feature）+ prost 0.14 +
-           ctor 1.0 (unsafe) + 兼容位若干 + deny allow +Zlib（foldhash
-           build-dep only，CHANGELOG 偏离登记）。
-           **RS2 修订**：release rebuild 必须显式带 required-features smoke
-           bins（cargo build --release -p robot-tests --features
-           "pubsub-cleanup-smoke,scripted-backend-smoke,ik-backend-smoke,
-           robotctl-smoke" + debug robotctl 重建）——本轮 4 smoke 曾因 6 月
-           8 日 0.8.1 陈旧二进制混版本 IPC 假失败。
-           cargo test --workspace **1185 PASS / 0 FAIL** + 6 smoke 全绿 +
-           deny 未新增 violation（licenses FAILED 仍既有 baseline）。**遗留
-           open**：robotctl _exit 跳 Drop（第 3 锚点）保留，是否回归 graceful
-           Drop 另行决策。
+实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
+           双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =
+           "机器人控制执行面受监督功能 demo 跑通"）。
+           D15 硬件 fail-safe 保持 OPEN——不宣称生产替换 / 无人值守；正式
+           退役等 post-E 生产安全硬化候选闭环（D-BI3 r5：旧栈已 disable
+           自启，unit 保留可回滚）。
+           下一步 = post-E 通信故障硬化 CodeMap（F1–F3 Reverse Sync 合并
+           输入 + 评估 §6.2 P0-2；后续硬序 ①通信故障硬化 → ②D15 退役决策
+           → ③robot-viz Rerun 桥 → ④F7 baseline 判据小件）。
+           详 docs/handoffs/v0.5_demo_run_2026-09-01_summary.md
+           + docs/CHANGELOG.md 2026-09-01 两条。
 
-v0.5 候选 C: SetEnabled RPC ✅ **完结**（RIPER：CodeMap+amend + Spec
-           r1-4 + Plan outline+r1-5 + 5 段 feat + 1 Reverse Sync + 2 fix；method
-           8→9 additive；feat 链 `f92bcec`→`dceebcc`→`e9bac70`→`b53ae1a`→
-           `a75f9bc` (5/5 e2e)，加 fix `4e56834` marker + 🔨 `79e0c02` nightly
-           pin + docs 若干，summary 为候选 C 最后一个 docs commit）。
-           set_enabled.fbs（0x040D/0x040E +
-           SetEnabledStatus 10-variant domain）+ S0 Event::Disable（§1.4 12→13，
-           走 CHANGELOG）+ config auto_enable typed + resolve_hardware_section
-           （B6 修 build_adapter .first() 错配 + fail-fast exit 2）+ 第 2 个专用
-           set_enabled_rr_server（D5，ClearEStop rr_server 0 改）+ ipc_thread
-           §5.5b drain / §6.6b 多 tick pending resolve（D8：enable Ack ⟺ 观测
-           Enabled.Active，heartbeat 依赖；disable ⟺ Safe；deadline 不回滚）+
-           dry-run/live 共用 evaluator（D7 precondition-only）+ gateway 12 步
-           handler（operator+ / PB12 request_id-mismatch 防线 / Method::SetEnabled
-           idempotency）+ 第 6 条 rr_io_thread + set_enabled_e2e 10 case
-           （s0 真 daemon + fake heartbeat + gateway）。**0 改 B4 frozen 8 method
-           wire / §6.7 全保（#3：disable 不查不清 latch）/ 0 改 ClearEStop·
-           ClearError rr_server / 0 改 S1 / 0 改 design.md**。详
-           docs/handoffs/v0.5_set_enabled_summary.md。
-           **审计必读（§P.4 全表）**：RS1（Fault+disable 幂等语义 A Reverse Sync，
-           Safe/Fault(_) disable 即时 Disabled(Ok) 不清 Fault）/ RS2（gate 漏报
-           修正：e2e marker 改 count-independent 前缀 "rr_io_threads started"，
-           release rebuild 必须先于 e2e gate）/ PE4（AC-9 + AC-5 cross-process
-           不可达 → unit 覆盖，PB10 同根因）/ PB10（adapter-fail = fault-inject
-           unit 非 e2e）。
-           **基建**：rust-toolchain pin **nightly-2026-06-08**（2026-06-09
-           nightly 滚动后 iceoryx2 0.8.1 编译失败 E0599；**已于 2026-07-12
-           v0.5 基建段解除**，与候选 B PE3 mem::forget 同清单同批闭环）。
-           cargo test --workspace **1160 PASS / 0 FAIL**（set_enabled_e2e 10
-           + state 6 + task 6，封存时）。
-
-v0.5 候选 B: GetState/StreamState 只读 RPC ✅ **完结**（RIPER：CodeMap
-           + Spec r1-3 + Plan r1-2 + 4 段 feat；method 6→8 additive，`a010fe7` →
-           `ea69be7`）。proto append 2 rpc + 3 message + 4 enum mirror（state_convert.rs
-           fbs→proto 纯转换器）+ gateway 常驻 per-hardware S0 state 订阅池 + cache
-           （state_pool.rs；**唯一**底层 subscriber，GetState/StreamState 只读 cache、
-           **不**新建 per-RPC subscriber）+ `--config` 解析 [[hardware]].id（D10，0 dep
-           robot-s0）+ StreamState 节流（D5a：0→50ms / <20→20ms floor）+ state_rpc_e2e
-           6 test（gateway-only，不起 s1）。**0 改 B4 wire 6 method / 0 触 §6.7（只读）/
-           0 改 robotctl / 0 改 design.md / 0 改 S0·S1 daemon**。详
-           docs/handoffs/v0.5_get_stream_state_summary.md。
-           **design-freeze diff + 4 PE 必读**：D3（`GetState(Empty)`→`GetStateRequest
-           {hardware_id}` 走 CHANGELOG）/ PE1（fbs enum newtype struct → variant-count
-           lock 防漂移）/ PE2（proto-additive 强制 gateway graceful unimplemented 占位
-           → 真 handler 2/4+3/4）/ PE3（state_pool `mem::forget(sub)` 有界泄漏 =
-           iceoryx2 0.8.1 Drop SIGSEGV workaround，**已于 2026-07-12 v0.5 基建
-           段撤销**〔上游 #1629〕）。
-           **C1 延续非安全保证**：read RPC 无 auth 字段、服务端不读不校验 token、
-           read_state cap 不实现。封存时 workspace 1117 PASS / 0 FAIL。
-
-v0.5 候选 A: operator CLI (`robotctl`) ✅ 完结（5 feat + 1 fix + 7 docs = 13 commit，
-           `809575f` → `25c2feb`）；crates/robot-cli +7 tonic gRPC operator 子命令 +
-           robotctl_smoke 12/12。三条非安全保证：A4（robot-cli dep robot-rpc/client →
-           task_rpc_e2e 默认随 workspace 跑）/ C1（read RPC token gate 仅 client-side）/
-           D6（--dry-run 仅 clear-estop 端到端）。详
-           docs/handoffs/v0.5_operator_cli_summary.md。
-
-v0.4 收口:  候选 3 (per-ActionId pubsub cleanup) ✅ + 候选 1 (Scripted backend) ✅
-           + 候选 2 round 1 (robot-kinematics trait crate) ✅
-           + 候选 2 round 2 (robot-kinematics-xlerobot impl + IkBackend + S1 wiring + e2e) ✅
-           + 候选 4 (dimos 切换 light Research) ✅（commit e6178f2）。
-
-v0.2 收尾:  commit 0fa1d77（2026-04-26 reviewer "复核通过，按降级宣称进入 v0.3"）。
-            §6.7 #4 真锁住继承自 v0.2；#2 (A2 land) + #3 (A1-5 land) 在 v0.3 Phase A 升级到真锁住。
-            详 docs/handoffs/v0.3_a1_4_clear_estop_smoke.md §5 + docs/CHANGELOG.md A1-5 升级登记。
-
-Phase A 收尾: A1 ClearEStop control plane（A1-1 → A1-5）+ A2 worker freeze hook 全 ✅；
-            §6.7 #2 + #3 升级到真锁住。详 docs/handoffs/v0.3_a1_4_clear_estop_smoke.md
-            + 2026-04-26_6.md。
+已完结:    候选 E  替换执行面(受监督demo)  → v0.5_demo_run_2026-09-01_summary.md
+           候选 A  operator CLI (robotctl)  → v0.5_operator_cli_summary.md
+           候选 B  GetState/StreamState     → v0.5_get_stream_state_summary.md
+           候选 C  SetEnabled RPC           → v0.5_set_enabled_summary.md
+           候选 D  EStop 触发 RPC            → v0.5_estop_summary.md
+           v0.5 基建  iceoryx2 0.9.3 + 全依赖升级（2026-07-12：解 toolchain pin +
+                      撤 mem::forget workaround ×2）→ 见归档
+           v0.4 收口  候选 1 / 2(r1+r2) / 3 / 4 → v0.4_*_summary.md
+           v0.3 Phase A/B + v0.2 收尾        → v0.3_*_summary.md + 见归档
 
 §6.7 真宣称: #1 ✅ S0 存活 = 软件层安全充分条件
             #2 ✅ systemd 看门狗（v0.3 A2 freeze hook + freeze_systemd_smoke 端到端真锁）
@@ -163,117 +49,6 @@ Phase A 收尾: A1 ClearEStop control plane（A1-1 → A1-5）+ A2 worker freeze
                   --allow-empty-latch；唯一清 latch 路径 = ClearEStop control action）
             #4 ✅ S0 重启不失忆（v0.2 fsync 双写 + crash_restart_smoke 5/5 PASS）
             #5 ✅ 幂等写 RPC（IdempotencyCache + idempotency_key fingerprint + idem_replay e2e 真过）
-
-Phase B 进度（已完结，commit `cac4515` Phase B 收尾）:
-            B1 ✅（s1_daemon hold + heartbeat 闭环 + 启动锚定 fail-fast；commit `f9b0764`）。
-            B2 ✅（policy/action interface + S1 coordinator state machine + binary wiring；
-                commit chain `4b9d4de` → `4b17e29`；详 docs/handoffs/v0.3_b2_summary.md）。
-            B3 ✅（第一个真 action backend = HoldPoseBackend；source_task_id == TickState.cmd_seq
-                单调契约锁；commit chain `916202e` → `d1f5031`；详 docs/handoffs/v0.3_b3_summary.md）。
-            B4 ✅（robot-rpc full gateway 5 task method + s1 4 RR server + per-ActionId events
-                drain pubsub + gateway 5 rr_io_thread + sync↔async 桥 + 6 cross-process e2e；
-                详 docs/handoffs/v0.3_b4_summary.md §3 7 条契约 + §4 e2e harness 工程经验）。
-
-v0.4 进度:
-            候选 3 ✅（per-ActionId pubsub cleanup + AC-C1 reap_finished；11 commit + summary）。
-                EventsDrainRegistry::reap_finished(&self) -> usize 锁内 swap_remove + 锁外 join
-                + panic 不传播但 warn + 1s reaper thread + shutdown step 4 reaper.stop+join；
-                events_registry_len final == 0 + triggered_c1 == false + smoke --phase all
-                exit 0；commit chain `cf8ddd8` → `2518fc0`；详
-                docs/handoffs/v0.4_pubsub_cleanup_summary.md。
-            候选 1 ✅（Scripted backend = joint-space 线性插值 + waypoint dwell；第二个真
-                action backend；6 docs/spec/plan 前置 + 3 实施 commit = 9 commit，加 summary
-                = 10 commit）。
-                schema 注册链 6 步 atomic + ActionKindProto/Fb/ActionKind 三层 append +
-                ScriptedBackend lib + gateway 两道 byte gate (MAX_SCRIPTED_PAYLOAD_BYTES =
-                4 KiB + CONTROL_TIER_MAX_BYTES = SizeTier::Control.max_bytes() 单源绑定) +
-                scripted_backend_smoke cross-process e2e AC-4/5/6/7 全过；commit chain
-                `d8ba207` → `70dcb25`（origin/master 已 push）；详
-                docs/handoffs/v0.4_scripted_backend_summary.md。
-                **关键契约**：source_task_id == ctx.command_seq 跨 segment 严格单调（沿 B3
-                §3.7）+ Dwell start_ns 锚定 Interp 自然完成时刻（覆盖大步推 clock 收敛）+
-                cancel 两层分离（backend lib PartialSuccess ↔ coordinator ActionEvent::
-                Cancelled 终态 only）。
-            候选 2 round 1 ✅（robot-kinematics trait crate first release；3 docs/spec/plan
-                前置 + 1 实施 commit = 4 commit，加 summary = 5 commit）。
-                新 workspace member crates/robot-kinematics（Cargo.toml workspace 继承 +
-                [lints] workspace = true + [dependencies] thiserror 唯一 runtime dep；
-                cargo tree --edges normal,no-proc-macro = {thiserror v2.0.18}）+ src/lib.rs
-                313 L 单文件（5 共享类型 Pose / Twist / Jacobian / KinematicInfo /
-                IkSolution + JointLimit POD 嵌套于 KinematicInfo.joint_limits；自带 POD
-                零 nalgebra）+ IkError 5 variant
-                (InvalidInput / NoSolution / OutOfReach / SingularityTooClose /
-                DeadlineExceeded；thiserror::Error derive；exhaustive match 编译期锁)+
-                ArmIkSolver: Send + Sync trait (info() + solve(target: &Pose, seed:
-                Option<&[f64]>, deadline_ns: Option<u64>) -> Result<IkSolution, IkError>;
-                dyn-safe + assert_dyn_safe::<dyn ArmIkSolver>() 编译期 monomorphize 锁)+
-                4 lib unit + AC-6 "trait 层不预钉 XLeRobot clamp 行为" 四处双写防漂移
-                (Cargo.toml description + lib.rs 模块 doc + trait doc + Spec AC-6)+ 零
-                robot-s1/rpc/msg/s0/adapters/tests 改动 + 零 wire schema 改动；commit chain
-                `557e354` → `64cf312` → `98b6033` → `6caf0ee`（origin/master 已 push）+
-                summary 本日 land；详 docs/handoffs/v0.4_robot_kinematics_round1_summary.md。
-                **关键契约**：trait dyn-safe 编译期锁 + IkError exhaustive match 锁 + 不预钉
-                XLeRobot clamp 行为（四处双写）+ deadline_ns: Option<u64> 仓库统一时间模型对齐
-                （robot-core::time::MonoRawNs(u64) + Deadline + ActionRequest.deadline_ns;
-                trait crate 不 dep robot-core）+ 零 runtime 依赖（trait crate 永远不扩
-                [dependencies]）+ 零 robot-s1 改动。
-                **不在范围**（推到 round 2）：BaseKinematics trait（Q5(b) ACK 推迟）+
-                robot-kinematics-xlerobot impl + IkBackend 第三个真 action backend + S1
-                coordinator 持 Box<dyn ArmIkSolver> + IkPayload fbs body (SCHEMA_IK_PAYLOAD
-                = 0x040C) + ActionKindProto::Ik / ActionKindFb::Ik / ActionKind::Ik 三层
-                enum append + ik_backend_smoke cross-process e2e。
-                **cargo deny check 状态**：未新增 violation；overall licenses FAILED 是既有
-                baseline（assert_no_alloc BSD-1-Clause + serialport MPL-2.0 + unescaper
-                标识符 warning；全部跟 robot-kinematics 无关；baseline 已在 HEAD = 98b6033
-                存在）；follow-up 独立 commit / PR 处理，不进 round 1。
-            候选 2 round 2 ✅（robot-kinematics-xlerobot impl + IkBackend 第三个真 action
-                backend + S1 wiring + ik_backend_smoke cross-process e2e；3 docs/spec/plan
-                前置 + 4 实施 commit = 7 commit，加 summary = 8 commit）。
-                新 workspace member crates/robot-kinematics-xlerobot（Cargo.toml workspace
-                继承 + 唯一 runtime dep robot-kinematics trait crate；零 nalgebra；
-                cargo tree --edges normal,no-proc-macro = {robot-kinematics → thiserror}）+
-                src/lib.rs 763 L 单文件（XLeRobotArmIkSolver 5-DOF 闭式 IK 沿 dimos
-                arm_ik.py path A 闭式硬编码 + Side { Right, Left } sign 控制 target_y 符号
-                + Q-IK6 (a) yaw != 0 reject + Q-IK16 (a) clamp 路径走 Ok(clamped) + 9 lib
-                unit）+ IK schema 注册链 6 步 atomic (SCHEMA_IK_PAYLOAD = 0x0000_040C +
-                IkPayload fbs body + BodyMarker + SizeTier::Control + build_helpers) +
-                三层 ActionKind::Ik enum append (proto ACTION_KIND_IK = 4 + fbs Ik = 4 +
-                lib Ik) + 三个 variant count 锁测同步 4 → 5 + IkBackend (8 步 semantic
-                check 顺序短路 + IkInstance Q-IK17 (a) single-shot tick 收敛 + cancel
-                PartialSuccess { warning: "cancelled_{before,after}_emit" } +
-                map_ik_error_to_start_error 5 variant exhaustive + inventory::submit! +
-                17 lib unit 含 bit-equivalent + Q-IK10 三层 fail-fast: UnknownBackend /
-                MissingSolver / NoBackendForKind) + ActionContext::solver: Option<&dyn
-                ArmIkSolver> 引用 plumb (Q-IK3 (a) 不 Arc / 不 clone) + Coordinator::
-                solver: Option<Box<dyn ArmIkSolver>> 持有 + validate_solver_for_profile
-                + ProfileError::MissingSolver 新 variant (Q-IK10b (i) startup 校验) +
-                s1_daemon feature-gated XLeRobotArmIkSolver::new(Side::Right) 注入 +
-                ik_backend_smoke 5-phase cross-process e2e (selftest / happy / monotonic
-                / unreachable_clamp / invalid_input；all 5/5 PASS)；commit chain
-                `a42ef73` → `7fd0756` → `266191f` → `19a3f43` → `ce2f498` → `13ecde8`
-                → `c0ef8e1`（origin/master 已 push）；详
-                docs/handoffs/v0.4_robot_kinematics_round2_summary.md。
-                **关键契约**：round 1 trait crate 0 改动（Spec §"严禁改动" #1 hard
-                boundary）+ source_task_id == ctx.command_seq bit-equivalent + cross-
-                process monotonic 实测（27+ entries 严格单调）+ Q-IK10 三层 fail-fast
-                + Q-IK16 (a) clamp 路径走 Ok(clamped) e2e 锁住 + deadline 单一权威 =
-                backend pre/post guard（solver 收 None 永不返 DeadlineExceeded）+ 3 类
-                ActionStartError 映射严格分离（PayloadDecode / HardwareMismatch /
-                Rejected 全部 → tonic FailedPrecondition）+ frozen schema 不动（B4 wire
-                契约 + IkPayload byte cap 沿 Control tier 兜底）。
-                **Quality Gate 实测**：989 PASS / 0 FAIL workspace tests（+30 new）+
-                双路 crash_restart_smoke 5/5+5/5 + scripted_backend_smoke 5/5 PASS +
-                pubsub_cleanup_smoke all PASS + triggered_c3=false + ik_backend_smoke
-                --phase all **5/5 PASS**（本 round 2 硬 gate）。
-                **cargo deny check 状态**：未新增 violation；overall licenses FAILED 是
-                既有 baseline（assert_no_alloc BSD-1-Clause + serialport MPL-2.0 两条
-                error[rejected] + unescaper GPL-3.0/MIT 一条 warning[parse-error]；3 处
-                全部跟 round 2 本轮改动无关；沿 round 1 + 候选 1 同款 follow-up 独立
-                处理路径）。
-            候选 4 ⬜ 准备开（dimos 切换 light Research）。
-                **不**捆绑 round 2 trait crate / impl crate 改动；**不**改候选 1/3 既
-                有 smoke binary 行为；触发：本 round 2 summary push + reviewer 候选 4
-                entry ACK；详 round 2 summary "开工前必读"接班 checklist。
 
 上游项目:   /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
 ```
