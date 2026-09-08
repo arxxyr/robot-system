@@ -15,6 +15,7 @@ use tonic::transport::{Channel, Endpoint};
 
 use robot_core::serial_services::BusOpClass;
 use robot_s0::comm_fault_hook::{HookCommandKind, RESULT_HARDWARE_FAULT, TestCommFaultCommand};
+use robot_s0::comm_fault_trace::SampleMode;
 use robot_s0::worker_stop::WorkerKind;
 
 use super::Args;
@@ -22,6 +23,7 @@ use super::control::{ControlPort, wait_applied};
 use super::harness::{Case, isolated_command, stop, wait_log};
 use super::heartbeat::HeartbeatFeed;
 use super::report::Report;
+use super::sla::send_sample_request;
 
 struct RequestTask<T>(tokio::task::JoinHandle<T>);
 impl<T> Drop for RequestTask<T> {
@@ -145,9 +147,7 @@ async fn inflight_fault(
         let before = case.observation("s0")?;
         let trace = case.trace("s0")?;
         if !trace.installed() { return Err("S0未安装真实运行时事件环".to_owned()); }
-        port.send(TestCommFaultCommand { sequence: 101, duration_ms: 0, count: 0,
-            kind: HookCommandKind::ArmSample as u8, target: 0, error: 0, reserved: [0; 5] })?;
-        wait_applied(&case, &mut s0, 101).await?;
+        send_sample_request(&port, &case, &mut s0, &trace, SampleMode::ArmInflight).await?;
         if fault_code == 6 {
             port.send(serial_command(1, BusOpClass::Safety, 0, 0, 3))?;
             wait_applied(&case, &mut s0, 1).await?;
@@ -197,6 +197,7 @@ async fn inflight_fault(
         if std::fs::read(&case.latch).map_err(|e| e.to_string())? != b"0\n" {
             return Err("非急停故障误改latch".to_owned());
         }
+        let disarmed = send_sample_request(&port, &case, &mut s0, &trace, SampleMode::Disarm).await;
         let trace_events = trace.drain(8192);
         if trace.dropped() != 0 { return Err("事件环丢失，SLA证据无效".to_owned()); }
         let trace_path = case.directory.join("fault_trace.csv");
@@ -209,6 +210,8 @@ async fn inflight_fault(
                     event.source, event.normal_seq, event.generation, event.a, event.b).map_err(|e| e.to_string())?;
             }
         }
+        let (_, boundary) = disarmed?;
+        if boundary.failure.is_some() { return Err(format!("Fault采样边界失败：{boundary:?}")); }
         let sla = if fault_code == 7 {
             verify_fault_visibility(&trace_events, samples.last().ok_or("缺GetState样本")?)?
         } else { Value::Null };

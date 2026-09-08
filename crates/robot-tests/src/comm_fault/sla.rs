@@ -14,7 +14,9 @@ use robot_msg::{build_helpers::build_estop_event, markers};
 use robot_rpc::proto::robot_control_client::RobotControlClient;
 use robot_rpc::proto::{ClearEStopCommand, GetStateRequest, SetEnabledCommand};
 use robot_s0::comm_fault_hook::{HookCommandKind, TestCommFaultCommand};
-use robot_s0::comm_fault_trace::{TRACE_CAPACITY, TraceEvent, TraceKind, TracePage};
+use robot_s0::comm_fault_trace::{
+    BoundarySnapshot, SampleMode, SampleStatus, TRACE_CAPACITY, TraceEvent, TraceKind, TracePage,
+};
 use robot_s0::deploy::identity::load_and_verify_arm_config;
 use robot_s0::deploy::types::DeployArm;
 use robot_s0::rx_trust::{RealMarkerFs, acquire_trust_lock, marker_status};
@@ -784,6 +786,154 @@ async fn send_control(
     Ok(sequence)
 }
 
+fn boundary_evidence(snapshot: BoundarySnapshot) -> Value {
+    json!({"request_seq": snapshot.request_seq, "request_mode": format!("{:?}", snapshot.request_mode),
+        "request_deadline_ns": snapshot.request_deadline_ns, "receipt_seq": snapshot.receipt_seq,
+        "mode": format!("{:?}", snapshot.mode), "status": format!("{:?}", snapshot.status),
+        "ready_ns": snapshot.ready_ns, "idle_deadline_ns": snapshot.idle_deadline_ns,
+        "armed_seq": snapshot.armed_seq, "gate_active": snapshot.gate_active,
+        "gate_release": format!("{:?}", snapshot.gate_release),
+        "failure_seq": snapshot.failure_seq, "failure": format!("{:?}", snapshot.failure)})
+}
+
+/// 匹配请求与回执的真实完成事实；外层轮询期限不能掩盖已知的边界超时。
+pub(super) fn sample_boundary_ready(
+    sequence: u64,
+    mode: SampleMode,
+    snapshot: &BoundarySnapshot,
+    now: u64,
+) -> Result<bool, String> {
+    if snapshot.request_seq != sequence {
+        return Ok(false);
+    }
+    if snapshot.request_mode != Some(mode) {
+        return Err("采样请求模式与预期不一致".to_owned());
+    }
+    if mode != SampleMode::Disarm && snapshot.failure.is_some() {
+        return Err(format!("采样边界保留失败：{snapshot:?}"));
+    }
+    if snapshot.receipt_seq != sequence
+        || matches!(
+            snapshot.status,
+            SampleStatus::Empty | SampleStatus::Pending | SampleStatus::Applying
+        )
+    {
+        return if now >= snapshot.request_deadline_ns {
+            Err("已接收的采样请求超过固定边界截止".to_owned())
+        } else {
+            Ok(false)
+        };
+    }
+    if snapshot.mode != Some(mode) {
+        return Err("采样回执模式与请求不一致".to_owned());
+    }
+    if snapshot.ready_ns >= snapshot.request_deadline_ns {
+        return Err("采样边界未在固定截止前完成".to_owned());
+    }
+    match (mode, snapshot.status) {
+        (SampleMode::Disarm, SampleStatus::Disarmed) if snapshot.armed_seq == 0 => Ok(true),
+        (SampleMode::ArmIdle, SampleStatus::Ready)
+            if snapshot.armed_seq == sequence
+                && snapshot.gate_active
+                && now < snapshot.idle_deadline_ns =>
+        {
+            Ok(true)
+        }
+        (SampleMode::ArmInflight, SampleStatus::Ready) if snapshot.armed_seq == sequence => {
+            Ok(true)
+        }
+        _ => Err(format!("采样边界状态或有效窗口不满足请求：{snapshot:?}")),
+    }
+}
+
+/// 单次真实轮询与错误留证共用入口，先读 control 提交确认再读取边界。
+pub(super) fn poll_sample_request(
+    sequence: u64,
+    mode: SampleMode,
+    last: &mut Option<BoundarySnapshot>,
+    read_applied: impl FnOnce() -> Result<u64, String>,
+    read_boundary: impl FnOnce() -> Option<BoundarySnapshot>,
+    read_now: impl FnOnce() -> u64,
+) -> Result<bool, String> {
+    // control 在请求发布或拒绝后 Release 写确认字；先 Acquire 读它，
+    // 再取边界快照，不能把旧快照与随后到达的新确认拼成虚假拒绝。
+    let applied = read_applied()?;
+    if let Some(snapshot) = read_boundary() {
+        *last = Some(snapshot);
+        if sample_boundary_ready(sequence, mode, &snapshot, read_now())? {
+            return Ok(true);
+        }
+        if applied == sequence && snapshot.request_seq != sequence {
+            return Err(format!("control 已处理但拒绝采样请求：{snapshot:?}"));
+        }
+    }
+    Ok(false)
+}
+
+pub(super) async fn send_sample_request(
+    port: &ControlPort,
+    case: &Case,
+    s0: &mut tokio::process::Child,
+    trace: &TracePage,
+    mode: SampleMode,
+) -> Result<(u64, BoundarySnapshot), String> {
+    let sequence = COMMAND_SEQ.fetch_add(1, Ordering::Relaxed);
+    let started_ns = SystemClock.now().0;
+    let deadline = started_ns + 3_000_000_000;
+    let mut last = None;
+    let result = async {
+        port.send(TestCommFaultCommand {
+            sequence,
+            duration_ms: 0,
+            count: 0,
+            kind: HookCommandKind::ArmSample as u8,
+            target: match mode {
+                SampleMode::ArmInflight => 0,
+                SampleMode::Disarm => 1,
+                SampleMode::ArmIdle => 2,
+            },
+            error: 0,
+            reserved: [0; 5],
+        })?;
+        loop {
+            if poll_sample_request(
+                sequence,
+                mode,
+                &mut last,
+                || {
+                    case.observation("s0")
+                        .map(|observation| observation.command_applied)
+                },
+                || trace.boundary_snapshot(),
+                || SystemClock.now().0,
+            )? {
+                return last
+                    .map(|snapshot| (sequence, snapshot))
+                    .ok_or_else(|| "采样完成却缺少对应边界快照".to_owned());
+            }
+            if let Some(status) = s0.try_wait().map_err(|error| error.to_string())? {
+                return Err(format!("等待采样边界时 S0 退出：{status}"));
+            }
+            if SystemClock.now().0 >= deadline {
+                return Err(format!("采样请求 {sequence} 未取得对应真实边界回执"));
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+    .await;
+    let evidence = json!({"sequence": sequence, "mode": format!("{mode:?}"),
+        "started_ns": started_ns, "finished_ns": SystemClock.now().0,
+        "snapshot": last.map(boundary_evidence), "error": result.as_ref().err()});
+    let mut journal = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(case.directory.join("boundary.jsonl"))
+        .map_err(|error| error.to_string())?;
+    writeln!(journal, "{evidence}").map_err(|error| error.to_string())?;
+    journal.flush().map_err(|error| error.to_string())?;
+    result
+}
+
 fn publish_estop(
     output: &mut Iceoryx2Publisher<markers::EStopEvent>,
     sequence: u64,
@@ -1059,38 +1209,62 @@ impl SlaRunner<'_> {
     async fn software_samples(&mut self) -> Result<Vec<Value>, String> {
         let mut samples = Vec::new();
         for external in [false, true] {
-            for attempt in 0..2 {
-                let (sample, events) = self.attempt(attempt, external, false).await?;
-                if sample.in_flight {
-                    return Err("现有 mock 不提供真实总线 acquire，不能宣称在途采样".to_owned());
-                }
-                let mut safety_started = None;
-                let mut safety_durations = Vec::new();
-                for event in &events {
-                    match event.kind {
-                        TraceKind::SafetyStart => safety_started = Some(event.stamp_ns),
-                        TraceKind::SafetyReturn => {
-                            let started = safety_started.take().ok_or("Safety 返回无入口")?;
-                            let elapsed = event
-                                .stamp_ns
-                                .checked_sub(started)
-                                .ok_or("Safety 时间倒序")?;
-                            safety_durations.push(elapsed);
-                            if elapsed >= 10_000_000 {
-                                return Err(format!(
-                                    "AC13 mock 单次 Safety 调用不小于10ms：{elapsed}ns"
-                                ));
-                            }
-                        }
-                        _ => {}
+            for in_flight in [false, true] {
+                send_control(
+                    self.port,
+                    self.case,
+                    self.s0,
+                    HookCommandKind::NormalDelayProfile,
+                    0,
+                    u32::from(in_flight),
+                    if in_flight { 5 } else { 0 },
+                )
+                .await?;
+                let mut completed = 0;
+                for attempt in 0..32 {
+                    let (sample, events) = self.attempt(attempt, external, in_flight).await?;
+                    if sample.in_flight != in_flight {
+                        self.record_attempt(&json!({"external": external, "attempt": attempt,
+                        "requested_in_flight": in_flight, "matched": false,
+                        "epoch": events[0].sample_seq}))?;
+                        continue;
                     }
-                }
-                let evidence = json!({"external": external, "cycle": attempt,
+                    let mut safety_started = None;
+                    let mut safety_durations = Vec::new();
+                    for event in &events {
+                        match event.kind {
+                            TraceKind::SafetyStart => safety_started = Some(event.stamp_ns),
+                            TraceKind::SafetyReturn => {
+                                let started = safety_started.take().ok_or("Safety 返回无入口")?;
+                                let elapsed = event
+                                    .stamp_ns
+                                    .checked_sub(started)
+                                    .ok_or("Safety 时间倒序")?;
+                                safety_durations.push(elapsed);
+                                if elapsed >= 10_000_000 {
+                                    return Err(format!(
+                                        "AC13 mock 单次 Safety 调用不小于10ms：{elapsed}ns"
+                                    ));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    let evidence = json!({"external": external, "cycle": completed, "attempt": attempt,
                     "epoch": events[0].sample_seq, "t0_ns": sample.t0_ns, "t1_ns": sample.t1_ns,
                     "all_off_ns": sample.all_off_ns, "real_rpc_recovery_verified": true,
-                    "mock_safety_call_ns": safety_durations, "in_flight": false});
-                self.record_attempt(&evidence)?;
-                samples.push(evidence);
+                    "mock_safety_call_ns": safety_durations, "in_flight": in_flight,
+                    "requested_in_flight": in_flight, "matched": true, "mock_lease": true});
+                    self.record_attempt(&evidence)?;
+                    samples.push(evidence);
+                    completed += 1;
+                    if completed == 2 {
+                        break;
+                    }
+                }
+                if completed != 2 {
+                    return Err("mock 四组采样未在有界次数内取得每组两项完整匹配样本".to_owned());
+                }
             }
         }
         Ok(samples)
@@ -1155,14 +1329,16 @@ impl SlaRunner<'_> {
         let unarmed = self.trace.drain(TRACE_CAPACITY);
         // 上一 epoch 必须已完整消费并解除采样；迟到事件同样保留，不静默丢弃。
         save_events(self.csv, attempt, external, &unarmed)?;
-        let sequence = send_control(
+        let (sequence, _) = send_sample_request(
             self.port,
             self.case,
             self.s0,
-            HookCommandKind::ArmSample,
-            0,
-            0,
-            0,
+            self.trace,
+            if in_flight {
+                SampleMode::ArmInflight
+            } else {
+                SampleMode::ArmIdle
+            },
         )
         .await?;
         let mut events = Vec::new();
@@ -1187,21 +1363,26 @@ impl SlaRunner<'_> {
             collect(self.trace, sequence, self.s0, &mut events).await
         }
         .await;
-        events.extend(self.trace.drain(TRACE_CAPACITY));
-        events.sort_by_key(|event| event.stamp_ns);
-        save_events(self.csv, attempt, external, &events)?;
-        let disarmed = send_control(
+        let disarmed = send_sample_request(
             self.port,
             self.case,
             self.s0,
-            HookCommandKind::ArmSample,
-            1,
-            0,
-            0,
+            self.trace,
+            SampleMode::Disarm,
         )
         .await;
+        // 回执确认真实 lease 完整退场后才收尾；失败也保存已消费的全部原始事件。
+        events.extend(self.trace.drain(TRACE_CAPACITY));
+        events.sort_by_key(|event| event.stamp_ns);
+        save_events(self.csv, attempt, external, &events)?;
         let interpreted = captured
-            .and(disarmed.map(|_| ()))
+            .and(disarmed.and_then(|(_, snapshot)| match snapshot.failure {
+                Some(failure) => Err(format!(
+                    "采样边界保留失败：seq={} {failure:?}",
+                    snapshot.failure_seq
+                )),
+                None => Ok(()),
+            }))
             .and_then(|()| analyze(&events, external))
             .and_then(|sample| {
                 if in_flight && sample.in_flight {
@@ -1392,8 +1573,9 @@ async fn measure(
     }
     Ok(
         json!({"groups": groups, "background": background, "trace_dropped": trace.dropped(),
-        "events_csv": case.directory.join("events.csv"), "hardware_only": physical, "runtime_only": !physical, "in_flight_exercised": physical,
-        "scope": if physical { "Orin真实总线H2测量" } else { "真实mock进程空闲两入口采集/恢复；无OrinP99判据、无在途总线宣称" }}),
+        "events_csv": case.directory.join("events.csv"), "hardware_only": physical, "runtime_only": !physical, "in_flight_exercised": true,
+        "mock_lease": !physical,
+        "scope": if physical { "Orin真实总线H2测量" } else { "真实mock进程两入口×idle/inflight调用lease采集/恢复；无UART与OrinP99宣称" }}),
     )
 }
 
@@ -1405,8 +1587,11 @@ async fn final_stop(
     hardware_id: &str,
 ) -> Result<Value, String> {
     // 即使前面的日志、连接、采样或证据写入失败，也独立发出一次真实急停。
-    let disarmed = send_control(port, case, s0, HookCommandKind::ArmSample, 1, 0, 0).await;
     let estop = send_control(port, case, s0, HookCommandKind::ExternalEStop, 0, 0, 0).await;
+    let disarmed = match case.trace("s0") {
+        Ok(trace) => send_sample_request(port, case, s0, &trace, SampleMode::Disarm).await,
+        Err(error) => Err(error),
+    };
     tokio::time::sleep(Duration::from_millis(700)).await;
     let observed = async {
         let mut client = connect(address).await?;
@@ -1455,7 +1640,7 @@ pub(super) async fn software_probe(args: &Args) -> Result<Value, String> {
         case,
         "arm",
         &json!({"runtime_only": true, "hardware_only": false,
-        "in_flight_exercised": false}),
+        "in_flight_exercised": true, "mock_lease": true, "physical_uart": false}),
         false,
     )
     .await

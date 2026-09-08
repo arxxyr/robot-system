@@ -1331,7 +1331,11 @@ mod tests {
         publish_estop(&mut estop_pub, 42_000_000);
 
         wait_until(
-            || state_rdr.load().state == S0State::Safe,
+            || {
+                // 启动快照也可能暂为 Safe，须等待同一快照中的真实急停 latch。
+                let snapshot = state_rdr.load();
+                snapshot.state == S0State::Safe && snapshot.guards_summary.estop_latched
+            },
             Duration::from_secs(2),
         );
 

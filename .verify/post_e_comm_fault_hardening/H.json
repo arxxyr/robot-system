@@ -1,43 +1,226 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "base_commit": "85efefb6996fdc5c066533c07f5060d7c6ad0f25",
-  "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a",
-  "source_input_count": 308,
-  "status": "SOFTWARE_ACCEPTED_LEFT_H1_H3_PASSED_H2_PENDING",
-  "review_status": "APPROVED_S44_SOFTWARE_AND_LEFT_H1_H3",
+  "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
+  "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
+  "source_input_count": 309,
+  "status": "S45_SOFTWARE_ACCEPTED_LEFT_H2_RETEST_PENDING",
+  "review_status": "APPROVED_SOFTWARE_SCOPE",
   "deployable": false,
-  "scope": "S-44 H2验收工具调度修复与左臂H1/H3；不宣称物理H2、右臂或D15通过。",
+  "scope": "S-45实现及两端软件验收已独立批准；左H1/H3通过，左H2首次FAIL已真实收尾，修复后H2待新的物理边界；右未测，D15 OPEN。",
   "software": {
-    "local": {
-      "tool_tests_passed": 57,
-      "new_rt_acceptance_tests": 11,
-      "fmt": "PASS",
-      "clippy_default": "PASS",
-      "clippy_tool_all_features": "PASS",
-      "actual_build_manifests": 3,
-      "mock_ac12": "PASS",
-      "evidence": [
-        "local/gates.json",
-        "local/runtime.json",
-        "local/commit_gates.json"
-      ]
-    },
-    "orin": {
-      "tool_tests_passed": 57,
-      "fmt": "PASS",
-      "clippy_tool_all_features": "PASS",
-      "actual_build_manifests": 3,
-      "mock_ac12": "PASS",
-      "mock_s0_actual_rt": {
-        "cpu4": "PASS",
-        "cpu5": "PASS",
-        "scope": "仅S0：每次11个实际TID，串口FIFO70@指定CPU，其余OTHER0@CPU0–3，退出0；完整H2三进程gate待物理H2启动执行。"
+    "s44": {
+      "local": {
+        "tool_tests_passed": 57,
+        "new_rt_acceptance_tests": 11,
+        "fmt": "PASS",
+        "clippy_default": "PASS",
+        "clippy_tool_all_features": "PASS",
+        "actual_build_manifests": 3,
+        "mock_ac12": "PASS",
+        "evidence": [
+          "local/gates.json",
+          "local/runtime.json",
+          "local/commit_gates.json"
+        ]
       },
-      "evidence": [
-        "orin/s44.json",
-        "orin/mock_rt/run.json"
-      ]
+      "orin": {
+        "tool_tests_passed": 57,
+        "fmt": "PASS",
+        "clippy_tool_all_features": "PASS",
+        "actual_build_manifests": 3,
+        "mock_ac12": "PASS",
+        "mock_s0_actual_rt": {
+          "cpu4": "PASS",
+          "cpu5": "PASS",
+          "scope": "仅两轮mock S0调度；随后真实左H2三进程RT门也PASS，测量本身FAIL。"
+        },
+        "evidence": [
+          "orin/s44.json",
+          "orin/mock_rt/run.json"
+        ]
+      },
+      "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a",
+      "review": {
+        "reviewer": "inspect_current_specs",
+        "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a",
+        "blocking_findings": 0,
+        "independent_checks": [
+          "63 Orin原始文件 SHA/大小及64归档成员",
+          "两端57测试与实际Cargo产物身份",
+          "Orin两核实际11 TID S0调度",
+          "H1完整双事务/响应与100+1000重算",
+          "H3全部1100帧/一写零读/1000正式样本时延重算"
+        ],
+        "approved_scope": "S-44软件实现及左H1/H3；H2与右臂未测，D15 OPEN"
+      }
+    },
+    "s45": {
+      "status": "APPROVED_SOFTWARE_SCOPE",
+      "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
+      "source_input_count": 309,
+      "source_review": "APPROVED",
+      "first_run": {
+        "status": "LOCAL_PASS_ORIN_66_PASS_1_FAIL",
+        "source_hash": "e383b15a0aca3df18ae5f6e4de61a05b0f1d6fabb2f54daa4543ed66b23938b6",
+        "source_input_count": 309,
+        "source_review": "APPROVED",
+        "local": {
+          "fmt": "PASS",
+          "clippy_default": "PASS",
+          "clippy_s0_tool_all_features": "PASS",
+          "core_tests": 79,
+          "s0_lib_tests": 394,
+          "s0_bin_tests": 5,
+          "startup_tests": 8,
+          "serial_tests": 5,
+          "tool_tests": 58,
+          "actual_allocation_abort_test": "PASS",
+          "evidence": [
+            "local/s45/gates.json",
+            "local/s45/runtime.json",
+            "local/s45/mock/report.json",
+            "local/s45/mock/000_runtime_sla_probe/boundary.jsonl"
+          ],
+          "runtime_scenarios": 67,
+          "mock_ac12": {
+            "status": "PASS",
+            "samples": 8,
+            "per_source_and_load_group": 2,
+            "event_rows": 253,
+            "complete_normal_leases": 14,
+            "inflight_delay_samples": 4,
+            "boundary_receipts": 17,
+            "dropped": 0,
+            "final_safety_state": 3
+          },
+          "rpc_three_faults": "PASS",
+          "actual_build_manifests": 3,
+          "independent_review": "ACK"
+        },
+        "orin": {
+          "status": "FAIL",
+          "core_tests": 79,
+          "s0_lib_tests": 394,
+          "s0_bin_tests": 5,
+          "serial_tests": 5,
+          "startup_tests": 8,
+          "tool_tests": 58,
+          "rt_guard": {
+            "debug_allocation_abort": "PASS",
+            "debug_soak_60s": "PASS",
+            "release_allocation_abort": "PASS",
+            "release_soak_60s": "PASS"
+          },
+          "gates_passed": 17,
+          "runtime_scenarios_passed": 66,
+          "runtime_scenarios_failed": 1,
+          "exit_code": 1,
+          "evidence": [
+            "orin/s45/run.json",
+            "orin/s45/software_all/report.json",
+            "orin/s45/final_audit.json"
+          ],
+          "failure": "seq10009先读旧boundary再读新CommandApplied导致误拒；原环另有81条epoch10009已提交未消费事件，dropped0。"
+        }
+      },
+      "local": {
+        "status": "PASS",
+        "gates_passed": 8,
+        "tool_tests": 60,
+        "evidence": [
+          "local/s45/recheck/gates.json",
+          "local/s45/recheck/runtime.json",
+          "local/s45/recheck/mock/report.json",
+          "local/s45/recheck/mock/000_runtime_sla_probe/boundary.jsonl"
+        ],
+        "fmt": "PASS",
+        "clippy_default": "PASS",
+        "clippy_s0_tool_all_features": "PASS",
+        "core_tests": 79,
+        "s0_lib_tests": 394,
+        "s0_bin_tests": 5,
+        "startup_tests": 8,
+        "serial_tests": 5,
+        "actual_allocation_abort_test": "PASS",
+        "actual_build_manifests": 3,
+        "runtime_scenarios": 67,
+        "mock_ac12": {
+          "status": "PASS",
+          "samples": 8,
+          "per_source_and_load_group": 2,
+          "dropped": 0,
+          "event_rows": 248,
+          "complete_normal_leases": 14,
+          "boundary_receipts": 17,
+          "final_safety_state": 3
+        },
+        "rpc_three_faults": "PASS",
+        "independent_review": "ACK"
+      },
+      "orin": {
+        "status": "PASS",
+        "source_unchanged": true,
+        "startup_tests": 8,
+        "tool_tests": 60,
+        "startup_cache_failure": {
+          "status": "FAIL",
+          "test_failures": 8,
+          "evidence": "orin/s45/recheck/run.json",
+          "cause": "旧integration harness编译期绑定上一轮无hook S0路径",
+          "repair": "仅更新测试源mtime后同参数重编，源码SHA不变；新.d及ELF绑定current路径，原8项原预算通过"
+        },
+        "accepted_gates": 18,
+        "gates_evidence": {
+          "first_eight": "orin/s45/recheck/run.json",
+          "last_ten": "orin/s45/recheck/continuation/run.json",
+          "additional_startup_rebind": "orin/s45/recheck/continuation/startup_binding.json"
+        },
+        "core_tests": 79,
+        "s0_lib_tests": 394,
+        "s0_bin_tests": 5,
+        "serial_tests": 5,
+        "rt_guard": {
+          "debug_allocation_abort": "PASS",
+          "debug_soak_60s": "PASS",
+          "release_allocation_abort": "PASS",
+          "release_soak_60s": "PASS"
+        },
+        "actual_build_manifests": 3,
+        "runtime_scenarios": 67,
+        "mock_ac12": {
+          "status": "PASS",
+          "samples": 8,
+          "per_source_and_load_group": 2,
+          "event_rows": 258,
+          "boundary_receipts": 17,
+          "dropped": 0,
+          "final_safety_state": 3,
+          "complete_normal_leases": 19,
+          "lease_scope": "含AllOff后的合法周期尾部，全部同epoch完整配对"
+        },
+        "rpc_three_faults": "PASS",
+        "independent_review": "APPROVED",
+        "evidence": [
+          "orin/s45/recheck/continuation/run.json",
+          "orin/s45/recheck/continuation/software_all/report.json",
+          "orin/s45/recheck/continuation/final_audit.json"
+        ],
+        "comm_fault_propagation_ms": {
+          "mailbox": 26.0448,
+          "mailbox_bound": 34.2352,
+          "first_error": 26.046752,
+          "first_error_bound": 144.2352
+        }
+      },
+      "deterministic_poll_order": {
+        "red_exit": 101,
+        "green_tests": 2,
+        "evidence": [
+          "local/s45/poll_order_red.log",
+          "local/s45/poll_order_green.log"
+        ]
+      }
     }
   },
   "hardware": {
@@ -53,13 +236,42 @@
         },
         "errors": 0,
         "scope": "六电机轮询共1000次完整ping，每次PING+Model_Number READ；时延只记录特性。",
-        "evidence": "orin/left_h1/report.json"
+        "evidence": "orin/left_h1/report.json",
+        "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a"
       },
       "H2": {
-        "status": "NOT_RUN",
+        "status": "FAIL",
+        "run_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
+        "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a",
+        "rt_preflight": "PASS",
+        "rt_threads": {
+          "tool": 6,
+          "s0": 11,
+          "gateway": 14
+        },
+        "attempts": 36,
+        "classification_mismatches": 35,
+        "invalid": 1,
+        "warmup": 0,
+        "samples": 0,
+        "invalid_sequence": 10072,
+        "error": "在途执行权缺少同 epoch 的 acquire，不能归为 idle",
+        "trace_dropped": 0,
+        "final_stop": "PASS",
+        "final_safety_state": 3,
+        "all_test_processes_exited": true,
         "operator_available": true,
-        "fresh_physical_boundary_confirmed": true,
-        "next": "评审提交与Orin源码对齐后，一次性revoke/authorize并taskset -c 0-3启动。"
+        "fresh_physical_boundary_confirmed": false,
+        "next": "S-45评审提交并对齐后，重新确认物理边界，D9一次授权再执行。",
+        "evidence": [
+          "orin/left_h2/report.json",
+          "orin/left_h2/orin_sla_left/rt_preflight.json",
+          "orin/left_h2/orin_sla_left/events.csv",
+          "orin/left_h2/orin_sla_left/attempts.jsonl",
+          "orin/left_h2/orin_sla_left/final_stop.json",
+          "orin/left_h2_run.json",
+          "orin/left_h2_final_audit.json"
+        ]
       },
       "H3": {
         "status": "PASS",
@@ -72,7 +284,8 @@
         },
         "all_formal_samples_within_10ms": true,
         "scope": "每次完整六ID断扭广播一写零读；主机调用返回，不保证UART完成或机械已断扭。",
-        "evidence": "orin/left_h3/report.json"
+        "evidence": "orin/left_h3/report.json",
+        "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a"
       }
     },
     "right": {
@@ -90,36 +303,61 @@
   "operational_state": {
     "formal_four_binaries_unchanged": true,
     "six_services": "inactive/PID0",
-    "physical_rx_marker": "H1/H3前后均未写入，H2尚未authorize",
+    "physical_rx_marker": "H2一次授权已消费，收尾双份1\\n，UID/GID1000、0600",
     "physical_estop_latch": "H1/H3前后SHA相同",
-    "no_serial_access_after_h2_physical_reset": true
+    "no_serial_access_after_h2_physical_reset": false,
+    "all_h2_processes_exited": true,
+    "left_serial_unoccupied": true
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 1410,
-    "sha256": "2d78d1252683d2427fae82ee3dce12fc756c4304d1cdf34ea082a170b7681979"
+    "lines": 1475,
+    "sha256": "4263cc370662ef79740194078fe65342040a54a15143be5c10b0a04de1b36da2"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "4c6ce8397292ac8e787abad08e5e1449c6928ced21d7f8d144f192597b1a3d80",
-    "bytes": 501476,
-    "members": 103,
-    "logical_bytes": 6914424,
+    "sha256": "188e1315d8e35d803fd3b529036635cee4995ca4f2bb3980ccfc1f92ebefb741",
+    "bytes": 9294190,
+    "members": 2930,
+    "logical_bytes": 379751701,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-08T20:35:30.097077+00:00",
+  "updated_at": "2026-09-08T22:25:58.876641+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
-    "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a",
+    "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
     "blocking_findings": 0,
+    "approved_scope": "S-45实现及两端软件验收已独立批准；左H1/H3通过，左H2首次FAIL已真实收尾，修复后H2待新的物理边界；右未测，D15 OPEN。",
     "independent_checks": [
-      "63 Orin原始文件 SHA/大小及64归档成员",
-      "两端57测试与实际Cargo产物身份",
-      "Orin两核实际11 TID S0调度",
-      "H1完整双事务/响应与100+1000重算",
-      "H3全部1100帧/一写零读/1000正式样本时延重算"
-    ],
-    "approved_scope": "S-44软件实现及左H1/H3；H2与右臂未测，D15 OPEN"
+      "真实TracePage/probe跨arm/disarm首RED→GREEN",
+      "真实tick gate优先序、CAS前交错、取消/超时/非法pending责任",
+      "Writing时旧idle到期与首错sticky",
+      "Ready/disarm归属及固定deadline矩阵",
+      "mock RAII真实EStop/方法错误/拒入/非mock",
+      "本地8门日志及SHA",
+      "本地67场景、AC12四组原始配对、AC17三Fault原始传播预算、实际三产物",
+      "Orin首红81条未消费epoch10009证明实际已接受，确定性跨读取RED→GREEN",
+      "Orin747原始文件逐SHA/大小；18必要门加实际harness重编绑定，原失败不覆盖",
+      "Orin67场景，AC12原始258事件与环逐条一致/四格各2/19完整lease/17回执；AC17三Fault原环一致与传播预算",
+      "三native实际CargoJSON/manifest/SHA及最终无进程/服务停用/正式与持久态不变",
+      "新H2驱动PLAN ACK：仅一次授权启动，新commit clean与新物理完成信号均必需"
+    ]
+  },
+  "next_h2": {
+    "status": "NEEDS_FRESH_PHYSICAL_BOUNDARY",
+    "driver": "local/s45/left_h2_current_driver.py",
+    "driver_sha256": "c6b698074c4785b858c8bc9954c2463d187afc349953cfb5e5b328b933efb890",
+    "plan_review": "ACK",
+    "default_plan_only": "PASS_BOTH_HOSTS",
+    "runtime_head_policy": "本阶段新提交在两端对齐且clean，执行时显式传入，不能反填构建base",
+    "physical_reset_after_failed_h2_confirmed": false,
+    "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/s45/recheck/artifacts/release",
+    "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2_current"
+  },
+  "cleanup": {
+    "local": "local/s45/cleanup.json",
+    "orin": "orin/s45/old_artifacts_cleanup.json",
+    "scope": "只清旧验收可执行产物及已逐SHA合并的重复解包；当前产物、构建缓存与本次失败证据保留"
   }
 }

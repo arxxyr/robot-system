@@ -1,6 +1,6 @@
 # post-E 通信故障硬化 · 函数级实施计划
 
-> 日期：2026-09-08。版本：Plan Approved + S-40 至 S-44 Reverse Sync。状态：**C1–C5 已评审提交（C5 `85efefb`）；S-44 两端软件门与左 H1/H3 已独立 APPROVED。左 H2 与右臂未测，D15 OPEN**。
+> 日期：2026-09-08。版本：Plan Approved + S-40 至 S-45 Reverse Sync。状态：**C1–C5 已评审提交（C5 `85efefb`）；S-44 两端软件门与左 H1/H3 已独立 APPROVED。左 H2 首次 FAIL 已收尾，S-45 两端软件验收已独立批准，左 H2 待新物理边界重测；右臂未测，D15 OPEN**。
 > 权威：[`post_e_comm_fault_hardening.md`](post_e_comm_fault_hardening.md)（round 21 Spec Approved）。
 > 代码基线：`bd081cb`；工作分支：`feat/post-e-comm-fault-hardening`。
 > 本文只展开已批准 D1–D15 与 P.0–P.8，不修改冻结设计。主 agent / reviewer 明确
@@ -1342,6 +1342,71 @@ taskset -c 0-3 "$H_BINS/comm_fault_e2e" --phase orin-sla --bin-dir "$H_BINS" \
 普通 loosqk 的已核 rtprio99 / memlock 无限可用；必要时才 sudo，不改变 marker 属主。
 57 项工具测试（含 11 项本包调度独立用例）与真实 mock AC-12 回归已在本地通过；
 完整包结果与实际执行命令以 `.verify/post_e_comm_fault_hardening/H.json` 为入口。
+
+### P.6.11 H2 完整采样边界与 idle 夹具（S-45，软件验收已批准）
+
+本包修复左 H2 首次运行的跨 epoch 孤立 release，并显式建立 idle 前置条件。
+developer 负责 `comm_fault_trace.rs`、`comm_fault_hook.rs`、`serial_tick.rs`、
+`comm_fault/sla.rs`、`comm_fault/rpc.rs` 及必要私有接线；主 agent 负责独立 acceptance、文档与本地
+Cargo；reviewer 独立评审，Orin owner 独占远端 Cargo。无依赖、生产协议或调度变更。
+
+1. `comm_fault_trace`：测试 TracePage 控制头升级 VERSION，TraceEvent 布局不变。
+   `request_boundary(seq, mode, now)` 支持 ArmInflight/ArmIdle/Disarm，拒绝零、
+   超过 61 位、重复/回退 seq 及未完成请求覆盖。请求单词打包 seq+mode，control
+   单写；CAS 占位 Writing 成功后才写固定 `now+1s` 截止并发布请求。请求、回执及
+   ready/deadline 等边界字段统一 SeqCst，保证 ARM 上双读代次与多字段不会混读。
+   serial 消费已发布请求，真实 ACTIVE 未清时不得落实 epoch，不主动清权威执行权。
+2. `serial_service_boundary(ctrl, now)` 在 serial 的真实事务边界处理请求并独占
+   epoch/回执/gate。回执先 Applying(seq)，写 ready_ns/绝对截止，再发布
+   Ready/Disarmed/Failed(seq)；读取者前后核同一终态单词，禁止混代。disarm 使用
+   独立新 request_seq 回执，epoch=0 不充当回执。idle 截止固定 ready_ns+1s；
+   超时留下不能被 disarm 清除的 sticky failure(seq,cause)，撤 gate、保留 epoch。
+   回执必须能核序号、模式、ready_ns、截止与状态；拒绝/解除/到期事实均留证。
+   disarm 只允许替换已完成 Ready/Failed/Disarmed；Writing/Pending/Applying
+   不覆盖。新 arm 不得覆盖仍 armed 的 Ready，也不得跨 sticky FAIL 继续测量。
+   expiry/撤门每 tick 独立办理，不因新请求处于 Writing/Pending 或 Fault 跳过。
+3. `SerialTick::tick_impl` 在 begin_tick 后无条件执行非阻塞 boundary service，
+   此处不提前 return；Fault/EStop/SSF 也能推进 disarm。已有 claim_estop、
+   retire_timeout、phase.step、inhibit 处理保持优先。gate 仅在这些安全处理之后
+   阻新的正常动作与 periodic；真实 SERIAL_ESTOP_PENDING/inhibit/StopCommanded
+   先于 claim 清位被观察后可撤 gate，t0 本身不撤 gate。不得阻 Safety/Confirm、
+   AwaitAck、停止或超时退休，不改原语调用点，不为采样改生产绝对 tick 调度。
+4. `consume_normal` 在 gate 有效时只保留可执行正常请求；cancelled、abort 或
+   非法词仍走既有完成/故障路径。用观察值 CAS 取得应退休的 pending，避免判断后
+   无条件 swap 错取新正常请求；无 hook 路径保留原行为。有效普通请求最长只等待
+   固定 idle 窗口，不靠无限搁置制造空闲。serial 边界服务不做分配、锁或文件 IO。
+5. control `ArmSample` 改为请求提交，CommandApplied 仅表示 control 已处理。预期拒绝与
+   超时记结构化失败，不以 `?` 退出 control 线程，确保最终 ExternalEStop 通道可用。
+   `rpc::inflight_fault` 的既有采样调用者同样改用此握手并在最终 drain 前完成 disarm；
+   三种 Fault 原验收界不变。tool 接纳同 seq/mode 的及时 Ready/Disarmed；idle 还要
+   当前 gate 有效且未过 idle 截止。已观测 Pending 的固定1秒到期即 FAIL，3秒仅为
+   未送达/无快照的外层上限；及时完成的 Disarmed 不因工具晚读误判超时。tool 专用
+   请求 helper 等待匹配 seq/mode 的真实边界回执；idle/inflight 显式选模式。
+   同一轮询先 Acquire 读 CommandApplied，再读一致边界快照；只用本序号确认字
+   之后取得的快照判断真实拒绝。独立回归在首次读取后发布真实 TracePage 请求和
+   Release 确认，旧读取顺序须确定性失败；修复后等待 Pending，真实拒绝仍失败。
+   collect 完成后请求边界 disarm，再 final drain 保存尾部；任何超时/失配/sticky
+   failure 保留原始数据并 FAIL。最终独立 EStop 收尾不依赖 disarm 成功，不重授权。
+6. 先从真实 acquire/arm/release 接缝跑出确定性 RED，再验证修复。永久独立回归
+   用真实 TracePage 双映射、隔离子进程与 ctrl/probe/tick 调用点，不能用固定 epoch
+   的 capture_emitted 隐藏接缝。覆盖旧 lease 中途请求、Ready 后立即 EStop、
+   陈旧/重复/覆盖请求、到期不续期、Fault disarm、cancel/abort/非法词绕 gate、
+   t0→t1 与新请求交错；现有 strict analyzer 拒绝反例继续有效。完成后删除当前
+   读取临时真机 CSV 的诊断测试，不提交机器特定测试路径。
+7. 四组合软件验收补充已独立 ACK：`CommFaultAdapter` 仅在实际 adapter 身份为
+   `mock_serial_rt` 且测试 hook 启用时，用私有 RAII guard 围住真实 mock 普通
+   方法调用及错误返回，使用既有 probe begin/finish；begin 已注入延迟，不重复调用。
+   拒绝 acquire 时零 inner 调用、零伪 release，保留 AbortReason。Safety/Confirm/
+   Connect 不取 normal lease；Feetech 路径不增加第二次 acquire，不扩大其私有 API。
+   不以是否已 arm 选择 lease，以覆盖 arm 前真实事务边界。四组各至少2个分类匹配
+   的完整样本，经真实 RPC 恢复和独立收尾；报告 mock lease/inflight，不冒充 UART
+   或物理断扭/P99。独立反例核在途 EStop、失败归还、EStop拒入及非mock零重复lease。
+
+按序运行 fmt → 默认 workspace Clippy → S0/robot-tests 全 feature Clippy →
+相关单元/集成测试 → 三个实际 Cargo JSON 构建 → 真实 mock 两入口 idle/inflight
+采集/恢复/收尾。必要 RT allocation 与原语/退休回归不得省。两端必要门与独立评审
+通过后提交；不以本包 mock 判定 Orin P99。新真机 H2 需要新的物理边界完成信号与
+D9 一次授权，失败证据保留在当前唯一 H 包中，不覆盖为 PASS。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

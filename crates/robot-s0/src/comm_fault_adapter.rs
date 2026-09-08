@@ -24,9 +24,41 @@ pub struct CommFaultAdapter<A> {
     probe: Arc<dyn PreemptProbe>,
     observation: Option<Arc<ObservationPage>>,
     ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+    mock_normal_lease: bool,
 }
 
-impl<A> CommFaultAdapter<A> {
+struct MockNormalLease<'a> {
+    probe: Option<&'a dyn PreemptProbe>,
+    class: BusOpClass,
+}
+
+impl<'a> MockNormalLease<'a> {
+    fn acquire(
+        enabled: bool,
+        probe: &'a dyn PreemptProbe,
+        class: BusOpClass,
+    ) -> Result<Self, RobotError> {
+        let probe = if enabled && class.is_normal() {
+            probe
+                .begin_transaction(class)
+                .map_err(RobotError::Aborted)?;
+            Some(probe)
+        } else {
+            None
+        };
+        Ok(Self { probe, class })
+    }
+}
+
+impl Drop for MockNormalLease<'_> {
+    fn drop(&mut self) {
+        if let Some(probe) = self.probe {
+            probe.finish_transaction(self.class);
+        }
+    }
+}
+
+impl<A: SerialRtAdapter> CommFaultAdapter<A> {
     pub fn new(
         inner: A,
         clock: Arc<dyn RobotClock>,
@@ -34,12 +66,15 @@ impl<A> CommFaultAdapter<A> {
         observation: Option<Arc<ObservationPage>>,
         ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     ) -> Self {
+        // 仅补 mock 的真实调用执行权；Feetech 已在每个完整总线事务中持有 lease。
+        let mock_normal_lease = inner.info().name == "mock_serial_rt";
         Self {
             inner,
             clock,
             probe,
             observation,
             ctrl,
+            mock_normal_lease,
         }
     }
 
@@ -80,36 +115,71 @@ impl<A: SerialRtAdapter> ManipulatorAdapter for CommFaultAdapter<A> {
         self.inner.info()
     }
     fn connect(&mut self) -> Result<(), RobotError> {
+        let _lease = MockNormalLease::acquire(
+            self.mock_normal_lease,
+            self.probe.as_ref(),
+            self.probe.operation_class(),
+        )?;
         self.before_call(self.probe.operation_class())?;
         let result = self.inner.connect();
         self.observe_result(result)
     }
     fn disconnect(&mut self) -> Result<(), RobotError> {
+        let _lease = MockNormalLease::acquire(
+            self.mock_normal_lease,
+            self.probe.as_ref(),
+            self.probe.operation_class(),
+        )?;
         self.before_call(self.probe.operation_class())?;
         let result = self.inner.disconnect();
         self.observe_result(result)
     }
     fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
+        let _lease = MockNormalLease::acquire(
+            self.mock_normal_lease,
+            self.probe.as_ref(),
+            self.probe.operation_class(),
+        )?;
         self.before_call(self.probe.operation_class())?;
         let result = self.inner.read_state(out);
         self.observe_result(result)
     }
     fn write_command(&mut self, command: &JointCommandView<'_>) -> Result<(), RobotError> {
+        let _lease = MockNormalLease::acquire(
+            self.mock_normal_lease,
+            self.probe.as_ref(),
+            self.probe.operation_class(),
+        )?;
         self.before_call(self.probe.operation_class())?;
         let result = self.inner.write_command(command);
         self.observe_result(result)
     }
     fn set_mode(&mut self, mode: ControlMode) -> Result<(), RobotError> {
+        let _lease = MockNormalLease::acquire(
+            self.mock_normal_lease,
+            self.probe.as_ref(),
+            self.probe.operation_class(),
+        )?;
         self.before_call(self.probe.operation_class())?;
         let result = self.inner.set_mode(mode);
         self.observe_result(result)
     }
     fn enable(&mut self, enabled: bool) -> Result<(), RobotError> {
+        let _lease = MockNormalLease::acquire(
+            self.mock_normal_lease,
+            self.probe.as_ref(),
+            self.probe.operation_class(),
+        )?;
         self.before_call(self.probe.operation_class())?;
         let result = self.inner.enable(enabled);
         self.observe_result(result)
     }
     fn safety_stop(&mut self) -> Result<(), RobotError> {
+        let _lease = MockNormalLease::acquire(
+            self.mock_normal_lease,
+            self.probe.as_ref(),
+            self.probe.operation_class(),
+        )?;
         self.before_call(self.probe.operation_class())?;
         let result = self.inner.safety_stop();
         self.observe_result(result)

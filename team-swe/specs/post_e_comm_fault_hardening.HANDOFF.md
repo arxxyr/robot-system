@@ -2,53 +2,58 @@
 
 ## 当前状态（2026-09-08）
 
-C1–C5 已独立评审并提交，C5 基线 `85efefb`（未 push）。
-[Spec](post_e_comm_fault_hardening.md) / [PLAN](post_e_comm_fault_hardening.PLAN.md)
-的 S-44 / P.6.10 已获独立 **APPROVED**：两端各 57 项工具测试与真实 mock 回归
-通过，Orin 两核 mock S0 的实际调度通过，左臂 H1/H3 原始记录已独立复核。
-当前源码 `d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a`
-（308 输入）；证据为 [H.json](../../.verify/post_e_comm_fault_hardening/H.json) 与
-[H_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)。
-本文件只保留当前执行事实；已结束的逐轮评审流水账与重复提纲按用户要求删除。
+C1–C5 已独立评审提交，C5 `85efefb`；S-44 工具 RT 修复与左 H1/H3 已批准并提交
+`a161a7b`。左 H2 首次 **FAIL**，真实断扭及进程收尾完成；
+S-45 / [PLAN P.6.11](post_e_comm_fault_hardening.PLAN.md) 实现与两端软件验收已独立
+**APPROVED_SOFTWARE_SCOPE**，随本提交落地，未 push。[Spec](post_e_comm_fault_hardening.md) 是有效语义。
 
-C5 源码 `e6d2b30699379ee0e2222649efb4e79093978c612e0d6a67bc83dce9720d2598`
-（308 输入）获 **APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING**。
-两端各 1737 PASS / 11 ignored、67 软件场景、八套 smoke；Orin 四项真实 RT guard
-全部通过。完整范围见 [10_verification](../../docs/10_verification.md)，复现见 PLAN P.6。
+- 左 H1：100 warmup + 1000 次六电机轮询完整 ping，零错误；时延只记录特性。
+- 左 H3：100 warmup + 1000 次完整六 ID 断扭广播，一写零读，正式 host 调用最大
+  0.491552ms；不据此保证 UART 发完或机械断扭。
+- 左 H2：三进程实际 RT 门 PASS（工具/S0/GW 各 6/11/14 TID）；首组 35 次真实
+  在途分类失配，第 36 次 epoch10072 缺同 epoch acquire，严格分析器拒绝，正式0。
+  无 dropped 或通信 Fault，不能把采样缺陷写成已证实总线故障。
+- `final_stop` 的真实 EStop 确认状态3，Disable 成功；五测试 PID 全退、左串口无占用，
+  六服务 inactive/PID0，双 marker `1\n`、UID/GID1000、0600，正式四 SHA 未变。
+- 右 H1–H3 未测，D15 **OPEN**，`deployable=false`，不自动启动常驻服务。
 
-C5 当前证据为 [C5.json](../../.verify/post_e_comm_fault_hardening/C5.json) 与
-[C5_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)，包 SHA
-`343dba15f58dcae362464b4a5829e6d855fadc262aaaae2b4214355e43a5c819`。
-两端旧验收目录、重复产物与历史压缩包已清理；复跑按包内 manifest 重建二进制。
-不恢复旧过程数据，不修改 Git 历史，活跃 Cargo 缓存与四个无 hook 正式产物保留。
+当前证据唯一入口 [H.json](../../.verify/post_e_comm_fault_hardening/H.json) 与
+[H_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)。H2 FAIL
+已合并到活动目录 `target/post_e_h2_rt/orin/`，修复包收口时更新唯一归档，不新建历史包。
+S-44/首次 H2 源码 `d6963ed0…4b11a`（308 输入），构建时 base=`85efefb`，不能反填
+后续提交身份。C5 源码 `e6d2b306…2598`（308 输入），两端各1737 PASS/11 ignored、
+67软件场景、八套smoke、Orin四RT guard通过；[C5.json](../../.verify/post_e_comm_fault_hardening/C5.json)
+与唯一C5包保留。已结束的流水账/重复产物不恢复；活跃Cargo缓存与正式产物保留。
 
-## 当前工作与现场边界
+## 当前分工与下一步
 
-- 主 agent：Spec / PLAN / 当前文档、独立 `sla_acceptance.rs`、本地 Cargo、整合提交。
-- developer：只写 `comm_fault/sla.rs`，实现物理 S0 参数、普通 CPU 掩码继承、
-  三进程逐 TID 真实调度检查；首次恢复/使能前先留完整报告，失败走既有独立收尾。
-- reviewer：独立 Plan / 代码 / 证据评审；开发自测不替代验收。
-- Orin owner：独占远端 Cargo 与执行器；隔离验收最终产物，核正式四 bin SHA 不变。
+主 agent 维护 Spec/PLAN/文档、独立 acceptance、本地 Cargo、整合提交；developer
+负责 S-45 trace/hook/serial tick/SLA 工具；reviewer 独立审查；Orin owner 独占远端
+Cargo 和现场执行。共享文件按 owner 写，同机 Cargo 串行。每阶段独立评审和 fmt /
+Clippy 等必要门通过后 commit，不 push，不改冻结 `docs/00_design.md`。
 
-用户已明确确认“左臂已完成，支撑与现场断电手段就绪”，对应双臂支撑、清空
-接触区、左臂电机断电重上电及物理 USB 拔插。左臂 H1/H3 已通过；右臂尚未收到
-其物理步骤完成信号。用户已再次确认左臂电源循环/物理 USB 拔插完成，此后未开总线；
-工具包评审提交并对齐后即可 D9 一次性授权 → 左臂 H2。
-H1 只做 100 warmup + 1000 次完整 ping 特性记录，不设响应时延 PASS 门；H3 的
-100 warmup + 1000 次全六 ID 断扭广播只证明主机调用 ≤10ms、一写零读及完整帧。
-H2 在 S-44 通过代码与必要质量门后再执行：每臂四组各 100 warmup + 1000 样本，
-反复恢复/使能/断扭，单臂至少约 44 分钟；用户已确认可以持续在场完成左臂 H2。
-开始前须新物理边界
-及 D9 canonical revoke → authorize；marker 缺失不代表授权，不自动反复授权。
+S-45 在真实 serial 无 lease 边界落实 arm/disarm，tool 等同 seq 真实回执。idle
+前置门各用固定1秒截止，普通准入受控，急停/故障/取消/退休不受阻；inflight 保留真实
+事务及 U(1,5)ms 载荷，原 analyzer/样本数/P99 不放宽。真实 TracePage+probe 的
+acquire→arm→release 已确定性 RED→GREEN。Orin 首轮软件门17项通过，完整67场景
+为66 PASS/1 FAIL：工具混读旧快照与新 CommandApplied，将已接受请求误判拒绝；
+另有81条已提交未消费事件证明 serial 实际接受。修订先 Acquire 读确认再读边界，
+新增确定性交错与真实拒绝回归通过，源码 `c07a9886…514b1`/309 输入已独立批准；
+本地8项门及完整67场景通过并独立 ACK。Orin 复验发现启动测试缓存绑定旧产物路径，
+仅重编该 harness 后原8项启动测试通过；最终18门、四RT guard及67场景通过。
+18门证据由 `orin/s45/recheck/run.json` 前8门与 `continuation/run.json` 后10门
+组成，另留一次具名 harness 重编验证；首次 FAIL 不覆盖为 PASS。
 
-Orin `loosqk@10.0.1.40`，原仓库两端基线一致；左右 by-id、D2 配置、标定、权限已
-只读核验，六个常驻 S0/S1/gateway 服务保持 inactive/PID0，串口无占用。
-CPU0–5 在线，4–5 isolated；普通 loosqk rtprio99、memlock 无限、NOFILE1024。
-需要权限直接用已授权 sudo，但 sudo 本身不会配置 FIFO/绑核。工具须在 Tokio
-runtime 前由 `taskset -c 0-3` 启动；串口线程独立 FIFO70、左4/右5。快照只证明
-取证当时环境，不声称连续监控或 PREEMPT_RT 内核。
+用户已确认持续在场，并完成过两次左电机电源循环/物理 USB 拔插。后一次已用于本次
+FAIL 的 D9 一次授权，不能复用或自动重试。S-45 软件分包提交并与 Orin 对齐后，再请
+用户给新的左物理边界完成信号，执行 D9 一次授权 → H2 四组100+1000样本。
+右臂物理步骤尚未确认。用户当前无需为了未完成的软件修复反复操作硬件。
 
-左臂 H1/H3 PASS，H2 与右臂未测，D15 **OPEN**，`deployable=false`；不自动启动六个常驻服务。
-推进硬序：通信硬化现场验收 → D15 退役决策 → Rerun 桥 → F7 判据小件。
-RX 重同步、串口 reopen、跨臂联锁不在本候选；不改冻结 `docs/00_design.md`。
-每阶段独立评审及 fmt / Clippy 等必要门通过后 commit，不 push；同机 Cargo 串行。
+Orin `loosqk@10.0.1.40`，当前现场产物在
+`target/post_e_hardware_current/s45/recheck/artifacts/release`；新驱动为
+`target/post_e_h2_rt/s45/left_h2_current_driver.py`（默认只列计划，新 HEAD 与物理事实
+缺一不可；构建 base=`a161a7b` 不反填后续提交）。
+普通 loosqk rtprio99/memlock无限，NOFILE1024；需要权限直接 sudo，但其限额不同。
+工具在 Tokio 创建前 `taskset -c 0-3`，serial FIFO70，左CPU4/右CPU5，其余OTHER0@0–3。
+实际内核 CONFIG_PREEMPT=y，不称 PREEMPT_RT。真实串口只按已核 by-id/D2 身份选择。
+后续硬序：通信硬化现场验收 → D15退役决策 → Rerun桥 → F7判据小件。

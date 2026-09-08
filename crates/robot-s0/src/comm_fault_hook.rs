@@ -170,6 +170,40 @@ fn apply_command(
     worker_stops: &[Arc<AtomicBool>; 7],
     external: &crate::event_ingress::ExternalEvents,
 ) -> io::Result<()> {
+    if command.kind == HookCommandKind::ArmSample as u8 {
+        use crate::comm_fault_trace::{SampleFailure, SampleMode};
+        let mode = match command.target {
+            0 => Some(SampleMode::ArmInflight),
+            1 => Some(SampleMode::Disarm),
+            2 => Some(SampleMode::ArmIdle),
+            _ => None,
+        };
+        let accepted = match mode {
+            Some(mode)
+                if command.reserved == [0; 5]
+                    && command.duration_ms == 0
+                    && command.count == 0
+                    && command.error == 0 =>
+            {
+                crate::comm_fault_trace::request_boundary(command.sequence, mode, clock.now().0)
+            }
+            _ => {
+                crate::comm_fault_trace::reject_boundary(
+                    command.sequence,
+                    SampleFailure::InvalidRequest,
+                );
+                Err(SampleFailure::InvalidRequest)
+            }
+        };
+        if let Err(failure) = accepted {
+            // 预期拒绝不能关闭 control：最终独立急停还要经过此线程。
+            eprintln!(
+                "sample_boundary_rejected sequence={} target={} failure={failure:?}",
+                command.sequence, command.target
+            );
+        }
+        return Ok(());
+    }
     if command.reserved != [0; 5] {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -208,18 +242,6 @@ fn apply_command(
             && command.error == 0 =>
         {
             worker_stops[usize::from(command.target)].store(true, Ordering::Release);
-        }
-        5 if command.target <= 1
-            && command.duration_ms == 0
-            && command.count == 0
-            && command.error == 0
-            && command.sequence != 0 =>
-        {
-            crate::comm_fault_trace::arm_sample(if command.target == 0 {
-                command.sequence
-            } else {
-                0
-            })?;
         }
         6 if command.target == 0
             && command.duration_ms == 0

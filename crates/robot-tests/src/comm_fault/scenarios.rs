@@ -47,7 +47,7 @@ async fn mock(args: &Args, report: &mut Report) -> Result<(), String> {
             Err(error) => Err(error),
         };
         report.record(
-            "runtime_idle_estop_sampling_and_recovery",
+            "runtime_estop_sampling_and_recovery",
             "AC-12/13",
             started,
             result,

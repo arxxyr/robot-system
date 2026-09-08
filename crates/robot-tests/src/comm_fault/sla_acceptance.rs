@@ -284,6 +284,12 @@ fn sla_parser_classifies_t0_from_the_complete_lease_interval_not_presence_of_io(
         one(&mut after_t0, TraceKind::NormalAcquire).stamp_ns = T0 + 1;
         after_t0.sort_by_key(|event| event.stamp_ns);
         valid_sample(&after_t0, external, false);
+        // 真机出现过 t0 在途、t1 已 release；t1 旧 ACTIVE=0 不能将其误判为 idle。
+        let mut ends_before_primitive = valid_events(external, true);
+        one(&mut ends_before_primitive, TraceKind::NormalRelease).stamp_ns = T0 + 1;
+        one(&mut ends_before_primitive, TraceKind::PrimitiveCommitted).b = 0;
+        ends_before_primitive.sort_by_key(|event| event.stamp_ns);
+        valid_sample(&ends_before_primitive, external, true);
         // release 与 t0 同时，采用 acquire <= t0 < release，不能再归为在途。
         let mut ended = valid_events(external, true);
         one(&mut ended, TraceKind::NormalRelease).stamp_ns = T0;
@@ -1031,4 +1037,208 @@ fn rt_preflight_cannot_accept_when_evidence_cannot_be_written() {
     let profile = H2RtProfile::for_hardware_id("right_arm").unwrap();
     assert!(super::sla::rt_preflight(&blocked, profile, u32::MAX, None, None).is_err());
     assert_eq!(std::fs::read(blocked).unwrap(), b"file, not directory");
+}
+
+#[test]
+fn sample_boundary_reader_rejects_stale_late_expired_and_released_idle_receipts() {
+    use super::sla::sample_boundary_ready;
+    use robot_s0::comm_fault_trace::{BoundarySnapshot, SampleFailure, SampleMode, SampleStatus};
+    let ready = BoundarySnapshot {
+        request_seq: 81,
+        request_mode: Some(SampleMode::ArmIdle),
+        request_deadline_ns: 1000,
+        receipt_seq: 81,
+        mode: Some(SampleMode::ArmIdle),
+        status: SampleStatus::Ready,
+        ready_ns: 100,
+        idle_deadline_ns: 1100,
+        armed_seq: 81,
+        gate_active: true,
+        gate_release: None,
+        failure_seq: 0,
+        failure: None,
+    };
+    assert_eq!(
+        sample_boundary_ready(81, SampleMode::ArmIdle, &ready, 1099),
+        Ok(true)
+    );
+    assert!(sample_boundary_ready(81, SampleMode::ArmIdle, &ready, 1100).is_err());
+    for broken in [
+        BoundarySnapshot {
+            request_seq: 82,
+            ..ready
+        },
+        BoundarySnapshot {
+            receipt_seq: 80,
+            ..ready
+        },
+        BoundarySnapshot {
+            request_mode: Some(SampleMode::ArmInflight),
+            ..ready
+        },
+        BoundarySnapshot {
+            mode: Some(SampleMode::ArmInflight),
+            ..ready
+        },
+        BoundarySnapshot {
+            ready_ns: 1000,
+            ..ready
+        },
+        BoundarySnapshot {
+            gate_active: false,
+            ..ready
+        },
+        BoundarySnapshot {
+            armed_seq: 80,
+            ..ready
+        },
+        BoundarySnapshot {
+            failure_seq: 80,
+            failure: Some(SampleFailure::IdleExpired),
+            ..ready
+        },
+    ] {
+        assert_ne!(
+            sample_boundary_ready(81, SampleMode::ArmIdle, &broken, 500),
+            Ok(true),
+            "错误回执不能被接纳：{broken:?}"
+        );
+    }
+    let pending = BoundarySnapshot {
+        receipt_seq: 80,
+        status: SampleStatus::Pending,
+        armed_seq: 0,
+        gate_active: false,
+        ..ready
+    };
+    assert_eq!(
+        sample_boundary_ready(81, SampleMode::ArmIdle, &pending, 999),
+        Ok(false)
+    );
+    assert!(sample_boundary_ready(81, SampleMode::ArmIdle, &pending, 1000).is_err());
+    let disarmed = BoundarySnapshot {
+        request_mode: Some(SampleMode::Disarm),
+        mode: Some(SampleMode::Disarm),
+        status: SampleStatus::Disarmed,
+        armed_seq: 0,
+        gate_active: false,
+        failure_seq: 80,
+        failure: Some(SampleFailure::IdleExpired),
+        ..ready
+    };
+    assert_eq!(
+        sample_boundary_ready(81, SampleMode::Disarm, &disarmed, 5000),
+        Ok(true),
+        "及时完成的 disarm 可以晚读，首错留给样本拒绝，不阻独立收尾"
+    );
+    let late = BoundarySnapshot {
+        ready_ns: 1000,
+        ..disarmed
+    };
+    assert!(sample_boundary_ready(81, SampleMode::Disarm, &late, 5000).is_err());
+}
+
+#[test]
+fn sample_poll_never_pairs_old_boundary_with_new_command_confirmation() {
+    use super::sla::poll_sample_request;
+    use robot_s0::comm_fault_trace::{SampleMode, TracePage};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    // 在读确认字的接缝发布真实请求：旧顺序先缓存空页，随后会用新确认误判拒绝。
+    let directory = RtDirectory::new();
+    let path = directory.path().join("trace");
+    let writer = TracePage::create(&path).unwrap();
+    let reader = TracePage::open(&path).unwrap();
+    let applied = AtomicU64::new(0);
+    let mut last = None;
+    let result = poll_sample_request(
+        81,
+        SampleMode::ArmInflight,
+        &mut last,
+        || {
+            writer
+                .request_boundary(81, SampleMode::ArmInflight, 100)
+                .unwrap();
+            applied.store(81, Ordering::Release);
+            Ok(applied.load(Ordering::Acquire))
+        },
+        || reader.boundary_snapshot(),
+        || 200,
+    );
+    assert_eq!(result, Ok(false), "已接收而未 Ready 的请求应继续等待");
+    let snapshot = last.unwrap();
+    assert_eq!(snapshot.request_seq, 81);
+    assert_ne!(snapshot.receipt_seq, 81);
+
+    // control 真实拒绝覆盖未完成请求后，确认字虽前进，也不得继续等待或误放行。
+    assert!(
+        writer
+            .request_boundary(82, SampleMode::ArmInflight, 300)
+            .is_err()
+    );
+    applied.store(82, Ordering::Release);
+    let result = poll_sample_request(
+        82,
+        SampleMode::ArmInflight,
+        &mut last,
+        || Ok(applied.load(Ordering::Acquire)),
+        || reader.boundary_snapshot(),
+        || 400,
+    );
+    assert!(result.unwrap_err().contains("拒绝采样请求"));
+    let rejected = last.unwrap();
+    assert_eq!(rejected.request_seq, 81);
+    assert_eq!(rejected.failure_seq, 82);
+    assert!(rejected.failure.is_some());
+}
+
+#[test]
+fn sample_poll_accepts_current_ready_without_requiring_applied_and_waits_on_no_snapshot() {
+    use super::sla::poll_sample_request;
+    use robot_s0::comm_fault_trace::{BoundarySnapshot, SampleMode, SampleStatus};
+
+    // 回执可以在本轮读取旧确认字之后完成，不能额外要求两者同时已更新。
+    let ready = BoundarySnapshot {
+        request_seq: 81,
+        request_mode: Some(SampleMode::ArmInflight),
+        request_deadline_ns: 1000,
+        receipt_seq: 81,
+        mode: Some(SampleMode::ArmInflight),
+        status: SampleStatus::Ready,
+        ready_ns: 100,
+        idle_deadline_ns: 0,
+        armed_seq: 81,
+        gate_active: false,
+        gate_release: None,
+        failure_seq: 0,
+        failure: None,
+    };
+    let mut last = None;
+    assert_eq!(
+        poll_sample_request(
+            81,
+            SampleMode::ArmInflight,
+            &mut last,
+            || Ok(80),
+            || Some(ready),
+            || 200,
+        ),
+        Ok(true)
+    );
+    last = None;
+    assert_eq!(
+        poll_sample_request(
+            81,
+            SampleMode::ArmInflight,
+            &mut last,
+            || Ok(81),
+            || None,
+            || 200,
+        ),
+        Ok(false)
+    );
+    assert!(
+        last.is_none(),
+        "Writing/Applying 暂无一致快照不能拼造拒绝证据"
+    );
 }

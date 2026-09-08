@@ -52,7 +52,7 @@ S1 私有 guard 按 publisher → Node 顺序析构；A1 通过上游 Node ID �
 | 现场条目 | 当前边界 |
 |---|---|
 | H1 / AC-2(d) | 左臂 PASS：100 warmup + 1000 正式完整 ping，零错误；P50/P99/max = 1.081312/1.153664/1.165824 ms（特性记录，无时延通过阈值）。右臂未测 |
-| H2 / AC-12 | NEEDS_HUMAN：topic/external × idle/inflight，各 100 warmup + 1000 有效样本；RR 20/s、实际载荷、σ/CAS 分布 |
+| H2 / AC-12 | 左首次 FAIL：RT 门 PASS，35 次分类失配后出现无同 epoch acquire，正式 0；断扭收尾完成。S-45 修采样接缝，右未测；原四组样本数/RR/载荷/P99 判据不变 |
 | H3 / AC-13 | 左臂 PASS：100 warmup + 1000 正式广播，完整六 ID 断扭帧、一写零读；主机调用最大 0.491552 ms，正式样本全部 ≤10 ms。右臂未测 |
 | D15 | OPEN：软件收敛不保证进程死亡或三次广播均失败时的物理断扭 |
 
@@ -65,16 +65,25 @@ PX-56 的 FIFO70/左右 CPU4/5 参数；S-44 / PLAN P.6.10 已实现，两端必
 H3 证明主机 adapter/write 返回边界，不据此宣称 UART 已发完或机械已断扭。
 S-44 两端各 57 项工具测试、Clippy、真实 mock AC-12 通过；Orin 两次 mock S0
 分别实测串口 FIFO70@CPU4/5，其余全部 OTHER0@CPU0–3，均正常退出。
-这两次只覆盖 S0；真实 H2 的三进程检查在首次使能前执行，尚未作为实物结果通过。
+随后左 H2 实测三进程门 PASS：工具/S0/gateway 各 6/11/14 TID，串口 FIFO70@4，
+其余 OTHER0@0–3。测量于第 36 次尝试拒绝不完整 epoch，正式 0，不能写 H2 PASS；
+S-45 已在真实事务边界 arm/disarm，并为 idle 显式建立有界无在途前提。
+`final_stop` 状态 3、进程全退、串口无占用，marker `1/1`，正式四 SHA 未变。
 S-44 软件包与左 H1/H3 已独立 **APPROVED**，完整证据入口为
 [H.json](../.verify/post_e_comm_fault_hardening/H.json) 与
 [H_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)。
 
-当前结论与逐项命令/日志索引为 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json)，
-最新验收证据为 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
-最新五组 Orin 证据已重建并逐项校验。
+S-45 源码 `c07a9886…514b1`（309 输入）已独立 **APPROVED_SOFTWARE_SCOPE**，两端必要软件门通过。两端均为 core 79、S0 lib 394 / bins 5、startup 8、SerialRT 5、工具 60 项
+通过，三份实际 Cargo JSON 产物和完整 67 场景通过；Orin 四项 RT guard 通过。
+AC12 两入口 × idle/inflight 四格各2完整 mock 样本，AC17 三 Fault 通过；不作为
+物理 H2 或 Orin P99 证据。Orin 首轮工具混读误拒和复验时旧 harness 路径失败均
+保留原始 FAIL；后者仅重编测试程序、源码 SHA 未变，原8项预算不变。
+
+C5 结论与逐项命令/日志索引为 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json)，
+对应归档为 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
 查看原始 run / 执行器时，先按 PLAN P.6.5 将证据包解到仓库根；日常验收命令仍在 PLAN。
-旧轮次日志、源码快照、重复产物和历史归档按用户授权清除，不再承诺保留旧 FAIL 原始日志。
+旧轮次日志、重复产物和历史归档按用户授权清除；当前 H 阶段的两项软件首红与
+首次真实 H2 FAIL 作为修复依据，随唯一 H 包保留。
 
 ### 阶段历史（按当时状态保留）
 
@@ -483,6 +492,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-09-08 | S-45 两端软件验收独立批准；左 H2 首次 FAIL 保真，新物理边界后重测 | Codex |
 | 2026-09-08 | 当前 post-E 验收入口、实现前 Cargo 清单与实跑基线；新增 S-39 / D3 / D4 / D13 验收范围，未标新增项通过 | Codex |
 | 2026-09-08 | C2 有界传输与 adapter 分包验证；独立测试实际执行，整候选门仍待 C3–C5 | Codex |
 | 2026-09-08 | S-40 同槽取消标记与确定性交错验收登记，方案已 ACK，未宣称新增测试通过 | Codex |

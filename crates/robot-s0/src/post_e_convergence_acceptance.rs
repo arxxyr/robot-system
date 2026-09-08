@@ -83,6 +83,7 @@ struct Observation {
 }
 
 struct ScriptedAdapter {
+    name: &'static str,
     script: VecDeque<Reply>,
     observed: Vec<Observation>,
     clock: Arc<MockClock>,
@@ -100,6 +101,7 @@ impl ScriptedAdapter {
         replies: impl IntoIterator<Item = Reply>,
     ) -> Self {
         Self {
+            name: "独立收敛验收设备",
             script: replies.into_iter().collect(),
             observed: Vec::new(),
             clock,
@@ -161,7 +163,7 @@ impl ScriptedAdapter {
 impl ManipulatorAdapter for ScriptedAdapter {
     fn info(&self) -> AdapterInfo {
         AdapterInfo {
-            name: "独立收敛验收设备",
+            name: self.name,
             kind: AdapterKind::Manipulator,
             rt_class: RtClass::SerialRT,
             vendor_sdk: false,
@@ -1720,4 +1722,264 @@ fn missing_completion_record_in_await_ack_escalates_without_more_io() {
     }
     assert_eq!(f.adapter.observed.len(), io_count);
     f.adapter.assert_drained();
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+mod sampling_boundary {
+    use super::*;
+    use crate::comm_fault_trace::{self as trace, SampleMode, SampleStatus, TracePage};
+
+    fn isolated(name: &str, check: impl FnOnce(&TracePage)) {
+        if std::env::var_os("ROBOT_TEST_TICK_BOUNDARY_CHILD").is_some() {
+            trace::install_from_env().unwrap();
+            let path = std::env::var_os("ROBOT_TEST_TRACE_PATH").unwrap();
+            let page = TracePage::open(std::path::Path::new(&path)).unwrap();
+            check(&page);
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("trace");
+        let _page = TracePage::create(&path).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                &format!("post_e_convergence_acceptance::sampling_boundary::{name}"),
+                "--nocapture",
+            ])
+            .env("ROBOT_TEST_TICK_BOUNDARY_CHILD", "1")
+            .env("ROBOT_TEST_TRACE_PATH", path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "真实 tick 子进程失败：{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+    }
+
+    fn arm_idle(f: &mut TickFixture, page: &TracePage) {
+        trace::request_boundary(101, SampleMode::ArmIdle, f.clock.now().0).unwrap();
+        assert_eq!(page.armed_seq(), 0, "control 接收请求不等于 serial Ready");
+        let _ = f.tick();
+        let ready = page.boundary_snapshot().unwrap();
+        assert_eq!(ready.receipt_seq, 101);
+        assert_eq!(ready.mode, Some(SampleMode::ArmIdle));
+        assert_eq!(ready.status, SampleStatus::Ready);
+        assert!(ready.gate_active);
+        assert!(f.adapter.observed.is_empty(), "Ready tick 不得开始普通 IO");
+    }
+
+    #[test]
+    fn idle_gate_preserves_pending_then_real_estop_runs_safety_and_confirm() {
+        isolated(
+            "idle_gate_preserves_pending_then_real_estop_runs_safety_and_confirm",
+            |page| {
+                let mut f = TickFixture::healthy();
+                arm_idle(&mut f, page);
+                let seq = f.submit(AdapterNormalReq::Enable(true));
+                let pending = f.ctrl.pending_normal.load(Ordering::Acquire);
+                let _ = f.tick();
+                assert_eq!(f.ctrl.pending_normal.load(Ordering::Acquire), pending);
+                assert!(f.adapter.observed.is_empty());
+                let client = HardRtCtrlClient::new(f.ctrl.clone());
+                let mut before_cas_calls = 0;
+                client.estop_monotonic_before_cas(|| {
+                    before_cas_calls += 1;
+                    // 原语已进入但 CAS 尚未建立保护：此时另一个 serial tick 仍不能放行 normal。
+                    let _ = f.tick();
+                    assert!(page.boundary_snapshot().unwrap().gate_active);
+                    assert!(f.adapter.observed.is_empty());
+                    assert_eq!(
+                        f.ctrl.pending_normal.load(Ordering::Acquire),
+                        0,
+                        "原语前置取消仍须正常退休"
+                    );
+                });
+                assert_eq!(before_cas_calls, 1);
+                // 不由原语调用者另写测试状态；serial 必须观察真实保护并自行通行。
+                f.adapter
+                    .script
+                    .extend([Io::Safety, Io::Confirm].map(Reply::ok));
+                let _ = f.tick();
+                assert!(!page.boundary_snapshot().unwrap().gate_active);
+                let _ = f.tick();
+                f.adapter.assert_drained();
+                assert_eq!(f.ctrl.safety_state(), OutputSafetyState::TorqueOffConfirmed);
+                assert_eq!(f.ctrl.pending_normal.load(Ordering::Acquire), 0);
+                assert_eq!(
+                    HardRtCtrlClient::new(f.ctrl.clone()).poll_last_normal_resp(seq),
+                    Some(AdapterResp::Err(AdapterErr::PreemptedByEmergency))
+                );
+                assert_eq!(page.armed_seq(), 101, "安全收敛不能提前关闭采样 epoch");
+                trace::request_boundary(102, SampleMode::Disarm, f.clock.now().0).unwrap();
+                f.adapter.script.push_back(Reply::ok(Io::Read));
+                let _ = f.tick();
+                assert_eq!(page.boundary_snapshot().unwrap().receipt_seq, 102);
+                assert_eq!(page.armed_seq(), 0);
+            },
+        );
+    }
+
+    #[test]
+    fn cancelled_request_retires_without_waiting_for_idle_expiry() {
+        isolated(
+            "cancelled_request_retires_without_waiting_for_idle_expiry",
+            |page| {
+                let mut f = TickFixture::healthy();
+                arm_idle(&mut f, page);
+                let seq = f.submit(AdapterNormalReq::Enable(true));
+                // 模拟既有取消槽事实，不发新 EStop，不替测试门撤除保护。
+                f.ctrl
+                    .pending_normal
+                    .fetch_or(PENDING_CANCELLED, Ordering::AcqRel);
+                let _ = f.tick();
+                assert!(page.boundary_snapshot().unwrap().gate_active);
+                assert_eq!(f.ctrl.pending_normal.load(Ordering::Acquire), 0);
+                assert_eq!(
+                    HardRtCtrlClient::new(f.ctrl.clone()).poll_last_normal_resp(seq),
+                    Some(AdapterResp::Err(AdapterErr::PreemptedByEmergency))
+                );
+                assert!(f.adapter.observed.is_empty());
+            },
+        );
+    }
+
+    #[test]
+    fn submitted_timeout_bypasses_idle_gate_and_fault_can_disarm() {
+        isolated(
+            "submitted_timeout_bypasses_idle_gate_and_fault_can_disarm",
+            |page| {
+                let mut f = TickFixture::healthy();
+                arm_idle(&mut f, page);
+                let seq = f.submit(AdapterNormalReq::Enable(true));
+                f.timeout(NormalAbortTarget::Submitted { seq });
+                f.adapter
+                    .script
+                    .extend([Io::Safety, Io::Confirm].map(Reply::ok));
+                f.run_to_await_ack();
+                let mail = f.ctrl.mailbox_snapshot().unwrap();
+                assert_eq!(mail.code, FaultCode::CommFault);
+                assert_eq!(mail.detail, CommErrorKind::PendingDeadline.to_u8());
+                assert_eq!(
+                    HardRtCtrlClient::new(f.ctrl.clone()).poll_last_normal_resp(seq),
+                    Some(AdapterResp::Err(AdapterErr::AbortedByTimeout))
+                );
+                trace::request_boundary(102, SampleMode::Disarm, f.clock.now().0).unwrap();
+                let _ = f.tick();
+                let result = page.boundary_snapshot().unwrap();
+                assert_eq!(result.receipt_seq, 102);
+                assert_eq!(result.status, SampleStatus::Disarmed);
+                assert_eq!(result.armed_seq, 0);
+                assert!(matches!(
+                    f.driver.convergence().phase(),
+                    ConvergePhase::AwaitAck
+                ));
+            },
+        );
+    }
+
+    #[test]
+    fn invalid_pending_under_idle_gate_still_becomes_invariant_fault() {
+        isolated(
+            "invalid_pending_under_idle_gate_still_becomes_invariant_fault",
+            |page| {
+                let mut f = TickFixture::healthy();
+                arm_idle(&mut f, page);
+                f.ctrl
+                    .pending_normal
+                    .store(PENDING_CANCELLED, Ordering::Release);
+                f.adapter
+                    .script
+                    .extend([Io::Safety, Io::Confirm].map(Reply::ok));
+                f.run_to_await_ack();
+                let mail = f.ctrl.mailbox_snapshot().unwrap();
+                assert_eq!(mail.origin, FaultOrigin::InvariantViolation);
+                assert_eq!(mail.detail, CommErrorKind::Unknown.to_u8());
+                assert_eq!(f.ctrl.pending_normal.load(Ordering::Acquire), 0);
+                assert!(!f.ctrl.rx_trust.load(Ordering::Acquire));
+            },
+        );
+    }
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+#[test]
+fn mock_call_lease_covers_estop_errors_and_excludes_other_adapters() {
+    use crate::comm_fault_adapter::CommFaultAdapter;
+    use crate::comm_fault_trace::{TraceKind, capture_emitted};
+    use crate::hard_rt_ctrl::NORMAL_IO_ACTIVE;
+
+    for case in ["estop_in_call", "inner_error", "refused", "non_mock"] {
+        let mut f = TickFixture::healthy();
+        let mocked = case != "non_mock";
+        if mocked {
+            f.adapter.name = "mock_serial_rt";
+        }
+        f.probe.set_context(
+            BusOpClass::NormalEffectful,
+            47,
+            MonoRawNs(f.clock.now().0 + 100_000_000),
+            true,
+        );
+        let ctrl = f.ctrl.clone();
+        if case == "refused" {
+            HardRtCtrlClient::new(ctrl.clone()).estop_monotonic();
+        } else {
+            f.adapter.script.push_back(match case {
+                "inner_error" => {
+                    Reply::error(Io::Enable(true), RobotError::HardwareFault("设备返回失败"))
+                }
+                _ => Reply::ok(Io::Enable(true)),
+            });
+            f.adapter.during_enable = Some(Box::new(move || {
+                assert_eq!(
+                    ctrl.safety_word.load(Ordering::Acquire) & NORMAL_IO_ACTIVE != 0,
+                    mocked
+                );
+                if case == "estop_in_call" {
+                    HardRtCtrlClient::new(ctrl.clone()).estop_monotonic();
+                }
+            }));
+        }
+        let mut wrapper = CommFaultAdapter::new(f.adapter, f.clock, f.probe, None, f.ctrl.clone());
+        let mut response = None;
+        let events = capture_emitted(|| {
+            response = Some(wrapper.enable(true));
+        });
+        match case {
+            "refused" => assert_eq!(
+                response,
+                Some(Err(RobotError::Aborted(AbortReason::Emergency)))
+            ),
+            "inner_error" => assert_eq!(
+                response,
+                Some(Err(RobotError::HardwareFault("设备返回失败")))
+            ),
+            _ => assert_eq!(response, Some(Ok(()))),
+        }
+        assert_eq!(
+            f.ctrl.safety_word.load(Ordering::Acquire) & NORMAL_IO_ACTIVE,
+            0,
+            "{case}: 方法返回必须归还执行权"
+        );
+        let acquired = events
+            .iter()
+            .filter(|e| e.kind == TraceKind::NormalAcquire && e.b == 1)
+            .count();
+        let released = events
+            .iter()
+            .filter(|e| e.kind == TraceKind::NormalRelease)
+            .count();
+        let expected = usize::from(matches!(case, "estop_in_call" | "inner_error"));
+        assert_eq!((acquired, released), (expected, expected), "{case}");
+        if case == "estop_in_call" {
+            let committed = events
+                .iter()
+                .find(|e| e.kind == TraceKind::PrimitiveCommitted)
+                .unwrap();
+            assert_eq!(committed.b & 1, 1, "真实 EStop CAS 发生在 wrapper lease 内");
+        }
+    }
 }

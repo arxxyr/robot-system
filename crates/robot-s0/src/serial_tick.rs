@@ -127,6 +127,9 @@ impl SerialTick {
             ..
         } = *context;
         probe.begin_tick();
+        // 先在真实无事务边界办理采样请求；不得被 Fault/SSF 的早退饿死。
+        #[cfg(feature = "test-comm-fault-hook")]
+        let sample_gate = crate::comm_fault_trace::serial_service_boundary(ctrl, clock.now().0);
         self.convergence.claim_estop(ctrl, diag, clock.now());
         self.convergence.retire_timeout(ctrl, diag, clock.now());
         if self.convergence.phase() != ConvergePhase::Idle {
@@ -142,6 +145,10 @@ impl SerialTick {
         // 取消词只取消原动作，本身不创建急停轮次或故障；本 tick 不再接其它普通 IO。
         if self.consume_normal(adapter, context, before_completion, after_completion) {
             self.claim_followup(context);
+            return self.snapshot(context, deadline);
+        }
+        #[cfg(feature = "test-comm-fault-hook")]
+        if sample_gate {
             return self.snapshot(context, deadline);
         }
         self.periodic(adapter, command, context);
@@ -247,6 +254,31 @@ impl SerialTick {
             clock,
             metrics,
         } = *context;
+        #[cfg(feature = "test-comm-fault-hook")]
+        let raw = {
+            let gated = crate::comm_fault_trace::sample_gate_active();
+            if gated {
+                let observed = ctrl.pending_normal.load(Ordering::Acquire);
+                if matches!(decode_serial_pending(observed), Ok(Some(pending)) if !pending.cancelled)
+                    && ctrl.abort_request.load(Ordering::Acquire) == 0
+                {
+                    return false;
+                }
+                // 判断后仅取得观察到的退休项；并发新 normal 留到下一 tick。
+                match ctrl.pending_normal.compare_exchange(
+                    observed,
+                    0,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(raw) => raw,
+                    Err(_) => return false,
+                }
+            } else {
+                ctrl.pending_normal.swap(0, Ordering::AcqRel)
+            }
+        };
+        #[cfg(not(feature = "test-comm-fault-hook"))]
         let raw = ctrl.pending_normal.swap(0, Ordering::AcqRel);
         let pending = match decode_serial_pending(raw) {
             Ok(Some(pending)) => pending,

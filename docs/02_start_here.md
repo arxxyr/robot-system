@@ -20,9 +20,9 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     C1–C5 已评审提交（C5 85efefb）；H2 PX-56 工具修复与左 H1/H3 独立评审通过
+当前步骤:     C1–C5 已评审提交（C5 85efefb）；S-45 采样修复两端软件验收已独立批准
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
-平台:         C5 两端软件门全 PASS；现场左臂 H1/H3 PASS，H2 与右臂待验证
+平台:         C5 两端软件门全 PASS；左 H1/H3 PASS，H2 首次 FAIL 已收尾，右臂未测
 ```
 
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
@@ -48,9 +48,11 @@ S1 的私有 `EventsPublisherGuard` 保证 publisher 先于 Node 退场；工具
 Orin 原仓库已更新，六项开发服务经授权按 gateway → S1 → S0 停止并保持
 inactive/PID0。两端正式无 hook 产物已恢复，`deployable=false`，不自动启动服务。
 Orin 调试 / RT 需要权限时直接使用已获授权的 `sudo`，不放宽资源阈值或测试预算。
-左臂 H1/H3 已 PASS，H2 与右臂待验证；D15 `OPEN`，不宣称机器人无人值守安全。
-用户已确认可以现场配合，按各臂物理步骤完成信号执行；H2 先完成 S-44 的调度装配
-与使能前实际线程检查，详 PLAN P.6.10。普通权限足够时沿用 loosqk 身份与原限额。
+左 H2 三进程 RT 检查已通过；首组 35 次在途分类失配后，epoch 10072 缺少 acquire，
+严格分析器判 FAIL，正式样本 0；真实断扭确认、进程全部退出、marker 为 `1/1`。
+S-45 / PLAN P.6.11 已修复采样边界、显式 idle 前置条件及工具跨读取误判；两端各
+67 软件场景通过并独立批准，随本提交落地，再执行新的物理边界及 D9 一次授权。启动夹具
+缓存旧路径的失败也已定位并按原预算复验通过。左 H1/H3 PASS、右臂未测、D15 `OPEN`。
 
 C5 证据保留 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与
 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)；

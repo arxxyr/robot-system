@@ -2,6 +2,80 @@
 
 use super::{TRACE_CAPACITY, TraceEvent, TraceKind, TracePage};
 
+#[test]
+fn arm_inside_real_normal_lease_waits_for_serial_boundary() {
+    use robot_core::serial_services::{BusOpClass, PreemptProbe};
+    use robot_core::time::{MockClock, MonoRawNs};
+    use std::sync::Arc;
+
+    const CHILD: &str = "ROBOT_TEST_BOUNDARY_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        super::install_from_env().unwrap();
+        let path = std::env::var_os("ROBOT_TEST_TRACE_PATH").unwrap();
+        let reader = TracePage::open(std::path::Path::new(&path)).unwrap();
+        let ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new_serial());
+        let clock = Arc::new(MockClock::default());
+        let probe = crate::serial_preempt::SerialPreemptProbe::new(clock, ctrl.clone());
+        probe.set_context(BusOpClass::PeriodicRead, 0, MonoRawNs(1_000_000), true);
+        assert_eq!(probe.begin_transaction(BusOpClass::PeriodicRead), Ok(()));
+        super::request_boundary(10072, super::SampleMode::ArmInflight, 1).unwrap();
+        let during_lease = reader.armed_seq();
+        probe.finish_transaction(BusOpClass::PeriodicRead);
+        let events = reader.drain(TRACE_CAPACITY);
+        assert_eq!(during_lease, 0, "在途事务结束前不得切换采样 epoch");
+        assert!(events.is_empty(), "旧 epoch 的 release 不得进入新样本");
+        assert!(!super::serial_service_boundary(&ctrl, 2));
+        assert_eq!(reader.armed_seq(), 10072);
+        let ready = reader.boundary_snapshot().unwrap();
+        assert_eq!(ready.receipt_seq, 10072);
+        assert_eq!(ready.status, super::SampleStatus::Ready);
+        assert_eq!(probe.begin_transaction(BusOpClass::PeriodicRead), Ok(()));
+        super::request_boundary(10073, super::SampleMode::Disarm, 3).unwrap();
+        assert!(!super::serial_service_boundary(&ctrl, 4));
+        assert_eq!(
+            reader.armed_seq(),
+            10072,
+            "真实旧 lease 在途时 disarm 也须等待"
+        );
+        probe.finish_transaction(BusOpClass::PeriodicRead);
+        assert!(!super::serial_service_boundary(&ctrl, 5));
+        assert_eq!(reader.armed_seq(), 0);
+        let disarmed = reader.boundary_snapshot().unwrap();
+        assert_eq!(disarmed.receipt_seq, 10073);
+        assert_eq!(disarmed.status, super::SampleStatus::Disarmed);
+        let pair = reader.drain(TRACE_CAPACITY);
+        assert_eq!(pair.len(), 2);
+        assert_eq!(pair[0].kind, TraceKind::NormalAcquire);
+        assert_eq!(pair[1].kind, TraceKind::NormalRelease);
+        assert!(
+            pair.iter()
+                .all(|event| event.sample_seq == 10072 && event.b == 1)
+        );
+
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("trace");
+    let _page = TracePage::create(&path).unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "comm_fault_trace::acceptance::arm_inside_real_normal_lease_waits_for_serial_boundary",
+            "--nocapture",
+        ])
+        .env(CHILD, "1")
+        .env("ROBOT_TEST_TRACE_PATH", &path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "真实采样接缝子进程失败：{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+}
+
 fn event(index: u64) -> TraceEvent {
     TraceEvent {
         sample_seq: index + 1,
@@ -132,4 +206,130 @@ fn two_consumers_return_each_committed_row_once_across_reuse() {
         assert_eq!(writer.drain(1), []);
         assert_eq!(writer.dropped(), 0);
     }
+}
+
+#[test]
+fn boundary_idle_deadline_is_fixed_and_failure_survives_disarm() {
+    use super::{SampleFailure, SampleMode, SampleStatus};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("trace");
+    let writer = TracePage::create(&path).unwrap();
+    let reader = TracePage::open(&path).unwrap();
+    let (ctrl, _clock) = crate::post_e_convergence_acceptance::healthy_ipc_control();
+    writer
+        .request_boundary(10, SampleMode::ArmIdle, 100)
+        .unwrap();
+    assert!(writer.service_boundary(&ctrl, 200));
+    let ready = reader.boundary_snapshot().unwrap();
+    assert_eq!(ready.request_seq, 10);
+    assert_eq!(ready.receipt_seq, 10);
+    assert_eq!(ready.mode, Some(SampleMode::ArmIdle));
+    assert_eq!(ready.status, SampleStatus::Ready);
+    assert_eq!(ready.request_deadline_ns, 1_000_000_100);
+    assert_eq!(ready.ready_ns, 200);
+    assert_eq!(ready.idle_deadline_ns, 1_000_000_200);
+    assert!(writer.service_boundary(&ctrl, ready.idle_deadline_ns - 1));
+    assert_eq!(
+        reader.boundary_snapshot().unwrap().idle_deadline_ns,
+        ready.idle_deadline_ns
+    );
+    assert!(!writer.service_boundary(&ctrl, ready.idle_deadline_ns));
+    let failed = reader.boundary_snapshot().unwrap();
+    assert_eq!(failed.failure_seq, 10);
+    assert_eq!(failed.failure, Some(SampleFailure::IdleExpired));
+    assert!(!failed.gate_active);
+    assert_eq!(reader.armed_seq(), 10, "门到期不得截断尚待收集的 epoch");
+    writer
+        .request_boundary(11, SampleMode::Disarm, ready.idle_deadline_ns)
+        .unwrap();
+    assert!(!writer.service_boundary(&ctrl, ready.idle_deadline_ns + 1));
+    let disarmed = reader.boundary_snapshot().unwrap();
+    assert_eq!(disarmed.receipt_seq, 11);
+    assert_eq!(disarmed.status, SampleStatus::Disarmed);
+    assert_eq!(disarmed.armed_seq, 0);
+    assert_eq!(disarmed.failure, Some(SampleFailure::IdleExpired));
+    assert!(
+        writer
+            .request_boundary(12, SampleMode::ArmIdle, ready.idle_deadline_ns + 2)
+            .is_err()
+    );
+    assert_eq!(
+        reader.boundary_snapshot().unwrap().failure,
+        Some(SampleFailure::IdleExpired)
+    );
+}
+
+#[test]
+fn boundary_request_cannot_overwrite_pending_or_reuse_a_completed_sequence() {
+    use super::{SampleMode, SampleStatus};
+    let directory = tempfile::tempdir().unwrap();
+    let page = TracePage::create(&directory.path().join("trace")).unwrap();
+    let ctrl = crate::hard_rt_ctrl::HardRtCtrlInner::new_serial();
+    page.request_boundary(21, SampleMode::ArmInflight, 1)
+        .unwrap();
+    assert!(page.request_boundary(22, SampleMode::Disarm, 999).is_err());
+    let pending = page.boundary_snapshot().unwrap();
+    assert_eq!(pending.request_seq, 21);
+    assert_eq!(pending.request_deadline_ns, 1_000_000_001);
+    assert_eq!(page.armed_seq(), 0);
+    page.service_boundary(&ctrl, 2);
+    page.request_boundary(23, SampleMode::Disarm, 3).unwrap();
+    page.service_boundary(&ctrl, 4);
+    let completed = page.boundary_snapshot().unwrap();
+    assert_eq!(completed.status, SampleStatus::Disarmed);
+    assert_eq!(completed.receipt_seq, 23);
+    assert!(page.request_boundary(23, SampleMode::Disarm, 5).is_err());
+    assert!(page.request_boundary(20, SampleMode::Disarm, 5).is_err());
+    assert_eq!(page.boundary_snapshot().unwrap().receipt_seq, 23);
+}
+
+#[test]
+fn boundary_request_expiry_does_not_arm_after_a_late_serial_tick() {
+    use super::{SampleFailure, SampleMode};
+    let directory = tempfile::tempdir().unwrap();
+    let page = TracePage::create(&directory.path().join("trace")).unwrap();
+    let ctrl = crate::hard_rt_ctrl::HardRtCtrlInner::new_serial();
+    page.request_boundary(31, SampleMode::ArmIdle, 17).unwrap();
+    assert!(!page.service_boundary(&ctrl, 1_000_000_017));
+    let result = page.boundary_snapshot().unwrap();
+    assert_eq!(result.armed_seq, 0);
+    assert!(!result.gate_active);
+    assert_eq!(result.failure_seq, 31);
+    assert_eq!(result.failure, Some(SampleFailure::BoundaryExpired));
+}
+
+#[test]
+fn a_writing_disarm_cannot_hide_the_previous_idle_deadline() {
+    use super::{SampleFailure, SampleGateRelease, SampleMode, SampleStatus};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("trace");
+    let writer = TracePage::create(&path).unwrap();
+    let reader = TracePage::open(&path).unwrap();
+    let (ctrl, _clock) = crate::post_e_convergence_acceptance::healthy_ipc_control();
+    writer
+        .request_boundary(41, SampleMode::ArmIdle, 100)
+        .unwrap();
+    assert!(writer.service_boundary(&ctrl, 200));
+    let deadline = reader.boundary_snapshot().unwrap().idle_deadline_ns;
+    writer
+        .request_boundary_after_writing(42, SampleMode::Disarm, deadline - 2, || {
+            assert!(
+                reader.boundary_snapshot().is_none(),
+                "Writing 期间不能混读上一请求回执"
+            );
+            assert!(
+                !writer.service_boundary(&ctrl, deadline),
+                "新请求 Writing 不得阻止旧门按期释放"
+            );
+            assert_eq!(reader.armed_seq(), 41, "到期只撤 gate，不关闭旧事件 epoch");
+        })
+        .unwrap();
+    assert!(!writer.service_boundary(&ctrl, deadline + 1));
+    let result = reader.boundary_snapshot().unwrap();
+    assert_eq!(result.receipt_seq, 42);
+    assert_eq!(result.status, SampleStatus::Disarmed);
+    assert_eq!(result.armed_seq, 0);
+    assert_eq!(result.failure_seq, 41);
+    assert_eq!(result.failure, Some(SampleFailure::IdleExpired));
+    assert_eq!(result.gate_release, Some(SampleGateRelease::Expired));
 }

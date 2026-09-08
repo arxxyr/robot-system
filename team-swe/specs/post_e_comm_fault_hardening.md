@@ -40,6 +40,39 @@ FIFO70、左 CPU4 / 右 CPU5；首次恢复与使能前，逐 TID 核实际策�
 该臂已支撑、断电重上电及物理 USB 拔插完成的现场事实。H2 再按 D9 显式一次性
 授权，不自动恢复信任。此授权不等于实测完成，六项常驻服务保持停止、D15 OPEN。
 
+### S-45：完整事务边界采样与显式 idle 前置条件（软件验收通过）
+
+左 H2 在 `a161a7b` 上首次运行 FAIL：三进程实际 RT 门通过；首组 35 次真实在途
+分类失配，随后 epoch 10072 缺同 epoch acquire，严格分析器拒绝，正式样本 0。
+原始记录无 dropped 或通信 Fault；`final_stop` 确认状态 3，进程全部退出，marker
+为 `1/1`。这是采样接缝问题，不能据此宣称通信故障或 H2 通过。旧物理授权已消费。
+
+control 线程不得在任意时刻直接切换 trace epoch。仅 `test-comm-fault-hook` 启用时，
+arm/disarm 先发布带唯一 request_seq 的请求，serial 在真实无 normal lease 的边界
+落实并发布独立回执；CommandApplied 只代表 control 已处理，不代表请求被接受或 Ready。disarm 的 epoch=0
+仍须绑定新 request_seq，不能复用旧零值或旧 Ready。请求、回执与 deadline 必须一致
+可读；重复请求、未完成请求覆盖、错误模式/序号均拒绝，不清 ACTIVE、不补造 acquire。
+tool 每轮先 Acquire 读取 CommandApplied，再读取一致边界快照；只有本序号已处理且
+随后快照仍无本请求才判 control 拒绝，禁止用旧快照搭配后读的新确认字推导拒绝。
+
+idle 组显式建立“t0 时无在途 IO”的测试前置条件，不宣称自然运行的空闲命中率。
+Ready 后有界阻止普通 IO admission；不暂停串口线程，真实急停 claim、故障收敛、
+Safety/Confirm/AwaitAck、取消、timeout 退休和 stop 始终可推进。只有真实 EStop
+已建立权威保护或窗口到期/disarm 才解除测试门；不能在 TopicReceived 的 t0 先解除，
+以免 t0→t1 间又开始 normal IO。epoch 独立保留至 AllOff、IPC 事件采集完毕及边界
+disarm。inflight 组在边界 Ready 后照常取得真实 lease 并执行既有 U(1,5)ms 载荷。
+
+边界等待与 idle 窗口各固定 1 秒：前者由 control 首次接收时计算绝对截止，后者由
+serial Ready 时计算；轮询/重复请求不得续期。到期显式 FAIL 并解除测试门，不自动
+重测、授权、恢复信任或发另一测量 EStop；仍执行既有独立最终收尾。gate 无权修改
+safety_word，原语调用方无附加原子写，无 hook 生产调度与冻结设计保持不变。
+
+独立验收覆盖真实 acquire→arm 请求→release 的跨边界反例、Ready 后立即急停、
+陈旧回执/重复请求、固定截止到期、取消与超时退休绕过 gate、t0→t1 交错、Fault 下
+disarm，以及真实 mock 进程完整采集/恢复/收尾。保留不完整事件拒绝、t0 lease 分类、
+慢样本、样本数与原 P99 门；不能以 t1 的 ACTIVE 位替代 t0 分类。函数级范围见
+PLAN P.6.11；实现与两端软件验收已独立批准，物理 H2 仍待新边界重测。
+
 ## C4 Reverse Sync（2026-09-08，已 admission live RR 的急停保护）
 
 S-41：新调度把 PendingReplies 延后到 RR dequeue 后创建，不能因此丢掉旧实现对
@@ -1581,7 +1614,9 @@ SetEnabled 注入。
   原语 CAS、无独立"意图"原子写、无第二次原语（ctrl 写序列记录）；调用线程在原语
   返回后立即提前返回或被 seam 暂停 → IPC 与 serial 各自 claim 并完成处理（进程
   存活判据）。明文：**不覆盖调用线程 panic**（`panic = "abort"`，S-23 → 进程终止，
-  属 D15 OPEN 范围）。
+  属 D15 OPEN 范围）。(d) H2 采样采用 S-45 的真实事务边界握手；idle 组以有界
+  普通 admission 测试门建立无在途前提，inflight 组仍走真实事务与载荷，不宣称自然
+  idle 命中率。边界回执、门解除/超时与完整 epoch 原始证据必须留存；不完整即 FAIL。
 - **AC-13** §4.6 广播 ≤ 10 ms（Mock 计时 + Orin 实测登记）。
 - **AC-14** 隔离（分类无重叠，按 S-19 注册名；**factory 分派探针**）：
   `mock_hard_rt` 除 `rx_trust.lock` 文件创建外 0 行为变化（探针断言：IPC 持有

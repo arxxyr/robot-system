@@ -9,10 +9,14 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const TRACE_CAPACITY: usize = 8192;
-const VERSION: u64 = 1;
+const VERSION: u64 = 2;
 const RESERVATION_ATTEMPTS: usize = 8;
 
 static TRACE: std::sync::OnceLock<TracePage> = std::sync::OnceLock::new();
+
+#[path = "comm_fault_sample.rs"]
+mod sample;
+pub use sample::{BoundarySnapshot, SampleFailure, SampleGateRelease, SampleMode, SampleStatus};
 
 #[derive(Default, Clone, Copy)]
 pub(crate) struct TraceContext {
@@ -52,12 +56,34 @@ pub(crate) fn install_from_env() -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn arm_sample(sequence: u64) -> io::Result<()> {
-    let page = TRACE
+pub(crate) fn request_boundary(
+    sequence: u64,
+    mode: SampleMode,
+    now: u64,
+) -> Result<(), SampleFailure> {
+    TRACE
         .get()
-        .ok_or_else(|| io::Error::other("未安装事件环"))?;
-    page.arm(sequence);
-    Ok(())
+        .ok_or(SampleFailure::InvalidRequest)?
+        .request_boundary(sequence, mode, now)
+}
+
+pub(crate) fn reject_boundary(sequence: u64, failure: SampleFailure) {
+    if let Some(page) = TRACE.get() {
+        page.reject_boundary(sequence, failure);
+    }
+}
+
+pub(crate) fn serial_service_boundary(
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
+    now: u64,
+) -> bool {
+    TRACE
+        .get()
+        .is_some_and(|page| page.service_boundary(ctrl, now))
+}
+
+pub(crate) fn sample_gate_active() -> bool {
+    TRACE.get().is_some_and(TracePage::sample_gate_active)
 }
 
 pub(crate) fn emit(kind: TraceKind, stamp_ns: u64, context: TraceContext, a: u64, b: u64) {
@@ -238,6 +264,7 @@ struct TraceWords {
     consumer_active: AtomicU64,
     installed: AtomicU64,
     armed_seq: AtomicU64,
+    boundary: sample::BoundaryWords,
     slots: [Slot; TRACE_CAPACITY],
 }
 
@@ -451,11 +478,11 @@ impl TracePage {
 
     #[must_use]
     pub fn armed_seq(&self) -> u64 {
-        self.words().armed_seq.load(Ordering::Acquire)
+        self.words().armed_seq.load(Ordering::SeqCst)
     }
 
     pub(crate) fn arm(&self, sequence: u64) {
-        self.words().armed_seq.store(sequence, Ordering::Release);
+        self.words().armed_seq.store(sequence, Ordering::SeqCst);
     }
 }
 
