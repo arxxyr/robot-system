@@ -1,0 +1,237 @@
+[1m[92m   Compiling[0m robot-msg v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-msg)
+[1m[92m   Compiling[0m robot-core v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-core)
+[1m[92m   Compiling[0m robot-transport v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-transport)
+[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`test` profile [optimized + debuginfo]]8;;\ target(s) in 0.39s
+[1m[92m     Running[0m tests/trybuild.rs (target/debug/build/robot-transport/af00ae749537c6ac/out/trybuild-af00ae749537c6ac)
+
+running 1 test
+warning: unused workspace dependency `assert_no_alloc`
+  --> Cargo.toml:55:25
+   |
+55 | [workspace.dependencies.assert_no_alloc]
+   |                         ^^^^^^^^^^^^^^^
+   |
+   = note: `cargo::unused_workspace_dependencies` is set to `warn` by default
+help: consider removing the workspace dependency `assert_no_alloc`
+warning: unused workspace dependency `blake3`
+  --> Cargo.toml:59:25
+   |
+59 | [workspace.dependencies.blake3]
+   |                         ^^^^^^
+   |
+help: consider removing the workspace dependency `blake3`
+warning: unused workspace dependency `criterion`
+  --> Cargo.toml:63:25
+   |
+63 | [workspace.dependencies.criterion]
+   |                         ^^^^^^^^^
+   |
+help: consider removing the workspace dependency `criterion`
+warning: unused workspace dependency `crossbeam-channel`
+  --> Cargo.toml:68:25
+   |
+68 | [workspace.dependencies.crossbeam-channel]
+   |                         ^^^^^^^^^^^^^^^^^
+   |
+help: consider removing the workspace dependency `crossbeam-channel`
+warning: unused workspace dependency `ctor`
+  --> Cargo.toml:72:25
+   |
+72 | [workspace.dependencies.ctor]
+   |                         ^^^^
+   |
+help: consider removing the workspace dependency `ctor`
+warning: unused workspace dependency `hdrhistogram`
+  --> Cargo.toml:80:25
+   |
+80 | [workspace.dependencies.hdrhistogram]
+   |                         ^^^^^^^^^^^^
+   |
+help: consider removing the workspace dependency `hdrhistogram`
+warning: unused workspace dependency `inventory`
+  --> Cargo.toml:88:25
+   |
+88 | [workspace.dependencies.inventory]
+   |                         ^^^^^^^^^
+   |
+help: consider removing the workspace dependency `inventory`
+warning: unused workspace dependency `libc`
+  --> Cargo.toml:92:25
+   |
+92 | [workspace.dependencies.libc]
+   |                         ^^^^
+   |
+help: consider removing the workspace dependency `libc`
+warning: unused workspace dependency `prost`
+  --> Cargo.toml:96:25
+   |
+96 | [workspace.dependencies.prost]
+   |                         ^^^^^
+   |
+help: consider removing the workspace dependency `prost`
+warning: unused workspace dependency `protoc-bin-vendored`
+   --> Cargo.toml:100:25
+    |
+100 | [workspace.dependencies.protoc-bin-vendored]
+    |                         ^^^^^^^^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `protoc-bin-vendored`
+warning: unused workspace dependency `robot-adapter-feetech`
+   --> Cargo.toml:104:25
+    |
+104 | [workspace.dependencies.robot-adapter-feetech]
+    |                         ^^^^^^^^^^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `robot-adapter-feetech`
+warning: unused workspace dependency `robot-adapter-mock`
+   --> Cargo.toml:107:25
+    |
+107 | [workspace.dependencies.robot-adapter-mock]
+    |                         ^^^^^^^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `robot-adapter-mock`
+warning: unused workspace dependency `robot-health`
+   --> Cargo.toml:113:25
+    |
+113 | [workspace.dependencies.robot-health]
+    |                         ^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `robot-health`
+warning: unused workspace dependency `robot-kinematics`
+   --> Cargo.toml:116:25
+    |
+116 | [workspace.dependencies.robot-kinematics]
+    |                         ^^^^^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `robot-kinematics`
+warning: unused workspace dependency `robot-kinematics-xlerobot`
+   --> Cargo.toml:119:25
+    |
+119 | [workspace.dependencies.robot-kinematics-xlerobot]
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `robot-kinematics-xlerobot`
+warning: unused workspace dependency `robot-logging`
+   --> Cargo.toml:122:25
+    |
+122 | [workspace.dependencies.robot-logging]
+    |                         ^^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `robot-logging`
+warning: unused workspace dependency `robot-rpc`
+   --> Cargo.toml:128:25
+    |
+128 | [workspace.dependencies.robot-rpc]
+    |                         ^^^^^^^^^
+    |
+help: consider removing the workspace dependency `robot-rpc`
+warning: unused workspace dependency `robot-transport`
+   --> Cargo.toml:131:25
+    |
+131 | [workspace.dependencies.robot-transport]
+    |                         ^^^^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `robot-transport`
+warning: unused workspace dependency `serde`
+   --> Cargo.toml:134:25
+    |
+134 | [workspace.dependencies.serde]
+    |                         ^^^^^
+    |
+help: consider removing the workspace dependency `serde`
+warning: unused workspace dependency `serde_json`
+   --> Cargo.toml:138:25
+    |
+138 | [workspace.dependencies.serde_json]
+    |                         ^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `serde_json`
+warning: unused workspace dependency `serialport`
+   --> Cargo.toml:142:25
+    |
+142 | [workspace.dependencies.serialport]
+    |                         ^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `serialport`
+warning: unused workspace dependency `tempfile`
+   --> Cargo.toml:146:25
+    |
+146 | [workspace.dependencies.tempfile]
+    |                         ^^^^^^^^
+    |
+help: consider removing the workspace dependency `tempfile`
+warning: unused workspace dependency `tokio`
+   --> Cargo.toml:154:25
+    |
+154 | [workspace.dependencies.tokio]
+    |                         ^^^^^
+    |
+help: consider removing the workspace dependency `tokio`
+warning: unused workspace dependency `toml`
+   --> Cargo.toml:159:25
+    |
+159 | [workspace.dependencies.toml]
+    |                         ^^^^
+    |
+help: consider removing the workspace dependency `toml`
+warning: unused workspace dependency `tonic`
+   --> Cargo.toml:163:25
+    |
+163 | [workspace.dependencies.tonic]
+    |                         ^^^^^
+    |
+help: consider removing the workspace dependency `tonic`
+warning: unused workspace dependency `tonic-prost`
+   --> Cargo.toml:168:25
+    |
+168 | [workspace.dependencies.tonic-prost]
+    |                         ^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `tonic-prost`
+warning: unused workspace dependency `tonic-prost-build`
+   --> Cargo.toml:172:25
+    |
+172 | [workspace.dependencies.tonic-prost-build]
+    |                         ^^^^^^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `tonic-prost-build`
+warning: unused workspace dependency `tracing`
+   --> Cargo.toml:176:25
+    |
+176 | [workspace.dependencies.tracing]
+    |                         ^^^^^^^
+    |
+help: consider removing the workspace dependency `tracing`
+warning: unused workspace dependency `tracing-subscriber`
+   --> Cargo.toml:180:25
+    |
+180 | [workspace.dependencies.tracing-subscriber]
+    |                         ^^^^^^^^^^^^^^^^^^
+    |
+help: consider removing the workspace dependency `tracing-subscriber`
+warning: unused workspace dependency `uuid`
+   --> Cargo.toml:185:25
+    |
+185 | [workspace.dependencies.uuid]
+    |                         ^^^^
+    |
+help: consider removing the workspace dependency `uuid`
+warning: workspace (manifest) generated 30 warnings
+   Compiling robot-msg v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-msg)
+    Checking robot-core v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-core)
+    Checking robot-transport v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-transport)
+    Checking robot-transport-tests v0.0.0 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/target/tests/trybuild/robot-transport)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.66s
+
+
+test tests/ui/view_outlives_lease.rs ... ok
+test tests/ui/writer_use_after_publish.rs ... ok
+test tests/ui/second_loan_before_publish.rs ... ok
+
+
+
+ROBOT_TRYBUILD_THREE_CASES_COMPLETED
+test compile_failures ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.31s
+

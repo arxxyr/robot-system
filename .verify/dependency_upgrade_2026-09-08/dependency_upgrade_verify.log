@@ -1,0 +1,142 @@
+    Checking virtual workspace's dependencies
+    Checking robot-adapter-feetech's dependencies
+warning: ignoring robot-core, source is workspace
+warning: ignoring thiserror, source is workspace
+warning: ignoring inventory, source is workspace
+warning: ignoring tracing, source is workspace
+warning: ignoring serialport, source is workspace
+warning: ignoring serde, source is workspace
+warning: ignoring serde_json, source is workspace
+warning: ignoring robot-logging, source is workspace
+warning: ignoring criterion, source is workspace
+warning: ignoring tempfile, source is workspace
+warning: ignoring assert_no_alloc, source is workspace
+    Checking robot-adapter-mock's dependencies
+warning: ignoring robot-core, source is workspace
+warning: ignoring inventory, source is workspace
+warning: ignoring assert_no_alloc, source is workspace
+    Checking robot-cli's dependencies
+warning: ignoring robot-core, source is workspace
+warning: ignoring robot-logging, source is workspace
+warning: ignoring robot-msg, source is workspace
+warning: ignoring robot-transport, source is workspace
+warning: ignoring iceoryx2, source is workspace
+warning: ignoring libc, source is workspace
+warning: ignoring tracing, source is workspace
+warning: ignoring robot-rpc, source is workspace
+warning: ignoring tonic, source is workspace
+warning: ignoring tokio, source is workspace
+warning: ignoring flatbuffers, source is workspace
+warning: ignoring uuid, source is workspace
+warning: ignoring serde, source is workspace
+warning: ignoring serde_json, source is workspace
+    Checking robot-core's dependencies
+warning: ignoring libc, source is workspace
+warning: ignoring thiserror, source is workspace
+warning: ignoring inventory, source is workspace
+warning: ignoring assert_no_alloc, source is workspace
+    Checking robot-health's dependencies
+warning: ignoring tracing, source is workspace
+warning: ignoring tempfile, source is workspace
+    Checking robot-kinematics's dependencies
+warning: ignoring thiserror, source is workspace
+    Checking robot-kinematics-xlerobot's dependencies
+warning: ignoring robot-kinematics, source is workspace
+    Checking robot-logging's dependencies
+warning: ignoring tracing, source is workspace
+warning: ignoring tracing-subscriber, source is workspace
+warning: ignoring ctor, source is workspace
+    Checking robot-msg's dependencies
+warning: ignoring flatbuffers, source is workspace
+warning: ignoring blake3, source is workspace
+    Checking robot-rpc's dependencies
+warning: ignoring robot-core, source is workspace
+warning: ignoring robot-msg, source is workspace
+warning: ignoring tonic, source is workspace
+warning: ignoring tonic-prost, source is workspace
+warning: ignoring prost, source is workspace
+warning: ignoring tracing, source is workspace
+warning: ignoring uuid, source is workspace
+warning: ignoring serde, source is workspace
+warning: ignoring toml, source is workspace
+warning: ignoring thiserror, source is workspace
+warning: ignoring blake3, source is workspace
+warning: ignoring tokio, source is workspace
+warning: ignoring crossbeam-channel, source is workspace
+warning: ignoring iceoryx2, source is workspace
+warning: ignoring robot-transport, source is workspace
+warning: ignoring robot-logging, source is workspace
+warning: ignoring flatbuffers, source is workspace
+warning: ignoring robot-health, source is workspace
+warning: ignoring tonic-prost-build, source is workspace
+warning: ignoring protoc-bin-vendored, source is workspace
+warning: ignoring tempfile, source is workspace
+warning: ignoring tokio, source is workspace
+warning: ignoring libc, source is workspace
+warning: ignoring robot-core, source is workspace
+    Checking robot-s0's dependencies
+warning: ignoring robot-core, source is workspace
+warning: ignoring robot-health, source is workspace
+warning: ignoring robot-logging, source is workspace
+warning: ignoring robot-transport, source is workspace
+warning: ignoring robot-msg, source is workspace
+warning: ignoring tracing, source is workspace
+warning: ignoring robot-adapter-mock, source is workspace
+warning: ignoring robot-adapter-feetech, source is workspace
+warning: ignoring crossbeam-channel, source is workspace
+warning: ignoring iceoryx2, source is workspace
+warning: ignoring libc, source is workspace
+warning: ignoring serde, source is workspace
+warning: ignoring toml, source is workspace
+warning: ignoring blake3, source is workspace
+warning: ignoring thiserror, source is workspace
+warning: ignoring flatbuffers, source is workspace
+warning: ignoring assert_no_alloc, source is workspace
+warning: ignoring tempfile, source is workspace
+    Checking robot-s1's dependencies
+warning: ignoring robot-core, source is workspace
+warning: ignoring robot-logging, source is workspace
+warning: ignoring robot-msg, source is workspace
+warning: ignoring robot-transport, source is workspace
+warning: ignoring iceoryx2, source is workspace
+warning: ignoring libc, source is workspace
+warning: ignoring tracing, source is workspace
+warning: ignoring serde, source is workspace
+warning: ignoring toml, source is workspace
+warning: ignoring thiserror, source is workspace
+warning: ignoring flatbuffers, source is workspace
+warning: ignoring uuid, source is workspace
+warning: ignoring inventory, source is workspace
+warning: ignoring robot-kinematics, source is workspace
+warning: ignoring robot-kinematics-xlerobot, source is workspace
+warning: ignoring robot-health, source is workspace
+    Checking robot-tests's dependencies
+warning: ignoring flatbuffers, source is workspace
+warning: ignoring toml, source is workspace
+warning: ignoring iceoryx2, source is workspace
+warning: ignoring robot-core, source is workspace
+warning: ignoring robot-msg, source is workspace
+warning: ignoring robot-transport, source is workspace
+warning: ignoring hdrhistogram, source is workspace
+warning: ignoring robot-logging, source is workspace
+warning: ignoring tracing, source is workspace
+warning: ignoring libc, source is workspace
+warning: ignoring robot-rpc, source is workspace
+warning: ignoring tonic, source is workspace
+warning: ignoring tokio, source is workspace
+warning: ignoring serde_json, source is workspace
+warning: ignoring robot-kinematics, source is workspace
+warning: ignoring robot-kinematics-xlerobot, source is workspace
+warning: ignoring robot-adapter-feetech, source is workspace
+    Checking robot-transport's dependencies
+warning: ignoring robot-core, source is workspace
+warning: ignoring robot-msg, source is workspace
+warning: ignoring flatbuffers, source is workspace
+warning: ignoring thiserror, source is workspace
+warning: ignoring iceoryx2, source is workspace
+warning: ignoring arc-swap, source is workspace
+warning: ignoring trybuild, source is workspace
+note: Re-run with `--verbose` to show more dependencies
+  latest: 27 packages
+  local: 12 packages
+warning: aborting upgrade due to dry run

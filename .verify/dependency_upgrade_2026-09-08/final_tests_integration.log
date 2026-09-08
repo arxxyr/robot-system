@@ -1,0 +1,192 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/build/robot-adapter-feetech/72509fb9f0898f5a/out/robot_adapter_feetech-72509fb9f0898f5a)
+
+running 145 tests
+test adapter::tests::calibration_derived_limits_override_pm_pi ... ok
+test adapter::tests::calibration_id_mismatch_rejected_at_construction ... ok
+test adapter::tests::calibration_length_mismatch_rejected ... ok
+test adapter::tests::enable_false_stops_on_first_communication_error_without_retry_or_next_motor ... ok
+test adapter::tests::enable_false_writes_torque_off_per_joint ... ok
+test adapter::tests::enable_true_does_not_retry_a_failed_initial_present_read ... ok
+test adapter::tests::enable_true_follows_dimos_sequence ... ok
+test adapter::tests::hold_current_position_syncs_goal_to_present ... ok
+test adapter::tests::info_reports_serial_rt_manipulator ... ok
+test adapter::tests::limits_default_to_pm_pi ... ok
+test adapter::tests::output_safety_probe_all_off_confirmed ... ok
+test adapter::tests::output_safety_probe_joint_count_reports ... ok
+test adapter::tests::output_safety_probe_mixed_state ... ok
+test adapter::tests::output_safety_probe_short_out_rejected ... ok
+test adapter::tests::raw_rad_round_trip_at_center ... ok
+test adapter::tests::raw_rad_round_trip_quarter_turn ... ok
+test adapter::tests::read_state_decodes_positions_to_rad ... ok
+test adapter::tests::safety_stop_fast_before_connect_sends_all_configured_motors ... ok
+test adapter::tests::safety_stop_fast_broadcasts_torque_disable ... ok
+test adapter::tests::safety_stop_fast_is_alloc_free ... ok
+test adapter::tests::safety_stop_uses_fast_path_one_broadcast_frame ... ok
+test adapter::tests::set_mode_torque_rejected ... ok
+test adapter::tests::sync_goal_to_present_retries_on_readback_mismatch ... ok
+test adapter::tests::sync_goal_to_present_returns_error_after_max_attempts ... ok
+test adapter::tests::sync_goal_to_present_tolerance_accepts_small_drift ... ok
+test adapter::tests::sync_read_device_status_diagnostic_identifies_the_failed_response_motor ... ok
+test adapter::tests::sync_write_by_id_into_is_alloc_free ... ok
+test adapter::tests::sync_write_by_id_into_rejects_too_many_motors ... ok
+test adapter::tests::sync_write_by_id_into_short_frame_buf_returns_byte_length_mismatch ... ok
+test adapter::tests::torque_communication_failure_diagnostic_retains_motor_and_error_kind ... ok
+test adapter::tests::torque_device_status_diagnostic_retains_motor_status_and_retry_count ... ok
+test adapter::tests::torque_nack_retry_has_three_attempts_and_preserves_first_device_failure ... ok
+test adapter::tests::write_command_converts_rad_to_raw_sync_write ... ok
+test adapter::tests::write_command_no_calibration_no_clamp ... ok
+test adapter::tests::write_command_non_position_mode_is_noop_with_warning ... ok
+test adapter::tests::write_command_silent_clamp_when_calibration_present ... ok
+test bus::tests::handshake_fails_when_motor_silent ... ok
+test bus::tests::handshake_passes_when_all_motors_respond_with_correct_model ... ok
+test bus::tests::new_rejects_duplicate_motor_id ... ok
+test bus::tests::ping_known_motor_returns_model_number ... ok
+test bus::tests::ping_no_response_returns_none ... ok
+test bus::tests::read_present_position_decodes_sign_magnitude ... ok
+test bus::tests::sync_read_present_position_two_motors ... ok
+test bus::tests::sync_read_response_id_mismatch_rejected ... ok
+test bus::tests::sync_write_goal_position_two_motors_no_ack_required ... ok
+test bus::tests::unknown_motor_rejected ... ok
+test bus::tests::unknown_register_rejected_at_read_boundary ... ok
+test bus::tests::write_goal_position_encodes_and_acks ... ok
+test bus::tests::write_status_error_byte_propagates ... ok
+test calibration::tests::reset_calibration_writes_three_eeprom_regs_per_motor ... ok
+test calibration::tests::set_half_turn_homings_computes_offset_from_present ... ok
+test calibration::tests::set_half_turn_homings_negative_offset ... ok
+test calibration::tests::unlock_eeprom_writes_torque_off_then_lock_off_per_motor ... ok
+test calibration::tests::write_calibration_unlocks_writes_then_locks ... ok
+test calibration_io::tests::clamp_raw_above_upper_bound_clamps_down ... ok
+test calibration_io::tests::clamp_raw_below_lower_bound_clamps_up ... ok
+test calibration_io::tests::clamp_raw_equal_bounds_pins_value ... ok
+test calibration_io::tests::clamp_raw_inside_range_returns_value ... ok
+test calibration_io::tests::clamp_raw_negative_bounds_work ... ok
+test calibration_io::tests::load_and_merge_combines_bus1_files ... ok
+test calibration_io::tests::load_and_merge_duplicate_motor_name_rejected ... ok
+test calibration_io::tests::load_file_drive_mode_defaults_to_zero ... ok
+test calibration_io::tests::load_file_malformed_json_returns_parse_error ... ok
+test calibration_io::tests::load_file_missing_returns_io_error ... ok
+test calibration_io::tests::load_file_non_object_top_level_rejected ... ok
+test calibration_io::tests::load_file_out_of_range_homing_offset_rejected ... ok
+test calibration_io::tests::load_file_parses_left_arm_fixture ... ok
+test calibration_io::tests::load_file_range_min_over_4095_rejected ... ok
+test calibration_io::tests::load_file_range_over_u16_max_is_parse_error ... ok
+test convert::tests::center_is_zero_rad ... ok
+test convert::tests::full_12bit_range_round_trips_exactly ... ok
+test convert::tests::half_turn_maps_to_full_scale_edges ... ok
+test convert::tests::negative_raw_after_sign_magnitude_decode ... ok
+test convert::tests::quarter_turn_is_1024_ticks ... ok
+test convert::tests::rad_per_tick_matches_resolution ... ok
+test convert::tests::rounding_is_nearest_tick ... ok
+test encoding::tests::combine_four_byte_little_endian ... ok
+test encoding::tests::combine_length_mismatch_rejected ... ok
+test encoding::tests::combine_one_byte ... ok
+test encoding::tests::combine_two_byte_little_endian ... ok
+test encoding::tests::sign_magnitude_boundary_values ... ok
+test encoding::tests::sign_magnitude_negative_one_is_0x8001_for_sign_bit_15 ... ok
+test encoding::tests::sign_magnitude_negative_one_is_0x801_for_sign_bit_11 ... ok
+test encoding::tests::sign_magnitude_positive_uses_lower_bits ... ok
+test encoding::tests::sign_magnitude_present_position_use_case ... ok
+test encoding::tests::sign_magnitude_roundtrip_random_set ... ok
+test encoding::tests::sign_magnitude_zero_no_direction_bit ... ok
+test encoding::tests::split_combine_roundtrip ... ok
+test encoding::tests::split_four_byte_little_endian ... ok
+test encoding::tests::split_one_byte ... ok
+test encoding::tests::split_one_byte_overflow_rejected ... ok
+test encoding::tests::split_two_byte_little_endian ... ok
+test encoding::tests::split_two_byte_overflow_rejected ... ok
+test encoding::tests::split_unsupported_length_rejected ... ok
+test error::tests::device_faults_configuration_and_abort_do_not_become_unknown_communication ... ok
+test error::tests::transport_and_protocol_errors_keep_their_communication_classes ... ok
+test protocol::tests::build_out_buffer_too_small_rejected ... ok
+test protocol::tests::build_ping_id1_matches_known_bytes ... ok
+test protocol::tests::build_read_present_position_id5 ... ok
+test protocol::tests::build_sync_read_three_motors ... ok
+test protocol::tests::build_sync_write_data_length_mismatch_rejected ... ok
+test protocol::tests::build_sync_write_two_motors ... ok
+test protocol::tests::build_then_locally_parse_as_status ... ok
+test protocol::tests::build_too_long_params_rejected ... ok
+test protocol::tests::build_write_goal_position_2048_id1 ... ok
+test protocol::tests::checksum_known_values ... ok
+test protocol::tests::find_header_in_clean_buffer ... ok
+test protocol::tests::find_header_partial_returns_none ... ok
+test protocol::tests::find_header_skips_noise ... ok
+test protocol::tests::parse_status_bad_checksum_rejected ... ok
+test protocol::tests::parse_status_bad_header_rejected ... ok
+test protocol::tests::parse_status_ping_response ... ok
+test protocol::tests::parse_status_too_short_rejected ... ok
+test protocol::tests::parse_status_truncated_payload_rejected ... ok
+test protocol::tests::parse_status_with_two_byte_payload ... ok
+test protocol::tests::parse_status_zero_length_rejected ... ok
+test registers::tests::constants_match_dimos ... ok
+test registers::tests::eeprom_registers_match_dimos ... ok
+test registers::tests::enums_have_expected_repr_values ... ok
+test registers::tests::known_register_lookup ... ok
+test registers::tests::no_duplicate_addresses_per_length ... ok
+test registers::tests::no_duplicate_register_names ... ok
+test registers::tests::sign_bit_lookup_matches_dimos ... ok
+test registers::tests::unknown_register_errors ... ok
+test transport::post_e_acceptance::a_received_byte_restarts_only_the_quiet_window ... ok
+test transport::post_e_acceptance::continuous_noise_cannot_extend_the_drain_absolute_deadline ... ok
+test transport::post_e_acceptance::drain_read_errors_are_classified_as_discard_failures ... ok
+test transport::post_e_acceptance::empty_buffers_do_not_start_io_or_install_a_timeout ... ok
+test transport::post_e_acceptance::interrupted_and_would_block_retry_only_the_remaining_budget ... ok
+test transport::post_e_acceptance::native_timeout_before_absolute_deadline_does_not_end_the_packet ... ok
+test transport::post_e_acceptance::next_call_gets_a_fresh_budget_after_a_short_success ... ok
+test transport::post_e_acceptance::read_drip_preserves_got_and_one_absolute_deadline ... ok
+test transport::post_e_acceptance::timeout_install_failure_prevents_all_following_io ... ok
+test transport::post_e_acceptance::write_drip_reports_actual_progress_and_tx_timeout_kind ... ok
+test transport::post_e_acceptance::zero_progress_and_terminal_io_errors_do_not_spin_or_retry ... ok
+test transport::tests::push_rx_then_read_exact ... ok
+test transport::tests::read_exact_short_returns_timeout ... ok
+test transport::tests::set_timeout_does_not_fail ... ok
+test transport::tests::write_then_drain_roundtrip ... ok
+test types::tests::calibration_homing_offset_boundary ... ok
+test types::tests::calibration_identity_is_full_range ... ok
+test types::tests::calibration_range_boundary ... ok
+test types::tests::motor_id_254_or_255_rejected ... ok
+test types::tests::motor_id_valid_range ... ok
+test types::tests::motor_id_zero_rejected ... ok
+
+test result: ok. 145 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/comm_fault_transport.rs (target/debug/build/robot-adapter-feetech/b03f1256f1e588e2/out/comm_fault_transport-b03f1256f1e588e2)
+
+running 12 tests
+test every_broadcast_variant_holds_one_lease_without_reading_an_ack ... ok
+test failed_connect_does_not_prevent_safety_or_confirm_and_hygiene_error_survives_success ... ok
+test first_safety_covers_nonconsecutive_ids_before_connect_but_normal_io_is_denied ... ok
+test invalid_arguments_are_rejected_before_acquiring_the_transaction ... ok
+test named_and_by_id_bulk_reads_share_the_complete_transaction_contract ... ok
+test parse_failure_and_transport_timeout_release_exactly_one_lease ... ok
+test periodic_admission_refused_by_emergency_never_starts_io ... ok
+test ping_status_error_is_not_silently_accepted_as_a_healthy_motor ... ok
+test ping_uses_two_transactions_and_may_abort_only_between_them ... ok
+test read_state_aborted_between_position_and_velocity_preserves_the_whole_snapshot ... ok
+test transaction_response_is_not_preempted_after_the_request_write ... ok
+test wrong_reply_id_is_rejected_by_single_read_write_and_both_ping_steps ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/integration_smoke.rs (target/debug/build/robot-adapter-feetech/fcb86e51a210f43d/out/integration_smoke-fcb86e51a210f43d)
+
+running 3 tests
+test handshake_passes_when_all_13_motors_respond_with_sts3215_model ... FAILED
+test xlerobot_13motor_1000_loop_sync_read_write ... ok
+test xlerobot_13motor_sync_read_handles_negative_present_position ... ok
+
+failures:
+
+---- handshake_passes_when_all_13_motors_respond_with_sts3215_model stdout ----
+
+thread 'handshake_passes_when_all_13_motors_respond_with_sts3215_model' (546070) panicked at crates/robot-adapters/feetech/tests/integration_smoke.rs:169:23:
+called `Result::unwrap()` on an `Err` value: ResponseIdMismatch { expected: 2, got: 1 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    handshake_passes_when_all_13_motors_respond_with_sts3215_model
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p robot-adapter-feetech --test integration_smoke`

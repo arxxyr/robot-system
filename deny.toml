@@ -59,6 +59,12 @@ confidence-threshold = 0.93
 # 内部 workspace crate（robot-*）用 "Proprietary"（非 SPDX），且 publish=false
 # 不上 crates.io；`private.ignore` 让 cargo-deny 跳过这些 crate 的许可证校验。
 private = { ignore = true }
+# 补登记既有依赖的许可证，仅覆盖复核过的精确版本。
+# 使用域、许可证文件与复审触发见 CHANGELOG 2026-09-08 依赖升级条。
+exceptions = [
+    { name = "assert_no_alloc", version = "=1.1.2", allow = ["BSD-1-Clause"] },
+    { name = "serialport", version = "=4.10.0", allow = ["MPL-2.0"] },
+]
 
 # ---------------------------------------------------------------------------
 # Ban 规则
@@ -79,7 +85,7 @@ highlight = "all"
 deny = []
 
 # skip-tree：允许某依赖子树里出现重复版本。
-# iceoryx2 0.9.3 仍依赖 toml 0.9 (→ winnow 0.7)；trybuild 1.0.117（连同
+# iceoryx2 0.9.3 仍依赖 toml 0.9 (→ winnow 0.7)；trybuild 1.0.121（连同
 # robot-rpc / robot-s0 直依）依赖 toml 1.1 (→ winnow 1.0)。两棵独立子树，
 # dup 不在我们控制面；2026-07-12 升 0.9.3 后复核 dup 仍在，继续等上游对齐
 # 后再清。仅标 iceoryx2 不够（因为 trybuild 那棵也贡献）；标 toml 会把整个

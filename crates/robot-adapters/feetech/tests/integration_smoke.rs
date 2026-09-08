@@ -160,10 +160,12 @@ fn handshake_passes_when_all_13_motors_respond_with_sts3215_model() {
     let (mut bus, handle) = make_bus();
 
     // handshake 内部对每个 motor 调 ping（PING + READ_DATA Model_Number 两步）
-    // mock 的所有回包都用 id=1 也能过 parse_status（parse 不强校验 id 字段对不对）
-    for _ in 0..13 {
-        handle.push_rx(&fake_status(1, &[])); // PING ack
-        handle.push_rx(&fake_status(1, &[0x09, 0x03])); // model_number 777 = 0x309 LE
+    // 按已配置电机ID升序回复；生产总线会严格核验每个响应的归属。
+    let mut ids: Vec<_> = XLEROBOT_JOINTS.iter().map(|(_, id)| *id).collect();
+    ids.sort_unstable();
+    for id in ids {
+        handle.push_rx(&fake_status(id, &[])); // PING 回包
+        handle.push_rx(&fake_status(id, &[0x09, 0x03])); // 型号777，小端编码
     }
 
     bus.connect(true).unwrap();

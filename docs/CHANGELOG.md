@@ -10,6 +10,29 @@
 
 ---
 
+## 2026-09-08 · 全 workspace Cargo 依赖升级（状态：分包实现与独立验收通过）
+
+用户要求全部依赖更新至最新版本。覆盖 27 项外部直接依赖，更新 8 项版本要求与
+传递依赖锁定；保留 libc 1.0 alpha 精确 pin，FlatBuffers / flatc 和 iceoryx2 版本
+配对不变。没有新增 runtime 依赖或修改冻结架构；统一应用版本仍为 0.1.2。
+逐项版本、最终 lock 哈希与验证记录见
+[依赖升级记录](handoffs/dependency_upgrade_2026-09-08.md)。依赖分包从 C4 单独验证，
+不把主工作树未完成的 C5 代码或现场结果算入通过证据。
+
+验收 fix-forward：旧 Feetech 13 电机握手夹具全部返回 ID 1，与 C2 新增的严格
+响应 ID 校验冲突；现按实际 ID 及总线遍历顺序构造响应。trybuild 1.0.121 复制
+全量 workspace.dependencies 到临时单包，触发 Cargo 1.100 的未使用清单警告；
+以独立子进程仅豁免该类警告及其汇总，其它警告继续拒绝，三份编译失败快照
+保持严格比较，父进程检查退出码与析构后完成标记。正式构建门禁不变。
+
+许可证偏离补登记：assert_no_alloc 1.1.2 的 `LICENSE` 为 BSD-1-Clause，除了
+dev-dependency，也可随 robot-core / S0 的 rt_guard feature 链接进二进制；
+serialport 4.10.0 的 `LICENSE.txt` 为 MPL-2.0，是 Feetech real-hw 可选运行时依赖。
+两者均已存在于原依赖图，serialport 4.9.0 与 4.10.0 许可证文件相同，本次没有
+更换其许可证。`deny.toml` 仅添加这两个精确版本的 exceptions；版本、许可证、
+源码修改方式或分发用途变化时须重新评审。此登记仅解决工程门禁的原有遗漏，
+不代表对外发布的许可证材料已齐备；发布时须保留原许可证与适用通知。
+
 ## 2026-09-08 · C4 IPC 断连退出与启动观测（状态：分包实现与独立验收通过）
 
 S-43：auto-enable 发送点显式处理 Full / Disconnected，并置于启动物理出口和

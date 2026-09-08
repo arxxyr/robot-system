@@ -53,14 +53,14 @@ readme       = "README.md"
 # 的 FFI 绑定；`libc` 加入 §4.2 允许列表的登记见 docs/CHANGELOG.md 2026-04-21。
 # 用户 2026-04-22 显式决定走 1.0 预发布轨道；精确 pin 防 alpha.N → alpha.N+1
 # 的破坏性变更（pre-release SemVer 不保证兼容）。升级 alpha 时同步跑 time.rs 测试。
-libc      = "=1.0.0-alpha.3"
+libc      = "=1.0.0-alpha.4"
 # thiserror：Step 1 暂未使用（Result 路径未登场），保留入口供后续子 crate 继承。
-thiserror = "2.0.18"
+thiserror = "2.0.20"
 # robot-msg (Step 2) FlatBuffers runtime：与 3rd-party/flatc/VERSION 严格对齐（精确 pin，防 minor 漂移）。
 # 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。
 flatbuffers = "=25.12.19"
 # blake3：layout_id / ConfigIdentity / schema_lint 碰撞检测需要的固定 hash。
-blake3 = "1.8.5"
+blake3 = "1.8.7"
 # iceoryx2：本机零拷贝 pub-sub（§2.1）。精确 pin 仿 flatbuffers，防 minor 破坏性变更。
 # 烟测见 docs/CHANGELOG.md 2026-04-22 "Step 5 开工决策与 iceoryx2 依赖登记"。
 iceoryx2 = "=0.9.3"
@@ -75,13 +75,13 @@ tempfile = "3.27"
 crossbeam-channel = "0.5"
 # hdrhistogram：Step 6 Part 2 iceoryx2_rt_baseline harness 的延迟分布统计。
 # 10 µs - 10 s 动态范围，p50/p99/p999/max 精确到 3 位有效数字即可。
-hdrhistogram = "7.5"
+hdrhistogram = "7.6"
 # serde + toml：Step 7 task 25 ConfigIdentity TOML loader（v0.2 阶段限 robot-s0
 # 使用，robot-core 仍恪守 §4.2 零 runtime 依赖；白名单登记见 docs/CHANGELOG.md
 # 2026-04-24 "Step 7 task 25 robot-s0 / robot-core::config 依赖白名单更新"）。
-# toml 0.9 与 iceoryx2 0.8.1 子树对齐，避免新增重复版本（deny.toml skip-tree 注释）。
+# toml 1.x：配置解析与身份散列的兼容性由 config_loader / ConfigIdentity 测试锁定。
 serde = { version = "1", features = ["derive"] }
-toml  = "1.1.2"
+toml  = "1.1.5"
 # serde_json：Step 7 task 29 (2026-04-25) feetech MotorCalibration JSON loader。
 # 限 robot-adapter-feetech 使用，格式与 dimos `scripts/calibrate.py` 输出 1:1 兼容
 # （顶层 {motor_name: {id, drive_mode, homing_offset, range_min, range_max}}）。
@@ -106,7 +106,7 @@ serialport = "4"
 # 继承，版本单源在此。
 assert_no_alloc = "1.1"
 # trybuild：robot-transport 编译期负向测试（UI test snapshot）。dev-only。
-trybuild = "1.0.117"
+trybuild = "1.0.121"
 # tracing + tracing-subscriber：Rust 生态标准结构化日志（相当于 C++ spdlog）。
 # task-32 (2026-04-25) 日志骨架：所有 bin（s0_daemon / mock_s1 / robotctl /
 # policy_host 等）启动时 `init_tracing()`，RT thread 内严格**禁用**（带 format
@@ -119,7 +119,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 # 让所有 bin 只要依赖 `robot-logging` 就自动 init tracing subscriber，不用
 # 每个 main 写 `robot_logging::init()`。白名单登记见 docs/CHANGELOG.md 2026-04-25
 # "task-32 日志骨架"。
-ctor               = "1.0.8"
+ctor               = "1.0.13"
 
 # v0.3 A1 ClearEStop control-plane slice 网关依赖（**仅** robot-rpc 用；
 # 其它 crate **不**得 link tonic / prost / tokio / 跨 crate 复用 RPC 类型）。
@@ -137,7 +137,7 @@ tonic-prost = { version = "0.14", default-features = false }
 prost = "0.14"
 # UUIDv7 生成 + parse（CommandMeta.request_id）。robot-rpc auth + idempotency
 # 用此 crate 校验 request_id 格式。
-uuid = { version = "1.23", default-features = false, features = ["v7", "std"] }
+uuid = { version = "1.26", default-features = false, features = ["v7", "std"] }
 # tonic-prost-build：A1-1 (3/3) robot-rpc proto 代码生成（tonic 0.14 起替代
 # tonic-build 的 prost 路径）。仅 robot-rpc/build.rs 用
 # （`[build-dependencies] tonic-prost-build = { workspace = true }`）。

@@ -9,6 +9,12 @@
 
 ---
 
+## 2026-09-08 依赖升级分包
+
+全部 27 项外部直接依赖的最终版本与验证记录见
+[依赖升级记录](handoffs/dependency_upgrade_2026-09-08.md)。该分包基于 C4，最终锁定后
+使用 `--locked` 执行静态检查、测试与构建；C5 与硬件验收仍按各自条件独立收口。
+
 ## 当前候选：post-E 通信故障硬化（2026-09-08）
 
 权威验收条件见 [Spec 的 AC-1–AC-24](../team-swe/specs/post_e_comm_fault_hardening.md)，
@@ -437,3 +443,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 2. **`assert-no-alloc` 集成**：`crates/robot-tests::rt_arc_guard` / `robot-s0::rt_thread` 启动期全局安装；Step 6 必须。
 3. ~~**cargo-deny 配置**：`deny.toml`（版本 / 许可证 / 重复依赖）Step 6 前加，拦截未经登记的新依赖。~~ → ✅ 已落（`deny.toml`，`cargo deny check` 本地 + CI 均过）
 4. ~~**env_id 自动采集脚本**：`scripts/collect_env_id.sh`（uname / sw_vers / sysctl / rustc -V / cargo tree 合成 id），实测时一键生成登记条。~~ → ✅ 已落（`scripts/collect_env_id.sh`，macOS + Linux 兼容）
+
+- 2026-09-08：新增全部 Cargo 依赖升级分包的最终锁文件与验证入口；不替代 C5 / 现场验收。
