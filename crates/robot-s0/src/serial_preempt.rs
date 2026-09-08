@@ -19,6 +19,8 @@ pub struct SerialPreemptProbe {
     lease_deadline_ns: AtomicU64,
     confirmation_trusted: AtomicBool,
     observed_comm_error: AtomicU8,
+    tick_has_call: AtomicBool,
+    tick_overdue: AtomicBool,
 }
 
 impl SerialPreemptProbe {
@@ -32,11 +34,12 @@ impl SerialPreemptProbe {
             lease_deadline_ns: AtomicU64::new(0),
             confirmation_trusted: AtomicBool::new(false),
             observed_comm_error: AtomicU8::new(0),
+            tick_has_call: AtomicBool::new(false),
+            tick_overdue: AtomicBool::new(false),
         }
     }
 
-    /// C3 phase 接线后为每次 adapter 调用安装上下文；不得在调用途中换域。
-    #[allow(dead_code)] // C3 phase 接线后撤除。
+    /// 为每次 adapter 调用安装上下文；不得在调用途中换域。
     pub(crate) fn set_context(
         &self,
         class: BusOpClass,
@@ -44,6 +47,13 @@ impl SerialPreemptProbe {
         deadline: MonoRawNs,
         confirmation_trusted: bool,
     ) {
+        // 一个 tick 的较早调用越界不能被较晚调用的新 deadline 抹掉。
+        if self.tick_has_call.load(Ordering::Relaxed)
+            && self.clock.now().0 >= self.lease_deadline_ns.load(Ordering::Relaxed)
+        {
+            self.tick_overdue.store(true, Ordering::Relaxed);
+        }
+        self.tick_has_call.store(true, Ordering::Relaxed);
         self.class.store(class as u8, Ordering::Relaxed);
         self.seq.store(seq, Ordering::Relaxed);
         self.lease_deadline_ns.store(deadline.0, Ordering::Relaxed);
@@ -51,8 +61,19 @@ impl SerialPreemptProbe {
             .store(confirmation_trusted, Ordering::Relaxed);
     }
 
+    pub(crate) fn begin_tick(&self) {
+        self.tick_has_call.store(false, Ordering::Relaxed);
+        self.tick_overdue.store(false, Ordering::Relaxed);
+    }
+
+    /// 无 IO 的 ACK/终态 tick 可以推进；有 IO 则本 tick 所有调用都必须未越界。
+    pub(crate) fn tick_progress_allowed(&self) -> bool {
+        !self.tick_has_call.load(Ordering::Relaxed)
+            || (!self.tick_overdue.load(Ordering::Relaxed)
+                && self.clock.now().0 < self.lease_deadline_ns.load(Ordering::Relaxed))
+    }
+
     /// 每次 Confirm 完成后先消费事实，再判断证据可信；不依赖诊断是否丢失。
-    #[allow(dead_code)] // C3 Confirm 接线后撤除。
     pub(crate) fn take_comm_error(&self) -> Option<CommErrorKind> {
         match self.observed_comm_error.swap(0, Ordering::AcqRel) {
             0 => None,
@@ -237,5 +258,32 @@ mod tests {
         probe.report_comm_error(CommErrorKind::FrameCorrupt);
         assert_eq!(probe.take_comm_error(), Some(CommErrorKind::DiscardFailed));
         assert_eq!(probe.take_comm_error(), None);
+    }
+
+    #[test]
+    fn tick_progress_preserves_an_earlier_overrun_but_recovers_for_a_no_io_tick() {
+        let clock = Arc::new(MockClock::default());
+        let probe = SerialPreemptProbe::new(clock.clone(), Arc::new(HardRtCtrlInner::new_serial()));
+        probe.begin_tick();
+        probe.set_context(BusOpClass::NormalEffectful, 1, MonoRawNs(100), true);
+        clock.set(MonoRawNs(101));
+        probe.set_context(BusOpClass::PeriodicRead, 0, MonoRawNs(1_000), true);
+        assert!(
+            !probe.tick_progress_allowed(),
+            "后续新预算不能洗掉同tick较早调用的越界"
+        );
+        probe.begin_tick();
+        assert!(
+            probe.tick_progress_allowed(),
+            "无IO的对账等待不继承过期lease"
+        );
+        probe.set_context(BusOpClass::PeriodicRead, 0, MonoRawNs(200), true);
+        clock.set(MonoRawNs(199));
+        assert!(probe.tick_progress_allowed());
+        clock.set(MonoRawNs(200));
+        assert!(
+            !probe.tick_progress_allowed(),
+            "与checkpoint共用严格未到期条件"
+        );
     }
 }

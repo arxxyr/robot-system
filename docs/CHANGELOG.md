@@ -10,6 +10,36 @@
 
 ---
 
+## 2026-09-08 · C3 运行时收敛验收细化（状态：分包实现与独立验收通过）
+
+独立验收直接驱动生产 SerialTick 和 SerialConvergence，脚本仅提供设备回答，覆盖
+正常动作在途 / 已完成 / 尚未消费的超时退场、ACK 世代、急停合并及状态冻结。
+评审核出 tick 尾部无条件推进 liveness 会掩盖重复超期 IO：现按已批准 Plan 的
+phase deadline 限制 tick 进度，本 tick 任一调用越界不得因后续换 phase 重新计数；
+无 IO 的合法等待不继承旧 lease。Spec 同步这一精确口径，不增加整轮预算。
+启动 deadline 的 EStop-bound 分支同样须先写不可信完成记录再进入 SSF。
+
+失败证据保留：实际调度曾在普通读故障后同 tick 多发 Safety，破坏已完成 Disable
+的迟到超时豁免；现仅登记义务，后续 tick 执行收敛。取消 tag 与匹配 Submitted
+同时到达时结果必须优先 AbortedByTimeout，不能把正常超时覆盖成 Preempted。
+另两项夹具误预排五次全断扭确认，已按 D4 首次 AllOffUntrusted 即退场修正。
+独立评审已 C3 Approved；S0 337（含独立34）、workspace 1428 项通过，
+最终 fmt / 默认与全 feature clippy / build 完整零警告。证据见 C3.json，
+本包不宣称整个候选完成；daemon 接线仍在 C4。
+
+## 2026-09-08 · C3 超时与急停交错保留请求身份（状态：Reverse Sync；方案已独立 ACK）
+
+S-40 核码：C1 的 EStop 原语同步清空 pending，可能丢弃一个已被 Submitted timeout
+引用、尚未执行的请求，随后被错误判为 Unknown 并清除 RX 信任。SerialRT 改为在
+原 pending 词 bit63 标取消，保留 40 位 seq 与 action / arg，serial 唯一消费者
+零执行取消并发布完整完成记录；匹配 timeout 按 PendingDeadline 收敛并保留 ACK
+和独立 EStop 义务。不新增跨槽事实搬运，HardRT 48 位协议不变。
+
+tag 本身不创建 Emergency / 写 policy / 发 gen，权威请求仍由 safety_word 一次
+成功 CAS 发布；发布者暂停于两者之间时亦成立。非法保留位不得被 mask 吞掉。
+独立 reviewer 已批准该修正，Spec D3 / D13 / AC-4 / AC-9 已回写；C3 实现及
+确定性交错验收现已执行通过，随 C3 分包获批。冻结设计未改。
+
 ## 2026-09-08 · post-E 通信故障硬化：Plan 核码澄清（状态：Reverse Sync；实现前登记）
 
 用户授权对齐文档并由固定开发、独立评审持续推进。2026-09-05 的 Spec round 21

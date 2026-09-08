@@ -146,6 +146,20 @@ fn sequence_exhaustion_is_serial_only_and_preserves_hard_rt_responses() {
     }
     hard_client.abort_pending_normal(NormalAbortTarget::Unsubmitted);
     assert_eq!(hard.abort_request.load(Ordering::Acquire), 0);
+    for expected in [(1_u64 << 47) - 1, 1_u64 << 47, (1_u64 << 48) - 1] {
+        hard.seq_counter.store(expected, Ordering::Release);
+        assert!(
+            matches!(hard_client.request_normal(AdapterNormalReq::Enable(false)), NormalReqStatus::Submitted { seq } if seq == expected)
+        );
+        let raw = hard.pending_normal.load(Ordering::Acquire);
+        assert_eq!(raw >> 16, expected, "HardRT 的 bit63 属于完整 48 位序号");
+        hard_client.safety_stop();
+        assert_eq!(
+            hard_client.poll_last_normal_resp(expected),
+            Some(AdapterResp::Err(AdapterErr::PreemptedByEmergency))
+        );
+        assert_eq!(hard.pending_normal.load(Ordering::Acquire), 0);
+    }
 }
 
 /// D13 的已发布请求优先返回 Merged，但不改变权威严重度或在途 IO 位。

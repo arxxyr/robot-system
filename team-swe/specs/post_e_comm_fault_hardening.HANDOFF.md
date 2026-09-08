@@ -5,8 +5,10 @@
 - 用户授权：对齐本地文档，固定专职开发 / 独立评审两个子 agent，持续推进。
 - Spec 的 2026-09-05 round 21 批准保持有效；独立 reviewer 已于 2026-09-08 明确
   **Plan Approved**。developer 按 C1–C5 分包实施，主 agent 负责整合、文档与检查。
-  批准文件为 [正式 Plan](post_e_comm_fault_hardening.PLAN.md)，916 行，SHA256
+  首次批准文件为 [正式 Plan](post_e_comm_fault_hardening.PLAN.md) 的 `ea9b63a` 版本，916 行，SHA256
   `3a8a394a74764ad2277bdd5f3aa0901627538f635d4b6208c55cde99d6f2dd30`。
+  C3 的 S-40 方案经 reviewer ACK 后同步当前 Plan：938 行，SHA256
+  `8d8cfcbc767c4ee6405d15a1cb1f1016134fb98d20b1f5cae89fd6e510bc5d19`。
 - 开发分支已创建：`feat/post-e-comm-fault-hardening`，基础提交 `bd081cb`。
 - C1 公共契约已实现并获独立 reviewer **C1 Approved**；core 79、S0 298、schema
   compat 16 项通过，S0 含主 agent 独立验收 14 项。Cargo manifest 提示已最小修正，
@@ -17,6 +19,14 @@
   workspace 全 feature lib / bins 1389 项通过。默认 build 暴露仅 real-hw 使用的
   tracing 依赖声明未门控，随包按实际使用域修正；最终门与日志见 C2.json。
   接续 C3 serial 收敛，整候选尚未完成。
+- C3 核出 S-40：EStop 丢弃 pending 与 Submitted timeout 正常交错产生误报 Unknown。
+  reviewer 已 ACK 同槽取消 tag 方案，Spec / CHANGELOG / 验收入口已 Reverse Sync；
+  不新增 drained_pending 槽。developer 同步 Plan 后实施，root 补独立交错验收。
+- C3 已获独立 **C3 Approved**：真实 SerialConvergence / SerialTick 的库验证
+  337 PASS，含 root 独立 34 项及 C1 HardRT 全 48 位序号回归。已关闭取消 tag
+  误映射结果、同 tick 多发 Safety、liveness 超期尾部自增、bound 启动超时
+  完成记录缺失；失败日志与修复后结果分开保留。最终 fmt / 默认与全 feature clippy / build 均零警告，workspace lib / bins 1428 PASS；
+  daemon 仍未切换新循环，C4 总装、C5 全套进程验收尚未完成。
 - 旧“不得实施 / 不 commit”的授权前提只描述 9 月 5 日；本轮按用户持续推进授权
   与内部质量门执行，提交前仍必须 fmt + clippy 零警告。不因本地开发执行真机动作。
 - 文档所有者：主 agent（Spec / 本交接 / 导航）；开发所有者：developer（正式计划 /

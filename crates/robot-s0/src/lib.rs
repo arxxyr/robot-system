@@ -52,9 +52,11 @@ pub mod ipc_thread;
 pub mod ipc_tick;
 pub mod pub_thread;
 pub mod rr_server_thread;
+pub(crate) mod serial_convergence;
 pub mod serial_io_ctrl;
 pub mod serial_io_thread;
 pub mod serial_preempt;
+mod serial_tick;
 mod set_enabled_action;
 pub mod set_enabled_rr_server;
 pub mod state_machine;
@@ -64,6 +66,8 @@ pub mod watchdog;
 
 #[cfg(test)]
 mod post_e_acceptance;
+#[cfg(test)]
+mod post_e_convergence_acceptance;
 #[cfg(test)]
 mod test_util;
 

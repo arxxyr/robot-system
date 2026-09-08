@@ -1,10 +1,13 @@
 # post-E 通信故障硬化 · 函数级实施计划
 
-> 日期：2026-09-08。版本：round 2 回修稿。状态：**Plan 待独立评审，未进入 Execute**。
+> 日期：2026-09-08。版本：Plan Approved + C3 S-40 Reverse Sync。状态：**Plan Approved，分包 Execute 中**。
 > 权威：[`post_e_comm_fault_hardening.md`](post_e_comm_fault_hardening.md)（round 21 Spec Approved）。
 > 代码基线：`bd081cb`；工作分支：`feat/post-e-comm-fault-hardening`。
 > 本文只展开已批准 D1–D15 与 P.0–P.8，不修改冻结设计。主 agent / reviewer 明确
 > `Plan Approved` 后实施；用户已授权团队内部评审通过后持续推进，无需再次请求流程确认。
+> 历史批准稿 SHA-256：`3a8a394a74764ad2277bdd5f3aa0901627538f635d4b6208c55cde99d6f2dd30`。
+> C1 `fc0c142`、C2 `822ab16` 已提交；C3 实施中新发现 S-40 已由独立 reviewer ACK，
+> 本次仅同步已批准的原槽取消 tag 协议；当前文件新 hash 由主 agent 写入 HANDOFF。
 
 ## P.0 范围、所有权与当前事实
 
@@ -187,6 +190,10 @@ pub const SEQ_BITS: u32 = 40;
 pub const SEQ_MASK: u64 = (1_u64 << SEQ_BITS) - 1;
 pub const ABORT_NONE: u64 = 0;
 pub const ABORT_UNSUBMITTED: u64 = 1_u64 << 63;
+pub const PENDING_CANCELLED: u64 = 1_u64 << 63;
+pub struct SerialPending { pub action: ActionRecord, pub cancelled: bool }
+pub struct InvalidSerialPending(pub u64);
+pub fn decode_serial_pending(raw: u64) -> Result<Option<SerialPending>, InvalidSerialPending>;
 ```
 
 | 字段 | 类型/初值 | writer / reader 与内存序 |
@@ -196,6 +203,7 @@ pub const ABORT_UNSUBMITTED: u64 = 1_u64 << 63;
 | active_action | AtomicU64，0 | serial 单写 Relaxed；pub 观测；serial retire 自有记录匹配 |
 | completed_effect | AtomicU64，0 | serial 单写 Relaxed；pub 观测；valid/success/action/arg/seq按 D3 |
 | abort_request | AtomicU64，0 | IPC Release / serial Acquire；0空、1..SEQ_MASK为Submitted、bit63专用Unsubmitted；先判tag再mask |
+| pending_normal（SerialRT） | 既有 AtomicU64，0 | request 发布 payload；EStop strong CAS AcqRel/Acquire 仅将非空未取消词置 bit63；serial AcqRel 消费，取消词不抹去 action/arg/seq；HardRT 48位原逻辑不变 |
 | fault_mailbox | AtomicU64，0 | serial Release / IPC Acquire；gen:32/code:8/detail:8/origin:8/保留8 |
 | fault_ack | AtomicU32，0 | IPC 唯一 Release / serial Acquire |
 | inhibit | AtomicU8，SerialRT 初始 BOOT | serial Release 修改，IPC/serial Acquire；位=COMM_FAULT/ADAPTER_FAULT/STOP_FAILED/CONVERGING/FAULT_PENDING/BOOT |
@@ -206,7 +214,7 @@ pub const ABORT_UNSUBMITTED: u64 = 1_u64 << 63;
 | boot_outcome / boot_deadline_expired | AtomicU8/AtomicBool，Pending/false | serial Release发布出口，daemon Acquire；deadline daemon Release/serial Acquire |
 
 `HardRtCtrlClient::safety_state` 委托 inner accessor；`impl SerialEmergencyCtrl` 按
-D13 latch → drain pending → 诊断计数 → strong CAS（同时两位），CAS 后零权威写。
+D13 latch → 原槽取消 pending（S-40）→ 诊断计数 → strong CAS（同时两位），CAS 后零权威写。
 `request_normal` 只在 SerialRT 检查 seq∈[1,2^40−1]，失败 Unsupported；既有 pending
 48-bit 编码不改，HardRT 不收紧取号范围。`abort_pending_normal` 只在 SerialRT 发布。
 HardRT `safety_stop` 五步与 legacy 状态/序号不变；SerialRT production EStop 只用新
@@ -406,6 +414,20 @@ session_clean，其余=rx_trust。可信all-off在Preflight先Release rx=true再
 retire对Submitted的active/completed/未消费/unmatched按D3全表；发布active→执行→
 completed→清active→last_completed（legacy发布仍Release）。abort尚未匹配时先检尚未
 消费pending；EStop drain与timeout交错保持EStop义务且仍服务timeout请求。
+
+**S-40（C3 独立 reviewer ACK）**：SerialRT EStop 不再 swap 清 pending；在同一槽
+以 strong CAS 标 `PENDING_CANCELLED=1<<63`。空槽/已标记均不写，CAS 失败重读，
+不能把消费后提交的新请求覆盖成旧请求。`decode_serial_pending` 仅剥 bit63，严格
+校验 seq∈[1,SEQ_MASK]、位56..62全零、非空 action；不借 HardRT 48位解码掩盖非法位。
+serial 唯一消费未匹配 timeout 的合法取消词，原 action 零执行：先发布 exact action/arg/seq 的
+`completed_effect(success=false)`，再 `last_completed=PreemptedByEmergency`。
+匹配 Submitted timeout 时由 timeout 消费端回 AbortedByTimeout（优先于 tag 的普通
+取消响应），仍按 PendingDeadline 完成 Fault/gen/ACK，迟到同 seq
+timeout 由完成记录匹配。取消 tag 自身不创建 Emergency、不 claim、不改 policy/
+gen；发布者在 tag 后、权威 safety_word CAS 前暂停时也如此。Unsubmitted 对别的
+请求的取消残留仍为 Unknown 不变量失败。新增同一 CAS 实现的 test-only hook 覆盖
+CAS 败给消费、tag 后暂停、双 publisher、迟到 timeout；root 独立验收 AC-4(n/o/p)
+与 AC-9(o7)，不复制生产算法、不增加新事实槽。
 
 **无seq的正常路径已核码**：Step3建立`Some(plan,None)`后IPC停顿超过1s，下次Step2先
 超时甚至尚未调用request_normal；因此不能只考虑Busy或称不变量错误。采用

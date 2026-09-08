@@ -28,6 +28,12 @@
   全 feature 145 项库测试 + 12 项独立 integration PASS（库内另含 11 项独立
   有界传输验收）。默认 / 全 feature clippy 完整输出零警告，schema compat 16 PASS，
   real-hw example 编译通过。尚未完成 C3/C4 的运行时收敛与总装，不能替代整候选验收。
+- C3 独立评审已批准，S0 库 337 PASS（含 root 34 项独立真实 tick / phase 验收），
+  全 48 位 HardRT 兼容性复核通过。liveness 与 bound 超时记录先复现再修正；
+  分包 fmt / 两组 clippy / build 零警告，workspace lib / bins 1428 PASS；
+  完整 IPC / startup / 进程验收归 C4–C5，证据见 `.verify/post_e_comm_fault_hardening/C3.json`。
+- C3 新增 S-40 交错验收：pending 同槽取消保留 seq；标记后暂停、标记 CAS 败给
+  serial 消费、重复发布者与取消完成后迟到 timeout。方案已 ACK，测试待执行。
 
 ## 0. 使用约定
 
@@ -406,6 +412,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 |---|---|---|
 | 2026-09-08 | 当前 post-E 验收入口、实现前 Cargo 清单与实跑基线；新增 S-39 / D3 / D4 / D13 验收范围，未标新增项通过 | Codex |
 | 2026-09-08 | C2 有界传输与 adapter 分包验证；独立测试实际执行，整候选门仍待 C3–C5 | Codex |
+| 2026-09-08 | S-40 同槽取消标记与确定性交错验收登记，方案已 ACK，未宣称新增测试通过 | Codex |
 | 2026-04-22 | 骨架初稿：§10.1/§10.2/§10.3 三级结构 + 状态标签 + env_id 机制；所有数值行占位。Step 5 完成时刻快照 | Claude Code (提议) / loosqk (拍板) |
 | 2026-04-22 | §10.2.3 CI 1–6 步接入 `.github/workflows/ci.yml`；`deny.toml` 落地（allow 0BSD；workspace path wildcard + private crate 豁免；iceoryx2 / trybuild winnow dup 走 skip-tree）；`scripts/collect_env_id.sh` 兼容 macOS + Linux。TODO 1/3/4 划掉，只剩 2（assert-no-alloc） | Claude Code |
 | 2026-04-24 | §10.2.1 加 3 个 task 27c harness（`feetech_bench` criterion / `feetech::integration_smoke` / `scripts/feetech_flamegraph.sh`）+ 附录加 feetech bench baseline 实测数值。结论：协议层零瓶颈，task 28 真机延迟瓶颈在 USB-RS485 wire RTT。 | Claude Code |

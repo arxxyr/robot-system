@@ -92,6 +92,7 @@ use robot_core::time::{Deadline, DurationNs, RobotClock};
 use robot_transport::{LatestCommandReader, RtSnapshotPublisher};
 
 use crate::serial_io_ctrl::SerialIoCtrlInner;
+pub(crate) use crate::serial_tick::{SerialTick, SerialTickContext};
 
 // ============================================================================
 // SerialRtAdapter 综合 trait
@@ -150,7 +151,7 @@ pub struct SerialIoThreadMetrics {
     pub read_errors: AtomicU64,
     /// `write_command` Err 次数。
     pub write_errors: AtomicU64,
-    /// emergency `safety_stop` 下发次数。
+    /// `safety_stop` 下发次数；新串口协议包含启动、Fault 和 Emergency 的统一停止写。
     pub emergency_safety_stop_count: AtomicU64,
     /// confirm_torque_off 升 `TorqueOffConfirmed` 的次数。
     pub confirm_off_count: AtomicU64,
@@ -635,6 +636,47 @@ fn execute_serial_normal<A: SerialRtAdapter>(
             AdapterResp::Err(AdapterErr::Unsupported)
         }
         _ => AdapterResp::Err(AdapterErr::Unsupported),
+    }
+}
+
+/// C4 在七 worker 的同源启动门打开后调用；旧 daemon 尚不选择此入口。
+/// 本函数不执行调用方 connect，首个设备动作由 SerialTick 的 StopIssue 决定。
+#[allow(dead_code, clippy::too_many_arguments, clippy::needless_pass_by_value)]
+pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
+    cfg: SerialIoThreadConfig,
+    clock: Arc<dyn RobotClock>,
+    mut adapter: A,
+    cmd_reader: LatestCommandReader<JointCommandBuf>,
+    snapshot_pub: RtSnapshotPublisher<RtSnapshot>,
+    ctrl: Arc<SerialIoCtrlInner>,
+    probe: Arc<crate::serial_preempt::SerialPreemptProbe>,
+    diag: Arc<crate::diag::SerialDiagRing>,
+    authorized: bool,
+    spawned_at: robot_core::time::MonoRawNs,
+    stop: Arc<AtomicBool>,
+    metrics: Arc<SerialIoThreadMetrics>,
+) {
+    apply_serial_rt_setup(&cfg);
+    let mut tick = SerialTick::new(authorized, adapter.joint_count(), spawned_at);
+    let context = SerialTickContext {
+        ctrl: ctrl.as_ref(),
+        probe: probe.as_ref(),
+        diag: diag.as_ref(),
+        clock: clock.as_ref(),
+        metrics: metrics.as_ref(),
+    };
+    let mut deadline = Deadline(spawned_at);
+    while !stop.load(Ordering::Acquire) {
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock.as_ref(), &stop);
+        deadline = deadline + DurationNs(cfg.tick_period_ns);
+        clock.sleep_until(deadline);
+        if stop.load(Ordering::Acquire) {
+            break;
+        }
+        let command = cmd_reader.load();
+        let snapshot = tick.tick(&mut adapter, &command.as_view(), &context, deadline.0);
+        snapshot_pub.publish(&snapshot);
     }
 }
 

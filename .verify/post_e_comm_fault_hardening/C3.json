@@ -1,0 +1,83 @@
+{
+  "stage": "C3",
+  "base_commit": "822ab16",
+  "scope": "真实串口单tick与物理收敛、超时退场、同槽取消、启动出口及liveness；daemon仍未切换，C4总装待完成",
+  "implementation_status": "implemented",
+  "review_status": "C3 Approved",
+  "checks": [
+    {
+      "command": "cargo fmt --all --check",
+      "status": "PASS"
+    },
+    {
+      "command": "cargo clippy --all --all-targets -- -D warnings",
+      "status": "PASS",
+      "warnings": 0
+    },
+    {
+      "command": "cargo clippy --workspace --all-features --all-targets -- -D warnings",
+      "status": "PASS",
+      "warnings": 0
+    },
+    {
+      "command": "cargo test --workspace --all-features --lib --bins",
+      "status": "PASS",
+      "passed": 1428,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "scope": "S0库包含root独立34项、C1兼容14项与其余模块/legacy回归",
+      "status": "PASS",
+      "passed": 337,
+      "independent_convergence": 34
+    },
+    {
+      "command": "cargo build --workspace --all-targets --timings",
+      "status": "PASS",
+      "warnings": 0,
+      "elapsed_seconds": 2.52,
+      "timing_report": "target/cargo-timings/cargo-timing-20260908T113236817Z-c7bbe0615ae0bce4.html"
+    }
+  ],
+  "evidence": {
+    "c3_bound_timeout_red.log": "4a5268bba53300bb1a615a6a97e4afb76bb3e292481a2b29200b9d4405aabcd0",
+    "c3_final_all_feature_clippy.log": "9e7cff607c68625419f563926678adc22d25870d7fa80573da8f6498bdbc5422",
+    "c3_final_build.log": "e097aeb467f985d108dd23421c38ccdfcfa671af948253282a2ba95cf42f23d3",
+    "c3_final_clippy.log": "648c1f4ee7633a2fac98c11e394fb158a8a8999095fe0e7d2584a7022e5c5ca9",
+    "c3_final_fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "c3_final_workspace_tests.log": "1a84b97df25945db5e2abc686220afc3ded2b35a9bf4d38fa9c9d57238c8983a",
+    "c3_fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "c3_phase_fifth_tests.log": "a0d1befde34f2d3efeae3eb1d87612a1bd8220e6eace6a1024005fe0879cabc4",
+    "c3_phase_first_tests.log": "3c29b1dfaee0c1bcf32a0d3c76593c4854b743fcd17fd8da111d33a750caaa9d",
+    "c3_phase_fourth_tests.log": "63d9d7b8bd0b6c0d2f93fefe1759023f1583fcf43e0b66ae0f55ab2e29c86420",
+    "c3_phase_second_tests.log": "97ef63dfa1cd8f7b4c2b0e749bf53d9d7d569461820252f59e9ba86e2e1a07b1",
+    "c3_phase_seventh_tests.log": "73c2e2ce3a578f23f30ffd6ef26279907c74ac280392aec54a84965ed5fdb401",
+    "c3_phase_sixth_tests.log": "b2550c3c9d8879e1a9a0f33b41ddc4e076d5abba7b2587aa65de9bca98547fe4",
+    "c3_phase_third_tests.log": "40d604cdb55e9c5c77047f63c37432001245f4f939bc14290a45a597b56798db",
+    "c3_production_clippy_first.log": "723bb071ff3b4b1ab64c58c28864bc4e4e329a50ab427e38f300bd5dc6db9932",
+    "c3_production_clippy_fourth.log": "c10f674e8e042618f1f3837a29ec7ca859eb355efa5a633ce4bc14dd7e6b9125",
+    "c3_production_clippy_second.log": "109aa8fc0f4e7fee6f6eebd1ea617e963ea50dd4a70b18748f0ab0578d759b8a",
+    "c3_production_clippy_third.log": "551fe43db531c57fefd5e97f6a053474ca2c5934623a899a4cd8327cea19f507",
+    "c3_s0_clippy_first.log": "39503066e3f063d2165949e7ecff7bb3203b243fd214ad8d86af8a99f7fb2f63",
+    "c3_s0_clippy_second.log": "d12c27158ee275910a569726a0cc5838aedf7edb5bf013545f09564bfea7d492",
+    "c3_s0_lib_tests.log": "29189a98d301fe86ceb641ee32df7364184b0bf03328d796ad1974a7feb9cc1d"
+  },
+  "resolved_findings": [
+    "故障登记tick不得提前执行下一物理phase，保留已完成Disable迟到超时豁免",
+    "EStop同槽tag保留完整请求；匹配Submitted优先AbortedByTimeout",
+    "新Emergency首次fault不得被上一轮同级fault去重",
+    "仅bound StopIssue可收紧policy，StopRetry无写权",
+    "普通非通信错误detail默认0",
+    "本tick任一IO越过phase deadline不再靠tick末自增喂liveness；合法无IO等待不继承过期lease",
+    "bound启动超时先写Some(AdapterUncertain{Unknown})再升级SSF"
+  ],
+  "corrected_test_assumptions": [
+    "AllOffUntrusted首次观测即退场，原两夹具误预排5次，按冻结D4改1次；原32PASS/2FAIL日志保留"
+  ],
+  "remaining": [
+    "C4 IPC/启动/marker/worker监督总装",
+    "C5全部integration/进程/隔离systemd/soak门",
+    "H1/H2/H3 NEEDS_HUMAN；D15 OPEN"
+  ]
+}

@@ -10,7 +10,7 @@
 
 > CodeMap：[`team-swe/codemap/post_e_comm_fault_hardening.md`](../codemap/post_e_comm_fault_hardening.md)
 > （`bd081cb`，reviewer 五轮 ACK）。入口 = CodeMap §6 **Q1–Q15**，本 Spec 逐条
-> 落为 D1–D15 + Spec / Plan 期新发现 S-6..S-39；实现前代码基线 `bd081cb`。
+> 落为 D1–D15 + Spec / Plan / 实施期新发现 S-6..S-40；实现前代码基线 `bd081cb`。
 >
 > 收口口径承接候选 E：本候选闭合评估 §6.2 **P0-2** 中"连续读写错误阈值 / Fault·
 > 断扭语义 / 快速错误也须触发"三件 + Reverse Sync **F1/F2/F3** + CodeMap **S-1 的
@@ -25,6 +25,13 @@
 > **本文件自包含**：正文 = 最终有效规范全文（API、路由矩阵、phase 表、出口矩阵、
 > 错误映射、预算、AC），不引用任何未入库的历史轮次；amend 记录只做摘要，摘要与
 > 正文不一致时以正文为准。
+
+## C3 Reverse Sync（2026-09-08，独立 reviewer 方案 ACK）
+
+S-40：EStop 不再丢弃尚未执行请求的身份，SerialRT 在原 pending 槽标取消位，
+由 serial 唯一消费者完成零执行取消与记录。没有跨槽搬运，不增加事实槽；权威
+EStop 仍由 safety_word 一次成功 CAS 发布。下文 D3 / D13 / AC 已同步；这项批准
+不代表实现或验收已完成。C1 中间实现的同步清空语义随 C3 整包修正，HardRT 不变。
 
 ## Spec amend 记录（round 20；reviewer 复核后）
 
@@ -317,6 +324,10 @@
   1 s 即可无 seq 超时；持续 `Busy` 也可走该分支，不能笼统视为不可达。
   → D3 类型化 timeout 请求新增 `Unsubmitted`，不伪造 seq 0 或 EStop，
   保持 D1 的 `CommFault + Disabled`、物理收敛与 gen/ACK 义务。
+- **S-40（C3 核码，C1 实现 `fc0c142`）**：`estop_monotonic_impl` 在权威 CAS
+  之前 `pending_normal.swap(0)` 丢弃请求词；正常交错为 IPC 已发布 Submitted
+  timeout、serial 未消费、EStop 再清 pending，三类记录均不匹配，误进 Unknown。
+  → D3 / D13 改原槽取消 tag，保留完整请求直到 serial 消费；不新增跨槽事实搬运。
 
 ## 术语
 
@@ -353,6 +364,9 @@
 - **admission**：事件按类进入 EventQueue 的规则（D13）；`AdmitError ∈ {Full,
   Disconnected}`。mailbox **不是**事件：独立 level-triggered 原子槽（D4 / D13），
   **一个 u64 词** {gen:32 | code:8 | detail:8 | origin:8}，gen 与 detail 原子绑定。
+- **SerialRT pending 取消 tag**：`PENDING_CANCELLED = 1 << 63`；action / arg
+  沿用低 16 位，合法 seq 在位 16..55，位 56..62 必须为零。只剥 bit63 后校验
+  seq 为 1..SEQ_MASK，禁止宽 mask 吞掉非法位。HardRT 仍用完整 48 位 seq，绝不剥 tag。
 - **`EmergencyBatch { estop: bool, ssf: Option<MailboxSnapshot { gen, detail,
   origin }> }`**：IPC 每 tick Step 0 以 CAS claim `ipc_estop_notice`（SerialRT）或
   取走 EventQueue `estop_pending`（HardRT）并快照 mailbox（code ==
@@ -509,6 +523,7 @@ CommFault | SafetyStopFailed)` → `AdapterError`（AC-17）。
   | `completed.valid ∧ seq`，`Enable(false)` ∧ `success` | **仅豁免重复物理收敛**（不重发 `Safety`、不 `Confirm`）；**不豁免 Fault / gen / ack**：仍 `enter_fault(CommFault, PendingDeadline, PendingTimeout)` 发布 gen，创建的 `Fault` 轮次跳过 `StopIssue` / `Confirm`，以 N 个电机逐项 status ACK 全数成功（`write_torque_enable_with_retry(false)`，`adapter.rs:352-402`）为观测经封顶表提交：`evidence_trusted`（= `rx_trust`，未被本路径清零）→ `TorqueOffConfirmed`，否则 `AdapterUncertain` → `AwaitAck(gen)`；IPC 预提交的 `Fault(CommFault)` 由该 gen 对账；AC-4i 锁 |
   | `completed.valid ∧ seq`，其它 action × 结果 | `enter_fault(CommFault, PendingDeadline, PendingTimeout)`（含收敛） |
   | 未消费 pending seq | 消费时 0 IO 回 `AbortedByTimeout` + `enter_fault(CommFault, PendingDeadline, PendingTimeout)`（无效果，收敛为幂等广播） |
+  | EStop 已标取消的 pending，精确匹配 Submitted seq | 同未消费 pending：零原 action IO，以 PendingDeadline 收敛；独立 EStop 请求仍须 claim / 合并，不因 timeout 结果吞掉急停义务 |
   | `Unsubmitted`，原 action 尚未提交 | 不调用原 action、不构造假 seq；`enter_fault(CommFault, PendingDeadline, PendingTimeout)` + 完整物理收敛 + gen/ACK；不置 EStop latch、不清信任量。持续 Busy 若还残留非本请求的 pending / active，先按单 pending 不变量失败记 `InvariantViolation`，阻止该残留发起普通 IO，并以 `Unknown` 收紧信任后收敛，不误当成本请求完成 |
   | **Submitted 不匹配 / 非法请求编码** | **不变量违反（fail-closed）**：Diag `InvariantViolation{abort_request, active, completed}` + `enter_fault(CommFault, Unknown, InvariantViolation)`（`Unknown` ∈ `TRUST_CLEARING`，清信任量）；"不可能"由 AC-4c 证明，运行时仍 fail-closed |
 
@@ -516,8 +531,22 @@ CommFault | SafetyStopFailed)` → `AdapterError`（AC-17）。
   清本次请求，不能普通 store 覆盖其间到达的不同请求。每个请求的收敛与 gen/ACK
   责任登记完成后才清；同一 IPC pending 超时仅发布一次，不在每 tick 重复发布。
 
+  **已取消 pending 的记录所有权（S-40）**：原槽保持非空，`request_normal` 既有
+  `compare_exchange(0, payload)` 继续返回 Busy，不能覆盖被取消请求。serial 唯一
+  消费者剥 tag 并严格校验 payload；匹配 Submitted timeout 按上表退场。未匹配
+  timeout 的合法取消请求仅零执行完成 `PreemptedByEmergency`，先写
+  `completed_effect{success=false, exact action/arg/seq}` 再发布 `last_completed`；
+  随后迟到的同 seq timeout 可以精确命中完成记录。取消 tag 自身不创建 Emergency、
+  不 claim 请求、不写 policy / gen；即使发布者停在 tag 成功、权威 CAS 之前也如此。
+  急停义务只来自 `safety_word` 请求的 claim。Unsubmitted 遇到非本请求的取消槽
+  仍属不变量残留，按 Unknown，不因取消标记豁免。IPC 收到取消结果按抢占结果
+  处理，不误映射成普通 AdapterErr；EStop notice 到达后独立服务其状态与 latch 责任。
+
 - `T_pending` 保持 1 s；client 栈 0 改。
-- **liveness（lease 化）**：`liveness_counter` 每 tick +1；`checkpoint()` 仅在一次
+- **liveness（lease 化）**：`liveness_counter` 在合法 tick 推进时 +1；本 tick 有 IO 时，
+  任一调用越过其当前 phase deadline 就不得靠 tick 尾部增加进度，后续调用重设
+  deadline 不能抹掉此前越界。无 IO 的 Idle-inhibited / AwaitAck / 终态等待正常
+  计进度，不继承上一个 tick 的过期 lease；不新增整轮绝对预算。`checkpoint()` 仅在一次
   transport 调用**已返回**且 `now < phase_deadline` 时 +1（normal action：开始 +
   `B_action_retire`；启动 Connect：开始 + `T_connect(N)`；收敛：按 D4 phase 预算）；
   越界冻结 → 观察器（`s0_daemon.rs:1083` 改接本计数）≤ 1 s 判停滞 → 停喂 →
@@ -1053,8 +1082,11 @@ Fault(SafetyStopFailed)` 先例登记 freeze diff）；退出仅 ClearError 守�
   锁定；HardRT 走既有 `safety_stop()`）。**唯一发布者**：topic `poll_estop`（IPC
   ingress）或 `ExternalEvents::estop()`；IPC Step 1 **不调**。原语（全部 atomic，
   无锁）：
-  1. `safety_latched.store(true, Release)`；`pending_normal.swap(0, AcqRel)`；
-     `estop_requests.fetch_add(1, Relaxed)`（诊断，非权威）——均先于 CAS；
+  1. `safety_latched.store(true, Release)`；对 SerialRT `pending_normal` 的非空
+     未取消词 strong CAS 置 `PENDING_CANCELLED`，保留完整 payload，失败重读；
+     空槽 / 已取消槽仅退出 pending 标记步骤，继续计数与权威 CAS，
+     不造空 tag、不丢弃原词；随后
+     `estop_requests.fetch_add(1, Relaxed)`（诊断，非权威）——均先于权威 CAS；
   2. **一次 strong CAS 循环于 `safety_word`**：`old = load(Acquire)`；
      `new.state = if old.state ∈ {TorqueUnknown, TorqueOn, TorqueOffConfirmed} {
      StopCommanded } else { old.state }`；`new.serial_estop_pending = 1`；
@@ -1295,6 +1327,12 @@ SetEnabled 注入。
   rx_trust 与 EStop latch 不变；(l) 持续 Busy 与残留 pending/active 分列，残留槽
   禁止发新普通 IO并记录 Unknown 不变量失败；(m) Unsubmitted 与 EStop/mailbox
   交错不吞请求、不跳物理确认与 ACK，清请求 CAS 不覆盖不同新请求，高标签不得误匹配 seq 0。
+  (n) Submitted timeout 已发布、EStop 标取消、serial 后消费：原 action 零执行，
+  PendingDeadline 保信任、gen / ACK 与独立急停义务均完成；标记 CAS 败给 serial
+  消费的反序亦成立；(o) 发布者在 tag 成功、权威 CAS 前暂停，serial 只取消动作，
+  不提前创建 Emergency / 写 policy / 发布 gen；发布者继续后恰一个权威请求；
+  (p) 两发布者重复取消不覆盖 payload，取消完成后迟到同 seq timeout 仍精确匹配；
+  非法保留位、空 tag、seq 0 均 Unknown，HardRT 48 位高值不得被剥成取消 tag。
 - **AC-5** 三元 + S-6 + 禁写空窗：(a) 扭矩阶段第 k 台 NACK → 收敛；(b) 性质"从不
   在任一台 on 时报 `TorqueOffConfirmed`"；(c) 非 Comm 失败后冻结 IPC 至 confirm
   之后 → 期间 policy write 计数恒 0，`FAULT_PENDING` 直至 ack 才清。
@@ -1375,7 +1413,8 @@ SetEnabled 注入。
   **(o7) 单次外部 API 调用
   恰产生一个权威请求**：`ExternalEvents::estop()` 一次 → ctrl 写序列记录恰一次
   原语成功 CAS、`estop_requests` +1、双位各置 1 一次；**原语成功 CAS 后零写**，
-  CAS 前的 latch 写、pending drain 与诊断计数按 D13 执行；上述各项均：
+  CAS 前的 latch 写、pending 取消标记 CAS 与诊断计数按 D13 执行；“恰一次”指
+  safety_word 的权威成功 CAS，pending 标记 CAS 单独计数；上述各项均：
   `safety_word.state` 不降级、`estop_latched` 已持久化、SSF gen 在下一 tick 正常
   commit + ack；**(p) EStop 不清粘滞 Fault 全表 + classifier**：{`Fault(AdapterErr)`,
   `Fault(CommFault)`, `Fault(SafetyStopFailed)`} × 原语 outcome {`StopIssued`,
