@@ -1,6 +1,6 @@
 # post-E 通信故障硬化 · 函数级实施计划
 
-> 日期：2026-09-08。版本：Plan Approved + S-40/S-41/S-42/S-43 Reverse Sync。状态：**C1–C4 已评审提交；C5 source e6d2b306…2598 / 308，S1 guard 与精确目录 oracle 已独立 ACK；r6 本地与 Orin 全部软件门 PASS，最终独立 APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING，本阶段随本次提交归档**。
+> 日期：2026-09-08。版本：Plan Approved + S-40 至 S-44 Reverse Sync。状态：**C1–C5 已评审提交（C5 `85efefb`）；S-44 两端软件门与左 H1/H3 已独立 APPROVED。左 H2 与右臂未测，D15 OPEN**。
 > 权威：[`post_e_comm_fault_hardening.md`](post_e_comm_fault_hardening.md)（round 21 Spec Approved）。
 > 代码基线：`bd081cb`；工作分支：`feat/post-e-comm-fault-hardening`。
 > 本文只展开已批准 D1–D15 与 P.0–P.8，不修改冻结设计。主 agent / reviewer 明确
@@ -26,7 +26,8 @@ unit、不对真实 marker 授权**。Orin 的 AC-2(d)、AC-12、AC-13 留具名
 软件验收，事实与限制见 P.6.4–P.6.6。本地与 Orin 均已恢复并核验无 hook 正式产物，
 六服务继续停止，`deployable=false`。用户已明确授权 Orin 调试尤其 RT 检查需要权限时
 直接使用 `sudo`；记录实际权限和调度环境，不提高资源阈值或放宽既定预算。
-真实电机测量、自动启动服务和正式部署流程仍不在本轮软件执行范围内。
+用户现已确认可以现场配合 H1–H3；真实电机测量按每臂现场步骤完成信号推进，
+P.6.10 修复与复核通过后才运行 H2。常驻服务仍停止，正式部署流程未执行。
 
 现有调用链已核：
 
@@ -841,7 +842,7 @@ C5 新增 `robot-tests` feature `comm-fault-e2e`（第10项单feature gate；不
 CLI：`comm_fault_e2e --phase mock|startup|rpc|all|orin-characterize|orin-sla|orin-broadcast
 --bin-dir <abs> --evidence-dir <abs> [--case <AC编号>]`。默认mock；all仅软件三phase。
 Orin入口额外要求`--config <abs> --hardware-id <id> --ack-supervised-hardware`且构建
-`comm-fault-e2e,real-hw`；本轮不执行。无ack/无匹配配置一律退2、零open。harness注入
+`comm-fault-e2e,real-hw`；现场执行按 P.0 当前授权。无ack/无匹配配置一律退2、零open。harness注入
 只用test-hook S0，生产release不得部署带hook产物；报告记录artifact hash/features。
 
 | AC | 具名测试/场景（新名为锁定计划名） | 命令组/证据 |
@@ -1146,7 +1147,7 @@ bounded64，必须按上述 release exact 命令看到 1 项实际执行；库�
 feature导致0 tests的输出属于门未运行，不能判PASS。
 
 软件全门后重新不带test-hook构建生产artifact，记录sha256、commit、features，避免
-混合release目录的最后一份带注入代码。硬件H1/H2/H3命令仅归档，分别使用
+混合release目录的最后一份带注入代码。硬件H1/H2/H3按逐臂现场完成信号推进，分别使用
 `--phase orin-characterize|orin-sla|orin-broadcast`，H2每场景100warmup/1000样本，
 保存CSV/P50/P99/max/CAS重试分布/σ_est与Orin PX56环境；P99门不在本机推算。
 
@@ -1295,6 +1296,52 @@ git diff --check
 
 A1 仍按 P.6.3 完整参数执行原 1000 轮；单 feature、tree、timings、deny、全量 tests、
 67 场景、八套 smoke、正式产物和 fresh 均由当前源码实跑，结果见 P.6.5。
+
+### P.6.10 H2 的 PX-56 装配与使能前硬门（S-44）
+
+范围仅 `comm_fault/sla.rs`（developer）与 `sla_acceptance.rs`（主 agent 独立
+验收）；主 agent 维护 Spec / 本计划 / 当前交接。无新依赖、生产接口或架构语义变化。
+
+1. `H2RtProfile::for_hardware_id` 固定左 CPU4、右 CPU5、FIFO70、普通 CPU0–3；
+   未知硬件拒绝。仅 physical 路径的 `configure_physical_s0` 追加现有三个 CLI 参数，
+   CPU 掩码在父进程预构造，exec 前仅用原始系统调用设置；不在 fork 后分配、日志或加锁。
+2. `read_s0_threads`（可作为通用进程读取器）读取 `/proc/<pid>/task`、comm 与
+   `sched_getscheduler` / `sched_getparam` / `sched_getaffinity`。线程集合读取前后
+   必须一致且非空，任何读取/系统调用错误、线程消失均拒绝，不以缺失值冒充 OTHER。
+3. `validate_s0_rt_snapshot` 要求恰一个 `s0_serial_io_th` 是 FIFO70、精确目标核；
+   主线程必须存在，其余全部 OTHER0、精确 CPU0–3。工具启动时由 `taskset -c 0-3`
+   继承普通掩码，gateway 沿用继承；首次使能前也核两进程所有线程为 OTHER0 / 0–3。
+   工具不在 Tokio 线程已生成后仅修改主线程亲和性，不用整进程 chrt 升 RT。
+4. `run_instance` 在 S0 boot_ready、gateway ready 后，首次 `measure` / `recover`
+   / SetEnabled 前检查三进程并写 `rt_preflight.json`，含 profile、PID/TID/comm、
+   实际 policy/priority/CPU、RobotClock 时间及错误。三进程各自错误全部收集后先写
+   报告，再判通过/失败，不因某次读取失败跳过留证。检查失败不进入测量，但仍执行
+   既有 `final_stop` 和有界进程退场。软件 probe 不走此硬门。调度快照仅证明检查
+   当时环境，不声称连续监控或 PREEMPT_RT 内核。
+5. 独立反例覆盖左右正确、未知身份、serial 缺失/重复/OTHER/错优先级/错核、主线程
+   缺失、普通线程 FIFO/越界/窄掩码、读取失败与线程集合变化。参数装配区分左右和
+   软件路径。另用无特权受控子进程实际读取 Linux 线程调度/亲和性，只在子进程选
+   本机可用 CPU，测试父进程保持不变；合成快照不作为 Orin 实测证据。
+
+本地按序执行 fmt → 默认 workspace Clippy → robot-tests 全 feature Clippy →
+comm_fault_e2e 独立测试与构建；运行现有 mock SLA probe 验证软件路径，复用已核
+S0/GW 输入但保留真实构建 manifest。Orin owner 独占 Cargo，隔离最终产物并核正式
+四 bin 未变化。独立代码评审、必要门全绿后提交工具修复；实物 H2 仍独立留待现场。
+
+H2 现场入口（先完成该臂物理步骤及 D9 一次性授权；目录必须为新的一次运行）：
+
+```bash
+H_BINS=/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/artifacts/release
+H_RUN=/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2
+taskset -c 0-3 "$H_BINS/comm_fault_e2e" --phase orin-sla --bin-dir "$H_BINS" \
+  --evidence-dir "$H_RUN" --config /etc/robot/xlerobot_left_arm.toml \
+  --hardware-id left_arm --ack-supervised-hardware
+```
+
+右臂同步改为 `right_h2` / `xlerobot_right_arm.toml` / `right_arm`，不同时跑双臂。
+普通 loosqk 的已核 rtprio99 / memlock 无限可用；必要时才 sudo，不改变 marker 属主。
+57 项工具测试（含 11 项本包调度独立用例）与真实 mock AC-12 回归已在本地通过；
+完整包结果与实际执行命令以 `.verify/post_e_comm_fault_hardening/H.json` 为入口。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

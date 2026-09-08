@@ -24,7 +24,7 @@ ignored**；lib / bins **1461 PASS 包含在 1643 内，不相加**。原有 ign
 函数与命令映射见 [正式 Plan](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md)，
 执行状态见 [HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
 
-当前源码 `e6d2b30699379ee0e2222649efb4e79093978c612e0d6a67bc83dce9720d2598`
+C5 提交 `85efefb` 的源码 `e6d2b30699379ee0e2222649efb4e79093978c612e0d6a67bc83dce9720d2598`
 （308 输入）已独立 **APPROVED_SOFTWARE_SCOPE**；汇总状态为
 **SOFTWARE_ACCEPTED_HARDWARE_PENDING**，`deployable=false`。
 
@@ -51,10 +51,24 @@ S1 私有 guard 按 publisher → Node 顺序析构；A1 通过上游 Node ID �
 
 | 现场条目 | 当前边界 |
 |---|---|
-| H1 / AC-2(d) | NEEDS_HUMAN：真实串口特性、配置/udev 身份、原始 TX 与耗时 |
+| H1 / AC-2(d) | 左臂 PASS：100 warmup + 1000 正式完整 ping，零错误；P50/P99/max = 1.081312/1.153664/1.165824 ms（特性记录，无时延通过阈值）。右臂未测 |
 | H2 / AC-12 | NEEDS_HUMAN：topic/external × idle/inflight，各 100 warmup + 1000 有效样本；RR 20/s、实际载荷、σ/CAS 分布 |
-| H3 / AC-13 | NEEDS_HUMAN：真实广播调用、完整原始帧、一写零读与耗时 |
+| H3 / AC-13 | 左臂 PASS：100 warmup + 1000 正式广播，完整六 ID 断扭帧、一写零读；主机调用最大 0.491552 ms，正式样本全部 ≤10 ms。右臂未测 |
 | D15 | OPEN：软件收敛不保证进程死亡或三次广播均失败时的物理断扭 |
+
+用户现已确认可以现场配合，逐臂物理准备完成后执行。H2 准备时发现验收工具未传
+PX-56 的 FIFO70/左右 CPU4/5 参数；S-44 / PLAN P.6.10 已实现，两端必要门通过。
+新增硬门在首次使能前逐 TID 核 S0、工具与 gateway 的实际调度和精确 CPU 掩码，
+错误先留证再收尾；工具的 `taskset -c 0-3` 必须早于 Tokio runtime 创建。
+这项修复不改变 C5 的软件批准，也不构成任何 H2 实测通过声明。
+左臂 H1/H3 使用真实 by-id 总线；marker 与 latch 未改，六项常驻服务保持停止。
+H3 证明主机 adapter/write 返回边界，不据此宣称 UART 已发完或机械已断扭。
+S-44 两端各 57 项工具测试、Clippy、真实 mock AC-12 通过；Orin 两次 mock S0
+分别实测串口 FIFO70@CPU4/5，其余全部 OTHER0@CPU0–3，均正常退出。
+这两次只覆盖 S0；真实 H2 的三进程检查在首次使能前执行，尚未作为实物结果通过。
+S-44 软件包与左 H1/H3 已独立 **APPROVED**，完整证据入口为
+[H.json](../.verify/post_e_comm_fault_hardening/H.json) 与
+[H_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)。
 
 当前结论与逐项命令/日志索引为 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json)，
 最新验收证据为 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
@@ -473,6 +487,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 | 2026-09-08 | C2 有界传输与 adapter 分包验证；独立测试实际执行，整候选门仍待 C3–C5 | Codex |
 | 2026-09-08 | S-40 同槽取消标记与确定性交错验收登记，方案已 ACK，未宣称新增测试通过 | Codex |
 | 2026-09-08 | 当前 e6d2b306 / 308 的本地与 Orin 软件验收独立批准；统一 C5.json / C5_evidence.tar.gz 入口，按用户授权清除旧过程数据；H1–H3 与 D15 状态不变 | Codex |
+| 2026-09-08 | S-44 的 d6963ed0 / 308 两端工具门、Orin 两核 mock S0 RT 与左 H1/H3 独立批准；H2 和右臂未测，D15 OPEN；证据统一 H.json / H_evidence.tar.gz | Codex |
 | 2026-04-22 | 骨架初稿：§10.1/§10.2/§10.3 三级结构 + 状态标签 + env_id 机制；所有数值行占位。Step 5 完成时刻快照 | Claude Code (提议) / loosqk (拍板) |
 | 2026-04-22 | §10.2.3 CI 1–6 步接入 `.github/workflows/ci.yml`；`deny.toml` 落地（allow 0BSD；workspace path wildcard + private crate 豁免；iceoryx2 / trybuild winnow dup 走 skip-tree）；`scripts/collect_env_id.sh` 兼容 macOS + Linux。TODO 1/3/4 划掉，只剩 2（assert-no-alloc） | Claude Code |
 | 2026-04-24 | §10.2.1 加 3 个 task 27c harness（`feetech_bench` criterion / `feetech::integration_smoke` / `scripts/feetech_flamegraph.sh`）+ 附录加 feetech bench baseline 实测数值。结论：协议层零瓶颈，task 28 真机延迟瓶颈在 USB-RS485 wire RTT。 | Claude Code |

@@ -5,7 +5,10 @@
 
 use robot_s0::comm_fault_trace::{TraceEvent, TraceKind};
 
-use super::sla::{Sample, analyze};
+use super::sla::{
+    H2RtProfile, ProcessRtSnapshot, Sample, ThreadRtSnapshot, analyze, read_s0_threads, s0_command,
+    validate_ordinary_rt_snapshot, validate_s0_rt_snapshot,
+};
 
 const EPOCH: u64 = 73;
 const BASE_NS: u64 = 1_000_000_000;
@@ -653,4 +656,379 @@ async fn collect_preserves_foreign_epoch_received_while_waiting_for_completion()
     for event in complete {
         assert!(captured.contains(&event));
     }
+}
+
+// PX-56 的独立环境反例；这些合成快照不能用于宣称真实 Orin 测量通过。
+struct RtDirectory(std::path::PathBuf);
+
+impl RtDirectory {
+    fn new() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "robot-rt-preflight-{}-{sequence}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for RtDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn ordinary_thread(tid: u32, comm: &str) -> ThreadRtSnapshot {
+    ThreadRtSnapshot {
+        tid,
+        comm: Some(comm.to_owned()),
+        policy: Some(libc::SCHED_OTHER),
+        priority: Some(0),
+        cpus: Some(vec![0, 1, 2, 3]),
+    }
+}
+
+fn px56_snapshot(serial_cpu: usize) -> ProcessRtSnapshot {
+    ProcessRtSnapshot {
+        pid: 700,
+        tids_before: vec![700, 701, 702],
+        tids_after: vec![700, 701, 702],
+        threads: vec![
+            ordinary_thread(700, "s0_daemon"),
+            ordinary_thread(701, "s0_ipc_thread"),
+            ThreadRtSnapshot {
+                policy: Some(libc::SCHED_FIFO),
+                priority: Some(70),
+                cpus: Some(vec![serial_cpu]),
+                ..ordinary_thread(702, "s0_serial_io_th")
+            },
+        ],
+        errors: Vec::new(),
+    }
+}
+
+#[test]
+fn rt_preflight_accepts_left_and_right_px56_but_not_each_others_cpu() {
+    for (identity, serial_cpu) in [("left_arm", 4), ("right_arm", 5)] {
+        let profile = H2RtProfile::for_hardware_id(identity).unwrap();
+        assert_eq!(profile.serial_cpu, serial_cpu);
+        validate_s0_rt_snapshot(profile, &px56_snapshot(serial_cpu)).unwrap();
+        assert!(validate_s0_rt_snapshot(profile, &px56_snapshot(9 - serial_cpu)).is_err());
+    }
+    for unknown in ["arm", "left", "right", "", "LEFT_ARM"] {
+        assert!(H2RtProfile::for_hardware_id(unknown).is_err());
+    }
+}
+
+#[test]
+fn rt_preflight_rejects_serial_policy_priority_affinity_and_identity_errors() {
+    let profile = H2RtProfile::for_hardware_id("left_arm").unwrap();
+    let baseline = px56_snapshot(4);
+    let serial = baseline.threads[2].clone();
+    let mut variants = Vec::new();
+    for policy in [libc::SCHED_OTHER, libc::SCHED_RR, libc::SCHED_BATCH] {
+        variants.push(ThreadRtSnapshot {
+            policy: Some(policy),
+            ..serial.clone()
+        });
+    }
+    for priority in [0, 69, 71, 99] {
+        variants.push(ThreadRtSnapshot {
+            priority: Some(priority),
+            ..serial.clone()
+        });
+    }
+    for cpus in [vec![], vec![0], vec![5], vec![4, 5], vec![4, 4]] {
+        variants.push(ThreadRtSnapshot {
+            cpus: Some(cpus),
+            ..serial.clone()
+        });
+    }
+    variants.push(ThreadRtSnapshot {
+        comm: Some("s0_serial_io_thread".to_owned()),
+        ..serial
+    });
+    for invalid in variants {
+        let mut snapshot = baseline.clone();
+        snapshot.threads[2] = invalid;
+        assert!(
+            validate_s0_rt_snapshot(profile, &snapshot).is_err(),
+            "{snapshot:?}"
+        );
+    }
+    let mut duplicate = baseline.clone();
+    duplicate.threads[1] = ThreadRtSnapshot {
+        tid: 701,
+        ..baseline.threads[2].clone()
+    };
+    assert!(validate_s0_rt_snapshot(profile, &duplicate).is_err());
+    let mut missing = baseline;
+    missing.tids_before.pop();
+    missing.tids_after.pop();
+    missing.threads.pop();
+    validate_ordinary_rt_snapshot(&missing).unwrap();
+    assert!(validate_s0_rt_snapshot(profile, &missing).is_err());
+}
+
+#[test]
+fn rt_preflight_rejects_missing_fields_even_without_reported_reader_error() {
+    let profile = H2RtProfile::for_hardware_id("left_arm").unwrap();
+    for thread in 0..3 {
+        for field in 0..4 {
+            let mut snapshot = px56_snapshot(4);
+            let row = &mut snapshot.threads[thread];
+            match field {
+                0 => row.comm = None,
+                1 => row.policy = None,
+                2 => row.priority = None,
+                _ => row.cpus = None,
+            }
+            assert!(
+                validate_s0_rt_snapshot(profile, &snapshot).is_err(),
+                "{snapshot:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn rt_preflight_rejects_nonserial_rt_threads_and_inexact_ordinary_masks() {
+    let profile = H2RtProfile::for_hardware_id("left_arm").unwrap();
+    for index in [0, 1] {
+        for (policy, priority, cpus) in [
+            (libc::SCHED_FIFO, 70, vec![0, 1, 2, 3]),
+            (libc::SCHED_RR, 1, vec![0, 1, 2, 3]),
+            (libc::SCHED_OTHER, 1, vec![0, 1, 2, 3]),
+            (libc::SCHED_OTHER, 0, vec![0, 1, 2, 3, 4]),
+            (libc::SCHED_OTHER, 0, vec![0, 1, 2]),
+            (libc::SCHED_OTHER, 0, vec![]),
+        ] {
+            let mut snapshot = px56_snapshot(4);
+            snapshot.threads[index].policy = Some(policy);
+            snapshot.threads[index].priority = Some(priority);
+            snapshot.threads[index].cpus = Some(cpus);
+            assert!(
+                validate_s0_rt_snapshot(profile, &snapshot).is_err(),
+                "{snapshot:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn rt_preflight_rejects_incomplete_changed_and_duplicate_thread_census() {
+    let profile = H2RtProfile::for_hardware_id("left_arm").unwrap();
+    let mut invalid = Vec::new();
+    for field in 0..8 {
+        let mut snapshot = px56_snapshot(4);
+        match field {
+            0 => snapshot.tids_after.push(703),
+            1 => {
+                snapshot.tids_before.pop();
+            }
+            2 => {
+                snapshot.threads.pop();
+            }
+            3 => snapshot.threads.push(snapshot.threads[0].clone()),
+            4 => {
+                snapshot.pid = 699;
+            }
+            5 => {
+                snapshot.tids_before.push(700);
+                snapshot.tids_after.push(700);
+            }
+            6 => snapshot.errors.push("读取 TID 时 ESRCH".to_owned()),
+            _ => {
+                snapshot.tids_before.clear();
+                snapshot.tids_after.clear();
+                snapshot.threads.clear();
+            }
+        }
+        invalid.push(snapshot);
+    }
+    for snapshot in invalid {
+        assert!(
+            validate_s0_rt_snapshot(profile, &snapshot).is_err(),
+            "{snapshot:?}"
+        );
+    }
+}
+
+#[test]
+fn rt_preflight_applies_ordinary_rules_to_every_tool_and_gateway_thread() {
+    let mut ordinary = px56_snapshot(4);
+    ordinary.threads[2] = ordinary_thread(702, "tokio-runtime-w");
+    validate_ordinary_rt_snapshot(&ordinary).unwrap();
+    for index in 0..ordinary.threads.len() {
+        let mut invalid = ordinary.clone();
+        invalid.threads[index].cpus = Some(vec![0, 1, 2, 3, 4]);
+        assert!(validate_ordinary_rt_snapshot(&invalid).is_err());
+        invalid = ordinary.clone();
+        invalid.threads[index].policy = Some(libc::SCHED_FIFO);
+        invalid.threads[index].priority = Some(70);
+        assert!(validate_ordinary_rt_snapshot(&invalid).is_err());
+    }
+    assert!(validate_ordinary_rt_snapshot(&px56_snapshot(4)).is_err());
+}
+
+#[test]
+fn rt_preflight_reads_missing_process_as_failure_without_fabricating_defaults() {
+    let snapshot = read_s0_threads(u32::MAX);
+    assert_eq!(snapshot.pid, u32::MAX);
+    assert_ne!(snapshot.errors, Vec::<String>::new());
+    assert!(snapshot.threads.is_empty());
+    assert!(validate_ordinary_rt_snapshot(&snapshot).is_err());
+}
+
+#[test]
+fn rt_preflight_assembles_real_s0_commands_and_preserves_software_probe() {
+    let temp = RtDirectory::new();
+    let case = super::harness::Case::new(temp.path(), temp.path(), "rt_args", 6).unwrap();
+    for (hardware, physical, extra) in [
+        (
+            "left_arm",
+            true,
+            vec!["--serial-fifo", "70", "--cpu", "4", "--strict-rt"],
+        ),
+        (
+            "right_arm",
+            true,
+            vec!["--serial-fifo", "70", "--cpu", "5", "--strict-rt"],
+        ),
+        ("arm", false, vec![]),
+    ] {
+        let command = s0_command(&case, hardware, physical).unwrap();
+        let actual: Vec<String> = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let mut expected = vec![
+            "--config".to_owned(),
+            case.config.display().to_string(),
+            "--hardware-id".to_owned(),
+            hardware.to_owned(),
+            "--latch-path".to_owned(),
+            case.latch.display().to_string(),
+            "--rx-trust-dir".to_owned(),
+            case.trust.display().to_string(),
+            "--notify-mode".to_owned(),
+            "standalone".to_owned(),
+        ];
+        expected.extend(extra.into_iter().map(str::to_owned));
+        assert_eq!(actual, expected);
+    }
+    assert!(s0_command(&case, "arm", true).is_err());
+}
+
+#[test]
+fn rt_preflight_reads_real_child_affinity_without_changing_parent() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::process::CommandExt;
+    use std::process::{Child, Command, Stdio};
+
+    struct ChildGuard(Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    fn allowed_cpus() -> Vec<usize> {
+        // SAFETY：完整初始化的 cpu_set_t，pid=0 只读取当前测试线程。
+        let mut mask: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+        assert_eq!(
+            unsafe { libc::sched_getaffinity(0, std::mem::size_of_val(&mask), &raw mut mask) },
+            0
+        );
+        (0..libc::CPU_SETSIZE as usize)
+            .filter(|&cpu| unsafe { libc::CPU_ISSET(cpu, &mask) })
+            .collect()
+    }
+    let parent_before = allowed_cpus();
+    let selected = *parent_before.first().expect("测试线程必须至少允许一个 CPU");
+    // SAFETY：掩码在父进程准备，只选择其实际允许的 CPU。
+    let mut mask: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    unsafe { libc::CPU_SET(selected, &mut mask) };
+    let mut command = Command::new("/bin/cat");
+    command.stdin(Stdio::piped()).stdout(Stdio::piped());
+    // SAFETY：子端只做无分配的调度系统调用；不接触测试父线程或机器人进程。
+    unsafe {
+        command.pre_exec(move || {
+            let param = libc::sched_param { sched_priority: 0 };
+            if libc::sched_setscheduler(0, libc::SCHED_OTHER, &raw const param) != 0
+                || libc::sched_setaffinity(0, std::mem::size_of_val(&mask), &raw const mask) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = ChildGuard(command.spawn().unwrap());
+    child
+        .0
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"ready\n")
+        .unwrap();
+    let mut ready = String::new();
+    BufReader::new(child.0.stdout.take().unwrap())
+        .read_line(&mut ready)
+        .unwrap();
+    assert_eq!(ready, "ready\n");
+    let actual = read_s0_threads(child.0.id());
+    assert!(actual.errors.is_empty(), "{actual:?}");
+    assert_eq!(actual.tids_before, vec![child.0.id()]);
+    assert_eq!(actual.tids_after, actual.tids_before);
+    assert_eq!(actual.threads.len(), 1);
+    let thread = &actual.threads[0];
+    assert_eq!(thread.comm.as_deref(), Some("cat"));
+    assert_eq!(thread.policy, Some(libc::SCHED_OTHER));
+    assert_eq!(thread.priority, Some(0));
+    assert_eq!(thread.cpus.as_deref(), Some([selected].as_slice()));
+    assert_eq!(allowed_cpus(), parent_before);
+}
+
+#[test]
+fn rt_preflight_persists_all_three_process_failures_before_rejecting_run() {
+    let temp = RtDirectory::new();
+    let profile = H2RtProfile::for_hardware_id("left_arm").unwrap();
+    let result = super::sla::rt_preflight(temp.path(), profile, u32::MAX, Some(u32::MAX - 1), None);
+    assert!(result.is_err());
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(temp.path().join("rt_preflight.json")).unwrap())
+            .unwrap();
+    assert_eq!(report["passed"], false);
+    assert_eq!(report["profile"]["serial_cpu"], 4);
+    assert!(report["finished_ns"].as_u64().unwrap() >= report["started_ns"].as_u64().unwrap());
+    let processes = report["processes"].as_array().unwrap();
+    assert_eq!(processes.len(), 3);
+    for role in ["tool", "s0", "gateway"] {
+        let process = processes
+            .iter()
+            .find(|process| process["role"] == role)
+            .unwrap();
+        assert_ne!(process["validation_error"].as_str().unwrap(), "");
+        assert_ne!(
+            process["snapshot"]["errors"].as_array().unwrap().as_slice(),
+            [] as [serde_json::Value; 0]
+        );
+    }
+}
+
+#[test]
+fn rt_preflight_cannot_accept_when_evidence_cannot_be_written() {
+    let temp = RtDirectory::new();
+    let blocked = temp.path().join("ordinary_file");
+    std::fs::write(&blocked, b"file, not directory").unwrap();
+    let profile = H2RtProfile::for_hardware_id("right_arm").unwrap();
+    assert!(super::sla::rt_preflight(&blocked, profile, u32::MAX, None, None).is_err());
+    assert_eq!(std::fs::read(blocked).unwrap(), b"file, not directory");
 }

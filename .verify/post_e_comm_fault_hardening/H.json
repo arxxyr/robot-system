@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "stage": "H",
+  "base_commit": "85efefb6996fdc5c066533c07f5060d7c6ad0f25",
+  "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a",
+  "source_input_count": 308,
+  "status": "SOFTWARE_ACCEPTED_LEFT_H1_H3_PASSED_H2_PENDING",
+  "review_status": "APPROVED_S44_SOFTWARE_AND_LEFT_H1_H3",
+  "deployable": false,
+  "scope": "S-44 H2验收工具调度修复与左臂H1/H3；不宣称物理H2、右臂或D15通过。",
+  "software": {
+    "local": {
+      "tool_tests_passed": 57,
+      "new_rt_acceptance_tests": 11,
+      "fmt": "PASS",
+      "clippy_default": "PASS",
+      "clippy_tool_all_features": "PASS",
+      "actual_build_manifests": 3,
+      "mock_ac12": "PASS",
+      "evidence": [
+        "local/gates.json",
+        "local/runtime.json",
+        "local/commit_gates.json"
+      ]
+    },
+    "orin": {
+      "tool_tests_passed": 57,
+      "fmt": "PASS",
+      "clippy_tool_all_features": "PASS",
+      "actual_build_manifests": 3,
+      "mock_ac12": "PASS",
+      "mock_s0_actual_rt": {
+        "cpu4": "PASS",
+        "cpu5": "PASS",
+        "scope": "仅S0：每次11个实际TID，串口FIFO70@指定CPU，其余OTHER0@CPU0–3，退出0；完整H2三进程gate待物理H2启动执行。"
+      },
+      "evidence": [
+        "orin/s44.json",
+        "orin/mock_rt/run.json"
+      ]
+    }
+  },
+  "hardware": {
+    "left": {
+      "H1": {
+        "status": "PASS",
+        "warmup": 100,
+        "samples": 1000,
+        "ping_ms": {
+          "p50": 1.081312,
+          "p99": 1.153664,
+          "max": 1.165824
+        },
+        "errors": 0,
+        "scope": "六电机轮询共1000次完整ping，每次PING+Model_Number READ；时延只记录特性。",
+        "evidence": "orin/left_h1/report.json"
+      },
+      "H2": {
+        "status": "NOT_RUN",
+        "operator_available": true,
+        "fresh_physical_boundary_confirmed": true,
+        "next": "评审提交与Orin源码对齐后，一次性revoke/authorize并taskset -c 0-3启动。"
+      },
+      "H3": {
+        "status": "PASS",
+        "warmup": 100,
+        "samples": 1000,
+        "host_call_ms": {
+          "p50": 0.204448,
+          "p99": 0.262528,
+          "max": 0.491552
+        },
+        "all_formal_samples_within_10ms": true,
+        "scope": "每次完整六ID断扭广播一写零读；主机调用返回，不保证UART完成或机械已断扭。",
+        "evidence": "orin/left_h3/report.json"
+      }
+    },
+    "right": {
+      "H1": "NOT_RUN",
+      "H2": "NOT_RUN",
+      "H3": "NOT_RUN"
+    },
+    "D15": "OPEN"
+  },
+  "operator_attestations": [
+    "左臂已完成，支撑与现场断电手段就绪",
+    "可以持续在场，接着完成左臂 H2",
+    "左臂已再次完成，继续 H2"
+  ],
+  "operational_state": {
+    "formal_four_binaries_unchanged": true,
+    "six_services": "inactive/PID0",
+    "physical_rx_marker": "H1/H3前后均未写入，H2尚未authorize",
+    "physical_estop_latch": "H1/H3前后SHA相同",
+    "no_serial_access_after_h2_physical_reset": true
+  },
+  "plan": {
+    "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
+    "lines": 1410,
+    "sha256": "2d78d1252683d2427fae82ee3dce12fc756c4304d1cdf34ea082a170b7681979"
+  },
+  "evidence_archive": {
+    "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
+    "sha256": "4c6ce8397292ac8e787abad08e5e1449c6928ced21d7f8d144f192597b1a3d80",
+    "bytes": 501476,
+    "members": 103,
+    "logical_bytes": 6914424,
+    "per_file_sha256_verified": true
+  },
+  "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
+  "updated_at": "2026-09-08T20:35:30.097077+00:00",
+  "review": {
+    "reviewer": "inspect_current_specs",
+    "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a",
+    "blocking_findings": 0,
+    "independent_checks": [
+      "63 Orin原始文件 SHA/大小及64归档成员",
+      "两端57测试与实际Cargo产物身份",
+      "Orin两核实际11 TID S0调度",
+      "H1完整双事务/响应与100+1000重算",
+      "H3全部1100帧/一写零读/1000正式样本时延重算"
+    ],
+    "approved_scope": "S-44软件实现及左H1/H3；H2与右臂未测，D15 OPEN"
+  }
+}

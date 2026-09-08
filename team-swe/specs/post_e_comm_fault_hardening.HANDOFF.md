@@ -2,278 +2,53 @@
 
 ## 当前状态（2026-09-08）
 
-当前 [PLAN](post_e_comm_fault_hardening.PLAN.md)：**1363 行**，
-SHA256 `3307a6de165696f0190b3f40126af12d579d2524842502a348c42ff37c131ead`。
+C1–C5 已独立评审并提交，C5 基线 `85efefb`（未 push）。
+[Spec](post_e_comm_fault_hardening.md) / [PLAN](post_e_comm_fault_hardening.PLAN.md)
+的 S-44 / P.6.10 已获独立 **APPROVED**：两端各 57 项工具测试与真实 mock 回归
+通过，Orin 两核 mock S0 的实际调度通过，左臂 H1/H3 原始记录已独立复核。
+当前源码 `d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a`
+（308 输入）；证据为 [H.json](../../.verify/post_e_comm_fault_hardening/H.json) 与
+[H_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)。
+本文件只保留当前执行事实；已结束的逐轮评审流水账与重复提纲按用户要求删除。
 
-当前源码 `e6d2b30699379ee0e2222649efb4e79093978c612e0d6a67bc83dce9720d2598`
-（308 输入）已独立 **APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING**。
-本地与 Orin 均完成 1737 PASS / 11 ignored、67 软件场景、八套 smoke；四项 RT guard、
-fresh 与两端四个无 hook 正式产物均已通过。完整计数和现场边界见
-[10_verification](../../docs/10_verification.md)，实现约束与复现命令见 PLAN P.6。
+C5 源码 `e6d2b30699379ee0e2222649efb4e79093978c612e0d6a67bc83dce9720d2598`
+（308 输入）获 **APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING**。
+两端各 1737 PASS / 11 ignored、67 软件场景、八套 smoke；Orin 四项真实 RT guard
+全部通过。完整范围见 [10_verification](../../docs/10_verification.md)，复现见 PLAN P.6。
 
-当前只维护 [C5.json](../../.verify/post_e_comm_fault_hardening/C5.json) 与
-[C5_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
-查看原始 run / 执行器前，按 PLAN P.6.5 以仓库相对路径解包；日常验收命令仍在 PLAN。
-旧轮次日志、源码快照、重复产物和历史归档按用户授权清除；下方已提交阶段记录仅供
-设计与提交背景，不作为旧过程数据仍保留的承诺。
+C5 当前证据为 [C5.json](../../.verify/post_e_comm_fault_hardening/C5.json) 与
+[C5_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)，包 SHA
+`343dba15f58dcae362464b4a5829e6d855fadc262aaaae2b4214355e43a5c819`。
+两端旧验收目录、重复产物与历史压缩包已清理；复跑按包内 manifest 重建二进制。
+不恢复旧过程数据，不修改 Git 历史，活跃 Cargo 缓存与四个无 hook 正式产物保留。
 
-Orin 原仓库已更新，六项开发服务经授权按 gateway → S1 → S0 停止并保持
-inactive/PID0；两端无 hook 正式产物已恢复，`deployable=false`。调试 / RT 检查
-需要权限时直接使用已获授权的 `sudo`，不放宽 NOFILE、1000 轮、2 秒 grace 或 60 秒
-soak。H1/H2/H3 均 NEEDS_HUMAN、D15 OPEN，不自动启动服务，不宣称真实电机验收完成。
+## 当前工作与现场边界
 
-主 agent 整合证据与提交，developer 实施，reviewer 独立评审；同一文件单写者，
-本地 Cargo 串行、Orin Cargo 由远端 owner 独占。每阶段独立评审与必要质量门通过后
-commit。下一步为通信硬化现场 H1/H2/H3 → D15 退役决策 → Rerun 桥 → F7 判据小件；
-RX 重同步、串口 reopen、跨臂联锁不在本候选内。
+- 主 agent：Spec / PLAN / 当前文档、独立 `sla_acceptance.rs`、本地 Cargo、整合提交。
+- developer：只写 `comm_fault/sla.rs`，实现物理 S0 参数、普通 CPU 掩码继承、
+  三进程逐 TID 真实调度检查；首次恢复/使能前先留完整报告，失败走既有独立收尾。
+- reviewer：独立 Plan / 代码 / 证据评审；开发自测不替代验收。
+- Orin owner：独占远端 Cargo 与执行器；隔离验收最终产物，核正式四 bin SHA 不变。
 
-## 本日阶段历史（2026-09-08，截至 C4 收口，保留原记录）
+用户已明确确认“左臂已完成，支撑与现场断电手段就绪”，对应双臂支撑、清空
+接触区、左臂电机断电重上电及物理 USB 拔插。左臂 H1/H3 已通过；右臂尚未收到
+其物理步骤完成信号。用户已再次确认左臂电源循环/物理 USB 拔插完成，此后未开总线；
+工具包评审提交并对齐后即可 D9 一次性授权 → 左臂 H2。
+H1 只做 100 warmup + 1000 次完整 ping 特性记录，不设响应时延 PASS 门；H3 的
+100 warmup + 1000 次全六 ID 断扭广播只证明主机调用 ≤10ms、一写零读及完整帧。
+H2 在 S-44 通过代码与必要质量门后再执行：每臂四组各 100 warmup + 1000 样本，
+反复恢复/使能/断扭，单臂至少约 44 分钟；用户已确认可以持续在场完成左臂 H2。
+开始前须新物理边界
+及 D9 canonical revoke → authorize；marker 缺失不代表授权，不自动反复授权。
 
-- **C4 Approved**：生产与独立验收已收口，随本阶段提交。最终 workspace 1461、
-  RPC 45、deploy unit 16、startup 8、S0 lib 370（含 IPC 26）、marker 9、Serial 5
-  均通过；fresh fmt、两次各 touch 218 源文件的双 Clippy、build/timings 零警告。
-  当前 PLAN 1049 行，SHA256 `c88e8a1409f13ba200e1fd6652ffad6130c3ded7311c82aa3f5012faf98a60f8`。
-  `.verify/post_e_comm_fault_hardening/C4.json` 保存门与红绿日志哈希。
-  下一阶段 C5：未注册的 comm_fault 工具与 ELF 脚本不在 C4 提交范围。
+Orin `loosqk@10.0.1.40`，原仓库两端基线一致；左右 by-id、D2 配置、标定、权限已
+只读核验，六个常驻 S0/S1/gateway 服务保持 inactive/PID0，串口无占用。
+CPU0–5 在线，4–5 isolated；普通 loosqk rtprio99、memlock 无限、NOFILE1024。
+需要权限直接用已授权 sudo，但 sudo 本身不会配置 FIFO/绑核。工具须在 Tokio
+runtime 前由 `taskset -c 0-3` 启动；串口线程独立 FIFO70、左4/右5。快照只证明
+取证当时环境，不声称连续监控或 PREEMPT_RT 内核。
 
-- 用户授权：对齐本地文档，固定专职开发 / 独立评审两个子 agent，持续推进。
-- 用户追加要求：每个阶段独立评审通过且必要质量门通过后立即 commit，再推进下一阶段；
-  C1/C2/C3 已分包提交，C4 过门即由 root 提交，C5 工具与全套验证按阶段继续。
-- 用户追加现场地址 `loosqk@10.0.1.40`：已只读确认 Orin Nano、远端工作区干净、
-  `master` 停在 `fed7549`、两个串口可见、机器人服务未运行。未同步部署或操作电机。
-  [Archify 架构图](../../docs/architecture/post_e_runtime.html) 已生成并通过 9 项
-  校验、四档浏览器布局和实际浅/深色图像检查，图为 C4 验收中的时间快照。
-- C4 当前 S0 lib 370、daemon 5、startup 6、marker 9、既有 serial E2E 5 均 PASS；
-  IPC 独立 26 项已包含在 S0 lib。评审 S-43 发现 auto-enable Disconnected 与
-  READY 后 IPC 结束未退出，正在修复；root 新增两个进程反例，总 startup 8 组待跑。
-  健康 preflight_finished 与带 gen 的 first_exit 已分离，不能借零页或虚假时间过门。
-- S-43 已经 8/8 真实启动验收与模块 Clippy 验证关闭；第一次完整全局门
-  fmt / 两次强制 touch 218 个源文件后默认与全 feature Clippy / workspace lib-bins
-  1461 项 / build-timings 全过。追加 RPC 回归的首红为旧 started 日志被总装删除，
-  11 个 workflow 均在已启动 S0 上等待超时；已恢复四类真实阶段日志并再次冻结。
-  双臂 fixture 新增各 robot 独立 trust-dir；deploy_units 同步 86/87 和 required
-  notify。正在重跑旧 RPC 五组及 unit integration，再跑全局门后由 reviewer 收口。
-- Spec 的 2026-09-05 round 21 批准保持有效；独立 reviewer 已于 2026-09-08 明确
-  **Plan Approved**。developer 按 C1–C5 分包实施，主 agent 负责整合、文档与检查。
-  首次批准文件为 [正式 Plan](post_e_comm_fault_hardening.PLAN.md) 的 `ea9b63a` 版本，916 行，SHA256
-  `3a8a394a74764ad2277bdd5f3aa0901627538f635d4b6208c55cde99d6f2dd30`。
-  C3 的 S-40 方案经 reviewer ACK 后同步当前 Plan：938 行，SHA256
-  `8d8cfcbc767c4ee6405d15a1cb1f1016134fb98d20b1f5cae89fd6e510bc5d19`。
-- 开发分支已创建：`feat/post-e-comm-fault-hardening`，基础提交 `bd081cb`。
-- C1 公共契约已实现并获独立 reviewer **C1 Approved**；core 79、S0 298、schema
-  compat 16 项通过，S0 含主 agent 独立验收 14 项。Cargo manifest 提示已最小修正，
-  fresh fmt / workspace clippy / all-targets build 均零警告，timings 9.55 s；证据见
-  `.verify/post_e_comm_fault_hardening/C1.json`。
-- C2 有界传输 / adapter 已实现并获 **C2 Approved**；诊断缺 motor 的 P2 已修复并
-  经 reviewer ACK 关闭。Feetech 145 库测试（含独立 11）+ 12 独立 integration、
-  workspace 全 feature lib / bins 1389 项通过。默认 build 暴露仅 real-hw 使用的
-  tracing 依赖声明未门控，随包按实际使用域修正；最终门与日志见 C2.json。
-  接续 C3 serial 收敛，整候选尚未完成。
-- C3 核出 S-40：EStop 丢弃 pending 与 Submitted timeout 正常交错产生误报 Unknown。
-  reviewer 已 ACK 同槽取消 tag 方案，Spec / CHANGELOG / 验收入口已 Reverse Sync；
-  不新增 drained_pending 槽。developer 同步 Plan 后实施，root 补独立交错验收。
-- C3 已获独立 **C3 Approved**：真实 SerialConvergence / SerialTick 的库验证
-  337 PASS，含 root 独立 34 项及 C1 HardRT 全 48 位序号回归。已关闭取消 tag
-  误映射结果、同 tick 多发 Safety、liveness 超期尾部自增、bound 启动超时
-  完成记录缺失；失败日志与修复后结果分开保留。最终 fmt / 默认与全 feature clippy / build 均零警告，workspace lib / bins 1428 PASS；
-  daemon 仍未切换新循环，C4 总装、C5 全套进程验收尚未完成。
-- C3 已提交 `beebfa0`，C4 开发中。marker 9 组独立验收已过（含 authorize
-  精确掉电 pair），IPC 首批 20 组独立验收通过；完整 S0 364 库测试与目标 Clippy
-  已过。后续新增发布接缝 / lane 顺序 / 源 deadline 等反例仍待下轮执行。
-  S-41 新 RR admission→dequeue 迁移保护已按 reviewer 窄边界 Reverse Sync，
-  待最终复核与实现测试；不得泛称取消所有急停前上游请求。启动时间观测拟用
-  test-only 共享页与 ELF 初始化边界包络，未将 parent elapsed 冒充 supervisor 时间。
-- C4 S-42 已获 reviewer 方案 ACK：timeout 预提交与 mailbox 提交同步清两 guard；
-  ready 推导先 Acquire 读 abort 再 inhibit，避免旧健康缓存绕过 ClearError 守门。
-  Spec / CHANGELOG / AC-11(ab) 已同步；开发与独立 runtime 验收进行中。
-- 正常错误已改为先登记 Fault 再发布完成，取消只终结原 RR owner；独立评审静态 ACK，
-  接缝反例正在执行。七 worker / daemon 总装及 POD 故障注入仍开发中，不能标 C4 完成。
-- root 启动 harness 已改为单源 ObservationPage：fired-main 而非父进程 elapsed；
-  preinit-main 的初始化包络独立判据。ELF 核验脚本解析动态表/重定位/符号，当前
-  debug 链接产物含1个 preinit 与6个 init 项；最终 debug/release 产物仍需重新核验。
-- 旧“不得实施 / 不 commit”的授权前提只描述 9 月 5 日；本轮按用户持续推进授权
-  与内部质量门执行，提交前仍必须 fmt + clippy 零警告。不因本地开发执行真机动作。
-- 文档所有者：主 agent（Spec / 本交接 / 导航）；开发所有者：developer（正式计划 /
-  生产代码）；独立评审：inspect_current_specs（只读代码 / QA）。
-- D15 保持 OPEN；RX 重同步、串口 reopen、跨臂联锁不在本候选内。
-- Plan 前置独立评审完成：启动发布门、事务 RAII 执行权、RR 三类 pending 责任、
-  SerialRT 40 位 / HardRT 48 位分派、integration / smoke 活清单五项纳入正式计划。
-- AC-1 消歧已获 reviewer 同意：按实现前 Cargo 清单保留全部覆盖，历史 12/12 溯源
-  为 workflow 主体 + 公共 subprocess 测试；补已批准 abort additive default 例外。
-- Plan round 1 的三项阻断已逐项回修：S-39 未提交请求超时、周期事务入口被 EStop
-  拒绝的返回语义、完整 ignored / smoke / 当前二进制验收命令。Spec D3 / D4 /
-  D13 / AC 及 CHANGELOG、10_verification 已 Reverse Sync，最终复核已通过。
-- 基线检查（实现前）：fmt / 默认 clippy 返回 0；2026-09-08 复核完整日志勘误：
-  Rust / clippy 诊断为 0，但 Cargo 另有未用 workspace dependency 与既有二进制
-  snake_case 命名的 manifest 提示，不能称整个输出零警告。全 feature clippy 另报
-  既有 feetech 可选 `robot-logging` 未用警告，C2 修正；
-  `cargo test --workspace --all-features --lib --bins` 为 1345 PASS / 0 FAIL。
-  RPC 五组 integration 实跑 45 PASS（workflow 12、estop 7、set_enabled 11、
-  state 8、task 7），显式指定本次 debug 构建的三个子进程。其余 integration 仅
-  冻结清单，smoke 与真机尚未执行；日志位于 `target/post_e_verify/`。
-
-## 历史交接（2026-09-05）
-
-## 当前状态（一句话）
-
-reviewer round 21 已明确 **Spec Approved（2026-09-05）**，8 项拍板全部 ACK；
-AC-9(o7) 已收准为“原语成功 CAS 后零写”，允许 CAS 前的 latch / pending drain /
-诊断计数，随收口同步，**不开新 Spec 回修轮**。
-
-当前交付是 Spec 末尾的 **Plan outline（待审）**。本次不是 Plan Approved，
-**不授权实施**。代码基线 `bd081cb`，0 代码改动，文档仍 untracked / 未 commit。
-
-## 工作流（RIPER）
-
-1. 用户粘贴 reviewer 一轮意见（P0 / P1 / 非阻断，附 `file:line`）。reviewer 默认
-   只读；Spec 已批准，后续围绕末尾 Plan outline 细化文件 / 函数级计划，
-   不重新选择已批准方案。发现真实语义偏离才走 Reverse Sync。
-2. **逐条核码**：每个引用行号实读后确认事实；检索优先 `rg`，区间用
-   `sed -n 'a,bp'` / `nl -ba`。新代码事实登记 **S-xx**（当前到 S-38），规范自身的
-   时序错误写 amend，不冒充代码已实现。
-3. 改 Spec：amend 记录置顶（本轮全文；历史轮只留摘要）；正文必须**自包含**，
-   规范、phase / 调度表、AC、hard boundaries 和拍板状态同步。
-4. 每次改完跑下方自检。仅文档改动不运行生产代码测试，不将新增 AC 写成已通过。
-5. 更新本交接文件；记忆文件追加本轮摘要：
-   `~/.claude/projects/-home-loosqk-repo-robot-robot-system/memory/candidate_e_execute_progress.md`。
-   本机已核验该记忆文件不受 chezmoi 管理；若迁移机器，写入前重新核对。
-6. 回复以「爸爸」开头，简要说明核码结论、回修点和验证；待复核状态写清，不自行
-   视为 reviewer ACK。当前 Spec 拍板清单 8 项全部 ACK；Plan 审批独立记录。
-
-**不要做的事**：不 commit（reviewer ACK 后才提交，Conventional Commits + emoji，
-**不加 Co-Authored-By**；commit 前 fmt + clippy；`git fetch` 后再 push）；不改
-`docs/00_design.md`（偏离走 CHANGELOG + `10_verification.md`）；不动并行 session
-的文件；不宣称超出“机器人控制执行面受监督功能 demo 跑通”的口径；候选 E 的
-D15 硬件 fail-safe 保持 OPEN。用户本轮只批准准备 Plan outline，未批准 Plan 或实施。
-
-## 写文件的坑（本机实测）
-
-- 单次 heredoc 输出有上限：整份 1500 行一次写会截断/失败。做法：**Python 定点
-  替换（`assert count == 1`，行内换行用宽松正则 `\s*`）+ 只重写变动大的段**（round 19 曾
-  把 `### D13（` 起截断后重写 D13–D15，再追加 AC–末尾）。
-- 若 heredoc 先 append、Python 后失败，会出现**重复段**（round 19 出现过两个 `### D13`
-  标题）：用 `s.index('### D13（')` 两次定位去重。自检脚本打印 D13 标题行数，应恰 1。
-- 表格单元格内**不能含 `|`**（如 `{gen | code | …}` 要写成 `{gen, code, …}`），
-  否则管道自检报错。
-
-## 自检脚本（复制即用）
-
-```python
-from pathlib import Path
-import re
-p = Path('team-swe/specs/post_e_comm_fault_hardening.md')
-s = p.read_text()
-lines = s.splitlines()
-bad = []
-i = 0
-while i < len(lines):
-    if lines[i].lstrip().startswith('|'):
-        hdr = lines[i].count('|')
-        j = i
-        while j < len(lines) and lines[j].lstrip().startswith('|'):
-            if lines[j].count('|') != hdr:
-                bad.append((j + 1, lines[j].count('|'), hdr))
-            j += 1
-        i = j
-    else:
-        i += 1
-body = s.split('## What\n', 1)[1]
-refs = re.findall(r'同 round|同前轮', body)
-old_names = re.findall(
-    r'estop_seq|last_seen|N_max = 13|external_estop|compare_exchange_weak|EStopPending',
-    body,
-)
-d13 = [k for k, line in enumerate(lines, 1) if line.startswith('### D13（')]
-trailing = [k for k, line in enumerate(lines, 1) if line.rstrip() != line]
-print(len(lines), trailing, bad, refs, old_names, d13)
-assert not (trailing or bad or refs or old_names)
-assert len(d13) == 1
-```
-
-## round 20 回修要点（round 21 已闭合，保留设计理由）
-
-- **P0**：`ConvergeRound.completed_safety` 是 serial 自有完成记录，初始 / 重开为
-  None，Confirm / D3 豁免 / 启动 deadline 出口写 Some；publisher 改写 word 不影响旧证据。
-  D4(d) 优先于启动合并：AwaitAck 可信 off → 保留原 ctx / gen / inhibit / BOOT /
-  原绝对截止，仅重开 `StopIssue → Confirm`；再次完成仍 AwaitAck(n)，ACK 早到不
-  跳过物理阶段。不可信 → 零 IO 升级 SSF 新 gen。AC-19(iv) + AC-23 同步每轮预算。
-- **P1-1**：撤 serial claim 通用尾写。`StopIssue ∧ estop_bound` 是 serial 唯一
-  policy 写点：`tighten_estop_policy()` strong CAS 仅将四种可输出 policy 收紧为
-  StopTorque，Disabled / StopTorque 原样保留；IPC Fault commit + Disabled 任一
-  顺序都不被覆盖。纯 Fault 收敛零 policy 写。S-37 + AC-9(r)。
-- **P1-2**：Step 1 命中后只清 pending + 记 `emergency_handled`，Step 1b 每 tick
-  必经一次，随后才结束普通处理。SSF 仍在 Step 1 优先 commit + Disabled 后 ack
-  快照 gen；Step 0 之后新看到的 SSF 留下一 tick，不由非 SSF 分支误 ack。
-  S-38 + AC-8(j) 连续 4 tick EStop / AC-8(k) SSF 升级交错。
-- **非阻断**：AC-9(o6) 第二次发布前安排两 consumer 已各 claim 一次，另测尚未
-  消费 notice 的合法合并；AC-22(l16) 零业务 worker spawn，supervisor 已启动。
-- **联动口径**：普通 lane 时延上界以没有 emergency 占用 tick 为前提；normal IO
-  禁入指 t1 至本轮收敛完成（claim 前 CAS，claim 后 phase / inhibit），健康
-  Emergency 完成后的采样仍按既有规则，StopTorque 继续禁 write_command。
-
-## 拍板状态（round 21：Spec Approved）
-
-- 已 ACK：范围、D1、D2、D3、D4、D6/D8、D9、D11–D14（清单 8 项）。
-- AwaitAck 完成记录与 ACK 义务、policy 条件 CAS / SSF 零写、emergency 后 mailbox
-  服务三项均闭合；AC-9(o7) 非阻断措辞已同步。
-- 下一步：评审 Plan outline，展开函数签名 / 文件所有者 / 依赖与验证门槛，再进入
-  Plan round。只有明确 Plan Approved 后才可实施；Spec Approved 不替代此门禁。
-
-## 关键设计锚点（改动时别打破）
-
-- SerialRT 权威 `safety_state` 只在 `safety_word.state`；serial / IPC 原语的
-  strong CAS 保留他人字段；IPC 不把 StopFailed / AdapterUncertain 降为
-  StopCommanded。serial 的 completed_safety 仅作本轮出口证据，不是第二权威状态。
-- `gen = Some` 无例外经 AwaitAck / SafetyStopFailedAwaitAck；AwaitAck 的物理重开
-  保留 gen 与 ACK 义务；mailbox 单词绑定 gen/code/detail/origin，发布顺序
-  ① state / 记录 → ② inhibit → ③ 词，IPC 唯一 ack；连续 EStop 不跳过 Step 1b。
-- estop_bound 与 code 升级正交；SerialRT `(Fault(_), EStop) → 原 Fault + Disabled`；
-  serial 的 policy CAS 不能反向覆盖 Disabled，HardRT 通配转 Safe 不变。
-- 每逻辑 EStop 恰一次 estop_monotonic，双 consumer 各自在处理开始 claim 自己的位；
-  normal_io_active acquire-CAS 与 EStop CAS 在同 word 全序。不得恢复双发或 load
-  检查后直接启动 normal 事务。
-- 启动：main 首语句 boot_supervisor，N_max = 32 后只缩短；CP1 七 worker 全部
-  Spawned，CP2 = T_abs + 1 s；_exit(88) 可重启；READY 按 try_notify_ready 真送达
-  （required/standalone/auto）。AwaitAck 重开不再 Connect、不刷新启动截止。
-- marker：`1\n` / `0\n` 双状态、rename 线性化点、backup-first 持久屏障、
-  authorize 仅 canonical 1/1，退出码 0/2/3/4，锁冲突退 87。
-
-## 相关文件
-
-- Spec：`team-swe/specs/post_e_comm_fault_hardening.md`（untracked）
-- CodeMap（已入库 `bd081cb`）：`team-swe/codemap/post_e_comm_fault_hardening.md`
-- 历史版本抽取（若需回看某轮全文）：会话转录 jsonl 中 Write/heredoc 内容，脚本思路见
-  记忆文件；本机 scratchpad 已有 round 1–9 版本副本（`spec_versions/`），可能已被清理。
-- 记忆：`~/.claude/projects/-home-loosqk-repo-robot-robot-system/memory/
-  candidate_e_execute_progress.md`（每轮一行）。
-
-## 历史验证（round 20 amend，收口前）
-
-- Spec 结构自检通过：1654 行；尾随空白、表格列错、正文历史依赖引用、旧名残留均为 0；
-  D13 标题恰 1 个。自检脚本已实际执行。
-- 两名独立 agent 只读复核：AwaitAck / policy 和 mailbox / AC / 拍板状态分别通过，
-  未发现本轮未闭合的 P0/P1；补齐其提出的启动 deadline 完成记录、AC-9(o5)
-  Step 0 claim 措辞和 AC-8(k) 初始 ACK 前置。
-- 仅 Spec / 本交接文件及会话记忆更新；未改生产代码、未运行生产代码测试、未 commit。
-  新 AC 是实施期验收要求，未宣称已经实现或通过；该次等待已由 round 21 的
-  Spec Approved 结束，当前状态以上方审批记录为准。
-
-## 当前 Plan outline 交接（Spec Approved 后）
-
-- 位置：Spec 末尾 `## Plan outline（待审；未获 Plan Approved）`，同文件自包含。
-- P.0 约束与文件 Owner；P.1 公共契约 / 原子槽 / Diag；P.2 transport / 抢占 / 工厂；
-  P.3 serial 收敛；P.4 IPC / 状态机 / RR / pub；P.5 信任文件 / supervisor / READY；
-  P.6 独立 QA 与分层质量门；P.7 部署 / 整体回滚 / Archive；P.8 函数级 Plan 待细化项。
-- 必须先细化的接缝：AdapterBuildContext 的构造期服务注入、共享 ctrl 提前构造、
-  七 worker stop 槽贯穿 spawn 与 handle、pub 直接读取 legacy safety_state 的改线。
-  既有健康 monitor 不加入 CP1 七 worker。
-- abort additive default 依据 Spec hard boundaries 第 3 条已在范围内；正式 Plan
-  要收准 AC-1“无新方法”的该项例外，不增加 ExecutorCtrlClient 的 EStop 方法。
-- 质量顺序 fmt→clippy→test→build；依赖 release 产物的 E2E/smoke 后验，显式构建
-  当前 checkout 的全部所需 bin/feature，不能拿旧 release 充数。提纲中的命令尚未运行。
-- 下一步仅评审 / 展开 Plan。Spec 审批已完成，不重复要求 Spec ACK；也不得把本节
-  或提纲的存在解释为 Plan Approved / 实施 / 真机动作授权。
-
-当前收口验证：Spec 1851 行，结构自检通过（零尾随空白 / 表格列错 / 正文历史依赖 /
-旧名残留，D13 恰一处）；8 项 ACK 状态核对通过；Plan outline 经独立只读核验，
-AC 覆盖与工作包依赖无缺项。未运行 Cargo / 生产测试，未修改代码，未 commit。
+左臂 H1/H3 PASS，H2 与右臂未测，D15 **OPEN**，`deployable=false`；不自动启动六个常驻服务。
+推进硬序：通信硬化现场验收 → D15 退役决策 → Rerun 桥 → F7 判据小件。
+RX 重同步、串口 reopen、跨臂联锁不在本候选；不改冻结 `docs/00_design.md`。
+每阶段独立评审及 fmt / Clippy 等必要门通过后 commit，不 push；同机 Cargo 串行。

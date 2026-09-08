@@ -1,5 +1,6 @@
 //! H2：真实 S0 的两种 `EStop` 入口、事务执行权内载荷与完整物理确认时序。
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
@@ -32,6 +33,336 @@ const WARMUP: usize = 100;
 const SAMPLES: usize = 1000;
 const MAX_ATTEMPTS: usize = (WARMUP + SAMPLES) * 10;
 static COMMAND_SEQ: AtomicU64 = AtomicU64::new(10_000);
+
+const ORDINARY_CPUS: [usize; 4] = [0, 1, 2, 3];
+const SERIAL_FIFO_PRIORITY: i32 = 70;
+// Linux comm 只保留线程名的前 15 字节。
+const SERIAL_THREAD_COMM: &str = "s0_serial_io_th";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct H2RtProfile {
+    pub(super) serial_cpu: usize,
+}
+
+impl H2RtProfile {
+    pub(super) fn for_hardware_id(hardware_id: &str) -> Result<Self, String> {
+        let serial_cpu = match hardware_id {
+            "left_arm" => 4,
+            "right_arm" => 5,
+            _ => return Err(format!("H2 调度配置不接受硬件身份 {hardware_id:?}")),
+        };
+        Ok(Self { serial_cpu })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ThreadRtSnapshot {
+    pub(super) tid: u32,
+    pub(super) comm: Option<String>,
+    pub(super) policy: Option<i32>,
+    pub(super) priority: Option<i32>,
+    pub(super) cpus: Option<Vec<usize>>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ProcessRtSnapshot {
+    pub(super) pid: u32,
+    pub(super) tids_before: Vec<u32>,
+    pub(super) tids_after: Vec<u32>,
+    pub(super) threads: Vec<ThreadRtSnapshot>,
+    pub(super) errors: Vec<String>,
+}
+
+impl ProcessRtSnapshot {
+    fn evidence(&self) -> Value {
+        let threads: Vec<_> = self
+            .threads
+            .iter()
+            .map(|thread| {
+                json!({"tid": thread.tid, "comm": thread.comm, "policy": thread.policy,
+                    "priority": thread.priority, "cpus": thread.cpus})
+            })
+            .collect();
+        json!({"pid": self.pid, "tids_before": self.tids_before,
+            "tids_after": self.tids_after, "threads": threads, "errors": self.errors})
+    }
+}
+
+pub(super) fn configure_physical_s0(command: &mut tokio::process::Command, profile: H2RtProfile) {
+    command
+        .args(["--serial-fifo", "70", "--cpu"])
+        .arg(profile.serial_cpu.to_string())
+        .arg("--strict-rt");
+    // SAFETY：cpu_set_t 是 POD；父进程先构造完整掩码，CPU0–3 均在其容量内。
+    let mut mask: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    for cpu in ORDINARY_CPUS {
+        unsafe { libc::CPU_SET(cpu, &mut mask) };
+    }
+    // SAFETY：fork 后只在子线程执行原始系统调用并读取 errno，不分配、日志或加锁。
+    // 继承掩码不是 cpuset 上限；S0 的串口线程仍由现有 --cpu 自行绑定 CPU4/5。
+    unsafe {
+        command.pre_exec(move || {
+            match libc::sched_setaffinity(0, std::mem::size_of_val(&mask), &raw const mask) {
+                0 => Ok(()),
+                _ => Err(std::io::Error::last_os_error()),
+            }
+        });
+    }
+}
+
+pub(super) fn s0_command(
+    case: &Case,
+    hardware_id: &str,
+    physical: bool,
+) -> Result<tokio::process::Command, String> {
+    let mut command = isolated_command(&case.bin_dir.join("s0_daemon"));
+    command
+        .arg("--config")
+        .arg(&case.config)
+        .args(["--hardware-id", hardware_id])
+        .arg("--latch-path")
+        .arg(&case.latch)
+        .arg("--rx-trust-dir")
+        .arg(&case.trust)
+        .args(["--notify-mode", "standalone"])
+        .env("RUST_LOG", "info");
+    if physical {
+        configure_physical_s0(&mut command, H2RtProfile::for_hardware_id(hardware_id)?);
+    }
+    Ok(command)
+}
+
+fn read_task_ids(pid: u32) -> Result<Vec<u32>, String> {
+    let path = format!("/proc/{pid}/task");
+    let entries = std::fs::read_dir(&path).map_err(|error| format!("{path}: {error}"))?;
+    let mut tids = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("{path}: {error}"))?;
+        let name = entry.file_name();
+        let tid = name
+            .to_str()
+            .ok_or_else(|| format!("{path} 含非 UTF-8 线程目录"))?
+            .parse::<u32>()
+            .map_err(|error| format!("{path}/{}: {error}", name.display()))?;
+        tids.push(tid);
+    }
+    tids.sort_unstable();
+    Ok(tids)
+}
+
+fn read_thread_rt(pid: u32, tid: u32, errors: &mut Vec<String>) -> ThreadRtSnapshot {
+    let mut thread = ThreadRtSnapshot {
+        tid,
+        comm: None,
+        policy: None,
+        priority: None,
+        cpus: None,
+    };
+    let path = format!("/proc/{pid}/task/{tid}/comm");
+    match std::fs::read_to_string(&path) {
+        Ok(comm) => thread.comm = Some(comm.trim_end_matches('\n').to_owned()),
+        Err(error) => errors.push(format!("{path}: {error}")),
+    }
+    let native_tid = match i32::try_from(tid) {
+        Ok(tid) if tid > 0 => tid,
+        _ => {
+            errors.push(format!("PID {pid} 的 TID {tid} 无效"));
+            return thread;
+        }
+    };
+    // SAFETY：三个读取调用仅查询枚举出的正 TID；输出指针均指向有效的栈上 POD。
+    let policy = unsafe { libc::sched_getscheduler(native_tid) };
+    match policy {
+        -1 => errors.push(format!(
+            "PID {pid} TID {tid} sched_getscheduler: {}",
+            std::io::Error::last_os_error()
+        )),
+        policy => thread.policy = Some(policy),
+    }
+    let mut parameter = libc::sched_param { sched_priority: 0 };
+    match unsafe { libc::sched_getparam(native_tid, &raw mut parameter) } {
+        0 => thread.priority = Some(parameter.sched_priority),
+        _ => errors.push(format!(
+            "PID {pid} TID {tid} sched_getparam: {}",
+            std::io::Error::last_os_error()
+        )),
+    }
+    let mut mask: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    match unsafe {
+        libc::sched_getaffinity(native_tid, std::mem::size_of_val(&mask), &raw mut mask)
+    } {
+        0 => {
+            thread.cpus = Some(
+                (0..std::mem::size_of_val(&mask) * 8)
+                    .filter(|cpu| unsafe { libc::CPU_ISSET(*cpu, &mask) })
+                    .collect(),
+            );
+        }
+        _ => errors.push(format!(
+            "PID {pid} TID {tid} sched_getaffinity: {}",
+            std::io::Error::last_os_error()
+        )),
+    }
+    thread
+}
+
+/// 即使一项读取失败，也继续保存其余字段及读取后的线程集合；失败值永不填零。
+pub(super) fn read_s0_threads(pid: u32) -> ProcessRtSnapshot {
+    let mut snapshot = ProcessRtSnapshot {
+        pid,
+        tids_before: Vec::new(),
+        tids_after: Vec::new(),
+        threads: Vec::new(),
+        errors: Vec::new(),
+    };
+    match read_task_ids(pid) {
+        Ok(tids) => snapshot.tids_before = tids,
+        Err(error) => snapshot.errors.push(format!("读取前线程集合：{error}")),
+    }
+    for &tid in &snapshot.tids_before {
+        snapshot
+            .threads
+            .push(read_thread_rt(pid, tid, &mut snapshot.errors));
+    }
+    match read_task_ids(pid) {
+        Ok(tids) => snapshot.tids_after = tids,
+        Err(error) => snapshot.errors.push(format!("读取后线程集合：{error}")),
+    }
+    snapshot
+}
+
+fn validate_thread_inventory(snapshot: &ProcessRtSnapshot) -> Result<(), String> {
+    if !snapshot.errors.is_empty() {
+        return Err(format!("线程读取失败：{}", snapshot.errors.join("；")));
+    }
+    let before: BTreeSet<_> = snapshot.tids_before.iter().copied().collect();
+    let after: BTreeSet<_> = snapshot.tids_after.iter().copied().collect();
+    let observed: BTreeSet<_> = snapshot.threads.iter().map(|thread| thread.tid).collect();
+    if before.is_empty()
+        || before.len() != snapshot.tids_before.len()
+        || after.len() != snapshot.tids_after.len()
+        || before != after
+        || observed.len() != snapshot.threads.len()
+        || observed != before
+    {
+        return Err("线程集合为空、重复、读取期间变化或采集不完整".to_owned());
+    }
+    if snapshot.pid == 0 || !before.contains(&snapshot.pid) {
+        return Err("线程集合缺少有效主线程".to_owned());
+    }
+    for thread in &snapshot.threads {
+        if thread.comm.as_ref().is_none_or(String::is_empty)
+            || thread.policy.is_none()
+            || thread.priority.is_none()
+            || thread.cpus.is_none()
+        {
+            return Err(format!("TID {} 的实际调度字段缺失", thread.tid));
+        }
+    }
+    Ok(())
+}
+
+fn validate_thread_rt(
+    thread: &ThreadRtSnapshot,
+    policy: i32,
+    priority: i32,
+    cpus: &[usize],
+) -> Result<(), String> {
+    if thread.policy != Some(policy)
+        || thread.priority != Some(priority)
+        || thread.cpus.as_deref() != Some(cpus)
+    {
+        return Err(format!(
+            "TID {} {:?} 实际 policy={:?} priority={:?} CPUs={:?}，要求 {policy}/{priority}/{cpus:?}",
+            thread.tid, thread.comm, thread.policy, thread.priority, thread.cpus
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_s0_rt_snapshot(
+    profile: H2RtProfile,
+    snapshot: &ProcessRtSnapshot,
+) -> Result<(), String> {
+    validate_thread_inventory(snapshot)?;
+    if !matches!(profile.serial_cpu, 4 | 5) {
+        return Err("H2 串口目标核必须为左 4 或右 5".to_owned());
+    }
+    let mut serial_threads = 0;
+    for thread in &snapshot.threads {
+        match thread.comm.as_deref() {
+            Some(SERIAL_THREAD_COMM) => {
+                serial_threads += 1;
+                if thread.tid == snapshot.pid {
+                    return Err("S0 主线程不能冒充串口线程".to_owned());
+                }
+                validate_thread_rt(
+                    thread,
+                    libc::SCHED_FIFO,
+                    SERIAL_FIFO_PRIORITY,
+                    &[profile.serial_cpu],
+                )?;
+            }
+            _ => validate_thread_rt(thread, libc::SCHED_OTHER, 0, &ORDINARY_CPUS)?,
+        }
+    }
+    match serial_threads {
+        1 => Ok(()),
+        _ => Err(format!("要求恰一个真实串口线程，实际 {serial_threads} 个")),
+    }
+}
+
+pub(super) fn validate_ordinary_rt_snapshot(snapshot: &ProcessRtSnapshot) -> Result<(), String> {
+    validate_thread_inventory(snapshot)?;
+    for thread in &snapshot.threads {
+        validate_thread_rt(thread, libc::SCHED_OTHER, 0, &ORDINARY_CPUS)?;
+    }
+    Ok(())
+}
+
+/// 三进程全部采集、全部落证后才返回判据；此快照只证明检查时刻的实际调度。
+pub(super) fn rt_preflight(
+    directory: &Path,
+    profile: H2RtProfile,
+    tool_pid: u32,
+    s0_pid: Option<u32>,
+    gateway_pid: Option<u32>,
+) -> Result<Value, String> {
+    let started_ns = SystemClock.now().0;
+    let mut processes = Vec::new();
+    let mut failures = Vec::new();
+    for (role, pid) in [
+        ("tool", Some(tool_pid)),
+        ("s0", s0_pid),
+        ("gateway", gateway_pid),
+    ] {
+        let snapshot = read_s0_threads(pid.unwrap_or(0));
+        let validation = match role {
+            "s0" => validate_s0_rt_snapshot(profile, &snapshot),
+            _ => validate_ordinary_rt_snapshot(&snapshot),
+        };
+        if let Err(error) = &validation {
+            failures.push(format!("{role}: {error}"));
+        }
+        processes.push(json!({"role": role, "snapshot": snapshot.evidence(),
+            "validation_error": validation.err()}));
+    }
+    let evidence = json!({"started_ns": started_ns, "finished_ns": SystemClock.now().0,
+        "profile": {"serial_cpu": profile.serial_cpu, "serial_policy": libc::SCHED_FIFO,
+            "serial_priority": SERIAL_FIFO_PRIORITY, "ordinary_policy": libc::SCHED_OTHER,
+            "ordinary_priority": 0, "ordinary_cpus": ORDINARY_CPUS},
+        "processes": processes, "passed": failures.is_empty()});
+    let path = directory.join("rt_preflight.json");
+    write_json(&path, &evidence)?;
+    if !failures.is_empty() {
+        return Err(format!(
+            "H2 PX-56 调度检查失败：{}；原始记录见 {}",
+            failures.join("；"),
+            path.display()
+        ));
+    }
+    Ok(evidence)
+}
 
 #[derive(Clone, Copy, Debug)]
 struct LeaseInterval {
@@ -1139,19 +1470,9 @@ async fn run_instance(
     write_json(&case.directory.join("environment.json"), environment)?;
     let port = ControlPort::new(&case.robot_id)?;
     let (gateway_config, address) = gateway_command(&case)?;
-    let mut command = isolated_command(&case.bin_dir.join("s0_daemon"));
-    command
-        .arg("--config")
-        .arg(&case.config)
-        .args(["--hardware-id", hardware_id])
-        .arg("--latch-path")
-        .arg(&case.latch)
-        .arg("--rx-trust-dir")
-        .arg(&case.trust)
-        .args(["--notify-mode", "standalone"])
-        .env("RUST_LOG", "info");
-    let mut s0 = case.spawn("s0", command)?;
+    let mut s0 = case.spawn("s0", s0_command(&case, hardware_id, physical)?)?;
     let mut gateway = None;
+    let mut scheduling = Value::Null;
     let result = async {
         gateway = Some(case.spawn("gateway", gateway_config)?);
         wait_log(&case, &mut s0, "s0", "boot_ready", Duration::from_secs(15)).await?;
@@ -1164,6 +1485,15 @@ async fn run_instance(
         )
         .await?;
         let mut client = connect(&address).await?;
+        if physical {
+            scheduling = rt_preflight(
+                &case.directory,
+                H2RtProfile::for_hardware_id(hardware_id)?,
+                std::process::id(),
+                s0.id(),
+                gateway.as_ref().and_then(tokio::process::Child::id),
+            )?;
+        }
         measure(&case, &port, &mut s0, &mut client, hardware_id, physical).await
     }
     .await;
@@ -1174,9 +1504,14 @@ async fn run_instance(
     };
     let s0_stop = stop(&mut s0).await;
     match (result, final_state, gateway_stop, s0_stop) {
-        (Ok(measurement), Ok(final_state), Ok(()), Ok(())) => Ok(
-            json!({"environment": environment, "measurement": measurement, "final_state": final_state}),
-        ),
+        (Ok(measurement), Ok(final_state), Ok(()), Ok(())) => {
+            let mut result = json!({"environment": environment, "measurement": measurement,
+                "final_state": final_state});
+            if physical {
+                result["rt_preflight"] = scheduling;
+            }
+            Ok(result)
+        }
         other => Err(format!("H2 测量或收尾失败：{other:?}")),
     }
 }

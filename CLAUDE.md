@@ -31,13 +31,11 @@
            8 项决策全部 ACK）；2026-09-08 函数级 Plan Approved，专职
            developer 按包实施，专职 reviewer 独立评审，主 agent 整合验收。
            实施状态与证据 = team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md；
-           C1–C4 已通过独立评审与必要质量门，按阶段分包提交；
-           C4 IPC / 启动总装已收口；C5 source e6d2b306…2598 / 308 输入，
-           本地与 Orin 均为 1737 PASS / 11 ignored、67 场景、八套 smoke 全 PASS；
-           RT guard 四门与两端四个无 hook 正式产物均已核验，六项 Orin 服务保持停止。
-           C5 已独立 APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING，
-           deployable=false；H1/H2/H3 NEEDS_HUMAN，D15 OPEN，不宣称现场验收完成。
-           当前证据只保留 C5.json 与 C5_evidence.tar.gz，旧过程数据按用户授权清除。
+           C1–C5 已通过独立评审并提交（C5 85efefb）；完整证据见 HANDOFF。
+           H2 PX-56 验收装配（S-44 / PLAN P.6.10）已独立评审通过；
+           用户已确认可以现场配合，按每臂物理步骤完成信号开展 H1–H3。
+           左臂 H1/H3 已通过，H2 与右臂未测；六项服务保持停止，deployable=false，D15 OPEN。
+           证据保留当前包，旧过程数据与重复文档按用户授权清除。
            Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。
            每阶段评审与必要质量门通过即 commit，再推进下一阶段。
            RX 重同步 / 串口 reopen 已移出本候选。

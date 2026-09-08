@@ -3,7 +3,7 @@
 > 本文档保留 [`docs/00_design.md`](00_design.md) §11.2 的 **v0.2 历史实施计划**。
 > v0.2 Step 1–10 已于 `0fa1d77` 收口；正文步骤、依赖版本与当时退出标准作为历史保留，
 > 不代表当前实现状态，也不覆盖后续 CHANGELOG 的勘误与已批准候选契约。
-> 当前（2026-09-08）：**v0.5 候选 E 受监督 demo 完结；post-E 通信故障硬化 Plan Approved，C1–C4 已独立评审通过并分包提交，C4 IPC / 启动总装收口，进入 C5 完整软件验证与现场测量入口**。
+> 当前（2026-09-08）：**v0.5 候选 E 受监督 demo 完结；post-E 通信故障硬化 C1–C5 已独立评审提交（C5 `85efefb`）；H2 PX-56 验收工具修复与左臂 H1/H3 均已独立评审通过，H2 与右臂尚未测量**。
 > 当前执行入口：[`post-E 交接`](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)；
 > 规范入口：[`post-E Spec`](../team-swe/specs/post_e_comm_fault_hardening.md)。D15 仍 OPEN。
 >
