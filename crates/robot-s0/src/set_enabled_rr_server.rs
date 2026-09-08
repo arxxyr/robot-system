@@ -71,7 +71,12 @@ impl SetEnabledRrServerHandle {
 
     /// 通知主循环退出（下一轮 stop check 命中即跳出）。
     pub fn request_stop(&self) {
-        self.stop.store(true, Ordering::Release);
+        self.stop.swap(true, Ordering::AcqRel);
+    }
+
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join.is_finished()
     }
 
     /// 等线程退出。
@@ -118,13 +123,20 @@ pub fn spawn_set_enabled_rr_server_thread<F>(
     server_factory: F,
     rr_request_tx: Sender<SetEnabledRrRequest>,
     rr_response_rx: Receiver<SetEnabledRrResponse>,
+    stop: Arc<AtomicBool>,
 ) -> std::io::Result<SetEnabledRrServerHandle>
 where
     F: FnOnce() -> Iceoryx2RrServer<markers::SetEnabledRequest, markers::SetEnabledResponse>
         + Send
         + 'static,
 {
-    let stop = Arc::new(AtomicBool::new(false));
+    crate::rr_server_thread::validate_rr_capacity(
+        cfg.max_in_flight,
+        rr_request_tx.capacity(),
+        rr_response_rx.capacity(),
+    )?;
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_hook::before_spawn("set_rr")?;
     let metrics = Arc::new(RrServerMetrics::default());
 
     let stop_clone = Arc::clone(&stop);
@@ -170,7 +182,7 @@ where
 #[allow(clippy::too_many_lines)]
 fn run_loop(
     cfg: &RrServerThreadConfig,
-    _clock: &dyn RobotClock,
+    clock: &dyn RobotClock,
     server: &Iceoryx2RrServer<markers::SetEnabledRequest, markers::SetEnabledResponse>,
     rr_request_tx: &Sender<SetEnabledRrRequest>,
     rr_response_rx: &Receiver<SetEnabledRrResponse>,
@@ -179,7 +191,11 @@ fn run_loop(
 ) {
     let mut pending: VecDeque<PendingRr> = VecDeque::with_capacity(cfg.max_in_flight);
 
-    while !stop.load(Ordering::Acquire) {
+    while crate::worker_stop::worker_running(
+        crate::worker_stop::WorkerKind::SetEnabledRr,
+        clock,
+        stop,
+    ) {
         // ─── 1) drain rr_response_rx 先（释放 pending 容量减少误报 backpressure）───
         while let Ok(resp) = rr_response_rx.try_recv() {
             handle_response(&mut pending, &resp, metrics);

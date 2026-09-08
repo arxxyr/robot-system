@@ -32,8 +32,18 @@
   全 48 位 HardRT 兼容性复核通过。liveness 与 bound 超时记录先复现再修正；
   分包 fmt / 两组 clippy / build 零警告，workspace lib / bins 1428 PASS；
   完整 IPC / startup / 进程验收归 C4–C5，证据见 `.verify/post_e_comm_fault_hardening/C3.json`。
+- C4 S-41 新增 AC-11(aa)：已 admission live RR 急停取消前缀、dry / expired
+  消耗配额、source / 后续新 admission 不误杀、SSF only 与 both 响应对照；首批独立用例通过。
+- C4 S-42 新增 AC-11(ab)：Submitted / Unsubmitted timeout、abort→inhibit
+  交接读序、初始 guard 刷新后 mailbox 到达；同 tick ClearError 不得恢复，独立反例已过。
+- C4 中间验证：marker 9/9、IPC 独立 26/26、完整 S0 lib 370/370、startup 8/8、
+  既有 SerialRT integration 5/5 PASS；workspace lib/bins 1461 PASS。
+  S-43 的 READY 前后真实 IPC 断连已闭环；追加 RPC 兼容首红为旧启动日志遗漏，
+  已恢复并同步双臂锁目录 / unit 退出码断言。最终 RPC 45、unit 16 全过；
+  fresh fmt / 双 workspace Clippy / 1461 库-bin测试 / build 全过，独立 **C4 Approved**，
+  证据见 `.verify/post_e_comm_fault_hardening/C4.json`。C5 完整软件与真机验证仍未完成。
 - C3 新增 S-40 交错验收：pending 同槽取消保留 seq；标记后暂停、标记 CAS 败给
-  serial 消费、重复发布者与取消完成后迟到 timeout。方案已 ACK，测试待执行。
+  serial 消费、重复发布者与取消完成后迟到 timeout。已纳入 C3 的实际通过记录。
 
 ## 0. 使用约定
 

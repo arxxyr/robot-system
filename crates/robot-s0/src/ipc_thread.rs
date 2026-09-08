@@ -28,7 +28,7 @@
 //!
 //! - **非 RT**（普通优先级）。轮询周期 500 µs 默认（2 kHz），足够把最新 command
 //!   转发给 `rt_thread`（`rt_thread` 本身 1 kHz）。
-//! - 用 `Arc<AtomicBool>` 作退出信号；`event_tx.send(Event::Stop)` 也会走
+//! - 用 `Arc<AtomicBool>` 作退出信号；`event_tx.control(crate::event_ingress::ControlEvent::Stop)` 也会走
 //!   state machine 变成 `STOPPING` 态然后外层 stop。
 //! - 用 `crossbeam_channel` 接 `watchdog`（下行） + 外部事件（`SIGINT` / 测试驱动）。
 //!
@@ -52,7 +52,12 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crate::event_ingress::ExternalEvents;
+#[cfg(test)]
+use crate::state_machine::FaultCode;
+#[cfg(test)]
+use crossbeam_channel::unbounded;
+use crossbeam_channel::{Receiver, Sender};
 use robot_core::adapter::{ControlModeRepr, JointCommandBuf, MAX_JOINTS};
 use robot_core::time::RobotClock;
 use robot_msg::markers;
@@ -62,13 +67,7 @@ use robot_transport::{LatestCommandWriter, LatestSubscriber, RtSnapshotPublisher
 
 use robot_core::executor_ctrl::{ExecutorCtrlClient, OutputSafetyState};
 
-use crate::clear_estop_action::{self, ClearEStopDryRunOutcome};
-use crate::estop_latch::save_estop_latch;
-use crate::ipc_tick::{ClearEStopTickOutcome, IpcRetryState, ipc_tick};
-use crate::set_enabled_action::{self, SetEnabledDryRunOutcome};
-use crate::state_machine::{
-    EnabledSub, Event, EventQueue, FaultCode, Guards, S0State, S0StateSnapshot,
-};
+use crate::state_machine::{Event, Guards, S0State, S0StateSnapshot};
 
 // ============================================================================
 // RR control plane（A1-3 (1/3b) ClearEStop RR drain；reviewer 拍板）
@@ -410,6 +409,11 @@ impl Default for IpcThreadConfig {
 /// `Relaxed` ordering 足够 —— 这些是统计类 counter，不参与控制流同步。
 #[derive(Debug, Default)]
 pub struct IpcThreadMetrics {
+    /// 仅验收读取真实 evaluator 入口计数，不参与生产行为。
+    #[cfg(test)]
+    pub clear_evaluations: AtomicU64,
+    #[cfg(test)]
+    pub set_evaluations: AtomicU64,
     /// 主循环 tick 数。
     pub tick_count: AtomicU64,
     /// 成功解析并写入 `LatestCommandWriter` 的 `JointCommand` 数。
@@ -468,14 +472,19 @@ pub struct IpcThreadHandle {
     /// 给 `watchdog` 读：`ipc_thread` 每收到 heartbeat 就 `store(now, Release)`。
     last_hb_ns: Arc<AtomicU64>,
     /// 给外部（signal handler / `CLI` / 测试）发 Event（`EStop` / Stop / Clear`EStop` ...）。
-    event_tx: Sender<Event>,
+    event_tx: ExternalEvents,
     metrics: Arc<IpcThreadMetrics>,
 }
 
 impl IpcThreadHandle {
     /// 请求停止。下次 tick 开始时检测到并退出。
     pub fn request_stop(&self) {
-        self.stop.store(true, Ordering::Release);
+        self.stop.swap(true, Ordering::AcqRel);
+    }
+
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join.is_finished()
     }
 
     /// Watchdog 监测用的 `last_hb_ns` 原子。
@@ -486,7 +495,7 @@ impl IpcThreadHandle {
 
     /// 外部注入事件（signal handler / `CLI` / 测试）。
     #[must_use]
-    pub fn event_sender(&self) -> Sender<Event> {
+    pub fn event_sender(&self) -> ExternalEvents {
         self.event_tx.clone()
     }
 
@@ -546,17 +555,22 @@ pub fn spawn_ipc_thread<F>(
     executor_ctrl: Arc<dyn ExecutorCtrlClient>,
     rr_channels: Option<RrChannels>,
     set_enabled_rr_channels: Option<SetEnabledRrChannels>,
+    serial_ctrl: Option<Arc<crate::hard_rt_ctrl::HardRtCtrlInner>>,
+    emergency_ctrl: Option<Arc<dyn robot_core::executor_ctrl::SerialEmergencyCtrl>>,
+    stop: Arc<AtomicBool>,
 ) -> std::io::Result<IpcThreadHandle>
 where
     F: FnOnce() -> IpcSubscribers + Send + 'static,
 {
-    let stop = Arc::new(AtomicBool::new(false));
     let last_hb_ns = Arc::new(AtomicU64::new(clock.now().0));
     let metrics = Arc::new(IpcThreadMetrics::default());
 
-    // 外部事件 channel（SIGINT / CLI / 测试驱动）。unbounded 避免发送端阻塞；
-    // 预期流量极低（信号级），不会内存失控。
-    let (event_tx, event_rx) = unbounded::<Event>();
+    let legacy_notice = Arc::new(AtomicBool::new(false));
+    let (event_tx, event_rx) = ExternalEvents::channel(
+        Arc::clone(&legacy_notice),
+        Arc::clone(&executor_ctrl),
+        emergency_ctrl.clone(),
+    );
 
     let join_stop = Arc::clone(&stop);
     let join_last_hb = Arc::clone(&last_hb_ns);
@@ -566,10 +580,14 @@ where
     // 拿到 handle，就可以开始发 publish，subscribers 这时已经 subscribe 到 service。
     let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<()>(0);
 
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_hook::before_spawn("ipc")?;
     let join = thread::Builder::new()
         .name("s0_ipc_thread".into())
         .spawn(move || {
             let subs = subscribers_factory();
+            #[cfg(feature = "test-comm-fault-hook")]
+            crate::comm_fault_hook::boot_pause("ipc_ready");
             // 通知外层 "subscribers 已 ready"；ready_rx.recv() 立刻解除阻塞。
             let _ = ready_tx.send(());
             drop(ready_tx);
@@ -587,6 +605,9 @@ where
                 executor_ctrl.as_ref(),
                 rr_channels.as_ref(),
                 set_enabled_rr_channels.as_ref(),
+                serial_ctrl.as_deref(),
+                emergency_ctrl.as_deref(),
+                legacy_notice,
             );
         })?;
 
@@ -611,18 +632,8 @@ where
 // 主循环
 // ============================================================================
 
-/// **task-30 v9 / M7 阶段 4**：主循环改造为 [`ipc_tick`] 驱动。
-///
-/// 与旧 `run_loop` 的差别：
-/// - **删除** `apply_event` + `try_transition` 直接改 state 的旧路径
-///   （reviewer 硬要求 #2）；
-/// - [`EventQueue`] 收集所有来源（`heartbeat` / `estop` topic / `watchdog` /
-///   外部 channel），由 `ipc_tick` 三步式（`drain_emergency` → 推进 pending →
-///   plan）统一消费；
-/// - **`ClearEStop` / `EStop` / `ClearError` 等事件的 `guards` 副作用必须在
-///   `events.push` 之前更新**（reviewer 硬要求 #1）—— 否则 `ipc_tick` 内部
-///   `plan_transition` 会因 stale guard 拒绝 transition。
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+/// 一个真实线程循环只委托一个共享单 tick，不另持 evaluator 或 pending 副本。
+#[allow(clippy::too_many_arguments)]
 fn run_loop(
     cfg: &IpcThreadConfig,
     clock: &dyn RobotClock,
@@ -630,494 +641,55 @@ fn run_loop(
     cmd_writer: &LatestCommandWriter<JointCommandBuf>,
     state_pub: &RtSnapshotPublisher<S0StateSnapshot>,
     watchdog_rx: &Receiver<Event>,
-    event_rx: &Receiver<Event>,
+    event_rx: &Receiver<crate::event_ingress::ControlEvent>,
     stop: &AtomicBool,
     last_hb_ns: &AtomicU64,
     metrics: &IpcThreadMetrics,
     executor_ctrl: &dyn ExecutorCtrlClient,
     rr_channels: Option<&RrChannels>,
     set_enabled_rr_channels: Option<&SetEnabledRrChannels>,
+    serial_ctrl: Option<&crate::hard_rt_ctrl::HardRtCtrlInner>,
+    emergency_ctrl: Option<&dyn robot_core::executor_ctrl::SerialEmergencyCtrl>,
+    legacy_notice: Arc<AtomicBool>,
 ) {
-    let mut state = cfg.initial_state;
-    let mut guards = cfg.initial_guards;
-    let mut events = EventQueue::new();
-    let mut retry = IpcRetryState::new();
+    use crate::ipc_runtime::{IpcLoopState, IpcRuntimeContext, IpcSources, TopicEvents};
 
-    // **task #15 阻断 1 修复**：初值落盘 baseline。`prev_estop_latched`
-    // 跟 `guards.estop_latched` 同步，每 tick 比较；翻转时立即 fsync 写
-    // latch 文件。`latch_path` 为 `None` 时（单测）整条路径 no-op。
-    let mut prev_estop_latched = guards.estop_latched;
-
-    // **A1-3 (1/3b)**：live ClearEStop 单飞插槽。reviewer 拍板：第二个
-    // live request 不能排队无限等，第二个直接拒 `AlreadyInProgress`。
-    // dry_run 不入此槽（同步 read-only 评估，立刻 reply）。
-    let mut in_flight_live: Option<ClearEStopRrRequest> = None;
-
-    // **v0.5 候选 C**：live SetEnabled 单飞 + 多 tick 观测槽（D8）。区别
-    // `in_flight_live`（ClearEStop 单 tick）：SetEnabled 跨 tick 观测 state 到
-    // target / fault / deadline / preempt 才 resolve。dry_run 不入此槽。
-    let mut pending_set_enabled: Option<PendingSetEnabled> = None;
-
-    // 启动即发一次初值快照。
-    state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
-
-    while !stop.load(Ordering::Acquire) {
-        // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
+    let mut state = IpcLoopState::new(cfg.initial_state, cfg.initial_guards, legacy_notice);
+    let context = IpcRuntimeContext {
+        executor_ctrl,
+        serial_ctrl,
+        emergency_ctrl,
+        clock,
+        latch_path: cfg.latch_path.as_deref(),
+        metrics,
+    };
+    let sources = IpcSources {
+        watchdog: watchdog_rx,
+        external: event_rx,
+        clear_rr: rr_channels,
+        set_rr: set_enabled_rr_channels,
+    };
+    state_pub.publish(&S0StateSnapshot::new(
+        cfg.initial_state,
+        cfg.initial_guards,
+        clock.now().0,
+    ));
+    while crate::worker_stop::worker_running(crate::worker_stop::WorkerKind::Ipc, clock, stop) {
         #[cfg(any(test, feature = "test-freeze-hook"))]
         crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock, stop);
-
-        // ─── 1) data plane: JointCommand → cmd_writer (不进 EventQueue) ───
-        poll_command(
-            &mut subs.command,
-            cmd_writer,
-            cfg.authoritative_layout,
-            metrics,
-        );
-
-        // ─── 2) Heartbeat：本 event 没有"反向 guard 副作用"（只在收到时
-        //       置 heartbeat_ok=true，未收到时由 watchdog HeartbeatTimeout
-        //       走 ipc_tick 内置 false），可以在 push 前安全置位 ───
-        if poll_heartbeat(&mut subs.heartbeat, clock, last_hb_ns, metrics) {
-            guards.heartbeat_ok = true;
-            events.push(Event::Heartbeat);
-        }
-
-        // ─── 3) EStop topic / 4) Watchdog channel / 5) 外部 channel ───
-        //
-        // **第 5 条门槛修订（SerialRT E2E）**：本 ipc_thread::run_loop **不再**
-        // 在 channel drain 阶段对 ClearEStop / EStop / ClearError /
-        // HeartbeatTimeout 调 apply_event_guard_side_effect（旧逻辑会让同
-        // tick 多事件批量进入 ipc_tick 时，前到事件被后到事件的 guard 改写
-        // 污染 plan）。改成 ipc_tick 内每个 event pop 后逐条 apply。详
-        // ipc_tick 模块 doc + 锁测
-        // `events_in_same_tick_use_per_event_guard_view`。
-        if poll_estop(&mut subs.estop, metrics) {
-            events.push(Event::EStop);
-        }
-        while let Ok(ev) = watchdog_rx.try_recv() {
-            metrics.watchdog_events.fetch_add(1, Ordering::Relaxed);
-            events.push(ev);
-        }
-        while let Ok(ev) = event_rx.try_recv() {
-            metrics.external_events.fetch_add(1, Ordering::Relaxed);
-            events.push(ev);
-        }
-
-        // ─── 5.5) RR control plane drain (A1-3 (1/3b)) ───
-        //
-        // reviewer 拍板线程模型：rr_server_thread 做 iceoryx2 RR I/O，
-        // ipc_thread 是唯一 action executor。本步：
-        //
-        // - **deadline check**（drain 入口；A1-3 (1/3b) round 2 阻断 2）：
-        //   `clock.now() > req.deadline_ns` → 直接 reply
-        //   `DeadlineExceeded`，**不**入 in_flight_live / **不** push event。
-        // - **dry_run** request：直接同步调
-        //   `clear_estop_action::evaluate_clear_estop_dry_run` (read-only)
-        //   评估，**不**进 events queue / 不进 ipc_tick；立即把 domain
-        //   status 通过 response_tx 回 rr_server_thread。
-        // - **live** request：检查 `in_flight_live` 单飞槽：
-        //     - 槽空 → 占用 + push `Event::ClearEStop` 进 events queue，
-        //       让本 tick 后续 ipc_tick 走三步硬顺序消费
-        //     - 槽已占 → 直拒 `AlreadyInProgress`（reviewer 拍板：第二个
-        //       live 不能排队无限等，防止两个 request 共享一个 TickOutcome
-        //       搞错 Ack）
-        if let Some(rr) = rr_channels {
-            while let Ok(req) = rr.request_rx.try_recv() {
-                if clock.now().0 > req.deadline_ns {
-                    let _ = rr.response_tx.send(ClearEStopRrResponse {
-                        request_id: req.request_id,
-                        payload: ClearEStopRrPayload::DeadlineExceeded,
-                    });
-                    continue;
-                }
-                if req.dry_run {
-                    let payload = match clear_estop_action::evaluate_clear_estop_dry_run(
-                        state,
-                        &guards,
-                        executor_ctrl,
-                        clock,
-                    ) {
-                        ClearEStopDryRunOutcome::WouldClear { would_clear_at_ns } => {
-                            ClearEStopRrPayload::WouldClear { would_clear_at_ns }
-                        }
-                        ClearEStopDryRunOutcome::StateNotSafe { actual } => {
-                            ClearEStopRrPayload::StateNotSafe { actual }
-                        }
-                        ClearEStopDryRunOutcome::NotTorqueOffConfirmed { actual } => {
-                            ClearEStopRrPayload::NotTorqueOffConfirmed { actual }
-                        }
-                    };
-                    let _ = rr.response_tx.send(ClearEStopRrResponse {
-                        request_id: req.request_id,
-                        payload,
-                    });
-                } else if in_flight_live.is_some() {
-                    let _ = rr.response_tx.send(ClearEStopRrResponse {
-                        request_id: req.request_id,
-                        payload: ClearEStopRrPayload::AlreadyInProgress,
-                    });
-                } else {
-                    in_flight_live = Some(req);
-                    events.push(Event::ClearEStop);
-                }
+        let snapshot = state.tick(&context, &sources, || {
+            poll_command(
+                &mut subs.command,
+                cmd_writer,
+                cfg.authoritative_layout,
+                metrics,
+            );
+            TopicEvents {
+                heartbeat: poll_heartbeat(&mut subs.heartbeat, clock, last_hb_ns, metrics),
+                estop: poll_estop(&mut subs.estop, metrics),
             }
-        }
-
-        // ─── 5.5b) SetEnabled RR drain (v0.5 候选 C，D5/D7/D8) ───
-        //
-        // 与 §5.5 ClearEStop drain 同构，差异（D8 多 tick）：
-        // - **deadline check**（drain 入口）：过期直接 reply `DeadlineExceeded`，
-        //   不入 pending / 不 push event。
-        // - **dry_run**：调 `set_enabled_action::evaluate_set_enabled_dry_run`
-        //   read-only 评估 → 立即 reply `WouldAccept` / `LatchBlocked` /
-        //   `GuardRejected`；不进 events queue / 不进 ipc_tick（D7）。
-        // - **live**：先单飞（`pending_set_enabled.is_some()` → `AlreadyInProgress`，
-        //   不入 pending）；否则跑**即时 precondition gate**（同 evaluator）：
-        //   `LatchBlocked` / `GuardRejected` 即时拒不入 pending（AC-4/AC-9）；
-        //   `WouldAccept` 才 push `Event::Enable`/`Event::Disable` + 起 pending
-        //   多 tick 观测（§6.6b resolve，D8）。dry_run 与 live 共用同一 gate，
-        //   杜绝"dry-run 说能、live 却走不同判断"漂移。
-        if let Some(se) = set_enabled_rr_channels {
-            while let Ok(req) = se.request_rx.try_recv() {
-                if clock.now().0 > req.deadline_ns {
-                    let _ = se.response_tx.send(SetEnabledRrResponse {
-                        request_id: req.request_id,
-                        payload: SetEnabledRrPayload::DeadlineExceeded,
-                    });
-                    continue;
-                }
-                let outcome =
-                    set_enabled_action::evaluate_set_enabled_dry_run(state, &guards, req.enabled);
-                if req.dry_run {
-                    let payload = match outcome {
-                        SetEnabledDryRunOutcome::WouldAccept => SetEnabledRrPayload::WouldAccept {
-                            at_ns: clock.now().0,
-                        },
-                        SetEnabledDryRunOutcome::LatchBlocked => SetEnabledRrPayload::LatchBlocked,
-                        SetEnabledDryRunOutcome::GuardRejected { actual } => {
-                            SetEnabledRrPayload::GuardRejected { actual }
-                        }
-                    };
-                    let _ = se.response_tx.send(SetEnabledRrResponse {
-                        request_id: req.request_id,
-                        payload,
-                    });
-                } else if pending_set_enabled.is_some() {
-                    let _ = se.response_tx.send(SetEnabledRrResponse {
-                        request_id: req.request_id,
-                        payload: SetEnabledRrPayload::AlreadyInProgress,
-                    });
-                } else {
-                    match outcome {
-                        SetEnabledDryRunOutcome::LatchBlocked => {
-                            let _ = se.response_tx.send(SetEnabledRrResponse {
-                                request_id: req.request_id,
-                                payload: SetEnabledRrPayload::LatchBlocked,
-                            });
-                        }
-                        SetEnabledDryRunOutcome::GuardRejected { actual } => {
-                            let _ = se.response_tx.send(SetEnabledRrResponse {
-                                request_id: req.request_id,
-                                payload: SetEnabledRrPayload::GuardRejected { actual },
-                            });
-                        }
-                        SetEnabledDryRunOutcome::WouldAccept
-                            if !req.enabled
-                                && matches!(state, S0State::Safe | S0State::Fault(_)) =>
-                        {
-                            // **Reverse Sync（Fault+disable 语义 A）**：disable 时
-                            // 当前 state 已是 torque-off 终态（Safe / Fault(_)）→
-                            // no-op 幂等 → **即时** reply `Disabled`(Ok)，**不** push
-                            // `Event::Disable`、**不**建 pending、**不**清 Fault /
-                            // latch、**不**动 adapter（沿 D3 (Safe/Fault,Disable)=no-op
-                            // 幂等 + AC-5 disable 安全方向）。区别 Enabled→disable
-                            // （effectful 真 torque-off）/ Ready→disable（ReadyHold
-                            // 仍带扭，须观测到 Safe）走下方多 tick pending。
-                            // `Fault(AdapterErr)` 也走本路（请求**前**就在 Fault =
-                            // 幂等，非本次 ack fail；后者只可能在 Enabled→disable 的
-                            // pending 观测期产生 → §6.6b 才报 AdapterError）。
-                            let _ = se.response_tx.send(SetEnabledRrResponse {
-                                request_id: req.request_id,
-                                payload: SetEnabledRrPayload::Disabled {
-                                    completed_at_ns: clock.now().0,
-                                },
-                            });
-                        }
-                        SetEnabledDryRunOutcome::WouldAccept => {
-                            let (event, target) = if req.enabled {
-                                (Event::Enable, PendingTarget::EnabledActive)
-                            } else {
-                                (Event::Disable, PendingTarget::Safe)
-                            };
-                            events.push(event);
-                            pending_set_enabled = Some(PendingSetEnabled {
-                                request_id: req.request_id,
-                                deadline_ns: req.deadline_ns,
-                                target,
-                                requested_enabled: req.enabled,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        // ─── 5.6) RR live preempt (A1-3 (1/3b) round 2 阻断 1+2) ───
-        //
-        // 在 §5.5 drain 入队后、§6 ipc_tick 之前，检查 in-flight live 是否
-        // 应被 emergency preempt 或 deadline 过期取消：
-        //
-        // - **emergency preempt**：events queue 含 `Event::EStop` /
-        //   `Event::AdapterErr(SafetyStopFailed)` → 旧 RR live 不应继续
-        //   执行（emergency 之后硬件可能新 latch；客户端的 ClearEStop
-        //   request 是基于 emergency 之前的状态发的）。
-        // - **deadline preempt**：drain 入队后到 ipc_tick 之间窗口（典型：
-        //   上一 tick 没消费 ClearEStop event，本 tick 才消费，中间隔
-        //   500µs sleep）期间 deadline 过期。
-        //
-        // 两种情况都：(a) `EventQueue::remove_clear_estop_events()` 从
-        // queue 摘掉 ClearEStop event 防 ipc_tick Step 3 误处理；
-        // (b) take in_flight_live + reply `PreemptedByEmergency` /
-        // `DeadlineExceeded`。
-        if let Some(rr) = rr_channels
-            && let Some(req) = in_flight_live.as_ref()
-        {
-            let now = clock.now().0;
-            let preempt_payload = if events.has_emergency() {
-                Some(ClearEStopRrPayload::PreemptedByEmergency)
-            } else if now > req.deadline_ns {
-                Some(ClearEStopRrPayload::DeadlineExceeded)
-            } else {
-                None
-            };
-            if let Some(payload) = preempt_payload {
-                let removed = events.remove_clear_estop_events();
-                debug_assert!(
-                    removed >= 1,
-                    "in_flight_live = Some 时 events queue 应至少有 1 个 ClearEStop event"
-                );
-                let req = in_flight_live.take().expect("just checked is Some");
-                let _ = rr.response_tx.send(ClearEStopRrResponse {
-                    request_id: req.request_id,
-                    payload,
-                });
-            }
-        }
-
-        // ─── 6) ipc_tick 三步式：唯一改 state 的路径（硬要求 #2）───
-        //
-        // guards 现在是 &mut，ipc_tick 内部对每个 event 单独 apply 副作用。
-        // **A1-2**：`latch_path` 透传给 ipc_tick，让 `ClearEStop` action
-        // handler 在 ipc_tick 内完成 fsync + clear_safety_latch + 翻 guard
-        // 三步硬顺序；返回 `TickOutcome` 让本主循环跳过通用 latch hook 的
-        // 二次写盘。
-        // **v0.5 候选 C**：SetEnabled pending 的 EStop preempt 判据须在 ipc_tick
-        // drain events **之前**抓（tick 后 queue 已空）。仅 pending 在飞时看；
-        // §6.6b 用它优先于 target 匹配（emergency 覆盖 disable 也落 Safe 的歧义）。
-        let set_enabled_emergency_pre = pending_set_enabled.is_some() && events.has_emergency();
-
-        let prev_state = state;
-        let tick_outcome = ipc_tick(
-            &mut retry,
-            &mut state,
-            &mut guards,
-            executor_ctrl,
-            clock,
-            &mut events,
-            cfg.latch_path.as_deref(),
-        );
-        if state != prev_state {
-            metrics.state_changes.fetch_add(1, Ordering::Relaxed);
-        }
-        metrics.ipc_tick_count.fetch_add(1, Ordering::Relaxed);
-
-        // ─── 6.5) latch fsync hook ───
-        //
-        // **A1-3 (1/3a)**：ClearEStop 路径已在 ipc_tick 内由
-        // `clear_estop_action::try_apply_clear_estop` 完成 fsync + clear +
-        // 翻 guard 三步硬顺序；本 hook 通过 `tick_outcome.clear_estop` domain
-        // status enum 决定是否要补 fsync / 计数 / 同步 prev：
-        //
-        // - `Some(Cleared { .. })`：成功 → 计 latch_writes + 同步 prev +
-        //   **跳过**通用 `prev != now` hook 的二次 `save_estop_latch`。
-        // - `Some(FsyncFailed)`：gate 通过但 fsync 失败 → 计
-        //   latch_write_errors；guard 没翻 → prev 不动；通用 hook 也不会
-        //   触发（`guards.estop_latched` 仍为 true）。
-        // - `Some(StateNotSafe { .. } | NotTorqueOffConfirmed { .. })`：
-        //   gate 拒 → 不计数 / 不动盘；guard / executor / latch 全不动。
-        //   RR response 在 §6.6) 段从 `in_flight_live` 取出原 request 派发
-        //   `FailedPrecondition` payload。
-        // - `None`：本 tick 没消费 ClearEStop → 走通用 EStop 翻转 hook
-        //   （false → true 单调；保留 task #15 阻断 1 修复）。
-        //
-        // 设计 §6.7 不变量 #4：S0 重启不失忆，EStop / fault / 最后 safe 输出
-        // 都 fsync 双写。本 hook 是 EStop / ClearEStop 两条的实施点。
-        match tick_outcome.clear_estop {
-            Some(ClearEStopTickOutcome::Cleared { .. }) => {
-                metrics.latch_writes.fetch_add(1, Ordering::Relaxed);
-                prev_estop_latched = guards.estop_latched; // = false
-            }
-            Some(ClearEStopTickOutcome::FsyncFailed) => {
-                metrics.latch_write_errors.fetch_add(1, Ordering::Relaxed);
-                // guard 没翻 → prev 不动；下方通用 hook 走不到
-            }
-            Some(
-                ClearEStopTickOutcome::StateNotSafe { .. }
-                | ClearEStopTickOutcome::NotTorqueOffConfirmed { .. },
-            ) => {
-                // gate 拒：guard / executor / latch 全不动；不计数
-                // RR response 由 A1-3 (1/3b) 的 ipc_thread RR drain 处理
-            }
-            None => {
-                if guards.estop_latched != prev_estop_latched {
-                    // 通用 EStop 翻转 hook（false→true 单调；ClearEStop 路径
-                    // 已被 outcome 接管）。`save_estop_latch` 内部双文件
-                    // atomic rename + fsync，几 ms 级阻塞；EStop 是低频事件，
-                    // 对 500us tick 节奏影响仅在事件发生瞬间，不持续。
-                    if let Some(path) = cfg.latch_path.as_ref() {
-                        match save_estop_latch(path, guards.estop_latched) {
-                            Ok(()) => {
-                                metrics.latch_writes.fetch_add(1, Ordering::Relaxed);
-                            }
-                            Err(_e) => {
-                                metrics.latch_write_errors.fetch_add(1, Ordering::Relaxed);
-                                // **不**中断主循环：即便 IO 失败，state 已进
-                                // Safe，executor 已 safety_stop（client 同步
-                                // 置 latch + emergency_action）。重启读不到
-                                // latch 是分级降级，不阻断 emergency 响应路径。
-                            }
-                        }
-                    }
-                    prev_estop_latched = guards.estop_latched;
-                }
-            }
-        }
-
-        // ─── 6.6) RR live response 派发 (A1-3 (1/3b)) ───
-        //
-        // 当本 tick 消费了 `Event::ClearEStop` 时（`tick_outcome.clear_estop
-        // == Some(_)`），从 `in_flight_live` 取出原 request，把 4 variant
-        // `ClearEStopTickOutcome` 显式 match 成对应 `ClearEStopRrPayload`
-        // domain status，通过 response_tx 回 rr_server_thread。
-        //
-        // **A1-3 (1/3b) round 3 阻断 2**：派发前**不**再 check deadline。
-        // deadline 只在两处拦截：
-        // - §5.5) drain 入口：过期请求不入队（写盘 / clear / 翻 guard 都
-        //   未发生）
-        // - §5.6) preempt 段：drain 入队后到 ipc_tick 之前的窗口（同
-        //   emergency preempt 共用 take + remove + reply 三件事）
-        //
-        // 一旦 action 在 deadline 前开始并产出 `Cleared` / `FsyncFailed` /
-        // `StateNotSafe` / `NotTorqueOffConfirmed`，response 必须返**真实**
-        // outcome——不再"事后用 DeadlineExceeded 覆盖已成功 / 已失败的真
-        // 实结果"，避免"硬件已 clear 但客户端收 DeadlineExceeded 以为没
-        // 成功" 跟 `clear_estop.fbs` "S0 端 action layer ordering" 段
-        // "deadline 时三个翻转都不发生" 硬契约冲突。
-        //
-        // 长 fsync 跨 deadline 的极端 window 留 A1-3 (3/3) e2e 评估是否
-        // 把 deadline 传进 `try_apply_clear_estop` action handler 在不可
-        // 逆步骤前再 check（reviewer 拍板本轮不强求；ipc_tick 同步执行
-        // ms 级，single tick 内 deadline 过期的 window 极小）。
-        //
-        // **invariant**：`in_flight_live.is_some()` ↔ 上一轮 RR drain 把
-        // `Event::ClearEStop` push 进 events queue（live 单飞）。如果
-        // `tick_outcome.clear_estop == Some(_)` 但 `in_flight_live == None`，
-        // 说明事件来源不是 RR（理论上不会发生：ClearEStop 当前只通过 RR /
-        // 外部 channel 入队，其它入队点都没了；这里 debug_assert 兜底）。
-        if let (Some(rr), Some(status)) = (rr_channels, tick_outcome.clear_estop) {
-            if let Some(req) = in_flight_live.take() {
-                let payload = match status {
-                    ClearEStopTickOutcome::Cleared { cleared_at_ns } => {
-                        ClearEStopRrPayload::Cleared { cleared_at_ns }
-                    }
-                    ClearEStopTickOutcome::StateNotSafe { actual } => {
-                        ClearEStopRrPayload::StateNotSafe { actual }
-                    }
-                    ClearEStopTickOutcome::NotTorqueOffConfirmed { actual } => {
-                        ClearEStopRrPayload::NotTorqueOffConfirmed { actual }
-                    }
-                    ClearEStopTickOutcome::FsyncFailed => ClearEStopRrPayload::FsyncFailed,
-                };
-                let _ = rr.response_tx.send(ClearEStopRrResponse {
-                    request_id: req.request_id,
-                    payload,
-                });
-            } else {
-                debug_assert!(
-                    false,
-                    "tick_outcome.clear_estop = Some(_) but in_flight_live = None; \
-                     ClearEStop event 入队来源应只有 RR drain"
-                );
-            }
-        }
-
-        // ─── 6.6b) SetEnabled pending resolve (v0.5 候选 C，D8) ───
-        //
-        // ipc_tick 后读 `state` 决定 pending 是否 resolve（多 tick 观测）。优先级：
-        // 1. **EStop preempt**（`set_enabled_emergency_pre`，tick 前抓）→
-        //    `PreemptedByEStop`（优先于 target：disable 也落 Safe，emergency 须先赢）。
-        // 2. **Stopping**（`Event::Stop`）→ `PreemptedByShutdown`。
-        // 3. **`Fault(AdapterErr)`**（effectful `Enable(*)` ack fail / 1s timeout，
-        //    `ipc_tick.rs`）→ `AdapterError`（AC-2c/AC-3b）。enable 路径上唯一可能
-        //    的 fault 即 AdapterErr（Ready 态无其它 →Fault 边）；非 AdapterErr 的
-        //    病态 fault 由 deadline 兜底。
-        // 4. **到 target**（`EnabledActive` / `Safe`）→ `Enabled` / `Disabled`
-        //    （`completed_at_ns = now`，AC-2/AC-3）。
-        // 5. **deadline 过期** → `DeadlineExceeded`（**不**回滚已发副作用，D8/AC-2b）。
-        // 6. 否则继续观测（下一 tick）。
-        // resolve 后 `pending_set_enabled = None`（释放单飞）。
-        let se_resolve: Option<(String, SetEnabledRrPayload)> =
-            if let Some(pending) = pending_set_enabled.as_ref() {
-                let now = clock.now().0;
-                let reached_target = match pending.target {
-                    PendingTarget::EnabledActive => matches!(
-                        state,
-                        S0State::Enabled {
-                            sub: EnabledSub::Active,
-                            ..
-                        }
-                    ),
-                    PendingTarget::Safe => state == S0State::Safe,
-                };
-                let payload = if set_enabled_emergency_pre {
-                    Some(SetEnabledRrPayload::PreemptedByEStop)
-                } else if state == S0State::Stopping {
-                    Some(SetEnabledRrPayload::PreemptedByShutdown)
-                } else if state == S0State::Fault(FaultCode::AdapterErr) {
-                    Some(SetEnabledRrPayload::AdapterError)
-                } else if reached_target {
-                    Some(match pending.target {
-                        PendingTarget::EnabledActive => SetEnabledRrPayload::Enabled {
-                            completed_at_ns: now,
-                        },
-                        PendingTarget::Safe => SetEnabledRrPayload::Disabled {
-                            completed_at_ns: now,
-                        },
-                    })
-                } else if now > pending.deadline_ns {
-                    Some(SetEnabledRrPayload::DeadlineExceeded)
-                } else {
-                    None
-                };
-                payload.map(|p| (pending.request_id.clone(), p))
-            } else {
-                None
-            };
-        if let Some((request_id, payload)) = se_resolve {
-            pending_set_enabled = None;
-            if let Some(se) = set_enabled_rr_channels {
-                let _ = se.response_tx.send(SetEnabledRrResponse {
-                    request_id,
-                    payload,
-                });
-            }
-        }
-
-        // ─── 7) 发布 snapshot ───
-        state_pub.publish(&S0StateSnapshot::new(state, guards, clock.now().0));
-        metrics.tick_count.fetch_add(1, Ordering::Relaxed);
-
-        // 非 RT 线程：std::thread::sleep 够用。
+        });
+        state_pub.publish(&snapshot);
         thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
     }
 }
@@ -1285,6 +857,7 @@ mod tests {
 
     fn healthy_guards() -> Guards {
         Guards {
+            rt_serial: false,
             estop_latched: false,
             adapter_connected: true,
             calibration_loaded: true,
@@ -1483,6 +1056,9 @@ mod tests {
             None,
             // SetEnabled RR control plane（v0.5 候选 C）：默认 helper 不接。
             None,
+            None,
+            None,
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
 
@@ -1859,7 +1435,10 @@ mod tests {
         let (handle, _cmd_reader, state_rdr, _cp, _hp, _ep, _inner) =
             bring_up(S0State::Ready, healthy_guards(), wd_rx, clock);
 
-        handle.event_sender().send(Event::Stop).unwrap();
+        handle
+            .event_sender()
+            .control(crate::event_ingress::ControlEvent::Stop)
+            .unwrap();
 
         wait_until(
             || state_rdr.load().state == S0State::Stopping,
@@ -2037,6 +1616,9 @@ mod tests {
             }),
             // ClearEStop RR 单测不接 SetEnabled RR（v0.5 候选 C）。
             None,
+            None,
+            None,
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
 
@@ -2139,6 +1721,7 @@ mod tests {
     /// outcome.clear_estop=Cleared → response 派发 Cleared。
     #[test]
     fn rr_live_success_routes_cleared_response() {
+        #[cfg(test)]
         use crate::estop_latch::save_estop_latch;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -2199,6 +1782,7 @@ mod tests {
     /// 走 try_apply_clear_estop gate 拒 → 抛 `NotTorqueOffConfirmed`。
     #[test]
     fn rr_live_not_torque_off_confirmed_routes_failed_precondition() {
+        #[cfg(test)]
         use crate::estop_latch::save_estop_latch;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -2268,6 +1852,7 @@ mod tests {
     /// TickOutcome 搞错 Ack 的 race。
     #[test]
     fn rr_live_single_flight_second_request_returns_already_in_progress() {
+        #[cfg(test)]
         use crate::estop_latch::save_estop_latch;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -2419,6 +2004,7 @@ mod tests {
     /// 一行（共用 §5.6 take/remove/reply 代码）。
     #[test]
     fn rr_live_emergency_preempt_aborts_in_flight_live() {
+        #[cfg(test)]
         use crate::estop_latch::save_estop_latch;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -2446,7 +2032,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(40));
 
         // 2) freeze 期间塞两条 message：EStop external + RR live
-        handle.event_sender().send(Event::EStop).unwrap();
+        handle.event_sender().estop();
         req_tx
             .send(ClearEStopRrRequest {
                 request_id: "req-emerg-1".to_string(),
@@ -2598,6 +2184,9 @@ mod tests {
                 request_rx: se_req_rx,
                 response_tx: se_resp_tx,
             }),
+            None,
+            None,
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
 

@@ -609,14 +609,14 @@ impl SerialConvergence {
                     .as_ref()
                     .is_some_and(|round| round.completed_safety.is_some());
                 if complete && !self.generation_saturated && ctrl.clear_acked_fault_pending() {
-                    self.finish_boot(BootOutcome::Faulted, ctrl);
+                    self.finish_boot(BootOutcome::Faulted, ctrl, now);
                     self.transition(ConvergePhase::Idle, diag, now);
                 }
             }
             ConvergePhase::SafetyStopFailedAwaitAck { generation, .. } => {
                 if generation != 0 && !self.generation_saturated && ctrl.clear_acked_fault_pending()
                 {
-                    self.finish_boot(BootOutcome::Faulted, ctrl);
+                    self.finish_boot(BootOutcome::Faulted, ctrl, now);
                     self.transition(ConvergePhase::SafetyStopFailed, diag, now);
                 }
             }
@@ -918,7 +918,7 @@ impl SerialConvergence {
             self.mark_boot_exit(ctrl, now);
             self.transition(ConvergePhase::AwaitAck, diag, now);
         } else {
-            self.finish_boot(BootOutcome::Passed, ctrl);
+            self.finish_boot(BootOutcome::Passed, ctrl, now);
             self.transition(ConvergePhase::Idle, diag, now);
         }
     }
@@ -995,10 +995,16 @@ impl SerialConvergence {
         }
     }
 
-    fn finish_boot(&mut self, outcome: BootOutcome, ctrl: &HardRtCtrlInner) {
+    fn finish_boot(&mut self, outcome: BootOutcome, ctrl: &HardRtCtrlInner, now: MonoRawNs) {
         if self.boot_outcome == BootOutcome::Pending {
             self.boot_outcome = outcome;
             ctrl.inhibit.fetch_and(!inhibit::BOOT, Ordering::Release);
+            // 观测值先发布，随后真实 outcome 的 Release 完成启动提交；READY 的 Acquire
+            // 观察到 outcome 后，父端不会读到缺失的完成时间。首次带 gen 出口保持独立。
+            #[cfg(feature = "test-comm-fault-hook")]
+            crate::comm_fault_hook::record_preflight_finished(now.0);
+            #[cfg(not(feature = "test-comm-fault-hook"))]
+            let _ = now;
             ctrl.boot_outcome.store(outcome as u8, Ordering::Release);
         }
     }

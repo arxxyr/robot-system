@@ -34,7 +34,14 @@ pub use robot_adapter_mock as _;
 #[allow(unused_imports)]
 pub use robot_adapter_feetech as _;
 
+pub mod boot_supervisor;
 mod clear_estop_action;
+#[cfg(feature = "test-comm-fault-hook")]
+pub mod comm_fault_adapter;
+#[cfg(feature = "test-comm-fault-hook")]
+pub mod comm_fault_hook;
+#[cfg(feature = "test-comm-fault-hook")]
+pub mod comm_fault_observation;
 pub mod config_loader;
 // v0.5 候选 E 段(9)：真机部署件（guard / preflight / provision）。纯逻辑不加
 // feature 门——AC-E16/E21/E22 的 unit 判据必须在默认 gate 内跑到；真串口实现
@@ -42,16 +49,19 @@ pub mod config_loader;
 pub mod deploy;
 pub mod diag;
 pub mod estop_latch;
+pub mod event_ingress;
 #[cfg(any(test, feature = "test-freeze-hook"))]
 pub mod freeze_control;
 #[cfg(any(test, feature = "test-freeze-hook"))]
 pub mod freeze_hook;
 pub mod hard_rt_ctrl;
 pub mod io_thread;
+pub(crate) mod ipc_runtime;
 pub mod ipc_thread;
 pub mod ipc_tick;
 pub mod pub_thread;
 pub mod rr_server_thread;
+pub mod rx_trust;
 pub(crate) mod serial_convergence;
 pub mod serial_io_ctrl;
 pub mod serial_io_thread;
@@ -63,11 +73,14 @@ pub mod state_machine;
 // v0.5 候选 E 段(8)：`systemd_notify` 迁入 `robot_health::systemd`（单一实现），
 // 本 crate 不再持副本；s0_daemon 直接调 robot_health。
 pub mod watchdog;
+pub mod worker_stop;
 
 #[cfg(test)]
 mod post_e_acceptance;
 #[cfg(test)]
 mod post_e_convergence_acceptance;
+#[cfg(test)]
+mod post_e_ipc_acceptance;
 #[cfg(test)]
 mod test_util;
 

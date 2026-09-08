@@ -975,7 +975,7 @@ mod tests {
     /// AC-E3 回归锁：**86 是 guard 永久保留码**——`s0_daemon` 任何路径都
     /// 不得以它退出，否则 unit 的 `RestartPreventExitStatus=86` 会连
     /// watchdog 重启一起吞掉（违反 §6.7 #2）。源级扫描 bin 里的
-    /// `exit(<字面量>)` / `Err(<字面量>)`，并锁死其退出码表 = {0, 1, 2}。
+    /// `exit(<字面量>)` / `Err(<字面量>)`；post-E 只扩允许集，86 永久保留。
     #[test]
     fn s0_daemon_never_exits_with_the_reserved_code() {
         const SRC: &str = include_str!("../bin/s0_daemon.rs");
@@ -995,7 +995,10 @@ mod tests {
         assert!(!codes.is_empty(), "扫描失效（marker 漂移）");
         for code in codes {
             assert_ne!(code, GUARD_STOP_EXIT_CODE, "s0_daemon 不得以 86 退出");
-            assert!(code <= 2, "s0_daemon 退出码表 = 0/1/2，出现 {code}");
+            assert!(
+                matches!(code, 0..=4 | 87 | 88),
+                "S0 出现未批准的退出码 {code}"
+            );
         }
     }
 

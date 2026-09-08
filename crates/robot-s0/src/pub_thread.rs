@@ -109,7 +109,12 @@ pub struct PubThreadHandle {
 
 impl PubThreadHandle {
     pub fn request_stop(&self) {
-        self.stop.store(true, Ordering::Release);
+        self.stop.swap(true, Ordering::AcqRel);
+    }
+
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join.is_finished()
     }
 
     #[must_use]
@@ -141,6 +146,8 @@ impl PubThreadHandle {
 /// # Errors
 ///
 /// `std::io::Error` 当 `thread::Builder::spawn` 失败。
+// 保留已批准的构造参数：独立预建 stop 与可选 Serial 诊断源不可隐式构造。
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_pub_thread<F>(
     cfg: PubThreadConfig,
     clock: Arc<dyn RobotClock>,
@@ -148,11 +155,14 @@ pub fn spawn_pub_thread<F>(
     rt_snap_rdr: RtSnapshotReader<RtSnapshot>,
     state_rdr: RtSnapshotReader<S0StateSnapshot>,
     rt_ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+    diag: Option<Arc<crate::diag::SerialDiagRing>>,
+    stop: Arc<AtomicBool>,
 ) -> std::io::Result<PubThreadHandle>
 where
     F: FnOnce() -> IpcPublishers + Send + 'static,
 {
-    let stop = Arc::new(AtomicBool::new(false));
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_hook::before_spawn("pub")?;
     let metrics = Arc::new(PubThreadMetrics::default());
 
     let join_stop = Arc::clone(&stop);
@@ -174,6 +184,7 @@ where
                 &rt_snap_rdr,
                 &state_rdr,
                 &rt_ctrl,
+                diag.as_deref(),
                 &join_stop,
                 &join_metrics,
             );
@@ -204,6 +215,7 @@ fn run_loop(
     rt_snap_rdr: &RtSnapshotReader<RtSnapshot>,
     state_rdr: &RtSnapshotReader<S0StateSnapshot>,
     rt_ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
+    diag: Option<&crate::diag::SerialDiagRing>,
     stop: &AtomicBool,
     metrics: &PubThreadMetrics,
 ) {
@@ -216,13 +228,15 @@ fn run_loop(
     let mut last_hb_ns: u64 = clock.now().0;
     let mut state_seq: u64 = 0;
     let mut hb_seq: u64 = 0;
+    let mut last_diag_summary_ns = clock.now().0;
 
-    while !stop.load(Ordering::Acquire) {
+    while crate::worker_stop::worker_running(crate::worker_stop::WorkerKind::Pub, clock, stop) {
         // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
         #[cfg(any(test, feature = "test-freeze-hook"))]
         crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock, stop);
 
         let now = clock.now().0;
+        drain_serial_diag(diag, rt_ctrl, now, &mut last_diag_summary_ns);
 
         // 1) JointState
         if now.saturating_sub(last_state_ns) >= state_period_ns {
@@ -438,6 +452,40 @@ fn publish_s0_heartbeat(
 // Tests
 // ============================================================================
 
+/// 每 poll 有界消费，持续生产也不会阻塞状态与心跳发布。
+fn drain_serial_diag(
+    diag: Option<&crate::diag::SerialDiagRing>,
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
+    now: u64,
+    last_summary: &mut u64,
+) {
+    let Some(diag) = diag else { return };
+    for _ in 0..256 {
+        let Some(event) = diag.pop() else { break };
+        tracing::warn!(
+            site = event.site,
+            kind = event.kind,
+            a = event.a,
+            b = event.b,
+            seq = event.seq_lo,
+            stamp = event.stamp_ns,
+            "串口诊断事件",
+        );
+    }
+    if now.saturating_sub(*last_summary) >= 1_000_000_000 {
+        *last_summary = now;
+        tracing::info!(
+            dropped = diag.dropped(),
+            safety = ?ctrl.safety_state(),
+            comm_level = ctrl.comm_level.load(Ordering::Acquire),
+            rx_trust = ctrl.rx_trust.load(Ordering::Acquire),
+            inhibited = ctrl.inhibit.load(Ordering::Acquire),
+            liveness = ctrl.liveness_counter.load(Ordering::Relaxed),
+            "串口一秒摘要",
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,6 +573,8 @@ mod tests {
             rt_rdr,
             state_rdr.clone(),
             Arc::clone(&rt_ctrl),
+            None,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .unwrap();
         (handle, rt_pub, state_pub, js_sub, hb_sub, rt_ctrl)
@@ -742,7 +792,17 @@ mod tests {
             }
         };
         let rt_ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
-        let handle = spawn_pub_thread(cfg, clock, factory, rt_rdr, state_rdr, rt_ctrl).unwrap();
+        let handle = spawn_pub_thread(
+            cfg,
+            clock,
+            factory,
+            rt_rdr,
+            state_rdr,
+            rt_ctrl,
+            None,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
 
         // MockClock 冻结在 0：循环里 now = 0，last_state = 0，`0 - 0 >= period` 永远 false
         // （除非 period == 0；这里 period = 5 ms）。sleep 让 tick 跑几轮。

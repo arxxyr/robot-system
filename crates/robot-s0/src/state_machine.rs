@@ -154,6 +154,8 @@ pub enum Event {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Guards {
+    /// SerialRT 使用独立通信故障与急停收敛协议。
+    pub rt_serial: bool,
     pub estop_latched: bool,
     pub adapter_connected: bool,
     pub calibration_loaded: bool,
@@ -171,6 +173,7 @@ pub struct Guards {
 impl Default for Guards {
     fn default() -> Self {
         Self {
+            rt_serial: false,
             estop_latched: false,
             adapter_connected: false,
             calibration_loaded: false,
@@ -358,7 +361,13 @@ fn classify_transition(
 
     // EStop = Emergency
     if matches!(ev, E::EStop) {
-        return (TransitionKind::Emergency, OutputPolicy::StopTorque);
+        return (
+            TransitionKind::Emergency,
+            match new_state {
+                S::Fault(_) => OutputPolicy::Disabled,
+                _ => OutputPolicy::StopTorque,
+            },
+        );
     }
 
     // SafetyStopFailed = Emergency（任意态 → Fault(SafetyStopFailed)）
@@ -426,105 +435,27 @@ pub fn commit_transition(state: &mut S0State, plan: &PlannedTransition) {
 /// **直接**升 fault，不走 `Event::AdapterErr` 入队 + `plan_transition` —— 防止
 /// guard 挡住造成 silent stall。
 pub fn commit_fault(state: &mut S0State, fault: FaultCode) {
+    if let S0State::Fault(previous) = state
+        && fault_severity(*previous) >= fault_severity(fault)
+    {
+        return;
+    }
     *state = S0State::Fault(fault);
+}
+
+const fn fault_severity(fault: FaultCode) -> u8 {
+    match fault {
+        FaultCode::SafetyStopFailed => 3,
+        FaultCode::CommFault => 2,
+        _ => 1,
+    }
 }
 
 // ============================================================================
 // EventQueue（task-30 v9 §4.4.3 errata Step 1 用）
 // ============================================================================
 
-/// 简单 FIFO 队列 + `drain_emergency` 优先抽取语义。
-///
-/// **设计 v9 errata §0.5 A1**：`ipc_tick` 第一步 `drain_emergency` 必须**先于**
-/// 推进 in-flight pending 处理；emergency 不能被 effectful pending 阻塞 1s。
-/// 本类型提供线性扫一次队列、移除并返回**第一个** `Event::EStop` /
-/// `Event::FaultLatched` / `Event::SafetyStopFailed` 的方法，其它事件原序保留。
-///
-/// 普通入队 / 出队走 `push` / `pop`；emergency 走 `drain_emergency`。
-#[derive(Debug, Default)]
-pub struct EventQueue {
-    inner: std::collections::VecDeque<Event>,
-}
-
-impl EventQueue {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// 普通入队（FIFO 尾部）。
-    pub fn push(&mut self, ev: Event) {
-        self.inner.push_back(ev);
-    }
-
-    /// 普通出队（FIFO 头部）。
-    pub fn pop(&mut self) -> Option<Event> {
-        self.inner.pop_front()
-    }
-
-    /// 队列是否为空。
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-
-    /// 队列长度（含 emergency events）。
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// **task-30 v9 §0.5 A1**：从队列摘出第一个 emergency event（按 push
-    /// 顺序），其它事件**原序保留**。返回 `None` 表示队列里没有 emergency。
-    ///
-    /// emergency events：
-    /// - `Event::EStop`
-    /// - `Event::AdapterErr(FaultCode::SafetyStopFailed)` —— v9 视作 emergency
-    ///   级别 fault（safety_stop 失败 = 任意态直进 Fault + 立即下硬件
-    ///   safety_stop 兜底）。
-    pub fn drain_emergency(&mut self) -> Option<Event> {
-        // 找到第一个 emergency event 的位置，移除并返回。
-        let pos = self.inner.iter().position(|ev| {
-            matches!(
-                ev,
-                Event::EStop | Event::AdapterErr(FaultCode::SafetyStopFailed)
-            )
-        })?;
-        self.inner.remove(pos)
-    }
-
-    /// **A1-3 (1/3b) round 2**：peek 队列里是否有 emergency event（不移除）。
-    ///
-    /// `ipc_thread` RR drain 完后用本方法判断"in-flight live ClearEStop
-    /// 是否需要被 emergency preempt 取消"——避免 RR live 进 EventQueue 后
-    /// 被 [`drain_emergency`] 跳过（drain_emergency 只抽 emergency 自己），
-    /// 等下一 tick 仍误执行 ClearEStop 清掉新触发的 EStop。
-    ///
-    /// emergency events 跟 [`drain_emergency`] 同集：
-    /// - `Event::EStop`
-    /// - `Event::AdapterErr(FaultCode::SafetyStopFailed)`
-    #[must_use]
-    pub fn has_emergency(&self) -> bool {
-        self.inner.iter().any(|ev| {
-            matches!(
-                ev,
-                Event::EStop | Event::AdapterErr(FaultCode::SafetyStopFailed)
-            )
-        })
-    }
-
-    /// **A1-3 (1/3b) round 2**：移除队列里**所有** `Event::ClearEStop`，
-    /// 返回移除数量。
-    ///
-    /// 用于 `ipc_thread` 在 emergency preempt / deadline 过期时取消
-    /// in-flight live ClearEStop —— 把对应 event 从 queue 摘掉，避免
-    /// `ipc_tick` Step 3 在下一 tick 误处理已被取消的 RR 请求。
-    pub fn remove_clear_estop_events(&mut self) -> usize {
-        let before = self.inner.len();
-        self.inner.retain(|ev| !matches!(ev, Event::ClearEStop));
-        before - self.inner.len()
-    }
-}
+pub use crate::event_ingress::EventQueue;
 
 // ============================================================================
 // try_transition
@@ -554,6 +485,7 @@ pub fn try_transition(cur: S0State, ev: Event, g: &Guards) -> Result<S0State, Re
 
     match (cur, ev) {
         // ---- * → SAFE（EStop 压倒一切，包括 FAULT 和 STOPPING）----
+        (S::Fault(_), E::EStop) if g.rt_serial => Ok(cur),
         (_, E::EStop) => Ok(S::Safe),
 
         // ---- * → STOPPING（systemd SIGTERM 等关停信号）----
@@ -566,6 +498,10 @@ pub fn try_transition(cur: S0State, ev: Event, g: &Guards) -> Result<S0State, Re
         // （含 Safe / Ready / Stopping / 其它 Fault）都允许进 Fault(SafetyStopFailed)。
         (_, E::AdapterErr(FaultCode::SafetyStopFailed)) => {
             Ok(S::Fault(FaultCode::SafetyStopFailed))
+        }
+
+        (S::Safe | S::Ready | S::Enabled { .. }, E::AdapterErr(FaultCode::CommFault)) => {
+            Ok(S::Fault(FaultCode::CommFault))
         }
 
         // ---- SAFE → READY ----
@@ -679,6 +615,7 @@ mod tests {
 
     fn healthy_guards() -> Guards {
         Guards {
+            rt_serial: false,
             estop_latched: false,
             adapter_connected: true,
             calibration_loaded: true,

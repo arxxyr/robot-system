@@ -195,17 +195,20 @@ fn arm_units_have_no_exec_start_pre_and_run_guard() {
         );
         assert!(opt(&argv, "--s0-bin").ends_with("s0_daemon"), "{name}");
         assert_eq!(single(name, "Type"), "notify", "{name}");
+        assert_eq!(opt(&argv, "--notify-mode"), "required", "{name}");
     }
 }
 
 #[test]
 fn arm_units_lock_exit_86_and_both_budgets() {
     for (_, name) in ARM_UNITS {
-        assert_eq!(
-            single(name, "RestartPreventExitStatus"),
-            GUARD_STOP_EXIT_CODE.to_string(),
-            "{name}"
-        );
+        let mut prevented: Vec<i32> = single(name, "RestartPreventExitStatus")
+            .split_whitespace()
+            .map(|value| value.parse().expect("退出码必须为整数"))
+            .collect();
+        prevented.sort_unstable();
+        // 锁冲突不重启；监督器 88 必须保留 on-failure 重启路径。
+        assert_eq!(prevented, [i32::from(GUARD_STOP_EXIT_CODE), 87], "{name}");
         assert_eq!(single(name, "StartLimitIntervalSec"), "60s", "{name}");
         assert_eq!(single(name, "StartLimitBurst"), "5", "{name}");
         assert_eq!(single(name, "Restart"), "on-failure", "{name}");

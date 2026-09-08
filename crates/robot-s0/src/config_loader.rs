@@ -113,6 +113,8 @@ pub fn resolve_hardware_section<'a>(
 /// [`Self::exit_code`]，AC-E3）。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum HardwareSectionError {
+    #[error("[[hardware]] joints={actual} 超过上限 {max}")]
+    TooManyJoints { actual: usize, max: usize },
     /// `joints` 为空（无法派生 layout / 驱动任何关节）。
     #[error("[[hardware]] id={id}: joints 为空")]
     EmptyJoints { id: String },
@@ -158,6 +160,12 @@ impl ConfigLoadError {
 ///
 /// 见 [`HardwareSectionError`] 五 variant。
 pub fn validate_hardware_section(hw: &HardwareSection) -> Result<(), HardwareSectionError> {
+    if hw.joints.len() > robot_core::adapter::MAX_JOINTS {
+        return Err(HardwareSectionError::TooManyJoints {
+            actual: hw.joints.len(),
+            max: robot_core::adapter::MAX_JOINTS,
+        });
+    }
     if hw.joints.is_empty() {
         return Err(HardwareSectionError::EmptyJoints { id: hw.id.clone() });
     }

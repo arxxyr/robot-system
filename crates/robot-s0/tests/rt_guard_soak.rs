@@ -104,8 +104,16 @@ fn rt_guard_soak_no_alloc_no_arc_for_one_minute() {
         OutputPolicy::ActiveForward.to_u8(),
         std::sync::atomic::Ordering::Release,
     );
-    let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, rt_ctrl)
-        .expect("spawn_rt_thread failed");
+    let handle = spawn_rt_thread(
+        cfg,
+        clock,
+        adapter,
+        cmd_reader,
+        snap_pub,
+        rt_ctrl,
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    )
+    .expect("spawn_rt_thread failed");
     let metrics = Arc::clone(handle.metrics());
 
     let started = Instant::now();

@@ -327,7 +327,42 @@ pub struct HardRtCtrlInner {
     pub safety_latched: AtomicBool,
 }
 
+/// 主线程启动等待只读视图，不暴露底层控制原子。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SerialBootProgress {
+    /// 0=Pending，1=Passed，2=Faulted。
+    pub outcome: u8,
+    pub first_exit: Option<robot_core::time::MonoRawNs>,
+    pub fault_acknowledged: bool,
+}
+
 impl HardRtCtrlInner {
+    #[must_use]
+    pub fn serial_boot_progress(&self) -> SerialBootProgress {
+        let outcome = self.boot_outcome.load(Ordering::Acquire);
+        let first_exit = self
+            .boot_exit_reached
+            .load(Ordering::Acquire)
+            .then(|| robot_core::time::MonoRawNs(self.boot_first_exit_ns.load(Ordering::Relaxed)));
+        let fault_acknowledged = self
+            .mailbox_snapshot()
+            .is_none_or(|mail| self.fault_ack.load(Ordering::Acquire) == mail.generation);
+        SerialBootProgress {
+            outcome,
+            first_exit,
+            fault_acknowledged,
+        }
+    }
+
+    /// 主线程超期通知，serial 仍独占最终收敛及至少一次 Safety 尝试。
+    pub fn expire_serial_boot(&self) {
+        self.boot_deadline_expired.store(true, Ordering::Release);
+    }
+
+    #[must_use]
+    pub fn serial_liveness(&self) -> u64 {
+        self.liveness_counter.load(Ordering::Relaxed)
+    }
     /// 出厂默认：policy=Disabled / safety_state=TorqueUnknown / emergency=NONE /
     /// pending=0 / seq_counter=1（避免初值与 valid seq 0 冲突；poll 看到
     /// `last_completed_seq < 1` 表示"从未完成过"）/ last_completed=0 /
@@ -501,7 +536,6 @@ impl HardRtCtrlInner {
         self.update_safety_word(|old| old & !SERIAL_ESTOP_PENDING) & SERIAL_ESTOP_PENDING != 0
     }
 
-    #[allow(dead_code)] // C4 IPC claim 接线后撤除。
     pub(crate) fn claim_ipc_estop(&self) -> bool {
         self.update_safety_word(|old| old & !IPC_ESTOP_NOTICE) & IPC_ESTOP_NOTICE != 0
     }
@@ -518,7 +552,6 @@ impl HardRtCtrlInner {
     }
 
     /// 唯一调用方为 IPC，传入它实际提交过的快照代次。
-    #[allow(dead_code)] // C4 IPC ack 接线后撤除。
     pub(crate) fn ack_fault(&self, generation: u32) {
         self.fault_ack.store(generation, Ordering::Release);
     }

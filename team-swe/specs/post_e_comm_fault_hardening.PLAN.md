@@ -1,13 +1,14 @@
 # post-E 通信故障硬化 · 函数级实施计划
 
-> 日期：2026-09-08。版本：Plan Approved + C3 S-40 Reverse Sync。状态：**Plan Approved，分包 Execute 中**。
+> 日期：2026-09-08。版本：Plan Approved + S-40/S-41/S-42/S-43 Reverse Sync。状态：**C1–C3 已评审提交，C4 总装验收中**。
 > 权威：[`post_e_comm_fault_hardening.md`](post_e_comm_fault_hardening.md)（round 21 Spec Approved）。
 > 代码基线：`bd081cb`；工作分支：`feat/post-e-comm-fault-hardening`。
 > 本文只展开已批准 D1–D15 与 P.0–P.8，不修改冻结设计。主 agent / reviewer 明确
 > `Plan Approved` 后实施；用户已授权团队内部评审通过后持续推进，无需再次请求流程确认。
 > 历史批准稿 SHA-256：`3a8a394a74764ad2277bdd5f3aa0901627538f635d4b6208c55cde99d6f2dd30`。
-> C1 `fc0c142`、C2 `822ab16` 已提交；C3 实施中新发现 S-40 已由独立 reviewer ACK，
-> 本次仅同步已批准的原槽取消 tag 协议；当前文件新 hash 由主 agent 写入 HANDOFF。
+> C1 `fc0c142`、C2 `822ab16`、C3 `beebfa0` 已独立 Approved 并提交。
+> S-40 至 S-43 均经主 agent 与独立 reviewer ACK；当前文件新 hash 由主 agent 写入 HANDOFF。
+> C4 包含生产总装、test hook、独立 IPC/marker/startup 验收；C5 工具与剩余验收单独提交。
 
 ## P.0 范围、所有权与当前事实
 
@@ -503,7 +504,8 @@ link64、rr128、control128，构造with_capacity后不超过容量；link overf
 ```rust
 fn apply_emergency_batch(ctx: &mut IpcTickContext<'_>, batch: EmergencyBatch) -> bool;
 fn service_fault_mailbox(ctx: &mut IpcTickContext<'_>);
-fn advance_pending(ctx: &mut IpcTickContext<'_>) -> bool;
+enum PendingAdvance { Ready, InFlight, CancelledByEmergency }
+fn advance_pending(ctx: &mut IpcTickContext<'_>) -> PendingAdvance;
 fn apply_control_event(ctx: &mut IpcTickContext<'_>, event: Event) -> TickOutcome;
 fn process_rr_event(ctx: &mut IpcTickContext<'_>, request: RrEvent,
     replies: &RrReplySinks<'_>, pending: &mut PendingReplies) -> TickOutcome;
@@ -545,11 +547,32 @@ source过期、lane Full、dequeue过期、evaluator拒绝、emergency取消、�
 通过移动所有权取走请求保证不二次reply。服务端自己的pending上限仍64，与IPC lane
 容量128是两组source总在飞数，不扩大max_in_flight。
 
+**C4 S41 Reverse Sync（内部独立评审已 ACK）**：仅 `EmergencyBatch.estop` 为真时，
+Step1 用 O(1) 长度记录当前 rr lane 的取消前缀，包含本 tick Step0 已 admission 请求。
+后续每次 rr pop 都消耗一个前缀计数并占 rr24 配额（含 dry_run 与 expired）；第二道
+deadline 优先，过期照常 DeadlineExceeded。未过期的 live 前缀 ClearEStop 返回
+PreemptedByEmergency、live SetEnabled 返回 PreemptedByEStop，零 evaluator/副作用；
+dry_run 正常只读评估。重复 EStop 刷新为当时完整 rr.len。未来新 admission、仍在
+source/gRPC 的请求和 control lane 不在该取消域。SSF-only 不标前缀，尚排队 Disable
+按当前 Fault 保持既有幂等 Disabled；既在飞的 PendingReplies 保持 emergency/SSF
+返回优先级，both 时 EStop 优先。禁止紧急路径扫描/清空 rr lane 或无限同步回包。
+
 `Guards::rt_serial` + try_transition Fault/EStop保原Fault + classifier给Emergency/
 Disabled；HardRT EStop通配Safe/StopTorque不变。CommFault从Safe/Ready/Enabled进Fault，
 commit_fault加severity保护。删除ClearError自授权；SerialRT每tick由boot Passed &&
-rx_trust && inhibit==0推adapter_connected，adapter_fault_cleared还需confirmed &&
+rx_trust && abort_request==0 && inhibit==0推adapter_connected，adapter_fault_cleared还需confirmed &&
 L0持续500ms。HardRT初值语义保持。
+
+**C4 S42 Reverse Sync（内部独立评审已 ACK）**：IPC timeout 预提交 SerialRT Fault 时
+立即清本地 adapter_connected/adapter_fault_cleared，不能让同 tick ClearError 使用
+先前健康 guard。持续推导必须先 Acquire 读 abort_request，再读 inhibit；任一未清则
+不可 ready。mailbox 在本 tick 开头 guard 刷新之后提交 Fault 也当场清这两个本地量，
+避免 Step1b 与 control 之间的 ClearError 窗口。SerialRT 的 PreemptedByEmergency
+完成返回类型化 CancelledByEmergency，只退 pending、不变成 AdapterErr/CommFault，也
+不重复 EStop 原语；必须在 process_lanes 前取走原在飞 SetEnabled owner 并回复
+PreemptedByEStop，不能让 tick 尾的取消标记误伤新 admission。HardRT 保旧映射。
+SerialRT 正常错误先 route_normal 登记 fault/inhibit/mailbox，再 Release 发布完成；
+IPC 看到错误完成时不能从旧健康 guard 恢复 Ready。Preempted 保持不登记 Fault。
 
 pub `publish_joint_state`用inner.safety_state()，map_state_to_wire补CommFault，pub
 每poll消费Diag（有限256个）+1Hz摘要；不adapterIO、不读写ConvergeRound，不以日志
@@ -612,6 +635,7 @@ impl StopFlags {
     pub fn flag(&self, worker: WorkerKind) -> Arc<AtomicBool>;
     pub fn mark_spawned(&self, worker: WorkerKind);
     pub fn request_spawned_stop(&self);
+    pub fn request_worker_stop(&self, worker: WorkerKind);
     pub fn all_spawned(&self) -> bool;
 }
 pub struct BootShared {
@@ -634,7 +658,7 @@ pub const fn absolute_boot_budget(joints: usize) -> DurationNs;
 `main()`第一语句调用BootSupervisor::start，内部先取t_start再spawn；日志/parse之前。
 supervisor硬循环直接SystemClock（不用dyn trait）、原子读取、50ms sleep；执法只有
 Relaxed fired + libc::_exit(88)，不日志/析构。joint_count初32、resolve后只缩短，
-CP1=5s，CP2=T_abs+1s；read_reached后自退。帮助/CLI出错由进程退出终止supervisor，
+CP1=5s，CP2=T_abs+1s；ready_reached后自退。帮助/CLI出错由进程退出终止supervisor，
 不能先无界join。
 
 **同源首IO门**：executor先spawn时BOOT保持，serial只读`spawned_reached`，未置时
@@ -716,18 +740,92 @@ auto看INVOCATION_ID。auto-enable仅Passed；pub/IPC不因READY才开始服务�
 Fault/Disabled/ack可被观察。liveness observer SerialRT接同一个ctrl计数；HardRT仍
 metrics.tick_count，READY后的systemd watchdog不计CP1。
 
+**C4 S43 Reverse Sync（内部独立评审已 ACK）**：`wait_startup` 每次先检测必需
+worker 是否已退出，再允许物理/ACK 成功返回。HardRT 也在 READY 前检查 worker。
+auto-enable 移至启动物理/ACK 完成后、真实 READY 发送前；`ExternalEvents::control`
+返回 `Ok` 正常继续，`AdmitError::Full` 结构化记录并保持当前安全状态、不重试，
+`Disconnected` 结构化记录并返回 1，进入尚未 READY 的既有有界清理。READY 后
+主循环检测真正 IPC handle `is_finished()`，错误退出 1，Disabled 后按原顺序停止
+全部 worker。watchdog 的 Disconnected 同样结构化记录并退出。正常顺序关闭逐个
+调用 `StopFlags::request_worker_stop`，启动失败仍用 `request_spawned_stop`；观测位
+仅在真正停止原子写入之后发布，不用测试指令本身冒充已清理。
+
+### P.5.4 独立 test hook 与时间观测的实际接口
+
+仅 `robot-s0/test-comm-fault-hook` 编译 `comm_fault_hook`、`comm_fault_adapter`、
+`comm_fault_observation`，默认生产不包含。旧 `test-freeze-hook` 独立开关；
+robot-tests 的 optional s0 依赖不再隐式带 freeze，仅 `freeze-systemd-smoke` 启用它。
+
+```rust
+#[repr(u8)]
+pub enum HookCommandKind {
+    PauseWorker = 1, RefuseStop = 2, SerialResult = 3, RequestWorkerStop = 4,
+}
+#[repr(C)] // 24 字节，同一公共定义供父/子进程编译，不复制偏移。
+pub struct TestCommFaultCommand {
+    pub sequence: u64, pub duration_ms: u32, pub count: u32,
+    pub kind: u8, pub target: u8, pub error: u8, pub reserved: [u8; 5],
+}
+pub fn spawn_control_thread(robot_id: String, clock: Arc<dyn RobotClock>,
+    observation: Option<Arc<ObservationPage>>, worker_stops: [Arc<AtomicBool>; 7])
+    -> io::Result<CommFaultControlHandle>;
+impl ObservationPage {
+    pub fn create(path: &Path) -> io::Result<Self>;
+    pub fn open(path: &Path) -> io::Result<Self>;
+    pub fn snapshot(&self) -> ObservationSnapshot;
+}
+```
+
+独立 raw POD topic 为 `/<robot_id>/test/comm_fault`，publisher/subscriber 各 1，
+history 1、buffer 8、safe overflow 关闭。控制线程先消费 history，再发布 HookReady；
+不属七 worker、不参与 liveness。每个成功应用命令最后 Release 发布 CommandApplied。
+Pause/Refuse target 沿七 worker 0..6 编码，相对 duration_ms，0 解除；SerialResult
+沿六 BusOpClass 编码，count 1..65535、通信错误 0..9/63、HardwareFault 64、
+InvalidParameter 65、延迟后真正 inner 操作 66、Confirm 真实返回 some-on 67。
+脚本用单 AtomicU64 保存次数/错误/延迟，CAS 消费不吞控制器的新覆盖。RequestWorkerStop
+仅将指定预建 worker stop 原子置 true，其 duration/count/error 必须为 0；不伪造进程
+退出。RefusedStopBitmap 只在 worker 真正观察到 stop 且正在拒停时置位。
+
+`ROBOT_TEST_BOOT_PAUSE_STAGE` 仅在真实阶段到达后写一次 stderr
+`comm_fault_hook stage=<stage>` 再冻结：before_logging、before_parse、before_resolve、
+adapter_open、ipc_ready、after_spawn、before_ready、marker_write（真实文件 fsync 前）。
+`ROBOT_TEST_BOOT_FAIL_WORKER` 在对应七 worker 的真实 spawn 前返回系统错误。
+`ROBOT_TEST_IPC_EXIT_BEFORE_AUTO_ENABLE=1` 在真正发送 auto-enable 前请求 IPC 停止并
+等待 handle finished，随后仍调用真实 control 得到 Disconnected；不替换 supervisor。
+
+父端先 create 0600 的 4096 字节共享页并保持 mapping；daemon 仅 open 已有页，
+校验长度/version，不 truncate，不在 RT 打开文件。mmap/install 必须在监督线程成功
+spawn 之后；ObservationReady 仅在 OnceLock 安装成功后发布。Linux test-only
+`.preinit_array` 只用 clock_gettime(MONOTONIC_RAW)+原子记录初始化边界；main 首句
+时刻为结束，保守包络包含 runtime 过渡，不把 logging ctor 当全部 ctor。C5 对最终
+产物 readelf/nm 确认其先于全部 `.init_array` 项。
+
+ObservationSnapshot 单源字段：version、main_start_ns、spawned_ns、joint_count、
+ready_ns、supervisor_exit_ns、fired_ns、fired_checkpoint、worker_bitmap、first_io_ns、
+disabled_ns、stop_bitmap、preinit_ns、observation_ready、first_exit_ns、ready_reached、
+command_applied、hook_ready、serial_calls[6]、refused_stop_bitmap、preflight_finished_ns。
+值先写、完成 flag 后 Release；父端 Acquire flag 后读值。READY 先取 ready_at，再写
+权威 shared.ready_reached Release，最后页 ready_at/ReadyReached。preflight_finished
+记录真实 finish_boot(Passed/Failed)，在最终 boot_outcome Release 前发布；健康 Passed
+不写 first_exit（首次带 gen 的出口），不得混淆两者。CommFaultAdapter 在调用者最早
+构造，早于任何潜在 adapter IO，记录真实首 IO/六类调用，脚本仍走真实 convergence。
+
 ## P.6 独立验收映射与可执行命令
 
 ### P.6.1 测试文件、场景与拒绝伪覆盖
 
-由主 agent（QA Owner）新增 `crates/robot-s0/tests/comm_fault_protocol.rs`、`comm_fault_startup.rs`、
-`rx_trust_faults.rs`；Feetech `tests/comm_fault_transport.rs`；core `executor_ctrl.rs`
+由主 agent（QA Owner）新增 crate 内 `src/post_e_acceptance.rs`、
+`src/post_e_convergence_acceptance.rs`、`src/post_e_ipc_acceptance.rs`（cfg(test)，通过
+真实 pub(crate) 接口验收，不为独立作者扩大生产公开面），以及 integration
+`tests/comm_fault_startup.rs`、`tests/rx_trust_faults.rs`；Feetech
+`tests/comm_fault_transport.rs` 与真实私有 helper 子模块；core `executor_ctrl.rs`
 编码单测。确定性调度seam仅`cfg(test)`或`robot-s0/test-comm-fault-hook`，默认生产编译
 无阻塞钩子。原子竞态seam位置必须按AC9(o/q/r)、mailbox①②③、ACK冻结精确放置，
 不能用随机sleep“碰运气”。reviewer先给独立场景表，主 agent按接口写验收夹具，reviewer
 独立检查反例确实能使错误实现失败。
 
-新增 `robot-tests` feature `comm-fault-e2e`（第10项单feature gate）：
+C5 新增 `robot-tests` feature `comm-fault-e2e`（第10项单feature gate；不以未完成
+工具阻塞 C4 的独立评审与提交）：
 `["dep:robot-s0", "robot-s0/test-comm-fault-hook", "dep:robot-rpc", "robot-rpc/client",
 "dep:robot-adapter-feetech", "dep:tokio", "dep:tonic", "dep:serde_json"]`。
 现有robot-s0 optional依赖`default-features=false`，新feature还需显式
@@ -768,6 +866,18 @@ Orin入口额外要求`--config <abs> --hardware-id <id> --ack-supervised-hardwa
 | 23 | `estop_merge_each_physical_phase`、`await_ack_reopen_round_budget`、`ssf_terminal_repeated_estop_no_io_or_policy`、`estop_claim_counts_allow_level_merge` | G2/G3，每轮独立预算 |
 | 24 | `trust_lock_two_daemons_and_commands`、`trust_lock_errno_matrix`、`trust_lock_sigkill_releases`、`deploy_units_restart_and_notify_contract` | G2/G3，tmpdir实例，真实flock |
 | Q | `gate_manifest_and_exit_codes` | G0–G4，fresh clippy真实退出码、产物hash/feature、环境限制 |
+
+C4 实际独立启动入口 `comm_fault_startup` 包含八个具名测试：
+`initialization_and_all_seven_workers_gate_first_bus_io`、
+`each_worker_spawn_failure_stops_only_the_successful_prefix`、
+`main_pause_before_spawn_is_enforced_by_cp1`、`main_pause_after_spawn_is_enforced_by_cp2`、
+`missing_required_notify_socket_never_commits_ready`、
+`thirty_three_joints_reject_before_workers_or_bus_io`、
+`auto_enable_disconnected_exits_before_ready`、
+`ipc_worker_exit_after_ready_terminates_standalone_daemon`。后两项锁 AC11(ac)/S43；
+正常时序验证 preflight_finished 而 first_exit==0；CP1/CP2 用真实 main_start 到 fired
+测时，不以 parent spawn→wait 冒充硬截止或 ctor 预算。IPC 独立模块当前 26 组，
+marker 独立 integration 当前 9 组，实际 Cargo --list 与日志为执行数量权威。
 
 这些是全部AC到具名入口的映射；每个AC子条（a/b/o1等）在报告作为独立case id。
 框架不允许遗漏case时AC仍PASS；NEEDS_HUMAN/未运行不会按success计入。
@@ -811,7 +921,8 @@ cargo +nightly clippy -p robot-tests --all-features --all-targets --keep-going -
 # G2：纯类型/单测/确定性协议。
 CARGO_BUILD_WARNINGS=deny cargo +nightly test --workspace --all-features --lib --bins
 CARGO_BUILD_WARNINGS=deny cargo +nightly test -p robot-adapter-feetech --test comm_fault_transport
-CARGO_BUILD_WARNINGS=deny cargo +nightly test -p robot-s0 --features test-comm-fault-hook --test comm_fault_protocol --test rx_trust_faults
+CARGO_BUILD_WARNINGS=deny cargo +nightly test -p robot-s0 --all-features --lib post_e_
+CARGO_BUILD_WARNINGS=deny cargo +nightly test -p robot-s0 --features test-comm-fault-hook --test comm_fault_startup --test rx_trust_faults
 CARGO_BUILD_WARNINGS=deny cargo +nightly test -p robot-transport --no-default-features --features mock
 
 # 单feature隔离（每项独立命令，不合并features）。

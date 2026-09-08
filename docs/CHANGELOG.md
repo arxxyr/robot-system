@@ -10,6 +10,45 @@
 
 ---
 
+## 2026-09-08 · C4 IPC 断连退出与启动观测（状态：分包实现与独立验收通过）
+
+S-43：auto-enable 发送点显式处理 Full / Disconnected，并置于启动物理出口和
+ACK 之后、READY 之前；断连进入已有有界清理，正常运行亦检查 IPC handle 结束。
+Full 记录并留 Safe，不重试。测试控制器只请求真实 worker stop，不伪造退出。
+健康预检完成时间与首次带 gen 的故障出口时间分开，保留原 first_exit 语义；
+新增两组真实进程反例锁定 READY 前后断连。冻结设计不改。最终 C4 Approved，workspace 1461、RPC 45、unit 16、startup 8
+等分包门全过，详 C4.json；完整 C5 与现场验证仍待完成。
+
+C4 追加既有 RPC 进程回归发现总装漏掉旧启动日志。恢复 starting、load 后的
+initial estop_latched（含 latched 字段）、两个 RR server 成功 spawn 后的 started；
+RR 标记仍只表示对应 server 就绪，不冒充整体 READY。双臂测试显式隔离各自
+RX 锁目录，保持生产“同目录互斥”的约束；unit 验收精确锁定停止码 86/87，
+88 仍允许重启，并断言 `--notify-mode required`。
+
+## 2026-09-08 · C4 Fault 提交与健康 guard 同步（状态：Reverse Sync，方案已独立 ACK）
+
+S-42 核码发现 timeout 预提交及 tick 内新 mailbox 提交后，本地 guard 仍可能保留
+旧健康状态，使同 tick ClearError 错误恢复。SerialRT 两个 Fault 提交点立即清
+adapter_connected / adapter_fault_cleared；持续推导增加 abort_request==0，先
+Acquire 读 abort 再读 inhibit，接住 serial 登记故障后清 abort 的交接顺序。
+不新增原子、恢复 RPC，也不修改 serial 单写权。Spec D3 / D9 / D11 / AC-11(ab)
+已同步，独立验收尚待执行。
+继续核码确认正常错误完成先于 Fault 登记有同类窗口：改为 serial 先登记 inhibit /
+mailbox 再发布错误完成；正常抢占不造 Fault。typed cancellation 的 RR 终结移至
+后续 lane 处理前，仅终结原 owner，防同 tick 新请求误收旧取消；独立反例同步补充。
+
+## 2026-09-08 · C4 已接收 RR 的急停保护（状态：Reverse Sync，实施前登记）
+
+S-41 核码：旧 IPC 在 source admission 后即保护尚未执行的 live ClearEStop，急停
+会取消该请求，避免随后清掉新 latch。新调度延后 PendingReplies 创建，须保留这一
+保护。EStop 的 Step1 O(1) 冻结 rr lane 前缀，后续按 rr24 出队：先检查 deadline，
+再取消未过期 live 请求；dry 仍只读，每次 pop 都扣前缀。重复 EStop 以当时长度更新。
+取消范围仅 IPC 已 admission 请求，不含 source channel / gRPC / control，也不把
+SSF only 当新 EStop；该情形 queued Disable 保持幂等，既在飞仍按既有故障响应。
+
+基线依据、D13 完整调度及 AC-11(aa) 已同步；独立 reviewer 提出窄边界后由根 agent
+核码采纳，代码及反例尚待验证。冻结设计不改，硬件范围不扩大。
+
 ## 2026-09-08 · C3 运行时收敛验收细化（状态：分包实现与独立验收通过）
 
 独立验收直接驱动生产 SerialTick 和 SerialConvergence，脚本仅提供设备回答，覆盖

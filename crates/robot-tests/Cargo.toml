@@ -182,7 +182,6 @@ libc            = { workspace = true }
 #   继承方关闭，因此这里一直独立声明；post-E 只删除无人继承的顶层重复条目。
 robot-s0 = { path = "../robot-s0", optional = true, default-features = false, features = [
     "mock-only",
-    "test-freeze-hook",
 ] }
 
 # v0.5 候选 E 段(8) sd_watchdog_smoke optional dep（Spec P.2.7 feature 传播
@@ -249,7 +248,7 @@ robot-adapter-feetech = { workspace = true, optional = true }
 #   freeze-systemd-smoke -- ...`
 # - reviewer 硬边界：本 feature 同时启用 robot-s0 optional dep + 它的
 #   `test-freeze-hook` feature，让 smoke 跟 daemon binary 共享 wire struct。
-freeze-systemd-smoke = ["dep:robot-s0"]
+freeze-systemd-smoke = ["dep:robot-s0", "robot-s0/test-freeze-hook"]
 
 # v0.3 A1-3 (3/3-a) ClearEStop 端到端 smoke 入口 feature。
 # - 生产 release **不**带本 feature（clear_estop_e2e binary 不参编译）。

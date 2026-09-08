@@ -26,6 +26,31 @@
 > 错误映射、预算、AC），不引用任何未入库的历史轮次；amend 记录只做摘要，摘要与
 > 正文不一致时以正文为准。
 
+## C4 Reverse Sync（2026-09-08，已 admission live RR 的急停保护）
+
+S-41：新调度把 PendingReplies 延后到 RR dequeue 后创建，不能因此丢掉旧实现对
+IPC 已接收、尚未执行 live 请求的急停保护。采用 EStop 时冻结 rr lane 前缀、随后
+按既有配额与第二道 deadline 取消 live 的方案；dry / source channel / gRPC / control
+不扩大取消域。SSF only 继续按 Fault 守门。根 agent 已核基线并按 reviewer 给出的
+窄边界回写 D13 与 AC-11(aa)，实现前独立复核；不宣称覆盖所有急停前发送的请求。
+
+S-42：SerialRT timeout 预提交或本 tick 刷新后到达的 mailbox 可使 Fault 与缓存的
+健康 guard 同时存在，随后 ClearError 错误恢复。独立 reviewer 已 ACK：两个 Fault
+提交点同步清 `adapter_connected` / `adapter_fault_cleared`；持续推导先 Acquire
+读 `abort_request` 再读 inhibit，未退场请求不准 ready。只收紧已有守门，不增加
+原子或更改 serial 对 inhibit / generation 的单写权；D3 / D9 / D11 / AC-11(ab) 同步。
+同类发布接缝补充：正常动作错误先经 serial 登记 Fault / inhibit / mailbox，再
+Release 发布错误完成，不能让 IPC 先收到 Err 却读到未登记故障的健康原子；
+PreemptedByEmergency 保持无 Fault。取消响应在普通 lane 继续前只终结原 RR owner，
+后续 admission 新请求不继承旧取消结果。
+
+S-43：C4 总装曾忽略 auto-enable 的 `Disconnected`，且 READY 后不检查 IPC
+handle 已退出，standalone 可继续存活。按既有 D13 收口：auto-enable 移至物理
+出口 / ACK 后、READY 前；`Full` 日志留 Safe，不重试；`Disconnected` 进入有界
+启动清理并退 1。READY 后发现 IPC handle finished 同样提交 Disabled 并清理退出。
+此项不扩展看门狗架构。测试独立区分健康 `preflight_finished_ns` 与首次带 gen 的
+`first_exit_ns`；前者只观测真实 finish_boot，健康路径后者必须保持零。
+
 ## C3 Reverse Sync（2026-09-08，独立 reviewer 方案 ACK）
 
 S-40：EStop 不再丢弃尚未执行请求的身份，SerialRT 在原 pending 槽标取消位，
@@ -328,6 +353,18 @@ EStop 仍由 safety_word 一次成功 CAS 发布。下文 D3 / D13 / AC 已同�
   之前 `pending_normal.swap(0)` 丢弃请求词；正常交错为 IPC 已发布 Submitted
   timeout、serial 未消费、EStop 再清 pending，三类记录均不匹配，误进 Unknown。
   → D3 / D13 改原槽取消 tag，保留完整请求直到 serial 消费；不新增跨槽事实搬运。
+- **S-41（C4 迁移核码，基线 `beebfa0`）**：旧 `ipc_thread.rs:864–910` 在 source
+  drain 建立 live 请求后、实际执行前，对 emergency 移除 ClearEStop event 并回复
+  Preempted，避免清除新 latch。P.4 将 PendingReplies 延至 dequeue 后创建，若只
+  清它会让已 admission 的 live RR 丢失急停保护。→ D13 冻结 rr 前缀，按配额取消；
+  明确只涵盖 IPC 已 admission 的 live 请求，不扩展为所有上游旧请求。
+- **S-42（C4 IPC 独立评审）**：timeout 已预提交 CommFault 但 serial 未消费 abort，
+  或 tick 开头 guard 刷新之后才发布 mailbox，旧健康 guard 仍可能让同 tick
+  ClearError 恢复 Ready。→ Fault 提交点同步清两 guard，持续推导按 abort→inhibit
+  的 Acquire 顺序读取；禁止拼接旧 inhibit=0 与新 abort=0。
+- **S-43（C4 daemon 独立评审）**：auto-enable 丢弃 channel 结果且 READY 后
+  未检测 IPC handle finished，接收端退出后 standalone 可常驻。→ 按 D13 退出
+  责任穷尽处理发送结果，并检测真实 IPC 退出；不新增重启或恢复路径。
 
 ## 术语
 
@@ -514,6 +551,11 @@ CommFault | SafetyStopFailed)` → `AdapterError`（AC-17）。
   位（HardRT：`emergency_action`）；timeout lane 读 `abort_request`。唯一新增接口为
   `fn abort_pending_normal(&self, target: NormalAbortTarget)`（default no-op，HardRT 保持原行为）；
   IPC 超时按 `seq_opt` 发布 Submitted / Unsubmitted，并预提交 `CommFault + Disabled`。
+  预提交同时清两个本地健康 guard，覆盖本 tick 后续 control；mailbox 提交 Fault
+  同样清 guard。持续 ready 推导必须先 Acquire 读 abort 再读 inhibit：serial
+  登记 inhibit / generation 后以 AcqRel CAS 清 abort，读到清零者继而看到故障登记。
+  正常动作错误同样须先由 serial 登记故障再 Release 发布错误完成，消除 response
+  先可见而 inhibit 尚为零的接缝；取消结果不制造 Fault，仅终结当时已存在的 RR owner。
   serial 在 tick 头先解标签，事务边界只匹配 Submitted；**下列正常超时路径一律以
   `PendingDeadline`（非 RX 事件，不清信任量）进 `enter_fault`**：
 
@@ -977,7 +1019,8 @@ Fault(SafetyStopFailed)` 先例登记 freeze diff）；退出仅 ClearError 守�
   D7 类）；Dirty → 同级只记 Diag `ConnectResult{kind}`。**授权在 ④ 之后即视为
   已消费，Connect 失败不复用**。
 - **`adapter_connected` 推导（enable-ready guard）**：ipc 每 tick 由 serial 原子
-  推导 `adapter_connected = boot_outcome == Passed ∧ rx_trust ∧ inhibit 位集 = 0`；
+  推导 `adapter_connected = abort_request == 0 ∧ boot_outcome == Passed ∧ rx_trust ∧ inhibit 位集 = 0`；
+  先 Acquire 读 abort 再读取 inhibit，不得以反序拼出虚假的双零（S-42）。
   既有 SAFE→READY 守卫（`state_machine.rs:191-196`）与 `SetEnabled` dry/live
   （`set_enabled_action.rs:80`）因此天然拒。HardRT / SoftRT 保持静态 true。**字段
   语义扩展登记**（`Guards` 文档 + CHANGELOG：非纯物理连接状态；`Guards` 另增
@@ -1029,6 +1072,9 @@ Fault(SafetyStopFailed)` 先例登记 freeze diff）；退出仅 ClearError 守�
   `rx_trust`）；拒绝 → `GuardRejected{actual}`。
 - `adapter_fault_cleared` 推导按 RtClass：SerialRT → serial 原子推导，初值 `false`；
   HardRT / SoftRT → 保持现语义（初值 `true`）；两类都删 `ipc_tick.rs:388` 自置。
+- SerialRT timeout 预提交与 mailbox 对账提交 Fault 的同一控制路径，立即将
+  `adapter_connected` / `adapter_fault_cleared` 置 false；不得仅等 tick 尾刷新。
+  abort 未退场时两个 guard 保持 false，读序按 D9；不改变 serial 故障登记所有权。
 - 恢复触发面：不新增 S0 ClearError RR（S-7，紧后候选）；失步会话内前置不可满足
   → 实际恢复 = D9 程序 + 重启；拒 auto-heal（S0State 粘滞；SerialRT 下 EStop 亦
   不清 Fault，D13）；`SetEnabled(false)` 作 ack 的替代不推荐。
@@ -1181,16 +1227,28 @@ Fault(SafetyStopFailed)` 先例登记 freeze diff）；退出仅 ClearError 守�
   本 tick（不执行 Step 2–5）。Step 1b 以新读到的完整词决定是否处理非 SSF，不能
   因本 tick 已处理 EStop 跳过，也不循环追赶生产者。`estop_latched` 守卫与 latch
   文件在所有含 EStop 的情形**始终持久化**。
+- **已 admission RR 的 EStop 取消范围（S-41）**：仅 `EmergencyBatch.estop == true`
+  时，Step 1 以 O(1) 记录当时 rr lane 长度为取消前缀（含本 tick Step 0 新 admission）。
+  之后每次 rr pop 都消耗一个前缀计数并占 rr24 配额，包含 dry 与过期请求。
+  **先执行第二道 deadline**：过期一律 DeadlineExceeded；未过期且在取消前缀内的
+  live ClearEStop 回 PreemptedByEmergency，live SetEnabled 回 PreemptedByEStop，
+  零 evaluator / latch / Event / PendingReplies。dry 仍只读评估；后续新 admission
+  不受旧前缀影响。重复 EStop 更新前缀为当时 rr.len，不扫描队列。
+  SSF only 不新增前缀取消：queued 请求按当前 Fault 守门，尚未执行的 Disable
+  保持幂等 Disabled；已在飞 Set 的 SSF 仍为 AdapterError，both 保持 EStop 响应优先。
+  **已在飞** PendingReplies 的既有 emergency 优先于观察 deadline 不变；前缀规则
+  只服务尚未执行的 RrEvent。源 channel / gRPC / control lane 不在取消域，不能
+  宣称取消所有旧意图，也不能把 SSF 等同新 EStop。
 - **完整 tick 调度表（含 effectful pending 位置，S-28）**：
 
   | Step | 条件 | 动作 | 预算 |
   |---|---|---|---|
   | 0 ingress | 每 tick | topic polls（heartbeat 1、estop → SerialRT 调原语恰一次 / HardRT `set_estop()`）；SerialRT claim `ipc_estop_notice`；mailbox 词快照（SSF → `EmergencyBatch.ssf`）；wd → link ≤ 8；external → control ≤ 8；ClearEStop RR → rr ≤ 8；SetEnabled RR → rr ≤ 8（**第一道** deadline 检查在 source drain，既有 `ipc_thread.rs:726 / 782`：过期不入 lane、回 `DeadlineExceeded`；rr Full → 立即 `ResourceExhausted`） | 预算外配额 |
-  | 1 emergency batch | 每 tick | `EmergencyBatch` 矩阵；命中 → 清 pending + `emergency_handled = true`；**继续 Step 1b** | 预算外 O(1) |
+  | 1 emergency batch | 每 tick | `EmergencyBatch` 矩阵；EStop 另冻结 rr 取消前缀；命中 → 清 pending + `emergency_handled = true`；**继续 Step 1b** | 预算外 O(1) |
   | 1b mailbox | 每 tick（含 Step 1 命中） | Acquire 读一次完整词；非 SSF code 且 `gen != fault_ack` → 单调 commit + `Disabled` + 清 pending + `fault_ack := 读到的 gen`；新 SSF 留下一 tick Step 0 / 1，不提前 ack；完成服务后 `emergency_handled` 为 true → 本 tick 结束 | 预算外 O(1) |
   | 2 pending | 未命中 emergency 且在飞 | poll resp / deadline → retire（≤ `B_action_retire`）；**仍在飞 → 本 tick 结束，lane 不 drain**（既有 `ipc_tick.rs:186/209` 语义） | — |
   | 3 link | 无在飞 | ≤ 16（回放 + `link_overflow` 合成） | 16 |
-  | 4 rr | 无在飞 | ≤ 24；**每条 dequeue 后、任何 dry/live evaluator / latch 修改 / Event 入队 / pending 创建之前，第二道 deadline 检查（新增，S-33）：`clock.now() > deadline_ns` → 立即回 `DeadlineExceeded`、零副作用**；某请求创建 effectful pending → 本 tick 后续 rr / control 停止 | 24 |
+  | 4 rr | 无在飞 | ≤ 24；**每条 dequeue 后、任何 dry/live evaluator / latch 修改 / Event 入队 / pending 创建之前，第二道 deadline 检查（新增，S-33）：`clock.now() > deadline_ns` → 立即回 `DeadlineExceeded`、零副作用**；未过期 live 取消前缀按 S-41 回复 Preempted；某请求创建 effectful pending → 本 tick 后续 rr / control 停止 | 24 |
   | 5 control | 无在飞 | ≤ 24 | 24 |
 
   固定顺序 emergency → mailbox → link → rr → control；emergency 命中只在 mailbox
@@ -1234,6 +1292,8 @@ Fault(SafetyStopFailed)` 先例登记 freeze diff）；退出仅 ClearError 守�
   `try_send`，`Full` / `Disconnected`（接收端已退出）；**无阻塞 `send` 方法**；
   `Event::EStop` 不接受经 `control` 提交（类型上排除）。`Disconnected`：daemon →
   IPC 已死，转 `graceful_stop` 退出路径；watchdog 线程 → 日志 + 停止；测试 → 断言。
+  auto-enable 在启动物理出口 / ACK 后、READY 前发送；断连时不提交 READY。
+  READY 后主循环检查 IPC handle finished，同样进入既有清理退出路径。
 - **wd channel**：`wd_tx`（`s0_daemon.rs:555`）改 `bounded(RR_CHANNEL_CAPACITY)` +
   `try_send`；只承载 `HeartbeatTimeout`（`watchdog.rs:102`）→ channel Full ⇒ 已有
   ≥ 1 条同类事件排队 ⇒ 丢弃即合并（无信息损失），计数 `wd_full`；IPC ingress 后进
@@ -1479,6 +1539,26 @@ SetEnabled 注入。
   完整）；`Stop` → `set_policy(Disabled)` 在注入 ≤ 1 ipc tick 内已生效，STOPPING
   在 retire 后 ≤ 1 tick；期间新 RR 得 `ResourceExhausted` 或延后处理 ≤
   `B_action_retire` + 14 tick（等待中过期者由第二道检查拒绝）。
+  **(aa) 已 admission 急停取消前缀**：EStop 前已 admission live Clear / Set →
+  相应 Preempted 且零执行；同前缀 dry 继续只读；标记后过期优先 DeadlineExceeded；
+  每 pop（含 dry / expired）均扣前缀，源 channel 尚未 admission 与后续新 admission
+  不被旧前缀误杀；重复 EStop 扩大为当前长度。SSF only 下 queued Disable 幂等
+  Disabled、既在飞 Disable 返回 AdapterError；both 维持 EStop 响应优先。
+  **(ab) timeout / mailbox 与 ClearError 同 tick**：Submitted / Unsubmitted
+  pending 超过 1 s，serial 尚未消费时，同 tick 及后续 tick 注入 ClearError / Enable，
+  快照始终 CommFault、policy 始终 Disabled、两 guard 为 false，无新 normal 提交；
+  abort 先读非零后 serial 登记并清零、以及 serial 完成退场后才刷新两序均不 ready。
+  初始 guard 刷新后注入真实 mailbox，再处理 ClearError：仍 ACK 对应 generation，
+  不出现 Ready / ReadyHold。此项不新增 S0 ClearError RR。
+  正常动作 Comm / HardwareFault 的完成发布点亦运行 IPC 两 tick 并注入 ClearError，
+  必须已观察到 inhibit / mailbox、保持 Fault；取消时原 normal 无 RR owner，
+  同 tick 后续新 RR 不得误回 Preempted，其 request_id 与动作生命周期一一对应。
+  **(ac) daemon 断连退场**：auto-enable=true 时，在真实发送点前请求 IPC stop 并
+  等待其 handle finished，再由真实 channel 返回 Disconnected；断言未 READY、
+  Disabled、已启动七 worker 均请求 stop、退出 1。正常 READY 后通过测试控制器
+  仅请求真实 IPC stop，断言注入已消费、daemon 退出 1、无 supervisor 假超时。
+  测试 POD kind=4 `RequestWorkerStop` 只置预建 worker stop 标志；
+  `ROBOT_TEST_IPC_EXIT_BEFORE_AUTO_ENABLE` 仅冻结上述窄交错，二者不伪造退出码。
 - **AC-12** SLA 口径：(a) 每场景 1000 样本 / 100 warmup；负载 U(1,5) ms IO、背景 RR
   20/s；判据 P99；报告 P50 / P99 / max、σ_est 与**原语 / acquire / claim 的 CAS
   重试次数分布**，并分别对照 fast-path 参考值与全路径上界；Orin PX-56 为判据；

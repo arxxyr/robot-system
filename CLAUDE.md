@@ -31,7 +31,9 @@
            8 项决策全部 ACK）；2026-09-08 函数级 Plan Approved，专职
            developer 按包实施，专职 reviewer 独立评审，主 agent 整合验收。
            实施状态与证据 = team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md；
-           C1 公共契约、C2 有界传输已通过独立评审，接续 C3 serial 收敛。
+           C1–C4 已通过独立评审与必要质量门，按阶段分包提交；
+           C4 IPC / 启动总装收口，当前进入 C5 完整软件验证与现场测量入口。
+           每阶段评审与必要质量门通过即 commit，再推进下一阶段。
            RX 重同步 / 串口 reopen 已移出本候选。
            后续硬序 ①通信故障硬化 → ②D15 退役决策 → ③robot-viz Rerun 桥
            → ④F7 baseline 判据小件；通信硬化不自动关闭 D15。

@@ -354,6 +354,8 @@ impl ManipulatorAdapter for MockSerialRTAdapter {
         }
     }
     fn connect(&mut self) -> Result<(), RobotError> {
+        // 串口物理广播不持久锁住握手；启动先断扭后 Connect 仍保持 enabled=false。
+        self.inner.reset_safety_latch_for_test();
         self.inner.connect()
     }
     fn disconnect(&mut self) -> Result<(), RobotError> {

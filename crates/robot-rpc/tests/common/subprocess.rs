@@ -336,6 +336,11 @@ pub fn build_s0_daemon_command(
     latch_path: &Path,
 ) -> Command {
     let mut cmd = Command::new(bin_path);
+    // 两臂共享 forensic 父目录，但各 robot 必须持有独立实例锁。
+    let trust_dir = latch_path
+        .parent()
+        .expect("latch 必须位于场景目录")
+        .join(format!("{robot_id}_rx_trust"));
     cmd.arg("--robot-id")
         .arg(robot_id)
         .arg("--hardware-id")
@@ -343,7 +348,9 @@ pub fn build_s0_daemon_command(
         .arg("--config")
         .arg(config_path)
         .arg("--latch-path")
-        .arg(latch_path);
+        .arg(latch_path)
+        .arg("--rx-trust-dir")
+        .arg(trust_dir);
     cmd.env("RUST_LOG", "info");
     cmd
 }

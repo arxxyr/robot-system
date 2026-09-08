@@ -4,7 +4,7 @@
 #
 # ## ExecStart = guard，**不是** s0_daemon（QA1 / Y1 终拍）
 #
-# `RestartPreventExitStatus=86` **只作用于主进程**。若把 preflight/provision
+# `RestartPreventExitStatus=86 87` **只作用于主进程**。若把 preflight/provision
 # 放 `ExecStartPre=`，退 86 不会被捕获 → 连败停止态失效。故 unit **无
 # ExecStartPre**：`xlerobot_deploy guard` 是主进程，六步全绿后 `exec
 # s0_daemon` 保住 MainPID（`Type=notify` / watchdog 语义照旧）。
@@ -88,12 +88,13 @@ ExecStart=/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy gu
     --tick-hz 50 \
     --serial-fifo 70 \
     --cpu 5 \
+    --notify-mode required \
     --strict-rt
 
 # **TimeoutStartSec=infinity 是硬要求**（round 1 P0-2）：有限值会在"部分
 # 电机已写、其余尚未处理"时截断 ensure-safe 的末尾聚合（D13 备选"可证明
 # 总时限"未采）。guard 的 pre 步最坏 ~12 s 本身有界；notify READY 由 exec
-# 之后的 s0_daemon 发出，真卡死由人工介入。
+# 之后的 s0_daemon 发出；main 首句监督器以 88 兜底，允许 systemd 重启。
 TimeoutStartSec=infinity
 
 WatchdogSec=2s
@@ -103,7 +104,7 @@ RestartSec=2s
 # 86 = guard 停止态专用码（预算耗尽 / 计数 I/O / 锁冲突 / 配置级 exec 前置
 # 失败）。**exec 后同样作用于 s0_daemon**，故 86 是 s0_daemon 的永久保留
 # 退出码（回归锁见 AC-E3 / deploy::guard 单测）。
-RestartPreventExitStatus=86
+RestartPreventExitStatus=86 87
 
 ReadWritePaths=/var/lib/robot/xlerobot_right
 

@@ -76,6 +76,49 @@ impl SerialTick {
         context: &SerialTickContext<'_>,
         deadline: MonoRawNs,
     ) -> RtSnapshot {
+        self.tick_impl(adapter, command, context, deadline, || {}, || {})
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tick_after_normal_completion<A: SerialRtAdapter>(
+        &mut self,
+        adapter: &mut A,
+        command: &JointCommandView<'_>,
+        context: &SerialTickContext<'_>,
+        deadline: MonoRawNs,
+        after_completion: impl FnOnce(),
+    ) -> RtSnapshot {
+        self.tick_impl(adapter, command, context, deadline, || {}, after_completion)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tick_before_normal_completion<A: SerialRtAdapter>(
+        &mut self,
+        adapter: &mut A,
+        command: &JointCommandView<'_>,
+        context: &SerialTickContext<'_>,
+        deadline: MonoRawNs,
+        before_completion: impl FnOnce(),
+    ) -> RtSnapshot {
+        self.tick_impl(
+            adapter,
+            command,
+            context,
+            deadline,
+            before_completion,
+            || {},
+        )
+    }
+
+    fn tick_impl<A: SerialRtAdapter>(
+        &mut self,
+        adapter: &mut A,
+        command: &JointCommandView<'_>,
+        context: &SerialTickContext<'_>,
+        deadline: MonoRawNs,
+        before_completion: impl FnOnce(),
+        after_completion: impl FnOnce(),
+    ) -> RtSnapshot {
         let SerialTickContext {
             ctrl,
             probe,
@@ -97,7 +140,7 @@ impl SerialTick {
             return self.snapshot(context, deadline);
         }
         // 取消词只取消原动作，本身不创建急停轮次或故障；本 tick 不再接其它普通 IO。
-        if self.consume_normal(adapter, context) {
+        if self.consume_normal(adapter, context, before_completion, after_completion) {
             self.claim_followup(context);
             return self.snapshot(context, deadline);
         }
@@ -194,6 +237,8 @@ impl SerialTick {
         &mut self,
         adapter: &mut A,
         context: &SerialTickContext<'_>,
+        before_completion: impl FnOnce(),
+        after_completion: impl FnOnce(),
     ) -> bool {
         let SerialTickContext {
             ctrl,
@@ -252,11 +297,14 @@ impl SerialTick {
             }
             None => execute_serial_normal(adapter, record, ctrl),
         };
+        // 错误责任先登记：IPC Acquire 看见完成时，不得再从旧健康 guard 清回 Ready。
+        self.route_normal(response, context);
+        before_completion();
         publish_completion(ctrl, record, response);
+        after_completion();
         metrics
             .normal_completed_count
             .fetch_add(1, Ordering::Relaxed);
-        self.route_normal(response, context);
         self.convergence.claim_estop(ctrl, diag, clock.now());
         self.convergence.retire_timeout(ctrl, diag, clock.now());
         !self.convergence.normal_io_allowed(ctrl)

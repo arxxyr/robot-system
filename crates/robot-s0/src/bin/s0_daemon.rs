@@ -1,43 +1,14 @@
-//! `s0_daemon` —— Step 6 Part 2 完整 S0 守护进程。
+//! S0 守护进程：七 worker、SerialRT 启动收敛与独立启动监督。
 //!
-//! ### 启动顺序
+//! main 首句启动监督器，再执行日志、解析、实例锁与 adapter 构造。共享控制器和
+//! bus 服务在 factory 前建立；SerialRT 在七 worker 全部成功后才允许首个总线 IO。
+//! 物理预检与故障 ACK 完成后处理自动使能，再发送 READY；运行中 IPC 退出视为错误。
+//! 启动失败先 Disabled、仅停止已启动 worker，并在同一绝对截止内回收已结束线程；
+//! READY 后保留 RR → pub/io → executor → IPC → watchdog 的顺序关闭。
 //!
-//! 1. 解析 CLI（`--robot-id` / `--hardware-id` / `--latch-path` /
-//!    `--heartbeat-timeout-ms` / `--smoke-duration` 等）
-//! 2. 读 `EStop` latch 文件 → 若持久化为 `true` 则 `initial_guards.estop_latched = true`
-//! 3. 构造共享 channel / atomic / seqlock / latest-command slot
-//! 4. 按顺序 spawn：
-//!    - `ipc_thread`（iceoryx2 subscribers 在内部构造，factory closure 同步；
-//!      接 `Some(RrChannels)` 跟下方 `rr_server_thread` 双向 RR 通信）
-//!    - `rr_server_thread`（A1-3 (1/3c-2)：iceoryx2 RR server 在
-//!      `/<robot_id>/control/clear_estop`；只做 wire I/O，action 仍在
-//!      `ipc_thread` 唯一执行）
-//!    - `watchdog`（读 `ipc_thread`.`last_hb_ns`，超时发 `HeartbeatTimeout` 到 `wd_tx`）
-//!    - `rt_thread`（`SCHED_FIFO` 70 + `mlockall`；`strict_rt` 可选）
-//!    - `pub_thread`（iceoryx2 publishers 在内部构造）
-//!    - `io_thread`（no-op 占位）
-//! 5. 注册 `SIGINT` / `SIGTERM` handler → 原子 shutdown flag
-//! 6. 主 loop 等：`smoke_duration` 到期 / shutdown flag 触发 / state 进入 `STOPPING`
-//! 7. 发 `Event::Stop` 给 `ipc_thread`（让 state machine 真正走进 `STOPPING`），
-//!    `request_stop` 所有线程，`join`，保存 `EStop latch`（若 `estop_latched`=true）
-//!
-//! ### CLI
-//!
-//! ```text
-//! s0_daemon --robot-id xlerobot \
-//!           --hardware-id right_arm \
-//!           --heartbeat-timeout-ms 200 \
-//!           --latch-path /var/lib/robot/xlerobot/estop_latch \
-//!           --smoke-duration 10s
-//! ```
-//!
-//! `robot_id` 来源（架构决策 ②）：`--robot-id` > 环境变量 `ROBOT_ID` > `"default"`。
-//!
-//! ### 退出码
-//!
-//! - `0`：正常 shutdown（到 `STOPPING` 或 `smoke_duration` 到期）。
-//! - `1`：线程启动失败 / 运行中 panic / RT 线程零 tick。
-//! - `2`：CLI 参数解析失败。
+//! `robot_id` 来源：CLI > TOML > 环境 `ROBOT_ID` > default。具体参数见 `--help`。
+//! 退出码：0 正常；1 启动/运行/存储失败；2 参数错误；3 marker 第一阶段已提交但
+//! 第二阶段未完成；4 marker 未授权；87 同实例锁竞争；88 独立监督器执法。
 
 #![cfg(target_os = "linux")]
 
@@ -47,18 +18,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use crossbeam_channel::{bounded, unbounded};
+use crossbeam_channel::bounded;
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::adapter::{
     HardRtAdapter, JointCommandBuf, ManipulatorAdapter, RtClass, RtSnapshot, SerialRtAdapter,
 };
 use robot_core::config::IdentityFingerprint;
-use robot_core::executor_ctrl::ExecutorCtrlClient;
-use robot_core::factory::{AdapterBuildContext, find_factory, registered_factories};
-use robot_core::time::{RobotClock, SystemClock};
+use robot_core::executor_ctrl::{ExecutorCtrlClient, OutputPolicy, SerialEmergencyCtrl};
+use robot_core::factory::{
+    AdapterBuildContext, AdapterBuildServices, find_factory, registered_factories,
+};
+use robot_core::time::{DurationNs, MonoRawNs, RobotClock, SystemClock};
 use robot_msg::joint_layout::compute_layout_id;
 use robot_msg::markers;
+use robot_s0::boot_supervisor::{
+    BootSupervisor, STARTUP_ACK_BUDGET, absolute_boot_budget, boot_budget,
+};
 use robot_s0::config_loader::{
     LoadedConfig, load_robot_config, resolve_hardware_section, validate_hardware_section,
 };
@@ -72,12 +48,14 @@ use robot_s0::ipc_thread::{
 use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread};
 use robot_s0::rr_server_thread::{RrServerThreadConfig, spawn_rr_server_thread};
 use robot_s0::rt_thread::{RtThreadConfig, RtThreadHandle, spawn_rt_thread};
+use robot_s0::rx_trust::{MarkerCommand, RealMarkerFs, TrustLockError};
 use robot_s0::serial_io_thread::{
     SerialIoThreadConfig, SerialIoThreadHandle, spawn_serial_io_thread,
 };
 use robot_s0::set_enabled_rr_server::spawn_set_enabled_rr_server_thread;
 use robot_s0::state_machine::{Event, Guards, S0State, S0StateSnapshot};
 use robot_s0::watchdog::{WatchdogConfig, spawn_watchdog};
+use robot_s0::worker_stop::{StopFlags, WorkerKind};
 use robot_transport::iceoryx2::request_response::rr_server;
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
 use robot_transport::{LatestCommandSlot, RtSnapshotPublisher};
@@ -111,6 +89,10 @@ fn install_signal_handlers() {
 // ============================================================================
 
 struct Args {
+    marker_command: Option<MarkerCommand>,
+    rx_trust_dir_cli: Option<PathBuf>,
+    trust_policy: Option<SerialTrustPolicy>,
+    notify_mode: NotifyMode,
     /// CLI 显式指定时为 `Some`；否则从 `--config` TOML / env / "default" 回填。
     robot_id_cli: Option<String>,
     /// CLI 显式指定时为 `Some`；否则从 `--config` 第一段 hardware / `"default_arm"` 回填。
@@ -133,6 +115,10 @@ struct Args {
 
 /// CLI 解析完 + `--config` 加载完之后的最终配置（CLI override 优先级已应用）。
 struct ResolvedArgs {
+    marker_command: Option<MarkerCommand>,
+    rx_trust_dir: PathBuf,
+    trust_policy: Option<SerialTrustPolicy>,
+    notify_mode: NotifyMode,
     robot_id: String,
     hardware_id: String,
     latch_path: PathBuf,
@@ -157,10 +143,27 @@ struct ResolvedArgs {
     identity: IdentityFingerprint,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SerialTrustPolicy {
+    Marker,
+    Static,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NotifyMode {
+    Required,
+    Standalone,
+    Auto,
+}
+
 impl Args {
     #[allow(clippy::too_many_lines)]
     fn parse() -> Result<Self, String> {
         let mut args = Self {
+            marker_command: None,
+            rx_trust_dir_cli: None,
+            trust_policy: None,
+            notify_mode: NotifyMode::Auto,
             robot_id_cli: None,
             hardware_id_cli: None,
             latch_path_cli: None,
@@ -179,6 +182,43 @@ impl Args {
         while i < raw.len() {
             let a = &raw[i];
             match a.as_str() {
+                "rx-trust" if i == 0 => {
+                    i += 1;
+                    args.marker_command = Some(match raw.get(i).map(String::as_str) {
+                        Some("authorize") => MarkerCommand::Authorize,
+                        Some("revoke") => MarkerCommand::Revoke,
+                        Some("status") => MarkerCommand::Status,
+                        _ => return Err("rx-trust 需要 authorize|revoke|status".into()),
+                    });
+                }
+                "--rx-trust-dir" => {
+                    i += 1;
+                    if args.rx_trust_dir_cli.is_some() {
+                        return Err("--rx-trust-dir 重复".into());
+                    }
+                    args.rx_trust_dir_cli =
+                        Some(PathBuf::from(raw.get(i).ok_or("--rx-trust-dir 缺少值")?));
+                }
+                "--rx-trust-policy" => {
+                    i += 1;
+                    if args.trust_policy.is_some() {
+                        return Err("--rx-trust-policy 重复".into());
+                    }
+                    args.trust_policy = Some(match raw.get(i).map(String::as_str) {
+                        Some("marker") => SerialTrustPolicy::Marker,
+                        Some("static") => SerialTrustPolicy::Static,
+                        _ => return Err("--rx-trust-policy 需要 marker|static".into()),
+                    });
+                }
+                "--notify-mode" => {
+                    i += 1;
+                    args.notify_mode = match raw.get(i).map(String::as_str) {
+                        Some("required") => NotifyMode::Required,
+                        Some("standalone") => NotifyMode::Standalone,
+                        Some("auto") => NotifyMode::Auto,
+                        _ => return Err("--notify-mode 需要 required|standalone|auto".into()),
+                    };
+                }
                 "--robot-id" => {
                     i += 1;
                     args.robot_id_cli =
@@ -247,6 +287,9 @@ impl Args {
                         .ok_or("--joints requires value")?
                         .parse()
                         .map_err(|e| format!("--joints: {e}"))?;
+                    if !(1..=32).contains(&args.joint_count) {
+                        return Err("--joints 必须为 1..=32".into());
+                    }
                 }
                 "--cpu" => {
                     i += 1;
@@ -263,6 +306,13 @@ impl Args {
             i += 1;
         }
 
+        if args.marker_command.is_some()
+            && (args.config_path.is_some()
+                || args.hardware_id_cli.is_some()
+                || args.trust_policy.is_some())
+        {
+            return Err("rx-trust 子命令不接受 hardware/config/trust-policy".into());
+        }
         Ok(args)
     }
 
@@ -353,7 +403,24 @@ impl Args {
             |c| c.identity.clone(),
         );
 
+        let joint_count = loaded_config
+            .as_ref()
+            .and_then(|cfg| resolve_hardware_section(&cfg.parsed, &hardware_id))
+            .map_or(self.joint_count, |hardware| {
+                u8::try_from(hardware.motor_ids.len()).expect("已校验 <=32")
+            });
+        let rx_trust_dir = self.rx_trust_dir_cli.clone().unwrap_or_else(|| {
+            latch_path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf()
+        });
         Ok(ResolvedArgs {
+            marker_command: self.marker_command,
+            rx_trust_dir,
+            trust_policy: self.trust_policy,
+            notify_mode: self.notify_mode,
             robot_id,
             hardware_id,
             latch_path,
@@ -363,7 +430,7 @@ impl Args {
             tick_period_ns: self.tick_period_ns,
             strict_rt: self.strict_rt,
             serial_fifo_priority: self.serial_fifo_priority,
-            joint_count: self.joint_count,
+            joint_count,
             cpu_affinity: self.cpu_affinity,
             loaded_config,
             identity,
@@ -386,20 +453,25 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
 
 fn print_help() {
     eprintln!(
-        "s0_daemon (Step 7)
+        "s0_daemon（post-E 通信故障硬化）
 
 USAGE:
   s0_daemon [OPTIONS]
+  s0_daemon rx-trust authorize|revoke|status [--robot-id ID] [--rx-trust-dir PATH]
 
 OPTIONS:
   --config <PATH>              configs/<robot>.toml。CLI > TOML > env > 默认（task 25）。
   --robot-id <ID>              Robot identifier。优先级：CLI > TOML > env ROBOT_ID > \"default\"。
   --hardware-id <ID>           本实例控制的硬件（如 \"left_arm\"）。优先级：CLI > TOML 首段 > \"default_arm\"。
   --latch-path <PATH>          EStop latch 文件路径。默认 /var/lib/robot/<robot_id>/estop_latch。
+  --rx-trust-dir <PATH>        信任文件与实例锁目录。默认 latch 的父目录。
+  --rx-trust-policy <POLICY>   mock SerialRT 可选 marker|static；真实 Feetech 固定 marker。
+  --notify-mode <MODE>         required|standalone|auto，默认 auto（看 INVOCATION_ID）。
+  --serial-fifo <PRIORITY>     SerialRT 可选 FIFO 优先级，1..99。
   --heartbeat-timeout-ms <MS>  S1 heartbeat 超时阈值（毫秒）。默认 200。
   --smoke-duration <DUR>       运行时长上限（3s / 500ms / 10 均可）。默认无限（直到 signal）。
   --tick-hz <HZ>               rt_thread tick 频率。默认 50。
-  --joints <N>                 mock adapter 关节数。默认 3。
+  --joints <N>                 mock adapter 关节数，1..32。默认 3。
   --strict-rt                  RT syscall 失败立即 panic（生产推荐）。
   --cpu <IDX>                  rt_thread CPU 亲和性。默认不绑核。
   -h, --help                   显示帮助。
@@ -414,6 +486,7 @@ TOPICS（iceoryx2）:
     /<robot_id>/s0/heartbeat
   RR server (A1-3 (1/3c-2)):
     /<robot_id>/control/clear_estop
+    /<robot_id>/control/set_enabled
 "
     );
 }
@@ -451,173 +524,343 @@ struct Topics {
 // ============================================================================
 
 fn main() {
-    // task-32：所有 bin 的第一件事 —— 统一 tracing subscriber 初始化。
-    // 幂等：多次调用只第一次生效（底层 `set_global_default` 限制）。
+    let supervisor = BootSupervisor::start().unwrap_or_else(|_| std::process::exit(1));
+    #[cfg(feature = "test-comm-fault-hook")]
+    robot_s0::comm_fault_hook::boot_pause("before_logging");
     let _ = robot_logging::init();
-
+    #[cfg(feature = "test-comm-fault-hook")]
+    robot_s0::comm_fault_hook::boot_pause("before_parse");
     let parsed = match Args::parse() {
-        Ok(a) => a,
-        Err(msg) => {
-            if msg == "HELP" {
-                print_help();
-                std::process::exit(0);
-            }
-            tracing::error!(error = %msg, "CLI argument parse failed");
+        Ok(args) => args,
+        Err(message) if message == "HELP" => {
             print_help();
+            std::process::exit(0);
+        }
+        Err(message) => {
+            tracing::error!(%message, "CLI 解析失败");
             std::process::exit(2);
         }
     };
-
-    let resolved = match parsed.resolve() {
-        Ok(r) => r,
-        Err(msg) => {
-            tracing::error!(error = %msg, "CLI argument resolve failed");
-            std::process::exit(2);
-        }
-    };
-
-    if let Err(code) = run(&resolved) {
+    let stops = StopFlags::new();
+    #[cfg(feature = "test-comm-fault-hook")]
+    if let Some(page) = supervisor.shared().observation_arc() {
+        stops.set_observation(page);
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    robot_s0::comm_fault_hook::boot_pause("before_resolve");
+    let args = parsed.resolve().unwrap_or_else(|error| {
+        tracing::error!(%error, "配置解析失败");
+        std::process::exit(2)
+    });
+    supervisor.update_joint_count(usize::from(args.joint_count));
+    ensure_latch_parent(&args.latch_path).unwrap_or_else(|error| {
+        tracing::error!(?error, "latch 目录不可用");
+        std::process::exit(1)
+    });
+    std::fs::create_dir_all(&args.rx_trust_dir).unwrap_or_else(|error| {
+        tracing::error!(?error, "信任目录不可用");
+        std::process::exit(1)
+    });
+    // 锁在 main 持有至 process::exit；任何早退均不提前释放给另一个 daemon。
+    let _trust_lock =
+        robot_s0::rx_trust::acquire_trust_lock(&args.rx_trust_dir).unwrap_or_else(|error| {
+            match error {
+                TrustLockError::Held { pid } => {
+                    tracing::error!(?pid, "信任锁被占用");
+                    std::process::exit(87)
+                }
+                TrustLockError::Io(error) => {
+                    tracing::error!(?error, "信任锁系统错误");
+                    std::process::exit(1)
+                }
+            }
+        });
+    if let Some(command) = args.marker_command {
+        let result =
+            robot_s0::rx_trust::run_marker_command(&RealMarkerFs, &args.rx_trust_dir, command);
+        let code = match result {
+            Ok(outcome) => {
+                match robot_s0::rx_trust::marker_status(&RealMarkerFs, &args.rx_trust_dir) {
+                    Ok(status) => println!(
+                        "primary={:?} backup={:?} canonical_dirty={} authorized_candidate={} outcome={outcome:?}",
+                        status.primary,
+                        status.backup,
+                        status.canonical_dirty(),
+                        status.authorized_candidate()
+                    ),
+                    Err(error) => tracing::error!(?error, "命令后状态读取失败"),
+                }
+                outcome.exit_code()
+            }
+            Err(error) => {
+                tracing::error!(?error, "信任命令失败");
+                1
+            }
+        };
         std::process::exit(code);
+    }
+    let code = run(&args, &supervisor, &stops).err().unwrap_or(0);
+    std::process::exit(code);
+}
+
+struct ExecutionResources {
+    clock: Arc<dyn RobotClock>,
+    ctrl: Arc<HardRtCtrlInner>,
+    client: Arc<dyn ExecutorCtrlClient>,
+    emergency: Option<Arc<dyn SerialEmergencyCtrl>>,
+    probe: Arc<robot_s0::serial_preempt::SerialPreemptProbe>,
+    diag: Arc<robot_s0::diag::SerialDiagRing>,
+    serial: bool,
+    authorized: bool,
+    latched: bool,
+}
+
+fn selected_kind(args: &ResolvedArgs) -> &str {
+    args.loaded_config
+        .as_ref()
+        .and_then(|config| resolve_hardware_section(&config.parsed, &args.hardware_id))
+        .map_or("mock_hard_rt", |hardware| hardware.adapter.as_str())
+}
+
+fn select_trust(args: &ResolvedArgs) -> Result<Option<SerialTrustPolicy>, i32> {
+    match (selected_kind(args), args.trust_policy) {
+        ("mock_hard_rt", None) => Ok(None),
+        ("mock_serial_rt", override_policy) => {
+            Ok(Some(override_policy.unwrap_or(SerialTrustPolicy::Static)))
+        }
+        ("feetech_sts3215", None) => Ok(Some(SerialTrustPolicy::Marker)),
+        (kind, policy) => {
+            tracing::error!(kind, ?policy, "不支持的 adapter 信任策略组合");
+            Err(2)
+        }
     }
 }
 
-#[allow(clippy::too_many_lines)]
-fn run(args: &ResolvedArgs) -> Result<(), i32> {
-    let t = topics(args);
+fn prepare_execution(args: &ResolvedArgs) -> Result<(ExecutionResources, BuiltAdapter), i32> {
+    tracing::info!(identity = %args.identity, "S0 实例配置身份");
+    let trust = select_trust(args)?;
+    let latched = load_estop_latch(&args.latch_path).map_err(|error| startup_io_error(&error))?;
+    tracing::info!(latched, "initial estop_latched");
+    let serial = trust.is_some();
+    let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+    // 服务必须先于 factory 创建，factory、adapter、serial 与 IPC 共享这一组对象。
+    let ctrl = Arc::new(if serial {
+        HardRtCtrlInner::new_serial()
+    } else {
+        HardRtCtrlInner::new()
+    });
+    ctrl.safety_latched.store(latched, Ordering::Release);
+    let client = Arc::new(HardRtCtrlClient::new(ctrl.clone()));
+    let emergency: Option<Arc<dyn SerialEmergencyCtrl>> =
+        if serial { Some(client.clone()) } else { None };
+    let probe = Arc::new(robot_s0::serial_preempt::SerialPreemptProbe::new(
+        clock.clone(),
+        ctrl.clone(),
+    ));
+    let diag = Arc::new(robot_s0::diag::SerialDiagRing::new());
+    let services = AdapterBuildServices {
+        clock: clock.clone(),
+        preempt: Some(probe.clone()),
+        diag: Some(diag.clone()),
+        call_deadline: DurationNs(50_000_000),
+    };
+    #[cfg(feature = "test-comm-fault-hook")]
+    robot_s0::comm_fault_hook::boot_pause("adapter_open");
+    let built = build_adapter(args, serial.then_some(&services))?;
+    match (&built, serial) {
+        (BuiltAdapter::HardRt(adapter), false) if adapter.info().rt_class == RtClass::HardRT => {}
+        (BuiltAdapter::SerialRt(adapter), true)
+            if adapter.info().rt_class == RtClass::SerialRT
+                && adapter.joint_count() == usize::from(args.joint_count) => {}
+        _ => {
+            tracing::error!("factory 与已选择执行协议不一致");
+            return Err(2);
+        }
+    }
+    let authorized = match trust {
+        Some(SerialTrustPolicy::Marker) => {
+            let consumed =
+                robot_s0::rx_trust::consume_authorization(&RealMarkerFs, &args.rx_trust_dir)
+                    .map_err(|error| startup_io_error(&error))?;
+            tracing::info!(?consumed, "一次性信任授权已消费");
+            consumed.authorized
+        }
+        Some(SerialTrustPolicy::Static) => true,
+        None => false,
+    };
+    Ok((
+        ExecutionResources {
+            clock,
+            ctrl,
+            client,
+            emergency,
+            probe,
+            diag,
+            serial,
+            authorized,
+            latched,
+        },
+        built,
+    ))
+}
 
+fn startup_io_error(error: &std::io::Error) -> i32 {
+    tracing::error!(?error, "S0 启动或存储失败");
+    1
+}
+
+fn run(args: &ResolvedArgs, supervisor: &BootSupervisor, stops: &StopFlags) -> Result<(), i32> {
     tracing::info!(
         robot_id = %args.robot_id,
         hardware_id = %args.hardware_id,
-        latch_path = %args.latch_path.display(),
-        hb_timeout_ms = args.heartbeat_timeout_ns / 1_000_000,
         tick_hz = 1_000_000_000 / args.tick_period_ns,
         strict_rt = args.strict_rt,
         joints = args.joint_count,
         cpu = ?args.cpu_affinity,
         "s0_daemon starting"
     );
-    if let Some(cfg) = &args.loaded_config {
-        tracing::info!(
-            config_path = %cfg.source_path.display(),
-            hardware_sections = cfg.parsed.hardware.len(),
-            sensor_sections = cfg.parsed.sensor.len(),
-            "config loaded"
-        );
+    let (resources, built) = prepare_execution(args)?;
+    let mut workers = WorkerHandles::default();
+    let result = run_workers(args, supervisor, stops, &resources, built, &mut workers);
+    resources.client.set_policy(OutputPolicy::Disabled);
+    #[cfg(feature = "test-comm-fault-hook")]
+    if let Some(page) = supervisor.shared().observation() {
+        page.record_disabled(resources.clock.now().0);
+    }
+    if supervisor.shared().ready_reached.load(Ordering::Acquire) {
+        workers.stop_normally(stops);
     } else {
-        tracing::info!("config: none (CLI-only mode; identity is stub)");
-    }
-    tracing::info!(identity = %args.identity, "identity fingerprint");
-    tracing::info!(
-        sub_cmd = %t.sub_command,
-        sub_hb = %t.sub_heartbeat,
-        sub_estop = %t.sub_estop,
-        pub_state = %t.pub_state,
-        pub_hb = %t.pub_heartbeat,
-        "iceoryx2 topics"
-    );
-
-    // ---- 1) EStop latch ----
-    if let Err(e) = ensure_latch_parent(&args.latch_path) {
-        tracing::error!(
-            latch_path = %args.latch_path.display(),
-            ?e,
-            "fatal: failed to prepare EStop latch directory"
+        workers.stop_startup(
+            stops,
+            resources.clock.as_ref(),
+            supervisor
+                .started_at()
+                .0
+                .saturating_add(absolute_boot_budget(usize::from(args.joint_count)).0)
+                .saturating_add(1_000_000_000),
         );
-        return Err(1);
     }
-    // **A1-5**：strict fail-closed 是唯一行为（撤掉 `--allow-empty-latch`
-    // opt-in / `MissingLatchPolicy::AllowEmpty`）。primary + backup 都不
-    // 存在 → `load_estop_latch` 返 NotFound → daemon 拒启动 + 报错指引
-    // 运维 provision `0\n` 或走 ClearEStop control action。
-    let initial_estop_latched = match load_estop_latch(&args.latch_path) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!(
-                latch_path = %args.latch_path.display(),
-                ?e,
-                "fatal: failed to load EStop latch"
-            );
-            return Err(1);
-        }
-    };
-    tracing::info!(latched = initial_estop_latched, "initial estop_latched");
+    result
+}
 
-    // ---- 2) 共享 channel / atomic / slot ----
-    let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+#[derive(Default)]
+struct WorkerHandles {
+    ipc: Option<IpcThreadHandle>,
+    clear: Option<robot_s0::rr_server_thread::RrServerThreadHandle>,
+    set: Option<robot_s0::set_enabled_rr_server::SetEnabledRrServerHandle>,
+    watchdog: Option<thread::JoinHandle<()>>,
+    executor: Option<ExecutorHandle>,
+    publisher: Option<robot_s0::pub_thread::PubThreadHandle>,
+    io: Option<robot_s0::io_thread::IoThreadHandle>,
+}
 
-    let (cmd_writer, cmd_reader) =
-        LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
-
-    let (rt_snap_pub, rt_snap_rdr) = RtSnapshotPublisher::<RtSnapshot>::new(RtSnapshot::default());
-    let (state_pub, state_rdr) =
-        RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
-
-    let (wd_tx, wd_rx) = unbounded::<Event>();
-
-    // ---- 3) build adapter + 创建 rt_ctrl + ExecutorCtrlClient（必须在 spawn_ipc_thread 之前） ----
-    //
-    // **task-30 v9 / M7 阶段 4**：spawn_ipc_thread 必传 `Arc<dyn ExecutorCtrlClient>`
-    // 让 ipc_tick 三步式驱动 set_policy / safety_stop / request_normal /
-    // poll_last_normal_resp / clear_safety_latch。client 由对应路径 ctrl 包装：
-    // - HardRT 路径：`HardRtCtrlClient::new(Arc::clone(&rt_ctrl))`
-    // - SerialRT 路径：`SerialIoCtrlClient` 是 `HardRtCtrlClient` 的 type alias
-    //   （v9 收敛后 atomic 协议层共用），同款构造。
-    let built = build_adapter(args)?;
-    // task-30 v9 finding #3 + M7 阶段 4 第二步守门：编译期 + 运行期双重 dispatch。
-    //
-    // - HardRt：trait object 已 RtSafeCtrl witness，进 spawn_rt_thread。
-    // - SerialRt：trait object 已 OutputSafetyProbe witness，进
-    //   spawn_serial_io_thread。
-    // - SoftRt：v0.2 不接通；v0.4 起 SoftRT adapter 挂 s0_io_thread。
-    //
-    // executor_ctrl 在两条路径上类型一致（HardRtCtrlClient ==
-    // SerialIoCtrlClient = HardRtCtrlClient 的 type alias，atomic 协议层共享
-    // HardRtCtrlInner），ipc_thread 注入 `Arc<dyn ExecutorCtrlClient>` 不区分
-    // 路径。reviewer 硬要求 #3：dispatch 后只把对应路径的 client 注入。
-    let plan: SpawnPlan = match built {
-        BuiltAdapter::HardRt(a) => {
-            debug_assert_eq!(a.info().rt_class, RtClass::HardRT);
-            SpawnPlan::HardRt(a)
-        }
-        BuiltAdapter::SerialRt(a) => {
-            debug_assert_eq!(a.info().rt_class, RtClass::SerialRT);
-            SpawnPlan::SerialRt(a)
-        }
-        BuiltAdapter::SoftRt(a) => {
-            let class = a.info().rt_class;
-            let name = a.info().name;
-            match class {
-                RtClass::SoftRT => tracing::error!(
-                    adapter = name,
-                    rt_class = "SoftRT",
-                    "fatal: SoftRT adapter 应挂 s0_io_thread (v0.4)，不能进 ManipulatorAdapter spawn 路径"
-                ),
-                RtClass::HardRT => tracing::error!(
-                    adapter = name,
-                    rt_class = "HardRT",
-                    "fatal: 报告 HardRT 但 factory 没走 build_hard_rt（factory 实现遗漏 RtSafeCtrl + override）"
-                ),
-                RtClass::SerialRT => tracing::error!(
-                    adapter = name,
-                    rt_class = "SerialRT",
-                    "fatal: 报告 SerialRT 但 factory 没走 build_serial_rt（factory 实现遗漏 OutputSafetyProbe + override）"
-                ),
+impl WorkerHandles {
+    fn stop_startup(&mut self, stops: &StopFlags, clock: &dyn RobotClock, deadline: u64) {
+        stops.request_spawned_stop();
+        loop {
+            macro_rules! join_finished {
+                ($field:ident) => {
+                    if self
+                        .$field
+                        .as_ref()
+                        .is_some_and(|handle| handle.is_finished())
+                    {
+                        if let Some(handle) = self.$field.take() {
+                            let _ = handle.join();
+                        }
+                    }
+                };
             }
-            return Err(1);
+            join_finished!(ipc);
+            join_finished!(clear);
+            join_finished!(set);
+            join_finished!(watchdog);
+            join_finished!(executor);
+            join_finished!(publisher);
+            join_finished!(io);
+            if self.all_joined() || clock.now().0 >= deadline {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
         }
-    };
+    }
+    fn all_joined(&self) -> bool {
+        self.ipc.is_none()
+            && self.clear.is_none()
+            && self.set.is_none()
+            && self.watchdog.is_none()
+            && self.executor.is_none()
+            && self.publisher.is_none()
+            && self.io.is_none()
+    }
+    fn any_finished(&self) -> bool {
+        self.ipc.as_ref().is_some_and(IpcThreadHandle::is_finished)
+            || self
+                .clear
+                .as_ref()
+                .is_some_and(robot_s0::rr_server_thread::RrServerThreadHandle::is_finished)
+            || self
+                .set
+                .as_ref()
+                .is_some_and(robot_s0::set_enabled_rr_server::SetEnabledRrServerHandle::is_finished)
+            || self
+                .watchdog
+                .as_ref()
+                .is_some_and(thread::JoinHandle::is_finished)
+            || self
+                .executor
+                .as_ref()
+                .is_some_and(ExecutorHandle::is_finished)
+            || self
+                .publisher
+                .as_ref()
+                .is_some_and(robot_s0::pub_thread::PubThreadHandle::is_finished)
+            || self
+                .io
+                .as_ref()
+                .is_some_and(robot_s0::io_thread::IoThreadHandle::is_finished)
+    }
+    fn stop_normally(&mut self, stops: &StopFlags) {
+        if let (Some(ipc), Some(watchdog)) = (self.ipc.take(), self.watchdog.take()) {
+            graceful_stop(
+                ipc,
+                stops,
+                watchdog,
+                self.executor.take(),
+                self.publisher.take(),
+                self.io.take(),
+                self.clear.take(),
+                self.set.take(),
+            );
+        }
+    }
+}
 
-    // rt_ctrl + client：ipc_thread 拿 client；rt_thread / serial_io_thread 拿 ctrl。
-    // HardRtCtrlInner 在 HardRT / SerialRT 两条路径上共享类型（v9 收敛后 atomic
-    // 协议层统一），构造方式相同。
-    let rt_ctrl = Arc::new(HardRtCtrlInner::new());
-    let executor_ctrl: Arc<dyn ExecutorCtrlClient> =
-        Arc::new(HardRtCtrlClient::new(Arc::clone(&rt_ctrl)));
-
-    // ---- 4) spawn ipc_thread ----
-    let mut initial_guards = Guards {
-        estop_latched: initial_estop_latched,
-        adapter_connected: true,
+#[allow(clippy::too_many_lines)]
+fn run_workers(
+    args: &ResolvedArgs,
+    supervisor: &BootSupervisor,
+    stops: &StopFlags,
+    res: &ExecutionResources,
+    built: BuiltAdapter,
+    workers: &mut WorkerHandles,
+) -> Result<(), i32> {
+    use robot_s0::event_ingress::{ControlEvent, RR_CHANNEL_CAPACITY};
+    let clock = &res.clock;
+    let t = topics(args);
+    let (cmd_writer, cmd_reader) = LatestCommandSlot::new(JointCommandBuf::default());
+    let (snapshot_pub, snapshot_reader) = RtSnapshotPublisher::new(RtSnapshot::default());
+    let (state_pub, state_reader) = RtSnapshotPublisher::new(S0StateSnapshot::default());
+    let (wd_tx, wd_rx) = bounded::<Event>(64);
+    let (clear_tx, clear_rx) = bounded::<ClearEStopRrRequest>(RR_CHANNEL_CAPACITY);
+    let (clear_response_tx, clear_response_rx) =
+        bounded::<ClearEStopRrResponse>(RR_CHANNEL_CAPACITY);
+    let (set_tx, set_rx) = bounded::<SetEnabledRrRequest>(RR_CHANNEL_CAPACITY);
+    let (set_response_tx, set_response_rx) = bounded::<SetEnabledRrResponse>(RR_CHANNEL_CAPACITY);
+    let guards = Guards {
+        rt_serial: res.serial,
+        estop_latched: res.latched,
+        adapter_connected: !res.serial,
         calibration_loaded: true,
         joint_state_valid: true,
         power_ok: true,
@@ -625,563 +868,482 @@ fn run(args: &ResolvedArgs) -> Result<(), i32> {
         cmd_deadline_valid: true,
         limits_valid: true,
         hw_enable_ok: true,
-        adapter_fault_cleared: true,
+        adapter_fault_cleared: !res.serial,
         command_mode: robot_core::adapter::ControlMode::Position,
         on_timeout_hint: robot_s0::state_machine::EnabledSub::CtrlLostHold,
     };
-    // latch 为 true 时开工就 SAFE；ipc_thread 里只在未 latch 时才进 Ready/Enabled。
-    if initial_estop_latched {
-        initial_guards.adapter_connected = true;
-    }
-
-    let ipc_cfg = IpcThreadConfig {
-        poll_interval_ns: 500_000,
-        initial_guards,
-        initial_state: S0State::Safe,
-        // **task #15 阻断 1 修复**：把 latch_path 注入 ipc_thread，让 EStop
-        // 触发即 fsync 落盘（不等 graceful shutdown）。daemon 退出时仍会再
-        // 写一次 final 值（§12 graceful save），但不再依赖那次写。
-        latch_path: Some(args.latch_path.clone()),
-        authoritative_layout: args.authoritative_layout,
-    };
-
-    let sub_cmd_topic = t.sub_command.clone();
-    let sub_hb_topic = t.sub_heartbeat.clone();
-    let sub_estop_topic = t.sub_estop.clone();
-    let ipc_factory = move || {
-        let node = NodeBuilder::new().create::<IxService>().unwrap();
-        let command =
-            open_sub::<markers::JointCommand>(&node, &sub_cmd_topic, TopicClass::S0Command)
-                .expect("open command subscriber");
-        let heartbeat = open_sub::<markers::Heartbeat>(&node, &sub_hb_topic, TopicClass::Heartbeat)
-            .expect("open heartbeat subscriber");
-        let estop =
-            open_sub::<markers::EStopEvent>(&node, &sub_estop_topic, TopicClass::SafetyEvent)
-                .expect("open estop subscriber");
-        // Node 保持活到 subscribers 消亡 = daemon 生命周期。
-        Box::leak(Box::new(node));
-        IpcSubscribers {
-            command,
-            heartbeat,
-            estop,
+    let ipc_topics = (
+        t.sub_command.clone(),
+        t.sub_heartbeat.clone(),
+        t.sub_estop.clone(),
+    );
+    workers.ipc = Some(
+        spawn_ipc_thread(
+            IpcThreadConfig {
+                initial_guards: guards,
+                initial_state: S0State::Safe,
+                latch_path: Some(args.latch_path.clone()),
+                authoritative_layout: args.authoritative_layout,
+                ..IpcThreadConfig::default()
+            },
+            clock.clone(),
+            move || make_subscribers(&ipc_topics),
+            cmd_writer,
+            state_pub,
+            wd_rx,
+            res.client.clone(),
+            Some(RrChannels {
+                request_rx: clear_rx,
+                response_tx: clear_response_tx,
+            }),
+            Some(SetEnabledRrChannels {
+                request_rx: set_rx,
+                response_tx: set_response_tx,
+            }),
+            res.serial.then(|| res.ctrl.clone()),
+            res.emergency.clone(),
+            stops.flag(WorkerKind::Ipc),
+        )
+        .map_err(|error| startup_io_error(&error))?,
+    );
+    stops.mark_spawned(WorkerKind::Ipc);
+    let clear_topic = t.rr_clear_estop.clone();
+    workers.clear = Some(
+        spawn_rr_server_thread(
+            RrServerThreadConfig {
+                topic: clear_topic.clone(),
+                ..RrServerThreadConfig::default()
+            },
+            clock.clone(),
+            move || {
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .expect("Clear RR node");
+                let server = rr_server::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+                    &node,
+                    &clear_topic,
+                )
+                .expect("Clear RR server");
+                Box::leak(Box::new(node));
+                server
+            },
+            clear_tx,
+            clear_response_rx,
+            stops.flag(WorkerKind::ClearEStopRr),
+        )
+        .map_err(|error| startup_io_error(&error))?,
+    );
+    stops.mark_spawned(WorkerKind::ClearEStopRr);
+    // 既有验收稳定标记：只表明该 RR server 的真实初始化握手已完成。
+    tracing::info!(topic = %t.rr_clear_estop, "rr_server_thread started (ClearEStop RR control plane; A1-3 (1/3c-2))");
+    let set_topic = t.rr_set_enabled.clone();
+    workers.set = Some(
+        spawn_set_enabled_rr_server_thread(
+            RrServerThreadConfig {
+                topic: set_topic.clone(),
+                ..RrServerThreadConfig::default()
+            },
+            clock.clone(),
+            move || {
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .expect("Set RR node");
+                let server = rr_server::<markers::SetEnabledRequest, markers::SetEnabledResponse>(
+                    &node, &set_topic,
+                )
+                .expect("Set RR server");
+                Box::leak(Box::new(node));
+                server
+            },
+            set_tx,
+            set_response_rx,
+            stops.flag(WorkerKind::SetEnabledRr),
+        )
+        .map_err(|error| startup_io_error(&error))?,
+    );
+    stops.mark_spawned(WorkerKind::SetEnabledRr);
+    tracing::info!(topic = %t.rr_set_enabled, "set_enabled_rr_server started (SetEnabled RR control plane; v0.5 候选 C)");
+    workers.watchdog = Some(
+        spawn_watchdog(
+            WatchdogConfig {
+                heartbeat_timeout_ns: args.heartbeat_timeout_ns,
+                ..WatchdogConfig::default()
+            },
+            clock.clone(),
+            workers.ipc.as_ref().expect("IPC 已启动").last_hb_ns(),
+            wd_tx,
+            stops.flag(WorkerKind::Watchdog),
+        )
+        .map_err(|error| startup_io_error(&error))?,
+    );
+    stops.mark_spawned(WorkerKind::Watchdog);
+    #[cfg(feature = "test-comm-fault-hook")]
+    let hook_control = robot_s0::comm_fault_hook::spawn_control_thread(
+        args.robot_id.clone(),
+        clock.clone(),
+        supervisor.shared().observation_arc(),
+        WorkerKind::ALL.map(|worker| stops.flag(worker)),
+    )
+    .map_err(|error| startup_io_error(&error))?;
+    workers.executor = Some(match built {
+        BuiltAdapter::HardRt(adapter) => ExecutorHandle::HardRt(
+            spawn_rt_thread(
+                RtThreadConfig {
+                    tick_period_ns: args.tick_period_ns,
+                    sched_fifo_priority: 70,
+                    cpu_affinity: args.cpu_affinity,
+                    strict_rt: args.strict_rt,
+                },
+                clock.clone(),
+                adapter,
+                cmd_reader,
+                snapshot_pub,
+                res.ctrl.clone(),
+                stops.flag(WorkerKind::Executor),
+            )
+            .map_err(|error| startup_io_error(&error))?,
+        ),
+        BuiltAdapter::SerialRt(adapter) => ExecutorHandle::SerialRt(
+            spawn_serial_io_thread(
+                SerialIoThreadConfig {
+                    sched_fifo_priority: args.serial_fifo_priority,
+                    cpu_affinity: args.cpu_affinity,
+                    strict_rt: args.strict_rt,
+                    ..SerialIoThreadConfig::default()
+                },
+                clock.clone(),
+                adapter,
+                cmd_reader,
+                snapshot_pub,
+                res.ctrl.clone(),
+                res.probe.clone(),
+                res.diag.clone(),
+                res.authorized,
+                supervisor.shared(),
+                stops.flag(WorkerKind::Executor),
+            )
+            .map_err(|error| startup_io_error(&error))?,
+        ),
+        BuiltAdapter::SoftRt(adapter) => {
+            tracing::error!(adapter = adapter.info().name, "SoftRT 不得进入执行器");
+            return Err(2);
         }
-    };
-
-    // **A1-3 (1/3c-2)**：ClearEStop RR control plane channels。reviewer 拍板
-    // bounded(64)。`rr_server_thread` (RR I/O) ↔ `ipc_thread` (action
-    // executor) 通过这两条 crossbeam channel 解耦。
-    let (rr_request_tx, rr_request_rx) = bounded::<ClearEStopRrRequest>(64);
-    let (rr_response_tx, rr_response_rx) = bounded::<ClearEStopRrResponse>(64);
-
-    // **v0.5 候选 C（D5）**：SetEnabled RR control plane channels（第 2 个专用
-    // rr_server ↔ ipc_thread；同 bounded(64)）。
-    let (se_request_tx, se_request_rx) = bounded::<SetEnabledRrRequest>(64);
-    let (se_response_tx, se_response_rx) = bounded::<SetEnabledRrResponse>(64);
-
-    let ipc = match spawn_ipc_thread(
-        ipc_cfg,
-        Arc::clone(&clock),
-        ipc_factory,
-        cmd_writer,
-        state_pub,
-        wd_rx,
-        Arc::clone(&executor_ctrl),
-        // **A1-3 (1/3c-2)**：接通 RR control plane channels（rr_server_thread
-        // 在下方 spawn 起来后通过同一对 channel 跟 ipc_thread 双向通信）。
-        Some(RrChannels {
-            request_rx: rr_request_rx,
-            response_tx: rr_response_tx,
-        }),
-        // **v0.5 候选 C**：SetEnabled RR channels（set_enabled_rr_server 在下方
-        // spawn 后通过同一对 channel 跟 ipc_thread 双向通信）。
-        Some(SetEnabledRrChannels {
-            request_rx: se_request_rx,
-            response_tx: se_response_tx,
-        }),
-    ) {
-        Ok(h) => h,
-        Err(e) => {
-            tracing::error!(?e, "fatal: spawn_ipc_thread failed");
-            return Err(1);
-        }
-    };
+    });
+    stops.mark_spawned(WorkerKind::Executor);
+    let pub_topics = (t.pub_state.clone(), t.pub_heartbeat.clone());
+    workers.publisher = Some(
+        spawn_pub_thread(
+            PubThreadConfig {
+                joint_layout_id: args.authoritative_layout,
+                ..PubThreadConfig::default()
+            },
+            clock.clone(),
+            move || make_publishers(&pub_topics),
+            snapshot_reader,
+            state_reader.clone(),
+            res.ctrl.clone(),
+            res.serial.then(|| res.diag.clone()),
+            stops.flag(WorkerKind::Pub),
+        )
+        .map_err(|error| startup_io_error(&error))?,
+    );
+    stops.mark_spawned(WorkerKind::Pub);
+    workers.io = Some(
+        spawn_io_thread(
+            IoThreadConfig::default(),
+            clock.clone(),
+            stops.flag(WorkerKind::Io),
+        )
+        .map_err(|error| startup_io_error(&error))?,
+    );
+    stops.mark_spawned(WorkerKind::Io);
+    assert!(stops.all_spawned());
+    let spawned_at = clock.now();
+    supervisor.mark_workers_spawned(spawned_at);
+    #[cfg(feature = "test-comm-fault-hook")]
+    robot_s0::comm_fault_hook::boot_pause("after_spawn");
+    wait_startup(args, supervisor, res, workers, spawned_at)?;
+    let ipc = workers.ipc.as_ref().expect("IPC 已启动");
     let event_tx = ipc.event_sender();
-    let last_hb_ns = ipc.last_hb_ns();
-
-    // ---- 3.5) spawn rr_server_thread (A1-3 (1/3c-2)) ----
-    //
-    // iceoryx2 RR server 在 spawn factory closure 内构造（service
-    // SingleThreaded → server `!Send`，必须 owner 线程内 create）。
-    // server_factory 内部独立 Node + leak 让 server 持有的 shm fd 跟 daemon
-    // 生命周期一致。
-    let rr_topic = t.rr_clear_estop.clone();
-    let rr_topic_for_factory = rr_topic.clone();
-    let rr_factory = move || {
-        let server_node = NodeBuilder::new().create::<IxService>().unwrap();
-        let server = rr_server::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
-            &server_node,
-            &rr_topic_for_factory,
+    send_auto_enable(args, res, ipc, &event_tx)?;
+    if workers.any_finished() {
+        tracing::error!("READY 前必需 worker 已退出");
+        return Err(1);
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    robot_s0::comm_fault_hook::boot_pause("before_ready");
+    send_ready(args.notify_mode)?;
+    supervisor.mark_ready();
+    let first_exit = res
+        .ctrl
+        .serial_boot_progress()
+        .first_exit
+        .map_or(0, |t| t.0);
+    eprintln!(
+        "boot_ready spawned_ns={} first_exit_ns={} ready_ns={}",
+        spawned_at.0,
+        first_exit,
+        clock.now().0
+    );
+    install_signal_handlers();
+    #[cfg(feature = "test-freeze-hook")]
+    let freeze_control = {
+        let (rt, serial_io) = workers
+            .executor
+            .as_ref()
+            .expect("执行器已启动")
+            .freeze_metrics();
+        robot_s0::freeze_control::spawn_freeze_control_thread(
+            robot_s0::freeze_control::FreezeControlContext {
+                robot_id: args.robot_id.clone(),
+                clock: clock.clone(),
+                ipc: ipc.metrics().clone(),
+                rt,
+                serial_io,
+                pub_thr: workers
+                    .publisher
+                    .as_ref()
+                    .expect("pub 已启动")
+                    .metrics()
+                    .clone(),
+                io: workers.io.as_ref().expect("io 已启动").metrics().clone(),
+            },
         )
-        .expect("rr_server create");
-        // server 持 server_node 内部 shm fd；leak Node 让其活到 daemon 退出。
-        Box::leak(Box::new(server_node));
-        server
+        .map_err(|error| startup_io_error(&error))?
     };
-    let rr_handle = match spawn_rr_server_thread(
-        RrServerThreadConfig {
-            topic: rr_topic.clone(),
-            poll_interval_ns: 500_000,
-            max_in_flight: 64,
+    let observers = vec![
+        {
+            let metrics = ipc.metrics().clone();
+            robot_health::systemd::LivenessObserver::from_fn("ipc_thread", move || {
+                metrics.ipc_tick_count.load(Ordering::Relaxed)
+            })
         },
-        Arc::clone(&clock),
-        rr_factory,
-        rr_request_tx,
-        rr_response_rx,
-    ) {
-        Ok(h) => h,
-        Err(e) => {
-            tracing::error!(?e, "fatal: spawn_rr_server_thread failed");
-            // ipc_thread 已起来 → 先 stop 再 return（其它线程都还没起）
-            ipc.request_stop();
-            let _ = ipc.join();
-            return Err(1);
-        }
-    };
-    tracing::info!(
-        topic = %rr_topic,
-        "rr_server_thread started (ClearEStop RR control plane; A1-3 (1/3c-2))"
-    );
-
-    // ---- 3.6) spawn set_enabled_rr_server (v0.5 候选 C，D5) ----
-    //
-    // 第 2 个专用 rr_server（topic `/<robot_id>/control/set_enabled`），与
-    // ClearEStop rr_server 同 factory + leak Node 模式；**ClearEStop
-    // rr_server_thread 0 改**。spawn 失败 → 先 stop 已起的 clear_estop
-    // rr_server + ipc，再 return。
-    let se_topic = t.rr_set_enabled.clone();
-    let se_topic_for_factory = se_topic.clone();
-    let se_factory = move || {
-        let server_node = NodeBuilder::new().create::<IxService>().unwrap();
-        let server = rr_server::<markers::SetEnabledRequest, markers::SetEnabledResponse>(
-            &server_node,
-            &se_topic_for_factory,
-        )
-        .expect("set_enabled rr_server create");
-        Box::leak(Box::new(server_node));
-        server
-    };
-    let se_rr_handle = match spawn_set_enabled_rr_server_thread(
-        RrServerThreadConfig {
-            topic: se_topic.clone(),
-            poll_interval_ns: 500_000,
-            max_in_flight: 64,
+        workers
+            .executor
+            .as_ref()
+            .expect("执行器已启动")
+            .make_tick_observer(res.ctrl.clone()),
+        {
+            let metrics = workers
+                .publisher
+                .as_ref()
+                .expect("pub 已启动")
+                .metrics()
+                .clone();
+            robot_health::systemd::LivenessObserver::from_fn("pub_thread", move || {
+                metrics.tick_count.load(Ordering::Relaxed)
+            })
         },
-        Arc::clone(&clock),
-        se_factory,
-        se_request_tx,
-        se_response_rx,
-    ) {
-        Ok(h) => h,
-        Err(e) => {
-            tracing::error!(?e, "fatal: spawn_set_enabled_rr_server_thread failed");
-            rr_handle.request_stop();
-            let _ = rr_handle.join();
-            ipc.request_stop();
-            let _ = ipc.join();
-            return Err(1);
-        }
-    };
-    tracing::info!(
-        topic = %se_topic,
-        "set_enabled_rr_server started (SetEnabled RR control plane; v0.5 候选 C)"
-    );
-
-    // ---- 4) spawn watchdog ----
-    let wd_stop = Arc::new(AtomicBool::new(false));
-    let wd_handle = spawn_watchdog(
-        WatchdogConfig {
-            heartbeat_timeout_ns: args.heartbeat_timeout_ns,
-            poll_interval_ns: 10_000_000, // 10 ms
+        {
+            let metrics = workers.io.as_ref().expect("io 已启动").metrics().clone();
+            robot_health::systemd::LivenessObserver::from_fn("io_thread", move || {
+                metrics.tick_count.load(Ordering::Relaxed)
+            })
         },
-        Arc::clone(&clock),
-        last_hb_ns,
-        wd_tx,
-        Arc::clone(&wd_stop),
+    ];
+    let systemd_watchdog = robot_health::systemd::spawn_watchdog(
+        observers,
+        robot_health::systemd::WatchdogConfig::new("s0_systemd_wd"),
     );
-
-    // ---- 4.5) spawn system health monitor（task-31 B'a + B'b）----
-    // 每 [monitor.interval_secs]（默认 5 s）采样系统级 CPU / mem / load +
-    // per-process（`interested_processes` + 全系统 top N by CPU），
-    // tracing::info! 结构化输出。非 RT，普通优先级线程，无 RT 影响。
-    // handle 不显式 stop —— main 作用域内 local，Drop 自动 join（含 early return）。
     let monitor_cfg = args
         .loaded_config
         .as_ref()
-        .map(|cfg| {
-            let m = &cfg.parsed.monitor;
-            robot_health::MonitorConfig {
-                interval: std::time::Duration::from_secs(m.interval_secs),
-                interested_processes: m.interested_processes.clone(),
-                top_n: m.top_n,
-            }
+        .map(|cfg| robot_health::MonitorConfig {
+            interval: Duration::from_secs(cfg.parsed.monitor.interval_secs),
+            interested_processes: cfg.parsed.monitor.interested_processes.clone(),
+            top_n: cfg.parsed.monitor.top_n,
         })
         .unwrap_or_default();
     let _health_handle = robot_health::spawn_monitor(monitor_cfg);
-
-    // ---- 6) spawn executor (rt_thread for HardRT, serial_io_thread for SerialRT) ----
-    //
-    // adapter / rt_ctrl / executor_ctrl 已经在 ---- 3) 创建好；这里按 SpawnPlan
-    // 分发：
-    //
-    // - HardRT：spawn_rt_thread（SCHED_FIFO 70 + mlockall）。`HardRtCtrlInner`
-    //   默认 policy = Disabled / safety_state = TorqueOffConfirmed —— 由
-    //   state_machine `Safe → Ready → Enabled.Active` 走两阶段 transition 通过
-    //   client.request_normal(Enable(true)) 走 ctrl 路径，rt_thread 主循环 Step
-    //   2 真上扭后 ipc_tick Pure/Effectful 分支才 set_policy(ActiveForward)。
-    // - SerialRT：spawn_serial_io_thread（**缺省**普通优先级；`--serial-fifo`
-    //   opt-in 后进 SCHED_FIFO + mlockall、`--cpu` 绑核——2026-09-01 调度硬化，
-    //   串口 RTT 决定 tick 周期 5-20 ms）。同样走两阶段 transition；
-    //   serial_io_thread 在 Step 3 consume normal action 时调
-    //   `adapter.enable(true)`，emergency 后下 tick `read_torque_enable_mask`
-    //   把 OutputSafetyState 推进到 TorqueOffConfirmed / AdapterUncertain /
-    //   StopFailed。
-    let executor: ExecutorHandle = match plan {
-        SpawnPlan::HardRt(adapter) => {
-            let rt_cfg = RtThreadConfig {
-                tick_period_ns: args.tick_period_ns,
-                sched_fifo_priority: 70,
-                cpu_affinity: args.cpu_affinity,
-                strict_rt: args.strict_rt,
-            };
-            match spawn_rt_thread(
-                rt_cfg,
-                Arc::clone(&clock),
-                adapter,
-                cmd_reader,
-                rt_snap_pub,
-                Arc::clone(&rt_ctrl),
-            ) {
-                Ok(h) => ExecutorHandle::HardRt(h),
-                Err(e) => {
-                    tracing::error!(?e, "fatal: spawn_rt_thread failed");
-                    graceful_stop(
-                        ipc,
-                        &wd_stop,
-                        wd_handle,
-                        None,
-                        None,
-                        None,
-                        Some(rr_handle),
-                        Some(se_rr_handle),
-                    );
-                    return Err(1);
-                }
-            }
+    let start = clock.now().0;
+    let mut last_report = start;
+    let mut runtime_result = Ok(());
+    loop {
+        if ipc.is_finished() {
+            tracing::error!(reason = "Disconnected", "READY 后 IPC worker 已退出");
+            runtime_result = Err(1);
+            break;
         }
-        SpawnPlan::SerialRt(adapter) => {
-            let serial_cfg = SerialIoThreadConfig {
-                // opt-in 调度硬化（2026-09-01；缺省三 None/false = 行为不变）。
-                sched_fifo_priority: args.serial_fifo_priority,
-                cpu_affinity: args.cpu_affinity,
-                strict_rt: args.strict_rt,
-                ..SerialIoThreadConfig::default()
-            };
-            match spawn_serial_io_thread(
-                serial_cfg,
-                Arc::clone(&clock),
-                adapter,
-                cmd_reader,
-                rt_snap_pub,
-                Arc::clone(&rt_ctrl),
-            ) {
-                Ok(h) => ExecutorHandle::SerialRt(h),
-                Err(e) => {
-                    tracing::error!(?e, "fatal: spawn_serial_io_thread failed");
-                    graceful_stop(
-                        ipc,
-                        &wd_stop,
-                        wd_handle,
-                        None,
-                        None,
-                        None,
-                        Some(rr_handle),
-                        Some(se_rr_handle),
-                    );
-                    return Err(1);
-                }
-            }
+        let now = clock.now().0;
+        if SHUTDOWN.load(Ordering::Acquire)
+            || args.smoke_duration.is_some_and(|duration| {
+                u128::from(now.saturating_sub(start)) >= duration.as_nanos()
+            })
+            || state_reader.load().state == S0State::Stopping
+        {
+            break;
         }
-    };
-
-    // ---- 6) spawn pub_thread ----
-    let pub_state_topic = t.pub_state.clone();
-    let pub_hb_topic = t.pub_heartbeat.clone();
-    let pub_factory = move || {
-        let node = NodeBuilder::new().create::<IxService>().unwrap();
-        let joint_state =
-            open_pub::<markers::JointState>(&node, &pub_state_topic, TopicClass::S0State)
-                .expect("open state publisher");
-        let heartbeat = open_pub::<markers::Heartbeat>(&node, &pub_hb_topic, TopicClass::Heartbeat)
-            .expect("open heartbeat publisher");
-        Box::leak(Box::new(node));
-        IpcPublishers {
-            joint_state,
-            heartbeat,
+        if now.saturating_sub(last_report) >= 2_000_000_000 {
+            tracing::info!(state = ?state_reader.load().state, "heartbeat");
+            last_report = now;
         }
-    };
-
-    let pub_cfg = PubThreadConfig {
-        state_hz: 50.0,
-        heartbeat_hz: 50.0,
-        s0_source_id: 1,
-        // v0.5 候选 E 段(3)：撤占位——config 派生单源（CLI-only 时该
-        // resolved 值本身即占位）。
-        joint_layout_id: args.authoritative_layout,
-        poll_interval_ns: 1_000_000,
-    };
-    let pub_handle = match spawn_pub_thread(
-        pub_cfg,
-        Arc::clone(&clock),
-        pub_factory,
-        rt_snap_rdr,
-        state_rdr.clone(),
-        Arc::clone(&rt_ctrl),
-    ) {
-        Ok(h) => h,
-        Err(e) => {
-            tracing::error!(?e, "fatal: spawn_pub_thread failed");
-            graceful_stop(
-                ipc,
-                &wd_stop,
-                wd_handle,
-                Some(executor),
-                None,
-                None,
-                Some(rr_handle),
-                Some(se_rr_handle),
-            );
-            return Err(1);
-        }
-    };
-
-    // ---- 7) spawn io_thread（占位）----
-    let io_handle = match spawn_io_thread(IoThreadConfig::default(), Arc::clone(&clock)) {
-        Ok(h) => h,
-        Err(e) => {
-            tracing::error!(?e, "fatal: spawn_io_thread failed");
-            graceful_stop(
-                ipc,
-                &wd_stop,
-                wd_handle,
-                Some(executor),
-                Some(pub_handle),
-                None,
-                Some(rr_handle),
-                Some(se_rr_handle),
-            );
-            return Err(1);
-        }
-    };
-
-    // ---- 7b) **test-only** freeze control thread（A2-2，cfg-gated；生产
-    //          release 不编译）：订阅 `/{robot_id}/test/freeze`，把测试驱动 publish
-    //          的 freeze 命令路由到对应 worker 的 `freeze_until_ns` 原子。
-    //
-    // **不进 watchdog observer**（reviewer 拍板硬边界："control thread 不进
-    // watchdog observer；它只是测试注入器"），所以 spawn 完不挂 LivenessObserver。
-    // 失败仅 log + 返 None，**不**杀 daemon（test-only 路径不应影响生产）。
-    //
-    // 本 bin 只 gate `feature = "test-freeze-hook"`（**不**带 `test`）：bin 的
-    // doctest / unittest target 在 lib 没启该 feature 时，`robot_s0::freeze_control`
-    // 不存在 → 用 `cfg(test)` 会编译失败。要测 daemon binary + freeze_control，
-    // 显式 `--features test-freeze-hook`（lib 的单测仍可在 cfg(test) 下用 module，
-    // 不受本 bin 行为影响）。
+        thread::sleep(Duration::from_millis(50));
+    }
+    let _ = event_tx.control(ControlEvent::Stop);
+    robot_health::systemd::notify_stopping();
+    if let Some(handle) = systemd_watchdog {
+        handle.stop();
+    }
     #[cfg(feature = "test-freeze-hook")]
-    let freeze_control_handle: Option<robot_s0::freeze_control::FreezeControlHandle> = {
-        let (rt_m, serial_m) = executor.freeze_metrics();
-        let ctx = robot_s0::freeze_control::FreezeControlContext {
-            robot_id: args.robot_id.clone(),
-            clock: Arc::clone(&clock),
-            ipc: Arc::clone(ipc.metrics()),
-            rt: rt_m,
-            serial_io: serial_m,
-            pub_thr: Arc::clone(pub_handle.metrics()),
-            io: Arc::clone(io_handle.metrics()),
-        };
-        match robot_s0::freeze_control::spawn_freeze_control_thread(ctx) {
-            Ok(h) => {
-                tracing::info!("freeze_control thread spawned (test-freeze-hook feature)");
-                Some(h)
-            }
-            Err(e) => {
-                tracing::error!(
-                    ?e,
-                    "freeze_control thread spawn failed; freeze hook control inactive"
-                );
-                None
-            }
+    {
+        freeze_control.request_stop();
+        let _ = freeze_control.join();
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    {
+        hook_control.request_stop();
+        if hook_control.is_finished() {
+            let _ = hook_control.join();
         }
-    };
+    }
+    let latched = res.ctrl.safety_latched.load(Ordering::Acquire)
+        || state_reader.load().guards_summary.estop_latched;
+    save_estop_latch(&args.latch_path, latched).map_err(|error| startup_io_error(&error))?;
+    tracing::info!("s0_daemon: clean shutdown");
+    runtime_result
+}
 
-    // ---- 8) 注册 signal handlers ----
-    install_signal_handlers();
-
-    // ---- 8b) 自动 Event::Enable（Part 2 无 RPC，由 daemon 启动时替代 RPC 源）----
-    //
-    // state machine 的 SAFE → READY 转换需要 Event::Enable。v0.3 起由 RPC 网关
-    // 发；Part 2 简化：daemon 启动时立即发一次，配合 initial_guards 的 all-true
-    // 推进到 READY。之后 ipc_thread 收到第一个 heartbeat 会把 READY 推到
-    // ENABLED.Active。跳过 EStop latch 时 estop_latched=true → try_transition 拒绝
-    // 进 READY，state 留在 SAFE —— 期望行为。
-    // **v0.5 候选 C D6**：启动 auto-enable 绑定 config `auto_enable`（B6：从
-    // resolved hardware 段读，**缺省 true** 保既有无条件行为；CLI-only 无 config
-    // 也 = true）。`auto_enable=false` → 启动留 Safe，等 operator `SetEnabled(true)`。
+fn send_auto_enable(
+    args: &ResolvedArgs,
+    res: &ExecutionResources,
+    ipc: &IpcThreadHandle,
+    event_tx: &robot_s0::event_ingress::ExternalEvents,
+) -> Result<(), i32> {
+    use robot_s0::event_ingress::{AdmitError, ControlEvent};
     let auto_enable = args
         .loaded_config
         .as_ref()
         .and_then(|c| resolve_hardware_section(&c.parsed, &args.hardware_id))
-        .and_then(|hw| hw.auto_enable)
+        .and_then(|h| h.auto_enable)
         .unwrap_or(true);
-
-    if initial_estop_latched {
-        tracing::info!("estop_latched=true → not auto-sending Event::Enable");
-    } else if auto_enable {
-        let _ = event_tx.send(Event::Enable);
-    } else {
-        tracing::info!(
-            hardware_id = %args.hardware_id,
-            "auto_enable=false → not auto-sending Event::Enable; awaiting SetEnabled(true)"
-        );
+    if !auto_enable || res.latched || (res.serial && res.ctrl.serial_boot_progress().outcome != 1) {
+        return Ok(());
     }
-
-    // ---- 8c) systemd `Type=notify` 握手 + watchdog ping 线程 ----
-    //
-    // 所有线程都已 spawn + initial state 落盘后，告诉 systemd "READY"，让
-    // `Type=notify` unit 的 active 状态成立 + 解锁下游 unit 的 `After=` 链。
-    //
-    // `WATCHDOG_USEC` 由 systemd unit `WatchdogSec=` 注入；spawn 出独立非 RT
-    // 线程按 `usec / 2` 间隔 ping，daemon 卡死 / 死锁就让 systemd 按
-    // `Restart=on-failure` 自动拉起。**不在 systemd 下跑时**（NOTIFY_SOCKET /
-    // WATCHDOG_USEC 都未设置）这两条都 silent no-op，跟 runbook / crash_restart_smoke
-    // 等场景零差异。详 `crates/robot-health/src/systemd.rs`（v0.5 候选 E
-    // 段(8) 起单一实现；S0 传 thread_name = "s0_systemd_wd" 原值 = **调用面单源
-    // 迁移**，判停语义保持；**首次 enforce 节奏按 PX-21 修正**——cycle 0 grace
-    // 喂一次 + 即刻取 snapshot，cycle 1（一个 usec/2 后）起 enforce（原实现首个
-    // 间隔 = WATCHDOG_USEC 整、无 50% 余量；段(8) round 2 继承缺陷修正）。
-    robot_health::systemd::notify_ready();
-    // **liveness-gated watchdog**（reviewer round 4 阻断 1）：把 4 个 worker
-    // 的 `tick_count` 暴露给 watchdog 线程；任一停滞就**不**喂 systemd，
-    // WatchdogSec 超时让 systemd 真把 daemon 重启。详
-    // `robot_health::systemd::LivenessObserver`。
-    let observers = vec![
-        {
-            let m = Arc::clone(ipc.metrics());
-            robot_health::systemd::LivenessObserver::from_fn("ipc_thread", move || {
-                m.ipc_tick_count.load(Ordering::Relaxed)
-            })
-        },
-        executor.make_tick_observer(),
-        {
-            let m = Arc::clone(pub_handle.metrics());
-            robot_health::systemd::LivenessObserver::from_fn("pub_thread", move || {
-                m.tick_count.load(Ordering::Relaxed)
-            })
-        },
-        {
-            let m = Arc::clone(io_handle.metrics());
-            robot_health::systemd::LivenessObserver::from_fn("io_thread", move || {
-                m.tick_count.load(Ordering::Relaxed)
-            })
-        },
-    ];
-    let systemd_wd_handle = robot_health::systemd::spawn_watchdog(
-        observers,
-        robot_health::systemd::WatchdogConfig::new("s0_systemd_wd"),
-    );
-
-    // ---- 9) 主 loop：等 shutdown flag / smoke 超时 / state = STOPPING ----
-    let start = std::time::Instant::now();
-    let mut last_report = start;
-    loop {
-        if SHUTDOWN.load(Ordering::Acquire) {
-            tracing::info!("signal received → Event::Stop");
-            break;
+    // 测试仅让真正的 IPC 线程退出，发送与清理仍走原来的生产路径。
+    #[cfg(feature = "test-comm-fault-hook")]
+    if std::env::var("ROBOT_TEST_IPC_EXIT_BEFORE_AUTO_ENABLE").as_deref() == Ok("1") {
+        ipc.request_stop();
+        while !ipc.is_finished() {
+            thread::sleep(Duration::from_millis(1));
         }
-        if args.smoke_duration.is_some_and(|d| start.elapsed() >= d) {
-            tracing::info!("smoke duration elapsed → Event::Stop");
-            break;
-        }
-        let snap = state_rdr.load();
-        if matches!(snap.state, S0State::Stopping) {
-            tracing::info!("state machine entered STOPPING → exiting main loop");
-            break;
-        }
-        if last_report.elapsed() >= Duration::from_secs(2) {
-            tracing::info!(
-                state = ?snap.state,
-                "guards.estop" = snap.guards_summary.estop_latched,
-                "guards.hb_ok" = snap.guards_summary.heartbeat_ok,
-                t = ?start.elapsed(),
-                "heartbeat"
+    }
+    #[cfg(not(feature = "test-comm-fault-hook"))]
+    let _ = ipc;
+    match event_tx.control(ControlEvent::Enable) {
+        Ok(()) => Ok(()),
+        Err(AdmitError::Full) => {
+            tracing::warn!(
+                reason = "Full",
+                "auto-enable 队列已满，保留当前安全状态且不重试"
             );
-            last_report = std::time::Instant::now();
+            Ok(())
         }
-        std::thread::sleep(Duration::from_millis(50));
+        Err(AdmitError::Disconnected) => {
+            tracing::error!(reason = "Disconnected", "auto-enable 的 IPC 接收端已退出");
+            Err(1)
+        }
     }
+}
 
-    // ---- 10) 发 Event::Stop，让 state machine 进 STOPPING ----
-    let _ = event_tx.send(Event::Stop);
-
-    // ---- 10a) 通知 systemd 进入 graceful shutdown，停 watchdog ping ----
-    //
-    // 顺序很关键：先 STOPPING= 让 systemd 切到 deactivating（停 watchdog
-    // timeout），再 stop ping 线程。如果反过来，watchdog 线程已经停但 systemd
-    // 还按 `WatchdogSec` 计时，graceful 期间稍长一点就被 systemd 误杀。
-    robot_health::systemd::notify_stopping();
-    if let Some(h) = systemd_wd_handle {
-        h.stop();
+fn wait_startup(
+    args: &ResolvedArgs,
+    supervisor: &BootSupervisor,
+    res: &ExecutionResources,
+    workers: &WorkerHandles,
+    spawned_at: MonoRawNs,
+) -> Result<(), i32> {
+    if !res.serial {
+        return if workers.any_finished() {
+            Err(1)
+        } else {
+            Ok(())
+        };
     }
-
-    // ---- 10b) **test-only** stop freeze_control thread（A2-2，cfg-gated）。
-    //          跟 watchdog 平行 stop，不进 graceful_stop（保持 graceful_stop 签名
-    //          与生产 release 一致）。同上只 gate feature（不带 test）。
-    #[cfg(feature = "test-freeze-hook")]
-    if let Some(h) = freeze_control_handle {
-        h.request_stop();
-        let _ = h.join();
+    let absolute = supervisor
+        .started_at()
+        .0
+        .saturating_add(absolute_boot_budget(usize::from(args.joint_count)).0);
+    let physical = spawned_at
+        .0
+        .saturating_add(boot_budget(usize::from(args.joint_count)).0);
+    loop {
+        let progress = res.ctrl.serial_boot_progress();
+        if workers.any_finished() {
+            tracing::error!("启动期间必需 worker 已退出");
+            return Err(1);
+        }
+        if progress.outcome != 0 && progress.fault_acknowledged {
+            return Ok(());
+        }
+        let now = res.clock.now().0;
+        if now >= physical {
+            res.ctrl.expire_serial_boot();
+        }
+        let deadline = progress.first_exit.map_or(absolute, |exit| {
+            absolute.min(exit.0.saturating_add(STARTUP_ACK_BUDGET.0))
+        });
+        if now >= deadline {
+            tracing::error!(?progress, "启动物理/ACK 截止失败");
+            return Err(1);
+        }
+        thread::sleep(Duration::from_millis(5));
     }
+}
 
-    // ---- 11) graceful stop ----
-    graceful_stop(
-        ipc,
-        &wd_stop,
-        wd_handle,
-        Some(executor),
-        Some(pub_handle),
-        Some(io_handle),
-        Some(rr_handle),
-        Some(se_rr_handle),
-    );
-
-    // ---- 12) 保存 EStop latch ----
-    let final_state_snap = state_rdr.load();
-    let final_latched = final_state_snap.guards_summary.estop_latched;
-    if let Err(e) = save_estop_latch(&args.latch_path, final_latched) {
-        tracing::warn!(
-            latch_path = %args.latch_path.display(),
-            ?e,
-            "failed to save EStop latch"
-        );
-    } else {
-        tracing::info!(
-            latched = final_latched,
-            latch_path = %args.latch_path.display(),
-            "final estop_latched persisted"
-        );
+fn send_ready(mode: NotifyMode) -> Result<(), i32> {
+    use robot_health::systemd::ReadyOutcome;
+    let required = match mode {
+        NotifyMode::Required => true,
+        NotifyMode::Standalone => false,
+        NotifyMode::Auto => std::env::var_os("INVOCATION_ID").is_some(),
+    };
+    match robot_health::systemd::try_notify_ready() {
+        ReadyOutcome::Sent => {
+            tracing::info!("READY 已送达");
+            Ok(())
+        }
+        ReadyOutcome::NotConfigured if !required => {
+            tracing::info!("standalone 无 READY socket");
+            Ok(())
+        }
+        ReadyOutcome::NotConfigured => {
+            tracing::error!("required 缺少 READY socket");
+            Err(1)
+        }
+        ReadyOutcome::Err(error) => {
+            tracing::error!(?error, "READY 发送失败");
+            Err(1)
+        }
     }
+}
 
-    tracing::info!("s0_daemon: clean shutdown");
-    Ok(())
+fn make_subscribers(topics: &(String, String, String)) -> IpcSubscribers {
+    let node = NodeBuilder::new().create::<IxService>().expect("IPC node");
+    let command = open_sub::<markers::JointCommand>(&node, &topics.0, TopicClass::S0Command)
+        .expect("command subscriber");
+    let heartbeat = open_sub::<markers::Heartbeat>(&node, &topics.1, TopicClass::Heartbeat)
+        .expect("heartbeat subscriber");
+    let estop = open_sub::<markers::EStopEvent>(&node, &topics.2, TopicClass::SafetyEvent)
+        .expect("estop subscriber");
+    Box::leak(Box::new(node));
+    IpcSubscribers {
+        command,
+        heartbeat,
+        estop,
+    }
+}
+
+fn make_publishers(topics: &(String, String)) -> IpcPublishers {
+    let node = NodeBuilder::new().create::<IxService>().expect("pub node");
+    let joint_state = open_pub::<markers::JointState>(&node, &topics.0, TopicClass::S0State)
+        .expect("state publisher");
+    let heartbeat = open_pub::<markers::Heartbeat>(&node, &topics.1, TopicClass::Heartbeat)
+        .expect("heartbeat publisher");
+    Box::leak(Box::new(node));
+    IpcPublishers {
+        joint_state,
+        heartbeat,
+    }
 }
 
 /// 启动期确保 latch 父目录存在；失败直接拒启动，避免 `EStop` 后落盘失败却
@@ -1212,14 +1374,6 @@ enum BuiltAdapter {
     SoftRt(Box<dyn ManipulatorAdapter + Send>),
 }
 
-/// `BuiltAdapter` `SoftRT` 早退 + 标 `RtClass` 后的"已分发"形态。仅
-/// `HardRt` / `SerialRt` 两路对应 `spawn_rt_thread` / `spawn_serial_io_thread`。
-#[allow(clippy::enum_variant_names)] // 同 BuiltAdapter，对齐 RtClass 命名
-enum SpawnPlan {
-    HardRt(Box<dyn HardRtAdapter + Send>),
-    SerialRt(Box<dyn SerialRtAdapter + Send>),
-}
-
 /// 按 resolved `hardware_id` match `--config` 的 `[[hardware]].id` 段（无
 /// `--config` 时 fallback `mock_hard_rt`）走 `robot_core::factory::find_factory`
 /// 拿 factory + build。**v0.5 候选 C B6**：与 `auto_enable` 同段（`resolve_
@@ -1230,7 +1384,10 @@ enum SpawnPlan {
 /// [`BuiltAdapter`] 变体内。
 ///
 /// 错误返回 i32 退出码（与 `run` 顶层一致），调用方据此 `graceful_stop`。
-fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
+fn build_adapter(
+    args: &ResolvedArgs,
+    services: Option<&AdapterBuildServices>,
+) -> Result<BuiltAdapter, i32> {
     // 1) 决定 adapter_kind + joint_names + address + motor_ids + calibration_paths 来源
     let (adapter_kind, joint_names, address, motor_ids, calibration_paths): (
         String,
@@ -1309,7 +1466,7 @@ fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
 
     // 3) build adapter
     let ctx = AdapterBuildContext {
-        services: None,
+        services,
         instance_name: &args.hardware_id,
         adapter_kind: &adapter_kind,
         joint_names: &joint_names,
@@ -1355,13 +1512,12 @@ enum ExecutorHandle {
 }
 
 impl ExecutorHandle {
-    fn request_stop(&self) {
+    fn is_finished(&self) -> bool {
         match self {
-            Self::HardRt(h) => h.request_stop(),
-            Self::SerialRt(h) => h.request_stop(),
+            Self::HardRt(h) => h.is_finished(),
+            Self::SerialRt(h) => h.is_finished(),
         }
     }
-
     fn join(self) -> thread::Result<()> {
         match self {
             Self::HardRt(h) => h.join(),
@@ -1372,7 +1528,10 @@ impl ExecutorHandle {
     /// systemd watchdog 的 liveness observer：执行 thread `tick_count` 取值。
     /// 在 `spawn_watchdog_thread` 闭包里调用，**不能** RT-thread-aware 加锁
     /// 或 alloc，只用 `AtomicU64::load(Relaxed)`。
-    fn make_tick_observer(&self) -> robot_health::systemd::LivenessObserver {
+    fn make_tick_observer(
+        &self,
+        ctrl: Arc<HardRtCtrlInner>,
+    ) -> robot_health::systemd::LivenessObserver {
         match self {
             Self::HardRt(h) => {
                 let m = Arc::clone(h.metrics());
@@ -1380,10 +1539,9 @@ impl ExecutorHandle {
                     m.tick_count.load(Ordering::Relaxed)
                 })
             }
-            Self::SerialRt(h) => {
-                let m = Arc::clone(h.metrics());
+            Self::SerialRt(_) => {
                 robot_health::systemd::LivenessObserver::from_fn("serial_io_thread", move || {
-                    m.tick_count.load(Ordering::Relaxed)
+                    ctrl.serial_liveness()
                 })
             }
         }
@@ -1412,7 +1570,7 @@ impl ExecutorHandle {
 #[allow(clippy::too_many_arguments)]
 fn graceful_stop(
     ipc: IpcThreadHandle,
-    wd_stop: &Arc<AtomicBool>,
+    stops: &StopFlags,
     wd_handle: std::thread::JoinHandle<()>,
     executor: Option<ExecutorHandle>,
     pub_handle: Option<robot_s0::pub_thread::PubThreadHandle>,
@@ -1435,31 +1593,31 @@ fn graceful_stop(
     //              crossbeam disconnect 语义自然丢弃）
     //   → watchdog 最后停
     if let Some(h) = rr_handle {
-        h.request_stop();
+        stops.request_worker_stop(WorkerKind::ClearEStopRr);
         let _ = h.join();
     }
     // **v0.5 候选 C**：第 2 个 rr_server（set_enabled）同 rr_server 阶段先停 —
     // 出循环后 `abort_pending_on_shutdown` 给 in-flight SetEnabled best-effort 回
     // `RpcStatus::Aborted` + domain `PreemptedByShutdown`。
     if let Some(h) = se_rr_handle {
-        h.request_stop();
+        stops.request_worker_stop(WorkerKind::SetEnabledRr);
         let _ = h.join();
     }
     if let Some(h) = pub_handle {
-        h.request_stop();
+        stops.request_worker_stop(WorkerKind::Pub);
         let _ = h.join();
     }
     if let Some(h) = io_handle {
-        h.request_stop();
+        stops.request_worker_stop(WorkerKind::Io);
         let _ = h.join();
     }
     if let Some(h) = executor {
-        h.request_stop();
+        stops.request_worker_stop(WorkerKind::Executor);
         let _ = h.join();
     }
-    ipc.request_stop();
+    stops.request_worker_stop(WorkerKind::Ipc);
     let _ = ipc.join();
-    wd_stop.store(true, Ordering::Release);
+    stops.request_worker_stop(WorkerKind::Watchdog);
     let _ = wd_handle.join();
 }
 
@@ -1486,6 +1644,10 @@ mod tests {
 
     fn base_args() -> Args {
         Args {
+            marker_command: None,
+            rx_trust_dir_cli: None,
+            trust_policy: None,
+            notify_mode: NotifyMode::Auto,
             robot_id_cli: None,
             hardware_id_cli: None,
             latch_path_cli: None,

@@ -2,7 +2,30 @@
 
 ## 本轮状态（2026-09-08，优先于下方历史交接）
 
+- **C4 Approved**：生产与独立验收已收口，随本阶段提交。最终 workspace 1461、
+  RPC 45、deploy unit 16、startup 8、S0 lib 370（含 IPC 26）、marker 9、Serial 5
+  均通过；fresh fmt、两次各 touch 218 源文件的双 Clippy、build/timings 零警告。
+  当前 PLAN 1049 行，SHA256 `c88e8a1409f13ba200e1fd6652ffad6130c3ded7311c82aa3f5012faf98a60f8`。
+  `.verify/post_e_comm_fault_hardening/C4.json` 保存门与红绿日志哈希。
+  下一阶段 C5：未注册的 comm_fault 工具与 ELF 脚本不在 C4 提交范围。
+
 - 用户授权：对齐本地文档，固定专职开发 / 独立评审两个子 agent，持续推进。
+- 用户追加要求：每个阶段独立评审通过且必要质量门通过后立即 commit，再推进下一阶段；
+  C1/C2/C3 已分包提交，C4 过门即由 root 提交，C5 工具与全套验证按阶段继续。
+- 用户追加现场地址 `loosqk@10.0.1.40`：已只读确认 Orin Nano、远端工作区干净、
+  `master` 停在 `fed7549`、两个串口可见、机器人服务未运行。未同步部署或操作电机。
+  [Archify 架构图](../../docs/architecture/post_e_runtime.html) 已生成并通过 9 项
+  校验、四档浏览器布局和实际浅/深色图像检查，图为 C4 验收中的时间快照。
+- C4 当前 S0 lib 370、daemon 5、startup 6、marker 9、既有 serial E2E 5 均 PASS；
+  IPC 独立 26 项已包含在 S0 lib。评审 S-43 发现 auto-enable Disconnected 与
+  READY 后 IPC 结束未退出，正在修复；root 新增两个进程反例，总 startup 8 组待跑。
+  健康 preflight_finished 与带 gen 的 first_exit 已分离，不能借零页或虚假时间过门。
+- S-43 已经 8/8 真实启动验收与模块 Clippy 验证关闭；第一次完整全局门
+  fmt / 两次强制 touch 218 个源文件后默认与全 feature Clippy / workspace lib-bins
+  1461 项 / build-timings 全过。追加 RPC 回归的首红为旧 started 日志被总装删除，
+  11 个 workflow 均在已启动 S0 上等待超时；已恢复四类真实阶段日志并再次冻结。
+  双臂 fixture 新增各 robot 独立 trust-dir；deploy_units 同步 86/87 和 required
+  notify。正在重跑旧 RPC 五组及 unit integration，再跑全局门后由 reviewer 收口。
 - Spec 的 2026-09-05 round 21 批准保持有效；独立 reviewer 已于 2026-09-08 明确
   **Plan Approved**。developer 按 C1–C5 分包实施，主 agent 负责整合、文档与检查。
   首次批准文件为 [正式 Plan](post_e_comm_fault_hardening.PLAN.md) 的 `ea9b63a` 版本，916 行，SHA256
@@ -27,6 +50,20 @@
   误映射结果、同 tick 多发 Safety、liveness 超期尾部自增、bound 启动超时
   完成记录缺失；失败日志与修复后结果分开保留。最终 fmt / 默认与全 feature clippy / build 均零警告，workspace lib / bins 1428 PASS；
   daemon 仍未切换新循环，C4 总装、C5 全套进程验收尚未完成。
+- C3 已提交 `beebfa0`，C4 开发中。marker 9 组独立验收已过（含 authorize
+  精确掉电 pair），IPC 首批 20 组独立验收通过；完整 S0 364 库测试与目标 Clippy
+  已过。后续新增发布接缝 / lane 顺序 / 源 deadline 等反例仍待下轮执行。
+  S-41 新 RR admission→dequeue 迁移保护已按 reviewer 窄边界 Reverse Sync，
+  待最终复核与实现测试；不得泛称取消所有急停前上游请求。启动时间观测拟用
+  test-only 共享页与 ELF 初始化边界包络，未将 parent elapsed 冒充 supervisor 时间。
+- C4 S-42 已获 reviewer 方案 ACK：timeout 预提交与 mailbox 提交同步清两 guard；
+  ready 推导先 Acquire 读 abort 再 inhibit，避免旧健康缓存绕过 ClearError 守门。
+  Spec / CHANGELOG / AC-11(ab) 已同步；开发与独立 runtime 验收进行中。
+- 正常错误已改为先登记 Fault 再发布完成，取消只终结原 RR owner；独立评审静态 ACK，
+  接缝反例正在执行。七 worker / daemon 总装及 POD 故障注入仍开发中，不能标 C4 完成。
+- root 启动 harness 已改为单源 ObservationPage：fired-main 而非父进程 elapsed；
+  preinit-main 的初始化包络独立判据。ELF 核验脚本解析动态表/重定位/符号，当前
+  debug 链接产物含1个 preinit 与6个 init 项；最终 debug/release 产物仍需重新核验。
 - 旧“不得实施 / 不 commit”的授权前提只描述 9 月 5 日；本轮按用户持续推进授权
   与内部质量门执行，提交前仍必须 fmt + clippy 零警告。不因本地开发执行真机动作。
 - 文档所有者：主 agent（Spec / 本交接 / 导航）；开发所有者：developer（正式计划 /

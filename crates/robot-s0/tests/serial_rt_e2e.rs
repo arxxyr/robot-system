@@ -40,7 +40,7 @@
 #![allow(clippy::doc_markdown)]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::unbounded;
@@ -48,9 +48,9 @@ use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::adapter::{JointCommandBuf, RtClass, RtSnapshot};
 use robot_core::executor_ctrl::{
-    ExecutorCtrlClient, OutputPolicy, OutputSafetyState, emergency_codes,
+    ExecutorCtrlClient, OutputPolicy, OutputSafetyState, SerialEmergencyCtrl,
 };
-use robot_core::factory::{AdapterBuildContext, find_factory};
+use robot_core::factory::{AdapterBuildContext, AdapterBuildServices, find_factory};
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::build_helpers::{build_estop_event, build_heartbeat};
 use robot_msg::markers;
@@ -99,8 +99,9 @@ fn fresh_topics() -> Topics {
 
 fn healthy_guards() -> Guards {
     Guards {
+        rt_serial: true,
         estop_latched: false,
-        adapter_connected: true,
+        adapter_connected: false,
         calibration_loaded: true,
         joint_state_valid: true,
         power_ok: true,
@@ -108,7 +109,7 @@ fn healthy_guards() -> Guards {
         cmd_deadline_valid: true,
         limits_valid: true,
         hw_enable_ok: true,
-        adapter_fault_cleared: true,
+        adapter_fault_cleared: false,
         command_mode: robot_core::adapter::ControlMode::Position,
         on_timeout_hint: robot_s0::state_machine::EnabledSub::CtrlLostHold,
     }
@@ -157,6 +158,20 @@ impl Harness {
 #[allow(clippy::too_many_lines)] // E2E harness 拼装 5 个线程 + iceoryx2 publishers
 fn spawn_harness(factory_name: &str) -> Harness {
     let topics = fresh_topics();
+    let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+    let rt_ctrl = Arc::new(HardRtCtrlInner::new_serial());
+    let probe = Arc::new(robot_s0::serial_preempt::SerialPreemptProbe::new(
+        clock.clone(),
+        rt_ctrl.clone(),
+    ));
+    let diag = Arc::new(robot_s0::diag::SerialDiagRing::new());
+    let services = AdapterBuildServices {
+        clock: clock.clone(),
+        preempt: Some(probe.clone()),
+        diag: Some(diag.clone()),
+        call_deadline: robot_core::time::DurationNs(50_000_000),
+    };
+    let boot = Arc::new(robot_s0::boot_supervisor::BootShared::default());
 
     // ── 1) 用 inventory factory 走 build_serial_rt ──
     //
@@ -165,7 +180,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
     let factory = find_factory(factory_name).expect("factory not registered");
     let joint_names = ["j0".into(), "j1".into(), "j2".into()];
     let ctx = AdapterBuildContext {
-        services: None,
+        services: Some(&services),
         instance_name: "test_arm",
         adapter_kind: factory_name,
         joint_names: &joint_names,
@@ -186,7 +201,6 @@ fn spawn_harness(factory_name: &str) -> Harness {
     );
 
     // ── 2) 共享 channel / atomic / seqlock / slot ──
-    let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
     let (cmd_writer, cmd_reader) =
         LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
     let (rt_snap_pub, rt_snap_rdr) = RtSnapshotPublisher::<RtSnapshot>::new(RtSnapshot::default());
@@ -194,7 +208,6 @@ fn spawn_harness(factory_name: &str) -> Harness {
         RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
     let (_wd_tx, wd_rx) = unbounded::<Event>();
 
-    let rt_ctrl = Arc::new(HardRtCtrlInner::new());
     let executor_ctrl: Arc<dyn ExecutorCtrlClient> =
         Arc::new(HardRtCtrlClient::new(Arc::clone(&rt_ctrl)));
 
@@ -273,11 +286,11 @@ fn spawn_harness(factory_name: &str) -> Harness {
         None,
         // SetEnabled RR control plane（v0.5 候选 C）：本 harness 不接。
         None,
+        Some(rt_ctrl.clone()),
+        Some(Arc::new(HardRtCtrlClient::new(rt_ctrl.clone())) as Arc<dyn SerialEmergencyCtrl>),
+        Arc::new(AtomicBool::new(false)),
     )
     .expect("spawn_ipc_thread");
-
-    // auto Event::Enable（s0_daemon 同款逻辑：daemon 启动期发一次让 SAFE→READY）
-    let _ = ipc.event_sender().send(Event::Enable);
 
     // ── 5) spawn serial_io_thread（必须把 Box<dyn SerialRtAdapter + Send> 直接交进去）──
     let serial_cfg = SerialIoThreadConfig::default();
@@ -288,6 +301,11 @@ fn spawn_harness(factory_name: &str) -> Harness {
         cmd_reader,
         rt_snap_pub,
         Arc::clone(&rt_ctrl),
+        probe,
+        diag.clone(),
+        true,
+        boot.clone(),
+        Arc::new(AtomicBool::new(false)),
     )
     .expect("spawn_serial_io_thread");
 
@@ -325,8 +343,20 @@ fn spawn_harness(factory_name: &str) -> Harness {
         rt_snap_rdr,
         state_rdr.clone(),
         Arc::clone(&rt_ctrl),
+        Some(diag),
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )
     .expect("spawn_pub_thread");
+
+    boot.spawned_at_ns.store(clock.now().0, Ordering::Relaxed);
+    boot.spawned_reached.store(true, Ordering::Release);
+    assert!(wait_until(Duration::from_secs(2), || rt_ctrl
+        .serial_boot_progress()
+        .outcome
+        == 1));
+    let _ = ipc
+        .event_sender()
+        .control(robot_s0::event_ingress::ControlEvent::Enable);
 
     Harness {
         ipc,
@@ -477,7 +507,7 @@ fn test_heartbeat_drives_enable_via_serial_ack() {
         "Enable ack OK 后 policy 必须 ActiveForward；实际 {policy:?}"
     );
     // safety_state：rt_thread mock 反映 enabled=true → TorqueOn
-    let safety = OutputSafetyState::from_u8(h.rt_ctrl.safety_state.load(Ordering::Acquire));
+    let safety = h.rt_ctrl.safety_state();
     assert!(
         matches!(
             safety,
@@ -533,19 +563,25 @@ fn test_estop_topic_preempts_and_safety_state_reflects_serial_confirm() {
     // 返 [false; n] → safety_state = TorqueOffConfirmed。
     assert!(
         wait_until(Duration::from_secs(2), || matches!(
-            OutputSafetyState::from_u8(h.rt_ctrl.safety_state.load(Ordering::Acquire)),
+            h.rt_ctrl.safety_state(),
             OutputSafetyState::TorqueOffConfirmed
         )),
         "EStop 后 safety_state 必须由 SerialRT confirm 推进到 TorqueOffConfirmed；\
          实际 {:?}",
-        OutputSafetyState::from_u8(h.rt_ctrl.safety_state.load(Ordering::Acquire))
+        h.rt_ctrl.safety_state()
     );
 
-    // emergency_action 已被 rt 端 swap 走，此时应回到 NONE
-    assert_eq!(
-        h.rt_ctrl.emergency_action.load(Ordering::Acquire),
-        emergency_codes::NONE,
-        "rt 端应已消费 emergency_action 回归 NONE"
+    assert!(
+        h.serial
+            .metrics()
+            .emergency_safety_stop_count
+            .load(Ordering::Relaxed)
+            >= 2,
+        "启动及急停均必须执行真实 Safety"
+    );
+    assert!(
+        h.serial.metrics().confirm_off_count.load(Ordering::Relaxed) >= 2,
+        "急停必须再次确认，不能使用启动已有状态"
     );
 
     // policy = StopTorque（client.safety_stop 同步 + emergency 兜底）
@@ -597,7 +633,7 @@ fn test_clear_estop_then_enable_again_no_safety_latch_reject() {
     // / RPC 调 ClearEStop 时本就该看到 wire S0SafetyState=TorqueOffConfirmed。
     assert!(
         wait_until(Duration::from_secs(2), || matches!(
-            OutputSafetyState::from_u8(h.rt_ctrl.safety_state.load(Ordering::Acquire)),
+            h.rt_ctrl.safety_state(),
             OutputSafetyState::TorqueOffConfirmed
         )),
         "前置：safety_state 未升 TorqueOffConfirmed"
@@ -605,7 +641,10 @@ fn test_clear_estop_then_enable_again_no_safety_latch_reject() {
 
     // 3) ClearEStop → ipc_tick Pure 分支（safety_state 守门通过）调
     //    clear_safety_latch
-    let _ = h.ipc.event_sender().send(Event::ClearEStop);
+    let _ = h
+        .ipc
+        .event_sender()
+        .control(robot_s0::event_ingress::ControlEvent::ClearEStop);
     assert!(
         wait_until(Duration::from_secs(2), || !h
             .rt_ctrl
@@ -617,7 +656,10 @@ fn test_clear_estop_then_enable_again_no_safety_latch_reject() {
     // 4) 重新 Enable + heartbeat → state 必须能再回 Enabled.Active；
     //    若 client / rt 二次 latch check 还把 Enable(true) 拒，
     //    ipc_tick A3 会升 Fault(AdapterErr)。
-    let _ = h.ipc.event_sender().send(Event::Enable);
+    let _ = h
+        .ipc
+        .event_sender()
+        .control(robot_s0::event_ingress::ControlEvent::Enable);
     assert!(
         wait_until(Duration::from_secs(2), || matches!(
             h.state_reader.load().state,
@@ -658,7 +700,7 @@ fn test_same_tick_enable_then_clear_estop_via_channel_does_not_misenable() {
     // 1) 先把 state 推到 Safe + estop_latched=true
     //    （注入 Event::EStop 走 ipc_tick emergency drain；
     //    ipc_tick 内部 apply_event_guard_side_effect 把 estop_latched 置 true）
-    let _ = h.ipc.event_sender().send(Event::EStop);
+    h.ipc.event_sender().estop();
     assert!(
         wait_until(Duration::from_secs(2), || h.state_reader.load().state
             == S0State::Safe
@@ -669,7 +711,7 @@ fn test_same_tick_enable_then_clear_estop_via_channel_does_not_misenable() {
     // 等 SerialRT confirm 完成（同 #4 调用规范）
     assert!(
         wait_until(Duration::from_secs(2), || matches!(
-            OutputSafetyState::from_u8(h.rt_ctrl.safety_state.load(Ordering::Acquire)),
+            h.rt_ctrl.safety_state(),
             OutputSafetyState::TorqueOffConfirmed
         )),
         "前置：safety_state 未升 TorqueOffConfirmed"
@@ -683,8 +725,10 @@ fn test_same_tick_enable_then_clear_estop_via_channel_does_not_misenable() {
     //    修订后 apply 在 ipc_tick 内逐 event 执行，Enable 看 estop_latched=true
     //    plan_transition 拒绝；ClearEStop 自己处理时再清 latch。
     let tx = h.ipc.event_sender();
-    tx.send(Event::Enable).unwrap();
-    tx.send(Event::ClearEStop).unwrap();
+    tx.control(robot_s0::event_ingress::ControlEvent::Enable)
+        .unwrap();
+    tx.control(robot_s0::event_ingress::ControlEvent::ClearEStop)
+        .unwrap();
 
     // 3) 等足够时间让 ipc_thread 处理这两个事件 + 后续若干 tick
     std::thread::sleep(Duration::from_millis(50));

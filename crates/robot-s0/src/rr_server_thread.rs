@@ -109,7 +109,7 @@ impl Default for RrServerThreadConfig {
         Self {
             topic: String::new(),
             poll_interval_ns: 500_000,
-            max_in_flight: 64,
+            max_in_flight: crate::event_ingress::RR_CHANNEL_CAPACITY,
         }
     }
 }
@@ -159,7 +159,12 @@ impl RrServerThreadHandle {
 
     /// 通知主循环退出（下一轮 stop check 命中即跳出）。
     pub fn request_stop(&self) {
-        self.stop.store(true, Ordering::Release);
+        self.stop.swap(true, Ordering::AcqRel);
+    }
+
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join.is_finished()
     }
 
     /// 等线程退出。
@@ -214,13 +219,20 @@ pub fn spawn_rr_server_thread<F>(
     server_factory: F,
     rr_request_tx: Sender<ClearEStopRrRequest>,
     rr_response_rx: Receiver<ClearEStopRrResponse>,
+    stop: Arc<AtomicBool>,
 ) -> std::io::Result<RrServerThreadHandle>
 where
     F: FnOnce() -> Iceoryx2RrServer<markers::ClearEStopRequest, markers::ClearEStopResponse>
         + Send
         + 'static,
 {
-    let stop = Arc::new(AtomicBool::new(false));
+    validate_rr_capacity(
+        cfg.max_in_flight,
+        rr_request_tx.capacity(),
+        rr_response_rx.capacity(),
+    )?;
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_hook::before_spawn("clear_rr")?;
     let metrics = Arc::new(RrServerMetrics::default());
 
     let stop_clone = Arc::clone(&stop);
@@ -260,6 +272,25 @@ where
     })
 }
 
+/// 回复 channel 必须容纳全部在飞请求，避免 IPC 等待已停用的 RR server。
+pub(crate) fn validate_rr_capacity(
+    max_in_flight: usize,
+    requests: Option<usize>,
+    responses: Option<usize>,
+) -> std::io::Result<()> {
+    let limit = crate::event_ingress::RR_CHANNEL_CAPACITY;
+    if !(1..=limit).contains(&max_in_flight)
+        || !requests.is_some_and(|n| (1..=limit).contains(&n))
+        || !responses.is_some_and(|n| n >= max_in_flight && n <= limit)
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "RR 必须有界：请求容量 1..=64，回复容量 >= 在飞上限且 <=64",
+        ));
+    }
+    Ok(())
+}
+
 // ============================================================================
 // 主循环
 // ============================================================================
@@ -276,7 +307,11 @@ fn run_loop(
 ) {
     let mut pending: VecDeque<PendingRr> = VecDeque::with_capacity(cfg.max_in_flight);
 
-    while !stop.load(Ordering::Acquire) {
+    while crate::worker_stop::worker_running(
+        crate::worker_stop::WorkerKind::ClearEStopRr,
+        clock,
+        stop,
+    ) {
         // ─── 1) drain rr_response_rx 先（reviewer 拍板：释放 pending 容量
         //        减少误报 backpressure）───
         while let Ok(resp) = rr_response_rx.try_recv() {
@@ -741,8 +776,15 @@ mod tests {
             server
         };
 
-        let handle = spawn_rr_server_thread(cfg, clock, factory, req_tx, resp_rx)
-            .expect("spawn_rr_server_thread");
+        let handle = spawn_rr_server_thread(
+            cfg,
+            clock,
+            factory,
+            req_tx,
+            resp_rx,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .expect("spawn_rr_server_thread");
 
         (handle, client, req_rx, resp_tx)
     }
@@ -1248,8 +1290,15 @@ mod tests {
             server
         };
 
-        let handle = spawn_rr_server_thread(cfg, clock, factory, req_tx, resp_rx)
-            .expect("spawn_rr_server_thread");
+        let handle = spawn_rr_server_thread(
+            cfg,
+            clock,
+            factory,
+            req_tx,
+            resp_rx,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .expect("spawn_rr_server_thread");
 
         // 直接发 orphan response（pending 里没 "ghost"）
         resp_tx

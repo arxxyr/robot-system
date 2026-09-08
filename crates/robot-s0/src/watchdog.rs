@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Sender, TrySendError};
 use robot_core::time::RobotClock;
 
 use crate::state_machine::Event;
@@ -54,10 +54,9 @@ impl Default for WatchdogConfig {
 /// - `event_tx`：发送 `HeartbeatTimeout` 事件给 `ipc_thread`。
 /// - `stop`：主进程退出前 `store(true)`，watchdog 下个轮询退出。
 ///
-/// # Panics
+/// # Errors
 ///
 /// 当 `std::thread::Builder::spawn` 失败（OS 资源耗尽）。
-#[must_use]
 #[allow(clippy::needless_pass_by_value)]
 pub fn spawn_watchdog(
     cfg: WatchdogConfig,
@@ -65,11 +64,12 @@ pub fn spawn_watchdog(
     last_hb_ns: Arc<AtomicU64>,
     event_tx: Sender<Event>,
     stop: Arc<AtomicBool>,
-) -> JoinHandle<()> {
+) -> std::io::Result<JoinHandle<()>> {
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_hook::before_spawn("watchdog")?;
     std::thread::Builder::new()
         .name("s0_watchdog".into())
         .spawn(move || run_loop(cfg, clock, &last_hb_ns, &event_tx, &stop))
-        .expect("spawn watchdog thread")
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -84,8 +84,14 @@ fn run_loop(
     // armed = false 表示 "已发过事件，等新 heartbeat 重新武装"
     let mut armed = true;
     let mut last_seen_hb = last_hb_ns.load(Ordering::Acquire);
+    let mut pending_timeout = false;
+    let mut full_merged = 0_u64;
 
-    while !stop.load(Ordering::Acquire) {
+    while crate::worker_stop::worker_running(
+        crate::worker_stop::WorkerKind::Watchdog,
+        clock.as_ref(),
+        stop,
+    ) {
         let cur_hb = last_hb_ns.load(Ordering::Acquire);
         let now = clock.now().0;
 
@@ -99,13 +105,24 @@ fn run_loop(
         // 注意：若 cur_hb > now（MockClock 下可能发生），skip（防 underflow）
         let overdue = now.saturating_sub(cur_hb) > cfg.heartbeat_timeout_ns;
         if overdue && armed {
-            if let Err(e) = event_tx.try_send(Event::HeartbeatTimeout) {
-                tracing::warn!(
-                    ?e,
-                    "watchdog: event channel full/closed, dropping HeartbeatTimeout"
-                );
-            }
+            pending_timeout = true;
             armed = false; // 去抖：直到下次看到新 hb 才重新 armed
+        }
+        if pending_timeout {
+            match event_tx.try_send(Event::HeartbeatTimeout) {
+                Ok(()) => {
+                    pending_timeout = false;
+                    if full_merged != 0 {
+                        tracing::warn!(full_merged, "watchdog 满队列合并的 Timeout 已送达");
+                        full_merged = 0;
+                    }
+                }
+                Err(TrySendError::Full(_)) => full_merged = full_merged.saturating_add(1),
+                Err(TrySendError::Disconnected(_)) => {
+                    tracing::error!(reason = "Disconnected", "watchdog 的 IPC 接收端已退出");
+                    break;
+                }
+            }
         }
 
         // 真 sleep；非 RT 线程，普通 std::thread::sleep 够用。
@@ -134,7 +151,7 @@ mod tests {
         let last_hb = Arc::new(AtomicU64::new(0));
         let (tx, rx) = unbounded();
         let stop = Arc::new(AtomicBool::new(false));
-        let handle = spawn_watchdog(fast_cfg(), clock, last_hb, tx, Arc::clone(&stop));
+        let handle = spawn_watchdog(fast_cfg(), clock, last_hb, tx, Arc::clone(&stop)).unwrap();
 
         // 等 watchdog 至少跑 1 次轮询（1 ms interval + 宽松）
         let ev = rx
@@ -163,7 +180,8 @@ mod tests {
             Arc::clone(&last_hb),
             tx,
             Arc::clone(&stop),
-        );
+        )
+        .unwrap();
 
         // 第一次超时
         let ev1 = rx.recv_timeout(Duration::from_millis(200)).unwrap();
@@ -200,7 +218,8 @@ mod tests {
             Arc::clone(&last_hb),
             tx,
             Arc::clone(&stop),
-        );
+        )
+        .unwrap();
 
         // 每 10 ms 更新一次 last_hb = now，共 6 次（总 60 ms），阈值 50 ms。
         // 每次 now - last_hb ≤ 10 ms < 50 ms，绝不会触发。
@@ -229,7 +248,8 @@ mod tests {
             last_hb,
             tx,
             Arc::clone(&stop),
-        );
+        )
+        .unwrap();
 
         std::thread::sleep(Duration::from_millis(20));
         stop.store(true, Ordering::Release);

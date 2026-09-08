@@ -122,7 +122,12 @@ pub struct RtThreadHandle {
 impl RtThreadHandle {
     /// 请求停止。下次 tick 开始时检测到并退出。
     pub fn request_stop(&self) {
-        self.stop.store(true, Ordering::Release);
+        self.stop.swap(true, Ordering::AcqRel);
+    }
+
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join.is_finished()
     }
 
     /// 等待 RT 线程退出。`request_stop` 后调用。
@@ -169,6 +174,7 @@ pub fn spawn_rt_thread<A>(
     cmd_reader: LatestCommandReader<JointCommandBuf>,
     snapshot_pub: RtSnapshotPublisher<RtSnapshot>,
     ctrl: Arc<HardRtCtrlInner>,
+    stop: Arc<AtomicBool>,
 ) -> std::io::Result<RtThreadHandle>
 where
     // task-30 v9 finding #3：bound 改成 `HardRtAdapter`（综合 ManipulatorAdapter
@@ -177,7 +183,8 @@ where
 {
     // 在**主线程**完成可能分配的准备（thread name 字符串、Arc<AtomicBool> 等）。
     // RT scope 只在 spawn 之后 + 每 tick rt_entry! 内才算进入。
-    let stop = Arc::new(AtomicBool::new(false));
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_hook::before_spawn("executor")?;
     let metrics = Arc::new(RtThreadMetrics::default());
 
     // **task-30 v9 / M7 修订**：spawn-time 只 connect，**不**调 enable(true)。
@@ -274,7 +281,11 @@ fn run_rt_loop<A: HardRtAdapter>(
     });
 
     // ---- 主循环（task-30 v9 / M5 改造） ----
-    while !stop.load(Ordering::Acquire) {
+    while crate::worker_stop::worker_running(
+        crate::worker_stop::WorkerKind::Executor,
+        clock.as_ref(),
+        stop,
+    ) {
         // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
         //
         // 放在 rt_entry! **外**：spin 是 alloc-free / syscall-free，但放外面避
@@ -596,7 +607,16 @@ mod tests {
         // 切到 ActiveForward。M7 由 state_machine 切。
         ctrl.policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
-        let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, ctrl).unwrap();
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            ctrl,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
 
         // 等至少 1 tick（确定性轮询替代固定 50ms sleep）
@@ -724,7 +744,16 @@ mod tests {
             ..RtThreadConfig::default()
         };
         let ctrl = Arc::new(HardRtCtrlInner::new());
-        let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, ctrl).unwrap();
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            ctrl,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
 
         // ① 正常读：等 stamp 真正推进。
@@ -787,7 +816,16 @@ mod tests {
         // 切到 ActiveForward。M7 由 state_machine 切。
         ctrl.policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
-        let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, ctrl).unwrap();
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            ctrl,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         handle.request_stop();
         handle.join().unwrap();
     }
@@ -811,7 +849,16 @@ mod tests {
         // 切到 ActiveForward。M7 由 state_machine 切。
         ctrl.policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
-        let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, ctrl).unwrap();
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            ctrl,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
         // 等 tick_seq 超 0（确定性轮询替代 sleep 30ms）
         assert!(
@@ -861,8 +908,16 @@ mod tests {
         let ctrl = Arc::new(HardRtCtrlInner::new());
         ctrl.policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
-        let handle =
-            spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, Arc::clone(&ctrl)).unwrap();
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            Arc::clone(&ctrl),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         (handle, ctrl, snap_rdr)
     }
 
@@ -1049,8 +1104,16 @@ mod tests {
         let ctrl = Arc::new(HardRtCtrlInner::new());
         let client = HardRtCtrlClient::new(Arc::clone(&ctrl));
 
-        let handle =
-            spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, Arc::clone(&ctrl)).unwrap();
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            Arc::clone(&ctrl),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
 
         // **task-30 v9 / M7**：spawn-time 不再 enable；通过 client 排
         // Enable(true) 让 rt_thread 真上扭，等 ack 完成再切 policy。
@@ -1215,8 +1278,16 @@ mod tests {
         let ctrl = Arc::new(HardRtCtrlInner::new());
         ctrl.policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
-        let handle =
-            spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, Arc::clone(&ctrl)).unwrap();
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            Arc::clone(&ctrl),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
 
         // 等 rt warmup
@@ -1308,7 +1379,16 @@ mod tests {
         };
         let ctrl = Arc::new(HardRtCtrlInner::new());
         // **policy=Disabled (default)** —— 不切到 ActiveForward。
-        let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, ctrl).unwrap();
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            ctrl,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
         // 等至少 1 tick
         assert!(crate::test_util::wait_until(
@@ -1350,7 +1430,16 @@ mod tests {
         let ctrl = Arc::new(HardRtCtrlInner::new());
         ctrl.policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
-        let handle = spawn_rt_thread(cfg, clock, adapter, cmd_reader, snap_pub, ctrl).unwrap();
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            ctrl,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
 
         // 等 worker 跑起来

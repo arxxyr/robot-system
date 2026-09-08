@@ -64,7 +64,12 @@ pub struct IoThreadHandle {
 
 impl IoThreadHandle {
     pub fn request_stop(&self) {
-        self.stop.store(true, Ordering::Release);
+        self.stop.swap(true, Ordering::AcqRel);
+    }
+
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join.is_finished()
     }
 
     #[must_use]
@@ -93,8 +98,10 @@ impl IoThreadHandle {
 pub fn spawn_io_thread(
     cfg: IoThreadConfig,
     clock: Arc<dyn RobotClock>,
+    stop: Arc<AtomicBool>,
 ) -> std::io::Result<IoThreadHandle> {
-    let stop = Arc::new(AtomicBool::new(false));
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_hook::before_spawn("io")?;
     let metrics = Arc::new(IoThreadMetrics::default());
 
     let join_stop = Arc::clone(&stop);
@@ -113,7 +120,11 @@ pub fn spawn_io_thread(
             #[cfg(not(any(test, feature = "test-freeze-hook")))]
             let _ = &join_clock;
 
-            while !join_stop.load(Ordering::Acquire) {
+            while crate::worker_stop::worker_running(
+                crate::worker_stop::WorkerKind::Io,
+                join_clock.as_ref(),
+                &join_stop,
+            ) {
                 // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
                 #[cfg(any(test, feature = "test-freeze-hook"))]
                 crate::freeze_hook::freeze_check(
@@ -146,7 +157,12 @@ mod tests {
 
     #[test]
     fn spawn_then_stop_cleanly() {
-        let handle = spawn_io_thread(IoThreadConfig::default(), test_clock()).unwrap();
+        let handle = spawn_io_thread(
+            IoThreadConfig::default(),
+            test_clock(),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         thread::sleep(Duration::from_millis(30));
         handle.request_stop();
         handle.join().unwrap();
@@ -159,7 +175,12 @@ mod tests {
         let cfg = IoThreadConfig {
             poll_interval_ns: 1_000_000, // 1 ms
         };
-        let handle = spawn_io_thread(cfg, test_clock()).unwrap();
+        let handle = spawn_io_thread(
+            cfg,
+            test_clock(),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
         // 确定性轮询：等 tick_count >= 5（每 ms 一次，100ms 内绰绰有余）
         assert!(
@@ -176,7 +197,12 @@ mod tests {
     #[test]
     fn stops_promptly() {
         use crate::test_util::wait_until;
-        let handle = spawn_io_thread(IoThreadConfig::default(), test_clock()).unwrap();
+        let handle = spawn_io_thread(
+            IoThreadConfig::default(),
+            test_clock(),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
         // 等线程跑起来（至少 1 tick）再 request_stop —— 比固定 5ms sleep 稳
         assert!(
@@ -204,7 +230,12 @@ mod tests {
             poll_interval_ns: 1_000_000, // 1 ms
         };
         let clock = test_clock();
-        let handle = spawn_io_thread(cfg, Arc::clone(&clock)).unwrap();
+        let handle = spawn_io_thread(
+            cfg,
+            Arc::clone(&clock),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
 
         // 等 worker 跑起来

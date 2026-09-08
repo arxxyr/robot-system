@@ -924,6 +924,109 @@ impl TickFixture {
     }
 }
 
+/// IPC 独立验收复用真实 preflight 和一次周期采样产生的健康事实。
+pub(crate) fn healthy_ipc_control() -> (Arc<HardRtCtrlInner>, Arc<MockClock>) {
+    let mut fixture = TickFixture::healthy();
+    fixture.adapter.script.push_back(Reply::ok(Io::Read));
+    let _ = fixture.tick();
+    fixture.adapter.assert_drained();
+    fixture.clock.advance(DurationNs::from_millis(500));
+    assert_eq!(
+        fixture.ctrl.safety_state(),
+        OutputSafetyState::TorqueOffConfirmed
+    );
+    assert_eq!(fixture.ctrl.inhibit.load(Ordering::Acquire), 0);
+    (fixture.ctrl, fixture.clock)
+}
+
+/// 在真实设备错误完成发布点交给 IPC 反例运行，夹具不复制错误分流。
+pub(crate) fn normal_failure_publication(
+    error: RobotError,
+    observe: impl FnOnce(Arc<HardRtCtrlInner>, Arc<MockClock>),
+) {
+    let mut f = TickFixture::healthy();
+    f.adapter.script.push_back(Reply::ok(Io::Read));
+    let _ = f.tick();
+    f.clock.advance(DurationNs::from_millis(500));
+    let seq = f.submit(AdapterNormalReq::SetMode(ControlMode::Position));
+    f.adapter
+        .script
+        .push_back(Reply::error(Io::Mode(ControlMode::Position), error));
+    let ctrl = f.ctrl.clone();
+    let clock = f.clock.clone();
+    let mut observed = false;
+    let _ = f.driver.tick_after_normal_completion(
+        &mut f.adapter,
+        &f.command.as_view(),
+        &SerialTickContext {
+            ctrl: &f.ctrl,
+            probe: &f.probe,
+            diag: &f.diag,
+            clock: f.clock.as_ref(),
+            metrics: &f.metrics,
+        },
+        MonoRawNs(f.clock.now().0 + 5_000_000),
+        || {
+            observed = true;
+            assert!(
+                HardRtCtrlClient::new(ctrl.clone())
+                    .poll_last_normal_resp(seq)
+                    .is_some()
+            );
+            observe(ctrl, clock);
+        },
+    );
+    assert!(observed, "必须到达实际normal完成发布点");
+    f.adapter.assert_drained();
+}
+
+/// 故障登记已经发布但动作完成尚未发布：让独立 IPC 验收注入迟到 timeout。
+pub(crate) fn normal_failure_before_publication(
+    error: RobotError,
+    observe: impl FnOnce(Arc<HardRtCtrlInner>, Arc<MockClock>, u64),
+) {
+    let mut f = TickFixture::healthy();
+    f.adapter.script.push_back(Reply::ok(Io::Read));
+    let _ = f.tick();
+    f.clock.advance(DurationNs::from_millis(500));
+    let seq = f.submit(AdapterNormalReq::SetMode(ControlMode::Position));
+    f.adapter
+        .script
+        .push_back(Reply::error(Io::Mode(ControlMode::Position), error));
+    let ctrl = f.ctrl.clone();
+    let clock = f.clock.clone();
+    let mut observed = false;
+    let _ = f.driver.tick_before_normal_completion(
+        &mut f.adapter,
+        &f.command.as_view(),
+        &SerialTickContext {
+            ctrl: &f.ctrl,
+            probe: &f.probe,
+            diag: &f.diag,
+            clock: f.clock.as_ref(),
+            metrics: &f.metrics,
+        },
+        MonoRawNs(f.clock.now().0 + 5_000_000),
+        || {
+            observed = true;
+            observe(ctrl, clock, seq);
+        },
+    );
+    assert!(observed);
+    assert_eq!(f.ctrl.active_action.load(Ordering::Acquire), 0);
+    assert_eq!(
+        HardRtCtrlClient::new(f.ctrl.clone()).poll_last_normal_resp(seq),
+        Some(AdapterResp::Err(AdapterErr::HardwareFault))
+    );
+    assert_eq!(f.ctrl.abort_request.load(Ordering::Acquire), 0);
+    assert!(f.ctrl.rx_trust.load(Ordering::Acquire));
+    assert_eq!(
+        f.ctrl.mailbox_snapshot().unwrap().detail,
+        CommErrorKind::PendingDeadline.to_u8()
+    );
+    f.adapter.assert_drained();
+}
+
 #[test]
 fn unsubmitted_timeout_drives_real_tick_without_original_action_or_new_sample() {
     let mut f = TickFixture::healthy();

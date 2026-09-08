@@ -1,0 +1,22 @@
+{
+  "host": "loosqk@10.0.1.40",
+  "inspection": "read_only_ssh",
+  "model": "NVIDIA Jetson Orin Nano Engineering Reference Developer Kit Super",
+  "kernel": "5.15.199-tegra",
+  "architecture": "aarch64",
+  "repository": "/home/loosqk/repo/robot/robot-system",
+  "branch": "master",
+  "commit_short": "fed7549",
+  "working_tree": "clean",
+  "post_e_deployed": false,
+  "serial_by_id": [
+    "usb-1a86_USB_Single_Serial_5A7C121427-if00",
+    "usb-1a86_USB_Single_Serial_5A7C122340-if00"
+  ],
+  "robot_services": "not_running",
+  "legacy_autostart": "disabled",
+  "H1": "NEEDS_HUMAN",
+  "H2": "NEEDS_HUMAN",
+  "H3": "NEEDS_HUMAN",
+  "D15": "OPEN"
+}

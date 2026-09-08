@@ -20,12 +20,13 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     函数级 Plan Approved（2026-09-08）；C1 / C2 已通过独立评审；接续 C3 serial 收敛
+当前步骤:     函数级 Plan Approved（2026-09-08）；C1–C4 已评审通过并分包提交，进入 C5 完整验收
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         Linux 开发机做离线验证；Orin + XLeRobot 做现场真机验收
 ```
 
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
+用户追加：每阶段评审与必要质量门通过即 commit，再推进下一阶段。
 由团队完善函数级计划、独立评审通过后实施；原 9 月 5 日“仅准备 Plan outline”
 是历史授权状态，不作为本轮停工理由。实现、验证、真机执行分别记录，不能将
 Spec Approved 或旧测试记录写成新代码已通过验收。

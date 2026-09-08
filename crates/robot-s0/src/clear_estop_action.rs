@@ -210,6 +210,7 @@ mod tests {
 
     fn healthy_guards_latched() -> Guards {
         Guards {
+            rt_serial: false,
             estop_latched: true, // EStop 已 latch
             adapter_connected: true,
             calibration_loaded: true,

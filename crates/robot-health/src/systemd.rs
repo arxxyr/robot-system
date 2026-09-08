@@ -54,6 +54,7 @@
 
 #![allow(clippy::doc_markdown)]
 
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::UnixDatagram;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -69,6 +70,36 @@ use std::time::Duration;
 /// observer ready 之后调一次（D12 第 3 条）。
 pub fn notify_ready() {
     let _ = send_message("READY=1\n");
+}
+
+/// READY 的实际发送结果，供要求启动握手的 daemon 决定是否提交就绪。
+#[derive(Debug)]
+pub enum ReadyOutcome {
+    Sent,
+    NotConfigured,
+    Err(std::io::Error),
+}
+
+/// 未配置与真实发送成功分开；abstract socket 明确报告尚不支持。
+#[must_use]
+pub fn try_notify_ready() -> ReadyOutcome {
+    let Some(path) = std::env::var_os("NOTIFY_SOCKET").filter(|path| !path.is_empty()) else {
+        return ReadyOutcome::NotConfigured;
+    };
+    if path.as_os_str().as_bytes().starts_with(b"@") {
+        return ReadyOutcome::Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "READY 不支持 abstract NOTIFY_SOCKET",
+        ));
+    }
+    match UnixDatagram::unbound().and_then(|socket| socket.send_to(b"READY=1\n", &path)) {
+        Ok(8) => ReadyOutcome::Sent,
+        Ok(_) => ReadyOutcome::Err(std::io::Error::new(
+            std::io::ErrorKind::WriteZero,
+            "READY datagram 未完整发送",
+        )),
+        Err(error) => ReadyOutcome::Err(error),
+    }
 }
 
 /// `WATCHDOG=1` —— ping 一次（重置 systemd watchdog 计时器）。一般由

@@ -85,30 +85,237 @@ impl IpcRetryState {
 /// effectful pending 的总超时（v9 §0.5 A2 约定 = 1 s）。
 const PENDING_TOTAL_TIMEOUT: DurationNs = DurationNs::from_secs(1);
 
-/// **task-30 v9 §4.4.3 errata 实施版**：单次 ipc tick 的三步式。
-///
-/// 三步顺序见模块 doc 表。返回 `()`；副作用全部通过 `state` / `retry` /
-/// `executor_ctrl` / `guards` 各 store 落地。M7 阶段 4 把本函数嵌进
-/// `run_ipc_loop` 主循环；当前阶段独立可测。
-///
-/// **task-30 v9 / SerialRT E2E 第 5 条门槛 修订**：`guards` 改 `&mut`。
-/// `apply_event_guard_side_effect` 不再由 `run_ipc_loop` 在 channel drain
-/// 阶段批量调用 —— 改为本函数内**每个 event 处理前**逐条 apply。这样
-/// 同 tick 多事件场景下，**每个 event 的 plan_transition 看到的 guards
-/// 是"该事件被处理那一刻的状态"**，不会被同 batch 后续事件提前污染（典型
-/// 反例：`[Enable, EStop]` 同 tick 入队，旧实现会让 Enable 因 EStop 提前
-/// 置 estop_latched=true 而误通过反向方向；本修订让 Enable 在 EStop 之
-/// 前用旧 guard 判断；EStop 自己处理时再 latch）。
-///
-/// **A1-2**：`Event::ClearEStop` 不再走批量 apply；它的 guard 副作用由
-/// [`clear_estop_action::try_apply_clear_estop`] 在 plan_transition 之后
-/// 单独完成（fsync + clear_safety_latch + 翻转 guard 的三步硬顺序，
-/// 详 `docs/00_design.md` §6.6.1 errata）。`ipc_tick` 把 outcome 抛给
-/// `ipc_thread` 防二次写盘。
-///
-/// 阶段 4 若需要"本 tick 是否做过动作 → 决定 idle sleep"，再加返回字段（当前
-/// 的 §0.5 三测红灯门槛 + A1-2 outcome 已在 [`TickOutcome`] 内）。
-#[allow(clippy::too_many_lines)] // A1-2 把 ClearEStop 三步硬顺序内联到 Pure 分支
+/// 单 tick 借用上下文；SerialRT 通过同一共享 ctrl 完成 mailbox 与退场协议。
+pub(crate) struct IpcTickContext<'a> {
+    pub retry: &'a mut IpcRetryState,
+    pub state: &'a mut S0State,
+    pub guards: &'a mut Guards,
+    pub executor_ctrl: &'a dyn ExecutorCtrlClient,
+    pub serial_ctrl: Option<&'a crate::hard_rt_ctrl::HardRtCtrlInner>,
+    pub clock: &'a dyn RobotClock,
+    pub latch_path: Option<&'a Path>,
+}
+
+/// 所有包含 EStop 的组合先持久化 latch，再合并故障；不重复发布 SerialRT 原语。
+pub(crate) fn apply_emergency_batch(
+    ctx: &mut IpcTickContext<'_>,
+    batch: crate::event_ingress::EmergencyBatch,
+) -> bool {
+    apply_emergency_batch_observed(ctx, batch, |_| {})
+}
+
+pub(crate) fn apply_emergency_batch_observed(
+    ctx: &mut IpcTickContext<'_>,
+    batch: crate::event_ingress::EmergencyBatch,
+    observe_latch: impl FnOnce(bool),
+) -> bool {
+    if !batch.estop && batch.ssf.is_none() {
+        return false;
+    }
+    if batch.estop {
+        ctx.guards.estop_latched = true;
+        if let Some(path) = ctx.latch_path {
+            let result = crate::estop_latch::save_estop_latch(path, true);
+            observe_latch(result.is_ok());
+            if let Err(error) = result {
+                tracing::error!(?error, "EStop latch 持久化失败，内存急停继续保持");
+            }
+        }
+        if ctx.serial_ctrl.is_none() {
+            ctx.executor_ctrl.safety_stop();
+        }
+        if let Some(plan) = plan_transition(*ctx.state, Event::EStop, ctx.guards) {
+            commit_transition(ctx.state, &plan);
+            ctx.executor_ctrl.set_policy(plan.new_policy);
+        }
+    }
+    if let Some(ssf) = batch.ssf {
+        commit_fault(ctx.state, FaultCode::SafetyStopFailed);
+        ctx.executor_ctrl.set_policy(OutputPolicy::Disabled);
+        if let Some(ctrl) = ctx.serial_ctrl {
+            ctrl.ack_fault(ssf.generation);
+        }
+    }
+    ctx.retry.clear();
+    true
+}
+
+/// 每 tick 恰一次，不能被 emergency、pending 或 lane 容量跳过。
+pub(crate) fn service_fault_mailbox(ctx: &mut IpcTickContext<'_>) {
+    use std::sync::atomic::Ordering;
+
+    let Some(ctrl) = ctx.serial_ctrl else { return };
+    let Some(mailbox) = ctrl.mailbox_snapshot() else {
+        return;
+    };
+    if mailbox.code == FaultCode::SafetyStopFailed
+        || mailbox.generation == ctrl.fault_ack.load(Ordering::Acquire)
+    {
+        return;
+    }
+    commit_fault(ctx.state, mailbox.code);
+    ctx.executor_ctrl.set_policy(OutputPolicy::Disabled);
+    ctx.guards.adapter_connected = false;
+    ctx.guards.adapter_fault_cleared = false;
+    ctx.retry.clear();
+    ctrl.ack_fault(mailbox.generation);
+    tracing::error!(generation = mailbox.generation, code = ?mailbox.code,
+        detail = mailbox.detail, origin = ?mailbox.origin, "串口故障 mailbox 已对账");
+}
+
+fn commit_pending_failure(ctx: &mut IpcTickContext<'_>, fault: FaultCode) {
+    commit_fault(ctx.state, fault);
+    ctx.executor_ctrl.set_policy(OutputPolicy::Disabled);
+    if ctx.serial_ctrl.is_some() {
+        ctx.guards.adapter_connected = false;
+        ctx.guards.adapter_fault_cleared = false;
+    }
+    ctx.retry.clear();
+}
+
+/// 正常动作退场的类型化结果，取消回执与真实 EStop notice 正交。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PendingAdvance {
+    Ready,
+    InFlight,
+    CancelledByEmergency,
+}
+
+/// 完成或失败后本 tick 继续处理已排队的链路事件。
+pub(crate) fn advance_pending(ctx: &mut IpcTickContext<'_>) -> PendingAdvance {
+    use robot_core::executor_ctrl::AdapterErr;
+    use robot_core::serial_services::NormalAbortTarget;
+
+    let Some((plan, seq)) = ctx.retry.pending else {
+        return PendingAdvance::Ready;
+    };
+    let elapsed = ctx
+        .retry
+        .pending_started_at
+        .and_then(|start| ctx.clock.now() - start);
+    if elapsed.is_some_and(|duration| duration > PENDING_TOTAL_TIMEOUT) {
+        let fault = match ctx.serial_ctrl {
+            Some(_) => FaultCode::CommFault,
+            None => FaultCode::AdapterErr,
+        };
+        commit_pending_failure(ctx, fault);
+        if ctx.serial_ctrl.is_some() {
+            ctx.executor_ctrl.abort_pending_normal(match seq {
+                Some(seq) => NormalAbortTarget::Submitted { seq },
+                None => NormalAbortTarget::Unsubmitted,
+            });
+        }
+        tracing::error!(?seq, action = ?plan.kind, elapsed_ns = elapsed.map_or(0, |duration| duration.0),
+            "普通动作等待超时，已提交故障与 Disabled");
+        return PendingAdvance::Ready;
+    }
+    match seq {
+        None => {
+            let TransitionKind::Effectful { action } = plan.kind else {
+                commit_pending_failure(ctx, FaultCode::AdapterErr);
+                return PendingAdvance::Ready;
+            };
+            match ctx.executor_ctrl.request_normal(action) {
+                NormalReqStatus::Submitted { seq } => {
+                    ctx.retry.pending = Some((plan, Some(seq)));
+                    PendingAdvance::InFlight
+                }
+                NormalReqStatus::Busy => PendingAdvance::InFlight,
+                NormalReqStatus::Unsupported(message) => {
+                    tracing::error!(?action, message, "执行器拒绝普通动作能力");
+                    commit_pending_failure(ctx, FaultCode::AdapterErr);
+                    PendingAdvance::Ready
+                }
+            }
+        }
+        Some(seq) => match ctx.executor_ctrl.poll_last_normal_resp(seq) {
+            None => PendingAdvance::InFlight,
+            Some(AdapterResp::Err(AdapterErr::PreemptedByEmergency))
+                if ctx.serial_ctrl.is_some() =>
+            {
+                // 取消 tag 可以先于权威急停 CAS 被消费；此返回自身不创造 Fault。
+                ctx.retry.clear();
+                PendingAdvance::CancelledByEmergency
+            }
+            Some(AdapterResp::Ok) => {
+                commit_transition(ctx.state, &plan);
+                ctx.executor_ctrl.set_policy(plan.new_policy);
+                ctx.retry.clear();
+                PendingAdvance::Ready
+            }
+            Some(AdapterResp::Err(error)) => {
+                let fault = match (ctx.serial_ctrl, error) {
+                    (Some(_), AdapterErr::Comm(_) | AdapterErr::AbortedByTimeout) => {
+                        FaultCode::CommFault
+                    }
+                    _ => FaultCode::AdapterErr,
+                };
+                tracing::error!(seq, action = ?plan.kind, ?error,
+                    elapsed_ns = elapsed.map_or(0, |duration| duration.0), "普通动作返回失败");
+                commit_pending_failure(ctx, fault);
+                PendingAdvance::Ready
+            }
+        },
+    }
+}
+
+/// 应用一个已经出队且通过 deadline 的事件，不负责读取下一事件。
+pub(crate) fn apply_control_event(ctx: &mut IpcTickContext<'_>, event: Event) -> TickOutcome {
+    let mut outcome = TickOutcome::default();
+    apply_event_guard_side_effect(event, ctx.guards);
+    let Some(plan) = plan_transition(*ctx.state, event, ctx.guards) else {
+        if event == Event::ClearEStop {
+            outcome.clear_estop = Some(ClearEStopTickOutcome::StateNotSafe { actual: *ctx.state });
+        }
+        return outcome;
+    };
+    match plan.kind {
+        TransitionKind::Pure if event == Event::ClearEStop => {
+            let Some(path) = ctx.latch_path else {
+                return outcome;
+            };
+            match clear_estop_action::try_apply_clear_estop(
+                ctx.guards,
+                ctx.executor_ctrl,
+                path,
+                ctx.clock,
+            ) {
+                Ok(result) => {
+                    outcome.clear_estop = Some(ClearEStopTickOutcome::Cleared {
+                        cleared_at_ns: result.cleared_at_ns,
+                    });
+                    commit_transition(ctx.state, &plan);
+                    ctx.executor_ctrl.set_policy(plan.new_policy);
+                }
+                Err(clear_estop_action::ClearEStopError::FsyncFailed(_)) => {
+                    outcome.clear_estop = Some(ClearEStopTickOutcome::FsyncFailed);
+                }
+                Err(clear_estop_action::ClearEStopError::NotTorqueOffConfirmed { actual }) => {
+                    outcome.clear_estop =
+                        Some(ClearEStopTickOutcome::NotTorqueOffConfirmed { actual });
+                }
+            }
+        }
+        TransitionKind::Pure => {
+            commit_transition(ctx.state, &plan);
+            ctx.executor_ctrl.set_policy(plan.new_policy);
+        }
+        TransitionKind::Emergency => {
+            if ctx.serial_ctrl.is_none() && event == Event::EStop {
+                ctx.executor_ctrl.safety_stop();
+            }
+            commit_transition(ctx.state, &plan);
+            ctx.executor_ctrl.set_policy(plan.new_policy);
+        }
+        TransitionKind::Effectful { .. } => {
+            ctx.retry.pending = Some((plan, None));
+            ctx.retry.pending_started_at = Some(ctx.clock.now());
+        }
+    }
+    outcome
+}
+
+/// 旧状态机测试入口委托同一分步实现；完整线程调度还包含 RR 与 source 配额。
 pub fn ipc_tick(
     retry: &mut IpcRetryState,
     state: &mut S0State,
@@ -118,185 +325,54 @@ pub fn ipc_tick(
     events: &mut EventQueue,
     latch_path: Option<&Path>,
 ) -> TickOutcome {
-    let mut outcome = TickOutcome::default();
+    use crate::event_ingress::{CONTROL_QUOTA, EmergencyBatch, LINK_QUOTA};
+    use crate::hard_rt_ctrl::{FaultOrigin, MailboxSnapshot};
 
-    // ─── Step 1: emergency drain（A1）───
-    //
-    // 任何 emergency event（EStop / AdapterErr(SafetyStopFailed)）必须**先于**
-    // 推进 pending 处理。命中即清 pending 并 commit Emergency；本 tick 直接
-    // return，后续的 normal action 留给下 tick。
-    if let Some(em) = events.drain_emergency() {
-        // 第 5 条门槛修订：emergency event 自身的 guard 副作用（EStop →
-        // estop_latched=true）必须先于 plan_transition 应用，否则
-        // plan_transition 看到的还是旧 guards 会拒绝 transition。
-        apply_event_guard_side_effect(em, guards);
-        if let Some(plan) = plan_transition(*state, em, guards) {
-            debug_assert!(matches!(plan.kind, TransitionKind::Emergency));
-            executor_ctrl.safety_stop();
-            commit_transition(state, &plan);
-            executor_ctrl.set_policy(plan.new_policy);
-        }
-        // **A1**：强制清 in-flight pending，让后续 ack 即使到达也无副作用
-        retry.clear();
-        return outcome;
+    let mut ctx = IpcTickContext {
+        retry,
+        state,
+        guards,
+        executor_ctrl,
+        serial_ctrl: None,
+        clock,
+        latch_path,
+    };
+    let batch = EmergencyBatch {
+        estop: events.claim_estop(),
+        ssf: events.claim_legacy_ssf().then_some(MailboxSnapshot {
+            generation: 0,
+            code: FaultCode::SafetyStopFailed,
+            detail: 0,
+            origin: FaultOrigin::InvariantViolation,
+        }),
+    };
+    let handled = apply_emergency_batch(&mut ctx, batch);
+    service_fault_mailbox(&mut ctx);
+    if handled || advance_pending(&mut ctx) == PendingAdvance::InFlight {
+        return TickOutcome::default();
     }
-
-    // ─── Step 2: 推进 in-flight effectful pending ───
-    if let Some((plan, seq_opt)) = retry.pending {
-        // **A2 头部**：1s 总超时检查（覆盖 None / Some(seq) 两个分支）。
-        // `MonoRawNs - MonoRawNs` 返 `Option<DurationNs>`：None 表示
-        // start > now（不该发生）；保守视为未超时。
-        if let Some(start) = retry.pending_started_at
-            && let Some(elapsed) = clock.now() - start
-            && elapsed > PENDING_TOTAL_TIMEOUT
-        {
-            // **A3**：直接 commit_fault，不走 Event::AdapterErr。
-            // **不**兜底 `safety_stop()`：AdapterErr 不是 emergency 路径
-            // （safety_stop client 端会把 policy 切到 StopTorque 覆盖 Disabled）；
-            // 下游若需 emergency 由 state_machine `* → Fault(SafetyStopFailed)`
-            // 走 emergency drain。见设计 v9 §0.5 A3 注释。
-            commit_fault(state, FaultCode::AdapterErr);
-            executor_ctrl.set_policy(OutputPolicy::Disabled);
-            retry.clear();
+    let mut outcome = TickOutcome::default();
+    for _ in 0..LINK_QUOTA {
+        let Some(event) = events.pop_link() else {
+            break;
+        };
+        let _ = apply_control_event(&mut ctx, event.into());
+        if ctx.retry.pending.is_some() {
             return outcome;
         }
-
-        match seq_opt {
-            None => {
-                // 第一次提交（或 Busy 重试）
-                let TransitionKind::Effectful { action: req } = plan.kind else {
-                    unreachable!("non-Effectful in pending: {:?}", plan.kind)
-                };
-                match executor_ctrl.request_normal(req) {
-                    NormalReqStatus::Submitted { seq } => {
-                        retry.pending = Some((plan, Some(seq)));
-                        // pending_started_at 不动（A2：保持 plan 入队时刻）
-                    }
-                    NormalReqStatus::Busy => {
-                        // 等下 tick；超时由 Step 2 头部检查兜底
-                    }
-                    NormalReqStatus::Unsupported(_msg) => {
-                        // **A3**：能力级拒绝在 effectful 路径必须升 Fault。
-                        // 不兜底 safety_stop（同 1s 超时分支）。
-                        commit_fault(state, FaultCode::AdapterErr);
-                        executor_ctrl.set_policy(OutputPolicy::Disabled);
-                        retry.clear();
-                    }
-                }
-                return outcome;
-            }
-            Some(seq) => {
-                match executor_ctrl.poll_last_normal_resp(seq) {
-                    None => {
-                        // 还没完成；超时由 Step 2 头部检查兜底
-                    }
-                    Some(AdapterResp::Ok) => {
-                        // ack 成功 —— 现在才 commit state + set_policy
-                        commit_transition(state, &plan);
-                        executor_ctrl.set_policy(plan.new_policy);
-                        retry.clear();
-                    }
-                    Some(AdapterResp::Err(_e)) => {
-                        // **A3 + finding #3**：所有 AdapterErr 变体都映射到
-                        // FaultCode::AdapterErr（含 SafetyLatched）；
-                        // SafetyStopFailed 仅来自 emergency 路径 + confirm 失败。
-                        // 不兜底 safety_stop（同 1s 超时分支）。
-                        commit_fault(state, FaultCode::AdapterErr);
-                        executor_ctrl.set_policy(OutputPolicy::Disabled);
-                        retry.clear();
-                    }
-                }
-                return outcome;
-            }
-        }
     }
-
-    // ─── Step 3: plan_transition（pending 为空时）───
-    while let Some(event) = events.pop() {
-        // 第 5 条门槛修订：每个 event 的 guard 副作用必须**在它自己 plan
-        // 之前**应用，**不**与同 batch 其它 event 共用一份"已被批量更新"的
-        // guards。
-        //
-        // **A1-2**：`Event::ClearEStop` 不再走批量 apply；它的 guard 副作用
-        // 由 [`clear_estop_action::try_apply_clear_estop`] 在 plan_transition
-        // 之后单独完成（fsync + clear_safety_latch + 翻转 guard 的三步硬
-        // 顺序，详 `docs/00_design.md` §6.6.1 errata）。
-        if !matches!(event, Event::ClearEStop) {
-            apply_event_guard_side_effect(event, guards);
-        }
-        let Some(plan) = plan_transition(*state, event, guards) else {
-            // **A1-3 (1/3a)**：ClearEStop 在非 Safe state 被 plan_transition
-            // 返 None 时，必须把 StateNotSafe domain status 抛给 ipc_thread
-            // 生成 RR response。其它 event 静默 continue 不变。
-            if matches!(event, Event::ClearEStop) {
-                outcome.clear_estop = Some(ClearEStopTickOutcome::StateNotSafe { actual: *state });
-            }
-            continue;
+    for _ in 0..CONTROL_QUOTA {
+        let Some(event) = events.pop_control() else {
+            break;
         };
-        match plan.kind {
-            TransitionKind::Pure => {
-                if matches!(event, Event::ClearEStop) {
-                    // **A1-2 硬顺序**（详 docs/00_design.md §6.6.1 errata）：
-                    //   TorqueOffConfirmed gate
-                    //     → save_estop_latch_clear()           // backup-first fsync
-                    //     → executor_ctrl.clear_safety_latch()
-                    //     → guards.estop_latched = false
-                    // 任一步失败 → 不 commit_transition / 不 set_policy，
-                    // state 留 Safe（下次 tick 由上层重新发 ClearEStop 重试）。
-                    //
-                    // **A1-3 (1/3a)**：把所有 4 个 domain status 写到
-                    // `outcome.clear_estop` 让 ipc_thread / gateway 显式 match。
-                    let Some(path) = latch_path else {
-                        // latch_path 未配置（mock 测试场景）→ ClearEStop
-                        // 静默丢弃。生产期 strict fail-closed 保证 latch_path
-                        // 永远 Some（详 estop_latch::load_estop_latch；A1-5
-                        // 撤掉 `MissingLatchPolicy` enum 后 strict 是唯一行为）。
-                        continue;
-                    };
-                    match clear_estop_action::try_apply_clear_estop(
-                        guards,
-                        executor_ctrl,
-                        path,
-                        clock,
-                    ) {
-                        Ok(action_outcome) => {
-                            outcome.clear_estop = Some(ClearEStopTickOutcome::Cleared {
-                                cleared_at_ns: action_outcome.cleared_at_ns,
-                            });
-                            commit_transition(state, &plan);
-                            executor_ctrl.set_policy(plan.new_policy);
-                        }
-                        Err(clear_estop_action::ClearEStopError::FsyncFailed(_e)) => {
-                            // io::Error 细节走 tracing；TickOutcome 只标 variant
-                            outcome.clear_estop = Some(ClearEStopTickOutcome::FsyncFailed);
-                        }
-                        Err(clear_estop_action::ClearEStopError::NotTorqueOffConfirmed {
-                            actual,
-                        }) => {
-                            outcome.clear_estop =
-                                Some(ClearEStopTickOutcome::NotTorqueOffConfirmed { actual });
-                        }
-                    }
-                } else {
-                    commit_transition(state, &plan);
-                    executor_ctrl.set_policy(plan.new_policy);
-                }
-            }
-            TransitionKind::Emergency => {
-                // 兜底（理论 Step 1 drain_emergency 应该已经拿走；保留以防万一）
-                executor_ctrl.safety_stop();
-                commit_transition(state, &plan);
-                executor_ctrl.set_policy(plan.new_policy);
-            }
-            TransitionKind::Effectful { .. } => {
-                // **A2**：plan 入 pending 时**立即**置 pending_started_at
-                retry.pending = Some((plan, None));
-                retry.pending_started_at = Some(clock.now());
-                break; // 一个 tick 只排一个 pending
-            }
+        let current = apply_control_event(&mut ctx, event.into());
+        if current.clear_estop.is_some() {
+            outcome = current;
+        }
+        if ctx.retry.pending.is_some() {
+            break;
         }
     }
-
     outcome
 }
 
@@ -385,7 +461,7 @@ pub(crate) fn apply_event_guard_side_effect(ev: Event, guards: &mut Guards) {
         // 由 [`clear_estop_action::try_apply_clear_estop`] 在 `ipc_tick` 内
         // plan_transition 之后通过 fsync + `clear_safety_latch()` + 翻 guard
         // 的三步硬顺序完成（详 `docs/00_design.md` §6.6.1 errata）。
-        Event::ClearError => guards.adapter_fault_cleared = true,
+        Event::Heartbeat => guards.heartbeat_ok = true,
         Event::HeartbeatTimeout => guards.heartbeat_ok = false,
         _ => {}
     }
@@ -447,6 +523,7 @@ mod tests {
 
     fn healthy_guards() -> Guards {
         Guards {
+            rt_serial: false,
             estop_latched: false,
             adapter_connected: true,
             calibration_loaded: true,
