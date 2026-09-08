@@ -17,10 +17,13 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
 use robot_core::adapter::{ManipulatorAdapter, SerialRtAdapter};
 use robot_core::error::RobotError;
 use robot_core::factory::{AdapterBuildContext, AdapterFactory};
+use robot_core::time::{RobotClock, SystemClock};
 
 use crate::adapter::{FeetechAdapter, FeetechAdapterConfig};
 use crate::bus::FeetechBus;
@@ -47,33 +50,25 @@ impl FeetechFactory {
             .address
             .ok_or(RobotError::InvalidParameter("feetech: missing address"))?;
 
-        // ---- 2) motor_ids ----
-        // 缺省策略：长度 0 → fallback 1..=joint_names.len()
-        // 显式：长度必须 == joint_names.len()
-        let motor_ids: Vec<u8> = if ctx.motor_ids.is_empty() {
-            (0..ctx.joint_names.len())
-                .map(|i| u8::try_from(i + 1))
-                .collect::<Result<_, _>>()
-                .map_err(|_| RobotError::InvalidParameter("feetech: joint count > 255"))?
-        } else if ctx.motor_ids.len() != ctx.joint_names.len() {
-            tracing::error!(
-                motor_ids_len = ctx.motor_ids.len(),
-                joint_names_len = ctx.joint_names.len(),
-                "feetech factory: motor_ids length mismatch joints"
-            );
-            return Err(RobotError::InvalidParameter(
-                "feetech: motor_ids length mismatch joints",
-            ));
-        } else {
-            ctx.motor_ids.to_vec()
-        };
+        let motor_ids = resolve_motor_ids(ctx)?;
 
         // ---- 3) 打开真串口 ----
-        let transport =
-            RealSerialTransport::open(Path::new(address), DEFAULT_BAUDRATE).map_err(|e| {
-                tracing::error!(bus_address = %address, ?e, "feetech open serial failed");
-                RobotError::from(e)
-            })?;
+        let clock: Arc<dyn RobotClock> = ctx.services.map_or_else(
+            || Arc::new(SystemClock::new()) as Arc<dyn RobotClock>,
+            |services| Arc::clone(&services.clock),
+        );
+        let call_deadline = ctx.services.map_or(Duration::from_millis(50), |services| {
+            Duration::from_nanos(services.call_deadline.0)
+        });
+        let transport = RealSerialTransport::open_with_clock(
+            Path::new(address),
+            DEFAULT_BAUDRATE,
+            Arc::clone(&clock),
+        )
+        .map_err(|e| {
+            tracing::error!(bus_address = %address, ?e, "feetech open serial failed");
+            RobotError::from(e)
+        })?;
 
         // ---- 4) 构造 motors HashMap（name → Motor{id}） ----
         let mut motors = HashMap::with_capacity(ctx.joint_names.len());
@@ -128,6 +123,10 @@ impl FeetechFactory {
         let has_calibration = !calibrations.is_empty();
         let adapter = FeetechAdapter::new(
             FeetechAdapterConfig {
+                clock,
+                preempt: ctx.services.and_then(|services| services.preempt.clone()),
+                diag: ctx.services.and_then(|services| services.diag.clone()),
+                call_deadline,
                 adapter_name: "feetech_sts3215",
                 joint_names: ctx.joint_names.to_vec(),
                 calibrations,
@@ -151,6 +150,27 @@ impl FeetechFactory {
         );
         Ok(adapter)
     }
+}
+
+/// 参数解析在打开物理 transport 之前完成，保留原有缺省 ID 策略。
+fn resolve_motor_ids(ctx: &AdapterBuildContext<'_>) -> Result<Vec<u8>, RobotError> {
+    if ctx.motor_ids.is_empty() {
+        return (0..ctx.joint_names.len())
+            .map(|index| u8::try_from(index + 1))
+            .collect::<Result<_, _>>()
+            .map_err(|_| RobotError::InvalidParameter("feetech: joint count > 255"));
+    }
+    if ctx.motor_ids.len() != ctx.joint_names.len() {
+        tracing::error!(
+            motor_ids_len = ctx.motor_ids.len(),
+            joint_names_len = ctx.joint_names.len(),
+            "feetech factory: motor_ids length mismatch joints"
+        );
+        return Err(RobotError::InvalidParameter(
+            "feetech: motor_ids length mismatch joints",
+        ));
+    }
+    Ok(ctx.motor_ids.to_vec())
 }
 
 impl AdapterFactory for FeetechFactory {

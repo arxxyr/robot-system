@@ -17,15 +17,10 @@ publish    .workspace = true
 
 [dependencies]
 robot-core = { workspace = true }
-# task-32 (2026-04-25)：robot-logging 只在 feetech_poke example (bin) 里用，
-# library 自身只用 tracing macros；dev-dep 可能更干净，但 example 编译也要求
-# 主 crate 能 link —— 干脆放 dep 里 + optional real-hw gate。
-robot-logging = { workspace = true, optional = true }
 thiserror  = { workspace = true }
 inventory  = { workspace = true }
-# task-32：library 代码用 tracing macros 生产结构化 Event，subscriber init
-# 由 binary 负责（不依赖 robot-logging）。
-tracing    = { workspace = true }
+# 仅 real-hw 的构造期 factory 用 tracing；串口执行路径只写固定 DiagEvent。
+tracing    = { workspace = true, optional = true }
 # Step 7 task 28：real-hw feature 拉 serialport，提供 RealSerialTransport +
 # 注册 FeetechFactory（task 28 真机阶段必需；CI / dev 默认 off 走 mock）。
 serialport = { workspace = true, optional = true }
@@ -42,9 +37,11 @@ default = []
 # - `transport::real::RealSerialTransport` 可用
 # - `factory::FeetechFactory` 自注册（adapter name = "feetech_sts3215"）
 # 详 docs/CHANGELOG.md 2026-04-24 "Step 7 task 28 feetech real-hw + Orin 实跑"。
-real-hw = ["dep:serialport", "dep:robot-logging"]
+real-hw = ["dep:serialport", "dep:tracing"]
 
 [dev-dependencies]
+# 只有 feetech_poke example 的 main 显式初始化 subscriber，不进 library / daemon。
+robot-logging = { workspace = true }
 # Step 7 task 27c：criterion bench harness（5 组：sign-magnitude / LE byte /
 # protocol packet / parse_status / bus end-to-end）。
 criterion = { workspace = true }

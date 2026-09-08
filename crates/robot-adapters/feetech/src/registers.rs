@@ -39,8 +39,8 @@ pub const DEFAULT_BAUDRATE: u32 = 1_000_000;
 /// 未直接使用（wire protocol 自实现），保留作为 dimos 移植对照参考。
 pub const DEFAULT_PROTOCOL: u8 = 0;
 
-/// 单包默认超时（毫秒）。dimos `feetech_io/registers.py` `DEFAULT_TIMEOUT_MS`。
-pub const DEFAULT_TIMEOUT_MS: u64 = 1000;
+/// 单次完整读写调用的默认预算（毫秒），覆盖所有短 IO。
+pub const DEFAULT_TIMEOUT_MS: u64 = 50;
 
 // ============================================================================
 // 控制表（addr, length）

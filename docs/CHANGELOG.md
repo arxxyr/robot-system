@@ -42,6 +42,18 @@ core 79 / S0 298（含独立 14）/ schema compat 16 项通过，后续 phase / 
 既定命名约定显式配置 Cargo lint；不降低 Rust / clippy 诊断门。全 feature 的
 feetech logging 依赖提示按 C2 原计划处理。
 
+**C2 分包验证**：整包读写共用调用级绝对截止，短读写保留累计进度，下一次调用
+恢复完整预算；总线请求 / 响应由同一 RAII 执行权覆盖。adapter 构造期安装预算并
+填充安全输出对象，首 Safety / Confirm 不依赖 connect 成功，普通 IO 仍要求已连接；
+通信错误与可重试设备拒绝分开，hygiene 错误保留事实，运行诊断改固定事件。
+`robot-logging` 仅供工具 example，移至 dev-dependencies 后全 feature 静态门零警告。
+workspace lib / bins 1389、Feetech 独立 integration 12、schema compat 16 项通过，
+真实硬件未执行。独立验收曾把 checkpoint 过约束为必须持有事务执行权，已修正：
+discard / drain 返回也记录进度，真实 W/R 才要求执行权连续；失败日志保留供追溯。
+独立评审已 **C2 Approved**；诊断缺 motor 的 P2 随包修复并获 ACK，单条事件保留
+设备 ID 与状态字节 / 通信类别。默认 build 另发现 tracing 仅在 real-hw factory
+使用，将该依赖改为由 real-hw 显式启用，保持默认和真硬件构建的诊断门。
+
 ## 2026-09-01 · 候选 E 段(10-demo) 真机执行补录 + F1–F3 / F7 / F8 Reverse Sync 拍板（**状态：执行记录 ×1 + 拍板 ×3；本轮不实施代码、不改 00_design.md**）
 
 ### 段(10-demo) 真机执行补录（2026-09-01，操作者全程在场逐步放行）

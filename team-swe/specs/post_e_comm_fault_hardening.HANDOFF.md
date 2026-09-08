@@ -11,7 +11,12 @@
 - C1 公共契约已实现并获独立 reviewer **C1 Approved**；core 79、S0 298、schema
   compat 16 项通过，S0 含主 agent 独立验收 14 项。Cargo manifest 提示已最小修正，
   fresh fmt / workspace clippy / all-targets build 均零警告，timings 9.55 s；证据见
-  `.verify/post_e_comm_fault_hardening/C1.json`。接续 C2 有界传输，整候选未完成。
+  `.verify/post_e_comm_fault_hardening/C1.json`。
+- C2 有界传输 / adapter 已实现并获 **C2 Approved**；诊断缺 motor 的 P2 已修复并
+  经 reviewer ACK 关闭。Feetech 145 库测试（含独立 11）+ 12 独立 integration、
+  workspace 全 feature lib / bins 1389 项通过。默认 build 暴露仅 real-hw 使用的
+  tracing 依赖声明未门控，随包按实际使用域修正；最终门与日志见 C2.json。
+  接续 C3 serial 收敛，整候选尚未完成。
 - 旧“不得实施 / 不 commit”的授权前提只描述 9 月 5 日；本轮按用户持续推进授权
   与内部质量门执行，提交前仍必须 fmt + clippy 零警告。不因本地开发执行真机动作。
 - 文档所有者：主 agent（Spec / 本交接 / 导航）；开发所有者：developer（正式计划 /

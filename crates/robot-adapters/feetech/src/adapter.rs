@@ -22,15 +22,18 @@
 //! - velocity / torque：raw 单位定义随固件版本变（lerobot 也未做精确转换），
 //!   v0.2 直接 raw 透传到 f32（精度足够 50 Hz observation）。
 
-use std::thread::sleep;
+use std::sync::Arc;
 use std::time::Duration;
 
 use robot_core::adapter::{
     AdapterInfo, AdapterKind, ControlMode, JointCommandView, JointLimits, JointStateBuf,
     ManipulatorAdapter, RtClass,
 };
+use robot_core::diag::{DiagEvent, DiagSink};
 use robot_core::error::RobotError;
 use robot_core::executor_ctrl::OutputSafetyProbe;
+use robot_core::serial_services::{BusOpClass, CommErrorKind, PreemptProbe};
+use robot_core::time::{DurationNs, RobotClock};
 
 use crate::bus::FeetechBus;
 use crate::calibration_io::clamp_raw;
@@ -89,6 +92,11 @@ const SYNC_GOAL_TOLERANCE: i32 = 20;
 
 /// 配置：构造 adapter 时必传。
 pub struct FeetechAdapterConfig {
+    /// 同一运行时的单调时钟与构造期服务；热路径不 clone 句柄。
+    pub clock: Arc<dyn RobotClock>,
+    pub preempt: Option<Arc<dyn PreemptProbe>>,
+    pub diag: Option<Arc<dyn DiagSink>>,
+    pub call_deadline: Duration,
     pub adapter_name: &'static str,
     /// joint index 顺序对齐 `JointStateBuf.positions[..joint_count]`。每个 joint
     /// 名必须已经在 bus 的 motors 表里。
@@ -105,11 +113,15 @@ pub struct FeetechAdapterConfig {
 /// `FeetechAdapter` —— 包一层 `FeetechBus`，把 sync_read/write 跟
 /// `JointStateBuf` / `JointCommandView` 适配起来。
 pub struct FeetechAdapter<T: SerialTransport> {
+    clock: Arc<dyn RobotClock>,
+    preempt: Option<Arc<dyn PreemptProbe>>,
+    diag: Option<Arc<dyn DiagSink>>,
+    connected: bool,
     info: AdapterInfo,
     bus: FeetechBus<T>,
     joint_names: Vec<String>,
     /// `joint_names` 翻译成 motor id（hot path 用，避开 HashMap String compare）。
-    /// `connect()` 内一次性填充；`new()` 只能拿 `Vec::new()` placeholder。
+    /// `new()` 内一次性填充；首次 Safety 不依赖后续握手是否完成。
     /// Step 7 task 27c follow-up 优化点（火焰图发现 `__memcmp_evex_movbe` 来自
     /// `FeetechBus::motor_id` HashMap lookup）。
     joint_ids: Vec<u8>,
@@ -137,7 +149,7 @@ pub struct FeetechAdapter<T: SerialTransport> {
     /// 长度 = `joint_count`，sync_read Torque_Enable 回包后解码到这里再翻 bool。
     torque_enable_raw: Vec<i32>,
     /// task-30 v9 / M4：`safety_stop_fast` 路径的预分配 (id, 0) 列表。
-    /// `connect()` 时按 `joint_ids` 一次性填充；`safety_stop_fast` 调用时只读不
+    /// `new()` 时按 `joint_ids` 一次性填充；`safety_stop_fast` 调用时只读不
     /// 改，**emergency 路径不 alloc**。
     safety_stop_entries: Vec<(u8, i32)>,
     /// task-30 v9 / M4：`safety_stop_fast` 路径的 wire frame 预分配缓冲。
@@ -154,7 +166,10 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     ///
     /// # Panics
     /// `joint_names.len() > 255`（不可能 —— `MAX_JOINTS = 32`）。
-    pub fn new(config: FeetechAdapterConfig, bus: FeetechBus<T>) -> Result<Self, FeetechError> {
+    pub fn new(config: FeetechAdapterConfig, mut bus: FeetechBus<T>) -> Result<Self, FeetechError> {
+        // 构造任何出口之前安装调用预算；首个 Safety 不能等 connect 再配置。
+        bus.set_timeout(config.call_deadline)?;
+        bus.set_services(config.preempt.clone(), config.diag.clone());
         let joint_count_usize = config.joint_names.len();
         if joint_count_usize > robot_core::adapter::MAX_JOINTS {
             return Err(FeetechError::ByteLengthMismatch {
@@ -170,6 +185,22 @@ impl<T: SerialTransport> FeetechAdapter<T> {
                 expected: joint_count_usize,
                 actual: calibrations.len(),
             });
+        }
+
+        let mut joint_ids = Vec::with_capacity(joint_count_usize);
+        let mut safety_stop_entries = Vec::with_capacity(joint_count_usize);
+        for (index, name) in config.joint_names.iter().enumerate() {
+            let id = bus.motor_id(name)?;
+            if let Some(calibration) = calibrations.get(index)
+                && calibration.id != id
+            {
+                return Err(FeetechError::CalibrationMotorIdMismatch {
+                    expected: id,
+                    got: calibration.id,
+                });
+            }
+            joint_ids.push(id);
+            safety_stop_entries.push((id, 0));
         }
 
         // 关节限位：无 calibration 时保留原 ±π 全开默认；有 calibration 时按
@@ -196,6 +227,10 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         }
 
         Ok(Self {
+            clock: config.clock,
+            preempt: config.preempt,
+            diag: config.diag,
+            connected: false,
             info: AdapterInfo {
                 name: config.adapter_name,
                 kind: AdapterKind::Manipulator,
@@ -207,8 +242,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             },
             bus,
             joint_names: config.joint_names,
-            // joint_ids 留空，connect() 时填充（避免 new 也要查 bus 的 HashMap）
-            joint_ids: Vec::new(),
+            joint_ids,
             // hot path 缓冲预分配到 joint_count，read_state / write_command 不 alloc
             pos_raw: vec![0_i32; joint_count_usize],
             vel_raw: vec![0_i32; joint_count_usize],
@@ -220,9 +254,8 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             goal_raw: vec![0_i32; joint_count_usize],
             // task-30 v9 / M3：OutputSafetyProbe 路径预分配缓冲
             torque_enable_raw: vec![0_i32; joint_count_usize],
-            // task-30 v9 / M4：safety_stop_fast 路径预分配。entries 在 connect()
-            // 填充（new() 还没拿 motor id）；frame_buf 一次性 resize 到 256。
-            safety_stop_entries: Vec::with_capacity(joint_count_usize),
+            // 首次 Safety 已有完整 motor 列表，不发空广播冒充成功。
+            safety_stop_entries,
             safety_stop_frame_buf: vec![0u8; 256],
         })
     }
@@ -230,6 +263,57 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     /// 借出 `&mut FeetechBus` 给上层做校准 / set_half_turn_homings 等不属于 trait 的操作。
     pub fn bus(&mut self) -> &mut FeetechBus<T> {
         &mut self.bus
+    }
+
+    fn require_connected(&self) -> Result<(), FeetechError> {
+        if !self.connected || !self.bus.is_connected() {
+            return Err(FeetechError::NotConnected);
+        }
+        Ok(())
+    }
+
+    /// site 标记入口；kind：0错误、1重试、2恢复、3不支持模式、4接收清理、
+    /// 5设备状态（a=motor、b=状态字节）、6扭矩使能写失败（a=motor、b=通信分类）。
+    fn record(&self, site: u8, kind: u8, a: u8, b: u8, detail: u32) {
+        if let Some(diag) = self.diag.as_ref() {
+            diag.record(DiagEvent {
+                stamp_ns: self.clock.now().0,
+                site,
+                kind,
+                a,
+                b,
+                seq_lo: detail,
+            });
+        }
+    }
+
+    fn record_error(&self, site: u8, error: &FeetechError) {
+        let (kind, a, b) = match error {
+            FeetechError::StatusError(status) => (5, self.bus.device_status_motor(), *status),
+            _ => (
+                0,
+                error.comm_kind().unwrap_or(CommErrorKind::Unknown).to_u8(),
+                0,
+            ),
+        };
+        self.record(site, kind, a, b, 0);
+    }
+
+    fn sleep_or_abort(&self, duration: Duration) -> Result<(), FeetechError> {
+        let nanos = u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX);
+        if let Some(preempt) = self.preempt.as_ref() {
+            return preempt
+                .sleep_or_abort(BusOpClass::NormalEffectful, DurationNs(nanos))
+                .map_err(FeetechError::Aborted);
+        }
+        let deadline = self.clock.now().0.saturating_add(nanos);
+        loop {
+            let remaining = deadline.saturating_sub(self.clock.now().0);
+            if remaining == 0 {
+                return Ok(());
+            }
+            self.clock.sleep_for(DurationNs(remaining.min(5_000_000)));
+        }
     }
 
     /// 读当前 `Present_Position`，把它作为 `Goal_Position` 写回 —— target 追平
@@ -255,13 +339,14 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     ///    tick）→ 重写，至多 [`SYNC_GOAL_MAX_ATTEMPTS`] 次
     /// 4. 全部重试失败 → 返回 [`FeetechError::SyncGoalReadbackMismatch`]
     ///
-    /// 每次失败 attempt 都走 `tracing::warn!` 打印 write/readback 对比 ——
-    /// 即便 fix 对个别 motor 型号无效，日志也留诊断线索。
+    /// 每次失败与恢复均记录固定诊断事件；串口执行线程不格式化日志。
     ///
     /// # Errors
     /// - 透传 `sync_read` / `sync_write` 的 [`FeetechError`]（总线通信失败）
     /// - Readback 连续不匹配 → [`FeetechError::SyncGoalReadbackMismatch`]
     pub fn sync_goal_to_present(&mut self) -> Result<(), FeetechError> {
+        self.require_connected()?;
+        self.bus.set_op_class(BusOpClass::NormalEffectful);
         // 1. 读 Present_Position（target 目标值）
         self.bus
             .sync_read_by_id_into("Present_Position", &self.joint_ids, &mut self.pos_raw)?;
@@ -276,7 +361,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         for attempt in 1..=SYNC_GOAL_MAX_ATTEMPTS {
             self.bus
                 .sync_write_by_id("Goal_Position", &self.cmd_entries)?;
-            sleep(SYNC_GOAL_READBACK_WAIT);
+            self.sleep_or_abort(SYNC_GOAL_READBACK_WAIT)?;
             self.bus
                 .sync_read_by_id_into("Goal_Position", &self.joint_ids, &mut self.goal_raw)?;
 
@@ -296,25 +381,13 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             match mismatch {
                 None => {
                     if attempt > 1 {
-                        tracing::info!(
-                            attempt,
-                            max_attempts = max,
-                            "feetech sync_goal_to_present: succeeded after retry"
-                        );
+                        self.record(2, 2, 0, attempt as u8, 0);
                     }
                     return Ok(());
                 }
                 Some((id, wanted, got)) => {
                     let diff = got - wanted;
-                    tracing::warn!(
-                        motor_id = id,
-                        attempt,
-                        max_attempts = max,
-                        wrote = wanted,
-                        got,
-                        diff,
-                        "feetech sync_goal_to_present: Goal readback mismatch"
-                    );
+                    self.record(2, 1, id, attempt as u8, diff.unsigned_abs());
                     if attempt == max {
                         return Err(FeetechError::SyncGoalReadbackMismatch {
                             motor_id: id,
@@ -341,7 +414,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     /// 透传 [`Self::sync_goal_to_present`] 的错误。
     pub fn hold_current_position(&mut self) -> Result<(), RobotError> {
         self.sync_goal_to_present().map_err(|e| {
-            tracing::error!(?e, "feetech hold_current_position failed");
+            self.record_error(2, &e);
             RobotError::from(e)
         })
     }
@@ -355,50 +428,49 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         } else {
             i32::from(TorqueMode::Disabled as u8)
         };
-        let label = if on { "enable(true)" } else { "enable(false)" };
-        let max_attempts = TORQUE_ENABLE_MAX_ATTEMPTS;
-
-        let mut first_failure: Option<(String, FeetechError)> = None;
-        for name in &self.joint_names {
-            let mut last_err: Option<FeetechError> = None;
-            for attempt in 1..=max_attempts {
-                match self.bus.write("Torque_Enable", name, target) {
+        let mut first_failure = None;
+        for index in 0..self.joint_names.len() {
+            for attempt in 1..=TORQUE_ENABLE_MAX_ATTEMPTS {
+                match self
+                    .bus
+                    .write("Torque_Enable", &self.joint_names[index], target)
+                {
                     Ok(()) => {
-                        last_err = None;
+                        if attempt > 1 {
+                            self.record(3, 2, self.joint_ids[index], attempt as u8, 0);
+                        }
                         break;
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            joint = %name,
-                            attempt,
-                            max_attempts,
-                            label,
-                            ?e,
-                            "feetech torque_enable write retry"
+                    Err(error) => {
+                        self.record(
+                            3,
+                            6,
+                            self.joint_ids[index],
+                            error.comm_kind().unwrap_or(CommErrorKind::Unknown).to_u8(),
+                            0,
                         );
-                        last_err = Some(e);
-                        if attempt < max_attempts {
-                            sleep(TORQUE_ENABLE_RETRY_DELAY);
+                        self.record_error(3, &error);
+                        // 只有设备 NACK 可重试；通信、抢占和永久参数问题立即定级返回。
+                        if !matches!(error, FeetechError::StatusError(_)) {
+                            return Err(error.into());
+                        }
+                        self.record(3, 1, self.joint_ids[index], attempt as u8, 0);
+                        if attempt == TORQUE_ENABLE_MAX_ATTEMPTS {
+                            if first_failure.is_none() {
+                                first_failure = Some(error);
+                            }
+                        } else {
+                            self.sleep_or_abort(TORQUE_ENABLE_RETRY_DELAY)
+                                .map_err(RobotError::from)?;
                         }
                     }
                 }
             }
-            if let Some(e) = last_err
-                && first_failure.is_none()
-            {
-                first_failure = Some((name.clone(), e));
-            }
         }
-        if let Some((name, e)) = first_failure {
-            tracing::error!(
-                joint = %name,
-                label,
-                ?e,
-                "feetech torque_enable: first failing motor"
-            );
-            return Err(RobotError::from(e));
+        match first_failure {
+            Some(error) => Err(error.into()),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     /// **task-30 v9 / M4**：emergency 路径专用快速断扭。
@@ -413,26 +485,18 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     /// - `safety_stop_fast`：单 broadcast → < 10 ms。**emergency 路径专用**，
     ///   失败也不重试（再失败由 confirm_torque_off 升 `StopFailed`）。
     ///
-    /// 调用约束：必须在 `connect()` 之后调；`safety_stop_entries` 已被填充。
+    /// 构造结束即拥有完整停止列表，允许在 `connect()` 握手之前发送首次 Safety。
     /// 路径**不分配堆**（`assert_no_alloc::assert_no_alloc(...)` 包裹下不 panic）。
     ///
     /// # Errors
     ///
     /// - 透传 `sync_write_by_id_into` 的协议 / transport 错误。
-    /// - 若 `connect()` 还没跑过 → entries 为空，sync_write 发空帧，调用方应
-    ///   先 connect。
+    /// - transport 未打开或停止目标为空 → `NotConnected`，绝不发空广播冒充成功。
     pub fn safety_stop_fast(&mut self) -> Result<(), FeetechError> {
-        // task-30 v9 finding #2：emergency 路径不允许"假成功"。
-        //
-        // 触发条件：`safety_stop_entries` 在 `connect()` 末尾才填充。如果在
-        // 半初始化（new 后未 connect）/ 重连失败 / teardown 中调用本方法，
-        // entries 为空 → sync_write 仍然能写出"广播 + 0 entry"的合法 wire 帧
-        // → 返回 Ok 但**没有 motor 真的被 disable**。这种"假成功"在 emergency
-        // 路径上等于"硬件 fail-safe 被消音"，是隐性安全失真。
-        //
-        // 这里强制 entries.len() == joint_ids.len() 且都 > 0，否则 NotConnected
-        // 让上层（serial_io_thread）走 confirm_torque_off → `StopFailed` 路径。
-        if self.safety_stop_entries.is_empty()
+        self.bus.set_op_class(BusOpClass::Safety);
+        // 构造期已填完整目标；首次广播只要求物理 transport 已打开。
+        if !self.bus.is_connected()
+            || self.safety_stop_entries.is_empty()
             || self.safety_stop_entries.len() != self.joint_ids.len()
         {
             return Err(FeetechError::NotConnected);
@@ -454,53 +518,30 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     }
 
     fn connect(&mut self) -> Result<(), RobotError> {
-        self.bus.connect(true).map_err(RobotError::from)?;
-        // Step 7 task 27c follow-up：一次性翻译 joint_names → joint_ids，
-        // 让 read_state / write_command hot path 走 by-id API 跳过 HashMap lookup。
-        self.joint_ids.clear();
-        self.joint_ids.reserve(self.joint_names.len());
-        for name in &self.joint_names {
-            let id = self.bus.motor_id(name).map_err(|e| {
-                tracing::error!(joint = %name, ?e, "feetech connect: motor_id lookup failed");
-                RobotError::from(e)
-            })?;
-            self.joint_ids.push(id);
-        }
-        // task 29 commit 2：若提供 calibration，校验 cal.id 与 bus 给出的 motor id
-        // 对齐 —— 配错时 ID 与名字错配（比如 left_arm.json 被指给了 right_arm
-        // joints）→ silent clamp 会用错 range，真转时撞机械限位
-        if !self.calibrations.is_empty() {
-            for (i, cal) in self.calibrations.iter().enumerate() {
-                let bus_id = self.joint_ids[i];
-                if cal.id != bus_id {
-                    tracing::error!(
-                        joint = %self.joint_names[i],
-                        index = i,
-                        calibration_id = cal.id,
-                        bus_motor_id = bus_id,
-                        "feetech connect: calibration motor id mismatch with bus"
-                    );
-                    return Err(RobotError::InvalidParameter(
-                        "feetech: calibration motor id mismatch",
-                    ));
-                }
-            }
-        }
-        // task-30 v9 / M4：safety_stop_fast 路径预填 (id, 0) 列表。connect 后
-        // 任何 emergency 调 safety_stop_fast 不需要再走 HashMap / alloc。
-        self.safety_stop_entries.clear();
-        for &id in &self.joint_ids {
-            self.safety_stop_entries.push((id, 0));
-        }
+        let class = self
+            .preempt
+            .as_ref()
+            .map_or(BusOpClass::NormalEffectful, |probe| probe.operation_class());
+        self.bus.set_op_class(class);
+        self.connected = false;
+        self.bus.connect(true).map_err(|error| {
+            self.record_error(1, &error);
+            RobotError::from(error)
+        })?;
+        self.connected = true;
         Ok(())
     }
 
     fn disconnect(&mut self) -> Result<(), RobotError> {
+        self.bus.set_op_class(BusOpClass::NormalEffectful);
+        self.connected = false;
         self.bus.disconnect();
         Ok(())
     }
 
     fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
+        self.require_connected().map_err(RobotError::from)?;
+        self.bus.set_op_class(BusOpClass::PeriodicRead);
         // Step 7 task 27c follow-up：走 by-id API + 复用预分配 raw 缓冲，
         // 完全跳过 HashMap String compare（火焰图 hot path 优化）。
         // pos_raw / vel_raw 在 new() 已 vec![0; joint_count]，size 与 joint_count
@@ -508,21 +549,13 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         self.bus
             .sync_read_by_id_into("Present_Position", &self.joint_ids, &mut self.pos_raw)
             .map_err(|e| {
-                tracing::warn!(
-                    register = "Present_Position",
-                    ?e,
-                    "feetech read_state failed"
-                );
+                self.record_error(4, &e);
                 RobotError::from(e)
             })?;
         self.bus
             .sync_read_by_id_into("Present_Velocity", &self.joint_ids, &mut self.vel_raw)
             .map_err(|e| {
-                tracing::warn!(
-                    register = "Present_Velocity",
-                    ?e,
-                    "feetech read_state failed"
-                );
+                self.record_error(4, &e);
                 RobotError::from(e)
             })?;
 
@@ -540,15 +573,14 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     }
 
     fn write_command(&mut self, cmd: &JointCommandView) -> Result<(), RobotError> {
+        self.require_connected().map_err(RobotError::from)?;
+        self.bus.set_op_class(BusOpClass::PeriodicWrite);
         // v0.2 仅支持 Position 模式；其他模式静默忽略 + 警告
         if !matches!(cmd.mode, ControlMode::Position) {
             // 不报错，因为 state machine 的 holding command 也走这条路；只在
             // 非 stop 模式给警告
             if !matches!(cmd.mode, ControlMode::Stop) {
-                tracing::warn!(
-                    mode = ?cmd.mode,
-                    "feetech write_command: ControlMode not yet implemented (v0.2 only Position)"
-                );
+                self.record(5, 3, 0, 0, 0);
             }
             return Ok(());
         }
@@ -572,16 +604,14 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         self.bus
             .sync_write_by_id("Goal_Position", &self.cmd_entries)
             .map_err(|e| {
-                tracing::warn!(
-                    register = "Goal_Position",
-                    ?e,
-                    "feetech write_command sync_write failed"
-                );
+                self.record_error(5, &e);
                 RobotError::from(e)
             })
     }
 
     fn set_mode(&mut self, mode: ControlMode) -> Result<(), RobotError> {
+        self.require_connected().map_err(RobotError::from)?;
+        self.bus.set_op_class(BusOpClass::NormalEffectful);
         let op_mode_value: i32 = match mode {
             ControlMode::Position | ControlMode::ServoPosition => 0,
             ControlMode::Velocity => 1,
@@ -600,13 +630,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             self.bus
                 .write("Operating_Mode", name, op_mode_value)
                 .map_err(|e| {
-                    tracing::error!(
-                        joint = %name,
-                        register = "Operating_Mode",
-                        value = op_mode_value,
-                        ?e,
-                        "feetech set_mode write failed"
-                    );
+                    self.record_error(6, &e);
                     RobotError::from(e)
                 })?;
         }
@@ -614,6 +638,8 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     }
 
     fn enable(&mut self, on: bool) -> Result<(), RobotError> {
+        self.require_connected().map_err(RobotError::from)?;
+        self.bus.set_op_class(BusOpClass::NormalEffectful);
         if on {
             // task 29 commit 2：1:1 移植 dimos `_manipulator_base.py:468-504` 防飞序列
             //   1) sync_read Present_Position for all
@@ -623,10 +649,11 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             // 目的：Torque 接上瞬间 target == current → 电机不动，避开 Goal 还
             // 是旧值导致的"飞向 0"风险。
             self.sync_goal_to_present().map_err(|e| {
-                tracing::error!(?e, "feetech enable(true): sync_goal_to_present failed");
+                self.record_error(3, &e);
                 RobotError::from(e)
             })?;
-            sleep(ENABLE_SYNC_SETTLE);
+            self.sleep_or_abort(ENABLE_SYNC_SETTLE)
+                .map_err(RobotError::from)?;
 
             self.write_torque_enable_with_retry(true)
         } else {
@@ -648,7 +675,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         // confirm_torque_off 由 SerialIoCtrlClient 下 tick 调
         // `OutputSafetyProbe::read_torque_enable_mask` 验证；本方法只负责下发。
         self.safety_stop_fast().map_err(|e| {
-            tracing::error!(?e, "feetech safety_stop_fast failed");
+            self.record_error(7, &e);
             RobotError::from(e)
         })
     }
@@ -675,9 +702,31 @@ impl<T: SerialTransport + 'static> OutputSafetyProbe for FeetechAdapter<T> {
                 "OutputSafetyProbe out len < joint_count",
             ));
         }
-        if self.joint_ids.len() != n {
-            // connect() 还没跑过；joint_ids 为空 → safety probe 没意义。
-            return Err(RobotError::NotConnected);
+        if self.joint_ids.len() != n || n == 0 || !self.bus.is_connected() {
+            return Err(FeetechError::NotConnected.into());
+        }
+        self.bus.set_op_class(BusOpClass::Confirm);
+        if self
+            .preempt
+            .as_ref()
+            .is_some_and(|probe| !probe.confirmation_trusted())
+        {
+            match self.bus.confirm_hygiene() {
+                Ok(report) => self.record(
+                    8,
+                    4,
+                    u8::from(report.deadline_hit),
+                    0,
+                    u32::try_from(report.bytes).unwrap_or(u32::MAX),
+                ),
+                Err(error) => {
+                    // 先发布安全事实，仍继续本轮 probe；probe 成功不能抹掉 hygiene 错误。
+                    if let Some(probe) = self.preempt.as_ref() {
+                        probe.report_comm_error(CommErrorKind::DiscardFailed);
+                    }
+                    self.record_error(8, &error);
+                }
+            }
         }
         // sync_read Torque_Enable 一次 wire RTT；torque_enable_raw 已在 new()
         // 预分配 vec![0; joint_count]，本路径不 alloc。
@@ -688,11 +737,7 @@ impl<T: SerialTransport + 'static> OutputSafetyProbe for FeetechAdapter<T> {
                 &mut self.torque_enable_raw,
             )
             .map_err(|e| {
-                tracing::warn!(
-                    register = "Torque_Enable",
-                    ?e,
-                    "feetech read_torque_enable_mask failed"
-                );
+                self.record_error(8, &e);
                 RobotError::from(e)
             })?;
         // 解码：== 0 → torque off (false)；其它（== 1 通常）→ torque on (true)。
@@ -720,6 +765,16 @@ mod tests {
     use crate::types::Motor;
     use std::collections::HashMap;
     use std::f32::consts::TAU;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct CapturedDiagnostics(Mutex<Vec<DiagEvent>>);
+
+    impl DiagSink for CapturedDiagnostics {
+        fn record(&self, event: DiagEvent) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
 
     /// 构造 + connected 状态的 adapter。喂 handshake 回包（每 motor 2 包：
     /// PING ack + Model_Number 777）让 `connect()` 内部 handshake + populate
@@ -744,6 +799,10 @@ mod tests {
         let bus = FeetechBus::new(transport, motors).unwrap();
         let mut adapter = FeetechAdapter::new(
             FeetechAdapterConfig {
+                clock: Arc::new(robot_core::time::MockClock::default()),
+                preempt: None,
+                diag: None,
+                call_deadline: Duration::from_millis(50),
                 adapter_name: "feetech_sts3215_test",
                 joint_names: joints.iter().map(|(n, _)| (*n).to_string()).collect(),
                 calibrations,
@@ -843,6 +902,148 @@ mod tests {
         let tx = h.drain_tx();
         let count = tx.windows(3).filter(|w| *w == [0x03, 0x28, 0x00]).count();
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn enable_false_stops_on_first_communication_error_without_retry_or_next_motor() {
+        let (mut adapter, handle) = make_adapter(&[("j1", 1), ("j2", 2)]);
+        assert_eq!(
+            adapter.enable(false),
+            Err(RobotError::Comm(CommErrorKind::Timeout))
+        );
+        let mut expected = [0; 16];
+        let size = crate::protocol::build_write(1, 40, &[0], &mut expected).unwrap();
+        assert_eq!(handle.drain_tx(), expected[..size]);
+    }
+
+    #[test]
+    fn enable_true_does_not_retry_a_failed_initial_present_read() {
+        let (mut adapter, handle) = make_adapter(&[("j1", 1)]);
+        assert_eq!(
+            adapter.enable(true),
+            Err(RobotError::Comm(CommErrorKind::Timeout))
+        );
+        let mut expected = [0; 16];
+        let size = crate::protocol::build_sync_read(56, 2, &[1], &mut expected).unwrap();
+        assert_eq!(handle.drain_tx(), expected[..size]);
+    }
+
+    #[test]
+    fn torque_nack_retry_has_three_attempts_and_preserves_first_device_failure() {
+        let (mut adapter, handle) = make_adapter(&[("j1", 1), ("j2", 2)]);
+        for _ in 0..3 {
+            handle.push_rx(&read_status_with_error(1, 1));
+        }
+        handle.push_rx(&ack_status(2));
+        assert!(matches!(
+            adapter.enable(false),
+            Err(RobotError::HardwareFault(_))
+        ));
+        let transmitted = handle.drain_tx();
+        // 每个 write Torque_Enable 为八字节；设备 NACK 封顶后仍处理下一个 motor。
+        assert_eq!(transmitted.len(), 4 * 8);
+        assert_eq!(
+            transmitted
+                .as_chunks::<8>()
+                .0
+                .iter()
+                .map(|frame| frame[2])
+                .collect::<Vec<_>>(),
+            [1, 1, 1, 2]
+        );
+    }
+
+    #[test]
+    fn torque_communication_failure_diagnostic_retains_motor_and_error_kind() {
+        let (mut adapter, handle) = make_adapter(&[("j1", 7), ("j2", 42)]);
+        let diag = Arc::new(CapturedDiagnostics::default());
+        adapter.diag = Some(diag.clone());
+        handle.push_rx(&ack_status(7));
+        assert_eq!(
+            adapter.enable(false),
+            Err(RobotError::Comm(CommErrorKind::Timeout))
+        );
+        let events = diag.0.lock().unwrap();
+        let failures: Vec<_> = events.iter().filter(|event| event.kind == 6).collect();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(
+            (
+                failures[0].site,
+                failures[0].a,
+                failures[0].b,
+                failures[0].seq_lo
+            ),
+            (3, 42, 0, 0)
+        );
+    }
+
+    #[test]
+    fn torque_device_status_diagnostic_retains_motor_status_and_retry_count() {
+        let (mut adapter, handle) = make_adapter(&[("j1", 19), ("j2", 42)]);
+        let diag = Arc::new(CapturedDiagnostics::default());
+        adapter.diag = Some(diag.clone());
+        for _ in 0..3 {
+            handle.push_rx(&read_status_with_error(19, 0x24));
+        }
+        for _ in 0..3 {
+            handle.push_rx(&read_status_with_error(42, 0x08));
+        }
+        assert!(matches!(
+            adapter.enable(false),
+            Err(RobotError::HardwareFault(_))
+        ));
+        let events = diag.0.lock().unwrap();
+        let statuses: Vec<_> = events.iter().filter(|event| event.kind == 5).collect();
+        assert_eq!(statuses.len(), 6);
+        for (status, (motor, byte)) in statuses.into_iter().zip([
+            (19, 0x24),
+            (19, 0x24),
+            (19, 0x24),
+            (42, 0x08),
+            (42, 0x08),
+            (42, 0x08),
+        ]) {
+            assert_eq!(
+                (status.site, status.a, status.b, status.seq_lo),
+                (3, motor, byte, 0)
+            );
+        }
+        let failures: Vec<_> = events.iter().filter(|event| event.kind == 6).collect();
+        assert_eq!(failures.len(), 6);
+        for (failure, motor) in failures.into_iter().zip([19, 19, 19, 42, 42, 42]) {
+            assert_eq!((failure.site, failure.a, failure.b), (3, motor, 63));
+        }
+        assert_eq!(events.iter().filter(|event| event.kind == 1).count(), 6);
+    }
+
+    #[test]
+    fn sync_read_device_status_diagnostic_identifies_the_failed_response_motor() {
+        let (mut adapter, handle) = make_adapter(&[("j1", 7), ("j2", 42)]);
+        let diag = Arc::new(CapturedDiagnostics::default());
+        adapter.diag = Some(diag.clone());
+        handle.push_rx(&read_status(7, &[0x00, 0x08]));
+        let mut failed_response = read_status(42, &[0x00, 0x08]);
+        failed_response[4] = 0x20;
+        let checksum_offset = failed_response.len() - 1;
+        failed_response[checksum_offset] = checksum(&failed_response[2..checksum_offset]);
+        handle.push_rx(&failed_response);
+        assert!(matches!(
+            adapter.read_state(&mut JointStateBuf::default()),
+            Err(RobotError::HardwareFault(_))
+        ));
+        let events = diag.0.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        let event = events[0];
+        assert_eq!(
+            (event.site, event.kind, event.a, event.b, event.seq_lo),
+            (4, 5, 42, 0x20, 0)
+        );
+    }
+
+    fn read_status_with_error(id: u8, error: u8) -> Vec<u8> {
+        let mut response = vec![0xff, 0xff, id, 2, error];
+        response.push(checksum(&response[2..]));
+        response
     }
 
     #[test]
@@ -1000,6 +1201,10 @@ mod tests {
         let bus = FeetechBus::new(transport, motors).unwrap();
         let result = FeetechAdapter::new(
             FeetechAdapterConfig {
+                clock: Arc::new(robot_core::time::MockClock::default()),
+                preempt: None,
+                diag: None,
+                call_deadline: Duration::from_millis(50),
                 adapter_name: "test",
                 joint_names: vec!["j1".into()],
                 calibrations: vec![MotorCalibration::identity(1), MotorCalibration::identity(2)],
@@ -1014,31 +1219,31 @@ mod tests {
     }
 
     #[test]
-    fn calibration_id_mismatch_rejected_on_connect() {
-        // calibration.id=99 与 bus motor id=1 不匹配 → connect() 拒绝
+    fn calibration_id_mismatch_rejected_at_construction() {
         let (transport, handle) = MockTransport::new();
-        let mut motors = HashMap::new();
-        motors.insert("j1".to_string(), Motor::new(1).unwrap());
+        let motors = HashMap::from([("j1".into(), Motor::new(1).unwrap())]);
         let bus = FeetechBus::new(transport, motors).unwrap();
-        let mut adapter = FeetechAdapter::new(
+        let calibration = MotorCalibration::new(99, 0, 0, 0, 4095).unwrap();
+        let result = FeetechAdapter::new(
             FeetechAdapterConfig {
+                clock: Arc::new(robot_core::time::MockClock::default()),
+                preempt: None,
+                diag: None,
+                call_deadline: Duration::from_millis(50),
                 adapter_name: "test",
                 joint_names: vec!["j1".into()],
-                calibrations: vec![MotorCalibration::identity(99)],
+                calibrations: vec![calibration],
             },
             bus,
-        )
-        .unwrap();
-        // handshake 回包（连接先成功）
-        handle.push_rx(&ack_status(1));
-        handle.push_rx(&read_status(1, &[0x09, 0x03]));
-        let err = adapter.connect().unwrap_err();
-        match err {
-            RobotError::InvalidParameter(msg) => {
-                assert!(msg.contains("calibration motor id mismatch"));
-            }
-            other => panic!("expected InvalidParameter, got {other:?}"),
-        }
+        );
+        assert!(matches!(
+            result,
+            Err(FeetechError::CalibrationMotorIdMismatch {
+                expected: 1,
+                got: 99
+            })
+        ));
+        assert_eq!(handle.drain_tx(), [] as [u8; 0]);
     }
 
     #[test]
@@ -1294,18 +1499,21 @@ mod tests {
         // 慢路径会有多个 INST = WriteData (0x03) 的帧。
     }
 
-    /// **finding #2 lock 测试**：未 connect（safety_stop_entries 为空）
-    /// 时 `safety_stop_fast` 返 NotConnected，**不**发空 SYNC_WRITE。
+    /// 首次 Safety 在握手前也必须向全部构造期目标发送实际广播。
     #[test]
-    fn safety_stop_fast_unconnected_returns_not_connected() {
-        // 直接构造一个未 connect 的 adapter；不能用 make_adapter（它会 connect）。
+    fn safety_stop_fast_before_connect_sends_all_configured_motors() {
         let (transport, handle) = MockTransport::new();
-        let mut motors = HashMap::new();
-        motors.insert("j1".to_string(), Motor::new(1).unwrap());
-        motors.insert("j2".to_string(), Motor::new(2).unwrap());
+        let motors = HashMap::from([
+            ("j1".into(), Motor::new(1).unwrap()),
+            ("j2".into(), Motor::new(2).unwrap()),
+        ]);
         let bus = FeetechBus::new(transport, motors).unwrap();
-        let mut a = FeetechAdapter::new(
+        let mut adapter = FeetechAdapter::new(
             FeetechAdapterConfig {
+                clock: Arc::new(robot_core::time::MockClock::default()),
+                preempt: None,
+                diag: None,
+                call_deadline: Duration::from_millis(50),
                 adapter_name: "test_unconnected",
                 joint_names: vec!["j1".into(), "j2".into()],
                 calibrations: Vec::new(),
@@ -1313,17 +1521,15 @@ mod tests {
             bus,
         )
         .unwrap();
-        // 关键：**没**调 connect()，所以 safety_stop_entries 为空 + joint_ids 为空
-        let err = a.safety_stop_fast().unwrap_err();
-        assert!(
-            matches!(err, FeetechError::NotConnected),
-            "expected NotConnected, got {err:?}"
-        );
-        // **未**发任何 wire bytes（emergency 路径不能假成功）
-        let tx = handle.drain_tx();
-        assert!(
-            tx.is_empty(),
-            "未 connect 时不应发任何 wire bytes，发了：{tx:?}"
-        );
+        assert!(matches!(
+            adapter.enable(true),
+            Err(RobotError::Comm(CommErrorKind::Disconnected))
+        ));
+        assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+        adapter.safety_stop_fast().unwrap();
+        let mut expected = [0; 32];
+        let size = crate::protocol::build_sync_write(40, 1, &[(1, &[0]), (2, &[0])], &mut expected)
+            .unwrap();
+        assert_eq!(handle.drain_tx(), expected[..size]);
     }
 }

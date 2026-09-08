@@ -24,8 +24,11 @@
 //! 引入"adapter 内部 IO 线程 + atomic snapshot"双层架构。
 
 use std::collections::HashMap;
-use std::fmt::Write as _;
+use std::sync::Arc;
 use std::time::Duration;
+
+use robot_core::diag::DiagSink;
+use robot_core::serial_services::{BusOpClass, PreemptProbe};
 
 use crate::encoding::{
     combine_bytes_le, decode_sign_magnitude, encode_sign_magnitude, split_bytes_le,
@@ -35,8 +38,8 @@ use crate::protocol::{
     StatusPacket, build_ping, build_read, build_sync_read, build_sync_write, build_write,
     parse_status,
 };
-use crate::registers::{DEFAULT_TIMEOUT_MS, MODEL_NUMBER_STS3215, get_register, sign_bit_for};
-use crate::transport::SerialTransport;
+use crate::registers::{MODEL_NUMBER_STS3215, get_register, sign_bit_for};
+use crate::transport::{DrainReport, SerialTransport};
 use crate::types::Motor;
 
 /// 一条 Feetech bus。`T` 是 [`SerialTransport`] 实现（`MockTransport` /
@@ -49,6 +52,60 @@ pub struct FeetechBus<T: SerialTransport> {
     name_by_id: HashMap<u8, String>,
     /// 当前 read_exact 超时配置；`set_timeout` 切换时同步给 transport。
     timeout: Duration,
+    /// 构造期固定的确定性握手顺序，不在串口线程构造临时集合。
+    motor_ids: Vec<u8>,
+    preempt: Option<Arc<dyn PreemptProbe>>,
+    op_class: BusOpClass,
+    /// 仅为刚返回的 `StatusError` 保存已验 ID 的响应来源，不参与安全决策。
+    device_status_motor: u8,
+}
+
+/// 一个完整 request + response 持有一次执行权；所有失败和解析退出由 Drop 归还。
+struct BusTransactionLease<'a> {
+    probe: Option<&'a dyn PreemptProbe>,
+    class: BusOpClass,
+}
+
+impl<'a> BusTransactionLease<'a> {
+    fn acquire(
+        probe: Option<&'a dyn PreemptProbe>,
+        class: BusOpClass,
+    ) -> Result<Self, FeetechError> {
+        if let Some(probe) = probe {
+            probe
+                .begin_transaction(class)
+                .map_err(FeetechError::Aborted)?;
+        }
+        Ok(Self { probe, class })
+    }
+
+    fn write<T: SerialTransport>(&self, transport: &mut T, buf: &[u8]) -> Result<(), FeetechError> {
+        let result = transport.write_all(buf);
+        if let Some(probe) = self.probe {
+            probe.checkpoint();
+        }
+        result
+    }
+
+    fn read<T: SerialTransport>(
+        &self,
+        transport: &mut T,
+        buf: &mut [u8],
+    ) -> Result<(), FeetechError> {
+        let result = transport.read_exact(buf);
+        if let Some(probe) = self.probe {
+            probe.checkpoint();
+        }
+        result
+    }
+}
+
+impl Drop for BusTransactionLease<'_> {
+    fn drop(&mut self) {
+        if let Some(probe) = self.probe {
+            probe.finish_transaction(self.class);
+        }
+    }
 }
 
 impl<T: SerialTransport> FeetechBus<T> {
@@ -63,12 +120,52 @@ impl<T: SerialTransport> FeetechBus<T> {
                 return Err(FeetechError::DuplicateMotorId(motor.id));
             }
         }
+        let mut motor_ids: Vec<_> = name_by_id.keys().copied().collect();
+        motor_ids.sort_unstable();
         Ok(Self {
             transport,
             motors,
             name_by_id,
-            timeout: Duration::from_millis(DEFAULT_TIMEOUT_MS),
+            timeout: Duration::from_millis(50),
+            motor_ids,
+            preempt: None,
+            op_class: BusOpClass::NormalEffectful,
+            device_status_motor: 0,
         })
+    }
+
+    /// 构造期服务安装。诊断由 adapter 使用同源时钟记录，bus 不另建时间源。
+    pub fn set_services(
+        &mut self,
+        preempt: Option<Arc<dyn PreemptProbe>>,
+        _diag: Option<Arc<dyn DiagSink>>,
+    ) {
+        self.preempt = preempt;
+    }
+
+    pub fn set_op_class(&mut self, class: BusOpClass) {
+        self.op_class = class;
+    }
+
+    /// 只在本次总线调用返回 `StatusError` 时读取；其他错误不消费旧上下文。
+    pub(crate) fn device_status_motor(&self) -> u8 {
+        self.device_status_motor
+    }
+
+    /// hygiene 属于 Confirm 自身，不取得普通事务执行权。
+    pub fn confirm_hygiene(&mut self) -> Result<DrainReport, FeetechError> {
+        let discard = self.transport.discard_input();
+        if let Some(probe) = self.preempt.as_ref() {
+            probe.checkpoint();
+        }
+        discard?;
+        let drain = self
+            .transport
+            .drain_until_quiet(Duration::from_millis(50), Duration::from_millis(150));
+        if let Some(probe) = self.preempt.as_ref() {
+            probe.checkpoint();
+        }
+        drain
     }
 
     /// 是否已连接。
@@ -81,8 +178,9 @@ impl<T: SerialTransport> FeetechBus<T> {
     /// # Errors
     /// 透传 [`SerialTransport::set_timeout`]。
     pub fn set_timeout(&mut self, timeout: Duration) -> Result<(), FeetechError> {
+        self.transport.set_timeout(timeout)?;
         self.timeout = timeout;
-        self.transport.set_timeout(timeout)
+        Ok(())
     }
 
     // ── connect / disconnect ──────────────────────────────────────────
@@ -94,7 +192,7 @@ impl<T: SerialTransport> FeetechBus<T> {
     /// # Errors
     ///
     /// - transport 已断开 → [`FeetechError::NotConnected`]
-    /// - 某 motor ping 不到或型号不对 → [`FeetechError::Handshake`]
+    /// - 某 motor ping 不到或型号不对 → 类型化握手错误。
     pub fn connect(&mut self, handshake: bool) -> Result<(), FeetechError> {
         if !self.transport.is_connected() {
             return Err(FeetechError::NotConnected);
@@ -113,33 +211,17 @@ impl<T: SerialTransport> FeetechBus<T> {
     }
 
     fn handshake(&mut self) -> Result<(), FeetechError> {
-        let mut missing: Vec<(String, u8)> = Vec::new();
-        let mut wrong: Vec<(String, u8, u16)> = Vec::new();
-
-        let names: Vec<String> = self.motors.keys().cloned().collect();
-        for name in names {
-            let id = self.motors[&name].id;
+        for index in 0..self.motor_ids.len() {
+            let id = self.motor_ids[index];
             match self.ping(id)? {
-                None => missing.push((name, id)),
-                Some(model) if model != MODEL_NUMBER_STS3215 => wrong.push((name, id, model)),
+                None => return Err(FeetechError::HandshakeMissing { id }),
+                Some(got) if got != MODEL_NUMBER_STS3215 => {
+                    return Err(FeetechError::HandshakeWrongModel { id, got });
+                }
                 Some(_) => {}
             }
         }
-        if missing.is_empty() && wrong.is_empty() {
-            return Ok(());
-        }
-        let mut msg = String::from("Feetech handshake failed:");
-        for (name, id) in missing {
-            // unwrap_or_default 维持 push 失败语义（write to String 永不失败）
-            let _ = write!(msg, "\n  missing {name}(id={id})");
-        }
-        for (name, id, model) in wrong {
-            let _ = write!(
-                msg,
-                "\n  wrong model {name}(id={id}) → {model} (expected {MODEL_NUMBER_STS3215})"
-            );
-        }
-        Err(FeetechError::Handshake(msg))
+        Ok(())
     }
 
     // ── ping ──────────────────────────────────────────────────────────
@@ -158,24 +240,30 @@ impl<T: SerialTransport> FeetechBus<T> {
         // ① PING
         let mut tx = [0u8; 6];
         let n = build_ping(motor_id, &mut tx)?;
-        self.transport.write_all(&tx[..n])?;
-        let mut rx = [0u8; 6];
-        match self.transport.read_exact(&mut rx) {
-            Ok(()) => {
-                let _pkt = parse_status(&rx)?;
+        {
+            let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+            lease.write(&mut self.transport, &tx[..n])?;
+            let mut rx = [0u8; 6];
+            match lease.read(&mut self.transport, &mut rx) {
+                Ok(()) => {
+                    let pkt = parse_status(&rx)?;
+                    validate_response(&pkt, motor_id, &mut self.device_status_motor)?;
+                }
+                Err(FeetechError::TransportTimeout { .. }) => return Ok(None),
+                Err(e) => return Err(e),
             }
-            Err(FeetechError::TransportTimeout { .. }) => return Ok(None),
-            Err(e) => return Err(e),
         }
 
         // ② READ_DATA Model_Number (addr=3, len=2)
         let mut tx2 = [0u8; 8];
         let n2 = build_read(motor_id, 3, 2, &mut tx2)?;
-        self.transport.write_all(&tx2[..n2])?;
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &tx2[..n2])?;
         let mut rx2 = [0u8; 8]; // FF FF ID LEN ERR P0 P1 CHK = 8
-        match self.transport.read_exact(&mut rx2) {
+        match lease.read(&mut self.transport, &mut rx2) {
             Ok(()) => {
                 let pkt = parse_status(&rx2)?;
+                validate_response(&pkt, motor_id, &mut self.device_status_motor)?;
                 if pkt.params.len() != 2 {
                     return Err(FeetechError::ByteLengthMismatch {
                         expected: 2,
@@ -202,15 +290,14 @@ impl<T: SerialTransport> FeetechBus<T> {
 
         let mut tx = [0u8; 8];
         let n = build_read(id, reg.addr, reg.length, &mut tx)?;
-        self.transport.write_all(&tx[..n])?;
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &tx[..n])?;
 
         let total = 6 + usize::from(reg.length); // FF FF ID LEN ERR <data..> CHK
         let mut rx = vec![0u8; total];
-        self.transport.read_exact(&mut rx)?;
+        lease.read(&mut self.transport, &mut rx)?;
         let pkt = parse_status(&rx)?;
-        if pkt.error != 0 {
-            return Err(FeetechError::StatusError(pkt.error));
-        }
+        validate_response(&pkt, id, &mut self.device_status_motor)?;
         if pkt.params.len() != usize::from(reg.length) {
             return Err(FeetechError::ByteLengthMismatch {
                 expected: usize::from(reg.length),
@@ -241,15 +328,14 @@ impl<T: SerialTransport> FeetechBus<T> {
 
         let mut tx = [0u8; 6 + 1 + 4]; // ping(6) + ADDR(1) + max DATA(4)
         let n = build_write(id, reg.addr, &data_buf[..length_usize], &mut tx)?;
-        self.transport.write_all(&tx[..n])?;
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &tx[..n])?;
 
         // ACK 是一个空 payload status：FF FF ID 02 ERR CHK = 6 字节
         let mut rx = [0u8; 6];
-        self.transport.read_exact(&mut rx)?;
+        lease.read(&mut self.transport, &mut rx)?;
         let pkt = parse_status(&rx)?;
-        if pkt.error != 0 {
-            return Err(FeetechError::StatusError(pkt.error));
-        }
+        validate_response(&pkt, id, &mut self.device_status_motor)?;
         Ok(())
     }
 
@@ -274,27 +360,20 @@ impl<T: SerialTransport> FeetechBus<T> {
         // 发请求（一个包到 BROADCAST_ID）
         let mut tx = vec![0u8; 6 + 2 + ids.len()];
         let n = build_sync_read(reg.addr, reg.length, &ids, &mut tx)?;
-        self.transport.write_all(&tx[..n])?;
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &tx[..n])?;
 
         // 每个 motor 回 1 个 status，按请求顺序
         let per_status_len = 6 + usize::from(reg.length);
         let total = per_status_len * ids.len();
         let mut rx = vec![0u8; total];
-        self.transport.read_exact(&mut rx)?;
+        lease.read(&mut self.transport, &mut rx)?;
 
         let mut result = HashMap::with_capacity(ids.len());
         let mut cursor = 0usize;
         for (idx, id) in ids.iter().enumerate() {
             let pkt: StatusPacket<'_> = parse_status(&rx[cursor..cursor + per_status_len])?;
-            if pkt.id != *id {
-                return Err(FeetechError::Handshake(format!(
-                    "sync_read response id mismatch: expected {id}, got {}",
-                    pkt.id
-                )));
-            }
-            if pkt.error != 0 {
-                return Err(FeetechError::StatusError(pkt.error));
-            }
+            validate_response(&pkt, *id, &mut self.device_status_motor)?;
             let raw = combine_bytes_le(pkt.params, usize::from(reg.length))?;
             let name = motor_names[idx].to_string();
             result.insert(name, decode_value(reg_name, raw));
@@ -333,7 +412,8 @@ impl<T: SerialTransport> FeetechBus<T> {
         let total_size = 6 + 2 + entries.len() * (1 + length_usize);
         let mut tx = vec![0u8; total_size];
         let n = build_sync_write(reg.addr, reg.length, &entries, &mut tx)?;
-        self.transport.write_all(&tx[..n])
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &tx[..n])
     }
 
     // ── by-id hot-path API（Step 7 task 27c follow-up：消除 HashMap String compare）──
@@ -356,7 +436,7 @@ impl<T: SerialTransport> FeetechBus<T> {
     /// # Errors
     ///
     /// - `out.len() < ids.len()` → [`FeetechError::ByteLengthMismatch`]
-    /// - 任一回包 id ≠ 期望 id → [`FeetechError::Handshake`]
+    /// - 任一回包 id ≠ 期望 id → [`FeetechError::ResponseIdMismatch`]
     /// - 任一 status `ERROR != 0` → [`FeetechError::StatusError`]
     /// - 透传 transport / 编码错误
     pub fn sync_read_by_id_into(
@@ -376,26 +456,19 @@ impl<T: SerialTransport> FeetechBus<T> {
         // 发请求
         let mut tx = vec![0u8; 6 + 2 + ids.len()];
         let n = build_sync_read(reg.addr, reg.length, ids, &mut tx)?;
-        self.transport.write_all(&tx[..n])?;
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &tx[..n])?;
 
         // 回包
         let per_status_len = 6 + usize::from(reg.length);
         let total = per_status_len * ids.len();
         let mut rx = vec![0u8; total];
-        self.transport.read_exact(&mut rx)?;
+        lease.read(&mut self.transport, &mut rx)?;
 
         let mut cursor = 0usize;
         for (idx, &id) in ids.iter().enumerate() {
             let pkt: StatusPacket<'_> = parse_status(&rx[cursor..cursor + per_status_len])?;
-            if pkt.id != id {
-                return Err(FeetechError::Handshake(format!(
-                    "sync_read_by_id response id mismatch at idx {idx}: expected {id}, got {}",
-                    pkt.id
-                )));
-            }
-            if pkt.error != 0 {
-                return Err(FeetechError::StatusError(pkt.error));
-            }
+            validate_response(&pkt, id, &mut self.device_status_motor)?;
             let raw = combine_bytes_le(pkt.params, usize::from(reg.length))?;
             out[idx] = decode_value(reg_name, raw);
             cursor += pkt.consumed;
@@ -431,7 +504,8 @@ impl<T: SerialTransport> FeetechBus<T> {
         let total_size = 6 + 2 + frame_entries.len() * (1 + length_usize);
         let mut tx = vec![0u8; total_size];
         let n = build_sync_write(reg.addr, reg.length, &frame_entries, &mut tx)?;
-        self.transport.write_all(&tx[..n])
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &tx[..n])
     }
 
     /// **task-30 v9 / M4**：`sync_write_by_id` 的预分配版本。`safety_stop_fast`
@@ -496,7 +570,8 @@ impl<T: SerialTransport> FeetechBus<T> {
         }
 
         let n_bytes = build_sync_write(reg.addr, reg.length, &entry_refs[..n], frame_buf)?;
-        self.transport.write_all(&frame_buf[..n_bytes])
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &frame_buf[..n_bytes])
     }
 
     // ── 工具 ──────────────────────────────────────────────────────────
@@ -528,6 +603,24 @@ impl<T: SerialTransport> FeetechBus<T> {
 // ============================================================================
 // Encode / decode helpers（按 SIGN_BIT 表自动分支）
 // ============================================================================
+
+fn validate_response(
+    packet: &StatusPacket<'_>,
+    expected: u8,
+    device_status_motor: &mut u8,
+) -> Result<(), FeetechError> {
+    if packet.id != expected {
+        return Err(FeetechError::ResponseIdMismatch {
+            expected,
+            got: packet.id,
+        });
+    }
+    if packet.error != 0 {
+        *device_status_motor = packet.id;
+        return Err(FeetechError::StatusError(packet.error));
+    }
+    Ok(())
+}
 
 fn encode_value(reg_name: &'static str, value: i32) -> Result<u32, FeetechError> {
     if let Some(bit) = sign_bit_for(reg_name) {
@@ -698,8 +791,11 @@ mod tests {
             .sync_read("Present_Position", &["j1", "j2"])
             .unwrap_err();
         match err {
-            FeetechError::Handshake(msg) => assert!(msg.contains("response id mismatch")),
-            other => panic!("expected Handshake, got {other:?}"),
+            FeetechError::ResponseIdMismatch {
+                expected: 1,
+                got: 99,
+            } => {}
+            other => panic!("预期响应 ID 不匹配，实际 {other:?}"),
         }
     }
 
@@ -726,13 +822,11 @@ mod tests {
     fn handshake_passes_when_all_motors_respond_with_correct_model() {
         let (mut bus, handle) = make_bus(&[("a", 1), ("b", 2)]);
         // 两 motor 都回 ping ack + model 777
-        for _ in 0..2 {
-            handle.push_rx(&fake_status(1, 0, &[]));
-            handle.push_rx(&fake_status(1, 0, &[0x09, 0x03]));
+        for id in [1, 2] {
+            handle.push_rx(&fake_status(id, 0, &[]));
+            handle.push_rx(&fake_status(id, 0, &[0x09, 0x03]));
         }
-        // 但 handshake 是按 HashMap 顺序 ping，order 不固定 —— 上面的 fake_status
-        // 用了 id=1，对 id=2 的回包 parse_status 会因 id 字段不匹配通过（parse 不查 id）。
-        // 这里我们只验 handshake 不报错就行。
+        // 握手顺序在构造期按 ID 固定，每个回包必须属于实际请求电机。
         bus.handshake().unwrap();
     }
 
@@ -742,8 +836,8 @@ mod tests {
         // 不喂 rx → ping 立即 timeout → 视为 missing
         let err = bus.handshake().unwrap_err();
         match err {
-            FeetechError::Handshake(msg) => assert!(msg.contains("missing")),
-            other => panic!("expected Handshake, got {other:?}"),
+            FeetechError::HandshakeMissing { id: 1 } => {}
+            other => panic!("预期握手缺少电机，实际 {other:?}"),
         }
     }
 
