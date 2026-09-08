@@ -42,6 +42,8 @@ pub mod comm_fault_adapter;
 pub mod comm_fault_hook;
 #[cfg(feature = "test-comm-fault-hook")]
 pub mod comm_fault_observation;
+#[cfg(feature = "test-comm-fault-hook")]
+pub mod comm_fault_trace;
 pub mod config_loader;
 // v0.5 候选 E 段(9)：真机部署件（guard / preflight / provision）。纯逻辑不加
 // feature 门——AC-E16/E21/E22 的 unit 判据必须在默认 gate 内跑到；真串口实现
@@ -79,6 +81,8 @@ pub mod worker_stop;
 mod post_e_acceptance;
 #[cfg(test)]
 mod post_e_convergence_acceptance;
+#[cfg(test)]
+mod post_e_diag_acceptance;
 #[cfg(test)]
 mod post_e_ipc_acceptance;
 #[cfg(test)]

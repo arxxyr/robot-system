@@ -109,6 +109,15 @@ pub(crate) fn apply_emergency_batch_observed(
     batch: crate::event_ingress::EmergencyBatch,
     observe_latch: impl FnOnce(bool),
 ) -> bool {
+    apply_emergency_batch_impl(ctx, batch, observe_latch, || {})
+}
+
+fn apply_emergency_batch_impl(
+    ctx: &mut IpcTickContext<'_>,
+    batch: crate::event_ingress::EmergencyBatch,
+    observe_latch: impl FnOnce(bool),
+    after_fault_ack: impl FnOnce(),
+) -> bool {
     if !batch.estop && batch.ssf.is_none() {
         return false;
     }
@@ -128,12 +137,19 @@ pub(crate) fn apply_emergency_batch_observed(
             commit_transition(ctx.state, &plan);
             ctx.executor_ctrl.set_policy(plan.new_policy);
         }
+        #[cfg(feature = "test-comm-fault-hook")]
+        if let Some(ctrl) = ctx.serial_ctrl {
+            ctrl.trace_now(crate::comm_fault_trace::TraceKind::IpcEStopCommit, 0, 0);
+        }
     }
     if let Some(ssf) = batch.ssf {
         commit_fault(ctx.state, FaultCode::SafetyStopFailed);
         ctx.executor_ctrl.set_policy(OutputPolicy::Disabled);
         if let Some(ctrl) = ctx.serial_ctrl {
             ctrl.ack_fault(ssf.generation);
+            after_fault_ack();
+            #[cfg(feature = "test-comm-fault-hook")]
+            trace_fault_commit(ctrl, ssf);
         }
     }
     ctx.retry.clear();
@@ -142,6 +158,10 @@ pub(crate) fn apply_emergency_batch_observed(
 
 /// 每 tick 恰一次，不能被 emergency、pending 或 lane 容量跳过。
 pub(crate) fn service_fault_mailbox(ctx: &mut IpcTickContext<'_>) {
+    service_fault_mailbox_impl(ctx, || {});
+}
+
+fn service_fault_mailbox_impl(ctx: &mut IpcTickContext<'_>, after_fault_ack: impl FnOnce()) {
     use std::sync::atomic::Ordering;
 
     let Some(ctrl) = ctx.serial_ctrl else { return };
@@ -159,8 +179,28 @@ pub(crate) fn service_fault_mailbox(ctx: &mut IpcTickContext<'_>) {
     ctx.guards.adapter_fault_cleared = false;
     ctx.retry.clear();
     ctrl.ack_fault(mailbox.generation);
+    after_fault_ack();
+    #[cfg(feature = "test-comm-fault-hook")]
+    trace_fault_commit(ctrl, mailbox);
     tracing::error!(generation = mailbox.generation, code = ?mailbox.code,
         detail = mailbox.detail, origin = ?mailbox.origin, "串口故障 mailbox 已对账");
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+fn trace_fault_commit(
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
+    snapshot: crate::hard_rt_ctrl::MailboxSnapshot,
+) {
+    let mut context = ctrl.trace_context();
+    // ACK 后 mailbox 可能已经发布下一代；归属只能来自本次实际提交的快照。
+    context.generation = snapshot.generation;
+    crate::comm_fault_trace::emit(
+        crate::comm_fault_trace::TraceKind::FaultIpcCommit,
+        crate::comm_fault_trace::now(),
+        context,
+        crate::comm_fault_trace::fault_code(snapshot.code),
+        u64::from(snapshot.detail),
+    );
 }
 
 fn commit_pending_failure(ctx: &mut IpcTickContext<'_>, fault: FaultCode) {
@@ -537,6 +577,94 @@ mod tests {
             command_mode: robot_core::adapter::ControlMode::Position,
             on_timeout_hint: EnabledSub::CtrlLostHold,
         }
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn fault_trace_keeps_acked_generation_when_next_fault_is_published() {
+        verify_fault_trace_generation(false);
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn ssf_commit_emits_its_actual_generation_before_next_mailbox() {
+        verify_fault_trace_generation(true);
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn verify_fault_trace_generation(ssf: bool) {
+        use crate::comm_fault_trace::{TraceKind, capture_emitted};
+        use crate::event_ingress::EmergencyBatch;
+        use crate::hard_rt_ctrl::{FaultOrigin, inhibit};
+
+        let inner = Arc::new(HardRtCtrlInner::new_serial());
+        let client = HardRtCtrlClient::new(inner.clone());
+        let clock = MockClock::new(MonoRawNs::ZERO);
+        let mut retry = IpcRetryState::new();
+        let mut state = S0State::Ready;
+        let mut guards = healthy_guards();
+        let code = if ssf {
+            FaultCode::SafetyStopFailed
+        } else {
+            FaultCode::CommFault
+        };
+        let generation = inner
+            .publish_fault(
+                OutputSafetyState::AdapterUncertain,
+                inhibit::FAULT_PENDING,
+                code,
+                17,
+                FaultOrigin::InvariantViolation,
+            )
+            .unwrap();
+        let snapshot = inner.mailbox_snapshot().unwrap();
+        let mut ctx = IpcTickContext {
+            retry: &mut retry,
+            state: &mut state,
+            guards: &mut guards,
+            executor_ctrl: &client,
+            serial_ctrl: Some(&inner),
+            clock: &clock,
+            latch_path: None,
+        };
+        let publish_after_ack = || {
+            assert_eq!(inner.fault_ack.load(Ordering::Acquire), generation);
+            assert_eq!(
+                inner.publish_fault(
+                    OutputSafetyState::AdapterUncertain,
+                    inhibit::FAULT_PENDING,
+                    FaultCode::AdapterErr,
+                    23,
+                    FaultOrigin::InvariantViolation
+                ),
+                Some(generation + 1)
+            );
+        };
+        let events = capture_emitted(|| {
+            if ssf {
+                assert!(apply_emergency_batch_impl(
+                    &mut ctx,
+                    EmergencyBatch {
+                        estop: false,
+                        ssf: Some(snapshot)
+                    },
+                    |_| {},
+                    publish_after_ack
+                ));
+            } else {
+                service_fault_mailbox_impl(&mut ctx, publish_after_ack);
+            }
+        });
+        let commits: Vec<_> = events
+            .iter()
+            .filter(|event| event.kind == TraceKind::FaultIpcCommit)
+            .collect();
+        assert_eq!(commits.len(), 1);
+        assert_eq!(commits[0].generation, generation);
+        assert_eq!(commits[0].a, if ssf { 6 } else { 7 });
+        assert_eq!(commits[0].b, 17);
+        assert_eq!(state, S0State::Fault(code));
+        assert_eq!(inner.mailbox_snapshot().unwrap().generation, generation + 1);
     }
 
     fn enabled_active() -> S0State {

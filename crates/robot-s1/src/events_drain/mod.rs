@@ -72,4 +72,5 @@ pub use runtime::{
     EventsDrainMetrics, EventsDrainRegistry, EventsDrainThreadConfig, EventsDrainThreadHandle,
     spawn_events_drain_thread,
 };
+pub(crate) use runtime::{EventsPublisherGuard, spawn_owned_events_drain_thread};
 pub use wire::{encode_envelope, is_terminal};

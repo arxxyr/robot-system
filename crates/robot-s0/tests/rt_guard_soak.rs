@@ -14,7 +14,7 @@
 //! 1. **0 heap allocation in RT scope**：整个 test binary 用
 //!    [`assert_no_alloc::AllocDisabler`] 作 `#[global_allocator]`；RT 线程主循环每
 //!    tick 进 `rt_entry!` scope（内部走 `assert_no_alloc::assert_no_alloc(...)`），
-//!    任何堆分配立即 panic（thread panic propagate 到 `JoinHandle::join`）。
+//!    任何堆分配立即 abort；独立子进程反例锁住 debug/release 都以 SIGABRT 终止。
 //! 2. **0 `Arc::clone` / `Arc::drop` in RT scope**：`rt_entry!` 同时挂
 //!    `RtArcGuard`，`RtArc::clone` / `RtArc::drop` 在 scope 内 panic。
 //! 3. **稳态吞吐**：`tick_count` ≥ `duration * tick_hz * 0.95`，证明 RT 循环
@@ -63,6 +63,94 @@ static ALLOC_GUARD: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisab
 const DEFAULT_SOAK_SECS: u64 = 60;
 const TICK_HZ: f64 = 50.0;
 const PASS_THRESHOLD_RATIO: f64 = 0.95;
+const ALLOCATION_CHILD_ENV: &str = "ROBOT_TEST_RT_GUARD_ALLOC_CHILD";
+const ALLOCATION_SCOPE_MARKER: &[u8] = b"rt_guard_allocation entered_rt_scope\n";
+
+fn allocate_inside_real_rt_scope() {
+    let core_limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: 指向当前栈上有效 rlimit；只限制本测试子进程，避免预期 abort 留下 core。
+    assert_eq!(
+        unsafe { libc::setrlimit(libc::RLIMIT_CORE, &raw const core_limit) },
+        0
+    );
+    let layout = std::alloc::Layout::from_size_align(64, 8).unwrap();
+    let pointer = robot_core::rt_entry!({
+        assert!(robot_core::rt_guard::in_rt_scope());
+        // SAFETY: 静态字节切片有效；直接写 stderr 避免标记本身触发堆分配。
+        let written = unsafe {
+            libc::write(
+                libc::STDERR_FILENO,
+                ALLOCATION_SCOPE_MARKER.as_ptr().cast(),
+                ALLOCATION_SCOPE_MARKER.len(),
+            )
+        };
+        assert_eq!(
+            usize::try_from(written).ok(),
+            Some(ALLOCATION_SCOPE_MARKER.len())
+        );
+        // SAFETY: layout 非零且合法；若守卫失效，返回的分配在 scope 外按同一 layout 释放。
+        // black_box 保留对真实分配结果的观察，不用故意 panic/abort 代替分配违规。
+        std::hint::black_box(unsafe { std::alloc::alloc(std::hint::black_box(layout)) })
+    });
+    if !pointer.is_null() {
+        // SAFETY: pointer 来自上面的分配且尚未释放，layout 完全一致。
+        unsafe { std::alloc::dealloc(pointer, layout) };
+    }
+    // 能运行至此表示分配未被拒绝；父进程只接受 SIGABRT，不接受这个普通非零退出。
+    std::process::exit(73);
+}
+
+#[test]
+fn rt_guard_allocation_in_real_scope_aborts_child() {
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{Command, Stdio};
+
+    if std::env::var(ALLOCATION_CHILD_ENV).as_deref() == Ok("1") {
+        allocate_inside_real_rt_scope();
+    }
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "rt_guard_allocation_in_real_scope_aborts_child",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(ALLOCATION_CHILD_ENV, "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("启动实际分配违规子进程");
+    let deadline = SystemClock.now().0 + 5_000_000_000;
+    while child.try_wait().expect("读取分配反例退出状态").is_none() {
+        if SystemClock.now().0 >= deadline {
+            child.kill().expect("终止未按预期退场的分配反例");
+            let output = child.wait_with_output().unwrap();
+            panic!("分配反例超时：{}", String::from_utf8_lossy(&output.stderr));
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(
+        output.status.signal(),
+        Some(libc::SIGABRT),
+        "分配守卫必须实际 abort：status={} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        output
+            .stderr
+            .windows(ALLOCATION_SCOPE_MARKER.len())
+            .filter(|window| *window == ALLOCATION_SCOPE_MARKER)
+            .count(),
+        1,
+        "必须先实际进入 rt_entry，不能把启动失败或其它 abort 充当分配守卫生效"
+    );
+}
 
 #[test]
 #[ignore = "1min RT soak; run with `cargo test -p robot-s0 --features rt_guard -- --ignored`"]

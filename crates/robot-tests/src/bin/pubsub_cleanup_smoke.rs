@@ -85,6 +85,10 @@
 // pedantic。
 #![allow(clippy::doc_markdown, clippy::too_many_lines)]
 
+#[path = "../pubsub_resource_oracle.rs"]
+mod resource_oracle;
+
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{ExitCode, Stdio};
 use std::sync::Arc;
@@ -1082,52 +1086,55 @@ fn read_proc_vmrss_kb(pid: u32) -> Result<u64, String> {
     Err(format!("VmRSS not found in {path}"))
 }
 
-/// iceoryx2 0.8.1 默认 storage root（Linux）。
-///
-/// 来源：`iceoryx2-pal-configuration-0.8.1/src/lib.rs:40` 定义
-/// `pub const ICEORYX2_ROOT_PATH: &[u8] = b"/tmp/iceoryx2/";`
-/// （详 AC-C1 outline §7.1）。Mac 同 `/tmp/iceoryx2/`；Windows
-/// `C:\\Temp\\iceoryx2\\`；Android `/data/iceoryx2/`。
-///
-/// 本 smoke binary `#![cfg(target_os = "linux")]` 守门，只硬编码 Linux
-/// 路径；如 host 不跑过 iceoryx2 (路径不存在) → 返 (0, "")。
+/// iceoryx2 0.9.3 默认 Linux storage root；全局采样失败必须显示 NA。
 const ICEORYX2_STORAGE_ROOT: &str = "/tmp/iceoryx2";
 
-/// `/tmp/iceoryx2/` 递归计文件数。AC-C1 outline §7.2 修正：
-/// 之前 glob `/dev/shm/iceoryx2_*` 永远 0 是错路径（Plan v3 §P.2.2.c
-/// 拍板时未实测；Plan-Execute diff #2，详 AC-C1 outline §8.3）。
-///
-/// 返 `(count, root_hit)`：
-/// - `root_hit` = `"/tmp/iceoryx2"` 如目录存在；否则 `""`
-/// - caller 在第一次 sample 时 eprintln 命中 root，让 forensic 能确认
-///   smoke 真扫到正确根；后续 sample 仅取 count
-///
-/// 如 root 不存在 (host 不跑过 iceoryx2 / OS 已清) → 返 (0, "")
-/// 降级 informational only（AC-A3 探活 30/30 是主判定）。
-fn count_iceoryx2_storage_files() -> (u64, &'static str) {
-    let dir = std::path::Path::new(ICEORYX2_STORAGE_ROOT);
-    if !dir.exists() {
-        return (0, "");
-    }
-    (count_files_recursive(dir), ICEORYX2_STORAGE_ROOT)
-}
-
-/// 递归 walk `dir` 计文件数（含子目录）。read_dir 失败 (权限 / 不存在)
-/// 返 0，**不**propagate err（让 smoke 长跑不被瞬时采样错误打断）。
-fn count_files_recursive(dir: &std::path::Path) -> u64 {
-    let mut count: u64 = 0;
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return 0;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() {
-            count = count.saturating_add(1);
-        } else if path.is_dir() {
-            count = count.saturating_add(count_files_recursive(&path));
+/// 全局变化可能属于其它进程，只作信息采样；本轮回收由独立 Node 集合判定。
+fn sample_storage_counts() -> Option<resource_oracle::StorageCounts> {
+    match resource_oracle::count_storage(Path::new(ICEORYX2_STORAGE_ROOT)) {
+        Ok(counts) => Some(counts),
+        Err(error) => {
+            eprintln!("[metric] storage root={ICEORYX2_STORAGE_ROOT} sample=NA error={error}");
+            None
         }
     }
-    count
+}
+
+fn metric_cell(value: Option<u64>) -> String {
+    value.map_or_else(|| "NA".to_owned(), |value| value.to_string())
+}
+
+fn require_live_child(handle: &mut SubprocessHandle) -> Result<u32, String> {
+    let pid = handle
+        .pid
+        .filter(|pid| *pid != 0)
+        .ok_or_else(|| format!("{} 没有有效 PID", handle.label))?;
+    let child = handle
+        .child
+        .as_mut()
+        .ok_or_else(|| format!("{} 没有被持有的子进程", handle.label))?;
+    match child.try_wait() {
+        Ok(None) if child.id() == Some(pid) => Ok(pid),
+        Ok(status) => Err(format!(
+            "{} PID {pid} 在 Node 采样时已退出或身份变化：{status:?}",
+            handle.label
+        )),
+        Err(error) => Err(format!("{} PID {pid} 状态检查失败：{error}", handle.label)),
+    }
+}
+
+fn snapshot_active_pair_nodes(
+    s1: &mut SubprocessHandle,
+    gw: &mut SubprocessHandle,
+) -> Result<BTreeSet<u128>, String> {
+    let pids = [require_live_child(s1)?, require_live_child(gw)?];
+    let nodes =
+        resource_oracle::scan_owned_nodes(&Path::new(ICEORYX2_STORAGE_ROOT).join("nodes"), &pids)?;
+    let after = [require_live_child(s1)?, require_live_child(gw)?];
+    if after != pids {
+        return Err(format!("Node 扫描期间 PID 变化：{pids:?} → {after:?}"));
+    }
+    Ok(nodes)
 }
 
 /// 读 `/proc/<pid>/task` 子目录数 = 进程线程数（含主线程）。
@@ -1193,14 +1200,13 @@ struct MetricRow {
     /// 当前还没打任一 register/shutdown event log → `None`，CSV 写
     /// `"NA"`）。
     events_registry_len: Option<u64>,
-    /// `/tmp/iceoryx2/` 递归文件计数（iceoryx2 0.8.1 Linux 默认 storage
-    /// root；详 [`ICEORYX2_STORAGE_ROOT`] + AC-C1 outline §7）。root
-    /// 不存在时为 0，仅作 informational metric（AC-A3 探活 30/30 是
-    /// 主判定）。
-    iceoryx2_storage_count: u64,
+    /// 全局递归文件数，仅作信息采样；失败为 None，CSV 写 NA。
+    iceoryx2_storage_count: Option<u64>,
     /// gateway `/proc/<pid>/task` 数（含 tokio worker + subscribe thread
     /// 等所有线程）。
     gw_subscribe_threads: u64,
+    /// 全局实际目录数（含根、含空目录、不跟随符号链接），CSV 追加到末列。
+    iceoryx2_directory_count: Option<u64>,
 }
 
 /// (2/2) AC-A1 report。
@@ -1243,11 +1249,11 @@ struct A3CaseResult {
     label: &'static str,
     /// SIGKILL 前 `/tmp/iceoryx2/` 递归文件数（基线；详
     /// [`ICEORYX2_STORAGE_ROOT`]）。informational only。
-    storage_before: u64,
+    storage_before: Option<u64>,
     /// SIGKILL 后 + `--leftover-grace-ms` 之后 `/tmp/iceoryx2/` 递归文件
     /// 数（看 OS / iceoryx2 是否回收）。informational only；AC-A3 主判
     /// 定看 `restart_ok` + `post_restart_invoke_ok`。
-    storage_after: u64,
+    storage_after: Option<u64>,
     /// 重启 daemon / gateway 是否成功（ready signal 三段都过）。
     restart_ok: bool,
     /// 重启后 N=10 InvokeTask 探活成功数（Plan v3 Q5）。
@@ -1276,7 +1282,7 @@ fn write_csv(path: &Path, rows: &[MetricRow]) -> std::io::Result<()> {
     let mut out = String::new();
     out.push_str(
         "iter,vmrss_s1_kb,vmrss_gw_kb,events_registry_len,\
-         iceoryx2_storage_count,gw_subscribe_threads\n",
+         iceoryx2_storage_count,gw_subscribe_threads,iceoryx2_directory_count\n",
     );
     for r in rows {
         let er = r
@@ -1286,13 +1292,14 @@ fn write_csv(path: &Path, rows: &[MetricRow]) -> std::io::Result<()> {
         // Ok）；用 writeln! 避开 clippy `format_push_string`。
         let _ = writeln!(
             &mut out,
-            "{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{}",
             r.iter,
             r.vmrss_s1_kb,
             r.vmrss_gw_kb,
             er,
-            r.iceoryx2_storage_count,
+            metric_cell(r.iceoryx2_storage_count),
             r.gw_subscribe_threads,
+            metric_cell(r.iceoryx2_directory_count),
         );
     }
     std::fs::write(path, out)
@@ -1642,7 +1649,7 @@ async fn run_selftest(args: &Args) -> Result<(), String> {
 
 /// 单次 metric 采样：构造 [`MetricRow`]。
 ///
-/// 各字段读取失败（极罕见 / 子进程刚死）→ 用 0 填充 + warn 转发；
+/// RSS / 线程数字段读取失败保留原有 0 + warn；目录采样失败为 None / NA；
 /// scrape `events_registry_len` 失败用 `None`。**不** propagate err（让
 /// 长跑不被瞬时采样错误打断）。
 async fn sample_metric(
@@ -1659,23 +1666,15 @@ async fn sample_metric(
         eprintln!("[metric] read_proc_vmrss_kb(gw={gw_pid}) err: {e}");
         0
     });
-    let (iceoryx2_storage_count, iceoryx2_root_hit) = count_iceoryx2_storage_files();
-    // 第一次 sample (iter == 0) eprintln 命中 root，让 forensic 能确认
-    // smoke 真扫到 iceoryx2 0.8.1 默认 storage path
-    // (/tmp/iceoryx2 on Linux)；后续 sample 仅取 count 不重复打。
+    let storage = sample_storage_counts();
+    let iceoryx2_storage_count = storage.map(|counts| counts.files);
+    let iceoryx2_directory_count = storage.map(|counts| counts.directories);
     if iter == 0 {
-        if iceoryx2_root_hit.is_empty() {
-            eprintln!(
-                "[metric] iceoryx2_storage_root not found (host 未跑过 \
-                 iceoryx2 或 OS 已清；count=0 informational only，详 \
-                 AC-C1 outline §7)"
-            );
-        } else {
-            eprintln!(
-                "[metric] iceoryx2_storage_root hit: {iceoryx2_root_hit} \
-                 (baseline count={iceoryx2_storage_count})"
-            );
-        }
+        eprintln!(
+            "[metric] storage root={ICEORYX2_STORAGE_ROOT} files={} directories={}",
+            metric_cell(iceoryx2_storage_count),
+            metric_cell(iceoryx2_directory_count),
+        );
     }
     let gw_subscribe_threads = count_proc_threads(gw_pid).unwrap_or_else(|e| {
         eprintln!("[metric] count_proc_threads(gw={gw_pid}) err: {e}");
@@ -1689,6 +1688,7 @@ async fn sample_metric(
         events_registry_len,
         iceoryx2_storage_count,
         gw_subscribe_threads,
+        iceoryx2_directory_count,
     }
 }
 
@@ -1744,6 +1744,7 @@ fn percentile(sorted: &[u64], p: u8) -> u64 {
 /// Ok(report)，main 据此设退出码（沿 Plan v3 §P.2.1.b "退出码 2 = AC
 /// FAIL 含触发条件性 AC"）。
 async fn run_phase_a1(args: &Args) -> Result<A1Report, String> {
+    use std::fmt::Write as _;
     let ctx = CaseCtx::alloc(args)?;
     eprintln!(
         "[A1] start robot_id={} iterations={} sample_every={}",
@@ -1752,25 +1753,34 @@ async fn run_phase_a1(args: &Args) -> Result<A1Report, String> {
     let bring_up = bring_up_pair(&ctx).await?;
     let BringUp {
         fake_s0,
-        s1,
-        gw,
+        mut s1,
+        mut gw,
         mut client,
     } = bring_up;
     let s1_pid = s1.pid.unwrap_or(0);
     let gw_pid = gw.pid.unwrap_or(0);
 
     let mut report = A1Report::default();
+    let baseline_nodes = snapshot_active_pair_nodes(&mut s1, &mut gw).and_then(|nodes| {
+        resource_oracle::validate_baseline(&nodes, &[s1_pid, gw_pid])?;
+        Ok(nodes)
+    });
+    let mut node_forensic = format!(
+        "root={ICEORYX2_STORAGE_ROOT}/nodes pids=[{s1_pid},{gw_pid}] baseline={baseline_nodes:?}\n"
+    );
+    eprintln!("[A1] node_oracle {node_forensic}");
 
     // 初始 sample（iter=0，bring_up 完成、task 还没跑）作为 baseline。
     let row0 = sample_metric(0, s1_pid, gw_pid, &s1.captured).await;
     eprintln!(
         "[A1] iter=0 vmrss_s1={} vmrss_gw={} registry_len={:?} \
-         storage={} gw_threads={}",
+         storage={} gw_threads={} directories={}",
         row0.vmrss_s1_kb,
         row0.vmrss_gw_kb,
         row0.events_registry_len,
-        row0.iceoryx2_storage_count,
+        metric_cell(row0.iceoryx2_storage_count),
         row0.gw_subscribe_threads,
+        metric_cell(row0.iceoryx2_directory_count),
     );
     let baseline_threads = row0.gw_subscribe_threads;
     report.rows.push(row0);
@@ -1778,9 +1788,12 @@ async fn run_phase_a1(args: &Args) -> Result<A1Report, String> {
     let rpc_timeout_ms: u64 = 5_000;
     let stream_timeout = Duration::from_secs(5);
 
-    let mut last_err: Option<String> = None;
+    let mut last_err = baseline_nodes.as_ref().err().cloned();
     let mut completed_iters: u32 = 0;
     for i in 1..=args.iterations {
+        if last_err.is_some() {
+            break;
+        }
         match invoke_and_wait_terminal(
             &mut client,
             "maintainer-fake-token-001",
@@ -1807,41 +1820,49 @@ async fn run_phase_a1(args: &Args) -> Result<A1Report, String> {
             let row = sample_metric(i, s1_pid, gw_pid, &s1.captured).await;
             eprintln!(
                 "[A1] iter={i} vmrss_s1={} vmrss_gw={} registry_len={:?} \
-                 storage={} gw_threads={}",
+                 storage={} gw_threads={} directories={}",
                 row.vmrss_s1_kb,
                 row.vmrss_gw_kb,
                 row.events_registry_len,
-                row.iceoryx2_storage_count,
+                metric_cell(row.iceoryx2_storage_count),
                 row.gw_subscribe_threads,
+                metric_cell(row.iceoryx2_directory_count),
             );
             report.rows.push(row);
         }
     }
 
-    // final sample（task 全跑完 + 2000ms grace 让 events_drain thread
-    // terminal_grace=100ms 后退 + s1_daemon reaper thread (AC-C1 outline
-    // §3) 1s cadence reap 已退 handle）。
-    //
-    // **强耦合**（Plan-Execute diff #3）：本 grace 跟 reaper 1s cadence +
-    // `EventsDrainThreadConfig.terminal_grace` 100ms + 调度抖动 margin
-    // 强耦合。改 reaper cadence 必须同步改本 grace（或反过来）；
-    // 2000ms = 2× reaper cycle + grace + margin，保留 2x 余量保证
-    // `events_registry_len final == 0` 硬 gate 稳定（AC-C1 outline §6.1）。
-    //
-    // `iter` 字段填 `iterations + 1` 标示 final（CSV 末行可识别）。
+    // 保留既有 2000ms grace，等待 1000ms terminal_grace 与 reaper 退场；
+    // 之后按实际 Node ID 集合判定，不因只删文件而遗漏空目录。
+    // `iter = iterations + 1` 标示 CSV 的 final 行。
     if last_err.is_none() {
         tokio::time::sleep(Duration::from_secs(2)).await;
         let final_row = sample_metric(args.iterations + 1, s1_pid, gw_pid, &s1.captured).await;
         eprintln!(
             "[A1] final (after 2000ms grace) vmrss_s1={} vmrss_gw={} registry_len={:?} \
-             storage={} gw_threads={}",
+             storage={} gw_threads={} directories={}",
             final_row.vmrss_s1_kb,
             final_row.vmrss_gw_kb,
             final_row.events_registry_len,
-            final_row.iceoryx2_storage_count,
+            metric_cell(final_row.iceoryx2_storage_count),
             final_row.gw_subscribe_threads,
+            metric_cell(final_row.iceoryx2_directory_count),
         );
         report.rows.push(final_row);
+        let final_nodes = snapshot_active_pair_nodes(&mut s1, &mut gw);
+        let final_line = format!("final={final_nodes:?}\n");
+        eprintln!("[A1] node_oracle {final_line}");
+        node_forensic.push_str(&final_line);
+        let verdict = match (&baseline_nodes, &final_nodes) {
+            (Ok(baseline), Ok(final_nodes)) => {
+                resource_oracle::validate_no_new_nodes(baseline, final_nodes)
+            }
+            (_, Err(error)) | (Err(error), _) => Err(error.clone()),
+        };
+        if let Err(error) = verdict {
+            let _ = writeln!(node_forensic, "FAIL: {error}");
+            last_err = Some(error);
+        }
     }
 
     // 触发判定（Plan v3 Q2 启发式；reviewer 看曲线后人工复核）。
@@ -1858,6 +1879,13 @@ async fn run_phase_a1(args: &Args) -> Result<A1Report, String> {
     // 整 case_dir，dump 也会被一并删除（无谓 IO）。
     let dump_needed = last_err.is_some();
     if dump_needed {
+        if let Err(error) = std::fs::write(ctx.case_dir.join("node_directories.txt"), node_forensic)
+        {
+            eprintln!("[A1] Node 目录证据保存失败：{error}");
+        }
+        if let Err(error) = write_csv(&ctx.case_dir.join("metrics.csv"), &report.rows) {
+            eprintln!("[A1] 失败现场 CSV 保存失败：{error}");
+        }
         let _ = s1.dump_captured_to(&ctx.case_dir).await;
         let _ = gw.dump_captured_to(&ctx.case_dir).await;
         eprintln!(
@@ -2087,10 +2115,7 @@ async fn run_phase_a3_case(args: &Args, which: A3aSigkill) -> Result<A3CaseResul
     }
     eprintln!("[{label}] pre-kill probe passed");
 
-    // AC-C1 outline §7.2: count_iceoryx2_storage_files 返
-    // (count, root_hit)；A3 子 case 只需 count，root_hit 由
-    // sample_metric (iter=0) eprintln 打印；这里丢 root_hit 兼容。
-    let (storage_before, _root_hit) = count_iceoryx2_storage_files();
+    let storage_before = sample_storage_counts().map(|counts| counts.files);
 
     // SIGKILL according to `which`。SIGKILL 完后被 kill 的 handle 已
     // owned 走 `sigkill_and_wait` 消费，未 kill 的进入 `kept_*` owned
@@ -2126,8 +2151,12 @@ async fn run_phase_a3_case(args: &Args, which: A3aSigkill) -> Result<A3CaseResul
     };
 
     tokio::time::sleep(Duration::from_millis(args.leftover_grace_ms)).await;
-    let (storage_after, _root_hit) = count_iceoryx2_storage_files();
-    eprintln!("[{label}] storage before={storage_before} after={storage_after}");
+    let storage_after = sample_storage_counts().map(|counts| counts.files);
+    eprintln!(
+        "[{label}] storage before={} after={}",
+        metric_cell(storage_before),
+        metric_cell(storage_after),
+    );
 
     // Restart killed processes。`restart_after_sigkill` 接 owned
     // `Option` 返新 owned `Option`：未被 kill 的进程 pass-through，被
@@ -2338,24 +2367,24 @@ async fn run_phase_a3(args: &Args) -> Result<A3Report, String> {
 
     eprintln!(
         "[A3] case_a (SIGKILL s1): storage {}->{}; restart={}; probes={}/{}",
-        report.case_a.storage_before,
-        report.case_a.storage_after,
+        metric_cell(report.case_a.storage_before),
+        metric_cell(report.case_a.storage_after),
         report.case_a.restart_ok,
         report.case_a.post_restart_invoke_ok,
         report.case_a.post_restart_invoke_total,
     );
     eprintln!(
         "[A3] case_b (SIGKILL gw): storage {}->{}; restart={}; probes={}/{}",
-        report.case_b.storage_before,
-        report.case_b.storage_after,
+        metric_cell(report.case_b.storage_before),
+        metric_cell(report.case_b.storage_after),
         report.case_b.restart_ok,
         report.case_b.post_restart_invoke_ok,
         report.case_b.post_restart_invoke_total,
     );
     eprintln!(
         "[A3] case_c (SIGKILL both): storage {}->{}; restart={}; probes={}/{}",
-        report.case_c.storage_before,
-        report.case_c.storage_after,
+        metric_cell(report.case_c.storage_before),
+        metric_cell(report.case_c.storage_after),
         report.case_c.restart_ok,
         report.case_c.post_restart_invoke_ok,
         report.case_c.post_restart_invoke_total,
@@ -2396,6 +2425,28 @@ async fn run_phase_all(args: &Args) -> Result<AllReport, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resource_csv_preserves_columns_and_marks_failed_samples_na() {
+        let path = std::env::temp_dir().join(format!("pubsub_metric_{}.csv", uuidv7_compat()));
+        let row = MetricRow {
+            iter: 0,
+            vmrss_s1_kb: 1,
+            vmrss_gw_kb: 2,
+            events_registry_len: None,
+            iceoryx2_storage_count: None,
+            gw_subscribe_threads: 3,
+            iceoryx2_directory_count: Some(4),
+        };
+        write_csv(&path, &[row]).unwrap();
+        let csv = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(
+            csv,
+            "iter,vmrss_s1_kb,vmrss_gw_kb,events_registry_len,iceoryx2_storage_count,\
+             gw_subscribe_threads,iceoryx2_directory_count\n0,1,2,NA,NA,3,4\n"
+        );
+    }
 
     #[test]
     fn phase_parse_all_variants() {

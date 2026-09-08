@@ -89,6 +89,7 @@ struct ScriptedAdapter {
     ctrl: Arc<HardRtCtrlInner>,
     probe: Arc<SerialPreemptProbe>,
     limits: JointLimits,
+    during_enable: Option<Box<dyn FnOnce() + Send>>,
 }
 
 impl ScriptedAdapter {
@@ -105,6 +106,7 @@ impl ScriptedAdapter {
             ctrl,
             probe,
             limits: JointLimits::default(),
+            during_enable: None,
         }
     }
 
@@ -119,6 +121,11 @@ impl ScriptedAdapter {
         });
         let reply = self.script.pop_front().expect("出现脚本以外的额外 IO");
         assert_eq!(io, reply.io, "实际设备调用顺序偏离独立脚本");
+        if io == Io::Enable(true)
+            && let Some(during) = self.during_enable.take()
+        {
+            during();
+        }
         if let Some(reason) = reply.interrupt {
             let client = HardRtCtrlClient::new(self.ctrl.clone());
             match reason {
@@ -937,6 +944,77 @@ pub(crate) fn healthy_ipc_control() -> (Arc<HardRtCtrlInner>, Arc<MockClock>) {
     );
     assert_eq!(fixture.ctrl.inhibit.load(Ordering::Acquire), 0);
     (fixture.ctrl, fixture.clock)
+}
+
+/// 让 IPC 在真实 adapter Enable 调用尚未返回时运行；完成由生产 `SerialTick` 发布。
+pub(crate) fn complete_enable_while<T: Send + 'static>(
+    periodic_write: bool,
+    prepare: impl FnOnce(Arc<HardRtCtrlInner>, Arc<MockClock>) -> T,
+    during: impl FnOnce(&mut T) + Send + 'static,
+) -> T {
+    let mut fixture = TickFixture::healthy();
+    fixture.adapter.script.push_back(Reply::ok(Io::Read));
+    let _ = fixture.tick();
+    fixture.clock.advance(DurationNs::from_millis(500));
+    let state = Arc::new(std::sync::Mutex::new(prepare(
+        fixture.ctrl.clone(),
+        fixture.clock.clone(),
+    )));
+    let running = state.clone();
+    fixture.adapter.during_enable = Some(Box::new(move || during(&mut running.lock().unwrap())));
+    fixture.adapter.script.push_back(Reply {
+        elapsed_ms: 0,
+        ..Reply::ok(Io::Enable(true))
+    });
+    if periodic_write {
+        fixture.adapter.script.push_back(Reply {
+            elapsed_ms: 0,
+            ..Reply::ok(Io::Write)
+        });
+    }
+    fixture.adapter.script.push_back(Reply {
+        elapsed_ms: 0,
+        ..Reply::ok(Io::Read)
+    });
+    let pending = decode_serial_pending(fixture.ctrl.pending_normal.load(Ordering::Acquire))
+        .unwrap()
+        .expect("IPC 必须已经真正提交 enable");
+    assert_eq!(
+        pending.action.action,
+        robot_core::executor_ctrl::normal_codes::ENABLE
+    );
+    assert_eq!(pending.action.arg, 1);
+    let _ = fixture.driver.tick(
+        &mut fixture.adapter,
+        &fixture.command.as_view(),
+        &SerialTickContext {
+            ctrl: &fixture.ctrl,
+            probe: &fixture.probe,
+            diag: &fixture.diag,
+            clock: fixture.clock.as_ref(),
+            metrics: &fixture.metrics,
+        },
+        MonoRawNs(fixture.clock.now().0 + 5_000_000),
+    );
+    fixture.adapter.assert_drained();
+    assert_eq!(
+        fixture
+            .adapter
+            .observed
+            .iter()
+            .filter(|event| event.io == Io::Enable(true))
+            .count(),
+        1
+    );
+    assert_eq!(
+        HardRtCtrlClient::new(fixture.ctrl.clone()).poll_last_normal_resp(pending.action.seq),
+        Some(AdapterResp::Ok)
+    );
+    assert_eq!(fixture.ctrl.active_action.load(Ordering::Acquire), 0);
+    Arc::into_inner(state)
+        .expect("adapter 回调已归还测试状态")
+        .into_inner()
+        .unwrap()
 }
 
 /// 在真实设备错误完成发布点交给 IPC 反例运行，夹具不复制错误分流。

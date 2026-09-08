@@ -649,8 +649,22 @@ impl SerialConvergence {
             MonoRawNs(now.0.saturating_add(CALL_BUDGET_NS)),
             false,
         );
+        #[cfg(feature = "test-comm-fault-hook")]
+        ctrl.trace_now(
+            crate::comm_fault_trace::TraceKind::SafetyStart,
+            u64::from(self.stop_attempt),
+            0,
+        );
         let result = adapter.safety_stop();
         let now = clock.now();
+        #[cfg(feature = "test-comm-fault-hook")]
+        crate::comm_fault_trace::emit(
+            crate::comm_fault_trace::TraceKind::SafetyReturn,
+            now.0,
+            ctrl.trace_context(),
+            u64::from(self.stop_attempt),
+            u64::from(result.is_ok()),
+        );
         match result {
             Ok(()) if self.boot_timed_out(ctrl, now) => self.finish_boot_timeout(ctrl, diag, now),
             Ok(()) => self.transition(
@@ -741,6 +755,17 @@ impl SerialConvergence {
         );
         let result = adapter.read_torque_enable_mask(&mut torque_mask[..self.joint_count]);
         let now = clock.now();
+        #[cfg(feature = "test-comm-fault-hook")]
+        crate::comm_fault_trace::emit(
+            crate::comm_fault_trace::TraceKind::ConfirmReturn,
+            now.0,
+            ctrl.trace_context(),
+            torque_mask[..self.joint_count]
+                .iter()
+                .filter(|enabled| **enabled)
+                .count() as u64,
+            u64::from(result.is_ok()),
+        );
         // hygiene 与 probe 是同一次确认。先消费事实、收紧信任，再解释 all-off。
         let hygiene_error = probe.take_comm_error();
         if let Some(round) = &mut self.round {
@@ -780,6 +805,16 @@ impl SerialConvergence {
                 )
                 .expect("已校验关节数不超过32");
                 if on == 0 {
+                    #[cfg(feature = "test-comm-fault-hook")]
+                    if self.evidence_trusted(ctrl) {
+                        crate::comm_fault_trace::emit(
+                            crate::comm_fault_trace::TraceKind::AllOffTrusted,
+                            now.0,
+                            ctrl.trace_context(),
+                            0,
+                            0,
+                        );
+                    }
                     self.finish_observation(self.evidence_trusted(ctrl), ctrl, diag, now);
                 } else {
                     self.still_on = on;

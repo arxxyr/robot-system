@@ -29,12 +29,16 @@ fn build_joint_state_body(stamp: u64) -> Vec<u8> {
 }
 
 fn build_joint_state_body_n(stamp: u64, positions: &[f64]) -> Vec<u8> {
+    build_joint_state_body_for_layout(stamp, positions, 0xCAFE_BABE_DEAD_BEEF)
+}
+
+fn build_joint_state_body_for_layout(stamp: u64, positions: &[f64], layout_id: u64) -> Vec<u8> {
     let mut fbb = FlatBufferBuilder::new();
     let pos = fbb.create_vector::<f64>(positions);
     let js = FbJointState::create(
         &mut fbb,
         &JointStateArgs {
-            layout_id: 0xCAFE_BABE_DEAD_BEEF,
+            layout_id,
             position_rad: Some(pos),
             velocity_rps: None,
             effort_nm: None,
@@ -54,6 +58,55 @@ fn unique_topic(label: &str) -> String {
         .map(|d| d.subsec_nanos())
         .unwrap_or(0);
     format!("/test/{label}/{pid}_{nanos}")
+}
+
+/// 本夹具独占的临时配置与日志目录；测试退出时只清理本次创建的目录。
+struct ReproTempDir(std::path::PathBuf);
+
+impl ReproTempDir {
+    fn create(robot_id: &str) -> Self {
+        let path = std::env::temp_dir().join(robot_id);
+        // 原子创建拒绝同名已有目录，避免清理任何非本轮资源。
+        std::fs::create_dir(&path).expect("create isolated repro directory");
+        Self(path)
+    }
+}
+
+impl Drop for ReproTempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// 真 S1 应在两秒 duration 后退出；额外上界只负责故障诊断与子进程回收。
+fn wait_repro_child(
+    mut command: std::process::Command,
+) -> std::io::Result<std::process::ExitStatus> {
+    use robot_core::time::RobotClock;
+
+    let mut child = command.spawn()?;
+    let clock = robot_core::time::SystemClock;
+    let deadline_ns = clock.now().0.saturating_add(10_000_000_000);
+    let result = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Err(error) => break Err(error),
+            Ok(None) => {
+                if clock.now().0 >= deadline_ns {
+                    break Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "s1_daemon exceeded the ten-second diagnostic deadline",
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    };
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    result
 }
 
 /// 变体 1：subscriber 先建 service（robot-transport 封装路径 = s1 启动锚定
@@ -158,8 +211,48 @@ fn concurrent_pub_sub_create_race() {
 #[ignore = "需要预先 cargo build --release -p robot-s1（spawn 真 s1_daemon）；诊断/升级复核手跑"]
 fn parent_pub_then_child_s1_open() {
     // s1_daemon 的 state topic 形状固定 /<robot>/s0/<hw>/state。
-    let robot_id = format!("repro_pc_{}", std::process::id());
+    let now_ns = robot_core::time::RobotClock::now(&robot_core::time::SystemClock).0;
+    let robot_id = format!("repro_pc_{}_{now_ns}", std::process::id());
     let topic = format!("/{robot_id}/s0/smoke_arm/state");
+    // 与真实 S1 从本例配置派生的布局一致；其余纯 transport 样本保留原哨兵。
+    let layout_id =
+        robot_msg::joint_layout::compute_layout_id(&robot_id, "smoke_arm", &[("smoke_j0", 1)]);
+
+    // CARGO_MANIFEST_DIR = crates/robot-transport → workspace 根向上两级。
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let temporary = ReproTempDir::create(&robot_id);
+    let template = std::fs::read_to_string(root.join("configs/scripted_backend_smoke.toml"))
+        .expect("read the real scripted backend configuration");
+    // 本 crate 没有 TOML 测试依赖；只替换受精确断言保护的已知 robot 字段，
+    // 模板结构漂移时明确失败，不扩大替换范围或绕开 S1 的配置一致性检查。
+    let original = "[robot]\nid             = \"scripted_backend_smoke\"";
+    assert_eq!(
+        template.matches(original).count(),
+        1,
+        "robot template drift"
+    );
+    let config = template.replacen(
+        original,
+        &format!("[robot]\nid             = \"{robot_id}\""),
+        1,
+    );
+    let config_path = temporary.0.join("config.toml");
+    std::fs::write(&config_path, config).expect("write the isolated robot configuration");
+    let log_path = temporary.0.join("s1.log");
+    let log = std::fs::File::create(&log_path).expect("create s1 diagnostic log");
+    let stdout = log.try_clone().expect("clone s1 diagnostic log handle");
+    let mut command = std::process::Command::new(root.join("target/release/s1_daemon"));
+    command
+        .arg("--robot-id")
+        .arg(&robot_id)
+        .arg("--hardware-id")
+        .arg("smoke_arm")
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--duration")
+        .arg("2s")
+        .stdout(stdout)
+        .stderr(log);
 
     // 50 Hz 发布线程（iceoryx2 句柄 !Send → node + publisher 线程内建，
     // ready 握手后再 spawn 子进程 —— 跟 smoke harness fake_s0 同款时序）。
@@ -180,7 +273,7 @@ fn parent_pub_then_child_s1_open() {
         while !stop_pub.load(std::sync::atomic::Ordering::Acquire) {
             let stamp = robot_core::time::RobotClock::now(&clock).0;
             // smoke_arm = 1 关节（configs/scripted_backend_smoke.toml）。
-            let body = build_joint_state_body_n(stamp, &[0.0]);
+            let body = build_joint_state_body_for_layout(stamp, &[0.0], layout_id);
             if let Ok(mut w) = pub_.loan(1024 + body.len()) {
                 w.set_stamp_ns(stamp);
                 w.set_body_bytes(&body);
@@ -189,29 +282,18 @@ fn parent_pub_then_child_s1_open() {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
     });
-    ready_rx.recv().expect("publisher ready handshake");
-
-    // CARGO_MANIFEST_DIR = crates/robot-transport → workspace 根向上两级。
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let out = std::process::Command::new(root.join("target/release/s1_daemon"))
-        .arg("--robot-id")
-        .arg(&robot_id)
-        .arg("--hardware-id")
-        .arg("smoke_arm")
-        .arg("--config")
-        .arg(root.join("configs/scripted_backend_smoke.toml"))
-        .arg("--duration")
-        .arg("2s")
-        .output()
-        .expect("spawn s1_daemon");
+    let result = ready_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .map_err(std::io::Error::other)
+        .and_then(|()| wait_repro_child(command));
 
     stop.store(true, std::sync::atomic::Ordering::Release);
-    pub_thread.join().expect("pub thread join");
+    let publisher_result = pub_thread.join();
 
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    eprintln!("[repro] s1 exit={:?}", out.status);
-    eprintln!("[repro] s1 stderr tail:");
-    for line in stderr
+    let diagnostic = std::fs::read_to_string(&log_path).expect("read s1 diagnostic log");
+    eprintln!("[repro] s1 exit={result:?}");
+    eprintln!("[repro] s1 log tail:");
+    for line in diagnostic
         .lines()
         .rev()
         .take(5)
@@ -221,15 +303,17 @@ fn parent_pub_then_child_s1_open() {
     {
         eprintln!("[repro]   {line}");
     }
+    publisher_result.expect("pub thread join");
+    let status =
+        result.unwrap_or_else(|error| panic!("s1 diagnostic failed: {error}\n{diagnostic}"));
     assert!(
-        !stderr.contains("ServiceInCorruptedState"),
-        "s1 child hit corrupted-state on parent-created service:\n{stderr}"
+        !diagnostic.contains("ServiceInCorruptedState"),
+        "s1 child hit corrupted-state on parent-created service:\n{diagnostic}"
     );
     // 反向防假阳性：s1 必须真的跑过 anchor（正常锚定 exit 0 跑满 duration）。
     assert!(
-        out.status.success(),
-        "s1 child did not run cleanly (exit={:?}); stderr:\n{stderr}",
-        out.status
+        status.success(),
+        "s1 child did not run cleanly (exit={status:?}); log:\n{diagnostic}"
     );
 }
 

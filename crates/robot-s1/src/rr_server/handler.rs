@@ -57,13 +57,13 @@ use robot_core::time::RobotClock;
 use robot_msg::markers;
 use robot_msg::msg::{ActionKindFb, ActionRpcStatus};
 use robot_transport::iceoryx2::publisher as open_pub;
-use robot_transport::iceoryx2::publisher::Iceoryx2Publisher;
 use robot_transport::iceoryx2::qos::TopicClass;
 
 use crate::action::{ActionId, ActionKind, ActionRequest, ActionSource};
 use crate::coordinator::Coordinator;
 use crate::events_drain::{
-    EventsDrainRegistry, EventsDrainThreadConfig, spawn_events_drain_thread,
+    EventsDrainRegistry, EventsDrainThreadConfig, EventsPublisherGuard,
+    spawn_owned_events_drain_thread,
 };
 
 use super::wire::{
@@ -235,7 +235,7 @@ pub fn handle_invoke(payload: &[u8], ctx: &RealHandlerCtx) -> Vec<u8> {
             // 7. spawn events_drain_thread + register。
             let cfg = EventsDrainThreadConfig::for_action(&ctx.robot_id, action_id);
             let factory = make_events_publisher_factory(cfg.topic.clone());
-            match spawn_events_drain_thread(
+            match spawn_owned_events_drain_thread(
                 cfg,
                 ticket.events,
                 factory,
@@ -418,13 +418,10 @@ fn parse_action_id(s: &str) -> Result<ActionId, uuid::Error> {
     Ok(ActionId(uuid::Uuid::parse_str(s)?))
 }
 
-/// 构造 events_drain `publisher_factory` closure：每个 ActionId 一个独立
-/// iceoryx2 Node + Publisher，Node leak 让 publisher 整个生命周期内 Node
-/// 不被 drop（同 1/3-c events_drain_thread 测试 / 1/3-b s1_daemon rr_server
-/// factory 同款 leak 模式）。
+/// 每个 `ActionId` 的端口与 Node 由同一 owner 持有，完整端口先于 Node 析构。
 fn make_events_publisher_factory(
     topic: String,
-) -> impl FnOnce() -> Iceoryx2Publisher<markers::ActionEventEnvelope> + Send + 'static {
+) -> impl FnOnce() -> EventsPublisherGuard + Send + 'static {
     move || {
         let pub_node = NodeBuilder::new()
             .create::<IxService>()
@@ -432,16 +429,311 @@ fn make_events_publisher_factory(
         let publisher =
             open_pub::<markers::ActionEventEnvelope>(&pub_node, &topic, TopicClass::TaskEvent)
                 .expect("rr handle_invoke: events_drain Publisher create");
-        // node 持 publisher 内部 shm fd；leak 让 publisher 整个生命周期内
-        // node 不被 drop。
-        Box::leak(Box::new(pub_node));
-        publisher
+        // 0.9.3 的 SharedNode 引用足以保活，但可能在 port_tag 析构前归零。
+        // 显式 owner 保证先完整删除端口标记，再释放 Node 目录，不永久保留资源。
+        EventsPublisherGuard::owned(publisher, pub_node)
     }
 }
 
 // ============================================================================
 // Tests
 // ============================================================================
+
+#[cfg(all(test, target_os = "linux"))]
+mod node_lifetime_tests {
+    use super::*;
+    use robot_core::time::{DurationNs, SystemClock};
+    use robot_msg::build_helpers::build_action_event_envelope;
+    use robot_msg::msg::{ActionEventEnvelope, ActionEventKindFb};
+    use robot_transport::iceoryx2::subscriber as open_sub;
+    use robot_transport::{LatestSubscriber, Publisher};
+    use std::process::{Command, Stdio};
+    use std::time::Duration;
+
+    const CHILD: &str = "ROBOT_TEST_ACTION_PUBLISHER_LIFETIME_CHILD";
+    const TEST: &str =
+        "rr_server::handler::node_lifetime_tests::action_publisher_releases_node_under_fd_limit";
+
+    #[test]
+    fn action_publisher_releases_node_under_fd_limit() {
+        if std::env::var_os(CHILD).is_some() {
+            run_child();
+            return;
+        }
+        let sentinel = inherited_sentinel();
+        let sentinel_fd = std::os::fd::AsRawFd::as_raw_fd(&sentinel);
+        let fd_limit = fallback_fd_limit();
+        let force_fcntl = std::env::var_os("ROBOT_TEST_NODE_FORCE_FCNTL").is_some();
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", TEST, "--nocapture", "--test-threads=1"])
+            .env(CHILD, "1")
+            .env("ROBOT_TEST_NODE_FD_SENTINEL", sentinel_fd.to_string())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        // 仅 fork 后的子进程标记 CLOEXEC，不关闭父进程或 spawn 错误管道。
+        unsafe {
+            std::os::unix::process::CommandExt::pre_exec(&mut command, move || {
+                if force_fcntl {
+                    mark_child_fds_with_fcntl(fd_limit)
+                } else {
+                    mark_child_fds_cloexec(fd_limit)
+                }
+            });
+        }
+        let mut child = command.spawn().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        // 两条管道同时读取，底层错误日志不能阻塞子进程并制造假超时。
+        let stdout_reader = std::thread::spawn(move || read_output(stdout));
+        let stderr_reader = std::thread::spawn(move || read_output(stderr));
+        let clock = SystemClock::new();
+        let deadline = clock.now() + DurationNs::from_secs(30);
+        let mut timed_out = false;
+        while child.try_wait().unwrap().is_none() {
+            if clock.now() >= deadline {
+                child.kill().unwrap();
+                timed_out = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let status = child.wait().unwrap();
+        assert_eq!(
+            unsafe { libc::fcntl(sentinel_fd, libc::F_GETFD) },
+            0,
+            "子进程隔离不能改父 FD 标志"
+        );
+        let stdout_bytes = stdout_reader.join().unwrap();
+        let stderr_bytes = stderr_reader.join().unwrap();
+        let stdout = String::from_utf8_lossy(&stdout_bytes);
+        let stderr = String::from_utf8_lossy(&stderr_bytes);
+        if status.success() {
+            for line in stdout
+                .lines()
+                .filter(|line| line.contains("action_publisher_"))
+            {
+                eprintln!("{line}");
+            }
+        } else {
+            eprintln!("{stdout}{stderr}");
+        }
+        assert!(!timed_out, "真实 publisher 生命周期子进程超时");
+        assert!(stdout.contains("action_publisher_child nofile=128"));
+        assert!(status.success(), "子进程失败：{status}");
+        assert!(stdout.contains("action_publisher_done rounds=256"));
+    }
+
+    fn inherited_sentinel() -> std::os::fd::OwnedFd {
+        use std::os::fd::{AsRawFd, FromRawFd};
+        let source = std::fs::File::open("/dev/null").unwrap();
+        // F_DUPFD 故意不设置 CLOEXEC，模拟前序测试保留的库资源；OwnedFd 最终归还。
+        let raw = unsafe { libc::fcntl(source.as_raw_fd(), libc::F_DUPFD, 64) };
+        assert!(raw >= 64);
+        unsafe { std::os::fd::OwnedFd::from_raw_fd(raw) }
+    }
+
+    fn fallback_fd_limit() -> libc::c_int {
+        let mut limit = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        assert_eq!(
+            unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) },
+            0
+        );
+        // 旧内核回退只遍历有限的父进程硬上界；不改变任一进程的限额。
+        libc::c_int::try_from(limit.rlim_max).expect("测试要求有限且可表示的 NOFILE 硬上界")
+    }
+
+    fn mark_child_fds_cloexec(fd_limit: libc::c_int) -> std::io::Result<()> {
+        // pre_exec 内仅作系统调用与栈上运算，不分配、记录日志或获取进程锁。
+        let result = unsafe {
+            libc::syscall(
+                libc::SYS_close_range,
+                3_u32,
+                u32::MAX,
+                libc::CLOSE_RANGE_CLOEXEC,
+            )
+        };
+        if result == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        match error.raw_os_error() {
+            Some(libc::ENOSYS | libc::EINVAL) => mark_child_fds_with_fcntl(fd_limit),
+            _ => Err(error),
+        }
+    }
+
+    fn mark_child_fds_with_fcntl(fd_limit: libc::c_int) -> std::io::Result<()> {
+        for fd in 3..fd_limit {
+            loop {
+                let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+                if flags >= 0
+                    && unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } == 0
+                {
+                    break;
+                }
+                let error = std::io::Error::last_os_error();
+                match error.raw_os_error() {
+                    Some(libc::EBADF) => break,
+                    Some(libc::EINTR) => {}
+                    _ => return Err(error),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn read_output(mut pipe: impl std::io::Read) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        pipe.read_to_end(&mut bytes).unwrap();
+        bytes
+    }
+
+    fn owned_node_directories() -> std::collections::BTreeSet<std::path::PathBuf> {
+        // 只观察本隔离子进程实际打开的 Node details；不遍历或删除全局资源。
+        let paths: std::collections::BTreeSet<_> = std::fs::read_dir("/proc/self/fd")
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .filter_map(|entry| std::fs::read_link(entry.path()).ok())
+            .filter(|path| {
+                path.file_name()
+                    .is_some_and(|name| name == "iox2_node.details")
+            })
+            .map(|path| path.parent().unwrap().to_path_buf())
+            .collect();
+        assert_eq!(
+            paths.len(),
+            2,
+            "本轮必须观察到真实 publisher / subscriber 的两个 Node"
+        );
+        assert!(paths.iter().all(|path| path.is_dir()));
+        paths
+    }
+
+    fn assert_node_directories_released(paths: &std::collections::BTreeSet<std::path::PathBuf>) {
+        for path in paths {
+            assert!(
+                !path.exists(),
+                "真实 Node 完整退场后目录仍残留（空目录同样失败）：{}",
+                path.display()
+            );
+        }
+    }
+
+    fn fd_count() -> usize {
+        std::fs::read_dir("/proc/self/fd").unwrap().count()
+    }
+
+    fn run_child() {
+        let sentinel_fd: libc::c_int = std::env::var("ROBOT_TEST_NODE_FD_SENTINEL")
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(
+            unsafe { libc::fcntl(sentinel_fd, libc::F_GETFD) },
+            -1,
+            "exec 不得继承父进程哨兵 FD"
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::EBADF)
+        );
+        println!("action_publisher_initial_fd_count count={}", fd_count());
+        for entry in std::fs::read_dir("/proc/self/fd").unwrap() {
+            let entry = entry.unwrap();
+            if let Ok(target) = std::fs::read_link(entry.path()) {
+                println!(
+                    "action_publisher_initial_fd fd={} target={}",
+                    entry.file_name().to_string_lossy(),
+                    target.display()
+                );
+            }
+        }
+        let limit = libc::rlimit {
+            rlim_cur: 128,
+            rlim_max: 128,
+        };
+        let no_core = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // 只收紧这个隔离子进程；真实资源创建错误必须导致测试失败。
+        assert_eq!(
+            unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &raw const limit) },
+            0
+        );
+        assert_eq!(
+            unsafe { libc::setrlimit(libc::RLIMIT_CORE, &raw const no_core) },
+            0
+        );
+        println!("action_publisher_child nofile=128");
+        let clock = SystemClock::new();
+        let robot_id = format!(
+            "publisher_lifetime_{}_{}",
+            std::process::id(),
+            clock.now().0
+        );
+        let baseline = fd_count();
+        for index in 0..256 {
+            publisher_round_trip(&robot_id, index);
+            if index % 8 == 0 {
+                println!("action_publisher_fd round={index} count={}", fd_count());
+            }
+        }
+        let final_count = fd_count();
+        println!("action_publisher_done rounds=256 baseline={baseline} final={final_count}");
+        assert!(final_count <= baseline, "每 Action 的 Node/port FD 未归还");
+    }
+
+    fn publisher_round_trip(robot_id: &str, index: u64) {
+        let clock = SystemClock::new();
+        let action_id = uuid::Uuid::now_v7().to_string();
+        let topic = format!("/{robot_id}/s1/action_events/{action_id}");
+        // 调真正 handle_invoke 工厂；返回 owner 必须保活端口并正确归还资源。
+        let mut publisher = make_events_publisher_factory(topic.clone())();
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let mut subscriber =
+            open_sub::<markers::ActionEventEnvelope>(&node, &topic, TopicClass::TaskEvent).unwrap();
+        let node_directories = owned_node_directories();
+        let stamp = clock.now().0;
+        let body = build_action_event_envelope(
+            &action_id,
+            stamp,
+            ActionEventKindFb::Started,
+            0.0,
+            None,
+            None,
+        );
+        let mut writer = publisher.loan(body.len() + 1024).unwrap();
+        writer.set_seq(index);
+        writer.set_body_bytes(&body);
+        writer.publish().unwrap();
+        let deadline = clock.now() + DurationNs::from_secs(2);
+        loop {
+            publisher.update_connections().unwrap();
+            if let Some(sample) = subscriber.latest().unwrap() {
+                let view = sample.view().unwrap();
+                let envelope: ActionEventEnvelope<'_> = view.body.get();
+                assert_eq!(envelope.action_id(), Some(action_id.as_str()));
+                assert_eq!(envelope.at_ns(), stamp);
+                assert_eq!(view.header.get().seq(), index);
+                break;
+            }
+            assert!(
+                clock.now() < deadline,
+                "工厂返回的 owner 必须保持真实消息可达"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        drop(subscriber);
+        drop(node);
+        drop(publisher);
+        assert_node_directories_released(&node_directories);
+    }
+}
 
 #[cfg(test)]
 mod tests {

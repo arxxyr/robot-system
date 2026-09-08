@@ -32,7 +32,13 @@
            developer 按包实施，专职 reviewer 独立评审，主 agent 整合验收。
            实施状态与证据 = team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md；
            C1–C4 已通过独立评审与必要质量门，按阶段分包提交；
-           C4 IPC / 启动总装收口，当前进入 C5 完整软件验证与现场测量入口。
+           C4 IPC / 启动总装已收口；C5 source e6d2b306…2598 / 308 输入，
+           本地与 Orin 均为 1737 PASS / 11 ignored、67 场景、八套 smoke 全 PASS；
+           RT guard 四门与两端四个无 hook 正式产物均已核验，六项 Orin 服务保持停止。
+           C5 已独立 APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING，
+           deployable=false；H1/H2/H3 NEEDS_HUMAN，D15 OPEN，不宣称现场验收完成。
+           当前证据只保留 C5.json 与 C5_evidence.tar.gz，旧过程数据按用户授权清除。
+           Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。
            每阶段评审与必要质量门通过即 commit，再推进下一阶段。
            RX 重同步 / 串口 reopen 已移出本候选。
            后续硬序 ①通信故障硬化 → ②D15 退役决策 → ③robot-viz Rerun 桥

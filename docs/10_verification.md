@@ -14,12 +14,55 @@
 全部 27 项外部直接依赖的最终版本与验证记录见
 [依赖升级记录](handoffs/dependency_upgrade_2026-09-08.md)。该分包基于 C4，最终锁定后
 使用 `--locked` 执行静态检查、测试与构建；C5 与硬件验收仍按各自条件独立收口。
+依赖分包已独立 **Approved** 并提交 `0001858`：完整 tests **1643 PASS、2 项原有
+ignored**；lib / bins **1461 PASS 包含在 1643 内，不相加**。原有 ignored 未计为通过，
+完整执行证据见 [report.json](../.verify/dependency_upgrade_2026-09-08/report.json)。
 
 ## 当前候选：post-E 通信故障硬化（2026-09-08）
 
 权威验收条件见 [Spec 的 AC-1–AC-24](../team-swe/specs/post_e_comm_fault_hardening.md)，
 函数与命令映射见 [正式 Plan](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md)，
 执行状态见 [HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+
+当前源码 `e6d2b30699379ee0e2222649efb4e79093978c612e0d6a67bc83dce9720d2598`
+（308 输入）已独立 **APPROVED_SOFTWARE_SCOPE**；汇总状态为
+**SOFTWARE_ACCEPTED_HARDWARE_PENDING**，`deployable=false`。
+
+| 软件验收范围 | 本地与 Orin 当前结果 |
+|---|---|
+| 完整 tests | 各 1737 PASS = 1528 lib/bins + 208 integration + 1 doc；11 ignored = 2 integration + 9 doc |
+| 进程与资源 | 各 67 软件场景、八套 smoke PASS；A1 原 1000 轮与精确 Node 集合 15→15 通过 |
+| RT guard | debug/release 的真实分配 SIGABRT 检查与完整 60 秒 soak，四门 PASS；既有 ignored 单独执行，不重复计入全量 |
+| 构建与独立质量门 | fresh、单 feature、schema、deny、ELF、timings 和库存检查通过；库存 23 targets / 210 cases / 2 ignored |
+| 正式产物恢复 | 两端各四个无测试 hook 产物已核验：xlerobot_deploy、s0_daemon、s1_daemon、robot_rpc_gateway；Orin 为 AArch64 |
+| 退出状态 | 临时 systemd unit 和验证进程已清理；Orin 六项原服务 inactive/PID0，保持停止 |
+
+当前资源观测保持原 NOFILE=1024：Orin 完整 S1 FD 为 81→154→81，gateway 为
+94→103→94，Node 集合 15→15，registry 与 cleanup warning 均为 0。它们是本轮
+验收进程观测，不是正式机器人常态基线；隔离调用点 FD=4 也不能冒充 daemon 基线。
+
+S1 私有 guard 按 publisher → Node 顺序析构；A1 通过上游 Node ID 解码精确归属
+两个存活 PID，baseline 每端非空，原 2 秒 grace 后不得新增目录，空目录与同数量
+替换均失败。完整实现约束、具名反例及复现命令见 PLAN P.6，软件门不靠清理全局资源通过。
+
+用户已授权更新 Orin 原仓库、停止六项开发服务，并在调试 / RT 检查需要权限时
+直接 `sudo`。实际构建 manifest 保留 features/profile/source/commit/SHA，不反填
+后续提交身份；无 hook 正式产物已恢复，但不自动启动服务或宣称可部署。
+
+| 现场条目 | 当前边界 |
+|---|---|
+| H1 / AC-2(d) | NEEDS_HUMAN：真实串口特性、配置/udev 身份、原始 TX 与耗时 |
+| H2 / AC-12 | NEEDS_HUMAN：topic/external × idle/inflight，各 100 warmup + 1000 有效样本；RR 20/s、实际载荷、σ/CAS 分布 |
+| H3 / AC-13 | NEEDS_HUMAN：真实广播调用、完整原始帧、一写零读与耗时 |
+| D15 | OPEN：软件收敛不保证进程死亡或三次广播均失败时的物理断扭 |
+
+当前结论与逐项命令/日志索引为 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json)，
+最新验收证据为 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
+最新五组 Orin 证据已重建并逐项校验。
+查看原始 run / 执行器时，先按 PLAN P.6.5 将证据包解到仓库根；日常验收命令仍在 PLAN。
+旧轮次日志、源码快照、重复产物和历史归档按用户授权清除，不再承诺保留旧 FAIL 原始日志。
+
+### 阶段历史（按当时状态保留）
 
 - 实现前清单为 [baseline.json](../.verify/post_e_comm_fault_hardening/baseline.json)：
   20 个 integration target、155 项用例，其中 2 项原有 ignored；枚举不算执行通过。
@@ -429,6 +472,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 | 2026-09-08 | 当前 post-E 验收入口、实现前 Cargo 清单与实跑基线；新增 S-39 / D3 / D4 / D13 验收范围，未标新增项通过 | Codex |
 | 2026-09-08 | C2 有界传输与 adapter 分包验证；独立测试实际执行，整候选门仍待 C3–C5 | Codex |
 | 2026-09-08 | S-40 同槽取消标记与确定性交错验收登记，方案已 ACK，未宣称新增测试通过 | Codex |
+| 2026-09-08 | 当前 e6d2b306 / 308 的本地与 Orin 软件验收独立批准；统一 C5.json / C5_evidence.tar.gz 入口，按用户授权清除旧过程数据；H1–H3 与 D15 状态不变 | Codex |
 | 2026-04-22 | 骨架初稿：§10.1/§10.2/§10.3 三级结构 + 状态标签 + env_id 机制；所有数值行占位。Step 5 完成时刻快照 | Claude Code (提议) / loosqk (拍板) |
 | 2026-04-22 | §10.2.3 CI 1–6 步接入 `.github/workflows/ci.yml`；`deny.toml` 落地（allow 0BSD；workspace path wildcard + private crate 豁免；iceoryx2 / trybuild winnow dup 走 skip-tree）；`scripts/collect_env_id.sh` 兼容 macOS + Linux。TODO 1/3/4 划掉，只剩 2（assert-no-alloc） | Claude Code |
 | 2026-04-24 | §10.2.1 加 3 个 task 27c harness（`feetech_bench` criterion / `feetech::integration_smoke` / `scripts/feetech_flamegraph.sh`）+ 附录加 feetech bench baseline 实测数值。结论：协议层零瓶颈，task 28 真机延迟瓶颈在 USB-RS485 wire RTT。 | Claude Code |

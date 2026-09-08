@@ -691,8 +691,6 @@ mod tests {
     use std::time::Instant;
 
     use crossbeam_channel::bounded;
-    #[cfg(not(debug_assertions))]
-    use crossbeam_channel::unbounded;
     use iceoryx2::prelude::NodeBuilder;
     use iceoryx2::service::ipc::Service as IxService;
     use robot_core::time::SystemClock;
@@ -1255,10 +1253,9 @@ mod tests {
     // ────────────────────────────────────────────────────────────────────────
 
     /// debug_assert 在 test profile（debug build）会触发；这条单测目的是
-    /// 验证 release 不 panic + metrics 计数。我们用 `unbounded` channel 让
-    /// rr_server 不阻塞。手动跳过 debug_assert：用 release-only sanity 测
-    /// 不容易（cargo test 默认 debug）。改方案：跑 `metrics + tracing` 路径，
-    /// 显式标 `#[cfg(not(debug_assertions))]` 守门，确保 debug build 跳过。
+    /// 验证 release 不 panic + metrics 计数。夹具使用符合生产入口要求的
+    /// 64 容量有界通道；只发送一个孤儿响应，不会触及容量上限。
+    /// 显式标 `#[cfg(not(debug_assertions))]`，避免触发 debug 的故意断言。
     #[test]
     #[cfg(not(debug_assertions))]
     fn rr_server_handles_orphan_response_no_panic_release_only() {
@@ -1269,8 +1266,8 @@ mod tests {
             rr_client::<markers::ClearEStopRequest, markers::ClearEStopResponse>(test_node, &topic)
                 .unwrap();
 
-        let (req_tx, _req_rx) = unbounded::<ClearEStopRrRequest>();
-        let (resp_tx, resp_rx) = unbounded::<ClearEStopRrResponse>();
+        let (req_tx, _req_rx) = bounded::<ClearEStopRrRequest>(64);
+        let (resp_tx, resp_rx) = bounded::<ClearEStopRrResponse>(64);
 
         let cfg = RrServerThreadConfig {
             topic: topic.clone(),

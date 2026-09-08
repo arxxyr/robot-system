@@ -756,8 +756,13 @@ struct WorkerHandles {
 
 impl WorkerHandles {
     fn stop_startup(&mut self, stops: &StopFlags, clock: &dyn RobotClock, deadline: u64) {
+        // CP2 是进程退出截止，不能把全部预算耗在 join 轮询上；给栈回收与退出留 50 ms。
+        let stop_deadline = deadline.saturating_sub(50_000_000);
         stops.request_spawned_stop();
         loop {
+            if clock.now().0 >= stop_deadline {
+                break;
+            }
             macro_rules! join_finished {
                 ($field:ident) => {
                     if self
@@ -778,10 +783,11 @@ impl WorkerHandles {
             join_finished!(executor);
             join_finished!(publisher);
             join_finished!(io);
-            if self.all_joined() || clock.now().0 >= deadline {
+            if self.all_joined() {
                 break;
             }
-            thread::sleep(Duration::from_millis(5));
+            let remaining = stop_deadline.saturating_sub(clock.now().0);
+            thread::sleep(Duration::from_nanos(remaining.min(5_000_000)));
         }
     }
     fn all_joined(&self) -> bool {
@@ -983,6 +989,7 @@ fn run_workers(
         clock.clone(),
         supervisor.shared().observation_arc(),
         WorkerKind::ALL.map(|worker| stops.flag(worker)),
+        workers.ipc.as_ref().expect("IPC 已启动").event_sender(),
     )
     .map_err(|error| startup_io_error(&error))?;
     workers.executor = Some(match built {

@@ -21,6 +21,9 @@ pub enum HookCommandKind {
     RefuseStop = 2,
     SerialResult = 3,
     RequestWorkerStop = 4,
+    ArmSample = 5,
+    ExternalEStop = 6,
+    NormalDelayProfile = 7,
 }
 
 /// 单次脚本返回。通信错误直接沿用 `CommErrorKind` 数值 0..=9、63。
@@ -61,6 +64,39 @@ static STATE: HookState = HookState {
 };
 static OBSERVATION: std::sync::OnceLock<Arc<crate::comm_fault_observation::ObservationPage>> =
     std::sync::OnceLock::new();
+static DELAY_PROFILE: AtomicU64 = AtomicU64::new(0);
+static DELAY_SEED: AtomicU64 = AtomicU64::new(1);
+
+/// 只在真实取得 normal 执行权后调用，完整事务仍必须完成，不假造传输响应。
+pub(crate) fn delay_acquired_normal(context: crate::comm_fault_trace::TraceContext) {
+    let profile = DELAY_PROFILE.load(Ordering::Acquire);
+    if profile == 0 {
+        return;
+    }
+    let mut old = DELAY_SEED.load(Ordering::Acquire);
+    let random = loop {
+        let mut next = old;
+        next ^= next << 13;
+        next ^= next >> 7;
+        next ^= next << 17;
+        match DELAY_SEED.compare_exchange(old, next, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => break next,
+            Err(actual) => old = actual,
+        }
+    };
+    let minimum = (profile >> 32) * 1_000_000;
+    let maximum = (profile & u64::from(u32::MAX)) * 1_000_000;
+    let requested = minimum + random % (maximum - minimum + 1);
+    let start = crate::comm_fault_trace::now();
+    std::thread::sleep(Duration::from_nanos(requested));
+    crate::comm_fault_trace::emit(
+        crate::comm_fault_trace::TraceKind::InjectedDelay,
+        start,
+        context,
+        requested,
+        crate::comm_fault_trace::now().saturating_sub(start),
+    );
+}
 
 /// 每个 worker 在正常轮询边界调用；暂停期间仍观察真正 stop，除非明确拒停。
 pub fn worker_checkpoint(worker: WorkerKind, clock: &dyn RobotClock, stop: &AtomicBool) {
@@ -132,6 +168,7 @@ fn apply_command(
     command: TestCommFaultCommand,
     clock: &dyn RobotClock,
     worker_stops: &[Arc<AtomicBool>; 7],
+    external: &crate::event_ingress::ExternalEvents,
 ) -> io::Result<()> {
     if command.reserved != [0; 5] {
         return Err(io::Error::new(
@@ -172,6 +209,38 @@ fn apply_command(
         {
             worker_stops[usize::from(command.target)].store(true, Ordering::Release);
         }
+        5 if command.target <= 1
+            && command.duration_ms == 0
+            && command.count == 0
+            && command.error == 0
+            && command.sequence != 0 =>
+        {
+            crate::comm_fault_trace::arm_sample(if command.target == 0 {
+                command.sequence
+            } else {
+                0
+            })?;
+        }
+        6 if command.target == 0
+            && command.duration_ms == 0
+            && command.count == 0
+            && command.error == 0 =>
+        {
+            external.estop();
+        }
+        7 if command.target == 0
+            && command.error == 0
+            && ((command.duration_ms == 0 && command.count == 0)
+                || (command.duration_ms >= 1
+                    && command.duration_ms <= command.count
+                    && command.count <= 5)) =>
+        {
+            DELAY_SEED.store(command.sequence.max(1), Ordering::Release);
+            DELAY_PROFILE.store(
+                (u64::from(command.duration_ms) << 32) | u64::from(command.count),
+                Ordering::Release,
+            );
+        }
         _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "非法测试指令")),
     }
     Ok(())
@@ -202,7 +271,20 @@ pub fn spawn_control_thread(
     clock: Arc<dyn RobotClock>,
     observation: Option<Arc<crate::comm_fault_observation::ObservationPage>>,
     worker_stops: [Arc<AtomicBool>; 7],
+    external: crate::event_ingress::ExternalEvents,
 ) -> io::Result<CommFaultControlHandle> {
+    let expected_initial = std::env::var("ROBOT_TEST_INITIAL_COMMAND_SEQUENCE")
+        .ok()
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .ok()
+                .filter(|sequence| *sequence != 0)
+                .ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "初始指令序号必须为非零u64")
+                })
+        })
+        .transpose()?;
     if let Some(page) = &observation {
         let _ = OBSERVATION.set(page.clone());
     }
@@ -234,18 +316,20 @@ pub fn spawn_control_thread(
                     .create()
                     .map_err(|e| io::Error::other(format!("{e:?}")))?;
                 let mut ready = Some(ready_tx);
+                let mut initial_applied = expected_initial.is_none();
                 loop {
                     while let Some(sample) = subscriber
                         .receive()
                         .map_err(|e| io::Error::other(format!("{e:?}")))?
                     {
                         let command = *sample.payload();
-                        apply_command(command, clock.as_ref(), &worker_stops)?;
+                        apply_command(command, clock.as_ref(), &worker_stops, &external)?;
+                        initial_applied |= expected_initial == Some(command.sequence);
                         if let Some(page) = &observation {
                             page.store(F::CommandApplied, command.sequence);
                         }
                     }
-                    if let Some(sender) = ready.take() {
+                    if initial_applied && let Some(sender) = ready.take() {
                         if let Some(page) = &observation {
                             page.store(F::HookReady, 1);
                         }

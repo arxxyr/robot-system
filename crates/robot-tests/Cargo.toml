@@ -149,6 +149,12 @@ name = "supervised_demo"
 path = "src/bin/supervised_demo.rs"
 required-features = ["supervised-demo"]
 
+# post-E 独立验收工具；默认构建不编译注入与现场测量入口。
+[[bin]]
+name = "comm_fault_e2e"
+path = "src/bin/comm_fault_e2e.rs"
+required-features = ["comm-fault-e2e"]
+
 [dependencies]
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
@@ -157,6 +163,7 @@ flatbuffers     = { workspace = true }
 # robot-tests → toml，timings/tree/deny 随段跑）。
 toml            = { workspace = true }
 iceoryx2        = { workspace = true }
+iceoryx2-bb-posix = { workspace = true, optional = true }
 robot-core      = { workspace = true }
 robot-msg       = { workspace = true }
 robot-transport = { workspace = true, default-features = true }
@@ -237,11 +244,24 @@ robot-kinematics-xlerobot = { workspace = true, optional = true }
 # v0.5 候选 E 段(6)（Spec D11 换算权威唯一 + P.2.6）：feetech 公共换算 API
 # （`raw_to_rad` / `rad_to_raw`）供段(9) preflight / 真机验收 bin 从标定 JSON
 # `range_min/max` 派生 gripper rad_lo/rad_hi，再传 `robot_rpc::client::
-# baseline_shim`。optional 挂 `real-hw` feature（含 feetech `real-hw` →
-# serialport，真机 bin 才拉）；默认构建 0 影响（timings / tree / deny 段(6) 核）。
+# baseline_shim`。当前由 comm-fault-e2e 显式启用，软件门也消费真实编码与记录器；
+# real-hw 仅弱转发串口 feature，不单独拉入无人消费的依赖或启用验收 binary。
 robot-adapter-feetech = { workspace = true, optional = true }
 
 [features]
+# 独立启用真实验收依赖，不继承旧 freeze hook；现场串口仍需另外启用 real-hw。
+comm-fault-e2e = [
+    "dep:robot-s0",
+    "robot-s0/test-comm-fault-hook",
+    "robot-s0/mock",
+    "robot-s0/feetech",
+    "dep:robot-rpc",
+    "robot-rpc/client",
+    "dep:robot-adapter-feetech",
+    "dep:tokio",
+    "dep:tonic",
+    "dep:serde_json",
+]
 # v0.3 A2-3 freeze systemd smoke 入口 feature。
 # - 生产 release **不**带本 feature（freeze_systemd_smoke binary 不参编译）。
 # - 本机跑：`cargo run -p robot-tests --bin freeze_systemd_smoke --features
@@ -270,6 +290,7 @@ clear-estop-e2e = [
 # - 启用 robot-rpc / tonic / tokio 3 条 optional dep（跟 clear-estop-e2e
 #   完全等价 —— 同款 feature gate 模式）。
 pubsub-cleanup-smoke = [
+    "dep:iceoryx2-bb-posix",
     "dep:robot-rpc",
     "robot-rpc/client",
     "dep:tonic",
@@ -321,7 +342,7 @@ ik-backend-smoke = [
 #   （robot-cli 用），加 optional dep 不改 Cargo.lock。
 robotctl-smoke = ["dep:tokio", "dep:serde_json", "dep:robot-rpc"]
 # v0.5 候选 E 段(6)：真机侧 feature（段(9) preflight / 验收 bin 的 required-
-# features 宿主）——拉 feetech 公共换算 API + 其 `real-hw`（serialport 真串口）。
+# features 宿主）——仅为已经启用的 feetech 依赖打开 `real-hw`（serialport 真串口）。
 # CI / dev 默认 off；`cargo clippy -p robot-tests --all-features` 永久 gate
 # （PX-5）覆盖本 feature 编译面。
 # v0.5 候选 E 段(8) sd_watchdog_smoke 入口 feature（Spec P.2.7 锁名）。
@@ -347,7 +368,7 @@ sd-watchdog-smoke = [
 #   `client::dual_arm_workflow`，端点适配为本 bin 内纯 I/O 第二份（PX-12
 #   同款并存先例）。
 supervised-demo = ["dep:tokio", "dep:tonic", "dep:robot-rpc", "robot-rpc/client"]
-real-hw = ["dep:robot-adapter-feetech", "robot-adapter-feetech/real-hw"]
+real-hw = ["robot-adapter-feetech?/real-hw"]
 
 [lints]
 workspace = true

@@ -1,12 +1,12 @@
 # post-E 通信故障硬化 · 函数级实施计划
 
-> 日期：2026-09-08。版本：Plan Approved + S-40/S-41/S-42/S-43 Reverse Sync。状态：**C1–C3 已评审提交，C4 总装验收中**。
+> 日期：2026-09-08。版本：Plan Approved + S-40/S-41/S-42/S-43 Reverse Sync。状态：**C1–C4 已评审提交；C5 source e6d2b306…2598 / 308，S1 guard 与精确目录 oracle 已独立 ACK；r6 本地与 Orin 全部软件门 PASS，最终独立 APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING，本阶段随本次提交归档**。
 > 权威：[`post_e_comm_fault_hardening.md`](post_e_comm_fault_hardening.md)（round 21 Spec Approved）。
 > 代码基线：`bd081cb`；工作分支：`feat/post-e-comm-fault-hardening`。
 > 本文只展开已批准 D1–D15 与 P.0–P.8，不修改冻结设计。主 agent / reviewer 明确
 > `Plan Approved` 后实施；用户已授权团队内部评审通过后持续推进，无需再次请求流程确认。
 > 历史批准稿 SHA-256：`3a8a394a74764ad2277bdd5f3aa0901627538f635d4b6208c55cde99d6f2dd30`。
-> C1 `fc0c142`、C2 `822ab16`、C3 `beebfa0` 已独立 Approved 并提交。
+> C1 `fc0c142`、C2 `822ab16`、C3 `beebfa0`、C4 `437b14f` 已独立 Approved 并提交。
 > S-40 至 S-43 均经主 agent 与独立 reviewer ACK；当前文件新 hash 由主 agent 写入 HANDOFF。
 > C4 包含生产总装、test hook、独立 IPC/marker/startup 验收；C5 工具与剩余验收单独提交。
 
@@ -22,6 +22,11 @@ Archive 与 `.verify` 汇总。同一文件
 systemd 服务可以执行；**不连接真实串口、不执行机器人上扭/断扭、不部署/启停生产
 unit、不对真实 marker 授权**。Orin 的 AC-2(d)、AC-12、AC-13 留具名命令与证据格式，
 缺现场实测只能记 NEEDS_HUMAN，不写 PASS。D15 硬件 fail-safe 仍 OPEN。
+以上为最初执行边界；用户后续明确授权停止六项 Orin 开发服务与更新原仓库开展原路径
+软件验收，事实与限制见 P.6.4–P.6.6。本地与 Orin 均已恢复并核验无 hook 正式产物，
+六服务继续停止，`deployable=false`。用户已明确授权 Orin 调试尤其 RT 检查需要权限时
+直接使用 `sudo`；记录实际权限和调度环境，不提高资源阈值或放宽既定预算。
+真实电机测量、自动启动服务和正式部署流程仍不在本轮软件执行范围内。
 
 现有调用链已核：
 
@@ -882,6 +887,138 @@ marker 独立 integration 当前 9 组，实际 Cargo --list 与日志为执行�
 这些是全部AC到具名入口的映射；每个AC子条（a/b/o1等）在报告作为独立case id。
 框架不允许遗漏case时AC仍PASS；NEEDS_HUMAN/未运行不会按success计入。
 
+### P.6.1a C5 已批准测量接缝、实际工具与失败证据
+
+Dev 拥有 `comm_fault_trace.rs`、原生产调用点和 `comm_fault/sla.rs`（H2）；主 agent
+拥有其它 comm_fault 模块及独立 trace 环 oracle。生产默认 feature 不含这些观测，
+不增加 wire schema、外部库或生产状态写入路径。本节由主 agent/reviewer 已 ACK 的
+测量接口展开；真实 Orin 动作仍只登记命令，当前禁止执行。
+
+- `TracePage::{create(&Path),open(&Path)} -> io::Result<Self>`，
+  `drain(&self, limit:usize)->Vec<TraceEvent>`、`dropped()->u64`、`installed()->bool`、
+  `armed_seq()->u64`。独立 mmap 环容量 8192；父端 create_new/0600/精确长度并初始化，
+  S0 在真实 BootSupervisor spawn 后只 open 已有页。RT 不 open/mmap/分配。
+- `TraceEvent { sample_seq:u64, stamp_ns:u64, kind:TraceKind, source:u64,
+  normal_seq:u64, generation:u32, a:u64, b:u64 }`。8 个字段以 AtomicU64 写入，
+  生产者最多 8 次 strong CAS 预留；字段 Relaxed 后槽 generation Release 提交。
+  消费者以不等待的原子准入串行读，槽 Acquire 后读取全部字段，再 Release 归还槽。
+  先预留但暂停的槽阻止越过读，不能拿后槽当作其内容。满/准入竞争耗尽/无效编码增加
+  dropped；累计 dropped>0 使整次运行 invalid。counter 到界拒绝，不回绕复用。
+- `TraceKind` 1–18：TopicReceived、ExternalEnter、PrimitiveCommitted、NormalAcquire、
+  NormalRelease、SerialClaim、IpcClaim、SafetyStart、SafetyReturn、ConfirmReturn、
+  AllOffTrusted、IpcEStopCommit、FirstCommError、MailboxPublished、FaultIpcCommit、
+  InjectedDelay、MailboxPublishing、CommErrorObserved。原语 a=实际 strong CAS 失败次数，
+  b 的 bit0=成功 CAS 前 ACTIVE、bit1=Merged、bit2=LatchOnly；acquire/release/两 claim
+  的 a=实际失败次数、b=成功取得/原位曾置位。Safety a=真实 attempt、return b=Ok；
+  Confirm a=真实 on 数、b=Ok；all-off 只在生产信任判定通过后发事件。
+- Topic t0 是 `poll_estop.latest()` 真取得 lease 后立即取时；external t0 是真实
+  `ExternalEvents::estop` 入口。t1 在权威 strong CAS 成功返回处立即取时。
+  原语 CAS 后再读的 normal_seq 可能已被 serial 清零，不用它冒充线性化点的 seq。
+  H2 用同 epoch 的真实 acquire/release 区间与 CAS 前 ACTIVE 验证归属；in-flight
+  必须 Acquired≤t0<Released。缺区间、重复 acquire、t1→全关间新 normal、Merged、
+  LatchOnly、零 Safety/Confirm、缺两消费者任一成功 claim 均不能成为有效样本。
+  physical/inflight 计入有效样本前，还必须在 t0 所属完整 lease 内恰有一个真实
+  InjectedDelay：epoch/gen/normal_seq 与该 lease 相同，a 为 1–5ms 请求时长，
+  b 为 sleep 返回后的实际耗时且 b≥a，stamp 为 sleep 开始，完整 [stamp,stamp+b]
+  位于 acquire/release 内。缺失、重复、身份错配、越界或时间溢出均 invalid；
+  idle/software 不强制这项随机载荷，不能因此伪造 mock 的事务执行权。
+- FirstCommError 来自 S0 实际收到/建立 `RobotError::Comm` 的 typed 边界或真实 hygiene
+  `report_comm_error`；记录最初时刻/normal seq，待实际 publish 才绑定真实 generation，
+  不预测下一代。已在 adapter 内恢复的重试不伪装成 S0 首 typed 错误。mailbox 权威
+  Release 前后分别取时并记录同一代，GetState 从较早发布前界保守计算。IPC commit
+  明确使用实际 ACK 的 snapshot.generation；ACK n 后并发发布 n+1，记录仍属于 n。
+  SSF batch 的真实 Fault commit 同样发 FaultIpcCommit，不依赖普通 mailbox 路径。
+- hook POD kind5 `ArmSample`：sequence 非零；target0 设测量 epoch，target1 解除；
+  kind6 `ExternalEStop`：通过持有的真实 ExternalEvents 调原语一次；kind7
+  `NormalDelayProfile`：duration_ms=min、count=max，1≤min≤max≤5 或 0/0 关闭。
+  U[1,5]ms 随机附加载荷位于真实 normal acquire 成功后、第一 W/R 前，事务仍完整
+  request+response；记录请求延迟与实测延迟，不宣称每个 W/R 独立 U 分布。
+  Arm 仅写测量 epoch，绝不清权威位、故障、latch、policy。下一次 arm 必须上一轮
+  真实物理收敛和两个 claim 已退场，并完成真实 RPC ClearEStop/SetEnabled 恢复。
+- `ROBOT_TEST_INITIAL_COMMAND_SEQUENCE` 可选非零 u64；指定时子端唯有实际 apply 对应
+  sequence 才能发布 HookReady 与 spawn ready。父端 publisher 持续 update_connections
+  发送历史；没有匹配脚本则继续 drain，原 BootSupervisor 仍执法，不伪造 applied。
+
+H2 `sla::run(&Args)->Result<Value,String>` 仅显式 orin-sla + real-hw + 现场确认运行。
+先复用 D2 完整 arm/config/by-id 校验，核 udev 1a86:55d3/cdc_acm 与 Orin 型号；记录
+current_exe、工具/S0/gateway 的 `.build.json` features 和实际 SHA256、配置与标定
+SHA256、kernel/governor/L4T。真实实例锁与 marker 仅检查既有一次性授权，S0 自行
+consume；工具不代写许可、不构造假 latch。S0 构建记录须含 test-comm-fault-hook 与
+xlerobot-real，工具须含 comm-fault-e2e、real-hw。
+
+四组 topic/external × idle/inflight 各 100 warmup + 1000 有效样本。每组真实 RR 干跑
+目标 20/s，逐请求记录计划/实际开始/结束及完整 response；错误 response 或掉过一整个
+50ms 调度槽则负载无效，不把缺负载当快速 PASS。独立 5ms 调度探针记录 σ_est 原始值。
+每组保存 SLA-A/B 与原语/acquire/两 claim CAS 分布 P50/P99/max、全部 events.csv、
+attempts.jsonl 和 background.json；任何失败都保留已 drain 的原始事件及 invalid 原因。
+collect 不按 sample_seq 过滤已消费事件；等待完成期间任何一批混入外代即判 invalid，
+该批全部原始事件仍写 CSV。独立两批采集反例锁住真实等待路径，不只调用 analyze。
+分类失配保留并计 retry，不按时延挑样本；其它因果缺失直接失败。P99 A≤2ms、B idle≤20ms /
+inflight≤75ms；fast-path 与全路径参考界分列并标明还需加调度延迟。无论测量成败，独立
+请求真实 EStop、读取全关状态并幂等 Disable，再退出自己启动的进程；收尾失败也是失败。
+
+C5 软件回归发现 C4 startup cooperative cleanup 把 join 轮询耗尽到 CP2，导致实际退出
+晚约 1–4ms。修复只收紧内部 join 截止为 CP2−50ms，先验截止、只 join finished 句柄，
+sleep≤min(5ms,剩余)；CP2/监督期限不延长，独立进程 oracle 仍严格原绝对退出上界。
+覆盖 7 worker RefuseStop 与原合作/执法两分支，不把 11.95s 等超期合作当 PASS。
+
+新增具名门：独立 `comm_fault_trace_acceptance` 四组（跨 mapping 两圈、暂停首 producer、
+8193 精确 drop、双 consumer）；模块 `fault_trace_keeps_acked_generation_when_next_fault_is_published`
+与 `ssf_commit_emits_its_actual_generation_before_next_mailbox` 通过真实 ACK 后 seam 发布 n+1，
+截取真实 emit 验证 n 与 SSF 事件存在。独立采样 oracle 由主 agent 编写，不用 Dev 的分析
+函数自算 expected。所有真机 H2 结果在本轮只能为 NEEDS_HUMAN，绝不由软件结果代填。
+
+补充 AC-11(z) 两个真实单 tick 用例：
+`real_enable_retirement_applies_lost_before_snapshot_under_four_source_flood` 与
+`real_enable_under_four_source_flood_keeps_stop_disabled_and_retires_to_stopping`。
+复用独立 ScriptedAdapter，回调仅延迟真实 `enable(true)` 返回并推进 200×5ms IPC tick，
+正常完成由生产 SerialTick 发布，不手写 AdapterResp。每 tick 四源各 64 次 try_send，
+锁 source 8 配额与在飞 lane/evaluator 零 drain；Stop 用真实 ExternalEvents.control
+当场 Disabled。1s 边界完成后首快照为 Lost/Stopping，不出现 Active；两条已 admission
+但过期的请求第二道 deadline 直接拒绝、零 evaluator；新 RR 全部在 1.105s+14tick
+内回唯一结果，停止注入后实际排空。原 Enable 物理动作完整 Ok，未发 abort。
+
+软件采样 `sla::software_probe(&Args)` 经主 agent ACK 接入 Mock/All 的
+`runtime_idle_estop_sampling_and_recovery`（AC-12/13）。用真 mock S0/gateway，
+topic/external 各两轮，共用采集器与 analyze；每轮验证真实 ClearEStop/SetEnabled
+非 dry 完成回执及 GetState Enabled/Active/TorqueOn，再触发一次原语并等待真实全关。
+记录实际 mock Safety 调用时间并核 <10ms；最终真实 EStop/Disabled 后清理进程。
+现有 MockSerialRTAdapter 不执行总线 begin_transaction，所以仅验证空闲两入口，
+显式 runtime_only=true、hardware_only=false、in_flight_exercised=false，不加假 lease，
+不改 factory，不套 Orin P99。独立 `sla_acceptance.rs` 的 25 组完整/突变证据（原 21
+加本轮 4 项）覆盖
+四分类、代次、双入口、未知位、CAS旧ACTIVE、执行权配对、Safety attempt、Confirm
+唯一性、故障标记、慢样本保留、实际随机载荷的边界/身份/完整区间，以及 collect
+等待中混代仍完整保留证据；纯合成 oracle 不能作为实测数据。
+
+单 feature 门暴露工具依赖消费域后，`comm-fault-e2e` 显式拥有 feetech 依赖，
+`real-hw=["robot-adapter-feetech?/real-hw"]` 仅弱转发，不自动启用验收 binary。
+纯协议记录、校验和独立 oracle 在无 real-hw 的 comm-fault-e2e 下可用，真实设备
+环境核验/open/run 仍受 real-hw 限制。既有软件 runtime case 附加 `feetech_wire_check`：
+实际 FeetechAdapter.safety_stop_fast→MeasuredTransport<MockTransport>，两枚非连续
+电机 ID，构造期 timeout 与操作记录分开；Safety 恰一 write、零 read，完整广播数据
+全零且无丢失/截断。它复用 H3 的记录器与协议校验，不打开设备、不增加 case、不改变
+原软件结果的物理范围。新增具名
+`software_protocol_entry_exercises_actual_feetech_encoder_without_a_device` 锁实际入口。
+
+AC-17 使用被测 daemon 未覆盖的同源码默认配置：IPC tick=0.5ms、serial tick=5ms，
+二者不能互换，也不宣称实际周期无抖动。三个独立验收界分别是：
+
+| 观测 | 验收界 | 当前配置值 |
+|---|---|---|
+| 在飞 RPC 总超时退场 | 1s + 2×IPC tick | 1.001s |
+| mailbox 发布前界到 GetState 可见返回 | 2×IPC tick + 23ms + 10ms 轮询 + 实测 RTT | 34ms + RTT |
+| 首 typed 通信错误到 GetState 可见返回 | 上项 + serial tick + 105ms 在途 IO 界 | 144ms + RTT |
+
+RTT 必须等于同一次 GetState 的 response_ns−request_ns，不能用任意填值扩大预算；
+mailbox 使用同 gen 的真实发布前界保守计时，保留发布后界与实际 IPC commit。
+独立 `rpc_acceptance.rs` 四项具名反例为
+`rpc_retirement_uses_two_half_millisecond_ipc_ticks_without_old_slack`、
+`mailbox_bound_rejects_values_inside_the_old_serial_tick_based_limit`、
+`first_error_bound_separately_adds_one_serial_tick_and_the_inflight_io_bound`、
+`invented_rtt_cannot_expand_the_fault_visibility_budget`，覆盖精确边界、边界外 1ns、
+旧宽松界内仍须拒绝及伪造 RTT，不以另一条预算失败代偿本条断言。
+
 ### P.6.2 现有基线具名清单
 
 基线权威清单已落 `.verify/post_e_comm_fault_hardening/baseline.json`，包含20个integration
@@ -918,17 +1055,29 @@ rg --files crates -g '*.rs' -0 | xargs -0 touch
 cargo +nightly clippy --all --all-targets --keep-going -- -D warnings
 cargo +nightly clippy -p robot-tests --all-features --all-targets --keep-going -- -D warnings
 
+# G2库存：必须同时保留完整清单和实际ignored清单；只核保留，不冒充执行通过。
+mkdir -p target/post_e_verify
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --workspace --all-features --tests -- --list > target/post_e_verify/c5_current_test_list.log 2>&1
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --workspace --all-features --tests -- --ignored --list > target/post_e_verify/c5_current_ignored_list.log 2>&1
+uv run --no-project python scripts/check_post_e_inventory.py --baseline .verify/post_e_comm_fault_hardening/baseline.json --current-list target/post_e_verify/c5_current_test_list.log --current-ignored target/post_e_verify/c5_current_ignored_list.log --output target/post_e_verify/c5_inventory.json
+
 # G2：纯类型/单测/确定性协议。
 CARGO_BUILD_WARNINGS=deny cargo +nightly test --workspace --all-features --lib --bins
 CARGO_BUILD_WARNINGS=deny cargo +nightly test -p robot-adapter-feetech --test comm_fault_transport
 CARGO_BUILD_WARNINGS=deny cargo +nightly test -p robot-s0 --all-features --lib post_e_
 CARGO_BUILD_WARNINGS=deny cargo +nightly test -p robot-s0 --features test-comm-fault-hook --test comm_fault_startup --test rx_trust_faults
 CARGO_BUILD_WARNINGS=deny cargo +nightly test -p robot-transport --no-default-features --features mock
+# 此测试仅在not(debug_assertions)下存在；debug零测试不得算覆盖。
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --release -p robot-s0 --all-features --lib rr_server_thread::tests::rr_server_handles_orphan_response_no_panic_release_only -- --exact --test-threads=1
 
 # 单feature隔离（每项独立命令，不合并features）。
 for feature_name in freeze-systemd-smoke clear-estop-e2e pubsub-cleanup-smoke scripted-backend-smoke ik-backend-smoke robotctl-smoke sd-watchdog-smoke real-hw supervised-demo comm-fault-e2e; do
   cargo +nightly check -p robot-tests --no-default-features --features "$feature_name" --all-targets || exit "$?"
 done
+
+# 两份hook ELF各自检查真实链接产物，不能拿debug报告代替release或只查源码属性。
+CARGO_BUILD_WARNINGS=deny cargo +nightly build -p robot-s0 --features test-freeze-hook,test-comm-fault-hook --bin s0_daemon
+uv run --no-project python scripts/check_post_e_elf_init.py --binary target/debug/s0_daemon --output target/post_e_verify/c5_elf_debug.json
 
 # G3前先构建所有当前checkout的release产物。
 CARGO_BUILD_WARNINGS=deny cargo +nightly build --release --workspace
@@ -937,6 +1086,7 @@ CARGO_BUILD_WARNINGS=deny cargo +nightly build --release -p robot-s1 --features 
 CARGO_BUILD_WARNINGS=deny cargo +nightly build --release -p robot-rpc --features test-freeze-hook --bin robot_rpc_gateway
 CARGO_BUILD_WARNINGS=deny cargo +nightly build --release -p robot-tests --features pubsub-cleanup-smoke,scripted-backend-smoke,ik-backend-smoke,robotctl-smoke,clear-estop-e2e,sd-watchdog-smoke,freeze-systemd-smoke,supervised-demo,comm-fault-e2e
 CARGO_BUILD_WARNINGS=deny cargo +nightly build --release -p robot-s0 --features test-freeze-hook,test-comm-fault-hook --bin s0_daemon
+uv run --no-project python scripts/check_post_e_elf_init.py --binary target/release/s0_daemon --output target/post_e_verify/c5_elf_release.json
 
 # G3：最后一条S0为隔离mock专用hook产物，必须在artifact记录中标记不可部署。
 export B4_E2E_BIN_S0_DAEMON="$PWD/target/release/s0_daemon"
@@ -944,16 +1094,19 @@ export B4_E2E_BIN_S1_DAEMON="$PWD/target/release/s1_daemon"
 export B4_E2E_BIN_ROBOT_RPC_GATEWAY="$PWD/target/release/robot_rpc_gateway"
 CARGO_BUILD_WARNINGS=deny cargo +nightly test --workspace --all-features -- --test-threads=1
 ./target/release/comm_fault_e2e --phase all --bin-dir "$PWD/target/release" --evidence-dir "$PWD/.verify/post-e"
-./target/release/crash_restart_smoke --bin-dir "$PWD/target/release"
-./target/release/clear_estop_e2e --case all
-./target/release/pubsub_cleanup_smoke --phase all --bin-dir "$PWD/target/release"
-./target/release/scripted_backend_smoke --phase all --bin-dir "$PWD/target/release"
-./target/release/ik_backend_smoke --phase all --bin-dir "$PWD/target/release"
-./target/release/robotctl_smoke --phase all --bin-dir "$PWD/target/release"
+# 八套旧smoke使用本轮构建后按SHA冻结的完整release目录，禁止缺产物时fallback。
+POST_E_BIN="$PWD/target/post_e_verify/c5_release_bins"
+POST_E_SMOKE="$(mktemp -d "$PWD/.verify/post-e/smoke.XXXXXX")"
+"$POST_E_BIN/crash_restart_smoke" --bin-dir "$POST_E_BIN" --config "$PWD/configs/crash_restart_smoke.toml" --hardware-id smoke_arm --iterations 5 --robot-id-prefix post_e_crash --latch-dir "$POST_E_SMOKE/crash"
+"$POST_E_BIN/clear_estop_e2e" --bin-dir "$POST_E_BIN" --config "$PWD/configs/clear_estop_e2e.toml" --case all --workdir "$POST_E_SMOKE/clear"
+"$POST_E_BIN/pubsub_cleanup_smoke" --bin-dir "$POST_E_BIN" --config "$PWD/configs/crash_restart_smoke.toml" --hardware-id smoke_arm --joints 1 --phase all --iterations 1000 --metric-sample-every 100 --robot-id-prefix post_e_pubsub --workdir "$POST_E_SMOKE/pubsub" --output-csv "$POST_E_SMOKE/pubsub.csv"
+"$POST_E_BIN/scripted_backend_smoke" --bin-dir "$POST_E_BIN" --config "$PWD/configs/scripted_backend_smoke.toml" --hardware-id smoke_arm --joints 1 --phase all --robot-id-prefix post_e_scripted --workdir "$POST_E_SMOKE/scripted"
+"$POST_E_BIN/ik_backend_smoke" --bin-dir "$POST_E_BIN" --config "$PWD/configs/ik_backend_smoke.toml" --hardware-id ik_arm --joints 5 --phase all --robot-id-prefix post_e_ik --workdir "$POST_E_SMOKE/ik"
+"$POST_E_BIN/robotctl_smoke" --bin-dir "$POST_E_BIN" --config "$PWD/configs/robotctl_smoke.toml" --hardware-id ik_arm --joints 5 --phase all --robot-id-prefix post_e_robotctl --workdir "$POST_E_SMOKE/robotctl"
 
 # G4：systemd真实可用才运行；不可用登记NEEDS_HUMAN，不模拟PASS。
-./target/release/sd_watchdog_smoke --s1-bin "$PWD/target/release/s1_daemon" --gateway-bin "$PWD/target/release/robot_rpc_gateway" --phase all
-./target/release/freeze_systemd_smoke --daemon-bin "$PWD/target/release/s0_daemon" --unit-template "$PWD/scripts/systemd/xlerobot-s0-freeze-test.service" --workdir-base "$PWD/.verify/post-e/freeze" --unit-name-prefix post-e-freeze --robot-id-prefix post_e_freeze --iterations 5 --worker ipc
+"$POST_E_BIN/sd_watchdog_smoke" --s1-bin "$POST_E_BIN/s1_daemon" --gateway-bin "$POST_E_BIN/robot_rpc_gateway" --s1-unit-template "$PWD/scripts/systemd/xlerobot-s1-freeze-test.service" --gateway-unit-template "$PWD/scripts/systemd/xlerobot-gateway-freeze-test.service" --roles-toml "$PWD/configs/rpc_roles.toml" --phase all --s1-workers tick,heartbeat_pub,rr_server:0,state_cache --gateway-workers rr_io:0,estop_pub,state_pool:1,tonic_probe --robot-id-prefix post_e_sdwd --unit-name-prefix post-e-sdwd --workdir-base "$POST_E_SMOKE/sd-watchdog"
+"$POST_E_BIN/freeze_systemd_smoke" --daemon-bin "$POST_E_BIN/s0_daemon" --unit-template "$PWD/scripts/systemd/xlerobot-s0-freeze-test.service" --workdir-base "$POST_E_SMOKE/freeze" --unit-name-prefix post-e-freeze --robot-id-prefix post_e_freeze --iterations 5 --worker ipc
 
 # schema、allocation、依赖门。
 cargo +nightly run -p robot-msg --bin schema_lint
@@ -965,11 +1118,25 @@ cargo deny check
 cargo +nightly build --workspace --all-targets --timings
 ```
 
+八套旧 smoke 各有独立工作目录或 latch 目录；重新执行时使用新的运行目录，不能让
+上一轮 latch/marker 残留改变初态。crash 使用真实 s1_daemon 默认路径，从上述配置
+读关节，不传仅 mock_s1 路径接受的 --joints。freeze 自己生成最小 mock 配置；
+sd_watchdog 按既有模板生成每 case 配置，不传工具未定义的 --config 参数。
+执行驱动先清 inherited NOTIFY_SOCKET/INVOCATION_ID/WATCHDOG_USEC/WATCHDOG_PID
+及全部 ROBOT_TEST_*，保留 XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS；测试工具再为
+所属子进程安装具名 hook。G4 日志使用 `_SYSTEMD_USER_UNIT` 精确过滤临时 unit。
 freeze_systemd_smoke自行在XDG_RUNTIME_DIR的user目录渲染隔离unit，主agent只运行该
 测试unit，不能安装/重启生产服务。user systemd不可用时该门保持NEEDS_HUMAN。
 `cargo deny`工具缺失若无法按既有工具链
-安装则记录门未过。无新增第三方版本；新增内部feature边仍附timings和cargo tree。
+安装则记录门未过。用户另行授权的依赖更新已独立提交 `0001858`；当前工具的
+optional 直接依赖见 P.6.9。使用已锁定依赖，feature / 依赖变化仍附 timings 和 cargo tree。
 
+当前软件验收结果统一见 P.6.5。release orphan_response 夹具使用生产要求的
+bounded64，必须按上述 release exact 命令看到 1 项实际执行；库存、ELF 与进程
+场景分别记录结果，不能用过滤门或条件编译下的零测试代替完整验收。
+
+用户授权的依赖更新不免除两个既有 ignored 的独立运行；它们必须在新 lock 下按上列
+命令重新实跑，库存保留、普通全量测试和依赖阶段的 PASS 均不能替代。
 `rt_guard_soak`有crate级feature门与test级ignored门，debug/release两命令均显式带
 `rt_guard`和`--ignored`，保持默认60秒，日志至少一条测试真实执行。另一既有ignored
 `parent_pub_then_child_s1_open`按上列命令显式执行，消费此前构建的当前checkout
@@ -983,7 +1150,153 @@ feature导致0 tests的输出属于门未运行，不能判PASS。
 `--phase orin-characterize|orin-sla|orin-broadcast`，H2每场景100warmup/1000样本，
 保存CSV/P50/P99/max/CAS重试分布/σ_est与Orin PX56环境；P99门不在本机推算。
 
-## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行）
+### P.6.4 显式分配守卫与 Orin 开发环境
+
+workspace 的 `assert_no_alloc={version="1.1",default-features=false}` 关闭上游
+`disable_release`，保留 debug/release 的真实分配拦截；不启用 warn_debug/warn_release，
+不为 daemon 新增全局 allocator，不扩大生产分配器范围。分配违规为 abort，不能
+描述为可由 catch_unwind 恢复；RtArc 原有 panic 语义保持不变。
+
+具名门 `rt_guard_allocation_in_real_scope_aborts_child` 重新执行当前测试 binary；
+子进程设置 RLIMIT_CORE=0，进入真实 rt_entry 后以不分配的 stderr write 记录标记，
+再由真实全局 allocator 分配 64 字节。父端有界等待，必须收到 SIGABRT 且进入标记
+恰一次；普通非零退出、超时或只告警均失败。守卫漏过时只在 scope 外释放并 exit73。
+该门不替代原一分钟 ignored soak，四条命令分别执行：
+
+```bash
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked -p robot-s0 --features rt_guard --test rt_guard_soak rt_guard_allocation_in_real_scope_aborts_child -- --exact --test-threads=1 --nocapture
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked --release -p robot-s0 --features rt_guard --test rt_guard_soak rt_guard_allocation_in_real_scope_aborts_child -- --exact --test-threads=1 --nocapture
+RT_GUARD_SOAK_SECS=60 CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked -p robot-s0 --features rt_guard --test rt_guard_soak rt_guard_soak_no_alloc_no_arc_for_one_minute -- --ignored --exact --test-threads=1 --nocapture
+RT_GUARD_SOAK_SECS=60 CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked --release -p robot-s0 --features rt_guard --test rt_guard_soak rt_guard_soak_no_alloc_no_arc_for_one_minute -- --ignored --exact --test-threads=1 --nocapture
+```
+
+用户已授权更新 `loosqk@10.0.1.40` 原仓库并按 gateway → S1 → S0 停止六项开发服务：
+`xlerobot-gateway-left.service`、`xlerobot-gateway-right.service`、
+`xlerobot-s1-left.service`、`xlerobot-s1-right.service`、
+`xlerobot-s0-left-arm.service`、`xlerobot-s0-right-arm.service`。
+六项均已核验 inactive/dead、MainPID=0，并保持停止。Orin 调试 / RT 检查需要权限时
+直接使用已获授权的 `sudo`，记录实际权限和调度环境；NOFILE=1024、1000 轮、2 秒
+资源回收 grace 与完整 60 秒 soak 均不放宽。该授权不包括真实电机测量、自动启动
+服务或正式部署；H1/H2/H3 仍 NEEDS_HUMAN，D15 OPEN。
+
+### P.6.5 当前软件验收结果与证据入口
+
+当前源码 `e6d2b30699379ee0e2222649efb4e79093978c612e0d6a67bc83dce9720d2598`
+（308 输入）已获独立 **APPROVED_SOFTWARE_SCOPE**，汇总状态为
+**SOFTWARE_ACCEPTED_HARDWARE_PENDING**，`deployable=false`。
+
+本地与 Orin 均完成 **1737 PASS = 1528 lib/bins + 208 integration + 1 doc**、
+**11 ignored = 2 integration + 9 doc**；两端 67 软件场景和八套 smoke 全 PASS。
+既有 ignored 按 P.6.3/P.6.4 单独执行，不与全量计数相加；库存为 23 integration
+targets / 210 cases / 2 ignored。A1 保持原 1000 轮与精确 Node 集合硬门；临时
+systemd unit 和验证进程已清理。debug/release 真实分配 abort 与两轮完整 60 秒
+soak 共四项 RT guard 均通过，fresh、单 feature、schema、deny、ELF 与构建门均通过。
+
+本地与 Orin 已实证恢复四个无测试 hook 正式产物：S0 xlerobot-real 的
+`xlerobot_deploy` / `s0_daemon`、默认 S1 `s1_daemon`、默认 gateway
+`robot_rpc_gateway`。Orin 四个 ELF 为 AArch64；构建 manifest 保留实际
+features/profile/source/commit/SHA，不把后续提交号反填成构建身份。六项原服务
+保持停止，软件批准不等于部署或机器人使能。
+
+当前结论与逐项索引仅维护于 [C5.json](../../.verify/post_e_comm_fault_hardening/C5.json)，
+最新验收证据为 [C5_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
+证据包按仓库相对路径保存原始 run 与执行器；需要查看时先在仓库根解包：
+
+```bash
+tar -xzf .verify/post_e_comm_fault_hardening/C5_evidence.tar.gz -C .
+```
+
+日常验收命令仍以本节为准。核包后按授权清除散落的 `target/post_e_verify` 验收目录、
+临时执行器与重复测试 bin；正式 `target/release` 产物和 Cargo 缓存保留。
+旧轮次日志、旧源码快照、重复产物及历史归档按用户授权清除，不再承诺保留旧过程数据。
+现场 H1/H2/H3 的命令、样本与判据仍按 P.6.1 执行，不能由软件结果代填。
+
+### P.6.6 双臂夹具的首帧屏障
+
+`robot-rpc/tests/common/dual_ctx.rs` 在 `wait_ready` 后、返回 ArmStack 前调用真实
+GetState；任务 RPC READY 不代表独立 state cache 已收到首帧。RobotClock 的一次
+5 秒总预算覆盖 RPC 与轮询，只重试本 hardware 精确 NoFrame/Unavailable；沿用
+PairConfig 的 20ms 轮询并截到剩余预算。robot/hardware、配置派生 layout、关节
+长度与有限位置必须合法，其它 RPC 错误或非法 payload 立即失败。合法首帧立即返回，
+不加固定 settle，不放宽后续 strict GetState、运动漂移或 terminal SLA。
+
+五项同一 helper 回归覆盖：NoFrame→合法首帧、非法 payload 立即拒绝、精确错误
+分类、RPC/轮询共用总截止、挂起 RPC 被总截止截断。前四项使用可控 future/MockClock，
+最后一项使用永不完成的 future 核实际 timeout，不能靠增加 wall-time 预算过门。
+
+### P.6.7 Action 端口的 Node 生命周期
+
+S1 `rr_server/handler.rs::make_events_publisher_factory` 与 gateway
+`events_subscribe.rs::spawn_events_subscribe_thread` 不再永久泄漏每 Action 的 Node。
+S1 使用 P.6.9 的私有 guard，gateway 的 Node / Subscriber 在线程 scope 内正常
+回收。history、terminal grace、retry、QoS 和公共接口保持原约定，不扩展固定
+daemon 生命周期保留点的重构范围。
+
+回归必须使用真实调用点：S1 实际工厂创建 Publisher 后接收真实帧；gateway 调用
+真实 spawn，核 Action/request 身份和时间戳，再 request_stop + join。两端均在
+NOFILE=128、CORE=0 的隔离子进程中执行 256 轮，父端并发读双管道，30 秒总截止后
+kill/wait。父 harness 每端计一项，子进程重复输出不重复累计；这两项不能替代
+原 1000 轮 A1、八套 smoke 或完整进程验收。
+
+```bash
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked -p robot-s1 --all-features --lib action_publisher_releases_node_under_fd_limit -- --nocapture --test-threads=1
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked -p robot-rpc --all-features --lib action_subscriber_releases_node_under_fd_limit -- --nocapture --test-threads=1
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked -p robot-s1 -p robot-rpc --all-features --lib
+CARGO_BUILD_WARNINGS=deny cargo +nightly clippy --locked -p robot-s1 -p robot-rpc --all-features --all-targets -- -D warnings
+```
+
+### P.6.8 生命周期测试的继承 FD 隔离
+
+两处 `cfg(test)` 子进程启动在 `pre_exec` 中使用原始 `SYS_close_range` 将 fd≥3
+标记为 CLOEXEC，保留 spawn 错误管道直到 exec。ENOSYS/EINVAL 时按父
+RLIMIT_NOFILE 硬上界的 checked 转换有限遍历 fcntl，保留原 flags 后追加 CLOEXEC。
+pre_exec 仅做系统调用与栈运算，无分配、日志或锁；EBADF 跳过、EINTR 重试，其它
+错误返回并使测试失败。非 CLOEXEC 哨兵必须在 child 入口为 EBADF，父 FD 和 flags
+仍有效。NOFILE128、CORE0、256 轮、真实收发和回收判据保持不变。
+
+```bash
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked -p robot-s1 -p robot-rpc --all-features --lib -- --test-threads=1 --nocapture
+ROBOT_TEST_NODE_FORCE_FCNTL=1 CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked -p robot-s1 --all-features --lib action_publisher_releases_node_under_fd_limit -- --nocapture --test-threads=1
+ROBOT_TEST_NODE_FORCE_FCNTL=1 CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked -p robot-rpc --all-features --lib action_subscriber_releases_node_under_fd_limit -- --nocapture --test-threads=1
+```
+
+`ROBOT_TEST_NODE_FORCE_FCNTL` 只由 cfg(test) 夹具读取，不进入 production hook 或
+正式 daemon。串行门覆盖前序测试资源污染，哨兵也能在单跑时确定性验证 exec 隔离。
+
+### P.6.9 Node 析构顺序与 smoke 精确目录硬门
+
+iceoryx2 0.9.3 Publisher 的 Sender 可能在外层 port_tag 退场前释放最后一个
+SharedNode，使 Node 目录删除遇到 ENOTEMPTY。S1 私有 `EventsPublisherGuard`
+按 publisher 在前、Node 在后声明字段；线程持完整 guard，只借 publisher，禁止
+解构造成逆序退场。公开 spawn 签名保持兼容，history/QoS/retry/grace 不变。
+真实调用点回归读取 `/proc/self/fd` 的实际 Node 路径：存活期必须存在，完整 drop
+后必须不存在，空目录也失败；隔离调用点的 FD=4 不代表完整 daemon 常态基线。
+
+`pubsub_cleanup_smoke` 使用上游 `UniqueSystemId::from(u128).pid()` 解码十进制
+Node ID，不复制位布局。扫描前后确认两个实际 Child 仍活着，baseline 每个 PID
+非空；原 2 秒 grace 后，final 相对 baseline 的新增 ID 集合必须为空。同数量替换
+与空目录均失败，扫描异常不能吞为零或 NA。失败先保存 Node/PID、日志与 CSV，
+再显式 teardown 并退出 2。CSV 既有文件列保持兼容，末尾追加目录数；全局文件/目录
+仅用于信息采样，不跟随符号链接，错误写 NA（其它进程删除造成的 NotFound 可忽略），
+不能受其它 PID 影响硬门判定；验收观察期间不清全局残留。
+
+工具只新增 optional 直接依赖 `iceoryx2-bb-posix =0.9.3`，由
+`pubsub-cleanup-smoke` 开启；版本已在 lock 中，不升级版本，外部直接依赖为 28 项。
+五项新增用例覆盖空目录与另一 PID 隔离、全局文件归零及等数量替换、根/单端基线
+缺失及本 PID 文件/symlink 错误、全局目录统计不跟随 symlink、CSV 兼容及错误 NA。
+原三项用例保留，无新增 ignored；八项局部门与独立评审均通过。
+
+```bash
+cargo +nightly fmt --all
+CARGO_BUILD_WARNINGS=deny cargo +nightly test --locked -p robot-tests --features pubsub-cleanup-smoke --bin pubsub_cleanup_smoke
+CARGO_BUILD_WARNINGS=deny cargo +nightly clippy --locked -p robot-tests --all-features --all-targets -- -D warnings
+git diff --check
+```
+
+A1 仍按 P.6.3 完整参数执行原 1000 轮；单 feature、tree、timings、deny、全量 tests、
+67 场景、八套 smoke、正式产物和 fresh 均由当前源码实跑，结果见 P.6.5。
+
+## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 改两份arm service：`RestartPreventExitStatus=86 87`、guard `--`后加
 `--notify-mode required`，注释解释88可重启及supervisor边界；保留guard六步、
@@ -1044,6 +1357,7 @@ round 1集中回修闭合项（本稿冻结待round 2，不带未定行为进入
    具名全集以baseline.json冻结；两ignored用例显式命令、RPC三个B4 override、freeze
    user unit完整命令均已列出。不可用systemd/Orin环境须真实登记，禁止删测试绕门。
 
-以上无生产代码改动，无Cargo结果宣称。Plan通过后主agent更新Spec链接与审批记录，
-Dev按C1→C5推进，reviewer每组独立审查，修复后再审，最终产出逐AC evidence与
-`_human.md`/`_llm.md`，未满足的现场条目显式保留。
+以上为 round 1 计划审查当时的无生产改动记录；当前实施与验收进展以顶部和 P.6.5 为准。
+Plan通过后主agent更新Spec链接与审批记录，
+Dev按C1→C5推进，reviewer每组独立审查，修复后再审，最终以逐 AC evidence 和 HANDOFF
+记录结果，当前证据入口为 C5.json 与 C5_evidence.tar.gz；未满足的现场条目显式保留。

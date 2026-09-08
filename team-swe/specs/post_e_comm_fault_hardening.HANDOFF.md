@@ -1,6 +1,33 @@
-# 交接 · post-E 通信故障硬化（2026-09-08 持续推进）
+# 交接 · post-E 通信故障硬化
 
-## 本轮状态（2026-09-08，优先于下方历史交接）
+## 当前状态（2026-09-08）
+
+当前 [PLAN](post_e_comm_fault_hardening.PLAN.md)：**1363 行**，
+SHA256 `3307a6de165696f0190b3f40126af12d579d2524842502a348c42ff37c131ead`。
+
+当前源码 `e6d2b30699379ee0e2222649efb4e79093978c612e0d6a67bc83dce9720d2598`
+（308 输入）已独立 **APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING**。
+本地与 Orin 均完成 1737 PASS / 11 ignored、67 软件场景、八套 smoke；四项 RT guard、
+fresh 与两端四个无 hook 正式产物均已通过。完整计数和现场边界见
+[10_verification](../../docs/10_verification.md)，实现约束与复现命令见 PLAN P.6。
+
+当前只维护 [C5.json](../../.verify/post_e_comm_fault_hardening/C5.json) 与
+[C5_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
+查看原始 run / 执行器前，按 PLAN P.6.5 以仓库相对路径解包；日常验收命令仍在 PLAN。
+旧轮次日志、源码快照、重复产物和历史归档按用户授权清除；下方已提交阶段记录仅供
+设计与提交背景，不作为旧过程数据仍保留的承诺。
+
+Orin 原仓库已更新，六项开发服务经授权按 gateway → S1 → S0 停止并保持
+inactive/PID0；两端无 hook 正式产物已恢复，`deployable=false`。调试 / RT 检查
+需要权限时直接使用已获授权的 `sudo`，不放宽 NOFILE、1000 轮、2 秒 grace 或 60 秒
+soak。H1/H2/H3 均 NEEDS_HUMAN、D15 OPEN，不自动启动服务，不宣称真实电机验收完成。
+
+主 agent 整合证据与提交，developer 实施，reviewer 独立评审；同一文件单写者，
+本地 Cargo 串行、Orin Cargo 由远端 owner 独占。每阶段独立评审与必要质量门通过后
+commit。下一步为通信硬化现场 H1/H2/H3 → D15 退役决策 → Rerun 桥 → F7 判据小件；
+RX 重同步、串口 reopen、跨臂联锁不在本候选内。
+
+## 本日阶段历史（2026-09-08，截至 C4 收口，保留原记录）
 
 - **C4 Approved**：生产与独立验收已收口，随本阶段提交。最终 workspace 1461、
   RPC 45、deploy unit 16、startup 8、S0 lib 370（含 IPC 26）、marker 9、Serial 5

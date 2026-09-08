@@ -20,16 +20,39 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     函数级 Plan Approved（2026-09-08）；C1–C4 已评审通过并分包提交，进入 C5 完整验收
+当前步骤:     C1–C4 已评审提交；C5 r6 软件验收已独立批准，本阶段随本次提交归档
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
-平台:         Linux 开发机做离线验证；Orin + XLeRobot 做现场真机验收
+平台:         source e6d2b306…2598 / 308；本地与 Orin 软件门全 PASS，现场 H1/H2/H3 待验证
 ```
 
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
 用户追加：每阶段评审与必要质量门通过即 commit，再推进下一阶段。
+developer 可根据任务需要自主启动子 agent 并负责整合；reviewer 保持独立评审。
+共享工作区按文件明确归属，Cargo 由主 agent 串行执行。
 由团队完善函数级计划、独立评审通过后实施；原 9 月 5 日“仅准备 Plan outline”
 是历史授权状态，不作为本轮停工理由。实现、验证、真机执行分别记录，不能将
 Spec Approved 或旧测试记录写成新代码已通过验收。
+
+当前源码 `e6d2b306…2598`（308 输入）已获独立
+**APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING**。本地与 Orin
+均完成 **1737 PASS / 11 ignored**、67 软件场景和八套 smoke；四项 RT guard、
+原 1000 轮精确 Node 目录门、fresh 与四个无 hook 正式产物均已核验。
+完整计数、验收边界与当前证据见 [10_verification](10_verification.md)，
+复现命令和实现约束统一见 [PLAN](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md) P.6。
+
+S1 的私有 `EventsPublisherGuard` 保证 publisher 先于 Node 退场；工具只按两个
+存活 PID 的精确 Node 集合验收，baseline 每端非空，原 2 秒 grace 后不得新增目录，
+空目录和同数量替换均失败。公开 spawn、QoS/history/retry/grace 不变。
+工具 optional 依赖 `iceoryx2-bb-posix =0.9.3` 只在 pubsub feature 开启，复用现有 lock。
+
+Orin 原仓库已更新，六项开发服务经授权按 gateway → S1 → S0 停止并保持
+inactive/PID0。两端正式无 hook 产物已恢复，`deployable=false`，不自动启动服务。
+Orin 调试 / RT 需要权限时直接使用已获授权的 `sudo`，不放宽资源阈值或测试预算。
+H1/H2/H3 仍 `NEEDS_HUMAN`、D15 `OPEN`，软件批准不等于真实串口测量或机器人使能。
+
+当前只保留 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与
+[C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)；
+旧轮次日志、快照、重复产物和历史归档按用户授权清除。
 
 ---
 

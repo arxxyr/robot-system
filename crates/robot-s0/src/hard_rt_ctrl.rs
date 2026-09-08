@@ -336,6 +336,15 @@ pub struct SerialBootProgress {
     pub fault_acknowledged: bool,
 }
 
+// 生产只使用 old；测试构建额外保存同一次 CAS 的真实失败数与返回时刻。
+struct SafetyCasObservation {
+    old: u32,
+    #[cfg(feature = "test-comm-fault-hook")]
+    retries: u64,
+    #[cfg(feature = "test-comm-fault-hook")]
+    stamp_ns: u64,
+}
+
 impl HardRtCtrlInner {
     #[must_use]
     pub fn serial_boot_progress(&self) -> SerialBootProgress {
@@ -454,8 +463,18 @@ impl HardRtCtrlInner {
     fn update_safety_word_with_hook(
         &self,
         update: impl Fn(u32) -> u32,
-        mut before_cas: impl FnMut(),
+        before_cas: impl FnMut(),
     ) -> u32 {
+        self.update_safety_word_observed(update, before_cas).old
+    }
+
+    fn update_safety_word_observed(
+        &self,
+        update: impl Fn(u32) -> u32,
+        mut before_cas: impl FnMut(),
+    ) -> SafetyCasObservation {
+        #[cfg(feature = "test-comm-fault-hook")]
+        let mut retries = 0_u64;
         let mut old = self.safety_word.load(Ordering::Acquire);
         loop {
             let new = update(old);
@@ -464,16 +483,38 @@ impl HardRtCtrlInner {
                 .safety_word
                 .compare_exchange(old, new, Ordering::AcqRel, Ordering::Acquire)
             {
-                Ok(previous) => return previous,
-                Err(actual) => old = actual,
+                Ok(previous) => {
+                    return SafetyCasObservation {
+                        old: previous,
+                        #[cfg(feature = "test-comm-fault-hook")]
+                        retries,
+                        #[cfg(feature = "test-comm-fault-hook")]
+                        stamp_ns: crate::comm_fault_trace::now(),
+                    };
+                }
+                Err(actual) => {
+                    #[cfg(feature = "test-comm-fault-hook")]
+                    {
+                        retries = retries.saturating_add(1);
+                    }
+                    old = actual;
+                }
             }
         }
     }
 
     pub(crate) fn try_acquire_normal_io(&self) -> bool {
+        #[cfg(feature = "test-comm-fault-hook")]
+        let mut retries = 0_u64;
         let mut old = self.safety_word.load(Ordering::Acquire);
         loop {
             if old & (SERIAL_ESTOP_PENDING | NORMAL_IO_ACTIVE) != 0 {
+                #[cfg(feature = "test-comm-fault-hook")]
+                self.trace_now(
+                    crate::comm_fault_trace::TraceKind::NormalAcquire,
+                    retries,
+                    0,
+                );
                 return false;
             }
             match self.safety_word.compare_exchange(
@@ -482,14 +523,36 @@ impl HardRtCtrlInner {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_) => return true,
-                Err(actual) => old = actual,
+                Ok(_) => {
+                    #[cfg(feature = "test-comm-fault-hook")]
+                    self.trace_now(
+                        crate::comm_fault_trace::TraceKind::NormalAcquire,
+                        retries,
+                        1,
+                    );
+                    return true;
+                }
+                Err(actual) => {
+                    #[cfg(feature = "test-comm-fault-hook")]
+                    {
+                        retries = retries.saturating_add(1);
+                    }
+                    old = actual;
+                }
             }
         }
     }
 
     pub(crate) fn release_normal_io(&self) {
-        self.update_safety_word(|old| old & !NORMAL_IO_ACTIVE);
+        let observed = self.update_safety_word_observed(|old| old & !NORMAL_IO_ACTIVE, || {});
+        #[cfg(feature = "test-comm-fault-hook")]
+        self.trace_cas(
+            crate::comm_fault_trace::TraceKind::NormalRelease,
+            &observed,
+            u64::from(observed.old & NORMAL_IO_ACTIVE != 0),
+        );
+        #[cfg(not(feature = "test-comm-fault-hook"))]
+        let _ = observed;
     }
 
     /// 正常动作的完成不得覆盖在它执行期间已发布的 EStop 安全态。
@@ -533,11 +596,27 @@ impl HardRtCtrlInner {
     }
 
     pub(crate) fn claim_serial_estop(&self) -> bool {
-        self.update_safety_word(|old| old & !SERIAL_ESTOP_PENDING) & SERIAL_ESTOP_PENDING != 0
+        let observed = self.update_safety_word_observed(|old| old & !SERIAL_ESTOP_PENDING, || {});
+        let claimed = observed.old & SERIAL_ESTOP_PENDING != 0;
+        #[cfg(feature = "test-comm-fault-hook")]
+        self.trace_cas(
+            crate::comm_fault_trace::TraceKind::SerialClaim,
+            &observed,
+            u64::from(claimed),
+        );
+        claimed
     }
 
     pub(crate) fn claim_ipc_estop(&self) -> bool {
-        self.update_safety_word(|old| old & !IPC_ESTOP_NOTICE) & IPC_ESTOP_NOTICE != 0
+        let observed = self.update_safety_word_observed(|old| old & !IPC_ESTOP_NOTICE, || {});
+        let claimed = observed.old & IPC_ESTOP_NOTICE != 0;
+        #[cfg(feature = "test-comm-fault-hook")]
+        self.trace_cas(
+            crate::comm_fault_trace::TraceKind::IpcClaim,
+            &observed,
+            u64::from(claimed),
+        );
+        claimed
     }
 
     /// 仅清掉自己处理的请求；并发新请求必须保留到下一轮。
@@ -573,6 +652,8 @@ impl HardRtCtrlInner {
             return None;
         }
         let generation = generation + 1;
+        #[cfg(feature = "test-comm-fault-hook")]
+        let before_publish = crate::comm_fault_trace::now();
         self.fault_mailbox.store(
             MailboxSnapshot {
                 generation,
@@ -583,7 +664,61 @@ impl HardRtCtrlInner {
             .pack(),
             Ordering::Release,
         );
+        #[cfg(feature = "test-comm-fault-hook")]
+        {
+            use crate::comm_fault_trace::{self as trace, TraceKind};
+            let after_publish = trace::now();
+            let mut context = self.trace_context();
+            context.generation = generation;
+            trace::emit(
+                TraceKind::MailboxPublishing,
+                before_publish,
+                context,
+                crate::comm_fault_trace::fault_code(code),
+                u64::from(detail),
+            );
+            trace::emit(
+                TraceKind::MailboxPublished,
+                after_publish,
+                context,
+                crate::comm_fault_trace::fault_code(code),
+                u64::from(detail),
+            );
+            trace::bind_comm_to_generation(generation);
+        }
         Some(generation)
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    pub(crate) fn trace_context(&self) -> crate::comm_fault_trace::TraceContext {
+        let active = ActionRecord::unpack(self.active_action.load(Ordering::Acquire));
+        crate::comm_fault_trace::TraceContext {
+            source: 0,
+            normal_seq: if active.valid { active.seq } else { 0 },
+            generation: self.mailbox_snapshot().map_or(0, |mail| mail.generation),
+        }
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    pub(crate) fn trace_now(&self, kind: crate::comm_fault_trace::TraceKind, a: u64, b: u64) {
+        let stamp = crate::comm_fault_trace::now();
+        crate::comm_fault_trace::emit(kind, stamp, self.trace_context(), a, b);
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn trace_cas(
+        &self,
+        kind: crate::comm_fault_trace::TraceKind,
+        observed: &SafetyCasObservation,
+        b: u64,
+    ) {
+        crate::comm_fault_trace::emit(
+            kind,
+            observed.stamp_ns,
+            self.trace_context(),
+            observed.retries,
+            b,
+        );
     }
 
     /// 只有当前代次的 ACK 才能解开 mailbox 抑制；其它故障原因保持。
@@ -786,7 +921,7 @@ impl HardRtCtrlClient {
         self.inner.safety_latched.store(true, Ordering::Release);
         self.inner.cancel_pending();
         self.inner.estop_requests.fetch_add(1, Ordering::Relaxed);
-        let old = self.inner.update_safety_word_with_hook(
+        let observed = self.inner.update_safety_word_observed(
             |old| {
                 let state = OutputSafetyState::from_u8((old & SAFETY_STATE_MASK) as u8);
                 let next = match state {
@@ -802,8 +937,9 @@ impl HardRtCtrlClient {
             },
             hook,
         );
+        let old = observed.old;
         // 成功 CAS 之后只计算返回值，不能再写 policy 或任何权威原子。
-        match (
+        let outcome = match (
             old & SERIAL_ESTOP_PENDING != 0,
             OutputSafetyState::from_u8((old & SAFETY_STATE_MASK) as u8),
         ) {
@@ -812,7 +948,19 @@ impl HardRtCtrlClient {
                 EStopOutcome::LatchOnly
             }
             _ => EStopOutcome::StopIssued,
-        }
+        };
+        #[cfg(feature = "test-comm-fault-hook")]
+        self.inner.trace_cas(
+            crate::comm_fault_trace::TraceKind::PrimitiveCommitted,
+            &observed,
+            u64::from(old & NORMAL_IO_ACTIVE != 0)
+                | match outcome {
+                    EStopOutcome::StopIssued => 0,
+                    EStopOutcome::Merged => 2,
+                    EStopOutcome::LatchOnly => 4,
+                },
+        );
+        outcome
     }
 }
 

@@ -64,6 +64,8 @@ blake3 = "1.8.7"
 # iceoryx2：本机零拷贝 pub-sub（§2.1）。精确 pin 仿 flatbuffers，防 minor 破坏性变更。
 # 烟测见 docs/CHANGELOG.md 2026-04-22 "Step 5 开工决策与 iceoryx2 依赖登记"。
 iceoryx2 = "=0.9.3"
+# 仅 pubsub cleanup 工具用上游 Node ID 解码 PID，避免复制私有位布局。
+iceoryx2-bb-posix = "=0.9.3"
 # arc-swap：Step 6 Part 1 latest-command slot 的同步原语（ipc_thread → rt_thread 方向）。
 # RT 侧 load() 返回 Guard 不 bump refcount（hazard pointer），满足 §4.9 RT 铁律。
 arc-swap = "1.9"
@@ -104,7 +106,9 @@ serialport = "4"
 # assert_no_alloc：RT 线程 alloc 守卫（robot-core rt-alloc-guard feature +
 # feetech / mock adapter 的 RT 路径断言）。子 crate 一律 `workspace = true`
 # 继承，版本单源在此。
-assert_no_alloc = "1.1"
+# 上游默认 disable_release 会移除 AllocDisabler 并让 scope 在 release 中变成空操作。
+# rt_guard 显式启用时两种 profile 都必须真正拒绝分配，且不启用仅告警的 feature。
+assert_no_alloc = { version = "1.1", default-features = false }
 # trybuild：robot-transport 编译期负向测试（UI test snapshot）。dev-only。
 trybuild = "1.0.121"
 # tracing + tracing-subscriber：Rust 生态标准结构化日志（相当于 C++ spdlog）。

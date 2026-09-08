@@ -21,6 +21,8 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use iceoryx2::node::Node;
+use iceoryx2::service::ipc::Service as IxService;
 use robot_core::time::RobotClock;
 use robot_msg::markers;
 use robot_transport::Publisher;
@@ -29,6 +31,42 @@ use robot_transport::iceoryx2::Iceoryx2Publisher;
 use crate::action::{ActionEvent, ActionId};
 
 use super::wire::{encode_envelope, is_terminal};
+
+/// 保持完整端口先退场、Node 后退场；不能解构为反向析构的两个局部变量。
+pub(crate) struct EventsPublisherGuard {
+    publisher: Iceoryx2Publisher<markers::ActionEventEnvelope>,
+    // 字段按声明顺序析构，端口最后的 port_tag 必须先于 Node 目录删除。
+    _node: Option<Node<IxService>>,
+}
+
+impl EventsPublisherGuard {
+    pub(crate) fn owned(
+        publisher: Iceoryx2Publisher<markers::ActionEventEnvelope>,
+        node: Node<IxService>,
+    ) -> Self {
+        Self {
+            publisher,
+            _node: Some(node),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn update_connections(&self) -> Result<(), robot_transport::TransportError> {
+        self.publisher.update_connections()
+    }
+}
+
+impl Publisher<markers::ActionEventEnvelope> for EventsPublisherGuard {
+    fn loan(
+        &mut self,
+        size: usize,
+    ) -> Result<
+        robot_transport::SampleWriter<'_, markers::ActionEventEnvelope>,
+        robot_transport::TransportError,
+    > {
+        self.publisher.loan(size)
+    }
+}
 
 // ============================================================================
 // Config / Metrics / Handle
@@ -397,6 +435,42 @@ pub fn spawn_events_drain_thread<F>(
 where
     F: FnOnce() -> Iceoryx2Publisher<markers::ActionEventEnvelope> + Send + 'static,
 {
+    spawn_events_drain_thread_impl(
+        cfg,
+        events_rx,
+        move || EventsPublisherGuard {
+            publisher: publisher_factory(),
+            _node: None,
+        },
+        clock,
+        source_id,
+    )
+}
+
+/// S1 按 Action 创建的 Node 与端口由同一 owner 按固定顺序释放。
+pub(crate) fn spawn_owned_events_drain_thread<F>(
+    cfg: EventsDrainThreadConfig,
+    events_rx: Receiver<ActionEvent>,
+    publisher_factory: F,
+    clock: Arc<dyn RobotClock>,
+    source_id: u32,
+) -> std::io::Result<EventsDrainThreadHandle>
+where
+    F: FnOnce() -> EventsPublisherGuard + Send + 'static,
+{
+    spawn_events_drain_thread_impl(cfg, events_rx, publisher_factory, clock, source_id)
+}
+
+fn spawn_events_drain_thread_impl<F>(
+    cfg: EventsDrainThreadConfig,
+    events_rx: Receiver<ActionEvent>,
+    publisher_factory: F,
+    clock: Arc<dyn RobotClock>,
+    source_id: u32,
+) -> std::io::Result<EventsDrainThreadHandle>
+where
+    F: FnOnce() -> EventsPublisherGuard + Send + 'static,
+{
     let stop = Arc::new(AtomicBool::new(false));
     let metrics = Arc::new(EventsDrainMetrics::default());
     let stop_clone = Arc::clone(&stop);
@@ -412,12 +486,12 @@ where
     let join = thread::Builder::new()
         .name(format!("s1_events_drain_{action_id}"))
         .spawn(move || {
-            let mut publisher = publisher_factory();
+            let mut publisher_guard = publisher_factory();
             let _ = ready_tx.send(());
             drop(ready_tx);
             run_drain_loop(
                 &cfg,
-                &mut publisher,
+                &mut publisher_guard.publisher,
                 &events_rx,
                 clock.as_ref(),
                 source_id,

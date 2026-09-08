@@ -13,7 +13,7 @@
 //!    避免依赖方被强行替换 global allocator。打开后：
 //!    - BINARY crate 需自己声明 `#[global_allocator] static _: AllocDisabler = ...`
 //!    - `rt_entry!` 用 `assert_no_alloc(|| body)` 包裹 RT 主循环；scope 内任何
-//!      alloc 触发 `panic!`
+//!      alloc 触发进程 abort（不能通过 `catch_unwind` 恢复）
 //!
 //! ### 典型用法
 //!
@@ -29,7 +29,7 @@
 //! use robot_core::rt_entry;
 //! loop {
 //!     rt_entry!({
-//!         // 这里 clone RtArc 会 panic；alloc 会 panic（rt_guard on 且 binary 设了 AllocDisabler 时）
+//!         // 这里 clone RtArc 会 panic；alloc 会 abort（rt_guard on 且 binary 设了 AllocDisabler 时）
 //!     });
 //! }
 //! ```
@@ -183,7 +183,7 @@ impl<T: std::fmt::Debug> std::fmt::Debug for RtArc<T> {
 /// 运行 `f`，在 `rt_guard` feature on 时启用 `assert_no_alloc` 检测。
 ///
 /// - `rt_guard` ON：等价 `assert_no_alloc::assert_no_alloc(f)`——scope 内任何 alloc
-///   触发 panic。需要 binary 侧配套 `#[global_allocator] static _: AllocDisabler = ...`
+///   触发进程 abort。需要 binary 侧配套 `#[global_allocator] static _: AllocDisabler = ...`
 ///   否则检测不生效（默认降级为普通调用）。
 /// - `rt_guard` OFF：等价 `f()`，零开销。
 #[inline]

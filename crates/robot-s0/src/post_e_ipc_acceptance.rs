@@ -1054,3 +1054,653 @@ fn fault_registration_keeps_original_action_until_completion_and_late_timeout() 
         },
     );
 }
+
+/// 四源持续灌流只调用真实IPC runtime；仅观测器本身清空历史，生产队列不清空。
+struct FloodProbe {
+    fixture: Fixture,
+    next_request: u64,
+    tick: u64,
+    pending: std::collections::HashMap<String, (u64, Option<u64>)>,
+    clear_source: std::collections::VecDeque<String>,
+    set_source: std::collections::VecDeque<String>,
+    completed: u64,
+}
+
+impl FloodProbe {
+    fn new() -> Self {
+        let mut probe = Self {
+            fixture: Fixture::new(S0State::Fault(FaultCode::CommFault)),
+            next_request: 0,
+            tick: 0,
+            pending: std::collections::HashMap::with_capacity(512),
+            clear_source: std::collections::VecDeque::with_capacity(64),
+            set_source: std::collections::VecDeque::with_capacity(64),
+            completed: 0,
+        };
+        for index in 0..64 {
+            probe.fixture.runtime.events.admit_link(if index % 2 == 0 {
+                LinkEvent::HeartbeatTimeout
+            } else {
+                LinkEvent::Heartbeat
+            });
+        }
+        for index in 0..128 {
+            probe
+                .fixture
+                .runtime
+                .events
+                .admit_control(if index % 2 == 0 {
+                    ControlEvent::Disable
+                } else {
+                    ControlEvent::AdapterErr(FaultCode::CommFault)
+                })
+                .unwrap();
+            let id = probe.id();
+            probe
+                .fixture
+                .runtime
+                .events
+                .admit_rr(RrEvent::SetEnabled(
+                    probe.fixture.set_request(&id, false, true),
+                ))
+                .unwrap();
+            assert!(probe.pending.insert(id, (0, Some(0))).is_none());
+        }
+        probe
+    }
+
+    fn id(&mut self) -> String {
+        self.next_request += 1;
+        self.next_request.to_string()
+    }
+
+    fn step(&mut self) {
+        self.step_with_lost_reply(false);
+    }
+
+    fn inject_sources(&mut self) {
+        let f = &mut self.fixture;
+        // 不是把64当成功发送数：每源恰64次try_send，Full明确计入背压。
+        for index in 0..64 {
+            match f.watchdog_tx.try_send(if index % 2 == 0 {
+                Event::HeartbeatTimeout
+            } else {
+                Event::Heartbeat
+            }) {
+                Ok(()) | Err(crossbeam_channel::TrySendError::Full(_)) => {}
+                Err(error) => panic!("watchdog源退出：{error}"),
+            }
+            match f.external_tx.try_send(if index % 2 == 0 {
+                ControlEvent::Disable
+            } else {
+                ControlEvent::AdapterErr(FaultCode::CommFault)
+            }) {
+                Ok(()) | Err(crossbeam_channel::TrySendError::Full(_)) => {}
+                Err(error) => panic!("external源退出：{error}"),
+            }
+        }
+        for _ in 0..64 {
+            let id = self.id();
+            match self
+                .fixture
+                .clear_tx
+                .try_send(self.fixture.clear_request(&id, true))
+            {
+                Ok(()) => {
+                    assert!(self.pending.insert(id.clone(), (self.tick, None)).is_none());
+                    self.clear_source.push_back(id);
+                }
+                Err(crossbeam_channel::TrySendError::Full(_)) => {}
+                Err(error) => panic!("clear源退出：{error}"),
+            }
+            let id = self.id();
+            match self
+                .fixture
+                .set_tx
+                .try_send(self.fixture.set_request(&id, false, true))
+            {
+                Ok(()) => {
+                    assert!(self.pending.insert(id.clone(), (self.tick, None)).is_none());
+                    self.set_source.push_back(id);
+                }
+                Err(crossbeam_channel::TrySendError::Full(_)) => {}
+                Err(error) => panic!("set源退出：{error}"),
+            }
+        }
+    }
+
+    fn step_with_lost_reply(&mut self, mut discard_first_reply: bool) {
+        self.tick += 1;
+        self.inject_sources();
+        let f = &mut self.fixture;
+        assert_eq!(
+            (
+                f.watchdog_rx.len(),
+                f.external_rx.len(),
+                f.clear.request_rx.len(),
+                f.set.request_rx.len()
+            ),
+            (64, 64, 64, 64)
+        );
+        let (link, rr, control) = f.runtime.events.lane_lengths();
+        let admitted = (
+            (link + 8).min(64),
+            (rr + 16).min(128),
+            (control + 8).min(128),
+        );
+        assert!(f.runtime.retry.pending.is_none());
+        let before_wd = f.metrics.watchdog_events.load(Ordering::Relaxed);
+        let before_external = f.metrics.external_events.load(Ordering::Relaxed);
+        assert_eq!(f.tick(), S0State::Fault(FaultCode::CommFault));
+        assert_eq!(
+            f.metrics.watchdog_events.load(Ordering::Relaxed) - before_wd,
+            8
+        );
+        assert_eq!(
+            f.metrics.external_events.load(Ordering::Relaxed) - before_external,
+            8
+        );
+        assert_eq!(
+            (
+                f.watchdog_rx.len(),
+                f.external_rx.len(),
+                f.clear.request_rx.len(),
+                f.set.request_rx.len()
+            ),
+            (56, 56, 56, 56)
+        );
+        // 每tick独立检查三个lane的实际消耗，不只量总吞吐；非空lane不得饥饿。
+        assert_eq!(
+            f.runtime.events.lane_lengths(),
+            (
+                admitted.0.saturating_sub(16),
+                admitted.1.saturating_sub(24),
+                admitted.2.saturating_sub(24)
+            )
+        );
+        for source in [&mut self.clear_source, &mut self.set_source] {
+            for _ in 0..8 {
+                let id = source.pop_front().unwrap();
+                let (started, admission) = self.pending.get_mut(&id).unwrap();
+                assert!(self.tick - *started < 8, "source等待超8tick");
+                assert!(admission.replace(self.tick).is_none());
+            }
+        }
+        let mut completed_this_tick = 0;
+        for id in f
+            .clear_rx
+            .try_iter()
+            .map(|reply| reply.request_id)
+            .chain(f.set_rx.try_iter().map(|reply| reply.request_id))
+        {
+            if discard_first_reply {
+                discard_first_reply = false;
+                continue;
+            }
+            let (started, admitted) = self
+                .pending
+                .remove(&id)
+                .expect("回复必须且只能归属一个已接受请求");
+            assert!(self.tick - started <= 14, "总等待超14tick");
+            assert!(
+                self.tick - admitted.expect("不能在source drain前回复") <= 6,
+                "lane等待超6tick"
+            );
+            completed_this_tick += 1;
+        }
+        assert!(completed_this_tick >= 16, "持续灌流RR不得连续停顿");
+        self.completed += completed_this_tick;
+        assert!(self.pending.len() <= 256);
+        assert!(self.clear_source.len() <= 64 && self.set_source.len() <= 64);
+        f.observed.policies.lock().unwrap().clear();
+        f.observed.aborts.lock().unwrap().clear();
+        f.clock.advance(DurationNs::from_millis(5));
+        self.assert_pending_ages();
+    }
+
+    fn assert_pending_ages(&self) {
+        for (id, (started, admitted)) in &self.pending {
+            assert!(self.tick - started <= 14, "未回复请求总等待超14tick：{id}");
+            match admitted {
+                Some(admitted) => {
+                    assert!(self.tick - admitted <= 6, "未回复请求lane等待超6tick：{id}");
+                }
+                None => assert!(
+                    self.tick - started < 8,
+                    "未admit请求source等待超8tick：{id}"
+                ),
+            }
+        }
+    }
+
+    fn drain_accepted(&mut self) {
+        for _ in 0..14 {
+            self.tick += 1;
+            self.fixture.tick();
+            for source in [&mut self.clear_source, &mut self.set_source] {
+                for _ in 0..source.len().min(8) {
+                    let id = source.pop_front().unwrap();
+                    let (_, admission) = self.pending.get_mut(&id).unwrap();
+                    assert!(admission.replace(self.tick).is_none());
+                }
+            }
+            for id in self
+                .fixture
+                .clear_rx
+                .try_iter()
+                .map(|reply| reply.request_id)
+                .chain(self.fixture.set_rx.try_iter().map(|reply| reply.request_id))
+            {
+                let (started, admitted) = self.pending.remove(&id).expect("排空时不能重复回复");
+                assert!(self.tick - started <= 14);
+                assert!(self.tick - admitted.unwrap() <= 6);
+            }
+            self.assert_pending_ages();
+            self.fixture.clock.advance(DurationNs::from_millis(5));
+            if self.pending.is_empty() {
+                break;
+            }
+        }
+        assert!(self.pending.is_empty(), "停止注入后仍有已接受请求未回复");
+        assert!(self.clear_source.is_empty() && self.set_source.is_empty());
+        assert_eq!(self.fixture.runtime.events.lane_lengths(), (0, 0, 0));
+    }
+}
+
+#[test]
+fn sustained_four_source_flood_obeys_every_tick_quotas_and_rr_wait_bounds() {
+    let mut probe = FloodProbe::new();
+    let clock = robot_core::time::SystemClock::new();
+    let start = clock.now().0;
+    while clock.now().0 - start < 2_000_000_000 {
+        probe.step();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(probe.tick >= 100 && probe.completed >= 1600);
+    probe.drain_accepted();
+}
+
+#[cfg(target_os = "linux")]
+fn process_rss_high_water_kib() -> i64 {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
+    // SAFETY：内核成功填满rusage后才读取；Linux ru_maxrss单位是KiB。
+    assert_eq!(
+        unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) },
+        0
+    );
+    unsafe { usage.assume_init() }.ru_maxrss
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn isolated_ten_second_flood_rss_growth_is_at_most_one_mib() {
+    const CHILD: &str = "ROBOT_TEST_RSS_FLOOD_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "post_e_ipc_acceptance::isolated_ten_second_flood_rss_growth_is_at_most_one_mib",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("rss_flood_measured_ticks="),
+            "不能以零测枚举冒充隔离RSS运行"
+        );
+        return;
+    }
+    let clock = robot_core::time::SystemClock::new();
+    let mut probe = FloodProbe::new();
+    let warmup = clock.now().0;
+    while clock.now().0 - warmup < 1_000_000_000 {
+        probe.step();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let baseline = process_rss_high_water_kib();
+    let start = clock.now().0;
+    let before_ticks = probe.tick;
+    while clock.now().0 - start < 10_000_000_000 {
+        probe.step();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(
+            process_rss_high_water_kib() <= baseline + 1024,
+            "预热后RSS高水位增长超1MiB"
+        );
+    }
+    let elapsed = clock.now().0 - start;
+    assert!(probe.tick - before_ticks >= 1000);
+    println!(
+        "rss_flood_measured_ticks={} elapsed_ns={elapsed} baseline_kib={baseline} final_kib={}",
+        probe.tick - before_ticks,
+        process_rss_high_water_kib()
+    );
+    probe.drain_accepted();
+}
+
+#[test]
+#[should_panic(expected = "未回复请求")]
+fn flood_oracle_rejects_one_lost_reply_despite_other_traffic_progress() {
+    let mut probe = FloodProbe::new();
+    // 丢弃真实runtime产生的首条回复；首轮其它39条仍能满足吞吐检查。
+    probe.step_with_lost_reply(true);
+    for _ in 0..15 {
+        probe.step();
+    }
+}
+
+/// Enable 的实际设备调用在栈上暂停；IPC 时间推进由 `MockClock` 控制，完成回执仍由 `SerialTick` 发布。
+struct InFlightFlood {
+    fixture: Fixture,
+    external: ExternalEvents,
+    with_stop: bool,
+    next_id: u64,
+    pending: std::collections::HashMap<String, u64>,
+    full_replies: usize,
+    deadline_replies: usize,
+    original_reply: Option<SetEnabledRrPayload>,
+}
+
+impl InFlightFlood {
+    fn prepare(ctrl: Arc<HardRtCtrlInner>, clock: Arc<MockClock>, with_stop: bool) -> Self {
+        let mut fixture = Fixture::from_control(S0State::Safe, ctrl.clone(), clock);
+        let client = Arc::new(HardRtCtrlClient::new(ctrl));
+        let (external, receiver) = ExternalEvents::channel(
+            Arc::new(AtomicBool::new(false)),
+            client.clone(),
+            Some(client),
+        );
+        fixture.external_rx = receiver;
+        let mut original = fixture.set_request("真实在途Enable", true, false);
+        original.deadline_ns = fixture.clock.now().0 + 1_050_000_000;
+        fixture.set_tx.send(original).unwrap();
+        assert_eq!(fixture.tick(), S0State::Ready);
+        fixture.create_enable_pending(true);
+        for clear in [true, false] {
+            let id = if clear {
+                "lane过期Clear"
+            } else {
+                "lane过期Set"
+            };
+            let deadline = fixture.clock.now().0 + 500_000_000;
+            if clear {
+                let mut request = fixture.clear_request(id, false);
+                request.deadline_ns = deadline;
+                fixture.clear_tx.send(request).unwrap();
+            } else {
+                let mut request = fixture.set_request(id, true, false);
+                request.deadline_ns = deadline;
+                fixture.set_tx.send(request).unwrap();
+            }
+        }
+        let pending = ["lane过期Clear", "lane过期Set"]
+            .map(|id| (id.to_owned(), fixture.clock.now().0))
+            .into();
+        Self {
+            fixture,
+            external,
+            with_stop,
+            next_id: 0,
+            pending,
+            full_replies: 0,
+            deadline_replies: 0,
+            original_reply: None,
+        }
+    }
+
+    fn fill_sources(&mut self) {
+        for _ in 0..64 {
+            assert!(matches!(
+                self.fixture.watchdog_tx.try_send(Event::HeartbeatTimeout),
+                Ok(()) | Err(crossbeam_channel::TrySendError::Full(_))
+            ));
+            assert!(matches!(
+                self.external.control(ControlEvent::ClearError),
+                Ok(()) | Err(AdmitError::Full)
+            ));
+            self.next_id += 1;
+            let id = format!("clear-{}", self.next_id);
+            match self
+                .fixture
+                .clear_tx
+                .try_send(self.fixture.clear_request(&id, true))
+            {
+                Ok(()) => {
+                    assert!(
+                        self.pending
+                            .insert(id, self.fixture.clock.now().0)
+                            .is_none()
+                    );
+                }
+                Err(crossbeam_channel::TrySendError::Full(_)) => {}
+                Err(error) => panic!("Clear源退出：{error}"),
+            }
+            let id = format!("set-{}", self.next_id);
+            match self
+                .fixture
+                .set_tx
+                .try_send(self.fixture.set_request(&id, true, true))
+            {
+                Ok(()) => {
+                    assert!(
+                        self.pending
+                            .insert(id, self.fixture.clock.now().0)
+                            .is_none()
+                    );
+                }
+                Err(crossbeam_channel::TrySendError::Full(_)) => {}
+                Err(error) => panic!("Set源退出：{error}"),
+            }
+        }
+        assert_eq!(self.source_lengths(), (64, 64, 64, 64));
+    }
+
+    fn source_lengths(&self) -> (usize, usize, usize, usize) {
+        (
+            self.fixture.watchdog_rx.len(),
+            self.fixture.external_rx.len(),
+            self.fixture.clear.request_rx.len(),
+            self.fixture.set.request_rx.len(),
+        )
+    }
+
+    fn run_inflight(&mut self) {
+        use crate::hard_rt_ctrl::ActionRecord;
+        let action = ActionRecord::unpack(self.fixture.ctrl.active_action.load(Ordering::Acquire));
+        assert!(action.valid, "回调必须发生在真实 serial active 发布之后");
+        assert_eq!(
+            self.fixture.observed.poll_last_normal_resp(action.seq),
+            None
+        );
+        if self.with_stop {
+            self.fixture
+                .observed
+                .set_policy(OutputPolicy::ActiveForward);
+            assert_eq!(self.external.control(ControlEvent::Stop), Ok(()));
+            assert_eq!(
+                self.fixture.ctrl.policy.load(Ordering::Acquire),
+                OutputPolicy::Disabled.to_u8()
+            );
+        }
+        let started = self.fixture.clock.now().0;
+        let evaluations = (
+            self.fixture
+                .metrics
+                .clear_evaluations
+                .load(Ordering::Relaxed),
+            self.fixture.metrics.set_evaluations.load(Ordering::Relaxed),
+        );
+        for tick in 1..=200 {
+            self.fill_sources();
+            assert_eq!(self.fixture.tick(), S0State::Ready);
+            assert_eq!(self.source_lengths(), (56, 56, 56, 56));
+            assert_eq!(
+                self.fixture.runtime.events.lane_lengths(),
+                (1, (tick * 16).min(128), if self.with_stop { 2 } else { 1 })
+            );
+            assert_eq!(
+                (
+                    self.fixture
+                        .metrics
+                        .clear_evaluations
+                        .load(Ordering::Relaxed),
+                    self.fixture.metrics.set_evaluations.load(Ordering::Relaxed)
+                ),
+                evaluations
+            );
+            assert!(self.fixture.runtime.retry.pending.is_some());
+            assert_eq!(
+                self.fixture.observed.poll_last_normal_resp(action.seq),
+                None
+            );
+            assert!(self.fixture.observed.aborts.lock().unwrap().is_empty());
+            if self.with_stop {
+                assert_eq!(
+                    self.fixture.ctrl.policy.load(Ordering::Acquire),
+                    OutputPolicy::Disabled.to_u8()
+                );
+            }
+            self.collect_replies(true);
+            self.fixture.clock.advance(DurationNs::from_millis(5));
+        }
+        assert_eq!(self.fixture.clock.now().0 - started, 1_000_000_000);
+        assert!(self.full_replies > 1000, "必须实际达到 RR lane 背压");
+        assert!(self.original_reply.is_none());
+        assert!(
+            self.pending.contains_key("lane过期Clear") && self.pending.contains_key("lane过期Set")
+        );
+    }
+
+    fn record_reply(&mut self, id: &str, full: bool, expired: bool, in_flight: bool) {
+        let started = self
+            .pending
+            .remove(id)
+            .expect("每条回复只能对应一个实际接受的请求");
+        assert!(self.fixture.clock.now().0 - started <= 1_175_000_000);
+        if in_flight {
+            assert!(
+                full && !expired,
+                "在途期间不能 dequeue 到 evaluator 或第二deadline"
+            );
+        }
+        if id.starts_with("lane过期") {
+            assert!(expired && !full);
+        }
+        self.full_replies += usize::from(full);
+        self.deadline_replies += usize::from(expired);
+    }
+
+    fn collect_replies(&mut self, in_flight: bool) {
+        for reply in self.fixture.clear_rx.try_iter().collect::<Vec<_>>() {
+            self.record_reply(
+                &reply.request_id,
+                reply.payload == ClearEStopRrPayload::AlreadyInProgress,
+                reply.payload == ClearEStopRrPayload::DeadlineExceeded,
+                in_flight,
+            );
+        }
+        for reply in self.fixture.set_rx.try_iter().collect::<Vec<_>>() {
+            if reply.request_id == "真实在途Enable" {
+                assert!(self.original_reply.replace(reply.payload).is_none());
+            } else {
+                self.record_reply(
+                    &reply.request_id,
+                    reply.payload == SetEnabledRrPayload::AlreadyInProgress,
+                    reply.payload == SetEnabledRrPayload::DeadlineExceeded,
+                    in_flight,
+                );
+            }
+        }
+    }
+
+    fn verify_retirement(mut self) {
+        let before = self
+            .fixture
+            .metrics
+            .clear_evaluations
+            .load(Ordering::Relaxed)
+            + self.fixture.metrics.set_evaluations.load(Ordering::Relaxed);
+        let expected = if self.with_stop {
+            S0State::Stopping
+        } else {
+            S0State::Enabled {
+                sub: EnabledSub::CtrlLostHold,
+                control_link: ControlLink::Lost,
+                output_mode: OutputMode::Hold,
+            }
+        };
+        assert_eq!(
+            self.fixture.tick(),
+            expected,
+            "真实 Enable 完成后的首份快照不得出现 Active"
+        );
+        assert!(self.fixture.runtime.retry.pending.is_none());
+        assert_eq!(
+            self.fixture
+                .metrics
+                .clear_evaluations
+                .load(Ordering::Relaxed)
+                + self.fixture.metrics.set_evaluations.load(Ordering::Relaxed)
+                - before,
+            22,
+            "首24个出队中的两条过期请求不能进入 evaluator"
+        );
+        self.collect_replies(false);
+        assert_eq!(self.deadline_replies, 2);
+        assert!(self.fixture.observed.aborts.lock().unwrap().is_empty());
+        assert!(self.fixture.ctrl.mailbox_snapshot().is_none());
+        for _ in 0..14 {
+            self.fixture.clock.advance(DurationNs::from_millis(5));
+            assert_eq!(self.fixture.tick(), expected);
+            self.collect_replies(false);
+        }
+        assert!(
+            self.pending.is_empty(),
+            "停止注入后14tick内必须处理所有已接受的新RR"
+        );
+        assert_eq!(self.fixture.runtime.events.lane_lengths(), (0, 0, 0));
+        assert_eq!(self.source_lengths(), (0, 0, 0, 0));
+        assert_eq!(
+            self.original_reply,
+            Some(if self.with_stop {
+                SetEnabledRrPayload::PreemptedByShutdown
+            } else {
+                SetEnabledRrPayload::DeadlineExceeded
+            })
+        );
+        if self.with_stop {
+            assert_eq!(
+                self.fixture.ctrl.policy.load(Ordering::Acquire),
+                OutputPolicy::Disabled.to_u8()
+            );
+        }
+    }
+}
+
+#[test]
+fn real_enable_retirement_applies_lost_before_snapshot_under_four_source_flood() {
+    let probe = super::post_e_convergence_acceptance::complete_enable_while(
+        true,
+        |ctrl, clock| InFlightFlood::prepare(ctrl, clock, false),
+        InFlightFlood::run_inflight,
+    );
+    probe.verify_retirement();
+}
+
+#[test]
+fn real_enable_under_four_source_flood_keeps_stop_disabled_and_retires_to_stopping() {
+    let probe = super::post_e_convergence_acceptance::complete_enable_while(
+        false,
+        |ctrl, clock| InFlightFlood::prepare(ctrl, clock, true),
+        InFlightFlood::run_inflight,
+    );
+    probe.verify_retirement();
+}

@@ -764,6 +764,14 @@ fn poll_estop(
     let Ok(Some(lease)) = estop_sub.latest() else {
         return false;
     };
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_trace::emit(
+        crate::comm_fault_trace::TraceKind::TopicReceived,
+        crate::comm_fault_trace::now(),
+        crate::comm_fault_trace::TraceContext::default(),
+        0,
+        0,
+    );
     if lease.view().is_ok() {
         metrics.estops_received.fetch_add(1, Ordering::Relaxed);
         true

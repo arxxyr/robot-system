@@ -144,6 +144,14 @@ impl ExternalEvents {
     }
 
     pub fn estop(&self) {
+        #[cfg(feature = "test-comm-fault-hook")]
+        crate::comm_fault_trace::emit(
+            crate::comm_fault_trace::TraceKind::ExternalEnter,
+            crate::comm_fault_trace::now(),
+            crate::comm_fault_trace::TraceContext::default(),
+            0,
+            0,
+        );
         if let Some(emergency) = &self.emergency {
             let outcome = emergency.estop_monotonic();
             tracing::info!(?outcome, "外部急停原语已发布");

@@ -114,6 +114,12 @@ impl PreemptProbe for SerialPreemptProbe {
         if class.is_normal() && !self.ctrl.try_acquire_normal_io() {
             return Err(AbortReason::Emergency);
         }
+        #[cfg(feature = "test-comm-fault-hook")]
+        if class.is_normal() {
+            let mut context = self.ctrl.trace_context();
+            context.source = class as u64;
+            crate::comm_fault_hook::delay_acquired_normal(context);
+        }
         Ok(())
     }
 
@@ -159,6 +165,16 @@ impl PreemptProbe for SerialPreemptProbe {
     }
 
     fn report_comm_error(&self, kind: CommErrorKind) {
+        #[cfg(feature = "test-comm-fault-hook")]
+        {
+            let mut context = self.ctrl.trace_context();
+            context.source = self.operation_class() as u64;
+            crate::comm_fault_trace::comm_error(
+                crate::comm_fault_trace::now(),
+                context,
+                kind.to_u8(),
+            );
+        }
         // 记录首个事实；后续成功或其它错误不覆盖本次已发现的 hygiene 失败。
         let _ = self.observed_comm_error.compare_exchange(
             0,

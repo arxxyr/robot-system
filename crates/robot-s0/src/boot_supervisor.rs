@@ -100,6 +100,8 @@ impl BootSupervisor {
         };
         #[cfg(feature = "test-comm-fault-hook")]
         supervisor.install_observation()?;
+        #[cfg(feature = "test-comm-fault-hook")]
+        crate::comm_fault_trace::install_from_env()?;
         Ok(supervisor)
     }
 

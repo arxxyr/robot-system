@@ -10,6 +10,38 @@
 
 ---
 
+## 2026-09-08 · C5 通信故障软件验收完成
+
+当前源码 `e6d2b306…2598`（308 输入）获独立 **APPROVED_SOFTWARE_SCOPE**，
+汇总状态为 **SOFTWARE_ACCEPTED_HARDWARE_PENDING**，`deployable=false`。
+本地与 Orin 均完成 1737 PASS / 11 ignored、67 软件场景和八套 smoke；四项 RT guard、
+fresh 与正式产物门通过。两端各四个无测试 hook 正式产物已恢复，Orin 六项开发服务
+保持 inactive/PID0；H1/H2/H3 NEEDS_HUMAN、D15 OPEN。
+
+本次实现与验收保留以下约束：
+
+- 测试 feature 下的有界事件环从真实原语、事务执行权、Safety/Confirm 和 IPC 提交点
+  采样，不改变安全状态写入权。Fault/SSF 记录实际 snapshot generation；H2 在途
+  样本验证同一 lease 内的真实 U[1,5]ms 延迟，采集器拒绝外代且保留已消费事件。
+- 启动清理内部 join 截止为 CP2−50ms；监督器原期限不延长。AC-17 按 IPC 0.5ms /
+  serial 5ms 分别设界：退场 1.001s、mailbox 34ms+实测 RTT、首错 144ms+实测 RTT。
+- S1/gateway 每 Action 的 Node 正常回收；S1 私有 guard 保证 publisher 先于 Node
+  析构。烟测按存活 PID 的精确 Node 集合拒绝新增空目录和同数量替换，保持原 1000 轮、
+  2 秒 grace、NOFILE=1024；history/QoS/retry 与公共接口不变。
+- 双臂测试初始化仅等待合法 GetState 首帧，RobotClock 总预算 5 秒，只重试本 hardware
+  NoFrame；后续业务断言不放宽。生命周期测试以 child-only CLOEXEC 隔离继承 FD，
+  含受界 fcntl 回退，不修改父进程 FD。
+- `assert_no_alloc` 关闭默认 disable_release，显式 rt_guard 的 debug/release 均验证
+  真实分配 SIGABRT 与完整 60 秒 soak；不为 daemon 新增 allocator。工具仅新增
+  optional `iceoryx2-bb-posix =0.9.3` 直接引用，复用 lock 中版本，外部直接依赖为 28 项。
+
+用户已授权更新 Orin 原仓库、停止六项开发服务，调试 / RT 需要权限时直接 `sudo`；
+真实串口与物理 SLA 未由软件门代验。复现命令与函数级约束见
+[PLAN](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md) P.6。
+当前证据只维护 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与
+[C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)；
+旧轮次日志、源码快照、重复产物和历史归档按用户授权清除。
+
 ## 2026-09-08 · 全 workspace Cargo 依赖升级（状态：分包实现与独立验收通过）
 
 用户要求全部依赖更新至最新版本。覆盖 27 项外部直接依赖，更新 8 项版本要求与

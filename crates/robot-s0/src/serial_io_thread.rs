@@ -169,6 +169,7 @@ where
         Arc::clone(&clock),
         probe.clone(),
         boot.observation_arc(),
+        ctrl.clone(),
     );
     let info = robot_core::adapter::ManipulatorAdapter::info(&adapter);
     if info.rt_class != RtClass::SerialRT {
