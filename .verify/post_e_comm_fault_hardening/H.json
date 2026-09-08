@@ -220,7 +220,8 @@
           "local/s45/poll_order_red.log",
           "local/s45/poll_order_green.log"
         ]
-      }
+      },
+      "implementation_commit": "965bcd7558a6e861a2456d7a94d29eba90ea1d65"
     }
   },
   "hardware": {
@@ -311,8 +312,8 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 1475,
-    "sha256": "4263cc370662ef79740194078fe65342040a54a15143be5c10b0a04de1b36da2"
+    "lines": 1487,
+    "sha256": "0f78fb6ab78104467bbc7eabe04868945b661ef3f4b0b1ea7af01e9f1064a245"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
@@ -350,7 +351,7 @@
     "driver_sha256": "c6b698074c4785b858c8bc9954c2463d187afc349953cfb5e5b328b933efb890",
     "plan_review": "ACK",
     "default_plan_only": "PASS_BOTH_HOSTS",
-    "runtime_head_policy": "本阶段新提交在两端对齐且clean，执行时显式传入，不能反填构建base",
+    "runtime_head_policy": "运行时两端最新HEAD一致且clean，309源码须仍与已批准c07a冻结一致；不能反填构建base",
     "physical_reset_after_failed_h2_confirmed": false,
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/s45/recheck/artifacts/release",
     "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2_current"

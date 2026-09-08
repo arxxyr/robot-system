@@ -1328,20 +1328,32 @@ comm_fault_e2e 独立测试与构建；运行现有 mock SLA probe 验证软件�
 S0/GW 输入但保留真实构建 manifest。Orin owner 独占 Cargo，隔离最终产物并核正式
 四 bin 未变化。独立代码评审、必要门全绿后提交工具修复；实物 H2 仍独立留待现场。
 
-H2 现场入口（先完成该臂物理步骤及 D9 一次性授权；目录必须为新的一次运行）：
+当前 H2 现场入口仅支持左臂，使用 S-45 驱动；先查看默认 `PLAN_ONLY`：
 
 ```bash
-H_BINS=/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/artifacts/release
-H_RUN=/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2
-taskset -c 0-3 "$H_BINS/comm_fault_e2e" --phase orin-sla --bin-dir "$H_BINS" \
-  --evidence-dir "$H_RUN" --config /etc/robot/xlerobot_left_arm.toml \
-  --hardware-id left_arm --ack-supervised-hardware
+cd /home/loosqk/repo/robot/robot-system
+uv run --no-project python target/post_e_hardware_current/s45/left_h2_current_driver.py \
+  --expected-head "$(git rev-parse HEAD)"
 ```
 
-右臂同步改为 `right_h2` / `xlerobot_right_arm.toml` / `right_arm`，不同时跑双臂。
+**只有收到本轮新的现场物理步骤完成事实后**，才显式执行下列命令；当前尚未收到，
+不得沿用首次 H2 的确认或授权。驱动校验当前 HEAD 与 clean 状态、309 个源码输入的
+`c07a9886…14b1` SHA，以及三份真实构建清单和产物；构建来源仍为 `a161a7b`，
+不反填运行时提交。产物固定为 `s45/recheck/artifacts/release`，输出固定为
+`left_h2_current`；已有运行目录即拒绝重跑，D9 revoke/status/一次 authorize 由驱动办理。
+
+```bash
+cd /home/loosqk/repo/robot/robot-system
+uv run --no-project python target/post_e_hardware_current/s45/left_h2_current_driver.py \
+  --execute --physical-reset-confirmed --expected-head "$(git rev-parse HEAD)"
+```
+
+驱动内部以 `taskset -c 0-3` 启动工具，保留原 H2 载荷、样本、预算与独立 `final_stop`。
+右臂须另行准备并审核入口，不能仅替换此驱动参数，也不同时跑双臂。
 普通 loosqk 的已核 rtprio99 / memlock 无限可用；必要时才 sudo，不改变 marker 属主。
-57 项工具测试（含 11 项本包调度独立用例）与真实 mock AC-12 回归已在本地通过；
-完整包结果与实际执行命令以 `.verify/post_e_comm_fault_hardening/H.json` 为入口。
+S-44 的 57 项工具测试属于历史结果；当前 S-45 工具测试为 60 项。
+当前状态与执行前提见 [HANDOFF](post_e_comm_fault_hardening.HANDOFF.md)，完整软件门、
+构建来源与硬件边界以 [H.json](../../.verify/post_e_comm_fault_hardening/H.json) 为入口。
 
 ### P.6.11 H2 完整采样边界与 idle 夹具（S-45，软件验收已批准）
 

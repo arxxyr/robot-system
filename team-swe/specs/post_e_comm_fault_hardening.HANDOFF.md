@@ -5,7 +5,7 @@
 C1–C5 已独立评审提交，C5 `85efefb`；S-44 工具 RT 修复与左 H1/H3 已批准并提交
 `a161a7b`。左 H2 首次 **FAIL**，真实断扭及进程收尾完成；
 S-45 / [PLAN P.6.11](post_e_comm_fault_hardening.PLAN.md) 实现与两端软件验收已独立
-**APPROVED_SOFTWARE_SCOPE**，随本提交落地，未 push。[Spec](post_e_comm_fault_hardening.md) 是有效语义。
+**APPROVED_SOFTWARE_SCOPE**，已提交 `965bcd7`，未 push。[Spec](post_e_comm_fault_hardening.md) 是有效语义。
 
 - 左 H1：100 warmup + 1000 次六电机轮询完整 ping，零错误；时延只记录特性。
 - 左 H3：100 warmup + 1000 次完整六 ID 断扭广播，一写零读，正式 host 调用最大
@@ -18,8 +18,8 @@ S-45 / [PLAN P.6.11](post_e_comm_fault_hardening.PLAN.md) 实现与两端软件�
 - 右 H1–H3 未测，D15 **OPEN**，`deployable=false`，不自动启动常驻服务。
 
 当前证据唯一入口 [H.json](../../.verify/post_e_comm_fault_hardening/H.json) 与
-[H_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)。H2 FAIL
-已合并到活动目录 `target/post_e_h2_rt/orin/`，修复包收口时更新唯一归档，不新建历史包。
+[H_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)。首次 H2 FAIL
+与 S-45 软件证据均已纳入该唯一归档；当前活动目录为 `target/post_e_h2_rt/orin/`。
 S-44/首次 H2 源码 `d6963ed0…4b11a`（308 输入），构建时 base=`85efefb`，不能反填
 后续提交身份。C5 源码 `e6d2b306…2598`（308 输入），两端各1737 PASS/11 ignored、
 67软件场景、八套smoke、Orin四RT guard通过；[C5.json](../../.verify/post_e_comm_fault_hardening/C5.json)
@@ -47,7 +47,8 @@ acquire→arm→release 已确定性 RED→GREEN。Orin 首轮软件门17项通�
 用户已确认持续在场，并完成过两次左电机电源循环/物理 USB 拔插。后一次已用于本次
 FAIL 的 D9 一次授权，不能复用或自动重试。S-45 软件分包提交并与 Orin 对齐后，再请
 用户给新的左物理边界完成信号，执行 D9 一次授权 → H2 四组100+1000样本。
-右臂物理步骤尚未确认。用户当前无需为了未完成的软件修复反复操作硬件。
+右臂物理步骤尚未确认。S-45 软件修复与验收已完成，当前没有 H2 进程运行；
+新的左臂重置及持续值守问题已提出，尚待现场回复。
 
 Orin `loosqk@10.0.1.40`，当前现场产物在
 `target/post_e_hardware_current/s45/recheck/artifacts/release`；新驱动为
