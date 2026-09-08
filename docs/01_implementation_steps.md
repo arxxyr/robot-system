@@ -1,8 +1,13 @@
 # 01 · v0.2 实施步骤
 
-> 本文档是 [`docs/00_design.md`](00_design.md) §11.2 "v0.2 实现顺序" 的可执行版本。
-> 10 步顺序**强制**；第 6 步闭环打通前不接任何真硬件。
-> 当前位置：**Step 6 + Step 7 task 24-29 功能性完成 · Step 10 Feetech 真机 bring-up 通过 · Step 8 未开始**。
+> 本文档保留 [`docs/00_design.md`](00_design.md) §11.2 的 **v0.2 历史实施计划**。
+> v0.2 Step 1–10 已于 `0fa1d77` 收口；正文步骤、依赖版本与当时退出标准作为历史保留，
+> 不代表当前实现状态，也不覆盖后续 CHANGELOG 的勘误与已批准候选契约。
+> 当前（2026-09-08）：**v0.5 候选 E 受监督 demo 完结；post-E 通信故障硬化 Spec Approved，函数级 Plan 编制 / 评审中，尚未实施**。
+> 当前执行入口：[`post-E 交接`](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)；
+> 规范入口：[`post-E Spec`](../team-swe/specs/post_e_comm_fault_hardening.md)。D15 仍 OPEN。
+>
+> 以下为 2026-04-25 阶段记录（历史，非当前位置）：
 > Part 1 (`2026-04-24_3.md`)：6 crate + rt_thread + state machine + s0_daemon smoke。
 > Part 2：task 10-12 `c738b87` → 13 `de6ffc6` → 14 `414fee1` → 15 `a83cee1` →
 > 16 `f30b5e8` → 17 `87def64` → 18 `2189daf` → 19 `10afe8d` → 20 `85fa270` →

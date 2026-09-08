@@ -1,5 +1,9 @@
 # Handoffs（session 续接快照）
 
+**当前工作入口（2026-09-08）**：[`post-E 通信故障硬化交接`](../../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+Spec 已于 2026-09-05 round 21 批准；函数级 Plan 已于 2026-09-08 获独立评审批准，当前由专职开发分包实施、专职评审把关。
+下面的 milestone / daily 条目均保留各自时点的状态；旧条目的“待 ACK”不代表当前门禁。
+
 `docs/handoffs/<YYYY-MM-DD>.md` 每一份 = 一次 session 结束时的进度 + 决定快照，供下一次 session（尤其是异地续开、换机器、隔几天回来）**5–10 分钟读完就能 resume**。
 
 ## 这是什么 / 不是什么
@@ -20,19 +24,17 @@
 ## 怎么用（新 session 开场）
 
 ```
-# 拉代码（服务器或别的机器）
-cd ~/repo/rust/robot-system && git pull
-
-# 按时间降序读最新 1-2 份 handoff
-ls -t docs/handoffs/*.md | head -2 | xargs -I {} less {}
+# 在实际 checkout 中先检查工作区，再读当前候选入口
+git status --short
+less team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 
 # 然后按 handoff 末尾 "开工前必读" 补齐语境
 ```
 
 ## Milestone anchor（**不**是 daily snapshot）
 
-跟下面 daily 列表区别开，专门挂 milestone 入口的 handoff —— 这些是 onboarding
-/ 跨阶段交接时的**当前**权威读物，不是历史快照。
+跟下面 daily 列表区别开，专门挂 milestone 的边界与验收记录。
+每份材料对其所属里程碑有效；当前阶段与授权以本页顶部的活跃候选入口为准。
 
 | Milestone | 用途 | 文件 |
 |---|---|---|

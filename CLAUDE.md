@@ -27,9 +27,13 @@
            D15 硬件 fail-safe 保持 OPEN——不宣称生产替换 / 无人值守；正式
            退役等 post-E 生产安全硬化候选闭环（D-BI3 r5：旧栈已 disable
            自启，unit 保留可回滚）。
-           下一步 = post-E 通信故障硬化 CodeMap（F1–F3 Reverse Sync 合并
-           输入 + 评估 §6.2 P0-2；后续硬序 ①通信故障硬化 → ②D15 退役决策
-           → ③robot-viz Rerun 桥 → ④F7 baseline 判据小件）。
+           当前 = post-E 通信故障硬化 Spec Approved（2026-09-05 round 21，
+           8 项决策全部 ACK）；2026-09-08 函数级 Plan Approved，专职
+           developer 按包实施，专职 reviewer 独立评审，主 agent 整合验收。
+           实施状态与证据 = team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md；
+           当前进入 C1 公共契约实现。RX 重同步 / 串口 reopen 已移出本候选。
+           后续硬序 ①通信故障硬化 → ②D15 退役决策 → ③robot-viz Rerun 桥
+           → ④F7 baseline 判据小件；通信硬化不自动关闭 D15。
            详 docs/handoffs/v0.5_demo_run_2026-09-01_summary.md
            + docs/CHANGELOG.md 2026-09-01 两条。
 
@@ -50,7 +54,7 @@
             #4 ✅ S0 重启不失忆（v0.2 fsync 双写 + crash_restart_smoke 5/5 PASS）
             #5 ✅ 幂等写 RPC（IdempotencyCache + idempotency_key fingerprint + idem_replay e2e 真过）
 
-上游项目:   /Users/loosqk/repo/robot/dimos（XLeRobot 集成，v0.4 后切换到本仓库）
+上游项目:   dimos / dimos-deploy（只读移植参考；本地路径以实际 checkout 为准）
 ```
 
 ## 核心不变量
@@ -81,7 +85,7 @@ s0_rr_server_thread  普通优先级    (v0.3 A1-3) iceoryx2 RR server I/O → f
 ## v0.2 实现顺序（已收尾，留作历史参考）
 
 设计文档 §11.2。v0.2 Step 1–10 在 `0fa1d77` 全部 land，**最小闭环 + Orin
-真机三轮闭环全通**。新工作走 v0.3 Phase A → B 路线（详
+真机三轮闭环全通**。当时后续走 v0.3 Phase A → B 路线（详
 [`docs/handoffs/v0.3_entry.md`](docs/handoffs/v0.3_entry.md)），不再按
 Step 序号推进。
 
@@ -167,9 +171,10 @@ robot-system/
 
 ## 与上游 dimos 的关系
 
-- 当前 XLeRobot 控制栈跑在 `/Users/loosqk/repo/robot/dimos`（Python + dimos 框架）。
+- 上游 dimos / dimos-deploy 是 Python 控制栈的只读移植参考；本地路径以实际 checkout 为准。
 - `robot-system` 的目标是**完全替代 dimos 运行时**，保留 dimos 项目里已验证的 adapter 逻辑（Feetech 寄存器序列、运动学、校准）作为 `robot-adapters/feetech` 的 Rust 移植参考。
-- `robot-system` v0.4 完成后，dimos 项目会切换到调用 robot-system 的二进制 + RPC / iceoryx2 客户端。
+- v0.5 候选 E 已按原生替换控制执行面的路线跑通受监督 demo；旧栈自启已 disable、unit 保留回滚。
+  不再执行早期“改造 dimos 为 RPC 客户端”的计划；正式退役待 D15 等生产安全硬化闭合。
 
 ## 提交规范（与全局 CLAUDE.md §4 一致）
 

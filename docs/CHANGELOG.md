@@ -10,6 +10,30 @@
 
 ---
 
+## 2026-09-08 · post-E 通信故障硬化：Plan 核码澄清（状态：Reverse Sync；实现前登记）
+
+用户授权对齐文档并由固定开发、独立评审持续推进。2026-09-05 的 Spec round 21
+批准继续有效；正式计划见
+[`post_e_comm_fault_hardening.PLAN.md`](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md)，
+内部审批与实施进度记在同目录 HANDOFF。冻结设计 `00_design.md` 未修改。
+
+- **S-39 / D3：IPC 超时未必已有 seq**。核 `ipc_tick.rs` 的总超时判断早于首次
+  `request_normal`：IPC 停顿即可产生未提交请求超时，不要求先发生 Busy。以
+  `NormalAbortTarget::{Submitted { seq }, Unsubmitted}` 区分，并在唯一 additive
+  default 接口 `abort_pending_normal(target)` 发布带标签请求。全部正常超时仍预提交
+  `CommFault + Disabled`，由 serial 物理收敛、发布 gen 并等 ACK；不构造假 seq。
+  Unsubmitted 若另有非本请求的 pending / active 残留，按 `InvariantViolation`
+  转 `Unknown`、清信任并收敛，阻止残留普通 IO。消费后 CAS 清确切请求。
+- **D4 / D13：入口拒绝与在途抢占分开**。周期读写在取得事务执行权前败给 EStop，
+  合法返回 `Aborted(Emergency)` 且零 IO，不计通信故障、不刷新快照；已经取得执行权
+  的完整 request / response 由 RAII 释放。checkpoint 只记进度，不释放执行权。
+- **AC-1：回归范围从 Cargo 实际枚举冻结**。保留全部原用例，历史 workflow 12/12
+  包含公共 subprocess 测试；唯一 abort default 扩展不改变 HardRT 行为。验收包含
+  integration、显式 ignored soak、隔离 smoke 和当前源码构建的子进程。
+
+上述澄清由开发与独立评审核码、主 agent 回写；不扩大候选范围。D15 保持 OPEN，
+RX 重同步、reopen 与跨臂联锁仍不纳入。新增验收项尚未执行，不能据此宣称实现完成。
+
 ## 2026-09-01 · 候选 E 段(10-demo) 真机执行补录 + F1–F3 / F7 / F8 Reverse Sync 拍板（**状态：执行记录 ×1 + 拍板 ×3；本轮不实施代码、不改 00_design.md**）
 
 ### 段(10-demo) 真机执行补录（2026-09-01，操作者全程在场逐步放行）

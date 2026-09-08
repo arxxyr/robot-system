@@ -1,9 +1,15 @@
 # 文档导航
 
+当前（2026-09-08）：v0.5 候选 E 受监督功能 demo 已完成；post-E 通信故障硬化
+Spec / 函数级 Plan 已批准，正按包实施与独立评审。继续工作先读
+[`post-E Spec`](../team-swe/specs/post_e_comm_fault_hardening.md) 与
+[`当前交接`](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+真实执行证据见 [`9 月 1 日真机总结`](handoffs/v0.5_demo_run_2026-09-01_summary.md)，D15 保持 OPEN。
+
 | 文件 | 用途 |
 |------|------|
 | [`00_design.md`](00_design.md) | **v0.1.2 冻结设计**（权威，架构不再改动） |
-| [`01_implementation_steps.md`](01_implementation_steps.md) | v0.2 实施步骤（10 步强制顺序，执行依据） |
+| [`01_implementation_steps.md`](01_implementation_steps.md) | v0.2 历史实施步骤（已收口；当前执行依据见活跃候选 Spec） |
 | [`02_start_here.md`](02_start_here.md) | Claude Code 上手指南（新 session 必读） |
 | [`10_verification.md`](10_verification.md) | 验证测试文档（活文档，Step 5 完成时落骨架，随后每 Step 填实测） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 冻结后 spec 变更登记簿：①偏离登记 · ②回写登记 · ③Target 契约登记（仅 `targets/<name>.md` §2） |
@@ -21,7 +27,7 @@
 | Spec 类别 | 对应文档 | 写什么（契约） | 不写什么 |
 |---|---|---|---|
 | **Design spec** — 架构规格 | [`00_design.md`](00_design.md) | 不变量、语义契约、线程模型、消息格式、§6.7 five invariants | 行数 / 函数签名 / 调度细节 |
-| **Implementation spec** — 实施规格 | [`01_implementation_steps.md`](01_implementation_steps.md) | 10 步顺序、每步交付清单、退出标准、可测性原则 5 条 | 具体怎么 coding / 代码风格 |
+| **Implementation spec** — 实施规格 | [`01_implementation_steps.md`](01_implementation_steps.md)（v0.2 历史）与 [`team-swe/specs/`](../team-swe/specs/)（当前候选） | 候选范围、验收条件、接口与执行计划；v0.2 保留 10 步与可测性原则 | 已执行但未验证的结果不得写成 PASS |
 | **Verification spec** — 验证规格 | [`10_verification.md`](10_verification.md) | 指标目标值、measured baseline、CI 串行顺序、env_id | 每一次实际跑出的原始数据 |
 | **Target spec** — 部署目标规格 | [`targets/<name>.md`](targets/) 的 **§2 训练 / 部署契约** | 每个平台必须 1:1 复刻的硬契约（字段顺序、数值常量、公式） | 路线图 / 源码 walkthrough（见下方辅助文件） |
 
@@ -38,11 +44,11 @@
 ### Spec vs 其他文档
 
 - **Spec vs 代码**：spec 先于实现、可在没任何代码时评审拍板。
-- **Spec vs CHANGELOG**：[`CHANGELOG.md`](CHANGELOG.md) 记录"spec 从 A 变到 B、原因是什么"；spec 本身永远是**当前版本**的样子。
+- **Spec vs CHANGELOG**：[`CHANGELOG.md`](CHANGELOG.md) 记录"spec 从 A 变到 B、原因是什么"；活跃候选 spec 本身保持当前契约，明确标为历史的实施计划保留原时点内容。
 - **Spec vs 指南**：[`02_start_here.md`](02_start_here.md) 是 onboarding 指南，不是 spec —— 可以随意更新、不走 CHANGELOG。
 
 ### 改 spec 的规矩
 
 - **Design spec 冻结**：`00_design.md` 不在代码 PR 中改。发现语义问题 → `CHANGELOG.md` 登记 → 评审通过 → 该动才动。
-- **Implementation / Verification spec 随步更新**：每完成一步同步 "当前位置" / 指标状态 ⏳→🟡→✅。
+- **活跃 Implementation / Verification spec 随步更新**：每完成一步同步实现 / 指标状态；已归档阶段只补当前入口指针，不重写历史计划与结果。
 - **Target spec 跟随上游**：上游仓库演进时更新 `targets/*.md`，不影响 design spec。**§2 契约节改动必经 [`CHANGELOG.md`](CHANGELOG.md) 第 3 类（target-contract）登记**；其他节 PR 直接改。规则表见 [`targets/README.md`](targets/)《Spec 登记规则》。

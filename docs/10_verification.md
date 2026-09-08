@@ -1,13 +1,29 @@
 # 10 · 验证与测试（活文档）
 
-> `docs/00_design.md` §10 的落地版本。**骨架提交**：数值占位，随 Step 5–10
-> 推进逐项填实测。
+> `docs/00_design.md` §10 的落地版本。历史表格保留各阶段的实测与待验证标签；
+> 当前 post-E 候选按下方验收入口推进，不以历史 PASS 替代本轮结果。
 >
 > - 权威语义来源：`docs/00_design.md` §10 / §6 / §4.9。
 > - 偏离 / 调整语义走 `docs/CHANGELOG.md`，不在本文件改。
 > - 本文件每次更新 → 在底部《变更记录》追加一行。
 
 ---
+
+## 当前候选：post-E 通信故障硬化（2026-09-08）
+
+权威验收条件见 [Spec 的 AC-1–AC-24](../team-swe/specs/post_e_comm_fault_hardening.md)，
+函数与命令映射见 [正式 Plan](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md)，
+执行状态见 [HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+
+- 实现前清单为 [baseline.json](../.verify/post_e_comm_fault_hardening/baseline.json)：
+  20 个 integration target、155 项用例，其中 2 项原有 ignored；枚举不算执行通过。
+- 实现前实跑：lib / bins 1345 PASS；RPC 五组 integration 45 PASS，显式指向本次
+  debug 构建的 S0 / S1 / gateway。此处仅记录旧代码基线。
+- 新增重点：未提交请求超时与异常 Busy 残留、带标签 abort 的 CAS 清理、EStop
+  与事务入口两种先后顺序、RR 两道 deadline、启动首 IO 发布门与信任文件屏障。
+- 收口需重跑保留用例、debug / release 的 `rt_guard_soak` ignored、隔离 smoke；
+  本机条件不足或需要 Orin 现场的项如实记录 `NEEDS_HUMAN`，不得写 PASS。
+- Plan 核码澄清见 CHANGELOG 2026-09-08。D15 保持 OPEN，不据本地测试宣称无人值守。
 
 ## 0. 使用约定
 
@@ -384,6 +400,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-09-08 | 当前 post-E 验收入口、实现前 Cargo 清单与实跑基线；新增 S-39 / D3 / D4 / D13 验收范围，未标新增项通过 | Codex |
 | 2026-04-22 | 骨架初稿：§10.1/§10.2/§10.3 三级结构 + 状态标签 + env_id 机制；所有数值行占位。Step 5 完成时刻快照 | Claude Code (提议) / loosqk (拍板) |
 | 2026-04-22 | §10.2.3 CI 1–6 步接入 `.github/workflows/ci.yml`；`deny.toml` 落地（allow 0BSD；workspace path wildcard + private crate 豁免；iceoryx2 / trybuild winnow dup 走 skip-tree）；`scripts/collect_env_id.sh` 兼容 macOS + Linux。TODO 1/3/4 划掉，只剩 2（assert-no-alloc） | Claude Code |
 | 2026-04-24 | §10.2.1 加 3 个 task 27c harness（`feetech_bench` criterion / `feetech::integration_smoke` / `scripts/feetech_flamegraph.sh`）+ 附录加 feetech bench baseline 实测数值。结论：协议层零瓶颈，task 28 真机延迟瓶颈在 USB-RS485 wire RTT。 | Claude Code |

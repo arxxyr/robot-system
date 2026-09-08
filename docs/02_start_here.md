@@ -1,6 +1,6 @@
 # 02 · Claude Code 上手指南
 
-> 给在 `/Users/loosqk/repo/rust/robot-system/` 开新 session 的 Claude Code 读。
+> 给在本仓库开启新 session 的 agent 读；路径以实际 checkout 为准。
 
 ---
 
@@ -18,10 +18,17 @@
 
 ```
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
-实施阶段:     v0.2 最小闭环
-当前步骤:     见 docs/01_implementation_steps.md 顶部"当前位置"行（单一事实来源）
-平台:         Step 0-5 macOS 可跑；Step 6+ 需 Linux（Orin 或 Linux 开发机）
+实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
+当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
+当前步骤:     函数级 Plan Approved（2026-09-08）；进入 C1 公共契约实现
+执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
+平台:         Linux 开发机做离线验证；Orin + XLeRobot 做现场真机验收
 ```
+
+用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
+由团队完善函数级计划、独立评审通过后实施；原 9 月 5 日“仅准备 Plan outline”
+是历史授权状态，不作为本轮停工理由。实现、验证、真机执行分别记录，不能将
+Spec Approved 或旧测试记录写成新代码已通过验收。
 
 ---
 
@@ -32,7 +39,8 @@
 1. `CLAUDE.md`（本项目工作约定，包括禁用 API 清单）
 2. 本文档 `docs/02_start_here.md`
 3. `docs/00_design.md`（冻结设计，**权威**）
-4. `docs/01_implementation_steps.md`（实施步骤，**执行依据**）
+4. `docs/01_implementation_steps.md`（v0.2 历史实施步骤，已收口）
+5. 当前候选 Spec 与 HANDOFF（当前执行依据）；正式 Plan 随评审更新。
 
 **用户通用偏好**：`~/.claude/CLAUDE.md`（已由 Claude Code 自动加载）
 
@@ -43,7 +51,7 @@
 ## 硬性约束（破一条都不行）
 
 1. **不改 `docs/00_design.md`**。架构已冻结。发现语义问题 → 写 `docs/CHANGELOG.md` 讨论，不直接改设计。
-2. **不跳步**。`docs/01_implementation_steps.md` 的 10 步顺序强制。
+2. **不跳当前候选的依赖与验收门**。v0.2 十步已收口，当前按批准的 Spec / Plan 推进。
 3. **commit 前零警告**：`cargo fmt --all --check && cargo clippy --all --all-targets -- -D warnings`。
 4. **Rust nightly 是硬要求，严格不用 stable**（对应 `docs/00_design.md` §9）。**核心 crate**（`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`）**原则上不写 `#![feature(...)]`**，目的是降低 nightly 升级回归风险（不是为了留 stable 后门）；确需启用必须 crate 顶部注释 + review。
 5. **业务代码禁用 API**：
@@ -54,37 +62,35 @@
 
 ---
 
-## 第一个任务：Step 0
+## 当前任务：post-E 通信故障硬化
 
-打开 session 后没有特殊指示，直接按 `docs/01_implementation_steps.md` Step 0 执行：
-
-1. 写 `Cargo.toml`（workspace 根，**无** `[package]`，列出未来所有 crate 但此刻只 include `robot-core`）
-2. 写 `rust-toolchain.toml`（pin `channel = "nightly"`；可进一步 pin 具体日期 `nightly-YYYY-MM-DD`）。`Cargo.toml` 设 `edition = "2024"`，**不写 `rust-version`**（自动跟随最新 nightly；严格不用 stable）。
-3. 写 `.cargo/config.toml`（sccache rustc-wrapper、target 目录可选）
-4. 写 `.gitignore`（`target/`、`.DS_Store`、`*.sccache*`）
-5. 建 `crates/robot-core/`，`src/lib.rs` 留空 `// robot-core v0.1.2 frozen design`
-6. 跑三件套：`cargo build --all` / `cargo fmt --check` / `cargo clippy -D warnings`
-7. `git add -A && git commit -m "✨ feat: 初始化 workspace"`
-
-完成后直接进 Step 1（`robot-core::time`）。
+1. 先看工作区和当前交接，保留已有改动；功能分支为 `feat/post-e-comm-fault-hardening`。
+2. 阅读 [`Spec`](../team-swe/specs/post_e_comm_fault_hardening.md) 的已批准 D1–D15、
+   AC-1–24 / AC-Q 与边界，再核对函数级 Plan 的真实代码落点。
+3. 专职 developer 实施，专职 reviewer 独立评审 / 验收；主 agent 维护文档、门禁与整合。
+   共享文件始终只有一个写者，Cargo 长检查统一调度。
+4. 内部 Plan 评审通过后分包实现、回修；所有工作包与测试通过后才记录候选完成。
+5. 本候选不含 RX 重同步 / 串口 reopen、D15 硬件 fail-safe、跨臂独立联锁；
+   不把本地开发授权解释成真机上扭或正式退役授权。
 
 ---
 
 ## 工作方式
 
-- **少解释、多动手**。用户已经读过设计文档 1500 行，不需要你再复述。
+- **先核事实再推进**。围绕当前任务报告进度、风险与验证证据。
 - **先读后写**。修改任何文件前先 `Read` 一次。
 - **小步 commit**。一个逻辑单元一个 commit，不要攒一大堆。
-- **遇到未决就问**，不私自做架构决策。
+- 例行实现细节由团队核码并评审；真正改变已批准语义时先 Reverse Sync，不私改冻结架构。
 - **不主动创建 README.md / 文档** 除非用户明确要求（全局 CLAUDE.md）。
-- **保持 CLAUDE.md / 01_implementation_steps.md 新鲜**：每完成一步更新状态；发现文档错漏顺手改。
-- **每步结束把 `docs/01_implementation_steps.md` 顶部 "当前位置" 更新**到下一步。
+- **保持当前状态入口一致**：更新 CLAUDE.md / 当前 Spec / HANDOFF；历史文档只补明确状态指针，不覆盖历史证据。
 
 ---
 
 ## 上游参考（dimos 项目）
 
-`/Users/loosqk/repo/robot/dimos/` 是 XLeRobot 现役控制栈（Python + dimos）。需要硬件信息时查：
+上游 dimos / dimos-deploy 是已验证 adapter 逻辑与功能基线的只读参考，路径以本机 checkout 为准。
+候选 E 已跑通控制执行面受监督 demo；旧栈自启已 disable、unit 保留回滚，尚未正式退役。
+需要硬件移植依据时可查上游：
 
 | 用途 | 路径 |
 |------|------|
@@ -101,10 +107,11 @@
 
 ## 和 dimos 仓库的关系
 
-- 本项目是**独立 git 仓库**（`/Users/loosqk/repo/rust/robot-system/`），与 dimos 无 git 联系。
+- 本项目是**独立 git 仓库**，与 dimos 无 git 联系。
 - 设计文档源版本在 dimos `docs/09_robot_framework.md`；本项目的 `docs/00_design.md` 是**复制快照**，不反向同步。
 - 如果在本项目发现需要改设计：先在本项目 `docs/CHANGELOG.md` 记录，评审通过后由用户决定是否同步回 dimos 侧。
-- v0.4 完成后，dimos 项目会切换成调用 robot-system 的二进制 + RPC / iceoryx2 客户端。
+- 候选 E 的已批准路线是原生替换控制执行面；最新边界见 `handoffs/v0.5_dimos_buyin_decision.md`，
+  不沿用早期“改造 dimos 为 RPC 客户端”的过期计划。
 
 ---
 
@@ -141,5 +148,5 @@
 
 - 确认 `cargo fmt + clippy` 零警告
 - 确认当前 step 的 "退出标准" 全部达成再宣称完成
-- 确认 `docs/01_implementation_steps.md` 的 "当前位置" 行已更新
+- 确认当前 Spec / HANDOFF 的实现状态、评审结论和证据指针已更新
 - 如果还没到下一步自然的 commit 边界，不要留未 commit 的大改

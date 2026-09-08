@@ -1,4 +1,9 @@
-# CodeMap · post-E 通信故障硬化（Pre-Research，不开 Spec/Plan/实现）
+# CodeMap · post-E 通信故障硬化（Pre-Research 历史基线）
+
+> **当前入口（2026-09-08）**：本文件保留五轮评审收敛的历史代码事实；标题与正文中的
+> “不开 Spec/Plan/实现”仅描述当时阶段。后续 [Spec](../specs/post_e_comm_fault_hardening.md)
+> 已获批准，当前函数级计划与实施状态见 [HANDOFF](../specs/post_e_comm_fault_hardening.HANDOFF.md)。
+> RX 重同步 / 串口 reopen 已在 Spec 阶段移出本候选，不能按下面的原始研究范围实施。
 
 > 代码基线：`fed7549`（候选 E 段(10) 收口后）。方法：纯读码 + 已登记证据，
 > **零代码改动**。

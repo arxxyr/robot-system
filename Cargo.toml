@@ -1,7 +1,7 @@
 # robot-system workspace 根
 #
 # 设计版本：v0.1.2（冻结，见 docs/00_design.md）
-# 实施阶段：v0.2（见 docs/01_implementation_steps.md）
+# 实施阶段：v0.5 受监督 demo 完成；post-E 当前进度见 team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 # 工具链：nightly 硬要求，严格不用 stable（docs/00_design.md §9 / docs/CHANGELOG.md 2026-04-21）
 
 [workspace]
