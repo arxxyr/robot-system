@@ -10,10 +10,12 @@
 
 pub mod adapter;
 pub mod config;
+pub mod diag;
 pub mod error;
 pub mod executor_ctrl;
 pub mod factory;
 pub mod rt_guard;
+pub mod serial_services;
 #[cfg(target_os = "linux")]
 pub mod thread;
 pub mod time;

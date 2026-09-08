@@ -177,10 +177,9 @@ libc            = { workspace = true }
 #   test-freeze-hook 启用 freeze_control module + freeze_until_ns 字段。
 # - `optional = true`：默认构建 / 生产构建不 link robot-s0；只在
 #   `freeze-systemd-smoke` feature 显式开启时才编译。
-# - **不**走 workspace 继承（`workspace = true`）：workspace 顶层 `robot-s0
-#   = { path = "..." }` 没显式 `default-features`，cargo 1.x 拒绝继承时
-#   override `default-features = false`（"cannot override workspace's
-#   default-features"）。直接 path 跳过继承。
+# - **不**走 workspace 继承（`workspace = true`）：独立 path 保留本测试入口的
+#   `default-features = false` 边界。旧 workspace 默认 feature 声明不能由
+#   继承方关闭，因此这里一直独立声明；post-E 只删除无人继承的顶层重复条目。
 robot-s0 = { path = "../robot-s0", optional = true, default-features = false, features = [
     "mock-only",
     "test-freeze-hook",

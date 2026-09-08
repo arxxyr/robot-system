@@ -34,6 +34,14 @@
 上述澄清由开发与独立评审核码、主 agent 回写；不扩大候选范围。D15 保持 OPEN，
 RX 重同步、reopen 与跨臂联锁仍不纳入。新增验收项尚未执行，不能据此宣称实现完成。
 
+**C1 实施细化与复核**：SerialRT 耗尽后不再递增序号，以 strong CAS 限定合法取号，
+避免持续 `fetch_add` 最终 u64 回绕；HardRT 原逻辑不变。独立 reviewer 已批准 C1，
+core 79 / S0 298（含独立 14）/ schema compat 16 项通过，后续 phase / IPC 验收尚未落地。
+复核发现此前 clippy 返回 0 的日志仍含 Cargo manifest 提示，基线记录已更正：删除
+未被继承的三条 workspace 依赖声明，保留现有 snake_case 二进制接口，并为这项
+既定命名约定显式配置 Cargo lint；不降低 Rust / clippy 诊断门。全 feature 的
+feetech logging 依赖提示按 C2 原计划处理。
+
 ## 2026-09-01 · 候选 E 段(10-demo) 真机执行补录 + F1–F3 / F7 / F8 Reverse Sync 拍板（**状态：执行记录 ×1 + 拍板 ×3；本轮不实施代码、不改 00_design.md**）
 
 ### 段(10-demo) 真机执行补录（2026-09-01，操作者全程在场逐步放行）

@@ -12,6 +12,7 @@
 //! - 不实现 `From<std::io::Error>` 等自动转换：每次跨边界强制显式 `match`，
 //!   避免意外把 `io::Error::kind == WouldBlock` 等吞到笼统分类里。
 
+pub use crate::serial_services::{AbortReason, CommErrorKind};
 use thiserror::Error;
 
 /// 机器人运行时的统一错误类型。
@@ -46,6 +47,14 @@ pub enum RobotError {
     /// 操作未在 `Deadline` 前完成。
     #[error("deadline exceeded")]
     DeadlineExceeded,
+
+    /// 通信错误保留类型化原因，供 `SerialRT` 按操作域定级。
+    #[error("通信错误：{0:?}")]
+    Comm(CommErrorKind),
+
+    /// 正常操作在事务边界被中止，不代表硬件通信失败。
+    #[error("操作中止：{0:?}")]
+    Aborted(AbortReason),
 
     /// 命令违反 `JointLimits`（位置 / 速度 / 力矩边界）。
     #[error("limits violation")]

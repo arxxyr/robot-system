@@ -8,7 +8,10 @@
   批准文件为 [正式 Plan](post_e_comm_fault_hardening.PLAN.md)，916 行，SHA256
   `3a8a394a74764ad2277bdd5f3aa0901627538f635d4b6208c55cde99d6f2dd30`。
 - 开发分支已创建：`feat/post-e-comm-fault-hardening`，基础提交 `bd081cb`。
-- 当前进入 C1 公共契约实现；计划批准不等于实现完成，新测试结果逐项登记。
+- C1 公共契约已实现并获独立 reviewer **C1 Approved**；core 79、S0 298、schema
+  compat 16 项通过，S0 含主 agent 独立验收 14 项。Cargo manifest 提示已最小修正，
+  fresh fmt / workspace clippy / all-targets build 均零警告，timings 9.55 s；证据见
+  `.verify/post_e_comm_fault_hardening/C1.json`。接续 C2 有界传输，整候选未完成。
 - 旧“不得实施 / 不 commit”的授权前提只描述 9 月 5 日；本轮按用户持续推进授权
   与内部质量门执行，提交前仍必须 fmt + clippy 零警告。不因本地开发执行真机动作。
 - 文档所有者：主 agent（Spec / 本交接 / 导航）；开发所有者：developer（正式计划 /
@@ -21,8 +24,10 @@
 - Plan round 1 的三项阻断已逐项回修：S-39 未提交请求超时、周期事务入口被 EStop
   拒绝的返回语义、完整 ignored / smoke / 当前二进制验收命令。Spec D3 / D4 /
   D13 / AC 及 CHANGELOG、10_verification 已 Reverse Sync，最终复核已通过。
-- 基线检查（尚无生产代码改动）：fmt / 默认 clippy 通过；全 feature clippy 返回 0，
-  但 Cargo 报既有 feetech 可选 `robot-logging` 未用警告，待核码修正；
+- 基线检查（实现前）：fmt / 默认 clippy 返回 0；2026-09-08 复核完整日志勘误：
+  Rust / clippy 诊断为 0，但 Cargo 另有未用 workspace dependency 与既有二进制
+  snake_case 命名的 manifest 提示，不能称整个输出零警告。全 feature clippy 另报
+  既有 feetech 可选 `robot-logging` 未用警告，C2 修正；
   `cargo test --workspace --all-features --lib --bins` 为 1345 PASS / 0 FAIL。
   RPC 五组 integration 实跑 45 PASS（workflow 12、estop 7、set_enabled 11、
   state 8、task 7），显式指定本次 debug 构建的三个子进程。其余 integration 仅

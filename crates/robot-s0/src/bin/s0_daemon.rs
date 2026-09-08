@@ -1309,6 +1309,7 @@ fn build_adapter(args: &ResolvedArgs) -> Result<BuiltAdapter, i32> {
 
     // 3) build adapter
     let ctx = AdapterBuildContext {
+        services: None,
         instance_name: &args.hardware_id,
         adapter_kind: &adapter_kind,
         joint_names: &joint_names,

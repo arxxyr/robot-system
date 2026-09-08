@@ -75,6 +75,8 @@ impl OutputMode {
 /// (`SafetyStopFailed`：`safety_stop` / `confirm_torque_off` 失败)。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FaultCode {
+    /// SerialRT 通信不可信，必须由执行器完成本地收敛。
+    CommFault,
     AdapterErr,
     CmdDeadlineExpired,
     LimitViolation,

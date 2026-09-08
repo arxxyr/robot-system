@@ -460,8 +460,10 @@ CommFault | SafetyStopFailed)` → `AdapterError`（AC-17）。
   允许最大可编码 seq = 2^40 − 1；`request_normal` 在取号结果 ≥ 2^40 时回
   `NormalReqStatus::Unsupported`（`hard_rt_ctrl.rs:222` 取号处）；既有 48 位槽
   不改；无绕回 → 无 ABA。**seq 永不为 0**：`seq_counter` 初值 1
-  （`hard_rt_ctrl.rs:85`）、`fetch_add` 单调；取号结果为 0 亦回 `Unsupported`
-  （防未来漂移），故 `ABORT_NONE = 0` 永不匹配合法 seq（AC-4h）。
+  （基线 `hard_rt_ctrl.rs:85`）。SerialRT 以 strong CAS 取号：旧值为 0 或超出
+  `SEQ_MASK` 则拒绝且不推进计数器，合法旧值才 CAS 加一；Busy 仍允许消耗 seq。
+  不能继续对已耗尽计数器 `fetch_add`，否则最终 u64 回绕会重新发出旧 seq。
+  HardRT 保留原取号逻辑；`ABORT_NONE = 0` 永不匹配合法 seq（AC-4h）。
 - **发布顺序**（serial 单写者）：① 读 `abort_request`（Acquire），Submitted 匹配 seq → 0 IO 回
   `AbortedByTimeout`；② `active{valid=1}`；③ 执行；④ `completed{valid=1,
   success}`；⑤ `active.valid = 0`；⑥ `last_completed`（既有）。跨线程配对：

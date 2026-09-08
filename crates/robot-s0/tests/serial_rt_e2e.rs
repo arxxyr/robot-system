@@ -165,6 +165,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
     let factory = find_factory(factory_name).expect("factory not registered");
     let joint_names = ["j0".into(), "j1".into(), "j2".into()];
     let ctx = AdapterBuildContext {
+        services: None,
         instance_name: "test_arm",
         adapter_kind: factory_name,
         joint_names: &joint_names,
@@ -396,6 +397,7 @@ fn test_serial_rt_dispatch_chooses_serial_factory() {
     let factory = find_factory("mock_serial_rt").expect("mock_serial_rt factory not registered");
     let joint_names = ["j0".into()];
     let ctx = AdapterBuildContext {
+        services: None,
         instance_name: "test",
         adapter_kind: "mock_serial_rt",
         joint_names: &joint_names,

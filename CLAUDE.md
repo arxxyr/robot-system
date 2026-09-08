@@ -31,7 +31,7 @@
            8 项决策全部 ACK）；2026-09-08 函数级 Plan Approved，专职
            developer 按包实施，专职 reviewer 独立评审，主 agent 整合验收。
            实施状态与证据 = team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md；
-           当前进入 C1 公共契约实现。RX 重同步 / 串口 reopen 已移出本候选。
+           C1 公共契约已通过独立评审，接续 C2 有界传输。RX 重同步 / 串口 reopen 已移出本候选。
            后续硬序 ①通信故障硬化 → ②D15 退役决策 → ③robot-viz Rerun 桥
            → ④F7 baseline 判据小件；通信硬化不自动关闭 D15。
            详 docs/handoffs/v0.5_demo_run_2026-09-01_summary.md

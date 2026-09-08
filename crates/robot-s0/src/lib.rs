@@ -40,6 +40,7 @@ pub mod config_loader;
 // feature 门——AC-E16/E21/E22 的 unit 判据必须在默认 gate 内跑到；真串口实现
 // 与 `xlerobot_deploy` bin 才由 `xlerobot-real` 守门（详 deploy/mod.rs doc）。
 pub mod deploy;
+pub mod diag;
 pub mod estop_latch;
 #[cfg(any(test, feature = "test-freeze-hook"))]
 pub mod freeze_control;
@@ -53,6 +54,7 @@ pub mod pub_thread;
 pub mod rr_server_thread;
 pub mod serial_io_ctrl;
 pub mod serial_io_thread;
+pub mod serial_preempt;
 mod set_enabled_action;
 pub mod set_enabled_rr_server;
 pub mod state_machine;
@@ -60,6 +62,8 @@ pub mod state_machine;
 // 本 crate 不再持副本；s0_daemon 直接调 robot_health。
 pub mod watchdog;
 
+#[cfg(test)]
+mod post_e_acceptance;
 #[cfg(test)]
 mod test_util;
 

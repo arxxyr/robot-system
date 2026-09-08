@@ -38,13 +38,221 @@
 #![allow(clippy::doc_markdown)]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
+use crate::state_machine::FaultCode;
 use robot_core::executor_ctrl::{
     AdapterErr, AdapterNormalReq, AdapterResp, ExecutorCtrlClient, NormalReqStatus, OutputPolicy,
     OutputSafetyState, emergency_codes, encode_normal_req, normal_codes, pack_completed,
     pack_pending_normal, unpack_completed, unpack_pending_normal,
 };
+use robot_core::executor_ctrl::{EStopOutcome, SerialEmergencyCtrl};
+use robot_core::serial_services::{NormalAbortTarget, SEQ_MASK};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CtrlKind {
+    HardRt,
+    SerialRt,
+}
+
+pub(crate) const SERIAL_ESTOP_PENDING: u32 = 1 << 8;
+pub(crate) const IPC_ESTOP_NOTICE: u32 = 1 << 9;
+pub(crate) const NORMAL_IO_ACTIVE: u32 = 1 << 10;
+const SAFETY_STATE_MASK: u32 = 0xff;
+
+/// 活跃记录采用低位 valid、action、arg、seq；高七位永远为零。
+// C3 接入活跃动作/退役矩阵后撤除此局部允许。
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ActionRecord {
+    pub valid: bool,
+    pub action: u8,
+    pub arg: u8,
+    pub seq: u64,
+}
+
+#[allow(dead_code)] // C3 接线后撤除。
+impl ActionRecord {
+    pub(crate) const fn pack(self) -> u64 {
+        (self.valid as u64)
+            | ((self.action as u64) << 1)
+            | ((self.arg as u64) << 9)
+            | ((self.seq & SEQ_MASK) << 17)
+    }
+
+    pub(crate) const fn unpack(raw: u64) -> Self {
+        Self {
+            valid: raw & 1 != 0,
+            action: ((raw >> 1) & 0xff) as u8,
+            arg: ((raw >> 9) & 0xff) as u8,
+            seq: (raw >> 17) & SEQ_MASK,
+        }
+    }
+}
+
+/// 完成记录的低两位依次为 valid、success，随后为 action、arg、40 位 seq。
+#[allow(dead_code)] // C3 接入完成效果记录后撤除。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CompletedEffect {
+    pub action: ActionRecord,
+    pub success: bool,
+}
+
+#[allow(dead_code)] // C3 接线后撤除。
+impl CompletedEffect {
+    pub(crate) const fn pack(self) -> u64 {
+        (self.action.valid as u64)
+            | ((self.success as u64) << 1)
+            | ((self.action.action as u64) << 2)
+            | ((self.action.arg as u64) << 10)
+            | ((self.action.seq & SEQ_MASK) << 18)
+    }
+
+    pub(crate) const fn unpack(raw: u64) -> Self {
+        Self {
+            action: ActionRecord {
+                valid: raw & 1 != 0,
+                action: ((raw >> 2) & 0xff) as u8,
+                arg: ((raw >> 10) & 0xff) as u8,
+                seq: (raw >> 18) & SEQ_MASK,
+            },
+            success: raw & 2 != 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+#[allow(dead_code)] // C3 mailbox 发布/消费接线后撤除。
+pub(crate) enum FaultOrigin {
+    Periodic,
+    NormalAction,
+    PendingTimeout,
+    InvariantViolation,
+    Confirm,
+    StopNotDelivered,
+    BootUntrusted,
+    ConnectFailed,
+    PreflightFailed,
+    PreflightTimeout,
+    EStopEscalation,
+}
+
+#[allow(dead_code)] // C3 接线后撤除。
+impl FaultOrigin {
+    const fn from_u8(raw: u8) -> Self {
+        match raw {
+            0 => Self::Periodic,
+            1 => Self::NormalAction,
+            2 => Self::PendingTimeout,
+            4 => Self::Confirm,
+            5 => Self::StopNotDelivered,
+            6 => Self::BootUntrusted,
+            7 => Self::ConnectFailed,
+            8 => Self::PreflightFailed,
+            9 => Self::PreflightTimeout,
+            10 => Self::EStopEscalation,
+            _ => Self::InvariantViolation,
+        }
+    }
+}
+
+/// 单词绑定代次与故障内容；位 0..31 为 generation，其后为 code/detail/origin。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)] // C3/C4 mailbox 接线后撤除。
+pub(crate) struct MailboxSnapshot {
+    pub generation: u32,
+    pub code: FaultCode,
+    pub detail: u8,
+    pub origin: FaultOrigin,
+}
+
+#[allow(dead_code)] // C3/C4 接线后撤除。
+impl MailboxSnapshot {
+    pub(crate) const fn pack(self) -> u64 {
+        let code = match self.code {
+            FaultCode::AdapterErr => 1,
+            FaultCode::CmdDeadlineExpired => 2,
+            FaultCode::LimitViolation => 3,
+            FaultCode::WatchdogTimeout => 4,
+            FaultCode::RtOverrun => 5,
+            FaultCode::SafetyStopFailed => 6,
+            FaultCode::CommFault => 7,
+        };
+        (self.generation as u64)
+            | (code << 32)
+            | ((self.detail as u64) << 40)
+            | ((self.origin as u64) << 48)
+    }
+
+    pub(crate) const fn unpack(raw: u64) -> Option<Self> {
+        let generation = (raw & 0xffff_ffff) as u32;
+        if generation == 0 {
+            return None;
+        }
+        let code = match (raw >> 32) & 0xff {
+            1 => FaultCode::AdapterErr,
+            2 => FaultCode::CmdDeadlineExpired,
+            3 => FaultCode::LimitViolation,
+            4 => FaultCode::WatchdogTimeout,
+            5 => FaultCode::RtOverrun,
+            6 => FaultCode::SafetyStopFailed,
+            _ => FaultCode::CommFault,
+        };
+        Some(Self {
+            generation,
+            code,
+            detail: ((raw >> 40) & 0xff) as u8,
+            origin: FaultOrigin::from_u8(((raw >> 48) & 0xff) as u8),
+        })
+    }
+}
+
+/// 只收紧可输出策略。CAS 失败必须按新值重判，绝不覆盖并发 Disabled。
+#[allow(dead_code)] // C3 StopIssue 接线后撤除。
+pub(crate) fn tighten_estop_policy(policy: &AtomicU8) {
+    tighten_estop_policy_impl(policy, || {});
+}
+
+#[allow(dead_code)] // C3 StopIssue 接线后撤除。
+fn tighten_estop_policy_impl(policy: &AtomicU8, mut before_cas: impl FnMut()) {
+    let mut old = policy.load(Ordering::Acquire);
+    loop {
+        match OutputPolicy::from_u8(old) {
+            OutputPolicy::ReadyHold
+            | OutputPolicy::ActiveForward
+            | OutputPolicy::HoldCurrent
+            | OutputPolicy::ZeroCommand => {}
+            OutputPolicy::Disabled | OutputPolicy::StopTorque => return,
+        }
+        before_cas();
+        match policy.compare_exchange(
+            old,
+            OutputPolicy::StopTorque.to_u8(),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => return,
+            Err(actual) => old = actual,
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn tighten_estop_policy_before_cas(policy: &AtomicU8, hook: impl FnMut()) {
+    tighten_estop_policy_impl(policy, hook);
+}
+
+/// C3/C4 接线前保留未使用的原因位；接线完成后撤除此局部允许。
+#[allow(dead_code)]
+pub(crate) mod inhibit {
+    pub(crate) const COMM_FAULT: u8 = 1;
+    pub(crate) const ADAPTER_FAULT: u8 = 1 << 1;
+    pub(crate) const STOP_FAILED: u8 = 1 << 2;
+    pub(crate) const CONVERGING: u8 = 1 << 3;
+    pub(crate) const FAULT_PENDING: u8 = 1 << 4;
+    pub(crate) const BOOT: u8 = 1 << 5;
+}
 
 // ============================================================================
 // HardRtCtrlInner
@@ -54,6 +262,30 @@ use robot_core::executor_ctrl::{
 /// rt_thread 持 `Arc<Inner>` 并在主循环内 swap / store。
 #[derive(Debug)]
 pub struct HardRtCtrlInner {
+    pub(crate) ctrl_kind: CtrlKind,
+    pub(crate) safety_word: AtomicU32,
+    #[allow(dead_code)] // C3 动作发布接线后撤除。
+    pub(crate) active_action: AtomicU64,
+    #[allow(dead_code)] // C3 退役矩阵接线后撤除。
+    pub(crate) completed_effect: AtomicU64,
+    pub(crate) abort_request: AtomicU64,
+    pub(crate) fault_mailbox: AtomicU64,
+    pub(crate) fault_ack: AtomicU32,
+    pub(crate) inhibit: AtomicU8,
+    #[allow(dead_code)] // C3 信任判定接线后撤除。
+    pub(crate) session_clean: AtomicBool,
+    #[allow(dead_code)] // C3 Preflight 接线后撤除。
+    pub(crate) rx_trust: AtomicBool,
+    #[allow(dead_code)] // C3 通信分级接线后撤除。
+    pub(crate) comm_level: AtomicU8,
+    #[allow(dead_code)] // C3 L0 恢复计时接线后撤除。
+    pub(crate) l0_since_ns: AtomicU64,
+    pub(crate) liveness_counter: AtomicU64,
+    pub(crate) estop_requests: AtomicU32,
+    #[allow(dead_code)] // C3/C4 启动出口接线后撤除。
+    pub(crate) boot_outcome: AtomicU8,
+    #[allow(dead_code)] // C4 supervisor 接线后撤除。
+    pub(crate) boot_deadline_expired: AtomicBool,
     /// 当前 [`OutputPolicy`]。`set_policy` 写、rt_thread 在 hot-path 读。
     pub policy: AtomicU8,
     /// 当前 [`OutputSafetyState`]。rt_thread 写（emergency / 正常 enable 切换）；
@@ -67,8 +299,8 @@ pub struct HardRtCtrlInner {
     /// 消费。**v9**：单 slot 简化语义，最近一次未消费请求覆盖前一次（client
     /// 端拒后续 Busy 提交）。
     pub pending_normal: AtomicU64,
-    /// `seq_counter`。`request_normal` fetch_add 拿 seq；**永远 +1**（即便
-    /// CAS 失败 seq 也废弃 = 允许空洞，简化 wraparound 推理）。
+    /// `seq_counter`。HardRT 保留 fetch_add；SerialRT strong CAS 在 40 位边界
+    /// 拒绝后不再推进。正常取号即便 pending CAS 失败也废弃序号，允许空洞。
     pub seq_counter: AtomicU64,
     /// **packed AtomicU64**（layout 见 [`pack_completed`]）：rt_thread 完成
     /// 一条 normal action 后 store(seq + resp_code)；client 端
@@ -87,7 +319,36 @@ impl HardRtCtrlInner {
     /// safety_latched=false。
     #[must_use]
     pub fn new() -> Self {
+        Self::with_kind(CtrlKind::HardRt)
+    }
+
+    /// SerialRT 新协议构造入口；生产选择在完整启动接线后切换。
+    #[must_use]
+    pub fn new_serial() -> Self {
+        Self::with_kind(CtrlKind::SerialRt)
+    }
+
+    fn with_kind(ctrl_kind: CtrlKind) -> Self {
         Self {
+            ctrl_kind,
+            safety_word: AtomicU32::new(0),
+            active_action: AtomicU64::new(0),
+            completed_effect: AtomicU64::new(0),
+            abort_request: AtomicU64::new(0),
+            fault_mailbox: AtomicU64::new(0),
+            fault_ack: AtomicU32::new(0),
+            inhibit: AtomicU8::new(match ctrl_kind {
+                CtrlKind::HardRt => 0,
+                CtrlKind::SerialRt => inhibit::BOOT,
+            }),
+            session_clean: AtomicBool::new(true),
+            rx_trust: AtomicBool::new(false),
+            comm_level: AtomicU8::new(0),
+            l0_since_ns: AtomicU64::new(0),
+            liveness_counter: AtomicU64::new(0),
+            estop_requests: AtomicU32::new(0),
+            boot_outcome: AtomicU8::new(0),
+            boot_deadline_expired: AtomicBool::new(false),
             policy: AtomicU8::new(OutputPolicy::Disabled.to_u8()),
             safety_state: AtomicU8::new(OutputSafetyState::TorqueUnknown.to_u8()),
             emergency_action: AtomicU8::new(emergency_codes::NONE),
@@ -96,6 +357,166 @@ impl HardRtCtrlInner {
             last_completed: AtomicU64::new(0),
             safety_latched: AtomicBool::new(false),
         }
+    }
+
+    /// 所有观测方共用同一权威来源选择，避免 pub 误读 legacy 字节。
+    #[must_use]
+    pub fn safety_state(&self) -> OutputSafetyState {
+        let raw = match self.ctrl_kind {
+            CtrlKind::HardRt => self.safety_state.load(Ordering::Acquire),
+            CtrlKind::SerialRt => {
+                (self.safety_word.load(Ordering::Acquire) & SAFETY_STATE_MASK) as u8
+            }
+        };
+        OutputSafetyState::from_u8(raw)
+    }
+
+    fn take_next_seq(&self) -> Option<u64> {
+        match self.ctrl_kind {
+            CtrlKind::HardRt => Some(self.seq_counter.fetch_add(1, Ordering::AcqRel)),
+            CtrlKind::SerialRt => {
+                let mut seq = self.seq_counter.load(Ordering::Acquire);
+                loop {
+                    // 越界后不再递增，连 u64 本身也不允许绕回可用序号。
+                    if seq == 0 || seq > SEQ_MASK {
+                        return None;
+                    }
+                    match self.seq_counter.compare_exchange(
+                        seq,
+                        seq + 1,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => return Some(seq),
+                        Err(actual) => seq = actual,
+                    }
+                }
+            }
+        }
+    }
+
+    fn update_safety_word(&self, update: impl Fn(u32) -> u32) -> u32 {
+        self.update_safety_word_with_hook(update, || {})
+    }
+
+    fn update_safety_word_with_hook(
+        &self,
+        update: impl Fn(u32) -> u32,
+        mut before_cas: impl FnMut(),
+    ) -> u32 {
+        let mut old = self.safety_word.load(Ordering::Acquire);
+        loop {
+            let new = update(old);
+            before_cas();
+            match self
+                .safety_word
+                .compare_exchange(old, new, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(previous) => return previous,
+                Err(actual) => old = actual,
+            }
+        }
+    }
+
+    pub(crate) fn try_acquire_normal_io(&self) -> bool {
+        let mut old = self.safety_word.load(Ordering::Acquire);
+        loop {
+            if old & (SERIAL_ESTOP_PENDING | NORMAL_IO_ACTIVE) != 0 {
+                return false;
+            }
+            match self.safety_word.compare_exchange(
+                old,
+                old | NORMAL_IO_ACTIVE,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => old = actual,
+            }
+        }
+    }
+
+    pub(crate) fn release_normal_io(&self) {
+        self.update_safety_word(|old| old & !NORMAL_IO_ACTIVE);
+    }
+
+    #[allow(dead_code)] // C3 phase 接线后撤除。
+    pub(crate) fn set_serial_safety(&self, state: OutputSafetyState) {
+        self.update_safety_word(|old| (old & !SAFETY_STATE_MASK) | u32::from(state.to_u8()));
+    }
+
+    #[allow(dead_code)] // C3 tick claim 接线后撤除。
+    pub(crate) fn claim_serial_estop(&self) -> bool {
+        self.update_safety_word(|old| old & !SERIAL_ESTOP_PENDING) & SERIAL_ESTOP_PENDING != 0
+    }
+
+    #[allow(dead_code)] // C4 IPC claim 接线后撤除。
+    pub(crate) fn claim_ipc_estop(&self) -> bool {
+        self.update_safety_word(|old| old & !IPC_ESTOP_NOTICE) & IPC_ESTOP_NOTICE != 0
+    }
+
+    /// 仅清掉自己处理的请求；并发新请求必须保留到下一轮。
+    #[allow(dead_code)] // C3 retire 接线后撤除。
+    pub(crate) fn clear_abort(&self, observed: u64) -> bool {
+        self.abort_request
+            .compare_exchange(observed, 0, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    #[allow(dead_code)] // C3/C4 mailbox 接线后撤除。
+    pub(crate) fn mailbox_snapshot(&self) -> Option<MailboxSnapshot> {
+        MailboxSnapshot::unpack(self.fault_mailbox.load(Ordering::Acquire))
+    }
+
+    /// 唯一调用方为 IPC，传入它实际提交过的快照代次。
+    #[allow(dead_code)] // C4 IPC ack 接线后撤除。
+    pub(crate) fn ack_fault(&self, generation: u32) {
+        self.fault_ack.store(generation, Ordering::Release);
+    }
+
+    /// serial 单写者入口。饱和后仍收紧状态与抑制位，返回 None 供调用方记诊断。
+    #[allow(dead_code)] // C3 fault 接线后撤除。
+    pub(crate) fn publish_fault(
+        &self,
+        state: OutputSafetyState,
+        reasons: u8,
+        code: FaultCode,
+        detail: u8,
+        origin: FaultOrigin,
+    ) -> Option<u32> {
+        self.set_serial_safety(state);
+        self.inhibit
+            .fetch_or(reasons | inhibit::FAULT_PENDING, Ordering::Release);
+        let generation = self.mailbox_snapshot().map_or(0, |mail| mail.generation);
+        if generation >= u32::MAX - 1 {
+            return None;
+        }
+        let generation = generation + 1;
+        self.fault_mailbox.store(
+            MailboxSnapshot {
+                generation,
+                code,
+                detail,
+                origin,
+            }
+            .pack(),
+            Ordering::Release,
+        );
+        Some(generation)
+    }
+
+    /// 只有当前代次的 ACK 才能解开 mailbox 抑制；其它故障原因保持。
+    #[allow(dead_code)] // C3 AwaitAck 接线后撤除。
+    pub(crate) fn clear_acked_fault_pending(&self) -> bool {
+        let Some(mail) = self.mailbox_snapshot() else {
+            return false;
+        };
+        if self.fault_ack.load(Ordering::Acquire) != mail.generation {
+            return false;
+        }
+        self.inhibit
+            .fetch_and(!inhibit::FAULT_PENDING, Ordering::Release);
+        true
     }
 }
 
@@ -133,6 +554,14 @@ impl HardRtCtrlClient {
 }
 
 impl ExecutorCtrlClient for HardRtCtrlClient {
+    fn abort_pending_normal(&self, target: NormalAbortTarget) {
+        if self.inner.ctrl_kind == CtrlKind::SerialRt {
+            // 非法序号保持为非法词，由 serial 的不变量路径收敛，不能掩码为合法序号。
+            self.inner
+                .abort_request
+                .store(target.encode().unwrap_or(u64::MAX), Ordering::Release);
+        }
+    }
     fn set_policy(&self, policy: OutputPolicy) {
         // Release：rt_thread 在 read policy 时用 Acquire 配对，看到本次 store
         // 之后的所有 ipc_thread 侧 happens-before 写。
@@ -219,7 +648,9 @@ impl ExecutorCtrlClient for HardRtCtrlClient {
         // 3) 取 seq + 占 slot。**v9 §0 #1**：fetch_add 永远 +1（即便 CAS 失败
         //    seq 也废弃，允许空洞）；CAS 失败 = slot 被前一次未消费的请求占住
         //    → 返 Busy。
-        let seq = self.inner.seq_counter.fetch_add(1, Ordering::AcqRel);
+        let Some(seq) = self.inner.take_next_seq() else {
+            return NormalReqStatus::Unsupported("SerialRT 请求序号超出 40 位有效范围");
+        };
         let new_packed = pack_pending_normal(action, arg, seq);
         // CAS 期望旧值 = 0（slot 空）。非 0 表示前一次未被 rt_thread 消费 → Busy。
         match self.inner.pending_normal.compare_exchange(
@@ -255,7 +686,53 @@ impl ExecutorCtrlClient for HardRtCtrlClient {
     }
 
     fn safety_state(&self) -> OutputSafetyState {
-        OutputSafetyState::from_u8(self.inner.safety_state.load(Ordering::Acquire))
+        self.inner.safety_state()
+    }
+}
+
+impl SerialEmergencyCtrl for HardRtCtrlClient {
+    fn estop_monotonic(&self) -> EStopOutcome {
+        self.estop_monotonic_impl(|| {})
+    }
+}
+
+impl HardRtCtrlClient {
+    #[cfg(test)]
+    pub(crate) fn estop_monotonic_before_cas(&self, hook: impl FnMut()) -> EStopOutcome {
+        self.estop_monotonic_impl(hook)
+    }
+
+    fn estop_monotonic_impl(&self, hook: impl FnMut()) -> EStopOutcome {
+        self.inner.safety_latched.store(true, Ordering::Release);
+        self.inner.pending_normal.swap(0, Ordering::AcqRel);
+        self.inner.estop_requests.fetch_add(1, Ordering::Relaxed);
+        let old = self.inner.update_safety_word_with_hook(
+            |old| {
+                let state = OutputSafetyState::from_u8((old & SAFETY_STATE_MASK) as u8);
+                let next = match state {
+                    OutputSafetyState::TorqueUnknown
+                    | OutputSafetyState::TorqueOn
+                    | OutputSafetyState::TorqueOffConfirmed => OutputSafetyState::StopCommanded,
+                    _ => state,
+                };
+                (old & !SAFETY_STATE_MASK)
+                    | u32::from(next.to_u8())
+                    | SERIAL_ESTOP_PENDING
+                    | IPC_ESTOP_NOTICE
+            },
+            hook,
+        );
+        // 成功 CAS 之后只计算返回值，不能再写 policy 或任何权威原子。
+        match (
+            old & SERIAL_ESTOP_PENDING != 0,
+            OutputSafetyState::from_u8((old & SAFETY_STATE_MASK) as u8),
+        ) {
+            (true, _) | (false, OutputSafetyState::StopCommanded) => EStopOutcome::Merged,
+            (false, OutputSafetyState::StopFailed | OutputSafetyState::AdapterUncertain) => {
+                EStopOutcome::LatchOnly
+            }
+            _ => EStopOutcome::StopIssued,
+        }
     }
 }
 
@@ -268,6 +745,56 @@ mod tests {
     use super::*;
     use robot_core::adapter::ControlMode;
     use robot_core::executor_ctrl::{AdapterErr, pack_completed};
+
+    #[test]
+    fn action_records_use_the_exact_40_bit_layout() {
+        for seq in [1, 2, SEQ_MASK] {
+            for valid in [false, true] {
+                let action = ActionRecord {
+                    valid,
+                    action: 5,
+                    arg: 255,
+                    seq,
+                };
+                assert_eq!(
+                    action.pack(),
+                    u64::from(valid) | (5 << 1) | (255 << 9) | (seq << 17)
+                );
+                assert_eq!(ActionRecord::unpack(action.pack()), action);
+                assert_eq!(action.pack() >> 57, 0);
+                for success in [false, true] {
+                    let completed = CompletedEffect { action, success };
+                    assert_eq!(
+                        completed.pack(),
+                        u64::from(valid)
+                            | (u64::from(success) << 1)
+                            | (5 << 2)
+                            | (255 << 10)
+                            | (seq << 18)
+                    );
+                    assert_eq!(CompletedEffect::unpack(completed.pack()), completed);
+                    assert_eq!(completed.pack() >> 58, 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn exhausted_serial_sequence_never_increments_or_wraps() {
+        for invalid in [0, SEQ_MASK + 1, u64::MAX] {
+            let inner = Arc::new(HardRtCtrlInner::new_serial());
+            let client = HardRtCtrlClient::new(Arc::clone(&inner));
+            inner.seq_counter.store(invalid, Ordering::Release);
+            for _ in 0..8 {
+                assert!(matches!(
+                    client.request_normal(AdapterNormalReq::Enable(false)),
+                    NormalReqStatus::Unsupported(_)
+                ));
+                assert_eq!(inner.seq_counter.load(Ordering::Acquire), invalid);
+                assert_eq!(inner.pending_normal.load(Ordering::Acquire), 0);
+            }
+        }
+    }
 
     fn fresh() -> (HardRtCtrlClient, Arc<HardRtCtrlInner>) {
         let inner = Arc::new(HardRtCtrlInner::new());

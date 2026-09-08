@@ -198,6 +198,10 @@ pub enum AdapterResp {
 /// **不**来自 `AdapterErr::SafetyLatched`。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdapterErr {
+    /// 本地 pending 超时；不构成接收失步。
+    AbortedByTimeout,
+    /// 可区分通信原因的错误码。
+    Comm(crate::serial_services::CommErrorKind),
     /// safety 已 latch，拒绝执行 Enable(true) / 其它 normal action。
     ///
     /// → 映射到 `FaultCode::AdapterErr`（v9 finding #3 修订）。这是**正常保护**：
@@ -217,6 +221,66 @@ pub enum AdapterErr {
     Other,
 }
 
+/// SerialRT 紧急停止的线性化结果；不表示物理断扭已经完成。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EStopOutcome {
+    StopIssued,
+    Merged,
+    LatchOnly,
+}
+
+/// 仅向 SerialRT 计划注入的紧急控制入口。
+pub trait SerialEmergencyCtrl: Send + Sync {
+    fn estop_monotonic(&self) -> EStopOutcome;
+}
+
+/// 停止失败的 detail 字节：高两位类型，低六位原因或台数。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SafetyStopFailDetail {
+    StopFailed {
+        still_on: u8,
+    },
+    AdapterUncertain {
+        kind: crate::serial_services::CommErrorKind,
+    },
+    StopNotDelivered {
+        kind: crate::serial_services::CommErrorKind,
+    },
+}
+
+impl SafetyStopFailDetail {
+    #[must_use]
+    pub const fn to_u8(self) -> u8 {
+        match self {
+            Self::StopFailed { still_on } => match still_on {
+                0..=0x3f => still_on,
+                _ => 0x3f,
+            },
+            Self::AdapterUncertain { kind } => 0x40 | kind.to_u8(),
+            Self::StopNotDelivered { kind } => 0x80 | kind.to_u8(),
+        }
+    }
+
+    #[must_use]
+    pub const fn from_u8(raw: u8) -> Self {
+        use crate::serial_services::CommErrorKind;
+        match raw >> 6 {
+            0 => Self::StopFailed {
+                still_on: raw & 0x3f,
+            },
+            1 => Self::AdapterUncertain {
+                kind: CommErrorKind::from_u8(raw & 0x3f),
+            },
+            2 => Self::StopNotDelivered {
+                kind: CommErrorKind::from_u8(raw & 0x3f),
+            },
+            _ => Self::AdapterUncertain {
+                kind: CommErrorKind::Unknown,
+            },
+        }
+    }
+}
+
 impl AdapterErr {
     /// 从 atomic u8 解码（rt_thread 写 last_completed.code，client 读取）。
     #[must_use]
@@ -227,6 +291,8 @@ impl AdapterErr {
             3 => Self::HardwareFault,
             4 => Self::PreemptedByEmergency,
             5 => Self::SafetyLatched,
+            6 => Self::AbortedByTimeout,
+            0x40..=0x7f => Self::Comm(crate::serial_services::CommErrorKind::from_u8(v & 0x3f)),
             _ => Self::Other,
         }
     }
@@ -240,6 +306,8 @@ impl AdapterErr {
             Self::HardwareFault => 3,
             Self::PreemptedByEmergency => 4,
             Self::SafetyLatched => 5,
+            Self::AbortedByTimeout => 6,
+            Self::Comm(kind) => 0x40 | kind.to_u8(),
         }
     }
 }
@@ -368,6 +436,8 @@ pub type TorqueEnableMask = [bool; MAX_JOINTS];
 /// 3. `clear_safety_latch` 必须**同步可见**（atomic store）—— 不允许走
 ///    channel 异步动作（v9 §0 #2 修正）。
 pub trait ExecutorCtrlClient: Send + Sync {
+    /// SerialRT 请求在事务边界退场；HardRT 保持既有行为。
+    fn abort_pending_normal(&self, _target: crate::serial_services::NormalAbortTarget) {}
     /// 切换 OutputPolicy；rt-loop / io-loop 下个 tick 即生效。
     fn set_policy(&self, policy: OutputPolicy);
 
@@ -575,6 +645,44 @@ pub fn decode_normal_req(action_code: u8, arg: u8) -> Result<AdapterNormalReq, R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn safety_stop_details_keep_namespaces_and_bound_payloads() {
+        use crate::serial_services::CommErrorKind;
+        for raw in 0_u8..=u8::MAX {
+            let decoded = SafetyStopFailDetail::from_u8(raw);
+            let normalized = match raw {
+                0..=0x3f | 0x40..=0x49 | 0x80..=0x89 => raw,
+                0x4a..=0x7f | 0xc0..=0xff => 0x7f,
+                0x8a..=0xbf => 0xbf,
+            };
+            assert_eq!(decoded.to_u8(), normalized);
+        }
+        assert_eq!(
+            SafetyStopFailDetail::StopFailed { still_on: 255 }.to_u8(),
+            63
+        );
+        assert_eq!(
+            SafetyStopFailDetail::StopNotDelivered {
+                kind: CommErrorKind::IoWrite
+            }
+            .to_u8(),
+            0x83
+        );
+    }
+
+    #[test]
+    fn completed_response_preserves_all_communication_error_codes() {
+        for raw in 0_u8..=u8::MAX {
+            let error = AdapterErr::from_u8(raw);
+            for seq in [1, (1_u64 << 40) - 1, 1_u64 << 40, (1_u64 << 48) - 1] {
+                assert_eq!(
+                    unpack_completed(pack_completed(seq, AdapterResp::Err(error))),
+                    (seq, AdapterResp::Err(error))
+                );
+            }
+        }
+    }
 
     #[test]
     fn output_policy_round_trip_full_range() {

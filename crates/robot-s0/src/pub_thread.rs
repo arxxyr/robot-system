@@ -284,7 +284,7 @@ fn publish_joint_state(
     // 转 wire enum（数值已 1:1 对齐，schema_compat 锁测保证）。
     let s0_snap = state_rdr.load();
     let (s0_mode, s0_control_link, s0_output_mode, s0_fault_code) = map_state_to_wire(&s0_snap);
-    let s0_safety_state = map_safety_state_to_wire(rt_ctrl.safety_state.load(Ordering::Acquire));
+    let s0_safety_state = map_safety_state_to_wire(rt_ctrl.safety_state().to_u8());
     let body = build_joint_state_with_s0(
         cfg.joint_layout_id,
         snap.state.stamp_ns,
@@ -366,6 +366,7 @@ fn map_state_to_wire(snap: &S0StateSnapshot) -> (S0Mode, S0ControlLink, S0Output
                 FaultCode::WatchdogTimeout => S0FaultCode::WatchdogTimeout,
                 FaultCode::RtOverrun => S0FaultCode::RtOverrun,
                 FaultCode::SafetyStopFailed => S0FaultCode::SafetyStopFailed,
+                FaultCode::CommFault => S0FaultCode::CommFault,
             };
             (
                 S0Mode::Fault,

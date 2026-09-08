@@ -161,13 +161,15 @@ robot-transport     = { path = "crates/robot-transport" }
 robot-adapter-mock    = { path = "crates/robot-adapters/mock" }
 robot-adapter-feetech = { path = "crates/robot-adapters/feetech" }
 robot-rpc           = { path = "crates/robot-rpc" }
-robot-s0            = { path = "crates/robot-s0" }
-robot-s1            = { path = "crates/robot-s1" }
-robot-cli           = { path = "crates/robot-cli" }
 
 # Workspace 级 lint 默认。
 # 子 crate 在自己的 Cargo.toml 里写 `[lints] workspace = true` 即可继承。
 # 注：`unsafe_op_in_unsafe_fn` 在 edition 2024 下已是默认 deny，不再在此重复声明。
+[workspace.lints.cargo]
+# 既有 snake_case 二进制名称已被部署脚本、systemd unit 与外部客户端使用。
+# 保持这些名称兼容；仅允许 Cargo 命名风格提示，不降低 Rust / Clippy 检查。
+non_kebab_case_bins = "allow"
+
 [workspace.lints.rust]
 unreachable_pub = "warn"
 

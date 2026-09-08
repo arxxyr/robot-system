@@ -406,5 +406,16 @@
   "integration_count": 155,
   "ignored_integration_count": 2,
   "rpc_binary_build_command": "cargo build -p robot-s0 -p robot-s1 -p robot-rpc --bins --features robot-rpc/client,robot-s1/test-fault-backend",
-  "rpc_binary_override": "B4_E2E_BIN_S0_DAEMON=target/debug/s0_daemon; B4_E2E_BIN_S1_DAEMON=target/debug/s1_daemon; B4_E2E_BIN_ROBOT_RPC_GATEWAY=target/debug/robot_rpc_gateway（实际运行均使用绝对路径）"
+  "rpc_binary_override": "B4_E2E_BIN_S0_DAEMON=target/debug/s0_daemon; B4_E2E_BIN_S1_DAEMON=target/debug/s1_daemon; B4_E2E_BIN_ROBOT_RPC_GATEWAY=target/debug/robot_rpc_gateway（实际运行均使用绝对路径）",
+  "static_check_baseline": {
+    "default_clippy_exit_code": 0,
+    "rust_clippy_diagnostics": 0,
+    "cargo_manifest_warning_lines": 26,
+    "cargo_manifest_categories": [
+      "unused_workspace_dependencies: robot-cli / robot-s0 / robot-s1",
+      "non_kebab_case_bins: 既有snake_case二进制接口"
+    ],
+    "all_features_additional_warning": "feetech可选robot-logging未用",
+    "correction": "此前将退出码0简称通过，不能据此声称完整输出零警告；C1/C2分别最小修正。"
+  }
 }

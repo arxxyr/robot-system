@@ -12,8 +12,8 @@
 //!   server 端 `serial_io_thread` 主循环 swap 出消费，与 HardRT `rt_thread` 同款。
 //! - **`safety_latched: AtomicBool`**（v9 §0 #2 修订）—— 同步 atomic store，
 //!   client `clear_safety_latch` 立即 visible，与 HardRT 完全对齐。
-//! - 其它字段（`policy / safety_state / emergency_action / seq_counter /
-//!   last_completed`）也与 HardRT 同款。
+//! - post-E 新增 `CtrlKind` 构造标记。`new()` 保留 HardRT/旧执行器行为；
+//!   `new_serial()` 启用独立 safety_word、40 位序号及故障 mailbox。
 //!
 //! **结果**：`SerialIoCtrlInner` 在数据布局与 atomic 协议层面**与
 //! [`HardRtCtrlInner`](crate::hard_rt_ctrl::HardRtCtrlInner) 一致**。本模块不
@@ -21,7 +21,7 @@
 //!
 //! ## SerialRT 与 HardRT 的实际区别
 //!
-//! 区别**全在 server 端的主循环行为**（`serial_io_thread` vs `rt_thread`）：
+//! 主循环差异如下；post-E 新协议还由构造标记选择权威原子读源：
 //!
 //! | 维度 | HardRT (`rt_thread`) | SerialRT (`serial_io_thread`) |
 //! |---|---|---|
@@ -35,7 +35,7 @@
 //!
 //! - **client 端**：`ipc_thread` 持 `Arc<dyn ExecutorCtrlClient>`，**M7 dispatch
 //!   by RtClass** 时根据 adapter rt_class 决定指向 HardRT client 还是 SerialIo
-//!   client。**当前阶段两者实现完全相同**，任一都可。
+//!   client。别名共享实现，但必须按所选执行器构造相应 `CtrlKind`。
 //! - **server 端**：[`crate::serial_io_thread::spawn_serial_io_thread`] 用
 //!   `Arc<SerialIoCtrlInner>`（= `Arc<HardRtCtrlInner>`）作共享状态。
 
@@ -48,12 +48,12 @@
 /// 等）。本 alias 仅作命名层语义说明：M7 dispatch by RtClass 时用
 /// `SerialIoCtrlInner` 让代码意图清晰。
 ///
-/// 任何对 inner 字段的语义变更**同时**影响 HardRT 与 SerialRT。
+/// 协议由构造期 `CtrlKind` 分派；不能把 SerialRT 的 40 位限制施加到 HardRT。
 pub type SerialIoCtrlInner = crate::hard_rt_ctrl::HardRtCtrlInner;
 
 /// `SerialIoCtrlClient` —— SerialRT 路径的 [`crate::hard_rt_ctrl::ExecutorCtrlClient`]
 /// 实现。同上 alias 模式：与 [`crate::hard_rt_ctrl::HardRtCtrlClient`] 完全一致
-/// 的 client 端 atomic 行为；区别在 server 端的 `serial_io_thread` 主循环。
+/// 的 client 类型；新协议的读源与控制行为按构造标记分派。
 pub type SerialIoCtrlClient = crate::hard_rt_ctrl::HardRtCtrlClient;
 
 #[cfg(test)]

@@ -42,7 +42,29 @@
 #![allow(clippy::doc_markdown)]
 
 use crate::adapter::{HardRtAdapter, ManipulatorAdapter, SerialRtAdapter};
+use crate::diag::DiagSink;
 use crate::error::RobotError;
+use crate::serial_services::PreemptProbe;
+use crate::time::{DurationNs, RobotClock};
+use std::sync::Arc;
+
+/// 构造时复制到 adapter 的服务句柄；工厂不持有上下文借用。
+pub struct AdapterBuildServices {
+    pub clock: Arc<dyn RobotClock>,
+    pub preempt: Option<Arc<dyn PreemptProbe>>,
+    pub diag: Option<Arc<dyn DiagSink>>,
+    pub call_deadline: DurationNs,
+}
+
+impl std::fmt::Debug for AdapterBuildServices {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdapterBuildServices")
+            .field("preempt", &self.preempt.is_some())
+            .field("diag", &self.diag.is_some())
+            .field("call_deadline", &self.call_deadline)
+            .finish_non_exhaustive()
+    }
+}
 
 /// 启动期 build adapter 的最小上下文。
 ///
@@ -53,6 +75,8 @@ use crate::error::RobotError;
 /// 按需消费。任何 *改语义* 的字段调整走 `docs/CHANGELOG.md` 评审。
 #[derive(Clone, Copy, Debug)]
 pub struct AdapterBuildContext<'a> {
+    /// SerialRT 构造期服务；既有 HardRT 工厂可忽略。
+    pub services: Option<&'a AdapterBuildServices>,
     /// `[[hardware]] id`，本实例在 robot 内的唯一名（如 `"left_arm"`）。
     pub instance_name: &'a str,
     /// `[[hardware]] adapter`，factory 名（如 `"mock_hard_rt"`）。`AdapterFactory::name`
@@ -261,6 +285,7 @@ mod tests {
         let f = find_factory("robot_core_test_stub").expect("stub factory not registered");
         assert_eq!(f.name(), "robot_core_test_stub");
         let ctx = AdapterBuildContext {
+            services: None,
             instance_name: "test",
             adapter_kind: "robot_core_test_stub",
             joint_names: &[],
@@ -295,6 +320,7 @@ mod tests {
             "/tmp/head.json".to_string(),
         ];
         let ctx = AdapterBuildContext {
+            services: None,
             instance_name: "left_arm",
             adapter_kind: "robot_core_test_stub",
             joint_names: &names,

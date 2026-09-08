@@ -84,6 +84,7 @@ enum S0FaultCode : ubyte {
     WatchdogTimeout = 4,
     RtOverrun = 5,
     SafetyStopFailed = 6,
+    CommFault = 7,
 }
 
 // JointLayout：低频广播，消费者按 layout_id 建立缓存。
