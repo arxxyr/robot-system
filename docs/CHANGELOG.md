@@ -10,6 +10,18 @@
 
 ---
 
+## 2026-09-09 · P-T 显式RR容量与发送分类（本地独立验收通过）
+
+P-T 显式RR容量与发送分类原语已 **APPROVED_SOFTWARE_SCOPE**：base `0d3caca`，
+round6九门通过，完整351项来源`4e9c698e…767e8`一致，恰6改+1新增。
+RR20、真实TOML1、roundtrip6通过；workspace1950通过/1既有ignored，doc0通过/2既有ignored。
+独立源码/证据及root范围核验通过，证据`local/s48/pt/review.md`与同轮真实timing。
+新增精确L4/C8 profile、创建前受检容量、可信peer和未投递/不确定发送分类，旧API保持。
+原计划的global_config诊断缺口经真实同名双配置L16/L2反例先红后修，两个公开工厂
+现在均从node.config读actual2，服务身份不变；原绿round4与失败轮均保留。
+仅增加已锁定iceoryx2-cal=0.9.3的dev边供纯错误枚举测试，生产依赖图前后相同。
+未切换生产调用者、未验证Orin或电机；wire4历史FAIL、D15 OPEN与deployable=false保持。
+
 ## 2026-09-09 · P-M响应schema准备包（本地独立验收通过）
 
 P-M响应schema准备包已 **APPROVED_SOFTWARE_SCOPE**：base `5abd148`，round3九门通过，

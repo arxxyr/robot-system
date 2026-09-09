@@ -63,4 +63,12 @@ pub enum TransportError {
     /// [`crate::traits::RequestClient::call`] 的 deadline 过了还没收到 response。
     #[error("request-response deadline exceeded")]
     DeadlineExceeded,
+
+    /// 显式 RR 容量或固定策略不符合要求；保留实际输入或真实静态读值。
+    #[error("RR 配置不匹配：{field} expected={expected} actual={actual}")]
+    RrConfigMismatch {
+        field: &'static str,
+        expected: u64,
+        actual: u64,
+    },
 }

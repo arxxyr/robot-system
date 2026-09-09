@@ -2218,9 +2218,23 @@ P-S1/P-L1准备可信peer准入、双队列和心跳新鲜性；P-A1准备typed�
 
 P-M为schema唯一owner，W3a只引用最终生成类型；旧v0依赖一并冻结，旧builder兼容。
 P-M已完成round3九门与独立源码/证据/root范围验收，APPROVED_SOFTWARE_SCOPE；
-350项来源、8改+4新增，详local/s48/pm/review.md。未接生产调用者，后续P-T按依赖推进。
+350项来源、8改+4新增，详local/s48/pm/review.md。未接生产调用者。P-T也已完成round6九门与独立源码/证据/root验收，
+351项来源、6改+1新增，详local/s48/pt/review.md；下一包P-S1/P-L1。
 SetEnabled保留0–9，追加SupersededByDisable=10/QueueFull=11/Superseded=12，
 Shutdown继续PreemptedByShutdown=7。P-M修改build.rs须附实际workspace --timings报告。
+
+P-T实施增补由root批准：仅dev依赖显式命名已锁定的iceoryx2-cal=0.9.3错误载荷，
+不增加生产直接依赖或包版本；范围为七件，正式八门末尾追加实际workspace timings。
+服务打开错误的详情读取改用node.config()，覆盖原r2的global_config指定，确保与
+打开服务来自同一配置。真实同名双配置L16/L2反例先红后修，不将全局同名服务读值
+误报为当前服务actual。批准及独立来源核查见local/s48/pt/root_test_dependency_approval.md、
+root_node_config_approval.md、independent_node_config_review.md；运行结果另见终审。
+
+P-S1/P-L1发令边界已独立/root批准：Slot.serial四步只读容量检查之后、修改任何
+peer/计数之前checked_add，耗尽返QueueFull{class,reason:SerialExhausted}且零变更；
+归还旧Slot不重置序列。C0按既批用LimitsError::CTooSmall拒绝，不增wire状态或正式门。
+详local/s48/ps1/root_dispatch_edge_approval.md；仍待P-T提交后绑定实际base实施。
+
 总线桥按值持有真实NormalIoLease，按class/intent受检构造、跨域拒绝返原凭证，
 外部crate公开API夹具验证，不暴露raw或Drop自动释放。Start槽为固定域+原子epoch，
 take/withdraw在同字竞争后可复用；Execution安装/重复读取/清除不消费权限视图。
@@ -2234,7 +2248,7 @@ P-A1任务r2及root范围裁决已批准准备态，详local/s48/pa1/root_task_r
 
 S46原七件工具/回归文件已由S46-B独立源码/证据终审通过；round2七门、三CLI及
 81具名通过，详local/s48/s46/review.md。旧wire4 FAIL与长测来源保留，不算修复成功，
-不成为W0.1/W2a/W2b前置。P-M也已独立验收，下一包P-T。
+不成为W0.1/W2a/W2b前置。P-M与P-T也已独立验收，下一包P-S1/P-L1。
 W3-P与W3统一激活gateway/S0/S1协议、profile和真实退休，并同时迁移权限/唯一writer/
 监督/ACK；不支持新gateway配缺退休字段旧S0的生产组合。完整W3函数接线另审，
 本节不批准硬件操作或新负载PASS；详既有容量/生命周期合同及root四项裁决。

@@ -37,6 +37,10 @@ pub use attributes::{
 };
 pub use publisher::{Iceoryx2Publisher, Iceoryx2SampleWriter};
 pub use qos::{QosProfile, TopicClass, profile_of};
+pub use request_response::{
+    LoanKind, NotDelivered, RrPeerId, RrProfile, RrSendError, RrStaticLimits, Uncertain,
+    rr_client_with, rr_server_with,
+};
 pub use service_name::topic_to_service_name;
 pub use subscriber::{Iceoryx2SampleLease, Iceoryx2Subscriber};
 

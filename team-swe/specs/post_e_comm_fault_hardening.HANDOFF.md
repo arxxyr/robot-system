@@ -7,8 +7,8 @@
 用户最新要求优先节省root token，并允许多个Claude或Codex子agent并行。
 用户进一步明确：cc-claude完成实现、测试和自查后，必须由root或独立Codex子agent
 作最终评审；Claude交叉检查只作为前置检查，不能代替最终评审和提交门。
-W2b已评审提交`6defac484d5d7e7f8fccd32276fa0931cfc8f131`，S46-B已评审提交`5abd148bf0c39583a7f5957dd9cac260ff2106dc`，P-M开发与独立源码/证据终审通过，root归包提交，下一包P-T；root只做最终决策、阻断项处理与验收提交，
-详细方案和独立复核可以委派。旧开发agent保持停止，新并行角色见下。
+W2b已评审提交`6defac484d5d7e7f8fccd32276fa0931cfc8f131`，S46-B已评审提交`5abd148bf0c39583a7f5957dd9cac260ff2106dc`，P-M已评审提交`0d3cacae75a83a61050a21fdb3a3fe59a710b621`，P-T已完成独立终审，待root归档提交，下一包P-S1/P-L1；root只做最终决策、阻断项处理与验收提交，
+详细方案和独立复核可以委派。cc-claude额度耗尽后由原生implementation接手，新并行角色见下。
 A1验证基线为`ce61623436138342b6a2d234b10bada71d6877ca`，分支
 `feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46原七源现由S46-B独立验收收口，旧长测/Orin失败来源保留。S-47合入S-48；A2已评审提交`dee67fa`，
 A3a共享权限归位core已评审提交`fdac02c`。A3b快照并发修复已通过本地22门及独立源码/证据评审，
@@ -55,6 +55,16 @@ workspace1932通过/1既有ignored；旧五builder20组byte-equality与typed80�
 独立源码/证据及root范围核验通过，证据`local/s48/pm/review.md`；真实timing与dep-info绑定
 的gen_root已保留。新增副作用/退休字段与typed builder，旧API/字节不变，v0与新类型隔离。
 round1格式化中止、round2生成常量误用失败保留；无生产新调用者或Orin验证，D15仍OPEN。
+
+P-T 显式RR容量与发送分类原语已 **APPROVED_SOFTWARE_SCOPE**：base `0d3caca`，
+round6九门通过，完整351项来源`4e9c698e…767e8`一致，恰6改+1新增。
+RR20、真实TOML1、roundtrip6通过；workspace1950通过/1既有ignored，doc0通过/2既有ignored。
+独立源码/证据及root范围核验通过，证据`local/s48/pt/review.md`与同轮真实timing。
+新增精确L4/C8 profile、创建前受检容量、可信peer和未投递/不确定发送分类，旧API保持。
+原计划的global_config诊断缺口经真实同名双配置L16/L2反例先红后修，两个公开工厂
+现在均从node.config读actual2，服务身份不变；原绿round4与失败轮均保留。
+仅增加已锁定iceoryx2-cal=0.9.3的dev边供纯错误枚举测试，生产依赖图前后相同。
+未切换生产调用者、未验证Orin或电机；wire4历史FAIL、D15 OPEN与deployable=false保持。
 
 后续队列见target/post_e_h2_rt/s48/root_next_package_queue.md，不以原语门冒充总装通过。
 
@@ -123,9 +133,9 @@ independent_evidence_receipt.json、cc/sixth及sixth_supplement。首四轮FAIL�
 
 当前并行编排（2026-09-09 13:34 UTC后）：三个Claude会话均已明确Fable额度耗尽，
 模型claude-fable-5-1、effort=max，原会话保留，不继续派发或消费重置。
-按用户允许混合编排，P-M由原生implementation开发与运行Cargo，
+按用户允许混合编排，P-T由原生implementation开发与运行Cargo，
 a3b_evidence_audit独立源码终审，writer_final_review独立证据终审，root整合提交。
-W2b round3已APPROVED_SOFTWARE_SCOPE并提交6defac4；S46-B已独立验收提交5abd148，P-M现九门及独立终审通过，下一包P-T。
+W2b round3已APPROVED_SOFTWARE_SCOPE并提交6defac4；S46-B已独立验收提交5abd148，P-M已评审提交0d3caca，当前P-T。
 round1的1909具名可完整还原；round3共1914具名、五段跨行原文经root独立恢复，
 原记录与派生核验并存。
 W1开发期偶发锁测试失败另记w2b/w1_lock_observation_review.md，根因未证实，保持观察OPEN。

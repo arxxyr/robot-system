@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_PM_APPROVED_PT_NEXT",
-  "resume_from": "HANDOFF：P-M九门/独立源码与证据终审及root范围通过，按阶段提交后实施P-T（含C>=1补齐）；后续按批准依赖推进",
+  "work_state": "S48_PT_REVIEW_APPROVED_AWAITING_COMMIT",
+  "resume_from": "HANDOFF：P-T九门与独立源码/证据/root验收通过，归档提交后绑定实际base实施P-S1/P-L1；三项增补与后续生产总装边界见PLAN。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_PM_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "PM_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_PT_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "PT_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
-  "scope": "P-M响应schema/builder准备包本地独立验收通过；未接生产调用者或改变默认容量。旧wire4 FAIL/D15 OPEN保留，双队列/权限/单writer总装未完成，deployable=false。",
+  "scope": "P-T显式RR容量、可信peer与typed发送分类原语本地独立验收通过；含node.config真实红→绿修复。未接生产调用者/Orin，旧wire4 FAIL、D15 OPEN、双队列/权限/单writer总装未完成。",
   "software": {
     "s44": {
       "local": {
@@ -391,7 +391,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "W2B_PM_APPROVED_REMAINING_PRIMITIVES_PENDING",
+      "status": "W2B_PM_PT_APPROVED_REMAINING_PRIMITIVES_PENDING",
       "implementation_started": true,
       "a1": {
         "plan_review": "APPROVED",
@@ -422,7 +422,7 @@
       },
       "user_requirement": "基础控制走高优先级通道，关节位置等连续目标走普通通道",
       "candidate": "唯一state owner与单disk writer解耦；可恢复Clear事务标记与原子提交权限；端到端有界容量保留",
-      "review_blocker": "W0/W1/W0.1/W2a/W2b及S46-B/P-M已独立验收；P-T含C>=1补齐、其余优先级原语/W3a依批准任务实施，生产总装及两条剩余退休入口另审",
+      "review_blocker": "P-T本地原语已独立验收；下一包P-S1/P-L1，其后P-G1/P-A1/W3a及生产总装按批准依赖推进；W3完整函数接线另审。",
       "hardware_scope": "左臂已断电；仅软件设计与验证，不打开串口",
       "queues": {
         "high": "live基础控制",
@@ -1126,7 +1126,7 @@
         "production_activation_approved": false
       },
       "priority_primitives": {
-        "status": "PM_APPROVED_REMAINING_PRIMITIVES_NOT_IMPLEMENTED",
+        "status": "PM_PT_APPROVED_REMAINING_PRIMITIVES_NOT_IMPLEMENTED",
         "plan": "P.6.14.12",
         "root_approval": "local/s48/a3/root_priority_execution_plan_r4_approval.md",
         "root_approval_sha256": "0040b79ea676e0fba7407d8c5501e8dee94a42a065d7ad29747be1663ddd40f7",
@@ -1237,14 +1237,120 @@
             "未访问Orin/服务/硬件，不改变既有wire4 FAIL、D15 OPEN及不部署边界；未自批、commit或push。"
           ],
           "production_activation_approved": false,
-          "hardware_access": false
+          "hardware_access": false,
+          "commit": "0d3cacae75a83a61050a21fdb3a3fe59a710b621"
         },
         "zero_client_guard": {
-          "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+          "status": "PT_IMPLEMENTED_PS1_PG1_PLAN_APPROVED",
           "root_approval": "local/s48/pt/root_zero_client_guard_approval.md",
           "root_approval_sha256": "c767286ee3ad7f4e17a184e9676abebf6a1f8815257be9595a7f59779aef96d9",
           "independent_review_sha256": "5c1340230ac9f099428b4d58f43e8219e7cabc569a01e1c09615fcf9a06c9aa5",
           "scope": "精确profile/公开limits派生C>=1；S1零高类预算不变"
+        },
+        "pt": {
+          "status": "APPROVED_SOFTWARE_SCOPE",
+          "base_commit": "0d3cacae75a83a61050a21fdb3a3fe59a710b621",
+          "task": "local/s48/pt/root_dispatch.md",
+          "task_sha256": "3c55707c3af4b31647675fed9a134b339a2e14cabe39ec8ae42e1f307e8dcfcc",
+          "production_activation_approved": false,
+          "test_dependency_amendment": {
+            "status": "IMPLEMENTED_AND_REVIEWED",
+            "approval": "local/s48/pt/root_test_dependency_approval.md",
+            "approval_sha256": "5b1bee863a45f39e98d3fbb758133131cbc981cb7ae26a09f37285d4a18e374c",
+            "scope": "既有iceoryx2-cal=0.9.3仅dev边，三manifest/lock增补；九门含最终timings，非新增生产依赖"
+          },
+          "node_config_amendment": {
+            "status": "IMPLEMENTED_AND_REVIEWED",
+            "approval": "local/s48/pt/root_node_config_approval.md",
+            "approval_sha256": "23863993949069e2a3ee5084392aaa386cfcafbffacb4d743f580cb13e3f87ca",
+            "scope": "details沿node.config读取与打开服务相同配置；真实同名双配置反例先红后绿，仍完整九门"
+          },
+          "source_hash": "4e9c698e96d27888858dde3f0b47cda751b02a72ad7061f4a28f5bfaa3b767e8",
+          "source_input_count": 351,
+          "source_manifest": "local/s48/pt/cc/round6/source_after.sha256",
+          "source_files": {
+            "Cargo.lock": "731a0df296a8a954b2a70ddac0e1dfb21a134559937ce48f85966642dee3f30d",
+            "Cargo.toml": "1e6d8b4bcbc20d351b8b903aedc7773c4261ed1567d4ffaf950512674362eb09",
+            "crates/robot-transport/Cargo.toml": "d58362f08010b0a7333a50c6cefcca5ed0b1e7031102f4c92e4acc6539324603",
+            "crates/robot-transport/src/error.rs": "ac1591195cb01a7975cb59dc2790b1ccada70dc993b2d1de41269bc98a4e1432",
+            "crates/robot-transport/src/iceoryx2/mod.rs": "0eb2ab34de2ede36dfd1e4bf9e1871931e3948401c0fb44d8b7197c1ae1c6b62",
+            "crates/robot-transport/src/iceoryx2/request_response.rs": "4d779a580d6a2614f4c8e45339492f174317a8c404ac19297eb130cd6a35ae3a",
+            "crates/robot-transport/tests/rr_profile_host_config.rs": "4d63b6d4f1d550f55b59c1e21c9ed43346bf5dc14a47fd9f6c9f21cc4c95e877"
+          },
+          "final_round": "round6",
+          "formal_gates": 9,
+          "test_counts": {
+            "test_rr": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 20,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_host_config": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 1,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_roundtrip": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 6,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_doc": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 0,
+              "failed": 0,
+              "ignored": 2
+            },
+            "test_workspace": {
+              "status": "ok",
+              "suites": 53,
+              "passed": 1950,
+              "failed": 0,
+              "ignored": 1
+            }
+          },
+          "result_sha256": "aadcc58ff5c318c0edd7f7950c8e1ee7f8433cc21d98b1e82b60ac10e641cd38",
+          "timing_artifact": {
+            "source": "/home/loosqk/repo/robot/robot-system/target/cargo-timings/cargo-timing-20260909T152244725Z-c7bbe0615ae0bce4.html",
+            "copy": "cargo-timing.html",
+            "sha256": "057dfe0194389be70969bbf176aaf978d57531f72115960188eb21c6f2216653",
+            "size": 34778,
+            "source_mtime_ns": 1788967364953927477,
+            "latest_path": "/home/loosqk/repo/robot/robot-system/target/cargo-timings/cargo-timing.html"
+          },
+          "normal_build_graph_sha256": "1e01e2bae97eb699e10a1adfcdbc07fc61b1891ed287792d17a7e99f1866061c",
+          "source_review": "local/s48/pt/independent_source_review.md",
+          "source_review_sha256": "02cb3de45e98d01aa430252d837c355eec6decf3d8ea96889aff97d8a3cbbcdc",
+          "evidence_review": "local/s48/pt/independent_evidence_review.md",
+          "evidence_review_sha256": "05ed17b4b7f3beddb43a4e940df83ca97360555cc0ee5a2560c8d50499bf3f5b",
+          "evidence_receipt_sha256": "95ed5d535fc7d780310d8c15bb7bc583d27a21688a19d695c4ab98963fe9c21b",
+          "root_review": "local/s48/pt/review.md",
+          "root_review_sha256": "8f821b544d08cabd991fe10e04b31445663acac5b52623a67f0b56502b4056bd",
+          "root_scope_receipt_sha256": "2828fd09de40b857ff1eb4c3ed4fd5912ded03db1f6280b72c7b03e8ddb0af6e",
+          "history_and_limits": [
+            "原生接手；实际HEAD绑定P-M提交，改源前350来源与P-M最终逐字相等，三个既有owner与81c5c54 oracle相同。",
+            "root增补批准显式cal测试依赖后才改manifest；Cargo实际仅给robot-transport锁文件依赖数组追加iceoryx2-cal，现有包/版本/生产依赖图不变。正式门从8增为9，末尾真实timing build。",
+            "round1 fmt实际改源即中止。round2 Clippy报遗漏PortFactory trait导入后停止；补导入后round3 Clippy报测试SemanticString导入、expected借用、整数符号转换、大Result数组四项诊断后停止，均按实际错误修复。旧轮raw与事前runner快照保留，没有续跑旧轮或拼接PASS。",
+            "round4九门1949通过后，root/独立源码审发现原合同global_config在自定义节点下会读错同名服务。经新增批准，先真实运行未修复的同名global L16/custom L2反例：两个_with均误报actual16而不是2，1失败/exit101；两factory身份与静态配置前后已核。红例源码/raw/run/runner与round4原result/名字/最终清单均保留。",
+            "只将新_with错误诊断查询改用node.config，Config导入移cfg(test)，加入同名双配置具名回归。round5 fmt只改该文件格式即停，后续重新冻结完整九门。原19项RR测试仍保留。",
+            "正式新轮完整九门；各轮执行前保存真实同SHA runner快照。未cargo clean或强迫Checking。最终timing由最后build实际生成、路径与SHA保存。",
+            "既有三factory只补limits=None，旧send/receive/reply原样。_with、typed分类和可信peer仅独立原语，无生产调用路径切换。纯上游错误枚举构造不是实际故障注入；满队列/第五条/peer/预建服务/TOML走真实iceoryx2服务。",
+            "未访问Orin/服务控制/串口/硬件，不改变wire4 FAIL、D15 OPEN和不部署边界；未自批、commit或push。"
+          ],
+          "hardware_access": false
+        },
+        "ps1_dispatch_edges": {
+          "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+          "approval": "local/s48/ps1/root_dispatch_edge_approval.md",
+          "approval_sha256": "7c0471f7b40a2f16dc1d7adbf55ac6e327c323b59839bb698081ded3a1d21a37",
+          "scope": "本实例serial耗尽零变更QueueFull诊断；C0受检拒绝；不增wire语义或门"
         }
       },
       "w3a": {
@@ -1414,14 +1520,14 @@
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "7642becc907846cd7f01d26f594ca43669e96c39bf2386a3e008e32af2d0a68f",
-    "bytes": 29221299,
-    "members": 7782,
-    "logical_bytes": 899806225,
+    "sha256": "80f72666130668481edcbc0fddfe777a03e21b3f21c864d1a78ae161b133b3a3",
+    "bytes": 29943000,
+    "members": 7905,
+    "logical_bytes": 902337698,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-09T14:50:38.516695+00:00",
+  "updated_at": "2026-09-09T15:31:11.909516+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",

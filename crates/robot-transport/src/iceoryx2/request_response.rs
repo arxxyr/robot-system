@@ -40,15 +40,20 @@
 use core::marker::PhantomData;
 
 use iceoryx2::active_request::ActiveRequest as IxActiveRequest;
+use iceoryx2::identifiers::UniqueClientId;
 use iceoryx2::pending_response::PendingResponse as IxPendingResponse;
 use iceoryx2::port::client::Client as IxClient;
+use iceoryx2::port::client::RequestSendError;
 use iceoryx2::port::server::Server as IxServer;
-use iceoryx2::prelude::Node;
+use iceoryx2::port::{LoanError, SendError};
+use iceoryx2::prelude::{BackpressureStrategy, MessagingPattern, Node, PortFactory, Service};
 use iceoryx2::response::Response as IxResponse;
+use iceoryx2::service::ServiceDetailsError;
 use iceoryx2::service::builder::request_response::{
     RequestResponseCreateError, RequestResponseOpenError, RequestResponseOpenOrCreateError,
 };
 use iceoryx2::service::ipc::Service as IxService;
+use iceoryx2::service::static_config::StaticConfig;
 use robot_msg::markers::BodyMarker;
 use robot_msg::size_tier::default_tier_of;
 
@@ -69,6 +74,139 @@ type IxRrResponse = IxResponse<IxService, [u8], ()>;
 type IxRrServiceFactory =
     iceoryx2::service::port_factory::request_response::PortFactory<IxService, [u8], (), [u8], ()>;
 
+/// 显式 RR 静态配置；只允许调整每客户端在途上限和客户端上限。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RrProfile {
+    pub l: usize,
+    pub c: usize,
+    pub max_servers: usize,
+    pub safe_overflow_requests: bool,
+    pub fire_and_forget: bool,
+}
+
+impl RrProfile {
+    /// S0 控制通道的显式默认值。
+    pub const S0_CONTROL: Self = Self {
+        l: 4,
+        c: 8,
+        max_servers: 1,
+        safe_overflow_requests: false,
+        fire_and_forget: true,
+    };
+
+    /// S1 任务通道的显式默认值，独立命名供调用方选择。
+    pub const S1_TASK: Self = Self::S0_CONTROL;
+
+    /// 创建前校验固定策略与受检容量；不把零客户端下传给上游归一化。
+    ///
+    /// # Errors
+    ///
+    /// 策略不符、L < 3、C 不在 1..=16 或受检乘积大于 64 时拒绝。
+    pub fn validate(&self) -> Result<RrStaticLimits, TransportError> {
+        check_rr_field("max_servers", 1, self.max_servers as u64)?;
+        check_rr_field(
+            "enable_safe_overflow_for_requests",
+            0,
+            u64::from(self.safe_overflow_requests),
+        )?;
+        check_rr_field(
+            "enable_fire_and_forget_requests",
+            1,
+            u64::from(self.fire_and_forget),
+        )?;
+        if self.c == 0 {
+            return Err(rr_mismatch("max_clients", 1, 0));
+        }
+        if self.l < 3 {
+            return Err(rr_mismatch("derived_limits", 3, self.l as u64));
+        }
+        if self.c > 16 {
+            return Err(rr_mismatch("derived_limits", 16, self.c as u64));
+        }
+        match self.c.checked_mul(self.l) {
+            Some(total) if total <= 64 => Ok(RrStaticLimits {
+                l: self.l,
+                c: self.c,
+            }),
+            Some(total) => Err(rr_mismatch("derived_limits", 64, total as u64)),
+            // 乘积不可表示，保留导致溢出的真实 L 输入，不能伪造乘积或填零。
+            None => Err(rr_mismatch("derived_limits", 64, self.l as u64)),
+        }
+    }
+}
+
+/// 已校验静态容量；实际打开的 service 必须与这两个值精确相等。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RrStaticLimits {
+    pub l: usize,
+    pub c: usize,
+}
+
+impl RrStaticLimits {
+    /// 与 profile 的公开校验入口共用同一条受检路径。
+    ///
+    /// # Errors
+    ///
+    /// 同 [`RrProfile::validate`]。
+    pub fn from_profile(profile: &RrProfile) -> Result<Self, TransportError> {
+        profile.validate()
+    }
+}
+
+/// 请求 loan 尚未投递时的失败原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoanKind {
+    OutOfMemory,
+    ExceedsMaxLoans,
+    ExceedsMaxLoanSize,
+    InternalFailure,
+}
+
+/// transport 能证明没有投递请求的失败。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotDelivered {
+    ExceedsMaxActiveRequests,
+    Loan(LoanKind),
+    ConnectionUpdate,
+    ZeroRecipients,
+}
+
+/// 已进入发送阶段，不能证明请求没有产生副作用。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Uncertain {
+    UnableToDeliver,
+    InternalError,
+    ConnectionCorrupted,
+    SenderGone,
+}
+
+/// 显式区分未投递与投递结果不确定。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RrSendError {
+    NotDelivered(NotDelivered),
+    Uncertain(Uncertain),
+}
+
+/// transport 的可信客户端身份；不依赖请求载荷声明的来源。
+#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy, PartialOrd, Ord)]
+pub struct RrPeerId(UniqueClientId);
+
+fn rr_mismatch(field: &'static str, expected: u64, actual: u64) -> TransportError {
+    TransportError::RrConfigMismatch {
+        field,
+        expected,
+        actual,
+    }
+}
+
+fn check_rr_field(field: &'static str, expected: u64, actual: u64) -> Result<(), TransportError> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(rr_mismatch(field, expected, actual))
+    }
+}
+
 /// RR client wrapper（thin）。
 ///
 /// 跟 [`crate::iceoryx2::Iceoryx2Publisher`] 类似的 marker 泛型设计：
@@ -76,6 +214,7 @@ type IxRrServiceFactory =
 /// 调用方意图；运行时 schema 守门走 service attribute verifier。
 pub struct Iceoryx2RrClient<Req: BodyMarker, Resp: BodyMarker> {
     inner: IxRrClient,
+    limits: Option<RrStaticLimits>,
     _ty: PhantomData<(Req, Resp)>,
 }
 
@@ -91,6 +230,7 @@ impl<Req: BodyMarker, Resp: BodyMarker> core::fmt::Debug for Iceoryx2RrClient<Re
 /// RR server wrapper（thin）。设计同 [`Iceoryx2RrClient`]。
 pub struct Iceoryx2RrServer<Req: BodyMarker, Resp: BodyMarker> {
     inner: IxRrServer,
+    limits: Option<RrStaticLimits>,
     _ty: PhantomData<(Req, Resp)>,
 }
 
@@ -180,10 +320,12 @@ pub fn rr_channel<Req: BodyMarker, Resp: BodyMarker>(
     Ok((
         Iceoryx2RrClient {
             inner: client,
+            limits: None,
             _ty: PhantomData,
         },
         Iceoryx2RrServer {
             inner: server,
+            limits: None,
             _ty: PhantomData,
         },
     ))
@@ -207,6 +349,7 @@ pub fn rr_client<Req: BodyMarker, Resp: BodyMarker>(
         .map_err(|e| TransportError::Backend(format!("iceoryx2 RR client create: {e:?}")))?;
     Ok(Iceoryx2RrClient {
         inner: client,
+        limits: None,
         _ty: PhantomData,
     })
 }
@@ -229,8 +372,216 @@ pub fn rr_server<Req: BodyMarker, Resp: BodyMarker>(
         .map_err(|e| TransportError::Backend(format!("iceoryx2 RR server create: {e:?}")))?;
     Ok(Iceoryx2RrServer {
         inner: server,
+        limits: None,
         _ty: PhantomData,
     })
+}
+
+/// 使用显式容量与 DiscardData 策略创建客户端。
+///
+/// # Errors
+///
+/// profile 非法、既有服务五项静态值不完全一致或后端创建失败时拒绝。
+pub fn rr_client_with<Req: BodyMarker, Resp: BodyMarker>(
+    node: &Node<IxService>,
+    topic: &str,
+    profile: &RrProfile,
+) -> Result<Iceoryx2RrClient<Req, Resp>, TransportError> {
+    let (service, limits) = build_rr_service_with::<Req>(node, topic, profile)?;
+    let max_bytes = max_bytes_for::<Req, Resp>()?;
+    let client = service
+        .client_builder()
+        .initial_max_slice_len(max_bytes)
+        .backpressure_strategy(BackpressureStrategy::DiscardData)
+        .create()
+        .map_err(|e| TransportError::Backend(format!("iceoryx2 RR client create: {e:?}")))?;
+    Ok(Iceoryx2RrClient {
+        inner: client,
+        limits: Some(limits),
+        _ty: PhantomData,
+    })
+}
+
+/// 使用显式容量创建服务端，不移除或重建不匹配的既有服务。
+///
+/// # Errors
+///
+/// 同 [`rr_client_with`]。
+pub fn rr_server_with<Req: BodyMarker, Resp: BodyMarker>(
+    node: &Node<IxService>,
+    topic: &str,
+    profile: &RrProfile,
+) -> Result<Iceoryx2RrServer<Req, Resp>, TransportError> {
+    let (service, limits) = build_rr_service_with::<Req>(node, topic, profile)?;
+    let max_bytes = max_bytes_for::<Req, Resp>()?;
+    let server = service
+        .server_builder()
+        .initial_max_slice_len(max_bytes)
+        .create()
+        .map_err(|e| TransportError::Backend(format!("iceoryx2 RR server create: {e:?}")))?;
+    Ok(Iceoryx2RrServer {
+        inner: server,
+        limits: Some(limits),
+        _ty: PhantomData,
+    })
+}
+
+fn check_rr_static_config(
+    profile: &RrProfile,
+    actual: &iceoryx2::service::static_config::request_response::StaticConfig,
+) -> Result<(), TransportError> {
+    for (field, expected, actual) in [
+        (
+            "max_active_requests_per_client",
+            profile.l as u64,
+            actual.max_active_requests_per_client() as u64,
+        ),
+        ("max_clients", profile.c as u64, actual.max_clients() as u64),
+        (
+            "max_servers",
+            profile.max_servers as u64,
+            actual.max_servers() as u64,
+        ),
+        (
+            "enable_safe_overflow_for_requests",
+            u64::from(profile.safe_overflow_requests),
+            u64::from(actual.has_safe_overflow_for_requests()),
+        ),
+        (
+            "enable_fire_and_forget_requests",
+            u64::from(profile.fire_and_forget),
+            u64::from(actual.does_support_fire_and_forget_requests()),
+        ),
+    ] {
+        check_rr_field(field, expected, actual)?;
+    }
+    Ok(())
+}
+
+fn is_profile_open_error(err: RequestResponseOpenError) -> bool {
+    matches!(
+        err,
+        RequestResponseOpenError::DoesNotSupportRequestedAmountOfActiveRequestsPerClient
+            | RequestResponseOpenError::DoesNotSupportRequestedAmountOfClients
+            | RequestResponseOpenError::DoesNotSupportRequestedAmountOfServers
+            | RequestResponseOpenError::IncompatibleOverflowBehaviorForRequests
+            | RequestResponseOpenError::IncompatibleBehaviorForFireAndForgetRequests
+    )
+}
+
+fn diagnose_open_error(
+    err: RequestResponseOpenError,
+    requested: &RrProfile,
+    details: Result<Option<StaticConfig>, ServiceDetailsError>,
+) -> TransportError {
+    let config = match details {
+        Ok(Some(config)) => config,
+        unavailable @ (Ok(None) | Err(_)) => {
+            return TransportError::Backend(format!(
+                "iceoryx2 RR open {err:?}; static details unavailable: {unavailable:?}"
+            ));
+        }
+    };
+    let actual = match config.messaging_pattern() {
+        iceoryx2::service::static_config::messaging_pattern::MessagingPattern::RequestResponse(
+            config,
+        ) => config,
+        pattern => {
+            return TransportError::Backend(format!(
+                "iceoryx2 RR open {err:?}; static details incompatible: {pattern:?}"
+            ));
+        }
+    };
+    let (field, expected, actual) = match err {
+        RequestResponseOpenError::DoesNotSupportRequestedAmountOfActiveRequestsPerClient => (
+            "max_active_requests_per_client",
+            requested.l as u64,
+            actual.max_active_requests_per_client() as u64,
+        ),
+        RequestResponseOpenError::DoesNotSupportRequestedAmountOfClients => (
+            "max_clients",
+            requested.c as u64,
+            actual.max_clients() as u64,
+        ),
+        RequestResponseOpenError::DoesNotSupportRequestedAmountOfServers => (
+            "max_servers",
+            requested.max_servers as u64,
+            actual.max_servers() as u64,
+        ),
+        RequestResponseOpenError::IncompatibleOverflowBehaviorForRequests => (
+            "enable_safe_overflow_for_requests",
+            u64::from(requested.safe_overflow_requests),
+            u64::from(actual.has_safe_overflow_for_requests()),
+        ),
+        RequestResponseOpenError::IncompatibleBehaviorForFireAndForgetRequests => (
+            "enable_fire_and_forget_requests",
+            u64::from(requested.fire_and_forget),
+            u64::from(actual.does_support_fire_and_forget_requests()),
+        ),
+        _ => return TransportError::Backend(format!("iceoryx2 RR open {err:?}")),
+    };
+    // 布尔不兼容必为请求值的反值；若详情不再一致，保留打开失败而不伪造 actual。
+    // 数值相等同样可能是 open 与只读详情之间发生变化，不能声称配置不匹配。
+    if actual == expected {
+        TransportError::Backend(format!(
+            "iceoryx2 RR open {err:?}; static details no longer show the mismatch"
+        ))
+    } else {
+        rr_mismatch(field, expected, actual)
+    }
+}
+
+fn build_rr_service_with<Req: BodyMarker>(
+    node: &Node<IxService>,
+    topic: &str,
+    profile: &RrProfile,
+) -> Result<(IxRrServiceFactory, RrStaticLimits), TransportError> {
+    let limits = profile.validate()?;
+    let service_name = topic_to_service_name(topic)?;
+    let _tier = default_tier_of(Req::SCHEMA_ID).ok_or_else(|| TransportError::Backend(format!(
+        "request schema {:#010x} ({}) has no size tier in robot-msg::size_tier; refusing to create iceoryx2 RR service",
+        Req::SCHEMA_ID, Req::SCHEMA_NAME,
+    )))?;
+    let verifier = schema_attribute_verifier(Req::SCHEMA_ID, 1)?;
+    let mut attempt: u32 = 0;
+    loop {
+        match node
+            .service_builder(&service_name)
+            .request_response::<[u8], [u8]>()
+            .max_active_requests_per_client(profile.l)
+            .max_clients(profile.c)
+            .max_servers(profile.max_servers)
+            .enable_safe_overflow_for_requests(profile.safe_overflow_requests)
+            .enable_fire_and_forget_requests(profile.fire_and_forget)
+            .open_or_create_with_attributes(&verifier)
+        {
+            Ok(service) => {
+                check_rr_static_config(profile, service.static_config())?;
+                return Ok((service, limits));
+            }
+            Err(e) if attempt < CREATE_RACE_MAX_ATTEMPTS && is_transient_rr_race(e) => {
+                attempt += 1;
+                std::thread::sleep(CREATE_RACE_RETRY_INTERVAL);
+            }
+            Err(RequestResponseOpenOrCreateError::RequestResponseOpenError(err))
+                if is_profile_open_error(err) =>
+            {
+                let details = IxService::details(
+                    &service_name,
+                    node.config(),
+                    MessagingPattern::RequestResponse,
+                )
+                .map(|details| details.map(|details| details.static_details));
+                return Err(diagnose_open_error(err, profile, details));
+            }
+            Err(e) => {
+                return Err(TransportError::Backend(format!(
+                    "iceoryx2 RR service open_or_create: {e:?} (attempts={})",
+                    attempt + 1,
+                )));
+            }
+        }
+    }
 }
 
 /// 算 client / server `initial_max_slice_len`：取 Req / Resp 两端 size_tier
@@ -321,6 +672,37 @@ fn is_transient_rr_race(e: RequestResponseOpenOrCreateError) -> bool {
 // ---------------------------------------------------------------------------
 
 impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2RrClient<Req, Resp> {
+    /// 仅显式 profile 工厂返回已验证容量，旧工厂保持 None。
+    #[must_use]
+    pub const fn limits(&self) -> Option<RrStaticLimits> {
+        self.limits
+    }
+
+    /// 发送并保留可证明的投递结果；零接收者时先释放 pending 再返回。
+    ///
+    /// # Errors
+    ///
+    /// 未投递与投递不确定分别由 [`RrSendError`] 的两个分支承载。
+    pub fn send_typed(&self, bytes: &[u8]) -> Result<Iceoryx2PendingResponse<Resp>, RrSendError> {
+        let mut req = self.inner.loan_slice_uninit(bytes.len()).map_err(|error| {
+            RrSendError::NotDelivered(NotDelivered::Loan(map_loan_error(error)))
+        })?;
+        for (dst, src) in req.payload_mut().iter_mut().zip(bytes.iter()) {
+            dst.write(*src);
+        }
+        // SAFETY: 上面的循环已写入全部 bytes.len() 个元素。
+        let initialized = unsafe { req.assume_init() };
+        let pending = initialized.send().map_err(map_request_send_error)?;
+        if pending.number_of_server_connections() == 0 {
+            drop(pending);
+            return Err(RrSendError::NotDelivered(NotDelivered::ZeroRecipients));
+        }
+        Ok(Iceoryx2PendingResponse {
+            inner: pending,
+            _ty: PhantomData,
+        })
+    }
+
     /// 发送一条 request（FlatBuffers root bytes，调用方走 `robot-msg` 的
     /// `build_*_request` 之类构造）。返 pending response handle，调用方轮询
     /// `try_recv()` 拿 reply。
@@ -360,6 +742,18 @@ impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2RrClient<Req, Resp> {
 // ---------------------------------------------------------------------------
 
 impl<Resp: BodyMarker> Iceoryx2PendingResponse<Resp> {
+    /// 上游是否仍有可响应此请求的服务端连接。
+    #[must_use]
+    pub fn is_connected(&self) -> bool {
+        self.inner.is_connected()
+    }
+
+    /// 初始实际投递到的服务端数量，不是后续响应完成数量。
+    #[must_use]
+    pub fn server_connections(&self) -> usize {
+        self.inner.number_of_server_connections()
+    }
+
     /// 非阻塞 receive。`Ok(Some(bytes))` = 拿到 reply（拷贝出 `Vec<u8>` 让调
     /// 用方持有；spike scope 简化，A1-3 production 可零拷贝复用 borrow）。
     /// `Ok(None)` = 还没 reply，下轮再 poll。
@@ -388,6 +782,12 @@ fn copy_response_payload(resp: &IxRrResponse) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2RrServer<Req, Resp> {
+    /// 仅显式 profile 工厂返回已验证容量，旧工厂保持 None。
+    #[must_use]
+    pub const fn limits(&self) -> Option<RrStaticLimits> {
+        self.limits
+    }
+
     /// 非阻塞 receive 一条 active request。`Ok(Some(handle))` = 拿到一条；
     /// `Ok(None)` = 队列空，下轮再 poll。
     ///
@@ -420,6 +820,12 @@ impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2RrServer<Req, Resp> {
 // ---------------------------------------------------------------------------
 
 impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2ActiveRequest<Req, Resp> {
+    /// 来自上游端口的可信来源身份，不读取 payload 内的声明。
+    #[must_use]
+    pub fn peer(&self) -> RrPeerId {
+        RrPeerId(self.inner.origin())
+    }
+
     /// 借用读 request payload bytes（zero-copy；borrow lifetime 绑到 self）。
     #[must_use]
     pub fn payload(&self) -> &[u8] {
@@ -450,6 +856,39 @@ impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2ActiveRequest<Req, Resp> {
     }
 }
 
+fn map_loan_error(error: LoanError) -> LoanKind {
+    match error {
+        LoanError::OutOfMemory => LoanKind::OutOfMemory,
+        LoanError::ExceedsMaxLoans => LoanKind::ExceedsMaxLoans,
+        LoanError::ExceedsMaxLoanSize => LoanKind::ExceedsMaxLoanSize,
+        LoanError::InternalFailure => LoanKind::InternalFailure,
+    }
+}
+
+fn map_request_send_error(error: RequestSendError) -> RrSendError {
+    match error {
+        RequestSendError::ExceedsMaxActiveRequests => {
+            RrSendError::NotDelivered(NotDelivered::ExceedsMaxActiveRequests)
+        }
+        RequestSendError::SendError(error) => match error {
+            SendError::LoanError(error) => {
+                RrSendError::NotDelivered(NotDelivered::Loan(map_loan_error(error)))
+            }
+            SendError::ConnectionError(_) => {
+                RrSendError::NotDelivered(NotDelivered::ConnectionUpdate)
+            }
+            SendError::UnableToDeliver => RrSendError::Uncertain(Uncertain::UnableToDeliver),
+            SendError::InternalError => RrSendError::Uncertain(Uncertain::InternalError),
+            SendError::ConnectionCorrupted => {
+                RrSendError::Uncertain(Uncertain::ConnectionCorrupted)
+            }
+            SendError::ConnectionBrokenSinceSenderNoLongerExists => {
+                RrSendError::Uncertain(Uncertain::SenderGone)
+            }
+        },
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -457,7 +896,7 @@ impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2ActiveRequest<Req, Resp> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iceoryx2::prelude::NodeBuilder;
+    use iceoryx2::prelude::{Config, NodeBuilder};
     use robot_msg::build_helpers::{build_clear_estop_request, build_clear_estop_response};
     use robot_msg::markers;
     use robot_msg::msg::{
@@ -640,6 +1079,529 @@ mod tests {
             bad.is_err(),
             "expected schema attribute verify to reject mismatched request marker"
         );
+    }
+
+    type TestClient = Iceoryx2RrClient<markers::ClearEStopRequest, markers::ClearEStopResponse>;
+    type TestServer = Iceoryx2RrServer<markers::ClearEStopRequest, markers::ClearEStopResponse>;
+
+    fn explicit_pair(node: &Node<IxService>, topic: &str) -> (TestClient, TestServer) {
+        let server = rr_server_with(node, topic, &RrProfile::S0_CONTROL).unwrap();
+        let client = rr_client_with(node, topic, &RrProfile::S0_CONTROL).unwrap();
+        (client, server)
+    }
+
+    fn static_details(topic: &str) -> Option<StaticConfig> {
+        IxService::details(
+            &topic_to_service_name(topic).unwrap(),
+            Config::global_config(),
+            MessagingPattern::RequestResponse,
+        )
+        .unwrap()
+        .map(|details| details.static_details)
+    }
+
+    fn prebuilt(node: &Node<IxService>, topic: &str, profile: RrProfile) -> IxRrServiceFactory {
+        let name = topic_to_service_name(topic).unwrap();
+        let attributes =
+            crate::iceoryx2::schema_attribute_spec(markers::ClearEStopRequest::SCHEMA_ID, 1)
+                .unwrap();
+        node.service_builder(&name)
+            .request_response::<[u8], [u8]>()
+            .max_active_requests_per_client(profile.l)
+            .max_clients(profile.c)
+            .max_servers(profile.max_servers)
+            .enable_safe_overflow_for_requests(profile.safe_overflow_requests)
+            .enable_fire_and_forget_requests(profile.fire_and_forget)
+            .create_with_attributes(&attributes)
+            .unwrap()
+    }
+
+    fn assert_existing_rejected(profile: RrProfile, expected: &TransportError) {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let topic = fresh_topic("existing_profile");
+        let factory = prebuilt(&node, &topic, profile);
+        let before = static_details(&topic).unwrap();
+        check_rr_static_config(&profile, factory.static_config()).unwrap();
+        check_rr_static_config(&profile, before.request_response()).unwrap();
+        let result = rr_client_with::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+            &node,
+            &topic,
+            &RrProfile::S0_CONTROL,
+        );
+        assert_eq!(&result.unwrap_err(), expected);
+        // 在复核后才 drop factory；其实际唯一 ID 证明旧服务一直存在、没有重建。
+        let after = static_details(&topic).unwrap();
+        assert_eq!(before.unique_service_id(), after.unique_service_id());
+        assert_eq!(before.service_hash(), after.service_hash());
+        check_rr_static_config(&profile, after.request_response()).unwrap();
+        drop(factory);
+    }
+
+    #[test]
+    fn open_existing_l16_service_is_rejected_with_real_actual() {
+        assert_existing_rejected(
+            RrProfile {
+                l: 16,
+                ..RrProfile::S0_CONTROL
+            },
+            &rr_mismatch("max_active_requests_per_client", 4, 16),
+        );
+    }
+
+    #[test]
+    fn open_existing_l2_service_maps_builder_error_with_real_actual() {
+        assert_existing_rejected(
+            RrProfile {
+                l: 2,
+                ..RrProfile::S0_CONTROL
+            },
+            &rr_mismatch("max_active_requests_per_client", 4, 2),
+        );
+    }
+
+    #[test]
+    fn open_existing_two_servers_is_rejected() {
+        assert_existing_rejected(
+            RrProfile {
+                max_servers: 2,
+                ..RrProfile::S0_CONTROL
+            },
+            &rr_mismatch("max_servers", 1, 2),
+        );
+    }
+
+    #[test]
+    fn open_existing_overflow_on_is_rejected() {
+        assert_existing_rejected(
+            RrProfile {
+                safe_overflow_requests: true,
+                ..RrProfile::S0_CONTROL
+            },
+            &rr_mismatch("enable_safe_overflow_for_requests", 0, 1),
+        );
+    }
+
+    #[test]
+    fn open_existing_fire_and_forget_off_is_rejected() {
+        assert_existing_rejected(
+            RrProfile {
+                fire_and_forget: false,
+                ..RrProfile::S0_CONTROL
+            },
+            &rr_mismatch("enable_fire_and_forget_requests", 1, 0),
+        );
+    }
+
+    #[test]
+    fn open_existing_client_count_is_exact() {
+        for c in [2, 16] {
+            assert_existing_rejected(
+                RrProfile {
+                    c,
+                    ..RrProfile::S0_CONTROL
+                },
+                &rr_mismatch("max_clients", 8, c as u64),
+            );
+        }
+    }
+
+    #[test]
+    fn policy_fields_rejected_before_any_create() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        for (profile, expected) in [
+            (
+                RrProfile {
+                    max_servers: 2,
+                    ..RrProfile::S0_CONTROL
+                },
+                rr_mismatch("max_servers", 1, 2),
+            ),
+            (
+                RrProfile {
+                    safe_overflow_requests: true,
+                    ..RrProfile::S0_CONTROL
+                },
+                rr_mismatch("enable_safe_overflow_for_requests", 0, 1),
+            ),
+            (
+                RrProfile {
+                    fire_and_forget: false,
+                    ..RrProfile::S0_CONTROL
+                },
+                rr_mismatch("enable_fire_and_forget_requests", 1, 0),
+            ),
+        ] {
+            let topic = fresh_topic("invalid_policy");
+            assert!(static_details(&topic).is_none());
+            assert_eq!(profile.validate().unwrap_err(), expected);
+            assert_eq!(
+                RrStaticLimits::from_profile(&profile).unwrap_err(),
+                expected
+            );
+            assert_eq!(
+                rr_client_with::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+                    &node, &topic, &profile
+                )
+                .unwrap_err(),
+                expected
+            );
+            assert_eq!(
+                rr_server_with::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+                    &node, &topic, &profile
+                )
+                .unwrap_err(),
+                expected
+            );
+            assert!(static_details(&topic).is_none());
+        }
+    }
+
+    #[test]
+    fn zero_clients_are_rejected_before_any_create_even_with_maximum_l() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        for l in [4, usize::MAX] {
+            let profile = RrProfile {
+                l,
+                c: 0,
+                ..RrProfile::S0_CONTROL
+            };
+            let expected = rr_mismatch("max_clients", 1, 0);
+            let topic = fresh_topic("zero_clients");
+            assert!(static_details(&topic).is_none());
+            assert_eq!(profile.validate().unwrap_err(), expected);
+            assert_eq!(
+                RrStaticLimits::from_profile(&profile).unwrap_err(),
+                expected
+            );
+            assert_eq!(
+                rr_client_with::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+                    &node, &topic, &profile
+                )
+                .unwrap_err(),
+                expected
+            );
+            assert_eq!(
+                rr_server_with::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+                    &node, &topic, &profile
+                )
+                .unwrap_err(),
+                expected
+            );
+            assert!(static_details(&topic).is_none());
+        }
+    }
+
+    #[test]
+    fn derived_limits_guard() {
+        for (l, c, expected, actual) in [
+            (2, 8, 3_u64, 2),
+            (4, 17, 16, 17),
+            (16, 8, 64, 128),
+            (65, 1, 64, 65),
+            (usize::MAX, 16, 64, usize::MAX),
+        ] {
+            let profile = RrProfile {
+                l,
+                c,
+                ..RrProfile::S0_CONTROL
+            };
+            assert_eq!(
+                profile.validate(),
+                Err(rr_mismatch("derived_limits", expected, actual as u64))
+            );
+            assert_eq!(RrStaticLimits::from_profile(&profile), profile.validate());
+        }
+        for (l, c) in [(3, 16), (4, 16), (64, 1), (4, 8)] {
+            let profile = RrProfile {
+                l,
+                c,
+                ..RrProfile::S0_CONTROL
+            };
+            assert_eq!(profile.validate(), Ok(RrStaticLimits { l, c }));
+            assert_eq!(RrStaticLimits::from_profile(&profile), profile.validate());
+        }
+        assert_eq!(RrProfile::S0_CONTROL, RrProfile::S1_TASK);
+    }
+
+    #[test]
+    fn diagnose_open_error_keeps_upstream_error_when_details_unavailable() {
+        let upstream =
+            RequestResponseOpenError::DoesNotSupportRequestedAmountOfActiveRequestsPerClient;
+        let unavailable = [
+            None,
+            Some(ServiceDetailsError::FailedToOpenStaticServiceInfo),
+            Some(ServiceDetailsError::FailedToReadStaticServiceInfo),
+            Some(ServiceDetailsError::FailedToDeserializeStaticServiceInfo),
+            Some(ServiceDetailsError::ServiceInInconsistentState),
+            Some(ServiceDetailsError::VersionMismatch),
+            Some(ServiceDetailsError::InternalError),
+            Some(ServiceDetailsError::FailedToAcquireNodeState),
+        ];
+        for error in unavailable {
+            let details = error.map_or(Ok(None), Err);
+            let error = diagnose_open_error(upstream, &RrProfile::S0_CONTROL, details);
+            match error {
+                TransportError::Backend(text) => {
+                    assert!(
+                        text.contains("DoesNotSupportRequestedAmountOfActiveRequestsPerClient")
+                    );
+                    assert!(text.contains("static details unavailable"));
+                    assert!(!text.contains("actual: 0"));
+                }
+                other => panic!("必须保留原始打开错误：{other:?}"),
+            }
+        }
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let topic = fresh_topic("diagnose_actual");
+        let factory = prebuilt(
+            &node,
+            &topic,
+            RrProfile {
+                l: 2,
+                ..RrProfile::S0_CONTROL
+            },
+        );
+        let config = static_details(&topic).unwrap();
+        assert_eq!(
+            diagnose_open_error(upstream, &RrProfile::S0_CONTROL, Ok(Some(config))),
+            rr_mismatch("max_active_requests_per_client", 4, 2)
+        );
+        drop(factory);
+    }
+
+    #[test]
+    fn stale_boolean_diagnosis_keeps_original_open_failure() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let topic = fresh_topic("diagnose_changed");
+        let factory = prebuilt(&node, &topic, RrProfile::S0_CONTROL);
+        for error in [
+            RequestResponseOpenError::IncompatibleOverflowBehaviorForRequests,
+            RequestResponseOpenError::IncompatibleBehaviorForFireAndForgetRequests,
+        ] {
+            let diagnosed =
+                diagnose_open_error(error, &RrProfile::S0_CONTROL, Ok(static_details(&topic)));
+            assert!(matches!(diagnosed, TransportError::Backend(_)));
+        }
+        drop(factory);
+    }
+
+    #[test]
+    fn custom_node_diagnosis_uses_its_own_same_named_service() {
+        use iceoryx2::prelude::{FileName, SemanticString};
+
+        let global_node = NodeBuilder::new().create::<IxService>().unwrap();
+        let mut config = global_node.config().clone();
+        config.global.prefix =
+            FileName::new(format!("pt_custom_{}_", std::process::id()).as_bytes()).unwrap();
+        assert_ne!(config.global.prefix, global_node.config().global.prefix);
+        let custom_node = NodeBuilder::new()
+            .config(&config)
+            .create::<IxService>()
+            .unwrap();
+        let topic = fresh_topic("same_name_two_configs");
+        let global_profile = RrProfile {
+            l: 16,
+            ..RrProfile::S0_CONTROL
+        };
+        let custom_profile = RrProfile {
+            l: 2,
+            ..RrProfile::S0_CONTROL
+        };
+        let global_factory = prebuilt(&global_node, &topic, global_profile);
+        let custom_factory = prebuilt(&custom_node, &topic, custom_profile);
+        let name = topic_to_service_name(&topic).unwrap();
+        let details = |config: &Config| {
+            IxService::details(&name, config, MessagingPattern::RequestResponse)
+                .unwrap()
+                .unwrap()
+                .static_details
+        };
+        let global_before = details(global_node.config());
+        let custom_before = details(custom_node.config());
+        check_rr_static_config(&global_profile, global_before.request_response()).unwrap();
+        check_rr_static_config(&custom_profile, custom_before.request_response()).unwrap();
+        assert_ne!(
+            global_before.unique_service_id(),
+            custom_before.unique_service_id()
+        );
+        let errors = [
+            rr_client_with::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+                &custom_node,
+                &topic,
+                &RrProfile::S0_CONTROL,
+            )
+            .unwrap_err(),
+            rr_server_with::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+                &custom_node,
+                &topic,
+                &RrProfile::S0_CONTROL,
+            )
+            .unwrap_err(),
+        ];
+        let global_after = details(global_node.config());
+        let custom_after = details(custom_node.config());
+        assert_eq!(
+            global_before.unique_service_id(),
+            global_after.unique_service_id()
+        );
+        assert_eq!(
+            custom_before.unique_service_id(),
+            custom_after.unique_service_id()
+        );
+        check_rr_static_config(&global_profile, global_after.request_response()).unwrap();
+        check_rr_static_config(&custom_profile, custom_after.request_response()).unwrap();
+        let expected = rr_mismatch("max_active_requests_per_client", 4, 2);
+        assert_eq!(errors, [expected.clone(), expected]);
+        drop((global_factory, custom_factory));
+    }
+
+    #[test]
+    fn client_cap_fifth_send_is_not_delivered() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let (client, server) = explicit_pair(&node, &fresh_topic("fifth"));
+        let pending: Vec<_> = (0..4).map(|id| client.send_typed(&[id]).unwrap()).collect();
+        assert!(matches!(
+            client.send_typed(&[4]),
+            Err(RrSendError::NotDelivered(
+                NotDelivered::ExceedsMaxActiveRequests
+            ))
+        ));
+        assert_eq!(client.limits(), Some(RrStaticLimits { l: 4, c: 8 }));
+        assert_eq!(server.limits(), client.limits());
+        assert!(
+            pending
+                .iter()
+                .all(|p| p.is_connected() && p.server_connections() == 1)
+        );
+    }
+
+    #[test]
+    fn real_full_queue_probe_reports_zero_recipients() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let (client, server) = explicit_pair(&node, &fresh_topic("full_queue"));
+        let first: Vec<_> = (0..4).map(|id| client.send_typed(&[id]).unwrap()).collect();
+        let held: Vec<_> = (0..4)
+            .map(|_| wait_for_active(&server, std::time::Duration::from_secs(2)))
+            .collect();
+        drop(first);
+        let mut second: Vec<_> = (4..8).map(|id| client.send_typed(&[id]).unwrap()).collect();
+        drop(second.pop().unwrap());
+        assert!(matches!(
+            client.send_typed(&[99]),
+            Err(RrSendError::NotDelivered(NotDelivered::ZeroRecipients))
+        ));
+        drop(held);
+        let mut received = Vec::new();
+        for _ in 0..4 {
+            let active = wait_for_active(&server, std::time::Duration::from_secs(2));
+            received.push(active.payload()[0]);
+        }
+        received.sort_unstable();
+        assert_eq!(received, [4, 5, 6, 7]);
+        assert!(server.try_recv().unwrap().is_none());
+        drop(second);
+        // 探测 pending 若没有真实释放，这一批的第四条会撞到客户端在途上限。
+        let next: Vec<_> = (10..14)
+            .map(|id| client.send_typed(&[id]).unwrap())
+            .collect();
+        assert_eq!(next.len(), 4);
+    }
+
+    #[test]
+    fn peer_id_is_stable_per_client_and_distinct_across_clients() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let topic = fresh_topic("peer");
+        let (client, server) = explicit_pair(&node, &topic);
+        let other: TestClient = rr_client_with(&node, &topic, &RrProfile::S0_CONTROL).unwrap();
+        let first = client.send_typed(&[1]).unwrap();
+        let a = wait_for_active(&server, std::time::Duration::from_secs(2));
+        let second = client.send_typed(&[2]).unwrap();
+        let b = wait_for_active(&server, std::time::Duration::from_secs(2));
+        let third = other.send_typed(&[3]).unwrap();
+        let c = wait_for_active(&server, std::time::Duration::from_secs(2));
+        assert_eq!(a.peer(), b.peer());
+        assert_ne!(a.peer(), c.peer());
+        let mut peers = std::collections::HashMap::new();
+        peers.insert(a.peer(), 1);
+        peers.insert(b.peer(), 2);
+        peers.insert(c.peer(), 3);
+        assert_eq!(peers.len(), 2);
+        assert_eq!(peers[&a.peer()], 2);
+        drop((first, second, third));
+    }
+
+    #[test]
+    fn map_request_send_error_is_total() {
+        use iceoryx2::port::update_connections::ConnectionFailure;
+        use iceoryx2_cal::shared_memory::SharedMemoryOpenError;
+        use iceoryx2_cal::zero_copy_connection::ZeroCopyCreationError;
+        assert_eq!(
+            map_request_send_error(RequestSendError::ExceedsMaxActiveRequests),
+            RrSendError::NotDelivered(NotDelivered::ExceedsMaxActiveRequests)
+        );
+        for (error, kind) in [
+            (LoanError::OutOfMemory, LoanKind::OutOfMemory),
+            (LoanError::ExceedsMaxLoans, LoanKind::ExceedsMaxLoans),
+            (LoanError::ExceedsMaxLoanSize, LoanKind::ExceedsMaxLoanSize),
+            (LoanError::InternalFailure, LoanKind::InternalFailure),
+        ] {
+            assert_eq!(
+                map_request_send_error(RequestSendError::SendError(SendError::LoanError(error))),
+                RrSendError::NotDelivered(NotDelivered::Loan(kind))
+            );
+        }
+        for connection in [
+            ConnectionFailure::FailedToEstablishConnection(ZeroCopyCreationError::InternalError),
+            ConnectionFailure::UnableToMapSendersDataSegment(SharedMemoryOpenError::DoesNotExist),
+        ] {
+            assert_eq!(
+                map_request_send_error(RequestSendError::SendError(SendError::ConnectionError(
+                    connection
+                ))),
+                RrSendError::NotDelivered(NotDelivered::ConnectionUpdate)
+            );
+        }
+        for (error, kind) in [
+            (SendError::UnableToDeliver, Uncertain::UnableToDeliver),
+            (SendError::InternalError, Uncertain::InternalError),
+            (
+                SendError::ConnectionCorrupted,
+                Uncertain::ConnectionCorrupted,
+            ),
+            (
+                SendError::ConnectionBrokenSinceSenderNoLongerExists,
+                Uncertain::SenderGone,
+            ),
+        ] {
+            assert_eq!(
+                map_request_send_error(RequestSendError::SendError(error)),
+                RrSendError::Uncertain(kind)
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_factories_have_no_limits() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let pair = rr_channel::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+            &node,
+            &fresh_topic("legacy_pair"),
+        )
+        .unwrap();
+        assert_eq!(pair.0.limits(), None);
+        assert_eq!(pair.1.limits(), None);
+        let client = rr_client::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+            &node,
+            &fresh_topic("legacy_client"),
+        )
+        .unwrap();
+        let server = rr_server::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
+            &node,
+            &fresh_topic("legacy_server"),
+        )
+        .unwrap();
+        assert_eq!(client.limits(), None);
+        assert_eq!(server.limits(), None);
     }
 
     fn wait_for_active<Req: BodyMarker, Resp: BodyMarker>(

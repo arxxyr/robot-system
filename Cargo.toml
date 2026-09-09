@@ -64,6 +64,8 @@ blake3 = "1.8.7"
 # iceoryx2：本机零拷贝 pub-sub（§2.1）。精确 pin 仿 flatbuffers，防 minor 破坏性变更。
 # 烟测见 docs/CHANGELOG.md 2026-04-22 "Step 5 开工决策与 iceoryx2 依赖登记"。
 iceoryx2 = "=0.9.3"
+# 仅供 transport 纯错误映射测试命名上游载荷，不增加生产直接依赖。
+iceoryx2-cal = { version = "=0.9.3", default-features = false }
 # 仅 pubsub cleanup 工具用上游 Node ID 解码 PID，避免复制私有位布局。
 iceoryx2-bb-posix = "=0.9.3"
 # arc-swap：Step 6 Part 1 latest-command slot 的同步原语（ipc_thread → rt_thread 方向）。

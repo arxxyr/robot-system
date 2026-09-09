@@ -1713,6 +1713,7 @@ dependencies = [
  "arc-swap",
  "flatbuffers",
  "iceoryx2",
+ "iceoryx2-cal",
  "robot-core",
  "robot-msg",
  "thiserror",
