@@ -78,6 +78,8 @@ pub mod serial_preempt;
 mod serial_tick;
 mod set_enabled_action;
 pub mod set_enabled_rr_server;
+// S48 W2b：纯关闭 / join 机制（句柄槽、有界 join、门谓词注入的顺序停止与唯一报告）；无生产调用方。
+pub mod shutdown_mechanism;
 pub mod state_machine;
 // S48 A3b：`S0StateSnapshot` 的显式字段 codec（快照编码与 state_machine 分文件）。
 mod state_snapshot_codec;

@@ -196,6 +196,30 @@ impl WatchdogHandle {
             let _ = j.join();
         }
     }
+
+    /// 只置停止位、不 join（S48 W2b：顺序关闭先对所有辅助线程发停止，稍后统一有界 join）。
+    pub fn request_stop(&self) {
+        self.stop.store(true, Ordering::Release);
+    }
+
+    /// 只读：线程是否已结束；不消费句柄。句柄已被 [`Self::try_join`] 取走后恒为 `false`。
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join.as_ref().is_some_and(JoinHandle::is_finished)
+    }
+
+    /// 仅在线程已结束时取走句柄并真实 `join`（不会阻塞）；否则返回
+    /// [`JoinState::Pending`](crate::JoinState::Pending) 且句柄保留（`join: Some`）、结果不丢。
+    /// 取走后 [`Self::stop`] / `Drop` 不再 join。
+    pub fn try_join(&mut self) -> crate::JoinState {
+        if !self.is_finished() {
+            return crate::JoinState::Pending;
+        }
+        match self.join.take() {
+            Some(j) => crate::JoinState::Joined(j.join()),
+            None => crate::JoinState::Pending,
+        }
+    }
 }
 
 impl Drop for WatchdogHandle {
@@ -642,6 +666,66 @@ mod tests {
             "stop() 应在分片粒度内返回，实际 {:?}",
             t0.elapsed()
         );
+    }
+
+    /// 直接构造 watchdog 句柄（不读 env / 不开 socket）：线程以 `stop` 为退出条件。
+    fn handle_with_thread(body: impl FnOnce(&AtomicBool) + Send + 'static) -> WatchdogHandle {
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        WatchdogHandle {
+            stop,
+            join: Some(thread::spawn(move || body(&worker_stop))),
+        }
+    }
+
+    fn wait_finished(handle: &WatchdogHandle) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !handle.is_finished() {
+            assert!(Instant::now() < deadline, "watchdog 线程应在期限内结束");
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn try_join_is_pending_while_running_and_stop_still_joins() {
+        let exited = Arc::new(AtomicBool::new(false));
+        let exited_in_thread = Arc::clone(&exited);
+        let mut h = handle_with_thread(move |stop| {
+            while !stop.load(Ordering::Acquire) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            exited_in_thread.store(true, Ordering::Release);
+        });
+        assert!(!h.is_finished());
+        assert!(matches!(h.try_join(), crate::JoinState::Pending));
+        assert!(h.join.is_some(), "Pending 不取走句柄");
+        h.stop();
+        assert!(
+            exited.load(Ordering::Acquire),
+            "既有 stop(self) 仍真实 join"
+        );
+    }
+
+    #[test]
+    fn request_stop_then_try_join_yields_ok_and_drop_is_noop() {
+        let mut h = handle_with_thread(|stop| {
+            while !stop.load(Ordering::Acquire) {
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+        h.request_stop();
+        wait_finished(&h);
+        assert!(matches!(h.try_join(), crate::JoinState::Joined(Ok(()))));
+        assert!(h.join.is_none());
+        assert!(matches!(h.try_join(), crate::JoinState::Pending));
+        drop(h);
+    }
+
+    #[test]
+    fn try_join_after_panic_yields_err() {
+        let mut h = handle_with_thread(|_stop| panic!("watchdog 测试注入 panic"));
+        wait_finished(&h);
+        assert!(matches!(h.try_join(), crate::JoinState::Joined(Err(_))));
     }
 
     #[test]

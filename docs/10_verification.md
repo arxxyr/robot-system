@@ -167,6 +167,14 @@ W2a纯writer模块已独立 **APPROVED_SOFTWARE_SCOPE**：base `81c5c54`，round
 及权限恢复。root独立核门/逐名日志/范围，见H包`local/s48/a3e/review.md`。
 旧回归的夹具失败/空过滤/未复现限制保留；S46改动排除本提交，无生产接线或Orin验证。
 
+W2b独立关闭/join机制已 **APPROVED_SOFTWARE_SCOPE**：base `b5a0bfa`，round3
+十一门全零，346项来源`434632ed…ea4d1`前后及当前一致，恰六文件变化。
+health72（含doc1）、机制15/15、公开15、doc16，workspace1914通过、1既有ignored。
+独立源码复审闭合截止接纳、因果断言、失败回收、真实拒停及panic经报告取唯一凭证；
+root核完整原始日志与逐名结果，五处跨行片段按原文/SHA还原，原日志不改。
+round1源码评审未通过与round2 Clippy失败保留；十五个父场景均检查真实子进程。
+证据`local/s48/w2b/review.md`。W1开发期旧锁偶发失败另为观察OPEN；无生产或Orin验收。
+
 后续方案新增验证要求（**Plan Approved，尚无运行PASS**）：容量O1用可控无并发夹具
 钉3840/7936总len门；长负载仅对Normal cache Capacity核该阈值，wire/queue等
 提前失败按真实原因记录，不能充当缓存EXPECTED_RED。peer额度与实际业务忙分开，

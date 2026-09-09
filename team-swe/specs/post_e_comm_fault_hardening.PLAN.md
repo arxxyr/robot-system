@@ -2188,7 +2188,19 @@ Plan Approved并获root采纳，见`independent_w2b_r3_review.md`及`root_w2b_r3
 既有stop/Drop与daemon不改；真实关闭顺序、main全出口、D/90及观测在W3激活。
 实施须W2a先独立验收提交并核最终API，源码和证据另行终审；本节无运行PASS。
 
-#### P.6.14.12 优先级原语函数分包（Plan Approved，2026-09-09）
+W2a已提交`b5a0bfa`，实际WriterHandle只有is_finished/join，停止源为另传只读WriterStop。
+W2b最小接口增补经独立审评及root批准，见`local/s48/w2b/root_writer_control_approval.md`：
+新模块内以WriterControl和私有ManagedWriterHandle的唯一spawn绑定同一Arc控制对象，
+原W2a不改、真实join凭证不变；请求停止不等于已经退出。HardRt导入/变体/match沿
+现有Linux cfg，HandleKind稳定。全部增量沿原十一门，生产控制实现仍留W3。
+
+#W2b 实施验收：round3 本地十一门全零、346项完整来源一致，独立源码复审及root
+原始证据核验通过，APPROVED_SOFTWARE_SCOPE，详H包local/s48/w2b/review.md。
+初版截止接纳、等待预算、失败夹具回收及真实拒停/panic报告路径已修；round1/2原记录保留。
+CC额度耗尽后转原生implementation开发/测试与独立Codex终审；无生产调用方或Orin操作。
+W1旧锁测试偶发失败另保留观察OPEN，不据重复通过宣称根因闭合。
+
+### P.6.14.12 优先级原语函数分包（Plan Approved，2026-09-09）
 
 函数方案`local/s48/a3/cc_priority_execution_plan_r4.md` SHA
 `f96375336a67785e2acb5f9128987ea9e69c692635c4522b122cf3b415951781`已独立

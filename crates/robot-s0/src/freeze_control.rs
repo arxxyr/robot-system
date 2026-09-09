@@ -163,6 +163,12 @@ impl FreezeControlHandle {
         self.stop.store(true, Ordering::Release);
     }
 
+    /// 只读：control thread 是否已结束（S48 W2b 顺序关闭机制的发现接口；不消费句柄）。
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join.is_finished()
+    }
+
     /// 等待 control thread 退出。
     ///
     /// # Errors
@@ -368,6 +374,29 @@ fn handle_command(ctx: &FreezeControlContext, cmd: TestFreezeCommand) {
 mod tests {
     use super::*;
     use robot_core::time::SystemClock;
+
+    /// S48 W2b：`is_finished` 只读反映线程结束、不消费句柄；`request_stop` 后仍可真实 `join`。
+    #[test]
+    fn is_finished_reflects_thread_exit_without_consuming_handle() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_stop = Arc::clone(&stop);
+        let handle = FreezeControlHandle {
+            join: thread::spawn(move || {
+                while !thread_stop.load(Ordering::Acquire) {
+                    thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }),
+            stop,
+        };
+        assert!(!handle.is_finished(), "运行中不得报告结束");
+        handle.request_stop();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !handle.is_finished() {
+            assert!(std::time::Instant::now() < deadline, "线程应在期限内结束");
+            thread::sleep(std::time::Duration::from_millis(1));
+        }
+        handle.join().expect("线程正常退出");
+    }
 
     /// 生成测试用 robot_id（带 PID + 单元化序列号），避免并行单测 service name 撞。
     fn fresh_robot_id() -> String {

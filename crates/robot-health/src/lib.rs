@@ -120,6 +120,16 @@ impl Default for MonitorConfig {
     }
 }
 
+/// 非消费式 join 的结果（S48 W2b 顺序关闭机制的发现接口）。
+///
+/// `Pending`：线程尚未结束，句柄仍由原持有者保留、结果不丢；`Joined`：线程已结束并被真实
+/// `join`，携带 `JoinHandle::join` 的原样结果（`Err` = 线程 panic）。
+#[derive(Debug)]
+pub enum JoinState {
+    Pending,
+    Joined(thread::Result<()>),
+}
+
 /// Monitor 句柄：持 join handle + stop flag。`drop` 自动 stop + join。
 pub struct MonitorHandle {
     stop: Arc<AtomicBool>,
@@ -132,6 +142,31 @@ impl MonitorHandle {
         self.stop.store(true, Ordering::Release);
         if let Some(h) = self.join.take() {
             let _ = h.join();
+        }
+    }
+
+    /// 只置停止位、不 join（S48 W2b：顺序关闭先对所有辅助线程发停止，稍后统一有界 join）。
+    pub fn request_stop(&self) {
+        self.stop.store(true, Ordering::Release);
+    }
+
+    /// 只读：线程是否已结束；不消费句柄。句柄已被 [`Self::try_join`] 取走后恒为 `false`。
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join
+            .as_ref()
+            .is_some_and(thread::JoinHandle::is_finished)
+    }
+
+    /// 仅在线程已结束时取走句柄并真实 `join`（不会阻塞）；否则返回 [`JoinState::Pending`]
+    /// 且句柄保留（`join: Some`）、结果不丢。取走后 [`Self::stop`] / `Drop` 不再 join。
+    pub fn try_join(&mut self) -> JoinState {
+        if !self.is_finished() {
+            return JoinState::Pending;
+        }
+        match self.join.take() {
+            Some(h) => JoinState::Joined(h.join()),
+            None => JoinState::Pending,
         }
     }
 }
@@ -521,6 +556,78 @@ mod tests {
             },
         ]);
         assert_eq!(s, "1:a@1.0%[1M],2:b@2.0%[2M]");
+    }
+
+    /// 直接构造句柄（不读 /proc）：线程以 `stop` 为退出条件，并在退出时置 `exited`。
+    fn handle_with_thread(body: impl FnOnce(&AtomicBool) + Send + 'static) -> MonitorHandle {
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        MonitorHandle {
+            stop,
+            join: Some(thread::spawn(move || body(&worker_stop))),
+        }
+    }
+
+    fn wait_until(condition: impl Fn() -> bool, what: &str) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !condition() {
+            assert!(Instant::now() < deadline, "{what}");
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn try_join_is_pending_while_running_and_handle_still_stops() {
+        let exited = Arc::new(AtomicBool::new(false));
+        let exited_in_thread = Arc::clone(&exited);
+        let mut h = handle_with_thread(move |stop| {
+            while !stop.load(Ordering::Acquire) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            exited_in_thread.store(true, Ordering::Release);
+        });
+        assert!(!h.is_finished(), "运行中不得报告结束");
+        assert!(matches!(h.try_join(), JoinState::Pending));
+        assert!(h.join.is_some(), "Pending 不取走句柄");
+        assert!(!exited.load(Ordering::Acquire));
+        h.stop();
+        assert!(
+            exited.load(Ordering::Acquire),
+            "既有 stop(self) 仍真实 join"
+        );
+    }
+
+    #[test]
+    fn request_stop_only_sets_flag_then_try_join_yields_real_result() {
+        let mut h = handle_with_thread(|stop| {
+            while !stop.load(Ordering::Acquire) {
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+        h.request_stop();
+        wait_until(|| h.is_finished(), "request_stop 后线程应结束");
+        assert!(matches!(h.try_join(), JoinState::Joined(Ok(()))));
+        assert!(h.join.is_none(), "Joined 后句柄已取走");
+        assert!(!h.is_finished(), "无句柄时 is_finished 恒 false");
+        assert!(
+            matches!(h.try_join(), JoinState::Pending),
+            "再次 try_join 无句柄可 join"
+        );
+        // Drop 对已取走的句柄为 no-op（不会二次 join）。
+        drop(h);
+    }
+
+    #[test]
+    fn try_join_after_panic_yields_err_with_payload() {
+        let mut h = handle_with_thread(|_stop| panic!("monitor 测试注入 panic"));
+        wait_until(|| h.is_finished(), "panic 线程应结束");
+        let JoinState::Joined(Err(payload)) = h.try_join() else {
+            panic!("panic 必须以 Joined(Err) 表达");
+        };
+        assert_eq!(
+            payload.downcast_ref::<&str>().copied(),
+            Some("monitor 测试注入 panic")
+        );
     }
 
     #[test]
