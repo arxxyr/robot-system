@@ -1,13 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
+  "work_state": "S48_A1_APPROVED_A2_NEXT",
+  "resume_from": "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md：A1已独立批准，推进A2权限原语详细方案",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S45_SOFTWARE_ACCEPTED_LEFT_H2_RETEST_PENDING",
-  "review_status": "APPROVED_SOFTWARE_SCOPE",
+  "status": "S46_LOCAL_PASS_ORIN_WIRE_CAPACITY_FAIL",
+  "review_status": "SOURCE_APPROVED_ORIN_FAILURE_REVIEWING",
   "deployable": false,
-  "scope": "S-45实现及两端软件验收已独立批准；左H1/H3通过，左H2首次FAIL已真实收尾，修复后H2待新的物理边界；右未测，D15 OPEN。",
+  "scope": "S46本地负载通过，Orin原67通过但长测暴露真实wire4满；没有放宽负载或QoS，待独立核因及后续ReverseSync。左H2两次FAIL保留，右未测，D15 OPEN。",
   "software": {
     "s44": {
       "local": {
@@ -222,6 +224,140 @@
         ]
       },
       "implementation_commit": "965bcd7558a6e861a2456d7a94d29eba90ea1d65"
+    },
+    "s46": {
+      "status": "LOCAL_ACCEPTED_ORIN_WIRE_CAPACITY_FAIL",
+      "scope": "H2有界固定due负载、8192/TTL300夹具、分项收尾与真实mock长负载；生产默认与幂等合同不改",
+      "plan_section": "P.6.12",
+      "software_acceptance": "NOT_RUN",
+      "source_hash": "b74505b72b96e106b6395bf723f5edffac24a5c6cb86767157d6d8758abc6076",
+      "source_input_count": 310,
+      "base_commit": "ce61623436138342b6a2d234b10bada71d6877ca",
+      "source_review": "APPROVED",
+      "developer_tests": {
+        "tool": 75,
+        "idempotency": 17,
+        "real_handler_cache": 1,
+        "real_wire_four": 1,
+        "clippy_tool_all_features": "PASS",
+        "clippy_rpc_all_features": "PASS"
+      },
+      "two_host_source_equal": true,
+      "software_long_load": "LOCAL_4096_RED_8192_GREEN_ORIN_WIRE4_FAIL",
+      "driver_review": "ACK",
+      "driver_sha256": "0038976593bdcc9c9308d7bba5e10c356282f96cf6ca78b348e19c8ba4fe1fdb",
+      "local": {
+        "fmt": "PASS",
+        "clippy_default": "PASS",
+        "clippy_tool_rpc_all_features": "PASS",
+        "tool_tests": 75,
+        "rpc_tests": 255,
+        "actual_build_manifests": 3,
+        "software_scenarios": 67,
+        "independent_review_first_three_stages": "ACK",
+        "load4096": {
+          "status": "EXPECTED_RED_ACK",
+          "tool_exit_code": 1,
+          "raw_report_status": "FAIL",
+          "successful_unique_writes": 4096,
+          "background_successful": 3564,
+          "recovery_successful": 532,
+          "max_start_lag_ns": 2042601,
+          "trace_events": 6153,
+          "dropped": 0,
+          "cadence": "PASS",
+          "final_get_state": 3,
+          "final_disable": "CAPACITY_REJECTED",
+          "process_residual": 0
+        },
+        "load8192": {
+          "status": "PASS_INDEPENDENT_ACK",
+          "tool_exit_code": 0,
+          "successful_unique_writes": 8281,
+          "background_successful": 7205,
+          "recovery_successful": 1076,
+          "actual_window_ns": 360229366431,
+          "max_start_lag_ns": 2060917,
+          "max_rpc_ns": 93235393,
+          "peak_tracked": 2,
+          "final_get_state": 3,
+          "final_disable": "PASS",
+          "process_residual": 0
+        }
+      },
+      "orin": {
+        "fmt": "PASS",
+        "clippy_default": "PASS",
+        "clippy_tool_rpc_all_features": "PASS",
+        "tool_tests": 75,
+        "rpc_tests": 255,
+        "actual_build_manifests": 3,
+        "software_scenarios": 67,
+        "load4096": {
+          "status": "UNEXPECTED_FAIL",
+          "tool_exit_code": 1,
+          "reason": "真实ExceedsMaxActiveRequests，非缓存耗尽",
+          "background_successful": 769,
+          "recovery_successful": 113,
+          "successful_unique_writes": 882,
+          "peak_tracked": 5,
+          "cadence": "PASS",
+          "first_error_sequence": 769,
+          "final_stop": "PASS",
+          "source_unchanged": true,
+          "protected_17_sha_unchanged": true,
+          "evidence": "orin/s46/acceptance1/load4096/failure_diagnostic.json"
+        },
+        "load8192": "NOT_RUN",
+        "independent_review": "ACK_ACTUAL_WIRE_CAPACITY_FAILURE"
+      }
+    },
+    "s47": {
+      "status": "DEFERRED_TO_S48_PRIORITY_ISOLATION",
+      "implementation_started": false,
+      "choice": "原bounded64队列容量背压，wire QoS不改",
+      "review_blocker": "用户明确基础控制高优先级；仅有界排队不能解决入口容量与同步IPC阻塞",
+      "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
+    },
+    "s48": {
+      "status": "A1_APPROVED_SOFTWARE_SCOPE_A2_NEXT",
+      "implementation_started": true,
+      "a1": {
+        "plan_review": "APPROVED",
+        "record_encoding_review": "ACK_112_BYTE_RECORD",
+        "source_review": "APPROVED_SOFTWARE_SCOPE",
+        "validation": "LOCAL_PASS",
+        "scope": "纯文件事务模块与测试，尚未接生产启动/IPC/双队列",
+        "source_hash": "b61a1534aab527528f075c16c36d72b7079869317c75819e9264eb1504b6c20e",
+        "source_input_count": 313,
+        "base_commit": "ce61623436138342b6a2d234b10bada71d6877ca",
+        "tests": {
+          "module_test_entries": 28,
+          "process_exit_checkpoints": 16,
+          "independent_public_api": 7,
+          "legacy_latch": 24,
+          "compile_fail_doctests": 3
+        },
+        "fmt": "PASS",
+        "clippy": "PASS",
+        "source_unchanged": true,
+        "evidence": "local/s48/a1/second/run.json",
+        "first_failure": "local/s48/a1/first/run.json",
+        "evidence_limit": "边界hook在实际操作成功后中断；unlink后的目录同步错误实为目录open失败，不称真实fsync errno或物理掉电验证",
+        "orin_validation": "NOT_RUN",
+        "production_wiring": false,
+        "review_evidence": "local/s48/a1/review.json"
+      },
+      "user_requirement": "基础控制走高优先级通道，关节位置等连续目标走普通通道",
+      "candidate": "唯一state owner与单disk writer解耦；可恢复Clear事务标记与原子提交权限；端到端有界容量保留",
+      "review_blocker": "A2原子权限、A3完整总装、A4端到端验收待分阶段闭合",
+      "hardware_scope": "左臂已断电；仅软件设计与验证，不打开串口",
+      "queues": {
+        "high": "live基础控制",
+        "ordinary": "dry-run与诊断；关节目标latest-only",
+        "loop": "每轮先高后普通，各项非阻塞、有界推进"
+      },
+      "atomic_safety": "紧急/故障独立原子notice，Disable撤销旧Enable/Clear恢复权限，不增加第三业务队列"
     }
   },
   "hardware": {
@@ -242,36 +378,46 @@
       },
       "H2": {
         "status": "FAIL",
-        "run_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
-        "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a",
+        "run_commit": "ce61623436138342b6a2d234b10bada71d6877ca",
+        "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
         "rt_preflight": "PASS",
         "rt_threads": {
           "tool": 6,
           "s0": 11,
           "gateway": 14
         },
-        "attempts": 36,
-        "classification_mismatches": 35,
-        "invalid": 1,
-        "warmup": 0,
-        "samples": 0,
-        "invalid_sequence": 10072,
-        "error": "在途执行权缺少同 epoch 的 acquire，不能归为 idle",
+        "group": "topic/idle",
+        "warmup": 100,
+        "samples": 138,
+        "classification_mismatches": 0,
+        "invalid_samples": 0,
         "trace_dropped": 0,
-        "final_stop": "PASS",
-        "final_safety_state": 3,
+        "cached_successful_writes": 4096,
+        "background_successful_writes": 3620,
+        "recovery_successful_writes": 476,
+        "background_requests": 3621,
+        "background_failed_responses": 1,
+        "background_late_requests": 11,
+        "error": "ClearEStop因幂等缓存4096/4096满拒绝；背景串行await另导致11项启动迟到至少50ms",
+        "final_stop": "FAIL",
+        "get_state_safety_state": 3,
+        "get_state_evidence_scope": "原控制流与随后网关Disable拒绝日志交叉证明，原合并observation Err保留",
+        "disable_error": "ResourceExhausted: idempotency cache full (4096/4096)",
         "all_test_processes_exited": true,
         "operator_available": true,
-        "fresh_physical_boundary_confirmed": false,
-        "next": "S-45评审提交并对齐后，重新确认物理边界，D9一次授权再执行。",
+        "physical_entry_confirmed": true,
+        "physical_authorization_consumed": true,
+        "physical_power_off_confirmed_after_failure": true,
+        "physical_power_off_evidence": "orin/left_h2_current/physical_power_off_confirmation.json",
+        "next": "S46工具修复与两端等效长负载验收；评审提交后重新确认物理边界，不复用本次驱动目录",
         "evidence": [
-          "orin/left_h2/report.json",
-          "orin/left_h2/orin_sla_left/rt_preflight.json",
-          "orin/left_h2/orin_sla_left/events.csv",
-          "orin/left_h2/orin_sla_left/attempts.jsonl",
-          "orin/left_h2/orin_sla_left/final_stop.json",
-          "orin/left_h2_run.json",
-          "orin/left_h2_final_audit.json"
+          "orin/left_h2_current/evidence_index.json",
+          "orin/left_h2_current/run.json",
+          "orin/left_h2_current/report.json",
+          "orin/left_h2_current/orin_sla_left/final_stop.json",
+          "orin/left_h2_current/post_run_audit.json",
+          "orin/left_h2_current/cadence_diagnostic.json",
+          "local/left_h2_current_independent.json"
         ]
       },
       "H3": {
@@ -287,7 +433,43 @@
         "scope": "每次完整六ID断扭广播一写零读；主机调用返回，不保证UART完成或机械已断扭。",
         "evidence": "orin/left_h3/report.json",
         "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a"
-      }
+      },
+      "H2_previous_runs": [
+        {
+          "status": "FAIL",
+          "run_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
+          "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a",
+          "rt_preflight": "PASS",
+          "rt_threads": {
+            "tool": 6,
+            "s0": 11,
+            "gateway": 14
+          },
+          "attempts": 36,
+          "classification_mismatches": 35,
+          "invalid": 1,
+          "warmup": 0,
+          "samples": 0,
+          "invalid_sequence": 10072,
+          "error": "在途执行权缺少同 epoch 的 acquire，不能归为 idle",
+          "trace_dropped": 0,
+          "final_stop": "PASS",
+          "final_safety_state": 3,
+          "all_test_processes_exited": true,
+          "operator_available": true,
+          "fresh_physical_boundary_confirmed": false,
+          "next": "S-45评审提交并对齐后，重新确认物理边界，D9一次授权再执行。",
+          "evidence": [
+            "orin/left_h2/report.json",
+            "orin/left_h2/orin_sla_left/rt_preflight.json",
+            "orin/left_h2/orin_sla_left/events.csv",
+            "orin/left_h2/orin_sla_left/attempts.jsonl",
+            "orin/left_h2/orin_sla_left/final_stop.json",
+            "orin/left_h2_run.json",
+            "orin/left_h2_final_audit.json"
+          ]
+        }
+      ]
     },
     "right": {
       "H1": "NOT_RUN",
@@ -299,32 +481,49 @@
   "operator_attestations": [
     "左臂已完成，支撑与现场断电手段就绪",
     "可以持续在场，接着完成左臂 H2",
-    "左臂已再次完成，继续 H2"
+    "左臂已再次完成，继续 H2",
+    "已完成，可以持续在场，继续 H2",
+    "左臂已断电，双臂继续支撑"
   ],
   "operational_state": {
     "formal_four_binaries_unchanged": true,
     "six_services": "inactive/PID0",
-    "physical_rx_marker": "H2一次授权已消费，收尾双份1\\n，UID/GID1000、0600",
+    "physical_rx_marker": "本次一次授权已消费；两份1\\n，UID/GID1000、0600",
     "physical_estop_latch": "H1/H3前后SHA相同",
     "no_serial_access_after_h2_physical_reset": false,
     "all_h2_processes_exited": true,
-    "left_serial_unoccupied": true
+    "left_serial_unoccupied": true,
+    "left_motor_power": "现场确认已断电，双臂继续支撑",
+    "python_calibration_reuse": {
+      "user_requested": true,
+      "host": "loosqk@10.0.1.40",
+      "left": {
+        "path": "/home/loosqk/repo/dimensional-applications/calibration/left_arm.json",
+        "sha256": "d946abf3d0f4b68f63c81eb21a95b6e35dd66406d5bf5c3219b19d8ae8c6f7de"
+      },
+      "right": {
+        "path": "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",
+        "sha256": "98ad69369b4bcfeb1cc84051116d8722709fe2d38b987c077e6e1453c2cea03e"
+      },
+      "validation": "安装配置与仓库逐字一致，直接引用Python JSON；每臂6个名称/ID1–6、offset/range/drive_mode字段兼容",
+      "scope": "仅文件及源码只读核验，不称电机EEPROM本轮已读回；没有重标定/改值/打开串口"
+    }
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 1487,
-    "sha256": "0f78fb6ab78104467bbc7eabe04868945b661ef3f4b0b1ea7af01e9f1064a245"
+    "lines": 1687,
+    "sha256": "0f861da0588c081578e3d81f6601e8711677268e3cdf176e9a45dd177da31f40"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "188e1315d8e35d803fd3b529036635cee4995ca4f2bb3980ccfc1f92ebefb741",
-    "bytes": 9294190,
-    "members": 2930,
-    "logical_bytes": 379751701,
+    "sha256": "82ab85b5ef1590da159440e9aa6324d9592fc7e9022806cb9c04c43e786b45f6",
+    "bytes": 16530448,
+    "members": 4415,
+    "logical_bytes": 601658026,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-08T22:25:58.876641+00:00",
+  "updated_at": "2026-09-09T03:51:49.981943+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -346,7 +545,7 @@
     ]
   },
   "next_h2": {
-    "status": "NEEDS_FRESH_PHYSICAL_BOUNDARY",
+    "status": "S46_SOFTWARE_FIX_REQUIRED",
     "driver": "local/s45/left_h2_current_driver.py",
     "driver_sha256": "c6b698074c4785b858c8bc9954c2463d187afc349953cfb5e5b328b933efb890",
     "plan_review": "ACK",
@@ -354,7 +553,8 @@
     "runtime_head_policy": "运行时两端最新HEAD一致且clean，309源码须仍与已批准c07a冻结一致；不能反填构建base",
     "physical_reset_after_failed_h2_confirmed": false,
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/s45/recheck/artifacts/release",
-    "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2_current"
+    "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2_current",
+    "prior_driver_state": "已执行且失败，left_h2_current目录已消费；修复后必须准备并评审新驱动/新目录"
   },
   "cleanup": {
     "local": "local/s45/cleanup.json",

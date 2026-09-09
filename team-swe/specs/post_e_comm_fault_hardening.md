@@ -73,6 +73,190 @@ disarm，以及真实 mock 进程完整采集/恢复/收尾。保留不完整事
 慢样本、样本数与原 P99 门；不能以 t1 的 ACTIVE 位替代 t0 分类。函数级范围见
 PLAN P.6.11；实现与两端软件验收已独立批准，物理 H2 仍待新边界重测。
 
+### S-46：H2 有界背景负载与缓存工作集（2026-09-09，Plan Approved，实施中）
+
+`ce61623` / `c07a9886…514b1` 的左 H2 重测仍为 FAIL：topic/idle 完成100个预热及
+138个正式样本、零分类失配后，4096条成功幂等写占满默认缓存（3620条背景干跑、
+476条真实 ClearEStop/Enable）。另有11条背景请求启动迟到至少50ms；三次前导RPC
+耗时201.565/275.143/172.031ms，后继唤醒残余约1ms，证明串行等待回复不能维持
+固定20/s到达。平均速率不能替代逐项判据。最终 GetState 已确认 safety_state=3，
+随后 Disable 被容量拒绝；整次测量与收尾均保持 FAIL。全部进程退出、串口释放，
+现场已明确左臂断电；当时快照和之后的现场回复分开留证，不改写原始失败。
+
+只调整 H2 验收夹具及其软件负载验证入口，不修改生产 gateway 的默认容量4096、
+TTL300s、成功干跑缓存、fingerprint/replay/conflict 或容量拒绝语义。H2 隔离 gateway
+通过既有 CLI 明确设置 TTL300s、有限容量8192；真实 H2 不接受4096对照参数。
+合规300s窗口内保守计背景6002、恢复1004、跨窗在途64+1、最终Disable1，共7072条，
+小于8192。此界依赖固定50ms due、启动延迟严格小于50ms、恢复每轮至少600ms及
+首错后停止新发起；不以无限积压追赶、重复key重放或缩短TTL规避工作集。
+
+背景发起与响应等待分开：固定绝对 due，每次真实发起使用新key和真实 dry-run RR，
+最多64条受工具追踪的请求；真正调用前再次检查 started−due<50ms。64包括尚未开始
+以及尚未收齐结果的任务，不代表底层每client可持有64项：现有iceoryx2实际上限为4，
+生产QoS不变，真实wire满照常FAIL，不用延迟HTTP回复代替占用wire的验证。响应总
+等待从该次实际开始起最多2000ms，与既有Endpoint及请求timeout一致，gateway
+grace仍500ms；不能把gateway内部2500ms等待当成客户端总界。每条已发请求必须记录
+真实Ack、Status、join失败或工具超时，不能静默丢弃。响应回收顺序不改变发起序号；
+Ack核请求身份、dry_run=true和非零完成戳。在途满、启动迟到、错误响应或超时均
+锁存首错、停止新增背景请求，不追赶错过的槽，不降低原负载或放宽50ms判据。
+
+测量发现背景首错后不得继续下一次 ClearEStop/Enable。已发出的真实恢复RPC仍须
+取得原合同结果，不以取消future伪造控制动作退休；恢复的等待后、Clear前、Clear
+返回且Enable前，以及下一轮入口均检查健康状态。在采样中失败仍解除采样边界、
+保存已消费事件；已有背景干跑按其总等待界收齐。finish自停止时起固定2500ms兜底，
+到期逐项记录未完成并判FAIL，仅回收背景干跑任务，不取消真实恢复RPC；随后独立执行 final_stop。
+final_stop 将 GetState 与 Disable 的结果分别结构化保存，任何步骤失败仍整体FAIL，
+不把成功读到状态3等同于后续禁用RPC已经成功。
+
+新增独立纯软件长负载入口，拒绝所有现场参数；运行真实 mock S0/gateway/tool，
+复用相同20/s背景、至少600ms恢复间隔及真实 Clear/Enable/EStop 路径。4096配置
+保留容量耗尽的反例，8192配置至少运行360s且成功新写key累计超过8192，最多600s；
+所有响应、逐项节拍、真实恢复/收尾及TTL轮换均须有原始证据。原67个软件场景和
+8项短采样不能代替此长负载验证；H2四组100+1000样本、原A/B P99与RT硬门不变。
+函数级范围和独立反例见 PLAN P.6.12；独立 reviewer 已批准计划，软件与真机验收尚未完成。
+
+### S-47：网关按真实 RR 容量发送（2026-09-09，暂停，待并入 S-48 优先级方案）
+
+用户明确基础控制走高优先级通道、关节位置等走普通通道。仅有界排队不能解决
+入口容量被诊断耗尽、Disable排在Enable后或同步持久化阻塞安全接收的问题。
+以下保留为尚未实施的容量子方案，不表示已批准；先完成S-48端到端优先级设计。
+
+S-46源码`b74505b7…6076`两端均通过75项工具、255项RPC及原67场景；本地4096
+对照精确耗尽、8192正例360.229s/8281唯一成功新写通过。Orin的4096对照在第769
+条背景请求实际返回`ExceedsMaxActiveRequests`，仅882唯一成功新写，保留非预期
+FAIL、不运行后续8192。当时SetEnabled的765–768四条仍未完成，完成戳在拒绝后
+约299ms；另一RR client上的ClearEStop共518.85ms，四背景完成紧随其后。不是
+已就绪响应只待网关回收，不能仅调整poll顺序。同步Clear持久化是待诊断的延迟
+来源；缺少阶段/syscall证据，不直接归因fsync、CPU或nice。真实收尾完整成功。
+
+本修正显式改变网关共有六条RR通道的发送准入：wire满时，未发送请求留在已有
+bounded64 FIFO中等待可用槽，仍受原handler/client/daemon截止约束。不是S-46
+私有夹具调整，也不把原始wire拒绝改写为PASS。transport只读保存已打开service
+的`max_active_requests_per_client`，不写QoS、不假设常量4；默认仍为4。每个
+RR worker独占client，所有成功send的PendingResponse都由其in_flight持有。
+先释放closed/ready/error对应的真实pending，再按实际剩余槽从原队列取出请求；
+没有额外待发队列，不预取已满槽时的live项，不重试任何已经send的请求。
+
+每轮最多dequeue64项，closed/send失败也计入预算，循环内观察stop。queued
+oneshot已关闭时不send，单独计数；已发请求仍按旧取消/收包失败语义退休。检查
+与send间的取消竞态没有原子撤销保证，不能宣称撤销已发生的副作用。四槽满时，
+排队中已取消项仍短暂占原队列容量，新的try_send仍可能按原义返回Full。
+默认每worker最多持有64条排队+4条wire，共68条，不把工具tracked64混为同一界。
+
+所有wire bytes、stamp与绝对deadline原样保留，排队不刷新预算。待发项携带构建wire
+时的同一个deadline，worker使用handler注入的同一RobotClock；实际send前观察
+`now > deadline`时返回内部类型化ExpiredBeforeSend，由handler映射DeadlineExceeded，
+零wire、不写成功幂等缓存。等于deadline保持原边界；检查/send不是原子操作。
+不能外推daemon统一截止：S0 Clear/Set已有门，S1 Invoke过期映射InvalidArgument，
+CancelTask/GetTaskStatus/ClearError没有同等执行前截止门。已进入wire后的S1缺口
+不是本子方案的已解决事项。handler已退出的queued项零send。
+关闭时不再发送queued；有限回收queued和所有in_flight，接收端drop保证剩余sender
+关闭。生产shutdown先等tonic退出，因而没有新handler继续入队；分别记录queued
+取消/关闭与in_flight退出，不将队列项漏记为零。真实send/poll错误保持原Unavailable。
+
+必须用真实RR四槽占用锁RED→GREEN：第五条留队，释放后仅发送一次、FIFO准入，
+旧四条不取消；保留直接transport第五send仍失败的反例。另核原64队列Full、
+queued/inflight取消、ready回收、关闭、原deadline字节与发送前过期零wire拒绝、
+单轮预算及真实至少518ms占槽下20/s负载。两端重新跑原67及4096/8192完整长测，
+保持所有S-46时间/容量/首错门。此改进只吸收有界暂态，不声称消除S0慢响应；持续
+服务能力不足仍按原截止FAIL。函数级范围见PLAN P.6.13；批准前不实施。
+
+### S-48：基础控制优先级隔离（分阶段实施：A1已批准，后续待评审）
+
+A1纯文件事务已通过独立评审与本地必要门，具体范围见PLAN P.6.14.1；
+生产双队列、原子权限迁移和disk writer总装仍待后续阶段，不宣称端到端已修复。
+
+用户要求：基础控制走高优先级通道，关节位置等连续目标走普通通道。这是端到端
+资源与执行顺序的要求，不能用不同topic、增加RR队列或提高线程调度优先级替代。
+S-47暂缓作为独立修复，容量与截止子方案须服从这里的控制优先级。
+用户进一步明确主结构为两个有界工作队列，每轮先高优先级、再普通队列。
+高队列承载live基础控制，普通队列承载诊断等普通请求；普通侧关节目标继续
+latest合并。下表的语义类别不对应新增多个物理队列。既有急停/fault原子notice
+保留；每轮先查安全notice，再有限处理高队列，最后处理少量普通工作，随后回到
+安全检查。每项只作非阻塞状态推进，不在循环内等待fsync、RPC或电机回复。
+
+当前已核事实：SetEnabled有独立RR worker/client/forward队列，dry/live共用；
+S-46中的四条未完成请求全是每50ms一次的新key干跑，并非四次真实使能。JointCommand
+本来走pub/sub与latest slot，但同一IPC线程先解析它再poll EStop；Clear/Set进入
+混合RR队列，Disable没有独立优先级，normal pending还会阻止后续lane推进。
+ClearEStop和EStop的同步落盘可阻塞这个IPC线程。四槽故障是压力模型暴露的
+容量症状，不是正常操作所需并发量；原FAIL及20/s验收条件继续保留。
+
+| 类别 | 内容 | 必须满足的语义 |
+|---|---|---|
+| 紧急安全 | EStop、硬件/软件安全故障 | 独立单调安全入口，不等普通目标、诊断或慢恢复；保留安全确认与持久化义务 |
+| 安全降低控制 | live Disable、Stop | 高于Enable/恢复；不冒充EStop，不额外制造持久化急停锁；真实退休/断扭后才报完成 |
+| 授权基础控制 | live Enable、ClearEStop | 高于普通目标与诊断；保持权限、幂等、断扭确认、原截止与持久化守门 |
+| 普通目标 | 关节位置、速度等JointCommand | 保留最新有效目标，不排旧目标FIFO；沿既有deadline/fallback执行 |
+| 普通诊断 | dry-run等无副作用请求 | 保留真实执行面评估；不能因借用SetEnabled方法而用尽基础控制保留资源 |
+
+逻辑控制通道可保留强类型方法/topic，不为合成一个物理topic引入通用弱类型载荷。
+入口分类必须贯穿网关幂等准入、forward队列、wire容量、S0接收与执行，不能到
+最后一级才排序。所有队列/在途资源仍有确定上限；控制本身超载时诚实拒绝，
+不承诺无限控制洪峰零失败。heartbeat期限与fault mailbox必须始终得到处理。
+
+IpcLoopState保持state/guards/pending唯一写者，SerialTick保持总线唯一执行者。
+Disable抢占已有Enable时，必须按原请求身份退休，旧成功回执不能迟到提交
+ActiveForward；不能只清pending或伪造完成。解除安全保护的提交点须检查当前
+权威代次，不能只使用本tick开始时的旧快照。RT保持无动态分配、无中间件、
+无磁盘/网络等待的边界；逻辑高优先级不等于把gRPC/IPC整体改成SCHED_FIFO。
+
+选取进一步评审的方向为单owner与普通优先级单disk writer解耦，所有持久化任务
+有界、有身份、有退休结果。Clear必须先持久化成功，再由owner验证当前权限与
+代次后解锁、回复。仅加内存generation不足以解决旧Clear写0后新EStop到达时的
+崩溃窗口；须完成可恢复事务标记协议及逐崩溃点审核后才允许实现。不以“任何
+异常重启一律额外锁存”的运行标记代替既有恢复语义，不修改冻结设计文件。
+
+新增验证从真实publish/call之前留戳，分别记录安全入口、首Safety与实际完成；
+普通目标及诊断满载、真实wire满、持久化屏障至少518ms时，屏障释放前必须
+观察到急停和安全降低推进。核旧Enable/Clear迟到结果、逐文件崩溃恢复、超时、
+重复请求、shutdown、READY/watchdog/线程收尾及RT allocation guard。原AC-12
+topic t0从取得样本起算，只证明原测量区间，不能证明发布到取样无排队；两种
+时间定义分别报告，不能偷换原P99。函数级设计见PLAN P.6.14。
+
+#### S-48 持久化候选协议（待逐阶段批准）
+
+只增加当前latch对应的`estop_latch.clear_pending`事务标记，不引入通用journal
+或全进程运行标记。标记记录固定版本、目标身份、txn_id、原epoch、原锁存值及
+完整性校验；以排他创建、完整写入、文件fsync、目录fsync建立，旧标记不得覆盖。
+部分写入或校验失败在启动时fail-closed。单writer独占非Clone的文件事务store，
+磁盘协作用单在途命令/完成mailbox，不是第三个可堆积业务队列。
+marker只接受普通文件，链接、目录、FIFO等均拒绝；只有真实路径不存在才进入
+原loader，特殊文件不能导致阻塞或绕过事务恢复。所有复核与重同步入口一致。
+
+| 阶段 | owner与writer义务 |
+|---|---|
+| Queued | 保持原截止检查、Safe与TorqueOffConfirmed守门；尚未开始磁盘副作用 |
+| Started | owner将不可变身份移入自己的pending并成功投递writer时开始；投递失败不算开始。之后超时/客户端退出不遗忘事务，沿旧合同记录真实outcome |
+| ZeroPrepared | writer先确认marker durable，再依次strict写backup0、primary0，发送匹配身份的完成；不能改state/guards/executor |
+| LogicalCommit | owner与EStop/Disable在同一原子权限域CAS竞争；成功清逻辑latch，但保留ClearFinalizing抑制，尚不允许Enable；失败进入Repair |
+| Finalize | 仅当前txn的许可允许writer清理本marker并strict目录fsync；已知后续EStop持久化义务不得被旧完成覆盖 |
+| Release/Ack | 匹配清理完成后，由同一权限域核token/epoch再释放finalization gate；旧receipt不能解除后来保护。成功Ack必须晚于strict清理，Ack不等于之后始终可运动 |
+| Repair | commit前抢占/失败保原latch；先strict修复所需磁盘态再清标记。新EStop必须补双1；Disable不将已经合法false的latch新置true；失败保持禁止Enable与真实阶段错误 |
+
+四个节点分别留证：逻辑提交、执行器放行、marker清理、成功Ack。当前无条件
+store(false)的清锁接口不能用于新协议；单独读epoch再调用旧接口也不成立。
+action已经Started后，即使fsync跨越原deadline仍沿旧合同返回真实结果；不能
+偷偷变成事后DeadlineExceeded。排队未发送的原截止拒绝仍单独成立。
+
+启动在任何primary读取或backup自愈之前检查marker：不存在时保持原恢复语义；
+有效pending存在则strict恢复双1、清理marker成功后才允许继续启动；损坏、
+身份不符、读失败或恢复/目录同步失败均拒绝启动。只对未完成Clear事务作保守
+恢复，不把所有异常重启统一额外锁存。无论0写到哪一步，只要marker仍存在，
+都不得根据primary0放行。unlink后目录fsync前崩溃，marker可能存在或消失：
+存在则保守恢复；消失时双0早已durable且逻辑提交已经发生，可以恢复已提交Clear，
+即使RPC Ack丢失。目录同步失败时不能成功Ack/Enable，也不能声称unlink未发生。
+
+新EStop/Disable早于逻辑commit时旧Clear必须失败，不得凭迟到结果清锁；晚于
+逻辑commit时是后续安全事件，新epoch立即封锁恢复。此后新EStop双1完成前的
+掉电窗口是“原语先行、持久化随后”的既有边界，不宣称CAS与磁盘瞬时原子。
+post-commit清理失败必须记录logical_committed与stage，不误报为完全无副作用。
+
+shutdown先停止新admission、完成真实安全降低；已开始未commit的Clear以关闭
+权限栅栏否决提交并修复，已commit者完成必要finalize与后续EStop持久化。writer
+须真实退休才能报clean/join；fsync超过原关闭预算时如实升级外层supervisor，
+保留事务/失败证据，不能中止线程后伪造完成。新增worker同步覆盖启动回滚及健康门。
+
 ## C4 Reverse Sync（2026-09-08，已 admission live RR 的急停保护）
 
 S-41：新调度把 PendingReplies 延后到 RR dequeue 后创建，不能因此丢掉旧实现对

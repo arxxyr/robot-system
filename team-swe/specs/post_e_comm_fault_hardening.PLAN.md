@@ -1,6 +1,6 @@
 # post-E 通信故障硬化 · 函数级实施计划
 
-> 日期：2026-09-08。版本：Plan Approved + S-40 至 S-45 Reverse Sync。状态：**C1–C5 已评审提交（C5 `85efefb`）；S-44 两端软件门与左 H1/H3 已独立 APPROVED。左 H2 首次 FAIL 已收尾，S-45 两端软件验收已独立批准，左 H2 待新物理边界重测；右臂未测，D15 OPEN**。
+> 日期：2026-09-09。版本：Plan Approved + S-40 至 S-46 Reverse Sync；S-47合入S-48。状态：**C1–C5、S-44与S-45软件已评审提交；左H1/H3 PASS，左H2两次FAIL保留，现场已确认左臂断电；S-46本地通过/Orin wire4满FAIL，S-48 A1文件事务本地及独立评审通过；右臂未测，D15 OPEN**。
 > 权威：[`post_e_comm_fault_hardening.md`](post_e_comm_fault_hardening.md)（round 21 Spec Approved）。
 > 代码基线：`bd081cb`；工作分支：`feat/post-e-comm-fault-hardening`。
 > 本文只展开已批准 D1–D15 与 P.0–P.8，不修改冻结设计。主 agent / reviewer 明确
@@ -1328,32 +1328,12 @@ comm_fault_e2e 独立测试与构建；运行现有 mock SLA probe 验证软件�
 S0/GW 输入但保留真实构建 manifest。Orin owner 独占 Cargo，隔离最终产物并核正式
 四 bin 未变化。独立代码评审、必要门全绿后提交工具修复；实物 H2 仍独立留待现场。
 
-当前 H2 现场入口仅支持左臂，使用 S-45 驱动；先查看默认 `PLAN_ONLY`：
-
-```bash
-cd /home/loosqk/repo/robot/robot-system
-uv run --no-project python target/post_e_hardware_current/s45/left_h2_current_driver.py \
-  --expected-head "$(git rev-parse HEAD)"
-```
-
-**只有收到本轮新的现场物理步骤完成事实后**，才显式执行下列命令；当前尚未收到，
-不得沿用首次 H2 的确认或授权。驱动校验当前 HEAD 与 clean 状态、309 个源码输入的
-`c07a9886…14b1` SHA，以及三份真实构建清单和产物；构建来源仍为 `a161a7b`，
-不反填运行时提交。产物固定为 `s45/recheck/artifacts/release`，输出固定为
-`left_h2_current`；已有运行目录即拒绝重跑，D9 revoke/status/一次 authorize 由驱动办理。
-
-```bash
-cd /home/loosqk/repo/robot/robot-system
-uv run --no-project python target/post_e_hardware_current/s45/left_h2_current_driver.py \
-  --execute --physical-reset-confirmed --expected-head "$(git rev-parse HEAD)"
-```
-
-驱动内部以 `taskset -c 0-3` 启动工具，保留原 H2 载荷、样本、预算与独立 `final_stop`。
-右臂须另行准备并审核入口，不能仅替换此驱动参数，也不同时跑双臂。
-普通 loosqk 的已核 rtprio99 / memlock 无限可用；必要时才 sudo，不改变 marker 属主。
-S-44 的 57 项工具测试属于历史结果；当前 S-45 工具测试为 60 项。
-当前状态与执行前提见 [HANDOFF](post_e_comm_fault_hardening.HANDOFF.md)，完整软件门、
-构建来源与硬件边界以 [H.json](../../.verify/post_e_comm_fault_hardening/H.json) 为入口。
+S-45 左H2驱动已经用于第二次真实FAIL，`left_h2_current`运行目录已消费，不能复用。
+当前转入P.6.12的软件修复与等效长负载；S-46独立评审提交并对齐两端后，才维护
+新的具体现场驱动与输出目录。新物理边界和持续值守事实仍是下一次H2的执行前提；
+右臂必须另行准备并审核入口，不能仅替换左臂驱动参数，也不同时跑双臂。
+当前现场操作已结束，用户确认左臂断电。源代码、构建身份与原始FAIL见
+[H.json](../../.verify/post_e_comm_fault_hardening/H.json)，后续执行约束见HANDOFF。
 
 ### P.6.11 H2 完整采样边界与 idle 夹具（S-45，软件验收已批准）
 
@@ -1419,6 +1399,226 @@ Cargo；reviewer 独立评审，Orin owner 独占远端 Cargo。无依赖、生�
 采集/恢复/收尾。必要 RT allocation 与原语/退休回归不得省。两端必要门与独立评审
 通过后提交；不以本包 mock 判定 Orin P99。新真机 H2 需要新的物理边界完成信号与
 D9 一次授权，失败证据保留在当前唯一 H 包中，不覆盖为 PASS。
+
+### P.6.12 H2 背景负载、缓存工作集与分项收尾（S-46，Plan Approved，实施中）
+
+真实依据：`ce61623`/`c07a9886…514b1` 左H2第二次运行，topic/idle为100预热+
+138正式、零失配，随后缓存恰4096项耗尽（3620背景干跑+476真实恢复）。3621项
+背景中11项启动迟到至少50ms；前导RPC201.565/275.143/172.031ms，S0完成前占
+201.088/274.283/171.115ms，完成到client接收不足1ms。故先前的串行await无法
+保持固定20/s；不归因未证实的CPU/磁盘因素。原始目录为
+`target/post_e_h2_rt/orin/left_h2_current`，含逐SHA索引、静态trace/observation、
+全部请求时间戳及现场断电补充。GetState已确认state3，后续Disable容量拒绝，
+最终收尾整体FAIL；原始记录不覆盖，现场确认已消费，不重复执行旧驱动。
+
+实现边界为`robot-tests`及必要文档/验收资产；真实handler/传输反例可在现有
+`robot-rpc`测试模块补充`cfg(test)`测试，不改其生产逻辑。不得改生产RPC、默认4096/TTL300、
+干跑幂等合同、transport QoS、S0调度、原H2四组样本/载荷/P99/RT门。
+
+1. **入口与容量装配**：`comm_fault/mod.rs`新增`Phase::MockH2Load`，CLI
+   `--phase mock-h2-load`，不并入`all`和原67场景。仅该软件phase接受
+   `--h2-software-cache-entries 4096|8192`，缺省8192；其余phase拒绝该参数，
+   软件phase仍拒绝所有现场参数。`sla.rs`以私有`SlaRunKind`区分Physical、
+   SoftwareProbe、SoftwareLoad；H2专用gateway装配复用`rpc::gateway_command`，
+   只Physical/SoftwareLoad显式追加TTL300和容量。Physical固定8192，短probe及
+   通用RPC入口保持原默认。有效CLI/TTL/容量/在途上限写入environment。
+2. **固定节拍**：私有`sla_background.rs`承载共同负载运行器。纯
+   `BackgroundSchedule::admit(now_ns,in_flight)`使用同一RobotClock域，早到
+   不发；实际start满足`due <= start < due+50ms`且tracked<64才允许发起，
+   checked推进原绝对due恰50ms。迟到、满槽、算术溢出锁存首错，不重置基准、
+   跳槽或追赶欠账。64包括尚未开始和完成未收回的任务。
+3. **真实请求与响应**：有界JoinSet将发起与响应等待分开；任务首次实际执行时
+   再读start并校验50ms门，不能拿spawn时刻替代。每项全新metadata、真实
+   `SetEnabled(dry_run=true,enabled=false)`；同Channel clone不绕RR。完整RPC
+   从actual start起固定2000ms外层截止，保原请求/Endpoint2000ms与gateway
+   grace500ms。每条记录sequence/request_id/due/start/finish、Ack或Status/
+   timeout/join失败；Ack核身份、dry_run与非零完成戳。按发起sequence汇总，
+   不把完成顺序当发起间隔；记录launched/completed/峰值及未完成清单。
+4. **传输容量真实边界**：应用forward与S0pending各64；现有iceoryx2每client
+   active request实际为4、PendingResponse Drop才释放。工具64不保证wire64。
+   独立反例须占住真实4个wire槽并核第5个真实失败；若等效长跑触发此门，保留
+   FAIL、另据实证Reverse Sync，不通过静默扩大QoS或延迟已释放wire的HTTP
+   回复冒充成功。生成器的慢回复/乱序测试只证明其调度接缝，不证明wire容量。
+5. **首错与收尾**：`BackgroundHealth::check`可见首错，负载发生迟发、响应
+   错误/超时、join失败或满槽立即停新发。`recover`开始、600ms等待后发Clear前、
+   Clear返回且发Enable前检查；已经发出的live RPC必须等待原合同结果，不能
+   select/drop后让旧请求越过final_stop。下一轮及采集轮询也检查health；错误仍
+   disarm→drain→保存事件。`finish`自stop起固定2500ms drain预算，不续期；
+   到期列出未完成并FAIL，仅回收背景dry任务，live恢复请求不取消。5ms调度探针
+   独立停止/join，保存原值及时钟起点以便对齐；任何错误后仍走独立final_stop。
+6. **分项final_stop**：保ExternalEStop、Disarm、700ms等待、GetState确认state3、
+   随后Disable的顺序。单独结构化保存get_state的真实状态或错误，以及disable的
+   attempted/结果或未发原因。任一步失败整体FAIL；读state3不能掩盖Disable失败。
+7. **无电机长负载**：新software_load用真实mock S0/GW/tool及相同运行器，
+   ≥600ms恢复、真实Clear/Enable/GetState、真实ExternalEStop及全关确认循环。
+   4096作为负面对照，首次真实容量拒绝即按原失败收尾并保留RED；8192至少360s
+   且成功唯一写key累计>8192，最多600s，未满足即FAIL。窗口结束不再起新恢复，
+   已发live请求先退休再收尾。明确无UART/无物理P99宣称。统计每条节拍、所有
+   结果、真实恢复次数及唯一key集合/总数，以跨越容量证明TTL轮换，不能只看运行时长。
+8. **容量界与必要门**：TTL300s从commit计；合规窗口保守背景6002+恢复1004+
+   跨窗背景64+恢复1+最终Disable1=7072<8192。测试调用真实装配/调度接缝，并以
+   真实handler锁满缓存时GetState仍读、新写拒、旧key重放/冲突原义及TTL释放。
+   MockClock/可控response future锁早到/边界49999999与50000000ns、64满、溢出、
+   首错sticky、不补发、201/275ms慢响应与乱序配对、错误后禁止下一Enable且保
+   已发live结果；final_stop反例锁state3+Disable失败的分项证据。两端各运行
+   4096 RED与8192长负载GREEN，必要工具单元/装配、原67软件场景及受影响门通过。
+   同机Cargo串行；真机新H2必须在独立评审、fmt/Clippy、提交与两端对齐后，再收
+   到新的物理重置及持续在场事实，生成新驱动/新输出目录，不能沿用已消费目录。
+
+### P.6.13 RR worker 按真实可用槽发送（S-47，暂停，待并入S-48）
+
+用户已明确基础控制高优先级、连续目标普通通道。本节只保留容量子方案，尚未
+实施；原统一FIFO发送方案要服从P.6.14分类与保留容量设计，不能先落地再补优先级。
+
+输入为S-46两端实际软件证据：本地五阶段通过；Orin原67通过但长测在真实wire4
+满时拒绝第五请求，完整raw见`target/post_e_h2_rt/orin/s46/acceptance1/load4096`。
+765–768的S0完成戳晚于拒绝约299ms，ClearEStop位于另一client，不占SetEnabled
+四槽。先收后发只是正确准入的一部分，不能代替实际容量背压。旧FAIL始终保留。
+
+1. **transport容量观察**：只改`iceoryx2/request_response.rs`的wrapper与
+   `rr_client`/`rr_channel`构造，在已open/create的service上读取实际静态active
+   上限并保存，提供只读getter；不改`build_rr_service`QoS或其它工厂合同。
+   getter必须核非默认已存在service的实际值；原默认4直接send第五条仍失败。
+2. **单轮运行接缝**：`robot-rpc/rr_io_thread.rs`提取必要私有单轮/回收辅助，
+   closed→ready/error→有限forward准入；pending必须实际Drop后才计算余量。
+   `in_flight.len()<client实际上限`才取原crossbeam队列，不添加VecDeque、pending
+   临时槽或重试。每轮dequeue预算固定64，包含closed及send失败；每项前观察stop。
+   所有成功send仅进入原in_flight，真实send/poll错误仍关闭oneshot并计原错误。
+3. **取消与关闭**：新增独立queued取消/关闭计数，不混入已发handler_drops。
+   queued已closed零send；保留inflight取消/乱序回复/收包错误的真实pending归还。
+   stop后不发新queued，最多64次显式回收原生产队列并Drop剩余接收端；production
+   tonic已退出无新入队，故queued+inflight退场计数可完整核。不得无限drain生产者。
+   其它公共调用方的并发取消检查/send竞态不增加原子撤销承诺。
+4. **截止与FIFO**：原wire bytes不重建、不改stamp/deadline，handler及tool预算
+   不续期。RrForwardRequest携带构造wire时的同一deadline；六worker复用gateway
+   注入的同一RobotClock。send前检查closed和`now > deadline`；过期经内部
+   ExpiredBeforeSend类型映射DeadlineExceeded，零wire且不写成功缓存。
+   Clear/Set handler与四task方法共同await接缝都要接通。等于截止保留原比较边界；
+   不保证check/send原子。S1 Invoke旧映射InvalidArgument、Cancel/Status/ClearError
+   无同等执行门的缺口单列，不能外推已进入wire后的零副作用。原FIFO只为待调整
+   子方案，最终发送优先级由P.6.14规定；满槽closed项占位造成Full仍如实报告。
+5. **永久回归**：在真实transport接缝保留四槽+第五拒绝；将原gateway第五拒绝
+   测试保留为RED依据并改成四槽占用→第五留队→释放→一次送达GREEN。核原64
+   队列第65Full、FIFO、queued/inflight取消、queued+inflight关闭、ready/poll
+   error真实归还、非默认service容量getter及每轮64预算。必须有真实wire至少
+   518ms占槽而固定20/s仍入原队列、释放后完整身份配对的集成反例，不能仅延迟HTTP。
+   截止测试核六真handler携带值等于wire原deadline，2s过期而grace仍开时返回
+   DeadlineExceeded且真实RR零收包；核相等/+1ns、cache不commit、同源MockClock。
+   不新增依赖。六topic共用运行器
+   装配和已有cancel/timeout/routing/shutdown回归都要通过。
+6. **验证与收口**：同机Cargo串行，fmt→默认Clippy→transport/RPC/tool相关
+   features Clippy→相关测试→实际三个CargoJSON产物→原67→4096预期RED→8192
+   至少360s且unique>8192。两端源码一致，保留旧S-46本地通过和Orin失败；新输出
+   目录、新run/build manifest绑定实际source/base。驱动原时间/首因/清理oracle
+   不放宽。独立审核全部证据后commit，再准备新物理H2驱动；D15 OPEN不变。
+
+### P.6.14 基础控制与普通目标优先级隔离（S-48，设计评审中，尚未实施）
+
+本节优先于P.6.13推进，用户要求已授权，不需要再次询问流程许可。开发agent
+负责函数级实现设计，reviewer独立审安全边界，root维护文档及验收；三者确认
+完整协议后才进入实现。现场保持左臂断电，纯软件阶段不打开串口。
+
+1. **两个队列的端到端分类与容量**：保留强类型RPC/topic，主调度只使用两个有界
+   工作队列，每轮先高再普通；保留既有原子安全notice与普通侧latest slot，不扩成
+   通用多级调度框架。紧急安全独立；live Disable/Stop
+   先于live Enable/Clear；dry-run属于普通诊断，JointCommand单独latest-only。
+   检查gateway幂等准入、forward、实际wire槽、S0 RR入口、EventQueue每一层，
+   给基础控制保留有界容量。分类与拒绝码、每类上限、同类FIFO及跨类抢占要在
+   实施前锁定，不能把dry_run原20/s要求悄悄删除，也不能把所有请求直接堆大队列。
+2. **唯一owner与优先调度**：改`event_ingress`与`ipc_runtime`调度接缝；安全入口
+   先于普通目标解析，安全降低先于恢复。normal pending不能挡住Disable；其真实
+   退休回执必须按身份消费，旧Enable不能迟到翻回ActiveForward。heartbeat期限与
+   mailbox不因业务lane持续忙而失去推进。每轮工作量有界，不引入第二状态机写者。
+3. **磁盘解耦协议先审**：`ipc_tick/clear_estop_action/estop_latch`拟接单disk writer，
+   worker仅做有界磁盘事务，不能修改state/guards/executor。必须先落盘Clear事务
+   标记/恢复协议与唯一线性化点：标记先于双0写入，未完成事务启动时保守恢复，
+   新EStop/Disable与Clear提交由同一原子权限仲裁，迟到结果不得解锁。当前
+   `clear_safety_latch`仅storefalse，不能沿用“先读epoch再store”的竞态接缝。
+   不使用异常重启无条件额外锁存的运行标记代替事务恢复；保留原双文件失败语义。
+   marker清理、Ack、超时、abort、writer退出及每个崩溃点必须经独立审查。
+4. **线程与RT约束**：普通gateway/IPC/persist允许受控分配，但不设为serial FIFO。
+   RT仍只操作预分配POD/原子与唯一总线执行器，不进入RPC、持久化或中间件。
+   新worker同步接入READY、启动失败回滚、watchdog、CP2收尾和TID验证。
+5. **确定性反例先于长测**：从真正publish/call之前记录入口时刻；压满普通目标与
+   诊断的每层资源，持久化阶段用可控屏障停住至少518ms。释放屏障前观察到紧急
+   安全和Disable推进；核抢占旧Enable、Clear前后新EStop、真实请求唯一回复、
+   真实临时文件逐crash点恢复、固定截止和shutdown。旧AC-12取样后t0/P99不变，
+   新发布前起点独立记录；禁止先解除屏障再开始计时。
+6. **分阶段验收与提交**：依据完整评审后的代码图确定可独立提交的小阶段；每个
+   阶段独立评审、fmt/Clippy与必要回归通过后commit。最终保留旧S-46失败证据，
+   两端重跑原67、长负载、RT guard及新增优先级反例；软件关闭前不恢复物理H2。
+
+#### P.6.14.1 A1 纯文件事务与恢复（Plan Approved，本地及独立评审通过）
+
+重启恢复后的独立reviewer已核当前文档、loader与strict helper，三项旧阻断及
+repair前完整record校验、canonical身份、单writer前提全部通过；root批准本阶段实施。
+
+新增`crates/robot-s0/src/clear_estop_transaction.rs`，`lib.rs`只注册模块。本阶段
+不接生产prepare_execution、IPC owner、旧Clear入口，不改线程数、依赖、CLI或
+正常启动语义；不宣称双队列或优先级隔离已落地。复用现有blake3/tempfile。
+
+文件层以非Clone的`ClearTxnStore`独占目标，变更接口取`&mut self`。身份记录绑定
+robot_id/hardware_id/canonical_latch_path，事务含txn_id、expected_epoch、
+original_latched，固定版本、完整性校验与有界读取。身份不匹配不得修别的目标。
+marker采用固定112字节二进制：magic8、version u16 LE、保留6字节零、目标身份
+blake3摘要32、非零txn_id u128 LE、expected_epoch u64 LE、original_latched一字节
+0/1、保留7字节零、前80字节的blake3校验32；版本1，magic为`RBTCLRTX`。
+身份摘要以固定域和各段长度绑定robot_id、hardware_id、canonical_latch_path原生
+编码字节；摘要代替可变字符串入标记。最多读113字节，拒绝短记录、尾随、未知
+版本、非零保留位或坏校验。txn唯一性由上层分配保证，文件层拒绝零txn及旧marker。
+canonical路径按已存在父目录canonicalize后拼原文件名绑定，不依赖primary当前
+存在或其inode；原子替换不改变身份。单writer/部署锁是调用方前提，非Clone本身
+不提供跨实例或跨进程互斥，不新增第二套锁文件协议。
+
+marker只接受普通文件；Linux读取采用`O_NOFOLLOW | O_NONBLOCK`并核fstat类型，
+仅真实NotFound视为不存在。链接（包括悬空链接）、目录、FIFO等必须明确拒绝，
+不得进入旧loader自愈；inspect、完整record复核与重同步入口遵守同一合同。
+临时latch文件排他创建；撞上残留文件仅更换序号，最多64次，耗尽返回对应创建
+阶段错误。不得覆盖残留，也不得将选名重试扩展为事务或磁盘失败重试。
+
+- `inspect_pending`：只读核当前marker，返回完整记录或明确错误。合法可读不等于
+  marker已durable，更不等于双0已准备；此结果不能直接构造PreparedClear。
+- `prepare_clear`：`create_new`拒覆盖旧marker；写完整记录→file fsync→dir fsync
+  成功后才strict backup0→primary0，返回带不可混淆身份的PreparedClear。
+- `repair_prepared`：按上层明确给定的RepairTarget严格修复，保留marker；文件层
+  在任何latch写入前先核当前marker完整record，不自行读取epoch推断最新权限。
+  若为恢复失败事务另设从inspect记录取得repair
+  令牌的入口，任何false写入之前必须重新核完整记录并strict同步marker文件和
+  目录；不得把一次成功读取当作durability凭证。
+  false按backup0→primary0，true按primary1→backup1，全部严格同步。
+- PreparedClear/RepairedClear字段私有、非Clone，变更/清理凭证按值消费；凭证
+  绑定完整record。`remove_prepared_marker`消费凭证，再次核当前完整record一致
+  才unlink并strict dir fsync；旧凭证不得删除新txn。此API只执行文件操作，
+  不代表Clear授权，高层持有Finalize许可是后续总装前提。
+- unlink成功、目录fsync失败时必须返回对应阶段错误，当前命名空间中的marker
+  可能已消失；不能承诺清理失败必保marker或重开必true。不自动重建/重试、
+  不虚构原子删除；未来总装需在调用删除前已经持有有效Finalize许可。
+- `recover_and_load`：先marker；有效pending strict双1→cleanup→true；坏/错identity/
+  读错直接拒绝且不先自愈。无marker才调用原load，原0/1/缺失语义保持。
+
+测试使用真实TempDir文件，在marker与两份latch的写入、文件fsync、rename和目录
+fsync边界注入确定性中断并重新打开恢复。核无durable marker绝不写0、重复prepare
+拒覆盖、校验/版本/身份/txn错配、有marker必保守恢复、repair各目标与失败保marker、
+从可读记录恢复到false前重同步、令牌消费与旧令牌不能删新txn、unlink后目录
+同步失败的实际不可见marker及明确错误阶段、严格操作顺序。只证明实际文件状态、进程中断恢复与fsync调用
+顺序，不称断电实测。独立源码评审、必要测试及全workspace fmt/Clippy通过后，
+只提交本阶段源文件与对应文档证据；S-46未关闭事项及旧失败不得顺带宣称完成。
+
+本地实际门：`b61a1534…b6c20e`/313输入、base `ce61623`；模块28入口、公开API7、
+旧latch24、compile-fail3全部通过，fmt/Clippy零警告。16处进程退出是实际子进程
+中断，逐步骤故障hook位于成功操作之后；目录同步错误用例含目录open失败，
+不称每种fsync errno或真实掉电已测试。first Clippy首红与second通过分开留证。
+
+#### P.6.14.2 A2–A4 后续相依阶段（协议待详细评审）
+
+- A2 权限原语：同一原子域内capture/commit/release token，EStop/Disable撤销旧
+  恢复权限，避免ABA且耗尽fail-closed；RT请求与执行器读同一权威门，先验证原语。
+- A3 S0完整总装：两业务队列、单在途disk mailbox、事务生命周期与启动恢复一起
+  接通；真实Enable退休、Disable抢占、worker READY/回滚/watchdog/CP2同步完成。
+  不将半条异步Clear默认启用后再等待下一提交补恢复。
+- A4 网关与总体验收：两类准入及保留容量、actual-wire背压、发送前typed截止；
+  数值与拒绝策略另经二审钉死。新增独立优先级场景，原67默认集合不变，两端
+  原长测、RT与新增反例全部通过后才准备下一轮物理H2。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

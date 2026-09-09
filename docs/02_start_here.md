@@ -20,9 +20,9 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     C1–C5 已评审提交（C5 85efefb）；S-45 采样修复两端软件验收已独立批准
+当前步骤:     C1–C5 与S-45软件已评审提交；S-46本地通过、Orin wire4满FAIL；S-48 A1纯文件事务本地及独立评审通过，A2权限与A3双队列待总装
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
-平台:         C5 两端软件门全 PASS；左 H1/H3 PASS，H2 首次 FAIL 已收尾，右臂未测
+平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
 
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
@@ -53,6 +53,18 @@ Orin 调试 / RT 需要权限时直接使用已获授权的 `sudo`，不放宽�
 S-45 / PLAN P.6.11 已修复采样边界、显式 idle 前置条件及工具跨读取误判；两端各
 67 软件场景通过并独立批准，已提交 `965bcd7`；新物理边界确认后再执行 D9 一次授权。启动夹具
 缓存旧路径的失败也已定位并按原预算复验通过。左 H1/H3 PASS、右臂未测、D15 `OPEN`。
+
+2026-09-09在`ce61623`上重测左H2，topic/idle为100预热+138正式、零失配后缓存
+恰4096项耗尽；另11条背景请求因串行await慢RPC导致启动迟到至少50ms。最终
+GetState确认state3，随后Disable容量拒绝，整体仍FAIL；全部进程退出，用户确认
+左臂断电、双臂继续支撑。S-46 / PLAN P.6.12只修工具负载、有限缓存配置和收尾留证，
+先做两端同负载长测，再独立评审提交；不重复执行已消费的`left_h2_current`目录。
+两臂继续直接读取Orin上既有Python标定JSON，名称/ID/字段兼容已只读核对。
+
+S-48按用户要求分高/普通两个有界队列，每轮先高后普通、每项非阻塞推进。
+A1先独立实现Clear文件事务与恢复，已通过28个模块入口、7项公开API验收、
+24项旧latch回归和3项编译失败文档测试；全workspace fmt/Clippy零警告。
+此时仍未接生产启动或IPC，双队列与磁盘writer尚未总装；不得称优先级问题已修复。
 
 C5 证据保留 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与
 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)；

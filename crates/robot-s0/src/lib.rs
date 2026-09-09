@@ -36,6 +36,7 @@ pub use robot_adapter_feetech as _;
 
 pub mod boot_supervisor;
 mod clear_estop_action;
+pub mod clear_estop_transaction;
 #[cfg(feature = "test-comm-fault-hook")]
 pub mod comm_fault_adapter;
 #[cfg(feature = "test-comm-fault-hook")]
