@@ -1626,3 +1626,241 @@ fn crash_checkpoint_child() {
     store.remove(prepared, &mut NoGuard).unwrap();
     panic!("子进程未命中指定文件步骤");
 }
+
+// ── W0.1 只读双份核验 ──────────────────────────────────────────────────────
+
+/// 记录每次守门调用的阶段；核 `inspect_pair` 一个步骤内守门恰一次。
+struct CountingGuard(Vec<ClearTxnStage>);
+
+impl StepGuard for CountingGuard {
+    fn before(&mut self, stage: ClearTxnStage) -> Result<(), GuardInterrupt> {
+        self.0.push(stage);
+        Ok(())
+    }
+}
+
+/// 目录条目快照：名字、普通文件内容与是否符号链接。
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct DirEntrySnapshot {
+    name: std::ffi::OsString,
+    bytes: Vec<u8>,
+    symlink: bool,
+}
+
+fn dir_snapshot(dir: &Path) -> Vec<DirEntrySnapshot> {
+    let mut rows: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            let metadata = std::fs::symlink_metadata(entry.path()).unwrap();
+            let bytes = if metadata.is_file() {
+                std::fs::read(entry.path()).unwrap()
+            } else {
+                Vec::new()
+            };
+            DirEntrySnapshot {
+                name: entry.file_name(),
+                bytes,
+                symlink: metadata.file_type().is_symlink(),
+            }
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+/// 值 / 缺失 / 坏值矩阵：每种组合返回真实状态，且目录条目与所有现存内容（含标记）
+/// 逐字节不变；守门恰一次、仅 `InspectPair` 一个步骤。
+#[test]
+fn inspect_pair_reports_values_missing_and_corrupt_without_side_effects() {
+    use LatchCopyState as S;
+    /// (primary 内容, backup 内容, 期望 primary 状态, 期望 backup 状态)；`None` = 文件不存在。
+    type Case = (Option<&'static [u8]>, Option<&'static [u8]>, S, S);
+    let cases: [Case; 12] = [
+        (Some(b"0\n"), Some(b"0\n"), S::Value(false), S::Value(false)),
+        (Some(b"1\n"), Some(b"1\n"), S::Value(true), S::Value(true)),
+        (Some(b"1\n"), Some(b"0\n"), S::Value(true), S::Value(false)),
+        (Some(b"0\n"), Some(b"1\n"), S::Value(false), S::Value(true)),
+        (Some(b"0"), Some(b"1"), S::Value(false), S::Value(true)),
+        (None, Some(b"1\n"), S::Missing, S::Value(true)),
+        (Some(b"0\n"), None, S::Value(false), S::Missing),
+        (None, None, S::Missing, S::Missing),
+        (Some(b"garbage"), Some(b"0\n"), S::Corrupt, S::Value(false)),
+        (Some(b""), Some(b"2\n"), S::Corrupt, S::Corrupt),
+        (Some(b"1\n\n"), None, S::Corrupt, S::Missing),
+        (Some(b"01"), Some(b"1\r\n"), S::Corrupt, S::Corrupt),
+    ];
+    for (primary, backup, expect_primary, expect_backup) in cases {
+        let dir = TempDir::new().unwrap();
+        let latch = dir.path().join("estop_latch");
+        if let Some(bytes) = primary {
+            std::fs::write(&latch, bytes).unwrap();
+        }
+        if let Some(bytes) = backup {
+            std::fs::write(backup_path(&latch), bytes).unwrap();
+        }
+        // 标记只允许存在、不得被读改：用坏字节证明它既不触发恢复也不被动。
+        std::fs::write(
+            dir.path().join("estop_latch.clear_pending"),
+            b"stale-marker",
+        )
+        .unwrap();
+        let before = dir_snapshot(dir.path());
+        let mut store = open_store(&latch);
+        let steps = record_steps(&mut store);
+        let mut guard = CountingGuard(Vec::new());
+        let view = store.inspect_pair(&mut guard).unwrap();
+        assert_eq!(view.primary, expect_primary, "{primary:?}/{backup:?}");
+        assert_eq!(view.backup, expect_backup, "{primary:?}/{backup:?}");
+        assert_eq!(view.directory_identity, store.directory_identity());
+        assert_eq!(guard.0, vec![ClearTxnStage::InspectPair], "守门恰一次");
+        assert_eq!(&*steps.lock().unwrap(), &[ClearTxnStage::InspectPair]);
+        assert_eq!(dir_snapshot(dir.path()), before, "不得写入 / 自愈 / 改标记");
+        store.after_step = None;
+    }
+}
+
+/// 符号链接 / 硬链接 / 目录：Operation 相真实错误（`ELOOP` / `InvalidInput`），不伪装
+/// 成 Corrupt，不返回部分结果，目录不变。
+#[test]
+fn inspect_pair_rejects_symlink_hardlink_and_directory_objects() {
+    // primary 为符号链接（O_NOFOLLOW → ELOOP）。
+    let dir = TempDir::new().unwrap();
+    let latch = dir.path().join("estop_latch");
+    std::fs::write(dir.path().join("real"), b"1\n").unwrap();
+    symlink("real", &latch).unwrap();
+    std::fs::write(backup_path(&latch), b"1\n").unwrap();
+    let before = dir_snapshot(dir.path());
+    let mut store = open_store(&latch);
+    let error = store.inspect_pair(&mut NoGuard).unwrap_err();
+    assert_eq!(error.stage, ClearTxnStage::InspectPair);
+    assert_eq!(error.phase, StepPhase::Operation);
+    assert_eq!(error.source.raw_os_error(), Some(libc::ELOOP));
+    assert_eq!(dir_snapshot(dir.path()), before);
+
+    // backup 与 primary 互为硬链接（nlink == 2）。
+    let dir = TempDir::new().unwrap();
+    let latch = dir.path().join("estop_latch");
+    std::fs::write(&latch, b"0\n").unwrap();
+    std::fs::hard_link(&latch, backup_path(&latch)).unwrap();
+    let before = dir_snapshot(dir.path());
+    let mut store = open_store(&latch);
+    let error = store.inspect_pair(&mut NoGuard).unwrap_err();
+    assert_eq!(error.stage, ClearTxnStage::InspectPair);
+    assert_eq!(error.phase, StepPhase::Operation);
+    assert_eq!(error.source.kind(), io::ErrorKind::InvalidInput);
+    assert_eq!(dir_snapshot(dir.path()), before);
+
+    // backup 是目录。
+    let dir = TempDir::new().unwrap();
+    let latch = dir.path().join("estop_latch");
+    std::fs::write(&latch, b"0\n").unwrap();
+    std::fs::create_dir(backup_path(&latch)).unwrap();
+    let mut store = open_store(&latch);
+    let error = store.inspect_pair(&mut NoGuard).unwrap_err();
+    assert_eq!(error.stage, ClearTxnStage::InspectPair);
+    assert_eq!(error.phase, StepPhase::Operation);
+    assert_eq!(error.source.kind(), io::ErrorKind::InvalidInput);
+    assert_eq!(std::fs::read(&latch).unwrap(), b"0\n");
+}
+
+/// 真实系统错误（primary 不可读 `EACCES`）直接传播为 Operation 错误，不吞成 Corrupt，
+/// 也不回退 backup；root 下无法构造则跳过。
+#[test]
+fn inspect_pair_propagates_real_io_errors_instead_of_corrupt() {
+    // SAFETY：geteuid 无参数、无副作用、不会失败。
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let dir = TempDir::new().unwrap();
+    let latch = dir.path().join("estop_latch");
+    std::fs::write(&latch, b"1\n").unwrap();
+    std::fs::write(backup_path(&latch), b"1\n").unwrap();
+    std::fs::set_permissions(&latch, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let mut store = open_store(&latch);
+    let error = store.inspect_pair(&mut NoGuard).unwrap_err();
+    std::fs::set_permissions(&latch, std::fs::Permissions::from_mode(0o640)).unwrap();
+    assert_eq!(error.stage, ClearTxnStage::InspectPair);
+    assert_eq!(error.phase, StepPhase::Operation);
+    assert_eq!(error.source.kind(), io::ErrorKind::PermissionDenied);
+    assert_eq!(std::fs::read(&latch).unwrap(), b"1\n");
+}
+
+/// 父目录被替换后仍读打开时的目录 fd：返回旧目录的值与原身份，不读新目录。
+#[test]
+fn inspect_pair_reads_the_bound_directory_after_parent_replacement() {
+    let dir = TempDir::new().unwrap();
+    let parent = dir.path().join("robot");
+    std::fs::create_dir(&parent).unwrap();
+    let latch = parent.join("estop_latch");
+    std::fs::write(&latch, b"0\n").unwrap();
+    std::fs::write(backup_path(&latch), b"0\n").unwrap();
+    let mut store = open_store(&latch);
+    let identity = store.directory_identity();
+
+    std::fs::rename(&parent, dir.path().join("robot.old")).unwrap();
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::write(&latch, b"1\n").unwrap();
+    std::fs::write(backup_path(&latch), b"1\n").unwrap();
+
+    let view = store.inspect_pair(&mut NoGuard).unwrap();
+    assert_eq!(view.primary, LatchCopyState::Value(false));
+    assert_eq!(view.backup, LatchCopyState::Value(false));
+    assert_eq!(view.directory_identity, identity);
+    let new_identity = FileIdentity::of(&std::fs::metadata(&parent).unwrap());
+    assert_ne!(view.directory_identity, new_identity, "不得读替换目录");
+}
+
+/// 三相注入：守门拒绝为 Before 且不进入文件操作；Operation 注入为真实 EIO；After
+/// 注入在两份读取成功后才触发。
+#[test]
+fn inspect_pair_records_real_phase_for_before_operation_and_after() {
+    let (dir, mut store) = fixture(false);
+    let before = dir_snapshot(dir.path());
+
+    let steps = record_steps(&mut store);
+    let error = store
+        .inspect_pair(&mut FailBefore(ClearTxnStage::InspectPair))
+        .unwrap_err();
+    assert_eq!(error.stage, ClearTxnStage::InspectPair);
+    assert_eq!(error.phase, StepPhase::Before);
+    assert_eq!(error.guard_interrupt(), Some(InterruptReason::TestBarrier));
+    assert!(
+        steps.lock().unwrap().is_empty(),
+        "Before 拒绝不得进入 Operation"
+    );
+
+    store.fail_operation = Some((ClearTxnStage::InspectPair, 1));
+    let error = store.inspect_pair(&mut NoGuard).unwrap_err();
+    assert_eq!(error.stage, ClearTxnStage::InspectPair);
+    assert_eq!(error.phase, StepPhase::Operation);
+    assert_eq!(error.source.raw_os_error(), Some(libc::EIO));
+    assert_eq!(store.fail_operation, Some((ClearTxnStage::InspectPair, 0)));
+    assert!(
+        steps.lock().unwrap().is_empty(),
+        "Operation 失败不得到 After"
+    );
+
+    fail_after(&mut store, ClearTxnStage::InspectPair);
+    let error = store.inspect_pair(&mut NoGuard).unwrap_err();
+    assert_eq!(error.stage, ClearTxnStage::InspectPair);
+    assert_eq!(error.phase, StepPhase::After);
+
+    store.after_step = None;
+    let view = store.inspect_pair(&mut NoGuard).unwrap();
+    assert_eq!(view.primary, LatchCopyState::Value(false));
+    assert_eq!(view.backup, LatchCopyState::Value(false));
+    assert_eq!(dir_snapshot(dir.path()), before);
+}
+
+/// 纯字节解析与旧 loader 接受形态完全一致。
+#[test]
+fn parse_latch_bytes_matches_legacy_reader() {
+    assert_eq!(parse_latch_bytes(b"0"), Some(false));
+    assert_eq!(parse_latch_bytes(b"0\n"), Some(false));
+    assert_eq!(parse_latch_bytes(b"1"), Some(true));
+    assert_eq!(parse_latch_bytes(b"1\n"), Some(true));
+    for bad in [&b""[..], b"2", b"01", b"1\n\n", b"1\r\n", b"garb", b" 1"] {
+        assert_eq!(parse_latch_bytes(bad), None, "{bad:?}");
+    }
+}

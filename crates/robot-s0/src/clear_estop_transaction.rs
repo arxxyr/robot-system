@@ -34,6 +34,13 @@
 //! 不证明原物理对象仍在。该交错不属于当前受支持的生产前提；不同 txn / epoch /
 //! 原锁存值的旧凭证仍由完整记录比较拒绝。
 //!
+//! ## 只读双份核验（W0.1）
+//!
+//! [`ClearTxnStore::inspect_pair`] 在一个 [`ClearTxnStage::InspectPair`] 步骤内相对
+//! 绑定目录 fd 依次读取 primary、backup，返回 [`PairView`]：值 / 真实缺失 / 坏值，
+//! 附打开时采样的目录身份。它不写、不自愈、不同步、不碰标记、不产生或消费凭证，
+//! 供上层在不借用会自愈或恢复标记的 `recover_and_load` 的情况下核验真实双份。
+//!
 //! 调用方必须保证目标只有一个 writer，并持有部署层的排他锁。非 `Clone`
 //! 的 store 与按值消费的凭证只约束本实例，不能代替跨实例或跨进程互斥。
 
@@ -93,6 +100,31 @@ pub enum ClearTxnStage {
     RemoveMarker,
     SyncRemovalDirectory,
     LoadLatch,
+    /// W0.1 只读双份核验：一个步骤内顺序读取 primary、backup，不写不自愈。
+    InspectPair,
+}
+
+/// W0.1：单份 latch 文件的只读核验结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LatchCopyState {
+    /// `nlink == 1` 的普通文件，内容为合法 `0` / `1`（可带一个换行）。
+    Value(bool),
+    /// 打开时真实 `ENOENT`。
+    Missing,
+    /// 普通文件但内容不是合法值（含空文件）。
+    Corrupt,
+}
+
+/// W0.1：一次 [`ClearTxnStage::InspectPair`] 步骤读取到的双份状态与绑定目录身份。
+///
+/// 它不是 durability 证明、不是清锁许可，也不承诺外部并发改名下的原子快照；
+/// 两份按 primary → backup 顺序各读一次。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PairView {
+    pub primary: LatchCopyState,
+    pub backup: LatchCopyState,
+    /// store 打开时采样的目录身份（读取相对该 fd 进行，父目录被替换也不变）。
+    pub directory_identity: FileIdentity,
 }
 
 /// 由唯一 owner 根据当前权限决定；文件层不自行猜测新事件或代次。
@@ -413,6 +445,31 @@ impl ClearTxnStore {
                 token: RemoveFailureToken::Retained(credential),
             }),
         }
+    }
+
+    /// W0.1 只读双份核验：一个 [`ClearTxnStage::InspectPair`] 步骤内先守门恰一次，
+    /// 再在 `Operation` 相相对绑定目录 fd 依次读取 primary、backup（每份
+    /// `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` 打开，同一 fd 先核普通文件且
+    /// `nlink == 1` 再读前缀解析），两份都成功后才执行测试 `After` 检查点。
+    ///
+    /// 仅 open 的真实 `ENOENT` 记为 [`LatchCopyState::Missing`]；普通文件的坏字节
+    /// 记为 [`LatchCopyState::Corrupt`]；权限、`ELOOP`、非普通文件 / `nlink != 1`
+    /// （`InvalidInput`）、fstat / read 等真实错误直接以 [`StageError`] 返回，不返回
+    /// 部分结果。绝不写入、创建、删除、同步、自愈，不读取或改变标记，不产生或
+    /// 消费任何凭证；不承诺外部并发改名下的原子快照。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`StageError`]：守门拒绝为 `Before`，真实 IO / 对象错误为 `Operation`，
+    /// 测试后置检查点失败为 `After`。
+    pub fn inspect_pair(&mut self, guard: &mut dyn StepGuard) -> Result<PairView, StageError> {
+        let directory_identity = self.dir.identity();
+        let (primary, backup) = self.engine(guard).inspect_pair()?;
+        Ok(PairView {
+            primary,
+            backup,
+            directory_identity,
+        })
     }
 
     /// 写 1：primary `1` → backup `1`，全部严格同步；供急停持久化义务与无
@@ -1004,14 +1061,62 @@ impl<'a> Engine<'a> {
         let file = self.dir.open_at(name, libc::O_RDONLY)?;
         let mut buf = [0u8; 4];
         let n = read_prefix_at(&file, &mut buf)?;
-        match &buf[..n] {
-            b"0" | b"0\n" => Ok(false),
-            b"1" | b"1\n" => Ok(true),
-            _ => Err(io::Error::new(
+        parse_latch_bytes(&buf[..n]).ok_or_else(|| {
+            io::Error::new(
                 io::ErrorKind::InvalidData,
                 "estop_latch file: expected '0\\n' or '1\\n'",
-            )),
+            )
+        })
+    }
+
+    /// W0.1：一个 `InspectPair` 步骤内顺序核验 primary、backup；任一真实错误立即
+    /// 返回，不产生部分结果。
+    fn inspect_pair(&mut self) -> Result<(LatchCopyState, LatchCopyState), StageError> {
+        let dir = self.dir;
+        let layout = self.layout;
+        self.run_flat(ClearTxnStage::InspectPair, || {
+            let primary = inspect_copy(dir, &layout.latch)?;
+            let backup = inspect_copy(dir, &layout.backup)?;
+            Ok((primary, backup))
+        })
+    }
+}
+
+/// W0.1：相对绑定目录 fd 只读核验一份。不跟随链接、不在 FIFO 上等待；对同一个
+/// 打开的 fd 先核普通文件且 `nlink == 1`，再读前缀解析。仅 open 的真实 `ENOENT`
+/// 记为 `Missing`，坏字节记为 `Corrupt`，其余错误原样返回。
+fn inspect_copy(dir: &DirHandle, name: &OsStr) -> io::Result<LatchCopyState> {
+    let file = match dir.open_at(name, libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK) {
+        Ok(file) => file,
+        Err(error) if error.raw_os_error() == Some(libc::ENOENT) => {
+            return Ok(LatchCopyState::Missing);
         }
+        Err(error) => return Err(error),
+    };
+    let metadata = file.metadata()?;
+    if !metadata.file_type().is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "latch 数据对象不是普通文件（符号链接 / 目录 / 特殊文件）",
+        ));
+    }
+    if metadata.nlink() != 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "latch 数据对象硬链接数不为 1",
+        ));
+    }
+    let mut buf = [0u8; 4];
+    let n = read_prefix_at(&file, &mut buf)?;
+    Ok(parse_latch_bytes(&buf[..n]).map_or(LatchCopyState::Corrupt, LatchCopyState::Value))
+}
+
+/// 纯字节解析：`0`、`0\n`、`1`、`1\n` 合法，其它（含空）为 `None`；与旧 loader 相同。
+fn parse_latch_bytes(bytes: &[u8]) -> Option<bool> {
+    match bytes {
+        b"0" | b"0\n" => Some(false),
+        b"1" | b"1\n" => Some(true),
+        _ => None,
     }
 }
 

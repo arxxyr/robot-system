@@ -152,8 +152,14 @@ EINTR为注入；正常/ready等待有deadline，SIGKILL后的OS回收不承诺�
 两位Codex源码/证据终审与root范围核验通过；round1中止、round2旧评审对象保留，
 W0与S46不变。证据`local/s48/a3d/review.md`及`cc/round3/`，无Orin或服务操作。
 
-后续方案新增验证要求（**Plan Approved，尚无运行PASS**）：W0.1核绑定fd的真实
-双份值/缺失/坏值、对象拒绝、三相与零写入；W2a核唯一Claim、真实锁目标配对、
+W0.1只读双份核验已独立 **APPROVED_SOFTWARE_SCOPE**：base `1b21457`，round2
+七门全零，335项完整来源一致、恰三文件变化。W0模块48/公开16/旧latch24/doc4，
+计数含子入口；权限分支实际euid1000。真实对象、绑定目录替换、三相及零写入均核验，
+独立源码/证据及root范围通过，见H包`local/s48/w01/review.md`。开发起点为与W1
+已冻结终点相同的派生记录，非本包开发前采样；原轮和审计名称格式误判原样保留。
+FIFO回收不承诺OS硬墙钟上限；没有生产调用方或Orin验证。
+
+后续方案新增验证要求（**Plan Approved，尚无运行PASS**）：W2a核唯一Claim、真实锁目标配对、
 join/standby实例绑定、Created修复续段和监督候选竞争。容量O1用可控无并发夹具
 钉3840/7936总len门；长负载仅对Normal cache Capacity核该阈值，wire/queue等
 提前失败按真实原因记录，不能充当缓存EXPECTED_RED。peer额度与实际业务忙分开，

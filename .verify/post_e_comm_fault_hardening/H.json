@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_W1_APPROVED_W01_PLAN_APPROVED",
+  "work_state": "S48_W01_APPROVED_W2A_PLAN_APPROVED",
   "resume_from": "HANDOFF：W1本地14门、独立源码/证据终审及root范围核验通过，按阶段提交；下一步W0.1→W2a→W2b，生产总装函数方案另审",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_W1_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "W1_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_W01_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "W01_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
   "scope": "W1同目标启动锁/provision/事务恢复获本地软件批准；W0.1/W2a/W2b及监督/生命周期/容量仅方案批准。未运行本包Orin，旧H2/S46 FAIL保留；右未测，D15 OPEN，deployable=false。",
   "software": {
@@ -320,7 +320,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "W1_APPROVED_FOLLOWUP_PLANS_APPROVED_INTEGRATION_PENDING",
+      "status": "W01_APPROVED_FOLLOWUP_PLANS_APPROVED_INTEGRATION_PENDING",
       "implementation_started": true,
       "a1": {
         "plan_review": "APPROVED",
@@ -459,10 +459,10 @@
         "commit": "dee67faf42f08083511648fa0befe263d9b6b37a"
       },
       "a3": {
-        "status": "W1_APPROVED_W01_W2A_W2B_PLANS_APPROVED",
+        "status": "W01_APPROVED_W2A_W2B_PLANS_APPROVED",
         "implementation_started": true,
         "survey": "local/s48/a3/root_integration_survey.md",
-        "open_followup": "依序W0.1只读pair、W2a纯writer、W2b关闭机制，各包代码及证据独立终审后提交；优先级函数总装方案继续评审"
+        "open_followup": "W0.1提交后依序W2a纯writer、W2b关闭机制；各包代码及证据独立终审后提交；优先级函数方案继续评审"
       },
       "a3a": {
         "status": "APPROVED_SOFTWARE_SCOPE",
@@ -767,14 +767,70 @@
         "hardware_access": false,
         "orin_validation": "NOT_RUN",
         "validation": "LOCAL_PASS",
-        "archive_boundary": "包括W1最终源码/证据/范围终审及旧评审快照，已冻结监督r4/生命周期r6/容量r3及W0.1/W2a/W2b批准；仍在编写的priority函数实施计划明确排除，见index"
+        "archive_boundary": "包括W1最终源码/证据/范围终审及旧评审快照，已冻结监督r4/生命周期r6/容量r3及W0.1/W2a/W2b批准；仍在编写的priority函数实施计划明确排除，见index",
+        "commit": "1b2145737143eb631cb45b32d96a40d8d2d8ec43"
       },
       "w01": {
-        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "status": "APPROVED_SOFTWARE_SCOPE",
         "plan": "P.6.14.8",
         "root_approval": "local/s48/a3/root_w01_pair_approval.md",
         "root_approval_sha256": "09b52d28d03339f2fcbed29dff4bd89e7262e54005ad5567b1ad49dc020673c0",
-        "production_activation_approved": false
+        "production_activation_approved": false,
+        "base_commit": "1b2145737143eb631cb45b32d96a40d8d2d8ec43",
+        "source_hash": "d9c70001c39b38d54702705a9b209e8041f355edb4041b307263edc2ea015ae0",
+        "source_input_count": 335,
+        "source_manifest": "local/s48/w01/cc/round2/source_after.sha256",
+        "frozen_sources_sha256": "0c5094db17c8bdc8d50aef86c47283d8a49865e93763696ccd491d830a9297b2",
+        "frozen_source_count": 3,
+        "result_sha256": "c08dd44a37a6f17e0c2eb7fac7cf8fffc53506272897a587452fefae4f83d8ec",
+        "final_round": "round2",
+        "gates_passed": 7,
+        "named_counts": {
+          "test_w0_module": 48,
+          "test_w0_acceptance": 16,
+          "test_estop_latch": 24,
+          "test_doc": 4
+        },
+        "executor_identity": {
+          "uid": 1000,
+          "euid": 1000,
+          "gid": 1000,
+          "egid": 1000,
+          "pid": 784133,
+          "hostname": "FRIDAY"
+        },
+        "executor": "cc-claude claude-fable-5-1 / max",
+        "final_reviewers": [
+          "Codex snapshot_plan_review",
+          "Codex a3b_evidence_audit",
+          "root"
+        ],
+        "validation": "LOCAL_PASS",
+        "orin_validation": "NOT_RUN",
+        "hardware_access": false,
+        "scope": "绑定目录fd、同fd对象检查的只读pair原语；旧解析抽取等价；无生产调用方",
+        "limits": [
+          "开发起点为事后重建、等同W1实际冻结终点的派生记录，不是本包开发前采样",
+          "具名计数含harness子入口，不能当作独立行为场景",
+          "round1旧源字节未保存，最终来源已重跑七门",
+          "SIGKILL后最终wait不承诺OS硬墙钟上限",
+          "没有Orin、服务或硬件操作"
+        ],
+        "preserved_history": [
+          "round1格式化改变输入后中止",
+          "审计v1名单格式误判及回执；v2精确适配而未放松SHA/顺序/真实结果"
+        ],
+        "source_review": "local/s48/w01/independent_source_review.md",
+        "source_review_sha256": "8764d508e04ff9d53d7d5c49b531768ee67b199b21aeb8a579441d72aeb4d5ed",
+        "evidence_review": "local/s48/w01/independent_evidence_review.md",
+        "evidence_review_sha256": "1422d6834beaa31d9e516435ea83af0578c5cd8298b4b35048ff0bc04913dadc",
+        "evidence_receipt": "local/s48/w01/independent_evidence_receipt_round2_v2.json",
+        "evidence_receipt_sha256": "7e1f1871d994ba2746169a0276d7cb09e974baa5ddf0583d716e057e464863d3",
+        "root_review": "local/s48/w01/review.md",
+        "root_review_sha256": "45265b6a41ce954698b14df2684ff33eab64135ac7f8960c5e2b69bb051ab1af",
+        "root_scope_receipt": "local/s48/w01/root_scope_receipt.json",
+        "root_scope_receipt_sha256": "e0fb05870b8af82d40977d928036c44310622c224b279827dc31977ed424bf20",
+        "archive_boundary": "W0.1两轮原始记录、派生起点说明、源码/证据/root终审完整保留；活动priority r3与S46补丁预审排除，详index"
       },
       "w2a": {
         "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
@@ -965,18 +1021,18 @@
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
     "lines": 2245,
-    "sha256": "379a6d96c3c1736a65e2fb752c78aa3030ecf9b06bf62f67947d8910d726aaa3"
+    "sha256": "8c02306bd31cd127b12eb76e06df4bab8cc27b1745930c851eebedcedac615ea"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "d04dd96fd328752d79ec428c7851ea665977f296e843dec6686706498539962f",
-    "bytes": 24744236,
-    "members": 7045,
-    "logical_bytes": 886181458,
+    "sha256": "0b45f4d6156aa1d69de10fed58a7c908e221c979f597e07249fc4d1082ede2e2",
+    "bytes": 24928256,
+    "members": 7092,
+    "logical_bytes": 886711640,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-09T09:54:56.657792+00:00",
+  "updated_at": "2026-09-09T10:23:10.161449+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
