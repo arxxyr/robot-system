@@ -12,13 +12,13 @@
 //! 检查 wire 层。
 
 use flatbuffers::FlatBufferBuilder;
-use robot_msg::msg;
 use robot_msg::schema_id::{
     SCHEMA_ESTOP_EVENT, SCHEMA_HEARTBEAT, SCHEMA_IMAGE_HEADER, SCHEMA_JOINT_COMMAND,
     SCHEMA_JOINT_LAYOUT, SCHEMA_JOINT_STATE, SCHEMA_POINTCLOUD_HEADER, SCHEMA_TENSOR_HEADER,
     SCHEMA_TWIST, lookup_name,
 };
 use robot_msg::v0;
+use robot_msg::{build_helpers, msg};
 
 // ===========================================================================
 // Round-trip：每个 table
@@ -553,4 +553,666 @@ fn current_writer_v0_reader_ignores_unknown_field() {
     assert!((pos_read.get(1) - 0.6).abs() < 1e-12);
     // v0 schema 没有 frame_id 的 accessor —— 编译期就限制了，不用运行时 assert；
     // 这里的重点是 "verify 通过 + 已有字段值对" 同时满足。
+}
+
+// ===========================================================================
+// 控制响应：冻结 v0 的逐字节 oracle 与新增尾字段
+// ===========================================================================
+
+// 来源：git show 81c5c54:crates/robot-msg/src/build_helpers.rs
+// SHA-256：48703e7b52b21ebde87434e396270aafe4ad04eb831a98e79a2ee1fc9b853e57。
+// 逐行保留字符串创建和 Args 构造顺序，只替换冻结命名空间与函数名。
+fn v0_ref_build_clear_estop_response(
+    request_id: &str,
+    status: v0::RpcStatus,
+    error_msg: &str,
+    cleared_at_ns: u64,
+    dry_run: bool,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let resp = v0::ClearEStopResponse::create(
+        &mut fbb,
+        &v0::ClearEStopResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            cleared_at_ns,
+            dry_run,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+// 来源：git show 81c5c54:crates/robot-msg/src/build_helpers.rs
+// SHA-256：48703e7b52b21ebde87434e396270aafe4ad04eb831a98e79a2ee1fc9b853e57。
+// 逐行保留字符串创建和 Args 构造顺序，只替换冻结命名空间与函数名。
+fn v0_ref_build_set_enabled_response(
+    request_id: &str,
+    status: v0::RpcStatus,
+    domain: v0::SetEnabledStatus,
+    completed_at_ns: u64,
+    error_msg: &str,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let resp = v0::SetEnabledResponse::create(
+        &mut fbb,
+        &v0::SetEnabledResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            domain,
+            completed_at_ns,
+            error_msg: Some(error_msg_off),
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+// 来源：git show 81c5c54:crates/robot-msg/src/build_helpers.rs
+// SHA-256：48703e7b52b21ebde87434e396270aafe4ad04eb831a98e79a2ee1fc9b853e57。
+// 逐行保留字符串创建和 Args 构造顺序，只替换冻结命名空间与函数名。
+fn v0_ref_build_invoke_task_response(
+    request_id: &str,
+    status: v0::ActionRpcStatus,
+    error_msg: &str,
+    action_id: &str,
+    accepted_at_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let action_id_off = fbb.create_string(action_id);
+    let resp = v0::InvokeTaskResponse::create(
+        &mut fbb,
+        &v0::InvokeTaskResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            action_id: Some(action_id_off),
+            accepted_at_ns,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+// 来源：git show 81c5c54:crates/robot-msg/src/build_helpers.rs
+// SHA-256：48703e7b52b21ebde87434e396270aafe4ad04eb831a98e79a2ee1fc9b853e57。
+// 逐行保留字符串创建和 Args 构造顺序，只替换冻结命名空间与函数名。
+fn v0_ref_build_cancel_task_response(
+    request_id: &str,
+    status: v0::ActionRpcStatus,
+    error_msg: &str,
+    action_id: &str,
+    cancel_at_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let action_id_off = fbb.create_string(action_id);
+    let resp = v0::CancelTaskResponse::create(
+        &mut fbb,
+        &v0::CancelTaskResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            action_id: Some(action_id_off),
+            cancel_at_ns,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+// 来源：git show 81c5c54:crates/robot-msg/src/build_helpers.rs
+// SHA-256：48703e7b52b21ebde87434e396270aafe4ad04eb831a98e79a2ee1fc9b853e57。
+// 逐行保留字符串创建和 Args 构造顺序，只替换冻结命名空间与函数名。
+fn v0_ref_build_clear_error_response(
+    request_id: &str,
+    status: v0::ActionRpcStatus,
+    error_msg: &str,
+    cleared_at_ns: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let resp = v0::ClearErrorResponse::create(
+        &mut fbb,
+        &v0::ClearErrorResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            cleared_at_ns,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+#[derive(Clone, Copy)]
+struct LegacyResponseCase {
+    request_id: &'static str,
+    error_msg: &'static str,
+    action_id: &'static str,
+    time_ns: u64,
+    status: u8,
+    domain: u8,
+    dry_run: bool,
+}
+
+// 默认/非默认旧标量、空/非空字符串及非 ASCII 输入均进入实际字节对照。
+const LEGACY_RESPONSE_CASES: [LegacyResponseCase; 4] = [
+    LegacyResponseCase {
+        request_id: "",
+        error_msg: "",
+        action_id: "",
+        time_ns: 0,
+        status: 0,
+        domain: 0,
+        dry_run: false,
+    },
+    LegacyResponseCase {
+        request_id: "request-1",
+        error_msg: "",
+        action_id: "action-1",
+        time_ns: 42,
+        status: 1,
+        domain: 1,
+        dry_run: false,
+    },
+    LegacyResponseCase {
+        request_id: "request-2",
+        error_msg: "失败原因",
+        action_id: "action-2",
+        time_ns: u64::MAX,
+        status: 5,
+        domain: 9,
+        dry_run: true,
+    },
+    LegacyResponseCase {
+        request_id: "请求",
+        error_msg: "",
+        action_id: "",
+        time_ns: 0,
+        status: 0,
+        domain: 0,
+        dry_run: true,
+    },
+];
+
+// 两个命名空间的 enum 是不同类型，按 wire 原始数值比较旧字段。
+macro_rules! assert_common_response_fields {
+    ($current:ident, $old:ident, $case:ident) => {
+        assert_eq!($current.request_id(), Some($case.request_id));
+        assert_eq!($old.request_id(), $current.request_id());
+        assert_eq!($current.status().0, $case.status);
+        assert_eq!($old.status().0, $current.status().0);
+        assert_eq!($current.error_msg(), Some($case.error_msg));
+        assert_eq!($old.error_msg(), $current.error_msg());
+    };
+}
+
+#[test]
+fn clear_estop_legacy_builder_matches_v0_bytes_and_defaults() {
+    for case in LEGACY_RESPONSE_CASES {
+        let bytes = build_helpers::build_clear_estop_response(
+            case.request_id,
+            msg::RpcStatus(case.status),
+            case.error_msg,
+            case.time_ns,
+            case.dry_run,
+        );
+        let reference = v0_ref_build_clear_estop_response(
+            case.request_id,
+            v0::RpcStatus(case.status),
+            case.error_msg,
+            case.time_ns,
+            case.dry_run,
+        );
+        assert_eq!(bytes, reference, "{} 逐字节兼容", case.request_id);
+        let current = flatbuffers::root::<msg::ClearEStopResponse>(&bytes).unwrap();
+        let old = flatbuffers::root::<v0::ClearEStopResponse>(&bytes).unwrap();
+        assert_common_response_fields!(current, old, case);
+        assert_eq!(current.cleared_at_ns(), case.time_ns);
+        assert_eq!(old.cleared_at_ns(), current.cleared_at_ns());
+        assert_eq!(current.effect(), msg::SideEffect::Unknown);
+        assert!(!current.retired());
+        assert_eq!(current.dry_run(), case.dry_run);
+        assert_eq!(old.dry_run(), current.dry_run());
+        assert_eq!(current.domain(), msg::ClearEStopStatus::Unknown);
+        assert!(!current.superseded());
+    }
+}
+
+#[test]
+fn v0_clear_estop_writer_missing_tail_reads_defaults() {
+    let case = LEGACY_RESPONSE_CASES[2];
+    let bytes = v0_ref_build_clear_estop_response(
+        case.request_id,
+        v0::RpcStatus(case.status),
+        case.error_msg,
+        case.time_ns,
+        case.dry_run,
+    );
+    let current = flatbuffers::root::<msg::ClearEStopResponse>(&bytes).unwrap();
+    assert_eq!(current.effect(), msg::SideEffect::Unknown);
+    assert!(!current.retired());
+    assert_eq!(current.domain(), msg::ClearEStopStatus::Unknown);
+    assert!(!current.superseded());
+}
+
+#[test]
+fn set_enabled_legacy_builder_matches_v0_bytes_and_defaults() {
+    for case in LEGACY_RESPONSE_CASES {
+        let bytes = build_helpers::build_set_enabled_response(
+            case.request_id,
+            msg::RpcStatus(case.status),
+            msg::SetEnabledStatus(case.domain),
+            case.time_ns,
+            case.error_msg,
+        );
+        let reference = v0_ref_build_set_enabled_response(
+            case.request_id,
+            v0::RpcStatus(case.status),
+            v0::SetEnabledStatus(case.domain),
+            case.time_ns,
+            case.error_msg,
+        );
+        assert_eq!(bytes, reference, "{} 逐字节兼容", case.request_id);
+        let current = flatbuffers::root::<msg::SetEnabledResponse>(&bytes).unwrap();
+        let old = flatbuffers::root::<v0::SetEnabledResponse>(&bytes).unwrap();
+        assert_common_response_fields!(current, old, case);
+        assert_eq!(current.completed_at_ns(), case.time_ns);
+        assert_eq!(old.completed_at_ns(), current.completed_at_ns());
+        assert_eq!(current.effect(), msg::SideEffect::Unknown);
+        assert!(!current.retired());
+        assert_eq!(current.domain().0, case.domain);
+        assert_eq!(old.domain().0, current.domain().0);
+    }
+}
+
+#[test]
+fn v0_set_enabled_writer_missing_tail_reads_defaults() {
+    let case = LEGACY_RESPONSE_CASES[2];
+    let bytes = v0_ref_build_set_enabled_response(
+        case.request_id,
+        v0::RpcStatus(case.status),
+        v0::SetEnabledStatus(case.domain),
+        case.time_ns,
+        case.error_msg,
+    );
+    let current = flatbuffers::root::<msg::SetEnabledResponse>(&bytes).unwrap();
+    assert_eq!(current.effect(), msg::SideEffect::Unknown);
+    assert!(!current.retired());
+}
+
+#[test]
+fn invoke_task_legacy_builder_matches_v0_bytes_and_defaults() {
+    for case in LEGACY_RESPONSE_CASES {
+        let bytes = build_helpers::build_invoke_task_response(
+            case.request_id,
+            msg::ActionRpcStatus(case.status),
+            case.error_msg,
+            case.action_id,
+            case.time_ns,
+        );
+        let reference = v0_ref_build_invoke_task_response(
+            case.request_id,
+            v0::ActionRpcStatus(case.status),
+            case.error_msg,
+            case.action_id,
+            case.time_ns,
+        );
+        assert_eq!(bytes, reference, "{} 逐字节兼容", case.request_id);
+        let current = flatbuffers::root::<msg::InvokeTaskResponse>(&bytes).unwrap();
+        let old = flatbuffers::root::<v0::InvokeTaskResponse>(&bytes).unwrap();
+        assert_common_response_fields!(current, old, case);
+        assert_eq!(current.accepted_at_ns(), case.time_ns);
+        assert_eq!(old.accepted_at_ns(), current.accepted_at_ns());
+        assert_eq!(current.effect(), msg::SideEffect::Unknown);
+        assert!(!current.retired());
+        assert_eq!(current.action_id(), Some(case.action_id));
+        assert_eq!(old.action_id(), current.action_id());
+    }
+}
+
+#[test]
+fn v0_invoke_task_writer_missing_tail_reads_defaults() {
+    let case = LEGACY_RESPONSE_CASES[2];
+    let bytes = v0_ref_build_invoke_task_response(
+        case.request_id,
+        v0::ActionRpcStatus(case.status),
+        case.error_msg,
+        case.action_id,
+        case.time_ns,
+    );
+    let current = flatbuffers::root::<msg::InvokeTaskResponse>(&bytes).unwrap();
+    assert_eq!(current.effect(), msg::SideEffect::Unknown);
+    assert!(!current.retired());
+}
+
+#[test]
+fn cancel_task_legacy_builder_matches_v0_bytes_and_defaults() {
+    for case in LEGACY_RESPONSE_CASES {
+        let bytes = build_helpers::build_cancel_task_response(
+            case.request_id,
+            msg::ActionRpcStatus(case.status),
+            case.error_msg,
+            case.action_id,
+            case.time_ns,
+        );
+        let reference = v0_ref_build_cancel_task_response(
+            case.request_id,
+            v0::ActionRpcStatus(case.status),
+            case.error_msg,
+            case.action_id,
+            case.time_ns,
+        );
+        assert_eq!(bytes, reference, "{} 逐字节兼容", case.request_id);
+        let current = flatbuffers::root::<msg::CancelTaskResponse>(&bytes).unwrap();
+        let old = flatbuffers::root::<v0::CancelTaskResponse>(&bytes).unwrap();
+        assert_common_response_fields!(current, old, case);
+        assert_eq!(current.cancel_at_ns(), case.time_ns);
+        assert_eq!(old.cancel_at_ns(), current.cancel_at_ns());
+        assert_eq!(current.effect(), msg::SideEffect::Unknown);
+        assert!(!current.retired());
+        assert_eq!(current.action_id(), Some(case.action_id));
+        assert_eq!(old.action_id(), current.action_id());
+    }
+}
+
+#[test]
+fn v0_cancel_task_writer_missing_tail_reads_defaults() {
+    let case = LEGACY_RESPONSE_CASES[2];
+    let bytes = v0_ref_build_cancel_task_response(
+        case.request_id,
+        v0::ActionRpcStatus(case.status),
+        case.error_msg,
+        case.action_id,
+        case.time_ns,
+    );
+    let current = flatbuffers::root::<msg::CancelTaskResponse>(&bytes).unwrap();
+    assert_eq!(current.effect(), msg::SideEffect::Unknown);
+    assert!(!current.retired());
+}
+
+#[test]
+fn clear_error_legacy_builder_matches_v0_bytes_and_defaults() {
+    for case in LEGACY_RESPONSE_CASES {
+        let bytes = build_helpers::build_clear_error_response(
+            case.request_id,
+            msg::ActionRpcStatus(case.status),
+            case.error_msg,
+            case.time_ns,
+        );
+        let reference = v0_ref_build_clear_error_response(
+            case.request_id,
+            v0::ActionRpcStatus(case.status),
+            case.error_msg,
+            case.time_ns,
+        );
+        assert_eq!(bytes, reference, "{} 逐字节兼容", case.request_id);
+        let current = flatbuffers::root::<msg::ClearErrorResponse>(&bytes).unwrap();
+        let old = flatbuffers::root::<v0::ClearErrorResponse>(&bytes).unwrap();
+        assert_common_response_fields!(current, old, case);
+        assert_eq!(current.cleared_at_ns(), case.time_ns);
+        assert_eq!(old.cleared_at_ns(), current.cleared_at_ns());
+        assert_eq!(current.effect(), msg::SideEffect::Unknown);
+        assert!(!current.retired());
+    }
+}
+
+#[test]
+fn v0_clear_error_writer_missing_tail_reads_defaults() {
+    let case = LEGACY_RESPONSE_CASES[2];
+    let bytes = v0_ref_build_clear_error_response(
+        case.request_id,
+        v0::ActionRpcStatus(case.status),
+        case.error_msg,
+        case.time_ns,
+    );
+    let current = flatbuffers::root::<msg::ClearErrorResponse>(&bytes).unwrap();
+    assert_eq!(current.effect(), msg::SideEffect::Unknown);
+    assert!(!current.retired());
+}
+
+#[test]
+fn clear_estop_typed_response_preserves_legacy_fields_and_metadata() {
+    for case in LEGACY_RESPONSE_CASES {
+        // 包含未来未知枚举，验证 reader 保留原始值而不会悄悄归零。
+        for (effect, retired) in [
+            (msg::SideEffect::None, false),
+            (msg::SideEffect::Started, false),
+            (msg::SideEffect::Committed, true),
+            (msg::SideEffect(255), true),
+        ] {
+            let bytes = build_helpers::build_clear_estop_response_typed(
+                case.request_id,
+                msg::RpcStatus(case.status),
+                case.error_msg,
+                case.time_ns,
+                case.dry_run,
+                build_helpers::ClearResponseMeta {
+                    domain: msg::ClearEStopStatus::WriterUnavailable,
+                    superseded: true,
+                    effect,
+                    retired,
+                },
+            );
+            let current = flatbuffers::root::<msg::ClearEStopResponse>(&bytes).unwrap();
+            let old = flatbuffers::root::<v0::ClearEStopResponse>(&bytes).unwrap();
+            assert_common_response_fields!(current, old, case);
+            assert_eq!(current.cleared_at_ns(), case.time_ns);
+            assert_eq!(old.cleared_at_ns(), current.cleared_at_ns());
+            assert_eq!(current.effect(), effect);
+            assert_eq!(current.retired(), retired);
+            assert_eq!(current.dry_run(), case.dry_run);
+            assert_eq!(old.dry_run(), current.dry_run());
+            assert_eq!(current.domain(), msg::ClearEStopStatus::WriterUnavailable);
+            assert!(current.superseded());
+        }
+    }
+}
+
+#[test]
+fn set_enabled_typed_response_preserves_legacy_fields_and_metadata() {
+    for case in LEGACY_RESPONSE_CASES {
+        // 包含未来未知枚举，验证 reader 保留原始值而不会悄悄归零。
+        for (effect, retired) in [
+            (msg::SideEffect::None, false),
+            (msg::SideEffect::Started, false),
+            (msg::SideEffect::Committed, true),
+            (msg::SideEffect(255), true),
+        ] {
+            let bytes = build_helpers::build_set_enabled_response_typed(
+                case.request_id,
+                msg::RpcStatus(case.status),
+                msg::SetEnabledStatus::QueueFull,
+                case.time_ns,
+                case.error_msg,
+                effect,
+                retired,
+            );
+            let current = flatbuffers::root::<msg::SetEnabledResponse>(&bytes).unwrap();
+            let old = flatbuffers::root::<v0::SetEnabledResponse>(&bytes).unwrap();
+            assert_common_response_fields!(current, old, case);
+            assert_eq!(current.completed_at_ns(), case.time_ns);
+            assert_eq!(old.completed_at_ns(), current.completed_at_ns());
+            assert_eq!(current.effect(), effect);
+            assert_eq!(current.retired(), retired);
+            assert_eq!(current.domain(), msg::SetEnabledStatus::QueueFull);
+            assert_eq!(current.domain().variant_name(), Some("QueueFull"));
+            assert_eq!(old.domain(), v0::SetEnabledStatus(11));
+            assert_eq!(old.domain().0, 11);
+            assert_eq!(old.domain().variant_name(), None);
+        }
+    }
+}
+
+#[test]
+fn invoke_task_typed_response_preserves_legacy_fields_and_metadata() {
+    for case in LEGACY_RESPONSE_CASES {
+        // 包含未来未知枚举，验证 reader 保留原始值而不会悄悄归零。
+        for (effect, retired) in [
+            (msg::SideEffect::None, false),
+            (msg::SideEffect::Started, false),
+            (msg::SideEffect::Committed, true),
+            (msg::SideEffect(255), true),
+        ] {
+            let bytes = build_helpers::build_invoke_task_response_typed(
+                case.request_id,
+                msg::ActionRpcStatus(case.status),
+                case.error_msg,
+                case.action_id,
+                case.time_ns,
+                effect,
+                retired,
+            );
+            let current = flatbuffers::root::<msg::InvokeTaskResponse>(&bytes).unwrap();
+            let old = flatbuffers::root::<v0::InvokeTaskResponse>(&bytes).unwrap();
+            assert_common_response_fields!(current, old, case);
+            assert_eq!(current.accepted_at_ns(), case.time_ns);
+            assert_eq!(old.accepted_at_ns(), current.accepted_at_ns());
+            assert_eq!(current.effect(), effect);
+            assert_eq!(current.retired(), retired);
+            assert_eq!(current.action_id(), Some(case.action_id));
+            assert_eq!(old.action_id(), current.action_id());
+        }
+    }
+}
+
+#[test]
+fn cancel_task_typed_response_preserves_legacy_fields_and_metadata() {
+    for case in LEGACY_RESPONSE_CASES {
+        // 包含未来未知枚举，验证 reader 保留原始值而不会悄悄归零。
+        for (effect, retired) in [
+            (msg::SideEffect::None, false),
+            (msg::SideEffect::Started, false),
+            (msg::SideEffect::Committed, true),
+            (msg::SideEffect(255), true),
+        ] {
+            let bytes = build_helpers::build_cancel_task_response_typed(
+                case.request_id,
+                msg::ActionRpcStatus(case.status),
+                case.error_msg,
+                case.action_id,
+                case.time_ns,
+                effect,
+                retired,
+            );
+            let current = flatbuffers::root::<msg::CancelTaskResponse>(&bytes).unwrap();
+            let old = flatbuffers::root::<v0::CancelTaskResponse>(&bytes).unwrap();
+            assert_common_response_fields!(current, old, case);
+            assert_eq!(current.cancel_at_ns(), case.time_ns);
+            assert_eq!(old.cancel_at_ns(), current.cancel_at_ns());
+            assert_eq!(current.effect(), effect);
+            assert_eq!(current.retired(), retired);
+            assert_eq!(current.action_id(), Some(case.action_id));
+            assert_eq!(old.action_id(), current.action_id());
+        }
+    }
+}
+
+#[test]
+fn clear_error_typed_response_preserves_legacy_fields_and_metadata() {
+    for case in LEGACY_RESPONSE_CASES {
+        // 包含未来未知枚举，验证 reader 保留原始值而不会悄悄归零。
+        for (effect, retired) in [
+            (msg::SideEffect::None, false),
+            (msg::SideEffect::Started, false),
+            (msg::SideEffect::Committed, true),
+            (msg::SideEffect(255), true),
+        ] {
+            let bytes = build_helpers::build_clear_error_response_typed(
+                case.request_id,
+                msg::ActionRpcStatus(case.status),
+                case.error_msg,
+                case.time_ns,
+                effect,
+                retired,
+            );
+            let current = flatbuffers::root::<msg::ClearErrorResponse>(&bytes).unwrap();
+            let old = flatbuffers::root::<v0::ClearErrorResponse>(&bytes).unwrap();
+            assert_common_response_fields!(current, old, case);
+            assert_eq!(current.cleared_at_ns(), case.time_ns);
+            assert_eq!(old.cleared_at_ns(), current.cleared_at_ns());
+            assert_eq!(current.effect(), effect);
+            assert_eq!(current.retired(), retired);
+        }
+    }
+}
+
+#[test]
+fn side_effect_wire_values_are_append_only() {
+    let expected = [
+        (msg::SideEffect::Unknown, 0),
+        (msg::SideEffect::None, 1),
+        (msg::SideEffect::Started, 2),
+        (msg::SideEffect::Committed, 3),
+    ];
+    assert_eq!(msg::SideEffect::ENUM_VALUES.len(), expected.len());
+    for ((variant, raw), registered) in expected.into_iter().zip(msg::SideEffect::ENUM_VALUES) {
+        assert_eq!(variant.0, raw);
+        assert_eq!(&variant, registered);
+    }
+}
+
+#[test]
+fn set_enabled_status_wire_values_are_append_only() {
+    let expected = [
+        (msg::SetEnabledStatus::Unknown, 0),
+        (msg::SetEnabledStatus::Ok, 1),
+        (msg::SetEnabledStatus::GuardRejected, 2),
+        (msg::SetEnabledStatus::LatchBlocked, 3),
+        (msg::SetEnabledStatus::AdapterError, 4),
+        (msg::SetEnabledStatus::AlreadyInProgress, 5),
+        (msg::SetEnabledStatus::PreemptedByEStop, 6),
+        (msg::SetEnabledStatus::PreemptedByShutdown, 7),
+        (msg::SetEnabledStatus::WouldAccept, 8),
+        (msg::SetEnabledStatus::DeadlineExceeded, 9),
+        (msg::SetEnabledStatus::SupersededByDisable, 10),
+        (msg::SetEnabledStatus::QueueFull, 11),
+        (msg::SetEnabledStatus::Superseded, 12),
+    ];
+    assert_eq!(msg::SetEnabledStatus::ENUM_VALUES.len(), expected.len());
+    for ((variant, raw), registered) in expected.into_iter().zip(msg::SetEnabledStatus::ENUM_VALUES)
+    {
+        assert_eq!(variant.0, raw);
+        assert_eq!(&variant, registered);
+    }
+}
+
+#[test]
+fn clear_estop_status_wire_values_are_append_only() {
+    let expected = [
+        (msg::ClearEStopStatus::Unknown, 0),
+        (msg::ClearEStopStatus::Cleared, 1),
+        (msg::ClearEStopStatus::WouldClear, 2),
+        (msg::ClearEStopStatus::StateNotSafe, 3),
+        (msg::ClearEStopStatus::NotTorqueOffConfirmed, 4),
+        (msg::ClearEStopStatus::FsyncFailed, 5),
+        (msg::ClearEStopStatus::AlreadyInProgress, 6),
+        (msg::ClearEStopStatus::PreemptedByEmergency, 7),
+        (msg::ClearEStopStatus::DeadlineExceeded, 8),
+        (msg::ClearEStopStatus::SupersededByDisable, 9),
+        (msg::ClearEStopStatus::SupersededByShutdown, 10),
+        (msg::ClearEStopStatus::SupersededByInhibit, 11),
+        (msg::ClearEStopStatus::SupersededByExhausted, 12),
+        (msg::ClearEStopStatus::AuthorityRefused, 13),
+        (msg::ClearEStopStatus::QueueFull, 14),
+        (msg::ClearEStopStatus::BusyLowering, 15),
+        (msg::ClearEStopStatus::PersistPending, 16),
+        (msg::ClearEStopStatus::WriterUnavailable, 17),
+    ];
+    assert_eq!(msg::ClearEStopStatus::ENUM_VALUES.len(), expected.len());
+    for ((variant, raw), registered) in expected.into_iter().zip(msg::ClearEStopStatus::ENUM_VALUES)
+    {
+        assert_eq!(variant.0, raw);
+        assert_eq!(&variant, registered);
+    }
 }

@@ -1,0 +1,288 @@
+// action_status.fbs — v0.3 B4 task control plane wire format。
+//
+// 对应 docs/00_design.md §5.3 frozen RPC schema，跟
+// `crates/robot-rpc/proto/robot_control.proto` 的 `GetTaskStatus` /
+// `CancelTask` / `ClearError` 三条 RPC 边界 wire format 平行存在 ——
+// proto 是 client ↔ gateway 跨网络 (HTTP/2 wire)，fbs 是 gateway ↔
+// s1_daemon 跨进程 (iceoryx2 RR zero-copy)，两套 schema 分开维护
+// （对齐 v0.3 A1 ClearEStop 已建立的双层 schema 分工，详
+// `clear_estop.fbs` 顶部 + docs/handoffs/v0.3_b4_outline.md §6）。
+//
+// ### 跨进程通道（B4 outline §4 / §5.4 拍板）
+//
+// 走 iceoryx2 RequestResponse messaging pattern（沿 A1 ClearEStop 同
+// 模式）。RPC 端（robot-rpc gateway）做 client，daemon 端
+// （robot-s1_daemon::s1_rr_server_thread，B4 (1/3-b) 加）做 server。
+// service name：
+//   - `/<robot_id>/control/task_status`
+//   - `/<robot_id>/control/task_cancel`
+//   - `/<robot_id>/control/clear_error`
+//
+// `task_invoke` 走 `action_request.fbs`；`StreamTaskEvents` **不**走
+// RR，走 per-ActionId pubsub `action_event.fbs`（详
+// docs/handoffs/v0.3_b4_outline.md §5.2 拍板）。
+//
+// ### 字段 / 安全边界
+//
+// **`role` 字段仅 audit**（沿 A1 `clear_estop.fbs` 同款边界）：
+// gateway 端必须完成 auth / role / capability 校验；s1 端只把 role
+// 当审计字段记录到 tracing，**不**做授权决策。s1 端真正 guard 是
+// coordinator state machine（DEGRADED / EXECUTING / IDLE / Booting /
+// ShuttingDown）+ ActionRequest::validate。
+//
+// `request_id` / `idempotency_key` 跟 A1 `CommandMeta` 字段语义一致
+// （详 `crates/robot-rpc/proto/robot_control.proto::CommandMeta`）：
+//   - `request_id`：UUIDv7，每次 retry 改变（用 audit）。
+//   - `idempotency_key`：跨 retry 稳定（gateway TTL cache 去重 key）。
+//
+// ### 引用关系
+//
+// 复用 `clear_estop.fbs::RpcRole`（设计 §5.4 角色枚举：Unknown /
+// Viewer / Operator / Maintainer / Admin）。`RpcStatus` 不复用：B4
+// 自己定义 `ActionRpcStatus`，避免 ClearEStop 端再扩 variant 时锁
+// 测影响 B4。
+include "clear_estop_v0.fbs";
+
+namespace robot.msg.v0;
+
+// 任务生命周期状态（对齐 `robot_s1::action::ActionStatus` lib 端枚
+// 举；reviewer round 4 拍板 #5b 的字段集草案）。
+//
+// 数值仅保证 (a) `Unknown=0` 兼容旧 writer，(b) 各值唯一升序，
+// (c) 跨 schema 版本只增不删（FlatBuffers append-only）。
+//
+// **B2 单 action 序列化**：`Pending` 在 B2/B3 **不构造**（submit 即
+// 转 EXECUTING，无 queue 缓冲）；保留 variant 是为对齐 B3+ scheduler
+// 引入 queue 后的语义，让 RPC GetTaskStatus 字段集 stable。
+enum TaskStateFb : ubyte {
+    Unknown = 0,
+    Pending = 1,
+    Executing = 2,
+    Completed = 3,
+    Failed = 4,
+    Cancelled = 5,
+}
+
+// `ActionOutcome::{Success, PartialSuccess}` 的 kind tag。
+// `PartialSuccess` 的 `warning` 字符串走附带的 `ActionOutcomeFb.warning`
+// 字段（**不**塞进 enum）。
+enum ActionOutcomeKindFb : ubyte {
+    Unknown = 0,
+    Success = 1,
+    PartialSuccess = 2,
+}
+
+// `ActionFailure::{DeadlineExceeded, PreconditionFailed, AdapterError,
+//   SafetyAbort, InternalError}` 的 kind tag。
+// 失败原因 reason 字符串（PreconditionFailed / AdapterError /
+// SafetyAbort / InternalError 携带）走 `ActionFailureFb.reason` 字
+// 段；DeadlineExceeded 不带 reason（reason 留空字符串）。
+//
+// **变体非穷举**（B3+ backend 自定义具体拒绝原因；B4 (1/3-a) 仅声
+// 明 lib `ActionFailure` 现有 5 个 variant）。
+enum ActionFailureKindFb : ubyte {
+    Unknown = 0,
+    DeadlineExceeded = 1,
+    PreconditionFailed = 2,
+    AdapterError = 3,
+    SafetyAbort = 4,
+    InternalError = 5,
+}
+
+// 任务 RPC response status（v0.3 B4 task control plane 用；跟
+// clear_estop.fbs::RpcStatus 平行存在 —— 二者覆盖的语义不同，刻
+// 意**不**复用，避免 ClearEStop 端再扩 variant 时锁测影响 B4）。
+//
+// **本 enum 是 s1 ↔ robot-rpc 进程间内部状态码，跟 gRPC numeric
+// code 不对齐**。数值仅保证 (a) `Unknown=0` 兼容旧 writer，(b) 各
+// 值唯一升序，(c) 跨 schema 版本只增不删（FlatBuffers append-only）。
+//
+// **gateway 端转译硬要求**（沿 A1 RpcStatus 同款）：
+// `robot-rpc` 把 `ActionRpcStatus` 转 `tonic::Code` 时**必须**用
+// 显式 `match` 全枚举所有 variant；**禁止** `code as i32` 之类靠
+// 数值对齐的 cast。`flatc` 把本 enum 生成成
+// `pub struct ActionRpcStatus(pub u8)` newtype；`match` 非穷举不
+// 会编译期报错——真正防线是 lib unit 测试把
+// `ActionRpcStatus::ENUM_VALUES.len()` 跟 mapping 数硬绑（B4
+// (2/3) gateway 端实现 `action_rpc_status_to_tonic_code` 时落地，
+// 沿 A1 `rpc_status_variant_count_matches_explicit_mapping` 同款锁测）。
+//
+// variant 集来自 docs/handoffs/v0.3_b4_outline.md §7.1 错误码映射
+// 表 round 4 终版（reviewer round 4 拍板 BusyExecuting → AlreadyExists
+// + BackendStartFailed 按 ActionStartError 内部 variant 拆）：
+//   - `Ok` = 调用成功（submit / cancel / clear_error / status 查询命中）
+//   - `FailedPrecondition` = NotReady / CoordinatorDegraded / NotDegraded /
+//     BackendStartFailed::{Rejected,PayloadDecode,HardwareMismatch}
+//   - `PermissionDenied` = gateway auth 拒绝（role / capability）
+//   - `InvalidArgument` = InvalidRequest / UnsupportedSchema
+//   - `AlreadyExists` = BusyExecuting（单 action 序列化资源已存在）
+//   - `Unimplemented` = NoBackendForKind
+//   - `NotFound` = ActionCancelError::NotExecuting / status 查询未知 ID
+//   - `Unavailable` = ShuttingDown / 跨进程 RR 失败
+//   - `Internal` = ClearError::InternalError / ActionCancelError::BackendError /
+//     BackendStartFailed 兜底（B3 期间无此路径）
+enum ActionRpcStatus : ubyte {
+    Unknown = 0,
+    Ok = 1,
+    FailedPrecondition = 2,
+    PermissionDenied = 3,
+    InvalidArgument = 4,
+    Internal = 5,
+    AlreadyExists = 6,
+    Unimplemented = 7,
+    NotFound = 8,
+    Unavailable = 9,
+}
+
+// `ActionOutcome` 的 fbs 形态。`PartialSuccess` 时 `warning` 必须非
+// 空字符串；`Success` 时 `warning` 留空。
+table ActionOutcomeFb {
+    kind:    ActionOutcomeKindFb = Unknown;
+    warning: string;
+}
+
+// `ActionFailure` 的 fbs 形态。`DeadlineExceeded` 时 `reason` 留空；
+// 其它 4 个 variant 都带具体 reason 字符串（gateway 端透传给客户端
+// `ActionFailureProto.reason`）。
+table ActionFailureFb {
+    kind:   ActionFailureKindFb = Unknown;
+    reason: string;
+}
+
+// ============================================================================
+// GetTaskStatus RR
+// ============================================================================
+
+// `GetTaskStatusRequest` —— gateway → s1 RR call body for
+// `GetTaskStatus` RPC.
+//
+// 字段语义：
+// - `request_id`：proto `CommandMeta.request_id`（UUIDv7 hex），RR
+//   correlation + audit。
+// - `idempotency_key`：design §5.2 CommandMeta.idempotency_key。
+//   gateway in-process TTL cache 去重；s1 端**不**做 idempotency
+//   check，仅 audit。**`status` 是只读查询**，幂等天然成立；本字段
+//   保留是为 RPC 字段集 stable（跟 `InvokeTask` / `CancelTask` 共
+//   享 CommandMeta）。
+// - `source` / `role` / `audit_reason`：仅 audit。
+// - `action_id`：UUIDv7 hex（`robot_s1::action::ActionId` 的 canonical
+//   string 形式）。空字符串 = client 字段缺失，由 s1 端拒
+//   `InvalidArgument`。
+// - `deadline_ns` / `stamp_ns`：跟 clear_estop.fbs::ClearEStopRequest
+//   同语义。s1 端在 RR drain 入口 + ipc_tick 之前两处 check
+//   `clock.now() > deadline_ns`，过期则不查 + 返 `DeadlineExceeded`
+//   （沿 A1 ClearEStop 同款 ordering）。
+table GetTaskStatusRequest {
+    request_id:      string;
+    idempotency_key: string;
+    source:          string;
+    role:            RpcRole = Unknown;
+    audit_reason:    string;
+    action_id:       string;
+    deadline_ns:     ulong;
+    stamp_ns:        ulong;
+}
+
+// `GetTaskStatusResponse` —— s1 → gateway RR reply body.
+//
+// 字段语义：
+// - `request_id`：回填 request.request_id，client 用以 correlate。
+// - `status`：RPC 处理结果。
+// - `error_msg`：status != Ok 时人类可读错误描述（max ~256 chars）；
+//   Ok 时填空串。
+// - `action_id`：回填 request.action_id（即使 status != Ok 也回填
+//   方便 audit）。
+// - `state`：当前 task 生命周期状态（仅 status == Ok 有意义；
+//   status != Ok 时填 `Unknown` 占位）。
+// - `progress`：当前进度 [0.0, 1.0]（仅 state == Executing 有意义；
+//   其它 state 填 0.0；reviewer round 4 后续可能拍 optional float
+//   显式标 absent，但 fbs 没有 `optional` 关键字，沿 default 值约
+//   定）。
+// - `outcome`：仅 state == Completed 时存在。
+// - `failure`：仅 state == Failed 时存在。
+table GetTaskStatusResponse {
+    request_id:    string;
+    status:        ActionRpcStatus = Unknown;
+    error_msg:     string;
+    action_id:     string;
+    state:         TaskStateFb = Unknown;
+    progress:      float = 0.0;
+    outcome:       ActionOutcomeFb;
+    failure:       ActionFailureFb;
+}
+
+// ============================================================================
+// CancelTask RR
+// ============================================================================
+
+// `CancelTaskRequest` —— gateway → s1 RR call body for `CancelTask` RPC.
+//
+// `action_id` 指向待取消的 ticket；s1 端调
+// `Coordinator::cancel(action_id, clock)`（in-process）。
+table CancelTaskRequest {
+    request_id:      string;
+    idempotency_key: string;
+    source:          string;
+    role:            RpcRole = Unknown;
+    audit_reason:    string;
+    action_id:       string;
+    deadline_ns:     ulong;
+    stamp_ns:        ulong;
+}
+
+// `CancelTaskResponse` —— s1 → gateway RR reply body.
+//
+// `cancel_at_ns` = s1 端 `clock.now()` 在 cancel 路径完成时刻
+// （flag set + 等待 backend cooperative cancel 收敛**之前**；reviewer
+// round 4 拍板 cancel = cooperative，事件流 Cancelled 走 pubsub
+// `action_event.fbs`，**不**等同步 reply）。status != Ok 时填 0。
+table CancelTaskResponse {
+    request_id:   string;
+    status:       ActionRpcStatus = Unknown;
+    error_msg:    string;
+    action_id:    string;
+    cancel_at_ns: ulong;
+}
+
+// ============================================================================
+// ClearError RR
+// ============================================================================
+
+// `ClearErrorRequest` —— gateway → s1 RR call body for `ClearError` RPC.
+//
+// **跟 ClearEStop 不同**：ClearEStop 是 §6.7 #3 invariant 真宣称（清
+// EStop latch；safety-critical maintainer-only）；`ClearError` 仅
+// 清 coordinator `Degraded` 内存状态（B2 outline §10 决策 #5），
+// **不**碰磁盘 latch / **不**触发硬件 clear / **不**改 §6.7 任何
+// 不变量。语义是"action 失败后回 IDLE"恢复路径。
+//
+// 权限层级（reviewer round 2 阻断 4 + outline §8.1 #7c 拍板）：
+// `maintainer+`；configs/rpc_roles.toml 的 [roles.operator] 删
+// `clear_error`，[roles.maintainer] / [roles.admin] 保留。本字段
+// 收紧由 B4 (2/3) gateway 实现期落地（详
+// docs/handoffs/v0.3_b4_outline.md §8.1）。
+table ClearErrorRequest {
+    request_id:      string;
+    idempotency_key: string;
+    source:          string;
+    role:            RpcRole = Unknown;
+    audit_reason:    string;
+    deadline_ns:     ulong;
+    stamp_ns:        ulong;
+}
+
+// `ClearErrorResponse` —— s1 → gateway RR reply body.
+//
+// `cleared_at_ns` = s1 端 `clock.now()` 在 `clear_error()` 完成时刻
+// （Degraded → Idle 转移成功）；status != Ok 时填 0。
+table ClearErrorResponse {
+    request_id:    string;
+    status:        ActionRpcStatus = Unknown;
+    error_msg:     string;
+    cleared_at_ns: ulong;
+}
+
+// 本文件多个 table 都是 root 候选，按 schema_id 路由（同
+// clear_estop.fbs 风格）。flatc 需要一个顶层 root_type 声明；选
+// `GetTaskStatusRequest` 作占位，不影响其它 table 的 root 解析。
+root_type GetTaskStatusRequest;

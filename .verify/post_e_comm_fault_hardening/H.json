@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S46_B_APPROVED_PM_NEXT",
-  "resume_from": "HANDOFF：W2b已提交6defac4；S46-B七门/三CLI、独立源码/证据终审及root范围通过，按阶段提交后实施P-M；随后P-T/优先级原语/W3a依已批依赖推进",
+  "work_state": "S48_PM_APPROVED_PT_NEXT",
+  "resume_from": "HANDOFF：P-M九门/独立源码与证据终审及root范围通过，按阶段提交后实施P-T（含C>=1补齐）；后续按批准依赖推进",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S46_B_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "S46_B_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_PM_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "PM_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
-  "scope": "S46-B七件实验工具/回归基线本地独立验收通过；旧Orin wire4 FAIL保留，本轮无长测/Orin操作。双队列/权限/单writer生产总装尚未完成，D15 OPEN，deployable=false。",
+  "scope": "P-M响应schema/builder准备包本地独立验收通过；未接生产调用者或改变默认容量。旧wire4 FAIL/D15 OPEN保留，双队列/权限/单writer总装未完成，deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -379,7 +379,8 @@
         ],
         "hardware_access": false,
         "long_load_rerun": false,
-        "production_wiring": false
+        "production_wiring": false,
+        "commit": "5abd148bf0c39583a7f5957dd9cac260ff2106dc"
       }
     },
     "s47": {
@@ -390,7 +391,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "W2B_APPROVED_PRIMITIVES_CONTINUE_INTEGRATION_PENDING",
+      "status": "W2B_PM_APPROVED_REMAINING_PRIMITIVES_PENDING",
       "implementation_started": true,
       "a1": {
         "plan_review": "APPROVED",
@@ -421,7 +422,7 @@
       },
       "user_requirement": "基础控制走高优先级通道，关节位置等连续目标走普通通道",
       "candidate": "唯一state owner与单disk writer解耦；可恢复Clear事务标记与原子提交权限；端到端有界容量保留",
-      "review_blocker": "W0/W1/W0.1/W2a/W2b已独立验收；S46-B旧基线已独立验收；优先级原语及W3a按批准任务实施，P-A1 r2最小退休桥已批准准备态，生产双队列/单writer/权限总装及两条剩余退休路由另审",
+      "review_blocker": "W0/W1/W0.1/W2a/W2b及S46-B/P-M已独立验收；P-T含C>=1补齐、其余优先级原语/W3a依批准任务实施，生产总装及两条剩余退休入口另审",
       "hardware_scope": "左臂已断电；仅软件设计与验证，不打开串口",
       "queues": {
         "high": "live基础控制",
@@ -1125,7 +1126,7 @@
         "production_activation_approved": false
       },
       "priority_primitives": {
-        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "status": "PM_APPROVED_REMAINING_PRIMITIVES_NOT_IMPLEMENTED",
         "plan": "P.6.14.12",
         "root_approval": "local/s48/a3/root_priority_execution_plan_r4_approval.md",
         "root_approval_sha256": "0040b79ea676e0fba7407d8c5501e8dee94a42a065d7ad29747be1663ddd40f7",
@@ -1142,6 +1143,108 @@
             "未撤销Queued真实起步失败退休入口",
             "未撤销Succeeded真实commit拒绝退休入口"
           ]
+        },
+        "pm": {
+          "status": "APPROVED_SOFTWARE_SCOPE",
+          "base_commit": "5abd148bf0c39583a7f5957dd9cac260ff2106dc",
+          "source_hash": "4617c60dc06a7d303f01e5cdeaa2e05f99d3d051df9f514f1afd07363146f524",
+          "source_input_count": 350,
+          "source_manifest": "local/s48/pm/cc/round3/source_after.sha256",
+          "source_files": {
+            "crates/robot-msg/build.rs": "7bc03ec4a3a6d47d07b3e4122c2c9bcdbcc8041a08269ea5682b0a822d240eca",
+            "crates/robot-msg/schemas/action_request.fbs": "9afac6052dbdc13ce5c3fdbaee01ccfcdfaad0ac1af537c7e683f44f1f1d79dd",
+            "crates/robot-msg/schemas/action_status.fbs": "baa1b742ce3d51d94f5b21e473e564a7034bc1448edf0cbfa653031dedd57b66",
+            "crates/robot-msg/schemas/clear_estop.fbs": "e406afb2a57e275133c3c86e9f3a0b0fb25fea89642c8b6ca3ae6c29790ccc13",
+            "crates/robot-msg/schemas/old/action_request_v0.fbs": "7d9a69ccb8239914b33d02c27d3a8a6d7c43c34518258a3ff935b8858dae510b",
+            "crates/robot-msg/schemas/old/action_status_v0.fbs": "ec6b17545c8a1bbc65365eeaab62137327c35859e3e322b8bb1954c230502e13",
+            "crates/robot-msg/schemas/old/clear_estop_v0.fbs": "0f9d823b77c12f346a34f477fee7b50ac5c64ab1a09615db52c31be187b42824",
+            "crates/robot-msg/schemas/old/set_enabled_v0.fbs": "0ba7a95ee291ac4053cccfd2afb0a03581b3216e3595ec00099f2230d3b0984d",
+            "crates/robot-msg/schemas/set_enabled.fbs": "531a0a160ff4016f1d4430fbd06e80a6354a48117670b302ac0897e2d93cc084",
+            "crates/robot-msg/src/build_helpers.rs": "b17b76eb25dcbf7d028fbc21cf97dae5261f680c5e3df365104bb02ab6628101",
+            "crates/robot-msg/src/lib.rs": "291d41dac392b82e25b8a9d829edb458fa82d44d25a7db9208b2e374db8bc429",
+            "crates/robot-msg/tests/compat.rs": "14ad8fcad592f9ea0057f029546d8cdb3095b6a75f6d3d2db9959c20b03d8775"
+          },
+          "final_round": "round3",
+          "formal_gates": 9,
+          "test_counts": {
+            "test_msg": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 34,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_compat": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 34,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_doc": {
+              "status": "ok",
+              "suites": 2,
+              "passed": 2,
+              "failed": 0,
+              "ignored": 2
+            },
+            "test_workspace": {
+              "status": "ok",
+              "suites": 52,
+              "passed": 1932,
+              "failed": 0,
+              "ignored": 1
+            }
+          },
+          "result_sha256": "564540b9e1bbaf20e62b356064da15cecb616e94fa79da7df3ea06eb76410575",
+          "artifacts": {
+            "timing_artifact": {
+              "source": "/home/loosqk/repo/robot/robot-system/target/cargo-timings/cargo-timing-20260909T144118733Z-c7bbe0615ae0bce4.html",
+              "copy": "cargo-timing.html",
+              "sha256": "31029b44cc844f9c7e0f12300e5305aeae1a730f945ff4d59811846174cff3ae",
+              "size": 34789,
+              "source_mtime_ns": 1788964879243284441,
+              "latest_path": "/home/loosqk/repo/robot/robot-system/target/cargo-timings/cargo-timing.html"
+            },
+            "gen_root_dependency": {
+              "source": "/home/loosqk/repo/robot/robot-system/target/debug/librobot_msg.d",
+              "copy": "librobot_msg.d",
+              "sha256": "65e6088abbbf4071312ea0349366f82b616ffc823e849e690d52aa6344cee6d1",
+              "size": 12379,
+              "source_mtime_ns": 1788964879244284417
+            },
+            "gen_root_artifact": {
+              "source": "/home/loosqk/repo/robot/robot-system/target/debug/build/robot-msg/9871a2b35d540b6a/out/gen_root.rs",
+              "copy": "gen_root.rs",
+              "sha256": "22dc4fc47d6f1be71f038a2d4c75e124244fc12e7167a3f8b13c9dc23e90e394",
+              "size": 18989,
+              "source_mtime_ns": 1788964772674167269
+            }
+          },
+          "source_review": "local/s48/pm/independent_source_review.md",
+          "source_review_sha256": "29ef3bb8df2c56b355ca28d6eb8606dfcceb74cbe9f8ae614294ee90a3b0a3d2",
+          "evidence_review": "local/s48/pm/independent_evidence_review.md",
+          "evidence_review_sha256": "791ec86188acf402777d35d2beb729f579e80e5cb2eb2e15bf096232dcdf8bbd",
+          "evidence_receipt_sha256": "189f77b31cc1a8e4649af5fc41e6495aaff561ef8d1f7dcd748661c56f2cad32",
+          "root_review": "local/s48/pm/review.md",
+          "root_review_sha256": "507049328f777ae16f5a93edaef42b5639ce1419627e705ae7a06e3fe42eb77d",
+          "root_scope_receipt_sha256": "4da38399021e222a8685af3edf1ee5ce6b8fc8ba35752391b47015f00bb58bcc",
+          "history_and_limits": [
+            "原生接手；实际 HEAD 绑定 S46-B 提交，开工前346来源与 S46 最终相等，8个既有owner与81c5c54 oracle逐字相等。",
+            "round1 fmt实际改builders/compat格式后立即中止。round2 workspace Clippy报6处SideEffect::None_不存在后停止；实际flatc生成关联常量None，已按真实生成API修正；同期superseded注释明确覆盖提交前后撤销。原失败轮均保留。",
+            "新轮均完整重跑九门，runner每轮执行前保存实际同SHA快照；未clean或强制Checking。最终timing由最后build实际生成，gen_root由该build的顶层dep-info绑定实际OUT_DIR后复制。",
+            "仅无生产调用方的schema准备包；旧五builder保持签名/构造顺序/逐字节兼容，typed新接口未接入生产。未新加依赖/feature/allow或后处理生成文件。",
+            "未访问Orin/服务/硬件，不改变既有wire4 FAIL、D15 OPEN及不部署边界；未自批、commit或push。"
+          ],
+          "production_activation_approved": false,
+          "hardware_access": false
+        },
+        "zero_client_guard": {
+          "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+          "root_approval": "local/s48/pt/root_zero_client_guard_approval.md",
+          "root_approval_sha256": "c767286ee3ad7f4e17a184e9676abebf6a1f8815257be9595a7f59779aef96d9",
+          "independent_review_sha256": "5c1340230ac9f099428b4d58f43e8219e7cabc569a01e1c09615fcf9a06c9aa5",
+          "scope": "精确profile/公开limits派生C>=1；S1零高类预算不变"
         }
       },
       "w3a": {
@@ -1311,14 +1414,14 @@
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "bc1b192924407dd8b839ba513e554ab6944d50f02608d5d2fc9c250140df5fdd",
-    "bytes": 28858137,
-    "members": 7722,
-    "logical_bytes": 898513069,
+    "sha256": "7642becc907846cd7f01d26f594ca43669e96c39bf2386a3e008e32af2d0a68f",
+    "bytes": 29221299,
+    "members": 7782,
+    "logical_bytes": 899806225,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-09T14:30:08.872732+00:00",
+  "updated_at": "2026-09-09T14:50:38.516695+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",

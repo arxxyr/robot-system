@@ -242,6 +242,8 @@ table CancelTaskResponse {
     error_msg:    string;
     action_id:    string;
     cancel_at_ns: ulong;
+    effect:        SideEffect = Unknown;
+    retired:       bool = false;
 }
 
 // ============================================================================
@@ -280,6 +282,8 @@ table ClearErrorResponse {
     status:        ActionRpcStatus = Unknown;
     error_msg:     string;
     cleared_at_ns: ulong;
+    effect:        SideEffect = Unknown;
+    retired:       bool = false;
 }
 
 // 本文件多个 table 都是 root 候选，按 schema_id 路由（同

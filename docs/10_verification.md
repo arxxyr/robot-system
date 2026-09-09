@@ -182,12 +182,19 @@ S46-B旧实验基线已 **APPROVED_SOFTWARE_SCOPE**：base `6defac4`，round2七
 round1格式化中止与临时runner事后重建来源保留；旧长测/Orin wire4 FAIL不提升为
 本轮同源PASS，未重跑长测/67场景/硬件，也未完成双队列生产总装或关闭D15。
 
+P-M响应schema准备包已 **APPROVED_SOFTWARE_SCOPE**：base `5abd148`，round3九门通过，
+350项来源`4617c60d…6f524`一致，恰8改+4新增。msg lib34、compat34、doc2通过/2既有ignored，
+workspace1932通过/1既有ignored；旧五builder20组byte-equality与typed80组循环不重复计数。
+独立源码/证据及root范围核验通过，证据`local/s48/pm/review.md`；真实timing与dep-info绑定
+的gen_root已保留。新增副作用/退休字段与typed builder，旧API/字节不变，v0与新类型隔离。
+round1格式化中止、round2生成常量误用失败保留；无生产新调用者或Orin验证，D15仍OPEN。
+
 后续方案新增验证要求（**Plan Approved，尚无运行PASS**）：容量O1用可控无并发夹具
 钉3840/7936总len门；长负载仅对Normal cache Capacity核该阈值，wire/queue等
 提前失败按真实原因记录，不能充当缓存EXPECTED_RED。peer额度与实际业务忙分开，
 SetEnabled新domain须测旧新schema的实际未知数值行为。详PLAN P.6.14.8–10。
 
-优先级原语函数分包r4已独立Plan Approved（P.6.14.12），尚无源码/运行PASS。
+优先级原语函数分包r4已独立Plan Approved（P.6.14.12）；P-M已按上文验收，其他分包尚待实施。
 新增门须核外部crate公开BusLease的真实获取、错域返原凭证、正确归还及Drop不释放；
 固定域槽的两轮复用、take/withdraw竞争与Execution重复读取；目标原子约束不等于
 wait-free。P-M修改build.rs须附实际workspace --timings报告；旧v0依赖/默认尾字段/

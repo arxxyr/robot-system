@@ -10,6 +10,19 @@
 
 ---
 
+## 2026-09-09 · P-M响应schema准备包（本地独立验收通过）
+
+P-M响应schema准备包已 **APPROVED_SOFTWARE_SCOPE**：base `5abd148`，round3九门通过，
+350项来源`4617c60d…6f524`一致，恰8改+4新增。msg lib34、compat34、doc2通过/2既有ignored，
+workspace1932通过/1既有ignored；旧五builder20组byte-equality与typed80组循环不重复计数。
+独立源码/证据及root范围核验通过，证据`local/s48/pm/review.md`；真实timing与dep-info绑定
+的gen_root已保留。新增副作用/退休字段与typed builder，旧API/字节不变，v0与新类型隔离。
+round1格式化中止、round2生成常量误用失败保留；无生产新调用者或Orin验证，D15仍OPEN。
+
+容量输入边界另获独立/root方案批准：精确profile须1≤C≤16，拒绝C0乘积守门绕过；
+上游open最低需求为0的语义与精确静态profile分开。P-T及后续P-S1/P-G1公共派生
+入口沿同一检查，S1零高类额度仍合法；尚待实现，原门/default/wire语义不变。
+
 ## 2026-09-09 · S46-B实验基线收口（本地独立验收通过）
 
 S46-B旧实验基线已 **APPROVED_SOFTWARE_SCOPE**：base `6defac4`，round2七门与三条CLI

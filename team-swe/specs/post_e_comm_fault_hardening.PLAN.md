@@ -2175,6 +2175,13 @@ High每tick非阻塞处理，不保留retry整体早退；Normal队列按2·C(L�
 伪称自动变成Unknown变体，也不证明旧责任退休。当前只批准合同，不授权全部
 函数接线或运行长测；永久IO/未知责任与D15边界均保持原口径。
 
+容量输入补齐（独立/root Plan Approved，2026-09-09）：`1 <= C <= 16`，其余L>=3、
+checked C*L<=64不变。上游create把C0改为1，open的零最低需求不构成本项目精确profile；
+P-T的validate/from_profile创建前共用检查，P-S1/P-G1公开limits派生入口同样检查。
+S1 high/restore/lower=0仍合法，QueueProfile无c时不虚称自己验证client数。原门内补
+C0/L4与C0/LMAX，保持C1/L64正边界及C16/LMAX受检溢出；不将极大L送入builder。
+详local/s48/pt/root_zero_client_guard_approval.md；本条不表示运行通过或默认容量改变。
+
 #### P.6.14.11 W2b 关闭与join机制（已评审提交6defac4）
 
 函数计划`local/s48/a3/cc_w2b_shutdown_mechanism_plan_r3.md` SHA
@@ -2210,6 +2217,8 @@ P-S1/P-L1准备可信peer准入、双队列和心跳新鲜性；P-A1准备typed�
 旧生产API和调用路径保留，各包另核真实基线、运行质量门并独立终审提交。
 
 P-M为schema唯一owner，W3a只引用最终生成类型；旧v0依赖一并冻结，旧builder兼容。
+P-M已完成round3九门与独立源码/证据/root范围验收，APPROVED_SOFTWARE_SCOPE；
+350项来源、8改+4新增，详local/s48/pm/review.md。未接生产调用者，后续P-T按依赖推进。
 SetEnabled保留0–9，追加SupersededByDisable=10/QueueFull=11/Superseded=12，
 Shutdown继续PreemptedByShutdown=7。P-M修改build.rs须附实际workspace --timings报告。
 总线桥按值持有真实NormalIoLease，按class/intent受检构造、跨域拒绝返原凭证，
@@ -2225,7 +2234,7 @@ P-A1任务r2及root范围裁决已批准准备态，详local/s48/pa1/root_task_r
 
 S46原七件工具/回归文件已由S46-B独立源码/证据终审通过；round2七门、三CLI及
 81具名通过，详local/s48/s46/review.md。旧wire4 FAIL与长测来源保留，不算修复成功，
-不成为W0.1/W2a/W2b前置。无调用者模块按依赖推进，下一包P-M。
+不成为W0.1/W2a/W2b前置。P-M也已独立验收，下一包P-T。
 W3-P与W3统一激活gateway/S0/S1协议、profile和真实退休，并同时迁移权限/唯一writer/
 监督/ACK；不支持新gateway配缺退休字段旧S0的生产组合。完整W3函数接线另审，
 本节不批准硬件操作或新负载PASS；详既有容量/生命周期合同及root四项裁决。

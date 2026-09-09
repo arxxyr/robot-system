@@ -37,6 +37,9 @@ enum SetEnabledStatus : ubyte {
     PreemptedByShutdown = 7,
     WouldAccept = 8,
     DeadlineExceeded = 9,
+    SupersededByDisable = 10,
+    QueueFull = 11,
+    Superseded = 12,
 }
 
 // SetEnabledRequest —— RPC 端验证完 auth / role / capability / idempotency 后
@@ -88,6 +91,8 @@ table SetEnabledResponse {
     domain:          SetEnabledStatus = Unknown;
     completed_at_ns: ulong;
     error_msg:       string;
+    effect:        SideEffect = Unknown;
+    retired:       bool = false;
 }
 
 // 两个 table 都是 root 候选，按 schema_id 路由（同 clear_estop.fbs 风格）。

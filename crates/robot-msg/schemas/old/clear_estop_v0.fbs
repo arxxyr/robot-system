@@ -1,0 +1,211 @@
+// clear_estop.fbs — v0.3 A1 ClearEStop control-plane slice wire format。
+//
+// 对应 docs/00_design.md §5.2 / §5.3 frozen RPC schema：
+//   - ClearEStopCommand（meta: CommandMeta + confirmation: string）
+//   - service RobotControl { rpc ClearEStop (ClearEStopCommand) returns (Ack) }
+//
+// 跟 docs/CHANGELOG.md 2026-04-26 "v0.3 entry：`ClearEStop RPC` 文案的控制
+// 动作解释" 解释登记口径对齐：安全语义为"显式授权、可审计的 ClearEStop
+// control action"；RPC / Web / 本地维护面板都是 transport 入口，**必须**走
+// 同一套 maintainer+ / confirmation / idempotency / TorqueOffConfirmed /
+// fsync 双写 / audit guard。
+//
+// ### 跨进程通道（C2 拍板）
+//
+// 走 iceoryx2 RequestResponse messaging pattern（reviewer A1 第 1 个拍板）。
+// RPC 端（robot-rpc）做 client，daemon 端（robot-s0::ipc_thread）做 server。
+// service name `/<robot_id>/control/clear_estop`（v0.3 控制 namespace）。
+//
+// ### S0 端 action layer ordering（reviewer A1-2 round 2 + A1-3 (1/3b)
+//   round 2 拍板硬契约）
+//
+// daemon 端收到 ClearEStopRequest 后**严格按序**：
+//   1. deadline check：clock.now() > deadline_ns
+//      true → reply DeadlineExceeded；不写 latch / 不清 guards / 不清
+//             executor latch
+//      （A1-3 (1/3b) round 3 拍板修订：daemon 在两处显式 check deadline——
+//      (a) RR drain 入口拦截过期请求不入队；(b) drain 入队后到 ipc_tick
+//      之前的 preempt 段（同 emergency preempt 共用 take + remove + reply
+//      三件事）。**响应前不再事后覆盖**真实 outcome——一旦 action 在
+//      deadline 前开始产出 Cleared / FsyncFailed / StateNotSafe /
+//      NotTorqueOffConfirmed，必须返真实结果，避免"硬件已 clear 但客户端
+//      收 DeadlineExceeded 以为没成功"跟"deadline 时三个翻转都不发生"
+//      硬契约冲突。详 docs/CHANGELOG.md 2026-04-27 A1-3 (1/3b) round 3
+//      登记）
+//   2. emergency preempt check：events queue 有 EStop / SafetyStopFailed
+//      event 且 in_flight_live 已注册 → reply PreemptedByEmergency；
+//      移除 events queue 里的 ClearEStop event；不写 latch / 不清 guards
+//      / 不清 executor latch
+//      （A1-3 (1/3b) round 2 阻断 1 拍板：避免 RR live 在 EventQueue 中
+//      滞留被下一 tick 错误清掉同 tick 新触发的 EStop）
+//   3. check executor_ctrl.safety_state() == TorqueOffConfirmed
+//      false → reply FailedPrecondition；不写 latch / 不清 guards / 不清
+//              executor latch
+//   4. dry_run? reply Ok { cleared_at_ns = clock.now() (placeholder) };
+//      不写 latch / 不清 guards / 不清 executor latch
+//   5. (real path) save_estop_latch_clear(path) backup-first fsync
+//      （A1-2 round 2 拍板：bak 先写 primary 后写；partial failure 时
+//      primary 保持 latched=true 不动，重启 load_estop_latch 不破坏
+//      §6.7 #4；详 docs/CHANGELOG.md 2026-04-27 A1-2 round 2 登记）
+//      Err → reply Internal；不清 guards / 不清 executor latch
+//   6. executor_ctrl.clear_safety_latch() （硬件层 clear，**晚于** fsync；
+//      fsync 失败时本步必须不执行）
+//   7. guards.estop_latched = false （内存 guard 翻转，**晚于**
+//      clear_safety_latch；任一前置步骤失败时本步必须不执行）
+//   8. audit log → reply Ok { cleared_at_ns = clock.now() }
+//
+// 失败语义不变量：fsync / clear_safety_latch / guards 翻转构成"全有
+// 全无" 三连——任一步失败时三个翻转都不发生；safety_state !=
+// TorqueOffConfirmed / dry_run / deadline / emergency preempt 时
+// 三个翻转都不发生。
+//
+// ### 字段安全边界
+//
+// **`role` 字段仅 audit**（reviewer A1-1 最后拍板）：
+//   - RPC 端必须完成 auth / role 查表 / capability 校验，viewer / operator
+//     在 publish 之前直接拒绝（PermissionDenied）。
+//   - S0 端收到的 role 只当审计字段记录到 tracing，**不**做授权决策。
+//   - S0 端真正的安全 guard 仍只有 action 语义 guard：TorqueOffConfirmed /
+//     dry_run / fsync 顺序 / 内存 guard / executor latch。
+
+namespace robot.msg.v0;
+
+// 调用方角色（仅 audit；S0 端不做授权决策）。
+//
+// 数值与 docs/00_design.md §5.4 角色顺序对齐（数值升序 = 权限升级）：
+//   0=Unknown（兼容旧 writer）/ 1=Viewer / 2=Operator / 3=Maintainer / 4=Admin
+//
+// `clear_estop` 是 `(maintainer+)` capability（design §5.4）；RPC 端必须拒
+// 绝 role < Maintainer 的 request 进 publish，**不**让它到 wire 上。
+enum RpcRole : ubyte {
+    Unknown = 0,
+    Viewer = 1,
+    Operator = 2,
+    Maintainer = 3,
+    Admin = 4,
+}
+
+// RR response status（v0.3 ClearEStop control-plane slice 用；后续其它
+// control RPC 也复用本 enum）。
+//
+// **本 enum 是 S0 ↔ robot-rpc 进程间内部状态码，跟 gRPC numeric code
+// 不对齐**。数值仅保证 (a) `Unknown=0` 兼容旧 writer，(b) 各值在本表内
+// 唯一升序，(c) 跨 schema 版本只增不删（FlatBuffers append-only）。
+//
+// **RPC 端转译硬要求**（reviewer A1-1 part 1 round 2 拍板）：
+// `robot-rpc` 把 `RpcStatus` 转 `tonic::Code` 时**必须**用显式 `match`
+// 全枚举所有 variant；**禁止** `code as i32` 之类靠数值对齐的 cast，因
+// 为 `RpcStatus::FailedPrecondition` (=2) 在 gRPC 里是 9，等等都不一致。
+//
+// **新增 variant 时的真实防线**：flatc 把 `RpcStatus` 生成成
+// `pub struct RpcStatus(pub u8)` newtype 而**不是** Rust enum——`match`
+// 的非穷举**不**会编译期报错。真正防线是 `crates/robot-rpc/src/clear_estop.rs`
+// 的 `rpc_status_variant_count_matches_explicit_mapping` 单测，把
+// `RpcStatus::ENUM_VALUES.len()` 跟 `rpc_status_to_tonic_code` 显式映射数
+// 硬绑：新增 variant 必须同步 (a) `match` 加 arm；(b) 加 mapping 单测；
+// (c) 升 `EXPECTED_VARIANTS` 数字。任一漏项 → 锁测 fail。
+//
+// ClearEStop 用得到 8 个 + Unknown 兼容旧 writer。后续 control RPC 复用
+// 本 enum 时按需扩 variant，**不**碰已有数值（FlatBuffers append-only）。
+//
+// `ResourceExhausted` / `Aborted` 是 A1-3 (1/3b) round 3 拍板新加（reviewer
+// A1-3 (1/3b) round 3 阻断 1）：
+// - `ResourceExhausted` = `ClearEStopRrPayload::AlreadyInProgress`（live
+//   单飞冲突；第二个 live 直拒不入队）；gateway 映射 `tonic::Code::ResourceExhausted`。
+// - `Aborted` = `ClearEStopRrPayload::PreemptedByEmergency`（in-flight live
+//   被新触发的 EStop / SafetyStopFailed preempt 取消）；gateway 映射
+//   `tonic::Code::Aborted`。
+enum RpcStatus : ubyte {
+    Unknown = 0,
+    Ok = 1,
+    FailedPrecondition = 2,
+    PermissionDenied = 3,
+    InvalidArgument = 4,
+    Internal = 5,
+    DeadlineExceeded = 6,
+    ResourceExhausted = 7,
+    Aborted = 8,
+}
+
+// ClearEStopRequest —— RPC 端验证完 auth / role / capability / confirmation /
+// idempotency 后通过 iceoryx2 RequestResponse publish 进来。daemon (S0) 端
+// 订阅 → 走 ipc_thread action layer ordering（详顶部"S0 端 action layer
+// ordering"段）。
+//
+// **字段语义**：
+// - `request_id`：RPC 端生成的 UUIDv7（design §5.2 CommandMeta.request_id），
+//   用于 RR correlation + audit trace。
+// - `idempotency_key`：design §5.2 CommandMeta.idempotency_key。RPC 端
+//   in-process TTL cache 用此 key 去重；同 key 不同 payload 必须拒绝（不能
+//   复用错误 request 的 cached Ack）。daemon 端**不**做 idempotency check，
+//   仅记录到 audit。
+// - `source`：调用源标识（"cli.loosqk" / "web.ui" / "local_panel.s0"）。
+//   仅 audit。
+// - `role`：调用方角色（仅 audit）。
+// - `confirmation`：design §5.2 ClearEStopCommand.confirmation。RPC 端必须
+//   验证非空才能 publish；具体格式约束（如必须含 request_id 后缀 / 操作
+//   员姓名）v0.3 实现时定。daemon 端不重新校验 confirmation 内容，仅记录
+//   confirmation 长度 / 摘要到 audit log。
+// - `audit_reason`：CommandMeta.audit_reason，"谁、为什么调" human context。
+//   仅 audit。
+// - `dry_run`：CommandMeta.dry_run。daemon 端 action layer **必须**真识别
+//   （reviewer A1 拍板硬边界："dry_run 必须进 S0 端 action layer，RPC 端
+//   不能短路返"）。
+// - `deadline_ns`：CLOCK_MONOTONIC_RAW 截止时刻。daemon 端在 RR drain 入口
+//   + drain 入队后到 ipc_tick 之前的 preempt 段两处显式 check
+//   `clock.now() > deadline_ns` 即返 DeadlineExceeded（A1-3 (1/3b) round 3
+//   修订：响应前不再事后覆盖真实 outcome；详顶部"S0 端 action layer
+//   ordering" 段）。长 fsync 跨 deadline 极端 window 留 A1-3 (3/3) e2e
+//   评估是否把 deadline 传进 action handler 在不可逆步骤前再 check。
+// - `stamp_ns`：RPC 端构造 request 时本机 wall-clock ns。仅 audit。
+table ClearEStopRequest {
+    request_id:       string;
+    idempotency_key:  string;
+    source:           string;
+    role:             RpcRole = Unknown;
+    confirmation:     string;
+    audit_reason:     string;
+    dry_run:          bool = false;
+    deadline_ns:      ulong;
+    stamp_ns:         ulong;
+}
+
+// ClearEStopResponse —— daemon (S0) 端 ipc_thread action layer 处理完后回
+// RR reply。
+//
+// **字段语义**：
+// - `request_id`：跟 ClearEStopRequest.request_id 一致，RPC 端用此 correlate
+//   pending response（多 in-flight request 的场景），并转译 tonic Status。
+// - `status`：处理结果。
+//     - `Ok` = 真路径 fsync + clear_safety_latch + guard 翻转全成功
+//       （dry_run=false）或 dry_run 评估通过
+//     - `FailedPrecondition` = `safety_state != TorqueOffConfirmed` 或
+//       `*state != Safe`
+//     - `Internal` = fsync IO err（backup-first save_estop_latch_clear
+//       失败；磁盘 latch 仍 latched=true）
+//     - `DeadlineExceeded` = `clock.now() > deadline_ns`（drain 入口或
+//       preempt 段命中；执行未开始或刚开始就被取消，三个翻转都不发生）
+//     - `ResourceExhausted` = live 单飞冲突（in_flight_live 已被另一
+//       live request 占用；本 request 直拒不入队）
+//     - `Aborted` = in-flight live 被新触发的 EStop / SafetyStopFailed
+//       preempt 取消（reviewer A1-3 (1/3b) round 2 阻断 1）
+// - `error_msg`：status != Ok 时人类可读错误描述（max ~256 chars）。Ok 时填
+//   空串。
+// - `cleared_at_ns`：status == Ok && dry_run == false 时填 daemon 内
+//   clock.now().0（CLOCK_MONOTONIC_RAW；clear_safety_latch 完成的时刻）。
+//   status == Ok && dry_run == true 时填 daemon 内 clock.now().0（语义为
+//   "would clear at"，方便 audit）。status != Ok 时填 0。
+// - `dry_run`：回传 request.dry_run，方便 RPC 端 audit log 不需重新 lookup
+//   request 状态。
+table ClearEStopResponse {
+    request_id:    string;
+    status:        RpcStatus = Unknown;
+    error_msg:     string;
+    cleared_at_ns: ulong;
+    dry_run:       bool = false;
+}
+
+// 本文件两个 table 都是 root 候选，按 schema_id 路由（同 event.fbs 风格）。
+// flatc 需要一个顶层 root_type 声明；选 ClearEStopRequest 作占位，不影响
+// ClearEStopResponse 的 root 解析。
+root_type ClearEStopRequest;

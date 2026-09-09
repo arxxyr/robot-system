@@ -67,9 +67,16 @@ pub use crate::flatc_gen::robot::msg;
 
 /// v0 快照命名空间（compat 测试用）。
 ///
-/// 源自 `schemas/old/joint_v0.fbs` 的 `robot.msg.v0`；flatc 把数字开头
-/// ident 转义成 `v_0`，本模块对外暴露时改用更干净的 `v0`。v0 里**目前只有
-/// `JointState`**，直接 re-export 该 generated mod；未来添加更多 v0 类型时
-/// 改为 `pub mod v0 { pub use crate::flatc_gen::robot::msg::v_0::*; }`
-/// + 相应 glob 规避（见 `build.rs` 生成策略注释）。
-pub use crate::flatc_gen::robot::msg::v_0::joint_state_generated as v0;
+/// 仅导出 `schemas/old` 的冻结类型，保留 `v0::JointState` 等既有路径。
+/// 新增控制响应元数据不进入旧命名空间。
+///
+/// ```compile_fail
+/// use robot_msg::v0::SideEffect;
+/// ```
+///
+/// ```compile_fail
+/// use robot_msg::v0::ClearEStopStatus;
+/// ```
+pub mod v0 {
+    pub use crate::flatc_gen::robot::msg::v_0::*;
+}

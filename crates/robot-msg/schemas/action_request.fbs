@@ -130,6 +130,8 @@ table InvokeTaskResponse {
     error_msg:      string;
     action_id:      string;
     accepted_at_ns: ulong;
+    effect:        SideEffect = Unknown;
+    retired:       bool = false;
 }
 
 // 本文件两个 table 都是 root 候选，按 schema_id 路由。flatc 需要一

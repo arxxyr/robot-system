@@ -73,7 +73,13 @@ fn main() {
         // action_status.fbs / action_request.fbs 模式）。
         "set_enabled.fbs",
     ];
-    let v0_schemas: [&str; 1] = ["joint_v0.fbs"];
+    let v0_schemas: [&str; 5] = [
+        "joint_v0.fbs",
+        "clear_estop_v0.fbs",
+        "set_enabled_v0.fbs",
+        "action_status_v0.fbs",
+        "action_request_v0.fbs",
+    ];
 
     // --- 2. flatc 生成 ---------------------------------------------------
     let gen_dir = out_dir.join("gen");
@@ -145,16 +151,12 @@ fn main() {
         ));
     }
     if !v0_mods.is_empty() {
-        // v_0 只有单个 schema（JointState）时，常规的 `pub use
-        // self::joint_state_generated::*;` 与 generated 文件自身的
-        // `use super::*` 会在 nightly 下触发 ambiguous-glob-reexport hard
-        // error。这里只声明 `pub mod <type>_generated`（不做 glob），由
-        // lib.rs 把该 mod 以别名 re-export 成 `v0`。
+        // 冻结类型仅在 v_0 内互相导入，不从 current 命名空间导入。
         src.push_str("        pub mod v_0 {\n");
         for module in &v0_mods {
             let path = v0_dir.join(format!("{module}.rs"));
             src.push_str(&format!(
-                "            #[path = {path:?}]\n            pub mod {module};\n",
+                "            #[path = {path:?}]\n            mod {module};\n            pub use self::{module}::*;\n",
                 path = path.display().to_string(),
             ));
         }

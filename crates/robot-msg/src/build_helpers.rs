@@ -31,14 +31,14 @@ use crate::msg::{
     ActionFailureFbArgs, ActionFailureKindFb, ActionKindFb, ActionOutcomeFb, ActionOutcomeFbArgs,
     ActionOutcomeKindFb, ActionRpcStatus, CancelTaskRequest, CancelTaskRequestArgs,
     CancelTaskResponse, CancelTaskResponseArgs, ClearEStopRequest, ClearEStopRequestArgs,
-    ClearEStopResponse, ClearEStopResponseArgs, ClearErrorRequest, ClearErrorRequestArgs,
-    ClearErrorResponse, ClearErrorResponseArgs, ControlMode, EStopEvent, EStopEventArgs,
-    GetTaskStatusRequest, GetTaskStatusRequestArgs, GetTaskStatusResponse,
+    ClearEStopResponse, ClearEStopResponseArgs, ClearEStopStatus, ClearErrorRequest,
+    ClearErrorRequestArgs, ClearErrorResponse, ClearErrorResponseArgs, ControlMode, EStopEvent,
+    EStopEventArgs, GetTaskStatusRequest, GetTaskStatusRequestArgs, GetTaskStatusResponse,
     GetTaskStatusResponseArgs, Heartbeat, HeartbeatArgs, InvokeTaskRequest, InvokeTaskRequestArgs,
     InvokeTaskResponse, InvokeTaskResponseArgs, JointCommand, JointCommandArgs, JointState,
     JointStateArgs, RpcRole, RpcStatus, S0ControlLink, S0FaultCode, S0Mode, S0OutputMode,
     S0SafetyState, SetEnabledRequest, SetEnabledRequestArgs, SetEnabledResponse,
-    SetEnabledResponseArgs, SetEnabledStatus, StaleAction, TaskStateFb,
+    SetEnabledResponseArgs, SetEnabledStatus, SideEffect, StaleAction, TaskStateFb,
 };
 
 // ============================================================================
@@ -310,6 +310,54 @@ pub fn build_clear_estop_response(
             error_msg: Some(error_msg_off),
             cleared_at_ns,
             dry_run,
+            domain: ClearEStopStatus::Unknown,
+            superseded: false,
+            effect: SideEffect::Unknown,
+            retired: false,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 清锁存响应的事务领域结果与实际副作用元数据。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClearResponseMeta {
+    /// 清锁存事务领域结果。
+    pub domain: ClearEStopStatus,
+    /// 本次事务是否已被后续安全事件撤销。
+    pub superseded: bool,
+    /// 实际已发生的副作用阶段。
+    pub effect: SideEffect,
+    /// 本次事务是否完成退休。
+    pub retired: bool,
+}
+
+/// 构造带事务元数据的控制响应；只编码调用方提供的实际结果。
+#[must_use]
+pub fn build_clear_estop_response_typed(
+    request_id: &str,
+    status: RpcStatus,
+    error_msg: &str,
+    cleared_at_ns: u64,
+    dry_run: bool,
+    meta: ClearResponseMeta,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let resp = ClearEStopResponse::create(
+        &mut fbb,
+        &ClearEStopResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            cleared_at_ns,
+            dry_run,
+            domain: meta.domain,
+            superseded: meta.superseded,
+            effect: meta.effect,
+            retired: meta.retired,
         },
     );
     fbb.finish(resp, None);
@@ -382,6 +430,38 @@ pub fn build_set_enabled_response(
             domain,
             completed_at_ns,
             error_msg: Some(error_msg_off),
+            effect: SideEffect::Unknown,
+            retired: false,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造带事务元数据的控制响应；只编码调用方提供的实际结果。
+#[must_use]
+pub fn build_set_enabled_response_typed(
+    request_id: &str,
+    status: RpcStatus,
+    domain: SetEnabledStatus,
+    completed_at_ns: u64,
+    error_msg: &str,
+    effect: SideEffect,
+    retired: bool,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let resp = SetEnabledResponse::create(
+        &mut fbb,
+        &SetEnabledResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            domain,
+            completed_at_ns,
+            error_msg: Some(error_msg_off),
+            effect,
+            retired,
         },
     );
     fbb.finish(resp, None);
@@ -583,6 +663,39 @@ pub fn build_invoke_task_response(
             error_msg: Some(error_msg_off),
             action_id: Some(action_id_off),
             accepted_at_ns,
+            effect: SideEffect::Unknown,
+            retired: false,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造带事务元数据的控制响应；只编码调用方提供的实际结果。
+#[must_use]
+pub fn build_invoke_task_response_typed(
+    request_id: &str,
+    status: ActionRpcStatus,
+    error_msg: &str,
+    action_id: &str,
+    accepted_at_ns: u64,
+    effect: SideEffect,
+    retired: bool,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let action_id_off = fbb.create_string(action_id);
+    let resp = InvokeTaskResponse::create(
+        &mut fbb,
+        &InvokeTaskResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            action_id: Some(action_id_off),
+            accepted_at_ns,
+            effect,
+            retired,
         },
     );
     fbb.finish(resp, None);
@@ -669,6 +782,39 @@ pub fn build_cancel_task_response(
             error_msg: Some(error_msg_off),
             action_id: Some(action_id_off),
             cancel_at_ns,
+            effect: SideEffect::Unknown,
+            retired: false,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造带事务元数据的控制响应；只编码调用方提供的实际结果。
+#[must_use]
+pub fn build_cancel_task_response_typed(
+    request_id: &str,
+    status: ActionRpcStatus,
+    error_msg: &str,
+    action_id: &str,
+    cancel_at_ns: u64,
+    effect: SideEffect,
+    retired: bool,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let action_id_off = fbb.create_string(action_id);
+    let resp = CancelTaskResponse::create(
+        &mut fbb,
+        &CancelTaskResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            action_id: Some(action_id_off),
+            cancel_at_ns,
+            effect,
+            retired,
         },
     );
     fbb.finish(resp, None);
@@ -764,6 +910,36 @@ pub fn build_clear_error_response(
             status,
             error_msg: Some(error_msg_off),
             cleared_at_ns,
+            effect: SideEffect::Unknown,
+            retired: false,
+        },
+    );
+    fbb.finish(resp, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造带事务元数据的控制响应；只编码调用方提供的实际结果。
+#[must_use]
+pub fn build_clear_error_response_typed(
+    request_id: &str,
+    status: ActionRpcStatus,
+    error_msg: &str,
+    cleared_at_ns: u64,
+    effect: SideEffect,
+    retired: bool,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(128);
+    let request_id_off = fbb.create_string(request_id);
+    let error_msg_off = fbb.create_string(error_msg);
+    let resp = ClearErrorResponse::create(
+        &mut fbb,
+        &ClearErrorResponseArgs {
+            request_id: Some(request_id_off),
+            status,
+            error_msg: Some(error_msg_off),
+            cleared_at_ns,
+            effect,
+            retired,
         },
     );
     fbb.finish(resp, None);

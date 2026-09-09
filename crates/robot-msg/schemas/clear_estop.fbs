@@ -127,6 +127,36 @@ enum RpcStatus : ubyte {
     Aborted = 8,
 }
 
+// 控制响应的实际副作用阶段；Unknown 保持旧 writer 缺字段时的默认语义。
+enum SideEffect : ubyte {
+    Unknown = 0,
+    None = 1,
+    Started = 2,
+    Committed = 3,
+}
+
+// 清锁存事务领域结果；与 RpcStatus 分离，数值只允许尾追加。
+enum ClearEStopStatus : ubyte {
+    Unknown = 0,
+    Cleared = 1,
+    WouldClear = 2,
+    StateNotSafe = 3,
+    NotTorqueOffConfirmed = 4,
+    FsyncFailed = 5,
+    AlreadyInProgress = 6,
+    PreemptedByEmergency = 7,
+    DeadlineExceeded = 8,
+    SupersededByDisable = 9,
+    SupersededByShutdown = 10,
+    SupersededByInhibit = 11,
+    SupersededByExhausted = 12,
+    AuthorityRefused = 13,
+    QueueFull = 14,
+    BusyLowering = 15,
+    PersistPending = 16,
+    WriterUnavailable = 17,
+}
+
 // ClearEStopRequest —— RPC 端验证完 auth / role / capability / confirmation /
 // idempotency 后通过 iceoryx2 RequestResponse publish 进来。daemon (S0) 端
 // 订阅 → 走 ipc_thread action layer ordering（详顶部"S0 端 action layer
@@ -203,6 +233,10 @@ table ClearEStopResponse {
     error_msg:     string;
     cleared_at_ns: ulong;
     dry_run:       bool = false;
+    domain:        ClearEStopStatus = Unknown;
+    superseded:    bool = false;
+    effect:        SideEffect = Unknown;
+    retired:       bool = false;
 }
 
 // 本文件两个 table 都是 root 候选，按 schema_id 路由（同 event.fbs 风格）。
