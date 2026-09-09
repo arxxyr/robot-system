@@ -262,3 +262,77 @@ mod tests {
         );
     }
 }
+
+/// Timeout 的被判断心跳必须仍是当前心跳；较旧或较新都已过期。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Freshness {
+    Valid,
+    Stale {
+        latest_hb_ns: u64,
+        judged_hb_ns: u64,
+    },
+}
+
+#[must_use]
+pub const fn judge_heartbeat_timeout(latest_hb_ns: u64, judged_hb_ns: u64) -> Freshness {
+    if latest_hb_ns == judged_hb_ns {
+        Freshness::Valid
+    } else {
+        Freshness::Stale {
+            latest_hb_ns,
+            judged_hb_ns,
+        }
+    }
+}
+
+/// 与既有 watchdog 循环保持同式，阈值相等及未来心跳都不超时。
+#[must_use]
+pub const fn is_overdue(now_ns: u64, last_hb_ns: u64, timeout_ns: u64) -> bool {
+    now_ns.saturating_sub(last_hb_ns) > timeout_ns
+}
+
+#[cfg(test)]
+mod freshness_tests {
+    use super::*;
+
+    #[test]
+    fn equal_stamp_is_valid() {
+        assert_eq!(judge_heartbeat_timeout(100, 100), Freshness::Valid);
+    }
+    #[test]
+    fn newer_heartbeat_is_stale() {
+        assert_eq!(
+            judge_heartbeat_timeout(101, 100),
+            Freshness::Stale {
+                latest_hb_ns: 101,
+                judged_hb_ns: 100
+            }
+        );
+    }
+    #[test]
+    fn older_stamp_99_vs_100_is_stale() {
+        assert_eq!(
+            judge_heartbeat_timeout(99, 100),
+            Freshness::Stale {
+                latest_hb_ns: 99,
+                judged_hb_ns: 100
+            }
+        );
+    }
+    #[test]
+    fn is_overdue_matches_run_loop_formula_and_saturates() {
+        for (now, last, timeout, expected) in [
+            (100, 90, 10, false),
+            (101, 90, 10, true),
+            (90, 100, 0, false),
+            (u64::MAX, 0, u64::MAX, false),
+            (u64::MAX, 0, u64::MAX - 1, true),
+        ] {
+            assert_eq!(is_overdue(now, last, timeout), expected);
+            assert_eq!(
+                is_overdue(now, last, timeout),
+                now.saturating_sub(last) > timeout
+            );
+        }
+    }
+}

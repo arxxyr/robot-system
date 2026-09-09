@@ -9,6 +9,20 @@
 
 ---
 
+## 2026-09-09 · P-S1/P-L1 原语验收
+
+P-S1/P-L1 双队列、准入和心跳原语已 **APPROVED_SOFTWARE_SCOPE**：base `ac92f70`，
+round6十一门通过，完整353项来源`961aed49…2355`一致，恰3改+2新增。
+admission14、ingress9、watchdog8、doc20、公开5、真实guard6通过；S0 lib542，
+workspace1982通过/1既有ignored。聚焦门与workspace计数不相加，doc含4个新增compile_fail。
+独立源码/证据及root范围核验通过，证据`local/s48/ps1/review.md`。准入先核总量、类、
+peer槽与份额，再受检推进序号；拒绝零变更，错账本返原票据，Drop保留占用。
+高队列Lower先于Restore且类内FIFO，普通队列容量按受检L/C派生；真实三来源载荷验证。
+分配守卫正例在scope内搬移预分配载荷，反例必须出现唯一scope标记、真实SIGABRT并被父回收。
+心跳仅戳相等为Valid，过期判定保持饱和减法；生产接线须经from_rr受检分类，裸公开enum
+不作为权限凭证。旧中止/Clippy失败轮和raw日志保留；无依赖或生产调用迁移、无Orin验证，
+wire4历史FAIL、D15 OPEN与deployable=false保持。
+
 ## 2026-09-09 · P-T 显式RR原语验收
 
 P-T 显式RR容量与发送分类原语已 **APPROVED_SOFTWARE_SCOPE**：base `0d3caca`，
@@ -658,3 +672,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-09：登记S-48 A2已提交与A3a共享权限归位的本地门、root评审和证据边界；未接生产或验证Orin。
 
 - 2026-09-09：登记P-T九门、独立终审与同名双配置红→绿证据；未接生产或验证Orin。
+
+- 2026-09-09：登记P-S1/P-L1十一门、独立终审与真实分配守卫正反证；未接生产或验证Orin。

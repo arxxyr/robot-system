@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_PT_REVIEW_APPROVED_AWAITING_COMMIT",
-  "resume_from": "HANDOFF：P-T九门与独立源码/证据/root验收通过，归档提交后绑定实际base实施P-S1/P-L1；三项增补与后续生产总装边界见PLAN。",
+  "work_state": "S48_PS1_PL1_APPROVED_PENDING_COMMIT",
+  "resume_from": "HANDOFF：P-T已评审提交ac92f70；P-S1/P-L1按ps1/root_dispatch.md实施，五源/十一门与独立终审通过后提交；后续P-G1/P-A1/W3a及生产总装按依赖推进。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_PT_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "PT_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_PS1_PL1_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "PS1_PL1_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
   "scope": "P-T显式RR容量、可信peer与typed发送分类原语本地独立验收通过；含node.config真实红→绿修复。未接生产调用者/Orin，旧wire4 FAIL、D15 OPEN、双队列/权限/单writer总装未完成。",
   "software": {
@@ -1126,7 +1126,7 @@
         "production_activation_approved": false
       },
       "priority_primitives": {
-        "status": "PM_PT_APPROVED_REMAINING_PRIMITIVES_NOT_IMPLEMENTED",
+        "status": "PM_PT_PS1_PL1_APPROVED_PG1_PA1_PENDING",
         "plan": "P.6.14.12",
         "root_approval": "local/s48/a3/root_priority_execution_plan_r4_approval.md",
         "root_approval_sha256": "0040b79ea676e0fba7407d8c5501e8dee94a42a065d7ad29747be1663ddd40f7",
@@ -1241,7 +1241,7 @@
           "commit": "0d3cacae75a83a61050a21fdb3a3fe59a710b621"
         },
         "zero_client_guard": {
-          "status": "PT_IMPLEMENTED_PS1_PG1_PLAN_APPROVED",
+          "status": "PT_PS1_IMPLEMENTED_PG1_PLAN_APPROVED",
           "root_approval": "local/s48/pt/root_zero_client_guard_approval.md",
           "root_approval_sha256": "c767286ee3ad7f4e17a184e9676abebf6a1f8815257be9595a7f59779aef96d9",
           "independent_review_sha256": "5c1340230ac9f099428b4d58f43e8219e7cabc569a01e1c09615fcf9a06c9aa5",
@@ -1344,13 +1344,115 @@
             "既有三factory只补limits=None，旧send/receive/reply原样。_with、typed分类和可信peer仅独立原语，无生产调用路径切换。纯上游错误枚举构造不是实际故障注入；满队列/第五条/peer/预建服务/TOML走真实iceoryx2服务。",
             "未访问Orin/服务控制/串口/硬件，不改变wire4 FAIL、D15 OPEN和不部署边界；未自批、commit或push。"
           ],
-          "hardware_access": false
+          "hardware_access": false,
+          "commit": "ac92f70dd62ccaf3c76f24e5266ff3c8094b87e6"
         },
         "ps1_dispatch_edges": {
-          "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+          "status": "IMPLEMENTED_AND_REVIEWED",
           "approval": "local/s48/ps1/root_dispatch_edge_approval.md",
           "approval_sha256": "7c0471f7b40a2f16dc1d7adbf55ac6e327c323b59839bb698081ded3a1d21a37",
           "scope": "本实例serial耗尽零变更QueueFull诊断；C0受检拒绝；不增wire语义或门"
+        },
+        "ps1": {
+          "status": "APPROVED_SOFTWARE_SCOPE",
+          "base_commit": "ac92f70dd62ccaf3c76f24e5266ff3c8094b87e6",
+          "task": "local/s48/ps1/root_dispatch.md",
+          "task_sha256": "3fe533737aa42e3e2cfc5489d6d4b9a5b5f74415ac29e40e32f99e2aa530221e",
+          "production_activation_approved": false,
+          "source_hash": "961aed4941aaf6c99121a6bd813e0e24f42a29f23fb5e9a756b5c5db51bd2355",
+          "source_input_count": 353,
+          "source_manifest": "local/s48/ps1/cc/round6/source_after.sha256",
+          "source_files": {
+            "crates/robot-s0/src/event_ingress.rs": "d452c681b2816541d2c330beb8b600affd92cadb2c808d91b30b9efd0994d071",
+            "crates/robot-s0/src/lib.rs": "97e1d7643490c90a64a18962e67ba3ed9e3d0e0c2295563c8b95f9ada1466105",
+            "crates/robot-s0/src/rr_admission.rs": "786214cffa8a9bc6e514d54f918af02e36286ee1b07f77d26ca50d9b481d0ef7",
+            "crates/robot-s0/src/watchdog.rs": "97ae917d1f8cd8c974785ae371da89c0b95040df70cedb84687765de0a0425bb",
+            "crates/robot-s0/tests/priority_primitives.rs": "a37aa4777a7796156327327dbd0ddf253089681a140e25879143074cb5b42501"
+          },
+          "final_round": "round6",
+          "formal_gates": 11,
+          "test_counts": {
+            "test_admission": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 14,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_ingress": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 9,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_watchdog": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 8,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_doc": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 20,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_public": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 5,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_guard": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 6,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_s0": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 542,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_workspace": {
+              "status": "ok",
+              "suites": 54,
+              "passed": 1982,
+              "failed": 0,
+              "ignored": 1
+            }
+          },
+          "result_sha256": "01ee83953f03fa69344c41fb959fcdd60cc8affceba8bf7e70f534bc6ddcd71c",
+          "history_and_limits": [
+            "原生 Codex 开发；改源前 HEAD ac92f70 与 P-T 提交绑定，完整 351 来源等于 P-T 终点；event/watchdog 同 b5a0bfa 字节原件。",
+            "r1/r2/root 批准及 C>=1、Slot.serial MAX 增补均为真实输入。只有五 owner 变更，全来源增加两个新文件到 353；无依赖/feature/build.rs 变化。",
+            "round1 fmt 实际改源即停；round2 Clippy 报相同 match 分支及常量 chunks API；修复后 round3 fmt 改源即停；round4 Clippy 报合并分支块末分号，修复后 round5 feature Clippy 报反证子进程单模式 match，改为 let-else 后重冻 round6 完整十一门。旧 raw、来源、事前 runner 快照全部保留。",
+            "正式门按合同严格串行，失败轮不续跑，不拼接通过，不 cargo clean 或强制 Checking。逐具名结果从本轮 raw 解析，汇总与原始 harness 计数一致。",
+            "真实集成二进制安装 AllocDisabler 并进入 rt_entry；准入/归还 64 个 Slot 与高每类 32、普通 64 个真实载荷循环在 scope 内完成，字符串在 scope 外构造/析构。反证子进程故意在同宏内分配，父核唯一 scope 标记、SIGABRT 和实际回收并输出 raw 标记。",
+            "此包仅独立原语，生产 RR、高普通队列和心跳载荷尚未接线。未访问 Orin、服务、串口或硬件，不改变 wire4 FAIL / D15 OPEN / 不部署边界；未自批或提交。"
+          ],
+          "hardware_access": false,
+          "source_review": "local/s48/ps1/independent_source_review.md",
+          "source_review_sha256": "5d3ca1bf31142567c38a1a944d68038a5bcfe07fbf0c4615aba14e2db8286fb3",
+          "evidence_review": "local/s48/ps1/independent_evidence_review.md",
+          "evidence_review_sha256": "4b335e1f692d46a876846dee8d7c0d6fb5f5381b1631ef0f33f4091ab59f8140",
+          "root_review": "local/s48/ps1/review.md",
+          "root_review_sha256": "f42186a9faa4dad643ef28a3d586f9ca9418f604e062b312b3a129a661ce9f1d",
+          "evidence_receipt_sha256": "09be20c947b0afb03e1c0359190bbc2a144495491481c093c3923d244001d3e8",
+          "root_scope_receipt_sha256": "331d7891dc6b94e4a6bbcd00d063b4a4ae8cca38c1a21aace3ecf66ec597d3ea"
+        },
+        "pg1_dispatch_edges": {
+          "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+          "approval": "local/s48/pg1/root_dispatch_edge_approval.md",
+          "approval_sha256": "5be68de70f50685dd4051dff822b18b5bbea64be8787a4c80668165a6b2dc14e",
+          "scope": "泛型Ticket/取消来源与入队serial/锁外析构/私有受检shares与单参数Credits/本实例序号耗尽；五owner十门不变"
         }
       },
       "w3a": {
@@ -1361,6 +1463,13 @@
         "production_activation_approved": false,
         "prepared_task_approval": "local/s48/w3a/root_task_approval.md",
         "prepared_task_approval_sha256": "be8f334aac2a5dc1a9b366734756111c9613febdbafd879a12bab7781a708a79"
+      },
+      "production_plan_inputs": {
+        "cp2_bridge": "local/s48/w3/cp2_handle_bridge_r2.md",
+        "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL",
+        "root_review": "local/s48/w3/root_cp2_input_review.md",
+        "root_review_sha256": "82d1e6b3a77428b34b9a64efa14b98ea7b6385d9379347f96f5e57ee59925bb5",
+        "pending": "三项真实所有权API增补、READY原子交接及完整W3实际接口/门仍待整体函数方案和独立评审"
       }
     }
   },
@@ -1520,14 +1629,14 @@
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "80f72666130668481edcbc0fddfe777a03e21b3f21c864d1a78ae161b133b3a3",
-    "bytes": 29943000,
-    "members": 7905,
-    "logical_bytes": 902337698,
+    "sha256": "6c2e25a7435c898e0ba6e34dd4a5d72c0084bd74da61b9ec484c4c4a8df1ede8",
+    "bytes": 30429020,
+    "members": 7990,
+    "logical_bytes": 903967919,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-09T15:31:11.909516+00:00",
+  "updated_at": "2026-09-09T16:05:22.783021+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",

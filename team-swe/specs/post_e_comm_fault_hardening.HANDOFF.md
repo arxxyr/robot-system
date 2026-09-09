@@ -7,7 +7,7 @@
 用户最新要求优先节省root token，并允许多个Claude或Codex子agent并行。
 用户进一步明确：cc-claude完成实现、测试和自查后，必须由root或独立Codex子agent
 作最终评审；Claude交叉检查只作为前置检查，不能代替最终评审和提交门。
-W2b已评审提交`6defac484d5d7e7f8fccd32276fa0931cfc8f131`，S46-B已评审提交`5abd148bf0c39583a7f5957dd9cac260ff2106dc`，P-M已评审提交`0d3cacae75a83a61050a21fdb3a3fe59a710b621`，P-T已完成独立终审，待root归档提交，下一包P-S1/P-L1；root只做最终决策、阻断项处理与验收提交，
+W2b已评审提交`6defac484d5d7e7f8fccd32276fa0931cfc8f131`，S46-B已评审提交`5abd148bf0c39583a7f5957dd9cac260ff2106dc`，P-M已评审提交`0d3cacae75a83a61050a21fdb3a3fe59a710b621`，P-T已评审提交`ac92f70dd62ccaf3c76f24e5266ff3c8094b87e6`，P-S1/P-L1已独立验收待提交，下一包P-G1；root只做最终决策、阻断项处理与验收提交，
 详细方案和独立复核可以委派。cc-claude额度耗尽后由原生implementation接手，新并行角色见下。
 A1验证基线为`ce61623436138342b6a2d234b10bada71d6877ca`，分支
 `feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46原七源现由S46-B独立验收收口，旧长测/Orin失败来源保留。S-47合入S-48；A2已评审提交`dee67fa`，
@@ -65,6 +65,18 @@ RR20、真实TOML1、roundtrip6通过；workspace1950通过/1既有ignored，doc
 现在均从node.config读actual2，服务身份不变；原绿round4与失败轮均保留。
 仅增加已锁定iceoryx2-cal=0.9.3的dev边供纯错误枚举测试，生产依赖图前后相同。
 未切换生产调用者、未验证Orin或电机；wire4历史FAIL、D15 OPEN与deployable=false保持。
+
+P-S1/P-L1 双队列、准入和心跳原语已 **APPROVED_SOFTWARE_SCOPE**：base `ac92f70`，
+round6十一门通过，完整353项来源`961aed49…2355`一致，恰3改+2新增。
+admission14、ingress9、watchdog8、doc20、公开5、真实guard6通过；S0 lib542，
+workspace1982通过/1既有ignored。聚焦门与workspace计数不相加，doc含4个新增compile_fail。
+独立源码/证据及root范围核验通过，证据`local/s48/ps1/review.md`。准入先核总量、类、
+peer槽与份额，再受检推进序号；拒绝零变更，错账本返原票据，Drop保留占用。
+高队列Lower先于Restore且类内FIFO，普通队列容量按受检L/C派生；真实三来源载荷验证。
+分配守卫正例在scope内搬移预分配载荷，反例必须出现唯一scope标记、真实SIGABRT并被父回收。
+心跳仅戳相等为Valid，过期判定保持饱和减法；生产接线须经from_rr受检分类，裸公开enum
+不作为权限凭证。旧中止/Clippy失败轮和raw日志保留；无依赖或生产调用迁移、无Orin验证，
+wire4历史FAIL、D15 OPEN与deployable=false保持。
 
 后续队列见target/post_e_h2_rt/s48/root_next_package_queue.md，不以原语门冒充总装通过。
 

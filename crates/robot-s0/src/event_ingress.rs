@@ -363,3 +363,429 @@ impl EventQueue {
         before - self.control.len()
     }
 }
+
+/// 高优先级工作保留真实请求的唯一所有权。
+#[derive(Debug)]
+pub enum HighWork {
+    LiveDisable(SetEnabledRrRequest),
+    Control(ControlEvent),
+    LiveEnable(SetEnabledRrRequest),
+    LiveClear(ClearEStopRrRequest),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HighClass {
+    Lower,
+    Restore,
+}
+
+impl HighWork {
+    pub fn from_rr(event: RrEvent) -> Result<Self, RrEvent> {
+        match event {
+            RrEvent::SetEnabled(request) if !request.dry_run => {
+                if request.enabled {
+                    Ok(Self::LiveEnable(request))
+                } else {
+                    Ok(Self::LiveDisable(request))
+                }
+            }
+            RrEvent::ClearEStop(request) if !request.dry_run => Ok(Self::LiveClear(request)),
+            event => Err(event),
+        }
+    }
+
+    #[must_use]
+    pub const fn control(event: ControlEvent) -> Self {
+        Self::Control(event)
+    }
+
+    #[must_use]
+    pub const fn class(&self) -> HighClass {
+        match self {
+            Self::LiveDisable(_)
+            | Self::Control(
+                ControlEvent::Stop
+                | ControlEvent::Disable
+                | ControlEvent::AdapterErr(_)
+                | ControlEvent::CmdDeadlineExpired
+                | ControlEvent::LimitViolation
+                | ControlEvent::WatchdogTimeout
+                | ControlEvent::RtOverrun,
+            ) => HighClass::Lower,
+            Self::LiveEnable(_)
+            | Self::LiveClear(_)
+            | Self::Control(
+                ControlEvent::Enable | ControlEvent::ClearEStop | ControlEvent::ClearError,
+            ) => HighClass::Restore,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum NormalWork {
+    DryRunSet(SetEnabledRrRequest),
+    DryRunClear(ClearEStopRrRequest),
+}
+
+impl NormalWork {
+    pub fn from_rr(event: RrEvent) -> Result<Self, RrEvent> {
+        match event {
+            RrEvent::SetEnabled(request) if request.dry_run => Ok(Self::DryRunSet(request)),
+            RrEvent::ClearEStop(request) if request.dry_run => Ok(Self::DryRunClear(request)),
+            event => Err(event),
+        }
+    }
+}
+
+pub const HIGH_QUEUE_CAPACITY: usize = 32;
+
+/// 两个类别分别预留全部容量，合计准入上限仍为 32。
+#[derive(Debug)]
+pub struct HighQueue {
+    lower: VecDeque<HighWork>,
+    restore: VecDeque<HighWork>,
+}
+
+impl Default for HighQueue {
+    fn default() -> Self {
+        Self {
+            lower: VecDeque::with_capacity(HIGH_QUEUE_CAPACITY),
+            restore: VecDeque::with_capacity(HIGH_QUEUE_CAPACITY),
+        }
+    }
+}
+
+impl HighQueue {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn admit(&mut self, work: HighWork) -> Result<(), HighWork> {
+        if self.len() == HIGH_QUEUE_CAPACITY {
+            return Err(work);
+        }
+        match work.class() {
+            HighClass::Lower => self.lower.push_back(work),
+            HighClass::Restore => self.restore.push_back(work),
+        }
+        Ok(())
+    }
+
+    pub fn pop(&mut self) -> Option<HighWork> {
+        self.pop_lower().or_else(|| self.pop_restore())
+    }
+    pub fn pop_lower(&mut self) -> Option<HighWork> {
+        self.lower.pop_front()
+    }
+    pub fn pop_restore(&mut self) -> Option<HighWork> {
+        self.restore.pop_front()
+    }
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.lower.len() + self.restore.len()
+    }
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    #[must_use]
+    pub fn len_lower(&self) -> usize {
+        self.lower.len()
+    }
+    #[must_use]
+    pub fn len_restore(&self) -> usize {
+        self.restore.len()
+    }
+}
+
+/// 两个 RR 来源共用的普通工作队列；容量在非 RT 初始化时预分配。
+#[derive(Debug)]
+pub struct NormalQueue {
+    items: VecDeque<NormalWork>,
+    cap: usize,
+}
+
+impl NormalQueue {
+    #[must_use]
+    pub const fn capacity_for(limits: &crate::rr_admission::CheckedLimits) -> usize {
+        2 * crate::rr_admission::ClassCaps::from_checked(limits).normal
+    }
+
+    #[must_use]
+    pub fn with_capacity(cap: usize) -> Self {
+        Self {
+            items: VecDeque::with_capacity(cap),
+            cap,
+        }
+    }
+    pub fn admit(&mut self, work: NormalWork) -> Result<(), NormalWork> {
+        if self.items.len() == self.cap {
+            return Err(work);
+        }
+        self.items.push_back(work);
+        Ok(())
+    }
+    pub fn pop(&mut self) -> Option<NormalWork> {
+        self.items.pop_front()
+    }
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+    #[must_use]
+    pub const fn capacity(&self) -> usize {
+        self.cap
+    }
+}
+
+#[cfg(test)]
+mod priority_tests {
+    use super::*;
+    use crate::rr_admission::CheckedLimits;
+    use robot_transport::iceoryx2::RrStaticLimits;
+
+    fn set(id: u64, dry_run: bool, enabled: bool) -> RrEvent {
+        RrEvent::SetEnabled(SetEnabledRrRequest {
+            request_id: id.to_string(),
+            enabled,
+            dry_run,
+            deadline_ns: id,
+            audit_reason: "准入测试".into(),
+        })
+    }
+    fn clear(id: u64, dry_run: bool) -> RrEvent {
+        RrEvent::ClearEStop(ClearEStopRrRequest {
+            request_id: id.to_string(),
+            dry_run,
+            deadline_ns: id,
+            confirmation: "确认测试".into(),
+            audit_reason: "准入测试".into(),
+        })
+    }
+    fn normal_capacity(c: usize) -> usize {
+        NormalQueue::capacity_for(
+            &CheckedLimits::try_from_limits(&RrStaticLimits { c, l: 4 }).unwrap(),
+        )
+    }
+    fn assert_set(event: RrEvent, id: u64, dry_run: bool, enabled: bool) {
+        let RrEvent::SetEnabled(request) = event else {
+            panic!("必须返原 Set 请求")
+        };
+        assert_eq!(request.request_id, id.to_string());
+        assert_eq!(request.deadline_ns, id);
+        assert_eq!(request.dry_run, dry_run);
+        assert_eq!(request.enabled, enabled);
+        assert_eq!(request.audit_reason, "准入测试");
+    }
+    fn assert_clear(event: RrEvent, id: u64, dry_run: bool) {
+        let RrEvent::ClearEStop(request) = event else {
+            panic!("必须返原 Clear 请求")
+        };
+        assert_eq!(request.request_id, id.to_string());
+        assert_eq!(request.deadline_ns, id);
+        assert_eq!(request.dry_run, dry_run);
+        assert_eq!(request.audit_reason, "准入测试");
+        assert_eq!(request.confirmation, "确认测试");
+    }
+
+    #[test]
+    fn high_admits_real_three_sources_24_per_tick_and_drains() {
+        let mut queue = HighQueue::new();
+        for tick in 0..32 {
+            for offset in 0..SOURCE_QUOTA {
+                let id = u64::try_from(tick * SOURCE_QUOTA + offset).unwrap();
+                queue.admit(HighWork::control(ControlEvent::Stop)).unwrap();
+                queue
+                    .admit(HighWork::from_rr(clear(id, false)).unwrap())
+                    .unwrap();
+                queue
+                    .admit(HighWork::from_rr(set(id, false, offset % 2 == 0)).unwrap())
+                    .unwrap();
+            }
+            assert_eq!(queue.len(), 24);
+            let (mut external, mut clears, mut sets) = (0, 0, 0);
+            while let Some(work) = queue.pop() {
+                match work {
+                    HighWork::Control(_) => external += 1,
+                    HighWork::LiveClear(_) => clears += 1,
+                    HighWork::LiveEnable(_) | HighWork::LiveDisable(_) => sets += 1,
+                }
+            }
+            assert_eq!((external, clears, sets), (8, 8, 8));
+            assert!(queue.is_empty());
+        }
+    }
+
+    #[test]
+    fn high_pop_order_lower_before_restore_fifo_within_class() {
+        let mut queue = HighQueue::new();
+        queue
+            .admit(HighWork::from_rr(set(1, false, true)).unwrap())
+            .unwrap();
+        queue.admit(HighWork::control(ControlEvent::Stop)).unwrap();
+        queue
+            .admit(HighWork::from_rr(clear(2, false)).unwrap())
+            .unwrap();
+        queue
+            .admit(HighWork::from_rr(set(3, false, false)).unwrap())
+            .unwrap();
+        assert_eq!((queue.len_lower(), queue.len_restore()), (2, 2));
+        assert!(matches!(
+            queue.pop(),
+            Some(HighWork::Control(ControlEvent::Stop))
+        ));
+        let Some(HighWork::LiveDisable(request)) = queue.pop() else {
+            panic!("第二条必须 Lower FIFO")
+        };
+        assert_set(RrEvent::SetEnabled(request), 3, false, false);
+        let Some(HighWork::LiveEnable(request)) = queue.pop() else {
+            panic!("第三条必须 Restore FIFO")
+        };
+        assert_set(RrEvent::SetEnabled(request), 1, false, true);
+        let Some(HighWork::LiveClear(request)) = queue.pop() else {
+            panic!("第四条必须 Clear")
+        };
+        assert_clear(RrEvent::ClearEStop(request), 2, false);
+        assert!(queue.pop().is_none());
+    }
+
+    #[test]
+    fn high_33rd_returns_original_payload() {
+        let mut queue = HighQueue::new();
+        for _ in 0..HIGH_QUEUE_CAPACITY {
+            queue
+                .admit(HighWork::control(ControlEvent::Enable))
+                .unwrap();
+        }
+        let rejected = queue
+            .admit(HighWork::from_rr(set(33, false, false)).unwrap())
+            .unwrap_err();
+        let HighWork::LiveDisable(request) = rejected else {
+            panic!("必须归还 Disable 原请求")
+        };
+        assert_set(RrEvent::SetEnabled(request), 33, false, false);
+        assert_eq!(
+            (queue.len(), queue.len_lower(), queue.len_restore()),
+            (32, 0, 32)
+        );
+        assert!(queue.pop_lower().is_none());
+        assert!(queue.pop_restore().is_some());
+    }
+
+    #[test]
+    fn high_work_from_rr_rejects_dry_run_returning_event() {
+        for enabled in [false, true] {
+            assert_set(
+                HighWork::from_rr(set(10, true, enabled)).unwrap_err(),
+                10,
+                true,
+                enabled,
+            );
+        }
+        assert_clear(HighWork::from_rr(clear(11, true)).unwrap_err(), 11, true);
+    }
+
+    #[test]
+    fn normal_work_from_rr_rejects_live_returning_event() {
+        for enabled in [false, true] {
+            assert_set(
+                NormalWork::from_rr(set(10, false, enabled)).unwrap_err(),
+                10,
+                false,
+                enabled,
+            );
+        }
+        assert_clear(
+            NormalWork::from_rr(clear(11, false)).unwrap_err(),
+            11,
+            false,
+        );
+    }
+
+    #[test]
+    fn control_event_class_table() {
+        for (event, class) in [
+            (ControlEvent::Enable, HighClass::Restore),
+            (ControlEvent::Disable, HighClass::Lower),
+            (ControlEvent::ClearError, HighClass::Restore),
+            (ControlEvent::ClearEStop, HighClass::Restore),
+            (ControlEvent::Stop, HighClass::Lower),
+            (
+                ControlEvent::AdapterErr(FaultCode::SafetyStopFailed),
+                HighClass::Lower,
+            ),
+            (ControlEvent::CmdDeadlineExpired, HighClass::Lower),
+            (ControlEvent::LimitViolation, HighClass::Lower),
+            (ControlEvent::WatchdogTimeout, HighClass::Lower),
+            (ControlEvent::RtOverrun, HighClass::Lower),
+        ] {
+            assert_eq!(HighWork::control(event).class(), class);
+        }
+    }
+
+    #[test]
+    fn normal_capacity_for_c8_l4_is_32_and_c16_is_64() {
+        assert_eq!(normal_capacity(8), 32);
+        assert_eq!(normal_capacity(16), 64);
+    }
+
+    #[test]
+    fn normal_65th_returns_original_payload_under_c16() {
+        let mut queue = NormalQueue::with_capacity(normal_capacity(16));
+        for id in 0..64 {
+            queue
+                .admit(NormalWork::from_rr(set(id, true, id % 2 == 0)).unwrap())
+                .unwrap();
+        }
+        let NormalWork::DryRunClear(request) = queue
+            .admit(NormalWork::from_rr(clear(65, true)).unwrap())
+            .unwrap_err()
+        else {
+            panic!("必须归还 Clear 原请求")
+        };
+        assert_clear(RrEvent::ClearEStop(request), 65, true);
+        assert_eq!((queue.len(), queue.capacity()), (64, 64));
+        for id in 0..64 {
+            let Some(NormalWork::DryRunSet(request)) = queue.pop() else {
+                panic!("普通 FIFO 缺请求")
+            };
+            assert_set(RrEvent::SetEnabled(request), id, true, id % 2 == 0);
+        }
+        assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn full_high_channel_of_2c_needs_ceil_2c_over_8_ticks() {
+        for (c, expected_ticks) in [(8, 2), (16, 4)] {
+            let (tx, rx) = bounded(2 * c);
+            for id in 0..2 * c {
+                tx.try_send(
+                    HighWork::from_rr(set(u64::try_from(id).unwrap(), false, false)).unwrap(),
+                )
+                .unwrap();
+            }
+            let mut queue = HighQueue::new();
+            let mut ticks = 0;
+            let mut drained = 0;
+            while !rx.is_empty() {
+                ticks += 1;
+                for _ in 0..SOURCE_QUOTA {
+                    match rx.try_recv() {
+                        Ok(work) => queue.admit(work).unwrap(),
+                        Err(_) => break,
+                    }
+                }
+                while queue.pop().is_some() {
+                    drained += 1;
+                }
+            }
+            assert_eq!(ticks, expected_ticks);
+            assert_eq!(drained, 2 * c);
+        }
+    }
+}
