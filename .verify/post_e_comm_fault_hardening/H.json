@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_PG1_APPROVED_PENDING_COMMIT",
+  "work_state": "S48_PA1_APPROVED_READY_TO_COMMIT",
   "resume_from": "HANDOFF：P-T已评审提交ac92f70；P-S1/P-L1按ps1/root_dispatch.md实施，五源/十一门与独立终审通过后提交；后续P-G1/P-A1/W3a及生产总装按依赖推进。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_PG1_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "PG1_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_PA1_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "PA1_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
   "scope": "P-T显式RR容量、可信peer与typed发送分类原语本地独立验收通过；含node.config真实红→绿修复。未接生产调用者/Orin，旧wire4 FAIL、D15 OPEN、双队列/权限/单writer总装未完成。",
   "software": {
@@ -1126,7 +1126,7 @@
         "production_activation_approved": false
       },
       "priority_primitives": {
-        "status": "PM_PT_PS1_PL1_PG1_APPROVED_PA1_PENDING",
+        "status": "PM_PT_PS1_PL1_PG1_PA1_APPROVED",
         "plan": "P.6.14.12",
         "root_approval": "local/s48/a3/root_priority_execution_plan_r4_approval.md",
         "root_approval_sha256": "0040b79ea676e0fba7407d8c5501e8dee94a42a065d7ad29747be1663ddd40f7",
@@ -1549,7 +1549,100 @@
           "root_review": "local/s48/pg1/review.md",
           "root_review_sha256": "c53b7fea0dc16d984c831aa6ca83ffae8540538441262ee2670348abce812f7e",
           "evidence_receipt_sha256": "ab282d453e0f3aef2bf713e401559f8d413b1185f95c86dce41f1790be860ba7",
-          "root_scope_receipt_sha256": "bd6f649fe43b96a134f414bb27aa22444fdc5a2d9c9348e3aaaa555d8f75535a"
+          "root_scope_receipt_sha256": "bd6f649fe43b96a134f414bb27aa22444fdc5a2d9c9348e3aaaa555d8f75535a",
+          "commit": "e560691381261c596ae57ac4c0747dd9080b8a88"
+        },
+        "pa1": {
+          "status": "APPROVED_SOFTWARE_SCOPE",
+          "base_commit": "e560691381261c596ae57ac4c0747dd9080b8a88",
+          "task": "local/s48/pa1/root_dispatch.md",
+          "task_sha256": "5d42a7abfb0b43faa6ba4ce5826db6669ef04521f189966ead5bda53a3a96b90",
+          "production_activation_approved": false,
+          "retire_race_fixture": {
+            "status": "IMPLEMENTED_AND_REVIEWED",
+            "approval": "local/s48/pa1/root_retire_race_fixture_approval.md",
+            "approval_sha256": "b0efc54e383c868f5e06b56b8f14c2278258461436f5f403b57f7e47cd821568",
+            "scope": "私有单次after-withdraw，同一桥真实A2 start/retire WrongPhase返原；纯撤销元数据不冒称W3合法收紧顺序，六owner九门不变"
+          },
+          "source_hash": "28ba20efdb558a8b62042be01e95501500f3d8f4996f9f7752f78072134962a2",
+          "source_input_count": 359,
+          "source_manifest": "local/s48/pa1/cc/round8/source_after.sha256",
+          "source_files": {
+            "crates/robot-core/src/control_authority.rs": "982d346a407e853f31a9f362f60698c9ea258f3bbaabdb4012af620ebcaa7872",
+            "crates/robot-core/src/lib.rs": "111023dfc6165e5f1a33802c68aa6cf870b2552e7f237979ee46ce943b0149c1",
+            "crates/robot-core/src/serial_services.rs": "64151bac0f5e519b9f9fc13c52dc1b1a589697fd6dcbb3721f7791ed0c62d218",
+            "crates/robot-core/tests/bus_lease_bridge.rs": "737d8fea89f00cfb72f31a7e2aea80c2925a7f901b7bdc0c2b3a5e51e810ff10",
+            "crates/robot-s0/src/ipc_pending.rs": "7c086a56956d23d44c22a281858c008ed58beb749208ae061dff0487313ad50b",
+            "crates/robot-s0/src/lib.rs": "5825884606bdbfcc3a560b863979c4dfa6c06abfbf955cc0a5fe21fb5a7e8853"
+          },
+          "final_round": "round8",
+          "formal_gates": 9,
+          "test_counts": {
+            "test_view_slot": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 5,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_serial_services": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 2,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_bus_lease_bridge": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 5,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_doc": {
+              "status": "ok",
+              "suites": 2,
+              "passed": 17,
+              "failed": 0,
+              "ignored": 3
+            },
+            "test_view_slot_rt_guard": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 5,
+              "failed": 0,
+              "ignored": 0
+            },
+            "test_ipc_pending": {
+              "status": "ok",
+              "suites": 1,
+              "passed": 11,
+              "failed": 0,
+              "ignored": 0
+            }
+          },
+          "result_sha256": "9d6c7c0266ef5afd0e7723be2d0beebae87f4317a653cac6af364e2caffab706",
+          "history_and_limits": [
+            "native Codex 实施，实际 HEAD e560691 与 P-G1 提交绑定，真实357起点逐字等于P-G1 final；新增两源后完整359。六owner之外 source 未变。",
+            "真实退休竞争夹具批准是开工后 added 输入，保留独立 receipt，未回填 start_receipt。私有 cfg(test) after-withdraw 复用同一桥，真实 start→retire WrongPhase→返原→finish→retire收尾；纯revoke元数据未先实际收紧，不是W3合法生产顺序。",
+            "合法顺序对照在 cross_domain 用例中真实 disable 推进 epoch，再旧 view start 得到 StaleEpoch，权威及公告不变；随后原桥真实退休。",
+            "round1/3/5/7 fmt 改源即停；round2 workspaceClippy match风格，round4两条collapsible_if，均局部风格修复。round6前八门通过，末门10/11：夹具成功commit后再reserve被真实NotDisabled拒绝；修为独立Disabled实例。round8完整九门通过，所有停止轮保留原raw/来源/事前runner。",
+            "core lib rt_guard 测试二进制实际安装 AllocDisabler，具名六槽操作实际进入 assert_alloc_scope。未在本机构造无64位atomic平台反例，也不声明 wait-free。",
+            "core doc 实际17 compile_fail通过、3既有ignored；S0 pending 文档compile_fail本轮九门没有执行，只是源码所有权约束，不冒充已运行。",
+            "公开 BusLease 桥只调用真实公开API，完整类别/意图矩阵、错域返原、特殊类不变、Drop保留active。LeasedPreemptProbe没有任何impl；旧PreemptProbe/AbortReason/A2原件保持字节前缀。",
+            "pending的seq/BusinessObservation是脚本输入，只证明责任保存、分类和首次锁存；真正reserve/start/disable/finish/retire另由真实A2桥测试。 owner退休不清旧seq，不回包，16waiters不会因超期腾位。",
+            "未撤销Queued的真实起步失败、未撤销Succeeded的真实commit拒绝两条仍留W3。没有清seq/抽RR/按摘要回包或生产总装入口，无生产权限/adapter迁移。",
+            "本包九门没有workspace test、timing或gen_root要求，不宣称未执行的工作区测试通过。不cargo clean、不强制Checking、不自批/commit/push、不访问Orin、服务、串口或硬件。wire4 FAIL、D15 OPEN、deployable=false保持。"
+          ],
+          "hardware_access": false,
+          "source_review": "local/s48/pa1/independent_source_review.md",
+          "source_review_sha256": "44ee7ddb4bb743f0884d34bc5c671bb10ef39af4fb4a4732bd7372227df532f9",
+          "evidence_review": "local/s48/pa1/independent_evidence_review.md",
+          "evidence_review_sha256": "7bc00d99f0318308c36787d3efb0f512df76990e39f7c13e15c3c10c7f89b421",
+          "root_review": "local/s48/pa1/review.md",
+          "root_review_sha256": "4ff833da8e000f5b206cf17d92ae9597eec7a9bcd3f9af848b379a5aa915eec6",
+          "evidence_receipt_sha256": "c62d0a469cb67695f4ee58e66bbffb80ada0cb709c8721d8c8cacfc3abb4833d",
+          "root_scope_receipt_sha256": "fe2e808885f30058043fcba4535dd1dd6a2e332899e55ed1e42bacaf7687ac9e"
         }
       },
       "w3a": {
@@ -1559,7 +1652,13 @@
         "root_approval_sha256": "b142526eb0249b2bf2fb5b3169ad64acf8ebc7f70595d7f165a4344107370f03",
         "production_activation_approved": false,
         "prepared_task_approval": "local/s48/w3a/root_task_approval.md",
-        "prepared_task_approval_sha256": "be8f334aac2a5dc1a9b366734756111c9613febdbafd879a12bab7781a708a79"
+        "prepared_task_approval_sha256": "be8f334aac2a5dc1a9b366734756111c9613febdbafd879a12bab7781a708a79",
+        "completion_clock_amendment": {
+          "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+          "approval": "local/s48/w3a/root_resynced_clock_approval.md",
+          "sha256": "344c6dca5b447c81abcd8f79df6d21d95cb2d25dd4ff6495f2339b38d82546cd",
+          "scope": "匹配Resynced后内部RobotClock观测；MarkerRemoved保留消息at，不扩writer协议"
+        }
       },
       "production_plan_inputs": {
         "cp2_bridge": "local/s48/w3/cp2_handle_bridge_r2.md",
@@ -1578,6 +1677,13 @@
         "authority_inventory": {
           "path": "local/s48/w3/authority_binding_inventory.md",
           "sha256": "f7f39aea2eeebc6f401f04c1bf16ee849cabdff3692f328a4510cee542c83004"
+        },
+        "exit_last_resort": {
+          "draft": "local/s48/w3/exit_last_resort_draft.md",
+          "sha256": "934a7fcd759c6421114ce58e832b4741c4a723166420774b308987755d8aff18",
+          "root_review": "local/s48/w3/root_exit_input_review.md",
+          "root_review_sha256": "bc724e2a2608f39ba1d96b328610b1d20c1775b55f64e490090362fcc2371198",
+          "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL"
         }
       }
     }
@@ -1738,14 +1844,14 @@
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "e0c760f46a2748c7d127db910355ab95a4a99192c40ad8f33e1ae5013558fc6f",
-    "bytes": 30835360,
-    "members": 8063,
-    "logical_bytes": 905393910,
+    "sha256": "b0012139c3285f499c2462d92f45a10c25f22acff430d4df059f26be174f577b",
+    "bytes": 31297778,
+    "members": 8169,
+    "logical_bytes": 906525575,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-09T16:36:14.114916+00:00",
+  "updated_at": "2026-09-09T16:46:47.917847+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",

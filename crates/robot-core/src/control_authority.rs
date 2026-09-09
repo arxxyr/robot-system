@@ -2067,3 +2067,298 @@ fn enable_step_gate(word: Word, phase: Phase, held: u64) -> Option<Refusal> {
     }
     None
 }
+
+pub use view_slot::{
+    ExecutionViewRefused, ExecutionViewSlot, StartViewRefusal, StartViewRefused, StartViewSlot,
+};
+
+/// 固定权限域的 typed 公告槽；依靠单个 64 位原子字提供 lock-free 操作。
+mod view_slot {
+    #[cfg(not(target_has_atomic = "64"))]
+    compile_error!("view_slot requires 64-bit atomics");
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::{
+        ControlAuthority, DomainId, EnableExecutionView, EnableStartView, PermissionEpoch,
+    };
+
+    const VALID: u64 = 1 << 63;
+
+    /// 拒绝不会消耗调用者的合法启动视图。
+    #[derive(Debug)]
+    pub struct StartViewRefused {
+        pub view: EnableStartView,
+        pub reason: StartViewRefusal,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum StartViewRefusal {
+        CrossDomain,
+        Occupied { stale_epoch: PermissionEpoch },
+    }
+
+    /// 只传递真实 reserve 派生的启动视图，不制造权限。
+    ///
+    /// ```compile_fail
+    /// use robot_core::control_authority::{DomainId, EnableStartView};
+    /// fn forge(domain: DomainId) -> EnableStartView {
+    ///     EnableStartView { domain, epoch: 1 }
+    /// }
+    /// ```
+    #[derive(Debug)]
+    pub struct StartViewSlot {
+        domain: DomainId,
+        word: AtomicU64,
+    }
+
+    impl StartViewSlot {
+        #[must_use]
+        pub fn new(authority: &ControlAuthority) -> Self {
+            Self {
+                domain: authority.domain(),
+                word: AtomicU64::new(0),
+            }
+        }
+
+        #[must_use]
+        pub const fn domain(&self) -> DomainId {
+            self.domain
+        }
+
+        pub fn post(&self, view: EnableStartView) -> Result<(), StartViewRefused> {
+            if view.domain != self.domain {
+                return Err(StartViewRefused {
+                    view,
+                    reason: StartViewRefusal::CrossDomain,
+                });
+            }
+            self.word
+                .compare_exchange(0, VALID | view.epoch, Ordering::AcqRel, Ordering::Acquire)
+                .map(|_| ())
+                .map_err(|occupied| StartViewRefused {
+                    view,
+                    // 只有本模块能写原子字；非零字来自合法 typed view。
+                    reason: StartViewRefusal::Occupied {
+                        stale_epoch: PermissionEpoch(occupied & !VALID),
+                    },
+                })
+        }
+
+        #[must_use]
+        pub fn take(&self) -> Option<EnableStartView> {
+            match self.word.swap(0, Ordering::AcqRel) {
+                0 => None,
+                word => Some(EnableStartView {
+                    domain: self.domain,
+                    epoch: word & !VALID,
+                }),
+            }
+        }
+
+        #[must_use]
+        pub fn withdraw(&self, epoch: PermissionEpoch) -> bool {
+            self.word
+                .compare_exchange(VALID | epoch.get(), 0, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct ExecutionViewRefused {
+        pub view: EnableExecutionView,
+    }
+
+    /// 非消费型执行视图槽；实际每次 IO 仍须向同一权限域 acquire。
+    ///
+    /// ```compile_fail
+    /// use robot_core::control_authority::{DomainId, EnableExecutionView};
+    /// fn forge(domain: DomainId) -> EnableExecutionView {
+    ///     EnableExecutionView { domain, epoch: 1 }
+    /// }
+    /// ```
+    #[derive(Debug)]
+    pub struct ExecutionViewSlot {
+        domain: DomainId,
+        word: AtomicU64,
+    }
+
+    impl ExecutionViewSlot {
+        #[must_use]
+        pub fn new(authority: &ControlAuthority) -> Self {
+            Self {
+                domain: authority.domain(),
+                word: AtomicU64::new(0),
+            }
+        }
+
+        pub fn install(&self, view: EnableExecutionView) -> Result<(), ExecutionViewRefused> {
+            if view.domain != self.domain {
+                return Err(ExecutionViewRefused { view });
+            }
+            self.word.store(VALID | view.epoch, Ordering::Release);
+            Ok(())
+        }
+
+        #[must_use]
+        pub fn load(&self) -> Option<EnableExecutionView> {
+            match self.word.load(Ordering::Acquire) {
+                0 => None,
+                word => Some(EnableExecutionView {
+                    domain: self.domain,
+                    epoch: word & !VALID,
+                }),
+            }
+        }
+
+        pub fn clear(&self) {
+            self.word.store(0, Ordering::Release);
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::control_authority::{AuthorityInit, EnableResult, InhibitSet, NormalIoIntent};
+        use crate::executor_ctrl::OutputSafetyState;
+
+        fn authority() -> ControlAuthority {
+            ControlAuthority::new(AuthorityInit::new(
+                false,
+                OutputSafetyState::TorqueOffConfirmed,
+                InhibitSet::EMPTY,
+            ))
+            .unwrap()
+        }
+
+        #[test]
+        fn typed_slots_reuse_two_real_enable_lifecycles() {
+            let authority = authority();
+            let start = StartViewSlot::new(&authority);
+            let active = ExecutionViewSlot::new(&authority);
+            let mut previous = PermissionEpoch::INITIAL;
+            for result in [EnableResult::Failed, EnableResult::Succeeded] {
+                let (owner, view) = authority.reserve_enable().unwrap();
+                assert!(view.epoch() > previous);
+                previous = view.epoch();
+                start.post(view).unwrap();
+                assert_eq!(start.take(), Some(view));
+                assert_eq!(start.take(), None);
+                let execution = authority.start_enable(view).unwrap();
+                active.install(execution.view()).unwrap();
+                assert_eq!(active.load(), Some(execution.view()));
+                assert_eq!(active.load(), Some(execution.view()));
+                let lease = authority
+                    .acquire_normal_io(NormalIoIntent::EnableStep(active.load().unwrap()))
+                    .unwrap();
+                authority.release_normal_io(lease).unwrap();
+                active.clear();
+                assert_eq!(active.load(), None);
+                authority.finish_enable(execution, result).unwrap();
+                match result {
+                    EnableResult::Failed => {
+                        authority.retire_enable(owner).unwrap();
+                    }
+                    EnableResult::Succeeded => {
+                        authority.commit_enable(owner).unwrap();
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn take_and_withdraw_have_one_consumer_in_both_orders() {
+            let authority = authority();
+            let slot = StartViewSlot::new(&authority);
+            let (owner, view) = authority.reserve_enable().unwrap();
+            slot.post(view).unwrap();
+            assert!(!slot.withdraw(PermissionEpoch::MAX));
+            assert_eq!(slot.take(), Some(view));
+            assert!(!slot.withdraw(view.epoch()));
+            slot.post(view).unwrap();
+            assert!(slot.withdraw(view.epoch()));
+            assert_eq!(slot.take(), None);
+            authority.retire_enable(owner).unwrap();
+        }
+
+        #[test]
+        fn concurrent_take_and_withdraw_have_exactly_one_winner() {
+            let authority = authority();
+            let slot = StartViewSlot::new(&authority);
+            let (owner, view) = authority.reserve_enable().unwrap();
+            for _ in 0..32 {
+                slot.post(view).unwrap();
+                let (taken, withdrawn) = std::thread::scope(|scope| {
+                    let taker = scope.spawn(|| slot.take());
+                    let withdrawer = scope.spawn(|| slot.withdraw(view.epoch()));
+                    (taker.join().unwrap(), withdrawer.join().unwrap())
+                });
+                assert_ne!(taken.is_some(), withdrawn);
+                assert!(taken.is_none_or(|taken| taken == view));
+                assert_eq!(slot.take(), None);
+            }
+            authority.retire_enable(owner).unwrap();
+        }
+
+        #[test]
+        fn occupied_and_cross_domain_refusals_return_original_views() {
+            let a = authority();
+            let b = authority();
+            let slot = StartViewSlot::new(&a);
+            let (owner_a, view_a) = a.reserve_enable().unwrap();
+            let (owner_b, view_b) = b.reserve_enable().unwrap();
+            slot.post(view_a).unwrap();
+            let occupied = slot.post(view_a).unwrap_err();
+            assert_eq!(occupied.view, view_a);
+            assert_eq!(
+                occupied.reason,
+                StartViewRefusal::Occupied {
+                    stale_epoch: view_a.epoch()
+                }
+            );
+            let crossed = slot.post(view_b).unwrap_err();
+            assert_eq!(crossed.view, view_b);
+            assert_eq!(crossed.reason, StartViewRefusal::CrossDomain);
+            assert_eq!(slot.domain(), a.domain());
+            assert_eq!(slot.take(), Some(view_a));
+            let execution_a = a.start_enable(view_a).unwrap();
+            let execution_b = b.start_enable(view_b).unwrap();
+            let active = ExecutionViewSlot::new(&a);
+            active.install(execution_a.view()).unwrap();
+            let crossed = active.install(execution_b.view()).unwrap_err();
+            assert_eq!(crossed.view, execution_b.view());
+            assert_eq!(active.load(), Some(execution_a.view()));
+            for (authority, execution, owner) in
+                [(&a, execution_a, owner_a), (&b, execution_b, owner_b)]
+            {
+                authority
+                    .finish_enable(execution, EnableResult::Failed)
+                    .unwrap();
+                authority.retire_enable(owner).unwrap();
+            }
+        }
+
+        #[test]
+        fn six_slot_operations_run_in_real_allocation_guard_scope() {
+            let authority = authority();
+            let start = StartViewSlot::new(&authority);
+            let active = ExecutionViewSlot::new(&authority);
+            let (owner, view) = authority.reserve_enable().unwrap();
+            crate::rt_guard::assert_alloc_scope(|| {
+                start.post(view).unwrap();
+                assert_eq!(start.take(), Some(view));
+                start.post(view).unwrap();
+                assert!(start.withdraw(view.epoch()));
+                let execution = authority.start_enable(view).unwrap();
+                active.install(execution.view()).unwrap();
+                assert_eq!(active.load(), Some(execution.view()));
+                active.clear();
+                assert_eq!(active.load(), None);
+                authority
+                    .finish_enable(execution, EnableResult::Failed)
+                    .unwrap();
+                authority.retire_enable(owner).unwrap();
+            });
+        }
+    }
+}

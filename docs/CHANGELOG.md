@@ -10,6 +10,17 @@
 
 ---
 
+## 2026-09-10 · P-A1 权限与请求责任原语（本地独立验收通过）
+
+P-A1权限视图、总线租约与IPC责任原语已独立源码/证据及root验收，APPROVED_SOFTWARE_SCOPE；
+base `e560691`，round8九门全部通过，完整359来源`28ba20ef…4962a2`一致，恰四改+两新增。
+固定域原子槽、真实BusLease与完整pending记录已落；16个Lower waiter逐条锁存，超期不腾容量。
+三方域核验后撤公告再真实退休；竞争拒绝完整返原，转cleanup保留旧seq，不能提前释放RR责任。
+slot5/serial2/公开BusLease5/guard5/pending11、core doc17通过/3既有ignored；分组计数不累加。
+S0文档compile_fail未在九门执行；没有本包workspace test/timing声明。原fmt/Clippy/夹具失败轮保留，
+详证据`local/s48/pa1/review.md`。未撤销启动/commit拒绝两路及生产总装留W3，未访问Orin；
+wire4历史FAIL、D15 OPEN、deployable=false保持。下一包W3a，完成观测时钟增补见PLAN P.6.14.13。
+
 ## 2026-09-10 · P-G1 RPC优先级与幂等状态原语（本地独立验收通过）
 
 P-G1已独立源码/证据及root验收，APPROVED_SOFTWARE_SCOPE；base `129ef7d`，round4十门全通过。

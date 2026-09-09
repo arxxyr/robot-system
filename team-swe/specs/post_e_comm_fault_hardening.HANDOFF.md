@@ -7,7 +7,7 @@
 用户最新要求优先节省root token，并允许多个Claude或Codex子agent并行。
 用户进一步明确：cc-claude完成实现、测试和自查后，必须由root或独立Codex子agent
 作最终评审；Claude交叉检查只作为前置检查，不能代替最终评审和提交门。
-W2b已评审提交`6defac484d5d7e7f8fccd32276fa0931cfc8f131`，S46-B已评审提交`5abd148bf0c39583a7f5957dd9cac260ff2106dc`，P-M已评审提交`0d3cacae75a83a61050a21fdb3a3fe59a710b621`，P-T已评审提交`ac92f70dd62ccaf3c76f24e5266ff3c8094b87e6`，P-S1/P-L1已评审提交129ef7d，P-G1已独立验收待提交，下一包P-A1；root只做最终决策、阻断项处理与验收提交，
+W2b已评审提交`6defac484d5d7e7f8fccd32276fa0931cfc8f131`，S46-B已评审提交`5abd148bf0c39583a7f5957dd9cac260ff2106dc`，P-M已评审提交`0d3cacae75a83a61050a21fdb3a3fe59a710b621`，P-T已评审提交`ac92f70dd62ccaf3c76f24e5266ff3c8094b87e6`，P-S1/P-L1已评审提交129ef7d，P-G1已评审提交e560691，P-A1已独立验收，待本阶段提交后推进W3a；root只做最终决策、阻断项处理与验收提交，
 详细方案和独立复核可以委派。cc-claude额度耗尽后由原生implementation接手，新并行角色见下。
 A1验证基线为`ce61623436138342b6a2d234b10bada71d6877ca`，分支
 `feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46原七源现由S46-B独立验收收口，旧长测/Orin失败来源保留。S-47合入S-48；A2已评审提交`dee67fa`，
@@ -85,6 +85,15 @@ cache14/queue16/credit8/classify6/doc8、RPC299、workspace2026通过/1既有ign
 五类真实重入析构子进程均exit0且被父回收，payload在锁外析构。真实P-M字段区分缺失退休、合法Unknown与非法effect。
 原fmt中止和Clippy失败轮保留；详证据`local/s48/pg1/review.md`。下一包P-A1权限视图/生命周期；
 生产权限、RR退休与唯一writer总装仍待W3。未访问Orin，wire4历史FAIL、D15 OPEN、deployable=false保持。
+
+P-A1权限视图、总线租约与IPC责任原语已独立源码/证据及root验收，APPROVED_SOFTWARE_SCOPE；
+base `e560691`，round8九门全部通过，完整359来源`28ba20ef…4962a2`一致，恰四改+两新增。
+固定域原子槽、真实BusLease与完整pending记录已落；16个Lower waiter逐条锁存，超期不腾容量。
+三方域核验后撤公告再真实退休；竞争拒绝完整返原，转cleanup保留旧seq，不能提前释放RR责任。
+slot5/serial2/公开BusLease5/guard5/pending11、core doc17通过/3既有ignored；分组计数不累加。
+S0文档compile_fail未在九门执行；没有本包workspace test/timing声明。原fmt/Clippy/夹具失败轮保留，
+详证据`local/s48/pa1/review.md`。未撤销启动/commit拒绝两路及生产总装留W3，未访问Orin；
+wire4历史FAIL、D15 OPEN、deployable=false保持。下一包W3a，完成观测时钟增补见PLAN P.6.14.13。
 
 后续队列见target/post_e_h2_rt/s48/root_next_package_queue.md，不以原语门冒充总装通过。
 

@@ -61,6 +61,7 @@ pub mod freeze_control;
 pub mod freeze_hook;
 pub mod hard_rt_ctrl;
 pub mod io_thread;
+pub mod ipc_pending;
 pub(crate) mod ipc_runtime;
 pub mod ipc_thread;
 pub mod ipc_tick;

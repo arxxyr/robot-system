@@ -161,3 +161,100 @@ mod tests {
         assert!(NormalAbortTarget::decode(SEQ_MASK + 1).is_err());
     }
 }
+
+use crate::control_authority::{
+    ControlAuthority, NormalIoIntent, NormalIoLease, NormalIoReleased, Refused,
+};
+
+/// 总线操作持有的真实权限租约；Drop 不代替显式完成。
+///
+/// ```compile_fail
+/// use robot_core::serial_services::BusLease;
+/// fn duplicate(lease: BusLease) { let _ = lease.clone(); }
+/// ```
+///
+/// ```compile_fail
+/// use robot_core::serial_services::{BusLease, BusOpClass};
+/// let forged = BusLease { class: BusOpClass::Safety, lease: None };
+/// ```
+#[derive(Debug)]
+pub struct BusLease {
+    class: BusOpClass,
+    lease: Option<NormalIoLease>,
+}
+
+impl BusLease {
+    #[must_use]
+    pub const fn class(&self) -> BusOpClass {
+        self.class
+    }
+
+    #[must_use]
+    pub const fn holds_normal_lease(&self) -> bool {
+        self.lease.is_some()
+    }
+
+    /// 类别与意图逐项匹配，拒绝时返回仍占用原权限域的唯一租约。
+    #[allow(
+        clippy::match_like_matches_macro,
+        reason = "枚举组合分发保留项目约定的 match 表"
+    )]
+    pub fn with_normal(class: BusOpClass, lease: NormalIoLease) -> Result<Self, NormalIoLease> {
+        let allowed = match (class, lease.intent()) {
+            (BusOpClass::PeriodicRead, NormalIoIntent::PeriodicRead)
+            | (BusOpClass::PeriodicWrite | BusOpClass::NormalEffectful, NormalIoIntent::Motion)
+            | (
+                BusOpClass::NormalEffectful,
+                NormalIoIntent::EnableStep(_) | NormalIoIntent::NonEnergizingControl(_),
+            ) => true,
+            _ => false,
+        };
+        if allowed {
+            Ok(Self {
+                class,
+                lease: Some(lease),
+            })
+        } else {
+            Err(lease)
+        }
+    }
+
+    #[must_use]
+    pub const fn special(class: BusOpClass) -> Option<Self> {
+        match class {
+            BusOpClass::Safety | BusOpClass::Confirm | BusOpClass::Connect => {
+                Some(Self { class, lease: None })
+            }
+            BusOpClass::NormalEffectful | BusOpClass::PeriodicRead | BusOpClass::PeriodicWrite => {
+                None
+            }
+        }
+    }
+
+    /// 错域失败完整返还 wrapper；特殊事务没有普通 IO 占位可释放。
+    pub fn release(
+        self,
+        authority: &ControlAuthority,
+    ) -> Result<Option<NormalIoReleased>, Refused<Self>> {
+        let Self { class, lease } = self;
+        match lease {
+            None => Ok(None),
+            Some(lease) => authority
+                .release_normal_io(lease)
+                .map(Some)
+                .map_err(|refused| Refused {
+                    token: Self {
+                        class,
+                        lease: Some(refused.token),
+                    },
+                    reason: refused.reason,
+                }),
+        }
+    }
+}
+
+/// 后续总装迁移的接口声明；本包不安装生产实现。
+pub trait LeasedPreemptProbe: PreemptProbe {
+    fn begin_leased(&self, class: BusOpClass) -> Result<BusLease, AbortReason>;
+    fn finish_leased(&self, lease: BusLease);
+}

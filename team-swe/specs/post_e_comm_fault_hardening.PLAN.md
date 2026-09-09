@@ -2253,6 +2253,9 @@ take/withdraw在同字竞争后可复用；Execution安装/重复读取/清除�
 目标原子能力编译期约束只证明lock-free，RT零分配门保留，不宣称wait-free。
 
 P-A1任务r2及root范围裁决已批准准备态，详local/s48/pa1/root_task_r2_approval.md。
+已基于P-G1实际提交e560691完成round8九门和独立源码/证据/root验收，359来源/六owner，
+详local/s48/pa1/review.md。退休竞争夹具增补见pa1/root_retire_race_fixture_approval.md：
+私有测试调度真实start→同一桥真实retire拒绝，完整返原；仅纯撤销元数据，不冒称W3合法收紧序列。
 每条waiter独立锁存，容量满返QueueFull{Lower}且返原请求；完整Enable RR/旧seq
 随真实retire成功移交cleanup。桥先核三方domain再withdraw，不接收bool退休证明。
 未撤销Queued起步失败及Succeeded真实commit拒绝的退休入口留W3结合拥有返回补齐，
@@ -2277,6 +2280,9 @@ Cleanup与Unprepared各经真实A2退休才回包，后者无文件完成事实�
 每tick单槽暂存最多一条完成，先消费身份匹配的完成和可执行退休，再判剩余责任
 WriterGone，最后统一派发。真实claim计一次不回滚；AwaitRetry改目标仍计共享8次，
 首次正常修复/重同步按显式来源表处理。所有派发失败保留原owner及具名原因。
+完成观测时钟增补见local/s48/w3a/root_resynced_clock_approval.md：advance借用同域RobotClock，
+完整匹配无at的Resynced后内部取时，只称消费后物理成功观测；MarkerRemoved保留原at。
+禁止以tick预采时间倒填完成时刻，退休拒绝保留首个事实；原六owner/十门与writer协议不变。
 实施后须真实mailbox反例和十道门，不能以方案批准替代运行PASS；schema仍由P-M
 负责，daemon/IPC/权限权威/ACK/worker8/磁盘生产切换继续留完整W3另审。
 
