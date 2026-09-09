@@ -20,7 +20,7 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     C1–C5/S-45与S-48 A1/A2/A3a/A3b/W0/W1/W0.1已提交；W2a已提交b5a0bfa，W2b已评审提交6defac4，S46-B已评审提交5abd148，P-M已评审提交0d3caca，P-T已评审提交ac92f70，P-S1/P-L1已独立验收待提交，下一包P-G1；S-46 Orin wire4满FAIL，双队列与生产总装仍待完成
+当前步骤:     C1–C5/S-45与S-48 A1/A2/A3a/A3b/W0/W1/W0.1已提交；W2a已提交b5a0bfa，W2b已评审提交6defac4，S46-B已评审提交5abd148，P-M已评审提交0d3caca，P-T已评审提交ac92f70，P-S1/P-L1已评审提交129ef7d，P-G1已独立验收待提交，下一包P-A1；S-46 Orin wire4满FAIL，双队列与生产总装仍待完成
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -77,7 +77,7 @@ A3c/W0文件凭证已提交`8624f27`，W1启动锁与恢复已提交`1b21457`，
 344项来源及逐项日志；已修复阶段戳/公告顺序、断链观测与测试资源和并发问题，
 W2a已提交`b5a0bfa`。W2b关闭/join机制已通过本地十一门和独立终审，346项来源一致，
 workspace1914通过、1既有ignored；初版源码问题已修，详H包local/s48/w2b/review.md。
-W2b已提交`6defac4`，S46-B已评审提交`5abd148`，P-M已评审提交`0d3caca`，P-T已评审提交ac92f70，P-S1/P-L1已独立验收待提交，下一包P-G1。W3a协调原语方案已批准，见PLAN P.6.14.13。
+W2b已提交`6defac4`，S46-B已评审提交`5abd148`，P-M已评审提交`0d3caca`，P-T已评审提交ac92f70，P-S1/P-L1已评审提交129ef7d，P-G1已独立验收待提交，下一包P-A1。W3a协调原语方案已批准，见PLAN P.6.14.13。
 新权限尚未成为生产权威，双队列与唯一磁盘writer尚未总装；不得称优先级问题已修复。
 当前分工、最新门与提交证据统一见HANDOFF。
 

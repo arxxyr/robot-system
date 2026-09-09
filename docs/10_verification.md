@@ -9,6 +9,16 @@
 
 ---
 
+## 2026-09-10 · P-G1 原语验收
+
+P-G1已独立源码/证据及root验收，APPROVED_SOFTWARE_SCOPE；base `129ef7d`，round4十门全通过。
+完整357来源`609ee3f5…33fa60`与前后清单一致，恰四新RPC模块+lib四注册；无依赖或生产调用迁移。
+cache14/queue16/credit8/classify6/doc8、RPC299、workspace2026通过/1既有ignored，聚焦计数不累加。
+按总量预留缓存并保留未知在途责任；私有受检份额和唯一队列身份，票据按实际队列与入队序号取消；
+五类真实重入析构子进程均exit0且被父回收，payload在锁外析构。真实P-M字段区分缺失退休、合法Unknown与非法effect。
+原fmt中止和Clippy失败轮保留；详证据`local/s48/pg1/review.md`。下一包P-A1权限视图/生命周期；
+生产权限、RR退休与唯一writer总装仍待W3。未访问Orin，wire4历史FAIL、D15 OPEN、deployable=false保持。
+
 ## 2026-09-09 · P-S1/P-L1 原语验收
 
 P-S1/P-L1 双队列、准入和心跳原语已 **APPROVED_SOFTWARE_SCOPE**：base `ac92f70`，

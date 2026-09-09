@@ -71,17 +71,21 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod auth;
+pub mod class_cache;
 pub mod clear_estop;
 pub mod client;
 pub mod estop;
 pub mod estop_pub_thread;
 pub mod events_subscribe;
+pub mod forward_queue;
 pub mod gateway;
 pub mod idempotency;
+pub mod reply_classify;
 pub mod rr_io_thread;
 pub mod set_enabled;
 pub mod state_convert;
 pub mod state_pool;
+pub mod wire_credit;
 // v0.5 候选 E 段(8)（Spec D12 + P.2.7）：tonic loopback probe（READY 门槛 +
 // watchdog observer）/ worker liveness 面 + test-only freeze hook / control。
 #[cfg(any(test, feature = "test-freeze-hook"))]
