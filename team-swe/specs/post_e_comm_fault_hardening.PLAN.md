@@ -2268,7 +2268,7 @@ W3-P与W3统一激活gateway/S0/S1协议、profile和真实退休，并同时迁
 监督/ACK；不支持新gateway配缺退休字段旧S0的生产组合。完整W3函数接线另审，
 本节不批准硬件操作或新负载PASS；详既有容量/生命周期合同及root四项裁决。
 
-#### P.6.14.13 W3a Clear协调原语（Plan Approved，待W2a/W2b）
+#### P.6.14.13 W3a Clear协调原语（本地独立验收通过）
 
 函数稿`local/s48/a3/cc_w3a_coordination_plan_r7.md` SHA
 `f16f519bd812c992bdf6c6c77a947c850b0f862f7ea0f9876e17a6b087117736`已获
@@ -2283,8 +2283,16 @@ WriterGone，最后统一派发。真实claim计一次不回滚；AwaitRetry改�
 完成观测时钟增补见local/s48/w3a/root_resynced_clock_approval.md：advance借用同域RobotClock，
 完整匹配无at的Resynced后内部取时，只称消费后物理成功观测；MarkerRemoved保留原at。
 禁止以tick预采时间倒填完成时刻，退休拒绝保留首个事实；原六owner/十门与writer协议不变。
-实施后须真实mailbox反例和十道门，不能以方案批准替代运行PASS；schema仍由P-M
-负责，daemon/IPC/权限权威/ACK/worker8/磁盘生产切换继续留完整W3另审。
+开工后拥有接口增补见local/s48/w3a/root_reply_interface_approval.md：开始前拒绝按值返原rr；
+advance在非RT返回本次最多两条owned事件，真实Retired先于Reply，首次Stuck原因不被健康覆盖；
+复用P-A1身份，增补单独留added回执，不回填开工，原六owner/十门不变。
+后续开工后增补：root_retirement_event_approval.md使Retired事件按值带原事务和首次时间，
+不增历史镜像；root_protocol_fixture_approval.md仅准构造异常完成走同一生产私有拒绝分支，
+不冒充真实mailbox、文件或退休证明；正常分支和claim计数仍须真实writer链路。
+root_logical_clock_approval.md要求真实commit_clear成功后同域clock单次取时，活动状态、
+逻辑事件及最终退休/回复沿用同值，失败不造时间；三件均独立added回执绑定最终runner。
+实际基于9317e1e完成round11十门、独立源码/证据/root验收；362来源/六owner，
+详local/s48/w3a/review.md。本包不修改schema；daemon/IPC/权限权威/ACK/worker8/磁盘生产切换继续留完整W3另审。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

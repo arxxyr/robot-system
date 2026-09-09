@@ -2284,3 +2284,183 @@ fn cross_domain_tokens_are_refused_without_changing_any_bit() {
 
     assert_eq!(raw(&target), before, "跨 domain 拒绝不改任何位");
 }
+
+#[test]
+fn abandon_repair_returns_exact_owner_and_never_changes_authority_word() {
+    for finalizing in [false, true] {
+        let authority = fresh(false, S::TorqueOffConfirmed);
+        let pending = authority.reserve_clear().unwrap();
+        let owner = if finalizing {
+            let finalizing = authority.commit_clear(pending).unwrap();
+            let _ = authority.estop();
+            ClearOwner::Finalizing(finalizing)
+        } else {
+            ClearOwner::Pending(pending)
+        };
+        let expected = (
+            owner.domain(),
+            owner.epoch(),
+            owner.original_latched(),
+            owner.expected_phase(),
+        );
+        let repair = authority.begin_repair(owner).unwrap();
+        let _ = authority.shutdown();
+        let before = raw(&authority);
+        let returned = authority.abandon_repair(repair).unwrap();
+        assert_eq!(
+            (
+                returned.domain(),
+                returned.epoch(),
+                returned.original_latched(),
+                returned.expected_phase()
+            ),
+            expected
+        );
+        assert_eq!(raw(&authority), before);
+        let _ = authority.estop();
+        let repair = authority.begin_repair(returned).unwrap();
+        assert_eq!(repair.target(), RepairTarget::Latched);
+        let cleanup = authority.authorize_repair_cleanup(repair).unwrap();
+        authority.retire_clear_cleanup(cleanup).unwrap();
+    }
+}
+
+#[test]
+fn abandon_repair_wrong_domain_returns_unchanged_permit_for_original_authority() {
+    let a = fresh(false, S::TorqueOffConfirmed);
+    let b = fresh(false, S::TorqueOffConfirmed);
+    let owner = a.reserve_clear().unwrap();
+    let repair = a.begin_repair(ClearOwner::Pending(owner)).unwrap();
+    let expected = (
+        repair.owner().epoch(),
+        repair.target(),
+        repair.sampled_epoch(),
+    );
+    let before = (raw(&a), raw(&b));
+    let refused = b.abandon_repair(repair).unwrap_err();
+    assert!(matches!(refused.reason, Refusal::CrossDomain { .. }));
+    assert_eq!((raw(&a), raw(&b)), before);
+    assert_eq!(
+        (
+            refused.token.owner().epoch(),
+            refused.token.target(),
+            refused.token.sampled_epoch()
+        ),
+        expected
+    );
+    let returned = a.abandon_repair(refused.token).unwrap();
+    let repair = a.begin_repair(returned).unwrap();
+    let cleanup = a.authorize_repair_cleanup(repair).unwrap();
+    a.retire_clear_cleanup(cleanup).unwrap();
+}
+
+#[test]
+fn retire_unprepared_clear_changes_only_phase_across_all_tightenings() {
+    for tightening in 0..6 {
+        let authority = at_epoch(
+            false,
+            S::TorqueOffConfirmed,
+            if tightening == 5 {
+                word::EPOCH_MAX - 1
+            } else {
+                1
+            },
+        );
+        let owner = authority.reserve_clear().unwrap();
+        let held_epoch = owner.epoch();
+        match tightening {
+            0 => {}
+            1 | 5 => {
+                let _ = authority.disable();
+            }
+            2 => {
+                let _ = authority.estop();
+            }
+            3 => {
+                let _ = authority.shutdown();
+            }
+            4 => {
+                let _ = authority.tighten_inhibit(InhibitReason::ALL[0]);
+            }
+            _ => unreachable!(),
+        }
+        let before = authority.load();
+        let retired = authority.retire_unprepared_clear(owner).unwrap();
+        assert_eq!(raw(&authority), before.with_phase(Phase::Idle).raw());
+        assert_eq!(
+            retired.superseded,
+            before.epoch() != held_epoch.get() || before.has(EXHAUSTED)
+        );
+        assert_eq!(retired.latch, before.has(LATCH));
+    }
+}
+
+#[test]
+fn retire_unprepared_clear_cas_retry_preserves_new_protection_and_active_io() {
+    let authority = fresh(false, S::TorqueOffConfirmed);
+    let owner = authority.reserve_clear().unwrap();
+    let lease = authority
+        .acquire_normal_io(NormalIoIntent::PeriodicRead)
+        .unwrap();
+    let latest = Arc::new(AtomicU64::new(0));
+    let captured = Arc::clone(&latest);
+    install_hook(
+        &authority,
+        once(move |authority| {
+            let _ = authority.estop();
+            let _ = authority.shutdown();
+            let _ = authority.tighten_inhibit(InhibitReason::ALL[0]);
+            captured.store(raw(authority), Ordering::Release);
+        }),
+    );
+    let retired = authority.retire_unprepared_clear(owner).unwrap();
+    let before = Word::new(latest.load(Ordering::Acquire));
+    assert_eq!(raw(&authority), before.with_phase(Phase::Idle).raw());
+    assert!(retired.superseded && retired.latch);
+    assert!(authority.snapshot().normal_io_active);
+    authority.release_normal_io(lease).unwrap();
+}
+
+#[test]
+fn retire_unprepared_clear_wrong_domain_preserves_both_words_and_owner() {
+    let a = fresh(true, S::TorqueOffConfirmed);
+    let b = fresh(false, S::TorqueOffConfirmed);
+    let owner = a.reserve_clear().unwrap();
+    let expected = (owner.domain(), owner.epoch(), owner.original_latched());
+    let before = (raw(&a), raw(&b));
+    let refused = b.retire_unprepared_clear(owner).unwrap_err();
+    assert!(matches!(refused.reason, Refusal::CrossDomain { .. }));
+    assert_eq!((raw(&a), raw(&b)), before);
+    assert_eq!(
+        (
+            refused.token.domain(),
+            refused.token.epoch(),
+            refused.token.original_latched()
+        ),
+        expected
+    );
+    assert!(a.retire_unprepared_clear(refused.token).unwrap().latch);
+}
+
+#[test]
+fn retire_unprepared_clear_wrong_or_corrupted_phase_returns_original_owner() {
+    let authority = fresh(false, S::TorqueOffConfirmed);
+    let mut owner = authority.reserve_clear().unwrap();
+    let expected = owner.epoch();
+    for wrong in [Phase::Idle, Phase::ClearFinalizing, Phase::EnableExecuting] {
+        rewrite(&authority, |word| word.with_phase(wrong));
+        let before = raw(&authority);
+        let refused = authority.retire_unprepared_clear(owner).unwrap_err();
+        assert_eq!(refused.reason, Refusal::WrongPhase(wrong));
+        assert_eq!(raw(&authority), before);
+        owner = refused.token;
+        assert_eq!(owner.epoch(), expected);
+    }
+    rewrite(&authority, |word| Word::new(word.raw() | word::PHASE_MASK));
+    let before = raw(&authority);
+    let refused = authority.retire_unprepared_clear(owner).unwrap_err();
+    assert_eq!(refused.reason, Refusal::CorruptedPhase);
+    assert_eq!(raw(&authority), before);
+    rewrite(&authority, |word| word.with_phase(Phase::ClearPreparing));
+    authority.retire_unprepared_clear(refused.token).unwrap();
+}

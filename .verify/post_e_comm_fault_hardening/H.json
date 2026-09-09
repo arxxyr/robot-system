@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_PA1_APPROVED_READY_TO_COMMIT",
-  "resume_from": "HANDOFF：P-T已评审提交ac92f70；P-S1/P-L1按ps1/root_dispatch.md实施，五源/十一门与独立终审通过后提交；后续P-G1/P-A1/W3a及生产总装按依赖推进。",
+  "work_state": "S48_W3A_APPROVED_READY_TO_COMMIT",
+  "resume_from": "W3a已本地独立验收，提交后完善完整W3函数方案并独立审批，再统一W3-P/W3生产总装。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_PA1_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "PA1_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_W3A_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "W3A_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
-  "scope": "P-T显式RR容量、可信peer与typed发送分类原语本地独立验收通过；含node.config真实红→绿修复。未接生产调用者/Orin，旧wire4 FAIL、D15 OPEN、双队列/权限/单writer总装未完成。",
+  "scope": "W3a Clear协调与持久化健康原语本地验收通过；生产权限/双队列/唯一writer尚未总装，未访问Orin，wire4历史FAIL与D15 OPEN保留。",
   "software": {
     "s44": {
       "local": {
@@ -1642,11 +1642,12 @@
           "root_review": "local/s48/pa1/review.md",
           "root_review_sha256": "4ff833da8e000f5b206cf17d92ae9597eec7a9bcd3f9af848b379a5aa915eec6",
           "evidence_receipt_sha256": "c62d0a469cb67695f4ee58e66bbffb80ada0cb709c8721d8c8cacfc3abb4833d",
-          "root_scope_receipt_sha256": "fe2e808885f30058043fcba4535dd1dd6a2e332899e55ed1e42bacaf7687ac9e"
+          "root_scope_receipt_sha256": "fe2e808885f30058043fcba4535dd1dd6a2e332899e55ed1e42bacaf7687ac9e",
+          "commit": "9317e1e975768251bd14c737affd6c997e71f5e3"
         }
       },
       "w3a": {
-        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "status": "APPROVED_SOFTWARE_SCOPE",
         "plan": "P.6.14.13",
         "root_approval": "local/s48/a3/root_w3a_coordination_plan_r7_approval.md",
         "root_approval_sha256": "b142526eb0249b2bf2fb5b3169ad64acf8ebc7f70595d7f165a4344107370f03",
@@ -1654,11 +1655,123 @@
         "prepared_task_approval": "local/s48/w3a/root_task_approval.md",
         "prepared_task_approval_sha256": "be8f334aac2a5dc1a9b366734756111c9613febdbafd879a12bab7781a708a79",
         "completion_clock_amendment": {
-          "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+          "status": "IMPLEMENTED_AND_REVIEWED",
           "approval": "local/s48/w3a/root_resynced_clock_approval.md",
           "sha256": "344c6dca5b447c81abcd8f79df6d21d95cb2d25dd4ff6495f2339b38d82546cd",
           "scope": "匹配Resynced后内部RobotClock观测；MarkerRemoved保留消息at，不扩writer协议"
-        }
+        },
+        "base_commit": "9317e1e975768251bd14c737affd6c997e71f5e3",
+        "task": "local/s48/w3a/root_dispatch.md",
+        "task_sha256": "0a6aba35fb73835542a9a1088147f01b3efd947e144932d2792bf1920de8c706",
+        "owned_reply_amendment": {
+          "status": "IMPLEMENTED_AND_REVIEWED",
+          "approval": "local/s48/w3a/root_reply_interface_approval.md",
+          "sha256": "389f5d56ede9da65e83c311fd4358faf76ac989967d007ae5be836d543952f3d",
+          "scope": "RefusedBeforeReserve返原rr；advance非RT当次owned事件至多两条，真实退休后Reply，不覆盖首Stuck"
+        },
+        "retirement_event_amendment": {
+          "status": "IMPLEMENTED_AND_REVIEWED",
+          "approval": "local/s48/w3a/root_retirement_event_approval.md",
+          "sha256": "64471f3f698726cbcc30d9eafc21bdb3b793e00412a3d1e02ce6fbf209eb6a8d",
+          "scope": "Retired事件携带原txn/逻辑及物理时间；不加last_retired历史镜像，Err保留活动责任"
+        },
+        "protocol_fixture_amendment": {
+          "status": "IMPLEMENTED_AND_REVIEWED",
+          "approval": "local/s48/w3a/root_protocol_fixture_approval.md",
+          "sha256": "7f18cf567aaa53d3c4354f5d77f17dff2ae49da23fa88e199d4efb1fc9eeb76e",
+          "scope": "仅畸形完成协议拒绝同处理函数；claim/合法完成/文件/退休仍真实链，非法输入不造物理事实"
+        },
+        "logical_clock_amendment": {
+          "status": "IMPLEMENTED_AND_REVIEWED",
+          "approval": "local/s48/w3a/root_logical_clock_approval.md",
+          "sha256": "1248c2a6c4348ceb9db8c9b2f04e4af9eae98f090b31e8bb5c1f75c5a3ee4975",
+          "scope": "真实commit_clear Ok后同域采一次时间贯穿state/事件/Reply，不把tick预采时间倒填提交"
+        },
+        "source_hash": "bcb93c1a3caf30e2746aaee99ce793bff24cfd1a2e58f5ccd4b9ba2d97759a1a",
+        "source_input_count": 362,
+        "source_manifest": "local/s48/w3a/cc/round11/source_after.sha256",
+        "source_files": {
+          "crates/robot-core/src/control_authority.rs": "c84cc50cc304b87473b318cab291a1e02ced508c1099118277c6ccae3c6b9995",
+          "crates/robot-core/src/control_authority/tests.rs": "791a1e62330daa26fd95fa05a4c4fd2cae74b840531b84bbe47c18ec534d90fb",
+          "crates/robot-s0/src/clear_coordination.rs": "43dacd227771958e81bbfdec70e3ad252db6b570e09528423e0da540fa0365ae",
+          "crates/robot-s0/src/lib.rs": "d74bd42dd515542014518c2c0f4ed6a1d71968f3b629c7bcd66cd62933f2edc4",
+          "crates/robot-s0/src/persist_health.rs": "35130c4ccb30f6e4fe5d72fc18ae7413043f06583e00a06726c8064d3996b248",
+          "crates/robot-s0/tests/clear_coordination_acceptance.rs": "2b16cdf3e32628c787c8ed8f1750cd6adcbe7a4803ca290f110737bcee2eff0e"
+        },
+        "final_round": "round11",
+        "formal_gates": 10,
+        "test_counts": {
+          "test_authority": {
+            "status": "ok",
+            "suites": 1,
+            "passed": 58,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_core_doc": {
+            "status": "ok",
+            "suites": 2,
+            "passed": 19,
+            "failed": 0,
+            "ignored": 3
+          },
+          "test_clear_coordination": {
+            "status": "ok",
+            "suites": 1,
+            "passed": 23,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_persist_health": {
+            "status": "ok",
+            "suites": 1,
+            "passed": 4,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_acceptance": {
+            "status": "ok",
+            "suites": 1,
+            "passed": 18,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_s0_doc": {
+            "status": "ok",
+            "suites": 1,
+            "passed": 25,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_workspace": {
+            "status": "ok",
+            "suites": 56,
+            "passed": 2098,
+            "failed": 0,
+            "ignored": 1
+          }
+        },
+        "result_sha256": "ef175d2eec7508064a014620a5bb5c582d96a3d27e4af334f7187e4748a22ed3",
+        "history_and_limits": [
+          "native Codex 实施；实际基线9317e1e与P-A1 final359来源逐字相等，六owner之外source不变，新增3件后最终362来源。",
+          "Reply、退休事件事实、协议夹具、逻辑提交时钟四项开工后批准各有独立added receipt，没有回填start。",
+          "所有真实链路使用W0文件、W1锁、W2a writer/mailbox和真实A2令牌；测试只有时钟与WriterHook调度屏障。FileStep中止由真实WriterGuard返回StageError，ShuttingDown用真实领取前stop=false产生Refused，二者分别验证。",
+          "不可自然触发的Full/NoCredit/公告错误与畸形completion只注入同一私有完整匹配或派发结果处理函数；不冒充真实mailbox发送、文件完成、成功退休或回复。真实announce领取前/后两对照另由活writer屏障证明。",
+          "commit_clear Ok后同域clock只采一次逻辑时间；MarkerRemoved保留真实writer返回at；Resynced在匹配消费后同域clock观测，非精确文件完成戳。业务now_ns仅准入与重试。",
+          "退避策略与业务输入注入只证明纯分类；共享8次接受预算由真实writer领取/合法完成核。取消仅两项真实Prepare前置拒绝，不伪取消PrepareFailed(NotOwned)，取消不清原EStop持久化义务。",
+          "round1/3/5/7/9 fmt改源停止；round2/4/6/8为实际Clippy失败。round10 A2/core doc和两Clippy通过，协调7失败均为测试漏写真实文件换行，修为W0准确字节后完整新轮重跑。各停止轮保留原始raw、来源与事前同SHA runner。",
+          "core doc与S0 doc均属于本轮十门，逐名原始日志独立计数。没有timing/gen_root要求，不编造产物执行、RT/硬件结果。",
+          "未接入生产IPC、daemon、adapter或旧Clear路径；P-A1槽、allocator、pending以及W2a/W2b保持原件。无自批、commit、push或硬件操作，D15 OPEN与deployable=false不变。"
+        ],
+        "hardware_access": false,
+        "source_review": "local/s48/w3a/independent_source_review.md",
+        "source_review_sha256": "8ef07adf71c030a71a90d72326741add8de3c2ca82e3d5074627092c63fa451a",
+        "evidence_review": "local/s48/w3a/independent_evidence_review.md",
+        "evidence_review_sha256": "e313f1404346948d4e7e05491fda314e38dd17d0fcf7fb41141fc603259e893b",
+        "root_review": "local/s48/w3a/review.md",
+        "root_review_sha256": "1e57ed83d7b8e13accc0c1fd9f74029c815f2dcbfc5062c0fe5b9fb5f941fb12",
+        "evidence_receipt_sha256": "0b66ce6ebfc9aeaa573acdd216b039a8ef5e0dc8c536bb80439a3b651e499484",
+        "root_scope_receipt_sha256": "85c509e9dec95a35f9adacfb6f027f7d49d5035d72397a7c987f2f1ccd472bbb"
       },
       "production_plan_inputs": {
         "cp2_bridge": "local/s48/w3/cp2_handle_bridge_r2.md",
@@ -1684,7 +1797,72 @@
           "root_review": "local/s48/w3/root_exit_input_review.md",
           "root_review_sha256": "bc724e2a2608f39ba1d96b328610b1d20c1775b55f64e490090362fcc2371198",
           "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL"
+        },
+        "rr_ingress": {
+          "draft": "local/s48/w3/rr_ingress_ownership_draft_r2.md",
+          "sha256": "6a65571ee08027efb70e18070d688fee27c613252a1274d9cb3c95d0bac075e9",
+          "root_review": "local/s48/w3/root_rr_input_review.md",
+          "root_review_sha256": "473025418f5c537119422534357271932d4d12fe969a5fd905f9e2663e70826e",
+          "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL"
+        },
+        "enable_retirement": {
+          "draft": "local/s48/w3/enable_retirement_binding_input.md",
+          "sha256": "9dd1158496bca52883d93a16f0b35e3906b8768a786972b92fff3f1cdf33552d",
+          "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL",
+          "independent_review": "local/s48/w3/independent_enable_retirement_input_review.md",
+          "independent_review_sha256": "263fb3d42b0ba8aa63519efd8081af5a77bc7a1743a3a1abf38b1afd27d26399",
+          "root_review": "local/s48/w3/root_enable_retirement_input_review.md",
+          "root_review_sha256": "4ef006e03587e7b16fac160db4e3a49187c0524372fe11227bde525620254b82"
+        },
+        "runtime_fault": {
+          "draft": "local/s48/w3/runtime_fault_exit_draft.md",
+          "sha256": "fed5fbae123df5c4ea648f80ebbe2539af1bf67faa753ce5ac1e77dc7c0290a0",
+          "root_review": "local/s48/w3/root_runtime_fault_input_review.md",
+          "root_review_sha256": "dff94e6edf8168ec1d9dbf3bbaaeac07579c90ab24fe17db56c4bc2f98f2d9ea",
+          "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL"
+        },
+        "gateway_s1": {
+          "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL",
+          "draft": "local/s48/w3/gateway_task_ownership_input.md",
+          "draft_sha256": "cbc5e0466c8c66da0d6dbed0f6fc86d83e83194d3af0fb5239beab7b5e930846",
+          "wire_decision": "local/s48/w3/invoke_drain_wire_decision_r2.md",
+          "wire_decision_sha256": "b4e9a0dc1edf37058f61c3ec562c04b2d10114cfa2c4c8acf131fb0b9268ac77",
+          "independent_review": "local/s48/w3/independent_invoke_drain_wire_review.md",
+          "independent_review_sha256": "73f1c0b0475f77d84120698c744e51d04a6f8891eb205deae589fa70aec86254",
+          "root_review": "local/s48/w3/root_gateway_input_review.md",
+          "root_review_sha256": "64b364bc5e4515286a5af7a553c78292f08ca5c2cdb7828b863669419b058fc4"
+        },
+        "authority_lease_functions": {
+          "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL",
+          "draft": "local/s48/w3/authority_lease_function_input.md",
+          "draft_sha256": "658e961d9e724caa3cfb79f917828ec206232033d3a24e516b91aeeeb0a3cbf5",
+          "root_review": "local/s48/w3/root_authority_lease_input_review.md",
+          "root_review_sha256": "77d866e2f933e73a66ed7a692bb105a69f2569ce7200a438c10c3733aaed916e"
+        },
+        "startup_fallback": {
+          "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL",
+          "draft": "local/s48/w3/cp2_fallback_decision_draft.md",
+          "draft_sha256": "52c09d6d1eff438f4c8ed71d593610f5f6e7fe8d6bb4f3a2a390ee0b1f339fd2",
+          "independent_review": "local/s48/w3/independent_cp2_fallback_review.md",
+          "independent_review_sha256": "2f6770819402e179971dfbbdc777fae5082b8fb576830ff031764f634e0004c8",
+          "root_review": "local/s48/w3/root_cp2_fallback_input_review.md",
+          "root_review_sha256": "48fba5e60cea6b5982f8074a373fd276f653290a2eaed5650b968fdf37e7d153"
+        },
+        "rr_route_identity": {
+          "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL",
+          "draft": "local/s48/w3/rr_route_identity_decision_draft.md",
+          "draft_sha256": "e8c6d0920c8d491e7b34cd01fab601d75137e68b6cf023f41053a8aebdbf8584",
+          "independent_review": "local/s48/w3/independent_rr_route_identity_review.md",
+          "independent_review_sha256": "a44420b0facf370bdbb2f8bcd4919fc6657073c21e0939fda478788ab1655fac",
+          "root_review": "local/s48/w3/root_rr_route_input_review.md",
+          "root_review_sha256": "f3b365afcde3c7d026e591fd4d8be4e51c635891dd79ef6feef046b231e7dc3c"
         }
+      },
+      "production_function_plan_draft": {
+        "path": "local/s48/w3/owned_runtime_function_plan_draft.md",
+        "status": "DRAFT_NOT_APPROVED",
+        "sha256": "f8617751962f9156866431cbf7e6792db97b4d1b2d085cb12b54658e8c1a9989",
+        "remaining": "统一实参G1–G5、控制与RR拥有出口、S1 drain等待及完整门仍须root定稿/独立评审"
       }
     }
   },
@@ -1844,10 +2022,10 @@
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "b0012139c3285f499c2462d92f45a10c25f22acff430d4df059f26be174f577b",
-    "bytes": 31297778,
-    "members": 8169,
-    "logical_bytes": 906525575,
+    "sha256": "c53e57a426bb3568116f7062a998919e098e262579ac9123c5576aee500ef913",
+    "bytes": 32200146,
+    "members": 8323,
+    "logical_bytes": 909957845,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",

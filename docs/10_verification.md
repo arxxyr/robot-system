@@ -9,6 +9,16 @@
 
 ---
 
+## 2026-09-10 · W3a 协调与持久化健康验收
+
+W3a Clear协调与持久化健康原语已独立源码/证据及root验收，APPROVED_SOFTWARE_SCOPE。
+base `9317e1e`，round11十门全部通过，362来源`bcb93c1a…759a1a`一致，恰三改+三新增。
+唯一许可/RR按值持有，完整匹配后才处理完成；真实退休再交唯一Reply，共享八次接受重试。
+逻辑时间在实际提交后单次采样；物理完成与退休分开，断链/异常不伪造退休，当前health与sticky分离。
+core58/doc19+3ignored、协调23/公开18/health4、S0doc25；workspace2098通过/1既有ignored，分组不累加。
+非法Refused和不可达屏障在源码评审中修复；round10七项换行预期失败修后完整重跑，原轮证据保留。
+详H包`local/s48/w3a/review.md`。未生产总装或Orin验证，wire4历史FAIL、D15 OPEN、deployable=false保持。
+
 ## 2026-09-10 · P-A1 原语验收
 
 P-A1权限视图、总线租约与IPC责任原语已独立源码/证据及root验收，APPROVED_SOFTWARE_SCOPE；

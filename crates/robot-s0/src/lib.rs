@@ -35,6 +35,7 @@ pub use robot_adapter_mock as _;
 pub use robot_adapter_feetech as _;
 
 pub mod boot_supervisor;
+pub mod clear_coordination;
 mod clear_estop_action;
 pub mod clear_estop_transaction;
 #[cfg(feature = "test-comm-fault-hook")]
@@ -69,6 +70,7 @@ pub mod ipc_tick;
 pub mod latch_lock;
 // S48 A3e / W2a：唯一磁盘 writer 纯模块（义务 / 进度 / 公告 / 协议 / 本体 / 配对 / 监督）；无生产调用方。
 pub mod latch_writer;
+pub mod persist_health;
 pub mod pub_thread;
 pub mod rr_admission;
 pub mod rr_server_thread;

@@ -2362,3 +2362,73 @@ mod view_slot {
         }
     }
 }
+
+/// 未建文件事务的 Clear 退休事实；不代表逻辑提交或文件清理。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClearPendingRetired {
+    pub superseded: bool,
+    pub latch: bool,
+}
+
+impl ControlAuthority {
+    /// 仅移交原修复 owner，不改变任何权限位。
+    /// 调用方必须先证明匹配命令已结束或未派发且没有在飞命令；返回 owner 只能重新修复。
+    ///
+    /// ```compile_fail
+    /// use robot_core::control_authority::{ControlAuthority, RepairPermit};
+    /// fn twice(authority: &ControlAuthority, permit: RepairPermit) {
+    ///     let _ = authority.abandon_repair(permit);
+    ///     let _ = authority.abandon_repair(permit);
+    /// }
+    /// ```
+    pub fn abandon_repair(
+        &self,
+        permit: RepairPermit,
+    ) -> Result<ClearOwner, Refused<RepairPermit>> {
+        if let Err(reason) = self.check_domain(permit.owner.domain()) {
+            return Err(Refused {
+                token: permit,
+                reason,
+            });
+        }
+        Ok(permit.owner)
+    }
+
+    /// 只退休已被 writer 完整匹配的 Prepare 前置拒绝证明没有建文件事务的 owner。
+    /// 不检查 clear 门，不清保护，不把其它文件失败或断链当成取消证明。
+    ///
+    /// ```compile_fail
+    /// use robot_core::control_authority::{ControlAuthority, ClearPendingOwner};
+    /// fn twice(authority: &ControlAuthority, owner: ClearPendingOwner) {
+    ///     let _ = authority.retire_unprepared_clear(owner);
+    ///     let _ = authority.retire_unprepared_clear(owner);
+    /// }
+    /// ```
+    pub fn retire_unprepared_clear(
+        &self,
+        owner: ClearPendingOwner,
+    ) -> Result<ClearPendingRetired, Refused<ClearPendingOwner>> {
+        if let Err(reason) = self.check_domain(owner.domain) {
+            return Err(Refused {
+                token: owner,
+                reason,
+            });
+        }
+        let held = owner.epoch;
+        self.update(|old| match old.phase() {
+            None => Decision::Keep(Err(Refusal::CorruptedPhase)),
+            Some(Phase::ClearPreparing) => Decision::Commit(
+                old.with_phase(Phase::Idle),
+                Ok(ClearPendingRetired {
+                    superseded: old.epoch() != held || old.has(EXHAUSTED),
+                    latch: old.has(LATCH),
+                }),
+            ),
+            Some(phase) => Decision::Keep(Err(Refusal::WrongPhase(phase))),
+        })
+        .map_err(|reason| Refused {
+            token: owner,
+            reason,
+        })
+    }
+}
