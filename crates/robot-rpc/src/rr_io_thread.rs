@@ -646,6 +646,158 @@ mod tests {
         handle.join().unwrap();
     }
 
+    /// 仅给真实 RR 回归提供有界等待；结束条件来自实际通道或 wire 状态。
+    fn wait_for_rr_test_value<T>(description: &str, mut poll: impl FnMut() -> Option<T>) -> T {
+        let started = std::time::Instant::now();
+        loop {
+            if let Some(value) = poll() {
+                return value;
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "等待 {description} 超过 2 秒"
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    /// S-46 预审 B1：测试期拥有真实 `RrIoThreadHandle` 的 RAII 清理器。成功路径经
+    /// `finish()` 先 `request_stop` 再真实 `join` 并返回可断言的 join 结果；任何提前
+    /// 退出 / 断言失败 unwind 路径由 `Drop` 同样先 stop 再 join，不遗留活 RR 线程。
+    /// `Drop` 内忽略真实 join 的 `Err`（不记日志、不 panic：unwind 中写 stderr 遇 EPIPE
+    /// 也可能二次 panic）；不改生产 `RrIoThreadHandle` 的 stop / Drop 语义。
+    struct RrIoThreadCleanup {
+        handle: Option<RrIoThreadHandle>,
+    }
+
+    impl RrIoThreadCleanup {
+        fn new(handle: RrIoThreadHandle) -> Self {
+            Self {
+                handle: Some(handle),
+            }
+        }
+
+        /// 成功路径显式收尾：先 stop 再 join，返回真实 join 结果供断言。
+        fn finish(mut self) -> std::thread::Result<()> {
+            let handle = self.handle.take().expect("RrIoThreadCleanup 只能收尾一次");
+            handle.request_stop();
+            handle.join()
+        }
+    }
+
+    impl Drop for RrIoThreadCleanup {
+        fn drop(&mut self) {
+            if let Some(handle) = self.handle.take() {
+                handle.request_stop();
+                let _ = handle.join();
+            }
+        }
+    }
+
+    /// S-46：forward 容量 64 不改变现有 client 的 4 个 active wire 槽。
+    /// 真正持住未回复请求，证明第 5 个失败且不能替换前 4 个请求。
+    #[test]
+    fn rr_io_thread_fifth_active_request_fails_without_replacing_first_four() {
+        use tokio::sync::oneshot::error::TryRecvError;
+
+        let (handle, server, forward_tx) = bring_up(64);
+        let metrics = handle.metrics();
+        // 声明晚于 server / forward_tx：unwind 时先 stop+join 线程，再释放通道与 server。
+        let cleanup = RrIoThreadCleanup::new(handle);
+        let request_ids = ["req-wire-0", "req-wire-1", "req-wire-2", "req-wire-3"];
+        let mut receivers = Vec::new();
+        for request_id in request_ids {
+            let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
+            forward_tx
+                .send(RrForwardRequest {
+                    wire_bytes: build_test_request_bytes(request_id, false),
+                    oneshot_tx,
+                    request_id: request_id.to_string(),
+                })
+                .unwrap();
+            receivers.push((request_id, oneshot_rx));
+        }
+
+        // 保持全部 ActiveRequest 存活且未回复，不能用 HTTP 层延迟冒充 wire 占用。
+        let mut active_requests = Vec::new();
+        for _ in request_ids {
+            let active = wait_for_rr_test_value("真实 active request", || {
+                server.try_recv().expect("读取真实 RR 请求")
+            });
+            let request_id =
+                flatbuffers::root::<robot_msg::msg::ClearEStopRequest>(active.payload())
+                    .unwrap()
+                    .request_id()
+                    .unwrap()
+                    .to_string();
+            assert!(request_ids.contains(&request_id.as_str()));
+            assert!(
+                active_requests
+                    .iter()
+                    .all(|(existing_id, _)| existing_id != &request_id),
+                "每个 active request 必须保留独立身份"
+            );
+            active_requests.push((request_id, active));
+        }
+
+        let (fifth_tx, mut fifth_rx) = tokio::sync::oneshot::channel();
+        forward_tx
+            .send(RrForwardRequest {
+                wire_bytes: build_test_request_bytes("req-wire-4", false),
+                oneshot_tx: fifth_tx,
+                request_id: "req-wire-4".to_string(),
+            })
+            .unwrap();
+        let fifth_result = wait_for_rr_test_value("第 5 个请求的真实发送结果", || {
+            match fifth_rx.try_recv() {
+                Err(TryRecvError::Empty) => None,
+                result => Some(result),
+            }
+        });
+        assert!(matches!(fifth_result, Err(TryRecvError::Closed)));
+        assert_eq!(metrics.requests_sent.load(Ordering::Acquire), 4);
+        assert_eq!(metrics.send_errors.load(Ordering::Acquire), 1);
+        assert_eq!(metrics.responses_received.load(Ordering::Acquire), 0);
+        assert!(server.try_recv().unwrap().is_none());
+        for (_, receiver) in &mut receivers {
+            assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        }
+
+        // 反序释放前四项，逐 request_id 与完成戳核对原始 oneshot 路由。
+        while let Some((request_id, active)) = active_requests.pop() {
+            let index = request_ids.iter().position(|id| *id == request_id).unwrap();
+            active
+                .send_response(&build_test_ok_response_bytes(
+                    &request_id,
+                    u64::try_from(index).unwrap() + 100,
+                ))
+                .unwrap();
+        }
+        for (index, (request_id, mut receiver)) in receivers.into_iter().enumerate() {
+            let bytes = wait_for_rr_test_value("原始请求的真实响应", || {
+                match receiver.try_recv() {
+                    Err(TryRecvError::Empty) => None,
+                    result => Some(result),
+                }
+            })
+            .expect("第 5 个失败不能取消前 4 个请求");
+            let response = flatbuffers::root::<FbResp>(&bytes).unwrap();
+            assert_eq!(response.request_id(), Some(request_id));
+            assert_eq!(response.status(), RpcStatus::Ok);
+            assert_eq!(
+                response.cleared_at_ns(),
+                u64::try_from(index).unwrap() + 100
+            );
+        }
+        cleanup.finish().unwrap();
+        assert_eq!(metrics.requests_sent.load(Ordering::Acquire), 4);
+        assert_eq!(metrics.responses_received.load(Ordering::Acquire), 4);
+        assert_eq!(metrics.send_errors.load(Ordering::Acquire), 1);
+        assert_eq!(metrics.poll_errors.load(Ordering::Acquire), 0);
+        assert_eq!(metrics.handler_drops.load(Ordering::Acquire), 0);
+        assert_eq!(metrics.orphan_drops_on_shutdown.load(Ordering::Acquire), 0);
+    }
+
     // ────────────────────────────────────────────────────────────────────────
     // 3) shutdown drops 残留 in-flight oneshot → handler 收 RecvError
     // ────────────────────────────────────────────────────────────────────────

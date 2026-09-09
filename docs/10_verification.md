@@ -173,7 +173,14 @@ health72（含doc1）、机制15/15、公开15、doc16，workspace1914通过、1
 独立源码复审闭合截止接纳、因果断言、失败回收、真实拒停及panic经报告取唯一凭证；
 root核完整原始日志与逐名结果，五处跨行片段按原文/SHA还原，原日志不改。
 round1源码评审未通过与round2 Clippy失败保留；十五个父场景均检查真实子进程。
-证据`local/s48/w2b/review.md`。W1开发期旧锁偶发失败另为观察OPEN；无生产或Orin验收。
+已提交`6defac4`，证据`local/s48/w2b/review.md`。W1开发期旧锁偶发失败另为观察OPEN；无生产或Orin验收。
+
+S46-B旧实验基线已 **APPROVED_SOFTWARE_SCOPE**：base `6defac4`，round2七门与三条CLI
+通过；RR5、gateway1、工具75具名全通过，完整346项来源`fdf653d9…00373`一致。
+独立源码/证据终审和root范围核验通过，证据`local/s48/s46/review.md`。七件原工作树
+源码独立收口；新修正仅测试stop/join清理，临时同进程unwind观察通过且撤回。
+round1格式化中止与临时runner事后重建来源保留；旧长测/Orin wire4 FAIL不提升为
+本轮同源PASS，未重跑长测/67场景/硬件，也未完成双队列生产总装或关闭D15。
 
 后续方案新增验证要求（**Plan Approved，尚无运行PASS**）：容量O1用可控无并发夹具
 钉3840/7936总len门；长负载仅对Normal cache Capacity核该阈值，wire/queue等

@@ -229,6 +229,7 @@ fn report_args(directory: &Directory) -> Args {
         case: None,
         config: None,
         hardware_id: None,
+        h2_software_cache_entries: None,
     }
 }
 
@@ -271,4 +272,26 @@ fn software_pass_keeps_unmeasured_hardware_pending_and_empty_or_failed_cases_fai
     assert_eq!(payload["artifacts"], json!(report.artifacts));
     report.record("deliberate_failure", "AC-Q", 0, Err("独立负例".to_owned()));
     assert!(!report.finish().unwrap(), "已有成功场景不能掩盖后续失败");
+}
+
+#[test]
+fn software_long_load_never_marks_hardware_h2_as_passed() {
+    let directory = Directory::new();
+    let mut args = report_args(&directory);
+    args.phase = Phase::MockH2Load;
+    let mut report = Report::new(&args).unwrap();
+    report.record(
+        "mock_h2_load",
+        super::super::scenarios::SOFTWARE_LOAD_ACCEPTANCE,
+        0,
+        Ok(json!({"scope":"独立报告回归，不是长测实证"})),
+    );
+    assert!(report.finish().unwrap());
+    let payload: Value =
+        serde_json::from_slice(&std::fs::read(args.evidence_dir.join("report.json")).unwrap())
+            .unwrap();
+    for gate in ["H1", "H2", "H3"] {
+        assert_eq!(payload["hardware"][gate], "NEEDS_HUMAN");
+    }
+    assert_eq!(payload["hardware"]["D15"], "OPEN");
 }

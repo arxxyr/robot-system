@@ -7,11 +7,10 @@
 用户最新要求优先节省root token，并允许多个Claude或Codex子agent并行。
 用户进一步明确：cc-claude完成实现、测试和自查后，必须由root或独立Codex子agent
 作最终评审；Claude交叉检查只作为前置检查，不能代替最终评审和提交门。
-W2b round3源码及证据已全部冻结并通过终审，root办理阶段提交，后续S46-B由implementation独占；root只做最终决策、阻断项处理与验收提交，
+W2b已评审提交`6defac484d5d7e7f8fccd32276fa0931cfc8f131`，S46-B开发与独立源码/证据终审通过，root归包提交，下一包P-M；root只做最终决策、阻断项处理与验收提交，
 详细方案和独立复核可以委派。旧开发agent保持停止，新并行角色见下。
 A1验证基线为`ce61623436138342b6a2d234b10bada71d6877ca`，分支
-`feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46源文件
-仍未提交，不得reset/clean或冒充已收口。S-47合入S-48；A2已评审提交`dee67fa`，
+`feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46原七源现由S46-B独立验收收口，旧长测/Orin失败来源保留。S-47合入S-48；A2已评审提交`dee67fa`，
 A3a共享权限归位core已评审提交`fdac02c`。A3b快照并发修复已通过本地22门及独立源码/证据评审，
 已提交`d67752ded3fba7fd5de1ea31b83243b6f7cd8382`，未push。
 当前A3c/W0纯文件凭证获独立及root Plan Approved，按PLAN P.6.14.5交writer Claude
@@ -43,6 +42,13 @@ S46七文件不改且排除本提交；没有生产调用方、Orin或服务操�
 LatchWriter停止能力绑定的最小增补已独立及root批准，详w2b/root_writer_control_approval.md，禁止回改W2a。W2b round1的源码问题已回修；round3十一门全零、346项来源一致、独立源码/root证据终审通过，详w2b/review.md。workspace1914通过、1既有ignored；旧轮及跨行日志恢复原件保留。CC额度耗尽后转原生implementation开发/测试，独立Codex终审。
 优先级函数r4、P-M任务r2与P-T任务r2已获方案批准；W3a整体r7及两个A2专项已独立
 Plan Approved并获root采纳，详P.6.14.12–13。P-G1任务r2也已批准准备态，等待P-M/P-T实际提交；W3生产接线另审。
+S46-B旧实验基线已 **APPROVED_SOFTWARE_SCOPE**：base `6defac4`，round2七门与三条CLI
+通过；RR5、gateway1、工具75具名全通过，完整346项来源`fdf653d9…00373`一致。
+独立源码/证据终审和root范围核验通过，证据`local/s48/s46/review.md`。七件原工作树
+源码独立收口；新修正仅测试stop/join清理，临时同进程unwind观察通过且撤回。
+round1格式化中止与临时runner事后重建来源保留；旧长测/Orin wire4 FAIL不提升为
+本轮同源PASS，未重跑长测/67场景/硬件，也未完成双队列生产总装或关闭D15。
+
 后续队列见target/post_e_h2_rt/s48/root_next_package_queue.md，不以原语门冒充总装通过。
 
 最新用户决定：基础控制与普通工作分两个有界队列，每轮先高后普通；每项必须
@@ -110,14 +116,14 @@ independent_evidence_receipt.json、cc/sixth及sixth_supplement。首四轮FAIL�
 
 当前并行编排（2026-09-09 13:34 UTC后）：三个Claude会话均已明确Fable额度耗尽，
 模型claude-fable-5-1、effort=max，原会话保留，不继续派发或消费重置。
-按用户允许混合编排，原生implementation接W2b修复与Cargo，writer_final_review独立源码终审，
-a3b_evidence_audit在核完round1证据后转验收开发，root独立核最终证据并整合提交。
-W2b round3已APPROVED_SOFTWARE_SCOPE，下一包S46-B；
+按用户允许混合编排，S46-B由原生implementation开发与运行Cargo，
+a3b_evidence_audit独立源码终审，writer_final_review独立证据终审，root整合提交。
+W2b round3已APPROVED_SOFTWARE_SCOPE并提交6defac4；S46-B现独立验收通过，下一包P-M。
 round1的1909具名可完整还原；round3共1914具名、五段跨行原文经root独立恢复，
 原记录与派生核验并存。
 W1开发期偶发锁测试失败另记w2b/w1_lock_observation_review.md，根因未证实，保持观察OPEN。
-W3a开发任务、P-S1/P-L1任务r2及精确约束、P-G1均批准准备态；P-A1草稿在CC限额时中断，
-尚未独立批准。模型/任务状态详target/post_e_h2_rt/s48/parallel_coordination.json。
+W3a开发任务、P-S1/P-L1任务r2及精确约束、P-G1均批准准备态；P-A1 r2已由原生补齐并经root批准准备态，
+见pa1/root_task_r2_approval.md；两条非撤销启动/commit拒绝退休路由留W3真实接线。模型/任务状态详target/post_e_h2_rt/s48/parallel_coordination.json。
 
 A3两份r2提案及交叉报告冻结，仍未批准总装。共同裁决见a3/root_decision_notes.md。
 W0四项凭证阻断由cc_writer_r2_resolutions.md §A闭合并获独立批准；正式函数级

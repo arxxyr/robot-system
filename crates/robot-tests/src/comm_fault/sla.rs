@@ -3,8 +3,7 @@
 use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use iceoryx2::prelude::NodeBuilder;
@@ -29,6 +28,7 @@ use super::control::{ControlPort, wait_applied};
 use super::harness::{Case, isolated_command, stop, wait_log};
 use super::heartbeat::HeartbeatFeed;
 use super::rpc::{command_meta, connect, gateway_command};
+use super::sla_background::{Background, BackgroundHealth, RR_IN_FLIGHT_LIMIT};
 use super::{Args, Phase};
 
 const WARMUP: usize = 100;
@@ -948,39 +948,100 @@ fn publish_estop(
     loan.publish().map_err(|e| e.to_string())
 }
 
+fn check_background(health: Option<&BackgroundHealth>) -> Result<(), String> {
+    health.map_or(Ok(()), BackgroundHealth::check)
+}
+
+pub(super) fn ack_evidence(
+    response: Result<robot_rpc::proto::Ack, tonic::Status>,
+    request_id: &str,
+    dry_run: bool,
+) -> Value {
+    match response {
+        Ok(ack) => {
+            json!({"ok":ack.request_id == request_id && ack.dry_run == dry_run && ack.cleared_at_ns != 0,
+            "kind":"ack","request_id":ack.request_id,"dry_run":ack.dry_run,"cleared_at_ns":ack.cleared_at_ns})
+        }
+        Err(error) => {
+            json!({"ok":false,"kind":"status","code":format!("{:?}",error.code()),"message":error.message()})
+        }
+    }
+}
+
+/// 两个 future 直到各自步骤才被 poll。首错不取消已经发出的 live 动作。
+pub(super) async fn recover_writes<C, E>(
+    health: Option<&BackgroundHealth>,
+    writes: &mut Vec<Value>,
+    clear: (robot_rpc::proto::CommandMeta, C),
+    enable: (robot_rpc::proto::CommandMeta, E),
+) -> Result<(), String>
+where
+    C: std::future::Future<Output = Result<robot_rpc::proto::Ack, tonic::Status>>,
+    E: std::future::Future<Output = Result<robot_rpc::proto::Ack, tonic::Status>>,
+{
+    check_background(health)?;
+    let started = SystemClock.now().0;
+    let response = ack_evidence(clear.1.await, &clear.0.request_id, false);
+    writes.push(json!({"method":"ClearEStop","request_id":clear.0.request_id,"idempotency_key":clear.0.idempotency_key,
+        "started_ns":started,"finished_ns":SystemClock.now().0,"response":response,"ok":response["ok"]}));
+    if response["ok"] != true {
+        return Err(format!("真实 ClearEStop 失败：{response}"));
+    }
+    check_background(health)?;
+    let started = SystemClock.now().0;
+    let response = ack_evidence(enable.1.await, &enable.0.request_id, false);
+    writes.push(json!({"method":"SetEnabled(true)","request_id":enable.0.request_id,"idempotency_key":enable.0.idempotency_key,
+        "started_ns":started,"finished_ns":SystemClock.now().0,"response":response,"ok":response["ok"]}));
+    if response["ok"] != true {
+        return Err(format!("真实 SetEnabled 失败：{response}"));
+    }
+    check_background(health)
+}
+
 async fn recover(
     client: &mut RobotControlClient<Channel>,
     hardware_id: &str,
+    health: Option<&BackgroundHealth>,
+    writes: &mut Vec<Value>,
 ) -> Result<(), String> {
+    check_background(health)?;
     // 让上一轮的真实确认与 L0 连续窗口完成；不通过观测页写入许可。
     tokio::time::sleep(Duration::from_millis(600)).await;
-    let mut meta = command_meta(false, 2000);
-    "maintainer-fake-token-001".clone_into(&mut meta.auth.as_mut().expect("构造器含 auth").token);
-    let cleared = client
-        .clear_e_stop(ClearEStopCommand {
-            meta: Some(meta),
-            confirmation: "H2-supervised-sample".to_owned(),
-        })
-        .await
-        .map_err(|e| format!("真实 ClearEStop 失败：{e}"))?
-        .into_inner();
-    let enabled = client
-        .set_enabled(SetEnabledCommand {
-            meta: Some(command_meta(false, 2000)),
-            enabled: true,
-        })
-        .await
-        .map_err(|e| format!("真实 SetEnabled 失败：{e}"))?
-        .into_inner();
-    if cleared.dry_run
-        || enabled.dry_run
-        || cleared.cleared_at_ns == 0
-        || enabled.cleared_at_ns == 0
-    {
-        return Err("恢复必须取得两项真实完成回执".to_owned());
-    }
+    check_background(health)?;
+    let mut clear_meta = command_meta(false, 2000);
+    "maintainer-fake-token-001"
+        .clone_into(&mut clear_meta.auth.as_mut().expect("构造器含 auth").token);
+    let enable_meta = command_meta(false, 2000);
+    let clear_command = ClearEStopCommand {
+        meta: Some(clear_meta.clone()),
+        confirmation: "H2-supervised-sample".to_owned(),
+    };
+    let enable_command = SetEnabledCommand {
+        meta: Some(enable_meta.clone()),
+        enabled: true,
+    };
+    let mut clear_client = client.clone();
+    let mut enable_client = client.clone();
+    recover_writes(
+        health,
+        writes,
+        (clear_meta, async move {
+            clear_client
+                .clear_e_stop(clear_command)
+                .await
+                .map(tonic::Response::into_inner)
+        }),
+        (enable_meta, async move {
+            enable_client
+                .set_enabled(enable_command)
+                .await
+                .map(tonic::Response::into_inner)
+        }),
+    )
+    .await?;
     let deadline = SystemClock.now().0 + 1_000_000_000;
     loop {
+        check_background(health)?;
         let state = client
             .get_state(GetStateRequest {
                 hardware_id: hardware_id.to_owned(),
@@ -1002,106 +1063,6 @@ async fn recover(
             ));
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-}
-
-struct Background {
-    stop: Arc<AtomicBool>,
-    rr: tokio::task::JoinHandle<Vec<Value>>,
-    scheduler: std::thread::JoinHandle<Vec<u64>>,
-}
-
-impl Background {
-    fn start(mut client: RobotControlClient<Channel>) -> Result<Self, String> {
-        let stop = Arc::new(AtomicBool::new(false));
-        let scheduler_stop = stop.clone();
-        let scheduler = std::thread::Builder::new()
-            .name("H2调度延迟探针".to_owned())
-            .spawn(move || {
-                let mut delays = Vec::new();
-                let mut due = SystemClock.now().0 + 5_000_000;
-                while !scheduler_stop.load(Ordering::Acquire) {
-                    std::thread::sleep(Duration::from_nanos(
-                        due.saturating_sub(SystemClock.now().0),
-                    ));
-                    delays.push(SystemClock.now().0.saturating_sub(due));
-                    due = due.saturating_add(5_000_000);
-                }
-                delays
-            })
-            .map_err(|e| e.to_string())?;
-        let rr_stop = stop.clone();
-        let rr = tokio::spawn(async move {
-            let mut requests = Vec::new();
-            let mut due = SystemClock.now().0;
-            while !rr_stop.load(Ordering::Acquire) {
-                tokio::time::sleep(Duration::from_nanos(
-                    due.saturating_sub(SystemClock.now().0),
-                ))
-                .await;
-                if rr_stop.load(Ordering::Acquire) {
-                    break;
-                }
-                let started = SystemClock.now().0;
-                // 干跑请求仍经过真实 RR 调度与 evaluator，永不写电机。
-                let response = client
-                    .set_enabled(SetEnabledCommand {
-                        meta: Some(command_meta(true, 2000)),
-                        enabled: false,
-                    })
-                    .await;
-                requests.push(json!({"due_ns": due, "started_ns": started,
-                    "finished_ns": SystemClock.now().0, "ok": response.is_ok(),
-                    "response": format!("{response:?}")}));
-                due = due.saturating_add(50_000_000);
-            }
-            requests
-        });
-        Ok(Self {
-            stop,
-            rr,
-            scheduler,
-        })
-    }
-
-    async fn finish(self) -> Result<Value, String> {
-        self.stop.store(true, Ordering::Release);
-        let rr = self.rr.await.map_err(|e| e.to_string())?;
-        let scheduler = self.scheduler.join().map_err(|_| "调度探针 panic")?;
-        let starts: Vec<_> = rr
-            .iter()
-            .filter_map(|request| request["started_ns"].as_u64())
-            .collect();
-        let gaps: Vec<_> = starts
-            .windows(2)
-            .map(|pair| pair[1].saturating_sub(pair[0]))
-            .collect();
-        let valid = rr.len() >= 2 && rr.iter().all(|request| request["ok"] == true);
-        let elapsed = starts
-            .last()
-            .copied()
-            .unwrap_or(0)
-            .saturating_sub(starts.first().copied().unwrap_or(0));
-        // 不用四舍五入把不足的负载改写成 20/s；保留真实间隔和完整 response。
-        let interval_count =
-            u32::try_from(starts.len().saturating_sub(1)).map_err(|e| e.to_string())?;
-        let actual_rate = if elapsed == 0 {
-            0.0
-        } else {
-            f64::from(interval_count) / Duration::from_nanos(elapsed).as_secs_f64()
-        };
-        let cadence_valid = rr.iter().all(|request| {
-            request["started_ns"]
-                .as_u64()
-                .unwrap_or(u64::MAX)
-                .saturating_sub(request["due_ns"].as_u64().unwrap_or(0))
-                < 50_000_000
-        });
-        Ok(json!({"valid_responses": valid, "rr_target_per_second": 20,
-            "valid_cadence": cadence_valid,
-            "rr_actual_per_second": actual_rate, "rr_requests": rr,
-            "rr_gap_ns": distribution(&gaps), "sigma_probe_period_ns": 5_000_000,
-            "sigma_est_ns": distribution(&scheduler), "sigma_raw_ns": scheduler}))
     }
 }
 
@@ -1134,19 +1095,22 @@ async fn collect(
     sequence: u64,
     s0: &mut tokio::process::Child,
     events: &mut Vec<TraceEvent>,
+    health: Option<&BackgroundHealth>,
 ) -> Result<(), String> {
-    collect_batches(
+    let collected = collect_batches(
         sequence,
         events,
         || trace.drain(TRACE_CAPACITY),
         || trace.dropped(),
         || {
+            check_background(health)?;
             s0.try_wait()
                 .map(|status| status.is_none())
                 .map_err(|error| error.to_string())
         },
     )
-    .await
+    .await;
+    collected.and_then(|()| check_background(health))
 }
 
 /// 与真实采集器共用的循环；可替换的只有一次 drain 与外部存活事实。
@@ -1203,9 +1167,44 @@ struct SlaRunner<'a> {
     csv: &'a mut std::fs::File,
     attempts: std::fs::File,
     hardware_id: &'a str,
+    health: Option<&'a BackgroundHealth>,
+    writes: &'a mut Vec<Value>,
 }
 
 impl SlaRunner<'_> {
+    async fn software_load_samples(
+        &mut self,
+        heartbeat: &HeartbeatFeed,
+        load_start: u64,
+    ) -> Result<Vec<Value>, String> {
+        let health = self.health.expect("长负载已启动背景");
+        let mut recoveries = 0;
+        loop {
+            health.check()?;
+            heartbeat.verify_running()?;
+            let elapsed = SystemClock.now().0.saturating_sub(load_start);
+            let live_successes = self.writes.iter().filter(|row| row["ok"] == true).count();
+            let successes =
+                health.successful() + u64::try_from(live_successes).map_err(|e| e.to_string())?;
+            if elapsed >= LOAD_MIN_NS && successes > 8192 {
+                return Ok(vec![
+                    json!({"scope":"无UART软件负载","elapsed_ns":elapsed,"recoveries":recoveries,
+                        "successful_unique_writes_before_drain":successes,"minimum_ns":LOAD_MIN_NS,"maximum_ns":LOAD_MAX_NS}),
+                ]);
+            }
+            if elapsed >= LOAD_MAX_NS {
+                return Err("600s内未取得至少360s且成功唯一新写超过8192的证据".to_owned());
+            }
+            let (sample, events) = self.attempt(recoveries, true, false).await?;
+            self.record_attempt(&json!({"software_load":true,"attempt":recoveries,"sequence":events.first().map(|event|event.sample_seq),
+                    "event_count":events.len(),"all_off_ns":sample.all_off_ns,"matched":!sample.in_flight}))?;
+            if sample.in_flight {
+                return Err("软件长负载 idle 边界未匹配".to_owned());
+            }
+            recoveries += 1;
+        }
+    }
+
     async fn software_samples(&mut self) -> Result<Vec<Value>, String> {
         let mut samples = Vec::new();
         for external in [false, true] {
@@ -1325,7 +1324,7 @@ impl SlaRunner<'_> {
         external: bool,
         in_flight: bool,
     ) -> Result<(Sample, Vec<TraceEvent>), String> {
-        recover(self.client, self.hardware_id).await?;
+        recover(self.client, self.hardware_id, self.health, self.writes).await?;
         let unarmed = self.trace.drain(TRACE_CAPACITY);
         // 上一 epoch 必须已完整消费并解除采样；迟到事件同样保留，不静默丢弃。
         save_events(self.csv, attempt, external, &unarmed)?;
@@ -1346,6 +1345,7 @@ impl SlaRunner<'_> {
             if in_flight {
                 self.wait_acquired(sequence, &mut events).await?;
             }
+            check_background(self.health)?;
             if external {
                 send_control(
                     self.port,
@@ -1360,7 +1360,7 @@ impl SlaRunner<'_> {
             } else {
                 publish_estop(self.topic, sequence)?;
             }
-            collect(self.trace, sequence, self.s0, &mut events).await
+            collect(self.trace, sequence, self.s0, &mut events, self.health).await
         }
         .await;
         let disarmed = send_sample_request(
@@ -1410,6 +1410,7 @@ impl SlaRunner<'_> {
         let deadline = SystemClock.now().0 + 1_000_000_000;
         loop {
             events.extend(self.trace.drain(TRACE_CAPACITY));
+            check_background(self.health)?;
             if self.trace.dropped() != 0 {
                 return Err("事件环累计 dropped>0，整次运行无效".to_owned());
             }
@@ -1495,14 +1496,56 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(super) enum SlaRunKind {
+    Physical,
+    SoftwareProbe,
+    SoftwareLoad { cache_entries: usize },
+}
+
+pub(super) fn configure_h2_gateway(
+    command: &mut tokio::process::Command,
+    kind: SlaRunKind,
+) -> Result<Option<usize>, String> {
+    let entries = match kind {
+        SlaRunKind::Physical => Some(8192),
+        SlaRunKind::SoftwareProbe => None,
+        SlaRunKind::SoftwareLoad {
+            cache_entries: entries @ (4096 | 8192),
+        } => Some(entries),
+        SlaRunKind::SoftwareLoad { .. } => return Err("软件缓存对照仅允许4096或8192".to_owned()),
+    };
+    if let Some(entries) = entries {
+        command
+            .args(["--idempotency-ttl-secs", "300", "--idempotency-max-entries"])
+            .arg(entries.to_string());
+    }
+    Ok(entries)
+}
+
+const LOAD_MIN_NS: u64 = 360_000_000_000;
+const LOAD_MAX_NS: u64 = 600_000_000_000;
+
+fn create_event_csv(directory: &Path) -> Result<std::fs::File, String> {
+    let mut csv = std::fs::File::create(directory.join("events.csv")).map_err(|e| e.to_string())?;
+    writeln!(
+        csv,
+        "attempt,external,sample_seq,stamp_ns,kind,source,normal_seq,generation,a,b"
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(csv)
+}
+
 async fn measure(
     case: &Case,
     port: &ControlPort,
     s0: &mut tokio::process::Child,
     client: &mut RobotControlClient<Channel>,
     hardware_id: &str,
-    physical: bool,
+    kind: SlaRunKind,
 ) -> Result<Value, String> {
+    let physical = matches!(kind, SlaRunKind::Physical);
+    let long_load = matches!(kind, SlaRunKind::SoftwareLoad { .. });
     let trace = case.trace("s0")?;
     if !trace.installed() {
         return Err("S0 没有安装真实事件环".to_owned());
@@ -1517,21 +1560,21 @@ async fn measure(
         TopicClass::SafetyEvent,
     )
     .map_err(|e| e.to_string())?;
-    let mut csv =
-        std::fs::File::create(case.directory.join("events.csv")).map_err(|e| e.to_string())?;
-    writeln!(
-        csv,
-        "attempt,external,sample_seq,stamp_ns,kind,source,normal_seq,generation,a,b"
-    )
-    .map_err(|e| e.to_string())?;
+    let mut csv = create_event_csv(&case.directory)?;
     let attempts =
         std::fs::File::create(case.directory.join("attempts.jsonl")).map_err(|e| e.to_string())?;
     send_control(port, case, s0, HookCommandKind::ExternalEStop, 0, 0, 0).await?;
-    let background = if physical {
-        Some(Background::start(client.clone())?)
+    let background = if physical || long_load {
+        Some(Background::start(
+            client.clone(),
+            long_load.then_some(LOAD_MAX_NS),
+        )?)
     } else {
         None
     };
+    let load_start = background.as_ref().map_or(0, Background::started_ns);
+    let health = background.as_ref().map(Background::health);
+    let mut writes = Vec::new();
     let mut runner = SlaRunner {
         case,
         port,
@@ -1542,6 +1585,8 @@ async fn measure(
         csv: &mut csv,
         attempts,
         hardware_id,
+        health: health.as_ref(),
+        writes: &mut writes,
     };
     let mut groups = Vec::new();
     let measurement = async {
@@ -1552,6 +1597,8 @@ async fn measure(
                     groups.push(runner.group(external, in_flight).await?);
                 }
             }
+        } else if long_load {
+            groups = runner.software_load_samples(&heartbeat, load_start).await?;
         } else {
             heartbeat.verify_running()?;
             groups = runner.software_samples().await?;
@@ -1560,12 +1607,25 @@ async fn measure(
     }
     .await;
     let background = match background {
-        Some(background) => background.finish().await?,
+        Some(background) => background.finish().await,
         None => Value::Null,
     };
     write_json(&case.directory.join("background.json"), &background)?;
+    write_json(&case.directory.join("recovery_writes.json"), &json!(writes))?;
+    if long_load {
+        save_load_summary(
+            &case.directory,
+            &background,
+            &writes,
+            &groups,
+            load_start,
+            measurement.as_ref().err(),
+        )?;
+    }
     measurement?;
-    if physical && (background["valid_responses"] != true || background["valid_cadence"] != true) {
+    if (physical || long_load)
+        && (background["valid_responses"] != true || background["valid_cadence"] != true)
+    {
         return Err("真实 RR 背景负载发生错误或未维持 20/s 调度，完整记录已保留".to_owned());
     }
     if trace.dropped() != 0 {
@@ -1573,10 +1633,44 @@ async fn measure(
     }
     Ok(
         json!({"groups": groups, "background": background, "trace_dropped": trace.dropped(),
-        "events_csv": case.directory.join("events.csv"), "hardware_only": physical, "runtime_only": !physical, "in_flight_exercised": true,
-        "mock_lease": !physical,
-        "scope": if physical { "Orin真实总线H2测量" } else { "真实mock进程两入口×idle/inflight调用lease采集/恢复；无UART与OrinP99宣称" }}),
+        "events_csv": case.directory.join("events.csv"), "hardware_only": physical, "runtime_only": !physical, "in_flight_exercised": !long_load,
+        "mock_lease": !physical, "external_entry_exercised":true,"topic_entry_exercised":!long_load,"idle_exercised":true,
+        "scope": if physical { "Orin真实总线H2测量" } else if long_load { "真实mock三进程长期20/s与恢复写；无UART及物理P99宣称" } else { "真实mock进程两入口×idle/inflight调用lease采集/恢复；无UART与OrinP99宣称" }}),
     )
+}
+
+fn save_load_summary(
+    directory: &Path,
+    background: &Value,
+    writes: &[Value],
+    groups: &[Value],
+    load_start: u64,
+    measurement_error: Option<&String>,
+) -> Result<(), String> {
+    let mut keys = BTreeSet::new();
+    for row in background["rr_requests"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .chain(writes.iter())
+    {
+        if row["ok"] == true {
+            let key = row["idempotency_key"]
+                .as_str()
+                .ok_or("成功写缺少唯一幂等键")?;
+            if !keys.insert(key) {
+                return Err("长负载存在重复幂等键，不能作为新写证明".to_owned());
+            }
+        }
+    }
+    write_json(
+        &directory.join("load_summary.json"),
+        &json!({"successful_unique_keys":keys,
+            "successful_unique_count":keys.len(),"minimum_ns":LOAD_MIN_NS,"maximum_ns":LOAD_MAX_NS,
+            "started_ns":load_start,"stop_ns":background["stop_ns"],"groups":groups,
+            "measurement_error":measurement_error,"no_uart":true,"physical_p99_claim":false}),
+    )?;
+    Ok(())
 }
 
 async fn final_stop(
@@ -1593,42 +1687,73 @@ async fn final_stop(
         Err(error) => Err(error),
     };
     tokio::time::sleep(Duration::from_millis(700)).await;
-    let observed = async {
-        let mut client = connect(address).await?;
-        let state = client
-            .get_state(GetStateRequest {
-                hardware_id: hardware_id.to_owned(),
-            })
-            .await
-            .map_err(|e| e.to_string())?
-            .into_inner();
-        if state.safety_state != 3 {
-            return Err(format!("最终真实断扭未确认：{state:?}"));
-        }
-        client
-            .set_enabled(SetEnabledCommand {
-                meta: Some(command_meta(false, 2000)),
+    let observed = match connect(address).await {
+        Ok(mut client) => {
+            let meta = command_meta(false, 2000);
+            let mut disable_client = client.clone();
+            let command = SetEnabledCommand {
+                meta: Some(meta.clone()),
                 enabled: false,
-            })
+            };
+            confirm_and_disable(
+                async move {
+                    client
+                        .get_state(GetStateRequest {
+                            hardware_id: hardware_id.to_owned(),
+                        })
+                        .await
+                        .map(tonic::Response::into_inner)
+                },
+                async move {
+                    disable_client
+                        .set_enabled(command)
+                        .await
+                        .map(tonic::Response::into_inner)
+                },
+                &meta.request_id,
+            )
             .await
-            .map_err(|e| e.to_string())?;
-        Ok::<_, String>(
-            json!({"safety_state": state.safety_state, "state_stamp_ns": state.stamp_ns}),
-        )
-    }
-    .await;
-    let evidence = json!({"disarmed": format!("{disarmed:?}"), "estop": format!("{estop:?}"),
-        "observation": format!("{observed:?}")});
+        }
+        Err(error) => json!({"ok":false,"get_state":{"attempted":false,"ok":false,"error":error},
+            "disable":{"attempted":false,"ok":false,"reason":"连接失败"}}),
+    };
+    let evidence = json!({"ok":disarmed.is_ok() && estop.is_ok() && observed["ok"] == true,
+        "disarmed":format!("{disarmed:?}"),"estop":format!("{estop:?}"),
+        "get_state":observed["get_state"],"disable":observed["disable"]});
     write_json(&case.directory.join("final_stop.json"), &evidence)?;
-    match (disarmed, estop, observed) {
-        (Ok(_), Ok(_), Ok(value)) => Ok(value),
-        other => Err(format!("H2 真实收尾未完成：{other:?}")),
+    if evidence["ok"] == true {
+        Ok(evidence)
+    } else {
+        Err(format!("H2 真实收尾未完成：{evidence}"))
     }
+}
+
+/// 真实收尾使用同一顺序接缝：状态 3 成功并不代表随后 Disable 成功。
+pub(super) async fn confirm_and_disable<G, D>(get_state: G, disable: D, request_id: &str) -> Value
+where
+    G: std::future::Future<Output = Result<robot_rpc::proto::RobotState, tonic::Status>>,
+    D: std::future::Future<Output = Result<robot_rpc::proto::Ack, tonic::Status>>,
+{
+    let observed = match get_state.await {
+        Ok(state) => json!({"attempted":true,"ok":state.safety_state == 3,
+            "safety_state":state.safety_state,"state_stamp_ns":state.stamp_ns}),
+        Err(error) => {
+            json!({"attempted":true,"ok":false,"code":format!("{:?}",error.code()),"error":error.message()})
+        }
+    };
+    let disabled = if observed["ok"] == true {
+        let mut value = ack_evidence(disable.await, request_id, false);
+        value["attempted"] = json!(true);
+        value
+    } else {
+        json!({"attempted":false,"ok":false,"reason":"未取得真实状态3确认"})
+    };
+    json!({"ok":observed["ok"] == true && disabled["ok"] == true,"get_state":observed,"disable":disabled})
 }
 
 pub(super) async fn run(args: &Args) -> Result<Value, String> {
     let (case, hardware_id, environment) = physical_case(args)?;
-    run_instance(case, &hardware_id, &environment, true).await
+    run_instance(case, &hardware_id, &environment, SlaRunKind::Physical).await
 }
 
 pub(super) async fn software_probe(args: &Args) -> Result<Value, String> {
@@ -1641,7 +1766,23 @@ pub(super) async fn software_probe(args: &Args) -> Result<Value, String> {
         "arm",
         &json!({"runtime_only": true, "hardware_only": false,
         "in_flight_exercised": true, "mock_lease": true, "physical_uart": false}),
-        false,
+        SlaRunKind::SoftwareProbe,
+    )
+    .await
+}
+
+pub(super) async fn software_load(args: &Args) -> Result<Value, String> {
+    if args.phase != Phase::MockH2Load || args.config.is_some() || args.hardware_id.is_some() {
+        return Err("长负载仅允许无现场参数的 mock-h2-load".to_owned());
+    }
+    let case = Case::new(&args.evidence_dir, &args.bin_dir, "mock_h2_load", 6)?;
+    run_instance(
+        case,
+        "arm",
+        &json!({"runtime_only":true,"hardware_only":false,"physical_uart":false}),
+        SlaRunKind::SoftwareLoad {
+            cache_entries: args.h2_software_cache_entries.unwrap_or(8192),
+        },
     )
     .await
 }
@@ -1650,11 +1791,25 @@ async fn run_instance(
     case: Case,
     hardware_id: &str,
     environment: &Value,
-    physical: bool,
+    kind: SlaRunKind,
 ) -> Result<Value, String> {
-    write_json(&case.directory.join("environment.json"), environment)?;
+    let physical = matches!(kind, SlaRunKind::Physical);
+    let mut environment = environment.clone();
     let port = ControlPort::new(&case.robot_id)?;
-    let (gateway_config, address) = gateway_command(&case)?;
+    let (mut gateway_config, address) = gateway_command(&case)?;
+    let entries = configure_h2_gateway(&mut gateway_config, kind)?;
+    environment["gateway_idempotency_max_entries"] = json!(entries.unwrap_or(4096));
+    environment["gateway_idempotency_ttl_secs"] = json!(300);
+    environment["background_tracked_limit"] = json!(RR_IN_FLIGHT_LIMIT);
+    environment["wire_active_limit_unchanged"] = json!(4);
+    environment["gateway_arguments"] = json!(
+        gateway_config
+            .as_std()
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+    );
+    write_json(&case.directory.join("environment.json"), &environment)?;
     let mut s0 = case.spawn("s0", s0_command(&case, hardware_id, physical)?)?;
     let mut gateway = None;
     let mut scheduling = Value::Null;
@@ -1679,7 +1834,7 @@ async fn run_instance(
                 gateway.as_ref().and_then(tokio::process::Child::id),
             )?;
         }
-        measure(&case, &port, &mut s0, &mut client, hardware_id, physical).await
+        measure(&case, &port, &mut s0, &mut client, hardware_id, kind).await
     }
     .await;
     let final_state = final_stop(&case, &port, &mut s0, &address, hardware_id).await;

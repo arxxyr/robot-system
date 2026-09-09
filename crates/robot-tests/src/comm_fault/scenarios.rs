@@ -9,6 +9,8 @@ use super::harness::{Case, isolated_command, stop, wait_exit, wait_log};
 use super::report::Report;
 use super::{Args, Phase, rpc, startup};
 
+pub(super) const SOFTWARE_LOAD_ACCEPTANCE: &str = "S-46";
+
 pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> {
     match args.phase {
         Phase::Mock => mock(args, report).await,
@@ -22,6 +24,16 @@ pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> 
             startup::run(args, report).await?;
             super::watchdog::run(args, report).await?;
             rpc::run(args, report).await
+        }
+        Phase::MockH2Load => {
+            let started = SystemClock.now().0;
+            report.record(
+                "mock_h2_load",
+                SOFTWARE_LOAD_ACCEPTANCE,
+                started,
+                super::sla::software_load(args).await,
+            );
+            Ok(())
         }
         Phase::OrinSla => {
             let started = SystemClock.now().0;

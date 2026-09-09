@@ -2175,7 +2175,7 @@ High每tick非阻塞处理，不保留retry整体早退；Normal队列按2·C(L�
 伪称自动变成Unknown变体，也不证明旧责任退休。当前只批准合同，不授权全部
 函数接线或运行长测；永久IO/未知责任与D15边界均保持原口径。
 
-#### P.6.14.11 W2b 关闭与join机制（Plan Approved，待W2a提交）
+#### P.6.14.11 W2b 关闭与join机制（已评审提交6defac4）
 
 函数计划`local/s48/a3/cc_w2b_shutdown_mechanism_plan_r3.md` SHA
 `131e1b0900783046174a9ed87e75491b64c81efc3c6685f4dd58f4b7a01d3835`已独立
@@ -2217,8 +2217,15 @@ Shutdown继续PreemptedByShutdown=7。P-M修改build.rs须附实际workspace --t
 take/withdraw在同字竞争后可复用；Execution安装/重复读取/清除不消费权限视图。
 目标原子能力编译期约束只证明lock-free，RT零分配门保留，不宣称wait-free。
 
-S46现有七件工具/回归文件须在后续修改这些路径前独立评审提交；旧wire4 FAIL与
-长测来源保留，不算修复成功，不成为W0.1/W2a/W2b前置。无调用者模块可按依赖推进。
+P-A1任务r2及root范围裁决已批准准备态，详local/s48/pa1/root_task_r2_approval.md。
+每条waiter独立锁存，容量满返QueueFull{Lower}且返原请求；完整Enable RR/旧seq
+随真实retire成功移交cleanup。桥先核三方domain再withdraw，不接收bool退休证明。
+未撤销Queued起步失败及Succeeded真实commit拒绝的退休入口留W3结合拥有返回补齐，
+不得据此原语包声称全部退休路径或生产接线完成；原九门与真实allocator测试保留。
+
+S46原七件工具/回归文件已由S46-B独立源码/证据终审通过；round2七门、三CLI及
+81具名通过，详local/s48/s46/review.md。旧wire4 FAIL与长测来源保留，不算修复成功，
+不成为W0.1/W2a/W2b前置。无调用者模块按依赖推进，下一包P-M。
 W3-P与W3统一激活gateway/S0/S1协议、profile和真实退休，并同时迁移权限/唯一writer/
 监督/ACK；不支持新gateway配缺退休字段旧S0的生产组合。完整W3函数接线另审，
 本节不批准硬件操作或新负载PASS；详既有容量/生命周期合同及root四项裁决。

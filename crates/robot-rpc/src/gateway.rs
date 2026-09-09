@@ -4305,6 +4305,161 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "estop", "shutdown"]
         }
     }
 
+    /// 逐条经过真实 handler 与 forward/response 路径填缓存，不能直接插入缓存项。
+    async fn fill_set_enabled_cache_with_dry_runs(
+        handler: &GatewayHandler,
+        forward_rx: CrossbeamRecv<RrForwardRequest>,
+        count: usize,
+    ) -> CrossbeamRecv<RrForwardRequest> {
+        let responder = tokio::task::spawn_blocking(move || {
+            for index in 0..count {
+                let request = forward_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("干跑请求必须实际转发");
+                let wire =
+                    flatbuffers::root::<robot_msg::msg::SetEnabledRequest>(&request.wire_bytes)
+                        .expect("解码干跑请求");
+                assert_eq!(wire.request_id(), Some(request.request_id.as_str()));
+                assert_eq!(
+                    wire.idempotency_key(),
+                    Some(format!("h2-dry-run-{index}").as_str())
+                );
+                assert!(wire.dry_run());
+                assert!(!wire.enabled());
+                let response = build_set_enabled_response(
+                    &request.request_id,
+                    RpcStatus::Ok,
+                    SetEnabledStatus::Ok,
+                    u64::try_from(index).unwrap() + 1,
+                    "",
+                );
+                request.oneshot_tx.send(response).expect("干跑仍在等待结果");
+            }
+            forward_rx
+        });
+
+        for index in 0..count {
+            let mut command = make_set_enabled_cmd(
+                &format!("h2-dry-run-{index}"),
+                false,
+                "operator-fake-token-001",
+            );
+            let meta = command.meta.as_mut().unwrap();
+            meta.dry_run = true;
+            let request_id = meta.request_id.clone();
+            let ack = handler
+                .set_enabled(tonic::Request::new(command))
+                .await
+                .expect("容量内的成功干跑必须提交缓存")
+                .into_inner();
+            assert_eq!(ack.request_id, request_id);
+            assert!(ack.dry_run);
+            assert_eq!(ack.cleared_at_ns, u64::try_from(index).unwrap() + 1);
+        }
+        responder.await.expect("干跑回复线程完成")
+    }
+
+    /// S-46：真实成功干跑占满默认共享缓存后，只读状态仍成功；新写拒绝，
+    /// 已有键的重放/冲突保持原义。TTL 释放复用 idempotency 模块的确定性回归。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn h2_default_cache_full_preserves_reads_replay_and_rejects_new_writes() {
+        use robot_msg::msg::{S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyState};
+
+        let config = GatewayConfig::loopback_default();
+        assert_eq!(config.idempotency_max_entries, 4096);
+        assert_eq!(config.idempotency_ttl_secs, 300);
+        let (mut handler, set_enabled_rx) =
+            make_set_enabled_handler(config.idempotency_max_entries);
+        handler.state.idempotency = Arc::new(Mutex::new(IdempotencyCache::with_capacity(
+            Duration::from_secs(config.idempotency_ttl_secs),
+            config.idempotency_max_entries,
+        )));
+        // 两条写通道分别持有接收端，精确证明容量拒绝发生在 forward 之前。
+        let (clear_estop_tx, clear_estop_rx) = bounded::<RrForwardRequest>(64);
+        handler.state.rr_forward_tx_clear_estop = clear_estop_tx;
+        handler.state.state_cache = Arc::new(StateCache::new(&["arm".to_string()]));
+        handler.state.state_cache.store(
+            "arm",
+            robot_msg::build_helpers::build_joint_state_with_s0(
+                7,
+                123,
+                &[0.0],
+                &[],
+                &[],
+                "",
+                S0Mode::Safe,
+                S0ControlLink::Ok,
+                S0OutputMode::Stop,
+                S0SafetyState::TorqueOffConfirmed,
+                S0FaultCode::Unknown,
+            ),
+        );
+        let set_enabled_rx = fill_set_enabled_cache_with_dry_runs(
+            &handler,
+            set_enabled_rx,
+            config.idempotency_max_entries,
+        )
+        .await;
+        assert_eq!(handler.state.idempotency.lock().unwrap().len(), 4096);
+
+        let clear_error = handler
+            .clear_e_stop(tonic::Request::new(make_cmd("h2-fresh-clear")))
+            .await
+            .expect_err("满缓存必须拒绝新的 ClearEStop");
+        assert_eq!(clear_error.code(), tonic::Code::ResourceExhausted);
+        assert!(clear_error.message().contains("4096/4096"));
+
+        // 对齐现场收尾顺序：GetState 成功读到状态 3，随后的 live Disable 仍失败。
+        let state = handler
+            .get_state(tonic::Request::new(GetStateRequest {
+                hardware_id: "arm".to_string(),
+            }))
+            .await
+            .expect("GetState 不受写缓存容量影响")
+            .into_inner();
+        assert_eq!(state.robot_id, "test_robot");
+        assert_eq!(state.hardware_id, "arm");
+        assert_eq!(state.safety_state, 3);
+        let disable_error = handler
+            .set_enabled(tonic::Request::new(make_set_enabled_cmd(
+                "h2-fresh-disable",
+                false,
+                "operator-fake-token-001",
+            )))
+            .await
+            .expect_err("满缓存必须拒绝新的 live Disable");
+        assert_eq!(disable_error.code(), tonic::Code::ResourceExhausted);
+        assert!(disable_error.message().contains("4096/4096"));
+
+        let mut retry = make_set_enabled_cmd("h2-dry-run-0", false, "operator-fake-token-001");
+        retry.meta.as_mut().unwrap().dry_run = true;
+        let retry_request_id = retry.meta.as_ref().unwrap().request_id.clone();
+        let ack = handler
+            .set_enabled(tonic::Request::new(retry.clone()))
+            .await
+            .expect("满缓存仍应重放已有键")
+            .into_inner();
+        assert_eq!(ack.request_id, retry_request_id);
+        assert_eq!(ack.cleared_at_ns, 1);
+        assert!(ack.dry_run);
+        retry.meta.as_mut().unwrap().request_id = Uuid::now_v7().to_string();
+        retry.meta.as_mut().unwrap().dry_run = false;
+        let conflict = handler
+            .set_enabled(tonic::Request::new(retry))
+            .await
+            .expect_err("同键不能把已缓存干跑变成真实写");
+        assert_eq!(conflict.code(), tonic::Code::AlreadyExists);
+        assert_eq!(handler.state.idempotency.lock().unwrap().len(), 4096);
+        assert!(matches!(
+            clear_estop_rx.try_recv(),
+            Err(crossbeam_channel::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            set_enabled_rx.try_recv(),
+            Err(crossbeam_channel::TryRecvError::Empty)
+        ));
+    }
+
     /// 跑一次 SetEnabled，mock daemon 用**正确** request_id 回指定
     /// `(status, domain)`。返 handler 结果。
     // tonic handler 签名固定 `Result<Response<T>, Status>`（Status ≥176B 在框架
