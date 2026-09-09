@@ -20,7 +20,7 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     C1–C5 与S-45软件已评审提交；S-46本地通过、Orin wire4满FAIL；S-48 A1纯文件事务本地及独立评审通过，A2权限与A3双队列待总装
+当前步骤:     C1–C5 与S-45软件已评审提交；S-46本地通过、Orin wire4满FAIL；S-48 A1已提交，A2权限原语本地门与root评审通过，A3双队列待总装
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -28,7 +28,8 @@
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
 用户追加：每阶段评审与必要质量门通过即 commit，再推进下一阶段。
 developer 可根据任务需要自主启动子 agent 并负责整合；reviewer 保持独立评审。
-共享工作区按文件明确归属，Cargo 由主 agent 串行执行。
+共享工作区按文件明确归属。用户2026-09-09更新分工：主agent负责方案和评审，
+cc-claude负责具体开发与测试并独占当前Cargo，旧开发agent停止；评审通过仍由主agent提交。
 由团队完善函数级计划、独立评审通过后实施；原 9 月 5 日“仅准备 Plan outline”
 是历史授权状态，不作为本轮停工理由。实现、验证、真机执行分别记录，不能将
 Spec Approved 或旧测试记录写成新代码已通过验收。
@@ -64,6 +65,8 @@ GetState确认state3，随后Disable容量拒绝，整体仍FAIL；全部进程�
 S-48按用户要求分高/普通两个有界队列，每轮先高后普通、每项非阻塞推进。
 A1先独立实现Clear文件事务与恢复，已通过28个模块入口、7项公开API验收、
 24项旧latch回归和3项编译失败文档测试；全workspace fmt/Clippy零警告。
+A2独立原子权限模块已通过48项模块测试、13项compile-fail、16项默认公开验收，
+debug/release各21项真实guard验收与A1回归；root核验源码和原始证据后批准。
 此时仍未接生产启动或IPC，双队列与磁盘writer尚未总装；不得称优先级问题已修复。
 
 C5 证据保留 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与

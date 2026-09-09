@@ -12,6 +12,11 @@
 
 ## P.0 范围、所有权与当前事实
 
+**当前分工更新（用户2026-09-09明确指定）**：root负责方案与评审，`cc-claude`负责
+具体实现、全部测试与Cargo；旧开发agent已停止。A2执行委托见
+`target/post_e_h2_rt/s48/a2/cc_claude_task.md`。下文旧分工由本条覆盖；root维护
+文档与证据汇总，cc-claude冻结后交root评审，通过后由root提交，不push。
+
 唯一 Dev 负责生产代码、模块导出、Cargo 清单和模块单测；reviewer 只读独立评审，
 给出独立验收场景与 PASS / FAIL，不能以 Dev 自测替代验收；主 agent 负责独立 integration
 验收夹具、comm_fault_e2e 入口、Spec、HANDOFF、入口文档、CHANGELOG、10_verification、
@@ -1512,11 +1517,11 @@ D9 一次授权，失败证据保留在当前唯一 H 包中，不覆盖为 PASS
    目录、新run/build manifest绑定实际source/base。驱动原时间/首因/清理oracle
    不放宽。独立审核全部证据后commit，再准备新物理H2驱动；D15 OPEN不变。
 
-### P.6.14 基础控制与普通目标优先级隔离（S-48，设计评审中，尚未实施）
+### P.6.14 基础控制与普通目标优先级隔离（S-48，A1已提交，A2评审通过）
 
-本节优先于P.6.13推进，用户要求已授权，不需要再次询问流程许可。开发agent
-负责函数级实现设计，reviewer独立审安全边界，root维护文档及验收；三者确认
-完整协议后才进入实现。现场保持左臂断电，纯软件阶段不打开串口。
+本节优先于P.6.13推进，用户要求已授权，不需要再次询问流程许可。按用户最新分工，
+root负责函数级方案与独立评审，`cc-claude`负责具体开发和测试，root核验证据并提交。
+各阶段完整协议经评审后才实施。现场最后确认左臂断电，纯软件阶段不打开串口。
 
 1. **两个队列的端到端分类与容量**：保留强类型RPC/topic，主调度只使用两个有界
    工作队列，每轮先高再普通；保留既有原子安全notice与普通侧latest slot，不扩成
@@ -1609,7 +1614,146 @@ fsync边界注入确定性中断并重新打开恢复。核无durable marker绝�
 中断，逐步骤故障hook位于成功操作之后；目录同步错误用例含目录open失败，
 不称每种fsync errno或真实掉电已测试。first Clippy首红与second通过分开留证。
 
-#### P.6.14.2 A2–A4 后续相依阶段（协议待详细评审）
+#### P.6.14.2 A2–A4 后续相依阶段（A2已批准，A3/A4待详细评审）
+
+A1已提交`9fe20ea`。A2已通过独立Plan Approved及最后的同代次观测增量ACK，允许按以下
+函数级方案实施；A3/A4仍待各自详细评审。
+
+权限必须扩展原`serial safety_word`的CAS竞争域，在A3一次替换旧word、latch与
+inhibit读写；独立旁置epoch不解决check-then-acquire竞态。OutputPolicy只作输出
+选择，实际运动仍核同一权威域。A2先独立原语和测试，不接生产半套权威。
+初始化分配不回绕domain身份，令牌绑定domain与权限epoch；只读snapshot或复制
+的执行视图不能构造owner。begin才生成唯一私有、非Clone owner，阶段转换按值
+消费并至多返回一个后继；失败必须还回owner。撤销只收紧权限、不清占用位，
+新begin拒Busy；只有当前owner退休才释放占位，丢弃owner保持保守卡住。
+须补全执行许可的一次性转换：旧Copy视图不得在后继事务或同次执行结束后再授权。
+
+A2独立评审与验收最低矩阵：
+
+| 反例 | 必须观察到的结果 |
+|---|---|
+| IO acquire→EStop / EStop→acquire | 同域CAS确定先后；后来的运动获取失败，已开始事务沿既有安全责任退场 |
+| Clear各阶段遇EStop、Disable、Shutdown或每类inhibit | 旧恢复权限撤销，阶段占位保留，实际磁盘生命周期仍能匹配退休 |
+| 新begin、旧owner、跨domain、跨epoch及复制执行视图 | 不能覆盖新Pending，不能重复执行或释放，不能从只读快照制造变更许可 |
+| Enable硬件成功但IPC未commit时Disable到达 | 旧成功只能退休，不能提交ActiveForward或恢复运动 |
+| epoch/domain耗尽 | 不回绕；已存在权威仍能收紧与退休，永不再授予恢复权限 |
+| Disabled/Latch/Finalizing与遥测 | 保留健康读取；通信失信/BOOT/收敛原禁入条件不被绕过 |
+| Safety/Confirm/必要恢复动作与占位 | 不因Clear磁盘等待或普通队列满丧失安全降低能力，不创造额外EStop |
+
+CAS只能称lock-free，不称wait-free或固定重试次数；时延预算由A4真实竞争测量。
+独立原语热路径不得alloc/free、Arc操作、日志格式化或文件/中间件调用，新增独立
+测试须安装真实allocation guard，构造与线程夹具放在受测scope之外。
+
+##### A2 函数级方案（已实现，本地门与root评审通过）
+
+新增`crates/robot-s0/src/control_authority.rs`及模块测试，`lib.rs`只注册；`cc-claude`
+实现并执行独立integration/alloc验收，root逐项审查源码与原始测试证据。无依赖/trait/wire变更，不改旧控制路径。本阶段允许
+文件独立编译和验证，生产迁移必须等A3全部旧写者与读取点一起切换。
+
+2026-09-09 A2验收：第六轮13道门全部通过，来源439af44e…248a8d3/317输入、
+base 9fe20ea；模块48、compile-fail13、默认公开16、debug/release真实guard各21、
+rt_guard-only18，A1四项回归28/7/24/3。root亲自完成源码评审、日志摘要/计数与
+源码身份复算，证据见H.json的software.s48.a2及包内local/s48/a2。未接生产或访问Orin。
+
+`ControlAuthority`封装一个`AtomicU64`及初始化时取得的只读domain_id，均不公开
+原子或raw setter。bit0–7保留OutputSafetyState编码，8为serial EStop pending，
+9为IPC EStop notice，10为NORMAL_IO_ACTIVE，11为Latch，12–14为Phase，15为
+Disabled，16为Shutdown，17为Exhausted，18–23为既有六类inhibit，24–63为40位
+permission_epoch。Phase为Idle(0)/ClearPreparing(1)/ClearFinalizing(2)/
+EnableQueued(3)/EnableExecuting(4)/EnableSucceeded(5)/EnableFailed(6)，7非法。
+三个占位概念由Phase派生，不再各存一个bool。权限epoch与动作seq/trace epoch
+分别命名、分别验证，不复用语义。domain来自非RT构造时checked全局计数，不回绕；
+初始epoch=1、Disabled=true、Phase=Idle，latch/safety/inhibits由构造参数给定。
+domain耗尽构造失败。snapshot为只读Copy类型，不能构造任何owner或执行许可。
+
+| API/阶段 | 同域CAS与所有权合同 |
+|---|---|
+| `estop/disable/shutdown/tighten_inhibit` | 递增权限epoch、收紧相应位，保留Phase/IO_ACTIVE；EStop置Latch+Disabled+双notice并沿原表收紧safety，Disable只置Disabled、不创造EStop，Shutdown不可逆 |
+| `reserve_enable` | Disabled、Idle且恢复门允许时递增epoch，转Queued，生成唯一非Clone EnableOwner与只读Copy EnableStartView；已Enabled的高层幂等返回不再次reserve，底层Disabled=false拒绝NotDisabled；事务新代次避免旧view复活 |
+| `start_enable(view)` | 核domain/epoch/恢复门，唯一Queued→Executing CAS返回非Clone EnableExecution；第二次start无论同view或复制view均失败 |
+| `finish_enable(execution, actual_result)` | 消费执行令牌，在整个真实adapter动作结束、其IO已释放后转Succeeded/Failed；即使epoch已撤销也记录真实结果，但不能用旧成功把新Stop状态写成TorqueOn |
+| `commit_enable(owner)` | 仅Succeeded、当前safety=TorqueOn且原epoch/恢复门仍有效，消费owner、清Disabled并回Idle、推进epoch；迟到成功不能覆盖新保护 |
+| `retire_enable(owner)` | 仅Queued或真实终态可消费owner回Idle；Executing拒绝且返还owner。只清本事务占位、保留最新保护，并使旧view永不重新有效 |
+| `reserve_clear` | Disabled、Idle、TorqueOffConfirmed、无阻断原因及有效权限时递增epoch、转Preparing并生成唯一ClearPendingOwner；A3还必须核唯一owner维护的Safe与业务guard |
+| `commit_clear(owner)` | 同域核domain/epoch/守门，清Latch、Preparing→Finalizing并推进epoch，Disabled保持；返回唯一ClearFinalizingOwner，失败返原owner |
+| `begin_repair(pending_owner)` | 生成内含唯一owner、目标及采样epoch的非Clone RepairPermit；不另返可与owner错配的decision。pre-commit保原latch，新EStop要求Latched，只有原false可用Original(false) |
+| post-commit修复 | Finalizing且当前Latch=false时重新核同域后直接授权Finalize；不得用Original(true)回滚已提交Clear。后续EStop置Latch=true时只能进入Latched修复 |
+| `authorize_repair_cleanup(permit)` | 文件修复实际完成后，同域核采样epoch未变才返回唯一CleanupPermit；不匹配返同owner的新一轮修复入口并保持占位/marker，不能拿旧修复结果清标记 |
+| `authorize_finalize(owner)` | 双0已prepared且当前Latch=false时，同域CAS核当前保护状态后消费Finalizing owner并授予文件清理许可；后到Disable可以使运动仍被禁止，不要求回滚已提交Clear |
+| `retire_clear_cleanup(permit)` | 仅真实marker清理及strict目录同步成功后消费许可、清自己的Phase，保留所有最新保护；结果分别记录logical_committed与superseded，不能把后到事件误报成Clear从未发生 |
+
+所有owner/执行/修复/cleanup令牌字段私有、非Clone，无自引用生命周期；失败
+返回输入owner或唯一合法后继，不能暗中丢失清理责任。Drop不解除任何位。
+任何安全撤销都不清Phase；新begin必须Idle，因此旧owner存在期间不能有新事务。
+只读view无退休API，保证消费旧owner不可能释放后继事务；跨domain先拒且不改位。
+文件许可只是调用方下一步义务，A2不执行IO；A3必须以A1实际文件结果驱动后继。
+许可后到unlink/fsync间的新EStop仍是“原语先行、持久化随后”的边界；清理失败
+不得退休或成功Ack。Clear成功Ack须晚于strict清理，且保留已发生逻辑提交的事实。
+
+Feetech `enable(true)`包含多个wire事务，EnableExecuting覆盖整个adapter动作。
+各wire步骤从EnableExecution派生只读EnableExecutionView，经同域IO acquire核验；
+一次wire release不等于整个Enable完成。A3 packed请求可以附POD StartView，但
+不得从snapshot/seq自行制造执行许可，真实result/seq须在终态发布前准备好。
+
+普通IO基础门为没有serial pending、没有inhibit且IO_ACTIVE为空；所有获取在
+同一个权限word上CAS置IO_ACTIVE，消费NormalIoLease只释放该位并保留新保护。
+
+| NormalIoIntent | 额外门与边界 |
+|---|---|
+| PeriodicRead | 不因Latch/Disabled/ClearPreparing/Finalizing拒绝；不得绕过基础通信/BOOT/收敛门 |
+| Motion（周期写及模式控制） | 未Latch、Idle、未Disabled、未Shutdown/Exhausted；所有抑制原因仍为零 |
+| EnableStep(view) | domain与该Enable epoch匹配、Executing，未Latch/Shutdown/Exhausted；Disabled本来应为true，不据此挡住已授权使能步骤 |
+| NonEnergizingControl(闭合类型) | 闭合枚举仅Connect/Disconnect/Disable，保留基础门，不因Latch/Disabled/Clear阶段统一拒绝；没有未知NormalEffectful通配豁免 |
+
+Safety/Confirm/启动Connect维持既有特殊操作域，不占normal业务lease，不受新恢复
+抑制挡住安全降低。普通请求到intent的全部映射在A3按真实AdapterNormalReq逐项
+评审；SetMode全部模式均走Motion门（不能把Stop名字当作已断扭），HoldCurrent
+仍保留原Unsupported；Disconnect不主动断扭，仅报告Unknown。
+当前只有Connect/Disconnect/Enable/SetMode/HoldCurrent，没有ClearError
+总线action，不新增冻结trait变体。ClearError为owner上的Pure状态迁移，A3单独
+核其实际guard与当前权威，不伪造串口命令；已有不支持动作不因此变成支持。
+
+inhibit仅Boot/Converging/FaultPending可解除，CommFault/AdapterFault/StopFailed
+沿本候选保持sticky。`capture_inhibit_release(reason)`产生非Clone单原因许可；
+`try_release_inhibit(permit)`核domain/epoch及该位仍存在，只清该位并推进epoch，
+保留其他原因/保护/Phase。A3先捕获许可，再由唯一实际owner复核boot终态、实际
+收敛退休或mailbox当前generation的匹配ACK，最后用原许可epoch提交；不得先
+检查旧义务再无条件捕获更新后的epoch。FaultPending发布/ACK与许可的跨字段顺序
+在A3逐点证明，不能靠A2单个CAS概括为已原子。许可过期必须重走捕获与真实义务
+复核，不能自动刷epoch重试。
+Clear各阶段没有清inhibit权限，Shutdown/Exhausted不可清除。
+
+安全状态没有接受任意`OutputSafetyState`的setter，只有以下有限入口。普通
+观测令牌非Clone且按值消费，须在真实操作开始时采样domain/epoch/Phase/safety；
+完成时四者都必须仍匹配，notice/IO位变化不要求相等。不能从snapshot
+构造，过期结果不能重新采样当前epoch后复述，须新的实际操作产生新上下文。
+
+| 入口 | 允许转换与撤销规则 |
+|---|---|
+| `tighten_safety(SafetyTightening)` | 枚举仅StopCommanded/StopFailed/AdapterUncertain；每次推进epoch、置Disabled并保留Phase/IO/notice。StopCommanded不覆盖Failed/Uncertain，Uncertain不覆盖Failed，Failed最保守；饱和仍可收紧 |
+| `begin_safety_observation(SafetyOperation)` | 闭合操作仅ConfirmOff/Disable/Disconnect，真实操作开始时生成含Phase与safety的私有上下文；不提供任意状态参数 |
+| `complete_safety_observation`：ConfirmOff/Disable | 实际可信成功、当前epoch匹配且非Exhausted；当前Unknown/On/StopCommanded/OffConfirmed→OffConfirmed，Failed/Uncertain拒绝放宽；Disable另须当前Disabled。成功不递增epoch |
+| `complete_safety_observation`：Disconnect | 实际成功、当前epoch匹配且非Exhausted；置Disabled并递增epoch，撤销更早观测；普通四态→Unknown，Failed/Uncertain保持。断连不冒充断扭 |
+| `finish_enable`发布On | 只有唯一Execution令牌的真实成功可发布；须原epoch/恢复门仍有效、非Exhausted，Failed/Uncertain不可放宽。撤销后只记动作Succeeded事实，不更新新保护状态 |
+
+EnableExecuting期间的旧Confirm不得在同epoch的finish_enable改变Phase/On之后
+写回Off；若Succeeded之后新的真实Confirm已观测Off，commit_enable也必须因当前
+safety不是TorqueOn而拒绝旧使能提交。两种同代次交错均列为确定性回归。
+普通失败或不可信结果走既有错误责任分流，并由typed收紧入口推进epoch；旧同代
+Confirm不能覆盖新故障。EStop本身仍沿既有转换表，wire编码不变。
+notice消费、IO获取/释放、ConfirmOff/Disable成功不推进权限epoch；Disconnect的
+安全撤销例外已明确。NormalIoLease私有非Clone，唯一release出口消费lease，
+没有raw清IO_ACTIVE的方法；任何撤销均保留该位，旧lease退休前不能产生新lease。
+next epoch耗尽时置Exhausted+Disabled，不回绕；禁止新事务、权限提交或放宽，
+仍允许安全收紧、notice消费、真实IO释放、执行结果记账及唯一owner退休。
+
+饱和后新事件不能再递增epoch，故文件清理不能只比较epoch：修复许可还必须核
+当前所需文件目标，pre-commit为`original_latched || current_latch`，post-commit
+修复必须仍为current_latch=true且目标Latched。不匹配返同owner重修，false修复
+后的新EStop即使仍为MAX也不能授权删除marker。Finalize始终核当前Latch=false，
+只完成已提交Clear的文件收尾，不授运动权限。inhibit解除与一切普通/放宽观测在
+Exhausted下拒绝；superseded至少包含`epoch改变 || Exhausted`，独立保留
+logical_committed。MAX测试必须同时覆盖旧false修复、新EStop、旧确认和退休。
 
 - A2 权限原语：同一原子域内capture/commit/release token，EStop/Disable撤销旧
   恢复权限，避免ABA且耗尽fail-closed；RT请求与执行器读同一权威门，先验证原语。

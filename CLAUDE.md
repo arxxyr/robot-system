@@ -28,8 +28,8 @@
            退役等 post-E 生产安全硬化候选闭环（D-BI3 r5：旧栈已 disable
            自启，unit 保留可回滚）。
            当前 = post-E 通信故障硬化 Spec Approved（2026-09-05 round 21，
-           8 项决策全部 ACK）；2026-09-08 函数级 Plan Approved，专职
-           developer 按包实施，专职 reviewer 独立评审，主 agent 整合验收。
+           8 项决策全部 ACK）；函数级 Plan Approved，按用户2026-09-09最新分工：
+           root定方案与评审，cc-claude具体开发和测试，各阶段验收通过即提交。
            实施状态与证据 = team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md；
            C1–C5 已通过独立评审并提交（C5 85efefb）；完整证据见 HANDOFF。
            H2 PX-56 验收装配（S-44 / PLAN P.6.10）已独立评审通过；
@@ -37,8 +37,8 @@
            左臂 H1/H3 已通过；H2 两次 FAIL 保留，现场已确认左臂断电。
            S-45 软件已提交965bcd7；S-46本地长测通过、Orin真实wire4满FAIL。
            用户明确基础控制高优先级、关节目标普通通道；S-47背压暂停并入
-           S-48 A1纯文件Clear事务已实现、本地质量门及独立评审通过；
-           尚未接生产，A2权限原语与A3双队列总装继续分阶段评审实施。
+           S-48 A1纯文件Clear事务已评审提交9fe20ea；A2权限原语本地门与root评审通过。
+           尚未接生产，下一阶段A3双队列与唯一磁盘writer总装先完成详细方案。
            右臂未测；六项服务保持停止，deployable=false，D15 OPEN。
            证据保留当前包，旧过程数据与重复文档按用户授权清除。
            Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。

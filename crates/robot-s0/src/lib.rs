@@ -46,6 +46,7 @@ pub mod comm_fault_observation;
 #[cfg(feature = "test-comm-fault-hook")]
 pub mod comm_fault_trace;
 pub mod config_loader;
+pub mod control_authority;
 // v0.5 候选 E 段(9)：真机部署件（guard / preflight / provision）。纯逻辑不加
 // feature 门——AC-E16/E21/E22 的 unit 判据必须在默认 gate 内跑到；真串口实现
 // 与 `xlerobot_deploy` bin 才由 `xlerobot-real` 守门（详 deploy/mod.rs doc）。

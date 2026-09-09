@@ -3,10 +3,12 @@
 ## 重启后已恢复（当前入口）
 
 用户已明确“继续”，已恢复软件推进，不重跑已消费的H2驱动。重启后核实工作区
-仍保留全部改动，新建专职implementation与reviewer恢复分工；本地Cargo归root。
+仍保留全部改动。用户随后指定root定方案和评审，cc-claude具体开发与测试，
+当前Cargo归cc-claude独占，旧开发agent已停止。
 A1验证基线为`ce61623436138342b6a2d234b10bada71d6877ca`，分支
-`feat/post-e-comm-fault-hardening`。A1通过独立评审后作为本阶段提交；S-46源文件
-仍未提交，不得reset/clean或冒充已收口。S-47合入S-48；下一步为A2权限原语。
+`feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46源文件
+仍未提交，不得reset/clean或冒充已收口。S-47合入S-48；A2已通过本地门与root评审，
+本阶段提交后继续A3详细方案。
 
 最新用户决定：基础控制与普通工作分两个有界队列，每轮先高后普通；每项必须
 非阻塞推进。关节目标合并最新值，急停/Disable可否决旧Enable/Clear的恢复权限。
@@ -23,7 +25,31 @@ first Clippy首红已修复保留，不覆盖。验证期间源码摘要未变�
 特殊marker文件拒绝，临时文件撞名最多64，true主→备、false备→主严格同步。
 16个实际进程退出点验证恢复；逐步骤hook是成功操作之后中断，unlink后的目录
 同步错误是目录open失败，不称真实fsync errno或物理掉电实测。
-A1尚未接生产控制链；后续A2权限原语、A3双队列+writer总装、A4网关端到端验收。
+A1尚未接生产控制链；A2独立权限原语已通过，后续A3双队列+writer总装、A4网关端到端验收。
+
+A2函数级方案已获独立Plan Approved及增量ACK，见PLAN P.6.14.2，现按用户最新分工：root定方案与评审，本机cc-claude执行
+独立control_authority模块、公开API/真实allocation guard测试及Cargo。
+采用低24位状态/高40位权限epoch的AtomicU64，3位Phase覆盖Clear与Enable生命周期，
+domain绑定非Clone owner；旧事务占位直到真实退休，StartView只能启动一次。
+MAX核当前修复目标/Exhausted，有限typed safety转换，观测绑定domain/epoch/Phase/
+safety，commit_enable还核当前TorqueOn；两种同代次Confirm交错必测。
+此阶段只注册新模块，不迁移生产权威、不接双队列。旧开发agent已停止；
+委托文件为target/post_e_h2_rt/s48/a2/cc_claude_task.md，证据写a2/cc，root不并发跑Cargo。
+
+A2最终来源`439af44ef2f4897143d227e2ffb09f85d4dd9bad7fc64d2de333c8d6f248a8d3`，
+base `9fe20ea`、317输入；第六轮13道门全部PASS：fmt、全workspace及guard特性
+Clippy零警告；模块48、compile-fail13、公开默认16、debug/release guard各21、
+rt_guard-only18；A1回归28/7/24/3。root逐行评审并独立复算日志SHA/计数/源码身份，
+确认非A2源码（含A1、S-46）未变，结论APPROVED_SOFTWARE_SCOPE。
+证据`target/post_e_h2_rt/s48/a2/review.md`、`root_evidence_receipt.json`与`cc/sixth/`。
+首两轮Clippy红、第三轮证据脚本中断、第四轮并发夹具红、第五轮通过均保留；第六轮
+才是最终源码。未运行硬件，不外推为双队列已接通或S48整体完成。
+
+A3只读勘察见包内`local/s48/a3/root_integration_survey.md`：仍需锁定强类型wire租约
+归属、全部旧权威写入口替换、两队列准入与退休、单writer生命周期及端到端保留容量。
+同时识别既有`robot-transport/src/snapshot.rs`并发volatile读写缺少合法同步，
+单写端的!Clone也未阻止共享&self并发写；尚未Miri/TSan复现或修复。须作为后续软件
+闭合项，不复用为新权限槽，也不混入本阶段A2验收范围。
 
 现场最新确认仍为左臂断电、双臂支撑；六服务停止，D15 OPEN。未开展新串口操作。
 恢复软件工作不需要物理授权；任何新H2需软件审核/提交/两端对齐及新现场事实。
@@ -58,8 +84,9 @@ C5保留唯一C5包；S-45源码c07a/309输入，两端67场景、Orin18门及�
 
 ## 当前分工与下一步
 
-主agent维护Spec/PLAN/文档、独立API验收与证据；implementation实施，reviewer独立评审。
-本地Cargo归root，远端验证也由root统一调度；S-47合入S-48。共享文件按owner写，同机Cargo串行；每阶段独立评审和
+按用户最新分工，root维护Spec/PLAN/文档、亲自评审源码与原始验收证据；
+cc-claude实施并执行测试，独占本地Cargo。旧implementation/reviewer不再承担本阶段；
+远端操作由root统一调度。S-47合入S-48。共享文件按owner写，同机Cargo串行；每阶段评审和
 fmt/Clippy等必要门通过后commit，不push，不改冻结 `docs/00_design.md`。
 
 S-46已有固定due的有界64任务背景、H2专用8192/TTL300缓存装配、分项

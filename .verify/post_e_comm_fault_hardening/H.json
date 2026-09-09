@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_A1_APPROVED_A2_NEXT",
+  "work_state": "S48_A2_IMPLEMENTING",
   "resume_from": "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md：A1已独立批准，推进A2权限原语详细方案",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -320,7 +320,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "A1_APPROVED_SOFTWARE_SCOPE_A2_NEXT",
+      "status": "A1_COMMITTED_A2_APPROVED_SOFTWARE_SCOPE_A3_PLAN_NEXT",
       "implementation_started": true,
       "a1": {
         "plan_review": "APPROVED",
@@ -346,18 +346,123 @@
         "evidence_limit": "边界hook在实际操作成功后中断；unlink后的目录同步错误实为目录open失败，不称真实fsync errno或物理掉电验证",
         "orin_validation": "NOT_RUN",
         "production_wiring": false,
-        "review_evidence": "local/s48/a1/review.json"
+        "review_evidence": "local/s48/a1/review.json",
+        "commit": "9fe20ea986ad27fce41b8d3c7dc147f5b799f79b"
       },
       "user_requirement": "基础控制走高优先级通道，关节位置等连续目标走普通通道",
       "candidate": "唯一state owner与单disk writer解耦；可恢复Clear事务标记与原子提交权限；端到端有界容量保留",
-      "review_blocker": "A2原子权限、A3完整总装、A4端到端验收待分阶段闭合",
+      "review_blocker": "A3完整总装、A4端到端验收及已识别snapshot并发问题待后续软件闭合",
       "hardware_scope": "左臂已断电；仅软件设计与验证，不打开串口",
       "queues": {
         "high": "live基础控制",
         "ordinary": "dry-run与诊断；关节目标latest-only",
         "loop": "每轮先高后普通，各项非阻塞、有界推进"
       },
-      "atomic_safety": "紧急/故障独立原子notice，Disable撤销旧Enable/Clear恢复权限，不增加第三业务队列"
+      "atomic_safety": "紧急/故障独立原子notice，Disable撤销旧Enable/Clear恢复权限，不增加第三业务队列",
+      "a2": {
+        "status": "APPROVED_SOFTWARE_SCOPE",
+        "implementation_started": true,
+        "scope": "独立同域原子权限原语；A3统一迁移现safety_word/latch/inhibit及执行器放行",
+        "review_findings": [
+          "MAX饱和需核当前保护/修复目标",
+          "有限typed safety转换，禁止旧观测覆盖故障或刷新epoch重发"
+        ],
+        "plan_review": "APPROVED",
+        "incremental_review": "ACK",
+        "source_review": "APPROVED_SOFTWARE_SCOPE",
+        "validation": "LOCAL_PASS",
+        "executor": "cc-claude",
+        "plan_and_review_owner": "root",
+        "cargo_owner": "cc-claude",
+        "task": "target/post_e_h2_rt/s48/a2/cc_claude_task.md",
+        "evidence": "local/s48/a2/cc/sixth/run.json",
+        "preliminary_review": {
+          "path": "target/post_e_h2_rt/s48/a2/root_review_01.md",
+          "reviewer": "root",
+          "source_sha256": "ff9b06f0c6db278178aba9e1be3087d32f39252c13268d238a461a4f0f077772",
+          "findings": [
+            "finish_enable必须在同域确认IO_ACTIVE已释放",
+            "cleanup/finalize授权使用约定的CAS点",
+            "指定初始epoch的构造仅限验收",
+            "reserve_enable要求Disabled，保持执行期间恢复门前提"
+          ],
+          "dispatched_to": "cc-claude",
+          "formal_validation": "SUPERSEDED_BY_FINAL_SIXTH_ROUND",
+          "archive_pending": false
+        },
+        "source_hash": "439af44ef2f4897143d227e2ffb09f85d4dd9bad7fc64d2de333c8d6f248a8d3",
+        "source_input_count": 317,
+        "base_commit": "9fe20ea986ad27fce41b8d3c7dc147f5b799f79b",
+        "source_unchanged": true,
+        "production_wiring": false,
+        "orin_validation": "NOT_RUN",
+        "review_evidence": "local/s48/a2/review.md",
+        "identity_evidence": "local/s48/a2/root_evidence_receipt.json",
+        "final_round": "sixth",
+        "fmt": "PASS",
+        "clippy": "PASS",
+        "clippy_guard_features": "PASS",
+        "tests": {
+          "authority_unit": {
+            "passed": 48,
+            "failed": 0,
+            "ignored": 0
+          },
+          "authority_doctest": {
+            "passed": 13,
+            "failed": 0,
+            "ignored": 0
+          },
+          "authority_acceptance_default": {
+            "passed": 16,
+            "failed": 0,
+            "ignored": 0
+          },
+          "authority_acceptance_guard_debug": {
+            "passed": 21,
+            "failed": 0,
+            "ignored": 0
+          },
+          "authority_acceptance_guard_release": {
+            "passed": 21,
+            "failed": 0,
+            "ignored": 0
+          },
+          "authority_acceptance_rt_guard_only": {
+            "passed": 18,
+            "failed": 0,
+            "ignored": 0
+          },
+          "a1_transaction_unit": {
+            "passed": 28,
+            "failed": 0,
+            "ignored": 0
+          },
+          "a1_transaction_acceptance": {
+            "passed": 7,
+            "failed": 0,
+            "ignored": 0
+          },
+          "a1_latch_regression": {
+            "passed": 24,
+            "failed": 0,
+            "ignored": 0
+          },
+          "a1_transaction_doctest": {
+            "passed": 3,
+            "failed": 0,
+            "ignored": 0
+          }
+        },
+        "commit_status": "READY_FOR_STAGE_COMMIT",
+        "prior_rounds": "首两轮Clippy红；第三轮证据解析脚本中断，模块原始48通过；第四轮并发夹具红；第五轮通过；第六轮最终compile-fail修正后全部通过。原始日志分别保留。"
+      },
+      "a3": {
+        "status": "PLAN_RESEARCH",
+        "implementation_started": false,
+        "survey": "local/s48/a3/root_integration_survey.md",
+        "open_followup": "既有snapshot.rs并发volatile访问与单写类型约束问题，尚未Miri/TSan复现或修复；不可作为新权限槽安全依据"
+      }
     }
   },
   "hardware": {
@@ -511,19 +616,19 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 1687,
-    "sha256": "0f861da0588c081578e3d81f6601e8711677268e3cdf176e9a45dd177da31f40"
+    "lines": 1826,
+    "sha256": "fb386343ce4989ab20df65b7004694734752e132f41c77b9fea318ad5ebf4eb1"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "82ab85b5ef1590da159440e9aa6324d9592fc7e9022806cb9c04c43e786b45f6",
-    "bytes": 16530448,
-    "members": 4415,
-    "logical_bytes": 601658026,
+    "sha256": "330dcff95bd4ddf0c661b12faea41f72ec000cfb2ee92fb03039d0c1573334be",
+    "bytes": 16700226,
+    "members": 4488,
+    "logical_bytes": 602242181,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-09T03:51:49.981943+00:00",
+  "updated_at": "2026-09-09T05:02:57.895432+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
