@@ -7,8 +7,8 @@
 当前Cargo归cc-claude独占，旧开发agent已停止。
 A1验证基线为`ce61623436138342b6a2d234b10bada71d6877ca`，分支
 `feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46源文件
-仍未提交，不得reset/clean或冒充已收口。S-47合入S-48；A2已通过本地门与root评审，
-本阶段提交后继续A3详细方案。
+仍未提交，不得reset/clean或冒充已收口。S-47合入S-48；A2已评审提交`dee67fa`，
+A3a共享权限归位core已通过本地门与root评审，本阶段提交后继续A3详细方案。
 
 最新用户决定：基础控制与普通工作分两个有界队列，每轮先高后普通；每项必须
 非阻塞推进。关节目标合并最新值，急停/Disable可否决旧Enable/Clear的恢复权限。
@@ -44,6 +44,20 @@ rt_guard-only18；A1回归28/7/24/3。root逐行评审并独立复算日志SHA/�
 证据`target/post_e_h2_rt/s48/a2/review.md`、`root_evidence_receipt.json`与`cc/sixth/`。
 首两轮Clippy红、第三轮证据脚本中断、第四轮并发夹具红、第五轮通过均保留；第六轮
 才是最终源码。未运行硬件，不外推为双队列已接通或S48整体完成。
+
+A3a依据PLAN P.6.14.3只调整依赖方向：control_authority归位robot-core，s0直接
+重导出同一模块，domain计数器只有core一份；s0的真实inhibit常量对照保留在其
+cfg(test)中，不扩大pub(crate)。默认关闭的验收构造feature由s0显式转发。
+来源`6e9571abd0e4d0d823b8c1b0df4fb27d774aa51dc2cc126d2d59cdfae92b7084`，
+base `dee67fa`、320输入（包括3个已删除旧路径）。第二轮18道门PASS：fmt、
+全workspace与core/s0带特性Clippy、core无默认特性check；core模块126、文档13、
+s0常量对照1、公开默认18、debug/release guard各23、rt_guard-only20；A1回归
+28/7/24/3。七个生产feature图均无验收特性，阳性对照确认转发实际可见。
+workspace/all-targets热缓存build --timings完成，8.72s仅为本次构建记录。
+首轮feature图的阳性对照失败保留，改用反向图后第二轮通过；非源码失败。
+root独立复算源码/日志SHA和计数，核与A2实现等价及非A3a输入不变，批准本包；
+证据为H包`local/s48/a3a/review.md`、`root_evidence_receipt.json`、`cc/second/`。
+本包不改PreemptProbe、adapter、旧权威或snapshot，尚未生产接线和Orin验证。
 
 A3只读勘察见包内`local/s48/a3/root_integration_survey.md`：仍需锁定强类型wire租约
 归属、全部旧权威写入口替换、两队列准入与退休、单writer生命周期及端到端保留容量。

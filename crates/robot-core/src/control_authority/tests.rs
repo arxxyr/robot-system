@@ -182,31 +182,6 @@ fn word_layout_fields_are_disjoint_and_round_trip() {
     );
 }
 
-#[test]
-fn inhibit_bits_match_the_existing_serial_reasons() {
-    use crate::hard_rt_ctrl::inhibit;
-    assert_eq!(InhibitReason::CommFault.bit(), inhibit::COMM_FAULT);
-    assert_eq!(InhibitReason::AdapterFault.bit(), inhibit::ADAPTER_FAULT);
-    assert_eq!(InhibitReason::StopFailed.bit(), inhibit::STOP_FAILED);
-    assert_eq!(InhibitReason::Converging.bit(), inhibit::CONVERGING);
-    assert_eq!(InhibitReason::FaultPending.bit(), inhibit::FAULT_PENDING);
-    assert_eq!(InhibitReason::Boot.bit(), inhibit::BOOT);
-    let set = InhibitSet::from_bits(inhibit::BOOT | inhibit::COMM_FAULT).unwrap();
-    assert_eq!(
-        set.reasons().collect::<Vec<_>>(),
-        vec![InhibitReason::CommFault, InhibitReason::Boot]
-    );
-    for reason in InhibitReason::ALL {
-        assert_eq!(
-            reason.is_releasable(),
-            matches!(
-                reason,
-                InhibitReason::Boot | InhibitReason::Converging | InhibitReason::FaultPending
-            )
-        );
-    }
-}
-
 // ---------------------------------------------------------------------------
 // 构造与 domain
 // ---------------------------------------------------------------------------

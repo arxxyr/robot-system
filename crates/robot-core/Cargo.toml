@@ -29,6 +29,10 @@ default = []
 # `#[global_allocator] static _: assert_no_alloc::AllocDisabler = ...` 可在 scope 内
 # 捕获任何 heap allocation。详见 src/rt_guard.rs 头部说明。
 rt_guard = ["dep:assert_no_alloc"]
+# S48 A3a：`control_authority` 验收构造入口（`ControlAuthority::new_with_permission_epoch`，
+# 逼近 epoch MAX）的编译门。默认关闭；**不得**进 default / rt_guard / 任何机器人生产
+# 组合，只由 robot-s0 同名 test-only 特性显式转发或验收命令行显式开启。
+test-comm-fault-hook = []
 
 [lints]
 workspace = true

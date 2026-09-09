@@ -1,6 +1,9 @@
 //! `control_authority` 公开 API 验收与真实 allocation guard。
 //!
 //! 只使用 `robot_s0::control_authority` 的公开接口，不依赖模块内 CAS hook。
+//! S48 A3a 起本体位于 `robot_core::control_authority`，`robot_s0::control_authority`
+//! 是同一模块的重导出；本文件另验证两条路径是同一类型、令牌可交叉传递、
+//! 交错构造的 domain 来自唯一计数器。
 //!
 //! - 默认 features：公开 API 反例（Enable / Clear / IO / inhibit / 观测 / 跨 domain）。
 //! - `test-comm-fault-hook`：epoch MAX 用例（需要 `new_with_permission_epoch` 验收构造）。
@@ -718,6 +721,113 @@ fn cross_domain_tokens_are_refused_returned_and_change_nothing() {
     let _ = source.complete_safety_observation(observation).unwrap();
 
     assert_eq!(target.snapshot(), before, "跨 domain 拒绝不改任何位");
+}
+
+// ---------------------------------------------------------------------------
+// A3a：core / s0 两条公开路径是同一模块
+// ---------------------------------------------------------------------------
+
+#[test]
+fn core_and_s0_paths_name_the_same_types_and_tokens_cross_freely() {
+    fn same_type<T>(_: &T, _: &T) {}
+    fn takes_core_snapshot(
+        snapshot: robot_core::control_authority::AuthoritySnapshot,
+    ) -> robot_core::control_authority::DomainId {
+        snapshot.domain
+    }
+    let core_side = robot_core::control_authority::ControlAuthority::new(
+        robot_core::control_authority::AuthorityInit::new(
+            false,
+            S::TorqueOffConfirmed,
+            robot_core::control_authority::InhibitSet::EMPTY,
+        ),
+    )
+    .unwrap();
+    let s0_side: robot_s0::control_authority::ControlAuthority =
+        authority(false, S::TorqueOffConfirmed);
+    same_type(&core_side, &s0_side);
+
+    // core 路径产生的 owner / view / lease 用 s0 路径的类型名接收并消费。
+    let (owner, view): (
+        robot_s0::control_authority::EnableOwner,
+        robot_s0::control_authority::EnableStartView,
+    ) = core_side.reserve_enable().unwrap();
+    let execution: robot_core::control_authority::EnableExecution =
+        core_side.start_enable(view).unwrap();
+    let lease: robot_s0::control_authority::NormalIoLease = core_side
+        .acquire_normal_io(robot_core::control_authority::NormalIoIntent::EnableStep(
+            execution.view(),
+        ))
+        .unwrap();
+    let released: robot_core::control_authority::NormalIoReleased =
+        core_side.release_normal_io(lease).unwrap();
+    assert!(!released.superseded);
+    let finish = core_side
+        .finish_enable(
+            execution,
+            robot_s0::control_authority::EnableResult::Succeeded,
+        )
+        .unwrap();
+    assert!(finish.torque_on_published);
+    let committed: robot_s0::control_authority::EnableCommitted =
+        core_side.commit_enable(owner).unwrap();
+    assert_eq!(committed.epoch, epoch_at(3));
+
+    // 同一类型、不同 domain：s0 路径权威的视图在 core 路径权威上按跨 domain 拒绝。
+    let (owner, view) = s0_side.reserve_enable().unwrap();
+    assert_eq!(
+        core_side.start_enable(view).err(),
+        Some(robot_core::control_authority::Refusal::CrossDomain {
+            token: s0_side.domain(),
+            authority: core_side.domain(),
+        })
+    );
+    let _ = s0_side.retire_enable(owner).unwrap();
+    let snapshot: robot_s0::control_authority::AuthoritySnapshot = s0_side.snapshot();
+    assert_eq!(takes_core_snapshot(snapshot), s0_side.domain());
+}
+
+#[test]
+fn interleaved_construction_through_both_paths_yields_unique_domains_from_one_counter() {
+    fn build(via_core: bool) -> robot_core::control_authority::DomainId {
+        let init = robot_core::control_authority::AuthorityInit::new(
+            false,
+            S::TorqueUnknown,
+            robot_core::control_authority::InhibitSet::EMPTY,
+        );
+        if via_core {
+            robot_core::control_authority::ControlAuthority::new(init)
+                .unwrap()
+                .domain()
+        } else {
+            robot_s0::control_authority::ControlAuthority::new(init)
+                .unwrap()
+                .domain()
+        }
+    }
+    // 顺序交错：严格递增即唯一且不回绕。
+    let sequential: Vec<_> = (0..64).map(|index| build(index % 2 == 0)).collect();
+    assert!(sequential.windows(2).all(|pair| pair[0] < pair[1]));
+    // 多线程交错：全部唯一，且都晚于顺序构造的最后一个。
+    let handles: Vec<_> = (0..8_u32)
+        .map(|thread| {
+            std::thread::spawn(move || {
+                (0..64_u32)
+                    .map(|index| build((thread + index) % 2 == 0))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    let mut concurrent: Vec<_> = handles
+        .into_iter()
+        .flat_map(|handle| handle.join().unwrap())
+        .collect();
+    let total = concurrent.len();
+    concurrent.sort_unstable();
+    concurrent.dedup();
+    assert_eq!(concurrent.len(), total, "domain 必须唯一");
+    let last_sequential = *sequential.last().unwrap();
+    assert!(concurrent.iter().all(|domain| *domain > last_sequential));
 }
 
 // ---------------------------------------------------------------------------

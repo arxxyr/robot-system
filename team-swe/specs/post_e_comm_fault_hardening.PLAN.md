@@ -1764,6 +1764,31 @@ logical_committed。MAX测试必须同时覆盖旧false修复、新EStop、旧�
   数值与拒绝策略另经二审钉死。新增独立优先级场景，原67默认集合不变，两端
   原长测、RT与新增反例全部通过后才准备下一轮物理H2。
 
+#### P.6.14.3 A3a 共享权限类型归位（root Plan Approved，2026-09-09）
+
+A2已提交`dee67fa`。实际wire的`PreemptProbe`定义在robot-core、由adapter实现/调用，
+不能反向引用robot-s0中的NormalIoLease。A3使用强类型租约交接，避免RT锁、Box、
+擦除类型后伪造令牌；因此先把纯权限原语归位到core。此包只调整依赖方向和公开路径，
+不接生产权威；后续总装仍须一次切换全部旧读写者，不把本包称为双队列已完成。
+
+- 移动control_authority本体、word和模块测试至robot-core；标准库原子与既有
+  executor_ctrl类型依赖不增加runtime依赖。domain全局计数器只留一份。
+- robot-core::lib注册模块；robot-s0::lib直接重新导出同一模块，不留复制实现。
+  core文档反例改用robot_core路径，私有字段/非Clone等错误目标不变。
+- 唯一依赖s0旧inhibit常量的位兼容测试移至s0::lib的cfg(test)模块，常量仍为
+  pub(crate)，不为测试扩大公开API；其余模块测试随实现迁移。
+  s0公开验收保留，用core/s0两个路径交叉传递令牌、交错构造核同一类型和唯一domain。
+- core增加默认关闭的test-comm-fault-hook构造验收特性，s0同名特性显式转发；
+  不加入default、rt_guard或任何机器人生产组合。不新增crate或改依赖版本。
+- 全workspace fmt/Clippy、core全库单测与13项compile-fail、s0公开验收默认及
+  debug/release真实guard、rt_guard-only、A1回归必须通过。核生产feature图不泄漏
+  测试构造入口；涉及Cargo特性配置，执行workspace/all-targets的build --timings留证。
+- root审查搬迁前后语义等价、单一计数器与feature边界，cc-claude实现和执行测试；
+  通过即单独commit。该包不修改PreemptProbe、AdapterNormalReq、旧安全权威或运行流程。
+
+完整A3仍需锁定双队列容量/准入、强类型执行上下文和Abort责任、唯一writer的
+所有权/启动恢复/停止预算，以及既有snapshot并发访问修复；见A3勘察，不提前启用。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 改两份arm service：`RestartPreventExitStatus=86 87`、guard `--`后加

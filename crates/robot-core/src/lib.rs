@@ -10,6 +10,8 @@
 
 pub mod adapter;
 pub mod config;
+// S48 A3a：纯权限原语（原 robot-s0::control_authority）归位；robot-s0 重导出同一模块。
+pub mod control_authority;
 pub mod diag;
 pub mod error;
 pub mod executor_ctrl;

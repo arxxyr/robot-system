@@ -320,7 +320,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "A1_COMMITTED_A2_APPROVED_SOFTWARE_SCOPE_A3_PLAN_NEXT",
+      "status": "A1_A2_COMMITTED_A3A_APPROVED_SOFTWARE_SCOPE_A3_PLAN_NEXT",
       "implementation_started": true,
       "a1": {
         "plan_review": "APPROVED",
@@ -454,14 +454,113 @@
             "ignored": 0
           }
         },
-        "commit_status": "READY_FOR_STAGE_COMMIT",
-        "prior_rounds": "首两轮Clippy红；第三轮证据解析脚本中断，模块原始48通过；第四轮并发夹具红；第五轮通过；第六轮最终compile-fail修正后全部通过。原始日志分别保留。"
+        "commit_status": "COMMITTED",
+        "prior_rounds": "首两轮Clippy红；第三轮证据解析脚本中断，模块原始48通过；第四轮并发夹具红；第五轮通过；第六轮最终compile-fail修正后全部通过。原始日志分别保留。",
+        "commit": "dee67faf42f08083511648fa0befe263d9b6b37a"
       },
       "a3": {
         "status": "PLAN_RESEARCH",
         "implementation_started": false,
         "survey": "local/s48/a3/root_integration_survey.md",
         "open_followup": "既有snapshot.rs并发volatile访问与单写类型约束问题，尚未Miri/TSan复现或修复；不可作为新权限槽安全依据"
+      },
+      "a3a": {
+        "status": "APPROVED_SOFTWARE_SCOPE",
+        "plan_review": "APPROVED",
+        "source_review": "APPROVED_SOFTWARE_SCOPE",
+        "validation": "LOCAL_PASS",
+        "scope": "共享权限原语归位robot-core，s0重导出同一模块；尚未生产接线",
+        "executor": "cc-claude",
+        "plan_and_review_owner": "root",
+        "cargo_owner": "cc-claude",
+        "source_hash": "6e9571abd0e4d0d823b8c1b0df4fb27d774aa51dc2cc126d2d59cdfae92b7084",
+        "source_input_count": 320,
+        "base_commit": "dee67faf42f08083511648fa0befe263d9b6b37a",
+        "source_unchanged": true,
+        "final_round": "second",
+        "checks_passed": 18,
+        "fmt": "PASS",
+        "clippy": "PASS",
+        "clippy_core_s0_features": "PASS",
+        "tests": {
+          "core_lib_tests": {
+            "passed": 126,
+            "failed": 0,
+            "ignored": 0
+          },
+          "core_authority_doctest": {
+            "passed": 13,
+            "failed": 0,
+            "ignored": 0
+          },
+          "s0_inhibit_compat": {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "s0_acceptance_default": {
+            "passed": 18,
+            "failed": 0,
+            "ignored": 0
+          },
+          "s0_acceptance_guard_debug": {
+            "passed": 23,
+            "failed": 0,
+            "ignored": 0
+          },
+          "s0_acceptance_guard_release": {
+            "passed": 23,
+            "failed": 0,
+            "ignored": 0
+          },
+          "s0_acceptance_rt_guard_only": {
+            "passed": 20,
+            "failed": 0,
+            "ignored": 0
+          },
+          "a1_transaction_unit": {
+            "passed": 28,
+            "failed": 0,
+            "ignored": 0
+          },
+          "a1_transaction_acceptance": {
+            "passed": 7,
+            "failed": 0,
+            "ignored": 0
+          },
+          "a1_latch_regression": {
+            "passed": 24,
+            "failed": 0,
+            "ignored": 0
+          },
+          "a1_transaction_doctest": {
+            "passed": 3,
+            "failed": 0,
+            "ignored": 0
+          }
+        },
+        "production_feature_graphs": 7,
+        "feature_positive_control": "PASS",
+        "timing_reports": [
+          {
+            "file": "cargo-timing.html",
+            "sha256": "86b5b283d7464c0600cf8318bb8db1088b5f5c0b6d2be2ac54f23defe6e2e0ee",
+            "bytes": 69417
+          },
+          {
+            "file": "cargo-timing-20260909T051501137Z-c7bbe0615ae0bce4.html",
+            "sha256": "86b5b283d7464c0600cf8318bb8db1088b5f5c0b6d2be2ac54f23defe6e2e0ee",
+            "bytes": 69417
+          }
+        ],
+        "evidence": "local/s48/a3a/cc/second/run.json",
+        "review_evidence": "local/s48/a3a/review.md",
+        "identity_evidence": "local/s48/a3a/root_evidence_receipt.json",
+        "first_failure": "首轮向下feature图无法显示根特性转发，阳性对照FAIL；反向图修正后重跑通过",
+        "production_wiring": false,
+        "hardware_access": false,
+        "orin_validation": "NOT_RUN",
+        "commit_status": "READY_FOR_STAGE_COMMIT"
       }
     }
   },
@@ -621,10 +720,10 @@
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "330dcff95bd4ddf0c661b12faea41f72ec000cfb2ee92fb03039d0c1573334be",
-    "bytes": 16700226,
-    "members": 4488,
-    "logical_bytes": 602242181,
+    "sha256": "0239b7351a5b6095550a6390fd6ebcb01497a1d852ecee1e485bf9cfc2284dc9",
+    "bytes": 16911643,
+    "members": 4570,
+    "logical_bytes": 603689814,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",

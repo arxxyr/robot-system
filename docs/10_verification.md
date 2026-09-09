@@ -100,6 +100,22 @@ base `ce61623`，28个模块测试入口（含1个子进程入口与16处实际�
 同步错误用例是目录open失败，不是假称fsync syscall报错或物理掉电验证。
 A1未接生产启动/IPC，尚无Orin新版本验收；证据为H包`local/s48/a1/second/`。
 
+S-48 A2已评审提交`dee67fa`：来源`439af44e…8a8d3`/317输入、base `9fe20ea`，
+第六轮13道门PASS，模块48、文档反例13、公开默认16、debug/release guard各21、
+rt_guard-only18及A1回归28/7/24/3。完整证据为H包`local/s48/a2/cc/sixth/`，
+root源码审查与独立摘要复算分别见同目录上两级的review.md与root_evidence_receipt.json。
+
+A3a将权限模块归位core、s0重导出同一模块，保留原语语义与唯一domain计数器。
+来源`6e9571ab…b7084`/320输入（含3个已删除旧路径）、base `dee67fa`，第二轮
+18道门全部PASS：fmt、全workspace与core/s0带特性Clippy、core无默认特性check、
+core全库126（含47项迁入）、13项文档反例、s0真实inhibit对照1、公开默认18、
+debug/release guard各23、rt_guard-only20、A1回归28/7/24/3；不同配置不合并计数。
+七个生产feature图无test-comm-fault-hook，反向阳性对照确认core转发可见；首轮
+向下图阳性对照FAIL保留。workspace/all-targets热缓存构建8.72s与真实timing报告
+留存，不据此宣称冷构建性能或RT时延。root核搬迁等价及非A3a输入不变，证据为
+H包`local/s48/a3a/cc/second/`、`review.md`和`root_evidence_receipt.json`。
+A2/A3a均未接生产或运行Orin；双队列、单writer与既有snapshot并发问题继续闭合。
+
 C5 结论与逐项命令/日志索引为 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json)，
 对应归档为 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
 查看原始 run / 执行器时，先按 PLAN P.6.5 将证据包解到仓库根；日常验收命令仍在 PLAN。
@@ -535,3 +551,4 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 4. ~~**env_id 自动采集脚本**：`scripts/collect_env_id.sh`（uname / sw_vers / sysctl / rustc -V / cargo tree 合成 id），实测时一键生成登记条。~~ → ✅ 已落（`scripts/collect_env_id.sh`，macOS + Linux 兼容）
 
 - 2026-09-08：新增全部 Cargo 依赖升级分包的最终锁文件与验证入口；不替代 C5 / 现场验收。
+- 2026-09-09：登记S-48 A2已提交与A3a共享权限归位的本地门、root评审和证据边界；未接生产或验证Orin。

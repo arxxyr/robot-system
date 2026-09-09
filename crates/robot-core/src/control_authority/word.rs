@@ -14,7 +14,7 @@
 //! | 18–23 | 六类 inhibit（与 `hard_rt_ctrl::inhibit` 同值左移 18 位） |
 //! | 24–63 | 40 位 permission epoch |
 
-use robot_core::executor_ctrl::OutputSafetyState;
+use crate::executor_ctrl::OutputSafetyState;
 
 use super::{InhibitSet, Phase};
 

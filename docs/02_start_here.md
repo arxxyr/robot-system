@@ -20,7 +20,7 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     C1–C5 与S-45软件已评审提交；S-46本地通过、Orin wire4满FAIL；S-48 A1已提交，A2权限原语本地门与root评审通过，A3双队列待总装
+当前步骤:     C1–C5 与S-45软件已提交；S-46本地通过、Orin wire4满FAIL；S-48 A1/A2已提交，A3a共享权限归位core本地门与root评审通过，A3双队列待总装
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -67,6 +67,9 @@ A1先独立实现Clear文件事务与恢复，已通过28个模块入口、7项�
 24项旧latch回归和3项编译失败文档测试；全workspace fmt/Clippy零警告。
 A2独立原子权限模块已通过48项模块测试、13项compile-fail、16项默认公开验收，
 debug/release各21项真实guard验收与A1回归；root核验源码和原始证据后批准。
+A2已提交`dee67fa`。A3a仅将该模块归位robot-core并由s0重导出同一模块，
+方便后续adapter交接强类型租约；18道本地门通过，root已核语义等价、唯一计数器、
+生产feature边界及源码身份。完整计数见10_verification与H包，不重复相加。
 此时仍未接生产启动或IPC，双队列与磁盘writer尚未总装；不得称优先级问题已修复。
 
 C5 证据保留 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与

@@ -90,7 +90,9 @@ rt_guard = ["robot-core/rt_guard", "dep:assert_no_alloc"]
 #   link 本 feature。详 `crates/robot-s0/src/freeze_hook.rs` 模块 doc。
 test-freeze-hook = []
 # 通信故障验收专用；与 freeze 开关独立，所有生产组合均不启用。
-test-comm-fault-hook = []
+# S48 A3a：显式转发 robot-core 同名特性（control_authority 验收构造入口）；
+# 仍不进 default / rt_guard / 任何机器人组合。
+test-comm-fault-hook = ["robot-core/test-comm-fault-hook"]
 
 [dependencies.assert_no_alloc]
 workspace = true

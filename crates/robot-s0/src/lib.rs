@@ -46,7 +46,8 @@ pub mod comm_fault_observation;
 #[cfg(feature = "test-comm-fault-hook")]
 pub mod comm_fault_trace;
 pub mod config_loader;
-pub mod control_authority;
+// S48 A3a：权限原语本体已归位 robot-core；此处直接重导出同一模块，不留复制实现。
+pub use robot_core::control_authority;
 // v0.5 候选 E 段(9)：真机部署件（guard / preflight / provision）。纯逻辑不加
 // feature 门——AC-E16/E21/E22 的 unit 判据必须在默认 gate 内跑到；真串口实现
 // 与 `xlerobot_deploy` bin 才由 `xlerobot-real` 守门（详 deploy/mod.rs doc）。
@@ -78,6 +79,38 @@ pub mod state_machine;
 // 本 crate 不再持副本；s0_daemon 直接调 robot_health。
 pub mod watchdog;
 pub mod worker_stop;
+
+/// S48 A3a：唯一依赖本 crate 内部 `hard_rt_ctrl::inhibit` 常量的位兼容断言。
+/// 这些常量是 `pub(crate)`，外部公开验收无法引用，故保留在本 crate 的单测内。
+#[cfg(test)]
+mod control_authority_inhibit_compat {
+    use crate::hard_rt_ctrl::inhibit;
+    use robot_core::control_authority::{InhibitReason, InhibitSet};
+
+    #[test]
+    fn inhibit_bits_match_the_existing_serial_reasons() {
+        assert_eq!(InhibitReason::CommFault.bit(), inhibit::COMM_FAULT);
+        assert_eq!(InhibitReason::AdapterFault.bit(), inhibit::ADAPTER_FAULT);
+        assert_eq!(InhibitReason::StopFailed.bit(), inhibit::STOP_FAILED);
+        assert_eq!(InhibitReason::Converging.bit(), inhibit::CONVERGING);
+        assert_eq!(InhibitReason::FaultPending.bit(), inhibit::FAULT_PENDING);
+        assert_eq!(InhibitReason::Boot.bit(), inhibit::BOOT);
+        let set = InhibitSet::from_bits(inhibit::BOOT | inhibit::COMM_FAULT).unwrap();
+        assert_eq!(
+            set.reasons().collect::<Vec<_>>(),
+            vec![InhibitReason::CommFault, InhibitReason::Boot]
+        );
+        for reason in InhibitReason::ALL {
+            assert_eq!(
+                reason.is_releasable(),
+                matches!(
+                    reason,
+                    InhibitReason::Boot | InhibitReason::Converging | InhibitReason::FaultPending
+                )
+            );
+        }
+    }
+}
 
 #[cfg(test)]
 mod post_e_acceptance;

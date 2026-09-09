@@ -1,7 +1,10 @@
 //! S48 A2 控制权限原语：单个 `AtomicU64` 权威域上的同域 CAS，令牌化 Enable /
 //! Clear 生命周期、inhibit 解除、有限 typed 安全转换与普通 IO 租约。
 //!
-//! 本模块只提供独立原语与测试，**尚未接入生产控制链**。A3 必须一次替换旧
+//! 本模块只提供独立原语与测试，**尚未接入生产控制链**。S48 A3a 起本体归位
+//! `robot-core`（只用标准库原子与既有 `executor_ctrl` 类型，不增加 runtime
+//! 依赖），`robot-s0::control_authority` 直接重导出同一模块，以便 adapter 侧的
+//! `PreemptProbe` 后续能强类型交接 `NormalIoLease`。A3 必须一次替换 s0 旧
 //! `safety_word`、`safety_latched`、`inhibit` 的全部写者与读取点后它才成为权威；
 //! 生产迁移之前，这里的任何许可都不代表真实机器人已被授权。本模块不执行任何
 //! 文件或中间件操作：Finalize / Cleanup 许可只是调用方下一步的文件义务，
@@ -51,7 +54,7 @@
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use robot_core::executor_ctrl::{EStopOutcome, OutputSafetyState};
+use crate::executor_ctrl::{EStopOutcome, OutputSafetyState};
 
 #[cfg(test)]
 mod tests;
@@ -258,7 +261,7 @@ pub enum AuthorityInitError {
 /// 只读 `Copy` 快照；不能构造任何 owner 或执行许可。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::{AuthoritySnapshot, EnableOwner};
+/// use robot_core::control_authority::{AuthoritySnapshot, EnableOwner};
 /// fn forge(snapshot: AuthoritySnapshot) -> EnableOwner {
 ///     EnableOwner { domain: snapshot.domain, epoch: snapshot.epoch.get() }
 /// }
@@ -396,12 +399,12 @@ pub struct SafetyTightened {
 /// Enable 事务的唯一 owner；非 `Clone`，按值消费。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::EnableOwner;
+/// use robot_core::control_authority::EnableOwner;
 /// fn duplicate(owner: EnableOwner) { let _ = owner.clone(); }
 /// ```
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::{ControlAuthority, EnableOwner};
+/// use robot_core::control_authority::{ControlAuthority, EnableOwner};
 /// fn retire_twice(authority: &ControlAuthority, owner: EnableOwner) {
 ///     let _ = authority.retire_enable(owner);
 ///     let _ = authority.retire_enable(owner);
@@ -430,7 +433,7 @@ impl EnableOwner {
 /// 视图不能提交或退休事务：
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::{ControlAuthority, EnableStartView};
+/// use robot_core::control_authority::{ControlAuthority, EnableStartView};
 /// fn commit_with_view(authority: &ControlAuthority, view: EnableStartView) {
 ///     let _ = authority.commit_enable(view);
 /// }
@@ -456,7 +459,7 @@ impl EnableStartView {
 /// 唯一执行令牌；覆盖整个真实 adapter 动作（含多个 wire 事务）。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::EnableExecution;
+/// use robot_core::control_authority::EnableExecution;
 /// fn duplicate(execution: EnableExecution) { let _ = execution.clone(); }
 /// ```
 #[derive(Debug)]
@@ -490,7 +493,7 @@ impl EnableExecution {
 /// 执行视图；只能用于 [`NormalIoIntent::EnableStep`]，不能完成或退休事务。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::{ControlAuthority, EnableExecutionView, EnableResult};
+/// use robot_core::control_authority::{ControlAuthority, EnableExecutionView, EnableResult};
 /// fn finish_with_view(authority: &ControlAuthority, view: EnableExecutionView) {
 ///     let _ = authority.finish_enable(view, EnableResult::Succeeded);
 /// }
@@ -549,7 +552,7 @@ pub struct EnableRetired {
 /// Clear 事务 Preparing 阶段的唯一 owner。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::ClearPendingOwner;
+/// use robot_core::control_authority::ClearPendingOwner;
 /// fn duplicate(owner: ClearPendingOwner) { let _ = owner.clone(); }
 /// ```
 #[derive(Debug)]
@@ -581,7 +584,7 @@ impl ClearPendingOwner {
 /// Clear 已逻辑提交（Latch 已清），等待文件收尾的唯一 owner。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::ClearFinalizingOwner;
+/// use robot_core::control_authority::ClearFinalizingOwner;
 /// fn duplicate(owner: ClearFinalizingOwner) { let _ = owner.clone(); }
 /// ```
 #[derive(Debug)]
@@ -667,7 +670,7 @@ pub enum RepairTarget {
 /// 修复许可：内含唯一 owner、目标与采样 epoch，不另返可与 owner 错配的 decision。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::RepairPermit;
+/// use robot_core::control_authority::RepairPermit;
 /// fn duplicate(permit: RepairPermit) { let _ = permit.clone(); }
 /// ```
 #[derive(Debug)]
@@ -706,7 +709,7 @@ pub enum CleanupKind {
 /// 文件清理许可；只是调用方的文件义务，不代表 marker 已删除。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::CleanupPermit;
+/// use robot_core::control_authority::CleanupPermit;
 /// fn duplicate(permit: CleanupPermit) { let _ = permit.clone(); }
 /// ```
 #[derive(Debug)]
@@ -753,7 +756,7 @@ pub struct ClearRetirement {
 /// 单原因解除许可；过期后必须重走捕获与真实义务复核。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::InhibitReleasePermit;
+/// use robot_core::control_authority::InhibitReleasePermit;
 /// fn duplicate(permit: InhibitReleasePermit) { let _ = permit.clone(); }
 /// ```
 #[derive(Debug)]
@@ -805,7 +808,7 @@ pub enum SafetyOperation {
 /// 真实操作开始时采样的私有上下文（domain / epoch / Phase / safety）；非 `Clone`。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::SafetyObservation;
+/// use robot_core::control_authority::SafetyObservation;
 /// fn duplicate(observation: SafetyObservation) { let _ = observation.clone(); }
 /// ```
 #[derive(Debug)]
@@ -878,7 +881,7 @@ pub enum NormalIoIntent {
 /// 普通 IO 租约；唯一释放出口消费它，只清 `NORMAL_IO_ACTIVE`。
 ///
 /// ```compile_fail
-/// use robot_s0::control_authority::NormalIoLease;
+/// use robot_core::control_authority::NormalIoLease;
 /// fn duplicate(lease: NormalIoLease) { let _ = lease.clone(); }
 /// ```
 #[derive(Debug)]
@@ -1039,8 +1042,9 @@ impl ControlAuthority {
         Self::with_counter(&NEXT_DOMAIN, init, PermissionEpoch::INITIAL)
     }
 
-    /// 指定初始权限 epoch 的构造入口，仅供模块测试与 `test-comm-fault-hook`
-    /// 验收夹具逼近 `MAX`；生产组合不编译此入口，默认构造固定 epoch = 1。
+    /// 指定初始权限 epoch 的构造入口，仅供模块测试与本 crate 默认关闭的
+    /// `test-comm-fault-hook` 验收特性（robot-s0 同名特性显式转发）逼近 `MAX`；
+    /// 生产组合不编译此入口，默认构造固定 epoch = 1。
     /// 构造时不存在任何令牌或 owner，所以起始 epoch 不会撤销或复活任何权限。
     #[cfg(any(test, feature = "test-comm-fault-hook"))]
     pub fn new_with_permission_epoch(
