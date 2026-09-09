@@ -159,11 +159,24 @@ W0.1只读双份核验已独立 **APPROVED_SOFTWARE_SCOPE**：base `1b21457`，r
 已冻结终点相同的派生记录，非本包开发前采样；原轮和审计名称格式误判原样保留。
 FIFO回收不承诺OS硬墙钟上限；没有生产调用方或Orin验证。
 
-后续方案新增验证要求（**Plan Approved，尚无运行PASS**）：W2a核唯一Claim、真实锁目标配对、
-join/standby实例绑定、Created修复续段和监督候选竞争。容量O1用可控无并发夹具
+W2a纯writer模块已独立 **APPROVED_SOFTWARE_SCOPE**：base `81c5c54`，round6
+七门全零，344项来源`93ec062c…42aa8`前后及当前一致，恰10文件变化。
+模块41/公开19/doc10，workspace 1877通过、1既有ignored；实际euid1000，含子入口，
+不重复相加为场景数。唯一Claim、锁目标配对、真实join凭证、修复续段与监督候选
+已经验证；增量评审闭合完成读取、原Pending/公告截止、空轮不刷新、同目录实际再锁
+及权限恢复。root独立核门/逐名日志/范围，见H包`local/s48/a3e/review.md`。
+旧回归的夹具失败/空过滤/未复现限制保留；S46改动排除本提交，无生产接线或Orin验证。
+
+后续方案新增验证要求（**Plan Approved，尚无运行PASS**）：容量O1用可控无并发夹具
 钉3840/7936总len门；长负载仅对Normal cache Capacity核该阈值，wire/queue等
 提前失败按真实原因记录，不能充当缓存EXPECTED_RED。peer额度与实际业务忙分开，
 SetEnabled新domain须测旧新schema的实际未知数值行为。详PLAN P.6.14.8–10。
+
+优先级原语函数分包r4已独立Plan Approved（P.6.14.12），尚无源码/运行PASS。
+新增门须核外部crate公开BusLease的真实获取、错域返原凭证、正确归还及Drop不释放；
+固定域槽的两轮复用、take/withdraw竞争与Execution重复读取；目标原子约束不等于
+wait-free。P-M修改build.rs须附实际workspace --timings报告；旧v0依赖/默认尾字段/
+未知数值和旧builder兼容仍需真实测试。专项门不能代替每包fmt-all/workspace Clippy。
 
 后续生命周期r6及监督r4仅获独立**方案批准**，不算新增运行PASS。实施后必须分别
 验证请求许可单次转移/释放、早回复与E2未知占位、已判超时不变迟到成功、真实满

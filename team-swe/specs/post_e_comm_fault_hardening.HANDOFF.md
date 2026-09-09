@@ -7,7 +7,7 @@
 用户最新要求优先节省root token，并允许多个Claude或Codex子agent并行。
 用户进一步明确：cc-claude完成实现、测试和自查后，必须由root或独立Codex子agent
 作最终评审；Claude交叉检查只作为前置检查，不能代替最终评审和提交门。
-当前Cargo和W0.1源码归writer Claude独占；root只做最终决策、阻断项处理与验收提交，
+当前Cargo和W2a源码归writer Claude独占；root只做最终决策、阻断项处理与验收提交，
 详细方案和独立复核可以委派。旧开发agent保持停止，新并行角色见下。
 A1验证基线为`ce61623436138342b6a2d234b10bada71d6877ca`，分支
 `feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46源文件
@@ -29,9 +29,20 @@ W0.1只读pair已获APPROVED_SOFTWARE_SCOPE：round2七门全零，335项完整�
 恰三文件变化；独立源码/证据终审及root范围核验通过，证据w01/review.md和cc/round2。
 起点为事后重建的派生记录，与W1冻结结束清单逐字相同；不冒称开发前实际采样。
 round1中止与审计v1名称格式误判均保留。下一包W2a纯模块r4获root方案批准，详P.6.14.9；
-待W0.1提交后按a3e/cc_claude_task.md实施。容量r3及root精确拒绝分类/O1澄清已获合同批准，
+W0.1已提交`81c5c547e5906231711d15603616f98c6cfeed61`，现按a3e/cc_claude_task.md实施。容量r3及root精确拒绝分类/O1澄清已获合同批准，
 详PLAN P.6.14.10；后续生产总装及网关函数实施仍待评审。
 W2b关闭/join机制r3已独立方案批准并获root采纳，详P.6.14.11；待W2a提交后实施。
+W2a已获APPROVED_SOFTWARE_SCOPE：round6七门全零、344项来源前后及当前一致，
+恰10文件变化；模块41/公开19/doc10，workspace 1877通过、1既有ignored。
+独立Codex源码终审与root七门/具名/范围核验均通过，证据a3e/review.md、
+independent_source_review_round6.md、root_final_evidence_receipt_round6.json。
+round4/5源码问题及测试验收缺口已修，旧快照与原始失败轮保留；R1b前测为夹具失败，
+R4调度反例、R6首轮空过滤、R7仅后测均按独立回归报告准确记录，不伪造历史通过。
+S46七文件不改且排除本提交；没有生产调用方、Orin或服务操作。下一包W2b按批准r3
+实施，待实际W2a提交后绑定base。cc-claude继续开发/测试，root或独立Codex负责终审。
+优先级函数r4、P-M任务r2与P-T任务r2已获方案批准；W3a整体r7及两个A2专项已独立
+Plan Approved并获root采纳，详P.6.14.12–13。P-G1任务仍在增量复审，W3生产接线另审。
+后续队列见target/post_e_h2_rt/s48/root_next_package_queue.md，不以原语门冒充总装通过。
 
 最新用户决定：基础控制与普通工作分两个有界队列，每轮先高后普通；每项必须
 非阻塞推进。关节目标合并最新值，急停/Disable可否决旧Enable/Clear的恢复权限。
@@ -96,8 +107,8 @@ timing均通过。独立证据审计核1411文件，result SHA 2e0d420b…c3；r
 independent_evidence_receipt.json、cc/sixth及sixth_supplement。首四轮FAIL与第五轮旧
 源码PASS保留；没有把后者冒充最终通过。当前软件批准不包含Orin或双队列总装。
 
-当前并行编排：Claude PTY67537/PID91744仅在target准备S46测试RAII补丁，不应用、不Cargo；writer
-Claude PTY70639/PID259899独占源码和Cargo，W0.1冻结待提交，随后W2a；priority方案Claude
+当前并行编排：Claude PTY67537/PID91744仅在target预审W2a旧快照并修订W3a方案，不应用、不Cargo；writer
+Claude PTY70639/PID259899独占源码和Cargo，W0.1已提交，现实施W2a；priority方案Claude
 PTY99320/PID260261。三会话已核模型
 claude-fable-5-1、effort=max。恢复时核实际/proc和会话状态，不能因观察超时重启。
 紧凑进度脚本target/post_e_h2_rt/s48/root_team_watch.py；不读thinking或整屏刷新。

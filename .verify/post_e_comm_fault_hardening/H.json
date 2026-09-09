@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_W01_APPROVED_W2A_PLAN_APPROVED",
-  "resume_from": "HANDOFF：W1本地14门、独立源码/证据终审及root范围核验通过，按阶段提交；下一步W0.1→W2a→W2b，生产总装函数方案另审",
+  "work_state": "S48_W2A_APPROVED_W2B_NEXT",
+  "resume_from": "HANDOFF：W2a七门与独立源码/root证据终审通过，按阶段提交；下一包W2b，W3a协调原语方案已批准，生产总装另审",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_W01_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "W01_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_W2A_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "W2A_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
-  "scope": "W1同目标启动锁/provision/事务恢复获本地软件批准；W0.1/W2a/W2b及监督/生命周期/容量仅方案批准。未运行本包Orin，旧H2/S46 FAIL保留；右未测，D15 OPEN，deployable=false。",
+  "scope": "W2a无生产调用方的writer原语本地验收通过；W2b及W3a为已批后续方案。未运行本包Orin，H2/S46旧FAIL保留；右未测，D15 OPEN，deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -830,14 +830,94 @@
         "root_review_sha256": "45265b6a41ce954698b14df2684ff33eab64135ac7f8960c5e2b69bb051ab1af",
         "root_scope_receipt": "local/s48/w01/root_scope_receipt.json",
         "root_scope_receipt_sha256": "e0fb05870b8af82d40977d928036c44310622c224b279827dc31977ed424bf20",
-        "archive_boundary": "W0.1两轮原始记录、派生起点说明、源码/证据/root终审完整保留；活动priority r3与S46补丁预审排除，详index"
+        "archive_boundary": "W0.1两轮原始记录、派生起点说明、源码/证据/root终审完整保留；活动priority r3与S46补丁预审排除，详index",
+        "commit": "81c5c547e5906231711d15603616f98c6cfeed61"
       },
       "w2a": {
-        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "status": "APPROVED_SOFTWARE_SCOPE",
         "plan": "P.6.14.9",
         "root_approval": "local/s48/a3/root_w2_execution_plan_r4_approval.md",
         "root_approval_sha256": "a0040f4517b89aab5201482348bf4c9c0241bf72d84d3badd6e898232c7e8eb1",
-        "production_activation_approved": false
+        "production_activation_approved": false,
+        "base_commit": "81c5c547e5906231711d15603616f98c6cfeed61",
+        "source_hash": "93ec062cfc2c188a3d8a5750adf152891ed30f5e09612c7a0d44b813ace42aa8",
+        "source_input_count": 344,
+        "frozen_sources_sha256": "3147af0ab689ae815a995a3b177218f01eb09140856b8b2bdc9cb55fe43635dc",
+        "frozen_source_count": 10,
+        "source_files": {
+          "crates/robot-s0/src/latch_writer.rs": "f1ec4371dfa023fae11e8d025a85487f1f36304d34f7ddb23532edfc9c0b39fa",
+          "crates/robot-s0/src/latch_writer/announce.rs": "75fae69aee19c37c1748219f2b0ea5032c0658bbe1fbe010ed601b27224b9611",
+          "crates/robot-s0/src/latch_writer/core.rs": "c5a2f35c12b28e2db3ae38f408c90253fca4932c860bb05766e3550c77309c7e",
+          "crates/robot-s0/src/latch_writer/obligation.rs": "8d0e1a8559e39bbcbeefe3ed22020f7d28886daf5ba2e623506ddff2d704dba2",
+          "crates/robot-s0/src/latch_writer/pairing.rs": "2043ab798bb4c82f70d751410f253d74b1e8dee6e9888b45cd072ff4e24a214f",
+          "crates/robot-s0/src/latch_writer/progress.rs": "cd101031b9520f42bcf47b96c40e9f9a2b5712a8ff088ee2c6f5c1baa7987b68",
+          "crates/robot-s0/src/latch_writer/protocol.rs": "9e3cbff8c20de159ecad45fcd3671444274d6fc73e9f82b1f40b5490eb4ca33c",
+          "crates/robot-s0/src/latch_writer/supervision.rs": "0522a77f43c7482b525655343179bab9cef3304a1e847e670b95d4fef4f4f593",
+          "crates/robot-s0/src/lib.rs": "cfdf23e6940590d124db781b727f5760472f13c81232a4d1909e6ce0a18ec418",
+          "crates/robot-s0/tests/latch_writer_acceptance.rs": "b7ddd3458b099b4ff7ce8ecbe5a468969d4700512ea5722ad52e7c3d4c1c5e8d"
+        },
+        "result_sha256": "10354ccd5f7d176eb6f30037a8da996afa1809a6653f6150f2b2be8d63b16347",
+        "final_round": "round6",
+        "gates_passed": 7,
+        "executor": "cc-claude claude-fable-5-1 / max",
+        "final_reviewers": [
+          "Codex writer_final_review",
+          "root"
+        ],
+        "executor_identity": {
+          "uid": 1000,
+          "euid": 1000,
+          "gid": 1000,
+          "egid": 1000,
+          "pid": 1092857,
+          "hostname": "FRIDAY"
+        },
+        "counts": {
+          "test_writer_unit": {
+            "harness": 1,
+            "passed": 41,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_writer_acceptance": {
+            "harness": 1,
+            "passed": 19,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_doc": {
+            "harness": 1,
+            "passed": 10,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_workspace": {
+            "harness": 51,
+            "passed": 1877,
+            "failed": 0,
+            "ignored": 1
+          }
+        },
+        "validation": "LOCAL_PASS",
+        "hardware_access": false,
+        "orin_validation": "NOT_RUN",
+        "production_wiring": false,
+        "scope": "无生产调用方的writer原语；S46工作树基线保持且排除本提交",
+        "limits": [
+          "计数含子入口，专项与workspace不重复相加",
+          "R1b前测为夹具/前置失败；R4未复现旧失败；R6首轮空过滤无效；R7仅后测",
+          "停止测试中的最终OS回收不承诺硬墙钟上限",
+          "未迁移生产权限/双队列/磁盘writer，不关闭D15"
+        ],
+        "source_review": "local/s48/a3e/independent_source_review_round6.md",
+        "source_review_sha256": "984f2aeeb4b9d52934306ad875c389c109274dec68b4a27b42a9b4af35fb5b3f",
+        "evidence_receipt": "local/s48/a3e/root_final_evidence_receipt_round6.json",
+        "evidence_receipt_sha256": "008bacc1cb44623507f050cfc9bbb05bad4492f49bb8599def08ef4877576209",
+        "named_receipt": "local/s48/a3e/root_named_and_delta_receipt_round6.json",
+        "named_receipt_sha256": "143654cf57484c25b09c7e2865d908b5f12e939311e508ff9555db5ea50c7c9f",
+        "root_review": "local/s48/a3e/review.md",
+        "root_review_sha256": "5d8d0278daac59f328f1d6a86cf3c949c9b263e6c30af39b8bb8c63066a3c211",
+        "archive_boundary": "W2a最终源码/证据/root终审与旧轮完整保留；已冻结W3a/P-M/P-T及P-G1准备稿纳入，仍在编写的P-G1任务r2终审明确排除，见archive index；不构成生产接线批准"
       },
       "w2b": {
         "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
@@ -865,6 +945,20 @@
         "plan": "P.6.14.10",
         "root_approval": "local/s48/a3/root_capacity_policy_r3_approval.md",
         "root_approval_sha256": "bca97574a314e59f7981ae98e53f90198021578bef36461bfc7f98add9dabc16",
+        "production_activation_approved": false
+      },
+      "priority_primitives": {
+        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "plan": "P.6.14.12",
+        "root_approval": "local/s48/a3/root_priority_execution_plan_r4_approval.md",
+        "root_approval_sha256": "0040b79ea676e0fba7407d8c5501e8dee94a42a065d7ad29747be1663ddd40f7",
+        "production_activation_approved": false
+      },
+      "w3a": {
+        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "plan": "P.6.14.13",
+        "root_approval": "local/s48/a3/root_w3a_coordination_plan_r7_approval.md",
+        "root_approval_sha256": "b142526eb0249b2bf2fb5b3169ad64acf8ebc7f70595d7f165a4344107370f03",
         "production_activation_approved": false
       }
     }
@@ -1020,19 +1114,19 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2245,
-    "sha256": "8c02306bd31cd127b12eb76e06df4bab8cc27b1745930c851eebedcedac615ea"
+    "lines": 2298,
+    "sha256": "631244476251e6b40b88455197661601ad13208d794cec8e5975f8c16d96ff3c"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "0b45f4d6156aa1d69de10fed58a7c908e221c979f597e07249fc4d1082ede2e2",
-    "bytes": 24928256,
-    "members": 7092,
-    "logical_bytes": 886711640,
+    "sha256": "4e05517332d6e0b5dcdff37737e249f1558014788994828628bd75412c9fdfd5",
+    "bytes": 27732104,
+    "members": 7512,
+    "logical_bytes": 894473245,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-09T10:23:10.161449+00:00",
+  "updated_at": "2026-09-09T12:58:58.723557+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",

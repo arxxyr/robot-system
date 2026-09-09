@@ -20,7 +20,7 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     C1–C5 与S-45软件已提交；S-46本地通过、Orin wire4满FAIL；S-48 A1/A2/A3a/A3b已提交，A3c/W0独立验收通过，W1启动锁与恢复待接线，A3总装仍待闭合
+当前步骤:     C1–C5/S-45与S-48 A1/A2/A3a/A3b/W0/W1/W0.1已提交；W2a本地验收及独立终审通过，下一包W2b；S-46 Orin wire4满FAIL，双队列与生产总装仍待完成
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -71,10 +71,12 @@ A2已提交`dee67fa`。A3a仅将该模块归位robot-core并由s0重导出同一
 方便后续adapter交接强类型租约；18道本地门通过，root已核语义等价、唯一计数器、
 生产feature边界及源码身份。完整计数见10_verification与H包，不重复相加。
 A3b快照并发修复通过22道本地门及独立源码/证据评审，已提交`d67752d`。
-A3c/W0按PLAN P.6.14.5完成可重试的文件凭证，七道本地门和独立源码/证据终审通过；
-文件操作失败时保留实际资源与重试责任。W1启动锁与恢复的函数级方案已批准，
-实施等待W0按阶段提交。新权限和文件协议仍未接生产启动或IPC，双队列与磁盘writer
-尚未总装；不得称优先级问题已修复。当前分工与恢复入口见HANDOFF。
+A3c/W0文件凭证已提交`8624f27`，W1启动锁与恢复已提交`1b21457`，W0.1只读双份核验
+已提交`81c5c54`。W2a独立writer模块已通过本地七门与独立源码终审，root另核完整
+344项来源及逐项日志；已修复阶段戳/公告顺序、断链观测与测试资源和并发问题，
+下一包为W2b关闭/join机制。W3a协调原语方案已批准，见PLAN P.6.14.13。
+新权限尚未成为生产权威，双队列与唯一磁盘writer尚未总装；不得称优先级问题已修复。
+当前分工、最新门与提交证据统一见HANDOFF。
 
 C5 证据保留 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与
 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)；

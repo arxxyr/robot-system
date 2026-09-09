@@ -2124,7 +2124,7 @@ root采纳，见`root_w01_pair_approval.md`。实施依赖W1源码终审、质�
 起点为与W1真实结束清单相同的派生记录，非本包开发前采样；原轮与审计误判保留。
 未接生产调用方，未运行Orin；此通过不替代W2a与生产总装验收。
 
-#### P.6.14.9 W2a writer纯模块（函数方案批准，待W1与W0.1提交）
+#### P.6.14.9 W2a writer纯模块（本地独立验收通过）
 
 函数方案`local/s48/a3/cc_w2_execution_plan_r4.md` SHA
 `90769d166516c98fbd3158bc9028ff3ea784e409749cc912e4d68573082105a3`已由root
@@ -2142,6 +2142,11 @@ Claim在Active时禁止重复领取、跨实例不能完成；连续未settled�
 仍必要的独立机制，重复W2c删除；生产权限迁移、实际身份退休、ACK、READY监督、
 关闭D/90、8个worker与观测、EStop/Clear/退出唯一磁盘writer在W3统一激活。
 后续详细函数实现仍另审，不能把此依赖边界当作W3实施批准。
+
+W2a最终round6在base `81c5c54`完成七门并通过独立源码终审与root证据核验：
+344输入、10文件；模块41/公开19/doc10、workspace1877通过及1既有忽略。
+R1–R7回修和round5测试缺口已闭合，完整限制见`local/s48/a3e/review.md`；
+无生产调用方/Orin操作，下一包W2b按已批准合同实施。
 
 #### P.6.14.10 容量策略与S46新口径（合同批准，函数实施另审）
 
@@ -2183,7 +2188,49 @@ Plan Approved并获root采纳，见`independent_w2b_r3_review.md`及`root_w2b_r3
 既有stop/Drop与daemon不改；真实关闭顺序、main全出口、D/90及观测在W3激活。
 实施须W2a先独立验收提交并核最终API，源码和证据另行终审；本节无运行PASS。
 
+#### P.6.14.12 优先级原语函数分包（Plan Approved，2026-09-09）
+
+函数方案`local/s48/a3/cc_priority_execution_plan_r4.md` SHA
+`f96375336a67785e2acb5f9128987ea9e69c692635c4522b122cf3b415951781`已独立
+Plan Approved，root采纳见`root_priority_execution_plan_r4_approval.md`；批准限原语分包。
+P-M/P-T准备schema与显式RR profile；P-G1准备类缓存、队列、信用及回复分类；
+P-S1/P-L1准备可信peer准入、双队列和心跳新鲜性；P-A1准备typed槽与真实总线租约桥。
+旧生产API和调用路径保留，各包另核真实基线、运行质量门并独立终审提交。
+
+P-M为schema唯一owner，W3a只引用最终生成类型；旧v0依赖一并冻结，旧builder兼容。
+SetEnabled保留0–9，追加SupersededByDisable=10/QueueFull=11/Superseded=12，
+Shutdown继续PreemptedByShutdown=7。P-M修改build.rs须附实际workspace --timings报告。
+总线桥按值持有真实NormalIoLease，按class/intent受检构造、跨域拒绝返原凭证，
+外部crate公开API夹具验证，不暴露raw或Drop自动释放。Start槽为固定域+原子epoch，
+take/withdraw在同字竞争后可复用；Execution安装/重复读取/清除不消费权限视图。
+目标原子能力编译期约束只证明lock-free，RT零分配门保留，不宣称wait-free。
+
+S46现有七件工具/回归文件须在后续修改这些路径前独立评审提交；旧wire4 FAIL与
+长测来源保留，不算修复成功，不成为W0.1/W2a/W2b前置。无调用者模块可按依赖推进。
+W3-P与W3统一激活gateway/S0/S1协议、profile和真实退休，并同时迁移权限/唯一writer/
+监督/ACK；不支持新gateway配缺退休字段旧S0的生产组合。完整W3函数接线另审，
+本节不批准硬件操作或新负载PASS；详既有容量/生命周期合同及root四项裁决。
+
+#### P.6.14.13 W3a Clear协调原语（Plan Approved，待W2a/W2b）
+
+函数稿`local/s48/a3/cc_w3a_coordination_plan_r7.md` SHA
+`f16f519bd812c992bdf6c6c77a947c850b0f862f7ea0f9876e17a6b087117736`已获
+独立增量复审及root采纳，见`root_w3a_coordination_plan_r7_approval.md`。
+只批准无生产调用者的协调/health模块及A2两个专项接口：abandon_repair零改字返证；
+retire_unprepared_clear仅对完整匹配的Prepare前置拒绝，CAS只清Preparing并保留最新保护位。
+Cleanup与Unprepared各经真实A2退休才回包，后者无文件完成事实、不清EStop义务。
+
+每tick单槽暂存最多一条完成，先消费身份匹配的完成和可执行退休，再判剩余责任
+WriterGone，最后统一派发。真实claim计一次不回滚；AwaitRetry改目标仍计共享8次，
+首次正常修复/重同步按显式来源表处理。所有派发失败保留原owner及具名原因。
+实施后须真实mailbox反例和十道门，不能以方案批准替代运行PASS；schema仍由P-M
+负责，daemon/IPC/权限权威/ACK/worker8/磁盘生产切换继续留完整W3另审。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
+
+S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0
+步骤只作既有模板；W3实际接线后必须按真实路径/unit补齐整套SHA、安装/停止顺序
+及回滚清单并独立评审，不能只回滚S0后声称整套兼容。本轮不执行部署。
 
 改两份arm service：`RestartPreventExitStatus=86 87 89`、guard `--`后加
 `--notify-mode required`，注释解释88可重启及supervisor边界；保留guard六步、
@@ -2231,7 +2278,8 @@ SupplementaryGroups=dialout；左xlerobot_left/left_arm，右xlerobot_right/righ
 | C5 独立验收/资产 | P.6剩余门、主agent文档/Archive | reviewer按AC复核，软件与现场分开判 | 未满足硬门保持未完成 |
 
 每组任何逻辑偏离先报主agent Reverse Sync，先改Spec/Plan再代码；纯编译/格式修复可
-自行修。任何组未跑fmt+fresh clippy不commit；不push、不部署由中间状态绕过整体
+自行修。任何组未实际跑fmt+clippy不commit；同一最终源码的有效缓存命中（Fresh）
+仍为通过，不为制造Checking输出执行cargo clean。不push、不部署由中间状态绕过整体
 验收。`ManipularAdapter`等冻结trait保持0改；preempt构造服务新增接口是此Plan评审项。
 
 round 1集中回修闭合项（本稿冻结待round 2，不带未定行为进入Execute）：
