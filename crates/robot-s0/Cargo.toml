@@ -108,3 +108,9 @@ workspace = true
 [[test]]
 name = "comm_fault_startup"
 required-features = ["test-comm-fault-hook"]
+
+# S48 A3d / W1：无硬件夹具验证 xlerobot_deploy provision 子命令的 89 / 1 / 71 映射；
+# 与 bin 同受 xlerobot-real 约束（默认 gate 不编译，独立门显式启用该 feature）。
+[[test]]
+name = "xlerobot_deploy_provision"
+required-features = ["xlerobot-real"]

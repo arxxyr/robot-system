@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 
 use robot_s0::deploy::guard::{GUARD_STOP_EXIT_CODE, GuardConfig, GuardExit, build_s0_args};
 use robot_s0::deploy::types::DeployArm;
+use robot_s0::latch_lock::LATCH_LOCK_HELD_EXIT_CODE;
 
 const HANDOFF: &str = "xlerobot-handoff.service";
 const ARM_UNITS: [(&str, &str); 2] = [
@@ -207,8 +208,17 @@ fn arm_units_lock_exit_86_and_both_budgets() {
             .map(|value| value.parse().expect("退出码必须为整数"))
             .collect();
         prevented.sort_unstable();
-        // 锁冲突不重启；监督器 88 必须保留 on-failure 重启路径。
-        assert_eq!(prevented, [i32::from(GUARD_STOP_EXIT_CODE), 87], "{name}");
+        // 锁冲突（87 信任锁 / 89 latch 稳定锁）不重启；1 与监督器 88 必须保留
+        // on-failure 重启路径（S48 A3d / W1：精确列表，不多不少）。
+        assert_eq!(
+            prevented,
+            [
+                i32::from(GUARD_STOP_EXIT_CODE),
+                87,
+                i32::from(LATCH_LOCK_HELD_EXIT_CODE)
+            ],
+            "{name}"
+        );
         assert_eq!(single(name, "StartLimitIntervalSec"), "60s", "{name}");
         assert_eq!(single(name, "StartLimitBurst"), "5", "{name}");
         assert_eq!(single(name, "Restart"), "on-failure", "{name}");

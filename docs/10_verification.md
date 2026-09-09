@@ -144,6 +144,28 @@ round5清单自指问题仅修清单，12件快照与旧回执逐件一致；历
 `independent_evidence_receipt_round10.json`与`cc/round10/`。fd-less凭证不宣称抗inode
 ABA；W1锁、生产恢复/IPC/双队列及writer监督仍未接线，未运行Orin，D15 OPEN。
 
+W1启动锁/恢复已独立 **APPROVED_SOFTWARE_SCOPE**：base `8624f27`，最终round3
+来源`7a3480a4…6749b`/335输入，15个冻结文件。十四门退出0：fmt、workspace及专项
+Clippy；锁单元13/公开验收10/daemon11/deploy68/五个hook目标48/W0模块42/
+旧latch24/doc4/CLI6。计数含harness子入口，不当作独立场景数；权限IO本轮euid1000，
+EINTR为注入；正常/ready等待有deadline，SIGKILL后的OS回收不承诺硬墙钟上限。
+两位Codex源码/证据终审与root范围核验通过；round1中止、round2旧评审对象保留，
+W0与S46不变。证据`local/s48/a3d/review.md`及`cc/round3/`，无Orin或服务操作。
+
+后续方案新增验证要求（**Plan Approved，尚无运行PASS**）：W0.1核绑定fd的真实
+双份值/缺失/坏值、对象拒绝、三相与零写入；W2a核唯一Claim、真实锁目标配对、
+join/standby实例绑定、Created修复续段和监督候选竞争。容量O1用可控无并发夹具
+钉3840/7936总len门；长负载仅对Normal cache Capacity核该阈值，wire/queue等
+提前失败按真实原因记录，不能充当缓存EXPECTED_RED。peer额度与实际业务忙分开，
+SetEnabled新domain须测旧新schema的实际未知数值行为。详PLAN P.6.14.8–10。
+
+后续生命周期r6及监督r4仅获独立**方案批准**，不算新增运行PASS。实施后必须分别
+验证请求许可单次转移/释放、早回复与E2未知占位、已判超时不变迟到成功、真实满
+队列及逐跳保留；监督须核阶段/截止来源、连续未settled区间CAS两种胜负与重置、
+Active异常返还义务、真实Lower ACK/逐线程stop、helper join Err、残余句柄无隐式
+阻塞Drop、预绑定备用Store只在真实join后写入且保留新Pending。历史sticky与当前
+health分开；持续失败/重投耗尽不能冒充真实退休。具体合同见PLAN P.6.14.7。
+
 C5 结论与逐项命令/日志索引为 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json)，
 对应归档为 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
 查看原始 run / 执行器时，先按 PLAN P.6.5 将证据包解到仓库根；日常验收命令仍在 PLAN。

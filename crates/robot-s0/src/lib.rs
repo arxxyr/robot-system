@@ -64,6 +64,8 @@ pub mod io_thread;
 pub(crate) mod ipc_runtime;
 pub mod ipc_thread;
 pub mod ipc_tick;
+// S48 A3d / W1：latch 目标稳定锁、共享名称校验与绑定目录 fd 的数据对象检查。
+pub mod latch_lock;
 pub mod pub_thread;
 pub mod rr_server_thread;
 pub mod rx_trust;

@@ -25,7 +25,7 @@ use robot_s0::deploy::counter::{
     MAX_CONSECUTIVE_FAILURES, acquire_instance_lock, count_path, lock_path, read_count,
 };
 use robot_s0::deploy::guard::{
-    ExecOutcome, GUARD_STOP_EXIT_CODE, GuardConfig, GuardSteps, evaluate_guard,
+    ExecOutcome, GUARD_STOP_EXIT_CODE, GuardConfig, GuardSteps, ProvisionStepError, evaluate_guard,
 };
 use robot_s0::deploy::types::DeployArm;
 
@@ -76,7 +76,7 @@ impl GuardSteps for BlockingSteps {
         }
     }
 
-    fn provision(&mut self, _cfg: &GuardConfig) -> Result<(), String> {
+    fn provision(&mut self, _cfg: &GuardConfig) -> Result<(), ProvisionStepError> {
         Ok(())
     }
 

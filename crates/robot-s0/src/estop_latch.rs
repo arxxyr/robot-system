@@ -298,35 +298,6 @@ fn save_single_atomic(path: &Path, latched: bool) -> io::Result<()> {
     save_single_inner(path, latched, false)
 }
 
-/// **严格版**单文件原子写（v0.5 候选 E 段(9)，D2 provision 专用）：
-/// tmp 写入 → file fsync → rename → **parent-dir open + fsync**，
-/// **任一步失败（含目录 open / fsync）→ 返回错误**。
-///
-/// 与 [`save_single_atomic`] 的唯一差别是目录同步的失败处理：运行期 latch
-/// 写沿用 best-effort（某些 FS 不支持 dir sync），**provision 入口**要求
-/// 掉电保证故用严格版（Spec D2 第 1 条 r7/r8）。
-///
-/// # Errors
-///
-/// 见上（io 错误原样上抛）。
-pub(crate) fn save_single_strict(path: &Path, latched: bool) -> io::Result<()> {
-    save_single_inner(path, latched, true)
-}
-
-/// **严格** parent-dir open + fsync（provision 的统一最终步骤，r9 Z2：
-/// 所有分支收敛后必经，含"双份均存在"路径）。
-///
-/// # Errors
-///
-/// 目录 open / fsync 失败原样上抛。
-pub(crate) fn fsync_parent_dir_strict(path: &Path) -> io::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "latch path has no parent"))?;
-    let dir = File::open(parent)?;
-    dir.sync_all()
-}
-
 fn save_single_inner(path: &Path, latched: bool, strict_dir_sync: bool) -> io::Result<()> {
     let parent = path
         .parent()

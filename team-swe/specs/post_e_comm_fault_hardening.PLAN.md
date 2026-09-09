@@ -1960,12 +1960,14 @@ A1全部模块/公开/原latch回归与文档反例，实际进程crash检查点
 W1方向与命名/链接边界已由Codex独立评审批准，见
 `local/s48/a3/independent_writer_w1_plan_review.md`及`root_w1_lock_contract.md`。
 实施依赖W0最终源码/证据复审通过并提交；本节不授权与W0同时修改启动恢复依赖。
+该前置已在`8624f27`完成；W1执行前置增量亦获独立批准，见
+`local/s48/a3/independent_w1_execution_preflight_review.md`，现可按本节实施。
 接口为`acquire_latch_lock(&Path) -> Result<LatchTargetLock, LatchLockError>`，由
 `latch_lock.rs`统一完成名称/锁校验；`Held`退出89，IO及配置错误退出1，不伪称被占用。
 锁所有者提供目录身份与绑定fd的数据对象检查，辅助函数对外暴露以实际调用最小化。
 daemon用锁与W0的目录身份比对后恢复；不复制W0文件算法。不改现有RX信任87与
 启动CP1/CP2退出88。独立函数级核验已通过，见
-`local/s48/a3/independent_w1_function_plan_review.md`；实施仍等待W0验收提交。
+`local/s48/a3/independent_w1_function_plan_review.md`；W0验收提交前置现已满足。
 
 **共享的名称校验**
 
@@ -2028,9 +2030,157 @@ backup0的有效崩溃状态。合法锁EINTR、CLOEXEC、竞争者不改PID、�
 范围仅锁/共用验证器、daemon恢复、provision/guard及相关回归；不接监督、writer、
 新authority或双队列。最终由Codex独立评审与必要fmt/Clippy/相关测试后才提交。
 
+执行增补（已独立批准）：provision保留D2三分支与最终目录fsync：双缺失写1/1，
+单缺失从合法现存副本补齐，双存在内容不动；有效pending留给daemon恢复。
+共享锁/名称/对象检查不等于两入口对所有缺失状态结果相同，不能将daemon的严格
+缺失策略替换成provision行为。原deploy_guard_kill与guard的真实执行次序必须回归。
+两份`xlerobot-s0-{left,right}-arm.service`的`RestartPreventExitStatus`增为
+`86 87 89`，精确列表由deploy_units验证；保留1/88及其他原有重启与看门狗语义。
+不执行服务操作。部署CLI受`xlerobot-real`约束，须另跑该feature下
+`cargo clippy --locked -p robot-s0 --bin xlerobot_deploy --features xlerobot-real -- -D warnings`，
+并用无硬件夹具验证provision CLI的新89/1和旧业务错误映射。其余Cargo均使用
+仓库rust-toolchain默认nightly；完整来源枚举包含新源码/测试/unit，不固定W0的331项。
+
+必要清理增补：provision转入绑定目录fd后，允许删除`estop_latch.rs`已无调用者的
+`save_single_strict`与`fsync_parent_dir_strict`；不改旧runtime写序、loader自愈、
+`save_single_inner`或旧测试，不保留删除历史占位注释。独立范围核验见
+`local/s48/a3d/w1_scope_cleanup_review.md`，root批准见`root_w1_scope_addendum.md`；
+该范围批准不替代W1冻结源码终审。
+
+#### P.6.14.7 后续总装的已批准合同（合同批准，函数级实施包另审）
+
+生命周期r6 SHA`ea842921e007d433b53164136cd66e10a0e1fe79f4a39f8ec571ea1814f0caa3`
+已获独立终审与root批准，见`local/s48/a3/independent_priority_lifecycle_r6_review.md`
+与`root_priority_lifecycle_r6_approval.md`。监督r4
+SHA`141fe78c9c795710edef4e28d3448b97519e747a22e806d5f991caa3077b7602`已获独立终审，
+root采纳，见`independent_supervision_resolution_r4_review.md`。本节不授权并发修改
+W1源码，不自动批准容量默认值、旧S46 oracle变更或全部生产接线。
+
+生命周期必须继承唯一move许可与允许来源集合；Sending/Sent/Orphan/
+RepliedUnretired/NoHandle间只转移责任，已证未投递/未发过期或真退休才释放一次。
+未知与未退休不按TTL遗忘；Terminal从terminal_at起原TTL保留。旧写wire缺退休
+证据保持Pending，新wire区分effect/outcome/retired。R-Retire只延后回复，不删除
+live SetEnabled原判断顺序或业务期限；首个结果锁存至真退休，Clear特殊原合同保留。
+成功dry-run、EStop弱Ack/history、S1注册/长任务分离、只读非RR与GetTaskStatus
+真实RR均按r6逐方法表实现。RR精确static_config、无safe overflow与真实满队列
+反例不能只用客户端cap证明；数值与配置边界另经容量方案评审。
+
+监督新增政策为Bstep=2s、Bpickup=500ms、Bshutdown=10s、Q=10ms、M=250ms、
+L=D−M。原CP1/CP2及其他预算不改；250ms测试迟到容限与生产截止分开记录。
+单次CAS先武装D，再由赢家发布shutdown权限epoch；多次调用不续D或重复推进epoch。
+阶段和实际进入时间同一AtomicU64，FileStep戳在WriterGuard::before首条语句发布，
+测试屏障在其后；READY前已开始的阶段按max(实际开始,armed_at)+预算监督。
+公告先于try_send，退出前复读所判候选；不把await retry退避编码成未来阶段开始。
+
+EStopObligation的Pending/Active与连续非settled区间起点同字保存，整体settled
+才归零；ClaimGuard在异常/提前退出时先恢复责任再发布Exited，完成CAS保留新Pending。
+unsettled_since不等于单笔requested_at；request先赢则旧完成留下Pending(t1)，
+完成先赢则归零后新请求从t2起。2s仅保守告警：历史sticky保留，当前health对应
+责任settled后解除。持续有界IO失败不因总时长主动终止S0，不宣称整个事务有界退休。
+Clear实际接受重投最多8次，跨Repair/Cleanup/Resync/目标变化不重置，之后Stuck
+保留owner/permit/token/提交事实。未退休不发终态回复，RPC自身期限照常结束。
+
+真实Lower ACK必须核原身份/seq退休、Shutdown+Disabled和TorqueOffConfirmed，
+Stale先消费并退休旧seq再重新实际操作；RX不可信/Exhausted不能假ACK。
+ACK成功后才停executor，Clear真退休且flush完成后再停IPC及独立S0 watchdog。
+ACK失败只停r4表②线程，executor/IPC保留，S0 watchdog按收尾条件进residual。
+helper接口保留真实join Result，任一Err不得clean。RunExit持残余句柄到进程退出，
+D覆盖出口日志/导出等潜在阻塞点；A3b观测仅真实join后导出，不拿is_finished作同步。
+writer的Exited由main及监督双发现；D未武装时按exited_at+Bpickup候选，已武装由D接管。
+备用Store在启动时核与W1活锁/worker Store同目录，正常期不写；仅真实join后取
+LastResortToken作一次persist_latched，保留新Pending，flushed按是否真正settled记录。
+未join不能兜底；不能panic后按已替换路径重开。可收尾失败1与实际监督截止90分开
+验收：有效writer阶段/推进候选和D竞争最早绝对截止，分别留CP3/CP4来源；武装D
+不能压掉更早的FileStep/pickup候选，同刻按FileStep→pickup/推进→shutdown。
+WriterExited仍按既定特例在D武装后由D接管；不得将其特例扩到其他writer候选。
+
+Spec/CHANGELOG同步明确步骤有界、显式未完成、真正退休的区别；永久IO失败时
+重启记忆风险仍存在，D15 OPEN不变。后续首包可建立未接生产的纯模块，接线包
+必须整体保证EStop/Clear唯一writer与权限迁移，不能新旧写盘路径并发，也不能
+先把worker位图/观测页改为8却仍只spawn7。各实施包冻结后仍需Codex独立终审。
+
+#### P.6.14.8 W0.1 只读双份核验（Plan Approved，待W1提交后实施）
+
+函数合同`local/s48/a3/root_w01_pair_contract.md`的SHA为
+`7e51ec7e8bd57156e609b4210db71a8fc8502ee28934e2db5192d426ba0afe57`，
+独立报告`independent_w01_pair_plan_review.md`的SHA为
+`5a7b9465d724053c217c1acd5f09a35709d40a5b49c18e98185d252c02371d17`，
+root采纳，见`root_w01_pair_approval.md`。实施依赖W1源码终审、质量门和提交。
+
+仅新增`ClearTxnStore::inspect_pair`、`LatchCopyState`及`PairView`；
+`InspectPair`追加现有阶段末尾，使用原Engine/StepContext三相守门。读取绑定目录fd，
+每份以NOFOLLOW/NONBLOCK打开，同fd核普通文件/nlink=1后解析。仅open的ENOENT
+为Missing，坏内容为Corrupt，真实IO/对象错误直接StageError，不返回部分PairView。
+一个步骤内先guard再顺序读取两份，成功后才执行测试After；不承诺外部并发改名下
+的原子快照。绝不写入、自愈、同步或读改marker，不产生或消费持久化凭证。
+
+无生产调用方，不改W0旧恢复/写入算法及依赖。测试覆盖值/缺失/坏值、对象拒绝、
+绑定目录替换、三相及无文件内容/条目副作用；fmt、workspace与hook Clippy、W0
+模块/公开入口/旧latch/doc门通过，独立源码和证据评审后提交。完整执行边界以
+上述单一函数合同为准；本节不批准W2a或后续总装激活。
+
+#### P.6.14.9 W2a writer纯模块（函数方案批准，待W1与W0.1提交）
+
+函数方案`local/s48/a3/cc_w2_execution_plan_r4.md` SHA
+`90769d166516c98fbd3158bc9028ff3ea784e409749cc912e4d68573082105a3`已由root
+按独立B1–B5及后续具体反例终审，见`root_w2_execution_plan_r4_approval.md`。
+只批准无生产调用方的obligation/progress/announce/protocol/core/pairing/supervision
+模块及测试；真实W1锁和W0.1均须先冻结提交，实施前核最终公开接口。
+
+Claim在Active时禁止重复领取、跨实例不能完成；连续未settled起点及新Pending
+保留原合同。Created删除后目录同步失败保留原修复目标，重同步后继续真实修复。
+配对需真实锁的目录与primary目标同时匹配worker/standby；真实join才产生对应凭证，
+兜底token借用其standby、按值使用一次，写前拒绝不触文件，真实StageError原样保留。
+公开不可表达的跨standby使用以compile_fail证明，不为测试暴露伪造凭证入口。
+
+该包不接daemon、不spawn第八worker、不改生产观测版本或旧控制权威。W2b只准备
+仍必要的独立机制，重复W2c删除；生产权限迁移、实际身份退休、ACK、READY监督、
+关闭D/90、8个worker与观测、EStop/Clear/退出唯一磁盘writer在W3统一激活。
+后续详细函数实现仍另审，不能把此依赖边界当作W3实施批准。
+
+#### P.6.14.10 容量策略与S46新口径（合同批准，函数实施另审）
+
+`local/s48/a3/cc_capacity_policy_r3.md` SHA
+`4bfb06cbdb985b3b4b798d106ed750fa0cce331b54b4c0fd38033cbad551f6f0`
+经独立原五项/r2增量复核与root终审，具体权威规则见
+`root_capacity_policy_r3_approval.md`，其拒绝分类及未知枚举澄清优先于候选例子。
+
+默认应用显式L4/C8，打开后实际静态配置精确匹配，不自动使用主机默认或更大服务。
+S0每client N2/Restore1/Lower1，两个控制topic各High16/Normal48；四个S1 topic
+各Normal64、N=L。S0同时核可信peer与全局类/总份额，未退休责任占位不释放。
+High每tick非阻塞处理，不保留retry整体早退；Normal队列按2·C(L−2)派生，默认32。
+
+总cache4096/8192和TTL300不变，嵌套总len门的Emergency/Lower/Restore策略预留为
+64/64/128；高类可用低类空位，预留不是类硬上限或负载测量保证。NoHandle减少
+还能准入的新请求数量，不改变总len阈值。peer/队列容量拒绝为QueueFull，真正进入
+业务仲裁后的事务忙才为AlreadyInProgress；均映射ResourceExhausted、domain分开。
+
+对P.6.12第7/8条的后续S48实施显式采用O1 Reverse Sync：无并发/无GC可控夹具
+锁精确3840/7936总len门；真实长负载只对Normal的cache Capacity核当次GC后总len
+达到阈值。更早wire/queue错误按真实来源失败，不能计作缓存EXPECTED_RED；记录
+总/类/stage占用及GC，Lower收尾单验实果。旧S46结论与文件保留原义，新语义落
+新S48目录、source/base和H键，不重算旧结果。20/s、2s/500ms和wire4预算不变。
+
+对应实施时显式追加SetEnabled容量domain并跑实际旧新schema兼容；未知数值不能
+伪称自动变成Unknown变体，也不证明旧责任退休。当前只批准合同，不授权全部
+函数接线或运行长测；永久IO/未知责任与D15边界均保持原口径。
+
+#### P.6.14.11 W2b 关闭与join机制（Plan Approved，待W2a提交）
+
+函数计划`local/s48/a3/cc_w2b_shutdown_mechanism_plan_r3.md` SHA
+`131e1b0900783046174a9ed87e75491b64c81efc3c6685f4dd58f4b7a01d3835`已独立
+Plan Approved并获root采纳，见`independent_w2b_r3_review.md`及`root_w2b_r3_approval.md`。
+只有无生产调用方的shutdown_mechanism与health/freeze只增方法；继承监督r4预算。
+
+真实writer join原样保留Result和实例凭证；health Pending保留句柄，freeze/hook
+严格保持feature边界。NotSpawned与实际Joined分开，状态私有、不能伪造同步；
+插入失败返原句柄，teardown按值单次消费，真实结果和残余句柄进入唯一报告。
+既有stop/Drop与daemon不改；真实关闭顺序、main全出口、D/90及观测在W3激活。
+实施须W2a先独立验收提交并核最终API，源码和证据另行终审；本节无运行PASS。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
-改两份arm service：`RestartPreventExitStatus=86 87`、guard `--`后加
+改两份arm service：`RestartPreventExitStatus=86 87 89`、guard `--`后加
 `--notify-mode required`，注释解释88可重启及supervisor边界；保留guard六步、
 TimeoutStartSec=infinity、左右身份、serial FIFO/core配置。运行身份均loosqk:loosqk，
 SupplementaryGroups=dialout；左xlerobot_left/left_arm，右xlerobot_right/right_arm；

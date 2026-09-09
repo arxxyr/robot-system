@@ -4,7 +4,7 @@
 #
 # ## ExecStart = guard，**不是** s0_daemon（QA1 / Y1 终拍）
 #
-# `RestartPreventExitStatus=86 87` **只作用于主进程**。若把 preflight/provision
+# `RestartPreventExitStatus=86 87 89` **只作用于主进程**。若把 preflight/provision
 # 放 `ExecStartPre=`，退 86 不会被捕获 → 连败停止态失效。故 unit **无
 # ExecStartPre**：`xlerobot_deploy guard` 是主进程，六步全绿后 `exec
 # s0_daemon` 保住 MainPID（`Type=notify` / watchdog 语义照旧）。
@@ -104,7 +104,11 @@ RestartSec=2s
 # 86 = guard 停止态专用码（预算耗尽 / 计数 I/O / 锁冲突 / 配置级 exec 前置
 # 失败）。**exec 后同样作用于 s0_daemon**，故 86 是 s0_daemon 的永久保留
 # 退出码（回归锁见 AC-E3 / deploy::guard 单测）。
-RestartPreventExitStatus=86 87
+# 87 = RX 信任锁被占用；89 = latch 目标稳定锁被另一进程持有（S48 A3d / W1，
+# guard provision 与 s0_daemon 同码）。两者都是并发实例冲突，重启只会反复
+# 撞锁，故禁止重启。1（名字 / 锁 IO / 恢复失败）与 88（监督器）保留
+# on-failure 重启路径。精确列表由 tests/deploy_units.rs 锁定。
+RestartPreventExitStatus=86 87 89
 
 ReadWritePaths=/var/lib/robot/xlerobot_right
 

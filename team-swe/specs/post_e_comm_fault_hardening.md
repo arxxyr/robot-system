@@ -161,9 +161,12 @@ queued/inflight取消、ready回收、关闭、原deadline字节与发送前过�
 保持所有S-46时间/容量/首错门。此改进只吸收有界暂态，不声称消除S0慢响应；持续
 服务能力不足仍按原截止FAIL。函数级范围见PLAN P.6.13；批准前不实施。
 
-### S-48：基础控制优先级隔离（分阶段实施：A1已批准，后续待评审）
+### S-48：基础控制优先级隔离（W0已验收，W1实施，后续合同分包批准）
 
-A1纯文件事务已通过独立评审与本地必要门，具体范围见PLAN P.6.14.1；
+A1/A2/A3a/A3b与A3c/W0已通过独立评审并提交，W0为`8624f27`；W1锁/恢复
+按已批准P.6.14.6实施。请求生命周期r6与监督r4合同已独立及root批准，
+W0.1只读pair与W2a纯模块函数方案、容量策略合同已获批准，具体范围见
+PLAN P.6.14.8–10；后续生产总装与网关函数实施仍分包评审。
 生产双队列、原子权限迁移和disk writer总装仍待后续阶段，不宣称端到端已修复。
 
 用户要求：基础控制走高优先级通道，关节位置等连续目标走普通通道。这是端到端
@@ -201,8 +204,10 @@ ActiveForward；不能只清pending或伪造完成。解除安全保护的提交
 权威代次，不能只使用本tick开始时的旧快照。RT保持无动态分配、无中间件、
 无磁盘/网络等待的边界；逻辑高优先级不等于把gRPC/IPC整体改成SCHED_FIFO。
 
-选取进一步评审的方向为单owner与普通优先级单disk writer解耦，所有持久化任务
-有界、有身份、有退休结果。Clear必须先持久化成功，再由owner验证当前权限与
+采用单owner与普通优先级单disk writer解耦，每个文件步骤及运行/关闭阶段受固定
+监督预算约束，事务有身份、明确的未完成状态与真实退休结果。步骤有界不表示
+整个事务一定有界退休：持续有界IO失败时EStop义务保留并告警；Clear重投耗尽后
+保持Stuck与恢复抑制，不虚报完成。Clear必须先持久化成功，再由owner验证当前权限与
 代次后解锁、回复。仅加内存generation不足以解决旧Clear写0后新EStop到达时的
 崩溃窗口；须完成可恢复事务标记协议及逐崩溃点审核后才允许实现。不以“任何
 异常重启一律额外锁存”的运行标记代替既有恢复语义，不修改冻结设计文件。
@@ -256,6 +261,45 @@ shutdown先停止新admission、完成真实安全降低；已开始未commit的
 权限栅栏否决提交并修复，已commit者完成必要finalize与后续EStop持久化。writer
 须真实退休才能报clean/join；fsync超过原关闭预算时如实升级外层supervisor，
 保留事务/失败证据，不能中止线程后伪造完成。新增worker同步覆盖启动回滚及健康门。
+
+#### S-48 后续已批准合同（尚未生产接线）
+
+请求生命周期以`cc_priority_lifecycle_r6.md`及独立r6报告为批准依据。发送许可随
+唯一请求责任移动；已发送后客户端取消、传输句柄丢失或未知错误不能释放许可。
+未退休/未知条目不按TTL淘汰，容量满时本类显式拒绝。终态重放窗从terminal_at
+起算；本候选不新增跨gateway重启持久去重或未知条目重置接口。
+live SetEnabled仍按原preempt→stop→fault→target→deadline顺序判定，锁存结果后
+保持至真实退休，不能改成迟到成功；Clear沿原期限前开始后的真实结果合同。
+原RPC期限不延长，Stuck未退休不发终态回复。EStop成功发布含零recipients按既有
+弱Ack缓存，投递阶段未知结果保留；成功dry-run仍缓存。S1注册请求与长任务寿命
+分离；GetState/StreamState/StreamTaskEvents不走RR，GetTaskStatus实际RR仍持许可。
+RR请求关闭safe overflow并采用非阻塞背压，精确核已打开服务配置；具体容量另审。
+
+监督以`cc_supervision_resolution_r4.md`及独立r4报告为批准依据。新增软件政策值：
+文件步骤2s、拾取/非Idle推进500ms、关闭10s、检查周期10ms、收尾裕量250ms。
+这些不是Orin实测数据，不改变原CP1/CP2、RPC、IPC、串口、H2和RT预算。
+EStop义务的Pending/Active都不能因writer死亡丢失；单字unsettled_since记录连续
+未settled区间起点，整体settled才归零，2s只作保守告警，不作单笔IO/致命退出证据。
+历史Overdue观测保持sticky，当前health降级在相应责任settled后解除。
+持续有界IO失败不因事务总时长主动杀持有内存latch的S0；Latched禁止Enable，
+未settled禁止新Clear。永久IO失败仍存在重启失忆窗口，告警不证明已落盘。
+同一Clear事务AwaitRetry实际接受的重投最多8次，跨修复/清理/重同步/目标变化
+不重置；再次需要重投进入Stuck，保留owner/permit/token与提交事实，不假退休。
+关闭只在真实Lower ACK后停止executor；Clear真退休且flush协议完成后才停止IPC/
+独立watchdog。所有真实join错误均非clean；残余句柄由RunExit持有至process exit，
+不在返回途中阻塞Drop。可收尾失败退出1；有效writer阶段/推进候选与关闭D中最早
+实际截止触发90，分别记录CP3/CP4，不能因已武装D而延后有效FileStep/pickup截止。
+同刻保持FileStep→pickup/推进→shutdown顺序；WriterExited沿既定特例由已武装D接管。
+main可预持与W1活锁和worker Store目录身份及primary目标均一致的备用Store，正常期不写；仅writer
+真实join完成后独占作一次persist_latched兜底，保留写入期间新义务。未join不得
+并发兜底，不在panic后按可能已替换的路径重开。以上均不关闭D15或改变deployable。
+
+后续容量合同保留默认L4/C8、总cache4096/8192与TTL300，嵌套预留64/64/128仅为
+总量准入策略；可信peer与全局份额同时限制。High每tick非阻塞处理，S0每client
+N2/Restore1/Lower1；S1无高类topic保留N=L。容量拒绝QueueFull与真正业务忙
+AlreadyInProgress按发生点区分。O1验收将可控总len精确门与真实长负载分开；
+早期wire/queue错误不能冒充缓存EXPECTED_RED。旧S46证据不重算，具体口径与
+新schema兼容要求见PLAN P.6.14.10；本段不宣称生产接线或新长测已通过。
 
 ## C4 Reverse Sync（2026-09-08，已 admission live RR 的急停保护）
 

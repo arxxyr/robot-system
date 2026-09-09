@@ -30,9 +30,12 @@
 //! - `0`：成功（`guard` 成功 = `exec` 不返回）。
 //! - `2`：CLI 参数解析失败。
 //! - `70`：`preflight-arm` / `preflight-handoff` 失败。
-//! - `71`：`provision` 失败。
+//! - `71`：`provision` 三分支业务失败（损坏副本 / 写入 / 目录 fsync）。
 //! - `86`：**guard 专用停止态**（预算耗尽 / 计数 I/O / 锁冲突 / 配置级
 //!   `exec` 前置失败）——见 `deploy::guard` 码表。
+//! - `89`：latch 目标稳定锁被另一进程持有（S48 A3d / W1；`guard` 与
+//!   `provision` 同码，unit 禁止重启）。
+//! - `1`：latch 名字 / 锁 IO / 对象身份错误（配置或系统错误，不伪称被占用）。
 
 #![cfg(target_os = "linux")]
 
@@ -40,9 +43,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use robot_s0::config_loader::load_robot_config;
-use robot_s0::deploy::guard::{
-    GuardConfig, PREFLIGHT_FAIL_EXIT_CODE, PROVISION_FAIL_EXIT_CODE, real::run_guard,
-};
+use robot_s0::deploy::guard::{GuardConfig, PREFLIGHT_FAIL_EXIT_CODE, real::run_guard};
 use robot_s0::deploy::preflight::{
     DeployTransport, ensure_safe_arm, ensure_safe_handoff, feetech::open_arm_bus,
 };
@@ -183,8 +184,10 @@ fn cmd_provision(args: &[OsString]) -> ! {
             std::process::exit(0)
         }
         Err(err) => {
-            tracing::error!(latch = %latch_path.display(), %err, "provision: FAIL");
-            std::process::exit(i32::from(PROVISION_FAIL_EXIT_CODE))
+            // W1 类型化分流：锁被占用 89；名字 / 锁 IO / 对象身份 1；业务失败 71。
+            let code = err.exit_code();
+            tracing::error!(latch = %latch_path.display(), %err, code, "provision: FAIL");
+            std::process::exit(i32::from(code))
         }
     }
 }

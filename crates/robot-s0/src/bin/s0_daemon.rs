@@ -8,7 +8,8 @@
 //!
 //! `robot_id` 来源：CLI > TOML > 环境 `ROBOT_ID` > default。具体参数见 `--help`。
 //! 退出码：0 正常；1 启动/运行/存储失败；2 参数错误；3 marker 第一阶段已提交但
-//! 第二阶段未完成；4 marker 未授权；87 同实例锁竞争；88 独立监督器执法。
+//! 第二阶段未完成；4 marker 未授权；87 同实例锁竞争；88 独立监督器执法；
+//! 89 latch 稳定锁被另一进程持有（S48 A3d / W1）。
 
 #![cfg(target_os = "linux")]
 
@@ -35,15 +36,20 @@ use robot_msg::markers;
 use robot_s0::boot_supervisor::{
     BootSupervisor, STARTUP_ACK_BUDGET, absolute_boot_budget, boot_budget,
 };
+use robot_s0::clear_estop_transaction::{ClearTxnStore, StageError};
 use robot_s0::config_loader::{
     LoadedConfig, load_robot_config, resolve_hardware_section, validate_hardware_section,
 };
-use robot_s0::estop_latch::{load_estop_latch, save_estop_latch};
+use robot_s0::estop_latch::save_estop_latch;
 use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
 use robot_s0::ipc_thread::{
     ClearEStopRrRequest, ClearEStopRrResponse, IpcSubscribers, IpcThreadConfig, IpcThreadHandle,
     RrChannels, SetEnabledRrChannels, SetEnabledRrRequest, SetEnabledRrResponse, spawn_ipc_thread,
+};
+use robot_s0::latch_lock::{
+    LATCH_LOCK_HELD_EXIT_CODE, LatchLockError, LatchTargetLock, acquire_latch_lock,
+    validate_latch_path,
 };
 use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread};
 use robot_s0::rr_server_thread::{RrServerThreadConfig, spawn_rr_server_thread};
@@ -557,6 +563,12 @@ fn main() {
         tracing::error!(?error, "latch 目录不可用");
         std::process::exit(1)
     });
+    // S48 A3d / W1：纯名称校验必须先于任何 latch / 锁文件写入（含下面信任锁写 PID），
+    // 不合法名字是配置错误，退 1，不是被占用。
+    if let Err(error) = validate_latch_path(&args.latch_path) {
+        tracing::error!(latch = %args.latch_path.display(), %error, "latch 名字不合法");
+        std::process::exit(1);
+    }
     std::fs::create_dir_all(&args.rx_trust_dir).unwrap_or_else(|error| {
         tracing::error!(?error, "信任目录不可用");
         std::process::exit(1)
@@ -599,7 +611,21 @@ fn main() {
         };
         std::process::exit(code);
     }
-    let code = run(&args, &supervisor, &stops).err().unwrap_or(0);
+    // S48 A3d / W1：rx-trust 维护子命令不取 latch 锁；正常 daemon 在 run 之前取得
+    // 目标稳定锁并持有至 process::exit，退出持久化与旧同步 IPC 路径同受此锁。
+    let latch_lock = acquire_latch_lock(&args.latch_path).unwrap_or_else(|error| match error {
+        LatchLockError::Held { pid } => {
+            tracing::error!(?pid, latch = %args.latch_path.display(), "latch 锁被占用");
+            std::process::exit(i32::from(LATCH_LOCK_HELD_EXIT_CODE))
+        }
+        other => {
+            tracing::error!(%other, latch = %args.latch_path.display(), "latch 锁失败");
+            std::process::exit(i32::from(other.exit_code()))
+        }
+    });
+    let code = run(&args, &supervisor, &stops, &latch_lock)
+        .err()
+        .unwrap_or(0);
     std::process::exit(code);
 }
 
@@ -636,10 +662,14 @@ fn select_trust(args: &ResolvedArgs) -> Result<Option<SerialTrustPolicy>, i32> {
     }
 }
 
-fn prepare_execution(args: &ResolvedArgs) -> Result<(ExecutionResources, BuiltAdapter), i32> {
+fn prepare_execution(
+    args: &ResolvedArgs,
+    latch_lock: &LatchTargetLock,
+) -> Result<(ExecutionResources, BuiltAdapter), i32> {
     tracing::info!(identity = %args.identity, "S0 实例配置身份");
     let trust = select_trust(args)?;
-    let latched = load_estop_latch(&args.latch_path).map_err(|error| startup_io_error(&error))?;
+    // S48 A3d / W1：恢复失败在此返回，绝不进入下面的 adapter_open。
+    let latched = recover_latch(args, latch_lock)?;
     tracing::info!(latched, "initial estop_latched");
     let serial = trust.is_some();
     let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
@@ -709,7 +739,55 @@ fn startup_io_error(error: &std::io::Error) -> i32 {
     1
 }
 
-fn run(args: &ResolvedArgs, supervisor: &BootSupervisor, stops: &StopFlags) -> Result<(), i32> {
+/// S48 A3d / W1 启动恢复：持锁检查数据对象 → 打开 W0 store → 核目录身份与锁一致
+/// → `recover_and_load`。任一步失败退 1（不冒充被占用），且不产生 adapter 副作用。
+fn recover_latch(args: &ResolvedArgs, latch_lock: &LatchTargetLock) -> Result<bool, i32> {
+    let objects = latch_lock.check_data_objects().map_err(|error| {
+        tracing::error!(%error, latch = %args.latch_path.display(), "latch 数据对象检查失败");
+        i32::from(error.exit_code())
+    })?;
+    let mut store = ClearTxnStore::open(&args.latch_path, &args.robot_id, &args.hardware_id)
+        .map_err(|error| recovery_exit(&error))?;
+    let lock_identity = latch_lock.directory_identity();
+    let store_identity = store.directory_identity();
+    if !lock_identity.matches(store_identity) {
+        tracing::error!(
+            %lock_identity,
+            ?store_identity,
+            latch = %args.latch_path.display(),
+            "latch 目录身份与锁不一致（父目录已被替换），拒绝启动"
+        );
+        return Err(1);
+    }
+    let latched = store
+        .recover_and_load()
+        .map_err(|error| recovery_exit(&error))?;
+    tracing::info!(
+        primary_present = objects.primary.is_some(),
+        backup_present = objects.backup.is_some(),
+        latched,
+        "latch 启动恢复完成"
+    );
+    Ok(latched)
+}
+
+/// W0 事务阶段错误 → 退出码 1，并记录真实阶段与相位。
+fn recovery_exit(error: &StageError) -> i32 {
+    tracing::error!(
+        stage = ?error.stage,
+        phase = ?error.phase,
+        %error,
+        "latch 启动恢复失败"
+    );
+    1
+}
+
+fn run(
+    args: &ResolvedArgs,
+    supervisor: &BootSupervisor,
+    stops: &StopFlags,
+    latch_lock: &LatchTargetLock,
+) -> Result<(), i32> {
     tracing::info!(
         robot_id = %args.robot_id,
         hardware_id = %args.hardware_id,
@@ -719,7 +797,7 @@ fn run(args: &ResolvedArgs, supervisor: &BootSupervisor, stops: &StopFlags) -> R
         cpu = ?args.cpu_affinity,
         "s0_daemon starting"
     );
-    let (resources, built) = prepare_execution(args)?;
+    let (resources, built) = prepare_execution(args, latch_lock)?;
     let mut workers = WorkerHandles::default();
     let result = run_workers(args, supervisor, stops, &resources, built, &mut workers);
     resources.client.set_policy(OutputPolicy::Disabled);

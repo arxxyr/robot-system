@@ -43,6 +43,16 @@
 //!
 //! 两级都是**配置级、不可自动恢复**错误 → 退 86，且**不消耗连败预算**。
 //!
+//! ## latch 稳定锁的类型化分流（S48 A3d / W1）
+//!
+//! provision 内部持目标稳定锁 `<latch>.lock` 覆盖整个 read / repair / fsync，
+//! 返回即释放（RAII），因此 exec 前 guard 不持有它，`s0_daemon` 自行重取。
+//! 锁被另一进程持有 → [`GuardExit::LatchHeld`] 退 **89**（unit 禁止重启，与
+//! daemon 的 89 同义）；latch 名字 / 锁 IO / 对象身份错误 →
+//! [`GuardExit::LatchConfig`] 退 **1**（`Restart=on-failure` 仍会重试，连败预算
+//! 照常累计到 86）。两者都**不**压成字符串落入旧 71 / 86 分支；原三分支业务
+//! 失败仍走 [`PROVISION_FAIL_EXIT_CODE`] 与连败预算。
+//!
 //! ## latch 路径单源
 //!
 //! provision 的目标路径**跟随 s0 args**：`--latch-path <p>` 在场即用它，
@@ -64,7 +74,11 @@ use super::counter::{
     write_count_atomic,
 };
 use super::identity;
+use super::provision::ProvisionError;
 use super::types::DeployArm;
+use crate::latch_lock::{
+    LATCH_LOCK_FAILURE_EXIT_CODE, LATCH_LOCK_HELD_EXIT_CODE, validate_latch_path,
+};
 
 /// 停止态退出码——**永久保留**（`s0_daemon` 任何路径不得以 86 退出，
 /// 否则 `RestartPreventExitStatus=86` 会误吞 watchdog 重启；回归锁见 AC-E3）。
@@ -199,6 +213,10 @@ pub enum GuardExit {
     LockConflict,
     /// preflight / provision 正常失败，普通非零码。
     PreStepFailed(u8),
+    /// W1：latch 目标稳定锁被另一进程持有 → 89（unit 禁止重启；计数保留已递增值）。
+    LatchHeld,
+    /// W1：latch 名字 / 锁 IO / 对象身份错误 → 1（配置 / 系统错误，不伪称被占用）。
+    LatchConfig,
 }
 
 impl GuardExit {
@@ -210,6 +228,8 @@ impl GuardExit {
                 GUARD_STOP_EXIT_CODE
             }
             Self::PreStepFailed(code) => *code,
+            Self::LatchHeld => LATCH_LOCK_HELD_EXIT_CODE,
+            Self::LatchConfig => LATCH_LOCK_FAILURE_EXIT_CODE,
         }
     }
 
@@ -217,6 +237,32 @@ impl GuardExit {
     #[must_use]
     pub const fn is_stop_state(&self) -> bool {
         self.code() == GUARD_STOP_EXIT_CODE
+    }
+}
+
+/// provision 步骤的类型化失败（S48 A3d / W1）：锁被占用与配置 / 系统错误各自
+/// 保持独立退出码，只有原三分支业务失败才进入 71 / 连败预算。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvisionStepError {
+    /// latch 稳定锁被另一进程持有 → [`GuardExit::LatchHeld`]（89）。
+    LatchHeld { pid: Option<u32> },
+    /// latch 名字 / 锁 IO / 对象身份错误 → [`GuardExit::LatchConfig`]（1）。
+    LatchConfig(String),
+    /// 原三分支业务失败（损坏副本 / 写入 / 目录 fsync）→ 71 或预算耗尽 86。
+    Failed(String),
+}
+
+impl From<ProvisionError> for ProvisionStepError {
+    fn from(error: ProvisionError) -> Self {
+        match error {
+            ProvisionError::LatchLockHeld { pid } => Self::LatchHeld { pid },
+            ProvisionError::InvalidLatchName(_) | ProvisionError::LatchLock(_) => {
+                Self::LatchConfig(error.to_string())
+            }
+            ProvisionError::UnusableExisting { .. }
+            | ProvisionError::Write { .. }
+            | ProvisionError::DirFsync { .. } => Self::Failed(error.to_string()),
+        }
     }
 }
 
@@ -248,12 +294,12 @@ pub trait GuardSteps {
     /// 串口构造 / 安全写 / readback 任一失败。
     fn preflight(&mut self, cfg: &GuardConfig) -> Result<(), String>;
 
-    /// 本臂 latch provision。
+    /// 本臂 latch provision（持目标稳定锁覆盖整个过程，返回即释放）。
     ///
     /// # Errors
     ///
-    /// 见 [`super::provision::ProvisionError`]。
-    fn provision(&mut self, cfg: &GuardConfig) -> Result<(), String>;
+    /// 见 [`ProvisionStepError`]：锁被占用 / 配置错误 / 业务失败三类分流。
+    fn provision(&mut self, cfg: &GuardConfig) -> Result<(), ProvisionStepError>;
 
     /// `exec s0_daemon`（成功不返回）。
     fn exec_s0(&mut self, cfg: &GuardConfig, args: &[OsString]) -> ExecOutcome;
@@ -281,13 +327,14 @@ pub fn build_s0_args(cfg: &GuardConfig) -> Result<Vec<OsString>, GuardExit> {
 
 /// exec 前的**纯 argv 级**配置校验：`s0_bin` 绝对路径 + 存在、D2 身份三项
 /// （`robot_id` / s0 argv `--robot-id` / `--hardware-id`）、`--latch-path`
-/// 单源可解析。
+/// 单源可解析，以及 latch **纯名称校验**（W1，见 [`validate_latch_path`]）。
 ///
 /// 不读 config 文件——文件级校验在 [`GuardSteps::verify_identity`]。
 ///
 /// # Errors
 ///
-/// 见 [`GuardExit::ExecFailed`]（全部是配置级、不可自动恢复 → 86）。
+/// 见 [`GuardExit::ExecFailed`]（配置级、不可自动恢复 → 86）；latch 名字不合法
+/// → [`GuardExit::LatchConfig`]（1），且不产生锁 / 计数副作用。
 pub fn validate_invocation(cfg: &GuardConfig) -> Result<(), GuardExit> {
     let reject = |field: &str, detail: String| -> GuardExit {
         tracing::error!(arm = %cfg.arm, field, detail, "guard: invalid invocation");
@@ -342,8 +389,21 @@ pub fn validate_invocation(cfg: &GuardConfig) -> Result<(), GuardExit> {
     }
 
     // latch 单源必须可解析（重复 / 缺值 / 等号写法一律拒绝）。
-    cfg.resolve_latch_path()
+    let latch_path = cfg
+        .resolve_latch_path()
         .map_err(|e| reject(LATCH_PATH_OPT, e))?;
+    // S48 A3d / W1：共享的纯名称校验放在最早的 argv 级校验里——先于实例锁、
+    // 连败计数与任何文件 I/O。非法名字是配置错误退 1（不是 86），因此即使锁
+    // 被占用或预算已耗尽，也不会先产生锁 / 计数副作用再退别的码。
+    if let Err(error) = validate_latch_path(&latch_path) {
+        tracing::error!(
+            arm = %cfg.arm,
+            latch = %latch_path.display(),
+            %error,
+            "guard: latch name rejected before any lock or counter side effect"
+        );
+        return Err(GuardExit::LatchConfig);
+    }
     Ok(())
 }
 
@@ -402,9 +462,20 @@ pub fn evaluate_guard<S: GuardSteps + ?Sized>(
         tracing::error!(arm = %cfg.arm, attempt, %reason, "guard: preflight failed");
         return Err(pre_step_exit(attempt, PREFLIGHT_FAIL_EXIT_CODE));
     }
-    if let Err(reason) = steps.provision(cfg) {
-        tracing::error!(arm = %cfg.arm, attempt, %reason, "guard: latch provision failed");
-        return Err(pre_step_exit(attempt, PROVISION_FAIL_EXIT_CODE));
+    match steps.provision(cfg) {
+        Ok(()) => {}
+        Err(ProvisionStepError::LatchHeld { pid }) => {
+            tracing::error!(arm = %cfg.arm, attempt, ?pid, "guard: latch lock held by another process");
+            return Err(GuardExit::LatchHeld);
+        }
+        Err(ProvisionStepError::LatchConfig(reason)) => {
+            tracing::error!(arm = %cfg.arm, attempt, %reason, "guard: latch lock/name/object rejected");
+            return Err(GuardExit::LatchConfig);
+        }
+        Err(ProvisionStepError::Failed(reason)) => {
+            tracing::error!(arm = %cfg.arm, attempt, %reason, "guard: latch provision failed");
+            return Err(pre_step_exit(attempt, PROVISION_FAIL_EXIT_CODE));
+        }
     }
 
     // ③ 两步全成功 → 清零 → exec。
@@ -443,7 +514,7 @@ pub mod real {
     use super::super::identity::load_and_verify_arm_config;
     use super::super::preflight::{ensure_safe_arm, feetech::open_arm_bus};
     use super::super::provision::provision_latch;
-    use super::{GuardConfig, GuardSteps};
+    use super::{GuardConfig, GuardSteps, ProvisionStepError};
 
     /// 生产 [`GuardSteps`]。
     pub struct RealGuardSteps;
@@ -475,16 +546,15 @@ pub mod real {
             ensure_safe_arm(cfg.arm, &mut bus).map_err(|report| report.to_string())
         }
 
-        fn provision(&mut self, cfg: &GuardConfig) -> Result<(), String> {
+        fn provision(&mut self, cfg: &GuardConfig) -> Result<(), ProvisionStepError> {
             // validate_invocation 已保证可解析；这里再取一次保持单一来源。
-            let path = cfg.resolve_latch_path()?;
-            match provision_latch(&path) {
-                Ok(outcome) => {
-                    tracing::info!(latch = %path.display(), ?outcome, "guard: latch provisioned");
-                    Ok(())
-                }
-                Err(e) => Err(format!("{}: {e}", path.display())),
-            }
+            let path = cfg
+                .resolve_latch_path()
+                .map_err(ProvisionStepError::LatchConfig)?;
+            // 稳定锁在 provision_latch 内获取并于返回时释放；exec 前不再持有。
+            let outcome = provision_latch(&path).map_err(ProvisionStepError::from)?;
+            tracing::info!(latch = %path.display(), ?outcome, "guard: latch provisioned");
+            Ok(())
         }
 
         fn exec_s0(&mut self, cfg: &GuardConfig, args: &[OsString]) -> super::ExecOutcome {
@@ -525,7 +595,7 @@ mod tests {
     struct ScriptedSteps {
         identity_result: Result<(), String>,
         preflight_result: Result<(), String>,
-        provision_result: Result<(), String>,
+        provision_result: Result<(), ProvisionStepError>,
         exec: ExecOutcome,
         calls: RefCell<Vec<&'static str>>,
         seen_count: RefCell<Option<u8>>,
@@ -563,7 +633,7 @@ mod tests {
             self.preflight_result.clone()
         }
 
-        fn provision(&mut self, cfg: &GuardConfig) -> Result<(), String> {
+        fn provision(&mut self, cfg: &GuardConfig) -> Result<(), ProvisionStepError> {
             let _ = cfg;
             self.calls.borrow_mut().push("provision");
             self.provision_result.clone()
@@ -712,7 +782,7 @@ mod tests {
         let f = fixture();
         for _ in 0..3 {
             let mut steps = ScriptedSteps::ok();
-            steps.provision_result = Err("latch broken".into());
+            steps.provision_result = Err(ProvisionStepError::Failed("latch broken".into()));
             let exit = evaluate_guard(&f.cfg, &mut steps).expect_err("必须失败");
             assert_eq!(exit, GuardExit::PreStepFailed(PROVISION_FAIL_EXIT_CODE));
             assert_eq!(exit.code(), 71);
@@ -1016,5 +1086,242 @@ mod tests {
         assert!(!(0..=5).contains(&GUARD_STOP_EXIT_CODE));
         assert_ne!(PREFLIGHT_FAIL_EXIT_CODE, GUARD_STOP_EXIT_CODE);
         assert_ne!(PROVISION_FAIL_EXIT_CODE, GUARD_STOP_EXIT_CODE);
+    }
+
+    // ── S48 A3d / W1：latch 稳定锁的类型化分流 ─────────────────────────────
+
+    /// 锁被占用 → `LatchHeld` 退 89：不落入 71 / 86，计数保留已递增值（未成功尝试），
+    /// 不清零、不 exec。
+    #[test]
+    fn latch_held_exits_89_and_keeps_incremented_count() {
+        let f = fixture();
+        let mut steps = ScriptedSteps::ok();
+        steps.provision_result = Err(ProvisionStepError::LatchHeld { pid: Some(4242) });
+        let exit = evaluate_guard(&f.cfg, &mut steps).expect_err("必须失败");
+        assert_eq!(exit, GuardExit::LatchHeld);
+        assert_eq!(exit.code(), 89);
+        assert!(!exit.is_stop_state());
+        assert_eq!(count_of(&f.cfg), 1, "未成功尝试计数保留");
+        assert_eq!(
+            steps.calls(),
+            vec!["verify_identity", "preflight", "provision"],
+            "不得 exec"
+        );
+        // 第 5 次仍是 89，不被预算映射改写成 86。
+        write_count_atomic(&f.cfg.count_file(), MAX_CONSECUTIVE_FAILURES - 1).unwrap();
+        let mut steps = ScriptedSteps::ok();
+        steps.provision_result = Err(ProvisionStepError::LatchHeld { pid: None });
+        assert_eq!(
+            evaluate_guard(&f.cfg, &mut steps).expect_err("必须失败"),
+            GuardExit::LatchHeld
+        );
+        assert_eq!(count_of(&f.cfg), MAX_CONSECUTIVE_FAILURES);
+    }
+
+    /// 名字 / 锁 IO / 对象身份错误 → `LatchConfig` 退 1：同样不落 71 / 86。
+    #[test]
+    fn latch_config_error_exits_1() {
+        let f = fixture();
+        let mut steps = ScriptedSteps::ok();
+        steps.provision_result = Err(ProvisionStepError::LatchConfig("symlink".into()));
+        let exit = evaluate_guard(&f.cfg, &mut steps).expect_err("必须失败");
+        assert_eq!(exit, GuardExit::LatchConfig);
+        assert_eq!(exit.code(), 1);
+        assert_eq!(count_of(&f.cfg), 1);
+        assert_eq!(
+            steps.calls(),
+            vec!["verify_identity", "preflight", "provision"]
+        );
+    }
+
+    /// `ProvisionError` → `ProvisionStepError` 的三类映射，与退出码分区一致。
+    #[test]
+    fn provision_error_maps_to_typed_step_error() {
+        use super::super::provision::ProvisionError;
+        use crate::latch_lock::{LatchLockError, LatchNameError, LockStage};
+        assert_eq!(
+            ProvisionStepError::from(ProvisionError::LatchLockHeld { pid: Some(7) }),
+            ProvisionStepError::LatchHeld { pid: Some(7) }
+        );
+        assert!(matches!(
+            ProvisionStepError::from(ProvisionError::InvalidLatchName(LatchNameError::EmptyOrDot)),
+            ProvisionStepError::LatchConfig(_)
+        ));
+        assert!(matches!(
+            ProvisionStepError::from(ProvisionError::LatchLock(LatchLockError::Identity {
+                stage: LockStage::InspectLock,
+                detail: "x",
+            })),
+            ProvisionStepError::LatchConfig(_)
+        ));
+        assert!(matches!(
+            ProvisionStepError::from(ProvisionError::Write {
+                path: PathBuf::from("p"),
+                source: std::io::Error::other("x"),
+            }),
+            ProvisionStepError::Failed(_)
+        ));
+    }
+
+    /// 真实 provision 接在 guard 六步里：锁在 provision 返回时释放，exec 时可由
+    /// "daemon"（这里用同进程再取锁模拟）重新获取；测试持锁时 guard 退 89。
+    struct RealProvisionSteps {
+        calls: RefCell<Vec<&'static str>>,
+        lock_free_at_exec: RefCell<Option<bool>>,
+    }
+
+    impl GuardSteps for RealProvisionSteps {
+        fn verify_identity(&mut self, _cfg: &GuardConfig) -> Result<(), String> {
+            self.calls.borrow_mut().push("verify_identity");
+            Ok(())
+        }
+
+        fn preflight(&mut self, _cfg: &GuardConfig) -> Result<(), String> {
+            self.calls.borrow_mut().push("preflight");
+            Ok(())
+        }
+
+        fn provision(&mut self, cfg: &GuardConfig) -> Result<(), ProvisionStepError> {
+            self.calls.borrow_mut().push("provision");
+            let path = cfg
+                .resolve_latch_path()
+                .map_err(ProvisionStepError::LatchConfig)?;
+            super::super::provision::provision_latch(&path)
+                .map(|_| ())
+                .map_err(ProvisionStepError::from)
+        }
+
+        fn exec_s0(&mut self, cfg: &GuardConfig, _args: &[OsString]) -> ExecOutcome {
+            self.calls.borrow_mut().push("exec");
+            let path = cfg.resolve_latch_path().unwrap();
+            let free = crate::latch_lock::acquire_latch_lock(&path).is_ok();
+            *self.lock_free_at_exec.borrow_mut() = Some(free);
+            ExecOutcome::Execed
+        }
+    }
+
+    #[test]
+    fn real_provision_releases_latch_lock_before_exec_and_maps_held_to_89() {
+        let f = fixture();
+        let latch = f.cfg.resolve_latch_path().unwrap();
+        let mut steps = RealProvisionSteps {
+            calls: RefCell::new(Vec::new()),
+            lock_free_at_exec: RefCell::new(None),
+        };
+        evaluate_guard(&f.cfg, &mut steps).expect("成功路径");
+        assert_eq!(
+            *steps.calls.borrow(),
+            vec!["verify_identity", "preflight", "provision", "exec"]
+        );
+        assert_eq!(
+            *steps.lock_free_at_exec.borrow(),
+            Some(true),
+            "exec 时锁必须已释放"
+        );
+        assert_eq!(std::fs::read_to_string(&latch).unwrap(), "1\n");
+        assert_eq!(count_of(&f.cfg), 0);
+
+        let holder = crate::latch_lock::acquire_latch_lock(&latch).unwrap();
+        let mut steps = RealProvisionSteps {
+            calls: RefCell::new(Vec::new()),
+            lock_free_at_exec: RefCell::new(None),
+        };
+        let exit = evaluate_guard(&f.cfg, &mut steps).expect_err("持锁时必须 89");
+        assert_eq!(exit, GuardExit::LatchHeld);
+        assert_eq!(
+            *steps.calls.borrow(),
+            vec!["verify_identity", "preflight", "provision"]
+        );
+        assert_eq!(count_of(&f.cfg), 1);
+        drop(holder);
+
+        // 非法 latch 名字：validate_invocation 的纯名称校验就拒绝 → 1，不进任何步骤。
+        let mut cfg = f.cfg.clone();
+        let idx = cfg
+            .s0_args
+            .iter()
+            .position(|a| a == "--latch-path")
+            .unwrap();
+        cfg.s0_args[idx + 1] = f
+            .cfg
+            .runtime_dir
+            .parent()
+            .unwrap()
+            .join("estop_latch.bak")
+            .into_os_string();
+        let mut steps = RealProvisionSteps {
+            calls: RefCell::new(Vec::new()),
+            lock_free_at_exec: RefCell::new(None),
+        };
+        let exit = evaluate_guard(&cfg, &mut steps).expect_err("非法名字必须 1");
+        assert_eq!(exit, GuardExit::LatchConfig);
+        assert_eq!(exit.code(), 1);
+        assert!(steps.calls.borrow().is_empty(), "名字在 argv 校验就被拒绝");
+    }
+
+    /// W1 预审回归：非法 latch 名字在**最早的 argv 校验**退 1，且在无锁 / 实例锁被占 /
+    /// 预算耗尽三类条件下都不创建或修改锁与计数文件，也不进入任何步骤——不会先产生
+    /// 副作用再退 86。
+    #[test]
+    fn invalid_latch_name_exits_1_without_lock_or_counter_side_effects() {
+        for bad in [
+            "estop_latch.bak",
+            "estop_latch.lock",
+            "rx_trust_marker",
+            "x.tmp.1.2",
+        ] {
+            let f = fixture();
+            let mut cfg = f.cfg.clone();
+            let idx = cfg
+                .s0_args
+                .iter()
+                .position(|a| a == "--latch-path")
+                .unwrap();
+            cfg.s0_args[idx + 1] = f
+                .cfg
+                .runtime_dir
+                .parent()
+                .unwrap()
+                .join(bad)
+                .into_os_string();
+
+            // ① 无锁、无计数。
+            let mut steps = ScriptedSteps::ok();
+            let exit = evaluate_guard(&cfg, &mut steps).expect_err(bad);
+            assert_eq!(exit, GuardExit::LatchConfig, "{bad}");
+            assert_eq!(exit.code(), 1, "{bad}");
+            assert!(steps.calls().is_empty(), "{bad}: 不得进入任何步骤");
+            assert!(!cfg.count_file().exists(), "{bad}: 不得创建计数");
+            assert!(!cfg.lock_file().exists(), "{bad}: 不得创建实例锁");
+
+            // ② 实例锁被另一持有者占用：仍退 1，不是 86 LockConflict；锁文件字节不变。
+            let held = acquire_instance_lock(&cfg.lock_file()).expect("先占锁");
+            let lock_before = std::fs::read(cfg.lock_file()).unwrap();
+            let mut steps = ScriptedSteps::ok();
+            let exit = evaluate_guard(&cfg, &mut steps).expect_err(bad);
+            assert_eq!(exit, GuardExit::LatchConfig, "{bad}");
+            assert!(steps.calls().is_empty(), "{bad}");
+            assert_eq!(
+                std::fs::read(cfg.lock_file()).unwrap(),
+                lock_before,
+                "{bad}"
+            );
+            assert!(!cfg.count_file().exists(), "{bad}: 不得创建计数");
+            held.close();
+
+            // ③ 预算已耗尽：仍退 1，不是 86 BudgetExhausted；计数不变。
+            write_count_atomic(&cfg.count_file(), MAX_CONSECUTIVE_FAILURES).unwrap();
+            let count_before = std::fs::read(cfg.count_file()).unwrap();
+            let mut steps = ScriptedSteps::ok();
+            let exit = evaluate_guard(&cfg, &mut steps).expect_err(bad);
+            assert_eq!(exit, GuardExit::LatchConfig, "{bad}");
+            assert!(steps.calls().is_empty(), "{bad}");
+            assert_eq!(
+                std::fs::read(cfg.count_file()).unwrap(),
+                count_before,
+                "{bad}"
+            );
+            assert_eq!(count_of(&cfg), MAX_CONSECUTIVE_FAILURES, "{bad}");
+        }
     }
 }

@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_A3C_APPROVED_W1_PLAN_APPROVED",
-  "resume_from": "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md：A3c/W0七门及独立源码/证据终审通过，按阶段提交后实施W1；监督与优先级继续独立评审",
+  "work_state": "S48_W1_APPROVED_W01_PLAN_APPROVED",
+  "resume_from": "HANDOFF：W1本地14门、独立源码/证据终审及root范围核验通过，按阶段提交；下一步W0.1→W2a→W2b，生产总装函数方案另审",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_A3B_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "A3C_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_W1_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "W1_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
-  "scope": "A3c/W0纯文件凭证本地七门及独立终审通过；W1方案批准待接线，A3完整总装尚未批准。S46 Orin wire4满及左H2两次FAIL保留；右未测，D15 OPEN，deployable=false。",
+  "scope": "W1同目标启动锁/provision/事务恢复获本地软件批准；W0.1/W2a/W2b及监督/生命周期/容量仅方案批准。未运行本包Orin，旧H2/S46 FAIL保留；右未测，D15 OPEN，deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -320,7 +320,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "A1_A2_A3A_COMMITTED_A3B_APPROVED_A3_R2_REVIEW",
+      "status": "W1_APPROVED_FOLLOWUP_PLANS_APPROVED_INTEGRATION_PENDING",
       "implementation_started": true,
       "a1": {
         "plan_review": "APPROVED",
@@ -351,7 +351,7 @@
       },
       "user_requirement": "基础控制走高优先级通道，关节位置等连续目标走普通通道",
       "candidate": "唯一state owner与单disk writer解耦；可恢复Clear事务标记与原子提交权限；端到端有界容量保留",
-      "review_blocker": "W1生产启动恢复、A3监督/优先级总装与A4端到端验收待闭合；W0已独立验收通过",
+      "review_blocker": "W1已独立验收；W0.1/W2a/W2b待逐包实施，双队列/单writer/权限生产总装和A4网关函数方案另审",
       "hardware_scope": "左臂已断电；仅软件设计与验证，不打开串口",
       "queues": {
         "high": "live基础控制",
@@ -459,10 +459,10 @@
         "commit": "dee67faf42f08083511648fa0befe263d9b6b37a"
       },
       "a3": {
-        "status": "W0_APPROVED_W1_PLAN_APPROVED_INTEGRATION_PENDING",
-        "implementation_started": false,
+        "status": "W1_APPROVED_W01_W2A_W2B_PLANS_APPROVED",
+        "implementation_started": true,
         "survey": "local/s48/a3/root_integration_survey.md",
-        "open_followup": "W0已批准；W1启动锁/恢复方案批准待实施；监督r3修订与priority r5独立复核继续"
+        "open_followup": "依序W0.1只读pair、W2a纯writer、W2b关闭机制，各包代码及证据独立终审后提交；优先级函数总装方案继续评审"
       },
       "a3a": {
         "status": "APPROVED_SOFTWARE_SCOPE",
@@ -705,10 +705,111 @@
         "archive_boundary": "包含W0最终源码/证据终审及此前冻结提案；仍在编写的supervision r3、priority r6和W1执行前置增量评审明确排除，见archive index；归档不构成总装批准"
       },
       "w1": {
-        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "status": "APPROVED_SOFTWARE_SCOPE",
         "plan": "P.6.14.6",
-        "review": "local/s48/a3/independent_w1_function_plan_review.md",
-        "dependency": "A3c/W0按阶段提交后实施"
+        "base_commit": "8624f27d3d2340926e1909dcb8a95aaff9c6349d",
+        "source_hash": "7a3480a47942ebadce6fb24bef47d2825999c1390747c42fd64469b7ce86749b",
+        "source_input_count": 335,
+        "source_manifest": "local/s48/a3d/cc/round3/source_after.sha256",
+        "frozen_sources_sha256": "fc7c764fdd822be784b1d578c6181e1546b17dc6f98d4cfb73908cd613a20ad9",
+        "frozen_source_count": 15,
+        "result_sha256": "37700d21abb981775747adcbcbc7d8bf135970f0fd3cbbcd5d93e77ab54b4fae",
+        "final_round": "round3",
+        "gates_passed": 14,
+        "source_review": "local/s48/a3d/independent_source_review_round3.md",
+        "source_review_sha256": "97a8887353e76ac16f665e22bfb3bdd533ccea9f4172b8638c7ff6e0e8b6ac25",
+        "evidence_review": "local/s48/a3d/independent_evidence_review_round3.md",
+        "evidence_review_sha256": "2100bc6d097b7c89b68eb1b19ed77bb96c46ec0bf12facb9c850a947dfc67c74",
+        "evidence_receipt": "local/s48/a3d/independent_evidence_receipt_round3.json",
+        "evidence_receipt_sha256": "b1eb91a11080596d8a3c601475f9fbfb30b4433713ea062729ea3f41c2ca5189",
+        "root_review": "local/s48/a3d/review.md",
+        "root_review_sha256": "a7d459ef486aabae367e30f90d3f8564413beb52870dacdda6c487c974eaf5d3",
+        "root_scope_receipt": "local/s48/a3d/root_scope_receipt_round3.json",
+        "named_counts": {
+          "test_latch_lock_unit": 13,
+          "test_latch_lock_acceptance": 10,
+          "test_latch_lock_daemon": 11,
+          "test_deploy_unit": 68,
+          "test_integration_hook": 48,
+          "test_w0_module": 42,
+          "test_estop_latch": 24,
+          "test_doc": 4,
+          "test_deploy_cli": 6
+        },
+        "executor_identity": {
+          "uid": 1000,
+          "euid": 1000,
+          "gid": 1000,
+          "egid": 1000,
+          "pid": 750282,
+          "hostname": "FRIDAY"
+        },
+        "reviewed_at": "2026-09-09T09:54:56.657792+00:00",
+        "executor": "cc-claude claude-fable-5-1 / max",
+        "final_reviewers": [
+          "Codex snapshot_plan_review",
+          "Codex a3b_evidence_audit",
+          "root"
+        ],
+        "preserved_history": [
+          "round1 fmt来源改变中止",
+          "round2旧源码PASS但独立源码Changes Requested",
+          "review_snapshot_round2完整21对象",
+          "旧PLAN全文SHA不可重建，当前批准节快照独立绑定"
+        ],
+        "limits": [
+          "具名计数含harness子入口，不等于独立进程场景",
+          "EINTR为注入",
+          "SIGKILL后OS回收不承诺硬墙钟上限",
+          "未访问Orin/硬件/systemd服务"
+        ],
+        "scope": "稳定目标锁、早期名字检查、持锁provision、启动严格恢复及89/1/71分流；两unit禁止89重启；不迁移生产authority/IPC磁盘writer/双队列",
+        "hardware_access": false,
+        "orin_validation": "NOT_RUN",
+        "validation": "LOCAL_PASS",
+        "archive_boundary": "包括W1最终源码/证据/范围终审及旧评审快照，已冻结监督r4/生命周期r6/容量r3及W0.1/W2a/W2b批准；仍在编写的priority函数实施计划明确排除，见index"
+      },
+      "w01": {
+        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "plan": "P.6.14.8",
+        "root_approval": "local/s48/a3/root_w01_pair_approval.md",
+        "root_approval_sha256": "09b52d28d03339f2fcbed29dff4bd89e7262e54005ad5567b1ad49dc020673c0",
+        "production_activation_approved": false
+      },
+      "w2a": {
+        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "plan": "P.6.14.9",
+        "root_approval": "local/s48/a3/root_w2_execution_plan_r4_approval.md",
+        "root_approval_sha256": "a0040f4517b89aab5201482348bf4c9c0241bf72d84d3badd6e898232c7e8eb1",
+        "production_activation_approved": false
+      },
+      "w2b": {
+        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "plan": "P.6.14.11",
+        "root_approval": "local/s48/a3/root_w2b_r3_approval.md",
+        "root_approval_sha256": "53ed9ca8c5ce4c5626bd2138ecf1e55a924fcf5c32874ff3b5a38dd3462681bc",
+        "production_activation_approved": false
+      },
+      "supervision": {
+        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "plan": "P.6.14.7",
+        "root_approval": "local/s48/a3/root_supervision_r4_approval.md",
+        "root_approval_sha256": "7e1b5fb7049502aecf84414cfe51e38a48b36c62d89091a70c85835d2bc0c01b",
+        "production_activation_approved": false
+      },
+      "priority_lifecycle": {
+        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "plan": "P.6.14.7",
+        "root_approval": "local/s48/a3/root_priority_lifecycle_r6_approval.md",
+        "root_approval_sha256": "e830a05ead61bc0a0d24d7fa531c61dff970af38d8584eec9999689e01b8e8be",
+        "production_activation_approved": false
+      },
+      "capacity_policy": {
+        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "plan": "P.6.14.10",
+        "root_approval": "local/s48/a3/root_capacity_policy_r3_approval.md",
+        "root_approval_sha256": "bca97574a314e59f7981ae98e53f90198021578bef36461bfc7f98add9dabc16",
+        "production_activation_approved": false
       }
     }
   },
@@ -863,19 +964,19 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2095,
-    "sha256": "ae0d55d9a4d5ccb7f541865939b79e5cc87c2a053a3c2717c3d51685e8c19177"
+    "lines": 2245,
+    "sha256": "379a6d96c3c1736a65e2fb752c78aa3030ecf9b06bf62f67947d8910d726aaa3"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "34038762c131847dc443f0d3974c7e76b391444018bc22d4c679f92484b71401",
-    "bytes": 24246541,
-    "members": 6893,
-    "logical_bytes": 884598518,
+    "sha256": "d04dd96fd328752d79ec428c7851ea665977f296e843dec6686706498539962f",
+    "bytes": 24744236,
+    "members": 7045,
+    "logical_bytes": 886181458,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-09T08:08:56.482393+00:00",
+  "updated_at": "2026-09-09T09:54:56.657792+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -897,7 +998,7 @@
     ]
   },
   "next_h2": {
-    "status": "S46_SOFTWARE_FIX_REQUIRED",
+    "status": "S48_IMPLEMENTATION_AND_NEW_DRIVER_REQUIRED",
     "driver": "local/s45/left_h2_current_driver.py",
     "driver_sha256": "c6b698074c4785b858c8bc9954c2463d187afc349953cfb5e5b328b933efb890",
     "plan_review": "ACK",
@@ -906,7 +1007,8 @@
     "physical_reset_after_failed_h2_confirmed": false,
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/s45/recheck/artifacts/release",
     "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2_current",
-    "prior_driver_state": "已执行且失败，left_h2_current目录已消费；修复后必须准备并评审新驱动/新目录"
+    "prior_driver_state": "已执行且失败，left_h2_current目录已消费；修复后必须准备并评审新驱动/新目录",
+    "current_resume_note": "旧driver/source身份保留历史，不能复用；S48全部软件提交与两端验证后另备新现场driver"
   },
   "cleanup": {
     "local": "local/s45/cleanup.json",
