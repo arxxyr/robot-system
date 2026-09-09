@@ -4,11 +4,14 @@
 
 用户已明确“继续”，已恢复软件推进，不重跑已消费的H2驱动。重启后核实工作区
 仍保留全部改动。用户随后指定root定方案和评审，cc-claude具体开发与测试，
-当前Cargo归cc-claude独占，旧开发agent已停止。
+用户最新要求优先节省root token，并允许多个Claude或Codex子agent并行。
+当前Cargo和A3b源码仍归开发Claude独占；root只做最终决策、阻断项处理与验收提交，
+详细方案和独立复核可以委派。旧开发agent保持停止，新并行角色见下。
 A1验证基线为`ce61623436138342b6a2d234b10bada71d6877ca`，分支
 `feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46源文件
 仍未提交，不得reset/clean或冒充已收口。S-47合入S-48；A2已评审提交`dee67fa`，
-A3a共享权限归位core已通过本地门与root评审，本阶段提交后继续A3详细方案。
+A3a共享权限归位core已评审提交`fdac02c`。当前A3b快照并发修复已通过本地22门及独立源码/证据评审；
+root负责归档提交，A3总装r2的剩余问题由并行Claude修订。
 
 最新用户决定：基础控制与普通工作分两个有界队列，每轮先高后普通；每项必须
 非阻塞推进。关节目标合并最新值，急停/Disable可否决旧Enable/Clear的恢复权限。
@@ -61,9 +64,33 @@ root独立复算源码/日志SHA和计数，核与A2实现等价及非A3a输入�
 
 A3只读勘察见包内`local/s48/a3/root_integration_survey.md`：仍需锁定强类型wire租约
 归属、全部旧权威写入口替换、两队列准入与退休、单writer生命周期及端到端保留容量。
-同时识别既有`robot-transport/src/snapshot.rs`并发volatile读写缺少合法同步，
-单写端的!Clone也未阻止共享&self并发写；尚未Miri/TSan复现或修复。须作为后续软件
-闭合项，不复用为新权限槽，也不混入本阶段A2验收范围。
+A3b已获APPROVED_SOFTWARE_SCOPE：最终来源c359e632…d9c5bb/328输入，base fdac02c。
+预分配AtomicU64载荷、固定codec、&mut写端和非回绕版本替换旧并发volatile；旧模块
+Miri三seed全报数据竞争，修复后同驱动三seed均无UB。RT/Serial/IPC耗尽退出，daemon
+补standalone监督；回归用publish前同域时间与真实READY比较，真实join后再导出。
+第六轮16门+补跑6门全部PASS；workspace1740/1 ignored、doctest17/8 ignored、
+transport hook77/3 ignored、S0 guard+hook517/1 ignored、release guard25/0。
+四条既定RT guard专项及parent ignored另跑；67病例、7生产feature图及阳性、实际
+timing均通过。独立证据审计核1411文件，result SHA 2e0d420b…c3；root核26源码SHA。
+最终证据为H包local/s48/a3b/review.md、independent_source_review.md、
+independent_evidence_receipt.json、cc/sixth及sixth_supplement。首四轮FAIL与第五轮旧
+源码PASS保留；没有把后者冒充最终通过。当前软件批准不包含Orin或双队列总装。
+
+当前并行编排：开发Claude PTY67537/PID91744（A3b已FREEZE、Cargo结束）；writer方案
+Claude PTY70639/PID259899；priority方案Claude PTY99320/PID260261。三会话已核模型
+claude-fable-5-1、effort=max。恢复时核实际/proc和会话状态，不能因观察超时重启。
+紧凑进度脚本target/post_e_h2_rt/s48/root_team_watch.py；不读thinking或整屏刷新。
+
+A3两份r2提案及交叉报告冻结，仍未批准总装。共同裁决见a3/root_decision_notes.md。
+writer二审4个凭证与5个监督阻断见independent_writer_w0_r2_review.md、
+independent_writer_supervision_r2_review.md；writer Claude正在另写
+cc_writer_r2_resolutions.md。priority r2仍缺逐跳Lower保留、急停幂等、已发送取消
+身份与server真实pending界，Claude正在另写cc_priority_r2_resolutions.md。
+两份增补仍在编写时不收入A3b归档，归档index显式记录边界；下一包再按最终SHA收入。
+后续先批准W0失败凭证的完整函数合同，再按包实施/独立评审/提交；cache类内预留
+与旧4096门若冲突，须明确Reverse Sync并保留旧S46结果，不默默扩容/改计数。
+独立snapshot_plan_review与a3b_evidence_audit已完成本轮，后续可按有界任务复用；
+root只裁决与整合，避免重复全量源码/日志阅读。旧implementation/reviewer保持停止。
 
 现场最新确认仍为左臂断电、双臂支撑；六服务停止，D15 OPEN。未开展新串口操作。
 恢复软件工作不需要物理授权；任何新H2需软件审核/提交/两端对齐及新现场事实。

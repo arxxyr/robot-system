@@ -443,6 +443,13 @@ pub struct IpcThreadMetrics {
     /// **task #15 阻断 1 修复**：触发即写 latch 的累计成功次数（每次
     /// `guards.estop_latched` 翻转 + `save_estop_latch` 成功 → +1）。
     pub latch_writes: AtomicU64,
+    /// **S48 A3b**：`state_pub.publish` 返回错误（版本耗尽 / 写端损坏）的次数。
+    /// 首次出错即结束本 worker，由 `s0_daemon` READY 循环的 `is_finished` 判错。
+    pub snapshot_publish_errors: AtomicU64,
+    /// **S48 A3b（test-only）**：真实 `publish` 调用之前取的 `RobotClock` 时刻，
+    /// 仅该次返回 `VersionExhausted` 时原子记录（0 = 未发生）。
+    #[cfg(feature = "test-comm-fault-hook")]
+    pub snapshot_publish_failure_attempt_ns: AtomicU64,
     /// 同上，写盘失败次数（IO error）；触发后即便失败也继续运行（state 已
     /// 进 Safe，硬件已断扭；下次 daemon 启动可能漏读 latch，但这是分级降级
     /// 不阻断当前 tick）。
@@ -591,12 +598,14 @@ where
             // 通知外层 "subscribers 已 ready"；ready_rx.recv() 立刻解除阻塞。
             let _ = ready_tx.send(());
             drop(ready_tx);
+            // S48 A3b：写端唯一、按 `&mut` 发布。
+            let mut state_pub = state_pub;
             run_loop(
                 &cfg,
                 clock.as_ref(),
                 subs,
                 &cmd_writer,
-                &state_pub,
+                &mut state_pub,
                 &watchdog_rx,
                 &event_rx,
                 &join_stop,
@@ -639,7 +648,7 @@ fn run_loop(
     clock: &dyn RobotClock,
     mut subs: IpcSubscribers,
     cmd_writer: &LatestCommandWriter<JointCommandBuf>,
-    state_pub: &RtSnapshotPublisher<S0StateSnapshot>,
+    state_pub: &mut RtSnapshotPublisher<S0StateSnapshot>,
     watchdog_rx: &Receiver<Event>,
     event_rx: &Receiver<crate::event_ingress::ControlEvent>,
     stop: &AtomicBool,
@@ -669,11 +678,26 @@ fn run_loop(
         clear_rr: rr_channels,
         set_rr: set_enabled_rr_channels,
     };
-    state_pub.publish(&S0StateSnapshot::new(
+    // S48 A3b：首次发布失败同样结束 worker（不清 latch、不伪装 Ready）。
+    let initial_stamp_ns = clock.now().0;
+    let initial = state_pub.publish(&S0StateSnapshot::new(
         cfg.initial_state,
         cfg.initial_guards,
-        clock.now().0,
+        initial_stamp_ns,
     ));
+    #[cfg(feature = "test-comm-fault-hook")]
+    if initial == Err(robot_transport::SnapshotPublishError::VersionExhausted) {
+        // 时间戳在 publish 之前取（与快照 stamp 同一次时钟读取）。
+        metrics
+            .snapshot_publish_failure_attempt_ns
+            .store(initial_stamp_ns, Ordering::Relaxed);
+    }
+    if initial.is_err() {
+        metrics
+            .snapshot_publish_errors
+            .fetch_add(1, Ordering::Relaxed);
+        return;
+    }
     while crate::worker_stop::worker_running(crate::worker_stop::WorkerKind::Ipc, clock, stop) {
         #[cfg(any(test, feature = "test-freeze-hook"))]
         crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock, stop);
@@ -689,7 +713,21 @@ fn run_loop(
                 estop: poll_estop(&mut subs.estop, metrics),
             }
         });
-        state_pub.publish(&snapshot);
+        #[cfg(feature = "test-comm-fault-hook")]
+        let attempt_started_ns = clock.now().0;
+        let published = state_pub.publish(&snapshot);
+        #[cfg(feature = "test-comm-fault-hook")]
+        if published == Err(robot_transport::SnapshotPublishError::VersionExhausted) {
+            metrics
+                .snapshot_publish_failure_attempt_ns
+                .store(attempt_started_ns, Ordering::Relaxed);
+        }
+        if published.is_err() {
+            metrics
+                .snapshot_publish_errors
+                .fetch_add(1, Ordering::Relaxed);
+            return;
+        }
         thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
     }
 }
@@ -908,6 +946,82 @@ mod tests {
     /// 用途：测试只关心 `ipc_thread` 通路，不想真起 `rt_thread`；但
     /// `Ready → Enabled.Active` 是 Effectful `Enable(true)`，必须 executor 端
     /// ack 才能 commit。本 helper 提供 ack。
+    /// S48 A3b：状态快照写端已耗尽 → 首次发布失败 → IPC worker 在 ready 之后
+    /// 立即结束；错误计数可观察，reader 保留构造快照与版本。
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn state_snapshot_version_exhaustion_on_first_publish_ends_the_ipc_worker() {
+        use robot_transport::MAX_PUBLISHED_VERSION;
+        let (_wd_tx, wd_rx) = unbounded();
+        let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::SystemClock::new());
+        let injected = RtSnapshotPublisher::new_with_version(
+            S0StateSnapshot::default(),
+            MAX_PUBLISHED_VERSION,
+        )
+        .unwrap();
+        let (handle, _cmd_rdr, state_rdr, _cmd_pub, _hb_pub, _estop_pub, _inner) = bring_up_inner(
+            S0State::Safe,
+            Guards::default(),
+            wd_rx,
+            clock,
+            None,
+            Some(injected),
+        );
+        assert!(crate::test_util::wait_until(Duration::from_secs(3), || {
+            handle.is_finished()
+        }));
+        let metrics = Arc::clone(handle.metrics());
+        handle.join().unwrap();
+        assert_eq!(metrics.snapshot_publish_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            metrics.ipc_tick_count.load(Ordering::Relaxed),
+            0,
+            "未进入主循环"
+        );
+        assert_eq!(state_rdr.version(), MAX_PUBLISHED_VERSION, "不回绕");
+        assert_eq!(state_rdr.load(), S0StateSnapshot::default());
+    }
+
+    /// S48 A3b：首次发布成功（到 MAX）、第一个 tick 的发布耗尽 → worker 结束，
+    /// 已执行的 tick 计数保留，reader 保留初始快照。
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn state_snapshot_version_exhaustion_inside_the_loop_ends_the_ipc_worker() {
+        use robot_transport::MAX_PUBLISHED_VERSION;
+        let (_wd_tx, wd_rx) = unbounded();
+        let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::SystemClock::new());
+        let injected = RtSnapshotPublisher::new_with_version(
+            S0StateSnapshot::default(),
+            MAX_PUBLISHED_VERSION - 2,
+        )
+        .unwrap();
+        let (handle, _cmd_rdr, state_rdr, _cmd_pub, _hb_pub, _estop_pub, _inner) = bring_up_inner(
+            S0State::Safe,
+            Guards::default(),
+            wd_rx,
+            clock,
+            None,
+            Some(injected),
+        );
+        assert!(crate::test_util::wait_until(Duration::from_secs(3), || {
+            handle.is_finished()
+        }));
+        let metrics = Arc::clone(handle.metrics());
+        handle.join().unwrap();
+        assert_eq!(metrics.snapshot_publish_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            metrics.ipc_tick_count.load(Ordering::Relaxed),
+            1,
+            "第一个 tick 已执行"
+        );
+        assert_eq!(state_rdr.version(), MAX_PUBLISHED_VERSION);
+        assert_eq!(
+            state_rdr.load().state,
+            S0State::Safe,
+            "保留首次发布的初始快照"
+        );
+    }
+
     fn spawn_auto_ack(
         inner: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     ) -> (Arc<AtomicBool>, std::thread::JoinHandle<()>) {
@@ -970,6 +1084,37 @@ mod tests {
         robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
         Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     ) {
+        bring_up_inner(
+            initial_state,
+            initial_guards,
+            watchdog_rx,
+            clock,
+            latch_path,
+            None,
+        )
+    }
+
+    /// S48 A3b：可注入状态快照写端（例如逼近版本耗尽的 `new_with_version` 产物）。
+    #[allow(clippy::type_complexity)]
+    fn bring_up_inner(
+        initial_state: S0State,
+        initial_guards: Guards,
+        watchdog_rx: Receiver<Event>,
+        clock: Arc<dyn RobotClock>,
+        latch_path: Option<std::path::PathBuf>,
+        state: Option<(
+            RtSnapshotPublisher<S0StateSnapshot>,
+            RtSnapshotReader<S0StateSnapshot>,
+        )>,
+    ) -> (
+        IpcThreadHandle,
+        robot_transport::LatestCommandReader<JointCommandBuf>,
+        RtSnapshotReader<S0StateSnapshot>,
+        robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
+        robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
+        robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
+        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+    ) {
         let topics = fresh_topics();
         // publisher-side Node，测试线程持有。leak 到 'static 避免 drop 后 service
         // 被 iceoryx2 回收（ipc_thread 还要继续 open service）；测试进程 staci 可接受。
@@ -989,8 +1134,9 @@ mod tests {
         let (cmd_writer, cmd_reader) =
             LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
         let reader_clone = cmd_reader.clone();
-        let (state_pub, state_rdr) =
-            RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
+        let (state_pub, state_rdr) = state.unwrap_or_else(|| {
+            RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default())
+        });
 
         let cfg = IpcThreadConfig {
             poll_interval_ns: 500_000,

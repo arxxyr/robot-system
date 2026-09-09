@@ -611,7 +611,7 @@ mod tests {
     /// RT snapshot → `pub_thread` → subscriber 能看到 `JointState` body 的字段。
     #[test]
     fn joint_state_reaches_subscriber() {
-        let (handle, rt_pub, _state_pub, mut js_sub, _hb_sub, _rt_ctrl) = bring_up();
+        let (handle, mut rt_pub, _state_pub, mut js_sub, _hb_sub, _rt_ctrl) = bring_up();
 
         // 发一个带 3 关节的 RT snapshot
         let mut jsb = JointStateBuf {
@@ -627,7 +627,7 @@ mod tests {
             tick_seq: 99,
             tick_deadline_ns: 42_000_000,
         };
-        rt_pub.publish(&snap);
+        rt_pub.publish(&snap).unwrap();
 
         let lease = drain_latest(&mut js_sub, Duration::from_secs(2));
         let view = lease.view().unwrap();
@@ -654,7 +654,7 @@ mod tests {
         use robot_core::executor_ctrl::OutputSafetyState;
         use robot_msg::msg::{JointState as FbJointState, S0SafetyState as WireSafetyState};
 
-        let (handle, rt_pub, _state_pub, mut js_sub, _hb_sub, rt_ctrl) = bring_up();
+        let (handle, mut rt_pub, _state_pub, mut js_sub, _hb_sub, rt_ctrl) = bring_up();
 
         let cases = [
             (
@@ -677,15 +677,17 @@ mod tests {
                 .store(core_state.to_u8(), Ordering::Release);
             // 触发新一帧 publish（snap.tick_seq 唯一让 reader 能区分）。
             #[allow(clippy::cast_possible_truncation)]
-            rt_pub.publish(&RtSnapshot {
-                state: JointStateBuf {
-                    joint_count: 0,
-                    stamp_ns: (i as u64 + 1) * 1_000_000,
-                    ..JointStateBuf::default()
-                },
-                tick_seq: i as u64 + 1,
-                tick_deadline_ns: 0,
-            });
+            rt_pub
+                .publish(&RtSnapshot {
+                    state: JointStateBuf {
+                        joint_count: 0,
+                        stamp_ns: (i as u64 + 1) * 1_000_000,
+                        ..JointStateBuf::default()
+                    },
+                    tick_seq: i as u64 + 1,
+                    tick_deadline_ns: 0,
+                })
+                .unwrap();
 
             // 轮询直到拿到 stamp_ns 匹配的最新帧 —— 旧帧 stamp_ns 不一致就丢。
             let target_stamp = (i as u64 + 1) * 1_000_000;

@@ -9,7 +9,9 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const OBSERVATION_PAGE_BYTES: usize = 4096;
-const WORD_COUNT: usize = 26;
+// S48 A3b：末尾追加 ExecutorPublishFailureAttempt / IpcPublishFailureAttempt 两字（原 26）；
+// 既有字段偏移不变，页仍为 4096 字节。
+const WORD_COUNT: usize = 28;
 const VERSION: u64 = 1;
 
 #[repr(C)]
@@ -41,6 +43,18 @@ pub struct ObservationSnapshot {
     pub serial_calls: [u64; 6],
     pub refused_stop_bitmap: u64,
     pub preflight_finished_ns: u64,
+    /// S48 A3b：执行器 worker 在真实 `publish` 调用**之前**取的 `RobotClock` 时刻，
+    /// 仅该次返回 `VersionExhausted` 时记录；0 = 未发生。由 daemon 退出后导出。
+    pub executor_publish_failure_attempt_ns: u64,
+    /// S48 A3b：IPC worker 同上。
+    pub ipc_publish_failure_attempt_ns: u64,
+}
+
+/// S48 A3b：快照发布耗尽的 worker 身份，供 daemon 退出后导出对应字段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublishFailureWorker {
+    Executor,
+    Ipc,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -72,6 +86,8 @@ pub(crate) enum ObservationField {
     ConnectCalls,
     RefusedStopBitmap,
     PreflightFinished,
+    ExecutorPublishFailureAttempt,
+    IpcPublishFailureAttempt,
 }
 
 pub struct ObservationPage {
@@ -89,6 +105,20 @@ impl ObservationPage {
     /// daemon 协作式关停先真实提交 Disabled，再记录此观测时间。
     pub fn record_disabled(&self, now: u64) {
         self.store_first(ObservationField::Disabled, now);
+    }
+
+    /// S48 A3b：daemon 在 READY 循环退出后导出 worker 记录的快照耗尽尝试时刻
+    /// （worker 在 `publish` 之前取的时钟，仅 `VersionExhausted` 时记录）。
+    pub fn record_publish_failure_attempt(
+        &self,
+        worker: PublishFailureWorker,
+        attempt_started_ns: u64,
+    ) {
+        let field = match worker {
+            PublishFailureWorker::Executor => ObservationField::ExecutorPublishFailureAttempt,
+            PublishFailureWorker::Ipc => ObservationField::IpcPublishFailureAttempt,
+        };
+        self.store_first(field, attempt_started_ns);
     }
     /// 父端在 spawn 子进程之前创建全零页，路径已存在时拒绝覆盖。
     ///
@@ -236,6 +266,8 @@ impl ObservationPage {
             .map(|field| self.load(field)),
             refused_stop_bitmap: self.load(F::RefusedStopBitmap),
             preflight_finished_ns: self.load(F::PreflightFinished),
+            executor_publish_failure_attempt_ns: self.load(F::ExecutorPublishFailureAttempt),
+            ipc_publish_failure_attempt_ns: self.load(F::IpcPublishFailureAttempt),
         }
     }
 }

@@ -31,6 +31,23 @@ impl Process {
         fail: Option<&str>,
         ipc_exit_before_enable: bool,
     ) -> Self {
+        Self::spawn_inner(joints, extra, pause, fail, ipc_exit_before_enable, &[])
+    }
+
+    /// S48 A3b：standalone（显式移除 `WATCHDOG_USEC` / `NOTIFY_SOCKET`）并注入
+    /// 额外 `ROBOT_TEST_*` 环境变量，用于快照版本耗尽回归。
+    fn spawn_standalone_with_env(joints: usize, envs: &[(&str, String)]) -> Self {
+        Self::spawn_inner(joints, &[], None, None, false, envs)
+    }
+
+    fn spawn_inner(
+        joints: usize,
+        extra: &[&str],
+        pause: Option<&str>,
+        fail: Option<&str>,
+        ipc_exit_before_enable: bool,
+        envs: &[(&str, String)],
+    ) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let robot_id = format!(
             "c4_start_{}_{}",
@@ -86,6 +103,10 @@ impl Process {
         if ipc_exit_before_enable {
             command.env("ROBOT_TEST_IPC_EXIT_BEFORE_AUTO_ENABLE", "1");
         }
+        command.env_remove("WATCHDOG_USEC");
+        for (key, value) in envs {
+            command.env(key, value);
+        }
         let child = command.spawn().unwrap();
         Self {
             child,
@@ -123,20 +144,22 @@ impl Process {
     fn wait_ready(&mut self, timeout_ms: u64) -> ObservationSnapshot {
         let deadline = SystemClock.now().0 + timeout_ms * 1_000_000;
         loop {
-            let observed = self.page.snapshot();
-            if observed.ready_reached && observed.supervisor_exit_ns != 0 {
-                return observed;
-            }
+            // 先核存活与截止，再读 READY 页；历史 READY 页本身不证明事件顺序，
+            // 跨线程顺序由 worker 记录的耗尽尝试时刻与真实 ready_ns 比较证明。
             assert!(
                 self.child.try_wait().unwrap().is_none(),
                 "READY前退出\n{}",
                 self.log()
             );
+            let observed = self.page.snapshot();
             assert!(
                 SystemClock.now().0 < deadline,
                 "等待READY超时：{observed:?}\n{}",
                 self.log()
             );
+            if observed.ready_reached && observed.supervisor_exit_ns != 0 {
+                return observed;
+            }
             std::thread::sleep(Duration::from_millis(5));
         }
     }
@@ -161,6 +184,17 @@ impl Drop for Process {
             eprintln!("失败证据保留：{}", directory.keep().display());
         }
     }
+}
+
+/// `first` 首次出现必须早于 `second` 首次出现（两者都必须存在）。
+fn assert_log_order(log: &str, first: &str, second: &str) {
+    let first_at = log
+        .find(first)
+        .unwrap_or_else(|| panic!("缺少 {first:?}：{log}"));
+    let second_at = log
+        .find(second)
+        .unwrap_or_else(|| panic!("缺少 {second:?}：{log}"));
+    assert!(first_at < second_at, "{first:?} 必须早于 {second:?}：{log}");
 }
 
 fn assert_initialized(observed: ObservationSnapshot) {
@@ -257,6 +291,119 @@ fn ipc_worker_exit_after_ready_terminates_standalone_daemon() {
     assert_ne!(observed.disabled_ns, 0);
     assert_eq!(observed.stop_bitmap, 0x7f);
     assert_eq!(observed.fired_checkpoint, 0);
+}
+
+/// S48 A3b：READY 之后执行器（SerialRT mock）因快照版本耗尽结束；standalone
+/// （无 `WATCHDOG_USEC` / `NOTIFY_SOCKET`）下 daemon 必须由 READY 循环自己判错并
+/// 非零退出，走既有收尾。版本起点留 1000 次发布（5 ms tick ≈ 5 s），保证 READY
+/// 先于耗尽发生；若环境慢到 READY 晚于耗尽，本用例按超时失败而不是误判通过。
+#[test]
+fn executor_snapshot_version_exhaustion_after_ready_terminates_standalone_daemon() {
+    let start = robot_transport::MAX_PUBLISHED_VERSION - 2 * 1000;
+    let mut process = Process::spawn_standalone_with_env(
+        6,
+        &[("ROBOT_TEST_SNAPSHOT_INITIAL_VERSION", start.to_string())],
+    );
+    let ready = process.wait_ready(4000);
+    assert!(ready.ready_reached);
+    assert_eq!(process.wait_exit(15_000), 1);
+    let observed = process.page.snapshot();
+    assert!(observed.ready_reached);
+    assert_ne!(observed.disabled_ns, 0);
+    assert_eq!(
+        observed.stop_bitmap, 0x7f,
+        "既有收尾必须停掉全部七个 worker"
+    );
+    assert_eq!(observed.fired_checkpoint, 0);
+    // 事件顺序证据：执行器在真实 publish 之前取的时钟（同 CLOCK_MONOTONIC_RAW）
+    // 必须晚于 daemon 的真实 READY 时刻。
+    assert_ne!(
+        observed.executor_publish_failure_attempt_ns, 0,
+        "{observed:?}"
+    );
+    assert!(
+        observed.ready_ns < observed.executor_publish_failure_attempt_ns,
+        "耗尽尝试必须晚于 READY：{observed:?}"
+    );
+    assert_eq!(
+        observed.ipc_publish_failure_attempt_ns, 0,
+        "IPC 未耗尽：{observed:?}"
+    );
+    let log = process.log();
+    assert!(log.contains("READY 后执行器 worker 已退出"), "{log}");
+    assert!(
+        log.contains("VersionExhausted") && log.contains("worker=Executor"),
+        "{log}"
+    );
+    // 导出发生在 READY 循环退出 + 既有收尾真实 join 之后（不靠 is_finished）：
+    // 日志顺序必须是 READY 判错在前、耗尽时刻导出在后。
+    assert_log_order(&log, "READY 后执行器 worker 已退出", "VersionExhausted");
+    assert!(
+        !log.contains("READY 后 IPC worker 已退出"),
+        "执行器与 IPC 的耗尽出口分开核：{log}"
+    );
+    assert!(
+        log.contains("standalone 无 READY socket"),
+        "仍为无 notify 的 standalone：{log}"
+    );
+    assert!(
+        !log.contains("WATCHDOG_USEC"),
+        "不应启动 systemd watchdog：{log}"
+    );
+}
+
+/// S48 A3b：IPC 的状态快照写端耗尽 → IPC worker 结束 → READY 循环既有 IPC 判错。
+#[test]
+fn ipc_state_snapshot_version_exhaustion_after_ready_terminates_standalone_daemon() {
+    // IPC 每 500 µs 发布一次：留 8000 次发布 ≈ 4 s，保证 READY 先于耗尽。
+    let start = robot_transport::MAX_PUBLISHED_VERSION - 2 * 8000;
+    let mut process = Process::spawn_standalone_with_env(
+        6,
+        &[(
+            "ROBOT_TEST_STATE_SNAPSHOT_INITIAL_VERSION",
+            start.to_string(),
+        )],
+    );
+    let ready = process.wait_ready(4000);
+    assert!(ready.ready_reached);
+    assert_eq!(process.wait_exit(15_000), 1);
+    let observed = process.page.snapshot();
+    assert!(observed.ready_reached);
+    assert_eq!(observed.stop_bitmap, 0x7f);
+    assert_ne!(observed.ipc_publish_failure_attempt_ns, 0, "{observed:?}");
+    assert!(
+        observed.ready_ns < observed.ipc_publish_failure_attempt_ns,
+        "耗尽尝试必须晚于 READY：{observed:?}"
+    );
+    assert_eq!(
+        observed.executor_publish_failure_attempt_ns, 0,
+        "执行器未耗尽：{observed:?}"
+    );
+    let log = process.log();
+    assert!(log.contains("READY 后 IPC worker 已退出"), "{log}");
+    assert!(
+        log.contains("VersionExhausted") && log.contains("worker=Ipc"),
+        "{log}"
+    );
+    assert_log_order(&log, "READY 后 IPC worker 已退出", "VersionExhausted");
+    assert!(!log.contains("READY 后执行器 worker 已退出"), "{log}");
+    assert!(log.contains("standalone 无 READY socket"), "{log}");
+    assert!(!log.contains("WATCHDOG_USEC"), "{log}");
+}
+
+/// S48 A3b：非法注入值（奇数）不得启动 daemon。
+#[test]
+fn odd_snapshot_version_injection_is_rejected_at_startup() {
+    let mut process = Process::spawn_standalone_with_env(
+        6,
+        &[("ROBOT_TEST_SNAPSHOT_INITIAL_VERSION", "3".to_string())],
+    );
+    assert_eq!(process.wait_exit(5000), 1);
+    assert!(
+        process.log().contains("快照初始版本注入值非法"),
+        "{}",
+        process.log()
+    );
 }
 
 #[test]

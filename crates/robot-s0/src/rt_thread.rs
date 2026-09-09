@@ -102,6 +102,16 @@ pub struct RtThreadMetrics {
     pub latch_rejected_count: AtomicU64,
     /// task-30 v9 / M5：normal action 完成（成功 + 失败）计数。
     pub normal_completed_count: AtomicU64,
+    /// **S48 A3b**：`RtSnapshotPublisher::publish` 返回错误（版本耗尽 / 写端损坏）
+    /// 的次数。首次出错即结束本 worker（guard 退出后结束外层循环），由
+    /// `s0_daemon` 的 `is_finished` / 进度停滞监督判错；不清 latch、不伪装 Ready。
+    pub snapshot_publish_errors: AtomicU64,
+    /// **S48 A3b（test-only）**：真实 `publish` 调用之前取的 `RobotClock` 时刻，
+    /// 仅该次返回 `VersionExhausted` 时原子记录（0 = 未发生）；与 daemon 的真实
+    /// READY 时刻比较可证明耗尽发生在 READY 之后。RT 内只做一次 `clock.now()`
+    /// 与一次原子 store，无分配、无日志。
+    #[cfg(feature = "test-comm-fault-hook")]
+    pub snapshot_publish_failure_attempt_ns: AtomicU64,
     /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
     /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
     /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
@@ -249,7 +259,7 @@ fn run_rt_loop<A: HardRtAdapter>(
     clock: Arc<dyn RobotClock>,
     mut adapter: A,
     cmd_reader: LatestCommandReader<JointCommandBuf>,
-    snapshot_pub: RtSnapshotPublisher<RtSnapshot>,
+    mut snapshot_pub: RtSnapshotPublisher<RtSnapshot>,
     stop: &Arc<AtomicBool>,
     metrics: &Arc<RtThreadMetrics>,
     ctrl: &Arc<HardRtCtrlInner>,
@@ -274,11 +284,26 @@ fn run_rt_loop<A: HardRtAdapter>(
     // warmup 在 rt_entry! 之前 + 在主循环之前，alloc 允许。完成后 thread_local 全
     // 已初始化，主循环稳态 0 alloc。
     drop(cmd_reader.load());
-    snapshot_pub.publish(&RtSnapshot {
+    // S48 A3b：首次发布同样是失败出口——版本耗尽即不进入主循环、结束 worker。
+    #[cfg(feature = "test-comm-fault-hook")]
+    let warmup_attempt_started_ns = clock.now().0;
+    let warmup = snapshot_pub.publish(&RtSnapshot {
         state: state_buf,
         tick_seq: 0,
         tick_deadline_ns: 0,
     });
+    #[cfg(feature = "test-comm-fault-hook")]
+    if warmup == Err(robot_transport::SnapshotPublishError::VersionExhausted) {
+        metrics
+            .snapshot_publish_failure_attempt_ns
+            .store(warmup_attempt_started_ns, Ordering::Relaxed);
+    }
+    if warmup.is_err() {
+        metrics
+            .snapshot_publish_errors
+            .fetch_add(1, Ordering::Relaxed);
+        return;
+    }
 
     // ---- 主循环（task-30 v9 / M5 改造） ----
     while crate::worker_stop::worker_running(
@@ -303,7 +328,9 @@ fn run_rt_loop<A: HardRtAdapter>(
             metrics.overruns.fetch_add(1, Ordering::Relaxed);
         }
 
-        rt_entry!({
+        // S48 A3b：rt_entry 块返回本 tick 的发布结果；错误在 guard 退出之后
+        // 处理（计数 + 结束循环），RT scope 内不 format、不 panic、不 drop Arc。
+        let published = rt_entry!({
             clock.sleep_until(deadline);
 
             // ─── 1) emergency drain ────────────────────────────────────────
@@ -452,10 +479,26 @@ fn run_rt_loop<A: HardRtAdapter>(
                 tick_seq,
                 tick_deadline_ns: deadline.0.0,
             };
-            snapshot_pub.publish(&snap);
-
-            metrics.tick_count.fetch_add(1, Ordering::Relaxed);
+            #[cfg(feature = "test-comm-fault-hook")]
+            let attempt_started_ns = clock.now().0;
+            let published = snapshot_pub.publish(&snap);
+            #[cfg(feature = "test-comm-fault-hook")]
+            if published == Err(robot_transport::SnapshotPublishError::VersionExhausted) {
+                metrics
+                    .snapshot_publish_failure_attempt_ns
+                    .store(attempt_started_ns, Ordering::Relaxed);
+            }
+            if published.is_ok() {
+                metrics.tick_count.fetch_add(1, Ordering::Relaxed);
+            }
+            published
         });
+        if published.is_err() {
+            metrics
+                .snapshot_publish_errors
+                .fetch_add(1, Ordering::Relaxed);
+            break;
+        }
     }
 
     // ---- 退出清理 ----
@@ -795,6 +838,88 @@ mod tests {
 
         handle.request_stop();
         handle.join().unwrap();
+    }
+
+    /// S48 A3b：快照版本已耗尽 → warmup（首次）发布失败 → worker 不进入主循环即
+    /// 结束；错误计数可观察，reader 保留构造时的快照与版本，不回绕。
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn snapshot_version_exhaustion_on_first_publish_ends_the_worker() {
+        use robot_transport::MAX_PUBLISHED_VERSION;
+        let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::SystemClock::new());
+        let adapter = MockHardRTAdapter::with_unlimited_limits(2);
+        let (_cmd_writer, cmd_reader) =
+            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
+        let (snap_pub, snap_rdr) =
+            RtSnapshotPublisher::new_with_version(RtSnapshot::default(), MAX_PUBLISHED_VERSION)
+                .unwrap();
+        let cfg = RtThreadConfig {
+            tick_period_ns: 100_000,
+            strict_rt: false,
+            ..RtThreadConfig::default()
+        };
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            Arc::new(HardRtCtrlInner::new()),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
+        assert!(crate::test_util::wait_until(Duration::from_secs(3), || {
+            handle.is_finished()
+        }));
+        let metrics = Arc::clone(handle.metrics());
+        handle.join().unwrap();
+        assert_eq!(metrics.snapshot_publish_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.tick_count.load(Ordering::Relaxed), 0);
+        assert_eq!(snap_rdr.version(), MAX_PUBLISHED_VERSION, "不回绕");
+        assert_eq!(snap_rdr.load().tick_seq, 0, "保留构造时的快照");
+    }
+
+    /// S48 A3b：warmup 成功后第一个 tick 的发布耗尽 → 该 tick 不计数，错误在 guard
+    /// 退出后处理并结束循环；reader 保留 warmup 快照（tick_seq = 0）。
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn snapshot_version_exhaustion_inside_the_loop_ends_the_worker_after_the_guard() {
+        use robot_transport::MAX_PUBLISHED_VERSION;
+        let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::SystemClock::new());
+        let adapter = MockHardRTAdapter::with_unlimited_limits(2);
+        let (_cmd_writer, cmd_reader) =
+            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
+        let (snap_pub, snap_rdr) =
+            RtSnapshotPublisher::new_with_version(RtSnapshot::default(), MAX_PUBLISHED_VERSION - 2)
+                .unwrap();
+        let cfg = RtThreadConfig {
+            tick_period_ns: 100_000,
+            strict_rt: false,
+            ..RtThreadConfig::default()
+        };
+        let handle = spawn_rt_thread(
+            cfg,
+            clock,
+            adapter,
+            cmd_reader,
+            snap_pub,
+            Arc::new(HardRtCtrlInner::new()),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
+        assert!(crate::test_util::wait_until(Duration::from_secs(3), || {
+            handle.is_finished()
+        }));
+        let metrics = Arc::clone(handle.metrics());
+        handle.join().unwrap();
+        assert_eq!(metrics.snapshot_publish_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            metrics.tick_count.load(Ordering::Relaxed),
+            0,
+            "发布失败的 tick 不计成功"
+        );
+        assert_eq!(snap_rdr.version(), MAX_PUBLISHED_VERSION);
+        assert_eq!(snap_rdr.load().tick_seq, 0, "保留 warmup 快照");
     }
 
     /// 构造即 destroy（不跑 tick）—— 验证 handle 生命周期 + adapter connect 成功。

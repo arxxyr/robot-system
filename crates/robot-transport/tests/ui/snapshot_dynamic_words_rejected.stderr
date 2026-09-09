@@ -1,0 +1,16 @@
+error[E0277]: the trait bound `Vec<u64>: SnapshotWords` is not satisfied
+  --> tests/ui/snapshot_dynamic_words_rejected.rs:10:18
+   |
+10 |     type Words = Vec<u64>;
+   |                  ^^^^^^^^ the trait `SnapshotWords` is not implemented for `Vec<u64>`
+   |
+help: the trait `SnapshotWords` is implemented for `[u64; N]`
+  --> src/snapshot.rs
+   |
+   | impl<const N: usize> SnapshotWords for [u64; N] {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `robot_transport::SnapshotValue::Words`
+  --> src/snapshot.rs
+   |
+   |     type Words: SnapshotWords;
+   |                 ^^^^^^^^^^^^^ required by this bound in `SnapshotValue::Words`

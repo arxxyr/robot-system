@@ -231,7 +231,8 @@ pub struct Rejected {
 /// Part 2 架构决策：`ipc_thread` 是 state machine 的执行者，每 tick 消费事件调
 /// [`try_transition`] 后必须把结果发布给 `pub_thread`（它负责对外 iceoryx2 publish
 /// `JointState` + S0 自身 Heartbeat）。同步原语复用现有 `RtSnapshotPublisher<T>`
-/// seqlock —— 要求 `T: Copy`。
+/// seqlock —— S48 A3b 起要求 `T: SnapshotValue`（显式字段 codec，见
+/// [`crate::state_snapshot_codec`]），`Copy` 本身不再被当作跨线程搬运的安全依据。
 ///
 /// 把当前 [`S0State`] + [`Guards`] 快照 + 时间戳打包成单一 POD struct 承载，方便
 /// `pub_thread` 侧一次 `load()` 拿到完整视图（避免两次 load 之间的撕裂语义）。
@@ -978,21 +979,21 @@ mod tests {
 
     /// 集成测试：`S0StateSnapshot` 经 seqlock publish/load 语义正确。
     ///
-    /// 本测试同时在**编译期**证明 `S0StateSnapshot: Copy + Send + 'static`
-    /// —— `RtSnapshotPublisher<T>` 泛型 bound 为 `T: Copy + Send + 'static`，
-    /// 实例化失败即编译失败。这是 Part 2 `ipc_thread.state_pub` / `pub_thread.state_rdr`
-    /// 接线的前置条件。
+    /// 本测试同时在**编译期**证明 `S0StateSnapshot: SnapshotValue`
+    /// —— `RtSnapshotPublisher<T>` 泛型 bound 为 `T: SnapshotValue`（S48 A3b，
+    /// codec 见 `state_snapshot_codec`），实例化失败即编译失败。这是 Part 2
+    /// `ipc_thread.state_pub` / `pub_thread.state_rdr` 接线的前置条件。
     #[test]
     fn snapshot_roundtrips_through_seqlock() {
         use robot_transport::RtSnapshotPublisher;
 
         let initial = S0StateSnapshot::default();
-        let (pubr, rdr) = RtSnapshotPublisher::new(initial);
+        let (mut pubr, rdr) = RtSnapshotPublisher::new(initial);
         assert_eq!(rdr.load(), initial);
 
         let g = healthy_guards();
         let snap = S0StateSnapshot::new(enabled_active(), g, 12_345_000);
-        pubr.publish(&snap);
+        pubr.publish(&snap).unwrap();
 
         let loaded = rdr.load();
         assert_eq!(loaded, snap);

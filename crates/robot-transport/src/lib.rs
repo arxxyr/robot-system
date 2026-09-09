@@ -35,6 +35,8 @@ pub mod metrics;
 pub mod parser;
 pub mod sample;
 pub mod snapshot;
+// S48 A3b：`RtSnapshot` 的显式字段 codec；同步本体 `snapshot.rs` 保持只依赖标准库。
+mod snapshot_codec;
 pub mod traits;
 pub mod writer;
 
@@ -49,6 +51,9 @@ pub use error::TransportError;
 pub use metrics::ParseMetrics;
 pub use parser::{ParseError, ParsedSample, parse_sample};
 pub use sample::{BlobView, BodyView, HeaderView, MessageView, SampleLease};
-pub use snapshot::{RtSnapshotPublisher, RtSnapshotReader};
+pub use snapshot::{
+    MAX_PUBLISHED_VERSION, RtSnapshotPublisher, RtSnapshotReader, SnapshotPublishError,
+    SnapshotValue, SnapshotWords,
+};
 pub use traits::{LatestSubscriber, Publisher, RequestClient};
 pub use writer::SampleWriter;

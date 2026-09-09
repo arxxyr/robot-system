@@ -21,6 +21,19 @@ root核搬迁语义等价和非本包源码未变，cc-claude第二轮18道门�
 生产feature图与阳性对照、workspace/all-targets真实timing报告。计数与证据
 见10_verification及H包；不修改冻结设计，不宣称双队列已接通或真机已验证。
 
+后续A3b计划已批准：旧snapshot的volatile共享载荷由最小原样模块Miri复现数据
+竞争；改为预分配AtomicU64载荷与显式固定字段codec，&mut发布限制排他写，版本
+饱和拒绝发布并退出worker，不回绕。保持单写多读seqlock、RT零分配及原分层；
+函数级约束和软件退出门见PLAN P.6.14.4。现A3b已独立源码与证据评审通过，
+第六轮及补跑22道本地门PASS；原模块Miri三seed数据竞争，修复模块同驱动三seed
+均无UB。生产codec另外通过真实分配守卫，不宣称最小Miri已解释执行完整S0。
+独立方案评审发现standalone未配置systemd watchdog时，READY循环原只检查IPC，
+不能保证executor耗尽退出被发现；本包补executor退出检查及真实mock进程回归。
+增量评审另发现历史READY页不能证明真实耗尽先后；回归补publish调用前的同域
+时刻与ready_ns比较，分别核executor/IPC耗尽晚于READY；最后在实际join完成后
+导出观测，避免is_finished未同步导致旧零值。两项评审阻断均已闭合，具体来源与
+分类计数见10_verification及H包。双队列/单writer总装仍待后续，未运行本包Orin验证。
+
 ## 2026-09-09 · S-48 双队列控制优先级（A1文件事务本地及独立评审通过）
 
 用户明确基础控制走高优先级通道，关节位置等走普通通道，并指定两个有界队列、

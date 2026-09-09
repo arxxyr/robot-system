@@ -740,6 +740,11 @@ fn run(args: &ResolvedArgs, supervisor: &BootSupervisor, stops: &StopFlags) -> R
                 .saturating_add(1_000_000_000),
         );
     }
+    // S48 A3b（test-only）：在既有收尾真实 join 之后才导出 worker 记录的快照耗尽
+    // 尝试时刻；`is_finished` 不建立 happens-before，READY 循环内一次 Relaxed 读
+    // 可能仍见 0。物理收尾顺序与退出码不变。
+    #[cfg(feature = "test-comm-fault-hook")]
+    export_publish_failure_attempts(supervisor, &workers);
     result
 }
 
@@ -752,6 +757,41 @@ struct WorkerHandles {
     executor: Option<ExecutorHandle>,
     publisher: Option<robot_s0::pub_thread::PubThreadHandle>,
     io: Option<robot_s0::io_thread::IoThreadHandle>,
+    /// S48 A3b（test-only）：保留 executor / IPC metrics 引用与真实 join 结果，供
+    /// 收尾 join 之后导出快照耗尽尝试时刻（`is_finished` 不建立 happens-before）。
+    #[cfg(feature = "test-comm-fault-hook")]
+    publish_failure_probe: PublishFailureProbe,
+}
+
+/// S48 A3b（test-only）：worker metrics 引用 + 该 worker 是否已真实 join。
+#[cfg(feature = "test-comm-fault-hook")]
+#[derive(Default)]
+struct PublishFailureProbe {
+    executor: Option<ExecutorMetricsRef>,
+    ipc: Option<Arc<robot_s0::ipc_thread::IpcThreadMetrics>>,
+    executor_joined: bool,
+    ipc_joined: bool,
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+enum ExecutorMetricsRef {
+    HardRt(Arc<robot_s0::rt_thread::RtThreadMetrics>),
+    SerialRt(Arc<robot_s0::serial_io_thread::SerialIoThreadMetrics>),
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+impl ExecutorMetricsRef {
+    /// 只在对应线程真实 join 之后读取（happens-before 由 join 建立）。
+    fn snapshot_publish_failure_attempt_ns(&self) -> u64 {
+        match self {
+            Self::HardRt(m) => m
+                .snapshot_publish_failure_attempt_ns
+                .load(Ordering::Acquire),
+            Self::SerialRt(m) => m
+                .snapshot_publish_failure_attempt_ns
+                .load(Ordering::Acquire),
+        }
+    }
 }
 
 impl WorkerHandles {
@@ -788,6 +828,12 @@ impl WorkerHandles {
             }
             let remaining = stop_deadline.saturating_sub(clock.now().0);
             thread::sleep(Duration::from_nanos(remaining.min(5_000_000)));
+        }
+        // 只有 take 之后紧接 join 的路径会把槽位清空：槽位为空 = 已真实 join。
+        #[cfg(feature = "test-comm-fault-hook")]
+        {
+            self.publish_failure_probe.ipc_joined = self.ipc.is_none();
+            self.publish_failure_probe.executor_joined = self.executor.is_none();
         }
     }
     fn all_joined(&self) -> bool {
@@ -828,7 +874,7 @@ impl WorkerHandles {
     }
     fn stop_normally(&mut self, stops: &StopFlags) {
         if let (Some(ipc), Some(watchdog)) = (self.ipc.take(), self.watchdog.take()) {
-            graceful_stop(
+            let joined = graceful_stop(
                 ipc,
                 stops,
                 watchdog,
@@ -838,6 +884,13 @@ impl WorkerHandles {
                 self.clear.take(),
                 self.set.take(),
             );
+            #[cfg(feature = "test-comm-fault-hook")]
+            {
+                self.publish_failure_probe.executor_joined = joined.executor;
+                self.publish_failure_probe.ipc_joined = joined.ipc;
+            }
+            #[cfg(not(feature = "test-comm-fault-hook"))]
+            let _ = joined;
         }
     }
 }
@@ -855,8 +908,14 @@ fn run_workers(
     let clock = &res.clock;
     let t = topics(args);
     let (cmd_writer, cmd_reader) = LatestCommandSlot::new(JointCommandBuf::default());
-    let (snapshot_pub, snapshot_reader) = RtSnapshotPublisher::new(RtSnapshot::default());
-    let (state_pub, state_reader) = RtSnapshotPublisher::new(S0StateSnapshot::default());
+    let (snapshot_pub, snapshot_reader) = snapshot_publisher_with_test_version(
+        RtSnapshot::default(),
+        "ROBOT_TEST_SNAPSHOT_INITIAL_VERSION",
+    )?;
+    let (state_pub, state_reader) = snapshot_publisher_with_test_version(
+        S0StateSnapshot::default(),
+        "ROBOT_TEST_STATE_SNAPSHOT_INITIAL_VERSION",
+    )?;
     let (wd_tx, wd_rx) = bounded::<Event>(64);
     let (clear_tx, clear_rx) = bounded::<ClearEStopRrRequest>(RR_CHANNEL_CAPACITY);
     let (clear_response_tx, clear_response_rx) =
@@ -913,6 +972,11 @@ fn run_workers(
         .map_err(|error| startup_io_error(&error))?,
     );
     stops.mark_spawned(WorkerKind::Ipc);
+    #[cfg(feature = "test-comm-fault-hook")]
+    {
+        workers.publish_failure_probe.ipc =
+            workers.ipc.as_ref().map(|ipc| Arc::clone(ipc.metrics()));
+    }
     let clear_topic = t.rr_clear_estop.clone();
     workers.clear = Some(
         spawn_rr_server_thread(
@@ -1037,6 +1101,11 @@ fn run_workers(
         }
     });
     stops.mark_spawned(WorkerKind::Executor);
+    #[cfg(feature = "test-comm-fault-hook")]
+    {
+        workers.publish_failure_probe.executor =
+            workers.executor.as_ref().map(ExecutorHandle::metrics_ref);
+    }
     let pub_topics = (t.pub_state.clone(), t.pub_heartbeat.clone());
     workers.publisher = Some(
         spawn_pub_thread(
@@ -1171,6 +1240,23 @@ fn run_workers(
             runtime_result = Err(1);
             break;
         }
+        // S48 A3b：standalone（无 WATCHDOG_USEC）时 systemd watchdog 不启动，
+        // BootSupervisor 也已在 READY 退出；executor 因快照版本耗尽等原因结束
+        // 不能只依赖 systemd 发现，这里同时核 executor 存在且未结束，缺失 /
+        // 结束走错误退出与既有收尾（不清 latch、不伪装 Ready）。
+        match workers.executor.as_ref() {
+            Some(executor) if !executor.is_finished() => {}
+            Some(_) => {
+                tracing::error!(reason = "ExecutorFinished", "READY 后执行器 worker 已退出");
+                runtime_result = Err(1);
+                break;
+            }
+            None => {
+                tracing::error!(reason = "ExecutorMissing", "READY 后执行器 worker 不存在");
+                runtime_result = Err(1);
+                break;
+            }
+        }
         let now = clock.now().0;
         if SHUTDOWN.load(Ordering::Acquire)
             || args.smoke_duration.is_some_and(|duration| {
@@ -1208,6 +1294,88 @@ fn run_workers(
     save_estop_latch(&args.latch_path, latched).map_err(|error| startup_io_error(&error))?;
     tracing::info!("s0_daemon: clean shutdown");
     runtime_result
+}
+
+/// S48 A3b（test-only）：在对应线程真实 join 之后，把 worker 在 `publish` 之前取的
+/// 耗尽尝试时刻导出到观测页并记日志；0 表示该 worker 未发生 `VersionExhausted`。
+/// 未完成 join 的 worker 不导出（如实记录，不猜测）。
+#[cfg(feature = "test-comm-fault-hook")]
+fn export_publish_failure_attempts(supervisor: &BootSupervisor, workers: &WorkerHandles) {
+    use robot_s0::comm_fault_observation::PublishFailureWorker;
+    let probe = &workers.publish_failure_probe;
+    let executor_attempt_ns = match (&probe.executor, probe.executor_joined) {
+        (Some(metrics), true) => metrics.snapshot_publish_failure_attempt_ns(),
+        (Some(_), false) => {
+            tracing::warn!(
+                worker = "Executor",
+                "收尾未完成 join，不导出快照耗尽尝试时刻"
+            );
+            0
+        }
+        (None, _) => 0,
+    };
+    let ipc_attempt_ns = match (&probe.ipc, probe.ipc_joined) {
+        (Some(metrics), true) => metrics
+            .snapshot_publish_failure_attempt_ns
+            .load(Ordering::Acquire),
+        (Some(_), false) => {
+            tracing::warn!(worker = "Ipc", "收尾未完成 join，不导出快照耗尽尝试时刻");
+            0
+        }
+        (None, _) => 0,
+    };
+    let shared = supervisor.shared();
+    let page = shared.observation();
+    for (worker, attempt_ns) in [
+        (PublishFailureWorker::Executor, executor_attempt_ns),
+        (PublishFailureWorker::Ipc, ipc_attempt_ns),
+    ] {
+        if attempt_ns == 0 {
+            continue;
+        }
+        if let Some(page) = page {
+            page.record_publish_failure_attempt(worker, attempt_ns);
+        }
+        tracing::error!(
+            ?worker,
+            failure_attempt_started_ns = attempt_ns,
+            error = "VersionExhausted",
+            "snapshot 版本耗尽：worker 在该时刻之前取时钟并调用 publish"
+        );
+    }
+}
+
+/// S48 A3b：快照写端构造。生产路径固定 `RtSnapshotPublisher::new`（版本 0）；
+/// 仅 `test-comm-fault-hook` 验收组合读取 `ROBOT_TEST_*_INITIAL_VERSION`（偶数，
+/// 不超过最大偶版本）以逼近版本耗尽，非法注入值以启动错误退出（exit 1）。
+#[cfg_attr(
+    not(feature = "test-comm-fault-hook"),
+    allow(
+        clippy::unnecessary_wraps,
+        reason = "生产组合固定成功；Result 是验收注入路径的真实错误出口，两种组合共用签名"
+    )
+)]
+fn snapshot_publisher_with_test_version<T: robot_transport::SnapshotValue>(
+    initial: T,
+    env_key: &str,
+) -> Result<(RtSnapshotPublisher<T>, robot_transport::RtSnapshotReader<T>), i32> {
+    #[cfg(feature = "test-comm-fault-hook")]
+    if let Some(raw) = std::env::var_os(env_key) {
+        let version = raw
+            .to_str()
+            .and_then(|text| text.parse::<u64>().ok())
+            .ok_or_else(|| {
+                tracing::error!(env_key, "快照初始版本注入值不是 u64");
+                1
+            })?;
+        return RtSnapshotPublisher::new_with_version(initial, version).map_err(|error| {
+            tracing::error!(env_key, %error, "快照初始版本注入值非法");
+            1
+        });
+    }
+    #[cfg(not(feature = "test-comm-fault-hook"))]
+    let _ = env_key;
+    Ok(RtSnapshotPublisher::new(initial))
 }
 
 fn send_auto_enable(
@@ -1525,6 +1693,15 @@ impl ExecutorHandle {
             Self::SerialRt(h) => h.is_finished(),
         }
     }
+
+    /// S48 A3b（test-only）：保留 metrics 引用，供收尾 join 之后读取。
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn metrics_ref(&self) -> ExecutorMetricsRef {
+        match self {
+            Self::HardRt(h) => ExecutorMetricsRef::HardRt(Arc::clone(h.metrics())),
+            Self::SerialRt(h) => ExecutorMetricsRef::SerialRt(Arc::clone(h.metrics())),
+        }
+    }
     fn join(self) -> thread::Result<()> {
         match self {
             Self::HardRt(h) => h.join(),
@@ -1584,7 +1761,7 @@ fn graceful_stop(
     io_handle: Option<robot_s0::io_thread::IoThreadHandle>,
     rr_handle: Option<robot_s0::rr_server_thread::RrServerThreadHandle>,
     se_rr_handle: Option<robot_s0::set_enabled_rr_server::SetEnabledRrServerHandle>,
-) {
+) -> JoinedWorkers {
     // 顺序（A1-3 (1/3c-2) round 1 拍板 "shutdown 显式 abort pending"）：
     //   rr_server 先停 — 不再接新 RR request 入面；run_loop 出循环后
     //              `abort_pending_on_shutdown` 给所有 in-flight pending
@@ -1618,14 +1795,27 @@ fn graceful_stop(
         stops.request_worker_stop(WorkerKind::Io);
         let _ = h.join();
     }
+    let mut joined = JoinedWorkers::default();
     if let Some(h) = executor {
         stops.request_worker_stop(WorkerKind::Executor);
+        // join 返回（无论 Ok/Err）即线程已终止并与本线程建立 happens-before。
         let _ = h.join();
+        joined.executor = true;
     }
     stops.request_worker_stop(WorkerKind::Ipc);
     let _ = ipc.join();
+    joined.ipc = true;
     stops.request_worker_stop(WorkerKind::Watchdog);
     let _ = wd_handle.join();
+    joined
+}
+
+/// `graceful_stop` 中 executor / IPC 是否已真实 join（S48 A3b test-only 导出依据；
+/// 生产路径不读取）。
+#[derive(Default, Clone, Copy)]
+struct JoinedWorkers {
+    executor: bool,
+    ipc: bool,
 }
 
 #[cfg(test)]

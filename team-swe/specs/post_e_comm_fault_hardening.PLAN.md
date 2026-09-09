@@ -1789,6 +1789,101 @@ A2已提交`dee67fa`。实际wire的`PreemptProbe`定义在robot-core、由adapt
 完整A3仍需锁定双队列容量/准入、强类型执行上下文和Abort责任、唯一writer的
 所有权/启动恢复/停止预算，以及既有snapshot并发访问修复；见A3勘察，不提前启用。
 
+#### P.6.14.4 A3b 快照并发安全（root Plan Approved，2026-09-09）
+
+A3a已提交fdac02c。总装勘察发现现snapshot的UnsafeCell载荷在读写线程间使用
+非原子volatile操作，version重检无法消除数据竞争；!Clone写端的publish(&self)
+也不能保证排他写。基于fdac02c原样模块的最小并发夹具已由Miri报告数据竞争，
+实际证据见local/s48/a3b/cc/reproduce，最终摘要须独立核验。此包保持设计要求的
+预分配单写多读seqlock，先修共享基础件，不把它包装成权限总装或H2修复已完成。
+
+**接口与同步协议**：
+
+- SnapshotValue为Copy + Send + Sync + 'static的安全编码契约，关联Words仅允许
+  固定[u64; N]。SnapshotWords用私有sealed边界限制到该数组族，提供固定长度的
+  零值/只读及可变slice视图。不能用任意AsRef实现或动态集合伪装固定大小。
+- 底层仅AtomicU64版本和预先初始化的Box<[AtomicU64]>载荷，由Arc在非RT构造。
+  不存UnsafeCell<T>，不用volatile/transmute/原始结构体字节，也不新增unsafe impl。
+  泛型同步本体与RtSnapshot的字段codec分文件，最小Miri可直接编译实际同步本体。
+- publish改为&mut self并返回Result<(), SnapshotPublishError>，写端不Clone。
+  先在栈上encode，先核偶数版本checked_add(2)，再依次SeqCst存奇版本、所有载荷
+  字、偶版本。所有载荷和版本读写均用SeqCst，初版不优化为混合弱序/手写fence。
+  这给一致性检查一个共同全序；无版本回绕时，相同偶版本的两次读取之间不能
+  夹入一次发布。编码在奇版本之前，奇区间只做固定数量原子存储。
+- 版本初值0，最大可发布偶值u64::MAX-1；再发布返回VersionExhausted，完整保留
+  上一偶版本和载荷。不得回绕或只停更却继续宣称发布成功。reader维持load()语义：
+  栈上固定Words、读偶版本/全载荷/再版本，一致后decode，否则重试；只供非RT读。
+  删除“读取最坏只等一个tick”和未经证据支持的60ns等断言，线程被调度暂停时
+  不承诺reader墙钟上界。codec需满足decode(encode(value))保持全部业务字段。
+- codec为安全Rust；自定义codec违反可逆契约是程序错误，不得靠unsafe构造无效
+  Rust枚举值。RT无分配结论只覆盖实际生产codec及经真实guard测试的路径。
+
+**字段编码**（仅进程内实现，不改wire/FlatBuffers布局或业务枚举）：
+
+- RtSnapshot在transport私有codec模块实现trait；每2个f32的to_bits打包为1个
+  u64，顺序为positions/velocities/torques；随后state.stamp_ns、joint_count、
+  tick_seq、tick_deadline_ns各一字。当前MAX_JOINTS=32共52字，保留全部浮点
+  位模式、无效区数组及完整u8计数，不夹带标定/限幅/NaN过滤。字段与长度由
+  MAX_JOINTS常量推导，奇数长度的尾字高半置0，避免读padding。
+- S0StateSnapshot在s0的私有codec模块实现：3字。第0字state tag占0..2位，
+  Enabled的sub占3..4、link占5、output占6..7，Fault code占8..10；未用位为0。
+  tag按Safe/Ready/Enabled/Fault/Stopping显式对应0/1/2/3/4；其余枚举按当前
+  源码声明顺序显式match编码与解码，不用as/transmute依赖Rust内部表示。
+  第1字Guards的11个bool按字段声明顺序占0..10，command_mode占11..13、
+  on_timeout_hint占14..15；第2字完整stamp_ns。Enabled三个字段互相独立，
+  不借编码修正不匹配组合。字段codec保持业务值，不向core反向依赖s0。
+
+**调用方与失败出口**：
+
+- 全量检索所有snapshot publisher调用者，真实写者传&mut；测试及文档同步。
+  修改范围为transport snapshot/codec/lib、s0 state codec、rt/serial/ipc及相关
+  测试；core adapter仅修正错误的“Copy本身保证seqlock安全”与无证据性能注释。
+  不顺带重构状态机、adapter、权限或双队列。
+- RT/Serial/IPC的publish失败分别增加自身snapshot_publish_errors原子计数并
+  结束该worker，让既有is_finished或进度停滞监督发现；不清latch或伪装Ready。
+  HardRT通过rt_entry返回Result，在guard退出后才结束外层循环/析构拥有者；
+  首次发布错误同样处理，不在RT中format、panic或drop Arc。不忽略任何Result。
+  SerialTick已经完成的物理tick计数不回滚；失败后不能继续发布或执行下一tick。
+- 明确核对已有监督入口与实际错误路径，不能把“worker退出”称为已物理断扭。
+  独立评审已确认READY后主循环原先只检查IPC；standalone没有WATCHDOG_USEC时
+  不启动systemd watchdog，BootSupervisor又已退出。因此本包同时在daemon的
+  READY循环检查executor存在且未结束，缺失/结束走错误退出及既有收尾，不能
+  只依赖systemd。增加无WATCHDOG_USEC/NOTIFY_SOCKET的真实mock进程回归，确认
+  READY之后由版本耗尽触发executor结束、daemon非零退出；与IPC耗尽出口分开核。
+  独立增量评审发现历史READY页与发现退出的日志不能证明实际耗尽时序；两个
+  回归均须在真实publish调用前使用与ready_ns同域的RobotClock取attempt_started_ns，
+  仅该次返回VersionExhausted时原子记录，非RT侧导出并断言
+  ready_ns < failure_attempt_started_ns。仅test feature启用此观测，不在RT日志或
+  分配，也不能在失败后才取时间（暂停跨READY会误证）。wait_ready成功前核截止
+  与进程存活；这些检查不能代替真实调用前事件顺序。保留正常exit 1与无watchdog
+  /notify断言，失败及源码变化后的门轮次分别记录。
+  时间导出须在实际对应worker join完成之后读取其metrics；is_finished本身不提供
+  这些Relaxed字段的同步保证。保留测试用metrics引用到非RT收尾之后再导出，不能
+  只在join前读一次零值就跳过，也不能将一次Release/Acquire读当作必见新值。
+  版本耗尽注入构造仅cfg(test)或默认关闭的transport test-comm-fault-hook可见，
+  验证偶数输入；s0同名feature显式转发，不加入任何生产组合。
+
+**验收与提交**：
+
+- 旧模块原样Miri红灯及&self经Arc多写可编译反例保留。修复后同一并发驱动仅
+  按新API加mut/处理Result及Payload codec，不能改线程数/载荷/迭代/seed掩盖问题；
+  3个seed都须通过且无UB。实际生产codec在workspace测试中另核，不冒充最小夹具
+  已解释执行完整S0。常规多读压力保留，断言完整数据一致与writer完成后的最终值。
+- 浮点逐位往返覆盖NaN/负零/无穷及各字段边界；state覆盖全部Fault、Enabled
+  独立组合、control_mode/timeout及每个bool位，外加独立已知字值样例。MAX边界
+  保留上一完整快照，真实worker失败退出/计数可观察。编译反例锁住非Clone写端、
+  &self和共享Arc不能publish、非固定Words不能实现契约。
+- cc-claude串行执行fmt、全workspace Clippy、相关guard/hook特性Clippy、完整
+  workspace/all-targets测试、transport/S0相关文档反例、Miri、debug/release
+  真实allocation guard（首发布/稳态/耗尽与codec路径）、既有RT guard soak及
+  原67软件场景。已有ignored按既定专项命令运行，不能在汇总中静默当作PASS。
+  核7个生产组合core及transport均无测试hook，阳性对照确认转发；配置变更跑
+  workspace/all-targets build --timings。记录实际命令/计数/退出码，不预填总数。
+- 根Cargo.lock和第三方依赖版本不变，不新增依赖。失败如实保留，偏离先Reverse
+  Sync给root；代码冻结后由独立reviewer审查实现，root裁决阻断项并复核来源与
+  原始门证据，再单独commit，不push；按用户要求委派细审，避免root重复读全量日志。
+  只做本地软件，不SSH/串口/服务/daemon硬件实例。S46已有改动保持且不混入此提交。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 改两份arm service：`RestartPreventExitStatus=86 87`、guard `--`后加

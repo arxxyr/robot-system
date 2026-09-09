@@ -86,6 +86,14 @@ pub struct SerialIoThreadMetrics {
     pub normal_completed_count: AtomicU64,
     /// emergency drain 时 cancel 一条 in-flight pending 的次数。
     pub emergency_preempted_count: AtomicU64,
+    /// **S48 A3b**：`RtSnapshotPublisher::publish` 返回错误（版本耗尽 / 写端损坏）
+    /// 的次数。首次出错即结束本 worker：已完成的物理 tick 计数不回滚，失败后不再
+    /// 发布也不执行下一 tick；由 `s0_daemon` 的 `is_finished` / 进度停滞监督判错。
+    pub snapshot_publish_errors: AtomicU64,
+    /// **S48 A3b（test-only）**：真实 `publish` 调用之前取的 `RobotClock` 时刻，
+    /// 仅该次返回 `VersionExhausted` 时原子记录（0 = 未发生）。
+    #[cfg(feature = "test-comm-fault-hook")]
+    pub snapshot_publish_failure_attempt_ns: AtomicU64,
     /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
     /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
     /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
@@ -263,7 +271,7 @@ pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
     clock: Arc<dyn RobotClock>,
     mut adapter: A,
     cmd_reader: LatestCommandReader<JointCommandBuf>,
-    snapshot_pub: RtSnapshotPublisher<RtSnapshot>,
+    mut snapshot_pub: RtSnapshotPublisher<RtSnapshot>,
     ctrl: Arc<SerialIoCtrlInner>,
     probe: Arc<crate::serial_preempt::SerialPreemptProbe>,
     diag: Arc<crate::diag::SerialDiagRing>,
@@ -317,7 +325,22 @@ pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
         }
         #[cfg(not(feature = "test-comm-fault-hook"))]
         let _ = &boot;
-        snapshot_pub.publish(&snapshot);
+        // S48 A3b：发布失败即结束 worker；本 tick 已完成的计数不回滚。
+        #[cfg(feature = "test-comm-fault-hook")]
+        let attempt_started_ns = clock.now().0;
+        let published = snapshot_pub.publish(&snapshot);
+        #[cfg(feature = "test-comm-fault-hook")]
+        if published == Err(robot_transport::SnapshotPublishError::VersionExhausted) {
+            metrics
+                .snapshot_publish_failure_attempt_ns
+                .store(attempt_started_ns, Ordering::Relaxed);
+        }
+        if published.is_err() {
+            metrics
+                .snapshot_publish_errors
+                .fetch_add(1, Ordering::Relaxed);
+            break;
+        }
     }
 }
 
@@ -482,6 +505,43 @@ mod tests {
     }
 
     /// **finding #3 lock**：spawn 入口运行期校验 adapter 自报 SerialRT。
+    /// S48 A3b：快照版本耗尽 → 已完成的物理 tick 计数不回滚，失败后不再发布也不
+    /// 执行下一 tick，worker 结束且错误计数可观察；reader 保留上一完整快照。
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn snapshot_version_exhaustion_ends_the_serial_worker_without_rolling_back_ticks() {
+        use robot_transport::MAX_PUBLISHED_VERSION;
+        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
+        let adapter = SerialMockWrapper::new(MockHardRTAdapter::with_unlimited_limits(2));
+        let (_cmd_writer, cmd_reader) =
+            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
+        let (snap_pub, snap_rdr) =
+            RtSnapshotPublisher::new_with_version(RtSnapshot::default(), MAX_PUBLISHED_VERSION - 2)
+                .unwrap();
+        let cfg = SerialIoThreadConfig {
+            tick_period_ns: 1_000_000,
+            ..SerialIoThreadConfig::default()
+        };
+        let ctrl = Arc::new(SerialIoCtrlInner::new_serial());
+        ctrl.policy
+            .store(OutputPolicy::Disabled.to_u8(), Ordering::Release);
+        let handle =
+            spawn_test_serial(cfg, clock, adapter, cmd_reader, snap_pub, Arc::clone(&ctrl))
+                .unwrap();
+        assert!(crate::test_util::wait_until(Duration::from_secs(3), || {
+            handle.is_finished()
+        }));
+        let metrics = Arc::clone(handle.metrics());
+        handle.join().unwrap();
+        assert_eq!(metrics.snapshot_publish_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            metrics.tick_count.load(Ordering::Relaxed),
+            2,
+            "第一 tick 发布成功（到 MAX）、第二 tick 完成后发布失败：两次物理 tick 均计数"
+        );
+        assert_eq!(snap_rdr.version(), MAX_PUBLISHED_VERSION, "不回绕");
+    }
+
     /// HardRT mock 直接传入 → 拒启动；不让 HardRT adapter 误进 serial_io_thread。
     #[test]
     fn spawn_rejects_non_serial_rt_adapter() {

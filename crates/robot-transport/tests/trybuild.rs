@@ -18,7 +18,7 @@
 #[test]
 fn compile_failures() {
     const CHILD: &str = "ROBOT_TRYBUILD_CHILD";
-    const DONE: &str = "ROBOT_TRYBUILD_THREE_CASES_COMPLETED";
+    const DONE: &str = "ROBOT_TRYBUILD_ALL_CASES_COMPLETED";
     if std::env::var_os(CHILD).as_deref() != Some(std::ffi::OsStr::new("1")) {
         // trybuild 1.0.121 将完整 workspace.dependencies 复制到临时单包 workspace，
         // Cargo 1.100 会为其未使用条目报清单警告。仅在隔离子进程解除汇总拒绝，
@@ -36,7 +36,7 @@ fn compile_failures() {
         assert!(output.status.success(), "{stdout}\n{stderr}");
         assert!(
             stdout.lines().any(|line| line == DONE),
-            "三项编译失败检查未完成：{stdout}\n{stderr}"
+            "编译失败检查未全部完成：{stdout}\n{stderr}"
         );
         for line in stdout.lines().chain(stderr.lines()) {
             assert!(
@@ -64,6 +64,11 @@ fn compile_failures() {
     t.compile_fail("tests/ui/view_outlives_lease.rs");
     t.compile_fail("tests/ui/writer_use_after_publish.rs");
     t.compile_fail("tests/ui/second_loan_before_publish.rs");
+    // S48 A3b：snapshot 写端所有权与固定 Words 契约。
+    t.compile_fail("tests/ui/snapshot_publisher_not_clone.rs");
+    t.compile_fail("tests/ui/snapshot_publish_through_shared_ref.rs");
+    t.compile_fail("tests/ui/snapshot_publish_through_arc.rs");
+    t.compile_fail("tests/ui/snapshot_dynamic_words_rejected.rs");
     // trybuild 在析构时才真正运行，必须在成功完成之后发布标记。
     drop(t);
     println!("{DONE}");

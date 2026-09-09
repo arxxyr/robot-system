@@ -1,0 +1,7 @@
+error[E0596]: cannot borrow data in an `Arc` as mutable
+  --> tests/ui/snapshot_publish_through_arc.rs:15:35
+   |
+15 |             thread::spawn(move || shared.publish(&id).unwrap())
+   |                                   ^^^^^^ cannot borrow as mutable
+   |
+   = help: trait `DerefMut` is required to modify through a dereference, but it is not implemented for `Arc<RtSnapshotPublisher<u64>>`

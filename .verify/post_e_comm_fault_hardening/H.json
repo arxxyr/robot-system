@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_A2_IMPLEMENTING",
-  "resume_from": "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md：A1已独立批准，推进A2权限原语详细方案",
+  "work_state": "S48_A3B_APPROVED_A3_R2_REVIEW",
+  "resume_from": "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md：A3b本地22门及独立源码/证据批准，A3总装r2二审问题由Claude修订；按阶段提交继续推进",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S46_LOCAL_PASS_ORIN_WIRE_CAPACITY_FAIL",
-  "review_status": "SOURCE_APPROVED_ORIN_FAILURE_REVIEWING",
+  "status": "S48_A3B_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "A3B_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
-  "scope": "S46本地负载通过，Orin原67通过但长测暴露真实wire4满；没有放宽负载或QoS，待独立核因及后续ReverseSync。左H2两次FAIL保留，右未测，D15 OPEN。",
+  "scope": "A3b快照修复通过本地22门及独立评审；A3总装r2尚未批准。S46 Orin wire4满及左H2两次FAIL保留；右未测，D15 OPEN，deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -320,7 +320,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "A1_A2_COMMITTED_A3A_APPROVED_SOFTWARE_SCOPE_A3_PLAN_NEXT",
+      "status": "A1_A2_A3A_COMMITTED_A3B_APPROVED_A3_R2_REVIEW",
       "implementation_started": true,
       "a1": {
         "plan_review": "APPROVED",
@@ -351,7 +351,7 @@
       },
       "user_requirement": "基础控制走高优先级通道，关节位置等连续目标走普通通道",
       "candidate": "唯一state owner与单disk writer解耦；可恢复Clear事务标记与原子提交权限；端到端有界容量保留",
-      "review_blocker": "A3完整总装、A4端到端验收及已识别snapshot并发问题待后续软件闭合",
+      "review_blocker": "A3完整总装与A4端到端验收待后续闭合；快照数据竞争已由A3b修复并独立批准",
       "hardware_scope": "左臂已断电；仅软件设计与验证，不打开串口",
       "queues": {
         "high": "live基础控制",
@@ -459,10 +459,10 @@
         "commit": "dee67faf42f08083511648fa0befe263d9b6b37a"
       },
       "a3": {
-        "status": "PLAN_RESEARCH",
+        "status": "R2_PLAN_REVIEW_FINDINGS_BEING_RESOLVED",
         "implementation_started": false,
         "survey": "local/s48/a3/root_integration_survey.md",
-        "open_followup": "既有snapshot.rs并发volatile访问与单写类型约束问题，尚未Miri/TSan复现或修复；不可作为新权限槽安全依据"
+        "open_followup": "W0失败凭证与writer监督二审、逐跳Lower预留/幂等取消生命周期待修订；A3b已批准"
       },
       "a3a": {
         "status": "APPROVED_SOFTWARE_SCOPE",
@@ -560,7 +560,101 @@
         "production_wiring": false,
         "hardware_access": false,
         "orin_validation": "NOT_RUN",
-        "commit_status": "READY_FOR_STAGE_COMMIT"
+        "commit_status": "COMMITTED",
+        "commit": "fdac02c69b98836775de28e9650c5418798f0bd3"
+      },
+      "a3b": {
+        "status": "APPROVED_SOFTWARE_SCOPE",
+        "plan_review": "APPROVED",
+        "plan": "P.6.14.4",
+        "executor": "cc-claude",
+        "plan_and_review_owner": "root",
+        "cargo_owner": "cc-claude",
+        "base_commit": "fdac02c69b98836775de28e9650c5418798f0bd3",
+        "original_module_sha256": "77bfe6843c0592505abac5f33c213af3618d4bd9e17e40a9414af6ac89441944",
+        "reproduction": "REPRODUCED_DATA_RACE_3_OF_3_MIRI_SEEDS",
+        "reproduction_scope": "fdac02c逐字模块最小夹具；非全workspace Miri",
+        "evidence_worktree": "target/post_e_h2_rt/s48/a3b/",
+        "archive_pending": false,
+        "source_review": "APPROVED",
+        "validation": "LOCAL_PASS",
+        "hardware_access": false,
+        "orin_validation": "NOT_RUN",
+        "source_hash": "c359e63272a1b43a6e3f63ad45df064d76df3e7c85a0ed4e5c3544f7c4d9c5bb",
+        "source_input_count": 328,
+        "source_unchanged": true,
+        "main_round": "sixth",
+        "supplement_round": "sixth_supplement",
+        "checks_passed": 22,
+        "modified_source_files": 26,
+        "source_review_evidence": "local/s48/a3b/independent_source_review.md",
+        "evidence_audit": "local/s48/a3b/independent_evidence_receipt.json",
+        "root_review": "local/s48/a3b/review.md",
+        "evidence": "local/s48/a3b/cc/result.json",
+        "result_sha256": "2e0d420bab361aaed3bd150ddb316e219d25712542f8aa26bfee7fb51e9ee2c3",
+        "production_authority_wiring": false,
+        "miri_fixed": "PASS_NO_UB_3_OF_3",
+        "software_scenarios": 67,
+        "production_feature_graphs": 7,
+        "feature_positive_control": "PASS",
+        "test_counts": {
+          "workspace_tests_all_targets": {
+            "passed": 1740,
+            "failed": 0,
+            "ignored": 1
+          },
+          "workspace_doctests": {
+            "passed": 17,
+            "failed": 0,
+            "ignored": 8
+          },
+          "transport_hook_feature_tests": {
+            "passed": 77,
+            "failed": 0,
+            "ignored": 3
+          },
+          "s0_guard_hook_tests_debug": {
+            "passed": 517,
+            "failed": 0,
+            "ignored": 1
+          },
+          "s0_guard_release": {
+            "passed": 25,
+            "failed": 0,
+            "ignored": 0
+          },
+          "rt_guard_soak_ignored": {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "rt_guard_alloc_negative_debug": {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "rt_guard_alloc_negative_release": {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "rt_guard_soak_60s_debug": {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "rt_guard_soak_60s_release": {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "iox2_sub_first_repro_parent_pub_then_child_s1_open": {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          }
+        },
+        "archive_boundary": "包含本包最终证据与冻结r2提案/评审；两份仍在编写的r2_resolutions增补明确排除，见archive index"
       }
     }
   },
@@ -720,10 +814,10 @@
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "0239b7351a5b6095550a6390fd6ebcb01497a1d852ecee1e485bf9cfc2284dc9",
-    "bytes": 16911643,
-    "members": 4570,
-    "logical_bytes": 603689814,
+    "sha256": "b83f3e91ba5cf1b96820e7fc4a2f0d72bb720163d802fb8b75b6462190419bd5",
+    "bytes": 23776455,
+    "members": 6773,
+    "logical_bytes": 883222518,
     "per_file_sha256_verified": true
   },
   "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
@@ -764,5 +858,6 @@
     "local": "local/s45/cleanup.json",
     "orin": "orin/s45/old_artifacts_cleanup.json",
     "scope": "只清旧验收可执行产物及已逐SHA合并的重复解包；当前产物、构建缓存与本次失败证据保留"
-  }
+  },
+  "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。"
 }

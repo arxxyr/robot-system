@@ -114,7 +114,22 @@ debug/release guard各23、rt_guard-only20、A1回归28/7/24/3；不同配置不
 向下图阳性对照FAIL保留。workspace/all-targets热缓存构建8.72s与真实timing报告
 留存，不据此宣称冷构建性能或RT时延。root核搬迁等价及非A3a输入不变，证据为
 H包`local/s48/a3a/cc/second/`、`review.md`和`root_evidence_receipt.json`。
-A2/A3a均未接生产或运行Orin；双队列、单writer与既有snapshot并发问题继续闭合。
+A2/A3a均未接生产或运行Orin；snapshot并发修复由下述A3b完成，双队列与单writer仍待总装。
+
+A3b快照修复已独立 **APPROVED_SOFTWARE_SCOPE**：来源`c359e632…d9c5bb`/328输入，
+base `fdac02c`；第六轮16门与补跑6门全部PASS。预分配原子载荷、固定codec、&mut
+单写及非回绕版本替换并发volatile载荷；耗尽退出worker，daemon监督executor/IPC。
+无watchdog的mock回归核真实publish调用前时间晚于READY，并在实际join后导出。
+workspace all-targets为1740 PASS/1 ignored，doctest17/8 ignored，transport hook
+77/3 ignored，S0 guard+hook517/1 ignored，release guard25/0；配置重叠不相加。
+既定debug/release真实rt_entry分配负对照、各60秒soak及parent_pub_then_child_s1_open
+ignored专项另跑通过。原模块Miri三seed均报数据竞争，修复后同驱动三seed均无UB；
+范围只含同步本体及夹具codec，生产codec由workspace与真实allocation guard另核。
+原67场景、7生产feature组合及阳性对照、两份本次实际timing均通过。独立审计复核
+22门、328源码输入及1411证据文件；A3b外来源未变，S46改动不混入此分包。
+证据在H包`local/s48/a3b/cc/sixth/`、`sixth_supplement/`、`review.md`及
+`independent_evidence_receipt.json`。首四轮FAIL、第五轮旧源码PASS和评审修订均保留。
+本包未接权限权威/双队列/单writer，未做Orin验收，D15 OPEN不变。
 
 C5 结论与逐项命令/日志索引为 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json)，
 对应归档为 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
@@ -529,6 +544,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-09-09 | A3b快照数据竞争修复独立批准；22本地门及原始证据核验通过，Miri范围、ignored专项与Orin未测边界分别记录 | Codex |
 | 2026-09-08 | S-45 两端软件验收独立批准；左 H2 首次 FAIL 保真，新物理边界后重测 | Codex |
 | 2026-09-08 | 当前 post-E 验收入口、实现前 Cargo 清单与实跑基线；新增 S-39 / D3 / D4 / D13 验收范围，未标新增项通过 | Codex |
 | 2026-09-08 | C2 有界传输与 adapter 分包验证；独立测试实际执行，整候选门仍待 C3–C5 | Codex |

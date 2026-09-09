@@ -8,7 +8,9 @@
 //!
 //! - **POD 强制**：`JointStateBuf` / `JointCommandBuf` / `RtSnapshot` / `JointLimits`
 //!   全部 `#[derive(Copy)]`。编译期拒绝 `Vec` / `String` 等带 Drop 的字段进入
-//!   snapshot / command-slot 载荷，保证 seqlock / `arc_swap` 侧 memcpy 安全（§4.9）。
+//!   snapshot / command-slot 载荷（§4.9）。**`Copy` 本身不是跨线程搬运的安全依据**：
+//!   `RtSnapshot` 经 `robot-transport` 的显式字段 codec（`SnapshotValue`）编成
+//!   固定 `u64` 字后由原子存储发布（S48 A3b）；`arc_swap` 侧按 `Arc` 交换。
 //! - **`JointCommandView<'a>`** 是借用视图，不存数据：`rt_thread` 从 `LatestCommandReader`
 //!   拿到 `Guard<Arc<JointCommandBuf>>` 后按需构造 View，交给 adapter `write_command`。
 //! - trait 签名完全对照 `docs/00_design.md` §4.4（9 个方法），不简化。mock 实现把
@@ -85,14 +87,16 @@ pub struct AdapterInfo {
 ///
 /// 选 32 的理由：当前 XLeRobot（双臂 ≈ 12 + 夹爪 + 三轮 ≤ 18）、ATOM01 阵
 /// （双臂 + 腿 ≈ 24）都在此上限内；POD 大小也受控（3 × 32 × 4 = 384 B + 头部 ≈
-/// 396 B，seqlock memcpy 成本 50-80 ns）。
+/// 396 B；快照编码为 3 × 16 + 4 = 52 个 `u64` 字，性能以实际测量为准，此处不给
+/// 未经证据的纳秒断言）。
 pub const MAX_JOINTS: usize = 32;
 
 /// 关节状态的 POD buffer —— adapter 把当前 state 写进这里，RT 线程读。
 ///
 /// 全 `[f32; MAX_JOINTS]` 固定长度数组；`joint_count` 告诉调用方实际有效位数。
-/// `#[derive(Copy)]` 强制无堆字段，seqlock 安全。字段 `stamp_ns` 用
-/// `CLOCK_MONOTONIC_RAW` 纪元（见 `crate::time::MonoRawNs`）。
+/// `#[derive(Copy)]` 强制无堆字段；跨线程快照发布经显式字段 codec（S48 A3b），
+/// 不靠 `Copy` 位拷贝。字段 `stamp_ns` 用 `CLOCK_MONOTONIC_RAW` 纪元（见
+/// `crate::time::MonoRawNs`）。
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct JointStateBuf {
     pub positions: [f32; MAX_JOINTS],
@@ -208,9 +212,10 @@ pub struct JointLimits {
 // RtSnapshot
 // ============================================================================
 
-/// `rt_thread` 每 tick 发布给 `pub_thread` 的 POD 快照。seqlock 载荷。
+/// `rt_thread` 每 tick 发布给 `pub_thread` 的 POD 快照。seqlock 载荷（经
+/// `robot-transport` 的 `SnapshotValue` 显式字段 codec 编成 52 个 `u64` 字发布）。
 ///
-/// ≈ `JointStateBuf` (≈ 396 B) + 16 B = ~412 B，A78AE memcpy 约 60 ns。
+/// ≈ `JointStateBuf` (≈ 396 B) + 16 B = ~412 B；发布成本以实际测量为准。
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RtSnapshot {
     pub state: JointStateBuf,

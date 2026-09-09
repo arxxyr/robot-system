@@ -1,0 +1,5 @@
+error[E0599]: no method named `clone` found for struct `RtSnapshotPublisher<T>` in the current scope
+ --> tests/ui/snapshot_publisher_not_clone.rs:7:36
+  |
+7 |     let _second_writer = publisher.clone();
+  |                                    ^^^^^ method not found in `RtSnapshotPublisher<u64>`

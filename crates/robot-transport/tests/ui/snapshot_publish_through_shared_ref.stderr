@@ -1,0 +1,10 @@
+error[E0596]: cannot borrow `*publisher` as mutable, as it is behind a `&` reference
+ --> tests/ui/snapshot_publish_through_shared_ref.rs:6:5
+  |
+6 |     publisher.publish(&1).unwrap();
+  |     ^^^^^^^^^ `publisher` is a `&` reference, so it cannot be borrowed as mutable
+  |
+help: consider changing this to be a mutable reference
+  |
+5 | fn publish_via_shared(publisher: &mut RtSnapshotPublisher<u64>) {
+  |                                   +++

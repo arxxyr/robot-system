@@ -75,6 +75,8 @@ mod serial_tick;
 mod set_enabled_action;
 pub mod set_enabled_rr_server;
 pub mod state_machine;
+// S48 A3b：`S0StateSnapshot` 的显式字段 codec（快照编码与 state_machine 分文件）。
+mod state_snapshot_codec;
 // v0.5 候选 E 段(8)：`systemd_notify` 迁入 `robot_health::systemd`（单一实现），
 // 本 crate 不再持副本；s0_daemon 直接调 robot_health。
 pub mod watchdog;
