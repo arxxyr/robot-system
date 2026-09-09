@@ -5,13 +5,23 @@
 用户已明确“继续”，已恢复软件推进，不重跑已消费的H2驱动。重启后核实工作区
 仍保留全部改动。用户随后指定root定方案和评审，cc-claude具体开发与测试，
 用户最新要求优先节省root token，并允许多个Claude或Codex子agent并行。
-当前Cargo和A3b源码仍归开发Claude独占；root只做最终决策、阻断项处理与验收提交，
+用户进一步明确：cc-claude完成实现、测试和自查后，必须由root或独立Codex子agent
+作最终评审；Claude交叉检查只作为前置检查，不能代替最终评审和提交门。
+当前Cargo和A3c/W0源码归writer Claude独占；root只做最终决策、阻断项处理与验收提交，
 详细方案和独立复核可以委派。旧开发agent保持停止，新并行角色见下。
 A1验证基线为`ce61623436138342b6a2d234b10bada71d6877ca`，分支
 `feat/post-e-comm-fault-hardening`。A1已独立评审提交`9fe20ea`，未push；S-46源文件
 仍未提交，不得reset/clean或冒充已收口。S-47合入S-48；A2已评审提交`dee67fa`，
-A3a共享权限归位core已评审提交`fdac02c`。当前A3b快照并发修复已通过本地22门及独立源码/证据评审；
-root负责归档提交，A3总装r2的剩余问题由并行Claude修订。
+A3a共享权限归位core已评审提交`fdac02c`。A3b快照并发修复已通过本地22门及独立源码/证据评审，
+已提交`d67752ded3fba7fd5de1ea31b83243b6f7cd8382`，未push。
+当前A3c/W0纯文件凭证获独立及root Plan Approved，按PLAN P.6.14.5交writer Claude
+实现与测试。W0 round5已由Codex完成源码与证据终审，结论Changes Requested/
+EVIDENCE_INCOMPLETE：create后fstat失败丢凭证、续段0→1反例缺口、最终轮来源与
+fmt-all记录缺失。已按a3c/root_round5_review.md回修并在round10重新冻结，七门通过，
+两位Codex分别完成源码与证据终审，root采纳APPROVED_SOFTWARE_SCOPE；旧轮和
+评审对象保留，不回填缺失证据。
+W1锁/恢复正式函数级PLAN P.6.14.6已获独立Plan Approved，实施等待W0提交；
+监督及优先级仍在修订，不随W0批准接线。
 
 最新用户决定：基础控制与普通工作分两个有界队列，每轮先高后普通；每项必须
 非阻塞推进。关节目标合并最新值，急停/Disable可否决旧Enable/Clear的恢复权限。
@@ -76,21 +86,36 @@ timing均通过。独立证据审计核1411文件，result SHA 2e0d420b…c3；r
 independent_evidence_receipt.json、cc/sixth及sixth_supplement。首四轮FAIL与第五轮旧
 源码PASS保留；没有把后者冒充最终通过。当前软件批准不包含Orin或双队列总装。
 
-当前并行编排：开发Claude PTY67537/PID91744（A3b已FREEZE、Cargo结束）；writer方案
-Claude PTY70639/PID259899；priority方案Claude PTY99320/PID260261。三会话已核模型
+当前并行编排：Claude PTY67537/PID91744只读独立评审（A3b已FREEZE）；writer
+Claude PTY70639/PID259899独占A3c/W0源码和Cargo；priority方案Claude
+PTY99320/PID260261。三会话已核模型
 claude-fable-5-1、effort=max。恢复时核实际/proc和会话状态，不能因观察超时重启。
 紧凑进度脚本target/post_e_h2_rt/s48/root_team_watch.py；不读thinking或整屏刷新。
 
 A3两份r2提案及交叉报告冻结，仍未批准总装。共同裁决见a3/root_decision_notes.md。
-writer二审4个凭证与5个监督阻断见independent_writer_w0_r2_review.md、
-independent_writer_supervision_r2_review.md；writer Claude正在另写
-cc_writer_r2_resolutions.md。priority r2仍缺逐跳Lower保留、急停幂等、已发送取消
-身份与server真实pending界，Claude正在另写cc_priority_r2_resolutions.md。
-两份增补仍在编写时不收入A3b归档，归档index显式记录边界；下一包再按最终SHA收入。
-后续先批准W0失败凭证的完整函数合同，再按包实施/独立评审/提交；cache类内预留
+W0四项凭证阻断由cc_writer_r2_resolutions.md §A闭合并获独立批准；正式函数级
+PLAN P.6.14.5再次独立Plan Approved，开发任务a3c/cc_claude_task.md，证据a3c/cc。
+W0 round10已获snapshot_plan_review源码批准及a3b_evidence_audit证据批准。
+监督r2独立终审要求修Active义务接管、IPC/watchdog stop和join失败保留，
+已按root_supervision_r3_directions.md交Claude修订r3。priority r4信用/旧wire/夹具
+三项已修入r5，独立复审另核业务截止与只读路径表；不授权生产接线。
+root_priority_lifecycle_r3_review.md明确未知/未退休请求不能只按TTL遗忘、RR请求
+关闭safe overflow，但这些方向尚未构成总装实施授权。A3b归档不包含当时尚未冻结
+的两份r2增补，index已记录；后续包再按最终SHA收入。cache类内预留
 与旧4096门若冲突，须明确Reverse Sync并保留旧S46结果，不默默扩容/改计数。
-独立snapshot_plan_review与a3b_evidence_audit已完成本轮，后续可按有界任务复用；
 root只裁决与整合，避免重复全量源码/日志阅读。旧implementation/reviewer保持停止。
+
+A3c/W0最终来源`80294b56…145f73`/331输入，base `d67752d`；round10七道门
+严格串行PASS，fmt-all、全workspace及hook Clippy零警告，模块42、公开10、旧latch24、
+文档反例4，均无失败或ignored。目录fd绑定所有文件操作，Created保留活fd；
+create后首个metadata失败返同一凭证，目录sync成功后Durable提升不可失败；
+unlink后失败保留Unsynced并只重同步，0→1续段核真实primary/backup十步。
+原16个进程退出点保留并新增身份采样点；不称存储设备实际EIO或物理掉电测试。
+round1–9及round5评审快照保留，快照清单自指问题仅修清单、12件历史对象未变。
+独立证据核331项完整来源前后/当前一致，W0外含S46未漂移；最终证据见H包
+`local/s48/a3c/review.md`、`independent_source_review_round10.md`、
+`independent_evidence_receipt_round10.json`和`cc/round10/`。fd-less凭证不宣称抗inode
+ABA；本包尚未安装W1目标锁，单writer及无并发改名者仍为接线前提。未运行Orin。
 
 现场最新确认仍为左臂断电、双臂支撑；六服务停止，D15 OPEN。未开展新串口操作。
 恢复软件工作不需要物理授权；任何新H2需软件审核/提交/两端对齐及新现场事实。

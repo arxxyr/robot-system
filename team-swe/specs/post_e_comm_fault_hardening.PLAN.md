@@ -16,6 +16,8 @@
 具体实现、全部测试与Cargo；旧开发agent已停止。A2执行委托见
 `target/post_e_h2_rt/s48/a2/cc_claude_task.md`。下文旧分工由本条覆盖；root维护
 文档与证据汇总，cc-claude冻结后交root评审，通过后由root提交，不push。
+用户最新要求：最终独立评审由root或Codex子agent承担；Claude交叉检查是前置检查，
+不能替代该最终评审。实现者不能自行批准自己的包。
 
 唯一 Dev 负责生产代码、模块导出、Cargo 清单和模块单测；reviewer 只读独立评审，
 给出独立验收场景与 PASS / FAIL，不能以 Dev 自测替代验收；主 agent 负责独立 integration
@@ -1883,6 +1885,148 @@ A3a已提交fdac02c。总装勘察发现现snapshot的UnsafeCell载荷在读写�
   Sync给root；代码冻结后由独立reviewer审查实现，root裁决阻断项并复核来源与
   原始门证据，再单独commit，不push；按用户要求委派细审，避免root重复读全量日志。
   只做本地软件，不SSH/串口/服务/daemon硬件实例。S46已有改动保持且不混入此提交。
+
+#### P.6.14.5 A3c / W0 可重试的文件事务凭证（root Plan Approved，2026-09-09）
+
+A3b已独立评审提交`d67752ded3fba7fd5de1ea31b83243b6f7cd8382`。唯一writer总装需要
+文件步骤失败后保留实际取得的资源权利；旧A1错误只带stage，不能区分创建/删除已
+发生而后置检查失败。本包先完成纯文件原语，不等待监督与容量方案，不接生产控制链。
+方案来源为`local/s48/a3/cc_writer_plan_r2.md` §5及
+`cc_writer_r2_resolutions.md` §A（SHA-256
+`fd02ed2051fdf81205256a3f960d47f2e50c7d4dc961a5d9b00f31114ef6e0e2`）；
+独立`independent_writer_w0_r2_review.md`已给出W0 Plan Approved。本节采纳其明确
+解释；增补§B监督、W1–W4总装和priority提案不随本节批准。
+
+**目录与凭证身份**：ClearTxnStore::open保留canonical父目录的活File、dev/ino及
+原目标摘要，文件名为相对目录的名字。读写、rename、unlink、恢复、自愈、临时文件
+Drop清理都相对于同一目录fd；目录同步只sync该fd，不重开原路径。父目录改名或
+原路径被替换后仍操作原目录。单writer、目标锁与目录内无并发改名者仍是接线前提；
+本包不安装目标锁，也不宣称抗敌对目录竞态。
+
+CreatedMarker立即保留create_new取得的可读写活fd（0600、O_RDWR|O_CREAT|O_EXCL|
+O_CLOEXEC），活fd承载marker身份，并携带record与目录身份。首次marker元数据读取
+失败仍返同一Created，不允许先丢fd并隐式unlink再返NotOwned。所有可失败的身份
+采样必须在目录sync成功前完成，使Durable提升本身不可失败；不能sync成功后因
+fstat失败降回Created。全部凭证密封、不可Clone、按值
+消费，绑定目标/目录/marker身份；PendingClear仅只读检查，不实现删除凭证。
+discard_created先核目标和目录，再核活fd为普通文件、nlink=1、长度<=112；从偏移0
+读取完整内容并确认EOF，必须为本次记录编码的前缀，再核相对路径仍指向同一inode。
+空前缀本身不授权删除，尾随字节、换inode、跨目标、真实身份不符拒绝且不unlink。
+临时fstat/read错误尚未证明不符，必须返还原凭证；不得按错误stage猜失权。
+
+**函数和阶段合同**：公开open、prepare_clear、repair<C>、remove<C>、discard_created、
+resync_removal、persist_latched、recover_and_load、inspect_pending，具体入参依增补
+§A.6。prepare/repair/remove/discard/resync/persist显式接收StepGuard；恢复内部用
+NoGuard。MarkerCredential仅允许PreparedClear、DurableMarker、RepairedClear。
+以StageError记录stage和Before/Operation/After；GuardInterrupt独立于syscall EINTR，
+不得被IO重试吞掉。保留已有成功Operation之后的crash hook语义。
+
+- 凭证随真实Operation成功推进：create得到File立即Created，marker目录sync成功
+  才Durable，unlink成功立即Unsynced。之后After失败仍返已经推进的凭证。
+- PrepareError区分NotOwned/Created/Durable。NotOwned仅表示本次未取得所有权，
+  不证明磁盘上无marker；AlreadyExists不得被当成本事务成功。
+- RepairError<C>在Before中断、临时IO错误或latch部分写入后保留C；只有真实
+  NotFound或确认身份/内容不符才失权。RemoveError<C>区分Retained(C)、
+  Unsynced(UnsyncedRemoval)、Lost；unlink前失败与后置错误严格区分。
+- UnsyncedRemoval绑定原目录及目标；resync只重试该目录同步，失败保留凭证，
+  绝不再次unlink，不凭当前路径不存在宣布strict完成。跨目标拒绝且不成功。
+- Created丢弃后若尚欠目录同步，调用方须保留原修复目标：同步成功后继续该目标
+  的文件修复，不能把resync当作Clear退休。W0以纯文件驱动验证此续段；实际
+  WriterToken、RepairPermit与IPC协调属于后续W3，本包不接入。
+- persist_latched按primary1→backup1严格同步；clear仍先durable marker再backup0→
+  primary0。recover_and_load保留原strict缺失/fallback与损坏marker语义，全部
+  迁移到绑定fd算法。旧repair_prepared/remove_*同步迁移删除，不留绕过返证合同
+  的旧入口；repair_pending仅恢复内部使用。
+
+**实现边界与验收**：唯一开发者负责clear_estop_transaction模块、必要内部fd/错误
+辅助与相关公开验收/文档反例；不改daemon、writer、IPC、观测页、权限、Cargo依赖
+版本或S-46未提交文件。如确需扩大文件范围，先报root，不自行接通生产调用方。
+
+保留并迁移A1顺序、strict恢复、特殊文件、损坏标记、目标身份、16个真实进程crash
+检查点与不可复制/重复消费反例；新增逐阶段三相返证、临时读取错误返证、空/半写/
+全等/非前缀/尾随/nlink/换inode/跨目标，目录改名和原路径替换后仍同步旧目录，
+unlink后重复失败不重删、同凭证最终重试成功、Created→Unsynced→同步→继续修复。
+目录rename不再冒充目录sync失败注入；失败点与已完成副作用必须有确定性证据。
+
+cc-claude串行执行fmt、全workspace/all-targets Clippy及涉及的hook编译路径Clippy、
+A1全部模块/公开/原latch回归与文档反例，实际进程crash检查点；按影响补充测试。
+不为纯文件原语重复A3b全workspace长测/Miri/RT soak；若改依赖或触及RT则先报偏离。
+每轮记录实际命令、退出码、具名计数、原始日志SHA、验证前后源码清单；失败轮保留，
+不得预填PASS或覆盖旧A1/A3b证据。源码冻结后独立源码和证据评审，root验收通过即
+单独commit，不push、不访问Orin。本阶段仍不宣称总装完成或H2已修复。
+
+#### P.6.14.6 A3d / W1 启动锁与事务恢复（root Plan Approved，2026-09-09）
+
+W1方向与命名/链接边界已由Codex独立评审批准，见
+`local/s48/a3/independent_writer_w1_plan_review.md`及`root_w1_lock_contract.md`。
+实施依赖W0最终源码/证据复审通过并提交；本节不授权与W0同时修改启动恢复依赖。
+接口为`acquire_latch_lock(&Path) -> Result<LatchTargetLock, LatchLockError>`，由
+`latch_lock.rs`统一完成名称/锁校验；`Held`退出89，IO及配置错误退出1，不伪称被占用。
+锁所有者提供目录身份与绑定fd的数据对象检查，辅助函数对外暴露以实际调用最小化。
+daemon用锁与W0的目录身份比对后恢复；不复制W0文件算法。不改现有RX信任87与
+启动CP1/CP2退出88。独立函数级核验已通过，见
+`local/s48/a3/independent_w1_function_plan_review.md`；实施仍等待W0验收提交。
+
+**共享的名称校验**
+
+
+以canonical父目录+OsStr原始字节解析主文件名，不依赖UTF-8。拒绝空名、`.`/`..`、
+末尾为`.bak`/`.clear_pending`/`.lock`，以及符合以下完整临时文件后缀的名字：
+`.tmp.<十进制pid>.<十进制seq>`、`.clear_tmp.<十进制pid>.<十进制seq>`。
+这里两个数字段非空，只含ASCII数字，匹配从相应分隔符到basename结尾；不以是否
+能解析进u64决定保留性（过长数字也保留）。所有派生文件均在同一父目录。
+固定RX信任资源同时保留：拒绝primary名`rx_trust_marker`和`rx_trust`，其备份、
+稳定锁与临时文件已由上述规则排除；避免latch数据或其锁与RX信任文件重合。
+实际W0临时名在冻结后核对；如新增家族，统一验证器与证明/测试必须一起扩展。
+
+派生primary、backup、marker、稳定锁及两种临时文件家族的名字由上述规则划成
+互不相交集合；同一类的完整生成名相等只能来自相同primary（临时类另含pid/seq）。
+这不仅防并发覆盖，也拒绝把旧backup/lock改作另一个合法primary。不同合法basename
+在同目录仍可独立持锁，不改成整目录单例。原路径指向符号链接时遵循冻结W0目标
+身份规则，不把canonical父目录以外的别名当成新的独立锁目标。
+
+daemon/provision/guard使用同一验证器，在任何latch/锁文件写入之前拒绝不合法名字，
+给明确InvalidInput/配置错误；不是Held。rx-trust维护子命令分流保持原行为，不取得
+latch锁；不改变其既有写授权或Dirty操作。
+禁止独立包装层二次取同一锁；provision共享入口持锁覆盖整个read/repair/fsync。
+
+**稳定锁对象**
+
+锁名`<primary>.lock`，永不rename/unlink。按绑定canonical目录fd相对openat，
+O_RDWR|O_CREAT|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK，mode0600，不带TRUNC。
+先fstat确认普通文件、nlink=1，再非阻塞flock(LOCK_EX|LOCK_NB)，仅EINTR重试；
+EAGAIN/EWOULDBLOCK→Held，其余IO或身份错误fail-closed。只在成功持锁且身份核对
+通过后才set_len/seek/write PID；失败竞争者不能改变持有者PID或任何latch字节。
+活File为RAII所有者，不Clone；借鉴rx_trust的flock/EINTR/CLOEXEC辅助，不复制其
+未验证类型就截断的打开流程。单writer/目录内无并发改名者前提不变。
+
+daemon在rx-trust子命令分流后、run之前取得锁，活至process exit；provision整个
+文件过程持锁，guard exec前释放后由daemon重新获取，竞争者至多一方成功。
+W1恢复使用W0最终open→recover_and_load，成功值同步进入既有ctrl和ExecutionResources，
+错误退出1且不得到daemon adapter_open；不把这一结论扩大成部署guard全链零串口。
+启动完成后store可在普通线程结束生命周期；第八worker和writer所有权移交仍属W2。
+
+增补：锁成功后、恢复/数据读取/自愈之前，通过绑定目录fd统一检查现存primary与
+backup：不跟随链接，必须普通文件且nlink=1；仅真实NotFound进入原缺失规则，
+其余IO错误fail-closed。daemon与provision共享这一入口，拒绝以不同basename/锁
+访问同一数据对象的symlink/hardlink别名。损坏的普通文件内容仍按原strict fallback。
+ClearTxnStore打开后、recover之前，还须核其directory_identity与锁绑定的目录身份
+一致；父目录替换导致不一致则在数据副作用前失败，不能拿旧目录的锁写新目录。
+锁与检查均使用绑定fd，不能校验时再按绝对路径重开目录。
+
+**最小验收与提交**
+
+同目录两个不同合法名字可并发持锁；同canonical目标/父目录别名互斥；不同trust
+目录不能绕过latch锁。`.bak`/`.lock`/marker及两种临时名、RX信任名字在副作用前拒绝，
+覆盖无对应A实例存在时的旧派生文件，避免只证明并发互斥。非UTF-8合法名保留。
+锁为symlink/hardlink/FIFO/目录均拒绝且primary/backup原字节不变；覆盖primary1、
+backup0的有效崩溃状态。合法锁EINTR、CLOEXEC、竞争者不改PID、进程退出后可重取。
+现存primary/backup的symlink、跨不同名字的hardlink、特殊文件均拒绝且不自愈；
+另核真实缺失/损坏普通文件fallback不变，以及锁后父目录替换时不写新目录。
+启动恢复保留W1独立报告全部无marker/严格缺失/有效pending/损坏或身份错误/IO失败
+分支，断言真实阶段与文件态。旧同步IPC和退出持久化仍受同一锁，不改其安全语义。
+范围仅锁/共用验证器、daemon恢复、provision/guard及相关回归；不接监督、writer、
+新authority或双队列。最终由Codex独立评审与必要fmt/Clippy/相关测试后才提交。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

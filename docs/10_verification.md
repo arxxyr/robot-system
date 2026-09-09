@@ -131,6 +131,19 @@ ignored专项另跑通过。原模块Miri三seed均报数据竞争，修复后�
 `independent_evidence_receipt.json`。首四轮FAIL、第五轮旧源码PASS和评审修订均保留。
 本包未接权限权威/双队列/单writer，未做Orin验收，D15 OPEN不变。
 
+A3c/W0已独立 **APPROVED_SOFTWARE_SCOPE**：来源`80294b56…145f73`/331输入，
+base `d67752d`；round10七门严格串行PASS，fmt-all、全workspace及hook Clippy零警告，
+模块42/公开10/旧latch24/compile-fail4，均无失败或ignored。独立源码复核确认
+create取得File即Created、首个metadata失败返活fd、目录sync后Durable提升不可失败；
+0→1续段测试核primary五步→backup五步。原16个真实进程退出点保留并增加身份采样点；
+聚合父测试日志与冻结测试源码共同证明，不称17份独立子进程日志或物理掉电实测。
+故障注入返回syscall步骤EIO，不声称存储设备产生真实EIO。四个文档反例核不可复制/
+重复消费错误目标。完整来源前后及当前一致，W0外含S46未变，round1–9/旧评审保留。
+round5清单自指问题仅修清单，12件快照与旧回执逐件一致；历史缺来源绑定不回填。
+证据见H包`local/s48/a3c/review.md`、`independent_source_review_round10.md`、
+`independent_evidence_receipt_round10.json`与`cc/round10/`。fd-less凭证不宣称抗inode
+ABA；W1锁、生产恢复/IPC/双队列及writer监督仍未接线，未运行Orin，D15 OPEN。
+
 C5 结论与逐项命令/日志索引为 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json)，
 对应归档为 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)。
 查看原始 run / 执行器时，先按 PLAN P.6.5 将证据包解到仓库根；日常验收命令仍在 PLAN。

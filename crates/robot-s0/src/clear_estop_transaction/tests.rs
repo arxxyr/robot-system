@@ -1,12 +1,29 @@
 use super::*;
 use std::ffi::CString;
+use std::fs::OpenOptions;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
+use crate::estop_latch::backup_path;
+
 const ROBOT_ID: &str = "测试机器人";
 const HARDWARE_ID: &str = "左臂";
+
+/// 在指定阶段之前中断的守门；其余阶段放行。
+struct FailBefore(ClearTxnStage);
+
+impl StepGuard for FailBefore {
+    fn before(&mut self, stage: ClearTxnStage) -> Result<(), GuardInterrupt> {
+        if stage == self.0 {
+            Err(GuardInterrupt::new(InterruptReason::TestBarrier))
+        } else {
+            Ok(())
+        }
+    }
+}
 
 #[test]
 fn store_and_owned_credentials_can_move_to_the_single_writer_thread() {
@@ -14,7 +31,10 @@ fn store_and_owned_credentials_can_move_to_the_single_writer_thread() {
     assert_send::<ClearTxnStore>();
     assert_send::<PendingClear>();
     assert_send::<PreparedClear>();
+    assert_send::<DurableMarker>();
     assert_send::<RepairedClear>();
+    assert_send::<CreatedMarker>();
+    assert_send::<UnsyncedRemoval>();
 }
 
 fn open_store(path: &Path) -> ClearTxnStore {
@@ -77,9 +97,50 @@ fn fail_after(store: &mut ClearTxnStore, failure: ClearTxnStage) {
     }));
 }
 
+/// 记录每个已完成步骤，并在第 `fail_times` 次命中 `failure` 之前（含）的后置检查点失败。
+fn record_and_fail_after(
+    store: &mut ClearTxnStore,
+    failure: ClearTxnStage,
+    fail_times: usize,
+) -> Arc<Mutex<Vec<ClearTxnStage>>> {
+    let steps = Arc::new(Mutex::new(Vec::new()));
+    let observed = Arc::clone(&steps);
+    let mut remaining = fail_times;
+    store.after_step = Some(Box::new(move |stage| {
+        observed.lock().unwrap().push(stage);
+        if stage == failure && remaining > 0 {
+            remaining -= 1;
+            return Err(io::Error::other("测试在已完成文件步骤后中断"));
+        }
+        Ok(())
+    }));
+    steps
+}
+
 fn refresh_checksum(bytes: &mut [u8]) {
     let checksum = blake3::hash(&bytes[..CHECKSUM_OFFSET]);
     bytes[CHECKSUM_OFFSET..RECORD_BYTES].copy_from_slice(checksum.as_bytes());
+}
+
+fn prepare(store: &mut ClearTxnStore) -> PreparedClear {
+    store.prepare_clear(1, 2, true, &mut NoGuard).unwrap()
+}
+
+/// 用后置检查点在 `stage` 之后中断，取得本 store 创建的 `CreatedMarker`。
+fn created_marker(store: &mut ClearTxnStore, stage: ClearTxnStage) -> CreatedMarker {
+    fail_after(store, stage);
+    let error = store.prepare_clear(7, 8, true, &mut NoGuard).unwrap_err();
+    store.after_step = None;
+    assert_eq!(error.error.stage, stage);
+    assert_eq!(error.error.phase, StepPhase::After);
+    match error.token {
+        PrepareFailureToken::Created(created) => created,
+        other => panic!("{stage:?} 之后必须返还 Created，实际 {other:?}"),
+    }
+}
+
+fn set_mode(path: &Path, mode: u32) {
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
 }
 
 #[test]
@@ -87,7 +148,9 @@ fn prepare_has_fixed_record_and_strict_backup_first_order() {
     use ClearTxnStage as Stage;
     let (_dir, mut store) = fixture(true);
     let steps = record_steps(&mut store);
-    let prepared = store.prepare_clear(u128::MAX, u64::MAX, true).unwrap();
+    let prepared = store
+        .prepare_clear(u128::MAX, u64::MAX, true, &mut NoGuard)
+        .unwrap();
     assert_eq!(prepared.record().txn_id(), u128::MAX);
     assert_eq!(prepared.record().expected_epoch(), u64::MAX);
     assert!(prepared.record().original_latched());
@@ -111,6 +174,7 @@ fn prepare_has_fixed_record_and_strict_backup_first_order() {
         &*steps.lock().unwrap(),
         &[
             Stage::CreateMarker,
+            Stage::SampleMarkerIdentity,
             Stage::WriteMarker,
             Stage::SyncMarkerFile,
             Stage::SyncMarkerDirectory,
@@ -127,11 +191,10 @@ fn prepare_has_fixed_record_and_strict_backup_first_order() {
         ]
     );
     store.after_step = None;
-    assert_eq!(
-        store.inspect_pending().unwrap().unwrap().record(),
-        prepared.record()
-    );
-    store.remove_prepared_marker(prepared).unwrap();
+    let pending = store.inspect_pending().unwrap().unwrap();
+    assert_eq!(pending.record(), prepared.record());
+    assert_eq!(pending.identity(), prepared.identity());
+    store.remove(prepared, &mut NoGuard).unwrap();
     assert!(!store.marker_path.exists());
     assert!(!open_store(&store.latch_path).recover_and_load().unwrap());
 }
@@ -139,9 +202,10 @@ fn prepare_has_fixed_record_and_strict_backup_first_order() {
 #[test]
 fn zero_transaction_id_and_existing_marker_are_rejected_without_latch_writes() {
     let (_dir, mut store) = fixture(true);
-    let error = store.prepare_clear(0, 1, true).unwrap_err();
-    assert_eq!(error.stage, ClearTxnStage::ValidateMarker);
-    assert_eq!(error.source.kind(), io::ErrorKind::InvalidInput);
+    let error = store.prepare_clear(0, 1, true, &mut NoGuard).unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::ValidateMarker);
+    assert_eq!(error.error.source.kind(), io::ErrorKind::InvalidInput);
+    assert!(matches!(error.token, PrepareFailureToken::NotOwned));
     assert!(!store.marker_path.exists());
     assert_pair(&store, true);
 
@@ -151,12 +215,29 @@ fn zero_transaction_id_and_existing_marker_are_rejected_without_latch_writes() {
         pending_record(&store, true).encode().to_vec(),
     ] {
         std::fs::write(&store.marker_path, &contents).unwrap();
-        let error = store.prepare_clear(2, 3, true).unwrap_err();
-        assert_eq!(error.stage, ClearTxnStage::CreateMarker);
-        assert_eq!(error.source.kind(), io::ErrorKind::AlreadyExists);
+        let error = store.prepare_clear(2, 3, true, &mut NoGuard).unwrap_err();
+        assert_eq!(error.error.stage, ClearTxnStage::CreateMarker);
+        assert_eq!(error.error.phase, StepPhase::Operation);
+        assert_eq!(error.error.source.kind(), io::ErrorKind::AlreadyExists);
+        // NotOwned 只表示本次未取得所有权：既有标记原样保留。
+        assert!(matches!(error.token, PrepareFailureToken::NotOwned));
         assert_eq!(std::fs::read(&store.marker_path).unwrap(), contents);
         assert_pair(&store, true);
     }
+}
+
+#[test]
+fn open_rejects_missing_file_name_and_non_directory_parent() {
+    let dir = TempDir::new().unwrap();
+    let error = ClearTxnStore::open(Path::new("/"), ROBOT_ID, HARDWARE_ID)
+        .err()
+        .map(|error| error.stage);
+    assert_eq!(error, Some(ClearTxnStage::OpenStore));
+    let file_parent = dir.path().join("not_a_directory");
+    std::fs::write(&file_parent, b"x").unwrap();
+    let error =
+        ClearTxnStore::open(&file_parent.join("estop_latch"), ROBOT_ID, HARDWARE_ID).unwrap_err();
+    assert_eq!(error.stage, ClearTxnStage::OpenStore);
 }
 
 #[test]
@@ -251,9 +332,13 @@ fn canonical_parent_alias_and_atomic_latch_replacement_preserve_identity() {
     let mut original = open_store(&actual.join("estop_latch"));
     let missing_identity = original.target_identity;
     write_pair(&original, true);
-    let prepared = original.prepare_clear(1, 2, true).unwrap();
+    let prepared = prepare(&mut original);
     let mut through_alias = open_store(&alias.join("estop_latch"));
     assert_eq!(through_alias.target_identity, missing_identity);
+    assert_eq!(
+        through_alias.directory_identity(),
+        original.directory_identity()
+    );
     assert_eq!(
         through_alias.inspect_pending().unwrap().unwrap().record(),
         prepared.record()
@@ -286,6 +371,11 @@ fn no_marker_preserves_original_loader_and_missing_policy() {
         assert_eq!(error.stage, ClearTxnStage::LoadLatch);
         assert_eq!(error.source.kind(), io::ErrorKind::NotFound);
         assert!(!store.marker_path.exists());
+        std::fs::write(&store.latch_path, "损坏").unwrap();
+        std::fs::write(backup_path(&store.latch_path), "也损坏").unwrap();
+        let error = store.recover_and_load().unwrap_err();
+        assert_eq!(error.stage, ClearTxnStage::LoadLatch);
+        assert_eq!(error.source.kind(), io::ErrorKind::InvalidData);
     }
 }
 
@@ -388,16 +478,20 @@ fn special_marker_types_are_rejected_before_fallback_and_never_treated_as_missin
 }
 
 #[test]
-fn all_credential_matching_paths_reject_special_marker_replacements() {
+fn all_credential_matching_paths_reject_special_marker_replacements_and_lose_credentials() {
     for kind in SPECIAL_MARKERS {
         for operation in 0..4 {
             let (_dir, mut store) = fixture(true);
-            let mut prepared = Some(store.prepare_clear(123, 456, true).unwrap());
+            let mut prepared = Some(prepare(&mut store));
             let pending = store.inspect_pending().unwrap().unwrap();
             let repaired = match operation {
                 3 => Some(
                     store
-                        .repair_prepared(prepared.take().unwrap(), RepairTarget::Latched)
+                        .repair(
+                            prepared.take().unwrap(),
+                            RepairTarget::Latched,
+                            &mut NoGuard,
+                        )
                         .unwrap(),
                 ),
                 _ => None,
@@ -406,17 +500,30 @@ fn all_credential_matching_paths_reject_special_marker_replacements() {
             install_special_marker(&store, kind);
             write_pair(&store, true);
             let error = match operation {
-                0 => store
-                    .repair_prepared(prepared.unwrap(), RepairTarget::Original)
-                    .unwrap_err(),
-                1 => store.remove_prepared_marker(prepared.unwrap()).unwrap_err(),
+                0 => {
+                    let error = store
+                        .repair(prepared.unwrap(), RepairTarget::Original, &mut NoGuard)
+                        .unwrap_err();
+                    assert!(error.token.is_none(), "{kind:?} 确认不符必须失权");
+                    error.error
+                }
+                1 => {
+                    let error = store.remove(prepared.unwrap(), &mut NoGuard).unwrap_err();
+                    assert!(matches!(error.token, RemoveFailureToken::Lost), "{kind:?}");
+                    error.error
+                }
                 2 => store
                     .repair_pending(pending, RepairTarget::Original)
                     .unwrap_err(),
-                3 => store.remove_repaired_marker(repaired.unwrap()).unwrap_err(),
+                3 => {
+                    let error = store.remove(repaired.unwrap(), &mut NoGuard).unwrap_err();
+                    assert!(matches!(error.token, RemoveFailureToken::Lost), "{kind:?}");
+                    error.error
+                }
                 _ => unreachable!(),
             };
             assert_eq!(error.stage, ClearTxnStage::ReadMarker, "{kind:?}");
+            assert_eq!(error.phase, StepPhase::Operation, "{kind:?}");
             assert_ne!(error.source.kind(), io::ErrorKind::NotFound, "{kind:?}");
             assert!(std::fs::symlink_metadata(&store.marker_path).is_ok());
             assert_pair(&store, true);
@@ -424,8 +531,8 @@ fn all_credential_matching_paths_reject_special_marker_replacements() {
     }
 }
 
-fn temporary_candidate(target: &Path, sequence: u64) -> PathBuf {
-    target.with_file_name(format!(
+fn temporary_candidate(dir: &Path, sequence: u64) -> PathBuf {
+    dir.join(format!(
         "estop_latch.clear_tmp.{}.{sequence}",
         std::process::id()
     ))
@@ -434,13 +541,15 @@ fn temporary_candidate(target: &Path, sequence: u64) -> PathBuf {
 #[test]
 fn temporary_name_collision_uses_next_sequence_without_overwriting_existing_file() {
     let dir = TempDir::new().unwrap();
-    let target = dir.path().join("estop_latch");
-    let existing = temporary_candidate(&target, 0);
+    let handle = DirHandle::open(dir.path()).unwrap();
+    let existing = temporary_candidate(dir.path(), 0);
     std::fs::write(&existing, "保留已有临时内容").unwrap();
     let sequence = AtomicU64::new(0);
-    let (temporary, file) = TemporaryLatch::create_with_sequence(&target, &sequence).unwrap();
-    let allocated = temporary.path.clone();
-    assert_eq!(allocated, temporary_candidate(&target, 1));
+    let (temporary, file) =
+        TemporaryLatch::create_with_sequence(&handle, OsStr::new("estop_latch"), &sequence)
+            .unwrap();
+    let allocated = dir.path().join(&temporary.name);
+    assert_eq!(allocated, temporary_candidate(dir.path(), 1));
     assert_eq!(sequence.load(Ordering::Relaxed), 2);
     assert_eq!(
         std::fs::read(&existing).unwrap(),
@@ -456,24 +565,24 @@ fn temporary_name_collision_uses_next_sequence_without_overwriting_existing_file
 #[test]
 fn temporary_name_collision_budget_stops_at_64_without_trying_the_available_next_name() {
     let dir = TempDir::new().unwrap();
-    let target = dir.path().join("estop_latch");
+    let handle = DirHandle::open(dir.path()).unwrap();
     for sequence in 0..64 {
         std::fs::write(
-            temporary_candidate(&target, sequence),
+            temporary_candidate(dir.path(), sequence),
             sequence.to_le_bytes(),
         )
         .unwrap();
     }
     let sequence = AtomicU64::new(0);
-    let error = TemporaryLatch::create_with_sequence(&target, &sequence)
+    let error = TemporaryLatch::create_with_sequence(&handle, OsStr::new("estop_latch"), &sequence)
         .err()
         .expect("64 次冲突必须拒绝");
     assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
     assert_eq!(sequence.load(Ordering::Relaxed), 64);
-    assert!(!temporary_candidate(&target, 64).exists());
+    assert!(!temporary_candidate(dir.path(), 64).exists());
     for sequence in 0..64 {
         assert_eq!(
-            std::fs::read(temporary_candidate(&target, sequence)).unwrap(),
+            std::fs::read(temporary_candidate(dir.path(), sequence)).unwrap(),
             sequence.to_le_bytes()
         );
     }
@@ -482,9 +591,9 @@ fn temporary_name_collision_budget_stops_at_64_without_trying_the_available_next
 #[test]
 fn temporary_sequence_exhaustion_does_not_wrap_or_allocate() {
     let dir = TempDir::new().unwrap();
-    let target = dir.path().join("estop_latch");
+    let handle = DirHandle::open(dir.path()).unwrap();
     let sequence = AtomicU64::new(u64::MAX);
-    let error = TemporaryLatch::create_with_sequence(&target, &sequence)
+    let error = TemporaryLatch::create_with_sequence(&handle, OsStr::new("estop_latch"), &sequence)
         .err()
         .expect("耗尽必须拒绝");
     assert_eq!(error.kind(), io::ErrorKind::Other);
@@ -495,38 +604,398 @@ fn temporary_sequence_exhaustion_does_not_wrap_or_allocate() {
 #[test]
 fn temporary_non_collision_io_error_is_not_retried() {
     let dir = TempDir::new().unwrap();
-    let target = dir.path().join("missing_parent").join("estop_latch");
+    let handle = DirHandle::open(dir.path()).unwrap();
+    set_mode(dir.path(), 0o500);
     let sequence = AtomicU64::new(0);
-    let error = TemporaryLatch::create_with_sequence(&target, &sequence)
+    let error = TemporaryLatch::create_with_sequence(&handle, OsStr::new("estop_latch"), &sequence)
         .err()
-        .expect("不存在的父目录必须拒绝");
-    assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        .expect("不可写目录必须拒绝");
+    set_mode(dir.path(), 0o700);
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
     assert_eq!(sequence.load(Ordering::Relaxed), 1);
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
 }
+
+const PREPARE_STAGES: [ClearTxnStage; 15] = [
+    ClearTxnStage::CreateMarker,
+    ClearTxnStage::SampleMarkerIdentity,
+    ClearTxnStage::WriteMarker,
+    ClearTxnStage::SyncMarkerFile,
+    ClearTxnStage::SyncMarkerDirectory,
+    ClearTxnStage::CreateBackup,
+    ClearTxnStage::WriteBackup,
+    ClearTxnStage::SyncBackupFile,
+    ClearTxnStage::RenameBackup,
+    ClearTxnStage::SyncBackupDirectory,
+    ClearTxnStage::CreatePrimary,
+    ClearTxnStage::WritePrimary,
+    ClearTxnStage::SyncPrimaryFile,
+    ClearTxnStage::RenamePrimary,
+    ClearTxnStage::SyncPrimaryDirectory,
+];
 
 #[test]
 fn prepare_interruption_before_marker_durability_never_writes_zero() {
     for stage in [
         ClearTxnStage::CreateMarker,
+        ClearTxnStage::SampleMarkerIdentity,
         ClearTxnStage::WriteMarker,
         ClearTxnStage::SyncMarkerFile,
         ClearTxnStage::SyncMarkerDirectory,
     ] {
         let (_dir, mut store) = fixture(true);
         fail_after(&mut store, stage);
-        assert_eq!(store.prepare_clear(1, 2, true).unwrap_err().stage, stage);
+        let error = store.prepare_clear(1, 2, true, &mut NoGuard).unwrap_err();
+        assert_eq!(error.error.stage, stage);
+        assert_eq!(error.error.phase, StepPhase::After);
+        match (stage, &error.token) {
+            (ClearTxnStage::SyncMarkerDirectory, PrepareFailureToken::Durable(_)) => {}
+            (ClearTxnStage::CreateMarker, PrepareFailureToken::Created(created)) => {
+                assert!(created.identity().is_none(), "采样步骤之前身份未采样");
+            }
+            (_, PrepareFailureToken::Created(created))
+                if stage != ClearTxnStage::SyncMarkerDirectory =>
+            {
+                assert!(created.identity().is_some(), "{stage:?} 之后身份已采样");
+            }
+            (_, token) => panic!("{stage:?} 的后置失败返还了错误凭证 {token:?}"),
+        }
         assert_pair(&store, true);
         assert!(store.marker_path.exists());
+        drop(error);
         let mut reopened = open_store(&store.latch_path);
         match stage {
-            ClearTxnStage::CreateMarker => assert_eq!(
+            // 写入之前中断：marker 为空文件，重启必须 fail-closed 而不是自愈。
+            ClearTxnStage::CreateMarker | ClearTxnStage::SampleMarkerIdentity => assert_eq!(
                 reopened.recover_and_load().unwrap_err().stage,
                 ClearTxnStage::ValidateMarker
             ),
             _ => assert!(reopened.recover_and_load().unwrap()),
         }
     }
+}
+
+#[test]
+fn before_interrupt_at_every_prepare_stage_returns_ownership_of_completed_operations() {
+    for stage in PREPARE_STAGES {
+        let (_dir, mut store) = fixture(true);
+        let error = store
+            .prepare_clear(3, 4, true, &mut FailBefore(stage))
+            .unwrap_err();
+        assert_eq!(error.error.stage, stage);
+        assert_eq!(error.error.phase, StepPhase::Before);
+        assert_eq!(
+            error.error.guard_interrupt(),
+            Some(InterruptReason::TestBarrier)
+        );
+        assert_ne!(error.error.source.kind(), io::ErrorKind::Interrupted);
+        match error.token {
+            PrepareFailureToken::NotOwned => {
+                assert_eq!(stage, ClearTxnStage::CreateMarker);
+                assert!(!store.marker_path.exists());
+                assert_pair(&store, true);
+            }
+            PrepareFailureToken::Created(created) => {
+                assert!(matches!(
+                    stage,
+                    ClearTxnStage::SampleMarkerIdentity
+                        | ClearTxnStage::WriteMarker
+                        | ClearTxnStage::SyncMarkerFile
+                        | ClearTxnStage::SyncMarkerDirectory
+                ));
+                // 采样步骤之前中断：身份未采样，由活 fd 承担；之后中断：已采样。
+                assert_eq!(
+                    created.identity().is_some(),
+                    stage != ClearTxnStage::SampleMarkerIdentity
+                );
+                assert_pair(&store, true);
+                assert!(store.marker_path.exists());
+                store.discard_created(created, &mut NoGuard).unwrap();
+                assert!(!store.marker_path.exists());
+                assert_pair(&store, true);
+            }
+            PrepareFailureToken::Durable(durable) => {
+                assert!(stage >= ClearTxnStage::CreateBackup, "{stage:?}");
+                assert!(store.marker_path.exists());
+                let repaired = store
+                    .repair(durable, RepairTarget::Latched, &mut NoGuard)
+                    .unwrap();
+                assert_pair(&store, true);
+                store.remove(repaired, &mut NoGuard).unwrap();
+                assert!(!store.marker_path.exists());
+            }
+        }
+        assert!(open_store(&store.latch_path).recover_and_load().unwrap());
+    }
+}
+
+#[test]
+fn after_failure_at_every_prepare_stage_returns_advanced_credential() {
+    for stage in PREPARE_STAGES {
+        let (_dir, mut store) = fixture(true);
+        fail_after(&mut store, stage);
+        let error = store.prepare_clear(5, 6, true, &mut NoGuard).unwrap_err();
+        store.after_step = None;
+        assert_eq!(error.error.stage, stage);
+        assert_eq!(error.error.phase, StepPhase::After);
+        match error.token {
+            PrepareFailureToken::NotOwned => panic!("{stage:?} 操作已成功，不得返回 NotOwned"),
+            PrepareFailureToken::Created(created) => {
+                assert!(stage < ClearTxnStage::SyncMarkerDirectory, "{stage:?}");
+                assert_pair(&store, true);
+                store.discard_created(created, &mut NoGuard).unwrap();
+                assert!(!store.marker_path.exists());
+            }
+            PrepareFailureToken::Durable(durable) => {
+                assert!(stage >= ClearTxnStage::SyncMarkerDirectory, "{stage:?}");
+                let repaired = store
+                    .repair(durable, RepairTarget::Latched, &mut NoGuard)
+                    .unwrap();
+                store.remove(repaired, &mut NoGuard).unwrap();
+            }
+        }
+        assert_pair(&store, true);
+        assert!(!store.marker_path.exists());
+    }
+}
+
+#[test]
+fn created_marker_discard_accepts_empty_half_written_and_full_contents() {
+    for (stage, truncate_to) in [
+        (ClearTxnStage::CreateMarker, Some(0)),
+        (ClearTxnStage::WriteMarker, Some(50)),
+        (ClearTxnStage::WriteMarker, None),
+        (ClearTxnStage::SyncMarkerFile, None),
+    ] {
+        let (_dir, mut store) = fixture(true);
+        let created = created_marker(&mut store, stage);
+        let encoded = created.record().encode();
+        if let Some(len) = truncate_to {
+            std::fs::write(&store.marker_path, &encoded[..len]).unwrap();
+        }
+        let steps = record_steps(&mut store);
+        store.discard_created(created, &mut NoGuard).unwrap();
+        assert_eq!(
+            &*steps.lock().unwrap(),
+            &[
+                ClearTxnStage::ReadMarker,
+                ClearTxnStage::ValidateMarker,
+                ClearTxnStage::RemoveMarker,
+                ClearTxnStage::SyncRemovalDirectory,
+            ]
+        );
+        assert!(!store.marker_path.exists());
+        assert_pair(&store, true);
+    }
+}
+
+#[test]
+fn created_marker_discard_rejects_trailing_nonprefix_inode_swap_hard_link_and_unlinked() {
+    for case in 0..5 {
+        let (_dir, mut store) = fixture(true);
+        let created = created_marker(&mut store, ClearTxnStage::WriteMarker);
+        let full = created.record().encode();
+        let expected_stage = match case {
+            0 => {
+                let mut file = OpenOptions::new()
+                    .append(true)
+                    .open(&store.marker_path)
+                    .unwrap();
+                file.write_all(&[0]).unwrap();
+                ClearTxnStage::ReadMarker
+            }
+            1 => {
+                let mut wrong = full;
+                wrong[3] ^= 1;
+                std::fs::write(&store.marker_path, &wrong[..40]).unwrap();
+                ClearTxnStage::ValidateMarker
+            }
+            2 => {
+                // 本次 inode 仍以另一名字存在（nlink=1），但标记路径已指向别的文件。
+                let moved = store.marker_path.with_extension("moved");
+                std::fs::rename(&store.marker_path, &moved).unwrap();
+                std::fs::write(&store.marker_path, full).unwrap();
+                ClearTxnStage::ValidateMarker
+            }
+            3 => {
+                std::fs::hard_link(&store.marker_path, store.marker_path.with_extension("link"))
+                    .unwrap();
+                ClearTxnStage::ReadMarker
+            }
+            4 => {
+                std::fs::remove_file(&store.marker_path).unwrap();
+                ClearTxnStage::ReadMarker
+            }
+            _ => unreachable!(),
+        };
+        let before: Vec<_> = std::fs::read_dir(store.latch_path.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        let error = store.discard_created(created, &mut NoGuard).unwrap_err();
+        assert_eq!(error.error.stage, expected_stage, "case {case}");
+        assert_eq!(error.error.phase, StepPhase::Operation, "case {case}");
+        assert_eq!(error.error.source.kind(), io::ErrorKind::InvalidData);
+        assert!(
+            matches!(error.token, RemoveFailureToken::Lost),
+            "case {case}"
+        );
+        let after: Vec<_> = std::fs::read_dir(store.latch_path.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(before, after, "case {case}: 确认不符时不得删除任何文件");
+        assert_pair(&store, true);
+    }
+}
+
+#[test]
+fn created_marker_discard_temporary_errors_and_before_interrupts_keep_ownership() {
+    let (dir, mut store) = fixture(true);
+    let created = created_marker(&mut store, ClearTxnStage::WriteMarker);
+    let error = store
+        .discard_created(created, &mut FailBefore(ClearTxnStage::RemoveMarker))
+        .unwrap_err();
+    assert_eq!(error.error.phase, StepPhase::Before);
+    let RemoveFailureToken::Retained(created) = error.token else {
+        panic!("unlink 前中断必须返还凭证");
+    };
+    assert!(store.marker_path.exists());
+
+    set_mode(dir.path(), 0o500);
+    let error = store.discard_created(created, &mut NoGuard).unwrap_err();
+    set_mode(dir.path(), 0o700);
+    assert_eq!(error.error.stage, ClearTxnStage::RemoveMarker);
+    assert_eq!(error.error.phase, StepPhase::Operation);
+    assert_eq!(error.error.source.kind(), io::ErrorKind::PermissionDenied);
+    let RemoveFailureToken::Retained(created) = error.token else {
+        panic!("临时 unlink 失败必须返还凭证");
+    };
+    assert!(store.marker_path.exists());
+
+    let error = store
+        .discard_created(
+            created,
+            &mut FailBefore(ClearTxnStage::SyncRemovalDirectory),
+        )
+        .unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::SyncRemovalDirectory);
+    let RemoveFailureToken::Unsynced(unsynced) = error.token else {
+        panic!("unlink 之后的中断必须返还 Unsynced");
+    };
+    assert!(!store.marker_path.exists());
+    assert_eq!(unsynced.directory_identity(), store.directory_identity());
+    store.resync_removal(unsynced, &mut NoGuard).unwrap();
+    assert_pair(&store, true);
+}
+
+#[test]
+fn remove_before_interrupts_retain_and_post_unlink_failures_return_unsynced_without_re_unlink() {
+    let (_dir, mut store) = fixture(true);
+    let mut prepared = prepare(&mut store);
+    for stage in [
+        ClearTxnStage::ReadMarker,
+        ClearTxnStage::ValidateMarker,
+        ClearTxnStage::RemoveMarker,
+    ] {
+        let error = store.remove(prepared, &mut FailBefore(stage)).unwrap_err();
+        assert_eq!(error.error.stage, stage);
+        assert_eq!(error.error.phase, StepPhase::Before);
+        let RemoveFailureToken::Retained(returned) = error.token else {
+            panic!("{stage:?} 之前中断必须返还凭证");
+        };
+        prepared = returned;
+        assert!(store.marker_path.exists());
+    }
+    fail_after(&mut store, ClearTxnStage::RemoveMarker);
+    let error = store.remove(prepared, &mut NoGuard).unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::RemoveMarker);
+    assert_eq!(error.error.phase, StepPhase::After);
+    let RemoveFailureToken::Unsynced(unsynced) = error.token else {
+        panic!("unlink 已发生必须返还 Unsynced");
+    };
+    assert!(!store.marker_path.exists());
+
+    // 之后所有重同步尝试都在同一记录器下进行：失败两次（After 相、Before 相）后成功，
+    // 全程不得再出现 RemoveMarker 步骤。
+    let steps = record_and_fail_after(&mut store, ClearTxnStage::SyncRemovalDirectory, 1);
+    let error = store.resync_removal(unsynced, &mut NoGuard).unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::SyncRemovalDirectory);
+    assert_eq!(error.error.phase, StepPhase::After);
+    let RemoveFailureToken::Retained(unsynced) = error.token else {
+        panic!("重同步失败必须保留 Unsynced");
+    };
+    let error = store
+        .resync_removal(
+            unsynced,
+            &mut FailBefore(ClearTxnStage::SyncRemovalDirectory),
+        )
+        .unwrap_err();
+    assert_eq!(error.error.phase, StepPhase::Before);
+    let RemoveFailureToken::Retained(unsynced) = error.token else {
+        panic!("重同步中断必须保留 Unsynced");
+    };
+    store.resync_removal(unsynced, &mut NoGuard).unwrap();
+    assert_eq!(
+        &*steps.lock().unwrap(),
+        &[
+            ClearTxnStage::SyncRemovalDirectory,
+            ClearTxnStage::SyncRemovalDirectory,
+        ]
+    );
+    assert_pair(&store, false);
+    assert!(!open_store(&store.latch_path).recover_and_load().unwrap());
+}
+
+#[test]
+fn unlink_failure_retains_credential_and_the_same_credential_retries_successfully() {
+    let (dir, mut store) = fixture(true);
+    let prepared = prepare(&mut store);
+    set_mode(dir.path(), 0o500);
+    let error = store.remove(prepared, &mut NoGuard).unwrap_err();
+    set_mode(dir.path(), 0o700);
+    assert_eq!(error.error.stage, ClearTxnStage::RemoveMarker);
+    assert_eq!(error.error.phase, StepPhase::Operation);
+    assert_eq!(error.error.source.kind(), io::ErrorKind::PermissionDenied);
+    let RemoveFailureToken::Retained(prepared) = error.token else {
+        panic!("unlink 失败必须返还凭证");
+    };
+    assert!(store.marker_path.exists());
+    store.remove(prepared, &mut NoGuard).unwrap();
+    assert!(!store.marker_path.exists());
+}
+
+#[test]
+fn repair_before_interrupts_and_temporary_read_errors_keep_the_credential() {
+    let (_dir, mut store) = fixture(true);
+    let mut prepared = prepare(&mut store);
+    for stage in [
+        ClearTxnStage::ReadMarker,
+        ClearTxnStage::ValidateMarker,
+        ClearTxnStage::CreatePrimary,
+        ClearTxnStage::RenameBackup,
+    ] {
+        let error = store
+            .repair(prepared, RepairTarget::Latched, &mut FailBefore(stage))
+            .unwrap_err();
+        assert_eq!(error.error.stage, stage);
+        assert_eq!(error.error.phase, StepPhase::Before);
+        prepared = error.token.expect("守门中断不得失权");
+        assert!(store.marker_path.exists());
+    }
+    set_mode(&store.marker_path, 0o000);
+    let error = store
+        .repair(prepared, RepairTarget::Latched, &mut NoGuard)
+        .unwrap_err();
+    set_mode(&store.marker_path, 0o600);
+    assert_eq!(error.error.stage, ClearTxnStage::ReadMarker);
+    assert_eq!(error.error.source.kind(), io::ErrorKind::PermissionDenied);
+    let prepared = error.token.expect("临时读取错误不得失权");
+    let repaired = store
+        .repair(prepared, RepairTarget::Latched, &mut NoGuard)
+        .unwrap();
+    assert_pair(&store, true);
+    store.remove(repaired, &mut NoGuard).unwrap();
 }
 
 #[test]
@@ -538,11 +1007,11 @@ fn prepared_repair_honors_explicit_target_and_keeps_marker_until_consumed() {
         (true, RepairTarget::Latched, true),
     ] {
         let (_dir, mut store) = fixture(original);
-        let prepared = store.prepare_clear(11, 12, original).unwrap();
-        let repaired = store.repair_prepared(prepared, target).unwrap();
+        let prepared = store.prepare_clear(11, 12, original, &mut NoGuard).unwrap();
+        let repaired = store.repair(prepared, target, &mut NoGuard).unwrap();
         assert_pair(&store, expected);
         assert!(store.marker_path.exists());
-        store.remove_repaired_marker(repaired).unwrap();
+        store.remove(repaired, &mut NoGuard).unwrap();
         assert!(!store.marker_path.exists());
         assert_eq!(
             open_store(&store.latch_path).recover_and_load().unwrap(),
@@ -573,7 +1042,8 @@ fn readable_pending_false_repair_rechecks_and_resynchronizes_before_latch_writes
         ]
     );
     assert!(store.marker_path.exists());
-    store.remove_repaired_marker(repaired).unwrap();
+    store.after_step = None;
+    store.remove(repaired, &mut NoGuard).unwrap();
 }
 
 #[test]
@@ -612,6 +1082,36 @@ fn conservative_recovery_strictly_writes_primary_then_backup_before_marker_clean
 }
 
 #[test]
+fn persist_latched_writes_primary_then_backup_strictly() {
+    use ClearTxnStage as Stage;
+    let (_dir, mut store) = fixture(false);
+    let steps = record_steps(&mut store);
+    store.persist_latched(&mut NoGuard).unwrap();
+    assert_pair(&store, true);
+    assert_eq!(
+        &*steps.lock().unwrap(),
+        &[
+            Stage::CreatePrimary,
+            Stage::WritePrimary,
+            Stage::SyncPrimaryFile,
+            Stage::RenamePrimary,
+            Stage::SyncPrimaryDirectory,
+            Stage::CreateBackup,
+            Stage::WriteBackup,
+            Stage::SyncBackupFile,
+            Stage::RenameBackup,
+            Stage::SyncBackupDirectory,
+        ]
+    );
+    let error = store
+        .persist_latched(&mut FailBefore(Stage::CreateBackup))
+        .unwrap_err();
+    assert_eq!(error.stage, Stage::CreateBackup);
+    assert_eq!(error.phase, StepPhase::Before);
+    assert_pair(&store, true);
+}
+
+#[test]
 fn failed_pending_marker_resync_never_writes_false() {
     for stage in [
         ClearTxnStage::SyncMarkerFile,
@@ -645,17 +1145,21 @@ fn replace_record(store: &ClearTxnStore, record: ClearTxnRecord, field: usize) {
 }
 
 #[test]
-fn full_record_mismatch_rejects_old_prepared_pending_and_repaired_credentials() {
+fn full_record_mismatch_loses_old_prepared_pending_and_repaired_credentials() {
     for field in 0..3 {
         for operation in 0..4 {
             let (_dir, mut store) = fixture(true);
-            let mut prepared = Some(store.prepare_clear(11, 12, true).unwrap());
+            let mut prepared = Some(store.prepare_clear(11, 12, true, &mut NoGuard).unwrap());
             let record = *prepared.as_ref().unwrap().record();
             let pending = store.inspect_pending().unwrap().unwrap();
             let repaired = match operation {
                 3 => Some(
                     store
-                        .repair_prepared(prepared.take().unwrap(), RepairTarget::Latched)
+                        .repair(
+                            prepared.take().unwrap(),
+                            RepairTarget::Latched,
+                            &mut NoGuard,
+                        )
                         .unwrap(),
                 ),
                 _ => None,
@@ -664,17 +1168,30 @@ fn full_record_mismatch_rejects_old_prepared_pending_and_repaired_credentials() 
             write_pair(&store, true);
             let replacement = std::fs::read(&store.marker_path).unwrap();
             let error = match operation {
-                0 => store
-                    .repair_prepared(prepared.unwrap(), RepairTarget::Original)
-                    .unwrap_err(),
-                1 => store.remove_prepared_marker(prepared.unwrap()).unwrap_err(),
+                0 => {
+                    let error = store
+                        .repair(prepared.unwrap(), RepairTarget::Original, &mut NoGuard)
+                        .unwrap_err();
+                    assert!(error.token.is_none());
+                    error.error
+                }
+                1 => {
+                    let error = store.remove(prepared.unwrap(), &mut NoGuard).unwrap_err();
+                    assert!(matches!(error.token, RemoveFailureToken::Lost));
+                    error.error
+                }
                 2 => store
                     .repair_pending(pending, RepairTarget::Original)
                     .unwrap_err(),
-                3 => store.remove_repaired_marker(repaired.unwrap()).unwrap_err(),
+                3 => {
+                    let error = store.remove(repaired.unwrap(), &mut NoGuard).unwrap_err();
+                    assert!(matches!(error.token, RemoveFailureToken::Lost));
+                    error.error
+                }
                 _ => unreachable!(),
             };
             assert_eq!(error.stage, ClearTxnStage::ValidateMarker);
+            assert_eq!(error.phase, StepPhase::Operation);
             assert_eq!(error.source.kind(), io::ErrorKind::InvalidData);
             assert_pair(&store, true);
             assert_eq!(std::fs::read(&store.marker_path).unwrap(), replacement);
@@ -683,45 +1200,92 @@ fn full_record_mismatch_rejects_old_prepared_pending_and_repaired_credentials() 
 }
 
 #[test]
+fn same_record_but_different_inode_loses_credentials() {
+    for operation in 0..2 {
+        let (_dir, mut store) = fixture(true);
+        let prepared = prepare(&mut store);
+        let bytes = std::fs::read(&store.marker_path).unwrap();
+        // 覆盖范围：只证明 (dev, ino) 数值确实不同时凭证被拒绝。文件系统在 unlink 后
+        // 会立即复用 inode 号（round4 真实失败记录），因此把原 inode 改名保活后再在
+        // 原路径建立同字节新文件；同字节且 inode 号复用的替换不在本模块识别范围内。
+        let kept_alive = store.marker_path.with_extension("kept");
+        std::fs::rename(&store.marker_path, &kept_alive).unwrap();
+        std::fs::write(&store.marker_path, &bytes).unwrap();
+        let error = match operation {
+            0 => {
+                let error = store
+                    .repair(prepared, RepairTarget::Latched, &mut NoGuard)
+                    .unwrap_err();
+                assert!(error.token.is_none());
+                error.error
+            }
+            1 => {
+                let error = store.remove(prepared, &mut NoGuard).unwrap_err();
+                assert!(matches!(error.token, RemoveFailureToken::Lost));
+                error.error
+            }
+            _ => unreachable!(),
+        };
+        assert_eq!(error.stage, ClearTxnStage::ValidateMarker);
+        assert_eq!(error.source.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&store.marker_path).unwrap(), bytes);
+        assert_eq!(std::fs::read(&kept_alive).unwrap(), bytes);
+        assert_pair(&store, false);
+    }
+}
+
+#[test]
 fn corrupted_marker_rejects_prepared_repair_before_any_latch_write() {
     let (_dir, mut store) = fixture(true);
-    let prepared = store.prepare_clear(1, 2, true).unwrap();
+    let prepared = prepare(&mut store);
     let mut bytes = std::fs::read(&store.marker_path).unwrap();
     bytes[100] ^= 1;
     std::fs::write(&store.marker_path, &bytes).unwrap();
-    assert_eq!(
-        store
-            .repair_prepared(prepared, RepairTarget::Latched)
-            .unwrap_err()
-            .stage,
-        ClearTxnStage::ValidateMarker
-    );
+    let error = store
+        .repair(prepared, RepairTarget::Latched, &mut NoGuard)
+        .unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::ValidateMarker);
+    assert!(error.token.is_none());
     assert_pair(&store, false);
     assert_eq!(std::fs::read(&store.marker_path).unwrap(), bytes);
 }
 
 #[test]
-fn repair_failure_at_every_latch_step_keeps_marker_for_conservative_recovery() {
+fn repair_failure_at_every_latch_step_keeps_marker_and_credential_for_retry() {
     let stages = LatchCopy::Backup
         .stages()
         .into_iter()
         .chain(LatchCopy::Primary.stages());
     for stage in stages {
-        let (_dir, mut store) = fixture(true);
-        let prepared = store.prepare_clear(1, 2, true).unwrap();
-        fail_after(&mut store, stage);
-        assert_eq!(
-            store
-                .repair_prepared(prepared, RepairTarget::Latched)
-                .unwrap_err()
-                .stage,
-            stage
-        );
-        assert!(store.marker_path.exists());
-        let mut reopened = open_store(&store.latch_path);
-        assert!(reopened.recover_and_load().unwrap());
-        assert_pair(&reopened, true);
-        assert!(!reopened.marker_path.exists());
+        for retry_in_process in [false, true] {
+            let (_dir, mut store) = fixture(true);
+            let prepared = prepare(&mut store);
+            fail_after(&mut store, stage);
+            let error = store
+                .repair(prepared, RepairTarget::Latched, &mut NoGuard)
+                .unwrap_err();
+            assert_eq!(error.error.stage, stage);
+            assert_eq!(error.error.phase, StepPhase::After);
+            assert!(store.marker_path.exists());
+            store.after_step = None;
+            match error.token {
+                Some(prepared) if retry_in_process => {
+                    let repaired = store
+                        .repair(prepared, RepairTarget::Latched, &mut NoGuard)
+                        .unwrap();
+                    assert_pair(&store, true);
+                    store.remove(repaired, &mut NoGuard).unwrap();
+                    assert!(!store.marker_path.exists());
+                }
+                Some(_) => {
+                    let mut reopened = open_store(&store.latch_path);
+                    assert!(reopened.recover_and_load().unwrap());
+                    assert_pair(&reopened, true);
+                    assert!(!reopened.marker_path.exists());
+                }
+                None => panic!("{stage:?}: latch 部分写入不得失权"),
+            }
+        }
     }
 }
 
@@ -730,38 +1294,237 @@ fn real_backup_rename_failure_preserves_marker_and_primary() {
     let (_dir, mut store) = fixture(true);
     std::fs::remove_file(backup_path(&store.latch_path)).unwrap();
     std::fs::create_dir(backup_path(&store.latch_path)).unwrap();
-    let error = store.prepare_clear(1, 2, true).unwrap_err();
-    assert_eq!(error.stage, ClearTxnStage::RenameBackup);
+    let error = store.prepare_clear(1, 2, true, &mut NoGuard).unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::RenameBackup);
+    assert_eq!(error.error.phase, StepPhase::Operation);
+    assert!(matches!(error.token, PrepareFailureToken::Durable(_)));
     assert_eq!(std::fs::read(&store.latch_path).unwrap(), b"1\n");
     assert!(store.marker_path.exists());
     assert!(store.inspect_pending().unwrap().is_some());
 }
 
 #[test]
-fn unlink_success_then_real_directory_sync_failure_leaves_marker_absent() {
+fn parent_rename_and_path_replacement_still_operate_on_the_original_directory() {
     let dir = TempDir::new().unwrap();
-    let parent = dir.path().join("original");
+    let original = dir.path().join("original");
     let moved = dir.path().join("moved");
-    std::fs::create_dir(&parent).unwrap();
-    let mut store = open_store(&parent.join("estop_latch"));
+    std::fs::create_dir(&original).unwrap();
+    let mut store = open_store(&original.join("estop_latch"));
     write_pair(&store, true);
-    let prepared = store.prepare_clear(1, 2, true).unwrap();
-    let rename_from = parent.clone();
-    let rename_to = moved.clone();
-    store.after_step = Some(Box::new(move |stage| {
-        if stage == ClearTxnStage::RemoveMarker {
-            std::fs::rename(&rename_from, &rename_to)?;
-        }
-        Ok(())
-    }));
-    let error = store.remove_prepared_marker(prepared).unwrap_err();
-    assert_eq!(error.stage, ClearTxnStage::SyncRemovalDirectory);
-    assert_eq!(error.source.kind(), io::ErrorKind::NotFound);
+    let prepared = prepare(&mut store);
+    std::fs::rename(&original, &moved).unwrap();
+    // 原路径被一个内容不同的新目录替换：旧目录 fd 上的操作不得触碰它。
+    std::fs::create_dir(&original).unwrap();
+    std::fs::write(original.join("estop_latch"), b"1\n").unwrap();
+    std::fs::write(original.join("estop_latch.bak"), b"1\n").unwrap();
+    std::fs::write(original.join("estop_latch.clear_pending"), b"fake").unwrap();
+
+    let repaired = store
+        .repair(prepared, RepairTarget::Latched, &mut NoGuard)
+        .unwrap();
+    store.remove(repaired, &mut NoGuard).unwrap();
+    store.persist_latched(&mut NoGuard).unwrap();
     assert!(!moved.join("estop_latch.clear_pending").exists());
-    std::fs::rename(&moved, &parent).unwrap();
+    assert_eq!(std::fs::read(moved.join("estop_latch")).unwrap(), b"1\n");
+    assert_eq!(
+        std::fs::read(moved.join("estop_latch.bak")).unwrap(),
+        b"1\n"
+    );
+    assert_eq!(
+        std::fs::read(original.join("estop_latch.clear_pending")).unwrap(),
+        b"fake"
+    );
+    assert!(std::fs::read_dir(&moved).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("clear_tmp")
+    }));
+    assert_eq!(std::fs::read_dir(&original).unwrap().count(), 3);
+    std::fs::remove_dir_all(&original).unwrap();
+    std::fs::rename(&moved, &original).unwrap();
+    assert!(
+        open_store(&original.join("estop_latch"))
+            .recover_and_load()
+            .unwrap()
+    );
+}
+
+#[test]
+fn created_then_unsynced_then_resync_then_repair_continues_to_the_target() {
+    use ClearTxnStage as Stage;
+    for (original, target, expected) in [
+        (true, RepairTarget::Latched, true),
+        (false, RepairTarget::Latched, true),
+        (false, RepairTarget::Original, false),
+    ] {
+        let (_dir, mut store) = fixture(original);
+        fail_after(&mut store, Stage::SyncMarkerFile);
+        let error = store
+            .prepare_clear(9, 10, original, &mut NoGuard)
+            .unwrap_err();
+        let PrepareFailureToken::Created(created) = error.token else {
+            panic!("marker 未 durable 必须返还 Created");
+        };
+        fail_after(&mut store, Stage::SyncRemovalDirectory);
+        let error = store.discard_created(created, &mut NoGuard).unwrap_err();
+        let RemoveFailureToken::Unsynced(unsynced) = error.token else {
+            panic!("目录同步失败必须返还 Unsynced");
+        };
+        assert!(!store.marker_path.exists());
+        store.after_step = None;
+        store.resync_removal(unsynced, &mut NoGuard).unwrap();
+        // 目录同步只结束删除义务：此刻 pair 仍是事务开始前的值，尚未到达目标。
+        assert_pair(&store, original);
+        let steps = record_steps(&mut store);
+        match target {
+            RepairTarget::Latched => {
+                // 无 marker 事务的 Latched 修复 = 真实写 1/1，严格 primary → backup。
+                store.persist_latched(&mut NoGuard).unwrap();
+                assert_eq!(
+                    &*steps.lock().unwrap(),
+                    &[
+                        Stage::CreatePrimary,
+                        Stage::WritePrimary,
+                        Stage::SyncPrimaryFile,
+                        Stage::RenamePrimary,
+                        Stage::SyncPrimaryDirectory,
+                        Stage::CreateBackup,
+                        Stage::WriteBackup,
+                        Stage::SyncBackupFile,
+                        Stage::RenameBackup,
+                        Stage::SyncBackupDirectory,
+                    ]
+                );
+            }
+            RepairTarget::Original => {
+                // OriginalUnlatched：只核对 pair 仍为 0/0，不制造额外锁存，无任何 latch 步骤。
+                assert!(!original);
+                assert!(steps.lock().unwrap().is_empty());
+            }
+        }
+        store.after_step = None;
+        assert_pair(&store, expected);
+        assert_eq!(
+            open_store(&store.latch_path).recover_and_load().unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn created_marker_survives_first_fstat_failure_and_transient_errors_then_discards_strictly() {
+    let (_dir, mut store) = fixture(true);
+    // openat 已真实成功，紧随其后的身份采样系统调用失败：所有权必须已经建立。
+    store.fail_operation = Some((ClearTxnStage::SampleMarkerIdentity, 1));
+    let error = store.prepare_clear(13, 14, true, &mut NoGuard).unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::SampleMarkerIdentity);
+    assert_eq!(error.error.phase, StepPhase::Operation);
+    assert_eq!(error.error.source.raw_os_error(), Some(libc::EIO));
+    let PrepareFailureToken::Created(created) = error.token else {
+        panic!("openat 成功后的采样失败必须返还 Created");
+    };
+    assert!(created.identity().is_none(), "采样失败不得填伪造身份");
+    assert_eq!(created.record().txn_id(), 13);
+    // 没有隐式 unlink：空 marker 仍在，pair 未动。
+    assert_eq!(std::fs::metadata(&store.marker_path).unwrap().len(), 0);
+    assert_pair(&store, true);
+    let entries_before = std::fs::read_dir(store.latch_path.parent().unwrap())
+        .unwrap()
+        .count();
+
+    // 同一凭证再遇 metadata / 读取临时错误：仍返还，不删除、不失权。
+    let mut created = created;
+    for stage in [ClearTxnStage::ReadMarker, ClearTxnStage::ValidateMarker] {
+        store.fail_operation = Some((stage, 1));
+        let error = store.discard_created(created, &mut NoGuard).unwrap_err();
+        assert_eq!(error.error.stage, stage);
+        assert_eq!(error.error.phase, StepPhase::Operation);
+        assert_eq!(error.error.source.raw_os_error(), Some(libc::EIO));
+        let RemoveFailureToken::Retained(returned) = error.token else {
+            panic!("{stage:?} 临时错误必须返还凭证");
+        };
+        created = returned;
+        assert!(store.marker_path.exists());
+        assert_eq!(
+            std::fs::read_dir(store.latch_path.parent().unwrap())
+                .unwrap()
+                .count(),
+            entries_before
+        );
+    }
+    assert_eq!(
+        store.fail_operation,
+        Some((ClearTxnStage::ValidateMarker, 0))
+    );
+
+    // 最终经 strict 删除成功：真实 fstat + 读取 + unlink + 目录同步。
+    let steps = record_steps(&mut store);
+    store.discard_created(created, &mut NoGuard).unwrap();
+    assert_eq!(
+        &*steps.lock().unwrap(),
+        &[
+            ClearTxnStage::ReadMarker,
+            ClearTxnStage::ValidateMarker,
+            ClearTxnStage::RemoveMarker,
+            ClearTxnStage::SyncRemovalDirectory,
+        ]
+    );
     assert!(!store.marker_path.exists());
-    assert_pair(&store, false);
-    assert!(!open_store(&store.latch_path).recover_and_load().unwrap());
+    assert_pair(&store, true);
+    assert!(open_store(&store.latch_path).recover_and_load().unwrap());
+}
+
+#[test]
+fn credentials_are_refused_by_another_store_without_file_changes() {
+    let (_dir, mut store) = fixture(true);
+    let other_dir = TempDir::new().unwrap();
+    let mut other = open_store(&other_dir.path().join("estop_latch"));
+    write_pair(&other, false);
+    let mut same_dir_other_target = open_store(&store.latch_path.with_file_name("other_latch"));
+    write_pair(&same_dir_other_target, false);
+    let prepared = prepare(&mut store);
+    let marker_bytes = std::fs::read(&store.marker_path).unwrap();
+
+    let error = other
+        .repair(prepared, RepairTarget::Latched, &mut NoGuard)
+        .unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::ValidateCredential);
+    assert_eq!(error.error.source.kind(), io::ErrorKind::InvalidInput);
+    let prepared = error.token.expect("跨 store 拒绝不得失权");
+    let error = same_dir_other_target
+        .remove(prepared, &mut NoGuard)
+        .unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::ValidateCredential);
+    let RemoveFailureToken::Retained(prepared) = error.token else {
+        panic!("跨目标拒绝必须返还凭证");
+    };
+    assert_eq!(std::fs::read(&store.marker_path).unwrap(), marker_bytes);
+    assert_pair(&other, false);
+    assert_pair(&same_dir_other_target, false);
+
+    let created = created_marker(&mut other, ClearTxnStage::WriteMarker);
+    let error = store.discard_created(created, &mut NoGuard).unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::ValidateCredential);
+    let RemoveFailureToken::Retained(created) = error.token else {
+        panic!("跨 store 丢弃必须返还凭证");
+    };
+    assert!(other.marker_path.exists());
+    other.discard_created(created, &mut NoGuard).unwrap();
+
+    fail_after(&mut store, ClearTxnStage::SyncRemovalDirectory);
+    let error = store.remove(prepared, &mut NoGuard).unwrap_err();
+    store.after_step = None;
+    let RemoveFailureToken::Unsynced(unsynced) = error.token else {
+        panic!("目录同步失败必须返还 Unsynced");
+    };
+    let error = other.resync_removal(unsynced, &mut NoGuard).unwrap_err();
+    assert_eq!(error.error.stage, ClearTxnStage::ValidateCredential);
+    let RemoveFailureToken::Retained(unsynced) = error.token else {
+        panic!("跨 store 重同步必须返还凭证");
+    };
+    store.resync_removal(unsynced, &mut NoGuard).unwrap();
 }
 
 #[test]
@@ -792,6 +1555,7 @@ fn process_interruption_at_real_file_checkpoints_recovers_observed_state() {
     use ClearTxnStage as Stage;
     let stages = [
         Stage::CreateMarker,
+        Stage::SampleMarkerIdentity,
         Stage::WriteMarker,
         Stage::SyncMarkerFile,
         Stage::SyncMarkerDirectory,
@@ -821,7 +1585,7 @@ fn process_interruption_at_real_file_checkpoints_recovers_observed_state() {
         );
         let mut reopened = open_store(&store.latch_path);
         match stage {
-            Stage::CreateMarker => {
+            Stage::CreateMarker | Stage::SampleMarkerIdentity => {
                 assert_eq!(std::fs::metadata(&store.marker_path).unwrap().len(), 0);
                 assert_eq!(
                     reopened.recover_and_load().unwrap_err().stage,
@@ -858,7 +1622,7 @@ fn crash_checkpoint_child() {
         }
         Ok(())
     }));
-    let prepared = store.prepare_clear(1, 2, true).unwrap();
-    store.remove_prepared_marker(prepared).unwrap();
+    let prepared = store.prepare_clear(1, 2, true, &mut NoGuard).unwrap();
+    store.remove(prepared, &mut NoGuard).unwrap();
     panic!("子进程未命中指定文件步骤");
 }

@@ -1,35 +1,82 @@
-//! `ClearEStop` 的纯文件事务：先建立持久标记，再准备双份未锁存值。
+//! `ClearEStop` 的纯文件事务：先建立持久标记，再准备双份未锁存值；失败按
+//! 真实已完成的文件步骤返还所有权凭证。
 //!
 //! 本模块只供普通磁盘 writer 使用，尚未接入生产启动或控制链。它不判断
 //! 当前安全代次，也不授予清锁、使能或回复成功的权限。删除标记之前，上层
 //! 必须已经持有当前事务的 Finalize 许可；磁盘操作与内存提交并非原子操作。
 //!
+//! ## 目录 fd 与身份
+//!
+//! [`ClearTxnStore::open`] 打开 canonical 父目录并保留其活 fd 与 `(dev, ino)`；
+//! 之后所有读写、创建、rename、unlink、恢复、自愈、临时文件清理都相对这个
+//! fd 进行，目录同步只 `fsync` 这个 fd，不按路径重开父目录。父目录被改名或
+//! 原路径被替换后，操作对象仍是打开时的那个目录。单 writer、目标锁与目录内
+//! 无并发改名者仍是接线前提；本模块不安装目标锁，也不宣称抗敌对目录竞态。
+//!
+//! ## 三相与凭证
+//!
+//! 每个文件步骤按 `Before`（[`StepGuard`]）→ `Operation`（真实系统调用）→
+//! `After`（仅测试的后置检查点）执行，失败以 [`StageError`] 记录阶段与相位。
+//! 凭证只随真实 `Operation` 成功推进：`create_new` 得到文件即
+//! [`CreatedMarker`]，标记目录同步成功才 [`DurableMarker`]，unlink 成功即
+//! [`UnsyncedRemoval`]；`Before` 相中断不改资源、返还原凭证，`After` 相失败
+//! 返还已经推进的凭证。只有真实 `NotFound` 或确认记录 / 身份 / 内容不符才失权。
+//!
+//! ## 凭证身份的适用前提与识别局限
+//!
+//! [`CreatedMarker`] 持有活 fd，其 inode 在凭证存续期间不会被释放复用。
+//! [`PreparedClear`] / [`DurableMarker`] / [`RepairedClear`] 不持 fd，只携带完整
+//! 记录（目标摘要、唯一 txn、epoch、原锁存值与校验）和创建时的 `(dev, ino)`；它们
+//! 在"完整记录 + 上层保证 txn 唯一 + 单 writer + 目录内无并发改名者"的前提下
+//! 使用，`FileIdentity` 只是附加核对。本模块**不宣称**抵抗 inode ABA：文件系统
+//! 在 unlink 后可能立即复用 inode 号，若同一唯一事务的原记录被外部逐字节复刻
+//! 且 inode 号复用，文件层无法识别；相同可读字节既不证明新文件已 durable，也
+//! 不证明原物理对象仍在。该交错不属于当前受支持的生产前提；不同 txn / epoch /
+//! 原锁存值的旧凭证仍由完整记录比较拒绝。
+//!
 //! 调用方必须保证目标只有一个 writer，并持有部署层的排他锁。非 `Clone`
 //! 的 store 与按值消费的凭证只约束本实例，不能代替跨实例或跨进程互斥。
 
-use std::ffi::OsString;
-use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
+use std::ffi::{OsStr, OsString};
+use std::fs::File;
+use std::io::{self, Write};
+use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::estop_latch::{backup_path, fsync_parent_dir_strict, load_estop_latch};
+mod credential;
+mod dirfd;
+mod guard;
 
-const MAGIC: &[u8; 8] = b"RBTCLRTX";
-const VERSION: u16 = 1;
-const RECORD_BYTES: usize = 112;
-const CHECKSUM_OFFSET: usize = 80;
+#[cfg(test)]
+mod tests;
+
+pub use credential::{
+    ClearTxnRecord, CreatedMarker, DurableMarker, FileIdentity, MarkerCredential, PendingClear,
+    PrepareError, PrepareFailureToken, PreparedClear, RemoveError, RemoveFailureToken, RepairError,
+    RepairedClear, UnsyncedRemoval,
+};
+pub use guard::{GuardInterrupt, InterruptReason, NoGuard, StageError, StepGuard, StepPhase};
+
+use credential::{Binding, RECORD_BYTES};
+use dirfd::{DirHandle, TemporaryLatch};
+
+#[cfg(test)]
+use credential::CHECKSUM_OFFSET;
+
 const IDENTITY_DOMAIN: &str = "robot-system clear-estop target identity v1";
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// 失败所在文件步骤；目录同步失败不意味着此前的 rename 或 unlink 未发生。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 声明顺序即执行顺序，可按序比较。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ClearTxnStage {
     OpenStore,
+    /// 凭证与本 store 的目标 / 目录绑定核对；不做任何文件操作。
+    ValidateCredential,
     ReadMarker,
     ValidateMarker,
     CreateMarker,
+    /// 对刚创建的 marker 活 fd 采样 `(dev, ino)`；失败仍返还持活 fd 的 Created。
+    SampleMarkerIdentity,
     WriteMarker,
     SyncMarkerFile,
     SyncMarkerDirectory,
@@ -46,142 +93,6 @@ pub enum ClearTxnStage {
     RemoveMarker,
     SyncRemovalDirectory,
     LoadLatch,
-}
-
-/// 保留明确文件阶段与原始 IO 错误，不把部分成功改写成“没有副作用”。
-#[derive(Debug, thiserror::Error)]
-#[error("Clear 事务文件步骤 {stage:?} 失败: {source}")]
-pub struct ClearTxnError {
-    pub stage: ClearTxnStage,
-    #[source]
-    pub source: io::Error,
-}
-
-impl ClearTxnError {
-    fn new(stage: ClearTxnStage, source: io::Error) -> Self {
-        Self { stage, source }
-    }
-}
-
-/// 完整事务身份。字段只读；它既不是 durability 证明，也不是清锁许可。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ClearTxnRecord {
-    target_identity: [u8; 32],
-    txn_id: u128,
-    expected_epoch: u64,
-    original_latched: bool,
-}
-
-impl ClearTxnRecord {
-    #[must_use]
-    pub const fn txn_id(&self) -> u128 {
-        self.txn_id
-    }
-
-    #[must_use]
-    pub const fn expected_epoch(&self) -> u64 {
-        self.expected_epoch
-    }
-
-    #[must_use]
-    pub const fn original_latched(&self) -> bool {
-        self.original_latched
-    }
-
-    fn encode(self) -> [u8; RECORD_BYTES] {
-        let mut bytes = [0; RECORD_BYTES];
-        bytes[..8].copy_from_slice(MAGIC);
-        bytes[8..10].copy_from_slice(&VERSION.to_le_bytes());
-        bytes[16..48].copy_from_slice(&self.target_identity);
-        bytes[48..64].copy_from_slice(&self.txn_id.to_le_bytes());
-        bytes[64..72].copy_from_slice(&self.expected_epoch.to_le_bytes());
-        bytes[72] = u8::from(self.original_latched);
-        let checksum = blake3::hash(&bytes[..CHECKSUM_OFFSET]);
-        bytes[CHECKSUM_OFFSET..].copy_from_slice(checksum.as_bytes());
-        bytes
-    }
-
-    fn decode(bytes: &[u8], target_identity: [u8; 32]) -> io::Result<Self> {
-        let invalid = || io::Error::new(io::ErrorKind::InvalidData, "Clear 事务标记损坏或身份不符");
-        if bytes.len() != RECORD_BYTES
-            || &bytes[..8] != MAGIC
-            || bytes[8..10] != VERSION.to_le_bytes()
-            || bytes[10..16] != [0; 6]
-            || bytes[73..80] != [0; 7]
-            || bytes[16..48] != target_identity
-            || bytes[CHECKSUM_OFFSET..] != *blake3::hash(&bytes[..CHECKSUM_OFFSET]).as_bytes()
-        {
-            return Err(invalid());
-        }
-        let original_latched = match bytes[72] {
-            0 => false,
-            1 => true,
-            _ => return Err(invalid()),
-        };
-        let txn_id = u128::from_le_bytes(bytes[48..64].try_into().map_err(|_| invalid())?);
-        if txn_id == 0 {
-            return Err(invalid());
-        }
-        let expected_epoch = u64::from_le_bytes(bytes[64..72].try_into().map_err(|_| invalid())?);
-        Ok(Self {
-            target_identity,
-            txn_id,
-            expected_epoch,
-            original_latched,
-        })
-    }
-}
-
-/// `inspect_pending` 的只读结果；不能用它直接构造已准备或已修复凭证。
-#[derive(Debug)]
-pub struct PendingClear {
-    record: ClearTxnRecord,
-}
-
-impl PendingClear {
-    #[must_use]
-    pub const fn record(&self) -> &ClearTxnRecord {
-        &self.record
-    }
-}
-
-/// 标记与双份 `0` 均完成严格同步；仍需要上层执行权限仲裁。
-///
-/// 准备凭证不能复制，也不能在被消费后再次使用：
-///
-/// ```compile_fail
-/// use robot_s0::clear_estop_transaction::PreparedClear;
-/// fn duplicate(prepared: PreparedClear) { let _ = prepared.clone(); }
-/// ```
-///
-/// ```compile_fail
-/// use robot_s0::clear_estop_transaction::{ClearTxnStore, PreparedClear};
-/// fn remove_twice(store: &mut ClearTxnStore, prepared: PreparedClear) {
-///     store.remove_prepared_marker(prepared).unwrap();
-///     store.remove_prepared_marker(prepared).unwrap();
-/// }
-/// ```
-#[derive(Debug)]
-pub struct PreparedClear {
-    record: ClearTxnRecord,
-}
-
-impl PreparedClear {
-    #[must_use]
-    pub const fn record(&self) -> &ClearTxnRecord {
-        &self.record
-    }
-}
-
-/// 指定修复目标已严格落盘，标记仍存在；删除时继续核完整事务身份。
-///
-/// ```compile_fail
-/// use robot_s0::clear_estop_transaction::RepairedClear;
-/// fn duplicate(repaired: RepairedClear) { let _ = repaired.clone(); }
-/// ```
-#[derive(Debug)]
-pub struct RepairedClear {
-    record: ClearTxnRecord,
 }
 
 /// 由唯一 owner 根据当前权限决定；文件层不自行猜测新事件或代次。
@@ -202,36 +113,61 @@ impl RepairTarget {
     }
 }
 
-/// 单 writer 的纯文件事务存储。构造不读取或修复 latch。
+/// 相对目录 fd 的三个文件名。
+#[derive(Debug)]
+struct Layout {
+    latch: OsString,
+    backup: OsString,
+    marker: OsString,
+}
+
+#[cfg(test)]
+type AfterStep = Option<Box<dyn FnMut(ClearTxnStage) -> io::Result<()> + Send>>;
+
+/// 单 writer 的纯文件事务存储。构造只打开目录，不读取或修复 latch。
 pub struct ClearTxnStore {
+    dir: DirHandle,
+    layout: Layout,
+    target_identity: [u8; 32],
+    /// 仅供诊断与测试；文件操作一律相对目录 fd。
     latch_path: PathBuf,
     marker_path: PathBuf,
-    target_identity: [u8; 32],
     #[cfg(test)]
-    after_step: Option<Box<dyn FnMut(ClearTxnStage) -> io::Result<()> + Send>>,
+    after_step: AfterStep,
+    /// 仅测试：让指定步骤的 `Operation` 相在不执行系统调用的情况下返回 `EIO`，
+    /// 用于确定性注入"前一步骤已真实成功、本步骤系统调用失败"。
+    #[cfg(test)]
+    fail_operation: Option<(ClearTxnStage, usize)>,
+}
+
+impl std::fmt::Debug for ClearTxnStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClearTxnStore")
+            .field("dir", &self.dir)
+            .field("layout", &self.layout)
+            .field("latch_path", &self.latch_path)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ClearTxnStore {
-    /// 身份绑定已存在父目录的规范路径与原文件名，不依赖 latch 的存在或 inode。
-    pub fn open(
-        latch_path: &Path,
-        robot_id: &str,
-        hardware_id: &str,
-    ) -> Result<Self, ClearTxnError> {
-        let invalid_path = || {
-            ClearTxnError::new(
-                ClearTxnStage::OpenStore,
-                io::Error::new(io::ErrorKind::InvalidInput, "latch 路径必须包含文件名"),
-            )
-        };
-        let name = latch_path.file_name().ok_or_else(invalid_path)?;
+    /// 身份绑定已存在父目录的规范路径与原文件名，不依赖 latch 的存在或 inode；
+    /// 同时打开该目录并保留活 fd。
+    pub fn open(latch_path: &Path, robot_id: &str, hardware_id: &str) -> Result<Self, StageError> {
+        let open_error = |source| StageError::operation(ClearTxnStage::OpenStore, source);
+        let name = latch_path.file_name().ok_or_else(|| {
+            open_error(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "latch 路径必须包含文件名",
+            ))
+        })?;
         let parent = latch_path
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        let canonical = std::fs::canonicalize(parent)
-            .map_err(|error| ClearTxnError::new(ClearTxnStage::OpenStore, error))?
-            .join(name);
+        let canonical_parent = std::fs::canonicalize(parent).map_err(open_error)?;
+        let dir = DirHandle::open(&canonical_parent).map_err(open_error)?;
+        let canonical = canonical_parent.join(name);
         let mut hasher = blake3::Hasher::new_derive_key(IDENTITY_DOMAIN);
         for bytes in [
             robot_id.as_bytes(),
@@ -241,41 +177,96 @@ impl ClearTxnStore {
             hasher.update(&(bytes.len() as u64).to_le_bytes());
             hasher.update(bytes);
         }
-        let mut marker_name = OsString::from(name);
-        marker_name.push(".clear_pending");
+        let mut backup = name.to_os_string();
+        backup.push(".bak");
+        let mut marker = name.to_os_string();
+        marker.push(".clear_pending");
+        let marker_path = canonical.with_file_name(&marker);
         Ok(Self {
-            marker_path: canonical.with_file_name(marker_name),
-            latch_path: canonical,
+            dir,
+            layout: Layout {
+                latch: name.to_os_string(),
+                backup,
+                marker,
+            },
             target_identity: *hasher.finalize().as_bytes(),
+            latch_path: canonical,
+            marker_path,
             #[cfg(test)]
             after_step: None,
+            #[cfg(test)]
+            fail_operation: None,
         })
     }
 
+    /// 打开时采样的目录身份；凭证跨 store 使用时据此拒绝。
+    #[must_use]
+    pub const fn directory_identity(&self) -> FileIdentity {
+        self.dir.identity()
+    }
+
+    /// 规范 latch 路径，仅供诊断；不用于任何文件操作。
+    #[must_use]
+    pub fn latch_path(&self) -> &Path {
+        &self.latch_path
+    }
+
+    /// 规范标记路径，仅供诊断；不用于任何文件操作。
+    #[must_use]
+    pub fn marker_path(&self) -> &Path {
+        &self.marker_path
+    }
+
     /// 只读校验，合法标记可能尚未经过任何同步；错误时不触发 latch 自愈。
-    pub fn inspect_pending(&mut self) -> Result<Option<PendingClear>, ClearTxnError> {
-        let marker_path = &self.marker_path;
-        let mut file = match open_marker_file(marker_path) {
+    pub fn inspect_pending(&mut self) -> Result<Option<PendingClear>, StageError> {
+        let mut guard = NoGuard;
+        let directory = self.dir.identity();
+        let mut engine = self.engine(&mut guard);
+        let file = match engine.open_marker() {
             Ok(file) => file,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(ClearTxnError::new(ClearTxnStage::ReadMarker, error)),
+            Err(failure) => {
+                let error = failure.into_error();
+                if error.phase == StepPhase::Operation
+                    && error.source.kind() == io::ErrorKind::NotFound
+                {
+                    return Ok(None);
+                }
+                return Err(error);
+            }
         };
-        self.read_record(&mut file)
-            .map(|record| Some(PendingClear { record }))
+        let (record, marker) = engine.read_record(&file).map_err(StepFailure::into_error)?;
+        Ok(Some(PendingClear {
+            binding: Binding {
+                record,
+                marker,
+                directory,
+            },
+        }))
     }
 
     /// 建立排他事务标记并严格准备双份 `0`。事务 ID 的唯一性由上层保证。
+    ///
+    /// 失败时按已完成的真实步骤返还所有权：`NotOwned` / [`CreatedMarker`] /
+    /// [`DurableMarker`]。
+    #[allow(
+        clippy::result_large_err,
+        reason = "错误变体按设计携带被返还的凭证本体；非实时路径，装箱只会掩盖所有权"
+    )]
     pub fn prepare_clear(
         &mut self,
         txn_id: u128,
         expected_epoch: u64,
         original_latched: bool,
-    ) -> Result<PreparedClear, ClearTxnError> {
+        guard: &mut dyn StepGuard,
+    ) -> Result<PreparedClear, PrepareError> {
         if txn_id == 0 {
-            return Err(ClearTxnError::new(
-                ClearTxnStage::ValidateMarker,
-                io::Error::new(io::ErrorKind::InvalidInput, "Clear 事务 ID 不得为零"),
-            ));
+            return Err(PrepareError {
+                error: StageError::operation(
+                    ClearTxnStage::ValidateMarker,
+                    io::Error::new(io::ErrorKind::InvalidInput, "Clear 事务 ID 不得为零"),
+                ),
+                token: PrepareFailureToken::NotOwned,
+            });
         }
         let record = ClearTxnRecord {
             target_identity: self.target_identity,
@@ -283,204 +274,759 @@ impl ClearTxnStore {
             expected_epoch,
             original_latched,
         };
-        let marker_path = self.marker_path.clone();
-        let mut marker = self.step(ClearTxnStage::CreateMarker, || {
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&marker_path)
-        })?;
-        self.step(ClearTxnStage::WriteMarker, || {
-            marker.write_all(&record.encode())
-        })?;
-        self.sync_marker(&marker)?;
-        self.write_pair(false)?;
-        Ok(PreparedClear { record })
+        self.engine(guard).prepare(record)
     }
 
-    /// 消费准备凭证，完整核对当前标记后修复。失败时不删除标记。
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "必须消费一次性凭证，不能改为借用或 Copy"
-    )]
-    pub fn repair_prepared(
-        &mut self,
-        prepared: PreparedClear,
-        target: RepairTarget,
-    ) -> Result<RepairedClear, ClearTxnError> {
-        self.matching_marker(prepared.record)?;
-        self.write_pair(target.latched(prepared.record))?;
-        Ok(RepairedClear {
-            record: prepared.record,
-        })
-    }
-
-    /// 从可读记录恢复修复流程；先重核并同步标记，不能凭可读状态直接写 `0`。
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "修复必须消费本次检查结果，禁止重复使用旧凭证"
-    )]
-    pub fn repair_pending(
-        &mut self,
-        pending: PendingClear,
-        target: RepairTarget,
-    ) -> Result<RepairedClear, ClearTxnError> {
-        let marker = self.matching_marker(pending.record)?;
-        self.sync_marker(&marker)?;
-        self.write_pair(target.latched(pending.record))?;
-        Ok(RepairedClear {
-            record: pending.record,
-        })
-    }
-
-    /// 消费准备凭证后清理标记。调用方必须已持有匹配的 Finalize 许可。
+    /// 消费"标记完整且 durable"的凭证，完整核对当前标记后按目标修复；标记保留。
     ///
-    /// 目录同步失败时 unlink 可能已经生效；不重建标记，也不自动重试。
-    #[allow(clippy::needless_pass_by_value, reason = "删除必须消费一次性准备凭证")]
-    pub fn remove_prepared_marker(&mut self, prepared: PreparedClear) -> Result<(), ClearTxnError> {
-        self.remove_marker(prepared.record)
+    /// `Before` 中断、临时 IO 错误或 latch 部分写入后凭证原样返还；只有真实
+    /// `NotFound` 或确认记录 / 身份不符才失权。
+    pub fn repair<C: MarkerCredential>(
+        &mut self,
+        credential: C,
+        target: RepairTarget,
+        guard: &mut dyn StepGuard,
+    ) -> Result<RepairedClear, RepairError<C>> {
+        if let Err(error) = self.check_binding(credential.record(), credential.directory_identity())
+        {
+            return Err(RepairError {
+                error,
+                token: Some(credential),
+            });
+        }
+        let record = *credential.record();
+        let marker = credential.marker_identity();
+        let directory = self.dir.identity();
+        let mut engine = self.engine(guard);
+        if let Err(failure) = engine.matching_marker(&record, marker) {
+            let lost = failure.confirms_loss();
+            return Err(RepairError {
+                error: failure.into_error(),
+                token: (!lost).then_some(credential),
+            });
+        }
+        if let Err(error) = engine.write_pair(target.latched(record)) {
+            return Err(RepairError {
+                error,
+                token: Some(credential),
+            });
+        }
+        Ok(RepairedClear {
+            binding: Binding {
+                record,
+                marker,
+                directory,
+            },
+        })
     }
 
-    /// 修复目标已严格落盘后消费修复凭证，清理本事务标记。
-    #[allow(clippy::needless_pass_by_value, reason = "删除必须消费一次性修复凭证")]
-    pub fn remove_repaired_marker(&mut self, repaired: RepairedClear) -> Result<(), ClearTxnError> {
-        self.remove_marker(repaired.record)
+    /// 消费凭证后清理标记。调用方必须已持有匹配的 Finalize 许可。
+    ///
+    /// unlink 前失败返还凭证；unlink 已发生但目录同步失败返还
+    /// [`UnsyncedRemoval`]，此后只能重同步，绝不再次 unlink。
+    pub fn remove<C: MarkerCredential>(
+        &mut self,
+        credential: C,
+        guard: &mut dyn StepGuard,
+    ) -> Result<(), RemoveError<C>> {
+        if let Err(error) = self.check_binding(credential.record(), credential.directory_identity())
+        {
+            return Err(RemoveError {
+                error,
+                token: RemoveFailureToken::Retained(credential),
+            });
+        }
+        let record = *credential.record();
+        let marker = credential.marker_identity();
+        let mut engine = self.engine(guard);
+        if let Err(failure) = engine.matching_marker(&record, marker) {
+            let lost = failure.confirms_loss();
+            return Err(RemoveError {
+                error: failure.into_error(),
+                token: if lost {
+                    RemoveFailureToken::Lost
+                } else {
+                    RemoveFailureToken::Retained(credential)
+                },
+            });
+        }
+        engine.unlink_and_sync(record, credential)
+    }
+
+    /// 收敛本 store 以 `create_new` 建立、之后写入或同步失败的标记。
+    ///
+    /// 先核目标与目录，再核活 fd 为普通文件、`nlink == 1`、长度 `<= 112`，
+    /// 从偏移 0 读取完整内容并确认 EOF，内容必须是本次记录编码的前缀；最后核
+    /// 相对路径仍指向同一 inode。任何确认不符都拒绝且不 unlink；临时 IO 错误
+    /// 返还原凭证。
+    #[allow(
+        clippy::result_large_err,
+        reason = "错误变体按设计携带被返还的凭证本体（含活 fd）；非实时路径"
+    )]
+    pub fn discard_created(
+        &mut self,
+        credential: CreatedMarker,
+        guard: &mut dyn StepGuard,
+    ) -> Result<(), RemoveError<CreatedMarker>> {
+        if let Err(error) = self.check_binding(credential.record(), credential.directory_identity())
+        {
+            return Err(RemoveError {
+                error,
+                token: RemoveFailureToken::Retained(credential),
+            });
+        }
+        let record = *credential.record();
+        let mut engine = self.engine(guard);
+        if let Err(failure) = engine.verify_created(&credential.file, &record) {
+            let lost = failure.confirms_loss();
+            return Err(RemoveError {
+                error: failure.into_error(),
+                token: if lost {
+                    RemoveFailureToken::Lost
+                } else {
+                    RemoveFailureToken::Retained(credential)
+                },
+            });
+        }
+        engine.unlink_and_sync(record, credential)
+    }
+
+    /// 只重试发生 unlink 的那个目录的同步；失败保留凭证，绝不再次 unlink，
+    /// 也不凭当前路径不存在宣布 strict 完成。
+    pub fn resync_removal(
+        &mut self,
+        credential: UnsyncedRemoval,
+        guard: &mut dyn StepGuard,
+    ) -> Result<(), RemoveError<UnsyncedRemoval>> {
+        if let Err(error) = self.check_binding(credential.record(), credential.directory_identity())
+        {
+            return Err(RemoveError {
+                error,
+                token: RemoveFailureToken::Retained(credential),
+            });
+        }
+        let mut engine = self.engine(guard);
+        match engine.sync_directory(ClearTxnStage::SyncRemovalDirectory) {
+            Ok(()) => Ok(()),
+            Err(error) => Err(RemoveError {
+                error,
+                token: RemoveFailureToken::Retained(credential),
+            }),
+        }
+    }
+
+    /// 写 1：primary `1` → backup `1`，全部严格同步；供急停持久化义务与无
+    /// 标记事务的 `Latched` 修复使用。
+    pub fn persist_latched(&mut self, guard: &mut dyn StepGuard) -> Result<(), StageError> {
+        self.engine(guard).write_pair(true)
     }
 
     /// 先检查事务标记，再决定是否允许沿用旧 loader 的读取与自愈逻辑。
+    ///
+    /// 有效 pending 标记 → strict 双 `1` → 清理标记 → `true`；坏 / 身份不符 /
+    /// 读错直接拒绝且不自愈。无标记时保持原 primary / backup / 缺失语义，
+    /// 自愈回写同样相对目录 fd 完成。
     #[allow(
         clippy::single_match_else,
         reason = "按项目约定显式列出 Option 两类恢复路径"
     )]
-    pub fn recover_and_load(&mut self) -> Result<bool, ClearTxnError> {
+    pub fn recover_and_load(&mut self) -> Result<bool, StageError> {
         match self.inspect_pending()? {
             Some(pending) => {
                 let repaired = self.repair_pending(pending, RepairTarget::Latched)?;
-                self.remove_repaired_marker(repaired)?;
+                let mut guard = NoGuard;
+                self.remove(repaired, &mut guard)
+                    .map_err(|failure| failure.error)?;
                 Ok(true)
             }
             None => {
-                let latch_path = self.latch_path.clone();
-                self.step(ClearTxnStage::LoadLatch, || load_estop_latch(&latch_path))
+                let mut guard = NoGuard;
+                self.engine(&mut guard).load_latch()
             }
         }
     }
 
-    fn read_record(&mut self, file: &mut File) -> Result<ClearTxnRecord, ClearTxnError> {
-        let mut bytes = [0; RECORD_BYTES + 1];
-        let len = self.step(ClearTxnStage::ReadMarker, || {
-            let mut reader = file.take(bytes.len() as u64);
-            let mut len = 0;
-            loop {
-                match reader.read(&mut bytes[len..]) {
-                    Ok(0) => return Ok(len),
-                    Ok(count) => len += count,
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                    Err(error) => return Err(error),
-                }
-            }
-        })?;
-        let target_identity = self.target_identity;
-        self.step(ClearTxnStage::ValidateMarker, || {
-            ClearTxnRecord::decode(&bytes[..len], target_identity)
+    /// 从可读记录恢复修复流程；先重核并同步标记，不能凭可读状态直接写 `0`。
+    /// 仅启动恢复使用；运行期修复必须持有 [`MarkerCredential`]。
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "修复必须消费本次检查结果，禁止重复使用旧检查"
+    )]
+    pub(crate) fn repair_pending(
+        &mut self,
+        pending: PendingClear,
+        target: RepairTarget,
+    ) -> Result<RepairedClear, StageError> {
+        let record = *pending.record();
+        let marker = pending.identity();
+        let directory = self.dir.identity();
+        self.check_binding(&record, pending.binding.directory)?;
+        let mut guard = NoGuard;
+        let mut engine = self.engine(&mut guard);
+        let file = engine
+            .matching_marker(&record, marker)
+            .map_err(StepFailure::into_error)?;
+        engine.run_flat(ClearTxnStage::SyncMarkerFile, || file.sync_all())?;
+        engine.sync_directory(ClearTxnStage::SyncMarkerDirectory)?;
+        engine.write_pair(target.latched(record))?;
+        Ok(RepairedClear {
+            binding: Binding {
+                record,
+                marker,
+                directory,
+            },
         })
     }
 
-    fn matching_marker(&mut self, expected: ClearTxnRecord) -> Result<File, ClearTxnError> {
-        let mut file = open_marker_file(&self.marker_path)
-            .map_err(|error| ClearTxnError::new(ClearTxnStage::ReadMarker, error))?;
-        let actual = self.read_record(&mut file)?;
-        if actual != expected {
-            return Err(ClearTxnError::new(
-                ClearTxnStage::ValidateMarker,
-                io::Error::new(io::ErrorKind::InvalidData, "Clear 事务标记已不属于当前凭证"),
+    fn check_binding(
+        &self,
+        record: &ClearTxnRecord,
+        directory: FileIdentity,
+    ) -> Result<(), StageError> {
+        if record.target_identity != self.target_identity || directory != self.dir.identity() {
+            return Err(StageError::operation(
+                ClearTxnStage::ValidateCredential,
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "凭证不属于本 store 的目标或目录",
+                ),
             ));
         }
-        Ok(file)
+        Ok(())
     }
 
-    fn sync_marker(&mut self, marker: &File) -> Result<(), ClearTxnError> {
-        self.step(ClearTxnStage::SyncMarkerFile, || marker.sync_all())?;
-        let marker_path = self.marker_path.clone();
-        self.step(ClearTxnStage::SyncMarkerDirectory, || {
-            fsync_parent_dir_strict(&marker_path)
+    fn engine<'a>(&'a mut self, guard: &'a mut dyn StepGuard) -> Engine<'a> {
+        Engine {
+            dir: &self.dir,
+            layout: &self.layout,
+            target_identity: self.target_identity,
+            ctx: StepContext {
+                guard,
+                #[cfg(test)]
+                after_step: &mut self.after_step,
+                #[cfg(test)]
+                fail_operation: &mut self.fail_operation,
+            },
+        }
+    }
+}
+
+/// 一个文件步骤的失败；`After` 携带已经成功的操作结果。
+enum StepFailure<T> {
+    Before(StageError),
+    Operation(StageError),
+    After(StageError, T),
+}
+
+impl<T> StepFailure<T> {
+    fn into_error(self) -> StageError {
+        match self {
+            Self::Before(error) | Self::Operation(error) | Self::After(error, _) => error,
+        }
+    }
+
+    /// 丢弃 `After` 相携带的操作结果，只保留失败事实。
+    fn discard_value(self) -> StepFailure<()> {
+        match self {
+            Self::Before(error) => StepFailure::Before(error),
+            Self::Operation(error) => StepFailure::Operation(error),
+            Self::After(error, _) => StepFailure::After(error, ()),
+        }
+    }
+
+    /// 仅真实 `Operation` 失败中的 `NotFound`、符号链接、类型 / 记录 / 身份
+    /// 不符才证明凭证已失效。
+    fn confirms_loss(&self) -> bool {
+        let Self::Operation(error) = self else {
+            return false;
+        };
+        let source = &error.source;
+        let is_loop = source.raw_os_error() == Some(libc::ELOOP);
+        match error.stage {
+            ClearTxnStage::ReadMarker | ClearTxnStage::ValidateMarker => {
+                is_loop
+                    || matches!(
+                        source.kind(),
+                        io::ErrorKind::NotFound | io::ErrorKind::InvalidData
+                    )
+            }
+            ClearTxnStage::RemoveMarker => source.kind() == io::ErrorKind::NotFound,
+            _ => false,
+        }
+    }
+}
+
+/// 守门与测试后置检查点；真实操作永远先于 `After` 相的 hook。
+struct StepContext<'a> {
+    guard: &'a mut dyn StepGuard,
+    #[cfg(test)]
+    after_step: &'a mut AfterStep,
+    #[cfg(test)]
+    fail_operation: &'a mut Option<(ClearTxnStage, usize)>,
+}
+
+impl StepContext<'_> {
+    fn run<T>(
+        &mut self,
+        stage: ClearTxnStage,
+        operation: impl FnOnce() -> io::Result<T>,
+    ) -> Result<T, StepFailure<T>> {
+        if let Err(interrupt) = self.guard.before(stage) {
+            return Err(StepFailure::Before(StageError::new(
+                stage,
+                StepPhase::Before,
+                interrupt.into_io_error(),
+            )));
+        }
+        #[cfg(test)]
+        if let Some((failing, remaining)) = self.fail_operation.as_mut()
+            && *failing == stage
+            && *remaining > 0
+        {
+            *remaining -= 1;
+            return Err(StepFailure::Operation(StageError::new(
+                stage,
+                StepPhase::Operation,
+                io::Error::from_raw_os_error(libc::EIO),
+            )));
+        }
+        let value = operation().map_err(|error| {
+            StepFailure::Operation(StageError::new(stage, StepPhase::Operation, error))
+        })?;
+        #[cfg(test)]
+        if let Some(after_step) = self.after_step.as_mut()
+            && let Err(error) = after_step(stage)
+        {
+            return Err(StepFailure::After(
+                StageError::new(stage, StepPhase::After, error),
+                value,
+            ));
+        }
+        Ok(value)
+    }
+}
+
+/// 一次公开操作内的借用集合：目录 fd、名字、目标身份与步骤上下文。
+struct Engine<'a> {
+    dir: &'a DirHandle,
+    layout: &'a Layout,
+    target_identity: [u8; 32],
+    ctx: StepContext<'a>,
+}
+
+impl<'a> Engine<'a> {
+    fn run_flat<T>(
+        &mut self,
+        stage: ClearTxnStage,
+        operation: impl FnOnce() -> io::Result<T>,
+    ) -> Result<T, StageError> {
+        self.ctx
+            .run(stage, operation)
+            .map_err(StepFailure::into_error)
+    }
+
+    fn sync_directory(&mut self, stage: ClearTxnStage) -> Result<(), StageError> {
+        let dir = self.dir;
+        self.run_flat(stage, || dir.sync())
+    }
+
+    /// 不跟随链接、不在 FIFO 上等待地打开标记；非普通文件视为确认不符。
+    fn open_marker(&mut self) -> Result<File, StepFailure<File>> {
+        let dir = self.dir;
+        let layout = self.layout;
+        let name = &layout.marker;
+        self.ctx.run(ClearTxnStage::ReadMarker, || {
+            let file = dir.open_at(name, libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK)?;
+            if !file.metadata()?.file_type().is_file() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Clear 事务标记必须是普通文件",
+                ));
+            }
+            Ok(file)
         })
     }
 
-    fn write_pair(&mut self, latched: bool) -> Result<(), ClearTxnError> {
-        let primary = self.latch_path.clone();
-        let backup = backup_path(&primary);
+    /// 有界读取并校验记录，同时采样该文件的身份。
+    fn read_record(
+        &mut self,
+        file: &File,
+    ) -> Result<(ClearTxnRecord, FileIdentity), StepFailure<(ClearTxnRecord, FileIdentity)>> {
+        let target_identity = self.target_identity;
+        self.ctx.run(ClearTxnStage::ValidateMarker, || {
+            let mut bytes = [0; RECORD_BYTES + 1];
+            let len = read_prefix_at(file, &mut bytes)?;
+            let record = ClearTxnRecord::decode(&bytes[..len], target_identity)?;
+            let identity = FileIdentity::of(&file.metadata()?);
+            Ok((record, identity))
+        })
+    }
+
+    /// 打开并核对当前标记与凭证的记录、身份完全一致。
+    fn matching_marker(
+        &mut self,
+        expected: &ClearTxnRecord,
+        marker: FileIdentity,
+    ) -> Result<File, StepFailure<File>> {
+        let file = self.open_marker()?;
+        let target_identity = self.target_identity;
+        match self.ctx.run(ClearTxnStage::ValidateMarker, || {
+            let mut bytes = [0; RECORD_BYTES + 1];
+            let len = read_prefix_at(&file, &mut bytes)?;
+            let actual = ClearTxnRecord::decode(&bytes[..len], target_identity)?;
+            if actual != *expected || FileIdentity::of(&file.metadata()?) != marker {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Clear 事务标记已不属于当前凭证",
+                ));
+            }
+            Ok(())
+        }) {
+            Ok(()) => Ok(file),
+            Err(StepFailure::Before(error)) => Err(StepFailure::Before(error)),
+            Err(StepFailure::Operation(error)) => Err(StepFailure::Operation(error)),
+            Err(StepFailure::After(error, ())) => Err(StepFailure::After(error, file)),
+        }
+    }
+
+    /// `discard_created` 的核对：活 fd 的类型 / `nlink` / 长度、完整内容前缀与
+    /// 路径身份。
+    fn verify_created(
+        &mut self,
+        file: &File,
+        record: &ClearTxnRecord,
+    ) -> Result<(), StepFailure<()>> {
+        let metadata = self
+            .ctx
+            .run(ClearTxnStage::ReadMarker, || {
+                let metadata = file.metadata()?;
+                if !metadata.file_type().is_file()
+                    || metadata.nlink() != 1
+                    || metadata.len() > RECORD_BYTES as u64
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "已创建的标记不再是本次建立的普通文件",
+                    ));
+                }
+                Ok(metadata)
+            })
+            .map_err(StepFailure::discard_value)?;
+        let expected = record.encode();
+        let dir = self.dir;
+        let layout = self.layout;
+        let name = &layout.marker;
+        self.ctx.run(ClearTxnStage::ValidateMarker, || {
+            let mut bytes = [0; RECORD_BYTES + 1];
+            let len = read_prefix_at(file, &mut bytes)?;
+            if u64::try_from(len)
+                .ok()
+                .is_none_or(|read| read != metadata.len())
+                || len > RECORD_BYTES
+                || bytes[..len] != expected[..len]
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "已创建的标记内容不是本次记录编码的前缀",
+                ));
+            }
+            // 身份以活 fd 此刻的 fstat 为准，不依赖创建时是否采样成功。
+            let (identity, kind) = dir.identity_at_nofollow(name)?;
+            if !kind.is_file() || identity != FileIdentity::of(&metadata) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "标记路径已不再指向本次创建的 inode",
+                ));
+            }
+            Ok(())
+        })
+    }
+
+    /// 核对通过后的 unlink + 目录同步；三相分别映射为 Retained / Lost / Unsynced。
+    fn unlink_and_sync<C>(
+        &mut self,
+        record: ClearTxnRecord,
+        credential: C,
+    ) -> Result<(), RemoveError<C>>
+    where
+        C: std::fmt::Debug,
+    {
+        let dir = self.dir;
+        let layout = self.layout;
+        let name = &layout.marker;
+        let unsynced = || UnsyncedRemoval {
+            record,
+            directory: dir.identity(),
+        };
+        match self
+            .ctx
+            .run(ClearTxnStage::RemoveMarker, || dir.unlink_at(name))
+        {
+            Ok(()) => {}
+            Err(StepFailure::Before(error)) => {
+                return Err(RemoveError {
+                    error,
+                    token: RemoveFailureToken::Retained(credential),
+                });
+            }
+            Err(StepFailure::Operation(error)) => {
+                let token = if error.source.kind() == io::ErrorKind::NotFound {
+                    RemoveFailureToken::Lost
+                } else {
+                    RemoveFailureToken::Retained(credential)
+                };
+                return Err(RemoveError { error, token });
+            }
+            Err(StepFailure::After(error, ())) => {
+                return Err(RemoveError {
+                    error,
+                    token: RemoveFailureToken::Unsynced(unsynced()),
+                });
+            }
+        }
+        self.sync_directory(ClearTxnStage::SyncRemovalDirectory)
+            .map_err(|error| RemoveError {
+                error,
+                token: RemoveFailureToken::Unsynced(unsynced()),
+            })
+    }
+
+    /// `CreateMarker` → `SampleMarkerIdentity` → `WriteMarker` → `SyncMarkerFile`：
+    /// `openat` 一成功即取得所有权，之后任何失败都返还持活 fd 的 `Created`；
+    /// 身份采样是唯一可失败的采样步骤，且在 Durable 提升之前完成。
+    #[allow(
+        clippy::result_large_err,
+        reason = "错误变体按设计携带被返还的凭证本体；非实时路径"
+    )]
+    fn create_marker(
+        &mut self,
+        record: ClearTxnRecord,
+    ) -> Result<(CreatedMarker, FileIdentity), PrepareError> {
+        let dir = self.dir;
+        let layout = self.layout;
+        let name = &layout.marker;
+        let directory = dir.identity();
+        let file = match self.ctx.run(ClearTxnStage::CreateMarker, || {
+            dir.create_new_at(name, libc::O_RDWR, 0o600)
+        }) {
+            Ok(file) => file,
+            Err(StepFailure::Before(error) | StepFailure::Operation(error)) => {
+                return Err(PrepareError {
+                    error,
+                    token: PrepareFailureToken::NotOwned,
+                });
+            }
+            Err(StepFailure::After(error, file)) => {
+                return Err(PrepareError {
+                    error,
+                    token: PrepareFailureToken::Created(CreatedMarker {
+                        record,
+                        directory,
+                        marker: None,
+                        file,
+                    }),
+                });
+            }
+        };
+        let mut created = CreatedMarker {
+            record,
+            directory,
+            marker: None,
+            file,
+        };
+        let sampled = self.ctx.run(ClearTxnStage::SampleMarkerIdentity, || {
+            created
+                .file
+                .metadata()
+                .map(|metadata| FileIdentity::of(&metadata))
+        });
+        let marker = match sampled {
+            Ok(marker) => marker,
+            Err(StepFailure::Before(error) | StepFailure::Operation(error)) => {
+                return Err(PrepareError {
+                    error,
+                    token: PrepareFailureToken::Created(created),
+                });
+            }
+            Err(StepFailure::After(error, marker)) => {
+                created.marker = Some(marker);
+                return Err(PrepareError {
+                    error,
+                    token: PrepareFailureToken::Created(created),
+                });
+            }
+        };
+        created.marker = Some(marker);
+        let encoded = record.encode();
+        if let Err(failure) = self.ctx.run(ClearTxnStage::WriteMarker, || {
+            created.file.write_all(&encoded)
+        }) {
+            return Err(PrepareError {
+                error: failure.into_error(),
+                token: PrepareFailureToken::Created(created),
+            });
+        }
+        if let Err(failure) = self
+            .ctx
+            .run(ClearTxnStage::SyncMarkerFile, || created.file.sync_all())
+        {
+            return Err(PrepareError {
+                error: failure.into_error(),
+                token: PrepareFailureToken::Created(created),
+            });
+        }
+        Ok((created, marker))
+    }
+
+    /// 排他创建标记并写入、同步文件（[`Self::create_marker`]），再同步目录提升为
+    /// Durable，最后严格准备双份 `0`。
+    #[allow(
+        clippy::result_large_err,
+        reason = "错误变体按设计携带被返还的凭证本体；非实时路径"
+    )]
+    fn prepare(&mut self, record: ClearTxnRecord) -> Result<PreparedClear, PrepareError> {
+        let dir = self.dir;
+        let (created, marker) = self.create_marker(record)?;
+        // 身份已在 Created 阶段采样完成；目录同步成功后的 Durable 提升不再有可失败步骤。
+        let binding = Binding {
+            record,
+            marker,
+            directory: created.directory,
+        };
+        match self
+            .ctx
+            .run(ClearTxnStage::SyncMarkerDirectory, || dir.sync())
+        {
+            Ok(()) => {}
+            Err(StepFailure::Before(error) | StepFailure::Operation(error)) => {
+                return Err(PrepareError {
+                    error,
+                    token: PrepareFailureToken::Created(created),
+                });
+            }
+            Err(StepFailure::After(error, ())) => {
+                return Err(PrepareError {
+                    error,
+                    token: PrepareFailureToken::Durable(DurableMarker { binding }),
+                });
+            }
+        }
+        // 标记已 durable：活 fd 不再需要，凭证升级为 Durable。
+        drop(created);
+        let durable = DurableMarker { binding };
+        if let Err(error) = self.write_pair(false) {
+            return Err(PrepareError {
+                error,
+                token: PrepareFailureToken::Durable(durable),
+            });
+        }
+        Ok(PreparedClear {
+            binding: durable.binding,
+        })
+    }
+
+    /// `false` 按 backup → primary，`true` 按 primary → backup，全部严格同步。
+    fn write_pair(&mut self, latched: bool) -> Result<(), StageError> {
+        let layout = self.layout;
         if latched {
-            self.write_latch(&primary, true, LatchCopy::Primary)?;
-            self.write_latch(&backup, true, LatchCopy::Backup)
+            self.write_latch(&layout.latch, true, LatchCopy::Primary)?;
+            self.write_latch(&layout.backup, true, LatchCopy::Backup)
         } else {
-            self.write_latch(&backup, false, LatchCopy::Backup)?;
-            self.write_latch(&primary, false, LatchCopy::Primary)
+            self.write_latch(&layout.backup, false, LatchCopy::Backup)?;
+            self.write_latch(&layout.latch, false, LatchCopy::Primary)
         }
     }
 
     fn write_latch(
         &mut self,
-        path: &Path,
+        name: &OsStr,
         latched: bool,
         copy: LatchCopy,
-    ) -> Result<(), ClearTxnError> {
+    ) -> Result<(), StageError> {
+        let dir: &'a DirHandle = self.dir;
         let stages = copy.stages();
-        let (temporary, mut file) = self.step(stages[0], || TemporaryLatch::create(path))?;
-        self.step(stages[1], || {
+        let (temporary, mut file) =
+            self.run_flat(stages[0], || TemporaryLatch::create(dir, name))?;
+        self.run_flat(stages[1], || {
             file.write_all(if latched { b"1\n" } else { b"0\n" })
         })?;
-        self.step(stages[2], || file.sync_all())?;
-        self.step(stages[3], || std::fs::rename(&temporary.path, path))?;
-        self.step(stages[4], || fsync_parent_dir_strict(path))
+        self.run_flat(stages[2], || file.sync_all())?;
+        self.run_flat(stages[3], || dir.rename_at(&temporary.name, name))?;
+        self.run_flat(stages[4], || dir.sync())
     }
 
-    fn remove_marker(&mut self, record: ClearTxnRecord) -> Result<(), ClearTxnError> {
-        self.matching_marker(record)?;
-        let marker_path = self.marker_path.clone();
-        self.step(ClearTxnStage::RemoveMarker, || {
-            std::fs::remove_file(&marker_path)
-        })?;
-        self.step(ClearTxnStage::SyncRemovalDirectory, || {
-            fsync_parent_dir_strict(&marker_path)
-        })
+    /// 无标记时的旧 loader 语义：primary 优先；缺失 / 损坏回退 backup 并
+    /// best-effort 自愈回写 primary；双缺失返回 `NotFound`，双损坏返回
+    /// `InvalidData`。
+    fn load_latch(&mut self) -> Result<bool, StageError> {
+        let load_error = |source| StageError::operation(ClearTxnStage::LoadLatch, source);
+        let layout = self.layout;
+        let primary = self.read_latch_value(&layout.latch);
+        let value = match primary {
+            Ok(value) => return Ok(value),
+            Err(error) => match error.kind() {
+                io::ErrorKind::NotFound => match self.read_latch_value(&layout.backup) {
+                    Ok(value) => value,
+                    Err(backup) if backup.kind() == io::ErrorKind::NotFound => {
+                        return Err(load_error(io::Error::new(
+                            io::ErrorKind::NotFound,
+                            "estop_latch: primary AND backup both missing \
+                             (fail-closed; first-deploy: provision \"0\\n\" to both \
+                             primary + backup before start; runtime clear: ClearEStop \
+                             control action)",
+                        )));
+                    }
+                    Err(backup) => return Err(load_error(backup)),
+                },
+                io::ErrorKind::InvalidData => match self.read_latch_value(&layout.backup) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return Err(load_error(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "estop_latch: primary AND backup both corrupted/unreadable",
+                        )));
+                    }
+                },
+                _ => return Err(load_error(error)),
+            },
+        };
+        tracing::warn!(
+            latched = value,
+            "estop_latch: primary missing or corrupted, restored from backup"
+        );
+        // 自愈只在 backup 确实可解析时执行；沿旧 loader 的 best-effort 语义忽略失败。
+        let _ = self.write_latch(&layout.latch, value, LatchCopy::Primary);
+        Ok(value)
     }
 
-    #[cfg_attr(
-        not(test),
-        allow(
-            clippy::unused_self,
-            reason = "测试注入属于 store 实例，生产与测试共用相同文件算法"
-        )
-    )]
-    fn step<T>(
-        &mut self,
-        stage: ClearTxnStage,
-        operation: impl FnOnce() -> io::Result<T>,
-    ) -> Result<T, ClearTxnError> {
-        let result = operation().map_err(|error| ClearTxnError::new(stage, error))?;
-        #[cfg(test)]
-        if let Some(after_step) = &mut self.after_step {
-            after_step(stage).map_err(|error| ClearTxnError::new(stage, error))?;
+    /// 读单个 latch 文件（不做 backup fallback），语义与旧 loader 相同。
+    fn read_latch_value(&self, name: &OsStr) -> io::Result<bool> {
+        let file = self.dir.open_at(name, libc::O_RDONLY)?;
+        let mut buf = [0u8; 4];
+        let n = read_prefix_at(&file, &mut buf)?;
+        match &buf[..n] {
+            b"0" | b"0\n" => Ok(false),
+            b"1" | b"1\n" => Ok(true),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "estop_latch file: expected '0\\n' or '1\\n'",
+            )),
         }
-        Ok(result)
     }
 }
 
-/// 不跟随链接，不在 FIFO 上等待；只有真正缺失才能进入无标记恢复分支。
-fn open_marker_file(path: &Path) -> io::Result<File> {
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
-    if !file.metadata()?.file_type().is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Clear 事务标记必须是普通文件",
-        ));
+/// 从偏移 0 读满缓冲或到 EOF；只对系统调用的 `EINTR` 重试。
+fn read_prefix_at(file: &File, buf: &mut [u8]) -> io::Result<usize> {
+    let mut len = 0;
+    while len < buf.len() {
+        match file.read_at(&mut buf[len..], len as u64) {
+            Ok(0) => break,
+            Ok(count) => len += count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
     }
-    Ok(file)
+    Ok(len)
 }
 
 #[derive(Clone, Copy)]
@@ -510,53 +1056,3 @@ impl LatchCopy {
         }
     }
 }
-
-/// 临时文件在常规错误时清理；进程中断留下的临时文件不参与 latch 恢复。
-struct TemporaryLatch {
-    path: PathBuf,
-}
-
-impl TemporaryLatch {
-    fn create(target: &Path) -> io::Result<(Self, File)> {
-        Self::create_with_sequence(target, &TEMP_SEQUENCE)
-    }
-
-    fn create_with_sequence(target: &Path, sequence: &AtomicU64) -> io::Result<(Self, File)> {
-        let target_name = target
-            .file_name()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "latch 文件名缺失"))?;
-        for _ in 0..64 {
-            let next = sequence
-                .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                    value.checked_add(1)
-                })
-                .map_err(|_| io::Error::other("Clear 临时文件序号耗尽"))?;
-            let mut name = target_name.to_os_string();
-            name.push(format!(".clear_tmp.{}.{next}", std::process::id()));
-            let path = target.with_file_name(name);
-            match OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o640)
-                .open(&path)
-            {
-                Ok(file) => return Ok((Self { path }, file)),
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "Clear 临时文件连续 64 个候选名已存在",
-        ))
-    }
-}
-
-impl Drop for TemporaryLatch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
-#[cfg(test)]
-mod tests;
