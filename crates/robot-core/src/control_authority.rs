@@ -1036,6 +1036,42 @@ const fn tightened(word: Word, advance: Advance) -> Tightened {
     }
 }
 
+/// 同一次权限更新的观测，保留原 outcome 的移动语义。
+#[cfg(any(test, feature = "test-comm-fault-hook"))]
+#[derive(Debug)]
+pub struct CasObserved<T> {
+    pub outcome: T,
+    pub failed_cas: Option<u64>,
+}
+
+struct CasResult<T> {
+    outcome: T,
+    failed_cas: Option<u64>,
+}
+impl<T> CasResult<T> {
+    const fn immediate(outcome: T) -> Self {
+        Self {
+            outcome,
+            failed_cas: Some(0),
+        }
+    }
+    fn map<U>(self, f: impl FnOnce(T) -> U) -> CasResult<U> {
+        CasResult {
+            outcome: f(self.outcome),
+            failed_cas: self.failed_cas,
+        }
+    }
+}
+#[cfg(any(test, feature = "test-comm-fault-hook"))]
+impl<T> From<CasResult<T>> for CasObserved<T> {
+    fn from(value: CasResult<T>) -> Self {
+        Self {
+            outcome: value.outcome,
+            failed_cas: value.failed_cas,
+        }
+    }
+}
+
 impl ControlAuthority {
     /// 非 RT 构造：从全局计数分配 domain；初始 epoch = 1、Disabled、Idle。
     pub fn new(init: AuthorityInit) -> Result<Self, AuthorityInitError> {
@@ -1102,12 +1138,22 @@ impl ControlAuthority {
     }
 
     /// 同域 CAS 循环：`decide` 基于最新观测值给出提交或放弃；提交失败按新值重判。
-    fn update<T>(&self, mut decide: impl FnMut(Word) -> Decision<T>) -> T {
+    fn update<T>(&self, decide: impl FnMut(Word) -> Decision<T>) -> T {
+        self.update_counted(decide).outcome
+    }
+
+    fn update_counted<T>(&self, mut decide: impl FnMut(Word) -> Decision<T>) -> CasResult<T> {
         let mut old = self.load();
+        let mut failed_cas = Some(0_u64);
         loop {
             match decide(old) {
-                Decision::Keep(out) => return out,
-                Decision::Commit(new, out) => {
+                Decision::Keep(outcome) => {
+                    return CasResult {
+                        outcome,
+                        failed_cas,
+                    };
+                }
+                Decision::Commit(new, outcome) => {
                     #[cfg(test)]
                     self.run_before_cas();
                     match self.word.compare_exchange(
@@ -1116,8 +1162,16 @@ impl ControlAuthority {
                         Ordering::AcqRel,
                         Ordering::Acquire,
                     ) {
-                        Ok(_) => return out,
-                        Err(actual) => old = Word::new(actual),
+                        Ok(_) => {
+                            return CasResult {
+                                outcome,
+                                failed_cas,
+                            };
+                        }
+                        Err(actual) => {
+                            failed_cas = failed_cas.and_then(|count| count.checked_add(1));
+                            old = Word::new(actual);
+                        }
                     }
                 }
             }
@@ -1163,7 +1217,17 @@ impl ControlAuthority {
     /// 保留 Phase 与 `NORMAL_IO_ACTIVE`。
     #[must_use]
     pub fn estop(&self) -> EStopTightened {
-        self.update(|old| {
+        self.estop_impl().outcome
+    }
+
+    /// 与普通入口共用一次真实操作；观察值不构成权限或额外执行。
+    #[cfg(any(test, feature = "test-comm-fault-hook"))]
+    pub fn estop_observed(&self) -> CasObserved<EStopTightened> {
+        self.estop_impl().into()
+    }
+
+    fn estop_impl(&self) -> CasResult<EStopTightened> {
+        self.update_counted(|old| {
             let previous = old.safety();
             let next = match previous {
                 OutputSafetyState::TorqueUnknown
@@ -1265,10 +1329,21 @@ impl ControlAuthority {
         })
     }
 
-    /// serial 消费 EStop pending；不推进 epoch。返回是否确有 pending。
+    /// 当前执行器（HardRT / SerialRT 二选一）消费 EStop pending；不推进 epoch。
+    /// 返回是否确有 pending；不会消费另属 IPC 的通知。
     #[must_use]
     pub fn claim_serial_estop(&self) -> bool {
-        self.update(|old| {
+        self.claim_serial_estop_impl().outcome
+    }
+
+    /// 与普通入口共用一次真实操作；观察值不构成权限或额外执行。
+    #[cfg(any(test, feature = "test-comm-fault-hook"))]
+    pub fn claim_serial_estop_observed(&self) -> CasObserved<bool> {
+        self.claim_serial_estop_impl().into()
+    }
+
+    fn claim_serial_estop_impl(&self) -> CasResult<bool> {
+        self.update_counted(|old| {
             if old.has(SERIAL_ESTOP_PENDING) {
                 Decision::Commit(old.clear(SERIAL_ESTOP_PENDING), true)
             } else {
@@ -1280,7 +1355,17 @@ impl ControlAuthority {
     /// IPC 消费 EStop notice；不推进 epoch。
     #[must_use]
     pub fn claim_ipc_estop(&self) -> bool {
-        self.update(|old| {
+        self.claim_ipc_estop_impl().outcome
+    }
+
+    /// 与普通入口共用一次真实操作；观察值不构成权限或额外执行。
+    #[cfg(any(test, feature = "test-comm-fault-hook"))]
+    pub fn claim_ipc_estop_observed(&self) -> CasObserved<bool> {
+        self.claim_ipc_estop_impl().into()
+    }
+
+    fn claim_ipc_estop_impl(&self) -> CasResult<bool> {
+        self.update_counted(|old| {
             if old.has(IPC_ESTOP_NOTICE) {
                 Decision::Commit(old.clear(IPC_ESTOP_NOTICE), true)
             } else {
@@ -1503,8 +1588,32 @@ impl ControlAuthority {
     /// Disabled、Idle、TorqueOffConfirmed、无阻断原因且权限有效时推进 epoch、
     /// 转 Preparing，生成唯一 owner。A3 还必须核唯一 owner 维护的 Safe 与业务 guard。
     pub fn reserve_clear(&self) -> Result<ClearPendingOwner, Refusal> {
+        self.reserve_clear_impl(None)
+    }
+
+    /// 仅在原采样 epoch 仍匹配时预约 Clear；每次 CAS 重试都重新核验。
+    /// 失配零副作用拒绝，不生成 owner；其余守门和耗尽语义与原预约相同。
+    pub fn reserve_clear_if_epoch(
+        &self,
+        expected: PermissionEpoch,
+    ) -> Result<ClearPendingOwner, Refusal> {
+        self.reserve_clear_impl(Some(expected))
+    }
+
+    fn reserve_clear_impl(
+        &self,
+        expected: Option<PermissionEpoch>,
+    ) -> Result<ClearPendingOwner, Refusal> {
         let domain = self.domain;
         self.update(|old| {
+            if let Some(held) = expected
+                && old.epoch() != held.get()
+            {
+                return Decision::Keep(Err(Refusal::StaleEpoch {
+                    held,
+                    current: PermissionEpoch(old.epoch()),
+                }));
+            }
             let Some(phase) = old.phase() else {
                 return Decision::Keep(Err(Refusal::CorruptedPhase));
             };
@@ -1956,11 +2065,29 @@ impl ControlAuthority {
     /// 基础门：无 serial pending、无 inhibit、IO 空闲；按意图追加门后 CAS 置
     /// `NORMAL_IO_ACTIVE`。Safety / Confirm / 启动 Connect 不走本租约。
     pub fn acquire_normal_io(&self, intent: NormalIoIntent) -> Result<NormalIoLease, Refusal> {
-        if let NormalIoIntent::EnableStep(view) = intent {
-            self.check_domain(view.domain)?;
+        self.acquire_normal_io_impl(intent).outcome
+    }
+
+    /// 与普通入口共用一次真实操作；观察值不构成权限或额外执行。
+    #[cfg(any(test, feature = "test-comm-fault-hook"))]
+    pub fn acquire_normal_io_observed(
+        &self,
+        intent: NormalIoIntent,
+    ) -> CasObserved<Result<NormalIoLease, Refusal>> {
+        self.acquire_normal_io_impl(intent).into()
+    }
+
+    fn acquire_normal_io_impl(
+        &self,
+        intent: NormalIoIntent,
+    ) -> CasResult<Result<NormalIoLease, Refusal>> {
+        if let NormalIoIntent::EnableStep(view) = intent
+            && let Err(reason) = self.check_domain(view.domain)
+        {
+            return CasResult::immediate(Err(reason));
         }
         let domain = self.domain;
-        self.update(|old| {
+        self.update_counted(|old| {
             if old.has(SERIAL_ESTOP_PENDING) {
                 return Decision::Keep(Err(Refusal::SerialEStopPending));
             }
@@ -1998,15 +2125,31 @@ impl ControlAuthority {
         &self,
         lease: NormalIoLease,
     ) -> Result<NormalIoReleased, Refused<NormalIoLease>> {
+        self.release_normal_io_impl(lease).outcome
+    }
+
+    /// 与普通入口共用一次真实操作；观察值不构成权限或额外执行。
+    #[cfg(any(test, feature = "test-comm-fault-hook"))]
+    pub fn release_normal_io_observed(
+        &self,
+        lease: NormalIoLease,
+    ) -> CasObserved<Result<NormalIoReleased, Refused<NormalIoLease>>> {
+        self.release_normal_io_impl(lease).into()
+    }
+
+    fn release_normal_io_impl(
+        &self,
+        lease: NormalIoLease,
+    ) -> CasResult<Result<NormalIoReleased, Refused<NormalIoLease>>> {
         if let Err(reason) = self.check_domain(lease.domain) {
-            return Err(Refused {
+            return CasResult::immediate(Err(Refused {
                 token: lease,
                 reason,
-            });
+            }));
         }
         let held = lease.epoch;
         let intent = lease.intent;
-        self.update(|old| {
+        self.update_counted(|old| {
             if !old.has(NORMAL_IO_ACTIVE) {
                 return Decision::Keep(Err(Refusal::LeaseNotActive));
             }
@@ -2018,9 +2161,11 @@ impl ControlAuthority {
                 }),
             )
         })
-        .map_err(|reason| Refused {
-            token: lease,
-            reason,
+        .map(|result| {
+            result.map_err(|reason| Refused {
+                token: lease,
+                reason,
+            })
         })
     }
 }
@@ -2113,6 +2258,12 @@ mod view_slot {
     }
 
     impl StartViewSlot {
+        /// 只读槽占用；不能代替 owner、原序号或真实执行退休核验。
+        #[must_use]
+        pub fn is_empty(&self) -> bool {
+            self.word.load(Ordering::Acquire) == 0
+        }
+
         #[must_use]
         pub fn new(authority: &ControlAuthority) -> Self {
             Self {

@@ -5,7 +5,8 @@ use robot_s0::event_ingress::{
 };
 use robot_s0::ipc_thread::{ClearEStopRrRequest, SetEnabledRrRequest};
 use robot_s0::rr_admission::{
-    CheckedLimits, ClassCaps, ClassCounts, LimitsError, PeerLedger, RrRequestClass, SlotMismatch,
+    CheckedLimits, ClassCaps, ClassCounts, LimitsError, PeerLedger, RrRequestClass, Slot,
+    SlotIdentity, SlotMismatch,
 };
 use robot_s0::watchdog::{Freshness, is_overdue, judge_heartbeat_timeout};
 use robot_transport::iceoryx2::RrStaticLimits;
@@ -18,8 +19,59 @@ fn limits(c: usize) -> CheckedLimits {
     CheckedLimits::try_from_limits(&RrStaticLimits { c, l: 4 }).unwrap()
 }
 
-fn set(id: usize, dry_run: bool, enabled: bool) -> RrEvent {
+// 公开泛型原语夹具：每个 topic 用真实独立账本，原 Slot 保留到请求场景结束。
+// 这里不证明 wire peer；可信 peer 来源另由真实 RR 接收验收覆盖。
+struct RrSource {
+    ledger: PeerLedger<u32>,
+    slots: Vec<Slot<u32>>,
+}
+
+impl RrSource {
+    fn new() -> Self {
+        Self {
+            ledger: PeerLedger::new(&limits(16)).unwrap(),
+            slots: Vec::new(),
+        }
+    }
+
+    fn admit(&mut self, class: RrRequestClass) -> SlotIdentity {
+        let counts = self.ledger.counts();
+        let peer = match class {
+            RrRequestClass::Normal => counts.normal / 2,
+            RrRequestClass::Restore => counts.restore,
+            RrRequestClass::Lower => counts.lower,
+        };
+        let slot = self
+            .ledger
+            .admit(u32::try_from(peer).unwrap(), class)
+            .unwrap();
+        let identity = slot.identity();
+        self.slots.push(slot);
+        identity
+    }
+
+    fn release_all(&mut self) {
+        while let Some(slot) = self.slots.pop() {
+            self.ledger.release(slot).unwrap();
+        }
+        assert_eq!(self.ledger.counts(), ClassCounts::default());
+    }
+}
+
+impl Drop for RrSource {
+    fn drop(&mut self) {
+        self.release_all();
+    }
+}
+
+fn set(source: &mut RrSource, id: usize, dry_run: bool, enabled: bool) -> RrEvent {
+    let class = match (dry_run, enabled) {
+        (true, _) => RrRequestClass::Normal,
+        (false, true) => RrRequestClass::Restore,
+        (false, false) => RrRequestClass::Lower,
+    };
     RrEvent::SetEnabled(SetEnabledRrRequest {
+        route: source.admit(class),
         request_id: format!("set-{id}"),
         enabled,
         dry_run,
@@ -28,8 +80,14 @@ fn set(id: usize, dry_run: bool, enabled: bool) -> RrEvent {
     })
 }
 
-fn clear(id: usize, dry_run: bool) -> RrEvent {
+fn clear(source: &mut RrSource, id: usize, dry_run: bool) -> RrEvent {
+    let class = if dry_run {
+        RrRequestClass::Normal
+    } else {
+        RrRequestClass::Restore
+    };
     RrEvent::ClearEStop(ClearEStopRrRequest {
+        route: source.admit(class),
         request_id: format!("clear-{id}"),
         dry_run,
         confirmation: "明确确认".into(),
@@ -58,20 +116,22 @@ fn public_api_cross_ledger_slot_returned_unchanged() {
 
 #[test]
 fn public_api_real_sources_high_then_normal_order() {
+    let mut set_source = RrSource::new();
+    let mut clear_source = RrSource::new();
     let mut high = HighQueue::new();
     let mut normal = NormalQueue::with_capacity(NormalQueue::capacity_for(&limits(8)));
-    high.admit(HighWork::from_rr(clear(1, false)).unwrap())
+    high.admit(HighWork::from_rr(clear(&mut clear_source, 1, false)).unwrap())
         .unwrap();
     normal
-        .admit(NormalWork::from_rr(set(2, true, true)).unwrap())
+        .admit(NormalWork::from_rr(set(&mut set_source, 2, true, true)).unwrap())
         .unwrap();
-    high.admit(HighWork::from_rr(set(3, false, false)).unwrap())
+    high.admit(HighWork::from_rr(set(&mut set_source, 3, false, false)).unwrap())
         .unwrap();
     high.admit(HighWork::control(ControlEvent::Stop)).unwrap();
-    high.admit(HighWork::from_rr(set(4, false, true)).unwrap())
+    high.admit(HighWork::from_rr(set(&mut set_source, 4, false, true)).unwrap())
         .unwrap();
     normal
-        .admit(NormalWork::from_rr(clear(5, true)).unwrap())
+        .admit(NormalWork::from_rr(clear(&mut clear_source, 5, true)).unwrap())
         .unwrap();
     let mut actual = Vec::new();
     while let Some(work) = high.pop() {
@@ -94,6 +154,8 @@ fn public_api_real_sources_high_then_normal_order() {
         actual,
         ["set-3", "stop", "clear-1", "set-4", "set-2", "clear-5"]
     );
+    set_source.release_all();
+    clear_source.release_all();
 }
 
 #[test]
@@ -168,6 +230,8 @@ fn public_api_checked_limits_matrix() {
 
 #[test]
 fn alloc_guard_admit_release_and_prefilled_queues_no_alloc() {
+    let mut set_source = RrSource::new();
+    let mut clear_source = RrSource::new();
     let mut ledger = PeerLedger::<u32>::new(&limits(16)).unwrap();
     let mut high = HighQueue::new();
     let mut normal = NormalQueue::with_capacity(NormalQueue::capacity_for(&limits(16)));
@@ -175,15 +239,15 @@ fn alloc_guard_admit_release_and_prefilled_queues_no_alloc() {
         Some(if id % 2 == 0 {
             HighWork::control(ControlEvent::Stop)
         } else {
-            HighWork::from_rr(set(id, false, false)).unwrap()
+            HighWork::from_rr(set(&mut set_source, id, false, false)).unwrap()
         })
     });
     let mut restore: [Option<HighWork>; 32] = std::array::from_fn(|id| {
         Some(
             HighWork::from_rr(if id % 2 == 0 {
-                clear(id, false)
+                clear(&mut clear_source, id, false)
             } else {
-                set(id, false, true)
+                set(&mut set_source, id, false, true)
             })
             .unwrap(),
         )
@@ -191,9 +255,9 @@ fn alloc_guard_admit_release_and_prefilled_queues_no_alloc() {
     let mut ordinary: [Option<NormalWork>; 64] = std::array::from_fn(|id| {
         Some(
             NormalWork::from_rr(if id % 2 == 0 {
-                clear(id, true)
+                clear(&mut clear_source, id, true)
             } else {
-                set(id, true, true)
+                set(&mut set_source, id, true, true)
             })
             .unwrap(),
         )
@@ -249,6 +313,10 @@ fn alloc_guard_admit_release_and_prefilled_queues_no_alloc() {
             && restore.iter().all(Option::is_some)
             && ordinary.iter().all(Option::is_some)
     );
+    // scope 外先销毁所有原请求载荷，再真实归还两来源的准入凭证。
+    drop((lower, restore, ordinary));
+    set_source.release_all();
+    clear_source.release_all();
 }
 
 #[cfg(all(feature = "rt_guard", unix))]

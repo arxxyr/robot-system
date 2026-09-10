@@ -44,9 +44,9 @@ pub use progress::{
     ExitStamp, Phase, ProgressDecodeError, ProgressOverflow, ProgressView, WriterProgress,
 };
 pub use protocol::{
-    ClearTxnIdentity, DispatchRefused, NoHook, PersistClient, PersistCommand, PersistCompletion,
-    PersistEndpoint, PersistShared, PrepareTokenKind, RemoveTokenKind, WriterConfig, WriterExit,
-    WriterHook, WriterRefusal, WriterStop, mailbox,
+    ClearTxnIdentity, DispatchRefused, FlushOutcome, NoHook, PersistClient, PersistCommand,
+    PersistCompletion, PersistEndpoint, PersistShared, PrepareTokenKind, RemoveTokenKind,
+    WriterConfig, WriterExit, WriterHook, WriterRefusal, WriterStop, mailbox,
 };
 pub use supervision::{
     Budgets, Candidate, CandidateKind, Decision, Inputs, RuntimeWords, ShutdownTicket, arm,

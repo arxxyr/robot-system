@@ -1,0 +1,15 @@
+error[E0382]: borrow of moved value: `writer`
+  --> tests/ui/writer_use_after_publish_typed.rs:11:5
+   |
+ 9 |     let mut writer = publisher.loan(1024).unwrap();
+   |         ---------- move occurs because `writer` has type `SampleWriter<'_, robot_msg::markers::JointState>`, which does not implement the `Copy` trait
+10 |     let _ = writer.publish_typed();
+   |                    --------------- `writer` moved due to this method call
+11 |     writer.set_seq(2);
+   |     ^^^^^^ value borrowed here after move
+   |
+note: `robot_transport::SampleWriter::<'a, T>::publish_typed` takes ownership of the receiver `self`, which moves `writer`
+  --> src/writer.rs
+   |
+   |     pub fn publish_typed(self) -> Result<PublishReceipt, PublishFailure> {
+   |                          ^^^^

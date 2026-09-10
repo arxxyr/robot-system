@@ -1072,11 +1072,13 @@ fn invoke_task_typed_response_preserves_legacy_fields_and_metadata() {
                 case.time_ns,
                 effect,
                 retired,
+                msg::InvokeOutcome::Registered,
             );
             let current = flatbuffers::root::<msg::InvokeTaskResponse>(&bytes).unwrap();
             let old = flatbuffers::root::<v0::InvokeTaskResponse>(&bytes).unwrap();
             assert_common_response_fields!(current, old, case);
             assert_eq!(current.accepted_at_ns(), case.time_ns);
+            assert_eq!(current.invoke_outcome(), msg::InvokeOutcome::Registered);
             assert_eq!(old.accepted_at_ns(), current.accepted_at_ns());
             assert_eq!(current.effect(), effect);
             assert_eq!(current.retired(), retired);
@@ -1084,6 +1086,51 @@ fn invoke_task_typed_response_preserves_legacy_fields_and_metadata() {
             assert_eq!(old.action_id(), current.action_id());
         }
     }
+}
+
+#[test]
+fn invoke_outcome_tail_preserves_unknown_values_and_old_bytes() {
+    for outcome in [
+        msg::InvokeOutcome::Unknown,
+        msg::InvokeOutcome::NotSubmitted,
+        msg::InvokeOutcome::Registered,
+        msg::InvokeOutcome::DrainFailedCancelAccepted,
+        msg::InvokeOutcome::DrainFailedCancelRejected,
+        msg::InvokeOutcome(255),
+    ] {
+        let bytes = build_helpers::build_invoke_task_response_typed(
+            "invoke",
+            msg::ActionRpcStatus::Internal,
+            "drain",
+            "action",
+            71,
+            msg::SideEffect::Committed,
+            true,
+            outcome,
+        );
+        let current = flatbuffers::root::<msg::InvokeTaskResponse>(&bytes).unwrap();
+        let old = flatbuffers::root::<v0::InvokeTaskResponse>(&bytes).unwrap();
+        assert_eq!(current.invoke_outcome(), outcome);
+        assert_eq!(old.accepted_at_ns(), 71);
+        assert_eq!(old.action_id(), Some("action"));
+        assert_eq!(old.error_msg(), Some("drain"));
+    }
+    let legacy = build_helpers::build_invoke_task_response(
+        "invoke",
+        msg::ActionRpcStatus::Ok,
+        "",
+        "action",
+        71,
+    );
+    let reference =
+        v0_ref_build_invoke_task_response("invoke", v0::ActionRpcStatus::Ok, "", "action", 71);
+    assert_eq!(legacy, reference);
+    assert_eq!(
+        flatbuffers::root::<msg::InvokeTaskResponse>(&legacy)
+            .unwrap()
+            .invoke_outcome(),
+        msg::InvokeOutcome::Unknown
+    );
 }
 
 #[test]

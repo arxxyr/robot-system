@@ -249,3 +249,122 @@ fn publisher_and_subscriber_debug_formats_dont_panic() {
     let _ = format!("{pub_:?}");
     let _ = format!("{sub:?}");
 }
+
+#[test]
+fn typed_publish_zero_two_recipients_and_idle_connection_update_replays_history() {
+    use robot_transport::PublishReceipt;
+    use robot_transport::iceoryx2::{publisher, subscriber};
+    let node = NodeBuilder::new().create::<ipc::Service>().unwrap();
+    let topic = unique_topic("typed_publish_history");
+    let mut publisher =
+        publisher::<markers::JointState>(&node, &topic, TopicClass::SafetyEvent).unwrap();
+    let body = build_joint_state_body(41);
+    let mut writer = publisher.loan(1024).unwrap();
+    writer.set_body_bytes(&body);
+    writer.set_stamp_ns(41);
+    writer.set_seq(9);
+    assert_eq!(
+        writer.publish_typed().unwrap(),
+        PublishReceipt::Iceoryx2 { recipients: 0 }
+    );
+
+    let mut first =
+        subscriber::<markers::JointState>(&node, &topic, TopicClass::SafetyEvent).unwrap();
+    publisher.update_connections().unwrap();
+    let historical = first
+        .latest()
+        .unwrap()
+        .expect("空闲刷新必须补送之前的 history");
+    let view = historical.view().unwrap();
+    assert_eq!((view.header.stamp_ns(), view.header.seq()), (41, 9));
+    assert_eq!(view.body.raw(), body);
+    drop(historical);
+    let mut second =
+        subscriber::<markers::JointState>(&node, &topic, TopicClass::SafetyEvent).unwrap();
+    publisher.update_connections().unwrap();
+    drop(
+        second
+            .latest()
+            .unwrap()
+            .expect("第二订阅者也收到真实旧 history"),
+    );
+    let mut writer = publisher.loan(1024).unwrap();
+    writer.set_body_bytes(&build_joint_state_body(42));
+    writer.set_stamp_ns(42);
+    writer.set_seq(10);
+    assert_eq!(
+        writer.publish_typed().unwrap(),
+        PublishReceipt::Iceoryx2 { recipients: 2 }
+    );
+    for subscriber in [&mut first, &mut second] {
+        let lease = subscriber.latest().unwrap().expect("两个真实订阅者都收到");
+        let view = lease.view().unwrap();
+        assert_eq!((view.header.stamp_ns(), view.header.seq()), (42, 10));
+        assert_eq!(view.body.get().stamp_ns(), 42);
+    }
+}
+
+#[test]
+fn typed_and_legacy_publish_deliver_identical_complete_wire_bytes() {
+    use robot_transport::{PublishFailure, PublishReceipt};
+    let node = NodeBuilder::new().create::<ipc::Service>().unwrap();
+    let topic = unique_topic("typed_legacy_wire");
+    let mut publisher = robot_transport::iceoryx2::publisher::<markers::JointState>(
+        &node,
+        &topic,
+        TopicClass::SafetyEvent,
+    )
+    .unwrap();
+    let service = node
+        .service_builder(&topic_to_service_name(&topic).unwrap())
+        .publish_subscribe::<[u8]>()
+        .open()
+        .unwrap();
+    let subscriber = service
+        .subscriber_builder()
+        .buffer_size(32)
+        .create()
+        .unwrap();
+    publisher.update_connections().unwrap();
+    let body = build_joint_state_body(77);
+    let mut received = Vec::new();
+    for typed in [false, true] {
+        let mut writer = publisher.loan(1024).unwrap();
+        writer.set_body_bytes(&body);
+        writer.set_blob_bytes(&[1, 3, 5, 7]);
+        writer.set_stamp_ns(77);
+        writer.set_seq(8);
+        writer.set_source_id(98);
+        match typed {
+            false => writer.publish().unwrap(),
+            true => assert_eq!(
+                writer.publish_typed().unwrap(),
+                PublishReceipt::Iceoryx2 { recipients: 1 }
+            ),
+        }
+        received.push(
+            subscriber
+                .receive()
+                .unwrap()
+                .expect("实际完整 shm payload")
+                .payload()
+                .to_vec(),
+        );
+    }
+    assert_eq!(
+        received[0], received[1],
+        "完整 header、padding、body、blob 字节保持一致"
+    );
+    let mut writer = publisher.loan(1).unwrap();
+    writer.set_body_bytes(&body);
+    assert!(matches!(
+        writer.publish_typed(),
+        Err(PublishFailure::BeforeHistory(
+            TransportError::SampleTooLarge { .. }
+        ))
+    ));
+    assert!(
+        subscriber.receive().unwrap().is_none(),
+        "history 前失败没有新样本"
+    );
+}

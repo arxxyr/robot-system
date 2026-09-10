@@ -225,8 +225,8 @@ impl TracePage {
                         .receipt
                         .store(packed(sequence, SampleStatus::Failed as u64), SeqCst);
                 }
-            } else if ctrl.safety_word.load(SeqCst) & SERIAL_ESTOP_PENDING != 0
-                || ctrl.inhibit.load(SeqCst) != 0
+            } else if ctrl.safety_word() & SERIAL_ESTOP_PENDING != 0
+                || ctrl.inhibit_bits() != 0
                 || ctrl.safety_state() == OutputSafetyState::StopCommanded
             {
                 words
@@ -247,7 +247,7 @@ impl TracePage {
             self.complete_boundary(sequence, mode, now, Some(SampleFailure::BoundaryExpired));
             return self.sample_gate_active();
         }
-        if ctrl.safety_word.load(SeqCst) & NORMAL_IO_ACTIVE != 0 {
+        if ctrl.safety_word() & NORMAL_IO_ACTIVE != 0 {
             return self.sample_gate_active();
         }
         let failure = match mode {

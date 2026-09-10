@@ -183,12 +183,26 @@ impl SubprocessHandle {
             .child
             .take()
             .expect("SubprocessHandle::shutdown: child already taken");
-        // SIGTERM via libc（tokio::process::Child::kill 是 SIGKILL，太硬）。
-        if let Some(pid) = self.pid {
-            let pid_i32 = i32::try_from(pid).unwrap_or(0);
-            // SAFETY: pid 来自 Child::id()，进程仍在或已退出（kill 返 -1
-            // 但不 panic）；signal 是 async-signal-safe。
-            unsafe { libc::kill(pid_i32, libc::SIGTERM) };
+        // 原 Child 已被 wait_for_marker/try_wait 回收时，绝不能再向可复用的历史 PID 发信号。
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {}
+            Err(error) => return Err(ShutdownError::Wait { label, error }),
+        }
+        let pid = child.id().ok_or_else(|| ShutdownError::Wait {
+            label,
+            error: std::io::Error::other("原 Child 尚无退出结果却缺少当前 PID"),
+        })?;
+        let pid = i32::try_from(pid).map_err(|error| ShutdownError::Signal {
+            label,
+            error: std::io::Error::new(std::io::ErrorKind::InvalidInput, error),
+        })?;
+        // SAFETY: PID 来自尚未回收的原 Child 且已受检转正数；不会向历史 PID/进程组发信号。
+        if unsafe { libc::kill(pid, libc::SIGTERM) } == -1 {
+            return Err(ShutdownError::Signal {
+                label,
+                error: std::io::Error::last_os_error(),
+            });
         }
         match tokio::time::timeout(grace, child.wait()).await {
             Ok(Ok(status)) => Ok(status),
@@ -264,6 +278,11 @@ impl SubprocessHandle {
             tokio::fs::create_dir_all(parent).await?;
         }
         tokio::fs::write(path, content.as_bytes()).await
+    }
+
+    /// 同一子进程已捕获输出的完整只读快照。
+    pub async fn snapshot_lines(&self) -> Vec<String> {
+        self.captured.lock().await.clone()
     }
 
     /// Forensic snapshot：头 N + 尾 N 行（panic 路径 eprintln 用）。
@@ -458,6 +477,33 @@ pub fn locate_test_bin(name: &str) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn naturally_reaped_child_shutdown_returns_original_exit_without_resignalling() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("exit 7");
+        let mut child = SubprocessHandle::spawn("natural_exit", cmd).expect("spawn 原子进程");
+        let original = match child
+            .wait_for_marker("never_emitted", Duration::from_secs(5))
+            .await
+        {
+            Err(MarkerError::EarlyExit {
+                status: Some(status),
+                ..
+            }) => status,
+            other => panic!("必须由原 try_wait 得到真实退出: {other:?}"),
+        };
+        assert_eq!(original.code(), Some(7));
+        assert!(
+            child.child.as_ref().unwrap().id().is_none(),
+            "原 Child 已真实 reap"
+        );
+        let after = child
+            .shutdown(Duration::from_secs(3))
+            .await
+            .expect("已回收原件仍可收尾");
+        assert_eq!(after, original, "不得发送新信号覆盖原退出结果");
+    }
 
     /// SIGTERM handler 打尾部 marker 的子进程：验证 `shutdown_with_dump` 的
     /// dump 里**确实包含**停机期输出（不 join drain task 时该行会丢）。

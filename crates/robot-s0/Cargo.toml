@@ -114,3 +114,8 @@ required-features = ["test-comm-fault-hook"]
 [[test]]
 name = "xlerobot_deploy_provision"
 required-features = ["xlerobot-real"]
+
+# W3：原 SerialRT 集成场景使用同一真实绑定的 test-only 无监督夹具；正式门显式运行。
+[[test]]
+name = "serial_rt_e2e"
+required-features = ["test-comm-fault-hook"]

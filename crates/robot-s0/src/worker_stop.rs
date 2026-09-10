@@ -1,10 +1,10 @@
-//! 七个业务 worker 共享的预建停止标志与成功 spawn 位图。
+//! 八个业务 worker 共享的预建停止标志与成功 spawn 位图。
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-const WORKER_COUNT: usize = 7;
-const ALL_SPAWNED: u8 = (1 << WORKER_COUNT) - 1;
+const WORKER_COUNT: usize = 8;
+const ALL_SPAWNED: u8 = u8::MAX;
 
 /// 生产只读停止位；验收组合在相同循环边界施加暂停或拒停。
 pub(crate) fn worker_running(
@@ -34,6 +34,7 @@ pub enum WorkerKind {
     Executor,
     Pub,
     Io,
+    LatchWriter,
 }
 
 impl WorkerKind {
@@ -45,6 +46,7 @@ impl WorkerKind {
         Self::Executor,
         Self::Pub,
         Self::Io,
+        Self::LatchWriter,
     ];
 
     #[must_use]
@@ -57,6 +59,7 @@ impl WorkerKind {
             Self::Executor => "executor",
             Self::Pub => "pub",
             Self::Io => "io",
+            Self::LatchWriter => "latch_writer",
         }
     }
 }
@@ -75,6 +78,18 @@ impl Default for StopFlags {
 }
 
 impl StopFlags {
+    /// 同一停止聚合同时交给 writer 读取和句柄请求，不能拼接另一停止位。
+    #[must_use]
+    pub fn writer_control(
+        self: &Arc<Self>,
+        clock: Arc<dyn robot_core::time::RobotClock>,
+    ) -> Arc<impl crate::shutdown_mechanism::WriterControl + 'static> {
+        Arc::new(LatchWriterControl {
+            flags: Arc::clone(self),
+            clock,
+        })
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -135,14 +150,35 @@ impl StopFlags {
     }
 }
 
+struct LatchWriterControl {
+    flags: Arc<StopFlags>,
+    clock: Arc<dyn robot_core::time::RobotClock>,
+}
+
+impl crate::latch_writer::WriterStop for LatchWriterControl {
+    fn running(&self) -> bool {
+        worker_running(
+            WorkerKind::LatchWriter,
+            self.clock.as_ref(),
+            &self.flags.flags[WorkerKind::LatchWriter as usize],
+        )
+    }
+}
+
+impl crate::shutdown_mechanism::WriterControl for LatchWriterControl {
+    fn request_stop(&self) {
+        self.flags.request_worker_stop(WorkerKind::LatchWriter);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn stop_only_reaches_spawned_workers_and_all_seven_are_required() {
+    fn stop_only_reaches_spawned_workers_and_all_eight_are_required() {
         let flags = StopFlags::new();
-        for worker in WorkerKind::ALL.into_iter().take(6) {
+        for worker in WorkerKind::ALL.into_iter().take(7) {
             flags.mark_spawned(worker);
         }
         assert!(!flags.all_spawned());
@@ -150,12 +186,12 @@ mod tests {
         for worker in WorkerKind::ALL {
             assert_eq!(
                 flags.flag(worker).load(Ordering::Acquire),
-                worker != WorkerKind::Io
+                worker != WorkerKind::LatchWriter
             );
         }
-        flags.mark_spawned(WorkerKind::Io);
+        flags.mark_spawned(WorkerKind::LatchWriter);
         assert!(flags.all_spawned());
         flags.request_spawned_stop();
-        assert!(flags.flag(WorkerKind::Io).load(Ordering::Acquire));
+        assert!(flags.flag(WorkerKind::LatchWriter).load(Ordering::Acquire));
     }
 }

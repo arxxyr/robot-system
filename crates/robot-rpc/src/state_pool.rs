@@ -133,10 +133,24 @@ impl StatePoolThreadMetrics {
 /// 常驻 per-hardware state 订阅池 handle。owner = [`crate::gateway`]；shutdown
 /// 时 [`StatePool::stop`] 一键 stop+join 全部 subscriber 线程。
 pub struct StatePool {
-    handles: Vec<JoinHandle<()>>,
+    handles: Vec<Option<JoinHandle<()>>>,
+    joined: Vec<std::thread::Result<()>>,
     stop: Arc<AtomicBool>,
     /// 顺序 = `hardware_ids` 顺序（`WorkerKind::StatePool(index)` 索引域）。
     metrics: Vec<Arc<StatePoolThreadMetrics>>,
+}
+
+pub struct StatePoolSpawnRejected {
+    pub partial: StatePool,
+    pub error: std::io::Error,
+}
+impl std::fmt::Debug for StatePoolSpawnRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StatePoolSpawnRejected")
+            .field("error", &self.error)
+            .field("spawned", &self.partial.handles.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl StatePool {
@@ -155,9 +169,9 @@ impl StatePool {
         robot_id: &str,
         hardware_ids: &[String],
         cache: &Arc<StateCache>,
-    ) -> std::io::Result<Self> {
+    ) -> Result<Self, StatePoolSpawnRejected> {
         let stop = Arc::new(AtomicBool::new(false));
-        let mut handles: Vec<JoinHandle<()>> = Vec::with_capacity(hardware_ids.len());
+        let mut handles: Vec<Option<JoinHandle<()>>> = Vec::with_capacity(hardware_ids.len());
         let mut metrics: Vec<Arc<StatePoolThreadMetrics>> = Vec::with_capacity(hardware_ids.len());
 
         for hw in hardware_ids {
@@ -193,9 +207,6 @@ impl StatePool {
                             return;
                         }
                     };
-                    // node 持 subscriber 内部 shm fd；leak 让其整生命周期不被 drop
-                    // （同 fake_state / daemon leak 模式）。
-                    Box::leak(Box::new(node));
                     let _ = ready_tx.send(true);
                     drop(ready_tx);
 
@@ -221,21 +232,35 @@ impl StatePool {
                         }
                         thread::sleep(POLL_INTERVAL);
                     }
-                })?;
-
-            if let Ok(true) = ready_rx.recv() {
-                handles.push(handle);
-                metrics.push(thread_metrics);
-            } else {
-                // 该 hardware subscriber open 失败 → 回滚已起线程 → fail-fast。
-                stop.store(true, Ordering::Release);
-                for h in handles {
-                    let _ = h.join();
+                });
+            let handle = match handle {
+                Ok(handle) => handle,
+                Err(error) => {
+                    return Err(StatePoolSpawnRejected {
+                        partial: Self {
+                            handles,
+                            stop,
+                            metrics,
+                            joined: Vec::new(),
+                        },
+                        error,
+                    });
                 }
-                let _ = handle.join();
-                return Err(std::io::Error::other(format!(
-                    "state_pool: failed to open subscriber for hardware '{hw}' (topic {topic})"
-                )));
+            };
+            handles.push(Some(handle));
+            metrics.push(thread_metrics);
+            if !matches!(ready_rx.recv(), Ok(true)) {
+                return Err(StatePoolSpawnRejected {
+                    partial: Self {
+                        handles,
+                        stop,
+                        metrics,
+                        joined: Vec::new(),
+                    },
+                    error: std::io::Error::other(format!(
+                        "state_pool: failed to open subscriber for hardware '{hw}' (topic {topic})"
+                    )),
+                });
             }
         }
 
@@ -243,6 +268,7 @@ impl StatePool {
             handles,
             stop,
             metrics,
+            joined: Vec::new(),
         })
     }
 
@@ -254,11 +280,19 @@ impl StatePool {
 
     /// 信号 stop + join 全部 subscriber 线程。tonic server 退出**之后**调
     /// （沿 B4 shutdown 顺序）。
-    pub fn stop(self) {
+    pub fn stop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        for h in self.handles {
-            let _ = h.join();
+        for slot in &mut self.handles {
+            if let Some(handle) = slot.take() {
+                self.joined.push(handle.join());
+            }
         }
+    }
+    pub(crate) fn joined_ok(&self) -> bool {
+        self.handles.iter().all(Option::is_none) && self.joined.iter().all(Result::is_ok)
+    }
+    pub(crate) fn join_failed(&self) -> bool {
+        self.joined.iter().any(Result::is_err)
     }
 }
 

@@ -9,7 +9,9 @@ use robot_adapter_feetech::FeetechBus;
 use robot_adapter_feetech::error::FeetechError;
 use robot_adapter_feetech::transport::{DrainReport, MockHandle, MockTransport, SerialTransport};
 use robot_adapter_feetech::types::Motor;
-use robot_core::serial_services::{AbortReason, BusOpClass, CommErrorKind, PreemptProbe};
+use robot_core::serial_services::{
+    AbortReason, BusLease, BusOpClass, CommErrorKind, LeasedPreemptProbe, PreemptProbe,
+};
 use robot_core::time::DurationNs;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,8 +24,8 @@ enum Trace {
     Rejected,
 }
 
-#[derive(Default)]
 struct LeaseProbe {
+    authority: robot_core::control_authority::ControlAuthority,
     active: AtomicBool,
     emergency: AtomicBool,
     emergency_after_write: AtomicBool,
@@ -32,6 +34,74 @@ struct LeaseProbe {
     untrusted: AtomicBool,
     hygiene_fail: AtomicBool,
     facts: Mutex<Vec<CommErrorKind>>,
+}
+
+impl Default for LeaseProbe {
+    fn default() -> Self {
+        use robot_core::control_authority::{
+            AuthorityInit, ControlAuthority, EnableResult, InhibitSet,
+        };
+        let authority = ControlAuthority::new(AuthorityInit::new(
+            false,
+            robot_core::executor_ctrl::OutputSafetyState::TorqueOffConfirmed,
+            InhibitSet::EMPTY,
+        ))
+        .unwrap();
+        let (owner, view) = authority.reserve_enable().unwrap();
+        let execution = authority.start_enable(view).unwrap();
+        authority
+            .finish_enable(execution, EnableResult::Succeeded)
+            .unwrap();
+        authority.commit_enable(owner).unwrap();
+        Self {
+            authority,
+            active: AtomicBool::new(false),
+            emergency: AtomicBool::new(false),
+            emergency_after_write: AtomicBool::new(false),
+            trace: Mutex::new(Vec::new()),
+            auto_reply: AtomicBool::new(false),
+            untrusted: AtomicBool::new(false),
+            hygiene_fail: AtomicBool::new(false),
+            facts: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl LeasedPreemptProbe for LeaseProbe {
+    fn begin_leased(&self, class: BusOpClass) -> Result<BusLease, AbortReason> {
+        if let Some(reason) = self.should_abort(class) {
+            self.record(Trace::Rejected);
+            return Err(reason);
+        }
+        let lease = if let Some(lease) = BusLease::special(class) {
+            lease
+        } else {
+            use robot_core::control_authority::NormalIoIntent;
+            let intent = match class {
+                BusOpClass::PeriodicRead => NormalIoIntent::PeriodicRead,
+                _ => NormalIoIntent::Motion,
+            };
+            let raw = self
+                .authority
+                .acquire_normal_io(intent)
+                .map_err(|_| AbortReason::Revoked)?;
+            BusLease::with_normal(class, raw).unwrap()
+        };
+        assert!(
+            !self.active.swap(true, Ordering::AcqRel),
+            "不得嵌套占用事务执行权"
+        );
+        self.record(Trace::Begin);
+        Ok(lease)
+    }
+    fn finish_leased(&self, lease: BusLease) {
+        lease.release(&self.authority).unwrap();
+        assert!(
+            self.active.swap(false, Ordering::AcqRel),
+            "每个成功 acquire 恰好释放一次"
+        );
+        self.record(Trace::End);
+    }
 }
 
 impl LeaseProbe {
@@ -48,27 +118,6 @@ impl PreemptProbe for LeaseProbe {
     fn should_abort(&self, class: BusOpClass) -> Option<AbortReason> {
         (class.is_normal() && self.emergency.load(Ordering::Acquire))
             .then_some(AbortReason::Emergency)
-    }
-
-    fn begin_transaction(&self, class: BusOpClass) -> Result<(), AbortReason> {
-        if let Some(reason) = self.should_abort(class) {
-            self.record(Trace::Rejected);
-            return Err(reason);
-        }
-        assert!(
-            !self.active.swap(true, Ordering::AcqRel),
-            "不得嵌套占用事务执行权"
-        );
-        self.record(Trace::Begin);
-        Ok(())
-    }
-
-    fn finish_transaction(&self, _class: BusOpClass) {
-        assert!(
-            self.active.swap(false, Ordering::AcqRel),
-            "每个成功 acquire 恰好释放一次"
-        );
-        self.record(Trace::End);
     }
 
     fn checkpoint(&self) {

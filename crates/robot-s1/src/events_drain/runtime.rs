@@ -145,12 +145,22 @@ pub struct EventsDrainMetrics {
 
 /// `events_drain_thread` 句柄。caller 通过 [`Self::request_stop`] +
 /// [`Self::join`] 关停。
+#[derive(Debug)]
 pub struct EventsDrainThreadHandle {
     join: JoinHandle<()>,
     stop: Arc<AtomicBool>,
     metrics: Arc<EventsDrainMetrics>,
     action_id: ActionId,
     topic: String,
+}
+
+/// 启动失败也保留所有成功创建的线程拥有权；ready 等待沿原同步政策。
+#[derive(Debug, thiserror::Error)]
+pub enum EventsDrainSpawnError {
+    #[error("events drain thread spawn failed: {0}")]
+    ThreadSpawn(#[source] std::io::Error),
+    #[error("events drain publisher failed before signalling ready")]
+    ReadyDisconnected { handle: EventsDrainThreadHandle },
 }
 
 impl EventsDrainThreadHandle {
@@ -431,7 +441,7 @@ pub fn spawn_events_drain_thread<F>(
     publisher_factory: F,
     clock: Arc<dyn RobotClock>,
     source_id: u32,
-) -> std::io::Result<EventsDrainThreadHandle>
+) -> Result<EventsDrainThreadHandle, EventsDrainSpawnError>
 where
     F: FnOnce() -> Iceoryx2Publisher<markers::ActionEventEnvelope> + Send + 'static,
 {
@@ -454,7 +464,7 @@ pub(crate) fn spawn_owned_events_drain_thread<F>(
     publisher_factory: F,
     clock: Arc<dyn RobotClock>,
     source_id: u32,
-) -> std::io::Result<EventsDrainThreadHandle>
+) -> Result<EventsDrainThreadHandle, EventsDrainSpawnError>
 where
     F: FnOnce() -> EventsPublisherGuard + Send + 'static,
 {
@@ -467,7 +477,7 @@ fn spawn_events_drain_thread_impl<F>(
     publisher_factory: F,
     clock: Arc<dyn RobotClock>,
     source_id: u32,
-) -> std::io::Result<EventsDrainThreadHandle>
+) -> Result<EventsDrainThreadHandle, EventsDrainSpawnError>
 where
     F: FnOnce() -> EventsPublisherGuard + Send + 'static,
 {
@@ -498,21 +508,20 @@ where
                 &stop_clone,
                 &metrics_clone,
             );
-        })?;
+        })
+        .map_err(EventsDrainSpawnError::ThreadSpawn)?;
 
-    if ready_rx.recv().is_err() {
-        return Err(std::io::Error::other(format!(
-            "events_drain_thread {action_id}: publisher_factory panicked before signalling ready"
-        )));
-    }
-
-    Ok(EventsDrainThreadHandle {
+    let handle = EventsDrainThreadHandle {
         join,
         stop,
         metrics,
         action_id,
         topic: topic_owned,
-    })
+    };
+    match ready_rx.recv() {
+        Ok(()) => Ok(handle),
+        Err(_) => Err(EventsDrainSpawnError::ReadyDisconnected { handle }),
+    }
 }
 
 // ============================================================================

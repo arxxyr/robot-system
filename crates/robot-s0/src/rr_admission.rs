@@ -176,8 +176,20 @@ impl ClassCounts {
 /// use robot_s0::rr_admission::LedgerId;
 /// let forged = LedgerId(std::num::NonZeroU64::new(1).unwrap());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LedgerId(NonZeroU64);
+
+/// 从真实准入 `Slot` 取得的回复关联事实；不能据此重建或释放凭证。
+///
+/// ```compile_fail
+/// use robot_s0::rr_admission::SlotIdentity;
+/// fn forge() { let route = SlotIdentity { ledger: todo!(), serial: todo!() }; }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SlotIdentity {
+    ledger: LedgerId,
+    serial: NonZeroU64,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LedgerError {
@@ -232,6 +244,14 @@ pub struct Slot<P> {
 }
 
 impl<P: Copy> Slot<P> {
+    #[must_use]
+    pub const fn identity(&self) -> SlotIdentity {
+        SlotIdentity {
+            ledger: self.ledger,
+            serial: self.serial,
+        }
+    }
+
     #[must_use]
     pub const fn class(&self) -> RrRequestClass {
         self.class

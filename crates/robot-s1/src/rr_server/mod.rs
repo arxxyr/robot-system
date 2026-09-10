@@ -93,7 +93,8 @@ pub use handler::{
     RealHandlerCtx, handle_cancel, handle_clear_error, handle_invoke, handle_status,
 };
 pub use runtime::{
-    RrServerMetrics, RrServerThreadConfig, RrServerThreadHandle, S1RrServerHandles,
-    spawn_clear_error_server, spawn_task_cancel_server, spawn_task_invoke_server,
-    spawn_task_status_server,
+    OwnedRrServer, RrServerInitError, RrServerMetrics, RrServerSpawnError, RrServerThreadConfig,
+    RrServerThreadHandle, S1RrServerHandles, spawn_clear_error_server, spawn_task_cancel_server,
+    spawn_task_invoke_server, spawn_task_status_server, try_spawn_clear_error_server,
+    try_spawn_task_cancel_server, try_spawn_task_invoke_server, try_spawn_task_status_server,
 };

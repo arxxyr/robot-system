@@ -3,7 +3,10 @@
 use std::time::Duration;
 
 use robot_core::time::{RobotClock, SystemClock};
+use robot_s0::boot_supervisor::{RUNTIME_SHUTDOWN_BUDGET, SHUTDOWN_MARGIN};
+use robot_s0::shutdown_mechanism::HandleKind;
 use serde_json::{Value, json};
+use tokio::process::Child;
 
 use super::harness::{Case, isolated_command, stop, wait_exit, wait_log};
 use super::report::Report;
@@ -16,14 +19,16 @@ pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> 
         Phase::Mock => mock(args, report).await,
         Phase::Startup => {
             startup::run(args, report).await?;
-            super::watchdog::run(args, report).await
+            super::watchdog::run(args, report).await?;
+            super::w3::run(args, report).await
         }
         Phase::Rpc => rpc::run(args, report).await,
         Phase::All => {
             mock(args, report).await?;
             startup::run(args, report).await?;
             super::watchdog::run(args, report).await?;
-            rpc::run(args, report).await
+            rpc::run(args, report).await?;
+            super::w3::run(args, report).await
         }
         Phase::MockH2Load => {
             let started = SystemClock.now().0;
@@ -77,6 +82,10 @@ async fn mock(args: &Args, report: &mut Report) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "同一场景顺序保存 marker CLI、一次性授权和该子进程的完整收尾结果"
+)]
 async fn marker_cli(args: &Args) -> Result<Value, String> {
     let case = Case::new(&args.evidence_dir, &args.bin_dir, "marker_cli", 6)?;
     let mut operations = Vec::new();
@@ -136,6 +145,7 @@ async fn marker_cli(args: &Args) -> Result<Value, String> {
         let mut command = case.command();
         command.args(["--rx-trust-policy", "marker"]);
         let mut child = case.spawn(name, command)?;
+        let startup_deadline_ns = SystemClock.now().0.saturating_add(5_000_000_000);
         let result = async {
             wait_log(
                 &case,
@@ -145,6 +155,9 @@ async fn marker_cli(args: &Args) -> Result<Value, String> {
                 Duration::from_secs(5),
             )
             .await?;
+            if expect_fault {
+                wait_runtime_armed(&case, &mut child, name, startup_deadline_ns).await?;
+            }
             let observation = case.observation(name)?;
             if !observation.observation_ready
                 || !observation.ready_reached
@@ -164,11 +177,136 @@ async fn marker_cli(args: &Args) -> Result<Value, String> {
             Ok(json!({"operation": name, "observation": format!("{observation:?}")}))
         }
         .await;
-        let cleanup = stop(&mut child).await;
+        let cleanup = if expect_fault {
+            stop_dirty_runtime(&case, &mut child, name).await
+        } else {
+            stop(&mut child).await.map(|()| json!({"exit_code": 0}))
+        };
         match (result, cleanup) {
-            (Ok(evidence), Ok(())) => operations.push(evidence),
+            (Ok(mut evidence), Ok(cleanup)) => {
+                evidence["cleanup"] = cleanup;
+                operations.push(evidence);
+            }
             (result, cleanup) => return Err(format!("{name}场景={result:?}；收尾={cleanup:?}")),
         }
     }
     Ok(json!({"operations": operations, "log_directory": case.directory}))
+}
+
+pub(super) async fn wait_runtime_armed(
+    case: &Case,
+    child: &mut Child,
+    name: &str,
+    startup_deadline_ns: u64,
+) -> Result<(), String> {
+    loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            return Err(format!(
+                "等待真实 RuntimeArmed 时该子进程提前退出：{status}"
+            ));
+        }
+        if SystemClock.now().0 >= startup_deadline_ns {
+            return Err("原 5 秒启动等待包络内未发布 RuntimeArmed".to_owned());
+        }
+        let observation = case.observation(name)?;
+        if observation.runtime_armed_ns != 0 && observation.ready_reached {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// 测试中真实尚存的责任角色；不是可任选的残件掩码。
+#[derive(Clone, Copy)]
+pub(super) enum UnretiredRuntimeCase {
+    DirtyWithoutRr,
+    SetRrHeld,
+}
+
+pub(super) async fn stop_unretired_runtime(
+    case: &Case,
+    child: &mut Child,
+    name: &str,
+    responsibility: UnretiredRuntimeCase,
+) -> Result<Value, String> {
+    let before = case.observation(name)?;
+    if before.runtime_armed_ns == 0 || !before.ready_reached {
+        return Err(format!(
+            "未确认真实 RuntimeArmed，不发送运行期停止信号：{before:?}"
+        ));
+    }
+    if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+        return Err(format!("发送停止信号前该子进程已退出：{status}"));
+    }
+    let pid = child.id().ok_or("发送停止信号前该子进程已无 id")?;
+    let signal_pid = i32::try_from(pid).map_err(|error| error.to_string())?;
+    let signal_at_ns = SystemClock.now().0;
+    // SAFETY：仅对仍由此 Child 持有、未回收且可表示为 pid_t 的当前 PID 请求 SIGTERM。
+    let signal_result = unsafe { libc::kill(signal_pid, libc::SIGTERM) };
+    let signal_error = (signal_result != 0).then(std::io::Error::last_os_error);
+    let wait_result = wait_exit(
+        child,
+        Duration::from_nanos(RUNTIME_SHUTDOWN_BUDGET.0 + SHUTDOWN_MARGIN.0),
+    )
+    .await;
+    let reaped_ns = SystemClock.now().0;
+    if signal_result != 0 {
+        return Err(format!(
+            "未退责 SIGTERM 未成功：pid={pid} result={signal_result} error={signal_error:?}；原等待={wait_result:?}"
+        ));
+    }
+    let code = wait_result.map_err(|error| {
+        format!("未退责 SIGTERM 已发送：pid={pid} result={signal_result}；原等待失败={error}")
+    })?;
+    let observation = case.observation(name)?;
+    let elapsed_ns = reaped_ns
+        .checked_sub(signal_at_ns)
+        .ok_or("真实回收早于信号起点")?;
+    // 信号前到真 wait 的父观测仅是外包络，绝不冒充 daemon 原 shutdown ticket 的 D。
+    let earliest_ns = RUNTIME_SHUTDOWN_BUDGET.0 - 250_000_000;
+    let latest_ns = RUNTIME_SHUTDOWN_BUDGET.0 + 100_000_000;
+    let protected = HandleKind::Executor.bit()
+        | HandleKind::Ipc.bit()
+        | HandleKind::Watchdog.bit()
+        | HandleKind::LatchWriter.bit()
+        | match responsibility {
+            UnretiredRuntimeCase::DirtyWithoutRr => 0,
+            UnretiredRuntimeCase::SetRrHeld => HandleKind::SetRr.bit(),
+        };
+    if code != 1
+        || !(earliest_ns..=latest_ns).contains(&elapsed_ns)
+        || observation.fired_ns != 0
+        || observation.fired_reason != 0
+        || observation.fired_checkpoint != 0
+        || observation.supervisor_exit_ns != 0
+        || observation.stop_bitmap != 0x66
+        || observation.residual_bitmap != u64::from(protected)
+    {
+        return Err(format!(
+            "运行期持责退出不符：pid={pid} signal_result={signal_result} code={code} elapsed_ns={elapsed_ns}；{observation:?}"
+        ));
+    }
+    Ok(json!({
+        "pid": pid, "signal": "SIGTERM", "signal_result": signal_result,
+        "signal_at_ns": signal_at_ns, "reaped_ns": reaped_ns, "elapsed_ns": elapsed_ns,
+        "exit_code": code, "observation": format!("{observation:?}"),
+        "time_evidence": "父进程信号前至真回收的外包络，不是原 D 的直接观测"
+    }))
+}
+
+async fn stop_dirty_runtime(case: &Case, child: &mut Child, name: &str) -> Result<Value, String> {
+    let receipt =
+        stop_unretired_runtime(case, child, name, UnretiredRuntimeCase::DirtyWithoutRr).await?;
+    for marker in ["rx_trust_marker", "rx_trust_marker.bak"] {
+        if std::fs::read(case.trust.join(marker)).map_err(|error| error.to_string())? != b"1\n" {
+            return Err(format!("dirty 收尾改变原一次性 marker：{marker}"));
+        }
+    }
+    let backup_latch = case.directory.join("estop_latch.bak");
+    for latch in [&case.latch, &backup_latch] {
+        if std::fs::read(latch).map_err(|error| error.to_string())? != b"0\n" {
+            return Err(format!("dirty 收尾改变独立急停 latch：{}", latch.display()));
+        }
+    }
+    Ok(receipt)
 }

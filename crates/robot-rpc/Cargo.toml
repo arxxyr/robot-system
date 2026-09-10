@@ -74,6 +74,8 @@ tonic-prost-build   = { workspace = true }
 protoc-bin-vendored = { workspace = true }
 
 [dev-dependencies]
+# W3 仅测试读取真实结构化补偿日志。
+serde_json = { workspace = true }
 # 段(4) client::layout 单测临时 config 文件。
 tempfile = { workspace = true }
 # B4 (3/3) cross-process integration test (`tests/task_rpc_e2e.rs`) 需 spawn
@@ -171,6 +173,11 @@ required-features = ["client"]
 name = "estop_e2e"
 path = "tests/estop_e2e.rs"
 required-features = ["client"]
+
+[[test]]
+name = "w3_gateway_owned"
+path = "tests/w3_gateway_owned.rs"
+required-features = ["client", "test-freeze-hook"]
 
 [lints]
 workspace = true

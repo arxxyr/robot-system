@@ -93,11 +93,15 @@ use robot_s1::action_backend::BackendRegistry;
 use robot_s1::coordinator::{self, Coordinator, CoordinatorConfig, HardwareSection, TickError};
 use robot_s1::events_drain::EventsDrainRegistry;
 use robot_s1::rr_server::{
-    RealHandlerCtx, RrServerThreadConfig, S1RrServerHandles, spawn_clear_error_server,
-    spawn_task_cancel_server, spawn_task_invoke_server, spawn_task_status_server,
+    OwnedRrServer, RrServerInitError, RrServerSpawnError, RrServerThreadHandle,
+};
+use robot_s1::rr_server::{
+    RealHandlerCtx, RrServerThreadConfig, S1RrServerHandles, try_spawn_clear_error_server,
+    try_spawn_task_cancel_server, try_spawn_task_invoke_server, try_spawn_task_status_server,
 };
 use robot_s1::state_cache::{StateCacheConfig, StateCacheSpawnError, spawn_state_cache_thread};
-use robot_transport::iceoryx2::request_response::rr_server;
+use robot_transport::iceoryx2::RrProfile;
+use robot_transport::iceoryx2::request_response::rr_server_with;
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
 
 /// `events_drain` 入 `FrameHeader.source_id`：与 v0.2 `JointCommand` /
@@ -606,10 +610,20 @@ fn run(args: &Args) -> Result<(), i32> {
     // Coordinator::{submit, cancel, status, clear_error} in-process API；
     // invoke 路径成功 → spawn events_drain_thread + register（详
     // rr_server::handler::handle_invoke）。
-    let rr_handles = spawn_s1_rr_server_threads(&args.robot_id, &ctx).map_err(|e| {
-        eprintln!("fatal: spawn s1 rr_server_threads: {e}");
-        5
-    })?;
+    let rr_handles = match spawn_s1_rr_server_threads(&args.robot_id, &ctx) {
+        Ok(handles) => handles,
+        Err(mut failure) => {
+            // 先封提交并按原 RR → registry 顺序回收，之后才输出诊断。
+            // 保留每个真实 join Err；这里不能退化成 Err(5) 而提前析构聚合。
+            let exit_code = failure.exit_code();
+            coordinator.mark_shutting_down();
+            failure.stop_and_join();
+            let drain_result = events_registry.stop_and_join_all();
+            let owned_failure = std::mem::ManuallyDrop::new((failure, drain_result));
+            owned_failure.0.report();
+            std::process::exit(exit_code);
+        }
+    };
     tracing::info!(
         topic_invoke = rr_handles.task_invoke.topic(),
         topic_cancel = rr_handles.task_cancel.topic(),
@@ -929,120 +943,224 @@ fn run(args: &Args) -> Result<(), i32> {
 /// [`RealHandlerCtx`] 派生（`ctx.invoke_handler()` / `cancel_handler()` /
 /// `status_handler()` / `clear_error_handler()`），各自捕获
 /// `Arc<RealHandlerCtx>` clone。
-#[allow(clippy::too_many_lines)] // 4 个 RR topic 各自 cfg + factory closure 一气呵成；拆 helper 反而让 reviewer 跨函数对账每个 topic 的连线。
+#[allow(clippy::too_many_lines)]
+// 4 个 RR topic 各自 cfg + factory closure 一气呵成；拆 helper 反而让 reviewer 跨函数对账每个 topic 的连线。
+/// 部分启动失败仍携带全部真实线程与最终 join 原结果。
+struct S1RrStartupFailure {
+    reason: S1RrStartupReason,
+    handles: Vec<RrServerThreadHandle>,
+    joined: Vec<std::thread::Result<()>>,
+}
+#[derive(Debug)]
+enum S1RrStartupReason {
+    ThreadSpawn(std::io::Error),
+    ReadyDisconnected,
+    ReadyFailed(RrServerInitError),
+}
+impl S1RrStartupFailure {
+    fn new(failure: RrServerSpawnError, mut handles: Vec<RrServerThreadHandle>) -> Self {
+        let reason = match failure {
+            RrServerSpawnError::ThreadSpawn(error) => S1RrStartupReason::ThreadSpawn(error),
+            RrServerSpawnError::ReadyDisconnected { handle } => {
+                handles.push(handle);
+                S1RrStartupReason::ReadyDisconnected
+            }
+            RrServerSpawnError::ReadyFailed { handle, reason } => {
+                handles.push(handle);
+                S1RrStartupReason::ReadyFailed(reason)
+            }
+        };
+        Self {
+            reason,
+            handles,
+            joined: Vec::new(),
+        }
+    }
+    fn exit_code(&self) -> i32 {
+        match &self.reason {
+            S1RrStartupReason::ReadyFailed(RrServerInitError::Transport(
+                robot_transport::TransportError::RrConfigMismatch { .. },
+            )) => 1,
+            _ => 5,
+        }
+    }
+    fn report(&self) {
+        match &self.reason {
+            S1RrStartupReason::ReadyFailed(RrServerInitError::Transport(
+                robot_transport::TransportError::RrConfigMismatch {
+                    field,
+                    expected,
+                    actual,
+                },
+            )) => {
+                eprintln!(
+                    "fatal: S1 RR 配置不兼容 field={field} expected={expected} actual={actual}"
+                );
+            }
+            S1RrStartupReason::ThreadSpawn(error) => {
+                eprintln!("fatal: S1 RR OS spawn 失败: {error}");
+            }
+            S1RrStartupReason::ReadyFailed(reason) => {
+                eprintln!("fatal: S1 RR 初始化失败: {reason}");
+            }
+            S1RrStartupReason::ReadyDisconnected => {
+                eprintln!("fatal: S1 RR ready 断链，原句柄与真 join 结果保留");
+            }
+        }
+    }
+    fn stop_and_join(&mut self) {
+        for handle in &self.handles {
+            handle.request_stop();
+        }
+        for handle in self.handles.drain(..) {
+            self.joined.push(handle.join());
+        }
+    }
+}
+
+fn validate_s1_rr_limits(
+    limits: Option<robot_transport::iceoryx2::RrStaticLimits>,
+) -> Result<(), RrServerInitError> {
+    let limits = limits.ok_or(RrServerInitError::MissingLimits)?;
+    let mismatch = match () {
+        () if limits.c < 1 => Some(("max_clients", 1, limits.c)),
+        () if limits.l < 3 => Some(("max_active_requests_per_client", 3, limits.l)),
+        () => None,
+    };
+    if let Some((field, expected, actual)) = mismatch {
+        return Err(RrServerInitError::Transport(
+            robot_transport::TransportError::RrConfigMismatch {
+                field,
+                expected,
+                actual: actual as u64,
+            },
+        ));
+    }
+    Ok(())
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "四服务依序启动并由同一聚合接管部分成功与原失败句柄，保持退出归属可见"
+)]
 fn spawn_s1_rr_server_threads(
     robot_id: &str,
     ctx: &Arc<RealHandlerCtx>,
-) -> std::io::Result<S1RrServerHandles> {
-    let topic_invoke = format!("/{robot_id}/control/task_invoke");
-    let topic_cancel = format!("/{robot_id}/control/task_cancel");
-    let topic_status = format!("/{robot_id}/control/task_status");
-    let topic_clear = format!("/{robot_id}/control/clear_error");
-
-    let task_invoke = {
-        let topic = topic_invoke.clone();
-        let cfg = RrServerThreadConfig {
-            topic: topic.clone(),
-            poll_interval_ns: 500_000,
-            max_in_flight: 64,
-        };
-        spawn_task_invoke_server(
-            cfg,
-            move || {
-                let node = NodeBuilder::new()
-                    .create::<IxService>()
-                    .expect("rr task_invoke node create");
-                let server = rr_server::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
-                    &node, &topic,
-                )
-                .expect("rr task_invoke server create");
-                // node 持 server 内部 shm fd；leak 让 server 整个生命周期内
-                // node 不被 drop（同 A1 s0_daemon 同款）。
-                Box::leak(Box::new(node));
-                server
-            },
-            ctx.invoke_handler(),
-        )?
+) -> Result<S1RrServerHandles, S1RrStartupFailure> {
+    let mut handles = Vec::with_capacity(4);
+    let topic = format!("/{robot_id}/control/task_invoke");
+    let cfg = RrServerThreadConfig {
+        topic: topic.clone(),
+        poll_interval_ns: 500_000,
+        max_in_flight: 64,
     };
-
-    let task_cancel = {
-        let topic = topic_cancel.clone();
-        let cfg = RrServerThreadConfig {
-            topic: topic.clone(),
-            poll_interval_ns: 500_000,
-            max_in_flight: 64,
-        };
-        spawn_task_cancel_server(
-            cfg,
-            move || {
-                let node = NodeBuilder::new()
-                    .create::<IxService>()
-                    .expect("rr task_cancel node create");
-                let server = rr_server::<markers::CancelTaskRequest, markers::CancelTaskResponse>(
-                    &node, &topic,
-                )
-                .expect("rr task_cancel server create");
-                Box::leak(Box::new(node));
-                server
-            },
-            ctx.cancel_handler(),
-        )?
+    let spawned = try_spawn_task_invoke_server(
+        cfg,
+        move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .map_err(RrServerInitError::Node)?;
+            let server = rr_server_with::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
+                &node,
+                &topic,
+                &RrProfile::S1_TASK,
+            )
+            .map_err(RrServerInitError::Transport)?;
+            validate_s1_rr_limits(server.limits())?;
+            Ok(OwnedRrServer::new(server, node))
+        },
+        ctx.invoke_handler(),
+    );
+    match spawned {
+        Ok(handle) => handles.push(handle),
+        Err(failure) => return Err(S1RrStartupFailure::new(failure, handles)),
+    }
+    let topic = format!("/{robot_id}/control/task_cancel");
+    let cfg = RrServerThreadConfig {
+        topic: topic.clone(),
+        poll_interval_ns: 500_000,
+        max_in_flight: 64,
     };
-
-    let task_status = {
-        let topic = topic_status.clone();
-        let cfg = RrServerThreadConfig {
-            topic: topic.clone(),
-            poll_interval_ns: 500_000,
-            max_in_flight: 64,
-        };
-        spawn_task_status_server(
-            cfg,
-            move || {
-                let node = NodeBuilder::new()
-                    .create::<IxService>()
-                    .expect("rr task_status node create");
-                let server = rr_server::<
-                    markers::GetTaskStatusRequest,
-                    markers::GetTaskStatusResponse,
-                >(&node, &topic)
-                .expect("rr task_status server create");
-                Box::leak(Box::new(node));
-                server
-            },
-            ctx.status_handler(),
-        )?
+    let spawned = try_spawn_task_cancel_server(
+        cfg,
+        move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .map_err(RrServerInitError::Node)?;
+            let server = rr_server_with::<markers::CancelTaskRequest, markers::CancelTaskResponse>(
+                &node,
+                &topic,
+                &RrProfile::S1_TASK,
+            )
+            .map_err(RrServerInitError::Transport)?;
+            validate_s1_rr_limits(server.limits())?;
+            Ok(OwnedRrServer::new(server, node))
+        },
+        ctx.cancel_handler(),
+    );
+    match spawned {
+        Ok(handle) => handles.push(handle),
+        Err(failure) => return Err(S1RrStartupFailure::new(failure, handles)),
+    }
+    let topic = format!("/{robot_id}/control/task_status");
+    let cfg = RrServerThreadConfig {
+        topic: topic.clone(),
+        poll_interval_ns: 500_000,
+        max_in_flight: 64,
     };
-
-    let clear_error = {
-        let topic = topic_clear.clone();
-        let cfg = RrServerThreadConfig {
-            topic: topic.clone(),
-            poll_interval_ns: 500_000,
-            max_in_flight: 64,
-        };
-        spawn_clear_error_server(
-            cfg,
-            move || {
-                let node = NodeBuilder::new()
-                    .create::<IxService>()
-                    .expect("rr clear_error node create");
-                let server = rr_server::<markers::ClearErrorRequest, markers::ClearErrorResponse>(
-                    &node, &topic,
-                )
-                .expect("rr clear_error server create");
-                Box::leak(Box::new(node));
-                server
-            },
-            ctx.clear_error_handler(),
-        )?
+    let spawned = try_spawn_task_status_server(
+        cfg,
+        move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .map_err(RrServerInitError::Node)?;
+            let server = rr_server_with::<
+                markers::GetTaskStatusRequest,
+                markers::GetTaskStatusResponse,
+            >(&node, &topic, &RrProfile::S1_TASK)
+            .map_err(RrServerInitError::Transport)?;
+            validate_s1_rr_limits(server.limits())?;
+            Ok(OwnedRrServer::new(server, node))
+        },
+        ctx.status_handler(),
+    );
+    match spawned {
+        Ok(handle) => handles.push(handle),
+        Err(failure) => return Err(S1RrStartupFailure::new(failure, handles)),
+    }
+    let topic = format!("/{robot_id}/control/clear_error");
+    let cfg = RrServerThreadConfig {
+        topic: topic.clone(),
+        poll_interval_ns: 500_000,
+        max_in_flight: 64,
     };
-
+    let spawned = try_spawn_clear_error_server(
+        cfg,
+        move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .map_err(RrServerInitError::Node)?;
+            let server = rr_server_with::<markers::ClearErrorRequest, markers::ClearErrorResponse>(
+                &node,
+                &topic,
+                &RrProfile::S1_TASK,
+            )
+            .map_err(RrServerInitError::Transport)?;
+            validate_s1_rr_limits(server.limits())?;
+            Ok(OwnedRrServer::new(server, node))
+        },
+        ctx.clear_error_handler(),
+    );
+    match spawned {
+        Ok(handle) => handles.push(handle),
+        Err(failure) => return Err(S1RrStartupFailure::new(failure, handles)),
+    }
+    let mut handles = handles.into_iter();
     Ok(S1RrServerHandles {
-        task_invoke,
-        task_cancel,
-        task_status,
-        clear_error,
+        task_invoke: handles.next().expect("四个成功 spawn 的原句柄"),
+        task_cancel: handles.next().expect("四个成功 spawn 的原句柄"),
+        task_status: handles.next().expect("四个成功 spawn 的原句柄"),
+        clear_error: handles.next().expect("四个成功 spawn 的原句柄"),
     })
 }
 
@@ -1089,6 +1207,126 @@ fn anchor_or_fail<C: RobotClock>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rr_partial_startup_keeps_real_mismatch_and_all_join_results() {
+        use robot_transport::iceoryx2::request_response::rr_server_with;
+        let prefix = format!("/s1_partial_{}", uuid::Uuid::now_v7());
+        let mut handles = Vec::new();
+        for index in 0..2 {
+            let topic = format!("{prefix}/ready_{index}");
+            let cfg = RrServerThreadConfig {
+                topic: topic.clone(),
+                ..Default::default()
+            };
+            handles.push(
+                try_spawn_task_invoke_server(
+                    cfg,
+                    move || {
+                        let node = NodeBuilder::new()
+                            .create::<IxService>()
+                            .map_err(RrServerInitError::Node)?;
+                        let server = rr_server_with::<
+                            markers::InvokeTaskRequest,
+                            markers::InvokeTaskResponse,
+                        >(&node, &topic, &RrProfile::S1_TASK)
+                        .map_err(RrServerInitError::Transport)?;
+                        Ok(OwnedRrServer::new(server, node))
+                    },
+                    |_| panic!("本例不发送请求"),
+                )
+                .unwrap(),
+            );
+        }
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let topic = format!("{prefix}/incompatible");
+        let profile = RrProfile {
+            l: 3,
+            ..RrProfile::S1_TASK
+        };
+        let existing = rr_server_with::<
+            markers::GetTaskStatusRequest,
+            markers::GetTaskStatusResponse,
+        >(&node, &topic, &profile)
+        .unwrap();
+        let cfg = RrServerThreadConfig {
+            topic: topic.clone(),
+            ..Default::default()
+        };
+        let failure = try_spawn_task_status_server(
+            cfg,
+            move || {
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .map_err(RrServerInitError::Node)?;
+                let server = rr_server_with::<
+                    markers::GetTaskStatusRequest,
+                    markers::GetTaskStatusResponse,
+                >(&node, &topic, &RrProfile::S1_TASK)
+                .map_err(RrServerInitError::Transport)?;
+                Ok(OwnedRrServer::new(server, node))
+            },
+            |_| panic!("工厂拒绝后不得执行 handler"),
+        )
+        .unwrap_err();
+        let mut failure = S1RrStartupFailure::new(failure, handles);
+        assert_eq!(failure.handles.len(), 3);
+        assert_eq!(failure.exit_code(), 1);
+        failure.stop_and_join();
+        assert!(failure.handles.is_empty());
+        assert_eq!(failure.joined.len(), 3);
+        assert!(failure.joined.iter().all(Result::is_ok));
+        assert!(matches!(
+            &failure.reason,
+            S1RrStartupReason::ReadyFailed(RrServerInitError::Transport(
+                robot_transport::TransportError::RrConfigMismatch {
+                    field: "max_active_requests_per_client",
+                    expected: 4,
+                    actual: 3,
+                }
+            ))
+        ));
+        failure.stop_and_join();
+        assert_eq!(failure.joined.len(), 3, "真 join 结果不得被第二次收尾覆盖");
+        assert_eq!(failure.exit_code(), 1);
+        assert_eq!(
+            existing.limits(),
+            Some(robot_transport::iceoryx2::RrStaticLimits { l: 3, c: 8 })
+        );
+    }
+
+    #[test]
+    fn rr_other_startup_errors_keep_original_exit_five() {
+        let mut failure = S1RrStartupFailure::new(
+            RrServerSpawnError::ThreadSpawn(std::io::Error::from_raw_os_error(libc::EAGAIN)),
+            Vec::new(),
+        );
+        failure.stop_and_join();
+        assert_eq!(failure.exit_code(), 5);
+        assert!(
+            matches!(&failure.reason, S1RrStartupReason::ThreadSpawn(error)
+            if error.raw_os_error() == Some(libc::EAGAIN))
+        );
+        assert!(failure.joined.is_empty());
+        for reason in [
+            RrServerInitError::MissingLimits,
+            RrServerInitError::Transport(robot_transport::TransportError::Backend(
+                "原传输初始化错误".to_owned(),
+            )),
+        ] {
+            let failure = try_spawn_clear_error_server(
+                RrServerThreadConfig::default(),
+                move || -> Result<OwnedRrServer<markers::ClearErrorRequest, markers::ClearErrorResponse>, RrServerInitError> { Err(reason) },
+                |_| panic!("工厂拒绝后不得执行 handler"),
+            ).unwrap_err();
+            let mut failure = S1RrStartupFailure::new(failure, Vec::new());
+            failure.stop_and_join();
+            assert_eq!(failure.exit_code(), 5);
+            assert_eq!(failure.joined.len(), 1);
+            assert!(failure.joined[0].is_ok());
+            assert!(matches!(failure.reason, S1RrStartupReason::ReadyFailed(_)));
+        }
+    }
 
     #[test]
     fn parse_u64_maybe_hex_decimal() {

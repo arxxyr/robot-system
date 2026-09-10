@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use robot_core::diag::DiagSink;
-use robot_core::serial_services::{BusOpClass, PreemptProbe};
+use robot_core::serial_services::{BusLease, BusOpClass, LeasedPreemptProbe};
 
 use crate::encoding::{
     combine_bytes_le, decode_sign_magnitude, encode_sign_magnitude, split_bytes_le,
@@ -54,7 +54,7 @@ pub struct FeetechBus<T: SerialTransport> {
     timeout: Duration,
     /// 构造期固定的确定性握手顺序，不在串口线程构造临时集合。
     motor_ids: Vec<u8>,
-    preempt: Option<Arc<dyn PreemptProbe>>,
+    preempt: Option<Arc<dyn LeasedPreemptProbe>>,
     op_class: BusOpClass,
     /// 仅为刚返回的 `StatusError` 保存已验 ID 的响应来源，不参与安全决策。
     device_status_motor: u8,
@@ -62,21 +62,20 @@ pub struct FeetechBus<T: SerialTransport> {
 
 /// 一个完整 request + response 持有一次执行权；所有失败和解析退出由 Drop 归还。
 struct BusTransactionLease<'a> {
-    probe: Option<&'a dyn PreemptProbe>,
-    class: BusOpClass,
+    probe: Option<&'a dyn LeasedPreemptProbe>,
+    lease: Option<BusLease>,
 }
 
 impl<'a> BusTransactionLease<'a> {
     fn acquire(
-        probe: Option<&'a dyn PreemptProbe>,
+        probe: Option<&'a dyn LeasedPreemptProbe>,
         class: BusOpClass,
     ) -> Result<Self, FeetechError> {
-        if let Some(probe) = probe {
-            probe
-                .begin_transaction(class)
-                .map_err(FeetechError::Aborted)?;
-        }
-        Ok(Self { probe, class })
+        let lease = match probe {
+            Some(probe) => Some(probe.begin_leased(class).map_err(FeetechError::Aborted)?),
+            None => None,
+        };
+        Ok(Self { probe, lease })
     }
 
     fn write<T: SerialTransport>(&self, transport: &mut T, buf: &[u8]) -> Result<(), FeetechError> {
@@ -102,8 +101,8 @@ impl<'a> BusTransactionLease<'a> {
 
 impl Drop for BusTransactionLease<'_> {
     fn drop(&mut self) {
-        if let Some(probe) = self.probe {
-            probe.finish_transaction(self.class);
+        if let (Some(probe), Some(lease)) = (self.probe, self.lease.take()) {
+            probe.finish_leased(lease);
         }
     }
 }
@@ -137,7 +136,7 @@ impl<T: SerialTransport> FeetechBus<T> {
     /// 构造期服务安装。诊断由 adapter 使用同源时钟记录，bus 不另建时间源。
     pub fn set_services(
         &mut self,
-        preempt: Option<Arc<dyn PreemptProbe>>,
+        preempt: Option<Arc<dyn LeasedPreemptProbe>>,
         _diag: Option<Arc<dyn DiagSink>>,
     ) {
         self.preempt = preempt;

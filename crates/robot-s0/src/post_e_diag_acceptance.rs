@@ -296,7 +296,9 @@ struct TickFixture {
 impl TickFixture {
     fn new() -> Self {
         let clock = Arc::new(MockClock::new(MonoRawNs(INITIAL_NS)));
-        let ctrl = Arc::new(HardRtCtrlInner::new_serial());
+        let ctrl = Arc::new(HardRtCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(true),
+        ));
         let probe = Arc::new(SerialPreemptProbe::new(clock.clone(), ctrl.clone()));
         let diag = Arc::new(SerialDiagRing::new());
         let writes = Arc::new(AtomicUsize::new(0));
@@ -359,6 +361,15 @@ impl TickFixture {
 
     fn normal(&mut self, enabled: bool, expected_response: AdapterResp) {
         let client = HardRtCtrlClient::new(self.ctrl.clone());
+        let enable_owner = if enabled {
+            let (owner, view) = self.ctrl.authority().reserve_enable().unwrap();
+            // 断言失败不能丢失原 owner；仅原 seq 真完成后才按值移交 commit。
+            let owner = std::mem::ManuallyDrop::new(owner);
+            self.ctrl.start_slot().post(view).unwrap();
+            Some(owner)
+        } else {
+            None
+        };
         let NormalReqStatus::Submitted { seq } =
             client.request_normal(AdapterNormalReq::Enable(enabled))
         else {
@@ -366,6 +377,20 @@ impl TickFixture {
         };
         self.step();
         assert_eq!(client.poll_last_normal_resp(seq), Some(expected_response));
+        if let Some(owner) = enable_owner {
+            match self
+                .ctrl
+                .authority()
+                .commit_enable(std::mem::ManuallyDrop::into_inner(owner))
+            {
+                Ok(_) => {}
+                Err(original) => {
+                    let reason = original.reason;
+                    let _held = std::mem::ManuallyDrop::new((original, self.ctrl.clone()));
+                    panic!("真实 Enable 成功后必须能提交原 owner：{reason:?}");
+                }
+            }
+        }
     }
 }
 

@@ -1198,6 +1198,62 @@ mod max_epoch {
 
 #[cfg(all(feature = "rt_guard", unix))]
 mod alloc_guard {
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn observed_cas_and_bus_lease_run_inside_the_real_allocator_guard() {
+        use robot_core::serial_services::{BusLease, BusOpClass};
+        let a = super::authority(false, super::S::TorqueOffConfirmed);
+        let b = super::authority(false, super::S::TorqueOffConfirmed);
+        let facts = assert_no_alloc::assert_no_alloc(|| {
+            let acquired = a.acquire_normal_io_observed(super::NormalIoIntent::PeriodicRead);
+            let acquisition_count = acquired.failed_cas;
+            let lease = acquired.outcome.unwrap();
+            let bus = BusLease::with_normal(BusOpClass::PeriodicRead, lease).unwrap();
+            let foreign = bus.release_observed(&b);
+            let foreign_count = foreign.failed_cas;
+            let original = foreign.outcome.unwrap_err().token;
+            let stopped = a.estop_observed();
+            let serial = a.claim_serial_estop_observed();
+            let ipc = a.claim_ipc_estop_observed();
+            let release = original.release_observed(&a);
+            let release_count = release.failed_cas;
+            let superseded = release.outcome.unwrap().unwrap().superseded;
+            let special = BusLease::special(BusOpClass::Safety)
+                .unwrap()
+                .release_observed(&a);
+            (
+                acquisition_count,
+                foreign_count,
+                stopped.failed_cas,
+                serial.failed_cas,
+                ipc.failed_cas,
+                release_count,
+                stopped.outcome.normal_io_active,
+                serial.outcome && ipc.outcome,
+                superseded,
+                special.failed_cas,
+                special.outcome.unwrap().is_none(),
+            )
+        });
+        assert_eq!(
+            facts,
+            (
+                Some(0),
+                Some(0),
+                Some(0),
+                Some(0),
+                Some(0),
+                Some(0),
+                true,
+                true,
+                true,
+                Some(0),
+                true
+            )
+        );
+        assert!(!a.snapshot().normal_io_active);
+    }
+
     use super::*;
     use robot_core::time::{RobotClock, SystemClock};
     use std::alloc::Layout;

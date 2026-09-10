@@ -52,14 +52,14 @@ pub struct TestCommFaultCommand {
 const _: () = assert!(std::mem::size_of::<TestCommFaultCommand>() == 24);
 
 struct HookState {
-    pause_until: [AtomicU64; 7],
-    refuse_until: [AtomicU64; 7],
+    pause_until: [AtomicU64; 8],
+    refuse_until: [AtomicU64; 8],
     results: [AtomicU64; 6],
 }
 
 static STATE: HookState = HookState {
-    pause_until: [const { AtomicU64::new(0) }; 7],
-    refuse_until: [const { AtomicU64::new(0) }; 7],
+    pause_until: [const { AtomicU64::new(0) }; 8],
+    refuse_until: [const { AtomicU64::new(0) }; 8],
     results: [const { AtomicU64::new(0) }; 6],
 };
 static OBSERVATION: std::sync::OnceLock<Arc<crate::comm_fault_observation::ObservationPage>> =
@@ -164,11 +164,16 @@ pub(crate) fn take_serial_result(class: BusOpClass) -> Option<ScriptedResult> {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "同一测试命令的校验、真实动作和对应观测按种类集中处理，保持各拒绝与完成出口"
+)]
 fn apply_command(
     command: TestCommFaultCommand,
     clock: &dyn RobotClock,
-    worker_stops: &[Arc<AtomicBool>; 7],
+    worker_stops: &[Arc<AtomicBool>; 8],
     external: &crate::event_ingress::ExternalEvents,
+    observation: Option<&crate::comm_fault_observation::ObservationPage>,
 ) -> io::Result<()> {
     if command.kind == HookCommandKind::ArmSample as u8 {
         use crate::comm_fault_trace::{SampleFailure, SampleMode};
@@ -219,7 +224,7 @@ fn apply_command(
             .saturating_add(u64::from(command.duration_ms) * 1_000_000)
     };
     match command.kind {
-        1 | 2 if command.target < 7 => {
+        1 | 2 if command.target < 8 => {
             let slots = if command.kind == 1 {
                 &STATE.pause_until
             } else {
@@ -236,12 +241,19 @@ fn apply_command(
                 | u64::from(command.count);
             STATE.results[usize::from(command.target)].store(word, Ordering::Release);
         }
-        4 if command.target < 7
+        4 if command.target < 8
             && command.duration_ms == 0
             && command.count == 0
             && command.error == 0 =>
         {
             worker_stops[usize::from(command.target)].store(true, Ordering::Release);
+            if let Some(page) = observation {
+                // 只记录本次已实际提交的停止请求，不代表线程已退出。
+                page.merge_bits(
+                    crate::comm_fault_observation::ObservationField::StopBitmap,
+                    1 << command.target,
+                );
+            }
         }
         6 if command.target == 0
             && command.duration_ms == 0
@@ -272,9 +284,13 @@ fn apply_command(
 pub struct CommFaultControlHandle {
     stop: Arc<AtomicBool>,
     join: JoinHandle<()>,
+    ready: crate::ipc_thread::ReadyReader<io::Error>,
 }
 
 impl CommFaultControlHandle {
+    pub fn poll_ready(&mut self) -> crate::ipc_thread::ReadyState<'_, io::Error> {
+        self.ready.poll()
+    }
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
     }
@@ -292,7 +308,7 @@ pub fn spawn_control_thread(
     robot_id: String,
     clock: Arc<dyn RobotClock>,
     observation: Option<Arc<crate::comm_fault_observation::ObservationPage>>,
-    worker_stops: [Arc<AtomicBool>; 7],
+    worker_stops: [Arc<AtomicBool>; 8],
     external: crate::event_ingress::ExternalEvents,
 ) -> io::Result<CommFaultControlHandle> {
     let expected_initial = std::env::var("ROBOT_TEST_INITIAL_COMMAND_SEQUENCE")
@@ -312,11 +328,12 @@ pub fn spawn_control_thread(
     }
     let stop = Arc::new(AtomicBool::new(false));
     let running_stop = Arc::clone(&stop);
-    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(0);
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
     let join = std::thread::Builder::new()
         .name("s0_comm_fault_control".into())
         .spawn(move || {
             use crate::comm_fault_observation::ObservationField as F;
+            let mut ready = Some(ready_tx);
             let result = (|| -> io::Result<()> {
                 let node = NodeBuilder::new()
                     .create::<IxService>()
@@ -337,7 +354,6 @@ pub fn spawn_control_thread(
                     .subscriber_builder()
                     .create()
                     .map_err(|e| io::Error::other(format!("{e:?}")))?;
-                let mut ready = Some(ready_tx);
                 let mut initial_applied = expected_initial.is_none();
                 loop {
                     while let Some(sample) = subscriber
@@ -345,7 +361,13 @@ pub fn spawn_control_thread(
                         .map_err(|e| io::Error::other(format!("{e:?}")))?
                     {
                         let command = *sample.payload();
-                        apply_command(command, clock.as_ref(), &worker_stops, &external)?;
+                        apply_command(
+                            command,
+                            clock.as_ref(),
+                            &worker_stops,
+                            &external,
+                            observation.as_deref(),
+                        )?;
                         initial_applied |= expected_initial == Some(command.sequence);
                         if let Some(page) = &observation {
                             page.store(F::CommandApplied, command.sequence);
@@ -355,7 +377,7 @@ pub fn spawn_control_thread(
                         if let Some(page) = &observation {
                             page.store(F::HookReady, 1);
                         }
-                        let _ = sender.send(());
+                        let _ = sender.try_send(Ok(()));
                     }
                     if running_stop.load(Ordering::Acquire) {
                         break;
@@ -366,12 +388,16 @@ pub fn spawn_control_thread(
             })();
             if let Err(error) = result {
                 tracing::error!(?error, "通信故障测试控制器退出");
+                if let Some(sender) = ready.take() {
+                    let _ = sender.try_send(Err(error));
+                }
             }
         })?;
-    ready_rx
-        .recv()
-        .map_err(|_| io::Error::other("测试控制器启动失败"))?;
-    Ok(CommFaultControlHandle { stop, join })
+    Ok(CommFaultControlHandle {
+        stop,
+        join,
+        ready: crate::ipc_thread::ReadyReader::new(ready_rx),
+    })
 }
 
 /// 在真实阶段到达后冻结当前线程，保留原监督器与退出路径。
@@ -396,4 +422,122 @@ pub fn before_spawn(worker: &str) -> io::Result<()> {
         return Err(io::Error::other("测试注入 worker spawn 失败"));
     }
     Ok(())
+}
+
+/// 只在真实 `FileStep` 公告之后暂停；严格一次匹配，不刷新监督期限。
+pub struct WriterStepPause {
+    stage: Option<crate::clear_estop_transaction::ClearTxnStage>,
+    duration_ns: u64,
+    clock: Arc<dyn RobotClock>,
+}
+impl WriterStepPause {
+    /// 未配置时没有暂停；配置非法沿原启动拥有出口返回。
+    pub fn from_env(clock: Arc<dyn RobotClock>) -> io::Result<Self> {
+        match std::env::var("ROBOT_TEST_WRITER_PAUSE") {
+            Err(std::env::VarError::NotPresent) => Ok(Self {
+                stage: None,
+                duration_ns: 0,
+                clock,
+            }),
+            Err(error) => Err(io::Error::new(io::ErrorKind::InvalidInput, error)),
+            Ok(raw) => Self::parse(&raw, clock),
+        }
+    }
+    fn parse(raw: &str, clock: Arc<dyn RobotClock>) -> io::Result<Self> {
+        use crate::clear_estop_transaction::ClearTxnStage as S;
+        let invalid = || {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "ROBOT_TEST_WRITER_PAUSE 要求真实阶段名:非零 u32 毫秒",
+            )
+        };
+        let (stage, millis) = raw.split_once(':').ok_or_else(invalid)?;
+        let stage = match stage {
+            "OpenStore" => S::OpenStore,
+            "ValidateCredential" => S::ValidateCredential,
+            "ReadMarker" => S::ReadMarker,
+            "ValidateMarker" => S::ValidateMarker,
+            "CreateMarker" => S::CreateMarker,
+            "SampleMarkerIdentity" => S::SampleMarkerIdentity,
+            "WriteMarker" => S::WriteMarker,
+            "SyncMarkerFile" => S::SyncMarkerFile,
+            "SyncMarkerDirectory" => S::SyncMarkerDirectory,
+            "CreateBackup" => S::CreateBackup,
+            "WriteBackup" => S::WriteBackup,
+            "SyncBackupFile" => S::SyncBackupFile,
+            "RenameBackup" => S::RenameBackup,
+            "SyncBackupDirectory" => S::SyncBackupDirectory,
+            "CreatePrimary" => S::CreatePrimary,
+            "WritePrimary" => S::WritePrimary,
+            "SyncPrimaryFile" => S::SyncPrimaryFile,
+            "RenamePrimary" => S::RenamePrimary,
+            "SyncPrimaryDirectory" => S::SyncPrimaryDirectory,
+            "RemoveMarker" => S::RemoveMarker,
+            "SyncRemovalDirectory" => S::SyncRemovalDirectory,
+            "LoadLatch" => S::LoadLatch,
+            "InspectPair" => S::InspectPair,
+            _ => return Err(invalid()),
+        };
+        if millis.is_empty() || !millis.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(invalid());
+        }
+        let millis = millis
+            .parse::<std::num::NonZeroU32>()
+            .map_err(|_| invalid())?;
+        Ok(Self {
+            stage: Some(stage),
+            duration_ns: u64::from(millis.get()) * 1_000_000,
+            clock,
+        })
+    }
+}
+impl crate::latch_writer::WriterHook for WriterStepPause {
+    fn before_step(&mut self, stage: crate::clear_estop_transaction::ClearTxnStage) {
+        if self.stage != Some(stage) {
+            return;
+        }
+        self.stage = None;
+        let end = self.clock.now().0.saturating_add(self.duration_ns);
+        eprintln!(
+            "comm_fault_hook writer_pause_stage={stage:?} duration_ns={}",
+            self.duration_ns
+        );
+        loop {
+            let remaining = end.saturating_sub(self.clock.now().0);
+            if remaining == 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_nanos(remaining.min(5_000_000)));
+        }
+    }
+}
+
+#[cfg(test)]
+mod writer_pause_tests {
+    use super::*;
+    #[test]
+    fn writer_pause_accepts_only_exact_stage_and_nonzero_u32_millis() {
+        let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::MockClock::new(
+            robot_core::time::MonoRawNs(0),
+        ));
+        for raw in [
+            "CreateMarker:1",
+            "InspectPair:4294967295",
+            "SampleMarkerIdentity:002",
+        ] {
+            assert!(WriterStepPause::parse(raw, clock.clone()).is_ok(), "{raw}");
+        }
+        for raw in [
+            "create_marker:1",
+            "CreateMarker:0",
+            "CreateMarker:4294967296",
+            "CreateMarker:+1",
+            "CreateMarker:1:2",
+            "CreateMarker: 1",
+            ":1",
+            "Open:1",
+        ] {
+            assert!(WriterStepPause::parse(raw, clock.clone()).is_err(), "{raw}");
+        }
+    }
 }

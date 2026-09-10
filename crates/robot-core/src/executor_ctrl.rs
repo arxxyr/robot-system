@@ -6,7 +6,7 @@
 //!
 //! `ipc_thread` 持 `Box<dyn ExecutorCtrlClient>`，在 state_machine transition
 //! 时调 5 个方法（set_policy / safety_stop / request_normal /
-//! poll_last_normal_resp / clear_safety_latch）；具体实现两份：
+//! poll_last_normal_resp / safety_state）；具体实现两份：
 //!
 //! - `HardRtCtrlClient`（M5，`robot-s0::rt_thread`）：单 packed `AtomicU64` slot
 //!   + `RtSafeCtrl` 路径，rt_thread 主循环零 alloc / 零 Arc refcount。
@@ -198,6 +198,8 @@ pub enum AdapterResp {
 /// **不**来自 `AdapterErr::SafetyLatched`。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdapterErr {
+    /// A2 拒绝原请求的执行权限；未声明发生通信故障。
+    AuthorityRevoked,
     /// 本地 pending 超时；不构成接收失步。
     AbortedByTimeout,
     /// 可区分通信原因的错误码。
@@ -205,7 +207,7 @@ pub enum AdapterErr {
     /// safety 已 latch，拒绝执行 Enable(true) / 其它 normal action。
     ///
     /// → 映射到 `FaultCode::AdapterErr`（v9 finding #3 修订）。这是**正常保护**：
-    /// state_machine 应先 `Event::ClearEStop` → `clear_safety_latch()` 再排
+    /// state_machine 应先走真实 Clear 协调器提交与退休，再排
     /// `Enable(true)`。如果在未清 latch 时收到 Enable 请求 = state_machine
     /// 编排错，需要排查；但**不**等同于"安全停止失败"。
     SafetyLatched,
@@ -292,6 +294,7 @@ impl AdapterErr {
             4 => Self::PreemptedByEmergency,
             5 => Self::SafetyLatched,
             6 => Self::AbortedByTimeout,
+            7 => Self::AuthorityRevoked,
             0x40..=0x7f => Self::Comm(crate::serial_services::CommErrorKind::from_u8(v & 0x3f)),
             _ => Self::Other,
         }
@@ -307,6 +310,7 @@ impl AdapterErr {
             Self::PreemptedByEmergency => 4,
             Self::SafetyLatched => 5,
             Self::AbortedByTimeout => 6,
+            Self::AuthorityRevoked => 7,
             Self::Comm(kind) => 0x40 | kind.to_u8(),
         }
     }
@@ -433,8 +437,7 @@ pub type TorqueEnableMask = [bool; MAX_JOINTS];
 ///    `poll_last_normal_resp` / `OutputSafetyProbe` 反映。
 /// 2. `request_normal` 的 `Busy` **不**触发 retry 自动化；由 ipc_tick 自身的
 ///    重试策略 + 1s 总超时（v9 §0.5 A2）。
-/// 3. `clear_safety_latch` 必须**同步可见**（atomic store）—— 不允许走
-///    channel 异步动作（v9 §0 #2 修正）。
+/// 3. 安全权限只来自同一 ControlAuthority；本 trait 不提供无凭证解除 latch 的入口。
 pub trait ExecutorCtrlClient: Send + Sync {
     /// SerialRT 请求在事务边界退场；HardRT 保持既有行为。
     fn abort_pending_normal(&self, _target: crate::serial_services::NormalAbortTarget) {}
@@ -458,22 +461,7 @@ pub trait ExecutorCtrlClient: Send + Sync {
     /// 旧结果，调用方应保证 `seq` 来源于最近一次 Submitted。
     fn poll_last_normal_resp(&self, seq: u64) -> Option<AdapterResp>;
 
-    /// 清除 safety latch（由 `Event::ClearEStop` transition 调用）。
-    ///
-    /// **同步语义**：本方法返回后，下一次 `request_normal(Enable(true))` 必须
-    /// 不再被 latch 拒。HardRT / SerialRT 实现都是 `safety_latched.store(false,
-    /// Release)`（v9 §0 #2 修正）。
-    fn clear_safety_latch(&self);
-
-    /// 读当前 [`OutputSafetyState`]（rt_thread / serial_io_thread 写入端）。
-    ///
-    /// **task-30 v9 / SerialRT E2E #4 守门**：`ipc_tick` 在 `Event::ClearEStop`
-    /// transition 调 [`Self::clear_safety_latch`] **之前**用本方法检查
-    /// `OutputSafetyState == TorqueOffConfirmed`。否则 SerialRT 端可能还有未
-    /// 消费的 `emergency_action`，下一 tick 兜底 `safety_latched.store(true)`
-    /// 会**覆盖** `clear_safety_latch` 的清除（race window）。
-    ///
-    /// 这是只读的 atomic load，无副作用。
+    /// 只读同一权限实例中由真实安全观测提交的状态；不产生解除权限。
     fn safety_state(&self) -> OutputSafetyState;
 }
 

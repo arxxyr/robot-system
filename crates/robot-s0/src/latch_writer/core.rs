@@ -777,7 +777,19 @@ pub fn run_writer(
             };
         }
         let mut env = StepEnv { clock, stop, hook };
-        match core.service_obligation(&mut env) {
+        // 先捕获刷新请求，再作本轮唯一义务尝试；失败退避不能饿死关闭结果。
+        let flushing = shared.flush_pending();
+        let serviced = core.service_obligation(&mut env);
+        if flushing {
+            use super::protocol::FlushOutcome;
+            let outcome = match (shared.obligation.view().is_settled(), core.current()) {
+                (false, _) => FlushOutcome::ObligationUnsettled,
+                (true, Some(_)) => FlushOutcome::TransactionOpen,
+                (true, None) => FlushOutcome::Complete,
+            };
+            shared.finish_flush(outcome);
+        }
+        match serviced {
             Some(ObligationServiced::Failed(error)) => {
                 tracing::warn!(
                     stage = ?error.stage,
@@ -1603,5 +1615,316 @@ mod tests {
             Some(ObligationServiced::Written(Settle::Settled))
         ));
         assert!(f.core.shared().obligation.is_settled());
+    }
+
+    /// 在真实第一次失败退避入口记录结果；不调用 `finish_flush` 或改生产共享字。
+    struct FlushStop {
+        running: AtomicBool,
+        shared: Arc<PersistShared>,
+        attempts: Arc<AtomicU64>,
+        first_backoff: std::sync::OnceLock<(Option<super::super::protocol::FlushOutcome>, u64)>,
+    }
+
+    impl WriterStop for FlushStop {
+        fn running(&self) -> bool {
+            if !self.running.load(Ordering::Acquire) {
+                return false;
+            }
+            if self
+                .shared
+                .progress
+                .load()
+                .is_ok_and(|view| view.phase == Phase::RetryBackoff)
+            {
+                let _ = self.first_backoff.set((
+                    self.shared.flush_outcome(),
+                    self.attempts.load(Ordering::Acquire),
+                ));
+            }
+            true
+        }
+    }
+
+    struct FlushHook {
+        shared: Arc<PersistShared>,
+        attempts: Arc<AtomicU64>,
+        steps: Arc<Mutex<Vec<ClearTxnStage>>>,
+        interrupt_prepared_at: Option<ClearTxnStage>,
+        latch: PathBuf,
+    }
+
+    impl WriterHook for FlushHook {
+        fn before_step(&mut self, stage: ClearTxnStage) {
+            self.steps.lock().unwrap().push(stage);
+            if stage == ClearTxnStage::CreatePrimary {
+                self.attempts.fetch_add(1, Ordering::AcqRel);
+            }
+            if self
+                .interrupt_prepared_at
+                .take_if(|at| *at == stage)
+                .is_some()
+            {
+                // 原双份 0 已写；留下真实 Durable 事务，再让同轮义务写入遭遇真实 rename 错误。
+                flush_obstacle(&self.latch);
+                self.attempts.store(0, Ordering::Release);
+                self.shared.obligation.request(MonoRawNs(BASE.0 + 500));
+                self.shared.request_flush();
+            }
+        }
+    }
+
+    fn flush_obstacle(latch: &Path) {
+        std::fs::remove_file(latch).unwrap();
+        std::fs::create_dir(latch).unwrap();
+        std::fs::write(latch.join("obstacle"), b"real rename failure").unwrap();
+    }
+
+    /// Drop 也先停止并有界等真结束、真 join，之后才释放原 Store 锁与目录。
+    struct FlushFixture {
+        handle: Option<WriterHandle>,
+        stop: Arc<FlushStop>,
+        client: crate::latch_writer::PersistClient,
+        shared: Arc<PersistShared>,
+        steps: Arc<Mutex<Vec<ClearTxnStage>>>,
+        latch: PathBuf,
+        _standby: crate::latch_writer::StandbyStore,
+        _lock: crate::latch_lock::LatchTargetLock,
+        _directory: TempDir,
+    }
+
+    impl FlushFixture {
+        fn new(interrupt_prepared_at: Option<ClearTxnStage>) -> Self {
+            let directory = TempDir::new().unwrap();
+            let latch = directory.path().join("estop_latch");
+            std::fs::write(&latch, b"0\n").unwrap();
+            std::fs::write(directory.path().join("estop_latch.bak"), b"0\n").unwrap();
+            let lock = acquire_latch_lock(&latch).unwrap();
+            let (slot, standby) = WriterPairing::new(open(&latch), open(&latch), &lock, BASE)
+                .unwrap()
+                .into_parts();
+            let shared = Arc::clone(slot.shared());
+            let (client, endpoint) = crate::latch_writer::mailbox(Arc::clone(&shared));
+            let attempts = Arc::new(AtomicU64::new(0));
+            let steps = Arc::new(Mutex::new(Vec::new()));
+            let stop = Arc::new(FlushStop {
+                running: AtomicBool::new(true),
+                shared: Arc::clone(&shared),
+                attempts: Arc::clone(&attempts),
+                first_backoff: std::sync::OnceLock::new(),
+            });
+            let hook = FlushHook {
+                shared: Arc::clone(&shared),
+                attempts,
+                steps: Arc::clone(&steps),
+                interrupt_prepared_at,
+                latch: latch.clone(),
+            };
+            let handle = spawn_writer(
+                slot,
+                endpoint,
+                WriterConfig::default(),
+                stop.clone(),
+                Arc::new(TickClock(AtomicU64::new(BASE.0 + 1))),
+                Box::new(hook),
+            )
+            .unwrap();
+            Self {
+                handle: Some(handle),
+                stop,
+                client,
+                shared,
+                steps,
+                latch,
+                _standby: standby,
+                _lock: lock,
+                _directory: directory,
+            }
+        }
+
+        fn wait_until(&self, condition: impl Fn() -> bool) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while !condition() {
+                assert!(
+                    !self.handle.as_ref().unwrap().is_finished(),
+                    "原 writer 提前结束"
+                );
+                assert!(std::time::Instant::now() < deadline, "真实 writer 观测超时");
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+
+        fn command(&mut self, command: PersistCommand) -> PersistCompletion {
+            self.client
+                .try_dispatch(command, MonoRawNs(BASE.0 + 1))
+                .unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            loop {
+                if let Some(done) = self.client.try_complete() {
+                    return done;
+                }
+                assert!(self.client.alive(), "原 writer mailbox 断开");
+                assert!(std::time::Instant::now() < deadline, "真实完成超时");
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+
+        fn remove_obstacle(&self) {
+            std::fs::remove_file(self.latch.join("obstacle")).unwrap();
+            std::fs::remove_dir(&self.latch).unwrap();
+        }
+
+        fn pair(&self) -> (Vec<u8>, Vec<u8>) {
+            (
+                std::fs::read(&self.latch).unwrap(),
+                std::fs::read(self.latch.with_file_name("estop_latch.bak")).unwrap(),
+            )
+        }
+
+        fn join(&mut self) -> thread::Result<WriterExit> {
+            self.stop.running.store(false, Ordering::Release);
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while !self.handle.as_ref().unwrap().is_finished() {
+                if std::time::Instant::now() >= deadline {
+                    std::process::abort();
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+            let (result, _original_joined) = self.handle.take().unwrap().join();
+            result
+        }
+    }
+
+    impl Drop for FlushFixture {
+        fn drop(&mut self) {
+            if self.handle.is_some() {
+                let result = self.join();
+                assert!(
+                    result.is_ok() || std::thread::panicking(),
+                    "writer panic 必须显式验收"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn flush_unsettled_precedes_open_transaction_and_is_published_before_retry() {
+        use super::super::protocol::FlushOutcome;
+        let mut f = FlushFixture::new(Some(ClearTxnStage::SyncPrimaryDirectory));
+        let identity = txn(false);
+        assert!(
+            matches!(f.command(PersistCommand::PrepareClear { txn: identity }),
+            PersistCompletion::PrepareFailed { txn, stage: ClearTxnStage::SyncPrimaryDirectory,
+                phase: StepPhase::Before, token: PrepareTokenKind::Durable } if txn == identity)
+        );
+        f.wait_until(|| f.stop.first_backoff.get().is_some());
+        assert_eq!(
+            f.stop.first_backoff.get(),
+            Some(&(Some(FlushOutcome::ObligationUnsettled), 1)),
+            "首个失败尝试退避前已发布 2，不能等重试或在一轮补第二次写"
+        );
+        assert!(f.shared.obligation.has_pending());
+        assert!(f.latch.with_file_name("estop_latch.clear_pending").exists());
+        f.remove_obstacle();
+        f.wait_until(|| f.shared.obligation.is_settled());
+        assert_eq!(
+            f.shared.flush_outcome(),
+            Some(FlushOutcome::ObligationUnsettled)
+        );
+        assert!(
+            matches!(f.command(PersistCommand::RepairClear { txn: identity, target: RepairTarget::Latched }),
+            PersistCompletion::Repaired { txn, target: RepairTarget::Latched, .. } if txn == identity)
+        );
+        assert!(
+            matches!(f.command(PersistCommand::RemoveMarker { txn: identity, kind: CleanupKind::Repaired(RepairTarget::Latched) }),
+            PersistCompletion::MarkerRemoved { txn, .. } if txn == identity)
+        );
+        f.shared.request_flush();
+        assert_eq!(f.join().unwrap(), WriterExit::Stopped);
+        assert_eq!(
+            f.shared.flush_outcome(),
+            Some(FlushOutcome::ObligationUnsettled)
+        );
+        assert_eq!(f.pair(), (b"1\n".to_vec(), b"1\n".to_vec()));
+        assert!(!f.latch.with_file_name("estop_latch.clear_pending").exists());
+    }
+
+    #[test]
+    fn flush_open_transaction_preserves_marker_and_first_result_after_cleanup() {
+        use super::super::protocol::FlushOutcome;
+        let mut f = FlushFixture::new(None);
+        let identity = txn(false);
+        assert!(
+            matches!(f.command(PersistCommand::PrepareClear { txn: identity }), PersistCompletion::Prepared { txn, .. } if txn == identity)
+        );
+        f.shared.request_flush();
+        f.wait_until(|| f.shared.flush_outcome().is_some());
+        assert_eq!(
+            f.shared.flush_outcome(),
+            Some(FlushOutcome::TransactionOpen)
+        );
+        assert!(f.shared.obligation.is_settled());
+        assert!(f.latch.with_file_name("estop_latch.clear_pending").exists());
+        assert_eq!(f.pair(), (b"0\n".to_vec(), b"0\n".to_vec()));
+        f.shared.request_flush();
+        assert!(
+            matches!(f.command(PersistCommand::RemoveMarker { txn: identity, kind: CleanupKind::Finalize }),
+            PersistCompletion::MarkerRemoved { txn, .. } if txn == identity)
+        );
+        assert!(!f.latch.with_file_name("estop_latch.clear_pending").exists());
+        // 新命令的实际完成保证已跨过清理后的下一轮；重复请求不能把首个 3 改成 1。
+        let next = ClearTxnIdentity {
+            txn_id: identity.txn_id + 1,
+            ..identity
+        };
+        assert!(
+            matches!(f.command(PersistCommand::PrepareClear { txn: next }), PersistCompletion::Prepared { txn, .. } if txn == next)
+        );
+        assert_eq!(
+            f.shared.flush_outcome(),
+            Some(FlushOutcome::TransactionOpen)
+        );
+        assert!(
+            matches!(f.command(PersistCommand::RemoveMarker { txn: next, kind: CleanupKind::Finalize }),
+            PersistCompletion::MarkerRemoved { txn, .. } if txn == next)
+        );
+        assert_eq!(f.join().unwrap(), WriterExit::Stopped);
+        assert_eq!(
+            f.shared.flush_outcome(),
+            Some(FlushOutcome::TransactionOpen)
+        );
+    }
+
+    #[test]
+    fn flush_complete_keeps_zero_pair_and_does_not_hide_late_pending() {
+        use super::super::protocol::FlushOutcome;
+        let mut f = FlushFixture::new(None);
+        f.shared.request_flush();
+        f.wait_until(|| f.shared.flush_outcome().is_some());
+        assert_eq!(f.shared.flush_outcome(), Some(FlushOutcome::Complete));
+        assert!(
+            f.steps.lock().unwrap().is_empty(),
+            "无义务不能无条件补写 1/1"
+        );
+        assert_eq!(f.pair(), (b"0\n".to_vec(), b"0\n".to_vec()));
+        flush_obstacle(&f.latch);
+        assert_eq!(
+            f.shared.obligation.request(MonoRawNs(BASE.0 + 500)),
+            RequestOutcome::Registered
+        );
+        f.shared.request_flush();
+        f.wait_until(|| f.stop.first_backoff.get().is_some());
+        assert_eq!(
+            f.stop.first_backoff.get(),
+            Some(&(Some(FlushOutcome::Complete), 1))
+        );
+        assert!(
+            !f.shared.obligation.is_settled(),
+            "早期 flush=1 不能代替最终义务事实"
+        );
+        f.remove_obstacle();
+        f.wait_until(|| f.shared.obligation.is_settled());
+        assert_eq!(f.join().unwrap(), WriterExit::Stopped);
+        assert_eq!(f.shared.flush_outcome(), Some(FlushOutcome::Complete));
+        assert_eq!(f.pair(), (b"1\n".to_vec(), b"1\n".to_vec()));
     }
 }

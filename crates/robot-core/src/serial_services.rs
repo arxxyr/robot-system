@@ -54,6 +54,8 @@ impl CommErrorKind {
 pub enum AbortReason {
     Emergency,
     Timeout,
+    /// 同一权限域拒绝本次普通 IO；不冒充通信故障。
+    Revoked,
 }
 
 /// 区分已有执行序号和尚未提交的请求，绝不以零序号冒充请求。
@@ -119,8 +121,6 @@ impl BusOpClass {
 /// 在构造时共享给 adapter 的服务；事务执行权与进度检查点不能互相替代。
 pub trait PreemptProbe: Send + Sync {
     fn should_abort(&self, class: BusOpClass) -> Option<AbortReason>;
-    fn begin_transaction(&self, class: BusOpClass) -> Result<(), AbortReason>;
-    fn finish_transaction(&self, class: BusOpClass);
     fn checkpoint(&self);
     fn sleep_or_abort(&self, class: BusOpClass, dur: DurationNs) -> Result<(), AbortReason>;
     fn operation_class(&self) -> BusOpClass;
@@ -236,24 +236,54 @@ impl BusLease {
         self,
         authority: &ControlAuthority,
     ) -> Result<Option<NormalIoReleased>, Refused<Self>> {
+        self.release_impl(authority).0
+    }
+
+    /// 测试观测沿同一次真实 release，拒绝仍完整返回原 wrapper。
+    #[cfg(any(test, feature = "test-comm-fault-hook"))]
+    pub fn release_observed(
+        self,
+        authority: &ControlAuthority,
+    ) -> crate::control_authority::CasObserved<Result<Option<NormalIoReleased>, Refused<Self>>>
+    {
+        let (outcome, failed_cas) = self.release_impl(authority);
+        crate::control_authority::CasObserved {
+            outcome,
+            failed_cas,
+        }
+    }
+
+    fn release_impl(
+        self,
+        authority: &ControlAuthority,
+    ) -> (Result<Option<NormalIoReleased>, Refused<Self>>, Option<u64>) {
         let Self { class, lease } = self;
         match lease {
-            None => Ok(None),
-            Some(lease) => authority
-                .release_normal_io(lease)
-                .map(Some)
-                .map_err(|refused| Refused {
-                    token: Self {
-                        class,
-                        lease: Some(refused.token),
-                    },
-                    reason: refused.reason,
-                }),
+            None => (Ok(None), Some(0)),
+            Some(lease) => {
+                #[cfg(any(test, feature = "test-comm-fault-hook"))]
+                let (outcome, failed_cas) = {
+                    let observed = authority.release_normal_io_observed(lease);
+                    (observed.outcome, observed.failed_cas)
+                };
+                #[cfg(not(any(test, feature = "test-comm-fault-hook")))]
+                let (outcome, failed_cas) = (authority.release_normal_io(lease), None);
+                (
+                    outcome.map(Some).map_err(|refused| Refused {
+                        token: Self {
+                            class,
+                            lease: Some(refused.token),
+                        },
+                        reason: refused.reason,
+                    }),
+                    failed_cas,
+                )
+            }
         }
     }
 }
 
-/// 后续总装迁移的接口声明；本包不安装生产实现。
+/// 事务持有真实权限租约；进度检查不能代替取得或归还租约。
 pub trait LeasedPreemptProbe: PreemptProbe {
     fn begin_leased(&self, class: BusOpClass) -> Result<BusLease, AbortReason>;
     fn finish_leased(&self, lease: BusLease);

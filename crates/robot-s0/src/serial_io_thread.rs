@@ -1,4 +1,4 @@
-//! 串口唯一 worker：七线程同源启动门后运行统一收敛与正常执行 tick。
+//! 串口唯一 worker：八线程同源启动门后运行统一收敛与正常执行 tick。
 //! 所有设备 IO、事务抢占和停止确认均由 serial 独占；日志交给诊断环消费者。
 
 #![allow(clippy::doc_markdown)]
@@ -104,7 +104,7 @@ pub struct SerialIoThreadMetrics {
 
 /// `serial_io_thread` 启动后返回的控制 handle。
 pub struct SerialIoThreadHandle {
-    join: JoinHandle<()>,
+    join: JoinHandle<crate::hard_rt_ctrl::ExecutorExit>,
     stop: Arc<AtomicBool>,
     metrics: Arc<SerialIoThreadMetrics>,
 }
@@ -129,7 +129,7 @@ impl SerialIoThreadHandle {
     /// # Errors
     ///
     /// `JoinHandle::join` 的 `Err`（线程 panic）。
-    pub fn join(self) -> thread::Result<()> {
+    pub fn join(self) -> thread::Result<crate::hard_rt_ctrl::ExecutorExit> {
         self.join.join()
     }
 }
@@ -153,7 +153,8 @@ impl SerialIoThreadHandle {
 ///
 /// # Errors
 ///
-/// `std::io::Error` 当 `adapter.connect()` 失败 / `thread::spawn` 失败。
+/// `std::io::Error` 当 adapter/控制块类型不匹配或真实线程创建失败。
+/// 设备 Connect 由启动门后的串口收敛机执行，结果通过原启动进度发布。
 #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 pub fn spawn_serial_io_thread<A>(
     cfg: SerialIoThreadConfig,
@@ -197,14 +198,14 @@ where
     let join = thread::Builder::new()
         .name("s0_serial_io_thread".into())
         .spawn(move || {
-            // 在全部七个 worker 的 spawn 提交之前，任何 adapter 方法都不得调用。
+            // 在全部八个 worker（含唯一 writer）的 spawn 提交之前，任何 adapter 方法都不得调用。
             while !boot.spawned_reached.load(Ordering::Acquire) {
                 if !crate::worker_stop::worker_running(
                     crate::worker_stop::WorkerKind::Executor,
                     clock.as_ref(),
                     &running_stop,
                 ) {
-                    return;
+                    return crate::hard_rt_ctrl::ExecutorExit::from_pending(None);
                 }
                 thread::sleep(std::time::Duration::from_millis(1));
             }
@@ -224,7 +225,7 @@ where
                 running_stop,
                 running_metrics,
                 boot,
-            );
+            )
         })?;
     Ok(SerialIoThreadHandle {
         join,
@@ -263,7 +264,7 @@ fn apply_serial_rt_setup(
     okay || !cfg.strict_rt
 }
 
-/// 七 worker 同源启动门打开后的唯一串口运行入口。
+/// 八 worker 同源启动门打开后的唯一串口运行入口。
 /// 本函数不执行调用方 connect，首个设备动作由 SerialTick 的 StopIssue 决定。
 #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
@@ -280,9 +281,9 @@ pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
     stop: Arc<AtomicBool>,
     metrics: Arc<SerialIoThreadMetrics>,
     boot: Arc<crate::boot_supervisor::BootShared>,
-) {
+) -> crate::hard_rt_ctrl::ExecutorExit {
     if !apply_serial_rt_setup(&cfg, diag.as_ref(), clock.as_ref()) {
-        return;
+        return crate::hard_rt_ctrl::ExecutorExit::from_pending(None);
     }
     let mut tick = SerialTick::new(authorized, adapter.joint_count(), spawned_at);
     let context = SerialTickContext {
@@ -342,6 +343,7 @@ pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
             break;
         }
     }
+    tick.into_exit()
 }
 
 // ============================================================================
@@ -352,6 +354,14 @@ pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
 mod tests {
     use super::*;
     use robot_adapter_mock::MockHardRTAdapter;
+
+    fn join_clean(handle: SerialIoThreadHandle) {
+        let exit = handle.join().unwrap();
+        if exit.has_pending_enable() {
+            // 旧健康场景不得静默丢失 Execution；异常保原件直到测试进程退出。
+            std::process::abort();
+        }
+    }
     use robot_core::adapter::{
         AdapterInfo, ControlMode, JointCommandView, JointLimits, JointStateBuf, ManipulatorAdapter,
     };
@@ -390,6 +400,9 @@ mod tests {
         /// 置位后 `read_state` **失败前故意部分写坏 out**（段(7) round 1 P0
         /// 回归锁用；trait 未禁止该行为，调用方必须防住）。
         read_fail: Arc<std::sync::atomic::AtomicBool>,
+        after_read: Option<Box<dyn FnOnce() + Send>>,
+        after_enable: Option<Box<dyn FnOnce() + Send>>,
+        enable_true_calls: Arc<std::sync::atomic::AtomicU64>,
     }
 
     /// `read_fail` 模式下写入 `positions[0]` 的哨兵值。
@@ -409,6 +422,9 @@ mod tests {
                 inner,
                 probe_mode: Arc::new(std::sync::atomic::AtomicU8::new(ProbeMode::Normal as u8)),
                 read_fail: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                after_read: None,
+                after_enable: None,
+                enable_true_calls: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             }
         }
 
@@ -436,7 +452,6 @@ mod tests {
             }
         }
         fn connect(&mut self) -> Result<(), RobotError> {
-            self.inner.reset_safety_latch_for_test();
             self.inner.connect()
         }
         fn disconnect(&mut self) -> Result<(), RobotError> {
@@ -449,7 +464,11 @@ mod tests {
                 out.stamp_ns = 0;
                 return Err(RobotError::HardwareFault("simulated serial read failure"));
             }
-            self.inner.read_state(out)
+            self.inner.read_state(out)?;
+            if let Some(hook) = self.after_read.take() {
+                hook();
+            }
+            Ok(())
         }
         fn write_command(&mut self, cmd: &JointCommandView) -> Result<(), RobotError> {
             self.inner.write_command(cmd)
@@ -458,7 +477,14 @@ mod tests {
             self.inner.set_mode(mode)
         }
         fn enable(&mut self, on: bool) -> Result<(), RobotError> {
-            self.inner.enable(on)
+            if on {
+                self.enable_true_calls.fetch_add(1, Ordering::Relaxed);
+            }
+            self.inner.enable(on)?;
+            if let Some(hook) = self.after_enable.take() {
+                hook();
+            }
+            Ok(())
         }
         fn safety_stop(&mut self) -> Result<(), RobotError> {
             self.inner.safety_stop()
@@ -504,6 +530,175 @@ mod tests {
         assert_serial_rt::<SerialMockWrapper>();
     }
 
+    /// 父进程监督 stop / 真版本耗尽；孩子保原 Exit/owner/lease 到进程退出。
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "同一父进程监督停止与版本耗尽两条真实线程出口，原残件保留到子进程退出"
+    )]
+    fn stopped_or_snapshot_failed_worker_returns_its_original_pending_execution() {
+        use robot_core::executor_ctrl::ExecutorCtrlClient;
+
+        const CHILD: &str = "ROBOT_W3_EXECUTOR_EXIT_CASE";
+        if let Some(case) = std::env::var_os(CHILD) {
+            let owner_thread = std::thread::current().id();
+            std::panic::set_hook(Box::new(move |info| {
+                eprintln!("执行器原件验收失败：{info}");
+                if std::thread::current().id() == owner_thread {
+                    std::process::exit(101);
+                }
+            }));
+            let snapshot_failure = case == "snapshot";
+            let ctrl = Arc::new(SerialIoCtrlInner::new_serial(
+                crate::hard_rt_ctrl::test_authority(true),
+            ));
+            let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::MockClock::default());
+            let stop = Arc::new(AtomicBool::new(false));
+            let owner = Arc::new(std::sync::Mutex::new(None));
+            let lease = Arc::new(std::sync::Mutex::new(None));
+            let seq = Arc::new(AtomicU64::new(0));
+            let mut adapter = SerialMockWrapper::new(MockHardRTAdapter::with_unlimited_limits(2));
+            let (submitted_owner, submitted_seq, submit_ctrl) =
+                (owner.clone(), seq.clone(), ctrl.clone());
+            // 首次周期读发生在真实启动 Stop/Connect/Confirm 完成之后。
+            adapter.after_read = Some(Box::new(move || {
+                use robot_core::executor_ctrl::{
+                    AdapterNormalReq, ExecutorCtrlClient, NormalReqStatus,
+                };
+                let (owner, view) = submit_ctrl.authority().reserve_enable().unwrap();
+                submit_ctrl.start_slot().post(view).unwrap();
+                let client = crate::hard_rt_ctrl::HardRtCtrlClient::new(submit_ctrl.clone());
+                let NormalReqStatus::Submitted { seq } =
+                    client.request_normal(AdapterNormalReq::Enable(true))
+                else {
+                    panic!("真实 Enable 通道未接纳原 owner");
+                };
+                *submitted_owner.lock().unwrap() = Some(owner);
+                submitted_seq.store(seq, Ordering::Release);
+            }));
+            let (held_lease, active_ctrl, stopped) = (lease.clone(), ctrl.clone(), stop.clone());
+            adapter.after_enable = Some(Box::new(move || {
+                let view = active_ctrl.execution_slot().load().unwrap();
+                let original = active_ctrl
+                    .authority()
+                    .acquire_normal_io(robot_core::control_authority::NormalIoIntent::EnableStep(
+                        view,
+                    ))
+                    .unwrap();
+                *held_lease.lock().unwrap() = Some(original);
+                if !snapshot_failure {
+                    stopped.store(true, Ordering::Release);
+                }
+            }));
+            let (_commands, reader) = LatestCommandSlot::new(JointCommandBuf {
+                joint_count: 2,
+                ..JointCommandBuf::default()
+            });
+            // Stop / Connect / Confirm 各占一 tick；第 4 tick 的周期读提交 Enable。
+            // 容许这四次真实发布，第 5 tick 执行 Enable 并保留原 Pending 后才耗尽。
+            let version = if snapshot_failure {
+                robot_transport::MAX_PUBLISHED_VERSION - 8
+            } else {
+                0
+            };
+            let (publisher, snapshot) =
+                RtSnapshotPublisher::new_with_version(RtSnapshot::default(), version).unwrap();
+            let boot = Arc::new(crate::boot_supervisor::BootShared::new(clock.now()));
+            boot.spawned_at_ns.store(clock.now().0, Ordering::Relaxed);
+            boot.spawned_reached.store(true, Ordering::Release);
+            let probe = Arc::new(crate::serial_preempt::SerialPreemptProbe::new(
+                clock.clone(),
+                ctrl.clone(),
+            ));
+            let handle = spawn_serial_io_thread(
+                SerialIoThreadConfig::default(),
+                clock,
+                adapter,
+                reader,
+                publisher,
+                ctrl.clone(),
+                probe,
+                Arc::new(crate::diag::SerialDiagRing::new()),
+                true,
+                boot,
+                stop,
+            )
+            .unwrap();
+            assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+                handle.is_finished()
+            }));
+            let metrics = handle.metrics().clone();
+            let exit = handle.join().unwrap();
+            assert!(exit.has_pending_enable());
+            let sequence = seq.load(Ordering::Acquire);
+            assert_ne!(sequence, 0);
+            let client = crate::hard_rt_ctrl::HardRtCtrlClient::new(ctrl.clone());
+            assert_eq!(client.poll_last_normal_resp(sequence), None);
+            let refused = ctrl
+                .authority()
+                .retire_enable(owner.lock().unwrap().take().unwrap())
+                .unwrap_err();
+            assert_eq!(
+                refused.reason,
+                robot_core::control_authority::Refusal::WrongPhase(
+                    robot_core::control_authority::Phase::EnableExecuting
+                )
+            );
+            assert!(ctrl.authority().snapshot().normal_io_active);
+            assert!(lease.lock().unwrap().is_some());
+            assert_eq!(
+                metrics.snapshot_publish_errors.load(Ordering::Relaxed),
+                u64::from(snapshot_failure)
+            );
+            if snapshot_failure {
+                assert_eq!(snapshot.version(), robot_transport::MAX_PUBLISHED_VERSION);
+                assert_eq!(metrics.tick_count.load(Ordering::Relaxed), 5);
+            }
+            eprintln!("W3_EXECUTOR_EXIT_PRESERVED case={}", case.to_string_lossy());
+            // 原 Exit、原 owner 及 lease 全保留，不造额外恢复入口为夹具收尾。
+            std::process::exit(0);
+        }
+        for case in ["stop", "snapshot"] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("exit.log");
+            let log = std::fs::File::create(&path).unwrap();
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "serial_io_thread::tests::stopped_or_snapshot_failed_worker_returns_its_original_pending_execution", "--nocapture"])
+                .env(CHILD, case).stdout(log.try_clone().unwrap()).stderr(log).spawn().unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let status = loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => break status,
+                    Ok(None) if std::time::Instant::now() < deadline => {
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                    result => {
+                        let _ = child.kill();
+                        let reap = std::time::Instant::now() + Duration::from_secs(2);
+                        loop {
+                            if matches!(child.try_wait(), Ok(Some(_))) {
+                                break;
+                            }
+                            if std::time::Instant::now() >= reap {
+                                std::process::abort();
+                            }
+                            std::thread::sleep(Duration::from_millis(2));
+                        }
+                        panic!("执行器验收子进程已 kill/reap：{result:?}");
+                    }
+                }
+            };
+            let raw = std::fs::read_to_string(path).unwrap();
+            assert!(
+                status.success()
+                    && raw.contains(&format!("W3_EXECUTOR_EXIT_PRESERVED case={case}")),
+                "{raw}"
+            );
+            eprintln!("W3_EXECUTOR_EXIT_CHILD_OK case={case}");
+        }
+    }
+
     /// **finding #3 lock**：spawn 入口运行期校验 adapter 自报 SerialRT。
     /// S48 A3b：快照版本耗尽 → 已完成的物理 tick 计数不回滚，失败后不再发布也不
     /// 执行下一 tick，worker 结束且错误计数可观察；reader 保留上一完整快照。
@@ -522,7 +717,9 @@ mod tests {
             tick_period_ns: 1_000_000,
             ..SerialIoThreadConfig::default()
         };
-        let ctrl = Arc::new(SerialIoCtrlInner::new_serial());
+        let ctrl = Arc::new(SerialIoCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(true),
+        ));
         ctrl.policy
             .store(OutputPolicy::Disabled.to_u8(), Ordering::Release);
         let handle =
@@ -532,7 +729,7 @@ mod tests {
             handle.is_finished()
         }));
         let metrics = Arc::clone(handle.metrics());
-        handle.join().unwrap();
+        join_clean(handle);
         assert_eq!(metrics.snapshot_publish_errors.load(Ordering::Relaxed), 1);
         assert_eq!(
             metrics.tick_count.load(Ordering::Relaxed),
@@ -550,7 +747,9 @@ mod tests {
         let (_cmd_writer, cmd_reader) =
             LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
         let (snap_pub, _) = RtSnapshotPublisher::new(RtSnapshot::default());
-        let ctrl = Arc::new(SerialIoCtrlInner::new_serial());
+        let ctrl = Arc::new(SerialIoCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(true),
+        ));
         let res = spawn_test_serial(
             SerialIoThreadConfig::default(),
             clock,
@@ -576,6 +775,7 @@ mod tests {
         snap_rdr: robot_transport::RtSnapshotReader<RtSnapshot>,
         probe_mode: Arc<std::sync::atomic::AtomicU8>,
         read_fail: Arc<std::sync::atomic::AtomicBool>,
+        enable_true_calls: Arc<std::sync::atomic::AtomicU64>,
     }
 
     fn setup(joint_count: u8) -> SerialIoTestKit {
@@ -584,6 +784,7 @@ mod tests {
         let adapter = SerialMockWrapper::new(MockHardRTAdapter::with_unlimited_limits(joint_count));
         let probe_mode = adapter.probe_handle();
         let read_fail = adapter.read_fail_handle();
+        let enable_true_calls = Arc::clone(&adapter.enable_true_calls);
         let (_cmd_writer, cmd_reader) =
             LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
         let (snap_pub, snap_rdr) = RtSnapshotPublisher::new(RtSnapshot::default());
@@ -591,7 +792,9 @@ mod tests {
             tick_period_ns: 1_000_000, // 1 ms
             ..SerialIoThreadConfig::default()
         };
-        let ctrl = Arc::new(SerialIoCtrlInner::new_serial());
+        let ctrl = Arc::new(SerialIoCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(true),
+        ));
         // **finding #2 修复后**：spawn-time **不**调 enable；mock 默认
         // enabled=false，read_torque_enable_mask 全 0 ≡ "torque off"。
         // 测试不依赖 ActiveForward 写命令；仍可手动 set_policy。
@@ -610,6 +813,7 @@ mod tests {
             snap_rdr,
             probe_mode,
             read_fail,
+            enable_true_calls,
         }
     }
 
@@ -621,7 +825,7 @@ mod tests {
         publisher: RtSnapshotPublisher<RtSnapshot>,
         ctrl: Arc<SerialIoCtrlInner>,
     ) -> std::io::Result<SerialIoThreadHandle> {
-        let boot = Arc::new(crate::boot_supervisor::BootShared::default());
+        let boot = Arc::new(crate::boot_supervisor::BootShared::new(clock.now()));
         boot.spawned_at_ns.store(clock.now().0, Ordering::Relaxed);
         boot.spawned_reached.store(true, Ordering::Release);
         let probe = Arc::new(crate::serial_preempt::SerialPreemptProbe::new(
@@ -700,12 +904,12 @@ mod tests {
             >= acknowledged_tick + 10));
         assert_eq!(snap_rdr.load().state.stamp_ns, frozen_b.stamp_ns);
         assert_ne!(
-            kit.ctrl.inhibit.load(Ordering::Acquire) & crate::hard_rt_ctrl::inhibit::ADAPTER_FAULT,
+            kit.ctrl.inhibit_bits() & crate::hard_rt_ctrl::inhibit::ADAPTER_FAULT,
             0
         );
 
         kit.handle.request_stop();
-        kit.handle.join().unwrap();
+        join_clean(kit.handle);
     }
 
     /// 启动 + 跑稳态 + tick_count > 0 + clean shutdown。
@@ -719,7 +923,7 @@ mod tests {
             metrics.tick_count.load(Ordering::Relaxed) > 0
         }));
         kit.handle.request_stop();
-        kit.handle.join().unwrap();
+        join_clean(kit.handle);
     }
 
     /// emergency drain：触发 `safety_stop` → safety_state 升 `StopCommanded`
@@ -750,9 +954,9 @@ mod tests {
             "emergency + confirm 2s 内未升 TorqueOffConfirmed"
         );
         kit.handle.request_stop();
-        kit.handle.join().unwrap();
+        join_clean(kit.handle);
 
-        assert!(kit.ctrl.safety_latched.load(Ordering::Acquire));
+        assert!(kit.ctrl.safety_latched());
         assert_eq!(
             kit.ctrl.safety_state(),
             OutputSafetyState::TorqueOffConfirmed
@@ -766,8 +970,8 @@ mod tests {
         );
     }
 
-    /// 二次 latch check：emergency 之后直接注入 Enable(true) packed slot，
-    /// serial_io_thread step 3 二次 check 拒，写 `Err(SafetyLatched)`。
+    /// 保留旧具名：原真实预约/公告经 EStop 撤销后，执行器必须拒绝迟到请求。
+    /// 拒绝来自同一 authority 的旧 StartView，不能依赖已移除的第二份 latch。
     #[test]
     fn serial_io_thread_secondary_latch_check_rejects_enable_true() {
         use crate::test_util::wait_until;
@@ -775,17 +979,19 @@ mod tests {
 
         let kit = setup(1);
         let metrics = Arc::clone(kit.handle.metrics());
+        let (owner, view) = kit.ctrl.authority().reserve_enable().unwrap();
+        kit.ctrl.start_slot().post(view).unwrap();
+        assert!(!kit.ctrl.start_slot().is_empty());
 
         crate::hard_rt_ctrl::HardRtCtrlClient::new(kit.ctrl.clone()).estop_monotonic();
         assert!(
             wait_until(Duration::from_secs(2), || {
-                kit.ctrl.safety_latched.load(Ordering::Acquire)
-                    && metrics.confirm_off_count.load(Ordering::Relaxed) >= 2
+                kit.ctrl.safety_latched() && metrics.confirm_off_count.load(Ordering::Relaxed) >= 2
             }),
             "emergency 2s 内未 latch"
         );
 
-        // 直接注入 Enable(true) packed slot
+        // 原视图已公告；延迟到真实 EStop/Confirm 后才让原请求到达执行器。
         let raw_seq = 99u64;
         let packed = pack_pending_normal(normal_codes::ENABLE, 1, raw_seq);
         kit.ctrl.pending_normal.store(packed, Ordering::Release);
@@ -797,16 +1003,32 @@ mod tests {
                 let (last_seq, _) = robot_core::executor_ctrl::unpack_completed(last);
                 last_seq == raw_seq
             }),
-            "secondary latch check 2s 内未触发"
+            "真实撤销视图的执行拒绝 2s 内未发布"
         );
+        assert!(kit.ctrl.start_slot().is_empty(), "执行器必须实际消费原视图");
+        let retired = kit.ctrl.authority().retire_enable(owner).unwrap();
+        assert_eq!(
+            retired.retired_from,
+            robot_core::control_authority::Phase::EnableQueued
+        );
+        assert!(retired.superseded);
         kit.handle.request_stop();
-        kit.handle.join().unwrap();
+        join_clean(kit.handle);
 
         let last = kit.ctrl.last_completed.load(Ordering::Acquire);
         let (last_seq, resp) = robot_core::executor_ctrl::unpack_completed(last);
         assert_eq!(last_seq, raw_seq);
-        assert_eq!(resp, AdapterResp::Err(AdapterErr::SafetyLatched));
-        assert!(metrics.latch_rejected_count.load(Ordering::Relaxed) >= 1);
+        assert_eq!(resp, AdapterResp::Err(AdapterErr::AuthorityRevoked));
+        assert_eq!(kit.enable_true_calls.load(Ordering::Relaxed), 0);
+        assert!(kit.ctrl.safety_latched());
+        assert_eq!(
+            kit.ctrl.safety_state(),
+            OutputSafetyState::TorqueOffConfirmed
+        );
+        assert_eq!(
+            kit.ctrl.authority().snapshot().phase,
+            Some(robot_core::control_authority::Phase::Idle)
+        );
     }
 
     /// confirm_torque_off 升 `TorqueOffConfirmed` 一致性：
@@ -829,7 +1051,7 @@ mod tests {
             "emergency + confirm 2s 内未跑完链路"
         );
         kit.handle.request_stop();
-        kit.handle.join().unwrap();
+        join_clean(kit.handle);
         // 状态进入 TorqueOffConfirmed（confirmed），不是停在 StopCommanded
         let s = kit.ctrl.safety_state();
         assert_eq!(
@@ -860,7 +1082,7 @@ mod tests {
             "持续 torque-on 2s 内未升 StopFailed"
         );
         kit.handle.request_stop();
-        kit.handle.join().unwrap();
+        join_clean(kit.handle);
 
         let s = kit.ctrl.safety_state();
         assert_eq!(s, OutputSafetyState::StopFailed);
@@ -891,7 +1113,7 @@ mod tests {
             "DeadlineExceeded 2s 内未升 AdapterUncertain"
         );
         kit.handle.request_stop();
-        kit.handle.join().unwrap();
+        join_clean(kit.handle);
 
         let s = kit.ctrl.safety_state();
         assert_eq!(
@@ -945,6 +1167,6 @@ mod tests {
         );
 
         kit.handle.request_stop();
-        kit.handle.join().unwrap();
+        join_clean(kit.handle);
     }
 }

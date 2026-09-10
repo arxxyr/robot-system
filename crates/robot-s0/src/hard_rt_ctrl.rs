@@ -1,39 +1,4 @@
-//! Task-30 v9 / M5：`HardRtCtrlClient` —— `RtClass::HardRT` 路径的
-//! [`ExecutorCtrlClient`] 实现。
-//!
-//! 对应 `docs/designs/task-30_state_machine_adapter_link.md` §4.2 + v9 §0.5。
-//!
-//! ## 数据布局
-//!
-//! ```text
-//! HardRtCtrlInner {
-//!   policy: AtomicU8,                     // OutputPolicy（rt_thread 读 hot path）
-//!   safety_state: AtomicU8,               // OutputSafetyState（rt_thread 写）
-//!   emergency_action: AtomicU8,           // emergency_codes::*（client 写、rt 读 swap）
-//!   pending_normal: AtomicU64 (8/8/48)    // packed (action, arg, seq)
-//!   seq_counter: AtomicU64,               // 单调 fetch_add；CAS 失败 seq 废弃 → 允许空洞
-//!   last_completed: AtomicU64 (16/48)     // packed (resp_code, seq)
-//!   safety_latched: AtomicBool,           // emergency 后由 rt 置 true，client 端
-//!                                         //   `clear_safety_latch` 同步 store(false)
-//! }
-//! ```
-//!
-//! ## 双重 latch 防护
-//!
-//! emergency 后 `safety_latched=true`。新 `Enable(true)` 请求会被**两层**拒：
-//! 1. **client 端**（本模块 [`HardRtCtrlClient::request_normal`]）：先读 latch
-//!    atomic，若 latched 直接返 `NormalReqStatus::Unsupported(...)`，省一次 RT
-//!    交互。
-//! 2. **rt_thread 端**（[`crate::rt_thread`] 主循环 "二次 latch check"）：
-//!    swap 出 packed slot 后再读一次 latch（防 race：client 检查后 latch 才被
-//!    rt 置位的窗口）。仍 latched 则写 `last_completed = Err(SafetyLatched)`。
-//!
-//! ## RT 安全
-//!
-//! 所有 rt_thread 侧读写都是 atomic load/store/swap/CAS（无 alloc，无 lock，
-//! 无 syscall 除 sleep_until）。client 侧也是纯 atomic（`set_policy` /
-//! `safety_stop` / `request_normal` / `poll_last_normal_resp` /
-//! `clear_safety_latch`），可在 ipc_thread 普通优先级线程调用。
+//! 同一 A2 权限实例的执行器控制与原序号通道；不保存第二安全权限字。
 
 #![allow(clippy::doc_markdown)]
 
@@ -41,10 +6,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
 use crate::state_machine::FaultCode;
+use robot_core::control_authority::{
+    ControlAuthority, ExecutionViewSlot, InhibitReason, SafetyTightening, StartViewSlot,
+};
 use robot_core::executor_ctrl::{
     AdapterErr, AdapterNormalReq, AdapterResp, ExecutorCtrlClient, NormalReqStatus, OutputPolicy,
-    OutputSafetyState, emergency_codes, encode_normal_req, normal_codes, pack_completed,
-    pack_pending_normal, unpack_completed, unpack_pending_normal,
+    OutputSafetyState, emergency_codes, encode_normal_req, normal_codes, pack_pending_normal,
+    unpack_completed, unpack_pending_normal,
 };
 use robot_core::executor_ctrl::{EStopOutcome, SerialEmergencyCtrl};
 use robot_core::serial_services::{NormalAbortTarget, SEQ_MASK};
@@ -55,10 +23,12 @@ pub enum CtrlKind {
     SerialRt,
 }
 
+#[cfg(any(test, feature = "test-comm-fault-hook"))]
 pub(crate) const SERIAL_ESTOP_PENDING: u32 = 1 << 8;
+#[cfg(any(test, feature = "test-comm-fault-hook"))]
 pub(crate) const IPC_ESTOP_NOTICE: u32 = 1 << 9;
+#[cfg(any(test, feature = "test-comm-fault-hook"))]
 pub(crate) const NORMAL_IO_ACTIVE: u32 = 1 << 10;
-const SAFETY_STATE_MASK: u32 = 0xff;
 pub(crate) const PENDING_CANCELLED: u64 = 1 << 63;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -270,6 +240,7 @@ pub(crate) mod inhibit {
     pub(crate) const ADAPTER_FAULT: u8 = 1 << 1;
     pub(crate) const STOP_FAILED: u8 = 1 << 2;
     pub(crate) const CONVERGING: u8 = 1 << 3;
+    #[cfg(test)]
     pub(crate) const FAULT_PENDING: u8 = 1 << 4;
     pub(crate) const BOOT: u8 = 1 << 5;
 }
@@ -283,13 +254,14 @@ pub(crate) mod inhibit {
 #[derive(Debug)]
 pub struct HardRtCtrlInner {
     pub(crate) ctrl_kind: CtrlKind,
-    pub(crate) safety_word: AtomicU32,
+    authority: Arc<ControlAuthority>,
+    start_slot: StartViewSlot,
+    execution_slot: ExecutionViewSlot,
     pub(crate) active_action: AtomicU64,
     pub(crate) completed_effect: AtomicU64,
     pub(crate) abort_request: AtomicU64,
     pub(crate) fault_mailbox: AtomicU64,
     pub(crate) fault_ack: AtomicU32,
-    pub(crate) inhibit: AtomicU8,
     pub(crate) session_clean: AtomicBool,
     pub(crate) rx_trust: AtomicBool,
     pub(crate) comm_level: AtomicU8,
@@ -303,9 +275,6 @@ pub struct HardRtCtrlInner {
     pub(crate) boot_deadline_expired: AtomicBool,
     /// 当前 [`OutputPolicy`]。`set_policy` 写、rt_thread 在 hot-path 读。
     pub policy: AtomicU8,
-    /// 当前 [`OutputSafetyState`]。rt_thread 写（emergency / 正常 enable 切换）；
-    /// `pub_thread` 读到对外 wire `S0SafetyState`。
-    pub safety_state: AtomicU8,
     /// `safety_stop` 路径。`safety_stop()` store(SAFETY_STOP)；rt_thread 主
     /// 循环 swap 出消费 + safety_stop_rt + latch。
     pub emergency_action: AtomicU8,
@@ -321,10 +290,6 @@ pub struct HardRtCtrlInner {
     /// 一条 normal action 后 store(seq + resp_code)；client 端
     /// `poll_last_normal_resp(seq)` 比对 seq 决定是否已完成。
     pub last_completed: AtomicU64,
-    /// emergency 后由 rt_thread 置 true；`Event::ClearEStop` transition 调
-    /// `clear_safety_latch()` atomic store(false)。client 端 + rt_thread 端
-    /// 都读它做"拒 Enable(true)"判定（双重防护）。
-    pub safety_latched: AtomicBool,
 }
 
 /// 主线程启动等待只读视图，不暴露底层控制原子。
@@ -334,15 +299,6 @@ pub struct SerialBootProgress {
     pub outcome: u8,
     pub first_exit: Option<robot_core::time::MonoRawNs>,
     pub fault_acknowledged: bool,
-}
-
-// 生产只使用 old；测试构建额外保存同一次 CAS 的真实失败数与返回时刻。
-struct SafetyCasObservation {
-    old: u32,
-    #[cfg(feature = "test-comm-fault-hook")]
-    retries: u64,
-    #[cfg(feature = "test-comm-fault-hook")]
-    stamp_ns: u64,
 }
 
 impl HardRtCtrlInner {
@@ -377,29 +333,27 @@ impl HardRtCtrlInner {
     /// `last_completed_seq < 1` 表示"从未完成过"）/ last_completed=0 /
     /// safety_latched=false。
     #[must_use]
-    pub fn new() -> Self {
-        Self::with_kind(CtrlKind::HardRt)
+    pub fn new(authority: Arc<ControlAuthority>) -> Self {
+        Self::with_kind(CtrlKind::HardRt, authority)
     }
 
     /// SerialRT 新协议构造入口；生产选择在完整启动接线后切换。
     #[must_use]
-    pub fn new_serial() -> Self {
-        Self::with_kind(CtrlKind::SerialRt)
+    pub fn new_serial(authority: Arc<ControlAuthority>) -> Self {
+        Self::with_kind(CtrlKind::SerialRt, authority)
     }
 
-    fn with_kind(ctrl_kind: CtrlKind) -> Self {
+    fn with_kind(ctrl_kind: CtrlKind, authority: Arc<ControlAuthority>) -> Self {
         Self {
             ctrl_kind,
-            safety_word: AtomicU32::new(0),
+            start_slot: StartViewSlot::new(&authority),
+            execution_slot: ExecutionViewSlot::new(&authority),
+            authority,
             active_action: AtomicU64::new(0),
             completed_effect: AtomicU64::new(0),
             abort_request: AtomicU64::new(0),
             fault_mailbox: AtomicU64::new(0),
             fault_ack: AtomicU32::new(0),
-            inhibit: AtomicU8::new(match ctrl_kind {
-                CtrlKind::HardRt => 0,
-                CtrlKind::SerialRt => inhibit::BOOT,
-            }),
             session_clean: AtomicBool::new(true),
             rx_trust: AtomicBool::new(false),
             comm_level: AtomicU8::new(0),
@@ -411,25 +365,79 @@ impl HardRtCtrlInner {
             boot_exit_reached: AtomicBool::new(false),
             boot_deadline_expired: AtomicBool::new(false),
             policy: AtomicU8::new(OutputPolicy::Disabled.to_u8()),
-            safety_state: AtomicU8::new(OutputSafetyState::TorqueUnknown.to_u8()),
             emergency_action: AtomicU8::new(emergency_codes::NONE),
             pending_normal: AtomicU64::new(0),
             seq_counter: AtomicU64::new(1),
             last_completed: AtomicU64::new(0),
-            safety_latched: AtomicBool::new(false),
         }
     }
 
-    /// 所有观测方共用同一权威来源选择，避免 pub 误读 legacy 字节。
+    /// 初始化期共享同一个对象；tick 仅借用，不 clone Arc。
+    #[must_use]
+    pub fn authority(&self) -> &Arc<ControlAuthority> {
+        &self.authority
+    }
+    #[must_use]
+    pub fn start_slot(&self) -> &StartViewSlot {
+        &self.start_slot
+    }
+    #[must_use]
+    pub fn execution_slot(&self) -> &ExecutionViewSlot {
+        &self.execution_slot
+    }
     #[must_use]
     pub fn safety_state(&self) -> OutputSafetyState {
-        let raw = match self.ctrl_kind {
-            CtrlKind::HardRt => self.safety_state.load(Ordering::Acquire),
-            CtrlKind::SerialRt => {
-                (self.safety_word.load(Ordering::Acquire) & SAFETY_STATE_MASK) as u8
+        self.authority.snapshot().safety
+    }
+    #[must_use]
+    pub fn safety_latched(&self) -> bool {
+        self.authority.snapshot().latch
+    }
+    #[must_use]
+    pub fn inhibit_bits(&self) -> u8 {
+        self.authority.snapshot().inhibits.bits()
+    }
+
+    /// 仅投影给既有诊断；不提供写入或凭此投影取 IO 权限的入口。
+    #[must_use]
+    #[cfg(any(test, feature = "test-comm-fault-hook"))]
+    pub(crate) fn safety_word(&self) -> u32 {
+        let s = self.authority.snapshot();
+        u32::from(s.safety.to_u8())
+            | if s.serial_estop_pending {
+                SERIAL_ESTOP_PENDING
+            } else {
+                0
             }
+            | if s.ipc_estop_notice {
+                IPC_ESTOP_NOTICE
+            } else {
+                0
+            }
+            | if s.normal_io_active {
+                NORMAL_IO_ACTIVE
+            } else {
+                0
+            }
+    }
+
+    pub(crate) fn tighten_inhibits(&self, reasons: u8) {
+        for reason in InhibitReason::ALL {
+            if reasons & reason.bit() != 0 {
+                let _ = self.authority.tighten_inhibit(reason);
+            }
+        }
+    }
+
+    /// 仅接受安全收紧，可信完成必须带真实操作开始的 SafetyObservation。
+    pub(crate) fn tighten_safety(&self, state: OutputSafetyState) {
+        let tightening = match state {
+            OutputSafetyState::StopCommanded => SafetyTightening::StopCommanded,
+            OutputSafetyState::StopFailed => SafetyTightening::StopFailed,
+            OutputSafetyState::AdapterUncertain => SafetyTightening::AdapterUncertain,
+            _ => return,
         };
-        OutputSafetyState::from_u8(raw)
+        let _ = self.authority.tighten_safety(tightening);
     }
 
     fn take_next_seq(&self) -> Option<u64> {
@@ -456,118 +464,16 @@ impl HardRtCtrlInner {
         }
     }
 
-    fn update_safety_word(&self, update: impl Fn(u32) -> u32) -> u32 {
-        self.update_safety_word_with_hook(update, || {})
-    }
-
-    fn update_safety_word_with_hook(
-        &self,
-        update: impl Fn(u32) -> u32,
-        before_cas: impl FnMut(),
-    ) -> u32 {
-        self.update_safety_word_observed(update, before_cas).old
-    }
-
-    fn update_safety_word_observed(
-        &self,
-        update: impl Fn(u32) -> u32,
-        mut before_cas: impl FnMut(),
-    ) -> SafetyCasObservation {
-        #[cfg(feature = "test-comm-fault-hook")]
-        let mut retries = 0_u64;
-        let mut old = self.safety_word.load(Ordering::Acquire);
-        loop {
-            let new = update(old);
-            before_cas();
-            match self
-                .safety_word
-                .compare_exchange(old, new, Ordering::AcqRel, Ordering::Acquire)
-            {
-                Ok(previous) => {
-                    return SafetyCasObservation {
-                        old: previous,
-                        #[cfg(feature = "test-comm-fault-hook")]
-                        retries,
-                        #[cfg(feature = "test-comm-fault-hook")]
-                        stamp_ns: crate::comm_fault_trace::now(),
-                    };
-                }
-                Err(actual) => {
-                    #[cfg(feature = "test-comm-fault-hook")]
-                    {
-                        retries = retries.saturating_add(1);
-                    }
-                    old = actual;
-                }
-            }
-        }
-    }
-
-    pub(crate) fn try_acquire_normal_io(&self) -> bool {
-        #[cfg(feature = "test-comm-fault-hook")]
-        let mut retries = 0_u64;
-        let mut old = self.safety_word.load(Ordering::Acquire);
-        loop {
-            if old & (SERIAL_ESTOP_PENDING | NORMAL_IO_ACTIVE) != 0 {
-                #[cfg(feature = "test-comm-fault-hook")]
-                self.trace_now(
-                    crate::comm_fault_trace::TraceKind::NormalAcquire,
-                    retries,
-                    0,
-                );
-                return false;
-            }
-            match self.safety_word.compare_exchange(
-                old,
-                old | NORMAL_IO_ACTIVE,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    #[cfg(feature = "test-comm-fault-hook")]
-                    self.trace_now(
-                        crate::comm_fault_trace::TraceKind::NormalAcquire,
-                        retries,
-                        1,
-                    );
-                    return true;
-                }
-                Err(actual) => {
-                    #[cfg(feature = "test-comm-fault-hook")]
-                    {
-                        retries = retries.saturating_add(1);
-                    }
-                    old = actual;
-                }
-            }
-        }
-    }
-
-    pub(crate) fn release_normal_io(&self) {
-        let observed = self.update_safety_word_observed(|old| old & !NORMAL_IO_ACTIVE, || {});
-        #[cfg(feature = "test-comm-fault-hook")]
-        self.trace_cas(
-            crate::comm_fault_trace::TraceKind::NormalRelease,
-            &observed,
-            u64::from(observed.old & NORMAL_IO_ACTIVE != 0),
-        );
-        #[cfg(not(feature = "test-comm-fault-hook"))]
-        let _ = observed;
-    }
-
-    /// 正常动作的完成不得覆盖在它执行期间已发布的 EStop 安全态。
-    pub(crate) fn set_serial_normal_safety(&self, state: OutputSafetyState) {
-        self.update_safety_word(|old| match old & SERIAL_ESTOP_PENDING {
-            0 => (old & !SAFETY_STATE_MASK) | u32::from(state.to_u8()),
-            _ => old,
-        });
-    }
-
     fn cancel_pending(&self) {
         self.cancel_pending_impl(|| {});
     }
 
     fn cancel_pending_impl(&self, mut before_cas: impl FnMut()) {
+        // HardRT 的原序号占满高 48 位，不能借用最高位作取消标记。
+        // 原请求由执行器在安全停止后真实拒绝，或由原 seq 的 CAS 撤回。
+        if self.ctrl_kind == CtrlKind::HardRt {
+            return;
+        }
         let mut old = self.pending_normal.load(Ordering::Acquire);
         loop {
             if old == 0 || old & PENDING_CANCELLED != 0 {
@@ -591,32 +497,87 @@ impl HardRtCtrlInner {
         self.cancel_pending_impl(hook);
     }
 
-    pub(crate) fn set_serial_safety(&self, state: OutputSafetyState) {
-        self.update_safety_word(|old| (old & !SAFETY_STATE_MASK) | u32::from(state.to_u8()));
-    }
-
     pub(crate) fn claim_serial_estop(&self) -> bool {
-        let observed = self.update_safety_word_observed(|old| old & !SERIAL_ESTOP_PENDING, || {});
-        let claimed = observed.old & SERIAL_ESTOP_PENDING != 0;
         #[cfg(feature = "test-comm-fault-hook")]
-        self.trace_cas(
-            crate::comm_fault_trace::TraceKind::SerialClaim,
-            &observed,
-            u64::from(claimed),
-        );
-        claimed
+        {
+            let observed = self.authority.claim_serial_estop_observed();
+            self.trace_now(
+                crate::comm_fault_trace::TraceKind::SerialClaim,
+                observed.failed_cas.unwrap_or(u64::MAX),
+                u64::from(observed.outcome),
+            );
+            observed.outcome
+        }
+        #[cfg(not(feature = "test-comm-fault-hook"))]
+        self.authority.claim_serial_estop()
     }
 
     pub(crate) fn claim_ipc_estop(&self) -> bool {
-        let observed = self.update_safety_word_observed(|old| old & !IPC_ESTOP_NOTICE, || {});
-        let claimed = observed.old & IPC_ESTOP_NOTICE != 0;
         #[cfg(feature = "test-comm-fault-hook")]
-        self.trace_cas(
-            crate::comm_fault_trace::TraceKind::IpcClaim,
-            &observed,
-            u64::from(claimed),
-        );
-        claimed
+        {
+            let observed = self.authority.claim_ipc_estop_observed();
+            self.trace_now(
+                crate::comm_fault_trace::TraceKind::IpcClaim,
+                observed.failed_cas.unwrap_or(u64::MAX),
+                u64::from(observed.outcome),
+            );
+            observed.outcome
+        }
+        #[cfg(not(feature = "test-comm-fault-hook"))]
+        self.authority.claim_ipc_estop()
+    }
+
+    /// CAS 仅取消尚未被执行器取走的原 Enable(true)；None 不等执行完成。
+    pub(crate) fn decode_pending(
+        &self,
+        raw: u64,
+    ) -> Result<Option<SerialPending>, InvalidSerialPending> {
+        match self.ctrl_kind {
+            CtrlKind::SerialRt => decode_serial_pending(raw),
+            CtrlKind::HardRt => {
+                if raw == 0 {
+                    return Ok(None);
+                }
+                let (action, arg, seq) = unpack_pending_normal(raw);
+                if seq == 0 || action == normal_codes::NONE {
+                    return Err(InvalidSerialPending(raw));
+                }
+                Ok(Some(SerialPending {
+                    action: ActionRecord {
+                        valid: true,
+                        action,
+                        arg,
+                        seq,
+                    },
+                    cancelled: false,
+                }))
+            }
+        }
+    }
+
+    /// 原通道的序号宽度不变；取消只比较并取回该笔原请求。
+    pub(crate) fn try_cancel_unclaimed(&self, seq: u64) -> CancelPendingResult {
+        let mut raw = self.pending_normal.load(Ordering::Acquire);
+        loop {
+            let pending = match self.decode_pending(raw) {
+                Ok(Some(pending)) => pending,
+                Ok(None) => return CancelPendingResult::NotTaken,
+                Err(e) => return CancelPendingResult::Invalid(e),
+            };
+            if pending.action.seq != seq
+                || pending.action.action != normal_codes::ENABLE
+                || pending.action.arg != 1
+            {
+                return CancelPendingResult::NotTaken;
+            }
+            match self
+                .pending_normal
+                .compare_exchange(raw, 0, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(_) => return CancelPendingResult::Taken(pending.action),
+                Err(actual) => raw = actual,
+            }
+        }
     }
 
     /// 仅清掉自己处理的请求；并发新请求必须保留到下一轮。
@@ -636,6 +597,7 @@ impl HardRtCtrlInner {
     }
 
     /// serial 单写者入口。饱和后仍收紧状态与抑制位，返回 None 供调用方记诊断。
+    #[cfg(test)]
     pub(crate) fn publish_fault(
         &self,
         state: OutputSafetyState,
@@ -644,12 +606,27 @@ impl HardRtCtrlInner {
         detail: u8,
         origin: FaultOrigin,
     ) -> Option<u32> {
-        self.set_serial_safety(state);
-        self.inhibit
-            .fetch_or(reasons | inhibit::FAULT_PENDING, Ordering::Release);
+        self.publish_fault_with_epoch(state, reasons, code, detail, origin)
+            .0
+    }
+
+    pub(crate) fn publish_fault_with_epoch(
+        &self,
+        state: OutputSafetyState,
+        reasons: u8,
+        code: FaultCode,
+        detail: u8,
+        origin: FaultOrigin,
+    ) -> (Option<u32>, robot_core::control_authority::PermissionEpoch) {
+        self.tighten_safety(state);
+        self.tighten_inhibits(reasons);
+        let epoch = self
+            .authority
+            .tighten_inhibit(InhibitReason::FaultPending)
+            .epoch;
         let generation = self.mailbox_snapshot().map_or(0, |mail| mail.generation);
         if generation >= u32::MAX - 1 {
-            return None;
+            return (None, epoch);
         }
         let generation = generation + 1;
         #[cfg(feature = "test-comm-fault-hook")]
@@ -686,7 +663,7 @@ impl HardRtCtrlInner {
             );
             trace::bind_comm_to_generation(generation);
         }
-        Some(generation)
+        (Some(generation), epoch)
     }
 
     #[cfg(feature = "test-comm-fault-hook")]
@@ -705,39 +682,26 @@ impl HardRtCtrlInner {
         crate::comm_fault_trace::emit(kind, stamp, self.trace_context(), a, b);
     }
 
-    #[cfg(feature = "test-comm-fault-hook")]
-    fn trace_cas(
-        &self,
-        kind: crate::comm_fault_trace::TraceKind,
-        observed: &SafetyCasObservation,
-        b: u64,
-    ) {
-        crate::comm_fault_trace::emit(
-            kind,
-            observed.stamp_ns,
-            self.trace_context(),
-            observed.retries,
-            b,
-        );
-    }
-
     /// 只有当前代次的 ACK 才能解开 mailbox 抑制；其它故障原因保持。
-    pub(crate) fn clear_acked_fault_pending(&self) -> bool {
-        let Some(mail) = self.mailbox_snapshot() else {
-            return false;
+    pub(crate) fn clear_acked_fault_pending_at(
+        &self,
+        epoch: robot_core::control_authority::PermissionEpoch,
+    ) -> Option<robot_core::control_authority::PermissionEpoch> {
+        let permit = match self
+            .authority
+            .capture_inhibit_release(InhibitReason::FaultPending)
+        {
+            Ok(permit) if permit.epoch() == epoch => permit,
+            _ => return None,
         };
+        let mail = self.mailbox_snapshot()?;
         if self.fault_ack.load(Ordering::Acquire) != mail.generation {
-            return false;
+            return None;
         }
-        self.inhibit
-            .fetch_and(!inhibit::FAULT_PENDING, Ordering::Release);
-        true
-    }
-}
-
-impl Default for HardRtCtrlInner {
-    fn default() -> Self {
-        Self::new()
+        self.authority
+            .try_release_inhibit(permit)
+            .ok()
+            .map(|released| released.epoch)
     }
 }
 
@@ -766,6 +730,28 @@ impl HardRtCtrlClient {
     pub fn inner(&self) -> &Arc<HardRtCtrlInner> {
         &self.inner
     }
+    #[must_use]
+    pub fn authority(&self) -> &Arc<ControlAuthority> {
+        self.inner.authority()
+    }
+    #[must_use]
+    pub fn start_slot(&self) -> &StartViewSlot {
+        self.inner.start_slot()
+    }
+    #[must_use]
+    pub fn execution_slot(&self) -> &ExecutionViewSlot {
+        self.inner.execution_slot()
+    }
+    pub(crate) fn try_cancel_unclaimed(&self, seq: u64) -> CancelPendingResult {
+        self.inner.try_cancel_unclaimed(seq)
+    }
+    /// 权限已由真实事件收紧后，只请求实际执行器停止，不再次推进 epoch。
+    pub fn request_stop_execution(&self) {
+        self.inner.cancel_pending();
+        self.inner
+            .emergency_action
+            .store(emergency_codes::SAFETY_STOP, Ordering::Release);
+    }
 }
 
 impl ExecutorCtrlClient for HardRtCtrlClient {
@@ -784,60 +770,11 @@ impl ExecutorCtrlClient for HardRtCtrlClient {
     }
 
     fn safety_stop(&self) {
-        // task-30 v9 finding #4 + #1：emergency 必须**在 client 端同步**切断
-        // policy + 置 latch + drain pending（packed slot 里**尚未被 rt_thread
-        // swap 走**的部分），最后置 emergency_action 让 rt 真下硬件。
-        //
-        // **顺序极其关键**（store 顺序决定可观测性窗口）：
-        //
-        // 1) **policy.store(StopTorque)**（finding #1）：第一时间切策略。
-        //    rt_thread step 3 hot-path 读 policy 决定 `do_write`；本 store
-        //    之后的 tick 一定看到 StopTorque → **不**再下 write_command。
-        //    RT 线程 emergency 分支随后再 commit 一次（兜底）。
-        //
-        // 2) **safety_latched.store(true)**：双重 latch 防护层 1。后续 ipc 并发
-        //    `request_normal(Enable(true))` 在 client 端立即被拒。
-        //
-        // 3) **pending_normal.swap(0)**：drain"**尚未被 rt 消费**"的 pending。
-        //    finding #2 收紧注释：本 swap **不能**消除"rt_thread step 2 已经
-        //    把 pending swap 到局部变量"的窗口（rt 已经在执行那条 action）；
-        //    其中 Enable(true) 由 rt 端二次 latch check 拦下，但
-        //    SetMode / Enable(false) / HoldCurrent 仍会跑完。这是合规的：
-        //    那些 action 都是"非破坏性"的，且 emergency_action 下个 tick 会被
-        //    consume 把 motor torque 真断；M7 的"已 swap in-flight action"
-        //    preempt 测试会覆盖此语义边界。
-        //
-        // 4) **emergency_action.store(SAFETY_STOP)**：让 rt_thread tick 头部
-        //    真下硬件 safety_stop 并 commit safety_state。
-        //
-        // 所有 store / swap 都是 atomic，client 端纯 RT-safe；可在 ipc_thread
-        // 普通线程调用。
+        let _ = self.estop_impl(|| {});
         self.inner
             .policy
             .store(OutputPolicy::StopTorque.to_u8(), Ordering::Release);
-        self.inner.safety_latched.store(true, Ordering::Release);
-        // **task-30 v9 / SerialRT E2E #4 修订**：同步重置 safety_state 到
-        // StopCommanded —— spawn 之初设的 TorqueOffConfirmed 在 emergency 触
-        // 发后已不再可信（rt/serial 端尚未消费 emergency_action 真断扭）。
-        // 让 ipc_tick 的 ClearEStop 守门 (== TorqueOffConfirmed) 必须等
-        // SerialRT 端**真正** confirm 完毕后才放行 clear_safety_latch，避免
-        // race window。
-        self.inner
-            .safety_state
-            .store(OutputSafetyState::StopCommanded.to_u8(), Ordering::Release);
-        let pending = self.inner.pending_normal.swap(0, Ordering::AcqRel);
-        if pending != 0 {
-            let (action, _arg, seq) = unpack_pending_normal(pending);
-            if action != normal_codes::NONE {
-                self.inner.last_completed.store(
-                    pack_completed(seq, AdapterResp::Err(AdapterErr::PreemptedByEmergency)),
-                    Ordering::Release,
-                );
-            }
-        }
-        self.inner
-            .emergency_action
-            .store(emergency_codes::SAFETY_STOP, Ordering::Release);
+        self.request_stop_execution();
     }
 
     fn request_normal(&self, req: AdapterNormalReq) -> NormalReqStatus {
@@ -851,10 +788,7 @@ impl ExecutorCtrlClient for HardRtCtrlClient {
         // 2) **client 端 latch 拒**（双重防护第一层）：finding #3 已说 latch 拒
         //    属正常保护；effectful 路径还是会被上层升 fault，但本层先拒能省
         //    一次 RT 交互。
-        if action == normal_codes::ENABLE
-            && arg == 1
-            && self.inner.safety_latched.load(Ordering::Acquire)
-        {
+        if action == normal_codes::ENABLE && arg == 1 && self.inner.safety_latched() {
             return NormalReqStatus::Unsupported(
                 "Enable(true) refused: safety latched (need ClearEStop first)",
             );
@@ -893,80 +827,241 @@ impl ExecutorCtrlClient for HardRtCtrlClient {
         if last_seq == seq { Some(resp) } else { None }
     }
 
-    fn clear_safety_latch(&self) {
-        // **v9 §0 #2**：同步 + 立即 visible。**禁止**走 channel 异步路径，
-        // 必须 atomic store —— 让后续 `request_normal(Enable(true))` 立刻不被
-        // latch 拒。
-        self.inner.safety_latched.store(false, Ordering::Release);
-    }
-
     fn safety_state(&self) -> OutputSafetyState {
         self.inner.safety_state()
     }
 }
 
-impl SerialEmergencyCtrl for HardRtCtrlClient {
-    fn estop_monotonic(&self) -> EStopOutcome {
-        self.estop_monotonic_impl(|| {})
-    }
-}
-
 impl HardRtCtrlClient {
-    #[cfg(test)]
-    pub(crate) fn estop_monotonic_before_cas(&self, hook: impl FnMut()) -> EStopOutcome {
-        self.estop_monotonic_impl(hook)
-    }
-
-    fn estop_monotonic_impl(&self, hook: impl FnMut()) -> EStopOutcome {
-        self.inner.safety_latched.store(true, Ordering::Release);
+    fn estop_impl(&self, after_cancel: impl FnOnce()) -> EStopOutcome {
         self.inner.cancel_pending();
+        after_cancel();
         self.inner.estop_requests.fetch_add(1, Ordering::Relaxed);
-        let observed = self.inner.update_safety_word_observed(
-            |old| {
-                let state = OutputSafetyState::from_u8((old & SAFETY_STATE_MASK) as u8);
-                let next = match state {
-                    OutputSafetyState::TorqueUnknown
-                    | OutputSafetyState::TorqueOn
-                    | OutputSafetyState::TorqueOffConfirmed => OutputSafetyState::StopCommanded,
-                    _ => state,
-                };
-                (old & !SAFETY_STATE_MASK)
-                    | u32::from(next.to_u8())
-                    | SERIAL_ESTOP_PENDING
-                    | IPC_ESTOP_NOTICE
-            },
-            hook,
-        );
-        let old = observed.old;
-        // 成功 CAS 之后只计算返回值，不能再写 policy 或任何权威原子。
-        let outcome = match (
-            old & SERIAL_ESTOP_PENDING != 0,
-            OutputSafetyState::from_u8((old & SAFETY_STATE_MASK) as u8),
-        ) {
-            (true, _) | (false, OutputSafetyState::StopCommanded) => EStopOutcome::Merged,
-            (false, OutputSafetyState::StopFailed | OutputSafetyState::AdapterUncertain) => {
-                EStopOutcome::LatchOnly
-            }
-            _ => EStopOutcome::StopIssued,
-        };
         #[cfg(feature = "test-comm-fault-hook")]
-        self.inner.trace_cas(
+        let observed = self.inner.authority.estop_observed();
+        #[cfg(feature = "test-comm-fault-hook")]
+        let committed = observed.outcome;
+        #[cfg(not(feature = "test-comm-fault-hook"))]
+        let committed = self.inner.authority.estop();
+        #[cfg(feature = "test-comm-fault-hook")]
+        self.inner.trace_now(
             crate::comm_fault_trace::TraceKind::PrimitiveCommitted,
-            &observed,
-            u64::from(old & NORMAL_IO_ACTIVE != 0)
-                | match outcome {
+            observed.failed_cas.unwrap_or(u64::MAX),
+            u64::from(committed.normal_io_active)
+                | match committed.outcome {
                     EStopOutcome::StopIssued => 0,
                     EStopOutcome::Merged => 2,
                     EStopOutcome::LatchOnly => 4,
                 },
         );
-        outcome
+        committed.outcome
+    }
+}
+
+impl SerialEmergencyCtrl for HardRtCtrlClient {
+    fn estop_monotonic(&self) -> EStopOutcome {
+        self.estop_impl(|| {})
+    }
+}
+
+#[cfg(test)]
+impl HardRtCtrlClient {
+    /// 只在取消原 packed 请求与真实 A2 调用之间建立交错；不是 A2 内部 CAS 注入。
+    pub(crate) fn estop_monotonic_after_cancel(&self, hook: impl FnOnce()) -> EStopOutcome {
+        self.estop_impl(hook)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum CancelPendingResult {
+    Taken(ActionRecord),
+    NotTaken,
+    Invalid(InvalidSerialPending),
+}
+
+/// 执行器栈内的唯一收尾责任；真实 finish 拒绝时整个原件留至下一 tick。
+#[derive(Debug)]
+pub(crate) struct EnableFinishPending {
+    pub execution: robot_core::control_authority::EnableExecution,
+    pub action: ActionRecord,
+    pub result: robot_core::control_authority::EnableResult,
+    pub response: AdapterResp,
+    /// 只由实际 adapter 调用路径设置；不声称任何一笔 wire 已成功。
+    pub adapter_called: bool,
+    recovery: RecoveryArranged,
+}
+
+/// 执行器正常退出时携回的原收尾责任；不证明设备已停止或 IPC 已退休。
+/// 不可复制、外造或取走 pending，唯一生产归宿是实际 join 的退出聚合。
+#[must_use = "执行器退出结果必须保留到实际退出聚合，不能丢弃原执行责任"]
+#[derive(Debug)]
+pub struct ExecutorExit {
+    pending_enable: Option<EnableFinishPending>,
+}
+
+impl ExecutorExit {
+    /// 只报告是否仍持有原 Enable；false 本身不是设备安全或关闭完成凭据。
+    #[must_use]
+    pub fn has_pending_enable(&self) -> bool {
+        self.pending_enable.is_some()
+    }
+
+    /// 只用于实际执行循环早退/末尾与 SerialTick 的按值退出出口。
+    pub(crate) fn from_pending(pending_enable: Option<EnableFinishPending>) -> Self {
+        Self { pending_enable }
+    }
+}
+
+#[derive(Debug)]
+enum RecoveryArranged {
+    NotArranged,
+    AfterThisCall,
+}
+
+impl EnableFinishPending {
+    pub(crate) fn new(
+        execution: robot_core::control_authority::EnableExecution,
+        action: ActionRecord,
+        result: robot_core::control_authority::EnableResult,
+        response: AdapterResp,
+        adapter_called: bool,
+    ) -> Self {
+        Self {
+            execution,
+            action,
+            result,
+            response,
+            adapter_called,
+            recovery: RecoveryArranged::NotArranged,
+        }
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "同次恢复事实必须按值消费，不能借用后再次关联另一完成件"
+    )]
+    pub(crate) fn record_serial_recovery(
+        &mut self,
+        arranged: crate::serial_convergence::EnableRecoveryArranged,
+    ) {
+        if self.adapter_called && arranged.covers(self.action.seq) {
+            self.recovery = RecoveryArranged::AfterThisCall;
+        }
+    }
+
+    /// 仅 HardRT 本线程实际 safety_stop_rt 返回的分支调用，不能依据旧安全快照。
+    pub(crate) fn record_hard_rt_stop_returned(&mut self) {
+        if self.adapter_called {
+            self.recovery = RecoveryArranged::AfterThisCall;
+        }
+    }
+}
+
+/// 已消费真实 Execution、尚未发布原 seq 的唯一完成件。
+/// 字段私有且不可复制；先安装停止责任，再一次性发布原响应。
+#[must_use]
+#[derive(Debug)]
+pub(crate) struct EnableFinished {
+    action: ActionRecord,
+    response: AdapterResp,
+    finish: robot_core::control_authority::EnableFinish,
+    adapter_called: bool,
+    recovery: RecoveryArranged,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EnableCompensation {
+    NotRequired,
+    Required,
+}
+
+impl EnableFinished {
+    /// 回调只能安装当前执行器的停止责任；它不是 Off 或退休证明。
+    /// 原 seq 的 Release 发布位于所有收紧和责任安装之后。
+    pub(crate) fn publish_after_compensation(
+        self,
+        ctrl: &HardRtCtrlInner,
+        before_publish: impl FnOnce(AdapterResp, EnableCompensation),
+    ) {
+        let compensation = if self.adapter_called
+            && !self.finish.torque_on_published
+            && matches!(self.recovery, RecoveryArranged::NotArranged)
+        {
+            ctrl.tighten_safety(OutputSafetyState::StopCommanded);
+            EnableCompensation::Required
+        } else {
+            EnableCompensation::NotRequired
+        };
+        before_publish(self.response, compensation);
+        crate::serial_convergence::publish_completion(ctrl, self.action, self.response);
+    }
+}
+
+pub(crate) fn start_enable_execution(
+    ctrl: &HardRtCtrlInner,
+) -> Result<robot_core::control_authority::EnableExecution, AdapterErr> {
+    let view = ctrl.start_slot.take().ok_or(AdapterErr::AuthorityRevoked)?;
+    ctrl.authority
+        .start_enable(view)
+        .map_err(|reason| match reason {
+            robot_core::control_authority::Refusal::SerialEStopPending => {
+                AdapterErr::PreemptedByEmergency
+            }
+            _ => AdapterErr::AuthorityRevoked,
+        })
+}
+
+pub(crate) fn finish_enable_owned(
+    active: EnableFinishPending,
+    ctrl: &HardRtCtrlInner,
+) -> Result<EnableFinished, EnableFinishPending> {
+    let EnableFinishPending {
+        execution,
+        action,
+        result,
+        response,
+        adapter_called,
+        recovery,
+    } = active;
+    match ctrl.authority.finish_enable(execution, result) {
+        Ok(finish) => Ok(EnableFinished {
+            action,
+            response,
+            finish,
+            adapter_called,
+            recovery,
+        }),
+        Err(refused) => Err(EnableFinishPending {
+            execution: refused.token,
+            action,
+            result,
+            response,
+            adapter_called,
+            recovery,
+        }),
     }
 }
 
 // ============================================================================
 // Tests
 // ============================================================================
+
+#[cfg(test)]
+pub(crate) fn test_authority(serial: bool) -> Arc<ControlAuthority> {
+    use robot_core::control_authority::{AuthorityInit, InhibitSet};
+    Arc::new(
+        ControlAuthority::new(AuthorityInit::new(
+            false,
+            OutputSafetyState::TorqueOffConfirmed,
+            if serial {
+                InhibitSet::EMPTY.with(InhibitReason::Boot)
+            } else {
+                InhibitSet::EMPTY
+            },
+        ))
+        .unwrap(),
+    )
+}
 
 #[cfg(test)]
 mod tests {
@@ -1009,7 +1104,7 @@ mod tests {
 
     #[test]
     fn cancel_cas_reloads_after_consumption_and_never_restores_the_old_payload() {
-        let ctrl = HardRtCtrlInner::new_serial();
+        let ctrl = HardRtCtrlInner::new_serial(crate::hard_rt_ctrl::test_authority(true));
         let first = pack_pending_normal(normal_codes::ENABLE, 0, 8);
         let next = pack_pending_normal(normal_codes::SET_MODE, 2, 9);
         ctrl.pending_normal.store(first, Ordering::Release);
@@ -1034,16 +1129,20 @@ mod tests {
 
     #[test]
     fn normal_safety_commit_cannot_overwrite_a_published_estop_state_or_other_bits() {
-        let ctrl = HardRtCtrlInner::new_serial();
-        ctrl.set_serial_normal_safety(OutputSafetyState::TorqueOn);
-        assert_eq!(ctrl.safety_state(), OutputSafetyState::TorqueOn);
-        let published = u32::from(OutputSafetyState::StopCommanded.to_u8())
-            | SERIAL_ESTOP_PENDING
-            | IPC_ESTOP_NOTICE
-            | (1 << 20);
-        ctrl.safety_word.store(published, Ordering::Release);
-        ctrl.set_serial_normal_safety(OutputSafetyState::TorqueOffConfirmed);
-        assert_eq!(ctrl.safety_word.load(Ordering::Acquire), published);
+        use robot_core::control_authority::SafetyOperation;
+        let ctrl = HardRtCtrlInner::new_serial(test_authority(false));
+        let observation = ctrl
+            .authority()
+            .begin_safety_observation(SafetyOperation::Disable);
+        let _ = ctrl.authority().estop();
+        let before = ctrl.authority().snapshot();
+        assert!(
+            ctrl.authority()
+                .complete_safety_observation(observation)
+                .is_err()
+        );
+        assert_eq!(ctrl.authority().snapshot(), before);
+        assert!(before.latch && before.serial_estop_pending && before.ipc_estop_notice);
     }
 
     #[test]
@@ -1082,7 +1181,9 @@ mod tests {
     #[test]
     fn exhausted_serial_sequence_never_increments_or_wraps() {
         for invalid in [0, SEQ_MASK + 1, u64::MAX] {
-            let inner = Arc::new(HardRtCtrlInner::new_serial());
+            let inner = Arc::new(HardRtCtrlInner::new_serial(
+                crate::hard_rt_ctrl::test_authority(true),
+            ));
             let client = HardRtCtrlClient::new(Arc::clone(&inner));
             inner.seq_counter.store(invalid, Ordering::Release);
             for _ in 0..8 {
@@ -1097,22 +1198,28 @@ mod tests {
     }
 
     fn fresh() -> (HardRtCtrlClient, Arc<HardRtCtrlInner>) {
-        let inner = Arc::new(HardRtCtrlInner::new());
+        let inner = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         let client = HardRtCtrlClient::new(Arc::clone(&inner));
         (client, inner)
     }
 
     #[test]
     fn default_state_is_safe() {
-        let (_, inner) = fresh();
+        let inner = HardRtCtrlInner::new(Arc::new(
+            ControlAuthority::new(robot_core::control_authority::AuthorityInit::new(
+                false,
+                OutputSafetyState::TorqueUnknown,
+                robot_core::control_authority::InhibitSet::EMPTY,
+            ))
+            .unwrap(),
+        ));
         assert_eq!(
             OutputPolicy::from_u8(inner.policy.load(Ordering::Acquire)),
             OutputPolicy::Disabled
         );
-        assert_eq!(
-            OutputSafetyState::from_u8(inner.safety_state.load(Ordering::Acquire)),
-            OutputSafetyState::TorqueUnknown
-        );
+        assert_eq!(inner.safety_state(), OutputSafetyState::TorqueUnknown);
         assert_eq!(
             inner.emergency_action.load(Ordering::Acquire),
             emergency_codes::NONE
@@ -1120,7 +1227,7 @@ mod tests {
         assert_eq!(inner.pending_normal.load(Ordering::Acquire), 0);
         assert_eq!(inner.seq_counter.load(Ordering::Acquire), 1);
         assert_eq!(inner.last_completed.load(Ordering::Acquire), 0);
-        assert!(!inner.safety_latched.load(Ordering::Acquire));
+        assert!(!inner.safety_latched());
     }
 
     #[test]
@@ -1212,7 +1319,7 @@ mod tests {
     #[test]
     fn request_normal_latched_rejects_only_enable_true() {
         let (c, i) = fresh();
-        i.safety_latched.store(true, Ordering::Release);
+        let _ = i.authority().estop();
 
         // Enable(true) → Unsupported
         match c.request_normal(AdapterNormalReq::Enable(true)) {
@@ -1254,40 +1361,42 @@ mod tests {
         );
     }
 
-    /// **v9 §0 #2**：`clear_safety_latch` 同步 atomic store。后续 Enable(true)
-    /// 立即不被拒。
+    /// 控制 client 没有清 latch 入口，原 A2 owner 完成真实提交才改变保护位。
     #[test]
-    fn clear_safety_latch_unblocks_enable_true() {
-        let (c, i) = fresh();
-        i.safety_latched.store(true, Ordering::Release);
-        // 先确认 latched 拒
+    fn only_owned_clear_commit_unblocks_enable_submission() {
+        let (client, inner) = fresh();
+        let authority = inner.authority();
+        let _ = authority.estop();
         assert!(matches!(
-            c.request_normal(AdapterNormalReq::Enable(true)),
+            client.request_normal(AdapterNormalReq::Enable(true)),
             NormalReqStatus::Unsupported(_)
         ));
-        // 清 latch
-        c.clear_safety_latch();
-        assert!(!i.safety_latched.load(Ordering::Acquire));
-        // 再 Enable(true) 应 Submitted
-        match c.request_normal(AdapterNormalReq::Enable(true)) {
-            NormalReqStatus::Submitted { .. } => {}
-            other => panic!("Enable(true) should be Submitted after clear, got {other:?}"),
-        }
+        assert!(authority.claim_serial_estop());
+        let observation = authority
+            .begin_safety_observation(robot_core::control_authority::SafetyOperation::ConfirmOff);
+        authority.complete_safety_observation(observation).unwrap();
+        let owner = authority.reserve_clear().unwrap();
+        let finalizing = authority.commit_clear(owner).unwrap();
+        assert!(!inner.safety_latched());
+        let cleanup = authority.authorize_finalize(finalizing).unwrap();
+        authority.retire_clear_cleanup(cleanup).unwrap();
+        assert!(matches!(
+            client.request_normal(AdapterNormalReq::Enable(true)),
+            NormalReqStatus::Submitted { .. }
+        ));
     }
 
-    /// `assert_no_alloc`：5 个 client 方法在 RT 路径下都不 alloc。
-    /// （client 端通常不在 rt_thread 调，但 ipc_thread 用的同一份代码；保持
-    /// 习惯让 ipc_thread tick 也"几乎"零 alloc。）
+    /// 这里只核 client 调用的有限行为，真实 allocator 反证由独立 guard 用例执行。
     #[test]
-    fn client_methods_alloc_free() {
-        // assert_no_alloc 不在 robot-s0 dev-deps；用 closure 调一次 ensure no panic
-        let (c, _i) = fresh();
-        c.set_policy(OutputPolicy::ActiveForward);
-        c.safety_stop();
-        let s = c.request_normal(AdapterNormalReq::Enable(false));
-        assert!(matches!(s, NormalReqStatus::Submitted { .. }));
-        let _ = c.poll_last_normal_resp(1);
-        c.clear_safety_latch();
+    fn client_methods_preserve_finite_control_operations() {
+        let (client, _) = fresh();
+        client.set_policy(OutputPolicy::ActiveForward);
+        client.safety_stop();
+        assert!(matches!(
+            client.request_normal(AdapterNormalReq::Enable(false)),
+            NormalReqStatus::Submitted { .. }
+        ));
+        assert_eq!(client.poll_last_normal_resp(1), None);
     }
 
     /// 编译期：`Box<HardRtCtrlClient>` 满足 trait object 要求。
@@ -1320,10 +1429,54 @@ mod tests {
         );
         // 配套：latch + emergency 也得置位（与 client_safety_stop_synchronously_
         // latches_and_drains_pending 配套，本测试关注 policy 这一项）
-        assert!(i.safety_latched.load(Ordering::Acquire));
+        assert!(i.safety_latched());
         assert_eq!(
             i.emergency_action.load(Ordering::Acquire),
             emergency_codes::SAFETY_STOP
         );
+    }
+
+    #[test]
+    fn actual_finish_refusal_keeps_execution_and_original_reply_until_lease_release() {
+        use robot_core::control_authority::{EnableResult, NormalIoIntent, Refusal};
+        let (client, ctrl) = fresh();
+        let (owner, view) = ctrl.authority().reserve_enable().unwrap();
+        ctrl.start_slot().post(view).unwrap();
+        let execution = start_enable_execution(&ctrl).unwrap();
+        let lease = ctrl
+            .authority()
+            .acquire_normal_io(NormalIoIntent::EnableStep(execution.view()))
+            .unwrap();
+        let active = EnableFinishPending::new(
+            execution,
+            ActionRecord {
+                valid: true,
+                action: normal_codes::ENABLE,
+                arg: 1,
+                seq: 97,
+            },
+            EnableResult::Succeeded,
+            AdapterResp::Ok,
+            false,
+        );
+        let active = finish_enable_owned(active, &ctrl).unwrap_err();
+        assert_eq!(active.action.seq, 97);
+        let mut exit = ExecutorExit::from_pending(Some(active));
+        assert!(exit.has_pending_enable());
+        assert_eq!(exit.pending_enable.as_ref().unwrap().action.seq, 97);
+        assert_eq!(client.poll_last_normal_resp(97), None);
+        let rejected = ctrl.authority().retire_enable(owner).unwrap_err();
+        assert!(matches!(rejected.reason, Refusal::WrongPhase(_)));
+        ctrl.authority().release_normal_io(lease).unwrap();
+        // 仅模块内夹具拆原件继续验证同一 finish；生产没有任何公开恢复/取走接口。
+        let active = exit.pending_enable.take().unwrap();
+        assert!(!exit.has_pending_enable());
+        let finished = finish_enable_owned(active, &ctrl).unwrap();
+        assert_eq!(client.poll_last_normal_resp(97), None);
+        finished.publish_after_compensation(&ctrl, |_, required| {
+            assert_eq!(required, EnableCompensation::NotRequired);
+        });
+        assert_eq!(client.poll_last_normal_resp(97), Some(AdapterResp::Ok));
+        ctrl.authority().commit_enable(rejected.token).unwrap();
     }
 }

@@ -74,10 +74,7 @@ pub async fn wait_ready(
     listen_addr: SocketAddr,
 ) -> Result<Channel, ReadyError> {
     // Step 1: s1 marker
-    s1_handle
-        .wait_for_marker(S1_READY_MARKER, MARKER_TIMEOUT)
-        .await
-        .map_err(ReadyError::S1Marker)?;
+    wait_s1_ready(s1_handle).await?;
 
     // Step 2: gateway marker
     gateway_handle
@@ -85,7 +82,19 @@ pub async fn wait_ready(
         .await
         .map_err(ReadyError::GatewayMarker)?;
 
-    // Step 3: TCP probe
+    wait_gateway_connection(listen_addr).await
+}
+
+/// 同一 S1 marker 与原 5 秒预算，供外层持有 GatewayRun 的夹具复用。
+pub async fn wait_s1_ready(s1_handle: &mut SubprocessHandle) -> Result<(), ReadyError> {
+    s1_handle
+        .wait_for_marker(S1_READY_MARKER, MARKER_TIMEOUT)
+        .await
+        .map_err(ReadyError::S1Marker)
+}
+
+/// Gateway 原 TCP/RPC 就绪预算；调用者须已并发驱动实际 GatewayRun。
+pub async fn wait_gateway_connection(listen_addr: SocketAddr) -> Result<Channel, ReadyError> {
     tcp_probe(listen_addr, TCP_TOTAL, TCP_INTERVAL).await?;
 
     // Step 4: RPC probe

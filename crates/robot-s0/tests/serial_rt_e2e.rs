@@ -3,7 +3,7 @@
 //! ### 入口
 //!
 //! ```bash
-//! cargo test -p robot-s0 --test serial_rt_e2e
+//! cargo test -p robot-s0 --test serial_rt_e2e --features test-comm-fault-hook
 //! ```
 //!
 //! ### 验证什么（reviewer 5 条红灯门槛）
@@ -20,15 +20,13 @@
 //!    `safety_latched=true`；`serial_io_thread` 下 tick `confirm_torque_off`
 //!    → `safety_state = TorqueOffConfirmed`，wire `S0SafetyState` 同步。
 //! 4. **clear_estop_then_enable_again_no_safety_latch_reject**：`ClearEStop`
-//!    走 `ipc_tick` Pure 分支调 `clear_safety_latch()`；再次 `Enable +
-//!    Heartbeat` 不被 client / rt 二次 latch check 拒（无 `SafetyLatched`），
+//!    走真实 RR → 唯一 writer → A2 事务退休；再次 `Enable +
+//!    Heartbeat` 经原权限预约/start/finish/commit，
 //!    state 重新进 `Enabled.Active`。
 //! 5. **same_tick_enable_then_clear_estop_via_channel_does_not_misenable**：
 //!    通过 ipc_thread 外部事件 channel 连续 send `[Enable, ClearEStop]`，
-//!    Enable 必须看到 `estop_latched=true` 被拒（不能因 ClearEStop 提前清而
-//!    误进 Ready）。本测试是 ipc_tick 单测 `events_in_same_tick_use_per_event_
-//!    guard_view` 的**集成版**，钉死 `ipc_thread::run_loop` 不能恢复 batch
-//!    update guards 模式。
+//!    Enable 必须被原 latch 拒绝；无 RR 身份的 bare Clear 不再具有解除权限。
+//!    原测试的“bare Clear 成功”断言按 W3 合同改为保持 latch；真实清除由第 4 场景验证。
 //!
 //! ### 不做的事
 //!
@@ -43,19 +41,20 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use crossbeam_channel::unbounded;
+use crossbeam_channel::{bounded, unbounded};
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_core::adapter::{JointCommandBuf, RtClass, RtSnapshot};
-use robot_core::executor_ctrl::{
-    ExecutorCtrlClient, OutputPolicy, OutputSafetyState, SerialEmergencyCtrl,
-};
+use robot_core::executor_ctrl::{OutputPolicy, OutputSafetyState};
 use robot_core::factory::{AdapterBuildContext, AdapterBuildServices, find_factory};
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::build_helpers::{build_estop_event, build_heartbeat};
 use robot_msg::markers;
 use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
-use robot_s0::ipc_thread::{IpcSubscribers, IpcThreadConfig, IpcThreadHandle, spawn_ipc_thread};
+use robot_s0::ipc_thread::{
+    IpcSpawnInputs, IpcSubscribers, IpcThreadConfig, IpcThreadHandle, OwnedIpcPorts, ReadyState,
+    spawn_ipc_thread,
+};
 use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, PubThreadHandle, spawn_pub_thread};
 use robot_s0::serial_io_thread::{
     SerialIoThreadConfig, SerialIoThreadHandle, spawn_serial_io_thread,
@@ -79,6 +78,59 @@ struct Topics {
     estop: String,
     joint_state: String,
     s0_heartbeat: String,
+}
+
+/// 父端只计一次真实用例；子进程输出独立保留，失败必 kill/reap，正常先真实 join。
+fn supervised(name: &str) -> bool {
+    const CHILD: &str = "ROBOT_SERIAL_W3_CASE";
+    if std::env::var(CHILD).as_deref() == Ok(name) {
+        let owner = std::thread::current().id();
+        std::panic::set_hook(Box::new(move |info| {
+            eprintln!("SerialRT 验收失败：{info}");
+            if std::thread::current().id() == owner {
+                std::process::exit(101);
+            }
+        }));
+        return false;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("case.log");
+    let log = std::fs::File::create(&path).unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture"])
+        .env(CHILD, name)
+        .env("TMPDIR", directory.path())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(2)),
+            result => {
+                let _ = child.kill();
+                let reap = Instant::now() + Duration::from_secs(2);
+                loop {
+                    if matches!(child.try_wait(), Ok(Some(_))) {
+                        break;
+                    }
+                    if Instant::now() >= reap {
+                        std::process::abort();
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                panic!("SerialRT 子进程失败，已 kill/reap：{result:?}");
+            }
+        }
+    };
+    assert!(
+        status.success(),
+        "{name}：{}",
+        std::fs::read_to_string(path).unwrap()
+    );
+    true
 }
 
 fn fresh_topics() -> Topics {
@@ -130,22 +182,105 @@ struct Harness {
     /// 但本 harness 走 trait object，不直接持 Arc<MockSerialRTAdapter>；safety
     /// 信号通过 rt_ctrl 原子观察，无需 inner 引用。
     topics: Topics,
-    /// **A1-2**：ClearEStop 走 `clear_estop_action::try_apply_clear_estop`
-    /// 需要 `latch_path`；harness 自动创建 tempdir，drop 时清理。EStop 路径
-    /// 走 ipc_thread 通用 hook fsync `latch=true`；ClearEStop 路径走 action
-    /// handler fsync `latch=false`。
-    _latch_dir: TempDir,
+    /// 真实锁/双文件/writer 事务所在目录，所有线程退出后由父子夹具清理。
+    latch_dir: TempDir,
+    _lock: robot_s0::latch_lock::LatchTargetLock,
+    _standby: robot_s0::latch_writer::StandbyStore,
+    writer: robot_s0::latch_writer::WriterHandle,
+    writer_stop: Arc<TestWriterStop>,
+    writer_shared: Arc<robot_s0::latch_writer::PersistShared>,
+    clear_rr: robot_s0::rr_server_thread::RrServerThreadHandle,
+    clear_client: robot_transport::iceoryx2::request_response::Iceoryx2RrClient<
+        markers::ClearEStopRequest,
+        markers::ClearEStopResponse,
+    >,
+    _clear_node: iceoryx2::prelude::Node<IxService>,
+    clock: Arc<dyn RobotClock>,
+}
+
+struct TestWriterStop(AtomicBool);
+impl robot_s0::latch_writer::WriterStop for TestWriterStop {
+    fn running(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
 }
 
 impl Harness {
+    fn clear_real_transaction(&self) {
+        let now = self.clock.now().0;
+        let body = robot_msg::build_helpers::build_clear_estop_request(
+            "e2e-real-clear",
+            "e2e-real-clear",
+            "e2e",
+            robot_msg::msg::RpcRole::Maintainer,
+            "确认停止",
+            "验收真实 writer 退休",
+            false,
+            now + 2_000_000_000,
+            now,
+        );
+        let pending = self.clear_client.send_typed(&body).unwrap();
+        let mut bytes = None;
+        assert!(wait_until(Duration::from_secs(3), || {
+            bytes = pending.try_recv().unwrap();
+            bytes.is_some()
+        }));
+        let bytes = bytes.unwrap();
+        let response = flatbuffers::root::<robot_msg::msg::ClearEStopResponse>(&bytes).unwrap();
+        assert_eq!(response.request_id(), Some("e2e-real-clear"));
+        assert_eq!(response.status(), robot_msg::msg::RpcStatus::Ok);
+        assert!(response.retired());
+        assert_eq!(response.effect(), robot_msg::msg::SideEffect::Committed);
+        assert_eq!(
+            std::fs::read(self.latch_dir.path().join("estop_latch")).unwrap(),
+            b"0\n"
+        );
+        assert_eq!(
+            std::fs::read(self.latch_dir.path().join("estop_latch.bak")).unwrap(),
+            b"0\n"
+        );
+    }
     fn graceful_stop(self) {
-        // 顺序：pub → serial（不再动 adapter）→ ipc → 测试 publishers drop
-        self.pub_h.request_stop();
-        let _ = self.pub_h.join();
-        self.serial.request_stop();
-        let _ = self.serial.join();
+        self.clear_rr.request_stop();
+        assert!(wait_until(Duration::from_secs(2), || self
+            .clear_rr
+            .is_finished()));
+        self.clear_rr.join().unwrap();
+        // 先等 IPC 真正看见两个 RR sender 断链；没有裸字段封口。
+        let tick = self.ipc.metrics().tick_count.load(Ordering::Relaxed);
+        assert!(wait_until(Duration::from_secs(2), || self
+            .ipc
+            .metrics()
+            .tick_count
+            .load(Ordering::Relaxed)
+            > tick + 2));
         self.ipc.request_stop();
-        let _ = self.ipc.join();
+        assert!(wait_until(Duration::from_secs(2), || self
+            .ipc
+            .is_finished()));
+        let ipc_exit = self.ipc.join().unwrap();
+        assert!(
+            ipc_exit.is_quiescent(),
+            "测试退出仍有原 IPC 请求责任：{ipc_exit:?}"
+        );
+        self.pub_h.request_stop();
+        self.pub_h.join().unwrap();
+        self.serial.request_stop();
+        let executor_exit = self.serial.join().unwrap();
+        assert!(!executor_exit.has_pending_enable());
+        assert!(wait_until(Duration::from_secs(2), || self
+            .writer_shared
+            .obligation
+            .view()
+            .is_settled()));
+        self.writer_stop.0.store(false, Ordering::Release);
+        assert!(wait_until(Duration::from_secs(2), || self
+            .writer
+            .is_finished()));
+        let (result, joined) = self.writer.join();
+        result.unwrap();
+        // 原 IPC/standby/锁与真实 join 凭证均持到全部工作线程已退出。
+        drop((ipc_exit, joined));
     }
 }
 
@@ -159,7 +294,19 @@ impl Harness {
 fn spawn_harness(factory_name: &str) -> Harness {
     let topics = fresh_topics();
     let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-    let rt_ctrl = Arc::new(HardRtCtrlInner::new_serial());
+    let base = clock.now();
+    let authority = Arc::new(
+        robot_core::control_authority::ControlAuthority::new(
+            robot_core::control_authority::AuthorityInit::new(
+                false,
+                OutputSafetyState::TorqueUnknown,
+                robot_core::control_authority::InhibitSet::EMPTY
+                    .with(robot_core::control_authority::InhibitReason::Boot),
+            ),
+        )
+        .unwrap(),
+    );
+    let rt_ctrl = Arc::new(HardRtCtrlInner::new_serial(authority.clone()));
     let probe = Arc::new(robot_s0::serial_preempt::SerialPreemptProbe::new(
         clock.clone(),
         rt_ctrl.clone(),
@@ -171,7 +318,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
         diag: Some(diag.clone()),
         call_deadline: robot_core::time::DurationNs(50_000_000),
     };
-    let boot = Arc::new(robot_s0::boot_supervisor::BootShared::default());
+    let boot = Arc::new(robot_s0::boot_supervisor::BootShared::new(base));
 
     // ── 1) 用 inventory factory 走 build_serial_rt ──
     //
@@ -208,8 +355,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
         RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
     let (_wd_tx, wd_rx) = unbounded::<Event>();
 
-    let executor_ctrl: Arc<dyn ExecutorCtrlClient> =
-        Arc::new(HardRtCtrlClient::new(Arc::clone(&rt_ctrl)));
+    let executor_ctrl = Arc::new(HardRtCtrlClient::new(Arc::clone(&rt_ctrl)));
 
     // ── 3) test 端 publishers（先 open，后 ipc_thread 内部 subscribers）──
     //
@@ -229,18 +375,39 @@ fn spawn_harness(factory_name: &str) -> Harness {
 
     // ── 4) spawn ipc_thread ──
     //
-    // **A1-2**：ClearEStop 走 `clear_estop_action::try_apply_clear_estop`，
-    // 必须有 `latch_path`，否则会被 `ipc_tick` 的 `latch_path=None` 守门
-    // 静默丢弃。harness 用 tempdir 自动 provision；EStop 路径走 ipc_thread
-    // 通用 hook fsync `latch=true`，ClearEStop 路径走 action handler fsync
-    // `latch=false`。drop 时 `_latch_dir` 自动清理整个临时目录。
+    // 持锁创建唯一 writer；EStop 义务和 Clear 文件事务均使用此实例。
     let latch_dir = tempfile::tempdir().expect("create latch tempdir");
     let latch_path = latch_dir.path().join("estop_latch");
+    std::fs::write(&latch_path, b"0\n").unwrap();
+    std::fs::write(latch_dir.path().join("estop_latch.bak"), b"0\n").unwrap();
+    let lock = robot_s0::latch_lock::acquire_latch_lock(&latch_path).unwrap();
+    let open = || {
+        robot_s0::clear_estop_transaction::ClearTxnStore::open(&latch_path, "test", "test_arm")
+            .unwrap()
+    };
+    let (slot, standby) = robot_s0::latch_writer::WriterPairing::new(open(), open(), &lock, base)
+        .unwrap()
+        .into_parts();
+    let writer_shared = slot.shared().clone();
+    match boot.install_runtime_for_test(authority, writer_shared.clone()) {
+        Ok(ready) => drop(ready),
+        Err(refused) => panic!("真实启动绑定拒绝：{:?}", refused.reason),
+    }
+    let (persist, endpoint) = robot_s0::latch_writer::mailbox(writer_shared.clone());
+    let writer_stop = Arc::new(TestWriterStop(AtomicBool::new(true)));
+    let writer = robot_s0::latch_writer::spawn_writer(
+        slot,
+        endpoint,
+        robot_s0::latch_writer::WriterConfig::default(),
+        writer_stop.clone(),
+        clock.clone(),
+        Box::new(robot_s0::latch_writer::NoHook),
+    )
+    .unwrap();
     let ipc_cfg = IpcThreadConfig {
         poll_interval_ns: 500_000,
         initial_guards: healthy_guards(),
         initial_state: S0State::Safe,
-        latch_path: Some(latch_path),
         // 段(3)：本 e2e 不发 command 帧（cmd_pub 仅保持 publisher 存活，
         // 驱动全走 heartbeat/estop）——值仅满足必填字段，沿测试惯例。
         authoritative_layout: 0xCAFE_0001,
@@ -266,31 +433,83 @@ fn spawn_harness(factory_name: &str) -> Harness {
             TopicClass::SafetyEvent,
         )
         .unwrap();
-        Box::leak(Box::new(node));
-        IpcSubscribers {
-            command,
-            heartbeat,
-            estop,
-        }
+        Ok(OwnedIpcPorts::new(
+            IpcSubscribers {
+                command,
+                heartbeat,
+                estop,
+            },
+            node,
+        ))
     };
-    let ipc = spawn_ipc_thread(
-        ipc_cfg,
-        Arc::clone(&clock),
-        ipc_factory,
-        cmd_writer,
-        state_pub,
-        wd_rx,
-        Arc::clone(&executor_ctrl),
-        // SerialRT e2e 测试不接 RR control plane（A1-3 (1/3c) 不在本套
-        // harness 范围；A1-3 (3/3) 端到端时另起 harness）。
-        None,
-        // SetEnabled RR control plane（v0.5 候选 C）：本 harness 不接。
-        None,
-        Some(rt_ctrl.clone()),
-        Some(Arc::new(HardRtCtrlClient::new(rt_ctrl.clone())) as Arc<dyn SerialEmergencyCtrl>),
+    let profile = robot_transport::iceoryx2::RrProfile::S0_CONTROL;
+    let (clear_high, clear_high_rx) = bounded(2 * profile.c);
+    let (clear_normal, clear_normal_rx) = bounded(profile.c * (profile.l - 2));
+    let (clear_response_tx, clear_response_rx) = bounded(profile.c * profile.l);
+    let clear_topic = format!("{}/clear", topics.estop);
+    let server_topic = clear_topic.clone();
+    let mut clear_rr = robot_s0::rr_server_thread::spawn_rr_server_thread(
+        robot_s0::rr_server_thread::RrServerThreadConfig {
+            topic: clear_topic.clone(),
+            ..robot_s0::rr_server_thread::RrServerThreadConfig::default()
+        },
+        clock.clone(),
+        move || {
+            use robot_s0::rr_server_thread::{OwnedRrServerPorts, RrInitError};
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .map_err(RrInitError::Node)?;
+            let server = robot_transport::iceoryx2::rr_server_with::<
+                markers::ClearEStopRequest,
+                markers::ClearEStopResponse,
+            >(&node, &server_topic, &profile)
+            .map_err(RrInitError::Service)?;
+            Ok(OwnedRrServerPorts::new(server, node))
+        },
+        robot_s0::rr_server_thread::TopicRequestSenders {
+            high: clear_high,
+            normal: clear_normal,
+        },
+        clear_response_rx,
         Arc::new(AtomicBool::new(false)),
     )
+    .unwrap();
+    assert!(wait_until(Duration::from_secs(2), || matches!(
+        clear_rr.poll_ready(),
+        ReadyState::Ready
+    )));
+    let clear_node = NodeBuilder::new().create::<IxService>().unwrap();
+    let clear_client = robot_transport::iceoryx2::rr_client_with::<
+        markers::ClearEStopRequest,
+        markers::ClearEStopResponse,
+    >(&clear_node, &clear_topic, &profile)
+    .unwrap();
+    let mut ipc = spawn_ipc_thread(IpcSpawnInputs {
+        cfg: ipc_cfg,
+        clock: clock.clone(),
+        subscribers_factory: ipc_factory,
+        cmd_writer,
+        state_pub,
+        watchdog_rx: wd_rx,
+        ctrl: executor_ctrl,
+        boot: boot.clone(),
+        persist,
+        rr_channels: Some(robot_s0::ipc_thread::RrChannels {
+            request_rx: clear_high_rx,
+            normal_request_rx: clear_normal_rx,
+            response_tx: clear_response_tx,
+        }),
+        set_enabled_rr_channels: None,
+        stop: Arc::new(AtomicBool::new(false)),
+    })
     .expect("spawn_ipc_thread");
+    assert!(
+        wait_until(Duration::from_secs(2), || matches!(
+            ipc.poll_ready(),
+            ReadyState::Ready
+        )),
+        "真实 factory/首次发布必须报告 ready"
+    );
 
     // ── 5) spawn serial_io_thread（必须把 Box<dyn SerialRtAdapter + Send> 直接交进去）──
     let serial_cfg = SerialIoThreadConfig::default();
@@ -336,7 +555,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
             heartbeat,
         }
     };
-    let pub_h = spawn_pub_thread(
+    let mut pub_h = spawn_pub_thread(
         pub_cfg,
         Arc::clone(&clock),
         pub_factory,
@@ -347,6 +566,13 @@ fn spawn_harness(factory_name: &str) -> Harness {
         std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )
     .expect("spawn_pub_thread");
+    assert!(
+        wait_until(Duration::from_secs(2), || matches!(
+            pub_h.poll_ready(),
+            ReadyState::Ready
+        )),
+        "发布线程必须真实完成 factory 初始化"
+    );
 
     boot.spawned_at_ns.store(clock.now().0, Ordering::Relaxed);
     boot.spawned_reached.store(true, Ordering::Release);
@@ -368,7 +594,16 @@ fn spawn_harness(factory_name: &str) -> Harness {
         hb_pub,
         estop_pub,
         topics,
-        _latch_dir: latch_dir,
+        latch_dir,
+        _lock: lock,
+        _standby: standby,
+        writer,
+        writer_stop,
+        writer_shared,
+        clear_rr,
+        clear_client,
+        _clear_node: clear_node,
+        clock,
     }
 }
 
@@ -421,6 +656,9 @@ fn enabled_active() -> S0State {
 
 #[test]
 fn test_serial_rt_dispatch_chooses_serial_factory() {
+    if supervised("test_serial_rt_dispatch_chooses_serial_factory") {
+        return;
+    }
     // mock_serial_rt factory 必须 build_hard_rt = Unsupported（HardRT 路径拒），
     // build_serial_rt = Ok（SerialRT 路径通），保证 s0_daemon 三段 dispatch
     // 落到 SerialRT。
@@ -476,6 +714,9 @@ fn test_serial_rt_dispatch_chooses_serial_factory() {
 
 #[test]
 fn test_heartbeat_drives_enable_via_serial_ack() {
+    if supervised("test_heartbeat_drives_enable_via_serial_ack") {
+        return;
+    }
     let mut h = spawn_harness("mock_serial_rt");
 
     // auto Event::Enable 已经 send；先等 SAFE → READY
@@ -526,6 +767,9 @@ fn test_heartbeat_drives_enable_via_serial_ack() {
 
 #[test]
 fn test_estop_topic_preempts_and_safety_state_reflects_serial_confirm() {
+    if supervised("test_estop_topic_preempts_and_safety_state_reflects_serial_confirm") {
+        return;
+    }
     let mut h = spawn_harness("mock_serial_rt");
 
     // 先把 state 推到 Enabled.Active
@@ -551,10 +795,7 @@ fn test_estop_topic_preempts_and_safety_state_reflects_serial_confirm() {
         h.state_reader.load().state,
     );
     assert!(
-        wait_until(Duration::from_secs(2), || h
-            .rt_ctrl
-            .safety_latched
-            .load(Ordering::Acquire)),
+        wait_until(Duration::from_secs(2), || h.rt_ctrl.safety_latched()),
         "EStop 后 safety_latched 必须 true",
     );
 
@@ -601,6 +842,9 @@ fn test_estop_topic_preempts_and_safety_state_reflects_serial_confirm() {
 
 #[test]
 fn test_clear_estop_then_enable_again_no_safety_latch_reject() {
+    if supervised("test_clear_estop_then_enable_again_no_safety_latch_reject") {
+        return;
+    }
     let mut h = spawn_harness("mock_serial_rt");
 
     // 1) 进 Enabled.Active
@@ -624,8 +868,7 @@ fn test_clear_estop_then_enable_again_no_safety_latch_reject() {
         == S0State::Safe));
     assert!(wait_until(Duration::from_secs(2), || h
         .rt_ctrl
-        .safety_latched
-        .load(Ordering::Acquire)));
+        .safety_latched()));
 
     // **task-30 v9 / SerialRT E2E #4 调用规范**：发 ClearEStop 之前必须等
     // SerialRT 端 confirm torque off（safety_state == TorqueOffConfirmed），
@@ -639,42 +882,52 @@ fn test_clear_estop_then_enable_again_no_safety_latch_reject() {
         "前置：safety_state 未升 TorqueOffConfirmed"
     );
 
-    // 3) ClearEStop → ipc_tick Pure 分支（safety_state 守门通过）调
-    //    clear_safety_latch
-    let _ = h
-        .ipc
-        .event_sender()
-        .control(robot_s0::event_ingress::ControlEvent::ClearEStop);
-    assert!(
-        wait_until(Duration::from_secs(2), || !h
-            .rt_ctrl
-            .safety_latched
-            .load(Ordering::Acquire)),
-        "ClearEStop 后 executor.safety_latched 必须清；实际 latch 仍为 true"
-    );
+    // 3) 真实 RR/peer 槽 → IPC 原 owner → 唯一 writer → 真退休 typed 回复。
+    assert!(wait_until(Duration::from_secs(2), || h
+        .writer_shared
+        .obligation
+        .is_settled()));
+    h.clear_real_transaction();
+    assert!(!h.rt_ctrl.safety_latched());
 
     // 4) 重新 Enable + heartbeat → state 必须能再回 Enabled.Active；
     //    若 client / rt 二次 latch check 还把 Enable(true) 拒，
     //    ipc_tick A3 会升 Fault(AdapterErr)。
-    let _ = h
-        .ipc
-        .event_sender()
-        .control(robot_s0::event_ingress::ControlEvent::Enable);
-    assert!(
-        wait_until(Duration::from_secs(2), || matches!(
-            h.state_reader.load().state,
-            S0State::Ready
-        )),
-        "ClearEStop 后再 Enable 未到 Ready；实际 {:?}",
-        h.state_reader.load().state
+    let completed_before = h
+        .serial
+        .metrics()
+        .normal_completed_count
+        .load(Ordering::Acquire);
+    let (previous_seq, _) = robot_core::executor_ctrl::unpack_completed(
+        h.rt_ctrl.last_completed.load(Ordering::Acquire),
     );
+    h.ipc
+        .event_sender()
+        .control(robot_s0::event_ingress::ControlEvent::Enable)
+        .expect("重新 Enable 必须真实进入原控制队列");
+    // 原 heartbeat 仍可有效，真实提交可在同一 IPC tick 越过 Ready；不要求父线程采到瞬态。
     publish_heartbeat(&mut h.hb_pub, 2);
     assert!(
-        wait_until(Duration::from_secs(2), || h.state_reader.load().state
-            == enabled_active()),
+        wait_until(Duration::from_secs(2), || {
+            h.state_reader.load().state == enabled_active()
+                && h.serial
+                    .metrics()
+                    .normal_completed_count
+                    .load(Ordering::Acquire)
+                    > completed_before
+        }),
         "ClearEStop + Enable + Heartbeat 后未回 Enabled.Active；实际 {:?}",
         h.state_reader.load().state
     );
+    let (new_seq, response) = robot_core::executor_ctrl::unpack_completed(
+        h.rt_ctrl.last_completed.load(Ordering::Acquire),
+    );
+    assert_ne!(
+        new_seq, previous_seq,
+        "必须完成真实的新原序号，不能复用急停前的 Enable"
+    );
+    assert_eq!(response, robot_core::executor_ctrl::AdapterResp::Ok);
+    assert!(!h.rt_ctrl.safety_latched());
     // 不应升 Fault
     assert!(
         !matches!(h.state_reader.load().state, S0State::Fault(_)),
@@ -691,9 +944,11 @@ fn test_clear_estop_then_enable_again_no_safety_latch_reject() {
 
 #[test]
 fn test_same_tick_enable_then_clear_estop_via_channel_does_not_misenable() {
-    // 这条门槛是 ipc_tick 单测 events_in_same_tick_use_per_event_guard_view
-    // 的**集成版**：通过真实 ipc_thread::run_loop 的外部事件 channel 验证
-    // 修订后的"per-event apply"语义 *端到端* 生效（不只是 ipc_tick 内部）。
+    if supervised("test_same_tick_enable_then_clear_estop_via_channel_does_not_misenable") {
+        return;
+    }
+    // 原第 5 场景迁移：同一来源的 Enable/bare Clear 均不能借其它事件
+    // 的新 guard 视图绕过 A2；bare Clear 没有 RR 身份，永远不能解除 latch。
 
     let h = spawn_harness("mock_serial_rt");
 
@@ -717,21 +972,28 @@ fn test_same_tick_enable_then_clear_estop_via_channel_does_not_misenable() {
         "前置：safety_state 未升 TorqueOffConfirmed"
     );
 
-    // 2) 关键步骤：**同 tick** 内连续 send [Enable, ClearEStop]。
-    //    crossbeam unbounded channel 是 FIFO，发送顺序 = 接收顺序 =
-    //    EventQueue.push 顺序。如果 ipc_thread 走 batch update guards 模式，
-    //    Enable 紧随 ClearEStop drain 时已被 estop_latched=false 污染 →
-    //    plan(Safe, Enable, guards) 会通过 → state→Ready ❌。
-    //    修订后 apply 在 ipc_tick 内逐 event 执行，Enable 看 estop_latched=true
-    //    plan_transition 拒绝；ClearEStop 自己处理时再清 latch。
+    // 2) 同一来源连续送入两个旧事件；无论落在同一或相邻 tick，
+    // Enable 不能恢复权限，bare Clear 也不能变成有凭证的事务。
     let tx = h.ipc.event_sender();
     tx.control(robot_s0::event_ingress::ControlEvent::Enable)
         .unwrap();
     tx.control(robot_s0::event_ingress::ControlEvent::ClearEStop)
         .unwrap();
 
-    // 3) 等足够时间让 ipc_thread 处理这两个事件 + 后续若干 tick
-    std::thread::sleep(Duration::from_millis(50));
+    // 3) 观察真实接收数，避免仅靠固定 sleep 声称事件已经处理。
+    assert!(wait_until(Duration::from_secs(2), || h
+        .ipc
+        .metrics()
+        .external_events
+        .load(Ordering::Relaxed)
+        >= 3));
+    let tick = h.ipc.metrics().ipc_tick_count.load(Ordering::Relaxed);
+    assert!(wait_until(Duration::from_secs(2), || h
+        .ipc
+        .metrics()
+        .ipc_tick_count
+        .load(Ordering::Relaxed)
+        > tick + 2));
 
     // **关键断言**：state 必须留 Safe（Enable 不能误通过到 Ready）。
     let snap = h.state_reader.load();
@@ -743,14 +1005,20 @@ fn test_same_tick_enable_then_clear_estop_via_channel_does_not_misenable() {
         snap.state,
         snap.guards_summary.estop_latched,
     );
-    // ClearEStop 自己已处理 → guards.estop_latched=false + executor latch 已清
-    assert!(
-        !snap.guards_summary.estop_latched,
-        "ClearEStop 应已被处理（estop_latched 应清）"
+    // 无原 RR 身份的 bare Clear 无权限，既不能改内存 latch，也不能改磁盘。
+    assert!(snap.guards_summary.estop_latched);
+    assert!(h.rt_ctrl.safety_latched());
+    assert!(wait_until(Duration::from_secs(2), || h
+        .writer_shared
+        .obligation
+        .is_settled()));
+    assert_eq!(
+        std::fs::read(h.latch_dir.path().join("estop_latch")).unwrap(),
+        b"1\n"
     );
-    assert!(
-        !h.rt_ctrl.safety_latched.load(Ordering::Acquire),
-        "ClearEStop transition 应调 clear_safety_latch；实际 executor latch 仍 true"
+    assert_eq!(
+        std::fs::read(h.latch_dir.path().join("estop_latch.bak")).unwrap(),
+        b"1\n"
     );
 
     h.graceful_stop();

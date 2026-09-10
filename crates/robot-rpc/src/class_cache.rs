@@ -138,6 +138,8 @@ impl From<TerminalState> for EntryState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DrainOutcome {
+    NotSubmitted,
+    Unknown { raw: u8 },
     Registered,
     DrainFailedCompensated { cancel_ok: bool },
 }
@@ -461,6 +463,13 @@ impl ClassCache {
         }
         self.entries.remove(&key);
         Transition::Applied
+    }
+
+    #[must_use]
+    /// 只读复制已有终态；测试观测不能改变 GC 或准入状态。
+    #[cfg(any(test, feature = "test-freeze-hook"))]
+    pub(crate) fn cached_terminal(&self, method: Method, key: &str) -> Option<CachedTerminal> {
+        self.entries.get(&namespace(method, key))?.terminal.clone()
     }
 
     #[must_use]

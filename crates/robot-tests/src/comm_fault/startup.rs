@@ -11,9 +11,15 @@ use super::Args;
 use super::control::{ControlPort, wait_applied};
 use super::harness::{Case, isolated_command, stop, wait_exit, wait_log};
 use super::report::Report;
+use robot_s0::boot_supervisor::{SHUTDOWN_MARGIN, absolute_boot_budget};
 use robot_s0::comm_fault_hook::{HookCommandKind, TestCommFaultCommand};
+use robot_s0::shutdown_mechanism::HandleKind;
 use robot_s0::worker_stop::WorkerKind;
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "逐项执行既有启动场景并保存各原进程结果，保持现有判据与场景顺序"
+)]
 pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> {
     if selected(args, "AC-22") {
         for stage in [
@@ -22,7 +28,6 @@ pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> 
             "before_resolve",
             "adapter_open",
             "marker_write",
-            "ipc_ready",
         ] {
             let started = SystemClock.now().0;
             report.record(
@@ -32,6 +37,14 @@ pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> 
                 blocked_stage(args, stage, 5_000).await,
             );
         }
+        let started = SystemClock.now().0;
+        // 旧 cp1_ipc_ready 场景保持；IPC worker 暂停不会阻塞 main 的原启动截止和持责回收。
+        report.record(
+            "ipc_ready_timeout_preserves_original_handle",
+            "AC-22",
+            started,
+            blocked_stage(args, "ipc_ready", 11_700).await,
+        );
         for stage in ["after_spawn", "before_ready"] {
             let started = SystemClock.now().0;
             // N=6 的 T_abs=10.7s，CP2=T_abs+1s。
@@ -43,7 +56,14 @@ pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> 
             );
         }
         for worker in [
-            "ipc", "clear_rr", "set_rr", "watchdog", "executor", "pub", "io",
+            "latch_writer",
+            "ipc",
+            "clear_rr",
+            "set_rr",
+            "watchdog",
+            "executor",
+            "pub",
+            "io",
         ] {
             let started = SystemClock.now().0;
             report.record(
@@ -156,6 +176,9 @@ async fn blocked_stage(args: &Args, stage: &str, deadline_ms: u64) -> Result<Val
     let reaped_ns = SystemClock.now().0;
     let parent_elapsed_ns = reaped_ns.saturating_sub(started);
     let observation = case.observation("s0")?;
+    if stage == "ipc_ready" {
+        return verify_ipc_ready_exit(&case, &observation, code, reaped_ns, parent_elapsed_ns);
+    }
     let elapsed_ns = observation
         .fired_ns
         .checked_sub(observation.main_start_ns)
@@ -193,6 +216,55 @@ async fn blocked_stage(args: &Args, stage: &str, deadline_ms: u64) -> Result<Val
     )
 }
 
+fn verify_ipc_ready_exit(
+    case: &Case,
+    observation: &robot_s0::comm_fault_observation::ObservationSnapshot,
+    code: i32,
+    reaped_ns: u64,
+    parent_elapsed_ns: u64,
+) -> Result<Value, String> {
+    let ctor_envelope_ns = verify_initialization(observation)?;
+    let cp2_ns = absolute_boot_budget(6).0 + SHUTDOWN_MARGIN.0;
+    let exit_upper_ns = verify_exit_deadline(observation, reaped_ns, cp2_ns + 100_000_000)?;
+    if code != 1
+        || exit_upper_ns < cp2_ns - 50_000_000
+        || observation.fired_checkpoint != 0
+        || observation.fired_reason != 0
+        || observation.fired_ns != 0
+        || observation.supervisor_exit_ns != 0
+        || observation.worker_bitmap != 0xff
+        || observation.stop_bitmap != 0xff
+        || observation.residual_bitmap != u64::from(HandleKind::Ipc.bit())
+        || observation.ready_reached
+        || observation.runtime_armed_ns != 0
+        || observation.spawned_ns == 0
+        || observation.first_io_ns == 0
+        || observation.first_io_ns < observation.spawned_ns
+        || observation.preflight_finished_ns < observation.first_io_ns
+    {
+        return Err(format!(
+            "IPC ready 阻塞须按原CP2持责退出：code={code} exit_upper_ns={exit_upper_ns} observation={observation:?}"
+        ));
+    }
+    let log = case.logs("s0")?;
+    let timeout_at = log
+        .find("启动物理/ACK 截止失败")
+        .ok_or("未见真实启动截止失败")?;
+    let retained_at = log
+        .find("收尾未完成 join，不导出快照耗尽尝试时刻")
+        .ok_or("未见未join IPC原件保留")?;
+    if timeout_at >= retained_at || log.contains("boot_ready") || log.contains("VersionExhausted") {
+        return Err("IPC ready 超时不得伪READY或导出未join时刻，必须先失败后持责退出".into());
+    }
+    Ok(
+        json!({"exit_code":code,"legacy_label":"cp1_ipc_ready","stage":"ipc_ready",
+        "expected_checkpoint":0,"cp2_deadline_from_main_ns":cp2_ns,
+        "reap_lower_bound_ns":cp2_ns-50_000_000,"actual_exit_upper_ns":exit_upper_ns,
+        "parent_elapsed_ns":parent_elapsed_ns,"initialization_envelope_ns":ctor_envelope_ns,
+        "observation":format!("{observation:?}"),"log_directory":case.directory}),
+    )
+}
+
 async fn failed_spawn(args: &Args, worker: &str) -> Result<Value, String> {
     let case = Case::new(
         &args.evidence_dir,
@@ -225,8 +297,16 @@ async fn failed_spawn(args: &Args, worker: &str) -> Result<Value, String> {
             5_000_000_000
         },
     )?;
-    if code == 1 && observation.disabled_ns == 0 {
-        return Err(format!("spawn失败协作退出未实际Disabled：{observation:?}"));
+    // 初始 policy 已是 Disabled；all-spawn 门未开，Serial 未运行 tick，不能要求其产戳。
+    if observation.serial_calls.iter().any(|count| *count != 0) {
+        return Err(format!(
+            "spawn失败前缀不得执行任何串口调用：{observation:?}"
+        ));
+    }
+    if observation.residual_bitmap != 0 {
+        return Err(format!(
+            "spawn失败前缀协作回收仍有原残余句柄：{observation:?}"
+        ));
     }
     if code == 88 {
         let elapsed_ns = observation
@@ -241,19 +321,43 @@ async fn failed_spawn(args: &Args, worker: &str) -> Result<Value, String> {
     if case.logs("s0")?.contains("boot_ready") {
         return Err("worker未全部spawn却READY".to_owned());
     }
-    if observation.spawned_ns != 0 || observation.first_io_ns != 0 || observation.ready_reached {
-        return Err(format!("七worker未齐却通过首IO/READY门：{observation:?}"));
+    if observation.spawned_ns != 0
+        || observation.first_io_ns != 0
+        || observation.ready_reached
+        || observation.runtime_armed_ns != 0
+    {
+        return Err(format!("八worker未齐却通过首IO/READY门：{observation:?}"));
     }
     if observation.stop_bitmap != observation.worker_bitmap {
         return Err(format!("未向已spawn worker逐一请求停止：{observation:?}"));
     }
     let index = [
-        "ipc", "clear_rr", "set_rr", "watchdog", "executor", "pub", "io",
+        "latch_writer",
+        "ipc",
+        "clear_rr",
+        "set_rr",
+        "watchdog",
+        "executor",
+        "pub",
+        "io",
     ]
     .iter()
     .position(|name| *name == worker)
     .ok_or("未知worker")?;
-    if observation.worker_bitmap != (1_u64 << index) - 1 {
+    let expected = [
+        WorkerKind::LatchWriter,
+        WorkerKind::Ipc,
+        WorkerKind::ClearEStopRr,
+        WorkerKind::SetEnabledRr,
+        WorkerKind::Watchdog,
+        WorkerKind::Executor,
+        WorkerKind::Pub,
+        WorkerKind::Io,
+    ]
+    .into_iter()
+    .take(index)
+    .fold(0_u64, |bits, kind| bits | (1 << kind as u8));
+    if observation.worker_bitmap != expected {
         return Err(format!("spawn失败成员之前的成功前缀错误：{observation:?}"));
     }
     Ok(
@@ -277,27 +381,28 @@ async fn normal_boot(args: &Args, joints: usize) -> Result<Value, String> {
         Duration::from_millis(10_500 + 200 * joints as u64),
     )
     .await?;
-    // 真实 supervisor 退出是证据；仅存活超过CP1不能证明CP2已解除。
+    // READY 后同一个 supervisor 转入 Runtime；原页必须有真实 Armed 且尚未退出。
     let until = SystemClock.now().0 + 1_000_000_000;
     let observation = loop {
         let observation = case.observation("s0")?;
-        if observation.supervisor_exit_ns != 0 {
+        if observation.runtime_armed_ns != 0 {
             break observation;
         }
         if SystemClock.now().0 > until {
-            return Err("READY后监督线程未退出".to_owned());
+            return Err("READY 后监督线程未进入 Runtime".to_owned());
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     };
     let ctor_envelope_ns = verify_initialization(&observation)?;
     if observation.joint_count != joints as u64
-        || observation.worker_bitmap != 0x7f
+        || observation.worker_bitmap != 0xff
         || observation.spawned_ns == 0
         || observation.first_io_ns < observation.spawned_ns
         || observation.preflight_finished_ns < observation.first_io_ns
         || observation.ready_ns < observation.preflight_finished_ns
         || !observation.ready_reached
-        || observation.supervisor_exit_ns < observation.ready_ns
+        || observation.runtime_armed_ns < observation.ready_ns
+        || observation.supervisor_exit_ns != 0
         || observation.fired_checkpoint != 0
         || observation.first_exit_ns != 0
     {
@@ -506,7 +611,7 @@ async fn frozen_worker(args: &Args, worker: WorkerKind) -> Result<Value, String>
     )?;
     if !matches!(code, 1 | 88)
         || observation.ready_reached
-        || observation.worker_bitmap != 0x7f
+        || observation.worker_bitmap != 0xff
         || observation.spawned_ns == 0
     {
         return Err(format!(
@@ -522,10 +627,30 @@ async fn frozen_worker(args: &Args, worker: WorkerKind) -> Result<Value, String>
         {
             return Err(format!("冻结worker未在CP2窗执法：{observation:?}"));
         }
-    } else if observation.stop_bitmap != 0x7f || observation.disabled_ns == 0 {
-        return Err(format!(
-            "协作退出未Disabled或未停止全部worker：{observation:?}"
-        ));
+    } else {
+        if observation.stop_bitmap != 0xff {
+            return Err(format!("协作退出未停止全部worker：{observation:?}"));
+        }
+        match worker {
+            WorkerKind::Executor => {
+                // 暂停在首个 tick 前；真实 stop 打断后直接退出，没有 Disabled 观测戳。
+                if observation.residual_bitmap != 0
+                    || observation.first_io_ns != 0
+                    || observation.first_exit_ns != 0
+                    || observation.serial_calls.iter().any(|count| *count != 0)
+                {
+                    return Err(format!(
+                        "冻结执行器未保持零调用或原句柄未回收：{observation:?}"
+                    ));
+                }
+            }
+            WorkerKind::Ipc => {
+                if observation.disabled_ns == 0 {
+                    return Err(format!("冻结IPC协作退出未实际Disabled：{observation:?}"));
+                }
+            }
+            _ => return Err(format!("未定义的冻结worker场景：{}", worker.name())),
+        }
     }
     Ok(
         json!({"worker": worker.name(), "exit_code": code, "observation": format!("{observation:?}"), "log_directory": case.directory}),
@@ -562,8 +687,8 @@ async fn refused_stop(args: &Args, worker: WorkerKind) -> Result<Value, String> 
     )?;
     if !matches!(code, 1 | 88)
         || observation.ready_reached
-        || observation.stop_bitmap != 0x7f
-        || observation.worker_bitmap != 0x7f
+        || observation.stop_bitmap != 0xff
+        || observation.worker_bitmap != 0xff
         || observation.disabled_ns == 0
         || observation.refused_stop_bitmap & (1 << worker as u8) == 0
     {

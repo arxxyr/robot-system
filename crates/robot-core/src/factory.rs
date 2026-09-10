@@ -44,14 +44,14 @@
 use crate::adapter::{HardRtAdapter, ManipulatorAdapter, SerialRtAdapter};
 use crate::diag::DiagSink;
 use crate::error::RobotError;
-use crate::serial_services::PreemptProbe;
+use crate::serial_services::LeasedPreemptProbe;
 use crate::time::{DurationNs, RobotClock};
 use std::sync::Arc;
 
 /// 构造时复制到 adapter 的服务句柄；工厂不持有上下文借用。
 pub struct AdapterBuildServices {
     pub clock: Arc<dyn RobotClock>,
-    pub preempt: Option<Arc<dyn PreemptProbe>>,
+    pub preempt: Option<Arc<dyn LeasedPreemptProbe>>,
     pub diag: Option<Arc<dyn DiagSink>>,
     pub call_deadline: DurationNs,
 }

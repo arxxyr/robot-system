@@ -120,10 +120,19 @@ table InvokeTaskRequest {
 // - `error_msg`：status != Ok 时人类可读错误描述（max ~256 chars）；
 //   Ok 时填空串。
 // - `action_id`：UUIDv7 hex（= request.request_id；echo 回填给
-//   gateway 用以构造 proto `TaskHandle`）。status != Ok 时填空串。
-// - `accepted_at_ns`：status == Ok 时填 daemon 内 `clock.now()`
-//   （Coordinator 接受 submit 转入 EXECUTING 的时刻）；status != Ok
-//   时填 0。
+//   gateway 用以构造 proto `TaskHandle`）；提交后 drain 失败仍保留真实 id，
+//   不因 status=Internal 抹去已提交的任务身份。
+// - `accepted_at_ns`：真实 submit 成功后采 daemon 的 clock；注册后的 drain
+//   失败也保留此时刻，尚未提交为 0。旧 builder 的字节语义保持不变。
+// - `invoke_outcome`：本次提交/补偿的真实事实；取消已登记不等于任务结束。
+enum InvokeOutcome : ubyte {
+    Unknown = 0,
+    NotSubmitted = 1,
+    Registered = 2,
+    DrainFailedCancelAccepted = 3,
+    DrainFailedCancelRejected = 4
+}
+
 table InvokeTaskResponse {
     request_id:     string;
     status:         ActionRpcStatus = Unknown;
@@ -132,6 +141,7 @@ table InvokeTaskResponse {
     accepted_at_ns: ulong;
     effect:        SideEffect = Unknown;
     retired:       bool = false;
+    invoke_outcome: InvokeOutcome = Unknown;
 }
 
 // 本文件两个 table 都是 root 候选，按 schema_id 路由。flatc 需要一

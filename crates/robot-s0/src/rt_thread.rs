@@ -22,7 +22,7 @@
 //! 1. `set_sched_fifo(cfg.sched_fifo_priority)`
 //! 2. `mlockall()`
 //! 3. optional `pin_to_cpu(cfg.cpu_affinity)`
-//! 4. `adapter.connect()` → `adapter.enable(true)`（Part 1 简化；Part 2 由 state machine 管）
+//! 4. `adapter.connect()`；首个 tick 做真实安全停止，Enable 仅经原 A2 预约/执行。
 //!
 //! 三个 syscall 失败走 `io::Error::raw_os_error`，主线程根据策略决定是否 fail-fast
 //! 或降级运行（在 CI / 无 rtprio 的开发机上允许降级）。
@@ -52,7 +52,15 @@ use robot_core::thread as rt_thread_os;
 use robot_core::time::{Deadline, DurationNs, RobotClock};
 use robot_transport::{LatestCommandReader, RtSnapshotPublisher};
 
-use crate::hard_rt_ctrl::HardRtCtrlInner;
+use crate::hard_rt_ctrl::{
+    EnableCompensation, EnableFinishPending, HardRtCtrlInner, finish_enable_owned,
+    start_enable_execution,
+};
+use robot_core::control_authority::{
+    EnableResult, NonEnergizingControl, NormalIoIntent, SafetyOperation,
+};
+use robot_core::error::RobotError;
+use robot_core::serial_services::AbortReason;
 
 /// RT 线程配置。
 #[derive(Clone, Copy, Debug)]
@@ -124,7 +132,7 @@ pub struct RtThreadMetrics {
 
 /// RT 线程启动后返回的控制 handle。
 pub struct RtThreadHandle {
-    join: JoinHandle<()>,
+    join: JoinHandle<crate::hard_rt_ctrl::ExecutorExit>,
     stop: Arc<AtomicBool>,
     metrics: Arc<RtThreadMetrics>,
 }
@@ -145,7 +153,7 @@ impl RtThreadHandle {
     /// # Errors
     ///
     /// 返回 `Err` 当 RT 线程 panic（`JoinHandle::join` 的 `Result`）。
-    pub fn join(self) -> thread::Result<()> {
+    pub fn join(self) -> thread::Result<crate::hard_rt_ctrl::ExecutorExit> {
         self.join.join()
     }
 
@@ -166,8 +174,8 @@ impl RtThreadHandle {
 /// - `cmd_reader`: 由 `ipc_thread`（Part 2）或测试喂命令的 reader 端。
 /// - `snapshot_pub`: 由 `pub_thread`（Part 2）或测试消费的 writer 端。
 /// - `ctrl`: `HardRtCtrlInner` 共享 atomic 协议 slot（与 `HardRtCtrlClient`
-///   对端配对）。spawn 时 `safety_state` 被初始化为 `TorqueOffConfirmed`；
-///   `policy` 留默认 `Disabled`（rt_thread 不 write_command 直到上层 set_policy）。
+///   对端配对）。spawn 不改写安全事实；首个 tick 完成真实安全停止后，
+///   才可能提交 `TorqueOffConfirmed`，运动还须原 authority 的 Motion 租约。
 ///
 /// 返回 `RtThreadHandle`，可 `request_stop` + `join`。
 ///
@@ -206,17 +214,16 @@ where
     // `adapter.enable(true)` 真上扭。这样 HardRT / SerialRT 两路径**统一**
     // 由 state_machine 驱动 enable，避免 daemon 启动那一刻的"特权窗口"。
     //
-    // 初始 safety_state = `TorqueOffConfirmed`（adapter 默认 torque off；
-    // mock connect 后 enabled=false，feetech connect 不动 Torque_Enable）。
+    // connect 的返回不构成断扭证明；首个 tick 必须真实 safety_stop_rt，
+    // 再提交该调用之前取得的同 authority 观测。
     // 初始 policy = `Disabled`（ctrl 默认值）→ Step 3 do_write 白名单不含
     // Disabled，所以不会调 write_command。
     adapter
         .connect()
         .map_err(|e| std::io::Error::other(format!("adapter connect failed: {e}")))?;
-    ctrl.safety_state.store(
-        OutputSafetyState::TorqueOffConfirmed.to_u8(),
-        Ordering::Release,
-    );
+    // connect 不证明已断扭；首个真实 RT tick 做安全停止并提交其原观测。
+    ctrl.emergency_action
+        .store(emergency_codes::SAFETY_STOP, Ordering::Release);
 
     let join_stop = Arc::clone(&stop);
     let join_metrics = Arc::clone(&metrics);
@@ -234,7 +241,7 @@ where
                 &join_stop,
                 &join_metrics,
                 &join_ctrl,
-            );
+            )
         })?;
 
     Ok(RtThreadHandle {
@@ -263,7 +270,7 @@ fn run_rt_loop<A: HardRtAdapter>(
     stop: &Arc<AtomicBool>,
     metrics: &Arc<RtThreadMetrics>,
     ctrl: &Arc<HardRtCtrlInner>,
-) {
+) -> crate::hard_rt_ctrl::ExecutorExit {
     // ---- 初始化阶段（尚未进 rt_entry!，允许 alloc）----
     apply_rt_prio(&cfg);
     apply_mlockall(&cfg);
@@ -271,6 +278,7 @@ fn run_rt_loop<A: HardRtAdapter>(
 
     let mut state_buf = JointStateBuf::default();
     let mut tick_seq: u64 = 0;
+    let mut active_enable: Option<EnableFinishPending> = None;
     let mut deadline = Deadline(clock.now());
 
     // ---- arc-swap / seqlock thread_local warmup（RT-critical）----
@@ -302,7 +310,7 @@ fn run_rt_loop<A: HardRtAdapter>(
         metrics
             .snapshot_publish_errors
             .fetch_add(1, Ordering::Relaxed);
-        return;
+        return crate::hard_rt_ctrl::ExecutorExit::from_pending(active_enable);
     }
 
     // ---- 主循环（task-30 v9 / M5 改造） ----
@@ -338,56 +346,42 @@ fn run_rt_loop<A: HardRtAdapter>(
             // **优先**消费 emergency_action：任何 in-flight pending 都被 cancel。
             // safety_stop_rt 是 RT-safe（HardRT mmap 写寄存器即时生效），<1µs。
             //
-            // **finding #4 修订**：client `safety_stop()` 已经在 ipc_thread 调用
-            // 那一刻**同步**置 `safety_latched=true` 并 drain pending → 写
-            // `last_completed = PreemptedByEmergency`。本 step 仍然要消费
-            // `emergency_action`：把硬件 fail-safe 真正下发并把
-            // `safety_state` 升到 `StopCommanded` / `TorqueOffConfirmed` /
-            // `StopFailed`。
-            //
+            // client 已在原 authority 同步收紧；原 packed 请求留给本执行器
+            // 精确消费并发布拒绝，不能由 client 丢弃原 seq 冒作真实执行结束。
             // **finding #1 修订**：safety_stop() 返 Err **不能**伪装成
             // `TorqueOffConfirmed`。区分：
             //   Ok  → `TorqueOffConfirmed`（HardRT mmap 即时生效；M7 + 真硬件
             //                              adapter 可改成 `StopCommanded` +
             //                              `OutputSafetyProbe` 异步 confirm）
             //   Err → `StopFailed`（M7 ipc_tick 升 `Fault(SafetyStopFailed)`）
+            // 两个入口分别消费：IPC 的单调 EStop 只发布 A2 责任，不能要求它再写旧槽。
+            // 即使本次 claim 成功，仍须交换 emergency 槽，避免同一请求在下 tick 重投。
+            let claimed_estop = ctrl.claim_serial_estop();
             let em = ctrl
                 .emergency_action
                 .swap(emergency_codes::NONE, Ordering::AcqRel);
-            if em == emergency_codes::SAFETY_STOP {
-                // task-30 v9 / M5：HardRT adapter `safety_stop()` 必须 RT-safe
-                // （见 `RtSafeCtrl` trait + 各 adapter 的 assert_no_alloc 单测）。
-                // SerialRT adapter 不会进 rt_thread（s0_daemon RtClass 守门）。
+            if claimed_estop || em == emergency_codes::SAFETY_STOP {
+                let observation = ctrl
+                    .authority()
+                    .begin_safety_observation(SafetyOperation::ConfirmOff);
                 let result = adapter.safety_stop_rt();
-                ctrl.safety_latched.store(true, Ordering::Release);
-                // **finding #1 兜底**：把 policy 兜底切到 StopTorque。client
-                // safety_stop() 已经先 store 过；这里再写一次是防"emergency
-                // 由测试 / 其它路径直接置 emergency_action 没经 client"的场景。
-                //
-                // **task-30 v9 / SerialRT E2E #4 调用规范**：本 tick 在
-                // emergency_action 被消费时**会**重新 store(latch, true)。这
-                // 意味着 ipc_tick 调 `clear_safety_latch` 前必须等
-                // `safety_state == TorqueOffConfirmed`（SerialRT 端 confirm 完
-                // 成 = emergency_action 已 swap 完 = rt 端兜底 store latch 已
-                // 落地）。否则 clear 之后会被 rt 端兜底重写。这是工程上合理
-                // 的：操作员/RPC 调 ClearEStop 时本就该已经 confirm hardware
-                // torque off。
+                if let Some(active) = &mut active_enable {
+                    // 这次真实 Stop 已在该 Enable adapter 返回之后执行，不能由 finish 重投。
+                    active.record_hard_rt_stop_returned();
+                }
                 ctrl.policy
                     .store(OutputPolicy::StopTorque.to_u8(), Ordering::Release);
-                let new_safety_state = match result {
-                    Ok(()) => OutputSafetyState::TorqueOffConfirmed,
-                    Err(_) => OutputSafetyState::StopFailed,
-                };
-                ctrl.safety_state
-                    .store(new_safety_state.to_u8(), Ordering::Release);
+                match result {
+                    Ok(()) => {
+                        let _ = ctrl.authority().complete_safety_observation(observation);
+                    }
+                    Err(_) => ctrl.tighten_safety(OutputSafetyState::StopFailed),
+                }
                 metrics
                     .emergency_safety_stop_count
                     .fetch_add(1, Ordering::Relaxed);
 
-                // **drain pending（兜底）**：client 端 safety_stop() 已 drain，
-                // 但若 rt_thread 看到 emergency_action 时 pending 仍非零（极小
-                // race 窗口：client safety_stop 还没跑完 pending swap，或
-                // emergency_action 是其它路径塞的），这里再兜一次。
+                // 本执行器取走尚未开始的原请求后才发布该 seq 的终结。
                 let pending = ctrl.pending_normal.swap(0, Ordering::AcqRel);
                 if pending != 0 {
                     let (action, _arg, seq) = unpack_pending_normal(pending);
@@ -403,25 +397,24 @@ fn run_rt_loop<A: HardRtAdapter>(
                 }
             }
 
-            // ─── 2) 消费 normal action（含二次 latch check） ────────────────
-            let pending = ctrl.pending_normal.swap(0, Ordering::AcqRel);
-            if pending != 0 {
-                let (action, arg, seq) = unpack_pending_normal(pending);
-                if action != normal_codes::NONE {
-                    // **二次 latch check**：client 端检查后到 rt_thread swap 之间
-                    // 可能有 race 窗口（emergency 在两次之间触发 latch）。
-                    let latched = ctrl.safety_latched.load(Ordering::Acquire);
-                    let resp = if latched && action == normal_codes::ENABLE && arg == 1 {
-                        metrics.latch_rejected_count.fetch_add(1, Ordering::Relaxed);
-                        AdapterResp::Err(AdapterErr::SafetyLatched)
-                    } else {
-                        execute_normal(&mut adapter, action, arg, ctrl)
-                    };
-                    ctrl.last_completed
-                        .store(pack_completed(seq, resp), Ordering::Release);
+            // 已开始的 Enable 先办真实 finish；拒绝时不取新 normal 或覆盖完成槽。
+            if let Some(active) = active_enable.take() {
+                active_enable = finish_hard_rt_enable(active, ctrl);
+                if active_enable.is_none() {
                     metrics
                         .normal_completed_count
                         .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            if active_enable.is_none() {
+                let raw = ctrl.pending_normal.swap(0, Ordering::AcqRel);
+                if let Ok(Some(pending)) = ctrl.decode_pending(raw) {
+                    active_enable = execute_owned_normal(&mut adapter, pending, ctrl);
+                    if active_enable.is_none() {
+                        metrics
+                            .normal_completed_count
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
 
@@ -442,7 +435,9 @@ fn run_rt_loop<A: HardRtAdapter>(
             if do_write {
                 let cmd_guard = cmd_reader.load();
                 let cmd = cmd_guard.as_view();
-                if adapter.write_command(&cmd).is_err() {
+                if with_normal_lease(ctrl, NormalIoIntent::Motion, || adapter.write_command(&cmd))
+                    .is_err()
+                {
                     metrics.write_errors.fetch_add(1, Ordering::Relaxed);
                 }
             }
@@ -463,7 +458,9 @@ fn run_rt_loop<A: HardRtAdapter>(
             // 无阻塞 IO。
             let sample_started_ns = clock.now().0;
             let mut next_state = state_buf;
-            match adapter.read_state(&mut next_state) {
+            match with_normal_lease(ctrl, NormalIoIntent::PeriodicRead, || {
+                adapter.read_state(&mut next_state)
+            }) {
                 Ok(()) => {
                     next_state.stamp_ns = sample_started_ns;
                     state_buf = next_state;
@@ -501,10 +498,86 @@ fn run_rt_loop<A: HardRtAdapter>(
         }
     }
 
-    // ---- 退出清理 ----
-    // Part 1：这里不主动 disable / disconnect —— 由主线程（s0_daemon）在 join 后
-    // 负责关停 adapter，保持 RT 线程职责纯净。
-    // Part 2 可能在这里做 "safe output" 兜底。
+    // 正常 stop 或快照失败均携原执行责任退出；不能通过析构伪造 finish 或原 seq 响应。
+    // 设备停止仍由关闭路径的真实 Lower/Stop 证明，join 本身不证明已断扭。
+    crate::hard_rt_ctrl::ExecutorExit::from_pending(active_enable)
+}
+
+/// 只消费执行器实际取到的 packed 请求；启动、调用、finish 走同一实现。
+/// 返回值是尚未能完成的原 Execution，调用者必须保留并只重试 finish。
+pub(crate) fn execute_owned_normal<A: HardRtAdapter>(
+    adapter: &mut A,
+    pending: crate::hard_rt_ctrl::SerialPending,
+    ctrl: &HardRtCtrlInner,
+) -> Option<EnableFinishPending> {
+    let record = pending.action;
+    let mut execution = None;
+    let start_error = if pending.cancelled {
+        Some(AdapterErr::PreemptedByEmergency)
+    } else if record.action == normal_codes::ENABLE && record.arg == 1 {
+        match start_enable_execution(ctrl) {
+            Ok(token) => {
+                let installed = ctrl.execution_slot().install(token.view());
+                execution = Some(token);
+                installed.err().map(|_| AdapterErr::AuthorityRevoked)
+            }
+            Err(error) => Some(error),
+        }
+    } else {
+        None
+    };
+    let mut adapter_called = false;
+    let response = match start_error {
+        Some(error) => AdapterResp::Err(error),
+        None => execute_normal(
+            adapter,
+            record.action,
+            record.arg,
+            ctrl,
+            &mut adapter_called,
+        ),
+    };
+    if execution.is_some() {
+        ctrl.execution_slot().clear();
+    }
+    match execution {
+        Some(execution) => {
+            return finish_hard_rt_enable(
+                EnableFinishPending::new(
+                    execution,
+                    record,
+                    match response {
+                        AdapterResp::Ok => EnableResult::Succeeded,
+                        AdapterResp::Err(_) => EnableResult::Failed,
+                    },
+                    response,
+                    adapter_called,
+                ),
+                ctrl,
+            );
+        }
+        None => crate::serial_convergence::publish_completion(ctrl, record, response),
+    }
+    None
+}
+
+/// 真实 finish 只执行一次；补偿使用原紧急槽，不另造 seq 或 EStop。
+fn finish_hard_rt_enable(
+    active: EnableFinishPending,
+    ctrl: &HardRtCtrlInner,
+) -> Option<EnableFinishPending> {
+    match finish_enable_owned(active, ctrl) {
+        Ok(finished) => {
+            finished.publish_after_compensation(ctrl, |_, compensation| {
+                if compensation == EnableCompensation::Required {
+                    ctrl.emergency_action
+                        .store(emergency_codes::SAFETY_STOP, Ordering::Release);
+                }
+            });
+            None
+        }
+        Err(active) => Some(active),
+    }
 }
 
 /// rt_thread 内部：把 (action, arg) 翻译成 adapter 调用，返回 AdapterResp。
@@ -520,24 +593,30 @@ fn execute_normal<A: HardRtAdapter>(
     action: u8,
     arg: u8,
     ctrl: &HardRtCtrlInner,
+    adapter_called: &mut bool,
 ) -> AdapterResp {
-    match action {
+    let intent = match (action, arg) {
+        (normal_codes::ENABLE, 1) => match ctrl.execution_slot().load() {
+            Some(view) => NormalIoIntent::EnableStep(view),
+            None => return AdapterResp::Err(AdapterErr::AuthorityRevoked),
+        },
+        (normal_codes::ENABLE, 0) => {
+            NormalIoIntent::NonEnergizingControl(NonEnergizingControl::Disable)
+        }
+        (normal_codes::SET_MODE, _) => NormalIoIntent::Motion,
+        _ => return AdapterResp::Err(AdapterErr::Unsupported),
+    };
+    let observation = match (action, arg) {
+        (normal_codes::ENABLE, 0) => Some(
+            ctrl.authority()
+                .begin_safety_observation(SafetyOperation::Disable),
+        ),
+        _ => None,
+    };
+    let result = with_normal_lease(ctrl, intent, || match action {
         normal_codes::ENABLE => {
-            let on = arg != 0;
-            match adapter.enable_rt(on) {
-                Ok(()) => {
-                    ctrl.safety_state.store(
-                        if on {
-                            OutputSafetyState::TorqueOn.to_u8()
-                        } else {
-                            OutputSafetyState::TorqueOffConfirmed.to_u8()
-                        },
-                        Ordering::Release,
-                    );
-                    AdapterResp::Ok
-                }
-                Err(_) => AdapterResp::Err(AdapterErr::HardwareFault),
-            }
+            *adapter_called = true;
+            adapter.enable_rt(arg != 0)
         }
         normal_codes::SET_MODE => {
             let mode = match arg {
@@ -546,20 +625,75 @@ fn execute_normal<A: HardRtAdapter>(
                 2 => ControlMode::Velocity,
                 3 => ControlMode::Torque,
                 4 => ControlMode::ServoPosition,
-                _ => return AdapterResp::Err(AdapterErr::Unsupported),
+                _ => return Err(RobotError::Unsupported("不支持的控制模式")),
             };
-            match adapter.set_mode_rt(mode) {
-                Ok(()) => AdapterResp::Ok,
-                Err(_) => AdapterResp::Err(AdapterErr::Unsupported),
-            }
+            adapter.set_mode_rt(mode)
         }
-        // HardRT 路径不支持的复杂 action：Connect / Disconnect / HoldCurrent
-        // 由 SerialRT executor 处理。HardRT 拿到这些 → Unsupported。
-        normal_codes::CONNECT | normal_codes::DISCONNECT | normal_codes::HOLD_CURRENT => {
+        _ => Err(RobotError::Unsupported("HardRT 不支持该动作")),
+    });
+    match result {
+        Ok(()) => {
+            if let Some(observation) = observation {
+                let _ = ctrl.authority().complete_safety_observation(observation);
+            }
+            AdapterResp::Ok
+        }
+        Err(RobotError::Aborted(AbortReason::Revoked)) => {
+            AdapterResp::Err(AdapterErr::AuthorityRevoked)
+        }
+        Err(RobotError::Aborted(AbortReason::Emergency)) => {
+            AdapterResp::Err(AdapterErr::PreemptedByEmergency)
+        }
+        Err(RobotError::Aborted(AbortReason::Timeout)) => {
+            AdapterResp::Err(AdapterErr::AbortedByTimeout)
+        }
+        Err(RobotError::Unsupported(_) | RobotError::InvalidParameter(_)) => {
             AdapterResp::Err(AdapterErr::Unsupported)
         }
-        _ => AdapterResp::Err(AdapterErr::Unsupported),
+        Err(_) => AdapterResp::Err(AdapterErr::HardwareFault),
     }
+}
+
+/// 调用前取得真实 token；返回后只释放原 token，拒绝不清位、不重复调用 adapter。
+fn with_normal_lease<T>(
+    ctrl: &HardRtCtrlInner,
+    intent: NormalIoIntent,
+    call: impl FnOnce() -> Result<T, RobotError>,
+) -> Result<T, RobotError> {
+    #[cfg(feature = "test-comm-fault-hook")]
+    let acquired = {
+        let observed = ctrl.authority().acquire_normal_io_observed(intent);
+        ctrl.trace_now(
+            crate::comm_fault_trace::TraceKind::NormalAcquire,
+            observed.failed_cas.unwrap_or(u64::MAX),
+            u64::from(observed.outcome.is_ok()),
+        );
+        observed.outcome
+    };
+    #[cfg(not(feature = "test-comm-fault-hook"))]
+    let acquired = ctrl.authority().acquire_normal_io(intent);
+    let lease = acquired.map_err(|reason| {
+        RobotError::Aborted(match reason {
+            robot_core::control_authority::Refusal::SerialEStopPending => AbortReason::Emergency,
+            _ => AbortReason::Revoked,
+        })
+    })?;
+    let result = call();
+    #[cfg(feature = "test-comm-fault-hook")]
+    {
+        let observed = ctrl.authority().release_normal_io_observed(lease);
+        ctrl.trace_now(
+            crate::comm_fault_trace::TraceKind::NormalRelease,
+            observed.failed_cas.unwrap_or(u64::MAX),
+            match observed.outcome {
+                Ok(_) => 1,
+                Err(_) => 3,
+            },
+        );
+    }
+    #[cfg(not(feature = "test-comm-fault-hook"))]
+    let _ = ctrl.authority().release_normal_io(lease);
+    result
 }
 
 // **RT 边界说明**（§0 / §4.9 RT 铁律）：以下三个 `apply_*` helper 在 RT
@@ -607,9 +741,70 @@ mod tests {
     use super::*;
     use robot_adapter_mock::MockHardRTAdapter;
     use robot_core::adapter::{ControlModeRepr, JointCommandBuf, MAX_JOINTS};
+    use robot_core::executor_ctrl::ExecutorCtrlClient;
     use robot_core::time::{MockClock, MonoRawNs};
     use robot_transport::LatestCommandSlot;
     use std::time::Duration;
+
+    /// 失败路径仍持真实句柄：先 stop，再有界等真正结束，最后 join。
+    /// adapter 若违约阻塞，终止测试进程，不 detach 活 worker 后继续其它测试。
+    struct TestRtHandle(Option<RtThreadHandle>);
+    impl TestRtHandle {
+        fn is_finished(&self) -> bool {
+            self.0.as_ref().unwrap().is_finished()
+        }
+        fn request_stop(&self) {
+            self.0.as_ref().unwrap().request_stop();
+        }
+        fn metrics(&self) -> &Arc<RtThreadMetrics> {
+            self.0.as_ref().unwrap().metrics()
+        }
+        fn wait_finished(&self) {
+            self.request_stop();
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            while !self.is_finished() {
+                if std::time::Instant::now() >= deadline {
+                    std::process::abort();
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        fn join(mut self) -> thread::Result<()> {
+            self.wait_finished();
+            let exit = self.0.take().unwrap().join()?;
+            if exit.has_pending_enable() {
+                // 旧健康用例必须真实为空；失败时把原件保到进程退出。
+                std::process::abort();
+            }
+            Ok(())
+        }
+    }
+    impl Drop for TestRtHandle {
+        fn drop(&mut self) {
+            if self.0.is_some() {
+                self.wait_finished();
+                if let Ok(exit) = self.0.take().unwrap().join()
+                    && exit.has_pending_enable()
+                {
+                    // 测试失败收尾不能先析构原执行凭证后继续运行。
+                    std::process::abort();
+                }
+            }
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_rt_thread<A: HardRtAdapter + Send + 'static>(
+        cfg: RtThreadConfig,
+        clock: Arc<dyn RobotClock>,
+        adapter: A,
+        commands: LatestCommandReader<JointCommandBuf>,
+        publisher: RtSnapshotPublisher<RtSnapshot>,
+        ctrl: Arc<HardRtCtrlInner>,
+        stop: Arc<AtomicBool>,
+    ) -> std::io::Result<TestRtHandle> {
+        super::spawn_rt_thread(cfg, clock, adapter, commands, publisher, ctrl, stop)
+            .map(|handle| TestRtHandle(Some(handle)))
+    }
 
     // **task-30 v9 / M7 配套**：spawn_rt_thread 不再 spawn-time enable。
     // 需要 enabled adapter 的测试通过 client 排 `Enable(true)` 让 rt_thread
@@ -644,7 +839,9 @@ mod tests {
             ..RtThreadConfig::default()
         };
 
-        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         // task-30 v9 / M5：默认 OutputPolicy=Disabled 时 rt_thread 不调
         // write_command。测试要求 mock adapter echo cmd → 必须先把 policy
         // 切到 ActiveForward。M7 由 state_machine 切。
@@ -786,7 +983,9 @@ mod tests {
             strict_rt: false,
             ..RtThreadConfig::default()
         };
-        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         let handle = spawn_rt_thread(
             cfg,
             clock,
@@ -864,7 +1063,9 @@ mod tests {
             adapter,
             cmd_reader,
             snap_pub,
-            Arc::new(HardRtCtrlInner::new()),
+            Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+                false,
+            ))),
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .unwrap();
@@ -903,7 +1104,9 @@ mod tests {
             adapter,
             cmd_reader,
             snap_pub,
-            Arc::new(HardRtCtrlInner::new()),
+            Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+                false,
+            ))),
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .unwrap();
@@ -935,7 +1138,9 @@ mod tests {
             tick_period_ns: 1_000_000, // 1 ms
             ..RtThreadConfig::default()
         };
-        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         // task-30 v9 / M5：默认 OutputPolicy=Disabled 时 rt_thread 不调
         // write_command。测试要求 mock adapter echo cmd → 必须先把 policy
         // 切到 ActiveForward。M7 由 state_machine 切。
@@ -968,7 +1173,9 @@ mod tests {
             tick_period_ns: 100_000, // 100 µs
             ..RtThreadConfig::default()
         };
-        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         // task-30 v9 / M5：默认 OutputPolicy=Disabled 时 rt_thread 不调
         // write_command。测试要求 mock adapter echo cmd → 必须先把 policy
         // 切到 ActiveForward。M7 由 state_machine 切。
@@ -1013,7 +1220,7 @@ mod tests {
     fn setup(
         joint_count: u8,
     ) -> (
-        RtThreadHandle,
+        TestRtHandle,
         Arc<HardRtCtrlInner>,
         robot_transport::RtSnapshotReader<RtSnapshot>,
     ) {
@@ -1030,7 +1237,9 @@ mod tests {
             tick_period_ns: 100_000, // 100 µs = 10 kHz
             ..RtThreadConfig::default()
         };
-        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         ctrl.policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
         let handle = spawn_rt_thread(
@@ -1060,24 +1269,22 @@ mod tests {
             }),
             "rt_thread 500ms 内未跑出第一 tick"
         );
-        // 触发 safety_stop
-        ctrl.emergency_action
-            .store(emergency_codes::SAFETY_STOP, Ordering::Release);
+        let stops_before = metrics.emergency_safety_stop_count.load(Ordering::Relaxed);
+        crate::hard_rt_ctrl::HardRtCtrlClient::new(ctrl.clone()).safety_stop();
         // 等 emergency 被消费 + safety_state 升 TorqueOffConfirmed
         assert!(
             wait_until(Duration::from_millis(500), || {
-                metrics.emergency_safety_stop_count.load(Ordering::Relaxed) >= 1
-                    && ctrl.safety_state.load(Ordering::Acquire)
-                        == OutputSafetyState::TorqueOffConfirmed.to_u8()
+                metrics.emergency_safety_stop_count.load(Ordering::Relaxed) > stops_before
+                    && ctrl.safety_state().to_u8() == OutputSafetyState::TorqueOffConfirmed.to_u8()
             }),
             "emergency 500ms 内未升 TorqueOffConfirmed"
         );
         handle.request_stop();
         handle.join().unwrap();
 
-        assert!(ctrl.safety_latched.load(Ordering::Acquire), "should latch");
+        assert!(ctrl.safety_latched(), "should latch");
         assert_eq!(
-            OutputSafetyState::from_u8(ctrl.safety_state.load(Ordering::Acquire)),
+            OutputSafetyState::from_u8(ctrl.safety_state().to_u8()),
             OutputSafetyState::TorqueOffConfirmed
         );
         assert!(metrics.emergency_safety_stop_count.load(Ordering::Relaxed) >= 1);
@@ -1100,7 +1307,9 @@ mod tests {
             metrics.tick_count.load(Ordering::Relaxed) > 0
         }));
 
-        // 提交 Enable(true)
+        // 同一真实 owner 派生公告，裸请求不能取得执行权限。
+        let (owner, view) = ctrl.authority().reserve_enable().unwrap();
+        ctrl.start_slot().post(view).unwrap();
         let Ok(seq) = (match client.request_normal(AdapterNormalReq::Enable(true)) {
             NormalReqStatus::Submitted { seq } => Ok(seq),
             other => Err(other),
@@ -1116,15 +1325,16 @@ mod tests {
             }),
             "Enable(true) 500ms 内未被 rt 消费"
         );
+        ctrl.authority().commit_enable(owner).unwrap();
         handle.request_stop();
         handle.join().unwrap();
 
         assert!(metrics.normal_completed_count.load(Ordering::Relaxed) >= 1);
     }
 
-    /// 二次 latch check：emergency 之后**直接**注入 Enable(true) packed slot
-    /// （绕过 client 端检查模拟 race），rt_thread 应在 latch check 写
-    /// `Err(SafetyLatched)` + `latch_rejected_count >= 1`。
+    /// 无视图启动拒绝：emergency 之后**直接**注入 Enable(true) packed slot
+    /// （绕过 client 端检查模拟 race），rt_thread 应在 A2 start 写
+    /// `Err(AuthorityRevoked)` + 真实完成计数。
     #[test]
     fn rt_thread_secondary_latch_check_rejects_enable_true() {
         use crate::test_util::wait_until;
@@ -1133,41 +1343,44 @@ mod tests {
         let (handle, ctrl, _) = setup(1);
         let metrics = Arc::clone(handle.metrics());
 
-        // 1. emergency 触发 + 等 rt 消费 → safety_latched=true
-        ctrl.emergency_action
-            .store(emergency_codes::SAFETY_STOP, Ordering::Release);
+        assert!(wait_until(Duration::from_millis(500), || {
+            metrics.tick_count.load(Ordering::Relaxed) > 0
+        }));
+        let stops_before = metrics.emergency_safety_stop_count.load(Ordering::Relaxed);
+        crate::hard_rt_ctrl::HardRtCtrlClient::new(ctrl.clone()).safety_stop();
         assert!(
             wait_until(Duration::from_millis(500), || {
-                ctrl.safety_latched.load(Ordering::Acquire)
+                ctrl.safety_latched()
+                    && metrics.emergency_safety_stop_count.load(Ordering::Relaxed) > stops_before
             }),
             "emergency 500ms 内未 latch"
         );
 
-        // 2. **绕过 client 端 latch check**直接注入 Enable(true) slot
+        // 2. **绕过 client 端 A2 start**直接注入 Enable(true) slot
         //    （模拟 client 端检查后 latch 才被置位的 race 窗口）。
         //    seq 用一个新值（避免与已有 last_completed 冲突）。
         let raw_seq = 99u64;
         let packed = pack_pending_normal(normal_codes::ENABLE, 1, raw_seq);
         ctrl.pending_normal.store(packed, Ordering::Release);
 
-        // 3. 等 rt_thread 处理 → 写 last_completed = (raw_seq, Err(SafetyLatched))
+        // 3. 等 rt_thread 处理 → 写 last_completed = (raw_seq, Err(AuthorityRevoked))
         assert!(
             wait_until(Duration::from_millis(500), || {
                 let last = ctrl.last_completed.load(Ordering::Acquire);
                 let (last_seq, _) = robot_core::executor_ctrl::unpack_completed(last);
                 last_seq == raw_seq
             }),
-            "secondary latch check 500ms 内未触发"
+            "secondary A2 start 500ms 内未触发"
         );
         handle.request_stop();
         handle.join().unwrap();
 
-        // 4. last_completed 应是 (seq=99, Err(SafetyLatched))
+        // 4. last_completed 应是 (seq=99, Err(AuthorityRevoked))
         let last = ctrl.last_completed.load(Ordering::Acquire);
         let (last_seq, resp) = robot_core::executor_ctrl::unpack_completed(last);
         assert_eq!(last_seq, raw_seq);
-        assert_eq!(resp, AdapterResp::Err(AdapterErr::SafetyLatched));
-        assert!(metrics.latch_rejected_count.load(Ordering::Relaxed) >= 1);
+        assert_eq!(resp, AdapterResp::Err(AdapterErr::AuthorityRevoked));
+        assert!(metrics.normal_completed_count.load(Ordering::Relaxed) >= 1);
     }
 
     /// emergency drain pending：rt tick 头部消费 emergency 时，**同 tick 内**
@@ -1177,15 +1390,31 @@ mod tests {
         use crate::test_util::wait_until;
         use robot_core::executor_ctrl::{AdapterErr, AdapterResp, pack_pending_normal};
 
-        let (handle, ctrl, _) = setup(1);
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
+        ctrl.pending_normal.store(
+            pack_pending_normal(normal_codes::ENABLE, 1, 42),
+            Ordering::Release,
+        );
+        crate::hard_rt_ctrl::HardRtCtrlClient::new(ctrl.clone()).safety_stop();
+        let (_commands, reader) = LatestCommandSlot::new(JointCommandBuf::default());
+        let (publisher, _snapshot) = RtSnapshotPublisher::new(RtSnapshot::default());
+        let handle = spawn_rt_thread(
+            RtThreadConfig {
+                tick_period_ns: 100_000,
+                ..RtThreadConfig::default()
+            },
+            Arc::new(robot_core::time::SystemClock::new()),
+            MockHardRTAdapter::with_unlimited_limits(1),
+            reader,
+            publisher,
+            ctrl.clone(),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
         let metrics = Arc::clone(handle.metrics());
-
-        // 同时设 emergency + pending（rt_thread 同 tick 头部消费 emergency 应
-        // 把 pending 也 drain 掉）。
-        let packed = pack_pending_normal(normal_codes::ENABLE, 1, 42);
-        ctrl.pending_normal.store(packed, Ordering::Release);
-        ctrl.emergency_action
-            .store(emergency_codes::SAFETY_STOP, Ordering::Release);
+        // 请求与真实收紧均在 spawn 前完成，第一次真实安全停止必取走原请求。
 
         // 等 rt 写 last_completed (seq=42, PreemptedByEmergency)
         assert!(
@@ -1211,6 +1440,10 @@ mod tests {
     /// 读 mock adapter 的 state；如果 adapter 仍 write_command，state.positions
     /// 会被 echo 成 cmd 的值；如果**正确不写**，state.positions 留旧值。
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "同一真实 worker 先授权写入再急停，比较原快照并完成真实 join"
+    )]
     fn rt_thread_after_emergency_skips_write_command() {
         use crate::hard_rt_ctrl::HardRtCtrlClient;
         use robot_core::adapter::ControlModeRepr;
@@ -1226,7 +1459,9 @@ mod tests {
             tick_period_ns: 100_000,
             ..RtThreadConfig::default()
         };
-        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         let client = HardRtCtrlClient::new(Arc::clone(&ctrl));
 
         let handle = spawn_rt_thread(
@@ -1240,8 +1475,13 @@ mod tests {
         )
         .unwrap();
 
-        // **task-30 v9 / M7**：spawn-time 不再 enable；通过 client 排
-        // Enable(true) 让 rt_thread 真上扭，等 ack 完成再切 policy。
+        assert!(crate::test_util::wait_until(
+            Duration::from_millis(500),
+            || { handle.metrics().tick_count.load(Ordering::Relaxed) > 0 }
+        ));
+        let (owner, view) = ctrl.authority().reserve_enable().unwrap();
+        ctrl.start_slot().post(view).unwrap();
+        // 原 owner 保留到真实执行完成；只有 commit 成功才允许 Motion。
         let status =
             client.request_normal(robot_core::executor_ctrl::AdapterNormalReq::Enable(true));
         let robot_core::executor_ctrl::NormalReqStatus::Submitted { seq: enable_seq } = status
@@ -1254,6 +1494,7 @@ mod tests {
                 == Some(robot_core::executor_ctrl::AdapterResp::Ok)),
             "Enable(true) 500ms 内未被 rt 消费"
         );
+        ctrl.authority().commit_enable(owner).unwrap();
         client.set_policy(OutputPolicy::ActiveForward);
 
         // 1) 正常路径：写一条 cmd → rt_thread 应 echo 到 state
@@ -1276,14 +1517,18 @@ mod tests {
             "ActiveForward 500ms 内 mock 未 echo cmd[0]=1.0"
         );
 
-        // 2) emergency
+        // 2) emergency，不能把启动期已经完成的 Stop 计为这次收尾。
+        let stops_before = handle
+            .metrics()
+            .emergency_safety_stop_count
+            .load(Ordering::Relaxed);
         client.safety_stop();
 
         // 3) 等 emergency 被 rt 消费（state.positions[0] 被清零）
         let metrics = Arc::clone(handle.metrics());
         assert!(
             crate::test_util::wait_until(Duration::from_millis(500), || {
-                metrics.emergency_safety_stop_count.load(Ordering::Relaxed) >= 1
+                metrics.emergency_safety_stop_count.load(Ordering::Relaxed) > stops_before
             }),
             "emergency 500ms 内未被 rt 消费"
         );
@@ -1400,7 +1645,9 @@ mod tests {
             tick_period_ns: 100_000, // 100 µs = 10 kHz tick
             ..RtThreadConfig::default()
         };
-        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         ctrl.policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
         let handle = spawn_rt_thread(
@@ -1420,12 +1667,11 @@ mod tests {
             Duration::from_millis(500),
             || metrics.tick_count.load(Ordering::Relaxed) > 0
         ));
-        ctrl.emergency_action
-            .store(emergency_codes::SAFETY_STOP, Ordering::Release);
+        crate::hard_rt_ctrl::HardRtCtrlClient::new(ctrl.clone()).safety_stop();
         // 等 emergency 被消费 + safety_state 升 StopFailed
         assert!(
             crate::test_util::wait_until(Duration::from_millis(500), || {
-                ctrl.safety_state.load(Ordering::Acquire) == OutputSafetyState::StopFailed.to_u8()
+                ctrl.safety_state().to_u8() == OutputSafetyState::StopFailed.to_u8()
             }),
             "safety_stop_rt Err 后 500ms 内未升 StopFailed"
         );
@@ -1434,26 +1680,24 @@ mod tests {
 
         // **关键断言**：safety_state = StopFailed，**不是** TorqueOffConfirmed
         assert_eq!(
-            OutputSafetyState::from_u8(ctrl.safety_state.load(Ordering::Acquire)),
+            OutputSafetyState::from_u8(ctrl.safety_state().to_u8()),
             OutputSafetyState::StopFailed,
             "safety_stop_rt Err 必须升 StopFailed，不能伪装 TorqueOffConfirmed"
         );
         // safety_latched 仍要 latch（防后续 Enable(true)）
-        assert!(ctrl.safety_latched.load(Ordering::Acquire));
+        assert!(ctrl.safety_latched());
     }
 
-    /// **finding #4 修复 lock 测试**：`client.safety_stop()` **同步**置 latch
-    /// + drain pending。调用方拿回控制权时 latch 已生效（不依赖 rt_thread tick）。
+    /// 同步收紧立即可见，但原请求和序号保持到真实执行器消费后才终结。
     #[test]
-    fn client_safety_stop_synchronously_latches_and_drains_pending() {
+    fn client_safety_stop_synchronously_latches_and_retains_pending() {
         use crate::hard_rt_ctrl::HardRtCtrlClient;
-        use robot_core::executor_ctrl::{
-            AdapterErr, AdapterNormalReq, AdapterResp, ExecutorCtrlClient, NormalReqStatus,
-            unpack_completed,
-        };
+        use robot_core::executor_ctrl::{AdapterNormalReq, ExecutorCtrlClient, NormalReqStatus};
 
         // 不 spawn rt_thread；直接验 client 端 atomic 行为。
-        let inner = Arc::new(HardRtCtrlInner::new());
+        let inner = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         let client = HardRtCtrlClient::new(Arc::clone(&inner));
 
         // 1) 先排一个 normal pending（Enable(false) 不被 latch 拒）
@@ -1468,14 +1712,16 @@ mod tests {
 
         // 3) **同步**断言（**不**等 rt tick）：
         //    - safety_latched=true
-        //    - pending 已被 drain（=0）
-        //    - last_completed 反映 PreemptedByEmergency 给 seq
+        //    - pending 原样保留，尚无 last_completed
+        //    - 原 seq 的责任未因同步收紧而退休
         //    - emergency_action=SAFETY_STOP
-        assert!(inner.safety_latched.load(Ordering::Acquire));
-        assert_eq!(inner.pending_normal.load(Ordering::Acquire), 0);
-        let (last_seq, resp) = unpack_completed(inner.last_completed.load(Ordering::Acquire));
-        assert_eq!(last_seq, seq);
-        assert_eq!(resp, AdapterResp::Err(AdapterErr::PreemptedByEmergency));
+        assert!(inner.safety_latched());
+        assert_ne!(inner.pending_normal.load(Ordering::Acquire), 0);
+        assert_eq!(
+            client.poll_last_normal_resp(seq),
+            None,
+            "原序号保留到真实执行器处理"
+        );
         assert_eq!(
             inner.emergency_action.load(Ordering::Acquire),
             emergency_codes::SAFETY_STOP
@@ -1502,7 +1748,9 @@ mod tests {
             tick_period_ns: 100_000,
             ..RtThreadConfig::default()
         };
-        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         // **policy=Disabled (default)** —— 不切到 ActiveForward。
         let handle = spawn_rt_thread(
             cfg,
@@ -1552,7 +1800,9 @@ mod tests {
             strict_rt: false,
             ..RtThreadConfig::default()
         };
-        let ctrl = Arc::new(HardRtCtrlInner::new());
+        let ctrl = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         ctrl.policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
         let handle = spawn_rt_thread(

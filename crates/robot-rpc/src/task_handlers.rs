@@ -55,11 +55,8 @@
 // gRPC service 改 Box<Status>），module 级 allow。
 #![allow(clippy::result_large_err)]
 
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 
-use crossbeam_channel::TrySendError;
 use robot_msg::build_helpers::{
     build_cancel_task_request, build_clear_error_request, build_get_task_status_request,
     build_invoke_task_request,
@@ -74,13 +71,12 @@ use thiserror::Error;
 use tonic::Code;
 
 use crate::auth::{Capability, RequestIdError, Role, RoleTable, validate_request_id};
-use crate::idempotency::{CachedResponse, Decision, Fingerprint, IdempotencyCache, Method};
+use crate::idempotency::{Fingerprint, Method};
 use crate::proto::{
     Ack, ActionFailureProto, ActionKindProto, ActionOutcomeProto, CancelTaskCommand,
     ClearErrorCommand, CommandMeta, InvokeTaskCommand, TaskHandle, TaskHandleRef,
     TaskState as ProtoTaskState, TaskStatus, action_failure_proto, action_outcome_proto,
 };
-use crate::rr_io_thread::RrForwardRequest;
 
 // ============================================================================
 // Q2(a) byte gate 常量（v0.4 候选 1）
@@ -474,100 +470,6 @@ fn check_capability(
     }
 }
 
-/// 共用：handler 入口若 gateway 已 shutdown，FreshInsert handle 直接 drop +
-/// 返 `Unavailable`（在 cache.decide=FreshInsert 之后、forward 之前调用）。
-fn shutdown_gate(
-    shutdown: bool,
-    request_id: &str,
-    idempotency_key: &str,
-    method_label: &str,
-    insert_handle: Option<crate::idempotency::InsertHandle>,
-) -> Result<(), tonic::Status> {
-    if shutdown {
-        tracing::warn!(
-            request_id,
-            idempotency_key,
-            method = method_label,
-            "rejected during shutdown (cache.decide=FreshInsert; not forwarding)"
-        );
-        drop(insert_handle);
-        return Err(tonic::Status::unavailable(
-            "gateway is shutting down; new requests rejected",
-        ));
-    }
-    Ok(())
-}
-
-/// 共用：forward wire bytes via rr_io_thread channel，返 oneshot rx。
-fn forward_to_rr_io(
-    tx: &crossbeam_channel::Sender<RrForwardRequest>,
-    wire_bytes: Vec<u8>,
-    request_id: &str,
-    method_label: &str,
-) -> Result<tokio::sync::oneshot::Receiver<Vec<u8>>, tonic::Status> {
-    let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
-    let forward = RrForwardRequest {
-        wire_bytes,
-        oneshot_tx,
-        request_id: request_id.to_string(),
-    };
-    match tx.try_send(forward) {
-        Ok(()) => Ok(oneshot_rx),
-        Err(TrySendError::Full(_)) => {
-            tracing::warn!(
-                request_id,
-                method = method_label,
-                "forward channel full; replying ResourceExhausted"
-            );
-            Err(tonic::Status::resource_exhausted(
-                "gateway RR I/O forward channel full; retry shortly",
-            ))
-        }
-        Err(TrySendError::Disconnected(_)) => {
-            tracing::error!(
-                request_id,
-                method = method_label,
-                "forward channel disconnected; rr_io_thread already stopped"
-            );
-            Err(tonic::Status::unavailable("gateway RR I/O thread stopped"))
-        }
-    }
-}
-
-/// 共用：等 oneshot reply with timeout（`timeout_ms + grace_ms`）。
-async fn await_reply(
-    oneshot_rx: tokio::sync::oneshot::Receiver<Vec<u8>>,
-    timeout_ms: u64,
-    grace_ms: u64,
-    request_id: &str,
-    method_label: &str,
-) -> Result<Vec<u8>, tonic::Status> {
-    let total_timeout_ms = timeout_ms.saturating_add(grace_ms);
-    match tokio::time::timeout(Duration::from_millis(total_timeout_ms), oneshot_rx).await {
-        Err(_elapsed) => {
-            tracing::warn!(
-                request_id,
-                timeout_ms,
-                grace_ms,
-                method = method_label,
-                "gateway-side timeout; replying DeadlineExceeded"
-            );
-            Err(tonic::Status::deadline_exceeded(format!(
-                "no RR response within {total_timeout_ms} ms (timeout_ms + grace_ms)"
-            )))
-        }
-        Ok(Err(_recv_err)) => {
-            tracing::error!(
-                request_id,
-                method = method_label,
-                "oneshot RecvError; gateway RR I/O unavailable"
-            );
-            Err(tonic::Status::unavailable("gateway RR I/O unavailable"))
-        }
-        Ok(Ok(b)) => Ok(b),
-    }
-}
-
 // ============================================================================
 // Handler async fns
 // ============================================================================
@@ -627,198 +529,65 @@ async fn handle_invoke_task_inner(
     // 4. fingerprint
     let fingerprint = invoke_task_idempotency_fingerprint(&v);
 
-    // 5. cache.decide
-    let insert_handle = match decide_with_method(
-        &state.idempotency,
-        Method::InvokeTask,
-        &v.meta.idempotency_key,
-        fingerprint,
-        &v.meta.request_id,
-        "InvokeTask",
-    )? {
-        DecisionRoute::Fresh(h) => h,
-        DecisionRoute::Replay(CachedResponse::InvokeTask { action_id }) => {
-            return Ok(tonic::Response::new(TaskHandle {
-                request_id: v.meta.request_id,
-                action_id,
-            }));
-        }
-        DecisionRoute::Replay(other) => {
-            tracing::error!(
-                request_id = %v.meta.request_id,
-                cached_variant = ?other,
-                "BUG: InvokeTask method namespace 命中非 InvokeTask variant"
-            );
-            return Err(tonic::Status::internal(
-                "idempotency cache namespace inconsistency",
-            ));
-        }
-    };
-
-    // 5.5 shutdown gate
-    let shutdown = *state.shutdown_rx.borrow();
-    shutdown_gate(
-        shutdown,
-        &v.meta.request_id,
-        &v.meta.idempotency_key,
-        "InvokeTask",
-        Some(insert_handle.clone()),
-    )?;
-
-    // 6. deadline + stamp
-    let now_ns = state.clock.now().0;
-    let timeout_ns = v.meta.timeout_ms.saturating_mul(1_000_000);
-    let wire_deadline_ns = now_ns.saturating_add(timeout_ns);
-
-    // 7. role → wire
-    let wire_role = role_to_wire(role);
-
-    // 8. build wire bytes
-    let kind_fb = action_kind_proto_to_fb(v.kind);
-    let wire_bytes = build_invoke_task_request(
-        &v.meta.request_id,
-        &v.meta.idempotency_key,
-        &v.meta.source,
-        wire_role,
-        &v.meta.audit_reason,
-        kind_fb,
-        wire_deadline_ns,
-        v.priority,
-        v.payload_schema_id,
-        &v.payload,
-        now_ns,
-    );
-
-    // 8.5. Q2(a) gate 2：final wire-size guard（v0.4 候选 1 (2/3) land；
-    // reviewer Plan round 2 阻断 1 拍板）。在 build_invoke_task_request 后
-    // 实测 wire bytes 长度；超 CONTROL_TIER_MAX_BYTES 直接拒 →
-    // InvalidArgument，**不**进 RR / s1，避免 iceoryx2 `loan_slice_uninit`
-    // 撞 `SampleTooLarge`。本 gate 兜底外层 CommandMeta + FlatBuffers
-    // overhead 撞 8 KiB；对 kind != Scripted 同样生效（防御性）。
-    if wire_bytes.len() > CONTROL_TIER_MAX_BYTES {
-        let e = TaskValidationError::InvokeWireBytesTooLarge {
-            len: wire_bytes.len(),
-            max: CONTROL_TIER_MAX_BYTES,
-        };
-        tracing::warn!(
-            request_id = %v.meta.request_id,
-            wire_bytes = wire_bytes.len(),
-            max_bytes = CONTROL_TIER_MAX_BYTES,
-            "InvokeTask wire-size guard exceeded (gate 2)"
-        );
-        drop(insert_handle);
-        return Err(tonic::Status::new(e.to_tonic_code(), e.to_string()));
-    }
-
-    // 9. forward
-    let oneshot_rx = match forward_to_rr_io(
+    let reply_bytes = crate::gateway_ledger::exchange_write(
         &state.rr_forward_tx_task_invoke,
-        wire_bytes,
-        &v.meta.request_id,
-        "InvokeTask",
-    ) {
-        Ok(rx) => rx,
-        Err(status) => {
-            drop(insert_handle);
-            return Err(status);
-        }
-    };
-
-    // 10. await reply
-    let reply_bytes = match await_reply(
-        oneshot_rx,
-        v.meta.timeout_ms,
+        crate::gateway_ledger::WriteRequest {
+            method: Method::InvokeTask,
+            request_id: &v.meta.request_id,
+            key: &v.meta.idempotency_key,
+            fingerprint,
+            class: crate::class_cache::Class::Normal,
+            timeout_ms: v.meta.timeout_ms,
+        },
+        state.clock.as_ref(),
+        &state.shutdown_rx,
         state.rr_timeout_grace_ms,
-        &v.meta.request_id,
-        "InvokeTask",
-    )
-    .await
-    {
-        Ok(b) => b,
-        Err(status) => {
-            drop(insert_handle);
-            return Err(status);
-        }
-    };
-
-    // 11. decode wire response + check request_id 匹配
-    let view = match flatbuffers::root::<FbInvokeResp>(&reply_bytes) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!(
-                request_id = %v.meta.request_id,
-                error = ?e,
-                "InvokeTask wire response decode failed; replying Internal"
+        |deadline_ns, now_ns| {
+            let bytes = build_invoke_task_request(
+                &v.meta.request_id,
+                &v.meta.idempotency_key,
+                &v.meta.source,
+                role_to_wire(role),
+                &v.meta.audit_reason,
+                action_kind_proto_to_fb(v.kind),
+                deadline_ns,
+                v.priority,
+                v.payload_schema_id,
+                &v.payload,
+                now_ns,
             );
-            drop(insert_handle);
-            return Err(tonic::Status::internal(format!(
-                "decode wire InvokeTaskResponse: {e}"
-            )));
-        }
-    };
-    let wire_status = view.status();
-    let action_id_str = view.action_id().unwrap_or("").to_string();
-    let _accepted_at_ns = view.accepted_at_ns(); // 仅 audit；proto TaskHandle 无此字段
-    let error_msg = view.error_msg().unwrap_or("").to_string();
-    let resp_request_id = view.request_id().unwrap_or("");
-    if resp_request_id != v.meta.request_id {
-        tracing::error!(
-            request_id = %v.meta.request_id,
-            resp_request_id,
-            ?wire_status,
-            "InvokeTask wire response request_id mismatch; replying Internal"
-        );
-        drop(insert_handle);
-        return Err(tonic::Status::internal(format!(
-            "wire InvokeTaskResponse.request_id `{resp_request_id}` does not match \
-             outgoing request `{}`",
-            v.meta.request_id
-        )));
+            if bytes.len() > CONTROL_TIER_MAX_BYTES {
+                let error = TaskValidationError::InvokeWireBytesTooLarge {
+                    len: bytes.len(),
+                    max: CONTROL_TIER_MAX_BYTES,
+                };
+                return Err(tonic::Status::new(error.to_tonic_code(), error.to_string()));
+            }
+            Ok(bytes)
+        },
+    )
+    .await?;
+    let view = flatbuffers::root::<FbInvokeResp>(&reply_bytes).map_err(|error| {
+        tonic::Status::internal(format!("decode wire InvokeTaskResponse: {error}"))
+    })?;
+    if view.request_id() != Some(v.meta.request_id.as_str()) {
+        return Err(tonic::Status::internal("RR response request_id mismatch"));
     }
-
-    // 12. status → tonic::Code + commit/return
-    let code = action_rpc_status_to_tonic_code(wire_status);
-    if code == Code::Ok {
-        // commit cache（Replay 路径下次同 fingerprint 直接返）
-        let mut cache = state
-            .idempotency
-            .lock()
-            .expect("idempotency cache mutex poisoned");
-        insert_handle.commit(
-            &mut cache,
-            CachedResponse::InvokeTask {
-                action_id: action_id_str.clone(),
-            },
-        );
-        drop(cache);
-        tracing::info!(
-            request_id = %v.meta.request_id,
-            idempotency_key = %v.meta.idempotency_key,
-            action_id = %action_id_str,
-            role = role.as_str(),
-            source = %v.meta.source,
-            "InvokeTask ok"
-        );
-        return Ok(tonic::Response::new(TaskHandle {
+    let code = action_rpc_status_to_tonic_code(view.status());
+    match code {
+        Code::Ok => Ok(tonic::Response::new(TaskHandle {
             request_id: v.meta.request_id,
-            action_id: action_id_str,
-        }));
+            action_id: view.action_id().unwrap_or_default().to_owned(),
+        })),
+        other => Err(tonic::Status::new(
+            other,
+            format!(
+                "daemon returned {:?}: {}",
+                view.status(),
+                view.error_msg().unwrap_or_default()
+            ),
+        )),
     }
-
-    // 非 Ok：drop handle 不缓存
-    drop(insert_handle);
-    tracing::warn!(
-        request_id = %v.meta.request_id,
-        idempotency_key = %v.meta.idempotency_key,
-        ?wire_status,
-        ?code,
-        error_msg = %error_msg,
-        "InvokeTask non-Ok wire status"
-    );
-    Err(tonic::Status::new(
-        code,
-        format!("daemon returned {wire_status:?}: {error_msg}"),
-    ))
 }
 
 /// `CancelTask` handler。
@@ -852,141 +621,55 @@ async fn handle_cancel_task_inner(
         "CancelTask",
     )?;
     let fingerprint = cancel_task_idempotency_fingerprint(&v);
-    let insert_handle = match decide_with_method(
-        &state.idempotency,
-        Method::CancelTask,
-        &v.meta.idempotency_key,
-        fingerprint,
-        &v.meta.request_id,
-        "CancelTask",
-    )? {
-        DecisionRoute::Fresh(h) => h,
-        DecisionRoute::Replay(CachedResponse::CancelTask {
-            cancel_at_ns,
-            dry_run,
-        }) => {
-            return Ok(tonic::Response::new(Ack {
-                request_id: v.meta.request_id,
-                cleared_at_ns: cancel_at_ns,
-                dry_run,
-            }));
-        }
-        DecisionRoute::Replay(other) => {
-            tracing::error!(
-                request_id = %v.meta.request_id,
-                cached_variant = ?other,
-                "BUG: CancelTask method namespace 命中非 CancelTask variant"
-            );
-            return Err(tonic::Status::internal(
-                "idempotency cache namespace inconsistency",
-            ));
-        }
-    };
-    let shutdown = *state.shutdown_rx.borrow();
-    shutdown_gate(
-        shutdown,
-        &v.meta.request_id,
-        &v.meta.idempotency_key,
-        "CancelTask",
-        Some(insert_handle.clone()),
-    )?;
-    let now_ns = state.clock.now().0;
-    let timeout_ns = v.meta.timeout_ms.saturating_mul(1_000_000);
-    let wire_deadline_ns = now_ns.saturating_add(timeout_ns);
-    let wire_role = role_to_wire(role);
-    let wire_bytes = build_cancel_task_request(
-        &v.meta.request_id,
-        &v.meta.idempotency_key,
-        &v.meta.source,
-        wire_role,
-        &v.meta.audit_reason,
-        &v.action_id,
-        wire_deadline_ns,
-        now_ns,
-    );
-    let oneshot_rx = match forward_to_rr_io(
+    let reply_bytes = crate::gateway_ledger::exchange_write(
         &state.rr_forward_tx_task_cancel,
-        wire_bytes,
-        &v.meta.request_id,
-        "CancelTask",
-    ) {
-        Ok(rx) => rx,
-        Err(status) => {
-            drop(insert_handle);
-            return Err(status);
-        }
-    };
-    let reply_bytes = match await_reply(
-        oneshot_rx,
-        v.meta.timeout_ms,
+        crate::gateway_ledger::WriteRequest {
+            method: Method::CancelTask,
+            request_id: &v.meta.request_id,
+            key: &v.meta.idempotency_key,
+            fingerprint,
+            class: crate::class_cache::Class::Normal,
+            timeout_ms: v.meta.timeout_ms,
+        },
+        state.clock.as_ref(),
+        &state.shutdown_rx,
         state.rr_timeout_grace_ms,
-        &v.meta.request_id,
-        "CancelTask",
+        |deadline_ns, now_ns| {
+            Ok(build_cancel_task_request(
+                &v.meta.request_id,
+                &v.meta.idempotency_key,
+                &v.meta.source,
+                role_to_wire(role),
+                &v.meta.audit_reason,
+                &v.action_id,
+                deadline_ns,
+                now_ns,
+            ))
+        },
     )
-    .await
-    {
-        Ok(b) => b,
-        Err(status) => {
-            drop(insert_handle);
-            return Err(status);
-        }
-    };
-    let view = match flatbuffers::root::<FbCancelResp>(&reply_bytes) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!(
-                request_id = %v.meta.request_id,
-                error = ?e,
-                "CancelTask wire response decode failed"
-            );
-            drop(insert_handle);
-            return Err(tonic::Status::internal(format!(
-                "decode wire CancelTaskResponse: {e}"
-            )));
-        }
-    };
-    let wire_status = view.status();
-    let cancel_at_ns = view.cancel_at_ns();
-    let error_msg = view.error_msg().unwrap_or("").to_string();
-    let resp_request_id = view.request_id().unwrap_or("");
-    if resp_request_id != v.meta.request_id {
-        drop(insert_handle);
-        return Err(tonic::Status::internal(format!(
-            "wire CancelTaskResponse.request_id `{resp_request_id}` does not match outgoing `{}`",
-            v.meta.request_id
-        )));
+    .await?;
+    let view = flatbuffers::root::<FbCancelResp>(&reply_bytes).map_err(|error| {
+        tonic::Status::internal(format!("decode wire CancelTaskResponse: {error}"))
+    })?;
+    if view.request_id() != Some(v.meta.request_id.as_str()) {
+        return Err(tonic::Status::internal("RR response request_id mismatch"));
     }
-    let code = action_rpc_status_to_tonic_code(wire_status);
-    if code == Code::Ok {
-        let mut cache = state
-            .idempotency
-            .lock()
-            .expect("idempotency cache mutex poisoned");
-        insert_handle.commit(
-            &mut cache,
-            CachedResponse::CancelTask {
-                cancel_at_ns,
-                dry_run: v.meta.dry_run,
-            },
-        );
-        drop(cache);
-        tracing::info!(
-            request_id = %v.meta.request_id,
-            action_id = %v.action_id,
-            cancel_at_ns,
-            "CancelTask ok"
-        );
-        return Ok(tonic::Response::new(Ack {
+    let code = action_rpc_status_to_tonic_code(view.status());
+    match code {
+        Code::Ok => Ok(tonic::Response::new(Ack {
             request_id: v.meta.request_id,
-            cleared_at_ns: cancel_at_ns,
+            cleared_at_ns: view.cancel_at_ns(),
             dry_run: v.meta.dry_run,
-        }));
+        })),
+        other => Err(tonic::Status::new(
+            other,
+            format!(
+                "daemon returned {:?}: {}",
+                view.status(),
+                view.error_msg().unwrap_or_default()
+            ),
+        )),
     }
-    drop(insert_handle);
-    Err(tonic::Status::new(
-        code,
-        format!("daemon returned {wire_status:?}: {error_msg}"),
-    ))
 }
 
 /// `GetTaskStatus` handler（只读 RPC，**不**进 cache）。
@@ -1042,21 +725,13 @@ async fn handle_get_task_status_inner(
         now_ns,
     );
 
-    // 9. forward
-    let oneshot_rx = forward_to_rr_io(
+    let reply_bytes = crate::gateway_ledger::exchange_read(
         &state.rr_forward_tx_task_status,
-        wire_bytes,
         &v.request_id,
-        "GetTaskStatus",
-    )?;
-
-    // 10. await reply
-    let reply_bytes = await_reply(
-        oneshot_rx,
+        wire_deadline_ns,
+        wire_bytes,
         GET_TASK_STATUS_DEFAULT_TIMEOUT_MS,
         state.rr_timeout_grace_ms,
-        &v.request_id,
-        "GetTaskStatus",
     )
     .await?;
 
@@ -1132,134 +807,54 @@ async fn handle_clear_error_inner(
         "ClearError",
     )?;
     let fingerprint = clear_error_idempotency_fingerprint(&v);
-    let insert_handle = match decide_with_method(
-        &state.idempotency,
-        Method::ClearError,
-        &v.meta.idempotency_key,
-        fingerprint,
-        &v.meta.request_id,
-        "ClearError",
-    )? {
-        DecisionRoute::Fresh(h) => h,
-        DecisionRoute::Replay(CachedResponse::ClearError {
-            cleared_at_ns,
-            dry_run,
-        }) => {
-            return Ok(tonic::Response::new(Ack {
-                request_id: v.meta.request_id,
-                cleared_at_ns,
-                dry_run,
-            }));
-        }
-        DecisionRoute::Replay(other) => {
-            tracing::error!(
-                request_id = %v.meta.request_id,
-                cached_variant = ?other,
-                "BUG: ClearError method namespace 命中非 ClearError variant"
-            );
-            return Err(tonic::Status::internal(
-                "idempotency cache namespace inconsistency",
-            ));
-        }
-    };
-    let shutdown = *state.shutdown_rx.borrow();
-    shutdown_gate(
-        shutdown,
-        &v.meta.request_id,
-        &v.meta.idempotency_key,
-        "ClearError",
-        Some(insert_handle.clone()),
-    )?;
-    let now_ns = state.clock.now().0;
-    let timeout_ns = v.meta.timeout_ms.saturating_mul(1_000_000);
-    let wire_deadline_ns = now_ns.saturating_add(timeout_ns);
-    let wire_role = role_to_wire(role);
-    let wire_bytes = build_clear_error_request(
-        &v.meta.request_id,
-        &v.meta.idempotency_key,
-        &v.meta.source,
-        wire_role,
-        &v.meta.audit_reason,
-        wire_deadline_ns,
-        now_ns,
-    );
-    let oneshot_rx = match forward_to_rr_io(
+    let reply_bytes = crate::gateway_ledger::exchange_write(
         &state.rr_forward_tx_clear_error,
-        wire_bytes,
-        &v.meta.request_id,
-        "ClearError",
-    ) {
-        Ok(rx) => rx,
-        Err(status) => {
-            drop(insert_handle);
-            return Err(status);
-        }
-    };
-    let reply_bytes = match await_reply(
-        oneshot_rx,
-        v.meta.timeout_ms,
+        crate::gateway_ledger::WriteRequest {
+            method: Method::ClearError,
+            request_id: &v.meta.request_id,
+            key: &v.meta.idempotency_key,
+            fingerprint,
+            class: crate::class_cache::Class::Normal,
+            timeout_ms: v.meta.timeout_ms,
+        },
+        state.clock.as_ref(),
+        &state.shutdown_rx,
         state.rr_timeout_grace_ms,
-        &v.meta.request_id,
-        "ClearError",
+        |deadline_ns, now_ns| {
+            Ok(build_clear_error_request(
+                &v.meta.request_id,
+                &v.meta.idempotency_key,
+                &v.meta.source,
+                role_to_wire(role),
+                &v.meta.audit_reason,
+                deadline_ns,
+                now_ns,
+            ))
+        },
     )
-    .await
-    {
-        Ok(b) => b,
-        Err(status) => {
-            drop(insert_handle);
-            return Err(status);
-        }
-    };
-    let view = match flatbuffers::root::<FbClearErrorResp>(&reply_bytes) {
-        Ok(v) => v,
-        Err(e) => {
-            drop(insert_handle);
-            return Err(tonic::Status::internal(format!(
-                "decode wire ClearErrorResponse: {e}"
-            )));
-        }
-    };
-    let wire_status = view.status();
-    let cleared_at_ns = view.cleared_at_ns();
-    let error_msg = view.error_msg().unwrap_or("").to_string();
-    let resp_request_id = view.request_id().unwrap_or("");
-    if resp_request_id != v.meta.request_id {
-        drop(insert_handle);
-        return Err(tonic::Status::internal(format!(
-            "wire ClearErrorResponse.request_id `{resp_request_id}` does not match outgoing `{}`",
-            v.meta.request_id
-        )));
+    .await?;
+    let view = flatbuffers::root::<FbClearErrorResp>(&reply_bytes).map_err(|error| {
+        tonic::Status::internal(format!("decode wire ClearErrorResponse: {error}"))
+    })?;
+    if view.request_id() != Some(v.meta.request_id.as_str()) {
+        return Err(tonic::Status::internal("RR response request_id mismatch"));
     }
-    let code = action_rpc_status_to_tonic_code(wire_status);
-    if code == Code::Ok {
-        let mut cache = state
-            .idempotency
-            .lock()
-            .expect("idempotency cache mutex poisoned");
-        insert_handle.commit(
-            &mut cache,
-            CachedResponse::ClearError {
-                cleared_at_ns,
-                dry_run: v.meta.dry_run,
-            },
-        );
-        drop(cache);
-        tracing::info!(
-            request_id = %v.meta.request_id,
-            cleared_at_ns,
-            "ClearError ok"
-        );
-        return Ok(tonic::Response::new(Ack {
+    let code = action_rpc_status_to_tonic_code(view.status());
+    match code {
+        Code::Ok => Ok(tonic::Response::new(Ack {
             request_id: v.meta.request_id,
-            cleared_at_ns,
+            cleared_at_ns: view.cleared_at_ns(),
             dry_run: v.meta.dry_run,
-        }));
+        })),
+        other => Err(tonic::Status::new(
+            other,
+            format!(
+                "daemon returned {:?}: {}",
+                view.status(),
+                view.error_msg().unwrap_or_default()
+            ),
+        )),
     }
-    drop(insert_handle);
-    Err(tonic::Status::new(
-        code,
-        format!("daemon returned {wire_status:?}: {error_msg}"),
-    ))
 }
 
 // ============================================================================
@@ -1341,44 +936,6 @@ pub fn handle_stream_task_events(
 // ============================================================================
 // Decision routing helper
 // ============================================================================
-
-/// Cache.decide 路由结果（去掉 Conflict / Capacity 用 tonic::Status 包好）。
-enum DecisionRoute {
-    Fresh(crate::idempotency::InsertHandle),
-    Replay(CachedResponse),
-}
-
-fn decide_with_method(
-    cache: &Arc<Mutex<IdempotencyCache>>,
-    method: Method,
-    idempotency_key: &str,
-    fingerprint: Fingerprint,
-    request_id: &str,
-    method_label: &str,
-) -> Result<DecisionRoute, tonic::Status> {
-    let mut g = cache.lock().expect("idempotency cache mutex poisoned");
-    match g.decide(method, idempotency_key, fingerprint) {
-        Decision::FreshInsert(h) => Ok(DecisionRoute::Fresh(h)),
-        Decision::Replay(resp) => {
-            tracing::info!(
-                request_id,
-                idempotency_key,
-                method = method_label,
-                "idempotency replay"
-            );
-            Ok(DecisionRoute::Replay(resp))
-        }
-        Decision::Conflict { .. } => Err(tonic::Status::already_exists(format!(
-            "idempotency_key `{idempotency_key}` already used with a different request fingerprint"
-        ))),
-        Decision::Capacity {
-            current_entries,
-            max_entries,
-        } => Err(tonic::Status::resource_exhausted(format!(
-            "idempotency cache full ({current_entries}/{max_entries}); retry after TTL expiry"
-        ))),
-    }
-}
 
 // ============================================================================
 // Proto ↔ fbs 字段映射 helpers
@@ -1840,12 +1397,9 @@ mod tests {
     #[tokio::test]
     async fn invoke_task_payload_over_max_scripted_bytes_returns_invalid_argument() {
         use crate::auth::load_role_table;
-        use crate::idempotency::IdempotencyCache;
         use crate::proto::AuthContext;
         use crossbeam_channel::bounded;
-        use robot_core::time::SystemClock;
-        use std::sync::{Arc, Mutex};
-        use std::time::Duration as StdDuration;
+        use std::sync::Arc;
         use tokio::sync::watch;
 
         const TEST_TOML: &str = r#"
@@ -1862,43 +1416,17 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
 "#;
         let role_table = Arc::new(load_role_table(TEST_TOML).expect("role table parse"));
 
-        let (task_invoke_tx, task_invoke_rx) = bounded(1);
-        let (clear_estop_tx, clear_estop_rx) = bounded(1);
-        let (task_cancel_tx, task_cancel_rx) = bounded(1);
-        let (task_status_tx, task_status_rx) = bounded(1);
-        let (clear_error_tx, clear_error_rx) = bounded(1);
-        let (set_enabled_tx, set_enabled_rx) = bounded(1);
-        let (estop_pub_tx, estop_pub_rx) = bounded::<crate::estop_pub_thread::EStopPubForward>(1);
-        Box::leak(Box::new(task_invoke_rx));
-        Box::leak(Box::new(clear_estop_rx));
-        Box::leak(Box::new(task_cancel_rx));
-        Box::leak(Box::new(task_status_rx));
-        Box::leak(Box::new(clear_error_rx));
-        Box::leak(Box::new(set_enabled_rx));
-        Box::leak(Box::new(estop_pub_rx));
-
-        let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        Box::leak(Box::new(shutdown_tx));
-
-        let state = crate::gateway::GatewayHandlerState {
-            rr_forward_tx_clear_estop: clear_estop_tx,
-            rr_forward_tx_task_invoke: task_invoke_tx,
-            rr_forward_tx_task_cancel: task_cancel_tx,
-            rr_forward_tx_task_status: task_status_tx,
-            rr_forward_tx_clear_error: clear_error_tx,
-            rr_forward_tx_set_enabled: set_enabled_tx,
-            estop_pub_tx,
-            robot_id: "gate1_test".to_string(),
+        let ledger = crate::gateway_ledger::handler_fixture::ledger(64);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+        let (estop_pub_tx, _estop_rx) = bounded(1);
+        let mut state = crate::gateway::GatewayHandler::test_state(
+            ledger,
             role_table,
-            idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
-                StdDuration::from_mins(1),
-                64,
-            ))),
-            clock: Arc::new(SystemClock),
-            rr_timeout_grace_ms: 50,
             shutdown_rx,
-            state_cache: std::sync::Arc::new(crate::state_pool::StateCache::new(&[])),
-        };
+            estop_pub_tx,
+            Arc::new(crate::state_pool::StateCache::new(&[])),
+        );
+        state.rr_timeout_grace_ms = 50;
 
         // payload = MAX_SCRIPTED_PAYLOAD_BYTES + 1 byte（刚好超 gate 1）。
         let oversized_payload = vec![0u8; MAX_SCRIPTED_PAYLOAD_BYTES + 1];
@@ -1947,12 +1475,9 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
     #[tokio::test]
     async fn invoke_task_wire_over_control_tier_returns_invalid_argument() {
         use crate::auth::load_role_table;
-        use crate::idempotency::IdempotencyCache;
         use crate::proto::AuthContext;
         use crossbeam_channel::bounded;
-        use robot_core::time::SystemClock;
-        use std::sync::{Arc, Mutex};
-        use std::time::Duration as StdDuration;
+        use std::sync::Arc;
         use tokio::sync::watch;
 
         const TEST_TOML: &str = r#"
@@ -1969,43 +1494,17 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
 "#;
         let role_table = Arc::new(load_role_table(TEST_TOML).expect("role table parse"));
 
-        let (task_invoke_tx, task_invoke_rx) = bounded(1);
-        let (clear_estop_tx, clear_estop_rx) = bounded(1);
-        let (task_cancel_tx, task_cancel_rx) = bounded(1);
-        let (task_status_tx, task_status_rx) = bounded(1);
-        let (clear_error_tx, clear_error_rx) = bounded(1);
-        let (set_enabled_tx, set_enabled_rx) = bounded(1);
-        let (estop_pub_tx, estop_pub_rx) = bounded::<crate::estop_pub_thread::EStopPubForward>(1);
-        Box::leak(Box::new(task_invoke_rx));
-        Box::leak(Box::new(clear_estop_rx));
-        Box::leak(Box::new(task_cancel_rx));
-        Box::leak(Box::new(task_status_rx));
-        Box::leak(Box::new(clear_error_rx));
-        Box::leak(Box::new(set_enabled_rx));
-        Box::leak(Box::new(estop_pub_rx));
-
-        let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        Box::leak(Box::new(shutdown_tx));
-
-        let state = crate::gateway::GatewayHandlerState {
-            rr_forward_tx_clear_estop: clear_estop_tx,
-            rr_forward_tx_task_invoke: task_invoke_tx,
-            rr_forward_tx_task_cancel: task_cancel_tx,
-            rr_forward_tx_task_status: task_status_tx,
-            rr_forward_tx_clear_error: clear_error_tx,
-            rr_forward_tx_set_enabled: set_enabled_tx,
-            estop_pub_tx,
-            robot_id: "gate2_test".to_string(),
+        let ledger = crate::gateway_ledger::handler_fixture::ledger(64);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+        let (estop_pub_tx, _estop_rx) = bounded(1);
+        let mut state = crate::gateway::GatewayHandler::test_state(
+            ledger,
             role_table,
-            idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
-                StdDuration::from_mins(1),
-                64,
-            ))),
-            clock: Arc::new(SystemClock),
-            rr_timeout_grace_ms: 50,
             shutdown_rx,
-            state_cache: std::sync::Arc::new(crate::state_pool::StateCache::new(&[])),
-        };
+            estop_pub_tx,
+            Arc::new(crate::state_pool::StateCache::new(&[])),
+        );
+        state.rr_timeout_grace_ms = 50;
 
         // kind = HoldPose（NOT Scripted）→ 不触发 gate 1 payload cap。
         // payload = 9000 bytes 让 wire 必超 8 KiB。
@@ -2064,11 +1563,8 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
     #[tokio::test]
     async fn handle_clear_error_handler_literal_layer_deadline_exceeded() {
         use crate::auth::load_role_table;
-        use crate::idempotency::IdempotencyCache;
         use crossbeam_channel::bounded;
-        use robot_core::time::SystemClock;
-        use std::sync::{Arc, Mutex};
-        use std::time::Duration as StdDuration;
+        use std::sync::Arc;
         use tokio::sync::watch;
 
         // 用 in-mem TOML 构造 role table（含 maintainer-fake-token-001 → maintainer
@@ -2091,44 +1587,17 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
 
         // forward channel：leak rx 让 sender 不见 Disconnected（try_send 成功
         // 后 handler oneshot.await 永等不到 reply → tokio.timeout 触发）。
-        let (clear_error_tx, clear_error_rx) = bounded(1);
-        Box::leak(Box::new(clear_error_rx));
-        // 4 个 sibling forward channel 不参与本测；同款 leak rx。
-        let (clear_estop_tx, clear_estop_rx) = bounded(1);
-        let (task_invoke_tx, task_invoke_rx) = bounded(1);
-        let (task_cancel_tx, task_cancel_rx) = bounded(1);
-        let (task_status_tx, task_status_rx) = bounded(1);
-        Box::leak(Box::new(clear_estop_rx));
-        Box::leak(Box::new(task_invoke_rx));
-        Box::leak(Box::new(task_cancel_rx));
-        Box::leak(Box::new(task_status_rx));
-        let (set_enabled_tx, set_enabled_rx) = bounded(1);
-        Box::leak(Box::new(set_enabled_rx));
-        let (estop_pub_tx, estop_pub_rx) = bounded::<crate::estop_pub_thread::EStopPubForward>(1);
-        Box::leak(Box::new(estop_pub_rx));
-
-        let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        Box::leak(Box::new(shutdown_tx));
-
-        let state = crate::gateway::GatewayHandlerState {
-            rr_forward_tx_clear_estop: clear_estop_tx,
-            rr_forward_tx_task_invoke: task_invoke_tx,
-            rr_forward_tx_task_cancel: task_cancel_tx,
-            rr_forward_tx_task_status: task_status_tx,
-            rr_forward_tx_clear_error: clear_error_tx,
-            rr_forward_tx_set_enabled: set_enabled_tx,
-            estop_pub_tx,
-            robot_id: "ac7_lit".to_string(),
+        let ledger = crate::gateway_ledger::handler_fixture::ledger(64);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+        let (estop_pub_tx, _estop_rx) = bounded(1);
+        let mut state = crate::gateway::GatewayHandler::test_state(
+            ledger,
             role_table,
-            idempotency: Arc::new(Mutex::new(IdempotencyCache::with_capacity(
-                StdDuration::from_mins(1),
-                64,
-            ))),
-            clock: Arc::new(SystemClock),
-            rr_timeout_grace_ms: 50, // 跟 timeout_ms 一起 ≤ 200ms 让 await 快速 timeout
             shutdown_rx,
-            state_cache: std::sync::Arc::new(crate::state_pool::StateCache::new(&[])),
-        };
+            estop_pub_tx,
+            Arc::new(crate::state_pool::StateCache::new(&[])),
+        );
+        state.rr_timeout_grace_ms = 50;
 
         // 构造合法 maintainer ClearErrorCommand，timeout_ms=100ms 让 handler
         // 等 oneshot reply 100+50=150ms 后触发 DeadlineExceeded。

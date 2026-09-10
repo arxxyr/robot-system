@@ -18,13 +18,13 @@
 #![allow(clippy::doc_markdown)]
 
 use robot_msg::build_helpers::{
-    build_cancel_task_response, build_clear_error_response, build_get_task_status_response,
-    build_invoke_task_response,
+    build_cancel_task_response_typed, build_clear_error_response_typed,
+    build_get_task_status_response, build_invoke_task_response_typed,
 };
 use robot_msg::msg::{
     ActionFailureKindFb, ActionOutcomeKindFb, ActionRpcStatus, CancelTaskRequest as FbCancelReq,
-    ClearErrorRequest as FbClearErrorReq, GetTaskStatusRequest as FbStatusReq,
-    InvokeTaskRequest as FbInvokeReq, RpcRole, TaskStateFb,
+    ClearErrorRequest as FbClearErrorReq, GetTaskStatusRequest as FbStatusReq, InvokeOutcome,
+    InvokeTaskRequest as FbInvokeReq, RpcRole, SideEffect, TaskStateFb,
 };
 
 use crate::action::{
@@ -198,12 +198,15 @@ pub fn encode_invoke_response_ok(
     action_id: &str,
     accepted_at_ns: u64,
 ) -> Vec<u8> {
-    build_invoke_task_response(
+    build_invoke_task_response_typed(
         request_id,
         ActionRpcStatus::Ok,
         "",
         action_id,
         accepted_at_ns,
+        SideEffect::Committed,
+        true,
+        InvokeOutcome::Registered,
     )
 }
 
@@ -219,15 +222,56 @@ pub fn encode_invoke_response_err(
         status != ActionRpcStatus::Ok,
         "encode_invoke_response_err called with status=Ok; use encode_invoke_response_ok"
     );
-    build_invoke_task_response(
-        request_id, status, error_msg, action_id, /* accepted_at_ns */ 0,
+    build_invoke_task_response_typed(
+        request_id,
+        status,
+        error_msg,
+        action_id,
+        /* accepted_at_ns */ 0,
+        SideEffect::None,
+        true,
+        InvokeOutcome::NotSubmitted,
+    )
+}
+
+/// 已提交后的 drain 失败保留真实提交时刻与实际补偿返回值。
+#[must_use]
+pub fn encode_invoke_drain_failure(
+    request_id: &str,
+    action_id: &str,
+    accepted_at_ns: u64,
+    error_msg: &str,
+    cancel_ok: bool,
+) -> Vec<u8> {
+    let outcome = if cancel_ok {
+        InvokeOutcome::DrainFailedCancelAccepted
+    } else {
+        InvokeOutcome::DrainFailedCancelRejected
+    };
+    build_invoke_task_response_typed(
+        request_id,
+        ActionRpcStatus::Internal,
+        error_msg,
+        action_id,
+        accepted_at_ns,
+        SideEffect::Committed,
+        true,
+        outcome,
     )
 }
 
 /// 编 `CancelTaskResponse` (status = `Ok`) bytes。
 #[must_use]
 pub fn encode_cancel_response_ok(request_id: &str, action_id: &str, cancel_at_ns: u64) -> Vec<u8> {
-    build_cancel_task_response(request_id, ActionRpcStatus::Ok, "", action_id, cancel_at_ns)
+    build_cancel_task_response_typed(
+        request_id,
+        ActionRpcStatus::Ok,
+        "",
+        action_id,
+        cancel_at_ns,
+        SideEffect::Committed,
+        true,
+    )
 }
 
 /// 编 `CancelTaskResponse` (status != `Ok`) bytes。
@@ -242,8 +286,14 @@ pub fn encode_cancel_response_err(
         status != ActionRpcStatus::Ok,
         "encode_cancel_response_err called with status=Ok; use encode_cancel_response_ok"
     );
-    build_cancel_task_response(
-        request_id, status, error_msg, action_id, /* cancel_at_ns */ 0,
+    build_cancel_task_response_typed(
+        request_id,
+        status,
+        error_msg,
+        action_id,
+        /* cancel_at_ns */ 0,
+        SideEffect::None,
+        true,
     )
 }
 
@@ -296,7 +346,14 @@ pub fn encode_status_response_err(
 /// 编 `ClearErrorResponse` (status = `Ok`) bytes。
 #[must_use]
 pub fn encode_clear_error_response_ok(request_id: &str, cleared_at_ns: u64) -> Vec<u8> {
-    build_clear_error_response(request_id, ActionRpcStatus::Ok, "", cleared_at_ns)
+    build_clear_error_response_typed(
+        request_id,
+        ActionRpcStatus::Ok,
+        "",
+        cleared_at_ns,
+        SideEffect::Committed,
+        true,
+    )
 }
 
 /// 编 `ClearErrorResponse` (status != `Ok`) bytes。
@@ -310,7 +367,14 @@ pub fn encode_clear_error_response_err(
         status != ActionRpcStatus::Ok,
         "encode_clear_error_response_err called with status=Ok; use encode_clear_error_response_ok"
     );
-    build_clear_error_response(request_id, status, error_msg, /* cleared_at_ns */ 0)
+    build_clear_error_response_typed(
+        request_id,
+        status,
+        error_msg,
+        /* cleared_at_ns */ 0,
+        SideEffect::None,
+        true,
+    )
 }
 
 // ============================================================================

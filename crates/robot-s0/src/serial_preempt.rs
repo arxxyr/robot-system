@@ -4,17 +4,33 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 use robot_core::serial_services::{
-    AbortReason, BusOpClass, CommErrorKind, NormalAbortTarget, PreemptProbe,
+    AbortReason, BusLease, BusOpClass, CommErrorKind, LeasedPreemptProbe, NormalAbortTarget,
+    PreemptProbe,
 };
 use robot_core::time::{DurationNs, MonoRawNs, RobotClock};
 
-use crate::hard_rt_ctrl::{HardRtCtrlInner, SERIAL_ESTOP_PENDING};
+use crate::hard_rt_ctrl::HardRtCtrlInner;
+use robot_core::control_authority::{NonEnergizingControl, NormalIoIntent, Refusal};
+
+/// 每次真实调用安装意图；EnableStep 的视图仅从同 ctrl 的执行槽读取。
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub(crate) enum InstalledIntent {
+    None = 0,
+    PeriodicRead = 1,
+    Motion = 2,
+    EnableStep = 3,
+    Connect = 4,
+    Disconnect = 5,
+    Disable = 6,
+}
 
 /// 服务在 spawn 前构造，serial 是上下文唯一写者，adapter 在同线程读取。
 pub struct SerialPreemptProbe {
     clock: Arc<dyn RobotClock>,
     ctrl: Arc<HardRtCtrlInner>,
     class: AtomicU8,
+    intent: AtomicU8,
     seq: AtomicU64,
     lease_deadline_ns: AtomicU64,
     confirmation_trusted: AtomicBool,
@@ -30,6 +46,7 @@ impl SerialPreemptProbe {
             clock,
             ctrl,
             class: AtomicU8::new(BusOpClass::Connect as u8),
+            intent: AtomicU8::new(InstalledIntent::None as u8),
             seq: AtomicU64::new(0),
             lease_deadline_ns: AtomicU64::new(0),
             confirmation_trusted: AtomicBool::new(false),
@@ -43,6 +60,7 @@ impl SerialPreemptProbe {
     pub(crate) fn set_context(
         &self,
         class: BusOpClass,
+        intent: InstalledIntent,
         seq: u64,
         deadline: MonoRawNs,
         confirmation_trusted: bool,
@@ -55,6 +73,7 @@ impl SerialPreemptProbe {
         }
         self.tick_has_call.store(true, Ordering::Relaxed);
         self.class.store(class as u8, Ordering::Relaxed);
+        self.intent.store(intent as u8, Ordering::Relaxed);
         self.seq.store(seq, Ordering::Relaxed);
         self.lease_deadline_ns.store(deadline.0, Ordering::Relaxed);
         self.confirmation_trusted
@@ -88,7 +107,7 @@ impl PreemptProbe for SerialPreemptProbe {
         if !class.is_normal() {
             return None;
         }
-        if self.ctrl.safety_word.load(Ordering::Acquire) & SERIAL_ESTOP_PENDING != 0 {
+        if self.ctrl.authority().snapshot().serial_estop_pending {
             return Some(AbortReason::Emergency);
         }
         if class != BusOpClass::NormalEffectful {
@@ -104,28 +123,6 @@ impl PreemptProbe for SerialPreemptProbe {
             // 非法词不能继续普通动作，由 serial 返回后按不变量违例收敛。
             Err(_) => Some(AbortReason::Timeout),
             _ => None,
-        }
-    }
-
-    fn begin_transaction(&self, class: BusOpClass) -> Result<(), AbortReason> {
-        if let Some(reason) = self.should_abort(class) {
-            return Err(reason);
-        }
-        if class.is_normal() && !self.ctrl.try_acquire_normal_io() {
-            return Err(AbortReason::Emergency);
-        }
-        #[cfg(feature = "test-comm-fault-hook")]
-        if class.is_normal() {
-            let mut context = self.ctrl.trace_context();
-            context.source = class as u64;
-            crate::comm_fault_hook::delay_acquired_normal(context);
-        }
-        Ok(())
-    }
-
-    fn finish_transaction(&self, class: BusOpClass) {
-        if class.is_normal() {
-            self.ctrl.release_normal_io();
         }
     }
 
@@ -185,6 +182,96 @@ impl PreemptProbe for SerialPreemptProbe {
     }
 }
 
+impl LeasedPreemptProbe for SerialPreemptProbe {
+    fn begin_leased(&self, class: BusOpClass) -> Result<BusLease, AbortReason> {
+        if let Some(reason) = self.should_abort(class) {
+            return Err(reason);
+        }
+        if let Some(special) = BusLease::special(class) {
+            return Ok(special);
+        }
+        let intent = match self.intent.load(Ordering::Relaxed) {
+            1 => NormalIoIntent::PeriodicRead,
+            2 => NormalIoIntent::Motion,
+            3 => NormalIoIntent::EnableStep(
+                self.ctrl
+                    .execution_slot()
+                    .load()
+                    .ok_or(AbortReason::Revoked)?,
+            ),
+            4 => NormalIoIntent::NonEnergizingControl(NonEnergizingControl::Connect),
+            5 => NormalIoIntent::NonEnergizingControl(NonEnergizingControl::Disconnect),
+            6 => NormalIoIntent::NonEnergizingControl(NonEnergizingControl::Disable),
+            _ => return Err(AbortReason::Revoked),
+        };
+        #[cfg(feature = "test-comm-fault-hook")]
+        let acquired = {
+            let observed = self.ctrl.authority().acquire_normal_io_observed(intent);
+            self.ctrl.trace_now(
+                crate::comm_fault_trace::TraceKind::NormalAcquire,
+                observed.failed_cas.unwrap_or(u64::MAX),
+                u64::from(observed.outcome.is_ok()),
+            );
+            observed.outcome
+        };
+        #[cfg(not(feature = "test-comm-fault-hook"))]
+        let acquired = self.ctrl.authority().acquire_normal_io(intent);
+        let lease = acquired.map_err(|reason| match reason {
+            Refusal::SerialEStopPending => AbortReason::Emergency,
+            _ => AbortReason::Revoked,
+        })?;
+        let lease = match BusLease::with_normal(class, lease) {
+            Ok(lease) => lease,
+            Err(lease) => {
+                // 内部 class/intent 错配不能伪装为一次可执行事务。
+                #[cfg(feature = "test-comm-fault-hook")]
+                {
+                    let observed = self.ctrl.authority().release_normal_io_observed(lease);
+                    self.ctrl.trace_now(
+                        crate::comm_fault_trace::TraceKind::NormalRelease,
+                        observed.failed_cas.unwrap_or(u64::MAX),
+                        match observed.outcome {
+                            Ok(_) => 1,
+                            Err(_) => 3,
+                        },
+                    );
+                }
+                #[cfg(not(feature = "test-comm-fault-hook"))]
+                let _ = self.ctrl.authority().release_normal_io(lease);
+                return Err(AbortReason::Revoked);
+            }
+        };
+        #[cfg(feature = "test-comm-fault-hook")]
+        {
+            let mut context = self.ctrl.trace_context();
+            context.source = class as u64;
+            crate::comm_fault_hook::delay_acquired_normal(context);
+        }
+        Ok(lease)
+    }
+
+    fn finish_leased(&self, lease: BusLease) {
+        let normal = lease.holds_normal_lease();
+        #[cfg(feature = "test-comm-fault-hook")]
+        {
+            let observed = lease.release_observed(self.ctrl.authority());
+            if normal {
+                self.ctrl.trace_now(
+                    crate::comm_fault_trace::TraceKind::NormalRelease,
+                    observed.failed_cas.unwrap_or(u64::MAX),
+                    match observed.outcome {
+                        Ok(_) => 1,
+                        Err(_) => 3,
+                    },
+                );
+            }
+        }
+        #[cfg(not(feature = "test-comm-fault-hook"))]
+        let _ = (normal, lease.release(self.ctrl.authority()));
+        // finish_leased 的既批签名为 ()；失败不清权限位，也不冒称返给 adapter。
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,28 +282,30 @@ mod tests {
     #[test]
     fn transaction_release_preserves_emergency_and_checkpoint_keeps_lease() {
         let clock = Arc::new(MockClock::default());
-        let ctrl = Arc::new(HardRtCtrlInner::new_serial());
+        let ctrl = Arc::new(HardRtCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(false),
+        ));
         let client = HardRtCtrlClient::new(Arc::clone(&ctrl));
         let probe = SerialPreemptProbe::new(clock.clone(), ctrl.clone());
-        probe.set_context(BusOpClass::NormalEffectful, 9, MonoRawNs(100), false);
-        assert_eq!(probe.begin_transaction(BusOpClass::NormalEffectful), Ok(()));
+        probe.set_context(
+            BusOpClass::NormalEffectful,
+            crate::serial_preempt::InstalledIntent::Disable,
+            9,
+            MonoRawNs(100),
+            false,
+        );
+        let lease = probe.begin_leased(BusOpClass::NormalEffectful).unwrap();
         probe.checkpoint();
-        assert_ne!(
-            ctrl.safety_word.load(Ordering::Acquire) & NORMAL_IO_ACTIVE,
-            0
-        );
+        assert_ne!(ctrl.safety_word() & NORMAL_IO_ACTIVE, 0);
         client.estop_monotonic();
-        probe.finish_transaction(BusOpClass::NormalEffectful);
+        probe.finish_leased(lease);
+        assert_eq!(ctrl.safety_word() & NORMAL_IO_ACTIVE, 0);
         assert_eq!(
-            ctrl.safety_word.load(Ordering::Acquire) & NORMAL_IO_ACTIVE,
-            0
+            probe.begin_leased(BusOpClass::PeriodicRead).unwrap_err(),
+            AbortReason::Emergency
         );
-        assert_eq!(
-            probe.begin_transaction(BusOpClass::PeriodicRead),
-            Err(AbortReason::Emergency)
-        );
-        assert_eq!(probe.begin_transaction(BusOpClass::Safety), Ok(()));
-        probe.finish_transaction(BusOpClass::Safety);
+        let safety = probe.begin_leased(BusOpClass::Safety).unwrap();
+        probe.finish_leased(safety);
         assert_eq!(ctrl.liveness_counter.load(Ordering::Relaxed), 1);
         clock.set(MonoRawNs(100));
         probe.checkpoint();
@@ -226,20 +315,25 @@ mod tests {
     #[test]
     fn matching_timeout_and_sliced_sleep_use_the_correct_operation_domain() {
         let clock = Arc::new(MockClock::default());
-        let ctrl = Arc::new(HardRtCtrlInner::new_serial());
+        let ctrl = Arc::new(HardRtCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(false),
+        ));
         let client = HardRtCtrlClient::new(ctrl.clone());
         let probe = SerialPreemptProbe::new(clock.clone(), ctrl.clone());
-        probe.set_context(BusOpClass::NormalEffectful, 9, MonoRawNs(100_000_000), true);
+        probe.set_context(
+            BusOpClass::NormalEffectful,
+            crate::serial_preempt::InstalledIntent::Disable,
+            9,
+            MonoRawNs(100_000_000),
+            true,
+        );
         client.abort_pending_normal(NormalAbortTarget::Submitted { seq: 8 });
         assert_eq!(
             probe.sleep_or_abort(BusOpClass::NormalEffectful, DurationNs(12_000_000)),
             Ok(())
         );
         assert_eq!(clock.now(), MonoRawNs(12_000_000));
-        assert_eq!(
-            ctrl.safety_word.load(Ordering::Acquire) & NORMAL_IO_ACTIVE,
-            0
-        );
+        assert_eq!(ctrl.safety_word() & NORMAL_IO_ACTIVE, 0);
         client.abort_pending_normal(NormalAbortTarget::Submitted { seq: 9 });
         assert_eq!(
             probe.should_abort(BusOpClass::NormalEffectful),
@@ -267,7 +361,9 @@ mod tests {
     fn hygiene_fact_survives_later_success_until_explicit_consumption() {
         let probe = SerialPreemptProbe::new(
             Arc::new(MockClock::default()),
-            Arc::new(HardRtCtrlInner::new_serial()),
+            Arc::new(HardRtCtrlInner::new_serial(
+                crate::hard_rt_ctrl::test_authority(false),
+            )),
         );
         assert_eq!(probe.take_comm_error(), None);
         probe.report_comm_error(CommErrorKind::DiscardFailed);
@@ -279,11 +375,28 @@ mod tests {
     #[test]
     fn tick_progress_preserves_an_earlier_overrun_but_recovers_for_a_no_io_tick() {
         let clock = Arc::new(MockClock::default());
-        let probe = SerialPreemptProbe::new(clock.clone(), Arc::new(HardRtCtrlInner::new_serial()));
+        let probe = SerialPreemptProbe::new(
+            clock.clone(),
+            Arc::new(HardRtCtrlInner::new_serial(
+                crate::hard_rt_ctrl::test_authority(false),
+            )),
+        );
         probe.begin_tick();
-        probe.set_context(BusOpClass::NormalEffectful, 1, MonoRawNs(100), true);
+        probe.set_context(
+            BusOpClass::NormalEffectful,
+            crate::serial_preempt::InstalledIntent::Disable,
+            1,
+            MonoRawNs(100),
+            true,
+        );
         clock.set(MonoRawNs(101));
-        probe.set_context(BusOpClass::PeriodicRead, 0, MonoRawNs(1_000), true);
+        probe.set_context(
+            BusOpClass::PeriodicRead,
+            crate::serial_preempt::InstalledIntent::PeriodicRead,
+            0,
+            MonoRawNs(1_000),
+            true,
+        );
         assert!(
             !probe.tick_progress_allowed(),
             "后续新预算不能洗掉同tick较早调用的越界"
@@ -293,7 +406,13 @@ mod tests {
             probe.tick_progress_allowed(),
             "无IO的对账等待不继承过期lease"
         );
-        probe.set_context(BusOpClass::PeriodicRead, 0, MonoRawNs(200), true);
+        probe.set_context(
+            BusOpClass::PeriodicRead,
+            crate::serial_preempt::InstalledIntent::PeriodicRead,
+            0,
+            MonoRawNs(200),
+            true,
+        );
         clock.set(MonoRawNs(199));
         assert!(probe.tick_progress_allowed());
         clock.set(MonoRawNs(200));

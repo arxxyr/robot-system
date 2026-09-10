@@ -12,6 +12,7 @@ mod sla;
 mod sla_acceptance;
 mod sla_background;
 mod startup;
+mod w3;
 mod watchdog;
 
 use robot_core::time::{RobotClock, SystemClock};

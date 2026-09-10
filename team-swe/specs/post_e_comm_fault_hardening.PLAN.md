@@ -2294,6 +2294,78 @@ root_logical_clock_approval.md要求真实commit_clear成功后同域clock单次
 实际基于9317e1e完成round11十门、独立源码/证据/root验收；362来源/六owner，
 详local/s48/w3a/review.md。本包不修改schema；daemon/IPC/权限权威/ACK/worker8/磁盘生产切换继续留完整W3另审。
 
+#### P.6.14.14 W3-P / W3 完整生产接线（Plan Approved）
+
+基线757ac55；root完整函数稿`local/s48/w3/master_function_plan.md` r2 SHA
+`af85ce680e591a3b9d359ce42715c83a2e771cd5823cb251351ab2e8aca689cb`，
+23份精确输入与26份既有评审由`inputs_manifest.json` SHA
+`52fdcac1150d545985d5c3aa00dd1391e3071586abc6de122439dcf0101c4f85`绑定。
+两路独立总审及r2增补已通过，root实施批准见`root_implementation_approval.md`；
+原启动私有类型B1、Gateway取消/真实join、四RR输入封口与sealed proof等已闭合。
+
+按`file_ownership.md`三域并行：核心/执行、网关/S1/传输、S0启动/IPC/监督/关闭总装；
+总开发唯一运行Cargo与生成证据。统一切换同一权限/双队列/唯一writer，不提交半迁移。
+开始前真实起点回执；最终同源连续门、独立源码/证据与root验收后commit。
+真实门包含分配负例/60秒soak、四后端、schema、S1-wire-cache、软件场景main及
+本轮来源绑定的release实件；编译和ignored不冒充运行通过。新增no-backend/cfg修补
+只服务上述传输特性矩阵，不另开架构或依赖升级。
+
+开工后观测增补已独立审/root批准，见`local/s48/w3/root_cas_observation_approval.md`：
+五个A2入口复用同一真实CAS循环的局部失败计数，feature-only按值返同次结果；
+不使用常态占位数，None/MAX使SLA invalid，不放宽旧门或改历史。另新增Gateway
+ledger模块仅拆文件，由B实现、C注册crate内出口，added回执与原起点分开保存。
+
+实施中独立复核的必要补充（实际来源/批准与开发结果见
+`local/s48/w3/root_incremental_source_review.md`，不改原起点或预报验收）：
+
+- 真实调用过的Enable未发布TorqueOn时，先将补偿交原执行器，再发布原seq完成；
+  旧Off不得清偿本次动作。finish拒绝保原execution，原Stop/Confirm继续推进，
+  私有本次接管事实避免重复收紧/刷新预算；默认mock移除第二永久latch。
+- Pub/hook成功spawn立即交原handle，真实ready在原启动期限内等待；hook初始history
+  必须先apply再spawn执行器。保持唯一Node拥有与原CP2收尾，不增加启动预算。
+- 双执行线程正常返回时将原未完成Enable记录移入不透明`ExecutorExit`，真实join
+  Result沿报告/CP2/ExitSettled保至MainExit；非空明确nonclean，不因原Phase阻止
+  假ACK便丢掉Execution。panic仍只保存真实Err，不补空退出或伪造退休。
+  真join后还须从原executor metrics核快照发布错误为0，空原件不替代正常退出事实。
+- HardRT每tick在原emergency段实际claim同A2的执行器EStop notice，并独立消费
+  既有emergency_action；两源合并走原`safety_stop_rt`/安全观测/完成路径，不用
+  短路表达式遗留其中一个来源。IPC notice保持独立，不在IPC清执行器通知或造Off。
+- Lower及原pending推进后、任何Restore之前，重读原执行器的业务guard；本tick
+  新超时/abort/Fault不得被tick开头的旧可恢复观测立即清除，不靠测试手置guard。
+- 真实IPC急停claim以O(1)标记原Restore前缀及deferred信封；每次实际pop消费标记，
+  live Clear/Enable到期优先于撤销，Lower独立收紧、dry-run只读。原RX第一次deadline
+  在入共享lane之前执行，实际处理再核；deferred处理同计High24预算。
+- 为封住claim之后新EStop/Confirm、旧Clear才预约的窗口，IPC在claim前采同authority
+  epoch；coordinator新入口原样透传到`reserve_clear_if_epoch`。该入口与旧reserve
+  共用内核，每次CAS重试先核相等，StaleEpoch无owner/无权限写；成功后仍原owner
+  撤销与repair/退休链。不在claim后重采epoch补许可，不新增第二权限状态。
+- S1的factory panic整链分profile验证：同源dev/unwind实际ReadyDisconnected与
+  补偿wire/cache；release实际SIGABRT后Gateway保原不确定责任并真回收子进程。
+  OS spawn错误仍用release，两个实件显式路径/SHA绑定，不改生产panic策略。
+  四RR生产factory的可预期初始化失败另沿同一fallible ready内核返原原因/句柄；
+  旧成功factory接口薄包装兼容。原RrConfigMismatch按D-QoS退出1并报真实字段，
+  其它Node/Transport/OSspawn/ready断链保原5；真panic不混为可恢复配置错误。
+
+- 旧A3有效失败语义恢复：BridgeStep 增加一次性 opaque、非Clone 的
+  EnableFailureFact，仅含同次真实 Unsupported 消息或原seq真实非撤销
+  AdapterResp::Err。后者无既有接管时锁原RR并置ExecutionFailed route，先返
+  原pending与一次事实，下次沿原route退休，避免退休拒绝丢失新失败事实。
+  IPC先接回pending，仅在无既有Fault/Stopping且原authority未latch/shutdown时
+  commit_fault(AdapterErr)、Disabled policy、revoke元数据；两来源都不再次
+  disable/tighten/投Stop，不刷新epoch或物理预算。PostRefused/CommitRefused、
+  AuthorityRevoked/Preempted以及既有AdapterError回复不得伪造该事实。
+- 原观测迁移恢复：真实急停/故障业务提交点保留原IpcEStopCommit/FaultIpcCommit
+  feature-only事件；故障记录使用已ACK原snapshot，不重采下一mailbox。两条
+  ACK后真实换代回归保留，私有测试回调不改变生产预算或观测格式。
+
+W3已完成生产总装并获独立源码/证据及root本地验收。正式round4连续31门与
+All72/72通过，367项来源与228项输入首末一致；详H包local/s48/w3/review.md。
+后续实施中批准的增量（fresh Disable的真实业务边界、闭连后一次补收、工厂typed
+失败与请求退休、启动/停止观测及RPC夹具）连同原始失败均绑定到该最终来源；
+正式证据不由开发轮拼接。双队列/权限/唯一writer已接生产调用方，未部署到Orin。
+W4纯D/逐步SIGKILL/双环境与P-E长测仍待完成；RR跨原子可见性证明另列OPEN。
+wire4历史FAIL、D15 OPEN、deployable=false保持；新现场步骤沿原物理边界。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

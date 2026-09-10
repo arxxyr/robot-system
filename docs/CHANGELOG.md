@@ -10,6 +10,20 @@
 
 ---
 
+## 2026-09-10 · W3生产总装（本地独立验收通过）
+
+W3共享权限、高/普通双队列、唯一文件writer、RPC原责任账本与受监督关闭链
+已接生产调用方，并获独立源码/证据及root本地验收，APPROVED_SOFTWARE_SCOPE。
+基线W3a `757ac55`；正式round4连续31门全部退出0，367项来源`2872511c…cc01c5`
+与228项冻结输入首末一致。完整软件All72/72；workspace2151/0/1、doc56/0/8、
+S0特性837/0/1（通过/失败/忽略，重叠分组不累加）；七份真实产物及timings已核验。
+通信不可信/断扭失败保持原RR/Slot到真实退休；客户端超时不释放责任，正常
+AdapterError仍按原期限真回复。原fresh Disable竞争与闭连最后回复确定性窗口
+修复已回归；闭连跨原子可见性证明仍留W4，不外推为弱内存严格排空。
+三轮正式失败和开发失败原样保留，完整裁决见H包`local/s48/w3/review.md`。
+W4纯D/逐步SIGKILL/双环境及P-E尚未完成；本轮未访问Orin或硬件，wire4历史FAIL、
+左H2两次FAIL、D15 OPEN、deployable=false保持。冻结设计文档未修改。
+
 ## 2026-09-10 · W3a Clear协调原语（本地独立验收通过）
 
 W3a Clear协调与持久化健康原语已独立源码/证据及root验收，APPROVED_SOFTWARE_SCOPE。

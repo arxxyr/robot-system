@@ -79,6 +79,7 @@ pub mod estop_pub_thread;
 pub mod events_subscribe;
 pub mod forward_queue;
 pub mod gateway;
+pub(crate) mod gateway_ledger;
 pub mod idempotency;
 pub mod reply_classify;
 pub mod rr_io_thread;

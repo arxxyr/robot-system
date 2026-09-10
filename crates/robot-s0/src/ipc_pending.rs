@@ -6,9 +6,12 @@
 // 完整返还固定 16 个 waiter 的责任，不能用 Box 降低错误大小或额外分配。
 #![allow(clippy::result_large_err, reason = "拒绝必须按值返还全部固定请求责任")]
 
+use crate::hard_rt_ctrl::HardRtCtrlClient;
 use robot_core::control_authority::{
-    ControlAuthority, DomainId, EnableOwner, PermissionEpoch, Phase, Refusal, StartViewSlot,
+    AuthoritySnapshot, ControlAuthority, DomainId, EnableOwner, PermissionEpoch, Phase, Refusal,
+    StartViewSlot,
 };
+use robot_core::executor_ctrl::{AdapterResp, ExecutorCtrlClient};
 use robot_core::time::MonoRawNs;
 
 use crate::event_ingress::RR_CHANNEL_CAPACITY;
@@ -35,6 +38,7 @@ pub enum RevokeCause {
 pub struct RrIdentity {
     pub request_id: String,
     pub deadline_ns: u64,
+    pub route: crate::rr_admission::SlotIdentity,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,10 +63,19 @@ impl LockedOutcome {
     }
 }
 
+/// 只为新接纳的 Safe Disable 保存历史 latch 边界；不是执行或退休许可。
+#[derive(Debug)]
+struct FreshDisableBoundary {
+    domain: DomainId,
+    epoch: PermissionEpoch,
+    observation: BusinessObservation,
+}
+
 #[derive(Debug)]
 pub struct PendingReply {
     identity: RrIdentity,
     locked: Option<LockedOutcome>,
+    fresh_disable: Option<FreshDisableBoundary>,
 }
 impl PendingReply {
     #[must_use]
@@ -75,7 +88,13 @@ impl PendingReply {
     }
 
     fn observe(&mut self, target: PendingTarget, observation: BusinessObservation) {
-        if self.locked.is_none() {
+        if self.locked.is_some() {
+            return;
+        }
+        if let Some(boundary) = &mut self.fresh_disable {
+            // 实际推进同快照判失败；不能在原 IO/seq 未结束时先锁 Safe 成功。
+            boundary.observation = observation;
+        } else {
             self.locked =
                 decide_business(target, self.identity.deadline_ns, observation).map(|payload| {
                     LockedOutcome {
@@ -114,6 +133,46 @@ impl LowerWaiters {
             reply.observe(PendingTarget::Safe, observation);
         }
     }
+
+    fn observe_fresh_failures(&mut self, snapshot: AuthoritySnapshot, now: MonoRawNs) {
+        for reply in self.entries.iter_mut().flatten() {
+            if reply.locked.is_some() {
+                continue;
+            }
+            let Some(boundary) = &reply.fresh_disable else {
+                continue;
+            };
+            let history_only = snapshot.epoch == boundary.epoch && !snapshot.exhausted;
+            let observation = BusinessObservation {
+                now,
+                state: if snapshot.shutdown {
+                    S0State::Stopping
+                } else {
+                    boundary.observation.state
+                },
+                estop: !history_only && (snapshot.latch || boundary.observation.estop),
+            };
+            let payload =
+                decide_business(PendingTarget::Safe, reply.identity.deadline_ns, observation);
+            // Safe 是业务状态，不是物理退休。成功只由 advance_lower 原完整门给出。
+            let failure = match payload {
+                Some(SetEnabledRrPayload::Disabled { .. }) | None => {
+                    if now.0 > reply.identity.deadline_ns {
+                        Some(SetEnabledRrPayload::DeadlineExceeded)
+                    } else {
+                        None
+                    }
+                }
+                other => other,
+            };
+            if let Some(payload) = failure {
+                reply.locked = Some(LockedOutcome {
+                    outcome: PendingOutcome::Existing(payload),
+                    at: now,
+                });
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -121,6 +180,7 @@ pub enum LowerCause {
     OperatorDisable,
     PostEnableCleanup,
     AwaitConvergence,
+    Shutdown,
 }
 
 /// 同时持有唯一 A2 owner、原 Enable RR 与独立 Lower waiters。
@@ -138,6 +198,7 @@ pub struct EnablePending {
     lower_waiters: LowerWaiters,
     revoked_by: Option<RevokeCause>,
     started_at: MonoRawNs,
+    bridge: EnableBridgeState,
 }
 impl EnablePending {
     #[must_use]
@@ -198,6 +259,27 @@ impl ControlPending {
     }
 }
 
+/// 仅消费同一控制通道实际公布的原序号结果；查询未完成完整返原。
+pub(crate) fn finish_control_owned(
+    pending: ControlPending,
+    ctrl: &HardRtCtrlClient,
+) -> Result<(PlannedTransition, AdapterResp), ControlPending> {
+    match pending.seq.and_then(|seq| ctrl.poll_last_normal_resp(seq)) {
+        Some(response) => Ok((pending.plan, response)),
+        None => Err(pending),
+    }
+}
+
+/// 未投递的旧控制计划可撤销；已有原序号必须继续持有到真实完成。
+pub(crate) fn cancel_unsubmitted_control(
+    pending: ControlPending,
+) -> Result<PlannedTransition, ControlPending> {
+    match pending.seq {
+        None => Ok(pending.plan),
+        Some(_) => Err(pending),
+    }
+}
+
 /// 只由真实 A2 退休成功产生，仍完整持有旧 seq 与请求责任。
 ///
 /// ```compile_fail
@@ -226,6 +308,7 @@ pub struct RetiredEnablePending {
     started_at: MonoRawNs,
     retired_from: Phase,
     withdrew_start: bool,
+    bridge: EnableBridgeState,
 }
 impl RetiredEnablePending {
     #[must_use]
@@ -273,8 +356,15 @@ pub struct LowerPending {
     carried_enable: Option<RetiredEnablePending>,
     waiters: LowerWaiters,
     started_at: MonoRawNs,
+    shutdown_generation: Option<std::num::NonZeroU64>,
+    completion: Option<robot_core::executor_ctrl::AdapterResp>,
 }
 impl LowerPending {
+    #[must_use]
+    #[cfg(test)]
+    pub(crate) const fn shutdown_generation(&self) -> Option<std::num::NonZeroU64> {
+        self.shutdown_generation
+    }
     #[must_use]
     pub const fn seq(&self) -> Option<u64> {
         self.seq
@@ -345,10 +435,12 @@ pub fn new_enable(
         rr: rr.map(|identity| PendingReply {
             identity,
             locked: None,
+            fresh_disable: None,
         }),
         lower_waiters: LowerWaiters::empty(),
         revoked_by: None,
         started_at,
+        bridge: EnableBridgeState::default(),
     }
 }
 
@@ -357,7 +449,7 @@ pub fn new_lower(
     started_at: MonoRawNs,
 ) -> Result<LowerPending, PendingRejected<(LowerCause, MonoRawNs)>> {
     match cause {
-        LowerCause::PostEnableCleanup => Err(PendingRejected {
+        LowerCause::PostEnableCleanup | LowerCause::Shutdown => Err(PendingRejected {
             input: (cause, started_at),
             reason: PendingRefusal::CleanupRequiresRetiredEnable,
         }),
@@ -367,6 +459,8 @@ pub fn new_lower(
             carried_enable: None,
             waiters: LowerWaiters::empty(),
             started_at,
+            shutdown_generation: None,
+            completion: None,
         }),
     }
 }
@@ -398,8 +492,17 @@ pub fn install_pending(
 }
 
 pub fn append_lower_waiter(
+    pending: IpcPending,
+    rr: RrIdentity,
+) -> Result<IpcPending, PendingRejected<(IpcPending, RrIdentity)>> {
+    append_lower_waiter_impl(pending, rr, None, None)
+}
+
+fn append_lower_waiter_impl(
     mut pending: IpcPending,
     rr: RrIdentity,
+    fresh_disable: Option<FreshDisableBoundary>,
+    locked: Option<LockedOutcome>,
 ) -> Result<IpcPending, PendingRejected<(IpcPending, RrIdentity)>> {
     let waiters = match &mut pending {
         IpcPending::Enable(enable) => &mut enable.lower_waiters,
@@ -415,7 +518,8 @@ pub fn append_lower_waiter(
         Some(entry) => {
             *entry = Some(PendingReply {
                 identity: rr,
-                locked: None,
+                locked,
+                fresh_disable,
             });
             Ok(pending)
         }
@@ -437,7 +541,7 @@ pub fn record_submitted(
         IpcPending::Control(control) => Ok(&mut control.seq),
         IpcPending::Lower(lower) => match lower.cause {
             LowerCause::AwaitConvergence => Err(PendingRefusal::NoNormalRequest),
-            LowerCause::OperatorDisable | LowerCause::PostEnableCleanup => {
+            LowerCause::OperatorDisable | LowerCause::PostEnableCleanup | LowerCause::Shutdown => {
                 match &lower.carried_enable {
                     Some(carried) if carried.source_seq.is_some() => {
                         Err(PendingRefusal::EnableSequenceStillHeld)
@@ -559,12 +663,15 @@ pub fn into_post_enable_cleanup(
     started_at: MonoRawNs,
 ) -> LowerPending {
     let waiters = std::mem::replace(&mut retired.lower_waiters, LowerWaiters::empty());
+    let shutdown_generation = retired.bridge.shutdown_generation;
     LowerPending {
         seq: None,
         cause: LowerCause::PostEnableCleanup,
         carried_enable: Some(retired),
         waiters,
         started_at,
+        shutdown_generation,
+        completion: None,
     }
 }
 
@@ -598,6 +705,7 @@ pub fn retire_enable_pending(
         pending,
         authority,
         start_slot,
+        RetirementEntry::Public,
         #[cfg(test)]
         || {},
     )
@@ -607,6 +715,7 @@ fn retire_enable_pending_impl(
     pending: EnablePending,
     authority: &ControlAuthority,
     start_slot: &StartViewSlot,
+    entry: RetirementEntry,
     #[cfg(test)] after_withdraw: impl FnOnce(),
 ) -> Result<RetiredEnablePending, EnableRetireRejected> {
     let domain = pending.owner.domain();
@@ -622,7 +731,11 @@ fn retire_enable_pending_impl(
     }
     let reason = match authority.snapshot().phase {
         Some(Phase::EnableExecuting) => Some(EnableRetireRefusal::ExecutionStillLive),
-        Some(Phase::EnableQueued | Phase::EnableSucceeded) if pending.revoked_by.is_none() => {
+        Some(Phase::EnableQueued | Phase::EnableSucceeded)
+            if pending.revoked_by.is_none()
+                && (!matches!(entry, RetirementEntry::Bridge)
+                    || pending.bridge.route.is_none()) =>
+        {
             Some(EnableRetireRefusal::RetirementRouteRequired)
         }
         Some(Phase::EnableQueued | Phase::EnableSucceeded | Phase::EnableFailed) => None,
@@ -642,6 +755,7 @@ fn retire_enable_pending_impl(
         lower_waiters,
         revoked_by,
         started_at,
+        bridge,
     } = pending;
     match authority.retire_enable(owner) {
         Ok(retired) => Ok(RetiredEnablePending {
@@ -654,6 +768,7 @@ fn retire_enable_pending_impl(
             started_at,
             retired_from: retired.retired_from,
             withdrew_start,
+            bridge,
         }),
         Err(refused) => Err(EnableRetireRejected {
             pending: EnablePending {
@@ -664,10 +779,821 @@ fn retire_enable_pending_impl(
                 lower_waiters,
                 revoked_by,
                 started_at,
+                bridge,
             },
             reason: EnableRetireRefusal::Authority(refused.reason),
         }),
     }
+}
+
+#[derive(Debug, Default)]
+struct EnableBridgeState {
+    start_view: Option<robot_core::control_authority::EnableStartView>,
+    completion: Option<robot_core::executor_ctrl::AdapterResp>,
+    route: Option<EnableRetirementRoute>,
+    shutdown_generation: Option<std::num::NonZeroU64>,
+    effect: EnableEffect,
+}
+
+#[derive(Debug)]
+enum EnableRetirementRoute {
+    PostRefused,
+    SubmitUnsupported,
+    CompletedWithoutStart,
+    CommitRefused,
+    ExecutionFailed,
+}
+
+// 私有调用入口判别，不携 owner、请求或退休凭证。
+#[derive(Clone, Copy)]
+enum RetirementEntry {
+    Public,
+    Bridge,
+}
+
+/// 真实退休后的固定回复批次；字段只在本模块移动原请求时创建。
+#[derive(Debug)]
+pub(crate) struct RetiredEnableReply {
+    pub identity: RrIdentity,
+    pub outcome: PendingOutcome,
+    pub effect: EnableEffect,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum EnableEffect {
+    #[default]
+    None,
+    Started,
+    Committed,
+}
+
+#[derive(Debug)]
+pub(crate) struct RetiredReplyBatch {
+    entries: [Option<RetiredEnableReply>; MAX_CLIENTS_SUPPORTED + 1],
+}
+impl RetiredReplyBatch {
+    fn empty() -> Self {
+        Self {
+            entries: [const { None }; MAX_CLIENTS_SUPPORTED + 1],
+        }
+    }
+    pub(crate) fn into_entries(self) -> impl Iterator<Item = RetiredEnableReply> {
+        self.entries.into_iter().flatten()
+    }
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.entries.iter().all(Option::is_none)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct EnableCommitFact {
+    pub at: MonoRawNs,
+    pub epoch: PermissionEpoch,
+}
+
+/// 真实提交或原序号完成返回的失败来源，不由已锁业务回复反推。
+#[derive(Debug)]
+pub(crate) enum EnableFailureSource {
+    SubmitUnsupported(&'static str),
+    ExecutionFailed(robot_core::executor_ctrl::AdapterErr),
+}
+
+/// 首次真实失败的单次交接事实；不授予执行、停止或退休权限。
+#[derive(Debug)]
+pub(crate) struct EnableFailureFact {
+    source: EnableFailureSource,
+}
+
+impl EnableFailureFact {
+    #[must_use]
+    pub(crate) const fn source(&self) -> &EnableFailureSource {
+        &self.source
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct BridgeStep {
+    pub pending: IpcPending,
+    pub replies: RetiredReplyBatch,
+    pub commit: Option<EnableCommitFact>,
+    /// 先接回原 pending 再消费；不能据此重写已锁首因或重复安排物理停止。
+    pub failure: Option<EnableFailureFact>,
+    /// 仅真实 Lower 责任完成时产生，供 IPC 记住先前原 g 的收尾事实。
+    pub lowered_generation: Option<std::num::NonZeroU64>,
+}
+impl BridgeStep {
+    fn retained(pending: IpcPending) -> Self {
+        Self {
+            pending,
+            replies: RetiredReplyBatch::empty(),
+            commit: None,
+            failure: None,
+            lowered_generation: None,
+        }
+    }
+
+    fn failed(pending: EnablePending, source: EnableFailureSource) -> Self {
+        Self {
+            failure: Some(EnableFailureFact { source }),
+            ..Self::retained(IpcPending::Enable(pending))
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum BridgeRefusal {
+    Pending(PendingRefusal),
+    Authority(Refusal),
+    Retirement(EnableRetireRefusal),
+    CrossDomain,
+    InvalidSequence(u64),
+    WaitingForShutdownPublication,
+}
+impl std::fmt::Display for BridgeRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending(reason) => write!(f, "待办拒绝：{reason:?}"),
+            Self::Authority(reason) => write!(f, "权限拒绝：{reason:?}"),
+            Self::Retirement(reason) => write!(f, "退休拒绝：{reason:?}"),
+            Self::CrossDomain => f.write_str("拥有域不一致"),
+            Self::InvalidSequence(raw) => write!(f, "原请求编码非法：{raw:#x}"),
+            Self::WaitingForShutdownPublication => f.write_str("等待原关机代次发布"),
+        }
+    }
+}
+#[derive(Debug)]
+pub(crate) struct BridgeRejected {
+    pub pending: IpcPending,
+    pub reason: BridgeRefusal,
+}
+
+#[derive(Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "每个分支按值保留原 pending、固定 waiter 和回复批次，不额外装箱"
+)]
+pub(crate) enum EnableStartOutcome {
+    BeforeReserve {
+        current: IpcPending,
+        rr: Option<RrIdentity>,
+        reason: BridgeRefusal,
+    },
+    Advanced(BridgeStep),
+    Retained(BridgeRejected),
+}
+
+pub(crate) fn start_enable_owned(
+    current: IpcPending,
+    rr: Option<RrIdentity>,
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlClient,
+    now: MonoRawNs,
+) -> EnableStartOutcome {
+    if !matches!(current, IpcPending::Idle) {
+        return EnableStartOutcome::BeforeReserve {
+            current,
+            rr,
+            reason: BridgeRefusal::Pending(PendingRefusal::AlreadyInProgress),
+        };
+    }
+    let (owner, view) = match ctrl.authority().reserve_enable() {
+        Ok(pair) => pair,
+        Err(reason) => {
+            return EnableStartOutcome::BeforeReserve {
+                current,
+                rr,
+                reason: BridgeRefusal::Authority(reason),
+            };
+        }
+    };
+    let mut pending = new_enable(owner, rr, now);
+    pending.bridge.start_view = Some(view);
+    match submit_enable(pending, ctrl) {
+        Ok(step) => EnableStartOutcome::Advanced(step),
+        Err(rejected) => EnableStartOutcome::Retained(rejected),
+    }
+}
+
+fn submit_enable(
+    mut pending: EnablePending,
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlClient,
+) -> Result<BridgeStep, BridgeRejected> {
+    use robot_core::control_authority::StartViewRefusal;
+    use robot_core::executor_ctrl::{AdapterNormalReq, ExecutorCtrlClient, NormalReqStatus};
+    if pending.owner.domain() != ctrl.authority().domain()
+        || pending.owner.domain() != ctrl.start_slot().domain()
+    {
+        return Err(BridgeRejected {
+            pending: IpcPending::Enable(pending),
+            reason: BridgeRefusal::CrossDomain,
+        });
+    }
+    if let Some(view) = pending.bridge.start_view.take() {
+        let posted = match ctrl.start_slot().post(view) {
+            Ok(()) => Ok(()),
+            Err(refused) => match refused.reason {
+                StartViewRefusal::Occupied { stale_epoch } => {
+                    let _ = ctrl.start_slot().withdraw(stale_epoch);
+                    ctrl.start_slot().post(refused.view)
+                }
+                StartViewRefusal::CrossDomain => Err(refused),
+            },
+        };
+        if let Err(refused) = posted {
+            pending.bridge.start_view = Some(refused.view);
+            pending.bridge.route = Some(EnableRetirementRoute::PostRefused);
+            lock_pending(
+                &mut pending.rr,
+                PendingOutcome::Existing(SetEnabledRrPayload::AdapterError),
+                pending.started_at,
+            );
+            return Ok(BridgeStep::retained(IpcPending::Enable(pending)));
+        }
+    }
+    if pending.seq.is_none()
+        && pending.bridge.completion.is_none()
+        && pending.bridge.route.is_none()
+    {
+        match ctrl.request_normal(AdapterNormalReq::Enable(true)) {
+            NormalReqStatus::Submitted { seq } => {
+                pending.seq = Some(seq);
+                pending.bridge.effect = EnableEffect::Started;
+            }
+            NormalReqStatus::Busy => {}
+            NormalReqStatus::Unsupported(message) => {
+                pending.bridge.route = Some(EnableRetirementRoute::SubmitUnsupported);
+                lock_pending(
+                    &mut pending.rr,
+                    PendingOutcome::Existing(SetEnabledRrPayload::AdapterError),
+                    pending.started_at,
+                );
+                return Ok(BridgeStep::failed(
+                    pending,
+                    EnableFailureSource::SubmitUnsupported(message),
+                ));
+            }
+        }
+    }
+    Ok(BridgeStep::retained(IpcPending::Enable(pending)))
+}
+
+fn lock_pending(reply: &mut Option<PendingReply>, outcome: PendingOutcome, at: MonoRawNs) {
+    if let Some(reply) = reply
+        && reply.locked.is_none()
+    {
+        reply.locked = Some(LockedOutcome { outcome, at });
+    }
+}
+
+fn take_reply(
+    reply: PendingReply,
+    fallback: PendingOutcome,
+    effect: EnableEffect,
+) -> RetiredEnableReply {
+    RetiredEnableReply {
+        identity: reply.identity,
+        outcome: reply.locked.map_or(fallback, |locked| locked.outcome),
+        effect,
+    }
+}
+
+fn retire_owned(
+    pending: EnablePending,
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlClient,
+) -> Result<RetiredEnablePending, BridgeRejected> {
+    retire_enable_pending_impl(
+        pending,
+        ctrl.authority(),
+        ctrl.start_slot(),
+        RetirementEntry::Bridge,
+        #[cfg(test)]
+        || {},
+    )
+    .map_err(|rejected| BridgeRejected {
+        pending: IpcPending::Enable(rejected.pending),
+        reason: BridgeRefusal::Retirement(rejected.reason),
+    })
+}
+
+pub(crate) fn advance_owned(
+    pending: IpcPending,
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlClient,
+    clock: &dyn robot_core::time::RobotClock,
+) -> Result<BridgeStep, BridgeRejected> {
+    match pending {
+        IpcPending::Enable(enable) => advance_enable(enable, ctrl, clock),
+        IpcPending::Lower(lower) => advance_lower(lower, ctrl, clock),
+        pending => Ok(BridgeStep::retained(pending)),
+    }
+}
+
+fn withdraw_cancel_enable(
+    mut pending: EnablePending,
+    ctrl: &HardRtCtrlClient,
+) -> Result<EnablePending, BridgeRejected> {
+    let _ = ctrl.start_slot().withdraw(pending.view_epoch);
+    if let Some(seq) = pending.seq {
+        match ctrl.try_cancel_unclaimed(seq) {
+            crate::hard_rt_ctrl::CancelPendingResult::Taken(action) => {
+                debug_assert_eq!(action.seq, seq);
+                pending.seq = None;
+            }
+            crate::hard_rt_ctrl::CancelPendingResult::NotTaken => {}
+            crate::hard_rt_ctrl::CancelPendingResult::Invalid(invalid) => {
+                return Err(BridgeRejected {
+                    pending: IpcPending::Enable(pending),
+                    reason: BridgeRefusal::InvalidSequence(invalid.0),
+                });
+            }
+        }
+    }
+    Ok(pending)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "同一原 seq 的业务锁存、一次故障事实及退休 Err 返原在一处闭合"
+)]
+fn advance_enable(
+    mut pending: EnablePending,
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlClient,
+    clock: &dyn robot_core::time::RobotClock,
+) -> Result<BridgeStep, BridgeRejected> {
+    use robot_core::executor_ctrl::{AdapterErr, AdapterResp, ExecutorCtrlClient};
+    if pending.owner.domain() != ctrl.authority().domain()
+        || pending.owner.domain() != ctrl.start_slot().domain()
+    {
+        return Err(BridgeRejected {
+            pending: IpcPending::Enable(pending),
+            reason: BridgeRefusal::CrossDomain,
+        });
+    }
+    if pending.revoked_by.is_some() {
+        pending = withdraw_cancel_enable(pending, ctrl)?;
+    }
+    if let Some(seq) = pending.seq
+        && let Some(response) = ctrl.poll_last_normal_resp(seq)
+    {
+        pending.seq = None;
+        pending.bridge.completion = Some(response);
+    }
+    if pending.revoked_by.is_some() || pending.bridge.route.is_some() {
+        let retired = retire_owned(pending, ctrl)?;
+        return advance_lower(into_post_enable_cleanup(retired, clock.now()), ctrl, clock);
+    }
+    match pending.bridge.completion {
+        None => submit_enable(pending, ctrl),
+        Some(AdapterResp::Err(error)) => {
+            pending.bridge.route = Some(match error {
+                AdapterErr::AuthorityRevoked | AdapterErr::PreemptedByEmergency => {
+                    EnableRetirementRoute::CompletedWithoutStart
+                }
+                _ => EnableRetirementRoute::ExecutionFailed,
+            });
+            lock_pending(
+                &mut pending.rr,
+                PendingOutcome::Existing(SetEnabledRrPayload::AdapterError),
+                clock.now(),
+            );
+            if matches!(
+                pending.bridge.route,
+                Some(EnableRetirementRoute::ExecutionFailed)
+            ) {
+                // 原 seq 的实际失败先交 IPC 锁业务故障；下次沿 route 退休。
+                // 若立即尝试退休，Err 会把本次新事实丢在错误返回之外。
+                return Ok(BridgeStep::failed(
+                    pending,
+                    EnableFailureSource::ExecutionFailed(error),
+                ));
+            }
+            let retired = retire_owned(pending, ctrl)?;
+            advance_lower(into_post_enable_cleanup(retired, clock.now()), ctrl, clock)
+        }
+        Some(AdapterResp::Ok) => {
+            // 已锁失败或已有 Lower waiter 时不重新恢复执行权限；原首次业务结果保留。
+            let failed_business = pending
+                .rr
+                .as_ref()
+                .and_then(|rr| rr.locked.as_ref())
+                .is_some_and(|locked| {
+                    !matches!(
+                        locked.outcome,
+                        PendingOutcome::Existing(SetEnabledRrPayload::Enabled { .. })
+                    )
+                });
+            if failed_business || !pending.lower_waiters.is_empty() {
+                let _ = ctrl.authority().disable();
+                pending.revoked_by = Some(RevokeCause::Disable);
+                let retired = retire_owned(pending, ctrl)?;
+                return advance_lower(into_post_enable_cleanup(retired, clock.now()), ctrl, clock);
+            }
+            let EnablePending {
+                owner,
+                view_epoch,
+                seq,
+                rr,
+                lower_waiters,
+                revoked_by,
+                started_at,
+                bridge,
+            } = pending;
+            match ctrl.authority().commit_enable(owner) {
+                Ok(committed) => {
+                    let at = clock.now();
+                    let mut replies = RetiredReplyBatch::empty();
+                    replies.entries[0] = rr.map(|rr| {
+                        take_reply(
+                            rr,
+                            PendingOutcome::Existing(SetEnabledRrPayload::Enabled {
+                                completed_at_ns: at.0,
+                            }),
+                            EnableEffect::Committed,
+                        )
+                    });
+                    Ok(BridgeStep {
+                        pending: IpcPending::Idle,
+                        replies,
+                        commit: Some(EnableCommitFact {
+                            at,
+                            epoch: committed.epoch,
+                        }),
+                        failure: None,
+                        lowered_generation: None,
+                    })
+                }
+                Err(refused) => {
+                    let mut pending = EnablePending {
+                        owner: refused.token,
+                        view_epoch,
+                        seq,
+                        rr,
+                        lower_waiters,
+                        revoked_by,
+                        started_at,
+                        bridge,
+                    };
+                    pending.bridge.route = Some(EnableRetirementRoute::CommitRefused);
+                    lock_pending(
+                        &mut pending.rr,
+                        PendingOutcome::Existing(SetEnabledRrPayload::AdapterError),
+                        clock.now(),
+                    );
+                    let retired = retire_owned(pending, ctrl)?;
+                    advance_lower(into_post_enable_cleanup(retired, clock.now()), ctrl, clock)
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "拒绝与推进均按值保留完整原请求和固定 waiter，不额外装箱"
+)]
+pub(crate) enum LowerStartOutcome {
+    BeforeStart {
+        pending: IpcPending,
+        rr: Option<RrIdentity>,
+        reason: BridgeRefusal,
+    },
+    Advanced(BridgeStep),
+    Retained(BridgeRejected),
+}
+
+pub(crate) fn begin_lower_owned(
+    pending: IpcPending,
+    rr: Option<RrIdentity>,
+    cause: LowerCause,
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlClient,
+    boot: &crate::boot_supervisor::BootShared,
+    observation: BusinessObservation,
+) -> LowerStartOutcome {
+    begin_lower_owned_impl(
+        pending,
+        rr,
+        cause,
+        ctrl,
+        boot,
+        observation,
+        #[cfg(test)]
+        || {},
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "同一拥有函数保全部失败返原；私有测试只在原前采与同次disable间插入一次真实并发更新"
+)]
+fn begin_lower_owned_impl(
+    mut pending: IpcPending,
+    rr: Option<RrIdentity>,
+    cause: LowerCause,
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlClient,
+    boot: &crate::boot_supervisor::BootShared,
+    observation: BusinessObservation,
+    #[cfg(test)] before_disable: impl FnOnce(),
+) -> LowerStartOutcome {
+    let now = observation.now;
+    let owner_domain = match &pending {
+        IpcPending::Enable(enable) => Some(enable.owner.domain()),
+        IpcPending::Lower(lower) => lower.carried_enable.as_ref().map(|carried| carried.domain),
+        _ => None,
+    };
+    if owner_domain.is_some_and(|domain| {
+        domain != ctrl.authority().domain() || domain != ctrl.start_slot().domain()
+    }) {
+        return LowerStartOutcome::BeforeStart {
+            pending,
+            rr,
+            reason: BridgeRefusal::CrossDomain,
+        };
+    }
+    let capacity_available = match &pending {
+        IpcPending::Idle => true,
+        IpcPending::Enable(enable) => enable.lower_waiters.len() < MAX_CLIENTS_SUPPORTED,
+        IpcPending::Lower(lower) => lower.waiters.len() < MAX_CLIENTS_SUPPORTED,
+        IpcPending::Control(_) => false,
+    };
+    if rr.is_some() && !capacity_available || matches!(pending, IpcPending::Control(_)) {
+        return LowerStartOutcome::BeforeStart {
+            pending,
+            rr,
+            reason: BridgeRefusal::Pending(PendingRefusal::QueueFull {
+                class: PendingClass::Lower,
+            }),
+        };
+    }
+    let mut fresh_disable = None;
+    let mut admission_failure = None;
+    let generation = match cause {
+        LowerCause::Shutdown => {
+            let same = boot.binding().is_some_and(|binding| {
+                std::sync::Arc::ptr_eq(binding.authority(), ctrl.authority())
+            });
+            let snapshot = ctrl.authority().snapshot();
+            if !same {
+                return LowerStartOutcome::BeforeStart {
+                    pending,
+                    rr,
+                    reason: BridgeRefusal::CrossDomain,
+                };
+            }
+            let Some(g) = std::num::NonZeroU64::new(boot.runtime_words().generation()) else {
+                return LowerStartOutcome::BeforeStart {
+                    pending,
+                    rr,
+                    reason: BridgeRefusal::WaitingForShutdownPublication,
+                };
+            };
+            if !snapshot.shutdown || !snapshot.disabled {
+                return LowerStartOutcome::BeforeStart {
+                    pending,
+                    rr,
+                    reason: BridgeRefusal::WaitingForShutdownPublication,
+                };
+            }
+            Some(g)
+        }
+        LowerCause::OperatorDisable => {
+            let before = ctrl.authority().snapshot();
+            let historical_candidate = matches!(pending, IpcPending::Idle)
+                && observation.state == S0State::Safe
+                && rr.is_some()
+                && before.latch;
+            let candidate = historical_candidate
+                && !before.ipc_estop_notice
+                && !before.shutdown
+                && !before.exhausted;
+            #[cfg(test)]
+            before_disable();
+            let tightened = ctrl.authority().disable();
+            if candidate
+                && tightened.advanced
+                && !tightened.exhausted
+                && before.epoch.get().checked_add(1) == Some(tightened.epoch.get())
+            {
+                fresh_disable = Some(FreshDisableBoundary {
+                    domain: before.domain,
+                    epoch: tightened.epoch,
+                    observation,
+                });
+            } else if historical_candidate {
+                // 未获豁免即回原历史 latch 拒绝，不能让首次 observe 前的快退默认成功。
+                // before 是原拒绝事实；epoch 不连续本身不证明发生过新 EStop。
+                let rejected = BusinessObservation {
+                    state: if before.shutdown {
+                        S0State::Stopping
+                    } else {
+                        observation.state
+                    },
+                    estop: before.latch || observation.estop,
+                    ..observation
+                };
+                admission_failure = rr.as_ref().and_then(|identity| {
+                    decide_business(PendingTarget::Safe, identity.deadline_ns, rejected)
+                        .filter(|payload| !matches!(payload, SetEnabledRrPayload::Disabled { .. }))
+                        .map(|payload| LockedOutcome {
+                            outcome: PendingOutcome::Existing(payload),
+                            at: now,
+                        })
+                });
+            }
+            None
+        }
+        LowerCause::PostEnableCleanup | LowerCause::AwaitConvergence => None,
+    };
+    if let IpcPending::Enable(enable) = &mut pending {
+        if enable.owner.domain() != ctrl.authority().domain() {
+            return LowerStartOutcome::BeforeStart {
+                pending,
+                rr,
+                reason: BridgeRefusal::CrossDomain,
+            };
+        }
+        let revoke = match cause {
+            LowerCause::Shutdown => RevokeCause::Shutdown,
+            _ => RevokeCause::Disable,
+        };
+        enable.revoked_by = Some(revoke);
+        if let Some(g) = generation {
+            enable.bridge.shutdown_generation = Some(g);
+        }
+        lock_pending(
+            &mut enable.rr,
+            match revoke {
+                RevokeCause::Shutdown => {
+                    PendingOutcome::Existing(SetEnabledRrPayload::PreemptedByShutdown)
+                }
+                _ => PendingOutcome::SupersededByDisable,
+            },
+            now,
+        );
+        let _ = ctrl.start_slot().withdraw(enable.view_epoch);
+    }
+    if matches!(pending, IpcPending::Idle) {
+        pending = IpcPending::Lower(LowerPending {
+            seq: None,
+            cause,
+            carried_enable: None,
+            waiters: LowerWaiters::empty(),
+            started_at: now,
+            shutdown_generation: generation,
+            completion: None,
+        });
+    }
+    if let IpcPending::Lower(lower) = &mut pending
+        && let Some(g) = generation
+    {
+        lower.shutdown_generation = Some(g);
+    }
+    if let Some(rr) = rr {
+        pending = match append_lower_waiter_impl(pending, rr, fresh_disable, admission_failure) {
+            Ok(pending) => pending,
+            Err(rejected) => {
+                return LowerStartOutcome::BeforeStart {
+                    pending: rejected.input.0,
+                    rr: Some(rejected.input.1),
+                    reason: BridgeRefusal::Pending(rejected.reason),
+                };
+            }
+        };
+    }
+    if let IpcPending::Enable(enable) = pending {
+        let retired =
+            withdraw_cancel_enable(enable, ctrl).and_then(|enable| retire_owned(enable, ctrl));
+        pending = match retired {
+            Ok(retired) => IpcPending::Lower(into_post_enable_cleanup(retired, now)),
+            Err(rejected) => return LowerStartOutcome::Retained(rejected),
+        };
+    }
+    LowerStartOutcome::Advanced(BridgeStep::retained(pending))
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "原 Lower 的首失败锁存、seq 清偿及同快照物理退休需集中保持所有权和判定顺序"
+)]
+fn advance_lower(
+    mut lower: LowerPending,
+    ctrl: &crate::hard_rt_ctrl::HardRtCtrlClient,
+    clock: &dyn robot_core::time::RobotClock,
+) -> Result<BridgeStep, BridgeRejected> {
+    use robot_core::control_authority::InhibitReason;
+    use robot_core::executor_ctrl::{
+        AdapterNormalReq, AdapterResp, ExecutorCtrlClient, NormalReqStatus, OutputSafetyState,
+    };
+    if lower.waiters.iter().any(|reply| {
+        reply
+            .fresh_disable
+            .as_ref()
+            .is_some_and(|boundary| boundary.domain != ctrl.authority().domain())
+    }) {
+        return Err(BridgeRejected {
+            pending: IpcPending::Lower(lower),
+            reason: BridgeRefusal::CrossDomain,
+        });
+    }
+    // 首失败必须先于所有 seq 早退锁存，不能被下一 tick 的 Safe 观测覆盖。
+    lower
+        .waiters
+        .observe_fresh_failures(ctrl.authority().snapshot(), clock.now());
+    if let Some(carried) = &mut lower.carried_enable {
+        if carried.domain != ctrl.authority().domain() {
+            return Err(BridgeRejected {
+                pending: IpcPending::Lower(lower),
+                reason: BridgeRefusal::CrossDomain,
+            });
+        }
+        if let Some(seq) = carried.source_seq {
+            let Some(response) = ctrl.poll_last_normal_resp(seq) else {
+                return Ok(BridgeStep::retained(IpcPending::Lower(lower)));
+            };
+            carried.source_seq = None;
+            carried.bridge.completion = Some(response);
+        }
+    }
+    if let Some(seq) = lower.seq {
+        let Some(response) = ctrl.poll_last_normal_resp(seq) else {
+            return Ok(BridgeStep::retained(IpcPending::Lower(lower)));
+        };
+        lower.seq = None;
+        lower.completion = Some(response);
+        if matches!(response, AdapterResp::Err(_)) {
+            for rr in lower.waiters.entries.iter_mut().flatten() {
+                if rr.locked.is_none() {
+                    rr.locked = Some(LockedOutcome {
+                        outcome: PendingOutcome::Existing(SetEnabledRrPayload::AdapterError),
+                        at: clock.now(),
+                    });
+                }
+            }
+        }
+    }
+    let snapshot = ctrl.authority().snapshot();
+    // 退休资格与新撤销必须来自同一个原 snapshot；不存在后采 epoch 补许可。
+    lower.waiters.observe_fresh_failures(snapshot, clock.now());
+    let physically_done = snapshot.phase == Some(Phase::Idle)
+        && snapshot.safety == OutputSafetyState::TorqueOffConfirmed
+        && snapshot.disabled
+        && !snapshot.exhausted
+        && !snapshot.normal_io_active
+        && !snapshot.serial_estop_pending
+        && !snapshot.inhibits.contains(InhibitReason::Converging)
+        && !snapshot.inhibits.contains(InhibitReason::FaultPending)
+        && !snapshot.inhibits.contains(InhibitReason::Boot);
+    if physically_done {
+        let mut replies = RetiredReplyBatch::empty();
+        if let Some(carried) = lower.carried_enable {
+            let effect = carried.bridge.effect;
+            replies.entries[0] = carried.rr.map(|rr| {
+                take_reply(
+                    rr,
+                    PendingOutcome::Existing(SetEnabledRrPayload::AdapterError),
+                    effect,
+                )
+            });
+        }
+        let at = clock.now();
+        for (target, rr) in replies.entries[1..].iter_mut().zip(lower.waiters.entries) {
+            *target = rr.map(|rr| {
+                take_reply(
+                    rr,
+                    PendingOutcome::Existing(SetEnabledRrPayload::Disabled {
+                        completed_at_ns: at.0,
+                    }),
+                    EnableEffect::Committed,
+                )
+            });
+        }
+        return Ok(BridgeStep {
+            pending: IpcPending::Idle,
+            replies,
+            commit: None,
+            failure: None,
+            lowered_generation: lower.shutdown_generation,
+        });
+    }
+    if lower.seq.is_none()
+        && lower.completion.is_none()
+        && lower.cause != LowerCause::AwaitConvergence
+        && snapshot.inhibits.is_empty()
+        && !snapshot.serial_estop_pending
+        && !snapshot.normal_io_active
+    {
+        match ctrl.request_normal(AdapterNormalReq::Enable(false)) {
+            NormalReqStatus::Submitted { seq } => lower.seq = Some(seq),
+            NormalReqStatus::Busy => {}
+            NormalReqStatus::Unsupported(_) => {
+                return Err(BridgeRejected {
+                    pending: IpcPending::Lower(lower),
+                    reason: BridgeRefusal::Pending(PendingRefusal::NoNormalRequest),
+                });
+            }
+        }
+    }
+    Ok(BridgeStep::retained(IpcPending::Lower(lower)))
 }
 
 #[cfg(test)]
@@ -686,7 +1612,19 @@ mod tests {
         .unwrap()
     }
     fn rr(id: &str, deadline_ns: u64) -> RrIdentity {
+        use crate::rr_admission::{CheckedLimits, PeerLedger, RrRequestClass};
+        let limits = CheckedLimits::try_from_limits(&robot_transport::iceoryx2::RrStaticLimits {
+            c: 1,
+            l: 4,
+        })
+        .unwrap();
+        let mut ledger = PeerLedger::<u8>::new(&limits).unwrap();
+        let slot = ledger.admit(1, RrRequestClass::Restore).unwrap();
+        let route = slot.identity();
+        // 此夹具只验证 pending 的关联字段；真实 RR 线程持活 Slot 的链另行验收。
+        ledger.release(slot).unwrap();
         RrIdentity {
+            route,
             request_id: id.into(),
             deadline_ns,
         }
@@ -1323,11 +2261,12 @@ mod tests {
         );
         let before = snapshot(&pending);
         let mut execution = None;
-        let rejected = retire_enable_pending_impl(pending, &authority, &slot, || {
-            assert_eq!(slot.take(), None);
-            execution = Some(authority.start_enable(view).unwrap());
-        })
-        .unwrap_err();
+        let rejected =
+            retire_enable_pending_impl(pending, &authority, &slot, RetirementEntry::Public, || {
+                assert_eq!(slot.take(), None);
+                execution = Some(authority.start_enable(view).unwrap());
+            })
+            .unwrap_err();
         assert_eq!(
             rejected.reason,
             EnableRetireRefusal::Authority(Refusal::WrongPhase(Phase::EnableExecuting))
@@ -1353,5 +2292,883 @@ mod tests {
         );
         assert_eq!(retired.revoked_by(), before.revoked);
         assert_eq!(retired.retired_from(), Phase::EnableFailed);
+    }
+
+    fn bridge_started(client: &HardRtCtrlClient, request: RrIdentity) -> EnablePending {
+        match start_enable_owned(IpcPending::Idle, Some(request), client, MonoRawNs(1)) {
+            EnableStartOutcome::Advanced(step) => enable(step.pending),
+            other => panic!("真实 reserve/post/submit 必须成功：{other:?}"),
+        }
+    }
+
+    fn mock_hard_adapter() -> robot_adapter_mock::MockHardRTAdapter {
+        use robot_core::adapter::ManipulatorAdapter;
+        let mut adapter = robot_adapter_mock::MockHardRTAdapter::with_unlimited_limits(2);
+        adapter.connect().unwrap();
+        adapter
+    }
+
+    #[test]
+    fn bridge_commits_only_after_real_executor_finish_and_returns_original_route_once() {
+        use std::sync::{Arc, atomic::Ordering};
+        let inner = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new(Arc::new(
+            authority(),
+        )));
+        let client = HardRtCtrlClient::new(inner.clone());
+        let request = rr("真实成功", 100);
+        let route = request.route;
+        let pending = bridge_started(&client, request);
+        let sequence = pending.seq().unwrap();
+        let clock = robot_core::time::MockClock::new(MonoRawNs(20));
+        let pending = advance_owned(IpcPending::Enable(pending), &client, &clock).unwrap();
+        assert!(pending.commit.is_none() && pending.replies.is_empty());
+        let raw = inner.pending_normal.swap(0, Ordering::AcqRel);
+        let packet = inner.decode_pending(raw).unwrap().unwrap();
+        let mut adapter = mock_hard_adapter();
+        assert!(crate::rt_thread::execute_owned_normal(&mut adapter, packet, &inner).is_none());
+        assert_eq!(
+            client.poll_last_normal_resp(sequence),
+            Some(AdapterResp::Ok)
+        );
+        let completed = advance_owned(pending.pending, &client, &clock).unwrap();
+        assert_eq!(completed.commit.unwrap().at, MonoRawNs(20));
+        assert!(matches!(completed.pending, IpcPending::Idle));
+        let replies: Vec<_> = completed.replies.into_entries().collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].identity.route, route);
+        assert_eq!(replies[0].identity.request_id, "真实成功");
+        assert_eq!(replies[0].effect, EnableEffect::Committed);
+        assert!(matches!(
+            replies[0].outcome,
+            PendingOutcome::Existing(SetEnabledRrPayload::Enabled {
+                completed_at_ns: 20
+            })
+        ));
+        assert!(
+            advance_owned(IpcPending::Idle, &client, &clock)
+                .unwrap()
+                .replies
+                .is_empty()
+        );
+    }
+
+    /// 确定性 owned 桥夹具：真权限原语、原 RR Slot 与真实 Mock 调用；不冒线程/磁盘链。
+    struct FreshLowerRig {
+        pending: IpcPending,
+        slots: Vec<crate::rr_admission::Slot<u8>>,
+        ledger: crate::rr_admission::PeerLedger<u8>,
+        ctrl: HardRtCtrlClient,
+        boot: crate::boot_supervisor::BootShared,
+        clock: robot_core::time::MockClock,
+    }
+    impl FreshLowerRig {
+        fn new() -> Self {
+            Self::with_authority(
+                ControlAuthority::new(AuthorityInit::new(
+                    true,
+                    OutputSafetyState::TorqueOffConfirmed,
+                    InhibitSet::EMPTY,
+                ))
+                .unwrap(),
+            )
+        }
+        fn with_authority(authority: ControlAuthority) -> Self {
+            let limits = crate::rr_admission::CheckedLimits::try_from_limits(
+                &robot_transport::iceoryx2::RrStaticLimits { c: 2, l: 4 },
+            )
+            .unwrap();
+            Self {
+                pending: IpcPending::Idle,
+                slots: Vec::new(),
+                ledger: crate::rr_admission::PeerLedger::new(&limits).unwrap(),
+                ctrl: HardRtCtrlClient::new(std::sync::Arc::new(
+                    crate::hard_rt_ctrl::HardRtCtrlInner::new(std::sync::Arc::new(authority)),
+                )),
+                boot: crate::boot_supervisor::BootShared::new(MonoRawNs(0)),
+                clock: robot_core::time::MockClock::new(MonoRawNs(10)),
+            }
+        }
+        fn admit(&mut self, id: &str, deadline: u64, before_disable: impl FnOnce()) {
+            self.admit_from(1, id, deadline, before_disable);
+        }
+        fn admit_from(&mut self, peer: u8, id: &str, deadline: u64, before_disable: impl FnOnce()) {
+            let slot = self
+                .ledger
+                .admit(peer, crate::rr_admission::RrRequestClass::Lower)
+                .unwrap();
+            let identity = RrIdentity {
+                request_id: id.into(),
+                deadline_ns: deadline,
+                route: slot.identity(),
+            };
+            self.slots.push(slot);
+            let pending = std::mem::replace(&mut self.pending, IpcPending::Idle);
+            let input = BusinessObservation {
+                now: robot_core::time::RobotClock::now(&self.clock),
+                state: S0State::Safe,
+                estop: true,
+            };
+            self.pending = match begin_lower_owned_impl(
+                pending,
+                Some(identity),
+                LowerCause::OperatorDisable,
+                &self.ctrl,
+                &self.boot,
+                input,
+                before_disable,
+            ) {
+                LowerStartOutcome::Advanced(step) => {
+                    assert!(step.replies.is_empty());
+                    step.pending
+                }
+                other => panic!("真原请求应进入 Lower：{other:?}"),
+            };
+        }
+        fn observe(&mut self, state: S0State, estop: bool) {
+            let pending = std::mem::replace(&mut self.pending, IpcPending::Idle);
+            self.pending = observe_business(
+                pending,
+                BusinessObservation {
+                    now: robot_core::time::RobotClock::now(&self.clock),
+                    state,
+                    estop,
+                },
+            );
+        }
+        fn advance(&mut self) -> Vec<RetiredEnableReply> {
+            let pending = std::mem::replace(&mut self.pending, IpcPending::Idle);
+            let step = advance_owned(pending, &self.ctrl, &self.clock).unwrap();
+            self.pending = step.pending;
+            let replies: Vec<_> = step.replies.into_entries().collect();
+            for reply in &replies {
+                let index = self
+                    .slots
+                    .iter()
+                    .position(|slot| slot.identity() == reply.identity.route)
+                    .unwrap();
+                self.ledger.release(self.slots.remove(index)).unwrap();
+            }
+            replies
+        }
+        fn lease(&self) -> robot_core::control_authority::NormalIoLease {
+            self.ctrl
+                .authority()
+                .acquire_normal_io(robot_core::control_authority::NormalIoIntent::PeriodicRead)
+                .unwrap()
+        }
+        fn execute_disable(&mut self) {
+            use std::sync::atomic::Ordering;
+            let inner = self.ctrl.inner();
+            let raw = inner.pending_normal.swap(0, Ordering::AcqRel);
+            let action = inner.decode_pending(raw).unwrap().expect("真实原提交序号");
+            assert!(
+                crate::rt_thread::execute_owned_normal(&mut mock_hard_adapter(), action, inner)
+                    .is_none()
+            );
+        }
+        fn finish_estop(&self) {
+            use robot_core::adapter::RtSafeCtrl;
+            assert!(self.ctrl.inner().claim_serial_estop());
+            let observation = self.ctrl.authority().begin_safety_observation(
+                robot_core::control_authority::SafetyOperation::ConfirmOff,
+            );
+            mock_hard_adapter().safety_stop_rt().unwrap();
+            self.ctrl
+                .authority()
+                .complete_safety_observation(observation)
+                .unwrap();
+            assert!(self.ctrl.inner().claim_ipc_estop());
+        }
+    }
+
+    #[test]
+    fn fresh_lower_same_epoch_foreign_domain_returns_original_waiter_untouched() {
+        let mut rig = FreshLowerRig::new();
+        rig.admit("same-epoch-foreign", 100, || {});
+        let foreign = FreshLowerRig::new();
+        let _ = foreign.ctrl.authority().disable();
+        assert_eq!(
+            rig.ctrl.authority().snapshot().epoch,
+            foreign.ctrl.authority().snapshot().epoch
+        );
+        assert_ne!(
+            rig.ctrl.authority().domain(),
+            foreign.ctrl.authority().domain()
+        );
+        let before = reply_snapshot(lower(&rig.pending).waiters.iter().next().unwrap());
+        let original = std::mem::replace(&mut rig.pending, IpcPending::Idle);
+        let Err(rejected) = advance_owned(original, &foreign.ctrl, &rig.clock) else {
+            panic!("同数值epoch不能当同authority");
+        };
+        assert!(matches!(rejected.reason, BridgeRefusal::CrossDomain));
+        rig.pending = rejected.pending;
+        assert_eq!(
+            reply_snapshot(lower(&rig.pending).waiters.iter().next().unwrap()),
+            before
+        );
+        assert_eq!(rig.advance().len(), 1);
+    }
+
+    #[test]
+    fn fresh_lower_real_lease_release_retires_once_without_false_preemption() {
+        let mut rig = FreshLowerRig::new();
+        let lease = rig.lease();
+        rig.admit("historical", 20, || {});
+        let boundary_epoch = lower(&rig.pending)
+            .waiters
+            .iter()
+            .next()
+            .unwrap()
+            .fresh_disable
+            .as_ref()
+            .unwrap()
+            .epoch;
+        assert_eq!(boundary_epoch, rig.ctrl.authority().snapshot().epoch);
+        rig.observe(S0State::Safe, true);
+        assert!(rig.advance().is_empty());
+        assert!(
+            lower(&rig.pending)
+                .waiters
+                .iter()
+                .next()
+                .unwrap()
+                .locked()
+                .is_none()
+        );
+        rig.ctrl.authority().release_normal_io(lease).unwrap();
+        let replies = rig.advance();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].identity.request_id, "historical");
+        assert!(matches!(
+            replies[0].outcome,
+            PendingOutcome::Existing(SetEnabledRrPayload::Disabled { .. })
+        ));
+        assert_eq!(replies[0].effect, EnableEffect::Committed);
+        assert!(rig.slots.is_empty());
+        assert!(rig.advance().is_empty());
+    }
+
+    #[test]
+    fn fresh_lower_new_estop_at_admission_or_between_observe_and_advance_stays_preempted() {
+        for timing in 0..3 {
+            let mut rig = FreshLowerRig::new();
+            let lease = rig.lease();
+            let authority = rig.ctrl.authority().clone();
+            rig.admit("new-estop", 100, || {
+                if timing == 0 {
+                    let _ = authority.estop();
+                }
+            });
+            if timing != 0 {
+                rig.observe(S0State::Safe, true);
+                assert!(rig.advance().is_empty());
+                assert!(
+                    lower(&rig.pending)
+                        .waiters
+                        .iter()
+                        .next()
+                        .unwrap()
+                        .locked()
+                        .is_none()
+                );
+                // timing=2 特意给过时的 estop=false；真实 snapshot 必须仍识别新撤销。
+                rig.observe(S0State::Safe, timing != 2);
+                let _ = authority.estop();
+            } else {
+                assert!(
+                    lower(&rig.pending)
+                        .waiters
+                        .iter()
+                        .next()
+                        .unwrap()
+                        .fresh_disable
+                        .is_none()
+                );
+                rig.observe(S0State::Safe, true);
+            }
+            assert!(rig.advance().is_empty());
+            assert!(matches!(
+                lower(&rig.pending)
+                    .waiters
+                    .iter()
+                    .next()
+                    .unwrap()
+                    .locked()
+                    .unwrap()
+                    .outcome(),
+                PendingOutcome::Existing(SetEnabledRrPayload::PreemptedByEStop)
+            ));
+            authority.release_normal_io(lease).unwrap();
+            rig.finish_estop();
+            let replies = rig.advance();
+            assert_eq!(replies.len(), 1);
+            assert!(matches!(
+                replies[0].outcome,
+                PendingOutcome::Existing(SetEnabledRrPayload::PreemptedByEStop)
+            ));
+            assert_eq!(
+                authority.snapshot().safety,
+                OutputSafetyState::TorqueOffConfirmed
+            );
+        }
+    }
+
+    #[test]
+    fn fresh_lower_ineligible_admission_keeps_original_failure_before_fast_advance() {
+        use robot_core::adapter::RtSafeCtrl;
+        use robot_core::control_authority::SafetyOperation;
+        for timing in 0..3 {
+            let mut rig = FreshLowerRig::new();
+            let inner = rig.ctrl.inner().clone();
+            let stop = || {
+                assert!(inner.claim_serial_estop());
+                let observed = inner
+                    .authority()
+                    .begin_safety_observation(SafetyOperation::ConfirmOff);
+                mock_hard_adapter().safety_stop_rt().unwrap();
+                inner
+                    .authority()
+                    .complete_safety_observation(observed)
+                    .unwrap();
+            };
+            match timing {
+                0 => {}
+                1 => {
+                    let _ = inner.authority().estop();
+                    stop();
+                    assert!(inner.authority().snapshot().ipc_estop_notice);
+                }
+                2 => {
+                    let _ = inner.authority().shutdown();
+                }
+                _ => unreachable!(),
+            }
+            rig.admit("ineligible-fast", 100, || {
+                if timing == 0 {
+                    let _ = inner.authority().estop();
+                    stop();
+                    assert!(inner.claim_ipc_estop());
+                }
+            });
+            let waiter = lower(&rig.pending).waiters.iter().next().unwrap();
+            assert!(waiter.fresh_disable.is_none());
+            assert_existing(waiter, SetEnabledRrPayload::PreemptedByEStop, 10);
+            assert_eq!(
+                inner.authority().snapshot().safety,
+                OutputSafetyState::TorqueOffConfirmed
+            );
+            // 不先 observe：同 tick 快退仍由原锁存失败回包，不能被默认 Disabled 覆盖。
+            let replies = rig.advance();
+            assert_eq!(replies.len(), 1);
+            assert!(matches!(
+                replies[0].outcome,
+                PendingOutcome::Existing(SetEnabledRrPayload::PreemptedByEStop)
+            ));
+            assert_eq!(replies[0].effect, EnableEffect::Committed);
+            assert!(rig.slots.is_empty());
+            assert!(rig.advance().is_empty());
+        }
+    }
+
+    #[test]
+    fn fresh_lower_deadline_equal_waits_but_current_time_over_locks_before_real_seq() {
+        use robot_core::executor_ctrl::{AdapterNormalReq, NormalReqStatus};
+        for late in [false, true] {
+            let mut rig = FreshLowerRig::new();
+            let lease = rig.lease();
+            rig.admit("deadline", 20, || {});
+            // 原 Lower 真实请求按值关联相同 seq；尚未由执行器取走，不能伪造完成。
+            let seq = match rig.ctrl.request_normal(AdapterNormalReq::Enable(false)) {
+                NormalReqStatus::Submitted { seq } => seq,
+                other => panic!("{other:?}"),
+            };
+            rig.pending = record_submitted(rig.pending, seq).unwrap();
+            rig.clock.set(MonoRawNs(20));
+            rig.observe(S0State::Safe, true);
+            if late {
+                rig.clock.set(MonoRawNs(21));
+            }
+            assert!(rig.advance().is_empty());
+            let reply = lower(&rig.pending).waiters.iter().next().unwrap();
+            if late {
+                assert_existing(reply, SetEnabledRrPayload::DeadlineExceeded, 21);
+            } else {
+                assert!(reply.locked().is_none());
+            }
+            rig.ctrl.authority().release_normal_io(lease).unwrap();
+            rig.execute_disable();
+            let replies = rig.advance();
+            assert_eq!(replies.len(), 1);
+            if late {
+                assert!(matches!(
+                    replies[0].outcome,
+                    PendingOutcome::Existing(SetEnabledRrPayload::DeadlineExceeded)
+                ));
+            } else {
+                assert!(matches!(
+                    replies[0].outcome,
+                    PendingOutcome::Existing(SetEnabledRrPayload::Disabled { .. })
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn fresh_lower_fault_stopping_and_actual_shutdown_do_not_get_safe_success() {
+        use robot_core::executor_ctrl::{AdapterNormalReq, NormalReqStatus};
+        for cause in 0..3 {
+            let mut rig = FreshLowerRig::new();
+            let lease = rig.lease();
+            rig.admit("failure", 100, || {});
+            let seq = match rig.ctrl.request_normal(AdapterNormalReq::Enable(false)) {
+                NormalReqStatus::Submitted { seq } => seq,
+                other => panic!("{other:?}"),
+            };
+            rig.pending = record_submitted(rig.pending, seq).unwrap();
+            match cause {
+                0 => rig.observe(S0State::Fault(FaultCode::CommFault), true),
+                1 => rig.observe(S0State::Stopping, true),
+                2 => {
+                    rig.observe(S0State::Safe, false);
+                    let _ = rig.ctrl.authority().shutdown();
+                }
+                _ => unreachable!(),
+            }
+            assert!(rig.advance().is_empty(), "原seq未完成只能保留");
+            let first = reply_snapshot(lower(&rig.pending).waiters.iter().next().unwrap());
+            assert!(first.2.is_some());
+            rig.observe(S0State::Safe, true);
+            assert!(rig.advance().is_empty());
+            assert_eq!(
+                reply_snapshot(lower(&rig.pending).waiters.iter().next().unwrap()),
+                first
+            );
+            rig.ctrl.authority().release_normal_io(lease).unwrap();
+            rig.execute_disable();
+            let replies = rig.advance();
+            assert_eq!(replies.len(), 1);
+            assert!(!matches!(
+                replies[0].outcome,
+                PendingOutcome::Existing(SetEnabledRrPayload::Disabled { .. })
+            ));
+            assert_eq!(replies[0].outcome, first.2.unwrap().0);
+        }
+    }
+
+    #[test]
+    fn fresh_lower_appended_waiter_and_old_lower_do_not_inherit_or_refresh_boundary() {
+        let mut rig = FreshLowerRig::new();
+        let lease = rig.lease();
+        rig.admit("first", 100, || {});
+        let epoch = lower(&rig.pending)
+            .waiters
+            .iter()
+            .next()
+            .unwrap()
+            .fresh_disable
+            .as_ref()
+            .unwrap()
+            .epoch;
+        // 每 peer 的 Lower share 固定为 1；第二原请求来自另一个真实 peer。
+        rig.admit_from(2, "appended", 100, || {});
+        {
+            let mut waiters = lower(&rig.pending).waiters.iter();
+            assert_eq!(
+                waiters
+                    .next()
+                    .unwrap()
+                    .fresh_disable
+                    .as_ref()
+                    .unwrap()
+                    .epoch,
+                epoch
+            );
+            assert!(waiters.next().unwrap().fresh_disable.is_none());
+        }
+        rig.observe(S0State::Safe, true);
+        assert!(rig.advance().is_empty());
+        for reply in lower(&rig.pending).waiters.iter() {
+            assert!(matches!(
+                reply.locked().unwrap().outcome(),
+                PendingOutcome::Existing(SetEnabledRrPayload::PreemptedByEStop)
+            ));
+        }
+        rig.ctrl.authority().release_normal_io(lease).unwrap();
+        assert_eq!(rig.advance().len(), 2);
+        assert!(rig.slots.is_empty());
+        rig.pending =
+            IpcPending::Lower(new_lower(LowerCause::OperatorDisable, MonoRawNs(10)).unwrap());
+        rig.admit("old-lower", 100, || {});
+        assert!(
+            lower(&rig.pending)
+                .waiters
+                .iter()
+                .all(|reply| reply.fresh_disable.is_none())
+        );
+        rig.observe(S0State::Safe, true);
+        assert!(matches!(
+            rig.advance()[0].outcome,
+            PendingOutcome::Existing(SetEnabledRrPayload::PreemptedByEStop)
+        ));
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn fresh_lower_permission_max_cannot_create_boundary_or_retire() {
+        let authority = ControlAuthority::new_with_permission_epoch(
+            AuthorityInit::new(
+                true,
+                OutputSafetyState::TorqueOffConfirmed,
+                InhibitSet::EMPTY,
+            ),
+            PermissionEpoch::MAX,
+        )
+        .unwrap();
+        let mut rig = FreshLowerRig::with_authority(authority);
+        rig.admit("exhausted", 100, || {});
+        assert_existing(
+            lower(&rig.pending).waiters.iter().next().unwrap(),
+            SetEnabledRrPayload::PreemptedByEStop,
+            10,
+        );
+        assert!(rig.ctrl.authority().snapshot().exhausted);
+        assert!(
+            lower(&rig.pending)
+                .waiters
+                .iter()
+                .next()
+                .unwrap()
+                .fresh_disable
+                .is_none()
+        );
+        rig.observe(S0State::Safe, true);
+        assert!(rig.advance().is_empty());
+        assert!(matches!(rig.pending, IpcPending::Lower(_)));
+        assert_eq!(rig.slots.len(), 1);
+    }
+
+    #[test]
+    fn bridge_retains_taken_request_until_real_start_rejection_then_lower_cleanup() {
+        use robot_core::executor_ctrl::AdapterErr;
+        use std::sync::{Arc, atomic::Ordering};
+        let inner = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new(Arc::new(
+            authority(),
+        )));
+        let client = HardRtCtrlClient::new(inner.clone());
+        let pending = bridge_started(&client, rr("先取后撤", 100));
+        let seq = pending.seq().unwrap();
+        // 执行器已取出 packed 请求，但尚未 take 真实 StartView。
+        let packet = inner
+            .decode_pending(inner.pending_normal.swap(0, Ordering::AcqRel))
+            .unwrap()
+            .unwrap();
+        let boot = crate::boot_supervisor::BootShared::new(MonoRawNs(0));
+        let clock = robot_core::time::MockClock::new(MonoRawNs(3));
+        let lowered = match begin_lower_owned(
+            IpcPending::Enable(pending),
+            None,
+            LowerCause::OperatorDisable,
+            &client,
+            &boot,
+            observation(2, S0State::Safe),
+        ) {
+            LowerStartOutcome::Advanced(step) => step,
+            other => panic!("同域 Lower 必须保留原责任：{other:?}"),
+        };
+        assert!(lowered.replies.is_empty());
+        let lower = match lowered.pending {
+            IpcPending::Lower(lower) => lower,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(lower.carried_enable().unwrap().source_seq(), Some(seq));
+        assert!(inner.start_slot().is_empty());
+        assert_eq!(client.poll_last_normal_resp(seq), None);
+        let mut adapter = mock_hard_adapter();
+        assert!(crate::rt_thread::execute_owned_normal(&mut adapter, packet, &inner).is_none());
+        assert_eq!(
+            client.poll_last_normal_resp(seq),
+            Some(AdapterResp::Err(AdapterErr::AuthorityRevoked))
+        );
+        let completed = advance_owned(IpcPending::Lower(lower), &client, &clock).unwrap();
+        assert!(matches!(completed.pending, IpcPending::Idle));
+        let replies: Vec<_> = completed.replies.into_entries().collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].identity.request_id, "先取后撤");
+        assert_eq!(replies[0].effect, EnableEffect::Started);
+        assert!(matches!(
+            replies[0].outcome,
+            PendingOutcome::SupersededByDisable
+        ));
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn exhausted_off_observation_cannot_retire_lower_or_publish_generation() {
+        use robot_core::control_authority::PermissionEpoch;
+        let authority = std::sync::Arc::new(
+            ControlAuthority::new_with_permission_epoch(
+                AuthorityInit::new(
+                    false,
+                    OutputSafetyState::TorqueOffConfirmed,
+                    InhibitSet::EMPTY,
+                ),
+                PermissionEpoch::MAX,
+            )
+            .unwrap(),
+        );
+        let _ = authority.disable();
+        assert!(authority.snapshot().exhausted);
+        assert_eq!(
+            authority.snapshot().safety,
+            OutputSafetyState::TorqueOffConfirmed
+        );
+        let ctrl = HardRtCtrlClient::new(std::sync::Arc::new(
+            crate::hard_rt_ctrl::HardRtCtrlInner::new(authority),
+        ));
+        let lower = LowerPending {
+            seq: None,
+            cause: LowerCause::AwaitConvergence,
+            carried_enable: None,
+            waiters: LowerWaiters::empty(),
+            started_at: MonoRawNs(1),
+            shutdown_generation: std::num::NonZeroU64::new(9),
+            completion: None,
+        };
+        assert_eq!(lower.shutdown_generation(), std::num::NonZeroU64::new(9));
+        // 此处只核桥的负面拒绝，不把私有测试中的 g 作为生产 ACK 证明。
+        let step = advance_lower(lower, &ctrl, &robot_core::time::MockClock::default()).unwrap();
+        assert!(
+            matches!(&step.pending, IpcPending::Lower(lower) if lower.shutdown_generation() == std::num::NonZeroU64::new(9))
+        );
+        assert_eq!(step.lowered_generation, None);
+        assert!(step.replies.is_empty());
+    }
+
+    #[test]
+    fn hard_rt_monotonic_estop_consumes_only_executor_notice_and_retires_real_lower() {
+        use std::time::{Duration, Instant};
+        const CHILD: &str = "ROBOT_W3_HARD_RT_ESTOP_CHILD";
+        const NAME: &str = "ipc_pending::tests::hard_rt_monotonic_estop_consumes_only_executor_notice_and_retires_real_lower";
+        if std::env::var_os(CHILD).is_some() {
+            run_hard_rt_estop_child();
+            std::process::exit(0);
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let log_path = directory.path().join("hard_rt_estop.log");
+        let log = std::fs::File::create(&log_path).unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", NAME, "--nocapture"])
+            .env(CHILD, "1")
+            .stdout(log.try_clone().unwrap())
+            .stderr(log)
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                result => {
+                    let _ = child.kill();
+                    let reap_deadline = Instant::now() + Duration::from_secs(2);
+                    loop {
+                        if matches!(child.try_wait(), Ok(Some(_))) {
+                            break;
+                        }
+                        if Instant::now() >= reap_deadline {
+                            std::process::abort();
+                        }
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                    panic!("真实 HardRT 子进程超时/等待失败，已 kill/reap: {result:?}");
+                }
+            }
+        };
+        let output = std::fs::read_to_string(log_path).unwrap();
+        assert!(
+            status.success(),
+            "真实 HardRT 急停链失败: {status} {output}"
+        );
+        assert_eq!(
+            output.matches("W3_HARD_RT_ESTOP_LOWER_VERIFIED").count(),
+            1,
+            "{output}"
+        );
+        eprintln!("W3_HARD_RT_ESTOP_LOWER_CHILD_OK reaped=true");
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "同一受监督子进程持原 worker、owner 与 Slot，连续核实际急停到退休全链"
+    )]
+    fn run_hard_rt_estop_child() {
+        use crate::rr_admission::{CheckedLimits, PeerLedger, RrRequestClass};
+        use robot_core::adapter::{JointCommandBuf, RtSnapshot};
+        use robot_core::executor_ctrl::{AdapterNormalReq, NormalReqStatus, SerialEmergencyCtrl};
+        use robot_core::time::{RobotClock, SystemClock};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        use std::time::Duration;
+
+        // 失败时保留原 worker、owner 与 Slot 到真实子进程退出；worker panic 仍真 join Err。
+        let main_thread = std::thread::current().id();
+        std::panic::set_hook(Box::new(move |info| {
+            eprintln!("HardRT 急停验收失败: {info}");
+            if std::thread::current().id() == main_thread {
+                std::process::exit(101);
+            }
+        }));
+        {
+            let authority = Arc::new(
+                ControlAuthority::new(AuthorityInit::new(
+                    false,
+                    OutputSafetyState::TorqueUnknown,
+                    InhibitSet::EMPTY,
+                ))
+                .unwrap(),
+            );
+            let inner = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new(authority.clone()));
+            let client = HardRtCtrlClient::new(inner.clone());
+            let clock = Arc::new(SystemClock::new());
+            let (_commands, reader) =
+                robot_transport::LatestCommandSlot::new(JointCommandBuf::default());
+            let (publisher, _snapshot) =
+                robot_transport::RtSnapshotPublisher::new(RtSnapshot::default());
+            let handle = crate::rt_thread::spawn_rt_thread(
+                crate::rt_thread::RtThreadConfig {
+                    strict_rt: false,
+                    cpu_affinity: None,
+                    ..crate::rt_thread::RtThreadConfig::default()
+                },
+                clock.clone(),
+                robot_adapter_mock::MockHardRTAdapter::with_unlimited_limits(2),
+                reader,
+                publisher,
+                inner.clone(),
+                Arc::new(AtomicBool::new(false)),
+            )
+            .unwrap();
+            assert!(crate::test_util::wait_until(
+                Duration::from_secs(2),
+                || authority.snapshot().safety == OutputSafetyState::TorqueOffConfirmed
+                    && handle.metrics().tick_count.load(Ordering::Acquire) > 0
+            ));
+            let (owner, view) = authority.reserve_enable().unwrap();
+            inner.start_slot().post(view).unwrap();
+            let sequence = match client.request_normal(AdapterNormalReq::Enable(true)) {
+                NormalReqStatus::Submitted { seq } => seq,
+                other => panic!("真实 Enable 未接纳: {other:?}"),
+            };
+            assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+                client.poll_last_normal_resp(sequence).is_some()
+            }));
+            assert_eq!(
+                client.poll_last_normal_resp(sequence),
+                Some(AdapterResp::Ok)
+            );
+            authority.commit_enable(owner).unwrap();
+            assert_eq!(authority.snapshot().safety, OutputSafetyState::TorqueOn);
+            let stops_before = handle
+                .metrics()
+                .emergency_safety_stop_count
+                .load(Ordering::Acquire);
+            let _ = client.estop_monotonic();
+            let limits =
+                CheckedLimits::try_from_limits(&robot_transport::iceoryx2::RrStaticLimits {
+                    c: 1,
+                    l: 4,
+                })
+                .unwrap();
+            let mut ledger = PeerLedger::<u8>::new(&limits).unwrap();
+            let slot = ledger.admit(1, RrRequestClass::Lower).unwrap();
+            let route = slot.identity();
+            let now = clock.now();
+            let request = RrIdentity {
+                request_id: "真实急停后的 Lower".into(),
+                deadline_ns: now.0 + 2_000_000_000,
+                route,
+            };
+            let boot = crate::boot_supervisor::BootShared::new(now);
+            let mut pending = match begin_lower_owned(
+                IpcPending::Idle,
+                Some(request),
+                LowerCause::AwaitConvergence,
+                &client,
+                &boot,
+                BusinessObservation {
+                    now,
+                    state: S0State::Safe,
+                    estop: true,
+                },
+            ) {
+                LowerStartOutcome::Advanced(step) => step.pending,
+                other => panic!("原 Lower 身份必须进入桥: {other:?}"),
+            };
+            assert!(
+                matches!(&pending, IpcPending::Lower(lower) if lower.shutdown_generation().is_none()),
+                "AwaitConvergence 不得伪造 Shutdown generation"
+            );
+            assert!(crate::test_util::wait_until(
+                Duration::from_secs(2),
+                || !authority.snapshot().serial_estop_pending
+                    && authority.snapshot().safety == OutputSafetyState::TorqueOffConfirmed
+                    && handle
+                        .metrics()
+                        .emergency_safety_stop_count
+                        .load(Ordering::Acquire)
+                        == stops_before + 1
+            ));
+            assert!(
+                authority.snapshot().ipc_estop_notice,
+                "执行器只消费自己的义务"
+            );
+            assert!(inner.claim_ipc_estop(), "同一 IPC 原 claim 必须仍可取通知");
+            assert!(!inner.claim_ipc_estop());
+            let completed = advance_owned(pending, &client, clock.as_ref()).unwrap();
+            pending = completed.pending;
+            assert!(matches!(pending, IpcPending::Idle));
+            assert!(completed.commit.is_none() && completed.lowered_generation.is_none());
+            let mut replies = completed.replies.into_entries();
+            let reply = replies.next().unwrap();
+            assert!(replies.next().is_none());
+            assert_eq!(reply.identity.route, route);
+            assert_eq!(reply.identity.request_id, "真实急停后的 Lower");
+            assert!(matches!(
+                reply.outcome,
+                PendingOutcome::Existing(SetEnabledRrPayload::Disabled { .. })
+            ));
+            ledger.release(slot).unwrap();
+            assert!(
+                advance_owned(pending, &client, clock.as_ref())
+                    .unwrap()
+                    .replies
+                    .is_empty()
+            );
+            let tick_before = handle.metrics().tick_count.load(Ordering::Acquire);
+            assert!(crate::test_util::wait_until(
+                Duration::from_secs(2),
+                || handle.metrics().tick_count.load(Ordering::Acquire) >= tick_before + 2
+            ));
+            assert_eq!(
+                handle
+                    .metrics()
+                    .emergency_safety_stop_count
+                    .load(Ordering::Acquire),
+                stops_before + 1,
+                "本次实际 claim 只执行一次 Stop，后 tick 不得重复停止"
+            );
+            assert!(authority.snapshot().latch && !authority.snapshot().ipc_estop_notice);
+            handle.request_stop();
+            assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+                handle.is_finished()
+            }));
+            let exit = handle.join().unwrap();
+            assert!(!exit.has_pending_enable());
+        }
+        println!("W3_HARD_RT_ESTOP_LOWER_VERIFIED");
     }
 }

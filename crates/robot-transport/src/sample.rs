@@ -43,6 +43,9 @@ enum SampleLeaseInner {
     Mock(crate::mock::MockSampleLease),
     #[cfg(feature = "iceoryx2")]
     Iceoryx2(crate::iceoryx2::Iceoryx2SampleLease),
+    #[cfg(not(any(feature = "mock", feature = "iceoryx2")))]
+    #[allow(dead_code)]
+    Unavailable(core::convert::Infallible),
 }
 
 impl<T: BodyMarker> core::fmt::Debug for SampleLease<T> {
@@ -79,6 +82,8 @@ impl<T: BodyMarker> SampleLease<T> {
             SampleLeaseInner::Mock(m) => m.bytes(),
             #[cfg(feature = "iceoryx2")]
             SampleLeaseInner::Iceoryx2(l) => l.bytes(),
+            #[cfg(not(any(feature = "mock", feature = "iceoryx2")))]
+            SampleLeaseInner::Unavailable(never) => match *never {},
         }
     }
 

@@ -10,10 +10,9 @@
 //!
 //! - **`pending_normal: AtomicU64`** packed (8 action / 8 arg / 48 seq) ——
 //!   server 端 `serial_io_thread` 主循环 swap 出消费，与 HardRT `rt_thread` 同款。
-//! - **`safety_latched: AtomicBool`**（v9 §0 #2 修订）—— 同步 atomic store，
-//!   client `clear_safety_latch` 立即 visible，与 HardRT 完全对齐。
-//! - post-E 新增 `CtrlKind` 构造标记。`new()` 保留 HardRT/旧执行器行为；
-//!   `new_serial()` 启用独立 safety_word、40 位序号及故障 mailbox。
+//! - 安全状态与保护位只读同一 A2 authority，不另存 latch 或 safety_word。
+//! - `new(authority)` 选择 HardRT 48 位序号；`new_serial(authority)` 选择
+//!   SerialRT 40 位序号与故障 mailbox。两者必须注入启动时的原 authority。
 //!
 //! **结果**：`SerialIoCtrlInner` 在数据布局与 atomic 协议层面**与
 //! [`HardRtCtrlInner`](crate::hard_rt_ctrl::HardRtCtrlInner) 一致**。本模块不
@@ -44,8 +43,7 @@
 /// `SerialIoCtrlInner` —— SerialRT 路径的共享 atomic 状态。
 ///
 /// **设计 v9 收敛**：与 [`crate::hard_rt_ctrl::HardRtCtrlInner`] 共用同款
-/// atomic-packed 协议（packed `AtomicU64` slot + `safety_latched: AtomicBool`
-/// 等）。本 alias 仅作命名层语义说明：M7 dispatch by RtClass 时用
+/// atomic-packed 序号协议与同一 A2 authority。本 alias 仅作命名层语义说明：M7 dispatch by RtClass 时用
 /// `SerialIoCtrlInner` 让代码意图清晰。
 ///
 /// 协议由构造期 `CtrlKind` 分派；不能把 SerialRT 的 40 位限制施加到 HardRT。
@@ -72,7 +70,9 @@ mod tests {
     #[test]
     fn alias_types_share_inner_with_hard_rt() {
         // 编译期断言：SerialIoCtrlInner 与 HardRtCtrlInner 可互转（同类型）
-        let inner: Arc<SerialIoCtrlInner> = Arc::new(SerialIoCtrlInner::new());
+        let inner: Arc<SerialIoCtrlInner> = Arc::new(SerialIoCtrlInner::new(
+            crate::hard_rt_ctrl::test_authority(false),
+        ));
         let hard_arc: Arc<crate::hard_rt_ctrl::HardRtCtrlInner> = Arc::clone(&inner);
         // inner + hard_arc → 2 strong refs
         assert_eq!(Arc::strong_count(&hard_arc), 2);
@@ -88,7 +88,9 @@ mod tests {
     /// + 置 emergency_action（finding #1/#4 fix 在两路径都生效）。
     #[test]
     fn serial_io_safety_stop_matches_hard_rt_semantics() {
-        let inner = Arc::new(SerialIoCtrlInner::new());
+        let inner = Arc::new(SerialIoCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         let client = SerialIoCtrlClient::new(Arc::clone(&inner));
 
         client.set_policy(OutputPolicy::ActiveForward);
@@ -100,8 +102,12 @@ mod tests {
             OutputPolicy::from_u8(inner.policy.load(Ordering::Acquire)),
             OutputPolicy::StopTorque
         );
-        assert!(inner.safety_latched.load(Ordering::Acquire));
-        assert_eq!(inner.pending_normal.load(Ordering::Acquire), 0);
+        assert!(inner.safety_latched());
+        assert_ne!(
+            inner.pending_normal.load(Ordering::Acquire),
+            0,
+            "原请求留给真实执行器拒绝"
+        );
         assert_eq!(
             inner.emergency_action.load(Ordering::Acquire),
             robot_core::executor_ctrl::emergency_codes::SAFETY_STOP
@@ -112,9 +118,11 @@ mod tests {
     /// 双重防护层 1）。
     #[test]
     fn serial_io_client_latch_rejects_enable_true() {
-        let inner = Arc::new(SerialIoCtrlInner::new());
+        let inner = Arc::new(SerialIoCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+            false,
+        )));
         let client = SerialIoCtrlClient::new(Arc::clone(&inner));
-        inner.safety_latched.store(true, Ordering::Release);
+        let _ = inner.authority().estop();
         match client.request_normal(AdapterNormalReq::Enable(true)) {
             NormalReqStatus::Unsupported(_) => {}
             other => panic!("Enable(true) should be Unsupported when latched, got {other:?}"),

@@ -58,6 +58,253 @@ pub mod proc;
 // 单一实现，自 robot-s0 迁入；S0 / S1 / gateway 三 daemon 共用。
 pub mod systemd;
 
+/// 控制运行期的当前降级；只用于报告，不构成执行或退出许可。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeDegradation {
+    PersistPending,
+    WriterGone,
+    RepairExhausted,
+    MarkerLost,
+    ProtocolBug,
+    PairMismatch,
+    RetireRefused,
+}
+
+impl RuntimeDegradation {
+    const fn index(self) -> usize {
+        match self {
+            Self::PersistPending => 0,
+            Self::WriterGone => 1,
+            Self::RepairExhausted => 2,
+            Self::MarkerLost => 3,
+            Self::ProtocolBug => 4,
+            Self::PairMismatch => 5,
+            Self::RetireRefused => 6,
+        }
+    }
+}
+
+/// 同一帧可以包含多个降级，不能以最后一项遮蔽其它项。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeDegradations([bool; 7]);
+
+impl RuntimeDegradations {
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self([false; 7])
+    }
+
+    pub fn insert(&mut self, degradation: RuntimeDegradation) {
+        self.0[degradation.index()] = true;
+    }
+
+    #[must_use]
+    pub const fn contains(&self, degradation: RuntimeDegradation) -> bool {
+        self.0[degradation.index()]
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        !self.0.iter().any(|present| *present)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeUnsettled {
+    pub since_ns: u64,
+    pub overdue: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeHealthInput {
+    pub current: RuntimeDegradations,
+    pub unsettled: Option<RuntimeUnsettled>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeHealthSnapshot {
+    pub sampled_ns: u64,
+    pub input: RuntimeHealthInput,
+}
+
+/// IPC 线程同步调用的报告器；每帧更新事实，所有降级合计至多每秒一条错误。
+#[derive(Debug, Default)]
+pub struct RuntimeHealthReporter {
+    current: Option<RuntimeHealthSnapshot>,
+    last_error_ns: Option<u64>,
+}
+
+impl RuntimeHealthReporter {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            current: None,
+            last_error_ns: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn current(&self) -> Option<&RuntimeHealthSnapshot> {
+        self.current.as_ref()
+    }
+
+    /// `now_ns` 必须来自调用者与义务同域的时钟；时钟回退不绕过日志限速。
+    pub fn report(&mut self, now_ns: u64, input: RuntimeHealthInput) {
+        self.current = Some(RuntimeHealthSnapshot {
+            sampled_ns: now_ns,
+            input,
+        });
+        let elapsed = match self.last_error_ns {
+            None => true,
+            Some(previous) => now_ns
+                .checked_sub(previous)
+                .is_some_and(|delta| delta >= 1_000_000_000),
+        };
+        if !input.current.is_empty() && elapsed {
+            self.last_error_ns = Some(now_ns);
+            tracing::error!(
+                sampled_ns = now_ns,
+                persist_pending = input.current.contains(RuntimeDegradation::PersistPending),
+                writer_gone = input.current.contains(RuntimeDegradation::WriterGone),
+                repair_exhausted = input.current.contains(RuntimeDegradation::RepairExhausted),
+                marker_lost = input.current.contains(RuntimeDegradation::MarkerLost),
+                protocol_bug = input.current.contains(RuntimeDegradation::ProtocolBug),
+                pair_mismatch = input.current.contains(RuntimeDegradation::PairMismatch),
+                retire_refused = input.current.contains(RuntimeDegradation::RetireRefused),
+                unsettled = ?input.unsettled,
+                "控制运行期健康降级"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod runtime_health_tests {
+    use super::{RuntimeDegradation as D, *};
+    use std::sync::Mutex;
+
+    #[derive(Clone, Default)]
+    struct CapturedEvents(Arc<Mutex<Vec<HashMap<String, String>>>>);
+
+    struct Fields(HashMap<String, String>);
+    impl tracing::field::Visit for Fields {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0.insert(field.name().to_owned(), format!("{value:?}"));
+        }
+    }
+
+    impl tracing::Subscriber for CapturedEvents {
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            *metadata.level() == tracing::Level::ERROR
+        }
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut fields = Fields(HashMap::new());
+            event.record(&mut fields);
+            self.0.lock().unwrap().push(fields.0);
+        }
+        fn enter(&self, _: &tracing::span::Id) {}
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+
+    fn input(flags: &[RuntimeDegradation]) -> RuntimeHealthInput {
+        let mut current = RuntimeDegradations::empty();
+        for flag in flags {
+            current.insert(*flag);
+        }
+        RuntimeHealthInput {
+            current,
+            unsettled: None,
+        }
+    }
+
+    #[test]
+    fn current_changes_during_rate_limit_and_recovery_does_not_reset_it() {
+        let mut reporter = RuntimeHealthReporter::new();
+        assert!(reporter.current().is_none());
+        reporter.report(10, input(&[D::PersistPending]));
+        assert_eq!(reporter.last_error_ns, Some(10));
+        reporter.report(20, input(&[D::WriterGone, D::MarkerLost]));
+        assert_eq!(
+            reporter.current().unwrap().input,
+            input(&[D::WriterGone, D::MarkerLost])
+        );
+        assert_eq!(reporter.last_error_ns, Some(10));
+        reporter.report(30, input(&[]));
+        assert!(reporter.current().unwrap().input.current.is_empty());
+        reporter.report(40, input(&[D::ProtocolBug]));
+        assert_eq!(reporter.last_error_ns, Some(10));
+        reporter.report(1_000_000_010, input(&[D::ProtocolBug]));
+        assert_eq!(reporter.last_error_ns, Some(1_000_000_010));
+        reporter.report(
+            5,
+            input(&[D::PairMismatch, D::RetireRefused, D::RepairExhausted]),
+        );
+        assert_eq!(reporter.last_error_ns, Some(1_000_000_010));
+        assert_eq!(reporter.current().unwrap().sampled_ns, 5);
+    }
+
+    #[test]
+    fn unsettled_fact_is_preserved_and_all_degradations_can_coexist() {
+        let mut frame = input(&[
+            D::PersistPending,
+            D::WriterGone,
+            D::RepairExhausted,
+            D::MarkerLost,
+            D::ProtocolBug,
+            D::PairMismatch,
+            D::RetireRefused,
+        ]);
+        frame.unsettled = Some(RuntimeUnsettled {
+            since_ns: 11,
+            overdue: true,
+        });
+        let mut reporter = RuntimeHealthReporter::new();
+        reporter.report(2_000_000_011, frame);
+        assert_eq!(reporter.current().unwrap().input, frame);
+        assert!(frame.current.0.into_iter().all(|present| present));
+    }
+
+    #[test]
+    fn actual_error_events_are_globally_limited_and_preserve_each_current_field() {
+        let captured = CapturedEvents::default();
+        tracing::subscriber::with_default(captured.clone(), || {
+            let mut reporter = RuntimeHealthReporter::new();
+            let mut first = input(&[D::PersistPending, D::WriterGone]);
+            first.unsettled = Some(RuntimeUnsettled {
+                since_ns: 9,
+                overdue: true,
+            });
+            reporter.report(10, first);
+            reporter.report(20, input(&[D::PairMismatch]));
+            reporter.report(30, input(&[]));
+            reporter.report(40, input(&[D::RepairExhausted]));
+            reporter.report(5, input(&[D::ProtocolBug]));
+            reporter.report(1_000_000_009, input(&[D::MarkerLost]));
+            reporter.report(1_000_000_010, input(&[D::RetireRefused, D::MarkerLost]));
+        });
+        let events = captured.0.lock().unwrap();
+        assert_eq!(
+            events.len(),
+            2,
+            "断言真实 tracing 输出，不能用私有限速时戳代替"
+        );
+        assert_eq!(events[0]["sampled_ns"], "10");
+        assert_eq!(events[0]["persist_pending"], "true");
+        assert_eq!(events[0]["writer_gone"], "true");
+        assert_eq!(events[0]["retire_refused"], "false");
+        assert!(events[0]["unsettled"].contains("since_ns: 9"));
+        assert_eq!(events[1]["sampled_ns"], "1000000010");
+        assert_eq!(events[1]["persist_pending"], "false");
+        assert_eq!(events[1]["retire_refused"], "true");
+        assert_eq!(events[1]["marker_lost"], "true");
+    }
+}
+
 /// 单进程健康快照（差分 CPU% + 实时 RSS）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcessSnapshot {

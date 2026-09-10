@@ -1,7 +1,7 @@
-//! S0 守护进程：七 worker、SerialRT 启动收敛与独立启动监督。
+//! S0 守护进程：八 worker（含 writer）、SerialRT 启动收敛与独立启动监督。
 //!
 //! main 首句启动监督器，再执行日志、解析、实例锁与 adapter 构造。共享控制器和
-//! bus 服务在 factory 前建立；SerialRT 在七 worker 全部成功后才允许首个总线 IO。
+//! bus 服务在 factory 前建立；SerialRT 在八 worker（含 writer） 全部成功后才允许首个总线 IO。
 //! 物理预检与故障 ACK 完成后处理自动使能，再发送 READY；运行中 IPC 退出视为错误。
 //! 启动失败先 Disabled、仅停止已启动 worker，并在同一绝对截止内回收已结束线程；
 //! READY 后保留 RR → pub/io → executor → IPC → watchdog 的顺序关闭。
@@ -9,7 +9,7 @@
 //! `robot_id` 来源：CLI > TOML > 环境 `ROBOT_ID` > default。具体参数见 `--help`。
 //! 退出码：0 正常；1 启动/运行/存储失败；2 参数错误；3 marker 第一阶段已提交但
 //! 第二阶段未完成；4 marker 未授权；87 同实例锁竞争；88 独立监督器执法；
-//! 89 latch 稳定锁被另一进程持有（S48 A3d / W1）。
+//! 89 latch 稳定锁被另一进程持有；90 运行期监督或未完成的 owned 关闭。
 
 #![cfg(target_os = "linux")]
 
@@ -26,7 +26,8 @@ use robot_core::adapter::{
     HardRtAdapter, JointCommandBuf, ManipulatorAdapter, RtClass, RtSnapshot, SerialRtAdapter,
 };
 use robot_core::config::IdentityFingerprint;
-use robot_core::executor_ctrl::{ExecutorCtrlClient, OutputPolicy, SerialEmergencyCtrl};
+use robot_core::control_authority::{AuthorityInit, ControlAuthority, InhibitReason, InhibitSet};
+use robot_core::executor_ctrl::OutputSafetyState;
 use robot_core::factory::{
     AdapterBuildContext, AdapterBuildServices, find_factory, registered_factories,
 };
@@ -40,16 +41,19 @@ use robot_s0::clear_estop_transaction::{ClearTxnStore, StageError};
 use robot_s0::config_loader::{
     LoadedConfig, load_robot_config, resolve_hardware_section, validate_hardware_section,
 };
-use robot_s0::estop_latch::save_estop_latch;
 use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{IoThreadConfig, spawn_io_thread};
 use robot_s0::ipc_thread::{
-    ClearEStopRrRequest, ClearEStopRrResponse, IpcSubscribers, IpcThreadConfig, IpcThreadHandle,
-    RrChannels, SetEnabledRrChannels, SetEnabledRrRequest, SetEnabledRrResponse, spawn_ipc_thread,
+    ClearEStopRrRequest, ClearEStopRrResponse, IpcSubscribers, IpcThreadConfig, RrChannels,
+    SetEnabledRrChannels, SetEnabledRrRequest, SetEnabledRrResponse, spawn_ipc_thread,
 };
 use robot_s0::latch_lock::{
     LATCH_LOCK_HELD_EXIT_CODE, LatchLockError, LatchTargetLock, acquire_latch_lock,
     validate_latch_path,
+};
+use robot_s0::latch_writer::{
+    PersistClient, PersistEndpoint, PersistShared, StandbyStore, WriterConfig, WriterPairing,
+    WriterSlot,
 };
 use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread};
 use robot_s0::rr_server_thread::{RrServerThreadConfig, spawn_rr_server_thread};
@@ -59,10 +63,13 @@ use robot_s0::serial_io_thread::{
     SerialIoThreadConfig, SerialIoThreadHandle, spawn_serial_io_thread,
 };
 use robot_s0::set_enabled_rr_server::spawn_set_enabled_rr_server_thread;
+use robot_s0::shutdown_mechanism::{
+    HandleKind, HandleKindSet, HandleSlots, InsertError, JoinedOutcome, ResidualHandles, RunExit,
+    WorkerSlot, spawn_managed_writer,
+};
 use robot_s0::state_machine::{Event, Guards, S0State, S0StateSnapshot};
 use robot_s0::watchdog::{WatchdogConfig, spawn_watchdog};
 use robot_s0::worker_stop::{StopFlags, WorkerKind};
-use robot_transport::iceoryx2::request_response::rr_server;
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
 use robot_transport::{LatestCommandSlot, RtSnapshotPublisher};
 
@@ -547,7 +554,7 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let stops = StopFlags::new();
+    let stops = Arc::new(StopFlags::new());
     #[cfg(feature = "test-comm-fault-hook")]
     if let Some(page) = supervisor.shared().observation_arc() {
         stops.set_observation(page);
@@ -623,17 +630,14 @@ fn main() {
             std::process::exit(i32::from(other.exit_code()))
         }
     });
-    let code = run(&args, &supervisor, &stops, &latch_lock)
-        .err()
-        .unwrap_or(0);
-    std::process::exit(code);
+    run(&args, &supervisor, &stops, &latch_lock).exit();
 }
 
 struct ExecutionResources {
     clock: Arc<dyn RobotClock>,
     ctrl: Arc<HardRtCtrlInner>,
-    client: Arc<dyn ExecutorCtrlClient>,
-    emergency: Option<Arc<dyn SerialEmergencyCtrl>>,
+    client: Arc<HardRtCtrlClient>,
+    writer_shared: Arc<PersistShared>,
     probe: Arc<robot_s0::serial_preempt::SerialPreemptProbe>,
     diag: Arc<robot_s0::diag::SerialDiagRing>,
     serial: bool,
@@ -662,27 +666,56 @@ fn select_trust(args: &ResolvedArgs) -> Result<Option<SerialTrustPolicy>, i32> {
     }
 }
 
+struct WorkerStart {
+    built: BuiltAdapter,
+    slot: WriterSlot,
+    endpoint: PersistEndpoint,
+    client: PersistClient,
+}
+
 fn prepare_execution(
     args: &ResolvedArgs,
     latch_lock: &LatchTargetLock,
-) -> Result<(ExecutionResources, BuiltAdapter), i32> {
+    base: MonoRawNs,
+) -> Result<(ExecutionResources, WorkerStart, StandbyStore), i32> {
     tracing::info!(identity = %args.identity, "S0 实例配置身份");
     let trust = select_trust(args)?;
     // S48 A3d / W1：恢复失败在此返回，绝不进入下面的 adapter_open。
-    let latched = recover_latch(args, latch_lock)?;
+    let (latched, worker_store, standby_store) = recover_latch(args, latch_lock)?;
+    let pairing =
+        WriterPairing::new(worker_store, standby_store, latch_lock, base).map_err(|error| {
+            tracing::error!(?error, "writer/standby 配对拒绝");
+            1
+        })?;
+    let (slot, standby) = pairing.into_parts();
+    let writer_shared = Arc::clone(slot.shared());
+    let (persist, endpoint) = robot_s0::latch_writer::mailbox(Arc::clone(&writer_shared));
     tracing::info!(latched, "initial estop_latched");
     let serial = trust.is_some();
     let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
     // 服务必须先于 factory 创建，factory、adapter、serial 与 IPC 共享这一组对象。
-    let ctrl = Arc::new(if serial {
-        HardRtCtrlInner::new_serial()
+    let inhibits = if serial {
+        InhibitSet::EMPTY.with(InhibitReason::Boot)
     } else {
-        HardRtCtrlInner::new()
+        InhibitSet::EMPTY
+    };
+    let authority = Arc::new(
+        ControlAuthority::new(AuthorityInit::new(
+            latched,
+            OutputSafetyState::TorqueUnknown,
+            inhibits,
+        ))
+        .map_err(|error| {
+            tracing::error!(?error, "权限实例初始化拒绝");
+            1
+        })?,
+    );
+    let ctrl = Arc::new(if serial {
+        HardRtCtrlInner::new_serial(authority)
+    } else {
+        HardRtCtrlInner::new(authority)
     });
-    ctrl.safety_latched.store(latched, Ordering::Release);
     let client = Arc::new(HardRtCtrlClient::new(ctrl.clone()));
-    let emergency: Option<Arc<dyn SerialEmergencyCtrl>> =
-        if serial { Some(client.clone()) } else { None };
     let probe = Arc::new(robot_s0::serial_preempt::SerialPreemptProbe::new(
         clock.clone(),
         ctrl.clone(),
@@ -723,14 +756,20 @@ fn prepare_execution(
             clock,
             ctrl,
             client,
-            emergency,
+            writer_shared,
             probe,
             diag,
             serial,
             authorized,
             latched,
         },
-        built,
+        WorkerStart {
+            built,
+            slot,
+            endpoint,
+            client: persist,
+        },
+        standby,
     ))
 }
 
@@ -741,7 +780,10 @@ fn startup_io_error(error: &std::io::Error) -> i32 {
 
 /// S48 A3d / W1 启动恢复：持锁检查数据对象 → 打开 W0 store → 核目录身份与锁一致
 /// → `recover_and_load`。任一步失败退 1（不冒充被占用），且不产生 adapter 副作用。
-fn recover_latch(args: &ResolvedArgs, latch_lock: &LatchTargetLock) -> Result<bool, i32> {
+fn recover_latch(
+    args: &ResolvedArgs,
+    latch_lock: &LatchTargetLock,
+) -> Result<(bool, ClearTxnStore, ClearTxnStore), i32> {
     let objects = latch_lock.check_data_objects().map_err(|error| {
         tracing::error!(%error, latch = %args.latch_path.display(), "latch 数据对象检查失败");
         i32::from(error.exit_code())
@@ -768,7 +810,13 @@ fn recover_latch(args: &ResolvedArgs, latch_lock: &LatchTargetLock) -> Result<bo
         latched,
         "latch 启动恢复完成"
     );
-    Ok(latched)
+    let standby = ClearTxnStore::open(&args.latch_path, &args.robot_id, &args.hardware_id)
+        .map_err(|error| recovery_exit(&error))?;
+    if !lock_identity.matches(standby.directory_identity()) {
+        tracing::error!("standby 目录身份与原锁不同");
+        return Err(1);
+    }
+    Ok((latched, store, standby))
 }
 
 /// W0 事务阶段错误 → 退出码 1，并记录真实阶段与相位。
@@ -785,63 +833,533 @@ fn recovery_exit(error: &StageError) -> i32 {
 fn run(
     args: &ResolvedArgs,
     supervisor: &BootSupervisor,
-    stops: &StopFlags,
+    stops: &Arc<StopFlags>,
     latch_lock: &LatchTargetLock,
-) -> Result<(), i32> {
-    tracing::info!(
-        robot_id = %args.robot_id,
-        hardware_id = %args.hardware_id,
-        tick_hz = 1_000_000_000 / args.tick_period_ns,
-        strict_rt = args.strict_rt,
-        joints = args.joint_count,
-        cpu = ?args.cpu_affinity,
-        "s0_daemon starting"
-    );
-    let (resources, built) = prepare_execution(args, latch_lock)?;
-    let mut workers = WorkerHandles::default();
-    let result = run_workers(args, supervisor, stops, &resources, built, &mut workers);
-    resources.client.set_policy(OutputPolicy::Disabled);
-    #[cfg(feature = "test-comm-fault-hook")]
-    if let Some(page) = supervisor.shared().observation() {
-        page.record_disabled(resources.clock.now().0);
+) -> MainExit {
+    let (resources, start, standby) =
+        match prepare_execution(args, latch_lock, supervisor.started_at()) {
+            Ok(value) => value,
+            Err(code) => return MainExit::empty(code),
+        };
+    let permit = match supervisor.install_runtime(
+        resources.ctrl.authority().clone(),
+        resources.writer_shared.clone(),
+    ) {
+        Ok(permit) => permit,
+        Err(refused) => {
+            tracing::error!(reason = ?refused.reason, "运行期原实例绑定失败");
+            return MainExit::empty(1);
+        }
+    };
+    let mut boot = BootHandles::new();
+    let started = run_workers(args, supervisor, stops, &resources, start, &mut boot);
+    match started {
+        Err(code) => stop_startup_owned(boot, stops, &resources, standby, supervisor, args, code),
+        Ok(state_reader) => {
+            #[cfg(feature = "test-comm-fault-hook")]
+            robot_s0::comm_fault_hook::boot_pause("before_ready");
+            if let Err(code) = send_ready(args.notify_mode) {
+                return stop_startup_owned(
+                    boot, stops, &resources, standby, supervisor, args, code,
+                );
+            }
+            permit.publish_ready(resources.clock.now());
+            let mut runtime = boot.into_runtime();
+            // READY 的唯一凭证发布后，第一步只能是不可失败的拥有移动。
+            let result = run_runtime(args, supervisor, &resources, &mut runtime, &state_reader);
+            finish_runtime_owned(runtime, &resources, standby, supervisor, result)
+        }
     }
-    if supervisor.shared().ready_reached.load(Ordering::Acquire) {
-        workers.stop_normally(stops);
-    } else {
-        workers.stop_startup(
-            stops,
-            resources.clock.as_ref(),
-            supervisor
-                .started_at()
-                .0
-                .saturating_add(absolute_boot_budget(usize::from(args.joint_count)).0)
-                .saturating_add(1_000_000_000),
-        );
-    }
-    // S48 A3b（test-only）：在既有收尾真实 join 之后才导出 worker 记录的快照耗尽
-    // 尝试时刻；`is_finished` 不建立 happens-before，READY 循环内一次 Relaxed 读
-    // 可能仍见 0。物理收尾顺序与退出码不变。
-    #[cfg(feature = "test-comm-fault-hook")]
-    export_publish_failure_attempts(supervisor, &workers);
-    result
 }
 
+struct BootHandles {
+    slots: HandleSlots,
+    rejected: Option<WorkerSlot>,
+    insert_error: Option<InsertError>,
+    meta: WorkerMetadata,
+}
+struct RuntimeHandles(BootHandles);
 #[derive(Default)]
-struct WorkerHandles {
-    ipc: Option<IpcThreadHandle>,
-    clear: Option<robot_s0::rr_server_thread::RrServerThreadHandle>,
-    set: Option<robot_s0::set_enabled_rr_server::SetEnabledRrServerHandle>,
-    watchdog: Option<thread::JoinHandle<()>>,
-    executor: Option<ExecutorHandle>,
-    publisher: Option<robot_s0::pub_thread::PubThreadHandle>,
-    io: Option<robot_s0::io_thread::IoThreadHandle>,
-    /// S48 A3b（test-only）：保留 executor / IPC metrics 引用与真实 join 结果，供
-    /// 收尾 join 之后导出快照耗尽尝试时刻（`is_finished` 不建立 happens-before）。
+struct WorkerMetadata {
+    ipc: Option<Arc<robot_s0::ipc_thread::IpcThreadMetrics>>,
+    events: Option<robot_s0::event_ingress::ExternalEvents>,
+    executor: Option<ExecutorMetricsRef>,
+    publisher: Option<Arc<robot_s0::pub_thread::PubThreadMetrics>>,
+    io: Option<Arc<robot_s0::io_thread::IoThreadMetrics>>,
     #[cfg(feature = "test-comm-fault-hook")]
     publish_failure_probe: PublishFailureProbe,
 }
+impl BootHandles {
+    fn new() -> Self {
+        let required = [
+            HandleKind::Ipc,
+            HandleKind::ClearRr,
+            HandleKind::SetRr,
+            HandleKind::Watchdog,
+            HandleKind::Executor,
+            HandleKind::Publisher,
+            HandleKind::Io,
+            HandleKind::LatchWriter,
+        ]
+        .into_iter()
+        .fold(HandleKindSet::EMPTY, HandleKindSet::with);
+        Self {
+            slots: HandleSlots::new(required),
+            rejected: None,
+            insert_error: None,
+            meta: WorkerMetadata::default(),
+        }
+    }
+    fn install(&mut self, handle: WorkerSlot) -> Result<(), i32> {
+        match self.slots.spawned(handle) {
+            Ok(()) => Ok(()),
+            Err((error, handle)) => {
+                // 调用者必须立即返回到同一 owned 收尾，不再继续 spawn。
+                self.rejected = Some(handle);
+                self.insert_error = Some(error);
+                Err(1)
+            }
+        }
+    }
+    fn any_finished(&self) -> bool {
+        HandleKind::ALL
+            .into_iter()
+            .any(|kind| self.slots.live_is_finished(kind) == Some(true))
+    }
+    fn into_runtime(self) -> RuntimeHandles {
+        RuntimeHandles(self)
+    }
+}
 
-/// S48 A3b（test-only）：worker metrics 引用 + 该 worker 是否已真实 join。
+/// 此处只保留真实线程结果、凭证和诊断，不将 join 改写成业务成功。
+struct ExitSettled {
+    _startup: Option<Cp2Settled>,
+    _runtime: Option<robot_s0::shutdown_mechanism::TeardownReport>,
+    _ipc: Option<thread::Result<robot_s0::ipc_thread::IpcExit>>,
+    _executor: Option<thread::Result<robot_s0::hard_rt_ctrl::ExecutorExit>>,
+    _writer: WriterSettlement,
+    _standby: Option<StandbyStore>,
+    _meta: WorkerMetadata,
+}
+struct Cp2Settled {
+    _required: HandleKindSet,
+    _joined: [Option<JoinedOutcome>; HandleKind::COUNT],
+    _rejected_joined: Option<(HandleKind, JoinedOutcome)>,
+    _insert_error: Option<InsertError>,
+}
+#[derive(Default)]
+struct WriterSettlement {
+    result: Option<thread::Result<robot_s0::latch_writer::WriterExit>>,
+    unused_joined: Option<robot_s0::latch_writer::WriterJoined>,
+    fallback: Option<FallbackResult>,
+}
+#[derive(Debug)]
+enum FallbackResult {
+    Token(robot_s0::latch_writer::TokenRefused),
+    Claim(robot_s0::latch_writer::ClaimRefused),
+    Persist(robot_s0::latch_writer::LastResortError),
+    Written(robot_s0::latch_writer::Settle),
+    Deadline,
+}
+struct MainExit {
+    run_exit: RunExit,
+    settled: ExitSettled,
+}
+impl MainExit {
+    fn empty(code: i32) -> Self {
+        Self {
+            run_exit: RunExit::new(
+                code,
+                ResidualHandles::from_startup(Ok(std::array::from_fn(|_| None)), None),
+            ),
+            settled: ExitSettled {
+                _startup: None,
+                _runtime: None,
+                _ipc: None,
+                _executor: None,
+                _writer: WriterSettlement::default(),
+                _standby: None,
+                _meta: WorkerMetadata::default(),
+            },
+        }
+    }
+    fn exit(self) -> ! {
+        let Self { run_exit, settled } = self;
+        let _settled = std::mem::ManuallyDrop::new(settled);
+        run_exit.exit()
+    }
+}
+
+fn settle_writer_once(
+    settlement: &mut WriterSettlement,
+    standby: &mut StandbyStore,
+    res: &ExecutionResources,
+    deadline: u64,
+) {
+    if settlement.unused_joined.is_none() || res.writer_shared.obligation.is_settled() {
+        return;
+    }
+    if res.clock.now().0 >= deadline {
+        settlement.fallback = Some(FallbackResult::Deadline);
+        return;
+    }
+    let joined = settlement
+        .unused_joined
+        .take()
+        .expect("前述只读检查持有唯一凭证");
+    let outcome = match standby.after_join(joined) {
+        Err(error) => FallbackResult::Token(error),
+        Ok(token) => match res.writer_shared.obligation.claim_guard() {
+            Err(error) => FallbackResult::Claim(error),
+            Ok(guard) => {
+                match token.persist_once(&mut robot_s0::clear_estop_transaction::NoGuard) {
+                    Ok(()) => FallbackResult::Written(guard.commit()),
+                    Err(error) => {
+                        guard.fail();
+                        FallbackResult::Persist(error)
+                    }
+                }
+            }
+        },
+    };
+    // 各结果分别记录；无论补写结果如何，此出口都不能重新成为 clean。
+    match &outcome {
+        FallbackResult::Token(error) => tracing::error!(?error, "备用写凭证拒绝"),
+        FallbackResult::Claim(error) => tracing::error!(?error, "备用写领取拒绝"),
+        FallbackResult::Persist(error) => tracing::error!(?error, "备用文件写失败"),
+        FallbackResult::Written(settle) => {
+            tracing::warn!(?settle, "备用文件写完成，退出仍非 clean");
+        }
+        FallbackResult::Deadline => {}
+    }
+    settlement.fallback = Some(outcome);
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "原 CP2 截止内逐项停止回收并完整保存所有结果，保留单一拥有出口"
+)]
+fn stop_startup_owned(
+    boot: BootHandles,
+    stops: &StopFlags,
+    res: &ExecutionResources,
+    mut standby: StandbyStore,
+    supervisor: &BootSupervisor,
+    args: &ResolvedArgs,
+    code: i32,
+) -> MainExit {
+    let shared = supervisor.shared();
+    let cp2 = supervisor
+        .started_at()
+        .0
+        .saturating_add(absolute_boot_budget(usize::from(args.joint_count)).0)
+        .saturating_add(1_000_000_000);
+    let deadline = if shared.spawned_reached.load(Ordering::Acquire) {
+        cp2
+    } else {
+        cp2.min(
+            supervisor
+                .started_at()
+                .0
+                .saturating_add(robot_s0::boot_supervisor::PRE_BOOT_BUDGET.0),
+        )
+    };
+    let BootHandles {
+        slots,
+        mut rejected,
+        insert_error,
+        meta,
+    } = boot;
+    #[cfg(feature = "test-comm-fault-hook")]
+    let mut meta = meta;
+    let required = slots.required();
+    let mut joined = std::array::from_fn(|_| None);
+    let mut rejected_joined = None;
+    stops.request_spawned_stop();
+    if let Some(handle) = rejected.as_ref() {
+        handle.request_stop();
+    }
+    let accepted = match slots.try_into_unjoined() {
+        Err(original) => Err(original),
+        Ok((_, mut accepted)) => {
+            for handle in accepted.iter().flatten() {
+                handle.request_stop();
+            }
+            let stop_deadline = deadline.saturating_sub(50_000_000);
+            loop {
+                if res.clock.now().0 >= stop_deadline {
+                    break;
+                }
+                for (slot, result) in accepted.iter_mut().zip(&mut joined) {
+                    join_startup_finished(slot, result);
+                }
+                if rejected.as_ref().is_some_and(WorkerSlot::is_finished) {
+                    let handle = rejected.take().expect("原拒绝句柄仍在槽内");
+                    let kind = handle.kind();
+                    match handle.join() {
+                        Ok(result) => rejected_joined = Some((kind, result)),
+                        Err(handle) => rejected = Some(handle),
+                    }
+                }
+                if accepted.iter().all(Option::is_none) && rejected.is_none() {
+                    break;
+                }
+                let remaining = stop_deadline.saturating_sub(res.clock.now().0);
+                if remaining == 0 {
+                    break;
+                }
+                thread::sleep(Duration::from_nanos(remaining.min(5_000_000)));
+            }
+            Ok(accepted)
+        }
+    };
+    #[cfg(feature = "test-comm-fault-hook")]
+    {
+        meta.publish_failure_probe.ipc_joined = joined[HandleKind::Ipc as usize].is_some();
+        meta.publish_failure_probe.executor_joined =
+            joined[HandleKind::Executor as usize].is_some();
+        export_publish_failure_attempts(supervisor, &meta);
+    }
+    let mut writer = WriterSettlement::default();
+    // 只取 accepted 原 writer；同 kind 的 rejected 结果不能冒充它。
+    if let Some(JoinedOutcome::Writer {
+        result,
+        joined: credential,
+    }) = joined[HandleKind::LatchWriter as usize].take()
+    {
+        writer.result = Some(result);
+        writer.unused_joined = Some(credential);
+    }
+    settle_writer_once(&mut writer, &mut standby, res, deadline);
+    let residual = ResidualHandles::from_startup(accepted, rejected);
+    #[cfg(feature = "test-comm-fault-hook")]
+    if let Some(page) = shared.observation() {
+        page.record_residual_bitmap(residual.bitmap());
+    }
+    MainExit {
+        run_exit: RunExit::new(code, residual),
+        settled: ExitSettled {
+            _startup: Some(Cp2Settled {
+                _required: required,
+                _joined: joined,
+                _rejected_joined: rejected_joined,
+                _insert_error: insert_error,
+            }),
+            _runtime: None,
+            _ipc: None,
+            _executor: None,
+            _writer: writer,
+            _standby: Some(standby),
+            _meta: meta,
+        },
+    }
+}
+fn join_startup_finished(slot: &mut Option<WorkerSlot>, result: &mut Option<JoinedOutcome>) {
+    if slot.as_ref().is_some_and(WorkerSlot::is_finished) {
+        match slot.take().expect("刚读取的原句柄").join() {
+            Ok(joined) => *result = Some(joined),
+            Err(handle) => *slot = Some(handle),
+        }
+    }
+}
+
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "各字段分别锁存原 ACK、退休、flush 请求和拒绝句柄停止事实，彼此并非互斥状态"
+)]
+struct RuntimeGates<'a> {
+    boot: &'a robot_s0::boot_supervisor::BootShared,
+    res: &'a ExecutionResources,
+    events: Option<&'a robot_s0::event_ingress::ExternalEvents>,
+    generation: u64,
+    ack: bool,
+    clear: bool,
+    flush_requested: bool,
+    flushed: u8,
+    rejected: Option<&'a WorkerSlot>,
+    rejected_stop_requested: bool,
+}
+impl robot_s0::shutdown_mechanism::TeardownGates for RuntimeGates<'_> {
+    fn control_stop_and_notify(&mut self) {
+        // 原 arm 已收紧权限，此处只投递同一物理 Stop，不能第二次递增 epoch。
+        self.res.client.request_stop_execution();
+        if let Some(events) = self.events {
+            let _ = events.control(robot_s0::event_ingress::ControlEvent::Stop);
+        }
+        robot_health::systemd::notify_stopping();
+        if let Some(handle) = self.rejected
+            && matches!(
+                handle.kind(),
+                HandleKind::ClearRr
+                    | HandleKind::SetRr
+                    | HandleKind::Publisher
+                    | HandleKind::Io
+                    | HandleKind::FreezeControl
+                    | HandleKind::HookControl
+                    | HandleKind::HealthMonitor
+                    | HandleKind::SystemdWatchdog
+            )
+        {
+            handle.request_stop();
+            self.rejected_stop_requested = true;
+        }
+    }
+    fn ack_reached(&mut self, _now: u64) -> bool {
+        self.ack = self.generation != 0
+            && self.boot.runtime_words().generation() == self.generation
+            && self
+                .boot
+                .runtime_words()
+                .lowering_ack_epoch
+                .load(Ordering::Acquire)
+                == self.generation;
+        if self.ack
+            && !self.rejected_stop_requested
+            && let Some(handle) = self.rejected
+            && handle.kind() == HandleKind::Executor
+        {
+            handle.request_stop();
+            self.rejected_stop_requested = true;
+        }
+        self.ack
+    }
+    fn clear_retired_and_flushed(&mut self, _now: u64) -> bool {
+        self.clear = self.boot.clear_retired_for(self.generation);
+        if !self.clear {
+            return false;
+        }
+        if !self.flush_requested {
+            self.res.writer_shared.request_flush();
+            self.flush_requested = true;
+        }
+        self.flushed = self
+            .res
+            .writer_shared
+            .flush_outcome()
+            .map_or(0, |outcome| outcome as u8);
+        if self.flushed != 0
+            && !self.rejected_stop_requested
+            && let Some(handle) = self.rejected
+            && matches!(
+                handle.kind(),
+                HandleKind::Ipc | HandleKind::LatchWriter | HandleKind::Watchdog
+            )
+        {
+            handle.request_stop();
+            self.rejected_stop_requested = true;
+        }
+        self.flushed != 0
+    }
+}
+fn executor_exit_clean(
+    exit: Option<&thread::Result<robot_s0::hard_rt_ctrl::ExecutorExit>>,
+    metrics: Option<&ExecutorMetricsRef>,
+) -> bool {
+    matches!(exit,Some(Ok(exit)) if !exit.has_pending_enable())
+        && metrics.is_some_and(|metrics| metrics.snapshot_publish_errors() == 0)
+}
+fn writer_exit_clean(writer: &WriterSettlement, shared: &PersistShared) -> bool {
+    matches!(writer.result.as_ref(), Some(Ok(_)))
+        && writer.fallback.is_none()
+        && shared.obligation.is_settled()
+}
+fn finish_runtime_owned(
+    runtime: RuntimeHandles,
+    res: &ExecutionResources,
+    mut standby: StandbyStore,
+    supervisor: &BootSupervisor,
+    result: Result<(), i32>,
+) -> MainExit {
+    let RuntimeHandles(BootHandles {
+        slots,
+        rejected,
+        insert_error,
+        meta,
+    }) = runtime;
+    #[cfg(feature = "test-comm-fault-hook")]
+    let mut meta = meta;
+    let shared = supervisor.shared();
+    let ticket = shared.arm_runtime_shutdown(res.clock.now());
+    let deadline = ticket.map_or_else(|| res.clock.now().0, |ticket| ticket.deadline().0);
+    let mut gates = RuntimeGates {
+        boot: &shared,
+        res,
+        events: meta.events.as_ref(),
+        generation: shared.runtime_words().generation(),
+        ack: false,
+        clear: false,
+        flush_requested: false,
+        flushed: 0,
+        rejected: rejected.as_ref(),
+        rejected_stop_requested: false,
+    };
+    let mut report = robot_s0::shutdown_mechanism::teardown(
+        slots,
+        &mut gates,
+        res.clock.as_ref(),
+        deadline.saturating_sub(250_000_000),
+        DurationNs(5_000_000),
+    );
+    let mut writer = WriterSettlement::default();
+    if let Some((result, joined)) = report.take_writer() {
+        writer.result = Some(result);
+        writer.unused_joined = Some(joined);
+    }
+    let ipc = report.take_ipc();
+    let executor = report.take_executor();
+    settle_writer_once(&mut writer, &mut standby, res, deadline);
+    let gate_ack = gates.ack;
+    let gate_clear = gates.clear;
+    let gate_flushed = gates.flushed;
+    if let Some(handle) = rejected {
+        report.residual.retain_extra(handle);
+    }
+    let true_ipc = matches!(ipc.as_ref(),Some(Ok(exit)) if matches!(exit.reason(),robot_s0::ipc_thread::IpcExitReason::Stopped)&&exit.is_quiescent());
+    let runtime_ok = result.is_ok()
+        && insert_error.is_none()
+        && ticket.is_some()
+        && true_ipc
+        && executor_exit_clean(executor.as_ref(), meta.executor.as_ref())
+        && writer_exit_clean(&writer, &res.writer_shared)
+        && matches!(shared.first_runtime_sample_fault(), Ok(None));
+    let code =
+        robot_s0::shutdown_mechanism::exit_code(&robot_s0::shutdown_mechanism::CleanInputs {
+            runtime_ok,
+            ack_before_executor_stop: gate_ack,
+            clear_retired: gate_clear,
+            flushed: gate_flushed,
+            failures: &report.failures,
+            residual_empty: report.residual.is_empty(),
+        });
+    #[cfg(feature = "test-comm-fault-hook")]
+    {
+        meta.publish_failure_probe.ipc_joined = report.ipc_joined;
+        meta.publish_failure_probe.executor_joined = report.executor_joined;
+        export_publish_failure_attempts(supervisor, &meta);
+        if let Some(page) = shared.observation() {
+            page.record_runtime_stop_trace(&report);
+            page.record_residual_bitmap(report.residual.bitmap());
+        }
+    }
+    // 报告中的其余真 Result 保留原样；这里只移动残余，绝不先 Drop。
+    let residual = std::mem::replace(
+        &mut report.residual,
+        ResidualHandles::from_startup(Ok(std::array::from_fn(|_| None)), None),
+    );
+    MainExit {
+        run_exit: RunExit::new(code, residual),
+        settled: ExitSettled {
+            _startup: None,
+            _runtime: Some(report),
+            _ipc: ipc,
+            _executor: executor,
+            _writer: writer,
+            _standby: Some(standby),
+            _meta: meta,
+        },
+    }
+}
+
 #[cfg(feature = "test-comm-fault-hook")]
 #[derive(Default)]
 struct PublishFailureProbe {
@@ -850,16 +1368,18 @@ struct PublishFailureProbe {
     executor_joined: bool,
     ipc_joined: bool,
 }
-
-#[cfg(feature = "test-comm-fault-hook")]
 enum ExecutorMetricsRef {
     HardRt(Arc<robot_s0::rt_thread::RtThreadMetrics>),
     SerialRt(Arc<robot_s0::serial_io_thread::SerialIoThreadMetrics>),
 }
-
-#[cfg(feature = "test-comm-fault-hook")]
 impl ExecutorMetricsRef {
-    /// 只在对应线程真实 join 之后读取（happens-before 由 join 建立）。
+    fn snapshot_publish_errors(&self) -> u64 {
+        match self {
+            Self::HardRt(metrics) => metrics.snapshot_publish_errors.load(Ordering::Acquire),
+            Self::SerialRt(metrics) => metrics.snapshot_publish_errors.load(Ordering::Acquire),
+        }
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
     fn snapshot_publish_failure_attempt_ns(&self) -> u64 {
         match self {
             Self::HardRt(m) => m
@@ -870,105 +1390,19 @@ impl ExecutorMetricsRef {
                 .load(Ordering::Acquire),
         }
     }
-}
-
-impl WorkerHandles {
-    fn stop_startup(&mut self, stops: &StopFlags, clock: &dyn RobotClock, deadline: u64) {
-        // CP2 是进程退出截止，不能把全部预算耗在 join 轮询上；给栈回收与退出留 50 ms。
-        let stop_deadline = deadline.saturating_sub(50_000_000);
-        stops.request_spawned_stop();
-        loop {
-            if clock.now().0 >= stop_deadline {
-                break;
+    fn observer(&self, ctrl: Arc<HardRtCtrlInner>) -> robot_health::systemd::LivenessObserver {
+        match self {
+            Self::HardRt(m) => {
+                let m = m.clone();
+                robot_health::systemd::LivenessObserver::from_fn("rt_thread", move || {
+                    m.tick_count.load(Ordering::Relaxed)
+                })
             }
-            macro_rules! join_finished {
-                ($field:ident) => {
-                    if self
-                        .$field
-                        .as_ref()
-                        .is_some_and(|handle| handle.is_finished())
-                    {
-                        if let Some(handle) = self.$field.take() {
-                            let _ = handle.join();
-                        }
-                    }
-                };
+            Self::SerialRt(_) => {
+                robot_health::systemd::LivenessObserver::from_fn("serial_io_thread", move || {
+                    ctrl.serial_liveness()
+                })
             }
-            join_finished!(ipc);
-            join_finished!(clear);
-            join_finished!(set);
-            join_finished!(watchdog);
-            join_finished!(executor);
-            join_finished!(publisher);
-            join_finished!(io);
-            if self.all_joined() {
-                break;
-            }
-            let remaining = stop_deadline.saturating_sub(clock.now().0);
-            thread::sleep(Duration::from_nanos(remaining.min(5_000_000)));
-        }
-        // 只有 take 之后紧接 join 的路径会把槽位清空：槽位为空 = 已真实 join。
-        #[cfg(feature = "test-comm-fault-hook")]
-        {
-            self.publish_failure_probe.ipc_joined = self.ipc.is_none();
-            self.publish_failure_probe.executor_joined = self.executor.is_none();
-        }
-    }
-    fn all_joined(&self) -> bool {
-        self.ipc.is_none()
-            && self.clear.is_none()
-            && self.set.is_none()
-            && self.watchdog.is_none()
-            && self.executor.is_none()
-            && self.publisher.is_none()
-            && self.io.is_none()
-    }
-    fn any_finished(&self) -> bool {
-        self.ipc.as_ref().is_some_and(IpcThreadHandle::is_finished)
-            || self
-                .clear
-                .as_ref()
-                .is_some_and(robot_s0::rr_server_thread::RrServerThreadHandle::is_finished)
-            || self
-                .set
-                .as_ref()
-                .is_some_and(robot_s0::set_enabled_rr_server::SetEnabledRrServerHandle::is_finished)
-            || self
-                .watchdog
-                .as_ref()
-                .is_some_and(thread::JoinHandle::is_finished)
-            || self
-                .executor
-                .as_ref()
-                .is_some_and(ExecutorHandle::is_finished)
-            || self
-                .publisher
-                .as_ref()
-                .is_some_and(robot_s0::pub_thread::PubThreadHandle::is_finished)
-            || self
-                .io
-                .as_ref()
-                .is_some_and(robot_s0::io_thread::IoThreadHandle::is_finished)
-    }
-    fn stop_normally(&mut self, stops: &StopFlags) {
-        if let (Some(ipc), Some(watchdog)) = (self.ipc.take(), self.watchdog.take()) {
-            let joined = graceful_stop(
-                ipc,
-                stops,
-                watchdog,
-                self.executor.take(),
-                self.publisher.take(),
-                self.io.take(),
-                self.clear.take(),
-                self.set.take(),
-            );
-            #[cfg(feature = "test-comm-fault-hook")]
-            {
-                self.publish_failure_probe.executor_joined = joined.executor;
-                self.publish_failure_probe.ipc_joined = joined.ipc;
-            }
-            #[cfg(not(feature = "test-comm-fault-hook"))]
-            let _ = joined;
         }
     }
 }
@@ -977,14 +1411,42 @@ impl WorkerHandles {
 fn run_workers(
     args: &ResolvedArgs,
     supervisor: &BootSupervisor,
-    stops: &StopFlags,
+    stops: &Arc<StopFlags>,
     res: &ExecutionResources,
-    built: BuiltAdapter,
-    workers: &mut WorkerHandles,
-) -> Result<(), i32> {
-    use robot_s0::event_ingress::{ControlEvent, RR_CHANNEL_CAPACITY};
+    start: WorkerStart,
+    workers: &mut BootHandles,
+) -> Result<robot_transport::RtSnapshotReader<S0StateSnapshot>, i32> {
+    let WorkerStart {
+        built,
+        slot,
+        endpoint,
+        client,
+    } = start;
     let clock = &res.clock;
     let t = topics(args);
+    // writer 先取得真实 slot；后续 IPC 是唯一 PersistClient 所有者。
+    #[cfg(feature = "test-comm-fault-hook")]
+    robot_s0::comm_fault_hook::before_spawn("latch_writer")
+        .map_err(|error| startup_io_error(&error))?;
+    #[cfg(feature = "test-comm-fault-hook")]
+    let writer_hook: Box<dyn robot_s0::latch_writer::WriterHook> = Box::new(
+        robot_s0::comm_fault_hook::WriterStepPause::from_env(clock.clone())
+            .map_err(|error| startup_io_error(&error))?,
+    );
+    #[cfg(not(feature = "test-comm-fault-hook"))]
+    let writer_hook: Box<dyn robot_s0::latch_writer::WriterHook> =
+        Box::new(robot_s0::latch_writer::NoHook);
+    let writer = spawn_managed_writer(
+        slot,
+        endpoint,
+        WriterConfig::default(),
+        stops.writer_control(clock.clone()),
+        clock.clone(),
+        writer_hook,
+    )
+    .map_err(|error| startup_io_error(&error))?;
+    workers.install(WorkerSlot::LatchWriter(writer))?;
+    stops.mark_spawned(WorkerKind::LatchWriter);
     let (cmd_writer, cmd_reader) = LatestCommandSlot::new(JointCommandBuf::default());
     let (snapshot_pub, snapshot_reader) = snapshot_publisher_with_test_version(
         RtSnapshot::default(),
@@ -995,11 +1457,19 @@ fn run_workers(
         "ROBOT_TEST_STATE_SNAPSHOT_INITIAL_VERSION",
     )?;
     let (wd_tx, wd_rx) = bounded::<Event>(64);
-    let (clear_tx, clear_rx) = bounded::<ClearEStopRrRequest>(RR_CHANNEL_CAPACITY);
-    let (clear_response_tx, clear_response_rx) =
-        bounded::<ClearEStopRrResponse>(RR_CHANNEL_CAPACITY);
-    let (set_tx, set_rx) = bounded::<SetEnabledRrRequest>(RR_CHANNEL_CAPACITY);
-    let (set_response_tx, set_response_rx) = bounded::<SetEnabledRrResponse>(RR_CHANNEL_CAPACITY);
+    let profile = robot_transport::iceoryx2::request_response::RrProfile::S0_CONTROL;
+    let high_capacity = profile.c.checked_mul(2).ok_or(1)?;
+    let normal_capacity = profile
+        .c
+        .checked_mul(profile.l.checked_sub(2).ok_or(1)?)
+        .ok_or(1)?;
+    let response_capacity = profile.c.checked_mul(profile.l).ok_or(1)?;
+    let (clear_high_tx, clear_high_rx) = bounded::<ClearEStopRrRequest>(high_capacity);
+    let (clear_normal_tx, clear_normal_rx) = bounded::<ClearEStopRrRequest>(normal_capacity);
+    let (clear_response_tx, clear_response_rx) = bounded::<ClearEStopRrResponse>(response_capacity);
+    let (set_high_tx, set_high_rx) = bounded::<SetEnabledRrRequest>(high_capacity);
+    let (set_normal_tx, set_normal_rx) = bounded::<SetEnabledRrRequest>(normal_capacity);
+    let (set_response_tx, set_response_rx) = bounded::<SetEnabledRrResponse>(response_capacity);
     let guards = Guards {
         rt_serial: res.serial,
         estop_latched: res.latched,
@@ -1010,7 +1480,7 @@ fn run_workers(
         heartbeat_ok: false,
         cmd_deadline_valid: true,
         limits_valid: true,
-        hw_enable_ok: true,
+        hw_enable_ok: false,
         adapter_fault_cleared: !res.serial,
         command_mode: robot_core::adapter::ControlMode::Position,
         on_timeout_hint: robot_s0::state_machine::EnabledSub::CtrlLostHold,
@@ -1020,121 +1490,137 @@ fn run_workers(
         t.sub_heartbeat.clone(),
         t.sub_estop.clone(),
     );
-    workers.ipc = Some(
-        spawn_ipc_thread(
-            IpcThreadConfig {
-                initial_guards: guards,
-                initial_state: S0State::Safe,
-                latch_path: Some(args.latch_path.clone()),
-                authoritative_layout: args.authoritative_layout,
-                ..IpcThreadConfig::default()
-            },
-            clock.clone(),
-            move || make_subscribers(&ipc_topics),
-            cmd_writer,
-            state_pub,
-            wd_rx,
-            res.client.clone(),
-            Some(RrChannels {
-                request_rx: clear_rx,
-                response_tx: clear_response_tx,
-            }),
-            Some(SetEnabledRrChannels {
-                request_rx: set_rx,
-                response_tx: set_response_tx,
-            }),
-            res.serial.then(|| res.ctrl.clone()),
-            res.emergency.clone(),
-            stops.flag(WorkerKind::Ipc),
-        )
-        .map_err(|error| startup_io_error(&error))?,
-    );
-    stops.mark_spawned(WorkerKind::Ipc);
+    let ipc = spawn_ipc_thread(robot_s0::ipc_thread::IpcSpawnInputs {
+        cfg: IpcThreadConfig {
+            initial_guards: guards,
+            initial_state: S0State::Safe,
+            authoritative_layout: args.authoritative_layout,
+            ..IpcThreadConfig::default()
+        },
+        clock: clock.clone(),
+        subscribers_factory: move || make_subscribers(&ipc_topics),
+        cmd_writer,
+        state_pub,
+        watchdog_rx: wd_rx,
+        ctrl: res.client.clone(),
+        boot: supervisor.shared(),
+        persist: client,
+        rr_channels: Some(RrChannels {
+            request_rx: clear_high_rx,
+            normal_request_rx: clear_normal_rx,
+            response_tx: clear_response_tx,
+        }),
+        set_enabled_rr_channels: Some(SetEnabledRrChannels {
+            request_rx: set_high_rx,
+            normal_request_rx: set_normal_rx,
+            response_tx: set_response_tx,
+        }),
+        stop: stops.flag(WorkerKind::Ipc),
+    })
+    .map_err(|error| {
+        tracing::error!(?error, "IPC spawn 拒绝");
+        1
+    })?;
+    let last_hb = ipc.last_hb_ns();
+    workers.meta.events = Some(ipc.event_sender());
+    workers.meta.ipc = Some(ipc.metrics().clone());
     #[cfg(feature = "test-comm-fault-hook")]
     {
-        workers.publish_failure_probe.ipc =
-            workers.ipc.as_ref().map(|ipc| Arc::clone(ipc.metrics()));
+        workers.meta.publish_failure_probe.ipc = Some(ipc.metrics().clone());
     }
+    workers.install(WorkerSlot::Ipc(ipc))?;
+    stops.mark_spawned(WorkerKind::Ipc);
     let clear_topic = t.rr_clear_estop.clone();
-    workers.clear = Some(
-        spawn_rr_server_thread(
-            RrServerThreadConfig {
-                topic: clear_topic.clone(),
-                ..RrServerThreadConfig::default()
-            },
-            clock.clone(),
-            move || {
-                let node = NodeBuilder::new()
-                    .create::<IxService>()
-                    .expect("Clear RR node");
-                let server = rr_server::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
-                    &node,
-                    &clear_topic,
-                )
-                .expect("Clear RR server");
-                Box::leak(Box::new(node));
-                server
-            },
-            clear_tx,
-            clear_response_rx,
-            stops.flag(WorkerKind::ClearEStopRr),
-        )
-        .map_err(|error| startup_io_error(&error))?,
-    );
-    stops.mark_spawned(WorkerKind::ClearEStopRr);
-    // 既有验收稳定标记：只表明该 RR server 的真实初始化握手已完成。
-    tracing::info!(topic = %t.rr_clear_estop, "rr_server_thread started (ClearEStop RR control plane; A1-3 (1/3c-2))");
-    let set_topic = t.rr_set_enabled.clone();
-    workers.set = Some(
-        spawn_set_enabled_rr_server_thread(
-            RrServerThreadConfig {
-                topic: set_topic.clone(),
-                ..RrServerThreadConfig::default()
-            },
-            clock.clone(),
-            move || {
-                let node = NodeBuilder::new()
-                    .create::<IxService>()
-                    .expect("Set RR node");
-                let server = rr_server::<markers::SetEnabledRequest, markers::SetEnabledResponse>(
-                    &node, &set_topic,
-                )
-                .expect("Set RR server");
-                Box::leak(Box::new(node));
-                server
-            },
-            set_tx,
-            set_response_rx,
-            stops.flag(WorkerKind::SetEnabledRr),
-        )
-        .map_err(|error| startup_io_error(&error))?,
-    );
-    stops.mark_spawned(WorkerKind::SetEnabledRr);
-    tracing::info!(topic = %t.rr_set_enabled, "set_enabled_rr_server started (SetEnabled RR control plane; v0.5 候选 C)");
-    workers.watchdog = Some(
-        spawn_watchdog(
-            WatchdogConfig {
-                heartbeat_timeout_ns: args.heartbeat_timeout_ns,
-                ..WatchdogConfig::default()
-            },
-            clock.clone(),
-            workers.ipc.as_ref().expect("IPC 已启动").last_hb_ns(),
-            wd_tx,
-            stops.flag(WorkerKind::Watchdog),
-        )
-        .map_err(|error| startup_io_error(&error))?,
-    );
-    stops.mark_spawned(WorkerKind::Watchdog);
-    #[cfg(feature = "test-comm-fault-hook")]
-    let hook_control = robot_s0::comm_fault_hook::spawn_control_thread(
-        args.robot_id.clone(),
+    let clear = spawn_rr_server_thread(
+        RrServerThreadConfig {
+            topic: clear_topic.clone(),
+            ..RrServerThreadConfig::default()
+        },
         clock.clone(),
-        supervisor.shared().observation_arc(),
-        WorkerKind::ALL.map(|worker| stops.flag(worker)),
-        workers.ipc.as_ref().expect("IPC 已启动").event_sender(),
+        move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .map_err(robot_s0::rr_server_thread::RrInitError::Node)?;
+            let server = robot_transport::iceoryx2::request_response::rr_server_with::<
+                markers::ClearEStopRequest,
+                markers::ClearEStopResponse,
+            >(&node, &clear_topic, &profile)
+            .map_err(robot_s0::rr_server_thread::RrInitError::Service)?;
+            Ok(robot_s0::rr_server_thread::OwnedRrServerPorts::new(
+                server, node,
+            ))
+        },
+        robot_s0::rr_server_thread::TopicRequestSenders {
+            high: clear_high_tx,
+            normal: clear_normal_tx,
+        },
+        clear_response_rx,
+        stops.flag(WorkerKind::ClearEStopRr),
     )
     .map_err(|error| startup_io_error(&error))?;
-    workers.executor = Some(match built {
+    workers.install(WorkerSlot::ClearRr(clear))?;
+    stops.mark_spawned(WorkerKind::ClearEStopRr);
+    let set_topic = t.rr_set_enabled.clone();
+    let set = spawn_set_enabled_rr_server_thread(
+        RrServerThreadConfig {
+            topic: set_topic.clone(),
+            ..RrServerThreadConfig::default()
+        },
+        clock.clone(),
+        move || {
+            let node = NodeBuilder::new()
+                .create::<IxService>()
+                .map_err(robot_s0::rr_server_thread::RrInitError::Node)?;
+            let server = robot_transport::iceoryx2::request_response::rr_server_with::<
+                markers::SetEnabledRequest,
+                markers::SetEnabledResponse,
+            >(&node, &set_topic, &profile)
+            .map_err(robot_s0::rr_server_thread::RrInitError::Service)?;
+            Ok(robot_s0::rr_server_thread::OwnedRrServerPorts::new(
+                server, node,
+            ))
+        },
+        robot_s0::rr_server_thread::TopicRequestSenders {
+            high: set_high_tx,
+            normal: set_normal_tx,
+        },
+        set_response_rx,
+        stops.flag(WorkerKind::SetEnabledRr),
+    )
+    .map_err(|error| startup_io_error(&error))?;
+    workers.install(WorkerSlot::SetRr(set))?;
+    stops.mark_spawned(WorkerKind::SetEnabledRr);
+    let watchdog = spawn_watchdog(
+        WatchdogConfig {
+            heartbeat_timeout_ns: args.heartbeat_timeout_ns,
+            ..WatchdogConfig::default()
+        },
+        clock.clone(),
+        last_hb,
+        wd_tx,
+        stops.flag(WorkerKind::Watchdog),
+    )
+    .map_err(|error| startup_io_error(&error))?;
+    workers.install(WorkerSlot::Raw {
+        kind: HandleKind::Watchdog,
+        join: watchdog,
+        stop: stops.flag(WorkerKind::Watchdog),
+    })?;
+    stops.mark_spawned(WorkerKind::Watchdog);
+    #[cfg(feature = "test-comm-fault-hook")]
+    {
+        let handle = robot_s0::comm_fault_hook::spawn_control_thread(
+            args.robot_id.clone(),
+            clock.clone(),
+            supervisor.shared().observation_arc(),
+            WorkerKind::ALL.map(|worker| stops.flag(worker)),
+            workers.meta.events.as_ref().expect("已安装 IPC").clone(),
+        )
+        .map_err(|error| startup_io_error(&error))?;
+        workers.install(WorkerSlot::HookControl(handle))?;
+        wait_initial_hook(args, supervisor, res, workers)?;
+    }
+    let executor = match built {
         BuiltAdapter::HardRt(adapter) => ExecutorHandle::HardRt(
             spawn_rt_thread(
                 RtThreadConfig {
@@ -1177,129 +1663,138 @@ fn run_workers(
             tracing::error!(adapter = adapter.info().name, "SoftRT 不得进入执行器");
             return Err(2);
         }
-    });
-    stops.mark_spawned(WorkerKind::Executor);
+    };
+    workers.meta.executor = Some(executor.metrics_ref());
     #[cfg(feature = "test-comm-fault-hook")]
     {
-        workers.publish_failure_probe.executor =
-            workers.executor.as_ref().map(ExecutorHandle::metrics_ref);
+        workers.meta.publish_failure_probe.executor = Some(executor.metrics_ref());
     }
+    workers.install(match executor {
+        ExecutorHandle::HardRt(handle) => WorkerSlot::HardRt(handle),
+        ExecutorHandle::SerialRt(handle) => WorkerSlot::SerialRt(handle),
+    })?;
+    stops.mark_spawned(WorkerKind::Executor);
     let pub_topics = (t.pub_state.clone(), t.pub_heartbeat.clone());
-    workers.publisher = Some(
-        spawn_pub_thread(
-            PubThreadConfig {
-                joint_layout_id: args.authoritative_layout,
-                ..PubThreadConfig::default()
-            },
-            clock.clone(),
-            move || make_publishers(&pub_topics),
-            snapshot_reader,
-            state_reader.clone(),
-            res.ctrl.clone(),
-            res.serial.then(|| res.diag.clone()),
-            stops.flag(WorkerKind::Pub),
-        )
-        .map_err(|error| startup_io_error(&error))?,
-    );
+    let publisher = spawn_pub_thread(
+        PubThreadConfig {
+            joint_layout_id: args.authoritative_layout,
+            ..PubThreadConfig::default()
+        },
+        clock.clone(),
+        move || make_publishers(&pub_topics),
+        snapshot_reader,
+        state_reader.clone(),
+        res.ctrl.clone(),
+        res.serial.then(|| res.diag.clone()),
+        stops.flag(WorkerKind::Pub),
+    )
+    .map_err(|error| startup_io_error(&error))?;
+    workers.meta.publisher = Some(publisher.metrics().clone());
+    workers.install(WorkerSlot::Publisher(publisher))?;
     stops.mark_spawned(WorkerKind::Pub);
-    workers.io = Some(
-        spawn_io_thread(
-            IoThreadConfig::default(),
-            clock.clone(),
-            stops.flag(WorkerKind::Io),
-        )
-        .map_err(|error| startup_io_error(&error))?,
-    );
+    let io = spawn_io_thread(
+        IoThreadConfig::default(),
+        clock.clone(),
+        stops.flag(WorkerKind::Io),
+    )
+    .map_err(|error| startup_io_error(&error))?;
+    workers.meta.io = Some(io.metrics().clone());
+    workers.install(WorkerSlot::Io(io))?;
     stops.mark_spawned(WorkerKind::Io);
-    assert!(stops.all_spawned());
     let spawned_at = clock.now();
     supervisor.mark_workers_spawned(spawned_at);
     #[cfg(feature = "test-comm-fault-hook")]
     robot_s0::comm_fault_hook::boot_pause("after_spawn");
     wait_startup(args, supervisor, res, workers, spawned_at)?;
-    let ipc = workers.ipc.as_ref().expect("IPC 已启动");
-    let event_tx = ipc.event_sender();
-    send_auto_enable(args, res, ipc, &event_tx)?;
+    tracing::info!(topic=%t.rr_clear_estop,"rr_server_thread started (ClearEStop RR control plane; A1-3 (1/3c-2))");
+    tracing::info!(topic=%t.rr_set_enabled,"set_enabled_rr_server started (SetEnabled RR control plane; v0.5 候选 C)");
+    send_auto_enable(args, res, workers, stops)?;
     if workers.any_finished() {
-        tracing::error!("READY 前必需 worker 已退出");
         return Err(1);
     }
-    #[cfg(feature = "test-comm-fault-hook")]
-    robot_s0::comm_fault_hook::boot_pause("before_ready");
-    send_ready(args.notify_mode)?;
-    supervisor.mark_ready();
-    let first_exit = res
-        .ctrl
-        .serial_boot_progress()
-        .first_exit
-        .map_or(0, |t| t.0);
+    Ok(state_reader)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "同一监督循环按既定顺序判定原截止、退出首因与真实健康观测"
+)]
+fn run_runtime(
+    args: &ResolvedArgs,
+    supervisor: &BootSupervisor,
+    res: &ExecutionResources,
+    runtime: &mut RuntimeHandles,
+    state_reader: &robot_transport::RtSnapshotReader<S0StateSnapshot>,
+) -> Result<(), i32> {
+    let workers = &mut runtime.0;
+    let clock = &res.clock;
     eprintln!(
         "boot_ready spawned_ns={} first_exit_ns={} ready_ns={}",
-        spawned_at.0,
-        first_exit,
+        supervisor.shared().spawned_at_ns.load(Ordering::Acquire),
+        res.ctrl
+            .serial_boot_progress()
+            .first_exit
+            .map_or(0, |at| at.0),
         clock.now().0
     );
     install_signal_handlers();
     #[cfg(feature = "test-freeze-hook")]
-    let freeze_control = {
-        let (rt, serial_io) = workers
-            .executor
-            .as_ref()
-            .expect("执行器已启动")
-            .freeze_metrics();
-        robot_s0::freeze_control::spawn_freeze_control_thread(
+    {
+        let (rt, serial_io) = match workers.meta.executor.as_ref().expect("原执行器 metrics") {
+            ExecutorMetricsRef::HardRt(m) => (Some(m.clone()), None),
+            ExecutorMetricsRef::SerialRt(m) => (None, Some(m.clone())),
+        };
+        let handle = robot_s0::freeze_control::spawn_freeze_control_thread(
             robot_s0::freeze_control::FreezeControlContext {
                 robot_id: args.robot_id.clone(),
                 clock: clock.clone(),
-                ipc: ipc.metrics().clone(),
+                ipc: workers.meta.ipc.as_ref().expect("原 IPC metrics").clone(),
                 rt,
                 serial_io,
                 pub_thr: workers
+                    .meta
                     .publisher
                     .as_ref()
-                    .expect("pub 已启动")
-                    .metrics()
+                    .expect("原 pub metrics")
                     .clone(),
-                io: workers.io.as_ref().expect("io 已启动").metrics().clone(),
+                io: workers.meta.io.as_ref().expect("原 io metrics").clone(),
             },
         )
-        .map_err(|error| startup_io_error(&error))?
-    };
+        .map_err(|error| startup_io_error(&error))?;
+        workers.install(WorkerSlot::FreezeControl(handle))?;
+    }
+    let ipc = workers.meta.ipc.as_ref().expect("原 IPC metrics").clone();
+    let publisher = workers
+        .meta
+        .publisher
+        .as_ref()
+        .expect("原 pub metrics")
+        .clone();
+    let io = workers.meta.io.as_ref().expect("原 io metrics").clone();
     let observers = vec![
-        {
-            let metrics = ipc.metrics().clone();
-            robot_health::systemd::LivenessObserver::from_fn("ipc_thread", move || {
-                metrics.ipc_tick_count.load(Ordering::Relaxed)
-            })
-        },
+        robot_health::systemd::LivenessObserver::from_fn("ipc_thread", move || {
+            ipc.ipc_tick_count.load(Ordering::Relaxed)
+        }),
         workers
+            .meta
             .executor
             .as_ref()
-            .expect("执行器已启动")
-            .make_tick_observer(res.ctrl.clone()),
-        {
-            let metrics = workers
-                .publisher
-                .as_ref()
-                .expect("pub 已启动")
-                .metrics()
-                .clone();
-            robot_health::systemd::LivenessObserver::from_fn("pub_thread", move || {
-                metrics.tick_count.load(Ordering::Relaxed)
-            })
-        },
-        {
-            let metrics = workers.io.as_ref().expect("io 已启动").metrics().clone();
-            robot_health::systemd::LivenessObserver::from_fn("io_thread", move || {
-                metrics.tick_count.load(Ordering::Relaxed)
-            })
-        },
+            .expect("原执行器 metrics")
+            .observer(res.ctrl.clone()),
+        robot_health::systemd::LivenessObserver::from_fn("pub_thread", move || {
+            publisher.tick_count.load(Ordering::Relaxed)
+        }),
+        robot_health::systemd::LivenessObserver::from_fn("io_thread", move || {
+            io.tick_count.load(Ordering::Relaxed)
+        }),
     ];
-    let systemd_watchdog = robot_health::systemd::spawn_watchdog(
+    if let Some(handle) = robot_health::systemd::spawn_watchdog(
         observers,
         robot_health::systemd::WatchdogConfig::new("s0_systemd_wd"),
-    );
-    let monitor_cfg = args
+    ) {
+        workers.install(WorkerSlot::SystemdWatchdog(handle))?;
+    }
+    let config = args
         .loaded_config
         .as_ref()
         .map(|cfg| robot_health::MonitorConfig {
@@ -1308,77 +1803,43 @@ fn run_workers(
             top_n: cfg.parsed.monitor.top_n,
         })
         .unwrap_or_default();
-    let _health_handle = robot_health::spawn_monitor(monitor_cfg);
+    workers.install(WorkerSlot::HealthMonitor(robot_health::spawn_monitor(
+        config,
+    )))?;
     let start = clock.now().0;
     let mut last_report = start;
-    let mut runtime_result = Ok(());
     loop {
-        if ipc.is_finished() {
-            tracing::error!(reason = "Disconnected", "READY 后 IPC worker 已退出");
-            runtime_result = Err(1);
-            break;
-        }
-        // S48 A3b：standalone（无 WATCHDOG_USEC）时 systemd watchdog 不启动，
-        // BootSupervisor 也已在 READY 退出；executor 因快照版本耗尽等原因结束
-        // 不能只依赖 systemd 发现，这里同时核 executor 存在且未结束，缺失 /
-        // 结束走错误退出与既有收尾（不清 latch、不伪装 Ready）。
-        match workers.executor.as_ref() {
-            Some(executor) if !executor.is_finished() => {}
-            Some(_) => {
-                tracing::error!(reason = "ExecutorFinished", "READY 后执行器 worker 已退出");
-                runtime_result = Err(1);
-                break;
-            }
-            None => {
-                tracing::error!(reason = "ExecutorMissing", "READY 后执行器 worker 不存在");
-                runtime_result = Err(1);
-                break;
-            }
+        if workers.any_finished() {
+            tracing::error!("READY 后 worker 已退出");
+            return Err(1);
         }
         let now = clock.now().0;
         if SHUTDOWN.load(Ordering::Acquire)
+            || supervisor
+                .shared()
+                .runtime_words()
+                .shutdown_deadline()
+                .is_some()
             || args.smoke_duration.is_some_and(|duration| {
                 u128::from(now.saturating_sub(start)) >= duration.as_nanos()
             })
             || state_reader.load().state == S0State::Stopping
         {
-            break;
+            return Ok(());
         }
         if now.saturating_sub(last_report) >= 2_000_000_000 {
-            tracing::info!(state = ?state_reader.load().state, "heartbeat");
+            tracing::info!(state=?state_reader.load().state,"heartbeat");
             last_report = now;
         }
         thread::sleep(Duration::from_millis(50));
     }
-    let _ = event_tx.control(ControlEvent::Stop);
-    robot_health::systemd::notify_stopping();
-    if let Some(handle) = systemd_watchdog {
-        handle.stop();
-    }
-    #[cfg(feature = "test-freeze-hook")]
-    {
-        freeze_control.request_stop();
-        let _ = freeze_control.join();
-    }
-    #[cfg(feature = "test-comm-fault-hook")]
-    {
-        hook_control.request_stop();
-        if hook_control.is_finished() {
-            let _ = hook_control.join();
-        }
-    }
-    let latched = res.ctrl.safety_latched.load(Ordering::Acquire)
-        || state_reader.load().guards_summary.estop_latched;
-    save_estop_latch(&args.latch_path, latched).map_err(|error| startup_io_error(&error))?;
-    tracing::info!("s0_daemon: clean shutdown");
-    runtime_result
 }
 
 /// S48 A3b（test-only）：在对应线程真实 join 之后，把 worker 在 `publish` 之前取的
 /// 耗尽尝试时刻导出到观测页并记日志；0 表示该 worker 未发生 `VersionExhausted`。
 /// 未完成 join 的 worker 不导出（如实记录，不猜测）。
 #[cfg(feature = "test-comm-fault-hook")]
-fn export_publish_failure_attempts(supervisor: &BootSupervisor, workers: &WorkerHandles) {
+fn export_publish_failure_attempts(supervisor: &BootSupervisor, workers: &WorkerMetadata) {
     use robot_s0::comm_fault_observation::PublishFailureWorker;
     let probe = &workers.publish_failure_probe;
     let executor_attempt_ns = match (&probe.executor, probe.executor_joined) {
@@ -1459,59 +1920,93 @@ fn snapshot_publisher_with_test_version<T: robot_transport::SnapshotValue>(
 fn send_auto_enable(
     args: &ResolvedArgs,
     res: &ExecutionResources,
-    ipc: &IpcThreadHandle,
-    event_tx: &robot_s0::event_ingress::ExternalEvents,
+    workers: &BootHandles,
+    stops: &StopFlags,
 ) -> Result<(), i32> {
     use robot_s0::event_ingress::{AdmitError, ControlEvent};
-    let auto_enable = args
+    let auto = args
         .loaded_config
         .as_ref()
         .and_then(|c| resolve_hardware_section(&c.parsed, &args.hardware_id))
         .and_then(|h| h.auto_enable)
         .unwrap_or(true);
-    if !auto_enable || res.latched || (res.serial && res.ctrl.serial_boot_progress().outcome != 1) {
+    if !auto || res.latched || (res.serial && res.ctrl.serial_boot_progress().outcome != 1) {
         return Ok(());
     }
-    // 测试仅让真正的 IPC 线程退出，发送与清理仍走原来的生产路径。
     #[cfg(feature = "test-comm-fault-hook")]
     if std::env::var("ROBOT_TEST_IPC_EXIT_BEFORE_AUTO_ENABLE").as_deref() == Ok("1") {
-        ipc.request_stop();
-        while !ipc.is_finished() {
+        stops.request_worker_stop(WorkerKind::Ipc);
+        while workers.slots.live_is_finished(HandleKind::Ipc) == Some(false) {
             thread::sleep(Duration::from_millis(1));
         }
     }
     #[cfg(not(feature = "test-comm-fault-hook"))]
-    let _ = ipc;
-    match event_tx.control(ControlEvent::Enable) {
+    let _ = stops;
+    match workers
+        .meta
+        .events
+        .as_ref()
+        .expect("已安装的 IPC 保留真实 sender")
+        .control(ControlEvent::Enable)
+    {
         Ok(()) => Ok(()),
         Err(AdmitError::Full) => {
-            tracing::warn!(
-                reason = "Full",
-                "auto-enable 队列已满，保留当前安全状态且不重试"
-            );
+            tracing::warn!("auto-enable 队列已满，保留原安全状态");
             Ok(())
         }
         Err(AdmitError::Disconnected) => {
-            tracing::error!(reason = "Disconnected", "auto-enable 的 IPC 接收端已退出");
+            tracing::error!("auto-enable 的 IPC 接收端已退出");
             Err(1)
         }
     }
 }
-
+#[cfg(feature = "test-comm-fault-hook")]
+fn wait_initial_hook(
+    args: &ResolvedArgs,
+    supervisor: &BootSupervisor,
+    res: &ExecutionResources,
+    workers: &mut BootHandles,
+) -> Result<(), i32> {
+    use robot_s0::shutdown_mechanism::ReadyProbe;
+    let deadline = supervisor
+        .started_at()
+        .0
+        .saturating_add(absolute_boot_budget(usize::from(args.joint_count)).0)
+        .min(
+            supervisor
+                .started_at()
+                .0
+                .saturating_add(robot_s0::boot_supervisor::PRE_BOOT_BUDGET.0),
+        );
+    loop {
+        if workers.any_finished() {
+            return Err(1);
+        }
+        let now = res.clock.now().0;
+        if now >= deadline {
+            return Err(1);
+        }
+        match workers.slots.poll_ready(HandleKind::HookControl) {
+            ReadyProbe::Ready => return Ok(()),
+            ReadyProbe::Pending => {}
+            failure => {
+                tracing::error!(?failure, "初始验收 history 未应用，禁止启动执行器");
+                return Err(1);
+            }
+        }
+        thread::sleep(Duration::from_nanos(
+            deadline.saturating_sub(now).min(5_000_000),
+        ));
+    }
+}
 fn wait_startup(
     args: &ResolvedArgs,
     supervisor: &BootSupervisor,
     res: &ExecutionResources,
-    workers: &WorkerHandles,
+    workers: &mut BootHandles,
     spawned_at: MonoRawNs,
 ) -> Result<(), i32> {
-    if !res.serial {
-        return if workers.any_finished() {
-            Err(1)
-        } else {
-            Ok(())
-        };
-    }
+    use robot_s0::shutdown_mechanism::ReadyProbe;
     let absolute = supervisor
         .started_at()
         .0
@@ -1520,18 +2015,27 @@ fn wait_startup(
         .0
         .saturating_add(boot_budget(usize::from(args.joint_count)).0);
     loop {
-        let progress = res.ctrl.serial_boot_progress();
+        let mut all_ready = true;
+        for kind in [
+            HandleKind::Ipc,
+            HandleKind::ClearRr,
+            HandleKind::SetRr,
+            HandleKind::Publisher,
+        ] {
+            match workers.slots.poll_ready(kind) {
+                ReadyProbe::Ready => {}
+                ReadyProbe::Pending => all_ready = false,
+                failure => {
+                    tracing::error!(?kind, ?failure, "worker 初始化失败，句柄仍在原 CP2 集合");
+                    return Err(1);
+                }
+            }
+        }
         if workers.any_finished() {
-            tracing::error!("启动期间必需 worker 已退出");
             return Err(1);
         }
-        if progress.outcome != 0 && progress.fault_acknowledged {
-            return Ok(());
-        }
+        let progress = res.ctrl.serial_boot_progress();
         let now = res.clock.now().0;
-        if now >= physical {
-            res.ctrl.expire_serial_boot();
-        }
         let deadline = progress.first_exit.map_or(absolute, |exit| {
             absolute.min(exit.0.saturating_add(STARTUP_ACK_BUDGET.0))
         });
@@ -1539,7 +2043,15 @@ fn wait_startup(
             tracing::error!(?progress, "启动物理/ACK 截止失败");
             return Err(1);
         }
-        thread::sleep(Duration::from_millis(5));
+        if all_ready && (!res.serial || (progress.outcome != 0 && progress.fault_acknowledged)) {
+            return Ok(());
+        }
+        if res.serial && now >= physical {
+            res.ctrl.expire_serial_boot();
+        }
+        thread::sleep(Duration::from_nanos(
+            deadline.saturating_sub(now).min(5_000_000),
+        ));
     }
 }
 
@@ -1570,33 +2082,51 @@ fn send_ready(mode: NotifyMode) -> Result<(), i32> {
     }
 }
 
-fn make_subscribers(topics: &(String, String, String)) -> IpcSubscribers {
-    let node = NodeBuilder::new().create::<IxService>().expect("IPC node");
+fn make_subscribers(
+    topics: &(String, String, String),
+) -> Result<robot_s0::ipc_thread::OwnedIpcPorts, robot_s0::ipc_thread::IpcInitError> {
+    use robot_s0::ipc_thread::{IpcInitError, OwnedIpcPorts};
+    let node = NodeBuilder::new()
+        .create::<IxService>()
+        .map_err(IpcInitError::Node)?;
     let command = open_sub::<markers::JointCommand>(&node, &topics.0, TopicClass::S0Command)
-        .expect("command subscriber");
+        .map_err(|error| IpcInitError::Subscriber {
+            topic: topics.0.clone(),
+            error,
+        })?;
     let heartbeat = open_sub::<markers::Heartbeat>(&node, &topics.1, TopicClass::Heartbeat)
-        .expect("heartbeat subscriber");
+        .map_err(|error| IpcInitError::Subscriber {
+            topic: topics.1.clone(),
+            error,
+        })?;
     let estop = open_sub::<markers::EStopEvent>(&node, &topics.2, TopicClass::SafetyEvent)
-        .expect("estop subscriber");
-    Box::leak(Box::new(node));
-    IpcSubscribers {
-        command,
-        heartbeat,
-        estop,
-    }
+        .map_err(|error| IpcInitError::Subscriber {
+            topic: topics.2.clone(),
+            error,
+        })?;
+    Ok(OwnedIpcPorts::new(
+        IpcSubscribers {
+            command,
+            heartbeat,
+            estop,
+        },
+        node,
+    ))
 }
 
-fn make_publishers(topics: &(String, String)) -> IpcPublishers {
+fn make_publishers(topics: &(String, String)) -> robot_s0::pub_thread::OwnedIpcPublishers {
     let node = NodeBuilder::new().create::<IxService>().expect("pub node");
     let joint_state = open_pub::<markers::JointState>(&node, &topics.0, TopicClass::S0State)
         .expect("state publisher");
     let heartbeat = open_pub::<markers::Heartbeat>(&node, &topics.1, TopicClass::Heartbeat)
         .expect("heartbeat publisher");
-    Box::leak(Box::new(node));
-    IpcPublishers {
-        joint_state,
-        heartbeat,
-    }
+    robot_s0::pub_thread::OwnedIpcPublishers::new(
+        IpcPublishers {
+            joint_state,
+            heartbeat,
+        },
+        node,
+    )
 }
 
 /// 启动期确保 latch 父目录存在；失败直接拒启动，避免 `EStop` 后落盘失败却
@@ -1765,140 +2295,158 @@ enum ExecutorHandle {
 }
 
 impl ExecutorHandle {
-    fn is_finished(&self) -> bool {
-        match self {
-            Self::HardRt(h) => h.is_finished(),
-            Self::SerialRt(h) => h.is_finished(),
-        }
-    }
-
-    /// S48 A3b（test-only）：保留 metrics 引用，供收尾 join 之后读取。
-    #[cfg(feature = "test-comm-fault-hook")]
     fn metrics_ref(&self) -> ExecutorMetricsRef {
         match self {
-            Self::HardRt(h) => ExecutorMetricsRef::HardRt(Arc::clone(h.metrics())),
-            Self::SerialRt(h) => ExecutorMetricsRef::SerialRt(Arc::clone(h.metrics())),
+            Self::HardRt(handle) => ExecutorMetricsRef::HardRt(handle.metrics().clone()),
+            Self::SerialRt(handle) => ExecutorMetricsRef::SerialRt(handle.metrics().clone()),
         }
     }
-    fn join(self) -> thread::Result<()> {
-        match self {
-            Self::HardRt(h) => h.join(),
-            Self::SerialRt(h) => h.join(),
-        }
-    }
-
-    /// systemd watchdog 的 liveness observer：执行 thread `tick_count` 取值。
-    /// 在 `spawn_watchdog_thread` 闭包里调用，**不能** RT-thread-aware 加锁
-    /// 或 alloc，只用 `AtomicU64::load(Relaxed)`。
-    fn make_tick_observer(
-        &self,
-        ctrl: Arc<HardRtCtrlInner>,
-    ) -> robot_health::systemd::LivenessObserver {
-        match self {
-            Self::HardRt(h) => {
-                let m = Arc::clone(h.metrics());
-                robot_health::systemd::LivenessObserver::from_fn("rt_thread", move || {
-                    m.tick_count.load(Ordering::Relaxed)
-                })
-            }
-            Self::SerialRt(_) => {
-                robot_health::systemd::LivenessObserver::from_fn("serial_io_thread", move || {
-                    ctrl.serial_liveness()
-                })
-            }
-        }
-    }
-
-    /// **A2-2 freeze hook control routing** (test-only)：把 dispatch 路径活跃
-    /// 的 RT 线程 metrics 暴露给 [`robot_s0::freeze_control`] 控制路由。返回
-    /// `(rt_metrics, serial_io_metrics)` 二元组，按 dispatch 路径恰好一个为
-    /// `Some`。生产 release 不编译本方法。本 bin gate `feature = "test-freeze-hook"`
-    /// （不带 `test`），跟 §7b spawn 处一致；详 §7b 注释。
-    #[cfg(feature = "test-freeze-hook")]
-    fn freeze_metrics(
-        &self,
-    ) -> (
-        Option<Arc<robot_s0::rt_thread::RtThreadMetrics>>,
-        Option<Arc<robot_s0::serial_io_thread::SerialIoThreadMetrics>>,
-    ) {
-        match self {
-            Self::HardRt(h) => (Some(Arc::clone(h.metrics())), None),
-            Self::SerialRt(h) => (None, Some(Arc::clone(h.metrics()))),
-        }
-    }
-}
-
-/// 有顺序地停线程 + `join`，容忍任一 handle 为 None（早期启动失败场景）。
-#[allow(clippy::too_many_arguments)]
-fn graceful_stop(
-    ipc: IpcThreadHandle,
-    stops: &StopFlags,
-    wd_handle: std::thread::JoinHandle<()>,
-    executor: Option<ExecutorHandle>,
-    pub_handle: Option<robot_s0::pub_thread::PubThreadHandle>,
-    io_handle: Option<robot_s0::io_thread::IoThreadHandle>,
-    rr_handle: Option<robot_s0::rr_server_thread::RrServerThreadHandle>,
-    se_rr_handle: Option<robot_s0::set_enabled_rr_server::SetEnabledRrServerHandle>,
-) -> JoinedWorkers {
-    // 顺序（A1-3 (1/3c-2) round 1 拍板 "shutdown 显式 abort pending"）：
-    //   rr_server 先停 — 不再接新 RR request 入面；run_loop 出循环后
-    //              `abort_pending_on_shutdown` 给所有 in-flight pending
-    //              best-effort 回 `RpcStatus::Aborted` + error_msg
-    //              "s0 daemon shutting down"。**不**伪造 Ack、**不** drain
-    //              等 ipc_thread 真实结果；未送达的 Aborted 由 gateway 按
-    //              RR timeout / retry 兜底。详 `crate::rr_server_thread`
-    //              shutdown 段 doc。
-    //   → pub/io 停（不再往外发）
-    //   → executor（rt 或 serial_io）停（不再动 adapter）
-    //   → ipc 停（state machine 收尾；rr_server 已停 + rr_response_rx drop
-    //              后 ipc_thread 内 RR drain / 派发跑空的 channel；按
-    //              crossbeam disconnect 语义自然丢弃）
-    //   → watchdog 最后停
-    if let Some(h) = rr_handle {
-        stops.request_worker_stop(WorkerKind::ClearEStopRr);
-        let _ = h.join();
-    }
-    // **v0.5 候选 C**：第 2 个 rr_server（set_enabled）同 rr_server 阶段先停 —
-    // 出循环后 `abort_pending_on_shutdown` 给 in-flight SetEnabled best-effort 回
-    // `RpcStatus::Aborted` + domain `PreemptedByShutdown`。
-    if let Some(h) = se_rr_handle {
-        stops.request_worker_stop(WorkerKind::SetEnabledRr);
-        let _ = h.join();
-    }
-    if let Some(h) = pub_handle {
-        stops.request_worker_stop(WorkerKind::Pub);
-        let _ = h.join();
-    }
-    if let Some(h) = io_handle {
-        stops.request_worker_stop(WorkerKind::Io);
-        let _ = h.join();
-    }
-    let mut joined = JoinedWorkers::default();
-    if let Some(h) = executor {
-        stops.request_worker_stop(WorkerKind::Executor);
-        // join 返回（无论 Ok/Err）即线程已终止并与本线程建立 happens-before。
-        let _ = h.join();
-        joined.executor = true;
-    }
-    stops.request_worker_stop(WorkerKind::Ipc);
-    let _ = ipc.join();
-    joined.ipc = true;
-    stops.request_worker_stop(WorkerKind::Watchdog);
-    let _ = wd_handle.join();
-    joined
-}
-
-/// `graceful_stop` 中 executor / IPC 是否已真实 join（S48 A3b test-only 导出依据；
-/// 生产路径不读取）。
-#[derive(Default, Clone, Copy)]
-struct JoinedWorkers {
-    executor: bool,
-    ipc: bool,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "同一真实子进程固定失败时序并保原句柄与结果，完整验证迟到快照错误不能被空退出掩盖"
+    )]
+    fn late_real_snapshot_failure_cannot_make_empty_executor_exit_clean() {
+        struct GateClock {
+            entered: AtomicBool,
+            released: AtomicBool,
+        }
+        impl RobotClock for GateClock {
+            fn now(&self) -> robot_core::time::MonoRawNs {
+                SystemClock.now()
+            }
+            fn sleep_for(&self, duration: robot_core::time::DurationNs) {
+                SystemClock.sleep_for(duration);
+            }
+            fn sleep_until(&self, _deadline: robot_core::time::Deadline) {
+                self.entered.store(true, Ordering::Release);
+                // 仅确定性线程夹具：暂停真实publish前的调用，不将它算作RT时延证据。
+                while !self.released.load(Ordering::Acquire) {
+                    std::hint::spin_loop();
+                }
+            }
+        }
+        const CHILD: &str = "ROBOT_W3_LATE_SNAPSHOT_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("child.log");
+            let log = std::fs::File::create(&path).unwrap();
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tests::late_real_snapshot_failure_cannot_make_empty_executor_exit_clean",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .stdout(log.try_clone().unwrap())
+                .stderr(log)
+                .spawn()
+                .unwrap();
+            let end = SystemClock.now().0 + 5_000_000_000;
+            let status = loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => break status,
+                    Ok(None) if SystemClock.now().0 < end => {
+                        thread::sleep(std::time::Duration::from_millis(2));
+                    }
+                    other => {
+                        let _ = child.kill();
+                        let reap = SystemClock.now().0 + 2_000_000_000;
+                        while !matches!(child.try_wait(), Ok(Some(_))) {
+                            if SystemClock.now().0 >= reap {
+                                std::process::abort();
+                            }
+                            thread::sleep(std::time::Duration::from_millis(2));
+                        }
+                        panic!("迟到失败子进程已kill/reap：{other:?}");
+                    }
+                }
+            };
+            let raw = std::fs::read_to_string(path).unwrap();
+            assert!(status.success(), "{raw}");
+            assert_eq!(
+                raw.lines()
+                    .filter(|line| *line == "late_snapshot_real_join_verified")
+                    .count(),
+                1,
+                "{raw}"
+            );
+            return;
+        }
+        let main = thread::current().id();
+        std::panic::set_hook(Box::new(move |info| {
+            eprintln!("迟到快照反例：{info}");
+            if thread::current().id() == main {
+                std::process::exit(101);
+            }
+        }));
+        let clock = Arc::new(GateClock {
+            entered: AtomicBool::new(false),
+            released: AtomicBool::new(false),
+        });
+        let authority = Arc::new(
+            robot_core::control_authority::ControlAuthority::new(
+                robot_core::control_authority::AuthorityInit::new(
+                    false,
+                    robot_core::executor_ctrl::OutputSafetyState::TorqueUnknown,
+                    robot_core::control_authority::InhibitSet::EMPTY,
+                ),
+            )
+            .unwrap(),
+        );
+        let ctrl = Arc::new(HardRtCtrlInner::new(authority));
+        let (_commands, reader) = robot_transport::LatestCommandSlot::new(
+            robot_core::adapter::JointCommandBuf::default(),
+        );
+        let (publisher, snapshots) = robot_transport::RtSnapshotPublisher::new_with_version(
+            RtSnapshot::default(),
+            robot_transport::MAX_PUBLISHED_VERSION - 2,
+        )
+        .unwrap();
+        let handle = spawn_rt_thread(
+            RtThreadConfig {
+                strict_rt: false,
+                ..RtThreadConfig::default()
+            },
+            clock.clone(),
+            robot_adapter_mock::MockHardRTAdapter::with_unlimited_limits(1),
+            reader,
+            publisher,
+            ctrl,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        let deadline = SystemClock.now().0 + 2_000_000_000;
+        while !clock.entered.load(Ordering::Acquire) {
+            assert!(SystemClock.now().0 < deadline);
+            thread::yield_now();
+        }
+        let metrics = ExecutorMetricsRef::HardRt(handle.metrics().clone());
+        assert!(!handle.is_finished());
+        assert_eq!(metrics.snapshot_publish_errors(), 0);
+        // 主层最后一次存活观察之后请求停止；正在执行的tick仍会真实发布并失败。
+        handle.request_stop();
+        clock.released.store(true, Ordering::Release);
+        while !handle.is_finished() {
+            assert!(SystemClock.now().0 < deadline);
+            thread::yield_now();
+        }
+        let original = Some(handle.join());
+        assert!(matches!(original.as_ref(),Some(Ok(exit)) if !exit.has_pending_enable()));
+        assert_eq!(snapshots.version(), robot_transport::MAX_PUBLISHED_VERSION);
+        assert_eq!(metrics.snapshot_publish_errors(), 1);
+        assert!(!executor_exit_clean(original.as_ref(), Some(&metrics)));
+        assert!(!executor_exit_clean(original.as_ref(), None));
+        eprintln!("late_snapshot_real_join_verified");
+        std::process::exit(0);
+    }
 
     #[test]
     fn ensure_latch_parent_creates_missing_directory() {
@@ -2006,5 +2554,158 @@ mod tests {
             panic!("expected unknown-hardware resolve error");
         };
         assert!(err.contains("无匹配 [[hardware]] 段"), "{err}");
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "同一子进程逐步验证原 writer join 凭据、原截止与唯一备用写结果"
+    )]
+    fn real_join_is_required_for_once_only_fallback_and_fallback_never_becomes_clean() {
+        const NAME: &str =
+            "tests::real_join_is_required_for_once_only_fallback_and_fallback_never_becomes_clean";
+        const CHILD: &str = "ROBOT_W3_FALLBACK_CHILD";
+        if std::env::var(CHILD).as_deref() != Ok("1") {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("raw.log");
+            let file = std::fs::File::create(&path).unwrap();
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", NAME, "--nocapture"])
+                .env(CHILD, "1")
+                .stdout(file.try_clone().unwrap())
+                .stderr(file)
+                .spawn()
+                .unwrap();
+            let until = SystemClock.now().0 + 8_000_000_000;
+            let status = loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => break status,
+                    Ok(None) if SystemClock.now().0 < until => {
+                        thread::sleep(std::time::Duration::from_millis(2));
+                    }
+                    other => {
+                        let _ = child.kill();
+                        let reap = SystemClock.now().0 + 2_000_000_000;
+                        while !matches!(child.try_wait(), Ok(Some(_))) {
+                            if SystemClock.now().0 >= reap {
+                                std::process::abort();
+                            }
+                            thread::sleep(std::time::Duration::from_millis(2));
+                        }
+                        panic!("备用写子进程已kill/reap：{other:?}");
+                    }
+                }
+            };
+            let raw = std::fs::read_to_string(path).unwrap();
+            assert!(status.success(), "{raw}");
+            assert_eq!(
+                raw.lines()
+                    .filter(|line| *line == "fallback_real_join_verified")
+                    .count(),
+                1,
+                "{raw}"
+            );
+            return;
+        }
+        let owner = thread::current().id();
+        std::panic::set_hook(Box::new(move |info| {
+            eprintln!("备用写验收：{info}");
+            if thread::current().id() == owner {
+                std::process::exit(101);
+            }
+        }));
+        for expired in [true, false] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("estop_latch");
+            robot_s0::estop_latch::save_estop_latch(&path, false).unwrap();
+            let lock = robot_s0::latch_lock::acquire_latch_lock(&path).unwrap();
+            let first = ClearTxnStore::open(&path, "fallback", "arm").unwrap();
+            let second = ClearTxnStore::open(&path, "fallback", "arm").unwrap();
+            let (slot, mut standby) = WriterPairing::new(first, second, &lock, MonoRawNs(10))
+                .unwrap()
+                .into_parts();
+            let shared = slot.shared().clone();
+            let (client, endpoint) = robot_s0::latch_writer::mailbox(shared.clone());
+            let clock: Arc<dyn RobotClock> =
+                Arc::new(robot_core::time::MockClock::new(MonoRawNs(10)));
+            let authority = Arc::new(
+                ControlAuthority::new(AuthorityInit::new(
+                    false,
+                    OutputSafetyState::TorqueOffConfirmed,
+                    InhibitSet::EMPTY,
+                ))
+                .unwrap(),
+            );
+            let ctrl = Arc::new(HardRtCtrlInner::new(authority));
+            let control = Arc::new(HardRtCtrlClient::new(ctrl.clone()));
+            let res = ExecutionResources {
+                clock: clock.clone(),
+                ctrl: ctrl.clone(),
+                client: control,
+                writer_shared: shared.clone(),
+                probe: Arc::new(robot_s0::serial_preempt::SerialPreemptProbe::new(
+                    clock.clone(),
+                    ctrl,
+                )),
+                diag: Arc::new(robot_s0::diag::SerialDiagRing::new()),
+                serial: false,
+                authorized: false,
+                latched: false,
+            };
+            let _ = shared.obligation.request(MonoRawNs(10));
+            let stops = Arc::new(StopFlags::new());
+            stops.request_worker_stop(robot_s0::worker_stop::WorkerKind::LatchWriter);
+            let writer = robot_s0::latch_writer::spawn_writer(
+                slot,
+                endpoint,
+                robot_s0::latch_writer::WriterConfig::default(),
+                stops.writer_control(clock.clone()),
+                clock,
+                Box::new(robot_s0::latch_writer::NoHook),
+            )
+            .unwrap();
+            let mut settlement = WriterSettlement::default();
+            settle_writer_once(&mut settlement, &mut standby, &res, 100);
+            assert_eq!(std::fs::read(&path).unwrap(), b"0\n");
+            assert!(settlement.fallback.is_none());
+            let until = SystemClock.now().0 + 2_000_000_000;
+            while !writer.is_finished() {
+                assert!(SystemClock.now().0 < until);
+                thread::yield_now();
+            }
+            let (result, joined) = writer.join();
+            settlement.result = Some(result);
+            settlement.unused_joined = Some(joined);
+            let deadline = if expired { 10 } else { 100 };
+            settle_writer_once(&mut settlement, &mut standby, &res, deadline);
+            if expired {
+                assert!(matches!(
+                    settlement.fallback,
+                    Some(FallbackResult::Deadline)
+                ));
+                settle_writer_once(&mut settlement, &mut standby, &res, deadline);
+                assert_eq!(std::fs::read(&path).unwrap(), b"0\n");
+                assert!(!shared.obligation.is_settled());
+            } else {
+                assert!(matches!(
+                    settlement.fallback,
+                    Some(FallbackResult::Written(
+                        robot_s0::latch_writer::Settle::Settled
+                    ))
+                ));
+                assert!(shared.obligation.is_settled());
+                assert_eq!(std::fs::read(&path).unwrap(), b"1\n");
+                assert_eq!(std::fs::read(path.with_extension("bak")).unwrap(), b"1\n");
+                let _ = shared.obligation.request(MonoRawNs(11));
+                settle_writer_once(&mut settlement, &mut standby, &res, deadline);
+                assert!(!shared.obligation.is_settled());
+                assert!(settlement.unused_joined.is_none());
+            }
+            assert!(!writer_exit_clean(&settlement, &shared));
+            // 原无预算凭证/新未结义务、真实join结果及其配对对象保持到受监督进程退出。
+            std::mem::forget((settlement, standby, res, client, shared, lock, directory));
+        }
+        eprintln!("fallback_real_join_verified");
+        std::process::exit(0);
     }
 }

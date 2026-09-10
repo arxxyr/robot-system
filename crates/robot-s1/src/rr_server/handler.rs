@@ -62,7 +62,7 @@ use robot_transport::iceoryx2::qos::TopicClass;
 use crate::action::{ActionId, ActionKind, ActionRequest, ActionSource};
 use crate::coordinator::Coordinator;
 use crate::events_drain::{
-    EventsDrainRegistry, EventsDrainThreadConfig, EventsPublisherGuard,
+    EventsDrainRegistry, EventsDrainSpawnError, EventsDrainThreadConfig, EventsPublisherGuard,
     spawn_owned_events_drain_thread,
 };
 
@@ -70,8 +70,9 @@ use super::wire::{
     cancel_err_to_rpc_status, clear_err_to_rpc_status, decode_cancel_request,
     decode_clear_error_request, decode_invoke_request, decode_status_request,
     encode_cancel_response_err, encode_cancel_response_ok, encode_clear_error_response_err,
-    encode_clear_error_response_ok, encode_invoke_response_err, encode_invoke_response_ok,
-    encode_status_response_err, encode_status_response_ok, submit_err_to_rpc_status,
+    encode_clear_error_response_ok, encode_invoke_drain_failure, encode_invoke_response_err,
+    encode_invoke_response_ok, encode_status_response_err, encode_status_response_ok,
+    submit_err_to_rpc_status,
 };
 
 // ============================================================================
@@ -144,6 +145,76 @@ impl RealHandlerCtx {
 #[must_use]
 #[allow(clippy::too_many_lines)] // 一条 happy path + 6 条 InvalidArgument early-return + Submit 错误映射；分成 helper 反而增加跨函数跳读成本。
 pub fn handle_invoke(payload: &[u8], ctx: &RealHandlerCtx) -> Vec<u8> {
+    #[cfg(feature = "test-fault-backend")]
+    let fixture_request_id = flatbuffers::root::<robot_msg::msg::InvokeTaskRequest<'_>>(payload)
+        .ok()
+        .and_then(|view| view.request_id());
+    handle_invoke_with_spawn(payload, ctx, |cfg, events, clock, source_id| {
+        #[cfg(feature = "test-fault-backend")]
+        match take_drain_fixture(fixture_request_id.unwrap_or("")) {
+            Some(DrainFixture::FactoryPanic) => {
+                return spawn_owned_events_drain_thread(
+                    cfg,
+                    events,
+                    || panic!("w3_real_drain_factory_panic"),
+                    clock,
+                    source_id,
+                );
+            }
+            Some(DrainFixture::SpawnRejected) => {
+                return Err(EventsDrainSpawnError::ThreadSpawn(std::io::Error::other(
+                    "w3 注入 OS spawn 拒绝",
+                )));
+            }
+            None => {}
+        }
+        let factory = make_events_publisher_factory(cfg.topic.clone());
+        spawn_owned_events_drain_thread(cfg, events, factory, clock, source_id)
+    })
+}
+
+// 默认构建没有此入口；精确匹配单个 request_id，仅在真实 submit 成功后的 spawn 边界消费一次。
+#[cfg(feature = "test-fault-backend")]
+#[derive(Clone, Copy)]
+enum DrainFixture {
+    FactoryPanic,
+    SpawnRejected,
+}
+#[cfg(feature = "test-fault-backend")]
+fn take_drain_fixture(request_id: &str) -> Option<DrainFixture> {
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static CONFIG: OnceLock<Option<(String, DrainFixture)>> = OnceLock::new();
+    static USED: AtomicBool = AtomicBool::new(false);
+    let config = CONFIG.get_or_init(|| {
+        let id = std::env::var("ROBOT_W3_DRAIN_FAILURE_REQUEST_ID").ok()?;
+        let mode = match std::env::var("ROBOT_W3_DRAIN_FAILURE_MODE").ok()?.as_str() {
+            "factory-panic" => DrainFixture::FactoryPanic,
+            "spawn-error" => DrainFixture::SpawnRejected,
+            _ => return None,
+        };
+        Some((id, mode))
+    });
+    match config {
+        Some((id, mode)) if id == request_id && !USED.swap(true, Ordering::AcqRel) => Some(*mode),
+        _ => None,
+    }
+}
+
+// 唯一提交/注册/取消/编码分支；测试只替换真实 OS spawn 边界，不伪造 cancel 结果。
+#[allow(
+    clippy::too_many_lines,
+    reason = "完整展示同一次提交、原句柄登记、真实取消与编码的责任顺序"
+)]
+fn handle_invoke_with_spawn<F>(payload: &[u8], ctx: &RealHandlerCtx, spawn: F) -> Vec<u8>
+where
+    F: FnOnce(
+        EventsDrainThreadConfig,
+        std::sync::mpsc::Receiver<crate::action::ActionEvent>,
+        Arc<dyn RobotClock>,
+        u32,
+    ) -> Result<crate::events_drain::EventsDrainThreadHandle, EventsDrainSpawnError>,
+{
     // 1. fbs decode（runtime 已 verify；这里再调 owned 化字段）。
     let decoded = match decode_invoke_request(payload) {
         Ok(d) => d,
@@ -234,14 +305,7 @@ pub fn handle_invoke(payload: &[u8], ctx: &RealHandlerCtx) -> Vec<u8> {
 
             // 7. spawn events_drain_thread + register。
             let cfg = EventsDrainThreadConfig::for_action(&ctx.robot_id, action_id);
-            let factory = make_events_publisher_factory(cfg.topic.clone());
-            match spawn_owned_events_drain_thread(
-                cfg,
-                ticket.events,
-                factory,
-                Arc::clone(&ctx.clock),
-                ctx.source_id,
-            ) {
+            match spawn(cfg, ticket.events, Arc::clone(&ctx.clock), ctx.source_id) {
                 Ok(handle) => {
                     ctx.events_registry.register(handle);
                     // v0.4 候选 3 Plan §P.2.1.d: register 即时 log。
@@ -259,22 +323,29 @@ pub fn handle_invoke(payload: &[u8], ctx: &RealHandlerCtx) -> Vec<u8> {
                     encode_invoke_response_ok(&decoded.request_id, &action_id_hex, accepted_at_ns)
                 }
                 Err(e) => {
-                    // events_drain spawn 失败：coordinator 已转 Executing，
-                    // 调 cancel 让它走 cooperative cancel 路径回 IDLE，避免
-                    // 客户端拿到 Internal 但 action 仍在跑的歧义。cancel 失
-                    // 败也吞掉（极少；event 已丢失，state 至多悬挂一阵后被
-                    // backend tick 收敛）。
+                    // 先把真实已创建线程交给唯一 registry，再消费真实 cancel 结果。
+                    // 请求退休不表示任务已结束，也不表示该线程已经 join。
+                    let error_msg = format!("spawn_events_drain_thread failed: {e}");
+                    match e {
+                        EventsDrainSpawnError::ReadyDisconnected { handle } => {
+                            handle.request_stop();
+                            ctx.events_registry.register(handle);
+                        }
+                        EventsDrainSpawnError::ThreadSpawn(_) => {}
+                    }
+                    let cancel_ok = ctx.coordinator.cancel(action_id, clock_ref).is_ok();
                     tracing::error!(
-                        ?e,
+                        error = %error_msg,
                         action_id = %action_id,
-                        "rr_server::handle_invoke: spawn_events_drain_thread failed; cancelling action"
+                        cancel_ok,
+                        "rr_server::handle_invoke: drain 启动失败，已移交回收责任并请求取消"
                     );
-                    let _ = ctx.coordinator.cancel(action_id, clock_ref);
-                    encode_invoke_response_err(
+                    encode_invoke_drain_failure(
                         &decoded.request_id,
                         &action_id.to_string(),
-                        ActionRpcStatus::Internal,
-                        &format!("spawn_events_drain_thread failed: {e}"),
+                        accepted_at_ns,
+                        &error_msg,
+                        cancel_ok,
                     )
                 }
             }
@@ -1231,5 +1302,92 @@ mod tests {
     #[allow(dead_code)]
     fn _force_use_kind_enums() -> (ActionFailureKindFb, ActionOutcomeKindFb) {
         (ActionFailureKindFb::Unknown, ActionOutcomeKindFb::Unknown)
+    }
+    #[test]
+    fn invoke_real_ready_panic_keeps_handle_and_reports_cancel_accepted() {
+        use robot_msg::msg::{InvokeOutcome, InvokeTaskResponse, SideEffect};
+        let coordinator = make_coordinator();
+        let ctx = make_ctx(Arc::clone(&coordinator));
+        let request_id = uuid::Uuid::now_v7().to_string();
+        let payload = build_invoke_payload(&request_id, ActionKindFb::DwellMs);
+        let wire = handle_invoke_with_spawn(&payload, &ctx, |cfg, events, clock, source| {
+            spawn_owned_events_drain_thread(
+                cfg,
+                events,
+                || panic!("w3_real_publisher_factory_panic"),
+                clock,
+                source,
+            )
+        });
+        let view = flatbuffers::root::<InvokeTaskResponse<'_>>(&wire).unwrap();
+        assert_eq!(view.request_id(), Some(request_id.as_str()));
+        assert_eq!(view.action_id(), Some(request_id.as_str()));
+        assert_ne!(view.accepted_at_ns(), 0);
+        assert_eq!(view.status(), ActionRpcStatus::Internal);
+        assert_eq!(view.effect(), SideEffect::Committed);
+        assert!(view.retired());
+        assert_eq!(
+            view.invoke_outcome(),
+            InvokeOutcome::DrainFailedCancelAccepted
+        );
+        assert_eq!(ctx.events_registry.len(), 1, "原失败句柄只登记一次");
+        coordinator.tick_action(ctx.clock.as_ref(), 0);
+        let joined = ctx.events_registry.stop_and_join_all();
+        let panic = joined.unwrap_err();
+        assert_eq!(
+            panic.downcast_ref::<&str>(),
+            Some(&"w3_real_publisher_factory_panic")
+        );
+        assert_eq!(ctx.events_registry.len(), 0);
+        ctx.events_registry.join_all().unwrap();
+    }
+
+    #[test]
+    fn invoke_injected_os_spawn_failure_uses_real_cancel_accepted_and_rejected() {
+        use robot_core::time::{DurationNs, MockClock, MonoRawNs};
+        use robot_msg::msg::{InvokeOutcome, InvokeTaskResponse, SideEffect};
+        for completed_before_compensation in [false, true] {
+            let coordinator = make_coordinator();
+            let clock = Arc::new(MockClock::new(MonoRawNs(41)));
+            let mut ctx = Arc::try_unwrap(make_ctx(Arc::clone(&coordinator)))
+                .ok()
+                .unwrap();
+            ctx.clock = clock.clone();
+            let request_id = uuid::Uuid::now_v7().to_string();
+            let payload = build_invoke_payload(&request_id, ActionKindFb::DwellMs);
+            let mut called = 0;
+            let wire =
+                handle_invoke_with_spawn(&payload, &ctx, |_cfg, _events, _clock, _source| {
+                    called += 1;
+                    if completed_before_compensation {
+                        clock.advance(DurationNs::from_millis(101));
+                        coordinator.tick_action(clock.as_ref(), 0);
+                    }
+                    Err(EventsDrainSpawnError::ThreadSpawn(std::io::Error::other(
+                        "w3 注入 OS spawn 边界错误",
+                    )))
+                });
+            let view = flatbuffers::root::<InvokeTaskResponse<'_>>(&wire).unwrap();
+            assert_eq!(called, 1);
+            assert_eq!(view.request_id(), Some(request_id.as_str()));
+            assert_eq!(view.action_id(), Some(request_id.as_str()));
+            assert_eq!(view.accepted_at_ns(), 41);
+            assert_eq!(view.status(), ActionRpcStatus::Internal);
+            assert_eq!(view.effect(), SideEffect::Committed);
+            assert!(view.retired());
+            assert_eq!(
+                view.invoke_outcome(),
+                if completed_before_compensation {
+                    InvokeOutcome::DrainFailedCancelRejected
+                } else {
+                    InvokeOutcome::DrainFailedCancelAccepted
+                }
+            );
+            assert_eq!(ctx.events_registry.len(), 0, "OS spawn 拒绝没有可登记句柄");
+            if !completed_before_compensation {
+                coordinator.tick_action(clock.as_ref(), 0);
+            }
+            ctx.events_registry.join_all().unwrap();
+        }
     }
 }

@@ -56,4 +56,4 @@ pub use snapshot::{
     SnapshotValue, SnapshotWords,
 };
 pub use traits::{LatestSubscriber, Publisher, RequestClient};
-pub use writer::SampleWriter;
+pub use writer::{PublishFailure, PublishReceipt, SampleWriter};

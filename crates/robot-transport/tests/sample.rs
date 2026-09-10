@@ -1,5 +1,6 @@
 // 测试文件：大量 `as u32` / trait object 构造，豁免 pedantic 噪音。
 #![allow(clippy::pedantic, clippy::nursery)]
+#![cfg(feature = "mock")]
 
 //! Step 4 集成测试：`SampleLease` / `SampleWriter` / mock 后端。
 //!
@@ -360,4 +361,33 @@ fn publish_exceeds_loan_max_sample_size_errors() {
     assert_eq!(ch.active_writers(), 0);
     // 未成功写入 slot，publish_count 保持 0。
     assert_eq!(ch.publishes(), 0);
+}
+
+#[test]
+fn typed_mock_receipt_is_stored_and_failure_releases_the_real_writer() {
+    use robot_transport::{PublishFailure, PublishReceipt};
+    let channel = MockChannel::<markers::JointState>::new();
+    let mut publisher = channel.publisher();
+    let mut subscriber = channel.subscriber();
+    let body = build_joint_state_body();
+    let mut writer = publisher.loan(1024).unwrap();
+    writer.set_body_bytes(&body);
+    writer.set_stamp_ns(123);
+    assert_eq!(writer.publish_typed().unwrap(), PublishReceipt::MockStored);
+    assert_eq!((channel.publishes(), channel.active_writers()), (1, 0));
+    let lease = subscriber.latest().unwrap().unwrap();
+    let view = lease.view().unwrap();
+    assert_eq!(view.header.stamp_ns(), 123);
+    assert_eq!(view.body.raw(), body);
+    drop(lease);
+    assert_eq!(channel.active_leases(), 0);
+    let mut rejected = publisher.loan(1).unwrap();
+    rejected.set_body_bytes(&body);
+    assert!(matches!(
+        rejected.publish_typed(),
+        Err(PublishFailure::BeforeHistory(
+            TransportError::SampleTooLarge { .. }
+        ))
+    ));
+    assert_eq!((channel.publishes(), channel.active_writers()), (1, 0));
 }

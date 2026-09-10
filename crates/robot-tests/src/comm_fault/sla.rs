@@ -387,6 +387,22 @@ pub(super) struct Sample {
 
 /// 只解释真实事件，不重建执行器状态机，也不根据时延挑选或删除样本。
 pub(super) fn analyze(events: &[TraceEvent], external: bool) -> Result<Sample, String> {
+    if let Some(event) = events.iter().find(|event| {
+        event.a == u64::MAX
+            && matches!(
+                event.kind,
+                TraceKind::PrimitiveCommitted
+                    | TraceKind::NormalAcquire
+                    | TraceKind::NormalRelease
+                    | TraceKind::SerialClaim
+                    | TraceKind::IpcClaim
+            )
+    }) {
+        return Err(format!(
+            "{:?} 的 CAS 次数缺失或耗尽，样本 invalid",
+            event.kind
+        ));
+    }
     let epoch = events.first().ok_or("事件为空")?.sample_seq;
     if epoch == 0 || events.iter().any(|event| event.sample_seq != epoch) {
         return Err("同一样本混入了其它 epoch".to_owned());

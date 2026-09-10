@@ -91,7 +91,7 @@ pub enum FaultCode {
     ///
     /// **不**来自 `AdapterResp::Err(AdapterErr::SafetyLatched)` —— v9 finding
     /// #3 收紧：latch 拒请求 = 正常保护，非"停机失败"，由 ipc_tick A3 升
-    /// `Fault(AdapterErr)`（见 [`crate::ipc_tick`]）。
+    /// `Fault(AdapterErr)`（见 [`crate::ipc_thread`]）。
     ///
     /// 比 `AdapterErr` 更高优级，提示上游"硬件 fail-safe 没拿到证据，需要
     /// 人工现场确认"。
@@ -281,7 +281,7 @@ const _: () = assert!(
 
 // ============================================================================
 // task-30 v9 / M7：plan_transition / commit_transition / commit_fault API
-// + EventQueue + drain_emergency
+// + 原持责执行路径
 // ============================================================================
 
 use robot_core::executor_ctrl::{AdapterNormalReq, OutputPolicy};
@@ -453,12 +453,6 @@ const fn fault_severity(fault: FaultCode) -> u8 {
 }
 
 // ============================================================================
-// EventQueue（task-30 v9 §4.4.3 errata Step 1 用）
-// ============================================================================
-
-pub use crate::event_ingress::EventQueue;
-
-// ============================================================================
 // try_transition
 // ============================================================================
 
@@ -516,16 +510,12 @@ pub fn try_transition(cur: S0State, ev: Event, g: &Guards) -> Result<S0State, Re
 
         // ---- SAFE → SAFE（ClearEStop control action）----
         //
-        // **A1-2**：state_machine 不再假设 latch 已被外层清掉。
-        // (Safe, ClearEStop) 静态允许；真正的清 latch（fsync +
-        // `clear_safety_latch()` + `guards.estop_latched` 翻转）由 ipc_tick
-        // 拿到本 plan 之后调 `clear_estop_action::try_apply_clear_estop`
-        // 完成。action handler 失败时 ipc_tick 不 commit_transition，state
-        // 留 Safe。
+        // (Safe, ClearEStop) 只表达业务允许，不能授予清锁权限。
+        // 实际 live RR 由 clear_coordination 预约原 authority、等待唯一
+        // writer 的文件完成并真实退休。裸控制事件不能绕过该拥有事务。
         //
         // 这条 transition 故意不检查 `g.estop_latched`——真正的硬件断扭
-        // 确认由 action handler 内部通过 `executor_ctrl.safety_state() ==
-        // TorqueOffConfirmed` 完成（看硬件实际，不看软件 guard 副本）。
+        // 确认由真实 authority 的断扭观测守门，不由 guard 副本代替。
         (S::Safe, E::ClearEStop) => Ok(S::Safe),
 
         // ---- READY → ENABLED.ACTIVE ----
@@ -1004,7 +994,6 @@ mod tests {
 
     // ============================================================================
     // task-30 v9 / M7：plan_transition / commit_transition / commit_fault /
-    // EventQueue 单测
     // ============================================================================
 
     /// **plan_transition vs try_transition 一致性**：同 `(cur, ev, guards)`
@@ -1127,84 +1116,6 @@ mod tests {
 
         commit_fault(&mut state, FaultCode::SafetyStopFailed);
         assert_eq!(state, S0State::Fault(FaultCode::SafetyStopFailed));
-    }
-
-    // ---- EventQueue + drain_emergency ----
-
-    #[test]
-    fn event_queue_fifo_push_pop() {
-        let mut q = EventQueue::new();
-        assert!(q.is_empty());
-        q.push(Event::Heartbeat);
-        q.push(Event::Enable);
-        assert_eq!(q.len(), 2);
-        assert_eq!(q.pop(), Some(Event::Heartbeat));
-        assert_eq!(q.pop(), Some(Event::Enable));
-        assert_eq!(q.pop(), None);
-    }
-
-    /// **v9 §0.5 A1 关键**：drain_emergency 摘 EStop / SafetyStopFailed，
-    /// 其它事件原序保留。
-    #[test]
-    fn event_queue_drain_emergency_estop_first() {
-        let mut q = EventQueue::new();
-        q.push(Event::Heartbeat);
-        q.push(Event::EStop);
-        q.push(Event::Enable);
-        q.push(Event::AdapterErr(FaultCode::AdapterErr));
-
-        // drain 出 EStop（第一个 emergency）
-        assert_eq!(q.drain_emergency(), Some(Event::EStop));
-        // 其它事件原序保留
-        assert_eq!(q.pop(), Some(Event::Heartbeat));
-        assert_eq!(q.pop(), Some(Event::Enable));
-        assert_eq!(q.pop(), Some(Event::AdapterErr(FaultCode::AdapterErr)));
-        assert_eq!(q.pop(), None);
-    }
-
-    /// `AdapterErr(SafetyStopFailed)` 也算 emergency；`AdapterErr(其它)` 不算。
-    #[test]
-    fn event_queue_drain_emergency_safety_stop_failed() {
-        let mut q = EventQueue::new();
-        q.push(Event::Heartbeat);
-        q.push(Event::AdapterErr(FaultCode::AdapterErr)); // **不**是 emergency
-        q.push(Event::AdapterErr(FaultCode::SafetyStopFailed)); // 是 emergency
-        q.push(Event::Stop);
-
-        assert_eq!(
-            q.drain_emergency(),
-            Some(Event::AdapterErr(FaultCode::SafetyStopFailed))
-        );
-        // AdapterErr(AdapterErr) 留下
-        assert_eq!(q.pop(), Some(Event::Heartbeat));
-        assert_eq!(q.pop(), Some(Event::AdapterErr(FaultCode::AdapterErr)));
-        assert_eq!(q.pop(), Some(Event::Stop));
-    }
-
-    #[test]
-    fn event_queue_drain_emergency_returns_none_when_no_emergency() {
-        let mut q = EventQueue::new();
-        q.push(Event::Heartbeat);
-        q.push(Event::Stop);
-        assert_eq!(q.drain_emergency(), None);
-        // 队列不变
-        assert_eq!(q.len(), 2);
-    }
-
-    /// drain_emergency 多次调用：先 EStop 后 SafetyStopFailed（按 push 顺序）。
-    #[test]
-    fn event_queue_drain_emergency_multiple_returns_in_push_order() {
-        let mut q = EventQueue::new();
-        q.push(Event::EStop);
-        q.push(Event::AdapterErr(FaultCode::SafetyStopFailed));
-        q.push(Event::Heartbeat);
-        assert_eq!(q.drain_emergency(), Some(Event::EStop));
-        assert_eq!(
-            q.drain_emergency(),
-            Some(Event::AdapterErr(FaultCode::SafetyStopFailed))
-        );
-        assert_eq!(q.drain_emergency(), None);
-        assert_eq!(q.pop(), Some(Event::Heartbeat));
     }
 
     // ---- v0.5 候选 C：`SetEnabled(false)` = Disable ----

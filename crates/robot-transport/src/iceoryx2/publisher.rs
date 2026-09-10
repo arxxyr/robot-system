@@ -34,6 +34,7 @@ use robot_msg::markers::BodyMarker;
 use robot_msg::msg::{FrameHeader as FbFrameHeader, FrameHeaderArgs};
 
 use crate::error::TransportError;
+use crate::writer::PublishFailure;
 
 /// iceoryx2 payload 统一用 `[u8]`（变长切片）+ `UserHeader = ()`。
 pub(crate) type IxPubSubPublisher = IxPublisher<IxService, [u8], ()>;
@@ -157,24 +158,31 @@ impl Iceoryx2SampleWriter<'_> {
         self.blob_bytes = None;
     }
 
-    pub(crate) fn iceoryx2_publish(mut self) -> Result<(), TransportError> {
-        let wire = self.build_sample()?;
+    pub(crate) fn iceoryx2_publish(self) -> Result<(), TransportError> {
+        self.publish_impl()
+            .map(|_| ())
+            .map_err(PublishFailure::into_transport)
+    }
+
+    pub(crate) fn publish_impl(mut self) -> Result<usize, PublishFailure> {
+        let wire = self.build_sample().map_err(PublishFailure::BeforeHistory)?;
         if wire.len() > self.max_sample_size {
-            return Err(TransportError::SampleTooLarge {
-                size: wire.len(),
-                limit: self.max_sample_size,
-            });
+            return Err(PublishFailure::BeforeHistory(
+                TransportError::SampleTooLarge {
+                    size: wire.len(),
+                    limit: self.max_sample_size,
+                },
+            ));
         }
-        let sample = self
-            .publisher
-            .loan_slice_uninit(wire.len())
-            .map_err(|e| TransportError::Backend(format!("iceoryx2 loan_slice_uninit: {e:?}")))?;
+        let sample = self.publisher.loan_slice_uninit(wire.len()).map_err(|e| {
+            PublishFailure::BeforeHistory(TransportError::Backend(format!(
+                "iceoryx2 loan_slice_uninit: {e:?}"
+            )))
+        })?;
         let sample = sample.write_from_slice(&wire);
-        sample
-            .send()
-            .map_err(|e| TransportError::Backend(format!("iceoryx2 send: {e:?}")))?;
+        let recipients = sample.send().map_err(classify_send_error)?;
         self.consumed = true;
-        Ok(())
+        Ok(recipients)
     }
 
     /// §2.2 wire 格式合成 —— 与 `mock::build_sample` 同算法（两遍 probe+real
@@ -280,4 +288,50 @@ fn encode_header(args: &FrameHeaderArgs) -> Vec<u8> {
     let fh = FbFrameHeader::create(&mut fbb, args);
     fbb.finish(fh, None);
     fbb.finished_data().to_vec()
+}
+
+/// 仅依据 0.9.3 的真实 `send_sample` 顺序分类，不根据错误文字猜测副作用。
+fn classify_send_error(error: iceoryx2::port::SendError) -> PublishFailure {
+    use iceoryx2::port::SendError;
+    let source = TransportError::Backend(format!("iceoryx2 send: {error:?}"));
+    match error {
+        SendError::ConnectionBrokenSinceSenderNoLongerExists | SendError::ConnectionError(_) => {
+            PublishFailure::BeforeHistory(source)
+        }
+        SendError::UnableToDeliver
+        | SendError::InternalError
+        | SendError::ConnectionCorrupted
+        | SendError::LoanError(_) => PublishFailure::Uncertain(source),
+    }
+}
+
+#[cfg(test)]
+mod publish_failure_tests {
+    use super::*;
+    use iceoryx2::port::update_connections::ConnectionFailure;
+    use iceoryx2::port::{LoanError, SendError};
+    use iceoryx2_cal::zero_copy_connection::ZeroCopyCreationError;
+
+    #[test]
+    fn all_send_error_variants_use_the_real_history_boundary() {
+        // 这是同一生产映射函数的枚举夹具，不宣称真实内核触发过这些故障。
+        for (error, before) in [
+            (SendError::ConnectionBrokenSinceSenderNoLongerExists, true),
+            (
+                SendError::ConnectionError(ConnectionFailure::FailedToEstablishConnection(
+                    ZeroCopyCreationError::InternalError,
+                )),
+                true,
+            ),
+            (SendError::UnableToDeliver, false),
+            (SendError::InternalError, false),
+            (SendError::ConnectionCorrupted, false),
+            (SendError::LoanError(LoanError::OutOfMemory), false),
+        ] {
+            let original = TransportError::Backend(format!("iceoryx2 send: {error:?}"));
+            let failure = classify_send_error(error);
+            assert_eq!(matches!(&failure, PublishFailure::BeforeHistory(_)), before);
+            assert_eq!(failure.into_transport(), original);
+        }
+    }
 }

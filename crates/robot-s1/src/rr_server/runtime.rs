@@ -147,11 +147,65 @@ pub struct RrServerMetrics {
 
 /// `rr_server_thread` 句柄。caller 通过 [`Self::request_stop`] +
 /// [`Self::join`] 关停。
+#[derive(Debug)]
 pub struct RrServerThreadHandle {
     join: JoinHandle<()>,
     stop: Arc<AtomicBool>,
     metrics: Arc<RrServerMetrics>,
     topic: String,
+}
+
+/// RR 端口在同一 owner 内先于其 Node 析构；生产工厂必须携带原 Node。
+pub struct OwnedRrServer<Req: BodyMarker, Resp: BodyMarker> {
+    server: Iceoryx2RrServer<Req, Resp>,
+    _node: Option<iceoryx2::node::Node<iceoryx2::service::ipc::Service>>,
+}
+impl<Req: BodyMarker, Resp: BodyMarker> OwnedRrServer<Req, Resp> {
+    #[must_use]
+    pub fn new(
+        server: Iceoryx2RrServer<Req, Resp>,
+        node: iceoryx2::node::Node<iceoryx2::service::ipc::Service>,
+    ) -> Self {
+        Self {
+            server,
+            _node: Some(node),
+        }
+    }
+}
+impl<Req: BodyMarker, Resp: BodyMarker> From<Iceoryx2RrServer<Req, Resp>>
+    for OwnedRrServer<Req, Resp>
+{
+    fn from(server: Iceoryx2RrServer<Req, Resp>) -> Self {
+        Self {
+            server,
+            _node: None,
+        }
+    }
+}
+
+/// RR 工厂的真实初始化错误；按值送回同步 ready，不将预期配置错误改成线程 panic。
+#[derive(Debug, thiserror::Error)]
+pub enum RrServerInitError {
+    #[error("RR Node 创建失败: {0}")]
+    Node(#[source] iceoryx2::node::NodeCreationFailure),
+    #[error("RR 传输初始化失败: {0}")]
+    Transport(#[source] robot_transport::TransportError),
+    #[error("显式 S1 RR 工厂未返回静态 limits")]
+    MissingLimits,
+}
+
+/// 成功创建 OS 线程后，即使同步 ready 断链也按值返回原句柄。
+#[derive(Debug, thiserror::Error)]
+pub enum RrServerSpawnError {
+    #[error("RR thread spawn failed: {0}")]
+    ThreadSpawn(#[source] std::io::Error),
+    #[error("RR server failed before signalling ready")]
+    ReadyDisconnected { handle: RrServerThreadHandle },
+    #[error("RR server 初始化未就绪: {reason}")]
+    ReadyFailed {
+        handle: RrServerThreadHandle,
+        reason: RrServerInitError,
+    },
 }
 
 impl RrServerThreadHandle {
@@ -236,18 +290,34 @@ impl S1RrServerHandles {
 ///
 /// # Errors
 ///
-/// - `server_factory` panic（factory 起 iceoryx2 service 失败 / port 耗
-///   尽等）。
-/// - `thread::Builder::spawn` 失败（极罕见）。
-pub fn spawn_task_invoke_server<F, H>(
+/// - `thread::Builder::spawn` 失败返回原 OS 错误。
+/// - 工厂线程在 unwind 构建下 panic，返回 ready 断链和原句柄；abort 构建保持进程终止。
+pub fn spawn_task_invoke_server<F, H, P>(
     cfg: RrServerThreadConfig,
     server_factory: F,
     handler: H,
-) -> std::io::Result<RrServerThreadHandle>
+) -> Result<RrServerThreadHandle, RrServerSpawnError>
 where
-    F: FnOnce() -> Iceoryx2RrServer<markers::InvokeTaskRequest, markers::InvokeTaskResponse>
-        + Send
-        + 'static,
+    F: FnOnce() -> P + Send + 'static,
+    P: Into<OwnedRrServer<markers::InvokeTaskRequest, markers::InvokeTaskResponse>>,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
+{
+    try_spawn_task_invoke_server(cfg, move || Ok(server_factory()), handler)
+}
+
+/// 同原 RR 生命周期接受可失败工厂；失败也返回实际已创建线程的原句柄。
+///
+/// # Errors
+///
+/// OS spawn 失败、真实工厂初始化失败或 ready 断链分别保留原错误。
+pub fn try_spawn_task_invoke_server<F, H, P>(
+    cfg: RrServerThreadConfig,
+    server_factory: F,
+    handler: H,
+) -> Result<RrServerThreadHandle, RrServerSpawnError>
+where
+    F: FnOnce() -> Result<P, RrServerInitError> + Send + 'static,
+    P: Into<OwnedRrServer<markers::InvokeTaskRequest, markers::InvokeTaskResponse>>,
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     spawn_typed(
@@ -268,15 +338,32 @@ where
 /// # Errors
 ///
 /// 同 [`spawn_task_invoke_server`]。
-pub fn spawn_task_cancel_server<F, H>(
+pub fn spawn_task_cancel_server<F, H, P>(
     cfg: RrServerThreadConfig,
     server_factory: F,
     handler: H,
-) -> std::io::Result<RrServerThreadHandle>
+) -> Result<RrServerThreadHandle, RrServerSpawnError>
 where
-    F: FnOnce() -> Iceoryx2RrServer<markers::CancelTaskRequest, markers::CancelTaskResponse>
-        + Send
-        + 'static,
+    F: FnOnce() -> P + Send + 'static,
+    P: Into<OwnedRrServer<markers::CancelTaskRequest, markers::CancelTaskResponse>>,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
+{
+    try_spawn_task_cancel_server(cfg, move || Ok(server_factory()), handler)
+}
+
+/// 同原 RR 生命周期接受可失败工厂；失败也返回实际已创建线程的原句柄。
+///
+/// # Errors
+///
+/// OS spawn 失败、真实工厂初始化失败或 ready 断链分别保留原错误。
+pub fn try_spawn_task_cancel_server<F, H, P>(
+    cfg: RrServerThreadConfig,
+    server_factory: F,
+    handler: H,
+) -> Result<RrServerThreadHandle, RrServerSpawnError>
+where
+    F: FnOnce() -> Result<P, RrServerInitError> + Send + 'static,
+    P: Into<OwnedRrServer<markers::CancelTaskRequest, markers::CancelTaskResponse>>,
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     spawn_typed(
@@ -297,15 +384,32 @@ where
 /// # Errors
 ///
 /// 同 [`spawn_task_invoke_server`]。
-pub fn spawn_task_status_server<F, H>(
+pub fn spawn_task_status_server<F, H, P>(
     cfg: RrServerThreadConfig,
     server_factory: F,
     handler: H,
-) -> std::io::Result<RrServerThreadHandle>
+) -> Result<RrServerThreadHandle, RrServerSpawnError>
 where
-    F: FnOnce() -> Iceoryx2RrServer<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>
-        + Send
-        + 'static,
+    F: FnOnce() -> P + Send + 'static,
+    P: Into<OwnedRrServer<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>>,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
+{
+    try_spawn_task_status_server(cfg, move || Ok(server_factory()), handler)
+}
+
+/// 同原 RR 生命周期接受可失败工厂；失败也返回实际已创建线程的原句柄。
+///
+/// # Errors
+///
+/// OS spawn 失败、真实工厂初始化失败或 ready 断链分别保留原错误。
+pub fn try_spawn_task_status_server<F, H, P>(
+    cfg: RrServerThreadConfig,
+    server_factory: F,
+    handler: H,
+) -> Result<RrServerThreadHandle, RrServerSpawnError>
+where
+    F: FnOnce() -> Result<P, RrServerInitError> + Send + 'static,
+    P: Into<OwnedRrServer<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>>,
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     spawn_typed(
@@ -326,15 +430,32 @@ where
 /// # Errors
 ///
 /// 同 [`spawn_task_invoke_server`]。
-pub fn spawn_clear_error_server<F, H>(
+pub fn spawn_clear_error_server<F, H, P>(
     cfg: RrServerThreadConfig,
     server_factory: F,
     handler: H,
-) -> std::io::Result<RrServerThreadHandle>
+) -> Result<RrServerThreadHandle, RrServerSpawnError>
 where
-    F: FnOnce() -> Iceoryx2RrServer<markers::ClearErrorRequest, markers::ClearErrorResponse>
-        + Send
-        + 'static,
+    F: FnOnce() -> P + Send + 'static,
+    P: Into<OwnedRrServer<markers::ClearErrorRequest, markers::ClearErrorResponse>>,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
+{
+    try_spawn_clear_error_server(cfg, move || Ok(server_factory()), handler)
+}
+
+/// 同原 RR 生命周期接受可失败工厂；失败也返回实际已创建线程的原句柄。
+///
+/// # Errors
+///
+/// OS spawn 失败、真实工厂初始化失败或 ready 断链分别保留原错误。
+pub fn try_spawn_clear_error_server<F, H, P>(
+    cfg: RrServerThreadConfig,
+    server_factory: F,
+    handler: H,
+) -> Result<RrServerThreadHandle, RrServerSpawnError>
+where
+    F: FnOnce() -> Result<P, RrServerInitError> + Send + 'static,
+    P: Into<OwnedRrServer<markers::ClearErrorRequest, markers::ClearErrorResponse>>,
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     spawn_typed(
@@ -355,17 +476,18 @@ where
 /// fn pointer（4 个 [`spawn_*_server`](spawn_task_invoke_server) 入口各自传）。
 type DecodeErrorReply = fn(&[u8]) -> Vec<u8>;
 
-fn spawn_typed<Req, Resp, F, H>(
+fn spawn_typed<Req, Resp, F, H, P>(
     thread_name: &'static str,
     cfg: RrServerThreadConfig,
     server_factory: F,
     handler: H,
     decode_error_reply: DecodeErrorReply,
-) -> std::io::Result<RrServerThreadHandle>
+) -> Result<RrServerThreadHandle, RrServerSpawnError>
 where
     Req: BodyMarker,
     Resp: BodyMarker,
-    F: FnOnce() -> Iceoryx2RrServer<Req, Resp> + Send + 'static,
+    F: FnOnce() -> Result<P, RrServerInitError> + Send + 'static,
+    P: Into<OwnedRrServer<Req, Resp>>,
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static,
 {
     let stop = Arc::new(AtomicBool::new(false));
@@ -375,38 +497,42 @@ where
     let metrics_clone = Arc::clone(&metrics);
     let topic_owned = cfg.topic.clone();
 
-    // ready signal：spawn 返前确认 server_factory 成功执行（factory panic
-    // / iceoryx2 错都在这里捕获）。同 A1 `spawn_rr_server_thread` 模式。
-    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<()>(0);
+    // 原同步 ready 不加截止；真实 Err 按值归还，panic 仍由断链/实际 profile 表现。
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<Result<(), RrServerInitError>>(0);
 
     let join = thread::Builder::new()
         .name(thread_name.into())
         .spawn(move || {
-            let server = server_factory();
-            let _ = ready_tx.send(());
+            let owned: OwnedRrServer<Req, Resp> = match server_factory() {
+                Ok(owned) => owned.into(),
+                Err(reason) => {
+                    let _ = ready_tx.send(Err(reason));
+                    return;
+                }
+            };
+            let _ = ready_tx.send(Ok(()));
             drop(ready_tx);
             run_handler_loop(
                 &cfg,
-                &server,
+                &owned.server,
                 &handler,
                 decode_error_reply,
                 &stop_clone,
                 &metrics_clone,
             );
-        })?;
-
-    if ready_rx.recv().is_err() {
-        return Err(std::io::Error::other(format!(
-            "rr_server_thread {thread_name}: server_factory panicked before signalling ready"
-        )));
-    }
-
-    Ok(RrServerThreadHandle {
+        })
+        .map_err(RrServerSpawnError::ThreadSpawn)?;
+    let handle = RrServerThreadHandle {
         join,
         stop,
         metrics,
         topic: topic_owned,
-    })
+    };
+    match ready_rx.recv() {
+        Ok(Ok(())) => Ok(handle),
+        Ok(Err(reason)) => Err(RrServerSpawnError::ReadyFailed { handle, reason }),
+        Err(_) => Err(RrServerSpawnError::ReadyDisconnected { handle }),
+    }
 }
 
 fn run_handler_loop<Req, Resp, H>(
@@ -432,7 +558,10 @@ fn run_handler_loop<Req, Resp, H>(
         );
         // drain 所有 pending wire request：循环 try_recv 直到 Ok(None) /
         // Err。同步 reply，无 pending 队列。
-        loop {
+        for _ in 0..cfg.max_in_flight {
+            if stop.load(Ordering::Acquire) {
+                break;
+            }
             match server.try_recv() {
                 Ok(Some(active)) => {
                     metrics.requests_received.fetch_add(1, Ordering::Relaxed);
@@ -637,6 +766,87 @@ mod tests {
         let req = flatbuffers::root::<robot_msg::msg::InvokeTaskRequest>(payload).unwrap();
         let request_id = req.request_id().unwrap_or_default();
         build_invoke_task_response(request_id, ActionRpcStatus::Ok, "", request_id, 7)
+    }
+
+    #[test]
+    fn real_profile_mismatch_returns_original_reason_and_joinable_handle() {
+        use robot_transport::iceoryx2::request_response::rr_server_with;
+        use robot_transport::iceoryx2::{RrProfile, RrStaticLimits};
+
+        let topic = fresh_topic("real_mismatch");
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let profile = RrProfile {
+            l: 3,
+            ..RrProfile::S1_TASK
+        };
+        let existing = rr_server_with::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
+            &node, &topic, &profile,
+        )
+        .unwrap();
+        let owned_topic = topic.clone();
+        let result = try_spawn_task_invoke_server(
+            cfg_for(&topic),
+            move || {
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .map_err(RrServerInitError::Node)?;
+                let server = rr_server_with::<
+                    markers::InvokeTaskRequest,
+                    markers::InvokeTaskResponse,
+                >(&node, &owned_topic, &RrProfile::S1_TASK)
+                .map_err(RrServerInitError::Transport)?;
+                Ok(OwnedRrServer::new(server, node))
+            },
+            |_| panic!("工厂拒绝后不得调用 handler"),
+        );
+        let RrServerSpawnError::ReadyFailed { handle, reason } = result.unwrap_err() else {
+            panic!("真实 QoS 不兼容必须返原 typed ready 错误");
+        };
+        let metrics = handle.metrics();
+        assert_eq!(handle.topic(), topic);
+        handle.request_stop();
+        handle
+            .join()
+            .expect("预期工厂错误应真实正常返回，不能伪造 panic");
+        assert!(matches!(
+            reason,
+            RrServerInitError::Transport(robot_transport::TransportError::RrConfigMismatch {
+                field: "max_active_requests_per_client",
+                expected: 4,
+                actual: 3,
+            })
+        ));
+        assert_eq!(metrics.loop_tick_count.load(Ordering::Acquire), 0);
+        assert_eq!(metrics.handler_replies.load(Ordering::Acquire), 0);
+        assert_eq!(existing.limits(), Some(RrStaticLimits { l: 3, c: 8 }));
+        // 原服务保活，按原 profile 重新打开仍成功；没有替它重建或改容量。
+        let client = robot_transport::iceoryx2::request_response::rr_client_with::<
+            markers::InvokeTaskRequest,
+            markers::InvokeTaskResponse,
+        >(&node, &topic, &profile)
+        .unwrap();
+        assert_eq!(client.limits(), existing.limits());
+    }
+
+    #[test]
+    fn real_factory_panic_returns_disconnected_handle_and_original_join_error() {
+        let topic = fresh_topic("real_factory_panic");
+        let result = spawn_task_invoke_server(
+            cfg_for(&topic),
+            || -> Iceoryx2RrServer<markers::InvokeTaskRequest, markers::InvokeTaskResponse> {
+                panic!("s1_rr_original_factory_panic");
+            },
+            invoke_stub_handler,
+        );
+        let RrServerSpawnError::ReadyDisconnected { handle } = result.unwrap_err() else {
+            panic!("真正线程 panic 应沿原 ready 断链返回");
+        };
+        handle.request_stop();
+        let panic = handle.join().expect_err("原线程必须真 join 为 Err");
+        assert_eq!(
+            panic.downcast_ref::<&str>(),
+            Some(&"s1_rr_original_factory_panic")
+        );
     }
 
     #[test]

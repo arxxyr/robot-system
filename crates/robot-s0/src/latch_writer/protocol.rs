@@ -7,6 +7,7 @@
 //! 完成类型全部 `Copy`；真实阶段与相位随完成一起上报，不扁平化为字符串。
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError, TrySendError, bounded};
 use robot_core::control_authority::{CleanupKind, RepairTarget};
@@ -133,12 +134,23 @@ pub enum PersistCompletion {
     },
 }
 
-/// IPC 与 writer 共享的三个原子字。
+/// 关闭封口后的单次刷新结果，只由真实 writer 发布。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum FlushOutcome {
+    Complete = 1,
+    ObligationUnsettled = 2,
+    TransactionOpen = 3,
+}
+
+/// IPC 与 writer 共享的持久化责任与单次刷新观测。
 #[derive(Debug)]
 pub struct PersistShared {
     pub obligation: EStopObligation,
     pub progress: WriterProgress,
     pub announce: CommandAnnounce,
+    flush_requested: AtomicBool,
+    flush_result: AtomicU8,
 }
 
 impl PersistShared {
@@ -152,6 +164,8 @@ impl PersistShared {
             obligation: EStopObligation::new(base)?,
             progress: WriterProgress::new(base),
             announce: CommandAnnounce::new(base),
+            flush_requested: AtomicBool::new(false),
+            flush_result: AtomicU8::new(0),
         })
     }
 
@@ -164,7 +178,38 @@ impl PersistShared {
             obligation: EStopObligation::new_with_counter(base, counter)?,
             progress: WriterProgress::new(base),
             announce: CommandAnnounce::new(base),
+            flush_requested: AtomicBool::new(false),
+            flush_result: AtomicU8::new(0),
         })
+    }
+
+    /// IPC 的真实输入/回复封口后，main 请求一次刷新；重复请求不刷新结果。
+    pub fn request_flush(&self) {
+        self.flush_requested.store(true, Ordering::Release);
+    }
+
+    #[must_use]
+    pub fn flush_outcome(&self) -> Option<FlushOutcome> {
+        match self.flush_result.load(Ordering::Acquire) {
+            1 => Some(FlushOutcome::Complete),
+            2 => Some(FlushOutcome::ObligationUnsettled),
+            3 => Some(FlushOutcome::TransactionOpen),
+            _ => None,
+        }
+    }
+
+    pub(super) fn flush_pending(&self) -> bool {
+        self.flush_requested.load(Ordering::Acquire)
+            && self.flush_result.load(Ordering::Acquire) == 0
+    }
+
+    pub(super) fn finish_flush(&self, outcome: FlushOutcome) {
+        let _ = self.flush_result.compare_exchange(
+            0,
+            outcome as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
     }
 }
 

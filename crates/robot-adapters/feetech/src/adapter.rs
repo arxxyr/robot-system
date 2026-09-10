@@ -32,7 +32,7 @@ use robot_core::adapter::{
 use robot_core::diag::{DiagEvent, DiagSink};
 use robot_core::error::RobotError;
 use robot_core::executor_ctrl::OutputSafetyProbe;
-use robot_core::serial_services::{BusOpClass, CommErrorKind, PreemptProbe};
+use robot_core::serial_services::{BusOpClass, CommErrorKind, LeasedPreemptProbe};
 use robot_core::time::{DurationNs, RobotClock};
 
 use crate::bus::FeetechBus;
@@ -94,7 +94,7 @@ const SYNC_GOAL_TOLERANCE: i32 = 20;
 pub struct FeetechAdapterConfig {
     /// 同一运行时的单调时钟与构造期服务；热路径不 clone 句柄。
     pub clock: Arc<dyn RobotClock>,
-    pub preempt: Option<Arc<dyn PreemptProbe>>,
+    pub preempt: Option<Arc<dyn LeasedPreemptProbe>>,
     pub diag: Option<Arc<dyn DiagSink>>,
     pub call_deadline: Duration,
     pub adapter_name: &'static str,
@@ -114,7 +114,7 @@ pub struct FeetechAdapterConfig {
 /// `JointStateBuf` / `JointCommandView` 适配起来。
 pub struct FeetechAdapter<T: SerialTransport> {
     clock: Arc<dyn RobotClock>,
-    preempt: Option<Arc<dyn PreemptProbe>>,
+    preempt: Option<Arc<dyn LeasedPreemptProbe>>,
     diag: Option<Arc<dyn DiagSink>>,
     connected: bool,
     info: AdapterInfo,

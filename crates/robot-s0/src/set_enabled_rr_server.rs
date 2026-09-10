@@ -1,476 +1,384 @@
-//! `set_enabled_rr_server` —— v0.5 候选 C `SetEnabled` RR server 线程。
-//!
-//! ## 角色
-//!
-//! D5 拍板的线程模型：**第 2 个专用 rr_server**（topic
-//! `/<robot_id>/control/set_enabled`），**ClearEStop `rr_server_thread` 0 改**。
-//! 本模块沿 `rr_server_thread`（A1-3）**copy** 范式，仅做 iceoryx2 RR I/O：
-//!
-//! - 收 wire `SetEnabledRequest` → decode → 转发 [`SetEnabledRrRequest`] 到
-//!   `ipc_thread`（crossbeam channel）；
-//! - 接 `ipc_thread` 派发的 [`SetEnabledRrResponse`] → encode wire
-//!   `SetEnabledResponse` → `active.send_response(bytes)`。
-//!   **不**持 action 状态、**不**碰 state machine / adapter、**不**做 deadline
-//!   gate（deadline 权威在 `ipc_thread` §5.5b drain + §6.6b pending）。
-//!
-//! ## 与 ClearEStop rr_server 的差异
-//!
-//! 1. **response 无 `dry_run` 字段**：`set_enabled.fbs` `SetEnabledResponse`
-//!    无 `dry_run`（ClearEStop 有），故 [`PendingRr`] 不回传 `dry_run`。
-//! 2. **encode 带 domain**：`build_set_enabled_response` 多一个 `domain:
-//!    SetEnabledStatus` 参数（细粒度审计 enum），wire `status: RpcStatus` 另带。
-//! 3. **多 tick 语义在 `ipc_thread`**：本 server 仍只做 I/O；pending 观测在
-//!    `ipc_thread`（区别仅在 response 何时回来，对本 server 透明）。
-//!
-//! 复用 `rr_server_thread` 的 pub [`RrServerThreadConfig`] / [`RrServerMetrics`]
-//! （纯配置 + 计数器，无行为）；句柄 [`SetEnabledRrServerHandle`] 本模块自带
-//! （`rr_server_thread` 的 handle 字段私有，不可跨模块构造）。
-//!
-//! ## shutdown 行为
-//!
-//! `request_stop()` 后 `run_loop` 调 [`abort_pending_on_shutdown`]：给每条
-//! in-flight active best-effort 回 `RpcStatus::Aborted` + domain
-//! `SetEnabledStatus::PreemptedByShutdown` + `error_msg = "s0 daemon shutting
-//! down"`。**不**伪造 Ack；**不** drain 等 ipc_thread。沿 ClearEStop 拍板。
-
-#![allow(clippy::doc_markdown)]
-
+//! `SetEnabled` RR：真实服务限额准入、独立双通道、按原 route 退休。
+//! 停止时先关闭唯一来源 sender；已交 IPC 的原 active/Slot 留到真实退休回复。
+use crate::ipc_thread::{
+    ReadyReader, ReadyState, SetEnabledRrPayload, SetEnabledRrRequest, SetEnabledRrResponse,
+};
+use crate::rr_admission::{ControlPeerLedger, RrRequestClass, Slot};
+use crate::rr_server_thread::{
+    OwnedRrServerPorts, RrInitError, RrServerMetrics, RrServerThreadConfig, TopicRequestSenders,
+    make_ledger, release_slot,
+};
+use crossbeam_channel::{Receiver, TrySendError};
+use robot_core::time::RobotClock;
+use robot_msg::build_helpers::build_set_enabled_response_typed;
+use robot_msg::markers;
+use robot_msg::msg::{RpcStatus, SetEnabledRequest as FbReq, SetEnabledStatus, SideEffect};
+use robot_transport::iceoryx2::RrPeerId;
+use robot_transport::iceoryx2::request_response::{Iceoryx2ActiveRequest, Iceoryx2RrServer};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crossbeam_channel::{Receiver, Sender, TrySendError};
-use robot_core::time::RobotClock;
-use robot_msg::build_helpers::build_set_enabled_response;
-use robot_msg::markers;
-use robot_msg::msg::{RpcStatus, SetEnabledRequest as FbReq, SetEnabledStatus};
-use robot_transport::iceoryx2::request_response::{Iceoryx2ActiveRequest, Iceoryx2RrServer};
-
-use crate::ipc_thread::{SetEnabledRrPayload, SetEnabledRrRequest, SetEnabledRrResponse};
-use crate::rr_server_thread::{RrServerMetrics, RrServerThreadConfig};
-
-// ============================================================================
-// Handle
-// ============================================================================
-
-/// `set_enabled_rr_server` 句柄。caller 通过 `request_stop()` + `join()` 关停。
 pub struct SetEnabledRrServerHandle {
     join: JoinHandle<()>,
     stop: Arc<AtomicBool>,
     metrics: Arc<RrServerMetrics>,
+    ready: ReadyReader<RrInitError>,
 }
-
 impl SetEnabledRrServerHandle {
-    /// 取 metrics 引用观察运行期统计。
     #[must_use]
     pub fn metrics(&self) -> Arc<RrServerMetrics> {
         Arc::clone(&self.metrics)
     }
-
-    /// 通知主循环退出（下一轮 stop check 命中即跳出）。
     pub fn request_stop(&self) {
-        self.stop.swap(true, Ordering::AcqRel);
+        self.stop.store(true, Ordering::Release);
     }
-
     #[must_use]
     pub fn is_finished(&self) -> bool {
         self.join.is_finished()
     }
-
-    /// 等线程退出。
-    ///
-    /// # Errors
-    ///
-    /// 线程内部 panic → `Err(Box<dyn Any + Send>)`。
-    pub fn join(self) -> std::thread::Result<()> {
+    pub fn poll_ready(&mut self) -> ReadyState<'_, RrInitError> {
+        self.ready.poll()
+    }
+    pub fn join(self) -> thread::Result<()> {
         self.join.join()
     }
 }
-
-// ============================================================================
-// PendingRr: 持 in-flight active request 元数据
-// ============================================================================
-
-/// in-flight RR request 元数据。按 `request_id` 跟 ipc_thread response 关联。
-/// **区别 ClearEStop**：`SetEnabledResponse` 无 `dry_run` 字段，故不回传。
 struct PendingRr {
     request_id: String,
-    /// owned active request handle；`send_response` 时 by-value consume。
+    slot: Slot<RrPeerId>,
     active: Iceoryx2ActiveRequest<markers::SetEnabledRequest, markers::SetEnabledResponse>,
 }
-
-// ============================================================================
-// spawn API
-// ============================================================================
-
-/// 起 `set_enabled_rr_server` 线程。
-///
-/// `server_factory` closure 在新线程内执行（iceoryx2 RR server `!Send`，必须
-/// 在 owner 线程内构造；同 `rr_server_thread::spawn_rr_server_thread` 模式）。
-///
-/// `rr_request_tx` / `rr_response_rx` 跟 `ipc_thread::SetEnabledRrChannels::
-/// request_rx` / `response_tx` 是同对；channel buffer `bounded(64)`。
-///
-/// # Errors
-///
-/// - `server_factory` panic（iceoryx2 service 起失败 / port 耗尽等）
-/// - `thread::Builder::spawn` 失败（极罕见）
+/// OS spawn 成功即交付原句柄；服务创建与限额检查通过后才发布 Ready。
 pub fn spawn_set_enabled_rr_server_thread<F>(
     cfg: RrServerThreadConfig,
     clock: Arc<dyn RobotClock>,
-    server_factory: F,
-    rr_request_tx: Sender<SetEnabledRrRequest>,
-    rr_response_rx: Receiver<SetEnabledRrResponse>,
+    factory: F,
+    requests: TopicRequestSenders<SetEnabledRrRequest>,
+    responses: Receiver<SetEnabledRrResponse>,
     stop: Arc<AtomicBool>,
 ) -> std::io::Result<SetEnabledRrServerHandle>
 where
-    F: FnOnce() -> Iceoryx2RrServer<markers::SetEnabledRequest, markers::SetEnabledResponse>
-        + Send
+    F: FnOnce() -> Result<
+            OwnedRrServerPorts<markers::SetEnabledRequest, markers::SetEnabledResponse>,
+            RrInitError,
+        > + Send
         + 'static,
 {
-    crate::rr_server_thread::validate_rr_capacity(
-        cfg.max_in_flight,
-        rr_request_tx.capacity(),
-        rr_response_rx.capacity(),
-    )?;
     #[cfg(feature = "test-comm-fault-hook")]
     crate::comm_fault_hook::before_spawn("set_rr")?;
     let metrics = Arc::new(RrServerMetrics::default());
-
-    let stop_clone = Arc::clone(&stop);
-    let metrics_clone = Arc::clone(&metrics);
-
-    // 同步 ready signal：spawn 返回前确认 server_factory 已成功执行。
-    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<()>(0);
-
+    let thread_metrics = Arc::clone(&metrics);
+    let thread_stop = Arc::clone(&stop);
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
     let join = thread::Builder::new()
-        .name("s0_set_enabled_rr_server".into())
+        .name("s0_set_rr".into())
         .spawn(move || {
-            let server = server_factory();
-            let _ = ready_tx.send(());
+            let ports = match factory() {
+                Ok(ports) => ports,
+                Err(error) => {
+                    let _ = ready_tx.try_send(Err(error));
+                    return;
+                }
+            };
+            let ledger = match make_ledger(&ports, &requests, &responses) {
+                Ok(ledger) => ledger,
+                Err(error) => {
+                    let _ = ready_tx.try_send(Err(error));
+                    return;
+                }
+            };
+            if ready_tx.try_send(Ok(())).is_err() {
+                return;
+            }
             drop(ready_tx);
             run_loop(
                 &cfg,
                 clock.as_ref(),
-                &server,
-                &rr_request_tx,
-                &rr_response_rx,
-                &stop_clone,
-                &metrics_clone,
+                &ports.server,
+                requests,
+                &responses,
+                &thread_stop,
+                &thread_metrics,
+                ledger,
             );
         })?;
-
-    if ready_rx.recv().is_err() {
-        return Err(std::io::Error::other(
-            "set_enabled_rr_server server_factory panicked before signalling ready",
-        ));
-    }
-
     Ok(SetEnabledRrServerHandle {
         join,
         stop,
         metrics,
+        ready: ReadyReader::new(ready_rx),
     })
 }
-
-// ============================================================================
-// 主循环
-// ============================================================================
-
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "线程逐项持有原服务端、双通道与唯一账本，保持已批准的退出归属"
+)]
 fn run_loop(
     cfg: &RrServerThreadConfig,
     clock: &dyn RobotClock,
     server: &Iceoryx2RrServer<markers::SetEnabledRequest, markers::SetEnabledResponse>,
-    rr_request_tx: &Sender<SetEnabledRrRequest>,
-    rr_response_rx: &Receiver<SetEnabledRrResponse>,
+    requests: TopicRequestSenders<SetEnabledRrRequest>,
+    responses: &Receiver<SetEnabledRrResponse>,
     stop: &AtomicBool,
     metrics: &RrServerMetrics,
+    mut ledger: ControlPeerLedger,
 ) {
-    let mut pending: VecDeque<PendingRr> = VecDeque::with_capacity(cfg.max_in_flight);
-
-    while crate::worker_stop::worker_running(
-        crate::worker_stop::WorkerKind::SetEnabledRr,
-        clock,
-        stop,
-    ) {
-        // ─── 1) drain rr_response_rx 先（释放 pending 容量减少误报 backpressure）───
-        while let Ok(resp) = rr_response_rx.try_recv() {
-            handle_response(&mut pending, &resp, metrics);
+    let mut pending = VecDeque::with_capacity(crate::event_ingress::RR_CHANNEL_CAPACITY);
+    let mut residual = Vec::new();
+    let mut source = Some(requests);
+    loop {
+        if !crate::worker_stop::worker_running(
+            crate::worker_stop::WorkerKind::SetEnabledRr,
+            clock,
+            stop,
+        ) {
+            drop(source.take());
         }
-
-        // ─── 2) drain wire request from server ───
-        //
-        // 即使 `pending.len() >= max_in_flight` 仍继续 try_recv 把 wire request
-        // 从 iceoryx2 队列拿出 → 直接 reply `ResourceExhausted`（不挂到 deadline
-        // 超时；沿 ClearEStop rr_server round 1 阻断修复）。
-        loop {
+        // 只处理有限原槽的完成；响应断链不能冒充原在飞请求退休。
+        for _ in 0..crate::event_ingress::RR_CHANNEL_CAPACITY {
+            match responses.try_recv() {
+                Ok(response) => {
+                    handle_response(&mut pending, response, &mut ledger, &mut residual, metrics);
+                }
+                Err(
+                    crossbeam_channel::TryRecvError::Empty
+                    | crossbeam_channel::TryRecvError::Disconnected,
+                ) => break,
+            }
+        }
+        if source.is_none() && pending.is_empty() && residual.is_empty() {
+            return;
+        }
+        for _ in 0..crate::event_ingress::RR_CHANNEL_CAPACITY {
+            // 每一次 wire receive 前核原停止标志，持续来流也必须交还来源 sender。
+            if !crate::worker_stop::worker_running(
+                crate::worker_stop::WorkerKind::SetEnabledRr,
+                clock,
+                stop,
+            ) {
+                drop(source.take());
+                break;
+            }
+            let Some(requests) = source.as_ref() else {
+                break;
+            };
             match server.try_recv() {
                 Ok(Some(active)) => {
                     metrics.requests_received.fetch_add(1, Ordering::Relaxed);
-                    if pending.len() >= cfg.max_in_flight {
-                        handle_pending_overflow(active, metrics);
-                    } else {
-                        handle_active_request(active, &mut pending, rr_request_tx, metrics);
-                    }
+                    handle_active_request(
+                        active,
+                        &mut pending,
+                        requests,
+                        &mut ledger,
+                        &mut residual,
+                        metrics,
+                    );
                 }
                 Ok(None) => break,
-                Err(e) => {
-                    tracing::error!(error = ?e, "set_enabled_rr_server: server.try_recv failed");
+                Err(error) => {
+                    tracing::error!(?error, "RR 接收失败");
                     break;
                 }
             }
         }
-
         thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
     }
-
-    abort_pending_on_shutdown(&mut pending, metrics);
 }
-
-/// 退出前 best-effort 给 pending 全部 in-flight active 回 `RpcStatus::Aborted`
-/// （domain `PreemptedByShutdown`，`error_msg = "s0 daemon shutting down"`）。
-/// **不**伪造 Ack、**不** drain 等 ipc_thread（沿 ClearEStop 拍板）。
-fn abort_pending_on_shutdown(pending: &mut VecDeque<PendingRr>, metrics: &RrServerMetrics) {
-    if pending.is_empty() {
-        return;
-    }
-    tracing::info!(
-        pending_count = pending.len(),
-        "set_enabled_rr_server: shutting down; aborting pending with RpcStatus::Aborted"
-    );
-    while let Some(p) = pending.pop_front() {
-        let bytes = build_set_enabled_response(
-            &p.request_id,
-            RpcStatus::Aborted,
-            SetEnabledStatus::PreemptedByShutdown,
-            0,
-            "s0 daemon shutting down",
-        );
-        if let Err(e) = p.active.send_response(&bytes) {
-            tracing::error!(
-                error = ?e,
-                request_id = %p.request_id,
-                "set_enabled_rr_server: shutdown abort send_response failed"
-            );
-            metrics.send_response_errors.fetch_add(1, Ordering::Relaxed);
-        } else {
-            metrics.responses_sent.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-}
-
-// ============================================================================
-// handle_active_request：decode + forward / 直接 reply error
-// ============================================================================
-
 fn handle_active_request(
     active: Iceoryx2ActiveRequest<markers::SetEnabledRequest, markers::SetEnabledResponse>,
     pending: &mut VecDeque<PendingRr>,
-    rr_request_tx: &Sender<SetEnabledRrRequest>,
+    requests: &TopicRequestSenders<SetEnabledRrRequest>,
+    ledger: &mut ControlPeerLedger,
+    residual: &mut Vec<Slot<RrPeerId>>,
     metrics: &RrServerMetrics,
 ) {
-    let payload = active.payload();
-
-    // FlatBuffers root verifier
-    let view = match flatbuffers::root::<FbReq>(payload) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(error = ?e, "set_enabled_rr_server: wire decode failed");
-            metrics.decode_errors.fetch_add(1, Ordering::Relaxed);
-            send_error_reply(
-                active,
-                "",
-                RpcStatus::InvalidArgument,
-                SetEnabledStatus::Unknown,
-                "wire decode failed",
-                metrics,
-            );
-            return;
-        }
-    };
-
-    let request_id = view.request_id().unwrap_or("").to_string();
-
-    // 必填字段：空 request_id 拒。
-    if request_id.is_empty() {
-        tracing::warn!("set_enabled_rr_server: empty request_id");
+    let Ok(view) = flatbuffers::root::<FbReq>(active.payload()) else {
         metrics.decode_errors.fetch_add(1, Ordering::Relaxed);
         send_error_reply(
             active,
             "",
+            false,
             RpcStatus::InvalidArgument,
-            SetEnabledStatus::Unknown,
+            "wire decode failed",
+            metrics,
+        );
+        return;
+    };
+    let request_id = view.request_id().unwrap_or("").to_owned();
+    let dry_run = view.dry_run();
+    if request_id.is_empty() {
+        metrics.decode_errors.fetch_add(1, Ordering::Relaxed);
+        send_error_reply(
+            active,
+            "",
+            dry_run,
+            RpcStatus::InvalidArgument,
             "request_id is empty",
             metrics,
         );
         return;
     }
-
-    // 重复 in-flight request_id：直接 reply InvalidArgument 不 forward（防 response
-    // 按 request_id 查找把第二条状态回给第一个 active handle）。
-    if pending.iter().any(|p| p.request_id == request_id) {
-        tracing::warn!(
-            request_id = %request_id,
-            "set_enabled_rr_server: duplicate in-flight request_id"
-        );
+    let peer = active.peer();
+    if pending
+        .iter()
+        .any(|p| p.slot.peer() == peer && p.request_id == request_id)
+    {
         metrics.duplicate_request_id.fetch_add(1, Ordering::Relaxed);
         send_error_reply(
             active,
             &request_id,
+            dry_run,
             RpcStatus::InvalidArgument,
-            SetEnabledStatus::Unknown,
-            "duplicate request_id (already in-flight)",
+            "duplicate peer/method/request_id",
             metrics,
         );
         return;
     }
-
-    let req = SetEnabledRrRequest {
-        request_id: request_id.clone(),
-        enabled: view.enabled(),
-        dry_run: view.dry_run(),
-        deadline_ns: view.deadline_ns(),
-        audit_reason: view.audit_reason().unwrap_or("").to_string(),
-    };
-
-    match rr_request_tx.try_send(req) {
-        Ok(()) => {
-            pending.push_back(PendingRr { request_id, active });
-            metrics.requests_forwarded.fetch_add(1, Ordering::Relaxed);
-        }
-        Err(TrySendError::Full(_)) => {
-            tracing::warn!(
-                request_id = %request_id,
-                "set_enabled_rr_server: ipc_thread RR channel full; replying ResourceExhausted"
-            );
-            metrics.forward_full_errors.fetch_add(1, Ordering::Relaxed);
-            send_error_reply(
-                active,
-                &request_id,
-                RpcStatus::ResourceExhausted,
-                SetEnabledStatus::Unknown,
-                "ipc_thread RR channel full",
-                metrics,
-            );
-        }
-        Err(TrySendError::Disconnected(_)) => {
-            tracing::error!(
-                request_id = %request_id,
-                "set_enabled_rr_server: ipc_thread RR channel disconnected; replying Internal"
-            );
-            metrics
-                .forward_disconnected_errors
-                .fetch_add(1, Ordering::Relaxed);
-            send_error_reply(
-                active,
-                &request_id,
-                RpcStatus::Internal,
-                SetEnabledStatus::Unknown,
-                "ipc_thread RR channel disconnected",
-                metrics,
-            );
-        }
-    }
-}
-
-/// pending 容量满时直接 reply `ResourceExhausted`，consume active，不入 pending。
-fn handle_pending_overflow(
-    active: Iceoryx2ActiveRequest<markers::SetEnabledRequest, markers::SetEnabledResponse>,
-    metrics: &RrServerMetrics,
-) {
-    metrics.overflow_drops.fetch_add(1, Ordering::Relaxed);
-    let request_id = match flatbuffers::root::<FbReq>(active.payload()) {
-        Ok(view) => view.request_id().unwrap_or("").to_string(),
-        Err(_) => String::new(),
-    };
-    tracing::warn!(
-        request_id = %request_id,
-        "set_enabled_rr_server: pending full; replying ResourceExhausted"
-    );
-    send_error_reply(
-        active,
-        &request_id,
-        RpcStatus::ResourceExhausted,
-        SetEnabledStatus::Unknown,
-        "rr_server pending full",
-        metrics,
-    );
-}
-
-/// 直接 reply 错误 wire response，consume active handle。
-fn send_error_reply(
-    active: Iceoryx2ActiveRequest<markers::SetEnabledRequest, markers::SetEnabledResponse>,
-    request_id: &str,
-    status: RpcStatus,
-    domain: SetEnabledStatus,
-    error_msg: &str,
-    metrics: &RrServerMetrics,
-) {
-    let bytes = build_set_enabled_response(request_id, status, domain, 0, error_msg);
-    if let Err(e) = active.send_response(&bytes) {
-        tracing::error!(
-            error = ?e,
-            request_id = %request_id,
-            "set_enabled_rr_server: send_response (error reply) failed"
-        );
-        metrics.send_response_errors.fetch_add(1, Ordering::Relaxed);
-    } else {
-        metrics.responses_sent.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-// ============================================================================
-// handle_response：encode ipc_thread payload → wire response
-// ============================================================================
-
-fn handle_response(
-    pending: &mut VecDeque<PendingRr>,
-    resp: &SetEnabledRrResponse,
-    metrics: &RrServerMetrics,
-) {
-    let pos = pending.iter().position(|p| p.request_id == resp.request_id);
-    let Some(idx) = pos else {
-        tracing::error!(
-            request_id = %resp.request_id,
-            "set_enabled_rr_server: orphan response (no pending active for request_id)"
-        );
-        metrics.orphan_responses.fetch_add(1, Ordering::Relaxed);
-        debug_assert!(
-            false,
-            "orphan response: request_id={} (release build 保命丢弃；debug build panic)",
-            resp.request_id
+    let class = RrRequestClass::of_set_enabled(dry_run, view.enabled());
+    let Ok(slot) = ledger.admit(peer, class) else {
+        metrics.overflow_drops.fetch_add(1, Ordering::Relaxed);
+        send_error_reply(
+            active,
+            &request_id,
+            dry_run,
+            RpcStatus::ResourceExhausted,
+            "peer/class capacity full",
+            metrics,
         );
         return;
     };
-    let pending_rr = pending.remove(idx).expect("position 找到");
-    let (status, domain, completed_at_ns, error_msg) = encode_payload(&resp.payload);
-    let bytes = build_set_enabled_response(
-        &resp.request_id,
-        status,
-        domain,
-        completed_at_ns,
-        &error_msg,
-    );
-    if let Err(e) = pending_rr.active.send_response(&bytes) {
-        tracing::error!(
-            error = ?e,
-            request_id = %resp.request_id,
-            "set_enabled_rr_server: send_response failed"
-        );
-        metrics.send_response_errors.fetch_add(1, Ordering::Relaxed);
-    } else {
-        metrics.responses_sent.fetch_add(1, Ordering::Relaxed);
+    let request = SetEnabledRrRequest {
+        route: slot.identity(),
+        request_id: request_id.clone(),
+        dry_run,
+        enabled: view.enabled(),
+        deadline_ns: view.deadline_ns(),
+        audit_reason: view.audit_reason().unwrap_or("").to_owned(),
+    };
+    match requests.select(class).try_send(request) {
+        Ok(()) => {
+            pending.push_back(PendingRr {
+                request_id,
+                slot,
+                active,
+            });
+            metrics.requests_forwarded.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(error) => {
+            let (status, message) = match error {
+                TrySendError::Full(_) => {
+                    metrics.forward_full_errors.fetch_add(1, Ordering::Relaxed);
+                    (RpcStatus::ResourceExhausted, "IPC lane full")
+                }
+                TrySendError::Disconnected(_) => {
+                    metrics
+                        .forward_disconnected_errors
+                        .fetch_add(1, Ordering::Relaxed);
+                    (RpcStatus::Internal, "IPC lane disconnected")
+                }
+            };
+            // 原请求尚未交付，无后台责任；真实消耗 active 后才归还此原槽。
+            send_error_reply(active, &request_id, dry_run, status, message, metrics);
+            release_slot(ledger, slot, residual);
+        }
     }
 }
-
-/// [`SetEnabledRrPayload`] → wire `(RpcStatus, SetEnabledStatus, completed_at_ns,
-/// error_msg)`。**显式 match** 每 variant（不直接 cast，沿 ClearEStop 约束）；
-/// 映射表锁 Plan §P.2.3 encode 表。
+fn send_error_reply(
+    active: Iceoryx2ActiveRequest<markers::SetEnabledRequest, markers::SetEnabledResponse>,
+    request_id: &str,
+    dry_run: bool,
+    status: RpcStatus,
+    error: &str,
+    metrics: &RrServerMetrics,
+) {
+    let _ = dry_run;
+    let domain = match status {
+        RpcStatus::ResourceExhausted => SetEnabledStatus::QueueFull,
+        _ => SetEnabledStatus::Unknown,
+    };
+    let bytes = build_set_enabled_response_typed(
+        request_id,
+        status,
+        domain,
+        0,
+        error,
+        SideEffect::None,
+        true,
+    );
+    match active.send_response(&bytes) {
+        Ok(()) => {
+            metrics.responses_sent.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(error) => {
+            metrics.send_response_errors.fetch_add(1, Ordering::Relaxed);
+            tracing::error!(?error, request_id, "RR 拒绝回复失败");
+        }
+    }
+}
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "退休回复必须按值消费一次，错路由与重复回复不得再次归还原槽"
+)]
+fn handle_response(
+    pending: &mut VecDeque<PendingRr>,
+    response: SetEnabledRrResponse,
+    ledger: &mut ControlPeerLedger,
+    residual: &mut Vec<Slot<RrPeerId>>,
+    metrics: &RrServerMetrics,
+) {
+    let index = pending
+        .iter()
+        .position(|p| p.slot.identity() == response.route && p.request_id == response.request_id);
+    let Some(index) = index else {
+        metrics.orphan_responses.fetch_add(1, Ordering::Relaxed);
+        tracing::error!(request_id=%response.request_id,"错 route 或重复退休回复，不归还任何槽");
+        return;
+    };
+    let original = pending.remove(index).expect("已核原 route");
+    let (status, domain, at, error) = encode_payload(&response.payload);
+    let bytes = build_set_enabled_response_typed(
+        &response.request_id,
+        status,
+        domain,
+        at,
+        &error,
+        response.effect,
+        true,
+    );
+    match original.active.send_response(&bytes) {
+        Ok(()) => {
+            metrics.responses_sent.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(error) => {
+            metrics.send_response_errors.fetch_add(1, Ordering::Relaxed);
+            tracing::error!(?error, "RR 退休回复发送失败");
+        }
+    }
+    release_slot(ledger, original.slot, residual);
+}
 fn encode_payload(payload: &SetEnabledRrPayload) -> (RpcStatus, SetEnabledStatus, u64, String) {
     match payload {
+        SetEnabledRrPayload::SupersededByDisable => (
+            RpcStatus::Aborted,
+            SetEnabledStatus::SupersededByDisable,
+            0,
+            "superseded by disable".into(),
+        ),
+        SetEnabledRrPayload::Superseded => (
+            RpcStatus::Aborted,
+            SetEnabledStatus::Superseded,
+            0,
+            "superseded".into(),
+        ),
+        SetEnabledRrPayload::QueueFull => (
+            RpcStatus::ResourceExhausted,
+            SetEnabledStatus::QueueFull,
+            0,
+            "IPC lane full".into(),
+        ),
         // enable / disable 成功 wire 形态相同（Ok + domain Ok + completed_at_ns）；
         // 客户端按自己请求的 enabled 区分语义，wire 不重复编码。
         SetEnabledRrPayload::Enabled { completed_at_ns }
@@ -540,8 +448,30 @@ mod tests {
     /// 锁 Plan §P.2.3 encode 映射表：每个 [`SetEnabledRrPayload`] variant →
     /// 期望 `(RpcStatus, SetEnabledStatus)` + `completed_at_ns` 透传。
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "逐项固定完整协议映射表，保持十三种结果的对照断言"
+    )]
     fn encode_payload_locks_plan_mapping_table() {
         let cases: &[(SetEnabledRrPayload, RpcStatus, SetEnabledStatus, u64)] = &[
+            (
+                SetEnabledRrPayload::SupersededByDisable,
+                RpcStatus::Aborted,
+                SetEnabledStatus::SupersededByDisable,
+                0,
+            ),
+            (
+                SetEnabledRrPayload::Superseded,
+                RpcStatus::Aborted,
+                SetEnabledStatus::Superseded,
+                0,
+            ),
+            (
+                SetEnabledRrPayload::QueueFull,
+                RpcStatus::ResourceExhausted,
+                SetEnabledStatus::QueueFull,
+                0,
+            ),
             (
                 SetEnabledRrPayload::Enabled {
                     completed_at_ns: 11,
@@ -625,5 +555,371 @@ mod tests {
                 _ => assert!(!msg.is_empty(), "非成功态应带诊断文案：{payload:?}"),
             }
         }
+    }
+    use crossbeam_channel::{Sender, bounded};
+    use iceoryx2::prelude::NodeBuilder;
+    use iceoryx2::service::ipc::Service as IxService;
+    use robot_core::time::SystemClock;
+    use robot_msg::msg::{RpcRole, SetEnabledResponse as FbResp};
+    use robot_transport::iceoryx2::request_response::{Iceoryx2PendingResponse, Iceoryx2RrClient};
+    use robot_transport::iceoryx2::{RrProfile, rr_client_with, rr_server_with};
+    use std::time::Instant;
+    type Client = Iceoryx2RrClient<markers::SetEnabledRequest, markers::SetEnabledResponse>;
+    type Pending = Iceoryx2PendingResponse<markers::SetEnabledResponse>;
+    type Server = Iceoryx2RrServer<markers::SetEnabledRequest, markers::SetEnabledResponse>;
+    fn supervised(name: &str) -> bool {
+        const ENV: &str = "ROBOT_W3_SET_RR_CASE";
+        if std::env::var(ENV).as_deref() == Ok(name) {
+            let owner = thread::current().id();
+            std::panic::set_hook(Box::new(move |info| {
+                eprintln!("Set RR 验收失败：{info}");
+                if thread::current().id() == owner {
+                    std::process::exit(101);
+                }
+            }));
+            return false;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("child.log");
+        let log = std::fs::File::create(&path).unwrap();
+        let exact = format!("set_enabled_rr_server::tests::{name}");
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &exact, "--nocapture"])
+            .env(ENV, name)
+            .env("TMPDIR", temp.path())
+            .stdout(log.try_clone().unwrap())
+            .stderr(log)
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(12);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(2)),
+                error => {
+                    let _ = child.kill();
+                    let reap = Instant::now() + Duration::from_secs(2);
+                    loop {
+                        if matches!(child.try_wait(), Ok(Some(_))) {
+                            break;
+                        }
+                        if Instant::now() >= reap {
+                            std::process::abort();
+                        }
+                        thread::sleep(Duration::from_millis(2));
+                    }
+                    panic!("已 kill/reap Set RR 子进程：{error:?}");
+                }
+            }
+        };
+        assert!(
+            status.success(),
+            "{}",
+            std::fs::read_to_string(path).unwrap()
+        );
+        true
+    }
+    fn wait(mut condition: impl FnMut() -> bool) {
+        let until = Instant::now() + Duration::from_secs(2);
+        while !condition() {
+            assert!(Instant::now() < until, "真实 RR 操作未在验收截止内结束");
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn topic() -> String {
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        format!(
+            "/w3_set_rr_{}_{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        )
+    }
+    fn request(id: &str, enabled: bool, dry: bool) -> Vec<u8> {
+        robot_msg::build_helpers::build_set_enabled_request(
+            id,
+            "idem",
+            "source",
+            RpcRole::Maintainer,
+            enabled,
+            dry,
+            u64::MAX,
+            "audit",
+            42,
+        )
+    }
+    fn response(pending: &Pending) -> Vec<u8> {
+        let mut bytes = None;
+        wait(|| {
+            bytes = pending.try_recv().unwrap();
+            bytes.is_some()
+        });
+        bytes.unwrap()
+    }
+    fn status(pending: &Pending) -> RpcStatus {
+        let bytes = response(pending);
+        let view = flatbuffers::root::<FbResp>(&bytes).unwrap();
+        assert!(view.retired());
+        view.status()
+    }
+    // 仅模拟 IPC 已退休消息来验证 RR 路由；不据此证明真实 Enable/Lower 已执行。
+    fn reply(req: SetEnabledRrRequest) -> SetEnabledRrResponse {
+        SetEnabledRrResponse {
+            route: req.route,
+            request_id: req.request_id,
+            effect: SideEffect::Started,
+            payload: SetEnabledRrPayload::PreemptedByShutdown,
+        }
+    }
+    struct Local {
+        server: Server,
+        first: Client,
+        second: Client,
+        ledger: ControlPeerLedger,
+        pending: VecDeque<PendingRr>,
+        residual: Vec<Slot<RrPeerId>>,
+        metrics: RrServerMetrics,
+        senders: TopicRequestSenders<SetEnabledRrRequest>,
+        high: Receiver<SetEnabledRrRequest>,
+        normal: Receiver<SetEnabledRrRequest>,
+        _node: iceoryx2::prelude::Node<IxService>,
+    }
+    impl Local {
+        fn new(high_capacity: usize) -> Self {
+            let node = NodeBuilder::new().create::<IxService>().unwrap();
+            let topic = topic();
+            let profile = RrProfile::S0_CONTROL;
+            let server = rr_server_with(&node, &topic, &profile).unwrap();
+            let first = rr_client_with(&node, &topic, &profile).unwrap();
+            let second = rr_client_with(&node, &topic, &profile).unwrap();
+            let checked =
+                crate::rr_admission::CheckedLimits::try_from_limits(&server.limits().unwrap())
+                    .unwrap();
+            let (high_tx, high) = bounded(high_capacity);
+            let (normal_tx, normal) = bounded(profile.c * (profile.l - 2));
+            Self {
+                server,
+                first,
+                second,
+                ledger: ControlPeerLedger::new(&checked).unwrap(),
+                pending: VecDeque::new(),
+                residual: Vec::new(),
+                metrics: RrServerMetrics::default(),
+                senders: TopicRequestSenders {
+                    high: high_tx,
+                    normal: normal_tx,
+                },
+                high,
+                normal,
+                _node: node,
+            }
+        }
+        fn consume(&mut self) {
+            let mut active = None;
+            wait(|| {
+                active = self.server.try_recv().unwrap();
+                active.is_some()
+            });
+            handle_active_request(
+                active.unwrap(),
+                &mut self.pending,
+                &self.senders,
+                &mut self.ledger,
+                &mut self.residual,
+                &self.metrics,
+            );
+        }
+        fn deliver(&mut self, message: SetEnabledRrResponse) {
+            handle_response(
+                &mut self.pending,
+                message,
+                &mut self.ledger,
+                &mut self.residual,
+                &self.metrics,
+            );
+        }
+    }
+    #[test]
+    fn real_peer_classification_routes_restore_lower_and_dry_to_distinct_lanes() {
+        let mut f = Local::new(16);
+        for (id, enabled, dry, class) in [
+            ("restore", true, false, RrRequestClass::Restore),
+            ("lower", false, false, RrRequestClass::Lower),
+            ("normal", true, true, RrRequestClass::Normal),
+        ] {
+            let pending = f.first.send(&request(id, enabled, dry)).unwrap();
+            f.consume();
+            let forwarded = match class {
+                RrRequestClass::Normal => f.normal.try_recv().unwrap(),
+                _ => f.high.try_recv().unwrap(),
+            };
+            assert_eq!(
+                (
+                    &*forwarded.request_id,
+                    forwarded.enabled,
+                    forwarded.dry_run,
+                    forwarded.deadline_ns
+                ),
+                (id, enabled, dry, u64::MAX)
+            );
+            assert_eq!(f.pending.front().unwrap().slot.class(), class);
+            assert_eq!(f.ledger.counts().total, 1);
+            f.deliver(reply(forwarded));
+            let bytes = response(&pending);
+            let view = flatbuffers::root::<FbResp>(&bytes).unwrap();
+            assert_eq!(view.request_id(), Some(id));
+            assert_eq!(view.status(), RpcStatus::Aborted);
+            assert_eq!(view.effect(), SideEffect::Started);
+            assert!(view.retired());
+            assert_eq!(f.ledger.counts().total, 0);
+        }
+    }
+    #[test]
+    fn same_peer_duplicate_and_other_peer_identity_do_not_release_original_slots() {
+        let mut f = Local::new(16);
+        let first = f.first.send(&request("same", true, false)).unwrap();
+        f.consume();
+        let req1 = f.high.try_recv().unwrap();
+        let duplicate = f.first.send(&request("same", true, false)).unwrap();
+        f.consume();
+        assert_eq!(status(&duplicate), RpcStatus::InvalidArgument);
+        assert_eq!(f.ledger.counts().restore, 1);
+        let second = f.second.send(&request("same", true, false)).unwrap();
+        f.consume();
+        let req2 = f.high.try_recv().unwrap();
+        assert_ne!(req1.route, req2.route);
+        assert_eq!(f.ledger.counts().restore, 2);
+        let mut foreign = ControlPeerLedger::new(
+            &crate::rr_admission::CheckedLimits::try_from_limits(&f.server.limits().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        let slot = foreign
+            .admit(
+                f.pending.front().unwrap().slot.peer(),
+                RrRequestClass::Restore,
+            )
+            .unwrap();
+        f.deliver(SetEnabledRrResponse {
+            route: slot.identity(),
+            request_id: "same".into(),
+            payload: SetEnabledRrPayload::AdapterError,
+            effect: SideEffect::Started,
+        });
+        foreign.release(slot).unwrap();
+        assert_eq!(f.ledger.counts().restore, 2);
+        let old = req1.route;
+        f.deliver(reply(req1));
+        assert_eq!(status(&first), RpcStatus::Aborted);
+        f.deliver(SetEnabledRrResponse {
+            route: old,
+            request_id: "same".into(),
+            payload: SetEnabledRrPayload::AdapterError,
+            effect: SideEffect::Started,
+        });
+        assert_eq!(f.ledger.counts().restore, 1);
+        assert!(second.try_recv().unwrap().is_none());
+        f.deliver(reply(req2));
+        assert_eq!(status(&second), RpcStatus::Aborted);
+        assert_eq!(f.ledger.counts().total, 0);
+        assert!(f.pending.is_empty() && f.residual.is_empty());
+        assert_eq!(f.metrics.duplicate_request_id.load(Ordering::Relaxed), 1);
+        assert_eq!(f.metrics.orphan_responses.load(Ordering::Relaxed), 2);
+    }
+    #[test]
+    fn actual_lane_full_returns_only_unsubmitted_slot_and_rejects_bad_factory_capacity() {
+        // 不合规小容量仅用于同 handler 的 Full 分支；真实工厂必须拒绝它。
+        let mut f = Local::new(1);
+        let checked =
+            crate::rr_admission::CheckedLimits::try_from_limits(&f.server.limits().unwrap())
+                .unwrap();
+        assert!(crate::rr_admission::validate_lane_capacity(&checked, 1, 16, 32).is_err());
+        let first = f.first.send(&request("first", true, false)).unwrap();
+        f.consume();
+        let second = f.second.send(&request("second", true, false)).unwrap();
+        f.consume();
+        assert_eq!(status(&second), RpcStatus::ResourceExhausted);
+        assert_eq!(f.ledger.counts().restore, 1);
+        assert_eq!(f.metrics.forward_full_errors.load(Ordering::Relaxed), 1);
+        let req = f.high.try_recv().unwrap();
+        f.deliver(reply(req));
+        assert_eq!(status(&first), RpcStatus::Aborted);
+        assert_eq!(f.ledger.counts().total, 0);
+    }
+    #[test]
+    fn decode_failure_and_empty_id_never_admit_a_slot() {
+        let mut f = Local::new(16);
+        for bytes in [b"NOT_FLATBUFFERS".to_vec(), request("", true, false)] {
+            let pending = f.first.send(&bytes).unwrap();
+            f.consume();
+            assert_eq!(status(&pending), RpcStatus::InvalidArgument);
+            assert!(f.pending.is_empty());
+            assert_eq!(f.ledger.counts().total, 0);
+        }
+    }
+    #[test]
+    fn stop_disconnects_both_sources_but_retains_last_admitted_active_until_real_reply() {
+        if supervised(
+            "stop_disconnects_both_sources_but_retains_last_admitted_active_until_real_reply",
+        ) {
+            return;
+        }
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let topic = topic();
+        let profile = RrProfile::S0_CONTROL;
+        let client: Client = rr_client_with(&node, &topic, &profile).unwrap();
+        let (high_tx, high) = bounded(2 * profile.c);
+        let (normal_tx, normal) = bounded(profile.c * (profile.l - 2));
+        let (responses, response_rx): (Sender<SetEnabledRrResponse>, _) =
+            bounded(profile.c * profile.l);
+        let mut handle = spawn_set_enabled_rr_server_thread(
+            RrServerThreadConfig {
+                topic: topic.clone(),
+                ..RrServerThreadConfig::default()
+            },
+            Arc::new(SystemClock::new()),
+            move || {
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .map_err(RrInitError::Node)?;
+                let server =
+                    rr_server_with(&node, &topic, &profile).map_err(RrInitError::Service)?;
+                Ok(OwnedRrServerPorts::new(server, node))
+            },
+            TopicRequestSenders {
+                high: high_tx,
+                normal: normal_tx,
+            },
+            response_rx,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        wait(|| matches!(handle.poll_ready(), ReadyState::Ready));
+        let pending = client.send(&request("retained", true, false)).unwrap();
+        let req = high.recv_timeout(Duration::from_secs(2)).unwrap();
+        handle.request_stop();
+        wait(|| {
+            matches!(
+                high.try_recv(),
+                Err(crossbeam_channel::TryRecvError::Disconnected)
+            )
+        });
+        assert!(matches!(
+            normal.try_recv(),
+            Err(crossbeam_channel::TryRecvError::Disconnected)
+        ));
+        assert!(!handle.is_finished());
+        assert!(pending.try_recv().unwrap().is_none());
+        let late = client.send(&request("after-stop", false, true)).unwrap();
+        assert!(late.try_recv().unwrap().is_none());
+        responses.send(reply(req)).unwrap();
+        assert_eq!(status(&pending), RpcStatus::Aborted);
+        wait(|| handle.is_finished());
+        assert_eq!(
+            handle.metrics().requests_received.load(Ordering::Relaxed),
+            1
+        );
+        handle.join().unwrap();
+        drop(late);
     }
 }

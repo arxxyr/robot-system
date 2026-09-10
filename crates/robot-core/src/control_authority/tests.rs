@@ -1060,6 +1060,123 @@ fn dropped_or_forgotten_owner_keeps_the_authority_conservatively_stuck() {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn clear_expected_epoch_preserves_the_original_reservation_lifecycle() {
+    let authority = fresh(true, S::TorqueOffConfirmed);
+    let expected = authority.snapshot().epoch;
+    let pending = authority.reserve_clear_if_epoch(expected).unwrap();
+    assert_eq!(pending.domain(), authority.domain());
+    assert_eq!(pending.epoch().get(), expected.get() + 1);
+    assert!(pending.original_latched());
+    let before = raw(&authority);
+    assert_eq!(
+        authority.reserve_clear_if_epoch(pending.epoch()).err(),
+        Some(Refusal::Busy(Phase::ClearPreparing))
+    );
+    assert_eq!(raw(&authority), before);
+    let finalizing = authority.commit_clear(pending).unwrap();
+    let cleanup = authority.authorize_finalize(finalizing).unwrap();
+    let retired = authority.retire_clear_cleanup(cleanup).unwrap();
+    assert!(retired.logical_committed && !retired.superseded && !retired.latch);
+    assert_eq!(phase(&authority), Phase::Idle);
+    assert!(authority.snapshot().disabled);
+}
+
+#[test]
+fn clear_stale_expected_epoch_is_a_zero_side_effect_refusal() {
+    let authority = fresh(true, S::TorqueOffConfirmed);
+    let held = authority.snapshot().epoch;
+    let _ = authority.disable();
+    let current = authority.snapshot().epoch;
+    let before = raw(&authority);
+    assert_eq!(
+        authority.reserve_clear_if_epoch(held).err(),
+        Some(Refusal::StaleEpoch { held, current })
+    );
+    assert_eq!(raw(&authority), before);
+    // 新入口不改变旧预约语义：新的调用仍可用同一个原实现取得 owner。
+    let pending = authority.reserve_clear().unwrap();
+    assert_eq!(pending.epoch().get(), current.get() + 1);
+    let repair = authority
+        .begin_repair(ClearOwner::Pending(pending))
+        .unwrap();
+    let cleanup = authority.authorize_repair_cleanup(repair).unwrap();
+    assert!(authority.retire_clear_cleanup(cleanup).unwrap().latch);
+}
+
+#[test]
+fn clear_expected_epoch_rechecks_after_estop_and_confirm_win_its_cas() {
+    let authority = fresh(true, S::TorqueOffConfirmed);
+    let held = authority.snapshot().epoch;
+    let after_interleaving = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let observed = Arc::clone(&after_interleaving);
+    install_hook(
+        &authority,
+        once(move |authority| {
+            // 同一个权限字的真实更新击败原预约 CAS；没有改写 raw 夹具。
+            assert_eq!(authority.estop().outcome, EStopOutcome::StopIssued);
+            assert!(authority.claim_serial_estop());
+            assert!(authority.claim_ipc_estop());
+            let confirmation = authority.begin_safety_observation(SafetyOperation::ConfirmOff);
+            authority.complete_safety_observation(confirmation).unwrap();
+            assert_eq!(authority.snapshot().safety, S::TorqueOffConfirmed);
+            observed.store(raw(authority), Ordering::Release);
+        }),
+    );
+    assert_eq!(
+        authority.reserve_clear_if_epoch(held).err(),
+        Some(Refusal::StaleEpoch {
+            held,
+            current: authority.snapshot().epoch,
+        })
+    );
+    let after = after_interleaving.load(Ordering::Acquire);
+    assert_ne!(after, 0, "预约真实到达 CAS 前 hook");
+    assert_eq!(
+        raw(&authority),
+        after,
+        "旧预约不能改新 EStop/Confirm 的 word"
+    );
+    assert_eq!(phase(&authority), Phase::Idle);
+    assert!(authority.snapshot().latch);
+    // 反例中的普通 Clear 门已经重新满足；必须由原 expected 拒绝旧请求。
+    let pending = authority
+        .reserve_clear_if_epoch(authority.snapshot().epoch)
+        .unwrap();
+    let repair = authority
+        .begin_repair(ClearOwner::Pending(pending))
+        .unwrap();
+    let cleanup = authority.authorize_repair_cleanup(repair).unwrap();
+    assert!(authority.retire_clear_cleanup(cleanup).unwrap().latch);
+}
+
+#[test]
+fn clear_expected_epoch_preserves_max_epoch_exhaustion() {
+    let authority = at_epoch(true, S::TorqueOffConfirmed, word::EPOCH_MAX);
+    let before = raw(&authority);
+    assert_eq!(
+        authority
+            .reserve_clear_if_epoch(PermissionEpoch::INITIAL)
+            .err(),
+        Some(Refusal::StaleEpoch {
+            held: PermissionEpoch::INITIAL,
+            current: PermissionEpoch::MAX,
+        })
+    );
+    assert_eq!(raw(&authority), before, "失配不能提前写 Exhausted");
+    assert_eq!(
+        authority.reserve_clear_if_epoch(PermissionEpoch::MAX).err(),
+        Some(Refusal::EpochExhausted)
+    );
+    assert!(authority.snapshot().exhausted && authority.snapshot().disabled);
+    assert_eq!(authority.snapshot().epoch, PermissionEpoch::MAX);
+    assert_eq!(
+        authority.reserve_clear_if_epoch(PermissionEpoch::MAX).err(),
+        Some(Refusal::Exhausted)
+    );
+    assert_eq!(phase(&authority), Phase::Idle);
+}
+
+#[test]
 fn clear_transaction_commits_then_finalizes_and_keeps_disabled() {
     let authority = fresh(true, S::TorqueOffConfirmed);
     assert_eq!(authority.reserve_enable().err(), Some(Refusal::Latched));
@@ -2463,4 +2580,99 @@ fn retire_unprepared_clear_wrong_or_corrupted_phase_returns_original_owner() {
     assert_eq!(raw(&authority), before);
     rewrite(&authority, |word| word.with_phase(Phase::ClearPreparing));
     authority.retire_unprepared_clear(refused.token).unwrap();
+}
+
+#[test]
+fn observed_cas_counts_real_same_authority_interference_and_keep() {
+    for failures in [0, 1, 4] {
+        let authority = fresh(false, S::TorqueOffConfirmed);
+        let mut remaining = failures;
+        install_hook(&authority, move |same| {
+            if remaining != 0 {
+                remaining -= 1;
+                let _ = same.disable();
+            }
+        });
+        let result = authority.estop_observed();
+        assert_eq!(result.failed_cas, Some(failures));
+        assert!(authority.snapshot().latch && authority.snapshot().disabled);
+        assert_eq!(epoch(&authority), 2 + failures);
+    }
+    let authority = fresh(false, S::TorqueOffConfirmed);
+    let owner = succeeded_enable(&authority);
+    authority.commit_enable(owner).unwrap();
+    install_hook(
+        &authority,
+        once(|same| {
+            let _ = same.disable();
+        }),
+    );
+    let observed = authority.acquire_normal_io_observed(NormalIoIntent::Motion);
+    assert_eq!(observed.failed_cas, Some(1));
+    assert_eq!(observed.outcome.unwrap_err(), Refusal::Disabled);
+    assert!(!authority.snapshot().normal_io_active);
+}
+
+#[test]
+fn observed_five_entries_preserve_real_outcomes_and_cross_domain_lease() {
+    let authority = fresh(false, S::TorqueOffConfirmed);
+    let acquired = authority.acquire_normal_io_observed(NormalIoIntent::PeriodicRead);
+    assert_eq!(acquired.failed_cas, Some(0));
+    let lease = acquired.outcome.unwrap();
+    let foreign = fresh(false, S::TorqueOffConfirmed);
+    let before = (raw(&authority), raw(&foreign));
+    let rejected = foreign.release_normal_io_observed(lease);
+    assert_eq!(rejected.failed_cas, Some(0));
+    assert_eq!((raw(&authority), raw(&foreign)), before);
+    let original = rejected.outcome.unwrap_err();
+    assert!(matches!(original.reason, Refusal::CrossDomain { .. }));
+    let stopped = authority.estop_observed();
+    assert_eq!(stopped.failed_cas, Some(0));
+    assert!(stopped.outcome.normal_io_active);
+    for serial in [true, false] {
+        let claim = if serial {
+            authority.claim_serial_estop_observed()
+        } else {
+            authority.claim_ipc_estop_observed()
+        };
+        assert_eq!(claim.failed_cas, Some(0));
+        assert!(claim.outcome);
+        let repeated = if serial {
+            authority.claim_serial_estop_observed()
+        } else {
+            authority.claim_ipc_estop_observed()
+        };
+        assert_eq!(repeated.failed_cas, Some(0));
+        assert!(!repeated.outcome);
+    }
+    let released = authority.release_normal_io_observed(original.token);
+    assert_eq!(released.failed_cas, Some(0));
+    assert!(released.outcome.unwrap().superseded);
+    assert!(!authority.snapshot().normal_io_active);
+    assert!(authority.snapshot().latch);
+
+    let plain = fresh(false, S::TorqueOffConfirmed);
+    let observed = fresh(false, S::TorqueOffConfirmed);
+    let _ = plain.estop();
+    let _ = observed.estop_observed().outcome;
+    assert_eq!(raw(&plain), raw(&observed));
+    assert_eq!(
+        plain.claim_serial_estop(),
+        observed.claim_serial_estop_observed().outcome
+    );
+    assert_eq!(
+        plain.claim_ipc_estop(),
+        observed.claim_ipc_estop_observed().outcome
+    );
+    let a = plain
+        .acquire_normal_io(NormalIoIntent::PeriodicRead)
+        .unwrap();
+    let b = observed
+        .acquire_normal_io_observed(NormalIoIntent::PeriodicRead)
+        .outcome
+        .unwrap();
+    assert_eq!(raw(&plain), raw(&observed));
+    let _ = plain.release_normal_io(a).unwrap();
+    let _ = observed.release_normal_io_observed(b).outcome.unwrap();
+    assert_eq!(raw(&plain), raw(&observed));
 }

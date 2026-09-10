@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_W3A_APPROVED_READY_TO_COMMIT",
-  "resume_from": "W3a已本地独立验收，提交后完善完整W3函数方案并独立审批，再统一W3-P/W3生产总装。",
+  "work_state": "S48_W3_APPROVED_W4_NEXT",
+  "resume_from": "W3本地独立验收通过，归档一致性复核后提交；接着W4最小故障接缝与真实恢复样例，再W4矩阵/P-E。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_W3A_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "W3A_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_W3_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "W3_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
-  "scope": "W3a Clear协调与持久化健康原语本地验收通过；生产权限/双队列/唯一writer尚未总装，未访问Orin，wire4历史FAIL与D15 OPEN保留。",
+  "scope": "W3生产权限/双队列/唯一writer/RPC责任总装本地验收通过；W4/P-E未完成，未访问Orin，wire4历史FAIL、D15 OPEN、deployable=false保持。",
   "software": {
     "s44": {
       "local": {
@@ -391,7 +391,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "W2B_PM_PT_APPROVED_REMAINING_PRIMITIVES_PENDING",
+      "status": "W3_APPROVED_SOFTWARE_SCOPE_W4_PENDING",
       "implementation_started": true,
       "a1": {
         "plan_review": "APPROVED",
@@ -422,7 +422,7 @@
       },
       "user_requirement": "基础控制走高优先级通道，关节位置等连续目标走普通通道",
       "candidate": "唯一state owner与单disk writer解耦；可恢复Clear事务标记与原子提交权限；端到端有界容量保留",
-      "review_blocker": "P-T本地原语已独立验收；下一包P-S1/P-L1，其后P-G1/P-A1/W3a及生产总装按批准依赖推进；W3完整函数接线另审。",
+      "review_blocker": "W3软件验收无剩余阻断；W4/P-E及两端同源/新现场验证未完成。",
       "hardware_scope": "左臂已断电；仅软件设计与验证，不打开串口",
       "queues": {
         "high": "live基础控制",
@@ -1771,14 +1771,16 @@
         "root_review": "local/s48/w3a/review.md",
         "root_review_sha256": "1e57ed83d7b8e13accc0c1fd9f74029c815f2dcbfc5062c0fe5b9fb5f941fb12",
         "evidence_receipt_sha256": "0b66ce6ebfc9aeaa573acdd216b039a8ef5e0dc8c536bb80439a3b651e499484",
-        "root_scope_receipt_sha256": "85c509e9dec95a35f9adacfb6f027f7d49d5035d72397a7c987f2f1ccd472bbb"
+        "root_scope_receipt_sha256": "85c509e9dec95a35f9adacfb6f027f7d49d5035d72397a7c987f2f1ccd472bbb",
+        "commit": "757ac5581a489672bdacd7bf56709f8996572fcb",
+        "commit_receipt": "local/s48/w3a/commit_receipt.json"
       },
       "production_plan_inputs": {
         "cp2_bridge": "local/s48/w3/cp2_handle_bridge_r2.md",
         "status": "ACCEPTED_INPUT_NOT_IMPLEMENTATION_APPROVAL",
         "root_review": "local/s48/w3/root_cp2_input_review.md",
         "root_review_sha256": "82d1e6b3a77428b34b9a64efa14b98ea7b6385d9379347f96f5e57ee59925bb5",
-        "pending": "三项真实所有权API增补、READY原子交接及完整W3实际接口/门仍待整体函数方案和独立评审",
+        "pending": "全部分项由master r2精确合并并已批准实施；各旧稿原状态与SHA保留，运行验收未完成。",
         "runtime_binding": {
           "draft": "local/s48/w3/runtime_binding_r2.md",
           "sha256": "342bf048a5dbe45f4662e5adc6c74e4d18417eecb613629fecabbdc0cf3b1a1e",
@@ -1856,13 +1858,288 @@
           "independent_review_sha256": "a44420b0facf370bdbb2f8bcd4919fc6657073c21e0939fda478788ab1655fac",
           "root_review": "local/s48/w3/root_rr_route_input_review.md",
           "root_review_sha256": "f3b365afcde3c7d026e591fd4d8be4e51c635891dd79ef6feef046b231e7dc3c"
+        },
+        "s1_ready_ownership": {
+          "status": "INPUT_ACCEPTED",
+          "base_commit": "757ac5581a489672bdacd7bf56709f8996572fcb",
+          "decision": "local/s48/w3/s1_ready_owned_decision.md",
+          "decision_sha256": "005198b4d0b5d85a4114935366e41ee55229c6ff03434cee532bf318283ab10d",
+          "independent_review": "local/s48/w3/independent_s1_ready_owned_review.md",
+          "independent_review_sha256": "4c4f976de5e6e953d095f8fa8fa349e0ab3e413b4d479c5b608f16c9b640047f",
+          "root_review": "local/s48/w3/root_s1_ready_input_review.md",
+          "root_review_sha256": "52a3d77cbb55f78db355626e5b058738a86747bdd5b1c29c4600062ba00943d0"
+        },
+        "runtime_binding_functions": {
+          "status": "INPUT_ACCEPTED",
+          "base_commit": "757ac5581a489672bdacd7bf56709f8996572fcb",
+          "decision": "local/s48/w3/runtime_binding_function_plan_r2.md",
+          "decision_sha256": "57135061933a9bf2715aa9987dac44d0799f60b75ad2c29fd6d06d91a997a54e",
+          "independent_review": "local/s48/w3/independent_runtime_binding_function_review.md",
+          "independent_review_sha256": "053324fe4e6cc647ccb82b3989984155f7443a7379625f6a3f4e66531eba30fc",
+          "root_review": "local/s48/w3/root_runtime_binding_function_input_review.md",
+          "root_review_sha256": "554acb3e208ae3dd31acbad916666e2fd8c43f7603b115efde933f29af031d29"
+        },
+        "runtime_seams": {
+          "status": "INPUT_ACCEPTED",
+          "decision": "local/s48/w3/runtime_wiring_function_plan_r2.md",
+          "decision_sha256": "9336fa09abf2dea9b1921eb74bceaca0a46477274f56dcb059549e765fb118be",
+          "ingress_closure": "local/s48/w3/root_shutdown_ingress_closure_draft.md",
+          "ingress_closure_sha256": "69ef0c0939b4fa3e7a1bd85b1fab0ecad42fc1b82695f009df1fbb112ebd6863",
+          "independent_review": "local/s48/w3/independent_runtime_seams_review.md",
+          "independent_review_sha256": "2567c46d7067a43a2391bd118168217894f7ca36278159c4da90bcb1b8d1ec4a",
+          "root_review": "local/s48/w3/root_runtime_seams_input_review.md",
+          "root_review_sha256": "3c264036aae809aa6db537c74e8685b334dc21c398dda29395005605797a3cf1"
+        },
+        "health_binding": {
+          "status": "INPUT_ACCEPTED",
+          "decision": "local/s48/w3/health_binding_function_plan.md",
+          "decision_sha256": "2671e407175d8cf82a3ef6b5811ac6f4a4314d79fb7ba4718ac93f5dfabe63a6",
+          "root_review": "local/s48/w3/root_health_binding_input_review.md",
+          "root_review_sha256": "7aa44484f241899a59d7fe5031c7663dc0312b1256e9716d4c4d8ad983fbf6b3"
+        },
+        "control_startup_functions": {
+          "status": "ENABLE_INPUT_ACCEPTED_STARTUP_B1_PENDING_MASTER",
+          "enable": "local/s48/w3/enable_bridge_function_plan_r2.md",
+          "enable_sha256": "179ef9473b1691d8a004e8bd297ad7d467443c95f9f231cfdd44907aee629073",
+          "startup": "local/s48/w3/startup_owned_function_plan_r2.md",
+          "startup_sha256": "414836a557ff1b01f50b1b9670c819ca3724f94359e8da0f1273535facf6312c",
+          "independent_review": "local/s48/w3/independent_control_startup_function_review.md",
+          "independent_review_sha256": "39013863e372eb0479d1b69d0b2f14c56e5593e39227a1802b028e95487e05d3",
+          "root_review": "local/s48/w3/root_control_startup_input_review.md",
+          "root_review_sha256": "bb7f9204c4d7fb8c13a6ae526596586fba45105a32c2d7ea3c84648ad1b24fa0"
+        },
+        "gateway_publish_functions": {
+          "status": "INPUT_ACCEPTED_WITH_REQUIRED_MASTER_MERGE_CONDITIONS",
+          "gateway": "local/s48/w3/gateway_function_plan_draft.md",
+          "gateway_sha256": "05b4bd39aee02f9a4948b5997c6d9723d13d04effe3fa9cdcf15b2c99621ceeb",
+          "exit": "local/s48/w3/gateway_exit_function_plan_draft.md",
+          "exit_sha256": "66a8519f945164f4975f668bc04167ddd4c5ada00a2d2fba6502aac6daf002ab",
+          "publish": "local/s48/w3/publish_receipt_function_plan.md",
+          "publish_sha256": "b137087422df004b7ff5700671fb9b11e98d604ce045fffd3bc063937bb2e602",
+          "independent_review": "local/s48/w3/independent_gateway_publish_function_review.md",
+          "independent_review_sha256": "5bb06f1033186bed7c4b69c0613804f01f10284c08d3fff098185a9c6241af82",
+          "root_decision": "root已完整读稿与独立报告，采纳同Arc ledger、真Drop再NoHandle、EStop每项查stop及原队列owned返回；borrowed join/原timer/真实watchdog try_join结果必须入master总审。"
+        },
+        "clear_closure_proof": {
+          "status": "INPUT_ACCEPTED_WITH_GETTER_NARROWING",
+          "decision": "local/s48/w3/clear_closure_proof_function_plan.md",
+          "decision_sha256": "c141b7f50d0e939d65fc497270b0c449235f616e3f5931441ea5f955a6f5c588",
+          "root_decision": "root完整读16行并采纳。第11条收紧为已有clear_retired_for(&self,g:u64)->bool（g非零、Acquire），不另加raw epoch getter；私有proof跨模块绑定原owned/BootShared，非执行许可，完整master纳入总审。"
+        },
+        "gate_command_audit": {
+          "status": "READ_ONLY_AUDIT_NOT_EXECUTED",
+          "path": "local/s48/w3/gate_command_audit.md",
+          "sha256": "858780472bb4b8f2268f2d245a9bf8322e28d8dd72ef3a29e4798fcf4298eaf1",
+          "root_decision": "root完整读稿；命令按实际feature/ignored/子进程入口映射。允许修transport no-backend及mock-only cfg缺口；本轮冻结源先建并绑定E2E实件，原67软件main显式运行；不自动授权Orin/真实unit/硬件。"
         }
       },
       "production_function_plan_draft": {
-        "path": "local/s48/w3/owned_runtime_function_plan_draft.md",
-        "status": "DRAFT_NOT_APPROVED",
-        "sha256": "f8617751962f9156866431cbf7e6792db97b4d1b2d085cb12b54658e8c1a9989",
-        "remaining": "统一实参G1–G5、控制与RR拥有出口、S1 drain等待及完整门仍须root定稿/独立评审"
+        "path": "local/s48/w3/master_function_plan.md",
+        "status": "PLAN_APPROVED",
+        "sha256": "af85ce680e591a3b9d359ce42715c83a2e771cd5823cb251351ab2e8aca689cb",
+        "inputs_manifest": "local/s48/w3/inputs_manifest.json",
+        "inputs_manifest_sha256": "52fdcac1150d545985d5c3aa00dd1391e3071586abc6de122439dcf0101c4f85",
+        "remaining": "W3已实现并完成本地独立验收，详software.s48.w3；原方案记录保留。",
+        "root_approval": "local/s48/w3/root_implementation_approval.md",
+        "root_approval_sha256": "3dcd841422bad9b0b7eec3616531921ff9f08cd36a1912b7b95e28a8a734bad5",
+        "file_ownership": "local/s48/w3/file_ownership.md",
+        "file_ownership_sha256": "412394f387bb30c842a61149e2bed46a002d47f1bf1f91a1627f3fbedd631b42",
+        "independent_review": "local/s48/w3/independent_master_review.md",
+        "independent_review_sha256": "c8cbb82580ca0d14445a501df16b8db2615b8de825e495d6767751d9c5e69a7d",
+        "gateway_review": "local/s48/w3/independent_master_gateway_gates_review.md",
+        "gateway_review_sha256": "e9b752a457657e5d45c60d1fab2836e7f1bbd1aad4b0fb5275391655dfe1ac7d",
+        "gateway_r2_addendum": "local/s48/w3/independent_master_gateway_r2_addendum.md",
+        "gateway_r2_addendum_sha256": "4fbef8ce92a46385adc908509f86436d1d065d92345b60aa2054a12411d38841"
+      },
+      "w3": {
+        "status": "APPROVED_SOFTWARE_SCOPE",
+        "base_commit": "757ac5581a489672bdacd7bf56709f8996572fcb",
+        "start_receipt": "local/s48/w3/cc/start_receipt.json",
+        "start_receipt_sha256": "4a75386de05e36e0f521c10b7a1088488ecbd6a91f8668776f22e39ff560ef0c",
+        "source_before": "local/s48/w3/cc/source_before.sha256",
+        "source_before_sha256": "bcb93c1a3caf30e2746aaee99ce793bff24cfd1a2e58f5ccd4b9ba2d97759a1a",
+        "root_start_verification": "local/s48/w3/root_start_verification.json",
+        "root_start_verification_sha256": "4774cddc07877d7814871fe7e7cb77b416ab3eaa1ad27558e6a0ac8e1e1b22a2",
+        "remaining": "归档一致性复核后commit；后续W4/P-E和Orin软件/新现场验证未完成。",
+        "cas_observation_addendum": {
+          "status": "IMPLEMENTED_REVIEWED_IN_W3_FINAL_SOURCE",
+          "input": "local/s48/w3/authority_cas_observation_addendum.md",
+          "input_sha256": "40666c09964a6d776a9c47990ec697520b64400b89a14c19505c2a3c94a56b3d",
+          "independent_review": "local/s48/w3/independent_cas_observation_review.md",
+          "independent_review_sha256": "23e3d89d2a45f86869b1ba031a99f4cafc64437cfcd5bc79df0bea64c0ae6e2c",
+          "root_approval": "local/s48/w3/root_cas_observation_approval.md",
+          "root_approval_sha256": "5d3db8662f9dceaad883ad3c7d79569ad27d2cc8fa26cd72f5cef992e2b413d8",
+          "bus_release_forwarding": "root随后批准必要feature-only BusLease::release_observed(&ControlAuthority)->CasObserved<Result<Option<NormalIoReleased>,Refused<BusLease>>>：特殊无CAS真零，普通一次原authority observed释放，拒绝原lease重组原wrapper，与旧release共享逻辑，不开放raw lease；A/C保存实际added记录。"
+        },
+        "gateway_ledger_module": {
+          "status": "ADDED_FILE_OWNERSHIP_APPROVED",
+          "root_approval": "local/s48/w3/root_gateway_ledger_module_approval.md",
+          "root_approval_sha256": "b3bd536b50421616b5a37e1ee960124de2bbead09ba1ce33c02e4014f5882fd3",
+          "owner": "B",
+          "registration": "C pub(crate) mod gateway_ledger"
+        },
+        "development_validation": {
+          "status": "PARTIAL_DEVELOPMENT_RUNS_NOT_FINAL_ACCEPTANCE",
+          "root_verified_daemon_run": "local/s48/w3/cc/dev_main3/run.json",
+          "root_evidence_audit": "local/s48/w3/root_dev_main3_evidence_audit.json",
+          "root_evidence_audit_sha256": "8d5bb6002334766a9ed8bf7400ea84ee13bb88bc4c4abe7dc485fadeb25dbba0",
+          "daemon_cases": [
+            "真实Clear退休、双0/0、exit0",
+            "SyncMarkerFile实际卡住后监督exit90",
+            "有界文件失败超过3秒期间7次watchdog/IPC健康，恢复后双1/1、exit0"
+          ],
+          "archive_status": "原开发与失败记录随W3最终证据保留；不代替正式round4。",
+          "latest_feedback": {
+            "s0_hook_sweep2": "827 PASS / 0 FAIL / 1既有ignored，19个harness；含fmt的开发轮，不替最终冻结",
+            "startup_main2": "AC-22同源61/61，原始report SHA f65658b7aeef937e3f145f18c4058a2cfa96230b6cb36fc4afc17c59713a4405",
+            "remaining_software1": "Mock 0 PASS / 2 FAIL；AC-24另实际PASS，旧失败保留",
+            "fresh_disable_red": "真实PeriodicRead acquire/release后收到PreemptedByEStop，0 PASS / 1 FAIL，raw SHA ac42063efd960de03b6a762ee54b876ad9e6b80be3829908083bb8e4aac477b4",
+            "implementation_approval": "local/s48/w3/root_fresh_disable_boundary_approval.md",
+            "approval_sha256": "c633e9eee566cba2c1ec74bc3dcdb73ef4887520e45629000110d1be89b2260c",
+            "archive_status": "原开发/失败实件随W3归档；正式验收见w3.result。",
+            "s0_hook_sweep3": "836 PASS / 0 FAIL / 1既有ignored，19个harness，367项源前后同b87be3439c83a5c2014847995eb4485c4bfd60580fe88d5d393967c70a83b15c；开发轮非最终冻结",
+            "fresh_disable3": "13/13，增量独审已通过；保原RED和夹具失败，未用修后测试伪称接纳补齐已有修前RED",
+            "remaining_software3": "同源3件构建后Mock2/2、AC16 1/1；RPC1/4，三失败保持并按R-Retire修订测试，不放宽生产门或预算",
+            "rpc_fixture_approval": "local/s48/w3/root_rpc_retirement_fixture_approval.md",
+            "rpc_fixture_approval_sha256": "732398bc2dea203804a9084bad0d149a1a433037b12b6d625e19a7f46358bbe2",
+            "rpc_owned2": "新增一条三分支真Serial+原RR/Slot测试实际1/1；旧fixture列表FAIL保留",
+            "rpc_software4": "367项源前后同4bb9495b7effe3d8420d098d8a58c74d8f304e3922ac03369f412611e4b61f0a，3build/RPC4/AC21均通过；三持责进程原L exit1/residual2162，trace零drop；开发轮不替最终31门",
+            "rpc_report_sha256": "87ceb0e16ae082af018b026b50aa3724adaed2fd396a255f4525bfebed04d5b2"
+          }
+        },
+        "final_round": "round4",
+        "formal_gates": 31,
+        "source_count": 367,
+        "source_manifest": "local/s48/w3/cc/source_files_final.sha256",
+        "source_manifest_sha256": "2872511c4645976eadf319b3c25b83b4727f32582b7d6d53950e6f9ccdcc01c5",
+        "input_count": 228,
+        "inputs_manifest": "local/s48/w3/cc/formal_inputs_freeze4.json",
+        "inputs_manifest_sha256": "09d7074d20ad34273748a857f0458ddac0f813725fde8b680e51102c351921ae",
+        "result": "local/s48/w3/cc/result.json",
+        "result_sha256": "f4356ee6c5ea4bbfbac6abed77362c1d3d8d2dfbd8cf8372233be1c3c9c5941b",
+        "run": "local/s48/w3/cc/round4/run.json",
+        "run_sha256": "20410a5aa366d37618ef579fe69616f8c43072612dbe25fcd61e3c377d4e5163",
+        "test_counts": {
+          "test_workspace": {
+            "suites": 56,
+            "passed": 2151,
+            "failed": 0,
+            "ignored": 1
+          },
+          "test_workspace_doc": {
+            "suites": 16,
+            "passed": 56,
+            "failed": 0,
+            "ignored": 8
+          },
+          "test_s0_features": {
+            "suites": 19,
+            "passed": 837,
+            "failed": 0,
+            "ignored": 1
+          },
+          "test_release_guard": {
+            "suites": 2,
+            "passed": 26,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_guard_negative_dev": {
+            "suites": 1,
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_guard_negative_release": {
+            "suites": 1,
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_soak_dev": {
+            "suites": 1,
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_soak_release": {
+            "suites": 1,
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_release_orphan": {
+            "suites": 1,
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_transport_both": {
+            "suites": 8,
+            "passed": 99,
+            "failed": 0,
+            "ignored": 3
+          },
+          "test_transport_mock": {
+            "suites": 8,
+            "passed": 53,
+            "failed": 0,
+            "ignored": 2
+          },
+          "test_transport_iox": {
+            "suites": 5,
+            "passed": 87,
+            "failed": 0,
+            "ignored": 1
+          },
+          "test_transport_none": {
+            "suites": 2,
+            "passed": 41,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_history_s1": {
+            "suites": 1,
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_schema_compat": {
+            "suites": 1,
+            "passed": 35,
+            "failed": 0,
+            "ignored": 0
+          },
+          "test_w3_gateway": {
+            "suites": 1,
+            "passed": 11,
+            "failed": 0,
+            "ignored": 0
+          }
+        },
+        "software_cases": {
+          "passed": 72,
+          "failed": 0,
+          "report": "local/s48/w3/cc/round4/scenarios/report.json",
+          "sha256": "f44e82414553743afe6d9c2e52b2119467698acd3f215b7ed0b1257b2eadfd2e"
+        },
+        "root_review": "local/s48/w3/review.md",
+        "root_review_sha256": "71a4074ff611b4cec691841a6c6b81658ee33d845e95558129edb379ab4383f9",
+        "source_review": "local/s48/w3/cc/final_review_outputs/robot-w3-final-source-coverage-r3.json",
+        "source_review_sha256": "31e434522e5b83d621d64f05f1445e84bc25d704c1e4c612b4130f9243acc9cd",
+        "evidence_review": "local/s48/w3/final_review_outputs/robot-w3-round4-independent-evidence-review.md",
+        "evidence_review_sha256": "4e3b7f0636ff1026d6ca8c29f76600f73afba6b28c9ce8e3aa1e2d01986ae4f0",
+        "evidence_receipt": "local/s48/w3/final_review_outputs/robot-w3-round4-independent-evidence-receipt.json",
+        "evidence_receipt_sha256": "17702b2bb181733d3fb786fb7971cef35b7cbfb944694c15e00b795ce091737c",
+        "scope_limits": [
+          "本机软件验收；不新增W4/Orin/硬件或真实user systemd PASS",
+          "纯D及逐磁盘步骤SIGKILL未关闭",
+          "RR Relaxed严格排空证明未关闭",
+          "D15 OPEN / deployable=false",
+          "RR跨原子缺口可能漏掉已完成回复而长期占用原credit，含Lower；保持原责任不等于活性已解决。"
+        ],
+        "commit_reference": "本阶段实际commit见git日志；自身回执随下一次证据包更新，不构造自指hash。",
+        "archive_status": "W3最终实件与独立评审已纳入唯一H包；原失败不覆盖，二进制实件留本地。"
       }
     }
   },
@@ -2017,19 +2294,19 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2310,
-    "sha256": "8ac5173e1c47c9e6b21d20e2e2949cb0a1121207690fe3cf7c621b807b273300"
+    "lines": 2438,
+    "sha256": "0885dfe680e60f770eb58e46adc6c2432bd27df5ac31cbf33cdb192b3c40610f"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "c53e57a426bb3568116f7062a998919e098e262579ac9123c5576aee500ef913",
-    "bytes": 32200146,
-    "members": 8323,
-    "logical_bytes": 909957845,
+    "sha256": "a589c11b1ab591f57d525ec33a0ab837031294b16c18e6e84ff195114e3c0fb9",
+    "bytes": 45977707,
+    "members": 12086,
+    "logical_bytes": 1239778640,
     "per_file_sha256_verified": true
   },
-  "retention": "当前H包仅一份，不含可执行bin；Orin当前现场产物暂留执行H2，已删除旧e6准备记录。全部H阶段结束后归包并清理散数据。",
-  "updated_at": "2026-09-09T16:46:47.917847+00:00",
+  "retention": "当前H证据包仅一份；保留W3全部实际失败轮、最终评审与精简前入口原文，不含可执行bin；二进制实件留本地并保SHA/构建记录。",
+  "updated_at": "2026-09-10T02:41:13.829107+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",

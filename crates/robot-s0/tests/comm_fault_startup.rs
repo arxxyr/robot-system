@@ -8,9 +8,22 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use robot_core::time::{RobotClock, SystemClock};
+use robot_s0::boot_supervisor::{RUNTIME_SHUTDOWN_BUDGET, SHUTDOWN_MARGIN, absolute_boot_budget};
 use robot_s0::comm_fault_observation::{ObservationPage, ObservationSnapshot};
+use robot_s0::shutdown_mechanism::HandleKind;
+use robot_s0::worker_stop::WorkerKind;
 
 static NEXT_INSTANCE: AtomicU32 = AtomicU32::new(0);
+
+// 父进程只留原 D 加既有回收余量；真实退出仍须满足下方 L/D 时间包络。
+const RUNTIME_EXIT_TIMEOUT_MS: u64 = (RUNTIME_SHUTDOWN_BUDGET.0 + SHUTDOWN_MARGIN.0) / 1_000_000;
+const IPC_NO_ACK_RESIDUAL: u64 = (HandleKind::Executor.bit()
+    | HandleKind::Watchdog.bit()
+    | HandleKind::LatchWriter.bit()) as u64;
+const HELPER_STOP_BITMAP: u64 = (1 << WorkerKind::ClearEStopRr as u8)
+    | (1 << WorkerKind::SetEnabledRr as u8)
+    | (1 << WorkerKind::Pub as u8)
+    | (1 << WorkerKind::Io as u8);
 
 struct Process {
     child: Child,
@@ -157,7 +170,7 @@ impl Process {
                 "等待READY超时：{observed:?}\n{}",
                 self.log()
             );
-            if observed.ready_reached && observed.supervisor_exit_ns != 0 {
+            if observed.ready_reached && observed.runtime_armed_ns != 0 {
                 return observed;
             }
             std::thread::sleep(Duration::from_millis(5));
@@ -210,22 +223,66 @@ fn assert_initialized(observed: ObservationSnapshot) {
     );
 }
 
+/// 同域故障锚早于 runtime 武装；父进程真回收只提供外部时间包络，不冒充 D/L 观测。
+fn assert_ipc_no_ack_exit_time(trigger_ns: u64, reaped_ns: u64) {
+    let elapsed = reaped_ns.checked_sub(trigger_ns).unwrap();
+    let earliest = RUNTIME_SHUTDOWN_BUDGET.0 - 250_000_000;
+    let latest = RUNTIME_SHUTDOWN_BUDGET.0 + 100_000_000;
+    assert!(
+        (earliest..=latest).contains(&elapsed),
+        "IPC 无 ACK 必须等原 L，且不越过原 D 加 100ms 迟到容限：elapsed={elapsed}"
+    );
+}
+
 #[test]
-fn initialization_and_all_seven_workers_gate_first_bus_io() {
+fn initialization_and_all_eight_workers_gate_first_bus_io() {
     for joints in [6, 13, 32] {
         let mut process = Process::spawn(joints, &[], None, None);
         let observed = process.wait_ready(10_500 + 200 * joints as u64);
         assert_initialized(observed);
         assert_eq!(observed.joint_count, joints as u64);
-        assert_eq!(observed.worker_bitmap, 0x7f);
+        assert_eq!(observed.worker_bitmap, 0xff);
         assert_ne!(observed.spawned_ns, 0);
         assert!(observed.first_io_ns >= observed.spawned_ns);
         assert!(observed.preflight_finished_ns >= observed.first_io_ns);
         assert_eq!(observed.first_exit_ns, 0, "健康预检不产生故障 generation");
         assert!(observed.ready_ns >= observed.preflight_finished_ns);
-        assert!(observed.supervisor_exit_ns >= observed.ready_ns);
+        assert!(observed.runtime_armed_ns >= observed.ready_ns);
+        assert_eq!(observed.supervisor_exit_ns, 0);
         assert_eq!(observed.fired_checkpoint, 0);
         process.stop();
+    }
+}
+
+#[test]
+fn initial_history_not_applied_keeps_executor_unspawned_under_original_checkpoint() {
+    let mut process = Process::spawn_standalone_with_env(
+        6,
+        &[("ROBOT_TEST_INITIAL_COMMAND_SEQUENCE", "4242".to_owned())],
+    );
+    // 没有该序号的真实 publisher：不能用已创建 subscriber 冒充 initial_applied。
+    let code = process.wait_exit(5300);
+    assert!(matches!(code, 1 | 88), "{code}: {}", process.log());
+    let observed = process.page.snapshot();
+    assert_initialized(observed);
+    assert!(!observed.hook_ready);
+    assert_eq!(observed.command_applied, 0);
+    assert_eq!(
+        observed.worker_bitmap, 0x8f,
+        "writer + IPC + 两 RR + watchdog，执行器尚未 spawn"
+    );
+    assert_eq!(observed.spawned_ns, 0);
+    assert_eq!(observed.first_io_ns, 0);
+    assert!(observed.serial_calls.iter().all(|count| *count == 0));
+    assert!(!observed.ready_reached);
+    assert_eq!(observed.runtime_armed_ns, 0);
+    if code == 88 {
+        assert_eq!(observed.fired_checkpoint, 1);
+        assert!(
+            (5_000_000_000..=5_100_000_000).contains(&(observed.fired_ns - observed.main_start_ns))
+        );
+    } else {
+        assert_eq!(observed.stop_bitmap, observed.worker_bitmap);
     }
 }
 
@@ -235,16 +292,19 @@ fn auto_enable_disconnected_exits_before_ready() {
     assert_eq!(process.wait_exit(5000), 1);
     let observed = process.page.snapshot();
     assert_initialized(observed);
-    assert_eq!(observed.worker_bitmap, 0x7f);
+    assert_eq!(observed.worker_bitmap, 0xff);
     assert_ne!(observed.preflight_finished_ns, 0);
     assert!(!observed.ready_reached);
     assert_ne!(observed.disabled_ns, 0);
-    assert_eq!(observed.stop_bitmap, 0x7f);
+    assert_eq!(observed.stop_bitmap, 0xff);
     assert_eq!(observed.fired_checkpoint, 0);
-    assert!(
-        process.log().contains("auto-enable 的 IPC 接收端已退出"),
-        "{}",
-        process.log()
+    assert_eq!(observed.runtime_armed_ns, 0);
+    assert_eq!(observed.ready_ns, 0);
+    // 保留旧验收入口；新 IpcExit 仍持原 Receiver，线程已退出不等于 channel 断链。
+    // 真实 hook 等待 IPC 退出，main 检出原 worker finished 后保原对象退出，不能为日志丢 Receiver。
+    assert_eq!(
+        observed.serial_calls[0], 0,
+        "NormalEffectful 调用数必须为零，不能实际 Enable：{observed:?}"
     );
 }
 
@@ -253,7 +313,6 @@ fn ipc_worker_exit_after_ready_terminates_standalone_daemon() {
     use iceoryx2::prelude::{NodeBuilder, ServiceName};
     use iceoryx2::service::ipc::Service;
     use robot_s0::comm_fault_hook::{HookCommandKind, TestCommFaultCommand};
-    use robot_s0::worker_stop::WorkerKind;
 
     let mut process = Process::spawn(6, &[], None, None);
     process.wait_ready(5000);
@@ -270,6 +329,7 @@ fn ipc_worker_exit_after_ready_terminates_standalone_daemon() {
         .open_or_create()
         .unwrap();
     let publisher = service.publisher_builder().create().unwrap();
+    let request_at = SystemClock.now().0;
     publisher
         .loan_uninit()
         .unwrap()
@@ -284,13 +344,25 @@ fn ipc_worker_exit_after_ready_terminates_standalone_daemon() {
         })
         .send()
         .unwrap();
-    assert_eq!(process.wait_exit(5000), 1);
+    assert_eq!(process.wait_exit(RUNTIME_EXIT_TIMEOUT_MS), 1);
+    let reaped_at = SystemClock.now().0;
     let observed = process.page.snapshot();
     assert_eq!(observed.command_applied, 101, "必须由真实控制器消费注入");
     assert!(observed.ready_reached);
     assert_ne!(observed.disabled_ns, 0);
-    assert_eq!(observed.stop_bitmap, 0x7f);
+    assert_eq!(
+        observed.stop_bitmap,
+        HELPER_STOP_BITMAP | (1 << WorkerKind::Ipc as u8),
+        "仅真实注入的 IPC 停止及 helpers；无 ACK 不得停止受保护句柄"
+    );
+    assert_eq!(observed.residual_bitmap, IPC_NO_ACK_RESIDUAL);
     assert_eq!(observed.fired_checkpoint, 0);
+    assert_eq!(
+        observed.fired_reason, 0,
+        "应由 main 在 L 收尾，不能拖至 supervisor D"
+    );
+    assert_ipc_no_ack_exit_time(request_at, reaped_at);
+    assert!(process.log().contains("READY 后 worker 已退出"));
 }
 
 /// S48 A3b：READY 之后执行器（SerialRT mock）因快照版本耗尽结束；standalone
@@ -311,9 +383,10 @@ fn executor_snapshot_version_exhaustion_after_ready_terminates_standalone_daemon
     assert!(observed.ready_reached);
     assert_ne!(observed.disabled_ns, 0);
     assert_eq!(
-        observed.stop_bitmap, 0x7f,
-        "既有收尾必须停掉全部七个 worker"
+        observed.stop_bitmap, 0xff,
+        "IPC 仍活并完成原 ACK/Clear/flush，实际停止请求覆盖八个 worker"
     );
+    assert_eq!(observed.residual_bitmap, 0, "真实 join 后没有残余句柄");
     assert_eq!(observed.fired_checkpoint, 0);
     // 事件顺序证据：执行器在真实 publish 之前取的时钟（同 CLOCK_MONOTONIC_RAW）
     // 必须晚于 daemon 的真实 READY 时刻。
@@ -330,16 +403,16 @@ fn executor_snapshot_version_exhaustion_after_ready_terminates_standalone_daemon
         "IPC 未耗尽：{observed:?}"
     );
     let log = process.log();
-    assert!(log.contains("READY 后执行器 worker 已退出"), "{log}");
+    assert!(log.contains("READY 后 worker 已退出"), "{log}");
     assert!(
         log.contains("VersionExhausted") && log.contains("worker=Executor"),
         "{log}"
     );
     // 导出发生在 READY 循环退出 + 既有收尾真实 join 之后（不靠 is_finished）：
     // 日志顺序必须是 READY 判错在前、耗尽时刻导出在后。
-    assert_log_order(&log, "READY 后执行器 worker 已退出", "VersionExhausted");
+    assert_log_order(&log, "READY 后 worker 已退出", "VersionExhausted");
     assert!(
-        !log.contains("READY 后 IPC worker 已退出"),
+        !log.contains("worker=Ipc"),
         "执行器与 IPC 的耗尽出口分开核：{log}"
     );
     assert!(
@@ -367,9 +440,13 @@ fn ipc_state_snapshot_version_exhaustion_after_ready_terminates_standalone_daemo
     let ready = process.wait_ready(4000);
     assert!(ready.ready_reached);
     assert_eq!(process.wait_exit(15_000), 1);
+    let reaped_at = SystemClock.now().0;
     let observed = process.page.snapshot();
     assert!(observed.ready_reached);
-    assert_eq!(observed.stop_bitmap, 0x7f);
+    assert_eq!(observed.stop_bitmap, HELPER_STOP_BITMAP);
+    assert_eq!(observed.residual_bitmap, IPC_NO_ACK_RESIDUAL);
+    assert_eq!(observed.fired_checkpoint, 0);
+    assert_eq!(observed.fired_reason, 0);
     assert_ne!(observed.ipc_publish_failure_attempt_ns, 0, "{observed:?}");
     assert!(
         observed.ready_ns < observed.ipc_publish_failure_attempt_ns,
@@ -379,14 +456,15 @@ fn ipc_state_snapshot_version_exhaustion_after_ready_terminates_standalone_daemo
         observed.executor_publish_failure_attempt_ns, 0,
         "执行器未耗尽：{observed:?}"
     );
+    assert_ipc_no_ack_exit_time(observed.ipc_publish_failure_attempt_ns, reaped_at);
     let log = process.log();
-    assert!(log.contains("READY 后 IPC worker 已退出"), "{log}");
+    assert!(log.contains("READY 后 worker 已退出"), "{log}");
     assert!(
         log.contains("VersionExhausted") && log.contains("worker=Ipc"),
         "{log}"
     );
-    assert_log_order(&log, "READY 后 IPC worker 已退出", "VersionExhausted");
-    assert!(!log.contains("READY 后执行器 worker 已退出"), "{log}");
+    assert_log_order(&log, "READY 后 worker 已退出", "VersionExhausted");
+    assert!(!log.contains("worker=Executor"), "{log}");
     assert!(log.contains("standalone 无 READY socket"), "{log}");
     assert!(!log.contains("WATCHDOG_USEC"), "{log}");
 }
@@ -409,7 +487,14 @@ fn odd_snapshot_version_injection_is_rejected_at_startup() {
 #[test]
 fn each_worker_spawn_failure_stops_only_the_successful_prefix() {
     for (index, worker) in [
-        "ipc", "clear_rr", "set_rr", "watchdog", "executor", "pub", "io",
+        "latch_writer",
+        "ipc",
+        "clear_rr",
+        "set_rr",
+        "watchdog",
+        "executor",
+        "pub",
+        "io",
     ]
     .into_iter()
     .enumerate()
@@ -423,7 +508,12 @@ fn each_worker_spawn_failure_stops_only_the_successful_prefix() {
         );
         let observed = process.page.snapshot();
         assert_initialized(observed);
-        assert_eq!(observed.worker_bitmap, (1_u64 << index) - 1);
+        let expected = [7_u8, 0, 1, 2, 3, 4, 5, 6]
+            .into_iter()
+            .take(index)
+            .fold(0_u64, |bits, kind| bits | (1 << kind));
+        assert_eq!(observed.worker_bitmap, expected);
+        assert_eq!(observed.runtime_armed_ns, 0, "CP2 失败不得武装 Runtime");
         assert_eq!(observed.stop_bitmap, observed.worker_bitmap);
         assert_eq!(observed.spawned_ns, 0);
         assert_eq!(observed.first_io_ns, 0);
@@ -433,23 +523,22 @@ fn each_worker_spawn_failure_stops_only_the_successful_prefix() {
 
 #[test]
 fn main_pause_before_spawn_is_enforced_by_cp1() {
-    for stage in ["before_logging", "ipc_ready"] {
-        let mut process = Process::spawn(6, &[], Some(stage), None);
-        assert_eq!(process.wait_exit(5400), 88);
-        assert!(
-            process
-                .log()
-                .contains(&format!("comm_fault_hook stage={stage}"))
-        );
-        let observed = process.page.snapshot();
-        assert_initialized(observed);
-        assert_eq!(observed.fired_checkpoint, 1);
-        assert!(
-            (5_000_000_000..=5_100_000_000).contains(&(observed.fired_ns - observed.main_start_ns))
-        );
-        assert!(!observed.ready_reached);
-        assert_eq!(observed.first_io_ns, 0);
-    }
+    let stage = "before_logging";
+    let mut process = Process::spawn(6, &[], Some(stage), None);
+    assert_eq!(process.wait_exit(5400), 88);
+    assert!(
+        process
+            .log()
+            .contains(&format!("comm_fault_hook stage={stage}"))
+    );
+    let observed = process.page.snapshot();
+    assert_initialized(observed);
+    assert_eq!(observed.fired_checkpoint, 1);
+    assert!(
+        (5_000_000_000..=5_100_000_000).contains(&(observed.fired_ns - observed.main_start_ns))
+    );
+    assert!(!observed.ready_reached);
+    assert_eq!(observed.first_io_ns, 0);
 }
 
 #[test]
@@ -465,7 +554,8 @@ fn main_pause_after_spawn_is_enforced_by_cp2() {
         let observed = process.page.snapshot();
         assert_initialized(observed);
         assert_eq!(observed.fired_checkpoint, 2);
-        assert_eq!(observed.worker_bitmap, 0x7f);
+        assert_eq!(observed.worker_bitmap, 0xff);
+        assert_ne!(observed.spawned_ns, 0);
         assert!(
             (11_700_000_000..=11_800_000_000)
                 .contains(&(observed.fired_ns - observed.main_start_ns))
@@ -475,14 +565,58 @@ fn main_pause_after_spawn_is_enforced_by_cp2() {
 }
 
 #[test]
+fn ipc_ready_pause_returns_original_residual_before_cp2() {
+    let mut process = Process::spawn(6, &[], Some("ipc_ready"), None);
+    assert_eq!(process.wait_exit(12_000), 1);
+    let reaped_at = SystemClock.now().0;
+    let observed = process.page.snapshot();
+    assert_initialized(observed);
+    assert_eq!(observed.worker_bitmap, 0xff);
+    assert_eq!(observed.stop_bitmap, 0xff);
+    assert_eq!(observed.residual_bitmap, u64::from(HandleKind::Ipc.bit()));
+    assert_eq!(observed.fired_checkpoint, 0);
+    assert_eq!(observed.fired_reason, 0);
+    assert_eq!(observed.fired_ns, 0);
+    assert_eq!(observed.supervisor_exit_ns, 0);
+    assert!(!observed.ready_reached);
+    assert_eq!(observed.runtime_armed_ns, 0);
+    assert_ne!(observed.spawned_ns, 0);
+    assert_ne!(observed.first_io_ns, 0);
+    assert!(observed.first_io_ns >= observed.spawned_ns);
+    assert!(observed.preflight_finished_ns >= observed.first_io_ns);
+    // IPC worker 挂在 ready 前，main 仍按原绝对启动截止返错；父真回收只作时间外包络。
+    let cp2 = absolute_boot_budget(6).0 + SHUTDOWN_MARGIN.0;
+    let elapsed = reaped_at.checked_sub(observed.main_start_ns).unwrap();
+    assert!(
+        (cp2 - 50_000_000..=cp2 + 100_000_000).contains(&elapsed),
+        "elapsed={elapsed}"
+    );
+    let log = process.log();
+    assert_log_order(
+        &log,
+        "comm_fault_hook stage=ipc_ready",
+        "启动物理/ACK 截止失败",
+    );
+    assert_log_order(
+        &log,
+        "启动物理/ACK 截止失败",
+        "收尾未完成 join，不导出快照耗尽尝试时刻",
+    );
+    assert!(
+        !log.contains("VersionExhausted"),
+        "活 IPC 不能冒充真 join：{log}"
+    );
+}
+
+#[test]
 fn missing_required_notify_socket_never_commits_ready() {
     let mut process = Process::spawn(6, &["--notify-mode", "required"], None, None);
     assert_eq!(process.wait_exit(5000), 1);
     let observed = process.page.snapshot();
     assert_initialized(observed);
     assert!(!observed.ready_reached);
-    assert_eq!(observed.worker_bitmap, 0x7f);
-    assert_eq!(observed.stop_bitmap, 0x7f);
+    assert_eq!(observed.worker_bitmap, 0xff);
+    assert_eq!(observed.stop_bitmap, 0xff);
     assert_ne!(observed.disabled_ns, 0);
 }
 

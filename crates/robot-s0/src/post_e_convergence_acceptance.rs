@@ -14,7 +14,7 @@ use robot_core::executor_ctrl::{
     OutputSafetyProbe, OutputSafetyState, SerialEmergencyCtrl, TorqueEnableMask,
 };
 use robot_core::serial_services::{
-    AbortReason, BusOpClass, CommErrorKind, NormalAbortTarget, PreemptProbe,
+    AbortReason, BusOpClass, CommErrorKind, LeasedPreemptProbe, NormalAbortTarget, PreemptProbe,
 };
 use robot_core::time::{DurationNs, MockClock, MonoRawNs, RobotClock};
 
@@ -30,6 +30,11 @@ use crate::serial_io_thread::{SerialIoThreadMetrics, SerialTick, SerialTickConte
 use crate::serial_preempt::SerialPreemptProbe;
 use crate::state_machine::FaultCode;
 
+// 本模块仅在 cfg(test) 编入 S0 lib test；生产分配器不变。
+#[cfg(feature = "rt_guard")]
+#[global_allocator]
+static LIB_TEST_ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Io {
     Safety,
@@ -40,6 +45,14 @@ enum Io {
     Mode(ControlMode),
     Read,
     Write,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EnableBoundary {
+    Ordinary,
+    RevokeBetweenMotors,
+    RevokeAfterLastMotor,
+    FailAfterFirstMotor,
 }
 
 #[derive(Clone, Copy)]
@@ -91,6 +104,9 @@ struct ScriptedAdapter {
     probe: Arc<SerialPreemptProbe>,
     limits: JointLimits,
     during_enable: Option<Box<dyn FnOnce() + Send>>,
+    during_confirm: Option<Box<dyn FnOnce() + Send>>,
+    enable_boundary: EnableBoundary,
+    actual_torque: [bool; 2],
 }
 
 impl ScriptedAdapter {
@@ -109,6 +125,9 @@ impl ScriptedAdapter {
             probe,
             limits: JointLimits::default(),
             during_enable: None,
+            during_confirm: None,
+            enable_boundary: EnableBoundary::Ordinary,
+            actual_torque: [false; 2],
         }
     }
 
@@ -119,7 +138,7 @@ impl ScriptedAdapter {
             started_at: self.clock.now(),
             trusted: self.probe.confirmation_trusted(),
             safety: self.ctrl.safety_state(),
-            inhibit: self.ctrl.inhibit.load(Ordering::Acquire),
+            inhibit: self.ctrl.inhibit_bits(),
         });
         let reply = self.script.pop_front().expect("出现脚本以外的额外 IO");
         assert_eq!(io, reply.io, "实际设备调用顺序偏离独立脚本");
@@ -140,6 +159,7 @@ impl ScriptedAdapter {
                 AbortReason::Emergency => {
                     client.estop_monotonic();
                 }
+                AbortReason::Revoked => panic!("Revoked 必须来自真实 A2 租约拒绝，不能脚本注入"),
             }
             assert_eq!(
                 self.probe.should_abort(self.probe.operation_class()),
@@ -196,11 +216,38 @@ impl ManipulatorAdapter for ScriptedAdapter {
     }
 
     fn enable(&mut self, on: bool) -> Result<(), RobotError> {
-        self.invoke(Io::Enable(on)).result
+        let reply = self.invoke(Io::Enable(on));
+        if self.enable_boundary == EnableBoundary::Ordinary {
+            return reply.result;
+        }
+        reply.result?;
+        for motor in 0..2 {
+            let lease = self
+                .probe
+                .begin_leased(BusOpClass::NormalEffectful)
+                .map_err(RobotError::Aborted)?;
+            self.actual_torque[motor] = on;
+            self.probe.finish_leased(lease);
+            match (self.enable_boundary, motor) {
+                (EnableBoundary::RevokeBetweenMotors, 0)
+                | (EnableBoundary::RevokeAfterLastMotor, 1) => {
+                    let _ = self.ctrl.authority().disable();
+                }
+                (EnableBoundary::FailAfterFirstMotor, 0) => {
+                    return Err(RobotError::HardwareFault("首电机已经上扭后设备失败"));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     fn safety_stop(&mut self) -> Result<(), RobotError> {
-        self.invoke(Io::Safety).result
+        let result = self.invoke(Io::Safety).result;
+        if result.is_ok() {
+            self.actual_torque.fill(false);
+        }
+        result
     }
 
     fn limits(&self) -> &JointLimits {
@@ -211,8 +258,14 @@ impl ManipulatorAdapter for ScriptedAdapter {
 impl OutputSafetyProbe for ScriptedAdapter {
     fn read_torque_enable_mask(&mut self, out: &mut [bool]) -> Result<(), RobotError> {
         let reply = self.invoke(Io::Confirm);
+        if let Some(during) = self.during_confirm.take() {
+            during();
+        }
         for (index, enabled) in out.iter_mut().enumerate() {
-            *enabled = reply.torque_on & (1_u32 << index) != 0;
+            *enabled = match self.enable_boundary {
+                EnableBoundary::Ordinary => reply.torque_on & (1_u32 << index) != 0,
+                _ => self.actual_torque[index],
+            };
         }
         reply.result
     }
@@ -235,7 +288,9 @@ struct Fixture {
 impl Fixture {
     fn new(authorized: bool, replies: impl IntoIterator<Item = Reply>) -> Self {
         let clock = Arc::new(MockClock::default());
-        let ctrl = Arc::new(HardRtCtrlInner::new_serial());
+        let ctrl = Arc::new(HardRtCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(true),
+        ));
         let probe = Arc::new(SerialPreemptProbe::new(clock.clone(), ctrl.clone()));
         Self {
             adapter: ScriptedAdapter::new(clock.clone(), ctrl.clone(), probe.clone(), replies),
@@ -277,7 +332,7 @@ impl Fixture {
             fixture.ctrl.safety_state(),
             OutputSafetyState::TorqueOffConfirmed
         );
-        assert_eq!(fixture.ctrl.inhibit.load(Ordering::Acquire), 0);
+        assert_eq!(fixture.ctrl.inhibit_bits(), 0);
         fixture.adapter.assert_drained();
         assert_eq!(
             fixture
@@ -405,7 +460,7 @@ fn trusted_await_ack_reopens_physics_without_losing_generation_or_accepting_earl
         let mut f = Fixture::await_trusted_fault();
         let old_round = *f.machine.round().unwrap();
         let generation = f.ctrl.mailbox_snapshot().unwrap().generation;
-        let old_reasons = f.ctrl.inhibit.load(Ordering::Acquire);
+        let old_reasons = f.ctrl.inhibit_bits();
         if ack_at == 0 {
             f.ctrl.ack_fault(generation);
         }
@@ -419,10 +474,7 @@ fn trusted_await_ack_reopens_physics_without_losing_generation_or_accepting_earl
             (old_round.ctx, old_round.generation)
         );
         assert_eq!(reopened.completed_safety, None);
-        assert_eq!(
-            f.ctrl.inhibit.load(Ordering::Acquire) & old_reasons,
-            old_reasons
-        );
+        assert_eq!(f.ctrl.inhibit_bits() & old_reasons, old_reasons);
         f.adapter
             .script
             .extend([Io::Safety, Io::Confirm].map(Reply::ok));
@@ -431,10 +483,7 @@ fn trusted_await_ack_reopens_physics_without_losing_generation_or_accepting_earl
         }
         f.tick();
         assert_eq!(f.machine.phase(), ConvergePhase::Confirm);
-        assert_ne!(
-            f.ctrl.inhibit.load(Ordering::Acquire) & inhibit::FAULT_PENDING,
-            0
-        );
+        assert_ne!(f.ctrl.inhibit_bits() & inhibit::FAULT_PENDING, 0);
         if ack_at == 2 {
             f.ctrl.ack_fault(generation);
         }
@@ -443,14 +492,8 @@ fn trusted_await_ack_reopens_physics_without_losing_generation_or_accepting_earl
         assert_eq!(f.ctrl.mailbox_snapshot().unwrap().generation, generation);
         f.tick();
         assert_eq!(f.machine.phase(), ConvergePhase::Idle);
-        assert_eq!(
-            f.ctrl.inhibit.load(Ordering::Acquire) & inhibit::FAULT_PENDING,
-            0
-        );
-        assert_ne!(
-            f.ctrl.inhibit.load(Ordering::Acquire) & inhibit::COMM_FAULT,
-            0
-        );
+        assert_eq!(f.ctrl.inhibit_bits() & inhibit::FAULT_PENDING, 0);
+        assert_ne!(f.ctrl.inhibit_bits() & inhibit::COMM_FAULT, 0);
         f.adapter.assert_drained();
     }
 }
@@ -477,10 +520,7 @@ fn untrusted_await_ack_escalates_without_any_extra_io_and_ignores_old_ack() {
         f.tick();
     }
     assert_eq!(f.adapter.observed.len(), io_count);
-    assert_ne!(
-        f.ctrl.inhibit.load(Ordering::Acquire) & inhibit::FAULT_PENDING,
-        0
-    );
+    assert_ne!(f.ctrl.inhibit_bits() & inhibit::FAULT_PENDING, 0);
     f.ctrl.ack_fault(new.generation);
     f.tick();
     assert_eq!(f.machine.phase(), ConvergePhase::SafetyStopFailed);
@@ -775,10 +815,7 @@ fn old_ack_never_clears_upgraded_fault_and_only_first_comm_upgrade_restarts_stop
     for old in [first, second] {
         f.ctrl.ack_fault(old);
         f.tick();
-        assert_ne!(
-            f.ctrl.inhibit.load(Ordering::Acquire) & inhibit::FAULT_PENDING,
-            0
-        );
+        assert_ne!(f.ctrl.inhibit_bits() & inhibit::FAULT_PENDING, 0);
     }
     assert_eq!(
         f.adapter
@@ -815,10 +852,7 @@ fn a_new_emergency_round_publishes_its_first_fault_even_after_an_older_fault_was
     assert_eq!(round.attempt, 1);
     assert_eq!(round.generation, Some(previous + 1));
     assert_eq!(f.ctrl.mailbox_snapshot().unwrap().generation, previous + 1);
-    assert_ne!(
-        f.ctrl.inhibit.load(Ordering::Acquire) & inhibit::FAULT_PENDING,
-        0
-    );
+    assert_ne!(f.ctrl.inhibit_bits() & inhibit::FAULT_PENDING, 0);
     f.adapter.assert_drained();
 }
 
@@ -854,12 +888,16 @@ struct TickFixture {
     diag: SerialDiagRing,
     metrics: SerialIoThreadMetrics,
     command: JointCommandBuf,
+    pending: crate::ipc_pending::IpcPending,
+    failure: Option<crate::ipc_pending::EnableFailureFact>,
 }
 
 impl TickFixture {
     fn healthy() -> Self {
         let clock = Arc::new(MockClock::default());
-        let ctrl = Arc::new(HardRtCtrlInner::new_serial());
+        let ctrl = Arc::new(HardRtCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(true),
+        ));
         let probe = Arc::new(SerialPreemptProbe::new(clock.clone(), ctrl.clone()));
         let mut f = Self {
             driver: SerialTick::new(true, 2, clock.now()),
@@ -874,6 +912,8 @@ impl TickFixture {
             probe,
             diag: SerialDiagRing::new(),
             metrics: SerialIoThreadMetrics::default(),
+            pending: crate::ipc_pending::IpcPending::Idle,
+            failure: None,
             command: JointCommandBuf {
                 joint_count: 2,
                 ..JointCommandBuf::default()
@@ -903,12 +943,45 @@ impl TickFixture {
             },
             MonoRawNs(self.clock.now().0 + 5_000_000),
         );
+        let pending = std::mem::replace(&mut self.pending, crate::ipc_pending::IpcPending::Idle);
+        let client = HardRtCtrlClient::new(self.ctrl.clone());
+        self.failure = None;
+        self.pending =
+            match crate::ipc_pending::advance_owned(pending, &client, self.clock.as_ref()) {
+                Ok(step) => {
+                    assert!(step.replies.is_empty());
+                    self.failure = step.failure;
+                    step.pending
+                }
+                Err(rejected) => rejected.pending,
+            };
         self.clock.advance(DurationNs::from_millis(5));
         result
     }
 
-    fn submit(&self, request: AdapterNormalReq) -> u64 {
-        match HardRtCtrlClient::new(self.ctrl.clone()).request_normal(request) {
+    fn submit(&mut self, request: AdapterNormalReq) -> u64 {
+        let client = HardRtCtrlClient::new(self.ctrl.clone());
+        if request == AdapterNormalReq::Enable(true) {
+            let original =
+                std::mem::replace(&mut self.pending, crate::ipc_pending::IpcPending::Idle);
+            self.pending = match crate::ipc_pending::start_enable_owned(
+                original,
+                None,
+                &client,
+                self.clock.now(),
+            ) {
+                crate::ipc_pending::EnableStartOutcome::Advanced(step) => step.pending,
+                other => panic!("真实 Enable 预约/公告失败：{other:?}"),
+            };
+            return match &self.pending {
+                crate::ipc_pending::IpcPending::Enable(enable) => enable.seq().unwrap(),
+                other => panic!("{other:?}"),
+            };
+        }
+        if request == AdapterNormalReq::Enable(false) {
+            let _ = self.ctrl.authority().disable();
+        }
+        match client.request_normal(request) {
             NormalReqStatus::Submitted { seq } => seq,
             other => panic!("健康夹具提交失败：{other:?}"),
         }
@@ -944,7 +1017,7 @@ pub(crate) fn healthy_ipc_control() -> (Arc<HardRtCtrlInner>, Arc<MockClock>) {
         fixture.ctrl.safety_state(),
         OutputSafetyState::TorqueOffConfirmed
     );
-    assert_eq!(fixture.ctrl.inhibit.load(Ordering::Acquire), 0);
+    assert_eq!(fixture.ctrl.inhibit_bits(), 0);
     (fixture.ctrl, fixture.clock)
 }
 
@@ -1125,7 +1198,7 @@ fn unsubmitted_timeout_drives_real_tick_without_original_action_or_new_sample() 
     assert_eq!(message.origin, FaultOrigin::PendingTimeout);
     assert!(f.ctrl.rx_trust.load(Ordering::Acquire));
     assert!(f.ctrl.session_clean.load(Ordering::Acquire));
-    assert!(!f.ctrl.safety_latched.load(Ordering::Acquire));
+    assert!(!f.ctrl.safety_latched());
     assert_eq!(f.driver.state().stamp_ns, old.stamp_ns);
     assert_eq!(
         f.driver.state().positions.map(f32::to_bits),
@@ -1149,15 +1222,12 @@ fn pending_submitted_timeout_cancels_before_normal_action_and_preserves_exact_se
         Some(AdapterResp::Err(AdapterErr::AbortedByTimeout))
     );
     assert!(f.ctrl.rx_trust.load(Ordering::Acquire));
-    assert!(!f.ctrl.safety_latched.load(Ordering::Acquire));
-    assert_ne!(
-        f.ctrl.inhibit.load(Ordering::Acquire) & inhibit::FAULT_PENDING,
-        0
-    );
+    assert!(!f.ctrl.safety_latched());
+    assert_ne!(f.ctrl.inhibit_bits() & inhibit::FAULT_PENDING, 0);
 }
 
 #[test]
-fn completed_disable_only_skips_physical_io_but_keeps_fault_generation_and_ack() {
+fn completed_disable_skips_repeat_stop_but_requires_current_confirm_and_original_ack() {
     for next_read_fails in [false, true] {
         let mut f = TickFixture::healthy();
         let seq = f.submit(AdapterNormalReq::Enable(false));
@@ -1176,18 +1246,16 @@ fn completed_disable_only_skips_physical_io_but_keeps_fault_generation_and_ack()
         assert_eq!(f.ctrl.rx_trust.load(Ordering::Acquire), !next_read_fails);
         let old_io_count = f.adapter.observed.len();
         f.timeout(NormalAbortTarget::Submitted { seq });
+        f.adapter.script.push_back(Reply::ok(Io::Confirm));
         f.run_to_await_ack();
         assert_eq!(
             f.adapter.observed.len(),
-            old_io_count,
-            "完成Disable不得重复Safety/Confirm"
+            old_io_count + 1,
+            "旧 Disable 只免去重复 Stop，必须实际确认当前代次"
         );
         let message = f.ctrl.mailbox_snapshot().unwrap();
         assert_eq!(message.code, FaultCode::CommFault);
-        assert_ne!(
-            f.ctrl.inhibit.load(Ordering::Acquire) & inhibit::FAULT_PENDING,
-            0
-        );
+        assert_ne!(f.ctrl.inhibit_bits() & inhibit::FAULT_PENDING, 0);
         let expected = if next_read_fails {
             OutputSafetyState::AdapterUncertain
         } else {
@@ -1199,9 +1267,81 @@ fn completed_disable_only_skips_physical_io_but_keeps_fault_generation_and_ack()
         f.ctrl.ack_fault(message.generation);
         let _ = f.tick();
         assert_eq!(f.driver.convergence().phase(), ConvergePhase::Idle);
+        assert_ne!(f.ctrl.inhibit_bits() & inhibit::COMM_FAULT, 0);
+    }
+}
+
+/// 旧 Disable 的 `CompletedEffect` 只免重复 Stop；新撤销不能借旧完成绕过真实 Confirm。
+#[test]
+fn late_disable_confirmation_preserves_revocation_and_consumed_attempt_budget() {
+    for rejected_confirmations in [1_u8, 5] {
+        let mut f = TickFixture::healthy();
+        let sequence = f.submit(AdapterNormalReq::Enable(false));
+        f.adapter
+            .script
+            .extend([Io::Enable(false), Io::Read].map(Reply::ok));
+        let _ = f.tick();
+        assert_eq!(
+            HardRtCtrlClient::new(f.ctrl.clone()).poll_last_normal_resp(sequence),
+            Some(AdapterResp::Ok)
+        );
+        f.timeout(NormalAbortTarget::Submitted { seq: sequence });
+        let mut original_round = None;
+        for attempt in 1..=rejected_confirmations {
+            let authority = f.ctrl.authority().clone();
+            f.adapter.during_confirm = Some(Box::new(move || {
+                let _ = authority.disable();
+            }));
+            f.adapter.script.push_back(Reply::ok(Io::Confirm));
+            let _ = f.tick();
+            assert_eq!(f.driver.convergence().phase(), ConvergePhase::Confirm);
+            let round = *f.driver.convergence().round().unwrap();
+            let identity = (round.ctx, round.generation, round.estop_bound);
+            assert_eq!(*original_round.get_or_insert(identity), identity);
+            assert_eq!(round.attempt, attempt, "真实撤销不刷新本轮确认次数");
+            assert_eq!(round.completed_safety, None);
+            assert_ne!(f.ctrl.inhibit_bits() & inhibit::CONVERGING, 0);
+        }
+        let calls = f.adapter.observed.len();
+        if rejected_confirmations == 1 {
+            f.adapter.script.push_back(Reply::ok(Io::Confirm));
+        }
+        let _ = f.tick();
+        f.adapter.assert_drained();
+        let round = f.driver.convergence().round().unwrap();
+        assert_eq!(
+            (round.ctx, round.generation, round.estop_bound),
+            original_round.unwrap()
+        );
+        assert_eq!(f.driver.convergence().phase(), ConvergePhase::AwaitAck);
+        match rejected_confirmations {
+            1 => {
+                assert_eq!(f.adapter.observed.len(), calls + 1);
+                assert_eq!(round.attempt, 2);
+                assert_eq!(
+                    round.completed_safety,
+                    Some(ConvergeCompletion::AllOffTrusted)
+                );
+            }
+            5 => {
+                assert_eq!(
+                    f.adapter.observed.len(),
+                    calls,
+                    "五次已用完，不准补第六次 IO"
+                );
+                assert_eq!(round.attempt, 5);
+                assert!(matches!(
+                    round.completed_safety,
+                    Some(ConvergeCompletion::AdapterUncertain { .. })
+                ));
+                assert_eq!(f.ctrl.safety_state(), OutputSafetyState::AdapterUncertain);
+            }
+            _ => unreachable!(),
+        }
         assert_ne!(
-            f.ctrl.inhibit.load(Ordering::Acquire) & inhibit::COMM_FAULT,
-            0
+            f.ctrl.inhibit_bits() & inhibit::FAULT_PENDING,
+            0,
+            "原 ACK 责任保持"
         );
     }
 }
@@ -1300,7 +1440,7 @@ fn cancel_tag_visible_before_authority_cas_only_cancels_and_does_not_start_an_em
     let payload = f.ctrl.pending_normal.load(Ordering::Acquire);
     let client = HardRtCtrlClient::new(f.ctrl.clone());
     let mut injected = false;
-    client.estop_monotonic_before_cas(|| {
+    client.estop_monotonic_after_cancel(|| {
         if injected {
             return;
         }
@@ -1339,7 +1479,7 @@ fn completed_cancellation_is_still_matched_by_a_late_timeout_and_keeps_estop_obl
     let seq = f.submit(AdapterNormalReq::Enable(true));
     let client = HardRtCtrlClient::new(f.ctrl.clone());
     let mut injected = false;
-    client.estop_monotonic_before_cas(|| {
+    client.estop_monotonic_after_cancel(|| {
         if !injected {
             injected = true;
             let _ = f.tick();
@@ -1476,6 +1616,7 @@ fn active_action_is_retired_at_real_adapter_boundary_and_preserves_typed_result(
         let expected = match reason {
             AbortReason::Timeout => AdapterErr::AbortedByTimeout,
             AbortReason::Emergency => AdapterErr::PreemptedByEmergency,
+            AbortReason::Revoked => unreachable!("此用例只遍历 Timeout/Emergency"),
         };
         assert_eq!(
             HardRtCtrlClient::new(f.ctrl.clone()).poll_last_normal_resp(seq),
@@ -1498,13 +1639,14 @@ fn active_action_is_retired_at_real_adapter_boundary_and_preserves_typed_result(
                     f.ctrl.mailbox_snapshot().unwrap().detail,
                     CommErrorKind::PendingDeadline.to_u8()
                 );
-                assert!(!f.ctrl.safety_latched.load(Ordering::Acquire));
+                assert!(!f.ctrl.safety_latched());
             }
             AbortReason::Emergency => {
                 assert_eq!(f.driver.convergence().phase(), ConvergePhase::Idle);
                 assert_eq!(f.ctrl.mailbox_snapshot(), None);
-                assert!(f.ctrl.safety_latched.load(Ordering::Acquire));
+                assert!(f.ctrl.safety_latched());
             }
+            AbortReason::Revoked => unreachable!("此用例只遍历 Timeout/Emergency"),
         }
         f.adapter.assert_drained();
     }
@@ -1593,11 +1735,21 @@ fn a_new_timeout_survives_the_old_retirement_compare_exchange_and_is_processed_n
     ));
     assert_eq!(f.ctrl.abort_request.load(Ordering::Acquire), seq + 77);
     assert!(f.ctrl.rx_trust.load(Ordering::Acquire));
+    let generation = f.ctrl.mailbox_snapshot().unwrap().generation;
+    assert_eq!(f.driver.convergence().phase(), ConvergePhase::Confirm);
+    // 旧 Disable 完成只免重复 Stop，仍须本轮真实 Confirm；新 Unknown 不刷新此轮。
+    f.adapter.script.push_back(Reply::ok(Io::Confirm));
     let _ = f.tick();
     assert_eq!(f.ctrl.abort_request.load(Ordering::Acquire), 0);
     assert!(
         !f.ctrl.rx_trust.load(Ordering::Acquire),
         "新请求必须实际经过 Unknown 退场"
+    );
+    assert_eq!(f.ctrl.mailbox_snapshot().unwrap().generation, generation);
+    assert_eq!(f.driver.convergence().counters().stop_writes, 1);
+    assert_eq!(
+        f.adapter.observed.last().map(|observation| observation.io),
+        Some(Io::Confirm)
     );
     f.adapter.assert_drained();
 }
@@ -1614,7 +1766,7 @@ fn every_inhibit_bit_blocks_periodic_io_even_with_active_forward_policy() {
     ] {
         let mut f = TickFixture::healthy();
         let old = *f.driver.state();
-        f.ctrl.inhibit.store(bit, Ordering::Release);
+        f.ctrl.tighten_inhibits(bit);
         f.ctrl
             .policy
             .store(OutputPolicy::ActiveForward.to_u8(), Ordering::Release);
@@ -1690,9 +1842,7 @@ fn repeated_overdue_reads_cannot_feed_liveness_but_io_free_waits_can() {
         before,
         "过期调用的 tick 尾不得掩盖 lease 失败"
     );
-    f.ctrl
-        .inhibit
-        .store(inhibit::ADAPTER_FAULT, Ordering::Release);
+    f.ctrl.tighten_inhibits(inhibit::ADAPTER_FAULT);
     let _ = f.tick();
     assert!(
         f.ctrl.liveness_counter.load(Ordering::Acquire) > before,
@@ -1785,7 +1935,7 @@ mod sampling_boundary {
                 assert!(f.adapter.observed.is_empty());
                 let client = HardRtCtrlClient::new(f.ctrl.clone());
                 let mut before_cas_calls = 0;
-                client.estop_monotonic_before_cas(|| {
+                client.estop_monotonic_after_cancel(|| {
                     before_cas_calls += 1;
                     // 原语已进入但 CAS 尚未建立保护：此时另一个 serial tick 仍不能放行 normal。
                     let _ = f.tick();
@@ -1917,8 +2067,12 @@ fn mock_call_lease_covers_estop_errors_and_excludes_other_adapters() {
         if mocked {
             f.adapter.name = "mock_serial_rt";
         }
+        let (owner, view) = f.ctrl.authority().reserve_enable().unwrap();
+        let execution = f.ctrl.authority().start_enable(view).unwrap();
+        f.ctrl.execution_slot().install(execution.view()).unwrap();
         f.probe.set_context(
             BusOpClass::NormalEffectful,
+            crate::serial_preempt::InstalledIntent::EnableStep,
             47,
             MonoRawNs(f.clock.now().0 + 100_000_000),
             true,
@@ -1934,10 +2088,7 @@ fn mock_call_lease_covers_estop_errors_and_excludes_other_adapters() {
                 _ => Reply::ok(Io::Enable(true)),
             });
             f.adapter.during_enable = Some(Box::new(move || {
-                assert_eq!(
-                    ctrl.safety_word.load(Ordering::Acquire) & NORMAL_IO_ACTIVE != 0,
-                    mocked
-                );
+                assert_eq!(ctrl.safety_word() & NORMAL_IO_ACTIVE != 0, mocked);
                 if case == "estop_in_call" {
                     HardRtCtrlClient::new(ctrl.clone()).estop_monotonic();
                 }
@@ -1960,10 +2111,24 @@ fn mock_call_lease_covers_estop_errors_and_excludes_other_adapters() {
             _ => assert_eq!(response, Some(Ok(()))),
         }
         assert_eq!(
-            f.ctrl.safety_word.load(Ordering::Acquire) & NORMAL_IO_ACTIVE,
+            f.ctrl.safety_word() & NORMAL_IO_ACTIVE,
             0,
             "{case}: 方法返回必须归还执行权"
         );
+        f.ctrl.execution_slot().clear();
+        let result = match response {
+            Some(Ok(())) => robot_core::control_authority::EnableResult::Succeeded,
+            _ => robot_core::control_authority::EnableResult::Failed,
+        };
+        f.ctrl.authority().finish_enable(execution, result).unwrap();
+        match case {
+            "non_mock" => {
+                f.ctrl.authority().commit_enable(owner).unwrap();
+            }
+            _ => {
+                f.ctrl.authority().retire_enable(owner).unwrap();
+            }
+        }
         let acquired = events
             .iter()
             .filter(|e| e.kind == TraceKind::NormalAcquire && e.b == 1)
@@ -1981,5 +2146,678 @@ fn mock_call_lease_covers_estop_errors_and_excludes_other_adapters() {
                 .unwrap();
             assert_eq!(committed.b & 1, 1, "真实 EStop CAS 发生在 wrapper lease 内");
         }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "同一真实部分执行的失败事实、原 owner 退休和 Stop/Confirm 顺序须完整验收"
+)]
+fn actual_partial_enable_and_late_success_cannot_retire_lower_using_old_off() {
+    for boundary in [
+        EnableBoundary::RevokeBetweenMotors,
+        EnableBoundary::RevokeAfterLastMotor,
+        EnableBoundary::FailAfterFirstMotor,
+    ] {
+        let mut f = TickFixture::healthy();
+        f.adapter.enable_boundary = boundary;
+        let seq = f.submit(AdapterNormalReq::Enable(true));
+        let (domain, epoch) = match &f.pending {
+            crate::ipc_pending::IpcPending::Enable(enable) => {
+                (enable.owner().domain(), enable.view_epoch())
+            }
+            _ => unreachable!(),
+        };
+        f.adapter
+            .script
+            .extend([Io::Enable(true), Io::Safety, Io::Confirm].map(Reply::ok));
+        let _ = f.tick();
+        assert!(
+            f.adapter.actual_torque[0],
+            "首个受真实租约保护的电机调用确已上扭"
+        );
+        let expected = match boundary {
+            EnableBoundary::RevokeBetweenMotors => AdapterResp::Err(AdapterErr::AuthorityRevoked),
+            EnableBoundary::RevokeAfterLastMotor => AdapterResp::Ok,
+            EnableBoundary::FailAfterFirstMotor => AdapterResp::Err(AdapterErr::HardwareFault),
+            EnableBoundary::Ordinary => unreachable!(),
+        };
+        assert_eq!(
+            HardRtCtrlClient::new(f.ctrl.clone()).poll_last_normal_resp(seq),
+            Some(expected)
+        );
+        assert_eq!(f.ctrl.safety_state(), OutputSafetyState::StopCommanded);
+        match boundary {
+            EnableBoundary::FailAfterFirstMotor => {
+                let failure = f.failure.take().expect("原 seq 的首次真实失败事实");
+                assert!(matches!(
+                    failure.source(),
+                    crate::ipc_pending::EnableFailureSource::ExecutionFailed(
+                        AdapterErr::HardwareFault
+                    )
+                ));
+                let crate::ipc_pending::IpcPending::Enable(enable) = &f.pending else {
+                    panic!("首次交接失败事实时必须保留原 Enable owner");
+                };
+                assert_eq!(
+                    (enable.owner().domain(), enable.view_epoch()),
+                    (domain, epoch)
+                );
+                assert_eq!(enable.seq(), None, "原 seq 的真实完成已消费");
+            }
+            EnableBoundary::RevokeBetweenMotors
+            | EnableBoundary::RevokeAfterLastMotor
+            | EnableBoundary::Ordinary => {
+                assert!(f.failure.is_none());
+                assert!(matches!(
+                    f.pending,
+                    crate::ipc_pending::IpcPending::Lower(_)
+                ));
+            }
+        }
+        assert_eq!(f.driver.convergence().phase(), ConvergePhase::StopIssue);
+        assert!(
+            f.ctrl
+                .authority()
+                .acquire_normal_io(robot_core::control_authority::NormalIoIntent::Motion)
+                .is_err()
+        );
+        let _ = f.tick();
+        assert!(f.failure.is_none(), "下一轮原 route 退休不得重报失败事实");
+        assert_eq!(f.adapter.actual_torque, [false; 2]);
+        assert_eq!(
+            f.ctrl.safety_state(),
+            OutputSafetyState::StopCommanded,
+            "实际 Stop 返回还不是 Confirm 证明"
+        );
+        assert!(matches!(
+            f.pending,
+            crate::ipc_pending::IpcPending::Lower(_)
+        ));
+        let _ = f.tick();
+        assert!(f.failure.is_none());
+        assert_eq!(f.ctrl.safety_state(), OutputSafetyState::TorqueOffConfirmed);
+        assert_eq!(
+            f.driver.convergence().counters().stop_writes,
+            2,
+            "含启动一次，本次只能安排一次 Stop"
+        );
+        match boundary {
+            EnableBoundary::FailAfterFirstMotor => {
+                assert_eq!(
+                    f.ctrl.mailbox_snapshot().unwrap().code,
+                    FaultCode::AdapterErr
+                );
+                assert!(
+                    matches!(f.pending, crate::ipc_pending::IpcPending::Lower(_)),
+                    "原故障 ACK 责任不能由确认清掉"
+                );
+            }
+            _ => assert!(matches!(f.pending, crate::ipc_pending::IpcPending::Idle)),
+        }
+        f.adapter.assert_drained();
+    }
+}
+
+#[test]
+fn finish_retry_keeps_original_sequence_and_does_not_rearm_a_completed_stop() {
+    for timeout in [false, true] {
+        let mut f = TickFixture::healthy();
+        let lease_holder = Arc::new(std::sync::Mutex::new(None));
+        let during_holder = lease_holder.clone();
+        let ctrl = f.ctrl.clone();
+        // 仅制造真实 finish 的 NormalIoActive 拒绝；不伪造 A2 结果或原 Execution。
+        f.adapter.during_enable = Some(Box::new(move || {
+            let view = ctrl.execution_slot().load().unwrap();
+            let lease = ctrl
+                .authority()
+                .acquire_normal_io(robot_core::control_authority::NormalIoIntent::EnableStep(
+                    view,
+                ))
+                .unwrap();
+            *during_holder.lock().unwrap() = Some(lease);
+        }));
+        let seq = f.submit(AdapterNormalReq::Enable(true));
+        f.adapter.script.push_back(Reply::ok(Io::Enable(true)));
+        let _ = f.tick();
+        let client = HardRtCtrlClient::new(f.ctrl.clone());
+        assert_eq!(client.poll_last_normal_resp(seq), None);
+        if timeout {
+            f.timeout(NormalAbortTarget::Submitted { seq });
+        } else {
+            client.estop_monotonic();
+        }
+        f.adapter
+            .script
+            .extend([Io::Safety, Io::Confirm].map(Reply::ok));
+        let _ = f.tick();
+        assert_eq!(
+            client.poll_last_normal_resp(seq),
+            None,
+            "高优先级停止不冒作原 Enable finish"
+        );
+        assert_eq!(f.driver.convergence().phase(), ConvergePhase::Confirm);
+        let _ = f.tick();
+        assert_eq!(client.poll_last_normal_resp(seq), None);
+        assert_eq!(f.ctrl.safety_state(), OutputSafetyState::TorqueOffConfirmed);
+        let original_round = *f.driver.convergence().round().unwrap();
+        let stops = f.driver.convergence().counters().stop_writes;
+        f.ctrl
+            .authority()
+            .release_normal_io(lease_holder.lock().unwrap().take().unwrap())
+            .unwrap();
+        if !timeout {
+            f.adapter.script.push_back(Reply::ok(Io::Read));
+        }
+        let _ = f.tick();
+        assert_eq!(client.poll_last_normal_resp(seq), Some(AdapterResp::Ok));
+        assert_eq!(
+            f.ctrl.safety_state(),
+            OutputSafetyState::TorqueOffConfirmed,
+            "finish 续接不得撤掉本调用后实际确认的 Off"
+        );
+        assert_eq!(*f.driver.convergence().round().unwrap(), original_round);
+        assert_eq!(f.driver.convergence().counters().stop_writes, stops);
+        assert_eq!(f.metrics.normal_completed_count.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            f.adapter
+                .observed
+                .iter()
+                .filter(|entry| entry.io == Io::Enable(true))
+                .count(),
+            1
+        );
+        f.adapter.assert_drained();
+    }
+}
+
+#[test]
+fn enable_compensation_merges_active_attempts_and_never_reopens_sticky_failure() {
+    let mut f = Fixture::healthy();
+    f.fault(FaultCode::CommFault, CommErrorKind::PendingDeadline);
+    f.adapter.script.push_back(Reply::ok(Io::Safety));
+    f.adapter.script.extend(std::iter::repeat_n(
+        Reply::error(Io::Confirm, RobotError::Comm(CommErrorKind::Timeout)),
+        5,
+    ));
+    f.tick();
+    let initial = *f.machine.round().unwrap();
+    let stop_writes = f.machine.counters().stop_writes;
+    for attempt in 0..5 {
+        let before = *f.machine.round().unwrap();
+        f.machine
+            .ensure_enable_compensation(&f.ctrl, &f.diag, f.clock.now());
+        assert_eq!(*f.machine.round().unwrap(), before);
+        assert_eq!(f.machine.counters().stop_writes, stop_writes);
+        f.tick();
+        assert_eq!(f.machine.round().unwrap().attempt, attempt + 1);
+        assert_eq!(f.machine.round().unwrap().generation, initial.generation);
+    }
+    assert_eq!(f.ctrl.safety_state(), OutputSafetyState::AdapterUncertain);
+    let terminal = *f.machine.round().unwrap();
+    let terminal_phase = f.machine.phase();
+    f.machine
+        .ensure_enable_compensation(&f.ctrl, &f.diag, f.clock.now());
+    assert_eq!(*f.machine.round().unwrap(), terminal);
+    assert_eq!(f.machine.phase(), terminal_phase);
+    assert_eq!(f.machine.counters().stop_writes, stop_writes);
+    f.adapter.assert_drained();
+}
+
+#[test]
+fn old_completed_or_same_fault_dedup_cannot_manufacture_enable_recovery_coverage() {
+    let mut f = Fixture::await_trusted_fault();
+    let original = *f.machine.round().unwrap();
+    let mail = f.ctrl.mailbox_snapshot().unwrap();
+    let receipt = f.machine.enter_fault_arranged(
+        mail.code,
+        mail.detail,
+        FaultOrigin::NormalAction,
+        &f.ctrl,
+        &f.diag,
+        f.clock.now(),
+        31,
+    );
+    assert!(receipt.is_none());
+    assert_eq!(*f.machine.round().unwrap(), original);
+    assert_eq!(f.machine.phase(), ConvergePhase::AwaitAck);
+    assert!(
+        f.machine
+            .claim_estop_arranged(&f.ctrl, &f.diag, f.clock.now())
+            .is_none(),
+        "无真实 pending 的重复 claim 不得复用旧 Off 生成接管事实"
+    );
+    f.adapter.assert_drained();
+}
+
+#[cfg(feature = "rt_guard")]
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "真实适配器与同一 driver 的完整补偿调用都在本场景受 allocator 验证"
+)]
+fn serial_enable_compensation_uses_real_allocator_without_allocating() {
+    struct NoAllocAdapter {
+        probe: Arc<SerialPreemptProbe>,
+        ctrl: Arc<HardRtCtrlInner>,
+        limits: JointLimits,
+        on: bool,
+        enable_calls: u64,
+        stops: u64,
+        confirms: u64,
+    }
+    impl ManipulatorAdapter for NoAllocAdapter {
+        fn info(&self) -> AdapterInfo {
+            AdapterInfo {
+                name: "补偿零分配真调用",
+                kind: AdapterKind::Manipulator,
+                rt_class: RtClass::SerialRT,
+                vendor_sdk: false,
+            }
+        }
+        fn connect(&mut self) -> Result<(), RobotError> {
+            Ok(())
+        }
+        fn disconnect(&mut self) -> Result<(), RobotError> {
+            self.on = false;
+            Ok(())
+        }
+        fn read_state(&mut self, _out: &mut JointStateBuf) -> Result<(), RobotError> {
+            Ok(())
+        }
+        fn write_command(&mut self, _cmd: &JointCommandView<'_>) -> Result<(), RobotError> {
+            Ok(())
+        }
+        fn set_mode(&mut self, _mode: ControlMode) -> Result<(), RobotError> {
+            Ok(())
+        }
+        fn enable(&mut self, on: bool) -> Result<(), RobotError> {
+            let lease = self
+                .probe
+                .begin_leased(BusOpClass::NormalEffectful)
+                .map_err(RobotError::Aborted)?;
+            self.on = on;
+            self.enable_calls += 1;
+            self.probe.finish_leased(lease);
+            let _ = self.ctrl.authority().disable();
+            // 真实撤销后的第二笔申请拒绝；第一笔模拟设备已经上扭。
+            let lease = self
+                .probe
+                .begin_leased(BusOpClass::NormalEffectful)
+                .map_err(RobotError::Aborted)?;
+            self.probe.finish_leased(lease);
+            Ok(())
+        }
+        fn safety_stop(&mut self) -> Result<(), RobotError> {
+            self.stops += 1;
+            self.on = false;
+            Ok(())
+        }
+        fn limits(&self) -> &JointLimits {
+            &self.limits
+        }
+    }
+    impl OutputSafetyProbe for NoAllocAdapter {
+        fn joint_count(&self) -> usize {
+            2
+        }
+        fn read_torque_enable_mask(&mut self, out: &mut [bool]) -> Result<(), RobotError> {
+            self.confirms += 1;
+            out.fill(self.on);
+            Ok(())
+        }
+    }
+    let mut f = TickFixture::healthy();
+    let seq = f.submit(AdapterNormalReq::Enable(true));
+    let mut adapter = NoAllocAdapter {
+        probe: f.probe.clone(),
+        ctrl: f.ctrl.clone(),
+        limits: JointLimits::default(),
+        on: false,
+        enable_calls: 0,
+        stops: 0,
+        confirms: 0,
+    };
+    let context = SerialTickContext {
+        ctrl: &f.ctrl,
+        probe: &f.probe,
+        diag: &f.diag,
+        clock: f.clock.as_ref(),
+        metrics: &f.metrics,
+    };
+    assert_no_alloc::assert_no_alloc(|| {
+        for _ in 0..3 {
+            let _ = f.driver.tick(
+                &mut adapter,
+                &f.command.as_view(),
+                &context,
+                MonoRawNs(f.clock.now().0 + 5_000_000),
+            );
+            f.clock.advance(DurationNs::from_millis(5));
+        }
+    });
+    assert_eq!(
+        (adapter.enable_calls, adapter.stops, adapter.confirms),
+        (1, 1, 1)
+    );
+    assert!(!adapter.on);
+    assert_eq!(f.ctrl.safety_state(), OutputSafetyState::TorqueOffConfirmed);
+    assert_eq!(
+        HardRtCtrlClient::new(f.ctrl.clone()).poll_last_normal_resp(seq),
+        Some(AdapterResp::Err(AdapterErr::AuthorityRevoked))
+    );
+}
+
+// SIGABRT 的实际判据只在 Unix 验收；不把其它平台的任意失败当分配器证明。
+#[cfg(all(feature = "rt_guard", unix))]
+#[test]
+fn serial_compensation_allocator_negative_control_really_rejects_alloc() {
+    use std::os::unix::process::ExitStatusExt;
+    const CHILD: &str = "ROBOT_W3_SERIAL_ALLOC_NEGATIVE";
+    if std::env::var_os(CHILD).is_some() {
+        eprintln!("W3_SERIAL_ALLOC_NEGATIVE_ENTERED");
+        assert_no_alloc::assert_no_alloc(|| {
+            let value = std::hint::black_box(Vec::<u8>::with_capacity(std::hint::black_box(1024)));
+            std::hint::black_box(value);
+        });
+        return;
+    }
+    let logs = tempfile::tempdir().unwrap();
+    let path = logs.path().join("negative.log");
+    let log = std::fs::File::create(&path).unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "post_e_convergence_acceptance::serial_compensation_allocator_negative_control_really_rejects_alloc", "--nocapture"])
+        .env(CHILD, "1").stdout(log.try_clone().unwrap()).stderr(log).spawn().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            result => {
+                let _ = child.kill();
+                let reap = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                loop {
+                    if matches!(child.try_wait(), Ok(Some(_))) {
+                        break;
+                    }
+                    if std::time::Instant::now() >= reap {
+                        std::process::abort();
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                panic!("负对照子进程异常，已真实 kill/reap：{result:?}");
+            }
+        }
+    };
+    let raw = std::fs::read_to_string(path).unwrap();
+    assert!(
+        raw.contains("W3_SERIAL_ALLOC_NEGATIVE_ENTERED"),
+        "未进入实际反证：{raw}"
+    );
+    assert_eq!(
+        status.signal(),
+        Some(libc::SIGABRT),
+        "必须是实际 allocator 触发 SIGABRT：{raw}"
+    );
+    eprintln!("W3_SERIAL_ALLOC_NEGATIVE_REJECTED");
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "同一原 RR 的实际执行、故障锁存、物理退休及原 Slot 归还必须贯穿三个真实设备结果分支"
+)]
+fn serial_fault_retains_original_rr_and_slot_until_trusted_physical_retirement() {
+    use crate::ipc_pending::{
+        BusinessObservation, EnableStartOutcome, IpcPending, PendingOutcome, RevokeCause,
+        RrIdentity, advance_owned, observe_business, revoke_enable, start_enable_owned,
+    };
+    use crate::ipc_thread::SetEnabledRrPayload;
+    use crate::rr_admission::{CheckedLimits, PeerLedger, RrRequestClass};
+    use crate::state_machine::S0State;
+    use robot_core::control_authority::{Phase, Refusal, SafetyObservationError, SafetyOperation};
+
+    #[derive(Clone, Copy)]
+    enum Case {
+        TrustedAdapterError,
+        UntrustedCommFault,
+        StopFailed,
+    }
+    fn drive_serial(f: &mut TickFixture) {
+        let _ = f.driver.tick(
+            &mut f.adapter,
+            &f.command.as_view(),
+            &SerialTickContext {
+                ctrl: &f.ctrl,
+                probe: &f.probe,
+                diag: &f.diag,
+                clock: f.clock.as_ref(),
+                metrics: &f.metrics,
+            },
+            MonoRawNs(f.clock.now().0 + 5_000_000),
+        );
+        f.clock.advance(DurationNs::from_millis(5));
+    }
+    fn observe_actual_fault(f: &mut TickFixture) {
+        // 来自本次真实 Serial 路由发布的 mailbox；不在夹具中制造 Fault 快照。
+        let fault = f.ctrl.mailbox_snapshot().expect("真实设备故障必须有原公告");
+        let observed = BusinessObservation {
+            now: f.clock.now(),
+            state: S0State::Fault(fault.code),
+            estop: f.ctrl.authority().snapshot().latch,
+        };
+        let pending = std::mem::replace(&mut f.pending, IpcPending::Idle);
+        let pending = observe_business(pending, observed);
+        f.pending = match pending {
+            IpcPending::Enable(_) => revoke_enable(pending, RevokeCause::Fault, observed)
+                .expect("仅同原 Enable 记录已实际发布的故障撤销"),
+            original => original,
+        };
+        f.ctrl.ack_fault(fault.generation);
+    }
+
+    for case in [
+        Case::TrustedAdapterError,
+        Case::UntrustedCommFault,
+        Case::StopFailed,
+    ] {
+        let mut f = TickFixture::healthy();
+        let limits = CheckedLimits::try_from_limits(&robot_transport::iceoryx2::RrStaticLimits {
+            c: 1,
+            l: 4,
+        })
+        .unwrap();
+        let mut ledger = PeerLedger::new(&limits).unwrap();
+        let mut slot = Some(ledger.admit(1_u8, RrRequestClass::Restore).unwrap());
+        let route = slot.as_ref().unwrap().identity();
+        let request_id = "原串口故障请求";
+        let client = HardRtCtrlClient::new(f.ctrl.clone());
+        let start = start_enable_owned(
+            IpcPending::Idle,
+            Some(RrIdentity {
+                request_id: request_id.into(),
+                deadline_ns: f.clock.now().0 + 1_000_000_000,
+                route,
+            }),
+            &client,
+            f.clock.now(),
+        );
+        f.pending = match start {
+            EnableStartOutcome::Advanced(step) => step.pending,
+            other => panic!("真实 owner/公告/原请求应提交：{other:?}"),
+        };
+        let (domain, epoch, seq) = match &f.pending {
+            IpcPending::Enable(enable) => (
+                enable.owner().domain(),
+                enable.view_epoch(),
+                enable.seq().unwrap(),
+            ),
+            _ => unreachable!(),
+        };
+        let error = match case {
+            Case::UntrustedCommFault => RobotError::Comm(CommErrorKind::Timeout),
+            Case::TrustedAdapterError | Case::StopFailed => {
+                RobotError::HardwareFault("真实设备调用失败")
+            }
+        };
+        f.adapter
+            .script
+            .push_back(Reply::error(Io::Enable(true), error));
+        match case {
+            Case::StopFailed => f.adapter.script.extend(std::iter::repeat_n(
+                Reply::error(Io::Safety, RobotError::HardwareFault("真实 Stop 失败")),
+                3,
+            )),
+            Case::TrustedAdapterError | Case::UntrustedCommFault => {
+                f.adapter
+                    .script
+                    .extend([Io::Safety, Io::Confirm].map(Reply::ok));
+            }
+        }
+        drive_serial(&mut f);
+        assert!(matches!(
+            client.poll_last_normal_resp(seq),
+            Some(AdapterResp::Err(_))
+        ));
+        assert_eq!(f.metrics.normal_completed_count.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            f.ctrl.authority().snapshot().phase,
+            Some(Phase::EnableFailed)
+        );
+        observe_actual_fault(&mut f);
+        let first = match &f.pending {
+            IpcPending::Enable(enable) => {
+                assert_eq!(enable.seq(), Some(seq));
+                let rr = enable.rr().unwrap();
+                assert_eq!(rr.identity().route, route);
+                assert_eq!(rr.identity().request_id, request_id);
+                assert!(matches!(
+                    rr.locked().unwrap().outcome(),
+                    PendingOutcome::Existing(SetEnabledRrPayload::AdapterError)
+                ));
+                rr.locked().unwrap().at()
+            }
+            _ => unreachable!(),
+        };
+        let pending = std::mem::replace(&mut f.pending, IpcPending::Idle);
+        let step = advance_owned(pending, &client, f.clock.as_ref()).unwrap();
+        assert!(step.replies.is_empty());
+        assert!(
+            step.failure.is_none(),
+            "原 mailbox 已接管，不重报第二次失败事实"
+        );
+        f.pending = step.pending;
+        assert_eq!(f.ctrl.authority().snapshot().phase, Some(Phase::Idle));
+        let mut replies = Vec::new();
+        for _ in 0..4 {
+            if let IpcPending::Lower(lower) = &f.pending {
+                let carried = lower.carried_enable().expect("原 owner 退后仍持原 RR");
+                assert_eq!((carried.domain(), carried.view_epoch()), (domain, epoch));
+                assert_eq!(carried.source_seq(), None, "原 seq 已从真实完成槽消费");
+                let rr = carried.rr().unwrap();
+                assert_eq!(
+                    (rr.identity().request_id.as_str(), rr.identity().route),
+                    (request_id, route)
+                );
+                assert_eq!(rr.locked().unwrap().at(), first);
+                assert!(matches!(
+                    rr.locked().unwrap().outcome(),
+                    PendingOutcome::Existing(SetEnabledRrPayload::AdapterError)
+                ));
+                assert!(slot.is_some());
+                assert!(
+                    ledger.admit(1_u8, RrRequestClass::Restore).is_err(),
+                    "持原槽时不能再次借信用"
+                );
+            }
+            drive_serial(&mut f);
+            observe_actual_fault(&mut f);
+            let pending = std::mem::replace(&mut f.pending, IpcPending::Idle);
+            let step = advance_owned(pending, &client, f.clock.as_ref()).unwrap();
+            f.pending = step.pending;
+            for reply in step.replies.into_entries() {
+                assert_eq!(
+                    (reply.identity.request_id.as_str(), reply.identity.route),
+                    (request_id, route)
+                );
+                assert!(matches!(
+                    reply.outcome,
+                    PendingOutcome::Existing(SetEnabledRrPayload::AdapterError)
+                ));
+                ledger
+                    .release(slot.take().expect("同原 Slot 只能归还一次"))
+                    .unwrap();
+                replies.push(reply);
+            }
+        }
+        match case {
+            Case::TrustedAdapterError => {
+                assert_eq!(f.ctrl.safety_state(), OutputSafetyState::TorqueOffConfirmed);
+                assert!(matches!(f.pending, IpcPending::Idle));
+                assert_eq!(replies.len(), 1);
+                assert!(slot.is_none());
+                let next = ledger.admit(1_u8, RrRequestClass::Restore).unwrap();
+                ledger.release(next).unwrap();
+            }
+            Case::UntrustedCommFault | Case::StopFailed => {
+                let expected = match case {
+                    Case::UntrustedCommFault => OutputSafetyState::AdapterUncertain,
+                    Case::StopFailed => OutputSafetyState::StopFailed,
+                    Case::TrustedAdapterError => unreachable!(),
+                };
+                assert_eq!(f.ctrl.safety_state(), expected);
+                assert!(replies.is_empty());
+                assert!(matches!(f.pending, IpcPending::Lower(_)));
+                assert!(slot.is_some());
+                let round = *f.driver.convergence().round().unwrap();
+                let stop_writes = f.driver.convergence().counters().stop_writes;
+                let expected_calls = match case {
+                    Case::StopFailed => {
+                        assert_eq!(stop_writes, 4, "启动一次，故障后仅三次真实 Stop");
+                        vec![Io::Enable(true), Io::Safety, Io::Safety, Io::Safety]
+                    }
+                    Case::UntrustedCommFault => {
+                        assert_eq!(stop_writes, 2);
+                        vec![Io::Enable(true), Io::Safety, Io::Confirm]
+                    }
+                    Case::TrustedAdapterError => unreachable!(),
+                };
+                assert_eq!(
+                    f.adapter
+                        .observed
+                        .iter()
+                        .map(|call| call.io)
+                        .collect::<Vec<_>>(),
+                    expected_calls,
+                    "SSF 不得 Connect/Confirm/第四次 Stop，通信故障不重开轮次"
+                );
+                let actual_calls = f.adapter.observed.len();
+                // 这是独立 core API 拒绝对照，不是 Serial 实际发出或成功完成了新 Confirm。
+                // 原负分支没有额外设备调用，不清粘滞终态、不重开原轮或任何物理预算。
+                let observed = f
+                    .ctrl
+                    .authority()
+                    .begin_safety_observation(SafetyOperation::ConfirmOff);
+                assert!(
+                    matches!(f.ctrl.authority().complete_safety_observation(observed),
+                    Err(SafetyObservationError::Rejected(Refusal::SafetyNotRelaxable(state))) if state == expected)
+                );
+                assert_eq!(*f.driver.convergence().round().unwrap(), round);
+                assert_eq!(f.driver.convergence().counters().stop_writes, stop_writes);
+                assert_eq!(f.adapter.observed.len(), actual_calls);
+                let pending = std::mem::replace(&mut f.pending, IpcPending::Idle);
+                let step = advance_owned(pending, &client, f.clock.as_ref()).unwrap();
+                assert!(step.replies.is_empty());
+                f.pending = step.pending;
+                assert!(ledger.admit(1_u8, RrRequestClass::Restore).is_err());
+            }
+        }
+        assert_eq!(f.metrics.normal_completed_count.load(Ordering::Relaxed), 1);
+        f.adapter.assert_drained();
+        // 负分支的原 pending/Slot 留在本地拥有聚合到夹具末尾，未发退休回复或退款。
+        let _retained_fixture = (f.pending, slot, ledger);
     }
 }

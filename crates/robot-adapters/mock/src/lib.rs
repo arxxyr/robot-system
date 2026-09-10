@@ -40,7 +40,6 @@ pub struct MockHardRTAdapter {
     mode: ControlModeRepr,
     connected: bool,
     enabled: bool,
-    safety_stopped: bool,
 }
 
 impl MockHardRTAdapter {
@@ -64,19 +63,7 @@ impl MockHardRTAdapter {
             mode: ControlModeRepr::Stop,
             connected: false,
             enabled: false,
-            safety_stopped: false,
         }
-    }
-
-    /// **task-30 v9 / `SerialRT` E2E 修订**：清 mock 的持久 `safety_stopped` flag。
-    ///
-    /// **仅供 test / `SerialRT` wrap 内部使用**：模拟真 `SerialRT` 硬件
-    /// （Feetech）的 `ClearEStop` 语义 —— `safety_stop` 是 broadcast disable，
-    /// 不持久 latch；操作员 `ClearEStop` 后再 `enable(true)` 应该成功。mock
-    /// 内部为单测便利保留持久 latch；E2E 测试用 `MockSerialRTAdapter` wrap，
-    /// 在 `enable(true)` 之前先调本 API 清 latch，行为更接近真硬件。
-    pub fn reset_safety_latch_for_test(&mut self) {
-        self.safety_stopped = false;
     }
 
     /// 便利构造：`joint_count` 关节，位置限位均为 `[-pi, pi]`，速度 / 力矩限位
@@ -108,9 +95,6 @@ impl ManipulatorAdapter for MockHardRTAdapter {
     }
 
     fn connect(&mut self) -> Result<(), RobotError> {
-        if self.safety_stopped {
-            return Err(RobotError::HardwareFault("safety_stop latched"));
-        }
         self.connected = true;
         Ok(())
     }
@@ -167,15 +151,11 @@ impl ManipulatorAdapter for MockHardRTAdapter {
         if !self.connected {
             return Err(RobotError::NotConnected);
         }
-        if self.safety_stopped && on {
-            return Err(RobotError::HardwareFault("safety_stop latched"));
-        }
         self.enabled = on;
         Ok(())
     }
 
     fn safety_stop(&mut self) -> Result<(), RobotError> {
-        self.safety_stopped = true;
         self.enabled = false;
         // 所有字段归零 —— 物理上等价"输出切断 + 保持 0 位置"。
         self.state.positions = [0.0; MAX_JOINTS];
@@ -209,7 +189,6 @@ impl ManipulatorAdapter for MockHardRTAdapter {
 // HardRT adapter 实现这个 trait = 编译期声明；assert_no_alloc 单测验证之。
 impl RtSafeCtrl for MockHardRTAdapter {
     fn safety_stop_rt(&mut self) -> Result<(), RobotError> {
-        self.safety_stopped = true;
         self.enabled = false;
         self.state.positions = [0.0; MAX_JOINTS];
         self.state.velocities = [0.0; MAX_JOINTS];
@@ -220,9 +199,6 @@ impl RtSafeCtrl for MockHardRTAdapter {
     fn enable_rt(&mut self, on: bool) -> Result<(), RobotError> {
         if !self.connected {
             return Err(RobotError::NotConnected);
-        }
-        if self.safety_stopped && on {
-            return Err(RobotError::HardwareFault("safety_stop latched"));
         }
         self.enabled = on;
         Ok(())
@@ -251,7 +227,7 @@ impl OutputSafetyProbe for MockHardRTAdapter {
         }
         // Mock 只跟踪整体 enabled flag，每个 motor 回同一 bool。真硬件每 motor
         // 独立读 Torque_Enable 寄存器才真正反映"部分 motor 没断电"的失败模式。
-        let val = self.enabled && !self.safety_stopped;
+        let val = self.enabled;
         for slot in &mut out[..n] {
             *slot = val;
         }
@@ -354,8 +330,6 @@ impl ManipulatorAdapter for MockSerialRTAdapter {
         }
     }
     fn connect(&mut self) -> Result<(), RobotError> {
-        // 串口物理广播不持久锁住握手；启动先断扭后 Connect 仍保持 enabled=false。
-        self.inner.reset_safety_latch_for_test();
         self.inner.connect()
     }
     fn disconnect(&mut self) -> Result<(), RobotError> {
@@ -371,16 +345,6 @@ impl ManipulatorAdapter for MockSerialRTAdapter {
         self.inner.set_mode(mode)
     }
     fn enable(&mut self, on: bool) -> Result<(), RobotError> {
-        // **task-30 v9 / SerialRT E2E 修订**：模拟真 SerialRT (Feetech) 硬件
-        // 的 ClearEStop 语义 —— `safety_stop` 只 broadcast disable
-        // Torque_Enable，不持久 latch；下次 `enable(true)` 是新的 broadcast
-        // Torque_Enable=1，应当成功（对应物理上操作员清完 EStop 后重新使能）。
-        // inner（`MockHardRTAdapter`）为单测便利保留持久 `safety_stopped`
-        // 粘性 latch；这里在 enable(true) 之前清掉，让 wrap 的对外行为更
-        // 接近真硬件。
-        if on {
-            self.inner.reset_safety_latch_for_test();
-        }
         self.inner.enable(on)
     }
     fn safety_stop(&mut self) -> Result<(), RobotError> {
@@ -553,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn safety_stop_latches_and_zeros_state() {
+    fn safety_stop_disables_until_a_new_enable_and_zeros_state() {
         let mut a = MockHardRTAdapter::with_unlimited_limits(2);
         a.connect().unwrap();
         a.enable(true).unwrap();
@@ -563,11 +527,15 @@ mod tests {
         let mut out = JointStateBuf::default();
         a.read_state(&mut out).unwrap();
         assert_eq!(&out.positions[..2], &[0.0, 0.0]);
-        // 尝试再 enable 会失败（latched）
-        assert_eq!(
-            a.enable(true).unwrap_err(),
-            RobotError::HardwareFault("safety_stop latched")
-        );
+        // Stop 后不重新使能时，写命令不产生输出；恢复权限由上层唯一 A2 管理。
+        a.write_command(&cmd).unwrap();
+        a.read_state(&mut out).unwrap();
+        assert_eq!(&out.positions[..2], &[0.0, 0.0]);
+        assert!(!a.enabled);
+        a.enable(true).unwrap();
+        a.write_command(&cmd).unwrap();
+        a.read_state(&mut out).unwrap();
+        assert_eq!(&out.positions[..2], &[5.0, 5.0]);
     }
 
     #[test]
@@ -596,7 +564,7 @@ mod tests {
     // ---- task-30 v9 / M2：RtSafeCtrl 行为 + RT 安全性 ----
 
     #[test]
-    fn rt_safety_stop_latches_and_zeros_state() {
+    fn rt_safety_stop_disables_until_a_new_enable_and_zeros_state() {
         let mut a = MockHardRTAdapter::with_unlimited_limits(2);
         a.connect().unwrap();
         a.enable(true).unwrap();
@@ -606,11 +574,15 @@ mod tests {
         let mut out = JointStateBuf::default();
         a.read_state(&mut out).unwrap();
         assert_eq!(&out.positions[..2], &[0.0, 0.0]);
-        // safety_stopped 已 latch
-        assert_eq!(
-            a.enable_rt(true).unwrap_err(),
-            RobotError::HardwareFault("safety_stop latched")
-        );
+        // Stop 后不重新使能时，写命令不产生输出；恢复权限由上层唯一 A2 管理。
+        a.write_command(&cmd).unwrap();
+        a.read_state(&mut out).unwrap();
+        assert_eq!(&out.positions[..2], &[0.0, 0.0]);
+        assert!(!a.enabled);
+        a.enable_rt(true).unwrap();
+        a.write_command(&cmd).unwrap();
+        a.read_state(&mut out).unwrap();
+        assert_eq!(&out.positions[..2], &[5.0, 5.0]);
     }
 
     #[test]
@@ -657,10 +629,6 @@ mod tests {
         assert_no_alloc(|| {
             let _ = a.safety_stop_rt();
         });
-
-        // 清 latch（safety_stop 之后 enable_rt(true) 会被拒；做一遍 reset 让后续
-        // enable 能跑）。Mock 没有公开 clear_latch，直接重置 latched 标志测试用。
-        a.safety_stopped = false;
 
         // enable_rt(false) / enable_rt(true)
         assert_no_alloc(|| {

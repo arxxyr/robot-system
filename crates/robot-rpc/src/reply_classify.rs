@@ -1,8 +1,12 @@
 //! 回复退休证据的纯分类；不操作队列、许可或缓存。
 
+use crate::class_cache::DrainOutcome;
 use crate::class_cache::{CachedTerminal, TerminalState, TypedOutcome};
 use crate::idempotency::Method;
-use robot_msg::msg::SideEffect;
+use robot_msg::msg::{
+    ActionRpcStatus, CancelTaskResponse, ClearEStopResponse, ClearErrorResponse, InvokeOutcome,
+    InvokeTaskResponse, RpcStatus, SetEnabledResponse, SideEffect,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldPresence<T> {
@@ -54,109 +58,150 @@ pub fn classify(expected: &Expected, view: &ReplyView<'_>) -> Verdict {
     })
 }
 
+/// 真实 wire 解码失败；不能据此归还在途信用。
+#[derive(Debug)]
+pub enum DecodeMismatch {
+    Malformed(flatbuffers::InvalidFlatbuffer),
+    MissingRequestId,
+    RequestId,
+    NotRr,
+}
+
+fn presence(
+    table: flatbuffers::Table<'_>,
+    offset: flatbuffers::VOffsetT,
+    value: bool,
+) -> FieldPresence<bool> {
+    if table.vtable().get(offset) == 0 {
+        FieldPresence::Absent
+    } else {
+        FieldPresence::Present(value)
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "在同一穷尽匹配中核各响应协议字段与终态来源，避免分类分支遗漏"
+)]
+pub fn decode_reply<'a>(
+    expected: &Expected,
+    bytes: &'a [u8],
+) -> Result<ReplyView<'a>, DecodeMismatch> {
+    let method = expected.method;
+
+    let view = match method {
+        Method::ClearEStop => {
+            let r = flatbuffers::root::<ClearEStopResponse>(bytes)
+                .map_err(DecodeMismatch::Malformed)?;
+            ReplyView {
+                method,
+                request_id: r.request_id().ok_or(DecodeMismatch::MissingRequestId)?,
+                retired: presence(r._tab, ClearEStopResponse::VT_RETIRED, r.retired()),
+                effect: r.effect(),
+                success: r.status() == RpcStatus::Ok,
+                outcome: TypedOutcome::ClearEStop {
+                    status: r.status(),
+                    domain: r.domain(),
+                    superseded: r.superseded(),
+                    cleared_at_ns: r.cleared_at_ns(),
+                    dry_run: r.dry_run(),
+                    error_msg: r.error_msg().unwrap_or_default().to_owned(),
+                },
+            }
+        }
+        Method::SetEnabled => {
+            let r = flatbuffers::root::<SetEnabledResponse>(bytes)
+                .map_err(DecodeMismatch::Malformed)?;
+            ReplyView {
+                method,
+                request_id: r.request_id().ok_or(DecodeMismatch::MissingRequestId)?,
+                retired: presence(r._tab, SetEnabledResponse::VT_RETIRED, r.retired()),
+                effect: r.effect(),
+                success: r.status() == RpcStatus::Ok,
+                outcome: TypedOutcome::SetEnabled {
+                    status: r.status(),
+                    domain: r.domain(),
+                    completed_at_ns: r.completed_at_ns(),
+                    error_msg: r.error_msg().unwrap_or_default().to_owned(),
+                },
+            }
+        }
+        Method::InvokeTask => {
+            let r = flatbuffers::root::<InvokeTaskResponse>(bytes)
+                .map_err(DecodeMismatch::Malformed)?;
+            ReplyView {
+                method,
+                request_id: r.request_id().ok_or(DecodeMismatch::MissingRequestId)?,
+                retired: presence(r._tab, InvokeTaskResponse::VT_RETIRED, r.retired()),
+                effect: r.effect(),
+                success: r.status() == ActionRpcStatus::Ok,
+                outcome: TypedOutcome::InvokeTask {
+                    status: r.status(),
+                    action_id: r.action_id().unwrap_or_default().to_owned(),
+                    accepted_at_ns: r.accepted_at_ns(),
+                    error_msg: r.error_msg().unwrap_or_default().to_owned(),
+                    drain: match r.invoke_outcome() {
+                        InvokeOutcome::NotSubmitted => DrainOutcome::NotSubmitted,
+                        InvokeOutcome::Registered => DrainOutcome::Registered,
+                        InvokeOutcome::DrainFailedCancelAccepted => {
+                            DrainOutcome::DrainFailedCompensated { cancel_ok: true }
+                        }
+                        InvokeOutcome::DrainFailedCancelRejected => {
+                            DrainOutcome::DrainFailedCompensated { cancel_ok: false }
+                        }
+                        unknown => DrainOutcome::Unknown { raw: unknown.0 },
+                    },
+                },
+            }
+        }
+        Method::CancelTask => {
+            let r = flatbuffers::root::<CancelTaskResponse>(bytes)
+                .map_err(DecodeMismatch::Malformed)?;
+            ReplyView {
+                method,
+                request_id: r.request_id().ok_or(DecodeMismatch::MissingRequestId)?,
+                retired: presence(r._tab, CancelTaskResponse::VT_RETIRED, r.retired()),
+                effect: r.effect(),
+                success: r.status() == ActionRpcStatus::Ok,
+                outcome: TypedOutcome::CancelTask {
+                    status: r.status(),
+                    action_id: r.action_id().unwrap_or_default().to_owned(),
+                    cancel_at_ns: r.cancel_at_ns(),
+                    error_msg: r.error_msg().unwrap_or_default().to_owned(),
+                },
+            }
+        }
+        Method::ClearError => {
+            let r = flatbuffers::root::<ClearErrorResponse>(bytes)
+                .map_err(DecodeMismatch::Malformed)?;
+            ReplyView {
+                method,
+                request_id: r.request_id().ok_or(DecodeMismatch::MissingRequestId)?,
+                retired: presence(r._tab, ClearErrorResponse::VT_RETIRED, r.retired()),
+                effect: r.effect(),
+                success: r.status() == ActionRpcStatus::Ok,
+                outcome: TypedOutcome::ClearError {
+                    status: r.status(),
+                    cleared_at_ns: r.cleared_at_ns(),
+                    error_msg: r.error_msg().unwrap_or_default().to_owned(),
+                },
+            }
+        }
+        Method::EStop => return Err(DecodeMismatch::NotRr),
+    };
+    if view.request_id != expected.request_id {
+        return Err(DecodeMismatch::RequestId);
+    }
+    Ok(view)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::class_cache::DrainOutcome;
     use robot_msg::{build_helpers::*, msg::*};
 
-    fn presence(
-        table: flatbuffers::Table<'_>,
-        offset: flatbuffers::VOffsetT,
-        value: bool,
-    ) -> FieldPresence<bool> {
-        if table.vtable().get(offset) == 0 {
-            FieldPresence::Absent
-        } else {
-            FieldPresence::Present(value)
-        }
-    }
     fn decode(method: Method, bytes: &[u8]) -> ReplyView<'_> {
-        match method {
-            Method::ClearEStop => {
-                let r = flatbuffers::root::<ClearEStopResponse>(bytes).unwrap();
-                ReplyView {
-                    method,
-                    request_id: r.request_id().unwrap(),
-                    retired: presence(r._tab, ClearEStopResponse::VT_RETIRED, r.retired()),
-                    effect: r.effect(),
-                    success: r.status() == RpcStatus::Ok,
-                    outcome: TypedOutcome::ClearEStop {
-                        status: r.status(),
-                        domain: r.domain(),
-                        superseded: r.superseded(),
-                        cleared_at_ns: r.cleared_at_ns(),
-                        dry_run: r.dry_run(),
-                        error_msg: r.error_msg().unwrap_or_default().to_owned(),
-                    },
-                }
-            }
-            Method::SetEnabled => {
-                let r = flatbuffers::root::<SetEnabledResponse>(bytes).unwrap();
-                ReplyView {
-                    method,
-                    request_id: r.request_id().unwrap(),
-                    retired: presence(r._tab, SetEnabledResponse::VT_RETIRED, r.retired()),
-                    effect: r.effect(),
-                    success: r.status() == RpcStatus::Ok,
-                    outcome: TypedOutcome::SetEnabled {
-                        status: r.status(),
-                        domain: r.domain(),
-                        completed_at_ns: r.completed_at_ns(),
-                        error_msg: r.error_msg().unwrap_or_default().to_owned(),
-                    },
-                }
-            }
-            Method::InvokeTask => {
-                let r = flatbuffers::root::<InvokeTaskResponse>(bytes).unwrap();
-                ReplyView {
-                    method,
-                    request_id: r.request_id().unwrap(),
-                    retired: presence(r._tab, InvokeTaskResponse::VT_RETIRED, r.retired()),
-                    effect: r.effect(),
-                    success: r.status() == ActionRpcStatus::Ok,
-                    outcome: TypedOutcome::InvokeTask {
-                        status: r.status(),
-                        action_id: r.action_id().unwrap_or_default().to_owned(),
-                        accepted_at_ns: r.accepted_at_ns(),
-                        error_msg: r.error_msg().unwrap_or_default().to_owned(),
-                        drain: DrainOutcome::Registered,
-                    },
-                }
-            }
-            Method::CancelTask => {
-                let r = flatbuffers::root::<CancelTaskResponse>(bytes).unwrap();
-                ReplyView {
-                    method,
-                    request_id: r.request_id().unwrap(),
-                    retired: presence(r._tab, CancelTaskResponse::VT_RETIRED, r.retired()),
-                    effect: r.effect(),
-                    success: r.status() == ActionRpcStatus::Ok,
-                    outcome: TypedOutcome::CancelTask {
-                        status: r.status(),
-                        action_id: r.action_id().unwrap_or_default().to_owned(),
-                        cancel_at_ns: r.cancel_at_ns(),
-                        error_msg: r.error_msg().unwrap_or_default().to_owned(),
-                    },
-                }
-            }
-            Method::ClearError => {
-                let r = flatbuffers::root::<ClearErrorResponse>(bytes).unwrap();
-                ReplyView {
-                    method,
-                    request_id: r.request_id().unwrap(),
-                    retired: presence(r._tab, ClearErrorResponse::VT_RETIRED, r.retired()),
-                    effect: r.effect(),
-                    success: r.status() == ActionRpcStatus::Ok,
-                    outcome: TypedOutcome::ClearError {
-                        status: r.status(),
-                        cleared_at_ns: r.cleared_at_ns(),
-                        error_msg: r.error_msg().unwrap_or_default().to_owned(),
-                    },
-                }
-            }
-            Method::EStop => panic!("EStop 发布不走 RR 回复"),
-        }
+        decode_reply(&expected(method), bytes).unwrap()
     }
     fn expected(method: Method) -> Expected {
         Expected {
@@ -216,7 +261,14 @@ mod tests {
                 retired,
             ),
             Method::InvokeTask => build_invoke_task_response_typed(
-                "request", action, "原因", "action", 33, effect, retired,
+                "request",
+                action,
+                "原因",
+                "action",
+                33,
+                effect,
+                retired,
+                InvokeOutcome::Registered,
             ),
             Method::CancelTask => build_cancel_task_response_typed(
                 "request", action, "原因", "action", 34, effect, retired,

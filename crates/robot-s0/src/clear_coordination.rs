@@ -437,6 +437,50 @@ impl ClearCoordination {
         client: &mut PersistClient,
         now_ns: u64,
     ) -> StartOutcome {
+        self.start_impl(rr, txn_id, *inputs, authority, client, now_ns, None)
+    }
+
+    /// 将 IPC 在本 tick 急停公告消费前观察到的代次绑定到真实预约 CAS。
+    #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "保留已批准的原身份、预约代次和真实持久化端点逐项接线"
+    )]
+    pub fn start_with_epoch(
+        &mut self,
+        rr: RrIdentity,
+        txn_id: NonZeroU128,
+        inputs: &StartInputs,
+        authority: &ControlAuthority,
+        client: &mut PersistClient,
+        now_ns: u64,
+        expected_epoch: robot_core::control_authority::PermissionEpoch,
+    ) -> StartOutcome {
+        self.start_impl(
+            rr,
+            txn_id,
+            *inputs,
+            authority,
+            client,
+            now_ns,
+            Some(expected_epoch),
+        )
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "保留已批准的原身份、预约代次和真实持久化端点逐项接线"
+    )]
+    fn start_impl(
+        &mut self,
+        rr: RrIdentity,
+        txn_id: NonZeroU128,
+        inputs: StartInputs,
+        authority: &ControlAuthority,
+        client: &mut PersistClient,
+        now_ns: u64,
+        expected_epoch: Option<robot_core::control_authority::PermissionEpoch>,
+    ) -> StartOutcome {
         let refused = match () {
             () if now_ns > rr.deadline_ns => Some(ClearOutcome::DeadlineExceeded),
             () if !inputs.state_safe => Some(ClearOutcome::StateNotSafe),
@@ -457,7 +501,11 @@ impl ClearCoordination {
                 outcome: ClearOutcome::WriterUnavailable,
             };
         }
-        let owner = match authority.reserve_clear() {
+        let reserved = match expected_epoch {
+            Some(epoch) => authority.reserve_clear_if_epoch(epoch),
+            None => authority.reserve_clear(),
+        };
+        let owner = match reserved {
             Ok(owner) => owner,
             Err(reason) => {
                 let outcome = match reason {
@@ -1667,16 +1715,23 @@ mod tests {
             obligation_settled: true,
         }
     }
-    fn rr() -> RrIdentity {
+    fn rr(routes: &mut Vec<crate::test_util::TestRrRoute>) -> RrIdentity {
+        routes.push(crate::test_util::TestRrRoute::new());
         RrIdentity {
+            route: routes.last().unwrap().identity(),
             request_id: "same-allocation".into(),
             deadline_ns: 100,
         }
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "同一实例逐项验证守门顺序与原身份按值返还，保持完整断言链"
+    )]
     fn start_refusals_return_original_owned_identity_in_guard_order() {
         for case in 0..10 {
+            let mut routes = Vec::new();
             let authority = authority();
             let shared = Arc::new(PersistShared::new(MonoRawNs(1)).unwrap());
             let (mut client, endpoint) = mailbox(shared);
@@ -1721,7 +1776,7 @@ mod tests {
                 7 => {
                     assert!(matches!(
                         coordinator.start(
-                            rr(),
+                            rr(&mut routes),
                             NonZeroU128::new(1).unwrap(),
                             &inputs(),
                             &authority,
@@ -1753,7 +1808,7 @@ mod tests {
                 }
                 _ => unreachable!(),
             };
-            let identity = rr();
+            let identity = rr(&mut routes);
             let original_pointer = identity.request_id.as_ptr();
             match coordinator.start(
                 identity,
@@ -1792,6 +1847,7 @@ mod tests {
                 DispatchRefused::Full,
                 DispatchRefused::Disconnected,
             ] {
+                let mut routes = Vec::new();
                 let authority = authority();
                 let owner = authority.reserve_clear().unwrap();
                 let txn = ClearTxnIdentity {
@@ -1804,7 +1860,7 @@ mod tests {
                     txn,
                     stage: ClearStage::Preparing,
                     reply: ReplyState::Pending {
-                        rr: rr(),
+                        rr: rr(&mut routes),
                         locked: None,
                     },
                     started_at_ns: 1,

@@ -2,16 +2,17 @@
 //! 顺序停止（沿监督 r4：控制面先停 → 真实 ACK 才停 Executor → Clear 退休且 flush 才停
 //! IPC / writer → 最后 Watchdog）与全部真实结果只进入的唯一 [`TeardownReport`]。
 //!
-//! **无生产调用方**：本模块只提供机制与类型，不 spawn 生产线程、不改 daemon 的
-//! `graceful_stop` / `boot_supervisor` / `worker_stop`、不接 authority / ACK / `arm` / D / 90、
-//! 不改观测页或 worker 位图；`main` 全出口、`ReadyHandles` 迁移与真实门在 W3 统一激活。
+//! W3 的 daemon 启动与运行期关闭使用这些原句柄和结果类型；运行期通过
+//! [`TeardownGates`] 接入同一 authority、原 Shutdown 代次、ACK 与截止门。
+//! 本模块保留真实停止请求与 join 结果，daemon 将原残件移入进程退出聚合；
+//! 独立监督器负责原 D 的最终执法。
 //!
 //! | 项 | 内容 |
 //! |---|---|
 //! | [`HandleKind`] / [`HandleKindSet`] | 12 种句柄身份与 `required` 集合；`bit()` 仅供残余位图 |
 //! | [`WorkerSlot`] | 真实句柄的显式枚举：`kind` / `request_stop` / `is_finished` / `join`；health 变体经 `try_join`，`Pending` 原样返还 |
 //! | [`WriterControl`] / [`ManagedWriterHandle`] / [`spawn_managed_writer`] | writer 停止能力绑定：唯一 spawn 从同一 `Arc<C>` 产生停止读取源并保存请求控制器 |
-//! | [`JoinedOutcome`] | worker 的 `thread::Result<()>`；writer 的 `Result<WriterExit>` + 唯一 [`WriterJoined`] 原样保留 |
+//! | [`JoinedOutcome`] | 普通 worker、Executor、IPC 各自的真实 join 结果；writer 的 `Result<WriterExit>` + 唯一 [`WriterJoined`] 原样保留 |
 //! | [`Slot`] / [`SlotView`] | 三态槽，状态私有；公开只能构造 `NotSpawned` / `Live`，`Joined` 只由本模块在真实 join 后写入 |
 //! | [`HandleSlots`] | 12 槽集合；`spawned` 失败原样返还句柄 |
 //! | [`join_with_deadline`] | 唯一能把槽推进到 `Joined` 的入口；`NotSpawned` / `AlreadyJoined` 绝不产生结果 |
@@ -57,7 +58,7 @@ use crate::set_enabled_rr_server::SetEnabledRrServerHandle;
 // 句柄身份
 // ============================================================================
 
-/// 句柄身份（与 7-worker 位图无关；`bit()` 仅供 [`ResidualHandles::bitmap`]）。
+/// 句柄身份（与八 worker 观测位图无关；`bit()` 仅供 [`ResidualHandles::bitmap`]）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum HandleKind {
@@ -368,12 +369,16 @@ impl WorkerSlot {
     /// # Errors
     ///
     /// health 变体尚未结束时返回原句柄。
+    #[allow(
+        clippy::result_large_err,
+        reason = "尚不能回收时完整返还原线程句柄，不新增分配或丢弃停止责任"
+    )]
     pub fn join(self) -> Result<JoinedOutcome, Self> {
         match self {
-            Self::Ipc(handle) => Ok(JoinedOutcome::Worker(handle.join())),
+            Self::Ipc(handle) => Ok(JoinedOutcome::Ipc(handle.join())),
             #[cfg(target_os = "linux")]
-            Self::HardRt(handle) => Ok(JoinedOutcome::Worker(handle.join())),
-            Self::SerialRt(handle) => Ok(JoinedOutcome::Worker(handle.join())),
+            Self::HardRt(handle) => Ok(JoinedOutcome::Executor(handle.join())),
+            Self::SerialRt(handle) => Ok(JoinedOutcome::Executor(handle.join())),
             Self::Publisher(handle) => Ok(JoinedOutcome::Worker(handle.join())),
             Self::Io(handle) => Ok(JoinedOutcome::Worker(handle.join())),
             Self::ClearRr(handle) => Ok(JoinedOutcome::Worker(handle.join())),
@@ -402,8 +407,14 @@ impl WorkerSlot {
 /// 真实 join 的结果：worker 的 `thread::Result<()>`（`Err` = panic）；writer 的
 /// `Result<WriterExit>` 与唯一 [`WriterJoined`] 原样保留（panic 亦带凭证，不压成 `Result<()>`）。
 #[derive(Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "真实线程返回的 IPC 与执行器原残件内联保留至最终退出，不引入新的分配层"
+)]
 pub enum JoinedOutcome {
     Worker(thread::Result<()>),
+    Executor(thread::Result<crate::hard_rt_ctrl::ExecutorExit>),
+    Ipc(thread::Result<crate::ipc_thread::IpcExit>),
     Writer {
         result: thread::Result<WriterExit>,
         joined: WriterJoined,
@@ -517,6 +528,10 @@ impl HandleSlots {
     /// # Errors
     ///
     /// 同一身份已有活句柄 → `AlreadyPresent`；该槽已 `Joined` → `AlreadyJoined`。
+    #[allow(
+        clippy::result_large_err,
+        reason = "安装拒绝必须完整返还原句柄和错误，原线程责任不经替身转移"
+    )]
     pub fn spawned(&mut self, handle: WorkerSlot) -> Result<(), (InsertError, WorkerSlot)> {
         let entry = &mut self.slots[handle.kind().index()];
         match entry.view() {
@@ -535,8 +550,96 @@ impl HandleSlots {
     }
 
     #[must_use]
+    pub fn live_is_finished(&self, kind: HandleKind) -> Option<bool> {
+        match &self.slots[kind.index()].0 {
+            SlotState::Live(handle) => Some(handle.is_finished()),
+            SlotState::NotSpawned | SlotState::Joined(_) => None,
+        }
+    }
+
+    /// 只借用真实 Ready 结果；结果与原句柄继续留在同一个槽。
+    pub fn poll_ready(&mut self, kind: HandleKind) -> ReadyProbe<'_> {
+        match &mut self.slots[kind.index()].0 {
+            SlotState::Live(WorkerSlot::Ipc(handle)) => match handle.poll_ready() {
+                crate::ipc_thread::ReadyState::Pending => ReadyProbe::Pending,
+                crate::ipc_thread::ReadyState::Ready => ReadyProbe::Ready,
+                crate::ipc_thread::ReadyState::Failed(error) => ReadyProbe::IpcFailed(error),
+                crate::ipc_thread::ReadyState::Disconnected => ReadyProbe::Disconnected,
+            },
+            SlotState::Live(WorkerSlot::Publisher(handle)) => match handle.poll_ready() {
+                crate::ipc_thread::ReadyState::Pending => ReadyProbe::Pending,
+                crate::ipc_thread::ReadyState::Ready => ReadyProbe::Ready,
+                crate::ipc_thread::ReadyState::Failed(never) => match *never {},
+                crate::ipc_thread::ReadyState::Disconnected => ReadyProbe::Disconnected,
+            },
+            #[cfg(feature = "test-comm-fault-hook")]
+            SlotState::Live(WorkerSlot::HookControl(handle)) => match handle.poll_ready() {
+                crate::ipc_thread::ReadyState::Pending => ReadyProbe::Pending,
+                crate::ipc_thread::ReadyState::Ready => ReadyProbe::Ready,
+                crate::ipc_thread::ReadyState::Failed(error) => ReadyProbe::HookFailed(error),
+                crate::ipc_thread::ReadyState::Disconnected => ReadyProbe::Disconnected,
+            },
+            SlotState::Live(WorkerSlot::ClearRr(handle)) => rr_ready(&handle.poll_ready()),
+            SlotState::Live(WorkerSlot::SetRr(handle)) => rr_ready(&handle.poll_ready()),
+            SlotState::Live(_) => ReadyProbe::NotReadyWorker,
+            SlotState::NotSpawned => ReadyProbe::NotSpawned,
+            SlotState::Joined(_) => ReadyProbe::Joined,
+        }
+    }
+
+    /// 启动集合仍未 join 时按值拆出全部原句柄；任何 Joined 都完整返原集合。
+    #[allow(
+        clippy::result_large_err,
+        reason = "拆分失败完整返还全部原槽，禁止丢弃或另行分配原退出责任"
+    )]
+    pub fn try_into_unjoined(
+        self,
+    ) -> Result<(HandleKindSet, [Option<WorkerSlot>; HandleKind::COUNT]), Self> {
+        if self
+            .slots
+            .iter()
+            .any(|slot| matches!(slot.0, SlotState::Joined(_)))
+        {
+            return Err(self);
+        }
+        let Self { slots, required } = self;
+        Ok((
+            required,
+            slots.map(|slot| match slot.0 {
+                SlotState::Live(handle) => Some(handle),
+                SlotState::NotSpawned => None,
+                SlotState::Joined(_) => unreachable!("已核没有 Joined"),
+            }),
+        ))
+    }
+
+    #[must_use]
     pub const fn required(&self) -> HandleKindSet {
         self.required
+    }
+}
+
+#[derive(Debug)]
+pub enum ReadyProbe<'a> {
+    Pending,
+    Ready,
+    Disconnected,
+    NotSpawned,
+    Joined,
+    NotReadyWorker,
+    IpcFailed(&'a crate::ipc_thread::IpcInitError),
+    RrFailed(&'a crate::rr_server_thread::RrInitError),
+    #[cfg(feature = "test-comm-fault-hook")]
+    HookFailed(&'a std::io::Error),
+}
+fn rr_ready<'a>(
+    state: &crate::ipc_thread::ReadyState<'a, crate::rr_server_thread::RrInitError>,
+) -> ReadyProbe<'a> {
+    match state {
+        crate::ipc_thread::ReadyState::Pending => ReadyProbe::Pending,
+        crate::ipc_thread::ReadyState::Ready => ReadyProbe::Ready,
+        crate::ipc_thread::ReadyState::Failed(error) => ReadyProbe::RrFailed(error),
+        crate::ipc_thread::ReadyState::Disconnected => ReadyProbe::Disconnected,
     }
 }
 
@@ -546,6 +649,10 @@ impl HandleSlots {
 
 /// [`join_with_deadline`] 的结果；`NotSpawned` / `AlreadyJoined` 绝不携带 [`JoinedOutcome`]。
 #[derive(Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "单次回收按值移交真实结果及原残件，保持最终退出的唯一拥有链"
+)]
 pub enum SlotJoin {
     NotSpawned,
     AlreadyJoined,
@@ -643,28 +750,48 @@ pub enum ShutdownFailure {
 /// fn duplicate(residual: ResidualHandles) { let _ = residual.clone(); }
 /// ```
 #[derive(Debug)]
-pub struct ResidualHandles(Vec<WorkerSlot>);
+pub struct ResidualHandles(Vec<WorkerSlot>, Option<HandleSlots>);
 
 impl ResidualHandles {
+    /// 收入启动数组或无法拆出的原集合；拒绝安装的句柄独立保管，不按 kind 覆盖。
+    #[must_use]
+    pub fn from_startup(
+        accepted: Result<[Option<WorkerSlot>; HandleKind::COUNT], HandleSlots>,
+        rejected: Option<WorkerSlot>,
+    ) -> Self {
+        let (mut handles, opaque) = match accepted {
+            Ok(array) => (array.into_iter().flatten().collect::<Vec<_>>(), None),
+            Err(slots) => (Vec::new(), Some(slots)),
+        };
+        if let Some(handle) = rejected {
+            handles.push(handle);
+        }
+        Self(handles, opaque)
+    }
+    pub fn retain_extra(&mut self, handle: WorkerSlot) {
+        self.0.push(handle);
+    }
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.kinds().next().is_none()
     }
-
     #[must_use]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.kinds().count()
     }
-
     #[must_use]
     pub fn bitmap(&self) -> u16 {
+        self.kinds().fold(0, |bits, kind| bits | kind.bit())
+    }
+    pub fn kinds(&self) -> impl Iterator<Item = HandleKind> + '_ {
         self.0
             .iter()
-            .fold(0, |bits, handle| bits | handle.kind().bit())
-    }
-
-    pub fn kinds(&self) -> impl Iterator<Item = HandleKind> + '_ {
-        self.0.iter().map(WorkerSlot::kind)
+            .map(WorkerSlot::kind)
+            .chain(self.1.iter().flat_map(|slots| {
+                HandleKind::ALL
+                    .into_iter()
+                    .filter(|kind| matches!(slots.view(*kind), SlotView::Live(_)))
+            }))
     }
 }
 
@@ -674,6 +801,8 @@ pub struct TeardownReport {
     /// 真实 join 过的 worker（含 panic 的 `Err`）。
     pub joined: Vec<(HandleKind, thread::Result<()>)>,
     writer: Option<(thread::Result<WriterExit>, WriterJoined)>,
+    ipc: Option<thread::Result<crate::ipc_thread::IpcExit>>,
+    executor: Option<thread::Result<crate::hard_rt_ctrl::ExecutorExit>>,
     pub residual: ResidualHandles,
     pub failures: Vec<ShutdownFailure>,
     /// 仅在 Executor 槽 `Live → Joined` 时为 true（空槽无同步含义）。
@@ -689,7 +818,9 @@ impl TeardownReport {
         Self {
             joined: Vec::new(),
             writer: None,
-            residual: ResidualHandles(Vec::new()),
+            ipc: None,
+            executor: None,
+            residual: ResidualHandles(Vec::new(), None),
             failures: Vec::new(),
             executor_joined: false,
             ipc_joined: false,
@@ -701,6 +832,16 @@ impl TeardownReport {
     /// `None`。
     pub fn take_writer(&mut self) -> Option<(thread::Result<WriterExit>, WriterJoined)> {
         self.writer.take()
+    }
+
+    /// 仅真实 IPC join 的原值，包含尚未退休的原 owned 责任；第二次取为 None。
+    pub fn take_ipc(&mut self) -> Option<thread::Result<crate::ipc_thread::IpcExit>> {
+        self.ipc.take()
+    }
+
+    /// 一次按值移交真实执行器退出结果；非空 Enable 残件仍完整持有。
+    pub fn take_executor(&mut self) -> Option<thread::Result<crate::hard_rt_ctrl::ExecutorExit>> {
+        self.executor.take()
     }
 }
 
@@ -842,6 +983,20 @@ fn collect_join(
                 report.failures.push(ShutdownFailure::Panicked(kind));
             }
             report.writer = Some((result, joined));
+        }
+        SlotJoin::Joined(JoinedOutcome::Ipc(result)) => {
+            if result.is_err() {
+                report.failures.push(ShutdownFailure::Panicked(kind));
+            }
+            report.ipc_joined = true;
+            report.ipc = Some(result);
+        }
+        SlotJoin::Joined(JoinedOutcome::Executor(result)) => {
+            if result.is_err() {
+                report.failures.push(ShutdownFailure::Panicked(kind));
+            }
+            report.executor_joined = true;
+            report.executor = Some(result);
         }
         SlotJoin::Pending => {
             report.failures.push(ShutdownFailure::JoinTimeout(kind));

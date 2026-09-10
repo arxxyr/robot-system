@@ -1060,8 +1060,12 @@ mod tests {
                 .collect()
         }
 
-        let mut codes = literal_codes(SRC, "exit(");
-        codes.extend(literal_codes(SRC, "Err("));
+        // 生产出口与测试子进程分开；测试用 101 报断言失败，不属于 daemon 退出码。
+        let (production, _) = SRC
+            .split_once("\n#[cfg(test)]\nmod tests {")
+            .expect("daemon 测试模块边界必须明确，不能静默漏扫生产源码");
+        let mut codes = literal_codes(production, "exit(");
+        codes.extend(literal_codes(production, "Err("));
         assert!(!codes.is_empty(), "扫描失效（marker 漂移）");
         for code in codes {
             assert_ne!(code, GUARD_STOP_EXIT_CODE, "s0_daemon 不得以 86 退出");

@@ -1,51 +1,21 @@
-//! `s0_ipc_thread` —— S0 四线程模型的"非 RT IPC 枢纽"。
+//! S0 非 RT IPC 线程：订阅关节目标/心跳/急停，推进唯一业务状态与持责控制桥。
 //!
-//! 对应 `docs/00_design.md` §1.2：
-//! - 订阅 `JointCommand` / `Heartbeat` / `EStopEvent` iceoryx2 topic
-//! - 把 `FlatBuffers` `JointCommand` 解析 → [`JointCommandBuf`] → 写
-//!   [`LatestCommandWriter`]（供 `rt_thread` 零拷贝读）
-//! - **驱动 state machine**：每 tick 消费 command/heartbeat/estop/`watchdog`/外部事件，
-//!   调 [`try_transition`]，结果写入 state seqlock（供 `pub_thread` 读）
-//! - 写 `last_hb_ns: Arc<AtomicU64>`（供 `watchdog` 监测）
+//! 关节目标解析后写 latest slot。基础控制使用高优先级队列，dry-run 使用普通队列；
+//! 每 tick 先处理原急停公告与 Lower，再推进原 pending 和 Restore，最后处理普通请求。
+//! Clear 的文件事务由唯一 PersistClient 交 writer 执行，IPC 不同步执行文件 fsync。
 //!
-//! ### 架构决策（Part 2 已 confirm，见 `docs/handoffs/2026-04-24_4.md` §2）
+//! subscriber 与 Node 在工作线程内由 fallible factory 构造，OwnedIpcPorts 保持析构顺序。
+//! 真实工厂与首次状态发布完成后才发 READY；spawn 立即交回拥有真实线程的 handle。
+//! 正常线程退出返回 IpcExit，按值保留原 pending、coordinator、client、输入与 outbox。
 //!
-//! **state machine 执行者 = `ipc_thread`**：[`S0State`] 生命周期跟 `ipc_thread` 绑定，
-//! 不设独立的 `state_thread`；`ipc_thread` 非 RT，allocate / lock / iceoryx2 都允许。
-//!
-//! ### 为什么 iceoryx2 subscribers 走 factory closure 注入
-//!
-//! iceoryx2 0.8 的 `ipc::Service` 家族用 `SingleThreaded` `arc_sync_policy`，
-//! `Iceoryx2Subscriber<T>` 因此 **`!Send`**（内部 `Rc`）。直接把 subscriber 作为
-//! 参数 move 进线程会被借用检查器拒绝；唯一干净的办法是让调用方提供一个
-//! `FnOnce() -> IpcSubscribers` 闭包，在 `ipc_thread` **内部**执行构造 —— 这样 `!Send`
-//! 的 subscribers 从不跨线程，只在 spawn 后的线程里存在。
-//!
-//! 闭包里通常调用 [`robot_transport::iceoryx2::subscriber`] 三次。同进程测试和
-//! 跨进程 `s0_daemon` 共用同一模式。
-//!
-//! ### 线程语义
-//!
-//! - **非 RT**（普通优先级）。轮询周期 500 µs 默认（2 kHz），足够把最新 command
-//!   转发给 `rt_thread`（`rt_thread` 本身 1 kHz）。
-//! - 用 `Arc<AtomicBool>` 作退出信号；`event_tx.control(crate::event_ingress::ControlEvent::Stop)` 也会走
-//!   state machine 变成 `STOPPING` 态然后外层 stop。
-//! - 用 `crossbeam_channel` 接 `watchdog`（下行） + 外部事件（`SIGINT` / 测试驱动）。
-//!
-//! ### Guards 生命周期（Part 2 简化）
-//!
-//! Part 2 scope 内，`Guards` 大部分字段（`adapter_connected` / `calibration_loaded` /
-//! `power_ok` / `limits_valid` / `hw_enable_ok` 等）在**启动期一次性由 caller 填入**
-//! `IpcThreadConfig::initial_guards`，运行期 `ipc_thread` 只更新 3 个字段：
-//! - `heartbeat_ok`：收到新 heartbeat 置 true，收到 `HeartbeatTimeout` 事件置 false
-//! - `estop_latched`：收到 `EStop` topic / 外部 `Event::EStop` 置 true；`ClearEStop` 置 false
-//! - `adapter_fault_cleared`：收到外部 `Event::ClearError` 置 true
-//!
-//! 其他字段由 `rt_thread` 产生的观测（Part 3 加）回填；Part 2 不做。
+//! Guards 是业务观测：心跳按序回放，latch 来自同 ControlAuthority；Serial 恢复条件从
+//! 原 abort/inhibit/Boot/RX/Off/L0 观察刷新。hw_enable_ok 仅由真实 Enable commit 更新，
+//! 执行权限仍由同原子 authority 与不可复制许可决定。
 
 #![forbid(unused_must_use)]
 #![allow(clippy::doc_markdown)]
 
+#[cfg(test)]
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -73,39 +43,15 @@ use crate::state_machine::{Event, Guards, S0State, S0StateSnapshot};
 // RR control plane（A1-3 (1/3b) ClearEStop RR drain；reviewer 拍板）
 // ============================================================================
 
-/// RR control plane: `rr_server_thread` → `ipc_thread` 的 `ClearEStop`
-/// request channel payload（A1-3 (1/3b)）。
-///
-/// reviewer A1-3 拍板线程模型：
-///
-/// - `rr_server_thread`（A1-3 (1/3c) 落地）只做 iceoryx2 RR I/O：收 wire
-///   request → decode → 容量限制 → 转发本结构到 `ipc_thread`。
-/// - `ipc_thread` 是唯一 action executor：持 pending 元数据、决定 dry_run
-///   / live 路径、通过 `ipc_tick` 执行 live ClearEStop 三步硬顺序。
-/// - response 经 channel 回到 `rr_server_thread`，由它 reply 给 gateway。
-///
-/// 字段语义：
-///
-/// - `request_id`：客户端 UUIDv7（每次 retry 重新生成；correlation / audit
-///   only；详 `docs/00_design.md` §6.6.2 errata）。S0 端**仅**用于 RR
-///   response routing，**不**用作幂等 cache key（idempotency cache 在
-///   gateway 不在 S0；详 reviewer A1-3 拍板 3）。
-/// - `dry_run`：true → 走 [`clear_estop_action::evaluate_clear_estop_dry_run`]
-///   read-only 评估（不进 events queue / 不进 `ipc_tick`）；false → 走
-///   live 路径（live 单飞 + 进 events queue + `ipc_tick` 三步硬顺序）。
-/// - `confirmation` / `audit_reason`：gateway 已校过 `confirmation` 非空
-///   （`InvalidArgument`），但 S0 也保留这些字段做 audit trace
-///   （`tracing::info!` 落 journald；A1-3 (3/3) 端到端时再加详细字段）。
-/// - `deadline_ns`：CLOCK_MONOTONIC_RAW 截止时刻（mono raw ns）。daemon
-///   端在 RR drain 入口 / preempt 段 / response 派发前**三处**显式 check
-///   `clock.now() > deadline_ns`，过期返 `DeadlineExceeded`，不入队 / 不
-///   继续执行（reviewer A1-3 (1/3b) round 2 拍板 + frozen schema
-///   `clear_estop.fbs:112` 要求）。
-#[derive(Debug, Clone)]
+/// RR 线程移交的唯一 Clear 信封，route 绑定原 peer/slot；request_id 只作关联标识。
+/// dry_run 在普通通道只读评估；live 在高通道预约同域事务并等待真实文件与权限退休。
+/// deadline 在真实源出队和执行前检查；已开始事务保留首因与真实结果，不由晚到期限改写。
+#[derive(Debug)]
 pub struct ClearEStopRrRequest {
+    pub route: crate::rr_admission::SlotIdentity,
     /// 客户端 UUIDv7，用于 RR response routing；不用作幂等 key。
     pub request_id: String,
-    /// `true` → dry_run read-only 评估；`false` → live 三步硬顺序。
+    /// `true` → 只读评估；`false` → 真实协调事务，文件完成与权限退休后回复。
     pub dry_run: bool,
     /// 人工确认串（gateway 已校非空）。
     pub confirmation: String,
@@ -121,12 +67,15 @@ pub struct ClearEStopRrRequest {
 /// reviewer 拍板：S0 返**domain status**（[`ClearEStopRrPayload`]），gateway
 /// **必须显式 match** 到 `tonic::Code`，**不**直接 cast——这条沿用 A1-1
 /// `RpcStatus` 的 enum 映射约束。
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ClearEStopRrResponse {
+    pub(crate) route: crate::rr_admission::SlotIdentity,
+    pub(crate) effect: robot_msg::msg::SideEffect,
+    pub(crate) superseded: bool,
     /// 复用 request 的 `request_id` 让 `rr_server_thread` 路由 reply。
-    pub request_id: String,
+    pub(crate) request_id: String,
     /// Domain status 枚举（详 [`ClearEStopRrPayload`]）。
-    pub payload: ClearEStopRrPayload,
+    pub(crate) payload: ClearEStopRrPayload,
 }
 
 /// `ClearEStop` RR domain status enum（A1-3 (1/3b) reviewer 拍板）。
@@ -139,29 +88,41 @@ pub struct ClearEStopRrResponse {
 /// `tracing::warn!` 落 journald，不进 enum。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClearEStopRrPayload {
+    /// W3 真实协调结果；原逻辑与物理退休事实由同一事务消费链产生。
+    Coordination(crate::clear_coordination::ClearOutcome),
+    QueueFull,
+    ShuttingDown,
     /// **live 成功**：fsync(primary+bak) → `clear_safety_latch()` → 翻 guard
     /// 三步全过；`cleared_at_ns` = `clock.now()` mono raw 时间戳。
     /// gateway 映射到 `tonic::Code::Ok`（gRPC `Ack`）。
-    Cleared { cleared_at_ns: u64 },
+    Cleared {
+        cleared_at_ns: u64,
+    },
 
     /// **dry_run 成功**：gate 全过（state == Safe + safety_state ==
     /// TorqueOffConfirmed）；`would_clear_at_ns` = 评估瞬间的 mono raw 时间戳，
     /// **不**代表硬件真清的时刻——dry_run 不动硬件。
     /// gateway 映射到 `tonic::Code::Ok`（携带 dry_run 提示字符串）。
-    WouldClear { would_clear_at_ns: u64 },
+    WouldClear {
+        would_clear_at_ns: u64,
+    },
 
     /// **gate 拒**：`*state != S0State::Safe`。`actual` 携带具体 state
     /// 让 gateway 给客户端清楚的诊断。live 路径走 `plan_transition` 返
     /// `None`，dry_run 路径走 `evaluate_clear_estop_dry_run` 直接拒。
     /// gateway 映射到 `tonic::Code::FailedPrecondition`。
-    StateNotSafe { actual: S0State },
+    StateNotSafe {
+        actual: S0State,
+    },
 
     /// **gate 拒**：state == Safe 但 `safety_state != TorqueOffConfirmed`
     /// （硬件断扭未确认）。**reviewer 拍板**：torque gate 看
     /// `executor_ctrl.safety_state()` 权威，不能靠 `guards.estop_latched`
     /// 副本绕过。
     /// gateway 映射到 `tonic::Code::FailedPrecondition`。
-    NotTorqueOffConfirmed { actual: OutputSafetyState },
+    NotTorqueOffConfirmed {
+        actual: OutputSafetyState,
+    },
 
     /// **live: gate 通过但 fsync 失败**。具体 `io::Error` 走 tracing；
     /// 磁盘 latch 仍 latched=true（`save_estop_latch_clear` backup-first
@@ -178,34 +139,10 @@ pub enum ClearEStopRrPayload {
     /// `crates/robot-rpc/src/clear_estop.rs::rpc_status_to_tonic_code`）。
     AlreadyInProgress,
 
-    /// **live: 被 emergency preempt**——RR drain 把 live request 入
-    /// `in_flight_live` + push `Event::ClearEStop` 后，本 tick 又收到
-    /// `EStop` / `SafetyStopFailed` 进 events queue。`ipc_thread` 主循环
-    /// §5.6) preempt 段取消 in-flight live：移除 events queue 里的
-    /// `Event::ClearEStop`，reply 本 variant。客户端应重新评估硬件状态
-    /// 后决定是否重发。
-    ///
-    /// reviewer A1-3 (1/3b) round 2 阻断 1 拍板：避免 RR live 滞留
-    /// EventQueue 被下一 tick 误清掉新触发的 EStop。
-    /// gateway 映射到 `tonic::Code::Aborted`。
+    /// 原 live Restore 位于已领取 EStop 的准入前缀，尚未预约事务，按原 route 拒绝。
     PreemptedByEmergency,
 
-    /// **deadline 过期**——`clock.now() > req.deadline_ns`。两处 check 之一
-    /// 命中：(a) §5.5) RR drain 入口（过期请求直接拒，不入 in_flight_live
-    /// / 不 push event）；(b) §5.6) preempt 段（drain 入队后到 ipc_tick
-    /// 之前的窗口；同 emergency preempt 共用 take + remove + reply 三件事）。
-    /// 任一命中即 reply 本 variant。
-    ///
-    /// **A1-3 (1/3b) round 3** 拍板：派发前**不**再事后覆盖 outcome ——
-    /// 一旦 action 在 deadline 前开始产出 `Cleared` / `FsyncFailed` /
-    /// `StateNotSafe` / `NotTorqueOffConfirmed`，response 必须返真实 outcome；
-    /// 否则跟 `clear_estop.fbs` "S0 端 action layer ordering" 段"deadline
-    /// 时三个翻转都不发生" 硬契约冲突。长 fsync 跨 deadline 极端 window 留
-    /// A1-3 (3/3) e2e 评估。
-    ///
-    /// reviewer A1-3 (1/3b) round 2 阻断 2 + round 3 阻断 2 + frozen
-    /// schema `clear_estop.fbs:112` 要求。
-    /// gateway 映射到 `tonic::Code::DeadlineExceeded`。
+    /// 源出队或执行前的严格 `now > deadline` 拒绝；不覆盖已经锁定的事务结果。
     DeadlineExceeded,
 }
 
@@ -220,6 +157,7 @@ pub enum ClearEStopRrPayload {
 /// `ipc_thread` 用 `try_recv` / `send` 不阻塞主 tick。
 pub struct RrChannels {
     pub request_rx: Receiver<ClearEStopRrRequest>,
+    pub normal_request_rx: Receiver<ClearEStopRrRequest>,
     pub response_tx: Sender<ClearEStopRrResponse>,
 }
 
@@ -227,12 +165,9 @@ pub struct RrChannels {
 // SetEnabled RR control plane（v0.5 候选 C；第 2 个专用 rr_server，D5）
 // ============================================================================
 //
-// 与 ClearEStop RR **结构同构**（沿 A1-3 范式），但语义关键差异（D8）：
-// ClearEStop 是**单 tick** action（`try_apply_clear_estop` 即时三步），SetEnabled
-// 是**多 tick** action —— `SetEnabled(true)` 要观测 heartbeat 驱动的
-// `Ready→Enabled.Active`（effectful `Enable(true)`），`SetEnabled(false)` 要观测
-// effectful `Enable(false)` 的 adapter ack。因此 `ipc_thread` 持 [`PendingSetEnabled`]
-// **跨 tick 观测** state，到 target / fault / deadline / preempt 才产 RR response。
+// Clear 与 SetEnabled 均保留原 RR route 跨 tick 推进。Clear 等待真实 writer
+// 完成与事务退休；Enable 等待原执行器 start/finish/commit，Lower 等待原 Stop/
+// Confirm 和旧序号退责。只有完整退休后才由原 outbox 交还唯一 RR 响应。
 
 /// RR control plane: `set_enabled_rr_server` → `ipc_thread` 的 `SetEnabled`
 /// request channel payload（v0.5 候选 C）。
@@ -249,8 +184,9 @@ pub struct RrChannels {
 ///   timeout_ms` 转 wire deadline）。drain 入口 check 过期即拒；live pending 每
 ///   tick check 过期 → `DeadlineExceeded`。
 /// - `role` / `audit_reason`：仅 audit（S0 不授权，沿 ClearEStop）。
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SetEnabledRrRequest {
+    pub route: crate::rr_admission::SlotIdentity,
     pub request_id: String,
     pub enabled: bool,
     pub dry_run: bool,
@@ -260,10 +196,12 @@ pub struct SetEnabledRrRequest {
 
 /// RR control plane: `ipc_thread` → `set_enabled_rr_server` 的 `SetEnabled`
 /// response channel payload。`request_id` 复用让 rr_server 路由 reply。
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SetEnabledRrResponse {
-    pub request_id: String,
-    pub payload: SetEnabledRrPayload,
+    pub(crate) route: crate::rr_admission::SlotIdentity,
+    pub(crate) effect: robot_msg::msg::SideEffect,
+    pub(crate) request_id: String,
+    pub(crate) payload: SetEnabledRrPayload,
 }
 
 /// `SetEnabled` RR domain status enum（v0.5 候选 C）。
@@ -273,20 +211,31 @@ pub struct SetEnabledRrResponse {
 /// `Copy` 友好（仅 `u64` / `S0State` POD 字段）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetEnabledRrPayload {
+    SupersededByDisable,
+    QueueFull,
+    Superseded,
     /// **enable 成功**：state commit `Enabled.Active` + adapter `Enable(true)`
     /// ack（D8 / AC-2）。`completed_at_ns` = 观测到 target 的 mono raw 时刻。
     /// → `RpcStatus::Ok` + domain `Ok`。
-    Enabled { completed_at_ns: u64 },
+    Enabled {
+        completed_at_ns: u64,
+    },
     /// **disable 成功**：state commit `Safe` + adapter `Enable(false)` ack
     /// （D3 / AC-3）。→ `RpcStatus::Ok` + domain `Ok`。
-    Disabled { completed_at_ns: u64 },
+    Disabled {
+        completed_at_ns: u64,
+    },
     /// **dry_run precondition 通过**（D7）：**不**代表 adapter 会 ack / enable
     /// 真完成。→ `RpcStatus::Ok` + domain `WouldAccept`。
-    WouldAccept { at_ns: u64 },
+    WouldAccept {
+        at_ns: u64,
+    },
     /// **precondition 拒**：ready guard 不满足 / state 不允许（`Fault` 需先
     /// `ClearError`，AC-9）。`actual` 携当前 state。→ `FailedPrecondition` +
     /// domain `GuardRejected`。
-    GuardRejected { actual: S0State },
+    GuardRejected {
+        actual: S0State,
+    },
     /// **enable 被 latch 拒**：`estop_latched=true`（§6.7 #3 / AC-4）。→
     /// `FailedPrecondition` + domain `LatchBlocked`。
     LatchBlocked,
@@ -312,6 +261,7 @@ pub enum SetEnabledRrPayload {
 /// `SetEnabled` RR control plane channels（沿 [`RrChannels`]）。
 pub struct SetEnabledRrChannels {
     pub request_rx: Receiver<SetEnabledRrRequest>,
+    pub normal_request_rx: Receiver<SetEnabledRrRequest>,
     pub response_tx: Sender<SetEnabledRrResponse>,
 }
 
@@ -326,7 +276,7 @@ pub enum PendingTarget {
 
 /// in-flight live SetEnabled 的观测状态（单飞；**非** ClearEStop 单 tick）。
 ///
-/// `ipc_thread` 每 tick 在 `ipc_tick` 后读 `state`：到 `target` → `Enabled`/
+/// IPC 每 tick 在持责推进后读 `state`：到 `target` → `Enabled`/
 /// `Disabled`；`Fault(AdapterErr)` → `AdapterError`；EStop preempt /
 /// `Stopping` / deadline → 对应 payload。resolve 后清空（释放单飞）。
 #[derive(Debug, Clone)]
@@ -355,33 +305,6 @@ pub struct IpcThreadConfig {
     pub initial_guards: Guards,
     /// 初始 state。生产 `S0State::Safe`；测试可注入任意初值。
     pub initial_state: S0State,
-    /// **task #15 阻断 1 修复**：`EStop` latch 文件路径（`fsync` 双写）。
-    ///
-    /// 设计 `docs/00_design.md` §6.7 不变量 #4 + §1117 强制要求：
-    /// > "`EStop` 来源进入 S0 → 立即 `fsync` 写 latch 文件，不等 graceful shutdown"
-    ///
-    /// 旧实现仅在 daemon 退出时一次性 save，**daemon 在 graceful 退出前崩溃
-    /// 会让 latch 落不下来 → 重启读 false → 自动 `Enable` → 安全语义破坏**。
-    ///
-    /// 新实现：本字段 `Some` 时，`ipc_thread` 主循环每 tick 走 latch fsync
-    /// hook 两条路径（A1-3 (1/3a) 之后）：
-    ///
-    /// - **`EStop` 翻转 (false → true 单调)**：通用 hook 比较
-    ///   `prev_estop_latched` vs `guards.estop_latched`，翻转时立即
-    ///   `save_estop_latch(latch_path, true)`（primary-first 双文件 `fsync`
-    ///   rename，~ms 级）。
-    /// - **`ClearEStop` 路径 (true → false)**：由 `ipc_tick` 内
-    ///   [`crate::clear_estop_action::try_apply_clear_estop`] 调
-    ///   [`crate::estop_latch::save_estop_latch_clear`]（**backup-first**，
-    ///   保证 partial failure 时磁盘 latch 不动；详 `docs/CHANGELOG.md`
-    ///   2026-04-27 `round 2` 阻断登记）；`ipc_thread` hook 通过
-    ///   `tick_outcome.clear_estop` 的 `ClearEStopTickOutcome::Cleared` /
-    ///   `FsyncFailed` 等 variant 决定计数 + 同步 prev，**不**再二次
-    ///   `save_estop_latch`（防二次写）。
-    ///
-    /// `None` 仅供单测：跳过 latch IO，保持测试纯类型路径。生产 daemon 必须
-    /// 传 `Some(args.latch_path.clone())`。
-    pub latch_path: Option<PathBuf>,
     /// **v0.5 候选 E 段(3)（D1 command 侧 layout gate，§3.5.1 部分落地）**：
     /// 本 S0 实例的权威 `layout_id`（config 模式 = `compute_layout_id(
     /// robot_id, hardware_id, zip(joints, motor_ids))` 派生；CLI-only 沿
@@ -396,7 +319,6 @@ impl Default for IpcThreadConfig {
             poll_interval_ns: 500_000, // 500 µs
             initial_guards: Guards::default(),
             initial_state: S0State::Safe,
-            latch_path: None,
             // 与 CLI-only 生产路径同占位（§3.5.1 部分落地边界）；单测显式
             // 覆盖为各自 fixture 的 layout。
             authoritative_layout: 0xCAFE_BABE_DEAD_BEEF,
@@ -436,13 +358,10 @@ pub struct IpcThreadMetrics {
     pub watchdog_events: AtomicU64,
     /// 外部 channel 发来的事件数（`SIGINT` / 测试驱动）。
     pub external_events: AtomicU64,
-    /// task-30 v9 / M7 阶段 4：`ipc_tick` 调用次数（每 tick 一次）。
+    /// 唯一 IPC 业务循环完成次数（保留既有指标字段名）。
     pub ipc_tick_count: AtomicU64,
     /// state 变化次数（`new_state != prev_state`）。
     pub state_changes: AtomicU64,
-    /// **task #15 阻断 1 修复**：触发即写 latch 的累计成功次数（每次
-    /// `guards.estop_latched` 翻转 + `save_estop_latch` 成功 → +1）。
-    pub latch_writes: AtomicU64,
     /// **S48 A3b**：`state_pub.publish` 返回错误（版本耗尽 / 写端损坏）的次数。
     /// 首次出错即结束本 worker，由 `s0_daemon` READY 循环的 `is_finished` 判错。
     pub snapshot_publish_errors: AtomicU64,
@@ -450,10 +369,6 @@ pub struct IpcThreadMetrics {
     /// 仅该次返回 `VersionExhausted` 时原子记录（0 = 未发生）。
     #[cfg(feature = "test-comm-fault-hook")]
     pub snapshot_publish_failure_attempt_ns: AtomicU64,
-    /// 同上，写盘失败次数（IO error）；触发后即便失败也继续运行（state 已
-    /// 进 Safe，硬件已断扭；下次 daemon 启动可能漏读 latch，但这是分级降级
-    /// 不阻断当前 tick）。
-    pub latch_write_errors: AtomicU64,
     /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
     /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
     /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
@@ -472,263 +387,532 @@ pub struct IpcSubscribers {
     pub estop: Iceoryx2Subscriber<markers::EStopEvent>,
 }
 
-/// `ipc_thread` 启动后返回的控制 handle。
-pub struct IpcThreadHandle {
-    join: JoinHandle<()>,
-    stop: Arc<AtomicBool>,
-    /// 给 `watchdog` 读：`ipc_thread` 每收到 heartbeat 就 `store(now, Release)`。
-    last_hb_ns: Arc<AtomicU64>,
-    /// 给外部（signal handler / `CLI` / 测试）发 Event（`EStop` / Stop / Clear`EStop` ...）。
-    event_tx: ExternalEvents,
-    metrics: Arc<IpcThreadMetrics>,
+/// subscriber 先于原 Node 析构；端口只在线程内创建和使用。
+pub struct OwnedIpcPorts {
+    subscribers: IpcSubscribers,
+    _node: iceoryx2::prelude::Node<iceoryx2::service::ipc::Service>,
+}
+impl OwnedIpcPorts {
+    #[must_use]
+    pub fn new(
+        subscribers: IpcSubscribers,
+        node: iceoryx2::prelude::Node<iceoryx2::service::ipc::Service>,
+    ) -> Self {
+        Self {
+            subscribers,
+            _node: node,
+        }
+    }
 }
 
+#[derive(Debug, Clone)]
+pub enum IpcInitError {
+    Node(iceoryx2::node::NodeCreationFailure),
+    Subscriber {
+        topic: String,
+        error: robot_transport::TransportError,
+    },
+    InitialPublish(robot_transport::SnapshotPublishError),
+}
+
+/// 非阻塞 READY 读取；先保缓冲结果，再报告断链，不能重复消费失败事实。
+pub struct ReadyReader<E> {
+    receiver: std::sync::mpsc::Receiver<Result<(), E>>,
+    observed: Option<Result<(), E>>,
+    disconnected: bool,
+}
+#[derive(Debug)]
+pub enum ReadyState<'a, E> {
+    Pending,
+    Ready,
+    Failed(&'a E),
+    Disconnected,
+}
+impl<E> ReadyReader<E> {
+    pub(crate) fn new(receiver: std::sync::mpsc::Receiver<Result<(), E>>) -> Self {
+        Self {
+            receiver,
+            observed: None,
+            disconnected: false,
+        }
+    }
+    pub fn poll(&mut self) -> ReadyState<'_, E> {
+        if self.observed.is_none() && !self.disconnected {
+            match self.receiver.try_recv() {
+                Ok(result) => self.observed = Some(result),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.disconnected = true,
+            }
+        }
+        match &self.observed {
+            Some(Ok(())) => ReadyState::Ready,
+            Some(Err(error)) => ReadyState::Failed(error),
+            None if self.disconnected => ReadyState::Disconnected,
+            None => ReadyState::Pending,
+        }
+    }
+}
+
+pub struct IpcSpawnInputs<F> {
+    pub cfg: IpcThreadConfig,
+    pub clock: Arc<dyn RobotClock>,
+    pub subscribers_factory: F,
+    pub cmd_writer: LatestCommandWriter<JointCommandBuf>,
+    pub state_pub: RtSnapshotPublisher<S0StateSnapshot>,
+    pub watchdog_rx: Receiver<Event>,
+    pub ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlClient>,
+    pub boot: Arc<crate::boot_supervisor::BootShared>,
+    pub persist: crate::latch_writer::PersistClient,
+    pub rr_channels: Option<RrChannels>,
+    pub set_enabled_rr_channels: Option<SetEnabledRrChannels>,
+    pub stop: Arc<AtomicBool>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpcBindError {
+    MissingBinding,
+    AuthorityMismatch,
+    StartDomainMismatch,
+    WriterSharedMismatch,
+}
+#[allow(
+    clippy::large_enum_variant,
+    reason = "绑定拒绝内联返还全部原输入，避免为错误分支新增分配与拥有层级"
+)]
+pub enum IpcSpawnError<F> {
+    Binding {
+        inputs: IpcSpawnInputs<F>,
+        reason: IpcBindError,
+    },
+    ThreadSpawn(std::io::Error),
+}
+impl<F> std::fmt::Debug for IpcSpawnError<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Binding { reason, .. } => f.debug_tuple("Binding").field(reason).finish(),
+            Self::ThreadSpawn(error) => f.debug_tuple("ThreadSpawn").field(error).finish(),
+        }
+    }
+}
+
+struct IpcControlBinding {
+    ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlClient>,
+    boot: Arc<crate::boot_supervisor::BootShared>,
+}
+struct IpcChannels {
+    watchdog: Receiver<Event>,
+    external: Receiver<crate::event_ingress::ControlEvent>,
+    clear: Option<RrChannels>,
+    set: Option<SetEnabledRrChannels>,
+    rr_sealed: [bool; 4],
+}
+#[derive(Default)]
+pub(crate) struct RetiredOutbox {
+    pub(crate) clear: std::collections::VecDeque<ClearEStopRrResponse>,
+    pub(crate) set: std::collections::VecDeque<SetEnabledRrResponse>,
+}
+struct IpcOwned {
+    loop_state: crate::ipc_runtime::IpcLoopState,
+    binding: IpcControlBinding,
+    persist: crate::latch_writer::PersistClient,
+    channels: IpcChannels,
+    outbox: RetiredOutbox,
+}
+impl IpcOwned {
+    fn is_quiescent(&self) -> bool {
+        self.channels.rr_sealed.into_iter().all(|closed| closed)
+            && self.loop_state.is_quiescent()
+            && self.persist.has_credit()
+            && self.outbox.clear.is_empty()
+            && self.outbox.set.is_empty()
+    }
+}
+
+fn flush_retired_outbox(outbox: &mut RetiredOutbox, channels: &IpcChannels) {
+    if let Some(channel) = &channels.clear {
+        while let Some(response) = outbox.clear.pop_front() {
+            match channel.response_tx.try_send(response) {
+                Ok(()) => {}
+                Err(
+                    crossbeam_channel::TrySendError::Full(original)
+                    | crossbeam_channel::TrySendError::Disconnected(original),
+                ) => {
+                    outbox.clear.push_front(original);
+                    break;
+                }
+            }
+        }
+    }
+    if let Some(channel) = &channels.set {
+        while let Some(response) = outbox.set.pop_front() {
+            match channel.response_tx.try_send(response) {
+                Ok(()) => {}
+                Err(
+                    crossbeam_channel::TrySendError::Full(original)
+                    | crossbeam_channel::TrySendError::Disconnected(original),
+                ) => {
+                    outbox.set.push_front(original);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// 只在本拥有模块核原责任后构造；借用期间不能重新推进同一个 IPC owner。
+pub(crate) struct ClearClosureProof<'a> {
+    boot: &'a crate::boot_supervisor::BootShared,
+    _owned: &'a IpcOwned,
+    g: std::num::NonZeroU64,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClosureMismatch {
+    Target,
+    Generation,
+    PublishedGeneration,
+}
+pub(crate) struct ClearClosurePublishRefused<'a> {
+    pub(crate) proof: ClearClosureProof<'a>,
+    pub(crate) reason: ClosureMismatch,
+}
+impl ClearClosureProof<'_> {
+    pub(crate) fn checked_epoch_for(
+        &self,
+        target: &crate::boot_supervisor::BootShared,
+    ) -> Result<std::num::NonZeroU64, ClosureMismatch> {
+        if !std::ptr::eq(self.boot, target) {
+            return Err(ClosureMismatch::Target);
+        }
+        if target.runtime_words().generation() != self.g.get() {
+            return Err(ClosureMismatch::Generation);
+        }
+        Ok(self.g)
+    }
+}
+fn prove_clear_closure<'a>(
+    owned: &'a IpcOwned,
+    boot: &'a crate::boot_supervisor::BootShared,
+) -> Option<ClearClosureProof<'a>> {
+    let g = std::num::NonZeroU64::new(boot.runtime_words().generation())?;
+    let binding = boot.binding()?;
+    if !std::ptr::eq(owned.binding.boot.as_ref(), boot)
+        || !Arc::ptr_eq(binding.authority(), owned.binding.ctrl.authority())
+        || !Arc::ptr_eq(binding.writer(), owned.persist.shared())
+        || boot.runtime_words().shutdown_deadline().is_none()
+        || !owned.is_quiescent()
+    {
+        return None;
+    }
+    Some(ClearClosureProof {
+        boot,
+        _owned: owned,
+        g,
+    })
+}
+#[derive(Debug)]
+pub enum IpcExitReason {
+    Stopped,
+    Initialization(IpcInitError),
+    SnapshotPublish(robot_transport::SnapshotPublishError),
+    ReadyDisconnected,
+}
+/// 正常退出持原 IPC 责任；panic 仅由真实 join Err 表达，不伪造此值。
+#[must_use]
+pub struct IpcExit {
+    reason: IpcExitReason,
+    owned: IpcOwned,
+}
+impl std::fmt::Debug for IpcExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IpcExit")
+            .field("reason", &self.reason)
+            .field("quiescent", &self.is_quiescent())
+            .finish_non_exhaustive()
+    }
+}
+impl IpcExit {
+    #[must_use]
+    pub const fn reason(&self) -> &IpcExitReason {
+        &self.reason
+    }
+    #[must_use]
+    pub fn is_quiescent(&self) -> bool {
+        self.owned.is_quiescent()
+    }
+}
+
+pub struct IpcThreadHandle {
+    join: JoinHandle<IpcExit>,
+    stop: Arc<AtomicBool>,
+    last_hb_ns: Arc<AtomicU64>,
+    event_tx: ExternalEvents,
+    metrics: Arc<IpcThreadMetrics>,
+    ready: ReadyReader<IpcInitError>,
+}
 impl IpcThreadHandle {
-    /// 请求停止。下次 tick 开始时检测到并退出。
     pub fn request_stop(&self) {
         self.stop.swap(true, Ordering::AcqRel);
     }
-
     #[must_use]
     pub fn is_finished(&self) -> bool {
         self.join.is_finished()
     }
-
-    /// Watchdog 监测用的 `last_hb_ns` 原子。
+    pub fn poll_ready(&mut self) -> ReadyState<'_, IpcInitError> {
+        self.ready.poll()
+    }
     #[must_use]
     pub fn last_hb_ns(&self) -> Arc<AtomicU64> {
         Arc::clone(&self.last_hb_ns)
     }
-
-    /// 外部注入事件（signal handler / `CLI` / 测试）。
     #[must_use]
     pub fn event_sender(&self) -> ExternalEvents {
         self.event_tx.clone()
     }
-
     #[must_use]
     pub fn metrics(&self) -> &Arc<IpcThreadMetrics> {
         &self.metrics
     }
-
-    /// 等待线程退出。
-    ///
-    /// # Errors
-    ///
-    /// 返回 `Err` 当 `ipc_thread` panic。
-    pub fn join(self) -> thread::Result<()> {
+    pub fn join(self) -> thread::Result<IpcExit> {
         self.join.join()
     }
 }
 
-// ============================================================================
-// 入口
-// ============================================================================
-
-/// 启动 `ipc_thread`。
-///
-/// - `cfg`：初值 + 轮询间隔。
-/// - `clock`：测试用 `MockClock`，生产用 `SystemClock`。
-/// - `subscribers_factory`：`FnOnce` 闭包，在 `ipc_thread` 线程内执行，返回 3 个
-///   已 open 的 iceoryx2 subscriber。用闭包包装是因为 iceoryx2 `ipc::Service`
-///   的 subscriber 是 `!Send`（见模块 doc "为什么 ..."）。闭包 panic / unwind
-///   会让 `ipc_thread` 直接退出（stop signal 没机会走 state machine）—— 调用方应
-///   保证 iceoryx2 open 成功再进入 `production daemon`，或者接受 `panic-abort`。
-/// - `cmd_writer`：`LatestCommandWriter<JointCommandBuf>` 写端（单写者）。
-/// - `state_pub`：`RtSnapshotPublisher<S0StateSnapshot>` 写端（单写者，每 tick 发布）。
-/// - `watchdog_rx`：`watchdog` 发 `HeartbeatTimeout` 进来。
-///
-/// # Errors
-///
-/// 返回 `std::io::Error` 当 `thread::Builder::spawn` 失败（OS 资源）。
-///
-/// **task-30 v9 / M7 阶段 4**：新增必传参数 `executor_ctrl: Arc<dyn
-/// ExecutorCtrlClient>`。`ipc_thread` 主循环现在用 [`ipc_tick`] 三步式驱动
-/// `executor_ctrl`（`set_policy` / `safety_stop` / `request_normal` /
-/// `poll_last_normal_resp` / `clear_safety_latch`），**不再绕过 `ipc_tick`
-/// 直接改 state**（reviewer 硬要求 #2）。
-///
-/// `executor_ctrl` 由 `s0_daemon` 按 `RtClass` 分发后构造：`HardRT` 路径的
-/// `Arc<HardRtCtrlClient>`，`SerialRT` 路径的 `Arc<SerialIoCtrlClient>`
-/// （同份 `HardRtCtrlInner` 的两路命名 alias）。
-#[allow(clippy::too_many_arguments)]
-pub fn spawn_ipc_thread<F>(
-    cfg: IpcThreadConfig,
-    clock: Arc<dyn RobotClock>,
-    subscribers_factory: F,
-    cmd_writer: LatestCommandWriter<JointCommandBuf>,
-    state_pub: RtSnapshotPublisher<S0StateSnapshot>,
-    watchdog_rx: Receiver<Event>,
-    executor_ctrl: Arc<dyn ExecutorCtrlClient>,
-    rr_channels: Option<RrChannels>,
-    set_enabled_rr_channels: Option<SetEnabledRrChannels>,
-    serial_ctrl: Option<Arc<crate::hard_rt_ctrl::HardRtCtrlInner>>,
-    emergency_ctrl: Option<Arc<dyn robot_core::executor_ctrl::SerialEmergencyCtrl>>,
-    stop: Arc<AtomicBool>,
-) -> std::io::Result<IpcThreadHandle>
+/// 先核原绑定；成功 spawn 后立即交原句柄，不等待 factory/首次发布。
+#[allow(
+    clippy::result_large_err,
+    reason = "绑定拒绝必须完整返原输入含唯一写端/client"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "同一函数完成原输入核验、线程启动与原句柄交接，避免拆散失败拥有出口"
+)]
+pub fn spawn_ipc_thread<F>(inputs: IpcSpawnInputs<F>) -> Result<IpcThreadHandle, IpcSpawnError<F>>
 where
-    F: FnOnce() -> IpcSubscribers + Send + 'static,
+    F: FnOnce() -> Result<OwnedIpcPorts, IpcInitError> + Send + 'static,
 {
+    let reason = match inputs.boot.binding() {
+        None => Some(IpcBindError::MissingBinding),
+        Some(binding) if !Arc::ptr_eq(binding.authority(), inputs.ctrl.authority()) => {
+            Some(IpcBindError::AuthorityMismatch)
+        }
+        Some(_) if inputs.ctrl.start_slot().domain() != inputs.ctrl.authority().domain() => {
+            Some(IpcBindError::StartDomainMismatch)
+        }
+        Some(binding) if !Arc::ptr_eq(binding.writer(), inputs.persist.shared()) => {
+            Some(IpcBindError::WriterSharedMismatch)
+        }
+        Some(_) => None,
+    };
+    if let Some(reason) = reason {
+        return Err(IpcSpawnError::Binding { inputs, reason });
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_hook::before_spawn("ipc").map_err(IpcSpawnError::ThreadSpawn)?;
+    let IpcSpawnInputs {
+        cfg,
+        clock,
+        subscribers_factory,
+        cmd_writer,
+        mut state_pub,
+        watchdog_rx,
+        ctrl,
+        boot,
+        persist,
+        rr_channels,
+        set_enabled_rr_channels,
+        stop,
+    } = inputs;
     let last_hb_ns = Arc::new(AtomicU64::new(clock.now().0));
     let metrics = Arc::new(IpcThreadMetrics::default());
-
     let legacy_notice = Arc::new(AtomicBool::new(false));
-    let (event_tx, event_rx) = ExternalEvents::channel(
-        Arc::clone(&legacy_notice),
-        Arc::clone(&executor_ctrl),
-        emergency_ctrl.clone(),
-    );
-
+    let executor: Arc<dyn ExecutorCtrlClient> = ctrl.clone();
+    let emergency: Arc<dyn robot_core::executor_ctrl::SerialEmergencyCtrl> = ctrl.clone();
+    let (event_tx, event_rx) =
+        ExternalEvents::channel(Arc::clone(&legacy_notice), executor, Some(emergency));
+    let rr_sealed = [
+        rr_channels.is_none(),
+        rr_channels.is_none(),
+        set_enabled_rr_channels.is_none(),
+        set_enabled_rr_channels.is_none(),
+    ];
+    let normal_capacity = rr_channels
+        .as_ref()
+        .and_then(|ch| ch.normal_request_rx.capacity())
+        .unwrap_or(0)
+        .saturating_add(
+            set_enabled_rr_channels
+                .as_ref()
+                .and_then(|ch| ch.normal_request_rx.capacity())
+                .unwrap_or(0),
+        );
+    let owned = IpcOwned {
+        loop_state: crate::ipc_runtime::IpcLoopState::new(
+            cfg.initial_state,
+            cfg.initial_guards,
+            normal_capacity,
+        ),
+        binding: IpcControlBinding { ctrl, boot },
+        persist,
+        channels: IpcChannels {
+            watchdog: watchdog_rx,
+            external: event_rx,
+            clear: rr_channels,
+            set: set_enabled_rr_channels,
+            rr_sealed,
+        },
+        outbox: RetiredOutbox::default(),
+    };
     let join_stop = Arc::clone(&stop);
     let join_last_hb = Arc::clone(&last_hb_ns);
     let join_metrics = Arc::clone(&metrics);
-
-    // 同步信号：spawn 返回前，确保 subscribers_factory 已成功完成 —— 调用方一旦
-    // 拿到 handle，就可以开始发 publish，subscribers 这时已经 subscribe 到 service。
-    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<()>(0);
-
-    #[cfg(feature = "test-comm-fault-hook")]
-    crate::comm_fault_hook::before_spawn("ipc")?;
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
     let join = thread::Builder::new()
         .name("s0_ipc_thread".into())
         .spawn(move || {
-            let subs = subscribers_factory();
-            #[cfg(feature = "test-comm-fault-hook")]
-            crate::comm_fault_hook::boot_pause("ipc_ready");
-            // 通知外层 "subscribers 已 ready"；ready_rx.recv() 立刻解除阻塞。
-            let _ = ready_tx.send(());
-            drop(ready_tx);
-            // S48 A3b：写端唯一、按 `&mut` 发布。
-            let mut state_pub = state_pub;
+            let ports = match subscribers_factory() {
+                Ok(ports) => ports,
+                Err(error) => {
+                    let _ = ready_tx.try_send(Err(error.clone()));
+                    return IpcExit {
+                        reason: IpcExitReason::Initialization(error),
+                        owned,
+                    };
+                }
+            };
             run_loop(
                 &cfg,
                 clock.as_ref(),
-                subs,
+                ports,
                 &cmd_writer,
                 &mut state_pub,
-                &watchdog_rx,
-                &event_rx,
                 &join_stop,
                 &join_last_hb,
                 &join_metrics,
-                executor_ctrl.as_ref(),
-                rr_channels.as_ref(),
-                set_enabled_rr_channels.as_ref(),
-                serial_ctrl.as_deref(),
-                emergency_ctrl.as_deref(),
-                legacy_notice,
-            );
-        })?;
-
-    // 阻塞等 factory 完成。若 factory panic 则 ready_tx drop → recv 返回 Err，
-    // 我们往上抛一个 io::Error（调用方 unwrap 会看到"ipc_thread factory panicked"）。
-    if ready_rx.recv().is_err() {
-        return Err(std::io::Error::other(
-            "ipc_thread subscribers_factory panicked before signalling ready",
-        ));
-    }
-
+                owned,
+                ready_tx,
+            )
+        })
+        .map_err(IpcSpawnError::ThreadSpawn)?;
     Ok(IpcThreadHandle {
         join,
         stop,
         last_hb_ns,
         event_tx,
         metrics,
+        ready: ReadyReader::new(ready_rx),
     })
 }
 
-// ============================================================================
-// 主循环
-// ============================================================================
-
-/// 一个真实线程循环只委托一个共享单 tick，不另持 evaluator 或 pending 副本。
 #[allow(clippy::too_many_arguments)]
 fn run_loop(
     cfg: &IpcThreadConfig,
     clock: &dyn RobotClock,
-    mut subs: IpcSubscribers,
+    mut ports: OwnedIpcPorts,
     cmd_writer: &LatestCommandWriter<JointCommandBuf>,
     state_pub: &mut RtSnapshotPublisher<S0StateSnapshot>,
-    watchdog_rx: &Receiver<Event>,
-    event_rx: &Receiver<crate::event_ingress::ControlEvent>,
     stop: &AtomicBool,
     last_hb_ns: &AtomicU64,
     metrics: &IpcThreadMetrics,
-    executor_ctrl: &dyn ExecutorCtrlClient,
-    rr_channels: Option<&RrChannels>,
-    set_enabled_rr_channels: Option<&SetEnabledRrChannels>,
-    serial_ctrl: Option<&crate::hard_rt_ctrl::HardRtCtrlInner>,
-    emergency_ctrl: Option<&dyn robot_core::executor_ctrl::SerialEmergencyCtrl>,
-    legacy_notice: Arc<AtomicBool>,
-) {
-    use crate::ipc_runtime::{IpcLoopState, IpcRuntimeContext, IpcSources, TopicEvents};
-
-    let mut state = IpcLoopState::new(cfg.initial_state, cfg.initial_guards, legacy_notice);
-    let context = IpcRuntimeContext {
-        executor_ctrl,
-        serial_ctrl,
-        emergency_ctrl,
-        clock,
-        latch_path: cfg.latch_path.as_deref(),
-        metrics,
-    };
-    let sources = IpcSources {
-        watchdog: watchdog_rx,
-        external: event_rx,
-        clear_rr: rr_channels,
-        set_rr: set_enabled_rr_channels,
-    };
-    // S48 A3b：首次发布失败同样结束 worker（不清 latch、不伪装 Ready）。
+    mut owned: IpcOwned,
+    ready: std::sync::mpsc::SyncSender<Result<(), IpcInitError>>,
+) -> IpcExit {
+    use crate::ipc_runtime::{IpcRuntimeContext, IpcSources, TopicEvents};
     let initial_stamp_ns = clock.now().0;
-    let initial = state_pub.publish(&S0StateSnapshot::new(
+    if let Err(error) = state_pub.publish(&S0StateSnapshot::new(
         cfg.initial_state,
         cfg.initial_guards,
         initial_stamp_ns,
-    ));
-    #[cfg(feature = "test-comm-fault-hook")]
-    if initial == Err(robot_transport::SnapshotPublishError::VersionExhausted) {
-        // 时间戳在 publish 之前取（与快照 stamp 同一次时钟读取）。
-        metrics
-            .snapshot_publish_failure_attempt_ns
-            .store(initial_stamp_ns, Ordering::Relaxed);
-    }
-    if initial.is_err() {
+    )) {
         metrics
             .snapshot_publish_errors
             .fetch_add(1, Ordering::Relaxed);
-        return;
+        #[cfg(feature = "test-comm-fault-hook")]
+        metrics
+            .snapshot_publish_failure_attempt_ns
+            .store(initial_stamp_ns, Ordering::Relaxed);
+        let error = IpcInitError::InitialPublish(error);
+        let _ = ready.try_send(Err(error.clone()));
+        return IpcExit {
+            reason: IpcExitReason::Initialization(error),
+            owned,
+        };
     }
+    #[cfg(feature = "test-comm-fault-hook")]
+    crate::comm_fault_hook::boot_pause("ipc_ready");
+    if ready.try_send(Ok(())).is_err() {
+        return IpcExit {
+            reason: IpcExitReason::ReadyDisconnected,
+            owned,
+        };
+    }
+    drop(ready);
     while crate::worker_stop::worker_running(crate::worker_stop::WorkerKind::Ipc, clock, stop) {
         #[cfg(any(test, feature = "test-freeze-hook"))]
         crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock, stop);
-        let snapshot = state.tick(&context, &sources, || {
-            poll_command(
-                &mut subs.command,
-                cmd_writer,
-                cfg.authoritative_layout,
-                metrics,
-            );
-            TopicEvents {
-                heartbeat: poll_heartbeat(&mut subs.heartbeat, clock, last_hb_ns, metrics),
-                estop: poll_estop(&mut subs.estop, metrics),
-            }
-        });
+        let ctrl = &owned.binding.ctrl;
+        let context = IpcRuntimeContext {
+            ctrl: ctrl.as_ref(),
+            boot: &owned.binding.boot,
+            clock,
+            metrics,
+        };
+        let sources = IpcSources {
+            watchdog: &owned.channels.watchdog,
+            external: &owned.channels.external,
+            clear_rr: owned.channels.clear.as_ref(),
+            set_rr: owned.channels.set.as_ref(),
+        };
+        let snapshot = owned.loop_state.tick(
+            &context,
+            &sources,
+            &mut owned.channels.rr_sealed,
+            &mut owned.persist,
+            &mut owned.outbox,
+            || TopicEvents {
+                heartbeat: poll_heartbeat(
+                    &mut ports.subscribers.heartbeat,
+                    clock,
+                    last_hb_ns,
+                    metrics,
+                ),
+                estop: poll_estop(&mut ports.subscribers.estop, metrics),
+            },
+        );
+        // 高优先级收紧与 owned 推进已完成后，才更新普通关节 latest 槽。
+        poll_command(
+            &mut ports.subscribers.command,
+            cmd_writer,
+            cfg.authoritative_layout,
+            metrics,
+        );
         #[cfg(feature = "test-comm-fault-hook")]
         let attempt_started_ns = clock.now().0;
-        let published = state_pub.publish(&snapshot);
-        #[cfg(feature = "test-comm-fault-hook")]
-        if published == Err(robot_transport::SnapshotPublishError::VersionExhausted) {
-            metrics
-                .snapshot_publish_failure_attempt_ns
-                .store(attempt_started_ns, Ordering::Relaxed);
-        }
-        if published.is_err() {
+        if let Err(error) = state_pub.publish(&snapshot) {
             metrics
                 .snapshot_publish_errors
                 .fetch_add(1, Ordering::Relaxed);
-            return;
+            #[cfg(feature = "test-comm-fault-hook")]
+            metrics
+                .snapshot_publish_failure_attempt_ns
+                .store(attempt_started_ns, Ordering::Relaxed);
+            return IpcExit {
+                reason: IpcExitReason::SnapshotPublish(error),
+                owned,
+            };
+        }
+        flush_retired_outbox(&mut owned.outbox, &owned.channels);
+        if let Some(proof) = prove_clear_closure(&owned, &owned.binding.boot)
+            && let Err(refused) = owned.binding.boot.publish_clear_retired(proof)
+        {
+            // 原 proof 仍借原 owned，失败不清状态，也不追认封口。
+            tracing::error!(reason = ?refused.reason, "IPC 封口观测发布拒绝");
+            let _ = refused.proof;
+            let _ = owned.binding.boot.arm_runtime_shutdown(clock.now());
         }
         thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
+    }
+    IpcExit {
+        reason: IpcExitReason::Stopped,
+        owned,
     }
 }
 
@@ -871,36 +1055,46 @@ fn fb_control_mode_to_repr(m: FbControlMode) -> ControlModeRepr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clear_coordination::ClearOutcome;
+    use crate::clear_estop_transaction::{ClearTxnStage, ClearTxnStore};
+    use crate::latch_writer::{
+        PersistShared, WriterConfig, WriterHandle, WriterHook, WriterPairing, WriterStop,
+    };
+    use crate::rr_admission::{
+        CheckedLimits, ClassCaps, PeerLedger, RrRequestClass, Slot, SlotIdentity,
+    };
     use iceoryx2::prelude::NodeBuilder;
     use iceoryx2::service::ipc::Service as IxService;
-    use robot_core::adapter::ControlMode as AdapterControlMode;
+    use robot_core::adapter::{
+        AdapterInfo, AdapterKind, ControlMode as AdapterControlMode, HardRtAdapter,
+        JointCommandView, JointLimits, JointStateBuf, ManipulatorAdapter, RtClass, RtSafeCtrl,
+    };
+    use robot_core::control_authority::{
+        AuthorityInit, ControlAuthority, EnableResult, InhibitSet, SafetyOperation,
+    };
+    use robot_core::error::RobotError;
     use robot_core::time::{MockClock, MonoRawNs, SystemClock};
     use robot_msg::build_helpers::{build_estop_event, build_heartbeat, build_joint_command};
-    use robot_msg::msg::StaleAction;
-    use robot_transport::iceoryx2::{TopicClass, publisher, subscriber};
-    use robot_transport::traits::Publisher;
-    use robot_transport::{LatestCommandSlot, RtSnapshotReader};
-    use std::sync::atomic::AtomicU32;
+    use robot_msg::msg::{SideEffect, StaleAction};
+    use robot_transport::iceoryx2::{RrProfile, TopicClass, publisher, subscriber};
+    use robot_transport::{LatestCommandSlot, Publisher, RtSnapshotReader};
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicU8, AtomicU32};
 
-    // 每个测试用独立 topic 前缀，避免 cargo test 并行执行时 iceoryx2 service 名冲突。
     static TEST_SEQ: AtomicU32 = AtomicU32::new(0);
+    const WAIT: Duration = Duration::from_secs(3);
+    const LAYOUT: u64 = 0xCAFE_0001;
 
-    struct Topics {
-        command: String,
-        heartbeat: String,
-        estop: String,
-    }
-
-    fn fresh_topics() -> Topics {
-        let id = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
-        let base = format!("/test_ipc_{}_{}", std::process::id(), id);
-        Topics {
-            command: format!("{base}/cmd"),
-            heartbeat: format!("{base}/hb"),
-            estop: format!("{base}/estop"),
+    fn wait_until(mut condition: impl FnMut() -> bool, budget: Duration) {
+        let end = std::time::Instant::now() + budget;
+        while !condition() {
+            assert!(
+                std::time::Instant::now() < end,
+                "等待真实 IPC/设备/文件事实超时"
+            );
+            thread::sleep(Duration::from_millis(1));
         }
     }
-
     fn healthy_guards() -> Guards {
         Guards {
             rt_serial: false,
@@ -909,7 +1103,7 @@ mod tests {
             calibration_loaded: true,
             joint_state_valid: true,
             power_ok: true,
-            heartbeat_ok: false, // 等 ipc 收到 heartbeat 再变 true
+            heartbeat_ok: false,
             cmd_deadline_valid: true,
             limits_valid: true,
             hw_enable_ok: true,
@@ -918,7 +1112,6 @@ mod tests {
             on_timeout_hint: crate::state_machine::EnabledSub::CtrlLostHold,
         }
     }
-
     fn enabled_active() -> S0State {
         S0State::Enabled {
             sub: crate::state_machine::EnabledSub::Active,
@@ -927,1705 +1120,1662 @@ mod tests {
         }
     }
 
-    /// 等待闭包返回 true，最长 `max`；否则 panic。用于等异步 tick 产生观察结果。
-    fn wait_until<F: FnMut() -> bool>(mut cond: F, max: Duration) {
-        let start = std::time::Instant::now();
-        while start.elapsed() < max {
-            if cond() {
-                return;
-            }
-            thread::sleep(Duration::from_millis(2));
+    struct WriterRunning(AtomicBool);
+    impl WriterStop for WriterRunning {
+        fn running(&self) -> bool {
+            self.0.load(Ordering::Acquire)
         }
-        panic!("wait_until timed out after {max:?}");
     }
-
-    /// task-30 v9 / M7 阶段 4 测试辅助：把 `bring_up` 返回的 `Arc<HardRtCtrlInner>`
-    /// 包成一个**自动应答**线程 —— 把 `pending_normal` swap 出来后立即
-    /// store `last_completed = (seq, AdapterResp::Ok)`。
-    ///
-    /// 用途：测试只关心 `ipc_thread` 通路，不想真起 `rt_thread`；但
-    /// `Ready → Enabled.Active` 是 Effectful `Enable(true)`，必须 executor 端
-    /// ack 才能 commit。本 helper 提供 ack。
-    /// S48 A3b：状态快照写端已耗尽 → 首次发布失败 → IPC worker 在 ready 之后
-    /// 立即结束；错误计数可观察，reader 保留构造快照与版本。
-    #[cfg(feature = "test-comm-fault-hook")]
-    #[test]
-    fn state_snapshot_version_exhaustion_on_first_publish_ends_the_ipc_worker() {
-        use robot_transport::MAX_PUBLISHED_VERSION;
-        let (_wd_tx, wd_rx) = unbounded();
-        let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::SystemClock::new());
-        let injected = RtSnapshotPublisher::new_with_version(
-            S0StateSnapshot::default(),
-            MAX_PUBLISHED_VERSION,
-        )
-        .unwrap();
-        let (handle, _cmd_rdr, state_rdr, _cmd_pub, _hb_pub, _estop_pub, _inner) = bring_up_inner(
-            S0State::Safe,
-            Guards::default(),
-            wd_rx,
-            clock,
-            None,
-            Some(injected),
-        );
-        assert!(crate::test_util::wait_until(Duration::from_secs(3), || {
-            handle.is_finished()
-        }));
-        let metrics = Arc::clone(handle.metrics());
-        handle.join().unwrap();
-        assert_eq!(metrics.snapshot_publish_errors.load(Ordering::Relaxed), 1);
-        assert_eq!(
-            metrics.ipc_tick_count.load(Ordering::Relaxed),
-            0,
-            "未进入主循环"
-        );
-        assert_eq!(state_rdr.version(), MAX_PUBLISHED_VERSION, "不回绕");
-        assert_eq!(state_rdr.load(), S0StateSnapshot::default());
+    struct FileHook {
+        pause: AtomicBool,
+        reached: AtomicBool,
+        release: AtomicBool,
+        fail_backup_once: AtomicU8,
+        backup: PathBuf,
     }
-
-    /// S48 A3b：首次发布成功（到 MAX）、第一个 tick 的发布耗尽 → worker 结束，
-    /// 已执行的 tick 计数保留，reader 保留初始快照。
-    #[cfg(feature = "test-comm-fault-hook")]
-    #[test]
-    fn state_snapshot_version_exhaustion_inside_the_loop_ends_the_ipc_worker() {
-        use robot_transport::MAX_PUBLISHED_VERSION;
-        let (_wd_tx, wd_rx) = unbounded();
-        let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::SystemClock::new());
-        let injected = RtSnapshotPublisher::new_with_version(
-            S0StateSnapshot::default(),
-            MAX_PUBLISHED_VERSION - 2,
-        )
-        .unwrap();
-        let (handle, _cmd_rdr, state_rdr, _cmd_pub, _hb_pub, _estop_pub, _inner) = bring_up_inner(
-            S0State::Safe,
-            Guards::default(),
-            wd_rx,
-            clock,
-            None,
-            Some(injected),
-        );
-        assert!(crate::test_util::wait_until(Duration::from_secs(3), || {
-            handle.is_finished()
-        }));
-        let metrics = Arc::clone(handle.metrics());
-        handle.join().unwrap();
-        assert_eq!(metrics.snapshot_publish_errors.load(Ordering::Relaxed), 1);
-        assert_eq!(
-            metrics.ipc_tick_count.load(Ordering::Relaxed),
-            1,
-            "第一个 tick 已执行"
-        );
-        assert_eq!(state_rdr.version(), MAX_PUBLISHED_VERSION);
-        assert_eq!(
-            state_rdr.load().state,
-            S0State::Safe,
-            "保留首次发布的初始快照"
-        );
-    }
-
-    fn spawn_auto_ack(
-        inner: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
-    ) -> (Arc<AtomicBool>, std::thread::JoinHandle<()>) {
-        use robot_core::executor_ctrl::{AdapterResp, pack_completed, unpack_pending_normal};
-        let stop = Arc::new(AtomicBool::new(false));
-        let stop_clone = Arc::clone(&stop);
-        let h = std::thread::spawn(move || {
-            while !stop_clone.load(Ordering::Acquire) {
-                let p = inner.pending_normal.swap(0, Ordering::AcqRel);
-                if p != 0 {
-                    let (_, _, seq) = unpack_pending_normal(p);
-                    inner
-                        .last_completed
-                        .store(pack_completed(seq, AdapterResp::Ok), Ordering::Release);
-                }
-                std::thread::sleep(Duration::from_millis(1));
+    impl WriterHook for Arc<FileHook> {
+        fn before_step(&mut self, stage: ClearTxnStage) {
+            if stage == ClearTxnStage::CreateMarker && self.pause.swap(false, Ordering::AcqRel) {
+                self.reached.store(true, Ordering::Release);
+                wait_until(|| self.release.load(Ordering::Acquire), WAIT);
             }
-        });
-        (stop, h)
+            // 只替换文件系统夹具：真正 RenameBackup 系统调用失败，后续真实 repair 可重试。
+            if stage == ClearTxnStage::RenameBackup
+                && self
+                    .fail_backup_once
+                    .compare_exchange(1, 2, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+            {
+                std::fs::remove_file(&self.backup).unwrap();
+                std::fs::create_dir(&self.backup).unwrap();
+                std::fs::write(self.backup.join("nonempty"), b"x").unwrap();
+            } else if self
+                .fail_backup_once
+                .compare_exchange(2, 3, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                std::fs::remove_file(self.backup.join("nonempty")).unwrap();
+                std::fs::remove_dir(&self.backup).unwrap();
+                std::fs::write(&self.backup, b"1\n").unwrap();
+            }
+        }
     }
 
-    /// 构造 `ipc_thread` + 配套的 iceoryx2 publishers（在调用方线程里存活，用于发数据）。
-    ///
-    /// 关键点：subscribers 在 `ipc_thread` 内部 open；publishers 在测试主线程 open。
-    /// iceoryx2 service 首次调用 create，后续 open。两端 Node 不同但 service 共享。
-    #[allow(clippy::type_complexity)]
-    fn bring_up(
-        initial_state: S0State,
-        initial_guards: Guards,
-        watchdog_rx: Receiver<Event>,
-        clock: Arc<dyn RobotClock>,
-    ) -> (
-        IpcThreadHandle,
-        robot_transport::LatestCommandReader<JointCommandBuf>,
-        RtSnapshotReader<S0StateSnapshot>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
-        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+    /// 纯软件设备模型；错误来自实际 enable_rt 调用，不直接伪写 completed/权限位。
+    struct TestAdapter {
+        limits: JointLimits,
+        enabled: bool,
+        fail: bool,
+    }
+    impl ManipulatorAdapter for TestAdapter {
+        fn info(&self) -> AdapterInfo {
+            AdapterInfo {
+                name: "ipc_test",
+                kind: AdapterKind::Manipulator,
+                rt_class: RtClass::HardRT,
+                vendor_sdk: false,
+            }
+        }
+        fn connect(&mut self) -> Result<(), RobotError> {
+            Ok(())
+        }
+        fn disconnect(&mut self) -> Result<(), RobotError> {
+            self.enabled = false;
+            Ok(())
+        }
+        fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
+            out.joint_count = 1;
+            Ok(())
+        }
+        fn write_command(&mut self, _: &JointCommandView<'_>) -> Result<(), RobotError> {
+            Ok(())
+        }
+        fn set_mode(&mut self, _: AdapterControlMode) -> Result<(), RobotError> {
+            Ok(())
+        }
+        fn enable(&mut self, on: bool) -> Result<(), RobotError> {
+            self.enabled = on;
+            Ok(())
+        }
+        fn safety_stop(&mut self) -> Result<(), RobotError> {
+            self.enabled = false;
+            Ok(())
+        }
+        fn limits(&self) -> &JointLimits {
+            &self.limits
+        }
+    }
+    impl RtSafeCtrl for TestAdapter {
+        fn safety_stop_rt(&mut self) -> Result<(), RobotError> {
+            self.enabled = false;
+            Ok(())
+        }
+        fn enable_rt(&mut self, on: bool) -> Result<(), RobotError> {
+            if self.fail {
+                return Err(RobotError::HardwareFault("IPC 设备调用失败夹具"));
+            }
+            self.enabled = on;
+            Ok(())
+        }
+        fn set_mode_rt(&mut self, _: AdapterControlMode) -> Result<(), RobotError> {
+            Ok(())
+        }
+    }
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "测试线程按值持有原控制端和停止标记，直到真实线程返回"
+    )]
+    fn executor_loop(
+        mut adapter: impl HardRtAdapter,
+        ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+        mode: Arc<AtomicU8>,
+        stop: Arc<AtomicBool>,
     ) {
-        bring_up_with_latch(initial_state, initial_guards, watchdog_rx, clock, None)
+        let mut active: Option<crate::hard_rt_ctrl::EnableFinishPending> = None;
+        let mut unstarted = None;
+        while !stop.load(Ordering::Acquire) {
+            // 与真实 HardRT 相同：先领取 A2 公告，仍独立取旧停止槽，两来源只做一次真实 Stop。
+            let claimed_estop = ctrl.claim_serial_estop();
+            let emergency = ctrl.emergency_action.swap(0, Ordering::AcqRel);
+            if claimed_estop || emergency == robot_core::executor_ctrl::emergency_codes::SAFETY_STOP
+            {
+                let observation = ctrl
+                    .authority()
+                    .begin_safety_observation(SafetyOperation::ConfirmOff);
+                adapter.safety_stop_rt().unwrap();
+                if let Some(active) = &mut active {
+                    active.record_hard_rt_stop_returned();
+                }
+                let _ = ctrl.authority().complete_safety_observation(observation);
+            }
+            if let Some(pending) = active.take() {
+                match crate::hard_rt_ctrl::finish_enable_owned(pending, &ctrl) {
+                    Ok(finished) => {
+                        finished.publish_after_compensation(&ctrl, |_, compensation| {
+                            if compensation == crate::hard_rt_ctrl::EnableCompensation::Required {
+                                ctrl.emergency_action.store(
+                                    robot_core::executor_ctrl::emergency_codes::SAFETY_STOP,
+                                    Ordering::Release,
+                                );
+                            }
+                        });
+                    }
+                    Err(pending) => active = Some(pending),
+                }
+            }
+            if active.is_none() {
+                match mode.load(Ordering::Acquire) {
+                    1 => {
+                        let pending = match unstarted.take() {
+                            Some(pending) => Some(pending),
+                            None => ctrl
+                                .decode_pending(ctrl.pending_normal.swap(0, Ordering::AcqRel))
+                                .unwrap(),
+                        };
+                        if let Some(pending) = pending {
+                            active = crate::rt_thread::execute_owned_normal(
+                                &mut adapter,
+                                pending,
+                                &ctrl,
+                            );
+                        }
+                    }
+                    2 => {
+                        // 已真实从 pending 槽取走 seq，暂不取启动 view。原件由此线程持有。
+                        let raw = ctrl.pending_normal.swap(0, Ordering::AcqRel);
+                        if let Some(pending) = ctrl.decode_pending(raw).unwrap() {
+                            unstarted = Some(pending);
+                            mode.store(3, Ordering::Release);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        // 若真实 finish 尚被拒，原 Execution 不因测试线程退出丢失。
+        let unfinished = active.is_some() || unstarted.is_some();
+        let _held_until_process_exit = std::mem::ManuallyDrop::new((active, unstarted));
+        assert!(!unfinished, "执行器退出时原 Enable 尚未真 finish");
     }
 
-    /// `bring_up` 的扩展形态：可注入 `latch_path`，让单测覆盖"`EStop` 触发即
-    /// `fsync` 落盘"链路。daemon 内嵌 `ipc_thread` 用这条 hook（`Some(path)`）；
-    /// 其它纯通路单测用 `None` 跳过 IO。
-    #[allow(clippy::type_complexity)]
-    fn bring_up_with_latch(
-        initial_state: S0State,
-        initial_guards: Guards,
-        watchdog_rx: Receiver<Event>,
-        clock: Arc<dyn RobotClock>,
-        latch_path: Option<std::path::PathBuf>,
-    ) -> (
-        IpcThreadHandle,
-        robot_transport::LatestCommandReader<JointCommandBuf>,
-        RtSnapshotReader<S0StateSnapshot>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
-        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
-    ) {
-        bring_up_inner(
-            initial_state,
-            initial_guards,
-            watchdog_rx,
-            clock,
-            latch_path,
-            None,
-        )
+    struct Routes {
+        ledger: PeerLedger<u32>,
+        slots: HashMap<SlotIdentity, Slot<u32>>,
+        next_peer: u32,
+    }
+    impl Routes {
+        fn new(limits: &CheckedLimits) -> Self {
+            Self {
+                ledger: PeerLedger::new(limits).unwrap(),
+                slots: HashMap::new(),
+                next_peer: 0,
+            }
+        }
+        fn admit(&mut self, class: RrRequestClass) -> SlotIdentity {
+            self.next_peer += 1;
+            let slot = self.ledger.admit(self.next_peer, class).unwrap();
+            let identity = slot.identity();
+            assert!(self.slots.insert(identity, slot).is_none());
+            identity
+        }
+        fn retired(&mut self, identity: SlotIdentity) {
+            self.ledger
+                .release(self.slots.remove(&identity).expect("回复匹配原已准入 Slot"))
+                .unwrap();
+        }
     }
 
-    /// S48 A3b：可注入状态快照写端（例如逼近版本耗尽的 `new_with_version` 产物）。
-    #[allow(clippy::type_complexity)]
-    fn bring_up_inner(
-        initial_state: S0State,
-        initial_guards: Guards,
-        watchdog_rx: Receiver<Event>,
+    /// 一个 fixture 同时拥有 Node、真实唯一 writer/配对锁、IPC 与软件执行器。
+    /// 普通动作调用生产 execute_owned_normal；不声称本夹具覆盖完整 RT 调度线程。
+    struct Rig {
+        ipc: Option<IpcThreadHandle>,
+        writer: Option<WriterHandle>,
+        executor: Option<JoinHandle<()>>,
+        executor_mode: Arc<AtomicU8>,
+        executor_stop: Arc<AtomicBool>,
+        writer_stop: Arc<WriterRunning>,
+        inner: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+        boot: Arc<crate::boot_supervisor::BootShared>,
+        shared: Arc<PersistShared>,
         clock: Arc<dyn RobotClock>,
-        latch_path: Option<std::path::PathBuf>,
-        state: Option<(
-            RtSnapshotPublisher<S0StateSnapshot>,
-            RtSnapshotReader<S0StateSnapshot>,
-        )>,
-    ) -> (
-        IpcThreadHandle,
-        robot_transport::LatestCommandReader<JointCommandBuf>,
-        RtSnapshotReader<S0StateSnapshot>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
-        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
-    ) {
-        let topics = fresh_topics();
-        // publisher-side Node，测试线程持有。leak 到 'static 避免 drop 后 service
-        // 被 iceoryx2 回收（ipc_thread 还要继续 open service）；测试进程 staci 可接受。
-        let pub_node: &'static _ =
-            Box::leak(Box::new(NodeBuilder::new().create::<IxService>().unwrap()));
-        // 先 open publisher 端（会 create service）。
-        let cmd_pub =
-            publisher::<markers::JointCommand>(pub_node, &topics.command, TopicClass::S0Command)
-                .unwrap();
-        let hb_pub =
-            publisher::<markers::Heartbeat>(pub_node, &topics.heartbeat, TopicClass::Heartbeat)
-                .unwrap();
-        let estop_pub =
-            publisher::<markers::EStopEvent>(pub_node, &topics.estop, TopicClass::SafetyEvent)
-                .unwrap();
+        hook: Arc<FileHook>,
+        cmd_reader: robot_transport::LatestCommandReader<JointCommandBuf>,
+        state: RtSnapshotReader<S0StateSnapshot>,
+        command: robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
+        heartbeat: robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
+        estop: robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
+        watchdog: Sender<Event>,
+        clear_tx: Option<[Sender<ClearEStopRrRequest>; 2]>,
+        clear_rx: Receiver<ClearEStopRrResponse>,
+        clear_routes: Option<Routes>,
+        set_tx: Option<[Sender<SetEnabledRrRequest>; 2]>,
+        set_rx: Receiver<SetEnabledRrResponse>,
+        set_routes: Option<Routes>,
+        latch: PathBuf,
+        standby: Option<crate::latch_writer::StandbyStore>,
+        lock: Option<crate::latch_lock::LatchTargetLock>,
+        expected_snapshot_exhaustion: bool,
+        directory: Option<tempfile::TempDir>,
+        _node: iceoryx2::prelude::Node<IxService>,
+    }
+    #[derive(Clone, Copy)]
+    enum RigProbe {
+        Binding(IpcBindError),
+        NarrowResponses,
+    }
 
-        let (cmd_writer, cmd_reader) =
-            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
-        let reader_clone = cmd_reader.clone();
-        let (state_pub, state_rdr) = state.unwrap_or_else(|| {
-            RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default())
-        });
-
-        let cfg = IpcThreadConfig {
-            poll_interval_ns: 500_000,
-            initial_guards,
-            initial_state,
-            latch_path,
-            // 段(3)：与 publish_command fixture layout（0xCAFE_0001）对齐。
-            authoritative_layout: 0xCAFE_0001,
-        };
-
-        let topics_for_factory = Topics {
-            command: topics.command.clone(),
-            heartbeat: topics.heartbeat.clone(),
-            estop: topics.estop.clone(),
-        };
-        let factory = move || {
-            // ipc_thread 内部的 Node —— iceoryx2 ipc_policy::SingleThreaded 要求
-            // 每线程独立 Node。两端的 Node 指向同一个 iceoryx2 service（topic +
-            // schema attribute 匹配时 open_or_create 合并到同一 service）。
-            //
-            // sub_node 需要活得跟 subscribers 一样久（subscriber 持有 Node 内的
-            // shm handle 句柄）。factory 结束后 node 会 drop，因此 leak 到 'static。
-            // 生产 s0_daemon 里 Node 由 main 持有，无需 leak。
-            let sub_node = NodeBuilder::new().create::<IxService>().unwrap();
-            let command = subscriber::<markers::JointCommand>(
-                &sub_node,
-                &topics_for_factory.command,
-                TopicClass::S0Command,
+    impl Rig {
+        fn new(state: S0State, guards: Guards, safety: OutputSafetyState, latched: bool) -> Self {
+            Self::with_clock(
+                state,
+                guards,
+                safety,
+                latched,
+                Arc::new(SystemClock::new()),
+                None,
+                false,
+            )
+        }
+        #[allow(clippy::too_many_arguments)]
+        fn with_clock(
+            initial_state: S0State,
+            guards: Guards,
+            safety: OutputSafetyState,
+            latched: bool,
+            clock: Arc<dyn RobotClock>,
+            injected: Option<(
+                RtSnapshotPublisher<S0StateSnapshot>,
+                RtSnapshotReader<S0StateSnapshot>,
+            )>,
+            fail_device: bool,
+        ) -> Self {
+            Self::with_probe(
+                initial_state,
+                guards,
+                safety,
+                latched,
+                clock,
+                injected,
+                fail_device,
+                None,
+            )
+        }
+        #[allow(clippy::too_many_arguments)]
+        #[allow(
+            clippy::too_many_lines,
+            reason = "测试夹具在一个拥有出口安装真实配对、线程与关闭责任，完整保留失败收尾"
+        )]
+        fn with_probe(
+            initial_state: S0State,
+            mut guards: Guards,
+            safety: OutputSafetyState,
+            latched: bool,
+            clock: Arc<dyn RobotClock>,
+            injected: Option<(
+                RtSnapshotPublisher<S0StateSnapshot>,
+                RtSnapshotReader<S0StateSnapshot>,
+            )>,
+            fail_device: bool,
+            probe: Option<RigProbe>,
+        ) -> Self {
+            let directory = tempfile::tempdir().unwrap();
+            let latch = directory.path().join("estop_latch");
+            let initial = if latched { b"1\n" } else { b"0\n" };
+            std::fs::write(&latch, initial).unwrap();
+            std::fs::write(latch.with_file_name("estop_latch.bak"), initial).unwrap();
+            let lock = crate::latch_lock::acquire_latch_lock(&latch).unwrap();
+            let base = clock.now();
+            let open = || ClearTxnStore::open(&latch, "ipc_test", "bus").unwrap();
+            let (slot, standby) = WriterPairing::new(open(), open(), &lock, base)
+                .unwrap()
+                .into_parts();
+            let shared = Arc::clone(slot.shared());
+            let (persist, endpoint) = crate::latch_writer::mailbox(Arc::clone(&shared));
+            let writer_stop = Arc::new(WriterRunning(AtomicBool::new(true)));
+            let hook = Arc::new(FileHook {
+                pause: AtomicBool::new(false),
+                reached: AtomicBool::new(false),
+                release: AtomicBool::new(false),
+                fail_backup_once: AtomicU8::new(0),
+                backup: latch.with_file_name("estop_latch.bak"),
+            });
+            let writer = crate::latch_writer::spawn_writer(
+                slot,
+                endpoint,
+                WriterConfig::default(),
+                writer_stop.clone(),
+                Arc::clone(&clock),
+                Box::new(Arc::clone(&hook)),
             )
             .unwrap();
-            let heartbeat = subscriber::<markers::Heartbeat>(
-                &sub_node,
-                &topics_for_factory.heartbeat,
-                TopicClass::Heartbeat,
-            )
-            .unwrap();
-            let estop = subscriber::<markers::EStopEvent>(
-                &sub_node,
-                &topics_for_factory.estop,
-                TopicClass::SafetyEvent,
-            )
-            .unwrap();
-            Box::leak(Box::new(sub_node));
-            IpcSubscribers {
+            let authority = Arc::new(
+                ControlAuthority::new(AuthorityInit::new(latched, safety, InhibitSet::EMPTY))
+                    .unwrap(),
+            );
+            let mut adapter = TestAdapter {
+                limits: JointLimits::default(),
+                enabled: false,
+                fail: false,
+            };
+            if matches!(initial_state, S0State::Enabled { .. }) {
+                // 运行态前提也经真实 A2，不能直接改 disabled/phase/safety 原子位。
+                let (owner, view) = authority.reserve_enable().unwrap();
+                let execution = authority.start_enable(view).unwrap();
+                adapter.enable_rt(true).unwrap();
+                authority
+                    .finish_enable(execution, EnableResult::Succeeded)
+                    .unwrap();
+                authority.commit_enable(owner).unwrap();
+            }
+            adapter.fail = fail_device;
+            guards.estop_latched = latched;
+            let inner = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new(Arc::clone(
+                &authority,
+            )));
+            let ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlClient::new(Arc::clone(
+                &inner,
+            )));
+            let boot = Arc::new(crate::boot_supervisor::BootShared::new(base));
+            let permit = boot
+                .install_runtime_for_test(authority, Arc::clone(&shared))
+                .unwrap_or_else(|refused| panic!("同对运行绑定拒绝: {:?}", refused.reason));
+            drop(permit); // 本 fixture 不启动 READY 监督线程；只安装同一对真实实例。
+            let id = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+            let prefix = format!("/w3_ipc_{}_{}", std::process::id(), id);
+            let topics = [
+                format!("{prefix}/cmd"),
+                format!("{prefix}/hb"),
+                format!("{prefix}/estop"),
+            ];
+            let node = NodeBuilder::new().create::<IxService>().unwrap();
+            let command = publisher(&node, &topics[0], TopicClass::S0Command).unwrap();
+            let heartbeat = publisher(&node, &topics[1], TopicClass::Heartbeat).unwrap();
+            let estop = publisher(&node, &topics[2], TopicClass::SafetyEvent).unwrap();
+            let factory_calls = Arc::new(AtomicU32::new(0));
+            let called = Arc::clone(&factory_calls);
+            let factory = move || {
+                called.fetch_add(1, Ordering::AcqRel);
+                let node = NodeBuilder::new()
+                    .create::<IxService>()
+                    .map_err(IpcInitError::Node)?;
+                let command =
+                    subscriber(&node, &topics[0], TopicClass::S0Command).map_err(|error| {
+                        IpcInitError::Subscriber {
+                            topic: topics[0].clone(),
+                            error,
+                        }
+                    })?;
+                let heartbeat =
+                    subscriber(&node, &topics[1], TopicClass::Heartbeat).map_err(|error| {
+                        IpcInitError::Subscriber {
+                            topic: topics[1].clone(),
+                            error,
+                        }
+                    })?;
+                let estop =
+                    subscriber(&node, &topics[2], TopicClass::SafetyEvent).map_err(|error| {
+                        IpcInitError::Subscriber {
+                            topic: topics[2].clone(),
+                            error,
+                        }
+                    })?;
+                Ok(OwnedIpcPorts::new(
+                    IpcSubscribers {
+                        command,
+                        heartbeat,
+                        estop,
+                    },
+                    node,
+                ))
+            };
+            let (cmd_writer, cmd_reader) = LatestCommandSlot::new(JointCommandBuf::default());
+            let injected_snapshot = injected.is_some();
+            let (state_pub, state) =
+                injected.unwrap_or_else(|| RtSnapshotPublisher::new(S0StateSnapshot::default()));
+            let (watchdog, watchdog_rx) = unbounded();
+            let limits =
+                CheckedLimits::try_from_limits(&RrProfile::S0_CONTROL.validate().unwrap()).unwrap();
+            let caps = ClassCaps::from_checked(&limits);
+            let (clear_high, clear_high_rx) = crossbeam_channel::bounded(caps.restore + caps.lower);
+            let (clear_normal, clear_normal_rx) = crossbeam_channel::bounded(caps.normal);
+            // 窄1容量仅用于内部 outbox Full 边界；生产 Profile 与原请求信用仍为 C8/L4。
+            let response_capacity = if matches!(probe, Some(RigProbe::NarrowResponses)) {
+                1
+            } else {
+                caps.total
+            };
+            let (clear_response, clear_rx) = crossbeam_channel::bounded(response_capacity);
+            let (set_high, set_high_rx) = crossbeam_channel::bounded(caps.restore + caps.lower);
+            let (set_normal, set_normal_rx) = crossbeam_channel::bounded(caps.normal);
+            let (set_response, set_rx) = crossbeam_channel::bounded(response_capacity);
+            let mut inputs = IpcSpawnInputs {
+                cfg: IpcThreadConfig {
+                    poll_interval_ns: 500_000,
+                    initial_guards: guards,
+                    initial_state,
+                    authoritative_layout: LAYOUT,
+                },
+                clock: Arc::clone(&clock),
+                subscribers_factory: factory,
+                cmd_writer,
+                state_pub,
+                watchdog_rx,
+                ctrl,
+                boot: Arc::clone(&boot),
+                persist,
+                rr_channels: Some(RrChannels {
+                    request_rx: clear_high_rx,
+                    normal_request_rx: clear_normal_rx,
+                    response_tx: clear_response,
+                }),
+                set_enabled_rr_channels: Some(SetEnabledRrChannels {
+                    request_rx: set_high_rx,
+                    normal_request_rx: set_normal_rx,
+                    response_tx: set_response,
+                }),
+                stop: Arc::new(AtomicBool::new(false)),
+            };
+            if let Some(RigProbe::Binding(expected)) = probe {
+                let bad_boot = Arc::new(crate::boot_supervisor::BootShared::new(base));
+                match expected {
+                    IpcBindError::MissingBinding => {}
+                    IpcBindError::AuthorityMismatch => {
+                        let other = Arc::new(
+                            ControlAuthority::new(AuthorityInit::new(
+                                latched,
+                                safety,
+                                InhibitSet::EMPTY,
+                            ))
+                            .unwrap(),
+                        );
+                        drop(
+                            bad_boot
+                                .install_runtime_for_test(other, Arc::clone(&shared))
+                                .unwrap_or_else(|refused| {
+                                    panic!("夹具绑定失败: {:?}", refused.reason)
+                                }),
+                        );
+                    }
+                    IpcBindError::WriterSharedMismatch => {
+                        let other = Arc::new(PersistShared::new(base).unwrap());
+                        drop(
+                            bad_boot
+                                .install_runtime_for_test(
+                                    Arc::clone(inputs.ctrl.authority()),
+                                    other,
+                                )
+                                .unwrap_or_else(|refused| {
+                                    panic!("夹具绑定失败: {:?}", refused.reason)
+                                }),
+                        );
+                    }
+                    IpcBindError::StartDomainMismatch => panic!("合法 ctrl 构造不能外造错域 slot"),
+                }
+                inputs.boot = Arc::clone(&bad_boot);
+                let original_ctrl = Arc::clone(&inputs.ctrl);
+                let original_stop = Arc::clone(&inputs.stop);
+                let original_watchdog = inputs.watchdog_rx.clone();
+                let original_clear = inputs.rr_channels.as_ref().unwrap();
+                let clear_receivers = [
+                    original_clear.request_rx.clone(),
+                    original_clear.normal_request_rx.clone(),
+                ];
+                let original_set = inputs.set_enabled_rr_channels.as_ref().unwrap();
+                let set_receivers = [
+                    original_set.request_rx.clone(),
+                    original_set.normal_request_rx.clone(),
+                ];
+                inputs = match spawn_ipc_thread(inputs) {
+                    Err(IpcSpawnError::Binding { inputs, reason }) => {
+                        assert_eq!(reason, expected);
+                        inputs
+                    }
+                    Ok(handle) => {
+                        handle.request_stop();
+                        let end = std::time::Instant::now() + WAIT;
+                        while !handle.is_finished() {
+                            if std::time::Instant::now() >= end {
+                                std::process::abort();
+                            }
+                            thread::sleep(Duration::from_millis(1));
+                        }
+                        let _original_exit = std::mem::ManuallyDrop::new(handle.join());
+                        panic!("错误绑定竟然真实启动 IPC，已回收并保原退出");
+                    }
+                    Err(error) => panic!("预期绑定拒绝，实际 {error:?}"),
+                };
+                assert_eq!(factory_calls.load(Ordering::Acquire), 0);
+                assert!(Arc::ptr_eq(&inputs.boot, &bad_boot));
+                assert!(Arc::ptr_eq(&inputs.ctrl, &original_ctrl));
+                assert!(Arc::ptr_eq(&inputs.clock, &clock));
+                assert!(Arc::ptr_eq(&inputs.stop, &original_stop));
+                assert!(Arc::ptr_eq(inputs.persist.shared(), &shared));
+                assert!(inputs.watchdog_rx.same_channel(&original_watchdog));
+                let clear = inputs.rr_channels.as_ref().unwrap();
+                let set = inputs.set_enabled_rr_channels.as_ref().unwrap();
+                assert!(
+                    clear.request_rx.same_channel(&clear_receivers[0])
+                        && clear.normal_request_rx.same_channel(&clear_receivers[1])
+                );
+                assert!(
+                    set.request_rx.same_channel(&set_receivers[0])
+                        && set.normal_request_rx.same_channel(&set_receivers[1])
+                );
+                assert_eq!(inputs.cfg.authoritative_layout, LAYOUT);
+                // 返原唯一写端仍驱动原 reader；不以新建替身证明归还。
+                inputs.cmd_writer.store(JointCommandBuf {
+                    seq: 91,
+                    ..JointCommandBuf::default()
+                });
+                assert_eq!(cmd_reader.load().seq, 91);
+                inputs
+                    .state_pub
+                    .publish(&S0StateSnapshot::new(initial_state, guards, 123))
+                    .unwrap();
+                assert_eq!(state.load().stamp_ns, 123);
+                assert_eq!(
+                    inputs.rr_channels.as_ref().unwrap().response_tx.capacity(),
+                    clear_rx.capacity()
+                );
+                assert_eq!(
+                    inputs
+                        .set_enabled_rr_channels
+                        .as_ref()
+                        .unwrap()
+                        .response_tx
+                        .capacity(),
+                    set_rx.capacity()
+                );
+                // 只修正拒绝的绑定；同 factory/client/通道/写端继续交实际 spawn。
+                inputs.boot = Arc::clone(&boot);
+            }
+            let ipc = spawn_ipc_thread(inputs).unwrap();
+            let executor_mode = Arc::new(AtomicU8::new(0));
+            let executor_stop = Arc::new(AtomicBool::new(false));
+            let executor = {
+                let ctrl = Arc::clone(&inner);
+                let mode = Arc::clone(&executor_mode);
+                let stop = Arc::clone(&executor_stop);
+                thread::spawn(move || executor_loop(adapter, ctrl, mode, stop))
+            };
+            let mut rig = Self {
+                ipc: Some(ipc),
+                writer: Some(writer),
+                executor: Some(executor),
+                executor_mode,
+                executor_stop,
+                writer_stop,
+                inner,
+                boot,
+                shared,
+                clock,
+                hook,
+                cmd_reader,
+                state,
                 command,
                 heartbeat,
                 estop,
+                watchdog,
+                clear_tx: Some([clear_high, clear_normal]),
+                clear_rx,
+                clear_routes: Some(Routes::new(&limits)),
+                set_tx: Some([set_high, set_normal]),
+                set_rx,
+                set_routes: Some(Routes::new(&limits)),
+                latch,
+                standby: Some(standby),
+                lock: Some(lock),
+                directory: Some(directory),
+                expected_snapshot_exhaustion: injected_snapshot,
+                _node: node,
+            };
+            wait_until(
+                || !matches!(rig.ipc.as_mut().unwrap().poll_ready(), ReadyState::Pending),
+                WAIT,
+            );
+            match rig.ipc.as_mut().unwrap().poll_ready() {
+                ReadyState::Ready => {}
+                ReadyState::Failed(IpcInitError::InitialPublish(_)) if injected_snapshot => {}
+                other => panic!("IPC 实际初始化失败: {other:?}"),
             }
-        };
+            assert_eq!(factory_calls.load(Ordering::Acquire), 1);
+            rig
+        }
+        fn handle(&self) -> &IpcThreadHandle {
+            self.ipc.as_ref().unwrap()
+        }
+        fn execute(&self) {
+            self.executor_mode.store(1, Ordering::Release);
+        }
+        fn claim_without_start(&self) {
+            self.executor_mode.store(2, Ordering::Release);
+            wait_until(|| self.executor_mode.load(Ordering::Acquire) == 3, WAIT);
+        }
+        fn heartbeat(&mut self) {
+            let body = build_heartbeat(2, 1, 50.0, 1_000_000);
+            let mut writer = self.heartbeat.loan(1024 + body.len()).unwrap();
+            writer.set_body_bytes(&body);
+            writer.publish().unwrap();
+        }
+        fn estop(&mut self) {
+            let now = self.clock.now().0;
+            let body = build_estop_event("ipc_test", now, "rpc", true);
+            let mut writer = self.estop.loan(1024 + body.len()).unwrap();
+            writer.set_stamp_ns(now);
+            writer.set_body_bytes(&body);
+            writer.publish().unwrap();
+        }
+        fn command(&mut self, seq: u64, layout: u64, positions: &[f64]) {
+            let body = build_joint_command(
+                layout,
+                robot_msg::msg::ControlMode::Position,
+                positions,
+                u64::MAX,
+                10,
+                StaleAction::Hold,
+                seq,
+            );
+            let mut writer = self.command.loan(1024 + body.len()).unwrap();
+            writer.set_seq(seq);
+            writer.set_body_bytes(&body);
+            writer.publish().unwrap();
+        }
+        fn clear(&mut self, id: &str, dry_run: bool, deadline_ns: u64) {
+            let route = self
+                .clear_routes
+                .as_mut()
+                .unwrap()
+                .admit(RrRequestClass::of_clear(dry_run));
+            self.clear_tx.as_ref().unwrap()[usize::from(dry_run)]
+                .send(ClearEStopRrRequest {
+                    route,
+                    request_id: id.into(),
+                    dry_run,
+                    confirmation: "CONFIRM".into(),
+                    audit_reason: "IPC owned test".into(),
+                    deadline_ns,
+                })
+                .unwrap();
+        }
+        fn clear_reply(&mut self) -> ClearEStopRrResponse {
+            let response = self
+                .clear_rx
+                .recv_timeout(WAIT)
+                .expect("真实 Clear 退休回复");
+            self.clear_routes.as_mut().unwrap().retired(response.route);
+            response
+        }
+        fn set(&mut self, id: &str, enabled: bool, deadline_ns: u64) {
+            let route = self
+                .set_routes
+                .as_mut()
+                .unwrap()
+                .admit(RrRequestClass::of_set_enabled(false, enabled));
+            self.set_tx.as_ref().unwrap()[0]
+                .send(SetEnabledRrRequest {
+                    route,
+                    request_id: id.into(),
+                    enabled,
+                    dry_run: false,
+                    deadline_ns,
+                    audit_reason: "IPC owned test".into(),
+                })
+                .unwrap();
+        }
+        fn set_reply(&mut self) -> SetEnabledRrResponse {
+            let response = self
+                .set_rx
+                .recv_timeout(WAIT)
+                .expect("真实 Enable/Lower 退休回复");
+            self.set_routes.as_mut().unwrap().retired(response.route);
+            response
+        }
+        fn drain_replies(&mut self) {
+            while let Ok(response) = self.clear_rx.try_recv() {
+                self.clear_routes.as_mut().unwrap().retired(response.route);
+            }
+            while let Ok(response) = self.set_rx.try_recv() {
+                self.set_routes.as_mut().unwrap().retired(response.route);
+            }
+        }
+        fn close(&mut self) {
+            if self.ipc.is_none() {
+                return;
+            }
+            self.hook.release.store(true, Ordering::Release);
+            self.handle()
+                .metrics()
+                .freeze_until_ns
+                .store(0, Ordering::Release);
+            self.execute();
+            drop(self.clear_tx.take());
+            drop(self.set_tx.take());
+            if !self.handle().is_finished() {
+                // 同实例真实 shutdown，停止输入后继续消费原退休责任；不是将测试槽清零。
+                let _ = self.boot.arm_runtime_shutdown(self.clock.now());
+                let end = std::time::Instant::now() + WAIT;
+                while std::time::Instant::now() < end
+                    && !self
+                        .boot
+                        .clear_retired_for(self.boot.runtime_words().generation())
+                {
+                    self.drain_replies();
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+            self.handle().request_stop();
+            self.writer_stop.0.store(false, Ordering::Release);
+            self.executor_stop.store(true, Ordering::Release);
+            let end = std::time::Instant::now() + WAIT;
+            while !self.handle().is_finished()
+                || !self.writer.as_ref().unwrap().is_finished()
+                || !self.executor.as_ref().unwrap().is_finished()
+            {
+                if std::time::Instant::now() >= end {
+                    eprintln!("IPC fixture 原 worker 未在测试退出预算内结束");
+                    std::process::abort();
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+            let ipc = self.ipc.take().unwrap().join();
+            let writer = self.writer.take().unwrap().join();
+            let executor = self.executor.take().unwrap().join();
+            self.drain_replies();
+            let clean = ipc.as_ref().is_ok_and(IpcExit::is_quiescent)
+                && writer.0.is_ok()
+                && executor.is_ok()
+                && self.clear_routes.as_ref().unwrap().slots.is_empty()
+                && self.set_routes.as_ref().unwrap().slots.is_empty();
+            let workers_ok = ipc.is_ok() && writer.0.is_ok() && executor.is_ok();
+            let expected_exit = self.expected_snapshot_exhaustion
+                && ipc.as_ref().is_ok_and(|exit| {
+                    matches!(
+                        exit.reason(),
+                        IpcExitReason::Initialization(IpcInitError::InitialPublish(
+                            robot_transport::SnapshotPublishError::VersionExhausted
+                        )) | IpcExitReason::SnapshotPublish(
+                            robot_transport::SnapshotPublishError::VersionExhausted
+                        )
+                    )
+                });
 
-        // task-30 v9 / M7 阶段 4 测试桩：注入一份默认 HardRtCtrlClient（Inner
-        // 默认值即可）。本模块单测重点是 ipc_thread 的"事件 → guards → 入队 →
-        // ipc_tick → snapshot 发布"通路；executor_ctrl 端的具体语义由
-        // hard_rt_ctrl.rs / ipc_tick.rs 自己的单测覆盖。inner 暴露给测试，
-        // 测试侧按需 spawn_auto_ack 模拟 rt_thread ack。
-        let inner = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
-        let inner_clone = Arc::clone(&inner);
-        let executor_ctrl: Arc<dyn ExecutorCtrlClient> =
-            Arc::new(crate::hard_rt_ctrl::HardRtCtrlClient::new(inner_clone));
+            if !clean {
+                // 初始化失败/故意未退休场景保原 exit、配对与锁，直到真进程退出。
+                let _held_until_process_exit = std::mem::ManuallyDrop::new((
+                    ipc,
+                    writer,
+                    executor,
+                    self.standby.take(),
+                    self.lock.take(),
+                    self.directory.take(),
+                    self.clear_routes.take(),
+                    self.set_routes.take(),
+                ));
+            }
+            assert!(
+                workers_ok || thread::panicking(),
+                "IPC 夹具真实 worker join 返回 panic"
+            );
+            assert!(
+                clean || expected_exit || thread::panicking(),
+                "IPC 夹具意外退出时仍有原退休责任，已保原件"
+            );
+        }
+    }
+    impl Drop for Rig {
+        fn drop(&mut self) {
+            self.close();
+        }
+    }
 
-        let handle = spawn_ipc_thread(
-            cfg,
-            clock,
-            factory,
-            cmd_writer,
-            state_pub,
-            watchdog_rx,
-            executor_ctrl,
-            // 默认 mod tests 不接 RR control plane；RR 单测自己 spawn 时
-            // 显式传 `Some(...)`。
-            None,
-            // SetEnabled RR control plane（v0.5 候选 C）：默认 helper 不接。
-            None,
-            None,
-            None,
-            Arc::new(AtomicBool::new(false)),
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "测试按值消费唯一原回复，只提取其真实协调结果"
+    )]
+    fn clear_outcome(response: ClearEStopRrResponse) -> ClearOutcome {
+        match response.payload {
+            ClearEStopRrPayload::Coordination(outcome) => outcome,
+            other => panic!("生产协调 typed 结果未抵达: {other:?}"),
+        }
+    }
+
+    fn safe_rig(latched: bool) -> Rig {
+        Rig::new(
+            S0State::Safe,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            latched,
+        )
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn state_snapshot_version_exhaustion_on_first_publish_ends_the_ipc_worker() {
+        let injected = RtSnapshotPublisher::new_with_version(
+            S0StateSnapshot::default(),
+            robot_transport::MAX_PUBLISHED_VERSION,
         )
         .unwrap();
-
-        (
-            handle,
-            reader_clone,
-            state_rdr,
-            cmd_pub,
-            hb_pub,
-            estop_pub,
-            inner,
-        )
-    }
-
-    fn publish_heartbeat(
-        pub_: &mut robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
-        seq: u64,
-    ) {
-        let body = build_heartbeat(2, seq, 50.0, 1_000_000);
-        let mut w = pub_.loan(1024 + body.len()).unwrap();
-        w.set_seq(seq);
-        w.set_source_id(2);
-        w.set_stamp_ns(1_000_000);
-        w.set_body_bytes(&body);
-        w.publish().unwrap();
-    }
-
-    fn publish_command(
-        pub_: &mut robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
-        seq: u64,
-        target: &[f64],
-    ) {
-        publish_command_with_layout(pub_, seq, target, 0xCAFE_0001);
-    }
-
-    /// 段(3) layout gate 测试用：显式 layout 变体。
-    fn publish_command_with_layout(
-        pub_: &mut robot_transport::iceoryx2::Iceoryx2Publisher<markers::JointCommand>,
-        seq: u64,
-        target: &[f64],
-        layout_id: u64,
-    ) {
-        let body = build_joint_command(
-            layout_id,
-            robot_msg::msg::ControlMode::Position,
-            target,
-            999_999_999_999,
-            10,
-            StaleAction::Hold,
-            seq,
+        let rig = Rig::with_clock(
+            S0State::Safe,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+            Arc::new(SystemClock::new()),
+            Some(injected),
+            false,
         );
-        let mut w = pub_.loan(1024 + body.len()).unwrap();
-        w.set_seq(seq);
-        w.set_source_id(2);
-        w.set_stamp_ns(seq * 1_000_000);
-        w.set_body_bytes(&body);
-        w.publish().unwrap();
-    }
-
-    fn publish_estop(
-        pub_: &mut robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
-        stamp_ns: u64,
-    ) {
-        let body = build_estop_event("test-driver", stamp_ns, "rpc", true);
-        let mut w = pub_.loan(1024 + body.len()).unwrap();
-        w.set_stamp_ns(stamp_ns);
-        w.set_body_bytes(&body);
-        w.publish().unwrap();
-    }
-
-    /// 最小冒烟：spawn + 立即 stop，验证不 panic、线程干净退出。
-    #[test]
-    fn spawn_then_stop_cleanly() {
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let (_wd_tx, wd_rx) = unbounded();
-        let (handle, _cmd_reader, _state_rdr, _cp, _hp, _ep, _inner) =
-            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
-        thread::sleep(Duration::from_millis(30));
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// 收到 `JointCommand` → `LatestCommandWriter` 里出现对应 POD。
-    #[test]
-    fn command_plumbing_writes_pod_buffer() {
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let (_wd_tx, wd_rx) = unbounded();
-        let (handle, cmd_reader, _state_rdr, mut cmd_pub, _hp, _ep, _inner) =
-            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
-
-        publish_command(&mut cmd_pub, 7, &[0.1, 0.2, 0.3]);
-
-        wait_until(
-            || {
-                let g = cmd_reader.load();
-                g.joint_count == 3 && (g.positions[0] - 0.1).abs() < 1e-3
-            },
-            Duration::from_secs(2),
-        );
-
-        let loaded = cmd_reader.load();
-        assert_eq!(loaded.joint_count, 3);
-        assert!((loaded.positions[0] - 0.1).abs() < 1e-3);
-        assert!((loaded.positions[1] - 0.2).abs() < 1e-3);
-        assert!((loaded.positions[2] - 0.3).abs() < 1e-3);
-        assert_eq!(loaded.mode, ControlModeRepr::Position);
-        assert_eq!(loaded.seq, 7);
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// 段(3) AC-E2 unit：mismatch 帧 → **slot 不变** + `unknown_layout_count`
-    /// 恰 +1（计数断言仅本 unit，R3-B4）。
-    #[test]
-    fn command_layout_mismatch_dropped_not_written() {
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let (_wd_tx, wd_rx) = unbounded();
-        let (handle, cmd_reader, _state_rdr, mut cmd_pub, _hp, _ep, _inner) =
-            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
-
-        publish_command_with_layout(&mut cmd_pub, 9, &[0.9], 0xDEAD_0002);
-
-        wait_until(
-            || {
-                handle
-                    .metrics()
-                    .unknown_layout_count
-                    .load(Ordering::Relaxed)
-                    == 1
-            },
-            Duration::from_secs(2),
-        );
-
-        let loaded = cmd_reader.load();
+        wait_until(|| rig.handle().is_finished(), WAIT);
         assert_eq!(
-            loaded.seq, 0,
-            "mismatch 帧不得写 slot（应保持初值 default）"
-        );
-        assert_eq!(loaded.joint_count, 0);
-        assert_eq!(
-            handle
+            rig.handle()
                 .metrics()
-                .unknown_layout_count
-                .load(Ordering::Relaxed),
+                .snapshot_publish_errors
+                .load(Ordering::Acquire),
             1
         );
-        assert_eq!(handle.metrics().commands_applied.load(Ordering::Relaxed), 0);
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// 段(3) 对照：match 帧照常写 slot（gate 放行路径回归）。
-    #[test]
-    fn command_layout_match_written() {
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let (_wd_tx, wd_rx) = unbounded();
-        let (handle, cmd_reader, _state_rdr, mut cmd_pub, _hp, _ep, _inner) =
-            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
-
-        publish_command_with_layout(&mut cmd_pub, 11, &[0.5, 0.6], 0xCAFE_0001);
-
-        wait_until(|| cmd_reader.load().seq == 11, Duration::from_secs(2));
-
-        let loaded = cmd_reader.load();
-        assert_eq!(loaded.joint_count, 2);
         assert_eq!(
-            handle
+            rig.handle()
                 .metrics()
-                .unknown_layout_count
-                .load(Ordering::Relaxed),
+                .ipc_tick_count
+                .load(Ordering::Acquire),
             0
         );
-
-        handle.request_stop();
-        handle.join().unwrap();
+        assert_eq!(rig.state.version(), robot_transport::MAX_PUBLISHED_VERSION);
+        assert_eq!(rig.state.load(), S0StateSnapshot::default());
     }
 
-    /// heartbeat 到达 → state 从 `READY` 推进到 `ENABLED.Active`；`last_hb_ns` 被更新。
-    ///
-    /// task-30 v9：READY → ENABLED.Active 是 Effectful Enable(true)，需要
-    /// executor ack。本测试用 [`spawn_auto_ack`] 模拟 `rt_thread` ack 通路。
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn state_snapshot_version_exhaustion_inside_the_loop_ends_the_ipc_worker() {
+        let injected = RtSnapshotPublisher::new_with_version(
+            S0StateSnapshot::default(),
+            robot_transport::MAX_PUBLISHED_VERSION - 2,
+        )
+        .unwrap();
+        let rig = Rig::with_clock(
+            S0State::Safe,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+            Arc::new(SystemClock::new()),
+            Some(injected),
+            false,
+        );
+        wait_until(|| rig.handle().is_finished(), WAIT);
+        assert_eq!(
+            rig.handle()
+                .metrics()
+                .snapshot_publish_errors
+                .load(Ordering::Acquire),
+            1
+        );
+        assert_eq!(
+            rig.handle()
+                .metrics()
+                .ipc_tick_count
+                .load(Ordering::Acquire),
+            1
+        );
+        assert_eq!(rig.state.version(), robot_transport::MAX_PUBLISHED_VERSION);
+        assert_eq!(rig.state.load().state, S0State::Safe);
+    }
+
+    #[test]
+    fn spawn_binding_rejections_return_original_inputs_before_factory_call() {
+        for reason in [
+            IpcBindError::MissingBinding,
+            IpcBindError::AuthorityMismatch,
+            IpcBindError::WriterSharedMismatch,
+        ] {
+            let mut rig = Rig::with_probe(
+                S0State::Safe,
+                healthy_guards(),
+                OutputSafetyState::TorqueOffConfirmed,
+                true,
+                Arc::new(SystemClock::new()),
+                None,
+                false,
+                Some(RigProbe::Binding(reason)),
+            );
+            rig.clear("returned-original-clear", false, u64::MAX);
+            let reply = rig.clear_reply();
+            assert_eq!(reply.request_id, "returned-original-clear");
+            assert!(matches!(clear_outcome(reply), ClearOutcome::Cleared { .. }));
+            rig.set("returned-original-set", false, u64::MAX);
+            rig.execute();
+            assert_eq!(rig.set_reply().request_id, "returned-original-set");
+            rig.close();
+        }
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "同一真实四路通道按序断链和送达，连续验证封口前后的原责任"
+    )]
+    fn four_rr_disconnects_and_actual_outbox_delivery_are_required_for_closure() {
+        let mut rig = Rig::with_probe(
+            S0State::Safe,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+            Arc::new(SystemClock::new()),
+            None,
+            false,
+            Some(RigProbe::NarrowResponses),
+        );
+        rig.execute();
+        let _ = rig.boot.arm_runtime_shutdown(rig.clock.now());
+        let generation = rig.boot.runtime_words().generation();
+        assert_ne!(generation, 0);
+        let tick = rig
+            .handle()
+            .metrics()
+            .ipc_tick_count
+            .load(Ordering::Acquire);
+        wait_until(
+            || {
+                rig.handle()
+                    .metrics()
+                    .ipc_tick_count
+                    .load(Ordering::Acquire)
+                    >= tick + 3
+            },
+            WAIT,
+        );
+        assert!(
+            !rig.boot.clear_retired_for(generation),
+            "四原 sender 仍在，Empty 不能变成 Disconnected"
+        );
+        rig.clear("close-high", false, u64::MAX);
+        rig.clear("close-normal", true, u64::MAX);
+        rig.set("set-high", false, u64::MAX);
+        let route = rig
+            .set_routes
+            .as_mut()
+            .unwrap()
+            .admit(RrRequestClass::of_set_enabled(true, false));
+        rig.set_tx.as_ref().unwrap()[1]
+            .send(SetEnabledRrRequest {
+                route,
+                request_id: "set-normal".into(),
+                enabled: false,
+                dry_run: true,
+                deadline_ns: u64::MAX,
+                audit_reason: "原关闭边界".into(),
+            })
+            .unwrap();
+        wait_until(
+            || {
+                rig.clear_tx.as_ref().unwrap().iter().all(Sender::is_empty)
+                    && rig.set_tx.as_ref().unwrap().iter().all(Sender::is_empty)
+                    && rig.clear_rx.len() == 1
+                    && rig.set_rx.len() == 1
+            },
+            WAIT,
+        );
+        let [clear_high, clear_normal] = rig.clear_tx.take().unwrap();
+        let [set_high, set_normal] = rig.set_tx.take().unwrap();
+        drop((clear_high, clear_normal, set_high));
+        let tick = rig
+            .handle()
+            .metrics()
+            .ipc_tick_count
+            .load(Ordering::Acquire);
+        wait_until(
+            || {
+                rig.handle()
+                    .metrics()
+                    .ipc_tick_count
+                    .load(Ordering::Acquire)
+                    >= tick + 3
+            },
+            WAIT,
+        );
+        assert!(!rig.boot.clear_retired_for(generation), "只断三路不能封口");
+        drop(set_normal);
+        let tick = rig
+            .handle()
+            .metrics()
+            .ipc_tick_count
+            .load(Ordering::Acquire);
+        wait_until(
+            || {
+                rig.handle()
+                    .metrics()
+                    .ipc_tick_count
+                    .load(Ordering::Acquire)
+                    >= tick + 3
+            },
+            WAIT,
+        );
+        assert!(
+            !rig.boot.clear_retired_for(generation),
+            "四路断链后原 outbox Full 仍须持有未送出的退休回复"
+        );
+        let mut clear_ids = Vec::new();
+        let mut set_ids = Vec::new();
+        for _ in 0..2 {
+            let clear = rig.clear_reply();
+            assert!(matches!(clear.payload, ClearEStopRrPayload::ShuttingDown));
+            assert_eq!(clear.effect, SideEffect::None);
+            clear_ids.push(clear.request_id);
+            let set = rig.set_reply();
+            assert!(matches!(
+                set.payload,
+                SetEnabledRrPayload::PreemptedByShutdown
+            ));
+            assert_eq!(set.effect, SideEffect::None);
+            set_ids.push(set.request_id);
+        }
+        clear_ids.sort();
+        set_ids.sort();
+        assert_eq!(clear_ids, ["close-high", "close-normal"]);
+        assert_eq!(set_ids, ["set-high", "set-normal"]);
+        wait_until(|| rig.boot.clear_retired_for(generation), WAIT);
+        assert!(rig.clear_rx.is_empty() && rig.set_rx.is_empty());
+        assert!(
+            rig.clear_routes.as_ref().unwrap().slots.is_empty()
+                && rig.set_routes.as_ref().unwrap().slots.is_empty()
+        );
+        rig.close();
+    }
+
+    #[test]
+    fn spawn_then_stop_cleanly() {
+        let mut rig = safe_rig(false);
+        wait_until(
+            || {
+                rig.handle()
+                    .metrics()
+                    .ipc_tick_count
+                    .load(Ordering::Acquire)
+                    >= 2
+            },
+            WAIT,
+        );
+        rig.close();
+        assert!(rig.ipc.is_none() && rig.writer.is_none() && rig.executor.is_none());
+    }
+
+    #[test]
+    fn command_plumbing_writes_pod_buffer() {
+        let mut rig = safe_rig(false);
+        rig.command(7, LAYOUT, &[0.1, 0.2, 0.3]);
+        wait_until(|| rig.cmd_reader.load().seq == 7, WAIT);
+        let command = rig.cmd_reader.load();
+        assert_eq!(command.joint_count, 3);
+        for (actual, expected) in command.positions.iter().zip([0.1, 0.2, 0.3]) {
+            assert!((actual - expected).abs() < 1e-3);
+        }
+        assert_eq!(command.mode, ControlModeRepr::Position);
+    }
+
+    #[test]
+    fn command_layout_mismatch_dropped_not_written() {
+        let mut rig = safe_rig(false);
+        rig.command(9, 0xDEAD_0002, &[0.9]);
+        wait_until(
+            || {
+                rig.handle()
+                    .metrics()
+                    .unknown_layout_count
+                    .load(Ordering::Acquire)
+                    == 1
+            },
+            WAIT,
+        );
+        assert_eq!(rig.cmd_reader.load().seq, 0);
+        assert_eq!(rig.cmd_reader.load().joint_count, 0);
+        assert_eq!(
+            rig.handle()
+                .metrics()
+                .commands_applied
+                .load(Ordering::Acquire),
+            0
+        );
+    }
+
+    #[test]
+    fn command_layout_match_written() {
+        let mut rig = safe_rig(false);
+        rig.command(11, LAYOUT, &[0.5, 0.6]);
+        wait_until(|| rig.cmd_reader.load().seq == 11, WAIT);
+        assert_eq!(rig.cmd_reader.load().joint_count, 2);
+        assert_eq!(
+            rig.handle()
+                .metrics()
+                .unknown_layout_count
+                .load(Ordering::Acquire),
+            0
+        );
+    }
+
     #[test]
     fn heartbeat_transitions_state_and_updates_watchdog_atom() {
         let clock = Arc::new(MockClock::new(MonoRawNs(100_000_000)));
-        let clock_dyn: Arc<dyn RobotClock> = Arc::clone(&clock) as Arc<dyn RobotClock>;
-        let (_wd_tx, wd_rx) = unbounded();
-        let (handle, _cmd_reader, state_rdr, _cp, mut hb_pub, _ep, inner) =
-            bring_up(S0State::Ready, healthy_guards(), wd_rx, clock_dyn);
-        let (ack_stop, ack_join) = spawn_auto_ack(Arc::clone(&inner));
-
-        publish_heartbeat(&mut hb_pub, 1);
-
-        let last_hb = handle.last_hb_ns();
-        wait_until(
-            || state_rdr.load().state == enabled_active() && last_hb.load(Ordering::Acquire) > 0,
-            Duration::from_secs(2),
+        let mut rig = Rig::with_clock(
+            S0State::Ready,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+            clock.clone(),
+            None,
+            false,
         );
-
-        let snap = state_rdr.load();
-        assert_eq!(snap.state, enabled_active());
-        assert!(snap.guards_summary.heartbeat_ok);
-        assert_eq!(last_hb.load(Ordering::Acquire), clock.now().0);
-
-        handle.request_stop();
-        handle.join().unwrap();
-        ack_stop.store(true, Ordering::Release);
-        ack_join.join().unwrap();
+        rig.execute();
+        rig.heartbeat();
+        wait_until(|| rig.state.load().state == enabled_active(), WAIT);
+        assert!(rig.state.load().guards_summary.heartbeat_ok);
+        assert_eq!(
+            rig.handle().last_hb_ns().load(Ordering::Acquire),
+            clock.now().0
+        );
+        assert!(!rig.inner.authority().snapshot().disabled);
     }
 
-    /// `watchdog` 发 `HeartbeatTimeout` → `Active` 态退到 `CONTROL_LOST_*`（hold）。
     #[test]
     fn watchdog_timeout_drops_to_control_lost() {
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let (wd_tx, wd_rx) = unbounded();
-        let mut initial = healthy_guards();
-        initial.heartbeat_ok = true;
-        let (handle, _cmd_reader, state_rdr, _cp, _hp, _ep, _inner) =
-            bring_up(enabled_active(), initial, wd_rx, clock);
-
-        wd_tx.send(Event::HeartbeatTimeout).unwrap();
-
+        let mut guards = healthy_guards();
+        guards.heartbeat_ok = true;
+        let rig = Rig::new(
+            enabled_active(),
+            guards,
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+        );
+        rig.watchdog.send(Event::HeartbeatTimeout).unwrap();
         wait_until(
             || {
                 matches!(
-                    state_rdr.load().state,
+                    rig.state.load().state,
                     S0State::Enabled {
                         control_link: crate::state_machine::ControlLink::Lost,
                         ..
                     }
                 )
             },
-            Duration::from_secs(2),
+            WAIT,
         );
-
-        let snap = state_rdr.load();
-        assert!(matches!(
-            snap.state,
+        assert_eq!(
+            rig.state.load().state,
             S0State::Enabled {
                 sub: crate::state_machine::EnabledSub::CtrlLostHold,
                 control_link: crate::state_machine::ControlLink::Lost,
-                output_mode: crate::state_machine::OutputMode::Hold,
+                output_mode: crate::state_machine::OutputMode::Hold
             }
-        ));
-        assert!(!snap.guards_summary.heartbeat_ok);
-
-        handle.request_stop();
-        handle.join().unwrap();
+        );
+        assert!(!rig.state.load().guards_summary.heartbeat_ok);
     }
 
-    /// `EStop` topic → 任意态 → `SAFE`；guards.`estop_latched` 置位。
     #[test]
     fn estop_topic_drops_to_safe() {
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let (_wd_tx, wd_rx) = unbounded();
-        let mut initial = healthy_guards();
-        initial.heartbeat_ok = true;
-        let (handle, _cmd_reader, state_rdr, _cp, _hp, mut estop_pub, _inner) =
-            bring_up(enabled_active(), initial, wd_rx, clock);
-
-        publish_estop(&mut estop_pub, 42_000_000);
-
+        let mut rig = Rig::new(
+            enabled_active(),
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+        );
+        rig.estop();
         wait_until(
             || {
-                // 启动快照也可能暂为 Safe，须等待同一快照中的真实急停 latch。
-                let snapshot = state_rdr.load();
-                snapshot.state == S0State::Safe && snapshot.guards_summary.estop_latched
+                rig.state.load().state == S0State::Safe
+                    && rig.state.load().guards_summary.estop_latched
             },
-            Duration::from_secs(2),
+            WAIT,
         );
-
-        let snap = state_rdr.load();
-        assert_eq!(snap.state, S0State::Safe);
-        assert!(snap.guards_summary.estop_latched);
-
-        handle.request_stop();
-        handle.join().unwrap();
+        assert!(rig.inner.authority().snapshot().latch);
     }
 
-    /// **task #15 阻断 1 锁测**：`EStop` topic 进来后，**daemon 仍在运行
-    /// 时**（不依赖 graceful shutdown）latch 文件已为 `1` 落盘双写。
-    ///
-    /// 旧实现 latch 仅在 `s0_daemon` graceful shutdown 路径写一次；daemon
-    /// 在 graceful 退出前崩溃时 latch 落不下来，重启读到 false → 自动
-    /// `Event::Enable` → 安全语义破坏。本测试钉死 "`EStop` 触发即 `fsync`
-    /// 落盘" 不变量：handle 仍 active 时文件已存在 + 内容 = `1\n`，bak 同。
-    ///
-    /// 关键时序：
-    /// 1. publish `EStop` topic
-    /// 2. `wait_until` daemon `state=Safe` + `guards_summary.estop_latched=true`
-    ///    （也即 `ipc_tick` emergency drain 已处理）
-    /// 3. **不**调用 `handle.request_stop` / `handle.join`
-    /// 4. 直接读 `latch_path` / `latch_path.bak` 文件 → 必须存在 + 内容 = `1`
-    /// 5. 然后才 stop daemon（验证关闭无副作用）
     #[test]
     fn estop_topic_writes_latch_to_disk_immediately() {
-        use std::fs;
-        let tmp = tempfile::tempdir().unwrap();
-        let latch_path = tmp.path().join("estop_latch");
-        let bak_path = tmp.path().join("estop_latch.bak");
-
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let (_wd_tx, wd_rx) = unbounded();
-        let mut initial = healthy_guards();
-        initial.heartbeat_ok = true;
-        // 关键：把 latch_path 注入 ipc_thread —— daemon 现实场景同款。
-        let (handle, _cmd_reader, state_rdr, _cp, _hp, mut estop_pub, _inner) = bring_up_with_latch(
-            enabled_active(),
-            initial,
-            wd_rx,
-            clock,
-            Some(latch_path.clone()),
-        );
-
-        // 触发前确认：latch 文件**不存在**（baseline；ipc_thread 启动期初值
-        // estop_latched=false，prev_estop_latched=false，没有 false→? 翻转，
-        // 所以不写）。
-        assert!(
-            !latch_path.exists(),
-            "baseline: latch file should not exist before EStop"
-        );
-
-        publish_estop(&mut estop_pub, 42_000_000);
-
-        // 等 ipc_tick emergency drain 完成（state=Safe + guard 翻转）
+        let mut rig = safe_rig(false);
+        assert_eq!(std::fs::read(&rig.latch).unwrap(), b"0\n");
+        rig.estop();
         wait_until(
             || {
-                let snap = state_rdr.load();
-                snap.state == S0State::Safe && snap.guards_summary.estop_latched
+                rig.inner.authority().snapshot().latch
+                    && rig.shared.obligation.is_settled()
+                    && std::fs::read(&rig.latch).is_ok_and(|bytes| bytes == b"1\n")
+                    && std::fs::read(rig.hook.backup.as_path()).is_ok_and(|bytes| bytes == b"1\n")
             },
-            Duration::from_secs(2),
+            WAIT,
         );
-
-        // 等 ipc_thread 主循环 §6.5 hook 把 latch 写盘。`save_estop_latch`
-        // 双文件 atomic rename + fsync，几 ms 级；用 wait_until 防 IO 抖动。
-        wait_until(
-            || latch_path.exists() && bak_path.exists(),
-            Duration::from_secs(2),
-        );
-
-        // **关键断言（daemon 仍 active 时）**：两份文件都已落盘 + 内容是 `1`。
-        let content = fs::read_to_string(&latch_path).expect("read latch_path");
-        assert_eq!(
-            content.trim_end(),
-            "1",
-            "latch_path content (daemon still alive): {content:?}"
-        );
-        let bak_content = fs::read_to_string(&bak_path).expect("read latch_path.bak");
-        assert_eq!(
-            bak_content.trim_end(),
-            "1",
-            "latch_path.bak content (daemon still alive): {bak_content:?}"
-        );
-
-        // 同时验 metrics 计数：至少 1 次成功写盘，0 次错误
-        let m = handle.metrics();
-        assert!(
-            m.latch_writes.load(Ordering::Relaxed) >= 1,
-            "metrics.latch_writes should be >= 1 after EStop"
-        );
-        assert_eq!(
-            m.latch_write_errors.load(Ordering::Relaxed),
-            0,
-            "metrics.latch_write_errors should be 0 (tmpdir always writable)"
-        );
-
-        // 之后才停 daemon —— 验证 stop 路径无副作用
-        handle.request_stop();
-        handle.join().unwrap();
+        assert!(!rig.handle().is_finished(), "持久化在 IPC 仍运行时完成");
+        assert!(!rig.writer.as_ref().unwrap().is_finished());
     }
 
-    /// 外部事件 channel：注入 `Event::Stop` → 进 `STOPPING`。
     #[test]
     fn external_stop_event_transitions_to_stopping() {
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let (_wd_tx, wd_rx) = unbounded();
-        let (handle, _cmd_reader, state_rdr, _cp, _hp, _ep, _inner) =
-            bring_up(S0State::Ready, healthy_guards(), wd_rx, clock);
-
-        handle
+        let rig = Rig::new(
+            S0State::Ready,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+        );
+        rig.handle()
             .event_sender()
             .control(crate::event_ingress::ControlEvent::Stop)
             .unwrap();
-
-        wait_until(
-            || state_rdr.load().state == S0State::Stopping,
-            Duration::from_secs(2),
-        );
-
-        assert_eq!(state_rdr.load().state, S0State::Stopping);
-
-        handle.request_stop();
-        handle.join().unwrap();
+        wait_until(|| rig.state.load().state == S0State::Stopping, WAIT);
+        assert!(rig.inner.authority().snapshot().disabled);
     }
 
-    /// **A2 freeze hook 单测**：设 `freeze_until_ns` 后，`ipc_thread` 的
-    /// `tick_count` 在 spin 期间不增长；过期后恢复 →
-    /// `robot_health::systemd::LivenessObserver` 看到停滞，watchdog 主循环
-    /// 跳 `sd_notify(WATCHDOG=1)`。详 [`crate::freeze_hook`] 模块 doc。
     #[test]
     fn freeze_hook_holds_tick_count() {
-        let sys_clock = SystemClock::new();
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let (_wd_tx, wd_rx) = unbounded();
-        let (handle, _cmd_reader, _state_rdr, _cp, _hp, _ep, _inner) =
-            bring_up(S0State::Safe, healthy_guards(), wd_rx, clock);
-
-        let metrics = Arc::clone(handle.metrics());
-        // 等 worker 跑起来
-        wait_until(
-            || metrics.tick_count.load(Ordering::Relaxed) >= 5,
-            Duration::from_secs(2),
-        );
-        let pre_freeze = metrics.tick_count.load(Ordering::Relaxed);
-        assert!(pre_freeze >= 5, "warmup 失败 tick={pre_freeze}");
-
-        // 设 freeze 80ms
-        let until = sys_clock.now().0 + 80_000_000;
-        metrics.freeze_until_ns.store(until, Ordering::Release);
-
-        // 等 freeze 中段（40ms）
-        std::thread::sleep(Duration::from_millis(40));
-        let mid_freeze = metrics.tick_count.load(Ordering::Relaxed);
-        let mid_grew = mid_freeze.saturating_sub(pre_freeze);
-        assert!(
-            mid_grew <= 1,
-            "freeze 期间 tick_count 不应继续增长：pre={pre_freeze} mid={mid_freeze} 增 {mid_grew}",
-        );
-
-        // 等 freeze 过期 + tick 恢复
-        std::thread::sleep(Duration::from_millis(100));
-        let post_freeze = metrics.tick_count.load(Ordering::Relaxed);
-        assert!(
-            post_freeze > mid_freeze + 5,
-            "freeze 过期后 tick_count 应当恢复增长：mid={mid_freeze} post={post_freeze}",
-        );
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    // ========================================================================
-    // A1-3 (1/3b) RR control plane 单测
-    //
-    // 端到端：测试线程通过 rr_request_tx 发 ClearEStopRrRequest →
-    // ipc_thread RR drain → (dry_run 同步评估 / live 入 events queue +
-    // ipc_tick 三步硬顺序) → response_tx → 测试线程 rr_response_rx 收
-    // ClearEStopRrResponse。
-    // ========================================================================
-
-    /// 起 ipc_thread + 配套 RR control plane channels，预设
-    /// `safety_state` / `safety_latched` 让单测覆盖 dry_run / live / gate
-    /// 拒等多种路径。
-    ///
-    /// 返回值含 `clock` + `metrics` 让 deadline / freeze hook 单测精确
-    /// 控制时序。
-    #[allow(clippy::type_complexity)]
-    fn bring_up_with_rr(
-        initial_state: S0State,
-        initial_guards: Guards,
-        latch_path: Option<std::path::PathBuf>,
-        safety_state: OutputSafetyState,
-        safety_latched: bool,
-    ) -> (
-        IpcThreadHandle,
-        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
-        crossbeam_channel::Sender<ClearEStopRrRequest>,
-        crossbeam_channel::Receiver<ClearEStopRrResponse>,
-        Arc<dyn RobotClock>,
-    ) {
-        use crossbeam_channel::bounded;
-
-        let topics = fresh_topics();
-        let pub_node: &'static _ =
-            Box::leak(Box::new(NodeBuilder::new().create::<IxService>().unwrap()));
-        let _cmd_pub =
-            publisher::<markers::JointCommand>(pub_node, &topics.command, TopicClass::S0Command)
-                .expect("open command publisher");
-        let _hb_pub =
-            publisher::<markers::Heartbeat>(pub_node, &topics.heartbeat, TopicClass::Heartbeat)
-                .expect("open heartbeat publisher");
-        let _estop_pub =
-            publisher::<markers::EStopEvent>(pub_node, &topics.estop, TopicClass::SafetyEvent)
-                .expect("open estop publisher");
-
-        let (cmd_writer, _cmd_reader) =
-            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
-        let (state_pub, _state_rdr) =
-            RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
-        let (_wd_tx, wd_rx) = unbounded::<Event>();
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let clock_for_test = Arc::clone(&clock);
-
-        let topics_for_factory = topics;
-        let factory = move || {
-            let sub_node = NodeBuilder::new().create::<IxService>().unwrap();
-            let command = subscriber::<markers::JointCommand>(
-                &sub_node,
-                &topics_for_factory.command,
-                TopicClass::S0Command,
-            )
-            .unwrap();
-            let heartbeat = subscriber::<markers::Heartbeat>(
-                &sub_node,
-                &topics_for_factory.heartbeat,
-                TopicClass::Heartbeat,
-            )
-            .unwrap();
-            let estop = subscriber::<markers::EStopEvent>(
-                &sub_node,
-                &topics_for_factory.estop,
-                TopicClass::SafetyEvent,
-            )
-            .unwrap();
-            Box::leak(Box::new(sub_node));
-            IpcSubscribers {
-                command,
-                heartbeat,
-                estop,
-            }
-        };
-
-        let inner = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
-        inner
-            .safety_state
-            .store(safety_state.to_u8(), Ordering::Release);
-        inner
-            .safety_latched
-            .store(safety_latched, Ordering::Release);
-        let executor_ctrl: Arc<dyn ExecutorCtrlClient> = Arc::new(
-            crate::hard_rt_ctrl::HardRtCtrlClient::new(Arc::clone(&inner)),
-        );
-
-        let cfg = IpcThreadConfig {
-            poll_interval_ns: 500_000,
-            initial_guards,
-            initial_state,
-            latch_path,
-            // 段(3)：与 publish_command fixture layout（0xCAFE_0001）对齐。
-            authoritative_layout: 0xCAFE_0001,
-        };
-
-        // RR control plane channels：bounded(64) 跟 reviewer 拍板的容量一致。
-        let (req_tx, req_rx) = bounded::<ClearEStopRrRequest>(64);
-        let (resp_tx, resp_rx) = bounded::<ClearEStopRrResponse>(64);
-
-        let handle = spawn_ipc_thread(
-            cfg,
-            clock,
-            factory,
-            cmd_writer,
-            state_pub,
-            wd_rx,
-            executor_ctrl,
-            Some(RrChannels {
-                request_rx: req_rx,
-                response_tx: resp_tx,
-            }),
-            // ClearEStop RR 单测不接 SetEnabled RR（v0.5 候选 C）。
-            None,
-            None,
-            None,
-            Arc::new(AtomicBool::new(false)),
-        )
-        .unwrap();
-
-        (handle, inner, req_tx, resp_rx, clock_for_test)
-    }
-
-    /// 测试 helper：发 RR request → 等 response（最多 1s）→ 返回 payload。
-    /// `deadline_ns` 默认设 `u64::MAX`（永不过期），跑过 RR 通路不被
-    /// deadline 拦截；deadline 单测用 `send_and_recv_rr_with_deadline`。
-    fn send_and_recv_rr(
-        req_tx: &crossbeam_channel::Sender<ClearEStopRrRequest>,
-        resp_rx: &crossbeam_channel::Receiver<ClearEStopRrResponse>,
-        request_id: &str,
-        dry_run: bool,
-    ) -> ClearEStopRrPayload {
-        send_and_recv_rr_with_deadline(req_tx, resp_rx, request_id, dry_run, u64::MAX)
-    }
-
-    /// 测试 helper：发 RR request 带显式 `deadline_ns`，等 response（最多 1s）。
-    fn send_and_recv_rr_with_deadline(
-        req_tx: &crossbeam_channel::Sender<ClearEStopRrRequest>,
-        resp_rx: &crossbeam_channel::Receiver<ClearEStopRrResponse>,
-        request_id: &str,
-        dry_run: bool,
-        deadline_ns: u64,
-    ) -> ClearEStopRrPayload {
-        req_tx
-            .send(ClearEStopRrRequest {
-                request_id: request_id.to_string(),
-                dry_run,
-                confirmation: format!("CONFIRM-{request_id}"),
-                audit_reason: "unit-test".to_string(),
-                deadline_ns,
-            })
-            .unwrap();
-        let resp = resp_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("response within 1s");
-        assert_eq!(resp.request_id, request_id, "RR response correlation 错位");
-        resp.payload
-    }
-
-    /// **A1-3 (1/3b)**：dry_run 在 ipc_thread RR drain 阶段直接同步评估，
-    /// **不**进 events queue / **不**进 ipc_tick。返 `WouldClear` /
-    /// `StateNotSafe` / `NotTorqueOffConfirmed` domain status。
-    #[test]
-    fn rr_dry_run_short_circuits_with_would_clear_when_gate_passes() {
-        // state=Safe + safety_state=TorqueOffConfirmed → gate 全过
-        let (handle, inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
-            S0State::Safe,
-            healthy_guards(),
-            None,
-            OutputSafetyState::TorqueOffConfirmed,
-            true,
-        );
-        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-dry-1", true);
-        match payload {
-            ClearEStopRrPayload::WouldClear { would_clear_at_ns } => {
-                assert!(
-                    would_clear_at_ns > 0,
-                    "would_clear_at_ns 应来自 clock.now()"
-                );
-            }
-            other => panic!("expected WouldClear, got {other:?}"),
-        }
-        // 副作用全不动
-        assert!(
-            inner.safety_latched.load(Ordering::Acquire),
-            "dry_run 不得动 executor.safety_latched"
-        );
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// **A1-3 (1/3b)**：dry_run state != Safe → 返 `StateNotSafe`，
-    /// 不进 events queue / ipc_tick。
-    #[test]
-    fn rr_dry_run_returns_state_not_safe_when_state_is_ready() {
-        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
-            S0State::Ready,
-            healthy_guards(),
-            None,
-            OutputSafetyState::TorqueOffConfirmed,
-            false,
-        );
-        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-dry-2", true);
-        match payload {
-            ClearEStopRrPayload::StateNotSafe { actual } => {
-                assert_eq!(actual, S0State::Ready);
-            }
-            other => panic!("expected StateNotSafe, got {other:?}"),
-        }
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// **A1-3 (1/3b)**：live 端到端成功路径。state=Safe + safety_state=
-    /// TorqueOffConfirmed + 真实 latch_path → ipc_tick 三步硬顺序成功 →
-    /// outcome.clear_estop=Cleared → response 派发 Cleared。
-    #[test]
-    fn rr_live_success_routes_cleared_response() {
-        #[cfg(test)]
-        use crate::estop_latch::save_estop_latch;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let latch_path = tmp.path().join("estop_latch");
-        save_estop_latch(&latch_path, true).unwrap(); // 预 provision latched=true
-
-        let mut guards = healthy_guards();
-        guards.estop_latched = true;
-
-        let (handle, inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
-            S0State::Safe,
-            guards,
-            Some(latch_path.clone()),
-            OutputSafetyState::TorqueOffConfirmed,
-            true,
-        );
-
-        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-live-1", false);
-        match payload {
-            ClearEStopRrPayload::Cleared { cleared_at_ns } => {
-                assert!(cleared_at_ns > 0);
-            }
-            other => panic!("expected Cleared, got {other:?}"),
-        }
-
-        // 端到端副作用：executor.safety_latched 已清；latch 文件 = "0\n"
-        assert!(!inner.safety_latched.load(Ordering::Acquire));
-        assert_eq!(std::fs::read_to_string(&latch_path).unwrap(), "0\n");
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// **A1-3 (1/3b)**：live state != Safe → ipc_tick 抛
-    /// `ClearEStopTickOutcome::StateNotSafe` → response 派发
-    /// `ClearEStopRrPayload::StateNotSafe`。
-    #[test]
-    fn rr_live_state_not_safe_routes_state_not_safe_response() {
-        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
-            S0State::Ready,
-            healthy_guards(),
-            None,
-            OutputSafetyState::TorqueOffConfirmed,
-            false,
-        );
-        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-live-2", false);
-        match payload {
-            ClearEStopRrPayload::StateNotSafe { actual } => {
-                assert_eq!(actual, S0State::Ready);
-            }
-            other => panic!("expected StateNotSafe, got {other:?}"),
-        }
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// **A1-3 (1/3b)**：live state=Safe 但 safety_state=TorqueOn → ipc_tick
-    /// 走 try_apply_clear_estop gate 拒 → 抛 `NotTorqueOffConfirmed`。
-    #[test]
-    fn rr_live_not_torque_off_confirmed_routes_failed_precondition() {
-        #[cfg(test)]
-        use crate::estop_latch::save_estop_latch;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let latch_path = tmp.path().join("estop_latch");
-        save_estop_latch(&latch_path, true).unwrap();
-
-        let mut guards = healthy_guards();
-        guards.estop_latched = true;
-
-        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
-            S0State::Safe,
-            guards,
-            Some(latch_path),
-            OutputSafetyState::TorqueOn,
-            true,
-        );
-        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-live-3", false);
-        match payload {
-            ClearEStopRrPayload::NotTorqueOffConfirmed { actual } => {
-                assert_eq!(actual, OutputSafetyState::TorqueOn);
-            }
-            other => panic!("expected NotTorqueOffConfirmed, got {other:?}"),
-        }
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// **A1-3 (1/3b)**：live fsync 失败 → ipc_tick 抛 `FsyncFailed` →
-    /// response 派发 `FsyncFailed` payload。
-    #[test]
-    fn rr_live_fsync_failed_routes_fsync_failed_response() {
-        use crate::estop_latch::{backup_path, save_estop_latch};
-
-        let tmp = tempfile::tempdir().unwrap();
-        let latch_path = tmp.path().join("estop_latch");
-        let bak_path = backup_path(&latch_path);
-        save_estop_latch(&latch_path, true).unwrap();
-        // bak 替换成非空目录：让 backup-first save_estop_latch_clear 第一步失败
-        std::fs::remove_file(&bak_path).unwrap();
-        std::fs::create_dir(&bak_path).unwrap();
-        std::fs::write(bak_path.join("nonempty"), b"x").unwrap();
-
-        let mut guards = healthy_guards();
-        guards.estop_latched = true;
-
-        let (handle, inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
-            S0State::Safe,
-            guards,
-            Some(latch_path.clone()),
-            OutputSafetyState::TorqueOffConfirmed,
-            true,
-        );
-        let payload = send_and_recv_rr(&req_tx, &resp_rx, "req-live-4", false);
-        assert_eq!(payload, ClearEStopRrPayload::FsyncFailed);
-
-        // 副作用：executor.safety_latched 不动；primary 仍 "1\n"
-        assert!(inner.safety_latched.load(Ordering::Acquire));
-        assert_eq!(std::fs::read(&latch_path).unwrap(), b"1\n");
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// **A1-3 (1/3b) reviewer 加的硬边界**：active live ClearEStop 单飞——
-    /// 第二个 live 来时 `in_flight_live` 已被占用，必须直接返
-    /// `AlreadyInProgress`，不能排队等。这条挡两个 request 共享一个
-    /// TickOutcome 搞错 Ack 的 race。
-    #[test]
-    fn rr_live_single_flight_second_request_returns_already_in_progress() {
-        #[cfg(test)]
-        use crate::estop_latch::save_estop_latch;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let latch_path = tmp.path().join("estop_latch");
-        save_estop_latch(&latch_path, true).unwrap();
-
-        let mut guards = healthy_guards();
-        guards.estop_latched = true;
-
-        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
-            S0State::Safe,
-            guards,
-            Some(latch_path),
-            // safety_state=TorqueOn → live 进 try_apply_clear_estop 后 gate
-            // 拒；这样 in_flight_live 在 ipc_tick 内就被 take，但本测试
-            // 关心的是 "第二个 live 在 in_flight_live 没被 take 之前到达"
-            // 的 race 窗口。为了制造稳定窗口，用 TorqueOn 让 live 走进
-            // ipc_tick 也会 reject，但事件 push + ipc_tick 处理之间有时
-            // 序窗口；并发 send 两条 live 至少一条会撞上 in_flight_live=Some
-            // 窗口。
-            //
-            // 更稳的做法：两条 live 同时挤入 RR drain，第一条占 in_flight，
-            // 第二条立刻拒。crossbeam bounded(64) channel 足以承载并发 64 条
-            // 顺序消息；ipc_thread RR drain 一 tick 内 try_recv 多条循环，
-            // 第一条 push event 后第二条立刻被拒。
-            OutputSafetyState::TorqueOn,
-            true,
-        );
-
-        // 先发两条 live request（一次性塞进 channel；ipc_thread 同 tick
-        // drain 时第一条占 in_flight_live，第二条直拒 AlreadyInProgress）。
-        req_tx
-            .send(ClearEStopRrRequest {
-                request_id: "req-A".to_string(),
-                dry_run: false,
-                confirmation: "CONFIRM-A".to_string(),
-                audit_reason: "unit-test-A".to_string(),
-                deadline_ns: u64::MAX,
-            })
-            .unwrap();
-        req_tx
-            .send(ClearEStopRrRequest {
-                request_id: "req-B".to_string(),
-                dry_run: false,
-                confirmation: "CONFIRM-B".to_string(),
-                audit_reason: "unit-test-B".to_string(),
-                deadline_ns: u64::MAX,
-            })
-            .unwrap();
-
-        // 收两条响应（顺序由 ipc_thread 决定）。
-        let mut got_a: Option<ClearEStopRrPayload> = None;
-        let mut got_b: Option<ClearEStopRrPayload> = None;
-        for _ in 0..2 {
-            let resp = resp_rx
-                .recv_timeout(Duration::from_secs(2))
-                .expect("response within 2s");
-            match resp.request_id.as_str() {
-                "req-A" => got_a = Some(resp.payload),
-                "req-B" => got_b = Some(resp.payload),
-                other => panic!("unexpected request_id: {other}"),
-            }
-        }
-        let pa = got_a.expect("req-A 应有响应");
-        let pb = got_b.expect("req-B 应有响应");
-
-        // **核心断言**：req-A / req-B 至少一条是 AlreadyInProgress（单飞拒），
-        // 另一条是 ipc_tick 处理结果（NotTorqueOffConfirmed，因为 safety_state=TorqueOn）。
-        // 不预设哪条先到（ipc_thread 端 try_recv 顺序虽通常 FIFO，但不依赖）。
-        let (ipc_processed, single_flight_rejected) = match (&pa, &pb) {
-            (ClearEStopRrPayload::AlreadyInProgress, p) => (*p, pa),
-            (p, ClearEStopRrPayload::AlreadyInProgress) => (*p, pb),
-            (a, b) => panic!(
-                "至少一条 live 必须返 AlreadyInProgress（单飞）；\
-                 实际 req-A = {a:?}, req-B = {b:?}"
-            ),
-        };
-        assert!(
-            matches!(
-                ipc_processed,
-                ClearEStopRrPayload::NotTorqueOffConfirmed { .. }
-            ),
-            "ipc_tick 处理的那一条应返 NotTorqueOffConfirmed（safety_state=TorqueOn 时 gate 拒），\
-             实际 = {ipc_processed:?}"
-        );
-        assert_eq!(
-            single_flight_rejected,
-            ClearEStopRrPayload::AlreadyInProgress
-        );
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    // ========================================================================
-    // A1-3 (1/3b) round 2 新加：deadline + emergency preempt 锁测
-    // ========================================================================
-
-    /// **A1-3 (1/3b) round 2 阻断 2**：drain 入口 deadline check 拦截过期
-    /// live request，**不**入 in_flight_live、**不**push event。
-    #[test]
-    fn rr_live_deadline_exceeded_at_drain_time_returns_deadline_exceeded() {
-        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
-            S0State::Safe,
-            healthy_guards(),
-            None,
-            OutputSafetyState::TorqueOffConfirmed,
-            true,
-        );
-        // deadline_ns=1（远小于 SystemClock::now()，drain 入口必命中）
-        let payload = send_and_recv_rr_with_deadline(&req_tx, &resp_rx, "req-deadline-1", false, 1);
-        assert_eq!(payload, ClearEStopRrPayload::DeadlineExceeded);
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// **A1-3 (1/3b) round 2 阻断 2**：dry_run 路径同样必须走 deadline check
-    /// （drain 入口）；过期 dry_run 不调 evaluate_clear_estop_dry_run，直接
-    /// reply `DeadlineExceeded`。
-    #[test]
-    fn rr_dry_run_deadline_exceeded_at_drain_time() {
-        let (handle, _inner, req_tx, resp_rx, _clock) = bring_up_with_rr(
-            S0State::Safe,
-            healthy_guards(),
-            None,
-            OutputSafetyState::TorqueOffConfirmed,
-            true,
-        );
-        let payload = send_and_recv_rr_with_deadline(&req_tx, &resp_rx, "req-deadline-2", true, 1);
-        assert_eq!(payload, ClearEStopRrPayload::DeadlineExceeded);
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    /// **A1-3 (1/3b) round 2 阻断 1**：emergency preempt 取消 in-flight live。
-    ///
-    /// 场景：RR live 入 in_flight_live + push `Event::ClearEStop`，但同 tick
-    /// 内 EStop event 也进 events queue。`ipc_thread` §5.6) preempt 段
-    /// 检测 `events.has_emergency() = true` → 移除 events queue 里的
-    /// `Event::ClearEStop` + take in_flight_live + reply
-    /// `PreemptedByEmergency`。
-    ///
-    /// 实施：用 freeze hook 暂停 ipc_thread tick body，期间塞 EStop external
-    /// event + RR live 到 channels；unfreeze 后 ipc_thread 同 tick drain
-    /// 两条 message → §5.6 preempt 命中。
-    ///
-    /// 这条单测端到端覆盖 §5.6 段 "take in_flight_live + remove ClearEStop
-    /// event + reply" 三件事；deadline 路径只是替换 payload variant
-    /// 一行（共用 §5.6 take/remove/reply 代码）。
-    #[test]
-    fn rr_live_emergency_preempt_aborts_in_flight_live() {
-        #[cfg(test)]
-        use crate::estop_latch::save_estop_latch;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let latch_path = tmp.path().join("estop_latch");
-        save_estop_latch(&latch_path, true).unwrap();
-
-        let mut guards = healthy_guards();
-        guards.estop_latched = true;
-
-        let (handle, inner, req_tx, resp_rx, clock) = bring_up_with_rr(
-            S0State::Safe,
-            guards,
-            Some(latch_path.clone()),
-            OutputSafetyState::TorqueOffConfirmed,
-            true,
-        );
-
-        // 1) freeze 200ms：ipc_thread tick body 不跑，channels 不被 drain
-        let metrics = Arc::clone(handle.metrics());
-        let freeze_until = clock.now().0 + 200_000_000;
+        let rig = safe_rig(false);
+        let metrics = rig.handle().metrics();
+        wait_until(|| metrics.tick_count.load(Ordering::Acquire) >= 5, WAIT);
+        let before = metrics.tick_count.load(Ordering::Acquire);
         metrics
             .freeze_until_ns
-            .store(freeze_until, Ordering::Release);
-        // 等 freeze 稳定生效
-        std::thread::sleep(Duration::from_millis(40));
-
-        // 2) freeze 期间塞两条 message：EStop external + RR live
-        handle.event_sender().estop();
-        req_tx
-            .send(ClearEStopRrRequest {
-                request_id: "req-emerg-1".to_string(),
-                dry_run: false,
-                confirmation: "CONFIRM-emerg-1".to_string(),
-                audit_reason: "unit-test-preempt".to_string(),
-                deadline_ns: u64::MAX,
-            })
-            .unwrap();
-
-        // 3) unfreeze
-        metrics.freeze_until_ns.store(0, Ordering::Release);
-
-        // 4) recv RR response → 必须是 PreemptedByEmergency
-        let resp = resp_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("response within 2s");
-        assert_eq!(resp.request_id, "req-emerg-1");
-        assert_eq!(
-            resp.payload,
-            ClearEStopRrPayload::PreemptedByEmergency,
-            "in-flight live RR ClearEStop 必须被 §5.6 preempt 取消"
-        );
-
-        // 5) 副作用：EStop 路径继续执行 → executor.safety_latched 升 true
-        std::thread::sleep(Duration::from_millis(50));
+            .store(rig.clock.now().0 + 80_000_000, Ordering::Release);
+        thread::sleep(Duration::from_millis(40));
+        let middle = metrics.tick_count.load(Ordering::Acquire);
         assert!(
-            inner.safety_latched.load(Ordering::Acquire),
-            "EStop 路径应继续执行，executor.safety_latched 应升 true"
+            middle.saturating_sub(before) <= 1,
+            "freeze 内仍推进 tick: {before}→{middle}"
         );
-
-        handle.request_stop();
-        handle.join().unwrap();
-    }
-
-    // ========================================================================
-    // v0.5 候选 C：SetEnabled RR drain + 多 tick pending 观测（D8）
-    //
-    // 端到端：测试线程通过 se_req_tx 发 SetEnabledRrRequest → ipc_thread §5.5b
-    // drain →（dry_run 同步评估 / live 即时 precondition gate + 起 pending）→
-    // §6.6b 每 tick 观测 state → se_resp_tx → 测试线程 se_resp_rx 收
-    // SetEnabledRrResponse。
-    // ========================================================================
-
-    /// 起 ipc_thread + SetEnabled RR control plane channels；返回 hb/estop
-    /// publisher（驱动 Ready→Enabled.Active / EStop preempt）+ inner（spawn
-    /// auto-ack/nack）+ clock（算 deadline）。
-    #[allow(clippy::type_complexity)]
-    fn bring_up_with_set_enabled_rr(
-        initial_state: S0State,
-        initial_guards: Guards,
-        safety_latched: bool,
-    ) -> (
-        IpcThreadHandle,
-        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
-        robot_transport::iceoryx2::Iceoryx2Publisher<markers::EStopEvent>,
-        crossbeam_channel::Sender<SetEnabledRrRequest>,
-        crossbeam_channel::Receiver<SetEnabledRrResponse>,
-        Arc<dyn RobotClock>,
-        RtSnapshotReader<S0StateSnapshot>,
-    ) {
-        use crossbeam_channel::bounded;
-
-        let topics = fresh_topics();
-        let pub_node: &'static _ =
-            Box::leak(Box::new(NodeBuilder::new().create::<IxService>().unwrap()));
-        let _cmd_pub =
-            publisher::<markers::JointCommand>(pub_node, &topics.command, TopicClass::S0Command)
-                .expect("open command publisher");
-        let hb_pub =
-            publisher::<markers::Heartbeat>(pub_node, &topics.heartbeat, TopicClass::Heartbeat)
-                .expect("open heartbeat publisher");
-        let estop_pub =
-            publisher::<markers::EStopEvent>(pub_node, &topics.estop, TopicClass::SafetyEvent)
-                .expect("open estop publisher");
-
-        let (cmd_writer, _cmd_reader) =
-            LatestCommandSlot::<JointCommandBuf>::new(JointCommandBuf::default());
-        let (state_pub, state_rdr) =
-            RtSnapshotPublisher::<S0StateSnapshot>::new(S0StateSnapshot::default());
-        let (_wd_tx, wd_rx) = unbounded::<Event>();
-        let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-        let clock_for_test = Arc::clone(&clock);
-
-        let topics_for_factory = topics;
-        let factory = move || {
-            let sub_node = NodeBuilder::new().create::<IxService>().unwrap();
-            let command = subscriber::<markers::JointCommand>(
-                &sub_node,
-                &topics_for_factory.command,
-                TopicClass::S0Command,
-            )
-            .unwrap();
-            let heartbeat = subscriber::<markers::Heartbeat>(
-                &sub_node,
-                &topics_for_factory.heartbeat,
-                TopicClass::Heartbeat,
-            )
-            .unwrap();
-            let estop = subscriber::<markers::EStopEvent>(
-                &sub_node,
-                &topics_for_factory.estop,
-                TopicClass::SafetyEvent,
-            )
-            .unwrap();
-            Box::leak(Box::new(sub_node));
-            IpcSubscribers {
-                command,
-                heartbeat,
-                estop,
-            }
-        };
-
-        let inner = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
-        inner.safety_state.store(
-            OutputSafetyState::TorqueOffConfirmed.to_u8(),
-            Ordering::Release,
+        wait_until(
+            || metrics.tick_count.load(Ordering::Acquire) > middle + 2,
+            WAIT,
         );
-        inner
-            .safety_latched
-            .store(safety_latched, Ordering::Release);
-        let executor_ctrl: Arc<dyn ExecutorCtrlClient> = Arc::new(
-            crate::hard_rt_ctrl::HardRtCtrlClient::new(Arc::clone(&inner)),
+    }
+
+    #[test]
+    fn rr_dry_run_short_circuits_with_would_clear_when_gate_passes() {
+        let mut rig = safe_rig(true);
+        rig.clear("dry", true, u64::MAX);
+        let reply = rig.clear_reply();
+        assert_eq!(reply.request_id, "dry");
+        assert_eq!(reply.effect, SideEffect::None);
+        assert!(matches!(
+            clear_outcome(reply),
+            ClearOutcome::WouldClear { .. }
+        ));
+        assert!(rig.inner.authority().snapshot().latch);
+        assert_eq!(std::fs::read(&rig.latch).unwrap(), b"1\n");
+    }
+
+    #[test]
+    fn rr_dry_run_returns_state_not_safe_when_state_is_ready() {
+        let mut rig = Rig::new(
+            S0State::Ready,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
         );
-
-        let cfg = IpcThreadConfig {
-            poll_interval_ns: 500_000,
-            initial_guards,
-            initial_state,
-            latch_path: None,
-            authoritative_layout: 0xCAFE_0001,
-        };
-
-        let (se_req_tx, se_req_rx) = bounded::<SetEnabledRrRequest>(64);
-        let (se_resp_tx, se_resp_rx) = bounded::<SetEnabledRrResponse>(64);
-
-        let handle = spawn_ipc_thread(
-            cfg,
-            clock,
-            factory,
-            cmd_writer,
-            state_pub,
-            wd_rx,
-            executor_ctrl,
-            // 本 harness 只接 SetEnabled RR（不接 ClearEStop）。
-            None,
-            Some(SetEnabledRrChannels {
-                request_rx: se_req_rx,
-                response_tx: se_resp_tx,
-            }),
-            None,
-            None,
-            Arc::new(AtomicBool::new(false)),
-        )
-        .unwrap();
-
-        (
-            handle,
-            inner,
-            hb_pub,
-            estop_pub,
-            se_req_tx,
-            se_resp_rx,
-            clock_for_test,
-            state_rdr,
-        )
+        rig.clear("dry-state", true, u64::MAX);
+        assert!(matches!(
+            clear_outcome(rig.clear_reply()),
+            ClearOutcome::StateNotSafe
+        ));
     }
 
-    /// `spawn_auto_ack` 的失败孪生：把 `pending_normal` swap 出来后 store
-    /// `last_completed = (seq, AdapterResp::Err(HardwareFault))` → ipc_tick
-    /// 走 `commit_fault(AdapterErr)`（PB10 fault-inject）。
-    fn spawn_auto_nack(
-        inner: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
-    ) -> (Arc<AtomicBool>, std::thread::JoinHandle<()>) {
-        use robot_core::executor_ctrl::{
-            AdapterErr, AdapterResp, pack_completed, unpack_pending_normal,
-        };
-        let stop = Arc::new(AtomicBool::new(false));
-        let stop_clone = Arc::clone(&stop);
-        let h = std::thread::spawn(move || {
-            while !stop_clone.load(Ordering::Acquire) {
-                let p = inner.pending_normal.swap(0, Ordering::AcqRel);
-                if p != 0 {
-                    let (_, _, seq) = unpack_pending_normal(p);
-                    inner.last_completed.store(
-                        pack_completed(seq, AdapterResp::Err(AdapterErr::HardwareFault)),
-                        Ordering::Release,
-                    );
-                }
-                std::thread::sleep(Duration::from_millis(1));
+    #[test]
+    fn rr_live_success_routes_cleared_response() {
+        let mut rig = safe_rig(true);
+        rig.clear("clear", false, u64::MAX);
+        let response = rig.clear_reply();
+        assert_eq!(response.request_id, "clear");
+        assert_eq!(response.effect, SideEffect::Committed);
+        assert!(matches!(
+            clear_outcome(response),
+            ClearOutcome::Cleared {
+                superseded: false,
+                ..
             }
-        });
-        (stop, h)
+        ));
+        assert!(!rig.inner.authority().snapshot().latch);
+        assert_eq!(std::fs::read(&rig.latch).unwrap(), b"0\n");
+        assert_eq!(std::fs::read(&rig.hook.backup).unwrap(), b"0\n");
+        assert!(
+            !rig.latch
+                .with_file_name("estop_latch.clear_pending")
+                .exists()
+        );
+        assert!(rig.clear_rx.try_recv().is_err(), "同一 RR 不得回复两次");
     }
 
-    /// 发 live / dry_run SetEnabled RR request。
-    fn send_se(
-        req_tx: &crossbeam_channel::Sender<SetEnabledRrRequest>,
-        request_id: &str,
-        enabled: bool,
-        dry_run: bool,
-        deadline_ns: u64,
-    ) {
-        req_tx
-            .send(SetEnabledRrRequest {
-                request_id: request_id.to_string(),
-                enabled,
-                dry_run,
-                deadline_ns,
-                audit_reason: "unit-test".to_string(),
-            })
+    #[test]
+    fn rr_live_state_not_safe_routes_state_not_safe_response() {
+        let mut rig = Rig::new(
+            S0State::Ready,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+        );
+        rig.clear("state", false, u64::MAX);
+        assert!(matches!(
+            clear_outcome(rig.clear_reply()),
+            ClearOutcome::StateNotSafe
+        ));
+    }
+
+    #[test]
+    fn rr_live_not_torque_off_confirmed_routes_failed_precondition() {
+        let mut rig = Rig::new(
+            S0State::Safe,
+            healthy_guards(),
+            OutputSafetyState::TorqueOn,
+            true,
+        );
+        rig.clear("not-off", false, u64::MAX);
+        let response = rig.clear_reply();
+        assert_eq!(response.effect, SideEffect::None);
+        assert!(matches!(
+            clear_outcome(response),
+            ClearOutcome::NotTorqueOffConfirmed {
+                safety: OutputSafetyState::TorqueOn
+            }
+        ));
+        assert_eq!(std::fs::read(&rig.latch).unwrap(), b"1\n");
+    }
+
+    #[test]
+    fn rr_live_fsync_failed_routes_fsync_failed_response() {
+        let mut rig = safe_rig(true);
+        rig.hook.fail_backup_once.store(1, Ordering::Release);
+        rig.clear("filesystem", false, u64::MAX);
+        assert!(matches!(
+            clear_outcome(rig.clear_reply()),
+            ClearOutcome::FsyncFailed {
+                stage: ClearTxnStage::RenameBackup
+            }
+        ));
+        assert_eq!(rig.hook.fail_backup_once.load(Ordering::Acquire), 3);
+        assert_eq!(std::fs::read(&rig.latch).unwrap(), b"1\n");
+        assert_eq!(std::fs::read(&rig.hook.backup).unwrap(), b"1\n");
+    }
+
+    #[test]
+    fn rr_live_single_flight_second_request_returns_already_in_progress() {
+        let mut rig = safe_rig(true);
+        rig.hook.pause.store(true, Ordering::Release);
+        rig.clear("first-clear", false, u64::MAX);
+        wait_until(|| rig.hook.reached.load(Ordering::Acquire), WAIT);
+        rig.clear("second-clear", false, u64::MAX);
+        let response = rig.clear_reply();
+        assert_eq!(response.request_id, "second-clear");
+        assert!(matches!(
+            clear_outcome(response),
+            ClearOutcome::AlreadyInProgress
+        ));
+        assert!(
+            rig.clear_rx.try_recv().is_err(),
+            "原 Clear 尚在真实文件步骤"
+        );
+        rig.hook.release.store(true, Ordering::Release);
+        let response = rig.clear_reply();
+        assert_eq!(response.request_id, "first-clear");
+        assert!(matches!(
+            clear_outcome(response),
+            ClearOutcome::Cleared { .. }
+        ));
+    }
+
+    #[test]
+    fn rr_live_deadline_exceeded_at_drain_time_returns_deadline_exceeded() {
+        let mut rig = safe_rig(true);
+        rig.clear("expired", false, 0);
+        let response = rig.clear_reply();
+        assert_eq!(response.effect, SideEffect::None);
+        assert_eq!(response.payload, ClearEStopRrPayload::DeadlineExceeded);
+        assert_eq!(std::fs::read(&rig.latch).unwrap(), b"1\n");
+    }
+
+    #[test]
+    fn rr_dry_run_deadline_exceeded_at_drain_time() {
+        let mut rig = safe_rig(true);
+        rig.clear("expired-dry", true, 0);
+        let response = rig.clear_reply();
+        assert_eq!(response.payload, ClearEStopRrPayload::DeadlineExceeded);
+        assert_eq!(response.effect, SideEffect::None);
+    }
+
+    #[test]
+    fn rr_live_emergency_during_prepare_preserves_first_guard_failure_and_repairs() {
+        let mut rig = safe_rig(true);
+        rig.hook.pause.store(true, Ordering::Release);
+        rig.clear("estop-clear", false, u64::MAX);
+        let original_route = *rig
+            .clear_routes
+            .as_ref()
+            .unwrap()
+            .slots
+            .keys()
+            .next()
             .unwrap();
-    }
-
-    /// 持续发 heartbeat（驱动 Ready→Enabled.Active）直到收到 RR response。
-    fn pump_hb_until_se_resp(
-        hb_pub: &mut robot_transport::iceoryx2::Iceoryx2Publisher<markers::Heartbeat>,
-        resp_rx: &crossbeam_channel::Receiver<SetEnabledRrResponse>,
-        timeout: Duration,
-    ) -> SetEnabledRrResponse {
-        let start = std::time::Instant::now();
-        let mut seq = 1u64;
-        while start.elapsed() < timeout {
-            publish_heartbeat(hb_pub, seq);
-            seq += 1;
-            if let Ok(resp) = resp_rx.recv_timeout(Duration::from_millis(15)) {
-                return resp;
+        wait_until(|| rig.hook.reached.load(Ordering::Acquire), WAIT);
+        let epoch = rig.inner.authority().snapshot().epoch;
+        rig.estop();
+        wait_until(|| rig.inner.authority().snapshot().epoch != epoch, WAIT);
+        assert!(
+            rig.clear_rx.try_recv().is_err(),
+            "真实 writer 归还/退休前不得回复"
+        );
+        rig.hook.release.store(true, Ordering::Release);
+        let response = rig.clear_reply();
+        assert_eq!(response.route, original_route);
+        assert_eq!(response.request_id, "estop-clear");
+        assert_eq!(response.effect, SideEffect::Started);
+        // 新义务使原 writer 在首个改值步骤拒绝；W3a 保留这条真实最早失败，再 repair/退休。
+        assert_eq!(
+            clear_outcome(response),
+            ClearOutcome::FsyncFailed {
+                stage: ClearTxnStage::CreateBackup
             }
-        }
-        panic!("no SetEnabled response within {timeout:?}");
+        );
+        assert_eq!(std::fs::read(&rig.latch).unwrap(), b"1\n");
+        assert_eq!(std::fs::read(&rig.hook.backup).unwrap(), b"1\n");
+        assert!(
+            !rig.latch
+                .with_file_name("estop_latch.clear_pending")
+                .exists()
+        );
+        assert!(rig.inner.authority().snapshot().latch);
+        assert!(
+            rig.clear_rx.try_recv().is_err(),
+            "原 Clear route 只能真实退休回复一次"
+        );
     }
 
-    /// **AC-2 / D8**：enable happy —— Safe + ready guard + heartbeat 源 →
-    /// 观测 Enabled.Active → `Enabled`（Ok）。
     #[test]
     fn pending_resolves_on_enabled_active() {
-        let (handle, inner, mut hb_pub, _estop_pub, req_tx, resp_rx, _clock, _state_rdr) =
-            bring_up_with_set_enabled_rr(S0State::Safe, healthy_guards(), false);
-        let (ack_stop, ack_join) = spawn_auto_ack(Arc::clone(&inner));
-
-        send_se(&req_tx, "enable-1", true, false, u64::MAX);
-        let resp = pump_hb_until_se_resp(&mut hb_pub, &resp_rx, Duration::from_secs(3));
-
-        assert_eq!(resp.request_id, "enable-1");
-        assert!(
-            matches!(resp.payload, SetEnabledRrPayload::Enabled { .. }),
-            "enable happy 应返 Enabled，实际 {:?}",
-            resp.payload
+        let mut rig = safe_rig(false);
+        rig.set("enable", true, u64::MAX);
+        rig.heartbeat();
+        wait_until(
+            || rig.inner.pending_normal.load(Ordering::Acquire) != 0,
+            WAIT,
         );
-
-        handle.request_stop();
-        handle.join().unwrap();
-        ack_stop.store(true, Ordering::Release);
-        ack_join.join().unwrap();
+        assert!(rig.set_rx.try_recv().is_err());
+        rig.execute();
+        let response = rig.set_reply();
+        assert_eq!(response.request_id, "enable");
+        assert!(matches!(
+            response.payload,
+            SetEnabledRrPayload::Enabled { .. }
+        ));
+        assert_eq!(response.effect, SideEffect::Committed);
+        assert_eq!(rig.state.load().state, enabled_active());
+        assert_eq!(
+            rig.inner.authority().snapshot().safety,
+            OutputSafetyState::TorqueOn
+        );
     }
 
-    /// **AC-3 / D3**：disable happy —— Enabled.Active → `Event::Disable` →
-    /// adapter `Enable(false)` ack → Safe → `Disabled`（Ok）。无 heartbeat 依赖。
     #[test]
     fn disable_pending_resolves_on_safe() {
-        let (handle, inner, _hb_pub, _estop_pub, req_tx, resp_rx, _clock, _state_rdr) =
-            bring_up_with_set_enabled_rr(enabled_active(), healthy_guards(), false);
-        let (ack_stop, ack_join) = spawn_auto_ack(Arc::clone(&inner));
-
-        send_se(&req_tx, "disable-1", false, false, u64::MAX);
-        let resp = resp_rx
-            .recv_timeout(Duration::from_secs(3))
-            .expect("disable response within 3s");
-
-        assert_eq!(resp.request_id, "disable-1");
-        assert!(
-            matches!(resp.payload, SetEnabledRrPayload::Disabled { .. }),
-            "disable happy 应返 Disabled，实际 {:?}",
-            resp.payload
+        let mut rig = Rig::new(
+            enabled_active(),
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
         );
-
-        handle.request_stop();
-        handle.join().unwrap();
-        ack_stop.store(true, Ordering::Release);
-        ack_join.join().unwrap();
+        rig.set("disable", false, u64::MAX);
+        wait_until(
+            || rig.inner.pending_normal.load(Ordering::Acquire) != 0,
+            WAIT,
+        );
+        assert!(rig.set_rx.try_recv().is_err());
+        rig.execute();
+        assert!(matches!(
+            rig.set_reply().payload,
+            SetEnabledRrPayload::Disabled { .. }
+        ));
+        assert_eq!(rig.state.load().state, S0State::Safe);
+        assert_eq!(
+            rig.inner.authority().snapshot().safety,
+            OutputSafetyState::TorqueOffConfirmed
+        );
     }
 
-    /// **单飞**：pending 在飞时第二个 live request 直拒 `AlreadyInProgress`，
-    /// **不**入 pending（不 pump heartbeat → 第一个滞留 Ready 不 resolve）。
+    // 旧“第二条单飞拒绝”改为已批 Restore 排队：首个原 seq 未退休前不消费第二条。
     #[test]
-    fn pending_single_flight_rejects_second() {
-        let (handle, _inner, _hb_pub, _estop_pub, req_tx, resp_rx, _clock, _state_rdr) =
-            bring_up_with_set_enabled_rr(S0State::Safe, healthy_guards(), false);
-
-        // A：far deadline + 无 heartbeat → 滞留 Ready 不 resolve（占单飞槽）。
-        send_se(&req_tx, "A", true, false, u64::MAX);
-        // B：在 A 的 pending 期间进 → AlreadyInProgress。
-        send_se(&req_tx, "B", true, false, u64::MAX);
-
-        let resp = resp_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("single-flight reject within 2s");
-        assert_eq!(resp.request_id, "B", "应是第二个 request 被拒");
-        assert_eq!(resp.payload, SetEnabledRrPayload::AlreadyInProgress);
-
-        handle.request_stop();
-        handle.join().unwrap();
+    fn pending_single_flight_preserves_second_restore_until_first_retires() {
+        let mut rig = safe_rig(false);
+        rig.set("first", true, u64::MAX);
+        rig.heartbeat();
+        wait_until(
+            || rig.inner.pending_normal.load(Ordering::Acquire) != 0,
+            WAIT,
+        );
+        let seq = rig.inner.pending_normal.load(Ordering::Acquire);
+        let ticks = rig.handle().metrics().tick_count.load(Ordering::Acquire);
+        rig.set("second", true, u64::MAX);
+        wait_until(
+            || rig.handle().metrics().tick_count.load(Ordering::Acquire) >= ticks + 4,
+            WAIT,
+        );
+        assert!(rig.set_rx.try_recv().is_err());
+        assert_eq!(rig.inner.pending_normal.load(Ordering::Acquire), seq);
+        rig.execute();
+        let first = rig.set_reply();
+        let second = rig.set_reply();
+        assert_eq!(first.request_id, "first");
+        assert_eq!(second.request_id, "second");
+        assert!(matches!(first.payload, SetEnabledRrPayload::Enabled { .. }));
+        assert!(matches!(
+            second.payload,
+            SetEnabledRrPayload::Enabled { .. }
+        ));
+        assert_eq!(first.effect, SideEffect::Committed);
+        assert_eq!(second.effect, SideEffect::None);
     }
 
-    /// **AC-2b / D8**：到 Ready 但 deadline 内无 heartbeat/Enabled.Active →
-    /// `DeadlineExceeded`（pending 观测期 deadline，**非** drain 入口）。
     #[test]
     fn pending_deadline_resolves() {
-        let (handle, _inner, _hb_pub, _estop_pub, req_tx, resp_rx, clock, _state_rdr) =
-            bring_up_with_set_enabled_rr(S0State::Safe, healthy_guards(), false);
-
-        // deadline 在未来 60ms（drain 入口 now < deadline → 起 pending）；不 pump
-        // heartbeat → 滞留 Ready → 60ms 后 §6.6b deadline 过期 → DeadlineExceeded。
-        let deadline_ns = clock.now().0 + 60_000_000;
-        send_se(&req_tx, "deadline-1", true, false, deadline_ns);
-
-        let resp = resp_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("deadline response within 2s");
-        assert_eq!(resp.request_id, "deadline-1");
-        assert_eq!(resp.payload, SetEnabledRrPayload::DeadlineExceeded);
-
-        handle.request_stop();
-        handle.join().unwrap();
+        let clock = Arc::new(MockClock::new(MonoRawNs(100_000_000)));
+        let mut rig = Rig::with_clock(
+            S0State::Safe,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+            clock.clone(),
+            None,
+            false,
+        );
+        rig.set("deadline", true, 200_000_000);
+        rig.heartbeat();
+        wait_until(
+            || rig.inner.pending_normal.load(Ordering::Acquire) != 0,
+            WAIT,
+        );
+        rig.claim_without_start();
+        clock.set(MonoRawNs(300_000_000));
+        let ticks = rig.handle().metrics().tick_count.load(Ordering::Acquire);
+        wait_until(
+            || rig.handle().metrics().tick_count.load(Ordering::Acquire) >= ticks + 3,
+            WAIT,
+        );
+        assert!(
+            rig.set_rx.try_recv().is_err(),
+            "过期不替代原 seq 的真实物理退休"
+        );
+        rig.execute();
+        assert_eq!(
+            rig.set_reply().payload,
+            SetEnabledRrPayload::DeadlineExceeded
+        );
     }
 
-    /// **EStop preempt**：enable pending（Ready）期间 EStop 进 queue →
-    /// `PreemptedByEStop`（emergency 优先于 target / deadline）。
     #[test]
     fn pending_preempt_estop_resolves_aborted() {
-        let (handle, _inner, _hb_pub, mut estop_pub, req_tx, resp_rx, _clock, _state_rdr) =
-            bring_up_with_set_enabled_rr(S0State::Safe, healthy_guards(), false);
-
-        // enable far deadline + 无 heartbeat → 滞留 Ready（pending 在飞）。
-        send_se(&req_tx, "estop-1", true, false, u64::MAX);
-        // 让 pending 稳定在 Ready 再触发 EStop。
-        std::thread::sleep(Duration::from_millis(30));
-        publish_estop(&mut estop_pub, 1);
-
-        let resp = resp_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("estop preempt response within 2s");
-        assert_eq!(resp.request_id, "estop-1");
-        assert_eq!(resp.payload, SetEnabledRrPayload::PreemptedByEStop);
-
-        handle.request_stop();
-        handle.join().unwrap();
+        let mut rig = safe_rig(false);
+        rig.set("preempt", true, u64::MAX);
+        rig.heartbeat();
+        wait_until(
+            || rig.inner.pending_normal.load(Ordering::Acquire) != 0,
+            WAIT,
+        );
+        rig.claim_without_start();
+        rig.estop();
+        wait_until(|| rig.inner.authority().snapshot().latch, WAIT);
+        assert!(rig.set_rx.try_recv().is_err(), "EStop 不伪造原 seq 退休");
+        rig.execute();
+        assert_eq!(
+            rig.set_reply().payload,
+            SetEnabledRrPayload::PreemptedByEStop
+        );
     }
 
-    /// **AC-2c / AC-3b / PB10**：adapter `Enable(false)` ack 失败 →
-    /// `commit_fault(AdapterErr)` → §6.6b resolve `AdapterError`（wire Internal）。
-    /// fault-inject = `spawn_auto_nack`（非 cross-process e2e；mock_hard_rt 无可控
-    /// ack-fail 开关）。
     #[test]
     fn pending_adapter_fault_resolves_internal_adapter_error() {
-        let (handle, inner, _hb_pub, _estop_pub, req_tx, resp_rx, _clock, _state_rdr) =
-            bring_up_with_set_enabled_rr(enabled_active(), healthy_guards(), false);
-        // 注入 adapter ack 失败（Enable(false) → Err(HardwareFault)）。
-        let (nack_stop, nack_join) = spawn_auto_nack(Arc::clone(&inner));
-
-        send_se(&req_tx, "fault-1", false, false, u64::MAX);
-        let resp = resp_rx
-            .recv_timeout(Duration::from_secs(3))
-            .expect("adapter-fault response within 3s");
-
-        assert_eq!(resp.request_id, "fault-1");
-        assert_eq!(resp.payload, SetEnabledRrPayload::AdapterError);
-
-        handle.request_stop();
-        handle.join().unwrap();
-        nack_stop.store(true, Ordering::Release);
-        nack_join.join().unwrap();
+        let mut rig = Rig::with_clock(
+            S0State::Safe,
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
+            Arc::new(SystemClock::new()),
+            None,
+            true,
+        );
+        rig.set("adapter-error", true, u64::MAX);
+        rig.heartbeat();
+        rig.execute();
+        assert_eq!(rig.set_reply().payload, SetEnabledRrPayload::AdapterError);
+        assert!(rig.inner.authority().snapshot().disabled);
     }
 
-    /// **Reverse Sync（Fault+disable 语义 A）**：`Fault(AdapterErr)` + disable →
-    /// 幂等成功 `Disabled`(Ok)；**不**清 Fault（state 仍 `Fault(AdapterErr)`）、
-    /// **不**进 pending、**不**误报 `AdapterError`（区别 Enabled→disable 中途 ack
-    /// fail 才报 AdapterError）。
-    #[test]
-    fn disable_from_fault_adapter_err_is_idempotent_ok() {
-        let fault = S0State::Fault(FaultCode::AdapterErr);
-        let (handle, _inner, _hb_pub, _estop_pub, req_tx, resp_rx, _clock, state_rdr) =
-            bring_up_with_set_enabled_rr(fault, healthy_guards(), false);
-
-        send_se(&req_tx, "idem-adaptererr", false, false, u64::MAX);
-        let resp = resp_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("idempotent disable response within 2s");
-
-        assert_eq!(resp.request_id, "idem-adaptererr");
-        assert!(
-            matches!(resp.payload, SetEnabledRrPayload::Disabled { .. }),
-            "Fault(AdapterErr)+disable 应幂等 Disabled(Ok)，实际 {:?}",
-            resp.payload
-        );
-        // Ok **不**清 Fault：state 仍原 Fault(AdapterErr)（避免 Ok 被误读成清 Fault）。
-        assert_eq!(
-            state_rdr.load().state,
+    fn assert_fault_disable_preserves_fault(code: FaultCode) {
+        let fault = S0State::Fault(code);
+        let mut rig = Rig::new(
             fault,
-            "disable 幂等成功不得清 Fault"
+            healthy_guards(),
+            OutputSafetyState::TorqueOffConfirmed,
+            false,
         );
-
-        handle.request_stop();
-        handle.join().unwrap();
+        rig.set("idempotent", false, u64::MAX);
+        let response = rig.set_reply();
+        assert_eq!(response.request_id, "idempotent");
+        // 原 Lower 的结果先锁存业务故障，物理退休成功不会覆盖这条首因。
+        match code {
+            FaultCode::AdapterErr => {
+                assert_eq!(response.payload, SetEnabledRrPayload::AdapterError);
+            }
+            _ => assert!(matches!(
+                response.payload,
+                SetEnabledRrPayload::Disabled { .. }
+            )),
+        }
+        assert_eq!(response.effect, SideEffect::Committed);
+        assert_eq!(
+            rig.inner.authority().snapshot().safety,
+            OutputSafetyState::TorqueOffConfirmed
+        );
+        assert_eq!(rig.state.load().state, fault);
+        assert_eq!(rig.inner.pending_normal.load(Ordering::Acquire), 0);
     }
 
-    /// **Reverse Sync（语义 A）**：非-AdapterErr `Fault`（如 `LimitViolation`）+
-    /// disable → 幂等成功 `Disabled`(Ok) **即时**；state 仍原 Fault。
-    /// `deadline = u64::MAX`：若误走 pending（target Safe，Fault 永不到 Safe），会
-    /// 一直滞留 → recv 超时 → 本测 fail（即捕获回归）。
+    #[test]
+    fn disable_from_fault_adapter_err_preserves_error_after_retirement() {
+        assert_fault_disable_preserves_fault(FaultCode::AdapterErr);
+    }
+
     #[test]
     fn disable_from_fault_other_is_idempotent_ok() {
-        let fault = S0State::Fault(FaultCode::LimitViolation);
-        let (handle, _inner, _hb_pub, _estop_pub, req_tx, resp_rx, _clock, state_rdr) =
-            bring_up_with_set_enabled_rr(fault, healthy_guards(), false);
-
-        send_se(&req_tx, "idem-limit", false, false, u64::MAX);
-        let resp = resp_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("idempotent disable response within 2s");
-
-        assert_eq!(resp.request_id, "idem-limit");
-        assert!(
-            matches!(resp.payload, SetEnabledRrPayload::Disabled { .. }),
-            "非-AdapterErr Fault+disable 应幂等 Disabled(Ok)（非 DeadlineExceeded），实际 {:?}",
-            resp.payload
-        );
-        assert_eq!(
-            state_rdr.load().state,
-            fault,
-            "disable 幂等成功不得清 Fault"
-        );
-
-        handle.request_stop();
-        handle.join().unwrap();
+        assert_fault_disable_preserves_fault(FaultCode::LimitViolation);
     }
 }

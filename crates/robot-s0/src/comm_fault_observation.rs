@@ -9,10 +9,9 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const OBSERVATION_PAGE_BYTES: usize = 4096;
-// S48 A3b：末尾追加 ExecutorPublishFailureAttempt / IpcPublishFailureAttempt 两字（原 26）；
-// 既有字段偏移不变，页仍为 4096 字节。
-const WORD_COUNT: usize = 28;
-const VERSION: u64 = 1;
+// W3 仅末尾追加运行监督五字；原 0–27 偏移不变，页仍为 4096 字节。
+const WORD_COUNT: usize = 33;
+const VERSION: u64 = 2;
 
 #[repr(C)]
 struct ObservationWords {
@@ -21,6 +20,10 @@ struct ObservationWords {
 
 /// 每个字段独立单调发布；checkpoint/READY 门在对应时刻之后 Release 写入。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "共享观测快照逐项保存独立真实事实，各位不是互斥业务状态且保持现有布局"
+)]
 pub struct ObservationSnapshot {
     pub version: u64,
     pub main_start_ns: u64,
@@ -48,6 +51,11 @@ pub struct ObservationSnapshot {
     pub executor_publish_failure_attempt_ns: u64,
     /// S48 A3b：IPC worker 同上。
     pub ipc_publish_failure_attempt_ns: u64,
+    pub runtime_armed_ns: u64,
+    pub fired_reason: u64,
+    pub obligation_overdue: bool,
+    pub writer_exited_at_ns: u64,
+    pub residual_bitmap: u64,
 }
 
 /// S48 A3b：快照发布耗尽的 worker 身份，供 daemon 退出后导出对应字段。
@@ -88,6 +96,11 @@ pub(crate) enum ObservationField {
     PreflightFinished,
     ExecutorPublishFailureAttempt,
     IpcPublishFailureAttempt,
+    RuntimeArmed,
+    FiredReason,
+    ObligationOverdue,
+    WriterExitedAt,
+    ResidualBitmap,
 }
 
 pub struct ObservationPage {
@@ -102,6 +115,34 @@ unsafe impl Send for ObservationPage {}
 unsafe impl Sync for ObservationPage {}
 
 impl ObservationPage {
+    /// 导出原报告中已实际发出的停止请求；不代表 worker 已退出或已 join。
+    pub fn record_runtime_stop_trace(&self, report: &crate::shutdown_mechanism::TeardownReport) {
+        use crate::shutdown_mechanism::HandleKind;
+        use crate::worker_stop::WorkerKind;
+        for (kind, _) in &report.stop_trace {
+            let worker = match kind {
+                HandleKind::ClearRr => WorkerKind::ClearEStopRr,
+                HandleKind::SetRr => WorkerKind::SetEnabledRr,
+                HandleKind::Publisher => WorkerKind::Pub,
+                HandleKind::Io => WorkerKind::Io,
+                HandleKind::Executor => WorkerKind::Executor,
+                HandleKind::Ipc => WorkerKind::Ipc,
+                HandleKind::Watchdog => WorkerKind::Watchdog,
+                HandleKind::LatchWriter => WorkerKind::LatchWriter,
+                HandleKind::FreezeControl
+                | HandleKind::HookControl
+                | HandleKind::HealthMonitor
+                | HandleKind::SystemdWatchdog => continue,
+            };
+            self.merge_bits(ObservationField::StopBitmap, 1 << worker as u8);
+        }
+    }
+
+    /// main 按真实仍持有的句柄集合记录残余位图，不生成 join 或退休事实。
+    pub fn record_residual_bitmap(&self, bitmap: u16) {
+        self.store(ObservationField::ResidualBitmap, u64::from(bitmap));
+    }
+
     /// daemon 协作式关停先真实提交 Disabled，再记录此观测时间。
     pub fn record_disabled(&self, now: u64) {
         self.store_first(ObservationField::Disabled, now);
@@ -268,6 +309,11 @@ impl ObservationPage {
             preflight_finished_ns: self.load(F::PreflightFinished),
             executor_publish_failure_attempt_ns: self.load(F::ExecutorPublishFailureAttempt),
             ipc_publish_failure_attempt_ns: self.load(F::IpcPublishFailureAttempt),
+            runtime_armed_ns: self.load(F::RuntimeArmed),
+            fired_reason: self.load(F::FiredReason),
+            obligation_overdue: self.load(F::ObligationOverdue) != 0,
+            writer_exited_at_ns: self.load(F::WriterExitedAt),
+            residual_bitmap: self.load(F::ResidualBitmap),
         }
     }
 }

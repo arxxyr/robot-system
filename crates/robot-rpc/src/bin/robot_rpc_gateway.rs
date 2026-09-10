@@ -63,7 +63,8 @@ use std::sync::Arc;
 use robot_core::time::SystemClock;
 use robot_rpc::auth::load_role_table;
 use robot_rpc::gateway::{
-    ConfigError, GatewayConfig, GatewayError, LoopbackBindError, run_gateway_with_rr_io,
+    ConfigError, GatewayConfig, GatewayError, GatewayRun, LoopbackBindError, finish_gateway_owned,
+    run_gateway_with_rr_io,
 };
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
@@ -355,11 +356,28 @@ async fn main() {
     // 注册 SIGINT / SIGTERM handler。tokio::signal::unix 是 Send-friendly
     // async API；触发后 set shutdown_tx → run_gateway_with_rr_io 通过
     // shutdown_rx 收到 graceful stop 信号。
-    spawn_signal_handler(shutdown_tx);
+    let signal = spawn_signal_handler(shutdown_tx);
 
     let clock = Arc::new(SystemClock);
 
-    match run_gateway_with_rr_io(cfg, role_table, clock, shutdown_rx, None).await {
+    let mut run = GatewayRun::new(cfg, role_table, clock, shutdown_rx, None);
+    if let Err(original) = run.install_signal_handler(signal) {
+        // new 构造的空槽不可拒绝；若不变量被破坏，仍把两份原 owner 持至实际失败退出。
+        let _held_run = std::mem::ManuallyDrop::new(run);
+        let _held_signal = std::mem::ManuallyDrop::new(original);
+        std::process::exit(1);
+    }
+    run_gateway_with_rr_io(&mut run).await;
+    let exit = loop {
+        match run.into_exit() {
+            Ok(exit) => break exit,
+            Err(original) => {
+                run = original;
+                finish_gateway_owned(&mut run).await;
+            }
+        }
+    };
+    match exit.outcome() {
         Ok(()) => {
             tracing::info!("robot_rpc_gateway: clean shutdown");
         }
@@ -371,11 +389,9 @@ async fn main() {
                 "fatal: --listen-addr must be loopback (127.0.0.0/8 or ::1); v0.3 \
                  fake-token + plain TCP 阶段禁绑外网"
             );
-            std::process::exit(2);
         }
         Err(GatewayError::Config(e)) => {
             tracing::error!(error = ?e, "fatal: gateway config validation failed");
-            std::process::exit(2);
         }
         Err(GatewayError::Bind { addr, source }) => {
             tracing::error!(
@@ -383,19 +399,15 @@ async fn main() {
                 error = ?source,
                 "fatal: TcpListener::bind failed (端口占用 / 权限不足等)"
             );
-            std::process::exit(1);
         }
         Err(GatewayError::Tonic(e)) => {
             tracing::error!(error = ?e, "fatal: tonic transport failed");
-            std::process::exit(1);
         }
         Err(GatewayError::RrIoSpawn(e)) => {
             tracing::error!(error = ?e, "fatal: rr_io_thread spawn failed");
-            std::process::exit(1);
         }
         Err(GatewayError::StatePoolSpawn(e)) => {
             tracing::error!(error = ?e, "fatal: state_pool spawn failed");
-            std::process::exit(1);
         }
         // v0.5 候选 E 段(8)：READY 门槛 probe 超时 / server task 异常 → 沿
         // transport 族 exit 1（systemd Restart=on-failure 可拉起）。
@@ -404,16 +416,15 @@ async fn main() {
                 waited_ms,
                 "fatal: tonic loopback probe never succeeded before READY deadline"
             );
-            std::process::exit(1);
         }
         Err(GatewayError::ServerTask(msg)) => {
             tracing::error!(error = %msg, "fatal: tonic server task ended abnormally");
-            std::process::exit(1);
         }
     }
+    exit.exit()
 }
 
-fn spawn_signal_handler(shutdown_tx: watch::Sender<bool>) {
+fn spawn_signal_handler(shutdown_tx: watch::Sender<bool>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // SIGINT 用 ctrl_c 抽象（tokio::signal::ctrl_c）；SIGTERM 走
         // tokio::signal::unix::signal。等任一触发即 set shutdown=true。
@@ -436,7 +447,7 @@ fn spawn_signal_handler(shutdown_tx: watch::Sender<bool>) {
             }
         }
         let _ = shutdown_tx.send(true);
-    });
+    })
 }
 
 // ============================================================================

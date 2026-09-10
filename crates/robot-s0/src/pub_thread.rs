@@ -100,14 +100,44 @@ pub struct IpcPublishers {
     pub heartbeat: Iceoryx2Publisher<markers::Heartbeat>,
 }
 
+/// 在线程内按原顺序持有发布端口与 Node；兼容测试输入不创建第二 Node。
+pub struct OwnedIpcPublishers {
+    publishers: IpcPublishers,
+    _node: Option<iceoryx2::prelude::Node<iceoryx2::service::ipc::Service>>,
+}
+impl OwnedIpcPublishers {
+    #[must_use]
+    pub fn new(
+        publishers: IpcPublishers,
+        node: iceoryx2::prelude::Node<iceoryx2::service::ipc::Service>,
+    ) -> Self {
+        Self {
+            publishers,
+            _node: Some(node),
+        }
+    }
+}
+impl From<IpcPublishers> for OwnedIpcPublishers {
+    fn from(publishers: IpcPublishers) -> Self {
+        Self {
+            publishers,
+            _node: None,
+        }
+    }
+}
+
 /// `pub_thread` 启动后返回的控制 handle。
 pub struct PubThreadHandle {
     join: JoinHandle<()>,
     stop: Arc<AtomicBool>,
     metrics: Arc<PubThreadMetrics>,
+    ready: crate::ipc_thread::ReadyReader<std::convert::Infallible>,
 }
 
 impl PubThreadHandle {
+    pub fn poll_ready(&mut self) -> crate::ipc_thread::ReadyState<'_, std::convert::Infallible> {
+        self.ready.poll()
+    }
     pub fn request_stop(&self) {
         self.stop.swap(true, Ordering::AcqRel);
     }
@@ -148,7 +178,7 @@ impl PubThreadHandle {
 /// `std::io::Error` 当 `thread::Builder::spawn` 失败。
 // 保留已批准的构造参数：独立预建 stop 与可选 Serial 诊断源不可隐式构造。
 #[allow(clippy::too_many_arguments)]
-pub fn spawn_pub_thread<F>(
+pub fn spawn_pub_thread<F, P>(
     cfg: PubThreadConfig,
     clock: Arc<dyn RobotClock>,
     publishers_factory: F,
@@ -159,7 +189,8 @@ pub fn spawn_pub_thread<F>(
     stop: Arc<AtomicBool>,
 ) -> std::io::Result<PubThreadHandle>
 where
-    F: FnOnce() -> IpcPublishers + Send + 'static,
+    F: FnOnce() -> P + Send + 'static,
+    P: Into<OwnedIpcPublishers>,
 {
     #[cfg(feature = "test-comm-fault-hook")]
     crate::comm_fault_hook::before_spawn("pub")?;
@@ -168,19 +199,19 @@ where
     let join_stop = Arc::clone(&stop);
     let join_metrics = Arc::clone(&metrics);
 
-    // 同步 factory 完成，避免外层测试在 publisher 还没 open 时就 load reader。
-    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<()>(0);
+    // 容量 1 的单次结果，OS spawn 成功后不等待工厂即可交还原句柄。
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
 
     let join = thread::Builder::new()
         .name("s0_pub_thread".into())
         .spawn(move || {
-            let pubs = publishers_factory();
-            let _ = ready_tx.send(());
+            let mut pubs: OwnedIpcPublishers = publishers_factory().into();
+            let _ = ready_tx.try_send(Ok(()));
             drop(ready_tx);
             run_loop(
                 &cfg,
                 clock.as_ref(),
-                pubs,
+                &mut pubs.publishers,
                 &rt_snap_rdr,
                 &state_rdr,
                 &rt_ctrl,
@@ -190,16 +221,11 @@ where
             );
         })?;
 
-    if ready_rx.recv().is_err() {
-        return Err(std::io::Error::other(
-            "pub_thread publishers_factory panicked before signalling ready",
-        ));
-    }
-
     Ok(PubThreadHandle {
         join,
         stop,
         metrics,
+        ready: crate::ipc_thread::ReadyReader::new(ready_rx),
     })
 }
 
@@ -211,7 +237,7 @@ where
 fn run_loop(
     cfg: &PubThreadConfig,
     clock: &dyn RobotClock,
-    mut pubs: IpcPublishers,
+    pubs: &mut IpcPublishers,
     rt_snap_rdr: &RtSnapshotReader<RtSnapshot>,
     state_rdr: &RtSnapshotReader<S0StateSnapshot>,
     rt_ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
@@ -479,7 +505,7 @@ fn drain_serial_diag(
             safety = ?ctrl.safety_state(),
             comm_level = ctrl.comm_level.load(Ordering::Acquire),
             rx_trust = ctrl.rx_trust.load(Ordering::Acquire),
-            inhibited = ctrl.inhibit.load(Ordering::Acquire),
+            inhibited = ctrl.inhibit_bits(),
             liveness = ctrl.liveness_counter.load(Ordering::Relaxed),
             "串口一秒摘要",
         );
@@ -502,6 +528,152 @@ mod tests {
 
     static TEST_SEQ: AtomicU32 = AtomicU32::new(0);
 
+    /// 真工厂可以阻塞或展开；父进程持有并有界回收测试子进程。
+    fn supervise_factory_test(name: &str) -> bool {
+        const KEY: &str = "ROBOT_PUB_OWNED_FACTORY_CHILD";
+        if std::env::var(KEY).as_deref() == Ok(name) {
+            let main = std::thread::current().id();
+            std::panic::set_hook(Box::new(move |info| {
+                eprintln!("publisher factory test: {info}");
+                if std::thread::current().id() == main {
+                    std::process::exit(101);
+                }
+            }));
+            return false;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let log_path = directory.path().join("child.log");
+        let log = std::fs::File::create(&log_path).unwrap();
+        let exact = format!("pub_thread::tests::{name}");
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &exact, "--nocapture"])
+            .env(KEY, name)
+            .stdout(log.try_clone().unwrap())
+            .stderr(log)
+            .spawn()
+            .unwrap();
+        let deadline = SystemClock.now().0 + 15_000_000_000;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if SystemClock.now().0 < deadline => {
+                    thread::sleep(Duration::from_millis(2));
+                }
+                other => {
+                    let _ = child.kill();
+                    let reap_deadline = SystemClock.now().0 + 2_000_000_000;
+                    while !matches!(child.try_wait(), Ok(Some(_))) {
+                        if SystemClock.now().0 >= reap_deadline {
+                            std::process::abort();
+                        }
+                        thread::sleep(Duration::from_millis(2));
+                    }
+                    panic!("工厂测试已 kill/reap：{other:?}");
+                }
+            }
+        };
+        let raw = std::fs::read_to_string(log_path).unwrap();
+        assert!(status.success(), "{raw}");
+        assert_eq!(
+            raw.lines()
+                .filter(|line| *line == "pub_factory_owned_verified")
+                .count(),
+            1,
+            "{raw}"
+        );
+        true
+    }
+
+    fn exercise_owned_factory(fail_after_first_publisher: bool) {
+        use crate::ipc_thread::ReadyState;
+        let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        let topics = fresh_topics();
+        let (_rt_pub, rt_reader) = RtSnapshotPublisher::new(RtSnapshot::default());
+        let (_state_pub, state_reader) = RtSnapshotPublisher::new(S0StateSnapshot::default());
+        let authority = robot_core::control_authority::ControlAuthority::new(
+            robot_core::control_authority::AuthorityInit::new(
+                false,
+                robot_core::executor_ctrl::OutputSafetyState::TorqueUnknown,
+                robot_core::control_authority::InhibitSet::EMPTY,
+            ),
+        )
+        .unwrap();
+        let ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new(Arc::new(
+            authority,
+        )));
+        let mut handle = spawn_pub_thread(
+            PubThreadConfig::default(),
+            Arc::new(SystemClock),
+            move || {
+                let node = NodeBuilder::new().create::<IxService>().unwrap();
+                let joint_state =
+                    make_pub::<markers::JointState>(&node, &topics.state, TopicClass::S0State)
+                        .unwrap();
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                assert!(
+                    !fail_after_first_publisher,
+                    "真实 partial publisher 工厂展开"
+                );
+                let heartbeat =
+                    make_pub::<markers::Heartbeat>(&node, &topics.heartbeat, TopicClass::Heartbeat)
+                        .unwrap();
+                OwnedIpcPublishers::new(
+                    IpcPublishers {
+                        joint_state,
+                        heartbeat,
+                    },
+                    node,
+                )
+            },
+            rt_reader,
+            state_reader,
+            ctrl,
+            None,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(matches!(handle.poll_ready(), ReadyState::Pending));
+        assert!(!handle.is_finished());
+        handle.request_stop();
+        release_tx.send(()).unwrap();
+        let deadline = SystemClock.now().0 + 2_000_000_000;
+        while !handle.is_finished() {
+            assert!(SystemClock.now().0 < deadline);
+            thread::sleep(Duration::from_millis(2));
+        }
+        let ready = matches!(handle.poll_ready(), ReadyState::Ready);
+        let disconnected = matches!(handle.poll_ready(), ReadyState::Disconnected);
+        let joined = handle.join();
+        assert_eq!(ready, !fail_after_first_publisher);
+        assert_eq!(disconnected, fail_after_first_publisher);
+        assert_eq!(joined.is_err(), fail_after_first_publisher);
+        // 原 panic payload 保至子进程退出，不以 Err 丢弃冒称正常回收。
+        let _joined = std::mem::ManuallyDrop::new(joined);
+        eprintln!("pub_factory_owned_verified");
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn factory_blocked_returns_owned_handle_before_ready() {
+        if supervise_factory_test("factory_blocked_returns_owned_handle_before_ready") {
+            return;
+        }
+        exercise_owned_factory(false);
+    }
+
+    #[test]
+    fn partial_factory_panic_returns_disconnected_and_original_join_error() {
+        if supervise_factory_test(
+            "partial_factory_panic_returns_disconnected_and_original_join_error",
+        ) {
+            return;
+        }
+        exercise_owned_factory(true);
+    }
+
     struct Topics {
         state: String,
         heartbeat: String,
@@ -516,23 +688,27 @@ mod tests {
         }
     }
 
+    struct Observers {
+        joint_state: Iceoryx2Subscriber<markers::JointState>,
+        heartbeat: Iceoryx2Subscriber<markers::Heartbeat>,
+        _node: iceoryx2::prelude::Node<IxService>,
+    }
+
     #[allow(clippy::type_complexity)]
     fn bring_up() -> (
         PubThreadHandle,
         RtSnapshotPublisher<RtSnapshot>,
         RtSnapshotPublisher<S0StateSnapshot>,
-        Iceoryx2Subscriber<markers::JointState>,
-        Iceoryx2Subscriber<markers::Heartbeat>,
+        Observers,
         Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     ) {
         let topics = fresh_topics();
         // subscriber 端 Node 放主线程（测试观察者）。
-        let sub_node: &'static _ =
-            Box::leak(Box::new(NodeBuilder::new().create::<IxService>().unwrap()));
+        let sub_node = NodeBuilder::new().create::<IxService>().unwrap();
         let js_sub =
-            make_sub::<markers::JointState>(sub_node, &topics.state, TopicClass::S0State).unwrap();
+            make_sub::<markers::JointState>(&sub_node, &topics.state, TopicClass::S0State).unwrap();
         let hb_sub =
-            make_sub::<markers::Heartbeat>(sub_node, &topics.heartbeat, TopicClass::Heartbeat)
+            make_sub::<markers::Heartbeat>(&sub_node, &topics.heartbeat, TopicClass::Heartbeat)
                 .unwrap();
 
         let (rt_pub, rt_rdr) = RtSnapshotPublisher::<RtSnapshot>::new(RtSnapshot::default());
@@ -556,16 +732,27 @@ mod tests {
             let heartbeat =
                 make_pub::<markers::Heartbeat>(&pub_node, &hb_topic, TopicClass::Heartbeat)
                     .unwrap();
-            Box::leak(Box::new(pub_node));
-            IpcPublishers {
-                joint_state,
-                heartbeat,
-            }
+            OwnedIpcPublishers::new(
+                IpcPublishers {
+                    joint_state,
+                    heartbeat,
+                },
+                pub_node,
+            )
         };
 
         // task-30 v9 / M7 阶段 5：默认共享 ctrl，safety_state = TorqueUnknown。
-        // 测试可在 store 后断言 wire S0SafetyState 同步。
-        let rt_ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
+        // wire 读取同一权限原子的投影，不再直接 store 第二安全状态。
+        let rt_ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new(Arc::new(
+            robot_core::control_authority::ControlAuthority::new(
+                robot_core::control_authority::AuthorityInit::new(
+                    false,
+                    robot_core::executor_ctrl::OutputSafetyState::TorqueUnknown,
+                    robot_core::control_authority::InhibitSet::EMPTY,
+                ),
+            )
+            .unwrap(),
+        )));
         let handle = spawn_pub_thread(
             cfg,
             clock,
@@ -577,7 +764,17 @@ mod tests {
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .unwrap();
-        (handle, rt_pub, state_pub, js_sub, hb_sub, rt_ctrl)
+        (
+            handle,
+            rt_pub,
+            state_pub,
+            Observers {
+                joint_state: js_sub,
+                heartbeat: hb_sub,
+                _node: sub_node,
+            },
+            rt_ctrl,
+        )
     }
 
     /// 轮询 `latest()` 直到拿到 `sample` 或超时 panic。
@@ -602,7 +799,7 @@ mod tests {
 
     #[test]
     fn spawn_then_stop_cleanly() {
-        let (handle, _rt_pub, _state_pub, _js_sub, _hb_sub, _rt_ctrl) = bring_up();
+        let (handle, _rt_pub, _state_pub, _observers, _rt_ctrl) = bring_up();
         thread::sleep(Duration::from_millis(30));
         handle.request_stop();
         handle.join().unwrap();
@@ -611,7 +808,7 @@ mod tests {
     /// RT snapshot → `pub_thread` → subscriber 能看到 `JointState` body 的字段。
     #[test]
     fn joint_state_reaches_subscriber() {
-        let (handle, mut rt_pub, _state_pub, mut js_sub, _hb_sub, _rt_ctrl) = bring_up();
+        let (handle, mut rt_pub, _state_pub, mut observers, _rt_ctrl) = bring_up();
 
         // 发一个带 3 关节的 RT snapshot
         let mut jsb = JointStateBuf {
@@ -629,7 +826,7 @@ mod tests {
         };
         rt_pub.publish(&snap).unwrap();
 
-        let lease = drain_latest(&mut js_sub, Duration::from_secs(2));
+        let lease = drain_latest(&mut observers.joint_state, Duration::from_secs(2));
         let view = lease.view().unwrap();
         let fb: FbJointState<'_> = view.body.get();
         assert_eq!(fb.layout_id(), PubThreadConfig::default().joint_layout_id);
@@ -644,7 +841,7 @@ mod tests {
         handle.join().unwrap();
     }
 
-    /// **task-30 v9 / M7 阶段 5 锁测**：`rt_ctrl.safety_state` 写入后，下一帧
+    /// 同一权限原子状态变化后，下一帧
     /// `JointState` 的 `s0_safety_state` wire 字段必须同步到对应值。覆盖
     /// 三个有代表性的状态：`StopCommanded`（emergency 后立即态）/
     /// `TorqueOffConfirmed`（confirm 成功）/ `AdapterUncertain`（confirm
@@ -654,7 +851,7 @@ mod tests {
         use robot_core::executor_ctrl::OutputSafetyState;
         use robot_msg::msg::{JointState as FbJointState, S0SafetyState as WireSafetyState};
 
-        let (handle, mut rt_pub, _state_pub, mut js_sub, _hb_sub, rt_ctrl) = bring_up();
+        let (handle, mut rt_pub, _state_pub, mut observers, rt_ctrl) = bring_up();
 
         let cases = [
             (
@@ -672,9 +869,28 @@ mod tests {
         ];
 
         for (i, (core_state, wire_expected)) in cases.iter().enumerate() {
-            rt_ctrl
-                .safety_state
-                .store(core_state.to_u8(), Ordering::Release);
+            use robot_core::control_authority::{SafetyOperation, SafetyTightening};
+            // 此用例只验证同权威到 wire 的映射；不宣称 adapter 或物理断扭验收。
+            match core_state {
+                OutputSafetyState::StopCommanded => {
+                    let _ = rt_ctrl.authority().estop();
+                }
+                OutputSafetyState::TorqueOffConfirmed => {
+                    let observed = rt_ctrl
+                        .authority()
+                        .begin_safety_observation(SafetyOperation::ConfirmOff);
+                    rt_ctrl
+                        .authority()
+                        .complete_safety_observation(observed)
+                        .unwrap();
+                }
+                OutputSafetyState::AdapterUncertain => {
+                    let _ = rt_ctrl
+                        .authority()
+                        .tighten_safety(SafetyTightening::AdapterUncertain);
+                }
+                _ => unreachable!("本表只有三个已列映射"),
+            }
             // 触发新一帧 publish（snap.tick_seq 唯一让 reader 能区分）。
             #[allow(clippy::cast_possible_truncation)]
             rt_pub
@@ -694,7 +910,7 @@ mod tests {
             let start = std::time::Instant::now();
             let mut got = false;
             while start.elapsed() < Duration::from_secs(2) {
-                if let Ok(Some(lease)) = js_sub.latest()
+                if let Ok(Some(lease)) = observers.joint_state.latest()
                     && let Ok(view) = lease.view()
                 {
                     let fb: FbJointState<'_> = view.body.get();
@@ -720,8 +936,8 @@ mod tests {
     /// S0 heartbeat 也按频率发出（`source_id` = 1，seq 单调）。
     #[test]
     fn s0_heartbeat_emitted_with_source_id_1() {
-        let (handle, _rt_pub, _state_pub, _js_sub, mut hb_sub, _rt_ctrl) = bring_up();
-        let lease = drain_latest(&mut hb_sub, Duration::from_secs(2));
+        let (handle, _rt_pub, _state_pub, mut observers, _rt_ctrl) = bring_up();
+        let lease = drain_latest(&mut observers.heartbeat, Duration::from_secs(2));
         let view = lease.view().unwrap();
         let fb = view.body.get();
         assert_eq!(fb.source_id(), 1);
@@ -734,7 +950,7 @@ mod tests {
     /// Metrics 有 `tick_count` 增长 + `joint_state_published` > 0。
     #[test]
     fn metrics_increment_during_run() {
-        let (handle, _rt_pub, _state_pub, _js_sub, _hb_sub, _rt_ctrl) = bring_up();
+        let (handle, _rt_pub, _state_pub, _observers, _rt_ctrl) = bring_up();
         thread::sleep(Duration::from_millis(60));
         let m = handle.metrics();
         assert!(
@@ -758,10 +974,9 @@ mod tests {
     #[test]
     fn mock_clock_frozen_suppresses_publishes() {
         let topics = fresh_topics();
-        let sub_node: &'static _ =
-            Box::leak(Box::new(NodeBuilder::new().create::<IxService>().unwrap()));
+        let sub_node = NodeBuilder::new().create::<IxService>().unwrap();
         let mut js_sub =
-            make_sub::<markers::JointState>(sub_node, &topics.state, TopicClass::S0State).unwrap();
+            make_sub::<markers::JointState>(&sub_node, &topics.state, TopicClass::S0State).unwrap();
 
         let (_rt_pub, rt_rdr) = RtSnapshotPublisher::<RtSnapshot>::new(RtSnapshot::default());
         let (_state_pub, state_rdr) =
@@ -787,13 +1002,24 @@ mod tests {
             let heartbeat =
                 make_pub::<markers::Heartbeat>(&pub_node, &hb_topic, TopicClass::Heartbeat)
                     .unwrap();
-            Box::leak(Box::new(pub_node));
-            IpcPublishers {
-                joint_state,
-                heartbeat,
-            }
+            OwnedIpcPublishers::new(
+                IpcPublishers {
+                    joint_state,
+                    heartbeat,
+                },
+                pub_node,
+            )
         };
-        let rt_ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new());
+        let rt_ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new(Arc::new(
+            robot_core::control_authority::ControlAuthority::new(
+                robot_core::control_authority::AuthorityInit::new(
+                    false,
+                    robot_core::executor_ctrl::OutputSafetyState::TorqueUnknown,
+                    robot_core::control_authority::InhibitSet::EMPTY,
+                ),
+            )
+            .unwrap(),
+        )));
         let handle = spawn_pub_thread(
             cfg,
             clock,
@@ -829,7 +1055,7 @@ mod tests {
     #[test]
     fn freeze_hook_holds_tick_count() {
         let sys_clock = SystemClock::new();
-        let (handle, _rt_pub, _state_pub, _js_sub, _hb_sub, _rt_ctrl) = bring_up();
+        let (handle, _rt_pub, _state_pub, _observers, _rt_ctrl) = bring_up();
         let metrics = Arc::clone(handle.metrics());
 
         // 等 worker 跑起来

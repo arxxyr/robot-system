@@ -80,3 +80,103 @@ mod tests {
         assert!(t0.elapsed() < Duration::from_millis(50));
     }
 }
+
+/// 外层持有的异步任务槽。等待 future 只借句柄，取消后保留原等待阶段和原计时器。
+pub(crate) struct TaskSlot<T> {
+    task: Option<tokio::task::JoinHandle<T>>,
+    joined: Option<Result<T, tokio::task::JoinError>>,
+    phase: TaskWaitPhase,
+    timed_out: bool,
+    timer: Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TaskWaitPhase {
+    Running,
+    Aborting,
+    Residual,
+    Joined,
+}
+impl<T> TaskSlot<T> {
+    pub(crate) fn new(task: tokio::task::JoinHandle<T>) -> Self {
+        Self {
+            task: Some(task),
+            joined: None,
+            phase: TaskWaitPhase::Running,
+            timed_out: false,
+            timer: None,
+        }
+    }
+    pub(crate) fn running_mut(&mut self) -> Option<&mut tokio::task::JoinHandle<T>> {
+        self.task.as_mut()
+    }
+    pub(crate) fn record_join(&mut self, result: Result<T, tokio::task::JoinError>) {
+        self.joined = Some(result);
+        self.task = None;
+        self.timer = None;
+        self.phase = TaskWaitPhase::Joined;
+    }
+    pub(crate) fn result(&self) -> Option<&Result<T, tokio::task::JoinError>> {
+        self.joined.as_ref()
+    }
+    pub(crate) fn timed_out(&self) -> bool {
+        self.timed_out
+    }
+    #[cfg(test)]
+    pub(crate) fn is_joined(&self) -> bool {
+        self.phase == TaskWaitPhase::Joined
+    }
+    #[cfg(test)]
+    pub(crate) fn is_residual(&self) -> bool {
+        self.phase == TaskWaitPhase::Residual
+    }
+    pub(crate) async fn join_unbounded(&mut self) {
+        if self.joined.is_some() {
+            return;
+        }
+        let result = self.task.as_mut().expect("原 blocking task 尚未回收").await;
+        self.record_join(result);
+    }
+    pub(crate) async fn join(
+        &mut self,
+        normal: std::time::Duration,
+        abort: std::time::Duration,
+    ) -> bool {
+        loop {
+            match self.phase {
+                TaskWaitPhase::Joined => return true,
+                TaskWaitPhase::Residual => return false,
+                TaskWaitPhase::Running | TaskWaitPhase::Aborting => {}
+            }
+            let duration = match self.phase {
+                TaskWaitPhase::Running => normal,
+                _ => abort,
+            };
+            if self.timer.is_none() {
+                self.timer = Some(Box::pin(tokio::time::sleep(duration)));
+            }
+            let completed = tokio::select! {
+                result = self.task.as_mut().expect("活任务槽必持原句柄") => Some(result),
+                () = self.timer.as_mut().expect("原阶段计时器已安装").as_mut() => None,
+            };
+            if let Some(result) = completed {
+                self.record_join(result);
+                return true;
+            }
+            match self.phase {
+                TaskWaitPhase::Running => {
+                    self.timed_out = true;
+                    self.task.as_ref().expect("原任务尚未回收").abort();
+                    self.phase = TaskWaitPhase::Aborting;
+                    self.timer = Some(Box::pin(tokio::time::sleep(abort)));
+                }
+                TaskWaitPhase::Aborting => {
+                    self.phase = TaskWaitPhase::Residual;
+                    return false;
+                }
+                TaskWaitPhase::Residual | TaskWaitPhase::Joined => {
+                    unreachable!("仅活等待阶段可以超时")
+                }
+            }
+        }
+    }
+}

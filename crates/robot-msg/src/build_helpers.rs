@@ -34,11 +34,12 @@ use crate::msg::{
     ClearEStopResponse, ClearEStopResponseArgs, ClearEStopStatus, ClearErrorRequest,
     ClearErrorRequestArgs, ClearErrorResponse, ClearErrorResponseArgs, ControlMode, EStopEvent,
     EStopEventArgs, GetTaskStatusRequest, GetTaskStatusRequestArgs, GetTaskStatusResponse,
-    GetTaskStatusResponseArgs, Heartbeat, HeartbeatArgs, InvokeTaskRequest, InvokeTaskRequestArgs,
-    InvokeTaskResponse, InvokeTaskResponseArgs, JointCommand, JointCommandArgs, JointState,
-    JointStateArgs, RpcRole, RpcStatus, S0ControlLink, S0FaultCode, S0Mode, S0OutputMode,
-    S0SafetyState, SetEnabledRequest, SetEnabledRequestArgs, SetEnabledResponse,
-    SetEnabledResponseArgs, SetEnabledStatus, SideEffect, StaleAction, TaskStateFb,
+    GetTaskStatusResponseArgs, Heartbeat, HeartbeatArgs, InvokeOutcome, InvokeTaskRequest,
+    InvokeTaskRequestArgs, InvokeTaskResponse, InvokeTaskResponseArgs, JointCommand,
+    JointCommandArgs, JointState, JointStateArgs, RpcRole, RpcStatus, S0ControlLink, S0FaultCode,
+    S0Mode, S0OutputMode, S0SafetyState, SetEnabledRequest, SetEnabledRequestArgs,
+    SetEnabledResponse, SetEnabledResponseArgs, SetEnabledStatus, SideEffect, StaleAction,
+    TaskStateFb,
 };
 
 // ============================================================================
@@ -665,6 +666,7 @@ pub fn build_invoke_task_response(
             accepted_at_ns,
             effect: SideEffect::Unknown,
             retired: false,
+            invoke_outcome: InvokeOutcome::Unknown,
         },
     );
     fbb.finish(resp, None);
@@ -673,6 +675,10 @@ pub fn build_invoke_task_response(
 
 /// 构造带事务元数据的控制响应；只编码调用方提供的实际结果。
 #[must_use]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "保持已批准的平坦构造接口，参数与完整协议字段逐项对应"
+)]
 pub fn build_invoke_task_response_typed(
     request_id: &str,
     status: ActionRpcStatus,
@@ -681,6 +687,7 @@ pub fn build_invoke_task_response_typed(
     accepted_at_ns: u64,
     effect: SideEffect,
     retired: bool,
+    invoke_outcome: InvokeOutcome,
 ) -> Vec<u8> {
     let mut fbb = FlatBufferBuilder::with_capacity(128);
     let request_id_off = fbb.create_string(request_id);
@@ -696,6 +703,7 @@ pub fn build_invoke_task_response_typed(
             accepted_at_ns,
             effect,
             retired,
+            invoke_outcome,
         },
     );
     fbb.finish(resp, None);

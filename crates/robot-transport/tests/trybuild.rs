@@ -61,9 +61,13 @@ fn compile_failures() {
         return;
     }
     let t = trybuild::TestCases::new();
-    t.compile_fail("tests/ui/view_outlives_lease.rs");
-    t.compile_fail("tests/ui/writer_use_after_publish.rs");
-    t.compile_fail("tests/ui/second_loan_before_publish.rs");
+    #[cfg(feature = "mock")]
+    {
+        t.compile_fail("tests/ui/view_outlives_lease.rs");
+        t.compile_fail("tests/ui/writer_use_after_publish.rs");
+        t.compile_fail("tests/ui/second_loan_before_publish.rs");
+        t.compile_fail("tests/ui/writer_use_after_publish_typed.rs");
+    }
     // S48 A3b：snapshot 写端所有权与固定 Words 契约。
     t.compile_fail("tests/ui/snapshot_publisher_not_clone.rs");
     t.compile_fail("tests/ui/snapshot_publish_through_shared_ref.rs");

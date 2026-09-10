@@ -187,7 +187,16 @@ fn rt_guard_soak_no_alloc_no_arc_for_one_minute() {
     // soak 测试只验 alloc / Arc 守卫，**不**驱动 emergency / normal action；
     // 默认 OutputPolicy=Disabled 跳 write_command（仍 read_state + publish）。
     // 如果想覆盖 write_command 路径，把 policy 切到 ActiveForward。
-    let rt_ctrl = Arc::new(HardRtCtrlInner::new());
+    let rt_ctrl = Arc::new(HardRtCtrlInner::new(Arc::new(
+        robot_core::control_authority::ControlAuthority::new(
+            robot_core::control_authority::AuthorityInit::new(
+                false,
+                robot_core::executor_ctrl::OutputSafetyState::TorqueUnknown,
+                robot_core::control_authority::InhibitSet::EMPTY,
+            ),
+        )
+        .unwrap(),
+    )));
     rt_ctrl.policy.store(
         OutputPolicy::ActiveForward.to_u8(),
         std::sync::atomic::Ordering::Release,
@@ -210,9 +219,14 @@ fn rt_guard_soak_no_alloc_no_arc_for_one_minute() {
     }
 
     handle.request_stop();
-    handle.join().expect(
+    let executor_exit = handle.join().expect(
         "RT thread panicked (likely from rt_guard: heap alloc / RtArc::clone / RtArc::drop \
          inside rt_entry! scope)",
+    );
+
+    assert!(
+        !executor_exit.has_pending_enable(),
+        "长测退出必须没有原 Enable 执行残件"
     );
 
     // ---- 验证 metrics ----

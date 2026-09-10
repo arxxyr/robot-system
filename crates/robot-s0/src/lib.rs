@@ -65,7 +65,6 @@ pub mod io_thread;
 pub mod ipc_pending;
 pub(crate) mod ipc_runtime;
 pub mod ipc_thread;
-pub mod ipc_tick;
 // S48 A3d / W1：latch 目标稳定锁、共享名称校验与绑定目录 fd 的数据对象检查。
 pub mod latch_lock;
 // S48 A3e / W2a：唯一磁盘 writer 纯模块（义务 / 进度 / 公告 / 协议 / 本体 / 配对 / 监督）；无生产调用方。
@@ -130,8 +129,6 @@ mod post_e_acceptance;
 mod post_e_convergence_acceptance;
 #[cfg(test)]
 mod post_e_diag_acceptance;
-#[cfg(test)]
-mod post_e_ipc_acceptance;
 #[cfg(test)]
 mod test_util;
 

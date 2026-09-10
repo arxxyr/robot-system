@@ -4,7 +4,7 @@ use super::{TRACE_CAPACITY, TraceEvent, TraceKind, TracePage};
 
 #[test]
 fn arm_inside_real_normal_lease_waits_for_serial_boundary() {
-    use robot_core::serial_services::{BusOpClass, PreemptProbe};
+    use robot_core::serial_services::{BusOpClass, LeasedPreemptProbe};
     use robot_core::time::{MockClock, MonoRawNs};
     use std::sync::Arc;
 
@@ -13,14 +13,22 @@ fn arm_inside_real_normal_lease_waits_for_serial_boundary() {
         super::install_from_env().unwrap();
         let path = std::env::var_os("ROBOT_TEST_TRACE_PATH").unwrap();
         let reader = TracePage::open(std::path::Path::new(&path)).unwrap();
-        let ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new_serial());
+        let ctrl = Arc::new(crate::hard_rt_ctrl::HardRtCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(false),
+        ));
         let clock = Arc::new(MockClock::default());
         let probe = crate::serial_preempt::SerialPreemptProbe::new(clock, ctrl.clone());
-        probe.set_context(BusOpClass::PeriodicRead, 0, MonoRawNs(1_000_000), true);
-        assert_eq!(probe.begin_transaction(BusOpClass::PeriodicRead), Ok(()));
+        probe.set_context(
+            BusOpClass::PeriodicRead,
+            crate::serial_preempt::InstalledIntent::PeriodicRead,
+            0,
+            MonoRawNs(1_000_000),
+            true,
+        );
+        let lease = probe.begin_leased(BusOpClass::PeriodicRead).unwrap();
         super::request_boundary(10072, super::SampleMode::ArmInflight, 1).unwrap();
         let during_lease = reader.armed_seq();
-        probe.finish_transaction(BusOpClass::PeriodicRead);
+        probe.finish_leased(lease);
         let events = reader.drain(TRACE_CAPACITY);
         assert_eq!(during_lease, 0, "在途事务结束前不得切换采样 epoch");
         assert!(events.is_empty(), "旧 epoch 的 release 不得进入新样本");
@@ -29,7 +37,7 @@ fn arm_inside_real_normal_lease_waits_for_serial_boundary() {
         let ready = reader.boundary_snapshot().unwrap();
         assert_eq!(ready.receipt_seq, 10072);
         assert_eq!(ready.status, super::SampleStatus::Ready);
-        assert_eq!(probe.begin_transaction(BusOpClass::PeriodicRead), Ok(()));
+        let lease = probe.begin_leased(BusOpClass::PeriodicRead).unwrap();
         super::request_boundary(10073, super::SampleMode::Disarm, 3).unwrap();
         assert!(!super::serial_service_boundary(&ctrl, 4));
         assert_eq!(
@@ -37,7 +45,7 @@ fn arm_inside_real_normal_lease_waits_for_serial_boundary() {
             10072,
             "真实旧 lease 在途时 disarm 也须等待"
         );
-        probe.finish_transaction(BusOpClass::PeriodicRead);
+        probe.finish_leased(lease);
         assert!(!super::serial_service_boundary(&ctrl, 5));
         assert_eq!(reader.armed_seq(), 0);
         let disarmed = reader.boundary_snapshot().unwrap();
@@ -264,7 +272,9 @@ fn boundary_request_cannot_overwrite_pending_or_reuse_a_completed_sequence() {
     use super::{SampleMode, SampleStatus};
     let directory = tempfile::tempdir().unwrap();
     let page = TracePage::create(&directory.path().join("trace")).unwrap();
-    let ctrl = crate::hard_rt_ctrl::HardRtCtrlInner::new_serial();
+    let ctrl = crate::hard_rt_ctrl::HardRtCtrlInner::new_serial(
+        crate::hard_rt_ctrl::test_authority(false),
+    );
     page.request_boundary(21, SampleMode::ArmInflight, 1)
         .unwrap();
     assert!(page.request_boundary(22, SampleMode::Disarm, 999).is_err());
@@ -288,7 +298,9 @@ fn boundary_request_expiry_does_not_arm_after_a_late_serial_tick() {
     use super::{SampleFailure, SampleMode};
     let directory = tempfile::tempdir().unwrap();
     let page = TracePage::create(&directory.path().join("trace")).unwrap();
-    let ctrl = crate::hard_rt_ctrl::HardRtCtrlInner::new_serial();
+    let ctrl = crate::hard_rt_ctrl::HardRtCtrlInner::new_serial(
+        crate::hard_rt_ctrl::test_authority(false),
+    );
     page.request_boundary(31, SampleMode::ArmIdle, 17).unwrap();
     assert!(!page.service_boundary(&ctrl, 1_000_000_017));
     let result = page.boundary_snapshot().unwrap();

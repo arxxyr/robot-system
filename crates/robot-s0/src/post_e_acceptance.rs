@@ -24,8 +24,9 @@ fn adapter_error_all_bytes_preserve_wire_contract() {
         AdapterErr::PreemptedByEmergency,
         AdapterErr::SafetyLatched,
         AdapterErr::AbortedByTimeout,
+        AdapterErr::AuthorityRevoked,
     ];
-    for (raw, expected) in (0_u8..=6).zip(legacy) {
+    for (raw, expected) in (0_u8..=7).zip(legacy) {
         assert_eq!(AdapterErr::from_u8(raw), expected, "旧协议字节 {raw}");
         assert_eq!(expected.to_u8(), raw, "旧协议编码 {raw}");
     }
@@ -49,7 +50,7 @@ fn adapter_error_all_bytes_preserve_wire_contract() {
 
     for raw in 0_u8..=u8::MAX {
         let expected = match raw {
-            0..=6 | 0x40..=0x49 => raw,
+            0..=7 | 0x40..=0x49 => raw,
             0x4a..=0x7f => 0x7f,
             _ => 0,
         };
@@ -98,7 +99,9 @@ fn abort_tags_reject_mixed_bits_instead_of_masking_to_a_sequence() {
 /// 同一底层控制类型必须只在 `SerialRT` 收紧到 40 位。
 #[test]
 fn sequence_exhaustion_is_serial_only_and_preserves_hard_rt_responses() {
-    let serial = Arc::new(HardRtCtrlInner::new_serial());
+    let serial = Arc::new(HardRtCtrlInner::new_serial(
+        crate::hard_rt_ctrl::test_authority(true),
+    ));
     let serial_client = HardRtCtrlClient::new(Arc::clone(&serial));
     serial
         .seq_counter
@@ -124,7 +127,9 @@ fn sequence_exhaustion_is_serial_only_and_preserves_hard_rt_responses() {
         NormalReqStatus::Unsupported(_)
     ));
 
-    let hard = Arc::new(HardRtCtrlInner::new());
+    let hard = Arc::new(HardRtCtrlInner::new(crate::hard_rt_ctrl::test_authority(
+        false,
+    )));
     let hard_client = HardRtCtrlClient::new(Arc::clone(&hard));
     hard.seq_counter.store((1_u64 << 40) - 1, Ordering::Release);
     for expected in [(1_u64 << 40) - 1, 1_u64 << 40, (1_u64 << 40) + 1] {
@@ -156,96 +161,150 @@ fn sequence_exhaustion_is_serial_only_and_preserves_hard_rt_responses() {
         hard_client.safety_stop();
         assert_eq!(
             hard_client.poll_last_normal_resp(expected),
+            None,
+            "停止请求不伪造执行退休"
+        );
+        let raw = hard.pending_normal.swap(0, Ordering::AcqRel);
+        let original = hard.decode_pending(raw).unwrap().unwrap().action;
+        assert_eq!(original.seq, expected);
+        crate::serial_convergence::publish_completion(
+            &hard,
+            original,
+            AdapterResp::Err(AdapterErr::PreemptedByEmergency),
+        );
+        assert_eq!(
+            hard_client.poll_last_normal_resp(expected),
             Some(AdapterResp::Err(AdapterErr::PreemptedByEmergency))
         );
         assert_eq!(hard.pending_normal.load(Ordering::Acquire), 0);
     }
 }
 
-/// D13 的已发布请求优先返回 Merged，但不改变权威严重度或在途 IO 位。
+/// 同一真实 A2 word 的六安全初态、在途租约及已发布请求组合。
 #[test]
-fn estop_word_preserves_severity_while_existing_requests_merge() {
-    for state in 0_u32..=5 {
-        for flags in 0_u32..8 {
-            let inner = Arc::new(HardRtCtrlInner::new_serial());
-            let client = HardRtCtrlClient::new(Arc::clone(&inner));
-            let unrelated = (flags << 8) | (1_u32 << 29);
-            inner
-                .safety_word
-                .store(state | unrelated, Ordering::Release);
-            inner.policy.store(2, Ordering::Release);
-            inner.emergency_action.store(0, Ordering::Release);
-            let (expected_state, expected_outcome) = match state {
-                0 | 1 | 3 => (2, EStopOutcome::StopIssued),
-                2 => (2, EStopOutcome::Merged),
-                4 | 5 => (state, EStopOutcome::LatchOnly),
-                _ => unreachable!(),
-            };
-            let expected_outcome = match flags & 1 {
-                1 => EStopOutcome::Merged,
-                _ => expected_outcome,
-            };
-            assert_eq!(
-                client.estop_monotonic(),
-                expected_outcome,
-                "state={state} flags={flags}"
-            );
-            assert_eq!(
-                inner.safety_word.load(Ordering::Acquire),
-                unrelated | expected_state | (1 << 8) | (1 << 9)
-            );
-            assert!(inner.safety_latched.load(Ordering::Acquire));
-            assert_eq!(inner.estop_requests.load(Ordering::Acquire), 1);
-            assert_eq!(inner.policy.load(Ordering::Acquire), 2);
-            assert_eq!(inner.emergency_action.load(Ordering::Acquire), 0);
+fn estop_preserves_severity_and_real_inflight_lease_while_requests_merge() {
+    use robot_core::control_authority::{
+        AuthorityInit, ControlAuthority, InhibitSet, NormalIoIntent,
+    };
+    for state in 0_u8..=5 {
+        for active in [false, true] {
+            for already_pending in [false, true] {
+                let authority = Arc::new(
+                    ControlAuthority::new(AuthorityInit::new(
+                        false,
+                        OutputSafetyState::from_u8(state),
+                        InhibitSet::EMPTY,
+                    ))
+                    .unwrap(),
+                );
+                let lease = active.then(|| {
+                    authority
+                        .acquire_normal_io(NormalIoIntent::PeriodicRead)
+                        .unwrap()
+                });
+                let inner = Arc::new(HardRtCtrlInner::new_serial(authority.clone()));
+                let client = HardRtCtrlClient::new(inner.clone());
+                if already_pending {
+                    let _ = client.estop_monotonic();
+                }
+                let before = authority.snapshot();
+                let expected = if already_pending {
+                    EStopOutcome::Merged
+                } else {
+                    match state {
+                        0 | 1 | 3 => EStopOutcome::StopIssued,
+                        2 => EStopOutcome::Merged,
+                        4 | 5 => EStopOutcome::LatchOnly,
+                        _ => unreachable!(),
+                    }
+                };
+                assert_eq!(client.estop_monotonic(), expected);
+                let after = authority.snapshot();
+                assert!(
+                    after.latch
+                        && after.disabled
+                        && after.serial_estop_pending
+                        && after.ipc_estop_notice
+                );
+                assert_eq!(after.normal_io_active, active);
+                assert_eq!(after.inhibits, before.inhibits);
+                assert_eq!(
+                    after.safety,
+                    match state {
+                        4 | 5 => OutputSafetyState::from_u8(state),
+                        _ => OutputSafetyState::StopCommanded,
+                    }
+                );
+                if let Some(lease) = lease {
+                    assert!(authority.release_normal_io(lease).unwrap().superseded);
+                }
+            }
         }
     }
 }
 
-/// 两种原子全序都由明确调用顺序建立，不依赖 sleep 或线程调度概率。
 #[test]
 fn normal_acquire_and_estop_have_two_distinct_valid_orders() {
-    let before = Arc::new(HardRtCtrlInner::new_serial());
-    let before_client = HardRtCtrlClient::new(Arc::clone(&before));
-    assert_eq!(before_client.estop_monotonic(), EStopOutcome::StopIssued);
-    assert!(!before.try_acquire_normal_io());
-    assert_eq!(before.safety_word.load(Ordering::Acquire) & (1 << 10), 0);
-
-    let during = Arc::new(HardRtCtrlInner::new_serial());
-    let during_client = HardRtCtrlClient::new(Arc::clone(&during));
-    assert!(during.try_acquire_normal_io());
-    assert!(!during.try_acquire_normal_io());
-    assert_eq!(during_client.estop_monotonic(), EStopOutcome::StopIssued);
-    assert_ne!(during.safety_word.load(Ordering::Acquire) & (1 << 10), 0);
-    during.release_normal_io();
-    assert_eq!(during.safety_word.load(Ordering::Acquire) & (1 << 10), 0);
-    assert!(!during.try_acquire_normal_io());
-    assert_ne!(during.safety_word.load(Ordering::Acquire) & (1 << 8), 0);
-    assert_ne!(during.safety_word.load(Ordering::Acquire) & (1 << 9), 0);
+    use robot_core::control_authority::NormalIoIntent;
+    let before = Arc::new(HardRtCtrlInner::new_serial(
+        crate::hard_rt_ctrl::test_authority(false),
+    ));
+    let client = HardRtCtrlClient::new(before.clone());
+    assert_eq!(client.estop_monotonic(), EStopOutcome::StopIssued);
+    assert!(
+        before
+            .authority()
+            .acquire_normal_io(NormalIoIntent::PeriodicRead)
+            .is_err()
+    );
+    assert!(!before.authority().snapshot().normal_io_active);
+    let during = Arc::new(HardRtCtrlInner::new_serial(
+        crate::hard_rt_ctrl::test_authority(false),
+    ));
+    let client = HardRtCtrlClient::new(during.clone());
+    let lease = during
+        .authority()
+        .acquire_normal_io(NormalIoIntent::PeriodicRead)
+        .unwrap();
+    assert!(
+        during
+            .authority()
+            .acquire_normal_io(NormalIoIntent::PeriodicRead)
+            .is_err()
+    );
+    assert_eq!(client.estop_monotonic(), EStopOutcome::StopIssued);
+    assert!(during.authority().snapshot().normal_io_active);
+    assert!(
+        during
+            .authority()
+            .release_normal_io(lease)
+            .unwrap()
+            .superseded
+    );
+    assert!(!during.authority().snapshot().normal_io_active);
+    assert!(during.authority().snapshot().serial_estop_pending);
+    assert!(during.authority().snapshot().ipc_estop_notice);
 }
 
 #[test]
-fn safety_observers_choose_their_ctrl_kind_even_when_sources_disagree() {
-    for (legacy, serial) in [(3_u8, 5_u8), (5, 3)] {
-        let hard = Arc::new(HardRtCtrlInner::new());
-        let soft = Arc::new(HardRtCtrlInner::new_serial());
-        for inner in [&hard, &soft] {
-            inner.safety_state.store(legacy, Ordering::Release);
-            inner
-                .safety_word
-                .store(u32::from(serial) | (3 << 8), Ordering::Release);
-        }
-        assert_eq!(hard.safety_state(), OutputSafetyState::from_u8(legacy));
-        assert_eq!(soft.safety_state(), OutputSafetyState::from_u8(serial));
+fn safety_observers_borrow_only_the_injected_authority_for_both_ctrl_kinds() {
+    let authority = crate::hard_rt_ctrl::test_authority(false);
+    let unrelated = crate::hard_rt_ctrl::test_authority(false);
+    let hard = Arc::new(HardRtCtrlInner::new(authority.clone()));
+    let serial = Arc::new(HardRtCtrlInner::new_serial(authority.clone()));
+    let _ = authority.tighten_safety(robot_core::control_authority::SafetyTightening::StopFailed);
+    for inner in [hard, serial] {
+        assert!(Arc::ptr_eq(inner.authority(), &authority));
+        assert_eq!(inner.safety_state(), OutputSafetyState::StopFailed);
         assert_eq!(
-            HardRtCtrlClient::new(hard).safety_state(),
-            OutputSafetyState::from_u8(legacy)
-        );
-        assert_eq!(
-            HardRtCtrlClient::new(soft).safety_state(),
-            OutputSafetyState::from_u8(serial)
+            HardRtCtrlClient::new(inner).safety_state(),
+            OutputSafetyState::StopFailed
         );
     }
+    assert_eq!(
+        unrelated.snapshot().safety,
+        OutputSafetyState::TorqueOffConfirmed
+    );
 }
 
 #[test]
@@ -344,25 +403,30 @@ fn diag_safe_api_accounts_for_concurrent_callers_without_torn_records() {
 }
 
 #[test]
-fn estop_cas_retry_observes_a_new_stop_failure_without_downgrading_it() {
-    for initial in [1_u32, 2] {
-        let inner = Arc::new(HardRtCtrlInner::new_serial());
-        let client = HardRtCtrlClient::new(Arc::clone(&inner));
+fn estop_preserves_a_real_stop_failure_with_an_original_lease() {
+    use robot_core::control_authority::{NormalIoIntent, SafetyTightening};
+    let inner = Arc::new(HardRtCtrlInner::new_serial(
+        crate::hard_rt_ctrl::test_authority(false),
+    ));
+    let client = HardRtCtrlClient::new(inner.clone());
+    let lease = inner
+        .authority()
+        .acquire_normal_io(NormalIoIntent::PeriodicRead)
+        .unwrap();
+    let _ = inner
+        .authority()
+        .tighten_safety(SafetyTightening::StopFailed);
+    assert_eq!(client.estop_monotonic(), EStopOutcome::LatchOnly);
+    assert_eq!(inner.safety_state(), OutputSafetyState::StopFailed);
+    assert!(inner.authority().snapshot().normal_io_active);
+    assert!(
         inner
-            .safety_word
-            .store(initial | (1 << 10), Ordering::Release);
-        let mut calls = 0;
-        let outcome = client.estop_monotonic_before_cas(|| {
-            calls += 1;
-            if calls == 1 {
-                inner.set_serial_safety(OutputSafetyState::StopFailed);
-            }
-        });
-        assert_eq!(calls, 2, "第一次 CAS 必须因旧状态变化失败并重读");
-        assert_eq!(outcome, EStopOutcome::LatchOnly);
-        assert_eq!(inner.safety_word.load(Ordering::Acquire), 4 | (7 << 8));
-        assert_eq!(inner.estop_requests.load(Ordering::Acquire), 1);
-    }
+            .authority()
+            .release_normal_io(lease)
+            .unwrap()
+            .superseded
+    );
+    assert_eq!(inner.estop_requests.load(Ordering::Acquire), 1);
 }
 
 #[test]
@@ -394,7 +458,9 @@ fn policy_cas_never_overwrites_a_concurrent_disabled_commit() {
 
 #[test]
 fn each_estop_consumer_claims_only_its_own_bit_and_allows_republication() {
-    let inner = Arc::new(HardRtCtrlInner::new_serial());
+    let inner = Arc::new(HardRtCtrlInner::new_serial(
+        crate::hard_rt_ctrl::test_authority(true),
+    ));
     let client = HardRtCtrlClient::new(Arc::clone(&inner));
     assert_eq!(client.estop_monotonic(), EStopOutcome::StopIssued);
     assert!(inner.claim_serial_estop());
@@ -424,7 +490,9 @@ fn retiring_one_abort_request_cannot_erase_a_new_request() {
             NormalAbortTarget::Unsubmitted,
         ),
     ] {
-        let inner = Arc::new(HardRtCtrlInner::new_serial());
+        let inner = Arc::new(HardRtCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(true),
+        ));
         let client = HardRtCtrlClient::new(Arc::clone(&inner));
         client.abort_pending_normal(first);
         let observed = inner.abort_request.load(Ordering::Acquire);
@@ -444,18 +512,16 @@ fn mailbox_generation_binds_details_and_old_ack_cannot_release_new_fault() {
     use crate::hard_rt_ctrl::FaultOrigin;
     use crate::state_machine::FaultCode;
 
-    let inner = HardRtCtrlInner::new_serial();
+    let inner = HardRtCtrlInner::new_serial(crate::hard_rt_ctrl::test_authority(true));
     assert!(inner.mailbox_snapshot().is_none());
-    assert_eq!(
-        inner.publish_fault(
-            OutputSafetyState::StopCommanded,
-            1,
-            FaultCode::CommFault,
-            9,
-            FaultOrigin::PendingTimeout
-        ),
-        Some(1)
+    let (first_generation, first_epoch) = inner.publish_fault_with_epoch(
+        OutputSafetyState::StopCommanded,
+        1,
+        FaultCode::CommFault,
+        9,
+        FaultOrigin::PendingTimeout,
     );
+    assert_eq!(first_generation, Some(1));
     let first_word = 1_u64 | (7 << 32) | (9 << 40) | (2 << 48);
     assert_eq!(inner.fault_mailbox.load(Ordering::Acquire), first_word);
     let old = inner.mailbox_snapshot().unwrap();
@@ -464,27 +530,23 @@ fn mailbox_generation_binds_details_and_old_ack_cannot_release_new_fault() {
         (1, FaultCode::CommFault, 9, FaultOrigin::PendingTimeout)
     );
 
-    assert_eq!(
-        inner.publish_fault(
-            OutputSafetyState::StopFailed,
-            4,
-            FaultCode::SafetyStopFailed,
-            0x89,
-            FaultOrigin::Confirm
-        ),
-        Some(2)
+    let (second_generation, second_epoch) = inner.publish_fault_with_epoch(
+        OutputSafetyState::StopFailed,
+        4,
+        FaultCode::SafetyStopFailed,
+        0x89,
+        FaultOrigin::Confirm,
     );
+    assert_eq!(second_generation, Some(2));
     let second_word = 2_u64 | (6 << 32) | (0x89 << 40) | (4 << 48);
     assert_eq!(inner.fault_mailbox.load(Ordering::Acquire), second_word);
     inner.ack_fault(old.generation);
-    assert!(!inner.clear_acked_fault_pending());
-    assert_eq!(
-        inner.inhibit.load(Ordering::Acquire),
-        (1 << 5) | (1 << 4) | 5
-    );
+    assert!(inner.clear_acked_fault_pending_at(first_epoch).is_none());
+    assert!(inner.clear_acked_fault_pending_at(second_epoch).is_none());
+    assert_eq!(inner.inhibit_bits(), (1 << 5) | (1 << 4) | 5);
     inner.ack_fault(2);
-    assert!(inner.clear_acked_fault_pending());
-    assert_eq!(inner.inhibit.load(Ordering::Acquire), (1 << 5) | 5);
+    assert!(inner.clear_acked_fault_pending_at(second_epoch).is_some());
+    assert_eq!(inner.inhibit_bits(), (1 << 5) | 5);
     assert_eq!(inner.safety_state(), OutputSafetyState::StopFailed);
 
     inner
@@ -501,5 +563,5 @@ fn mailbox_generation_binds_details_and_old_ack_cannot_release_new_fault() {
         None
     );
     assert_eq!(inner.mailbox_snapshot().unwrap().generation, u32::MAX - 1);
-    assert_ne!(inner.inhibit.load(Ordering::Acquire) & 4, 0);
+    assert_ne!(inner.inhibit_bits() & 4, 0);
 }

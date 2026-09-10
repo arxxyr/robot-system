@@ -18,7 +18,10 @@ use crate::hard_rt_ctrl::{
 };
 use crate::state_machine::FaultCode;
 
-use crate::serial_preempt::SerialPreemptProbe;
+use crate::serial_preempt::{InstalledIntent, SerialPreemptProbe};
+use robot_core::control_authority::{
+    InhibitReason, PermissionEpoch, SafetyObservation, SafetyOperation,
+};
 
 const CALL_BUDGET_NS: u64 = 50_000_000;
 const CONFIRM_BUDGET_NS: u64 = 250_000_000;
@@ -30,6 +33,20 @@ pub(crate) enum ConvergeContext {
     Fault,
     Emergency,
     Preflight,
+    Compensation,
+}
+
+/// 只表示本次控制路径已经安排物理停止；不能证明 Off、ACK 或事务退休。
+/// 构造封闭在实际 claim / timeout / fault 处理内，None 作用域是设备级急停。
+#[derive(Debug)]
+pub(crate) struct EnableRecoveryArranged {
+    seq: Option<u64>,
+}
+
+impl EnableRecoveryArranged {
+    pub(crate) fn covers(&self, seq: u64) -> bool {
+        self.seq.is_none_or(|arranged| arranged == seq)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -142,6 +159,8 @@ pub(crate) struct SerialConvergence {
     still_on: u8,
     last_kind: CommErrorKind,
     generation_saturated: bool,
+    // 仅本轮真实观测/失败提交及其后续单次解除产生的 epoch；陈旧时不重采。
+    release_epoch: Option<PermissionEpoch>,
     counters: ConvergeCounters,
 }
 
@@ -166,6 +185,7 @@ impl SerialConvergence {
             still_on: 0,
             last_kind: CommErrorKind::Unknown,
             generation_saturated: false,
+            release_epoch: None,
             counters: ConvergeCounters::default(),
         }
     }
@@ -210,7 +230,52 @@ impl SerialConvergence {
     }
 
     pub(crate) fn normal_io_allowed(&self, ctrl: &HardRtCtrlInner) -> bool {
-        self.phase == ConvergePhase::Idle && ctrl.inhibit.load(Ordering::Acquire) == 0
+        self.phase == ConvergePhase::Idle && ctrl.inhibit_bits() == 0
+    }
+
+    /// 仅在本次实际操作已经新建或合并停止责任后调用，不能用旧完成轮构造。
+    fn physical_recovery(&self, seq: Option<u64>) -> Option<EnableRecoveryArranged> {
+        match self.phase {
+            ConvergePhase::StopIssue
+            | ConvergePhase::StopRetry
+            | ConvergePhase::Connect
+            | ConvergePhase::Confirm
+                if self
+                    .round
+                    .as_ref()
+                    .is_some_and(|round| round.completed_safety.is_none()) =>
+            {
+                Some(EnableRecoveryArranged { seq })
+            }
+            _ => None,
+        }
+    }
+
+    /// 当前 Enable 的补偿复用唯一物理收敛机，不创造故障、急停或连接操作。
+    pub(crate) fn ensure_enable_compensation(
+        &mut self,
+        ctrl: &HardRtCtrlInner,
+        diag: &dyn DiagSink,
+        now: MonoRawNs,
+    ) {
+        if matches!(
+            ctrl.safety_state(),
+            OutputSafetyState::StopFailed | OutputSafetyState::AdapterUncertain
+        ) {
+            return;
+        }
+        if self.phase == ConvergePhase::Idle {
+            self.round = Some(ConvergeRound::new(ConvergeContext::Compensation));
+            self.stop_attempt = 0;
+            self.still_on = 0;
+            self.last_kind = CommErrorKind::Unknown;
+            self.connect_pending = false;
+            self.release_epoch = None;
+            ctrl.tighten_inhibits(inhibit::CONVERGING);
+            self.transition(ConvergePhase::StopIssue, diag, now);
+        }
+        // 活动轮已持有停止责任；不得重置任何尝试数、generation、截止或原观测。
+        // AwaitAck / sticky 终态也不能重开物理预算。
     }
 
     fn transition(&mut self, phase: ConvergePhase, diag: &dyn DiagSink, now: MonoRawNs) {
@@ -246,6 +311,43 @@ impl SerialConvergence {
         diag: &dyn DiagSink,
         now: MonoRawNs,
     ) {
+        let _ = self.enter_fault_impl(code, detail, origin, ctrl, diag, now);
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "沿原故障输入追加原 seq 关联，同次安排才返回恢复事实"
+    )]
+    pub(crate) fn enter_fault_arranged(
+        &mut self,
+        code: FaultCode,
+        detail: u8,
+        origin: FaultOrigin,
+        ctrl: &HardRtCtrlInner,
+        diag: &dyn DiagSink,
+        now: MonoRawNs,
+        seq: u64,
+    ) -> Option<EnableRecoveryArranged> {
+        if self.enter_fault_impl(code, detail, origin, ctrl, diag, now) {
+            self.physical_recovery(Some(seq))
+        } else {
+            None
+        }
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "故障去重、原代次发布与停止轮接管在同一路径判定，不凭旧轮生成事实"
+    )]
+    fn enter_fault_impl(
+        &mut self,
+        code: FaultCode,
+        detail: u8,
+        origin: FaultOrigin,
+        ctrl: &HardRtCtrlInner,
+        diag: &dyn DiagSink,
+        now: MonoRawNs,
+    ) -> bool {
         if code == FaultCode::CommFault {
             self.observe_comm(CommErrorKind::from_u8(detail), ctrl, diag, now);
             ctrl.comm_level.store(2, Ordering::Release);
@@ -271,7 +373,7 @@ impl SerialConvergence {
                     fault.detail = detail;
                 }
             }
-            return;
+            return false;
         }
 
         // 新 Emergency 轮的首个故障有独立 ACK 义务；旧轮次已 ACK 不可吞掉它。
@@ -297,7 +399,13 @@ impl SerialConvergence {
             FaultCode::SafetyStopFailed => inhibit::STOP_FAILED,
             _ => inhibit::ADAPTER_FAULT,
         };
-        let generation = ctrl.publish_fault(state, reasons, code, detail, origin);
+        if ssf.is_none() {
+            // 本轮收紧必须先于故障发布，后者返回最后一次自有 CAS 的释放代次。
+            ctrl.tighten_inhibits(inhibit::CONVERGING);
+        }
+        let (generation, publication_epoch) =
+            ctrl.publish_fault_with_epoch(state, reasons, code, detail, origin);
+        self.release_epoch = Some(publication_epoch);
         self.fault = Some(ActiveFault {
             code,
             detail,
@@ -330,8 +438,8 @@ impl SerialConvergence {
                 SafetyStopFailDetail::AdapterUncertain { .. } => self.counters.uncertain += 1,
                 _ => self.counters.failed += 1,
             }
-            ctrl.inhibit
-                .fetch_and(!inhibit::CONVERGING, Ordering::Release);
+            self.release_epoch =
+                release_inhibit_at(ctrl, InhibitReason::Converging, publication_epoch);
             self.mark_boot_exit(ctrl, now);
             self.transition(
                 ConvergePhase::SafetyStopFailedAwaitAck {
@@ -341,15 +449,14 @@ impl SerialConvergence {
                 diag,
                 now,
             );
-            return;
+            return false;
         }
         let restart =
             (previous.is_some() && !first_emergency_fault) || self.phase == ConvergePhase::Idle;
         if restart {
             self.restart_fault_convergence(diag, now);
         }
-        ctrl.inhibit
-            .fetch_or(inhibit::CONVERGING, Ordering::Release);
+        true
     }
 
     /// 升级故障只重置物理收敛进度，保留本轮上下文与 generation 对账义务。
@@ -370,8 +477,17 @@ impl SerialConvergence {
         diag: &dyn DiagSink,
         now: MonoRawNs,
     ) {
+        let _ = self.claim_estop_arranged(ctrl, diag, now);
+    }
+
+    pub(crate) fn claim_estop_arranged(
+        &mut self,
+        ctrl: &HardRtCtrlInner,
+        diag: &dyn DiagSink,
+        now: MonoRawNs,
+    ) -> Option<EnableRecoveryArranged> {
         if !ctrl.claim_serial_estop() {
-            return;
+            return None;
         }
         emit(diag, now, 4, self.phase.code(), 0, 0);
         if !matches!(
@@ -383,18 +499,15 @@ impl SerialConvergence {
         match self.phase {
             ConvergePhase::SafetyStopFailedAwaitAck { .. } | ConvergePhase::SafetyStopFailed => {}
             ConvergePhase::Idle => {
-                ctrl.safety_latched.store(true, Ordering::Release);
                 self.round = Some(ConvergeRound::new(ConvergeContext::Emergency));
                 self.stop_attempt = 0;
                 self.still_on = 0;
                 self.last_kind = CommErrorKind::Unknown;
                 self.connect_pending = false;
-                ctrl.inhibit
-                    .fetch_or(inhibit::CONVERGING, Ordering::Release);
+                ctrl.tighten_inhibits(inhibit::CONVERGING);
                 self.transition(ConvergePhase::StopIssue, diag, now);
             }
             ConvergePhase::AwaitAck => {
-                ctrl.safety_latched.store(true, Ordering::Release);
                 let completed = self.round.as_ref().and_then(|round| round.completed_safety);
                 if let Some(round) = &mut self.round {
                     round.estop_bound = true;
@@ -408,8 +521,7 @@ impl SerialConvergence {
                         self.still_on = 0;
                         self.last_kind = CommErrorKind::Unknown;
                         self.connect_pending = false;
-                        ctrl.inhibit
-                            .fetch_or(inhibit::CONVERGING, Ordering::Release);
+                        ctrl.tighten_inhibits(inhibit::CONVERGING);
                         self.transition(ConvergePhase::StopIssue, diag, now);
                     }
                     Some(ConvergeCompletion::AdapterUncertain { kind }) => {
@@ -436,13 +548,13 @@ impl SerialConvergence {
                 }
             }
             _ => {
-                ctrl.safety_latched.store(true, Ordering::Release);
                 if let Some(round) = &mut self.round {
                     round.estop_bound = true;
                 }
                 emit(diag, now, 5, self.phase.code(), 0, 0);
             }
         }
+        self.physical_recovery(None)
     }
 
     /// 只登记退場与收敛责任；设备操作统一留给下一次 step。
@@ -452,7 +564,16 @@ impl SerialConvergence {
         diag: &dyn DiagSink,
         now: MonoRawNs,
     ) -> bool {
-        self.retire_timeout_impl(ctrl, diag, now, || {})
+        self.retire_timeout_impl(ctrl, diag, now, || {}).0
+    }
+
+    pub(crate) fn retire_timeout_arranged(
+        &mut self,
+        ctrl: &HardRtCtrlInner,
+        diag: &dyn DiagSink,
+        now: MonoRawNs,
+    ) -> Option<EnableRecoveryArranged> {
+        self.retire_timeout_impl(ctrl, diag, now, || {}).1
     }
 
     #[cfg(test)]
@@ -463,7 +584,7 @@ impl SerialConvergence {
         now: MonoRawNs,
         hook: impl FnOnce(),
     ) -> bool {
-        self.retire_timeout_impl(ctrl, diag, now, hook)
+        self.retire_timeout_impl(ctrl, diag, now, hook).0
     }
 
     fn retire_timeout_impl(
@@ -472,10 +593,10 @@ impl SerialConvergence {
         diag: &dyn DiagSink,
         now: MonoRawNs,
         before_clear: impl FnOnce(),
-    ) -> bool {
+    ) -> (bool, Option<EnableRecoveryArranged>) {
         let observed = ctrl.abort_request.load(Ordering::Acquire);
         let request = match NormalAbortTarget::decode(observed) {
-            Ok(None) => return false,
+            Ok(None) => return (false, None),
             decoded => decoded,
         };
         emit(diag, now, 16, 0, 0, seq_low(observed));
@@ -487,7 +608,12 @@ impl SerialConvergence {
             Ok(Some(NormalAbortTarget::Unsubmitted)) => pending == 0 && !active.valid,
             Ok(Some(NormalAbortTarget::Submitted { seq: target })) => match () {
                 () if active.valid && active.seq == target => {
-                    publish_aborted(ctrl, active);
+                    // 已 start 的 Enable 只能由持 Execution 的执行器完成；本处只收紧。
+                    if ctrl.authority().snapshot().phase
+                        != Some(robot_core::control_authority::Phase::EnableExecuting)
+                    {
+                        publish_aborted(ctrl, active);
+                    }
                     true
                 }
                 () if completed.action.valid && completed.action.seq == target => {
@@ -520,7 +646,17 @@ impl SerialConvergence {
             );
             (CommErrorKind::Unknown, FaultOrigin::InvariantViolation)
         };
-        self.enter_fault(FaultCode::CommFault, kind.to_u8(), origin, ctrl, diag, now);
+        let registered =
+            self.enter_fault_impl(FaultCode::CommFault, kind.to_u8(), origin, ctrl, diag, now);
+        // 关联必须来自上面实际处理的同一 observed，不能另读可能已经替换的 abort。
+        let arranged = match request {
+            Ok(Some(NormalAbortTarget::Submitted { seq }))
+                if registered && active.valid && active.seq == seq =>
+            {
+                self.physical_recovery(Some(seq))
+            }
+            _ => None,
+        };
         if exempt
             && self.round.as_ref().is_some_and(|round| !round.estop_bound)
             && !matches!(
@@ -529,12 +665,13 @@ impl SerialConvergence {
             )
         {
             emit(diag, now, 6, 0, 0, seq_low(completed.action.seq));
-            self.finish_observation(self.evidence_trusted(ctrl), ctrl, diag, now);
+            // 旧成功只免去额外 Stop，不给新 epoch 的放行许可；原轮预算不重置。
+            self.transition(ConvergePhase::Confirm, diag, now);
         }
         // 即便 CAS 失败，本次义务已登记；新请求仍保留给下一 tick。
         before_clear();
         let _ = ctrl.clear_abort(observed);
-        true
+        (true, arranged)
     }
 
     pub(crate) fn step<A: SerialRtAdapter>(
@@ -550,8 +687,7 @@ impl SerialConvergence {
         if self.initialization == Initialization::Fresh {
             self.initialization = Initialization::Started;
             emit(diag, now, 17, u8::from(self.authorized), 0, 0);
-            ctrl.inhibit
-                .fetch_or(inhibit::BOOT | inhibit::CONVERGING, Ordering::Release);
+            ctrl.tighten_inhibits(inhibit::BOOT | inhibit::CONVERGING);
             if !self.authorized {
                 self.enter_fault(
                     FaultCode::CommFault,
@@ -608,16 +744,27 @@ impl SerialConvergence {
                     .round
                     .as_ref()
                     .is_some_and(|round| round.completed_safety.is_some());
-                if complete && !self.generation_saturated && ctrl.clear_acked_fault_pending() {
-                    self.finish_boot(BootOutcome::Faulted, ctrl, now);
-                    self.transition(ConvergePhase::Idle, diag, now);
+                if complete
+                    && !self.generation_saturated
+                    && let Some(epoch) = self.release_epoch
+                    && let Some(released) = ctrl.clear_acked_fault_pending_at(epoch)
+                {
+                    self.release_epoch = Some(released);
+                    if self.finish_boot(BootOutcome::Faulted, ctrl, now) {
+                        self.transition(ConvergePhase::Idle, diag, now);
+                    }
                 }
             }
             ConvergePhase::SafetyStopFailedAwaitAck { generation, .. } => {
-                if generation != 0 && !self.generation_saturated && ctrl.clear_acked_fault_pending()
+                if generation != 0
+                    && !self.generation_saturated
+                    && let Some(epoch) = self.release_epoch
+                    && let Some(released) = ctrl.clear_acked_fault_pending_at(epoch)
                 {
-                    self.finish_boot(BootOutcome::Faulted, ctrl, now);
-                    self.transition(ConvergePhase::SafetyStopFailed, diag, now);
+                    self.release_epoch = Some(released);
+                    if self.finish_boot(BootOutcome::Faulted, ctrl, now) {
+                        self.transition(ConvergePhase::SafetyStopFailed, diag, now);
+                    }
                 }
             }
             ConvergePhase::Idle | ConvergePhase::SafetyStopFailed => {}
@@ -633,9 +780,8 @@ impl SerialConvergence {
         clock: &dyn RobotClock,
     ) {
         let now = clock.now();
-        ctrl.set_serial_safety(OutputSafetyState::StopCommanded);
-        ctrl.inhibit
-            .fetch_or(inhibit::CONVERGING, Ordering::Release);
+        ctrl.tighten_safety(OutputSafetyState::StopCommanded);
+        ctrl.tighten_inhibits(inhibit::CONVERGING);
         if self.phase == ConvergePhase::StopIssue
             && self.round.as_ref().is_some_and(|round| round.estop_bound)
         {
@@ -645,6 +791,7 @@ impl SerialConvergence {
         self.counters.stop_writes += 1;
         probe.set_context(
             BusOpClass::Safety,
+            InstalledIntent::None,
             0,
             MonoRawNs(now.0.saturating_add(CALL_BUDGET_NS)),
             false,
@@ -710,6 +857,7 @@ impl SerialConvergence {
         let budget = (self.joint_count as u64).saturating_mul(4 * CALL_BUDGET_NS);
         probe.set_context(
             BusOpClass::Connect,
+            InstalledIntent::None,
             0,
             MonoRawNs(now.0.saturating_add(budget)),
             false,
@@ -747,12 +895,24 @@ impl SerialConvergence {
         torque_mask: &mut TorqueEnableMask,
     ) {
         let now = clock.now();
+        if self
+            .round
+            .as_ref()
+            .is_some_and(|round| round.attempt >= MAX_CONFIRM_ATTEMPTS)
+        {
+            self.finish_exhausted(ctrl, diag, now);
+            return;
+        }
         probe.set_context(
             BusOpClass::Confirm,
+            InstalledIntent::None,
             0,
             MonoRawNs(now.0.saturating_add(CONFIRM_BUDGET_NS)),
             self.evidence_trusted(ctrl),
         );
+        let observation = ctrl
+            .authority()
+            .begin_safety_observation(SafetyOperation::ConfirmOff);
         let result = adapter.read_torque_enable_mask(&mut torque_mask[..self.joint_count]);
         let now = clock.now();
         #[cfg(feature = "test-comm-fault-hook")]
@@ -815,7 +975,13 @@ impl SerialConvergence {
                             0,
                         );
                     }
-                    self.finish_observation(self.evidence_trusted(ctrl), ctrl, diag, now);
+                    self.finish_observation(
+                        self.evidence_trusted(ctrl),
+                        Some(observation),
+                        ctrl,
+                        diag,
+                        now,
+                    );
                 } else {
                     self.still_on = on;
                     if let Some(round) = &mut self.round {
@@ -870,19 +1036,43 @@ impl SerialConvergence {
                 now,
             );
         } else {
-            self.finish_observation(false, ctrl, diag, now);
+            self.finish_observation(false, None, ctrl, diag, now);
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "消费原物理观测后沿同一代次释放抑制并决定 ACK 或启动出口"
+    )]
     fn finish_observation(
         &mut self,
         trusted: bool,
+        observation: Option<SafetyObservation>,
         ctrl: &HardRtCtrlInner,
         diag: &dyn DiagSink,
         now: MonoRawNs,
     ) {
         let Some(round) = self.round else {
             return;
+        };
+        let confirmed_epoch = if trusted {
+            match observation {
+                Some(observation) => {
+                    let epoch = observation.epoch();
+                    if ctrl
+                        .authority()
+                        .complete_safety_observation(observation)
+                        .is_err()
+                    {
+                        emit(diag, now, 3, 5, 0, 0);
+                        return;
+                    }
+                    Some(epoch)
+                }
+                None => return,
+            }
+        } else {
+            None
         };
         if trusted && round.ctx == ConvergeContext::Preflight {
             ctrl.rx_trust.store(true, Ordering::Release);
@@ -898,11 +1088,18 @@ impl SerialConvergence {
                 kind: self.last_kind,
             }
         };
-        ctrl.set_serial_safety(if trusted {
-            OutputSafetyState::TorqueOffConfirmed
+        self.release_epoch = if trusted {
+            confirmed_epoch
         } else {
-            OutputSafetyState::AdapterUncertain
-        });
+            Some(
+                ctrl.authority()
+                    .tighten_safety(
+                        robot_core::control_authority::SafetyTightening::AdapterUncertain,
+                    )
+                    .tightened
+                    .epoch,
+            )
+        };
         if !trusted && round.estop_bound {
             self.fail_stop(
                 SafetyStopFailDetail::AdapterUncertain {
@@ -943,8 +1140,13 @@ impl SerialConvergence {
         if self.boot_outcome == BootOutcome::Pending {
             emit(diag, now, 13, u8::from(trusted), 0, 0);
         }
-        ctrl.inhibit
-            .fetch_and(!inhibit::CONVERGING, Ordering::Release);
+        let Some(epoch) = self.release_epoch else {
+            return;
+        };
+        let Some(released) = release_inhibit_at(ctrl, InhibitReason::Converging, epoch) else {
+            return;
+        };
+        self.release_epoch = Some(released);
         let has_gen = self
             .round
             .as_ref()
@@ -952,8 +1154,7 @@ impl SerialConvergence {
         if has_gen || self.generation_saturated {
             self.mark_boot_exit(ctrl, now);
             self.transition(ConvergePhase::AwaitAck, diag, now);
-        } else {
-            self.finish_boot(BootOutcome::Passed, ctrl, now);
+        } else if self.finish_boot(BootOutcome::Passed, ctrl, now) {
             self.transition(ConvergePhase::Idle, diag, now);
         }
     }
@@ -1017,7 +1218,7 @@ impl SerialConvergence {
                 diag,
                 now,
             );
-            self.finish_observation(false, ctrl, diag, now);
+            self.finish_observation(false, None, ctrl, diag, now);
         }
     }
 
@@ -1030,10 +1231,21 @@ impl SerialConvergence {
         }
     }
 
-    fn finish_boot(&mut self, outcome: BootOutcome, ctrl: &HardRtCtrlInner, now: MonoRawNs) {
+    fn finish_boot(
+        &mut self,
+        outcome: BootOutcome,
+        ctrl: &HardRtCtrlInner,
+        now: MonoRawNs,
+    ) -> bool {
         if self.boot_outcome == BootOutcome::Pending {
+            let Some(epoch) = self.release_epoch else {
+                return false;
+            };
+            let Some(released) = release_inhibit_at(ctrl, InhibitReason::Boot, epoch) else {
+                return false;
+            };
+            self.release_epoch = Some(released);
             self.boot_outcome = outcome;
-            ctrl.inhibit.fetch_and(!inhibit::BOOT, Ordering::Release);
             // 观测值先发布，随后真实 outcome 的 Release 完成启动提交；READY 的 Acquire
             // 观察到 outcome 后，父端不会读到缺失的完成时间。首次带 gen 出口保持独立。
             #[cfg(feature = "test-comm-fault-hook")]
@@ -1042,7 +1254,31 @@ impl SerialConvergence {
             let _ = now;
             ctrl.boot_outcome.store(outcome as u8, Ordering::Release);
         }
+        true
     }
+}
+
+/// 本模块已核真实步骤/ACK 后，仍拒绝其它 epoch 的解除许可。
+fn release_inhibit_at(
+    ctrl: &HardRtCtrlInner,
+    reason: InhibitReason,
+    epoch: PermissionEpoch,
+) -> Option<PermissionEpoch> {
+    let snapshot = ctrl.authority().snapshot();
+    if snapshot.epoch != epoch || snapshot.exhausted {
+        return None;
+    }
+    if !snapshot.inhibits.contains(reason) {
+        return Some(epoch);
+    }
+    let permit = match ctrl.authority().capture_inhibit_release(reason) {
+        Ok(permit) if permit.epoch() == epoch => permit,
+        _ => return None,
+    };
+    ctrl.authority()
+        .try_release_inhibit(permit)
+        .ok()
+        .map(|released| released.epoch)
 }
 
 fn publish_aborted(ctrl: &HardRtCtrlInner, action: ActionRecord) {
@@ -1152,7 +1388,9 @@ mod tests {
     fn bound_boot_timeout_records_uncertainty_before_or_after_the_first_safety() {
         for after_first_safety in [false, true] {
             let clock = Arc::new(MockClock::default());
-            let ctrl = Arc::new(HardRtCtrlInner::new_serial());
+            let ctrl = Arc::new(HardRtCtrlInner::new_serial(
+                crate::hard_rt_ctrl::test_authority(true),
+            ));
             let probe = SerialPreemptProbe::new(clock.clone(), ctrl.clone());
             let diag = SerialDiagRing::new();
             let mut convergence = SerialConvergence::new(true, 2, clock.now());

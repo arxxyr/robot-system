@@ -1242,3 +1242,21 @@ fn sample_poll_accepts_current_ready_without_requiring_applied_and_waits_on_no_s
         "Writing/Applying 暂无一致快照不能拼造拒绝证据"
     );
 }
+
+#[test]
+fn sla_parser_rejects_unknown_cas_counts_before_statistics() {
+    for external in [false, true] {
+        for kind in [
+            TraceKind::PrimitiveCommitted,
+            TraceKind::NormalAcquire,
+            TraceKind::NormalRelease,
+            TraceKind::SerialClaim,
+            TraceKind::IpcClaim,
+        ] {
+            let mut events = valid_events(external, true);
+            one(&mut events, kind).a = u64::MAX;
+            let error = analyze(&events, external).expect_err("未知计数不能补零或进入分布");
+            assert!(error.contains("CAS 次数"), "{kind:?}: {error}");
+        }
+    }
+}

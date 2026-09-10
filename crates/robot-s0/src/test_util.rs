@@ -33,6 +33,31 @@
 
 use std::time::{Duration, Instant};
 
+/// 纯数据/协调器单测的真实准入来源；不表示已存在传输层 ActiveRequest。
+pub(crate) struct TestRrRoute {
+    slot: crate::rr_admission::Slot<u8>,
+    _ledger: crate::rr_admission::PeerLedger<u8>,
+}
+impl TestRrRoute {
+    pub(crate) fn new() -> Self {
+        let limits = crate::rr_admission::CheckedLimits::try_from_limits(
+            &robot_transport::iceoryx2::RrStaticLimits { l: 4, c: 8 },
+        )
+        .unwrap();
+        let mut ledger = crate::rr_admission::PeerLedger::new(&limits).unwrap();
+        let slot = ledger
+            .admit(1, crate::rr_admission::RrRequestClass::Restore)
+            .unwrap();
+        Self {
+            slot,
+            _ledger: ledger,
+        }
+    }
+    pub(crate) fn identity(&self) -> crate::rr_admission::SlotIdentity {
+        self.slot.identity()
+    }
+}
+
 /// 轮询 `pred` 直到返 `true` 或超 `timeout`。返回 `pred()` 的最终值（`true`
 /// 表示成功，`false` 表示超时）。轮询间隔 1 ms（足够细让 worker 有 tick
 /// 机会，又不过度占 CPU）。

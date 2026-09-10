@@ -20,7 +20,8 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     C1–C5/S-45与S-48 A1/A2/A3a/A3b/W0/W1/W0.1已提交；W2a已提交b5a0bfa，W2b已评审提交6defac4，S46-B已评审提交5abd148，P-M已评审提交0d3caca，P-T已评审提交ac92f70，P-S1/P-L1已评审提交129ef7d，P-G1已评审提交e560691，P-A1已评审提交9317e1e，W3a已独立验收，待本阶段提交；下一步完整W3函数方案；S-46 Orin wire4满FAIL，双队列与生产总装仍待完成
+当前步骤:     W3生产总装独立终审及root验收通过；31门/All72/72，本阶段提交见git日志
+下一步:       W4故障矩阵 → P-E长负载 → 两端同源软件验证
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -29,62 +30,28 @@
 用户追加：每阶段评审与必要质量门通过即 commit，再推进下一阶段。
 developer 可根据任务需要自主启动子 agent 并负责整合；reviewer 保持独立评审。
 共享工作区按文件明确归属。用户2026-09-09更新分工：主agent负责方案和评审，
-cc-claude优先负责具体开发与测试；其额度耗尽后，按用户混编授权由原生implementation
-独占源码与Cargo，独立Codex评审；评审通过仍由主agent提交。
+cc-claude优先负责具体开发与测试；其额度耗尽后，按用户混编授权由原生A/B/C
+按文件分域开发，C独占Cargo，独立Codex评审；评审通过仍由主agent提交。
 由团队完善函数级计划、独立评审通过后实施；原 9 月 5 日“仅准备 Plan outline”
 是历史授权状态，不作为本轮停工理由。实现、验证、真机执行分别记录，不能将
 Spec Approved 或旧测试记录写成新代码已通过验收。
 
-C5 源码 `e6d2b306…2598`（308 输入）已获独立
-**APPROVED_SOFTWARE_SCOPE / SOFTWARE_ACCEPTED_HARDWARE_PENDING**。本地与 Orin
-均完成 **1737 PASS / 11 ignored**、67 软件场景和八套 smoke；四项 RT guard、
-原 1000 轮精确 Node 目录门、fresh 与四个无 hook 正式产物均已核验。
-完整计数、验收边界与当前证据见 [10_verification](10_verification.md)，
-复现命令和实现约束统一见 [PLAN](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md) P.6。
+当前 W3 已接通共享权限、高/普通双队列、唯一文件 writer、RPC责任账本和
+受监督关闭链。完整 round4 源码367项与输入228项首末一致，workspace2151通过、
+1项既有ignored；完整软件All72/72。独立源码/证据终审及root验收通过，不外推至Orin或电机。
+逐轮失败、回归和准确统计统一见HANDOFF、H包与10_verification，不重复累计。
 
-S1 的私有 `EventsPublisherGuard` 保证 publisher 先于 Node 退场；工具只按两个
-存活 PID 的精确 Node 集合验收，baseline 每端非空，原 2 秒 grace 后不得新增目录，
-空目录和同数量替换均失败。公开 spawn、QoS/history/retry/grace 不变。
-工具 optional 依赖 `iceoryx2-bb-posix =0.9.3` 只在 pubsub feature 开启，复用现有 lock。
+左H1/H3通过、H2两次FAIL；用户最后确认左臂断电、双臂支撑。右臂未测，
+六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。本轮未访问远端，
+不把旧现场状态写成本轮查询结果。Orin调试/RT必要时直接sudo；标定使用已有
+Python JSON。新H2须先完成软件验收/提交/两端对齐，再取得新物理重置与在场事实，
+不得复用已消费的left_h2_current目录或旧驱动。
 
-Orin 原仓库已更新，六项开发服务经授权按 gateway → S1 → S0 停止并保持
-inactive/PID0。两端正式无 hook 产物已恢复，`deployable=false`，不自动启动服务。
-Orin 调试 / RT 需要权限时直接使用已获授权的 `sudo`，不放宽资源阈值或测试预算。
-左 H2 三进程 RT 检查已通过；首组 35 次在途分类失配后，epoch 10072 缺少 acquire，
-严格分析器判 FAIL，正式样本 0；真实断扭确认、进程全部退出、marker 为 `1/1`。
-S-45 / PLAN P.6.11 已修复采样边界、显式 idle 前置条件及工具跨读取误判；两端各
-67 软件场景通过并独立批准，已提交 `965bcd7`；新物理边界确认后再执行 D9 一次授权。启动夹具
-缓存旧路径的失败也已定位并按原预算复验通过。左 H1/H3 PASS、右臂未测、D15 `OPEN`。
-
-2026-09-09在`ce61623`上重测左H2，topic/idle为100预热+138正式、零失配后缓存
-恰4096项耗尽；另11条背景请求因串行await慢RPC导致启动迟到至少50ms。最终
-GetState确认state3，随后Disable容量拒绝，整体仍FAIL；全部进程退出，用户确认
-左臂断电、双臂继续支撑。S-46 / PLAN P.6.12只修工具负载、有限缓存配置和收尾留证，
-先做两端同负载长测，再独立评审提交；不重复执行已消费的`left_h2_current`目录。
-两臂继续直接读取Orin上既有Python标定JSON，名称/ID/字段兼容已只读核对。
-
-S-48按用户要求分高/普通两个有界队列，每轮先高后普通、每项非阻塞推进。
-A1先独立实现Clear文件事务与恢复，已通过28个模块入口、7项公开API验收、
-24项旧latch回归和3项编译失败文档测试；全workspace fmt/Clippy零警告。
-A2独立原子权限模块已通过48项模块测试、13项compile-fail、16项默认公开验收，
-debug/release各21项真实guard验收与A1回归；root核验源码和原始证据后批准。
-A2已提交`dee67fa`。A3a仅将该模块归位robot-core并由s0重导出同一模块，
-方便后续adapter交接强类型租约；18道本地门通过，root已核语义等价、唯一计数器、
-生产feature边界及源码身份。完整计数见10_verification与H包，不重复相加。
-A3b快照并发修复通过22道本地门及独立源码/证据评审，已提交`d67752d`。
-A3c/W0文件凭证已提交`8624f27`，W1启动锁与恢复已提交`1b21457`，W0.1只读双份核验
-已提交`81c5c54`。W2a独立writer模块已通过本地七门与独立源码终审，root另核完整
-344项来源及逐项日志；已修复阶段戳/公告顺序、断链观测与测试资源和并发问题，
-W2a已提交`b5a0bfa`。W2b关闭/join机制已通过本地十一门和独立终审，346项来源一致，
-workspace1914通过、1既有ignored；初版源码问题已修，详H包local/s48/w2b/review.md。
-W2b已提交`6defac4`，S46-B已评审提交`5abd148`，P-M已评审提交`0d3caca`，P-T已评审提交ac92f70，P-S1/P-L1已评审提交129ef7d，P-G1已评审提交e560691，P-A1已评审提交9317e1e，W3a已独立验收，待本阶段提交；下一步完整W3函数方案。W3a协调原语方案已批准，见PLAN P.6.14.13。
-新权限尚未成为生产权威，双队列与唯一磁盘writer尚未总装；不得称优先级问题已修复。
-当前分工、最新门与提交证据统一见HANDOFF。
-
-C5 证据保留 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与
-[C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)；
-当前现场阶段另见 [H.json](../.verify/post_e_comm_fault_hardening/H.json) 与其唯一证据包。
-旧轮次日志、快照、重复产物和历史归档按用户授权清除。
+证据唯一入口为 [H.json](../.verify/post_e_comm_fault_hardening/H.json) 和
+[H_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)；C5独立
+基线保留C5.json/C5_evidence.tar.gz。精简前入口文档保存在H包W3/root_closeout，
+旧失败实件保留；后续通过不能回填旧来源。W4/P-E尚未完成，RR跨原子可见性
+证明另列待办，不称优先级改动已通过硬件长负载。
 
 ---
 

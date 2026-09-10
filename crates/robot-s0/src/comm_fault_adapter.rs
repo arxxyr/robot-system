@@ -9,7 +9,7 @@ use robot_core::adapter::{
 };
 use robot_core::error::RobotError;
 use robot_core::executor_ctrl::OutputSafetyProbe;
-use robot_core::serial_services::{BusOpClass, CommErrorKind, PreemptProbe};
+use robot_core::serial_services::{BusLease, BusOpClass, CommErrorKind, LeasedPreemptProbe};
 use robot_core::time::RobotClock;
 
 use crate::comm_fault_hook::{
@@ -21,39 +21,39 @@ use crate::comm_fault_observation::ObservationPage;
 pub struct CommFaultAdapter<A> {
     inner: A,
     clock: Arc<dyn RobotClock>,
-    probe: Arc<dyn PreemptProbe>,
+    probe: Arc<dyn LeasedPreemptProbe>,
     observation: Option<Arc<ObservationPage>>,
     ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     mock_normal_lease: bool,
 }
 
 struct MockNormalLease<'a> {
-    probe: Option<&'a dyn PreemptProbe>,
-    class: BusOpClass,
+    probe: Option<&'a dyn LeasedPreemptProbe>,
+    lease: Option<BusLease>,
 }
 
 impl<'a> MockNormalLease<'a> {
     fn acquire(
         enabled: bool,
-        probe: &'a dyn PreemptProbe,
+        probe: &'a dyn LeasedPreemptProbe,
         class: BusOpClass,
     ) -> Result<Self, RobotError> {
-        let probe = if enabled && class.is_normal() {
-            probe
-                .begin_transaction(class)
-                .map_err(RobotError::Aborted)?;
-            Some(probe)
+        let lease = if enabled && class.is_normal() {
+            Some(probe.begin_leased(class).map_err(RobotError::Aborted)?)
         } else {
             None
         };
-        Ok(Self { probe, class })
+        Ok(Self {
+            probe: Some(probe),
+            lease,
+        })
     }
 }
 
 impl Drop for MockNormalLease<'_> {
     fn drop(&mut self) {
-        if let Some(probe) = self.probe {
-            probe.finish_transaction(self.class);
+        if let (Some(probe), Some(lease)) = (self.probe, self.lease.take()) {
+            probe.finish_leased(lease);
         }
     }
 }
@@ -62,7 +62,7 @@ impl<A: SerialRtAdapter> CommFaultAdapter<A> {
     pub fn new(
         inner: A,
         clock: Arc<dyn RobotClock>,
-        probe: Arc<dyn PreemptProbe>,
+        probe: Arc<dyn LeasedPreemptProbe>,
         observation: Option<Arc<ObservationPage>>,
         ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     ) -> Self {

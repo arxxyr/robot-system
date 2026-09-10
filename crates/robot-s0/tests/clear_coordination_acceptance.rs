@@ -158,6 +158,8 @@ fn wait_until(mut condition: impl FnMut() -> bool, what: &str) {
 }
 
 struct Rig {
+    route_ledger: robot_s0::rr_admission::PeerLedger<u64>,
+    routes: Vec<robot_s0::rr_admission::Slot<u64>>,
     _dir: tempfile::TempDir,
     latch: PathBuf,
     _lock: LatchTargetLock,
@@ -215,6 +217,14 @@ impl Rig {
             delivery_release: AtomicBool::new(false),
         });
         Self {
+            route_ledger: robot_s0::rr_admission::PeerLedger::new(
+                &robot_s0::rr_admission::CheckedLimits::try_from_limits(
+                    &robot_transport::iceoryx2::RrStaticLimits { l: 4, c: 8 },
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+            routes: Vec::new(),
             _dir: dir,
             latch,
             _lock: lock,
@@ -250,8 +260,19 @@ impl Rig {
         );
     }
     fn start(&mut self, coordinator: &mut ClearCoordination) -> StartOutcome {
+        // 真实本地准入保留至该 rig 收尾；本 W3a 门不声称传输层 RR 退休。
+        let slot = self
+            .route_ledger
+            .admit(
+                self.routes.len() as u64,
+                robot_s0::rr_admission::RrRequestClass::Restore,
+            )
+            .unwrap();
+        let route = slot.identity();
+        self.routes.push(slot);
         coordinator.start(
             RrIdentity {
+                route,
                 request_id: "clear-original".into(),
                 deadline_ns: BASE + 1_000_000_000,
             },

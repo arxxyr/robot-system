@@ -69,8 +69,8 @@ pub mod wire;
 // rr_server::handler 等）只需 `use robot_s1::events_drain::*` 一次拿到所
 // 需类型。逐项 re-export 而非 glob，让 IDE 跳转 / rustdoc 链接更清晰。
 pub use runtime::{
-    EventsDrainMetrics, EventsDrainRegistry, EventsDrainThreadConfig, EventsDrainThreadHandle,
-    spawn_events_drain_thread,
+    EventsDrainMetrics, EventsDrainRegistry, EventsDrainSpawnError, EventsDrainThreadConfig,
+    EventsDrainThreadHandle, spawn_events_drain_thread,
 };
 pub(crate) use runtime::{EventsPublisherGuard, spawn_owned_events_drain_thread};
 pub use wire::{encode_envelope, is_terminal};
