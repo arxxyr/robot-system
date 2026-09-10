@@ -87,6 +87,50 @@ impl GuardInterrupt {
 /// 每个文件步骤开始前调用；返回 `Err` 即以该步骤为失败阶段、相位为 `Before` 中断。
 pub trait StepGuard {
     fn before(&mut self, stage: ClearTxnStage) -> Result<(), GuardInterrupt>;
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn after_success(&mut self, _stage: ClearTxnStage) {}
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn directory_sync_input(&mut self, _stage: ClearTxnStage) -> DirectorySyncInput {
+        DirectorySyncInput::Original
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn directory_sync_event(&mut self, _stage: ClearTxnStage, _event: DirectorySyncEvent) {}
+}
+
+/// 测试仅选择本次同步的输入 fd；不替换 store 的原目录所有权。
+#[cfg(feature = "test-comm-fault-hook")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectorySyncInput {
+    Original,
+    OPathAlias,
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AliasPreparation {
+    Open,
+    Metadata,
+    Identity,
+}
+
+/// 来自别名准备和真实 fsync 调用点的只读事实；准备失败不代表执行过 fsync。
+#[cfg(feature = "test-comm-fault-hook")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectorySyncEvent {
+    Expected(super::FileIdentity),
+    Verified(super::FileIdentity),
+    PreparationFailed {
+        phase: AliasPreparation,
+        errno: Option<i32>,
+    },
+    Call,
+    Returned {
+        success: bool,
+        errno: Option<i32>,
+    },
 }
 
 /// 永不中断的守门；启动恢复与不需要让路的调用方使用。

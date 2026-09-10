@@ -95,6 +95,25 @@ impl<'a> WriterGuard<'a> {
 }
 
 impl StepGuard for WriterGuard<'_> {
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn after_success(&mut self, stage: ClearTxnStage) {
+        self.env.hook.after_step_success(stage);
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn directory_sync_input(
+        &mut self,
+        stage: ClearTxnStage,
+    ) -> crate::clear_estop_transaction::DirectorySyncInput {
+        self.env.hook.directory_sync_input(stage)
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn directory_sync_event(
+        &mut self,
+        stage: ClearTxnStage,
+        event: crate::clear_estop_transaction::DirectorySyncEvent,
+    ) {
+        self.env.hook.directory_sync_event(stage, event);
+    }
     fn before(&mut self, stage: ClearTxnStage) -> Result<(), GuardInterrupt> {
         // 第一条实际语句：真实进入文件步骤的时刻；编码失败仍发布阶段（时间位 0）。
         let now = self.env.clock.now();
@@ -109,6 +128,19 @@ impl StepGuard for WriterGuard<'_> {
             return Err(GuardInterrupt::new(InterruptReason::EStopObligationPending));
         }
         Ok(())
+    }
+}
+
+/// 仅借用观察钩子；正常返回与 unwind 都清理诊断 scope，不接管令牌。
+#[cfg(feature = "test-comm-fault-hook")]
+struct CommandHookScope<'a> {
+    hook: &'a mut dyn WriterHook,
+    completed: bool,
+}
+#[cfg(feature = "test-comm-fault-hook")]
+impl Drop for CommandHookScope<'_> {
+    fn drop(&mut self) {
+        self.hook.command_scope_exit(self.completed);
     }
 }
 
@@ -244,6 +276,8 @@ impl WriterCore {
     /// 服务 `EStop` 义务：有 Pending 才领取；`persist_latched(guard{zeroing:false})`
     /// 成功 `commit`、失败 `fail`（恢复 Pending、起点不变）。无 Pending / 已 Active → `None`。
     pub fn service_obligation(&mut self, env: &mut StepEnv<'_>) -> Option<ObligationServiced> {
+        #[cfg(feature = "test-comm-fault-hook")]
+        env.hook.outside_command();
         let obligation = &self.shared.obligation;
         if !obligation.has_pending() {
             return None;
@@ -270,6 +304,38 @@ impl WriterCore {
 
     /// 执行一条命令；永不 panic 地返回完成，令牌按真实结果推进或保留。
     pub fn execute(&mut self, command: PersistCommand, env: &mut StepEnv<'_>) -> PersistCompletion {
+        #[cfg(feature = "test-comm-fault-hook")]
+        {
+            let mut scope = CommandHookScope {
+                hook: env.hook,
+                completed: false,
+            };
+            scope
+                .hook
+                .command_begin(command, self.current.as_ref().map(WriterTxn::token));
+            let completion = self.execute_inner(
+                command,
+                &mut StepEnv {
+                    clock: env.clock,
+                    stop: env.stop,
+                    hook: scope.hook,
+                },
+            );
+            scope
+                .hook
+                .command_completed(&completion, self.current.as_ref().map(WriterTxn::token));
+            scope.completed = true;
+            completion
+        }
+        #[cfg(not(feature = "test-comm-fault-hook"))]
+        self.execute_inner(command, env)
+    }
+
+    fn execute_inner(
+        &mut self,
+        command: PersistCommand,
+        env: &mut StepEnv<'_>,
+    ) -> PersistCompletion {
         match command {
             PersistCommand::PrepareClear { txn } => self.prepare(txn, env),
             PersistCommand::RepairClear { txn, target } => self.repair(txn, target, env),

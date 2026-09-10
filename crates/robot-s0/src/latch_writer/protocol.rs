@@ -343,6 +343,41 @@ pub trait WriterStop: Send + Sync {
 /// 文件步骤前的测试屏障钩子；在 `FileStep` 戳之后、义务检查之前调用。
 pub trait WriterHook: Send {
     fn before_step(&mut self, stage: ClearTxnStage);
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn after_step_success(&mut self, _stage: ClearTxnStage) {}
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn directory_sync_input(
+        &mut self,
+        _stage: ClearTxnStage,
+    ) -> crate::clear_estop_transaction::DirectorySyncInput {
+        crate::clear_estop_transaction::DirectorySyncInput::Original
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn directory_sync_event(
+        &mut self,
+        _stage: ClearTxnStage,
+        _event: crate::clear_estop_transaction::DirectorySyncEvent,
+    ) {
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn command_begin(
+        &mut self,
+        _command: PersistCommand,
+        _token: Option<&super::core::WriterToken>,
+    ) {
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn command_completed(
+        &mut self,
+        _completion: &PersistCompletion,
+        _token: Option<&super::core::WriterToken>,
+    ) {
+    }
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn command_scope_exit(&mut self, _completed: bool) {}
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn outside_command(&mut self) {}
 }
 
 /// 无屏障。

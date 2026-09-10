@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_W3_APPROVED_W4_NEXT",
-  "resume_from": "W3本地独立验收通过，归档一致性复核后提交；接着W4最小故障接缝与真实恢复样例，再W4矩阵/P-E。",
+  "work_state": "S48_W4_REMAINING_PLAN_REVIEW",
+  "resume_from": "W4a独立验收与归档完成，阶段提交见git日志；下一步RR严格内核与W4b逐步SIGKILL精确方案审，未批准vendor或新实施。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_W3_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "W3_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_W4A_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "W4A_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
-  "scope": "W3生产权限/双队列/唯一writer/RPC责任总装本地验收通过；W4/P-E未完成，未访问Orin，wire4历史FAIL、D15 OPEN、deployable=false保持。",
+  "scope": "W4a本地文件同步故障夹具与两真实软件恢复样例验收通过；W3权限/双队列/唯一writer已接生产调用方，未访问Orin，完整W4/RR/P-E未完，wire4历史FAIL/D15 OPEN/deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -1960,7 +1960,7 @@
         "source_before_sha256": "bcb93c1a3caf30e2746aaee99ce793bff24cfd1a2e58f5ccd4b9ba2d97759a1a",
         "root_start_verification": "local/s48/w3/root_start_verification.json",
         "root_start_verification_sha256": "4774cddc07877d7814871fe7e7cb77b416ab3eaa1ad27558e6a0ac8e1e1b22a2",
-        "remaining": "归档一致性复核后commit；后续W4/P-E和Orin软件/新现场验证未完成。",
+        "remaining": "W3已评审提交；后续W4/P-E和Orin软件/新现场验证未完成。",
         "cas_observation_addendum": {
           "status": "IMPLEMENTED_REVIEWED_IN_W3_FINAL_SOURCE",
           "input": "local/s48/w3/authority_cas_observation_addendum.md",
@@ -2139,7 +2139,116 @@
           "RR跨原子缺口可能漏掉已完成回复而长期占用原credit，含Lower；保持原责任不等于活性已解决。"
         ],
         "commit_reference": "本阶段实际commit见git日志；自身回执随下一次证据包更新，不构造自指hash。",
-        "archive_status": "W3最终实件与独立评审已纳入唯一H包；原失败不覆盖，二进制实件留本地。"
+        "archive_status": "W3最终实件与独立评审已纳入唯一H包；原失败不覆盖，二进制实件留本地。",
+        "commit": "1338f9dc729a3efb2394e61f3a9087b08f7f69d0",
+        "commit_receipt": "local/s48/w3/commit_receipt.json",
+        "post_archive_boundary": "原W3包之后产生的真实commit和post_archive回执已随本W4a包归档；不回填原W3包来源或其自身commit身份。"
+      },
+      "w4a": {
+        "status": "APPROVED_SOFTWARE_SCOPE",
+        "base_commit": "1338f9dc729a3efb2394e61f3a9087b08f7f69d0",
+        "root_approval": "local/s48/w4a/root_implementation_approval.md",
+        "root_approval_sha256": "70071c89c32633ceb3f007f1c49560c8f0d9e46d60b0fc0d6a62c9a68a6256c5",
+        "inputs": "local/s48/w4a/approved_inputs.json",
+        "inputs_sha256": "ea6fdfaaa3571d01303982af9320e40bc51d282050462eed0767fb8924e52569",
+        "scope": "三处同步共用原三相内核，固定同事务两slot；Created/Unsynced真实EBADF恢复保持原FsyncFailed/唯一退休/双1/1/latchtrue。",
+        "archive_status": "已归唯一H包local/s48/w4a/；新包同时衔接W3真实commit/post_archive回执，原历史FAIL不改。",
+        "baseline": "local/s48/w4a/c/baseline/receipt.json",
+        "baseline_sha256": "ad37839b9bb40e18ab329341de879e2a7a2a88d2100a63887dab2bdcea105c64",
+        "baseline_source_count": 367,
+        "baseline_source_sha256": "2872511c4645976eadf319b3c25b83b4727f32582b7d6d53950e6f9ccdcc01c5",
+        "root_baseline_verification": "local/s48/w4a/root_baseline_verification.json",
+        "root_baseline_verification_sha256": "0750c8bcdde90683008748459d41e42e5dd4e379326c43d2e36bc22556c84435",
+        "final_round": "round1",
+        "formal_gates": {
+          "total": 15,
+          "expected_zero": 13,
+          "expected_argument_exit_two": 2,
+          "passed": 15
+        },
+        "source_count": 373,
+        "input_count": 187,
+        "source_delta": {
+          "modified": 10,
+          "added": 6,
+          "deleted": 0
+        },
+        "source_manifest": "local/s48/w4a/c/formal_source.sha256",
+        "source_manifest_sha256": "f34f443021f34c75d36761aef95a7e9d15bde851257f6f3ee3d36cdbf845e5e2",
+        "inputs_manifest": "local/s48/w4a/c/formal_inputs.json",
+        "inputs_manifest_sha256": "128cbdce62b8ec78ca78b962b3182e57f2d9ee4bdce1bdd54d3cd5b718441c9a",
+        "freeze": "local/s48/w4a/c/formal_freeze.json",
+        "freeze_sha256": "a99e079c76910affaa6150ecfea79555091609d29bc851da912eec989623f960",
+        "run": "local/s48/w4a/c/round1/run.json",
+        "run_sha256": "de0e9c63fec4e9b062ba1b1b423efcccb9be3c1268a90888b0c9bbd24b71e608",
+        "result": "local/s48/w4a/c/result.json",
+        "result_sha256": "6bc84ff5de8aa9a57764ac79d572633659dcc8b3bc0f808937bc8bc7a724e26c",
+        "final_handoff": "local/s48/w4a/c/final_handoff.json",
+        "final_handoff_sha256": "a630aecce487f220f18a9e5221ca6f8da54f4f02d989be8d4e4c62d8b1a9469e",
+        "test_counts": {
+          "s0_default": [
+            605,
+            0,
+            0
+          ],
+          "s0_complete_hook": [
+            850,
+            0,
+            1
+          ],
+          "tools": [
+            79,
+            0,
+            0
+          ],
+          "groups_overlap": true,
+          "original_60s_soak_ran": false
+        },
+        "software_cases": {
+          "w4_new": {
+            "passed": 2,
+            "failed": 0
+          },
+          "original_all": {
+            "passed": 72,
+            "failed": 0,
+            "names_and_order_match_w3": true
+          }
+        },
+        "artifact_count": 4,
+        "software_evidence_count": 796,
+        "root_review": "local/s48/w4a/review.md",
+        "root_review_sha256": "ba6229cc2ba95a14ff5eca41200065d6cf8289b066d55fc3bc9100c1f08c89bb",
+        "source_evidence_review": "local/s48/w4a/reviews/final/robot-w4a-final-source-evidence-independent-review.md",
+        "source_evidence_review_sha256": "5449ad1d6dad0fc575e7c0f76606789bdac1a961f694a8d84c0f7f2980dcad6c",
+        "source_evidence_receipt": "local/s48/w4a/reviews/final/robot-w4a-final-source-evidence-independent-receipt.json",
+        "source_evidence_receipt_sha256": "7272bfd1bf88c916405c6ff63a8e72569d2de6423dfbe9e583619044eaf0250e",
+        "identity_review": "local/s48/w4a/reviews/final/robot-w4a-a-evidence-identity-review.md",
+        "identity_review_sha256": "aebf2308f15c3da7b12f2ed2dc6447fb52bbd162b6d378893c6d0d8eb7d6e3cb",
+        "postprocess": {
+          "original_finalizer_exit": 1,
+          "original_failure_preserved": true,
+          "r2_exit": 0,
+          "correction": "local/s48/w4a/c/postprocess_correction.json",
+          "correction_sha256": "a8a81b11de9274f730a9404c7679a8e0779ebc0ad1f94d2e0c31885cda718713",
+          "scope": "后置工具仅更正旧模块前缀并严格核9实际原名，不改原187输入或15门。"
+        },
+        "scope_limits": [
+          "仅本地Linux软件；实际O_PATH/fsync EBADF，不宣称自然EIO或断电。",
+          "非Linux仅cfg/配置判定，无跨目标构建；未运行本包systemd/Orin/电机。",
+          "RR完整修正、SIGKILL全矩阵/SUP/ENV/P-E未完成；wire4历史FAIL、D15 OPEN。"
+        ],
+        "commit_reference": "本阶段提交以git日志为准；每阶段独审与必要门通过即commit，不push。",
+        "archive_verified_files": 13545,
+        "post_archive_boundary": "归档执行回执、最终元数据核验与本阶段实际commit回执晚于当前包，暂存本地post_archive_review/和commit_receipt.json，下一包归档；不制造自身commit/hash循环。"
+      },
+      "w4_remaining": {
+        "status": "PLAN_REVIEW_ONLY",
+        "rr": "r2+本方现有工厂直接迁strict候选；最后shared析构顺序和公用CAL ORPHANED具名门仍Changes Required，未vendor。",
+        "rr_review": "local/s48/w4_rr/inputs/robot-w4-rr-r2-independent-review.md",
+        "rr_review_sha256": "bd4197ac58a12043b1e1f71449f0e8af3735e637017a888f96b530d64dedb8c4",
+        "sigkill": "W4b固定5例一次SIGKILL/同目录重启候选待独审，未实施；完整矩阵仍未验收。",
+        "w1_observation": "历史锁偶发失败仍留观察；W4a未作根因修正，不以本轮All通过代替结案。"
       }
     }
   },
@@ -2294,19 +2403,19 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2438,
-    "sha256": "0885dfe680e60f770eb58e46adc6c2432bd27df5ac31cbf33cdb192b3c40610f"
+    "lines": 2476,
+    "sha256": "0ba640774e6de637f70df62eb5bb4bb1d499ef0dc211102f39bafdfba371c018"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "a589c11b1ab591f57d525ec33a0ab837031294b16c18e6e84ff195114e3c0fb9",
-    "bytes": 45977707,
-    "members": 12086,
-    "logical_bytes": 1239778640,
+    "sha256": "d0db3ccf0b5bfb4a274922b5b98f03028775eed686fbcc1368bdfab69a737f21",
+    "bytes": 52553385,
+    "members": 13546,
+    "logical_bytes": 1364437321,
     "per_file_sha256_verified": true
   },
-  "retention": "当前H证据包仅一份；保留W3全部实际失败轮、最终评审与精简前入口原文，不含可执行bin；二进制实件留本地并保SHA/构建记录。",
-  "updated_at": "2026-09-10T02:41:13.829107+00:00",
+  "retention": "当前H包一份；保W4a开发/统计失败、两轮评审修正及最终原件，原W3与更早历史FAIL不改。可执行实件留本地，包内保实际构建/来源与SHA。",
+  "updated_at": "2026-09-10T04:16:06.366649+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",

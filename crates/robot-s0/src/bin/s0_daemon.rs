@@ -836,6 +836,14 @@ fn run(
     stops: &Arc<StopFlags>,
     latch_lock: &LatchTargetLock,
 ) -> MainExit {
+    #[cfg(feature = "test-comm-fault-hook")]
+    let file_fault = match robot_s0::comm_fault_hook::file_fault_from_env() {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "W4 文件故障配置拒绝，尚未准备执行资源");
+            return MainExit::empty(1);
+        }
+    };
     let (resources, start, standby) =
         match prepare_execution(args, latch_lock, supervisor.started_at()) {
             Ok(value) => value,
@@ -852,7 +860,16 @@ fn run(
         }
     };
     let mut boot = BootHandles::new();
-    let started = run_workers(args, supervisor, stops, &resources, start, &mut boot);
+    let started = run_workers(
+        args,
+        supervisor,
+        stops,
+        &resources,
+        start,
+        &mut boot,
+        #[cfg(feature = "test-comm-fault-hook")]
+        file_fault,
+    );
     match started {
         Err(code) => stop_startup_owned(boot, stops, &resources, standby, supervisor, args, code),
         Ok(state_reader) => {
@@ -1415,6 +1432,9 @@ fn run_workers(
     res: &ExecutionResources,
     start: WorkerStart,
     workers: &mut BootHandles,
+    #[cfg(feature = "test-comm-fault-hook")] file_fault: Option<
+        robot_s0::comm_fault_hook::FileFaultMode,
+    >,
 ) -> Result<robot_transport::RtSnapshotReader<S0StateSnapshot>, i32> {
     let WorkerStart {
         built,
@@ -1429,10 +1449,8 @@ fn run_workers(
     robot_s0::comm_fault_hook::before_spawn("latch_writer")
         .map_err(|error| startup_io_error(&error))?;
     #[cfg(feature = "test-comm-fault-hook")]
-    let writer_hook: Box<dyn robot_s0::latch_writer::WriterHook> = Box::new(
-        robot_s0::comm_fault_hook::WriterStepPause::from_env(clock.clone())
-            .map_err(|error| startup_io_error(&error))?,
-    );
+    let writer_hook = robot_s0::comm_fault_hook::writer_hook(file_fault, clock.clone())
+        .map_err(|error| startup_io_error(&error))?;
     #[cfg(not(feature = "test-comm-fault-hook"))]
     let writer_hook: Box<dyn robot_s0::latch_writer::WriterHook> =
         Box::new(robot_s0::latch_writer::NoHook);

@@ -9,6 +9,19 @@
 
 ---
 
+## 2026-09-10 · W4a 文件故障恢复验收
+
+W4a已独立源码/运行证据及root验收，APPROVED_SOFTWARE_SCOPE。基线`1338f9d`；
+373源/187输入首末一致，正式round1的15门满足原期望：13个exit0、两个参数拒绝exit2。
+默认S0 605/0/0、完整hook850/0/1（含26个compile-fail文档测试）、工具79/0/0；
+重叠分组不相加，原60秒soak仍ignored。13新共享/3工具/7旧锚点/9原Trace具名均通过。
+4真实产物、796软件文件逐件核验；两新增场景2/2、旧All72/72逐名逐序一致。
+双CSV共57/68条W4事件，真实同inode+EBADF、同事务/原目标修复、唯一unlink；
+原FlatBuffers回复直接核验首FsyncFailed/Started/retired，双1/1、latchtrue且真clean exit0。
+原finalizer模块前缀误写exit1保留；独立审核后的r2严格核9原名并真实exit0，未重写原门。
+开发失败、两处RR错误出口修正与最终源码审链均归H包`local/s48/w4a/`，root裁决为review.md。
+无Orin、systemd、完整SIGKILL或P-E；RR修正另包，wire4历史FAIL/D15 OPEN/deployable=false保持。
+
 ## 2026-09-10 · W3生产总装验收
 
 W3共享权限、高/普通双队列、唯一文件writer、RPC原责任账本与受监督关闭链
@@ -691,6 +704,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-09-10 | W4a正式15门/新增2例/原All72独立终审通过；原统计失败及限定更正保留，后续W4/RR/P-E未完成 | Codex |
 | 2026-09-10 | W3生产总装31门/All72/72独立源码与证据终审通过；原失败保留，W4/P-E及Orin待验证 | Codex |
 | 2026-09-09 | A3b快照数据竞争修复独立批准；22本地门及原始证据核验通过，Miri范围、ignored专项与Orin未测边界分别记录 | Codex |
 | 2026-09-08 | S-45 两端软件验收独立批准；左 H2 首次 FAIL 保真，新物理边界后重测 | Codex |

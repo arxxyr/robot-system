@@ -2294,7 +2294,7 @@ root_logical_clock_approval.md要求真实commit_clear成功后同域clock单次
 实际基于9317e1e完成round11十门、独立源码/证据/root验收；362来源/六owner，
 详local/s48/w3a/review.md。本包不修改schema；daemon/IPC/权限权威/ACK/worker8/磁盘生产切换继续留完整W3另审。
 
-#### P.6.14.14 W3-P / W3 完整生产接线（Plan Approved）
+#### P.6.14.14 W3-P / W3 完整生产接线（已评审提交1338f9d）
 
 基线757ac55；root完整函数稿`local/s48/w3/master_function_plan.md` r2 SHA
 `af85ce680e591a3b9d359ce42715c83a2e771cd5823cb251351ab2e8aca689cb`，
@@ -2365,6 +2365,44 @@ All72/72通过，367项来源与228项输入首末一致；详H包local/s48/w3/r
 正式证据不由开发轮拼接。双队列/权限/唯一writer已接生产调用方，未部署到Orin。
 W4纯D/逐步SIGKILL/双环境与P-E长测仍待完成；RR跨原子可见性证明另列OPEN。
 wire4历史FAIL、D15 OPEN、deployable=false保持；新现场步骤沿原物理边界。
+
+
+#### P.6.14.15 W4a 文件故障输入与真实恢复样例（本地独立验收通过）
+
+基线W3已提交`1338f9dc729a3efb2394e61f3a9087b08f7f69d0`，未push。
+精确任务r2与B独立限定ACK分别为`w4a/inputs/robot-w4-development-packages-r2.md`
+（SHA `ec63bdc1…446cad`）及同名`-independent-review.md`（`3b29be74…6af48`）。
+root已批准实施，见`target/post_e_h2_rt/s48/w4a/root_implementation_approval.md`；
+初始批准输入清单为`approved_inputs.json`，原8件保持；最终验收另见`w4a/review.md`。
+
+C独占TX目录同步/三相内核、guard/dirfd、writer/hook/trace、daemon和注册；
+A独占`comm_fault/w4_latch_crash.rs`两条真实daemon/RR样例，B非作者审查。
+先采真实起点与完整来源；C唯一Cargo/rustfmt/构建，运行前作者停写；root最终提交。
+
+实施补充：独审实读发现`write_latch`另有第三处同步调用，root已批准使其复用
+同一同步内核，并增加三处路径与原After阶段凭证推进回归；原阶段、错误和预算不变。
+准确增量见`w4a/root_tx_sync_coverage_addendum.md`，原r2输入与首次评审原文保留。
+
+仅现测试feature下接受created/created-unsynced两档、最多两项同txn单次故障。
+Linux O_PATH同inode目录别名只喂一次真实fsync；原fd/owner/token不换，准备失败
+不能冒调用或EBADF。Prepare直接同步和Engine公共同步均保Before/Operation/After，
+旧After仍可正确提升Durable。scope、执行序号、次数受检且不继承到义务/flush。
+真实事件复用原8192槽/旧编码与布局，generation按u32受检，txn用完整两u64；
+ArmInflight真边界后持续drain，未知/不完整/零例/丢失均失败。
+
+两例分别证明Created恢复，以及unlink后UnsyncedBeforeRepair沿原target重同步；
+保持首SyncMarkerDirectory FsyncFailed、原RR唯一退休、marker无、双1/1/latchtrue。
+新增W4-FILE-FAULT-SMOKE固定两例，不加入旧All；默认/旧pause/三相与真实回归必验。
+无feature不解析/不增加IO；未配置新计划保持旧行为；非Linux配置显式Unsupported，
+未实际跨目标编译时不声称通过。完整T8/SIGKILL、双环境/纯D/panic、P-E及RR上游
+可见性修复另包；原2s/500ms/D10s/L9.75s预算、权威及凭证合同不改。无Orin或硬件操作。
+
+W4a正式round1已通过独立源码/证据与root验收：373源/187输入首末一致，
+10改6新全部有源码审链；15门为13个exit0和两个参数拒绝exit2，新增2/2及原All72/72。
+默认S0 605/0/0、完整hook850/0/1、工具79/0/0，不重复相加。原统计器因旧Trace
+模块前缀误写真实exit1；事后r2仅校正前缀并严格核9原名，真实exit0，原冻件/FAIL不改。
+结果`w4a/c/result.json`（6bc84ff5…24e26c），裁决`w4a/review.md`。后续RR严格内核
+直接替换本方工厂及W4b最小SIGKILL候选均待精确方案闭合，尚未批准vendor或新实施。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

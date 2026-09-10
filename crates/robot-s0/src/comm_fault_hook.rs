@@ -1,5 +1,8 @@
 //! 通信故障验收专用接缝，不进入默认构建或生产组合。
 
+mod w4_file_fault;
+pub use w4_file_fault::{FileFaultMode, file_fault_from_env, writer_hook};
+
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

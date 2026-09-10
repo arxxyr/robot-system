@@ -10,6 +10,19 @@
 
 ---
 
+## 2026-09-10 · W4a 文件同步故障恢复（本地独立验收通过）
+
+W4a在原测试feature内增加固定两档同步故障夹具，以同目录O_PATH别名执行真实
+fsync并得到EBADF，验证Created和UnsyncedBeforeRepair沿原Latched目标恢复。
+三处目录同步共用原三相内核，原token/阶段/预算保持；命令scope与跟踪字段受检。
+两例均保首FsyncFailed、原RR唯一退休、双1/1/latchtrue，且只unlink一次。
+基线W3 `1338f9d`；373源码/187输入首末一致，10改6新已独审。正式15门通过
+（13个exit0、两个参数拒绝exit2），新增2/2及原All72/72；fmt与三组Clippy零警告。
+原编译/Clippy失败及汇总前缀误写的exit1保留，事后限定更正已审并真实exit0。
+完整证据和范围裁决见H包`local/s48/w4a/review.md`；无依赖或冻结设计变更。
+本包没有Orin/电机、systemd或完整SIGKILL矩阵；RR完整修正、P-E仍待完成，
+wire4历史FAIL、D15 OPEN、deployable=false保持。
+
 ## 2026-09-10 · W3生产总装（本地独立验收通过）
 
 W3共享权限、高/普通双队列、唯一文件writer、RPC原责任账本与受监督关闭链

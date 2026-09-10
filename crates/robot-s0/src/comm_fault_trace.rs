@@ -8,6 +8,8 @@ use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+pub mod w4;
+
 pub const TRACE_CAPACITY: usize = 8192;
 const VERSION: u64 = 2;
 const RESERVATION_ATTEMPTS: usize = 8;
@@ -208,6 +210,19 @@ pub enum TraceKind {
     InjectedDelay,
     MailboxPublishing,
     CommErrorObserved,
+    W4CommandBegin = 19,
+    W4TokenBefore = 20,
+    W4TokenAfter = 21,
+    W4Completion = 22,
+    W4CommandEnd = 23,
+    W4BeforeEntered = 24,
+    W4OperationSucceeded = 25,
+    W4FaultSelected = 26,
+    W4AliasExpected = 27,
+    W4AliasVerified = 28,
+    W4DirSyncCall = 29,
+    W4DirSyncReturned = 30,
+    W4FixtureFailure = 31,
 }
 
 impl TraceKind {
@@ -231,6 +246,20 @@ impl TraceKind {
             16 => Self::InjectedDelay,
             17 => Self::MailboxPublishing,
             18 => Self::CommErrorObserved,
+            19 => Self::W4CommandBegin,
+            20 => Self::W4TokenBefore,
+            21 => Self::W4TokenAfter,
+            22 => Self::W4Completion,
+            23 => Self::W4CommandEnd,
+            24 => Self::W4BeforeEntered,
+            25 => Self::W4OperationSucceeded,
+            26 => Self::W4FaultSelected,
+            27 => Self::W4AliasExpected,
+            28 => Self::W4AliasVerified,
+            29 => Self::W4DirSyncCall,
+            30 => Self::W4DirSyncReturned,
+            31 => Self::W4FixtureFailure,
+
             _ => return None,
         })
     }

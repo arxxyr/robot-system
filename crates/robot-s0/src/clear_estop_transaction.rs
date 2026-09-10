@@ -56,12 +56,16 @@ mod guard;
 
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, feature = "test-comm-fault-hook"))]
+mod w4_tests;
 
 pub use credential::{
     ClearTxnRecord, CreatedMarker, DurableMarker, FileIdentity, MarkerCredential, PendingClear,
     PrepareError, PrepareFailureToken, PreparedClear, RemoveError, RemoveFailureToken, RepairError,
     RepairedClear, UnsyncedRemoval,
 };
+#[cfg(feature = "test-comm-fault-hook")]
+pub use guard::{AliasPreparation, DirectorySyncEvent, DirectorySyncInput};
 pub use guard::{GuardInterrupt, InterruptReason, NoGuard, StageError, StepGuard, StepPhase};
 
 use credential::{Binding, RECORD_BYTES};
@@ -628,6 +632,41 @@ impl StepContext<'_> {
         stage: ClearTxnStage,
         operation: impl FnOnce() -> io::Result<T>,
     ) -> Result<T, StepFailure<T>> {
+        self.run_with_guard(stage, |_| operation())
+    }
+
+    fn run_directory_sync(
+        &mut self,
+        stage: ClearTxnStage,
+        dir: &DirHandle,
+    ) -> Result<(), StepFailure<()>> {
+        self.run_with_guard(stage, |guard| {
+            #[cfg(not(feature = "test-comm-fault-hook"))]
+            let _ = guard;
+            #[cfg(feature = "test-comm-fault-hook")]
+            match guard.directory_sync_input(stage) {
+                DirectorySyncInput::Original => {}
+                DirectorySyncInput::OPathAlias => {
+                    #[cfg(target_os = "linux")]
+                    return dir.sync_with_alias_input(|event| {
+                        guard.directory_sync_event(stage, event);
+                    });
+                    #[cfg(not(target_os = "linux"))]
+                    return Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "W4 目录别名故障仅支持 Linux",
+                    ));
+                }
+            }
+            dir.sync()
+        })
+    }
+
+    fn run_with_guard<T>(
+        &mut self,
+        stage: ClearTxnStage,
+        operation: impl FnOnce(&mut dyn StepGuard) -> io::Result<T>,
+    ) -> Result<T, StepFailure<T>> {
         if let Err(interrupt) = self.guard.before(stage) {
             return Err(StepFailure::Before(StageError::new(
                 stage,
@@ -647,9 +686,11 @@ impl StepContext<'_> {
                 io::Error::from_raw_os_error(libc::EIO),
             )));
         }
-        let value = operation().map_err(|error| {
+        let value = operation(self.guard).map_err(|error| {
             StepFailure::Operation(StageError::new(stage, StepPhase::Operation, error))
         })?;
+        #[cfg(feature = "test-comm-fault-hook")]
+        self.guard.after_success(stage);
         #[cfg(test)]
         if let Some(after_step) = self.after_step.as_mut()
             && let Err(error) = after_step(stage)
@@ -683,8 +724,9 @@ impl<'a> Engine<'a> {
     }
 
     fn sync_directory(&mut self, stage: ClearTxnStage) -> Result<(), StageError> {
-        let dir = self.dir;
-        self.run_flat(stage, || dir.sync())
+        self.ctx
+            .run_directory_sync(stage, self.dir)
+            .map_err(StepFailure::into_error)
     }
 
     /// 不跟随链接、不在 FIFO 上等待地打开标记；非普通文件视为确认不符。
@@ -952,7 +994,7 @@ impl<'a> Engine<'a> {
         };
         match self
             .ctx
-            .run(ClearTxnStage::SyncMarkerDirectory, || dir.sync())
+            .run_directory_sync(ClearTxnStage::SyncMarkerDirectory, dir)
         {
             Ok(()) => {}
             Err(StepFailure::Before(error) | StepFailure::Operation(error)) => {
@@ -1009,7 +1051,7 @@ impl<'a> Engine<'a> {
         })?;
         self.run_flat(stages[2], || file.sync_all())?;
         self.run_flat(stages[3], || dir.rename_at(&temporary.name, name))?;
-        self.run_flat(stages[4], || dir.sync())
+        self.sync_directory(stages[4])
     }
 
     /// 无标记时的旧 loader 语义：primary 优先；缺失 / 损坏回退 backup 并

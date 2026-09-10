@@ -15,6 +15,9 @@ use super::{Args, Phase, rpc, startup};
 pub(super) const SOFTWARE_LOAD_ACCEPTANCE: &str = "S-46";
 
 pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> {
+    if super::validate_w4_case(args.phase, args.case.as_deref())? {
+        return super::w4_latch_crash::run(args, report).await;
+    }
     match args.phase {
         Phase::Mock => mock(args, report).await,
         Phase::Startup => {

@@ -13,6 +13,7 @@ mod sla_acceptance;
 mod sla_background;
 mod startup;
 mod w3;
+mod w4_latch_crash;
 mod watchdog;
 
 use robot_core::time::{RobotClock, SystemClock};
@@ -128,6 +129,7 @@ impl Args {
         if phase == Phase::MockH2Load && case.is_some() {
             return Err("mock-h2-load 是完整长负载，不接受 --case 截短".to_owned());
         }
+        validate_w4_case(phase, case.as_deref())?;
         Ok(Some(Self {
             phase,
             bin_dir,
@@ -137,6 +139,16 @@ impl Args {
             hardware_id,
             h2_software_cache_entries,
         }))
+    }
+}
+
+/// W4a 只注册明确两例；未知 W4 筛选或错误 phase 在任何子进程启动前拒绝。
+fn validate_w4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
+    match case {
+        Some("W4-FILE-FAULT-SMOKE") if phase == Phase::Mock => Ok(true),
+        Some("W4-FILE-FAULT-SMOKE") => Err("W4-FILE-FAULT-SMOKE 仅属于 mock phase".to_owned()),
+        Some(value) if value.starts_with("W4") => Err(format!("未知 W4 筛选：{value}")),
+        _ => Ok(false),
     }
 }
 
@@ -193,6 +205,24 @@ mod argument_tests {
             .chain(extra.iter().copied())
             .map(str::to_owned),
         )
+    }
+
+    #[test]
+    fn w4_case_is_explicit_and_unknown_or_wrong_phase_is_rejected() {
+        let args = parse(&["--phase", "mock", "--case", "W4-FILE-FAULT-SMOKE"])
+            .unwrap()
+            .unwrap();
+        assert!(validate_w4_case(args.phase, args.case.as_deref()).unwrap());
+        for extra in [
+            ["--phase", "mock", "--case", "W4-UNKNOWN"],
+            ["--phase", "all", "--case", "W4-FILE-FAULT-SMOKE"],
+        ] {
+            assert!(parse(&extra).is_err());
+        }
+        assert!(
+            !validate_w4_case(Phase::All, None).unwrap(),
+            "原 All 不追加 W4 两例"
+        );
     }
 
     #[test]

@@ -31,11 +31,13 @@
            8 项决策全部 ACK）；函数级 Plan Approved，按用户2026-09-09最新分工：
            root定方案与评审，cc-claude具体开发和测试，各阶段验收通过即提交。
            实施状态与证据 = team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md；
-           W3生产总装已独立终审及root验收，本阶段提交见git日志。
+           W3生产总装已独立终审及root验收，已提交1338f9d。
            正式round4的31门与All72/72通过。原语阶段与旧失败
            详H包及HANDOFF，不在入口重复流水账。
            新权限、高/普通双队列、唯一writer和RPC责任账本已接生产调用方；
-           本地验收不代替Orin验证，下一步W4故障矩阵及P-E长负载。
+           W4a文件故障夹具已独立验收，15门/新增2例/原All72全部通过；
+           当前继续W4逐步崩溃矩阵与RR修正方案，之后P-E长负载；
+           本地验收不代替Orin验证，RR上游可见性/退出保留问题另包修正。
            cc-claude额度耗尽后按用户混编授权转原生开发，C独占Cargo，
            root或独立Codex终审；每阶段通过即commit，不push。
            左H1/H3已通过，H2两次FAIL，左断电；S-46 Orin wire4仍FAIL。

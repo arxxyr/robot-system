@@ -20,7 +20,7 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     W3生产总装独立终审及root验收通过；31门/All72/72，本阶段提交见git日志
+当前步骤:     W3已提交1338f9d；W4a文件故障恢复已独立验收，阶段提交见git日志
 下一步:       W4故障矩阵 → P-E长负载 → 两端同源软件验证
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
@@ -36,10 +36,11 @@ cc-claude优先负责具体开发与测试；其额度耗尽后，按用户混�
 是历史授权状态，不作为本轮停工理由。实现、验证、真机执行分别记录，不能将
 Spec Approved 或旧测试记录写成新代码已通过验收。
 
-当前 W3 已接通共享权限、高/普通双队列、唯一文件 writer、RPC责任账本和
-受监督关闭链。完整 round4 源码367项与输入228项首末一致，workspace2151通过、
-1项既有ignored；完整软件All72/72。独立源码/证据终审及root验收通过，不外推至Orin或电机。
-逐轮失败、回归和准确统计统一见HANDOFF、H包与10_verification，不重复累计。
+W3已接通共享权限、高/普通双队列、唯一文件writer、RPC责任账本和受监督关闭链。
+W4a新增Created/Unsynced真实文件故障恢复验收：373源码/187输入首末一致，
+15门满足期望、新增2/2与原All72/72，独立源码/证据及root验收通过。
+旧编译/Clippy失败与汇总脚本更正均保原件；准确统计见HANDOFF、H包和10_verification。
+RR完整修正与后续逐步SIGKILL矩阵仍在方案审，不外推至Orin或电机。
 
 左H1/H3通过、H2两次FAIL；用户最后确认左臂断电、双臂支撑。右臂未测，
 六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。本轮未访问远端，

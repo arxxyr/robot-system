@@ -50,6 +50,52 @@ impl DirHandle {
         self.file.sync_all()
     }
 
+    /// 仅向这一次真实 fsync 提供受检 `O_PATH` 别名；原目录 fd 始终留在 self。
+    #[cfg(all(target_os = "linux", feature = "test-comm-fault-hook"))]
+    pub(super) fn sync_with_alias_input(
+        &self,
+        mut observe: impl FnMut(super::DirectorySyncEvent),
+    ) -> io::Result<()> {
+        use super::{AliasPreparation as P, DirectorySyncEvent as E};
+        observe(E::Expected(self.identity));
+        let alias = self
+            .open_at(
+                OsStr::new("."),
+                libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW,
+            )
+            .inspect_err(|error| {
+                observe(E::PreparationFailed {
+                    phase: P::Open,
+                    errno: error.raw_os_error(),
+                });
+            })?;
+        let metadata = alias.metadata().inspect_err(|error| {
+            observe(E::PreparationFailed {
+                phase: P::Metadata,
+                errno: error.raw_os_error(),
+            });
+        })?;
+        let identity = FileIdentity::of(&metadata);
+        if !metadata.is_dir() || identity != self.identity {
+            observe(E::PreparationFailed {
+                phase: P::Identity,
+                errno: None,
+            });
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "W4 目录别名身份与原目录不符",
+            ));
+        }
+        observe(E::Verified(identity));
+        observe(E::Call);
+        let result = alias.sync_all();
+        observe(E::Returned {
+            success: result.is_ok(),
+            errno: result.as_ref().err().and_then(io::Error::raw_os_error),
+        });
+        result
+    }
+
     /// 相对本目录打开已存在的条目；`flags` 不含 `O_CREAT`。
     pub(super) fn open_at(&self, name: &OsStr, flags: libc::c_int) -> io::Result<File> {
         let name = c_name(name)?;
