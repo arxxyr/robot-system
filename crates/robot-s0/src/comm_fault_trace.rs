@@ -223,6 +223,7 @@ pub enum TraceKind {
     W4DirSyncCall = 29,
     W4DirSyncReturned = 30,
     W4FixtureFailure = 31,
+    W4KillReached = 32,
 }
 
 impl TraceKind {
@@ -259,6 +260,7 @@ impl TraceKind {
             29 => Self::W4DirSyncCall,
             30 => Self::W4DirSyncReturned,
             31 => Self::W4FixtureFailure,
+            32 => Self::W4KillReached,
 
             _ => return None,
         })

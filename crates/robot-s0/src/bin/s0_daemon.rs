@@ -837,6 +837,14 @@ fn run(
     latch_lock: &LatchTargetLock,
 ) -> MainExit {
     #[cfg(feature = "test-comm-fault-hook")]
+    let file_kill = match robot_s0::comm_fault_hook::file_kill_from_env() {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "W4 SIGKILL 配置拒绝，尚未准备执行资源");
+            return MainExit::empty(1);
+        }
+    };
+    #[cfg(feature = "test-comm-fault-hook")]
     let file_fault = match robot_s0::comm_fault_hook::file_fault_from_env() {
         Ok(value) => value,
         Err(error) => {
@@ -869,6 +877,8 @@ fn run(
         &mut boot,
         #[cfg(feature = "test-comm-fault-hook")]
         file_fault,
+        #[cfg(feature = "test-comm-fault-hook")]
+        file_kill,
     );
     match started {
         Err(code) => stop_startup_owned(boot, stops, &resources, standby, supervisor, args, code),
@@ -1425,6 +1435,13 @@ impl ExecutorMetricsRef {
 }
 
 #[allow(clippy::too_many_lines)]
+#[cfg_attr(
+    feature = "test-comm-fault-hook",
+    allow(
+        clippy::too_many_arguments,
+        reason = "测试配置在原非实时启动边界显式传入，保持原资源和监督实例借用"
+    )
+)]
 fn run_workers(
     args: &ResolvedArgs,
     supervisor: &BootSupervisor,
@@ -1434,6 +1451,9 @@ fn run_workers(
     workers: &mut BootHandles,
     #[cfg(feature = "test-comm-fault-hook")] file_fault: Option<
         robot_s0::comm_fault_hook::FileFaultMode,
+    >,
+    #[cfg(feature = "test-comm-fault-hook")] file_kill: Option<
+        robot_s0::comm_fault_hook::FileKillMode,
     >,
 ) -> Result<robot_transport::RtSnapshotReader<S0StateSnapshot>, i32> {
     let WorkerStart {
@@ -1449,8 +1469,16 @@ fn run_workers(
     robot_s0::comm_fault_hook::before_spawn("latch_writer")
         .map_err(|error| startup_io_error(&error))?;
     #[cfg(feature = "test-comm-fault-hook")]
-    let writer_hook = robot_s0::comm_fault_hook::writer_hook(file_fault, clock.clone())
-        .map_err(|error| startup_io_error(&error))?;
+    let writer_hook = match file_kill {
+        Some(mode) => robot_s0::comm_fault_hook::make_file_kill_hook(
+            mode,
+            Arc::clone(clock),
+            supervisor.shared(),
+            &res.writer_shared,
+        ),
+        None => robot_s0::comm_fault_hook::writer_hook(file_fault, Arc::clone(clock)),
+    }
+    .map_err(|error| startup_io_error(&error))?;
     #[cfg(not(feature = "test-comm-fault-hook"))]
     let writer_hook: Box<dyn robot_s0::latch_writer::WriterHook> =
         Box::new(robot_s0::latch_writer::NoHook);

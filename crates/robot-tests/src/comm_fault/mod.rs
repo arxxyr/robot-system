@@ -14,6 +14,7 @@ mod sla_background;
 mod startup;
 mod w3;
 mod w4_latch_crash;
+mod w4_latch_sigkill;
 mod watchdog;
 
 use robot_core::time::{RobotClock, SystemClock};
@@ -142,11 +143,12 @@ impl Args {
     }
 }
 
-/// W4a 只注册明确两例；未知 W4 筛选或错误 phase 在任何子进程启动前拒绝。
+/// W4 文件故障和 SIGKILL 只走显式入口；错误筛选在启动子进程前拒绝。
 fn validate_w4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
     match case {
-        Some("W4-FILE-FAULT-SMOKE") if phase == Phase::Mock => Ok(true),
+        Some("W4-FILE-FAULT-SMOKE" | "W4-FILE-SIGKILL-SMOKE") if phase == Phase::Mock => Ok(true),
         Some("W4-FILE-FAULT-SMOKE") => Err("W4-FILE-FAULT-SMOKE 仅属于 mock phase".to_owned()),
+        Some("W4-FILE-SIGKILL-SMOKE") => Err("W4-FILE-SIGKILL-SMOKE 仅属于 mock phase".to_owned()),
         Some(value) if value.starts_with("W4") => Err(format!("未知 W4 筛选：{value}")),
         _ => Ok(false),
     }
@@ -205,6 +207,21 @@ mod argument_tests {
             .chain(extra.iter().copied())
             .map(str::to_owned),
         )
+    }
+
+    #[test]
+    fn w4_sigkill_case_is_explicit_and_cannot_select_wrong_phase_or_unknown_point() {
+        let args = parse(&["--phase", "mock", "--case", "W4-FILE-SIGKILL-SMOKE"])
+            .unwrap()
+            .unwrap();
+        assert!(validate_w4_case(args.phase, args.case.as_deref()).unwrap());
+        for extra in [
+            ["--phase", "all", "--case", "W4-FILE-SIGKILL-SMOKE"],
+            ["--phase", "mock", "--case", "W4-FILE-SIGKILL-UNKNOWN"],
+        ] {
+            assert!(parse(&extra).is_err());
+        }
+        assert!(!validate_w4_case(Phase::All, None).unwrap());
     }
 
     #[test]

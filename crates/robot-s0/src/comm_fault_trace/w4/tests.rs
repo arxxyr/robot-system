@@ -134,6 +134,107 @@ fn invalid_slot_255_cannot_carry_into_errno_flag() {
 }
 
 #[test]
+fn kill_reached_round_trip_keeps_five_stages_and_original_deadline() {
+    for stage in [
+        ClearTxnStage::CreateMarker,
+        ClearTxnStage::RenameBackup,
+        ClearTxnStage::SyncPrimaryDirectory,
+        ClearTxnStage::RemoveMarker,
+        ClearTxnStage::SyncRemovalDirectory,
+    ] {
+        let payload = W4Payload::KillReached {
+            step_seq: u64::MAX,
+            stage,
+            entered_at: 1,
+            pause_until: 250_000_002,
+        };
+        let actual = event(payload);
+        assert_eq!(actual.kind as u64, 32);
+        assert_eq!(actual.a, 1);
+        assert_eq!(actual.b, 250_000_002);
+        assert_eq!(decode(&actual).unwrap(), Some(payload));
+    }
+    assert_eq!(TraceKind::decode(32), Some(TraceKind::W4KillReached));
+}
+
+#[test]
+fn kill_reached_rejects_unknown_stage_zero_source_and_late_or_overflowed_window() {
+    let payload = W4Payload::KillReached {
+        step_seq: 1,
+        stage: ClearTxnStage::RemoveMarker,
+        entered_at: 1,
+        pause_until: 250_000_003,
+    };
+    let valid = event(payload);
+    assert_eq!(decode(&valid).unwrap(), Some(payload));
+    for changed in [
+        TraceEvent { source: 0, ..valid },
+        TraceEvent {
+            sample_seq: 0,
+            ..valid
+        },
+        TraceEvent {
+            normal_seq: 0,
+            ..valid
+        },
+        TraceEvent {
+            generation: 0,
+            ..valid
+        },
+        TraceEvent {
+            generation: 6,
+            ..valid
+        },
+        TraceEvent {
+            generation: valid.generation | (1 << 31),
+            ..valid
+        },
+        TraceEvent {
+            stamp_ns: 0,
+            ..valid
+        },
+        TraceEvent {
+            stamp_ns: valid.b,
+            ..valid
+        },
+        TraceEvent {
+            b: valid.b + 1,
+            ..valid
+        },
+        TraceEvent {
+            a: u64::MAX,
+            ..valid
+        },
+        TraceEvent {
+            b: valid.a,
+            ..valid
+        },
+        TraceEvent {
+            b: valid.a + 2_000_000_000,
+            ..valid
+        },
+    ] {
+        assert!(decode(&changed).is_err(), "不接受篡改字段：{changed:?}");
+    }
+    for (stage, entered_at, pause_until) in [
+        (ClearTxnStage::SampleMarkerIdentity, 1, 2),
+        (ClearTxnStage::CreateMarker, u64::MAX, u64::MAX),
+        (ClearTxnStage::CreateMarker, 0, 1),
+        (ClearTxnStage::CreateMarker, 1, 2_000_000_001),
+    ] {
+        assert!(
+            encode(W4Payload::KillReached {
+                step_seq: 1,
+                stage,
+                entered_at,
+                pause_until,
+            })
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn reserved_fields_unknown_values_and_overflow_are_rejected() {
     let valid = event(W4Payload::DirSyncReturned {
         slot: 0,
@@ -162,7 +263,7 @@ fn reserved_fields_unknown_values_and_overflow_are_rejected() {
     ] {
         assert!(decode(&corrupt).is_err());
     }
-    assert_eq!(TraceKind::decode(32), None);
+    assert_eq!(TraceKind::decode(33), None);
     assert_eq!(
         decode(&TraceEvent {
             kind: TraceKind::NormalAcquire,

@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "S48_W4_REMAINING_PLAN_REVIEW",
-  "resume_from": "W4a独立验收与归档完成，阶段提交见git日志；下一步RR严格内核与W4b逐步SIGKILL精确方案审，未批准vendor或新实施。",
+  "work_state": "PAUSED_AFTER_W4B",
+  "resume_from": "W4b本地验收归档完成，本提交后按用户要求暂停；等待新的继续指令，不自动启动RR/vendor/模型/Orin，不再检查cc-claude。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_W4A_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "W4A_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_W4B_APPROVED_SOFTWARE_SCOPE",
+  "review_status": "W4B_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
   "deployable": false,
-  "scope": "W4a本地文件同步故障夹具与两真实软件恢复样例验收通过；W3权限/双队列/唯一writer已接生产调用方，未访问Orin，完整W4/RR/P-E未完，wire4历史FAIL/D15 OPEN/deployable=false。",
+  "scope": "W4b固定五例SIGKILL/原目录重启本地验收通过，W4a文件故障两例回归通过；W3权限/双队列/唯一writer已接生产调用方。当前提交后暂停，未访问Orin，完整W4/RR/P-E未完，wire4历史FAIL/D15 OPEN/deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -2238,17 +2238,124 @@
           "非Linux仅cfg/配置判定，无跨目标构建；未运行本包systemd/Orin/电机。",
           "RR完整修正、SIGKILL全矩阵/SUP/ENV/P-E未完成；wire4历史FAIL、D15 OPEN。"
         ],
-        "commit_reference": "本阶段提交以git日志为准；每阶段独审与必要门通过即commit，不push。",
+        "commit_reference": "382ca446a4e31cbf02a6ad76b8982e1996a76b5d",
         "archive_verified_files": 13545,
-        "post_archive_boundary": "归档执行回执、最终元数据核验与本阶段实际commit回执晚于当前包，暂存本地post_archive_review/和commit_receipt.json，下一包归档；不制造自身commit/hash循环。"
+        "post_archive_boundary": "W4a原归包后独审及commit_receipt.json已随本次W4b归包携带；不反称存在于先前W4a tar。"
       },
       "w4_remaining": {
-        "status": "PLAN_REVIEW_ONLY",
-        "rr": "r2+本方现有工厂直接迁strict候选；最后shared析构顺序和公用CAL ORPHANED具名门仍Changes Required，未vendor。",
-        "rr_review": "local/s48/w4_rr/inputs/robot-w4-rr-r2-independent-review.md",
-        "rr_review_sha256": "bd4197ac58a12043b1e1f71449f0e8af3735e637017a888f96b530d64dedb8c4",
-        "sigkill": "W4b固定5例一次SIGKILL/同目录重启候选待独审，未实施；完整矩阵仍未验收。",
-        "w1_observation": "历史锁偶发失败仍留观察；W4a未作根因修正，不以本轮All通过代替结案。"
+        "status": "PAUSED_AFTER_W4B",
+        "rr": "r3闭合最后shared析构及公用CAL两项方案遗留，B增量ACK；直接迁现有factory、同批所有peer/清理者，vendor/模型构建输入及实现另包。",
+        "rr_review": "local/s48/w4_rr/inputs/robot-w4-rr-r3-independent-review.md",
+        "rr_review_sha256": "c7fec56c07ed0b41d6a2f63c834ca6a1eb2496d393e7a9e30d2cb43d787f2d22",
+        "sigkill": "W4b固定五例已本地软件独立验收；完整磁盘/NoGuard/T8/SUP/ENV仍未完成。",
+        "w1_observation": "历史锁偶发失败仍留观察；W4a未作根因修正，不以本轮All通过代替结案。",
+        "rr_archive_boundary": "RR r3/R0只读方案及固定上游许可原件随本次W4b归档，不含vendor/模型实现。"
+      },
+      "w4b": {
+        "status": "APPROVED_SOFTWARE_SCOPE",
+        "base_commit": "382ca446a4e31cbf02a6ad76b8982e1996a76b5d",
+        "root_approval": "local/s48/w4b/root_implementation_approval.md",
+        "root_approval_sha256": "ab12d5365e50f722dda354c13a9c44d292a949cdb99fd52859b0bfa6a6a5dd7d",
+        "plan": "local/s48/w4b/inputs/robot-w4b-sigkill-minimal-plan-r2.md",
+        "plan_sha256": "12bc95ac56c3118d2f0785c0ad6bf75b862901b77e8695b8d96e92dade580253",
+        "independent_review": "local/s48/w4b/inputs/robot-w4b-sigkill-r2-independent-review.md",
+        "independent_review_sha256": "43774a82b029610a58672eda3dd9b4b4f76694ea4b5b865e275861eae6158244",
+        "scope": "固定五个成功步骤后的SIGKILL与原目录一次真实恢复；不含NoGuard恢复内部再杀、全矩阵、RR/vendor、Orin。",
+        "verification": "FORMAL_GATES_AND_INDEPENDENT_REVIEW_PASSED",
+        "archive_boundary": "当前W4b及RR只读方案随本包归档；本次归档后审查和commit回执留本地，精确边界见post_archive_boundary。",
+        "development_summary": "开发11轮36raw保留，含compile101、scope20/1、首软件五FAIL和两轮Clippy101；后续补正各自独审，正式同源round1全部通过。",
+        "oracle_correction_approval": "local/s48/w4b/root_oracle_correction_approval.md",
+        "oracle_correction_approval_sha256": "d85873e97fc8e0c37e03a83af1a1cb798c90b1be3109eda3b720df19f3774655",
+        "development_evidence": {
+          "quality_run": "local/s48/w4b/c/dev_quality_3/run.json",
+          "quality_run_sha256": "a0d938f5ba4da3ab003e5d07dc35834d99916949dd4fc6f1313e1089c64127de",
+          "source_count": 376,
+          "software": {
+            "sigkill": {
+              "path": "local/s48/w4b/c/dev_software_2/sigkill/report.json",
+              "sha256": "4535b3c01cccd6d93beb58f24af7fb858c94ee5b04c4b2ead1c978e9f2adfe07",
+              "cases_passed": 5
+            },
+            "w4a": {
+              "path": "local/s48/w4b/c/dev_software_2/w4a/report.json",
+              "sha256": "37050ca8a972c64294edd7d65b4b86ba0fb9584be23d0c20a0d2f1d94ff1c853",
+              "cases_passed": 2
+            }
+          }
+        },
+        "final_round": "round1",
+        "formal_gates": {
+          "total": 16,
+          "exit_0": 14,
+          "expected_exit_2": 2
+        },
+        "source_count": 376,
+        "input_count": 129,
+        "source_delta": {
+          "modified": 8,
+          "added": 3,
+          "deleted": 0
+        },
+        "test_counts": {
+          "s0_default_lib": {
+            "ok": 605,
+            "FAILED": 0,
+            "ignored": 0
+          },
+          "s0_complete_hook": {
+            "ok": 858,
+            "FAILED": 0,
+            "ignored": 1
+          },
+          "tools_tests": {
+            "ok": 89,
+            "FAILED": 0,
+            "ignored": 0
+          }
+        },
+        "software_cases": {
+          "sigkill": {
+            "passed": 5,
+            "total": 5
+          },
+          "w4a": {
+            "passed": 2,
+            "total": 2
+          },
+          "all": {
+            "passed": 72,
+            "total": 72
+          }
+        },
+        "artifact_count": 4,
+        "software_evidence_count": 979,
+        "scope_limits": "Linux本机同内核SIGKILL；未涵盖掉电/NoGuard恢复内部再杀/完整磁盘矩阵/SUP/ENV/非Linux构建/Orin；RR未修，D15 OPEN。",
+        "commit_reference": "本提交；实际commit由git日志及本地w4b/commit_receipt.json绑定，未push。",
+        "source_manifest": "local/s48/w4b/c/formal_source.sha256",
+        "source_manifest_sha256": "7b65294c0e2703c23b52869edc78fd1dd98bc05d8c8c846e21db386614dcb674",
+        "inputs_manifest": "local/s48/w4b/c/formal_inputs.json",
+        "inputs_manifest_sha256": "249569591ffb735b6694a4e933512a8c12c2358ef9daa4f79b56ae933cf09110",
+        "freeze": "local/s48/w4b/c/formal_freeze.json",
+        "freeze_sha256": "187415016b66eec11619dc7dfc80315fed4e7bf15ecd14dc143d43e57c8590e5",
+        "run": "local/s48/w4b/c/round1/run.json",
+        "run_sha256": "a2ea5c484a13de906578b59d2f93eed5e00b31fed69b5f5dba8b76b4fcc6ad7d",
+        "result": "local/s48/w4b/c/result.json",
+        "result_sha256": "bc1588d42fca315763e63ce133e7abe5a2015c729b1400f80d0fd440c1b64911",
+        "final_handoff": "local/s48/w4b/c/final_handoff.json",
+        "final_handoff_sha256": "b696d4b769af0dbefa65a60ac91546466ea3371662099d71d9e19d271153dc3f",
+        "root_review": "local/s48/w4b/review.md",
+        "root_review_sha256": "56cd37e95c1bceccf89c5504abe840a6f97a689808d5c13e5efb0c99294f8494",
+        "source_evidence_review": "local/s48/w4b/reviews/final/robot-w4b-final-source-evidence-independent-review.md",
+        "source_evidence_review_sha256": "fdb6c02843d041be0289ccdbbc308b0025b60a423f0ac1d2254408f0a3516a62",
+        "source_evidence_receipt": "local/s48/w4b/reviews/final/robot-w4b-final-source-evidence-independent-receipt.json",
+        "source_evidence_receipt_sha256": "d2078f197dd3aefb047374e28eebb68c4b2188b35205a894ed62256cb3f859dc",
+        "identity_review": "local/s48/w4b/reviews/robot-w4b-a-final-identity-review.md",
+        "identity_review_sha256": "24f9ba6650effc7b940df6a2162c31f0d3a0fa879c5601583a4f54b2a59a2960",
+        "root_raw_checks": "local/s48/w4b/root_final_raw_checks.json",
+        "root_raw_checks_sha256": "bbba6736b306af91c4d689a6175e6ec863d6b08863517e3e2167f8c6102e6168",
+        "archive_status": "PACKED_AND_PER_FILE_VERIFIED",
+        "archive_verified_files": 15611,
+        "post_archive_boundary": "本次归包15,611索引文件；包括W4b正文/所有开发与正式原件、W4a迟到审查和实际commit回执、RR只读方案。当前归包执行回执与归包后独审留target/post_e_h2_rt/s48/w4b/post_archive_review，实际commit回执留w4b/commit_receipt.json；这些后生文件不在本tar中。13二进制实件留本地，包内保SHA与实际构建记录。"
       }
     }
   },
@@ -2403,19 +2510,19 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2476,
-    "sha256": "0ba640774e6de637f70df62eb5bb4bb1d499ef0dc211102f39bafdfba371c018"
+    "lines": 2512,
+    "sha256": "9e67894be308997b6b466d5e4795cbd90dd270ad91e140e74fd48fbdb7fb74ed"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "d0db3ccf0b5bfb4a274922b5b98f03028775eed686fbcc1368bdfab69a737f21",
-    "bytes": 52553385,
-    "members": 13546,
-    "logical_bytes": 1364437321,
+    "sha256": "a19c5e43caaa639b02d7e44f2f9e17330527dcba095ed695596e02fa68d4c3b9",
+    "bytes": 60569798,
+    "members": 15612,
+    "logical_bytes": 1519532766,
     "per_file_sha256_verified": true
   },
-  "retention": "当前H包一份；保W4a开发/统计失败、两轮评审修正及最终原件，原W3与更早历史FAIL不改。可执行实件留本地，包内保实际构建/来源与SHA。",
-  "updated_at": "2026-09-10T04:16:06.366649+00:00",
+  "retention": "当前H包一份；保W4b全部开发失败、修正评审和正式原件，W4a迟到审查/commit回执及RR只读方案随本包携带。W4a/W3与更早历史FAIL不改；只有当前队列旧路径更新。可执行实件留本地，包内保实际构建/来源与SHA，本次归档后审查/commit回执留本地且不冒称已入tar。",
+  "updated_at": "2026-09-10T05:52:55.259177+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -2454,5 +2561,17 @@
     "orin": "orin/s45/old_artifacts_cleanup.json",
     "scope": "只清旧验收可执行产物及已逐SHA合并的重复解包；当前产物、构建缓存与本次失败证据保留"
   },
-  "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。"
+  "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。",
+  "stop_after_current": {
+    "user_request": "当前做完先暂停下来",
+    "current_package": "S48_W4B",
+    "required_before_pause": [
+      "本包实现与必要测试",
+      "独立源码和实际证据评审",
+      "root验收归档",
+      "git commit，不push"
+    ],
+    "next_package_authorized_to_start": false,
+    "state": "本次阶段提交后暂停，后续等待新的继续指令"
+  }
 }

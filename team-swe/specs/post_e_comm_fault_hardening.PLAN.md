@@ -2401,8 +2401,44 @@ W4a正式round1已通过独立源码/证据与root验收：373源/187输入首�
 10改6新全部有源码审链；15门为13个exit0和两个参数拒绝exit2，新增2/2及原All72/72。
 默认S0 605/0/0、完整hook850/0/1、工具79/0/0，不重复相加。原统计器因旧Trace
 模块前缀误写真实exit1；事后r2仅校正前缀并严格核9原名，真实exit0，原冻件/FAIL不改。
-结果`w4a/c/result.json`（6bc84ff5…24e26c），裁决`w4a/review.md`。后续RR严格内核
-直接替换本方工厂及W4b最小SIGKILL候选均待精确方案闭合，尚未批准vendor或新实施。
+结果`w4a/c/result.json`（6bc84ff5…24e26c），裁决`w4a/review.md`，已提交382ca44。
+RR r3两项遗留函数合同已获独审ACK；后续vendor/模型构建与调用方迁移独立分包，
+不把方案ACK写为修复或实测完成。真实原件见`w4_rr/inputs/`及r3_inputs_added.json。
+
+#### P.6.14.16 W4b 固定五例 SIGKILL 与同目录恢复（本地独立验收通过）
+
+2026-09-10 root读r2及B增量独审后批准。r2 SHA12bc95ac…0253，B独审43774a82…8244，
+root批准ab12d536…dd7d，原r1/Changes Required保留，入口`local/s48/w4b/`。
+只覆盖Prepare的CreateMarker/RenameBackup/SyncPrimaryDirectory，及同txn首Finalize
+的RemoveMarker/SyncRemovalDirectory成功后；每例一次SIGKILL、原目录一次原启动。
+五例杀后双份/marker分别为空marker+1/1、合法marker+1/0、合法marker+0/0、
+无marker+0/0、无marker+0/0；原恢复分别拒启动、保守双1/1两例、加载false两例。
+
+C独占新kill hook及tests、旧三个纯映射可见性、trace固定32、daemon原实例绑定与
+工具注册；A独占新w4_latch_sigkill.rs，含两invocation视图与五例；B独立源码/证据审。
+C独占Cargo，作者停写后运行；root文档/git。基线为382ca44，W4a原373源证据保持。
+用原BootShared binding/writer ptr_eq、原observation armed与原RuntimeWords的D读取，
+不造第二权威、重装或扩大观测ABI。Reached只证其前一次D=None，固定250ms严格位于
+原FileStep2s；不刷新progress/义务，不延长Pickup500ms/D10s/L9.75s。
+
+每例保原node/client/pending跨全部错误直到原Child真reap；真signal9不等于业务退休。
+旧端点作用域结束后才创建第二端点；crash/restart视图复用原config/latch/trust/锁，
+所有log/page/trace/CSV/boundary/请求回复输出分离，首轮完整集合与SHA重启前后一致。
+精确Prepare15步、Finalize真实4步前缀；不伪造ValidateCredential guard或尾Completion。
+第二次真实initial-latch日志与dry-run wire核验内存状态，不只拿0/0文件代替权限。
+首轮软件5例原FAIL保留；夹具补正仅将rx_trust.lock原地更新的诊断PID按真实Child
+分别校验，同时保持原锁inode、其它trust文件集合/SHA与所有原持久路径判据。
+两invocation显式warn,s0_daemon=info以取得原INFO，不放宽缺失/重复或错误latch。
+依据与root五轮独立原件核对见w4b/root_oracle_correction_approval.md。
+
+新增W4-FILE-SIGKILL-SMOKE固定5例；原W4a2例与All72独立保留。默认/完整hook/
+工具具名测试、fmt/三Clippy、4实际产物、两个精确exit2拒绝及三组软件样例同源执行；
+正式round1的16门全部满足期望（14个exit0、两个参数拒绝exit2），376源/129输入
+首末一致；默认S0 605/0/0、完整hook858/0/1、工具89/0/0，分组不相加，原soak仍ignored。
+新5/5、旧2/2、All72/72及4实际产物/979软件文件已独立核验。B非作者源码/证据终审
+与root验收通过，完整结果及失败轮见H包local/s48/w4b/review.md。
+不包含NoGuard启动恢复内部再杀、全17阶段、断电、SUP/ENV、RR修复、Orin或真机。
+用户最新收尾要求：本W4b通过测试、独审、归档及commit后暂停；后续包需用户新的继续指令。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

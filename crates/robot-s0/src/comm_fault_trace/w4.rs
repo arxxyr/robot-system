@@ -114,6 +114,12 @@ pub enum W4Payload {
         step_seq: u64,
         errno: Option<i32>,
     },
+    KillReached {
+        step_seq: u64,
+        stage: ClearTxnStage,
+        entered_at: u64,
+        pause_until: u64,
+    },
 }
 
 fn errno_word(errno: Option<i32>) -> u64 {
@@ -167,7 +173,7 @@ pub(crate) fn emit(source: u64, payload: W4Payload) {
 
 #[allow(
     clippy::too_many_lines,
-    reason = "固定十三种事件按单一穷举表编码，字段与解码表可逐项对照"
+    reason = "固定事件按单一穷举表编码，字段与解码表可逐项对照"
 )]
 fn encode(payload: W4Payload) -> Result<(TraceKind, u64, u32, u64, u64), &'static str> {
     use TraceKind as T;
@@ -277,6 +283,21 @@ fn encode(payload: W4Payload) -> Result<(TraceKind, u64, u32, u64, u64), &'stati
             errno_word(errno),
             0,
         ),
+        W4Payload::KillReached {
+            step_seq,
+            stage,
+            entered_at,
+            pause_until,
+        } => {
+            check_kill_fields(step_seq, stage, entered_at, pause_until)?;
+            (
+                T::W4KillReached,
+                step_seq,
+                stage_code(stage),
+                entered_at,
+                pause_until,
+            )
+        }
     })
 }
 
@@ -406,9 +427,50 @@ pub fn decode(event: &TraceEvent) -> Result<Option<W4Payload>, &'static str> {
                 errno: decode_errno(g & 0x10000 != 0, a)?,
             }
         }
+        T::W4KillReached => {
+            let stage = decode_stage(g)?;
+            check_kill_fields(step, stage, a, b)?;
+            if event.sample_seq == 0
+                || event.source == 0
+                || event.stamp_ns < a
+                || event.stamp_ns >= b
+                || b - event.stamp_ns > 250_000_000
+            {
+                return Err("W4 SIGKILL 命中来源或真实发布时刻无效");
+            }
+            W4Payload::KillReached {
+                step_seq: step,
+                stage,
+                entered_at: a,
+                pause_until: b,
+            }
+        }
         _ => return Ok(None),
     };
     Ok(Some(payload))
+}
+
+fn check_kill_fields(
+    step: u64,
+    stage: ClearTxnStage,
+    entered_at: u64,
+    pause_until: u64,
+) -> Result<(), &'static str> {
+    match stage {
+        ClearTxnStage::CreateMarker
+        | ClearTxnStage::RenameBackup
+        | ClearTxnStage::SyncPrimaryDirectory
+        | ClearTxnStage::RemoveMarker
+        | ClearTxnStage::SyncRemovalDirectory => {}
+        _ => return Err("W4 SIGKILL 仅接受五个固定阶段"),
+    }
+    let deadline = entered_at
+        .checked_add(2_000_000_000)
+        .ok_or("W4 SIGKILL 原步骤截止溢出")?;
+    if step == 0 || entered_at == 0 || pause_until <= entered_at || pause_until >= deadline {
+        return Err("W4 SIGKILL 步骤或固定窗口无效");
+    }
+    Ok(())
 }
 
 fn zero<const N: usize>(values: [u64; N]) -> Result<(), &'static str> {

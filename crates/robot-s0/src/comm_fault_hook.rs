@@ -2,6 +2,8 @@
 
 mod w4_file_fault;
 pub use w4_file_fault::{FileFaultMode, file_fault_from_env, writer_hook};
+mod w4_file_kill;
+pub use w4_file_kill::{FileKillMode, file_kill_from_env, make_file_kill_hook};
 
 use std::io;
 use std::sync::Arc;

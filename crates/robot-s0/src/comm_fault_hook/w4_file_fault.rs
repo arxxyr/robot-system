@@ -179,7 +179,7 @@ fn target_index(stage: S) -> Option<usize> {
         _ => None,
     }
 }
-fn command_kind(command: PersistCommand) -> C {
+pub(super) fn command_kind(command: PersistCommand) -> C {
     match command {
         PersistCommand::PrepareClear { .. } => C::Prepare,
         PersistCommand::RepairClear {
@@ -205,7 +205,7 @@ fn command_kind(command: PersistCommand) -> C {
         PersistCommand::ResyncRemoval { .. } => C::Resync,
     }
 }
-fn token_kind(token: Option<&WriterToken>) -> T {
+pub(super) fn token_kind(token: Option<&WriterToken>) -> T {
     match token {
         None => T::None,
         Some(WriterToken::NoMarker) => T::NoMarker,
@@ -225,7 +225,7 @@ fn token_kind(token: Option<&WriterToken>) -> T {
         Some(WriterToken::Lost) => T::Lost,
     }
 }
-fn completion_payload(completion: &PersistCompletion) -> P {
+pub(super) fn completion_payload(completion: &PersistCompletion) -> P {
     let (kind, failure) = match *completion {
         PersistCompletion::Prepared { .. } => (K::Prepared, None),
         PersistCompletion::PrepareFailed {
