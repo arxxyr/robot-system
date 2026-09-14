@@ -9,6 +9,18 @@
 
 ---
 
+## 2026-09-14 · RR R0 本地源码与构建准备验收
+
+两个iceoryx2 0.9.3发布包接入本地patch，原checksum/168原件及同commit许可已核；
+根仍14个成员，其余依赖版本不变。唯一源码兼容修正为fetch_update→try_update，
+原内存序和闭包不变，解决path依赖在当前nightly下触发deprecated编译拒绝。
+cc-claude完成开发自测，独立Codex及root验收通过；最终fmt、三Clippy、transport、
+RPC lib、build七门全0，transport99/0/3、RPC304/0/0（通过/失败/原忽略）。
+同图tree/deny引用首轮成功，原三编译失败与三个nonmember选择探针101保留。
+证据见H包local/s48/rr_r0/root_acceptance.md及independent_review.md。
+R0只验证来源与已有本方基线，未执行vendor私有测试；CAL/IOX修正、模型及迁移仍待后续。
+用户恢复持续目标，阶段验收后提交并继续；本轮无Orin/硬件，D15 OPEN、deployable=false。
+
 ## 2026-09-10 · W4b 固定五例SIGKILL与同目录恢复（本地独立验收通过）
 
 W4b在原测试feature内增加五个真实文件成功步骤后的SIGKILL，原Child真reap后
@@ -719,6 +731,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-09-14 | RR R0 两原包来源/唯一构建图及99项transport、304项RPC回归通过；strict/模型/Orin未验证 | Codex |
 | 2026-09-10 | W4b固定五例SIGKILL/原目录恢复独立验收；16门、5+2+72通过，原失败/ignored保留，提交后暂停 | root + 独立B源码/证据审 + A身份二路 |
 | 2026-09-10 | W4a正式15门/新增2例/原All72独立终审通过；原统计失败及限定更正保留，后续W4/RR/P-E未完成 | Codex |
 | 2026-09-10 | W3生产总装31门/All72/72独立源码与证据终审通过；原失败保留，W4/P-E及Orin待验证 | Codex |

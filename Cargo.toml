@@ -22,6 +22,16 @@ members = [
     "crates/robot-tests",
     "crates/robot-transport",
 ]
+# RR R0（2026-09-14）：iceoryx2 / iceoryx2-cal 0.9.3 以原始发布包 vendor 到 3rd-party/，
+# 经下方 [patch.crates-io] 接入根依赖图。这里显式排除，避免 Cargo 把 workspace 目录内的
+# path 依赖自动收为成员（否则 --workspace / --all-targets 会选中它们的 tests/tests.rs，
+# 而该文件引用未发布的 *_tests_common）。tools/rr-memory-model 为后续独立模型包预留，
+# 目前不存在。来源与原包缺失事实见 3rd-party/ICEORYX2_VENDOR_SOURCE.md。
+exclude = [
+    "3rd-party/iceoryx2",
+    "3rd-party/iceoryx2-cal",
+    "tools/rr-memory-model",
+]
 
 # 未来 crate（按 docs/01_implementation_steps.md 顺序逐步启用；现在不要提前加入 members）：
 #   crates/robot-kinematics-piper    # v0.6+：Piper 可选 IK/FK backend（结构异构验证）
@@ -167,6 +177,14 @@ robot-transport     = { path = "crates/robot-transport" }
 robot-adapter-mock    = { path = "crates/robot-adapters/mock" }
 robot-adapter-feetech = { path = "crates/robot-adapters/feetech" }
 robot-rpc           = { path = "crates/robot-rpc" }
+
+# RR R0（2026-09-14）：两个上游运行时 crate 改由本地 vendor 原件解析——版本仍 =0.9.3，
+# 只有 source 从 crates.io 变成 path，为后续 R1（CAL）/ R2（IOX）严格 RR 修正提供单一
+# 补丁图。其余 iceoryx2-bb-* / pal-* / log* 仍走 crates.io，不升级。原件身份见
+# 3rd-party/ICEORYX2_VENDOR_SOURCE.md。
+[patch.crates-io]
+iceoryx2     = { path = "3rd-party/iceoryx2" }
+iceoryx2-cal = { path = "3rd-party/iceoryx2-cal" }
 
 # Workspace 级 lint 默认。
 # 子 crate 在自己的 Cargo.toml 里写 `[lints] workspace = true` 即可继承。

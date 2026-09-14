@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "PAUSED_AFTER_W4B",
-  "resume_from": "W4b本地验收归档完成，本提交后按用户要求暂停；等待新的继续指令，不自动启动RR/vendor/模型/Orin，不再检查cc-claude。",
+  "work_state": "RR_R0_ACCEPTED_NEXT_R1",
+  "resume_from": "2026-09-14 RR R0来源/构建准备已由cc-claude完成，独立Codex及root验收；本包提交后R1 CAL转移/入队回执/同源模型继续交cc-claude，root最终评审。不以本地软件门代替Orin验证。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
@@ -2243,7 +2243,7 @@
         "post_archive_boundary": "W4a原归包后独审及commit_receipt.json已随本次W4b归包携带；不反称存在于先前W4a tar。"
       },
       "w4_remaining": {
-        "status": "PAUSED_AFTER_W4B",
+        "status": "RR_R0_ACCEPTED_NEXT_R1",
         "rr": "r3闭合最后shared析构及公用CAL两项方案遗留，B增量ACK；直接迁现有factory、同批所有peer/清理者，vendor/模型构建输入及实现另包。",
         "rr_review": "local/s48/w4_rr/inputs/robot-w4-rr-r3-independent-review.md",
         "rr_review_sha256": "c7fec56c07ed0b41d6a2f63c834ca6a1eb2496d393e7a9e30d2cb43d787f2d22",
@@ -2356,6 +2356,88 @@
         "archive_status": "PACKED_AND_PER_FILE_VERIFIED",
         "archive_verified_files": 15611,
         "post_archive_boundary": "本次归包15,611索引文件；包括W4b正文/所有开发与正式原件、W4a迟到审查和实际commit回执、RR只读方案。当前归包执行回执与归包后独审留target/post_e_h2_rt/s48/w4b/post_archive_review，实际commit回执留w4b/commit_receipt.json；这些后生文件不在本tar中。13二进制实件留本地，包内保SHA与实际构建记录。"
+      },
+      "rr_r0": {
+        "status": "APPROVED_R0_SOURCE_AND_BUILD",
+        "base_commit": "a2598a5a2721ac7611c5a67bc643aafe1a1ff508",
+        "developer": "cc-claude",
+        "reviewer": "rr_review及root",
+        "verified": true,
+        "result": {
+          "path": "local/s48/rr_r0/result.json",
+          "sha256": "a8c1f713696dbd2eb2bb3afc522bddb20b4796f7532a14c88779e1cfc2c674e7"
+        },
+        "review": {
+          "path": "local/s48/rr_r0/independent_review.md",
+          "sha256": "4c3c650c14e44787391a3b6c13010cfb0468dafafe09a171836149ba71836746"
+        },
+        "root_acceptance": {
+          "path": "local/s48/rr_r0/root_acceptance.md",
+          "sha256": "a21803a218edf2a1bcdc75d626b892d2d1f6d1b49b84d2b73095563030911e8f"
+        },
+        "scope": "两0.9.3原包vendor/唯一根图/原本方基线；唯一fetch_update到try_update别名兼容，不改变RR运行时算法。",
+        "final_gates": [
+          {
+            "name": "fmt",
+            "round": "round2",
+            "exit_code": 0
+          },
+          {
+            "name": "clippy_workspace",
+            "round": "round2",
+            "exit_code": 0
+          },
+          {
+            "name": "clippy_s0_hook",
+            "round": "round2",
+            "exit_code": 0
+          },
+          {
+            "name": "clippy_tools",
+            "round": "round2",
+            "exit_code": 0
+          },
+          {
+            "name": "transport_tests",
+            "round": "round2",
+            "exit_code": 0
+          },
+          {
+            "name": "rpc_lib_tests",
+            "round": "round2",
+            "exit_code": 0
+          },
+          {
+            "name": "build_timings",
+            "round": "round2",
+            "exit_code": 0
+          },
+          {
+            "name": "tree_d",
+            "round": "round1",
+            "exit_code": 0
+          },
+          {
+            "name": "deny",
+            "round": "round1",
+            "exit_code": 0
+          }
+        ],
+        "tests": {
+          "transport": {
+            "passed": 99,
+            "failed": 0,
+            "ignored": 3
+          },
+          "rpc_lib": {
+            "passed": 304,
+            "failed": 0,
+            "ignored": 0
+          }
+        },
+        "limitations": "vendor私有测试尚未运行；三个nonmember探针101不算PASS，原三编译失败保留；strict/模型/本方迁移/双环境后续，无SSH/硬件。",
+        "archive_boundary": "当前H包新增69件RR R0及W4b晚生回执，旧15611件保留；R0归包后执行回执及随后commit回执留本地，不在此tar。",
+        "next": "R1 CAL状态/真实push receipt/同源Loom，任务target/post_e_h2_rt/s48/rr_r1/cc_task.md"
       }
     }
   },
@@ -2510,19 +2592,20 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2512,
-    "sha256": "9e67894be308997b6b466d5e4795cbd90dd270ad91e140e74fd48fbdb7fb74ed"
+    "lines": 2528,
+    "sha256": "6b7cd48f2ff3ba7a72d4326bbbca7f23c44b53a0a85a7b7baced6cd23005c9e6"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "a19c5e43caaa639b02d7e44f2f9e17330527dcba095ed695596e02fa68d4c3b9",
-    "bytes": 60569798,
-    "members": 15612,
-    "logical_bytes": 1519532766,
-    "per_file_sha256_verified": true
+    "sha256": "4c59600a1bdb50272cf23f622b17db210fa2c42ee8d8af5b20dd5b70ede33c0f",
+    "bytes": 61106113,
+    "members": 15681,
+    "logical_bytes": 1526422073,
+    "per_file_sha256_verified": true,
+    "verification_method": "旧包SHA固定并复用既有逐件核验；输出保全部旧路径/大小，69新增件逐件SHA核验。"
   },
-  "retention": "当前H包一份；保W4b全部开发失败、修正评审和正式原件，W4a迟到审查/commit回执及RR只读方案随本包携带。W4a/W3与更早历史FAIL不改；只有当前队列旧路径更新。可执行实件留本地，包内保实际构建/来源与SHA，本次归档后审查/commit回执留本地且不冒称已入tar。",
-  "updated_at": "2026-09-10T05:52:55.259177+00:00",
+  "retention": "当前H包保旧15611索引项及69新增R0/W4b后生证据；旧queue保历史原文，当前状态以H.json/HANDOFF为准。R0归包后与commit回执留本地，不冒称入此tar。",
+  "updated_at": "2026-09-14T07:58:27.365752+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -2571,7 +2654,7 @@
       "root验收归档",
       "git commit，不push"
     ],
-    "next_package_authorized_to_start": false,
-    "state": "本次阶段提交后暂停，后续等待新的继续指令"
+    "next_package_authorized_to_start": true,
+    "state": "历史W4b暂停已完成；2026-09-14用户恢复持续推进"
   }
 }

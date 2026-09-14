@@ -2440,6 +2440,22 @@ C独占Cargo，作者停写后运行；root文档/git。基线为382ca44，W4a�
 不包含NoGuard启动恢复内部再杀、全17阶段、断电、SUP/ENV、RR修复、Orin或真机。
 用户最新收尾要求：本W4b通过测试、独审、归档及commit后暂停；后续包需用户新的继续指令。
 
+#### P.6.14.17 RR R0 来源与构建准备（2026-09-14实施）
+
+用户恢复持续推进并确认cc-claude额度重置；root设计/评审/提交，cc-claude具体开发与
+自测，独立Codex只读复核。基线a2598a5；已ACK strict r2/r3与本方migration map承接不改。
+R0只引入iceoryx2/iceoryx2-cal两个0.9.3发布原包，校验原锁checksum并补同commit许可附件；
+根patch统一路径，exclude两vendor及未来tools/rr-memory-model，14个本方members保持。
+根锁由Cargo生成，实际仅两包来源变为本地，不升级其余依赖。唯一兼容差异为
+Client::next_request_id的fetch_update改名try_update，原内存序/闭包不变；不改变RR算法。
+发布包缺tests_common，保原件但不声称完整上游测试可跑；R0使用已有非零transport/RPC
+测试与三Clippy、实际metadata/timings/deny验证。R1/R2的新私有门与同源模型在转移代码
+实际存在后实施，R0不创建空模型包或以0例当通过。模型依赖不进生产图。
+任务与结果入口target/post_e_h2_rt/s48/rr_r0；源码/来源/实际命令与失败原件分开记录。
+本条是root内部实施决定；不改变D/L、容量、业务退休、RT禁分配或现场授权边界。
+R0已独审及root验收：round2七门全0，transport99/0/3、RPC304/0/0；同图tree/deny复用
+round1。原三编译失败及三nonmember探针101保留，后者不算通过测试。详H包local/s48/rr_r0。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

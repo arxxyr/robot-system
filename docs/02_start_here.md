@@ -20,8 +20,8 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     W4b固定五例通过16门及独立验收；本包归档提交后暂停
-收尾边界:     用户要求完成W4b验证/独审/commit后暂停；后续阶段待新的继续指令
+当前步骤:     RR R0两原包来源/构建准备已验收；下一包R1 CAL与同源模型
+当前授权:     用户2026-09-14恢复持续推进；cc-claude开发自测，root方案/评审/提交
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -41,8 +41,12 @@ W4a新增Created/Unsynced真实文件故障恢复验收：373源码/187输入首
 15门满足期望、新增2/2与原All72/72，独立源码/证据及root验收通过。
 旧编译/Clippy失败与汇总脚本更正均保原件；准确统计见HANDOFF、H包和10_verification。
 W4b固定五例SIGKILL/同目录恢复已独立源码/证据及root验收，376源/129输入一致；
-16门满足期望，新5/5、旧W4a2/2及All72/72通过。本包归档提交后暂停，等待新的继续指令。
+16门满足期望，新5/5、旧W4a2/2及All72/72通过。已提交a2598a5。原暂停已由2026-09-14继续目标及额度重置说明结束。
 RR r3的析构和公用CAL遗留问题已获方案ACK；vendor/模型/迁移另包，不外推至Orin或电机。
+
+R0以两个0.9.3原发布包接入唯一path依赖图，保14个本方成员与其余锁定版本；
+仅补一处当前nightly原子API别名兼容。fmt、三组Clippy、构建及transport99/RPC304通过，
+来源与运行证据已独审。RR关闭/入队修复尚未实施；当前结果不代表strict协议或Orin通过。
 
 左H1/H3通过、H2两次FAIL；用户最后确认左臂断电、双臂支撑。右臂未测，
 六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。本轮未访问远端，

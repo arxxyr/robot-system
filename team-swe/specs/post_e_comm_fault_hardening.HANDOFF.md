@@ -1,11 +1,20 @@
 # 交接 · post-E 通信故障硬化
 
-## 当前步骤与暂停边界
+## 当前步骤
 
 W4b固定五例SIGKILL/原目录重启已通过独立源码、运行证据及root验收，
 APPROVED_SOFTWARE_SCOPE；基线W4a为`382ca44`，本包提交见git日志。
-**用户要求当前做完先暂停：本W4b归档commit后停止，不push、不启动RR或其它后续包。**
-本包按原生A/C开发、C独占Cargo、B非作者终审完成；不继续检查cc-claude。
+W4b已提交`a2598a5`。用户2026-09-14恢复持续推进，并确认cc-claude额度重置；
+RR R0已由cc-claude完成，独立Codex及root验收通过；root负责提交，不push。
+两个0.9.3原发布包接入唯一path图，14个本方成员及其余锁版本不变；唯一源码差异为
+`fetch_update`改名`try_update`，两个Relaxed及原闭包不变。round2的fmt、三Clippy、
+transport、RPC与build七门全0；transport99/0/3、RPC304/0/0，既有ignored保留。
+同图tree/deny引用round1实际成功；原三个编译失败与三个nonmember探针101保留。
+证据入口H包`local/s48/rr_r0/`，root裁决`root_acceptance.md`、独审`independent_review.md`。
+下一包R1 CAL转移/真实enqueue/同源模型；独立vendor测试workspace须保持完整运行时
+依赖闭包与根图一致。R0没有执行vendor私有单测，不宣称RR缺陷已修复或Orin已验证。
+
+## 已提交W4b证据
 
 正式round1连续16门全部满足原期望（14个exit0、两个参数拒绝exit2）。
 376源/129事前输入首末一致，恰8改3新，无依赖/构建图或冻结设计变更。
@@ -31,13 +40,13 @@ APPROVED_SOFTWARE_SCOPE；基线W4a为`382ca44`，本包提交见git日志。
   本次归档后审查与commit回执留本地w4b/post_archive_review及commit_receipt.json；
   不声称位于此前生成的tar内。W4a归档后回执和RR只读方案已随本包携带。
 
-## 仅备查的后续路线
+## 后续路线
 
 W3已将新权限、高/普通双队列、唯一writer、RPC责任账本接入生产调用方。
 W4a文件同步故障、W4b固定五例均已本地验收。W4剩余为RR严格内核修正、
-完整T8/SUP/ENV和双环境；随后P-E。**当前暂停，以下不构成自动启动授权。**
+完整T8/SUP/ENV和双环境；随后P-E。按R0→R1/CAL→R2/IOX→R3本方迁移→R4矩阵推进，每包必要检查与root评审通过即commit。
 RR r3析构与公共CAL两项方案已ACK，直接替换现有工厂，保topic/schema/FF；
-所有peer与自动清理者同批同源，vendor/模型/迁移实现仍须分包冻结和评审。
+所有peer与自动清理者同批同源，模型/迁移实现按分包开发和评审。
 旧跨原子可见性与映射删除可能漏回复并长期占信用，不能说仅短延迟或已修复。
 W1旧锁偶发失败仍列观察，本轮All通过不等于其根因已闭合。
 P-E保原20/s、50ms节拍、360–600秒、成功唯一新写>8192、真实wire4与所有结果final_stop。
