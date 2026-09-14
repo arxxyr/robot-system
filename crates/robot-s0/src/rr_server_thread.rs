@@ -266,6 +266,8 @@ fn run_loop(
     let mut pending = VecDeque::with_capacity(crate::event_ingress::RR_CHANNEL_CAPACITY);
     let mut residual = Vec::new();
     let mut source = Some(requests);
+    #[cfg(feature = "test-comm-fault-hook")]
+    let mut stopped_fact_recorded = false;
     loop {
         if !crate::worker_stop::worker_running(
             crate::worker_stop::WorkerKind::ClearEStopRr,
@@ -285,6 +287,12 @@ fn run_loop(
                     | crossbeam_channel::TryRecvError::Disconnected,
                 ) => break,
             }
+        }
+        #[cfg(feature = "test-comm-fault-hook")]
+        if source.is_none() && !stopped_fact_recorded {
+            // 内层丢来源会在下一轮完成有界响应处理后到这里，不能只看本轮Some→None。
+            record_pending_facts("stopped", clock.now().0, &pending, &ledger, &residual);
+            stopped_fact_recorded = true;
         }
         if source.is_none() && pending.is_empty() && residual.is_empty() {
             return;
@@ -312,6 +320,8 @@ fn run_loop(
                         &mut ledger,
                         &mut residual,
                         metrics,
+                        #[cfg(feature = "test-comm-fault-hook")]
+                        clock,
                     );
                 }
                 Ok(None) => break,
@@ -331,6 +341,7 @@ fn handle_active_request(
     ledger: &mut ControlPeerLedger,
     residual: &mut Vec<Slot<RrPeerId>>,
     metrics: &RrServerMetrics,
+    #[cfg(feature = "test-comm-fault-hook")] clock: &dyn RobotClock,
 ) {
     let Ok(view) = flatbuffers::root::<FbReq>(active.payload()) else {
         metrics.decode_errors.fetch_add(1, Ordering::Relaxed);
@@ -404,6 +415,8 @@ fn handle_active_request(
                 active,
             });
             metrics.requests_forwarded.fetch_add(1, Ordering::Relaxed);
+            #[cfg(feature = "test-comm-fault-hook")]
+            record_pending_facts("queued", clock.now().0, pending, ledger, residual);
         }
         Err(error) => {
             let (status, message) = match error {
@@ -424,6 +437,45 @@ fn handle_active_request(
         }
     }
 }
+#[cfg(feature = "test-comm-fault-hook")]
+fn record_pending_facts(
+    boundary: &str,
+    observed_at_ns: u64,
+    pending: &VecDeque<PendingRr>,
+    ledger: &ControlPeerLedger,
+    residual: &[Slot<RrPeerId>],
+) {
+    let counts = ledger.counts();
+    if pending.is_empty() {
+        tracing::info!(
+            boundary,
+            observed_at_ns,
+            pending_count = 0,
+            residual_count = residual.len(),
+            total = counts.total,
+            restore = counts.restore,
+            "R4原ClearRR责任"
+        );
+    }
+    for entry in pending {
+        let active_peer = entry.active.peer();
+        let slot_peer = entry.slot.peer();
+        let peer_counts = ledger.peer_counts(slot_peer);
+        let request = flatbuffers::root::<FbReq>(entry.active.payload()).ok();
+        tracing::info!(boundary, observed_at_ns, pending_count=pending.len(),
+            residual_count=residual.len(), total=counts.total, restore=counts.restore,
+            lower=counts.lower, normal=counts.normal, ledger=?ledger.id(),
+            request_id=%entry.request_id, route=?Some(entry.slot.identity()), class=?entry.slot.class(),
+            active_peer=?active_peer, slot_peer=?slot_peer, peer_matches=active_peer==slot_peer,
+            peer_total=?peer_counts.map(|counts|counts.total),
+            peer_restore=?peer_counts.map(|counts|counts.restore),
+            peer_lower=?peer_counts.map(|counts|counts.lower),
+            peer_normal=?peer_counts.map(|counts|counts.normal),
+            active_decoded=request.is_some(), deadline_ns=?request.map(|request|request.deadline_ns()),
+            "R4原ClearRR责任");
+    }
+}
+
 fn send_error_reply(
     active: Iceoryx2ActiveRequest<markers::ClearEStopRequest, markers::ClearEStopResponse>,
     request_id: &str,
@@ -1149,6 +1201,8 @@ mod tests {
                 &mut self.ledger,
                 &mut self.residual,
                 &self.metrics,
+                #[cfg(feature = "test-comm-fault-hook")]
+                &robot_core::time::SystemClock,
             );
         }
         fn deliver(&mut self, response: ClearEStopRrResponse) {

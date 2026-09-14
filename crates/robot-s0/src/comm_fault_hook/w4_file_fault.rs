@@ -25,6 +25,7 @@ pub enum FileFaultMode {
     Created,
     CreatedUnsynced,
     OrdinaryResync,
+    OrdinaryResyncExhausted,
 }
 
 /// 新配置只在 daemon 的资源准备之前读一次；没有配置时不触碰旧 pause 解析。
@@ -55,10 +56,11 @@ fn parse_file_fault(
         Some("created") => FileFaultMode::Created,
         Some("created-unsynced") => FileFaultMode::CreatedUnsynced,
         Some("ordinary-resync") => FileFaultMode::OrdinaryResync,
+        Some("ordinary-resync-exhausted") => FileFaultMode::OrdinaryResyncExhausted,
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "ROBOT_TEST_W4_FILE_FAULT 仅接受 created / created-unsynced / ordinary-resync",
+                "ROBOT_TEST_W4_FILE_FAULT 仅接受 created / created-unsynced / ordinary-resync / ordinary-resync-exhausted",
             ));
         }
     };
@@ -95,6 +97,7 @@ enum FaultSlot {
 #[derive(Debug, Clone, Copy)]
 struct Selected {
     slot: u8,
+    fault_index: Option<usize>,
     stage: S,
     step_seq: u64,
     phase: AliasPhase,
@@ -132,6 +135,30 @@ enum OrdinaryStep {
     Complete,
 }
 
+/// 十项各自保存原故障状态；wire slot 仍只有 Remove/Resync 两种角色。
+struct ExhaustedPlan {
+    faults: [FaultSlot; 10],
+    next_source: u64,
+}
+
+const EXHAUSTED_PREPARE_STAGES: [S; 15] = [
+    S::CreateMarker,
+    S::SampleMarkerIdentity,
+    S::WriteMarker,
+    S::SyncMarkerFile,
+    S::SyncMarkerDirectory,
+    S::CreateBackup,
+    S::WriteBackup,
+    S::SyncBackupFile,
+    S::RenameBackup,
+    S::SyncBackupDirectory,
+    S::CreatePrimary,
+    S::WritePrimary,
+    S::SyncPrimaryFile,
+    S::RenamePrimary,
+    S::SyncPrimaryDirectory,
+];
+
 struct FileFaultHook {
     slots: [Option<FaultSlot>; 2],
     binding: Option<ClearTxnIdentity>,
@@ -141,6 +168,7 @@ struct FileFaultHook {
     scope: Option<Scope>,
     created_proven: bool,
     ordinary: Option<OrdinaryStep>,
+    exhausted: Option<ExhaustedPlan>,
     failed: bool,
 }
 impl FileFaultHook {
@@ -150,9 +178,9 @@ impl FileFaultHook {
                 Some(FaultSlot::Armed),
                 match mode {
                     FileFaultMode::Created => None,
-                    FileFaultMode::CreatedUnsynced | FileFaultMode::OrdinaryResync => {
-                        Some(FaultSlot::Armed)
-                    }
+                    FileFaultMode::CreatedUnsynced
+                    | FileFaultMode::OrdinaryResync
+                    | FileFaultMode::OrdinaryResyncExhausted => Some(FaultSlot::Armed),
                 },
             ],
             binding: None,
@@ -163,7 +191,16 @@ impl FileFaultHook {
             created_proven: false,
             ordinary: match mode {
                 FileFaultMode::OrdinaryResync => Some(OrdinaryStep::Prepare),
-                FileFaultMode::Created | FileFaultMode::CreatedUnsynced => None,
+                FileFaultMode::Created
+                | FileFaultMode::CreatedUnsynced
+                | FileFaultMode::OrdinaryResyncExhausted => None,
+            },
+            exhausted: match mode {
+                FileFaultMode::OrdinaryResyncExhausted => Some(ExhaustedPlan {
+                    faults: [FaultSlot::Armed; 10],
+                    next_source: 1,
+                }),
+                _ => None,
             },
             failed: false,
         }
@@ -193,6 +230,133 @@ impl FileFaultHook {
     }
     fn occurrence(scope: Scope, stage: S) -> u64 {
         target_index(stage).map_or(0, |index| scope.occurrences[index])
+    }
+
+    fn fault_state(&self, slot: u8, index: Option<usize>) -> Option<FaultSlot> {
+        match index {
+            Some(index) => self.exhausted.as_ref()?.faults.get(index).copied(),
+            None => self.slots[usize::from(slot)],
+        }
+    }
+
+    fn set_fault_state(&mut self, slot: u8, index: Option<usize>, state: FaultSlot) {
+        match index {
+            Some(index) => match self
+                .exhausted
+                .as_mut()
+                .and_then(|plan| plan.faults.get_mut(index))
+            {
+                Some(original) => *original = state,
+                None => self.fail(F::Protocol, Some(slot), None),
+            },
+            None => self.slots[usize::from(slot)] = Some(state),
+        }
+    }
+
+    fn begin_exhausted(&mut self, scope: Scope, token: T) {
+        let expected = match scope.source {
+            1 => (C::Prepare, T::None),
+            2 => (C::RemoveCommitted, T::Prepared),
+            3..=11 => (C::Resync, T::Unsynced),
+            _ => {
+                self.fail(F::Protocol, None, None);
+                return;
+            }
+        };
+        if (scope.command, token) != expected
+            || self
+                .exhausted
+                .as_ref()
+                .is_none_or(|plan| plan.next_source != scope.source)
+        {
+            self.fail(F::Protocol, None, None);
+        }
+    }
+
+    fn before_exhausted_step(&mut self, scope: Scope, stage: S, next: u64) {
+        let expected = match (scope.source, next) {
+            (1, 1..=15) => EXHAUSTED_PREPARE_STAGES
+                .get(usize::try_from(next - 1).expect("最多15步"))
+                .copied(),
+            (2, 1) => Some(S::ReadMarker),
+            (2, 2) => Some(S::ValidateMarker),
+            (2, 3) => Some(S::RemoveMarker),
+            (2, 4) | (3..=11, 1) => Some(S::SyncRemovalDirectory),
+            _ => None,
+        };
+        if expected != Some(stage) || (scope.step_seq != 0 && !scope.stage_succeeded) {
+            self.fail(F::Protocol, None, None);
+        }
+    }
+
+    fn complete_exhausted(&mut self, scope: Scope, completion: &PersistCompletion, token: T) {
+        let valid = match (scope.source, *completion, token) {
+            (1, PersistCompletion::Prepared { txn, .. }, T::Prepared) => {
+                self.binding == Some(txn) && scope.step_seq == 15 && scope.stage_succeeded
+            }
+            (
+                source @ 2..=11,
+                PersistCompletion::MarkerRemoveFailed {
+                    txn,
+                    stage: S::SyncRemovalDirectory,
+                    phase: StepPhase::Operation,
+                    token: RemoveTokenKind::Unsynced,
+                },
+                T::Unsynced,
+            ) => {
+                let index = usize::try_from(source - 2).expect("最多十项故障");
+                self.binding == Some(txn)
+                    && scope.step_seq == if source == 2 { 4 } else { 1 }
+                    && scope.sync_input_seen
+                    && !scope.stage_succeeded
+                    && self.fault_state(u8::from(source != 2), Some(index))
+                        == Some(FaultSlot::Executed { bad_fd: true })
+            }
+            _ => false,
+        };
+        if !valid {
+            self.fail(F::Protocol, None, None);
+        }
+    }
+
+    fn finish_exhausted_scope(&mut self, scope: Scope, completed: bool) {
+        if !completed || !scope.completion_seen || self.failed {
+            self.fail(F::Protocol, None, None);
+        } else if let Some(plan) = self.exhausted.as_mut() {
+            plan.next_source = scope.source + 1;
+        }
+        self.emit(P::CommandEnd { completed });
+        self.scope = None;
+    }
+
+    fn fault_for_scope(&mut self, scope: Scope, stage: S) -> Option<(u8, Option<usize>)> {
+        if self.exhausted.is_some() {
+            return match (scope.source, stage, Self::occurrence(scope, stage)) {
+                (1, _, _) => None,
+                (source @ 2..=11, S::SyncRemovalDirectory, 1) => Some((
+                    u8::from(source != 2),
+                    Some(usize::try_from(source - 2).expect("最多十项故障")),
+                )),
+                _ => {
+                    self.fail(F::Protocol, None, None);
+                    None
+                }
+            };
+        }
+        let slot = match (
+            scope.ordinary,
+            scope.command,
+            scope.kind_sequence,
+            stage,
+            Self::occurrence(scope, stage),
+        ) {
+            (Some(OrdinaryStep::Remove), C::RemoveCommitted, _, S::SyncRemovalDirectory, 1)
+            | (None, C::Prepare, 1, S::SyncMarkerDirectory, 1) => 0,
+            (Some(OrdinaryStep::Resync), C::Resync, _, S::SyncRemovalDirectory, 1) => 1,
+            (None, C::RepairLatched, 1, S::SyncRemovalDirectory, 1) if self.created_proven => 1,
+            _ => return None,
+        };
+        Some((slot, None))
     }
 
     fn begin_ordinary(&mut self, step: OrdinaryStep, command: C, token: T) {
@@ -444,6 +608,11 @@ impl WriterHook for FileFaultHook {
         if let Some(step) = self.ordinary {
             self.begin_ordinary(step, kind, token_kind(token));
         }
+        if self.exhausted.is_some()
+            && let Some(scope) = self.scope
+        {
+            self.begin_exhausted(scope, token_kind(token));
+        }
         if matches!(kind, C::RepairLatched | C::RepairOriginal)
             && kind_sequence == 1
             && kind != C::RepairLatched
@@ -463,6 +632,16 @@ impl WriterHook for FileFaultHook {
             after: true,
             token: token_kind(token),
         });
+        if self.exhausted.is_some() {
+            if scope.completion_seen {
+                self.fail(F::Protocol, None, None);
+                return;
+            }
+            scope.completion_seen = true;
+            self.scope = Some(scope);
+            self.complete_exhausted(scope, completion, token_kind(token));
+            return;
+        }
         if let Some(step) = scope.ordinary {
             if scope.completion_seen {
                 self.fail(F::Protocol, None, None);
@@ -492,6 +671,10 @@ impl WriterHook for FileFaultHook {
 
     fn command_scope_exit(&mut self, completed: bool) {
         let Some(scope) = self.scope else { return };
+        if self.exhausted.is_some() {
+            self.finish_exhausted_scope(scope, completed);
+            return;
+        }
         if !completed {
             self.fail(F::Protocol, None, None);
         }
@@ -525,6 +708,9 @@ impl WriterHook for FileFaultHook {
         let Some(next) = self.count(scope.step_seq) else {
             return;
         };
+        if self.exhausted.is_some() {
+            self.before_exhausted_step(scope, stage, next);
+        }
         scope.step_seq = next;
         scope.stage = Some(stage);
         scope.selected = None;
@@ -554,7 +740,7 @@ impl WriterHook for FileFaultHook {
 
     fn after_step_success(&mut self, stage: S) {
         let Some(mut scope) = self.scope else { return };
-        if scope.stage != Some(stage) {
+        if scope.stage != Some(stage) || (self.exhausted.is_some() && scope.stage_succeeded) {
             self.fail(F::Protocol, None, None);
             return;
         }
@@ -579,7 +765,7 @@ impl WriterHook for FileFaultHook {
             self.fail(F::Protocol, None, None);
             return DirectorySyncInput::Original;
         }
-        if scope.ordinary.is_some() {
+        if scope.ordinary.is_some() || self.exhausted.is_some() {
             if scope.sync_input_seen {
                 self.fail(F::Protocol, None, None);
                 return DirectorySyncInput::Original;
@@ -587,20 +773,10 @@ impl WriterHook for FileFaultHook {
             scope.sync_input_seen = true;
             self.scope = Some(scope);
         }
-        let slot = match (
-            scope.ordinary,
-            scope.command,
-            scope.kind_sequence,
-            stage,
-            Self::occurrence(scope, stage),
-        ) {
-            (Some(OrdinaryStep::Remove), C::RemoveCommitted, _, S::SyncRemovalDirectory, 1)
-            | (None, C::Prepare, 1, S::SyncMarkerDirectory, 1) => 0,
-            (Some(OrdinaryStep::Resync), C::Resync, _, S::SyncRemovalDirectory, 1) => 1,
-            (None, C::RepairLatched, 1, S::SyncRemovalDirectory, 1) if self.created_proven => 1,
-            _ => return DirectorySyncInput::Original,
+        let Some((slot, fault_index)) = self.fault_for_scope(scope, stage) else {
+            return DirectorySyncInput::Original;
         };
-        match self.slots[usize::from(slot)] {
+        match self.fault_state(slot, fault_index) {
             None => return DirectorySyncInput::Original,
             Some(FaultSlot::Armed) => {}
             Some(_) => {
@@ -608,9 +784,10 @@ impl WriterHook for FileFaultHook {
                 return DirectorySyncInput::Original;
             }
         }
-        self.slots[usize::from(slot)] = Some(FaultSlot::Selected);
+        self.set_fault_state(slot, fault_index, FaultSlot::Selected);
         scope.selected = Some(Selected {
             slot,
+            fault_index,
             stage,
             step_seq: scope.step_seq,
             phase: AliasPhase::Selected,
@@ -661,7 +838,7 @@ impl WriterHook for FileFaultHook {
                 });
             }
             E::PreparationFailed { phase, errno } if selected.phase == AliasPhase::Expected => {
-                self.slots[usize::from(slot)] = Some(FaultSlot::PreparationFailed);
+                self.set_fault_state(slot, selected.fault_index, FaultSlot::PreparationFailed);
                 selected.phase = AliasPhase::Returned;
                 self.fail(
                     match phase {
@@ -682,7 +859,7 @@ impl WriterHook for FileFaultHook {
             }
             E::Returned { success, errno } if selected.phase == AliasPhase::Called => {
                 let bad_fd = !success && errno == Some(libc::EBADF);
-                self.slots[usize::from(slot)] = Some(FaultSlot::Executed { bad_fd });
+                self.set_fault_state(slot, selected.fault_index, FaultSlot::Executed { bad_fd });
                 selected.phase = AliasPhase::Returned;
                 self.emit(P::DirSyncReturned {
                     slot,

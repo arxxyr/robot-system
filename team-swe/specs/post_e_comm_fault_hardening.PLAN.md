@@ -2553,6 +2553,33 @@ workspace2211/0/9、S0hook864/0/1、工具109/0/0；dev/release各新1与旧2/5/
 Prepare判据补完整15步；成功接纳必须严格早于原3s截止，独审M1关闭。
 旧round1仅为修复前记录，不计最终通过；归档提交后进入已审R4b2重试耗尽。
 
+#### P.6.14.23 R4b2 原重试耗尽责任链（2026-09-15实施）
+
+R4b1已验收提交b4b44f7。按rr_r4b2/native_task.md启动单例普通Resync首投及八次
+实际接受重投失败，下一原due转Stuck；固定十次真实EBADF、十一scope，保原两槽编码。
+增加限定feature-only原状态日志核accepted计数、due、Cleanup与Pending及RR原账本；
+原5s deadline过去无终态，不宣称已测网关DeadlineExceeded。父观察t0+15s，原退避不改。
+Stuck后才SIGTERM，原ACK因Finalizing不能满足Idle，按真实LoweringUnconfirmed与五件
+原残余验证L退1；原writer未join不能兜底。生产预算、核心算法与权限API不变。
+原生主开发统一源码/Cargo，独立增量/证据评审，root验收提交；每包通过即commit，
+不push，继续至实时周额度剩20%。R4b3/4、剩余T8/SUP/ENV、双主机/P-E仍未闭合。
+
+R4b2已独审及root本地验收：正式round1的28/28、542输入一致，workspace2211/0/9、
+S0hook869/0/1、工具119/0/0；dev/release各新1与原1/3/2/5/72通过。
+原5s后同次receive及15s接纳、实际L残件、真正reap/join均核实；M1/M2已闭。
+十次真实EBADF不产生伪终态或退款，归档提交后进入已审25点R4b3。
+
+#### P.6.14.24 R4b3 剩余 daemon 中断点集中包（2026-09-15方案批准）
+
+原T8覆盖审计后，独立评审及root批准将原两点包集中扩为25点：Prepare成功12、
+Finalize Before unlink 1、运行期Repair成功12（含Read/Validate）。启动令为
+rr_r4b3/native_task_expanded.md，取代原native_task.md两点范围；仍待R4b2验收提交
+及root派发。单一FILE_KILL封闭模式以原Prepare末目录sync真实EBADF返回Durable，
+沿原owner/Permit/txn进入RepairLatched；不改生产算法、预算、trace/page或配置互斥。
+新旧点按实际回调与文件后果逐项绑定，保SIGKILL遗留临时文件和同目录恢复；旧W4b5
+及All72入口不变，一批验收，不逐两点重复全套。W0/W1/W3a既有证据按同源复用，
+R4b4启动恢复内部再杀、SUP/ENV、双主机/P-E仍未完成；当前仅方案通过。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

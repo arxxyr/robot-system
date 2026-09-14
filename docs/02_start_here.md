@@ -20,7 +20,7 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     R4b1已独审/root验收，归档提交后进入R4b2重试耗尽
+当前步骤:     R4b1已验收提交b4b44f7；R4b2正式28门及独审/root/归档通过；提交后进入R4b3的25点
 当前授权:     继续有效开发至周额度剩20%；每阶段验收后提交，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测

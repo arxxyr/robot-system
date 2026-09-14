@@ -86,6 +86,10 @@ fn configuration_keeps_absence_and_old_pause_and_rejects_invalid_or_non_linux() 
         parse_file_fault(Some(OsStr::new("ordinary-resync")), false, true).unwrap(),
         Some(FileFaultMode::OrdinaryResync)
     );
+    assert_eq!(
+        parse_file_fault(Some(OsStr::new("ordinary-resync-exhausted")), false, true).unwrap(),
+        Some(FileFaultMode::OrdinaryResyncExhausted)
+    );
     for raw in [
         "",
         "Created",
@@ -93,6 +97,8 @@ fn configuration_keeps_absence_and_old_pause_and_rejects_invalid_or_non_linux() 
         "created-unsynced:2",
         "ordinary-resync:2",
         "ordinary_resync",
+        "ordinary-resync-exhausted:10",
+        "ordinary-resync-exhausted ",
     ] {
         assert_eq!(
             parse_file_fault(Some(OsStr::new(raw)), false, true)
@@ -175,7 +181,9 @@ fn real_writer_created_and_unsynced_scopes_keep_original_target_and_single_sysca
                         }
                     ));
                 }
-                FileFaultMode::OrdinaryResync => unreachable!("旧 Created 用例不包含普通 Resync"),
+                FileFaultMode::OrdinaryResync | FileFaultMode::OrdinaryResyncExhausted => {
+                    unreachable!("旧 Created 用例不包含普通 Resync")
+                }
             }
             assert!(matches!(
                 rig.command(PersistCommand::RemoveMarker {
@@ -212,7 +220,9 @@ fn real_writer_created_and_unsynced_scopes_keep_original_target_and_single_sysca
         let expected = match mode {
             FileFaultMode::Created => 1,
             FileFaultMode::CreatedUnsynced => 2,
-            FileFaultMode::OrdinaryResync => unreachable!("旧 Created 用例不包含普通 Resync"),
+            FileFaultMode::OrdinaryResync | FileFaultMode::OrdinaryResyncExhausted => {
+                unreachable!("旧 Created 用例不包含普通 Resync")
+            }
         };
         assert!(!rig.hook.failed);
         assert_eq!(
@@ -816,4 +826,440 @@ fn ordinary_missing_or_duplicate_slot_input_is_fixture_failure() {
         assert_eq!(rig.hook.slots[1], Some(FaultSlot::Armed));
         assert!(rig.hook.scope.is_none());
     }
+}
+
+fn exhausted_command(source: u64) -> PersistCommand {
+    match source {
+        1 => PersistCommand::PrepareClear { txn: TXN },
+        2 => PersistCommand::RemoveMarker {
+            txn: TXN,
+            kind: CleanupKind::Finalize,
+        },
+        3..=11 => PersistCommand::ResyncRemoval { txn: TXN },
+        _ => panic!("固定夹具仅允许 source1…11"),
+    }
+}
+
+/// 真实 `WriterCore` 顺序执行；不把命令数称为协调器接受重投的计数。
+fn exhausted_prefix(rig: &mut Rig, last: u64) {
+    assert!((1..=11).contains(&last));
+    for source in 1..=last {
+        let completion = rig.command(exhausted_command(source));
+        if source == 1 {
+            assert!(matches!(
+                completion,
+                PersistCompletion::Prepared { txn: TXN, .. }
+            ));
+            assert!(matches!(
+                rig.core.current().unwrap().token(),
+                WriterToken::Prepared(_)
+            ));
+        } else {
+            assert_eq!(
+                completion,
+                PersistCompletion::MarkerRemoveFailed {
+                    txn: TXN,
+                    stage: S::SyncRemovalDirectory,
+                    phase: StepPhase::Operation,
+                    token: RemoveTokenKind::Unsynced
+                }
+            );
+            assert!(matches!(
+                rig.core.current().unwrap().token(),
+                WriterToken::Unsynced(_)
+            ));
+        }
+        assert_eq!(rig.core.current().unwrap().txn(), TXN);
+        assert!(!rig.hook.failed);
+        let plan = rig.hook.exhausted.as_ref().unwrap();
+        assert_eq!(plan.next_source, source + 1);
+        for (index, state) in plan.faults.iter().enumerate() {
+            let expected = if u64::try_from(index).unwrap() + 2 <= source {
+                FaultSlot::Executed { bad_fd: true }
+            } else {
+                FaultSlot::Armed
+            };
+            assert_eq!(*state, expected, "前次完成不能被后续 slot1 覆盖");
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn real_exhausted_plan_has_eleven_scopes_ten_distinct_alias_errors_and_original_unsynced() {
+    use std::os::unix::fs::MetadataExt;
+
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResyncExhausted);
+    let metadata = std::fs::metadata(rig.directory.path()).unwrap();
+    let events = capture_emitted(|| exhausted_prefix(&mut rig, 11));
+    assert_eq!(rig.hook.execute_sequence, 11);
+    assert_eq!(
+        rig.hook.exhausted.as_ref().unwrap().faults,
+        [FaultSlot::Executed { bad_fd: true }; 10]
+    );
+    assert!(matches!(
+        rig.core.current().unwrap().token(),
+        WriterToken::Unsynced(_)
+    ));
+    assert!(!rig.core.store().marker_path().exists());
+    assert_eq!(std::fs::read(&rig.latch).unwrap(), b"0\n");
+    assert_eq!(
+        std::fs::read(crate::estop_latch::backup_path(&rig.latch)).unwrap(),
+        b"0\n"
+    );
+    for source in 1..=11 {
+        let scope_events: Vec<_> = events
+            .iter()
+            .filter(|event| event.source == source)
+            .copied()
+            .collect();
+        let facts = payloads(&scope_events);
+        assert_exhausted_scope(source, &facts, metadata.dev(), metadata.ino());
+    }
+    let facts = payloads(&events);
+    assert_eq!(
+        facts
+            .iter()
+            .filter(|fact| matches!(fact, P::CommandBegin { .. }))
+            .count(),
+        11
+    );
+    assert_eq!(
+        facts
+            .iter()
+            .filter(|fact| matches!(fact, P::DirSyncCall { .. }))
+            .count(),
+        10
+    );
+    assert_eq!(
+        facts
+            .iter()
+            .filter(|fact| matches!(
+                fact,
+                P::Stage {
+                    succeeded: true,
+                    stage: S::RemoveMarker,
+                    ..
+                }
+            ))
+            .count(),
+        1
+    );
+}
+
+fn assert_exhausted_scope(source: u64, facts: &[P], dev: u64, ino: u64) {
+    assert_eq!(
+        facts.first(),
+        Some(&P::CommandBegin {
+            txn: TXN,
+            command: command_kind(exhausted_command(source))
+        })
+    );
+    assert_eq!(facts.last(), Some(&P::CommandEnd { completed: true }));
+    assert!(!facts.iter().any(|fact| matches!(fact, P::Failure { .. })));
+    let tokens: Vec<_> = facts
+        .iter()
+        .filter_map(|fact| match fact {
+            P::Token { after, token } => Some((*after, *token)),
+            _ => None,
+        })
+        .collect();
+    let before = match source {
+        1 => T::None,
+        2 => T::Prepared,
+        _ => T::Unsynced,
+    };
+    let after = match source {
+        1 => T::Prepared,
+        _ => T::Unsynced,
+    };
+    assert_eq!(tokens, [(false, before), (true, after)]);
+    let completed: Vec<_> = facts
+        .iter()
+        .filter_map(|fact| match fact {
+            P::Completion { kind, failure } => Some((*kind, *failure)),
+            _ => None,
+        })
+        .collect();
+    if source == 1 {
+        assert_eq!(completed, [(K::Prepared, None)]);
+        assert_exhausted_prepare_steps(facts);
+        return;
+    }
+    assert_eq!(
+        completed,
+        [(
+            K::RemoveFailedUnsynced,
+            Some((S::SyncRemovalDirectory, StepPhase::Operation))
+        )]
+    );
+    assert_exhausted_alias(source, facts, dev, ino);
+    if source >= 3 {
+        let stages: Vec<_> = facts
+            .iter()
+            .filter_map(|fact| match fact {
+                P::Stage {
+                    succeeded, stage, ..
+                } => Some((*succeeded, *stage)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(stages, [(false, S::SyncRemovalDirectory)]);
+    }
+}
+
+fn assert_exhausted_prepare_steps(facts: &[P]) {
+    let before: Vec<_> = facts
+        .iter()
+        .filter_map(|fact| match fact {
+            P::Stage {
+                succeeded: false,
+                stage,
+                ..
+            } => Some(*stage),
+            _ => None,
+        })
+        .collect();
+    let after: Vec<_> = facts
+        .iter()
+        .filter_map(|fact| match fact {
+            P::Stage {
+                succeeded: true,
+                stage,
+                ..
+            } => Some(*stage),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(before, EXHAUSTED_PREPARE_STAGES);
+    assert_eq!(after, EXHAUSTED_PREPARE_STAGES);
+    assert!(
+        !facts
+            .iter()
+            .any(|fact| matches!(fact, P::FaultSelected { .. }))
+    );
+}
+
+fn assert_exhausted_alias(source: u64, facts: &[P], dev: u64, ino: u64) {
+    let slot = u8::from(source != 2);
+    let step_seq = match source {
+        2 => 4,
+        _ => 1,
+    };
+    let syscall: Vec<_> = facts
+        .iter()
+        .copied()
+        .filter(|fact| {
+            matches!(
+                fact,
+                P::FaultSelected { .. }
+                    | P::Alias { .. }
+                    | P::DirSyncCall { .. }
+                    | P::DirSyncReturned { .. }
+            )
+        })
+        .collect();
+    assert_eq!(
+        syscall,
+        [
+            P::FaultSelected {
+                slot,
+                step_seq,
+                stage: S::SyncRemovalDirectory,
+                occurrence: 1
+            },
+            P::Alias {
+                verified: false,
+                slot,
+                step_seq,
+                dev,
+                ino
+            },
+            P::Alias {
+                verified: true,
+                slot,
+                step_seq,
+                dev,
+                ino
+            },
+            P::DirSyncCall { slot, step_seq },
+            P::DirSyncReturned {
+                slot,
+                step_seq,
+                success: false,
+                errno: Some(libc::EBADF)
+            },
+        ]
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn exhausted_rejects_source_twelve_and_repeated_remove_without_rearming_faults() {
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResyncExhausted);
+    exhausted_prefix(&mut rig, 11);
+    let events = capture_emitted(|| {
+        // 只验证 hook 的越界拒绝，不向生产 core 派发本不该出现的第十二条命令。
+        rig.hook.command_begin(
+            PersistCommand::ResyncRemoval { txn: TXN },
+            Some(rig.core.current().unwrap().token()),
+        );
+        rig.hook.before_step(S::SyncRemovalDirectory);
+        assert_eq!(
+            rig.hook.directory_sync_input(S::SyncRemovalDirectory),
+            DirectorySyncInput::Original
+        );
+        rig.hook.command_scope_exit(false);
+    });
+    assert!(rig.hook.failed);
+    assert_eq!(
+        rig.hook.exhausted.as_ref().unwrap().faults,
+        [FaultSlot::Executed { bad_fd: true }; 10]
+    );
+    assert!(
+        !payloads(&events)
+            .iter()
+            .any(|fact| matches!(fact, P::FaultSelected { .. }))
+    );
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResyncExhausted);
+    exhausted_prefix(&mut rig, 2);
+    let repeated = capture_emitted(|| {
+        // 核心保留原命令矩阵；fixture 拒绝错命令，不以核心返回种类冒 hook 成功。
+        let _ = rig.command(exhausted_command(2));
+    });
+    assert!(rig.hook.failed);
+    let repeated = payloads(&repeated);
+    assert!(
+        repeated
+            .iter()
+            .any(|fact| matches!(fact, P::Failure { .. }))
+    );
+    assert!(
+        !repeated
+            .iter()
+            .any(|fact| matches!(fact, P::FaultSelected { .. }))
+    );
+    assert_eq!(
+        rig.hook.exhausted.as_ref().unwrap().faults[0],
+        FaultSlot::Executed { bad_fd: true }
+    );
+    assert_eq!(
+        rig.hook.exhausted.as_ref().unwrap().faults[1],
+        FaultSlot::Armed
+    );
+}
+
+#[test]
+fn exhausted_rejects_skipped_source_incomplete_previous_scope_and_missing_prepare_step() {
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResyncExhausted);
+    exhausted_prefix(&mut rig, 1);
+    rig.hook.execute_sequence = 2;
+    assert!(matches!(
+        rig.command(PersistCommand::ResyncRemoval { txn: TXN }),
+        PersistCompletion::Refused { .. }
+    ));
+    assert!(rig.hook.failed);
+    let mut hook = FileFaultHook::new(FileFaultMode::OrdinaryResyncExhausted);
+    hook.command_begin(exhausted_command(1), None);
+    hook.command_begin(exhausted_command(2), None);
+    assert!(hook.failed);
+    assert_eq!(hook.exhausted.as_ref().unwrap().next_source, 1);
+    let mut hook = FileFaultHook::new(FileFaultMode::OrdinaryResyncExhausted);
+    hook.command_begin(exhausted_command(1), None);
+    hook.before_step(S::CreateMarker);
+    hook.before_step(S::SampleMarkerIdentity);
+    assert!(hook.failed, "前一原步骤未成功，不能补发后一步掩盖缺失");
+    hook.command_scope_exit(false);
+}
+
+#[test]
+fn exhausted_rejects_each_mismatched_identity_field_and_unsuccessful_prepare() {
+    for txn in [
+        ClearTxnIdentity {
+            txn_id: TXN.txn_id + (1_u128 << 80),
+            ..TXN
+        },
+        ClearTxnIdentity {
+            expected_epoch: TXN.expected_epoch - 1,
+            ..TXN
+        },
+        ClearTxnIdentity {
+            original_latched: false,
+            ..TXN
+        },
+    ] {
+        let mut rig = Rig::new(FileFaultMode::OrdinaryResyncExhausted);
+        exhausted_prefix(&mut rig, 1);
+        assert!(matches!(
+            rig.command(PersistCommand::RemoveMarker {
+                txn,
+                kind: CleanupKind::Finalize
+            }),
+            PersistCompletion::Refused {
+                reason: WriterRefusal::IdentityMismatch,
+                ..
+            }
+        ));
+        assert!(rig.hook.failed);
+        assert_eq!(
+            rig.hook.exhausted.as_ref().unwrap().faults,
+            [FaultSlot::Armed; 10]
+        );
+    }
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResyncExhausted);
+    rig.stop.0 = false;
+    assert!(matches!(
+        rig.command(exhausted_command(1)),
+        PersistCompletion::Refused { .. }
+    ));
+    assert!(rig.hook.failed);
+    assert_eq!(rig.hook.exhausted.as_ref().unwrap().next_source, 1);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn exhausted_alias_preparation_failure_retains_earlier_operation_and_disables_future_selection() {
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResyncExhausted);
+    exhausted_prefix(&mut rig, 2);
+    let identity = ClearTxnStore::open(&rig.latch, "w4", "mock")
+        .unwrap()
+        .inspect_pair(&mut NoGuard)
+        .unwrap()
+        .directory_identity;
+    let events = capture_emitted(|| {
+        rig.hook.command_begin(
+            exhausted_command(3),
+            Some(rig.core.current().unwrap().token()),
+        );
+        rig.hook.before_step(S::SyncRemovalDirectory);
+        assert_eq!(
+            rig.hook.directory_sync_input(S::SyncRemovalDirectory),
+            DirectorySyncInput::OPathAlias
+        );
+        // 仅核准备失败回调分类；该手送回调不冒充真实失败 syscall。
+        rig.hook
+            .directory_sync_event(S::SyncRemovalDirectory, E::Expected(identity));
+        rig.hook.directory_sync_event(
+            S::SyncRemovalDirectory,
+            E::PreparationFailed {
+                phase: AliasPreparation::Open,
+                errno: Some(libc::EMFILE),
+            },
+        );
+        assert_eq!(
+            rig.hook.directory_sync_input(S::SyncRemovalDirectory),
+            DirectorySyncInput::Original
+        );
+        rig.hook.command_scope_exit(false);
+    });
+    let states = &rig.hook.exhausted.as_ref().unwrap().faults;
+    assert_eq!(states[0], FaultSlot::Executed { bad_fd: true });
+    assert_eq!(states[1], FaultSlot::PreparationFailed);
+    assert_eq!(&states[2..], &[FaultSlot::Armed; 8]);
+    assert!(rig.hook.failed);
+    assert!(
+        !payloads(&events)
+            .iter()
+            .any(|fact| matches!(fact, P::DirSyncCall { .. } | P::DirSyncReturned { .. }))
+    );
 }

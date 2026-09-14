@@ -32,6 +32,68 @@ use robot_msg::msg::SideEffect;
 use std::num::{NonZeroU64, NonZeroU128};
 use std::sync::atomic::Ordering;
 
+/// 仅复制推进前的 POD 事实；原许可、RR身份与拥有者始终留在协调器。
+#[cfg(feature = "test-comm-fault-hook")]
+#[derive(Clone, Copy)]
+struct ClearAdvanceFact {
+    txn: crate::latch_writer::ClearTxnIdentity,
+    stage: crate::clear_coordination::ClearStage,
+    accepted: u8,
+    in_flight: Option<crate::clear_coordination::InFlight>,
+    flight: Option<crate::clear_coordination::RetryFlight>,
+}
+#[cfg(feature = "test-comm-fault-hook")]
+impl ClearAdvanceFact {
+    fn from_state(state: &crate::clear_coordination::ClearTxnState) -> Self {
+        Self {
+            txn: state.txn(),
+            stage: state.stage(),
+            accepted: state.retry_accepted(),
+            in_flight: state.in_flight(),
+            flight: state.flight(),
+        }
+    }
+}
+#[cfg(feature = "test-comm-fault-hook")]
+fn clear_stage_fact(stage: Option<crate::clear_coordination::ClearStage>) -> (&'static str, u64) {
+    use crate::clear_coordination::ClearStage as S;
+    match stage {
+        None => ("Absent", 0),
+        Some(S::Preparing) => ("Preparing", 0),
+        Some(S::Finalizing) => ("Finalizing", 0),
+        Some(S::FinalizeCleanup) => ("FinalizeCleanup", 0),
+        Some(S::Repairing) => ("Repairing", 0),
+        Some(S::RepairClean) => ("RepairClean", 0),
+        Some(S::Resyncing) => ("Resyncing", 0),
+        Some(S::AwaitRetry { due_at_ns, .. }) => ("AwaitRetry", due_at_ns),
+        Some(S::AwaitCapacity { .. }) => ("AwaitCapacity", 0),
+        Some(S::Stuck(_)) => ("Stuck", 0),
+    }
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+fn clear_dispatch_fact(
+    flight: Option<crate::clear_coordination::InFlight>,
+) -> (&'static str, &'static str) {
+    use crate::clear_coordination::DispatchIntent;
+    use crate::latch_writer::PersistCommand;
+    let Some(flight) = flight else {
+        return ("None", "None");
+    };
+    let command = match flight.command {
+        PersistCommand::PrepareClear { .. } => "Prepare",
+        PersistCommand::RemoveMarker { .. } => "RemoveMarker",
+        PersistCommand::ResyncRemoval { .. } => "Resync",
+        PersistCommand::RepairClear { .. } => "Repair",
+    };
+    let intent = match flight.intent {
+        DispatchIntent::Initial => "Initial",
+        DispatchIntent::NextStage => "NextStage",
+        DispatchIntent::Retry => "Retry",
+    };
+    (command, intent)
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct TopicEvents {
     pub heartbeat: bool,
@@ -67,6 +129,10 @@ pub(crate) struct IpcLoopState {
     deferred_restore: Option<(HighWork, bool)>,
     stranded_clear_reply: Option<(RrIdentity, ClearOutcome)>,
     control_invalidated: bool,
+    #[cfg(feature = "test-comm-fault-hook")]
+    clear_fact_sequence: u64,
+    #[cfg(feature = "test-comm-fault-hook")]
+    clear_shutdown_observed: u64,
 }
 impl IpcLoopState {
     pub(crate) fn new(state: S0State, guards: Guards, normal_capacity: usize) -> Self {
@@ -88,6 +154,10 @@ impl IpcLoopState {
             deferred_restore: None,
             stranded_clear_reply: None,
             control_invalidated: false,
+            #[cfg(feature = "test-comm-fault-hook")]
+            clear_fact_sequence: 0,
+            #[cfg(feature = "test-comm-fault-hook")]
+            clear_shutdown_observed: 0,
         }
     }
     pub(crate) fn is_quiescent(&self) -> bool {
@@ -1010,9 +1080,13 @@ impl IpcLoopState {
             draining: context.boot.runtime_words().generation() != 0,
             estop_seen_since: self.estop_during_clear,
         };
+        #[cfg(feature = "test-comm-fault-hook")]
+        let before = self.coordination.view().map(ClearAdvanceFact::from_state);
         let events =
             self.coordination
                 .advance(context.ctrl.authority(), persist, inputs, context.clock);
+        #[cfg(feature = "test-comm-fault-hook")]
+        self.record_clear_advance(before.as_ref(), inputs, context);
         let mut retired = None;
         for event in events {
             match event {
@@ -1059,6 +1133,78 @@ impl IpcLoopState {
         }
         self.update_health(context, persist);
     }
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn record_clear_advance(
+        &mut self,
+        before: Option<&ClearAdvanceFact>,
+        inputs: AdvanceInputs,
+        context: &IpcRuntimeContext<'_>,
+    ) {
+        use crate::clear_coordination::{HeldPermit, ReplyState};
+        let Some(state) = self.coordination.view() else {
+            return;
+        };
+        let after = ClearAdvanceFact::from_state(state);
+        let generation = context.boot.runtime_words().generation();
+        let first_shutdown = generation != 0 && self.clear_shutdown_observed == 0;
+        let changed =
+            before.is_none_or(|old| old.stage != after.stage || old.accepted != after.accepted);
+        if !changed && !first_shutdown {
+            return;
+        }
+        if first_shutdown {
+            self.clear_shutdown_observed = generation;
+        }
+        self.clear_fact_sequence = self.clear_fact_sequence.saturating_add(1);
+        let ReplyState::Pending { rr, locked } = state.reply() else {
+            tracing::info!(
+                fact_sequence = self.clear_fact_sequence,
+                pending = false,
+                "R4重投原责任"
+            );
+            return;
+        };
+        let cleanup = match state.held() {
+            HeldPermit::Cleanup(permit) => Some(permit),
+            _ => None,
+        };
+        let owner_kind = cleanup.map_or("None", |permit| match permit.owner() {
+            robot_core::control_authority::ClearOwner::Pending(_) => "Pending",
+            robot_core::control_authority::ClearOwner::Finalizing(_) => "Finalizing",
+        });
+        let (before_stage, before_due) = clear_stage_fact(before.map(|fact| fact.stage));
+        let (after_stage, after_due) = clear_stage_fact(Some(after.stage));
+        let before_dispatch = before.and_then(|fact| fact.in_flight);
+        let (before_command, before_intent) = clear_dispatch_fact(before_dispatch);
+        let (after_command, after_intent) = clear_dispatch_fact(state.in_flight());
+        tracing::info!(
+            fact_sequence=self.clear_fact_sequence, inputs_now_ns=inputs.now_ns,
+            observed_at_ns=context.clock.now().0, draining=inputs.draining,
+            first_shutdown, shutdown_generation=generation,
+            txn_id=%state.txn().txn_id, expected_epoch=state.txn().expected_epoch,
+            original_latched=state.txn().original_latched, before_txn=?before.map(|fact|fact.txn),
+            before_stage, before_due, after_stage, after_due, stage_detail=?state.stage(),
+            before_count=before.map_or(0, |fact|fact.accepted), after_count=after.accepted,
+            before_in_flight=?before_dispatch, before_command, before_intent,
+            before_command_txn_id=%before_dispatch.map_or(0, |flight|flight.command.txn().txn_id),
+            before_command_epoch=before_dispatch.map_or(0, |flight|flight.command.txn().expected_epoch),
+            before_command_latched=?before_dispatch.map(|flight|flight.command.txn().original_latched),
+            before_flight=?before.and_then(|fact|fact.flight),
+            before_flight_counted=?before.and_then(|fact|fact.flight).map(|flight|flight.counted),
+            after_command, after_intent,
+            in_flight=?state.in_flight(), flight=?state.flight(), next=?state.next(),
+            held_cleanup=cleanup.is_some(), cleanup_kind=?cleanup.map(robot_core::control_authority::CleanupPermit::kind),
+            owner_kind, owner_domain=?cleanup.map(|permit|permit.owner().domain()),
+            owner_epoch=?cleanup.map(|permit|permit.owner().epoch().get()),
+            owner_original_latched=?cleanup.map(|permit|permit.owner().original_latched()),
+            sampled_epoch=?cleanup.map(|permit|permit.sampled_epoch().get()),
+            pending=true, request_id=%rr.request_id, route=?Some(rr.route), deadline_ns=rr.deadline_ns,
+            locked=?locked, logical_committed_at=?state.logical_committed_at(),
+            physical_done_at=?state.physical_done_at(),
+            "R4重投原责任"
+        );
+    }
+
     fn process_control(
         &mut self,
         event: ControlEvent,

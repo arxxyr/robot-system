@@ -1371,7 +1371,7 @@ fn finish_runtime_owned(
         meta.publish_failure_probe.ipc_joined = report.ipc_joined;
         meta.publish_failure_probe.executor_joined = report.executor_joined;
         export_publish_failure_attempts(supervisor, &meta);
-        record_runtime_exit_facts(&writer, &report);
+        record_runtime_exit_facts(&writer, &report, &shared, res);
         if let Some(page) = shared.observation() {
             page.record_runtime_stop_trace(&report);
             page.record_residual_bitmap(report.residual.bitmap());
@@ -1400,7 +1400,11 @@ fn finish_runtime_owned(
 fn record_runtime_exit_facts(
     writer: &WriterSettlement,
     report: &robot_s0::shutdown_mechanism::TeardownReport,
+    shared: &robot_s0::boot_supervisor::BootShared,
+    res: &ExecutionResources,
 ) {
+    let generation = shared.runtime_words().generation();
+    let authority = res.client.authority().snapshot();
     let writer_join_result = match writer.result.as_ref() {
         Some(Ok(robot_s0::latch_writer::WriterExit::Stopped)) => "stopped",
         Some(Ok(robot_s0::latch_writer::WriterExit::StoppedAfterIpcDisconnect)) => {
@@ -1412,6 +1416,12 @@ fn record_runtime_exit_facts(
     tracing::info!(
         writer_join_result,
         shutdown_failures = ?report.failures,
+        shutdown_generation=generation,
+        lowering_ack_epoch=shared.runtime_words().lowering_ack_epoch.load(Ordering::Acquire),
+        authority_phase=?authority.phase,
+        clear_retired=shared.clear_retired_for(generation),
+        flush_outcome=?res.writer_shared.flush_outcome(),
+        writer_fallback=writer.fallback.is_some(),
         "R4运行期原退出结果"
     );
 }
