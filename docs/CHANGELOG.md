@@ -10,6 +10,19 @@
 
 ---
 
+## 2026-09-14 · RR R1 CAL 与同源内存模型验收
+
+已实施已ACK通信硬化方案的CAL部分：正常finish以Release关闭，清理仅将活动请求
+转为ORPHANED，严格观察使用Acquire；公用终止口识别两者，保满队列断链错误优先。
+唯一实际push内核返回未入队或已入队含issue，避免入队后错误被误作未接纳；普通Result
+沿原语义投影。strict薄入口复用同源CAS，不改变共享布局或冻结设计。
+
+独立vendor测试workspace与Loom模型已落地，模型直接包含生产状态转移文件。
+cc-claude开发自测，两位独立Codex及root验收；正式21门全0，详10_verification同日条目。
+根14成员及运行时依赖版本保持，模型不进生产图；仅删IOX冗余readme清单项适配nightly。
+同值CLOSED的原请求资格仍待R2真实route/pin维护，R3迁移、R4/Orin验证未完成。
+证据见H包local/s48/rr_r1/root_acceptance.md；D15 OPEN、deployable=false。
+
 ## 2026-09-14 · RR R0 本地源码与构建准备验收
 
 两个iceoryx2 0.9.3发布包接入本地patch，原checksum/168原件及同commit许可已核；

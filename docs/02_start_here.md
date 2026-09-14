@@ -20,7 +20,7 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     RR R0两原包来源/构建准备已验收；下一包R1 CAL与同源模型
+当前步骤:     RR R1 CAL与同源模型已独审/root验收；提交后cc-claude实施R2 IOX
 当前授权:     用户2026-09-14恢复持续推进；cc-claude开发自测，root方案/评审/提交
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
@@ -46,7 +46,10 @@ RR r3的析构和公用CAL遗留问题已获方案ACK；vendor/模型/迁移另�
 
 R0以两个0.9.3原发布包接入唯一path依赖图，保14个本方成员与其余锁定版本；
 仅补一处当前nightly原子API别名兼容。fmt、三组Clippy、构建及transport99/RPC304通过，
-来源与运行证据已独审。RR关闭/入队修复尚未实施；当前结果不代表strict协议或Orin通过。
+来源与运行证据已独审。R1已实现CAL正常关闭/清理区分及真实入队回执，同源模型6项通过；
+正式21门全0，CAL45、工作区2207、S0 hook656通过，原9项ignored保留。
+根/嵌套两vendor运行时闭包80包身份一致，Loom不进生产图。原route/pin与复用资格仍待R2，
+本方迁移及双环境矩阵仍待R3/R4；本地结果不代表完整strict协议或Orin通过。
 
 左H1/H3通过、H2两次FAIL；用户最后确认左臂断电、双臂支撑。右臂未测，
 六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。本轮未访问远端，

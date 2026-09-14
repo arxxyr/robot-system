@@ -1,0 +1,26 @@
+# rr-memory-model：RR R1 同源内存模型（Loom）。
+#
+# - 独立测试 workspace（下方空 [workspace] 表），不属根 workspace；根 Cargo.toml 的
+#   workspace.exclude 已列出本目录。不进入 S0 / S1 / Gateway 生产依赖图。
+# - 不写 version：沿 Cargo 默认 0.0.0，本包不是产品产物，应用版本唯一来源仍是根
+#   workspace.package。publish = false。
+# - 唯一开发依赖 Loom 精确 =0.7.2、default-features = false；原包 checksum
+#   419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca
+#   （来源记录：target/post_e_h2_rt/s48/rr_r0/loom_source.json）。传递依赖由 Cargo
+#   生成的本目录 Cargo.lock 记录，不手写。
+# - 模型只通过 src/lib.rs 的 #[path] 包含仓库同一份
+#   3rd-party/iceoryx2-cal/src/zero_copy_connection/channel_state.rs，
+#   不依赖 iceoryx2 / iceoryx2-cal 运行时。
+
+[package]
+name        = "rr-memory-model"
+edition     = "2024"
+publish     = false
+description = "RR strict channel 状态转移的 Loom 同源模型（仅测试，不进生产图）"
+
+[workspace]
+
+[dependencies]
+
+[dev-dependencies]
+loom = { version = "=0.7.2", default-features = false }

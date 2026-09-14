@@ -11,8 +11,14 @@ RR R0已由cc-claude完成，独立Codex及root验收通过；root负责提交�
 transport、RPC与build七门全0；transport99/0/3、RPC304/0/0，既有ignored保留。
 同图tree/deny引用round1实际成功；原三个编译失败与三个nonmember探针101保留。
 证据入口H包`local/s48/rr_r0/`，root裁决`root_acceptance.md`、独审`independent_review.md`。
-下一包R1 CAL转移/真实enqueue/同源模型；独立vendor测试workspace须保持完整运行时
-依赖闭包与根图一致。R0没有执行vendor私有单测，不宣称RR缺陷已修复或Orin已验证。
+R0已提交`cbed745`。R1 CAL转移/真实enqueue/同源模型已由cc-claude实现、独立Codex与
+root验收；本阶段提交后进入R2 IOX，实施令`target/post_e_h2_rt/s48/rr_r2/cc_task.md`。
+R1正式round1共21门全0，CAL45、IOX库内8、模型6、workspace2207/0/9、S0 hook656/0/0。
+库内测试真实经过Clippy、CAL no_std通过；根14成员保持，两vendor运行时闭包80包身份
+与嵌套图一致，模型依赖不进生产图。测试三项发现均已修，开发失败保留。
+证据在H包`local/s48/rr_r1/`；入口`root_acceptance.md`、`result.json`、两个独立评审。
+正常finish与清理ORPHANED分开；同值CLOSED仍须R2实际route/pin和未复用资格才能证明
+原请求完成。本包不宣称完整RR或Orin通过，归档边界以H.json为准。
 
 ## 已提交W4b证据
 

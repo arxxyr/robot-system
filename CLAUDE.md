@@ -39,7 +39,7 @@
            W4b五例SIGKILL/同目录恢复已通过16门及独立源码/证据验收；
            W4b已提交a2598a5；用户2026-09-14恢复持续推进并确认cc-claude额度重置；
            RR R0来源/构建准备已由cc-claude完成并通过独立评审/root验收；
-           两原包统一本地路径，transport99/RPC304通过；下一包R1 CAL与同源模型；
+           R0已提交cbed745；R1 CAL与同源模型21门通过，独审/root验收，提交后进入R2；
            RR r3两项遗留方案已ACK，vendor/模型/迁移另包，之后P-E长负载；
            本地验收不代替Orin验证，RR上游可见性/退出保留问题另包修正。
            前包曾因cc-claude额度耗尽由原生开发；当前已交回cc-claude独占Cargo，

@@ -38,6 +38,8 @@ pub mod details {
 
     pub use crate::zero_copy_connection::*;
 
+    use crate::zero_copy_connection::channel_state;
+
     use crate::dynamic_storage::{
         DynamicStorage, DynamicStorageBuilder, DynamicStorageCreateError, DynamicStorageOpenError,
         DynamicStorageOpenOrCreateError,
@@ -670,16 +672,19 @@ pub mod details {
         }
     }
 
-    impl<Storage: DynamicStorage<SharedManagementData>> ZeroCopySender for Sender<Storage> {
-        fn try_send(
+    impl<Storage: DynamicStorage<SharedManagementData>> Sender<Storage> {
+        /// RR R1：唯一真实 push 内核。publication（`submission_queue.push`）之前的拒绝返回
+        /// `NotEnqueued`；push 之后无论旧 offset 的 used 移除是否成功都返回 `Enqueued`：
+        /// 新 offset 已发布、新 used 已登记，旧 offset 只有真实移除成功才算回收。
+        /// `try_send` 与 `try_send_observed` 都只经此处。
+        fn push_offset(
             &self,
             ptr: PointerOffset,
             sample_size: usize,
             channel_id: ChannelId,
-        ) -> Result<Option<PointerOffset>, ZeroCopySendError> {
+        ) -> TrySendReceipt {
             debug_assert!(channel_id.value() < self.storage.get().channels.capacity());
 
-            let msg = "Unable to send sample";
             let storage = self.storage.get();
 
             if !storage.enable_safe_overflow
@@ -687,8 +692,7 @@ pub mod details {
                     .submission_queue
                     .is_full()
             {
-                fail!(from self, with ZeroCopySendError::ReceiveBufferFull,
-                             "{} since the receive buffer is full.", msg);
+                return TrySendReceipt::NotEnqueued(ZeroCopySendError::ReceiveBufferFull);
             }
 
             let segment_id = ptr.segment_id().value() as usize;
@@ -723,15 +727,88 @@ pub mod details {
                     let index = pointer_offset.offset()
                         / segment_details.sample_size.load(Ordering::Relaxed);
 
-                    if !segment_details.used_chunk_list.remove(index) {
-                        fail!(from self, with ZeroCopySendError::ConnectionCorrupted,
-                        "{} since the invalid offset {:?} was returned on overflow.", msg, pointer_offset);
+                    if segment_details.used_chunk_list.remove(index) {
+                        TrySendReceipt::Enqueued {
+                            reclaimed_overflow: Some(pointer_offset),
+                            issue: None,
+                        }
+                    } else {
+                        TrySendReceipt::Enqueued {
+                            reclaimed_overflow: None,
+                            issue: Some(EnqueueIssue::OverflowedOffsetNotInUsedList(
+                                pointer_offset,
+                            )),
+                        }
                     }
-
-                    Ok(Some(pointer_offset))
                 }
-                None => Ok(None),
+                None => TrySendReceipt::Enqueued {
+                    reclaimed_overflow: None,
+                    issue: None,
+                },
             }
+        }
+    }
+
+    #[cfg(test)]
+    impl<Storage: DynamicStorage<SharedManagementData>> Sender<Storage> {
+        /// 仅测试：从真实 used 列表移除一个已发送 offset 的登记，用于布置“post-push 旧 used
+        /// 缺失”这一真实故障；不伪造任何回执。返回原列表是否确有该登记。
+        pub(crate) fn test_only_forget_used_offset(
+            &self,
+            ptr: PointerOffset,
+            channel_id: ChannelId,
+        ) -> bool {
+            let storage = self.storage.get();
+            let segment_details =
+                storage.get_segment_details(ptr.segment_id().value() as usize, channel_id.value());
+            let index = ptr.offset() / segment_details.sample_size.load(Ordering::Relaxed);
+            segment_details.used_chunk_list.remove(index)
+        }
+
+        /// 仅测试：只读查询某个 offset 当前是否仍在真实 used 列表中；活借用期间的检查只能
+        /// 用它，不能用破坏性的 `acquire_used_offsets`。
+        pub(crate) fn test_only_is_used(&self, ptr: PointerOffset, channel_id: ChannelId) -> bool {
+            let storage = self.storage.get();
+            let segment_details =
+                storage.get_segment_details(ptr.segment_id().value() as usize, channel_id.value());
+            let index = ptr.offset() / segment_details.sample_size.load(Ordering::Relaxed);
+            segment_details.used_chunk_list.contains(index)
+        }
+    }
+
+    impl<Storage: DynamicStorage<SharedManagementData>> ZeroCopySender for Sender<Storage> {
+        fn try_send(
+            &self,
+            ptr: PointerOffset,
+            sample_size: usize,
+            channel_id: ChannelId,
+        ) -> Result<Option<PointerOffset>, ZeroCopySendError> {
+            let msg = "Unable to send sample";
+
+            // 原 Result 投影：两条原错误路径保留原日志，其余由 into_result 统一映射。
+            match self.push_offset(ptr, sample_size, channel_id) {
+                TrySendReceipt::NotEnqueued(ZeroCopySendError::ReceiveBufferFull) => {
+                    fail!(from self, with ZeroCopySendError::ReceiveBufferFull,
+                             "{} since the receive buffer is full.", msg);
+                }
+                TrySendReceipt::Enqueued {
+                    issue: Some(EnqueueIssue::OverflowedOffsetNotInUsedList(pointer_offset)),
+                    ..
+                } => {
+                    fail!(from self, with ZeroCopySendError::ConnectionCorrupted,
+                        "{} since the invalid offset {:?} was returned on overflow.", msg, pointer_offset);
+                }
+                receipt => receipt.into_result(),
+            }
+        }
+
+        fn try_send_observed(
+            &self,
+            ptr: PointerOffset,
+            sample_size: usize,
+            channel_id: ChannelId,
+        ) -> TrySendReceipt {
+            self.push_offset(ptr, sample_size, channel_id)
         }
 
         fn blocking_send<F: BackpressureToReceiverFn>(
@@ -761,10 +838,10 @@ pub mod details {
 
                 if let Err(e) = AdaptiveWaitBuilder::new().create().unwrap().wait_while(|| {
                     is_connected = mgmt.is_connected();
-                    has_valid_channel_state = mgmt.channels[channel_id.value()]
-                        .state
-                        .load(Ordering::Relaxed)
-                        != CHANNEL_STATE_CLOSED.0;
+                    // RR R1：CLOSED 与私有 ORPHANED 都是终止值（同源 Acquire 读）；满队列不再对
+                    // 已被清理者标记的 channel 无限等待。断链优先级与错误分类保持原样。
+                    has_valid_channel_state =
+                        !channel_state::terminal(&mgmt.channels[channel_id.value()].state);
                     if is_connected
                         && has_valid_channel_state
                         && mgmt.channels[channel_id.value()].submission_queue.is_full()
@@ -1089,9 +1166,14 @@ pub mod details {
                     Storage>>::new(name)
                        .config(&config.dynamic_storage_config).open(AccessMode::ReadWrite) {
                            Ok(storage) => {
+                               // RR R1：清理者只把合法 Open / hint 的 channel 真实 CAS 为私有
+                               // ORPHANED（Acquire 读、AcqRel 成功）；已 CLOSED / ORPHANED 保持，
+                               // 正常关闭不会被覆盖。之后才沿原路径移除端点位。
                                for channel in storage.get().channels.iter() {
-                                   channel.state.store(CHANNEL_STATE_CLOSED.0, Ordering::Relaxed);
+                                   let _ = channel_state::mark_orphaned(&channel.state);
                                }
+                               #[cfg(test)]
+                               crate::zero_copy_connection::tests::remove_port_hook::after_orphan_cas_before_port_removal();
                                cleanup_shared_memory(&storage, port); Ok(())},
                            Err(DynamicStorageOpenError::InitializationNotYetFinalized) => {
                                match unsafe { Storage::remove_cfg(name, &config.dynamic_storage_config) } {

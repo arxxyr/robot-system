@@ -9,6 +9,28 @@
 
 ---
 
+## 2026-09-14 · RR R1 CAL 与同源内存模型验收
+
+基线cbed745；cc-claude开发自测、独立Codex分审CAL与模型/依赖图，root验收。
+正式round1的21门全部exit0；fmt及三组根Clippy、真实CAL库内test目标Clippy、
+CAL无std check/Clippy、模型fmt/Clippy、build/timings/tree/deny/三metadata均通过。
+
+| 实跑范围 | 通过 / 失败 / 忽略 |
+|---|---|
+| CAL原语与真实连接（process_local、POSIX） | 45 / 0 / 0 |
+| IOX既有库内单测 | 8 / 0 / 0 |
+| 同源Loom测试（含两个负对照与能力边界） | 6 / 0 / 0 |
+| 根workspace（含文档测试） | 2207 / 0 / 9 |
+| S0 rt_guard,test-comm-fault-hook库内 | 656 / 0 / 0 |
+
+分组有重叠，不相加为独立覆盖。正式库内Clippy复用同源码缓存，实际--test driver
+编译证据在dev/cal_clippy_rustc_wrapper_probe.log；没有用生产lib检查冒测试lint。
+模型正向完整排列6/7/453/1538；负对照各完成2次后第3次命中所需尾不可见反例。
+两vendor运行时闭包在根/嵌套均80包，name/version/source/checksum一致；根14成员，
+Loom和测试运行器不进生产图。原开发失败保留，不以正式通过回填。
+未运行file后端、缺失tests_common的上游集成套件或ARM/Orin；R2原pin/复用资格、
+R3本方迁移与R4矩阵仍待完成。证据H包local/s48/rr_r1；D15 OPEN、deployable=false。
+
 ## 2026-09-14 · RR R0 本地源码与构建准备验收
 
 两个iceoryx2 0.9.3发布包接入本地patch，原checksum/168原件及同commit许可已核；
@@ -731,6 +753,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-09-14 | RR R1本地21门/CAL45/模型6通过；源码与证据独审，R2/R3/R4及Orin未验证 | Codex |
 | 2026-09-14 | RR R0 两原包来源/唯一构建图及99项transport、304项RPC回归通过；strict/模型/Orin未验证 | Codex |
 | 2026-09-10 | W4b固定五例SIGKILL/原目录恢复独立验收；16门、5+2+72通过，原失败/ignored保留，提交后暂停 | root + 独立B源码/证据审 + A身份二路 |
 | 2026-09-10 | W4a正式15门/新增2例/原All72独立终审通过；原统计失败及限定更正保留，后续W4/RR/P-E未完成 | Codex |

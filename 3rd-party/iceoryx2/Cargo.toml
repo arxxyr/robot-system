@@ -22,7 +22,6 @@ autotests = false
 autobenches = false
 description = "iceoryx2: Lock-Free Zero-Copy Interprocess Communication"
 homepage = "https://iceoryx.io"
-readme = "README.md"
 keywords = [
     "zero-copy",
     "communication",

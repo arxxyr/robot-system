@@ -1,0 +1,26 @@
+# 3rd-party 虚拟 workspace（RR R1，2026-09-14）
+#
+# 只用于运行两个 vendor crate 的库内私有测试（--lib）。根 workspace 已显式 exclude 这两个
+# 目录，本文件不是根 workspace 的一部分；根仍是 14 个本方 members。
+#
+# 独立 Cargo.lock 以根 Cargo.lock 为初始输入、由 Cargo 生成；两包运行时传递依赖闭包的
+# (name, version, source, checksum) 必须与根锁一致，只允许原 dev-dependencies
+# （iceoryx2-bb-testing / iceoryx2-bb-loggers 的 std）带来的增量。
+#
+# 运行示例（仓库根）：
+#   cargo test --locked --manifest-path 3rd-party/Cargo.toml --target-dir target/rr-vendor-tests \
+#       -p iceoryx2-cal --lib --features std
+#   cargo test --locked --manifest-path 3rd-party/Cargo.toml --target-dir target/rr-vendor-tests \
+#       -p iceoryx2 --lib
+#   cargo check --locked --manifest-path 3rd-party/Cargo.toml --target-dir target/rr-vendor-tests \
+#       -p iceoryx2-cal --lib --no-default-features
+# 显式 [[test]] tests/tests.rs 引用未发布的 *_tests_common，不能运行，不在此选择。
+
+[workspace]
+resolver = "2"
+members = ["iceoryx2", "iceoryx2-cal"]
+
+# 与根相同的两条本地 patch：iceoryx2 → iceoryx2-cal 的依赖必须落在同一目录，不回退 registry。
+[patch.crates-io]
+iceoryx2     = { path = "iceoryx2" }
+iceoryx2-cal = { path = "iceoryx2-cal" }

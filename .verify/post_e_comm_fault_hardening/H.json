@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "RR_R0_ACCEPTED_NEXT_R1",
-  "resume_from": "2026-09-14 RR R0来源/构建准备已由cc-claude完成，独立Codex及root验收；本包提交后R1 CAL转移/入队回执/同源模型继续交cc-claude，root最终评审。不以本地软件门代替Orin验证。",
+  "work_state": "RR_R1_APPROVED_PENDING_COMMIT",
+  "resume_from": "R1 CAL/真实回执/同源模型已验收；归档提交后cc-claude按rr_r2/cc_task.md实施IOX，root与独立Codex评审。不push、不启动硬件。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_W4B_APPROVED_SOFTWARE_SCOPE",
-  "review_status": "W4B_INDEPENDENT_SOURCE_AND_EVIDENCE_APPROVED",
+  "status": "S48_RR_R1_APPROVED_LOCAL_SCOPE",
+  "review_status": "R1_INDEPENDENT_CAL_MODEL_GRAPH_AND_ROOT_APPROVED",
   "deployable": false,
-  "scope": "W4b固定五例SIGKILL/原目录重启本地验收通过，W4a文件故障两例回归通过；W3权限/双队列/唯一writer已接生产调用方。当前提交后暂停，未访问Orin，完整W4/RR/P-E未完，wire4历史FAIL/D15 OPEN/deployable=false。",
+  "scope": "W3/W4a/W4b及RR R0/R1本地范围已验收；当前R1提交后继续R2 IOX。完整RR/W4/P-E及Orin尚未完成，wire4历史FAIL、D15 OPEN、deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -2243,13 +2243,13 @@
         "post_archive_boundary": "W4a原归包后独审及commit_receipt.json已随本次W4b归包携带；不反称存在于先前W4a tar。"
       },
       "w4_remaining": {
-        "status": "RR_R0_ACCEPTED_NEXT_R1",
-        "rr": "r3闭合最后shared析构及公用CAL两项方案遗留，B增量ACK；直接迁现有factory、同批所有peer/清理者，vendor/模型构建输入及实现另包。",
+        "status": "RR_R1_APPROVED_PENDING_COMMIT",
+        "rr": "R0来源构建与R1 CAL/同源模型已本地验收；R2 IOX原route/pin/退出、R3本方迁移、R4矩阵继续。",
         "rr_review": "local/s48/w4_rr/inputs/robot-w4-rr-r3-independent-review.md",
         "rr_review_sha256": "c7fec56c07ed0b41d6a2f63c834ca6a1eb2496d393e7a9e30d2cb43d787f2d22",
         "sigkill": "W4b固定五例已本地软件独立验收；完整磁盘/NoGuard/T8/SUP/ENV仍未完成。",
         "w1_observation": "历史锁偶发失败仍留观察；W4a未作根因修正，不以本轮All通过代替结案。",
-        "rr_archive_boundary": "RR r3/R0只读方案及固定上游许可原件随本次W4b归档，不含vendor/模型实现。"
+        "rr_archive_boundary": "本次H包已包含RR R0/R1实际来源、模型与运行证据；R2 IOX/R3迁移尚待开发。"
       },
       "w4b": {
         "status": "APPROVED_SOFTWARE_SCOPE",
@@ -2438,6 +2438,136 @@
         "limitations": "vendor私有测试尚未运行；三个nonmember探针101不算PASS，原三编译失败保留；strict/模型/本方迁移/双环境后续，无SSH/硬件。",
         "archive_boundary": "当前H包新增69件RR R0及W4b晚生回执，旧15611件保留；R0归包后执行回执及随后commit回执留本地，不在此tar。",
         "next": "R1 CAL状态/真实push receipt/同源Loom，任务target/post_e_h2_rt/s48/rr_r1/cc_task.md"
+      },
+      "rr_r1": {
+        "status": "APPROVED_R1_LOCAL_SCOPE",
+        "base_commit": "cbed745ec7a1c8f4881b64710c6d41b6f252f74b",
+        "developer": "cc-claude",
+        "verified": true,
+        "root_acceptance": "local/s48/rr_r1/root_acceptance.md",
+        "root_acceptance_sha256": "094be7d517e30c7765d2868c4fdb240eeb2d89090efc14edad55955ad277e437",
+        "result": "local/s48/rr_r1/result.json",
+        "result_sha256": "1c558bda2b3d8e336a725d2daecb35a40525aca1bf967a86e07bc37e6720a6fc",
+        "formal_run": "local/s48/rr_r1/gates/round1/run.json",
+        "formal_run_sha256": "95deca851156f6b3db39eb21282a17320305139f31b1efb30be3127b309f4c58",
+        "gate_count": 21,
+        "all_gates_exit_zero": true,
+        "source_identities": [
+          {
+            "path": "3rd-party/Cargo.toml",
+            "sha256": "64a4f016188a0ab7b67a7f69ec36c7827bce7eacadfdfec68f6e92ab0264d5ec",
+            "git": "??"
+          },
+          {
+            "path": "3rd-party/Cargo.lock",
+            "sha256": "0ed49167c8975cf68b3e2ac12c3a82ab6719d3d30effc2aa4d57c415a30baf17",
+            "git": "??"
+          },
+          {
+            "path": "3rd-party/iceoryx2/Cargo.toml",
+            "sha256": "ae4af353a4789dc583394850da54453c865319860805fbd4c5a63b6a3d462ced",
+            "git": "M "
+          },
+          {
+            "path": "3rd-party/ICEORYX2_VENDOR_SOURCE.md",
+            "sha256": "a5708dfdcaf356eb7d6610d73504e5b705eab0fa2304d6f9d3e21bfd8bd5aef5",
+            "git": "M "
+          },
+          {
+            "path": "3rd-party/iceoryx2-cal/src/zero_copy_connection/channel_state.rs",
+            "sha256": "98a37e994d3ee550494ebde10dc7e87767ee29c4bee4b69120bf1ef0fb533fbc",
+            "git": "??"
+          },
+          {
+            "path": "3rd-party/iceoryx2-cal/src/zero_copy_connection/mod.rs",
+            "sha256": "c0c6067782a7f822e1d26e5e9b101c3c0b3596b9fe8cfa5801c0af8846dda8bd",
+            "git": "M "
+          },
+          {
+            "path": "3rd-party/iceoryx2-cal/src/zero_copy_connection/common.rs",
+            "sha256": "3bffa338cc640d23d8c8c9673210748bbae8595c48587b0b1bf15628c2c18ad3",
+            "git": "M "
+          },
+          {
+            "path": "3rd-party/iceoryx2-cal/src/zero_copy_connection/used_chunk_list.rs",
+            "sha256": "fdea0d3cf1c432fe53e2bd5b73b65e1c2174524f821cf0de769ea3e95f106263",
+            "git": "M "
+          },
+          {
+            "path": "3rd-party/iceoryx2-cal/src/zero_copy_connection/tests.rs",
+            "sha256": "7654af7c0c7f8dcfe62b0adbe73ae5a200ffbd7ef06b0438f0c8acba594971d1",
+            "git": "??"
+          },
+          {
+            "path": "tools/rr-memory-model/Cargo.toml",
+            "sha256": "9c4af74a2ceae9e6f17cc3f7d86ac86d094fe86b5f69772fe989887d043801a8",
+            "git": "??"
+          },
+          {
+            "path": "tools/rr-memory-model/Cargo.lock",
+            "sha256": "5282f440ab639fffbb55adb1a11d63f1b13c4f17893cf9c05901f08e0f69420c",
+            "git": "??"
+          },
+          {
+            "path": "tools/rr-memory-model/README.md",
+            "sha256": "bbe682436724f754d1afae6fe8a138053b9f2168acb4b3fd3dc4dcd5d3e88cbd",
+            "git": "??"
+          },
+          {
+            "path": "tools/rr-memory-model/src/lib.rs",
+            "sha256": "9d5e86e6f53b2fa7b38b625cdd2121bdafb06f229a9a18a1832084da25ed1397",
+            "git": "??"
+          }
+        ],
+        "independent_reviews": [
+          {
+            "path": "local/s48/rr_r1/independent_tests_bridge_review.md",
+            "sha256": "5df0ca4202402f80506f8bc6ba84ae118371f235a07c0643370911481d940761"
+          },
+          {
+            "path": "local/s48/rr_r1/independent_model_review.md",
+            "sha256": "ecdbd5f3d538521d42a5ea0ff0106d0b2f65e5a6b9f7b8adbf005abe67dc2b3b"
+          }
+        ],
+        "test_counts": {
+          "cal": [
+            45,
+            0,
+            0
+          ],
+          "iox_lib": [
+            8,
+            0,
+            0
+          ],
+          "model": [
+            6,
+            0,
+            0
+          ],
+          "workspace": [
+            2207,
+            0,
+            9
+          ],
+          "s0_hook": [
+            656,
+            0,
+            0
+          ]
+        },
+        "graph": {
+          "root_members": 14,
+          "vendor_members": 2,
+          "vendor_runtime_closure_packages": 80,
+          "runtime_identity_sets_equal": true,
+          "model_in_production_graph": false
+        },
+        "limits": "只验收R1本地；file后端/完整上游集成套件/IOX持有/R3/R4/Orin未完成。",
+        "archive_boundary": "本次H包新增91件R1及R0归包后/commit回执；本阶段归包后执行回执与随后commit回执留rr_r1/post_archive_review和commit_receipt.json，不在本tar。",
+        "next": "R2 IOX，任务target/post_e_h2_rt/s48/rr_r2/cc_task.md",
+        "archive_verified_files": 15771,
+        "archive_receipt_sha256": "c92004887c90140c911e5e68d7b196519e0f78651792e6ceb53bc2bc5c9c2921"
       }
     }
   },
@@ -2592,20 +2722,20 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2528,
-    "sha256": "6b7cd48f2ff3ba7a72d4326bbbca7f23c44b53a0a85a7b7baced6cd23005c9e6"
+    "lines": 2552,
+    "sha256": "08db5d38376005a62a222554a5c9a99fa52c6dc68455198ca4a5aa34489dc415"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "4c59600a1bdb50272cf23f622b17db210fa2c42ee8d8af5b20dd5b70ede33c0f",
-    "bytes": 61106113,
-    "members": 15681,
-    "logical_bytes": 1526422073,
+    "sha256": "f5117f37e8f5941b81ea95a4a8ef08f1202a665dde054385f7c65cf835b706f9",
+    "bytes": 61788419,
+    "members": 15772,
+    "logical_bytes": 1533328938,
     "per_file_sha256_verified": true,
-    "verification_method": "旧包SHA固定并复用既有逐件核验；输出保全部旧路径/大小，69新增件逐件SHA核验。"
+    "verification_method": "旧包SHA固定并复用既有逐件核验；输出保全部旧路径/大小，91新增件逐件SHA核验。"
   },
-  "retention": "当前H包保旧15611索引项及69新增R0/W4b后生证据；旧queue保历史原文，当前状态以H.json/HANDOFF为准。R0归包后与commit回执留本地，不冒称入此tar。",
-  "updated_at": "2026-09-14T07:58:27.365752+00:00",
+  "retention": "当前H包保旧15680索引项及91新增R1/R0后生证据；旧queue保历史原文，当前状态以H.json/HANDOFF为准。R1归包后与commit回执留本地，不冒称入此tar。",
+  "updated_at": "2026-09-14T08:51:53.875241+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",

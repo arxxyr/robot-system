@@ -2456,6 +2456,30 @@ Client::next_request_id的fetch_update改名try_update，原内存序/闭包不�
 R0已独审及root验收：round2七门全0，transport99/0/3、RPC304/0/0；同图tree/deny复用
 round1。原三编译失败及三nonmember探针101保留，后者不算通过测试。详H包local/s48/rr_r0。
 
+#### P.6.14.18 RR R1 CAL 与同源模型（2026-09-14本地验收）
+
+基线cbed745；cc-claude负责CAL/测试实现，模型由其子agent并行开发，Cargo由主开发
+串行执行；root及独立Codex评审。私有channel_state.rs共享实际load/CAS与Ordering，
+普通合法域保含2^62，strict域不含上界；清理写ORPHANED，正常finish保Release关闭。
+真实push回执区分NotEnqueued与Enqueued+issue；普通Result投影/公用背压原错误顺序保持。
+本包补CAL跨crate strict_prepare/strict_channel_status薄入口；真实prepare记录、原route/pin
+及未复用资格仍由R2保障，不以同值CLOSED本身证明原请求完成。R2所有权/映射未实施。
+
+3rd-party独立测试workspace使用两真实vendor、Cargo生成独立锁，运行时依赖闭包必须
+与根图一致；根14members不变。tools/rr-memory-model独立Loom 0.7.2锁，不进生产图。
+模型通过同源文件验证正常尾发布和清理竞争；普通/预hint观察前无额外Acquire，弱化
+writer/observer两负对照必须发现反例。初始/复用后同值CLOSED另作能力边界反例，
+不能把模型包装的token/bool当真实pin；正向完整探索与负对照提前结束分开计数。
+
+借用/used真实单次转移、背压异常收尾、第二次finish CAS覆盖三项独审发现已修；
+破坏性扫描只用于满足Safety的终点，两个背压测试用实际握手和有界失败退出。
+正式round1的21门全0：CAL45、IOX库内8、模型6、workspace2207/0/9、S0 hook656/0/0；
+零警告Clippy含真实CAL库内test目标，默认无std单列通过。只额外移除IOX冗余readme行，
+metadata仍同README、运行时图与锁身份保持；两vendor在根/嵌套完整运行时闭包均80包。
+同源模型正向普通6/hint7/清理453/竞争1538排列；两个负对照各完成2次后第3次命中反例。
+独审及root验收限定R1本地软件范围，提交后按原方案实施R2；证据入口
+target/post_e_h2_rt/s48/rr_r1。本地结果不替代R2/R3/R4或Orin，D15 OPEN保持。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

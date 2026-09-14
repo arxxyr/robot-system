@@ -17,6 +17,11 @@ pub mod process_local;
 pub mod recommended;
 pub mod used_chunk_list;
 
+// RR R1（robot-system 本地补丁）：同源 channel 状态转移原语与私有测试。
+pub(crate) mod channel_state;
+#[cfg(test)]
+mod tests;
+
 use core::fmt::Debug;
 use core::time::Duration;
 
@@ -131,6 +136,42 @@ impl core::fmt::Display for ZeroCopyReleaseError {
 
 impl core::error::Error for ZeroCopyReleaseError {}
 
+/// RR R1：真实入队之后附带的问题。新 offset 已发布、新 used 已登记，问题只涉及旧 offset 的回收。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnqueueIssue {
+    /// 溢出挤出的旧 offset 不在 used 列表中：不能当作回收，也不回滚新引用。
+    OverflowedOffsetNotInUsedList(PointerOffset),
+}
+
+/// RR R1：[`ZeroCopySender::try_send_observed()`] 的真实回执。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrySendReceipt {
+    /// publication 之前拒绝：offset 未进 submission queue，used 集合未新增。
+    NotEnqueued(ZeroCopySendError),
+    /// 已 push 到 submission queue。`reclaimed_overflow` 仅在真实收到被挤出的旧 offset
+    /// 且其 used 移除成功时为 `Some`；`issue` 记录 push 之后的旧件回收问题。
+    Enqueued {
+        reclaimed_overflow: Option<PointerOffset>,
+        issue: Option<EnqueueIssue>,
+    },
+}
+
+impl TrySendReceipt {
+    /// 普通 [`ZeroCopySender::try_send()`] 的原 `Result` 投影：`NotEnqueued(e)` → `Err(e)`；
+    /// 带 `issue` 的 `Enqueued` → `Err(ConnectionCorrupted)`（原行为，此时新 offset 仍已投递）；
+    /// 其余 → `Ok(reclaimed_overflow)`。
+    pub fn into_result(self) -> Result<Option<PointerOffset>, ZeroCopySendError> {
+        match self {
+            Self::NotEnqueued(error) => Err(error),
+            Self::Enqueued { issue: Some(_), .. } => Err(ZeroCopySendError::ConnectionCorrupted),
+            Self::Enqueued {
+                reclaimed_overflow,
+                issue: None,
+            } => Ok(reclaimed_overflow),
+        }
+    }
+}
+
 /// Defines the action that shall be take when a [`PointerOffset`]
 /// cannot be delivered.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -198,6 +239,39 @@ impl ChannelState {
     }
 }
 
+/// RR R1：strict 请求状态的公开三态。这只是 CAL 的观测原语：仅当调用方确实持有本次成功
+/// strict prepare 的记录、原连接 route / pin，且该 channel 尚未复用时，`Closed` 才能作为该
+/// 请求正常关闭的证据——同值 CLOSED 本身分不清初始与复用代次；无 prepare 资格或缺原 route 时
+/// 调用方必须直接按 `Unknown` 处理。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrictChannelStatus {
+    /// 仍是原请求（含 hint 形态）：尚未观察到终结，不声称对端存活。
+    Open,
+    /// 正常关闭（Acquire 读到 CLOSED）：关闭方 Release 之前入队的尾内容可见。
+    Closed,
+    /// ORPHANED、其它代次、非法输入或越界值：不能证明任何发布关系。
+    Unknown,
+}
+
+/// RR R1：strict prepare 的失败原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrictPrepareError {
+    /// 请求不在 strict 域 0..<2^62（普通上界 2^62 与 CLOSED 哨兵都在此拒绝）；未执行任何原子操作。
+    IllegalRequest,
+    /// 当前不是 CLOSED；携带相对本请求观察到的三态。
+    NotClosed(StrictChannelStatus),
+}
+
+fn strict_status_of(observed: channel_state::Value, request: u64) -> StrictChannelStatus {
+    match observed {
+        channel_state::Value::Closed => StrictChannelStatus::Closed,
+        channel_state::Value::Open(r) | channel_state::Value::Hinted(r) if r == request => {
+            StrictChannelStatus::Open
+        }
+        _ => StrictChannelStatus::Unknown,
+    }
+}
+
 pub const DEFAULT_BUFFER_SIZE: usize = 4;
 pub const DEFAULT_ENABLE_SAFE_OVERFLOW: bool = false;
 pub const DEFAULT_MAX_BORROWED_SAMPLES_PER_CHANNEL: usize = 4;
@@ -210,6 +284,24 @@ pub const CHANNEL_STATE_OPEN: ChannelState = ChannelState(0);
 pub const CHANNEL_STATE_CLOSED: ChannelState = ChannelState(u64::MAX);
 /// Hints the channel that the other side intends to disconnect.
 const CHANNEL_STATE_DISCONNECT_HINT_BIT: u64 = 1u64 << 63;
+
+// RR R1：生产侧适配。channel 状态字的真实类型是 iceoryx2_bb_concurrency 的 AtomicU64 包装，
+// 直接为该类型实现同源 trait，两个方法都原样转发 Ordering。
+impl channel_state::AtomicState for AtomicU64 {
+    fn load(&self, order: Ordering) -> u64 {
+        (**self).load(order)
+    }
+
+    fn compare_exchange(
+        &self,
+        current: u64,
+        new: u64,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<u64, u64> {
+        (**self).compare_exchange(current, new, success, failure)
+    }
+}
 
 pub trait ZeroCopyConnectionBuilder<C: ZeroCopyConnection>: NamedConceptBuilder<C> {
     fn buffer_size(self, value: usize) -> Self;
@@ -240,77 +332,157 @@ pub trait ZeroCopyPortDetails {
     #[doc(hidden)]
     fn __internal_get_channel_state(&self, channel_id: ChannelId) -> &AtomicU64;
 
+    /// CLOSED → `state`。合法请求走同源 `channel_state::prepare`（成功 AcqRel / 失败 Acquire，
+    /// 成功条件与原来相同）；哨兵参数保持原 Relaxed CAS 的薄兼容边缘：
+    /// `CHANNEL_STATE_CLOSED` 在 CLOSED 上仍是成功的 no-op，该 no-op 不构成 strict prepare 资格。
     fn set_channel_state(&self, channel_id: ChannelId, state: ChannelState) -> bool {
-        self.__internal_get_channel_state(channel_id)
-            .compare_exchange(
-                CHANNEL_STATE_CLOSED.0,
-                state.0,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            )
-            .is_ok()
+        let atomic = self.__internal_get_channel_state(channel_id);
+        match channel_state::classify_value(state.0) {
+            channel_state::Value::Open(request) => channel_state::prepare(atomic, request).is_ok(),
+            _ => atomic
+                .compare_exchange(
+                    CHANNEL_STATE_CLOSED.0,
+                    state.0,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok(),
+        }
     }
 
+    /// 合法请求走同源 `channel_state::set_hint`（只匹配原请求，不能从 ORPHANED / CLOSED 转换）；
+    /// 哨兵参数保持原行为（`CHANNEL_STATE_CLOSED` 不改变值）。
     fn set_disconnect_hint(&self, channel_id: ChannelId, expected_state: ChannelState) {
-        let disconnect_hint_state = expected_state.0 | CHANNEL_STATE_DISCONNECT_HINT_BIT;
-
-        let _ = self
-            .__internal_get_channel_state(channel_id)
-            .compare_exchange(
-                expected_state.0,
-                disconnect_hint_state,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            );
+        let atomic = self.__internal_get_channel_state(channel_id);
+        match channel_state::classify_value(expected_state.0) {
+            channel_state::Value::Open(request) => {
+                let _ = channel_state::set_hint(atomic, request);
+            }
+            _ => {
+                let disconnect_hint_state = expected_state.0 | CHANNEL_STATE_DISCONNECT_HINT_BIT;
+                let _ = atomic.compare_exchange(
+                    expected_state.0,
+                    disconnect_hint_state,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                );
+            }
+        }
     }
 
+    /// 合法请求走同源 `channel_state::has_hint`（Acquire）；哨兵参数保持原比较
+    /// （`CHANNEL_STATE_CLOSED` 在 CLOSED 上为真）。
     fn has_disconnect_hint(&self, channel_id: ChannelId, expected_state: ChannelState) -> bool {
-        let disconnect_hint_state = expected_state.0 | CHANNEL_STATE_DISCONNECT_HINT_BIT;
-        disconnect_hint_state
-            == self
-                .__internal_get_channel_state(channel_id)
-                .load(Ordering::Relaxed)
+        let atomic = self.__internal_get_channel_state(channel_id);
+        match channel_state::classify_value(expected_state.0) {
+            channel_state::Value::Open(request) => channel_state::has_hint(atomic, request),
+            _ => {
+                let disconnect_hint_state = expected_state.0 | CHANNEL_STATE_DISCONNECT_HINT_BIT;
+                disconnect_hint_state == atomic.load(Ordering::Relaxed)
+            }
+        }
     }
 
+    /// 合法请求走同源 `channel_state::has_state`（Acquire，含 hint 形态）；哨兵参数保持原掩码
+    /// 比较（`CHANNEL_STATE_CLOSED` 恒为假）。
     fn has_channel_state(&self, channel_id: ChannelId, expected_state: ChannelState) -> bool {
-        let state = self
-            .__internal_get_channel_state(channel_id)
-            .load(Ordering::Relaxed);
-        let state_without_disconnect_hint_bit = state & !(CHANNEL_STATE_DISCONNECT_HINT_BIT);
-        expected_state.0 == state_without_disconnect_hint_bit
+        let atomic = self.__internal_get_channel_state(channel_id);
+        match channel_state::classify_value(expected_state.0) {
+            channel_state::Value::Open(request) => channel_state::has_state(atomic, request),
+            _ => {
+                let state = atomic.load(Ordering::Relaxed);
+                let state_without_disconnect_hint_bit =
+                    state & !(CHANNEL_STATE_DISCONNECT_HINT_BIT);
+                expected_state.0 == state_without_disconnect_hint_bit
+            }
+        }
     }
 
+    /// 通用终止识别（Acquire）：CLOSED 与私有 ORPHANED 都视为已关闭（原实现只认 CLOSED）。
+    /// strict 三态区分两者见 `channel_state::classify_prepared`。
     fn is_channel_closed(&self, channel_id: ChannelId) -> bool {
-        let state = self
-            .__internal_get_channel_state(channel_id)
-            .load(Ordering::Relaxed);
-        state == CHANNEL_STATE_CLOSED.0
+        channel_state::terminal(self.__internal_get_channel_state(channel_id))
     }
 
+    /// 合法请求走同源 `channel_state::finish`（仅原请求 / 其 hint → CLOSED，成功 Release，
+    /// 失败重新分类后不改其它代次或 ORPHANED）；哨兵参数保持原 Relaxed 序列
+    /// （`CHANNEL_STATE_CLOSED` 不改变其它值）。
     fn close_channel(&self, channel_id: ChannelId, expected_state: ChannelState) {
-        match self
-            .__internal_get_channel_state(channel_id)
-            .compare_exchange(
+        let atomic = self.__internal_get_channel_state(channel_id);
+        match channel_state::classify_value(expected_state.0) {
+            channel_state::Value::Open(request) => {
+                let _ = channel_state::finish(atomic, request);
+            }
+            _ => match atomic.compare_exchange(
                 expected_state.0,
                 CHANNEL_STATE_CLOSED.0,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
-            Ok(_) => (),
-            Err(v) => {
-                let graceful_disconnect_state =
-                    expected_state.0 | CHANNEL_STATE_DISCONNECT_HINT_BIT;
-                if v == graceful_disconnect_state {
-                    let _ = self
-                        .__internal_get_channel_state(channel_id)
-                        .compare_exchange(
+                Ok(_) => (),
+                Err(v) => {
+                    let graceful_disconnect_state =
+                        expected_state.0 | CHANNEL_STATE_DISCONNECT_HINT_BIT;
+                    if v == graceful_disconnect_state {
+                        let _ = atomic.compare_exchange(
                             graceful_disconnect_state,
                             CHANNEL_STATE_CLOSED.0,
                             Ordering::Relaxed,
                             Ordering::Relaxed,
                         );
+                    }
                 }
+            },
+        }
+    }
+
+    /// RR R1 跨 crate 薄入口：strict prepare。仅 CLOSED → 受检 strict 请求（0..<2^62），
+    /// 直接调用同源 `channel_state::prepare_strict`（成功 AcqRel / 失败 Acquire）。普通上界
+    /// 2^62 与 CLOSED 哨兵在此拒绝且不触碰状态；返回只反映本次是否真 prepare 成功，不以通用
+    /// `set_channel_state(CLOSED)` 的成功 no-op 代替。成功后的资格、原 route / pin 与未复用
+    /// 由调用方保存。
+    fn strict_prepare(
+        &self,
+        channel_id: ChannelId,
+        request: ChannelState,
+    ) -> Result<(), StrictPrepareError> {
+        if !channel_state::is_strict_request(request.0) {
+            return Err(StrictPrepareError::IllegalRequest);
+        }
+        match channel_state::prepare_strict(
+            self.__internal_get_channel_state(channel_id),
+            request.0,
+        ) {
+            Ok(()) => Ok(()),
+            Err(channel_state::PrepareError::IllegalRequest) => {
+                Err(StrictPrepareError::IllegalRequest)
             }
+            Err(channel_state::PrepareError::NotClosed(observed)) => Err(
+                StrictPrepareError::NotClosed(strict_status_of(observed, request.0)),
+            ),
+        }
+    }
+
+    /// RR R1 跨 crate 薄入口：受检请求状态查询。先校验 strict 请求域（非法输入直接
+    /// `Unknown`），再走同源 `channel_state::classify_prepared` 的 Acquire 读取。ORPHANED、
+    /// 其它代次、越界值都只是 `Unknown`，不会提升为 `Closed`；也不使用通用
+    /// `is_channel_closed` 的 bool。`Closed` 只对持有本次成功 prepare 记录、原 route / pin
+    /// 且 channel 未复用的调用方成立。
+    fn strict_channel_status(
+        &self,
+        channel_id: ChannelId,
+        request: ChannelState,
+    ) -> StrictChannelStatus {
+        if !channel_state::is_strict_request(request.0) {
+            return StrictChannelStatus::Unknown;
+        }
+        match channel_state::classify_prepared(
+            self.__internal_get_channel_state(channel_id),
+            request.0,
+        ) {
+            channel_state::Prepared::Closed => StrictChannelStatus::Closed,
+            channel_state::Prepared::Open => StrictChannelStatus::Open,
+            channel_state::Prepared::Unknown(_) => StrictChannelStatus::Unknown,
         }
     }
 }
@@ -337,6 +509,17 @@ pub trait ZeroCopySender: Debug + ZeroCopyPortDetails + NamedConcept + Send + Ab
         sample_size: usize,
         channel_id: ChannelId,
     ) -> Result<Option<PointerOffset>, ZeroCopySendError>;
+
+    /// RR R1：与 [`ZeroCopySender::try_send()`] 共用唯一真实 push 内核，返回真实回执：
+    /// publication（push 到 submission queue）之前的拒绝为 [`TrySendReceipt::NotEnqueued`]，
+    /// 之后始终 [`TrySendReceipt::Enqueued`]（可带 `issue`，此时新 offset 已发布、新 used
+    /// 已登记，旧 offset 不算回收）。
+    fn try_send_observed(
+        &self,
+        ptr: PointerOffset,
+        sample_size: usize,
+        channel_id: ChannelId,
+    ) -> TrySendReceipt;
 
     fn blocking_send<F: BackpressureToReceiverFn>(
         &self,
