@@ -15,6 +15,7 @@ mod startup;
 mod supervision;
 mod w3;
 mod w4_latch_crash;
+mod w4_latch_resync;
 mod w4_latch_sigkill;
 mod watchdog;
 
@@ -158,7 +159,8 @@ fn validate_w4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
 
 fn validate_r4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
     match case {
-        Some("R4-SUP-STANDALONE") if phase == Phase::Mock => Ok(true),
+        Some("R4-SUP-STANDALONE" | "R4-T8-RESYNC") if phase == Phase::Mock => Ok(true),
+        Some("R4-T8-RESYNC") => Err("R4-T8-RESYNC 仅属于 mock phase".to_owned()),
         Some("R4-SUP-STANDALONE") => Err("R4-SUP-STANDALONE 仅属于 mock phase".to_owned()),
         Some(value) if value.starts_with("R4") => Err(format!("未知 R4 筛选：{value}")),
         _ => Ok(false),
@@ -216,6 +218,22 @@ mod argument_tests {
             ["--phase", "all", "--case", "R4-SUP-STANDALONE"],
             ["--phase", "startup", "--case", "R4-SUP-STANDALONE"],
             ["--phase", "mock", "--case", "R4-UNKNOWN"],
+        ] {
+            assert!(parse(&extra).is_err());
+        }
+        assert!(!validate_r4_case(Phase::All, None).unwrap());
+    }
+
+    #[test]
+    fn r4_resync_is_explicit_mock_only_and_rejects_partial_selectors() {
+        let args = parse(&["--phase", "mock", "--case", "R4-T8-RESYNC"])
+            .unwrap()
+            .unwrap();
+        assert!(validate_r4_case(args.phase, args.case.as_deref()).unwrap());
+        for extra in [
+            ["--phase", "all", "--case", "R4-T8-RESYNC"],
+            ["--phase", "startup", "--case", "R4-T8-RESYNC"],
+            ["--phase", "mock", "--case", "R4-T8"],
         ] {
             assert!(parse(&extra).is_err());
         }

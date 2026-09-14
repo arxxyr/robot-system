@@ -1,4 +1,4 @@
-//! W4a 两项固定故障输入；只观察原命令、凭证和 syscall，不参与许可或退休。
+//! W4 固定文件故障输入；只观察原命令、凭证和 syscall，不参与许可或退休。
 
 #[cfg(test)]
 mod tests;
@@ -24,6 +24,7 @@ use std::sync::Arc;
 pub enum FileFaultMode {
     Created,
     CreatedUnsynced,
+    OrdinaryResync,
 }
 
 /// 新配置只在 daemon 的资源准备之前读一次；没有配置时不触碰旧 pause 解析。
@@ -53,10 +54,11 @@ fn parse_file_fault(
     let mode = match raw.to_str() {
         Some("created") => FileFaultMode::Created,
         Some("created-unsynced") => FileFaultMode::CreatedUnsynced,
+        Some("ordinary-resync") => FileFaultMode::OrdinaryResync,
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "ROBOT_TEST_W4_FILE_FAULT 仅接受 created / created-unsynced",
+                "ROBOT_TEST_W4_FILE_FAULT 仅接受 created / created-unsynced / ordinary-resync",
             ));
         }
     };
@@ -114,7 +116,22 @@ struct Scope {
     stage: Option<S>,
     occurrences: [u64; 2],
     selected: Option<Selected>,
+    ordinary: Option<OrdinaryStep>,
+    completion_seen: bool,
+    sync_input_seen: bool,
+    stage_succeeded: bool,
 }
+
+/// 仅约束固定夹具的真实观察顺序，不持有或构造 writer 令牌。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OrdinaryStep {
+    Prepare,
+    Remove,
+    Resync,
+    Retry,
+    Complete,
+}
+
 struct FileFaultHook {
     slots: [Option<FaultSlot>; 2],
     binding: Option<ClearTxnIdentity>,
@@ -123,6 +140,7 @@ struct FileFaultHook {
     repair_sequence: u64,
     scope: Option<Scope>,
     created_proven: bool,
+    ordinary: Option<OrdinaryStep>,
     failed: bool,
 }
 impl FileFaultHook {
@@ -132,7 +150,9 @@ impl FileFaultHook {
                 Some(FaultSlot::Armed),
                 match mode {
                     FileFaultMode::Created => None,
-                    FileFaultMode::CreatedUnsynced => Some(FaultSlot::Armed),
+                    FileFaultMode::CreatedUnsynced | FileFaultMode::OrdinaryResync => {
+                        Some(FaultSlot::Armed)
+                    }
                 },
             ],
             binding: None,
@@ -141,6 +161,10 @@ impl FileFaultHook {
             repair_sequence: 0,
             scope: None,
             created_proven: false,
+            ordinary: match mode {
+                FileFaultMode::OrdinaryResync => Some(OrdinaryStep::Prepare),
+                FileFaultMode::Created | FileFaultMode::CreatedUnsynced => None,
+            },
             failed: false,
         }
     }
@@ -169,6 +193,67 @@ impl FileFaultHook {
     }
     fn occurrence(scope: Scope, stage: S) -> u64 {
         target_index(stage).map_or(0, |index| scope.occurrences[index])
+    }
+
+    fn begin_ordinary(&mut self, step: OrdinaryStep, command: C, token: T) {
+        let expected = match step {
+            OrdinaryStep::Prepare => (C::Prepare, T::None),
+            OrdinaryStep::Remove => (C::RemoveCommitted, T::Prepared),
+            OrdinaryStep::Resync | OrdinaryStep::Retry => (C::Resync, T::Unsynced),
+            OrdinaryStep::Complete => {
+                self.fail(F::Protocol, None, None);
+                return;
+            }
+        };
+        if (command, token) != expected {
+            self.fail(F::Protocol, None, None);
+        }
+    }
+
+    fn complete_ordinary(&mut self, step: OrdinaryStep, completion: &PersistCompletion, token: T) {
+        let next = match (step, *completion, token) {
+            (OrdinaryStep::Prepare, PersistCompletion::Prepared { txn, .. }, T::Prepared)
+                if self.binding == Some(txn)
+                    && self
+                        .scope
+                        .is_some_and(|scope| scope.step_seq > 0 && scope.stage_succeeded) =>
+            {
+                Some(OrdinaryStep::Remove)
+            }
+            (
+                OrdinaryStep::Remove | OrdinaryStep::Resync,
+                PersistCompletion::MarkerRemoveFailed {
+                    txn,
+                    stage: S::SyncRemovalDirectory,
+                    phase: StepPhase::Operation,
+                    token: RemoveTokenKind::Unsynced,
+                },
+                T::Unsynced,
+            ) if self.binding == Some(txn) => {
+                let (slot, next) = match step {
+                    OrdinaryStep::Remove => (0, OrdinaryStep::Resync),
+                    _ => (1, OrdinaryStep::Retry),
+                };
+                (self.slots[slot] == Some(FaultSlot::Executed { bad_fd: true })).then_some(next)
+            }
+            (OrdinaryStep::Retry, PersistCompletion::Resynced { txn }, T::None)
+                if self.binding == Some(txn)
+                    && self.scope.is_some_and(|scope| {
+                        scope.step_seq == 1
+                            && scope.stage == Some(S::SyncRemovalDirectory)
+                            && scope.sync_input_seen
+                            && scope.stage_succeeded
+                            && scope.selected.is_none()
+                    }) =>
+            {
+                Some(OrdinaryStep::Complete)
+            }
+            _ => None,
+        };
+        match next {
+            Some(next) if !self.failed => self.ordinary = Some(next),
+            _ => self.fail(F::Protocol, None, None),
+        }
     }
 }
 
@@ -338,6 +423,10 @@ impl WriterHook for FileFaultHook {
             stage: None,
             occurrences: [0; 2],
             selected: None,
+            ordinary: self.ordinary,
+            completion_seen: false,
+            sync_input_seen: false,
+            stage_succeeded: false,
         });
         let txn = command.txn();
         self.emit(P::CommandBegin { txn, command: kind });
@@ -352,6 +441,9 @@ impl WriterHook for FileFaultHook {
             Some(bound) if bound == txn && kind != C::Prepare => {}
             _ => self.fail(F::Protocol, None, None),
         }
+        if let Some(step) = self.ordinary {
+            self.begin_ordinary(step, kind, token_kind(token));
+        }
         if matches!(kind, C::RepairLatched | C::RepairOriginal)
             && kind_sequence == 1
             && kind != C::RepairLatched
@@ -361,7 +453,7 @@ impl WriterHook for FileFaultHook {
     }
 
     fn command_completed(&mut self, completion: &PersistCompletion, token: Option<&WriterToken>) {
-        let Some(scope) = self.scope else {
+        let Some(mut scope) = self.scope else {
             self.fail(F::Protocol, None, None);
             return;
         };
@@ -371,6 +463,16 @@ impl WriterHook for FileFaultHook {
             after: true,
             token: token_kind(token),
         });
+        if let Some(step) = scope.ordinary {
+            if scope.completion_seen {
+                self.fail(F::Protocol, None, None);
+                return;
+            }
+            scope.completion_seen = true;
+            self.scope = Some(scope);
+            self.complete_ordinary(step, completion, token_kind(token));
+            return;
+        }
         if scope.command == C::Prepare {
             self.created_proven =
                 matches!(self.slots[0], Some(FaultSlot::Executed { bad_fd: true }))
@@ -393,9 +495,13 @@ impl WriterHook for FileFaultHook {
         if !completed {
             self.fail(F::Protocol, None, None);
         }
-        let expected = match (scope.command, scope.kind_sequence) {
-            (C::Prepare, 1) => Some(0),
-            (C::RepairLatched, 1) if self.slots[1].is_some() => Some(1),
+        if scope.ordinary.is_some() && !scope.completion_seen {
+            self.fail(F::Protocol, None, None);
+        }
+        let expected = match (scope.ordinary, scope.command, scope.kind_sequence) {
+            (Some(OrdinaryStep::Remove), _, _) | (None, C::Prepare, 1) => Some(0),
+            (Some(OrdinaryStep::Resync), _, _) => Some(1),
+            (None, C::RepairLatched, 1) if self.slots[1].is_some() => Some(1),
             _ => None,
         };
         if let Some(slot) = expected
@@ -422,6 +528,15 @@ impl WriterHook for FileFaultHook {
         scope.step_seq = next;
         scope.stage = Some(stage);
         scope.selected = None;
+        scope.sync_input_seen = false;
+        scope.stage_succeeded = false;
+        if matches!(
+            scope.ordinary,
+            Some(OrdinaryStep::Resync | OrdinaryStep::Retry)
+        ) && (stage != S::SyncRemovalDirectory || next != 1)
+        {
+            self.fail(F::Protocol, None, None);
+        }
         if let Some(index) = target_index(stage) {
             let Some(next) = self.count(scope.occurrences[index]) else {
                 return;
@@ -438,11 +553,13 @@ impl WriterHook for FileFaultHook {
     }
 
     fn after_step_success(&mut self, stage: S) {
-        let Some(scope) = self.scope else { return };
+        let Some(mut scope) = self.scope else { return };
         if scope.stage != Some(stage) {
             self.fail(F::Protocol, None, None);
             return;
         }
+        scope.stage_succeeded = true;
+        self.scope = Some(scope);
         self.emit(P::Stage {
             succeeded: true,
             step_seq: scope.step_seq,
@@ -462,14 +579,25 @@ impl WriterHook for FileFaultHook {
             self.fail(F::Protocol, None, None);
             return DirectorySyncInput::Original;
         }
+        if scope.ordinary.is_some() {
+            if scope.sync_input_seen {
+                self.fail(F::Protocol, None, None);
+                return DirectorySyncInput::Original;
+            }
+            scope.sync_input_seen = true;
+            self.scope = Some(scope);
+        }
         let slot = match (
+            scope.ordinary,
             scope.command,
             scope.kind_sequence,
             stage,
             Self::occurrence(scope, stage),
         ) {
-            (C::Prepare, 1, S::SyncMarkerDirectory, 1) => 0,
-            (C::RepairLatched, 1, S::SyncRemovalDirectory, 1) if self.created_proven => 1,
+            (Some(OrdinaryStep::Remove), C::RemoveCommitted, _, S::SyncRemovalDirectory, 1)
+            | (None, C::Prepare, 1, S::SyncMarkerDirectory, 1) => 0,
+            (Some(OrdinaryStep::Resync), C::Resync, _, S::SyncRemovalDirectory, 1) => 1,
+            (None, C::RepairLatched, 1, S::SyncRemovalDirectory, 1) if self.created_proven => 1,
             _ => return DirectorySyncInput::Original,
         };
         match self.slots[usize::from(slot)] {

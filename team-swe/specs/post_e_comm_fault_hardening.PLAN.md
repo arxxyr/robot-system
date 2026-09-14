@@ -2538,6 +2538,21 @@ workspace2211/0/9、S0hook859/0/1、工具104/0/0；dev/release各新3及旧2/5/
 M1原writer结果/真实失败集合与M2辅助线程保原句柄有界join均关闭，详rr_r4/root_acceptance.md。
 当前增量归档并提交；下一包按rr_r4b/native_task.md实施普通Unsynced重同步成功链。
 
+#### P.6.14.22 R4b1 普通 Unsynced 重同步（2026-09-15实施）
+
+R4a已验收提交68b50a6。root按rr_r4b/native_task.md启动R4b1，方案独审ACK，
+只新增R4-T8-RESYNC一例：真实Prepare成功、RemoveCommitted同步失败、首次Resync
+同步失败、一次原重投成功；固定两槽O_PATH真实EBADF，第三次原fd成功，不改生产语义。
+完整事务、原Unsynced、一次unlink和唯一Ok/Cleared/Committed退休均必须有实际证据；
+逻辑提交后文件诊断不改成业务FsyncFailed。当前源码/Cargo由原生开发独占，独立评审。
+保原预算/All72；真实耗尽和其他T8/SUP/ENV、双主机、P-E另包。开发不触真实电机。
+每阶段评审通过即commit，不push；按最新实时周额度剩20%的停止线推进。
+
+R4b1已独立源码/证据及root验收：正式round2共24门全过、540输入一致，
+workspace2211/0/9、S0hook864/0/1、工具109/0/0；dev/release各新1与旧2/5/72通过。
+Prepare判据补完整15步；成功接纳必须严格早于原3s截止，独审M1关闭。
+旧round1仅为修复前记录，不计最终通过；归档提交后进入已审R4b2重试耗尽。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

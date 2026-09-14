@@ -18,7 +18,7 @@ struct Rig {
     stop: Stop,
     latch: std::path::PathBuf,
     _lock: LatchTargetLock,
-    _dir: tempfile::TempDir,
+    directory: tempfile::TempDir,
 }
 const TXN: ClearTxnIdentity = ClearTxnIdentity {
     txn_id: (1_u128 << 100) | 0x13,
@@ -43,7 +43,7 @@ impl Rig {
             stop: Stop(true),
             latch,
             _lock: lock,
-            _dir: dir,
+            directory: dir,
         }
     }
     fn command(&mut self, command: PersistCommand) -> PersistCompletion {
@@ -82,7 +82,18 @@ fn configuration_keeps_absence_and_old_pause_and_rejects_invalid_or_non_linux() 
         parse_file_fault(Some(OsStr::new("created-unsynced")), false, true).unwrap(),
         Some(FileFaultMode::CreatedUnsynced)
     );
-    for raw in ["", "Created", "created ", "created-unsynced:2"] {
+    assert_eq!(
+        parse_file_fault(Some(OsStr::new("ordinary-resync")), false, true).unwrap(),
+        Some(FileFaultMode::OrdinaryResync)
+    );
+    for raw in [
+        "",
+        "Created",
+        "created ",
+        "created-unsynced:2",
+        "ordinary-resync:2",
+        "ordinary_resync",
+    ] {
         assert_eq!(
             parse_file_fault(Some(OsStr::new(raw)), false, true)
                 .unwrap_err()
@@ -164,6 +175,7 @@ fn real_writer_created_and_unsynced_scopes_keep_original_target_and_single_sysca
                         }
                     ));
                 }
+                FileFaultMode::OrdinaryResync => unreachable!("旧 Created 用例不包含普通 Resync"),
             }
             assert!(matches!(
                 rig.command(PersistCommand::RemoveMarker {
@@ -200,6 +212,7 @@ fn real_writer_created_and_unsynced_scopes_keep_original_target_and_single_sysca
         let expected = match mode {
             FileFaultMode::Created => 1,
             FileFaultMode::CreatedUnsynced => 2,
+            FileFaultMode::OrdinaryResync => unreachable!("旧 Created 用例不包含普通 Resync"),
         };
         assert!(!rig.hook.failed);
         assert_eq!(
@@ -460,4 +473,347 @@ fn real_execute_unwind_clears_scope_without_fabricating_completion() {
     let p = payloads(&events);
     assert!(p.contains(&P::CommandEnd { completed: false }));
     assert!(!p.iter().any(|p| matches!(p, P::Completion { .. })));
+}
+
+fn ordinary_until_retry(rig: &mut Rig) {
+    assert!(matches!(
+        rig.command(PersistCommand::PrepareClear { txn: TXN }),
+        PersistCompletion::Prepared { txn: TXN, .. }
+    ));
+    assert!(matches!(
+        rig.core.current().unwrap().token(),
+        WriterToken::Prepared(_)
+    ));
+    for command in [
+        PersistCommand::RemoveMarker {
+            txn: TXN,
+            kind: CleanupKind::Finalize,
+        },
+        PersistCommand::ResyncRemoval { txn: TXN },
+    ] {
+        assert!(matches!(
+            rig.command(command),
+            PersistCompletion::MarkerRemoveFailed {
+                txn: TXN,
+                stage: S::SyncRemovalDirectory,
+                phase: StepPhase::Operation,
+                token: RemoveTokenKind::Unsynced,
+            }
+        ));
+        assert!(matches!(
+            rig.core.current().unwrap().token(),
+            WriterToken::Unsynced(_)
+        ));
+        assert_eq!(rig.core.current().unwrap().txn(), TXN);
+        assert!(!rig.core.store().marker_path().exists());
+    }
+    assert_eq!(rig.hook.ordinary, Some(OrdinaryStep::Retry));
+    assert_eq!(
+        rig.hook.slots,
+        [Some(FaultSlot::Executed { bad_fd: true }); 2]
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn real_ordinary_resync_keeps_complete_identity_two_alias_errors_and_one_original_sync() {
+    use std::os::unix::fs::MetadataExt;
+
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResync);
+    let metadata = std::fs::metadata(rig.directory.path()).unwrap();
+    let events = capture_emitted(|| {
+        ordinary_until_retry(&mut rig);
+        assert_eq!(
+            rig.command(PersistCommand::ResyncRemoval { txn: TXN }),
+            PersistCompletion::Resynced { txn: TXN }
+        );
+    });
+    assert!(!rig.hook.failed);
+    assert_eq!(rig.hook.ordinary, Some(OrdinaryStep::Complete));
+    assert_eq!(rig.hook.execute_sequence, 4);
+    assert!(rig.core.current().is_none());
+    assert_eq!(std::fs::read(&rig.latch).unwrap(), b"0\n");
+    assert_eq!(
+        std::fs::read(crate::estop_latch::backup_path(&rig.latch)).unwrap(),
+        b"0\n"
+    );
+    let facts = payloads(&events);
+    assert_ordinary_trace(&facts);
+    for slot in 0..2 {
+        for verified in [false, true] {
+            assert_eq!(
+                facts
+                    .iter()
+                    .filter(|fact| matches!(fact,
+                P::Alias { slot: actual, verified: actual_verified, dev, ino, .. }
+                if *actual == slot && *actual_verified == verified
+                    && *dev == metadata.dev() && *ino == metadata.ino()))
+                    .count(),
+                1
+            );
+        }
+        assert_eq!(
+            facts
+                .iter()
+                .filter(|fact| matches!(fact,
+            P::DirSyncReturned { slot: actual, success: false, errno: Some(libc::EBADF), .. }
+            if *actual == slot))
+                .count(),
+            1
+        );
+        assert_eq!(
+            facts
+                .iter()
+                .filter(|fact| matches!(fact,
+            P::DirSyncCall { slot: actual, .. } if *actual == slot))
+                .count(),
+            1
+        );
+    }
+}
+
+fn assert_ordinary_trace(facts: &[P]) {
+    let commands: Vec<_> = facts
+        .iter()
+        .filter_map(|fact| match fact {
+            P::CommandBegin { txn, command } => {
+                assert_eq!(*txn, TXN);
+                Some(*command)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        commands,
+        [C::Prepare, C::RemoveCommitted, C::Resync, C::Resync]
+    );
+    let completions: Vec<_> = facts
+        .iter()
+        .filter_map(|fact| match fact {
+            P::Completion { kind, failure } => Some((*kind, *failure)),
+            _ => None,
+        })
+        .collect();
+    let failed = Some((S::SyncRemovalDirectory, StepPhase::Operation));
+    assert_eq!(
+        completions,
+        [
+            (K::Prepared, None),
+            (K::RemoveFailedUnsynced, failed),
+            (K::RemoveFailedUnsynced, failed),
+            (K::Resynced, None)
+        ]
+    );
+    let tokens: Vec<_> = facts
+        .iter()
+        .filter_map(|fact| match fact {
+            P::Token { after, token } => Some((*after, *token)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        tokens,
+        [
+            (false, T::None),
+            (true, T::Prepared),
+            (false, T::Prepared),
+            (true, T::Unsynced),
+            (false, T::Unsynced),
+            (true, T::Unsynced),
+            (false, T::Unsynced),
+            (true, T::None)
+        ]
+    );
+    assert_eq!(
+        facts
+            .iter()
+            .filter(|fact| matches!(
+                fact,
+                P::Stage {
+                    stage: S::RemoveMarker,
+                    succeeded: true,
+                    ..
+                }
+            ))
+            .count(),
+        1
+    );
+    let mut command = C::Prepare;
+    let mut resync_before = 0;
+    let mut resync_after = 0;
+    for fact in facts {
+        match fact {
+            P::CommandBegin {
+                command: actual, ..
+            } => command = *actual,
+            P::Stage {
+                stage, succeeded, ..
+            } if command == C::Resync => {
+                assert_eq!(*stage, S::SyncRemovalDirectory);
+                match succeeded {
+                    true => resync_after += 1,
+                    false => resync_before += 1,
+                }
+            }
+            P::Failure { .. } => panic!("真实四命令不得出现夹具失败：{fact:?}"),
+            _ => {}
+        }
+    }
+    assert_eq!((resync_before, resync_after), (2, 1));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn ordinary_retry_uses_bound_directory_after_original_path_is_replaced() {
+    struct RestoreDirectory {
+        original: std::path::PathBuf,
+        moved: std::path::PathBuf,
+    }
+    impl Drop for RestoreDirectory {
+        fn drop(&mut self) {
+            if self.original.is_dir() {
+                std::fs::remove_dir_all(&self.original).unwrap();
+            } else if self.original.exists() {
+                std::fs::remove_file(&self.original).unwrap();
+            }
+            std::fs::rename(&self.moved, &self.original).unwrap();
+        }
+    }
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResync);
+    ordinary_until_retry(&mut rig);
+    let original = rig.directory.path().to_path_buf();
+    let moved = original.with_extension("bound-directory");
+    std::fs::rename(&original, &moved).unwrap();
+    std::fs::create_dir(&original).unwrap();
+    let restore = RestoreDirectory { original, moved };
+    // 原路径现为普通文件，若第三次按路径重开父目录，其 fsync 路径不可能成功。
+    std::fs::remove_dir(&restore.original).unwrap();
+    std::fs::write(&restore.original, "替换路径，不是原目录".as_bytes()).unwrap();
+    assert_eq!(
+        rig.command(PersistCommand::ResyncRemoval { txn: TXN }),
+        PersistCompletion::Resynced { txn: TXN }
+    );
+    assert!(!rig.hook.failed);
+    assert!(rig.core.current().is_none());
+    std::fs::remove_file(&restore.original).unwrap();
+    std::fs::create_dir(&restore.original).unwrap();
+    drop(restore);
+}
+
+#[test]
+fn ordinary_rejects_wrong_order_and_prepare_without_real_success() {
+    for command in [
+        PersistCommand::RemoveMarker {
+            txn: TXN,
+            kind: CleanupKind::Finalize,
+        },
+        PersistCommand::ResyncRemoval { txn: TXN },
+        PersistCommand::RepairClear {
+            txn: TXN,
+            target: RepairTarget::Latched,
+        },
+    ] {
+        let mut rig = Rig::new(FileFaultMode::OrdinaryResync);
+        assert!(matches!(
+            rig.command(command),
+            PersistCompletion::Refused { .. }
+        ));
+        assert!(rig.hook.failed);
+        assert_eq!(rig.hook.slots, [Some(FaultSlot::Armed); 2]);
+    }
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResync);
+    rig.stop.0 = false;
+    assert!(matches!(
+        rig.command(PersistCommand::PrepareClear { txn: TXN }),
+        PersistCompletion::Refused { .. }
+    ));
+    assert!(rig.hook.failed);
+    assert_eq!(rig.hook.ordinary, Some(OrdinaryStep::Prepare));
+    assert_eq!(rig.hook.slots, [Some(FaultSlot::Armed); 2]);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn ordinary_rejects_wrong_complete_transaction_and_repeated_commands() {
+    for txn in [
+        ClearTxnIdentity {
+            txn_id: TXN.txn_id + (1_u128 << 80),
+            ..TXN
+        },
+        ClearTxnIdentity {
+            expected_epoch: TXN.expected_epoch - 1,
+            ..TXN
+        },
+        ClearTxnIdentity {
+            original_latched: false,
+            ..TXN
+        },
+    ] {
+        let mut rig = Rig::new(FileFaultMode::OrdinaryResync);
+        assert!(matches!(
+            rig.command(PersistCommand::PrepareClear { txn: TXN }),
+            PersistCompletion::Prepared { .. }
+        ));
+        assert!(matches!(
+            rig.command(PersistCommand::RemoveMarker {
+                txn,
+                kind: CleanupKind::Finalize
+            }),
+            PersistCompletion::Refused {
+                reason: WriterRefusal::IdentityMismatch,
+                ..
+            }
+        ));
+        assert!(rig.hook.failed);
+        assert_eq!(rig.hook.slots, [Some(FaultSlot::Armed); 2]);
+    }
+    let mut rig = Rig::new(FileFaultMode::OrdinaryResync);
+    ordinary_until_retry(&mut rig);
+    assert_eq!(
+        rig.command(PersistCommand::ResyncRemoval { txn: TXN }),
+        PersistCompletion::Resynced { txn: TXN }
+    );
+    assert!(matches!(
+        rig.command(PersistCommand::ResyncRemoval { txn: TXN }),
+        PersistCompletion::Refused { .. }
+    ));
+    assert!(rig.hook.failed);
+    assert_eq!(
+        rig.hook.slots,
+        [Some(FaultSlot::Executed { bad_fd: true }); 2]
+    );
+}
+
+#[test]
+fn ordinary_missing_or_duplicate_slot_input_is_fixture_failure() {
+    for duplicate in [false, true] {
+        let mut rig = Rig::new(FileFaultMode::OrdinaryResync);
+        assert!(matches!(
+            rig.command(PersistCommand::PrepareClear { txn: TXN }),
+            PersistCompletion::Prepared { .. }
+        ));
+        rig.hook.command_begin(
+            PersistCommand::RemoveMarker {
+                txn: TXN,
+                kind: CleanupKind::Finalize,
+            },
+            Some(rig.core.current().unwrap().token()),
+        );
+        rig.hook.before_step(S::SyncRemovalDirectory);
+        if duplicate {
+            // 只验证选择回调的拒绝边界，不把手送回调当作真实 fsync 证明。
+            assert_eq!(
+                rig.hook.directory_sync_input(S::SyncRemovalDirectory),
+                DirectorySyncInput::OPathAlias
+            );
+            assert_eq!(
+                rig.hook.directory_sync_input(S::SyncRemovalDirectory),
+                DirectorySyncInput::Original
+            );
+        }
+        rig.hook.command_scope_exit(true);
+        assert!(rig.hook.failed);
+        assert_eq!(rig.hook.slots[1], Some(FaultSlot::Armed));
+        assert!(rig.hook.scope.is_none());
+    }
 }

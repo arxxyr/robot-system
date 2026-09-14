@@ -2,14 +2,16 @@
 
 ## 当前步骤
 
-R4a standalone监督三例已通过独立源码/证据及root本地验收，基线R3为`0db309c`。
-正式round1共24门全部通过，539输入首末与当前相同；workspace2211/0/9、
-S0完整hook859/0/1、工具104/0/0。dev/release各新3、原W4a2/W4b5/All72通过，分组不累加。
-FileStep、RefuseStop到L失败退出及出口屏障到纯D监督均保持原预算；辅助控制线程真join收口。
-验收入口`target/post_e_h2_rt/s48/rr_r4/{root_acceptance.md,final_binding.json}`；
-当前归档提交R4a，提交身份见git日志及随后commit回执；归档身份见H.json。
-下一包R4b1普通Unsynced/Resync真实重试成功链，启动令`rr_r4b/native_task.md`，
-须当前提交完成后由root派发。重试耗尽/完整T8、剩余SUP/systemd、双主机及P-E仍待后包。
+R4b1普通Unsynced重同步已通过独立源码/证据及root本地验收，基线R4a为`68b50a6`。
+正式round2共24门全过，540输入首末及当前一致；workspace2211/0/9、S0hook864/0/1、
+工具109/0/0。dev/release各新1、旧W4a2/W4b5/All72通过，重叠分组不累加。
+真实Prepare15步→unlink一次后同步失败→首次Resync失败→一次原重投成功；
+原RR唯一Ok/Cleared、双0、marker无、真实exit0及控制线程join，生产预算/协议不变。
+成功分支严格核原3s接纳截止，M1已关闭；旧round1虽跑完仍仅保旧源记录。
+验收入口`target/post_e_h2_rt/s48/rr_r4b/{root_acceptance.md,final_binding.json}`。
+当前归档提交R4b1，身份见H.json和实际commit回执；R4a整个晚生目录随本包携带。
+下一包R4b2八次实际接受重试耗尽，已审启动令`rr_r4b2/native_task.md`，须当前提交后root派发。
+R4b3两处SIGKILL边界方案已审；恢复内部再杀、完整T8、剩余SUP/systemd、双主机及P-E尚未闭合。
 用户最新要求继续有效开发直到周额度剩20%；root实时读取账户周额度，
 接近停止线不派新包，达到停止线停派/停写并保存真实交接。每阶段通过即commit，不push。
 Orin仅只读软件盘点：旧HEAD及七处源码残留已辨明来源，待同批对齐；未运行R4/ARM验收。

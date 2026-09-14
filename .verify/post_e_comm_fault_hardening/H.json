@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "RR_R4A_READY_TO_COMMIT",
-  "resume_from": "R4a本地已验收，归档提交后派发rr_r4b/native_task.md；持续有效开发至周剩20%，每包通过即commit，不push。",
+  "work_state": "RR_R4B1_READY_TO_COMMIT",
+  "resume_from": "R4b1本地已验收，归档提交后派发rr_r4b2/native_task.md；持续有效开发至周剩20%，每包通过即commit，不push。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_RR_R4A_APPROVED_LOCAL_SCOPE",
-  "review_status": "R4A_INDEPENDENT_SOURCE_EVIDENCE_AND_ROOT_APPROVED",
+  "status": "S48_RR_R4B1_APPROVED_LOCAL_SCOPE",
+  "review_status": "R4B1_INDEPENDENT_SOURCE_EVIDENCE_AND_ROOT_APPROVED",
   "deployable": false,
-  "scope": "W3/W4a/W4b、RR R0–R3及R4a本地范围已验收；剩余T8/SUP/ENV和双主机、P-E、现场尚未完成，wire4历史FAIL、D15 OPEN、deployable=false。",
+  "scope": "W3/W4a/W4b、RR R0–R3及R4a/R4b1本地范围已验收；剩余T8/SUP/ENV和双主机、P-E、现场仍未完成，wire4历史FAIL、D15 OPEN、deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -2771,7 +2771,7 @@
         "task_sha256": "7d0811d1c06887c4e27049b03d0f8f04a96313e1479c6ba4804e0ab54e252e8f",
         "development_plan": "target/post_e_h2_rt/s48/rr_r4/development_plan.md",
         "development_plan_sha256": "ad29dc82bb99e55f0dbd701bbbd0a6261a54516895b412a919cb7f5f054a49e8",
-        "archive_boundary": "R4a最终原件和R3全部晚生材料已归包；R4a整个post_archive_review与随后commit回执为包外后生材料，下阶段携带。",
+        "archive_boundary": "R4a最终原件已归档；R4a全部post_archive_review和commit回执现随R4b1归包携带。",
         "plan_review": "target/post_e_h2_rt/s48/rr_r4/plan_review.md",
         "plan_review_sha256": "a98f8a1617796e70a6687d5a1ea95b36d7b2dee3c5634a3d69818d3c4f6f7dd3",
         "stop_after_commit": false,
@@ -2832,7 +2832,84 @@
         "archive_receipt_sha256": "0f08b480079efa73867e7981bf89b73792108a5ef5b89527159962b2146f4503",
         "archive_added_count": 2218,
         "archive_verified_files": 20191,
-        "root_archive_verification": "target/post_e_h2_rt/s48/rr_r4/post_archive_review/root_archive_verification.json"
+        "root_archive_verification": "target/post_e_h2_rt/s48/rr_r4/post_archive_review/root_archive_verification.json",
+        "commit_reference": "68b50a62d4d5ee524aba24da9dca5c4d2089285f"
+      },
+      "rr_r4b1": {
+        "status": "APPROVED_R4B1_LOCAL_SCOPE",
+        "verified": true,
+        "base_commit": "68b50a62d4d5ee524aba24da9dca5c4d2089285f",
+        "developer": "native subagent /root/r3_native_developer",
+        "reviewer": "/root/rr_review",
+        "scope": "普通Unsynced经首次Resync真实失败后一次接受重投成功并退休原Clear；精确mock入口R4-T8-RESYNC，保生产与预算",
+        "hardware_access": false,
+        "archive_boundary": "R4b1最终原件和R4a全部晚生材料已归包；R4b1整个post_archive_review与随后commit回执为包外后生材料，下阶段携带。",
+        "task": "target/post_e_h2_rt/s48/rr_r4b/native_task.md",
+        "task_sha256": "6bae96a32d18cc42a81a56e18ef911867dd289207f08c511be066114cb76860f",
+        "outline": "target/post_e_h2_rt/s48/rr_r4b/development_outline.md",
+        "outline_sha256": "b1fd14a407b012e722adfac21d83435c1787cd69dcd14bac5dc1bce70accede0",
+        "plan_review": "target/post_e_h2_rt/s48/rr_r4b/plan_review.md",
+        "plan_review_sha256": "c9a398e048a04f50cfc61b352c9b6a842451c2cf348e1f350b77ca74995a70c0",
+        "formal_run": "target/post_e_h2_rt/s48/rr_r4b/gates/round2/run.json",
+        "source_review": "target/post_e_h2_rt/s48/rr_r4b/source_review.md",
+        "source_review_sha256": "7ea326f96b2ed1a46c016b40ca81e5faa47944a7fe5a7b3d5d125eba5b2c551b",
+        "source_review_status": "ACK_SCOPED_SOURCE",
+        "source_inputs": 540,
+        "modified_sources": 6,
+        "prior_round": "round1原源码24门完成，但3s成功接纳截止漏洞未修；原记录保留、不计最终验收。",
+        "formal_gates": 24,
+        "source_unchanged": true,
+        "archive_pending": false,
+        "result": "target/post_e_h2_rt/s48/rr_r4b/result.json",
+        "result_sha256": "1944574678da158d6531815c53e48405ced68755c9e55d1a6078f6690a72ae37",
+        "handoff": "target/post_e_h2_rt/s48/rr_r4b/handoff.md",
+        "handoff_sha256": "a916350a4e814c0eac905615560aae25c4ea55a0df1c576891f9ebb928e7f226",
+        "root_acceptance": "target/post_e_h2_rt/s48/rr_r4b/root_acceptance.md",
+        "root_acceptance_sha256": "3a1064eac6c94ed373b6fbd5fc7f5c325982b36b2b4e7041ade816843cfe6a46",
+        "final_binding": "target/post_e_h2_rt/s48/rr_r4b/final_binding.json",
+        "final_binding_sha256": "3c895733d185d744441ca38e4a22c1770a66deb60b1e03eadf29374da4727161",
+        "independent_evidence_review": "target/post_e_h2_rt/s48/rr_r4b/final_evidence_review.md",
+        "independent_evidence_review_sha256": "5f1290927618c1a7d9695f37f074ec8ce67502eeb320e398c741f8a908c2ecc8",
+        "independent_verification": "target/post_e_h2_rt/s48/rr_r4b/independent_verification.json",
+        "independent_verification_sha256": "8fcc04bb5d4e58f24343559dd60131e4332393786443fecf54be5b5b279c71c7",
+        "delivery_manifest": "target/post_e_h2_rt/s48/rr_r4b/delivery_manifest.json",
+        "delivery_manifest_sha256": "bf5ae5c0f4e17d99796b85b243d775f993c44ff1139ea09b3862b57ddc0d8f3f",
+        "formal_run_sha256": "0b0e7460a743ef78e18e19496db899ca54b72a2907a92d3871bd01fd09fbb558",
+        "tests": {
+          "workspace": [
+            2211,
+            0,
+            9
+          ],
+          "s0_complete_hook": [
+            864,
+            0,
+            1
+          ],
+          "tools": [
+            109,
+            0,
+            0
+          ],
+          "dev": {
+            "r4b1": 1,
+            "w4a": 2,
+            "w4b": 5,
+            "all": 72
+          },
+          "release": {
+            "r4b1": 1,
+            "w4a": 2,
+            "w4b": 5,
+            "all": 72
+          },
+          "counts_overlap": true
+        },
+        "archive_receipt": "target/post_e_h2_rt/s48/rr_r4b/post_archive_review/robot-rr-r4b1-archive-receipt.json",
+        "archive_receipt_sha256": "2d1eeffe626a8313ae456288b9eae0846205cba4d72fc81effe141f23d38565e",
+        "archive_added_count": 4219,
+        "archive_verified_files": 24410,
+        "root_archive_verification": "target/post_e_h2_rt/s48/rr_r4b/post_archive_review/root_archive_verification.json"
       }
     }
   },
@@ -2987,21 +3064,21 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2610,
-    "sha256": "4188196da94aca05f990082f122b4a0d9314867b0871587a112505309731ded7"
+    "lines": 2625,
+    "sha256": "da2689ee40d1a1eec41c091806d121a0366bab211f7c5d048e000d9767a3cfed"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "2ddab9cf31688539f0c09e123bd966878f37fab4bf818b04fe5685edd12d0555",
-    "bytes": 74238960,
-    "members": 20192,
-    "logical_bytes": 2002275352,
-    "index_count": 20191,
+    "sha256": "a9b030d3e106132db1fe6274d901aa9d12253268d999a3543184d19a81eafda8",
+    "bytes": 85763719,
+    "members": 24411,
+    "logical_bytes": 2460573226,
+    "index_count": 24410,
     "per_file_sha256_verified": true,
-    "verification_method": "固定R3整包SHA复用旧17973项证明；保旧路径/大小/索引，2218新增件逐件SHA及来源首末一致；root核整包元数据与12关键件实际字节。"
+    "verification_method": "固定R4a整包SHA复用旧20191项证明；保旧路径/大小/索引，4219新增件逐件SHA及来源首末一致；root核整包元数据与14关键件实际字节。"
   },
-  "retention": "当前H包保旧17973索引，新增2218件R4a/R3晚生证据；排16编译ELF并保本地实件及构建身份。R4a整个post_archive_review和随后commit回执为晚生材料，下阶段携带；R4b仍未纳入。",
-  "updated_at": "2026-09-14T18:24:36.739373+00:00",
+  "retention": "当前H包保旧20191索引，新增4219件R4b1/R4a晚生证据；排32编译ELF并保本地实件及构建身份。R4b1整个post_archive_review和随后commit回执为晚生材料，下阶段携带；R4b2/3/4仍未纳入。",
+  "updated_at": "2026-09-14T19:17:28.867652+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -3043,7 +3120,7 @@
   "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。",
   "stop_after_current": {
     "user_request": "继续进行有效开发直到周token还剩20%",
-    "current_package": "S48_RR_R4A",
+    "current_package": "S48_RR_R4B1",
     "next_package_authorized_to_start": true,
     "state": "已取消R4a后暂停；改以实时周额度剩20%为停止线",
     "weekly_remaining_stop_percent": 20,

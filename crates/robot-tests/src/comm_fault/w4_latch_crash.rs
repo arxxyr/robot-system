@@ -90,22 +90,22 @@ async fn created_unsynced_repair_resumes_same_target_and_retires_first_failure(
 }
 
 #[derive(Debug)]
-struct StepFact {
-    stage: ClearTxnStage,
-    succeeded: bool,
-    slot: Option<u8>,
+pub(super) struct StepFact {
+    pub(super) stage: ClearTxnStage,
+    pub(super) succeeded: bool,
+    pub(super) slot: Option<u8>,
 }
 
 #[derive(Debug)]
-struct CommandFact {
-    source: u64,
-    txn: ClearTxnIdentity,
-    command: CommandKind,
-    before: TokenKind,
-    after: TokenKind,
-    completion: CompletionKind,
-    failure: Option<(ClearTxnStage, StepPhase)>,
-    steps: Vec<StepFact>,
+pub(super) struct CommandFact {
+    pub(super) source: u64,
+    pub(super) txn: ClearTxnIdentity,
+    pub(super) command: CommandKind,
+    pub(super) before: TokenKind,
+    pub(super) after: TokenKind,
+    pub(super) completion: CompletionKind,
+    pub(super) failure: Option<(ClearTxnStage, StepPhase)>,
+    pub(super) steps: Vec<StepFact>,
 }
 
 struct PayloadCursor<'a> {
@@ -136,7 +136,7 @@ impl PayloadCursor<'_> {
 }
 
 /// 对原顺序逐条配对；任何未知事件、重复、缺失、错代次或越界都不能跳过。
-fn analyze_trace(events: &[TraceEvent], mode: Mode) -> Result<Value, String> {
+pub(super) fn parse_trace(events: &[TraceEvent]) -> Result<Vec<CommandFact>, String> {
     if events.is_empty() || events.len() > MAX_W4_EVENTS {
         return Err("W4 事件为空或超过原1024条上限".into());
     }
@@ -184,8 +184,17 @@ fn analyze_trace(events: &[TraceEvent], mode: Mode) -> Result<Value, String> {
         }
         commands.push(fact);
     }
+    Ok(commands)
+}
+
+fn analyze_trace(events: &[TraceEvent], mode: Mode) -> Result<Value, String> {
+    let commands = parse_trace(events)?;
     validate_chain(&commands, mode)?;
-    Ok(json!({"txn_id": commands[0].txn.txn_id.to_string(),
+    Ok(command_evidence(&commands))
+}
+
+pub(super) fn command_evidence(commands: &[CommandFact]) -> Value {
+    json!({"txn_id": commands[0].txn.txn_id.to_string(),
         "expected_epoch": commands[0].txn.expected_epoch, "original_latched": true,
         "command_scopes": commands.iter().map(|command| json!({
             "source": command.source, "command": format!("{:?}", command.command),
@@ -196,7 +205,7 @@ fn analyze_trace(events: &[TraceEvent], mode: Mode) -> Result<Value, String> {
             "steps": command.steps.iter().map(|step| json!({
                 "stage": format!("{:?}", step.stage), "succeeded": step.succeeded,
                 "fault_slot": step.slot})).collect::<Vec<_>>()
-        })).collect::<Vec<_>>(), "remove_marker_successes": 1}))
+        })).collect::<Vec<_>>(), "remove_marker_successes": 1})
 }
 
 fn parse_command(source: u64, payloads: &[W4Payload]) -> Result<CommandFact, String> {
@@ -506,7 +515,7 @@ fn validate_chain(commands: &[CommandFact], mode: Mode) -> Result<(), String> {
     Ok(())
 }
 
-struct TraceCapture {
+pub(super) struct TraceCapture {
     page: TracePage,
     csv: BufWriter<File>,
     path: PathBuf,
@@ -517,7 +526,7 @@ struct TraceCapture {
 }
 
 impl TraceCapture {
-    fn open(case: &Case) -> Result<Self, String> {
+    pub(super) fn open(case: &Case) -> Result<Self, String> {
         let path = case.directory.join("w4_trace.csv");
         let mut csv = BufWriter::new(File::create(&path).map_err(|e| e.to_string())?);
         writeln!(
@@ -544,7 +553,7 @@ impl TraceCapture {
     }
 
     // 每批和内存解析都受原固定容量约束；超限后继续落原CSV，保留首个采集错误。
-    fn drain(&mut self) {
+    pub(super) fn drain(&mut self) {
         for event in self.page.drain(robot_s0::comm_fault_trace::TRACE_CAPACITY) {
             if let Err(error) = writeln!(
                 self.csv,
@@ -587,6 +596,21 @@ impl TraceCapture {
         }
     }
 
+    pub(super) const fn page(&self) -> &TracePage {
+        &self.page
+    }
+
+    pub(super) const fn set_sample(&mut self, sample: u64) {
+        self.sample = Some(sample);
+    }
+
+    pub(super) fn commands(&self) -> Result<Vec<CommandFact>, String> {
+        if let Some(error) = &self.first_error {
+            return Err(error.clone());
+        }
+        parse_trace(&self.events)
+    }
+
     fn validate(&self, mode: Mode) -> Result<Value, String> {
         if let Some(error) = &self.first_error {
             return Err(error.clone());
@@ -594,7 +618,7 @@ impl TraceCapture {
         analyze_trace(&self.events, mode)
     }
 
-    fn evidence(&self) -> Value {
+    pub(super) fn evidence(&self) -> Value {
         json!({"csv": self.path, "sample_seq": self.sample,
             "total_events": self.total_events, "w4_events": self.events.len(),
             "dropped": self.page.dropped(), "first_error": self.first_error})
@@ -672,7 +696,7 @@ async fn run_case(args: &Args, mode: Mode) -> Result<Value, String> {
     }
 }
 
-async fn close_child(
+pub(super) async fn close_child(
     child: &mut Child,
     mut capture: Option<&mut TraceCapture>,
     mut check_reply: impl FnMut() -> Result<(), String>,
@@ -874,7 +898,7 @@ async fn exercise(
     }
 }
 
-async fn disarm_with_drain(
+pub(super) async fn disarm_with_drain(
     port: &ControlPort,
     case: &Case,
     child: &mut Child,
@@ -892,7 +916,7 @@ async fn disarm_with_drain(
     }
 }
 
-fn require_running(child: &mut Child, until: u64, label: &str) -> Result<(), String> {
+pub(super) fn require_running(child: &mut Child, until: u64, label: &str) -> Result<(), String> {
     if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
         return Err(format!("等待{label}时原进程提前退出：{status}"));
     }
@@ -1028,7 +1052,7 @@ async fn verify_latch_read_only(
     )
 }
 
-fn receive_with_closed_tail<T: markers::BodyMarker>(
+pub(super) fn receive_with_closed_tail<T: markers::BodyMarker>(
     pending: &Iceoryx2PendingResponse<T>,
 ) -> Result<Option<Vec<u8>>, String> {
     let received = pending.try_recv().map_err(|e| e.to_string())?;
