@@ -40,6 +40,31 @@ use super::chunk::Chunk;
 use super::chunk_details::ChunkDetails;
 use super::data_segment::{DataSegmentType, DataSegmentView};
 
+/// 仅故障测试的实际注销账：完整本 receiver 身份隔离各测试，不参与回收判定。
+#[cfg(all(test, feature = "r2-test-fixtures"))]
+mod unregister_trace {
+    use core::cell::RefCell;
+    use iceoryx2_cal::shm_allocator::PointerOffset;
+
+    thread_local! {
+        static EVENTS: RefCell<alloc::vec::Vec<(u128, PointerOffset)>> = const { RefCell::new(alloc::vec::Vec::new()) };
+    }
+
+    pub(super) fn record(receiver: u128, offset: PointerOffset) {
+        EVENTS.with(|events| events.borrow_mut().push((receiver, offset)));
+    }
+
+    pub(super) fn count(receiver: u128, offset: PointerOffset) -> usize {
+        EVENTS.with(|events| {
+            events
+                .borrow()
+                .iter()
+                .filter(|item| **item == (receiver, offset))
+                .count()
+        })
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct SenderDetails {
     pub(crate) port_id: u128,
@@ -48,11 +73,44 @@ pub(crate) struct SenderDetails {
     pub(crate) data_segment_type: DataSegmentType,
 }
 
+/// RR R2：连接保留策略。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RetentionPolicy {
+    /// 上游原行为：换代 / 消失的连接经 expired 缓冲有界保留，满时可能丢件。
+    Standard,
+    /// strict：被 pin 的连接保留原 mapping 与绝对 key，不走 expired 缓冲的丢数据 / fatal 分支；
+    /// 存储满时 typed 拒绝并由调用方保 dirty 重试。无 pin 且所有 channel 无数据无借用才回收。
+    StrictPinned,
+}
+
+/// RR R2：原 route 的 pin 原件——只由 [`Receiver::pin_connection`] 在真实 pin 成功时构造；
+/// 不可 Clone / Copy、字段私有；绑定本 receiver id、原 sender id、连接绝对 key、channel 与
+/// 请求序号。持有期间所指连接不会被回收；只能由 [`Receiver::unpin_connection`] 按值消费一次。
+/// 可复制的定位提示（index / server id）可以另存，但不承担所有权。
+#[derive(Debug)]
+pub(crate) struct RoutePin {
+    receiver_port_id: u128,
+    sender_port_id: u128,
+    key: SlotMapKey,
+    channel_id: ChannelId,
+    request_id: ChannelState,
+}
+
+impl RoutePin {
+    /// 仅测试：真实原连接的绝对 SlotMapKey，不改变 pin 所有权。
+    #[cfg(test)]
+    pub(crate) fn key_for_test(&self) -> usize {
+        self.key.value()
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Connection<Service: service::Service> {
     pub(crate) receiver: <Service::Connection as ZeroCopyConnection>::Receiver,
     pub(crate) data_segment: DataSegmentView<Service>,
     pub(crate) sender_port_id: u128,
+    /// RR R2：持有该连接原 route 的 strict 请求数（Live 或 Detached），只由同一 shared 锁内改动。
+    pin_count: usize,
     tag: Tag,
 }
 
@@ -126,8 +184,15 @@ impl<Service: service::Service> Connection<Service> {
             receiver,
             data_segment,
             sender_port_id,
+            pin_count: 0,
             tag: cyclic_tagger.create_tag(),
         })
+    }
+
+    fn has_data_or_borrows(&self) -> bool {
+        let (has_data, has_borrows) =
+            Receiver::<Service>::receiver_channels_have_data_or_borrows(&self.receiver);
+        has_data | has_borrows
     }
 }
 
@@ -147,6 +212,11 @@ pub(crate) struct Receiver<Service: service::Service> {
     pub(crate) number_of_channels: usize,
     pub(crate) connection_storage: UnsafeCell<SlotMap<Connection<Service>>>,
     pub(crate) initial_channel_state: ChannelState,
+    /// RR R2：保留策略；`StrictPinned` 下换代 / 消失但仍被 pin 或仍有数据 / 借用的连接进入
+    /// `retained`（绝对 key），不再由 index 数组引用。
+    pub(crate) retention: RetentionPolicy,
+    /// `StrictPinned` 下为原 expired 预算 E 的保留表；`Standard` 置 `None`，不承担新表。
+    pub(crate) retained: Option<UnsafeCell<PolymorphicVec<'static, SlotMapKey, HeapAllocator>>>,
 }
 
 impl<Service: service::Service> Abandonable for Receiver<Service> {
@@ -160,6 +230,12 @@ impl<Service: service::Service> Abandonable for Receiver<Service> {
 }
 
 impl<Service: service::Service> Receiver<Service> {
+    /// 仅故障测试：该原 receiver 对指定 offset 实际 unregister 的累计次数。
+    #[cfg(all(test, feature = "r2-test-fixtures"))]
+    pub(crate) fn unregister_count_for_test(&self, offset: PointerOffset) -> usize {
+        unregister_trace::count(self.receiver_port_id, offset)
+    }
+
     pub(crate) fn release_offset(&self, chunk: &ChunkDetails, channel_id: ChannelId) {
         let connection_storage = unsafe { &mut *self.connection_storage.get() };
         if let Some(connection) = connection_storage.get(chunk.connection_key) {
@@ -168,6 +244,8 @@ impl<Service: service::Service> Receiver<Service> {
             }
 
             unsafe { connection.data_segment.unregister_offset(chunk.offset) };
+            #[cfg(all(test, feature = "r2-test-fixtures"))]
+            unregister_trace::record(self.receiver_port_id, chunk.offset);
             match connection.receiver.release(chunk.offset, channel_id) {
                 Ok(()) => (),
                 Err(ZeroCopyReleaseError::RetrieveBufferFull) => {
@@ -605,7 +683,31 @@ impl<Service: service::Service> Receiver<Service> {
         };
 
         if remove_connection {
-            self.prepare_connection_removal(index);
+            match self.retention {
+                RetentionPolicy::Standard => self.prepare_connection_removal(index),
+                RetentionPolicy::StrictPinned => {
+                    // 先完整预检：旧连接若须保留（有 pin / 数据 / 借用），存储与 retained 列表都
+                    // 必须有位；不满足时原 key / index / tag 全部不变，typed 拒绝，调用方保 dirty。
+                    if !self.strict_has_room_for_replacement(index) {
+                        fail!(from self, with ConnectionFailure::RetentionCapacityExceeded,
+                            "Unable to establish connection to new sender {:?} since the connection storage is full of retained (pinned / borrowed) connections; keeping existing mappings and retrying later.",
+                            sender_details.port_id);
+                    }
+                    // 预检通过后才提交迁移（不可失败）。
+                    self.retire_index_strict(index);
+                }
+            }
+
+            // strict：连接创建失败必须保真实 Err（调用方保 dirty 重试），不经 degradation 默认 Warn 吞成 Ok。
+            if self.retention == RetentionPolicy::StrictPinned {
+                return match self.create(index, &sender_details) {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        fail!(from self, with e, "Unable to establish strict connection to new sender {:?}.",
+                            sender_details.port_id);
+                    }
+                };
+            }
 
             match self.create(index, &sender_details) {
                 Ok(()) => Ok(()),
@@ -644,14 +746,264 @@ impl<Service: service::Service> Receiver<Service> {
             if let Some(connection_key) = unsafe { &*connection_key.get() } {
                 if let Some(connection) = connection_storage.get(*connection_key) {
                     if !connection.was_tagged_by(&self.tagger) {
-                        self.remove_connection(n);
+                        match self.retention {
+                            RetentionPolicy::Standard => self.remove_connection(n),
+                            RetentionPolicy::StrictPinned => self.retire_index_strict(n),
+                        }
                     }
                 }
             }
         }
     }
 
+    // ------------------------------------------------------------------
+    // RR R2：strict 保留策略与按原 key 的访问原语（全部在调用方的 shared 锁内使用）
+    // ------------------------------------------------------------------
+
+    /// index 上的旧连接是否须保留（仍被 pin、仍有数据或借用）。
+    fn strict_index_must_retain(&self, index: usize) -> Option<(SlotMapKey, bool)> {
+        let key = unsafe { *self.connections[index].get() }?;
+        let connection_storage = unsafe { &*self.connection_storage.get() };
+        let keep = match connection_storage.get(key) {
+            Some(connection) => connection.pin_count > 0 || connection.has_data_or_borrows(),
+            None => false,
+        };
+        Some((key, keep))
+    }
+
+    /// 预检：替换 index 上的旧连接后，存储与 retained 列表是否都能容纳（不改任何状态）。
+    fn strict_has_room_for_replacement(&self, index: usize) -> bool {
+        let connection_storage = unsafe { &*self.connection_storage.get() };
+        match self.strict_index_must_retain(index) {
+            // 旧连接保留：新连接需要一个额外存储位，retained 列表也需要一位。
+            Some((_, true)) => {
+                let retained_has_room = match &self.retained {
+                    Some(retained) => {
+                        let retained = unsafe { &*retained.get() };
+                        retained.len() < retained.capacity()
+                    }
+                    None => false,
+                };
+                !connection_storage.is_full() && retained_has_room
+            }
+            // 旧连接回收后腾出一位，或本 index 无旧连接：只要存储未满即可。
+            Some((_, false)) => true,
+            None => !connection_storage.is_full(),
+        }
+    }
+
+    /// 提交迁移（须先经 `strict_has_room_for_replacement` 预检）：把 index 上的旧连接脱离 index
+    /// 数组，须保留者进入 `retained`（保原 mapping 与绝对 key），否则按绝对 key 立即回收。
+    fn retire_index_strict(&self, index: usize) {
+        let Some((key, keep)) = self.strict_index_must_retain(index) else {
+            return;
+        };
+        if keep {
+            let Some(retained) = &self.retained else {
+                // 预检已排除（Standard 无保留表）；不破坏旧关联。
+                return;
+            };
+            let retained = unsafe { &mut *retained.get() };
+            if retained.len() >= retained.capacity() {
+                // 预检已排除；不破坏旧关联，留待下一轮。
+                return;
+            }
+            unsafe { *self.connections[index].get() = None };
+            if retained.push(key).is_err() {
+                fatal_panic!(from self, "This should never happen! The retained connection list capacity was checked before the push.");
+            }
+        } else {
+            unsafe { *self.connections[index].get() = None };
+            unsafe { &mut *self.connection_storage.get() }.remove(key);
+        }
+    }
+
+    /// 回收已脱离 index、且既无 pin 也无数据无借用的保留连接（绝对 key 删除）。
+    pub(crate) fn maintain_retained(&self) {
+        let Some(retained) = &self.retained else {
+            return;
+        };
+        let retained = unsafe { &mut *retained.get() };
+        let connection_storage = unsafe { &mut *self.connection_storage.get() };
+        let mut n = 0;
+        while n < retained.len() {
+            let key = retained[n];
+            let reclaim = match connection_storage.get(key) {
+                Some(connection) => connection.pin_count == 0 && !connection.has_data_or_borrows(),
+                None => true,
+            };
+            if reclaim {
+                connection_storage.remove(key);
+                retained.remove(n);
+            } else {
+                n += 1;
+            }
+        }
+    }
+
+    /// 仅测试：保留列表长度。
+    #[cfg(test)]
+    pub(crate) fn retained_len(&self) -> usize {
+        self.retained
+            .as_ref()
+            .map_or(0, |retained| unsafe { &*retained.get() }.len())
+    }
+
+    /// 仅测试：连接存储中的连接总数（index 数组 + 保留者）。
+    #[cfg(test)]
+    pub(crate) fn number_of_stored_connections(&self) -> usize {
+        unsafe { &*self.connection_storage.get() }.len()
+    }
+
+    /// 仅测试：原 pin 原件所指连接的 pin 计数。
+    #[cfg(test)]
+    pub(crate) fn pin_count_pinned(&self, pin: &RoutePin) -> usize {
+        self.pinned(pin).pin_count
+    }
+
+    /// 仅测试：借用原 pin 原件所指连接的原 CAL receiver（只读定位，不改状态）。
+    #[cfg(all(test, feature = "r2-test-fixtures"))]
+    pub(crate) fn cal_receiver_pinned_for_test(
+        &self,
+        pin: &RoutePin,
+    ) -> &<Service::Connection as ZeroCopyConnection>::Receiver {
+        &self.pinned(pin).receiver
+    }
+
+    /// 仅测试：index 上当前连接的 pin 计数。
+    #[cfg(test)]
+    pub(crate) fn pin_count_at_index(&self, index: usize) -> Option<usize> {
+        let key = unsafe { *self.connections.get(index)?.get() }?;
+        unsafe { &*self.connection_storage.get() }
+            .get(key)
+            .map(|c| c.pin_count)
+    }
+
+    /// pin index 上当前连接的原 route（同 shared 锁内）：连接须存在且其 sender id 与
+    /// `sender_port_id` 一致；只有真实 pin 成功才构造 [`RoutePin`] 原件。
+    pub(crate) fn pin_connection(
+        &self,
+        index: usize,
+        sender_port_id: u128,
+        channel_id: ChannelId,
+        request_id: ChannelState,
+    ) -> Option<RoutePin> {
+        let key = unsafe { *self.connections.get(index)?.get() }?;
+        let connection = unsafe { &mut *self.connection_storage.get() }.get_mut(key)?;
+        if connection.sender_port_id != sender_port_id {
+            return None;
+        }
+        connection.pin_count += 1;
+        Some(RoutePin {
+            receiver_port_id: self.receiver_port_id,
+            sender_port_id,
+            key,
+            channel_id,
+            request_id,
+        })
+    }
+
+    /// 按值消费原 pin 原件（每个原件恰一次）；不建立新 mapping、不触发回收循环。原件不属于本
+    /// receiver、连接已不存在或计数已为 0 均为不变量损坏，受检失败。
+    pub(crate) fn unpin_connection(&self, pin: RoutePin) {
+        if pin.receiver_port_id != self.receiver_port_id {
+            fatal_panic!(from self, "This should never happen! A strict route pin of another receiver was returned here.");
+        }
+        match unsafe { &mut *self.connection_storage.get() }.get_mut(pin.key) {
+            Some(connection) => {
+                if connection.sender_port_id != pin.sender_port_id {
+                    fatal_panic!(from self, "This should never happen! A strict route pin refers to a connection of another sender.");
+                }
+                if connection.pin_count == 0 {
+                    fatal_panic!(from self, "This should never happen! A strict route pin was returned twice.");
+                }
+                connection.pin_count -= 1;
+            }
+            None => {
+                fatal_panic!(from self, "This should never happen! A strict route pin refers to a connection that no longer exists.");
+            }
+        }
+    }
+
+    /// 原 pin 原件所指连接（pin 持有期间不会被回收；缺失或身份不符即不变量损坏）。
+    fn pinned(&self, pin: &RoutePin) -> &Connection<Service> {
+        if pin.receiver_port_id != self.receiver_port_id {
+            fatal_panic!(from self, "This should never happen! A strict route pin of another receiver was used here.");
+        }
+        match unsafe { &*self.connection_storage.get() }.get(pin.key) {
+            Some(connection) if connection.sender_port_id == pin.sender_port_id => connection,
+            Some(_) => {
+                fatal_panic!(from self, "This should never happen! A pinned strict route refers to a connection of another sender.");
+            }
+            None => {
+                fatal_panic!(from self, "This should never happen! A pinned strict route refers to a connection that no longer exists.");
+            }
+        }
+    }
+
+    /// CAL strict prepare（仅 CLOSED → 原请求），按原件的 channel / 序号。
+    pub(crate) fn strict_prepare_pinned(&self, pin: &RoutePin) -> Result<(), StrictPrepareError> {
+        self.pinned(pin)
+            .receiver
+            .strict_prepare(pin.channel_id, pin.request_id)
+    }
+
+    /// 严格三态观测，按原件的 channel / 序号。
+    pub(crate) fn strict_status_pinned(&self, pin: &RoutePin) -> StrictChannelStatus {
+        self.pinned(pin)
+            .receiver
+            .strict_channel_status(pin.channel_id, pin.request_id)
+    }
+
+    /// 只发原 hint（同源 set_hint：只匹配原请求）。
+    pub(crate) fn set_disconnect_hint_pinned(&self, pin: &RoutePin) {
+        self.pinned(pin)
+            .receiver
+            .set_disconnect_hint(pin.channel_id, pin.request_id);
+    }
+
+    /// 回滚本次成功 prepare（同源 finish：仅原请求 → CLOSED）。
+    pub(crate) fn close_channel_pinned(&self, pin: &RoutePin) {
+        self.pinned(pin)
+            .receiver
+            .close_channel(pin.channel_id, pin.request_id);
+    }
+
+    pub(crate) fn has_data_pinned(&self, pin: &RoutePin) -> bool {
+        self.pinned(pin).receiver.has_data(pin.channel_id)
+    }
+
+    pub(crate) fn borrow_count_pinned(&self, pin: &RoutePin) -> usize {
+        self.pinned(pin).receiver.borrow_count(pin.channel_id)
+    }
+
+    /// 按原 pin 原件直接从原连接、原 channel 收包（不经 expired 列表、不遍历其它连接）。
+    pub(crate) fn receive_pinned(
+        &self,
+        pin: &RoutePin,
+    ) -> Result<Option<(ChunkDetails, Chunk)>, ReceiveError> {
+        let connection = self.pinned(pin);
+        self.receive_from_connection(connection, pin.key, pin.channel_id)
+    }
+
     pub(crate) fn payload_size(&self) -> usize {
         self.message_type_details.payload.size
     }
+}
+
+/// RR R2：固定容量本地表的可失败分配——布局溢出或分配失败均返回 `None`，由构造入口 typed 拒绝。
+pub(crate) fn try_alloc_table<T, F: FnMut(usize) -> T>(
+    capacity: usize,
+    f: F,
+) -> Option<PolymorphicVec<'static, T, HeapAllocator>> {
+    core::alloc::Layout::array::<core::mem::MaybeUninit<T>>(capacity).ok()?;
+    PolymorphicVec::from_fn(HeapAllocator::global(), capacity, f).ok()
+}
+
+/// RR R2：固定容量空表的可失败分配（同上）。
+pub(crate) fn try_alloc_empty_table<T>(
+    capacity: usize,
+) -> Option<PolymorphicVec<'static, T, HeapAllocator>> {
+    core::alloc::Layout::array::<core::mem::MaybeUninit<T>>(capacity).ok()?;
+    PolymorphicVec::new(HeapAllocator::global(), capacity).ok()
 }

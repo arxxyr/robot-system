@@ -2480,6 +2480,22 @@ metadata仍同README、运行时图与锁身份保持；两vendor在根/嵌套�
 独审及root验收限定R1本地软件范围，提交后按原方案实施R2；证据入口
 target/post_e_h2_rt/s48/rr_r1。本地结果不替代R2/R3/R4或Orin，D15 OPEN保持。
 
+#### P.6.14.19 RR R2 IOX 原连接保留与退出（2026-09-15本地验收通过）
+
+R1基线0513a8c。CC首版后由原生r2_native_developer完成实现/测试，独立rr_review
+完成源码终审ACK；root负责方案、证据验收、归档与提交。后续开发继续原生子agent。
+真实RoutePin按值转移、严格唯一enqueue/回复、原连接保留/Detached回收与本地退出、
+实际N及容量受检均已落。31主测试+3故障测试直接操作真实原件，pubsub三父例含
+SIGKILL/reap/Node清理；默认关闭fixture不进入生产图。本方调用方迁移仍属R3。
+正式round1全部26门exit0，43输入首末一致；默认IOX42/0/1、故障45/0/1、CAL45、
+模型6、workspace2207/0/9、S0hook656/0/0。实际先fmt再Clippy，未关闭告警。
+首汇总因Cargo包ID格式假设误报，原FAIL/脚本/日志保留；仅修解析，不改源码或重跑
+未受影响的质量门。最终入口为rr_r2/{result.json,handoff.md,strict_tests_source_review.md}；
+完整命令/环境/日志/SHA见gates/round1/run.json；independent_evidence_review.md与
+root_acceptance.md已验收本地范围，含build的80包闭包与R1一致。
+R2提交后按r3_native_development_handoff.md成对替换既有工厂，保原profile/topic/schema。
+未运行R3/R4、Orin/ARM/硬件或P-E；D15 OPEN、deployable=false保持。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

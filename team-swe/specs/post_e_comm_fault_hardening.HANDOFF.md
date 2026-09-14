@@ -12,7 +12,10 @@ transport、RPC与build七门全0；transport99/0/3、RPC304/0/0，既有ignored
 同图tree/deny引用round1实际成功；原三个编译失败与三个nonmember探针101保留。
 证据入口H包`local/s48/rr_r0/`，root裁决`root_acceptance.md`、独审`independent_review.md`。
 R0已提交`cbed745`。R1 CAL转移/真实enqueue/同源模型已由cc-claude实现、独立Codex与
-root验收；本阶段提交后进入R2 IOX，实施令`target/post_e_h2_rt/s48/rr_r2/cc_task.md`。
+root验收并提交`0513a8c`；R2原生开发已完成：源码独审ACK，正式round1共26门全部通过，已获root本地验收；本次提交收口R2，提交身份以git日志及commit_receipt为准。
+R2最终交付为`target/post_e_h2_rt/s48/rr_r2/handoff.md`及`result.json`；43项输入首末一致，
+IOX默认42/0/1、故障45/0/1、CAL45/0/0、模型6/0/0、workspace2207/0/9、S0 hook656/0/0。
+后续R3直接迁移本方既有工厂与生产调用方，不增第二套公开入口；本地验证不代替Orin。
 R1正式round1共21门全0，CAL45、IOX库内8、模型6、workspace2207/0/9、S0 hook656/0/0。
 库内测试真实经过Clippy、CAL no_std通过；根14成员保持，两vendor运行时闭包80包身份
 与嵌套图一致，模型依赖不进生产图。测试三项发现均已修，开发失败保留。
@@ -47,6 +50,9 @@ R1正式round1共21门全0，CAL45、IOX库内8、模型6、workspace2207/0/9、
   不声称位于此前生成的tar内。W4a归档后回执和RR只读方案已随本包携带。
 
 ## 后续路线
+
+用户最新要求开发改用原生子agent。CC在2026-09-14额度限制处停止，root已停止其背景agent并退出会话（PTY70557 exit0）；R2剩余及后续由原生开发子agent实现/自测、另一个独立子agent评审，root方案/整合/提交。
+开发子agent仍可按需并行拆分，明确写入范围，Cargo继续由一个开发者串行拥有。
 
 W3已将新权限、高/普通双队列、唯一writer、RPC责任账本接入生产调用方。
 W4a文件同步故障、W4b固定五例均已本地验收。W4剩余为RR严格内核修正、

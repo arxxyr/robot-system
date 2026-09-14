@@ -119,6 +119,54 @@ root `build_warning_decision.md` 批准：从 `3rd-party/iceoryx2/Cargo.toml` �
 与根锁只差上游 dev-dependencies 带来的仅测试包；目标目录 `target/rr-vendor-tests`。运行命令见该
 manifest 注释。上游 `[[test]] tests/tests.rs` 引用未发布的 `*_tests_common`，不在选择范围。
 
+## R2 增量（2026-09-14，IOX 严格请求 / 原连接保留 / 退出所有权 / 受检构造 / 真实故障夹具）
+
+基线：R1 提交 0513a8c；原件身份仍以上文 `.crate` SHA256 为准。本节只列 R2 相对 R1 的差异与理由；
+差异明细见 `git diff 0513a8c -- 3rd-party`，证据在 `target/post_e_h2_rt/s48/rr_r2/`。
+
+### iceoryx2-cal
+
+| 文件 | 变更 |
+|---|---|
+| `Cargo.toml` | 新增默认关闭 feature `r2-test-fixtures`（root `real_fault_fixture_decision.md`）；不加依赖、不改锁。 |
+| `zero_copy_connection/mod.rs` | `ZeroCopyCreationError` 新增 `CapacityOverflow`；re-export `checked_connection_management_size`；`ZeroCopySender` 在 feature `r2-test-fixtures` 下新增 `r2_fixture_forget_used_offset` / `r2_fixture_is_used` / `r2_fixture_arm_one_overflow_attempt` / `r2_fixture_armed` / `r2_fixture_hits` 与 `FixtureArmError`。 |
+| `zero_copy_connection/common.rs` | 新增 `checked_connection_management_size`（受检镜像原 `SharedManagementData::const_memory_size`：builder 同样的 clamp、completion = buffer + borrow + 1、每个内部数组先 `Layout::array`、总量 ≤ isize::MAX；私有 `Channel` / `SegmentDetails` 布局单源），真实 `Builder::create_or_open_shm` 改用它并在创建任何共享资源前以 `CapacityOverflow` typed 拒绝；三处未受检 `const_memory_size` 删除。`Sender` 在 feature 下多一份进程本地原子 `R2Fixture`（三态 CAS 所有权：独占安装 → Release 发布 → 先 CAS 独占再匹配消费或读取快照，避免重装目标的 ABA）：`push_offset` 只对匹配的一次性目标放过“非 overflow 且队满”的 publication 前拒绝，之后仍走同一 push / 真实挤出 / 真实旧 used 移除分类；夹具的 forget / is_used / arm 目标先受检（channel / segment 范围、sample_size 已知、offset 对齐、used 索引在容量内），非法目标 typed 拒绝（`FixtureTargetError`）。R1 的 `cfg(test)` `test_only_*` 语义不变。 |
+| `zero_copy_connection/used_chunk_list.rs` | `contains` 改为 `cfg(any(test, feature = "r2-test-fixtures"))`。 |
+| `dynamic_storage/process_local.rs` | `StorageDetails::checked_layout`（`size_of::<T>() + supplementary` 受检并 `Layout::from_size_align`），`Builder::create_impl` 失败映射现有 `DynamicStorageCreateError::InternalError`，已验证 Layout 按值交 `new`；不再 `from_size_align_unchecked`。 |
+
+### iceoryx2
+
+| 文件 | 变更 |
+|---|---|
+| `Cargo.toml` | 新增默认关闭 feature `r2-test-fixtures = ["iceoryx2-cal/r2-test-fixtures"]`。 |
+| `lib.rs` | `pub mod strict;`。 |
+| `strict/{mod,client,server}.rs`（新增） | 受检成对入口 `StrictClient` / `StrictServer`（工厂 `create_single_server_strict` / `create_single_reply_strict`）：真核 `max_servers == 1`、Static、DiscardData、无自定义 backpressure handler、请求不 overflow（两端相同配置域）；strict 请求序号独立计数 `1..=2^62−1` 不回绕；同一 shared 锁内 维护 → update → active 上限 → 唯一 Static server 精确双向匹配 → 预留固定槽并真实 pin 原 route（不可 Clone 的 `RoutePin` 原件）→ CAL `strict_prepare` → 唯一 `deliver_one_observed`；publication 前拒绝按原件撤销预留并完整返回原 request，发布后只做不可失败提交，原 pin 按值交 `StrictPendingResponse`（私有持 post-push issue；Drop 转 Detached 只发原 hint）；`StrictServer::receive` 核 `origin == header.client_id`，`StrictActiveRequest` 按值进入唯一回复 loan（`StrictActiveCore` 持 Drop/finish），先建 loan RAII 再执行用户 header `Default`，`assume_init` 按字段转移不整对象 transmute，`write_from_slice` 长度不等即 panic 由 RAII 归还，`send` 同锁先按完整原 client id resolve 再唯一投递。 |
+| `strict/tests.rs`、`strict/fixture_tests.rs`（新增，cfg(test)） | 主集覆盖实际不同 N、原 route/key、完整身份、Default/initializer 展开及退出顺序；默认关闭的 `r2-test-fixtures` 子模块含真实 post-push issue 和 completion 满队列的两种释放顺序。仅测试 getter/字段后置 DropMarker/原 unregister 账不进入默认生产布局或回收判定。 |
+| `port/client.rs` | `ClientSharedState` 新增 `strict_slots`（Free / Reserved / Live / Detached，长度 = override 后真实 N，只在 `StrictPinned` 申请）、`retry_update`、`server_list_state` pub(crate)；`Drop` 首句 `dispose_detached_for_client_exit`（按值消费本地原件与原 pin）再注销 handle；`maintain_detached`（先按原 pin 有界 drain 真实回复，再 Closed && 无数据 && borrow 0 才释放）；`Client::new(factory, RetentionPolicy)`：全部派生容量按 override 后真实 N 受检（`required_amount_of_chunks_*` 改 checked、`checked_sample_layout`、`checked_static_segment_plan`、active+expired、本端已知 CAL 管理区）、固定表可失败预留、Standard 不申请新表；`ReceiverDetails.number_of_channels = 1`（请求侧）。 |
+| `port/server.rs` | `Server::new` 同样受检；`SharedServerState::force_update_connections` 把每个原 `ClientDetails.number_of_requests` 作为该回复连接的真实 channel 数（原来用全局 worst-case，使缩小 override 的 client 打开连接时 `IncompatibleNumberOfChannels`）；三处 receive 先取 `details.origin` 再核 `origin == header.client_id`；`shared_state` 等改 pub(crate)。 |
+| `port/details/sender.rs` | `ReceiverDetails` / `Connection` 增 `number_of_channels`（每原连接真实数，须 ≤ Sender 上界），`retrieve_returned_samples` 按该连接真实数回收；新增 `ExactTargetError`、`resolve_connection`、`exact_target_error`、`deliver_one_observed`（精确目标一次 `try_send_observed`；Enqueued 才登记本地引用，真实挤出旧件才释放）、`strict_channel_status_by_id`。 |
+| `port/details/receiver.rs` | `RetentionPolicy{Standard, StrictPinned}`；`Connection.pin_count`；`RoutePin` 原件（只由 `pin_connection` 真实 pin 成功构造，`unpin_connection` 按值消费、受检）；strict 下换代/消失但仍被 pin 或有数据/借用的连接进入 `retained`（原 expired 预算 E，Standard 为 `None`），存储满则 `ConnectionFailure::RetentionCapacityExceeded` 且原 key/index/tag 不变；strict create/update 失败不经 degradation Warn 吞成 Ok；`*_pinned` 系列按原件访问；固定表可失败分配助手。 |
+| `port/details/data_segment.rs` | `checked_static_segment_plan`（M、K_max ≤ 2^24−2、G、M+G ≤ isize::MAX；`create_static_segment` 单源复用，溢出 typed `InternalError`）。 |
+| `port/details/segment_state.rs`、`raw_sample.rs` | 仅测试引用计数只读查询；`RawSampleMut` 原始指针访问器（按字段转移用）。 |
+| `port/{publisher,subscriber}.rs` | `ReceiverDetails.number_of_channels = 1`；`Receiver` 新字段 `retention: Standard, retained: None`；行为不变。 |
+| `port/update_connections.rs` | `ConnectionFailure::RetentionCapacityExceeded`。 |
+| `active_request.rs`、`response_mut.rs` | 保存 `client_port_id`（来自真实 `ChunkDetails.origin`），finish / hint / is_connected / send 先 `resolve_connection(hint, id)`；缺失时普通 API 沿“无连接 = 0 recipients”。 |
+| `service/port_factory/{client,server}.rs` | 新增 strict 入口；`ClientCreateError` / `ServerCreateError` 新增 `CapacityOverflow` / `InsufficientMemory` / `ExceedsMaxSupportedChunks`。 |
+| `service/static_config/{request_response,message_type_details}.rs` | chunk 数算式改 checked `Option`；`checked_sample_layout`。 |
+| `port/pubsub_r2_tests.rs`（新增，cfg(test)） | 通用 pub/sub 活背压与真子进程死亡清理门。 |
+
+库内 Clippy 单独检查 IOX 主包时，上游 1.85 MSRV 与 R0 已验证的 `try_update`（1.95 起提供）存在事实差异；仅在原 `Client::next_request_id` 上以 `#[clippy::msrv = "1.95"]` 标注，不放宽 lint、不改变原子操作、上游 manifest 或项目 nightly。
+
+普通入口行为差异：普通 `Client` / `Server` / `Publisher` / `Subscriber` 的合法配置结果不变；只有原本溢出 / 回绕 / debug panic 的极端配置改为 typed 创建错误；server 回复连接改按每个 client 的真实 N 建立（修正上游缩小 override 后的连接失败）；Standard 路径不申请 strict 表。
+
+### 私有测试入口（R2）
+
+沿 R1 嵌套 workspace 与库内 Clippy 入口；新增：
+`cargo test --locked --manifest-path 3rd-party/Cargo.toml --target-dir target/rr-vendor-tests -p iceoryx2 --lib -- --test-threads=1`
+（strict 具名测试 + pubsub 三个父例，覆盖活端行为与死亡清理两组），以及显式故障夹具门
+`… -p iceoryx2 --lib --features r2-test-fixtures -- --test-threads=1` 与其库内 Clippy（`cargo rustc --profile test --features r2-test-fixtures`）。
+根生产图（`cargo metadata --locked`）中两包均未启用 `r2-test-fixtures`（见 `rr_r2/result.json`）。
+
 ## 后续变更约定
 
 之后对 vendor 的任何修改（R2 起）须以本说明中的 `.crate` SHA256 为原件基线、以上两节为 R0 / R1

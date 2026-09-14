@@ -33,7 +33,7 @@ use super::request_response::PortFactory;
 use crate::{
     port::{
         BackpressureFn, BackpressureHandler, DegradationAction, DegradationFn, DegradationHandler,
-        client::Client,
+        client::Client, details::receiver::RetentionPolicy,
     },
     prelude::BackpressureStrategy,
     service,
@@ -62,6 +62,12 @@ pub enum ClientCreateError {
     FailedToDeployThreadsafetyPolicy,
     /// The tracking port tag, required for cleanup, could not be created.
     UnableToCreatePortTag,
+    /// RR R2：按 override 后真实容量计算 chunk 数、连接数、样本布局或数据段字节数时算术溢出。
+    CapacityOverflow,
+    /// RR R2：固定容量的本地表（连接表 / 过期缓冲 / 保留表 / 固定槽）无法分配。
+    InsufficientMemory,
+    /// RR R2：数据段 chunk 数超过底层池分配器可表示的 bucket 数（`UniqueIndexSet` 24 位界）。
+    ExceedsMaxSupportedChunks,
 }
 
 impl core::fmt::Display for ClientCreateError {
@@ -285,8 +291,25 @@ impl<
     > {
         let origin = format!("{self:?}");
         Ok(fail!(from origin,
-              when Client::new(self),
+              when Client::new(self, RetentionPolicy::Standard),
               "Failed to create new Client port."))
+    }
+
+    /// RR R2：受检的严格单 server 入口。真核 `max_servers == 1`、Static 分配、DiscardData、
+    /// 无自定义 backpressure handler、请求不 overflow；每项单独 typed 拒绝。普通 `create()` 不变。
+    pub fn create_single_server_strict(
+        self,
+    ) -> Result<
+        crate::strict::StrictClient<
+            Service,
+            RequestPayload,
+            RequestHeader,
+            ResponsePayload,
+            ResponseHeader,
+        >,
+        crate::strict::StrictCreateError,
+    > {
+        crate::strict::StrictClient::new(self)
     }
 }
 

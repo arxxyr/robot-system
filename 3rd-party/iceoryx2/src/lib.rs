@@ -537,6 +537,8 @@ pub mod pending_response;
 /// The payload that is sent by a [`Client`](crate::port::client::Client) to a
 /// [`Server`](crate::port::server::Server).
 pub mod request_mut;
+/// RR R2：受检的严格单 server / 唯一回复 RR 入口（robot-system 本地补丁）。
+pub mod strict;
 
 /// The uninitialized payload that is sent by a [`Client`](crate::port::client::Client) to a
 /// [`Server`](crate::port::server::Server).

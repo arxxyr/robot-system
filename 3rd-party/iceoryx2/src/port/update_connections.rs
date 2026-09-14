@@ -22,6 +22,9 @@ pub enum ConnectionFailure {
     FailedToEstablishConnection(ZeroCopyCreationError),
     /// Failures when mapping the corresponding data segment
     UnableToMapSendersDataSegment(SharedMemoryOpenError),
+    /// RR R2：strict 保留策略下连接存储已满（被 pin / 仍有数据或借用的旧连接占位），
+    /// 本次不覆盖任何旧 mapping；原 key / 映射 / tag 保持，下次 update 重试。
+    RetentionCapacityExceeded,
 }
 
 impl From<ZeroCopyCreationError> for ConnectionFailure {

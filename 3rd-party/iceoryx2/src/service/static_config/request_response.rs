@@ -100,37 +100,39 @@ impl StaticConfig {
         }
     }
 
+    /// RR R2：受检的 client 数据段 chunk 数 `max_servers * (A + A) + client_max_loaned_data`；
+    /// 任一步溢出返回 `None`，由构造入口 typed 拒绝。
     pub(crate) fn required_amount_of_chunks_per_client_data_segment(
         &self,
         client_max_loaned_data: usize,
-    ) -> usize {
-        // all chunks a server can hold
-        self.max_servers * (
-            // a client sent so many active requests to a server in parallel
-            self.max_active_requests_per_client +
-            // the server can still hold old requests that the client has already dropped. in this case
-            // the client can fill up the server's buffer with at most max_active_requests_per_client again
-            self.max_active_requests_per_client
-        )
-        // all chunks a client can loan in parallel
-            + client_max_loaned_data
+    ) -> Option<usize> {
+        // a client sent so many active requests to a server in parallel, and the server can still
+        // hold old requests that the client has already dropped: at most 2 * A chunks per server.
+        let chunks_per_server = self
+            .max_active_requests_per_client
+            .checked_add(self.max_active_requests_per_client)?;
+        // all chunks all servers can hold, plus all chunks a client can loan in parallel
+        self.max_servers
+            .checked_mul(chunks_per_server)?
+            .checked_add(client_max_loaned_data)
     }
 
+    /// RR R2：受检的 server 数据段 chunk 数 `max_clients * (A + A) * (buffer + borrowed + loaned)`；
+    /// 任一步溢出返回 `None`。
     pub(crate) fn required_amount_of_chunks_per_server_data_segment(
         &self,
         max_loaned_responses_per_request: usize,
-    ) -> usize {
+    ) -> Option<usize> {
+        let requests_per_client = self
+            .max_active_requests_per_client
+            .checked_add(self.max_active_requests_per_client)?;
+        let responses_per_request = self
+            .max_response_buffer_size
+            .checked_add(self.max_borrowed_responses_per_pending_response)?
+            .checked_add(max_loaned_responses_per_request)?;
         self.max_clients
-            * (
-                // a client sent so many active requests to a server in parallel
-                self.max_active_requests_per_client +
-                // the server can still hold old requests that the client has already dropped. in this case
-                // the client can fill up the server's buffer with at most max_active_requests_per_client again
-                self.max_active_requests_per_client
-            )
-            * (self.max_response_buffer_size
-                + self.max_borrowed_responses_per_pending_response
-                + max_loaned_responses_per_request)
+            .checked_mul(requests_per_client)?
+            .checked_mul(responses_per_request)
     }
 
     /// Returns the request type details of the [`crate::service::Service`].

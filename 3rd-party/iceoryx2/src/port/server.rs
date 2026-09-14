@@ -95,21 +95,21 @@ use core::{fmt::Debug, marker::PhantomData};
 use iceoryx2_bb_concurrency::atomic::AtomicUsize;
 use iceoryx2_bb_concurrency::atomic::Ordering;
 use iceoryx2_bb_concurrency::cell::UnsafeCell;
-use iceoryx2_bb_container::slotmap::SlotMap;
-use iceoryx2_bb_container::vector::polymorphic_vec::*;
+use iceoryx2_bb_container::slotmap::{SlotMap, SlotMapKey};
 use iceoryx2_bb_elementary::{CallbackProgression, cyclic_tagger::CyclicTagger};
 use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_bb_lock_free::mpmc::container::{ContainerHandle, ContainerState};
-use iceoryx2_bb_memory::heap_allocator::HeapAllocator;
 use iceoryx2_bb_posix::unique_system_id::UniqueSystemId;
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
-use iceoryx2_cal::zero_copy_connection::{CHANNEL_STATE_CLOSED, CHANNEL_STATE_OPEN, ChannelId};
+use iceoryx2_cal::zero_copy_connection::{
+    CHANNEL_STATE_CLOSED, CHANNEL_STATE_OPEN, ChannelId, checked_connection_management_size,
+};
 use iceoryx2_log::{fail, warn};
 
-use super::details::data_segment::DataSegment;
+use super::details::data_segment::{DataSegment, StaticSegmentPlanError};
 use super::details::segment_state::SegmentState;
 use super::details::sender::{ReceiverDetails, Sender};
 use super::{
@@ -118,7 +118,9 @@ use super::{
         chunk::Chunk,
         chunk_details::ChunkDetails,
         data_segment::DataSegmentType,
-        receiver::{Receiver, SenderDetails},
+        receiver::{
+            Receiver, RetentionPolicy, SenderDetails, try_alloc_empty_table, try_alloc_table,
+        },
     },
     update_connections::ConnectionFailure,
 };
@@ -216,6 +218,8 @@ impl<Service: service::Service> SharedServerState<Service> {
                     ReceiverDetails {
                         port_id: details.client_id.value(),
                         buffer_size: details.response_buffer_size,
+                        // RR R2：该 client override 后的真实 N（= 其 response channel 数）。
+                        number_of_channels: details.number_of_requests,
                     },
                     |_| {},
                 );
@@ -246,9 +250,9 @@ pub struct Server<
     ResponsePayload: Debug + ZeroCopySend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > {
-    shared_state: Service::ArcThreadSafetyPolicy<SharedServerState<Service>>,
-    max_loaned_responses_per_request: usize,
-    enable_fire_and_forget: bool,
+    pub(crate) shared_state: Service::ArcThreadSafetyPolicy<SharedServerState<Service>>,
+    pub(crate) max_loaned_responses_per_request: usize,
+    pub(crate) enable_fire_and_forget: bool,
     _request_payload: PhantomData<RequestPayload>,
     _request_header: PhantomData<RequestHeader>,
     _response_payload: PhantomData<ResponsePayload>,
@@ -346,20 +350,34 @@ impl<
         };
 
         let static_config = server_factory.factory.static_config();
-        let number_of_requests_per_client =
-            unsafe { service.static_config().messaging_pattern.request_response() }
-                .required_amount_of_chunks_per_client_data_segment(
-                    static_config.max_loaned_requests,
-                );
-
-        let number_of_responses =
-            unsafe { service.static_config().messaging_pattern.request_response() }
-                .required_amount_of_chunks_per_server_data_segment(
-                    server_factory.config.max_loaned_responses_per_request,
-                );
+        let rr_config = unsafe { service.static_config().messaging_pattern.request_response() };
+        // RR R2：全部派生容量受检计算；override 有副作用，只调用一次，其结果统一使用。
+        let Some(number_of_requests_per_client) = rr_config
+            .required_amount_of_chunks_per_client_data_segment(static_config.max_loaned_requests)
+        else {
+            fail!(from origin, with ServerCreateError::CapacityOverflow,
+                "{msg} since the required number of request chunks per client overflows.");
+        };
+        let Some(worst_case_number_of_responses) = rr_config
+            .required_amount_of_chunks_per_server_data_segment(
+                server_factory.config.max_loaned_responses_per_request,
+            )
+        else {
+            fail!(from origin, with ServerCreateError::CapacityOverflow,
+                "{msg} since the required number of response chunks overflows.");
+        };
         let number_of_responses = server_factory
             .preallocated_number_of_responses_override
-            .call(number_of_responses);
+            .call(worst_case_number_of_responses);
+        let Some(sender_max_borrowed_samples) = server_factory
+            .config
+            .max_loaned_responses_per_request
+            .checked_mul(static_config.max_active_requests_per_client)
+            .and_then(|v| v.checked_mul(static_config.max_clients))
+        else {
+            fail!(from origin, with ServerCreateError::CapacityOverflow,
+                "{msg} since the maximum number of loaned responses overflows.");
+        };
 
         let client_list = &service.dynamic_storage().get().request_response().clients;
 
@@ -370,38 +388,11 @@ impl<
             .request_response
             .server_expired_connection_buffer;
         let number_of_active_connections = client_list.capacity();
-        let number_of_connections =
-            number_of_to_be_removed_connections + number_of_active_connections;
-
-        let request_receiver = Receiver {
-            connections: PolymorphicVec::from_fn(
-                HeapAllocator::global(),
-                number_of_active_connections,
-                |_| UnsafeCell::new(None),
-            )
-            .expect("Heap allocator provides memory."),
-            receiver_port_id: server_id.value(),
-            service_state: service.clone(),
-            message_type_details: static_config.request_message_type_details,
-            receiver_max_borrowed_samples: static_config.max_active_requests_per_client,
-            enable_safe_overflow: static_config.enable_safe_overflow_for_requests,
-            buffer_size: static_config.max_active_requests_per_client,
-            tagger: CyclicTagger::new(),
-            to_be_removed_connections: if static_config.enable_fire_and_forget_requests {
-                Some(UnsafeCell::new(
-                    PolymorphicVec::new(
-                        HeapAllocator::global(),
-                        number_of_to_be_removed_connections,
-                    )
-                    .expect("Heap allocator provides memory."),
-                ))
-            } else {
-                None
-            },
-            degradation_handler: server_factory.request_degradation_handler,
-            number_of_channels: 1,
-            connection_storage: UnsafeCell::new(SlotMap::new(number_of_connections)),
-            initial_channel_state: CHANNEL_STATE_OPEN,
+        let Some(number_of_connections) =
+            number_of_to_be_removed_connections.checked_add(number_of_active_connections)
+        else {
+            fail!(from origin, with ServerCreateError::CapacityOverflow,
+                "{msg} since the number of request connections overflows.");
         };
 
         let global_config = service.shared_node().config();
@@ -411,9 +402,94 @@ impl<
         let segment_name = data_segment_name(server_id.value());
         let max_number_of_segments =
             DataSegment::<Service>::max_number_of_segments(data_segment_type);
-        let sample_layout = static_config
+        let Some(sample_layout) = static_config
             .response_message_type_details
-            .sample_layout(server_factory.config.initial_max_slice_len);
+            .checked_sample_layout(server_factory.config.initial_max_slice_len)
+        else {
+            fail!(from origin, with ServerCreateError::CapacityOverflow,
+                "{msg} since the response sample layout for {} elements overflows.",
+                server_factory.config.initial_max_slice_len);
+        };
+        if data_segment_type == DataSegmentType::Static {
+            match DataSegment::<Service>::checked_static_segment_plan(
+                sample_layout,
+                number_of_responses,
+            ) {
+                Ok(_) => (),
+                Err(StaticSegmentPlanError::Overflow) => {
+                    fail!(from origin, with ServerCreateError::CapacityOverflow,
+                        "{msg} since the static data segment plan for {} responses overflows.",
+                        number_of_responses);
+                }
+                Err(StaticSegmentPlanError::ExceedsMaxSupportedChunks) => {
+                    fail!(from origin, with ServerCreateError::ExceedsMaxSupportedChunks,
+                        "{msg} since {} responses exceed the number of pool buckets supported by the allocator.",
+                        number_of_responses);
+                }
+            }
+        }
+        // RR R2：本端已知的 CAL 连接管理区容量受检——回复连接（本端 sender：samples = 实际 M、
+        // segments 已知；channels 取决于各 peer client override 后的真实 N，创建期未知，只以合法下界
+        // 1 预检，worst-case 值仅作 `Connection::new` 的上界）与请求连接的本端下界（peer 的
+        // samples / segments 只有匹配后才知道）；真实 peer 参数到位后由 CAL builder 在连接创建前完整受检。
+        if checked_connection_management_size(
+            static_config.max_response_buffer_size,
+            static_config.max_borrowed_responses_per_pending_response,
+            number_of_responses,
+            max_number_of_segments,
+            1,
+        )
+        .is_none()
+            || checked_connection_management_size(
+                static_config.max_active_requests_per_client,
+                static_config.max_active_requests_per_client,
+                1,
+                1,
+                1,
+            )
+            .is_none()
+        {
+            fail!(from origin, with ServerCreateError::CapacityOverflow,
+                "{msg} since the zero copy connection management memory for the configured buffer / borrow / channel counts overflows.");
+        }
+
+        // 固定容量本地表：共享资源创建前可失败预留，typed 返回。
+        let Some(receiver_connections) =
+            try_alloc_table(number_of_active_connections, |_| UnsafeCell::new(None))
+        else {
+            fail!(from origin, with ServerCreateError::InsufficientMemory,
+                "{msg} since the request connection table could not be allocated.");
+        };
+        let to_be_removed_connections = if static_config.enable_fire_and_forget_requests {
+            let Some(table) =
+                try_alloc_empty_table::<SlotMapKey>(number_of_to_be_removed_connections)
+            else {
+                fail!(from origin, with ServerCreateError::InsufficientMemory,
+                    "{msg} since the expired connection buffer could not be allocated.");
+            };
+            Some(UnsafeCell::new(table))
+        } else {
+            None
+        };
+
+        let request_receiver = Receiver {
+            connections: receiver_connections,
+            receiver_port_id: server_id.value(),
+            service_state: service.clone(),
+            message_type_details: static_config.request_message_type_details,
+            receiver_max_borrowed_samples: static_config.max_active_requests_per_client,
+            enable_safe_overflow: static_config.enable_safe_overflow_for_requests,
+            buffer_size: static_config.max_active_requests_per_client,
+            tagger: CyclicTagger::new(),
+            to_be_removed_connections,
+            degradation_handler: server_factory.request_degradation_handler,
+            number_of_channels: 1,
+            connection_storage: UnsafeCell::new(SlotMap::new(number_of_connections)),
+            initial_channel_state: CHANNEL_STATE_OPEN,
+            retention: RetentionPolicy::Standard,
+            retained: None,
+        };
+
         let data_segment = match data_segment_type {
             DataSegmentType::Static => DataSegment::<Service>::create_static_segment(
                 &segment_name,
@@ -453,9 +529,7 @@ impl<
             receiver_max_buffer_size: static_config.max_response_buffer_size,
             receiver_max_borrowed_samples: static_config
                 .max_borrowed_responses_per_pending_response,
-            sender_max_borrowed_samples: server_factory.config.max_loaned_responses_per_request
-                * static_config.max_active_requests_per_client
-                * static_config.max_clients,
+            sender_max_borrowed_samples,
             enable_safe_overflow: static_config.enable_safe_overflow_for_responses,
             number_of_samples: number_of_responses,
             max_number_of_segments,
@@ -571,7 +645,7 @@ impl<
             .backpressure_strategy
     }
 
-    fn receive_impl(&self) -> Result<Option<(ChunkDetails, Chunk)>, ReceiveError> {
+    pub(crate) fn receive_impl(&self) -> Result<Option<(ChunkDetails, Chunk)>, ReceiveError> {
         let shared_state = self.shared_state.lock();
         if let Err(e) = shared_state.update_connections() {
             fail!(from self,
@@ -580,6 +654,26 @@ impl<
         }
 
         shared_state.request_receiver.receive(REQUEST_CHANNEL_ID)
+    }
+
+    /// RR R2：公用 Active 创建入口的身份校验——真实接收连接（`ChunkDetails.origin`）必须等于
+    /// header 里的 client id；不一致则把该请求归还给原连接并返回 false。
+    pub(crate) fn origin_matches_header(
+        &self,
+        details: &ChunkDetails,
+        header: &service::header::request_response::RequestHeader,
+    ) -> bool {
+        if details.origin == header.client_id.value() {
+            return true;
+        }
+        warn!(from self,
+            "Dropping request whose header client id ({:?}) does not match the connection it arrived from ({:?}).",
+            header.client_id.value(), details.origin);
+        self.shared_state
+            .lock()
+            .request_receiver
+            .release_offset(details, REQUEST_CHANNEL_ID);
+        false
     }
 }
 
@@ -600,6 +694,7 @@ impl<
     {
         let header =
             unsafe { &*(chunk.header as *const service::header::request_response::RequestHeader) };
+        let client_port_id = details.origin;
 
         ActiveRequest {
             details,
@@ -608,6 +703,7 @@ impl<
             request_id: header.request_id,
             channel_id: header.channel_id,
             connection_id,
+            client_port_id,
             shared_state: self.shared_state.clone(),
             ptr: unsafe {
                 RawSample::new_unchecked(
@@ -665,11 +761,17 @@ impl<
                         &*(chunk.header as *const service::header::request_response::RequestHeader)
                     };
 
+                    // RR R2：真实接收连接身份必须与 header 一致，否则释放该请求并跳过，
+                    // 绝不把错代身份带入 Active。
+                    if !self.origin_matches_header(&details, header) {
+                        continue;
+                    }
+
                     if let Some(connection_id) = self
                         .shared_state
                         .lock()
                         .response_sender
-                        .get_connection_id_of(header.client_id.value())
+                        .get_connection_id_of(details.origin)
                     {
                         let active_request =
                             self.create_active_request(details, chunk, connection_id);
@@ -709,6 +811,7 @@ impl<
     {
         let header =
             unsafe { &*(chunk.header as *const service::header::request_response::RequestHeader) };
+        let client_port_id = details.origin;
 
         ActiveRequest {
             details,
@@ -717,6 +820,7 @@ impl<
             request_id: header.request_id,
             channel_id: header.channel_id,
             connection_id,
+            client_port_id,
             shared_state: self.shared_state.clone(),
             ptr: unsafe {
                 RawSample::new_slice_unchecked(
@@ -782,11 +886,15 @@ impl<
                         &*(chunk.header as *const service::header::request_response::RequestHeader)
                     };
 
+                    if !self.origin_matches_header(&details, header) {
+                        continue;
+                    }
+
                     if let Some(connection_id) = self
                         .shared_state
                         .lock()
                         .response_sender
-                        .get_connection_id_of(header.client_id.value())
+                        .get_connection_id_of(details.origin)
                     {
                         let active_request = self.create_active_request(
                             details,
@@ -856,9 +964,13 @@ impl<
                     let number_of_bytes =
                         number_of_elements as usize * shared_state.request_receiver.payload_size();
 
+                    if !self.origin_matches_header(&details, header) {
+                        continue;
+                    }
+
                     if let Some(connection_id) = shared_state
                         .response_sender
-                        .get_connection_id_of(header.client_id.value())
+                        .get_connection_id_of(details.origin)
                     {
                         let active_request = self.create_active_request(
                             details,

@@ -100,7 +100,10 @@ pub struct ActiveRequest<
     pub(crate) details: ChunkDetails,
     pub(crate) request_id: RequestId,
     pub(crate) channel_id: ChannelId,
+    /// 原 response 连接 index，仅作提示；真实目标以 `client_port_id` 精确定位（RR R2）。
     pub(crate) connection_id: usize,
+    /// RR R2：来自真实接收连接（`ChunkDetails.origin`）的完整原 client id。
+    pub(crate) client_port_id: u128,
     pub(crate) _response_payload: PhantomData<ResponsePayload>,
     pub(crate) _response_header: PhantomData<ResponseHeader>,
 }
@@ -198,11 +201,16 @@ impl<
 {
     fn finish(&self) {
         if self.connection_id != INVALID_CONNECTION_ID {
-            self.shared_state.lock().response_sender.close_channel(
-                self.channel_id,
-                self.connection_id,
-                self.request_id,
-            );
+            let shared_state = self.shared_state.lock();
+            // RR R2：按完整原 client id 精确定位，index 只是提示；原 client 已不在则不关闭新代。
+            if let Some(index) = shared_state
+                .response_sender
+                .resolve_connection(self.connection_id, self.client_port_id)
+            {
+                shared_state
+                    .response_sender
+                    .close_channel(self.channel_id, index, self.request_id);
+            }
         }
     }
 
@@ -212,10 +220,18 @@ impl<
     /// [`ResponseMut`] will be sent.
     pub fn has_disconnect_hint(&self) -> bool {
         if self.connection_id != INVALID_CONNECTION_ID {
-            self.shared_state
-                .lock()
+            let shared_state = self.shared_state.lock();
+            match shared_state
                 .response_sender
-                .has_disconnect_hint(self.channel_id, self.connection_id, self.request_id)
+                .resolve_connection(self.connection_id, self.client_port_id)
+            {
+                Some(index) => shared_state.response_sender.has_disconnect_hint(
+                    self.channel_id,
+                    index,
+                    self.request_id,
+                ),
+                None => false,
+            }
         } else {
             false
         }
@@ -226,11 +242,18 @@ impl<
     /// [`Client`](crate::port::client::Client) no longer receives the [`ResponseMut`].
     pub fn is_connected(&self) -> bool {
         if self.connection_id != INVALID_CONNECTION_ID {
-            self.shared_state.lock().response_sender.has_channel_state(
-                self.channel_id,
-                self.connection_id,
-                self.request_id,
-            )
+            let shared_state = self.shared_state.lock();
+            match shared_state
+                .response_sender
+                .resolve_connection(self.connection_id, self.client_port_id)
+            {
+                Some(index) => shared_state.response_sender.has_channel_state(
+                    self.channel_id,
+                    index,
+                    self.request_id,
+                ),
+                None => false,
+            }
         } else {
             false
         }
@@ -361,6 +384,7 @@ impl<
                 offset_to_chunk: chunk.offset,
                 channel_id: self.channel_id,
                 connection_id: self.connection_id,
+                client_port_id: self.client_port_id,
                 sample_size: chunk.size,
                 _response_payload: PhantomData,
                 _response_header: PhantomData,
@@ -615,6 +639,7 @@ impl<
                 offset_to_chunk: chunk.offset,
                 channel_id: self.channel_id,
                 connection_id: self.connection_id,
+                client_port_id: self.client_port_id,
                 sample_size: chunk.size,
                 _response_payload: PhantomData,
                 _response_header: PhantomData,

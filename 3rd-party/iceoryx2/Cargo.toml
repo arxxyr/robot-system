@@ -41,6 +41,8 @@ default = [
     "console",
 ]
 dev_permissions = ["iceoryx2-cal/dev_permissions"]
+# RR R2：默认关闭的真实故障夹具转发（只供指定库内测试门）。
+r2-test-fixtures = ["iceoryx2-cal/r2-test-fixtures"]
 log = ["iceoryx2-bb-loggers/log"]
 std = [
     "iceoryx2-log/std",

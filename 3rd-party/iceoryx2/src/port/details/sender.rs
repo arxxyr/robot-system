@@ -25,9 +25,9 @@ use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_cal::named_concept::NamedConceptBuilder;
 use iceoryx2_cal::shm_allocator::{AllocationError, PointerOffset, ShmAllocationError};
 use iceoryx2_cal::zero_copy_connection::{
-    BackpressureToReceiverAction, ChannelId, ChannelState, ZeroCopyConnection,
-    ZeroCopyConnectionBuilder, ZeroCopyCreationError, ZeroCopyPortDetails, ZeroCopySendError,
-    ZeroCopySender,
+    BackpressureToReceiverAction, ChannelId, ChannelState, StrictChannelStatus, TrySendReceipt,
+    ZeroCopyConnection, ZeroCopyConnectionBuilder, ZeroCopyCreationError, ZeroCopyPortDetails,
+    ZeroCopySendError, ZeroCopySender,
 };
 use iceoryx2_log::{error, fail, fatal_panic, warn};
 
@@ -50,12 +50,26 @@ use super::segment_state::SegmentState;
 pub(crate) struct ReceiverDetails {
     pub(crate) port_id: u128,
     pub(crate) buffer_size: usize,
+    /// RR R2：该 receiver 端点的真实 channel 数（RR server 侧 = 原 client override 后真实 N；
+    /// pub/sub 与请求侧固定 1）。连接按每个原 receiver 的真实数创建，回收 / 查询循环也用它。
+    pub(crate) number_of_channels: usize,
+}
+
+/// RR R2：精确目标定位失败的原因（完整原 receiver id 不再位于任何连接）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExactTargetError {
+    /// 原 receiver id 已不在任何连接中。
+    TargetGone,
+    /// 提示 index 上现在是另一个 receiver，且原 id 也不在其它 index 上。
+    TargetChanged,
 }
 
 #[derive(Debug)]
 pub(crate) struct Connection<Service: service::Service> {
     pub(crate) sender: <Service::Connection as ZeroCopyConnection>::Sender,
     pub(crate) receiver_port_id: u128,
+    /// RR R2：本连接真实建立的 channel 数（≤ Sender 的全局上界）。
+    pub(crate) number_of_channels: usize,
     tag: Tag,
 }
 
@@ -82,6 +96,7 @@ impl<Service: service::Service> Connection<Service> {
         receiver_port_id: u128,
         buffer_size: usize,
         number_of_samples: usize,
+        number_of_channels: usize,
         tag: Tag,
         initial_channel_state: ChannelState,
     ) -> Result<Self, ZeroCopyCreationError> {
@@ -94,6 +109,13 @@ impl<Service: service::Service> Connection<Service> {
                 "{} since the receiver buffer size {} exceeds the max receiver buffer size of {}.",
                 msg, buffer_size, this.receiver_max_buffer_size);
         }
+        // RR R2：每个原 receiver 的真实 channel 数不得超过本 Sender 的全局上界（server 侧 =
+        // 未 override 的最坏 N），否则 typed 拒绝而非以全局值覆盖。
+        if number_of_channels == 0 || this.number_of_channels < number_of_channels {
+            fail!(from this, with ZeroCopyCreationError::IncompatibleNumberOfChannels,
+                "{} since the receiver requires {} channels but the sender supports at most {}.",
+                msg, number_of_channels, this.number_of_channels);
+        }
 
         let sender = fail!(from this, when <Service::Connection as ZeroCopyConnection>::
                         Builder::new( &connection_name(this.sender_port_id, receiver_port_id))
@@ -104,7 +126,7 @@ impl<Service: service::Service> Connection<Service> {
                                 .number_of_samples_per_segment(number_of_samples)
                                 .max_supported_shared_memory_segments(this.max_number_of_segments)
                                 .initial_channel_state(initial_channel_state)
-                                .number_of_channels(this.number_of_channels)
+                                .number_of_channels(number_of_channels)
                                 .timeout(this.shared_node.config().global.creation_timeout)
                                 .create_sender(),
                         "{}.", msg);
@@ -112,6 +134,7 @@ impl<Service: service::Service> Connection<Service> {
         Ok(Self {
             sender,
             receiver_port_id,
+            number_of_channels,
             tag,
         })
     }
@@ -318,6 +341,88 @@ impl<Service: service::Service> Sender<Service> {
         Ok(number_of_recipients)
     }
 
+    /// RR R2：按完整原 receiver id 精确定位连接；`hint` 只是原 index 提示，不匹配时重新查找。
+    pub(crate) fn resolve_connection(&self, hint: usize, receiver_port_id: u128) -> Option<usize> {
+        if hint < self.len() {
+            if let Some(connection) = self.get(hint) {
+                if connection.receiver_port_id == receiver_port_id {
+                    return Some(hint);
+                }
+            }
+        }
+        self.get_connection_id_of(receiver_port_id)
+    }
+
+    /// RR R2：完整 receiver id 已不在任何连接时的 typed 原因：提示 index 上现为另一 receiver →
+    /// `TargetChanged`，否则 `TargetGone`。
+    pub(crate) fn exact_target_error(
+        &self,
+        hint: usize,
+        receiver_port_id: u128,
+    ) -> ExactTargetError {
+        if hint < self.len() {
+            if let Some(connection) = self.get(hint) {
+                if connection.receiver_port_id != receiver_port_id {
+                    return ExactTargetError::TargetChanged;
+                }
+            }
+        }
+        ExactTargetError::TargetGone
+    }
+
+    /// RR R2：只向精确选中的连接投递一次（真实唯一 push 回执）。`Enqueued` 时登记本地
+    /// sample 引用一次；溢出真实回收的旧件才释放。不进入多目标循环，不把 `Ok(0)` 当投递。
+    pub(crate) fn deliver_one_observed(
+        &self,
+        index: usize,
+        receiver_port_id: u128,
+        offset: PointerOffset,
+        sample_size: usize,
+        channel_id: ChannelId,
+    ) -> Result<TrySendReceipt, ExactTargetError> {
+        self.retrieve_returned_samples();
+        if index >= self.len() {
+            return Err(ExactTargetError::TargetGone);
+        }
+        let connection = match self.get(index) {
+            Some(connection) if connection.receiver_port_id == receiver_port_id => connection,
+            Some(_) => return Err(ExactTargetError::TargetChanged),
+            None => return Err(ExactTargetError::TargetGone),
+        };
+        let receipt = connection
+            .sender
+            .try_send_observed(offset, sample_size, channel_id);
+        if let TrySendReceipt::Enqueued {
+            reclaimed_overflow, ..
+        } = receipt
+        {
+            self.borrow_sample(offset);
+            if let Some(old) = reclaimed_overflow {
+                self.release_sample(old);
+            }
+        }
+        Ok(receipt)
+    }
+
+    /// RR R2：strict 三态查询（精确 id；连接缺失即 Unknown）。
+    pub(crate) fn strict_channel_status_by_id(
+        &self,
+        channel_id: ChannelId,
+        hint: usize,
+        receiver_port_id: u128,
+        request_id: ChannelState,
+    ) -> StrictChannelStatus {
+        match self.resolve_connection(hint, receiver_port_id) {
+            Some(index) => match self.get(index) {
+                Some(connection) => connection
+                    .sender
+                    .strict_channel_status(channel_id, request_id),
+                None => StrictChannelStatus::Unknown,
+            },
+            None => StrictChannelStatus::Unknown,
+        }
+    }
+
     pub(crate) fn has_disconnect_hint(
         &self,
         channel_id: ChannelId,
@@ -426,6 +531,7 @@ impl<Service: service::Service> Sender<Service> {
             receiver_details.port_id,
             receiver_details.buffer_size,
             self.number_of_samples,
+            receiver_details.number_of_channels,
             self.tagger.create_tag(),
             self.initial_channel_state,
         )?);
@@ -477,6 +583,33 @@ impl<Service: service::Service> Sender<Service> {
         ))
     }
 
+    /// 仅测试：按完整 receiver id 借用原 CAL sender（只读定位，不改状态）。
+    #[cfg(test)]
+    pub(crate) fn cal_sender_for_test(
+        &self,
+        receiver_port_id: u128,
+    ) -> Option<&<Service::Connection as ZeroCopyConnection>::Sender> {
+        let index = self.get_connection_id_of(receiver_port_id)?;
+        self.get(index).as_ref().map(|c| &c.sender)
+    }
+
+    /// 仅测试：到某完整 receiver id 的原 CAL 连接是否两端都已登记（`is_connected`）。
+    #[cfg(test)]
+    pub(crate) fn connection_is_connected_for_test(&self, receiver_port_id: u128) -> Option<bool> {
+        self.cal_sender_for_test(receiver_port_id)
+            .map(|sender| sender.is_connected())
+    }
+
+    /// 仅测试：本地 sample 引用计数（未曾 borrow 的 sample 为 0）。
+    #[cfg(test)]
+    pub(crate) fn sample_reference_count_for_test(&self, offset: PointerOffset) -> u64 {
+        let segment_state = &self.segment_states[offset.segment_id().value() as usize];
+        if segment_state.payload_size() == 0 {
+            return 0;
+        }
+        segment_state.reference_count(offset.offset())
+    }
+
     pub(crate) fn borrow_sample(&self, offset: PointerOffset) -> (u64, usize) {
         let segment_id = offset.segment_id();
         let segment_state = &self.segment_states[segment_id.value() as usize];
@@ -491,7 +624,8 @@ impl<Service: service::Service> Sender<Service> {
     pub(crate) fn retrieve_returned_samples(&self) {
         for i in 0..self.len() {
             if let Some(connection) = self.get(i) {
-                for channel_id in 0..self.number_of_channels {
+                // RR R2：按该连接真实建立的 channel 数回收，不用 Sender 全局上界。
+                for channel_id in 0..connection.number_of_channels {
                     let id = ChannelId::new(channel_id);
                     loop {
                         match connection.sender.reclaim(id) {

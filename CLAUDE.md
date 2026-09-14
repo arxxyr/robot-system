@@ -28,8 +28,8 @@
            退役等 post-E 生产安全硬化候选闭环（D-BI3 r5：旧栈已 disable
            自启，unit 保留可回滚）。
            当前 = post-E 通信故障硬化 Spec Approved（2026-09-05 round 21，
-           8 项决策全部 ACK）；函数级 Plan Approved，按用户2026-09-09最新分工：
-           root定方案与评审，cc-claude具体开发和测试，各阶段验收通过即提交。
+           8 项决策全部 ACK）；函数级 Plan Approved，按用户2026-09-14最新分工：
+           root定方案与评审，原生子agent具体开发和测试，各阶段验收通过即提交。
            实施状态与证据 = team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md；
            W3生产总装已独立终审及root验收，已提交1338f9d。
            正式round4的31门与All72/72通过。原语阶段与旧失败
@@ -39,10 +39,12 @@
            W4b五例SIGKILL/同目录恢复已通过16门及独立源码/证据验收；
            W4b已提交a2598a5；用户2026-09-14恢复持续推进并确认cc-claude额度重置；
            RR R0来源/构建准备已由cc-claude完成并通过独立评审/root验收；
-           R0已提交cbed745；R1 CAL与同源模型21门通过，独审/root验收，提交后进入R2；
+           R0已提交cbed745；R1 CAL与同源模型验收提交0513a8c；
+           R2 IOX源码/证据独审及root验收通过；本次提交收口R2，下一步R3；
+           R2已由原生开发子agent收口，后续继续原生开发+独立评审，root整合提交；
            RR r3两项遗留方案已ACK，vendor/模型/迁移另包，之后P-E长负载；
            本地验收不代替Orin验证，RR上游可见性/退出保留问题另包修正。
-           前包曾因cc-claude额度耗尽由原生开发；当前已交回cc-claude独占Cargo，
+           当前原生r2_native_developer独占源码与Cargo；CC旧会话及其背景agent已停止，
            root或独立Codex终审；每阶段通过即commit，不push。
            左H1/H3已通过，H2两次FAIL，左断电；S-46 Orin wire4仍FAIL。
            右臂未测；六服务最后已停止，deployable=false，D15 OPEN。

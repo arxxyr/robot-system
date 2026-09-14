@@ -146,7 +146,7 @@ pub mod details {
 
         /// RR R1 仅测试：只读查询某个登记是否存在，不做任何修改（不能用破坏性
         /// `remove_all` 冒只读检查）。
-        #[cfg(test)]
+        #[cfg(any(test, feature = "r2-test-fixtures"))]
         pub(crate) fn contains(&self, value: usize) -> bool {
             self.verify_init("contains");
             debug_assert!(

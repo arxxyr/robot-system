@@ -154,13 +154,58 @@ pub mod details {
             }
         }
 
-        const fn const_memory_size(number_of_samples: usize) -> usize {
-            RelocatableUsedChunkList::const_memory_size(number_of_samples)
-        }
-
         unsafe fn init<T: BaseAllocator>(&mut self, allocator: &T) -> Result<(), AllocationError> {
             unsafe { self.used_chunk_list.init(allocator) }
         }
+    }
+
+    /// RR R2：受检镜像 `SharedManagementData::const_memory_size`（与 builder 同样的 clamp、
+    /// completion = buffer + borrow + 1、`V(T, n) = size_of::<T>() * n + align_of::<T>() − 1`）。
+    /// 任一步溢出、任一内部数组超出 `Layout::array` 表示界或总量超过 `isize::MAX` 均返回 `None`。
+    /// 私有 `Channel` / `SegmentDetails` 布局在此单源，调用方不复制。
+    pub fn checked_connection_management_size(
+        buffer_size: usize,
+        max_borrowed_samples_per_channel: usize,
+        number_of_samples_per_segment: usize,
+        number_of_segments: u8,
+        number_of_channels: usize,
+    ) -> Option<usize> {
+        fn checked_unaligned_mem_size<T>(array_capacity: usize) -> Option<usize> {
+            core::alloc::Layout::array::<T>(array_capacity).ok()?;
+            core::mem::size_of::<T>()
+                .checked_mul(array_capacity)?
+                .checked_add(core::mem::align_of::<T>() - 1)
+        }
+
+        let buffer_size = buffer_size.max(1);
+        let max_borrowed = max_borrowed_samples_per_channel.max(1);
+        let samples = number_of_samples_per_segment.max(1);
+        let channels = number_of_channels.max(1);
+        // 与 builder 的 max_supported_shared_memory_segments 同样 clamp 到至少 1
+        let segments = (number_of_segments as usize).max(1);
+
+        let completion_queue_capacity = buffer_size.checked_add(max_borrowed)?.checked_add(1)?;
+        // safely overflowing index queue 内部按 capacity + 1 分配
+        let submission_queue_slots = buffer_size.checked_add(1)?;
+        let channel_size =
+            checked_unaligned_mem_size::<UnsafeCell<u64>>(completion_queue_capacity)?.checked_add(
+                checked_unaligned_mem_size::<UnsafeCell<u64>>(submission_queue_slots)?,
+            )?;
+        let segments_times_channels = segments.checked_mul(channels)?;
+        let total = channels
+            .checked_mul(channel_size)?
+            .checked_add(checked_unaligned_mem_size::<Channel>(channels)?)?
+            .checked_add(
+                checked_unaligned_mem_size::<iceoryx2_bb_concurrency::atomic::AtomicBool>(samples)?
+                    .checked_mul(segments_times_channels)?,
+            )?
+            .checked_add(checked_unaligned_mem_size::<SegmentDetails>(
+                segments_times_channels,
+            )?)?;
+        if total > isize::MAX as usize {
+            return None;
+        }
+        Some(total)
     }
 
     #[derive(Debug)]
@@ -182,16 +227,6 @@ pub mod details {
                 },
                 state: AtomicU64::new(CHANNEL_STATE_OPEN.0),
             }
-        }
-
-        const fn const_memory_size(
-            submission_queue_capacity: usize,
-            completion_queue_capacity: usize,
-        ) -> usize {
-            RelocatableIndexQueue::const_memory_size(completion_queue_capacity)
-                + RelocatableSafelyOverflowingIndexQueue::const_memory_size(
-                    submission_queue_capacity,
-                )
         }
 
         fn init(&mut self, allocator: &mut BumpAllocator) {
@@ -305,25 +340,6 @@ pub mod details {
             Ok(())
         }
 
-        const fn const_memory_size(
-            submission_queue_capacity: usize,
-            completion_queue_capacity: usize,
-            number_of_samples: usize,
-            number_of_segments: u8,
-            number_of_channels: usize,
-        ) -> usize {
-            let number_of_segments = number_of_segments as usize;
-            number_of_channels
-                * Channel::const_memory_size(submission_queue_capacity, completion_queue_capacity)
-                + RelocatableVec::<Channel>::const_memory_size(number_of_channels)
-                + SegmentDetails::const_memory_size(number_of_samples)
-                    * number_of_segments
-                    * number_of_channels
-                + RelocatableVec::<SegmentDetails>::const_memory_size(
-                    number_of_segments * number_of_channels,
-                )
-        }
-
         unsafe fn init(
             &mut self,
             allocator: &mut BumpAllocator,
@@ -394,15 +410,23 @@ pub mod details {
             &self,
             port_to_register: State,
         ) -> Result<Storage, ZeroCopyCreationError> {
-            let supplementary_size = SharedManagementData::const_memory_size(
-                self.submission_queue_size(),
-                self.completion_queue_size(),
+            let msg = "Failed to acquire underlying shared memory";
+            // RR R2：管理区字节数按受检算式计算，溢出在创建任何共享资源之前 typed 拒绝。
+            let supplementary_size = match checked_connection_management_size(
+                self.buffer_size,
+                self.max_borrowed_samples_per_channel,
                 self.number_of_samples_per_segment,
                 self.number_of_segments,
                 self.number_of_channels,
-            );
-
-            let msg = "Failed to acquire underlying shared memory";
+            ) {
+                Some(size) => size,
+                None => {
+                    fail!(from self, with ZeroCopyCreationError::CapacityOverflow,
+                        "{} since the management memory size for buffer {}, borrowed {}, samples {}, segments {}, channels {} overflows.",
+                        msg, self.buffer_size, self.max_borrowed_samples_per_channel,
+                        self.number_of_samples_per_segment, self.number_of_segments, self.number_of_channels);
+                }
+            };
             let storage = <<Storage as DynamicStorage<SharedManagementData>>::Builder<'_> as NamedConceptBuilder<
             Storage,
         >>::new(&self.name)
@@ -591,6 +615,8 @@ pub mod details {
             Ok(Sender {
                 storage,
                 name: self.name,
+                #[cfg(feature = "r2-test-fixtures")]
+                r2_fixture: R2Fixture::default(),
             })
         }
 
@@ -616,10 +642,98 @@ pub mod details {
         }
     }
 
+    /// RR R2 故障夹具（feature `r2-test-fixtures`）：Sender 进程本地的一次性 overflow 尝试目标；
+    /// 全部原子访问，不进入共享内存。所有权用三态 `state`：`UNARMED` → `ARMING`（CAS 独占安装，
+    /// 写目标字段）→ `ARMED`（Release 发布）；读取或消费先独占目标，避免重装目标的 ABA。
+    #[cfg(feature = "r2-test-fixtures")]
+    #[derive(Debug, Default)]
+    struct R2Fixture {
+        state: AtomicU8,
+        offset: AtomicU64,
+        channel: AtomicUsize,
+        hits: AtomicUsize,
+    }
+
+    #[cfg(feature = "r2-test-fixtures")]
+    impl R2Fixture {
+        const UNARMED: u8 = 0;
+        const ARMING: u8 = 1;
+        const ARMED: u8 = 2;
+
+        /// CAS 独占安装；已装或安装中即拒绝，不覆盖未消费目标。
+        fn arm(&self, ptr: PointerOffset, channel_id: ChannelId) -> Result<(), FixtureArmError> {
+            if self
+                .state
+                .compare_exchange(
+                    Self::UNARMED,
+                    Self::ARMING,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_err()
+            {
+                return Err(FixtureArmError::AlreadyArmed);
+            }
+            self.offset.store(ptr.as_value(), Ordering::Relaxed);
+            self.channel.store(channel_id.value(), Ordering::Relaxed);
+            self.state.store(Self::ARMED, Ordering::Release);
+            Ok(())
+        }
+
+        /// 只读快照：先独占目标，避免读取期间被消费和重新安装。
+        fn armed(&self) -> Option<(PointerOffset, ChannelId)> {
+            if self
+                .state
+                .compare_exchange(
+                    Self::ARMED,
+                    Self::ARMING,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_err()
+            {
+                return None;
+            }
+            let target = (
+                PointerOffset::from_value(self.offset.load(Ordering::Relaxed)),
+                ChannelId::new(self.channel.load(Ordering::Relaxed)),
+            );
+            self.state.store(Self::ARMED, Ordering::Release);
+            Some(target)
+        }
+
+        /// 先独占再匹配；命中才消费并计 hit，否则完整保留原目标。
+        fn consume_if_matches(&self, ptr: PointerOffset, channel_id: ChannelId) -> bool {
+            if self
+                .state
+                .compare_exchange(
+                    Self::ARMED,
+                    Self::ARMING,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_err()
+            {
+                return false;
+            }
+            if self.offset.load(Ordering::Relaxed) != ptr.as_value()
+                || self.channel.load(Ordering::Relaxed) != channel_id.value()
+            {
+                self.state.store(Self::ARMED, Ordering::Release);
+                return false;
+            }
+            self.hits.fetch_add(1, Ordering::Relaxed);
+            self.state.store(Self::UNARMED, Ordering::Release);
+            true
+        }
+    }
+
     #[derive(Debug)]
     pub struct Sender<Storage: DynamicStorage<SharedManagementData>> {
         storage: Storage,
         name: FileName,
+        #[cfg(feature = "r2-test-fixtures")]
+        r2_fixture: R2Fixture,
     }
 
     impl<Storage: DynamicStorage<SharedManagementData>> Abandonable for Sender<Storage> {
@@ -692,7 +806,15 @@ pub mod details {
                     .submission_queue
                     .is_full()
             {
-                return TrySendReceipt::NotEnqueued(ZeroCopySendError::ReceiveBufferFull);
+                // RR R2 故障夹具：只有匹配的一次性目标才放过 publication 前拒绝，随后仍走同一
+                // push / 真实挤出 / 真实旧 used 移除分类；生产构建无此分支。
+                #[cfg(feature = "r2-test-fixtures")]
+                let injected = self.r2_fixture.consume_if_matches(ptr, channel_id);
+                #[cfg(not(feature = "r2-test-fixtures"))]
+                let injected = false;
+                if !injected {
+                    return TrySendReceipt::NotEnqueued(ZeroCopySendError::ReceiveBufferFull);
+                }
             }
 
             let segment_id = ptr.segment_id().value() as usize;
@@ -773,6 +895,41 @@ pub mod details {
                 storage.get_segment_details(ptr.segment_id().value() as usize, channel_id.value());
             let index = ptr.offset() / segment_details.sample_size.load(Ordering::Relaxed);
             segment_details.used_chunk_list.contains(index)
+        }
+    }
+
+    #[cfg(feature = "r2-test-fixtures")]
+    impl<Storage: DynamicStorage<SharedManagementData>> Sender<Storage> {
+        /// 夹具目标受检（在任何索引 / 除法之前）：channel / segment 范围、sample_size 已知、
+        /// offset 对齐、used 索引在容量内。合法即返回该 (segment, channel) 的 SegmentDetails 与索引。
+        fn r2_fixture_target(
+            &self,
+            ptr: PointerOffset,
+            channel_id: ChannelId,
+        ) -> Result<(&SegmentDetails, usize), FixtureTargetError> {
+            let storage = self.storage.get();
+            if channel_id.value() >= storage.channels.capacity() {
+                return Err(FixtureTargetError::ChannelOutOfRange);
+            }
+            let segment_id = ptr.segment_id().value() as usize;
+            if segment_id >= storage.number_of_segments as usize
+                || segment_id >= storage.segment_details.len()
+            {
+                return Err(FixtureTargetError::SegmentOutOfRange);
+            }
+            let segment_details = storage.get_segment_details(segment_id, channel_id.value());
+            let sample_size = segment_details.sample_size.load(Ordering::Relaxed);
+            if sample_size == 0 {
+                return Err(FixtureTargetError::SampleSizeUnknown);
+            }
+            if ptr.offset() % sample_size != 0 {
+                return Err(FixtureTargetError::OffsetNotAligned);
+            }
+            let index = ptr.offset() / sample_size;
+            if index >= segment_details.used_chunk_list.capacity() {
+                return Err(FixtureTargetError::IndexOutOfRange);
+            }
+            Ok((segment_details, index))
         }
     }
 
@@ -950,6 +1107,48 @@ pub mod details {
                     ))
                 });
             }
+        }
+
+        #[cfg(feature = "r2-test-fixtures")]
+        fn r2_fixture_forget_used_offset(
+            &self,
+            ptr: PointerOffset,
+            channel_id: ChannelId,
+        ) -> Result<bool, FixtureTargetError> {
+            let (segment_details, index) = self.r2_fixture_target(ptr, channel_id)?;
+            Ok(segment_details.used_chunk_list.remove(index))
+        }
+
+        #[cfg(feature = "r2-test-fixtures")]
+        fn r2_fixture_is_used(
+            &self,
+            ptr: PointerOffset,
+            channel_id: ChannelId,
+        ) -> Result<bool, FixtureTargetError> {
+            let (segment_details, index) = self.r2_fixture_target(ptr, channel_id)?;
+            Ok(segment_details.used_chunk_list.contains(index))
+        }
+
+        #[cfg(feature = "r2-test-fixtures")]
+        fn r2_fixture_arm_one_overflow_attempt(
+            &self,
+            ptr: PointerOffset,
+            channel_id: ChannelId,
+        ) -> Result<(), FixtureArmError> {
+            if let Err(e) = self.r2_fixture_target(ptr, channel_id) {
+                return Err(FixtureArmError::InvalidTarget(e));
+            }
+            self.r2_fixture.arm(ptr, channel_id)
+        }
+
+        #[cfg(feature = "r2-test-fixtures")]
+        fn r2_fixture_armed(&self) -> Option<(PointerOffset, ChannelId)> {
+            self.r2_fixture.armed()
+        }
+
+        #[cfg(feature = "r2-test-fixtures")]
+        fn r2_fixture_hits(&self) -> usize {
+            self.r2_fixture.hits.load(Ordering::Relaxed)
         }
     }
 

@@ -159,6 +159,34 @@ impl MessageTypeDetails {
         }
     }
 
+    /// RR R2：受检版本——任一步算术溢出、对齐非法或 `Layout` 非法均返回 `None`。构造期以真实
+    /// 最大切片长度调用一次；之后 loan 期的 `sample_layout` 只会用不大于该长度的参数（单调），
+    /// 不再溢出。
+    pub(crate) fn checked_sample_layout(&self, number_of_elements: usize) -> Option<Layout> {
+        fn checked_align(value: usize, alignment: usize) -> Option<usize> {
+            if alignment == 0 {
+                return None;
+            }
+            let remainder = value % alignment;
+            if remainder == 0 {
+                Some(value)
+            } else {
+                value.checked_add(alignment - remainder)
+            }
+        }
+
+        let payload_bytes = self.payload.size.checked_mul(number_of_elements)?;
+        let unaligned = self
+            .header
+            .size
+            .checked_add(self.user_header.size)?
+            .checked_add(self.user_header.alignment.checked_sub(1)?)?
+            .checked_add(payload_bytes)?
+            .checked_add(self.payload.alignment.checked_sub(1)?)?;
+        let size = checked_align(unaligned, self.header.alignment)?;
+        Layout::from_size_align(size, self.header.alignment).ok()
+    }
+
     pub(crate) fn is_compatible_to(&self, rhs: &Self) -> bool {
         self.header == rhs.header
             && self.user_header.type_name == rhs.user_header.type_name

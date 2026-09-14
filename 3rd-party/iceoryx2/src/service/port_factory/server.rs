@@ -72,6 +72,12 @@ pub enum ServerCreateError {
     FailedToDeployThreadsafetyPolicy,
     /// The tracking port tag, required for cleanup, could not be created.
     UnableToCreatePortTag,
+    /// RR R2：按 override 后真实容量计算 chunk 数、连接数、样本布局或数据段字节数时算术溢出。
+    CapacityOverflow,
+    /// RR R2：固定容量的本地表（连接表 / 过期缓冲 / 保留表 / 固定槽）无法分配。
+    InsufficientMemory,
+    /// RR R2：数据段 chunk 数超过底层池分配器可表示的 bucket 数（`UniqueIndexSet` 24 位界）。
+    ExceedsMaxSupportedChunks,
 }
 
 impl core::fmt::Display for ServerCreateError {
@@ -305,6 +311,23 @@ impl<
         Ok(fail!(from origin,
               when Server::new(self),
               "Failed to create new Server port."))
+    }
+
+    /// RR R2：受检的严格唯一回复入口。真核 `max_servers == 1`、Static 分配、DiscardData、
+    /// 无自定义 backpressure handler；每项单独 typed 拒绝。普通 `create()` 不变。
+    pub fn create_single_reply_strict(
+        self,
+    ) -> Result<
+        crate::strict::StrictServer<
+            Service,
+            RequestPayload,
+            RequestHeader,
+            ResponsePayload,
+            ResponseHeader,
+        >,
+        crate::strict::StrictCreateError,
+    > {
+        crate::strict::StrictServer::new(self)
     }
 }
 

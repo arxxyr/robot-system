@@ -216,3 +216,19 @@ impl<Header, UserHeader, Payload: ?Sized> fmt::Debug for RawSampleMut<Header, Us
         )
     }
 }
+
+// RR R2（robot-system 本地补丁）：按字段转移所有权时读取原始指针——只用于把已初始化的
+// `MaybeUninit` 载荷指针转换为已初始化类型的指针，不对外层泛型结构整体位拷贝。
+impl<Header, UserHeader, Payload: ?Sized> RawSampleMut<Header, UserHeader, Payload> {
+    pub(crate) fn header_ptr(&self) -> *mut Header {
+        self.header
+    }
+
+    pub(crate) fn user_header_ptr(&self) -> *mut UserHeader {
+        self.user_header
+    }
+
+    pub(crate) fn payload_ptr(&self) -> *mut Payload {
+        self.payload
+    }
+}

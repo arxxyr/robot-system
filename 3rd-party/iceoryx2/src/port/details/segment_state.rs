@@ -53,6 +53,12 @@ impl SegmentState {
             .fetch_add(1, Ordering::Relaxed)
     }
 
+    /// 仅测试：当前引用计数。
+    #[cfg(test)]
+    pub(crate) fn reference_count(&self, distance_to_chunk: usize) -> u64 {
+        self.sample_reference_counter[self.sample_index(distance_to_chunk)].load(Ordering::Relaxed)
+    }
+
     pub(crate) fn release_sample(&self, distance_to_chunk: usize) -> u64 {
         self.sample_reference_counter[self.sample_index(distance_to_chunk)]
             .fetch_sub(1, Ordering::Relaxed)

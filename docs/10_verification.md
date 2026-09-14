@@ -9,6 +9,23 @@
 
 ---
 
+## 2026-09-15 · RR R2 严格请求原件与真实故障验证
+
+基线0513a8c，原生开发、独立源码/证据及root本地验收完成，正式round1连续26门全部exit0；
+43项编译/来源输入首末一致，62份真实测试产物记录非零与SHA。
+默认IOX42/0/1 = 新31主例+3 pubsub父例+原8例；feature45/0/1增加3真实故障例。
+ignored为父门专用子进程入口。CAL默认和feature分别45/0/0，模型6/0/0；
+workspace2207/0/9、S0hook656/0/0，重叠分组不合计覆盖，原ignored保留。
+真实prepare拒绝保原状态、post-push issue保原Pending、两种completion失败Drop顺序、
+Unknown/收包错误保残件、不同N、原完整ID/绝对key和字段析构顺序均有非零门。
+先cargo fmt再根Clippy，两组额外root及两vendor默认/feature库内cfg(test) Clippy均零警告；
+CAL no_std、同源模型两负对照、build/timings、tree/deny/metadata均通过。
+首summary误读Cargo包ID后只修解析，原FAIL与原日志保留，源码/锁/runner未变。
+根14/嵌套2/模型1成员保持；normal-only56包、normal+build80包均与R1身份一致，
+fixture/Loom不入生产图。证据入口rr_r2/result.json、handoff.md、两项独审及root_acceptance.md。
+未跑缺失tests_common的上游独立集成目标；strict清理不冒SIGKILL，真死亡仅pubsub。
+R3本方迁移、R4双环境、Orin/硬件与P-E未执行，D15 OPEN、deployable=false。
+
 ## 2026-09-14 · RR R1 CAL 与同源内存模型验收
 
 基线cbed745；cc-claude开发自测、独立Codex分审CAL与模型/依赖图，root验收。
@@ -753,6 +770,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-09-15 | RR R2正式26门、源码独审及真实故障验证通过；R3/R4/Orin待验证 | Codex |
 | 2026-09-14 | RR R1本地21门/CAL45/模型6通过；源码与证据独审，R2/R3/R4及Orin未验证 | Codex |
 | 2026-09-14 | RR R0 两原包来源/唯一构建图及99项transport、304项RPC回归通过；strict/模型/Orin未验证 | Codex |
 | 2026-09-10 | W4b固定五例SIGKILL/原目录恢复独立验收；16门、5+2+72通过，原失败/ignored保留，提交后暂停 | root + 独立B源码/证据审 + A身份二路 |

@@ -234,6 +234,7 @@ impl<Service: service::Service> PublisherSharedState<Service> {
                     ReceiverDetails {
                         port_id: port.subscriber_id.value(),
                         buffer_size: port.buffer_size,
+                        number_of_channels: 1,
                     },
                     |connection| self.deliver_sample_history(connection),
                 );

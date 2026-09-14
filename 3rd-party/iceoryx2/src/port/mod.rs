@@ -292,3 +292,6 @@ impl core::fmt::Display for ReceiveError {
 }
 
 impl core::error::Error for ReceiveError {}
+
+#[cfg(test)]
+mod pubsub_r2_tests;

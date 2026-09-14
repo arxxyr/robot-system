@@ -10,6 +10,16 @@
 
 ---
 
+## 2026-09-15 · RR R2 严格请求持有与退出（本地验收通过）
+
+R2在本地IOX/CAL实现受检严格入口、唯一真实入队/回复、不可复制原连接pin、
+Detached残件保留与最后shared有序退出，按每个client实际N配置和回收连接。
+默认关闭故障夹具直接触发真实post-push issue和completion满，覆盖原件/引用账；
+普通pubsub活背压和真实子进程死亡清理回归通过，未改共享布局或冻结设计。
+原生子agent完成开发自测，独立源码终审ACK；正式round1共26门全部exit0，
+源码/证据独审及root本地验收通过，完整测试计数和范围见10_verification同日条目。
+本方现有调用链尚待R3迁移；未验证Orin/ARM或P-E，不关闭D15，deployable=false。
+
 ## 2026-09-14 · RR R1 CAL 与同源内存模型验收
 
 已实施已ACK通信硬化方案的CAL部分：正常finish以Release关闭，清理仅将活动请求

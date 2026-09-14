@@ -38,6 +38,8 @@ resolver = "2"
 [features]
 default = []
 dev_permissions = []
+# RR R2：默认关闭的真实故障夹具（root real_fault_fixture_decision.md）；生产图不启用。
+r2-test-fixtures = []
 std = [
     "iceoryx2-bb-concurrency/std",
     "iceoryx2-bb-container/std",

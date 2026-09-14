@@ -11,6 +11,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 pub mod common;
+pub use common::details::checked_connection_management_size;
 pub mod file;
 pub mod posix_shared_memory;
 pub mod process_local;
@@ -68,6 +69,9 @@ pub enum ZeroCopyCreationError {
     IncompatibleNumberOfSamples,
     IncompatibleNumberOfSegments,
     IncompatibleNumberOfChannels,
+    /// RR R2：按 buffer / borrow / samples / segments / channels 受检计算管理区字节数时溢出，
+    /// 或某个内部数组超出 `Layout::array` 表示界（在创建任何共享资源之前拒绝）。
+    CapacityOverflow,
 }
 
 impl core::fmt::Display for ZeroCopyCreationError {
@@ -540,6 +544,71 @@ pub trait ZeroCopySender: Debug + ZeroCopyPortDetails + NamedConcept + Send + Ab
     /// * must ensure that [`ZeroCopySender::try_send()`] and [`ZeroCopySender::blocking_send()`]
     ///   are not called after using this method
     unsafe fn acquire_used_offsets<F: FnMut(PointerOffset)>(&self, callback: F);
+
+    /// RR R2 故障夹具（feature `r2-test-fixtures`，默认关闭）：真实移除一个已发送 offset 的 used
+    /// 登记，用于布置 "post-push 旧 used 缺失" 这一真实故障；不伪造回执。目标先受检（channel /
+    /// segment 范围、该 (segment, channel) 的 sample_size 已知、offset 对齐、index 在 used 容量内），
+    /// 非法目标 typed 拒绝、不触碰任何登记；合法目标返回原是否登记。
+    #[cfg(feature = "r2-test-fixtures")]
+    fn r2_fixture_forget_used_offset(
+        &self,
+        ptr: PointerOffset,
+        channel_id: ChannelId,
+    ) -> Result<bool, FixtureTargetError>;
+
+    /// RR R2 故障夹具：只读查询某 offset 当前是否仍在真实 used 列表中（目标同样先受检）。
+    #[cfg(feature = "r2-test-fixtures")]
+    fn r2_fixture_is_used(
+        &self,
+        ptr: PointerOffset,
+        channel_id: ChannelId,
+    ) -> Result<bool, FixtureTargetError>;
+
+    /// RR R2 故障夹具：安装一次性 overflow 尝试——只对匹配 `(ptr, channel_id)` 的下一次真实发送
+    /// 跳过 "非 overflow 且队满" 的 publication 前拒绝，之后仍走同一原 push / 真实挤出 / 真实旧
+    /// used 移除与原分类；命中即消费。目标先受检；安装以 CAS 独占（未装 → 安装中 → 已装，Release
+    /// 发布目标），命中以 CAS 一次消费（已装 → 未装），因此并发重复安装 / 重复消费各只成功一次；
+    /// 已装未消费时拒绝重复安装。仅本进程 Sender 本地状态，不改共享内存布局或共享 overflow 标志。
+    #[cfg(feature = "r2-test-fixtures")]
+    fn r2_fixture_arm_one_overflow_attempt(
+        &self,
+        ptr: PointerOffset,
+        channel_id: ChannelId,
+    ) -> Result<(), FixtureArmError>;
+
+    /// RR R2 故障夹具：只读——当前已安装且未消费的目标。
+    #[cfg(feature = "r2-test-fixtures")]
+    fn r2_fixture_armed(&self) -> Option<(PointerOffset, ChannelId)>;
+
+    /// RR R2 故障夹具：只读——注入命中（消费）次数。
+    #[cfg(feature = "r2-test-fixtures")]
+    fn r2_fixture_hits(&self) -> usize;
+}
+
+/// RR R2 故障夹具：目标 (offset, channel) 未通过受检（在任何索引 / 除法之前拒绝）。
+#[cfg(feature = "r2-test-fixtures")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixtureTargetError {
+    /// channel id 超出本连接的 channel 数。
+    ChannelOutOfRange,
+    /// offset 的 segment id 超出本连接支持的 segment 数。
+    SegmentOutOfRange,
+    /// 该 (segment, channel) 尚未有任何真实发送，sample_size 未知（为 0），无法定位 used 索引。
+    SampleSizeUnknown,
+    /// offset 不是 sample_size 的整数倍。
+    OffsetNotAligned,
+    /// 计算出的 used 索引超出 used 列表容量。
+    IndexOutOfRange,
+}
+
+/// RR R2 故障夹具：安装一次性 overflow 尝试的失败原因。
+#[cfg(feature = "r2-test-fixtures")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixtureArmError {
+    /// 目标未通过受检。
+    InvalidTarget(FixtureTargetError),
+    /// 已有未消费（或正在安装）的目标，不覆盖。
+    AlreadyArmed,
 }
 
 pub trait ZeroCopyReceiver:

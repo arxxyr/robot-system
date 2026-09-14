@@ -83,7 +83,61 @@ impl<Service: service::Service> Abandonable for DataSegment<Service> {
     }
 }
 
+/// RR R2：`UniqueIndexSet` 只用 24 位保存 head / borrowed 计数，池 bucket 数须 `< 2^24 − 1`。
+pub(crate) const MAX_POOL_BUCKETS: usize = (1 << 24) - 2;
+
+/// RR R2：静态段计划的 typed 失败。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StaticSegmentPlanError {
+    /// 字节数 / 管理区 / 总量算术溢出或布局非法。
+    Overflow,
+    /// 池 bucket 数超过底层 24 位界。
+    ExceedsMaxSupportedChunks,
+}
+
 impl<Service: service::Service> DataSegment<Service> {
+    /// RR R2：受检的静态段计划，返回 payload 字节数 `M = s * N + a − 1`。在此之前核：
+    /// 池 bucket 数上界 `K_max = floor(M / align_up(s, a))` 不超过 `UniqueIndexSet` 的 24 位界
+    /// （合法最大 `2^24 − 2`）、池管理区 `G = size_of::<u32>() * (floor(M / s) + 1) + align_of::<u32>() − 1`
+    /// 与总量 `M + G` 均可表示且不超过 `isize::MAX`。任一步失败 typed 返回，不申请任何资源。
+    pub(crate) fn checked_static_segment_plan(
+        chunk_layout: Layout,
+        number_of_chunks: usize,
+    ) -> Result<usize, StaticSegmentPlanError> {
+        let size = chunk_layout.size();
+        let align = chunk_layout.align();
+        if size == 0 {
+            return Err(StaticSegmentPlanError::Overflow);
+        }
+        let payload_size = size
+            .checked_mul(number_of_chunks)
+            .and_then(|v| v.checked_add(align - 1))
+            .ok_or(StaticSegmentPlanError::Overflow)?;
+        let bucket_size = size
+            .checked_next_multiple_of(align)
+            .ok_or(StaticSegmentPlanError::Overflow)?;
+        let max_buckets = payload_size / bucket_size;
+        if max_buckets > MAX_POOL_BUCKETS {
+            return Err(StaticSegmentPlanError::ExceedsMaxSupportedChunks);
+        }
+        let min_required_buckets = payload_size / size;
+        let management_size = core::mem::size_of::<u32>()
+            .checked_mul(
+                min_required_buckets
+                    .checked_add(1)
+                    .ok_or(StaticSegmentPlanError::Overflow)?,
+            )
+            .and_then(|v| v.checked_add(core::mem::align_of::<u32>() - 1))
+            .ok_or(StaticSegmentPlanError::Overflow)?;
+        let total = payload_size
+            .checked_add(management_size)
+            .ok_or(StaticSegmentPlanError::Overflow)?;
+        if total > isize::MAX as usize {
+            return Err(StaticSegmentPlanError::Overflow);
+        }
+        Ok(payload_size)
+    }
+
     pub(crate) fn create_static_segment(
         segment_name: &FileName,
         chunk_layout: Layout,
@@ -97,12 +151,21 @@ impl<Service: service::Service> DataSegment<Service> {
         let origin = "DataSegment::create_static_segment()";
 
         let segment_config = data_segment_config::<Service>(global_config);
+        // RR R2：字节数按受检计划计算（单一算式来源）；RR 构造入口已先行核过，这里失败即 typed
+        // 而非回绕。
+        let segment_size = match Self::checked_static_segment_plan(chunk_layout, number_of_chunks) {
+            Ok(size) => size,
+            Err(e) => {
+                fail!(from origin, with SharedMemoryCreateError::InternalError,
+                    "{msg} The segment plan for {number_of_chunks} chunks of {chunk_layout:?} is not representable ({e:?}).");
+            }
+        };
         let memory = fail!(from origin,
                                 when <<Service::SharedMemory as SharedMemory<PoolAllocator>>::Builder as NamedConceptBuilder<
                                 Service::SharedMemory,
                                     >>::new(segment_name)
                                     .config(&segment_config)
-                                    .size(chunk_layout.size() * number_of_chunks + chunk_layout.align() - 1)
+                                    .size(segment_size)
                                     .create(&allocator_config),
                                 "{msg}");
 

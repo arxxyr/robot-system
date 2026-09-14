@@ -286,6 +286,8 @@ impl<
                 number_of_channels: 1,
                 connection_storage: UnsafeCell::new(SlotMap::new(number_of_connections)),
                 initial_channel_state: CHANNEL_STATE_OPEN,
+                retention: RetentionPolicy::Standard,
+                retained: None,
             },
         });
 

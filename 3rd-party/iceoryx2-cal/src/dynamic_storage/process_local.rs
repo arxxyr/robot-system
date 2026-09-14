@@ -162,10 +162,15 @@ impl<T: Send + Sync + Debug> NamedConceptConfiguration for Configuration<T> {
 }
 
 impl<T> StorageDetails<T> {
-    fn new(value: T, additional_size: u64, call_drop_on_destruction: bool) -> Self {
-        let size = core::mem::size_of::<T>() + additional_size as usize;
-        let align = core::mem::align_of::<T>();
-        let layout = unsafe { Layout::from_size_align_unchecked(size, align) };
+    /// RR R2：受检布局——`size_of::<T>() + additional_size` 不溢出且为合法 `Layout`；失败返回 `None`，
+    /// 由创建入口 typed 拒绝。
+    fn checked_layout(additional_size: usize) -> Option<Layout> {
+        let size = core::mem::size_of::<T>().checked_add(additional_size)?;
+        Layout::from_size_align(size, core::mem::align_of::<T>()).ok()
+    }
+
+    fn new(value: T, layout: Layout, call_drop_on_destruction: bool) -> Self {
+        let size = layout.size();
         let new_self = Self {
             data_ptr: fatal_panic!(from "StorageDetails::new", when HeapAllocator::new()
                 .allocate(layout), "Failed to allocate {} bytes for dynamic global storage.", size)
@@ -423,9 +428,15 @@ impl<T: Send + Sync + Debug + 'static> Builder<'_, T> {
                 "{} since the storage does already exist.", msg);
         }
 
+        // RR R2：布局先受检，再按值交给 new；溢出映射为现有 typed InternalError。
+        let Some(layout) = StorageDetails::<T>::checked_layout(self.supplementary_size) else {
+            fail!(from self, with DynamicStorageCreateError::InternalError,
+                "{} since the storage layout for {} supplementary bytes is not representable.",
+                msg, self.supplementary_size);
+        };
         let storage_details = Arc::new(StorageDetails::new(
             initial_value,
-            self.supplementary_size as u64,
+            layout,
             self.call_drop_on_destruction,
         ));
 

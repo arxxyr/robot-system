@@ -87,7 +87,9 @@ pub struct ResponseMut<
     pub(crate) offset_to_chunk: PointerOffset,
     pub(crate) sample_size: usize,
     pub(crate) channel_id: ChannelId,
+    /// 原 response 连接 index，仅作提示；真实目标以 `client_port_id` 精确定位（RR R2）。
     pub(crate) connection_id: usize,
+    pub(crate) client_port_id: u128,
     pub(crate) _response_payload: PhantomData<ResponsePayload>,
     pub(crate) _response_header: PhantomData<ResponseHeader>,
 }
@@ -338,12 +340,19 @@ impl<
             "{} since the connections could not be updated.", msg);
 
         if self.connection_id != INVALID_CONNECTION_ID {
-            shared_state.response_sender.deliver_offset_to_connection(
-                self.offset_to_chunk,
-                self.sample_size,
-                self.channel_id,
-                self.connection_id,
-            )?;
+            // RR R2：按完整原 client id 精确定位；原 client 已不在则沿原“无连接 = 0 recipients”
+            // 语义返回 Ok，绝不向同 index 的新 client 投递。
+            if let Some(index) = shared_state
+                .response_sender
+                .resolve_connection(self.connection_id, self.client_port_id)
+            {
+                shared_state.response_sender.deliver_offset_to_connection(
+                    self.offset_to_chunk,
+                    self.sample_size,
+                    self.channel_id,
+                    index,
+                )?;
+            }
         }
 
         Ok(())

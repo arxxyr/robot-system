@@ -20,8 +20,8 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     RR R1 CAL与同源模型已独审/root验收；提交后cc-claude实施R2 IOX
-当前授权:     用户2026-09-14恢复持续推进；cc-claude开发自测，root方案/评审/提交
+当前步骤:     RR R2本地验收完成；本次提交收口，下一步R3本方成对迁移
+当前授权:     持续推进；CC已因额度停止并退出，R2余项与后续由原生子agent开发及独立评审
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -29,9 +29,9 @@
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
 用户追加：每阶段评审与必要质量门通过即 commit，再推进下一阶段。
 developer 可根据任务需要自主启动子 agent 并负责整合；reviewer 保持独立评审。
-共享工作区按文件明确归属。用户2026-09-09更新分工：主agent负责方案和评审，
-cc-claude优先负责具体开发与测试；其额度耗尽后，按用户混编授权由原生A/B/C
-按文件分域开发，C独占Cargo，独立Codex评审；评审通过仍由主agent提交。
+共享工作区按文件明确归属。用户2026-09-14更新分工：主agent负责方案和最终评审，
+原生子agent负责开发与测试，另派独立评审；开发者可按文件继续拆分，Cargo由主开发
+统一执行。此分工取代此前cc-claude优先安排，评审通过仍由主agent提交。
 由团队完善函数级计划、独立评审通过后实施；原 9 月 5 日“仅准备 Plan outline”
 是历史授权状态，不作为本轮停工理由。实现、验证、真机执行分别记录，不能将
 Spec Approved 或旧测试记录写成新代码已通过验收。
