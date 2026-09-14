@@ -681,7 +681,7 @@ fn prepare_execution(
     tracing::info!(identity = %args.identity, "S0 实例配置身份");
     let trust = select_trust(args)?;
     // S48 A3d / W1：恢复失败在此返回，绝不进入下面的 adapter_open。
-    let (latched, worker_store, standby_store) = recover_latch(args, latch_lock)?;
+    let (latched, worker_store, standby_store) = recover_latch(args, latch_lock, base)?;
     let pairing =
         WriterPairing::new(worker_store, standby_store, latch_lock, base).map_err(|error| {
             tracing::error!(?error, "writer/standby 配对拒绝");
@@ -783,7 +783,10 @@ fn startup_io_error(error: &std::io::Error) -> i32 {
 fn recover_latch(
     args: &ResolvedArgs,
     latch_lock: &LatchTargetLock,
+    base: MonoRawNs,
 ) -> Result<(bool, ClearTxnStore, ClearTxnStore), i32> {
+    #[cfg(not(feature = "test-comm-fault-hook"))]
+    let _ = base;
     let objects = latch_lock.check_data_objects().map_err(|error| {
         tracing::error!(%error, latch = %args.latch_path.display(), "latch 数据对象检查失败");
         i32::from(error.exit_code())
@@ -801,9 +804,17 @@ fn recover_latch(
         );
         return Err(1);
     }
-    let latched = store
-        .recover_and_load()
-        .map_err(|error| recovery_exit(&error))?;
+    let latched = {
+        #[cfg(feature = "test-comm-fault-hook")]
+        let _recovery_scope =
+            robot_s0::comm_fault_hook::w4_recovery_kill::install_from_env(base, store_identity)
+                .map_err(|error| {
+                    tracing::error!(%error, "恢复 SIGKILL 配置拒绝，尚未执行恢复文件操作");
+                    1
+                })?;
+        store.recover_and_load()
+    }
+    .map_err(|error| recovery_exit(&error))?;
     tracing::info!(
         primary_present = objects.primary.is_some(),
         backup_present = objects.backup.is_some(),

@@ -1,6 +1,7 @@
 //! W4b 原五点及 R4b3 固定二十五点进程中断；同内核重启不等于断电耐久验证。
 
 mod batch;
+mod recovery;
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
@@ -199,6 +200,10 @@ pub(super) async fn run_batch(args: &Args, report: &mut Report) -> Result<(), St
         return Err("R4b3未实际登记恰25点".into());
     }
     Ok(())
+}
+
+pub(super) async fn run_recovery(args: &Args, report: &mut Report) -> Result<(), String> {
+    recovery::run(args, report).await
 }
 
 #[derive(Clone, Copy, Debug)]

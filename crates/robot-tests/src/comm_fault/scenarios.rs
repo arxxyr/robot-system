@@ -27,6 +27,9 @@ pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> 
         Some("R4-T8-WRITER-KILL-25") => {
             return super::w4_latch_sigkill::run_batch(args, report).await;
         }
+        Some("R4-T8-RECOVERY-KILL") => {
+            return super::w4_latch_sigkill::run_recovery(args, report).await;
+        }
         Some("R4-SUP-STANDALONE") => return super::supervision::run(args, report).await,
         _ => {}
     }

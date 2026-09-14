@@ -141,4 +141,9 @@ impl StepGuard for NoGuard {
     fn before(&mut self, _stage: ClearTxnStage) -> Result<(), GuardInterrupt> {
         Ok(())
     }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn after_success(&mut self, stage: ClearTxnStage) {
+        crate::comm_fault_hook::w4_recovery_kill::after_success(stage);
+    }
 }

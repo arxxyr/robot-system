@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "RR_R4B3_COMMIT_READY",
-  "resume_from": "R4b3正式28/28、544输入及新50次实际运行已独审/root本地验收，归档核验完成；本阶段实际提交后派发R4b4已审单一三代恢复链。继续有效开发至实时周剩20%，每包通过即commit，不push。",
+  "work_state": "RR_R4B4_ACCEPTED_NEXT_R4C",
+  "resume_from": "R4b4三代启动恢复链已独审/root本地验收并完成归档核验；本阶段提交核clean后进入已审R4c。持续有效开发至实时周额度剩20%，每阶段通过即commit，不push。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_RR_R4B3_APPROVED_ARCHIVE_VERIFIED",
-  "review_status": "R4B3_INDEPENDENT_SOURCE_EVIDENCE_AND_ROOT_APPROVED",
+  "status": "S48_RR_R4B4_APPROVED_LOCAL_SCOPE",
+  "review_status": "R4B4_FINAL_SOURCE_EVIDENCE_AND_ROOT_ACK",
   "deployable": false,
   "scope": "W3/W4a/W4b、RR R0–R3及R4a/R4b1/R4b2/R4b3本地范围已验收；剩余T8/SUP/ENV和双主机、P-E、现场仍未完成，wire4历史FAIL、D15 OPEN、deployable=false。",
   "software": {
@@ -3073,7 +3073,98 @@
         "archive_sha256": "32eb52868132c0cc667fbb47bee896e02648db367e09c0eeb1dd7ab93a1c8fe0",
         "archive_verification": "target/post_e_h2_rt/s48/rr_r4b3/post_archive_review/root_archive_verification.json",
         "archive_verification_sha256": "8769949c93fdd43d413fbe3841c2ce916546b57ad70b6a3b41f0105a4b80ffdf",
-        "commit_reference": "本阶段提交见git日志及target/post_e_h2_rt/s48/rr_r4b3/commit_receipt.json实际回执"
+        "commit_reference": "本阶段提交见git日志及target/post_e_h2_rt/s48/rr_r4b3/commit_receipt.json实际回执",
+        "commit": "b6755b7d550c040530d21671f7bd62eec076fd66"
+      },
+      "rr_r4b4": {
+        "status": "APPROVED_R4B4_LOCAL_SCOPE",
+        "verified": true,
+        "base_commit": "b6755b7d550c040530d21671f7bd62eec076fd66",
+        "base_clean_verified": true,
+        "scope": "单一三代mock链：Prepare末同步杀、原启动恢复RenamePrimary成功后杀、无hook原目录恢复",
+        "task": "target/post_e_h2_rt/s48/rr_r4b4/native_task.md",
+        "task_sha256": "2c4bc7b4604071d3f6c0f6e25ad993106a47fcbf0b7f90173f7d4011544cb32e",
+        "developer": "native subagent /root/r3_native_developer",
+        "reviewer": "/root/r0_archive（独立源码/证据评审，未参与源码开发）",
+        "hardware_access": false,
+        "second_generation_budget": "原MainStart+5s，固定最多250ms暂停；实际kill返回起2s真reap",
+        "archive_boundary": "最终源码/原物证/独审/root归档均已验收；B3全部post/commit七件已携带，本包post/随后commit下包携带。",
+        "reviewer_change": "原rr_review无法恢复：agent线程上限；归档准备者转独立审源/证据，root执行归档与终验。",
+        "modified_sources": 13,
+        "final_source": "target/post_e_h2_rt/s48/rr_r4b4/final_source.sha256",
+        "final_source_sha256": "6cf9ac8785cb38f97ac3672477b6790ceba6bf94c0e051719d676335f399ae0d",
+        "formal_run": "target/post_e_h2_rt/s48/rr_r4b4/gates/round2/run.json",
+        "expected_formal_gates": 28,
+        "source_inputs": 550,
+        "source_unchanged": true,
+        "formal_gates": 28,
+        "archive_pending": false,
+        "source_review_status": "ACK_FINAL_SOURCE_SCOPE",
+        "archive_sha256": "b4639e3cf419778bf0921e92aca5078283650fbb93f916d26975f8d6292794fc",
+        "commit_reference": "本阶段提交见git日志及target/post_e_h2_rt/s48/rr_r4b4/commit_receipt.json实际回执",
+        "formal_run_sha256": "d228dd8d841d939fdef480ac22948e76100ea2668c5494ab0138d9867d4dede0",
+        "result": "target/post_e_h2_rt/s48/rr_r4b4/result.json",
+        "result_sha256": "012b4046a388c4e2dbcf66768c471f4428d0bdac0124a090f65e4798055599f2",
+        "handoff": "target/post_e_h2_rt/s48/rr_r4b4/handoff.md",
+        "handoff_sha256": "dc3aaf400fa856561d41898f76518c9a5e201c9d576d0a74dbaa3732b9f1b92a",
+        "source_review": "target/post_e_h2_rt/s48/rr_r4b4/source_review.md",
+        "source_review_sha256": "2b18ae60773140eaae57624de9dd91e491335771d254661fff8caf226202ce46",
+        "root_acceptance": "target/post_e_h2_rt/s48/rr_r4b4/root_acceptance.md",
+        "root_acceptance_sha256": "2cd848cbe14687ecd597fd00823a00e7d159a5873a9dbc0c422aefeee2fed647",
+        "root_verification": "target/post_e_h2_rt/s48/rr_r4b4/root_verification.json",
+        "root_verification_sha256": "256b270b1189c933c40b1a28c9f24fe970fe01e04456cf63cbcd613c7bf578e5",
+        "final_binding": "target/post_e_h2_rt/s48/rr_r4b4/final_binding.json",
+        "final_binding_sha256": "6acc6b16b56914268a8f0136f915579993b30b9f6d7943677d00105ed20cb41a",
+        "independent_evidence_review": "target/post_e_h2_rt/s48/rr_r4b4/final_evidence_review.md",
+        "independent_evidence_review_sha256": "16abbd8a83d100117ef30b0f98928df0a2aca5a9e112fd23a806f2f057ac4cf1",
+        "independent_verification": "target/post_e_h2_rt/s48/rr_r4b4/independent_final_verification.json",
+        "independent_verification_sha256": "2c8b83386ba4e2161f85029893ad15db433da72e2fc4c3bc8c39d56d8847de8e",
+        "delivery_manifest": "target/post_e_h2_rt/s48/rr_r4b4/delivery_manifest.json",
+        "delivery_manifest_sha256": "abbb96616beeff3a78b80ec150b5222f998d836defc65ab15e18186263aee2f0",
+        "future_plans": "target/post_e_h2_rt/s48/rr_r4b4/future_plans.json",
+        "future_plans_sha256": "9a7eb68540bc21cb3d5b6262426cff62135c16f36fcac7e005a867cf5f992acb",
+        "archive_verification": "target/post_e_h2_rt/s48/rr_r4b4/post_archive_review/root_archive_verification.json",
+        "archive_verification_sha256": "2677343407abede8b1b3a13dc76361c7727775db3803fb82244624b69514dce2",
+        "tests": {
+          "workspace": [
+            2211,
+            0,
+            9
+          ],
+          "s0_complete_hook": [
+            886,
+            0,
+            1
+          ],
+          "tools": [
+            138,
+            0,
+            0
+          ],
+          "dev": {
+            "r4b4": 1,
+            "r4b3": 25,
+            "r4b2": 1,
+            "r4b1": 1,
+            "w4b": 5,
+            "all": 72
+          },
+          "release": {
+            "r4b4": 1,
+            "r4b3": 25,
+            "r4b2": 1,
+            "r4b1": 1,
+            "w4b": 5,
+            "all": 72
+          },
+          "counts_overlap": true,
+          "reused_w4a": "B3两profile原报告与三个专属源；共同恢复路径本轮有改动，未称全闭包不变",
+          "reused_dependencies": 207
+        },
+        "known_limitations": [
+          "原round1默认并行锁例9/1/0；同ELF串行10/0/0后仅runner工作区串行，全round2重跑；默认并行CI未修复",
+          "仅本地同内核进程中断；manager/ARM/双主机/电机/P-E未运行，D15 OPEN"
+        ]
       }
     }
   },
@@ -3228,21 +3319,21 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2664,
-    "sha256": "537d4169a61e986150f9c8594252f549c936ad8153c8fb504a7dfd9ffa7460db"
+    "lines": 2668,
+    "sha256": "56fbe5d67f70712e4d4f02119b1b3448302102b5671c772e6bd75d16a8906e8a"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "32eb52868132c0cc667fbb47bee896e02648db367e09c0eeb1dd7ab93a1c8fe0",
-    "bytes": 105219653,
-    "members": 32054,
-    "logical_bytes": 3123591602,
-    "index_count": 32053,
+    "sha256": "b4639e3cf419778bf0921e92aca5078283650fbb93f916d26975f8d6292794fc",
+    "bytes": 115345269,
+    "members": 36336,
+    "logical_bytes": 3475032101,
+    "index_count": 36335,
     "per_file_sha256_verified": true,
-    "verification_method": "固定R4b2整包SHA复用旧26662项证明；5391新增件逐件SHA及来源首末一致；root核整包身份/元数据及38关键件实际字节。"
+    "verification_method": "固定B3整包SHA复用旧32053项证明；4282新增件逐SHA及来源首末一致；root核整包身份/元数据及39关键件实际字节。"
   },
-  "retention": "当前H包保旧26662索引，新增5391件R4b3/R4b2晚生/明确未来文档；排13 ELF，保本地原ELF身份和trace二进制。R4b2整个post及实际commit回执6件已纳入；R4b3整个post及随后commit下包携带。R4c十件只读/方案文档为未来材料，不代表实施。",
-  "updated_at": "2026-09-14T21:24:37.675056+00:00",
+  "retention": "当前H包保旧32053索引，新增4282件B4/全部B3晚生七件/明确未来十件；排12 ELF，保原ELF身份与trace二进制。本包整个post及随后commit下包携带。未来文档不代表实施。",
+  "updated_at": "2026-09-14T22:31:12.711361+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -3284,7 +3375,7 @@
   "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。",
   "stop_after_current": {
     "user_request": "继续进行有效开发直到周token还剩20%",
-    "current_package": "S48_RR_R4B3",
+    "current_package": "S48_RR_R4B4",
     "next_package_authorized_to_start": true,
     "state": "已取消R4a后暂停；改以实时周额度剩20%为停止线",
     "weekly_remaining_stop_percent": 20,

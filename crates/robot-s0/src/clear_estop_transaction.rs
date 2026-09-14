@@ -76,6 +76,18 @@ use credential::CHECKSUM_OFFSET;
 
 const IDENTITY_DOMAIN: &str = "robot-system clear-estop target identity v1";
 
+/// 仅从本次真实 Pending 借读生成；这些字节不携带修复或删除权限。
+#[cfg(feature = "test-comm-fault-hook")]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RecoveryObservation {
+    pub(crate) directory: FileIdentity,
+    pub(crate) marker: FileIdentity,
+    pub(crate) txn_id: u128,
+    pub(crate) expected_epoch: u64,
+    pub(crate) original_latched: bool,
+    pub(crate) record: [u8; RECORD_BYTES],
+}
+
 /// 失败所在文件步骤；目录同步失败不意味着此前的 rename 或 unlink 未发生。
 /// 声明顺序即执行顺序，可按序比较。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -494,6 +506,15 @@ impl ClearTxnStore {
     pub fn recover_and_load(&mut self) -> Result<bool, StageError> {
         match self.inspect_pending()? {
             Some(pending) => {
+                #[cfg(feature = "test-comm-fault-hook")]
+                crate::comm_fault_hook::w4_recovery_kill::bind_pending(RecoveryObservation {
+                    directory: pending.binding.directory,
+                    marker: pending.identity(),
+                    txn_id: pending.record().txn_id(),
+                    expected_epoch: pending.record().expected_epoch(),
+                    original_latched: pending.record().original_latched(),
+                    record: pending.record().encode(),
+                });
                 let repaired = self.repair_pending(pending, RepairTarget::Latched)?;
                 let mut guard = NoGuard;
                 self.remove(repaired, &mut guard)
