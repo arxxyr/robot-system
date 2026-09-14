@@ -1,4 +1,4 @@
-//! 五个成功操作后的固定 SIGKILL 观察点；不写权限、原职责或生产期限。
+//! 封闭的文件 SIGKILL 观察点；不写权限、原职责或生产期限。
 
 #[cfg(test)]
 mod tests;
@@ -12,14 +12,89 @@ use robot_core::time::{MonoRawNs, RobotClock};
 
 use super::w4_file_fault::{command_kind, completion_payload, token_kind};
 use crate::boot_supervisor::BootShared;
-use crate::clear_estop_transaction::ClearTxnStage as S;
-use crate::comm_fault_trace::w4::{self, CommandKind as C, FixtureFailure as F, W4Payload as P};
+use crate::clear_estop_transaction::{
+    AliasPreparation, ClearTxnStage as S, DirectorySyncEvent as E, DirectorySyncInput,
+    FileIdentity, StepPhase,
+};
+use crate::comm_fault_trace::w4::{
+    self, CommandKind as C, FixtureFailure as F, TokenKind as T, W4Payload as P,
+};
 use crate::latch_writer::{
     Budgets, ClearTxnIdentity, PersistCommand, PersistCompletion, PersistShared, Phase,
-    ProgressView, WriterHook, WriterToken,
+    PrepareTokenKind, ProgressView, WriterHook, WriterToken,
 };
 
 const PAUSE_NS: u64 = 250_000_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrepareAfterPoint {
+    SampleMarkerIdentity,
+    WriteMarker,
+    SyncMarkerFile,
+    SyncMarkerDirectory,
+    CreateBackup,
+    WriteBackup,
+    SyncBackupFile,
+    SyncBackupDirectory,
+    CreatePrimary,
+    WritePrimary,
+    SyncPrimaryFile,
+    RenamePrimary,
+}
+
+impl PrepareAfterPoint {
+    const fn stage(self) -> S {
+        match self {
+            Self::SampleMarkerIdentity => S::SampleMarkerIdentity,
+            Self::WriteMarker => S::WriteMarker,
+            Self::SyncMarkerFile => S::SyncMarkerFile,
+            Self::SyncMarkerDirectory => S::SyncMarkerDirectory,
+            Self::CreateBackup => S::CreateBackup,
+            Self::WriteBackup => S::WriteBackup,
+            Self::SyncBackupFile => S::SyncBackupFile,
+            Self::SyncBackupDirectory => S::SyncBackupDirectory,
+            Self::CreatePrimary => S::CreatePrimary,
+            Self::WritePrimary => S::WritePrimary,
+            Self::SyncPrimaryFile => S::SyncPrimaryFile,
+            Self::RenamePrimary => S::RenamePrimary,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepairAfterPoint {
+    ReadMarker,
+    ValidateMarker,
+    CreatePrimary,
+    WritePrimary,
+    SyncPrimaryFile,
+    RenamePrimary,
+    SyncPrimaryDirectory,
+    CreateBackup,
+    WriteBackup,
+    SyncBackupFile,
+    RenameBackup,
+    SyncBackupDirectory,
+}
+
+impl RepairAfterPoint {
+    const fn stage(self) -> S {
+        match self {
+            Self::ReadMarker => S::ReadMarker,
+            Self::ValidateMarker => S::ValidateMarker,
+            Self::CreatePrimary => S::CreatePrimary,
+            Self::WritePrimary => S::WritePrimary,
+            Self::SyncPrimaryFile => S::SyncPrimaryFile,
+            Self::RenamePrimary => S::RenamePrimary,
+            Self::SyncPrimaryDirectory => S::SyncPrimaryDirectory,
+            Self::CreateBackup => S::CreateBackup,
+            Self::WriteBackup => S::WriteBackup,
+            Self::SyncBackupFile => S::SyncBackupFile,
+            Self::RenameBackup => S::RenameBackup,
+            Self::SyncBackupDirectory => S::SyncBackupDirectory,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileKillMode {
@@ -28,6 +103,9 @@ pub enum FileKillMode {
     PrepareSyncPrimaryDirectory,
     FinalizeRemoveMarker,
     FinalizeSyncRemovalDirectory,
+    PrepareAfter(PrepareAfterPoint),
+    FinalizeBeforeUnlink,
+    RepairAfter(RepairAfterPoint),
 }
 
 impl FileKillMode {
@@ -36,9 +114,24 @@ impl FileKillMode {
             Self::PrepareCreateMarker => (C::Prepare, S::CreateMarker),
             Self::PrepareRenameBackup => (C::Prepare, S::RenameBackup),
             Self::PrepareSyncPrimaryDirectory => (C::Prepare, S::SyncPrimaryDirectory),
-            Self::FinalizeRemoveMarker => (C::RemoveCommitted, S::RemoveMarker),
+            Self::FinalizeRemoveMarker | Self::FinalizeBeforeUnlink => {
+                (C::RemoveCommitted, S::RemoveMarker)
+            }
             Self::FinalizeSyncRemovalDirectory => (C::RemoveCommitted, S::SyncRemovalDirectory),
+            Self::PrepareAfter(point) => (C::Prepare, point.stage()),
+            Self::RepairAfter(point) => (C::RepairLatched, point.stage()),
         }
+    }
+
+    const fn expanded(self) -> bool {
+        matches!(
+            self,
+            Self::PrepareAfter(_) | Self::FinalizeBeforeUnlink | Self::RepairAfter(_)
+        )
+    }
+
+    const fn repair(self) -> bool {
+        matches!(self, Self::RepairAfter(_))
     }
 }
 
@@ -68,19 +161,7 @@ fn parse_file_kill(
             "W4 SIGKILL 不可与其它 writer 故障并存",
         ));
     }
-    let mode = match raw.to_str() {
-        Some("prepare-create-marker") => FileKillMode::PrepareCreateMarker,
-        Some("prepare-rename-backup") => FileKillMode::PrepareRenameBackup,
-        Some("prepare-sync-primary-directory") => FileKillMode::PrepareSyncPrimaryDirectory,
-        Some("finalize-remove-marker") => FileKillMode::FinalizeRemoveMarker,
-        Some("finalize-sync-removal-directory") => FileKillMode::FinalizeSyncRemovalDirectory,
-        _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "W4 SIGKILL 只接受五个固定配置值",
-            ));
-        }
-    };
+    let mode = fixed_mode(raw)?;
     if !linux {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -88,6 +169,89 @@ fn parse_file_kill(
         ));
     }
     Ok(Some(mode))
+}
+
+fn fixed_mode(raw: &OsStr) -> io::Result<FileKillMode> {
+    Ok(match raw.to_str() {
+        Some("prepare-create-marker") => FileKillMode::PrepareCreateMarker,
+        Some("prepare-rename-backup") => FileKillMode::PrepareRenameBackup,
+        Some("prepare-sync-primary-directory") => FileKillMode::PrepareSyncPrimaryDirectory,
+        Some("finalize-remove-marker") => FileKillMode::FinalizeRemoveMarker,
+        Some("finalize-sync-removal-directory") => FileKillMode::FinalizeSyncRemovalDirectory,
+        Some("prepare-sample-marker-identity") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::SampleMarkerIdentity)
+        }
+        Some("prepare-write-marker") => FileKillMode::PrepareAfter(PrepareAfterPoint::WriteMarker),
+        Some("prepare-sync-marker-file") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::SyncMarkerFile)
+        }
+        Some("prepare-sync-marker-directory") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::SyncMarkerDirectory)
+        }
+        Some("prepare-create-backup") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::CreateBackup)
+        }
+        Some("prepare-write-backup") => FileKillMode::PrepareAfter(PrepareAfterPoint::WriteBackup),
+        Some("prepare-sync-backup-file") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::SyncBackupFile)
+        }
+        Some("prepare-sync-backup-directory") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::SyncBackupDirectory)
+        }
+        Some("prepare-create-primary") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::CreatePrimary)
+        }
+        Some("prepare-write-primary") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::WritePrimary)
+        }
+        Some("prepare-sync-primary-file") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::SyncPrimaryFile)
+        }
+        Some("prepare-rename-primary") => {
+            FileKillMode::PrepareAfter(PrepareAfterPoint::RenamePrimary)
+        }
+        Some("finalize-before-unlink") => FileKillMode::FinalizeBeforeUnlink,
+        Some("repair-after-read_marker") => FileKillMode::RepairAfter(RepairAfterPoint::ReadMarker),
+        Some("repair-after-validate_marker") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::ValidateMarker)
+        }
+        Some("repair-after-create_primary") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::CreatePrimary)
+        }
+        Some("repair-after-write_primary") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::WritePrimary)
+        }
+        Some("repair-after-sync_primary_file") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::SyncPrimaryFile)
+        }
+        Some("repair-after-rename_primary") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::RenamePrimary)
+        }
+        Some("repair-after-sync_primary_directory") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::SyncPrimaryDirectory)
+        }
+        Some("repair-after-create_backup") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::CreateBackup)
+        }
+        Some("repair-after-write_backup") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::WriteBackup)
+        }
+        Some("repair-after-sync_backup_file") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::SyncBackupFile)
+        }
+        Some("repair-after-rename_backup") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::RenameBackup)
+        }
+        Some("repair-after-sync_backup_directory") => {
+            FileKillMode::RepairAfter(RepairAfterPoint::SyncBackupDirectory)
+        }
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "W4 SIGKILL 只接受三十个固定配置值",
+            ));
+        }
+    })
 }
 
 /// 在原 runtime 安装后绑定同一个 writer 与原观测页；只持非 RT Arc。
@@ -126,6 +290,66 @@ struct KillScope {
     stage: Option<S>,
     succeeded: bool,
     target_occurrence: u64,
+    completion_seen: bool,
+    sync_input_seen: bool,
+}
+
+const PREPARE_STAGES: [S; 15] = [
+    S::CreateMarker,
+    S::SampleMarkerIdentity,
+    S::WriteMarker,
+    S::SyncMarkerFile,
+    S::SyncMarkerDirectory,
+    S::CreateBackup,
+    S::WriteBackup,
+    S::SyncBackupFile,
+    S::RenameBackup,
+    S::SyncBackupDirectory,
+    S::CreatePrimary,
+    S::WritePrimary,
+    S::SyncPrimaryFile,
+    S::RenamePrimary,
+    S::SyncPrimaryDirectory,
+];
+const REPAIR_STAGES: [S; 12] = [
+    S::ReadMarker,
+    S::ValidateMarker,
+    S::CreatePrimary,
+    S::WritePrimary,
+    S::SyncPrimaryFile,
+    S::RenamePrimary,
+    S::SyncPrimaryDirectory,
+    S::CreateBackup,
+    S::WriteBackup,
+    S::SyncBackupFile,
+    S::RenameBackup,
+    S::SyncBackupDirectory,
+];
+const REMOVE_STAGES: [S; 4] = [
+    S::ReadMarker,
+    S::ValidateMarker,
+    S::RemoveMarker,
+    S::SyncRemovalDirectory,
+];
+
+/// 单次末同步故障只保存观察状态，不持有或构造任何事务凭证。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RepairPrecursor {
+    Armed,
+    Selected,
+    Expected(FileIdentity),
+    Verified,
+    Called,
+    Returned,
+}
+
+fn scope_stages(command: C) -> &'static [S] {
+    match command {
+        C::Prepare => &PREPARE_STAGES,
+        C::RemoveCommitted => &REMOVE_STAGES,
+        C::RepairLatched => &REPAIR_STAGES,
+        _ => &[],
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -177,6 +401,8 @@ struct FileKillHook {
     finalize_sequence: u64,
     consumed: bool,
     failed: bool,
+    precursor: RepairPrecursor,
+    prepare_ended: bool,
 }
 
 impl FileKillHook {
@@ -192,6 +418,8 @@ impl FileKillHook {
             finalize_sequence: 0,
             consumed: false,
             failed: false,
+            precursor: RepairPrecursor::Armed,
+            prepare_ended: false,
         }
     }
 
@@ -239,7 +467,7 @@ impl FileKillHook {
         checked_window(progress, writer.progress.base(), armed, self.clock.now())
     }
 
-    fn pause_after_success(&mut self, scope: KillScope) {
+    fn pause_at_point(&mut self, scope: KillScope) {
         self.consumed = true;
         let window = match self.read_window() {
             Ok(window) => window,
@@ -255,7 +483,7 @@ impl FileKillHook {
         }
         self.emit(P::KillReached {
             step_seq: scope.step_seq,
-            stage: scope.stage.expect("真实成功回调已核 stage"),
+            stage: scope.stage.expect("真实步骤回调已核 stage"),
             entered_at: window.entered_at,
             pause_until: window.pause_until,
         });
@@ -270,6 +498,179 @@ impl FileKillHook {
         }
         // 未被父进程及时杀死是夹具失败；不把成功操作改写为合成 IO 失败。
         self.fail(F::Protocol);
+    }
+
+    fn is_target(&self, scope: KillScope, stage: S) -> bool {
+        let source = if self.mode.point().0 == C::Prepare {
+            1
+        } else {
+            2
+        };
+        scope.source == source
+            && (scope.command, stage) == self.mode.point()
+            && scope.kind_sequence == if self.mode.repair() { 2 } else { 1 }
+    }
+
+    fn is_precursor(&self, scope: KillScope, stage: S) -> bool {
+        self.mode.repair()
+            && scope.source == 1
+            && scope.command == C::Prepare
+            && scope.step_seq == 15
+            && stage == S::SyncPrimaryDirectory
+    }
+
+    fn occurrence(&self, scope: KillScope, stage: S) -> u64 {
+        if self.is_target(scope, stage) || self.is_precursor(scope, stage) {
+            scope.target_occurrence
+        } else {
+            0
+        }
+    }
+
+    fn check_expanded_begin(&mut self, scope: KillScope, token: T) {
+        let valid = match (scope.source, scope.command, token) {
+            (1, C::Prepare, T::None) => true,
+            (2, C::RemoveCommitted, T::Prepared) => {
+                self.mode == FileKillMode::FinalizeBeforeUnlink && self.prepare_ended
+            }
+            (2, C::RepairLatched, T::Durable) => self.mode.repair() && self.prepare_ended,
+            _ => false,
+        };
+        if !valid {
+            self.fail(F::Protocol);
+        }
+    }
+
+    fn check_expanded_completion(&mut self, completion: &PersistCompletion, token: T) {
+        let Some(mut scope) = self.scope else { return };
+        let last_step = u64::try_from(scope_stages(scope.command).len()).unwrap_or(u64::MAX);
+        let complete_steps = scope.step_seq == last_step;
+        let valid = match *completion {
+            PersistCompletion::PrepareFailed {
+                txn,
+                stage: S::SyncPrimaryDirectory,
+                phase: StepPhase::Operation,
+                token: PrepareTokenKind::Durable,
+            } => {
+                self.mode.repair()
+                    && scope.source == 1
+                    && scope.command == C::Prepare
+                    && self.binding == Some(txn)
+                    && token == T::Durable
+                    && complete_steps
+                    && !scope.succeeded
+                    && self.precursor == RepairPrecursor::Returned
+            }
+            PersistCompletion::Prepared { txn, .. } => {
+                !self.mode.repair()
+                    && scope.source == 1
+                    && scope.command == C::Prepare
+                    && self.binding == Some(txn)
+                    && token == T::Prepared
+                    && complete_steps
+                    && scope.succeeded
+            }
+            PersistCompletion::Repaired {
+                txn,
+                target: robot_core::control_authority::RepairTarget::Latched,
+                ..
+            } => {
+                self.mode.repair()
+                    && scope.source == 2
+                    && scope.command == C::RepairLatched
+                    && self.binding == Some(txn)
+                    && token == T::Repaired
+                    && complete_steps
+                    && scope.succeeded
+            }
+            PersistCompletion::MarkerRemoved {
+                txn,
+                kind: robot_core::control_authority::CleanupKind::Finalize,
+                ..
+            } => {
+                self.mode == FileKillMode::FinalizeBeforeUnlink
+                    && scope.source == 2
+                    && scope.command == C::RemoveCommitted
+                    && self.binding == Some(txn)
+                    && token == T::None
+                    && complete_steps
+                    && scope.succeeded
+            }
+            _ => false,
+        };
+        if scope.completion_seen || !valid {
+            self.fail(F::Protocol);
+        }
+        scope.completion_seen = true;
+        self.scope = Some(scope);
+    }
+
+    fn fail_precursor(&mut self, kind: F, errno: Option<i32>) {
+        self.failed = true;
+        self.emit(P::Failure {
+            kind,
+            slot: Some(0),
+            step_seq: self.scope.map_or(0, |scope| scope.step_seq),
+            errno,
+        });
+    }
+
+    fn observe_precursor(&mut self, event: E) {
+        match (self.precursor, event) {
+            (RepairPrecursor::Selected, E::Expected(identity)) => {
+                self.precursor = RepairPrecursor::Expected(identity);
+                self.emit(P::Alias {
+                    verified: false,
+                    slot: 0,
+                    step_seq: 15,
+                    dev: identity.dev(),
+                    ino: identity.ino(),
+                });
+            }
+            (RepairPrecursor::Expected(expected), E::Verified(identity)) => {
+                self.emit(P::Alias {
+                    verified: true,
+                    slot: 0,
+                    step_seq: 15,
+                    dev: identity.dev(),
+                    ino: identity.ino(),
+                });
+                if expected == identity {
+                    self.precursor = RepairPrecursor::Verified;
+                } else {
+                    self.fail_precursor(F::Identity, None);
+                }
+            }
+            (RepairPrecursor::Expected(_), E::PreparationFailed { phase, errno }) => {
+                let kind = match phase {
+                    AliasPreparation::Open => F::Open,
+                    AliasPreparation::Metadata => F::Metadata,
+                    AliasPreparation::Identity => F::Identity,
+                };
+                self.fail_precursor(kind, errno);
+            }
+            (RepairPrecursor::Verified, E::Call) => {
+                self.precursor = RepairPrecursor::Called;
+                self.emit(P::DirSyncCall {
+                    slot: 0,
+                    step_seq: 15,
+                });
+            }
+            (RepairPrecursor::Called, E::Returned { success, errno }) => {
+                self.emit(P::DirSyncReturned {
+                    slot: 0,
+                    step_seq: 15,
+                    success,
+                    errno,
+                });
+                if !success && errno == Some(libc::EBADF) {
+                    self.precursor = RepairPrecursor::Returned;
+                } else {
+                    self.fail_precursor(F::UnexpectedResult, errno);
+                }
+            }
+            _ => self.fail_precursor(F::Protocol, None),
+        }
     }
 }
 
@@ -309,6 +710,8 @@ impl WriterHook for FileKillHook {
             stage: None,
             succeeded: false,
             target_occurrence: 0,
+            completion_seen: false,
+            sync_input_seen: false,
         });
         let txn = command.txn();
         self.emit(P::CommandBegin { txn, command: kind });
@@ -320,8 +723,17 @@ impl WriterHook for FileKillHook {
             None if source == 1 && kind == C::Prepare && txn.original_latched => {
                 self.binding = Some(txn);
             }
-            Some(bound) if bound == txn && kind == C::RemoveCommitted && kind_sequence == 1 => {}
+            Some(bound)
+                if bound == txn
+                    && (self.mode.expanded()
+                        || (kind == C::RemoveCommitted && kind_sequence == 1)) => {}
             _ => self.fail(F::Protocol),
+        }
+        if self.mode.expanded() {
+            self.check_expanded_begin(
+                self.scope.expect("刚安装的真实命令 scope"),
+                token_kind(token),
+            );
         }
     }
 
@@ -335,12 +747,23 @@ impl WriterHook for FileKillHook {
             after: true,
             token: token_kind(token),
         });
+        if self.mode.expanded() {
+            self.check_expanded_completion(completion, token_kind(token));
+        }
     }
 
     fn command_scope_exit(&mut self, completed: bool) {
         let Some(scope) = self.scope else { return };
         if !completed || (scope.command == self.mode.point().0 && !self.consumed) {
             self.fail(F::Protocol);
+        }
+        if self.mode.expanded() {
+            if !scope.completion_seen {
+                self.fail(F::Protocol);
+            }
+            if completed && scope.source == 1 && scope.completion_seen && !self.failed {
+                self.prepare_ended = true;
+            }
         }
         self.emit(P::CommandEnd { completed });
         self.scope = None;
@@ -355,13 +778,26 @@ impl WriterHook for FileKillHook {
 
     fn before_step(&mut self, stage: S) {
         let Some(mut scope) = self.scope else { return };
+        if self.mode.expanded() {
+            let expected = usize::try_from(scope.step_seq)
+                .ok()
+                .and_then(|index| scope_stages(scope.command).get(index))
+                .copied();
+            if expected != Some(stage)
+                || scope.completion_seen
+                || (scope.step_seq != 0 && !scope.succeeded)
+            {
+                self.fail(F::Protocol);
+            }
+        }
         let Some(next) = self.next(scope.step_seq) else {
             return;
         };
         scope.step_seq = next;
         scope.stage = Some(stage);
         scope.succeeded = false;
-        if stage == self.mode.point().1 {
+        scope.sync_input_seen = false;
+        if self.is_target(scope, stage) || self.is_precursor(scope, stage) {
             let Some(occurrence) = self.next(scope.target_occurrence) else {
                 return;
             };
@@ -372,17 +808,21 @@ impl WriterHook for FileKillHook {
             succeeded: false,
             step_seq: next,
             stage,
-            occurrence: if stage == self.mode.point().1 {
-                scope.target_occurrence
-            } else {
-                0
-            },
+            occurrence: self.occurrence(scope, stage),
         });
+        if !self.failed
+            && !self.consumed
+            && self.mode == FileKillMode::FinalizeBeforeUnlink
+            && self.is_target(scope, stage)
+        {
+            // WriterGuard 已发布原 FileStep，且本函数刚发出真实 Stage-before。
+            self.pause_at_point(scope);
+        }
     }
 
     fn after_step_success(&mut self, stage: S) {
         let Some(mut scope) = self.scope else { return };
-        if scope.stage != Some(stage) || scope.succeeded {
+        if scope.stage != Some(stage) || scope.succeeded || scope.completion_seen {
             self.fail(F::Protocol);
             return;
         }
@@ -392,18 +832,72 @@ impl WriterHook for FileKillHook {
             succeeded: true,
             step_seq: scope.step_seq,
             stage,
-            occurrence: if stage == self.mode.point().1 {
-                scope.target_occurrence
-            } else {
-                0
-            },
+            occurrence: self.occurrence(scope, stage),
         });
+        if self.is_precursor(scope, stage) {
+            self.fail_precursor(F::UnexpectedResult, None);
+        }
         if !self.failed
             && !self.consumed
-            && scope.kind_sequence == 1
-            && (scope.command, stage) == self.mode.point()
+            && self.mode != FileKillMode::FinalizeBeforeUnlink
+            && self.is_target(scope, stage)
         {
-            self.pause_after_success(scope);
+            self.pause_at_point(scope);
         }
+    }
+
+    fn directory_sync_input(&mut self, stage: S) -> DirectorySyncInput {
+        if !self.mode.repair() || self.failed {
+            return DirectorySyncInput::Original;
+        }
+        let Some(mut scope) = self.scope else {
+            self.fail_precursor(F::Protocol, None);
+            return DirectorySyncInput::Original;
+        };
+        if scope.stage != Some(stage)
+            || scope.sync_input_seen
+            || scope.succeeded
+            || !matches!(
+                stage,
+                S::SyncMarkerDirectory | S::SyncBackupDirectory | S::SyncPrimaryDirectory
+            )
+        {
+            self.fail_precursor(F::Protocol, None);
+            return DirectorySyncInput::Original;
+        }
+        scope.sync_input_seen = true;
+        self.scope = Some(scope);
+        if !self.is_precursor(scope, stage) {
+            return DirectorySyncInput::Original;
+        }
+        if self.precursor != RepairPrecursor::Armed {
+            self.fail_precursor(F::Protocol, None);
+            return DirectorySyncInput::Original;
+        }
+        self.precursor = RepairPrecursor::Selected;
+        self.emit(P::FaultSelected {
+            slot: 0,
+            step_seq: 15,
+            stage,
+            occurrence: 1,
+        });
+        DirectorySyncInput::OPathAlias
+    }
+
+    fn directory_sync_event(&mut self, stage: S, event: E) {
+        let Some(scope) = self.scope else {
+            self.fail_precursor(F::Protocol, None);
+            return;
+        };
+        if !self.is_precursor(scope, stage)
+            || scope.stage != Some(stage)
+            || scope.succeeded
+            || !scope.sync_input_seen
+            || self.failed
+        {
+            self.fail_precursor(F::Protocol, None);
+            return;
+        }
+        self.observe_precursor(event);
     }
 }

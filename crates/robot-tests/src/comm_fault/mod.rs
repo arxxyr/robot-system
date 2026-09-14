@@ -160,14 +160,16 @@ fn validate_w4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
 
 fn validate_r4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
     match case {
-        Some("R4-SUP-STANDALONE" | "R4-T8-RESYNC" | "R4-T8-RESYNC-EXHAUSTED")
-            if phase == Phase::Mock =>
-        {
-            Ok(true)
-        }
+        Some(
+            "R4-SUP-STANDALONE"
+            | "R4-T8-RESYNC"
+            | "R4-T8-RESYNC-EXHAUSTED"
+            | "R4-T8-WRITER-KILL-25",
+        ) if phase == Phase::Mock => Ok(true),
         Some("R4-T8-RESYNC-EXHAUSTED") => {
             Err("R4-T8-RESYNC-EXHAUSTED 仅属于 mock phase".to_owned())
         }
+        Some("R4-T8-WRITER-KILL-25") => Err("R4-T8-WRITER-KILL-25 仅属于 mock phase".to_owned()),
         Some("R4-T8-RESYNC") => Err("R4-T8-RESYNC 仅属于 mock phase".to_owned()),
         Some("R4-SUP-STANDALONE") => Err("R4-SUP-STANDALONE 仅属于 mock phase".to_owned()),
         Some(value) if value.starts_with("R4") => Err(format!("未知 R4 筛选：{value}")),
@@ -261,6 +263,22 @@ mod argument_tests {
         ] {
             assert!(parse(&extra).is_err());
         }
+    }
+
+    #[test]
+    fn r4_writer_kill_batch_is_exact_mock_only_and_preserves_all() {
+        let args = parse(&["--phase", "mock", "--case", "R4-T8-WRITER-KILL-25"])
+            .unwrap()
+            .unwrap();
+        assert!(validate_r4_case(args.phase, args.case.as_deref()).unwrap());
+        for extra in [
+            ["--phase", "all", "--case", "R4-T8-WRITER-KILL-25"],
+            ["--phase", "startup", "--case", "R4-T8-WRITER-KILL-25"],
+            ["--phase", "mock", "--case", "R4-T8-WRITER-KILL"],
+        ] {
+            assert!(parse(&extra).is_err());
+        }
+        assert!(!validate_r4_case(Phase::All, None).unwrap());
     }
 
     fn parse(extra: &[&str]) -> Result<Option<Args>, String> {

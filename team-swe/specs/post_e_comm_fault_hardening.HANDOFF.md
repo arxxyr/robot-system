@@ -2,20 +2,20 @@
 
 ## 当前步骤
 
-R4b2普通Resync八次实际接受重试耗尽已通过最终源码/原证据独审及root本地验收。
-基线R4b1为`b4b44f7`；正式round1共28门全过，542输入首末及当前一致；
-workspace2211/0/9、S0hook869/0/1、工具119/0/0（重叠分组不累加）。
-dev/release各新1、原R4b1 1/R4a 3/W4a 2/W4b 5/All72通过。
-真实Prepare完整15步、原unlink一次、十次同inode fsync EBADF；原接受0→8、
-九个due后Stuck，同次5s后receive仍None/Open，原Pending/Cleanup/RR责任不退休。
-Stuck后SIGTERM，真实L退出1及原五件残余；0/0且marker无仅文件事实，不等于耐久。
-M1/M2已闭，开发失败不混入正式通过。验收入口为
-`target/post_e_h2_rt/s48/rr_r4b2/{root_acceptance.md,final_binding.json}`。
-归档已通过，R4b1整个晚生目录与commit回执6件已携带；本阶段post及commit回执下包携带。
-本阶段实际提交身份见git日志及rr_r4b2/commit_receipt.json。
-R4b3已扩为25个固定SIGKILL点且方案独审/root批准，后包入口为
-`rr_r4b3/native_task_expanded.md`，待本包实际提交后派发；旧两点启动令仅留历史。
-恢复内部再杀、完整T8、剩余SUP/systemd、双主机及P-E尚未闭合。
+R4b3固定25点已通过最终源码/原证据独审及root本地验收；实际基线R4b2为`9d1931a`。
+正式round1共28门全过，544输入首末/当前一致，workspace2211/0/9、S0hook877/0/1、
+工具129/0/0（集合重叠）。dev/release各新25、b2 1/b1 1/W4a2/W4b5/All72均通过；
+未改R4a监督/control.rs与207底层输入按已验身份复用，不冒本轮重跑。
+新增Prepare成功12、Finalize原unlink前1、runtime Repair成功12；原Prepare末同步真实EBADF
+保Durable，原daemon沿同txn进入Repair。50例完整前缀与原窗口均核；每环境唯一空marker
+拒启动，其余24同目录保守恢复1/1、marker清除、initial latched=true及正常退出。
+原临时文件身份/字节、原Child真reap后ControlPort真join及首代物证跨恢复保持。
+旧工具初始化owner与reap重新计时缺口已局部修补，开发错误保留，仅本冻结轮算正式。
+验收入口`target/post_e_h2_rt/s48/rr_r4b3/{root_acceptance.md,final_binding.json}`。
+归档核验已完成：32,054成员/32,053索引，新5,391件逐SHA；root整包及38关键件实字节通过。
+R4b2整个post与实际commit回执6件随本包携带，当前post/随后commit下包携带。
+下一包R4b4单一三代链已审，入口`rr_r4b4/native_task.md`，待本阶段实际提交后派发。
+R4c函数方案已独审/root收口，仅未来规划；真实manager/ARM/双主机/P-E和D15尚未闭合。
 用户最新要求继续有效开发直到周额度剩20%；root实时读取账户周额度，
 接近停止线不派新包，达到停止线停派/停写并保存真实交接。每阶段通过即commit，不push。
 Orin仅只读软件盘点：旧HEAD及七处源码残留已辨明来源，待同批对齐；未运行R4/ARM验收。

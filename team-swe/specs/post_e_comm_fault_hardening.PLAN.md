@@ -2569,16 +2569,28 @@ S0hook869/0/1、工具119/0/0；dev/release各新1与原1/3/2/5/72通过。
 原5s后同次receive及15s接纳、实际L残件、真正reap/join均核实；M1/M2已闭。
 十次真实EBADF不产生伪终态或退款，归档提交后进入已审25点R4b3。
 
-#### P.6.14.24 R4b3 剩余 daemon 中断点集中包（2026-09-15方案批准）
+#### P.6.14.24 R4b3 剩余 daemon 中断点集中包（2026-09-15方案批准与实施验收）
 
 原T8覆盖审计后，独立评审及root批准将原两点包集中扩为25点：Prepare成功12、
 Finalize Before unlink 1、运行期Repair成功12（含Read/Validate）。启动令为
-rr_r4b3/native_task_expanded.md，取代原native_task.md两点范围；仍待R4b2验收提交
-及root派发。单一FILE_KILL封闭模式以原Prepare末目录sync真实EBADF返回Durable，
+rr_r4b3/native_task_expanded.md，取代原native_task.md两点范围；R4b2提交9d1931a后
+已由root派发实施。单一FILE_KILL封闭模式以原Prepare末目录sync真实EBADF返回Durable，
 沿原owner/Permit/txn进入RepairLatched；不改生产算法、预算、trace/page或配置互斥。
 新旧点按实际回调与文件后果逐项绑定，保SIGKILL遗留临时文件和同目录恢复；旧W4b5
 及All72入口不变，一批验收，不逐两点重复全套。W0/W1/W3a既有证据按同源复用，
-R4b4启动恢复内部再杀、SUP/ENV、双主机/P-E仍未完成；当前仅方案通过。
+R4b4启动恢复内部再杀、SUP/ENV、双主机/P-E仍未完成。
+
+R4b3已按9d1931a基线实施并获独审/root本地验收：正式28/28、544输入一致，
+workspace2211/0/9、S0hook877/0/1、tools129/0/0；两profile各25/1/1/2/5/72通过。
+25点完整原CSV/真实文件/kill窗口/回收已核；各12个临时文件保留、24恢复+1拒绝符合原义。
+旧父工具owner安装与reap截止一并修补；未改R4a/底层复用，不重复其大门。归档已核验，待实际提交。
+
+#### P.6.14.25 R4b4 启动恢复内部再杀（方案已批准，待派发）
+
+按rr_r4b4/native_task.md：仅一条三代mock链，Prepare末同步后杀→原启动恢复RenamePrimary
+成功后杀→原目录无hook完整恢复。第二代原MainStart+5s/最多250ms有限stdout记录，
+NoGuard仅feature旁路真实成功回调，不改原许可/文件结果。此前阶段实际提交后root再派发。
+R4c已批函数提纲及执行组合仍仅未来方案；manager/ARM/P-E、现场及D15另有未完成项。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

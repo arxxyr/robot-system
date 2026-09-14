@@ -457,12 +457,26 @@ fn check_kill_fields(
     pause_until: u64,
 ) -> Result<(), &'static str> {
     match stage {
-        ClearTxnStage::CreateMarker
+        ClearTxnStage::ReadMarker
+        | ClearTxnStage::ValidateMarker
+        | ClearTxnStage::CreateMarker
+        | ClearTxnStage::SampleMarkerIdentity
+        | ClearTxnStage::WriteMarker
+        | ClearTxnStage::SyncMarkerFile
+        | ClearTxnStage::SyncMarkerDirectory
+        | ClearTxnStage::CreateBackup
+        | ClearTxnStage::WriteBackup
+        | ClearTxnStage::SyncBackupFile
         | ClearTxnStage::RenameBackup
+        | ClearTxnStage::SyncBackupDirectory
+        | ClearTxnStage::CreatePrimary
+        | ClearTxnStage::WritePrimary
+        | ClearTxnStage::SyncPrimaryFile
+        | ClearTxnStage::RenamePrimary
         | ClearTxnStage::SyncPrimaryDirectory
         | ClearTxnStage::RemoveMarker
         | ClearTxnStage::SyncRemovalDirectory => {}
-        _ => return Err("W4 SIGKILL 仅接受五个固定阶段"),
+        _ => return Err("W4 SIGKILL 仅接受固定 Prepare、Repair 与 Finalize 文件阶段"),
     }
     let deadline = entered_at
         .checked_add(2_000_000_000)

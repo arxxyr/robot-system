@@ -158,6 +158,36 @@ fn kill_reached_round_trip_keeps_five_stages_and_original_deadline() {
 }
 
 #[test]
+fn expanded_kill_reached_round_trip_preserves_existing_codec() {
+    for stage in [
+        ClearTxnStage::ReadMarker,
+        ClearTxnStage::ValidateMarker,
+        ClearTxnStage::SampleMarkerIdentity,
+        ClearTxnStage::WriteMarker,
+        ClearTxnStage::SyncMarkerFile,
+        ClearTxnStage::SyncMarkerDirectory,
+        ClearTxnStage::CreateBackup,
+        ClearTxnStage::WriteBackup,
+        ClearTxnStage::SyncBackupFile,
+        ClearTxnStage::SyncBackupDirectory,
+        ClearTxnStage::CreatePrimary,
+        ClearTxnStage::WritePrimary,
+        ClearTxnStage::SyncPrimaryFile,
+        ClearTxnStage::RenamePrimary,
+    ] {
+        let payload = W4Payload::KillReached {
+            step_seq: 1,
+            stage,
+            entered_at: 1,
+            pause_until: 250_000_002,
+        };
+        let actual = event(payload);
+        assert_eq!(actual.kind as u64, 32);
+        assert_eq!(decode(&actual).unwrap(), Some(payload));
+    }
+}
+
+#[test]
 fn kill_reached_rejects_unknown_stage_zero_source_and_late_or_overflowed_window() {
     let payload = W4Payload::KillReached {
         step_seq: 1,
@@ -182,7 +212,7 @@ fn kill_reached_rejects_unknown_stage_zero_source_and_late_or_overflowed_window(
             ..valid
         },
         TraceEvent {
-            generation: 6,
+            generation: 22,
             ..valid
         },
         TraceEvent {
@@ -217,7 +247,7 @@ fn kill_reached_rejects_unknown_stage_zero_source_and_late_or_overflowed_window(
         assert!(decode(&changed).is_err(), "不接受篡改字段：{changed:?}");
     }
     for (stage, entered_at, pause_until) in [
-        (ClearTxnStage::SampleMarkerIdentity, 1, 2),
+        (ClearTxnStage::LoadLatch, 1, 2),
         (ClearTxnStage::CreateMarker, u64::MAX, u64::MAX),
         (ClearTxnStage::CreateMarker, 0, 1),
         (ClearTxnStage::CreateMarker, 1, 2_000_000_001),

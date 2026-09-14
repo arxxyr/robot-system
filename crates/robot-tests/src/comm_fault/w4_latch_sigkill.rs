@@ -1,4 +1,6 @@
-//! W4b 五个真实成功步骤后的进程中断；同内核重启不等于断电耐久验证。
+//! W4b 原五点及 R4b3 固定二十五点进程中断；同内核重启不等于断电耐久验证。
+
+mod batch;
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
@@ -46,6 +48,7 @@ enum Point {
     PrepareSync,
     RemoveMarker,
     RemovalSync,
+    Batch(batch::Spec),
 }
 
 impl Point {
@@ -63,6 +66,7 @@ impl Point {
             Self::PrepareSync => "kill_after_prepare_last_sync_keeps_latch_on_restart",
             Self::RemoveMarker => "kill_after_unlink_restarts_from_real_zero_pair",
             Self::RemovalSync => "kill_after_removal_sync_restarts_from_real_zero_pair",
+            Self::Batch(spec) => spec.label,
         }
     }
     const fn configuration(self) -> &'static str {
@@ -72,6 +76,7 @@ impl Point {
             Self::PrepareSync => "prepare-sync-primary-directory",
             Self::RemoveMarker => "finalize-remove-marker",
             Self::RemovalSync => "finalize-sync-removal-directory",
+            Self::Batch(spec) => spec.label,
         }
     }
     const fn stage(self) -> ClearTxnStage {
@@ -81,13 +86,24 @@ impl Point {
             Self::PrepareSync => ClearTxnStage::SyncPrimaryDirectory,
             Self::RemoveMarker => ClearTxnStage::RemoveMarker,
             Self::RemovalSync => ClearTxnStage::SyncRemovalDirectory,
+            Self::Batch(spec) => spec.stage,
         }
     }
     const fn finalize(self) -> bool {
         matches!(self, Self::RemoveMarker | Self::RemovalSync)
     }
     const fn latch_after_restart(self) -> bool {
-        !self.finalize()
+        !matches!(self, Self::RemoveMarker | Self::RemovalSync)
+    }
+    const fn empty_marker(self) -> bool {
+        matches!(
+            self,
+            Self::CreateMarker
+                | Self::Batch(batch::Spec {
+                    stage: ClearTxnStage::SampleMarkerIdentity,
+                    ..
+                })
+        )
     }
 }
 
@@ -160,6 +176,27 @@ pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> 
     }
     if report.cases.len().checked_sub(count) != Some(5) {
         return Err("W4b 实际登记不是五例".into());
+    }
+    Ok(())
+}
+
+pub(super) async fn run_batch(args: &Args, report: &mut Report) -> Result<(), String> {
+    if !cfg!(target_os = "linux") || args.case.as_deref() != Some(batch::FILTER) {
+        return Err("R4b3仅支持Linux mock的固定25点入口".into());
+    }
+    let count = report.cases.len();
+    for spec in batch::POINTS {
+        let point = Point::Batch(spec);
+        let started = SystemClock.now().0;
+        report.record(
+            point.name(),
+            batch::FILTER,
+            started,
+            exercise_one(args, point).await,
+        );
+    }
+    if report.cases.len().checked_sub(count) != Some(25) {
+        return Err("R4b3未实际登记恰25点".into());
     }
     Ok(())
 }
@@ -476,10 +513,24 @@ fn validate_killed_prefix(
     if status.signal() != Some(libc::SIGKILL) {
         return Err("原Child未以SIGKILL真正reap".into());
     }
+    validate_prefix(events, point, sample, armed, kill_before, kill_after)
+}
+
+fn validate_prefix(
+    events: &[(TraceEvent, W4Payload)],
+    point: Point,
+    sample: u64,
+    armed: u64,
+    observed_before: u64,
+    observed_after: u64,
+) -> Result<Value, String> {
     if events.len() > MAX_EVENTS {
         return Err("解析事件超过原有界容量".into());
     }
     let source = events.first().ok_or("W4零事件")?.0.source;
+    if matches!(point, Point::Batch(_)) && source != 1 {
+        return Err("新批原source未从1开始".into());
+    }
     let mut cursor = Prefix {
         events,
         at: 0,
@@ -489,7 +540,13 @@ fn validate_killed_prefix(
     let txn = cursor.begin(source, CommandKind::Prepare, TokenKind::None, None)?;
     let target_source;
     let count;
-    if point.finalize() {
+    let mut predecessor = None;
+    if let Point::Batch(spec) = point {
+        let end = batch::parse_prefix(&mut cursor, spec, txn)?;
+        target_source = end.source;
+        count = end.count;
+        predecessor = end.predecessor;
+    } else if point.finalize() {
         cursor.steps(source, &PREPARE, point.stage())?;
         cursor.expect(
             source,
@@ -536,10 +593,11 @@ fn validate_killed_prefix(
     {
         return Err("杀点不符或原截断后仍有下一步骤/Completion/Token/End".into());
     }
-    reached.check(armed, kill_before, kill_after)?;
+    reached.check(armed, observed_before, observed_after)?;
     Ok(
         json!({"txn_id":txn.txn_id.to_string(),"expected_epoch":txn.expected_epoch,"original_latched":txn.original_latched,
-        "sample":sample,"source":reached.source,"step_seq":reached.step_seq,"stage":format!("{:?}",reached.stage),"events":events.len(),"first_rr_retired":false}),
+        "sample":sample,"source":reached.source,"step_seq":reached.step_seq,"stage":format!("{:?}",reached.stage),"events":events.len(),"first_rr_retired":false,
+        "target_phase":if matches!(point,Point::Batch(batch::Spec{family:batch::Family::FinalizeBefore,..})){"Before"}else{"AfterSuccess"},"predecessor":predecessor}),
     )
 }
 
@@ -560,6 +618,7 @@ struct Owned {
     probe_replies: usize,
     disarmed: bool,
     kill_sent: bool,
+    kill_after_ns: Option<u64>,
 }
 impl Owned {
     fn drain(&mut self) {
@@ -697,6 +756,7 @@ impl Owned {
             let observation = case.observation("s0")?;
             let logs = case.logs("s0")?;
             if logs.contains("boot_ready") && observation.runtime_armed_ns != 0 {
+                self.running(until, "接纳真实启动武装")?;
                 save_json(
                     &case.directory.join("armed.json"),
                     &json!({"at_ns":SystemClock.now().0,"observation":format!("{observation:?}")}),
@@ -786,6 +846,40 @@ impl Owned {
     }
 }
 
+fn within_deadline(observed_at: u64, until: u64, label: &str) -> Result<(), String> {
+    if observed_at >= until {
+        return Err(format!("{label}超出原绝对截止：{observed_at} >= {until}"));
+    }
+    Ok(())
+}
+
+/// 仅在原 Child 已真正回收（或尚未产生）后停止并真正 join 注入线程。
+fn finish_control(owned: &mut Owned, case: &Case) -> Result<(), String> {
+    let reaped = match &mut owned.child {
+        Some(child) => child
+            .try_wait()
+            .map_err(|error| error.to_string())?
+            .is_some(),
+        None => true,
+    };
+    if !reaped {
+        let _ = save_json(
+            &case.directory.join("control_cleanup_failure.json"),
+            &json!({"error":"原Child尚未reap，不能释放注入线程"}),
+        );
+        std::process::abort();
+    }
+    let Some(port) = &mut owned.port else {
+        return Ok(());
+    };
+    let result = port.finish();
+    let evidence = save_json(
+        &case.directory.join("control_cleanup.json"),
+        &json!({"at_ns":SystemClock.now().0,"child_reaped_or_not_spawned":reaped,"joined":true,"error":result.as_ref().err()}),
+    );
+    combine(result, evidence)
+}
+
 #[derive(Clone, Copy)]
 enum ExpectedExit {
     Killed,
@@ -803,6 +897,10 @@ impl ExpectedExit {
 }
 
 /// Child只暂移到本收尾栈；其它原对象仍在Owned，回收失败必须终止父进程而非detach。
+#[allow(
+    clippy::too_many_lines,
+    reason = "原Child在同一栈内覆盖正常退出、原SIGKILL期限及失败硬收尾，集中保持首错与真实reap顺序"
+)]
 async fn reap_owned(
     owned: &mut Owned,
     case: &Case,
@@ -813,6 +911,10 @@ async fn reap_owned(
     };
     let mut first = None;
     let initial = child.try_wait().map_err(|e| e.to_string());
+    let mut observed_at = SystemClock.now().0;
+    let original_until = owned
+        .kill_after_ns
+        .map(|stamp| stamp.saturating_add(REAP_NS));
     let mut status = match initial {
         Ok(value) => value,
         Err(error) => {
@@ -820,6 +922,14 @@ async fn reap_owned(
             None
         }
     };
+    if status.is_some() && matches!(expected, ExpectedExit::Killed) {
+        remember(
+            &mut first,
+            original_until
+                .ok_or_else(|| "原SIGKILL时刻缺失".into())
+                .and_then(|until| within_deadline(observed_at, until, "原SIGKILL真实reap")),
+        );
+    }
     if status.is_none() && matches!(expected, ExpectedExit::Normal) {
         {
             let closing = stop(&mut child);
@@ -832,7 +942,10 @@ async fn reap_owned(
             }
         }
         match child.try_wait() {
-            Ok(value) => status = value,
+            Ok(value) => {
+                status = value;
+                observed_at = SystemClock.now().0;
+            }
             Err(error) => {
                 first.get_or_insert(error.to_string());
             }
@@ -840,13 +953,21 @@ async fn reap_owned(
     }
     // 预期SIGKILL已发；先保原2s回收窗，超界才进入失败清理。
     if status.is_none() && matches!(expected, ExpectedExit::Killed) && owned.kill_sent {
-        let until = SystemClock.now().0.saturating_add(REAP_NS);
+        let until = original_until.unwrap_or_else(|| {
+            first.get_or_insert("原SIGKILL时刻缺失".into());
+            0
+        });
         loop {
             owned.drain();
             remember(&mut first, owned.poll_cleanup(case));
             match child.try_wait() {
                 Ok(Some(value)) => {
                     status = Some(value);
+                    observed_at = SystemClock.now().0;
+                    remember(
+                        &mut first,
+                        within_deadline(observed_at, until, "原SIGKILL真实reap"),
+                    );
                     break;
                 }
                 Ok(None) => (),
@@ -864,14 +985,20 @@ async fn reap_owned(
     }
     if status.is_none() {
         first.get_or_insert("原预期退出未完成，执行失败收尾".into());
+        let cleanup_kill_at = SystemClock.now().0;
         remember(&mut first, child.start_kill().map_err(|e| e.to_string()));
-        let until = SystemClock.now().0.saturating_add(REAP_NS);
+        let until = cleanup_kill_at.saturating_add(REAP_NS);
         loop {
             owned.drain();
             remember(&mut first, owned.poll_cleanup(case));
             match child.try_wait() {
                 Ok(Some(value)) => {
                     status = Some(value);
+                    observed_at = SystemClock.now().0;
+                    remember(
+                        &mut first,
+                        within_deadline(observed_at, until, "失败收尾真实reap"),
+                    );
                     break;
                 }
                 Ok(None) => (),
@@ -893,7 +1020,7 @@ async fn reap_owned(
     let status = status.ok_or("回收状态缺失")?;
     owned.drain();
     remember(&mut first, owned.poll_cleanup(case));
-    let exit_evidence = json!({"at_ns":SystemClock.now().0,"code":status.code(),"signal":status.signal(),"reaped":true,"first_error":first.clone()});
+    let exit_evidence = json!({"at_ns":SystemClock.now().0,"reaped_observed_at_ns":observed_at,"original_reap_deadline_ns":original_until,"code":status.code(),"signal":status.signal(),"reaped":true,"first_error":first.clone()});
     remember(
         &mut first,
         save_json(&case.directory.join("exit.json"), &exit_evidence),
@@ -926,6 +1053,18 @@ async fn wait_after_success_and_kill_owned(
     if reached.stage != point.stage() {
         return Err("真实Reached不是本例目标阶段".into());
     }
+    let capture = owned.capture.as_ref().ok_or("原capture丢失")?;
+    let observed = SystemClock.now().0;
+    let _ = validate_prefix(
+        &capture.events,
+        point,
+        capture.sample.ok_or("原sample丢失")?,
+        armed,
+        observed,
+        observed,
+    )?;
+    let accepted_at = SystemClock.now().0;
+    within_deadline(accepted_at, deadline, "接纳完整原前缀")?;
     owned.poll_clear(case, true)?;
     let child = owned.child.as_mut().ok_or("原Child丢失")?;
     if child.try_wait().map_err(|e| e.to_string())?.is_some() {
@@ -937,6 +1076,7 @@ async fn wait_after_success_and_kill_owned(
         return Err("禁止向非正PID发信号".into());
     }
     let before = SystemClock.now().0;
+    within_deadline(before, deadline, "实际SIGKILL前")?;
     reached.check(armed, before, before)?;
     // 仅向刚从同一存活Child取得的正PID发送；返回和实际回收分别记录。
     let result = unsafe { libc::kill(pid, libc::SIGKILL) };
@@ -947,15 +1087,17 @@ async fn wait_after_success_and_kill_owned(
     };
     let after = SystemClock.now().0;
     owned.kill_sent = result == 0;
+    owned.kill_after_ns = (result == 0).then_some(after);
     save_json(
         &case.directory.join("kill.json"),
         &json!({"pid":pid,"signal":libc::SIGKILL,"before_ns":before,"after_ns":after,
-        "return":result,"errno":errno,"sample":owned.capture.as_ref().and_then(|c|c.sample),"source":reached.source,"step_seq":reached.step_seq,
+        "return":result,"errno":errno,"accepted_at_ns":accepted_at,"request_deadline_ns":deadline,"sample":owned.capture.as_ref().and_then(|c|c.sample),"source":reached.source,"step_seq":reached.step_seq,
         "stage":format!("{:?}",reached.stage),"entered_at":reached.entered_at,"reached_stamp":reached.stamp,"pause_until":reached.pause_until,"armed_at":armed}),
     )?;
     if result != 0 {
         return Err(format!("原SIGKILL失败：errno={errno:?}"));
     }
+    within_deadline(after, deadline, "实际SIGKILL后")?;
     reached.check(armed, before, after)?;
     Ok((before, after))
 }
@@ -991,7 +1133,8 @@ async fn first_invocation(case: &Case, point: Point) -> Result<Value, String> {
     let mut owned = Owned::default();
     let result: Result<(u64,u64,u64,u64),String>=async {
         save_json(&case.directory.join("invocation.json"),&json!({"kind":"crash","rust_log":DAEMON_LOG,"configuration":point.configuration(),"config":case.config,"latch":case.latch,"trust":case.trust,"robot_id":case.robot_id}))?;
-        owned.port=Some(ControlPort::new(&case.robot_id)?);
+        owned.port=Some(ControlPort::spawn(&case.robot_id)?);
+        owned.port.as_mut().ok_or("原ControlPort安装后丢失")?.wait_ready()?;
         let mut command=case.command();command.env("ROBOT_TEST_W4_FILE_KILL",point.configuration()).env("ROBOT_LOG_FORMAT","json").env("RUST_LOG",DAEMON_LOG);
         let started=SystemClock.now().0;
         owned.child=Some(case.spawn("s0",command)?);
@@ -1007,6 +1150,7 @@ async fn first_invocation(case: &Case, point: Point) -> Result<Value, String> {
         Some(_) => reap_owned(&mut owned, case, ExpectedExit::Killed).await,
         None => Err("第一invocation未产生Child".into()),
     };
+    let cleanup = combine(cleanup, finish_control(&mut owned, case));
     let result = match (result, cleanup) {
         (Ok((armed, sample, before, after)), Ok(status)) => (|| {
             let capture = owned.capture.as_ref().ok_or("真reap后Capture缺失")?;
@@ -1095,19 +1239,22 @@ async fn probe_latch(owned: &mut Owned, case: &Case, latched: bool) -> Result<Va
         }
         if let Some(bytes) = received? {
             owned.probe_replies = 1;
+            save_bytes(&case.directory.join("probe_response_1.bin"), &bytes)?;
+            within_deadline(SystemClock.now().0, until, "接纳原只读回复")?;
             break bytes;
         }
         owned.running(until, "第二次只读评估")?;
         tokio::time::sleep(Duration::from_millis(2)).await;
     };
-    save_bytes(&case.directory.join("probe_response_1.bin"), &bytes)?;
     let response =
         flatbuffers::root::<msg::SetEnabledResponse>(&bytes).map_err(|e| e.to_string())?;
     let after = case.observation("s0")?.serial_calls[0];
     validate_probe(&response, &id, latched, before, after)?;
+    let accepted_at = SystemClock.now().0;
+    within_deadline(accepted_at, until, "接纳只读判据")?;
     Ok(
         json!({"request_id":id,"latch_expected":latched,"status":format!("{:?}",response.status()),"domain":format!("{:?}",response.domain()),
-        "error_msg":response.error_msg(),"completed_at_ns":response.completed_at_ns(),"effect":"None","retired":response.retired(),"normal_before":before,"normal_after":after}),
+        "error_msg":response.error_msg(),"completed_at_ns":response.completed_at_ns(),"effect":"None","retired":response.retired(),"normal_before":before,"normal_after":after,"accepted_at_ns":accepted_at,"deadline_ns":until}),
     )
 }
 
@@ -1216,12 +1363,14 @@ async fn wait_rejected(owned: &mut Owned, case: &Case, until: u64) -> Result<(),
                 || observation.runtime_armed_ns != 0
                 || observation.fired_ns != 0
                 || logs.contains("boot_ready")
+                || logs.contains("initial estop_latched")
                 || !logs.contains("ValidateMarker")
             {
                 return Err(format!(
                     "空marker未沿原ValidateMarker在IO前拒绝：{observation:?}"
                 ));
             }
+            within_deadline(SystemClock.now().0, until, "接纳坏marker真实拒绝")?;
             save_json(
                 &case.directory.join("probe_not_started.json"),
                 &json!({"reason":"原ValidateMarker拒绝，未创建RR端点","observation":format!("{observation:?}")}),
@@ -1244,31 +1393,31 @@ async fn restart_same_directory(case: &Case, point: Point) -> Result<Value, Stri
         owned.child=Some(case.spawn("s0",command)?);
         record_child_identity(case, &owned)?;
         owned.capture=Some(Capture::open(case)?);
-        match point {
-            Point::CreateMarker=>{
+        if point.empty_marker() {
                 wait_rejected(&mut owned,case,started.saturating_add(STARTUP_NS)).await?;
                 Ok(json!({"recovery":"ValidateMarker rejected","second_rr_started":false}))
-            }
-            Point::RenameBackup|Point::PrepareSync|Point::RemoveMarker|Point::RemovalSync=>{
+        } else {
                 let _=owned.armed(case,started.saturating_add(STARTUP_NS)).await?;
                 verify_initial_latch(&case.logs("s0")?, point.latch_after_restart())?;
-                owned.port=Some(ControlPort::new(&case.robot_id)?);
+                owned.port=Some(ControlPort::spawn(&case.robot_id)?);
+                owned.port.as_mut().ok_or("原ControlPort安装后丢失")?.wait_ready()?;
                 let sample=owned.sample(case,SampleMode::ArmInflight).await?;
                 let probe=probe_latch(&mut owned,case,point.latch_after_restart()).await?;
                 let _=owned.sample(case,SampleMode::Disarm).await?;
                 Ok(json!({"initial_latched":point.latch_after_restart(),"sample":sample,"probe":probe}))
-            }
         }
     }.await;
-    let expected = match point {
-        Point::CreateMarker => ExpectedExit::Rejected,
-        _ => ExpectedExit::Normal,
+    let expected = if point.empty_marker() {
+        ExpectedExit::Rejected
+    } else {
+        ExpectedExit::Normal
     };
     let cleanup = if owned.child.is_some() {
         reap_owned(&mut owned, case, expected).await.map(|_| ())
     } else {
         Err("第二invocation未产生Child".into())
     };
+    let cleanup = combine(cleanup, finish_control(&mut owned, case));
     let result = combine(result, cleanup).and_then(|evidence| {
         let observation = case.observation("s0")?;
         if observation.fired_ns != 0 || observation.residual_bitmap != 0 {
@@ -1331,11 +1480,13 @@ fn persistent_snapshot(shared: &Case) -> Result<Value, String> {
 
 fn verify_killed_files(shared: &Case, point: Point, chain: &Value) -> Result<(), String> {
     let directory = shared.latch.parent().ok_or("原持久目录丢失")?;
-    let expected = match point {
-        Point::CreateMarker => (b"1\n".as_slice(), b"1\n".as_slice()),
-        Point::RenameBackup => (b"1\n".as_slice(), b"0\n".as_slice()),
-        _ => (b"0\n".as_slice(), b"0\n".as_slice()),
+    let pair = match point {
+        Point::CreateMarker => (1, 1),
+        Point::RenameBackup => (1, 0),
+        Point::Batch(spec) => spec.pair,
+        _ => (0, 0),
     };
+    let expected = (latch_bytes(pair.0)?, latch_bytes(pair.1)?);
     if std::fs::read(&shared.latch).map_err(|e| e.to_string())? != expected.0
         || std::fs::read(directory.join("estop_latch.bak")).map_err(|e| e.to_string())?
             != expected.1
@@ -1344,36 +1495,111 @@ fn verify_killed_files(shared: &Case, point: Point, chain: &Value) -> Result<(),
     }
     let mut store =
         ClearTxnStore::open(&shared.latch, &shared.robot_id, "arm").map_err(|e| e.to_string())?;
-    match point {
-        Point::CreateMarker => {
-            let marker = std::fs::metadata(store.marker_path()).map_err(|e| e.to_string())?;
-            if !marker.is_file() || marker.len() != 0 {
-                return Err("CreateMarker杀后不是原空普通marker".into());
-            }
+    if point.empty_marker() {
+        let marker = std::fs::metadata(store.marker_path()).map_err(|e| e.to_string())?;
+        if !marker.is_file() || marker.len() != 0 {
+            return Err("CreateMarker杀后不是原空普通marker".into());
         }
-        Point::RenameBackup | Point::PrepareSync => {
-            // 仅调用原只读校验；不获得/制造Prepared，不运行recover或repair。
-            let pending = store
-                .inspect_pending()
-                .map_err(|e| e.to_string())?
-                .ok_or("有效marker丢失")?;
-            let record = pending.record();
-            if record.txn_id().to_string() != chain["txn_id"].as_str().ok_or("原txn证据丢失")?
-                || !record.original_latched()
-                || Some(record.expected_epoch()) != chain["expected_epoch"].as_u64()
-            {
-                return Err("真实有效marker不属于首次原txn".into());
-            }
+    } else if matches!(point, Point::RemoveMarker | Point::RemovalSync) {
+        match std::fs::symlink_metadata(store.marker_path()) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.to_string()),
+            Ok(_) => return Err("原unlink后marker仍存在".into()),
         }
-        Point::RemoveMarker | Point::RemovalSync => {
-            match std::fs::symlink_metadata(store.marker_path()) {
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                Err(error) => return Err(error.to_string()),
-                Ok(_) => return Err("原unlink后marker仍存在".into()),
-            }
+    } else {
+        // 仅调用原只读校验；不获得/制造Prepared，不运行recover或repair。
+        let pending = store
+            .inspect_pending()
+            .map_err(|e| e.to_string())?
+            .ok_or("有效marker丢失")?;
+        let record = pending.record();
+        if std::fs::metadata(store.marker_path())
+            .map_err(|error| error.to_string())?
+            .len()
+            != 112
+        {
+            return Err("原完整marker不是112字节".into());
+        }
+        if record.txn_id().to_string() != chain["txn_id"].as_str().ok_or("原txn证据丢失")?
+            || !record.original_latched()
+            || Some(record.expected_epoch()) != chain["expected_epoch"].as_u64()
+        {
+            return Err("真实有效marker不属于首次原txn".into());
+        }
+    }
+    if matches!(
+        point,
+        Point::Batch(batch::Spec {
+            family: batch::Family::Repair,
+            ..
+        })
+    ) {
+        let metadata = std::fs::metadata(directory).map_err(|error| error.to_string())?;
+        if chain["predecessor"]["directory_dev"].as_u64() != Some(metadata.dev())
+            || chain["predecessor"]["directory_ino"].as_u64() != Some(metadata.ino())
+        {
+            return Err("原末同步alias目录身份与原持久目录不同".into());
         }
     }
     Ok(())
+}
+
+fn latch_bytes(value: u8) -> Result<&'static [u8], String> {
+    match value {
+        0 => Ok(b"0\n"),
+        1 => Ok(b"1\n"),
+        _ => Err("固定文件判据值非法".into()),
+    }
+}
+
+fn verify_temporary_files(point: Point, snapshot: &Value, pid: u32) -> Result<Value, String> {
+    let files = snapshot["files"].as_object().ok_or("原文件快照缺集合")?;
+    let marker_expected = !matches!(point, Point::RemoveMarker | Point::RemovalSync);
+    for name in ["estop_latch", "estop_latch.bak"] {
+        if !files.contains_key(name) {
+            return Err(format!("原文件集合缺{name}"));
+        }
+    }
+    if files.contains_key("estop_latch.clear_pending") != marker_expected {
+        return Err("原marker集合不符".into());
+    }
+    let others: Vec<_> = files
+        .iter()
+        .filter(|(name, _)| {
+            !matches!(
+                name.as_str(),
+                "estop_latch" | "estop_latch.bak" | "estop_latch.clear_pending"
+            )
+        })
+        .collect();
+    let expected = match point {
+        Point::Batch(spec) => spec.temporary,
+        _ => None,
+    };
+    match expected {
+        None if others.is_empty() => Ok(json!([])),
+        Some(expected) if others.len() == 1 && pid != 0 => {
+            let (name, value) = others[0];
+            let prefix = format!("{}.clear_tmp.{pid}.", expected.target());
+            if name
+                .strip_prefix(&prefix)
+                .is_none_or(|seq| seq.is_empty() || seq.parse::<u64>().is_err())
+                || value["present"] != true
+                || value["directory"] != false
+                || value["nlink"] != 1
+                || value["ino"].as_u64().is_none_or(|ino| ino == 0)
+                || value["bytes"] != json!(expected.bytes())
+                || value["len"].as_u64()
+                    != Some(
+                        u64::try_from(expected.bytes().len()).map_err(|error| error.to_string())?,
+                    )
+            {
+                return Err(format!("原临时文件名字/PID/身份/字节不符：{name} {value}"));
+            }
+            Ok(json!([{"name":name,"identity":value}]))
+        }
+        _ => Err("原临时文件集合缺失或有额外文件".into()),
+    }
 }
 
 /// 只允许同原锁在真实两次取锁后写对应Child PID；其它trust数据仍完整比对。
@@ -1440,32 +1666,47 @@ fn verify_restarted_files(
     if !before["lock"]["present"].as_bool().unwrap_or(false) {
         return Err("第一回收后原稳定锁不存在".into());
     }
-    #[allow(
-        clippy::single_match_else,
-        reason = "按杀点枚举区分空标记拒绝启动和其余真实恢复，保留业务枚举分派"
-    )]
-    match point {
-        Point::CreateMarker => {
-            if before["files"] != after["files"] {
-                return Err("空marker拒绝启动仍改动原双份/marker字节或inode".into());
+    if point.empty_marker() {
+        if before["files"] != after["files"] {
+            return Err("空marker拒绝启动仍改动原双份/marker字节或inode".into());
+        }
+    } else {
+        verify_untouched_temporaries(before, after)?;
+        let directory = shared.latch.parent().ok_or("原持久目录丢失")?;
+        let expected = if point.latch_after_restart() {
+            b"1\n"
+        } else {
+            b"0\n"
+        };
+        for path in [&shared.latch, &directory.join("estop_latch.bak")] {
+            if std::fs::read(path).map_err(|e| e.to_string())? != expected {
+                return Err("第二原生产恢复的双份不符".into());
             }
         }
-        _ => {
-            let directory = shared.latch.parent().ok_or("原持久目录丢失")?;
-            let expected = if point.latch_after_restart() {
-                b"1\n"
-            } else {
-                b"0\n"
-            };
-            for path in [&shared.latch, &directory.join("estop_latch.bak")] {
-                if std::fs::read(path).map_err(|e| e.to_string())? != expected {
-                    return Err("第二原生产恢复的双份不符".into());
-                }
-            }
-            if after["files"].get("estop_latch.clear_pending").is_some() {
-                return Err("第二恢复后marker未移除".into());
-            }
+        if after["files"].get("estop_latch.clear_pending").is_some() {
+            return Err("第二恢复后marker未移除".into());
         }
+    }
+    Ok(())
+}
+
+fn verify_untouched_temporaries(before: &Value, after: &Value) -> Result<(), String> {
+    let temporary_set = |snapshot: &Value| -> Result<BTreeMap<String, Value>, String> {
+        Ok(snapshot["files"]
+            .as_object()
+            .ok_or("持久快照缺文件集合")?
+            .iter()
+            .filter(|(name, _)| {
+                !matches!(
+                    name.as_str(),
+                    "estop_latch" | "estop_latch.bak" | "estop_latch.clear_pending"
+                )
+            })
+            .map(|(name, identity)| (name.clone(), identity.clone()))
+            .collect())
+    };
+    if temporary_set(before)? != temporary_set(after)? {
+        return Err("恢复改变原临时文件集合、inode或字节".into());
     }
     Ok(())
 }
@@ -1528,6 +1769,11 @@ async fn exercise_one(args: &Args, point: Point) -> Result<Value, String> {
     let manifest = frozen?;
     verify_killed_files(&shared, point, &chain)?;
     let before = persistent_snapshot(&shared)?;
+    let temporaries = verify_temporary_files(point, &before, original_child_pid(&crash)?)?;
+    save_json(
+        &shared.directory.join("original_temporary_files.json"),
+        &temporaries,
+    )?;
     save_json(
         &shared.directory.join("persistent_before_restart.json"),
         &before,
@@ -1582,13 +1828,24 @@ async fn exercise_one(args: &Args, point: Point) -> Result<Value, String> {
     let second = combine(second, evidence_error.map_or(Ok(()), Err))?;
     Ok(
         json!({"point":point.configuration(),"first":chain,"second":second,"directory":shared.directory,
-        "first_manifest_unchanged":true,"first_files":manifest.len(),"first_rr_retired":false,"same_kernel_process_interruption_only":true}),
+        "first_manifest_unchanged":true,"first_files":manifest.len(),"original_temporaries":temporaries,"first_rr_retired":false,"same_kernel_process_interruption_only":true}),
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn original_acceptance_and_reap_deadlines_reject_equal_or_late_observations() {
+        assert!(within_deadline(199, 200, "观察").is_ok());
+        assert!(within_deadline(200, 200, "观察").is_err());
+        assert!(within_deadline(201, 200, "观察").is_err());
+        let original_kill_after = 100;
+        let until = original_kill_after + REAP_NS;
+        assert!(within_deadline(until - 1, until, "原reap").is_ok());
+        assert!(within_deadline(until, until, "原reap").is_err());
+    }
     use robot_s0::comm_fault_trace::TraceKind;
 
     // 这里只构造已解码的诊断输入和Unix状态值，验证解析器；不冒真实进程、凭证或SIGKILL证据。
