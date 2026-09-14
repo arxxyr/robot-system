@@ -16,9 +16,11 @@ pub(super) const SOFTWARE_LOAD_ACCEPTANCE: &str = "S-46";
 
 pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> {
     super::validate_w4_case(args.phase, args.case.as_deref())?;
+    super::validate_r4_case(args.phase, args.case.as_deref())?;
     match args.case.as_deref() {
         Some("W4-FILE-FAULT-SMOKE") => return super::w4_latch_crash::run(args, report).await,
         Some("W4-FILE-SIGKILL-SMOKE") => return super::w4_latch_sigkill::run(args, report).await,
+        Some("R4-SUP-STANDALONE") => return super::supervision::run(args, report).await,
         _ => {}
     }
     match args.phase {

@@ -22,6 +22,8 @@ pub(super) fn isolated_command(path: &Path) -> Command {
     command
         .env_remove("NOTIFY_SOCKET")
         .env_remove("INVOCATION_ID")
+        .env_remove("WATCHDOG_USEC")
+        .env_remove("WATCHDOG_PID")
         .kill_on_drop(true);
     command
 }
@@ -178,5 +180,49 @@ pub(super) async fn wait_log(
             return Err(format!("等待日志 {needle:?} 超时"));
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn isolated_command_removes_all_manager_variables_but_allows_explicit_fixture_values() {
+        let mut command = isolated_command(Path::new("/bin/true"));
+        for key in [
+            "NOTIFY_SOCKET",
+            "INVOCATION_ID",
+            "WATCHDOG_USEC",
+            "WATCHDOG_PID",
+        ] {
+            assert_eq!(
+                command
+                    .as_std()
+                    .get_envs()
+                    .find(|(name, _)| *name == key)
+                    .map(|(_, value)| value),
+                Some(None)
+            );
+        }
+        command
+            .env("NOTIFY_SOCKET", "/tmp/fixture-notify")
+            .env("WATCHDOG_USEC", "1000000");
+        assert_eq!(
+            command
+                .as_std()
+                .get_envs()
+                .find(|(name, _)| *name == "WATCHDOG_USEC")
+                .and_then(|(_, value)| value),
+            Some(std::ffi::OsStr::new("1000000"))
+        );
+        assert_eq!(
+            command
+                .as_std()
+                .get_envs()
+                .find(|(name, _)| *name == "WATCHDOG_PID")
+                .map(|(_, value)| value),
+            Some(None)
+        );
     }
 }

@@ -2519,6 +2519,25 @@ dev/release各自原W4a2、W4b5、All72全过，分组存在重叠不得累加�
 精确交付见delivery_manifest.json，正式记录gates/round2/run.json。归档提交后推进R4，
 本包不称R4/Orin/ARM/硬件/P-E通过，D15 OPEN、deployable=false保持。
 
+#### P.6.14.21 R4a standalone 监督小包（2026-09-15实施）
+
+R3已验收提交0db309c。root批准rr_r4/native_task.md，采用development_plan.md
+（ad29dc82…49e8），独审plan_review.md（a98f8a16…7dd3）限定ACK。
+原生主开发统一源码/Cargo，独立评审；mock专用R4-SUP-STANDALONE固定三例：
+FileStep原截止90/3/1、RefuseStop(io)到L带原残件退1、真实before_process_exit
+屏障到原D退90/4/3。保原2s/500ms/D10s/M250ms和All72，不将更早候选冒纯D。
+四环境变量隔离；观测页末尾追加6字原事实，4096字节/旧偏移不变、测试ABI2→3，
+同批构建消费者。原ticket、真join、出口原residual及confirm候选直接提供证据，
+不制造新政策状态或用父发信号时刻替代D。函数/字节边界见启动令和独审。
+用户最新取消本包后暂停，要求继续有效开发至周额度剩20%；每阶段验收后commit，不push。
+root定期核周额度，接近阈值不启动新包、达到阈值保存交接停止；R4b/T8、R4c/ENV、
+R4d双主机和P-E尚未执行，不据此关闭D15。
+
+R4a现已独立源码/证据及root本地验收：正式round1共24门通过，539输入首末一致；
+workspace2211/0/9、S0hook859/0/1、工具104/0/0；dev/release各新3及旧2/5/72通过。
+M1原writer结果/真实失败集合与M2辅助线程保原句柄有界join均关闭，详rr_r4/root_acceptance.md。
+当前增量归档并提交；下一包按rr_r4b/native_task.md实施普通Unsynced重同步成功链。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

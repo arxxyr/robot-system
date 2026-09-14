@@ -416,6 +416,13 @@ pub fn boot_pause(stage: &str) {
     }
 }
 
+/// 原 hook 与 `BootShared` 共用同一观测页；出口处仍由 `RunExit` 持有原残余。
+pub(crate) fn record_process_exit_boundary(residual_bitmap: u16) {
+    if let Some(page) = OBSERVATION.get() {
+        page.record_process_exit(robot_core::time::SystemClock.now().0, residual_bitmap);
+    }
+}
+
 /// 仅在对应 worker 的真实 spawn 之前注入系统错误，不伪造 daemon 退出码。
 ///
 /// # Errors

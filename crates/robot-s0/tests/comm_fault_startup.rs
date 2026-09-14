@@ -210,7 +210,7 @@ fn assert_log_order(log: &str, first: &str, second: &str) {
     assert!(first_at < second_at, "{first:?} 必须早于 {second:?}：{log}");
 }
 
-fn assert_initialized(observed: ObservationSnapshot) {
+fn assert_initialized(observed: &ObservationSnapshot) {
     assert!(
         observed.observation_ready,
         "不能拿零页当未执行证据：{observed:?}"
@@ -239,7 +239,7 @@ fn initialization_and_all_eight_workers_gate_first_bus_io() {
     for joints in [6, 13, 32] {
         let mut process = Process::spawn(joints, &[], None, None);
         let observed = process.wait_ready(10_500 + 200 * joints as u64);
-        assert_initialized(observed);
+        assert_initialized(&observed);
         assert_eq!(observed.joint_count, joints as u64);
         assert_eq!(observed.worker_bitmap, 0xff);
         assert_ne!(observed.spawned_ns, 0);
@@ -264,7 +264,7 @@ fn initial_history_not_applied_keeps_executor_unspawned_under_original_checkpoin
     let code = process.wait_exit(5300);
     assert!(matches!(code, 1 | 88), "{code}: {}", process.log());
     let observed = process.page.snapshot();
-    assert_initialized(observed);
+    assert_initialized(&observed);
     assert!(!observed.hook_ready);
     assert_eq!(observed.command_applied, 0);
     assert_eq!(
@@ -291,7 +291,7 @@ fn auto_enable_disconnected_exits_before_ready() {
     let mut process = Process::spawn_with(6, &[], None, None, true);
     assert_eq!(process.wait_exit(5000), 1);
     let observed = process.page.snapshot();
-    assert_initialized(observed);
+    assert_initialized(&observed);
     assert_eq!(observed.worker_bitmap, 0xff);
     assert_ne!(observed.preflight_finished_ns, 0);
     assert!(!observed.ready_reached);
@@ -507,7 +507,7 @@ fn each_worker_spawn_failure_stops_only_the_successful_prefix() {
                 .contains(&format!("comm_fault_hook fail_worker={worker}"))
         );
         let observed = process.page.snapshot();
-        assert_initialized(observed);
+        assert_initialized(&observed);
         let expected = [7_u8, 0, 1, 2, 3, 4, 5, 6]
             .into_iter()
             .take(index)
@@ -532,7 +532,7 @@ fn main_pause_before_spawn_is_enforced_by_cp1() {
             .contains(&format!("comm_fault_hook stage={stage}"))
     );
     let observed = process.page.snapshot();
-    assert_initialized(observed);
+    assert_initialized(&observed);
     assert_eq!(observed.fired_checkpoint, 1);
     assert!(
         (5_000_000_000..=5_100_000_000).contains(&(observed.fired_ns - observed.main_start_ns))
@@ -552,7 +552,7 @@ fn main_pause_after_spawn_is_enforced_by_cp2() {
                 .contains(&format!("comm_fault_hook stage={stage}"))
         );
         let observed = process.page.snapshot();
-        assert_initialized(observed);
+        assert_initialized(&observed);
         assert_eq!(observed.fired_checkpoint, 2);
         assert_eq!(observed.worker_bitmap, 0xff);
         assert_ne!(observed.spawned_ns, 0);
@@ -570,7 +570,7 @@ fn ipc_ready_pause_returns_original_residual_before_cp2() {
     assert_eq!(process.wait_exit(12_000), 1);
     let reaped_at = SystemClock.now().0;
     let observed = process.page.snapshot();
-    assert_initialized(observed);
+    assert_initialized(&observed);
     assert_eq!(observed.worker_bitmap, 0xff);
     assert_eq!(observed.stop_bitmap, 0xff);
     assert_eq!(observed.residual_bitmap, u64::from(HandleKind::Ipc.bit()));
@@ -613,7 +613,7 @@ fn missing_required_notify_socket_never_commits_ready() {
     let mut process = Process::spawn(6, &["--notify-mode", "required"], None, None);
     assert_eq!(process.wait_exit(5000), 1);
     let observed = process.page.snapshot();
-    assert_initialized(observed);
+    assert_initialized(&observed);
     assert!(!observed.ready_reached);
     assert_eq!(observed.worker_bitmap, 0xff);
     assert_eq!(observed.stop_bitmap, 0xff);
@@ -625,7 +625,7 @@ fn thirty_three_joints_reject_before_workers_or_bus_io() {
     let mut process = Process::spawn(33, &[], None, None);
     assert_eq!(process.wait_exit(2000), 2);
     let observed = process.page.snapshot();
-    assert_initialized(observed);
+    assert_initialized(&observed);
     assert_eq!(observed.joint_count, 32);
     assert_eq!(observed.worker_bitmap, 0);
     assert_eq!(observed.first_io_ns, 0);

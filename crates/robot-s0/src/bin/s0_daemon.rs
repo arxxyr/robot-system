@@ -1307,6 +1307,10 @@ fn finish_runtime_owned(
     let mut meta = meta;
     let shared = supervisor.shared();
     let ticket = shared.arm_runtime_shutdown(res.clock.now());
+    #[cfg(feature = "test-comm-fault-hook")]
+    if let (Some(page), Some(ticket)) = (shared.observation(), ticket) {
+        page.record_shutdown_ticket(ticket);
+    }
     let deadline = ticket.map_or_else(|| res.clock.now().0, |ticket| ticket.deadline().0);
     let mut gates = RuntimeGates {
         boot: &shared,
@@ -1329,6 +1333,10 @@ fn finish_runtime_owned(
     );
     let mut writer = WriterSettlement::default();
     if let Some((result, joined)) = report.take_writer() {
+        #[cfg(feature = "test-comm-fault-hook")]
+        if let Some(page) = shared.observation() {
+            page.record_writer_joined(res.clock.now().0);
+        }
         writer.result = Some(result);
         writer.unused_joined = Some(joined);
     }
@@ -1363,6 +1371,7 @@ fn finish_runtime_owned(
         meta.publish_failure_probe.ipc_joined = report.ipc_joined;
         meta.publish_failure_probe.executor_joined = report.executor_joined;
         export_publish_failure_attempts(supervisor, &meta);
+        record_runtime_exit_facts(&writer, &report);
         if let Some(page) = shared.observation() {
             page.record_runtime_stop_trace(&report);
             page.record_residual_bitmap(report.residual.bitmap());
@@ -1385,6 +1394,26 @@ fn finish_runtime_owned(
             _meta: meta,
         },
     }
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+fn record_runtime_exit_facts(
+    writer: &WriterSettlement,
+    report: &robot_s0::shutdown_mechanism::TeardownReport,
+) {
+    let writer_join_result = match writer.result.as_ref() {
+        Some(Ok(robot_s0::latch_writer::WriterExit::Stopped)) => "stopped",
+        Some(Ok(robot_s0::latch_writer::WriterExit::StoppedAfterIpcDisconnect)) => {
+            "stopped_after_ipc_disconnect"
+        }
+        Some(Err(_)) => "panicked",
+        None => "missing",
+    };
+    tracing::info!(
+        writer_join_result,
+        shutdown_failures = ?report.failures,
+        "R4运行期原退出结果"
+    );
 }
 
 #[cfg(feature = "test-comm-fault-hook")]

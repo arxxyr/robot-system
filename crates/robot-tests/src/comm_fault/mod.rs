@@ -12,6 +12,7 @@ mod sla;
 mod sla_acceptance;
 mod sla_background;
 mod startup;
+mod supervision;
 mod w3;
 mod w4_latch_crash;
 mod w4_latch_sigkill;
@@ -131,6 +132,7 @@ impl Args {
             return Err("mock-h2-load 是完整长负载，不接受 --case 截短".to_owned());
         }
         validate_w4_case(phase, case.as_deref())?;
+        validate_r4_case(phase, case.as_deref())?;
         Ok(Some(Self {
             phase,
             bin_dir,
@@ -150,6 +152,15 @@ fn validate_w4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
         Some("W4-FILE-FAULT-SMOKE") => Err("W4-FILE-FAULT-SMOKE 仅属于 mock phase".to_owned()),
         Some("W4-FILE-SIGKILL-SMOKE") => Err("W4-FILE-SIGKILL-SMOKE 仅属于 mock phase".to_owned()),
         Some(value) if value.starts_with("W4") => Err(format!("未知 W4 筛选：{value}")),
+        _ => Ok(false),
+    }
+}
+
+fn validate_r4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
+    match case {
+        Some("R4-SUP-STANDALONE") if phase == Phase::Mock => Ok(true),
+        Some("R4-SUP-STANDALONE") => Err("R4-SUP-STANDALONE 仅属于 mock phase".to_owned()),
+        Some(value) if value.starts_with("R4") => Err(format!("未知 R4 筛选：{value}")),
         _ => Ok(false),
     }
 }
@@ -194,6 +205,22 @@ pub(super) async fn main_entry() -> ExitCode {
 #[cfg(test)]
 mod argument_tests {
     use super::*;
+
+    #[test]
+    fn r4_standalone_is_explicit_mock_only_and_does_not_expand_original_all() {
+        let args = parse(&["--phase", "mock", "--case", "R4-SUP-STANDALONE"])
+            .unwrap()
+            .unwrap();
+        assert!(validate_r4_case(args.phase, args.case.as_deref()).unwrap());
+        for extra in [
+            ["--phase", "all", "--case", "R4-SUP-STANDALONE"],
+            ["--phase", "startup", "--case", "R4-SUP-STANDALONE"],
+            ["--phase", "mock", "--case", "R4-UNKNOWN"],
+        ] {
+            assert!(parse(&extra).is_err());
+        }
+        assert!(!validate_r4_case(Phase::All, None).unwrap());
+    }
 
     fn parse(extra: &[&str]) -> Result<Option<Args>, String> {
         Args::parse_from(

@@ -2,13 +2,17 @@
 
 ## 当前步骤
 
-R3本方成对迁移已通过独立源码/证据终审及root本地验收，基线R2为`06fcf0b`。
-原生开发统一完成实现和测试，正式round2的37门全过，538输入首末及当前身份相同；
-workspace2211/0/9、S0完整hook858/0/1，dev/release各W4a2/W4b5/All72通过，分组不累加。
-RR既有工厂、Gateway/S0/S1及W3/W4真实peer保原profile/预算/责任链；原失败及汇总更正保留。
-验收入口`target/post_e_h2_rt/s48/rr_r3/{root_acceptance.md,delivery_manifest.json}`，
-最终正式记录`rr_r3/gates/round2/run.json`；归档身份见H.json，提交身份见git日志及随后commit回执。
-当前归档提交后推进R4完整T8/SUP/ENV与双环境矩阵；未访问Orin，不将本地通过外推至硬件。
+R4a standalone监督三例已通过独立源码/证据及root本地验收，基线R3为`0db309c`。
+正式round1共24门全部通过，539输入首末与当前相同；workspace2211/0/9、
+S0完整hook859/0/1、工具104/0/0。dev/release各新3、原W4a2/W4b5/All72通过，分组不累加。
+FileStep、RefuseStop到L失败退出及出口屏障到纯D监督均保持原预算；辅助控制线程真join收口。
+验收入口`target/post_e_h2_rt/s48/rr_r4/{root_acceptance.md,final_binding.json}`；
+当前归档提交R4a，提交身份见git日志及随后commit回执；归档身份见H.json。
+下一包R4b1普通Unsynced/Resync真实重试成功链，启动令`rr_r4b/native_task.md`，
+须当前提交完成后由root派发。重试耗尽/完整T8、剩余SUP/systemd、双主机及P-E仍待后包。
+用户最新要求继续有效开发直到周额度剩20%；root实时读取账户周额度，
+接近停止线不派新包，达到停止线停派/停写并保存真实交接。每阶段通过即commit，不push。
+Orin仅只读软件盘点：旧HEAD及七处源码残留已辨明来源，待同批对齐；未运行R4/ARM验收。
 
 W4b固定五例SIGKILL/原目录重启已通过独立源码、运行证据及root验收，
 APPROVED_SOFTWARE_SCOPE；基线W4a为`382ca44`，本包提交见git日志。
@@ -75,6 +79,7 @@ P-E保原20/s、50ms节拍、360–600秒、成功唯一新写>8192、真实wire
 
 左H1/H3 PASS，H2两次FAIL；最后确认左臂断电、双臂支撑。S-46本地8192长测通过，
 Orin真实882唯一写时wire4满FAIL；右臂未测，六服务最后停止，D15 OPEN、deployable=false。
-本轮未访问远端，上述是最后已知事实。新使能前须取得新的电源/USB重置与持续在场事实，
+上述硬件状态沿用最后现场记录；R4准备仅只读盘点远端软件环境与源码残留。
+新使能前须取得新的电源/USB重置与持续在场事实，
 不复用旧H2驱动或已消费授权。Orin为`loosqk@10.0.1.40`，调试/RT必要时直接sudo；
 标定沿Orin已核Python值，串口按原D2 by-id身份。候选后续顺序保持D15→Rerun桥→F7。

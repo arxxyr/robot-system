@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "RR_R3_ACCEPTED_READY_TO_COMMIT",
-  "resume_from": "R3原生开发、独立源码/证据及root本地验收通过；完成本包归档提交后推进R4 T8/SUP/ENV与双环境矩阵。后续原生子agent开发与独立评审，root定方案/整合/提交；不push。",
+  "work_state": "RR_R4A_READY_TO_COMMIT",
+  "resume_from": "R4a本地已验收，归档提交后派发rr_r4b/native_task.md；持续有效开发至周剩20%，每包通过即commit，不push。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_RR_R3_APPROVED_LOCAL_SCOPE",
-  "review_status": "R3_INDEPENDENT_SOURCE_EVIDENCE_AND_ROOT_APPROVED",
+  "status": "S48_RR_R4A_APPROVED_LOCAL_SCOPE",
+  "review_status": "R4A_INDEPENDENT_SOURCE_EVIDENCE_AND_ROOT_APPROVED",
   "deployable": false,
-  "scope": "W3/W4a/W4b及RR R0–R3本地范围已验收；R4完整T8/SUP/ENV与双环境、P-E及Orin尚未完成，wire4历史FAIL、D15 OPEN、deployable=false。",
+  "scope": "W3/W4a/W4b、RR R0–R3及R4a本地范围已验收；剩余T8/SUP/ENV和双主机、P-E、现场尚未完成，wire4历史FAIL、D15 OPEN、deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -2645,7 +2645,7 @@
         "task": "target/post_e_h2_rt/s48/rr_r3/native_task.md",
         "verified": true,
         "hardware_access": false,
-        "archive_boundary": "R3最终交付/失败原件及R2晚生四件已归档；R3 post_archive_review与随后commit_receipt在本包边界外，下一阶段携带。",
+        "archive_boundary": "R3最终原件已归档；R3全部post_archive_review和commit回执现随R4a归包携带。",
         "scope": "既有transport工厂/四wrapper与Gateway/S0/S1/W3/W4a/W4b成对迁移、默认关闭真实故障桥及原预算本地回归已验收。",
         "fixture_bridge_decision": {
           "status": "APPROVED_IMPLEMENTATION",
@@ -2756,7 +2756,83 @@
         },
         "archive_receipt": "target/post_e_h2_rt/s48/rr_r3/post_archive_review/robot-rr-r3-archive-receipt.json",
         "archive_receipt_sha256": "70713577fffc94007bfa03d3fcb17e1609469ff285156c2ecc0ddb16e6861dc1",
-        "archive_added_count": 2061
+        "archive_added_count": 2061,
+        "commit_reference": "0db309c045383a7c6d27090be2ca490ffe305a03"
+      },
+      "rr_r4a": {
+        "status": "APPROVED_R4A_LOCAL_SCOPE",
+        "base_commit": "0db309c045383a7c6d27090be2ca490ffe305a03",
+        "developer": "native subagent /root/r3_native_developer",
+        "reviewer": "/root/rr_review",
+        "verified": true,
+        "hardware_access": false,
+        "scope": "本地x86_64 standalone三例、原预算及控制线程真回收；不覆盖systemd/ARM/Orin/电机或后包",
+        "task": "target/post_e_h2_rt/s48/rr_r4/native_task.md",
+        "task_sha256": "7d0811d1c06887c4e27049b03d0f8f04a96313e1479c6ba4804e0ab54e252e8f",
+        "development_plan": "target/post_e_h2_rt/s48/rr_r4/development_plan.md",
+        "development_plan_sha256": "ad29dc82bb99e55f0dbd701bbbd0a6261a54516895b412a919cb7f5f054a49e8",
+        "archive_boundary": "R4a最终原件和R3全部晚生材料已归包；R4a整个post_archive_review与随后commit回执为包外后生材料，下阶段携带。",
+        "plan_review": "target/post_e_h2_rt/s48/rr_r4/plan_review.md",
+        "plan_review_sha256": "a98f8a1617796e70a6687d5a1ea95b36d7b2dee3c5634a3d69818d3c4f6f7dd3",
+        "stop_after_commit": false,
+        "source_review": "target/post_e_h2_rt/s48/rr_r4/source_review.md",
+        "source_review_sha256": "ca9bdd323678cfea33347fe88cb7e25c79c8cfd7e7057ad601c1c7cac249f20c",
+        "source_review_status": "ACK_SCOPED_SOURCE",
+        "formal_run": "target/post_e_h2_rt/s48/rr_r4/gates/round1/run.json",
+        "formal_gates": 24,
+        "source_inputs": 539,
+        "source_unchanged": true,
+        "archive_pending": false,
+        "result": "target/post_e_h2_rt/s48/rr_r4/result.json",
+        "result_sha256": "46b1e542c0277e0eef10341d13fc1285d2c60152872a151d028796675b55dfd8",
+        "handoff": "target/post_e_h2_rt/s48/rr_r4/handoff.md",
+        "handoff_sha256": "579bdcb021912d260659259c4517a9ace115f69cbc09f2e9c620cb53577a3e1e",
+        "root_acceptance": "target/post_e_h2_rt/s48/rr_r4/root_acceptance.md",
+        "root_acceptance_sha256": "6ea30b30756ee4ab18f24f5f469823047fe820640d36fdcf3841aa3db1205251",
+        "final_binding": "target/post_e_h2_rt/s48/rr_r4/final_binding.json",
+        "final_binding_sha256": "41d9ca111d747b91436f28acf730b77eea39f3e45a35f8bc866c754ea76a7442",
+        "independent_evidence_review": "target/post_e_h2_rt/s48/rr_r4/final_evidence_review.md",
+        "independent_evidence_review_sha256": "eb183e8b0197570f2f82c177fa88c55724050f64b6e794ee64dd968827cdb6ec",
+        "independent_verification": "target/post_e_h2_rt/s48/rr_r4/independent_verification.json",
+        "independent_verification_sha256": "e09a26dfa43d3a203975bdba61eafb7fd8555175413cdb048727a5088c58678e",
+        "delivery_manifest": "target/post_e_h2_rt/s48/rr_r4/delivery_manifest.json",
+        "delivery_manifest_sha256": "d682ba54597dc223e56c6eec3566f174c09a5423f51a3d7c7126c4a0b7490696",
+        "formal_run_sha256": "73f2f5ef06f9d583bb16e6d988d64dbf2e16d8cc230368dc00496dd19a42852d",
+        "tests": {
+          "workspace": [
+            2211,
+            0,
+            9
+          ],
+          "s0_complete_hook": [
+            859,
+            0,
+            1
+          ],
+          "tools": [
+            104,
+            0,
+            0
+          ],
+          "dev": {
+            "r4a": 3,
+            "w4a": 2,
+            "w4b": 5,
+            "all": 72
+          },
+          "release": {
+            "r4a": 3,
+            "w4a": 2,
+            "w4b": 5,
+            "all": 72
+          },
+          "counts_overlap": true
+        },
+        "archive_receipt": "target/post_e_h2_rt/s48/rr_r4/post_archive_review/robot-rr-r4a-archive-receipt.json",
+        "archive_receipt_sha256": "0f08b480079efa73867e7981bf89b73792108a5ef5b89527159962b2146f4503",
+        "archive_added_count": 2218,
+        "archive_verified_files": 20191,
+        "root_archive_verification": "target/post_e_h2_rt/s48/rr_r4/post_archive_review/root_archive_verification.json"
       }
     }
   },
@@ -2911,21 +2987,21 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2591,
-    "sha256": "0ae089da3114d4e89cd8073ad3d09b160353e5066197f883a6ebae8f3b65cc05"
+    "lines": 2610,
+    "sha256": "4188196da94aca05f990082f122b4a0d9314867b0871587a112505309731ded7"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "84b0465a9b33df4f058891a85b1db98a98896e6f1110c3135ab2c94f0ad563f5",
-    "bytes": 68067245,
-    "members": 17974,
-    "logical_bytes": 1763841781,
-    "index_count": 17973,
+    "sha256": "2ddab9cf31688539f0c09e123bd966878f37fab4bf818b04fe5685edd12d0555",
+    "bytes": 74238960,
+    "members": 20192,
+    "logical_bytes": 2002275352,
+    "index_count": 20191,
     "per_file_sha256_verified": true,
-    "verification_method": "固定R2整包SHA复用旧15912项逐件证明，保全部旧路径/大小/索引；2061新增件逐件SHA及来源集合首末一致。root复核最终整包与16件验收绑定。"
+    "verification_method": "固定R3整包SHA复用旧17973项证明；保旧路径/大小/索引，2218新增件逐件SHA及来源首末一致；root核整包元数据与12关键件实际字节。"
   },
-  "retention": "当前H包保旧15912索引项及2061新增R3/R2晚生证据；排8编译ELF并留本地原件及构建身份。R3 post_archive_review和随后commit回执为晚生材料，下一阶段携带。旧queue保历史原文，当前状态以H.json/HANDOFF为准。",
-  "updated_at": "2026-09-14T17:30:55.023177+00:00",
+  "retention": "当前H包保旧17973索引，新增2218件R4a/R3晚生证据；排16编译ELF并保本地实件及构建身份。R4a整个post_archive_review和随后commit回执为晚生材料，下阶段携带；R4b仍未纳入。",
+  "updated_at": "2026-09-14T18:24:36.739373+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -2966,15 +3042,11 @@
   },
   "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。",
   "stop_after_current": {
-    "user_request": "当前做完先暂停下来",
-    "current_package": "S48_W4B",
-    "required_before_pause": [
-      "本包实现与必要测试",
-      "独立源码和实际证据评审",
-      "root验收归档",
-      "git commit，不push"
-    ],
+    "user_request": "继续进行有效开发直到周token还剩20%",
+    "current_package": "S48_RR_R4A",
     "next_package_authorized_to_start": true,
-    "state": "历史W4b暂停已完成；2026-09-14用户恢复持续推进"
+    "state": "已取消R4a后暂停；改以实时周额度剩20%为停止线",
+    "weekly_remaining_stop_percent": 20,
+    "policy": "接近停止线不启动新包；达到停止线停止派发/采样开发并保存交接，不以消耗额度为目标，不把未通过阶段强行commit。"
   }
 }

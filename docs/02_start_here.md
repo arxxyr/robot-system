@@ -20,8 +20,8 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     RR R3本方成对迁移已本地验收，归档提交后推进R4矩阵
-当前授权:     持续推进；原生子agent开发及独立评审，主agent定方案、终审并提交
+当前步骤:     R4a已独审/root验收，归档提交后进入R4b1普通重同步
+当前授权:     继续有效开发至周额度剩20%；每阶段验收后提交，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -54,8 +54,9 @@ dev/release各W4a2/W4b5/All72通过；独立源码/证据及root已验收本地�
 完整T8/SUP/ENV和双环境仍待R4；上述本地结果不代表Orin或P-E通过。
 
 左H1/H3通过、H2两次FAIL；用户最后确认左臂断电、双臂支撑。右臂未测，
-六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。本轮未访问远端，
-不把旧现场状态写成本轮查询结果。Orin调试/RT必要时直接sudo；标定使用已有
+六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。R4准备已只读盘点Orin
+软件环境与旧H2源码残留，未更新电机现场状态；来源见rr_r4/environment_inventory.md
+及orin_residual_source_review.md。Orin调试/RT必要时直接sudo；标定使用已有
 Python JSON。新H2须先完成软件验收/提交/两端对齐，再取得新物理重置与在场事实，
 不得复用已消费的left_h2_current目录或旧驱动。
 

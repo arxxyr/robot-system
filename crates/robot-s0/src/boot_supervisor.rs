@@ -495,6 +495,15 @@ fn supervise(shared: &BootShared, started_at: MonoRawNs, clock: SystemClock) {
                             | CandidateKind::WriterExited => 3,
                         };
                         page.store(F::Fired, clock.now().0);
+                        page.store(F::FiredDeadline, candidate.deadline.0);
+                        page.store(
+                            F::FiredCandidatesBitmap,
+                            after
+                                .candidates
+                                .iter()
+                                .flatten()
+                                .fold(0, |bits, candidate| bits | (1 << candidate.kind as u8)),
+                        );
                         page.store(F::FiredReason, reason);
                         page.store(F::FiredCheckpoint, checkpoint);
                     }

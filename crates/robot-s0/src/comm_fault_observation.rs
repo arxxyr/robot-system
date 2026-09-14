@@ -9,9 +9,9 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const OBSERVATION_PAGE_BYTES: usize = 4096;
-// W3 仅末尾追加运行监督五字；原 0–27 偏移不变，页仍为 4096 字节。
-const WORD_COUNT: usize = 33;
-const VERSION: u64 = 2;
+// R4a 仅末尾追加六个真实退出事实；原 0–32 偏移不变，页仍为 4096 字节。
+const WORD_COUNT: usize = 39;
+const VERSION: u64 = 3;
 
 #[repr(C)]
 struct ObservationWords {
@@ -56,6 +56,13 @@ pub struct ObservationSnapshot {
     pub obligation_overdue: bool,
     pub writer_exited_at_ns: u64,
     pub residual_bitmap: u64,
+    pub shutdown_deadline_ns: u64,
+    /// 主线程取得原 writer join 结果后的观测时刻，不是 join 完成的精确时刻。
+    pub writer_joined_observed_at_ns: u64,
+    pub before_process_exit_ns: u64,
+    pub exit_residual_bitmap: u64,
+    pub fired_deadline_ns: u64,
+    pub fired_candidates_bitmap: u64,
 }
 
 /// S48 A3b：快照发布耗尽的 worker 身份，供 daemon 退出后导出对应字段。
@@ -101,6 +108,12 @@ pub(crate) enum ObservationField {
     ObligationOverdue,
     WriterExitedAt,
     ResidualBitmap,
+    ShutdownDeadline,
+    WriterJoinedObservedAt,
+    BeforeProcessExit,
+    ExitResidualBitmap,
+    FiredDeadline,
+    FiredCandidatesBitmap,
 }
 
 pub struct ObservationPage {
@@ -115,6 +128,24 @@ unsafe impl Send for ObservationPage {}
 unsafe impl Sync for ObservationPage {}
 
 impl ObservationPage {
+    /// 只导出原 shutdown ticket；调用者不得从父信号时刻重建期限。
+    pub fn record_shutdown_ticket(&self, ticket: crate::latch_writer::ShutdownTicket) {
+        self.store_first(ObservationField::ShutdownDeadline, ticket.deadline().0);
+    }
+
+    /// 仅在主线程取得真实 `take_writer()` 结果后调用，成功或 panic 都已真 join。
+    pub fn record_writer_joined(&self, observed_at_ns: u64) {
+        self.store_first(ObservationField::WriterJoinedObservedAt, observed_at_ns);
+    }
+
+    pub(crate) fn record_process_exit(&self, now_ns: u64, residual_bitmap: u16) {
+        self.store(
+            ObservationField::ExitResidualBitmap,
+            u64::from(residual_bitmap),
+        );
+        self.store(ObservationField::BeforeProcessExit, now_ns);
+    }
+
     /// 导出原报告中已实际发出的停止请求；不代表 worker 已退出或已 join。
     pub fn record_runtime_stop_trace(&self, report: &crate::shutdown_mechanism::TeardownReport) {
         use crate::shutdown_mechanism::HandleKind;
@@ -275,6 +306,7 @@ impl ObservationPage {
         use ObservationField as F;
         // 先读提交门，再读取其之前发布的时间戳。
         let fired_checkpoint = self.load(F::FiredCheckpoint);
+        let before_process_exit_ns = self.load(F::BeforeProcessExit);
         let observation_ready = self.load(F::ObservationReady) != 0;
         let ready_reached = self.load(F::ReadyReached) != 0;
         ObservationSnapshot {
@@ -314,6 +346,12 @@ impl ObservationPage {
             obligation_overdue: self.load(F::ObligationOverdue) != 0,
             writer_exited_at_ns: self.load(F::WriterExitedAt),
             residual_bitmap: self.load(F::ResidualBitmap),
+            shutdown_deadline_ns: self.load(F::ShutdownDeadline),
+            writer_joined_observed_at_ns: self.load(F::WriterJoinedObservedAt),
+            before_process_exit_ns,
+            exit_residual_bitmap: self.load(F::ExitResidualBitmap),
+            fired_deadline_ns: self.load(F::FiredDeadline),
+            fired_candidates_bitmap: self.load(F::FiredCandidatesBitmap),
         }
     }
 }
@@ -358,6 +396,60 @@ pub(crate) fn preinit_ns() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appended_runtime_facts_keep_original_offsets_and_share_exit_commit_gate() {
+        use ObservationField as F;
+        assert_eq!(F::ResidualBitmap as usize, 32);
+        assert_eq!(F::ShutdownDeadline as usize, 33);
+        assert_eq!(F::FiredCandidatesBitmap as usize, 38);
+        assert_eq!(std::mem::size_of::<ObservationWords>(), 39 * 8);
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("r4_observation");
+        let parent = ObservationPage::create(&path).unwrap();
+        let child = ObservationPage::open(&path).unwrap();
+        let empty = parent.snapshot();
+        assert_eq!(empty.version, 3);
+        assert_eq!(
+            (
+                empty.shutdown_deadline_ns,
+                empty.writer_joined_observed_at_ns,
+                empty.before_process_exit_ns,
+                empty.exit_residual_bitmap,
+                empty.fired_deadline_ns,
+                empty.fired_candidates_bitmap
+            ),
+            (0, 0, 0, 0, 0, 0)
+        );
+        child.record_writer_joined(123);
+        child.record_process_exit(456, crate::shutdown_mechanism::HandleKind::Io.bit());
+        child.store(F::FiredDeadline, 789);
+        child.store(
+            F::FiredCandidatesBitmap,
+            1 << crate::latch_writer::CandidateKind::Shutdown as u8,
+        );
+        child.store(F::Fired, 790);
+        child.store(F::FiredCheckpoint, 4);
+        let observed = parent.snapshot();
+        assert_eq!(observed.writer_joined_observed_at_ns, 123);
+        assert_eq!(observed.before_process_exit_ns, 456);
+        assert_eq!(
+            observed.exit_residual_bitmap,
+            u64::from(crate::shutdown_mechanism::HandleKind::Io.bit())
+        );
+        assert_eq!(
+            (
+                observed.fired_checkpoint,
+                observed.fired_deadline_ns,
+                observed.fired_candidates_bitmap
+            ),
+            (4, 789, 8)
+        );
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 4096);
+        // 旧版本不能被新进程静默解释为拥有六个新事实。
+        child.store(F::Version, 2);
+        assert!(ObservationPage::open(&path).is_err());
+    }
 
     #[test]
     fn two_mappings_share_atomic_milestones_and_open_never_truncates() {

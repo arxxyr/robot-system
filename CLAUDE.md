@@ -40,18 +40,19 @@
            W4b已提交a2598a5；用户2026-09-14恢复持续推进并确认cc-claude额度重置；
            RR R0来源/构建准备已由cc-claude完成并通过独立评审/root验收；
            R0已提交cbed745；R1 CAL与同源模型验收提交0513a8c；
-           R2 IOX已验收提交06fcf0b；R3本方成对迁移已通过独立终审及root本地验收；
-           正式round2的37门全过，dev/release各W4a2/W4b5/All72通过，当前归档提交；
+           R2 IOX已验收提交06fcf0b；R3本方成对迁移已验收提交0db309c；
+           正式round2的37门全过，dev/release各W4a2/W4b5/All72通过；
            R2已由原生开发子agent收口，后续继续原生开发+独立评审，root整合提交；
-           RR r3两项遗留方案已ACK，vendor/模型/迁移另包，之后P-E长负载；
-           本地验收不代替Orin验证，RR上游可见性/退出保留问题另包修正。
-           下一步R4完整T8/SUP/ENV与双环境矩阵；原生主开发统一Cargo并按文件派发，
+           RR两项遗留已在R0–R3实现并本地验收，仍待双主机证明，之后P-E长负载；
+           R4a standalone监督三例已独审/root验收，正式24门及dev/release全过；
+           当前归档提交R4a，随后R4b1普通重同步；继续有效开发至周额度剩20%，
+           root实时查额度、接近阈值不派新包，达到阈值保存交接停止；主开发统一Cargo，
            root或独立Codex终审；每阶段通过即commit，不push。
            左H1/H3已通过，H2两次FAIL，左断电；S-46 Orin wire4仍FAIL。
            右臂未测；六服务最后已停止，deployable=false，D15 OPEN。
            证据保留当前包，旧过程数据与重复文档按用户授权清除。
            Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。
-           每阶段评审与必要质量门通过即commit，再推进下一阶段；不push。
+           每阶段评审与必要质量门通过即commit；继续至周额度剩20%，不push。
            RX 重同步 / 串口 reopen 已移出本候选。
            后续硬序 ①通信故障硬化 → ②D15 退役决策 → ③robot-viz Rerun 桥
            → ④F7 baseline 判据小件；通信硬化不自动关闭 D15。

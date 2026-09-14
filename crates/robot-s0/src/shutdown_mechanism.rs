@@ -1039,6 +1039,8 @@ impl RunExit {
     /// 验收 hook 下先在 `before_process_exit` 阶段冻结（W3 进程门）。
     pub fn exit(self) -> ! {
         #[cfg(feature = "test-comm-fault-hook")]
+        crate::comm_fault_hook::record_process_exit_boundary(self.residual.bitmap());
+        #[cfg(feature = "test-comm-fault-hook")]
         crate::comm_fault_hook::boot_pause("before_process_exit");
         let Self { code, residual } = self;
         std::mem::forget(residual);
