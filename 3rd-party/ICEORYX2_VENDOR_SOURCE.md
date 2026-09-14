@@ -171,3 +171,23 @@ manifest 注释。上游 `[[test]] tests/tests.rs` 引用未发布的 `*_tests_c
 
 之后对 vendor 的任何修改（R2 起）须以本说明中的 `.crate` SHA256 为原件基线、以上两节为 R0 / R1
 已知差异，另附 diff 与理由；不回写“原件身份”一节。
+
+## R3 本方迁移所需公共类型重导出
+
+`iceoryx2/src/strict/mod.rs` 重导出已有公共返回类型 `EnqueueIssue` 与
+`StrictChannelStatus`，使本方无需新增 CAL 生产直接依赖。类型定义、布局与
+严格状态机保持 R2 原件；本阶段验证记录位于 `target/post_e_h2_rt/s48/rr_r3`。
+
+### R3 默认关闭的受限故障桥
+
+`strict/client.rs` 在已有 `r2-test-fixtures` 图内加载新增 `strict/test_support.rs`；
+`strict/mod.rs` 仅在该图重导出。桥专用于原 IPC slice client 的 L4/C8/M2/N10，
+持一份真实 A loan，在同一请求队列保留 A 与三份真实 Sent 后，让 B 走原 strict
+发送；既有 CAL forget/arm 入口只对受检原 A/B 一次启用。无预制回执、共享状态代写
+或外部可写 offset。`port/details/{sender,segment_state}.rs` 仅把已有只读测试观测的
+编译条件扩至该显式 feature，默认生产图不增加观测口。
+
+`strict/server.rs` 同 feature 下新增 IPC slice 原 Active 的清理桥：按完整原 client ID
+取出唯一原响应 sender，按值 abandon 后实际 `remove_sender`，不写状态字、不宣称
+进程死亡。桥纯值 snapshot 不延长 owner 生命周期；调用方须先真 join server，再
+释放 A/client/Node。A 的未知远端引用只由原端点退出处置，不能当作业务退休。

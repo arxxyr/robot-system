@@ -12,6 +12,7 @@ use std::time::Duration;
 use iceoryx2::node::Node;
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service;
+use iceoryx2::strict::StrictChannelStatus;
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::{markers, msg};
 use robot_s0::clear_estop_transaction::{ClearTxnStage, ClearTxnStore};
@@ -571,7 +572,7 @@ impl Owned {
             return Ok(());
         };
         let now = SystemClock.now().0;
-        let polled = pending.try_recv();
+        let (channel_state, polled) = receive_with_closed_tail(pending);
         let mut error = None;
         match polled {
             Ok(Some(bytes)) => {
@@ -593,7 +594,7 @@ impl Owned {
                         &mut error,
                         append_json(
                             log,
-                            &json!({"at_ns":now,"result":"response","index":self.clear_replies,"bytes":bytes.len()}),
+                            &json!({"at_ns":now,"result":"response","index":self.clear_replies,"bytes":bytes.len(),"channel_state":format!("{channel_state:?}")}),
                         ),
                     );
                 }
@@ -604,18 +605,21 @@ impl Owned {
                 if let Some(log) = &mut self.clear_log {
                     remember(
                         &mut error,
-                        append_json(log, &json!({"at_ns":now,"result":"pending"})),
+                        append_json(
+                            log,
+                            &json!({"at_ns":now,"result":"pending","channel_state":format!("{channel_state:?}")}),
+                        ),
                     );
                 }
             }
             Err(failure) => {
-                let message = failure.to_string();
+                let message = failure;
                 if let Some(log) = &mut self.clear_log {
                     remember(
                         &mut error,
                         append_json(
                             log,
-                            &json!({"at_ns":now,"result":"transport_error","error":message,"after_signal":!strict}),
+                            &json!({"at_ns":now,"result":"transport_error","error":message,"after_signal":!strict,"channel_state":format!("{channel_state:?}")}),
                         ),
                     );
                 }
@@ -630,9 +634,18 @@ impl Owned {
         let Some(pending) = &self.probe_pending else {
             return Ok(());
         };
-        match pending.try_recv().map_err(|e| e.to_string())? {
-            None => Ok(()),
-            Some(bytes) => {
+        let (channel_state, received) = receive_with_closed_tail(pending);
+        match received {
+            Ok(None) => {
+                if let Some(log) = &mut self.probe_log {
+                    append_json(
+                        log,
+                        &json!({"at_ns":SystemClock.now().0,"result":"tail_pending","channel_state":format!("{channel_state:?}")}),
+                    )?;
+                }
+                Ok(())
+            }
+            Ok(Some(bytes)) => {
                 self.probe_replies = self
                     .probe_replies
                     .checked_add(1)
@@ -646,10 +659,19 @@ impl Owned {
                 if let Some(log) = &mut self.probe_log {
                     append_json(
                         log,
-                        &json!({"at_ns":SystemClock.now().0,"result":"tail_response","index":self.probe_replies}),
+                        &json!({"at_ns":SystemClock.now().0,"result":"tail_response","index":self.probe_replies,"channel_state":format!("{channel_state:?}")}),
                     )?;
                 }
                 Err("第二次只读请求出现额外回复".into())
+            }
+            Err(error) => {
+                if let Some(log) = &mut self.probe_log {
+                    append_json(
+                        log,
+                        &json!({"at_ns":SystemClock.now().0,"result":"tail_transport_error","error":error,"channel_state":format!("{channel_state:?}")}),
+                    )?;
+                }
+                Err(error)
             }
         }
     }
@@ -746,6 +768,20 @@ impl Owned {
                 .send_typed(&body)
                 .map_err(|e| format!("{e:?}"))?,
         );
+        let pending = self
+            .clear_pending
+            .as_ref()
+            .ok_or("原Clear pending安装后丢失")?;
+        if let Some(log) = &mut self.clear_log {
+            append_json(
+                log,
+                &json!({"at_ns":SystemClock.now().0,"result":"enqueued","delivery_issue":pending.delivery_issue().map(|issue|format!("{issue:?}"))}),
+            )?;
+        }
+        // issue 属于真实已入队结果；报错前原件已安装，保留到 reap_owned 完成。
+        if let Some(issue) = pending.delivery_issue() {
+            return Err(format!("原Clear已入队但附带投递问题：{issue:?}"));
+        }
         Ok(deadline)
     }
 }
@@ -1034,20 +1070,30 @@ async fn probe_latch(owned: &mut Owned, case: &Case, latched: bool) -> Result<Va
             .send_typed(&body)
             .map_err(|e| format!("{e:?}"))?,
     );
+    let pending = owned
+        .probe_pending
+        .as_ref()
+        .ok_or("第二原pending安装后丢失")?;
+    if let Some(log) = &mut owned.probe_log {
+        append_json(
+            log,
+            &json!({"at_ns":SystemClock.now().0,"result":"enqueued","delivery_issue":pending.delivery_issue().map(|issue|format!("{issue:?}"))}),
+        )?;
+    }
+    if let Some(issue) = pending.delivery_issue() {
+        return Err(format!("第二只读探针已入队但附带投递问题：{issue:?}"));
+    }
     let bytes = loop {
         owned.drain();
-        let received = owned
-            .probe_pending
-            .as_ref()
-            .ok_or("第二原pending丢失")?
-            .try_recv();
+        let pending = owned.probe_pending.as_ref().ok_or("第二原pending丢失")?;
+        let (channel_state, received) = receive_with_closed_tail(pending);
         if let Some(log) = &mut owned.probe_log {
             append_json(
                 log,
-                &json!({"at_ns":SystemClock.now().0,"result":match &received {Ok(Some(_))=>"response",Ok(None)=>"pending",Err(_)=>"transport_error"},"error":received.as_ref().err().map(ToString::to_string)}),
+                &json!({"at_ns":SystemClock.now().0,"result":match &received {Ok(Some(_))=>"response",Ok(None)=>"pending",Err(_)=>"transport_error"},"error":received.as_ref().err(),"channel_state":format!("{channel_state:?}")}),
             )?;
         }
-        if let Some(bytes) = received.map_err(|e| e.to_string())? {
+        if let Some(bytes) = received? {
             owned.probe_replies = 1;
             break bytes;
         }
@@ -1063,6 +1109,19 @@ async fn probe_latch(owned: &mut Owned, case: &Case, latched: bool) -> Result<Va
         json!({"request_id":id,"latch_expected":latched,"status":format!("{:?}",response.status()),"domain":format!("{:?}",response.domain()),
         "error_msg":response.error_msg(),"completed_at_ns":response.completed_at_ns(),"effect":"None","retired":response.retired(),"normal_before":before,"normal_after":after}),
     )
+}
+
+fn receive_with_closed_tail<T: markers::BodyMarker>(
+    pending: &Iceoryx2PendingResponse<T>,
+) -> (StrictChannelStatus, Result<Option<Vec<u8>>, String>) {
+    let received = pending.try_recv().map_err(|e| e.to_string());
+    let state = pending.connection_state();
+    let received = match (received, state) {
+        // 正常关闭的可见性只用于补收；Unknown/Open 继续由原 Child 收尾托底。
+        (Ok(None), StrictChannelStatus::Closed) => pending.try_recv().map_err(|e| e.to_string()),
+        (received, _) => received,
+    };
+    (state, received)
 }
 
 fn validate_probe(

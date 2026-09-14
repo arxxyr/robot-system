@@ -40,11 +40,12 @@
            W4b已提交a2598a5；用户2026-09-14恢复持续推进并确认cc-claude额度重置；
            RR R0来源/构建准备已由cc-claude完成并通过独立评审/root验收；
            R0已提交cbed745；R1 CAL与同源模型验收提交0513a8c；
-           R2 IOX源码/证据独审及root验收通过；本次提交收口R2，下一步R3；
+           R2 IOX已验收提交06fcf0b；R3本方成对迁移已通过独立终审及root本地验收；
+           正式round2的37门全过，dev/release各W4a2/W4b5/All72通过，当前归档提交；
            R2已由原生开发子agent收口，后续继续原生开发+独立评审，root整合提交；
            RR r3两项遗留方案已ACK，vendor/模型/迁移另包，之后P-E长负载；
            本地验收不代替Orin验证，RR上游可见性/退出保留问题另包修正。
-           当前原生r2_native_developer独占源码与Cargo；CC旧会话及其背景agent已停止，
+           下一步R4完整T8/SUP/ENV与双环境矩阵；原生主开发统一Cargo并按文件派发，
            root或独立Codex终审；每阶段通过即commit，不push。
            左H1/H3已通过，H2两次FAIL，左断电；S-46 Orin wire4仍FAIL。
            右臂未测；六服务最后已停止，deployable=false，D15 OPEN。

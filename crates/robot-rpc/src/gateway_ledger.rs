@@ -205,6 +205,18 @@ impl GatewayLedger {
         !self.faulted && self.writes.is_empty() && self.reads.is_empty()
     }
 
+    /// 仅故障验收读取原只读责任状态；不返回可写字段或额外许可。
+    #[cfg(all(test, feature = "test-rr-fixtures"))]
+    pub(crate) fn fixture_read_state(&self, id: EntryId) -> Option<EntryState> {
+        self.reads.get(&id).map(|owner| match owner.state {
+            ReadState::Queued => EntryState::Queued,
+            ReadState::Sending => EntryState::Sending,
+            ReadState::Sent => EntryState::Sent,
+            ReadState::Orphan => EntryState::Orphan,
+            ReadState::NoHandle => EntryState::NoHandle,
+        })
+    }
+
     fn abandon_queued(&mut self, id: EntryId) {
         if let Some(owner) = self.writes.get_mut(&id) {
             let Some(placeholder) = owner.placeholder.take() else {

@@ -632,8 +632,8 @@ fn handle_active<Req, Resp, H>(
 
 #[cfg(test)]
 mod tests {
-    //! Round-trip lib unit tests（runtime 层）：用 `rr_channel`（同进程
-    //! client + server pair）跑端到端 wire request → handler 产 reply →
+    //! Round-trip lib unit tests（runtime 层）：用显式 `S1_TASK` 成对端点跑
+    //! 同进程端到端 wire request → handler 产 reply →
     //! response 解析。锁住 4 个 topic 的生命周期 (spawn / request_stop / join)
     //! + decode-error 路径 + handler 回填。
     //!
@@ -653,8 +653,64 @@ mod tests {
         GetTaskStatusResponse as FbStatusResp, InvokeTaskResponse as FbInvokeResp, RpcRole,
     };
     use robot_transport::iceoryx2::request_response::{
-        Iceoryx2PendingResponse, rr_client, rr_server,
+        Iceoryx2PendingResponse, Iceoryx2RrClient, RrProfile, rr_client_with, rr_server_with,
     };
+
+    struct RuntimeFixture<Req: BodyMarker, Resp: BodyMarker> {
+        handle: Option<RrServerThreadHandle>,
+        pending: Option<Iceoryx2PendingResponse<Resp>>,
+        client: Iceoryx2RrClient<Req, Resp>,
+        _node: iceoryx2::node::Node<IxService>,
+    }
+
+    impl<Req: BodyMarker, Resp: BodyMarker> RuntimeFixture<Req, Resp> {
+        fn attach_server(&mut self, result: Result<RrServerThreadHandle, RrServerSpawnError>) {
+            match result {
+                Ok(handle) => self.handle = Some(handle),
+                Err(RrServerSpawnError::ReadyFailed { handle, reason }) => {
+                    self.handle = Some(handle);
+                    panic!("原服务器创建失败：{reason}");
+                }
+                Err(RrServerSpawnError::ReadyDisconnected { handle }) => {
+                    self.handle = Some(handle);
+                    panic!("原服务器 ready 断链");
+                }
+                Err(RrServerSpawnError::ThreadSpawn(error)) => {
+                    panic!("原服务器线程未创建：{error}");
+                }
+            }
+        }
+
+        fn send(&mut self, bytes: &[u8]) -> &Iceoryx2PendingResponse<Resp> {
+            self.pending = Some(self.client.send_typed(bytes).unwrap());
+            let pending = self.pending.as_ref().unwrap();
+            // 先装原 Pending，issue 断言失败也由本 owner 真 join 后再析构。
+            assert!(pending.delivery_issue().is_none());
+            pending
+        }
+
+        fn handle(&self) -> &RrServerThreadHandle {
+            self.handle.as_ref().unwrap()
+        }
+
+        fn stop_and_join(&mut self) -> thread::Result<()> {
+            let handle = self.handle.take().unwrap();
+            handle.request_stop();
+            handle.join()
+        }
+    }
+
+    impl<Req: BodyMarker, Resp: BodyMarker> Drop for RuntimeFixture<Req, Resp> {
+        fn drop(&mut self) {
+            if self.handle.is_some() {
+                // 正常与 unwind 均先停原线程并真 join，随后字段才析构 Pending/client/Node。
+                let joined = self.stop_and_join();
+                if !thread::panicking() {
+                    assert!(joined.is_ok(), "原服务器必须真实正常 join");
+                }
+            }
+        }
+    }
 
     fn invoke_req(request_id: &str) -> Vec<u8> {
         build_invoke_task_request(
@@ -733,22 +789,26 @@ mod tests {
         }
     }
 
-    fn make_client<Req: BodyMarker, Resp: BodyMarker>(
-        topic: &str,
-    ) -> robot_transport::iceoryx2::request_response::Iceoryx2RrClient<Req, Resp> {
-        let test_node: &'static _ =
-            Box::leak(Box::new(NodeBuilder::new().create::<IxService>().unwrap()));
-        rr_client::<Req, Resp>(test_node, topic).expect("rr_client create")
+    fn make_client<Req: BodyMarker, Resp: BodyMarker>(topic: &str) -> RuntimeFixture<Req, Resp> {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let client =
+            rr_client_with::<Req, Resp>(&node, topic, &RrProfile::S1_TASK).expect("显式 S1 client");
+        RuntimeFixture {
+            handle: None,
+            pending: None,
+            client,
+            _node: node,
+        }
     }
 
     fn make_server_factory<Req: BodyMarker, Resp: BodyMarker>(
         topic: String,
-    ) -> impl FnOnce() -> Iceoryx2RrServer<Req, Resp> + Send + 'static {
+    ) -> impl FnOnce() -> OwnedRrServer<Req, Resp> + Send + 'static {
         move || {
-            let server_node = NodeBuilder::new().create::<IxService>().unwrap();
-            let server = rr_server::<Req, Resp>(&server_node, &topic).expect("rr_server create");
-            Box::leak(Box::new(server_node));
-            server
+            let node = NodeBuilder::new().create::<IxService>().unwrap();
+            let server = rr_server_with::<Req, Resp>(&node, &topic, &RrProfile::S1_TASK)
+                .expect("显式 S1 server");
+            OwnedRrServer::new(server, node)
         }
     }
 
@@ -852,17 +912,21 @@ mod tests {
     #[test]
     fn invoke_runtime_round_trip_invokes_handler() {
         let topic = fresh_topic("invoke");
-        let client = make_client::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(&topic);
+        let mut fixture =
+            make_client::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(&topic);
         let factory = make_server_factory::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
             topic.clone(),
         );
 
-        let handle =
-            spawn_task_invoke_server(cfg_for(&topic), factory, invoke_stub_handler).unwrap();
+        fixture.attach_server(spawn_task_invoke_server(
+            cfg_for(&topic),
+            factory,
+            invoke_stub_handler,
+        ));
 
         let req_bytes = invoke_req("inv-rt-001");
-        let pending = client.send(&req_bytes).unwrap();
-        let bytes = wait_for_response(&pending, Duration::from_secs(2));
+        let pending = fixture.send(&req_bytes);
+        let bytes = wait_for_response(pending, Duration::from_secs(2));
         let resp = flatbuffers::root::<FbInvokeResp>(&bytes).unwrap();
         assert_eq!(resp.request_id().unwrap(), "inv-rt-001");
         assert_eq!(resp.status(), ActionRpcStatus::Ok);
@@ -870,15 +934,14 @@ mod tests {
         assert_eq!(resp.action_id().unwrap(), "inv-rt-001");
         assert_eq!(resp.accepted_at_ns(), 7);
 
-        let metrics = handle.metrics();
+        let metrics = fixture.handle().metrics();
         assert_eq!(metrics.requests_received.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.responses_sent.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.handler_replies.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.decode_errors.load(Ordering::Relaxed), 0);
-        assert_eq!(handle.topic(), topic);
+        assert_eq!(fixture.handle().topic(), topic);
 
-        handle.request_stop();
-        handle.join().unwrap();
+        fixture.stop_and_join().unwrap();
     }
 
     #[test]
@@ -887,7 +950,8 @@ mod tests {
         // decode_error_reply。stub handler 返一个明显可识别的 sentinel
         // accepted_at_ns，拿到 sentinel 就说明 handler 被错误调用了。
         let topic = fresh_topic("decode_err");
-        let client = make_client::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(&topic);
+        let mut fixture =
+            make_client::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(&topic);
         let factory = make_server_factory::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
             topic.clone(),
         );
@@ -904,12 +968,16 @@ mod tests {
             )
         };
 
-        let handle = spawn_task_invoke_server(cfg_for(&topic), factory, sentinel_handler).unwrap();
+        fixture.attach_server(spawn_task_invoke_server(
+            cfg_for(&topic),
+            factory,
+            sentinel_handler,
+        ));
 
         // 故意发非 fbs bytes（4 个 dummy 字节，过不了 root verifier）。
         let bad_bytes: Vec<u8> = vec![0xAA, 0xBB, 0xCC, 0xDD];
-        let pending = client.send(&bad_bytes).unwrap();
-        let bytes = wait_for_response(&pending, Duration::from_secs(2));
+        let pending = fixture.send(&bad_bytes);
+        let bytes = wait_for_response(pending, Duration::from_secs(2));
         let resp = flatbuffers::root::<FbInvokeResp>(&bytes).unwrap();
         assert_eq!(resp.request_id().unwrap(), "");
         assert_eq!(resp.status(), ActionRpcStatus::InvalidArgument);
@@ -917,20 +985,20 @@ mod tests {
         // sentinel 验：handler 没被调用。
         assert_ne!(resp.accepted_at_ns(), 999);
 
-        let metrics = handle.metrics();
+        let metrics = fixture.handle().metrics();
         assert_eq!(metrics.requests_received.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.responses_sent.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.handler_replies.load(Ordering::Relaxed), 0);
         assert_eq!(metrics.decode_errors.load(Ordering::Relaxed), 1);
 
-        handle.request_stop();
-        handle.join().unwrap();
+        fixture.stop_and_join().unwrap();
     }
 
     #[test]
     fn cancel_runtime_round_trip_invokes_handler() {
         let topic = fresh_topic("cancel");
-        let client = make_client::<markers::CancelTaskRequest, markers::CancelTaskResponse>(&topic);
+        let mut fixture =
+            make_client::<markers::CancelTaskRequest, markers::CancelTaskResponse>(&topic);
         let factory = make_server_factory::<markers::CancelTaskRequest, markers::CancelTaskResponse>(
             topic.clone(),
         );
@@ -946,25 +1014,24 @@ mod tests {
             )
         };
 
-        let handle = spawn_task_cancel_server(cfg_for(&topic), factory, handler).unwrap();
+        fixture.attach_server(spawn_task_cancel_server(cfg_for(&topic), factory, handler));
 
         let req_bytes = cancel_req("cnl-rt-001", "act-uuid-7");
-        let pending = client.send(&req_bytes).unwrap();
-        let bytes = wait_for_response(&pending, Duration::from_secs(2));
+        let pending = fixture.send(&req_bytes);
+        let bytes = wait_for_response(pending, Duration::from_secs(2));
         let resp = flatbuffers::root::<FbCancelResp>(&bytes).unwrap();
         assert_eq!(resp.request_id().unwrap(), "cnl-rt-001");
         assert_eq!(resp.action_id().unwrap(), "act-uuid-7");
         assert_eq!(resp.status(), ActionRpcStatus::Ok);
         assert_eq!(resp.cancel_at_ns(), 42);
 
-        handle.request_stop();
-        handle.join().unwrap();
+        fixture.stop_and_join().unwrap();
     }
 
     #[test]
     fn status_runtime_round_trip_invokes_handler() {
         let topic = fresh_topic("status");
-        let client =
+        let mut fixture =
             make_client::<markers::GetTaskStatusRequest, markers::GetTaskStatusResponse>(&topic);
         let factory = make_server_factory::<
             markers::GetTaskStatusRequest,
@@ -986,25 +1053,25 @@ mod tests {
             )
         };
 
-        let handle = spawn_task_status_server(cfg_for(&topic), factory, handler).unwrap();
+        fixture.attach_server(spawn_task_status_server(cfg_for(&topic), factory, handler));
 
         let req_bytes = status_req("sta-rt-001", "act-uuid-9");
-        let pending = client.send(&req_bytes).unwrap();
-        let bytes = wait_for_response(&pending, Duration::from_secs(2));
+        let pending = fixture.send(&req_bytes);
+        let bytes = wait_for_response(pending, Duration::from_secs(2));
         let resp = flatbuffers::root::<FbStatusResp>(&bytes).unwrap();
         assert_eq!(resp.request_id().unwrap(), "sta-rt-001");
         assert_eq!(resp.action_id().unwrap(), "act-uuid-9");
         assert_eq!(resp.status(), ActionRpcStatus::Ok);
         assert!((resp.progress() - 0.5).abs() < f32::EPSILON);
 
-        handle.request_stop();
-        handle.join().unwrap();
+        fixture.stop_and_join().unwrap();
     }
 
     #[test]
     fn clear_error_runtime_round_trip_invokes_handler() {
         let topic = fresh_topic("clearerr");
-        let client = make_client::<markers::ClearErrorRequest, markers::ClearErrorResponse>(&topic);
+        let mut fixture =
+            make_client::<markers::ClearErrorRequest, markers::ClearErrorResponse>(&topic);
         let factory = make_server_factory::<markers::ClearErrorRequest, markers::ClearErrorResponse>(
             topic.clone(),
         );
@@ -1019,18 +1086,17 @@ mod tests {
             )
         };
 
-        let handle = spawn_clear_error_server(cfg_for(&topic), factory, handler).unwrap();
+        fixture.attach_server(spawn_clear_error_server(cfg_for(&topic), factory, handler));
 
         let req_bytes = clear_req("clr-rt-001");
-        let pending = client.send(&req_bytes).unwrap();
-        let bytes = wait_for_response(&pending, Duration::from_secs(2));
+        let pending = fixture.send(&req_bytes);
+        let bytes = wait_for_response(pending, Duration::from_secs(2));
         let resp = flatbuffers::root::<FbClearResp>(&bytes).unwrap();
         assert_eq!(resp.request_id().unwrap(), "clr-rt-001");
         assert_eq!(resp.status(), ActionRpcStatus::Ok);
         assert_eq!(resp.cleared_at_ns(), 13);
 
-        handle.request_stop();
-        handle.join().unwrap();
+        fixture.stop_and_join().unwrap();
     }
 
     #[test]
@@ -1038,17 +1104,19 @@ mod tests {
         // 锁住"主循环退出不悬挂线程"语义：spawn 起来不发任何 wire request，
         // 直接 request_stop + join 应在 ~poll_interval 内 clean exit。
         let topic = fresh_topic("idle_stop");
-        let _client =
+        let mut fixture =
             make_client::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(&topic);
         let factory = make_server_factory::<markers::InvokeTaskRequest, markers::InvokeTaskResponse>(
             topic.clone(),
         );
-        let handle =
-            spawn_task_invoke_server(cfg_for(&topic), factory, invoke_stub_handler).unwrap();
+        fixture.attach_server(spawn_task_invoke_server(
+            cfg_for(&topic),
+            factory,
+            invoke_stub_handler,
+        ));
 
         let start = std::time::Instant::now();
-        handle.request_stop();
-        handle.join().unwrap();
+        fixture.stop_and_join().unwrap();
         let elapsed = start.elapsed();
         assert!(
             elapsed < Duration::from_millis(500),

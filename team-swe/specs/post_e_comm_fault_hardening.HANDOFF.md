@@ -2,6 +2,14 @@
 
 ## 当前步骤
 
+R3本方成对迁移已通过独立源码/证据终审及root本地验收，基线R2为`06fcf0b`。
+原生开发统一完成实现和测试，正式round2的37门全过，538输入首末及当前身份相同；
+workspace2211/0/9、S0完整hook858/0/1，dev/release各W4a2/W4b5/All72通过，分组不累加。
+RR既有工厂、Gateway/S0/S1及W3/W4真实peer保原profile/预算/责任链；原失败及汇总更正保留。
+验收入口`target/post_e_h2_rt/s48/rr_r3/{root_acceptance.md,delivery_manifest.json}`，
+最终正式记录`rr_r3/gates/round2/run.json`；归档身份见H.json，提交身份见git日志及随后commit回执。
+当前归档提交后推进R4完整T8/SUP/ENV与双环境矩阵；未访问Orin，不将本地通过外推至硬件。
+
 W4b固定五例SIGKILL/原目录重启已通过独立源码、运行证据及root验收，
 APPROVED_SOFTWARE_SCOPE；基线W4a为`382ca44`，本包提交见git日志。
 W4b已提交`a2598a5`。用户2026-09-14恢复持续推进，并确认cc-claude额度重置；
@@ -12,10 +20,10 @@ transport、RPC与build七门全0；transport99/0/3、RPC304/0/0，既有ignored
 同图tree/deny引用round1实际成功；原三个编译失败与三个nonmember探针101保留。
 证据入口H包`local/s48/rr_r0/`，root裁决`root_acceptance.md`、独审`independent_review.md`。
 R0已提交`cbed745`。R1 CAL转移/真实enqueue/同源模型已由cc-claude实现、独立Codex与
-root验收并提交`0513a8c`；R2原生开发已完成：源码独审ACK，正式round1共26门全部通过，已获root本地验收；本次提交收口R2，提交身份以git日志及commit_receipt为准。
+root验收并提交`0513a8c`；R2原生开发已完成：源码独审ACK，正式round1共26门全部通过，已获root本地验收并提交06fcf0b，精确身份见git日志及commit_receipt。
 R2最终交付为`target/post_e_h2_rt/s48/rr_r2/handoff.md`及`result.json`；43项输入首末一致，
 IOX默认42/0/1、故障45/0/1、CAL45/0/0、模型6/0/0、workspace2207/0/9、S0 hook656/0/0。
-后续R3直接迁移本方既有工厂与生产调用方，不增第二套公开入口；本地验证不代替Orin。
+R3已直接迁移本方既有工厂与生产调用方，不增第二套公开入口；本地验证不代替Orin。
 R1正式round1共21门全0，CAL45、IOX库内8、模型6、workspace2207/0/9、S0 hook656/0/0。
 库内测试真实经过Clippy、CAL no_std通过；根14成员保持，两vendor运行时闭包80包身份
 与嵌套图一致，模型依赖不进生产图。测试三项发现均已修，开发失败保留。
@@ -55,11 +63,11 @@ R1正式round1共21门全0，CAL45、IOX库内8、模型6、workspace2207/0/9、
 开发子agent仍可按需并行拆分，明确写入范围，Cargo继续由一个开发者串行拥有。
 
 W3已将新权限、高/普通双队列、唯一writer、RPC责任账本接入生产调用方。
-W4a文件同步故障、W4b固定五例均已本地验收。W4剩余为RR严格内核修正、
-完整T8/SUP/ENV和双环境；随后P-E。按R0→R1/CAL→R2/IOX→R3本方迁移→R4矩阵推进，每包必要检查与root评审通过即commit。
+W4a文件同步故障、W4b固定五例及RR R0–R3均已本地验收。W4剩余为R4
+完整T8/SUP/ENV和双环境；随后P-E。每包必要检查与root评审通过即commit。
 RR r3析构与公共CAL两项方案已ACK，直接替换现有工厂，保topic/schema/FF；
 所有peer与自动清理者同批同源，模型/迁移实现按分包开发和评审。
-旧跨原子可见性与映射删除可能漏回复并长期占信用，不能说仅短延迟或已修复。
+旧跨原子可见性与映射删除问题已在R1–R3实现并通过对应本地验收，仍待R4双环境验证，不能外推为完整候选闭环。
 W1旧锁偶发失败仍列观察，本轮All通过不等于其根因已闭合。
 P-E保原20/s、50ms节拍、360–600秒、成功唯一新写>8192、真实wire4与所有结果final_stop。
 

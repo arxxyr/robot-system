@@ -1005,3 +1005,45 @@ fn exact_target_send_error(error: ExactTargetError) -> StrictResponseSendError {
         ExactTargetError::TargetChanged => StrictResponseSendError::TargetChanged,
     }
 }
+
+/// RR R3：只限显式夹具图和真实 IPC slice 原 Active 的清理入口。
+#[cfg(feature = "r2-test-fixtures")]
+impl StrictActiveRequest<crate::service::ipc::Service, [u8], (), [u8], ()> {
+    /// 按值终止原响应 sender，再调用真实 CAL 清理；不代写状态字，不冒充进程死亡。
+    #[doc(hidden)]
+    pub fn fixture_abandon_response_sender(
+        &self,
+    ) -> Result<super::test_support::SenderCleanupRecord, super::test_support::FixtureError> {
+        use super::test_support::{FixtureError, SenderCleanupRecord};
+        use crate::service::{config_scheme::connection_config, naming_scheme::connection_name};
+        use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
+        use iceoryx2_cal::zero_copy_connection::ZeroCopyConnection;
+
+        let shared = self.core.shared.lock();
+        let client_id = self.core.client_id.value();
+        let server_id = shared.response_sender.sender_port_id;
+        let index = shared
+            .response_sender
+            .get_connection_id_of(client_id)
+            .ok_or(FixtureError::Boundary("原 Active 的响应 sender 已缺失"))?;
+        // 同原 shared 锁内按完整 ID 定位后取出原件；不触碰其他 client。
+        let connection = unsafe { &mut *shared.response_sender.connections[index].get() }
+            .take()
+            .ok_or(FixtureError::Boundary("原 sender 已被取走"))?;
+        connection.sender.abandon();
+        unsafe {
+            <crate::service::ipc::Service as crate::service::Service>::Connection::remove_sender(
+                &connection_name(server_id, client_id),
+                &connection_config::<crate::service::ipc::Service>(
+                    shared.response_sender.shared_node.config(),
+                ),
+            )
+        }
+        .map_err(|_| FixtureError::Kernel("原 sender 实际 remove 失败"))?;
+        Ok(SenderCleanupRecord {
+            client_id,
+            server_id,
+            removed: true,
+        })
+    }
+}

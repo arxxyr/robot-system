@@ -1,36 +1,9 @@
-//! v0.3 A1-1 spike：iceoryx2 `RequestResponse` minimal wrapper。
+//! 本方显式 profile 的严格单 server / 唯一回复 RR 封装。
 //!
-//! ⚠️ **scope**：reviewer A1 第 1 个拍板"跨进程通道选 C2 iceoryx2
-//! `RequestResponse`"的最小验证。本 module 只证明 C2 方案对
-//! `robot-msg` `[u8]` slice payload + schema attribute verifier 跑得通；
-//! **不**重构现有 `publish_subscribe` 封装（reviewer A1-1 拍板硬边界）。
-//!
-//! ## A1 land 后状态 + v0.4+ 留作业
-//!
-//! A1-2（s0_daemon `rr_server_thread`）/ A1-3（`robot-rpc` 端
-//! `rr_io_thread` + `ClearEStopHandler`）已用本 wrapper 真接通跨进程
-//! ClearEStop control plane（详
-//! `docs/handoffs/v0.3_a1_4_clear_estop_smoke.md`）。下面这些仍是 v0.4+
-//! 按需扩展点（**不**卡 A1 收尾，A1 用 schema attribute verifier +
-//! handler 端 deadline + idempotency_key 等已经覆盖核心安全语义）：
-//!
-//! - 双 `schema_id` attribute（当前只挂 request schema_id；response schema_id
-//!   靠 `Resp` 类型参数泛型 + 文档约定，不进 attribute 表）。
-//! - `QoS` profile（当前用 iceoryx2 默认 RR 队列大小 + 单 client 单 server）。
-//! - active request 的 deadline 跟踪 / 超时丢弃（A1 已在 handler 层走
-//!   `tokio::time::timeout(timeout_ms + grace_ms)` + daemon 端
-//!   `clock.now() > deadline_ns` 两点 check；transport 层不参与）。
-//! - `FrameHeader` 4-byte size prefix wrapping（当前 wire 只是 raw FlatBuffers
-//!   bytes，`Req::SCHEMA_ID` 通过 service attribute verifier 守门）。
-//!
-//! ## 跟生产 publish/subscribe wrapper 关系
-//!
-//! - `payload type` 一致用 `[u8]` 变长 slice（跟 [`crate::iceoryx2::publisher`]
-//!   `Iceoryx2Publisher<T>` 风格对齐）。
-//! - schema attribute 复用 [`crate::iceoryx2::attributes::schema_attribute_spec`]
-//!   / `schema_attribute_verifier`（**不**新增 attribute key），attribute 值
-//!   是 request schema_id（单边）。
-//! - 现有 publish_subscribe 封装一行不动。
+//! 保持原 topic、请求 schema attribute、L/C 和 fire-and-forget 配置。
+//! 已入队请求始终返回持有原连接的 Pending，投递 issue 只能作诊断；
+//! 正常 Closed 后仍须补收尾回复，Unknown 不能作为退休凭证。
+//! 非实时线程使用，RT thread 不进入 iceoryx2。
 
 // 中文 doc 块大量出现 `RequestResponse` / `QoS` / `FrameHeader` /
 // `RequestPayload` / `MaybeUninit` 等 identifier-like 字串；A1-1 spike
@@ -38,15 +11,26 @@
 #![allow(clippy::doc_markdown)]
 
 use core::marker::PhantomData;
+#[cfg(feature = "test-rr-fixtures")]
+use iceoryx2::strict::test_support::RequestQueueFixture;
+#[cfg(feature = "test-rr-fixtures")]
+#[doc(hidden)]
+pub use iceoryx2::strict::test_support::{
+    FixtureError, QueueFailure, QueueFixtureSnapshot, SenderCleanupRecord,
+};
+#[cfg(feature = "test-rr-fixtures")]
+use std::cell::RefCell;
 
-use iceoryx2::active_request::ActiveRequest as IxActiveRequest;
+/// 真实辅助 A 的非空非法业务载荷；接收夹具只能识别后 Drop，禁止交业务处理器。
+#[cfg(feature = "test-rr-fixtures")]
+#[doc(hidden)]
+pub const REQUEST_QUEUE_FIXTURE_AUXILIARY: &[u8] = b"R3_RR_AUXILIARY_NOT_A_BUSINESS_REQUEST";
+
 use iceoryx2::identifiers::UniqueClientId;
-use iceoryx2::pending_response::PendingResponse as IxPendingResponse;
-use iceoryx2::port::client::Client as IxClient;
-use iceoryx2::port::client::RequestSendError;
-use iceoryx2::port::server::Server as IxServer;
-use iceoryx2::port::{LoanError, SendError};
-use iceoryx2::prelude::{BackpressureStrategy, MessagingPattern, Node, PortFactory, Service};
+use iceoryx2::port::LoanError;
+use iceoryx2::prelude::{
+    AllocationStrategy, BackpressureStrategy, MessagingPattern, Node, PortFactory, Service,
+};
 use iceoryx2::response::Response as IxResponse;
 use iceoryx2::service::ServiceDetailsError;
 use iceoryx2::service::builder::request_response::{
@@ -54,6 +38,11 @@ use iceoryx2::service::builder::request_response::{
 };
 use iceoryx2::service::ipc::Service as IxService;
 use iceoryx2::service::static_config::StaticConfig;
+pub use iceoryx2::strict::{EnqueueIssue, StrictChannelStatus};
+use iceoryx2::strict::{
+    StrictActiveRequest as IxActiveRequest, StrictClient as IxClient, StrictLoanError,
+    StrictPendingResponse as IxPendingResponse, StrictSendRefusal, StrictServer as IxServer,
+};
 use robot_msg::markers::BodyMarker;
 use robot_msg::size_tier::default_tier_of;
 
@@ -162,29 +151,23 @@ pub enum LoanKind {
     InternalFailure,
 }
 
-/// transport 能证明没有投递请求的失败。
+/// transport 能证明请求尚未入队的失败；底层严格拒绝保留原 typed 原因。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotDelivered {
     ExceedsMaxActiveRequests,
     Loan(LoanKind),
-    ConnectionUpdate,
+    RequestIdExhausted,
+    NoChannelAvailable,
     ZeroRecipients,
+    Strict(StrictSendRefusal),
+    #[cfg(feature = "test-rr-fixtures")]
+    Fixture(FixtureError),
 }
 
-/// 已进入发送阶段，不能证明请求没有产生副作用。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Uncertain {
-    UnableToDeliver,
-    InternalError,
-    ConnectionCorrupted,
-    SenderGone,
-}
-
-/// 显式区分未投递与投递结果不确定。
+/// 仅表示真正未入队；已入队后的问题由原 Pending 的 delivery_issue 借用观察。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RrSendError {
     NotDelivered(NotDelivered),
-    Uncertain(Uncertain),
 }
 
 /// transport 的可信客户端身份；不依赖请求载荷声明的来源。
@@ -213,6 +196,8 @@ fn check_rr_field(field: &'static str, expected: u64, actual: u64) -> Result<(),
 /// 类型参数 `Req` / `Resp` 都是 `BodyMarker`，编译期固定 wire schema +
 /// 调用方意图；运行时 schema 守门走 service attribute verifier。
 pub struct Iceoryx2RrClient<Req: BodyMarker, Resp: BodyMarker> {
+    #[cfg(feature = "test-rr-fixtures")]
+    request_queue_fixture: RefCell<Option<(RequestQueueFixture, QueueFailure)>>,
     inner: IxRrClient,
     limits: Option<RrStaticLimits>,
     _ty: PhantomData<(Req, Resp)>,
@@ -243,9 +228,8 @@ impl<Req: BodyMarker, Resp: BodyMarker> core::fmt::Debug for Iceoryx2RrServer<Re
     }
 }
 
-/// `Iceoryx2RrClient::send` 返回的 pending response handle。`try_recv` 非阻
-/// 塞，没收到 reply 时返 `Ok(None)`。drop 即 cancel pending（iceoryx2 通知
-/// server 该 request 不再等 response）。
+/// 已入队请求的原 Pending。Drop 仅转交严格内核的 Detached 槽并发送提示；
+/// 原槽、连接和引用须等待正常关闭且排空，Unknown 保留到端点真实退出。
 pub struct Iceoryx2PendingResponse<Resp: BodyMarker> {
     inner: IxRrPending,
     _ty: PhantomData<Resp>,
@@ -280,103 +264,6 @@ impl<Req: BodyMarker, Resp: BodyMarker> core::fmt::Debug for Iceoryx2ActiveReque
 // service open / client / server 工厂
 // ---------------------------------------------------------------------------
 
-/// **仅同进程测试 / spike 便利用**：在同一 node 上 create 一份 service +
-/// 同时 create client + server，返回 pair。本函数让单测能一行起完整 RR
-/// round-trip 通路，**不**适合跨进程生产路径。
-///
-/// **跨进程禁用**（reviewer A1-1 part 2 round 2 拍板硬边界）：A1-2 真接
-/// daemon ↔ RPC 时**禁止**两端都调本函数 —— 那会让 RPC 进程多挂一个
-/// server / S0 进程多挂一个 client，request 可能被错误 server 端口占住
-/// / 造成调试歧义。跨进程**必须**分别调：
-///
-/// - `robot-rpc` 端 → [`rr_client`]
-/// - `s0_daemon` / `ipc_thread` 端 → [`rr_server`]
-///
-/// 两端共用同一 `topic`，首次 call 由先到那端 create + 后到那端 open，
-/// attribute verify 自动守门（schema_id mismatch → open 拒绝）。
-///
-/// # Errors
-///
-/// - `topic` 字符串非法（iceoryx2 `ServiceName` 拒绝）
-/// - `Req::SCHEMA_ID` 未在 [`robot_msg::size_tier::default_tier_of`] 登记
-/// - iceoryx2 service create 失败 / attribute verify 失败 / 端口耗尽
-#[allow(clippy::type_complexity)]
-pub fn rr_channel<Req: BodyMarker, Resp: BodyMarker>(
-    node: &Node<IxService>,
-    topic: &str,
-) -> Result<(Iceoryx2RrClient<Req, Resp>, Iceoryx2RrServer<Req, Resp>), TransportError> {
-    let service = build_rr_service::<Req>(node, topic)?;
-    let max_bytes = max_bytes_for::<Req, Resp>()?;
-    let client = service
-        .client_builder()
-        .initial_max_slice_len(max_bytes)
-        .create()
-        .map_err(|e| TransportError::Backend(format!("iceoryx2 RR client create: {e:?}")))?;
-    let server = service
-        .server_builder()
-        .initial_max_slice_len(max_bytes)
-        .create()
-        .map_err(|e| TransportError::Backend(format!("iceoryx2 RR server create: {e:?}")))?;
-    Ok((
-        Iceoryx2RrClient {
-            inner: client,
-            limits: None,
-            _ty: PhantomData,
-        },
-        Iceoryx2RrServer {
-            inner: server,
-            limits: None,
-            _ty: PhantomData,
-        },
-    ))
-}
-
-/// 跨进程 client 端工厂（**不**create server）。
-///
-/// # Errors
-///
-/// 同 [`rr_channel`]。
-pub fn rr_client<Req: BodyMarker, Resp: BodyMarker>(
-    node: &Node<IxService>,
-    topic: &str,
-) -> Result<Iceoryx2RrClient<Req, Resp>, TransportError> {
-    let service = build_rr_service::<Req>(node, topic)?;
-    let max_bytes = max_bytes_for::<Req, Resp>()?;
-    let client = service
-        .client_builder()
-        .initial_max_slice_len(max_bytes)
-        .create()
-        .map_err(|e| TransportError::Backend(format!("iceoryx2 RR client create: {e:?}")))?;
-    Ok(Iceoryx2RrClient {
-        inner: client,
-        limits: None,
-        _ty: PhantomData,
-    })
-}
-
-/// 跨进程 server 端工厂（**不**create client）。
-///
-/// # Errors
-///
-/// 同 [`rr_channel`]。
-pub fn rr_server<Req: BodyMarker, Resp: BodyMarker>(
-    node: &Node<IxService>,
-    topic: &str,
-) -> Result<Iceoryx2RrServer<Req, Resp>, TransportError> {
-    let service = build_rr_service::<Req>(node, topic)?;
-    let max_bytes = max_bytes_for::<Req, Resp>()?;
-    let server = service
-        .server_builder()
-        .initial_max_slice_len(max_bytes)
-        .create()
-        .map_err(|e| TransportError::Backend(format!("iceoryx2 RR server create: {e:?}")))?;
-    Ok(Iceoryx2RrServer {
-        inner: server,
-        limits: None,
-        _ty: PhantomData,
-    })
-}
-
 /// 使用显式容量与 DiscardData 策略创建客户端。
 ///
 /// # Errors
@@ -392,10 +279,13 @@ pub fn rr_client_with<Req: BodyMarker, Resp: BodyMarker>(
     let client = service
         .client_builder()
         .initial_max_slice_len(max_bytes)
+        .allocation_strategy(AllocationStrategy::Static)
         .backpressure_strategy(BackpressureStrategy::DiscardData)
-        .create()
+        .create_single_server_strict()
         .map_err(|e| TransportError::Backend(format!("iceoryx2 RR client create: {e:?}")))?;
     Ok(Iceoryx2RrClient {
+        #[cfg(feature = "test-rr-fixtures")]
+        request_queue_fixture: RefCell::new(None),
         inner: client,
         limits: Some(limits),
         _ty: PhantomData,
@@ -417,7 +307,9 @@ pub fn rr_server_with<Req: BodyMarker, Resp: BodyMarker>(
     let server = service
         .server_builder()
         .initial_max_slice_len(max_bytes)
-        .create()
+        .allocation_strategy(AllocationStrategy::Static)
+        .backpressure_strategy(BackpressureStrategy::DiscardData)
+        .create_single_reply_strict()
         .map_err(|e| TransportError::Backend(format!("iceoryx2 RR server create: {e:?}")))?;
     Ok(Iceoryx2RrServer {
         inner: server,
@@ -604,47 +496,6 @@ fn max_bytes_for<Req: BodyMarker, Resp: BodyMarker>() -> Result<usize, Transport
     Ok(req_tier.max_bytes().max(resp_tier.max_bytes()))
 }
 
-/// 内部辅助：build RR service + attribute verifier。
-fn build_rr_service<Req: BodyMarker>(
-    node: &Node<IxService>,
-    topic: &str,
-) -> Result<IxRrServiceFactory, TransportError> {
-    let service_name = topic_to_service_name(topic)?;
-    // attribute verifier 跟 publish_subscribe 一样硬约束 schema_id；这里只挂
-    // request schema_id（spike 简化）。
-    let _tier = default_tier_of(Req::SCHEMA_ID).ok_or_else(|| {
-        TransportError::Backend(format!(
-            "request schema {:#010x} ({}) has no size tier in robot-msg::size_tier; \
-             refusing to create iceoryx2 RR service",
-            Req::SCHEMA_ID,
-            Req::SCHEMA_NAME
-        ))
-    })?;
-    let verifier = schema_attribute_verifier(Req::SCHEMA_ID, 1)?;
-    // 并发 open_or_create 竞态有界重试，语义同 pub/sub 侧 `build_service`
-    // （参数/根因见 mod.rs `CREATE_RACE_*` doc）。
-    let mut attempt: u32 = 0;
-    loop {
-        match node
-            .service_builder(&service_name)
-            .request_response::<[u8], [u8]>()
-            .open_or_create_with_attributes(&verifier)
-        {
-            Ok(service) => return Ok(service),
-            Err(e) if attempt < CREATE_RACE_MAX_ATTEMPTS && is_transient_rr_race(e) => {
-                attempt += 1;
-                std::thread::sleep(CREATE_RACE_RETRY_INTERVAL);
-            }
-            Err(e) => {
-                return Err(TransportError::Backend(format!(
-                    "iceoryx2 RR service open_or_create: {e:?} (attempts={})",
-                    attempt + 1
-                )));
-            }
-        }
-    }
-}
-
 /// 判定 RR `open_or_create` 错误是否为并发创建竞态的瞬态错（可重试）。
 /// 分类原则同 mod.rs `is_transient_pubsub_race`（穷举 match 锁上游漂移）。
 fn is_transient_rr_race(e: RequestResponseOpenOrCreateError) -> bool {
@@ -672,68 +523,78 @@ fn is_transient_rr_race(e: RequestResponseOpenOrCreateError) -> bool {
 // ---------------------------------------------------------------------------
 
 impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2RrClient<Req, Resp> {
-    /// 仅显式 profile 工厂返回已验证容量，旧工厂保持 None。
+    /// 返回显式 profile 工厂已经校验的容量。
     #[must_use]
     pub const fn limits(&self) -> Option<RrStaticLimits> {
         self.limits
     }
 
-    /// 发送并保留可证明的投递结果；零接收者时先释放 pending 再返回。
-    ///
-    /// # Errors
-    ///
-    /// 未投递与投递不确定分别由 [`RrSendError`] 的两个分支承载。
+    /// 唯一发送路径：真正未入队时归还原 request，已入队含 issue 仍返回原 Pending。
     pub fn send_typed(&self, bytes: &[u8]) -> Result<Iceoryx2PendingResponse<Resp>, RrSendError> {
-        let mut req = self.inner.loan_slice_uninit(bytes.len()).map_err(|error| {
-            RrSendError::NotDelivered(NotDelivered::Loan(map_loan_error(error)))
+        let request = self
+            .inner
+            .loan_slice_uninit(bytes.len())
+            .map_err(map_strict_loan_error)?;
+        let request = request.write_from_slice(bytes);
+        #[cfg(feature = "test-rr-fixtures")]
+        {
+            let mut installed = self.request_queue_fixture.try_borrow_mut().map_err(|_| {
+                RrSendError::NotDelivered(NotDelivered::Fixture(FixtureError::Boundary(
+                    "原发送夹具正在借用",
+                )))
+            })?;
+            if let Some((fixture, mode)) = installed.as_mut() {
+                fixture
+                    .before_send(&request, *mode)
+                    .map_err(|error| RrSendError::NotDelivered(NotDelivered::Fixture(error)))?;
+            }
+        }
+        let pending = request.send().map_err(|refused| {
+            let reason = map_strict_send_refusal(refused.reason);
+            // publication 前拒绝，归还同一原 loan/channel，不产生远端责任。
+            drop(refused.request);
+            reason
         })?;
-        for (dst, src) in req.payload_mut().iter_mut().zip(bytes.iter()) {
-            dst.write(*src);
-        }
-        // SAFETY: 上面的循环已写入全部 bytes.len() 个元素。
-        let initialized = unsafe { req.assume_init() };
-        let pending = initialized.send().map_err(map_request_send_error)?;
-        if pending.number_of_server_connections() == 0 {
-            drop(pending);
-            return Err(RrSendError::NotDelivered(NotDelivered::ZeroRecipients));
-        }
         Ok(Iceoryx2PendingResponse {
             inner: pending,
             _ty: PhantomData,
         })
     }
 
-    /// 发送一条 request（FlatBuffers root bytes，调用方走 `robot-msg` 的
-    /// `build_*_request` 之类构造）。返 pending response handle，调用方轮询
-    /// `try_recv()` 拿 reply。
-    ///
-    /// `'a` lifetime 来自 `&'a self`：pending response 不能比 client 活久。
-    ///
-    /// # Errors
-    ///
-    /// - iceoryx2 `loan_slice_uninit` 失败（内存压力 / shm 耗尽）。
-    /// - `request.send` 失败（unable_to_deliver_strategy = Block 时不会丢；
-    ///   默认 DiscardSample 时静默丢，但仍返 Ok 表示 publish 路径完成）。
+    /// 与 send_typed 共用严格发送路径；返回值始终持有真实已入队的原 Pending。
     pub fn send(&self, bytes: &[u8]) -> Result<Iceoryx2PendingResponse<Resp>, TransportError> {
-        let mut req = self
-            .inner
-            .loan_slice_uninit(bytes.len())
-            .map_err(|e| TransportError::Backend(format!("RR client loan_slice_uninit: {e:?}")))?;
-        // SAFETY: loan_slice_uninit 给我们 `bytes.len()` 个 MaybeUninit<u8> 的
-        // slice；写入完整 bytes.len 个 u8 让所有 element 都 init。
-        let payload_mut = req.payload_mut();
-        for (dst, src) in payload_mut.iter_mut().zip(bytes.iter()) {
-            dst.write(*src);
+        self.send_typed(bytes)
+            .map_err(|error| TransportError::Backend(format!("RR request 未入队: {error:?}")))
+    }
+
+    /// 仅显式验收 feature 可安装一次原队列辅助件；没有第二条发送路径。
+    #[cfg(feature = "test-rr-fixtures")]
+    #[doc(hidden)]
+    pub fn install_request_queue_fixture(&self, mode: QueueFailure) -> Result<(), FixtureError> {
+        let mut installed = self
+            .request_queue_fixture
+            .try_borrow_mut()
+            .map_err(|_| FixtureError::Boundary("原发送夹具正在借用"))?;
+        if installed.is_some() {
+            return Err(FixtureError::Boundary("原发送夹具不能重复安装"));
         }
-        // SAFETY: 上面循环写入了所有 bytes.len() 个元素 → fully initialized。
-        let req_init = unsafe { req.assume_init() };
-        let pending = req_init
-            .send()
-            .map_err(|e| TransportError::Backend(format!("RR client send: {e:?}")))?;
-        Ok(Iceoryx2PendingResponse {
-            inner: pending,
-            _ty: PhantomData,
-        })
+        let fixture = RequestQueueFixture::seed(&self.inner, REQUEST_QUEUE_FIXTURE_AUXILIARY)?;
+        *installed = Some((fixture, mode));
+        Ok(())
+    }
+
+    /// 原连接的纯值快照，不泄露共享内存、offset、pin 或额外持有者。
+    #[cfg(feature = "test-rr-fixtures")]
+    #[doc(hidden)]
+    pub fn request_queue_fixture_snapshot(&self) -> Result<QueueFixtureSnapshot, FixtureError> {
+        let installed = self
+            .request_queue_fixture
+            .try_borrow()
+            .map_err(|_| FixtureError::Boundary("原发送夹具正在借用"))?;
+        let (fixture, _) = installed
+            .as_ref()
+            .ok_or(FixtureError::Boundary("原发送夹具未安装"))?;
+        fixture.snapshot()
     }
 }
 
@@ -742,16 +603,16 @@ impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2RrClient<Req, Resp> {
 // ---------------------------------------------------------------------------
 
 impl<Resp: BodyMarker> Iceoryx2PendingResponse<Resp> {
-    /// 上游是否仍有可响应此请求的服务端连接。
+    /// 借用观察真实入队回执的问题，不转移或释放原 Pending。
     #[must_use]
-    pub fn is_connected(&self) -> bool {
-        self.inner.is_connected()
+    pub fn delivery_issue(&self) -> Option<&EnqueueIssue> {
+        self.inner.delivery_issue()
     }
 
-    /// 初始实际投递到的服务端数量，不是后续响应完成数量。
+    /// 按原 pin 查询三态；Closed 后还须补收，Unknown/Open 不证明原请求退休。
     #[must_use]
-    pub fn server_connections(&self) -> usize {
-        self.inner.number_of_server_connections()
+    pub fn connection_state(&self) -> StrictChannelStatus {
+        self.inner.connection_state()
     }
 
     /// 非阻塞 receive。`Ok(Some(bytes))` = 拿到 reply（拷贝出 `Vec<u8>` 让调
@@ -782,7 +643,7 @@ fn copy_response_payload(resp: &IxRrResponse) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2RrServer<Req, Resp> {
-    /// 仅显式 profile 工厂返回已验证容量，旧工厂保持 None。
+    /// 返回显式 profile 工厂已经校验的容量。
     #[must_use]
     pub const fn limits(&self) -> Option<RrStaticLimits> {
         self.limits
@@ -820,6 +681,12 @@ impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2RrServer<Req, Resp> {
 // ---------------------------------------------------------------------------
 
 impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2ActiveRequest<Req, Resp> {
+    /// 仅验收时对本原 Active 的响应 sender 执行真实 abandon/remove。
+    #[cfg(feature = "test-rr-fixtures")]
+    #[doc(hidden)]
+    pub fn fixture_abandon_response_sender(&self) -> Result<SenderCleanupRecord, FixtureError> {
+        self.inner.fixture_abandon_response_sender()
+    }
     /// 来自上游端口的可信来源身份，不读取 payload 内的声明。
     #[must_use]
     pub fn peer(&self) -> RrPeerId {
@@ -837,22 +704,31 @@ impl<Req: BodyMarker, Resp: BodyMarker> Iceoryx2ActiveRequest<Req, Resp> {
     ///
     /// # Errors
     ///
-    /// - iceoryx2 `loan_slice_uninit` 失败 / `send` 失败。
+    /// loan 或发送拒绝，以及回复已入队后附带的回收诊断都会返回错误。
+    /// 无论结果如何，self 与唯一 Active 都已消费；不得依据 Err 重发或推断零接纳。
     pub fn send_response(self, bytes: &[u8]) -> Result<(), TransportError> {
-        let mut resp = self
+        let response = self
             .inner
             .loan_slice_uninit(bytes.len())
-            .map_err(|e| TransportError::Backend(format!("RR active loan_slice_uninit: {e:?}")))?;
-        let payload_mut = resp.payload_mut();
-        for (dst, src) in payload_mut.iter_mut().zip(bytes.iter()) {
-            dst.write(*src);
-        }
-        // SAFETY: 上面循环写满了 bytes.len() 个元素。
-        let resp_init = unsafe { resp.assume_init() };
-        resp_init
+            .map_err(|refused| {
+                let error = TransportError::Backend(format!(
+                    "RR active loan_slice_uninit: {:?}",
+                    refused.error
+                ));
+                // 原 Active 从 loan 拒绝中完整返回；只在本次回复收尾时真实 finish。
+                drop(refused.active);
+                error
+            })?;
+        let sent = response
+            .write_from_slice(bytes)
             .send()
-            .map_err(|e| TransportError::Backend(format!("RR active send response: {e:?}")))?;
-        Ok(())
+            .map_err(|error| TransportError::Backend(format!("RR 唯一回复未入队: {error:?}")))?;
+        match sent.issue {
+            None => Ok(()),
+            Some(issue) => Err(TransportError::Backend(format!(
+                "RR 唯一回复已入队但附带诊断: {issue:?}"
+            ))),
+        }
     }
 }
 
@@ -865,28 +741,20 @@ fn map_loan_error(error: LoanError) -> LoanKind {
     }
 }
 
-fn map_request_send_error(error: RequestSendError) -> RrSendError {
-    match error {
-        RequestSendError::ExceedsMaxActiveRequests => {
-            RrSendError::NotDelivered(NotDelivered::ExceedsMaxActiveRequests)
-        }
-        RequestSendError::SendError(error) => match error {
-            SendError::LoanError(error) => {
-                RrSendError::NotDelivered(NotDelivered::Loan(map_loan_error(error)))
-            }
-            SendError::ConnectionError(_) => {
-                RrSendError::NotDelivered(NotDelivered::ConnectionUpdate)
-            }
-            SendError::UnableToDeliver => RrSendError::Uncertain(Uncertain::UnableToDeliver),
-            SendError::InternalError => RrSendError::Uncertain(Uncertain::InternalError),
-            SendError::ConnectionCorrupted => {
-                RrSendError::Uncertain(Uncertain::ConnectionCorrupted)
-            }
-            SendError::ConnectionBrokenSinceSenderNoLongerExists => {
-                RrSendError::Uncertain(Uncertain::SenderGone)
-            }
-        },
-    }
+fn map_strict_loan_error(error: StrictLoanError) -> RrSendError {
+    RrSendError::NotDelivered(match error {
+        StrictLoanError::RequestIdExhausted => NotDelivered::RequestIdExhausted,
+        StrictLoanError::NoChannelAvailable => NotDelivered::NoChannelAvailable,
+        StrictLoanError::Loan(error) => NotDelivered::Loan(map_loan_error(error)),
+    })
+}
+
+fn map_strict_send_refusal(error: StrictSendRefusal) -> RrSendError {
+    RrSendError::NotDelivered(match error {
+        StrictSendRefusal::ExceedsMaxActiveRequests => NotDelivered::ExceedsMaxActiveRequests,
+        StrictSendRefusal::NoServer => NotDelivered::ZeroRecipients,
+        other => NotDelivered::Strict(other),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -920,9 +788,7 @@ mod tests {
     fn round_trip_clear_estop() {
         let node = NodeBuilder::new().create::<IxService>().unwrap();
         let topic = fresh_topic("round_trip");
-        let (client, server) =
-            rr_channel::<markers::ClearEStopRequest, markers::ClearEStopResponse>(&node, &topic)
-                .unwrap();
+        let (client, server) = explicit_pair(&node, &topic);
 
         // build request bytes（A1-1 part 1 落地的 robot-msg helper）
         let req_bytes = build_clear_estop_request(
@@ -982,9 +848,7 @@ mod tests {
     fn rr_server_can_hold_multiple_active_requests_concurrently() {
         let node = NodeBuilder::new().create::<IxService>().unwrap();
         let topic = fresh_topic("multi_active");
-        let (client, server) =
-            rr_channel::<markers::ClearEStopRequest, markers::ClearEStopResponse>(&node, &topic)
-                .unwrap();
+        let (client, server) = explicit_pair(&node, &topic);
 
         let req_a = build_clear_estop_request(
             "req-A",
@@ -1070,11 +934,13 @@ mod tests {
         let node = NodeBuilder::new().create::<IxService>().unwrap();
         let topic = fresh_topic("schema_mismatch");
         // 第一次 create：用 ClearEStopRequest 作 schema attribute
-        let _ok =
-            rr_channel::<markers::ClearEStopRequest, markers::ClearEStopResponse>(&node, &topic)
-                .unwrap();
+        let _ok = explicit_pair(&node, &topic);
         // 第二次 open：用 Heartbeat 作 schema → attribute verify 失败
-        let bad = rr_channel::<markers::Heartbeat, markers::ClearEStopResponse>(&node, &topic);
+        let bad = rr_client_with::<markers::Heartbeat, markers::ClearEStopResponse>(
+            &node,
+            &topic,
+            &RrProfile::S0_CONTROL,
+        );
         assert!(
             bad.is_err(),
             "expected schema attribute verify to reject mismatched request marker"
@@ -1471,40 +1337,131 @@ mod tests {
         assert!(
             pending
                 .iter()
-                .all(|p| p.is_connected() && p.server_connections() == 1)
+                .all(|p| p.connection_state() == StrictChannelStatus::Open
+                    && p.delivery_issue().is_none())
         );
     }
 
     #[test]
-    fn real_full_queue_probe_reports_zero_recipients() {
+    fn early_pending_drop_keeps_original_capacity_until_active_finishes() {
         let node = NodeBuilder::new().create::<IxService>().unwrap();
-        let (client, server) = explicit_pair(&node, &fresh_topic("full_queue"));
-        let first: Vec<_> = (0..4).map(|id| client.send_typed(&[id]).unwrap()).collect();
+        let (client, server) = explicit_pair(&node, &fresh_topic("detached_capacity"));
+        let pending: Vec<_> = (0..4).map(|id| client.send_typed(&[id]).unwrap()).collect();
         let held: Vec<_> = (0..4)
             .map(|_| wait_for_active(&server, std::time::Duration::from_secs(2)))
             .collect();
-        drop(first);
-        let mut second: Vec<_> = (4..8).map(|id| client.send_typed(&[id]).unwrap()).collect();
-        drop(second.pop().unwrap());
+        drop(pending);
+        assert_eq!(client.inner.number_of_detached_requests(), 4);
+        assert_eq!(client.inner.number_of_active_requests(), 4);
         assert!(matches!(
             client.send_typed(&[99]),
-            Err(RrSendError::NotDelivered(NotDelivered::ZeroRecipients))
+            Err(RrSendError::NotDelivered(
+                NotDelivered::ExceedsMaxActiveRequests
+            ))
         ));
+        assert_eq!(client.inner.number_of_detached_requests(), 4);
         drop(held);
-        let mut received = Vec::new();
-        for _ in 0..4 {
-            let active = wait_for_active(&server, std::time::Duration::from_secs(2));
-            received.push(active.payload()[0]);
-        }
-        received.sort_unstable();
-        assert_eq!(received, [4, 5, 6, 7]);
-        assert!(server.try_recv().unwrap().is_none());
-        drop(second);
-        // 探测 pending 若没有真实释放，这一批的第四条会撞到客户端在途上限。
+        client.inner.maintain();
+        assert_eq!(client.inner.number_of_detached_requests(), 0);
+        assert_eq!(client.inner.number_of_active_requests(), 0);
         let next: Vec<_> = (10..14)
             .map(|id| client.send_typed(&[id]).unwrap())
             .collect();
         assert_eq!(next.len(), 4);
+    }
+
+    #[test]
+    fn final_reply_remains_visible_after_whole_server_drop() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let (client, server) = explicit_pair(&node, &fresh_topic("server_drop_tail"));
+        let pending = client.send_typed(&[7]).unwrap();
+        assert_eq!(pending.connection_state(), StrictChannelStatus::Open);
+        assert!(pending.try_recv().unwrap().is_none());
+        let active = wait_for_active(&server, std::time::Duration::from_secs(2));
+        assert_eq!(active.peer(), RrPeerId(client.inner.id()));
+        active.send_response(&[8]).unwrap();
+        drop(server);
+        assert_eq!(pending.connection_state(), StrictChannelStatus::Closed);
+        assert_eq!(pending.try_recv().unwrap(), Some(vec![8]));
+        assert_eq!(pending.try_recv().unwrap(), None);
+        drop(pending);
+        client.inner.maintain();
+        assert_eq!(client.inner.number_of_active_requests(), 0);
+        assert_eq!(client.inner.number_of_pinned_routes(), 0);
+    }
+
+    #[test]
+    fn original_response_borrow_delays_detached_reclaim() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let (client, server) = explicit_pair(&node, &fresh_topic("held_response"));
+        let pending = client.send_typed(&[10]).unwrap();
+        wait_for_active(&server, std::time::Duration::from_secs(2))
+            .send_response(&[11])
+            .unwrap();
+        // 仅同模块测试持有真实 Response，公开 try_recv 仍拷出并释放借用。
+        let response = pending.inner.receive().unwrap().unwrap();
+        assert_eq!(response.payload(), &[11]);
+        drop(pending);
+        client.inner.maintain();
+        assert_eq!(client.inner.number_of_detached_requests(), 1);
+        assert_eq!(client.inner.number_of_pinned_routes(), 1);
+        assert_eq!(client.inner.number_of_active_requests(), 1);
+        drop(response);
+        client.inner.maintain();
+        assert_eq!(client.inner.number_of_detached_requests(), 0);
+        assert_eq!(client.inner.number_of_pinned_routes(), 0);
+        assert_eq!(client.inner.number_of_active_requests(), 0);
+    }
+
+    #[test]
+    fn original_active_drop_closes_without_a_reply() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let (client, server) = explicit_pair(&node, &fresh_topic("active_drop"));
+        let pending = client.send_typed(&[20]).unwrap();
+        let active = wait_for_active(&server, std::time::Duration::from_secs(2));
+        assert_eq!(pending.connection_state(), StrictChannelStatus::Open);
+        drop(active);
+        assert_eq!(pending.connection_state(), StrictChannelStatus::Closed);
+        assert_eq!(pending.try_recv().unwrap(), None);
+        drop(pending);
+        client.inner.maintain();
+        assert_eq!(client.inner.number_of_active_requests(), 0);
+    }
+
+    #[test]
+    fn reply_loan_refusal_finishes_only_the_original_active() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let (client, server) = explicit_pair(&node, &fresh_topic("reply_loan_refusal"));
+        let first = client.send_typed(&[30]).unwrap();
+        let active = wait_for_active(&server, std::time::Duration::from_secs(2));
+        let second = client.send_typed(&[31]).unwrap();
+        let other = wait_for_active(&server, std::time::Duration::from_secs(2));
+        let oversized = vec![
+            0;
+            max_bytes_for::<markers::ClearEStopRequest, markers::ClearEStopResponse>().unwrap()
+                + 1
+        ];
+        assert!(active.send_response(&oversized).is_err());
+        assert_eq!(first.connection_state(), StrictChannelStatus::Closed);
+        assert_eq!(first.try_recv().unwrap(), None);
+        assert_eq!(second.connection_state(), StrictChannelStatus::Open);
+        other.send_response(&[32]).unwrap();
+        assert_eq!(second.try_recv().unwrap(), Some(vec![32]));
+        assert_eq!(second.try_recv().unwrap(), None);
+    }
+
+    #[test]
+    fn absent_server_refuses_before_remote_acceptance() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let client: TestClient =
+            rr_client_with(&node, &fresh_topic("absent_server"), &RrProfile::S0_CONTROL).unwrap();
+        assert!(matches!(
+            client.send_typed(&[1]),
+            Err(RrSendError::NotDelivered(NotDelivered::ZeroRecipients))
+        ));
+        assert_eq!(client.inner.number_of_active_requests(), 0);
+        assert_eq!(client.inner.number_of_detached_requests(), 0);
+        assert_eq!(client.inner.number_of_pinned_routes(), 0);
     }
 
     #[test]
@@ -1531,14 +1488,26 @@ mod tests {
     }
 
     #[test]
-    fn map_request_send_error_is_total() {
-        use iceoryx2::port::update_connections::ConnectionFailure;
-        use iceoryx2_cal::shared_memory::SharedMemoryOpenError;
-        use iceoryx2_cal::zero_copy_connection::ZeroCopyCreationError;
+    fn strict_errors_only_describe_requests_not_enqueued() {
         assert_eq!(
-            map_request_send_error(RequestSendError::ExceedsMaxActiveRequests),
+            map_strict_send_refusal(StrictSendRefusal::NoServer),
+            RrSendError::NotDelivered(NotDelivered::ZeroRecipients)
+        );
+        assert_eq!(
+            map_strict_send_refusal(StrictSendRefusal::ExceedsMaxActiveRequests),
             RrSendError::NotDelivered(NotDelivered::ExceedsMaxActiveRequests)
         );
+        for refusal in [
+            StrictSendRefusal::TargetMismatch,
+            StrictSendRefusal::SlotBusy,
+            StrictSendRefusal::MultipleServers { count: 2 },
+            StrictSendRefusal::ServerNotStatic,
+        ] {
+            assert_eq!(
+                map_strict_send_refusal(refusal),
+                RrSendError::NotDelivered(NotDelivered::Strict(refusal))
+            );
+        }
         for (error, kind) in [
             (LoanError::OutOfMemory, LoanKind::OutOfMemory),
             (LoanError::ExceedsMaxLoans, LoanKind::ExceedsMaxLoans),
@@ -1546,62 +1515,220 @@ mod tests {
             (LoanError::InternalFailure, LoanKind::InternalFailure),
         ] {
             assert_eq!(
-                map_request_send_error(RequestSendError::SendError(SendError::LoanError(error))),
+                map_strict_loan_error(StrictLoanError::Loan(error)),
                 RrSendError::NotDelivered(NotDelivered::Loan(kind))
             );
         }
-        for connection in [
-            ConnectionFailure::FailedToEstablishConnection(ZeroCopyCreationError::InternalError),
-            ConnectionFailure::UnableToMapSendersDataSegment(SharedMemoryOpenError::DoesNotExist),
-        ] {
-            assert_eq!(
-                map_request_send_error(RequestSendError::SendError(SendError::ConnectionError(
-                    connection
-                ))),
-                RrSendError::NotDelivered(NotDelivered::ConnectionUpdate)
-            );
-        }
-        for (error, kind) in [
-            (SendError::UnableToDeliver, Uncertain::UnableToDeliver),
-            (SendError::InternalError, Uncertain::InternalError),
-            (
-                SendError::ConnectionCorrupted,
-                Uncertain::ConnectionCorrupted,
-            ),
-            (
-                SendError::ConnectionBrokenSinceSenderNoLongerExists,
-                Uncertain::SenderGone,
-            ),
-        ] {
-            assert_eq!(
-                map_request_send_error(RequestSendError::SendError(error)),
-                RrSendError::Uncertain(kind)
-            );
+        assert_eq!(
+            map_strict_loan_error(StrictLoanError::RequestIdExhausted),
+            RrSendError::NotDelivered(NotDelivered::RequestIdExhausted)
+        );
+        assert_eq!(
+            map_strict_loan_error(StrictLoanError::NoChannelAvailable),
+            RrSendError::NotDelivered(NotDelivered::NoChannelAvailable)
+        );
+    }
+
+    #[cfg(feature = "test-rr-fixtures")]
+    struct QueueFaultOwned {
+        server: Option<TestServer>,
+        pending: Vec<Iceoryx2PendingResponse<markers::ClearEStopResponse>>,
+        client: TestClient,
+        _node: Node<IxService>,
+    }
+
+    #[cfg(feature = "test-rr-fixtures")]
+    impl Drop for QueueFaultOwned {
+        fn drop(&mut self) {
+            // 本例 server 同线程无 worker；先真正结束原 server，再还原 Pending/A/client。
+            self.server.take();
         }
     }
 
+    #[cfg(feature = "test-rr-fixtures")]
     #[test]
-    fn legacy_factories_have_no_limits() {
+    fn real_original_queue_full_refuses_fourth_transport_send() {
+        exercise_queue_fault(QueueFailure::NotEnqueued);
+    }
+
+    #[cfg(feature = "test-rr-fixtures")]
+    #[test]
+    fn real_original_queue_issue_keeps_fourth_pending_and_reply() {
+        exercise_queue_fault(QueueFailure::EnqueueIssue);
+    }
+
+    #[cfg(feature = "test-rr-fixtures")]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "同一原队列的 A/P1/P2/P3/B 预算与回收证据保留在同一拥有域"
+    )]
+    fn exercise_queue_fault(mode: QueueFailure) {
+        use iceoryx2_cal::zero_copy_connection::ZeroCopySendError;
+
         let node = NodeBuilder::new().create::<IxService>().unwrap();
-        let pair = rr_channel::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
-            &node,
-            &fresh_topic("legacy_pair"),
-        )
-        .unwrap();
-        assert_eq!(pair.0.limits(), None);
-        assert_eq!(pair.1.limits(), None);
-        let client = rr_client::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
-            &node,
-            &fresh_topic("legacy_client"),
-        )
-        .unwrap();
-        let server = rr_server::<markers::ClearEStopRequest, markers::ClearEStopResponse>(
-            &node,
-            &fresh_topic("legacy_server"),
-        )
-        .unwrap();
-        assert_eq!(client.limits(), None);
-        assert_eq!(server.limits(), None);
+        let (client, server) = explicit_pair(&node, &fresh_topic("original_queue_fault"));
+        let mut owned = QueueFaultOwned {
+            server: Some(server),
+            pending: Vec::new(),
+            client,
+            _node: node,
+        };
+        assert!(owned.server.as_ref().unwrap().try_recv().unwrap().is_none());
+        owned.client.install_request_queue_fixture(mode).unwrap();
+        assert!(matches!(
+            owned.client.install_request_queue_fixture(mode),
+            Err(FixtureError::Boundary(_))
+        ));
+        let initial = owned.client.request_queue_fixture_snapshot().unwrap();
+        assert_eq!(
+            (
+                initial.loans,
+                initial.active,
+                initial.detached,
+                initial.pool_free
+            ),
+            (1, 0, 0, 9)
+        );
+        assert_eq!(
+            (initial.channels, initial.samples, initial.queue_capacity),
+            (10, 10, 4)
+        );
+        assert_eq!(initial.auxiliary_references, 2);
+        assert!(initial.auxiliary_used && !initial.armed && !initial.target_seen);
+        assert_eq!(initial.hits, 0);
+        for id in 1..=3 {
+            owned.pending.push(owned.client.send_typed(&[id]).unwrap());
+            assert!(owned.pending.last().unwrap().delivery_issue().is_none());
+            let observed = owned.client.request_queue_fixture_snapshot().unwrap();
+            assert_eq!(
+                (observed.client_id, observed.server_id),
+                (initial.client_id, initial.server_id)
+            );
+            assert_eq!(
+                (observed.loans, observed.active, observed.detached),
+                (1, usize::from(id), 0)
+            );
+            assert_eq!(observed.pool_free, 9 - usize::from(id));
+            assert_eq!(observed.auxiliary_references, 2);
+            assert!(observed.auxiliary_used && !observed.armed && !observed.target_seen);
+            assert_eq!(observed.hits, 0);
+        }
+        let result = owned.client.send_typed(&[4]);
+        match mode {
+            QueueFailure::NotEnqueued => assert!(matches!(
+                result,
+                Err(RrSendError::NotDelivered(NotDelivered::Strict(
+                    StrictSendRefusal::NotEnqueued(ZeroCopySendError::ReceiveBufferFull)
+                )))
+            )),
+            QueueFailure::EnqueueIssue => {
+                owned
+                    .pending
+                    .push(result.expect("真实入队 issue 必须返回原 Pending"));
+                assert!(matches!(
+                    owned.pending.last().unwrap().delivery_issue(),
+                    Some(EnqueueIssue::OverflowedOffsetNotInUsedList(_))
+                ));
+            }
+        }
+        let sent = owned.client.request_queue_fixture_snapshot().unwrap();
+        let count = match mode {
+            QueueFailure::NotEnqueued => 3,
+            QueueFailure::EnqueueIssue => 4,
+        };
+        assert_eq!(
+            (sent.client_id, sent.server_id),
+            (initial.client_id, initial.server_id)
+        );
+        assert_eq!(
+            (sent.loans, sent.active, sent.detached, sent.pool_free),
+            (1, count, 0, 9 - count)
+        );
+        assert!(sent.target_seen && !sent.armed);
+        assert_eq!(sent.hits, usize::from(mode == QueueFailure::EnqueueIssue));
+        assert_eq!(sent.auxiliary_used, mode == QueueFailure::NotEnqueued);
+        assert_eq!(sent.auxiliary_references, 2);
+        let server = owned.server.as_ref().unwrap();
+        if mode == QueueFailure::NotEnqueued {
+            let auxiliary = wait_for_active(server, std::time::Duration::from_secs(2));
+            assert_eq!(auxiliary.payload(), REQUEST_QUEUE_FIXTURE_AUXILIARY);
+            drop(auxiliary);
+        }
+        for id in 1..=count {
+            let active = wait_for_active(server, std::time::Duration::from_secs(2));
+            let byte = u8::try_from(id).unwrap();
+            assert_eq!(active.payload(), &[byte]);
+            active.send_response(&[byte + 10]).unwrap();
+            let pending = &owned.pending[id - 1];
+            assert_eq!(pending.connection_state(), StrictChannelStatus::Closed);
+            assert_eq!(pending.try_recv().unwrap(), Some(vec![byte + 10]));
+            assert_eq!(pending.try_recv().unwrap(), None);
+        }
+        assert!(server.try_recv().unwrap().is_none());
+        owned.pending.clear();
+        owned.client.inner.maintain();
+        assert_eq!(owned.client.inner.number_of_active_requests(), 0);
+        assert_eq!(owned.client.inner.number_of_detached_requests(), 0);
+        // 下一次真实 loan 执行原 returned-samples 回收；不让 snapshot 代替维护。
+        let original_loan = owned.client.inner.loan_slice_uninit(1).unwrap();
+        drop(original_loan);
+        let final_snapshot = owned.client.request_queue_fixture_snapshot().unwrap();
+        assert_eq!(
+            (
+                final_snapshot.loans,
+                final_snapshot.active,
+                final_snapshot.detached,
+                final_snapshot.pool_free
+            ),
+            (1, 0, 0, 9)
+        );
+        assert_eq!(
+            final_snapshot.auxiliary_references,
+            if mode == QueueFailure::NotEnqueued {
+                1
+            } else {
+                2
+            }
+        );
+        assert!(!final_snapshot.auxiliary_used);
+        eprintln!(
+            "原队列故障 {mode:?}：初态={initial:?} B结果={sent:?} 原server退出前={final_snapshot:?}"
+        );
+        drop(owned);
+        eprintln!(
+            "原队列故障 {mode:?}：原server、Pending、A本地loan、client和Node已按序退出；未知远端引用未当业务退休"
+        );
+    }
+
+    #[cfg(feature = "test-rr-fixtures")]
+    #[test]
+    fn real_sender_cleanup_keeps_original_unknown_pending_detached() {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let (client, server) = explicit_pair(&node, &fresh_topic("original_unknown"));
+        let pending = client.send_typed(&[42]).unwrap();
+        assert!(pending.delivery_issue().is_none());
+        let active = wait_for_active(&server, std::time::Duration::from_secs(2));
+        let record = active.fixture_abandon_response_sender().unwrap();
+        assert!(record.removed);
+        assert_eq!(record.client_id, client.inner.id().value());
+        assert_eq!(pending.connection_state(), StrictChannelStatus::Unknown);
+        assert!(!matches!(pending.try_recv(), Ok(Some(_))));
+        assert_eq!(client.inner.number_of_active_requests(), 1);
+        assert_eq!(client.inner.number_of_pinned_routes(), 1);
+        drop(pending);
+        client.inner.maintain();
+        assert_eq!(client.inner.number_of_active_requests(), 1);
+        assert_eq!(client.inner.number_of_detached_requests(), 1);
+        assert_eq!(client.inner.number_of_pinned_routes(), 1);
+        drop(active);
+        client.inner.maintain();
+        assert_eq!(client.inner.number_of_detached_requests(), 1);
+        eprintln!(
+            "原sender真实清理={record:?}；Unknown原请求仍占active/Detached/pin各1，非正常退休"
+        );
+        drop(server);
+        drop(client);
+        drop(node);
     }
 
     fn wait_for_active<Req: BodyMarker, Resp: BodyMarker>(

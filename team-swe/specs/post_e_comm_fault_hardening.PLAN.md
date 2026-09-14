@@ -2496,6 +2496,29 @@ root_acceptance.md已验收本地范围，含build的80包闭包与R1一致。
 R2提交后按r3_native_development_handoff.md成对替换既有工厂，保原profile/topic/schema。
 未运行R3/R4、Orin/ARM/硬件或P-E；D15 OPEN、deployable=false保持。
 
+#### P.6.14.20 RR R3 本方成对迁移（2026-09-15本地验收）
+
+基线R2真实提交06fcf0b；原生r3_native_developer独占Cargo/整合，按A–E文件租约
+并行开发，独立Codex评审，root定方案/终审/提交。任务及验收范围见rr_r3/native_task.md。
+直接替换既有工厂/四wrapper，不增第二套strict工厂；已入队含issue仍保原Pending，
+三态取代bool完成依据，唯一Active回复，保L4/C8/topic/schema/FF及原预算。
+root选择最小IOX重导出既有EnqueueIssue/StrictChannelStatus，避免新增CAL生产依赖。
+W3异常原件提升到Child持有层，真reap后才析构RR；W4a/W4b同步联动。
+真实故障桥函数级方案已获root与独立评审ACK，裁决见rr_r3/fixture_bridge_root_decision.md。
+保实际L4/C8/M2/N10，A原loan+三个真Sent填满原队列，再让B走唯一真实发送；
+Unknown走原sender按值abandon及真实CAL清理。默认关闭feature、受限不透明RAII；
+不跨client伪造同队列满、不公开全shared/锁/裸offset写口、不伪造receipt/borrow。
+测试原server真join后才结束guard/client/Node；接收错误仍保Pending/信用并且超时只转一次Orphan。
+正式round2共37门全部exit0，538个源码/构建输入首末与当前一致；实际先fmt后Clippy。
+workspace2211/0/9、S0完整hook858/0/1；IOX默认42/0/1与fixture45/0/1，
+transport fixture61/0/0、RPC fixture309/0/0；Serial5、工具89、owned/QoS11全过。
+dev/release各自原W4a2、W4b5、All72全过，分组存在重叠不得累加。
+根/嵌套/模型成员14/2/1，normal56及normal+build80闭包同R2身份，默认图无fixture；
+86个未变CAL/模型/锁输入复用R2证明。开发失败、正式round1 Clippy失败及汇总原件保留。
+独立最终源码/证据终审及root验收通过，见rr_r3/{final_evidence_review.md,root_acceptance.md}；
+精确交付见delivery_manifest.json，正式记录gates/round2/run.json。归档提交后推进R4，
+本包不称R4/Orin/ARM/硬件/P-E通过，D15 OPEN、deployable=false保持。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

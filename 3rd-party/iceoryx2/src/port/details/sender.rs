@@ -584,7 +584,7 @@ impl<Service: service::Service> Sender<Service> {
     }
 
     /// 仅测试：按完整 receiver id 借用原 CAL sender（只读定位，不改状态）。
-    #[cfg(test)]
+    #[cfg(any(test, feature = "r2-test-fixtures"))]
     pub(crate) fn cal_sender_for_test(
         &self,
         receiver_port_id: u128,
@@ -601,7 +601,7 @@ impl<Service: service::Service> Sender<Service> {
     }
 
     /// 仅测试：本地 sample 引用计数（未曾 borrow 的 sample 为 0）。
-    #[cfg(test)]
+    #[cfg(any(test, feature = "r2-test-fixtures"))]
     pub(crate) fn sample_reference_count_for_test(&self, offset: PointerOffset) -> u64 {
         let segment_state = &self.segment_states[offset.segment_id().value() as usize];
         if segment_state.payload_size() == 0 {

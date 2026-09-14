@@ -33,6 +33,13 @@ pub use server::{
     StrictServer,
 };
 
+// RR R3：公开现有 strict 返回类型，调用方无需直接依赖 CAL；类型与状态机不变。
+pub use iceoryx2_cal::zero_copy_connection::{EnqueueIssue, StrictChannelStatus};
+
+#[cfg(feature = "r2-test-fixtures")]
+#[doc(hidden)]
+pub use client::test_support;
+
 use iceoryx2_cal::zero_copy_connection::{StrictPrepareError, ZeroCopySendError};
 
 use crate::port::{LoanError, ReceiveError, update_connections::ConnectionFailure};

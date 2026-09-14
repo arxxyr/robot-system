@@ -32,6 +32,8 @@ iceoryx2 = ["dep:iceoryx2"]
 # 的编译门。默认关闭；**不得**进 default 或任何机器人生产组合，只由 robot-s0 同名
 # test-only 特性显式转发或验收命令行显式开启。
 test-comm-fault-hook = []
+# R3 真实 RR 故障夹具，仅显式验收启用；不进入 default 或生产组合。
+test-rr-fixtures = ["iceoryx2", "iceoryx2/r2-test-fixtures"]
 
 [dev-dependencies]
 iceoryx2-cal = { workspace = true }

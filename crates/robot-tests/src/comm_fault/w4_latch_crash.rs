@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service;
+use iceoryx2::strict::StrictChannelStatus;
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::{markers, msg};
 use robot_s0::clear_estop_transaction::{ClearTxnStage, StepPhase};
@@ -798,10 +799,14 @@ async fn exercise(
             .map_err(|e| e.to_string())?;
         owned_pending = Some(client.send_typed(&body).map_err(|e| format!("{e:?}"))?);
         let pending = owned_pending.as_ref().ok_or("原Clear pending安装后丢失")?;
+        // 已入队 issue 不能回滚成无原件错误；原 Pending 仍陪同 Child 真 reap。
+        if let Some(issue) = pending.delivery_issue() {
+            return Err(format!("原Clear已入队但附带投递问题：{issue:?}"));
+        }
         let until = started.saturating_add(REPLY_WAIT_NS);
         let reply = loop {
             capture.drain();
-            if let Some(bytes) = pending.try_recv().map_err(|e| e.to_string())? {
+            if let Some(bytes) = receive_with_closed_tail(pending)? {
                 reply_count = 1;
                 break bytes;
             }
@@ -841,7 +846,7 @@ async fn exercise(
     let cleanup = close_child(child, Some(capture), || {
         let clear: Result<(), String> = (|| {
             if let Some(pending) = &owned_pending
-                && let Some(bytes) = pending.try_recv().map_err(|e| e.to_string())?
+                && let Some(bytes) = receive_with_closed_tail(pending)?
             {
                 let path = case
                     .directory
@@ -938,7 +943,7 @@ struct LatchProbe {
 impl LatchProbe {
     fn poll_cleanup(&mut self, case: &Case) -> Result<(), String> {
         if let Some(pending) = &self.pending
-            && let Some(bytes) = pending.try_recv().map_err(|e| e.to_string())?
+            && let Some(bytes) = receive_with_closed_tail(pending)?
         {
             let path = case
                 .directory
@@ -989,8 +994,11 @@ async fn verify_latch_read_only(
     let client = probe.client.as_ref().ok_or("原只读client安装后丢失")?;
     probe.pending = Some(client.send_typed(&body).map_err(|e| format!("{e:?}"))?);
     let pending = probe.pending.as_ref().ok_or("原只读pending安装后丢失")?;
+    if let Some(issue) = pending.delivery_issue() {
+        return Err(format!("原只读探针已入队但附带投递问题：{issue:?}"));
+    }
     let bytes = loop {
-        if let Some(bytes) = pending.try_recv().map_err(|e| e.to_string())? {
+        if let Some(bytes) = receive_with_closed_tail(pending)? {
             probe.replies = 1;
             break bytes;
         }
@@ -1018,6 +1026,18 @@ async fn verify_latch_read_only(
         json!({"request_id": request_id, "domain": "LatchBlocked", "effect": "None",
         "normal_calls_before": before, "normal_calls_after": after}),
     )
+}
+
+fn receive_with_closed_tail<T: markers::BodyMarker>(
+    pending: &Iceoryx2PendingResponse<T>,
+) -> Result<Option<Vec<u8>>, String> {
+    let received = pending.try_recv().map_err(|e| e.to_string())?;
+    match (received, pending.connection_state()) {
+        // 只有原连接正常 Closed 才建立尾发布可见性，随后补收一次。
+        (None, StrictChannelStatus::Closed) => pending.try_recv().map_err(|e| e.to_string()),
+        // Open/Unknown 不构成退休证据；两份原 Pending 仍保留到共同真 reap。
+        (received, _) => Ok(received),
+    }
 }
 
 #[cfg(test)]

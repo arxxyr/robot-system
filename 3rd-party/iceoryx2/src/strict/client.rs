@@ -32,6 +32,12 @@ use crate::service::port_factory::client::PortFactoryClient;
 
 use super::{StrictCreateError, StrictLoanError, StrictSendRefusal};
 
+// 子模块仅在显式夹具图内借用本文件原件；不向外暴露 shared、锁或 offset。
+#[cfg(feature = "r2-test-fixtures")]
+#[path = "test_support.rs"]
+#[doc(hidden)]
+pub mod test_support;
+
 /// strict 请求序号合法域 `1..=2^62−1`；0 留给 CAL 的 OPEN 初值，不作请求序号。
 const STRICT_REQUEST_ID_LIMIT: u64 = 1u64 << 62;
 

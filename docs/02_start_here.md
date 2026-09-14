@@ -20,8 +20,8 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     RR R2本地验收完成；本次提交收口，下一步R3本方成对迁移
-当前授权:     持续推进；CC已因额度停止并退出，R2余项与后续由原生子agent开发及独立评审
+当前步骤:     RR R3本方成对迁移已本地验收，归档提交后推进R4矩阵
+当前授权:     持续推进；原生子agent开发及独立评审，主agent定方案、终审并提交
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -48,8 +48,10 @@ R0以两个0.9.3原发布包接入唯一path依赖图，保14个本方成员与�
 仅补一处当前nightly原子API别名兼容。fmt、三组Clippy、构建及transport99/RPC304通过，
 来源与运行证据已独审。R1已实现CAL正常关闭/清理区分及真实入队回执，同源模型6项通过；
 正式21门全0，CAL45、工作区2207、S0 hook656通过，原9项ignored保留。
-根/嵌套两vendor运行时闭包80包身份一致，Loom不进生产图。原route/pin与复用资格仍待R2，
-本方迁移及双环境矩阵仍待R3/R4；本地结果不代表完整strict协议或Orin通过。
+根/嵌套两vendor运行时闭包80包身份一致，Loom不进生产图。R2已验收提交06fcf0b。
+R3已直接替换本方RR工厂并成对联动真实peer，37门与538输入身份核验通过，
+dev/release各W4a2/W4b5/All72通过；独立源码/证据及root已验收本地范围。
+完整T8/SUP/ENV和双环境仍待R4；上述本地结果不代表Orin或P-E通过。
 
 左H1/H3通过、H2两次FAIL；用户最后确认左臂断电、双臂支撑。右臂未测，
 六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。本轮未访问远端，

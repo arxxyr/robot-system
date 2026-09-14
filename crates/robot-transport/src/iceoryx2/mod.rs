@@ -38,8 +38,14 @@ pub use attributes::{
 pub use publisher::{Iceoryx2Publisher, Iceoryx2SampleWriter};
 pub use qos::{QosProfile, TopicClass, profile_of};
 pub use request_response::{
-    LoanKind, NotDelivered, RrPeerId, RrProfile, RrSendError, RrStaticLimits, Uncertain,
-    rr_client_with, rr_server_with,
+    EnqueueIssue, LoanKind, NotDelivered, RrPeerId, RrProfile, RrSendError, RrStaticLimits,
+    StrictChannelStatus, rr_client_with, rr_server_with,
+};
+#[cfg(feature = "test-rr-fixtures")]
+#[doc(hidden)]
+pub use request_response::{
+    FixtureError, QueueFailure, QueueFixtureSnapshot, REQUEST_QUEUE_FIXTURE_AUXILIARY,
+    SenderCleanupRecord,
 };
 pub use service_name::topic_to_service_name;
 pub use subscriber::{Iceoryx2SampleLease, Iceoryx2Subscriber};

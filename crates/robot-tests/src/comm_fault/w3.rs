@@ -6,11 +6,14 @@ use super::{
     harness::{Case, stop, wait_exit, wait_log},
     report::Report,
 };
-use iceoryx2::prelude::NodeBuilder;
+use iceoryx2::prelude::{Node, NodeBuilder};
 use iceoryx2::service::ipc::Service;
+use iceoryx2::strict::StrictChannelStatus;
 use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::markers;
 use robot_transport::Publisher;
+use robot_transport::iceoryx2::Iceoryx2Publisher;
+use robot_transport::iceoryx2::request_response::{Iceoryx2PendingResponse, Iceoryx2RrClient};
 use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::process::Child;
@@ -41,6 +44,15 @@ impl Mode {
     }
 }
 
+/// 原请求与注入端点由真实 `Child` 的外层持有，异常返回也不能提前析构。
+#[derive(Default)]
+struct Owned {
+    pending: Option<Iceoryx2PendingResponse<markers::ClearEStopResponse>>,
+    client: Option<Iceoryx2RrClient<markers::ClearEStopRequest, markers::ClearEStopResponse>>,
+    publisher: Option<Iceoryx2Publisher<markers::EStopEvent>>,
+    node: Option<Node<Service>>,
+}
+
 async fn run_case(args: &Args, mode: Mode) -> Result<Value, String> {
     struct SocketPath(std::path::PathBuf);
     impl Drop for SocketPath {
@@ -67,8 +79,9 @@ async fn run_case(args: &Args, mode: Mode) -> Result<Value, String> {
         command.env("ROBOT_TEST_WRITER_PAUSE", "SyncMarkerFile:4000");
     }
     let mut child = case.spawn("s0", command)?;
-    let result = exercise(&case, &mut child, &notify, mode).await;
-    // 包含所有失败出口：原 Child 保持到真正回收，超时也不先丢原句柄。
+    let mut owned = Owned::default();
+    let result = exercise(&case, &mut child, &notify, mode, &mut owned).await;
+    // 包含所有失败出口：原 Child、RR 和注入原件均保持到真正回收。
     if !matches!(child.try_wait(), Ok(Some(_))) {
         // kill 失败也继续真实 wait；任何未回收出口终止父进程，不能先 Drop 原 Child。
         let _ = child.start_kill();
@@ -91,6 +104,7 @@ async fn exercise(
     child: &mut Child,
     notify: &tokio::net::UnixDatagram,
     mode: Mode,
+    owned: &mut Owned,
 ) -> Result<Value, String> {
     wait_log(case, child, "s0", "boot_ready", Duration::from_secs(12)).await?;
     let until = SystemClock.now().0 + 1_000_000_000;
@@ -107,16 +121,25 @@ async fn exercise(
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    let node = NodeBuilder::new()
-        .create::<Service>()
-        .map_err(|e| e.to_string())?;
+    owned.node = Some(
+        NodeBuilder::new()
+            .create::<Service>()
+            .map_err(|e| e.to_string())?,
+    );
+    let node = owned.node.as_ref().ok_or("原Node安装后丢失")?;
     if matches!(mode, Mode::BoundedIoFailure) {
-        let mut publisher = robot_transport::iceoryx2::publisher::<markers::EStopEvent>(
-            &node,
-            &format!("/{}/events/estop", case.robot_id),
-            robot_transport::iceoryx2::TopicClass::SafetyEvent,
-        )
-        .map_err(|e| e.to_string())?;
+        owned.publisher = Some(
+            robot_transport::iceoryx2::publisher::<markers::EStopEvent>(
+                node,
+                &format!("/{}/events/estop", case.robot_id),
+                robot_transport::iceoryx2::TopicClass::SafetyEvent,
+            )
+            .map_err(|e| e.to_string())?,
+        );
+        let publisher = owned
+            .publisher
+            .as_mut()
+            .ok_or("原注入publisher安装后丢失")?;
         // Store 已在daemon持锁打开；只对独立临时latch制造真实rename障碍。
         std::fs::remove_file(&case.latch).map_err(|e| e.to_string())?;
         std::fs::create_dir(&case.latch).map_err(|e| e.to_string())?;
@@ -191,15 +214,18 @@ async fn exercise(
         );
     }
     let profile = robot_transport::iceoryx2::RrProfile::S0_CONTROL;
-    let client = robot_transport::iceoryx2::rr_client_with::<
-        markers::ClearEStopRequest,
-        markers::ClearEStopResponse,
-    >(
-        &node,
-        &format!("/{}/control/clear_estop", case.robot_id),
-        &profile,
-    )
-    .map_err(|e| e.to_string())?;
+    owned.client = Some(
+        robot_transport::iceoryx2::rr_client_with::<
+            markers::ClearEStopRequest,
+            markers::ClearEStopResponse,
+        >(
+            node,
+            &format!("/{}/control/clear_estop", case.robot_id),
+            &profile,
+        )
+        .map_err(|e| e.to_string())?,
+    );
+    let client = owned.client.as_ref().ok_or("原Clear client安装后丢失")?;
     let started = SystemClock.now().0;
     let body = robot_msg::build_helpers::build_clear_estop_request(
         "w3-clear",
@@ -212,7 +238,12 @@ async fn exercise(
         started + 5_000_000_000,
         started,
     );
-    let pending = client.send_typed(&body).map_err(|e| format!("{e:?}"))?;
+    owned.pending = Some(client.send_typed(&body).map_err(|e| format!("{e:?}"))?);
+    let pending = owned.pending.as_ref().ok_or("原Clear pending安装后丢失")?;
+    // issue 属于已真实入队的原请求；先保原 Pending，再判本例失败。
+    if let Some(issue) = pending.delivery_issue() {
+        return Err(format!("原Clear已入队但附带投递问题：{issue:?}"));
+    }
     if matches!(mode, Mode::FileStep) {
         wait_log(
             case,
@@ -233,7 +264,7 @@ async fn exercise(
                 "真实FileStep未按运行预算退出：code={code} elapsed={elapsed} page={page:?}"
             ));
         }
-        if pending.try_recv().map_err(|e| e.to_string())?.is_some() {
+        if receive_with_closed_tail(pending)?.is_some() {
             return Err("卡在Prepare的原请求不应冒充退休回复".into());
         }
         return Ok(
@@ -241,7 +272,7 @@ async fn exercise(
         );
     }
     let response = loop {
-        if let Some(bytes) = pending.try_recv().map_err(|e| e.to_string())? {
+        if let Some(bytes) = receive_with_closed_tail(pending)? {
             break bytes;
         }
         if SystemClock.now().0 >= started + 3_000_000_000 {
@@ -270,6 +301,19 @@ async fn exercise(
         json!({"exit_code":0,"typed_retired":true,"effect":"Committed","latch_pair":[0,0],"log_directory":case.directory}),
     )
 }
+
+fn receive_with_closed_tail(
+    pending: &Iceoryx2PendingResponse<markers::ClearEStopResponse>,
+) -> Result<Option<Vec<u8>>, String> {
+    let received = pending.try_recv().map_err(|e| e.to_string())?;
+    match (received, pending.connection_state()) {
+        // 正常关闭之后再收一次，覆盖首次空收与对端发布之间的窗口。
+        (None, StrictChannelStatus::Closed) => pending.try_recv().map_err(|e| e.to_string()),
+        // Open/Unknown 仅是观察结果；原件仍由 Owned 持有至真实 Child reap。
+        (received, _) => Ok(received),
+    }
+}
+
 fn pair(case: &Case) -> Result<(Vec<u8>, Vec<u8>), String> {
     Ok((
         std::fs::read(&case.latch).map_err(|e| e.to_string())?,
