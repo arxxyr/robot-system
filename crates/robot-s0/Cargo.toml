@@ -93,6 +93,7 @@ test-freeze-hook = []
 # S48 A3a：显式转发 robot-core 同名特性（control_authority 验收构造入口）；
 # 仍不进 default / rt_guard / 任何机器人组合。
 test-comm-fault-hook = [
+    "robot-health/test-comm-fault-hook",
     "robot-core/test-comm-fault-hook",
     # S48 A3b：snapshot 版本耗尽注入构造（`RtSnapshotPublisher::new_with_version`）。
     "robot-transport/test-comm-fault-hook",

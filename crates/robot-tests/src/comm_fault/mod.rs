@@ -1,11 +1,14 @@
 //! post-E 独立验收：软件场景与现场测量入口共用明确的参数和证据格式。
 
 mod control;
+mod gateway_exhaustion;
 mod hardware;
 mod harness;
 mod heartbeat;
+mod manager;
 mod report;
 mod rpc;
+mod runtime_supervision;
 mod scenarios;
 mod sla;
 #[cfg(test)]
@@ -162,6 +165,12 @@ fn validate_r4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
     match case {
         Some(
             "R4-SUP-STANDALONE"
+            | "R4C-STANDALONE"
+            | "R4C-UNWIND"
+            | "R4C-GATEWAY-ORPHAN"
+            | "R4C-PERSIST-HEALTH"
+            | "R4C-MANAGER"
+            | "R4C-MANAGER-UNWIND"
             | "R4-T8-RESYNC"
             | "R4-T8-RESYNC-EXHAUSTED"
             | "R4-T8-WRITER-KILL-25"
@@ -180,6 +189,15 @@ fn validate_r4_case(phase: Phase, case: Option<&str>) -> Result<bool, String> {
 }
 
 pub(super) async fn main_entry() -> ExitCode {
+    if let Some(result) = manager::launcher_entry(&std::env::args().skip(1).collect::<Vec<_>>()) {
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("R4c launcher失败：{error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let args = match Args::parse() {
         Ok(Some(args)) => args,
         Ok(None) => {

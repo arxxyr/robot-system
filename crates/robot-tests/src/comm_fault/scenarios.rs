@@ -30,6 +30,14 @@ pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> 
         Some("R4-T8-RECOVERY-KILL") => {
             return super::w4_latch_sigkill::run_recovery(args, report).await;
         }
+        Some("R4C-MANAGER" | "R4C-MANAGER-UNWIND") => {
+            return super::manager::run(args, report).await;
+        }
+        Some("R4C-GATEWAY-ORPHAN") => return super::gateway_exhaustion::run(args, report).await,
+        Some("R4C-PERSIST-HEALTH") => return super::w3::run_health(args, report).await,
+        Some("R4C-STANDALONE" | "R4C-UNWIND") => {
+            return super::runtime_supervision::run(args, report).await;
+        }
         Some("R4-SUP-STANDALONE") => return super::supervision::run(args, report).await,
         _ => {}
     }

@@ -282,6 +282,8 @@ impl WriterCore {
         if !obligation.has_pending() {
             return None;
         }
+        #[cfg(feature = "test-comm-fault-hook")]
+        env.hook.before_obligation_claim();
         let now = env.clock.now();
         if self.shared.progress.store(Phase::Claiming, now).is_err() {
             self.shared.progress.store_unstamped(Phase::Claiming);
@@ -860,6 +862,7 @@ pub fn run_writer(
                 tracing::warn!(
                     stage = ?error.stage,
                     phase = ?error.phase,
+                    errno = ?error.source.raw_os_error(),
                     "latch writer: EStop 义务写入失败，退避后重试"
                 );
                 stamp(&shared.progress, Phase::RetryBackoff, clock);
@@ -879,6 +882,8 @@ pub fn run_writer(
             .recv_timeout(to_duration(config.idle_poll))
         {
             Ok(command) => {
+                #[cfg(feature = "test-comm-fault-hook")]
+                env.hook.command_received(&command);
                 // R6：先发布 Claiming 再认领公告——任一暂停点至少保留公告或 Claiming 之一，
                 // 监督不会同时看到 Idle + 无公告而失去 pickup 来源；真实接受只计一次。
                 stamp(&shared.progress, Phase::Claiming, clock);

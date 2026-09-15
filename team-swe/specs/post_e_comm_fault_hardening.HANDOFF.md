@@ -2,23 +2,22 @@
 
 ## 当前步骤
 
-R4b4单一三代mock恢复链已获源码/原物证独审及root本地验收，基线`b6755b7`。
-正式round2共28门全过，550项编译输入首末与当前一致，最终13源；workspace2211/0/9、
-S0hook886/0/1、tools138/0/0（集合重叠）。dev/release各新三代1、B3 25、B2 1、
-B1 1、W4b5、All72通过；207底层输入精确复用，W4a专属源及B3旧报告复用，未重跑。
-实际三代严格0/0→1/0→1/1、原112字节marker、第二代零worker/READY/RR及原250ms/CP1窗，
-第三代清marker、initial latched=true和只读禁使能探测；旧代物证保持，原Child真reap后真join。
-75测试ELF与8正式ELF实际身份、Cargo/原运行绑定经独审；root窄核验通过，不重复大哈希。
-原round1未改并行锁例9/1/0仍保留，同ELF串行10/0/0；只改runner工作区串行选项，
-全round2重新运行，生产/测试源码及预算不为通过而改。默认并行CI稳定性尚未修复。
-验收入口`target/post_e_h2_rt/s48/rr_r4b4/{root_acceptance.md,final_binding.json}`；
-H包36,336成员/36,335索引，新增4,282件逐SHA，B3全部post/commit七件已携带；
-本包post及随后commit下包携带。十件新增未来文档按明确清单归档，不冒本阶段运行证明。
-本包归档提交后以实际新HEAD核clean，派发`rr_r4c/native_task.md`；其函数方案已独审/root批准。
-R4c监督/真实manager → R4d双主机同源 → P-E长负载；R4d及P-E只读方案另件，未开始实施。
-用户要求继续有效开发直到周额度剩20%；root实时查额度，接近线不派新包，达到线停派/停写
-保存真实交接；各阶段验收通过即commit，不push。不SSH/不触电机，D15 OPEN/deployable=false。
-Orin仅已做只读软件盘点，旧HEAD/七处源码残留来源已辨明，尚未运行R4/ARM验收。
+R4c 监督、原责任与本地 manager 的 36 项修改已通过源码评审、正式 round3 全部 51 门、
+独立物证终审及 root 验收。564 项全仓输入首末/当前一致；8 件正式产物、77 个测试 ELF
+均已独立逐 SHA 核验。26 份原报告全部通过，239 次调用/237 个唯一组合，新矩阵 19 个
+profile 实例；F1 是原 writer 真 join/文件回调集成，不与外部 daemon 场景混算。
+验收入口为 H 包 local/s48/rr_r4c/root_acceptance.md、final_binding.json、
+final_evidence_review.md、gates/round3/run.json；完整源码表 final_source_round3.sha256。
+构建基线 24b2cf3 加精确 36 项修改；阶段提交以 git 日志及包外 commit_receipt.json 为准。
+原 round1 第 33 门 NoFrame 失败、round2 第 45 门 manager 身份采样失败均保留。
+修复分别是原 1.1 秒内唯一缺帧重试、同代 READY 后原截止内一次严格身份核验；
+没有改业务预算。round2 未保存坏环境，具体原因不冒实证。manager 引用只防 unit GC，
+S12 原两秒代际捕获不变。开发失败与正式成功不拼接；当前包 post 与提交回执下包携带。
+主开发已停写归还 Cargo；root 归档提交，不 push。默认并行 CI 锁例仍未修，另有只读诊断。
+后续按已批准 R4d-A 原连接压力 → R4d-B 双主机同源 → P-E 长负载推进。
+用户要求继续有效开发直到周额度剩 20%；最近实查剩 32%，接近线不派新大包，达到线真实交接。
+本包仅本地 mock/user manager，无 SSH/电机访问；D15 OPEN、deployable=false。
+旧 Orin 硬件状态与物理来源身份保持，尚未运行本轮 R4/ARM 验收。
 
 W4b固定五例SIGKILL/原目录重启已通过独立源码、运行证据及root验收，
 APPROVED_SOFTWARE_SCOPE；基线W4a为`382ca44`，本包提交见git日志。

@@ -342,6 +342,10 @@ pub trait WriterStop: Send + Sync {
 
 /// 文件步骤前的测试屏障钩子；在 `FileStep` 戳之后、义务检查之前调用。
 pub trait WriterHook: Send {
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn command_received(&mut self, _command: &PersistCommand) {}
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn before_obligation_claim(&mut self) {}
     fn before_step(&mut self, stage: ClearTxnStage);
 
     #[cfg(feature = "test-comm-fault-hook")]

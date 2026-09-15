@@ -1681,6 +1681,7 @@ dependencies = [
 name = "robot-tests"
 version = "0.1.2"
 dependencies = [
+ "blake3",
  "flatbuffers",
  "hdrhistogram",
  "iceoryx2",
@@ -1697,6 +1698,7 @@ dependencies = [
  "robot-s1",
  "robot-transport",
  "serde_json",
+ "tempfile",
  "tokio",
  "toml 1.1.5+spec-1.1.0",
  "tonic",

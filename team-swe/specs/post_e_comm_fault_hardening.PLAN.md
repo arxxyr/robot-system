@@ -2594,7 +2594,35 @@ NoGuard仅feature旁路真实成功回调，不改原许可/文件结果。R4b3�
 workspace2211/0/9、S0hook886/0/1、tools138/0/0；两profile各新1/B3 25/B2 1/B1 1/W4b5/All72。
 原round1旧并行锁例失败保留，同ELF串行对照通过；仅runner工作区增加串行选项后全轮重跑，
 不称默认并行CI已修复。W4a及207底层输入精确复用边界见root验收，旧包保留、新增件逐SHA。
-R4c已批函数提纲与执行组合将在本包提交后派发；manager/ARM/P-E、现场及D15仍未完成。
+R4b4已提交24b2cf3；R4c已批函数提纲与执行组合已派发，manager/ARM/P-E、现场及D15仍未完成。
+
+#### P.6.14.26 R4c 监督退出与真实 manager（正式 round3 与最终验收通过）
+
+实际基线24b2cf3已核clean，启动令为rr_r4c/native_task.md；原函数提纲、执行矩阵及
+pre-READY义务入口方案已独审/root批准。S1–S12与F1只走真实原线程、义务、文件回调、
+账本和join/reap：覆盖领取/文件步骤超时、writer及health helper异常、一次standby补写、
+真实gateway Orphan及完全相同请求判定、本地manager正常停止/自然重启。
+生产预算、许可、业务wire与trace ABI不改；独立test观测页升级同步父子解析。
+主开发拥有Cargo/S0/gateway/父工具，helper先H后独立manager模块；独立源码及原证据
+评审保持分离。真实manager门与standalone/F1分别记录，未通过不得省略或拿其它环境替代。
+本阶段只本地mock，不SSH/触电机；R4d-A新增原连接压力与R4d-B两端同源验证另按已审
+未来交接执行，P-E及D15另有剩余项。验收通过即commit，不push；周额度到20%时真实交接停写。
+
+当前36项修改源码已审：原35项独审23/root12精确复用，rpc.rs唯一增量另经独审；
+新表为rr_r4c/final_source_round2.sha256，root_round2_source_binding.json绑定全部身份。
+正式round1前32门通过，第33门旧All71/72失败，原结果保留。采样修复仅在原1.1秒
+内重试明确NoFrame，成功前后均核截止；开发AC-17四例通过且实走新增重试。
+正式round2前44门通过、两profile All72全过，第45门manager S12身份采样失败。
+父工具两源最小修复已审：先原同代READY，再同截止内一次严格proc身份核验，失败亦留
+白名单原件；原S0/launcher/两秒代际捕获不变。新表final_source_round3.sha256仍36项，
+与round2相比仅两源变化，另34项精确复用；开发S11/S12两例通过。
+正式round3于2026-09-15 00:36–00:52 UTC完整51门通过，564项输入首末及当前一致。
+manager实际验证补齐加载/运行属性分期、完整TOML解析及同bus RefUnit拥有域；
+引用只防unit GC，S12原2秒跨代采集仍不变；薄FFI的有限握手、无flush关闭及本地
+有效UID地址边界已独审。原失败与修正见development_summary.json，未并为正式PASS。
+独立物证及root最终验收已通过：26份报告、19新profile实例、6份exec、5组引用释放、
+77测试ELF与8正式ELF逐件一致。入口为rr_r4c/root_acceptance.md和final_binding.json；
+原失败仍保留，归档后阶段提交，不push。本地验收不关闭ARM、P-E或D15。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

@@ -18,6 +18,11 @@ publish    .workspace = true
 # **独立 crate**：不进 `robot-core`（§4.2 零 runtime 依赖），也不强绑 `robot-s0`
 # （其他 daemon 如 `robot-rpc` / `robot-policy-host` 也能用）。
 
+[features]
+default = []
+# 仅本地通信故障验收：原辅助线程的一次性 panic，不进入生产默认组合。
+test-comm-fault-hook = []
+
 [dependencies]
 # tracing：输出结构化日志 key=value，通用字段约定见 docs/logging.md
 tracing = { workspace = true }

@@ -114,6 +114,13 @@ pub fn notify_stopping() {
     let _ = send_message("STOPPING=1\n");
 }
 
+/// 记录原一次发送调用的结果；未配置或 abstract socket 仍按原语义跳过。
+/// `Ok` 只代表该调用成功或跳过，不能证明 manager 已接收 `STOPPING`。
+#[cfg(feature = "test-comm-fault-hook")]
+pub fn try_notify_stopping() -> std::io::Result<()> {
+    send_message("STOPPING=1\n")
+}
+
 /// `STATUS=<text>` —— 自由格式状态字符串（`systemctl status` 显示）。
 pub fn notify_status(text: &str) {
     let payload = format!("STATUS={text}\n");
@@ -185,9 +192,18 @@ impl WatchdogConfig {
 pub struct WatchdogHandle {
     stop: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
+    #[cfg(feature = "test-comm-fault-hook")]
+    test_panic: crate::test_comm_fault::HelperPanicControl,
 }
 
 impl WatchdogHandle {
+    /// 只返回本句柄的有限测试控制对象；调用者应在原句柄安装成功后才武装。
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[must_use]
+    pub fn test_panic_control(&self) -> crate::test_comm_fault::HelperPanicControl {
+        self.test_panic.clone()
+    }
+
     /// 停止喂 ping 并 join 线程。调用方应**先** [`notify_stopping`] 再调本
     /// 方法（否则 systemd 仍按 `WatchdogSec` 计时，graceful 期间稍长会被误杀）。
     pub fn stop(mut self) {
@@ -274,6 +290,12 @@ pub fn spawn_watchdog_with_usec(
     let interval = ping_interval(usec);
     let stop = Arc::new(AtomicBool::new(false));
     let stop_for_thread = Arc::clone(&stop);
+    #[cfg(feature = "test-comm-fault-hook")]
+    let test_panic = crate::test_comm_fault::HelperPanicControl::new(
+        crate::test_comm_fault::HelperKind::SystemdWatchdog,
+    );
+    #[cfg(feature = "test-comm-fault-hook")]
+    let test_panic_worker = test_panic.clone();
     let WatchdogConfig {
         thread_name,
         startup_grace_ping: grace,
@@ -281,13 +303,21 @@ pub fn spawn_watchdog_with_usec(
     let join = thread::Builder::new()
         .name(thread_name)
         .spawn(move || {
+            #[cfg(not(feature = "test-comm-fault-hook"))]
             let mut io = SdNotifyIo;
+            #[cfg(feature = "test-comm-fault-hook")]
+            let mut io = TestWatchdogIo {
+                notify: SdNotifyIo,
+                test_panic: test_panic_worker,
+            };
             run_watchdog_loop(&stop_for_thread, interval, &observers, grace, &mut io);
         })
         .expect("spawn systemd watchdog thread");
     Some(WatchdogHandle {
         stop,
         join: Some(join),
+        #[cfg(feature = "test-comm-fault-hook")]
+        test_panic,
     })
 }
 
@@ -335,6 +365,29 @@ pub struct SdNotifyIo;
 impl SdNotifyIo {
     /// sleep 分片上限。
     pub const SLICE: Duration = Duration::from_millis(50);
+
+    fn sleep_interval_inner(
+        interval: Duration,
+        stop: &AtomicBool,
+        #[cfg(feature = "test-comm-fault-hook")] test_panic: Option<
+            &crate::test_comm_fault::HelperPanicControl,
+        >,
+    ) -> bool {
+        let mut remaining = interval;
+        while !remaining.is_zero() {
+            if stop.load(Ordering::Acquire) {
+                return false;
+            }
+            #[cfg(feature = "test-comm-fault-hook")]
+            if let Some(control) = test_panic {
+                control.panic_if_armed();
+            }
+            let slice_len = remaining.min(Self::SLICE);
+            thread::sleep(slice_len);
+            remaining -= slice_len;
+        }
+        !stop.load(Ordering::Acquire)
+    }
 }
 
 impl WatchdogIo for SdNotifyIo {
@@ -343,16 +396,30 @@ impl WatchdogIo for SdNotifyIo {
     }
 
     fn sleep_interval(&mut self, interval: Duration, stop: &AtomicBool) -> bool {
-        let mut remaining = interval;
-        while !remaining.is_zero() {
-            if stop.load(Ordering::Acquire) {
-                return false;
-            }
-            let slice_len = remaining.min(Self::SLICE);
-            thread::sleep(slice_len);
-            remaining -= slice_len;
-        }
-        !stop.load(Ordering::Acquire)
+        Self::sleep_interval_inner(
+            interval,
+            stop,
+            #[cfg(feature = "test-comm-fault-hook")]
+            None,
+        )
+    }
+}
+
+/// 只给原 watchdog 主循环透传本句柄的有限触发对象；原 ping 与睡片实现共用。
+#[cfg(feature = "test-comm-fault-hook")]
+struct TestWatchdogIo {
+    notify: SdNotifyIo,
+    test_panic: crate::test_comm_fault::HelperPanicControl,
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+impl WatchdogIo for TestWatchdogIo {
+    fn ping(&mut self) {
+        self.notify.ping();
+    }
+
+    fn sleep_interval(&mut self, interval: Duration, stop: &AtomicBool) -> bool {
+        SdNotifyIo::sleep_interval_inner(interval, stop, Some(&self.test_panic))
     }
 }
 
@@ -675,6 +742,10 @@ mod tests {
         WatchdogHandle {
             stop,
             join: Some(thread::spawn(move || body(&worker_stop))),
+            #[cfg(feature = "test-comm-fault-hook")]
+            test_panic: crate::test_comm_fault::HelperPanicControl::new(
+                crate::test_comm_fault::HelperKind::SystemdWatchdog,
+            ),
         }
     }
 
@@ -773,6 +844,54 @@ mod tests {
     #[test]
     fn send_message_to_abstract_silent_skip() {
         send_message_to("READY=1\n", "@/tmp/nonexistent.sock").unwrap();
+    }
+
+    #[test]
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn stopping_result_preserves_skip_single_send_and_original_io_error() {
+        let _guard = lock_env();
+        // SAFETY: 此模块全部环境变更由同一 ENV_LOCK 串行保护。
+        unsafe {
+            std::env::remove_var("NOTIFY_SOCKET");
+        }
+        assert!(try_notify_stopping().is_ok(), "未配置仍跳过");
+        // SAFETY: 同一 ENV_LOCK 仍持有。
+        unsafe {
+            std::env::set_var("NOTIFY_SOCKET", "@/tmp/r4c-unsupported.sock");
+        }
+        assert!(try_notify_stopping().is_ok(), "abstract 仍按原语义跳过");
+        let (directory, socket_path, listener) = bind_test_socket();
+        // SAFETY: 同一 ENV_LOCK 仍持有。
+        unsafe {
+            std::env::set_var("NOTIFY_SOCKET", &socket_path);
+        }
+        let sent = try_notify_stopping();
+        // SAFETY: 在检查结果之前归还环境，避免断言失败留下本例 socket。
+        unsafe {
+            std::env::remove_var("NOTIFY_SOCKET");
+        }
+        sent.unwrap();
+        let mut buffer = [0_u8; 64];
+        let (length, _) = listener.recv_from(&mut buffer).unwrap();
+        assert_eq!(&buffer[..length], b"STOPPING=1\n");
+        listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            listener.recv_from(&mut buffer).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "原调用只发送一条 datagram"
+        );
+        // SAFETY: 同一 ENV_LOCK 仍持有；缺失路径只核真实 send_to 错误。
+        unsafe {
+            std::env::set_var("NOTIFY_SOCKET", directory.path().join("missing.sock"));
+        }
+        let failed = try_notify_stopping();
+        // SAFETY: 同一 ENV_LOCK 仍持有。
+        unsafe {
+            std::env::remove_var("NOTIFY_SOCKET");
+        }
+        let error = failed.unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(error.raw_os_error().is_some(), "保留原系统错误");
     }
 
     #[test]

@@ -252,6 +252,18 @@ pub struct ClassCache {
     entries: HashMap<String, Entry>,
 }
 impl ClassCache {
+    /// 测试只读同一原条目；不执行GC、准入或状态变更。
+    #[cfg(feature = "test-comm-fault-hook")]
+    pub(crate) fn observe_entry(
+        &self,
+        method: Method,
+        key: &str,
+    ) -> Option<(EntryId, EntryState, bool, Fingerprint)> {
+        self.entries
+            .get(&namespace(method, key))
+            .map(|entry| (entry.id, entry.state, entry.terminal.is_some(), entry.fp))
+    }
+
     pub fn with_reserves(
         ttl_ns: u64,
         max_entries: usize,
@@ -506,6 +518,39 @@ fn namespace(method: Method, key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn r4c_read_only_entry_binds_original_id_state_and_terminal_without_deciding() {
+        let mut cache = cache();
+        let method = Method::ClearEStop;
+        let original = fresh(&mut cache, method, "r4c", Class::Restore, 0);
+        assert_eq!(
+            cache.observe_entry(method, "r4c"),
+            Some((original.id(), EntryState::Queued, false, [1; 32]))
+        );
+        assert!(cache.observe_entry(Method::SetEnabled, "r4c").is_none());
+        for state in [EntryState::Sending, EntryState::Sent, EntryState::Orphan] {
+            assert_eq!(
+                cache.transition(method, "r4c", original.id(), state, 1),
+                Transition::Applied
+            );
+            assert_eq!(
+                cache.observe_entry(method, "r4c"),
+                Some((original.id(), state, false, [1; 32]))
+            );
+        }
+        assert!(matches!(
+            cache.decide(method, "r4c", [1; 32], Class::Restore, u64::MAX),
+            ClassDecision::InFlight {
+                state: EntryState::Orphan
+            }
+        ));
+        assert_eq!(
+            cache.observe_entry(method, "r4c"),
+            Some((original.id(), EntryState::Orphan, false, [1; 32]))
+        );
+    }
+
     fn cache() -> ClassCache {
         ClassCache::with_reserves(100, 4096, Reserves::DEFAULT, EntryIdAllocator::global()).unwrap()
     }

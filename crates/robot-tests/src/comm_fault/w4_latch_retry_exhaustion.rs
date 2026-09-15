@@ -197,6 +197,19 @@ fn match_original_transaction(chain: &Value, facts: &Value) -> Result<(), String
     Ok(())
 }
 
+pub(super) fn validate_shared_chain(
+    case: &Case,
+    capture: &TraceCapture,
+    request_id: &str,
+    deadline: u64,
+    after_shutdown: bool,
+) -> Result<Value, String> {
+    let chain = validate_capture(capture)?;
+    let facts = oracle::validate_facts(&case.logs("s0")?, request_id, deadline, after_shutdown)?;
+    match_original_transaction(&chain, &facts)?;
+    Ok(json!({"chain":chain,"facts":facts}))
+}
+
 fn send_clear(case: &Case, owned: &mut Owned) -> Result<(String, u64, u64), String> {
     owned.node = Some(
         NodeBuilder::new()
@@ -393,7 +406,7 @@ fn final_state(case: &Case, owned: &mut Owned) -> Result<Value, String> {
     )
 }
 
-fn validate_exit(
+pub(super) fn validate_exit(
     code: Option<i32>,
     page: &ObservationSnapshot,
     replies: u32,

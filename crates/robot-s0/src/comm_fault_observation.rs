@@ -9,9 +9,11 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const OBSERVATION_PAGE_BYTES: usize = 4096;
-// R4a 仅末尾追加六个真实退出事实；原 0–32 偏移不变，页仍为 4096 字节。
-const WORD_COUNT: usize = 39;
-const VERSION: u64 = 3;
+// R4c 在原39字后追加只读事实；旧偏移不变，页仍为4096字节。
+const WORD_COUNT: usize = 75;
+const VERSION: u64 = 4;
+
+pub mod supervision;
 
 #[repr(C)]
 struct ObservationWords {
@@ -63,6 +65,7 @@ pub struct ObservationSnapshot {
     pub exit_residual_bitmap: u64,
     pub fired_deadline_ns: u64,
     pub fired_candidates_bitmap: u64,
+    pub supervision: supervision::SupervisionSnapshot,
 }
 
 /// S48 A3b：快照发布耗尽的 worker 身份，供 daemon 退出后导出对应字段。
@@ -114,6 +117,42 @@ pub(crate) enum ObservationField {
     ExitResidualBitmap,
     FiredDeadline,
     FiredCandidatesBitmap,
+    SupMode,
+    CommandTxnLow,
+    CommandTxnHigh,
+    AnnounceAt,
+    IdleEntry,
+    CommandReached,
+    ObligationId,
+    PendingFlags,
+    PendingSince,
+    PendingAt,
+    ActiveFlags,
+    ActiveSince,
+    ActiveAt,
+    StepStage,
+    StepEntry,
+    SupReached,
+    MainHold,
+    MainWriterObserved,
+    ExitedFlags,
+    ExitedSince,
+    ExitedObserved,
+    FallbackTag,
+    FallbackSettle,
+    FallbackFlags,
+    FallbackSince,
+    FallbackObserved,
+    TestPauseFailure,
+    HelperOwned,
+    HelperEntered,
+    HealthEnteredAt,
+    SystemdEnteredAt,
+    HealthVersion,
+    CurrentHealthBits,
+    CurrentHealthAt,
+    CurrentHealthSince,
+    CurrentHealthOverdue,
 }
 
 pub struct ObservationPage {
@@ -352,6 +391,7 @@ impl ObservationPage {
             exit_residual_bitmap: self.load(F::ExitResidualBitmap),
             fired_deadline_ns: self.load(F::FiredDeadline),
             fired_candidates_bitmap: self.load(F::FiredCandidatesBitmap),
+            supervision: self.supervision_snapshot(),
         }
     }
 }
@@ -403,13 +443,13 @@ mod tests {
         assert_eq!(F::ResidualBitmap as usize, 32);
         assert_eq!(F::ShutdownDeadline as usize, 33);
         assert_eq!(F::FiredCandidatesBitmap as usize, 38);
-        assert_eq!(std::mem::size_of::<ObservationWords>(), 39 * 8);
+        assert_eq!(std::mem::size_of::<ObservationWords>(), 75 * 8);
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("r4_observation");
         let parent = ObservationPage::create(&path).unwrap();
         let child = ObservationPage::open(&path).unwrap();
         let empty = parent.snapshot();
-        assert_eq!(empty.version, 3);
+        assert_eq!(empty.version, 4);
         assert_eq!(
             (
                 empty.shutdown_deadline_ns,
@@ -446,8 +486,8 @@ mod tests {
             (4, 789, 8)
         );
         assert_eq!(std::fs::metadata(&path).unwrap().len(), 4096);
-        // 旧版本不能被新进程静默解释为拥有六个新事实。
-        child.store(F::Version, 2);
+        // 旧版本不能被新进程静默解释为拥有追加的监督事实。
+        child.store(F::Version, 3);
         assert!(ObservationPage::open(&path).is_err());
     }
 

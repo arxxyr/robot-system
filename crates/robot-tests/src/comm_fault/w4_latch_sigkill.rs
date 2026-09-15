@@ -1317,7 +1317,7 @@ fn validate_probe(
     Ok(())
 }
 
-fn initial_latch(logs: &str) -> Result<bool, String> {
+pub(super) fn initial_latch(logs: &str) -> Result<bool, String> {
     let mut values = Vec::new();
     for line in logs.lines() {
         let Ok(value) = serde_json::from_str::<Value>(line) else {

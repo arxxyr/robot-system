@@ -1421,6 +1421,10 @@ impl IpcLoopState {
             now.0,
             robot_health::RuntimeHealthInput { current, unsettled },
         );
+        #[cfg(feature = "test-comm-fault-hook")]
+        if let Some(snapshot) = self.health.current() {
+            crate::comm_fault_hook::record_current_health(snapshot);
+        }
         if self.overdue.observe(&report).is_some() {
             #[cfg(feature = "test-comm-fault-hook")]
             if let Some(page) = context.boot.observation() {

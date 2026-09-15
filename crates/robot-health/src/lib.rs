@@ -57,6 +57,8 @@ pub mod proc;
 // v0.5 候选 E 段(8)（Spec PD-E6(c)）：sd_notify + liveness-gated watchdog
 // 单一实现，自 robot-s0 迁入；S0 / S1 / gateway 三 daemon 共用。
 pub mod systemd;
+#[cfg(feature = "test-comm-fault-hook")]
+pub mod test_comm_fault;
 
 /// 控制运行期的当前降级；只用于报告，不构成执行或退出许可。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -381,9 +383,18 @@ pub enum JoinState {
 pub struct MonitorHandle {
     stop: Arc<AtomicBool>,
     join: Option<thread::JoinHandle<()>>,
+    #[cfg(feature = "test-comm-fault-hook")]
+    test_panic: test_comm_fault::HelperPanicControl,
 }
 
 impl MonitorHandle {
+    /// 只返回本句柄的有限测试控制对象；调用者应在原句柄安装成功后才武装。
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[must_use]
+    pub fn test_panic_control(&self) -> test_comm_fault::HelperPanicControl {
+        self.test_panic.clone()
+    }
+
     /// 请求采样线程停止并 join。幂等。
     pub fn stop(mut self) {
         self.stop.store(true, Ordering::Release);
@@ -434,15 +445,29 @@ impl Drop for MonitorHandle {
 pub fn spawn_monitor(cfg: MonitorConfig) -> MonitorHandle {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_worker = Arc::clone(&stop);
+    #[cfg(feature = "test-comm-fault-hook")]
+    let test_panic =
+        test_comm_fault::HelperPanicControl::new(test_comm_fault::HelperKind::HealthMonitor);
+    #[cfg(feature = "test-comm-fault-hook")]
+    let test_panic_worker = test_panic.clone();
 
     let join = thread::Builder::new()
         .name("robot-health".into())
-        .spawn(move || run_monitor(&cfg, &stop_worker))
+        .spawn(move || {
+            run_monitor(
+                &cfg,
+                &stop_worker,
+                #[cfg(feature = "test-comm-fault-hook")]
+                &test_panic_worker,
+            );
+        })
         .expect("spawn robot-health thread");
 
     MonitorHandle {
         stop,
         join: Some(join),
+        #[cfg(feature = "test-comm-fault-hook")]
+        test_panic,
     }
 }
 
@@ -456,7 +481,11 @@ struct PidPrev {
     cpu_jiffies_total: u64,
 }
 
-fn run_monitor(cfg: &MonitorConfig, stop: &Arc<AtomicBool>) {
+fn run_monitor(
+    cfg: &MonitorConfig,
+    stop: &Arc<AtomicBool>,
+    #[cfg(feature = "test-comm-fault-hook")] test_panic: &test_comm_fault::HelperPanicControl,
+) {
     let start = Instant::now();
     let mut last_cpu: Option<proc::CpuTimes> = None;
     let mut last_pid_cpu: HashMap<u32, PidPrev> = HashMap::new();
@@ -464,6 +493,8 @@ fn run_monitor(cfg: &MonitorConfig, stop: &Arc<AtomicBool>) {
     let num_cpus = num_cpus_online();
 
     while !stop.load(Ordering::Acquire) {
+        #[cfg(feature = "test-comm-fault-hook")]
+        test_panic.panic_if_armed();
         let now_cpu = proc::read_cpu_times();
         let mem = proc::read_meminfo();
         let load = proc::read_loadavg();
@@ -529,6 +560,8 @@ fn run_monitor(cfg: &MonitorConfig, stop: &Arc<AtomicBool>) {
         // check-then-sleep 粗粒度 stop 响应（最坏 interval 延时才退出）
         let deadline = Instant::now() + cfg.interval;
         while Instant::now() < deadline && !stop.load(Ordering::Acquire) {
+            #[cfg(feature = "test-comm-fault-hook")]
+            test_panic.panic_if_armed();
             thread::sleep(Duration::from_millis(100));
         }
     }
@@ -812,6 +845,10 @@ mod tests {
         MonitorHandle {
             stop,
             join: Some(thread::spawn(move || body(&worker_stop))),
+            #[cfg(feature = "test-comm-fault-hook")]
+            test_panic: test_comm_fault::HelperPanicControl::new(
+                test_comm_fault::HelperKind::HealthMonitor,
+            ),
         }
     }
 

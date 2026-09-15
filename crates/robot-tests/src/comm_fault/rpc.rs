@@ -112,19 +112,82 @@ async fn poll_fault(
     let mut samples = Vec::new();
     loop {
         let t0 = SystemClock.now().0;
-        let snapshot = state(client).await?;
+        let remaining = observation_deadline
+            .checked_sub(t0)
+            .filter(|value| *value > 0)
+            .ok_or_else(|| {
+                format!("原Fault观察deadline前未完成，禁止继续GetState；尝试={samples:?}")
+            })?;
+        let response = tokio::time::timeout(
+            Duration::from_nanos(remaining),
+            client.get_state(GetStateRequest {
+                hardware_id: "arm".into(),
+            }),
+        )
+        .await;
         let t1 = SystemClock.now().0;
-        samples.push(json!({"request_ns": t0, "response_ns": t1, "rtt_ns": t1-t0,
-                "mode": snapshot.mode, "fault_code": snapshot.fault_code, "state_stamp_ns": snapshot.stamp_ns}));
-        if snapshot.mode == S0Mode::Fault as i32 && snapshot.fault_code == fault_code {
-            break;
-        }
-        if t1 >= observation_deadline {
-            return Err(format!("目标Fault {fault_code}未可见：{snapshot:?}"));
+        let response = match response {
+            Ok(response) => response.map(tonic::Response::into_inner),
+            Err(error) => {
+                samples.push(json!({"request_ns":t0,"response_ns":t1,"rtt_ns":t1-t0,"error":{"source":"原Fault观察deadline","message":error.to_string()}}));
+                return Err(format!(
+                    "原GetState await耗尽同一观察预算；尝试={samples:?}"
+                ));
+            }
+        };
+        if record_fault_poll(
+            &mut samples,
+            response,
+            fault_code,
+            t0,
+            t1,
+            observation_deadline,
+        )? {
+            return Ok(samples);
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    Ok(samples)
+}
+
+fn record_fault_poll(
+    samples: &mut Vec<Value>,
+    response: Result<RobotState, tonic::Status>,
+    fault_code: u32,
+    started: u64,
+    observed: u64,
+    deadline: u64,
+) -> Result<bool, String> {
+    let mut attempt = json!({"request_ns":started,"response_ns":observed,"rtt_ns":observed.saturating_sub(started)});
+    match &response {
+        Ok(snapshot) => {
+            attempt["mode"] = json!(snapshot.mode);
+            attempt["fault_code"] = json!(snapshot.fault_code);
+            attempt["state_stamp_ns"] = json!(snapshot.stamp_ns);
+        }
+        Err(error) => {
+            attempt["error"] = json!({"source":"原GetState RPC","code":format!("{:?}",error.code()),"message":error.message()});
+        }
+    }
+    samples.push(attempt);
+    if started >= deadline || observed >= deadline || observed < started {
+        return Err(format!(
+            "原GetState成功或错误观察越过同一deadline；尝试={samples:?}"
+        ));
+    }
+    match response {
+        Ok(snapshot) => {
+            Ok(snapshot.mode == S0Mode::Fault as i32 && snapshot.fault_code == fault_code)
+        }
+        Err(error)
+            if error.code() == Code::Unavailable
+                && error.message() == "hardware_id 'arm' has no S0 state sample yet" =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(format!(
+            "原GetState非初始NoFrame错误：{error}；尝试={samples:?}"
+        )),
+    }
 }
 
 #[allow(
@@ -818,3 +881,68 @@ async fn dirty_boot(args: &Args) -> Result<Value, String> {
 #[cfg(test)]
 #[path = "rpc_acceptance.rs"]
 mod acceptance;
+
+#[cfg(test)]
+mod r4c_poll_tests {
+    use super::*;
+
+    #[test]
+    fn only_original_no_frame_error_retries_and_preserves_actual_attempt_fields() {
+        let mut attempts = Vec::new();
+        assert!(
+            !record_fault_poll(
+                &mut attempts,
+                Err(tonic::Status::unavailable(
+                    "hardware_id 'arm' has no S0 state sample yet"
+                )),
+                1,
+                100,
+                110,
+                200
+            )
+            .unwrap()
+        );
+        assert_eq!(attempts[0]["error"]["code"], "Unavailable");
+        assert_eq!(attempts[0]["request_ns"], 100);
+        assert_eq!(attempts[0]["response_ns"], 110);
+        assert_eq!(attempts[0]["rtt_ns"], 10);
+        let state = RobotState {
+            mode: S0Mode::Fault as i32,
+            fault_code: 1,
+            stamp_ns: 115,
+            ..RobotState::default()
+        };
+        assert!(record_fault_poll(&mut attempts, Ok(state), 1, 120, 130, 200).unwrap());
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[1]["state_stamp_ns"], 115);
+    }
+
+    #[test]
+    fn foreign_unavailable_and_other_rpc_errors_are_never_treated_as_initial_no_frame() {
+        for error in [
+            tonic::Status::unavailable("transport is closed"),
+            tonic::Status::unavailable("hardware_id 'other' has no S0 state sample yet"),
+            tonic::Status::internal("hardware_id 'arm' has no S0 state sample yet"),
+        ] {
+            let mut attempts = Vec::new();
+            assert!(record_fault_poll(&mut attempts, Err(error), 1, 100, 110, 200).is_err());
+            assert_eq!(attempts.len(), 1);
+        }
+    }
+
+    #[test]
+    fn matching_fault_cannot_pass_equal_late_or_reversed_original_deadline_observation() {
+        for (started, observed) in [(100, 200), (100, 201), (200, 201), (110, 100)] {
+            let mut attempts = Vec::new();
+            let state = RobotState {
+                mode: S0Mode::Fault as i32,
+                fault_code: 1,
+                ..RobotState::default()
+            };
+            assert!(
+                record_fault_poll(&mut attempts, Ok(state), 1, started, observed, 200).is_err()
+            );
+            assert_eq!(attempts.len(), 1);
+        }
+    }
+}

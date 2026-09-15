@@ -863,6 +863,11 @@ fn run(
             return MainExit::empty(1);
         }
     };
+    #[cfg(feature = "test-comm-fault-hook")]
+    if let Err(error) = robot_s0::comm_fault_hook::supervision::configure_from_env() {
+        tracing::error!(%error, "R4c监督配置拒绝，尚未准备执行资源");
+        return MainExit::empty(1);
+    }
     let (resources, start, standby) =
         match prepare_execution(args, latch_lock, supervisor.started_at()) {
             Ok(value) => value,
@@ -896,6 +901,17 @@ fn run(
         Ok(state_reader) => {
             #[cfg(feature = "test-comm-fault-hook")]
             robot_s0::comm_fault_hook::boot_pause("before_ready");
+            #[cfg(feature = "test-comm-fault-hook")]
+            if let Err(code) = robot_s0::comm_fault_hook::supervision::before_ready(
+                &supervisor.shared(),
+                &resources.writer_shared,
+                resources.clock.as_ref(),
+                || boot.any_finished(),
+            ) {
+                return stop_startup_owned(
+                    boot, stops, &resources, standby, supervisor, args, code,
+                );
+            }
             if let Err(code) = send_ready(args.notify_mode) {
                 return stop_startup_owned(
                     boot, stops, &resources, standby, supervisor, args, code,
@@ -926,6 +942,8 @@ struct WorkerMetadata {
     io: Option<Arc<robot_s0::io_thread::IoThreadMetrics>>,
     #[cfg(feature = "test-comm-fault-hook")]
     publish_failure_probe: PublishFailureProbe,
+    #[cfg(feature = "test-comm-fault-hook")]
+    health_controls: [Option<robot_health::test_comm_fault::HelperPanicControl>; 2],
 }
 impl BootHandles {
     fn new() -> Self {
@@ -1224,7 +1242,28 @@ impl robot_s0::shutdown_mechanism::TeardownGates for RuntimeGates<'_> {
         if let Some(events) = self.events {
             let _ = events.control(robot_s0::event_ingress::ControlEvent::Stop);
         }
+        #[cfg(not(feature = "test-comm-fault-hook"))]
         robot_health::systemd::notify_stopping();
+        #[cfg(feature = "test-comm-fault-hook")]
+        {
+            use std::io::Write as _;
+            let socket = std::env::var("NOTIFY_SOCKET").ok();
+            let mode = match socket.as_deref() {
+                None | Some("") => "unset",
+                Some(value) if value.starts_with('@') => "abstract_skip",
+                Some(_) => "configured",
+            };
+            let result = robot_health::systemd::try_notify_stopping();
+            if let Err(error) = writeln!(
+                std::io::stdout().lock(),
+                "R4C_NOTIFY_STOPPING_V1 mode={mode} result={result:?}"
+            ) {
+                let _ = writeln!(
+                    std::io::stderr().lock(),
+                    "R4C_DIAGNOSTIC_V1 notify_record_error={error}"
+                );
+            }
+        }
         if let Some(handle) = self.rejected
             && matches!(
                 handle.kind(),
@@ -1301,6 +1340,10 @@ fn writer_exit_clean(writer: &WriterSettlement, shared: &PersistShared) -> bool 
         && writer.fallback.is_none()
         && shared.obligation.is_settled()
 }
+#[allow(
+    clippy::too_many_lines,
+    reason = "原teardown、按值收回各join结果及一次诊断共处拥有域，保持失败收尾顺序"
+)]
 fn finish_runtime_owned(
     runtime: RuntimeHandles,
     res: &ExecutionResources,
@@ -1383,6 +1426,16 @@ fn finish_runtime_owned(
         meta.publish_failure_probe.executor_joined = report.executor_joined;
         export_publish_failure_attempts(supervisor, &meta);
         record_runtime_exit_facts(&writer, &report, &shared, res);
+        record_health_helpers(&meta, &shared);
+        export_r4c_exit(
+            &writer,
+            &report,
+            ipc.as_ref(),
+            executor.as_ref(),
+            (gate_ack, gate_clear, gate_flushed),
+            &shared,
+            res,
+        );
         if let Some(page) = shared.observation() {
             page.record_runtime_stop_trace(&report);
             page.record_residual_bitmap(report.residual.bitmap());
@@ -1532,11 +1585,21 @@ fn run_workers(
     #[cfg(not(feature = "test-comm-fault-hook"))]
     let writer_hook: Box<dyn robot_s0::latch_writer::WriterHook> =
         Box::new(robot_s0::latch_writer::NoHook);
+    let writer_control = stops.writer_control(clock.clone());
+    #[cfg(feature = "test-comm-fault-hook")]
+    let writer_hook = robot_s0::comm_fault_hook::supervision::wrap_writer(
+        writer_hook,
+        clock.clone(),
+        supervisor.shared(),
+        res.writer_shared.clone(),
+        writer_control.clone(),
+    )
+    .map_err(|error| startup_io_error(&error))?;
     let writer = spawn_managed_writer(
         slot,
         endpoint,
         WriterConfig::default(),
-        stops.writer_control(clock.clone()),
+        writer_control,
         clock.clone(),
         writer_hook,
     )
@@ -1637,6 +1700,19 @@ fn run_workers(
             let node = NodeBuilder::new()
                 .create::<IxService>()
                 .map_err(robot_s0::rr_server_thread::RrInitError::Node)?;
+            #[cfg(feature = "test-comm-fault-hook")]
+            {
+                use std::io::Write as _;
+                let config = &node.config().global.node;
+                if let Err(error) = writeln!(
+                    std::io::stdout().lock(),
+                    "R4C_NODE_CONFIG_V1 role=clear_rr cleanup_creation={} cleanup_destruction={} source=NodeBuilder_default_global_config",
+                    config.cleanup_dead_nodes_on_creation,
+                    config.cleanup_dead_nodes_on_destruction,
+                ) {
+                    let _ = writeln!(std::io::stderr().lock(), "R4C_NODE_CONFIG_WRITE_FAILED {error}");
+                }
+            }
             let server = robot_transport::iceoryx2::request_response::rr_server_with::<
                 markers::ClearEStopRequest,
                 markers::ClearEStopResponse,
@@ -1888,7 +1964,20 @@ fn run_runtime(
         observers,
         robot_health::systemd::WatchdogConfig::new("s0_systemd_wd"),
     ) {
+        #[cfg(feature = "test-comm-fault-hook")]
+        let control = handle.test_panic_control();
         workers.install(WorkerSlot::SystemdWatchdog(handle))?;
+        #[cfg(feature = "test-comm-fault-hook")]
+        {
+            workers.meta.health_controls[1] = Some(control);
+            arm_health_helper(
+                workers.meta.health_controls[1]
+                    .as_ref()
+                    .expect("已存原控制对象"),
+                1,
+                &supervisor.shared(),
+            )?;
+        }
     }
     let config = args
         .loaded_config
@@ -1899,13 +1988,41 @@ fn run_runtime(
             top_n: cfg.parsed.monitor.top_n,
         })
         .unwrap_or_default();
-    workers.install(WorkerSlot::HealthMonitor(robot_health::spawn_monitor(
-        config,
-    )))?;
+    let monitor = robot_health::spawn_monitor(config);
+    #[cfg(feature = "test-comm-fault-hook")]
+    let control = monitor.test_panic_control();
+    workers.install(WorkerSlot::HealthMonitor(monitor))?;
+    #[cfg(feature = "test-comm-fault-hook")]
+    {
+        workers.meta.health_controls[0] = Some(control);
+        arm_health_helper(
+            workers.meta.health_controls[0]
+                .as_ref()
+                .expect("已存原控制对象"),
+            0,
+            &supervisor.shared(),
+        )?;
+        robot_s0::comm_fault_hook::supervision::hold_main(
+            &supervisor.shared(),
+            &res.writer_shared,
+            clock.as_ref(),
+        )?;
+    }
     let start = clock.now().0;
     let mut last_report = start;
     loop {
         if workers.any_finished() {
+            #[cfg(feature = "test-comm-fault-hook")]
+            {
+                if workers.slots.live_is_finished(HandleKind::LatchWriter) == Some(true) {
+                    robot_s0::comm_fault_hook::supervision::main_observed_writer(
+                        &supervisor.shared(),
+                        &res.writer_shared,
+                        clock.as_ref(),
+                    );
+                }
+                record_health_helpers(&workers.meta, &supervisor.shared());
+            }
             tracing::error!("READY 后 worker 已退出");
             return Err(1);
         }
@@ -2396,6 +2513,146 @@ impl ExecutorHandle {
             Self::HardRt(handle) => ExecutorMetricsRef::HardRt(handle.metrics().clone()),
             Self::SerialRt(handle) => ExecutorMetricsRef::SerialRt(handle.metrics().clone()),
         }
+    }
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+fn arm_health_helper(
+    control: &robot_health::test_comm_fault::HelperPanicControl,
+    index: usize,
+    shared: &robot_s0::boot_supervisor::BootShared,
+) -> Result<(), i32> {
+    use robot_health::test_comm_fault::HelperKind;
+    use robot_s0::comm_fault_hook::supervision::Mode;
+    let kind = if index == 0 {
+        HelperKind::HealthMonitor
+    } else {
+        HelperKind::SystemdWatchdog
+    };
+    if let Some(page) = shared.observation() {
+        page.record_helper_owned(kind);
+    }
+    let selected = matches!(
+        (index, robot_s0::comm_fault_hook::supervision::mode()),
+        (0, Some(Mode::HealthMonitorPanic)) | (1, Some(Mode::SystemdWatchdogPanic))
+    );
+    if selected && !control.arm(|| robot_core::time::SystemClock.now().0) {
+        return Err(1);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+fn record_health_helpers(meta: &WorkerMetadata, shared: &robot_s0::boot_supervisor::BootShared) {
+    if let Some(page) = shared.observation() {
+        for control in meta.health_controls.iter().flatten() {
+            if let Some(entered) = control.entered() {
+                page.record_helper_entered(entered);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+fn fallback_tags(value: Option<&FallbackResult>) -> (u64, u64) {
+    use robot_s0::latch_writer::Settle;
+    match value {
+        None => (0, 0),
+        Some(FallbackResult::Token(_)) => (1, 0),
+        Some(FallbackResult::Claim(_)) => (2, 0),
+        Some(FallbackResult::Persist(_)) => (3, 0),
+        Some(FallbackResult::Written(Settle::Settled)) => (4, 1),
+        Some(FallbackResult::Written(Settle::PendingRemains)) => (4, 2),
+        Some(FallbackResult::Deadline) => (5, 0),
+    }
+}
+
+#[cfg(feature = "test-comm-fault-hook")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "只借仍由同一退出拥有域持有的原Result/report/gates，不复制或重建join凭证"
+)]
+fn export_r4c_exit(
+    writer: &WriterSettlement,
+    report: &robot_s0::shutdown_mechanism::TeardownReport,
+    ipc: Option<&thread::Result<robot_s0::ipc_thread::IpcExit>>,
+    executor: Option<&thread::Result<robot_s0::hard_rt_ctrl::ExecutorExit>>,
+    gate_facts: (bool, bool, u8),
+    shared: &robot_s0::boot_supervisor::BootShared,
+    res: &ExecutionResources,
+) {
+    use std::io::Write as _;
+    use std::os::unix::fs::MetadataExt as _;
+    let at_ns = res.clock.now().0;
+    let pid = std::process::id();
+    let executable = match std::fs::metadata("/proc/self/exe") {
+        Ok(metadata) => format!(r#"{{"dev":{},"ino":{}}}"#, metadata.dev(), metadata.ino()),
+        Err(error) => {
+            let _ = writeln!(
+                std::io::stderr().lock(),
+                "R4C_DIAGNOSTIC_V1 executable_identity_error={error}"
+            );
+            "null".to_owned()
+        }
+    };
+    let (tag, settle) = fallback_tags(writer.fallback.as_ref());
+    if tag != 0
+        && let Some(page) = shared.observation()
+    {
+        page.record_fallback(tag, settle, &res.writer_shared, at_ns);
+    }
+    let writer_join = match writer.result.as_ref() {
+        Some(Ok(robot_s0::latch_writer::WriterExit::Stopped)) => "stopped",
+        Some(Ok(robot_s0::latch_writer::WriterExit::StoppedAfterIpcDisconnect)) => {
+            "stopped_after_ipc_disconnect"
+        }
+        Some(Err(_)) => "panicked",
+        None => "missing",
+    };
+    let mut joined = report
+        .joined
+        .iter()
+        .map(|(kind, result)| (*kind, result.is_ok()))
+        .collect::<Vec<_>>();
+    if let Some(result) = writer.result.as_ref() {
+        joined.push((HandleKind::LatchWriter, result.is_ok()));
+    }
+    if let Some(result) = ipc {
+        joined.push((HandleKind::Ipc, result.is_ok()));
+    }
+    if let Some(result) = executor {
+        joined.push((HandleKind::Executor, result.is_ok()));
+    }
+    let joined = joined
+        .iter()
+        .map(|(kind, ok)| format!(r#"{{"kind":"{kind:?}","ok":{ok}}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let stop_trace = report
+        .stop_trace
+        .iter()
+        .map(|(kind, at)| format!(r#"{{"kind":"{kind:?}","at_ns":{at}}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let failures = report
+        .failures
+        .iter()
+        .map(|failure| format!("{:?}", format!("{failure:?}")))
+        .collect::<Vec<_>>()
+        .join(",");
+    let result = writeln!(
+        std::io::stdout().lock(),
+        r#"R4C_EXIT_V1 {{"at_ns":{at_ns},"pid":{pid},"executable":{executable},"ack":{},"clear":{},"flushed":{},"residual":{},"writer_join":{writer_join:?},"fallback_tag":{tag},"fallback_settle":{settle},"stop_trace":[{stop_trace}],"joined":[{joined}],"failures":[{failures}]}}"#,
+        gate_facts.0,
+        gate_facts.1,
+        gate_facts.2,
+        report.residual.bitmap()
+    );
+    if let Err(error) = result {
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "R4C_DIAGNOSTIC_V1 exit_record_error={error}"
+        );
     }
 }
 

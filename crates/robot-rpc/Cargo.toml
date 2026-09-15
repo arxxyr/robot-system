@@ -126,6 +126,8 @@ client = []
 # 启用 `client`（合并 feature 构建时 client 可能被其它 smoke feature 经 feature
 # unification 拉起，与本 feature 无关；段(8) round 2 更正原"同时启用两者"表述）。
 test-freeze-hook = []
+# R4c 仅借原网关责任的两处事实，不改变缓存/队列/许可。
+test-comm-fault-hook = []
 # R3 原连接故障门，仅测试显式转发，不进入默认或机器人生产组合。
 test-rr-fixtures = ["robot-transport/test-rr-fixtures"]
 

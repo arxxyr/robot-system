@@ -156,6 +156,7 @@ path = "src/bin/comm_fault_e2e.rs"
 required-features = ["comm-fault-e2e"]
 
 [dependencies]
+blake3 = { workspace = true, optional = true }
 # iceoryx2 集成路径走默认 feature；若未来单独测 mock 路径可开 --no-default-features。
 flatbuffers     = { workspace = true }
 # v0.5 候选 E 段(2) 回修 P0-1：lib config_fixture 结构化重写 [robot].id
@@ -251,6 +252,7 @@ robot-adapter-feetech = { workspace = true, optional = true }
 [features]
 # 独立启用真实验收依赖，不继承旧 freeze hook；现场串口仍需另外启用 real-hw。
 comm-fault-e2e = [
+    "dep:blake3",
     "dep:robot-s0",
     "robot-s0/test-comm-fault-hook",
     "robot-s0/mock",
@@ -372,3 +374,7 @@ real-hw = ["robot-adapter-feetech?/real-hw"]
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# R4c manager的原命令/launcher单测临时目录；不进入实际验收binary依赖。
+tempfile = { workspace = true }

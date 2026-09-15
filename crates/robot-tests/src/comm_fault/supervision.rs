@@ -146,7 +146,7 @@ async fn exercise(case: &Case, mode: Mode, owned: &mut Owned) -> Result<Value, S
     wait_log(case, child, "s0", "boot_ready", Duration::from_secs(12)).await?;
     wait_runtime_armed(case, child, "s0", SystemClock.now().0 + 1_000_000_000).await?;
     let ready = case.observation("s0")?;
-    if ready.version != 3 || ready.worker_bitmap != 0xff || ready.fired_checkpoint != 0 {
+    if ready.version != 4 || ready.worker_bitmap != 0xff || ready.fired_checkpoint != 0 {
         return Err(format!("真实standalone启动不符：{ready:?}"));
     }
     let environment = observe_environment(pid)?;
@@ -380,7 +380,7 @@ fn validate_fire_window(page: &ObservationSnapshot) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_file_step(code: i32, page: &ObservationSnapshot) -> Result<(), String> {
+pub(super) fn validate_file_step(code: i32, page: &ObservationSnapshot) -> Result<(), String> {
     validate_fire_window(page)?;
     if code != 90
         || page.fired_checkpoint != 3
@@ -414,7 +414,7 @@ fn validate_shutdown_boundary(page: &ObservationSnapshot) -> Result<(), String> 
     Ok(())
 }
 
-fn snapshot(page: &ObservationSnapshot) -> Value {
+pub(super) fn snapshot(page: &ObservationSnapshot) -> Value {
     json!({"version":page.version,"runtime_armed_ns":page.runtime_armed_ns,"ready_ns":page.ready_ns,
         "shutdown_deadline_ns":page.shutdown_deadline_ns,"derived_l_ns":page.shutdown_deadline_ns.checked_sub(RUNTIME_MARGIN_NS),
         "writer_exited_at_ns":page.writer_exited_at_ns,"writer_joined_observed_at_ns":page.writer_joined_observed_at_ns,

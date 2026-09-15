@@ -149,7 +149,19 @@ impl GatewayLedger {
                 BeginWrite::Fresh(id)
             }
             ClassDecision::Replay(terminal) => BeginWrite::Replay(terminal),
-            refused => BeginWrite::Refused(refused),
+            refused => {
+                #[cfg(feature = "test-comm-fault-hook")]
+                if matches!(
+                    refused,
+                    ClassDecision::InFlight {
+                        state: EntryState::Orphan
+                    }
+                ) && let Some((id, _, _, _)) = self.cache.observe_entry(method, key)
+                {
+                    self.observe_r4c_write(id, "duplicate", now_ns);
+                }
+                BeginWrite::Refused(refused)
+            }
         }
     }
 
@@ -270,10 +282,15 @@ impl GatewayLedger {
 
     pub(crate) fn transition(&mut self, id: EntryId, to: EntryState, now_ns: u64) -> bool {
         if let Some(owner) = self.writes.get(&id) {
-            return self
+            let applied = self
                 .cache
                 .transition(owner.method, &owner.key, id, to, now_ns)
                 == Transition::Applied;
+            #[cfg(feature = "test-comm-fault-hook")]
+            if applied && to == EntryState::Orphan {
+                self.observe_r4c_write(id, "orphan", now_ns);
+            }
+            return applied;
         }
         let Some(owner) = self.reads.get_mut(&id) else {
             return false;
@@ -289,6 +306,33 @@ impl GatewayLedger {
         };
         owner.state = next;
         true
+    }
+
+    /// 调用者仍持原ledger锁；只绑定已存在的同EntryId缓存和责任原件。
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn observe_r4c_write(&self, id: EntryId, point: &str, at_ns: u64) {
+        let Some(owner) = self.writes.get(&id) else {
+            return;
+        };
+        if owner.method != Method::ClearEStop
+            || std::env::var("ROBOT_TEST_R4C_LEDGER_KEY").as_deref() != Ok(owner.key.as_str())
+        {
+            return;
+        }
+        let Some((cache_id, state, terminal, fingerprint)) =
+            self.cache.observe_entry(owner.method, &owner.key)
+        else {
+            return;
+        };
+        tracing::info!(
+            point, at_ns, method = owner.method.as_str(), key = owner.key,
+            request_id = owner.expected.request_id, entry_id = ?id, cache_entry_id = ?cache_id,
+            state = ?state, terminal, fingerprint = ?fingerprint,
+            placeholder = owner.placeholder.is_some(), wire = owner.held.wire.is_some(),
+            restore = owner.held.restore.is_some(), cancel_ticket = owner.held.cancel_ticket.is_some(),
+            admission_closed = self.admission_closed, faulted = self.faulted,
+            "R4C原网关责任"
+        );
     }
 
     fn hold_pop(
