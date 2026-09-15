@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "RR_R4D_A_ACCEPTED_ARCHIVE_COMMIT",
-  "resume_from": "R4d-A正式六门/1024轮、独审及root验收通过；归档提交后继续B双主机同一实际提交，B后P-E。周额度最近剩29%，有效开发至20%停写交接，不push。",
+  "work_state": "RR_R4D_B_COMPLETE_PAUSED",
+  "resume_from": "R4d-B两端有效67门与独审/root验收已通过，本包归档提交后暂停。P-E未开始，等待用户新的继续指令；不push，不启动硬件验证。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_RR_R4D_A_ACCEPTED",
-  "review_status": "R4D_A_SOURCE_EVIDENCE_ROOT_ACCEPTED",
+  "status": "S48_RR_R4D_B_COMPLETE_PAUSED",
+  "review_status": "APPROVED_R4DB_SOFTWARE_SCOPE",
   "deployable": false,
   "scope": "W3/W4a/W4b、RR R0–R3及R4a/R4b1/R4b2/R4b3本地范围已验收；剩余T8/SUP/ENV和双主机、P-E、现场仍未完成，wire4历史FAIL、D15 OPEN、deployable=false。",
   "software": {
@@ -3331,7 +3331,117 @@
           "result.json": "5a24896423db32bb1f5f21fea257cafc52ec19665afe0ee63bcbacd60bf50d26",
           "handoff.md": "b7cf81c294a0388dd55a39f99782c5120ee942b1b5941b24262483d2782c01de",
           "delivery_manifest.json": "c749167601fac85e7ab38234d7c068a8f0f55ce7218d1052014e9e829c806ed7"
-        }
+        },
+        "commit": "f9a85be4f7064a54695eb33a7f5bf022d31b64eb",
+        "commit_clean_verified": true
+      },
+      "rr_r4d_b": {
+        "status": "APPROVED_R4DB_SOFTWARE_SCOPE_PAUSE_AFTER_COMMIT",
+        "verified": true,
+        "base_commit": "f9a85be4f7064a54695eb33a7f5bf022d31b64eb",
+        "base_clean_verified_local": true,
+        "evidence": "target/post_e_h2_rt/s48/rr_r4d/b",
+        "scope": "本机与Orin同源mock原生验证；67候选完整矩阵，x86至少13fresh，其余精确复用。",
+        "developer": "/root/r3_native_developer",
+        "orin_developer": "/root/r3_native_developer/r4c_health",
+        "reviewer": "/root/rr_review",
+        "hardware_access": false,
+        "remote": "loosqk@10.0.1.40",
+        "remote_preflight_verified": true,
+        "arm_verified": true,
+        "next": "本包提交后暂停；P-E及新验证须用户新的继续指令。",
+        "remote_source_alignment_verified": true,
+        "remote_toolchain_verified": true,
+        "root_alignment_review": "target/post_e_h2_rt/s48/rr_r4d/b/root_orin_alignment_review.json",
+        "x86_gate_status": "X86_EFFECTIVE_14_FRESH_53_REUSE_INDEPENDENT_AND_ROOT_ACCEPTED",
+        "x86_verified": true,
+        "x86_fresh": 14,
+        "x86_reused": 53,
+        "x86_review": "target/post_e_h2_rt/s48/rr_r4d/b/x86_evidence_review.md",
+        "x86_review_sha256": "d072d2619c727e6b53d4b355b33cee5816b1695afb89bd376a2a2fbdfe940f55",
+        "arm_gate_status": "EFFECTIVE_67_PASS_FROM_FIVE_RECORDED_ROUNDS",
+        "arm_run_directory": "target/post_e_h2_rt/s48/rr_r4d/b/gates/arm/round5",
+        "arm_started_at": "2026-09-15T02:17:28+00:00",
+        "arm_round1_failure": "workspace_tests: dimos_workflow_e2e 两项在S1 validate_profile_section因未编test-fault-backend退出3；门exit101，源首末同A。",
+        "next_execution": "不启动后续阶段。",
+        "arm_round1_cleanup_verified": true,
+        "arm_round1_cleanup_evidence": "target/post_e_h2_rt/s48/rr_r4d/b/orin/arm_round1_capture/post_failure_readonly.json",
+        "arm_round1_cleanup_sha256": "034cb8e106bdd47719ea9fc12d8343a4ed3cafed8696a3375820d4495e66cf62",
+        "x86_workspace_supplement_review": "target/post_e_h2_rt/s48/rr_r4d/b/x86_workspace_supplement_evidence_review.md",
+        "x86_workspace_supplement_review_sha256": "c14510ceffc64fd082c6c55494113f54403fa98e84e160ae4fb352e7cbb0b13c",
+        "arm_successful_unique_gates": 67,
+        "arm_incomplete_unique_gates": 0,
+        "arm_round2_failure": "s0_complete_hook exit101；comm_fault_startup 13项中11过2失败：executor_snapshot_version_exhaustion_after_ready_terminates_standalone_daemon / ipc_state_snapshot_version_exhaustion_after_ready_terminates_standalone_daemon。",
+        "arm_round2_unresolved_hint": "已关闭：仅该S0门NO_COLOR=1，原完整门后续真实通过；旧FAIL保留。",
+        "arm_round2_cleanup_verified": true,
+        "arm_round2_cleanup_evidence": "target/post_e_h2_rt/s48/rr_r4d/b/orin/arm_round2_capture/post_failure_readonly.json",
+        "arm_round2_cleanup_sha256": "6280aba96d1343423c649afaf016dc0eb0898a44acb8681be1c26b0d4ac095d3",
+        "evidence_sync_completed": true,
+        "active_cargo_test_transfer": false,
+        "resume_authorization": "用户：b阶段完成后暂停",
+        "no_color_execution_plan": "target/post_e_h2_rt/s48/rr_r4d/b/no_color_execution_plan.json",
+        "no_color_execution_plan_sha256": "8bbb0f2f988323f5da4395ec8631c8e4ac8203c3623112df36bb88ad2e98b236",
+        "precommit_run": "target/post_e_h2_rt/s48/rr_r4d/b/gates/x86/precommit_round3/run.json",
+        "precommit_run_sha256": "ac456a3737569b1d80dcefb79efc0dccefaaf9f08e6da0d085848c3212ccc7cc",
+        "arm_round3_failure": {
+          "gate": "deny",
+          "passed_before_failure": 13,
+          "ended_at": "2026-09-15T04:17:19.989721+00:00",
+          "status": "缺advisory DB的误导日期错误，原clone真实stderr被cargo-deny吞掉；保原FAIL。显式恢复另有TLS/连接超时，不能追认为原被吞错误。",
+          "run_sha256": "26b7dff4cd399299e09a1057964bf9d05c11e53602f57bbb38d5464b3da145d1",
+          "log_sha256": "41cdac1a68b0a8b777cee488da603e3815542895d89388e0ebd9d24b455e1e83"
+        },
+        "arm_round3_cleanup_verified": true,
+        "arm_round3_cleanup_evidence": "target/post_e_h2_rt/s48/rr_r4d/b/orin/arm_round3_capture/post_run_readonly.json",
+        "arm_round3_cleanup_sha256": "9acd259abb6559fa096958e815000dde90717945f70f013e29c747577467794e",
+        "arm_round4_failure": {
+          "gate": "dependency_identity",
+          "passed_before_failure": 13,
+          "run_sha256": "94e84d9f3787b9d5fa4f001a0329354430cf80f235feaa5e25b0d9def4178569",
+          "status": "四metadata exit0；model真实Cargo下载前缀被证据解析器拒绝，原FAIL保留。"
+        },
+        "arm_round5_started_at": "2026-09-15T04:47:12+00:00",
+        "metadata_execution_plan": "target/post_e_h2_rt/s48/rr_r4d/b/metadata_execution_plan.json",
+        "metadata_execution_plan_sha256": "31ff5140703599caefbc48ca93979d3f620e0d0e7becca53435e5cf1c2d2340a",
+        "arm_round5_run_sha256": "1cad8f4367167132da33b2fe3f01ab576cb9d460b0cbc5e7a6d5867b174a9aa7",
+        "arm_round5_ended_at": "2026-09-15T05:00:31.161240+00:00",
+        "source_input_count": 570,
+        "source_manifest_sha256": "971f5782ef3ca3c3069a5b714812db45102e57b19b881da3da35b5f617b3b2e8",
+        "archived_prefix": "local/s48/rr_r4d/b/",
+        "pressure_rounds": 3072,
+        "pressure_B_fresh_rounds": 2048,
+        "arm_reports": 26,
+        "arm_new_profile_cases": 19,
+        "arm_invocations": 239,
+        "arm_unique_profile_cases": 237,
+        "final_result": {
+          "path": "target/post_e_h2_rt/s48/rr_r4d/b/result.json",
+          "sha256": "06cc60dd9d3f3909536c3fcbdeba2687771c1d65eb09306a5b2bc2714c0bcd45"
+        },
+        "root_acceptance": {
+          "path": "target/post_e_h2_rt/s48/rr_r4d/b/root_acceptance.md",
+          "sha256": "0c8e228d7552216499bcf5505c7886557f5ca7c7cb32879970830b7c164f14c2"
+        },
+        "final_evidence_review": {
+          "path": "target/post_e_h2_rt/s48/rr_r4d/b/final_evidence_review.md",
+          "sha256": "7cca448904ea57a16123a22ca90626d5bb7c2e0f47296ccf69eb9cfa8f9d0d22"
+        },
+        "arm_coverage_summary": {
+          "path": "target/post_e_h2_rt/s48/rr_r4d/b/arm_coverage_summary.json",
+          "sha256": "f1251f831436f7a369e0e09e7564bdfcec8003c972aeaa85cbdcc356411348b5"
+        },
+        "root_arm_runtime_check": {
+          "path": "target/post_e_h2_rt/s48/rr_r4d/b/root_arm_runtime_check.json",
+          "sha256": "a7a03cf4ddee22d1c21584b11dc92120e8af1fa6de982d448d218e6432c26c5d"
+        },
+        "historical_quota_pause": {
+          "resume_handoff": "target/post_e_h2_rt/s48/rr_r4d/b/resume_handoff.md",
+          "resume_handoff_sha256": "7dc14f3250f768bf9d0ad3b1cc7fd0cb693ca6f1e297747d8815d10abe42ae00",
+          "weekly_remaining_percent_at_stop": 20,
+          "stopped_state": "target/post_e_h2_rt/s48/rr_r4d/b/stopped_state.json",
+          "stopped_state_sha256": "46f808853a09a1c4785254f7ccdaa9d1d00c5765f5c5eaf9fe0258bd7f180123"
+        },
+        "commit_receipt": "target/post_e_h2_rt/s48/rr_r4d/b/commit_receipt.json（提交后生件，不在本次H包内）"
       }
     }
   },
@@ -3486,21 +3596,21 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2717,
-    "sha256": "3011f22e6f0dfbf626e220f635fc1141ce04d7510a8edc55626099c3ddbb0b06"
+    "lines": 2777,
+    "sha256": "e5f336a0479a04c574f3f0c54b967d41f697bf4472a2417411bdea8a0c6c35a2"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "6390c41ac1ad02314eebde9eeb4dfb0da40e660a76264e670ff0b86af95ad62d",
-    "bytes": 147860452,
-    "members": 54372,
-    "logical_bytes": 4495193900,
-    "index_count": 54371,
+    "sha256": "96201d339e496fa426d6e4d88540defa56fc71582a2207ff34c009118759fcf3",
+    "bytes": 163604228,
+    "members": 61412,
+    "logical_bytes": 4921090318,
+    "index_count": 61411,
     "per_file_sha256_verified": true,
-    "verification_method": "固定C整包SHA复用旧54287项证明；84新增件逐SHA及来源首末一致；root核整包身份/完整元数据及最终与衔接关键件实际字节。"
+    "verification_method": "固定A整包SHA承接旧54371索引；7040新增逐SHA及源首末一致，旧路径与索引保留；root复核整包身份、完整元数据和最终/衔接关键件实际字节。"
   },
-  "retention": "当前H包保旧54287索引，新增84件A实现/正式六门/最终验收、全部C晚生10件和明确未来B三件；两个正式ELF及编译缓存不入包，原ELF本地保存。A整个post及随后commit回执下包携带，B预备runner不作为A验收。",
-  "updated_at": "2026-09-15T01:41:18.414124+00:00",
+  "retention": "H包保原A54371索引，新增7040件B双架构原轮/四FAIL/最终验收及A晚生8件，A既归档7件同内容衔接。7041开发清单含原A三计划件，全覆盖；ELF本体、编译缓存及派生传输包不嵌入。B post_archive_review与实际commit回执为本次包外后生件。",
+  "updated_at": "2026-09-15T05:20:27.070646+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -3541,11 +3651,11 @@
   },
   "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。",
   "stop_after_current": {
-    "user_request": "继续进行有效开发直到周token还剩20%",
-    "current_package": "S48_RR_R4D_A",
-    "next_package_authorized_to_start": true,
-    "state": "已取消R4a后暂停；改以实时周额度剩20%为停止线",
-    "weekly_remaining_stop_percent": 20,
-    "policy": "接近停止线不启动新包；达到停止线停止派发/采样开发并保存交接，不以消耗额度为目标，不把未通过阶段强行commit。"
+    "user_request": "b 阶段完成后暂停",
+    "current_package": "S48_RR_R4D_B",
+    "next_package_authorized_to_start": false,
+    "state": "B已验收；本包提交后暂停，不进入P-E。",
+    "previous_weekly_remaining_stop_percent": 20,
+    "policy": "本次用户指令替代旧额度停止点；必要开发/补验/独审/提交持续完成B，保留真实失败，不强行PASS，不push。"
   }
 }

@@ -2645,6 +2645,66 @@ G1 仅补独立汇总执行副本，不修改源码或重跑六门；原开发�
 归档后提交，随后 B 从 A 实际提交核两架构。B 最新映射、无额外旧门重复的裁决见
 rr_r4d/b_execution_matrix_draft.md、b_matrix_root_acceptance.md；尚未开始 B 实际运行。
 
+#### P.6.14.28 R4d-B 两架构同源验证（已验收，提交后暂停）
+
+A 已实际提交 f9a85be4f7064a54695eb33a7f5bf022d31b64eb 并核 clean；本阶段共同编译输入
+以此实际提交为准。67 个候选门保 ARM 全部实跑；本机最少 13 门 fresh，包含本次提交前
+fmt→根 Clippy，另有四图/tree/deny/身份、CAL fixture 测试/Clippy、RPC fixture 和 owned/QoS。
+其余 C/A/R3/R2 结果逐受影响目标核编译输入、组件/参数/原实件后精确复用；不足只补对应门，
+不倒填旧构建基线。CAL fixture 全库额外 512 轮单列：两端总证据 3072 轮，B 新执行 2048。
+先 fresh 核 Orin 七件旧残留、进程/unit/manager/工具链，再按已审来源定向处理；同 IPC 域
+全部旧 peer 与自动清理工具真退出、阻重启后整批换源。不清账冒退休、不动真实配置/校准/
+持久态或电机。命令级 nightly-2026-09-10、原预算和 ARM 原生执行保持。
+主开发与 Orin helper 每 host 独占 Cargo；root 管活文档/验收/归档/提交，独立评审另核原件。
+Orin 已按 fresh 七源/完整 PID/unit 盘点定向切至 A，工作区干净，固定工具链真实安装
+且两端分发 manifest 相同。本机 round1 的 13 fresh + 54 按目标复用已独审及 root
+验收。ARM round1 已按最终脚本启动完整 67 门；manager 缺口只阻对应原门，不能缩
+矩阵或宣布完整 B 已过。若真实失败，保原失败并核实际收尾，再用既有 --only 补未执行
+独立门，不新增自动跳过，不将多批拼称单轮全 PASS。
+ARM round1 实际 20 PASS 后 workspace_tests FAIL，dimos_workflow 两例缺 S1
+test-fault-backend 构建前置；源仍同 A，原失败不得删除。已批准只调整执行依赖：
+原八构建前置，并用既有 B4 环境显绑本批 release S0/S1/Gateway。保原 20，补失败
+workspace 与未执行 46，共 47；x86 仅补 workspace 显式 peer，一致后为 14 fresh/53
+复用。跨批逐门同源覆盖 67，必须显列原失败及每行真实来源，不宣称单轮全 PASS。
+B 全部验收后才推进 P-E；额度到剩 20% 停新开发并真实交接，不强行提交未完成阶段。
+
+2026-09-15 03:20 UTC 实际停止：周额度剩 20%。本机补门已独审/root 接受，有效
+14 fresh/53 复用。ARM 第二轮 9 项成功后 s0_complete_hook exit101，13 例中两项
+快照版本耗尽用例失败；与原轮合计 29 项执行成功、38 项未完成，未作完整 ARM 验收。
+停止前开发记录失败位置在 worker 日志文本断言且原文本有 ANSI，仅作待核线索。
+原两轮失败、源码同 A 与真实收尾证据保留；267 进程扫描无相关残留、5 原 PID 全退，
+相关 unit 空。只保存既有原件，不开第三批/新审计，不提交未完成 B；恢复入口为
+target/post_e_h2_rt/s48/rr_r4d/b/resume_handoff.md。
+
+用户最新指令“b阶段完成后暂停”：恢复本B阶段的必要诊断/最小修正/补验/独审与
+提交，旧20%停止点作为历史保留，不再阻止本B收口；不得进入P-E。已核原两日志
+worker字段被SGR彩色码打断，最小方案仅在s0_complete_hook门显式NO_COLOR=1，
+保持原文本、退出、页、顺序与时间断言；原两失败批及原日志不变。后续补失败门
+和原未执行门，不重复已验证的无关门；完整逐门覆盖、独审/root验收后提交并暂停。
+
+ARM 第三轮原 S0 hook 已通过，随后 13 门成功、deny exit1，原 FAIL 保留。cargo-deny
+0.19.6 在官方 advisory DB 不存在时吞掉 clone stderr，再把 Git 报错当日期解析；
+不能追认原 clone 的具体原因。显式原 clone 和命令级 HTTP/1.1 两次环境恢复分别
+遇 TLS 中断/连接超时，另保真实结果，不算正式矩阵失败门。root 实查本机官方缓存
+clean/main，与新查官方 HEAD 同为 e2e640471715167f73e22eaf761f2e547adafeec，批准
+完整 Git 缓存有限传输到原缺失路径；Orin HEAD/origin/clean/fsck 均通过。保传输包
+SHA/长度及实际完成记录，包体不嵌入 H。仍执行原 cargo deny check，不禁 fetch，
+不改工具、源码、锁或政策。固定补验为 R1 前20 + R2 workspace 1 + R3 五门 +
+新批41（剩余33与八构建），互斥覆盖67；旧三 FAIL 和每门原 peer 来源分别保留。
+此处为恢复与执行计划，须实际新批全过、真收尾及最终独审/root验收后才判 B 完成。
+
+R4实际原deny/四metadata通过，dependency_identity因model JSON前的Cargo进度行
+失败。仅B checker添加首JSON前的精确状态提示和Downloaded解析；下载包名/版本
+必须唯一匹配同份JSON中的crates.io包，进度单列，原C严格parser及图规则不改。
+四原raw完整JSON/warnings全等、十拒绝反例、只读完整图复核均通过；原R4 FAIL保留。
+独审通过后固定R1 20 + R2 1 + R3 5 + R4 deny 1 + R5 40（原余28+四metadata+
+八构建），仍互斥67。原runner/spec、产品/测试源码与门预算不变；新末轮报告使用
+本轮八peer，旧workspace等门仍绑定原来源，不拼称单轮全过。B验收提交后暂停。
+
+2026-09-15最终验收：R5实际40/40、两端有效67门全部满足；26报告、19新profile、
+239调用/237唯一组合及同run真实收尾通过。独立分段物证及root验收无阻断，
+本次提交前fresh fmt→根Clippy已通过。按最新用户指令归档提交B后暂停，P-E未开始。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

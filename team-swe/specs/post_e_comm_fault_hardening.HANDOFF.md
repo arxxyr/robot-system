@@ -2,44 +2,32 @@
 
 ## 当前步骤
 
-R4d-A 原连接真竞争测试已通过源码评审、正式六门、独立物证终审和 root 验收，归档后提交。
-基线是 R4c 实际提交 `1b0feff`；源码只 CAL tests.rs 的 230 行追加，SHA `5bc9725e…ad5d`。
-570 项输入首末/当前一致，其余 569 项与 C 相同。命令级 nightly-2026-09-10；实际根
-fmt→规定 Clippy、嵌套 fmt、CAL cfg(test) Clippy、dev/release 完整库测试均通过。
-两 profile 各 49/0/0；八组各 128，共 1024 轮，Closed 1022/Orphaned 2/errors 0，
-最大单轮 2,154,397 ns，原十秒界保持，不追自然赢家。两个正式 ELF 与实际 Running/
-compiler-artifact/旁车逐件一致。root 原统计与独审原件核验分别通过。
-本包入口 H 中 local/s48/rr_r4d/a/{root_acceptance.md,final_binding.json,final_evidence_review.md}。
-开发原 512 轮不算正式；G1 只补新汇总副本，原运行/旧脚本保留，不重跑六门。
-当前 A post 与提交回执为后生件，下包携带；实际提交见 git 日志及 commit_receipt.json。
-R4c 已验收提交 `1b0feff`：原监督与真实 manager 的 51 门、26 报告、19 新实例及
-77 测试 ELF/8 正式 ELF 均已核；C 原两次失败与修复完整保留，物证入口 local/s48/rr_r4c/。
-后续 B 按 A 实际提交做两架构验证：ARM 完整实际门，本地按目标精确复用并补缺项；
-CAL fixture 全库额外的 512 轮按 feature 单列，不隐藏或删门。B 只读计划已准备，尚未执行。
-P-E 长负载在完整 B 验收后。默认并行 CI 锁例仍未修，本包没有扩大相同旧门重复次数。
-用户要求有效开发至周额度剩 20%；最新实查剩 29%，达到线停止新开发并保真实交接。
-D15 OPEN、deployable=false；A 无 SSH/manager/电机访问，旧 Orin 硬件来源与物理状态不变。
+**R4d-B双主机软件验收通过；本包归档提交后暂停，不进入P-E，不push。**
+原生developer/helper已归还源码、Cargo和SSH；独立终审及root验收无阻断。
+本次提交和归档后的回执见git及 `target/post_e_h2_rt/s48/rr_r4d/b/commit_receipt.json`，
+回执为后生件，不冒已包含在本次H包中。下一步P-E须用户新的继续指令。
 
-W4b固定五例SIGKILL/原目录重启已通过独立源码、运行证据及root验收，
-APPROVED_SOFTWARE_SCOPE；基线W4a为`382ca44`，本包提交见git日志。
-W4b已提交`a2598a5`。用户2026-09-14恢复持续推进，并确认cc-claude额度重置；
-RR R0已由cc-claude完成，独立Codex及root验收通过；root负责提交，不push。
-两个0.9.3原发布包接入唯一path图，14个本方成员及其余锁版本不变；唯一源码差异为
-`fetch_update`改名`try_update`，两个Relaxed及原闭包不变。round2的fmt、三Clippy、
-transport、RPC与build七门全0；transport99/0/3、RPC304/0/0，既有ignored保留。
-同图tree/deny引用round1实际成功；原三个编译失败与三个nonmember探针101保留。
-证据入口H包`local/s48/rr_r0/`，root裁决`root_acceptance.md`、独审`independent_review.md`。
-R0已提交`cbed745`。R1 CAL转移/真实enqueue/同源模型已由cc-claude实现、独立Codex与
-root验收并提交`0513a8c`；R2原生开发已完成：源码独审ACK，正式round1共26门全部通过，已获root本地验收并提交06fcf0b，精确身份见git日志及commit_receipt。
-R2最终交付为`target/post_e_h2_rt/s48/rr_r2/handoff.md`及`result.json`；43项输入首末一致，
-IOX默认42/0/1、故障45/0/1、CAL45/0/0、模型6/0/0、workspace2207/0/9、S0 hook656/0/0。
-R3已直接迁移本方既有工厂与生产调用方，不增第二套公开入口；本地验证不代替Orin。
-R1正式round1共21门全0，CAL45、IOX库内8、模型6、workspace2207/0/9、S0 hook656/0/0。
-库内测试真实经过Clippy、CAL no_std通过；根14成员保持，两vendor运行时闭包80包身份
-与嵌套图一致，模型依赖不进生产图。测试三项发现均已修，开发失败保留。
-证据在H包`local/s48/rr_r1/`；入口`root_acceptance.md`、`result.json`、两个独立评审。
-正常finish与清理ORPHANED分开；同值CLOSED仍须R2实际route/pin和未复用资格才能证明
-原请求完成。本包不宣称完整RR或Orin通过，归档边界以H.json为准。
+- 唯一编译基线：A `f9a85be4f7064a54695eb33a7f5bf022d31b64eb`，两端原生固定
+  nightly-2026-09-10；570输入首末/当前一致，B未改tracked生产或测试源码。
+- 本机有效67门：14 fresh/53逐目标复用；Orin有效67门：R1前20 + R2 workspace1
+  + R3五门 + R4 deny1 + R5新40。R5实际40/40，四次原FAIL及真实来源保留，不称单轮全过。
+- 修正执行前置与证据接缝：workspace显绑同批peer；S0仅NO_COLOR=1；官方漏洞库
+  两次clone失败后传输已核官方HEAD的完整缓存，仍执行原deny；B checker精确解析
+  并核Cargo下载进度包身份。原断言、业务预算、源码和依赖政策保持。
+- Orin原生26报告、19新增profile实例、239调用/237唯一组合通过；六exec/五组
+  RefUnit/UnrefUnit及真实退出/重启均已核。两端压力证据3072轮，B新2048/A复用1024。
+- 本机本次提交前fresh fmt→根Clippy零警告通过。末轮05:00:31 UTC结束，05:01:13
+  同run清理扫描265进程，40gate PID加2已知PID全退，相关进程/IPC/unit及不可读项为空。
+  无关default.target/PulseAudio任务保留，不宣称所有系统任务为空。
+
+H包入口 `local/s48/rr_r4d/b/`：`root_acceptance.md`、`final_evidence_review.md`、
+`result.json`、两host coverage summary及两段独立机器核验。7041开发清单小件已逐核，
+后生独审/root与生成回执另收；ELF本体和派生传输包不嵌入。A后生15件按7已归档/8新增
+衔接。A/C历史提交分别f9a85be/1b0feff，其余历史按H索引和git定位。
+
+本次仅受控软件验证，未触电机/串口。D15 OPEN、deployable=false；默认并行CI锁例
+旧限制仍在。左H1/H3 PASS、H2两次FAIL、左最后断电；右未测、S46 wire4历史FAIL。
+不得把本次软件验收当成新硬件通过、生产退役或P-E长负载完成。
 
 ## 已提交W4b证据
 

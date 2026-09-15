@@ -20,8 +20,8 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     R4d-A六门/1024轮与最终验收通过，归档提交后继续R4d-B
-当前授权:     继续有效开发至周额度剩20%；每阶段验收后提交，不push
+当前步骤:     R4d-B双主机软件验收已通过；本包归档提交后暂停，P-E未开始
+当前授权:     按最新指令完成B的验收与提交后暂停；不进入P-E，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -36,27 +36,17 @@ developer 可根据任务需要自主启动子 agent 并负责整合；reviewer 
 是历史授权状态，不作为本轮停工理由。实现、验证、真机执行分别记录，不能将
 Spec Approved 或旧测试记录写成新代码已通过验收。
 
-W3已接通共享权限、高/普通双队列、唯一文件writer、RPC责任账本和受监督关闭链。
-W4a新增Created/Unsynced真实文件故障恢复验收：373源码/187输入首末一致，
-15门满足期望、新增2/2与原All72/72，独立源码/证据及root验收通过。
-旧编译/Clippy失败与汇总脚本更正均保原件；准确统计见HANDOFF、H包和10_verification。
-W4b固定五例SIGKILL/同目录恢复已独立源码/证据及root验收，376源/129输入一致；
-16门满足期望，新5/5、旧W4a2/2及All72/72通过。已提交a2598a5。原暂停已由2026-09-14继续目标及额度重置说明结束。
-RR r3的析构和公用CAL遗留问题已获方案ACK；vendor/模型/迁移另包，不外推至Orin或电机。
-
-R0以两个0.9.3原发布包接入唯一path依赖图，保14个本方成员与其余锁定版本；
-仅补一处当前nightly原子API别名兼容。fmt、三组Clippy、构建及transport99/RPC304通过，
-来源与运行证据已独审。R1已实现CAL正常关闭/清理区分及真实入队回执，同源模型6项通过；
-正式21门全0，CAL45、工作区2207、S0 hook656通过，原9项ignored保留。
-根/嵌套两vendor运行时闭包80包身份一致，Loom不进生产图。R2已验收提交06fcf0b。
-R3已直接替换本方RR工厂并成对联动真实peer，37门与538输入身份核验通过，
-dev/release各W4a2/W4b5/All72通过；独立源码/证据及root已验收本地范围。
-完整T8/SUP/ENV和双环境仍待R4；上述本地结果不代表Orin或P-E通过。
+W3/W4及RR底层已接通高/普通双队列、唯一writer、RPC责任账本和受监督关闭链。
+R4c监督退出与真实重启已提交1b0feff；R4d-A原连接真竞争已提交f9a85be。
+R4d-B在同一A源码基线上完成双主机软件验收：570编译输入一致，未改生产/测试
+源码；本机14 fresh/53按目标复用，Orin按五轮实际来源覆盖67有效门。原四FAIL
+保留，原生26报告/19新增profile实例及真实manager场景通过，独审/root已验收。
+本包归档提交后暂停，P-E长负载未开始；默认并行CI锁例旧限制仍未修复。
+原门/原件、恢复过程和精确身份均以HANDOFF/H包为准，不将分批结果称单轮全过。
 
 左H1/H3通过、H2两次FAIL；用户最后确认左臂断电、双臂支撑。右臂未测，
-六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。R4准备已只读盘点Orin
-软件环境与旧H2源码残留，未更新电机现场状态；来源见rr_r4/environment_inventory.md
-及orin_residual_source_review.md。Orin调试/RT必要时直接sudo；标定使用已有
+六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。R4d-B已在Orin完成受控软件验证，
+末轮相关进程/IPC/unit已清理，未访问电机或更新现场物理状态。Orin调试/RT必要时直接sudo；标定使用已有
 Python JSON。新H2须先完成软件验收/提交/两端对齐，再取得新物理重置与在场事实，
 不得复用已消费的left_h2_current目录或旧驱动。
 
