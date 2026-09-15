@@ -2624,6 +2624,27 @@ manager实际验证补齐加载/运行属性分期、完整TOML解析及同bus R
 77测试ELF与8正式ELF逐件一致。入口为rr_r4c/root_acceptance.md和final_binding.json；
 原失败仍保留，归档后阶段提交，不push。本地验收不关闭ARM、P-E或D15。
 
+#### P.6.14.27 R4d-A 原连接竞争压力（正式门及最终验收通过）
+
+基线为 R4c 实际提交 1b0feff89c8ecd2d22fb240b3f0e14b61805bb59，开始前已核 clean。
+仅修改 CAL 的 zero_copy_connection/tests.rs，原批准范围见 rr_r4d/root_pressure_scope.md
+及 execution_handoff_draft.md。合法 receiver abandon 后，保活 sender/原存储，由两线程
+真实 close_channel 与 remove_receiver 竞争；失败释放启动门且真 join，成功亦查原 10 秒界。
+只在双方 join 后核断链/终态，ORPHANED 不复活，CLOSED 保留合法下一代语义。
+本地 dev/release × 两后端 × plain/hinted 各 128 轮；记录实际赢家分布、错误、最大耗时，
+不要求自然竞争产生两种赢家，不以空负载屏障证明尾回复发布。原模型与未变 IOX/R4c 证据
+按身份复用，受改 CAL 全库门及根规定 fmt→Clippy 必须实际通过。
+命令级 nightly-2026-09-10，保项目 floating 配置；主开发独占 Cargo，独立源码/物证与
+root 验收后提交。A 不 SSH，不运行 manager 或电机；B 才取 A 实际提交执行两架构矩阵。
+
+实际 round1 于 2026-09-15 01:28 UTC 六门全部通过，570 输入首末/当前相同；唯一测试源
+230 行追加已由 root/独审验收。dev/release 全库各 49/0/0，1024 轮 Closed1022/
+Orphaned2/errors0，最大 2,154,397ns；两正式 ELF 与原 Running/构建身份精确一致。
+G1 仅补独立汇总执行副本，不修改源码或重跑六门；原开发记录和旧汇总保留。
+根 fmt→规定 Clippy 及真实 cfg(test) Clippy 均有效。最终绑定见 rr_r4d/a/final_binding.json；
+归档后提交，随后 B 从 A 实际提交核两架构。B 最新映射、无额外旧门重复的裁决见
+rr_r4d/b_execution_matrix_draft.md、b_matrix_root_acceptance.md；尚未开始 B 实际运行。
+
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 
 S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0

@@ -579,6 +579,119 @@ impl Drop for SetOnDrop<'_> {
     }
 }
 
+/// 两个原线程一经创建即登记；析构先放开启动门，再收回原 join。
+struct RaceWorkers<'scope> {
+    released: &'scope AtomicBool,
+    handles: [Option<std::thread::ScopedJoinHandle<'scope, Result<(), String>>>; 2],
+    deadline: Instant,
+}
+
+impl RaceWorkers<'_> {
+    fn finish(&mut self) -> Result<(), String> {
+        self.released.store(true, Ordering::Release);
+        while self
+            .handles
+            .iter()
+            .flatten()
+            .any(|worker| !worker.is_finished())
+        {
+            if Instant::now() >= self.deadline {
+                // 未退出的原线程不能 detach，也不能让 scope 无界 join 冒已收回。
+                eprintln!("R4DA 原线程超过10秒且未退出，保原拥有域硬失败");
+                std::process::abort();
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let mut first_error = None;
+        for (index, worker) in self.handles.iter_mut().enumerate() {
+            if let Some(worker) = worker.take() {
+                let result = match worker.join() {
+                    Ok(result) => result,
+                    Err(error) => Err(format!("原竞争线程panic: {error:?}")),
+                };
+                if let Err(error) = result {
+                    // 每个原结果分别保留，即使外层已有更早的spawn错误。
+                    eprintln!("R4DA 原worker[{index}] join错误: {error}");
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+        if Instant::now() >= self.deadline && first_error.is_none() {
+            first_error = Some("原线程成功join观察已超过10秒".into());
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+}
+
+impl Drop for RaceWorkers<'_> {
+    fn drop(&mut self) {
+        if self.handles.iter().any(Option::is_some) {
+            if let Err(error) = self.finish() {
+                eprintln!("R4DA 异常收尾仍记录原join错误: {error}");
+                if !std::thread::panicking() {
+                    panic!("原竞争线程未显式成功收回: {error}");
+                }
+            }
+        }
+    }
+}
+
+fn race_start(ready: &AtomicUsize, released: &AtomicBool) {
+    ready.fetch_add(1, Ordering::Release);
+    while !released.load(Ordering::Acquire) {
+        std::thread::yield_now();
+    }
+}
+
+#[test]
+fn race_owner_partial_start_releases_and_joins_original_worker() {
+    let released = AtomicBool::new(false);
+    let ready = AtomicUsize::new(0);
+    let completed = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let mut workers = RaceWorkers {
+            released: &released,
+            handles: [None, None],
+            deadline: Instant::now() + Duration::from_secs(10),
+        };
+        workers.handles[0] = Some(scope.spawn(|| {
+            race_start(&ready, &released);
+            completed.store(true, Ordering::Release);
+            Ok(())
+        }));
+        // 只证明部分启动拥有域，不冒真实OS spawn失败已经被注入。
+        workers.finish().unwrap();
+        assert!(workers.handles.iter().all(Option::is_none));
+        assert!(completed.load(Ordering::Acquire));
+    });
+}
+
+#[test]
+fn race_owner_keeps_first_error_and_joins_original_error_and_panic_workers() {
+    let released = AtomicBool::new(false);
+    let ready = AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        let mut workers = RaceWorkers {
+            released: &released,
+            handles: [None, None],
+            deadline: Instant::now() + Duration::from_secs(10),
+        };
+        workers.handles[0] = Some(scope.spawn(|| {
+            race_start(&ready, &released);
+            Err("原第一个worker错误".into())
+        }));
+        workers.handles[1] = Some(scope.spawn(|| {
+            race_start(&ready, &released);
+            panic!("原第二个worker panic");
+        }));
+        assert_eq!(workers.finish(), Err("原第一个worker错误".into()));
+        assert!(workers.handles.iter().all(Option::is_none));
+        assert_eq!(ready.load(Ordering::Acquire), 2);
+    });
+}
+
 /// 阻塞发送方的背压回调：正常 Retry；测试异常路径置 `abort` 后改为 DiscardPointerOffsetAndFail，
 /// 让 blocking_send 以 UnableToDeliver 有界返回。回调每轮都会被调用，`retries` 用作真实握手。
 fn retry_until_abort<'a>(
@@ -1160,6 +1273,123 @@ macro_rules! backend_tests {
                     channel_state::classify_prepared(sender.__internal_get_channel_state(CH0), 7),
                     Prepared::Unknown(Value::Orphaned)
                 );
+            }
+
+            fn original_finish_cleanup_round(hinted: bool, started: Instant) -> Result<u64, String> {
+                let deadline = started + Duration::from_secs(10);
+                let (cfg, name) = isolated::<Sut>("finish_cleanup_race");
+                let params = Params { initial: CHANNEL_STATE_CLOSED, ..Params::default() };
+                let (sender, receiver) = pair::<Sut>(&name, &cfg, &params);
+                let request = state(7);
+                assert!(receiver.set_channel_state(CH0, request));
+                assert!(sender.has_channel_state(CH0, request));
+                if hinted {
+                    receiver.set_disconnect_hint(CH0, request);
+                    assert!(sender.has_disconnect_hint(CH0, request));
+                    assert!(sender.has_channel_state(CH0, request));
+                }
+                // 唯一receiver先合法弃置，无接收样本；此后只保原sender和原存储。
+                receiver.abandon();
+                let ready = AtomicUsize::new(0);
+                let released = AtomicBool::new(false);
+                let result = std::thread::scope(|scope| {
+                    let mut workers = RaceWorkers { released: &released, handles: [None, None], deadline };
+                    let mut first_error = None;
+                    match std::thread::Builder::new().spawn_scoped(scope, || {
+                        race_start(&ready, &released);
+                        sender.close_channel(CH0, request);
+                        Ok(())
+                    }) {
+                        Ok(worker) => workers.handles[0] = Some(worker),
+                        Err(error) => first_error = Some(format!("创建原close线程失败: {error}")),
+                    }
+                    if first_error.is_none() {
+                        match std::thread::Builder::new().spawn_scoped(scope, || {
+                            race_start(&ready, &released);
+                            // receiver已abandon；从未清理仍活的sender。
+                            unsafe { Sut::remove_receiver(&name, &cfg) }
+                                .map_err(|error| format!("原remove_receiver失败: {error:?}"))
+                        }) {
+                            Ok(worker) => workers.handles[1] = Some(worker),
+                            Err(error) => first_error = Some(format!("创建原清理线程失败: {error}")),
+                        }
+                    }
+                    let cleaner_started = workers.handles[1].is_some();
+                    if first_error.is_none() {
+                        while ready.load(Ordering::Acquire) != 2 && Instant::now() < deadline {
+                            std::thread::yield_now();
+                        }
+                        if Instant::now() >= deadline {
+                            first_error = Some("原两线程启动观察超过10秒".into());
+                        }
+                    }
+                    // 错误也先释放门并真join双方；保第一个错误，不重试失败轮。
+                    let joined = workers.finish();
+                    if !cleaner_started {
+                        // spawn失败的退场清理，不计为竞争执行；先join已创建的原线程。
+                        if let Err(error) = unsafe { Sut::remove_receiver(&name, &cfg) } {
+                            eprintln!("R4DA spawn失败后原receiver清理失败: {error:?}");
+                        }
+                    }
+                    first_error.map_or(joined, Err)
+                });
+                result?;
+                if sender.is_connected() {
+                    return Err("两原join后sender仍连接".into());
+                }
+                let terminal = raw_state(&sender, CH0);
+                match terminal {
+                    channel_state::CLOSED => {}
+                    channel_state::ORPHANED => {
+                        sender.close_channel(CH0, request);
+                        assert_eq!(raw_state(&sender, CH0), channel_state::ORPHANED);
+                        sender.set_disconnect_hint(CH0, request);
+                        assert_eq!(raw_state(&sender, CH0), channel_state::ORPHANED);
+                        assert!(!sender.set_channel_state(CH0, request));
+                        assert!(!sender.set_channel_state(CH0, state(8)));
+                        assert_eq!(raw_state(&sender, CH0), channel_state::ORPHANED);
+                    }
+                    _ => return Err(format!("两原join后非法channel终态: {terminal}")),
+                }
+                drop(sender);
+                if Instant::now() >= deadline {
+                    return Err("原竞争完整成功观察超过10秒".into());
+                }
+                Ok(terminal)
+            }
+
+            #[test]
+            fn normal_finish_races_dead_receiver_cleanup_without_resurrection() {
+                for hinted in [false, true] {
+                    let mode = if hinted { "hinted" } else { "plain" };
+                    let mut closed = 0;
+                    let mut orphaned = 0;
+                    let mut max_elapsed_ns = 0;
+                    for round in 0..128 {
+                        let started = Instant::now();
+                        let result = original_finish_cleanup_round(hinted, started);
+                        let elapsed_ns = started.elapsed().as_nanos();
+                        let result = result.and_then(|terminal| {
+                            if elapsed_ns >= 10_000_000_000 {
+                                Err("原轮回收后的成功接纳超过10秒".into())
+                            } else {
+                                Ok(terminal)
+                            }
+                        });
+                        max_elapsed_ns = max_elapsed_ns.max(elapsed_ns);
+                        let label = match &result {
+                            Ok(value) if *value == channel_state::CLOSED => { closed += 1; "Closed" }
+                            Ok(_) => { orphaned += 1; "Orphaned" }
+                            Err(_) => "Error",
+                        };
+                        println!("R4DA_ROUND_V1 {{\"backend\":\"{}\",\"mode\":\"{mode}\",\"round\":{round},\"elapsed_ns\":{elapsed_ns},\"result\":\"{label}\"}}", stringify!($module));
+                        if let Err(error) = result {
+                            println!("R4DA_RACE_V1 {{\"backend\":\"{}\",\"mode\":\"{mode}\",\"completed\":{round},\"closed\":{closed},\"orphaned\":{orphaned},\"errors\":1,\"max_elapsed_ns\":{max_elapsed_ns}}}", stringify!($module));
+                            panic!("原竞争轮失败（不重试）: {error}");
+                        }
+                    }
+                    println!("R4DA_RACE_V1 {{\"backend\":\"{}\",\"mode\":\"{mode}\",\"completed\":128,\"closed\":{closed},\"orphaned\":{orphaned},\"errors\":0,\"max_elapsed_ns\":{max_elapsed_ns}}}", stringify!($module));
+                }
             }
 
             #[test]

@@ -2,22 +2,23 @@
 
 ## 当前步骤
 
-R4c 监督、原责任与本地 manager 的 36 项修改已通过源码评审、正式 round3 全部 51 门、
-独立物证终审及 root 验收。564 项全仓输入首末/当前一致；8 件正式产物、77 个测试 ELF
-均已独立逐 SHA 核验。26 份原报告全部通过，239 次调用/237 个唯一组合，新矩阵 19 个
-profile 实例；F1 是原 writer 真 join/文件回调集成，不与外部 daemon 场景混算。
-验收入口为 H 包 local/s48/rr_r4c/root_acceptance.md、final_binding.json、
-final_evidence_review.md、gates/round3/run.json；完整源码表 final_source_round3.sha256。
-构建基线 24b2cf3 加精确 36 项修改；阶段提交以 git 日志及包外 commit_receipt.json 为准。
-原 round1 第 33 门 NoFrame 失败、round2 第 45 门 manager 身份采样失败均保留。
-修复分别是原 1.1 秒内唯一缺帧重试、同代 READY 后原截止内一次严格身份核验；
-没有改业务预算。round2 未保存坏环境，具体原因不冒实证。manager 引用只防 unit GC，
-S12 原两秒代际捕获不变。开发失败与正式成功不拼接；当前包 post 与提交回执下包携带。
-主开发已停写归还 Cargo；root 归档提交，不 push。默认并行 CI 锁例仍未修，另有只读诊断。
-后续按已批准 R4d-A 原连接压力 → R4d-B 双主机同源 → P-E 长负载推进。
-用户要求继续有效开发直到周额度剩 20%；最近实查剩 32%，接近线不派新大包，达到线真实交接。
-本包仅本地 mock/user manager，无 SSH/电机访问；D15 OPEN、deployable=false。
-旧 Orin 硬件状态与物理来源身份保持，尚未运行本轮 R4/ARM 验收。
+R4d-A 原连接真竞争测试已通过源码评审、正式六门、独立物证终审和 root 验收，归档后提交。
+基线是 R4c 实际提交 `1b0feff`；源码只 CAL tests.rs 的 230 行追加，SHA `5bc9725e…ad5d`。
+570 项输入首末/当前一致，其余 569 项与 C 相同。命令级 nightly-2026-09-10；实际根
+fmt→规定 Clippy、嵌套 fmt、CAL cfg(test) Clippy、dev/release 完整库测试均通过。
+两 profile 各 49/0/0；八组各 128，共 1024 轮，Closed 1022/Orphaned 2/errors 0，
+最大单轮 2,154,397 ns，原十秒界保持，不追自然赢家。两个正式 ELF 与实际 Running/
+compiler-artifact/旁车逐件一致。root 原统计与独审原件核验分别通过。
+本包入口 H 中 local/s48/rr_r4d/a/{root_acceptance.md,final_binding.json,final_evidence_review.md}。
+开发原 512 轮不算正式；G1 只补新汇总副本，原运行/旧脚本保留，不重跑六门。
+当前 A post 与提交回执为后生件，下包携带；实际提交见 git 日志及 commit_receipt.json。
+R4c 已验收提交 `1b0feff`：原监督与真实 manager 的 51 门、26 报告、19 新实例及
+77 测试 ELF/8 正式 ELF 均已核；C 原两次失败与修复完整保留，物证入口 local/s48/rr_r4c/。
+后续 B 按 A 实际提交做两架构验证：ARM 完整实际门，本地按目标精确复用并补缺项；
+CAL fixture 全库额外的 512 轮按 feature 单列，不隐藏或删门。B 只读计划已准备，尚未执行。
+P-E 长负载在完整 B 验收后。默认并行 CI 锁例仍未修，本包没有扩大相同旧门重复次数。
+用户要求有效开发至周额度剩 20%；最新实查剩 29%，达到线停止新开发并保真实交接。
+D15 OPEN、deployable=false；A 无 SSH/manager/电机访问，旧 Orin 硬件来源与物理状态不变。
 
 W4b固定五例SIGKILL/原目录重启已通过独立源码、运行证据及root验收，
 APPROVED_SOFTWARE_SCOPE；基线W4a为`382ca44`，本包提交见git日志。

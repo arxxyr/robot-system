@@ -20,7 +20,7 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     R4c正式51门、独审/root验收完成，归档提交后继续R4d-A原连接压力
+当前步骤:     R4d-A六门/1024轮与最终验收通过，归档提交后继续R4d-B
 当前授权:     继续有效开发至周额度剩20%；每阶段验收后提交，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
