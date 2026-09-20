@@ -2,46 +2,34 @@
 
 ## 当前步骤
 
-**用户已明确“继续，用astra medium”；当前推进P.7软件交付准备，原生Astra/medium开发与独审。**
-本大阶段完成新驱动/共享产物校验及测试、独立评审提交、双端Git对齐与独立目录
-原生release两套产物验收后暂停供用户检查，不自动进入真实H2或下一大阶段。
-每个大阶段都须用户明确继续才进入下一阶段；周剩35%仍为额外停止上限，不自动push。
-此前手动暂停已由本次继续解除，原断点保留在`target/post_e_h2_rt/s48/p7/pause_receipt.json`。
+**P.7软件交付准备已完成，收口提交后暂停供用户检查；不自动进入真实H2。**
+本轮按用户要求使用原生Astra/medium开发与独审，root方案/验收/提交。每个大阶段须用户
+明确继续才进入下一阶段；周剩35%仍为额外停止上限，不自动push。
 
-P-E已验收提交`2f1de02`，P.7操作单已验收提交`9867064`，两者未push。
-P.7五件Python源码已提交`8491b42`。同步前置发现六unit的14处依赖显示顺序重排，
-原依赖与安装件未变；仅对七类依赖属性排序且保留重复，有序属性继续逐字核验。
-r2独审通过，fresh fmt→Clippy与35项合并Python测试通过；原两次拒绝和八件独立备份保留。
-r2已提交`c759082`；随后实际shared预检发现systemd省略ExecStop/EnvironmentFiles空复杂属性，
-`--all`仍省略，短命GetUnit因inactive unit未加载而拒绝，原失败均保留。r3仅对这两项
-通过系统已有python3-dbus的同一私有连接LoadUnit→typed Get证明准确签名/零元素，
-finally关闭，无Start/Ref；Orin七unit与完整安装快照实证通过。13项产物测试、
-16项独立拒绝案例和root fresh fmt→Clippy→37项合并测试通过；源码修复提交后
-重新绑定HEAD快进，当前fetch/restore/ff/Cargo均未执行。
-571编译输入冻结926a0f1d…，8件Rust源。各host All72全过；4096原FAIL/exit1在实际
-Normal容量3840/3840严格派生EXPECTED_RED，最终Lower与完整收尾均成功。8192本机
-360.459s/8298唯一成功/运行期GC1391，Orin360.087s/8270/GC1379；Lower的18/21 GC另列。
-每端RPC309、工具178通过，原预算/wire4不变。本机部分质量门按实际未变输入复用并完成
-fresh提交前fmt→Clippy；Orin完整quality/build/behavior同轮通过，无重试。922件回传原件
-逐SHA一致，Orin267进程终场无相关或不可读、六服务仍停。实际Git HEAD为本机B、OrinA
-加同源差；这是本批软件来源约定，不是新现场所需同HEAD/clean。
-P-E H入口`local/s48/pe/`：result.json、root_acceptance.md、review/final_review.md及
-两端run原件；ELF本体/缓存/重复传输包不入H。B包外后生归档与commit回执随本包承接。
-P.7操作单已提交9867064；新H2驱动、报告oracle与共享产物校验五件Python源码已获独审/root验收，
-本次源码提交。34项合并Python测试、3项helper夹具通过；独审另核8个报告反例与3个真实无害child
-异常路径。root提交前fresh fmt→Clippy及默认PLAN_ONLY通过，571编译输入未改。源码评审见
-`p7/review/source_review.{md,json}`，提交回执随后记录；两端Git同步、原生构建和现场H2未执行。P.7证据暂存
-`target/post_e_h2_rt/s48/p7/`，不在当前P-E H包内；下包同时承接P-E归档后与提交回执。
-新鲜只读盘点确认Orin四件实际安装路径为本仓库`target/release/`，禁止默认release
-构建覆盖它们；使用已有独立`target/rr-r4db-arm/root`缓存，先冻结生产四件再测量三件。
-六服务inactive，handoff active/exited且MainPID0；这不是电机物理断电证明。实际SSH
-loosqk的rtprio为99/99、memlock unlimited，沿该UID核验，不默认sudo整个IPC进程。
-R4d-B双主机软件验收通过，独立终审及root验收无阻断；已提交`cdeddd2`，
-并按用户“先push”推送`origin/feat/post-e-comm-fault-hardening`。
-B归档后回执见git及 `target/post_e_h2_rt/s48/rr_r4d/b/commit_receipt.json`；
-该回执记录提交时未push，早于后来实际推送，且是未含于B包的后生件。
-新阶段原生子agent开发与独立评审，root定方案/整合/提交；新提交不自动push。
-35%停止线取代此前B后暂停及20%停止线，停止前保存未完进度，不将未验收内容提交为完成。
+P.7操作单已提交`9867064`，驱动/报告oracle/共享产物校验源码`8491b42`；systemd
+依赖顺序误拒修复`c759082`，省略复杂空数组的同连接typed核验修复`b7cbaca`。
+37项合并Python测试、3项helper夹具通过；独审另含报告/真实无害child与systemd
+拒绝反例。提交前fresh fmt→Clippy通过，571编译输入926a0f1d…未改。
+
+双端在实际`b7cbaca` clean上对齐，Orin八件旧源码独立备份后精确恢复/快进，现役四件、
+配置、标定及七unit前后未变。Orin原生nightly-2026-09-10 release先冻结生产四件，
+再冻结测量三件，实际Cargo feature/profile/ELF183及七次精确`--help`全通过；15份
+真实完成回执/PGID清场全部通过，六业务服务仍停止。首轮因SSH PATH缺cargo bin在
+rustc spawn前失败，原16件保留；只修启动PATH后的成功轮80件已逐SHA回传，不称单轮全过。
+成功run为`native_20260920T114445Z_41e55668`，build HEAD永久记录`b7cbaca`；随后
+仅文档/证据收口提交可按祖先与完整编译源/三Python未变继承，不能回填构建来源。
+
+P.7 H入口`local/s48/p7/`：`result.json`、`root_acceptance.md`、`review/final_review.md`、
+`artifacts_delivery.json`及实际同步/构建原件；随本包承接P-E归档后与commit回执。
+本阶段归包审计、最终Git对齐和commit回执为包外后生件，位于
+`target/post_e_h2_rt/s48/p7/post_archive_review/`及`commit_receipt.json`，下包承接。
+未安装产物、未授权marker、未触电机或串口、未取得新现场事实；deployable=false、D15 OPEN。
+
+此前P-E已提交`2f1de02`，两端571输入各All72通过；4096原FAIL/exit1在实际Normal
+3840/3840严格派生EXPECTED_RED，最终Lower与收尾成功。8192本机360.459s/8298唯一成功/
+运行期GC1391，Orin360.087s/8270/GC1379；Lower的18/21 GC另列。RPC309、工具178通过，
+原预算/wire4不变。P-E当时实际Git为本机B/OrinA加同源差，与本轮真实同HEAD/clean分开记录。
+B已提交`cdeddd2`并按用户“先push”推送origin；后续P-E/P.7各提交未push。
 
 - B阶段唯一编译基线：A `f9a85be4f7064a54695eb33a7f5bf022d31b64eb`，两端原生固定
   nightly-2026-09-10；570输入首末/当前一致，B未改tracked生产或测试源码。

@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "P7_SOFTWARE_PREPARATION",
-  "resume_from": "P7五件Python源/测试及helper已独审/root验收，本次源码提交后受控Git对齐与独立目录原生构建，完成大阶段即暂停检查；新真实H2不自动启动。",
+  "work_state": "PAUSED_AFTER_P7_SOFTWARE_ACCEPTANCE",
+  "resume_from": "P.7软件准备已验收；收口commit后暂停等待用户检查和明确继续。后续现场H2必须核新的物理前置，不能复用旧确认。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_PE_SOFTWARE_ACCEPTED",
-  "review_status": "APPROVED_PE_SOFTWARE_SCOPE",
+  "status": "S48_P7_SOFTWARE_PREPARATION_ACCEPTED",
+  "review_status": "APPROVED_P7_SOFTWARE_SCOPE",
   "deployable": false,
-  "scope": "W3/W4、RR R0–R4及P-E双主机软件验收已完成；当前P.7软件准备，现场仍待验收，wire4历史FAIL、D15 OPEN、deployable=false。",
+  "scope": "W3/W4、RR R0–R4、P-E双主机软件验收及P.7软件准备已完成；收口提交后暂停。现场H2仍待验收，wire4历史FAIL、D15 OPEN、deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -3574,13 +3574,13 @@
         "commit_receipt": "target/post_e_h2_rt/s48/rr_r4d/b/commit_receipt.json（提交后生件，不在本次H包内）"
       },
       "p7": {
-        "status": "SOURCE_APPROVED_NATIVE_BUILD_PENDING",
+        "status": "SOFTWARE_PREPARATION_ACCEPTED_PAUSE_AFTER_COMMIT",
         "runbook": "scripts/systemd/README_dimos_replace.md",
         "plan": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md P.7",
         "local_evidence": "target/post_e_h2_rt/s48/p7/",
-        "archive_status": "不在当前P-E H包内；本阶段验收后携带P-E后生回执归下一包。",
-        "driver_and_artifacts": "SOURCE_AND_OFFLINE_TESTS_APPROVED",
-        "build_started": false,
+        "archive_status": "本轮收口纳入H包local/s48/p7；归档后/最终同步/commit回执留包外，下阶段承接。",
+        "driver_and_artifacts": "APPROVED",
+        "build_started": true,
         "deployment_started": false,
         "hardware_started": false,
         "auto_push": false,
@@ -3609,13 +3609,49 @@
           "sha256": "5b92f4e1ae455ba08d5825473943c6b8899a792b3098de1b3001443b7c6466ef",
           "bytes": 3298
         },
-        "sync_preflight": "c759 bundle已验证传输；shared发现systemd省略复杂空属性，r3同private D-Bus连接typed确认后通过；所有失败保留，尚未fetch/restore/ff/Cargo。",
+        "sync_preflight": "精确八件独立备份与双端b7cbaca clean对齐通过；原拒绝保留。",
         "source_review_r3": {
           "path": "target/post_e_h2_rt/s48/p7/review/source_review_r3.json",
           "sha256": "afebfa8c9f5190d22f6e1089fcaf2ac427a37bbc75d56850fd204960acb0e197",
           "bytes": 4579
         },
-        "source_fix_commit_r2": "c75908296d7007259ceef9e678238bddbc7cc8af"
+        "source_fix_commit_r2": "c75908296d7007259ceef9e678238bddbc7cc8af",
+        "build_head": "b7cbacaa1db7a78d1f3088cce5d52ebba0c8f72d",
+        "source_fix_commit_r3": "b7cbacaa1db7a78d1f3088cce5d52ebba0c8f72d",
+        "result": {
+          "path": "target/post_e_h2_rt/s48/p7/result.json",
+          "sha256": "95dfd6ff73d2c975a7b67abbbe961252879fddd397f2fbbb766f1b0f2b9f6c22",
+          "bytes": 1869
+        },
+        "final_review": {
+          "path": "target/post_e_h2_rt/s48/p7/review/final_review.json",
+          "sha256": "395609f724b94852e190a95fdc1f7af0a913b4346b65fbd613ef9c309139e917",
+          "bytes": 10471
+        },
+        "delivery": {
+          "path": "target/post_e_h2_rt/s48/p7/artifacts_delivery.json",
+          "sha256": "48527d6375e082f5ed6e01b8117d615e2aea45fb45fa9cbc4a0c4f5fce372a3e",
+          "bytes": 6347
+        },
+        "root_acceptance": {
+          "path": "target/post_e_h2_rt/s48/p7/root_acceptance.md",
+          "sha256": "24a6e5945e88803e8968a3051372b04749fe7c24987965a4ada30f7533e523d5",
+          "bytes": 1562
+        },
+        "native_checks": {
+          "python_tests": 37,
+          "fmt": "PASS",
+          "clippy": "PASS",
+          "independent_review": "PASS",
+          "production_artifacts": 4,
+          "measurement_artifacts": 3,
+          "help": 7,
+          "natural_completions_and_cleanup": 15,
+          "successful_raw_files": 80,
+          "first_failed_raw_files": 16,
+          "installed_unchanged": true
+        },
+        "first_attempt": "保留rustc spawn前PATH失败；只修启动PATH后新独占run通过，不称单轮全过"
       }
     }
   },
@@ -3766,7 +3802,8 @@
       },
       "validation": "安装配置与仓库逐字一致，直接引用Python JSON；每臂6个名称/ID1–6、offset/range/drive_mode字段兼容",
       "scope": "仅文件及源码只读核验，不称电机EEPROM本轮已读回；没有重标定/改值/打开串口"
-    }
+    },
+    "physical_state_scope": "电机/串口/marker/latch条目沿最后历史现场记录；本次P.7仅软件准备，没有刷新物理事实。"
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
@@ -3775,16 +3812,16 @@
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "39e82dc526b1542dbba33734a92969ec56068ccfa94fd36b5238bc3493e3f694",
-    "bytes": 174415321,
-    "members": 63414,
-    "logical_bytes": 5183063541,
-    "index_count": 63413,
+    "sha256": "3936e0dc4f7250ff64e95c46c3e4b2d87ab33beea4fa2a264467b7e6ae98fd87",
+    "bytes": 175558061,
+    "members": 63787,
+    "logical_bytes": 5188254063,
+    "index_count": 63786,
     "per_file_sha256_verified": true,
-    "verification_method": "旧B整体SHA承接61411索引/全部旧路径；新增2002件逐SHA，旧索引原样保留。root复核新整包SHA、63414成员元数据与六个最终关键原件。"
+    "verification_method": "旧PE整体SHA承接63413索引及全部旧路径；新增373件逐SHA、旧索引原样保留。root核新整包SHA/63787成员与索引集合及五个最终关键原件。"
   },
-  "retention": "H保B原61411索引，新增2002件P-E双端源码/原运行/失败/终审/root及B包外后生回执。ELF本体、派生缓存和重复源传输包不嵌入；P-E post_archive_review与随后commit_receipt为本次包外后生件，P.7材料另属下一包。",
-  "updated_at": "2026-09-20T10:36:12.660622+00:00",
+  "retention": "H保留PE原63413索引，新增373件P.7源码评审/真实同步/原生构建及PE包外后生回执。ELF本体、派生缓存和重复传输包不嵌入；P.7 post_archive_review、最终Git对齐与commit_receipt为本次包外后生材料，下阶段承接。",
+  "updated_at": "2026-09-20T12:02:29.544881+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -3816,7 +3853,18 @@
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/s45/recheck/artifacts/release",
     "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2_current",
     "prior_driver_state": "已执行且失败，left_h2_current目录已消费；修复后必须准备并评审新驱动/新目录",
-    "current_resume_note": "旧driver/source身份保留历史，不能复用；S48全部软件提交与两端验证后另备新现场driver"
+    "current_resume_note": "旧driver/source身份保留历史，不能复用；S48全部软件提交与两端验证后另备新现场driver",
+    "current_s48_driver": {
+      "path": "scripts/run_post_e_h2.py",
+      "sha256": "19c0a9faef5d40312381b538d2ae90d551fe794cd61a2e89834e0e85cd8b9b07",
+      "report_path": "scripts/post_e_h2_report.py",
+      "artifacts_path": "scripts/post_e_h2_artifacts.py",
+      "source_head": "b7cbacaa1db7a78d1f3088cce5d52ebba0c8f72d",
+      "status": "SOFTWARE_PREPARATION_ACCEPTED",
+      "new_physical_facts_received": false,
+      "hardware_started": false,
+      "entry": "默认PLAN_ONLY；现场模式须新事实及精准inputs manifest，不继承历史确认"
+    }
   },
   "cleanup": {
     "local": "local/s45/cleanup.json",
@@ -3829,7 +3877,7 @@
     "weekly_remaining_stop_percent": 35,
     "current_package": "S48_P7_SOFTWARE_PREPARATION",
     "next_package_authorized_to_start": false,
-    "state": "已恢复当前P7软件大阶段；完成验收提交即暂停检查，周35%为额外上限。",
+    "state": "P.7软件大阶段验收通过；收口提交即暂停，等待用户检查和明确继续。",
     "supersedes": [
       "b 阶段完成后暂停",
       "周额度剩余20%停止点"
@@ -3843,6 +3891,6 @@
     "pause_after_each_major_stage": true,
     "major_stage_boundary": "以已对齐实施计划的大阶段为界，不按小提交计；阶段完成必要验证、独审/root验收与commit后暂停。",
     "resume_requires_explicit_user_continue": true,
-    "current_stage_authorized_to_resume": true
+    "current_stage_authorized_to_resume": false
   }
 }

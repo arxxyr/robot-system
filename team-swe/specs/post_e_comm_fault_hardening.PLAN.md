@@ -2807,6 +2807,15 @@ guard preflight会在daemon监督/marker消费前真实打开bus，89前也可�
 P.7方案/审查/开发回执暂存`target/post_e_h2_rt/s48/p7/`；正式软件验收后随下一H包收录，
 并携带P-E归档后和commit回执，禁止回称已存在于当前P-E包。
 
+### P.7 软件准备验收记录（2026-09-20）
+
+新驱动与共享校验37项合并Python测试通过，原生Astra/medium独审；源码提交8491b42、
+c759082、b7cbaca。两端实际同b7cbaca clean、571编译输入一致；Orin独立目录先冻结
+生产四件再测量三件，全部release/feature/ELF检查与7help通过，15真实完成与清场通过。
+首轮PATH缺rustc的启动失败保留，修正环境后成功，不称单轮全过。现役安装/配置/标定/
+七unit未变。证据见H包local/s48/p7；build HEAD仍为b7cbaca，后续文档证据提交只继承来源。
+软件准备收口即暂停让用户检查；部署、新marker、新现场H2均未执行，D15 OPEN。
+
 ## P.8 执行依赖、提交边界与收口
 
 | 提交组 | 文件/工作包 | 依赖与退出门 | 风险/回滚 |
