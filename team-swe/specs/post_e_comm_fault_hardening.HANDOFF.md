@@ -2,7 +2,13 @@
 
 ## 当前步骤
 
-**2026-09-20 P-E 已验收提交 `2f1de02`，未push；继续P.7软件准备，周剩35%收尾暂停。**
+**用户已明确“继续，用astra medium”；当前推进P.7软件交付准备，原生Astra/medium开发与独审。**
+本大阶段完成新驱动/共享产物校验及测试、独立评审提交、双端Git对齐与独立目录
+原生release两套产物验收后暂停供用户检查，不自动进入真实H2或下一大阶段。
+每个大阶段都须用户明确继续才进入下一阶段；周剩35%仍为额外停止上限，不自动push。
+此前手动暂停已由本次继续解除，原断点保留在`target/post_e_h2_rt/s48/p7/pause_receipt.json`。
+
+P-E已验收提交`2f1de02`，P.7操作单已验收提交`9867064`，两者未push。
 571编译输入冻结926a0f1d…，8件Rust源。各host All72全过；4096原FAIL/exit1在实际
 Normal容量3840/3840严格派生EXPECTED_RED，最终Lower与完整收尾均成功。8192本机
 360.459s/8298唯一成功/运行期GC1391，Orin360.087s/8270/GC1379；Lower的18/21 GC另列。
@@ -12,8 +18,10 @@ fresh提交前fmt→Clippy；Orin完整quality/build/behavior同轮通过，无�
 加同源差；这是本批软件来源约定，不是新现场所需同HEAD/clean。
 P-E H入口`local/s48/pe/`：result.json、root_acceptance.md、review/final_review.md及
 两端run原件；ELF本体/缓存/重复传输包不入H。B包外后生归档与commit回执随本包承接。
-P.7操作单已另审，本次文档阶段对齐PLAN并提交；新H2驱动与共享产物校验由两个原生
-子agent按文件开发，正式构建/新驱动验收/现场H2仍未完成。P.7证据暂存
+P.7操作单已提交9867064；新H2驱动、报告oracle与共享产物校验五件Python源码已获独审/root验收，
+本次源码提交。34项合并Python测试、3项helper夹具通过；独审另核8个报告反例与3个真实无害child
+异常路径。root提交前fresh fmt→Clippy及默认PLAN_ONLY通过，571编译输入未改。源码评审见
+`p7/review/source_review.{md,json}`，提交回执随后记录；两端Git同步、原生构建和现场H2未执行。P.7证据暂存
 `target/post_e_h2_rt/s48/p7/`，不在当前P-E H包内；下包同时承接P-E归档后与提交回执。
 新鲜只读盘点确认Orin四件实际安装路径为本仓库`target/release/`，禁止默认release
 构建覆盖它们；使用已有独立`target/rr-r4db-arm/root`缓存，先冻结生产四件再测量三件。

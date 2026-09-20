@@ -2,7 +2,7 @@
   "schema_version": 1,
   "stage": "H",
   "work_state": "P7_SOFTWARE_PREPARATION",
-  "resume_from": "P-E已验收提交2f1de02，P.7操作单已独审；新驱动、产物校验与原生构建准备中，尚未构建/安装/新现场H2。周剩35%收尾暂停，新提交不自动push。",
+  "resume_from": "P7五件Python源/测试及helper已独审/root验收，本次源码提交后受控Git对齐与独立目录原生构建，完成大阶段即暂停检查；新真实H2不自动启动。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
@@ -3574,16 +3574,33 @@
         "commit_receipt": "target/post_e_h2_rt/s48/rr_r4d/b/commit_receipt.json（提交后生件，不在本次H包内）"
       },
       "p7": {
-        "status": "SOFTWARE_PREPARATION",
+        "status": "SOURCE_APPROVED_NATIVE_BUILD_PENDING",
         "runbook": "scripts/systemd/README_dimos_replace.md",
         "plan": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md P.7",
         "local_evidence": "target/post_e_h2_rt/s48/p7/",
         "archive_status": "不在当前P-E H包内；本阶段验收后携带P-E后生回执归下一包。",
-        "driver_and_artifacts": "IMPLEMENTING",
+        "driver_and_artifacts": "SOURCE_AND_OFFLINE_TESTS_APPROVED",
         "build_started": false,
         "deployment_started": false,
         "hardware_started": false,
-        "auto_push": false
+        "auto_push": false,
+        "runbook_commit": "9867064d06cbb93407dcba08d20156eaab5ee721",
+        "agent_model": "gpt-6-astra",
+        "agent_reasoning_effort": "medium",
+        "source_review": {
+          "path": "target/post_e_h2_rt/s48/p7/review/source_review.json",
+          "sha256": "4d231daa535cadde955abfeaa0f1f231898f88eb6414a3904b1897c1e4de6941"
+        },
+        "source_checks": {
+          "root_python_tests": 34,
+          "independent_helper_tests": 3,
+          "independent_report_cases": 8,
+          "independent_child_cases": 3,
+          "root_fmt": "PASS",
+          "root_clippy": "PASS",
+          "default_plan_only": "PASS",
+          "compiled_inputs_unchanged": 571
+        }
       }
     }
   },
@@ -3793,15 +3810,24 @@
   },
   "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。",
   "stop_after_current": {
-    "user_request": "跑到额度剩余35%停下",
+    "user_request": "每一个大阶段完成就暂停让我检查",
     "weekly_remaining_stop_percent": 35,
     "current_package": "S48_P7_SOFTWARE_PREPARATION",
-    "next_package_authorized_to_start": true,
-    "state": "P-E已提交，继续P.7有界软件准备与独立验收。",
+    "next_package_authorized_to_start": false,
+    "state": "已恢复当前P7软件大阶段；完成验收提交即暂停检查，周35%为额外上限。",
     "supersedes": [
       "b 阶段完成后暂停",
       "周额度剩余20%停止点"
     ],
-    "policy": "继续有效开发与独立评审，各验收阶段通过后commit；周剩余35%时安全收尾保存进度。不为消耗额度空转，不自动push；新物理动作须实际现场前置成立。"
+    "policy": "每个大阶段验收通过并commit后汇报成果、验证和遗留问题，暂停等用户检查并明确继续；周剩余35%仍是额外停止上限，任一停止条件先到即收尾。不自动push；新物理动作仍须实际现场前置成立。",
+    "manual_pause": {
+      "at": "2026-09-20T10:54:55.011346+00:00",
+      "weekly_remaining_percent": 89,
+      "receipt": "target/post_e_h2_rt/s48/p7/pause_receipt.json"
+    },
+    "pause_after_each_major_stage": true,
+    "major_stage_boundary": "以已对齐实施计划的大阶段为界，不按小提交计；阶段完成必要验证、独审/root验收与commit后暂停。",
+    "resume_requires_explicit_user_continue": true,
+    "current_stage_authorized_to_resume": true
   }
 }
