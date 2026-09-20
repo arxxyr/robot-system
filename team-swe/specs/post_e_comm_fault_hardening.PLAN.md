@@ -13,7 +13,7 @@
 > 当前覆盖说明（2026-09-20）：上列日期/基线和分工为历史批准稿。W3/W4与RR R0–R4
 > 双主机软件验收已完成，B提交`cdeddd2`且已按用户要求推送origin；用户现授权继续P-E，
 > 周额度剩余35%时收尾暂停。root定方案/整合/提交，原生子agent开发测试、另派独立评审；
-> 新提交不自动push。当前具体进度以HANDOFF及后续P-E节为准，旧20%与B后暂停已被替代。
+> 新提交不自动push。P-E已提交2f1de02，当前P.7准备；具体进度以HANDOFF为准，旧20%与B后暂停已被替代。
 
 ## P.0 范围、所有权与当前事实
 
@@ -2741,46 +2741,71 @@ Orin本轮8质量+3构建+3行为门全满足原期望，无重试。922远端�
 证据入口pe/result.json、root_acceptance.md与review/final_review.md，随H增量归档。
 后续P.7操作单、正式产物与新驱动；D15 OPEN、deployable=false，未启动新现场H2。
 
-## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
+## P.7 部署准备、新 H2 驱动与整候选回滚
 
-S48整候选单位按P.6.14.12扩为gateway/S0/S1相关二进制、unit和配置。下方旧S0
-步骤只作既有模板；W3实际接线后必须按真实路径/unit补齐整套SHA、安装/停止顺序
-及回滚清单并独立评审，不能只回滚S0后声称整套兼容。本轮不执行部署。
+2026-09-20：P-E已验收提交`2f1de02`。本阶段操作单已独审，当前实施软件准备；
+安装、启动业务服务、真实marker授权及新H2尚未执行。完整操作依据为
+[`README_dimos_replace.md`](../../scripts/systemd/README_dimos_replace.md) §0–8；
+其中§9仅保留候选E历史demo，不能当新现场许可。本节替代旧S0单独回滚模板。
 
-改两份arm service：`RestartPreventExitStatus=86 87 89`、guard `--`后加
-`--notify-mode required`，注释解释88可重启及supervisor边界；保留guard六步、
-TimeoutStartSec=infinity、左右身份、serial FIFO/core配置。运行身份均loosqk:loosqk，
-SupplementaryGroups=dialout；左xlerobot_left/left_arm，右xlerobot_right/right_arm；
-配置分别`/etc/robot/xlerobot_left_arm.toml`与`...right_arm.toml`，串口身份必须以
-`deploy::identity`既有D2 by-id精确校验，不凭ttyACM序号选择。默认trust目录分别
-`/var/lib/robot/xlerobot_left`与right（沿latch parent），目录0750，文件0600。
+### P.7.1 整候选与产物
 
-正式现场先确认机器人姿态/断扭与D15风险后，按“左完成并验证，再右”执行：
+候选包含14件：S0/guard/S1/Gateway四个共享ELF、七个unit、两臂配置与RPC角色配置。
+实际drop-in、EnvironmentFile、标定依赖另行盘点，模板不是实际安装状态。只读盘点
+确认Orin四件当前安装于本仓库`target/release/`；构建须使用独立
+`CARGO_TARGET_DIR=target/rr-r4db-arm/root`已有缓存，Cargo前拒绝输出路径或inode
+与安装件重合。不能在准备构建时覆盖现役文件，不cargo clean。
 
-1. 将生产不带hook的s0_daemon/xlerobot_deploy、两个unit、两配置的sha256与原文件备份
-   到`/var/lib/robot/deploy-backups/post-e-<commit>`；不备份用于恢复的授权marker。
-2. `sudo systemctl stop xlerobot-s0-left-arm.service xlerobot-s0-right-arm.service`；
-   现场确认物理断扭后才安装。`sudo install -d -o loosqk -g loosqk -m 0750
-   /var/lib/robot/xlerobot_left /var/lib/robot/xlerobot_right`；目录已有则核权限。
-3. `sudo install -m 0644 scripts/systemd/xlerobot-s0-left-arm.service
-   /etc/systemd/system/xlerobot-s0-left-arm.service`（右同）；二进制必须先写同目录
-   `.post-e-new`再rename到unit记录的绝对路径，不能cp覆盖正在执行的文件；核SHA。
-   `sudo systemctl daemon-reload`。
-4. 左bus断电重上电→USB拔插与枚举记录→以loosqk身份执行
-   `s0_daemon rx-trust status --robot-id xlerobot_left --latch-path
-   /var/lib/robot/xlerobot_left/estop_latch`；非canonical执行同参数revoke至0，再authorize。
-   0/3=已授权，2=拒绝，4=撤销已安全但须规范化，87=并发禁止，1=系统错误；不能把3
-   当“未发生”。左`sudo systemctl start xlerobot-s0-left-arm.service`，日志核消费→
-   首Safety→Connect→Passed→READY Sent；GetState只读核layout/safety/Fault状态。
-5. 左通过后右重复。不带扭矩动作证明“启动可用”，不执行SetEnabled自动试运动。
-   任一Dirty/SSF/超时/锁冲突停在故障处，不自动authorize或反复restart恢复信任。
+原生AArch64、nightly-2026-09-10、jobs=2，所有构建使用
+`--locked --release --message-format=json`，清除profile/RUSTFLAGS/wrapper及测试环境覆盖。
+生产四件先冻结到独占拒覆盖目录：S0和guard保留default，使用`xlerobot-real`；
+S1保留默认组合（含实际配置所需scripted）；Gateway无默认feature。核实际完整feature
+闭包无test-*、Cargo原始artifact executable、源/HEAD/lock/toolchain/ELF183身份、
+自然exit0及日志。生产S0没有安装全局AllocDisabler，不把rt_guard名称当作运行时拦截。
 
-回滚单元为完整候选（二进制+unit+配置），**禁止仅撤guard/mailbox/marker代码**。
-先stop新实例、现场确认断扭，再原子恢复备份的二进制/unit/config，核原SHA，
-`sudo systemctl daemon-reload`；启动旧版前按候选E受监督流程确认，旧版不理解marker，
-不能宣称“信任已恢复”。marker、estop latch都不删除、不从旧授权快照还原；重新启用
-本候选必须重新D9物理边界+authorize。代码回滚在分支保留证据后整范围revert，不reset
-工作区、不清用户修改。无现场授权/验证时上述命令只保留runbook。
+测量三件另存独立冻结目录且使用无默认feature：S0为
+`xlerobot-real,rt_guard,test-comm-fault-hook`，Gateway为`test-comm-fault-hook`，
+comm_fault_e2e为`comm-fault-e2e,real-hw`。测量不启用P-E软件缓存observer，不能拿
+P-E dev/mock ELF或旧产物冒充新件。共享tracked模块只做manifest和只读身份校验；
+一次性release执行器留证据目录，不让正式驱动依赖ignored helper。
+
+### P.7.2 新左 H2 驱动
+
+旧S45驱动及已消费目录仅作参考。新驱动默认PLAN_ONLY，不执行子进程或创建run目录；
+真实执行必须显式选择，绑定双方实际同HEAD/clean、完整新产物清单、D2精确by-id、
+当前配置及原Python标定SHA、六业务服务停止且无真实持有者。安装四件与测量三件分别
+记录。沿实际loosqk UID核RT/资源限制，必要时sudo调试但不混用IPC身份。
+
+取得本次电源/USB物理重置、双臂支撑、清空负载/接触区、连续值守与立即断电手段后，
+root才生成绑定本次唯一run/HEAD/清单的现场事实回执；历史回答不能自动重用。RX维护
+CLI会写锁，不能视为只读；规范化Dirty后只授权一次、启动一次。失败不重授权或自动重跑。
+保留PX56、四组各100预热+1000测量、原重试/恢复间隔、20/s与50ms、wire4、全部时延预算。
+新driver不得删门或自行降低测试规模。
+
+最终必须同时满足原report、EStop/Disarm、final_state.get_state.safety_state==3、
+实际非dry Lower的request/meta/DisableAck身份及非零时间、原子进程真实wait/reap与无残留。
+state3不得掩盖Disable失败；Physical不生成s48_lifecycle.json，不能补造此文件。
+默认零副作用、错误manifest/HEAD/feature/profile/ELF、坏Ack/收尾、启动失败与清理失败等
+以纯夹具和无害临时子进程验证，再独立评审。软件就绪后才能转新现场左H2；右臂另备H1/H3/H2。
+
+### P.7.3 停止、安装与完整回滚边界
+
+共享文件更新前停双臂Gateway→S1→S0并核实际PID/cgroup/手工持有者，不能以stop成功
+推断断扭。handoff active/exited只是过去完成记录，不因清理重启它；其启动可访问两bus。
+旧包备份实际安装文件/元数据/链接/原缺失项和unit启用状态，不备份用于恢复的安全状态。
+每件同目录临时文件先核SHA/权限/fsync，再rename与父目录fsync；只保证逐文件原子，
+不称14件整批事务。整批停止期间完成全部核验，部分失败整套回滚，不混新Gateway与旧S0。
+
+RX marker、latch、clear_pending与稳定锁不从旧包恢复，不替换锁inode。目录0750为
+既定策略须现场核；marker/RX锁0600，latch锁0600、latch0640，guard计数/锁0640。
+guard preflight会在daemon监督/marker消费前真实打开bus，89前也可能已执行安全写。
+86/87/89禁止自动重启；88/90保现有策略，90仅独立监督器截止后双次复核强退，普通owned
+关闭失败为1。维护CLI部分提交3必须停查，不可自动重试authorize。
+
+回滚完成仍保持业务停止，后续启动须适用的新现场边界。独审与root验收后分阶段提交，
+不自动push；当前仍deployable=false、D15 OPEN，不把操作单/产物通过说成已部署或硬件通过。
+P.7方案/审查/开发回执暂存`target/post_e_h2_rt/s48/p7/`；正式软件验收后随下一H包收录，
+并携带P-E归档后和commit回执，禁止回称已存在于当前P-E包。
 
 ## P.8 执行依赖、提交边界与收口
 

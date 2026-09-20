@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "PE_ARCHIVED_PENDING_COMMIT",
-  "resume_from": "P-E双主机软件验收/独审/root通过，归档提交后继续P.7已审操作单与产物/新驱动准备；周剩35%收尾暂停，新提交不自动push。",
+  "work_state": "P7_SOFTWARE_PREPARATION",
+  "resume_from": "P-E已验收提交2f1de02，P.7操作单已独审；新驱动、产物校验与原生构建准备中，尚未构建/安装/新现场H2。周剩35%收尾暂停，新提交不自动push。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
   "status": "S48_PE_SOFTWARE_ACCEPTED",
   "review_status": "APPROVED_PE_SOFTWARE_SCOPE",
   "deployable": false,
-  "scope": "W3/W4、RR R0–R4及双主机软件验收已完成；P-E软件长负载与现场仍待验收，wire4历史FAIL、D15 OPEN、deployable=false。",
+  "scope": "W3/W4、RR R0–R4及P-E双主机软件验收已完成；当前P.7软件准备，现场仍待验收，wire4历史FAIL、D15 OPEN、deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -517,7 +517,9 @@
           }
         },
         "remote_files_verified": 922,
-        "next": "P.7操作单/正式产物/新硬件驱动软件准备；新现场事实待取得"
+        "next": "P.7操作单/正式产物/新硬件驱动软件准备；新现场事实待取得",
+        "commit": "2f1de0278805866428909d1b2c0d1ad3a14b2df4",
+        "commit_receipt": "target/post_e_h2_rt/s48/pe/commit_receipt.json（P-E包外后生件，下一包承接）"
       },
       "a1": {
         "plan_review": "APPROVED",
@@ -3570,6 +3572,18 @@
           "stopped_state_sha256": "46f808853a09a1c4785254f7ccdaa9d1d00c5765f5c5eaf9fe0258bd7f180123"
         },
         "commit_receipt": "target/post_e_h2_rt/s48/rr_r4d/b/commit_receipt.json（提交后生件，不在本次H包内）"
+      },
+      "p7": {
+        "status": "SOFTWARE_PREPARATION",
+        "runbook": "scripts/systemd/README_dimos_replace.md",
+        "plan": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md P.7",
+        "local_evidence": "target/post_e_h2_rt/s48/p7/",
+        "archive_status": "不在当前P-E H包内；本阶段验收后携带P-E后生回执归下一包。",
+        "driver_and_artifacts": "IMPLEMENTING",
+        "build_started": false,
+        "deployment_started": false,
+        "hardware_started": false,
+        "auto_push": false
       }
     }
   },
@@ -3781,9 +3795,9 @@
   "stop_after_current": {
     "user_request": "跑到额度剩余35%停下",
     "weekly_remaining_stop_percent": 35,
-    "current_package": "S48_P_E_CLOSEOUT_THEN_P7",
+    "current_package": "S48_P7_SOFTWARE_PREPARATION",
     "next_package_authorized_to_start": true,
-    "state": "P-E双端验收通过，归档提交后继续P.7有界软件准备。",
+    "state": "P-E已提交，继续P.7有界软件准备与独立验收。",
     "supersedes": [
       "b 阶段完成后暂停",
       "周额度剩余20%停止点"

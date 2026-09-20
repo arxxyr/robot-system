@@ -2,7 +2,7 @@
 
 ## 当前步骤
 
-**2026-09-20 P-E 双主机软件验收已通过独审/root验收，归档提交后继续P.7软件准备；周剩35%收尾暂停。**
+**2026-09-20 P-E 已验收提交 `2f1de02`，未push；继续P.7软件准备，周剩35%收尾暂停。**
 571编译输入冻结926a0f1d…，8件Rust源。各host All72全过；4096原FAIL/exit1在实际
 Normal容量3840/3840严格派生EXPECTED_RED，最终Lower与完整收尾均成功。8192本机
 360.459s/8298唯一成功/运行期GC1391，Orin360.087s/8270/GC1379；Lower的18/21 GC另列。
@@ -12,7 +12,13 @@ fresh提交前fmt→Clippy；Orin完整quality/build/behavior同轮通过，无�
 加同源差；这是本批软件来源约定，不是新现场所需同HEAD/clean。
 P-E H入口`local/s48/pe/`：result.json、root_acceptance.md、review/final_review.md及
 两端run原件；ELF本体/缓存/重复传输包不入H。B包外后生归档与commit回执随本包承接。
-P.7操作单已另审，作为下一独立提交；正式产物、新驱动、自测和新现场验证仍未完成。
+P.7操作单已另审，本次文档阶段对齐PLAN并提交；新H2驱动与共享产物校验由两个原生
+子agent按文件开发，正式构建/新驱动验收/现场H2仍未完成。P.7证据暂存
+`target/post_e_h2_rt/s48/p7/`，不在当前P-E H包内；下包同时承接P-E归档后与提交回执。
+新鲜只读盘点确认Orin四件实际安装路径为本仓库`target/release/`，禁止默认release
+构建覆盖它们；使用已有独立`target/rr-r4db-arm/root`缓存，先冻结生产四件再测量三件。
+六服务inactive，handoff active/exited且MainPID0；这不是电机物理断电证明。实际SSH
+loosqk的rtprio为99/99、memlock unlimited，沿该UID核验，不默认sudo整个IPC进程。
 R4d-B双主机软件验收通过，独立终审及root验收无阻断；已提交`cdeddd2`，
 并按用户“先push”推送`origin/feat/post-e-comm-fault-hardening`。
 B归档后回执见git及 `target/post_e_h2_rt/s48/rr_r4d/b/commit_receipt.json`；
