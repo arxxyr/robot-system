@@ -265,6 +265,113 @@ class ArtifactTests(unittest.TestCase):
                 a.validate_installed_snapshot(snapshot(read(dict(properties, **{key: after}))),
                                               snapshot(read(dict(properties, **{key: before}))))
 
+    def test_systemd_omitted_arrays_require_typed_empty(self):
+        unit = a.BUSINESS_UNITS[0]
+        properties = {key: "" for key in a.UNIT_PROPERTIES}
+        properties.update(Id=unit, LoadState="loaded", ActiveState="inactive", SubState="dead", MainPID="0")
+
+        def show(missing=()):
+            return SimpleNamespace(returncode=0, stdout="\n".join(k + "=" + v for k, v in properties.items()
+                                                                 if k not in missing))
+
+        def proof(names):
+            return {"unit": unit, "object_path": "/org/freedesktop/systemd1/unit/fixture_2eservice",
+                    "load_state": "loaded", "connection_closed": True,
+                    "properties": {name: {"array": True, "element_signature": a.SYSTEMD_EMPTY_PROPERTY_SIGNATURES[name],
+                                           "count": 0} for name in names}}
+
+        with patch.object(a.subprocess, "run", return_value=show()) as run:
+            normal = a.read_systemd_unit(unit)
+            self.assertEqual(run.call_count, 1)
+        for names in (("ExecStop",), ("EnvironmentFiles",), ("ExecStop", "EnvironmentFiles")):
+            with patch.object(a.subprocess, "run", side_effect=[show(names), SimpleNamespace(returncode=0, stdout=json.dumps(proof(names)))]) as run:
+                self.assertEqual(a.read_systemd_unit(unit), normal)
+                self.assertEqual(run.call_count, 2)
+                args = run.call_args.args[0]
+                self.assertEqual(args[:2], ["/usr/bin/python3", "-c"])
+                self.assertEqual(args[3], unit)
+                self.assertEqual(json.loads(args[4]), sorted(names))
+        mutations = [lambda p: p["properties"]["ExecStop"].update(count=1),
+                     lambda p: p["properties"]["ExecStop"].update(count=False),
+                     lambda p: p["properties"]["ExecStop"].update(array=False),
+                     lambda p: p["properties"]["ExecStop"].update(element_signature="(sb)"),
+                     lambda p: p.update(unit="other.service"), lambda p: p.update(load_state="not-found"),
+                     lambda p: p.update(connection_closed=False), lambda p: p.update(object_path="/wrong"),
+                     lambda p: p["properties"].pop("ExecStop"),
+                     lambda p: p["properties"].update(Unknown={})]
+        for mutate in mutations:
+            value = proof(["ExecStop"])
+            mutate(value)
+            with self.subTest(mutate=mutate), patch.object(a.subprocess, "run", side_effect=[show(["ExecStop"]), SimpleNamespace(returncode=0, stdout=json.dumps(value))]), self.assertRaises(ValueError):
+                a.read_systemd_unit(unit)
+        for response in (SimpleNamespace(returncode=1, stdout=""), SimpleNamespace(returncode=0, stdout="{}")):
+            with patch.object(a.subprocess, "run", side_effect=[show(["ExecStop"]), response]), self.assertRaises(ValueError):
+                a.read_systemd_unit(unit)
+        with patch.object(a.subprocess, "run", side_effect=[show(["ExecStop"]), TimeoutError("超时")]), self.assertRaises(TimeoutError):
+            a.read_systemd_unit(unit)
+        for missing in (("MainPID",), ("ExecStop", "Environment")):
+            with patch.object(a.subprocess, "run", return_value=show(missing)) as run, self.assertRaises(ValueError):
+                a.read_systemd_unit(unit)
+            self.assertEqual(run.call_count, 1)
+
+    def test_systemd_probe_private_connection_closes_on_success_and_failure(self):
+        import contextlib
+        import io
+
+        class Array(list):
+            signature = "(sasbttttuii)"
+
+        class Bus:
+            def __init__(self):
+                self.closed = False
+                self.loads = []
+                self.fail_load = False
+                self.fail_get = False
+
+            def get_object(self, service, path):
+                return self
+
+            def LoadUnit(self, unit):
+                self.loads.append(unit)
+                if self.fail_load:
+                    raise RuntimeError("配置加载失败")
+                return "/org/freedesktop/systemd1/unit/fixture_2eservice"
+
+            def Get(self, interface, name):
+                if self.fail_get:
+                    raise RuntimeError("属性读取失败")
+                if name == "Id":
+                    return a.BUSINESS_UNITS[0]
+                if name == "LoadState":
+                    return "loaded"
+                return Array()
+
+            def close(self):
+                self.closed = True
+
+        for failure in (None, "load", "get"):
+            bus = Bus()
+            bus.fail_load = failure == "load"
+            bus.fail_get = failure == "get"
+            calls = []
+
+            def system_bus(*, private):
+                calls.append(private)
+                return bus
+
+            fake = SimpleNamespace(SystemBus=system_bus, Interface=lambda obj, interface: obj,
+                                   Array=Array, __file__="/fixture/dbus.py")
+            with patch.dict(sys.modules, {"dbus": fake}), patch.object(sys, "argv", ["probe", a.BUSINESS_UNITS[0], '["ExecStop"]']), contextlib.redirect_stdout(io.StringIO()) as output:
+                if failure:
+                    with self.assertRaises(RuntimeError):
+                        exec(a.SYSTEMD_EMPTY_PROPERTY_PROBE, {})
+                else:
+                    exec(a.SYSTEMD_EMPTY_PROPERTY_PROBE, {})
+                    self.assertTrue(json.loads(output.getvalue())["connection_closed"])
+            self.assertEqual(calls, [True])
+            self.assertEqual(bus.loads, [a.BUSINESS_UNITS[0]])
+            self.assertTrue(bus.closed)
+
     def test_clean_build_environment(self):
         contaminated = {"PATH": "/usr/bin", "CARGO_PROFILE_RELEASE_OPT_LEVEL": "0",
                         "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS": "bad",

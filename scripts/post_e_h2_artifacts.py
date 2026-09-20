@@ -279,12 +279,73 @@ UNIT_PROPERTIES = (
 )
 
 
+# 主驱动仍使用项目 Python；这个 Linux 属性探针复用系统已有的 python3-dbus。
+# 缺绑定或 D-Bus 查询失败一律拒绝，不安装依赖，不调用 StartUnit/RefUnit。
+SYSTEMD_EMPTY_PROPERTY_PROBE = r'''
+import dbus
+import json
+import sys
+
+unit = sys.argv[1]
+names = json.loads(sys.argv[2])
+bus = dbus.SystemBus(private=True)
+try:
+    manager = dbus.Interface(bus.get_object("org.freedesktop.systemd1", "/org/freedesktop/systemd1"),
+                             "org.freedesktop.systemd1.Manager")
+    path = manager.LoadUnit(unit)
+    properties = dbus.Interface(bus.get_object("org.freedesktop.systemd1", path),
+                                "org.freedesktop.DBus.Properties")
+    result = {"unit": str(properties.Get("org.freedesktop.systemd1.Unit", "Id")),
+              "object_path": str(path), "load_state": str(properties.Get("org.freedesktop.systemd1.Unit", "LoadState")),
+              "python": sys.version, "dbus_file": dbus.__file__, "properties": {}}
+    for name in names:
+        value = properties.Get("org.freedesktop.systemd1.Service", name)
+        result["properties"][name] = {"array": isinstance(value, dbus.Array),
+                                      "element_signature": str(getattr(value, "signature", "")),
+                                      "count": len(value)}
+finally:
+    bus.close()
+result["connection_closed"] = True
+print(json.dumps(result))
+'''
+
+SYSTEMD_EMPTY_PROPERTY_SIGNATURES = {"ExecStop": "(sasbttttuii)", "EnvironmentFiles": "(sb)"}
+
+
+def confirm_empty_systemd_properties(unit, names):
+    """只对 show 省略的两个复杂属性，以同一 D-Bus 连接核实际 typed 空数组。"""
+    require(unit in (*BUSINESS_UNITS, HANDOFF_UNIT) and names
+            and set(names) <= set(SYSTEMD_EMPTY_PROPERTY_SIGNATURES), "未批准的空属性查询")
+    result = subprocess.run(["/usr/bin/python3", "-c", SYSTEMD_EMPTY_PROPERTY_PROBE,
+                             unit, json.dumps(sorted(names))],
+                            capture_output=True, text=True, timeout=20, check=False)
+    require(result.returncode == 0, "systemd typed 属性查询失败：" + unit)
+    proof = strict_json(result.stdout)
+    require(proof.get("unit") == unit and proof.get("load_state") == "loaded"
+            and proof.get("connection_closed") is True
+            and re.fullmatch(r"/org/freedesktop/systemd1/unit/[A-Za-z0-9_]+", proof.get("object_path", ""))
+            and set(proof.get("properties", {})) == set(names), "systemd typed 属性来源或集合错误")
+    for name in names:
+        value = proof["properties"][name]
+        require(value.get("array") is True
+                and value.get("element_signature") == SYSTEMD_EMPTY_PROPERTY_SIGNATURES[name]
+                and type(value.get("count")) is int and value["count"] == 0,
+                "systemd 属性未被证明是准确签名的空数组：" + name)
+    return proof
+
+
 def read_systemd_unit(unit):
     require(unit in (*BUSINESS_UNITS, HANDOFF_UNIT), "未批准读取的 unit")
     result = subprocess.run(["systemctl", "show", unit, "--property=" + ",".join(UNIT_PROPERTIES)],
                             capture_output=True, text=True, timeout=20, check=False)
     require(result.returncode == 0, "systemctl 只读查询失败：" + unit)
     fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    missing = set(UNIT_PROPERTIES) - set(fields)
+    require(set(fields) <= set(UNIT_PROPERTIES) and missing <= set(SYSTEMD_EMPTY_PROPERTY_SIGNATURES),
+            "unit 属性缺失或有额外字段")
+    if missing:
+        confirm_empty_systemd_properties(unit, missing)
+        fields.update({name: "" for name in missing})
     require(set(fields) == set(UNIT_PROPERTIES), "unit 属性缺失")
     for key in ("ExecStart", "ExecStop", "Environment", "EnvironmentFiles"):
         raw = fields[key]

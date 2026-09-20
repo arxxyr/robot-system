@@ -12,7 +12,12 @@ P-E已验收提交`2f1de02`，P.7操作单已验收提交`9867064`，两者未pu
 P.7五件Python源码已提交`8491b42`。同步前置发现六unit的14处依赖显示顺序重排，
 原依赖与安装件未变；仅对七类依赖属性排序且保留重复，有序属性继续逐字核验。
 r2独审通过，fresh fmt→Clippy与35项合并Python测试通过；原两次拒绝和八件独立备份保留。
-源码修复提交后才绑定新HEAD进行快进和原生构建，当前尚未执行。
+r2已提交`c759082`；随后实际shared预检发现systemd省略ExecStop/EnvironmentFiles空复杂属性，
+`--all`仍省略，短命GetUnit因inactive unit未加载而拒绝，原失败均保留。r3仅对这两项
+通过系统已有python3-dbus的同一私有连接LoadUnit→typed Get证明准确签名/零元素，
+finally关闭，无Start/Ref；Orin七unit与完整安装快照实证通过。13项产物测试、
+16项独立拒绝案例和root fresh fmt→Clippy→37项合并测试通过；源码修复提交后
+重新绑定HEAD快进，当前fetch/restore/ff/Cargo均未执行。
 571编译输入冻结926a0f1d…，8件Rust源。各host All72全过；4096原FAIL/exit1在实际
 Normal容量3840/3840严格派生EXPECTED_RED，最终Lower与完整收尾均成功。8192本机
 360.459s/8298唯一成功/运行期GC1391，Orin360.087s/8270/GC1379；Lower的18/21 GC另列。
