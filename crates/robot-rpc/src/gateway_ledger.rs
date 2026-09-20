@@ -106,13 +106,22 @@ impl GatewayLedger {
         ttl_ns: u64,
         max_entries: usize,
     ) -> Result<SharedLedger, ClassCacheConfigError> {
+        let cache = ClassCache::with_reserves(
+            ttl_ns,
+            max_entries,
+            Reserves::DEFAULT,
+            EntryIdAllocator::global(),
+        )?;
+        #[cfg(feature = "test-comm-fault-hook")]
+        let cache = {
+            let mut cache = cache;
+            if std::env::var("ROBOT_TEST_PE_CACHE_OBSERVE").as_deref() == Ok("1") {
+                cache.enable_admission_observation();
+            }
+            cache
+        };
         Ok(Arc::new(Mutex::new(Self {
-            cache: ClassCache::with_reserves(
-                ttl_ns,
-                max_entries,
-                Reserves::DEFAULT,
-                EntryIdAllocator::global(),
-            )?,
+            cache,
             writes: HashMap::new(),
             reads: HashMap::new(),
             faulted: false,
@@ -130,7 +139,10 @@ impl GatewayLedger {
         now_ns: u64,
     ) -> BeginWrite {
         // 即使已停止入口，重放/冲突仍先由同一缓存判断；新的占位由调用方 guard 清理。
-        match self.cache.decide(method, key, fingerprint, class, now_ns) {
+        let decision = self.cache.decide(method, key, fingerprint, class, now_ns);
+        #[cfg(feature = "test-comm-fault-hook")]
+        self.observe_admission(method, key, class, request_id, now_ns, &decision);
+        match decision {
             ClassDecision::Fresh(placeholder) => {
                 let id = placeholder.id();
                 self.writes.insert(
@@ -163,6 +175,49 @@ impl GatewayLedger {
                 BeginWrite::Refused(refused)
             }
         }
+    }
+
+    /// 仍在原 ledger 锁内读取本次判定；日志不授予许可或执行额外 GC。
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn observe_admission(
+        &self,
+        method: Method,
+        key: &str,
+        class: Class,
+        request_id: &str,
+        now_ns: u64,
+        decision: &ClassDecision,
+    ) {
+        let Some(snapshot) = self.cache.admission_observation() else {
+            return;
+        };
+        let (kind, capacity_class, capacity_len, capacity_threshold, entry_id) = match decision {
+            ClassDecision::Fresh(placeholder) => {
+                ("Fresh", None, None, None, Some(placeholder.id()))
+            }
+            ClassDecision::Replay(_) => ("Replay", None, None, None, None),
+            ClassDecision::Conflict { .. } => ("Conflict", None, None, None, None),
+            ClassDecision::InFlight { .. } => ("InFlight", None, None, None, None),
+            ClassDecision::Capacity {
+                class,
+                len,
+                threshold,
+            } => ("Capacity", Some(*class), Some(*len), Some(*threshold), None),
+            ClassDecision::IdExhausted => ("IdExhausted", None, None, None, None),
+        };
+        tracing::info!(
+            method = method.as_str(), request_id, key, now_ns,
+            incoming_class = ?class, decision = kind, entry_id = ?entry_id,
+            capacity_class = ?capacity_class, capacity_len = ?capacity_len,
+            capacity_threshold = ?capacity_threshold,
+            before_gc_len = snapshot.before_gc_len, gc_removed = snapshot.removed,
+            post_gc_len = snapshot.post_gc_len, threshold = snapshot.threshold,
+            max_entries = snapshot.max_entries, ttl_ns = snapshot.ttl_ns,
+            class_stage = ?snapshot.class_stage,
+            classes = "Emergency,Lower,Restore,Normal",
+            stages = "Queued,Sending,Publishing,Sent,Orphan,RepliedUnretired,NoHandle,Committed,StartedRetired,UnknownRetired",
+            point = "post_gc_pre_admission", "S48原缓存准入"
+        );
     }
 
     pub(crate) fn begin_read(

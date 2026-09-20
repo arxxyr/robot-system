@@ -12,7 +12,7 @@ use super::harness::{Case, isolated_command, stop, wait_exit, wait_log};
 use super::report::Report;
 use super::{Args, Phase, rpc, startup};
 
-pub(super) const SOFTWARE_LOAD_ACCEPTANCE: &str = "S-46";
+pub(super) const SOFTWARE_LOAD_ACCEPTANCE: &str = "S-48/P-E";
 
 pub(super) async fn run(args: &Args, report: &mut Report) -> Result<(), String> {
     super::validate_w4_case(args.phase, args.case.as_deref())?;

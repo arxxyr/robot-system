@@ -69,6 +69,7 @@ struct Progress {
     requests: Vec<Value>,
     starts: Vec<Arc<AtomicU64>>,
     first_failure: Option<Value>,
+    failures: Vec<Value>,
     peak_tracked: usize,
     admission_rejection: Option<Value>,
 }
@@ -117,14 +118,19 @@ impl BackgroundHealth {
     }
 
     fn fail(&self, error: impl Into<String>) {
+        self.fail_from(&error.into(), &json!({"kind":"supervisor"}));
+    }
+
+    fn fail_from(&self, error: &str, source: &Value) {
         let mut progress = self
             .progress
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let failure = json!({"stamp_ns":self.clock.now().0,"error":error,"source":source});
         if progress.first_failure.is_none() {
-            progress.first_failure =
-                Some(json!({"stamp_ns":self.clock.now().0,"error":error.into()}));
+            progress.first_failure = Some(failure.clone());
         }
+        progress.failures.push(failure);
         drop(progress);
         self.stop();
     }
@@ -229,6 +235,7 @@ impl RequestPump {
         };
         let meta = command_meta(true, 2000);
         let request_id = meta.request_id.clone();
+        let request_key = meta.idempotency_key.clone();
         let started_slot = Arc::new(AtomicU64::new(0));
         let index = {
             let mut progress = self
@@ -282,7 +289,8 @@ impl RequestPump {
                 outcome["ok"] = json!(false);
             }
             if outcome["ok"] == true { health.successful.fetch_add(1, Ordering::AcqRel); }
-            else { health.fail(format!("请求 {index} / {request_id}：{outcome}")); }
+            else { health.fail_from(&format!("请求 {index} / {request_id}：{outcome}"),
+                &json!({"kind":"request","sequence":index,"request_id":request_id,"idempotency_key":request_key})); }
             health.update(index, |row| {
                 row["started_ns"] = json!(started);
                 row["deadline_ns"] = json!(started.checked_add(RR_TIMEOUT_NS));
@@ -545,7 +553,7 @@ fn background_report(health: &BackgroundHealth, started_ns: u64, scheduler: &[u6
         .saturating_sub(starts.first().copied().unwrap_or(0));
     let intervals = u32::try_from(starts.len().saturating_sub(1)).unwrap_or(u32::MAX);
     json!({"valid_responses":rr.len()>=2 && progress.first_failure.is_none() && unfinished.is_empty() && rr.iter().all(|row| row["ok"]==true),
-            "valid_cadence":cadence,"first_failure":progress.first_failure,"admission_rejection":progress.admission_rejection,"rr_target_per_second":20,
+            "valid_cadence":cadence,"first_failure":progress.first_failure,"failures":progress.failures,"admission_rejection":progress.admission_rejection,"rr_target_per_second":20,
             "rr_actual_per_second":if elapsed==0 {0.0} else {f64::from(intervals)/Duration::from_nanos(elapsed).as_secs_f64()},
             "started_ns":started_ns,"stop_ns":stop_ns,"drained_ns":health.drained_ns.load(Ordering::Acquire),"finished_ns":health.clock.now().0,
             "launched":rr.len(),"completed":rr.len()-unfinished.len(),"peak_tracked":progress.peak_tracked,
@@ -849,6 +857,30 @@ mod tests {
         .await;
         assert!(!called.load(Ordering::Acquire));
         assert_eq!(evidence["disable"]["attempted"], false);
+    }
+
+    #[tokio::test]
+    async fn final_disable_keeps_wrong_ack_identity_and_dry_run_for_review() {
+        let evidence = super::super::sla::confirm_and_disable(
+            async {
+                Ok(robot_rpc::proto::RobotState {
+                    safety_state: 3,
+                    ..Default::default()
+                })
+            },
+            async {
+                Ok(Ack {
+                    request_id: "wrong-ack".into(),
+                    dry_run: true,
+                    cleared_at_ns: 7,
+                })
+            },
+            "sent-id",
+        )
+        .await;
+        assert_eq!(evidence["ok"], false);
+        assert_eq!(evidence["disable"]["request_id"], "wrong-ack");
+        assert_eq!(evidence["disable"]["dry_run"], true);
     }
 
     #[test]

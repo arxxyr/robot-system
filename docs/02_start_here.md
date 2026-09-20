@@ -20,8 +20,8 @@
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     R4d-B双主机软件验收已通过；本包归档提交后暂停，P-E未开始
-当前授权:     按最新指令完成B的验收与提交后暂停；不进入P-E，不push
+当前步骤:     P-E双主机软件验收/独审通过，归档提交后继续P.7软件准备
+当前授权:     2026-09-20继续P-E；周额度剩余35%时收尾暂停，新提交不自动push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS；H2两次FAIL，现场已确认左臂断电；右臂未测
 ```
@@ -41,11 +41,14 @@ R4c监督退出与真实重启已提交1b0feff；R4d-A原连接真竞争已提�
 R4d-B在同一A源码基线上完成双主机软件验收：570编译输入一致，未改生产/测试
 源码；本机14 fresh/53按目标复用，Orin按五轮实际来源覆盖67有效门。原四FAIL
 保留，原生26报告/19新增profile实例及真实manager场景通过，独审/root已验收。
-本包归档提交后暂停，P-E长负载未开始；默认并行CI锁例旧限制仍未修复。
+B已提交cdeddd2并推送origin；P-E两端同571编译输入各All72全过，4096原FAIL/exit1
+严格派生EXPECTED_RED；8192本机360.459s/8298新写、Orin360.087s/8270新写，运行期
+GC分别1391/1379。完整收尾与独审/root验收通过，仅软件；后续P.7正式产物和新驱动准备。
+最新周额度35%停止线取代此前B后暂停与20%停止线；默认并行CI锁例旧限制仍未修复。
 原门/原件、恢复过程和精确身份均以HANDOFF/H包为准，不将分批结果称单轮全过。
 
 左H1/H3通过、H2两次FAIL；用户最后确认左臂断电、双臂支撑。右臂未测，
-六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。R4d-B已在Orin完成受控软件验证，
+六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。R4d-B及P-E均已在Orin完成受控软件验证，
 末轮相关进程/IPC/unit已清理，未访问电机或更新现场物理状态。Orin调试/RT必要时直接sudo；标定使用已有
 Python JSON。新H2须先完成软件验收/提交/两端对齐，再取得新物理重置与在场事实，
 不得复用已消费的left_h2_current目录或旧驱动。
@@ -53,8 +56,7 @@ Python JSON。新H2须先完成软件验收/提交/两端对齐，再取得新�
 证据唯一入口为 [H.json](../.verify/post_e_comm_fault_hardening/H.json) 和
 [H_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)；C5独立
 基线保留C5.json/C5_evidence.tar.gz。精简前入口文档保存在H包W3/root_closeout，
-旧失败实件保留；后续通过不能回填旧来源。W4/P-E尚未完成，RR跨原子可见性
-证明另列待办，不称优先级改动已通过硬件长负载。
+旧失败实件保留；后续通过不能回填旧来源。W4/R4及P-E双环境软件验证已完成；不外推额外内存序证明，不称优先级改动已通过硬件长负载。
 
 ---
 

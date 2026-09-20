@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "RR_R4D_B_COMPLETE_PAUSED",
-  "resume_from": "R4d-B两端有效67门与独审/root验收已通过，本包归档提交后暂停。P-E未开始，等待用户新的继续指令；不push，不启动硬件验证。",
+  "work_state": "PE_ARCHIVED_PENDING_COMMIT",
+  "resume_from": "P-E双主机软件验收/独审/root通过，归档提交后继续P.7已审操作单与产物/新驱动准备；周剩35%收尾暂停，新提交不自动push。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_RR_R4D_B_COMPLETE_PAUSED",
-  "review_status": "APPROVED_R4DB_SOFTWARE_SCOPE",
+  "status": "S48_PE_SOFTWARE_ACCEPTED",
+  "review_status": "APPROVED_PE_SOFTWARE_SCOPE",
   "deployable": false,
-  "scope": "W3/W4a/W4b、RR R0–R3及R4a/R4b1/R4b2/R4b3本地范围已验收；剩余T8/SUP/ENV和双主机、P-E、现场仍未完成，wire4历史FAIL、D15 OPEN、deployable=false。",
+  "scope": "W3/W4、RR R0–R4及双主机软件验收已完成；P-E软件长负载与现场仍待验收，wire4历史FAIL、D15 OPEN、deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -391,8 +391,134 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "W3_APPROVED_SOFTWARE_SCOPE_W4_PENDING",
+      "status": "W4_R4_PE_APPROVED_SOFTWARE_SCOPE",
       "implementation_started": true,
+      "pe": {
+        "status": "PASS_SOFTWARE",
+        "plan_review": "APPROVED",
+        "source_review": "APPROVED",
+        "source_manifest_sha256": "926a0f1d1f95ff4587d9ced40a466b259ce910998004f5ab67dde7fbdfa7ae87",
+        "source_input_count": 571,
+        "local_unit_tests": {
+          "tools": 178,
+          "rpc_hook": 309,
+          "failed": 0
+        },
+        "plan": "target/post_e_h2_rt/s48/pe/plan/root_execution_contract.md",
+        "base_commit": "cdeddd2d12aaa7d268543de36d144b76bbe3c51b",
+        "evidence": "target/post_e_h2_rt/s48/pe",
+        "resume_authorized": "2026-09-20",
+        "weekly_remaining_stop_percent": 35,
+        "long_load_started": true,
+        "hardware_started": false,
+        "auto_push": false,
+        "long_load_run": "target/post_e_h2_rt/s48/pe/runs/x86/20260920T095219Z_495b4f701516/run.json",
+        "evidence_review": "APPROVED",
+        "root_review": "APPROVED",
+        "result": "local/s48/pe/result.json",
+        "result_sha256": "49e4190e9547d9aec3144df144297fc9098a127a0cc50e1527e30b8b54a34f75",
+        "final_review": "local/s48/pe/review/final_review.md",
+        "final_review_sha256": "de2204ad6008459401d33056aa70afddc1acd0e1d6a5353c6bf3831256c31053",
+        "root_acceptance": "local/s48/pe/root_acceptance.md",
+        "hosts": {
+          "x86": {
+            "actual_head": "cdeddd2d12aaa7d268543de36d144b76bbe3c51b",
+            "formal_run": {
+              "path": "target/post_e_h2_rt/s48/pe/runs/x86/20260920T095219Z_495b4f701516/run.json",
+              "sha256": "e935a4d6abef120933f7524f8a614e1dbb337c64c8495064d5f1c4c7baf5b8e5",
+              "bytes": 251567
+            },
+            "loads": {
+              "4096": {
+                "raw_report_status": "FAIL",
+                "raw_exit": 1,
+                "verdict": "EXPECTED_RED",
+                "elapsed_ns": 166901860920,
+                "successful_unique": 3840,
+                "normal": 3338,
+                "restore": 502,
+                "gc_removed": 0,
+                "final_lower_gc_removed": 0,
+                "final_stop_and_children_reaped": true,
+                "valid_cadence": true,
+                "acceptance": {
+                  "path": "target/post_e_h2_rt/s48/pe/runs/x86/20260920T095219Z_495b4f701516/e2e/load4096/000_mock_h2_load/s48_acceptance.json",
+                  "sha256": "7e0fd1bdfdfaf8bcc08af6d49f33386f69f6a2c260d3e2659d69766e8324f3ba",
+                  "bytes": 172623
+                }
+              },
+              "8192": {
+                "raw_report_status": "PASS",
+                "raw_exit": 0,
+                "verdict": "GREEN",
+                "elapsed_ns": 360459459381,
+                "successful_unique": 8298,
+                "normal": 7210,
+                "restore": 1088,
+                "gc_removed": 1391,
+                "final_lower_gc_removed": 18,
+                "final_stop_and_children_reaped": true,
+                "valid_cadence": true,
+                "acceptance": {
+                  "path": "target/post_e_h2_rt/s48/pe/runs/x86/20260920T095219Z_495b4f701516/e2e/load8192/000_mock_h2_load/s48_acceptance.json",
+                  "sha256": "2069a25ee115a5d63eb47759d14a533393424d84fc06986da252f33036e09552",
+                  "bytes": 1694070
+                }
+              }
+            },
+            "all_cases": 72
+          },
+          "arm": {
+            "actual_head": "f9a85be4f7064a54695eb33a7f5bf022d31b64eb",
+            "formal_run": {
+              "path": "target/post_e_h2_rt/s48/pe/runs/arm/20260920T095359Z_dfbafdc59d8f/run.json",
+              "sha256": "53a890f5b94a03403039fdb32d5a32c7dff974ab0af114ff897656401474c703",
+              "bytes": 271541
+            },
+            "loads": {
+              "4096": {
+                "raw_report_status": "FAIL",
+                "raw_exit": 1,
+                "verdict": "EXPECTED_RED",
+                "elapsed_ns": 167301710816,
+                "successful_unique": 3840,
+                "normal": 3346,
+                "restore": 494,
+                "gc_removed": 0,
+                "final_lower_gc_removed": 0,
+                "final_stop_and_children_reaped": true,
+                "valid_cadence": true,
+                "acceptance": {
+                  "path": "target/post_e_h2_rt/s48/pe/runs/arm/20260920T095359Z_dfbafdc59d8f/e2e/load4096/000_mock_h2_load/s48_acceptance.json",
+                  "sha256": "35ca70414de4b0db4613c2abb2afb38fc40d62c34dfe2878c8b63fad7ebfb9ea",
+                  "bytes": 172626
+                }
+              },
+              "8192": {
+                "raw_report_status": "PASS",
+                "raw_exit": 0,
+                "verdict": "GREEN",
+                "elapsed_ns": 360086735552,
+                "successful_unique": 8270,
+                "normal": 7202,
+                "restore": 1068,
+                "gc_removed": 1379,
+                "final_lower_gc_removed": 21,
+                "final_stop_and_children_reaped": true,
+                "valid_cadence": true,
+                "acceptance": {
+                  "path": "target/post_e_h2_rt/s48/pe/runs/arm/20260920T095359Z_dfbafdc59d8f/e2e/load8192/000_mock_h2_load/s48_acceptance.json",
+                  "sha256": "45db5f732b866975b6cc5056beba5c9a1d33f633a629e582e29e7645031af81f",
+                  "bytes": 1689667
+                }
+              }
+            },
+            "all_cases": 72
+          }
+        },
+        "remote_files_verified": 922,
+        "next": "P.7操作单/正式产物/新硬件驱动软件准备；新现场事实待取得"
+      },
       "a1": {
         "plan_review": "APPROVED",
         "record_encoding_review": "ACK_112_BYTE_RECORD",
@@ -422,8 +548,8 @@
       },
       "user_requirement": "基础控制走高优先级通道，关节位置等连续目标走普通通道",
       "candidate": "唯一state owner与单disk writer解耦；可恢复Clear事务标记与原子提交权限；端到端有界容量保留",
-      "review_blocker": "W3软件验收无剩余阻断；W4/P-E及两端同源/新现场验证未完成。",
-      "hardware_scope": "左臂已断电；仅软件设计与验证，不打开串口",
+      "review_blocker": "P-E软件范围无剩余阻断；仍须P.7正式产物/新驱动、新提交对齐与新的现场验收。默认并行锁例旧限制未闭合。",
+      "hardware_scope": "仅隔离mock软件验证，不打开串口；左断电与双臂支撑仅为上次现场记录，本批未更新物理事实。",
       "queues": {
         "high": "live基础控制",
         "ordinary": "dry-run与诊断；关节目标latest-only",
@@ -1119,11 +1245,12 @@
         "production_activation_approved": false
       },
       "capacity_policy": {
-        "status": "PLAN_APPROVED_NOT_IMPLEMENTED",
+        "status": "IMPLEMENTED_W3_PE_SOFTWARE_VERIFIED",
         "plan": "P.6.14.10",
         "root_approval": "local/s48/a3/root_capacity_policy_r3_approval.md",
         "root_approval_sha256": "bca97574a314e59f7981ae98e53f90198021578bef36461bfc7f98add9dabc16",
-        "production_activation_approved": false
+        "production_activation_approved": false,
+        "scope_note": "W3已接生产调用方，P-E两容量软件验收/独审/root通过；现场部署/启用独立，未自动放行。"
       },
       "priority_primitives": {
         "status": "PM_PT_PS1_PL1_PG1_PA1_APPROVED",
@@ -2243,13 +2370,14 @@
         "post_archive_boundary": "W4a原归包后独审及commit_receipt.json已随本次W4b归包携带；不反称存在于先前W4a tar。"
       },
       "w4_remaining": {
-        "status": "RR_R2_IMPLEMENTATION",
-        "rr": "R0来源构建与R1 CAL/同源模型已本地验收；R2 IOX原route/pin/退出、R3本方迁移、R4矩阵继续。",
+        "status": "W4_RR_SOFTWARE_COMPLETE",
+        "rr": "R0–R4软件实现与验收已闭环；R4c/C、R4d-A及R4d-B双端证据见对应分包，P-E另单独验收。",
         "rr_review": "local/s48/w4_rr/inputs/robot-w4-rr-r3-independent-review.md",
         "rr_review_sha256": "c7fec56c07ed0b41d6a2f63c834ca6a1eb2496d393e7a9e30d2cb43d787f2d22",
-        "sigkill": "W4b固定五例已本地软件独立验收；完整磁盘/NoGuard/T8/SUP/ENV仍未完成。",
+        "sigkill": "W4b固定五例与后续R4完整NoGuard/T8/SUP/ENV及真实manager软件矩阵已验收；不能外推掉电/硬件结果。",
         "w1_observation": "历史锁偶发失败仍留观察；W4a未作根因修正，不以本轮All通过代替结案。",
-        "rr_archive_boundary": "本次H包已包含RR R0/R1实际来源、模型与运行证据；R2 IOX/R3迁移尚待开发。"
+        "rr_archive_boundary": "当前H包保留R0–R4d-B各轮原件与失败；B包外后生归档/提交回执随P-E承接。",
+        "rr_review_scope": "此rr_review链接为R3设计评审历史，后续实现终审见各rr_r*入口。"
       },
       "w4b": {
         "status": "APPROVED_SOFTWARE_SCOPE",
@@ -3601,16 +3729,16 @@
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "96201d339e496fa426d6e4d88540defa56fc71582a2207ff34c009118759fcf3",
-    "bytes": 163604228,
-    "members": 61412,
-    "logical_bytes": 4921090318,
-    "index_count": 61411,
+    "sha256": "39e82dc526b1542dbba33734a92969ec56068ccfa94fd36b5238bc3493e3f694",
+    "bytes": 174415321,
+    "members": 63414,
+    "logical_bytes": 5183063541,
+    "index_count": 63413,
     "per_file_sha256_verified": true,
-    "verification_method": "固定A整包SHA承接旧54371索引；7040新增逐SHA及源首末一致，旧路径与索引保留；root复核整包身份、完整元数据和最终/衔接关键件实际字节。"
+    "verification_method": "旧B整体SHA承接61411索引/全部旧路径；新增2002件逐SHA，旧索引原样保留。root复核新整包SHA、63414成员元数据与六个最终关键原件。"
   },
-  "retention": "H包保原A54371索引，新增7040件B双架构原轮/四FAIL/最终验收及A晚生8件，A既归档7件同内容衔接。7041开发清单含原A三计划件，全覆盖；ELF本体、编译缓存及派生传输包不嵌入。B post_archive_review与实际commit回执为本次包外后生件。",
-  "updated_at": "2026-09-15T05:20:27.070646+00:00",
+  "retention": "H保B原61411索引，新增2002件P-E双端源码/原运行/失败/终审/root及B包外后生回执。ELF本体、派生缓存和重复源传输包不嵌入；P-E post_archive_review与随后commit_receipt为本次包外后生件，P.7材料另属下一包。",
+  "updated_at": "2026-09-20T10:36:12.660622+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -3651,11 +3779,15 @@
   },
   "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。",
   "stop_after_current": {
-    "user_request": "b 阶段完成后暂停",
-    "current_package": "S48_RR_R4D_B",
-    "next_package_authorized_to_start": false,
-    "state": "B已验收；本包提交后暂停，不进入P-E。",
-    "previous_weekly_remaining_stop_percent": 20,
-    "policy": "本次用户指令替代旧额度停止点；必要开发/补验/独审/提交持续完成B，保留真实失败，不强行PASS，不push。"
+    "user_request": "跑到额度剩余35%停下",
+    "weekly_remaining_stop_percent": 35,
+    "current_package": "S48_P_E_CLOSEOUT_THEN_P7",
+    "next_package_authorized_to_start": true,
+    "state": "P-E双端验收通过，归档提交后继续P.7有界软件准备。",
+    "supersedes": [
+      "b 阶段完成后暂停",
+      "周额度剩余20%停止点"
+    ],
+    "policy": "继续有效开发与独立评审，各验收阶段通过后commit；周剩余35%时安全收尾保存进度。不为消耗额度空转，不自动push；新物理动作须实际现场前置成立。"
   }
 }

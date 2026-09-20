@@ -3826,17 +3826,27 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "estop", "shutdown"]
         reason = "同一真实容量夹具连续验证满载、重放和优先级预留，保持原资源生命周期"
     )]
     async fn h2_default_cache_full_preserves_reads_replay_and_priority_reserves() {
+        h2_cache_full_preserves_reads_replay_and_priority_reserves(4096).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pe_8192_cache_full_preserves_reads_replay_and_priority_reserves() {
+        h2_cache_full_preserves_reads_replay_and_priority_reserves(8192).await;
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "同一真实handler夹具核两配置的容量/预留和重放，不拆散生命周期"
+    )]
+    async fn h2_cache_full_preserves_reads_replay_and_priority_reserves(max_entries: usize) {
         use crate::gateway_ledger::{
             GatewayLedger, RrRoute,
             handler_fixture::{port, receiver},
         };
         let config = GatewayConfig::loopback_default();
         assert_eq!(config.idempotency_max_entries, 4096);
-        let ledger = GatewayLedger::new(
-            config.idempotency_ttl_secs * 1_000_000_000,
-            config.idempotency_max_entries,
-        )
-        .unwrap();
+        let ledger =
+            GatewayLedger::new(config.idempotency_ttl_secs * 1_000_000_000, max_entries).unwrap();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let (estop_tx, _estop_rx) = bounded(64);
         let mut state = GatewayHandler::test_state(
@@ -3855,7 +3865,7 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "estop", "shutdown"]
         let set_rx = receiver(&state.rr_forward_tx_set_enabled);
         let clear_rx = receiver(&state.rr_forward_tx_clear_estop);
         let handler = GatewayHandler::new(state);
-        let normal_capacity = 4096 - 64 - 64 - 128;
+        let normal_capacity = max_entries - 64 - 64 - 128;
         let set_rx = fill_set_enabled_cache_with_dry_runs(&handler, set_rx, normal_capacity).await;
         assert_eq!(ledger.lock().unwrap().len(), normal_capacity);
         let mut normal = make_set_enabled_cmd("normal-full", false, "operator-fake-token-001");
@@ -3865,7 +3875,10 @@ capabilities = ["read_state", "clear_estop", "set_enabled", "estop", "shutdown"]
             .await
             .unwrap_err();
         assert_eq!(error.code(), tonic::Code::ResourceExhausted);
-        assert!(error.message().contains("3840/3840"));
+        assert_eq!(
+            error.message(),
+            format!("idempotency cache full ({normal_capacity}/{normal_capacity})")
+        );
         assert!(set_rx.try_recv().is_err());
         assert_eq!(
             handler

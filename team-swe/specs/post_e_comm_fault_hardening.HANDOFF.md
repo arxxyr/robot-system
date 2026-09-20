@@ -2,12 +2,25 @@
 
 ## 当前步骤
 
-**R4d-B双主机软件验收通过；本包归档提交后暂停，不进入P-E，不push。**
-原生developer/helper已归还源码、Cargo和SSH；独立终审及root验收无阻断。
-本次提交和归档后的回执见git及 `target/post_e_h2_rt/s48/rr_r4d/b/commit_receipt.json`，
-回执为后生件，不冒已包含在本次H包中。下一步P-E须用户新的继续指令。
+**2026-09-20 P-E 双主机软件验收已通过独审/root验收，归档提交后继续P.7软件准备；周剩35%收尾暂停。**
+571编译输入冻结926a0f1d…，8件Rust源。各host All72全过；4096原FAIL/exit1在实际
+Normal容量3840/3840严格派生EXPECTED_RED，最终Lower与完整收尾均成功。8192本机
+360.459s/8298唯一成功/运行期GC1391，Orin360.087s/8270/GC1379；Lower的18/21 GC另列。
+每端RPC309、工具178通过，原预算/wire4不变。本机部分质量门按实际未变输入复用并完成
+fresh提交前fmt→Clippy；Orin完整quality/build/behavior同轮通过，无重试。922件回传原件
+逐SHA一致，Orin267进程终场无相关或不可读、六服务仍停。实际Git HEAD为本机B、OrinA
+加同源差；这是本批软件来源约定，不是新现场所需同HEAD/clean。
+P-E H入口`local/s48/pe/`：result.json、root_acceptance.md、review/final_review.md及
+两端run原件；ELF本体/缓存/重复传输包不入H。B包外后生归档与commit回执随本包承接。
+P.7操作单已另审，作为下一独立提交；正式产物、新驱动、自测和新现场验证仍未完成。
+R4d-B双主机软件验收通过，独立终审及root验收无阻断；已提交`cdeddd2`，
+并按用户“先push”推送`origin/feat/post-e-comm-fault-hardening`。
+B归档后回执见git及 `target/post_e_h2_rt/s48/rr_r4d/b/commit_receipt.json`；
+该回执记录提交时未push，早于后来实际推送，且是未含于B包的后生件。
+新阶段原生子agent开发与独立评审，root定方案/整合/提交；新提交不自动push。
+35%停止线取代此前B后暂停及20%停止线，停止前保存未完进度，不将未验收内容提交为完成。
 
-- 唯一编译基线：A `f9a85be4f7064a54695eb33a7f5bf022d31b64eb`，两端原生固定
+- B阶段唯一编译基线：A `f9a85be4f7064a54695eb33a7f5bf022d31b64eb`，两端原生固定
   nightly-2026-09-10；570输入首末/当前一致，B未改tracked生产或测试源码。
 - 本机有效67门：14 fresh/53逐目标复用；Orin有效67门：R1前20 + R2 workspace1
   + R3五门 + R4 deny1 + R5新40。R5实际40/40，四次原FAIL及真实来源保留，不称单轮全过。
@@ -27,7 +40,7 @@ H包入口 `local/s48/rr_r4d/b/`：`root_acceptance.md`、`final_evidence_review
 
 本次仅受控软件验证，未触电机/串口。D15 OPEN、deployable=false；默认并行CI锁例
 旧限制仍在。左H1/H3 PASS、H2两次FAIL、左最后断电；右未测、S46 wire4历史FAIL。
-不得把本次软件验收当成新硬件通过、生产退役或P-E长负载完成。
+P-E纯软件长负载已通过；不得外推新硬件通过、生产退役或整个通信候选已完结。
 
 ## 已提交W4b证据
 
@@ -61,11 +74,11 @@ H包入口 `local/s48/rr_r4d/b/`：`root_acceptance.md`、`final_evidence_review
 开发子agent仍可按需并行拆分，明确写入范围，Cargo继续由一个开发者串行拥有。
 
 W3已将新权限、高/普通双队列、唯一writer、RPC责任账本接入生产调用方。
-W4a文件同步故障、W4b固定五例及RR R0–R3均已本地验收。W4剩余为R4
-完整T8/SUP/ENV和双环境；随后P-E。每包必要检查与root评审通过即commit。
+W4a文件同步故障、W4b固定五例及RR R0–R3已验收；R4完整T8/SUP/ENV、
+原连接竞争与双环境验证已在C/A/B依次闭环。P-E已完成双端软件验收，后续P.7软件准备；每包必要检查与独立/root评审通过即commit。
 RR r3析构与公共CAL两项方案已ACK，直接替换现有工厂，保topic/schema/FF；
 所有peer与自动清理者同批同源，模型/迁移实现按分包开发和评审。
-旧跨原子可见性与映射删除问题已在R1–R3实现并通过对应本地验收，仍待R4双环境验证，不能外推为完整候选闭环。
+旧跨原子可见性与映射删除问题已在R1–R3实现，R4双环境软件验证已通过；不外推额外内存序证明或完整候选闭环。
 W1旧锁偶发失败仍列观察，本轮All通过不等于其根因已闭合。
 P-E保原20/s、50ms节拍、360–600秒、成功唯一新写>8192、真实wire4与所有结果final_stop。
 
@@ -73,7 +86,7 @@ P-E保原20/s、50ms节拍、360–600秒、成功唯一新写>8192、真实wire
 
 左H1/H3 PASS，H2两次FAIL；最后确认左臂断电、双臂支撑。S-46本地8192长测通过，
 Orin真实882唯一写时wire4满FAIL；右臂未测，六服务最后停止，D15 OPEN、deployable=false。
-上述硬件状态沿用最后现场记录；R4准备仅只读盘点远端软件环境与源码残留。
+上述硬件状态沿用最后现场记录；R4/P-E软件运行没有更新电机物理状态。
 新使能前须取得新的电源/USB重置与持续在场事实，
 不复用旧H2驱动或已消费授权。Orin为`loosqk@10.0.1.40`，调试/RT必要时直接sudo；
 标定沿Orin已核Python值，串口按原D2 by-id身份。候选后续顺序保持D15→Rerun桥→F7。

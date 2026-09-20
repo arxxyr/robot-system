@@ -10,6 +10,11 @@
 > S-40 至 S-43 均经主 agent 与独立 reviewer ACK；当前文件新 hash 由主 agent 写入 HANDOFF。
 > C4 包含生产总装、test hook、独立 IPC/marker/startup 验收；C5 工具与剩余验收单独提交。
 
+> 当前覆盖说明（2026-09-20）：上列日期/基线和分工为历史批准稿。W3/W4与RR R0–R4
+> 双主机软件验收已完成，B提交`cdeddd2`且已按用户要求推送origin；用户现授权继续P-E，
+> 周额度剩余35%时收尾暂停。root定方案/整合/提交，原生子agent开发测试、另派独立评审；
+> 新提交不自动push。当前具体进度以HANDOFF及后续P-E节为准，旧20%与B后暂停已被替代。
+
 ## P.0 范围、所有权与当前事实
 
 **当前分工更新（用户2026-09-09明确指定）**：root负责方案与评审，`cc-claude`负责
@@ -2704,6 +2709,37 @@ R4实际原deny/四metadata通过，dependency_identity因model JSON前的Cargo�
 2026-09-15最终验收：R5实际40/40、两端有效67门全部满足；26报告、19新profile、
 239调用/237唯一组合及同run真实收尾通过。独立分段物证及root验收无阻断，
 本次提交前fresh fmt→根Clippy已通过。按最新用户指令归档提交B后暂停，P-E未开始。
+
+#### P.6.14.29 P-E 分类缓存与持续负载（双主机软件验收通过）
+
+用户2026-09-20继续，周额度剩余35%时收尾暂停；B后暂停与旧20%停止点已被替代。
+基线为已提交并推送origin的`cdeddd2`。原生开发/独审继续分离，root方案与验收；
+每阶段通过即commit，新提交不自动push。函数合同见
+`target/post_e_h2_rt/s48/pe/plan/root_execution_contract.md`，独立`plan_review.md`
+无阻断，root批准实施。本节落实P.6.12与P.6.14.10，不改生产策略或冻结设计。
+
+仅test-comm-fault-hook给原Entry记录不可变class，GatewayLedger构造时一次读取
+显式SoftwareLoad开关；原decide仍恰一次GC与一次准入。真实GC移除、Lower或容量
+候选点稀疏记录同锁内GC后准入前的4类×10状态矩阵，绑定原request/key/decision，
+不建影子账本或为观测额外GC。未启用时无扫描；下一请求不能沿用上次快照。
+
+4096原测量仍FAIL/exit1；S48独立EXPECTED_RED必须是背景Normal首错真实Capacity，
+同次GC后总len>=3840、threshold3840，且无其他未解释错误。8192保20/s、严格50ms
+槽、360–600s、成功唯一新写>8192及真实GC；容量7936、TTL300、wire4及原预算不改。
+所有结果经过原final_stop和真实进程回收，最终非dry Lower请求按meta和实际Ack核；
+state3不能掩盖Disable失败。新证据仅进S48 P-E，不改旧S46失败。
+
+两配置边界/GC/NoHandle/联合计数、首错及错误来源、唯一身份与Lower失败反例先验；
+两端同源原生构建后各跑当前All72软件场景、原wire4反例和4096/8192长测。
+历史“原67场景”不等于B的67质量门；按实际diff补门，不机械重做无关矩阵。
+2026-09-20两端同571输入正式验收及独审/root验收通过，各All72。4096均原FAIL/exit1、
+真Normal在3840/3840拒绝且完整收尾，严格EXPECTED_RED。8192本机360.459s/8298
+唯一成功、运行期GC1391；Orin360.087s/8270、GC1379。最终Lower的GC18/21另列。
+RPC309/工具178各host通过；本机按明确输入复用部分质量门并fresh提交前fmt→Clippy，
+Orin本轮8质量+3构建+3行为门全满足原期望，无重试。922远端原件回传已逐SHA核对，
+终场无相关进程，六服务仍停。实际HEAD分别本机B/OrinA加同源差，不冒充同HEAD/clean。
+证据入口pe/result.json、root_acceptance.md与review/final_review.md，随H增量归档。
+后续P.7操作单、正式产物与新驱动；D15 OPEN、deployable=false，未启动新现场H2。
 
 ## P.7 部署与整候选回滚（仅形成可评审操作单，本轮不执行完整流程）
 

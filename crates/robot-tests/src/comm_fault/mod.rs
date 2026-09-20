@@ -14,6 +14,7 @@ mod sla;
 #[cfg(test)]
 mod sla_acceptance;
 mod sla_background;
+mod sla_cache;
 mod startup;
 mod supervision;
 mod w3;
@@ -417,6 +418,26 @@ mod argument_tests {
         ] {
             let mut command = tokio::process::Command::new("gateway");
             assert_eq!(configure_h2_gateway(&mut command, kind).unwrap(), expected);
+            let observed = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == "ROBOT_TEST_PE_CACHE_OBSERVE");
+            assert_eq!(
+                observed
+                    .and_then(|(_, value)| value)
+                    .and_then(std::ffi::OsStr::to_str),
+                matches!(kind, SlaRunKind::SoftwareLoad { .. }).then_some("1")
+            );
+            let format = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == "ROBOT_LOG_FORMAT");
+            assert_eq!(
+                format
+                    .and_then(|(_, value)| value)
+                    .and_then(std::ffi::OsStr::to_str),
+                matches!(kind, SlaRunKind::SoftwareLoad { .. }).then_some("json")
+            );
             let args: Vec<_> = command
                 .as_std()
                 .get_args()

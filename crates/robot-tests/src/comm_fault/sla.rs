@@ -1391,6 +1391,8 @@ impl SlaRunner<'_> {
         events.extend(self.trace.drain(TRACE_CAPACITY));
         events.sort_by_key(|event| event.stamp_ns);
         save_events(self.csv, attempt, external, &events)?;
+        let disarm_ok = matches!(&disarmed, Ok((_, snapshot)) if snapshot.failure.is_none());
+        let disarm_result = format!("{disarmed:?}");
         let interpreted = captured
             .and(disarmed.and_then(|(_, snapshot)| match snapshot.failure {
                 Some(failure) => Err(format!(
@@ -1412,6 +1414,7 @@ impl SlaRunner<'_> {
                 self.record_attempt(&json!({"sequence": sequence, "attempt": attempt,
                     "external": external, "requested_in_flight": in_flight,
                     "invalid": true, "error": error, "event_count": events.len(),
+                    "disarm_ok": disarm_ok, "disarm_result": disarm_result,
                     "dropped": self.trace.dropped()}))?;
                 Err(error)
             }
@@ -1536,6 +1539,11 @@ pub(super) fn configure_h2_gateway(
             .args(["--idempotency-ttl-secs", "300", "--idempotency-max-entries"])
             .arg(entries.to_string());
     }
+    if matches!(kind, SlaRunKind::SoftwareLoad { .. }) {
+        command
+            .env("ROBOT_TEST_PE_CACHE_OBSERVE", "1")
+            .env("ROBOT_LOG_FORMAT", "json");
+    }
     Ok(entries)
 }
 
@@ -1636,6 +1644,7 @@ async fn measure(
             &groups,
             load_start,
             measurement.as_ref().err(),
+            trace.dropped(),
         )?;
     }
     measurement?;
@@ -1662,6 +1671,7 @@ fn save_load_summary(
     groups: &[Value],
     load_start: u64,
     measurement_error: Option<&String>,
+    trace_dropped: u64,
 ) -> Result<(), String> {
     let mut keys = BTreeSet::new();
     for row in background["rr_requests"]
@@ -1684,7 +1694,7 @@ fn save_load_summary(
         &json!({"successful_unique_keys":keys,
             "successful_unique_count":keys.len(),"minimum_ns":LOAD_MIN_NS,"maximum_ns":LOAD_MAX_NS,
             "started_ns":load_start,"stop_ns":background["stop_ns"],"groups":groups,
-            "measurement_error":measurement_error,"no_uart":true,"physical_p99_claim":false}),
+            "measurement_error":measurement_error,"trace_dropped":trace_dropped,"no_uart":true,"physical_p99_claim":false}),
     )?;
     Ok(())
 }
@@ -1711,7 +1721,7 @@ async fn final_stop(
                 meta: Some(meta.clone()),
                 enabled: false,
             };
-            confirm_and_disable(
+            let mut observed = confirm_and_disable(
                 async move {
                     client
                         .get_state(GetStateRequest {
@@ -1728,7 +1738,10 @@ async fn final_stop(
                 },
                 &meta.request_id,
             )
-            .await
+            .await;
+            observed["disable"]["request"] = json!({"request_id":meta.request_id,
+                "idempotency_key":meta.idempotency_key,"dry_run":false,"enabled":false});
+            observed
         }
         Err(error) => json!({"ok":false,"get_state":{"attempted":false,"ok":false,"error":error},
             "disable":{"attempted":false,"ok":false,"reason":"连接失败"}}),
@@ -1758,8 +1771,11 @@ where
         }
     };
     let disabled = if observed["ok"] == true {
+        let started = SystemClock.now().0;
         let mut value = ack_evidence(disable.await, request_id, false);
         value["attempted"] = json!(true);
+        value["started_ns"] = json!(started);
+        value["finished_ns"] = json!(SystemClock.now().0);
         value
     } else {
         json!({"attempted":false,"ok":false,"reason":"未取得真实状态3确认"})
@@ -1818,6 +1834,7 @@ async fn run_instance(
     environment["gateway_idempotency_ttl_secs"] = json!(300);
     environment["background_tracked_limit"] = json!(RR_IN_FLIGHT_LIMIT);
     environment["wire_active_limit_unchanged"] = json!(4);
+    environment["s48_cache_observation"] = json!(matches!(kind, SlaRunKind::SoftwareLoad { .. }));
     environment["gateway_arguments"] = json!(
         gateway_config
             .as_std()
@@ -1859,6 +1876,17 @@ async fn run_instance(
         None => Ok(()),
     };
     let s0_stop = stop(&mut s0).await;
+    if let SlaRunKind::SoftwareLoad { cache_entries } = kind {
+        let lifecycle = json!({"measurement_ok":result.is_ok(),"measurement_error":result.as_ref().err(),
+            "final_stop_ok":final_state.is_ok(),"final_stop_error":final_state.as_ref().err(),
+            "gateway_stop_ok":gateway_stop.is_ok(),"gateway_stop_error":gateway_stop.as_ref().err(),
+            "s0_stop_ok":s0_stop.is_ok(),"s0_stop_error":s0_stop.as_ref().err()});
+        write_json(&case.directory.join("s48_lifecycle.json"), &lifecycle)?;
+        let acceptance = super::sla_cache::save_acceptance(&case, cache_entries, &lifecycle)?;
+        if cache_entries == 8192 && acceptance["verdict"] != "GREEN" {
+            return Err(format!("S48长负载证据未满足：{acceptance}"));
+        }
+    }
     match (result, final_state, gateway_stop, s0_stop) {
         (Ok(measurement), Ok(final_state), Ok(()), Ok(())) => {
             let mut result = json!({"environment": environment, "measurement": measurement,

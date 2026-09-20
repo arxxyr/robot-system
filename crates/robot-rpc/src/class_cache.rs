@@ -240,6 +240,21 @@ struct Entry {
     state: EntryState,
     terminal: Option<CachedTerminal>,
     terminal_at: Option<u64>,
+    #[cfg(feature = "test-comm-fault-hook")]
+    class: Class,
+}
+
+/// 原 GC 后、准入前的一次只读复制；不参与缓存或责任判定。
+#[cfg(feature = "test-comm-fault-hook")]
+#[derive(Debug, Clone)]
+pub(crate) struct AdmissionObservation {
+    pub(crate) before_gc_len: usize,
+    pub(crate) removed: usize,
+    pub(crate) post_gc_len: usize,
+    pub(crate) class_stage: [[usize; 10]; 4],
+    pub(crate) threshold: usize,
+    pub(crate) max_entries: usize,
+    pub(crate) ttl_ns: u64,
 }
 
 #[derive(Debug)]
@@ -250,8 +265,51 @@ pub struct ClassCache {
     reserves: Reserves,
     alloc: EntryIdAllocator,
     entries: HashMap<String, Entry>,
+    #[cfg(feature = "test-comm-fault-hook")]
+    observe_admission: bool,
+    #[cfg(feature = "test-comm-fault-hook")]
+    last_decision_observation: Option<AdmissionObservation>,
 }
 impl ClassCache {
+    #[cfg(feature = "test-comm-fault-hook")]
+    pub(crate) fn enable_admission_observation(&mut self) {
+        self.observe_admission = true;
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    pub(crate) fn admission_observation(&self) -> Option<&AdmissionObservation> {
+        self.last_decision_observation.as_ref()
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn capture_admission(&mut self, class: Class, before_gc_len: usize, removed: usize) {
+        self.last_decision_observation = None;
+        let threshold = self.threshold(class);
+        if !self.observe_admission
+            || (removed == 0 && class != Class::Lower && self.entries.len() < threshold)
+        {
+            return;
+        }
+        let mut class_stage = [[0; 10]; 4];
+        for entry in self.entries.values() {
+            let index = match entry.class {
+                Class::Emergency => 0,
+                Class::Lower => 1,
+                Class::Restore => 2,
+                Class::Normal => 3,
+            };
+            class_stage[index][entry.state.index()] += 1;
+        }
+        self.last_decision_observation = Some(AdmissionObservation {
+            before_gc_len,
+            removed,
+            post_gc_len: self.entries.len(),
+            class_stage,
+            threshold,
+            max_entries: self.max_entries,
+            ttl_ns: self.ttl_ns,
+        });
+    }
     /// 测试只读同一原条目；不执行GC、准入或状态变更。
     #[cfg(feature = "test-comm-fault-hook")]
     pub(crate) fn observe_entry(
@@ -293,6 +351,10 @@ impl ClassCache {
             reserves,
             alloc,
             entries: HashMap::new(),
+            #[cfg(feature = "test-comm-fault-hook")]
+            observe_admission: false,
+            #[cfg(feature = "test-comm-fault-hook")]
+            last_decision_observation: None,
         })
     }
 
@@ -304,7 +366,13 @@ impl ClassCache {
         class: Class,
         now_ns: u64,
     ) -> ClassDecision {
-        self.gc(now_ns);
+        #[cfg(feature = "test-comm-fault-hook")]
+        let before_gc_len = self.entries.len();
+        let removed = self.gc(now_ns);
+        #[cfg(feature = "test-comm-fault-hook")]
+        self.capture_admission(class, before_gc_len, removed);
+        #[cfg(not(feature = "test-comm-fault-hook"))]
+        let _ = removed;
         let qualified = namespace(method, key);
         if let Some(entry) = self.entries.get(&qualified) {
             if entry.fp != fp {
@@ -337,6 +405,8 @@ impl ClassCache {
                 state: EntryState::Queued,
                 terminal: None,
                 terminal_at: None,
+                #[cfg(feature = "test-comm-fault-hook")]
+                class,
             },
         );
         ClassDecision::Fresh(Placeholder {
@@ -553,6 +623,136 @@ mod tests {
 
     fn cache() -> ClassCache {
         ClassCache::with_reserves(100, 4096, Reserves::DEFAULT, EntryIdAllocator::global()).unwrap()
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn pe_observation_default_off_then_records_pre_admission_lower() {
+        let mut cache = cache();
+        let _first = fresh(&mut cache, Method::SetEnabled, "off", Class::Lower, 0);
+        assert!(cache.admission_observation().is_none());
+        cache.enable_admission_observation();
+        let _second = fresh(&mut cache, Method::SetEnabled, "on", Class::Lower, 1);
+        let observation = cache.admission_observation().unwrap();
+        assert_eq!(
+            (
+                observation.before_gc_len,
+                observation.removed,
+                observation.post_gc_len
+            ),
+            (1, 0, 1)
+        );
+        assert_eq!(observation.class_stage[1][0], 1);
+        assert_eq!(observation.class_stage.iter().flatten().sum::<usize>(), 1);
+        assert_eq!(cache.len(), 2, "快照不混入本次Fresh");
+        let _third = fresh(&mut cache, Method::SetEnabled, "sparse", Class::Normal, 2);
+        assert!(
+            cache.admission_observation().is_none(),
+            "下一请求不能复用前次快照"
+        );
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn pe_observation_exact_both_normal_thresholds_include_restore_occupancy() {
+        for maximum in [4096, 8192] {
+            let mut cache = ClassCache::with_reserves(
+                100,
+                maximum,
+                Reserves::DEFAULT,
+                EntryIdAllocator::global(),
+            )
+            .unwrap();
+            cache.enable_admission_observation();
+            for (class, count, prefix) in [
+                (Class::Normal, maximum - 356, "n"),
+                (Class::Restore, 100, "r"),
+            ] {
+                for index in 0..count {
+                    let _p = fresh(
+                        &mut cache,
+                        Method::SetEnabled,
+                        &format!("{prefix}{index}"),
+                        class,
+                        0,
+                    );
+                }
+            }
+            capacity(&mut cache, Class::Normal, maximum - 256, maximum - 256);
+            let observation = cache.admission_observation().unwrap();
+            assert_eq!(
+                (
+                    observation.before_gc_len,
+                    observation.removed,
+                    observation.post_gc_len,
+                    observation.threshold
+                ),
+                (maximum - 256, 0, maximum - 256, maximum - 256)
+            );
+            assert_eq!(observation.class_stage[3][0], maximum - 356);
+            assert_eq!(observation.class_stage[2][0], 100);
+            assert_eq!(
+                observation.class_stage.iter().flatten().sum::<usize>(),
+                maximum - 256
+            );
+        }
+    }
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn pe_observation_real_gc_removes_terminal_but_preserves_nohandle_class_stage() {
+        let mut cache = cache();
+        cache.enable_admission_observation();
+        let normal = fresh(&mut cache, Method::SetEnabled, "terminal", Class::Normal, 0);
+        sent(&mut cache, Method::SetEnabled, "terminal", &normal);
+        assert_eq!(
+            cache.finish(Method::SetEnabled, "terminal", normal.id(), terminal(), 3),
+            Transition::Applied
+        );
+        let lower = fresh(&mut cache, Method::SetEnabled, "pinned", Class::Lower, 0);
+        assert_eq!(
+            cache.transition(
+                Method::SetEnabled,
+                "pinned",
+                lower.id(),
+                EntryState::Sending,
+                1
+            ),
+            Transition::Applied
+        );
+        assert_eq!(
+            cache.transition(
+                Method::SetEnabled,
+                "pinned",
+                lower.id(),
+                EntryState::NoHandle,
+                2
+            ),
+            Transition::Applied
+        );
+        let _restore = fresh(&mut cache, Method::ClearEStop, "restore", Class::Restore, 0);
+        let _before = fresh(&mut cache, Method::SetEnabled, "before", Class::Normal, 102);
+        assert!(cache.admission_observation().is_none());
+        let _at = fresh(&mut cache, Method::SetEnabled, "at", Class::Normal, 103);
+        let observation = cache.admission_observation().unwrap();
+        assert_eq!(
+            (
+                observation.before_gc_len,
+                observation.removed,
+                observation.post_gc_len
+            ),
+            (4, 1, 3)
+        );
+        assert_eq!(observation.class_stage[1][6], 1);
+        assert_eq!(observation.class_stage[2][0], 1);
+        assert_eq!(observation.class_stage[3][0], 1);
+        assert_eq!(observation.class_stage.iter().flatten().sum::<usize>(), 3);
+        assert!(
+            cache
+                .cached_terminal(Method::SetEnabled, "terminal")
+                .is_none()
+        );
+        assert_eq!(cache.len(), 4);
     }
     fn fresh(
         cache: &mut ClassCache,
