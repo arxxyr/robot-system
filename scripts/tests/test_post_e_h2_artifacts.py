@@ -7,6 +7,8 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import post_e_h2_artifacts as a
@@ -223,6 +225,45 @@ class ArtifactTests(unittest.TestCase):
             drift["units"][a.BUSINESS_UNITS[0]][key] = value
             with self.subTest(key=key), self.assertRaises(ValueError):
                 a.validate_installed_snapshot(drift, drift)
+
+    def test_systemd_dependency_order_only(self):
+        properties = {key: "" for key in a.UNIT_PROPERTIES}
+        properties.update(Id=a.BUSINESS_UNITS[0], LoadState="loaded", ActiveState="inactive",
+                          SubState="dead", MainPID="0", DropInPaths="/fixture/10.conf /fixture/20.conf")
+        for key in a.UNIT_DEPENDENCY_PROPERTIES:
+            properties[key] = "b.service a.service a.service"
+
+        def read(values):
+            reply = SimpleNamespace(returncode=0, stdout="\n".join(k + "=" + v for k, v in values.items()))
+            with patch.object(a.subprocess, "run", return_value=reply):
+                return a.read_systemd_unit(a.BUSINESS_UNITS[0])
+
+        def snapshot(row):
+            units = {name: dict(row) for name in a.BUSINESS_UNITS}
+            units[a.HANDOFF_UNIT] = {"LoadState": "loaded"}
+            return {"schema": "P7_INSTALLED_STATE_V1", "units": units, "host": "fixture", "boot_id": "fixture",
+                    "files": {name: {} for name in [*("installed:" + n for n in a.INSTALLED_NAMES),
+                                                     "config:left", "config:right", "config:roles"]}}
+
+        baseline = snapshot(read(properties))
+        for key in a.UNIT_DEPENDENCY_PROPERTIES:
+            reordered = dict(properties, **{key: "a.service b.service a.service"})
+            self.assertTrue(a.validate_installed_snapshot(snapshot(read(reordered)), baseline)["valid"])
+            for changed in ("a.service b.service", "a.service a.service b.service c.service",
+                            "a.service a.service a.service b.service"):
+                with self.subTest(key=key, changed=changed), self.assertRaises(ValueError):
+                    a.validate_installed_snapshot(snapshot(read(dict(properties, **{key: changed}))), baseline)
+        for key, value in (("DropInPaths", "/fixture/20.conf /fixture/10.conf"),
+                           ("EnvironmentFiles", "/fixture/b.env /fixture/a.env"),
+                           ("Environment", "A=1 B=2")):
+            with self.subTest(ordered=key), self.assertRaises(ValueError):
+                a.validate_installed_snapshot(snapshot(read(dict(properties, **{key: value}))), baseline)
+        # 真正相同成员的有序字段重排也不能被依赖集合规则吞掉。
+        for key, before, after in (("EnvironmentFiles", "/fixture/a.env /fixture/b.env", "/fixture/b.env /fixture/a.env"),
+                                   ("Environment", "A=1 B=2", "B=2 A=1")):
+            with self.subTest(reordered=key), self.assertRaises(ValueError):
+                a.validate_installed_snapshot(snapshot(read(dict(properties, **{key: after}))),
+                                              snapshot(read(dict(properties, **{key: before}))))
 
     def test_clean_build_environment(self):
         contaminated = {"PATH": "/usr/bin", "CARGO_PROFILE_RELEASE_OPT_LEVEL": "0",

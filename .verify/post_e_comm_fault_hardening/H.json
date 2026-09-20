@@ -3592,15 +3592,23 @@
           "sha256": "4d231daa535cadde955abfeaa0f1f231898f88eb6414a3904b1897c1e4de6941"
         },
         "source_checks": {
-          "root_python_tests": 34,
+          "root_python_tests": 35,
           "independent_helper_tests": 3,
           "independent_report_cases": 8,
           "independent_child_cases": 3,
           "root_fmt": "PASS",
           "root_clippy": "PASS",
           "default_plan_only": "PASS",
-          "compiled_inputs_unchanged": 571
-        }
+          "compiled_inputs_unchanged": 571,
+          "systemd_dependency_order_regression": "PASS"
+        },
+        "source_commit": "8491b426cf197f8a6a24ef619c92c2b0bb2ccd63",
+        "source_review_r2": {
+          "path": "target/post_e_h2_rt/s48/p7/review/source_review_r2.json",
+          "sha256": "5b92f4e1ae455ba08d5825473943c6b8899a792b3098de1b3001443b7c6466ef",
+          "bytes": 3298
+        },
+        "sync_preflight": "八件源码与PE及本机一致，独立备份已核；纯systemd依赖展示重排误拒已定向修复，未执行ff或Cargo。"
       }
     }
   },

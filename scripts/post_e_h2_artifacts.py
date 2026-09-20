@@ -265,6 +265,11 @@ def validate_artifact_set(manifest, *, source_manifest, expected_kind, expected_
             "artifacts": {name: row["path"] for name, row in manifest["artifacts"].items()}}
 
 
+# systemd 的依赖关系是集合；只规范化这些字段的显示顺序，重复仍保留。
+UNIT_DEPENDENCY_PROPERTIES = frozenset({
+    "Requires", "Wants", "After", "Before", "BindsTo", "PartOf", "Conflicts",
+})
+
 UNIT_PROPERTIES = (
     "Id", "LoadState", "ActiveState", "SubState", "MainPID", "UnitFileState", "FragmentPath", "DropInPaths",
     "User", "Group", "WorkingDirectory", "After", "Before", "Requires", "Wants", "BindsTo", "PartOf",
@@ -289,6 +294,8 @@ def read_systemd_unit(unit):
         if key == "EnvironmentFiles":
             safe["paths"] = re.findall(r"(/[^ ;()]+)", raw)
         fields[key] = safe
+    for key in UNIT_DEPENDENCY_PROPERTIES:
+        fields[key] = " ".join(sorted(fields[key].split()))
     return fields
 
 
