@@ -9,6 +9,17 @@
 
 ---
 
+## 2026-09-22 · 本次左H2完整通过，已归包待提交
+
+runtime c5daa67/build fb600fd；四组各100预热+1000正式，4400 attempts、290158 events，
+6834条InjectedDelay无短于请求；背景66986唯一新写/恢复8800。原SLA-A/B P99门均通过，
+第三组SLA-B max52.502592ms仍保留，不把P99通过说成最大值保证。完整四组数字见HANDOFF。
+工具/driver exit0真实reap；独立final_stop与final_trace、实际UID/串口/六服务清场、双Dirty均通过。
+独审/root已验收，旧三次测量FAIL/一次前置拒绝保留；36远端原件与61本地owner材料纳入。
+值守解除、电源UNKNOWN；右未测、未部署、D15 OPEN。隔离0047920的64项与2e5b515的10项
+及独审通过，尚未合入，不作为本次runtime/build。W1历史具体根因仍OPEN_UNCONFIRMED。
+证据已归包：65097成员/65096索引，新增376件；完整SHA见H.json，包后审件下包承接。
+
 ## 2026-09-22 · 注入延时与尾窗检查软件验证
 
 源码`fb600fd`，571项新aggregate `52b1832…58d17`；完整来源与阶段证据见HANDOFF。

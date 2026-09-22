@@ -2,6 +2,35 @@
 
 ## 当前步骤
 
+2026-09-22本次新左H2已由独审/root验收：runtime `c5daa67`、实际build `fb600fd`，
+571编译输入aggregate `52b1832…58d17`及三Python身份按原门继承。12:17:08至13:13:12 UTC，
+约56分钟，单次authorize/launch各1；四组各100预热+1000正式全部通过，4400 attempts、
+290158 events、6834条InjectedDelay无短于请求，分类重试0/invalid0。背景66986唯一新写、恢复8800写。
+
+| 顺序 | SLA-A P99（ns） | SLA-B P99（ns） | SLA-B max（ns） |
+| --- | ---: | ---: | ---: |
+| topic/idle | 24896 | 10331104 | 11370176 |
+| topic/inflight | 24864 | 7055872 | 13453376 |
+| external/idle | 21024 | 11111744 | 52502592 |
+| external/inflight | 22176 | 6797440 | 7441344 |
+
+第三组max为52.502592ms，原样保留；原门为P99，不能把通过解释为每个样本均≤20ms。
+独立EStop/Disarm/GetState3及非dry-run DisableAck通过，final_trace在双child stop后valid。
+工具/driver均exit0并真实reap；实际UID进程清场、六服务停止、串口无占用、双marker Dirty，
+源/产物/正式安装/配置/设备前后身份已核。收尾后电源UNKNOWN，本轮值守已解除。
+三次旧真实H2 FAIL和一次前置拒绝保留；旧`hardware.left.H2`完整移入`H2_previous_runs`，不称历次全过。
+
+本轮入口`target/post_e_h2_rt/s48/h2_retry/`的result/root_raw_checks/review/final_review与root_acceptance；
+36远端原件逐SHA回传，61本地owner文件纳入审计。本轮已归包待提交，65097成员/65096索引，新增376件且旧64720条完整保全；
+本轮post_archive_review与commit回执为外置后生件，下包承接。
+右工具`0047920`的64项与独审、W1测试`2e5b515`的默认并行10项与独审均已完成，
+仍仅隔离分支，未合入/部署，不是本轮runtime/build。W1探针证明fork至exec fd继承窗口，
+原偶发失败具体根因仍OPEN_UNCONFIRMED；10项测试后仅fmt及等价lint调整，原失败记录保留。
+安装准备仅只读66原件，未安装。右H1/H2/H3仍未测，D15 OPEN、deployable=false。
+按25%额度线持续推进、每阶段独审/root验收后commit，不push；新的物理动作须新现场事实。
+
+### 已验收延时软件阶段（收口c5daa67，以下保留当时结论）
+
 2026-09-22用户继续后，注入延时软件修复源码已提交`fb600fd`。仅测试hook用同一RobotClock
 仅真实读数达到原deadline才成功；不足继续正时长sleep，最多8次后失败锁存。
 溢出、倒退同样失败，由调用者真实释放lease。工具在gateway/S0停止后独立核`final_trace`，拒绝尾窗sticky或未知状态，
@@ -147,16 +176,16 @@ P-E纯软件长负载已通过；不得外推新硬件通过、生产退役或�
 
 W3已将新权限、高/普通双队列、唯一writer、RPC责任账本接入生产调用方。
 W4a文件同步故障、W4b固定五例及RR R0–R3已验收；R4完整T8/SUP/ENV、
-原连接竞争与双环境验证已在C/A/B依次闭环。P-E、P.7及前置修复已验收；三次真实左H2 FAIL保持；本次fb600fd仅修测试hook等待保证及尾窗检查，按最新25%指令持续推进，新的现场测量另核事实。每包必要检查与独立/root评审通过即commit。
+原连接竞争与双环境验证已在C/A/B依次闭环。P-E、P.7及前置/延时修复已验收；本次左H2通过，旧三次FAIL保持。先完成本轮证据收口，再处理右/W1隔离提交集成与后续现场/部署门；按25%线持续推进，每包检查与独审/root验收后commit。
 RR r3析构与公共CAL两项方案已ACK，直接替换现有工厂，保topic/schema/FF；
 所有peer与自动清理者同批同源，模型/迁移实现按分包开发和评审。
 旧跨原子可见性与映射删除问题已在R1–R3实现，R4双环境软件验证已通过；不外推额外内存序证明或完整候选闭环。
-W1旧锁偶发失败仍列观察，本轮All通过不等于其根因已闭合。
+W1测试隔离已在未合入的2e5b515验收；旧锁偶发失败仍列OPEN_UNCONFIRMED，不由机制探针或10项通过倒推具体根因。
 P-E保原20/s、50ms节拍、360–600秒、成功唯一新写>8192、真实wire4与所有结果final_stop。
 
 ## 现场边界
 
-左H1/H3 PASS、三次已采样H2 FAIL；9/22另一次driver前置拒绝不算测量。
+左H1/H2/H3 PASS；旧三次已采样H2 FAIL与一次driver前置拒绝原样保留。
 当天已确认左臂断电重上电与USB重插、双臂支撑；收尾后电源未新确认。S-46本地8192长测通过，
 Orin真实882唯一写时wire4满FAIL；右臂未测，六服务最后停止，D15 OPEN、deployable=false。
 R4/P-E软件运行没有更新物理状态；9/22事实仅绑定已结束attempt，不再要求本次继续值守。

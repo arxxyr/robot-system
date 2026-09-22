@@ -1,6 +1,6 @@
 # post-E 通信故障硬化 · 函数级实施计划
 
-> 日期：2026-09-09。版本：Plan Approved + S-40 至 S-46 Reverse Sync；S-47合入S-48。状态：**C1–C5、S-44与S-45软件已评审提交；左H1/H3 PASS，左H2两次FAIL保留，现场已确认左臂断电；S-46本地通过/Orin wire4满FAIL，S-48 A1文件事务本地及独立评审通过；右臂未测，D15 OPEN**。
+> 历史批准稿（以下状态仅指2026-09-09）：日期：2026-09-09。版本：Plan Approved + S-40 至 S-46 Reverse Sync；S-47合入S-48。状态：**C1–C5、S-44与S-45软件已评审提交；左H1/H3 PASS，左H2两次FAIL保留，现场已确认左臂断电；S-46本地通过/Orin wire4满FAIL，S-48 A1文件事务本地及独立评审通过；右臂未测，D15 OPEN**。
 > 权威：[`post_e_comm_fault_hardening.md`](post_e_comm_fault_hardening.md)（round 21 Spec Approved）。
 > 代码基线：`bd081cb`；工作分支：`feat/post-e-comm-fault-hardening`。
 > 本文只展开已批准 D1–D15 与 P.0–P.8，不修改冻结设计。主 agent / reviewer 明确
@@ -10,17 +10,13 @@
 > S-40 至 S-43 均经主 agent 与独立 reviewer ACK；当前文件新 hash 由主 agent 写入 HANDOFF。
 > C4 包含生产总装、test hook、独立 IPC/marker/startup 验收；C5 工具与剩余验收单独提交。
 
-> 当前覆盖说明（2026-09-22）：上列日期/基线和分工为历史批准稿。W3/W4与RR R0–R4
-> 双主机软件验收已完成，B提交`cdeddd2`且已按用户要求推送origin；P-E已按后续授权完成，
-> 最新指令为持续推进至额度剩25%，替代35%及每阶段自动暂停。root定方案/整合/提交，原生子agent开发测试、独立评审；
-> 新提交不自动push。P-E已提交2f1de02、P.7基线7c9ffaa；9/22左H2前置拒绝后的软件修复
-> 1b6db3e/4191bf0及新原生绑定/只读复检已验收并收口b4ff720。后经明确继续与新现场确认，
-> 一次左H2第一组PASS、第二组639正式后因注入实测短于请求1426ns而FAIL，第三/四组未跑；
-> 断扭及真实回收/清场成功，失败证据已收口eb59bcc。用户继续后开展本次纯软件延时修复，
-> 源码fb600fd、571新aggregate52b1832…58d17；两端57及Orin原生/AC12通过，原controller路径误判FAIL保留，独审/root验收已通过。
-> 同RobotClock最多8次补足、异常sticky及真实release、停止后final_trace尾门；原预算不变。
-> 本阶段无硬件动作；每阶段验收commit保持，不自动重试H2或push，现场须新重置/支撑/在场事实。
-> 具体进度以HANDOFF为准；旧20%与B后暂停已被替代，历史断电记录不代表9/22收尾后的电源状态。
+> 当前状态（2026-09-22）：左H1/H2/H3通过。本次H2 runtime c5daa67/build fb600fd，
+> 四组各100+1000及原P99门、真实stop/reap/清场已独审/root验收；第三组max52.502592ms保留。
+> 三次旧真实FAIL与一次前置拒绝不回写；本轮值守解除、电源UNKNOWN，当前证据已归包待提交。
+> 右工具0047920/W1测试2e5b515仅隔离提交未合入未部署，右臂未测、正式部署未做、D15 OPEN。
+> 持续推进至额度剩25%，每阶段独审/root验收后commit、不push；新物理动作仍须当次事实。
+> root方案/整合，原生子agent开发测试与独立评审；历史CC分工及旧20%/35%/阶段自动暂停已被替代。
+> 完整结果及历史来源见HANDOFF；实际新归包SHA/数量已回填H.json，包后审件下包承接。
 
 ## P.0 范围、所有权与当前事实
 
@@ -2804,6 +2800,11 @@ state3不得掩盖Disable失败；Physical不生成s48_lifecycle.json，不能�
 不改`final_stop`原安全动作结论。原1–5ms请求、四组100+1000、SLA和wire保持。
 验收门覆盖短1426ns、多次短醒、冻结/倒退/溢出、真实release和末尾sticky；两端定向57项，
 Orin另核新来源原生七件及AC12 mock。结果与证据统一见HANDOFF，软件通过不替代现场H2。
+
+本次c5daa67运行左H2已按四组100+1000及原预算验收；历史FAIL不改，详情见HANDOFF。
+隔离0047920新增双臂Python身份/CPU4或5/final_trace原件门，64项通过；
+隔离2e5b515仅隔离W1九父case共享fd窗口，默认并行10项一次通过（测试后等价lint修正）。
+两提交独审完成但未合入主运行树，原三Python/571来源门不变；右H1/H3/H2与部署仍独立待验。
 
 ### P.7.3 停止、安装与完整回滚边界
 

@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "CONTINUING_AFTER_H2_DELAY_SOFTWARE_ACCEPTANCE",
-  "resume_from": "延时保证与最终采样状态修复已验收；按最新25%停止线持续推进，收口后同步最终HEAD并只读预检，新H2仍须新现场事实。",
+  "work_state": "CONTINUING_AFTER_LEFT_H2",
+  "resume_from": "本次左H2真实PASS及完整收尾已独审/root验收并归包，待文档/证据提交；右臂软件/W1隔离提交未集成，右硬件与部署未做。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_H2_DELAY_SOFTWARE_ACCEPTED",
-  "review_status": "APPROVED_SOFTWARE_AND_EVIDENCE",
+  "status": "S48_LEFT_H2_ACCEPTED_ARCHIVED",
+  "review_status": "APPROVED_LEFT_H2_AND_EVIDENCE",
   "deployable": false,
-  "scope": "W3/W4、RR、P-E/P.7及前置修复已验收；fb600fd延时与尾窗检查软件验收完成，本地/Orin各57与四组mock通过。旧真实H2 FAIL保持，D15 OPEN、deployable=false。",
+  "scope": "本次runtime c5daa67/build fb600fd左H2四组100+1000通过；三次旧真实FAIL和一次前置拒绝完整保留。右未测、未正式部署、D15 OPEN、deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -391,7 +391,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "W4_R4_PE_APPROVED_SOFTWARE_SCOPE",
+      "status": "LEFT_H2_ACCEPTED_RIGHT_HARDWARE_AND_DEPLOYMENT_OPEN",
       "implementation_started": true,
       "pe": {
         "status": "PASS_SOFTWARE",
@@ -3777,6 +3777,95 @@
         "D15": "OPEN",
         "archive_status": "归入H包local/s48/h2_delay；当前post与commit回执为包外后生件",
         "archive_added_count": 288
+      },
+      "h2_retry": {
+        "status": "ACCEPTED_ARCHIVED",
+        "runtime_head": "c5daa67da9bb77ef5a945b1ec588484b64f4c3af",
+        "actual_build_head": "fb600fd9af0e46c8ae7bed34e056eaa991e6e9e0",
+        "compiled_source_files": 571,
+        "compiled_source_sha256": "52b1832fd3e7d6ae741098fff05a3cfd45f16056f33dfb13b2d53bafc1c58d17",
+        "result": {
+          "path": "target/post_e_h2_rt/s48/h2_retry/result.json",
+          "bytes": 6378,
+          "sha256": "c306bf105010c1660c06cf27d8353a286ea38bc9f098c1c3e6c9243aa50c2739"
+        },
+        "raw_checks": {
+          "path": "target/post_e_h2_rt/s48/h2_retry/root_raw_checks.json",
+          "bytes": 7741,
+          "sha256": "1a1df606cc951efe4372ca30079b976e1266a663f49e0e386fa1f5f852ff886f"
+        },
+        "final_review": {
+          "path": "target/post_e_h2_rt/s48/h2_retry/review/final_review.json",
+          "bytes": 7264,
+          "sha256": "b6d8f9f02ab873405f4978f9672ce83d517079b9955a085c124fd8210b34aab8"
+        },
+        "root_acceptance": {
+          "path": "target/post_e_h2_rt/s48/h2_retry/root_acceptance.json",
+          "bytes": 1246,
+          "sha256": "b52bb47e473ed3664a528979401972bbde243f408de3d82b92f46feb07a4c19e"
+        },
+        "collection": {
+          "path": "target/post_e_h2_rt/s48/h2_retry/precheck_20260922T113258Z_b78558d3/execution_collection/collection_receipt.json",
+          "bytes": 9561,
+          "sha256": "253da8238798dc5790a12eb35022960d91d0aeb17207799f5924f9773e1569b3"
+        },
+        "deployment_started": false,
+        "deployable": false,
+        "D15": "OPEN",
+        "archive_status": "已增量归包；提交身份由包外commit_receipt记录",
+        "archive_added_count": 376
+      },
+      "h2_right_preparation": {
+        "status": "ACCEPTED_ISOLATED_NOT_INTEGRATED",
+        "commit": "0047920b4f778914c22ec4f09dc5a252373326fa",
+        "python_tests": 64,
+        "root_acceptance": {
+          "path": "target/post_e_h2_rt/s48/h2_right/root_acceptance.json",
+          "bytes": 554,
+          "sha256": "e02be6892eb67a1387d9c75d1aa80763d3d4c4f6bffcc17e3ec2423948808ee8"
+        },
+        "source_review": {
+          "path": "target/post_e_h2_rt/s48/h2_right/review/source_review.json",
+          "bytes": 2435,
+          "sha256": "d1c92fe8d2f7fa4952fae548293b538fe138c73fe4b6587543b3ad7d661d4254"
+        },
+        "commit_receipt": {
+          "path": "target/post_e_h2_rt/s48/h2_right/commit_receipt.json",
+          "bytes": 3328,
+          "sha256": "e8cf0ee3fdb011d7aa1636e20f95f50aedb4325978598ada571574b2902c3eda"
+        },
+        "integrated": false,
+        "deployed": false,
+        "hardware": "NOT_RUN",
+        "scope": "双臂Python工具与final_trace原件门、右H1/H3准备页；不是本次左H2的runtime/build"
+      },
+      "w1_followup": {
+        "status": "ACCEPTED_ISOLATED_TEST_CHANGE",
+        "commit": "2e5b51572e53954a89d28598346aa748aa71ff5d",
+        "probe_acceptance": {
+          "path": "target/post_e_h2_rt/s48/w1_followup/root_probe_acceptance.json",
+          "bytes": 576,
+          "sha256": "e59b3d849143c2ae59acc568133a32af662c246d61ffa972c1b817574331221a"
+        },
+        "implementation_review": {
+          "path": "target/post_e_h2_rt/s48/w1_followup/implementation_review.json",
+          "bytes": 1762,
+          "sha256": "54e051f157bc25572d47ccf2782ca3b38a409f1754e05ad4299839d7de8864cc"
+        },
+        "commit_receipt": {
+          "path": "target/post_e_h2_rt/s48/w1_followup/implementation/commit_receipt.json",
+          "bytes": 3258,
+          "sha256": "f0aa1f332e37329e76deb08405edc5a2f8c787b94d38e54a3a772ac15fff85ca"
+        },
+        "default_parallel_tests": 10,
+        "test_runs": 1,
+        "test_source_sha256": "1b81f4aa73b34bfdb02a8363927b343ccfc70b10a6472fdc6d7a571dd35ebd9f",
+        "final_source_sha256": "7bf685e8a14002d7220152b4e12139d3b18e3cce6bbfb56099510d9dfb7a8288",
+        "scope": "机制探针证明fork至exec窗口；9父case用MutexGuard隔离；测试后仅fmt及等价lint修正，原FAIL保留",
+        "historical_failure_root_cause": "OPEN_UNCONFIRMED",
+        "integrated": false,
+        "deployed": false,
+        "production_changed": false
       }
     }
   },
@@ -3797,73 +3886,98 @@
         "source_hash": "d6963ed017541d74b8733946c54d9243ece9b7691b8d5e72b1fa37966cf4b11a"
       },
       "H2": {
-        "status": "FAIL",
-        "run_commit": "b4ff720bb244202505b4fbf7df11f9a479739bad",
-        "build_commit": "4191bf0b03bddef1da353bb8c3895d6fc19416ae",
-        "source_hash": "926a0f1d1f95ff4587d9ced40a466b259ce910998004f5ab67dde7fbdfa7ae87",
+        "status": "PASS",
+        "run_commit": "c5daa67da9bb77ef5a945b1ec588484b64f4c3af",
+        "build_commit": "fb600fd9af0e46c8ae7bed34e056eaa991e6e9e0",
+        "source_hash": "52b1832fd3e7d6ae741098fff05a3cfd45f16056f33dfb13b2d53bafc1c58d17",
         "rt_preflight": "PASS",
         "groups": [
           {
             "external": false,
             "in_flight": false,
             "warmup": 100,
-            "valid": 1000,
+            "samples": 1000,
             "result": "PASS",
-            "sla_b_p99_ns": 10649408
+            "sla_a_p99_ns": 24896,
+            "sla_b_p99_ns": 10331104,
+            "sla_b_max_ns": 11370176,
+            "sla_b_p99_target_ns": 20000000
           },
           {
             "external": false,
             "in_flight": true,
             "warmup": 100,
-            "valid": 639,
-            "invalid": 1,
-            "result": "FAIL"
+            "samples": 1000,
+            "result": "PASS",
+            "sla_a_p99_ns": 24864,
+            "sla_b_p99_ns": 7055872,
+            "sla_b_max_ns": 13453376,
+            "sla_b_p99_target_ns": 75000000
           },
           {
             "external": true,
             "in_flight": false,
-            "result": "NOT_RUN"
+            "warmup": 100,
+            "samples": 1000,
+            "result": "PASS",
+            "sla_a_p99_ns": 21024,
+            "sla_b_p99_ns": 11111744,
+            "sla_b_max_ns": 52502592,
+            "sla_b_p99_target_ns": 20000000
           },
           {
             "external": true,
             "in_flight": true,
-            "result": "NOT_RUN"
+            "warmup": 100,
+            "samples": 1000,
+            "result": "PASS",
+            "sla_a_p99_ns": 22176,
+            "sla_b_p99_ns": 6797440,
+            "sla_b_max_ns": 7441344,
+            "sla_b_p99_target_ns": 75000000
           }
         ],
-        "classification_mismatches": 0,
-        "invalid_samples": 1,
-        "trace_dropped_invalid": 0,
-        "primary_failure": {
-          "attempt": 739,
-          "sequence": 13681,
-          "request_ns": 3895634,
-          "measured_ns": 3894208,
-          "shortfall_ns": 1426,
-          "request_within_1_5ms": true,
-          "root_cause": "NOT_DETERMINED"
+        "counts": {
+          "warmup": 400,
+          "formal": 4000,
+          "attempts": 4400,
+          "events": 290158,
+          "injected_delays": 6834,
+          "shortfalls": 0,
+          "background_unique_writes": 66986,
+          "recovery_writes": 8800
         },
-        "root_cause": "NOT_DETERMINED",
+        "started_at": "2026-09-22T12:17:08.984842+00:00",
+        "ended_at": "2026-09-22T13:13:12.110723+00:00",
+        "elapsed_scope": "约56分钟；第三组SLA-B max=52.502592ms保留，原验收判据为P99而非最大值",
+        "classification_mismatches": 0,
+        "invalid_samples": 0,
         "final_stop": "PASS",
+        "final_trace": "PASS",
         "final_safety_state": 3,
         "disable_actual_ack": true,
         "supervision": {
           "authorization_attempts": 1,
           "launch_attempts": 1,
-          "driver_pid": 274858,
-          "tool_pid": 274901,
-          "driver_exit": 1,
-          "tool_exit": 1,
+          "driver_pid": 282935,
+          "tool_pid": 282977,
+          "driver_exit": 0,
+          "tool_exit": 0,
           "reaped": true,
           "outer_signals": []
         },
         "all_test_processes_exited": true,
-        "operator_available": true,
         "physical_entry_confirmed": true,
         "physical_authorization_consumed": true,
-        "physical_power_off_confirmed_after_failure": false,
+        "physical_power_after_run": "UNKNOWN",
         "evidence_acceptance": "ACCEPTED",
-        "evidence": "local/s48/h2_run/precheck_20260922T093305Z_1197e472/execution_collection/",
-        "next": "先核实并修复载荷等待保证；原预算验收后新现场边界重测。本轮收口后暂停。"
+        "evidence": "local/s48/h2_retry/precheck_20260922T113258Z_b78558d3/execution_collection/",
+        "result": {
+          "path": "target/post_e_h2_rt/s48/h2_retry/result.json",
+          "bytes": 6378,
+          "sha256": "c306bf105010c1660c06cf27d8353a286ea38bc9f098c1c3e6c9243aa50c2739"
+        },
+        "next": "本轮值守已解除；先收口证据，右臂H1/H3/H2与正式部署仍待后续批准及新现场事实。"
       },
       "H3": {
         "status": "PASS",
@@ -3957,6 +4071,75 @@
             "orin/left_h2_current/cadence_diagnostic.json",
             "local/left_h2_current_independent.json"
           ]
+        },
+        {
+          "status": "FAIL",
+          "run_commit": "b4ff720bb244202505b4fbf7df11f9a479739bad",
+          "build_commit": "4191bf0b03bddef1da353bb8c3895d6fc19416ae",
+          "source_hash": "926a0f1d1f95ff4587d9ced40a466b259ce910998004f5ab67dde7fbdfa7ae87",
+          "rt_preflight": "PASS",
+          "groups": [
+            {
+              "external": false,
+              "in_flight": false,
+              "warmup": 100,
+              "valid": 1000,
+              "result": "PASS",
+              "sla_b_p99_ns": 10649408
+            },
+            {
+              "external": false,
+              "in_flight": true,
+              "warmup": 100,
+              "valid": 639,
+              "invalid": 1,
+              "result": "FAIL"
+            },
+            {
+              "external": true,
+              "in_flight": false,
+              "result": "NOT_RUN"
+            },
+            {
+              "external": true,
+              "in_flight": true,
+              "result": "NOT_RUN"
+            }
+          ],
+          "classification_mismatches": 0,
+          "invalid_samples": 1,
+          "trace_dropped_invalid": 0,
+          "primary_failure": {
+            "attempt": 739,
+            "sequence": 13681,
+            "request_ns": 3895634,
+            "measured_ns": 3894208,
+            "shortfall_ns": 1426,
+            "request_within_1_5ms": true,
+            "root_cause": "NOT_DETERMINED"
+          },
+          "root_cause": "NOT_DETERMINED",
+          "final_stop": "PASS",
+          "final_safety_state": 3,
+          "disable_actual_ack": true,
+          "supervision": {
+            "authorization_attempts": 1,
+            "launch_attempts": 1,
+            "driver_pid": 274858,
+            "tool_pid": 274901,
+            "driver_exit": 1,
+            "tool_exit": 1,
+            "reaped": true,
+            "outer_signals": []
+          },
+          "all_test_processes_exited": true,
+          "operator_available": true,
+          "physical_entry_confirmed": true,
+          "physical_authorization_consumed": true,
+          "physical_power_off_confirmed_after_failure": false,
+          "evidence_acceptance": "ACCEPTED",
+          "evidence": "local/s48/h2_run/precheck_20260922T093305Z_1197e472/execution_collection/",
+          "next": "先核实并修复载荷等待保证；原预算验收后新现场边界重测。本轮收口后暂停。"
         }
       ],
       "H2_prelaunch_attempts": [
@@ -3997,12 +4180,12 @@
   "operational_state": {
     "formal_four_binaries_unchanged": true,
     "six_services": "inactive/PID0",
-    "physical_rx_marker": "本次真实H2 authorize/launch各1；结束后两份Dirty 1\\n（hex310a）、UID/GID1000、0600。",
-    "physical_estop_latch": "此前H1/H3前后SHA相同为历史事实；本次执行过真实EStop/恢复，当前只据本次final_stop与原件，不宣称latch内容沿旧未变。",
+    "physical_rx_marker": "本次authorize/launch各1，真实收尾后两份Dirty；原件见h2_retry最终清场。",
+    "physical_estop_latch": "本次真实EStop/恢复/Disable均据当次原件；不沿用旧latch内容不变声明。",
     "no_serial_access_after_h2_physical_reset": false,
     "all_h2_processes_exited": true,
     "left_serial_unoccupied": true,
-    "left_motor_power": "9/22已确认断电重上电；本次driver退出后未重新确认电源状态，不能沿旧记录称当前已断电。",
+    "left_motor_power": "UNKNOWN；本轮结束后未新确认断电，不能由final_stop推断物理电源。",
     "python_calibration_reuse": {
       "user_requested": true,
       "host": "loosqk@10.0.1.40",
@@ -4017,26 +4200,26 @@
       "validation": "安装配置与仓库逐字一致，直接引用Python JSON；每臂6个名称/ID1–6、offset/range/drive_mode字段兼容",
       "scope": "仅文件及源码只读核验，不称电机EEPROM本轮已读回；没有重标定/改值/打开串口"
     },
-    "physical_state_scope": "9/22真实左H2已收尾；本软件修复阶段无硬件动作，当前安全状态与安装配置前后不变，物理电源未新确认。",
+    "physical_state_scope": "本次左H2已PASS并真实reap/清场，本轮值守已解除；六服务停止，正式安装状态未变。",
     "trust_directory": "此前软件阶段同一inode/属主0755→0750的历史操作；本次未改权限或回滚状态。"
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2864,
-    "sha256": "02935417c9fb2fbe38b2899fef17bab00a0d635ad0159b1c18589da03a8be9da"
+    "lines": 2865,
+    "sha256": "ef641280af2dbb8930bedafc3d7eda7c6e7415d619b8ecf20b3a1b19dfc440de"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "7afcb351648460d6c092d74571373d4ebe6a63ab45d7dfb0f85e9f93786b7b8c",
-    "bytes": 182095342,
-    "members": 64721,
-    "logical_bytes": 5245436504,
-    "index_count": 64720,
+    "sha256": "b9eed3be482d849a04a7c27636ce4f436c97aab2719536ebb18639e3580898e1",
+    "bytes": 205383447,
+    "members": 65097,
+    "logical_bytes": 5554078298,
+    "index_count": 65096,
     "per_file_sha256_verified": true,
-    "verification_method": "先校验前包整体SHA，保全64432旧索引/路径/大小，288新增件逐SHA；归包前后完整源及授权再核，新包身份由post_archive_review/archive_receipt记录。"
+    "verification_method": "旧包整体SHA已核，全部64720旧索引/路径/大小保全（含64432历史前缀）；376新增件逐SHA，源/授权首末复核；本轮归包回执位于包外post_archive_review。"
   },
-  "retention": "保全64432旧索引，新增本次h2_delay修复/两端测试/独审/root验收与h2_run包外后生材料288件；ELF、缓存和传输包排除。当前h2_delay/post_archive_review及commit回执为包外后生件，下次承接。",
-  "updated_at": "2026-09-22T11:26:02.127170+00:00",
+  "retention": "保全64720旧索引与全部历史FAIL，新增本轮h2_retry及h2_delay包外、右工具/W1隔离、安装只读准备与continuation材料376件；ELF/缓存/传输包排除。本轮h2_retry/post_archive_review和commit_receipt为包外后生件，下一包承接。",
+  "updated_at": "2026-09-22T13:25:58.258096+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -4056,34 +4239,35 @@
       "三native实际CargoJSON/manifest/SHA及最终无进程/服务停用/正式与持久态不变",
       "新H2驱动PLAN ACK：仅一次授权启动，新commit clean与新物理完成信号均必需"
     ],
-    "scope_note": "原review保留S45历史；最新软件修复验收见software.s48.h2_delay，真实失败记录见software.s48.h2_run。"
+    "scope_note": "原review保留S45历史；最新左H2真实通过见software.s48.h2_retry/hardware.left.H2，延时软件验收见h2_delay；旧真实FAIL已完整移入hardware.left.H2_previous_runs。"
   },
   "next_h2": {
-    "status": "WAIT_FRESH_PREFLIGHT_AND_NEW_PHYSICAL_FACTS",
+    "status": "LEFT_H2_ACCEPTED_RIGHT_REQUIRES_NEW_PREPARATION",
     "driver": "scripts/run_post_e_h2.py",
     "driver_sha256": "18fb7fc0ac0b7c4cb1c9628678ce7ba476e7498d0d8c1fbd2011508ddb6f09a9",
     "plan_review": "ACK",
     "default_plan_only": "驱动/报告/产物三Python源码未变，默认PLAN_ONLY既有测试记录保留；本修复阶段未重跑50项Python或两端默认CLI调用。",
     "runtime_head_policy": "运行时两端最新HEAD一致且clean；571编译源及三Python逐字绑定批准build来源；文档提交可严格祖先继承，不回填build HEAD。",
-    "physical_reset_after_failed_h2_confirmed": false,
+    "physical_reset_after_failed_h2_confirmed": true,
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_delay/native_20260922T110924Z_fa37abea/measurement",
-    "remote_run_dir": null,
-    "prior_driver_state": "b4ff720本次真实左H2已FAIL并真实退出，原输出目录已消费，不复用",
-    "current_resume_note": "fb600fd新产物软件验收完成；收口提交后对齐并fresh只读预检，再以新现场事实授权唯一新attempt，旧目录与授权不复用。",
+    "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_retry/precheck_20260922T113258Z_b78558d3/left_h2_run",
+    "prior_driver_state": "c5daa67本次左H2已PASS并真实退出，目录与授权已消费，不复用。",
+    "current_resume_note": "本次左H2已验收归包待提交；右工具0047920/W1测试2e5b515仍为隔离提交，未合入或原生绑定，不代右H1/H3/H2或部署验收。",
     "current_s48_driver": {
       "path": "scripts/run_post_e_h2.py",
       "sha256": "18fb7fc0ac0b7c4cb1c9628678ce7ba476e7498d0d8c1fbd2011508ddb6f09a9",
       "report_path": "scripts/post_e_h2_report.py",
       "artifacts_path": "scripts/post_e_h2_artifacts.py",
-      "source_head": "4191bf0b03bddef1da353bb8c3895d6fc19416ae",
-      "status": "EXECUTED_FAIL_CLEANED",
+      "source_head": "c5daa67da9bb77ef5a945b1ec588484b64f4c3af",
+      "status": "EXECUTED_PASS_CLEANED",
       "new_physical_facts_received": true,
       "hardware_started": true,
       "entry": "默认PLAN_ONLY；现场模式须新事实及精准inputs manifest，不继承历史确认",
-      "physical_fact_scope": "本次全部就绪仅绑定本次已结束真实左H2，不授权下一次",
+      "physical_fact_scope": "本次新现场事实仅绑定本轮已完成左H2；值守已解除，不授权下一次。",
       "driver_attempted": true,
       "measurement_launched": true,
-      "runtime_head": "b4ff720bb244202505b4fbf7df11f9a479739bad"
+      "runtime_head": "c5daa67da9bb77ef5a945b1ec588484b64f4c3af",
+      "actual_build_head": "fb600fd9af0e46c8ae7bed34e056eaa991e6e9e0"
     },
     "historical_s45_driver": {
       "driver": "local/s45/left_h2_current_driver.py",
@@ -4113,9 +4297,9 @@
   "stop_after_current": {
     "user_request": "一直跑完，直到 额度剩 25%",
     "weekly_remaining_stop_percent": 25,
-    "current_package": "S48_H2_DELAY_REMEDIATION",
+    "current_package": "S48_LEFT_H2_RETRY_CLOSURE",
     "next_package_authorized_to_start": true,
-    "state": "软件修复已验收；提交后继续新现场测试准备，待当次物理事实后才能唯一启动。",
+    "state": "左H2已验收并归包，当前文档/证据待提交；后续按25%停止线推进，物理动作仍需新事实。",
     "supersedes": [
       "b 阶段完成后暂停",
       "周额度剩余20%停止点",

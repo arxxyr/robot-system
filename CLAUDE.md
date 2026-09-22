@@ -47,17 +47,13 @@
            seq13681注入请求3895634ns、实测3894208ns，短1426ns触发原严格门。
            authorize/launch各1，工具与driver exit1/真实reap；独立断扭和清场成功。
            第3/4组未执行，原FAIL证据已收口eb59bcc，不自动重试。
-           用户继续后仅修测试注入保证，源码fb600fd；同RobotClock实读达到deadline才成功，
-           不足正时长sleep、最多8次后失败锁存并真实release；工具停止后final_trace拒绝尾窗失败/未知。
-           两端57项、Orin新七件/7help及唯一AC12 mock四组各2通过，20次completion。
-           571新编译输入52b1832…58d17，source/build HEAD fb600fd，原预算未变。
-           两组无硬件时钟探针各4000无短延时/补等；不同钟源已确认，1426ns根因未定。
-           controller路径误判FAIL保留，只读final_validation补验通过；独审/root验收已通过。
-           本软件阶段无硬件动作；原生Astra/medium开发及独审，不自动H2或push。
-           旧默认并行锁例仍有偶发失败，串行通过不代表根因闭合。
-           左H1/H3通过、三次已采样H2 FAIL及一次前置拒绝；收尾后电源未新确认。
-           S-46 Orin wire4历史FAIL；本次双marker Dirty、串口无占用。
-           右臂未测；六服务最后已停止，deployable=false，D15 OPEN。
+           注入延时/尾窗修复fb600fd已软件验收，c5daa67运行本次新左H2通过。
+           四组各100预热+1000正式、原P99门通过；工具/driver exit0真实reap，断扭/清场通过。
+           独审/root已验收，本轮已归包待提交；三次旧测量FAIL及一次前置拒绝完整保留。
+           第三组SLA-B max52.502592ms保留，判据为P99；收尾电源UNKNOWN，本轮值守已解除。
+           右工具0047920（64测试）及W1隔离测试2e5b515（10项）已独审，仅隔离分支未合入/部署。
+           W1 fork/exec窗口机制已证实，旧偶发失败具体根因仍OPEN_UNCONFIRMED；原FAIL保留。
+           左H1/H2/H3通过；右臂未测，正式部署未做，六服务停止，deployable=false、D15 OPEN。
            证据保留当前包，旧过程数据与重复文档按用户授权清除。
            Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。
            最新规则：按用户“一直跑完，直到 额度剩 25%”持续推进，不再每阶段自动暂停；

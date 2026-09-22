@@ -16,13 +16,13 @@
 
 ## 当前状态
 
-2026-09-22注入延时软件修复源码已提交`fb600fd`：只有同一RobotClock实读达到原deadline才成功，
-不足继续正时长sleep，最多8次后失败锁存并真实释放lease；停止后`final_trace`拒绝尾窗失败/未知。
-两端57项及Orin原生七件/7help、AC12 mock通过；原路径误判FAIL保留，独审/root验收已通过。
-本阶段无硬件动作；按最新指令持续推进至剩25%，不自动H2/push；旧H2 FAIL保留，D15 OPEN。
-来源、时钟探针限制和完整证据见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+2026-09-22本次左H2四组各100预热+1000正式通过，runtime `c5daa67` / build `fb600fd`。
+真实收尾、工具/driver回收及清场已独审/root验收，本轮已归包待提交；旧三次FAIL与前置拒绝保留。
+本轮值守已解除，电源UNKNOWN；右未测、正式部署未做、D15 OPEN。右工具`0047920`与
+W1测试`2e5b515`仅在隔离分支完成，尚未合入。继续至剩25%，不自动物理重试或push。
+完整数据、第三组max与P99区别及来源见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
 
-以下为已收口`eb59bcc`的真实H2失败记录，不代表本软件修复阶段再次测量：
+以下为已收口`eb59bcc`的历史真实H2失败记录，不覆盖本次新运行结论：
 
 2026-09-22在b4ff720与新现场“本次全部就绪”确认下，执行一次真实左H2：RT门通过，
 topic-idle 100次预热+1000正式PASS；topic-inflight 100次预热+639正式后FAIL。
@@ -41,10 +41,10 @@ authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TR
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     fb600fd两端57及Orin原生/AC12通过；独审/root验收完成；准备新现场预检
+当前步骤:     c5daa67运行左H2通过且独审/root验收；当前证据已归包待提交
 当前授权:     Astra/medium开发及独审，连续推进至剩25%；每阶段验收commit，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
-平台:         左 H1/H3 PASS、三次已采样H2 FAIL与一次前置拒绝；右臂未测
+平台:         左 H1/H2/H3 PASS；三次旧H2 FAIL及一次前置拒绝保留；右臂未测
 ```
 
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
@@ -72,15 +72,13 @@ Orin实际安装件位于target/release，禁止在那里构建候选；独立�
 再构建测量三件。只读盘点不等于已安装、已授权marker或取得新的现场事实。
 最新指令为持续推进至额度剩25%，替代原35%及每阶段自动暂停；每阶段必要验证、独审/root
 验收和commit仍保留，新提交不自动push。真实H2须另核当次物理重置、支撑与持续在场事实，不能自动重试。
-默认并行CI锁例旧限制仍未修复。
+W1父用例隔离测试已在2e5b515完成但未合入；旧偶发失败具体根因仍OPEN_UNCONFIRMED。
 原门/原件、恢复过程和精确身份均以HANDOFF/H包为准，不将分批结果称单轮全过。
 
-左H1/H3通过、三次已采样H2 FAIL；9/22另一次driver前置拒绝不算测量。
-当天已确认断电重上电与支撑，收尾后没有新的断电确认；右臂未测，
-六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。R4d-B及P-E均已在Orin完成受控软件验证，
-末轮相关进程/IPC/unit已清理，未访问电机或更新现场物理状态。Orin调试/RT必要时直接sudo；标定使用已有
-Python JSON。新H2须先完成软件验收/提交/两端对齐，再取得新物理重置与在场事实，
-不得复用已消费的left_h2_current目录或旧驱动。
+左H1/H2/H3通过，三次旧H2 FAIL与前置拒绝保留；当前只接受本次新物理边界的左H2结果。
+六服务停止、串口无占用、双marker Dirty；值守解除但电源UNKNOWN。右未测、正式部署未做，
+D15 OPEN、deployable=false。新物理动作仍需当次事实，不能复用已消费授权或输出目录。
+Orin调试/RT必要时直接sudo；标定沿已核Python JSON。隔离提交未集成，不混作本次build来源。
 
 证据唯一入口为 [H.json](../.verify/post_e_comm_fault_hardening/H.json) 和
 [H_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)；C5独立
