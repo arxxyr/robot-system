@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --no-project python
-"""左臂 H2 监督驱动；默认只输出计划，真实执行须本次明确事实与完整清单。"""
+"""双臂 H2 监督驱动；默认只输出计划，真实执行须本次明确事实与完整清单。"""
 from __future__ import annotations
 
 import argparse
@@ -19,13 +19,14 @@ import time
 import tomllib
 import traceback
 
-from post_e_h2_report import require, strict_json, verify_report
+from post_e_h2_report import arm_profile, require, strict_json, verify_report
 
 UNITS = tuple(f"xlerobot-{role}-{side}{'-arm' if role == 's0' else ''}.service"
               for role in ("gateway", "s1", "s0") for side in ("left", "right"))
-DEVICE = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
-TRUST = Path("/var/lib/robot/xlerobot_left")
-CONFIG = Path("/etc/robot/xlerobot_left_arm.toml")
+# 旧只读 helper 的左侧默认别名；真实运行只用显式 profile。
+DEVICE = arm_profile().device
+TRUST = arm_profile().trust
+CONFIG = arm_profile().config
 
 
 def file_hash(path):
@@ -52,10 +53,11 @@ def clean_environment(original):
     return result
 
 
-def tool_command(bin_dir, output):
+def tool_command(bin_dir, output, side="left"):
+    profile = arm_profile(side)
     return ["taskset", "-c", "0-3", str(bin_dir / "comm_fault_e2e"), "--phase", "orin-sla",
-            "--bin-dir", str(bin_dir), "--evidence-dir", str(output), "--config", str(CONFIG),
-            "--hardware-id", "left_arm", "--ack-supervised-hardware"]
+            "--bin-dir", str(bin_dir), "--evidence-dir", str(output), "--config", str(profile.config),
+            "--hardware-id", profile.hardware_id, "--ack-supervised-hardware"]
 
 
 # 同一份固定只读代码供普通进程读取和受限 sudo 探针使用；默认导入仅定义函数。
@@ -303,7 +305,7 @@ def inspect_runtime_preconditions(trust=TRUST):
                       "is_directory": stat.S_ISDIR(info.st_mode), "is_symlink": stat.S_ISLNK(info.st_mode)}}
 
 
-def validate_runtime_preconditions(value):
+def validate_runtime_preconditions(value, trust=TRUST):
     require(value["schema"] == "P7_RUNTIME_PRECONDITIONS_V1", "运行前置schema不符")
     require(value["uid"] == value["euid"] == value["account_uid"]
             and value["gid"] == value["egid"] == value["account_gid"], "必须以loosqk实际身份运行")
@@ -312,6 +314,7 @@ def validate_runtime_preconditions(value):
             and all(value["tools"].values()), "缺少必要运行工具")
     require(value["rtprio"][0] == resource.RLIM_INFINITY or value["rtprio"][0] >= 70, "实际身份没有FIFO70权限")
     require(value["memlock"][0] == resource.RLIM_INFINITY, "实际身份没有无限MEMLOCK预算")
+    require(value["trust"]["path"] == str(trust), "运行前置TRUST路径与所选侧不符")
     trust = value["trust"]
     require(trust["is_directory"] and not trust["is_symlink"] and trust["uid"] == value["account_uid"]
             and trust["gid"] == value["account_gid"] and trust["mode"] == 0o750, "trust目录权限不符")
@@ -362,6 +365,8 @@ def validate_services(output):
 
 def validate_facts(inputs, alignment, physical, options, now_ns):
     """回执由 root 收到本次事实后生成；校验绑定，不替代现场确认。"""
+    profile = arm_profile(getattr(options, "side", "left"))
+    require(arm_profile(inputs.get("side", "left")) == profile, "运行输入臂侧与CLI不符")
     require(inputs["schema"] == "P7_H2_INPUTS_V1" and inputs["expected_head"] == options.expected_head
             and inputs["output"] == str(options.output), "运行输入没有绑定本次目录/HEAD")
     require(alignment["schema"] == "P7_H2_ALIGNMENT_V1" and alignment["expected_head"] == options.expected_head,
@@ -373,9 +378,9 @@ def validate_facts(inputs, alignment, physical, options, now_ns):
                 and row["source_manifest_sha256"] == inputs["source_manifest_sha256"], "两端未同HEAD/clean/源")
         require(row["host"] and row["boot_id"], "对齐回执缺主机身份")
     require(0 < alignment["recorded_at_ns"] <= now_ns, "对齐时刻错误")
-    require(physical["schema"] == "P7_H2_PHYSICAL_CONFIRMATION_V1" and physical["side"] == "left"
+    require(physical["schema"] == "P7_H2_PHYSICAL_CONFIRMATION_V1" and physical["side"] == profile.side
             and physical["issued_by"] == "root" and physical["expected_head"] == options.expected_head
-            and physical["output"] == str(options.output), "现场回执没有绑定本次左臂运行")
+            and physical["output"] == str(options.output), "现场回执没有绑定本次所选臂运行")
     require(physical["measurement_manifest_sha256"] == inputs["measurement"]["sha256"]
             and physical["alignment_sha256"] == inputs["alignment"]["sha256"], "现场回执绑定清单错误")
     require(alignment["recorded_at_ns"] <= physical["confirmed_at_ns"] <= now_ns
@@ -389,6 +394,7 @@ class RealBackend:
     """仅显式 execute 使用；构造不运行命令，子进程所有权先于句柄交接。"""
     def __init__(self, options, journal):
         self.options, self.journal = options, journal
+        self.profile = arm_profile(getattr(options, "side", "left"))
         self.process = None
         self.launching = False
         self.log = None
@@ -459,32 +465,32 @@ class RealBackend:
         return actual
 
     def config_check(self):
-        require(file_hash(CONFIG) == self.inputs["config_sha256"] ==
-                file_hash(Path(self.inputs["repository"]) / "configs/xlerobot_left_arm.toml"), "D2配置身份不符")
-        config = tomllib.loads(CONFIG.read_text())
-        require(config["robot"]["id"] == "xlerobot_left" and len(config["hardware"]) == 1, "非左臂独占配置")
+        require(file_hash(self.profile.config) == self.inputs["config_sha256"] ==
+                file_hash(Path(self.inputs["repository"]) / self.profile.repository_config), "D2配置身份不符")
+        config = tomllib.loads(self.profile.config.read_text())
+        require(config["robot"]["id"] == self.profile.robot_id and len(config["hardware"]) == 1, "非所选臂独占配置")
         hw = config["hardware"][0]
-        require(hw["id"] == "left_arm" and hw["address"] == DEVICE
+        require(hw["id"] == self.profile.hardware_id and hw["address"] == self.profile.device
                 and hw["adapter"] == "feetech_sts3215" and hw["motor_ids"] == list(range(1, 7))
                 and hw["auto_enable"] is False and len(hw["calibration_paths"]) == 1, "D2硬件字段改变")
         calibration = Path(hw["calibration_paths"][0])
-        require(calibration.is_absolute() and calibration.name == "left_arm.json"
+        require(calibration.is_absolute() and calibration.name == self.profile.calibration_name
                 and str(calibration) == self.inputs["calibration"]["path"]
                 and file_hash(calibration) == self.inputs["calibration"]["sha256"], "Python标定身份改变")
         strict_json(calibration.read_text())
-        return {"config_sha256": file_hash(CONFIG), "calibration_sha256": file_hash(calibration)}
+        return {"config_sha256": file_hash(self.profile.config), "calibration_sha256": file_hash(calibration)}
 
     def device_check(self):
-        lines = self.command(["udevadm", "info", "--query=property", "--name", DEVICE]).splitlines()
+        lines = self.command(["udevadm", "info", "--query=property", "--name", self.profile.device]).splitlines()
         for key, value in {"ID_VENDOR_ID": "1a86", "ID_MODEL_ID": "55d3",
-                           "ID_SERIAL_SHORT": "5A7C121427", "ID_USB_DRIVER": "cdc_acm"}.items():
+                           "ID_SERIAL_SHORT": self.profile.usb_serial, "ID_USB_DRIVER": "cdc_acm"}.items():
             require([line for line in lines if line.startswith(key + "=")] == [key + "=" + value], "USB身份不唯一/不符")
-        info = Path(DEVICE).stat()
-        require(stat.S_ISCHR(info.st_mode) and os.access(DEVICE, os.R_OK | os.W_OK), "串口类型/权限不符")
-        output = self.command(["fuser", DEVICE], allowed=(1,))
+        info = Path(self.profile.device).stat()
+        require(stat.S_ISCHR(info.st_mode) and os.access(self.profile.device, os.R_OK | os.W_OK), "串口类型/权限不符")
+        output = self.command(["fuser", self.profile.device], allowed=(1,))
         last = self.journal.state["steps"][-1]
         require(not output.strip() and not last["stderr"].strip(), "fuser错误不能当成空闲")
-        return {"path": DEVICE, "resolved": str(Path(DEVICE).resolve()), "rdev": info.st_rdev,
+        return {"path": self.profile.device, "resolved": str(Path(self.profile.device).resolve()), "rdev": info.st_rdev,
                 "uid": info.st_uid, "gid": info.st_gid, "mode": stat.S_IMODE(info.st_mode)}
 
     def preflight(self):
@@ -492,14 +498,14 @@ class RealBackend:
         self.alignment = pinned_json(self.inputs["alignment"])
         physical = pinned_json(self.inputs["physical"])
         validate_facts(self.inputs, self.alignment, physical, self.options, time.time_ns())
-        runtime = inspect_runtime_preconditions()
+        runtime = inspect_runtime_preconditions(self.profile.trust)
         self.uid, self.gid = runtime["account_uid"], runtime["account_gid"]
         self.journal.state.update(physical=physical, alignment=self.alignment, runtime_preconditions=runtime,
                                   limits={key: runtime[key] for key in ("rtprio", "memlock")},
                                   actual_uid=runtime["uid"], actual_gid=runtime["gid"],
                                   environment_keys=sorted(self.environment))
         self.journal.save()
-        validate_runtime_preconditions(runtime)
+        validate_runtime_preconditions(runtime, self.profile.trust)
 
     def audit(self):
         require(self.inputs is not None, "未通过输入预检")
@@ -519,15 +525,15 @@ class RealBackend:
     def trust(self, action):
         require(action in ("status", "revoke", "authorize"), "未知维护动作")
         return self.command([self.production["artifacts"]["s0_daemon"]["path"], "rx-trust", action,
-                             "--robot-id", "xlerobot_left", "--rx-trust-dir", str(TRUST)])
+                             "--robot-id", self.profile.robot_id, "--rx-trust-dir", str(self.profile.trust)])
 
     def markers(self, expected):
-        return marker_snapshot(TRUST, expected, self.uid, self.gid)
+        return marker_snapshot(self.profile.trust, expected, self.uid, self.gid)
 
     def launch(self):
         require(self.process is None, "禁止第二次启动")
         self.log = (self.options.output / "tool.log").open("xb")
-        argv = tool_command(self.bin_dir, self.options.output)
+        argv = tool_command(self.bin_dir, self.options.output, self.profile.side)
         self.journal.state.update(tool_argv=argv, tool_launch_ns=time.time_ns())
         self.journal.save()
         require(not self.journal.state["failures"], "启动记录失败，拒绝Popen")
@@ -560,7 +566,7 @@ class RealBackend:
                 journal.save()
 
     def report(self, pid):
-        expected = {"bin_dir": str(self.bin_dir), "config": str(CONFIG),
+        expected = {"side": self.profile.side, "bin_dir": str(self.bin_dir), "config": str(self.profile.config),
                     "config_sha256": self.inputs["config_sha256"],
                     "calibration_sha256": self.inputs["calibration"]["sha256"], "tool_pid": pid,
                     "artifacts": {name: {"sha256": row["sha256"], "build": pinned_json(row["sidecar"])}
@@ -585,6 +591,7 @@ class Journal:
     def __init__(self, output, options):
         self.output = output
         self.state = {"schema": "P7_H2_RUN_V1", "status": "RUNNING", "started_ns": time.time_ns(),
+                      "side": arm_profile(getattr(options, "side", "left")).side,
                       "expected_head": options.expected_head, "inputs_sha256": options.inputs_sha256,
                       "supervisor_pid": os.getpid(), "steps": [], "failures": [],
                       "authorization_attempts": 0, "launch_attempts": 0, "deployable": False, "D15": "OPEN"}
@@ -721,6 +728,7 @@ def execute(options, backend_factory):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--side", choices=("left", "right"), default="left")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--physical-reset-confirmed", action="store_true")
     parser.add_argument("--expected-head")
@@ -744,7 +752,7 @@ def validate_options(options):
 def main(argv=None, backend_factory=None):
     options = parse_args(argv)
     if not options.execute:
-        print(json.dumps({"mode": "PLAN_ONLY", "side": "left", "deployable": False,
+        print(json.dumps({"mode": "PLAN_ONLY", "side": options.side, "deployable": False,
                           "steps": ["新run/HEAD/两端clean/源/两套产物/正式安装身份/六服务核验",
                                     "本次现场事实、D2/标定/USB/权限/无持有者",
                                     "status→revoke→status→一次authorize→status→一次工具启动",

@@ -425,6 +425,17 @@ daemon 的有限启动监督。当前模板 S0 为 `LimitRTPRIO=99`、`LimitMEML
 
 ### 5.2 一次性 RX 信任的人工操作
 
+H2 监督驱动 `scripts/run_post_e_h2.py --side left|right` 默认 `left`；不带
+`--execute` 只打印计划。右臂必须同时绑定 `inputs.side=right`、当次
+`physical.side=right` 与 `--side right`，配置、USB、标定、TRUST 和串口
+FIFO70@CPU5 均按 §0.1 的右侧 D2 行核验（左为 CPU4）。V1 输入缺 `side`
+只兼容左臂，不能据此运行右臂。两侧仍检查全部六服务、双配置与全量进程清场。
+右臂先独立完成新 H1/H3 及现场事实验收，再进入 H2；不能复用左侧结果或已消费
+授权。本工具更新须按新源码绑定三 Python 与真实构建来源，不能替换正在等待或
+执行左 H2 的冻结工具。当前格式报告必须有原始 `final_trace.json` 并与报告一致，
+确认两 child 已停且最终 Disarm 无 sticky；原 `final_stop` 的真实 DisableAck
+仍独立必需，旧缺原件报告不回填、不静默作为 PASS。
+
 `rx-trust` 子命令在打开 adapter 之前分流，**不触串口**，但 status 也会获取 RX
 稳定锁并写诊断 PID，不能与运行中的同目录 daemon 并发。当进程仍活着时获得 87
 应停止维护，不得强抢。真实设备信任来自新的物理供电/USB 边界和现场事实，文件
@@ -441,6 +452,7 @@ daemon 的有限启动监督。当前模板 S0 为 `LimitRTPRIO=99`、`LimitMEML
 
 1. 在任何marker CLI前，以loosqk复用驱动的`inspect_runtime_preconditions`、
    `validate_runtime_preconditions`与`process_snapshot`，核实际UID/EUID/GID/EGID、
+   两函数均显式传入所选侧 TRUST（默认仅左），并核返回路径一致；检查
    RT/MEMLOCK、TRUST属主及0750、实际进程读取能力；仅sudo扫描通过不能替代普通路径。
    确认对应链已停止、没有RX/latch/串口持有者，核D2、实际ELF/config、目录与锁身份。
    再status并保存主/备状态、退出码；status退0只表示命令完成，
