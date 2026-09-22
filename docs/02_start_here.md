@@ -16,6 +16,14 @@
 
 ## 当前状态
 
+2026-09-22注入延时软件修复源码已提交`fb600fd`：只有同一RobotClock实读达到原deadline才成功，
+不足继续正时长sleep，最多8次后失败锁存并真实释放lease；停止后`final_trace`拒绝尾窗失败/未知。
+两端57项及Orin原生七件/7help、AC12 mock通过；原路径误判FAIL保留，独审/root验收已通过。
+本阶段无硬件动作；按最新指令持续推进至剩25%，不自动H2/push；旧H2 FAIL保留，D15 OPEN。
+来源、时钟探针限制和完整证据见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+
+以下为已收口`eb59bcc`的真实H2失败记录，不代表本软件修复阶段再次测量：
+
 2026-09-22在b4ff720与新现场“本次全部就绪”确认下，执行一次真实左H2：RT门通过，
 topic-idle 100次预热+1000正式PASS；topic-inflight 100次预热+639正式后FAIL。
 seq13681注入请求3895634ns、实测3894208ns，短1426ns，原严格判据未放宽。
@@ -33,8 +41,8 @@ authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TR
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     9/22真实左H2第二组载荷校验FAIL，断扭/清场完成；失败证据收口后暂停
-当前授权:     Astra/medium开发及独审；本阶段收口提交后暂停，等用户检查继续
+当前步骤:     fb600fd两端57及Orin原生/AC12通过；独审/root验收完成；准备新现场预检
+当前授权:     Astra/medium开发及独审，连续推进至剩25%；每阶段验收commit，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H3 PASS、三次已采样H2 FAIL与一次前置拒绝；右臂未测
 ```
@@ -62,9 +70,8 @@ GC分别1391/1379。完整收尾与独审/root验收通过，已提交2f1de02，
 已审操作单见 scripts/systemd/README_dimos_replace.md。
 Orin实际安装件位于target/release，禁止在那里构建候选；独立构建目录先冻结生产四件，
 再构建测量三件。只读盘点不等于已安装、已授权marker或取得新的现场事实。
-最新规则为每个大阶段完成必要验证、独审/root验收及commit后暂停，汇报成果、证据与
-遗留问题，等用户检查并明确继续；大阶段按现有计划边界，不按小提交计。
-周额度剩35%仍是额外停止上限，新提交不自动push；本次失败证据收口后暂停，新现场测试另核事实。
+最新指令为持续推进至额度剩25%，替代原35%及每阶段自动暂停；每阶段必要验证、独审/root
+验收和commit仍保留，新提交不自动push。真实H2须另核当次物理重置、支撑与持续在场事实，不能自动重试。
 默认并行CI锁例旧限制仍未修复。
 原门/原件、恢复过程和精确身份均以HANDOFF/H包为准，不将分批结果称单轮全过。
 

@@ -2,6 +2,26 @@
 
 ## 当前步骤
 
+2026-09-22用户继续后，注入延时软件修复源码已提交`fb600fd`。仅测试hook用同一RobotClock
+仅真实读数达到原deadline才成功；不足继续正时长sleep，最多8次后失败锁存。
+溢出、倒退同样失败，由调用者真实释放lease。工具在gateway/S0停止后独立核`final_trace`，拒绝尾窗sticky或未知状态，
+不改`final_stop`安全动作原结论。原1–5ms请求、四组100预热/1000正式、SLA和trace wire不变。
+571项新编译输入aggregate=`52b1832fd3e7d6ae741098fff05a3cfd45f16056f33dfb13b2d53bafc1c58d17`；
+source/build HEAD均为`fb600fd`，不继承上一阶段旧产物身份。本地57项定向测试和必要clippy通过，
+Orin六条原生recipe完成生产4/测量3和7help，同57项及唯一AC12 mock四组各2通过，共20次completion。
+final_trace确认双child停止且valid，非dry-run收尾、实际UID清场、来源及正式安装状态核验通过。
+原controller误猜缺少`000_`前缀的final_stop路径而FAIL，保留不覆盖；独立只读final_validation
+随后exit0补验，不称单轮全过。最终证据独审/root验收已通过。
+普通与FIFO70@CPU4无硬件时钟探针各4000项，均未出现短延时或补等；已确认旧std sleep用
+MONOTONIC而量测用RAW，但没有复现原短1426ns，不能宣称该样本具体系统根因已确认。
+本阶段不安装、不操作硬件、不自动H2或push。用户最新要求持续推进至额度剩25%，
+替代35%及每阶段自动暂停；每阶段独审/root验收和commit保留，真实H2仍须新的物理重置/支撑/在场事实。
+此前三次已采样H2 FAIL与一次前置拒绝原样保留，D15 OPEN、deployable=false、右臂未测。
+
+证据阶段入口为`local/s48/h2_delay/`；已完成独审/root验收，归档身份见H.json；本阶段post_archive_review与commit回执为包外后生件，下包承接。
+
+### 上阶段真实H2失败（收口eb59bcc，以下保留当时结论）
+
 **2026-09-22 本次真实左H2为FAIL，软件收尾完成；失败证据收口commit后暂停供用户检查。**
 用户明确继续并确认“本次全部就绪”；runtime HEAD b4ff720、实际build HEAD4191bf0，
 571编译输入及三Python身份继承已核，未安装产物或修改测量预算。09:46:29至10:09:47 UTC，
@@ -127,7 +147,7 @@ P-E纯软件长负载已通过；不得外推新硬件通过、生产退役或�
 
 W3已将新权限、高/普通双队列、唯一writer、RPC责任账本接入生产调用方。
 W4a文件同步故障、W4b固定五例及RR R0–R3已验收；R4完整T8/SUP/ENV、
-原连接竞争与双环境验证已在C/A/B依次闭环。P-E、P.7及前置修复已验收；本次真实左H2载荷有效性FAIL，下一步先验证并修复等待保证，再按原预算验收。每包必要检查与独立/root评审通过即commit。
+原连接竞争与双环境验证已在C/A/B依次闭环。P-E、P.7及前置修复已验收；三次真实左H2 FAIL保持；本次fb600fd仅修测试hook等待保证及尾窗检查，按最新25%指令持续推进，新的现场测量另核事实。每包必要检查与独立/root评审通过即commit。
 RR r3析构与公共CAL两项方案已ACK，直接替换现有工厂，保topic/schema/FF；
 所有peer与自动清理者同批同源，模型/迁移实现按分包开发和评审。
 旧跨原子可见性与映射删除问题已在R1–R3实现，R4双环境软件验证已通过；不外推额外内存序证明或完整候选闭环。

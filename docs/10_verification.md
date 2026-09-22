@@ -9,6 +9,16 @@
 
 ---
 
+## 2026-09-22 · 注入延时与尾窗检查软件验证
+
+源码`fb600fd`，571项新aggregate `52b1832…58d17`；完整来源与阶段证据见HANDOFF。
+本地定向7延时+2 sticky+5 lease+43 SLA＝57通过，默认及相关feature Clippy零警告；
+开发期两轮Clippy/编译失败保留。Orin六recipe原生生产4/测量3、7help、同57项及唯一AC12 mock
+四组各2通过，共20次completion；final_trace与非dry-run收尾、清场/来源/安装状态核验通过。
+controller错猜无`000_`前缀路径的原FAIL保留，只读final_validation另exit0补充；独审/root验收已通过。
+普通/FIFO70@CPU4时钟探针各4000项，均无短延时/补等；时基不同已确认，原1426ns根因未定。
+仅测试hook及验收工具变更；原SLA/样本判据、旧H2 FAIL保留，无硬件动作、不自动H2/push。
+
 ## 2026-09-22 · 左H2一次真实测量FAIL及收尾
 
 用户新现场确认“本次全部就绪”后，runtime b4ff720/build4191bf0执行一次左H2；
@@ -836,3 +846,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-10：登记P-A1九门、独立终审与真实退休竞争/固定槽禁分配证据；S0文档未运行，生产与Orin待验证。
 
 - 2026-09-22：登记左H2前置拒绝的软件修复、两次原生来源与最终只读复检；保留原FAIL，不外推硬件通过。
+
+- 2026-09-22：登记测试hook同RobotClock有界补足与停止后final_trace门，两端57及Orin原生/AC12通过，原controller FAIL保留；最终独审/root验收已通过，旧H2 FAIL不变。

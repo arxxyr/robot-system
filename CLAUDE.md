@@ -46,17 +46,22 @@
            本次RT门通过，topic-idle 100+1000 PASS；topic-inflight 100+639后FAIL。
            seq13681注入请求3895634ns、实测3894208ns，短1426ns触发原严格门。
            authorize/launch各1，工具与driver exit1/真实reap；独立断扭和清场成功。
-           第3/4组未执行，不自动重试；本次失败证据收口commit后暂停检查。
-           runtime HEAD b4ff720/build4191bf0；571编译输入、预算及正式安装件未改。
-           使用原生Astra/medium开发及独审，不push；35%仍为额外停止阈值。
+           第3/4组未执行，原FAIL证据已收口eb59bcc，不自动重试。
+           用户继续后仅修测试注入保证，源码fb600fd；同RobotClock实读达到deadline才成功，
+           不足正时长sleep、最多8次后失败锁存并真实release；工具停止后final_trace拒绝尾窗失败/未知。
+           两端57项、Orin新七件/7help及唯一AC12 mock四组各2通过，20次completion。
+           571新编译输入52b1832…58d17，source/build HEAD fb600fd，原预算未变。
+           两组无硬件时钟探针各4000无短延时/补等；不同钟源已确认，1426ns根因未定。
+           controller路径误判FAIL保留，只读final_validation补验通过；独审/root验收已通过。
+           本软件阶段无硬件动作；原生Astra/medium开发及独审，不自动H2或push。
            旧默认并行锁例仍有偶发失败，串行通过不代表根因闭合。
            左H1/H3通过、三次已采样H2 FAIL及一次前置拒绝；收尾后电源未新确认。
            S-46 Orin wire4历史FAIL；本次双marker Dirty、串口无占用。
            右臂未测；六服务最后已停止，deployable=false，D15 OPEN。
            证据保留当前包，旧过程数据与重复文档按用户授权清除。
            Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。
-           最新规则：每个大阶段验收并commit后暂停，让用户检查；明确继续才进入下一阶段。
-           大阶段按现有计划边界，不把每个小提交当大阶段；35%额度线仍为额外上限，不push。
+           最新规则：按用户“一直跑完，直到 额度剩 25%”持续推进，不再每阶段自动暂停；
+           每阶段独审/root验收及commit保持，不push；真实H2仍需新物理重置/支撑/在场事实。
            RX 重同步 / 串口 reopen 已移出本候选。
            后续硬序 ①通信故障硬化 → ②D15 退役决策 → ③robot-viz Rerun 桥
            → ④F7 baseline 判据小件；通信硬化不自动关闭 D15。
