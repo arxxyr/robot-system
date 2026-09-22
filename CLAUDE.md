@@ -42,11 +42,16 @@
            预检修复1b6db3e/4191bf0已独审；50项Python、真实sudo集成通过。
            Orin新build HEAD4191bf0：生产4/测量3、7help/15收尾与只读复检通过。
            首native后零启动计数误拒已修，原FAIL保留；不称单轮全过。
-           571编译输入和预算未改；未安装/重试H2，软件收口commit后暂停检查。
+           该软件修复已收口b4ff720；后经继续及“本次全部就绪”确认执行一次左H2。
+           本次RT门通过，topic-idle 100+1000 PASS；topic-inflight 100+639后FAIL。
+           seq13681注入请求3895634ns、实测3894208ns，短1426ns触发原严格门。
+           authorize/launch各1，工具与driver exit1/真实reap；独立断扭和清场成功。
+           第3/4组未执行，不自动重试；本次失败证据收口commit后暂停检查。
+           runtime HEAD b4ff720/build4191bf0；571编译输入、预算及正式安装件未改。
            使用原生Astra/medium开发及独审，不push；35%仍为额外停止阈值。
            旧默认并行锁例仍有偶发失败，串行通过不代表根因闭合。
-           左H1/H3通过、两次历史H2 FAIL；9/22已确认重上电，收尾后电源未新确认。
-           S-46 Orin wire4历史FAIL；本次前置拒绝不算已采样H2。
+           左H1/H3通过、三次已采样H2 FAIL及一次前置拒绝；收尾后电源未新确认。
+           S-46 Orin wire4历史FAIL；本次双marker Dirty、串口无占用。
            右臂未测；六服务最后已停止，deployable=false，D15 OPEN。
            证据保留当前包，旧过程数据与重复文档按用户授权清除。
            Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。

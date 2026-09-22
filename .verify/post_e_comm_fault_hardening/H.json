@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "PAUSED_AFTER_H2_PREFLIGHT_REMEDIATION",
-  "resume_from": "本次前置拒绝的软件修复已验收；收口commit后暂停检查。下一次真实H2须明确继续与新的适用现场事实。",
+  "work_state": "PAUSED_AFTER_LEFT_H2_FAILED_RUN",
+  "resume_from": "本次真实左H2第二组注入时长校验FAIL，失败证据与收尾验收；提交后暂停。下一步先验证并修复注入时长保证，未经新验收和现场事实不重试。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_H2_PREFLIGHT_REMEDIATION_ACCEPTED",
-  "review_status": "APPROVED_SOFTWARE_REMEDIATION_SCOPE",
+  "status": "S48_LEFT_H2_FAIL_EVIDENCE_ACCEPTED",
+  "review_status": "APPROVED_FAILED_RUN_EVIDENCE_ONLY",
   "deployable": false,
-  "scope": "W3/W4、RR R0–R4、P-E及P.7软件准备通过；9/22 H2前置拒绝后修复及Orin新来源绑定/只读复检通过。原H2和首复检FAIL保留；未安装/重试H2，D15 OPEN、deployable=false。",
+  "scope": "W3/W4、RR R0–R4、P-E/P.7及前置修复软件验收已完成；本次真实左H2第一组PASS、第二组639正式后FAIL，第三/四组未跑。断扭/真实回收/清场成功；D15 OPEN、deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -3696,7 +3696,42 @@
         "deployment_started": false,
         "hardware_retried": false,
         "deployable": false,
-        "D15": "OPEN"
+        "D15": "OPEN",
+        "closeout_commit": "b4ff720bb244202505b4fbf7df11f9a479739bad"
+      },
+      "h2_run": {
+        "status": "H2_FAIL_EVIDENCE_ACCEPTED",
+        "runtime_head": "b4ff720bb244202505b4fbf7df11f9a479739bad",
+        "actual_build_head": "4191bf0b03bddef1da353bb8c3895d6fc19416ae",
+        "compiled_source_files": 571,
+        "compiled_source_sha256": "926a0f1d1f95ff4587d9ced40a466b259ce910998004f5ab67dde7fbdfa7ae87",
+        "result": {
+          "path": "target/post_e_h2_rt/s48/h2_run/result.json",
+          "bytes": 6452,
+          "sha256": "be702b4d5d895064768fd66c1496b76c1b0ca888399d507102c9bc893a1af338"
+        },
+        "final_review": {
+          "path": "target/post_e_h2_rt/s48/h2_run/review/final_review.json",
+          "bytes": 3668,
+          "sha256": "bc08a7bb0aff22d8bc0bec1cfd1242b6d830177d5b45925fd215b32c14eb1e35"
+        },
+        "root_acceptance": {
+          "path": "target/post_e_h2_rt/s48/h2_run/root_acceptance.md",
+          "bytes": 1862,
+          "sha256": "74f918ee4c5cdbb0ffd2fc779947e621f95207ea638ca86e545e60c153c0137d"
+        },
+        "collection": {
+          "path": "target/post_e_h2_rt/s48/h2_run/precheck_20260922T093305Z_1197e472/execution_collection/collection_receipt.json",
+          "bytes": 17668,
+          "sha256": "0a6913bc890d8eef221747b1103a3b4e17be0cda500d447dbd4a5081e2f0fdaa"
+        },
+        "local_evidence": "target/post_e_h2_rt/s48/h2_run",
+        "deployment_started": false,
+        "automatic_retry": false,
+        "deployable": false,
+        "D15": "OPEN",
+        "archive_status": "归入H包local/s48/h2_run；当前post与commit回执为包外后生件",
+        "archive_added_count": 159
       }
     }
   },
@@ -3718,47 +3753,72 @@
       },
       "H2": {
         "status": "FAIL",
-        "run_commit": "ce61623436138342b6a2d234b10bada71d6877ca",
-        "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
+        "run_commit": "b4ff720bb244202505b4fbf7df11f9a479739bad",
+        "build_commit": "4191bf0b03bddef1da353bb8c3895d6fc19416ae",
+        "source_hash": "926a0f1d1f95ff4587d9ced40a466b259ce910998004f5ab67dde7fbdfa7ae87",
         "rt_preflight": "PASS",
-        "rt_threads": {
-          "tool": 6,
-          "s0": 11,
-          "gateway": 14
-        },
-        "group": "topic/idle",
-        "warmup": 100,
-        "samples": 138,
+        "groups": [
+          {
+            "external": false,
+            "in_flight": false,
+            "warmup": 100,
+            "valid": 1000,
+            "result": "PASS",
+            "sla_b_p99_ns": 10649408
+          },
+          {
+            "external": false,
+            "in_flight": true,
+            "warmup": 100,
+            "valid": 639,
+            "invalid": 1,
+            "result": "FAIL"
+          },
+          {
+            "external": true,
+            "in_flight": false,
+            "result": "NOT_RUN"
+          },
+          {
+            "external": true,
+            "in_flight": true,
+            "result": "NOT_RUN"
+          }
+        ],
         "classification_mismatches": 0,
-        "invalid_samples": 0,
-        "trace_dropped": 0,
-        "cached_successful_writes": 4096,
-        "background_successful_writes": 3620,
-        "recovery_successful_writes": 476,
-        "background_requests": 3621,
-        "background_failed_responses": 1,
-        "background_late_requests": 11,
-        "error": "ClearEStop因幂等缓存4096/4096满拒绝；背景串行await另导致11项启动迟到至少50ms",
-        "final_stop": "FAIL",
-        "get_state_safety_state": 3,
-        "get_state_evidence_scope": "原控制流与随后网关Disable拒绝日志交叉证明，原合并observation Err保留",
-        "disable_error": "ResourceExhausted: idempotency cache full (4096/4096)",
+        "invalid_samples": 1,
+        "trace_dropped_invalid": 0,
+        "primary_failure": {
+          "attempt": 739,
+          "sequence": 13681,
+          "request_ns": 3895634,
+          "measured_ns": 3894208,
+          "shortfall_ns": 1426,
+          "request_within_1_5ms": true,
+          "root_cause": "NOT_DETERMINED"
+        },
+        "root_cause": "NOT_DETERMINED",
+        "final_stop": "PASS",
+        "final_safety_state": 3,
+        "disable_actual_ack": true,
+        "supervision": {
+          "authorization_attempts": 1,
+          "launch_attempts": 1,
+          "driver_pid": 274858,
+          "tool_pid": 274901,
+          "driver_exit": 1,
+          "tool_exit": 1,
+          "reaped": true,
+          "outer_signals": []
+        },
         "all_test_processes_exited": true,
         "operator_available": true,
         "physical_entry_confirmed": true,
         "physical_authorization_consumed": true,
-        "physical_power_off_confirmed_after_failure": true,
-        "physical_power_off_evidence": "orin/left_h2_current/physical_power_off_confirmation.json",
-        "next": "S46工具修复与两端等效长负载验收；评审提交后重新确认物理边界，不复用本次驱动目录",
-        "evidence": [
-          "orin/left_h2_current/evidence_index.json",
-          "orin/left_h2_current/run.json",
-          "orin/left_h2_current/report.json",
-          "orin/left_h2_current/orin_sla_left/final_stop.json",
-          "orin/left_h2_current/post_run_audit.json",
-          "orin/left_h2_current/cadence_diagnostic.json",
-          "local/left_h2_current_independent.json"
-        ]
+        "physical_power_off_confirmed_after_failure": false,
+        "evidence_acceptance": "ACCEPTED",
+        "evidence": "local/s48/h2_run/precheck_20260922T093305Z_1197e472/execution_collection/",
+        "next": "先核实并修复载荷等待保证；原预算验收后新现场边界重测。本轮收口后暂停。"
       },
       "H3": {
         "status": "PASS",
@@ -3808,6 +3868,50 @@
             "orin/left_h2_run.json",
             "orin/left_h2_final_audit.json"
           ]
+        },
+        {
+          "status": "FAIL",
+          "run_commit": "ce61623436138342b6a2d234b10bada71d6877ca",
+          "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
+          "rt_preflight": "PASS",
+          "rt_threads": {
+            "tool": 6,
+            "s0": 11,
+            "gateway": 14
+          },
+          "group": "topic/idle",
+          "warmup": 100,
+          "samples": 138,
+          "classification_mismatches": 0,
+          "invalid_samples": 0,
+          "trace_dropped": 0,
+          "cached_successful_writes": 4096,
+          "background_successful_writes": 3620,
+          "recovery_successful_writes": 476,
+          "background_requests": 3621,
+          "background_failed_responses": 1,
+          "background_late_requests": 11,
+          "error": "ClearEStop因幂等缓存4096/4096满拒绝；背景串行await另导致11项启动迟到至少50ms",
+          "final_stop": "FAIL",
+          "get_state_safety_state": 3,
+          "get_state_evidence_scope": "原控制流与随后网关Disable拒绝日志交叉证明，原合并observation Err保留",
+          "disable_error": "ResourceExhausted: idempotency cache full (4096/4096)",
+          "all_test_processes_exited": true,
+          "operator_available": true,
+          "physical_entry_confirmed": true,
+          "physical_authorization_consumed": true,
+          "physical_power_off_confirmed_after_failure": true,
+          "physical_power_off_evidence": "orin/left_h2_current/physical_power_off_confirmation.json",
+          "next": "S46工具修复与两端等效长负载验收；评审提交后重新确认物理边界，不复用本次驱动目录",
+          "evidence": [
+            "orin/left_h2_current/evidence_index.json",
+            "orin/left_h2_current/run.json",
+            "orin/left_h2_current/report.json",
+            "orin/left_h2_current/orin_sla_left/final_stop.json",
+            "orin/left_h2_current/post_run_audit.json",
+            "orin/left_h2_current/cadence_diagnostic.json",
+            "local/left_h2_current_independent.json"
+          ]
         }
       ],
       "H2_prelaunch_attempts": [
@@ -3842,14 +3946,15 @@
     "左臂已再次完成，继续 H2",
     "已完成，可以持续在场，继续 H2",
     "左臂已断电，双臂继续支撑",
-    "2026-09-22：全部完成，能持续在场，启动本次H2；仅绑定已退出的前置拒绝attempt，无收尾后新断电确认。"
+    "2026-09-22：全部完成，能持续在场，启动本次H2；仅绑定已退出的前置拒绝attempt，无收尾后新断电确认。",
+    "2026-09-22：本次全部就绪；仅绑定b4ff720的一次真实左H2，已结束，收尾后无新断电确认。"
   ],
   "operational_state": {
     "formal_four_binaries_unchanged": true,
     "six_services": "inactive/PID0",
-    "physical_rx_marker": "9/22失败后两份Dirty 1\\n，UID/GID1000、0600；本次authorize=0，后续修复未写marker。",
-    "physical_estop_latch": "H1/H3前后SHA相同",
-    "no_serial_access_after_h2_physical_reset": true,
+    "physical_rx_marker": "本次真实H2 authorize/launch各1；结束后两份Dirty 1\\n（hex310a）、UID/GID1000、0600。",
+    "physical_estop_latch": "此前H1/H3前后SHA相同为历史事实；本次执行过真实EStop/恢复，当前只据本次final_stop与原件，不宣称latch内容沿旧未变。",
+    "no_serial_access_after_h2_physical_reset": false,
     "all_h2_processes_exited": true,
     "left_serial_unoccupied": true,
     "left_motor_power": "9/22已确认断电重上电；本次driver退出后未重新确认电源状态，不能沿旧记录称当前已断电。",
@@ -3867,26 +3972,26 @@
       "validation": "安装配置与仓库逐字一致，直接引用Python JSON；每臂6个名称/ID1–6、offset/range/drive_mode字段兼容",
       "scope": "仅文件及源码只读核验，不称电机EEPROM本轮已读回；没有重标定/改值/打开串口"
     },
-    "physical_state_scope": "本段当前态绑定9/22唯一前置拒绝attempt与后续只读复核。历史H2授权/串口访问及断电确认保留于对应历史运行记录。",
-    "trust_directory": "同一inode/属主，仅0755→0750；五个现有文件身份SHA未变。"
+    "physical_state_scope": "绑定9/22本次真实左H2，软件断扭与清场已核；物理断电状态未新确认。",
+    "trust_directory": "此前软件阶段同一inode/属主0755→0750的历史操作；本次未改权限或回滚状态。"
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2849,
-    "sha256": "283867a2ae9f5bbcc879ea350d69d09ccc31087cc25c38d8794edab0bd5e2873"
+    "lines": 2851,
+    "sha256": "434a4152a80ccfb1fecf71bb20c561784a82bbe063a1accdf5fef8487c5c768a"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "22757197b4db4cd51834bedb4747940dd47ae45fd27beae01f68f503d1d8e0b4",
-    "bytes": 177252374,
-    "members": 64274,
-    "logical_bytes": 5196428188,
-    "index_count": 64273,
+    "sha256": "4351de6e2aa5bb9bb2a6e2c7e1d7448c70982c26c9e1812cdc41ddfd1d890a9a",
+    "bytes": 181301754,
+    "members": 64433,
+    "logical_bytes": 5239670931,
+    "index_count": 64432,
     "per_file_sha256_verified": true,
-    "verification_method": "旧P7完整包SHA与63786索引保留，新增逐SHA；root核新整包与全成员/索引集合及关键原件，详包外归档审计。"
+    "verification_method": "旧H2前置修复整包SHA与64273索引保全，新增159件逐SHA；root核新整包/成员/索引与新增件，详h2_run/post_archive_review。"
   },
-  "retention": "承接P7全部63786旧索引及包外后生件，新增9/22原attempt/原FAIL/源码修复/两次真实构建与最终只读预检；ELF、缓存与重复传输包不嵌入。本次post_archive_review、最终Git对齐和commit_receipt为包外后生件，下包承接。",
-  "updated_at": "2026-09-22T09:23:14.693822+00:00",
+  "retention": "保全前置修复64273旧索引，新增本次真实左H2 FAIL原件/评审/诊断及h2_new包外后生件159件；ELF、缓存和传输tar不嵌入。当前h2_run/post_archive_review、最终Git对齐及commit_receipt为包外后生件，下次承接。",
+  "updated_at": "2026-09-22T10:20:30.918525+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -3906,10 +4011,10 @@
       "三native实际CargoJSON/manifest/SHA及最终无进程/服务停用/正式与持久态不变",
       "新H2驱动PLAN ACK：仅一次授权启动，新commit clean与新物理完成信号均必需"
     ],
-    "scope_note": "原review字段保留S45历史评审；最新软件修复见software.s48.h2_remediation.final_review。"
+    "scope_note": "原review保留S45历史；最新本次失败证据见software.s48.h2_run.final_review。"
   },
   "next_h2": {
-    "status": "WAIT_USER_AFTER_SOFTWARE_REMEDIATION",
+    "status": "WAIT_USER_AFTER_FAILED_RUN_CLOSURE",
     "driver": "scripts/run_post_e_h2.py",
     "driver_sha256": "18fb7fc0ac0b7c4cb1c9628678ce7ba476e7498d0d8c1fbd2011508ddb6f09a9",
     "plan_review": "ACK",
@@ -3918,21 +4023,22 @@
     "physical_reset_after_failed_h2_confirmed": false,
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_new/native_20260922T091449Z_205c33c5/measurement",
     "remote_run_dir": null,
-    "prior_driver_state": "9/22唯一attempt已退出，原输出目录不可复用",
-    "current_resume_note": "本次前置拒绝已结束，软件修复及只读复检通过；收口后暂停。下一次须明确继续、全新输出目录及适用现场确认。",
+    "prior_driver_state": "b4ff720本次真实左H2已FAIL并真实退出，原输出目录已消费，不复用",
+    "current_resume_note": "本轮失败证据收口后暂停；下一步软件修复需先验证根因与原预算，硬件重试须全新输出及新现场事实。",
     "current_s48_driver": {
       "path": "scripts/run_post_e_h2.py",
       "sha256": "18fb7fc0ac0b7c4cb1c9628678ce7ba476e7498d0d8c1fbd2011508ddb6f09a9",
       "report_path": "scripts/post_e_h2_report.py",
       "artifacts_path": "scripts/post_e_h2_artifacts.py",
       "source_head": "4191bf0b03bddef1da353bb8c3895d6fc19416ae",
-      "status": "SOFTWARE_REMEDIATION_ACCEPTED",
+      "status": "EXECUTED_FAIL_CLEANED",
       "new_physical_facts_received": true,
-      "hardware_started": false,
+      "hardware_started": true,
       "entry": "默认PLAN_ONLY；现场模式须新事实及精准inputs manifest，不继承历史确认",
-      "physical_fact_scope": "仅9/22已退出attempt，不能复用于下一次",
+      "physical_fact_scope": "本次全部就绪仅绑定本次已结束真实左H2，不授权下一次",
       "driver_attempted": true,
-      "measurement_launched": false
+      "measurement_launched": true,
+      "runtime_head": "b4ff720bb244202505b4fbf7df11f9a479739bad"
     },
     "historical_s45_driver": {
       "driver": "local/s45/left_h2_current_driver.py",
@@ -3953,9 +4059,9 @@
   "stop_after_current": {
     "user_request": "每一个大阶段完成就暂停让我检查",
     "weekly_remaining_stop_percent": 35,
-    "current_package": "S48_H2_PREFLIGHT_REMEDIATION",
+    "current_package": "S48_LEFT_H2_FAILED_RUN",
     "next_package_authorized_to_start": false,
-    "state": "软件修复已验收；收口提交即暂停供用户检查，不自动重试H2或push。",
+    "state": "本次真实H2 FAIL的完整证据已验收；收口提交后暂停检查，不自动修复下一阶段、重试或push。",
     "supersedes": [
       "b 阶段完成后暂停",
       "周额度剩余20%停止点"

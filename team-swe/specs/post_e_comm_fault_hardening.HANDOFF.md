@@ -2,7 +2,23 @@
 
 ## 当前步骤
 
-**2026-09-22 左 H2 前置拒绝的软件修复已验收；收口commit后暂停供用户检查，本轮不重试H2。**
+**2026-09-22 本次真实左H2为FAIL，软件收尾完成；失败证据收口commit后暂停供用户检查。**
+用户明确继续并确认“本次全部就绪”；runtime HEAD b4ff720、实际build HEAD4191bf0，
+571编译输入及三Python身份继承已核，未安装产物或修改测量预算。09:46:29至10:09:47 UTC，
+单次authorize/launch各1。PX-56真RT门通过；topic-idle 100预热+1000正式PASS，
+SLA-A P99=25440ns、SLA-B P99=10649408ns；topic-inflight 100预热+639正式后invalid1。
+attempt739/seq13681原InjectedDelay请求3895634ns、实测3894208ns，短1426ns；
+请求范围合法，严格b>=a门拒绝。第3/4组未执行，全程分类重试0、原invalid dropped0。
+这是载荷有效性失败；时基/等待实现不一致仍待验证，不称已证实根因或改成PASS。
+
+独立ExternalEStop、Disarm、GetState3及非dry-run DisableAck均成功；工具和driver自然
+exit1/真实reap，外层signals[]。最终related/unreadable均空、串口fuser空、六服务inactive/PID0，
+双marker Dirty。正式四件、配置、标定、unit及编译源前后未改。无新物理断电确认。
+证据入口H包`local/s48/h2_run/`；完整原件在其precheck目录execution_collection，
+原report/run FAIL保留。后续需先诊断并修复注入时长保证，再按原预算软件验收与新现场边界执行；
+本阶段不实施下一修复或自动重试，不push，D15 OPEN、deployable=false，右臂未测。
+
+**此前同日：左 H2 前置拒绝的软件修复已验收并提交b4ff720；以下为历史阶段。**
 用户完成本次电源/USB重置并确认持续在场后，实际driver exit1且真实reap，
 authorize=0、launch=0，未进入电机/串口访问。TRUST目录0755不符既定0750；
 原清场另有两个不可读PID，后来消失，身份未知，不能用事后sudo清场回填原PASS。
@@ -111,7 +127,7 @@ P-E纯软件长负载已通过；不得外推新硬件通过、生产退役或�
 
 W3已将新权限、高/普通双队列、唯一writer、RPC责任账本接入生产调用方。
 W4a文件同步故障、W4b固定五例及RR R0–R3已验收；R4完整T8/SUP/ENV、
-原连接竞争与双环境验证已在C/A/B依次闭环。P-E已完成双端软件验收，后续P.7软件准备；每包必要检查与独立/root评审通过即commit。
+原连接竞争与双环境验证已在C/A/B依次闭环。P-E、P.7及前置修复已验收；本次真实左H2载荷有效性FAIL，下一步先验证并修复等待保证，再按原预算验收。每包必要检查与独立/root评审通过即commit。
 RR r3析构与公共CAL两项方案已ACK，直接替换现有工厂，保topic/schema/FF；
 所有peer与自动清理者同批同源，模型/迁移实现按分包开发和评审。
 旧跨原子可见性与映射删除问题已在R1–R3实现，R4双环境软件验证已通过；不外推额外内存序证明或完整候选闭环。
@@ -120,7 +136,7 @@ P-E保原20/s、50ms节拍、360–600秒、成功唯一新写>8192、真实wire
 
 ## 现场边界
 
-左H1/H3 PASS、两次历史H2 FAIL；9/22另一次driver前置拒绝，未启动测量。
+左H1/H3 PASS、三次已采样H2 FAIL；9/22另一次driver前置拒绝不算测量。
 当天已确认左臂断电重上电与USB重插、双臂支撑；收尾后电源未新确认。S-46本地8192长测通过，
 Orin真实882唯一写时wire4满FAIL；右臂未测，六服务最后停止，D15 OPEN、deployable=false。
 R4/P-E软件运行没有更新物理状态；9/22事实仅绑定已结束attempt，不再要求本次继续值守。

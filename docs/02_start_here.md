@@ -16,21 +16,27 @@
 
 ## 当前状态
 
-2026-09-22取得本次现场重置与在场事实后，一次driver在TRUST权限前置exit1/reap，
+2026-09-22在b4ff720与新现场“本次全部就绪”确认下，执行一次真实左H2：RT门通过，
+topic-idle 100次预热+1000正式PASS；topic-inflight 100次预热+639正式后FAIL。
+seq13681注入请求3895634ns、实测3894208ns，短1426ns，原严格判据未放宽。
+authorize/launch各1，工具/driver exit1且真实reap；独立断扭、最终清场成功，双marker Dirty。
+第3/4组未执行；本次失败证据收口提交后暂停检查，不自动重试或push。电源未有收尾后新确认。
+
+此前同日取得现场事实后，一次driver在TRUST权限前置exit1/reap，
 authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TRUST/进程预检，
 有限固定sudo只读补证仍拒绝未知；合法零启动计数修复保完整PID/start/boot/UID绑定。
 50项Python、Orin真实sudo集成及新HEAD生产4/测量3、7help、15收尾、只读复检通过。
-首只读复检FAIL与原H2拒绝保留，详HANDOFF；未安装/重试H2，收口commit后暂停检查。
+首只读复检FAIL与原H2拒绝保留，详HANDOFF；该软件阶段收口b4ff720，未安装产物。
 以下P.7基线与旧硬件记录为历史来源，不能视作当前电源状态或新H2通过。
 
 ```
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     9/22左H2前置拒绝的软件修复完成；50测试与Orin新产物/只读复检通过
+当前步骤:     9/22真实左H2第二组载荷校验FAIL，断扭/清场完成；失败证据收口后暂停
 当前授权:     Astra/medium开发及独审；本阶段收口提交后暂停，等用户检查继续
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
-平台:         左 H1/H3 PASS、两次历史H2 FAIL；9/22另一次前置拒绝；右臂未测
+平台:         左 H1/H3 PASS、三次已采样H2 FAIL与一次前置拒绝；右臂未测
 ```
 
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
@@ -58,11 +64,11 @@ Orin实际安装件位于target/release，禁止在那里构建候选；独立�
 再构建测量三件。只读盘点不等于已安装、已授权marker或取得新的现场事实。
 最新规则为每个大阶段完成必要验证、独审/root验收及commit后暂停，汇报成果、证据与
 遗留问题，等用户检查并明确继续；大阶段按现有计划边界，不按小提交计。
-周额度剩35%仍是额外停止上限，新提交不自动push；本次软件修复收口后暂停，新现场测试另核事实。
+周额度剩35%仍是额外停止上限，新提交不自动push；本次失败证据收口后暂停，新现场测试另核事实。
 默认并行CI锁例旧限制仍未修复。
 原门/原件、恢复过程和精确身份均以HANDOFF/H包为准，不将分批结果称单轮全过。
 
-左H1/H3通过、两次历史H2 FAIL；9/22另一次driver前置拒绝，未启动测量。
+左H1/H3通过、三次已采样H2 FAIL；9/22另一次driver前置拒绝不算测量。
 当天已确认断电重上电与支撑，收尾后没有新的断电确认；右臂未测，
 六服务最后停止，wire4历史FAIL、D15 OPEN、deployable=false。R4d-B及P-E均已在Orin完成受控软件验证，
 末轮相关进程/IPC/unit已清理，未访问电机或更新现场物理状态。Orin调试/RT必要时直接sudo；标定使用已有

@@ -9,6 +9,19 @@
 
 ---
 
+## 2026-09-22 · 左H2一次真实测量FAIL及收尾
+
+用户新现场确认“本次全部就绪”后，runtime b4ff720/build4191bf0执行一次左H2；
+571编译输入、三Python、正式四件/配置/标定/unit身份均核，authorize/launch各1。
+真RT门通过；topic-idle 100预热+1000正式PASS（SLA-A P99=25440ns，SLA-B P99=10649408ns）。
+topic-inflight 100预热+639正式后invalid1：attempt739/seq13681请求3895634ns、
+实测3894208ns，短1426ns，严格b>=a判据拒绝；第三/四组未执行。原report/run均FAIL，
+不以数值差小豁免，时基/等待实现候选根因仍待验证。
+独立ExternalEStop/Disarm/GetState3及非dry-run DisableAck成功；工具与driver自然
+exit1/reap，外层signals[]。driver及fresh清场related/unreadable为空，串口fuser无占用，
+六服务停止，双marker Dirty。未自动重试/安装，收尾后没有新物理断电确认。
+完整原件见H包local/s48/h2_run；失败证据收口后暂停检查，不push，D15 OPEN、deployable=false。
+
 ## 2026-09-22 · 左H2前置拒绝后的软件修复验收
 
 现场确认后一次driver exit1/reap，authorize/launch均0，未访问电机。TRUST 0755误配与
