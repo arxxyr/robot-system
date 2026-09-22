@@ -9,6 +9,14 @@
 
 ---
 
+## 2026-09-22 · 双臂工具与W1测试的新原生软件验证
+
+source/build `5952498`，571输入aggregate `e05a2ca…ce0ff`；6条release recipe、生产4/测量3、7help，
+Orin64Python及默认并行latch10、唯一AC12 mock四组各2通过，18份completion真实回收、122原件逐SHA/bytes核验。
+final_trace严格一致及双child停止、非dry-run收尾、实际UID清场和来源/安装状态不变通过独审。
+本地合并态64+10及fmt/Clippy已通过；旧57项未重跑，复核初次Mock字段误用失败保留。
+本轮证据已归档，入口`h2_arm_native/`，完整来源/边界见HANDOFF。未安装/重跑硬件，右未测、D15 OPEN。
+
 ## 2026-09-22 · 本次左H2完整通过，已收口10cff7a
 
 runtime c5daa67/build fb600fd；四组各100预热+1000正式，4400 attempts、290158 events，
@@ -18,8 +26,8 @@ runtime c5daa67/build fb600fd；四组各100预热+1000正式，4400 attempts、
 独审/root已验收，旧三次测量FAIL/一次前置拒绝保留；36远端原件与61本地owner材料纳入。
 值守解除、电源UNKNOWN；右未测、未部署、D15 OPEN。0047920/2e5b515现已本地集成并验证，
 合并态64Python和完整最终SHA默认并行10项及fresh fmt/Clippy通过；不作为此前左H2的runtime/build。
-新版Orin绑定另包，本包证据尚未归入当前H包；W1历史具体根因仍OPEN_UNCONFIRMED。
-证据已归包：65097成员/65096索引，新增376件；完整SHA见H.json，包后审件下包承接。
+新版Orin5952498软件绑定已通过，见上节；其证据已增量归入H包，W1历史具体根因仍OPEN_UNCONFIRMED。
+左H2收口时证据包为65097成员/65096索引，新增376件；完整SHA见H.json，包后审件下包承接。
 
 ## 2026-09-22 · 注入延时与尾窗检查软件验证
 
@@ -860,3 +868,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-22：登记左H2前置拒绝的软件修复、两次原生来源与最终只读复检；保留原FAIL，不外推硬件通过。
 
 - 2026-09-22：登记测试hook同RobotClock有界补足与停止后final_trace门，两端57及Orin原生/AC12通过，原controller FAIL保留；最终独审/root验收已通过，旧H2 FAIL不变。
+
+- 2026-09-22：登记5952498新原生来源、64+10/唯一AC12及122原件独审；仅软件，证据已归档，左H2历史来源不变。

@@ -10,6 +10,14 @@
 
 ---
 
+## 2026-09-22 · 双臂验收工具与锁测试隔离（软件独审通过）
+
+`5952498`合并右臂侧别绑定、严格final_trace原件门及W1父测试fork/fd窗口隔离；生产架构、SLA/样本预算和原断扭判据不变。
+本地与Orin64Python/默认并行latch10通过；Orin新source/build绑定、6条recipe、生产4/测量3、7help及唯一AC12 mock四组各2通过独审。
+18份真实completion和122原件已核，本轮证据已归档。W1旧偶发失败具体根因仍OPEN_UNCONFIRMED，历史FAIL不覆盖。
+仅软件验证，未安装或重跑硬件；左H2的c5daa67/fb600fd来源与PASS不变，右未测、D15 OPEN、deployable=false。
+来源和证据边界见HANDOFF及10_verification；审阅：独立reviewer，最终收口由root负责。
+
 ## 2026-09-15 · RR R2 严格请求持有与退出（本地验收通过）
 
 R2在本地IOX/CAL实现受检严格入口、唯一真实入队/回复、不可复制原连接pin、

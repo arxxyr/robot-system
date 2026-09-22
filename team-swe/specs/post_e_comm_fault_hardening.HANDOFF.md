@@ -2,11 +2,24 @@
 
 ## 当前步骤
 
-左H2证据已提交`10cff7a`；随后将`0047920`右工具与`2e5b515`W1测试无冲突集成到本地并验证。
-合并态64项Python、完整最终SHA的latch默认并行10项、fresh fmt/根Clippy通过，命令真实wait/reap。
-本次10项绑定最终`7bf685e8…a8288`，不覆盖旧测试后等价lint记录。新版三Python/Orin原生来源绑定另包，
-未SSH、部署或重跑硬件；不能把新版工具说成已在本轮左H2运行。证据位于`h2_arm_integration/`，
-连同上轮`h2_retry/post_archive_review`及commit回执待下一证据包承接，当前H包身份不变。
+左H2证据已提交`10cff7a`；右工具`0047920`与W1测试`2e5b515`已合并为`5952498`。
+合并态本地64项Python、完整最终SHA的latch默认并行10项、fresh fmt/根Clippy通过，命令真实wait/reap。
+本次10项绑定最终`7bf685e8…a8288`，不覆盖旧测试后等价lint记录或旧偶发失败的OPEN_UNCONFIRMED结论。
+
+Orin新软件source/build均`59524984368ad74b17384ca805b105102a29caac`，571编译输入aggregate
+`e05a2ca189b0f85873d3f780c94329ec03e739028031eb3b36fd5babdd9ce0ff`。6条release recipe产出生产4/测量3，
+7help、64Python、默认并行latch10与唯一AC12 mock四组各2通过；18次completion均真实退出回收，122原件逐SHA/bytes核验。
+final_trace在双child停止后valid且与报告严格一致，非dry-run DisableAck/Disarm、实际UID清场、来源/脚本/安装件/左状态不变均通过独审。
+旧57项本轮未重跑；ELF本体未回传，身份按远端冻结原件及Cargo JSON/profile/features/sidecar核验。
+独立复核初次误用Physical sequence读取Mock epoch的KeyError保留，随后用明确epoch映射验证原trace，未改原件或判据。
+
+证据入口为`target/post_e_h2_rt/s48/h2_arm_native/`的root_raw_checks和review/final_review；
+本轮native与`h2_arm_integration/`、上轮`h2_retry/post_archive_review`及commit回执已增量归档：
+SHA `72fff7b1a42ca4879f6a25d319d21d0c5a0a300bba49204300223007b8560898`，205856277 bytes、
+65322 members/65321索引、5558673967 logical bytes；旧65096条完整保全，新增225件。
+本轮`h2_arm_native/post_archive_review`及commit回执为包外后生件，下包承接；不提前填写未知收口commit。
+左真机runtime `c5daa67` / build `fb600fd`及其PASS不变；新版只做软件mock，未安装或操作硬件，右H1/H2/H3未测，D15 OPEN、deployable=false。
+用户暂不能现场配合，当前只继续软件准备，右硬件不启动。用户恢复工作并将停止线由25%改为周额度剩15%；每阶段独审/root验收后commit、不push，新的物理动作仍须当次现场事实。
 
 ### 已收口左H2（10cff7a，以下保留该提交当时的事实）
 
@@ -184,7 +197,7 @@ P-E纯软件长负载已通过；不得外推新硬件通过、生产退役或�
 
 W3已将新权限、高/普通双队列、唯一writer、RPC责任账本接入生产调用方。
 W4a文件同步故障、W4b固定五例及RR R0–R3已验收；R4完整T8/SUP/ENV、
-原连接竞争与双环境验证已在C/A/B依次闭环。P-E、P.7及前置/延时修复已验收；本次左H2通过，旧三次FAIL保持。左H2已收口10cff7a，右/W1本地集成并验证，后续处理Orin新来源绑定与现场/部署门；按25%线持续推进，每包检查与独审/root验收后commit。
+原连接竞争与双环境验证已在C/A/B依次闭环。P-E、P.7及前置/延时修复已验收；本次左H2通过，旧三次FAIL保持。左H2已收口10cff7a，右/W1合并5952498及Orin新来源验证/独审通过，后续完成证据收口与现场/部署门；按最新周额度剩15%线持续推进，每包检查与独审/root验收后commit。
 RR r3析构与公共CAL两项方案已ACK，直接替换现有工厂，保topic/schema/FF；
 所有peer与自动清理者同批同源，模型/迁移实现按分包开发和评审。
 旧跨原子可见性与映射删除问题已在R1–R3实现，R4双环境软件验证已通过；不外推额外内存序证明或完整候选闭环。

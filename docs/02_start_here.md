@@ -18,9 +18,9 @@
 
 2026-09-22本次左H2四组各100预热+1000正式通过，runtime `c5daa67` / build `fb600fd`。
 真实收尾、工具/driver回收及清场已独审/root验收，本轮已收口10cff7a；旧三次FAIL与前置拒绝保留。
-本轮值守已解除，电源UNKNOWN；右未测、正式部署未做、D15 OPEN。右工具`0047920`与
-W1测试`2e5b515`已本地集成并验证，合并态64Python/最终SHA默认并行10项及fmt/Clippy通过。
-新版Orin三Python/原生绑定另包，不能继承fb600fd冒称新版真机。继续至剩25%，不自动物理重试或push。
+本轮值守已解除，电源UNKNOWN；右未测、未安装、D15 OPEN。右工具/W1已合并`5952498`，
+Orin新来源绑定及64Python/默认并行latch10、唯一mock4×2已通过独审；详HANDOFF。
+本轮软件证据已归档；用户暂不能在场，只继续软件准备，右硬件不启动。按最新要求持续推进至周额度剩15%，每阶段验收commit，不自动物理重试或push。
 完整数据、第三组max与P99区别及来源见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
 
 以下为已收口`eb59bcc`的历史真实H2失败记录，不覆盖本次新运行结论：
@@ -42,8 +42,8 @@ authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TR
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     左H2收口10cff7a；右工具/W1本地集成并验证，Orin新绑定另包
-当前授权:     Astra/medium开发及独审，连续推进至剩25%；每阶段验收commit，不push
+当前步骤:     左H2收口10cff7a；5952498原生软件验证/独审通过，证据已归档
+当前授权:     Astra/medium开发及独审，连续推进至周额度剩15%；每阶段验收commit，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H2/H3 PASS；三次旧H2 FAIL及一次前置拒绝保留；右臂未测
 ```
@@ -71,7 +71,7 @@ GC分别1391/1379。完整收尾与独审/root验收通过，已提交2f1de02，
 已审操作单见 scripts/systemd/README_dimos_replace.md。
 Orin实际安装件位于target/release，禁止在那里构建候选；独立构建目录先冻结生产四件，
 再构建测量三件。只读盘点不等于已安装、已授权marker或取得新的现场事实。
-最新指令为持续推进至额度剩25%，替代原35%及每阶段自动暂停；每阶段必要验证、独审/root
+最新指令为持续推进至周额度剩15%，替代原25%停止线；不再每阶段自动暂停；每阶段必要验证、独审/root
 验收和commit仍保留，新提交不自动push。真实H2须另核当次物理重置、支撑与持续在场事实，不能自动重试。
 W1父用例隔离测试已本地集成验证；旧偶发失败具体根因仍OPEN_UNCONFIRMED。
 原门/原件、恢复过程和精确身份均以HANDOFF/H包为准，不将分批结果称单轮全过。
@@ -79,7 +79,7 @@ W1父用例隔离测试已本地集成验证；旧偶发失败具体根因仍OPE
 左H1/H2/H3通过，三次旧H2 FAIL与前置拒绝保留；当前只接受本次新物理边界的左H2结果。
 六服务停止、串口无占用、双marker Dirty；值守解除但电源UNKNOWN。右未测、正式部署未做，
 D15 OPEN、deployable=false。新物理动作仍需当次事实，不能复用已消费授权或输出目录。
-Orin调试/RT必要时直接sudo；标定沿已核Python JSON。新本地集成不混作已结束左H2的build来源；本包证据尚未归入当前H包。
+Orin调试/RT必要时直接sudo；标定沿已核Python JSON。新版5952498不混作已结束左H2的build来源；本轮native及integration证据已归入H包，本轮post/commit后生件仍在包外。
 
 证据唯一入口为 [H.json](../.verify/post_e_comm_fault_hardening/H.json) 和
 [H_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)；C5独立
