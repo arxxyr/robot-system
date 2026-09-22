@@ -93,8 +93,8 @@ P-E 的 dev/mock/hook 产物或旧 C5 四件补成“当前正式包”。
    feature 与默认 feature 状态、必要环境、自然退出码和完整日志。保留
    `--message-format=json` 的 `compiler-artifact` 原记录，按 executable 字段找到
    四件实际输出；记录每件 SHA-256、大小、ELF AArch64 身份与依赖。仅“文件存在”
-   或同名旧文件不合格。P-E 的两端同源证据不替代正式提交/clean 核验；当前尚未
-   生成这份 S48 正式四件清单。
+   或同名旧文件不合格。P-E 的两端同源证据不替代正式提交/clean 核验。P.7已生成
+   独立清单，每次使用核当前批准来源；驱动三Python变化后不得豁免旧build继承门。
 2. **新包安装清单**：上述十四件逐项绑定源路径、目标绝对路径、SHA、UID/GID、
    mode；unit 若按实际根调整，保留调整后的最终内容与 SHA。保存相关 drop-in、
    EnvironmentFile、标定 JSON 的路径与内容身份，确认没有遗漏的外部依赖。
@@ -439,8 +439,11 @@ daemon 的有限启动监督。当前模板 S0 为 `LimitRTPRIO=99`、`LimitMEML
   --robot-id xlerobot_left --rx-trust-dir /var/lib/robot/xlerobot_left
 ```
 
-1. 确认对应链已停止、没有 RX/latch/串口持有者，核 D2、实际 ELF/config、目录与
-   锁对象身份。先 status 并保存主/备状态、退出码；status 退 0 只表示命令完成，
+1. 在任何marker CLI前，以loosqk复用驱动的`inspect_runtime_preconditions`、
+   `validate_runtime_preconditions`与`process_snapshot`，核实际UID/EUID/GID/EGID、
+   RT/MEMLOCK、TRUST属主及0750、实际进程读取能力；仅sudo扫描通过不能替代普通路径。
+   确认对应链已停止、没有RX/latch/串口持有者，核D2、实际ELF/config、目录与锁身份。
+   再status并保存主/备状态、退出码；status退0只表示命令完成，
    **不表示已经授权**，必须读实际状态输出。
 2. 双份不是 canonical Dirty 时，调查是否存在旧的未消费授权/部分写。使用同一
    正式 ELF、ID/目录执行 `rx-trust revoke` 并重新 status；仅在根因已处理后单次
@@ -656,6 +659,10 @@ test "$fail" -eq 0   # ← 本节退出码（非零 = 取证不合格；归档�
 可以用 sudo 管服务、检查受限进程、设置所需权限/rlimit，但最终 IPC 进程的有效
 UID 与资源所有者须一致。不能把整条测试命令提升为 root 后，与 `loosqk` 服务
 混跑；也不能仅凭 sudo 成功就宣称 FIFO/CPU/内存锁达标。
+
+H2驱动先绑定PID/start_ticks/boot/PGID/UID，仅对权限不足候选执行一次有限固定sudo
+只读补证。启动计数0可以合法；负值、缺字段、未知或身份变化仍拒绝，不按ssh/pam
+名称豁免，不以sudo运行整个驱动。前置拒绝不自动重授权或重跑。
 
 历史 F8 的 root 属主残留曾导致非 root node 创建 `InternalError`，IPC panic
 发生在 guard exec 之后；成功 guard 已清零计数，因此该事故不由其连败预算

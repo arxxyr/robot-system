@@ -37,13 +37,16 @@
            原四失败保留，独审与root验收均通过；详HANDOFF及H包，不称单轮全过。
            B已提交cdeddd2并推送origin；用户2026-09-20授权继续P-E软件长负载。
            P-E两端All72、4096负控和8192长载已验收提交2f1de02，未push。
-           P.7软件准备已完成：新驱动/产物校验37测试通过，源码8491/c759/b7cbaca。
-           原生Astra/medium开发及独审；Orin生产4+测量3、7help、15进程收尾通过。
-           build HEAD b7cbaca，两端同源；未部署/新H2，收口提交后暂停等用户检查。
-           本机8298/Orin8270唯一成功新写且运行期GC成立；周剩35%收尾暂停。
-           使用原生子agent开发/独立评审，每阶段验收后commit，不push。
-           旧默认并行锁例仍有偶发失败，串行工作区通过不代表根因闭合。
-           左H1/H3已通过，H2两次FAIL，左断电；S-46 Orin wire4仍FAIL。
+           P.7基线7c9ffaa已验收。9/22左H2一次前置拒绝，driver exit1/reap，
+           authorize/launch均0，未触电机；原拒绝及两个未知PID清场FAIL保留。
+           预检修复1b6db3e/4191bf0已独审；50项Python、真实sudo集成通过。
+           Orin新build HEAD4191bf0：生产4/测量3、7help/15收尾与只读复检通过。
+           首native后零启动计数误拒已修，原FAIL保留；不称单轮全过。
+           571编译输入和预算未改；未安装/重试H2，软件收口commit后暂停检查。
+           使用原生Astra/medium开发及独审，不push；35%仍为额外停止阈值。
+           旧默认并行锁例仍有偶发失败，串行通过不代表根因闭合。
+           左H1/H3通过、两次历史H2 FAIL；9/22已确认重上电，收尾后电源未新确认。
+           S-46 Orin wire4历史FAIL；本次前置拒绝不算已采样H2。
            右臂未测；六服务最后已停止，deployable=false，D15 OPEN。
            证据保留当前包，旧过程数据与重复文档按用户授权清除。
            Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。

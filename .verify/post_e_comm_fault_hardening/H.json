@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "PAUSED_AFTER_P7_SOFTWARE_ACCEPTANCE",
-  "resume_from": "P.7软件准备已验收；收口commit后暂停等待用户检查和明确继续。后续现场H2必须核新的物理前置，不能复用旧确认。",
+  "work_state": "PAUSED_AFTER_H2_PREFLIGHT_REMEDIATION",
+  "resume_from": "本次前置拒绝的软件修复已验收；收口commit后暂停检查。下一次真实H2须明确继续与新的适用现场事实。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_P7_SOFTWARE_PREPARATION_ACCEPTED",
-  "review_status": "APPROVED_P7_SOFTWARE_SCOPE",
+  "status": "S48_H2_PREFLIGHT_REMEDIATION_ACCEPTED",
+  "review_status": "APPROVED_SOFTWARE_REMEDIATION_SCOPE",
   "deployable": false,
-  "scope": "W3/W4、RR R0–R4、P-E双主机软件验收及P.7软件准备已完成；收口提交后暂停。现场H2仍待验收，wire4历史FAIL、D15 OPEN、deployable=false。",
+  "scope": "W3/W4、RR R0–R4、P-E及P.7软件准备通过；9/22 H2前置拒绝后修复及Orin新来源绑定/只读复检通过。原H2和首复检FAIL保留；未安装/重试H2，D15 OPEN、deployable=false。",
   "software": {
     "s44": {
       "local": {
@@ -550,8 +550,8 @@
       },
       "user_requirement": "基础控制走高优先级通道，关节位置等连续目标走普通通道",
       "candidate": "唯一state owner与单disk writer解耦；可恢复Clear事务标记与原子提交权限；端到端有界容量保留",
-      "review_blocker": "P-E软件范围无剩余阻断；仍须P.7正式产物/新驱动、新提交对齐与新的现场验收。默认并行锁例旧限制未闭合。",
-      "hardware_scope": "仅隔离mock软件验证，不打开串口；左断电与双臂支撑仅为上次现场记录，本批未更新物理事实。",
+      "review_blocker": "软件修复范围无剩余阻断；真实H2仍未通过，默认并行锁例旧限制未闭合。",
+      "hardware_scope": "9/22一次driver前置拒绝，authorize/launch均0、未访问电机；后续仅软件修复/原生构建/只读预检，不自动重试。",
       "queues": {
         "high": "live基础控制",
         "ordinary": "dry-run与诊断；关节目标latest-only",
@@ -3652,6 +3652,51 @@
           "installed_unchanged": true
         },
         "first_attempt": "保留rustc spawn前PATH失败；只修启动PATH后新独占run通过，不称单轮全过"
+      },
+      "h2_remediation": {
+        "status": "ACCEPTED_PAUSE_AFTER_COMMIT",
+        "source_commits": [
+          "1b6db3e2f5f77a18cabf5cf8d02434ed796c9be2",
+          "4191bf0b03bddef1da353bb8c3895d6fc19416ae"
+        ],
+        "build_head": "4191bf0b03bddef1da353bb8c3895d6fc19416ae",
+        "compiled_source_files": 571,
+        "compiled_source_sha256": "926a0f1d1f95ff4587d9ced40a466b259ce910998004f5ab67dde7fbdfa7ae87",
+        "python_tests": 50,
+        "exact_checkout_sudo_integration": "PASS",
+        "production_artifacts": 4,
+        "measurement_artifacts": 3,
+        "help": 7,
+        "natural_completions": 15,
+        "final_readonly_precheck": "PASS",
+        "first_readonly_precheck": "FAIL: 合法start_ticks=0被误拒；原件保留，4191bf0修复后新轮通过",
+        "first_native": "PASS，真实build HEAD1b6db3e；不回填最终来源",
+        "original_attempt": "PRELAUNCH_FAIL: TRUST0755；driver exit1/reap、authorize/launch均0；原cleanup两个未知PID失败保留",
+        "result": {
+          "path": "target/post_e_h2_rt/s48/h2_new/result.json",
+          "sha256": "41b66b4ce576b6697998fe794ba59194745d18118e4cd0178da3064ea1d78e46",
+          "bytes": 1714
+        },
+        "final_review": {
+          "path": "target/post_e_h2_rt/s48/h2_new/review/final_review.json",
+          "sha256": "822be079846a81ae493b5cc1b9df919fe725349b9d20413017a175d18e7b44cd",
+          "bytes": 4943
+        },
+        "root_acceptance": {
+          "path": "target/post_e_h2_rt/s48/h2_new/root_acceptance.md",
+          "sha256": "c333c4218a9e012184fc6b330945a8d735210b039d64c2112391d5e83df690be",
+          "bytes": 1936
+        },
+        "delivery": {
+          "path": "target/post_e_h2_rt/s48/h2_new/artifacts_delivery.json",
+          "sha256": "13c13bd126d0fa953f5d79a33b09c22dae0224adbaa3009ad146b33c968c499e",
+          "bytes": 3425
+        },
+        "local_evidence": "target/post_e_h2_rt/s48/h2_new",
+        "deployment_started": false,
+        "hardware_retried": false,
+        "deployable": false,
+        "D15": "OPEN"
       }
     }
   },
@@ -3764,6 +3809,24 @@
             "orin/left_h2_final_audit.json"
           ]
         }
+      ],
+      "H2_prelaunch_attempts": [
+        {
+          "date": "2026-09-22",
+          "status": "PRELAUNCH_FAIL",
+          "driver_exit": 1,
+          "driver_reaped": true,
+          "authorization_attempts": 0,
+          "launch_attempts": 0,
+          "motor_or_serial_access": false,
+          "reason": "TRUST0755不符0750；原cleanup PID272000/272074不可读，后已消失但身份未知",
+          "physical_facts_received": true,
+          "physical_confirmation": "call_SzdNjjbyFTb5oTxO8v3HjTPd",
+          "evidence": "local/s48/h2_new/precheck_20260922T082008Z_a9c44c4c/",
+          "original_cleanup_status": "FAIL，事后清场不回填原结果",
+          "post_run_readonly_cleanup": "PASS",
+          "automatic_retry": false
+        }
       ]
     },
     "right": {
@@ -3778,17 +3841,18 @@
     "可以持续在场，接着完成左臂 H2",
     "左臂已再次完成，继续 H2",
     "已完成，可以持续在场，继续 H2",
-    "左臂已断电，双臂继续支撑"
+    "左臂已断电，双臂继续支撑",
+    "2026-09-22：全部完成，能持续在场，启动本次H2；仅绑定已退出的前置拒绝attempt，无收尾后新断电确认。"
   ],
   "operational_state": {
     "formal_four_binaries_unchanged": true,
     "six_services": "inactive/PID0",
-    "physical_rx_marker": "本次一次授权已消费；两份1\\n，UID/GID1000、0600",
+    "physical_rx_marker": "9/22失败后两份Dirty 1\\n，UID/GID1000、0600；本次authorize=0，后续修复未写marker。",
     "physical_estop_latch": "H1/H3前后SHA相同",
-    "no_serial_access_after_h2_physical_reset": false,
+    "no_serial_access_after_h2_physical_reset": true,
     "all_h2_processes_exited": true,
     "left_serial_unoccupied": true,
-    "left_motor_power": "现场确认已断电，双臂继续支撑",
+    "left_motor_power": "9/22已确认断电重上电；本次driver退出后未重新确认电源状态，不能沿旧记录称当前已断电。",
     "python_calibration_reuse": {
       "user_requested": true,
       "host": "loosqk@10.0.1.40",
@@ -3803,25 +3867,26 @@
       "validation": "安装配置与仓库逐字一致，直接引用Python JSON；每臂6个名称/ID1–6、offset/range/drive_mode字段兼容",
       "scope": "仅文件及源码只读核验，不称电机EEPROM本轮已读回；没有重标定/改值/打开串口"
     },
-    "physical_state_scope": "电机/串口/marker/latch条目沿最后历史现场记录；本次P.7仅软件准备，没有刷新物理事实。"
+    "physical_state_scope": "本段当前态绑定9/22唯一前置拒绝attempt与后续只读复核。历史H2授权/串口访问及断电确认保留于对应历史运行记录。",
+    "trust_directory": "同一inode/属主，仅0755→0750；五个现有文件身份SHA未变。"
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2777,
-    "sha256": "e5f336a0479a04c574f3f0c54b967d41f697bf4472a2417411bdea8a0c6c35a2"
+    "lines": 2849,
+    "sha256": "283867a2ae9f5bbcc879ea350d69d09ccc31087cc25c38d8794edab0bd5e2873"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "3936e0dc4f7250ff64e95c46c3e4b2d87ab33beea4fa2a264467b7e6ae98fd87",
-    "bytes": 175558061,
-    "members": 63787,
-    "logical_bytes": 5188254063,
-    "index_count": 63786,
+    "sha256": "22757197b4db4cd51834bedb4747940dd47ae45fd27beae01f68f503d1d8e0b4",
+    "bytes": 177252374,
+    "members": 64274,
+    "logical_bytes": 5196428188,
+    "index_count": 64273,
     "per_file_sha256_verified": true,
-    "verification_method": "旧PE整体SHA承接63413索引及全部旧路径；新增373件逐SHA、旧索引原样保留。root核新整包SHA/63787成员与索引集合及五个最终关键原件。"
+    "verification_method": "旧P7完整包SHA与63786索引保留，新增逐SHA；root核新整包与全成员/索引集合及关键原件，详包外归档审计。"
   },
-  "retention": "H保留PE原63413索引，新增373件P.7源码评审/真实同步/原生构建及PE包外后生回执。ELF本体、派生缓存和重复传输包不嵌入；P.7 post_archive_review、最终Git对齐与commit_receipt为本次包外后生材料，下阶段承接。",
-  "updated_at": "2026-09-20T12:02:29.544881+00:00",
+  "retention": "承接P7全部63786旧索引及包外后生件，新增9/22原attempt/原FAIL/源码修复/两次真实构建与最终只读预检；ELF、缓存与重复传输包不嵌入。本次post_archive_review、最终Git对齐和commit_receipt为包外后生件，下包承接。",
+  "updated_at": "2026-09-22T09:23:14.693822+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -3840,31 +3905,44 @@
       "Orin67场景，AC12原始258事件与环逐条一致/四格各2/19完整lease/17回执；AC17三Fault原环一致与传播预算",
       "三native实际CargoJSON/manifest/SHA及最终无进程/服务停用/正式与持久态不变",
       "新H2驱动PLAN ACK：仅一次授权启动，新commit clean与新物理完成信号均必需"
-    ]
+    ],
+    "scope_note": "原review字段保留S45历史评审；最新软件修复见software.s48.h2_remediation.final_review。"
   },
   "next_h2": {
-    "status": "S48_IMPLEMENTATION_AND_NEW_DRIVER_REQUIRED",
-    "driver": "local/s45/left_h2_current_driver.py",
-    "driver_sha256": "c6b698074c4785b858c8bc9954c2463d187afc349953cfb5e5b328b933efb890",
+    "status": "WAIT_USER_AFTER_SOFTWARE_REMEDIATION",
+    "driver": "scripts/run_post_e_h2.py",
+    "driver_sha256": "18fb7fc0ac0b7c4cb1c9628678ce7ba476e7498d0d8c1fbd2011508ddb6f09a9",
     "plan_review": "ACK",
-    "default_plan_only": "PASS_BOTH_HOSTS",
-    "runtime_head_policy": "运行时两端最新HEAD一致且clean，309源码须仍与已批准c07a冻结一致；不能反填构建base",
+    "default_plan_only": "当前默认PLAN_ONLY由本次Python单测覆盖；旧PASS_BOTH_HOSTS为历史记录，不作为4191bf0双端CLI调用证据。",
+    "runtime_head_policy": "运行时两端最新HEAD一致且clean；571编译源及三Python逐字绑定批准build来源；文档提交可严格祖先继承，不回填build HEAD。",
     "physical_reset_after_failed_h2_confirmed": false,
-    "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/s45/recheck/artifacts/release",
-    "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2_current",
-    "prior_driver_state": "已执行且失败，left_h2_current目录已消费；修复后必须准备并评审新驱动/新目录",
-    "current_resume_note": "旧driver/source身份保留历史，不能复用；S48全部软件提交与两端验证后另备新现场driver",
+    "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_new/native_20260922T091449Z_205c33c5/measurement",
+    "remote_run_dir": null,
+    "prior_driver_state": "9/22唯一attempt已退出，原输出目录不可复用",
+    "current_resume_note": "本次前置拒绝已结束，软件修复及只读复检通过；收口后暂停。下一次须明确继续、全新输出目录及适用现场确认。",
     "current_s48_driver": {
       "path": "scripts/run_post_e_h2.py",
-      "sha256": "19c0a9faef5d40312381b538d2ae90d551fe794cd61a2e89834e0e85cd8b9b07",
+      "sha256": "18fb7fc0ac0b7c4cb1c9628678ce7ba476e7498d0d8c1fbd2011508ddb6f09a9",
       "report_path": "scripts/post_e_h2_report.py",
       "artifacts_path": "scripts/post_e_h2_artifacts.py",
-      "source_head": "b7cbacaa1db7a78d1f3088cce5d52ebba0c8f72d",
-      "status": "SOFTWARE_PREPARATION_ACCEPTED",
-      "new_physical_facts_received": false,
+      "source_head": "4191bf0b03bddef1da353bb8c3895d6fc19416ae",
+      "status": "SOFTWARE_REMEDIATION_ACCEPTED",
+      "new_physical_facts_received": true,
       "hardware_started": false,
-      "entry": "默认PLAN_ONLY；现场模式须新事实及精准inputs manifest，不继承历史确认"
-    }
+      "entry": "默认PLAN_ONLY；现场模式须新事实及精准inputs manifest，不继承历史确认",
+      "physical_fact_scope": "仅9/22已退出attempt，不能复用于下一次",
+      "driver_attempted": true,
+      "measurement_launched": false
+    },
+    "historical_s45_driver": {
+      "driver": "local/s45/left_h2_current_driver.py",
+      "driver_sha256": "c6b698074c4785b858c8bc9954c2463d187afc349953cfb5e5b328b933efb890",
+      "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/s45/recheck/artifacts/release",
+      "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_hardware_current/left_h2_current",
+      "prior_driver_state": "已执行且失败，left_h2_current目录已消费；修复后必须准备并评审新驱动/新目录",
+      "default_plan_only": "PASS_BOTH_HOSTS"
+    },
+    "next_attempt_physical_confirmation_received": false
   },
   "cleanup": {
     "local": "local/s45/cleanup.json",
@@ -3875,9 +3953,9 @@
   "stop_after_current": {
     "user_request": "每一个大阶段完成就暂停让我检查",
     "weekly_remaining_stop_percent": 35,
-    "current_package": "S48_P7_SOFTWARE_PREPARATION",
+    "current_package": "S48_H2_PREFLIGHT_REMEDIATION",
     "next_package_authorized_to_start": false,
-    "state": "P.7软件大阶段验收通过；收口提交即暂停，等待用户检查和明确继续。",
+    "state": "软件修复已验收；收口提交即暂停供用户检查，不自动重试H2或push。",
     "supersedes": [
       "b 阶段完成后暂停",
       "周额度剩余20%停止点"
