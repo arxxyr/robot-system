@@ -14,11 +14,12 @@
 > 四组各100+1000及原P99门、真实stop/reap/清场已独审/root验收；第三组max52.502592ms保留。
 > 三次旧真实FAIL与一次前置拒绝不回写；本轮值守解除、电源UNKNOWN，左H2证据已收口10cff7a。
 > 右工具0047920/W1测试2e5b515已本地集成并验证64Python/最终SHA默认并行10项，
-> 原生软件已收口4441f59，实际build仍5952498/571项e05a；右H13准备22开发+12独立方法通过，仅本地验证。
+> 原生软件已收口4441f59，实际build仍5952498/571项e05a；右H13本地准备已收口9afdc92。
+> 最新right_h13_native/implementation_r3本地27+独立5及Orin27/默认入口通过；首Orin22方法3FAIL/3ERROR保留，仅软件、已归档。
 > 用户暂不能在场，右H1/H3/H2 NOT_RUN；右TRUST仅0755→0750，marker/locks未创建，未安装、D15 OPEN。
 > 按最新要求持续推进至周额度剩15%，每阶段独审/root验收后commit、不push；新物理动作仍须当次事实。
 > root方案/整合，原生子agent开发测试与独立评审；历史CC分工及旧20%/35%/阶段自动暂停已被替代。
-> 完整结果及历史来源见HANDOFF；H.json已回填右H13软件新包身份，当前post/commit为包外后生件；不预填未来提交身份。
+> 完整结果及历史来源见HANDOFF；H.json已回填本轮native新包身份，当前post/commit为包外后生件，不预填未来提交身份。
 
 ## P.0 范围、所有权与当前事实
 
@@ -2808,8 +2809,9 @@ Orin另核新来源原生七件及AC12 mock。结果与证据统一见HANDOFF，
 隔离2e5b515仅隔离W1九父case共享fd窗口，默认并行10项一次通过（测试后等价lint修正）。
 两提交已合并5952498，本地验证及Orin新来源软件绑定/独审通过，证据已归档；
 原三Python/571来源门不变，右H1/H3/H2与部署仍独立待验。
-后续独立H13监督/oracle仅在ignored操作证据目录实现，本地22开发+12独立方法通过，原180秒与wire/样本门不变；
-round6 FAIL及早轮回执边界见HANDOFF，软件准备不提供现场授权。
+后续独立H13监督/oracle仅在ignored操作证据目录实现，准备阶段22开发+12独立方法已收口9afdc92。
+新r3补pidfd能力检测，自有child身份/真实wait、180秒及wire/样本门不变；本地27+独立5、Orin27/默认入口通过，已归档。
+首Orin22方法3FAIL/3ERROR、旧round6 FAIL及早轮回执边界见HANDOFF；最新入口right_h13_native/implementation_r3，软件准备不提供现场授权。
 
 ### P.7.3 停止、安装与完整回滚边界
 

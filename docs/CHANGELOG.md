@@ -10,6 +10,12 @@
 
 ---
 
+## 2026-09-22 · 右H13 pidfd能力兼容（仅软件验证）
+
+首Orin uv Python3.12.13缺少`os.pidfd_open`，原22方法3FAIL/3ERROR保留。新r3仅在open/send两API均可调用时用pidfd；缺接口走自有未回收child监督，真实资源异常仍FAIL，不放宽身份或wait门。
+准备阶段已收口9afdc92；r3本地27+独立5、Orin27及默认入口通过，真实回收/前后状态相同/无收养child。最新脚本在`right_h13_native/implementation_r3/`，旧准备源码保留。
+仅软件、已归档；未改三Python/Rust或实际5952498产物，未硬件/安装，右三门NOT_RUN、D15 OPEN。证据边界见HANDOFF，最终收口由root负责。
+
 ## 2026-09-22 · 右H13操作监督准备（本地独审通过）
 
 新增ignored操作证据脚本与纯读原件oracle；复用已审只读检查，默认plan-only，H1真实回收及清场后才H3。

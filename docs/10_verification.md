@@ -9,6 +9,14 @@
 
 ---
 
+## 2026-09-22 · 右H13原生Python兼容验证（仅软件，已归档）
+
+运行HEAD `9afdc92`；首Orin uv Python3.12.13缺`os.pidfd_open`，22方法3FAIL/3ERROR原件保留。
+`right_h13_native/implementation_r3/`仅在两项pidfd API均可调用时使用pidfd，否则走已审自有未回收child路径；资源错误仍FAIL。
+本地27方法、独立5方法与新版Orin27方法/默认PLAN_ONLY入口通过；真实wait/reap、前后状态相同、收养child为空。
+未重跑Rust矩阵或访问硬件；实际build仍5952498、571项e05a，右H1/H3/H2 NOT_RUN，未安装/部署。
+旧round6 FAIL与早轮回执缺项继续保留，不称单轮全过。原件及来源见HANDOFF。
+
 ## 2026-09-22 · 右H13监督与原件oracle（仅本地软件准备）
 
 开发最终22方法、独立12方法PASS，覆盖纯原件反例与无害子进程监督；没有新右硬件结果。
@@ -879,3 +887,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-22：登记5952498新原生来源、64+10/唯一AC12及122原件独审；仅软件，证据已归档，左H2历史来源不变。
 
 - 2026-09-22：登记右H13本地监督/oracle的22开发+12独立方法验证；保留round6 FAIL和早轮回执边界，右现场未执行。
+
+- 2026-09-22：登记右H13 pidfd能力兼容的本地27/独立5/Orin27与默认入口；首22方法3FAIL/3ERROR保留，仅软件、已归档。

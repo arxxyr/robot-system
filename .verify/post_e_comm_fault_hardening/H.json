@@ -2,14 +2,14 @@
   "schema_version": 1,
   "stage": "H",
   "work_state": "CONTINUING_SOFTWARE_ONLY_TO_WEEKLY_REMAINING_15_PERCENT",
-  "resume_from": "右H13本地工具22开发+12独立方法通过并归包；当前未在Orin运行新脚本，右现场仍NOT_RUN。用户暂不能在场，仅继续软件兼容验证。",
+  "resume_from": "r3 pidfd能力兼容修复已通过本地27、独立5及Orin27软件验收并归包；用户暂不能现场，右H1/H3/H2仍NOT_RUN。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_RIGHT_H13_LOCAL_SOFTWARE_ACCEPTED_ARCHIVED",
-  "review_status": "APPROVED_RIGHT_H13_LOCAL_SOFTWARE_AND_EVIDENCE",
+  "status": "S48_RIGHT_H13_NATIVE_SOFTWARE_ACCEPTED_ARCHIVED",
+  "review_status": "APPROVED_PIDFD_COMPATIBILITY_AND_ORIN_SOFTWARE",
   "deployable": false,
-  "scope": "右H1/H3监督工具及原件oracle本地软件验证，含已授权右TRUST目录权限窄修；未运行右硬件或安装，左H2历史PASS不变。",
+  "scope": "右H13监督脚本pidfd能力兼容修复与原生软件证据收口；首轮Orin3FAIL/3ERROR原件保留。未执行硬件或安装，左H2历史PASS不变。",
   "software": {
     "s44": {
       "local": {
@@ -4012,7 +4012,7 @@
           "sha256": "abfd6aaec2d96353074a2e8ec02caede9f2a055de29f8d63ff7e63a40ecc5a4a"
         },
         "archive_added_count": 131,
-        "archive_status": "本阶段非post/commit及native包后/commit已归包；当前right_h13_preparation/post_archive_review与随后commit为包外后生件，下包承接。",
+        "archive_status": "本地准备已收口9afdc92；其post_archive_review及commit回执已随本次native包承接。",
         "right_trust_mode_fix": {
           "before": "0755",
           "after": "0750",
@@ -4023,7 +4023,82 @@
             "sha256": "19e3c6a7d0ccb5d734de8892854c06e1cfe5c88c1615b51ebe5fecc2811e1421"
           }
         },
-        "native_new_script_tested": false
+        "native_new_script_tested": false,
+        "followup_native_binding": "software.s48.right_h13_native（新的r3源码，不回写本地准备旧源码/测试）"
+      },
+      "right_h13_native": {
+        "schema": "RIGHT_H13_NATIVE_RESULT_V1",
+        "source_commit": "59524984368ad74b17384ca805b105102a29caac",
+        "actual_baseline_build": "59524984368ad74b17384ca805b105102a29caac",
+        "runtime_head": "9afdc9204ec87f9ae6aad0e75ed58535baddcecf",
+        "document_head": "9afdc9204ec87f9ae6aad0e75ed58535baddcecf",
+        "source_inputs_hash": "e05a2ca189b0f85873d3f780c94329ec03e739028031eb3b36fd5babdd9ce0ff",
+        "source_manifest": {
+          "path": "target/post_e_h2_rt/s48/right_h13_native/source_manifest.json",
+          "bytes": 109991,
+          "sha256": "e8554aa57e1909967f46c0615be6ad306df86302442af18ac46ba5841c2cb738"
+        },
+        "raw_checks": {
+          "path": "target/post_e_h2_rt/s48/right_h13_native/root_raw_checks.json",
+          "bytes": 12386,
+          "sha256": "091712972e6b9778c680413f384d88013e000fa25d1f73f5010cdd491875f915"
+        },
+        "independent_review": {
+          "path": "target/post_e_h2_rt/s48/right_h13_native/review/final_review.json",
+          "bytes": 5276,
+          "sha256": "94b180bac9f3cba556f50a90ee27e145ccfd3d02b2a5b1cdaaf9e277fdea2605"
+        },
+        "software_result": "PASS",
+        "evidence_acceptance": "ACCEPTED",
+        "hardware_executed": false,
+        "previous_left_h2_outcome": "PASS",
+        "right_h1": "NOT_RUN",
+        "right_h3": "NOT_RUN",
+        "right_h2": "NOT_RUN",
+        "deployable": false,
+        "D15": "OPEN",
+        "physical_power": "UNKNOWN",
+        "counts": {
+          "remote_originals": 55,
+          "local_r3_methods": 27,
+          "independent_methods": 5,
+          "native_r3_methods": 27,
+          "historical_native_methods": 22,
+          "historical_native_failures": 3,
+          "historical_native_errors": 3
+        },
+        "single_round_all_pass": false,
+        "scope": "r3监督Python pidfd兼容修复，本地27+独立5+Orin27软件通过；原首22项3FAIL/3ERROR保留，未硬件或安装，不改变595 Rust构建。",
+        "root_acceptance": {
+          "path": "target/post_e_h2_rt/s48/right_h13_native/root_acceptance.json",
+          "bytes": 1153,
+          "sha256": "cb2480d8a00df2b75de90bcd11e8ce052922964a408fc1bd7fa134f625657411"
+        },
+        "result": {
+          "path": "target/post_e_h2_rt/s48/right_h13_native/result.json",
+          "bytes": 1616,
+          "sha256": "089686d2d2235dee4cad25cf4e5a48c2b37bf8e63c8c11a1edc288f83c57b9c1"
+        },
+        "implementation": {
+          "path": "target/post_e_h2_rt/s48/right_h13_native/implementation_r3/delivery_receipt.json",
+          "bytes": 3963,
+          "sha256": "ae12452edc527ebf52247d73bc88419fd6b3496c5dd49f575a4f55e084ae16f1"
+        },
+        "status": "NATIVE_SOFTWARE_ACCEPTED_ARCHIVED",
+        "archive_added_count": 155,
+        "archive_status": "本阶段非post/commit及上一preparation包后/commit已归包；当前native post_archive_review及随后commit回执下包承接。",
+        "deployment_started": false,
+        "hardware_retried": false,
+        "driver": {
+          "path": "target/post_e_h2_rt/s48/right_h13_native/implementation_r3/run_right_h13.py",
+          "bytes": 26119,
+          "sha256": "3e6838eaa0be77a4b32cdbc952686ac2691c8d881f53c425c194cf0183263617"
+        },
+        "oracle": {
+          "path": "target/post_e_h2_rt/s48/right_h13_native/implementation_r3/oracle.py",
+          "bytes": 13313,
+          "sha256": "43cdc8e1e8c936407454f972cabc27e267f5bc656f7b261d1f1fe56722438bf6"
+        }
       }
     }
   },
@@ -4363,21 +4438,21 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2870,
-    "sha256": "21b29e1945913f78aebdef385ced152b5e964e1a21ddc208c4003e5801103c4c"
+    "lines": 2872,
+    "sha256": "79790edd448890549245ad39a1d2701ca8e6355dfcd81084e5d7f0fdb6ec451f"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "178a5501086efa9bb5511e45c4174bfa55dd1a9caae9b7baeeae421000743403",
-    "bytes": 206206186,
-    "members": 65453,
-    "logical_bytes": 5559918998,
-    "index_count": 65452,
+    "sha256": "616b81eac359e0bc99a9821df8e5cf6c4a2acde4ddd8ca3e880d5894b625cfcd",
+    "bytes": 206486632,
+    "members": 65608,
+    "logical_bytes": 5561014616,
+    "index_count": 65607,
     "per_file_sha256_verified": true,
-    "verification_method": "旧72fff7包整体SHA与65321旧索引前缀/成员路径大小保全，新增131件逐SHA；571来源与源集合首末不变。"
+    "verification_method": "旧178a5501包整体SHA、65452旧索引前缀及成员路径大小保全；新增155件逐SHA，571来源与源集合首末不变。"
   },
-  "retention": "旧65321索引及全部历史FAIL完整保留，新增右H13软件及native包后/commit共131件；当前right_h13_preparation post/commit为包外后生件，下包承接。",
-  "updated_at": "2026-09-22T15:37:17.751393+00:00",
+  "retention": "旧65452索引及历史FAIL保全；新增native软件、首Orin3F3E与修正版实际结果、上阶段post/commit共155件。当前native post/commit下包承接。",
+  "updated_at": "2026-09-22T16:03:46.398385+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -4397,7 +4472,7 @@
       "三native实际CargoJSON/manifest/SHA及最终无进程/服务停用/正式与持久态不变",
       "新H2驱动PLAN ACK：仅一次授权启动，新commit clean与新物理完成信号均必需"
     ],
-    "scope_note": "原review保留S45历史；最新左H2真实通过见software.s48.h2_retry/hardware.left.H2，延时软件验收见h2_delay；旧真实FAIL已完整移入hardware.left.H2_previous_runs。 本轮5952498软件与122原件独审见software.s48.h2_arm_native，原S45 review不改写。 右H13仅本地软件与目录权限窄修验收见software.s48.right_h13_preparation，未增加真实右硬件结果。"
+    "scope_note": "原review保留S45历史；最新左H2真实通过见software.s48.h2_retry/hardware.left.H2，延时软件验收见h2_delay；旧真实FAIL已完整移入hardware.left.H2_previous_runs。 本轮5952498软件与122原件独审见software.s48.h2_arm_native，原S45 review不改写。 右H13仅本地软件与目录权限窄修验收见software.s48.right_h13_preparation，未增加真实右硬件结果。 r3 pidfd兼容及新Orin软件验收见software.s48.right_h13_native，首轮原生失败保留，不增加右硬件结果。"
   },
   "next_h2": {
     "status": "LEFT_H2_ACCEPTED_RIGHT_REQUIRES_NEW_PREPARATION",
@@ -4410,7 +4485,7 @@
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_delay/native_20260922T110924Z_fa37abea/measurement",
     "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_retry/precheck_20260922T113258Z_b78558d3/left_h2_run",
     "prior_driver_state": "c5daa67本次左H2已PASS并真实退出，目录与授权已消费，不复用。",
-    "current_resume_note": "左H2已收口10cff7a，5952498原生软件已收口4441f59；右H13本地22+12独审通过且归包，仍未在Orin运行新脚本。用户暂不能现场，右真机不启动。",
+    "current_resume_note": "左H2历史已收口；右H13 r3本地27/独立5/Orin27软件已验收归档，尚未访问右臂。用户暂不能现场，不启动右H1/H3/H2；各现场步骤仍须对应新事实。",
     "current_s48_driver": {
       "path": "scripts/run_post_e_h2.py",
       "sha256": "37ff52be7893dc992eca0fca9b8133b790c745433222bc33dff1beaa01c0a699",
@@ -4483,9 +4558,9 @@
   "stop_after_current": {
     "user_request": "一直跑完，直到 额度剩 15%",
     "weekly_remaining_stop_percent": 15,
-    "current_package": "S48_RIGHT_H13_LOCAL_SOFTWARE_CLOSEOUT",
+    "current_package": "S48_RIGHT_H13_NATIVE_SOFTWARE_CLOSEOUT",
     "next_package_authorized_to_start": true,
-    "state": "右H13本地软件已独审/root验收并归包，待本阶段文档提交；继续软件工作至周余15%。",
+    "state": "右H13兼容修复与原生软件已审结归档，当前待文档提交；右现场等待用户，停止线仍周余15%。",
     "supersedes": [
       "b 阶段完成后暂停",
       "周额度剩余20%停止点",
@@ -4508,5 +4583,26 @@
       "bytes": 473,
       "sha256": "11a81b56b5df30c83921f3d163c7415bba3502d7b0cf3f69d91199bd2cdb50dd"
     }
+  },
+  "next_h13": {
+    "status": "SOFTWARE_VERIFIED_AWAITING_RIGHT_PHYSICAL_FACTS",
+    "driver": {
+      "path": "target/post_e_h2_rt/s48/right_h13_native/implementation_r3/run_right_h13.py",
+      "bytes": 26119,
+      "sha256": "3e6838eaa0be77a4b32cdbc952686ac2691c8d881f53c425c194cf0183263617"
+    },
+    "oracle": {
+      "path": "target/post_e_h2_rt/s48/right_h13_native/implementation_r3/oracle.py",
+      "bytes": 13313,
+      "sha256": "43cdc8e1e8c936407454f972cabc27e267f5bc656f7b261d1f1fe56722438bf6"
+    },
+    "actual_baseline_build": "59524984368ad74b17384ca805b105102a29caac",
+    "source_inputs_hash": "e05a2ca189b0f85873d3f780c94329ec03e739028031eb3b36fd5babdd9ce0ff",
+    "software_runtime_head": "9afdc9204ec87f9ae6aad0e75ed58535baddcecf",
+    "hardware_started": false,
+    "new_physical_facts_received": false,
+    "execution_authorized": false,
+    "default_plan_only": true,
+    "scope": "新右H1/H3物理重置、支撑、在场事实及root当次GO齐备后才执行；软件测试目录与原左确认不能作为现场授权。"
   }
 }

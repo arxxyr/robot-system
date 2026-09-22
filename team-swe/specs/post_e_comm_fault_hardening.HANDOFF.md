@@ -2,7 +2,19 @@
 
 ## 当前步骤
 
-当前右H13独立操作脚本已完成本地软件验证：开发22方法及独立12方法PASS，未改既有三Python或Rust。
+右H13准备已收口`9afdc92`。新软件验证运行HEAD仍为该提交，实际Rust build仍`5952498`、571项aggregate `e05a2ca…ce0ff`，没有重新构建或替换产物。
+首Orin uv Python3.12.13缺`os.pidfd_open`，22方法3FAIL/3ERROR原FAIL保留。最新脚本为`target/post_e_h2_rt/s48/right_h13_native/implementation_r3/`：仅两pidfd API均可调用才启用；接口缺失走已审自有未回收Popen child路径，资源真异常仍FAIL。
+r3本地27方法、独立5方法及新版Orin27方法/默认PLAN_ONLY入口通过；child/owner/SSH真实wait/reap，前后安装及安全状态相同、实际UID清场、收养child为空，不称单轮全过。
+原件在`right_h13_native/software_20260922T154412Z_1417961a/`及`software_r3_20260922T155141Z_0ffb13e6/`；本轮证据已增量归档，提交身份由随后真实commit回执记录。
+仅软件；右H1/H3/H2 NOT_RUN、未安装/部署。左H2历史PASS及c5daa67/fb600fd不变，电源UNKNOWN、D15 OPEN、deployable=false；用户暂不能现场配合，继续软件至周额度剩15%，每阶段验收commit、不push。
+
+本轮H包SHA `616b81eac359e0bc99a9821df8e5cf6c4a2acde4ddd8ca3e880d5894b625cfcd`，206486632 bytes、
+65608 members/65607索引、5561014616 logical bytes；旧65452索引完整保全，新增155件。
+上一preparation包后/commit已承接；本轮`right_h13_native/post_archive_review`及随后commit回执为包外后生件，下包承接。
+
+### 已收口右H13本地准备（9afdc92，以下为该阶段事实）
+
+当时右H13独立操作脚本已完成本地软件验证：开发22方法及独立12方法PASS，未改既有三Python或Rust。
 脚本默认plan-only；执行另需本次右现场事实与绑定输入，H1真实reap/原件核验/清场后才H3，180秒原阶段门不变。
 SIGKILL后仍未reap会记录需介入并继续持有wait，不伪造完成。原始CSV/帧oracle与无害子进程反例均已独审。
 开发round6因新增过期反例未建临时输出目录而FAIL，修夹具后的最终轮通过；首两轮仅log/工具终态，缺独立PID/wait与源码快照回执，原边界完整保留，不称单轮全过。
@@ -12,7 +24,7 @@ SIGKILL后仍未reap会记录需介入并继续持有wait，不伪造完成。�
 
 本次H包SHA `178a5501086efa9bb5511e45c4174bfa55dd1a9caae9b7baeeae421000743403`，206206186 bytes、
 65453 members/65452索引、5559918998 logical bytes；旧65321索引完整保全，新增131件。
-本次`right_h13_preparation/post_archive_review`及随后commit回执为包外后生件，下包承接。
+该preparation阶段的post_archive_review及commit回执已随本轮native包承接。
 
 ### 已收口原生软件阶段（4441f59，实际build仍5952498）
 

@@ -54,7 +54,9 @@
            右工具0047920与W1测试2e5b515已本地集成并验证；合并态64Python及最终SHA10项、fmt/Clippy通过。
            合并5952498已完成Orin新原生绑定并通过独审：6recipes、生产4/测量3、7help、64+10、单mock4×2。
            18次真实完成、122原件已核；原生软件证据已归档并收口4441f59，实际build仍5952498。
-           右H13独立操作脚本本地22开发+12独立方法通过；round6 FAIL与早两轮回执缺项保留。
+           右H13本地准备已收口9afdc92；首Orin22方法3FAIL/3ERROR因Python缺pidfd API，原FAIL保留。
+           native/implementation_r3按能力选择自有child回收，本地27+独立5及Orin27/默认入口通过。
+           真实wait、前后状态相同且无收养child；本轮仅软件、已归档，历史round6与早轮回执缺项保留。
            右TRUST仅按授权0755→0750，marker/locks未创建；用户暂不能在场，右H1/H3/H2不启动。
            W1 fork/exec窗口机制已证实，旧偶发失败具体根因仍OPEN_UNCONFIRMED；原FAIL保留。
            左H1/H2/H3通过；右臂未测，正式部署未做，六服务停止，deployable=false、D15 OPEN。
