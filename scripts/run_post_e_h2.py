@@ -58,44 +58,264 @@ def tool_command(bin_dir, output):
             "--hardware-id", "left_arm", "--ack-supervised-hardware"]
 
 
+# 同一份固定只读代码供普通进程读取和受限 sudo 探针使用；默认导入仅定义函数。
+# stdin 只接受已采集的 PID 身份，不能选择路径、命令或写操作。
+PROC_PROBE_CODE = r'''
+import json
+import os
+import sys
+
+def _read_at(directory, name, limit):
+    descriptor = os.open(name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=directory)
+    try:
+        data = bytearray()
+        while len(data) <= limit:
+            part = os.read(descriptor, min(8192, limit + 1 - len(data)))
+            if not part:
+                return bytes(data)
+            data.extend(part)
+        raise ValueError("proc字段超过读取上限")
+    finally:
+        os.close(descriptor)
+
+def _stat_at(directory, pid):
+    raw = _read_at(directory, "stat", 8192).decode()
+    opening, closing = raw.find("("), raw.rfind(")")
+    if opening < 1 or closing <= opening or int(raw[:opening].strip()) != pid:
+        raise ValueError("proc stat PID格式错误")
+    fields = raw[closing + 2:].split()
+    start = int(fields[19])
+    if start <= 0:
+        raise ValueError("缺少proc start_ticks")
+    return {"pid": pid, "start_ticks": start, "pgid": int(fields[2]), "state": fields[0]}
+
+def _uids_at(directory):
+    rows = [line.split()[1:] for line in _read_at(directory, "status", 65536).decode().splitlines()
+            if line.startswith("Uid:")]
+    if len(rows) != 1 or len(rows[0]) != 4:
+        raise ValueError("proc Uid字段不完整")
+    values = [int(value) for value in rows[0]]
+    if any(value < 0 for value in values):
+        raise ValueError("proc Uid无效")
+    return values
+
+def _boot(root):
+    with open(root + "/sys/kernel/random/boot_id", encoding="ascii") as stream:
+        value = stream.read(128).strip()
+    if len(value) != 36 or any(c not in "0123456789abcdef-" for c in value):
+        raise ValueError("proc boot_id格式错误")
+    return value
+
+def _stable(left, right):
+    return all(left[key] == right[key] for key in ("pid", "start_ticks", "boot_id", "pgid", "uids"))
+
+def _proc_probe(pid, expected=None, details=True, root="/proc"):
+    result = {"pid": pid}
+    directory = None
+    try:
+        directory = os.open(root + "/" + str(pid), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        before = _stat_at(directory, pid)
+        before.update(boot_id=_boot(root), uids=_uids_at(directory))
+        result["before"] = before
+        if expected is not None and not _stable(before, expected):
+            return dict(result, status="replaced")
+        identity = dict(before)
+        if details:
+            identity["argv"] = _read_at(directory, "cmdline", 65536).rstrip(b"\0").decode().split("\0")
+            identity["exe"] = None if before["state"] == "Z" else os.readlink("exe", dir_fd=directory)
+            identity["zombie"] = before["state"] == "Z"
+        after = _stat_at(directory, pid)
+        after.update(boot_id=_boot(root), uids=_uids_at(directory))
+        result["after"] = after
+        if not _stable(before, after):
+            return dict(result, status="replaced")
+        return dict(result, status="observed", identity=identity)
+    except FileNotFoundError as error:
+        # exe缺失不等于PID退出；只在同一dirfd的stat也消失时报告vanished。
+        if directory is not None:
+            try:
+                result["remaining_stat"] = _stat_at(directory, pid)
+            except FileNotFoundError:
+                return dict(result, status="vanished", error=repr(error))
+            except Exception as recheck_error:
+                return dict(result, status="unreadable", error=repr(recheck_error))
+            return dict(result, status="unreadable", error=repr(error))
+        return dict(result, status="vanished", error=repr(error))
+    except PermissionError as error:
+        return dict(result, status="permission", error=repr(error))
+    except (OSError, ValueError, KeyError, IndexError, UnicodeError) as error:
+        return dict(result, status="unreadable", error=repr(error))
+    finally:
+        if directory is not None:
+            os.close(directory)
+
+def _probe_main():
+    text = sys.stdin.read(131073)
+    if len(text) > 131072:
+        raise ValueError("PID批次输入过大")
+    request = json.loads(text)
+    if set(request) != {"schema", "candidates"} or request["schema"] != "P7_PROC_PROBE_V1":
+        raise ValueError("PID探针请求格式错误")
+    candidates = request["candidates"]
+    if not isinstance(candidates, list) or not 1 <= len(candidates) <= 256:
+        raise ValueError("PID批次超限")
+    pids = set()
+    for expected in candidates:
+        if set(expected) != {"pid", "start_ticks", "boot_id", "pgid", "state", "uids"}:
+            raise ValueError("PID身份字段错误")
+        pid = expected["pid"]
+        if type(pid) is not int or pid <= 0 or pid in pids:
+            raise ValueError("PID无效或重复")
+        if type(expected["start_ticks"]) is not int or expected["start_ticks"] <= 0:
+            raise ValueError("start_ticks无效")
+        if type(expected["pgid"]) is not int or expected["pgid"] < 0:
+            raise ValueError("PGID无效")
+        if not isinstance(expected["uids"], list) or len(expected["uids"]) != 4 or any(type(u) is not int or u < 0 for u in expected["uids"]):
+            raise ValueError("Uid无效")
+        if not isinstance(expected["state"], str) or len(expected["state"]) != 1 or not isinstance(expected["boot_id"], str):
+            raise ValueError("PID状态/boot错误")
+        pids.add(pid)
+    print(json.dumps({"schema": "P7_PROC_PROBE_V1", "reader_euid": os.geteuid(), "boot_id": _boot("/proc"),
+                      "rows": [_proc_probe(row["pid"], row) for row in candidates]}, ensure_ascii=False))
+
+if __name__ == "__main__":
+    _probe_main()
+'''
+_PROC_READER = {"__name__": "p7_fixed_proc_reader"}
+exec(PROC_PROBE_CODE, _PROC_READER)
+
+
+def read_process(pid, expected=None, details=True, proc=Path("/proc")):
+    return _PROC_READER["_proc_probe"](pid, expected, details, str(proc))
+
+
 def process_identity(pid, proc=Path("/proc")):
-    """PID 与 boot/start_ticks 同时绑定；缺失或读错不能猜成正常退出。"""
-    base = proc / str(pid)
-    raw = (base / "stat").read_text()
-    fields = raw[raw.rfind(")") + 2:].split()
-    return {"pid": pid, "start_ticks": int(fields[19]), "pgid": int(fields[2]),
-            "state": fields[0], "boot_id": (proc / "sys/kernel/random/boot_id").read_text().strip(),
-            "exe": os.readlink(base / "exe"),
-            "argv": (base / "cmdline").read_bytes().rstrip(b"\0").decode().split("\0")}
+    row = read_process(pid, proc=proc)
+    require(row["status"] == "observed", f"进程身份不稳定或不可读：{row}")
+    return row["identity"]
 
 
-def process_snapshot(pgid, output, binaries, proc=Path("/proc")):
-    """只读查本轮组、路径和三件可执行文件；不向进程发信号。"""
-    related, unreadable = [], []
+def privileged_process_probe(candidates):
+    """最多一次有界只读PID批次；不导入项目代码，不继承Python加载环境。"""
+    argv = ["sudo", "-n", "/usr/bin/python3", "-I", "-S", "-c", PROC_PROBE_CODE]
+    request = {"schema": "P7_PROC_PROBE_V1", "candidates": candidates}
+    row = {"argv_prefix": argv[:6], "code_sha256": hashlib.sha256(PROC_PROBE_CODE.encode()).hexdigest(),
+           "request": request, "started_ns": time.time_ns()}
+    try:
+        completed = subprocess.run(argv, input=json.dumps(request), capture_output=True, text=True,
+                                   timeout=10, check=False, env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
+        row.update(exit_code=completed.returncode, stdout=completed.stdout, stderr=completed.stderr)
+        require(completed.returncode == 0 and not completed.stderr.strip(), "只读PID探针未成功")
+        row["response"] = strict_json(completed.stdout)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        row["error"] = repr(error)
+    row["finished_ns"] = time.time_ns()
+    return row
+
+
+def process_snapshot(pgid, output, binaries, proc=Path("/proc"), *, probe_runner=None, reader=None):
+    """普通身份先读；只为已绑定身份的EACCES候选提权核实，不忽略未知。"""
+    related, unreadable, vanished, denied, candidates = [], [], [], [], []
+    read = reader or read_process
     binary_names = {str(path) for path in binaries}
+
+    def classify(row):
+        identity = row["identity"]
+        arguments = identity["argv"]
+        if (identity["pgid"] == pgid or str(output) in arguments or identity["exe"] in binary_names
+                or any(argument in binary_names for argument in arguments)):
+            related.append(identity)
+
     for path in proc.iterdir():
         if not path.name.isdigit() or int(path.name) == os.getpid():
             continue
-        try:
-            fields = (path / "stat").read_text().split(") ", 1)[1].split()
-            group = int(fields[2])
-            same_uid = path.stat().st_uid == os.getuid()
-            if group != pgid and not same_uid:
-                continue
-            arguments = (path / "cmdline").read_bytes().rstrip(b"\0").decode().split("\0")
-            same_run = str(output) in arguments
-            # 成功 exec 后的 ELF 路径才是身份；argv 仅用于补查 exec 前窗口。
-            executable = os.readlink(path / "exe") if fields[0] != "Z" else None
-            if group == pgid or same_run or executable in binary_names or any(a in binary_names for a in arguments):
-                if executable is None:
-                    related.append({"pid": int(path.name), "pgid": group, "state": fields[0], "zombie": True})
-                else:
-                    related.append(process_identity(int(path.name), proc))
-        except FileNotFoundError:
+        pid = int(path.name)
+        basic = read(pid, details=False, proc=proc)
+        if basic["status"] == "vanished":
+            vanished.append(basic)
             continue
-        except (OSError, ValueError, IndexError, UnicodeError) as error:
-            unreadable.append({"pid": int(path.name), "error": repr(error)})
-    return {"related": related, "unreadable": unreadable, "clean": not related and not unreadable}
+        if basic["status"] != "observed":
+            unreadable.append(basic)
+            continue
+        identity = basic["identity"]
+        if identity["pgid"] != pgid and os.getuid() not in identity["uids"]:
+            continue
+        row = read(pid, expected=identity, proc=proc)
+        if row["status"] == "observed":
+            classify(row)
+        elif row["status"] == "permission":
+            denied.append(row)
+            candidates.append(identity)
+        elif row["status"] == "vanished":
+            vanished.append(row)
+        else:
+            unreadable.append(row)
+    probe = None
+    if candidates:
+        try:
+            require(len(candidates) <= 256, "拒读PID数量超过有限批次")
+            # 临时proc夹具不会意外访问宿主机sudo；测试必须显式提供后端。
+            require(proc == Path("/proc") or probe_runner is not None, "非真实proc需要显式只读探针夹具")
+            probe = (probe_runner or privileged_process_probe)(candidates)
+            require(isinstance(probe, dict) and not probe.get("error") and probe.get("exit_code") == 0, "只读PID探针失败")
+            response = probe["response"]
+            require(isinstance(response, dict) and response["schema"] == "P7_PROC_PROBE_V1" and response["reader_euid"] == 0
+                    and all(response["boot_id"] == row["boot_id"] for row in candidates), "探针格式/权限/boot错误")
+            rows = response["rows"]
+            require(isinstance(rows, list) and all(isinstance(r, dict) for r in rows)
+                    and len(rows) == len(candidates) and [r["pid"] for r in rows] == [r["pid"] for r in candidates], "探针PID批次不对应")
+            for expected, row in zip(candidates, rows):
+                status = row["status"]
+                if status == "observed":
+                    require(isinstance(row.get("identity"), dict) and isinstance(row.get("before"), dict)
+                            and isinstance(row.get("after"), dict), "探针缺完整身份记录")
+                    require(_PROC_READER["_stable"](expected, row["before"])
+                            and _PROC_READER["_stable"](expected, row["after"])
+                            and _PROC_READER["_stable"](expected, row["identity"]), "探针PID/start/boot身份不对应")
+                    require(isinstance(row["identity"]["argv"], list)
+                            and all(isinstance(a, str) for a in row["identity"]["argv"])
+                            and (isinstance(row["identity"]["exe"], str) and row["identity"]["exe"].startswith("/")
+                                 or row["identity"]["exe"] is None and row["identity"].get("zombie") is True and row["identity"]["state"] == "Z"), "探针exe/argv不完整")
+                    classify(row)
+                elif status == "vanished":
+                    require("before" not in row or _PROC_READER["_stable"](expected, row["before"]), "消失回执身份不符")
+                    vanished.append({"expected": expected, "probe": row})
+                else:
+                    unreadable.append({"expected": expected, "probe": row})
+        except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError) as error:
+            unreadable.extend({"pid": row["pid"], "expected": row, "error": repr(error)} for row in candidates)
+    return {"related": related, "unreadable": unreadable, "vanished": vanished,
+            "ordinary_denied": denied, "privileged_probe": probe, "clean": not related and not unreadable}
+
+
+def inspect_runtime_preconditions(trust=TRUST):
+    """当前普通运行身份的只读前置；不建目录、不碰marker、不调用任何子进程。"""
+    account = pwd.getpwnam("loosqk")
+    info = trust.lstat()
+    return {"schema": "P7_RUNTIME_PRECONDITIONS_V1", "uid": os.getuid(), "euid": os.geteuid(),
+            "gid": os.getgid(), "egid": os.getegid(), "account_uid": account.pw_uid, "account_gid": account.pw_gid,
+            "machine": os.uname().machine, "python_version": list(sys.version_info[:3]),
+            "rtprio": list(resource.getrlimit(resource.RLIMIT_RTPRIO)),
+            "memlock": list(resource.getrlimit(resource.RLIMIT_MEMLOCK)),
+            "tools": {name: shutil.which(name) for name in ("taskset", "git", "systemctl", "udevadm", "fuser", "sha256sum", "sudo")},
+            "trust": {"path": str(trust), "mode": stat.S_IMODE(info.st_mode), "uid": info.st_uid,
+                      "gid": info.st_gid, "device": info.st_dev, "inode": info.st_ino,
+                      "is_directory": stat.S_ISDIR(info.st_mode), "is_symlink": stat.S_ISLNK(info.st_mode)}}
+
+
+def validate_runtime_preconditions(value):
+    require(value["schema"] == "P7_RUNTIME_PRECONDITIONS_V1", "运行前置schema不符")
+    require(value["uid"] == value["euid"] == value["account_uid"]
+            and value["gid"] == value["egid"] == value["account_gid"], "必须以loosqk实际身份运行")
+    require(value["machine"] == "aarch64" and value["python_version"] >= [3, 11, 0], "运行架构/Python版本不符")
+    require(set(value["tools"]) == {"taskset", "git", "systemctl", "udevadm", "fuser", "sha256sum", "sudo"}
+            and all(value["tools"].values()), "缺少必要运行工具")
+    require(value["rtprio"][0] == resource.RLIM_INFINITY or value["rtprio"][0] >= 70, "实际身份没有FIFO70权限")
+    require(value["memlock"][0] == resource.RLIM_INFINITY, "实际身份没有无限MEMLOCK预算")
+    trust = value["trust"]
+    require(trust["is_directory"] and not trust["is_symlink"] and trust["uid"] == value["account_uid"]
+            and trust["gid"] == value["account_gid"] and trust["mode"] == 0o750, "trust目录权限不符")
+    return value
 
 
 def marker_snapshot(directory, expected=None, uid=None, gid=None):
@@ -272,20 +492,14 @@ class RealBackend:
         self.alignment = pinned_json(self.inputs["alignment"])
         physical = pinned_json(self.inputs["physical"])
         validate_facts(self.inputs, self.alignment, physical, self.options, time.time_ns())
-        account = pwd.getpwnam("loosqk")
-        self.uid, self.gid = account.pw_uid, account.pw_gid
-        require(os.getuid() == os.geteuid() == self.uid and os.getgid() == self.gid, "必须以 loosqk 实际身份运行")
-        require(os.uname().machine == "aarch64", "真实H2只允许原生Orin")
-        for name in ("taskset", "git", "systemctl", "udevadm", "fuser", "sha256sum"):
-            require(shutil.which(name), f"缺少必要工具：{name}")
-        limits = {"rtprio": resource.getrlimit(resource.RLIMIT_RTPRIO),
-                  "memlock": resource.getrlimit(resource.RLIMIT_MEMLOCK)}
-        require(limits["rtprio"][0] == resource.RLIM_INFINITY or limits["rtprio"][0] >= 70, "实际身份没有FIFO70权限")
-        require(limits["memlock"][0] == resource.RLIM_INFINITY, "实际身份没有无限MEMLOCK预算")
-        self.journal.state.update(physical=physical, alignment=self.alignment, limits=limits,
-                                  actual_uid=self.uid, actual_gid=self.gid, environment_keys=sorted(self.environment))
-        require(TRUST.is_dir() and not TRUST.is_symlink() and TRUST.stat().st_uid == self.uid
-                and stat.S_IMODE(TRUST.stat().st_mode) == 0o750, "trust目录权限不符")
+        runtime = inspect_runtime_preconditions()
+        self.uid, self.gid = runtime["account_uid"], runtime["account_gid"]
+        self.journal.state.update(physical=physical, alignment=self.alignment, runtime_preconditions=runtime,
+                                  limits={key: runtime[key] for key in ("rtprio", "memlock")},
+                                  actual_uid=runtime["uid"], actual_gid=runtime["gid"],
+                                  environment_keys=sorted(self.environment))
+        self.journal.save()
+        validate_runtime_preconditions(runtime)
 
     def audit(self):
         require(self.inputs is not None, "未通过输入预检")
@@ -334,7 +548,10 @@ class RealBackend:
             return
         snapshot = process_snapshot(process.pid, self.options.output,
                                     [self.bin_dir / name for name in self.measurement["artifacts"]])
-        require(not snapshot["unreadable"], "本轮进程身份不可读")
+        if snapshot["privileged_probe"] or snapshot["unreadable"]:
+            journal.state["last_process_snapshot"] = snapshot
+            journal.save()
+        require(not snapshot["unreadable"], f"本轮进程身份不可读：{snapshot}")
         for row in snapshot["related"]:
             key = f"{row['pid']}:{row.get('start_ticks')}"
             if key not in self.identities:
@@ -354,6 +571,8 @@ class RealBackend:
         require(hasattr(self, "measurement"), "未建立本轮产物身份，无法完成清场核验")
         value = process_snapshot(self.process.pid if self.process else -1, self.options.output,
                                  [self.bin_dir / name for name in self.measurement["artifacts"]])
+        self.journal.state["last_process_snapshot"] = value
+        self.journal.save()
         require(value["clean"], f"清场存在残留或不可读身份：{value}")
         return value
 

@@ -476,11 +476,222 @@ class RealBackendTests(unittest.TestCase):
                         with self.assertRaises(ValueError):backend.device_check()
 
     def test_unreadable_process_is_not_clean(self):
-        with patch.object(Path,"iterdir",return_value=[Path("/fake/123")]), \
-             patch.object(Path,"read_text",side_effect=PermissionError("不可读")):
-            value = driver.process_snapshot(123,Path("/fake/run"),[],Path("/fake"))
+        with patch.object(Path,"iterdir",return_value=[Path("/fake/123")]):
+            value = driver.process_snapshot(123,Path("/fake/run"),[],Path("/fake"),
+                reader=lambda *args,**kwargs:{"pid":123,"status":"unreadable","error":"不可读"})
         self.assertFalse(value["clean"])
         self.assertEqual(value["unreadable"][0]["pid"],123)
 
+
+class ProcProbeTests(unittest.TestCase):
+    boot = "12345678-1234-1234-1234-123456789abc"
+
+    def make_proc(self, root, pid=123):
+        directory = root/str(pid); directory.mkdir()
+        fields = ["S", "1", "12"] + ["0"]*16 + ["42"]
+        (directory/"stat").write_text(f"{pid} (名字 ) 含括号) " + " ".join(fields))
+        (directory/"status").write_text("Name:\tfixture\nUid:\t1000\t1000\t1000\t1000\n")
+        (directory/"cmdline").write_bytes(b"/unrelated/tool\0")
+        (directory/"exe").symlink_to("/unrelated/tool")
+        (root/"sys/kernel/random").mkdir(parents=True,exist_ok=True)
+        (root/"sys/kernel/random/boot_id").write_text(self.boot+"\n")
+        return directory
+
+    def row(self, *, exe="/unrelated/tool", pgid=12, argv=None, state="S"):
+        identity = {"pid":123,"start_ticks":42,"pgid":pgid,"state":state,"boot_id":self.boot,
+                    "uids":[1000]*4}
+        return {"pid":123,"status":"observed","before":dict(identity),"after":dict(identity),
+                "identity":dict(identity,exe=exe,argv=argv or ["/unrelated/tool"],zombie=state=="Z")}
+
+    def receipt(self, rows):
+        return {"exit_code":0,"response":{"schema":"P7_PROC_PROBE_V1","reader_euid":0,
+                                           "boot_id":self.boot,"rows":rows}}
+
+    def scan_denied(self, receipt, expected=None):
+        base=expected or self.row()
+        def reader(pid,expected=None,details=True,proc=None):
+            if not details:
+                basic=copy.deepcopy(base); basic["identity"]={k:v for k,v in basic["identity"].items()
+                    if k not in ("exe","argv","zombie")}
+                return basic
+            return {"pid":pid,"status":"permission","before":expected,"error":"PermissionError"}
+        with patch.object(driver.os,"getuid",return_value=1000), \
+             patch.object(Path,"iterdir",return_value=[Path("/fixture/123")]):
+            calls=[]
+            def probe(rows):
+                calls.append(rows)
+                return receipt
+            result=driver.process_snapshot(99,Path("/run/new"),[Path("/bin/measurement")],
+                Path("/fixture"),reader=reader,probe_runner=probe)
+        return result,calls
+
+    def test_dirfd_read_uses_status_uid_and_handles_stat_parentheses(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);self.make_proc(root)
+            row=driver.read_process(123,proc=root)
+            self.assertEqual(row["status"],"observed")
+            self.assertEqual(row["identity"]["start_ticks"],42)
+            self.assertEqual(row["identity"]["uids"],[1000]*4)
+            with patch.object(driver.os,"getuid",return_value=1000), \
+                 patch.object(Path,"stat",side_effect=AssertionError("不能依赖proc目录属主")):
+                value=driver.process_snapshot(99,Path("/run/new"),[Path("/unrelated/tool")],root)
+            self.assertEqual(value["related"][0]["pid"],123)
+            self.assertFalse(value["clean"])
+
+    def test_only_stable_privileged_unrelated_identity_resolves_eacces(self):
+        value,calls=self.scan_denied(self.receipt([self.row()]))
+        self.assertTrue(value["clean"])
+        self.assertEqual(len(value["ordinary_denied"]),1)
+        self.assertEqual(len(calls),1)
+        self.assertEqual(calls[0][0]["start_ticks"],42)
+        self.assertEqual(calls[0][0]["uids"],[1000]*4)
+
+    def test_related_pgid_argv_elf_and_zombie_remain_residual(self):
+        for row in (self.row(pgid=99),self.row(exe="/bin/measurement"),
+                    self.row(argv=["tool","--output","/run/new"]),self.row(exe=None,pgid=99,state="Z")):
+            with self.subTest(row=row):
+                value,_=self.scan_denied(self.receipt([row]),expected=row)
+                self.assertFalse(value["clean"])
+                self.assertEqual(len(value["related"]),1)
+
+    def test_replaced_unknown_failed_or_malformed_probe_stays_unreadable(self):
+        good=self.receipt([self.row()])
+        broken=[]
+        for field,value in (("start_ticks",43),("boot_id","87654321-1234-1234-1234-123456789abc"),("pgid",13),("uids",[0]*4)):
+            bad=copy.deepcopy(good);bad["response"]["rows"][0]["after"][field]=value;broken.append(bad)
+        for status in ("replaced","unreadable","permission","unknown"):
+            bad=copy.deepcopy(good);bad["response"]["rows"][0]["status"]=status;broken.append(bad)
+        for rows in ([],[self.row(),self.row()],[dict(self.row(),pid=456)]):
+            bad=copy.deepcopy(good);bad["response"]["rows"]=rows;broken.append(bad)
+        broken += [{"exit_code":1,"error":"sudo denied"},{"exit_code":0,"response":{}},
+                   {"exit_code":0,"response":dict(good["response"],reader_euid=1000)},
+                   {"exit_code":0,"response":dict(good["response"],boot_id="other")}]
+        for receipt in broken:
+            with self.subTest(receipt=receipt):
+                value,_=self.scan_denied(receipt)
+                self.assertFalse(value["clean"])
+                self.assertTrue(value["unreadable"])
+
+    def test_vanished_is_explicit_current_absence_not_reap_claim(self):
+        value,_=self.scan_denied(self.receipt([{"pid":123,"status":"vanished"}]))
+        self.assertTrue(value["clean"])
+        self.assertEqual(value["vanished"][0]["expected"]["start_ticks"],42)
+        self.assertNotIn("reaped",value)
+
+    def test_fixed_probe_command_bounds_and_failures(self):
+        candidate={k:v for k,v in self.row()["identity"].items() if k not in ("exe","argv","zombie")}
+        for result in (subprocess.CompletedProcess([],1,"","sudo denied"),
+                       subprocess.CompletedProcess([],0,"{truncated",""),
+                       subprocess.CompletedProcess([],0,'{"x":1,"x":2}',"")):
+            with patch.object(driver.subprocess,"run",return_value=result) as run:
+                value=driver.privileged_process_probe([candidate])
+                self.assertIn("error",value)
+                argv=run.call_args.args[0]
+                self.assertEqual(argv[:6],["sudo","-n","/usr/bin/python3","-I","-S","-c"])
+                self.assertEqual(argv[6],driver.PROC_PROBE_CODE)
+                self.assertEqual(run.call_args.kwargs["timeout"],10)
+                self.assertNotIn("shell",run.call_args.kwargs)
+        with patch.object(driver.subprocess,"run",side_effect=subprocess.TimeoutExpired("probe",10)):
+            self.assertIn("error",driver.privileged_process_probe([candidate]))
+
+    def test_fixed_probe_script_rejects_extra_path_and_duplicate_pid_input(self):
+        candidate={k:v for k,v in self.row()["identity"].items() if k not in ("exe","argv","zombie")}
+        for candidates in ([dict(candidate,root="/tmp/forbidden")],[candidate,candidate],[]):
+            result=subprocess.run([sys.executable,"-I","-S","-c",driver.PROC_PROBE_CODE],
+                input=json.dumps({"schema":"P7_PROC_PROBE_V1","candidates":candidates}),
+                capture_output=True,text=True,timeout=5,check=False)
+            self.assertNotEqual(result.returncode,0)
+            self.assertEqual(result.stdout,"")
+
+    def test_oversized_permission_batch_never_invokes_sudo(self):
+        def reader(pid,expected=None,details=True,proc=None):
+            row=self.row();row["pid"]=pid
+            for key in ("identity","before","after"):row[key]["pid"]=pid
+            if details:return {"pid":pid,"status":"permission","before":expected}
+            row["identity"]={k:v for k,v in row["identity"].items() if k not in ("exe","argv","zombie")}
+            return row
+        with patch.object(driver.os,"getuid",return_value=1000), \
+             patch.object(Path,"iterdir",return_value=[Path("/fixture")/str(pid) for pid in range(1000000,1000257)]):
+            def probe(rows):raise AssertionError("不应调用sudo")
+            value=driver.process_snapshot(99,Path("/run/new"),[],Path("/fixture"),reader=reader,probe_runner=probe)
+        self.assertFalse(value["clean"])
+        self.assertEqual(len(value["unreadable"]),257)
+
+    def test_dirfd_replacement_missing_exe_and_exit_are_distinguished(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);directory=self.make_proc(root)
+            expected=driver.read_process(123,details=False,proc=root)["identity"]
+            changed=dict(expected,start_ticks=41)
+            self.assertEqual(driver.read_process(123,expected=changed,proc=root)["status"],"replaced")
+            (directory/"exe").unlink()
+            self.assertEqual(driver.read_process(123,proc=root)["status"],"unreadable")
+            self.assertEqual(driver.read_process(456,proc=root)["status"],"vanished")
+            actual_stat=driver._PROC_READER["_stat_at"]
+            calls=0
+            def changing(fd,pid):
+                nonlocal calls
+                calls+=1;value=actual_stat(fd,pid)
+                if calls==2:value["start_ticks"]+=1
+                return value
+            with patch.dict(driver._PROC_READER,{"_stat_at":changing}):
+                self.assertEqual(driver.read_process(123,details=False,proc=root)["status"],"replaced")
+
+    def test_real_non_dumpable_denial_with_fixture_probe_and_natural_reap(self):
+        code = """import ctypes,json,os,sys
+sys.path.insert(0,sys.argv[1])
+import run_post_e_h2 as driver
+assert ctypes.CDLL(None).prctl(4,0,0,0,0)==0
+print(json.dumps(driver.read_process(os.getpid())),flush=True)
+sys.stdin.buffer.read(1)
+"""
+        child=subprocess.Popen([sys.executable,"-c",code,str(Path(driver.__file__).parent)],
+                               stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,start_new_session=True)
+        try:
+            own=json.loads(child.stdout.readline())
+            self.assertEqual(own["status"],"observed")
+            basic=driver.read_process(child.pid,details=False)
+            self.assertEqual(basic["status"],"observed")
+            ordinary=driver.read_process(child.pid,expected=basic["identity"])
+            self.assertEqual(ordinary["status"],"permission")
+            # 真实child产生拒读；仅probe回执为夹具，不能当sudo路径实证。
+            receipt=self.receipt([own]);receipt["response"]["boot_id"]=own["identity"]["boot_id"]
+            with patch.object(Path,"iterdir",return_value=[Path("/proc")/str(child.pid)]):
+                value=driver.process_snapshot(child.pid,Path("/fixture/run"),[],probe_runner=lambda rows:receipt)
+            self.assertFalse(value["clean"])
+            self.assertEqual(value["related"][0]["pid"],child.pid)
+            self.assertEqual(value["unreadable"],[])
+        finally:
+            child.stdin.write("x");child.stdin.flush();child.stdin.close()
+            self.assertEqual(child.wait(timeout=5),0)
+            child.stdout.close()
+        with self.assertRaises(ChildProcessError):os.waitpid(child.pid,os.WNOHANG)
+
+
+class RuntimePreconditionTests(unittest.TestCase):
+    def test_readonly_inspection_does_not_create_or_spawn_and_validator_rejects_bad_trust(self):
+        with tempfile.TemporaryDirectory() as temp:
+            trust=Path(temp)/"trust";trust.mkdir(mode=0o750)
+            with patch.object(driver.subprocess,"run",side_effect=AssertionError), \
+                 patch.object(driver.subprocess,"Popen",side_effect=AssertionError), \
+                 patch.object(Path,"mkdir",side_effect=AssertionError):
+                value=driver.inspect_runtime_preconditions(trust)
+            self.assertEqual(value["trust"]["mode"],0o750)
+            self.assertEqual(value["trust"]["inode"],trust.stat().st_ino)
+            good=copy.deepcopy(value)
+            good.update(uid=1000,euid=1000,gid=1000,egid=1000,account_uid=1000,account_gid=1000,
+                        machine="aarch64",python_version=[3,12,0],rtprio=[99,99],memlock=[-1,-1])
+            good["tools"]={name:"/usr/bin/"+name for name in good["tools"]}
+            good["trust"].update(uid=1000,gid=1000)
+            self.assertEqual(driver.validate_runtime_preconditions(good),good)
+            for field,bad in (("mode",0o755),("uid",0),("gid",0),("is_directory",False),("is_symlink",True)):
+                value=copy.deepcopy(good);value["trust"][field]=bad
+                with self.subTest(field=field),self.assertRaises(ValueError):driver.validate_runtime_preconditions(value)
+            for field,bad in (("uid",0),("euid",0),("egid",0),("rtprio",[69,99]),("memlock",[65536,65536]),("machine","x86_64")):
+                value=copy.deepcopy(good);value[field]=bad
+                with self.subTest(field=field),self.assertRaises(ValueError):driver.validate_runtime_preconditions(value)
+            trust.chmod(0o755)
+            self.assertEqual(driver.inspect_runtime_preconditions(trust)["trust"]["mode"],0o755)
+            link=Path(temp)/"link";link.symlink_to(trust)
+            self.assertTrue(driver.inspect_runtime_preconditions(link)["trust"]["is_symlink"])
 
 if __name__=="__main__": unittest.main()
