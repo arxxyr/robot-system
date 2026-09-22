@@ -85,8 +85,8 @@ def _stat_at(directory, pid):
         raise ValueError("proc stat PID格式错误")
     fields = raw[closing + 2:].split()
     start = int(fields[19])
-    if start <= 0:
-        raise ValueError("缺少proc start_ticks")
+    if start < 0:
+        raise ValueError("proc start_ticks不能为负")
     return {"pid": pid, "start_ticks": start, "pgid": int(fields[2]), "state": fields[0]}
 
 def _uids_at(directory):
@@ -166,7 +166,7 @@ def _probe_main():
         pid = expected["pid"]
         if type(pid) is not int or pid <= 0 or pid in pids:
             raise ValueError("PID无效或重复")
-        if type(expected["start_ticks"]) is not int or expected["start_ticks"] <= 0:
+        if type(expected["start_ticks"]) is not int or expected["start_ticks"] < 0:
             raise ValueError("start_ticks无效")
         if type(expected["pgid"]) is not int or expected["pgid"] < 0:
             raise ValueError("PGID无效")

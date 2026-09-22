@@ -538,6 +538,45 @@ class ProcProbeTests(unittest.TestCase):
             self.assertEqual(value["related"][0]["pid"],123)
             self.assertFalse(value["clean"])
 
+    def check_probe_request(self, candidate):
+        request={"schema":"P7_PROC_PROBE_V1","candidates":[candidate]}
+        with patch.object(sys,"stdin",io.StringIO(json.dumps(request))), \
+             patch.dict(driver._PROC_READER,{"_boot":lambda root:self.boot,
+                 "_proc_probe":lambda pid,expected:{"pid":pid,"status":"vanished"}}), \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            driver._PROC_READER["_probe_main"]()
+            return json.loads(out.getvalue())
+
+    def test_zero_start_ticks_is_valid_and_still_fully_identity_bound(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);directory=self.make_proc(root)
+            path=directory/"stat";path.write_text(path.read_text().rsplit(" ",1)[0]+" 0")
+            row=driver.read_process(123,details=False,proc=root)
+            self.assertEqual(row["status"],"observed")
+            identity=row["identity"]
+            self.assertEqual(identity["start_ticks"],0)
+            self.assertEqual(driver.read_process(123,expected=identity,proc=root)["status"],"observed")
+            for field,value in (("start_ticks",1),("boot_id","other"),("pgid",99),("uids",[0]*4)):
+                with self.subTest(field=field):
+                    self.assertEqual(driver.read_process(123,expected=dict(identity,**{field:value}),proc=root)["status"],"replaced")
+            response=self.check_probe_request(identity)
+            self.assertEqual(response["rows"],[{"pid":123,"status":"vanished"}])
+
+    def test_negative_missing_or_malformed_start_ticks_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);directory=self.make_proc(root)
+            path=directory/"stat";prefix=path.read_text().rsplit(" ",1)[0]
+            for suffix in (" -1"," invalid",""):
+                path.write_text(prefix+suffix)
+                with self.subTest(stat_suffix=suffix):
+                    self.assertEqual(driver.read_process(123,details=False,proc=root)["status"],"unreadable")
+        identity=self.row()["before"]
+        for value in (-1,"0",None):
+            with self.subTest(probe_value=value),self.assertRaises(ValueError):
+                self.check_probe_request(dict(identity,start_ticks=value))
+        missing=dict(identity);missing.pop("start_ticks")
+        with self.assertRaises(ValueError):self.check_probe_request(missing)
+
     def test_only_stable_privileged_unrelated_identity_resolves_eacces(self):
         value,calls=self.scan_denied(self.receipt([self.row()]))
         self.assertTrue(value["clean"])
