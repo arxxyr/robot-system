@@ -2,6 +2,20 @@
 
 ## 当前步骤
 
+当前右H13独立操作脚本已完成本地软件验证：开发22方法及独立12方法PASS，未改既有三Python或Rust。
+脚本默认plan-only；执行另需本次右现场事实与绑定输入，H1真实reap/原件核验/清场后才H3，180秒原阶段门不变。
+SIGKILL后仍未reap会记录需介入并继续持有wait，不伪造完成。原始CSV/帧oracle与无害子进程反例均已独审。
+开发round6因新增过期反例未建临时输出目录而FAIL，修夹具后的最终轮通过；首两轮仅log/工具终态，缺独立PID/wait与源码快照回执，原边界完整保留，不称单轮全过。
+证据入口`target/post_e_h2_rt/s48/right_h13_preparation/`，本阶段证据已归档；最终源码身份见implementation_receipt_r2及独审回执。
+右TRUST目录仅经授权从0755修为0750，marker/locks仍未创建；用户暂不能现场配合，右H1/H3/H2均NOT_RUN，未安装/部署。
+左H2 PASS及runtime c5daa67/build fb600fd保留，收尾电源UNKNOWN；D15 OPEN、deployable=false。持续推进至周额度剩15%，每阶段独审/root验收后commit，不push。
+
+本次H包SHA `178a5501086efa9bb5511e45c4174bfa55dd1a9caae9b7baeeae421000743403`，206206186 bytes、
+65453 members/65452索引、5559918998 logical bytes；旧65321索引完整保全，新增131件。
+本次`right_h13_preparation/post_archive_review`及随后commit回执为包外后生件，下包承接。
+
+### 已收口原生软件阶段（4441f59，实际build仍5952498）
+
 左H2证据已提交`10cff7a`；右工具`0047920`与W1测试`2e5b515`已合并为`5952498`。
 合并态本地64项Python、完整最终SHA的latch默认并行10项、fresh fmt/根Clippy通过，命令真实wait/reap。
 本次10项绑定最终`7bf685e8…a8288`，不覆盖旧测试后等价lint记录或旧偶发失败的OPEN_UNCONFIRMED结论。
@@ -17,7 +31,7 @@ final_trace在双child停止后valid且与报告严格一致，非dry-run Disabl
 本轮native与`h2_arm_integration/`、上轮`h2_retry/post_archive_review`及commit回执已增量归档：
 SHA `72fff7b1a42ca4879f6a25d319d21d0c5a0a300bba49204300223007b8560898`，205856277 bytes、
 65322 members/65321索引、5558673967 logical bytes；旧65096条完整保全，新增225件。
-本轮`h2_arm_native/post_archive_review`及commit回执为包外后生件，下包承接；不提前填写未知收口commit。
+该阶段已收口`4441f59`；`h2_arm_native/post_archive_review`及commit回执已随本次右H13软件包承接。
 左真机runtime `c5daa67` / build `fb600fd`及其PASS不变；新版只做软件mock，未安装或操作硬件，右H1/H2/H3未测，D15 OPEN、deployable=false。
 用户暂不能现场配合，当前只继续软件准备，右硬件不启动。用户恢复工作并将停止线由25%改为周额度剩15%；每阶段独审/root验收后commit、不push，新的物理动作仍须当次现场事实。
 

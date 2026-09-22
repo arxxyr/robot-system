@@ -10,11 +10,18 @@
 
 ---
 
+## 2026-09-22 · 右H13操作监督准备（本地独审通过）
+
+新增ignored操作证据脚本与纯读原件oracle；复用已审只读检查，默认plan-only，H1真实回收及清场后才H3。
+阶段180秒与原始帧/样本门保持，异常继续持有真实wait；不改三Python/Rust、生产语义或既有build。
+本地22开发+12独立方法通过，round6夹具FAIL与早两轮回执缺项保留。仅软件准备，右现场未执行、未部署，D15 OPEN。
+证据与身份见HANDOFF；审阅：独立reviewer，最终收口由root负责。
+
 ## 2026-09-22 · 双臂验收工具与锁测试隔离（软件独审通过）
 
 `5952498`合并右臂侧别绑定、严格final_trace原件门及W1父测试fork/fd窗口隔离；生产架构、SLA/样本预算和原断扭判据不变。
 本地与Orin64Python/默认并行latch10通过；Orin新source/build绑定、6条recipe、生产4/测量3、7help及唯一AC12 mock四组各2通过独审。
-18份真实completion和122原件已核，本轮证据已归档。W1旧偶发失败具体根因仍OPEN_UNCONFIRMED，历史FAIL不覆盖。
+18份真实completion和122原件已核，该原生阶段已归档并收口4441f59，实际build仍5952498。W1旧偶发失败具体根因仍OPEN_UNCONFIRMED，历史FAIL不覆盖。
 仅软件验证，未安装或重跑硬件；左H2的c5daa67/fb600fd来源与PASS不变，右未测、D15 OPEN、deployable=false。
 来源和证据边界见HANDOFF及10_verification；审阅：独立reviewer，最终收口由root负责。
 

@@ -9,13 +9,20 @@
 
 ---
 
+## 2026-09-22 · 右H13监督与原件oracle（仅本地软件准备）
+
+开发最终22方法、独立12方法PASS，覆盖纯原件反例与无害子进程监督；没有新右硬件结果。
+round6夹具目录缺失FAIL保留；早两轮无独立PID/wait/源码快照回执，不回填、不称单轮全过。
+既有三Python/Rust与5952498产物未改；右H1/H3/H2 NOT_RUN，未安装/部署、D15 OPEN。
+本阶段证据已归档，完整身份及边界见HANDOFF和`right_h13_preparation/`。
+
 ## 2026-09-22 · 双臂工具与W1测试的新原生软件验证
 
 source/build `5952498`，571输入aggregate `e05a2ca…ce0ff`；6条release recipe、生产4/测量3、7help，
 Orin64Python及默认并行latch10、唯一AC12 mock四组各2通过，18份completion真实回收、122原件逐SHA/bytes核验。
 final_trace严格一致及双child停止、非dry-run收尾、实际UID清场和来源/安装状态不变通过独审。
 本地合并态64+10及fmt/Clippy已通过；旧57项未重跑，复核初次Mock字段误用失败保留。
-本轮证据已归档，入口`h2_arm_native/`，完整来源/边界见HANDOFF。未安装/重跑硬件，右未测、D15 OPEN。
+该原生阶段已归档并收口4441f59，入口`h2_arm_native/`，完整来源/边界见HANDOFF。未安装/重跑硬件，右未测、D15 OPEN。
 
 ## 2026-09-22 · 本次左H2完整通过，已收口10cff7a
 
@@ -870,3 +877,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-22：登记测试hook同RobotClock有界补足与停止后final_trace门，两端57及Orin原生/AC12通过，原controller FAIL保留；最终独审/root验收已通过，旧H2 FAIL不变。
 
 - 2026-09-22：登记5952498新原生来源、64+10/唯一AC12及122原件独审；仅软件，证据已归档，左H2历史来源不变。
+
+- 2026-09-22：登记右H13本地监督/oracle的22开发+12独立方法验证；保留round6 FAIL和早轮回执边界，右现场未执行。

@@ -18,9 +18,9 @@
 
 2026-09-22本次左H2四组各100预热+1000正式通过，runtime `c5daa67` / build `fb600fd`。
 真实收尾、工具/driver回收及清场已独审/root验收，本轮已收口10cff7a；旧三次FAIL与前置拒绝保留。
-本轮值守已解除，电源UNKNOWN；右未测、未安装、D15 OPEN。右工具/W1已合并`5952498`，
-Orin新来源绑定及64Python/默认并行latch10、唯一mock4×2已通过独审；详HANDOFF。
-本轮软件证据已归档；用户暂不能在场，只继续软件准备，右硬件不启动。按最新要求持续推进至周额度剩15%，每阶段验收commit，不自动物理重试或push。
+本轮值守已解除，电源UNKNOWN；右未测、未安装、D15 OPEN。原生软件已收口`4441f59`，实际build仍`5952498`。
+当前右H13操作脚本仅本地22开发+12独立方法通过，失败/证据缺项保留；详HANDOFF。
+用户暂不能在场，只继续软件准备，右H1/H3/H2不启动。持续推进至周额度剩15%，每阶段验收commit，不自动物理重试或push。
 完整数据、第三组max与P99区别及来源见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
 
 以下为已收口`eb59bcc`的历史真实H2失败记录，不覆盖本次新运行结论：
@@ -42,7 +42,7 @@ authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TR
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     左H2收口10cff7a；5952498原生软件验证/独审通过，证据已归档
+当前步骤:     原生阶段收口4441f59；右H13本地软件准备22+12通过，现场未执行
 当前授权:     Astra/medium开发及独审，连续推进至周额度剩15%；每阶段验收commit，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H2/H3 PASS；三次旧H2 FAIL及一次前置拒绝保留；右臂未测
