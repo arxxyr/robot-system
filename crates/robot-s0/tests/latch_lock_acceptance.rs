@@ -27,6 +27,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use robot_s0::clear_estop_transaction::ClearTxnStore;
@@ -49,6 +50,17 @@ const CHILD_SLEEP_ENV: &str = "ROBOT_S0_LATCH_LOCK_CHILD_SLEEP";
 const WAIT_LIMIT: Duration = Duration::from_secs(20);
 
 const PRIMARY: &str = "estop_latch";
+
+// 只隔离同一测试进程的 fd 表，避免其它父用例在 fork 至 exec 期间继承本例锁 fd；
+// 不是生产互斥机制。父用例最早声明守卫，确保 ChildGuard、锁与目录都先于它析构。
+static PARENT_CASES: Mutex<()> = Mutex::new(());
+
+fn isolate_parent_case() -> MutexGuard<'static, ()> {
+    // 没有受此锁保护的共享业务数据；原 panic 由测试框架报告，恢复毒化避免级联失败。
+    PARENT_CASES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// 子进程入口：父进程模式下（无环境变量）直接返回，是个空 case。
 #[test]
@@ -231,6 +243,7 @@ fn assert_identity_error(error: &LatchLockError, object: LatchObject) {
 /// 且失败竞争者不改锁文件 PID；锁只由 latch 目标决定，与任何其它目录无关。
 #[test]
 fn different_names_lock_independently_and_same_target_is_exclusive() {
+    let _case_guard = isolate_parent_case();
     let dir = TempDir::new().unwrap();
     let first = dir.path().join(PRIMARY);
     let second = dir.path().join("gripper_latch");
@@ -284,6 +297,7 @@ fn different_names_lock_independently_and_same_target_is_exclusive() {
 /// 末段本身是符号链接时不解析末段（名字仍是 `estop_latch`），但数据对象检查拒绝它。
 #[test]
 fn aliases_of_the_same_canonical_parent_are_mutually_exclusive() {
+    let _case_guard = isolate_parent_case();
     let dir = TempDir::new().unwrap();
     let robot = dir.path().join("robot");
     std::fs::create_dir(&robot).unwrap();
@@ -351,6 +365,7 @@ fn aliases_of_the_same_canonical_parent_are_mutually_exclusive() {
 /// 字节不变；非 UTF-8 合法名可以取锁、写入并读回。
 #[test]
 fn derived_and_reserved_names_are_rejected_before_any_side_effect() {
+    let _case_guard = isolate_parent_case();
     let dir = TempDir::new().unwrap();
     let bad_names: [&[u8]; 9] = [
         b"estop_latch.bak",
@@ -429,6 +444,7 @@ fn derived_and_reserved_names_are_rejected_before_any_side_effect() {
 /// primary `1` / backup `0` 这一有效崩溃状态的原字节不变；锁对象本身不被 rename / unlink。
 #[test]
 fn illegal_lock_objects_are_rejected_and_pair_bytes_are_untouched() {
+    let _case_guard = isolate_parent_case();
     for variant in ["symlink", "hardlink", "fifo", "directory"] {
         let dir = TempDir::new().unwrap();
         let primary = dir.path().join(PRIMARY);
@@ -488,6 +504,7 @@ fn illegal_lock_objects_are_rejected_and_pair_bytes_are_untouched() {
 /// 进程重取前后 sleeper 都仍然活着，另一进程仍能立即取锁。
 #[test]
 fn lock_fd_is_not_inherited_across_exec() {
+    let _case_guard = isolate_parent_case();
     let dir = TempDir::new().unwrap();
     let latch = dir.path().join(PRIMARY);
     let lock = acquire_latch_lock(&latch).unwrap();
@@ -538,6 +555,7 @@ fn lock_fd_is_not_inherited_across_exec() {
 /// holder 由 RAII 守卫持有：ready 超时或任一断言失败都会被 kill + wait。
 #[test]
 fn competitor_pid_is_reported_and_lock_is_reacquirable_after_holder_exit() {
+    let _case_guard = isolate_parent_case();
     let dir = TempDir::new().unwrap();
     let latch = dir.path().join(PRIMARY);
     let marker = dir.path().join("child_holds");
@@ -586,6 +604,7 @@ fn competitor_pid_is_reported_and_lock_is_reacquirable_after_holder_exit() {
 /// 损坏普通文件通过类型检查、读取得 `InvalidData`（fallback 策略留给各入口）。
 #[test]
 fn data_object_aliases_and_special_files_are_rejected_without_self_heal() {
+    let _case_guard = isolate_parent_case();
     // 真实缺失。
     let dir = TempDir::new().unwrap();
     let latch = dir.path().join(PRIMARY);
@@ -670,6 +689,7 @@ fn data_object_aliases_and_special_files_are_rejected_without_self_heal() {
 /// W0 store 目录身份与锁不一致（daemon 据此拒绝启动）；未替换时身份一致。
 #[test]
 fn parent_replacement_after_lock_keeps_new_directory_untouched_and_breaks_store_identity() {
+    let _case_guard = isolate_parent_case();
     let dir = TempDir::new().unwrap();
     let parent = dir.path().join("robot");
     std::fs::create_dir(&parent).unwrap();
@@ -718,6 +738,7 @@ fn parent_replacement_after_lock_keeps_new_directory_untouched_and_breaks_store_
 /// 用真实错误实例核退出码：`Held` → 89；`InvalidName` / `Io` / `Identity` → 1。
 #[test]
 fn exit_codes_partition_held_from_configuration_failures() {
+    let _case_guard = isolate_parent_case();
     let dir = TempDir::new().unwrap();
     let latch = dir.path().join(PRIMARY);
     let _held = acquire_latch_lock(&latch).unwrap();
