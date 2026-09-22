@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from dataclasses import replace
 import contextlib
 import hashlib
 import io
@@ -30,17 +31,18 @@ def ack(request_id, dry=False):
             "dry_run": dry, "cleared_at_ns": 10}
 
 
-def rt_fixture():
+def rt_fixture(side="left"):
+    profile = report.arm_profile(side)
     processes = []
     for role, pid in (("tool", 100), ("s0", 101), ("gateway", 102)):
         threads = [{"tid": pid, "comm": role, "policy": 0, "priority": 0, "cpus": [0, 1, 2, 3]}]
         if role == "s0":
-            threads.append({"tid": 103, "comm": "s0_serial_io_th", "policy": 1, "priority": 70, "cpus": [4]})
+            threads.append({"tid": 103, "comm": "s0_serial_io_th", "policy": 1, "priority": 70, "cpus": [profile.serial_cpu]})
         tids = sorted(t["tid"] for t in threads)
         processes.append({"role": role, "validation_error": None, "snapshot": {
             "pid": pid, "tids_before": tids, "tids_after": tids, "threads": threads, "errors": []}})
     return {"started_ns": 1, "finished_ns": 2, "passed": True, "processes": processes,
-            "profile": {"serial_cpu": 4, "serial_policy": 1, "serial_priority": 70,
+            "profile": {"serial_cpu": profile.serial_cpu, "serial_policy": 1, "serial_priority": 70,
                         "ordinary_policy": 0, "ordinary_priority": 0, "ordinary_cpus": [0, 1, 2, 3]}}
 
 
@@ -52,17 +54,18 @@ def boundary(seq, mode, now):
                          "request_deadline_ns": now+100_000, "failure": "None"}}
 
 
-def report_fixture(root):
+def report_fixture(root, side="left"):
     """合成报告只测试解析/判据，不模拟或宣称真实电机时序。"""
-    evidence = root / "orin_sla_left"; evidence.mkdir()
+    profile = report.arm_profile(side)
+    evidence = root / profile.evidence_directory; evidence.mkdir()
     bin_dir = root / "bin"; bin_dir.mkdir()
     artifacts = {name: {"sha256": "a"*64, "build": {"fixture": name}} for name in
                  ("s0_daemon", "robot_rpc_gateway", "comm_fault_e2e")}
-    expected = {"bin_dir": str(bin_dir), "config": str(driver.CONFIG), "config_sha256": "b"*64,
+    expected = {"side": side, "bin_dir": str(bin_dir), "config": str(profile.config), "config_sha256": "b"*64,
                 "calibration_sha256": "c"*64, "artifacts": artifacts, "tool_pid": 100}
     env = {"gateway_idempotency_max_entries": 8192, "gateway_idempotency_ttl_secs": 300,
            "background_tracked_limit": 64, "wire_active_limit_unchanged": 4, "s48_cache_observation": False,
-           "hardware_id": "left_arm", "address": driver.DEVICE, "current_exe": str(bin_dir / "comm_fault_e2e"),
+           "hardware_id": profile.hardware_id, "address": profile.device, "current_exe": str(bin_dir / "comm_fault_e2e"),
            "config_sha256": expected["config_sha256"], "calibration_sha256": expected["calibration_sha256"],
            "artifacts": {role: artifacts[name]["build"] for role, name in
                          (("tool", "comm_fault_e2e"), ("s0", "s0_daemon"), ("gateway", "robot_rpc_gateway"))},
@@ -124,20 +127,24 @@ def report_fixture(root):
            "get_state": {"attempted": True, "ok": True, "safety_state": 3, "state_stamp_ns": stop+102},
            "disable": {**ack("final"), "attempted": True, "started_ns": stop+103, "finished_ns": stop+104,
                        "request": {"request_id": "final", "idempotency_key": "final", "enabled": False, "dry_run": False}}}
-    rt=rt_fixture()
+    final_trace={"valid": True, "error": None, "children_stopped": True, "read_error": None,
+                 "installed": True, "dropped": 0, "boundary": {"request_seq": final_seq,
+                 "receipt_seq": final_seq, "request_mode": "Some(Disarm)", "mode": "Some(Disarm)",
+                 "status": "Disarmed", "armed_seq": 0, "gate_active": False, "failure_seq": 0, "failure": "None"}}
+    rt=rt_fixture(side)
     measurement={"groups": groups, "background": background, "trace_dropped": 0, "hardware_only": True,
                  "runtime_only": False, "in_flight_exercised": True, "mock_lease": False,
                  "external_entry_exercised": True, "topic_entry_exercised": True, "idle_exercised": True,
                  "events_csv": str(evidence / "events.csv")}
     payload={"schema_version": 1, "status": "PASS", "hardware": {"H1":"NEEDS_HUMAN", "H2":"PASS", "H3":"NEEDS_HUMAN", "D15":"OPEN"},
-             "invocation": {"phase":"OrinSla", "case_filter":None, "hardware_id":"left_arm", "config":str(driver.CONFIG),
+             "invocation": {"phase":"OrinSla", "case_filter":None, "hardware_id":profile.hardware_id, "config":str(profile.config),
                             "config_sha256":"b"*64, "current_exe":str(bin_dir/"comm_fault_e2e"), "current_exe_sha256":"a"*64},
              "artifacts":[{"name":n, "path":str(bin_dir/n), **v} for n,v in artifacts.items()],
              "cases":[{"case":"orin_sla", "ac":"AC-12/H2", "status":"PASS", "evidence":{
-                 "environment":env, "measurement":measurement, "final_state":final, "rt_preflight":rt}}]}
+                 "environment":env, "measurement":measurement, "final_state":final, "final_trace":final_trace, "rt_preflight":rt}}]}
     write_json(root/"report.json",payload)
     for name,value in (("environment.json",env),("background.json",background),("recovery_writes.json",recoveries),
-                       ("rt_preflight.json",rt),("final_stop.json",final)):
+                       ("rt_preflight.json",rt),("final_stop.json",final),("final_trace.json",final_trace)):
         write_json(evidence/name,value)
     for group in groups:
         write_json(evidence/f"sla_{str(group['external']).lower()}_{str(group['in_flight']).lower()}.json",group)
@@ -259,6 +266,7 @@ class FakeBackend:
 
     def __init__(self,options,journal):
         self.options=options; self.journal=journal; self.actions=[]; self.process=None
+        self.profile=report.arm_profile(getattr(options,"side","left"))
         type(self).instances.append(self)
 
     def preflight(self):
@@ -469,7 +477,7 @@ class RealBackendTests(unittest.TestCase):
             properties="ID_VENDOR_ID=1a86\nID_MODEL_ID=55d3\nID_SERIAL_SHORT=5A7C121427\nID_USB_DRIVER=cdc_acm\n"
             for code,stdout,stderr,valid in ((1,"","",True),(0,"123","",False),(2,"","error",False),(1,"","error",False)):
                 replies=[subprocess.CompletedProcess([],0,properties,""),subprocess.CompletedProcess([],code,stdout,stderr)]
-                with self.subTest(code=code,stderr=stderr),patch.object(driver,"DEVICE",str(port)), \
+                with self.subTest(code=code,stderr=stderr),patch.object(backend,"profile",replace(backend.profile,device=str(port))), \
                      patch.object(driver.stat,"S_ISCHR",return_value=True),patch.object(driver.subprocess,"run",side_effect=replies):
                     if valid:self.assertEqual(backend.device_check()["path"],str(port))
                     else:
@@ -721,16 +729,243 @@ class RuntimePreconditionTests(unittest.TestCase):
                         machine="aarch64",python_version=[3,12,0],rtprio=[99,99],memlock=[-1,-1])
             good["tools"]={name:"/usr/bin/"+name for name in good["tools"]}
             good["trust"].update(uid=1000,gid=1000)
-            self.assertEqual(driver.validate_runtime_preconditions(good),good)
+            self.assertEqual(driver.validate_runtime_preconditions(good,trust),good)
             for field,bad in (("mode",0o755),("uid",0),("gid",0),("is_directory",False),("is_symlink",True)):
                 value=copy.deepcopy(good);value["trust"][field]=bad
-                with self.subTest(field=field),self.assertRaises(ValueError):driver.validate_runtime_preconditions(value)
+                with self.subTest(field=field),self.assertRaises(ValueError):driver.validate_runtime_preconditions(value,trust)
             for field,bad in (("uid",0),("euid",0),("egid",0),("rtprio",[69,99]),("memlock",[65536,65536]),("machine","x86_64")):
                 value=copy.deepcopy(good);value[field]=bad
-                with self.subTest(field=field),self.assertRaises(ValueError):driver.validate_runtime_preconditions(value)
+                with self.subTest(field=field),self.assertRaises(ValueError):driver.validate_runtime_preconditions(value,trust)
             trust.chmod(0o755)
             self.assertEqual(driver.inspect_runtime_preconditions(trust)["trust"]["mode"],0o755)
             link=Path(temp)/"link";link.symlink_to(trust)
             self.assertTrue(driver.inspect_runtime_preconditions(link)["trust"]["is_symlink"])
+
+
+def side_facts(root, side):
+    options=argparse.Namespace(side=side,output=root,expected_head="a"*40,inputs_sha256="b"*64,inputs=root/"inputs.json")
+    inputs={"schema":"P7_H2_INPUTS_V1","side":side,"expected_head":options.expected_head,
+            "output":str(root),"source_manifest_sha256":"s"*64,"alignment":{"sha256":"c"*64},
+            "measurement":{"sha256":"d"*64},"physical":{"sha256":"e"*64}}
+    alignment={"schema":"P7_H2_ALIGNMENT_V1","expected_head":options.expected_head,"recorded_at_ns":10,
+               "hosts":[{"role":role,"host":role,"boot_id":role,"head":options.expected_head,
+                         "status_porcelain":"","source_manifest_sha256":"s"*64} for role in ("local","orin")]}
+    physical={"schema":"P7_H2_PHYSICAL_CONFIRMATION_V1","side":side,"issued_by":"root",
+              "expected_head":options.expected_head,"output":str(root),"confirmed_at_ns":11,
+              "source":"本次现场事实夹具","measurement_manifest_sha256":"d"*64,"alignment_sha256":"c"*64}
+    physical.update({key:True for key in ("supported","unloaded","area_clear","motor_power_cycle","usb_replug",
+                                        "continuous_presence_until_cleanup","immediate_power_cut")})
+    return options,inputs,alignment,physical
+
+
+class SideTests(unittest.TestCase):
+    def test_profiles_exact_d2_and_immutable(self):
+        for side,serial,cpu in (("left","5A7C121427",4),("right","5A7C122340",5)):
+            p=report.arm_profile(side)
+            self.assertEqual((p.robot_id,p.hardware_id,p.config,p.repository_config,p.trust,p.device,
+                              p.usb_serial,p.calibration_name,p.evidence_directory,p.serial_cpu),
+                             (f"xlerobot_{side}",f"{side}_arm",Path(f"/etc/robot/xlerobot_{side}_arm.toml"),
+                              Path(f"configs/xlerobot_{side}_arm.toml"),Path(f"/var/lib/robot/xlerobot_{side}"),
+                              f"/dev/serial/by-id/usb-1a86_USB_Single_Serial_{serial}-if00",serial,
+                              f"{side}_arm.json",f"orin_sla_{side}",cpu))
+            with self.assertRaises(AttributeError): p.side="other"
+        for side in (None,"LEFT","other",1):
+            with self.assertRaises(ValueError):report.arm_profile(side)
+
+    def test_both_side_plan_only_has_no_effect_and_default_is_left(self):
+        for argv,side in (([],"left"),(["--side","left"],"left"),(["--side","right"],"right")):
+            with self.subTest(side=side),patch.object(driver.subprocess,"run",side_effect=AssertionError), \
+                 patch.object(driver.subprocess,"Popen",side_effect=AssertionError), \
+                 patch.object(Path,"read_text",side_effect=AssertionError),patch.object(Path,"mkdir",side_effect=AssertionError), \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(driver.main(argv),0)
+                self.assertEqual(json.loads(output.getvalue())["side"],side)
+        with contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):driver.main(["--side","other"])
+        self.assertEqual(driver.tool_command(Path("/bin"),Path("/run")),driver.tool_command(Path("/bin"),Path("/run"),"left"))
+
+    def test_facts_require_three_way_side_and_keep_legacy_left(self):
+        for side in ("left","right"):
+            options,inputs,alignment,physical=side_facts(Path("/new/run"),side)
+            driver.validate_facts(inputs,alignment,physical,options,12)
+            for candidate in ("right" if side=="left" else "left","other",None,True):
+                for part in (inputs,physical):
+                    saved=part["side"];part["side"]=candidate
+                    with self.subTest(side=side,candidate=candidate),self.assertRaises(ValueError):
+                        driver.validate_facts(inputs,alignment,physical,options,12)
+                    part["side"]=saved
+            del inputs["side"]
+            if side=="left":driver.validate_facts(inputs,alignment,physical,options,12)
+            else:
+                with self.assertRaises(ValueError):driver.validate_facts(inputs,alignment,physical,options,12)
+
+    def test_backend_preflight_wrong_returned_trust_rejects_before_commands(self):
+        with tempfile.TemporaryDirectory() as temp:
+            options,inputs,alignment,physical=side_facts(Path(temp),"right")
+            runtime={"schema":"P7_RUNTIME_PRECONDITIONS_V1","uid":1000,"euid":1000,"gid":1000,"egid":1000,
+                     "account_uid":1000,"account_gid":1000,"machine":"aarch64","python_version":[3,12,0],
+                     "rtprio":[99,99],"memlock":[-1,-1],"tools":{name:"/usr/bin/"+name for name in
+                     ("taskset","git","systemctl","udevadm","fuser","sha256sum","sudo")},
+                     "trust":{"path":str(driver.TRUST),"is_directory":True,"is_symlink":False,"mode":0o750,"uid":1000,"gid":1000}}
+            backend=driver.RealBackend(options,driver.Journal(options.output,options))
+            with patch.object(driver,"pinned_json",side_effect=[inputs,alignment,physical]), \
+                 patch.object(driver,"inspect_runtime_preconditions",return_value=runtime) as inspect, \
+                 patch.object(backend,"command",side_effect=AssertionError):
+                with self.assertRaisesRegex(ValueError,"TRUST路径"):backend.preflight()
+                inspect.assert_called_once_with(report.arm_profile("right").trust)
+            self.assertEqual(backend.journal.state["authorization_attempts"],0)
+            runtime["trust"]["path"]=str(backend.profile.trust)
+            driver.validate_runtime_preconditions(runtime,backend.profile.trust)
+            with self.assertRaises(ValueError):driver.validate_runtime_preconditions(runtime)
+
+    def test_backend_maintenance_markers_and_launch_use_selected_side(self):
+        for side in ("left","right"):
+            with tempfile.TemporaryDirectory() as temp:
+                options,_,_,_=side_facts(Path(temp),side)
+                backend=driver.RealBackend(options,driver.Journal(options.output,options));p=backend.profile
+                backend.production={"artifacts":{"s0_daemon":{"path":"/frozen/s0"}}}
+                backend.uid=1000;backend.gid=1000;backend.bin_dir=Path("/frozen/measurement")
+                with patch.object(backend,"command",return_value="ok") as command:
+                    for action in ("status","revoke","authorize"):
+                        backend.trust(action)
+                        self.assertEqual(command.call_args.args[0],["/frozen/s0","rx-trust",action,"--robot-id",p.robot_id,"--rx-trust-dir",str(p.trust)])
+                with patch.object(driver,"marker_snapshot",return_value={}) as marker:
+                    backend.markers(b"1\n");marker.assert_called_once_with(p.trust,b"1\n",1000,1000)
+                with patch.object(driver.subprocess,"Popen",return_value=object()) as popen:
+                    backend.launch()
+                    argv=popen.call_args.args[0]
+                    self.assertEqual(argv[argv.index("--hardware-id")+1],p.hardware_id)
+                    self.assertEqual(argv[argv.index("--config")+1],str(p.config))
+                backend.close()
+
+    def test_backend_report_passes_explicit_side_and_approved_config(self):
+        for side in ("left","right"):
+            options,_,_,_=side_facts(Path("/fixture/output"),side)
+            backend=driver.RealBackend(options,driver.Journal(options.output,options))
+            backend.bin_dir=Path("/fixture/bin")
+            backend.inputs={"config_sha256":"a"*64,"calibration":{"sha256":"b"*64}}
+            backend.measurement={"artifacts":{"comm_fault_e2e":{"sha256":"c"*64,"sidecar":{}}}}
+            with patch.object(driver,"pinned_json",return_value={"fixture":True}), \
+                 patch.object(driver,"verify_report",return_value={}) as verify:
+                backend.report(100)
+                directory,expected=verify.call_args.args
+                self.assertEqual(directory,options.output)
+                self.assertEqual((expected["side"],expected["config"]),(side,str(report.arm_profile(side).config)))
+
+    def test_config_check_rejects_each_cross_side_identity(self):
+        for side in ("left","right"):
+            with tempfile.TemporaryDirectory() as temp:
+                root=Path(temp);options,_,_,_=side_facts(root,side)
+                backend=driver.RealBackend(options,driver.Journal(root,options));p=backend.profile
+                calibration=root/p.calibration_name;calibration.write_text("{}")
+                installed=root/"installed.toml";tracked=root/"tracked.toml"
+                backend.profile=replace(p,config=installed,repository_config=Path("tracked.toml"))
+                config={"robot":{"id":p.robot_id},"hardware":[{"id":p.hardware_id,"address":p.device,
+                        "adapter":"feetech_sts3215","motor_ids":list(range(1,7)),"auto_enable":False,
+                        "calibration_paths":[str(calibration)]}]}
+                installed.write_text("fixture");tracked.write_text("fixture")
+                backend.inputs={"repository":str(root),"config_sha256":driver.file_hash(installed),
+                                "calibration":{"path":str(calibration),"sha256":driver.file_hash(calibration)}}
+                with patch.object(driver.tomllib,"loads",return_value=config):backend.config_check()
+                other=report.arm_profile("right" if side=="left" else "left")
+                for key,bad in (("id",other.hardware_id),("address",other.device),("auto_enable",True),
+                                ("calibration_paths",[str(root/other.calibration_name)])):
+                    broken=copy.deepcopy(config);broken["hardware"][0][key]=bad
+                    with self.subTest(side=side,key=key),patch.object(driver.tomllib,"loads",return_value=broken),self.assertRaises(ValueError):backend.config_check()
+                config["robot"]["id"]=other.robot_id
+                with patch.object(driver.tomllib,"loads",return_value=config),self.assertRaises(ValueError):backend.config_check()
+
+    def test_right_device_requires_right_usb_serial(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);port=root/"port";port.write_text("fixture")
+            options,_,_,_=side_facts(root,"right")
+            backend=driver.RealBackend(options,driver.Journal(root,options));backend.profile=replace(backend.profile,device=str(port))
+            for serial,valid in (("5A7C122340",True),("5A7C121427",False)):
+                properties=f"ID_VENDOR_ID=1a86\nID_MODEL_ID=55d3\nID_SERIAL_SHORT={serial}\nID_USB_DRIVER=cdc_acm\n"
+                replies=[subprocess.CompletedProcess([],0,properties,""),subprocess.CompletedProcess([],1,"","")]
+                with patch.object(driver.stat,"S_ISCHR",return_value=True),patch.object(driver.subprocess,"run",side_effect=replies) as run:
+                    if valid:self.assertEqual(backend.device_check()["path"],str(port))
+                    else:
+                        with self.assertRaises(ValueError):backend.device_check()
+                    self.assertEqual(run.call_args_list[0].args[0][-1],str(port))
+
+    def test_selected_side_does_not_narrow_six_services(self):
+        text="\n\n".join(f"Id={u}\nLoadState=loaded\nActiveState=inactive\nSubState=dead\nMainPID=0" for u in driver.UNITS)
+        for unit in driver.UNITS:
+            blocks=text.split("\n\n");index=next(i for i,b in enumerate(blocks) if b.startswith("Id="+unit))
+            blocks[index]=blocks[index].replace("MainPID=0","MainPID=123")
+            with self.subTest(unit=unit),self.assertRaises(ValueError):driver.validate_services("\n\n".join(blocks))
+
+
+class RightReportTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp=tempfile.TemporaryDirectory();cls.root=Path(cls.temp.name)
+        cls.expected=report_fixture(cls.root,"right")
+    @classmethod
+    def tearDownClass(cls):cls.temp.cleanup()
+
+    def test_complete_right_report_passes_and_hashes_final_trace(self):
+        value=report.verify_report(self.root,self.expected)
+        self.assertEqual(value["samples"],4000)
+        self.assertIn("orin_sla_right/final_trace.json",value["original_hashes"])
+
+    def test_side_cpu_profile_and_actual_thread_cannot_cross(self):
+        for side,wrong in (("left","right"),("right","left")):
+            report.verify_rt(rt_fixture(side),100,side)
+            with self.assertRaises(ValueError):report.verify_rt(rt_fixture(side),100,wrong)
+            rt=rt_fixture(side);rt["processes"][1]["snapshot"]["threads"][1]["cpus"]=[report.arm_profile(wrong).serial_cpu]
+            with self.assertRaises(ValueError):report.verify_rt(rt,100,side)
+
+    def test_wrong_side_report_identity_and_directory_rejected(self):
+        path=self.root/"report.json";saved=path.read_bytes()
+        for key,bad in (("hardware_id","left_arm"),("config",str(driver.CONFIG))):
+            try:
+                value=json.loads(saved);value["invocation"][key]=bad;write_json(path,value)
+                with self.assertRaises(ValueError):report.verify_report(self.root,self.expected)
+            finally:path.write_bytes(saved)
+        env_path=self.root/"orin_sla_right/environment.json";env_saved=env_path.read_bytes()
+        try:
+            value=json.loads(saved);env=json.loads(env_saved);env["address"]=driver.DEVICE
+            value["cases"][0]["evidence"]["environment"]=env;write_json(path,value);write_json(env_path,env)
+            with self.assertRaises(ValueError):report.verify_report(self.root,self.expected)
+        finally:path.write_bytes(saved);env_path.write_bytes(env_saved)
+        with self.assertRaises(ValueError):report.verify_report(self.root,{**self.expected,"side":"left"})
+        selected=self.root/"orin_sla_right";other=self.root/"orin_sla_left";selected.rename(other)
+        try:
+            with self.assertRaises(ValueError):report.verify_report(self.root,self.expected)
+        finally:other.rename(selected)
+
+    def test_final_trace_requires_original_and_strict_report_equality(self):
+        path=self.root/"orin_sla_right/final_trace.json";saved=path.read_bytes();path.unlink()
+        try:
+            with self.assertRaises(ValueError):report.verify_report(self.root,self.expected)
+        finally:path.write_bytes(saved)
+        report_path=self.root/"report.json";payload=report_path.read_bytes()
+        for key,wrong in (("valid",1),("dropped",False),("dropped",0.0)):
+            try:
+                value=json.loads(payload);value["cases"][0]["evidence"]["final_trace"][key]=wrong;write_json(report_path,value)
+                with self.subTest(key=key,wrong=wrong),self.assertRaises(ValueError):report.verify_report(self.root,self.expected)
+            finally:report_path.write_bytes(payload)
+
+    def test_final_trace_rejects_unknown_sticky_unstopped_and_boolean_numbers(self):
+        base=json.loads((self.root/"orin_sla_right/final_trace.json").read_text())
+        boundaries=[json.loads(line) for line in (self.root/"orin_sla_right/boundary.jsonl").read_text().splitlines()]
+        report.verify_final_trace(base,boundaries)
+        changes=[("valid",False),("valid",1),("children_stopped",False),("installed",False),
+                 ("dropped",1),("dropped",False),("error","error"),("read_error","read"),("boundary",None)]
+        for key,value in changes:
+            bad=copy.deepcopy(base);bad[key]=value
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):report.verify_final_trace(bad,boundaries)
+        for key,value in (("request_seq",0),("receipt_seq",1),("request_seq",True),("mode","None"),
+                          ("request_mode","Some(ArmIdle)"),("status","Ready"),("armed_seq",1),
+                          ("armed_seq",False),("failure_seq",1),("failure_seq",False),("gate_active",True),
+                          ("gate_active",0),("failure","Some(DelayInvalid)")):
+            bad=copy.deepcopy(base);bad["boundary"][key]=value
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):report.verify_final_trace(bad,boundaries)
+        bad=copy.deepcopy(base);bad["boundary"].update(request_seq=1,receipt_seq=1)
+        with self.assertRaises(ValueError):report.verify_final_trace(bad,boundaries)
+        for key in base:
+            bad=copy.deepcopy(base);del bad[key]
+            with self.subTest(missing=key),self.assertRaises((ValueError,KeyError)):report.verify_final_trace(bad,boundaries)
 
 if __name__=="__main__": unittest.main()

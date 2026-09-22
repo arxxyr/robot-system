@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import dataclass
 import hashlib
 import io
 import json
@@ -12,6 +13,33 @@ from pathlib import Path
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+@dataclass(frozen=True)
+class ArmProfile:
+    side: str
+    robot_id: str
+    hardware_id: str
+    config: Path
+    repository_config: Path
+    trust: Path
+    device: str
+    usb_serial: str
+    calibration_name: str
+    evidence_directory: str
+    serial_cpu: int
+
+
+def arm_profile(side="left"):
+    """仅允许已冻结 D2 的两侧，不接受输入文件自定义硬件映射。"""
+    require(isinstance(side, str) and side in ("left", "right"), "未知臂侧")
+    serial, cpu = ("5A7C121427", 4) if side == "left" else ("5A7C122340", 5)
+    return ArmProfile(side, f"xlerobot_{side}", f"{side}_arm",
+                      Path(f"/etc/robot/xlerobot_{side}_arm.toml"),
+                      Path(f"configs/xlerobot_{side}_arm.toml"),
+                      Path(f"/var/lib/robot/xlerobot_{side}"),
+                      f"/dev/serial/by-id/usb-1a86_USB_Single_Serial_{serial}-if00",
+                      serial, f"{side}_arm.json", f"orin_sla_{side}", cpu)
 
 
 def strict_json(text):
@@ -78,11 +106,31 @@ def verify_final_stop(value, boundaries):
     require(integer(disable.get("finished_ns"), "Disable 结束", 1) >= start, "Disable 时间倒序")
 
 
-def verify_rt(value, tool_pid):
+def verify_final_trace(value, boundaries):
+    """最终 child stop 后的测量有效性门；不替代真实 final_stop 安全回执。"""
+    require(value["valid"] is True and value["children_stopped"] is True
+            and value["installed"] is True and value["error"] is None
+            and value["read_error"] is None, "最终 trace 未确认有效/停止/安装")
+    require(integer(value["dropped"], "最终丢事件") == 0, "最终 trace 丢事件")
+    snap = value["boundary"]
+    require(isinstance(snap, dict), "最终采样边界未知")
+    sequence = integer(snap["request_seq"], "最终请求序号", 1)
+    require(integer(snap["receipt_seq"], "最终回执序号", 1) == sequence
+            and sequence == boundaries[-1]["sequence"] and boundaries[-1]["mode"] == "Disarm",
+            "最终 trace 与最终 Disarm 不对应")
+    require(snap["request_mode"] == snap["mode"] == "Some(Disarm)"
+            and snap["status"] == "Disarmed" and snap["gate_active"] is False
+            and snap["failure"] == "None", "最终采样边界含未知/残余/sticky状态")
+    require(integer(snap["armed_seq"], "最终armed序号") == 0
+            and integer(snap["failure_seq"], "最终失败序号") == 0, "最终采样仍armed或锁存失败")
+
+
+def verify_rt(value, tool_pid, side="left"):
+    profile = arm_profile(side)
     require(value.get("passed") is True, "PX-56 未通过")
-    require(value.get("profile") == {"serial_cpu": 4, "serial_policy": 1,
+    require(value.get("profile") == {"serial_cpu": profile.serial_cpu, "serial_policy": 1,
             "serial_priority": 70, "ordinary_policy": 0, "ordinary_priority": 0,
-            "ordinary_cpus": [0, 1, 2, 3]}, "PX-56 左臂 profile 改变")
+            "ordinary_cpus": [0, 1, 2, 3]}, "PX-56 所选臂 profile 改变")
     require(0 < value["started_ns"] <= value["finished_ns"], "PX-56 时间错误")
     rows = value.get("processes", [])
     require(len(rows) == 3 and {r["role"] for r in rows} == {"tool", "s0", "gateway"},
@@ -102,7 +150,7 @@ def verify_rt(value, tool_pid):
         for thread in threads:
             nonempty(thread["comm"], "线程名")
             is_serial = row["role"] == "s0" and thread["comm"] == "s0_serial_io_th"
-            expected = (1, 70, [4]) if is_serial else (0, 0, [0, 1, 2, 3])
+            expected = (1, 70, [profile.serial_cpu]) if is_serial else (0, 0, [0, 1, 2, 3])
             require((thread["policy"], thread["priority"], thread["cpus"]) == expected,
                     "实际线程调度不满足 PX-56")
             if is_serial:
@@ -249,7 +297,9 @@ def verify_trace(trace, row):
 def verify_report(directory: Path, expected: dict) -> dict:
     """重新读取当前报告/原件并逐项核验；expected 来自已复核的运行清单。"""
     directory = Path(directory)
-    evidence = directory / "orin_sla_left"
+    profile = arm_profile(expected.get("side", "left"))
+    require(expected["config"] == str(profile.config), "期待配置与所选侧不符")
+    evidence = directory / profile.evidence_directory
     hashes = {}
 
     def read(path):
@@ -268,7 +318,7 @@ def verify_report(directory: Path, expected: dict) -> dict:
                                        "H3": "NEEDS_HUMAN", "D15": "OPEN"}, "不是完整 H2 PASS 原报告")
     invocation = report["invocation"]
     require(invocation["phase"] == "OrinSla" and invocation["case_filter"] is None
-            and invocation["hardware_id"] == "left_arm" and invocation["config"] == expected["config"]
+            and invocation["hardware_id"] == profile.hardware_id and invocation["config"] == expected["config"]
             and invocation["config_sha256"] == expected["config_sha256"], "报告调用身份错误")
     bin_dir = Path(expected["bin_dir"])
     require(invocation["current_exe"] == str(bin_dir / "comm_fault_e2e")
@@ -290,8 +340,8 @@ def verify_report(directory: Path, expected: dict) -> dict:
     require(result["environment"] == environment, "环境原件与报告不同")
     for key, value in {"gateway_idempotency_max_entries": 8192, "gateway_idempotency_ttl_secs": 300,
                        "background_tracked_limit": 64, "wire_active_limit_unchanged": 4,
-                       "s48_cache_observation": False, "hardware_id": "left_arm",
-                       "address": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+                       "s48_cache_observation": False, "hardware_id": profile.hardware_id,
+                       "address": profile.device,
                        "current_exe": str(bin_dir / "comm_fault_e2e"),
                        "config_sha256": expected["config_sha256"],
                        "calibration_sha256": expected["calibration_sha256"]}.items():
@@ -305,12 +355,16 @@ def verify_report(directory: Path, expected: dict) -> dict:
                 "Gateway 实际参数未保原容量/TTL")
     rt = json_file("rt_preflight.json")
     require(rt == result["rt_preflight"], "RT 原件与报告不同")
-    pids = verify_rt(rt, expected["tool_pid"])
+    pids = verify_rt(rt, expected["tool_pid"], profile.side)
     boundaries = [strict_json(line) for line in read(evidence / "boundary.jsonl").splitlines()]
     boundary_index = verify_boundaries(boundaries)
     final = json_file("final_stop.json")
     require(final == result["final_state"], "final_stop 原件与报告不同")
     verify_final_stop(final, boundaries)
+    final_trace = json_file("final_trace.json")
+    require(json.dumps(final_trace, sort_keys=True) == json.dumps(result["final_trace"], sort_keys=True),
+            "final_trace 原件与报告不同")
+    verify_final_trace(final_trace, boundaries)
     measurement = result["measurement"]
     for key, value in {"trace_dropped": 0, "hardware_only": True, "runtime_only": False,
                        "in_flight_exercised": True, "mock_lease": False,

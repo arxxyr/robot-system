@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "CONTINUING_AFTER_LEFT_H2",
-  "resume_from": "本次左H2真实PASS及完整收尾已独审/root验收并归包，待文档/证据提交；右臂软件/W1隔离提交未集成，右硬件与部署未做。",
+  "work_state": "CONTINUING_AFTER_LOCAL_INTEGRATION",
+  "resume_from": "左H2已收口10cff7a；右工具/W1已本地集成并验证，下一包才做新版Orin三Python与原生构建绑定。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
@@ -3816,7 +3816,7 @@
         "archive_added_count": 376
       },
       "h2_right_preparation": {
-        "status": "ACCEPTED_ISOLATED_NOT_INTEGRATED",
+        "status": "INTEGRATED_LOCAL_VALIDATED",
         "commit": "0047920b4f778914c22ec4f09dc5a252373326fa",
         "python_tests": 64,
         "root_acceptance": {
@@ -3834,13 +3834,19 @@
           "bytes": 3328,
           "sha256": "e8cf0ee3fdb011d7aa1636e20f95f50aedb4325978598ada571574b2902c3eda"
         },
-        "integrated": false,
+        "integrated": true,
         "deployed": false,
         "hardware": "NOT_RUN",
-        "scope": "双臂Python工具与final_trace原件门、右H1/H3准备页；不是本次左H2的runtime/build"
+        "scope": "双臂Python工具与final_trace原件门、右H1/H3准备页；不是本次左H2的runtime/build",
+        "integration_checks": {
+          "path": "target/post_e_h2_rt/s48/h2_arm_integration/checks_receipt.json",
+          "bytes": 9873,
+          "sha256": "a133639b2ca2ce223fe0f2e32846065621b5e18e34cae830ac0075604df4e6b4"
+        },
+        "orin_native_binding": "NOT_RUN_FOR_NEW_PYTHON_SOURCE"
       },
       "w1_followup": {
-        "status": "ACCEPTED_ISOLATED_TEST_CHANGE",
+        "status": "INTEGRATED_LOCAL_VALIDATED",
         "commit": "2e5b51572e53954a89d28598346aa748aa71ff5d",
         "probe_acceptance": {
           "path": "target/post_e_h2_rt/s48/w1_followup/root_probe_acceptance.json",
@@ -3863,9 +3869,36 @@
         "final_source_sha256": "7bf685e8a14002d7220152b4e12139d3b18e3cce6bbfb56099510d9dfb7a8288",
         "scope": "机制探针证明fork至exec窗口；9父case用MutexGuard隔离；测试后仅fmt及等价lint修正，原FAIL保留",
         "historical_failure_root_cause": "OPEN_UNCONFIRMED",
-        "integrated": false,
+        "integrated": true,
         "deployed": false,
-        "production_changed": false
+        "production_changed": false,
+        "integration_verification": {
+          "checks": {
+            "path": "target/post_e_h2_rt/s48/h2_arm_integration/checks_receipt.json",
+            "bytes": 9873,
+            "sha256": "a133639b2ca2ce223fe0f2e32846065621b5e18e34cae830ac0075604df4e6b4"
+          },
+          "final_source_sha256": "7bf685e8a14002d7220152b4e12139d3b18e3cce6bbfb56099510d9dfb7a8288",
+          "default_parallel_tests": 10,
+          "test_runs": 1,
+          "scope": "合并态最终SHA另行验证，旧测试/lint差异原件保留"
+        }
+      },
+      "h2_arm_integration": {
+        "status": "LOCAL_VALIDATED",
+        "head_before_merge": "10cff7a6b6e2463208932f589ef5020777518f4e",
+        "merge_head": "2e5b51572e53954a89d28598346aa748aa71ff5d",
+        "checks": {
+          "path": "target/post_e_h2_rt/s48/h2_arm_integration/checks_receipt.json",
+          "bytes": 9873,
+          "sha256": "a133639b2ca2ce223fe0f2e32846065621b5e18e34cae830ac0075604df4e6b4"
+        },
+        "python_tests": 64,
+        "latch_tests": 10,
+        "hardware_retried": false,
+        "orin_native_binding": false,
+        "deployed": false,
+        "archive_status": "本包与h2_retry包后/commit回执待下一证据包承接；当前H包身份不变"
       }
     }
   },
@@ -4205,8 +4238,8 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2865,
-    "sha256": "ef641280af2dbb8930bedafc3d7eda7c6e7415d619b8ecf20b3a1b19dfc440de"
+    "lines": 2866,
+    "sha256": "2e1abd1256f49c36aec8a8398dfab29b360d7cafefe7bab88ffe6fa16328ccd9"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
@@ -4218,7 +4251,7 @@
     "per_file_sha256_verified": true,
     "verification_method": "旧包整体SHA已核，全部64720旧索引/路径/大小保全（含64432历史前缀）；376新增件逐SHA，源/授权首末复核；本轮归包回执位于包外post_archive_review。"
   },
-  "retention": "保全64720旧索引与全部历史FAIL，新增本轮h2_retry及h2_delay包外、右工具/W1隔离、安装只读准备与continuation材料376件；ELF/缓存/传输包排除。本轮h2_retry/post_archive_review和commit_receipt为包外后生件，下一包承接。",
+  "retention": "保全64720旧索引与全部历史FAIL，新增本轮h2_retry及h2_delay包外、右工具/W1隔离、安装只读准备与continuation材料376件；ELF/缓存/传输包排除。本轮h2_retry/post_archive_review和commit_receipt为包外后生件，下一包承接。 本地h2_arm_integration新证据与h2_retry包后/commit回执尚未入当前包，下一证据包承接。",
   "updated_at": "2026-09-22T13:25:58.258096+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
@@ -4244,30 +4277,29 @@
   "next_h2": {
     "status": "LEFT_H2_ACCEPTED_RIGHT_REQUIRES_NEW_PREPARATION",
     "driver": "scripts/run_post_e_h2.py",
-    "driver_sha256": "18fb7fc0ac0b7c4cb1c9628678ce7ba476e7498d0d8c1fbd2011508ddb6f09a9",
+    "driver_sha256": "37ff52be7893dc992eca0fca9b8133b790c745433222bc33dff1beaa01c0a699",
     "plan_review": "ACK",
-    "default_plan_only": "驱动/报告/产物三Python源码未变，默认PLAN_ONLY既有测试记录保留；本修复阶段未重跑50项Python或两端默认CLI调用。",
+    "default_plan_only": "本地合并态64项Python通过，含默认/左右PLAN_ONLY零副作用验证；新版Orin三Python与原生构建绑定待做，不沿用旧50项或旧真机身份。",
     "runtime_head_policy": "运行时两端最新HEAD一致且clean；571编译源及三Python逐字绑定批准build来源；文档提交可严格祖先继承，不回填build HEAD。",
     "physical_reset_after_failed_h2_confirmed": true,
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_delay/native_20260922T110924Z_fa37abea/measurement",
     "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_retry/precheck_20260922T113258Z_b78558d3/left_h2_run",
     "prior_driver_state": "c5daa67本次左H2已PASS并真实退出，目录与授权已消费，不复用。",
-    "current_resume_note": "本次左H2已验收归包待提交；右工具0047920/W1测试2e5b515仍为隔离提交，未合入或原生绑定，不代右H1/H3/H2或部署验收。",
+    "current_resume_note": "左H2 c5daa67/fb600fd已收口；右工具0047920/W1测试2e5b515现已本地集成并验证，但新版未取得Orin原生绑定、右现场或部署验收。",
     "current_s48_driver": {
       "path": "scripts/run_post_e_h2.py",
-      "sha256": "18fb7fc0ac0b7c4cb1c9628678ce7ba476e7498d0d8c1fbd2011508ddb6f09a9",
+      "sha256": "37ff52be7893dc992eca0fca9b8133b790c745433222bc33dff1beaa01c0a699",
       "report_path": "scripts/post_e_h2_report.py",
       "artifacts_path": "scripts/post_e_h2_artifacts.py",
-      "source_head": "c5daa67da9bb77ef5a945b1ec588484b64f4c3af",
-      "status": "EXECUTED_PASS_CLEANED",
-      "new_physical_facts_received": true,
-      "hardware_started": true,
-      "entry": "默认PLAN_ONLY；现场模式须新事实及精准inputs manifest，不继承历史确认",
-      "physical_fact_scope": "本次新现场事实仅绑定本轮已完成左H2；值守已解除，不授权下一次。",
-      "driver_attempted": true,
-      "measurement_launched": true,
-      "runtime_head": "c5daa67da9bb77ef5a945b1ec588484b64f4c3af",
-      "actual_build_head": "fb600fd9af0e46c8ae7bed34e056eaa991e6e9e0"
+      "source_head": "0047920b4f778914c22ec4f09dc5a252373326fa",
+      "status": "LOCAL_VALIDATED_NATIVE_BINDING_PENDING",
+      "new_physical_facts_received": false,
+      "hardware_started": false,
+      "driver_attempted": false,
+      "measurement_launched": false,
+      "entry": "默认PLAN_ONLY；新版仅本地集成验证，须新的Orin三Python/原生来源绑定及当次现场事实后才可执行",
+      "physical_fact_scope": "没有为新版取得现场事实或启动授权；已结束左H2事实仅属historical_left_h2_driver",
+      "source_scope": "已审0047920的实际driver源码身份；本地合并提交及新版build身份尚未产生，不预填"
     },
     "historical_s45_driver": {
       "driver": "local/s45/left_h2_current_driver.py",
@@ -4285,8 +4317,26 @@
         "path": "target/post_e_h2_rt/s48/h2_delay/artifacts_delivery.json",
         "bytes": 3568,
         "sha256": "b48301258ebadf7c42b0759228d8ca6f858177bb3947fc642473dfd71b712a57"
-      }
-    }
+      },
+      "scope": "仅已结束左H2历史产物（fb600fd）；不能供当前新版三Python使用或冒称新版原生验收。"
+    },
+    "historical_left_h2_driver": {
+      "path": "scripts/run_post_e_h2.py",
+      "sha256": "18fb7fc0ac0b7c4cb1c9628678ce7ba476e7498d0d8c1fbd2011508ddb6f09a9",
+      "report_path": "scripts/post_e_h2_report.py",
+      "artifacts_path": "scripts/post_e_h2_artifacts.py",
+      "source_head": "c5daa67da9bb77ef5a945b1ec588484b64f4c3af",
+      "status": "EXECUTED_PASS_CLEANED",
+      "new_physical_facts_received": true,
+      "hardware_started": true,
+      "entry": "默认PLAN_ONLY；现场模式须新事实及精准inputs manifest，不继承历史确认",
+      "physical_fact_scope": "本次新现场事实仅绑定本轮已完成左H2；值守已解除，不授权下一次。",
+      "driver_attempted": true,
+      "measurement_launched": true,
+      "runtime_head": "c5daa67da9bb77ef5a945b1ec588484b64f4c3af",
+      "actual_build_head": "fb600fd9af0e46c8ae7bed34e056eaa991e6e9e0"
+    },
+    "remote_paths_scope": "remote_bin_dir与remote_run_dir仅指已结束左H2的历史目录；原授权/输出已消费，不可供新版驱动复用。"
   },
   "cleanup": {
     "local": "local/s45/cleanup.json",
@@ -4297,9 +4347,9 @@
   "stop_after_current": {
     "user_request": "一直跑完，直到 额度剩 25%",
     "weekly_remaining_stop_percent": 25,
-    "current_package": "S48_LEFT_H2_RETRY_CLOSURE",
+    "current_package": "S48_ARM_DRIVER_W1_LOCAL_INTEGRATION",
     "next_package_authorized_to_start": true,
-    "state": "左H2已验收并归包，当前文档/证据待提交；后续按25%停止线推进，物理动作仍需新事实。",
+    "state": "本地合并态64Python/最终SHA10项与fmt/Clippy通过；周25%停止线不变，新版Orin绑定另包。",
     "supersedes": [
       "b 阶段完成后暂停",
       "周额度剩余20%停止点",
