@@ -40,6 +40,21 @@ pub struct SerialPreemptProbe {
 }
 
 impl SerialPreemptProbe {
+    #[cfg(feature = "test-comm-fault-hook")]
+    fn finish_injected_delay(
+        &self,
+        lease: BusLease,
+        delayed: Result<(), crate::comm_fault_hook::DelayFailure>,
+    ) -> Result<BusLease, AbortReason> {
+        if delayed.is_err() {
+            // adapter 事务尚未开始；沿真实释放路径归还已取得的执行权。
+            self.finish_leased(lease);
+            Err(AbortReason::Timeout)
+        } else {
+            Ok(lease)
+        }
+    }
+
     #[must_use]
     pub fn new(clock: Arc<dyn RobotClock>, ctrl: Arc<HardRtCtrlInner>) -> Self {
         Self {
@@ -245,8 +260,12 @@ impl LeasedPreemptProbe for SerialPreemptProbe {
         {
             let mut context = self.ctrl.trace_context();
             context.source = class as u64;
-            crate::comm_fault_hook::delay_acquired_normal(context);
+            self.finish_injected_delay(
+                lease,
+                crate::comm_fault_hook::delay_acquired_normal(context),
+            )
         }
+        #[cfg(not(feature = "test-comm-fault-hook"))]
         Ok(lease)
     }
 
@@ -278,6 +297,39 @@ mod tests {
     use crate::hard_rt_ctrl::{HardRtCtrlClient, NORMAL_IO_ACTIVE};
     use robot_core::executor_ctrl::{ExecutorCtrlClient, SerialEmergencyCtrl};
     use robot_core::time::MockClock;
+
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn injected_delay_error_releases_active_lease_with_real_trace() {
+        let ctrl = Arc::new(HardRtCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(false),
+        ));
+        let probe = SerialPreemptProbe::new(Arc::new(MockClock::default()), ctrl.clone());
+        probe.set_context(
+            BusOpClass::NormalEffectful,
+            InstalledIntent::Disable,
+            9,
+            MonoRawNs(100),
+            false,
+        );
+        let events = crate::comm_fault_trace::capture_emitted(|| {
+            let lease = probe.begin_leased(BusOpClass::NormalEffectful).unwrap();
+            assert_ne!(ctrl.safety_word() & NORMAL_IO_ACTIVE, 0);
+            assert_eq!(
+                probe
+                    .finish_injected_delay(
+                        lease,
+                        Err(crate::comm_fault_hook::DelayFailure::Incomplete)
+                    )
+                    .unwrap_err(),
+                AbortReason::Timeout
+            );
+            assert_eq!(ctrl.safety_word() & NORMAL_IO_ACTIVE, 0);
+        });
+        assert!(events.iter().any(|event| event.kind
+            == crate::comm_fault_trace::TraceKind::NormalRelease
+            && event.b == 1));
+    }
 
     #[test]
     fn transaction_release_preserves_emergency_and_checkpoint_keeps_lease() {

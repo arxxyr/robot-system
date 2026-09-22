@@ -75,6 +75,19 @@ pub(crate) fn reject_boundary(sequence: u64, failure: SampleFailure) {
     }
 }
 
+pub(crate) fn reject_injected_delay() {
+    if let Some(page) = TRACE.get() {
+        page.reject_injected_delay();
+    }
+}
+
+impl TracePage {
+    /// 未 armed 时也锁存失败；最后 Disarm 后的异常不能等下一次 Arm 才检查。
+    pub(crate) fn reject_injected_delay(&self) {
+        self.reject_boundary(self.armed_seq(), SampleFailure::PriorFailure);
+    }
+}
+
 pub(crate) fn serial_service_boundary(
     ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
     now: u64,
@@ -534,3 +547,48 @@ impl Drop for TracePage {
 #[cfg(test)]
 #[path = "comm_fault_trace_acceptance.rs"]
 mod acceptance;
+
+#[cfg(test)]
+mod injected_delay_failure_tests {
+    use super::*;
+
+    #[test]
+    fn injected_delay_failure_survives_disarm_and_blocks_later_arm() {
+        for armed in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let page = TracePage::create(&directory.path().join("trace")).unwrap();
+            let (ctrl, _) = crate::post_e_convergence_acceptance::healthy_ipc_control();
+            if armed {
+                page.request_boundary(10, SampleMode::ArmInflight, 100)
+                    .unwrap();
+                page.service_boundary(&ctrl, 101);
+            }
+            page.reject_injected_delay();
+            page.request_boundary(11, SampleMode::Disarm, 102).unwrap();
+            page.service_boundary(&ctrl, 103);
+            let snapshot = page.boundary_snapshot().unwrap();
+            assert_eq!(snapshot.status, SampleStatus::Disarmed);
+            assert_eq!(snapshot.armed_seq, 0);
+            assert_eq!(snapshot.failure, Some(SampleFailure::PriorFailure));
+            assert_ne!(snapshot.failure_seq, 0);
+            assert!(
+                page.request_boundary(12, SampleMode::ArmInflight, 104)
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn injected_delay_failure_after_last_disarm_remains_in_final_snapshot() {
+        let directory = tempfile::tempdir().unwrap();
+        let page = TracePage::create(&directory.path().join("trace")).unwrap();
+        let (ctrl, _) = crate::post_e_convergence_acceptance::healthy_ipc_control();
+        page.request_boundary(10, SampleMode::Disarm, 100).unwrap();
+        page.service_boundary(&ctrl, 101);
+        assert_eq!(page.boundary_snapshot().unwrap().failure, None);
+        page.reject_injected_delay();
+        let final_snapshot = page.boundary_snapshot().unwrap();
+        assert_eq!(final_snapshot.status, SampleStatus::Disarmed);
+        assert_eq!(final_snapshot.failure, Some(SampleFailure::PriorFailure));
+    }
+}

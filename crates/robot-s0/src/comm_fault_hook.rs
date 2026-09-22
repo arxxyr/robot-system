@@ -74,35 +74,108 @@ static OBSERVATION: std::sync::OnceLock<Arc<crate::comm_fault_observation::Obser
 static DELAY_PROFILE: AtomicU64 = AtomicU64::new(0);
 static DELAY_SEED: AtomicU64 = AtomicU64::new(1);
 
-/// 只在真实取得 normal 执行权后调用，完整事务仍必须完成，不假造传输响应。
-pub(crate) fn delay_acquired_normal(context: crate::comm_fault_trace::TraceContext) {
-    let profile = DELAY_PROFILE.load(Ordering::Acquire);
-    if profile == 0 {
-        return;
+const MAX_DELAY_SLEEPS: usize = 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DelayFailure {
+    InvalidRequest,
+    DeadlineOverflow,
+    ClockReversed,
+    Incomplete,
+}
+
+#[derive(Debug)]
+struct DelayObservation {
+    start: u64,
+    observed: u64,
+    outcome: Result<(), DelayFailure>,
+}
+
+/// 有界补足同一 RAW 时基上的剩余量；次数上限不宣称操作系统调度的墙钟上界。
+fn wait_normal_delay(clock: &dyn RobotClock, requested: u64) -> DelayObservation {
+    let start = clock.now().0;
+    let mut observation = DelayObservation {
+        start,
+        observed: start,
+        outcome: Err(DelayFailure::Incomplete),
+    };
+    if !(1_000_000..=5_000_000).contains(&requested) {
+        observation.outcome = Err(DelayFailure::InvalidRequest);
+        return observation;
     }
+    let Some(deadline) = start.checked_add(requested) else {
+        observation.outcome = Err(DelayFailure::DeadlineOverflow);
+        return observation;
+    };
+    for _ in 0..MAX_DELAY_SLEEPS {
+        clock.sleep_for(robot_core::time::DurationNs(
+            deadline - observation.observed,
+        ));
+        let previous = observation.observed;
+        observation.observed = clock.now().0;
+        if observation.observed < previous {
+            observation.outcome = Err(DelayFailure::ClockReversed);
+            return observation;
+        }
+        if observation.observed >= deadline {
+            observation.outcome = Ok(());
+            return observation;
+        }
+    }
+    observation
+}
+
+/// 只在真实取得 normal 执行权后调用；成功后完成真实事务，失败由调用者释放 lease。
+pub(crate) fn delay_acquired_normal(
+    context: crate::comm_fault_trace::TraceContext,
+) -> Result<(), DelayFailure> {
+    let profile = DELAY_PROFILE.load(Ordering::Acquire);
+    delay_for_profile(
+        profile,
+        &robot_core::time::SystemClock,
+        context,
+        next_delay_random,
+    )
+}
+
+fn next_delay_random() -> u64 {
     let mut old = DELAY_SEED.load(Ordering::Acquire);
-    let random = loop {
+    loop {
         let mut next = old;
         next ^= next << 13;
         next ^= next >> 7;
         next ^= next << 17;
         match DELAY_SEED.compare_exchange(old, next, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => break next,
+            Ok(_) => return next,
             Err(actual) => old = actual,
         }
-    };
+    }
+}
+
+fn delay_for_profile(
+    profile: u64,
+    clock: &dyn RobotClock,
+    context: crate::comm_fault_trace::TraceContext,
+    random: impl FnOnce() -> u64,
+) -> Result<(), DelayFailure> {
+    if profile == 0 {
+        return Ok(());
+    }
     let minimum = (profile >> 32) * 1_000_000;
     let maximum = (profile & u64::from(u32::MAX)) * 1_000_000;
-    let requested = minimum + random % (maximum - minimum + 1);
-    let start = crate::comm_fault_trace::now();
-    std::thread::sleep(Duration::from_nanos(requested));
+    let requested = minimum + random() % (maximum - minimum + 1);
+    let observation = wait_normal_delay(clock, requested);
     crate::comm_fault_trace::emit(
         crate::comm_fault_trace::TraceKind::InjectedDelay,
-        start,
+        observation.start,
         context,
         requested,
-        crate::comm_fault_trace::now().saturating_sub(start),
+        observation.observed.saturating_sub(observation.start),
     );
+    if observation.outcome.is_err() {
+        crate::comm_fault_trace::reject_injected_delay();
+    }
+    observation.outcome
 }
 
 /// 每个 worker 在正常轮询边界调用；暂停期间仍观察真正 stop，除非明确拒停。
@@ -560,5 +633,169 @@ mod writer_pause_tests {
         ] {
             assert!(WriterStepPause::parse(raw, clock.clone()).is_err(), "{raw}");
         }
+    }
+}
+
+#[cfg(test)]
+mod normal_delay_tests {
+    use super::*;
+    use robot_core::time::{Deadline, DurationNs, MonoRawNs};
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    struct ScriptClock {
+        reads: Mutex<VecDeque<u64>>,
+        sleeps: Mutex<Vec<u64>>,
+    }
+
+    impl ScriptClock {
+        fn new(reads: impl IntoIterator<Item = u64>) -> Self {
+            Self {
+                reads: Mutex::new(reads.into_iter().collect()),
+                sleeps: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn sleeps(&self) -> Vec<u64> {
+            self.sleeps.lock().unwrap().clone()
+        }
+    }
+
+    impl RobotClock for ScriptClock {
+        fn now(&self) -> MonoRawNs {
+            MonoRawNs(
+                self.reads
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .expect("非预期时钟读取"),
+            )
+        }
+
+        fn sleep_until(&self, _: Deadline) {
+            panic!("必须显式按同一时钟重读剩余量");
+        }
+
+        fn sleep_for(&self, duration: DurationNs) {
+            assert!(duration.0 > 0 && duration.0 <= 5_000_000);
+            self.sleeps.lock().unwrap().push(duration.0);
+        }
+    }
+
+    #[test]
+    fn real_short_wake_1426ns_is_filled_and_one_actual_trace_is_emitted() {
+        let clock = ScriptClock::new([100, 3_894_308, 3_895_734]);
+        let events = crate::comm_fault_trace::capture_emitted(|| {
+            assert_eq!(
+                delay_for_profile(
+                    (1 << 32) | 5,
+                    &clock,
+                    crate::comm_fault_trace::TraceContext::default(),
+                    || 2_895_634
+                ),
+                Ok(())
+            );
+        });
+        assert_eq!(clock.sleeps(), [3_895_634, 1426]);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].kind,
+            crate::comm_fault_trace::TraceKind::InjectedDelay
+        );
+        assert_eq!(
+            (events[0].stamp_ns, events[0].a, events[0].b),
+            (100, 3_895_634, 3_895_634)
+        );
+    }
+
+    #[test]
+    fn repeated_short_wakes_sleep_only_remaining_and_keep_actual_oversleep() {
+        let clock = ScriptClock::new([0, 1_000_000, 1_500_000, 2_000_037]);
+        let observed = wait_normal_delay(&clock, 2_000_000);
+        assert_eq!(observed.outcome, Ok(()));
+        assert_eq!(observed.observed, 2_000_037);
+        assert_eq!(clock.sleeps(), [2_000_000, 1_000_000, 500_000]);
+    }
+
+    #[test]
+    fn frozen_and_slow_clocks_fail_after_exactly_eight_sleeps() {
+        for readings in [vec![0; 9], (0..9).collect()] {
+            let clock = ScriptClock::new(readings);
+            let observed = wait_normal_delay(&clock, 1_000_000);
+            assert_eq!(observed.outcome, Err(DelayFailure::Incomplete));
+            assert!(observed.observed < 1_000_000);
+            assert_eq!(clock.sleeps().len(), MAX_DELAY_SLEEPS);
+        }
+    }
+
+    #[test]
+    fn eighth_wake_at_deadline_is_accepted() {
+        let clock = ScriptClock::new((0..=8).map(|index| index * 125_000));
+        assert_eq!(wait_normal_delay(&clock, 1_000_000).outcome, Ok(()));
+        assert_eq!(clock.sleeps().len(), MAX_DELAY_SLEEPS);
+    }
+
+    #[test]
+    fn reversed_clock_and_deadline_overflow_are_explicit_failures() {
+        let clock = ScriptClock::new([100, 110, 109]);
+        let observed = wait_normal_delay(&clock, 1_000_000);
+        assert_eq!(observed.outcome, Err(DelayFailure::ClockReversed));
+        assert_eq!(observed.observed, 109);
+        assert_eq!(clock.sleeps(), [1_000_000, 999_990]);
+        let clock = ScriptClock::new([u64::MAX - 999_999]);
+        assert_eq!(
+            wait_normal_delay(&clock, 1_000_000).outcome,
+            Err(DelayFailure::DeadlineOverflow)
+        );
+        assert_eq!(clock.sleeps(), [] as [u64; 0]);
+    }
+
+    #[test]
+    fn exact_request_bounds_and_disabled_profile_remain_unchanged() {
+        for requested in [1_000_000, 5_000_000] {
+            let clock = ScriptClock::new([0, requested]);
+            assert_eq!(wait_normal_delay(&clock, requested).outcome, Ok(()));
+            assert_eq!(clock.sleeps(), [requested]);
+        }
+        for requested in [0, 999_999, 5_000_001, u64::MAX] {
+            let clock = ScriptClock::new([0]);
+            assert_eq!(
+                wait_normal_delay(&clock, requested).outcome,
+                Err(DelayFailure::InvalidRequest)
+            );
+            assert_eq!(clock.sleeps(), [] as [u64; 0]);
+        }
+        let clock = ScriptClock::new([]);
+        let events = crate::comm_fault_trace::capture_emitted(|| {
+            assert_eq!(
+                delay_for_profile(
+                    0,
+                    &clock,
+                    crate::comm_fault_trace::TraceContext::default(),
+                    || panic!("关闭profile不得生成随机数")
+                ),
+                Ok(())
+            );
+        });
+        assert_eq!(events, [] as [crate::comm_fault_trace::TraceEvent; 0]);
+        assert_eq!(clock.sleeps(), [] as [u64; 0]);
+    }
+
+    #[test]
+    fn incomplete_delay_trace_keeps_measured_short_duration() {
+        let clock = ScriptClock::new(0..9);
+        let events = crate::comm_fault_trace::capture_emitted(|| {
+            assert_eq!(
+                delay_for_profile(
+                    (1 << 32) | 5,
+                    &clock,
+                    crate::comm_fault_trace::TraceContext::default(),
+                    || 0
+                ),
+                Err(DelayFailure::Incomplete)
+            );
+        });
+        assert_eq!(events.len(), 1);
+        assert_eq!((events[0].a, events[0].b), (1_000_000, 8));
     }
 }

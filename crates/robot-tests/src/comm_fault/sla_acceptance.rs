@@ -1260,3 +1260,106 @@ fn sla_parser_rejects_unknown_cas_counts_before_statistics() {
         }
     }
 }
+
+fn clean_final_boundary() -> robot_s0::comm_fault_trace::BoundarySnapshot {
+    use robot_s0::comm_fault_trace::{BoundarySnapshot, SampleMode, SampleStatus};
+    BoundarySnapshot {
+        request_seq: 74,
+        request_mode: Some(SampleMode::Disarm),
+        request_deadline_ns: BASE_NS + 1_000_000_000,
+        receipt_seq: 74,
+        mode: Some(SampleMode::Disarm),
+        status: SampleStatus::Disarmed,
+        ready_ns: BASE_NS + 20_000_000,
+        idle_deadline_ns: 0,
+        armed_seq: 0,
+        gate_active: false,
+        gate_release: None,
+        failure_seq: 0,
+        failure: None,
+    }
+}
+
+#[test]
+fn final_trace_accepts_only_clean_stopped_disarm_and_rejects_late_sticky() {
+    use super::sla::{FinalTraceObservation, final_trace_evidence};
+    use robot_s0::comm_fault_trace::SampleFailure;
+    let clean = clean_final_boundary();
+    let inspect = |boundary| {
+        final_trace_evidence(
+            true,
+            &Ok(FinalTraceObservation {
+                installed: true,
+                dropped: 0,
+                boundary: Some(boundary),
+            }),
+        )
+    };
+    assert_eq!(inspect(clean)["valid"], true);
+    // 已成功 Disarm 的其他字段完全不变，仅在其后产生 sticky。
+    let mut late_failure = clean;
+    late_failure.failure_seq = 1;
+    late_failure.failure = Some(SampleFailure::PriorFailure);
+    let rejected = inspect(late_failure);
+    assert_eq!(rejected["valid"], false);
+    assert_eq!(rejected["boundary"]["status"], "Disarmed");
+    assert_eq!(rejected["boundary"]["failure_seq"], 1);
+}
+
+#[test]
+fn final_trace_unknown_uninstalled_dropped_or_unstopped_cannot_pass() {
+    use super::sla::{FinalTraceObservation, final_trace_evidence};
+    assert_eq!(
+        final_trace_evidence(true, &Err("原件打开失败".to_owned()))["valid"],
+        false
+    );
+    for (stopped, installed, dropped, boundary) in [
+        (true, true, 0, None),
+        (false, true, 0, Some(clean_final_boundary())),
+        (true, false, 0, Some(clean_final_boundary())),
+        (true, true, 1, Some(clean_final_boundary())),
+    ] {
+        assert_eq!(
+            final_trace_evidence(
+                stopped,
+                &Ok(FinalTraceObservation {
+                    installed,
+                    dropped,
+                    boundary,
+                })
+            )["valid"],
+            false
+        );
+    }
+}
+
+#[test]
+fn final_trace_rejects_unfinished_or_inconsistent_boundary_fields() {
+    use super::sla::{FinalTraceObservation, final_trace_evidence};
+    use robot_s0::comm_fault_trace::{SampleMode, SampleStatus};
+    for field in 0..8 {
+        let mut boundary = clean_final_boundary();
+        match field {
+            0 => boundary.request_seq = 0,
+            1 => boundary.receipt_seq += 1,
+            2 => boundary.request_mode = Some(SampleMode::ArmInflight),
+            3 => boundary.mode = None,
+            4 => boundary.status = SampleStatus::Pending,
+            5 => boundary.armed_seq = 73,
+            6 => boundary.gate_active = true,
+            _ => boundary.failure_seq = 1,
+        }
+        assert_eq!(
+            final_trace_evidence(
+                true,
+                &Ok(FinalTraceObservation {
+                    installed: true,
+                    dropped: 0,
+                    boundary: Some(boundary),
+                })
+            )["valid"],
+            false,
+            "字段{field}残留不得接受"
+        );
+    }
+}

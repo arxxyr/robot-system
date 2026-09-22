@@ -1819,6 +1819,67 @@ pub(super) async fn software_load(args: &Args) -> Result<Value, String> {
     .await
 }
 
+pub(super) struct FinalTraceObservation {
+    pub installed: bool,
+    pub dropped: u64,
+    pub boundary: Option<BoundarySnapshot>,
+}
+
+/// 最后 Disarm 的成功回执不覆盖之后至进程停止之间的 sticky 失败。
+pub(super) fn final_trace_evidence(
+    children_stopped: bool,
+    observation: &Result<FinalTraceObservation, String>,
+) -> Value {
+    let observed = observation.as_ref().ok();
+    let boundary = observed.and_then(|value| value.boundary.as_ref());
+    let error = match (observation, boundary) {
+        _ if !children_stopped => Some("子进程未确认正常停止，最终采样状态未知".to_owned()),
+        (Err(error), _) => Some(format!("最终事件环读取失败：{error}")),
+        (Ok(value), _) if !value.installed => Some("最终事件环未安装".to_owned()),
+        (Ok(value), _) if value.dropped != 0 => Some("最终事件环存在丢失事件".to_owned()),
+        (_, None) => Some("最终采样边界快照未知".to_owned()),
+        (_, Some(value)) if value.failure.is_some() || value.failure_seq != 0 => {
+            Some("最终采样边界保留 sticky 失败".to_owned())
+        }
+        (_, Some(value))
+            if value.request_seq == 0
+                || value.request_seq != value.receipt_seq
+                || value.request_mode != Some(SampleMode::Disarm)
+                || value.mode != Some(SampleMode::Disarm)
+                || value.status != SampleStatus::Disarmed
+                || value.armed_seq != 0
+                || value.gate_active =>
+        {
+            Some("最终采样边界不是完整解除状态".to_owned())
+        }
+        _ => None,
+    };
+    json!({"valid":error.is_none(), "error":error, "children_stopped":children_stopped,
+        "read_error":observation.as_ref().err(),
+        "installed":observed.map(|value|value.installed),
+        "dropped":observed.map(|value|value.dropped),
+        "boundary":boundary.map(|value|json!({
+            "request_seq":value.request_seq,"receipt_seq":value.receipt_seq,
+            "request_mode":format!("{:?}",value.request_mode),"mode":format!("{:?}",value.mode),
+            "status":format!("{:?}",value.status),"armed_seq":value.armed_seq,
+            "gate_active":value.gate_active,"failure_seq":value.failure_seq,
+            "failure":format!("{:?}",value.failure)}))})
+}
+
+fn save_final_trace(case: &Case, children_stopped: bool) -> Result<Value, String> {
+    let observation = case.trace("s0").map(|trace| FinalTraceObservation {
+        installed: trace.installed(),
+        dropped: trace.dropped(),
+        boundary: trace.boundary_snapshot(),
+    });
+    let evidence = final_trace_evidence(children_stopped, &observation);
+    write_json(&case.directory.join("final_trace.json"), &evidence)?;
+    if evidence["valid"] != true {
+        return Err(format!("最终采样有效性失败：{}", evidence["error"]));
+    }
+    Ok(evidence)
+}
+
 async fn run_instance(
     case: Case,
     hardware_id: &str,
@@ -1876,8 +1937,11 @@ async fn run_instance(
         None => Ok(()),
     };
     let s0_stop = stop(&mut s0).await;
+    // 两个真实 stop 均已尝试；此后只读核验，不以较早 final_stop 回执代替尾部状态。
+    let final_trace = save_final_trace(&case, gateway_stop.is_ok() && s0_stop.is_ok());
     if let SlaRunKind::SoftwareLoad { cache_entries } = kind {
-        let lifecycle = json!({"measurement_ok":result.is_ok(),"measurement_error":result.as_ref().err(),
+        let lifecycle = json!({"measurement_ok":result.is_ok() && final_trace.is_ok(),"measurement_error":result.as_ref().err(),
+            "final_trace_ok":final_trace.is_ok(),"final_trace_error":final_trace.as_ref().err(),
             "final_stop_ok":final_state.is_ok(),"final_stop_error":final_state.as_ref().err(),
             "gateway_stop_ok":gateway_stop.is_ok(),"gateway_stop_error":gateway_stop.as_ref().err(),
             "s0_stop_ok":s0_stop.is_ok(),"s0_stop_error":s0_stop.as_ref().err()});
@@ -1887,10 +1951,10 @@ async fn run_instance(
             return Err(format!("S48长负载证据未满足：{acceptance}"));
         }
     }
-    match (result, final_state, gateway_stop, s0_stop) {
-        (Ok(measurement), Ok(final_state), Ok(()), Ok(())) => {
+    match (result, final_state, gateway_stop, s0_stop, final_trace) {
+        (Ok(measurement), Ok(final_state), Ok(()), Ok(()), Ok(final_trace)) => {
             let mut result = json!({"environment": environment, "measurement": measurement,
-                "final_state": final_state});
+                "final_state": final_state, "final_trace": final_trace});
             if physical {
                 result["rt_preflight"] = scheduling;
             }
