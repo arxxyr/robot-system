@@ -2,6 +2,19 @@
 
 ## 当前步骤
 
+2026-09-23新右H1/H3各100预热+1000正式测量通过，运行HEAD `3790fd9`、实际build `5952498`、571输入aggregate `e05a2ca…ce0ff`；未重新构建或正式安装。
+H1完整PING+Model_Number READ的P99/max为1.147712/1.171040ms；H3六ID断扭广播主机调用P99/max为0.256192/0.879104ms，1000正式样本均≤10ms。Enable帧0、drop/truncated0；H3不证明UART完成、机械断扭或物理断电。
+H1真实reap及清场后才H3；两工具exit0/reaped，五次内部清场与退出后实际UID/串口/服务清场通过。driver通过远端shell直接exec及SSH exit0真实wait收口，未及时捕获独立driver PID，不补造。
+唯一保护变化为右`rx_trust.lock`首次由原工具创建（0600、UID/GID1000、无活持有者）；右marker仍缺失、双臂latch与左保护身份不变。正式安装件未变、六服务停止。
+首readonly命名冲突FAIL、首次setsid父wrapper被识别related的前置拒绝FAIL完整保留；前置拒绝H1/H3零启动，外层退出后清场通过，不回写原cleanup FAIL。本次另经用户继续和新root GO，非自动重试。
+本轮原件入口`target/post_e_h2_rt/s48/right_h13_run/precheck_20260923T061818Z_06b35bdf/exec_delivery.json`；独审/root已验收并完成增量归档。
+用户已撤销周余15%停线并确认本次右臂现场就绪；本轮值守已解除、电源UNKNOWN。右H2仍NOT_RUN且未授权，左H2历史PASS及c5daa67/fb600fd不变，D15 OPEN、deployable=false；每阶段独审/root验收后commit，不push。
+
+本轮H包SHA `3a7aa0f7e0bbcccdc9ef9fb2e6c5f1412100ff3821dcc4c9fc294f69bc897f77`，208520620 bytes、65919 members/65918索引、5569545267 logical bytes；旧65607索引完整保全，新增311件。
+已承接上一native/post_archive_review及commit；本轮`right_h13_run/post_archive_review`及随后commit为包外后生件，下包承接。
+
+### 已收口右H13原生软件（3790fd9，以下为当时事实）
+
 右H13准备已收口`9afdc92`。新软件验证运行HEAD仍为该提交，实际Rust build仍`5952498`、571项aggregate `e05a2ca…ce0ff`，没有重新构建或替换产物。
 首Orin uv Python3.12.13缺`os.pidfd_open`，22方法3FAIL/3ERROR原FAIL保留。最新脚本为`target/post_e_h2_rt/s48/right_h13_native/implementation_r3/`：仅两pidfd API均可调用才启用；接口缺失走已审自有未回收Popen child路径，资源真异常仍FAIL。
 r3本地27方法、独立5方法及新版Orin27方法/默认PLAN_ONLY入口通过；child/owner/SSH真实wait/reap，前后安装及安全状态相同、实际UID清场、收养child为空，不称单轮全过。
@@ -223,7 +236,7 @@ P-E纯软件长负载已通过；不得外推新硬件通过、生产退役或�
 
 W3已将新权限、高/普通双队列、唯一writer、RPC责任账本接入生产调用方。
 W4a文件同步故障、W4b固定五例及RR R0–R3已验收；R4完整T8/SUP/ENV、
-原连接竞争与双环境验证已在C/A/B依次闭环。P-E、P.7及前置/延时修复已验收；本次左H2通过，旧三次FAIL保持。左H2已收口10cff7a，右/W1合并5952498及Orin新来源验证/独审通过，后续完成证据收口与现场/部署门；按最新周额度剩15%线持续推进，每包检查与独审/root验收后commit。
+原连接竞争与双环境验证已在C/A/B依次闭环。P-E、P.7及前置/延时修复已验收；本次左H2通过，旧三次FAIL保持。左H2已收口10cff7a，右/W1合并5952498及Orin新来源验证/独审通过，本次右H1/H3也已验收归档，后续右H2/部署门仍未闭合；用户已撤销15%停线，每包检查与独审/root验收后commit。
 RR r3析构与公共CAL两项方案已ACK，直接替换现有工厂，保topic/schema/FF；
 所有peer与自动清理者同批同源，模型/迁移实现按分包开发和评审。
 旧跨原子可见性与映射删除问题已在R1–R3实现，R4双环境软件验证已通过；不外推额外内存序证明或完整候选闭环。

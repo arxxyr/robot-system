@@ -9,6 +9,12 @@
 
 ---
 
+## 2026-09-23 · 右H1/H3现场测量（已验收归档）
+
+运行3790fd9/build5952498；H1、H3各100预热+1000正式通过，H1 P99/max=1.147712/1.171040ms，H3=0.256192/0.879104ms，H3正式全部≤10ms。
+Enable0/drop0/truncated0；两工具exit0/reaped，内部五次与退出后清场通过。driver独立PID未捕获，远端exec+SSH真实wait边界如实保留。
+首readonly命名冲突及setsid前置拒绝FAIL保留，原件/独审入口见HANDOFF。本轮不提供右H2结论，未正式安装，D15 OPEN；H3只证明主机调用完成，电源UNKNOWN。
+
 ## 2026-09-22 · 右H13原生Python兼容验证（仅软件，已归档）
 
 运行HEAD `9afdc92`；首Orin uv Python3.12.13缺`os.pidfd_open`，22方法3FAIL/3ERROR原件保留。
@@ -889,3 +895,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-22：登记右H13本地监督/oracle的22开发+12独立方法验证；保留round6 FAIL和早轮回执边界，右现场未执行。
 
 - 2026-09-22：登记右H13 pidfd能力兼容的本地27/独立5/Orin27与默认入口；首22方法3FAIL/3ERROR保留，仅软件、已归档。
+
+- 2026-09-23：登记右H1/H3各100+1000及真实回收/清场；保留两次前置FAIL，右H2未测，已验收归档。

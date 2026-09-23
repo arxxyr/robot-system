@@ -56,13 +56,15 @@
            18次真实完成、122原件已核；原生软件证据已归档并收口4441f59，实际build仍5952498。
            右H13本地准备已收口9afdc92；首Orin22方法3FAIL/3ERROR因Python缺pidfd API，原FAIL保留。
            native/implementation_r3按能力选择自有child回收，本地27+独立5及Orin27/默认入口通过。
-           真实wait、前后状态相同且无收养child；本轮仅软件、已归档，历史round6与早轮回执缺项保留。
-           右TRUST仅按授权0755→0750，marker/locks未创建；用户暂不能在场，右H1/H3/H2不启动。
+           该历史软件阶段真实wait、前后状态相同且无收养child；已归档，历史round6与早轮回执缺项保留。
+           右H13软件已收口3790fd9；9/23本次右H1/H3各100+1000测量通过，实际build仍5952498。
+           两工具真实reap/清场成功；首readonly冲突与setsid前置拒绝FAIL保留，证据已独审/root验收并归档。
+           右rx_trust.lock由工具首次合法创建，marker仍缺失、latch不变；值守已解除、电源UNKNOWN。
            W1 fork/exec窗口机制已证实，旧偶发失败具体根因仍OPEN_UNCONFIRMED；原FAIL保留。
-           左H1/H2/H3通过；右臂未测，正式部署未做，六服务停止，deployable=false、D15 OPEN。
+           左H1/H2/H3、右H1/H3通过；右H2未测，正式部署未做，六服务停止，deployable=false、D15 OPEN。
            证据保留当前包，旧过程数据与重复文档按用户授权清除。
            Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。
-           最新规则：按用户最新要求持续推进至周额度剩15%，不再每阶段自动暂停；
+           最新规则：用户已撤销周额度剩15%停线并要求继续，不再每阶段自动暂停；
            每阶段独审/root验收及commit保持，不push；真实H2仍需新物理重置/支撑/在场事实。
            RX 重同步 / 串口 reopen 已移出本候选。
            后续硬序 ①通信故障硬化 → ②D15 退役决策 → ③robot-viz Rerun 桥

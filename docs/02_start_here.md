@@ -16,13 +16,11 @@
 
 ## 当前状态
 
-2026-09-22本次左H2四组各100预热+1000正式通过，runtime `c5daa67` / build `fb600fd`。
-真实收尾、工具/driver回收及清场已独审/root验收，本轮已收口10cff7a；旧三次FAIL与前置拒绝保留。
-本轮值守已解除，电源UNKNOWN；右未测、未安装、D15 OPEN。原生软件已收口`4441f59`，实际build仍`5952498`。
-右H13准备已收口`9afdc92`；首Orin22方法3FAIL/3ERROR保留，修复pidfd API能力检测后，本地27+独立5、Orin27及默认入口通过。
-最新脚本为`right_h13_native/implementation_r3/`，真实回收且前后状态不变；仅软件、已归档，详HANDOFF。
-用户暂不能在场，只继续软件准备，右H1/H3/H2不启动。持续推进至周额度剩15%，每阶段验收commit，不自动物理重试或push。
-完整数据、第三组max与P99区别及来源见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+2026-09-23右H1/H3各100预热+1000正式测量通过，运行HEAD `3790fd9` / 实际build `5952498`；两工具真实回收与清场通过，证据已独审/root验收并归档。
+首readonly命名冲突和setsid前置拒绝FAIL保留；本次经新GO执行，不称单轮全过。值守已解除、电源UNKNOWN。
+左H2历史`c5daa67` / `fb600fd` PASS不变；右H2未测、未正式安装、D15 OPEN、deployable=false。
+用户已撤销15%停线并确认本次右现场就绪；每阶段验收commit，不自动物理重试或push。下一物理步骤仍须对应新事实及授权。
+完整统计、原件身份及历史失败见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
 
 以下为已收口`eb59bcc`的历史真实H2失败记录，不覆盖本次新运行结论：
 
@@ -43,10 +41,10 @@ authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TR
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     右H13准备收口9afdc92；r3本地27+独立5及Orin27通过，已归档，现场未执行
-当前授权:     Astra/medium开发及独审，连续推进至周额度剩15%；每阶段验收commit，不push
+当前步骤:     3790fd9运行右H1/H3各100+1000通过；已验收归档，右H2未测
+当前授权:     Astra/medium开发及独审，用户已撤销15%停线；每阶段验收commit，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
-平台:         左 H1/H2/H3 PASS；三次旧H2 FAIL及一次前置拒绝保留；右臂未测
+平台:         左 H1/H2/H3 PASS；右 H1/H3测量通过、H2未测；所有历史FAIL保留
 ```
 
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
@@ -72,13 +70,13 @@ GC分别1391/1379。完整收尾与独审/root验收通过，已提交2f1de02，
 已审操作单见 scripts/systemd/README_dimos_replace.md。
 Orin实际安装件位于target/release，禁止在那里构建候选；独立构建目录先冻结生产四件，
 再构建测量三件。只读盘点不等于已安装、已授权marker或取得新的现场事实。
-最新指令为持续推进至周额度剩15%，替代原25%停止线；不再每阶段自动暂停；每阶段必要验证、独审/root
+最新指令已撤销周额度剩15%停止线并要求继续；不再每阶段自动暂停；每阶段必要验证、独审/root
 验收和commit仍保留，新提交不自动push。真实H2须另核当次物理重置、支撑与持续在场事实，不能自动重试。
 W1父用例隔离测试已本地集成验证；旧偶发失败具体根因仍OPEN_UNCONFIRMED。
 原门/原件、恢复过程和精确身份均以HANDOFF/H包为准，不将分批结果称单轮全过。
 
-左H1/H2/H3通过，三次旧H2 FAIL与前置拒绝保留；当前只接受本次新物理边界的左H2结果。
-六服务停止、串口无占用、双marker Dirty；值守解除但电源UNKNOWN。右未测、正式部署未做，
+左H1/H2/H3通过，三次旧H2 FAIL与前置拒绝保留；本次右H1/H3结果另按9/23现场事实验收。
+六服务停止、串口无占用；左双marker历史Dirty、右marker缺失；值守解除但电源UNKNOWN。右H1/H3已通过、H2未测、正式部署未做，
 D15 OPEN、deployable=false。新物理动作仍需当次事实，不能复用已消费授权或输出目录。
 Orin调试/RT必要时直接sudo；标定沿已核Python JSON。新版5952498不混作已结束左H2的build来源；本轮native及integration证据已归入H包，本轮post/commit后生件仍在包外。
 
