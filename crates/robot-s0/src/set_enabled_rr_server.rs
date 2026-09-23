@@ -354,7 +354,7 @@ fn handle_response(
         }
         Err(error) => {
             metrics.send_response_errors.fetch_add(1, Ordering::Relaxed);
-            tracing::error!(?error, "RR 退休回复发送失败");
+            tracing::error!(?error, request_id = %response.request_id, route = ?response.route, "RR 退休回复发送失败");
         }
     }
     release_slot(ledger, original.slot, residual);

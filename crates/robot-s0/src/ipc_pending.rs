@@ -360,6 +360,64 @@ pub struct LowerPending {
     completion: Option<robot_core::executor_ctrl::AdapterResp>,
 }
 impl LowerPending {
+    /// 仅供非 RT IPC 诊断读取；不复制 RR 身份，也不改变退休判据。
+    pub(crate) fn diagnostic(&self, snapshot: AuthoritySnapshot) -> LowerDiagnostic {
+        use robot_core::control_authority::InhibitReason;
+        use robot_core::executor_ctrl::OutputSafetyState;
+
+        let mut wait_mask = 0;
+        if self
+            .carried_enable
+            .as_ref()
+            .is_some_and(|carried| carried.source_seq.is_some())
+        {
+            wait_mask |= LowerDiagnostic::SOURCE_RESPONSE;
+        }
+        if self.seq.is_some() {
+            wait_mask |= LowerDiagnostic::LOWER_RESPONSE;
+        }
+        if self.seq.is_none() && self.completion.is_none() {
+            wait_mask |= LowerDiagnostic::LOWER_NOT_SUBMITTED;
+        }
+        if snapshot.phase != Some(Phase::Idle) {
+            wait_mask |= LowerDiagnostic::PHASE_NOT_IDLE;
+        }
+        if snapshot.safety != OutputSafetyState::TorqueOffConfirmed {
+            wait_mask |= LowerDiagnostic::TORQUE_OFF_UNCONFIRMED;
+        }
+        if !snapshot.disabled {
+            wait_mask |= LowerDiagnostic::NOT_DISABLED;
+        }
+        if snapshot.exhausted {
+            wait_mask |= LowerDiagnostic::EXHAUSTED;
+        }
+        if snapshot.normal_io_active {
+            wait_mask |= LowerDiagnostic::NORMAL_IO_ACTIVE;
+        }
+        if snapshot.serial_estop_pending {
+            wait_mask |= LowerDiagnostic::SERIAL_ESTOP_PENDING;
+        }
+        if snapshot.inhibits.contains(InhibitReason::Converging) {
+            wait_mask |= LowerDiagnostic::INHIBIT_CONVERGING;
+        }
+        if snapshot.inhibits.contains(InhibitReason::FaultPending) {
+            wait_mask |= LowerDiagnostic::INHIBIT_FAULT_PENDING;
+        }
+        if snapshot.inhibits.contains(InhibitReason::Boot) {
+            wait_mask |= LowerDiagnostic::INHIBIT_BOOT;
+        }
+        if !snapshot.inhibits.is_empty() {
+            wait_mask |= LowerDiagnostic::SUBMISSION_INHIBITED;
+        }
+        LowerDiagnostic {
+            wait_mask,
+            source_seq: self.carried_enable.as_ref().and_then(|c| c.source_seq),
+            lower_seq: self.seq,
+            phase: snapshot.phase,
+            safety: snapshot.safety,
+            inhibits: snapshot.inhibits.bits(),
+        }
+    }
     #[must_use]
     #[cfg(test)]
     pub(crate) const fn shutdown_generation(&self) -> Option<std::num::NonZeroU64> {
@@ -385,6 +443,32 @@ impl LowerPending {
     pub const fn started_at(&self) -> MonoRawNs {
         self.started_at
     }
+}
+
+/// 位 0–2 为原响应/提交等待，3–11 为原物理退休门，12 为提交前全量 inhibit。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct LowerDiagnostic {
+    pub wait_mask: u16,
+    pub source_seq: Option<u64>,
+    pub lower_seq: Option<u64>,
+    pub phase: Option<Phase>,
+    pub safety: robot_core::executor_ctrl::OutputSafetyState,
+    pub inhibits: u8,
+}
+impl LowerDiagnostic {
+    pub(crate) const SOURCE_RESPONSE: u16 = 1 << 0;
+    pub(crate) const LOWER_RESPONSE: u16 = 1 << 1;
+    pub(crate) const LOWER_NOT_SUBMITTED: u16 = 1 << 2;
+    pub(crate) const PHASE_NOT_IDLE: u16 = 1 << 3;
+    pub(crate) const TORQUE_OFF_UNCONFIRMED: u16 = 1 << 4;
+    pub(crate) const NOT_DISABLED: u16 = 1 << 5;
+    pub(crate) const EXHAUSTED: u16 = 1 << 6;
+    pub(crate) const NORMAL_IO_ACTIVE: u16 = 1 << 7;
+    pub(crate) const SERIAL_ESTOP_PENDING: u16 = 1 << 8;
+    pub(crate) const INHIBIT_CONVERGING: u16 = 1 << 9;
+    pub(crate) const INHIBIT_FAULT_PENDING: u16 = 1 << 10;
+    pub(crate) const INHIBIT_BOOT: u16 = 1 << 11;
+    pub(crate) const SUBMISSION_INHIBITED: u16 = 1 << 12;
 }
 
 #[derive(Debug)]
@@ -1602,6 +1686,39 @@ mod tests {
     use crate::state_machine::{ControlLink, OutputMode, TransitionKind};
     use robot_core::control_authority::{AuthorityInit, EnableResult, InhibitSet};
     use robot_core::executor_ctrl::OutputSafetyState;
+
+    #[test]
+    fn lower_diagnostic_reports_response_and_physical_wait_bits_without_mutation() {
+        let mut snapshot = authority().snapshot();
+        snapshot.phase = Some(Phase::EnableExecuting);
+        snapshot.safety = OutputSafetyState::StopCommanded;
+        snapshot.disabled = false;
+        snapshot.normal_io_active = true;
+        let lower = LowerPending {
+            seq: Some(17),
+            cause: LowerCause::OperatorDisable,
+            carried_enable: None,
+            waiters: LowerWaiters::empty(),
+            started_at: MonoRawNs(10),
+            shutdown_generation: None,
+            completion: None,
+        };
+        let diagnostic = lower.diagnostic(snapshot);
+        assert_eq!(diagnostic.lower_seq, Some(17));
+        assert_eq!(lower.seq(), Some(17));
+        assert_ne!(diagnostic.wait_mask & LowerDiagnostic::LOWER_RESPONSE, 0);
+        assert_ne!(diagnostic.wait_mask & LowerDiagnostic::PHASE_NOT_IDLE, 0);
+        assert_ne!(
+            diagnostic.wait_mask & LowerDiagnostic::TORQUE_OFF_UNCONFIRMED,
+            0
+        );
+        assert_ne!(diagnostic.wait_mask & LowerDiagnostic::NOT_DISABLED, 0);
+        assert_ne!(diagnostic.wait_mask & LowerDiagnostic::NORMAL_IO_ACTIVE, 0);
+        assert_eq!(
+            diagnostic.wait_mask & LowerDiagnostic::LOWER_NOT_SUBMITTED,
+            0
+        );
+    }
 
     fn authority() -> ControlAuthority {
         ControlAuthority::new(AuthorityInit::new(

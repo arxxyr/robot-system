@@ -860,6 +860,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn final_state_three_does_not_hide_disable_transport_timeout() {
+        for status in [
+            tonic::Status::cancelled("Timeout expired"),
+            tonic::Status::deadline_exceeded("gateway RR timeout"),
+        ] {
+            let expected_code = format!("{:?}", status.code());
+            let evidence = super::super::sla::confirm_and_disable(
+                async {
+                    Ok(robot_rpc::proto::RobotState {
+                        safety_state: 3,
+                        ..Default::default()
+                    })
+                },
+                async move { Err(status) },
+                "final-disable",
+            )
+            .await;
+            assert_eq!(evidence["get_state"]["ok"], true);
+            assert_eq!(evidence["disable"]["attempted"], true);
+            assert_eq!(evidence["disable"]["code"], expected_code);
+            assert_eq!(evidence["ok"], false);
+        }
+    }
+
+    #[tokio::test]
     async fn final_disable_keeps_wrong_ack_identity_and_dry_run_for_review() {
         let evidence = super::super::sla::confirm_and_disable(
             async {

@@ -11,7 +11,7 @@ use crate::event_ingress::{
 use crate::hard_rt_ctrl::{CtrlKind, HardRtCtrlClient};
 use crate::ipc_pending::{
     self, BridgeStep, BusinessObservation, EnableEffect, EnableStartOutcome, IpcPending,
-    LowerCause, LowerStartOutcome, PendingOutcome, RevokeCause, RrIdentity,
+    LowerCause, LowerDiagnostic, LowerStartOutcome, PendingOutcome, RevokeCause, RrIdentity,
 };
 use crate::ipc_thread::{
     ClearEStopRrPayload, ClearEStopRrRequest, ClearEStopRrResponse, IpcThreadMetrics,
@@ -111,6 +111,48 @@ pub(crate) struct IpcRuntimeContext<'a> {
     pub clock: &'a dyn RobotClock,
     pub metrics: &'a IpcThreadMetrics,
 }
+/// 只限制非 RT 诊断输出；不是请求责任或退休状态。
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct LowerLogKey {
+    started_at: u64,
+    diagnostic: LowerDiagnostic,
+    waiter_count: usize,
+    earliest_deadline: u64,
+}
+#[derive(Clone, Copy)]
+struct LowerLogState {
+    key: LowerLogKey,
+    logged_at: u64,
+    changes_logged: u8,
+    near_deadline_logged: bool,
+}
+
+const LOWER_LOG_MIN_INTERVAL_NS: u64 = 100_000_000;
+const LOWER_LOG_DEADLINE_WINDOW_NS: u64 = 250_000_000;
+const LOWER_LOG_MAX_CHANGES: u8 = 16;
+
+fn lower_log_decision(
+    previous: Option<LowerLogState>,
+    key: LowerLogKey,
+    now: u64,
+) -> (bool, bool, u8) {
+    let near_deadline = key.waiter_count != 0
+        && key.earliest_deadline.saturating_sub(now) <= LOWER_LOG_DEADLINE_WINDOW_NS;
+    let Some(previous) = previous.filter(|previous| previous.key.started_at == key.started_at)
+    else {
+        return (true, near_deadline, 1);
+    };
+    let log_change = previous.key != key
+        && previous.changes_logged < LOWER_LOG_MAX_CHANGES
+        && now.saturating_sub(previous.logged_at) >= LOWER_LOG_MIN_INTERVAL_NS;
+    let log_deadline = near_deadline && !previous.near_deadline_logged;
+    (
+        log_change || log_deadline,
+        previous.near_deadline_logged || near_deadline,
+        previous.changes_logged.saturating_add(u8::from(log_change)),
+    )
+}
+
 pub(crate) struct IpcLoopState {
     pub(crate) state: S0State,
     pub(crate) guards: Guards,
@@ -129,6 +171,7 @@ pub(crate) struct IpcLoopState {
     deferred_restore: Option<(HighWork, bool)>,
     stranded_clear_reply: Option<(RrIdentity, ClearOutcome)>,
     control_invalidated: bool,
+    lower_log: Option<LowerLogState>,
     #[cfg(feature = "test-comm-fault-hook")]
     clear_fact_sequence: u64,
     #[cfg(feature = "test-comm-fault-hook")]
@@ -154,6 +197,7 @@ impl IpcLoopState {
             deferred_restore: None,
             stranded_clear_reply: None,
             control_invalidated: false,
+            lower_log: None,
             #[cfg(feature = "test-comm-fault-hook")]
             clear_fact_sequence: 0,
             #[cfg(feature = "test-comm-fault-hook")]
@@ -179,6 +223,67 @@ impl IpcLoopState {
             state: self.state,
             estop: self.guards.estop_latched,
         }
+    }
+    fn observe_lower_pending(&mut self, context: &IpcRuntimeContext<'_>) {
+        let IpcPending::Lower(lower) = &self.pending else {
+            self.lower_log = None;
+            return;
+        };
+        if lower.waiters().is_empty() {
+            self.lower_log = None;
+            return;
+        }
+        let now = context.clock.now().0;
+        let diagnostic = lower.diagnostic(context.ctrl.authority().snapshot());
+        let waiter_count = lower.waiters().len();
+        let earliest_deadline = lower
+            .waiters()
+            .iter()
+            .map(|waiter| waiter.identity().deadline_ns)
+            .min()
+            .unwrap_or(u64::MAX);
+        let key = LowerLogKey {
+            started_at: lower.started_at().0,
+            diagnostic,
+            waiter_count,
+            earliest_deadline,
+        };
+        let (should_log, near_deadline_logged, changes_logged) =
+            lower_log_decision(self.lower_log, key, now);
+        if should_log {
+            for waiter in lower.waiters().iter() {
+                let rr = waiter.identity();
+                tracing::info!(
+                    request_id = %rr.request_id,
+                    route = ?rr.route,
+                    cause = ?lower.cause(),
+                    source_seq = ?diagnostic.source_seq,
+                    lower_seq = ?diagnostic.lower_seq,
+                    deadline_ns = rr.deadline_ns,
+                    age_ns = now.saturating_sub(lower.started_at().0),
+                    wait_mask = diagnostic.wait_mask,
+                    phase = ?diagnostic.phase,
+                    safety = ?diagnostic.safety,
+                    inhibits = diagnostic.inhibits,
+                    "Lower 待决快照（非退休证据）"
+                );
+            }
+        }
+        let logged_at = if should_log {
+            now
+        } else {
+            self.lower_log.map_or(now, |previous| previous.logged_at)
+        };
+        self.lower_log = Some(LowerLogState {
+            key: if should_log {
+                key
+            } else {
+                self.lower_log.map_or(key, |previous| previous.key)
+            },
+            logged_at,
+            changes_logged,
+            near_deadline_logged,
+        });
     }
     fn reply_clear(
         outbox: &mut RetiredOutbox,
@@ -266,6 +371,14 @@ impl IpcLoopState {
                 PendingOutcome::Existing(payload) => payload,
                 PendingOutcome::SupersededByDisable => SetEnabledRrPayload::SupersededByDisable,
             };
+            if let SetEnabledRrPayload::Disabled { completed_at_ns } = payload {
+                tracing::info!(
+                    request_id = %reply.identity.request_id,
+                    route = ?reply.identity.route,
+                    completed_at_ns,
+                    "Lower 原物理门退休，准备发送 RR 回复"
+                );
+            }
             if matches!(payload, SetEnabledRrPayload::Disabled { .. })
                 && !matches!(self.state, S0State::Fault(_) | S0State::Stopping)
             {
@@ -749,6 +862,7 @@ impl IpcLoopState {
         self.advance_clear(context, persist, outbox);
         self.try_ack_lowering(context);
         self.refresh_guards(context);
+        self.observe_lower_pending(context);
         if self.state != previous {
             context
                 .metrics
@@ -1447,6 +1561,49 @@ mod owned_tick_tests {
     };
     use robot_core::time::{DurationNs, MockClock, MonoRawNs};
     use std::sync::Arc;
+
+    #[test]
+    fn lower_log_changes_are_bounded_and_deadline_is_reported_once() {
+        let diagnostic = LowerDiagnostic {
+            wait_mask: LowerDiagnostic::LOWER_RESPONSE,
+            source_seq: None,
+            lower_seq: Some(7),
+            phase: Some(Phase::Idle),
+            safety: OutputSafetyState::TorqueOffConfirmed,
+            inhibits: 0,
+        };
+        let key = LowerLogKey {
+            started_at: 1,
+            diagnostic,
+            waiter_count: 1,
+            earliest_deadline: 1_000_000_000,
+        };
+        let (log, near, count) = lower_log_decision(None, key, 0);
+        assert_eq!((log, near, count), (true, false, 1));
+        let previous = LowerLogState {
+            key,
+            logged_at: 0,
+            changes_logged: count,
+            near_deadline_logged: near,
+        };
+        let mut changed = key;
+        changed.diagnostic.wait_mask |= LowerDiagnostic::NORMAL_IO_ACTIVE;
+        assert!(!lower_log_decision(Some(previous), changed, 1).0);
+        assert!(lower_log_decision(Some(previous), changed, 100_000_000).0);
+        let capped = LowerLogState {
+            changes_logged: LOWER_LOG_MAX_CHANGES,
+            ..previous
+        };
+        assert!(!lower_log_decision(Some(capped), changed, 500_000_000).0);
+        let (log, near, _) = lower_log_decision(Some(capped), changed, 750_000_000);
+        assert!(log);
+        assert!(near);
+        let once = LowerLogState {
+            near_deadline_logged: true,
+            ..capped
+        };
+        assert!(!lower_log_decision(Some(once), changed, 800_000_000).0);
+    }
 
     /// 确定性 tick 调度夹具使用真队列、真原语及同一 RT 消费函数；不称真实线程 E2E。
     struct Rig {

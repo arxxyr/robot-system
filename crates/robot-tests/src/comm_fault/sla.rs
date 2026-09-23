@@ -27,13 +27,17 @@ use tonic::transport::Channel;
 use super::control::{ControlPort, wait_applied};
 use super::harness::{Case, isolated_command, stop, wait_log};
 use super::heartbeat::HeartbeatFeed;
-use super::rpc::{command_meta, connect, gateway_command};
+use super::rpc::{command_meta, connect, connect_with_request_timeout, gateway_command};
 use super::sla_background::{Background, BackgroundHealth, RR_IN_FLIGHT_LIMIT};
 use super::{Args, Phase};
 
 const WARMUP: usize = 100;
 const SAMPLES: usize = 1000;
 const MAX_ATTEMPTS: usize = (WARMUP + SAMPLES) * 10;
+pub(super) const FINAL_DISABLE_TIMEOUT_MS: u64 = 2000;
+// 最终 Disable 的业务期限 2000ms + gateway RR grace 500ms 小于此传输期限。
+// GetState 与 Disable 共用此连接，避免客户端在网关完成原责任前先取消请求。
+pub(super) const FINAL_STOP_TRANSPORT_TIMEOUT: Duration = Duration::from_secs(3);
 static COMMAND_SEQ: AtomicU64 = AtomicU64::new(10_000);
 
 const ORDINARY_CPUS: [usize; 4] = [0, 1, 2, 3];
@@ -1713,9 +1717,9 @@ async fn final_stop(
         Err(error) => Err(error),
     };
     tokio::time::sleep(Duration::from_millis(700)).await;
-    let observed = match connect(address).await {
+    let observed = match connect_with_request_timeout(address, FINAL_STOP_TRANSPORT_TIMEOUT).await {
         Ok(mut client) => {
-            let meta = command_meta(false, 2000);
+            let meta = command_meta(false, FINAL_DISABLE_TIMEOUT_MS);
             let mut disable_client = client.clone();
             let command = SetEnabledCommand {
                 meta: Some(meta.clone()),

@@ -717,11 +717,17 @@ pub(super) fn command_meta(dry_run: bool, timeout_ms: u64) -> CommandMeta {
     }
 }
 
+pub(super) const ORDINARY_RPC_TRANSPORT_TIMEOUT: Duration = Duration::from_secs(2);
+
 pub(super) async fn connect(address: &str) -> Result<RobotControlClient<Channel>, String> {
-    let endpoint = Endpoint::from_shared(format!("http://{address}"))
-        .map_err(|error| error.to_string())?
-        .connect_timeout(Duration::from_millis(200))
-        .timeout(Duration::from_secs(2));
+    connect_with_request_timeout(address, ORDINARY_RPC_TRANSPORT_TIMEOUT).await
+}
+
+pub(super) async fn connect_with_request_timeout(
+    address: &str,
+    request_timeout: Duration,
+) -> Result<RobotControlClient<Channel>, String> {
+    let endpoint = endpoint_with_request_timeout(address, request_timeout)?;
     let deadline = SystemClock.now().0 + 4_000_000_000;
     loop {
         match endpoint.connect().await {
@@ -732,6 +738,17 @@ pub(super) async fn connect(address: &str) -> Result<RobotControlClient<Channel>
             Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
         }
     }
+}
+
+fn endpoint_with_request_timeout(
+    address: &str,
+    request_timeout: Duration,
+) -> Result<Endpoint, String> {
+    let endpoint = Endpoint::from_shared(format!("http://{address}"))
+        .map_err(|error| error.to_string())?
+        .connect_timeout(Duration::from_millis(200))
+        .timeout(request_timeout);
+    Ok(endpoint)
 }
 
 pub(super) async fn state(client: &mut RobotControlClient<Channel>) -> Result<RobotState, String> {
@@ -881,6 +898,26 @@ async fn dirty_boot(args: &Args) -> Result<Value, String> {
 #[cfg(test)]
 #[path = "rpc_acceptance.rs"]
 mod acceptance;
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn endpoint_builder_accepts_distinct_request_budgets_and_keeps_connect_budget() {
+        for request_timeout in [
+            ORDINARY_RPC_TRANSPORT_TIMEOUT,
+            crate::comm_fault::sla::FINAL_STOP_TRANSPORT_TIMEOUT,
+        ] {
+            let endpoint = endpoint_with_request_timeout("127.0.0.1:43983", request_timeout)
+                .expect("合法 loopback 端点");
+            assert_eq!(
+                endpoint.get_connect_timeout(),
+                Some(Duration::from_millis(200))
+            );
+        }
+    }
+}
 
 #[cfg(test)]
 mod r4c_poll_tests {

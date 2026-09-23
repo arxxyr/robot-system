@@ -17,6 +17,20 @@ const T0: u64 = BASE_NS + 2_000_000;
 const T1: u64 = BASE_NS + 2_200_000;
 const ALL_OFF: u64 = BASE_NS + 12_000_000;
 
+#[test]
+fn final_stop_transport_budget_outlives_gateway_business_deadline() {
+    use super::rpc::{ORDINARY_RPC_TRANSPORT_TIMEOUT, command_meta};
+    use super::sla::{FINAL_DISABLE_TIMEOUT_MS, FINAL_STOP_TRANSPORT_TIMEOUT};
+    use std::time::Duration;
+
+    let disable = command_meta(false, FINAL_DISABLE_TIMEOUT_MS);
+    let business_deadline = Duration::from_millis(disable.timeout_ms);
+    let gateway_grace = Duration::from_millis(500);
+    assert_eq!(ORDINARY_RPC_TRANSPORT_TIMEOUT, Duration::from_secs(2));
+    assert_eq!(FINAL_STOP_TRANSPORT_TIMEOUT, Duration::from_secs(3));
+    assert!(business_deadline + gateway_grace < FINAL_STOP_TRANSPORT_TIMEOUT);
+}
+
 fn event(kind: TraceKind, stamp_ns: u64) -> TraceEvent {
     TraceEvent {
         sample_seq: EPOCH,
