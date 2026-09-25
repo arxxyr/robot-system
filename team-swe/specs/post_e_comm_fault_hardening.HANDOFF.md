@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+**2026-09-25 交接状态：按用户要求暂停开发，仅完成本次 handoff/证据提交并推送。** 工作分支为`feat/post-e-comm-fault-hardening`；继续开发或启动真机测试须后续明确指令。左H1/H2/H3与右H1/H3已通过；右H2仍为**整体FAIL**，D15 OPEN、`deployable=false`，没有正式安装或退役。六个正式服务在最后一次Orin软件验收前后均为inactive/dead/MainPID0；这只是当时快照，不代表未来现场状态。
+
+2026-09-23右H2真机本轮整体**FAIL**：runtime `1ac4548`、实际build仍`5952498`；四组各100预热+1000正式测量文件逐组PASS，SLA-B P99依序10.168864/6.811968/10.145344/6.914688ms，但最终非dry-run Disable约2.001秒返回`Cancelled: Timeout expired`，故原`run.json`/`report.json`均FAIL，不称右H2通过。EStop/Disarm及GetState安全态3、final_trace有效均为局部事实，不能代替DisableAck或物理断电。
+本次authorize/launch各1，工具/driver/SSH均exit1且真实wait/reap；退出后独立只读清场PASS，六服务inactive/PID0、串口无占用、正式安装件不变，右双rx marker与右EStop latch均为`1\n`。清场时电源UNKNOWN；用户先回复“已物理断电”，随后澄清“已通电，电源和 USB 都重插”。**这是2026-09-23最后一次用户报告，截至本次交接物理电源现状未知**；实际动作时间未知，双臂支撑与接触区未重新确认，此重插不构成新H2授权。首udevadm瞬态FAIL、漏传alignment的零启动前置FAIL及其内部cleanup FAIL完整保留；补传alignment、重新签GO后的本次真实H2仍FAIL。
+原件入口`target/post_e_h2_rt/s48/right_h2_closeout/evidence_summary.json`及其逐SHA引用；软件修复`ca14f0e`已提交推送。Orin源码ff-only到该提交，571输入聚合SHA为`ae5a04ff7243e9b6ae49dcc187e20e0f3db747f2d60cea426f8314eed4c9deae`；原生生产4件、测量3件构建通过，冻结测量件mock AC-12通过（最终Disable Ack），final定向9/9、Endpoint重跑1/1、Lower诊断和日志各1/1。首次Endpoint `--exact`只匹配0项，原件保留但不计通过；安装/受保护文件、USB映射、服务和进程前后快照一致。软件验收摘要见`target/post_e_h2_rt/s48/right_h2_software_ca14f0e_20260923T082518Z/acceptance_summary.json`。**仅软件验收通过**：未测2.1秒延迟tonic端到端、未访问真实串口/电机、未正式安装或硬件重测，不能判右H2通过或证明当前物理扭矩状态。
+当前H包SHA `3337206531273c274c050875ab0545e2a98e5c172e0f5f050591b19d100fafab`，234996374 bytes、66143 members/66142索引。旧65918索引前缀保全，依次新增右H2原件115件、断电回执2件、通电澄清3件，再新增ca14软件原件104件（含7 ELF及sidecar；排除重复worktree）。软件归包回执在`target/post_e_h2_rt/s48/right_h2_software_ca14f0e_20260923T082518Z/post_archive_review/archive_receipt.json`，为包外后生件；本次最终独审与提交回执也由下一次归包承接。
+下一开发者先从[H.json](../../.verify/post_e_comm_fault_hardening/H.json)及[H_evidence.tar.gz](../../.verify/post_e_comm_fault_hardening/H_evidence.tar.gz)核实失败和软件来源；若要重测右H2，应先补足2.1秒延迟回执的可控端到端覆盖并评审，之后重新核对Orin源码/产物、双臂支撑、负载与接触区、电源和USB物理边界、现场持续值守与断电手段，再取得**本次**独立GO。旧GO、重插答复和输出目录均不可复用；不因通信硬化自动关闭D15。
+
+### 上阶段右H1/H3（以下为当时事实）
+
 2026-09-23新右H1/H3各100预热+1000正式测量通过，运行HEAD `3790fd9`、实际build `5952498`、571输入aggregate `e05a2ca…ce0ff`；未重新构建或正式安装。
 H1完整PING+Model_Number READ的P99/max为1.147712/1.171040ms；H3六ID断扭广播主机调用P99/max为0.256192/0.879104ms，1000正式样本均≤10ms。Enable帧0、drop/truncated0；H3不证明UART完成、机械断扭或物理断电。
 H1真实reap及清场后才H3；两工具exit0/reaped，五次内部清场与退出后实际UID/串口/服务清场通过。driver通过远端shell直接exec及SSH exit0真实wait收口，未及时捕获独立driver PID，不补造。

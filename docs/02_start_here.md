@@ -16,6 +16,10 @@
 
 ## 当前状态
 
+2026-09-25交接：2026-09-23右H2四组各100预热+1000正式测量文件PASS，但最终非dry-run Disable约2秒`Cancelled: Timeout expired`，原run/report整体FAIL；authorize/launch各1，工具/driver/SSH exit1真实回收，独立只读清场PASS。右双rx marker与右EStop latch均`1\n`；清场时电源UNKNOWN，用户先确认断电、后报告已通电且电源/USB均重插，**本次交接时物理电源现状未知**；支撑/接触区未重新确认，不构成新H2授权。D15 OPEN、deployable=false。首USB瞬态FAIL、漏传alignment前置FAIL及其内部cleanup FAIL保留。软件修复`ca14f0e`已提交推送，Orin源码ff-only对齐；原生生产4/测量3、mock AC-12及定向单测仅软件通过，未做2.1秒延迟回执端到端、正式安装或硬件重测。用户要求暂停开发，仅本次handoff提交推送；完整原件见HANDOFF和H包。下段右H13状态仅为该历史阶段事实。
+
+### 历史右H13阶段（2026-09-23，当时状态）
+
 2026-09-23右H1/H3各100预热+1000正式测量通过，运行HEAD `3790fd9` / 实际build `5952498`；两工具真实回收与清场通过，证据已独审/root验收并归档。
 首readonly命名冲突和setsid前置拒绝FAIL保留；本次经新GO执行，不称单轮全过。值守已解除、电源UNKNOWN。
 左H2历史`c5daa67` / `fb600fd` PASS不变；右H2未测、未正式安装、D15 OPEN、deployable=false。
@@ -41,10 +45,10 @@ authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TR
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     3790fd9运行右H1/H3各100+1000通过；已验收归档，右H2未测
-当前授权:     Astra/medium开发及独审，用户已撤销15%停线；每阶段验收commit，不push
+当前步骤:     右H2四组测量PASS但最终Disable超时，整体FAIL；软件修复Orin源码已对齐，验收中
+当前授权:     仅本次handoff评审、commit及push；开发和真机测试暂停
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
-平台:         左 H1/H2/H3 PASS；右 H1/H3测量通过、H2未测；所有历史FAIL保留
+平台:         左 H1/H2/H3 PASS；右 H1/H3通过、H2整体FAIL；所有历史FAIL保留
 ```
 
 用户已于 2026-09-08 授权对齐文档并由专职 developer / reviewer 持续推进。
@@ -70,14 +74,14 @@ GC分别1391/1379。完整收尾与独审/root验收通过，已提交2f1de02，
 已审操作单见 scripts/systemd/README_dimos_replace.md。
 Orin实际安装件位于target/release，禁止在那里构建候选；独立构建目录先冻结生产四件，
 再构建测量三件。只读盘点不等于已安装、已授权marker或取得新的现场事实。
-最新指令已撤销周额度剩15%停止线并要求继续；不再每阶段自动暂停；每阶段必要验证、独审/root
-验收和commit仍保留，新提交不自动push。真实H2须另核当次物理重置、支撑与持续在场事实，不能自动重试。
+2026-09-25最新指令为仅提交推送本次handoff，之后暂停开发；2026-09-23之前的继续/停止线/不push规则均为历史。
+真实H2须另核当次物理重置、支撑与持续在场事实并取得独立GO，不能自动重试。
 W1父用例隔离测试已本地集成验证；旧偶发失败具体根因仍OPEN_UNCONFIRMED。
 原门/原件、恢复过程和精确身份均以HANDOFF/H包为准，不将分批结果称单轮全过。
 
-左H1/H2/H3通过，三次旧H2 FAIL与前置拒绝保留；本次右H1/H3结果另按9/23现场事实验收。
-六服务停止、串口无占用；左双marker历史Dirty、右marker缺失；值守解除但电源UNKNOWN。右H1/H3已通过、H2未测、正式部署未做，
-D15 OPEN、deployable=false。新物理动作仍需当次事实，不能复用已消费授权或输出目录。
+左H1/H2/H3与右H1/H3通过，旧H2 FAIL及前置拒绝保留；右H2本次四组测量文件PASS但final Disable超时，整体FAIL。
+最后一次软件验收时六服务停止、串口无占用、正式安装未变；右marker与EStop latch均Dirty。清场时电源UNKNOWN，后到用户答复通电与USB/电源重插；本次交接时物理现状未知，须重新核实。
+D15 OPEN、deployable=false。新物理动作仍需当次事实与独立GO，不能复用已消费授权或输出目录。
 Orin调试/RT必要时直接sudo；标定沿已核Python JSON。新版5952498不混作已结束左H2的build来源；本轮native及integration证据已归入H包，本轮post/commit后生件仍在包外。
 
 证据唯一入口为 [H.json](../.verify/post_e_comm_fault_hardening/H.json) 和

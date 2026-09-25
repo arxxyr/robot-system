@@ -9,6 +9,11 @@
 
 ---
 
+## 2026-09-23 · 右H2真实长测：测量四组PASS，整体FAIL
+
+runtime `1ac4548`、实际build `5952498`；四组各100预热+1000正式样本的原P99门逐组通过，SLA-B P99依次为10.168864、6.811968、10.145344、6.914688ms。最终非dry-run Disable约2.001秒返回`Cancelled: Timeout expired`，因此原run/report均FAIL，右H2未通过。EStop/Disarm、GetState安全态3及有效final_trace不替代DisableAck或物理断电。
+authorize/launch各1，工具/driver/SSH exit1真实回收；独立只读清场PASS、六服务inactive/PID0、右双marker与EStop latch均`1\n`、安装件不变。清场时电源UNKNOWN；用户后续先确认断电、再报告“已通电，电源和 USB 都重插”，本次交接时物理电源现状未知，操作时刻未知。支撑/接触区未重新确认，重插不授权新H2；D15 OPEN、deployable=false。首USB枚举瞬态FAIL、漏传alignment的零启动前置FAIL及其内部cleanup FAIL保留。软件修复`ca14f0e`已提交推送、Orin源码已ff-only对齐；生产4/测量3原生构建、mock AC-12与定向单测仅软件PASS，首次Endpoint 0匹配不计通过，未做2.1秒延迟回执端到端、正式安装或硬件重测。证据见HANDOFF及H包；用户2026-09-25仅授权handoff提交推送，后续开发暂停。
+
 ## 2026-09-23 · 右H1/H3现场测量（已验收归档）
 
 运行3790fd9/build5952498；H1、H3各100预热+1000正式通过，H1 P99/max=1.147712/1.171040ms，H3=0.256192/0.879104ms，H3正式全部≤10ms。
@@ -849,6 +854,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-09-25 | 右H2原整体FAIL与后到通电答复保留；ca14f0e Orin原生构建/mock/定向单测仅软件通过，未正式安装或硬件重测，D15 OPEN；按用户要求交接并暂停 | Codex |
 | 2026-09-15 | RR R2正式26门、源码独审及真实故障验证通过；R3/R4/Orin待验证 | Codex |
 | 2026-09-14 | RR R1本地21门/CAL45/模型6通过；源码与证据独审，R2/R3/R4及Orin未验证 | Codex |
 | 2026-09-14 | RR R0 两原包来源/唯一构建图及99项transport、304项RPC回归通过；strict/模型/Orin未验证 | Codex |

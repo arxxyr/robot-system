@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "CONTINUING_AFTER_RIGHT_H1_H3",
-  "resume_from": "右H1/H3各100+1000已独审/root验收，值守解除；右H2仍未授权/未测，后续须对应新事实及授权。用户已撤销15%停止线。",
+  "work_state": "PAUSED_AFTER_RIGHT_H2_FAIL_CA14_SOFTWARE_ACCEPTED_HANDOFF",
+  "resume_from": "右H2四组测量文件PASS但final Disable超时，原run/report整体FAIL；ca14f0e已提交推送且Orin源码ff-only对齐，生产4/测量3及mock/定向单测仅软件PASS；未正式安装、未硬件重测。用户2026-09-23要求暂停，2026-09-25仅授权handoff提交推送；下一开发或硬件动作需新指令与当次现场事实，D15 OPEN。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_RIGHT_H1_H3_ACCEPTED_ARCHIVED",
-  "review_status": "APPROVED_RIGHT_H1_H3_MEASUREMENT",
+  "status": "S48_RIGHT_H2_FAIL_CA14_SOFTWARE_ACCEPTED_HANDOFF_READY",
+  "review_status": "APPROVED_INDEPENDENT_HANDOFF_REVIEW",
   "deployable": false,
-  "scope": "右H1/H3真实测量及清场证据收口；首readonly命名FAIL及setsid前置拒绝FAIL保留。未正式安装、右H2未测，左H2历史PASS不变。",
+  "scope": "右H2原失败及清场、后到物理答复和两次前置FAIL保留；ca14 Orin原生构建/mock/定向单测仅软件通过，未正式安装或真机重测，D15 OPEN。",
   "software": {
     "s44": {
       "local": {
@@ -391,7 +391,7 @@
       "next": "容量与发送前typed截止子方案并入S48端到端优先级设计"
     },
     "s48": {
-      "status": "LEFT_H2_ACCEPTED_ARM_NATIVE_SOFTWARE_ACCEPTED_RIGHT_HARDWARE_PENDING",
+      "status": "RIGHT_H2_FAIL_CA14_ORIN_SOFTWARE_PASS_PAUSED",
       "implementation_started": true,
       "pe": {
         "status": "PASS_SOFTWARE",
@@ -4099,6 +4099,46 @@
           "bytes": 13313,
           "sha256": "43cdc8e1e8c936407454f972cabc27e267f5bc656f7b261d1f1fe56722438bf6"
         }
+      },
+      "right_h2_failure": {
+        "status": "ORIGINAL_HARDWARE_FAIL",
+        "runtime_head": "1ac454888f293f8e317bdbc28cc1796824cfaf32",
+        "actual_build_head": "59524984368ad74b17384ca805b105102a29caac",
+        "software_fix_commit": "ca14f0e",
+        "fix_orin_deployed": false,
+        "fix_hardware_retested": false,
+        "evidence": {
+          "path": "target/post_e_h2_rt/s48/right_h2_closeout/evidence_summary.json",
+          "bytes": 6354,
+          "sha256": "7de70f4bdb20dba278cf0a8ac852592271d8e398b347f353f40f8a7844debb61"
+        },
+        "fix_pushed_to_origin": true,
+        "orin_source_ff_only_aligned_to_fix": true,
+        "new_native_build": "PASS_PRODUCTION_4_MEASUREMENT_3",
+        "new_software_acceptance": "PASS_SOFTWARE_ONLY",
+        "formal_install": false,
+        "hardware_retest": false,
+        "software_acceptance": {
+          "source_head": "ca14f0e6cf6df8ecc6baaaa8dff2dddb64abbd0a",
+          "source_input_count": 571,
+          "source_manifest_sha256": "ae5a04ff7243e9b6ae49dcc187e20e0f3db747f2d60cea426f8314eed4c9deae",
+          "native_production_count": 4,
+          "native_measurement_count": 3,
+          "mock_ac12": "PASS_SOFTWARE_ONLY",
+          "unit_final": "9/9",
+          "unit_endpoint_first": "0_MATCHED_PRESERVED_NOT_COUNTED",
+          "unit_endpoint_rerun": "1/1",
+          "unit_lower_diagnostic": "1/1",
+          "unit_lower_log_decision": "1/1",
+          "before_after_installed_protected_usb_services_processes": "IDENTICAL",
+          "hardware_retest": false,
+          "delayed_tonic_2_1s_e2e": "NOT_RUN",
+          "evidence": {
+            "path": "target/post_e_h2_rt/s48/right_h2_software_ca14f0e_20260923T082518Z/acceptance_summary.json",
+            "bytes": 7693,
+            "sha256": "359cbc96ded5669365a0a4e8819e6b72a2d280536f2d4fe3964cc7592390a34a"
+          }
+        }
       }
     }
   },
@@ -4440,7 +4480,97 @@
         "evidence_acceptance": "ACCEPTED",
         "scope": "六ID轮询完整PING+Model_Number READ；时延仅记录特性。"
       },
-      "H2": "NOT_RUN",
+      "H2": {
+        "status": "FAIL",
+        "runtime_head": "1ac454888f293f8e317bdbc28cc1796824cfaf32",
+        "actual_build_head": "59524984368ad74b17384ca805b105102a29caac",
+        "groups": [
+          {
+            "external": false,
+            "in_flight": false,
+            "warmup": 100,
+            "formal": 1000,
+            "sla_a_p99_ns": 26656,
+            "sla_b_p99_ns": 10168864,
+            "measurement_file_status": "PASS"
+          },
+          {
+            "external": false,
+            "in_flight": true,
+            "warmup": 100,
+            "formal": 1000,
+            "sla_a_p99_ns": 26080,
+            "sla_b_p99_ns": 6811968,
+            "measurement_file_status": "PASS"
+          },
+          {
+            "external": true,
+            "in_flight": false,
+            "warmup": 100,
+            "formal": 1000,
+            "sla_a_p99_ns": 22464,
+            "sla_b_p99_ns": 10145344,
+            "measurement_file_status": "PASS"
+          },
+          {
+            "external": true,
+            "in_flight": true,
+            "warmup": 100,
+            "formal": 1000,
+            "sla_a_p99_ns": 22080,
+            "sla_b_p99_ns": 6914688,
+            "measurement_file_status": "PASS"
+          }
+        ],
+        "overall_run_status": "FAIL",
+        "overall_report_status": "FAIL",
+        "final_disable": {
+          "status": "Cancelled",
+          "message": "Timeout expired",
+          "duration_ns": 2001182912,
+          "request_id": "00048f63-0000-7000-8000-0000000127c0"
+        },
+        "final_get_state_safety_state": 3,
+        "final_trace_valid": true,
+        "authorization_attempts": 1,
+        "launch_attempts": 1,
+        "tool_exit": 1,
+        "tool_naturally_reaped": true,
+        "driver_ssh_exit": 1,
+        "driver_ssh_reaped": true,
+        "fresh_readonly_cleanup": "PASS",
+        "six_services": "inactive/MainPID0",
+        "right_rx_markers_hex": [
+          "310a",
+          "310a"
+        ],
+        "right_estop_latch_hex": "310a",
+        "installed_unchanged": true,
+        "power_at_cleanup": "UNKNOWN",
+        "post_failure_user_power": "ON_USER_REPORTED_2026_09_23",
+        "power_action_time": "UNKNOWN",
+        "support_contact_zone_current": "NOT_RECONFIRMED",
+        "new_h2_authorized": false,
+        "evidence_acceptance": "ACCEPTED_FAILURE_EVIDENCE_NOT_H2_PASS",
+        "evidence": {
+          "path": "target/post_e_h2_rt/s48/right_h2_closeout/evidence_summary.json",
+          "bytes": 6354,
+          "sha256": "7de70f4bdb20dba278cf0a8ac852592271d8e398b347f353f40f8a7844debb61"
+        },
+        "physical_history": [
+          {
+            "path": "target/post_e_h2_rt/s48/right_h2_closeout/physical_power_receipt.json",
+            "bytes": 558,
+            "sha256": "fcd5a79fe28ebb22b01e960f3cc7cfafe6efc32f13029b87cd22c3691166ed6a"
+          },
+          {
+            "path": "target/post_e_h2_rt/s48/right_h2_closeout/physical_power_current_receipt.json",
+            "bytes": 760,
+            "sha256": "5d9b6e36291d90e80f8355818f0c9da09aa75463ecea6ef8b26d9e2e4ddf18b3"
+          }
+        ],
+        "power_now_as_of_handoff": "UNKNOWN_NOT_RECONFIRMED"
+      },
       "H3": {
         "status": "PASS",
         "run_commit": "3790fd9066bf902ab390bf64ff3168b8e4d50aa2",
@@ -4531,7 +4661,27 @@
         "operator_attendance_released": true,
         "physical_power": "UNKNOWN",
         "h2_authorized": false
-      }
+      },
+      "H2_prelaunch_attempts": [
+        {
+          "status": "READONLY_PREFLIGHT_FAIL",
+          "cause": "udevadm USB枚举瞬态exit1；新独立预检后PASS，原FAIL保留",
+          "evidence": {
+            "path": "target/post_e_h2_rt/s48/right_h2_precheck/remote_originals/precheck_20260923T065009Z_9a73c4d1/result.json",
+            "bytes": 396,
+            "sha256": "9d5c6d41b1e89cf40285b9e957a3eee27c6300eeb9b241b8f227c063a8296f3e"
+          }
+        },
+        {
+          "status": "PRELAUNCH_FAIL",
+          "cause": "alignment.json漏传；authorize/launch=0，内部cleanup FAIL原件不回填",
+          "evidence": {
+            "path": "target/post_e_h2_rt/s48/right_h2_precheck/precheck_20260923T065200Z_4d28ae16/right_h2_run/run.json",
+            "bytes": 2445,
+            "sha256": "a3ebd7b85808f190716a86bf200a48aff621498868ac97ce3e4e8da7d68524e2"
+          }
+        }
+      ]
     },
     "D15": "OPEN",
     "right_previous_status": {
@@ -4548,7 +4698,10 @@
     "左臂已断电，双臂继续支撑",
     "2026-09-22：全部完成，能持续在场，启动本次H2；仅绑定已退出的前置拒绝attempt，无收尾后新断电确认。",
     "2026-09-22：本次全部就绪；仅绑定b4ff720的一次真实左H2，已结束，收尾后无新断电确认。",
-    "2026-09-23：忽略继续、本次右臂全部就绪；撤销15%停止线。本次右H1/H3在前置拒绝后另经继续执行及新GO完成；本轮值守解除，不构成右H2授权。"
+    "2026-09-23：忽略继续、本次右臂全部就绪；撤销15%停止线。本次右H1/H3在前置拒绝后另经继续执行及新GO完成；本轮值守解除，不构成右H2授权。",
+    "2026-09-23右H2失败后用户答复“已物理断电”；root首次观察08:22:39 UTC，实际动作时刻未知，仅为当时事实。",
+    "2026-09-23随后用户答复“已经断电重新插上”，再澄清“已通电，电源和 USB 都重插”；root首次观察最终澄清08:27:47 UTC，实际动作时刻未知。此为当日最后报告；2026-09-25交接时物理电源现状未知，未重新确认支撑/接触区，不授权新H2。",
+    "2026-09-23本轮用户明确“push，继续”；1ac4548与ca14f0e已按授权推送，后续收口提交沿本轮授权push。"
   ],
   "operational_state": {
     "formal_four_binaries_unchanged": true,
@@ -4573,7 +4726,7 @@
       "validation": "安装配置与仓库逐字一致，直接引用Python JSON；每臂6个名称/ID1–6、offset/range/drive_mode字段兼容",
       "scope": "仅文件及源码只读核验，不称电机EEPROM本轮已读回；没有重标定/改值/打开串口"
     },
-    "physical_state_scope": "左H2历史与本次右H1/H3均已收尾，值守解除；六服务停止、正式安装件不变，电源UNKNOWN。",
+    "physical_state_scope": "右H2失败清场后用户先答复断电、后于2026-09-23报告通电且电源/USB均重插；实际操作时刻未知。2026-09-25交接时物理现状未知，支撑与接触区未重新确认，不授权新H2。",
     "trust_directory": "此前软件阶段同一inode/属主0755→0750的历史操作；本次未改权限或回滚状态。",
     "right_h13": {
       "status": "PASS",
@@ -4589,25 +4742,47 @@
         "bytes": 13140,
         "sha256": "f8a568198b7f781c861957a7aa4091c21752434ba3152610f0bb6464dce21699"
       }
+    },
+    "right_h2": {
+      "run": "FAIL",
+      "fresh_readonly_cleanup": "PASS",
+      "power_at_cleanup": "UNKNOWN",
+      "current_power": "UNKNOWN_NOT_RECONFIRMED_AT_HANDOFF",
+      "physical_action_time": "UNKNOWN",
+      "user_power_receipt": {
+        "path": "target/post_e_h2_rt/s48/right_h2_closeout/physical_power_current_receipt.json",
+        "bytes": 760,
+        "sha256": "5d9b6e36291d90e80f8355818f0c9da09aa75463ecea6ef8b26d9e2e4ddf18b3"
+      },
+      "support_contact_zone_current": "NOT_RECONFIRMED",
+      "next_h2_authorized": false,
+      "right_rx_markers_hex": [
+        "310a",
+        "310a"
+      ],
+      "right_estop_latch_hex": "310a",
+      "six_services": "inactive/MainPID0",
+      "installed_unchanged": true,
+      "last_user_reported_power": "ON_USER_REPORTED_2026_09_23"
     }
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2873,
-    "sha256": "388be7515713773adfc1c87d3fcaa6b867b57aa3fbc895db39eb685d13c0641f"
+    "lines": 2871,
+    "sha256": "42b7d92a660d470f242322e7dd3471f2afb650a8e9f0dc73fc65ecc35d6e788e"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
-    "sha256": "3a7aa0f7e0bbcccdc9ef9fb2e6c5f1412100ff3821dcc4c9fc294f69bc897f77",
-    "bytes": 208520620,
-    "members": 65919,
-    "logical_bytes": 5569545267,
-    "index_count": 65918,
+    "sha256": "3337206531273c274c050875ab0545e2a98e5c172e0f5f050591b19d100fafab",
+    "bytes": 234996374,
+    "members": 66143,
+    "logical_bytes": 5756015708,
+    "index_count": 66142,
     "per_file_sha256_verified": true,
-    "verification_method": "旧616b81ea包整体SHA、65607旧索引前缀及成员路径大小保全；新增311件逐SHA，571来源与源集合首末不变。"
+    "verification_method": "旧5b0c32c0包66038索引完整前缀保留；ca14 Orin软件原件新增104件逐SHA验证，含7 ELF及sidecar，排除重复worktree；右H2原FAIL不改写。"
   },
-  "retention": "旧65607索引及全部历史FAIL保全；新增本轮右H1/H3/两次前置失败和上一native post/commit共311件。本轮right_h13_run post/commit为包外后生件，下包承接。",
-  "updated_at": "2026-09-23T06:39:43.893092+00:00",
+  "retention": "旧65918索引及全部历史FAIL保全；右H2原失败115件、断电2件、通电澄清3件、ca14 Orin软件104件增量归包。软件归包回执与最终handoff评审/提交回执为包外后生件，留待后续包承接。",
+  "updated_at": "2026-09-25T17:05:15.162773+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -4627,10 +4802,10 @@
       "三native实际CargoJSON/manifest/SHA及最终无进程/服务停用/正式与持久态不变",
       "新H2驱动PLAN ACK：仅一次授权启动，新commit clean与新物理完成信号均必需"
     ],
-    "scope_note": "原review保留S45历史；最新左H2真实通过见software.s48.h2_retry/hardware.left.H2，延时软件验收见h2_delay；旧真实FAIL已完整移入hardware.left.H2_previous_runs。 本轮5952498软件与122原件独审见software.s48.h2_arm_native，原S45 review不改写。 右H13仅本地软件与目录权限窄修验收见software.s48.right_h13_preparation，未增加真实右硬件结果。 r3 pidfd兼容及新Orin软件验收见software.s48.right_h13_native，首轮原生失败保留，不增加右硬件结果。 本次右H1/H3实际结果见hardware.right及right_h13_run/review/raw_review.json；前述未测表述均为各旧阶段当时边界。"
+    "scope_note": "原review保留S45历史；最新左H2真实通过见software.s48.h2_retry/hardware.left.H2，延时软件验收见h2_delay；旧真实FAIL已完整移入hardware.left.H2_previous_runs。 本轮5952498软件与122原件独审见software.s48.h2_arm_native，原S45 review不改写。 右H13仅本地软件与目录权限窄修验收见software.s48.right_h13_preparation，未增加真实右硬件结果。 r3 pidfd兼容及新Orin软件验收见software.s48.right_h13_native，首轮原生失败保留，不增加右硬件结果。 本次右H1/H3实际结果见hardware.right及right_h13_run/review/raw_review.json；前述未测表述均为各旧阶段当时边界。 右H2本次真实结果见hardware.right.H2：四组测量文件PASS、最终Disable超时导致整体FAIL；右H2失败原件与ca14 Orin软件原件已分别核验；本次handoff最终独立复审通过，软件修复不等于硬件通过。"
   },
   "next_h2": {
-    "status": "LEFT_H2_ACCEPTED_RIGHT_REQUIRES_NEW_PREPARATION",
+    "status": "RIGHT_H2_FAILED_NEW_HARDWARE_GO_REQUIRED",
     "driver": "scripts/run_post_e_h2.py",
     "driver_sha256": "37ff52be7893dc992eca0fca9b8133b790c745433222bc33dff1beaa01c0a699",
     "plan_review": "ACK",
@@ -4640,22 +4815,29 @@
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_delay/native_20260922T110924Z_fa37abea/measurement",
     "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_retry/precheck_20260922T113258Z_b78558d3/left_h2_run",
     "prior_driver_state": "c5daa67本次左H2已PASS并真实退出，目录与授权已消费，不复用。",
-    "current_resume_note": "左右H1/H3及左H2历史PASS；右H2仍NOT_RUN，需独立当次现场事实与H2 GO，H13事实不可直接复用。",
+    "current_resume_note": "右H2原run/report整体FAIL；ca14f0e Orin软件验收PASS但未正式安装或硬件重测。用户已暂停，重插答复不是新H2授权；未来先补软件延迟回执覆盖，再取得新现场事实、独立GO与新输出目录。",
     "current_s48_driver": {
       "path": "scripts/run_post_e_h2.py",
       "sha256": "37ff52be7893dc992eca0fca9b8133b790c745433222bc33dff1beaa01c0a699",
       "report_path": "scripts/post_e_h2_report.py",
       "artifacts_path": "scripts/post_e_h2_artifacts.py",
       "source_head": "0047920b4f778914c22ec4f09dc5a252373326fa",
-      "status": "NATIVE_SOFTWARE_VALIDATED_HARDWARE_NOT_STARTED",
-      "new_physical_facts_received": false,
-      "hardware_started": false,
-      "driver_attempted": false,
-      "measurement_launched": false,
-      "entry": "默认PLAN_ONLY；右H1/H3已由独立H13脚本完成，本H2驱动未执行右H2；仍须对应新事实及授权。",
-      "physical_fact_scope": "H2尚未取得新的对应事实/GO；H13本轮已完成，左H2历史不复用。",
+      "status": "RIGHT_H2_EXECUTED_FAIL_CLEANED",
+      "new_physical_facts_received": true,
+      "hardware_started": true,
+      "driver_attempted": true,
+      "measurement_launched": true,
+      "entry": "默认PLAN_ONLY工具已在本次独立右H2 GO下执行一次，四组测量文件PASS、最终Disable超时使原run/report整体FAIL；本轮授权/输出已消费。",
+      "physical_fact_scope": "本次右H2现场事实与GO仅绑定已结束FAIL attempt；用户2026-09-23最后报告通电与USB重插，交接时物理现状未知，不构成下一次H2授权。",
       "source_scope": "driver源码提交0047920，已合入5952498并以5952498实际原生构建核验；不回填旧左H2build。",
-      "actual_build_head": "59524984368ad74b17384ca805b105102a29caac"
+      "actual_build_head": "59524984368ad74b17384ca805b105102a29caac",
+      "runtime_head": "1ac454888f293f8e317bdbc28cc1796824cfaf32",
+      "result": "FAIL",
+      "evidence": {
+        "path": "target/post_e_h2_rt/s48/right_h2_closeout/evidence_summary.json",
+        "bytes": 6354,
+        "sha256": "7de70f4bdb20dba278cf0a8ac852592271d8e398b347f353f40f8a7844debb61"
+      }
     },
     "historical_s45_driver": {
       "driver": "local/s45/left_h2_current_driver.py",
@@ -4674,7 +4856,7 @@
         "bytes": 5355,
         "sha256": "8378ac264e86e089433f12d81686a81ff59d46a9fd3af885295cf73beb06d51c"
       },
-      "scope": "5952498原生来源已用于本次右H1/H3；尚未用于右H2或正式安装，不代表下一步硬件授权。"
+      "scope": "5952498原生来源已用于右H1/H3以及本次右H2失败运行；未正式安装，不代表下一步硬件授权。"
     },
     "historical_left_h2_driver": {
       "path": "scripts/run_post_e_h2.py",
@@ -4711,11 +4893,11 @@
   },
   "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。",
   "stop_after_current": {
-    "user_request": "忽略继续；本次右臂全部就绪",
+    "user_request": "2026-09-23暂停；2026-09-25把当前进度写到handoff并传到git，用户将在其他地方开发。",
     "weekly_remaining_stop_percent": null,
-    "current_package": "S48_RIGHT_H1_H3_CLOSEOUT",
-    "next_package_authorized_to_start": true,
-    "state": "右H1/H3已验收，15%停止线已撤销；右H2未授权。",
+    "current_package": "S48_RIGHT_H2_FAIL_CA14_SOFTWARE_HANDOFF",
+    "next_package_authorized_to_start": false,
+    "state": "仅本次handoff/证据评审、提交、推送；后续开发与真机测试暂停。右H2仍FAIL，2026-09-23最后一次用户答复通电，本次交接时现状未知。",
     "supersedes": [
       "b 阶段完成后暂停",
       "周额度剩余20%停止点",
@@ -4723,17 +4905,21 @@
       "每一个大阶段完成就暂停让我检查",
       "周额度剩余25%停止点"
     ],
-    "policy": "按用户继续指令推进；每阶段验证、独审/root验收及commit，不push；新物理步骤仍须对应事实及授权。",
+    "policy": "本次文档和证据可提交推送；提交后停工，新的开发需用户明确继续，硬件另需本次现场事实与GO。",
     "manual_pause": {
       "at": "2026-09-20T10:54:55.011346+00:00",
       "weekly_remaining_percent": 89,
       "receipt": "target/post_e_h2_rt/s48/p7/pause_receipt.json"
     },
-    "pause_after_each_major_stage": false,
-    "major_stage_boundary": "按既有阶段验收提交；不自动重试硬件。",
-    "resume_requires_explicit_user_continue": false,
-    "current_stage_authorized_to_resume": true,
-    "policy_receipt": {
+    "pause_after_each_major_stage": true,
+    "major_stage_boundary": "当前交接完成后暂停，不自动进入右H2复测或D15。",
+    "resume_requires_explicit_user_continue": true,
+    "current_stage_authorized_to_resume": false,
+    "current_pause_receipt": {
+      "requested_on": "2026-09-23",
+      "scope": "用户说“暂停吧，没有额度了”；2026-09-25仅授权handoff提交推送。"
+    },
+    "historical_right_h13_policy_receipt": {
       "path": "target/post_e_h2_rt/s48/right_h13_run/root_operator_authorization.json",
       "bytes": 861,
       "sha256": "a3b4afd5c61dd14beef53e54f6730dd469e449f99ae18f9890f9558db63a8c63"
@@ -4758,7 +4944,7 @@
     "new_physical_facts_received": true,
     "execution_authorized": false,
     "default_plan_only": true,
-    "scope": "本次右H1/H3已完成且值守解除，现场事实/授权/输出已消费；不授权下一硬件步骤。",
+    "scope": "右H1/H3历史PASS；右H2本次真实运行整体FAIL，原授权/输出已消费；用户2026-09-23最后报告通电与USB重插，交接时物理现状未知，不授权下一硬件步骤。",
     "physical_authorization_consumed": true,
     "runtime_head": "3790fd9066bf902ab390bf64ff3168b8e4d50aa2",
     "result": {

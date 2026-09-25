@@ -61,11 +61,19 @@
            两工具真实reap/清场成功；首readonly冲突与setsid前置拒绝FAIL保留，证据已独审/root验收并归档。
            右rx_trust.lock由工具首次合法创建，marker仍缺失、latch不变；值守已解除、电源UNKNOWN。
            W1 fork/exec窗口机制已证实，旧偶发失败具体根因仍OPEN_UNCONFIRMED；原FAIL保留。
-           左H1/H2/H3、右H1/H3通过；右H2未测，正式部署未做，六服务停止，deployable=false、D15 OPEN。
+           左H1/H2/H3、右H1/H3通过；右H2四组测量PASS但最终Disable约2秒Cancelled，
+           整体run/report FAIL；首USB瞬态及漏传alignment零启动FAIL保留。工具/driver真实reap，
+           独立清场PASS，右marker/latch均Dirty；用户2026-09-23先确认断电、后报告通电且电源/USB重插，
+           本次交接时物理现状未知，支撑/接触区未重新确认，重插不构成新H2授权。软件修复ca14f0e已提交推送，
+           Orin源码ff-only对齐，571源聚合ae5a04ff、生产4/测量3原生构建、mock AC-12与
+           final9/Endpoint1/Lower2定向测试仅软件通过，证据已入H包；2.1秒延迟回执
+           端到端及右H2硬件重测未做，正式安装未做，
+           六服务停止，deployable=false、D15 OPEN。
            证据保留当前包，旧过程数据与重复文档按用户授权清除。
            Orin 调试 / RT 检查需要权限时直接 sudo，不放宽既定验收预算。
-           最新规则：用户已撤销周额度剩15%停线并要求继续，不再每阶段自动暂停；
-           每阶段独审/root验收及commit保持，不push；真实H2仍需新物理重置/支撑/在场事实。
+           最新规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
+           写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
+           不自动继续开发或真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。
            RX 重同步 / 串口 reopen 已移出本候选。
            后续硬序 ①通信故障硬化 → ②D15 退役决策 → ③robot-viz Rerun 桥
            → ④F7 baseline 判据小件；通信硬化不自动关闭 D15。

@@ -17,19 +17,17 @@
 > 原生软件已收口4441f59，实际build仍5952498/571项e05a；右H13本地准备已收口9afdc92。
 > 最新right_h13_native/implementation_r3本地27+独立5及Orin27/默认入口通过；首Orin22方法3FAIL/3ERROR保留，仅软件、已归档。
 > 9/23新右H1/H3各100+1000测量通过，runtime3790fd9/build5952498；已验收归档，首readonly/setsid前置FAIL保留。
-> 右H2 NOT_RUN，未正式安装、D15 OPEN；本轮值守解除、电源UNKNOWN，右marker仍缺失、rx_trust.lock由工具首次合法创建。
-> 用户已撤销周余15%停线并要求继续，每阶段独审/root验收后commit、不push；新物理动作仍须对应当次事实及授权。
+> 右H2随后在runtime 1ac4548/build5952498真实运行：四组各100+1000测量文件PASS，最终Disable 2秒Cancelled，整体run/report FAIL；右双marker及EStop latch现为`1\n`。首USB瞬态与漏传alignment前置FAIL均保留。软件修复ca14f0e已提交推送、Orin源码ff-only对齐；原生生产4/测量3、mock AC-12及final9/Endpoint1/Lower2定向测试仅软件PASS，未正式安装或硬件重测，D15 OPEN、deployable=false。清场时电源UNKNOWN，用户2026-09-23先确认断电、后报告通电且电源/USB均重插；本次交接时物理现状未知，支撑/接触区未重新确认，不构成新H2授权。前述H13“右marker缺失”仅为当时事实。
+> 2026-09-23用户因额度要求暂停；2026-09-25仅授权handoff收口与推送，之后在别处开发。此前“push，继续”下的1ac4548与ca14f0e已推送；本次交接独审/root验收后commit/push，不继续软件开发或真机动作。
 > root方案/整合，原生子agent开发测试与独立评审；历史CC分工及旧20%/35%/阶段自动暂停已被替代。
-> 完整结果及历史来源见HANDOFF；H.json已回填本轮right_h13_run新包身份，当前post/commit为包外后生件，不预填未来提交身份。
+> 完整结果及历史来源见HANDOFF；H.json已回填本轮右H2失败及后到物理答复，当前`right_h2_closeout/post_archive_review`为包外后生件，不预填未来提交身份。
 
 ## P.0 范围、所有权与当前事实
 
-**当前分工更新（用户2026-09-09明确指定）**：root负责方案与评审，`cc-claude`负责
-具体实现、全部测试与Cargo；旧开发agent已停止。A2执行委托见
-`target/post_e_h2_rt/s48/a2/cc_claude_task.md`。下文旧分工由本条覆盖；root维护
-文档与证据汇总，cc-claude冻结后交root评审，通过后由root提交，不push。
-用户最新要求：最终独立评审由root或Codex子agent承担；Claude交叉检查是前置检查，
-不能替代该最终评审。实现者不能自行批准自己的包。
+**历史分工（2026-09-09 A2 当时）**：root负责方案与评审，`cc-claude`负责
+具体实现、测试与Cargo；A2执行委托见`target/post_e_h2_rt/s48/a2/cc_claude_task.md`。
+当时约定root提交且不push；此段不覆盖页首2026-09-23原生子agent开发、独审和本轮push授权。
+独立评审仍由root或Codex子agent承担，实施者不能自行批准自己的包。
 
 唯一 Dev 负责生产代码、模块导出、Cargo 清单和模块单测；reviewer 只读独立评审，
 给出独立验收场景与 PASS / FAIL，不能以 Dev 自测替代验收；主 agent 负责独立 integration
@@ -37,7 +35,7 @@
 Archive 与 `.verify` 汇总。同一文件
 只由其 owner 修改。本文由 Dev 维护，评审反馈统一经 Dev 回修。
 
-本次是软件交付：本机 MockClock、伪串口、临时目录、loopback RPC、隔离子进程与测试
+**最初软件交付边界（历史）**：本机 MockClock、伪串口、临时目录、loopback RPC、隔离子进程与测试
 systemd 服务可以执行；**不连接真实串口、不执行机器人上扭/断扭、不部署/启停生产
 unit、不对真实 marker 授权**。Orin 的 AC-2(d)、AC-12、AC-13 留具名命令与证据格式，
 缺现场实测只能记 NEEDS_HUMAN，不写 PASS。D15 硬件 fail-safe 仍 OPEN。
@@ -45,8 +43,8 @@ unit、不对真实 marker 授权**。Orin 的 AC-2(d)、AC-12、AC-13 留具名
 软件验收，事实与限制见 P.6.4–P.6.6。本地与 Orin 均已恢复并核验无 hook 正式产物，
 六服务继续停止，`deployable=false`。用户已明确授权 Orin 调试尤其 RT 检查需要权限时
 直接使用 `sudo`；记录实际权限和调度环境，不提高资源阈值或放宽既定预算。
-用户现已确认可以现场配合 H1–H3；真实电机测量按每臂现场步骤完成信号推进，
-P.6.10 修复与复核通过后才运行 H2。常驻服务仍停止，正式部署流程未执行。
+当时用户确认可以现场配合 H1–H3；后续每次真实电机测量均另按该臂现场事实与GO推进。
+当前右H2已按页首记录为整体FAIL，重插答复不构成新授权；常驻服务仍停止，正式部署未执行。
 
 现有调用链已核：
 
