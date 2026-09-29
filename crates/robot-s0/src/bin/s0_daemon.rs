@@ -1982,12 +1982,11 @@ fn run_runtime(
     let config = args
         .loaded_config
         .as_ref()
-        .map(|cfg| robot_health::MonitorConfig {
+        .map_or_else(Default::default, |cfg| robot_health::MonitorConfig {
             interval: Duration::from_secs(cfg.parsed.monitor.interval_secs),
             interested_processes: cfg.parsed.monitor.interested_processes.clone(),
             top_n: cfg.parsed.monitor.top_n,
-        })
-        .unwrap_or_default();
+        });
     let monitor = robot_health::spawn_monitor(config);
     #[cfg(feature = "test-comm-fault-hook")]
     let control = monitor.test_panic_control();
@@ -2412,12 +2411,11 @@ fn build_adapter(
                 .extras
                 .get("calibration_paths")
                 .and_then(|v| v.as_array())
-                .map(|arr| {
+                .map_or_else(Vec::new, |arr| {
                     arr.iter()
                         .filter_map(|v| v.as_str().map(str::to_string))
                         .collect::<Vec<String>>()
-                })
-                .unwrap_or_default();
+                });
             (
                 hw.adapter.clone(),
                 hw.joints.clone(),

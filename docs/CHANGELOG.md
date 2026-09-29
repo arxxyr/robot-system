@@ -10,6 +10,41 @@
 
 ---
 
+## 2026-09-29 · Rerun 观测桥与发布隔离（方案已审，实施中）
+
+涉及冻结设计 §2.4、§8、§9。用户最新目标要求完成 Rerun 接入，因此先行推进独立观测软件；
+这不代表通信硬化的硬件门通过，也不关闭 D15 或执行正式退役。冻结设计正文不变。
+
+代码调查发现：原 Command/CmdVel/PolicyStream 只有一个消费者名额；原可靠事件通道的
+`safe_overflow=false` 配合 iceoryx2 默认 `RetryUntilDelivered`，会让暂停的新增观察者阻塞发布。
+“快 drain + 慢端队列”不足以隔离整个观察进程暂停，不能直接给这些原通道加可视化订阅者。
+
+内部方案决定：原通道和安全语义保留，通过独立有界观测镜像接出完整逻辑 pub/sub topic；
+主发布完成后只将已有 owned wire 交给有界队列，镜像创建/连接/发送由非实时 worker 执行。
+镜像为有损观测，专用 drop-old 与非阻塞策略，失败只影响观测统计，不改变主发布结果。
+独立实例及观测序号用于发现丢失，原始消息不重写；不把 EStop/Command 镜像当硬件执行回执。
+worker 使用有限 SDK 创建等待，正常及错误退出回收，不宣称覆盖任意内核或 SDK 永久卡死。
+
+`robot-viz` 独立进程使用精确版本 Rerun 0.38.1 SDK，支持文件与显式 Viewer 连接；
+不引入 Viewer/analytics 到机器人控制进程。新工具 profile 保留 unwind，既有 S0/S1 release
+行为不变。完成条件和当前证据状态见 `docs/10_verification.md` 的 V1–V8。
+审阅：独立 reviewer 提出背压与生命周期约束，root 接受镜像隔离；实现验收待完成。
+
+## 2026-09-29 · Feetech 中止诊断分类
+
+双臂腕部功能探针各出现 17 条 `site=5 / kind=0 / a=63`。原 `record_error`
+将 `Aborted(Emergency/Timeout/Revoked)` 与其他无通信分类的错误都压成 Unknown，
+而错误返回链仍保留原始中止原因，造成日志无法区分权限闸门拒绝和通信故障。
+
+按用户“代码中明确分类”的要求，先穷尽匹配为通信、中止、设备状态、参数、
+目标读回不一致、重复连接等明确类型，再统一编码。补充固定诊断 `kind=7`，
+`a=1/2/3` 表示三种中止；`kind=8` 区分七种非通信原因，避免参数问题也压成 Unknown。
+现有通信 `kind=0`、设备 `kind=5`、使能附加摘要 `kind=6`、16 字节事件、
+WARN 级别、错误计数、控制返回及安全语义不变。编码约定登记于
+`docs/logging.md`；不修改冻结设计或周期调度。验证及历史事件归因边界见本轮排查记录。
+本机定向门及隔离 Linux ARM 根 Clippy、Feetech 167 项和 SerialRT 42 项回归通过；
+另等价修复 CLI/S0 三处新版 nightly lint。前三轮原生失败保留，Orin 仍因 SSH 信任待核未测。
+
 ## 2026-09-29 · 最终 Disable 真实传输回归（软件）
 
 将H2工具的连接、请求元数据和最终GetState/Disable/Ack确认提取到`robot_tests::comm_fault_rpc`，窄feature `comm-fault-rpc`允许macOS/Linux共享同一实现，`comm-fault-e2e`继承该feature。原业务、传输和SLA预算不变；最终请求证据增加`timeout_ms`，既有报告字段及拒绝判据保留。

@@ -43,6 +43,10 @@ use crate::registers::TorqueMode;
 use crate::transport::SerialTransport;
 use crate::types::MotorCalibration;
 
+#[path = "diagnostic.rs"]
+mod diagnostic;
+use diagnostic::FeetechDiagnostic;
+
 // ============================================================================
 // dimos `_manipulator_base.py::write_enable(True)` 序列的常量
 // ============================================================================
@@ -273,7 +277,9 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     }
 
     /// site 标记入口；kind：0错误、1重试、2恢复、3不支持模式、4接收清理、
-    /// 5设备状态（a=motor、b=状态字节）、6扭矩使能写失败（a=motor、b=通信分类）。
+    /// 5设备状态（a=motor、b=状态字节）、6扭矩使能写失败（a=motor、b=通信分类）、
+    /// 7事务中止（a：1急停、2超时、3权限撤销）、8非通信错误（a 见诊断分类）；
+    /// 7/8 的 b/detail=0。诊断分类不改变原始错误或安全处理。
     fn record(&self, site: u8, kind: u8, a: u8, b: u8, detail: u32) {
         if let Some(diag) = self.diag.as_ref() {
             diag.record(DiagEvent {
@@ -288,14 +294,8 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     }
 
     fn record_error(&self, site: u8, error: &FeetechError) {
-        let (kind, a, b) = match error {
-            FeetechError::StatusError(status) => (5, self.bus.device_status_motor(), *status),
-            _ => (
-                0,
-                error.comm_kind().unwrap_or(CommErrorKind::Unknown).to_u8(),
-                0,
-            ),
-        };
+        let (kind, a, b) =
+            FeetechDiagnostic::classify(error, self.bus.device_status_motor()).encode();
         self.record(site, kind, a, b, 0);
     }
 

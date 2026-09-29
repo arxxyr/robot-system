@@ -75,6 +75,11 @@
            Orin最终fmt/根Clippy、lib4+工具182、回环6/9场景、66Python及绑定peer串行workspace通过。
            默认并行S1两例超时仍OPEN，旧FAIL不覆盖；已更新HANDOFF，阶段提交、不push。
            此次未核现场物理状态，右H2仍整体FAIL，D15 OPEN、deployable=false。
+           同日后续：ca14冻结件双臂腕部各一次往返及断扭收尾PASS，头部/底盘未测主动运动。
+           已加穷尽诊断分类，本机147+5、隔离Linux ARM根Clippy及167+42通过；Orin待SSH信任核实。
+           原日志不回填Revoked，读早退/过期tick问题独立OPEN；详情见HANDOFF及hardware_smoke报告。
+           最新持续目标：Rerun可视化接入完成或额度剩余15%；独立robot-viz与隔离观测镜像实施中。
+           方案已审，V1–V8尚未验收；原控制QoS保持，Linux ARM环境已准备，不关闭D15/右H2。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

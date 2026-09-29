@@ -16,6 +16,15 @@
 
 ## 当前状态
 
+最新持续目标：完成 Rerun 可视化接入或额度剩余 15%。独立 `robot-viz` 与隔离观测镜像
+实施中，当前完成条件以 [V1–V8](10_verification.md) 为准，不把方案评审当作实现验收。
+右 H2、D15 和正式退役保持原结论；本次只推进软件，不需要重做硬件动作。
+
+2026-09-29后续已做双臂各一次腕部小幅真机探针并完成断扭收尾；头部/底盘未测主动运动。
+已按用户要求加入穷尽类型分类，本机147＋5、隔离Linux ARM根Clippy及167＋42测试通过；
+历史34条Unknown不回填原因，Orin回归仍待SSH信任核实。精确当前状态见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)
+和[硬件检查](handoffs/hardware_smoke_2026-09-29_summary.md)；下段为同日先前软件阶段。
+
 2026-09-29用户重新要求按当前进度继续开发，并明确允许在Orin编译测试。最终Disable延迟2.1秒的真实tonic回环、工具构建及绑定测试peer的Orin串行workspace已通过，原S1默认并行两例失败仍待查；完整验收结果见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。下方暂停指令仅为9月25日历史状态；本轮在独立目录进行纯软件验证，右H2仍整体FAIL，D15 OPEN、deployable=false，新的硬件动作仍需当次现场事实与独立GO。
 
 2026-09-25交接：2026-09-23右H2四组各100预热+1000正式测量文件PASS，但最终非dry-run Disable约2秒`Cancelled: Timeout expired`，原run/report整体FAIL；authorize/launch各1，工具/driver/SSH exit1真实回收，独立只读清场PASS。右双rx marker与右EStop latch均`1\n`；清场时电源UNKNOWN，用户先确认断电、后报告已通电且电源/USB均重插，**本次交接时物理电源现状未知**；支撑/接触区未重新确认，不构成新H2授权。D15 OPEN、deployable=false。首USB瞬态FAIL、漏传alignment前置FAIL及其内部cleanup FAIL保留。软件修复`ca14f0e`已提交推送，Orin源码ff-only对齐；原生生产4/测量3、mock AC-12及定向单测仅软件通过，未做2.1秒延迟回执端到端、正式安装或硬件重测。用户要求暂停开发，仅本次handoff提交推送；完整原件见HANDOFF和H包。下段右H13状态仅为该历史阶段事实。

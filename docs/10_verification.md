@@ -9,6 +9,46 @@
 
 ---
 
+## 2026-09-29 · Rerun 全量观测桥（实施中，尚未验收）
+
+用户要求持续开发至 Rerun 可视化接入完成，或额度剩余 15%。独立桥与观测隔离方案已内部评审；
+本节列出完成条件，不能把下列计划当成已通过结果。右 H2、D15 和正式退役保持原状态。
+
+| 验收项 | 必须具备的证据 | 当前状态 |
+| --- | --- | --- |
+| V1 独立执行 | `robot-viz` 独立二进制，mimalloc、工具 unwind profile；依赖图无 S0/S1/adapter 控制实现，只读订阅，不下发命令 | 实施中 |
+| V2 观测隔离 | 原 pub/sub QoS、返回值及接收者计数不变；独立有界镜像 worker；慢、暂停、退出或失效观察者不阻塞主发布；正常及错误退出真实回收 | 实施中 |
+| V3 全逻辑 topic | JointLayout/JointState/JointCommand、Twist、ImageHeader/PointCloudHeader/TensorHeader、Heartbeat/EStopEvent/ActionEventEnvelope 均有真实数据转换；RR 请求响应不冒充可旁听 topic | 实施中 |
+| V4 数据可信度 | 配置派生 layout_id 与广播布局校验；未知布局、长度、非有限值、坏 frame/blob 拒绝；状态新鲜度用 body stamp；Unknown 不显示物理安全确认 | 实施中 |
+| V5 有界与丢失 | 订阅数、队列条数/字节数、单帧数据量有上限；原实例与观测序号可诊断 gap；事件 FIFO；本地及镜像丢失显式可见 | 实施中 |
+| V6 真实输出 | 相同 SDK 路径产生可读 `.rrd` 并接入同版 Viewer；验证关节曲线、事件、图像、点云及 Tensor 的实际内容和时间线，保留渲染证据 | 未执行 |
+| V7 故障与生命周期 | 晚启动/重启、零抢建正式服务、双观察者、无 Viewer/连接中断、SIGINT/退出及停止后资源检查 | 未执行 |
+| V8 质量门 | fmt、定向及根 workspace Clippy、转换单测、跨进程真实 SHM 集成、Linux ARM 原生检查、独立评审；失败原件保留 | 未执行 |
+
+Orin 严格 SSH 当前因本机信任条目缺失拒绝连接，准备本地 Linux ARM 虚拟机承接软件门。
+虚拟机已运行，诊断阶段的软件门通过，Rerun 门尚待运行。虚拟机检查不等同于 Orin、
+真实串口、相机或电机测试；本轮不需要硬件动作。
+
+## 2026-09-29 · 腕部硬件探针与诊断类型分类
+
+ca14冻结件左右腕部各一次小幅往返和收尾通过；头部/底盘只有状态检查及guard安全写，
+未测主动运动。原run_01不因后续诊断修复改写，详[本轮记录](handoffs/hardware_smoke_2026-09-29_summary.md)。
+
+针对每侧17条Unknown记录，新增私有`FeetechDiagnostic`及`ParameterReason`，穷尽原始错误后统一编码。
+本机fmt、feetech全目标/全feature Clippy r5、147项库测试及5项独立集成测试通过。
+集成测试使用真实ControlAuthority、FeetechAdapter和BusLease，验证Enable提交前及Disable后
+拒绝周期写且transport写次数为0、获得许可后正常发送；同时验证急停/超时/撤销编码与
+通信错误、设备状态及参数错误保持区分。无分配检查采用独立测试分配器和原子诊断收集器，
+只覆盖经公开Safety入口注入错误的固定诊断路径，不证明周期执行整链无分配。
+
+初轮Clippy风格错误、测试Mutex首次惰性分配触发64字节SIGABRT保留；修复测试设施后5项通过。
+独立源码及本机证据审查通过。**本轮Orin检查尚未开始**：known_hosts两主机条目缺失导致
+严格SSH拒绝，未向Orin传输源码。隔离Lima Ubuntu 24.04 ARM、nightly-2026-09-29 的第四轮
+实际fmt→根workspace Clippy通过；Feetech real-hw测试147+5+12+3项、SerialRT convergence/rt_guard
+42项通过，605项输入前后SHA一致。前三轮CLI lint、格式、S0 lint失败保留，三处写法等价修正。
+该诊断快照不含Rerun/观测镜像，不替代其验收。未正式安装或执行新硬件动作。
+历史34条逐条归因、写拒绝后的读公平性/过期tick、右H2、D15保持OPEN。
+
 ## 2026-09-29 · 最终 Disable 延迟回执软件回归
 
 `robot_tests::comm_fault_rpc` 是 Linux H2 工具与跨平台回环测试的同一调用入口：GetState 确认状态3后发送非dry-run Disable，逐项核对Ack身份、dry-run及非零完成戳。业务期限2000ms、gateway grace 500ms、普通传输2s与最终传输3s保持原值。
@@ -921,3 +961,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-23：登记右H1/H3各100+1000及真实回收/清场；保留两次前置FAIL，右H2未测，已验收归档。
 
 - 2026-09-29：登记最终Disable共用RPC入口、2.1秒真实回环正负控及Orin软件验收；保留历史失败和硬件边界。
+
+- 2026-09-29：登记腕部小幅探针与诊断类型分类；本机147+5、隔离Linux ARM根Clippy/167+42测试通过。Orin被SSH信任缺失阻断，历史归因和调度边界保留。
+
+- 2026-09-29：按持续目标登记 Rerun 全量观测桥 V1–V8 完成条件；方案已审、实施中，所有新验收结果待补。

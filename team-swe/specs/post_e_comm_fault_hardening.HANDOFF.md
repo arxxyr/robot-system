@@ -2,6 +2,31 @@
 
 ## 当前步骤
 
+**后续目标已恢复：持续开发至 Rerun 可视化接入完成或额度剩余 15%。** 新 `robot-viz`
+与有界观测镜像正在实施，验收清单见 `docs/10_verification.md` 的 V1–V8；当前仅方案
+评审通过，未宣称软件完成。原控制 QoS 不因可视化改成有损，Rerun 不进入控制关键路径。
+Orin 信任问题仍未解除，本地 Linux ARM 虚拟机已通过诊断阶段软件门；Rerun 门待跑，不替代 Orin/硬件验收。
+
+**2026-09-29硬件小幅检查后的诊断分类软件门通过。** 两侧各一次腕部往返功能探针通过，
+结束后17电机分总线读回断扭/零速、EStop双写恢复1，正式服务停止；头部/底盘只有状态
+检查和guard安全写，未测主动运动。实际硬件产物仍为ca14冻结件，本地c6及本次诊断修复
+未做硬件回归。原件和边界见[硬件检查及后续排查](../../docs/handoffs/hardware_smoke_2026-09-29_summary.md)。
+
+每侧17条site5 Unknown由“约16微秒内16条＋Disable附近1条”组成；日志分类缺陷已确认，
+Revoked权限窗口解释高度吻合，但缺原AbortReason/Enable提交时戳，不能逐条确证。
+按用户要求新增穷尽类型分类，明确通信、设备、中止、参数、目标读回及重复连接，统一编码，
+不改权限、故障返回和调度。本机fmt/定向全feature Clippy、147库＋5集成通过；原风格lint
+及测试收集器首次惰性分配失败保留。隔离Lima Ubuntu 24.04 ARM/nightly-2026-09-29第四轮
+fmt→根Clippy、Feetech147+5+12+3及SerialRT42通过，605项来源前后核验一致。
+CLI/S0三处lint等价修正；前三轮lint/格式FAIL保留。原生快照不含Rerun/镜像。
+Orin仍待核本机known_hosts缺失的两主机记录，严格SSH拒绝，未传输/安装或新硬件动作。
+读早退/过期tick、右H2、D15保持OPEN。
+可恢复的软件验证入口为[诊断分类摘要](../../.verify/hardware_smoke_2026-09-29/diagnosis_summary.json)
+和[本机证据包](../../.verify/hardware_smoke_2026-09-29/diagnosis_local_evidence.tar.gz)、
+[Linux ARM软件证据包](../../.verify/hardware_smoke_2026-09-29/diagnosis_linux_evidence.tar.gz)。
+
+### 同日先前软件阶段（已验收，以下为该阶段事实）
+
 **2026-09-29软件阶段已验收：补齐最终Disable的真实tonic延迟回执回归。** 用户重新要求按进度继续开发，并允许直接在Orin编译测试。共享`robot_tests::comm_fault_rpc`现在同时供Linux工具与回环测试调用；业务2000ms、gateway grace 500ms、最终传输3s、普通RPC 2s均保持。同步测量工具的三项feature闭包校验，并完成4处等价nightly Clippy修正；冻结设计、S0/RR安全语义和硬件SLA未改。
 
 源码基线`5213848`加本次变更；Orin独立目录`target/post_e_h2_rt/s49/rpc_transport_20260929_01`逐项核验603个来源（含辅助文件及符号链接），清单SHA `5fcbda255164cf91455d76183f2579abe737a2706c43ec36e634027220752539`。后续本地CLAUDE只更新状态文档，13项软件变更均与已验快照一致。未用本轮dev产物替代正式release测量件批准。

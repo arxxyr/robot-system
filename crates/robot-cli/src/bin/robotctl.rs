@@ -392,8 +392,7 @@ fn print_snapshot(
                 let js = view.body.get();
                 let positions: Vec<f64> = js
                     .position_rad()
-                    .map(|v| v.iter().collect())
-                    .unwrap_or_default();
+                    .map_or_else(Vec::new, |v| v.iter().collect());
                 // task-30 v9 pre-2：附 S0 mode + safety_state + fault_code 摘要
                 format!(
                     "state: stamp={}  layout={:#018x}  n={}  pos={:.3?}\n\

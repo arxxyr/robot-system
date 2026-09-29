@@ -78,6 +78,37 @@
 - **Display 值用 `%field`**：`info!(%robot_id, "...")`（避免 Debug 多一层引号）。
 - **不要拼 message 字符串**：错 ❌ `info!("motor {} failed", id)`；对 ✅ `info!(motor_id = id, "motor failed")`。
 
+### Feetech 固定诊断事件的中止原因
+
+串口执行线程通过 16 字节 `DiagEvent` 传递数字字段，由非实时 pub 线程输出
+`site / kind / a / b / seq / stamp`。这些字段不是跨进程命令 schema；安全决策
+不依赖诊断是否送达。`site=5` 表示 adapter 周期 `write_command`，不能当成
+Enable 自身的写操作；其他站点仍按产生该事件的函数解释。
+
+2026-09-29 起，Feetech `record_error` 先将 `FeetechError` 穷尽匹配为明确的
+诊断类型，再统一编码；新增错误变体必须显式选择类别，不以 Unknown 兜底：
+
+| `kind` | `a` | `b / seq` | 含义 |
+| --- | --- | --- | --- |
+| 0 | `CommErrorKind` 编码 | 0 / 0 | 通信错误，保持既有编码 |
+| 5 | 电机 ID | 设备状态码 / 0 | 既有 `StatusError` |
+| 7 | 1 | 0 / 0 | `Aborted(Emergency)`：急停中止 |
+| 7 | 2 | 0 / 0 | `Aborted(Timeout)`：请求超时中止 |
+| 7 | 3 | 0 / 0 | `Aborted(Revoked)`：执行权限拒绝或撤销 |
+| 8 | 1 | 0 / 0 | 无效寄存器、电机 ID、长度等参数 |
+| 8 | 2 | 0 / 0 | 编码数值越界 |
+| 8 | 3 | 0 / 0 | 标定参数无效 |
+| 8 | 4 | 0 / 0 | 标定文件读取或解析失败 |
+| 8 | 5 | 0 / 0 | 电机型号不匹配 |
+| 8 | 6 | 0 / 0 | 当前位追平后的目标读回不一致 |
+| 8 | 7 | 0 / 0 | 重复连接 |
+
+既有 `kind=6` 扭矩使能失败附加摘要不变，仍可能保留原 Unknown；其后完整错误
+记录使用上述分类。所有事件保留 WARN 和原有计数，返回的
+`RobotError::Aborted` 及安全策略也不变；权限拒绝不等同于串口发送失败。
+旧日志的 `kind=0 / a=63` 丢失了原始原因，不能仅凭新编码将历史事件回填成
+Revoked，也不能由一个中止事件推断当前物理扭矩或整个请求是否已有先前副作用。
+
 ## 级别约定
 
 - `ERROR`：业务级不可恢复错误（adapter handshake failed、config parse error、
