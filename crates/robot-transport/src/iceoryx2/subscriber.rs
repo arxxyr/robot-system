@@ -21,7 +21,7 @@ use robot_msg::markers::BodyMarker;
 use crate::error::TransportError;
 
 pub(crate) type IxPubSubSubscriber = IxSubscriber<IxService, [u8], ()>;
-type IxPubSubSample = IxSample<IxService, [u8], ()>;
+pub(crate) type IxPubSubSample = IxSample<IxService, [u8], ()>;
 
 /// 真后端订阅者。
 pub struct Iceoryx2Subscriber<T: BodyMarker> {
@@ -54,7 +54,10 @@ impl<T: BodyMarker> Iceoryx2Subscriber<T> {
     pub fn try_recv(&mut self) -> Result<Option<crate::SampleLease<T>>, TransportError> {
         match self.inner.receive() {
             Ok(Some(sample)) => Ok(Some(crate::SampleLease::from_iceoryx2(
-                Iceoryx2SampleLease { sample },
+                Iceoryx2SampleLease {
+                    sample,
+                    payload_offset: 0,
+                },
             ))),
             Ok(None) => Ok(None),
             Err(e) => Err(TransportError::Backend(format!("iceoryx2 receive: {e:?}"))),
@@ -79,27 +82,39 @@ impl<T: BodyMarker> Iceoryx2Subscriber<T> {
                 }
             }
         }
-        Ok(latest.map(|sample| Iceoryx2SampleLease { sample }))
+        Ok(latest.map(|sample| Iceoryx2SampleLease {
+            sample,
+            payload_offset: 0,
+        }))
     }
 }
 
 /// 接收端 sample 持有者；drop 时 iceoryx2 自动归还 shm slot。
 pub struct Iceoryx2SampleLease {
     sample: IxPubSubSample,
+    payload_offset: usize,
 }
 
 impl core::fmt::Debug for Iceoryx2SampleLease {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Iceoryx2SampleLease")
             .field("payload_len", &self.sample.payload().len())
+            .field("payload_offset", &self.payload_offset)
             .finish()
     }
 }
 
 impl Iceoryx2SampleLease {
+    /// 调用者已完整校验观测前缀长度，原正式 wire 从此 offset 开始。
+    pub(crate) const fn with_offset(sample: IxPubSubSample, payload_offset: usize) -> Self {
+        Self {
+            sample,
+            payload_offset,
+        }
+    }
     /// 从 sample 借 payload 字节供 parser 验证。生命周期绑 `&self`。
     #[inline]
     pub(crate) fn bytes(&self) -> &[u8] {
-        self.sample.payload()
+        &self.sample.payload()[self.payload_offset..]
     }
 }

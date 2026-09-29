@@ -9,25 +9,70 @@
 
 ---
 
-## 2026-09-29 · Rerun 全量观测桥（实施中，尚未验收）
+## 2026-09-29 · Rerun 观测桥（软件验收完成）
 
-用户要求持续开发至 Rerun 可视化接入完成，或额度剩余 15%。独立桥与观测隔离方案已内部评审；
-本节列出完成条件，不能把下列计划当成已通过结果。右 H2、D15 和正式退役保持原状态。
+独立 `robot-viz` 已实现，正常录制与真实 Viewer 文件/实时画面已验证，最终 Linux 根回归通过。
+完成状态以本节和[证据摘要](../.verify/robot_viz_2026-09-29/summary.json)为准。
+范围是十类 pub/sub 消息的软件观测；右 H2、D15、正式安装和退役保持原状态。
 
-| 验收项 | 必须具备的证据 | 当前状态 |
+| 验收项 | 实现与实测证据 | 当前状态 |
 | --- | --- | --- |
-| V1 独立执行 | `robot-viz` 独立二进制，mimalloc、工具 unwind profile；依赖图无 S0/S1/adapter 控制实现，只读订阅，不下发命令 | 实施中 |
-| V2 观测隔离 | 原 pub/sub QoS、返回值及接收者计数不变；独立有界镜像 worker；慢、暂停、退出或失效观察者不阻塞主发布；正常及错误退出真实回收 | 实施中 |
-| V3 全逻辑 topic | JointLayout/JointState/JointCommand、Twist、ImageHeader/PointCloudHeader/TensorHeader、Heartbeat/EStopEvent/ActionEventEnvelope 均有真实数据转换；RR 请求响应不冒充可旁听 topic | 实施中 |
-| V4 数据可信度 | 配置派生 layout_id 与广播布局校验；未知布局、长度、非有限值、坏 frame/blob 拒绝；状态新鲜度用 body stamp；Unknown 不显示物理安全确认 | 实施中 |
-| V5 有界与丢失 | 订阅数、队列条数/字节数、单帧数据量有上限；原实例与观测序号可诊断 gap；事件 FIFO；本地及镜像丢失显式可见 | 实施中 |
-| V6 真实输出 | 相同 SDK 路径产生可读 `.rrd` 并接入同版 Viewer；验证关节曲线、事件、图像、点云及 Tensor 的实际内容和时间线，保留渲染证据 | 未执行 |
-| V7 故障与生命周期 | 晚启动/重启、零抢建正式服务、双观察者、无 Viewer/连接中断、SIGINT/退出及停止后资源检查 | 未执行 |
-| V8 质量门 | fmt、定向及根 workspace Clippy、转换单测、跨进程真实 SHM 集成、Linux ARM 原生检查、独立评审；失败原件保留 | 未执行 |
+| V1 独立执行 | 独立二进制、mimalloc、`release-tools` unwind；不依赖 S0/S1/adapter，不访问串口或下发控制命令 | 源码与依赖审查、Linux ARM 优化构建通过 |
+| V2 观测隔离 | 主发布成功后非阻塞送入有界镜像；原 QoS、结果和消费者计数保持；真实 SHM 测试覆盖慢/暂停观察者与 worker 回收 | macOS/Linux 专项通过；不宣称抵抗任意内核/SDK 永久卡死 |
+| V3 pub/sub 覆盖 | JointLayout/State/Command、Twist、Image/PointCloud/Tensor Header、Heartbeat、EStopEvent、ActionEventEnvelope 十类均进入真实 RRD | 两平台六项显式集成通过；注册表中 RR 与嵌套 schema 不冒充可旁听 topic |
+| V4 数据可信度 | 配置/广播布局交叉校验，坏 frame/blob、非有限值、长度、时间及身份异常拒绝；原始 body stamp 新鲜度；Unknown 不显示安全确认 | 两平台 17 项单测及负例集成通过 |
+| V5 有界与丢失 | 64 topic、每 topic 8 实例；原实例与观测序号/丢弃计数；单发布者保留样本顺序，超载允许丢失；退休清理缓存 | 真 SHM 与容量退休测试通过；跨发布者公平性与完整事件审计不保证，见下文 |
+| V6 真实输出 | Rerun 0.38.1 官方文件校验、同版 Metal Viewer 实看关节曲线/事件/红绿图像/两点云/四值 Tensor，并移动整数时间游标 | 文件及实时 GUI 通过；[默认画面](../.verify/robot_viz_2026-09-29/default.png)、[实时画面](../.verify/robot_viz_2026-09-29/live.png) |
+| V7 故障与生命周期 | 晚启动/重新连接、双观察者、无效目录、黑洞 Viewer、真实连接中断、父进程 SIGINT 与资源回收 | 显式集成和独立实时检查通过；收到数据后 SIGINT 为 80 帧/10 类、worker 正常回收 |
+| V8 质量门 | macOS 定向 Clippy、Linux 根 fmt/Clippy、转换/SHM、依赖审计、CI 静态及独立审查；失败原件保留 | 根 fmt/Clippy、完整串行 workspace、609 项 S0+rt_guard、13 项退出与优化构建通过；独审通过 |
 
-Orin 严格 SSH 当前因本机信任条目缺失拒绝连接，准备本地 Linux ARM 虚拟机承接软件门。
-虚拟机已运行，诊断阶段的软件门通过，Rerun 门尚待运行。虚拟机检查不等同于 Orin、
-真实串口、相机或电机测试；本轮不需要硬件动作。
+最终正常文件记录 1000 帧、十类消息、11 个发布者实例，本次 gap/drop/reject 均为 0；
+实时 GUI SIGINT 记录 80 帧和 67 个序号缺口，真实连接中断以错误退出并回收 worker。
+这些是单次结果，不构成观测无丢失保证。底层接收从首连接扫描，持续积压可使其他发布者
+长期不可见；从未观察到的实例不计入 gap。集成夹具通过 A→B→A→B 分段发布并从官方
+RRD 读回每段新序号确认两实例，不声称修好了底层调度公平性。
+
+镜像队列、worker 和活跃 SHM 预约均有限额；512 MiB 是 worker 的估算预约上限，
+被外部持有的 loan 可晚于预约释放，不能视为进程或系统常驻内存的绝对上限。
+CPU Tensor 支持值统一无损转 f64、来源 dtype 留元数据；GPU 预览超界明确标记。
+固定状态和标题使用 ASCII，原中文事件仍可能受 Viewer 默认字体限制。
+图像/点云/Tensor 为真实软件夹具数据，未接生产相机或外参，不补造 FK/物理单位。
+
+首次截图因官方 Viewer 异步加载得到错误页、初版 Tensor 自动色阶不合适、Linux r1
+新 nightly trybuild 两行上下文差异、r2 多发布者夹具受首连接饥饿、r3 旧生命周期测试
+只允许两个 Node、r4 S1 对称节点断言及退出专项 11 通过/2 失败等原件全部保留。分别修正加载确认、逐帧色阶、golden 上下文、
+夹具真实读回握手及 RPC/S1 三类 Node 生命周期断言，未放宽生产数据校验。
+新生命周期 oracle 保留 `nofile=128`、256 轮、30 秒监督和最终 FD 不增长，
+逐级核对 Node `1→2→3→2→1→0`、目录删除、worker join 和资源归零。S1 通过真实工厂的正式/镜像双路
+事件和 `/proc/self/task` 的线程集合检查退出，不新增生产 API。
+
+退出专项修订只涉及测试：子进程显式 `NO_COLOR=1` 并清除 JSON 格式覆盖；
+两项快照耗尽测试仍限 15 秒等待真实关闭 ticket，随后按 `shutdown_deadline_ns + 1s`
+的绝对时刻监督父进程回收，不从观察时刻重置预算。原生产 10 秒收尾、READY 4 秒、
+1000/8000 次耗尽迭代、退出后 9.75–10.1 秒实测判据均不变。旧父测试把名义 4 秒耗尽
+等待与收尾合在 15 秒内，VM 实际约 6.2 秒才触发，使父截止先于程序原期限；保留的
+失败页没有完整退出结果，不因这个解释回填通过。真实耗尽时刻在 join 后才导出，
+失败页对应字段为 0 不能解释为没有发生故障。修订后的 13 项原生退出测试已全部通过；RPC 与 S1 两处 256 轮生命周期测试也分别通过。
+
+桥自身正常 `--save` 文件官方 verify 通过；两个独立接收服务器 `--save` 在 SIGINT 后
+缺 footer，官方 verify 实际失败，原件保留，不把传输成功当完整文件通过。
+文件阶段 Viewer logs 为空；后续实时接入初期 stderr 有一次 `Timeline robot_time not found`，
+随后时间线与画面正常，不宣称全程零警告。首 GUI SIGINT 检查因证据日志重名而在启动桥前
+失败，新目录重跑通过；这项前置失败也保留。
+
+最终 Linux r6 manifest SHA 为 `abb7029420438ed69d12b0aab541cea9558f027485af68c196d4342359f430d2`，
+620 项输入前后核验一致。r3 可视化/transport 专项、r4 RT/优化构建、r6 全仓/退出分别保留
+原回执；r3 后仅修三处 Linux 测试，生产输入未变，后续 CLAUDE 只写回当前状态。
+全仓使用明确绑定的测试 peer 与串行执行，ignored 不计通过，不关闭既有 S1 并行超时根因。
+测试构建的既有 unused-dependency 警告和依赖审计的重复版本警告保留；根 Clippy 零警告。
+证据[归档索引](../.verify/robot_viz_2026-09-29/archive.json)与[原件包](../.verify/robot_viz_2026-09-29/evidence.tar.gz)
+包含失败、各轮源码、实际 Viewer 画面与真实退出回执；[示例记录](../.verify/robot_viz_2026-09-29/example.rrd)
+可用同版 Viewer 打开。
+
+Orin 严格 SSH 因本机信任条目缺失拒绝连接，本轮改用隔离 Lima Ubuntu 24.04 ARM、
+`nightly-2026-09-29` 执行 Linux 软件门。未更新 Orin 安装件，未执行新硬件动作；
+CI 只完成配置/actionlint 检查，尚未 push 或运行远端工作流。使用入口见
+[观测工具命令](02_start_here.md#rerun-观测工具当前开发入口)。
 
 ## 2026-09-29 · 腕部硬件探针与诊断类型分类
 
@@ -965,3 +1010,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-29：登记腕部小幅探针与诊断类型分类；本机147+5、隔离Linux ARM根Clippy/167+42测试通过。Orin被SSH信任缺失阻断，历史归因和调度边界保留。
 
 - 2026-09-29：按持续目标登记 Rerun 全量观测桥 V1–V8 完成条件；方案已审、实施中，所有新验收结果待补。
+
+- 2026-09-29：更新 Rerun V1–V8 真实软件、Viewer 和故障证据；记录镜像丢失/公平性、GPU 与中断捕获限制；最终 Linux 软件门通过，按本节边界验收。

@@ -516,7 +516,9 @@ mod node_lifetime_tests {
     use robot_core::time::{DurationNs, SystemClock};
     use robot_msg::build_helpers::build_action_event_envelope;
     use robot_msg::msg::{ActionEventEnvelope, ActionEventKindFb};
-    use robot_transport::iceoryx2::subscriber as open_sub;
+    use robot_transport::iceoryx2::{
+        ObserverSubscriber, observer_subscriber, subscriber as open_sub,
+    };
     use robot_transport::{LatestSubscriber, Publisher};
     use std::process::{Command, Stdio};
     use std::time::Duration;
@@ -663,7 +665,7 @@ mod node_lifetime_tests {
         bytes
     }
 
-    fn owned_node_directories() -> std::collections::BTreeSet<std::path::PathBuf> {
+    fn owned_node_directories(expected: usize) -> std::collections::BTreeSet<std::path::PathBuf> {
         // 只观察本隔离子进程实际打开的 Node details；不遍历或删除全局资源。
         let paths: std::collections::BTreeSet<_> = std::fs::read_dir("/proc/self/fd")
             .unwrap()
@@ -677,8 +679,8 @@ mod node_lifetime_tests {
             .collect();
         assert_eq!(
             paths.len(),
-            2,
-            "本轮必须观察到真实 publisher / subscriber 的两个 Node"
+            expected,
+            "本轮真实工厂主节点、镜像 worker 和对照 subscriber 的 Node 数必须匹配生命周期阶段"
         );
         assert!(paths.iter().all(|path| path.is_dir()));
         paths
@@ -696,6 +698,28 @@ mod node_lifetime_tests {
 
     fn fd_count() -> usize {
         std::fs::read_dir("/proc/self/fd").unwrap().count()
+    }
+
+    fn owned_thread_ids() -> std::collections::BTreeSet<std::ffi::OsString> {
+        std::fs::read_dir("/proc/self/task")
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect()
+    }
+
+    fn wait_observer(
+        node: &iceoryx2::node::Node<IxService>,
+        topic: &str,
+        clock: SystemClock,
+    ) -> ObserverSubscriber<markers::ActionEventEnvelope> {
+        let deadline = clock.now() + DurationNs::from_secs(2);
+        loop {
+            match observer_subscriber(node, topic) {
+                Ok(subscriber) => return subscriber,
+                Err(error) => assert!(clock.now() < deadline, "真实工厂镜像启动超时：{error}"),
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     fn run_child() {
@@ -763,12 +787,15 @@ mod node_lifetime_tests {
         let clock = SystemClock::new();
         let action_id = uuid::Uuid::now_v7().to_string();
         let topic = format!("/{robot_id}/s1/action_events/{action_id}");
+        // 两条对照订阅复用同一个 Node，不增加无法区分归属的镜像读者节点。
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let subscriber_directories = owned_node_directories(1);
+        let initial_threads = owned_thread_ids();
         // 调真正 handle_invoke 工厂；返回 owner 必须保活端口并正确归还资源。
         let mut publisher = make_events_publisher_factory(topic.clone())();
-        let node = NodeBuilder::new().create::<IxService>().unwrap();
         let mut subscriber =
             open_sub::<markers::ActionEventEnvelope>(&node, &topic, TopicClass::TaskEvent).unwrap();
-        let node_directories = owned_node_directories();
+        let mut observer = wait_observer(&node, &topic, clock);
         let stamp = clock.now().0;
         let body = build_action_event_envelope(
             &action_id,
@@ -783,6 +810,8 @@ mod node_lifetime_tests {
         writer.set_body_bytes(&body);
         writer.publish().unwrap();
         let deadline = clock.now() + DurationNs::from_secs(2);
+        let mut primary_received = false;
+        let mut mirror_received = false;
         loop {
             publisher.update_connections().unwrap();
             if let Some(sample) = subscriber.latest().unwrap() {
@@ -791,17 +820,48 @@ mod node_lifetime_tests {
                 assert_eq!(envelope.action_id(), Some(action_id.as_str()));
                 assert_eq!(envelope.at_ns(), stamp);
                 assert_eq!(view.header.get().seq(), index);
+                primary_received = true;
+            }
+            if let Some(sample) = observer.try_recv().unwrap() {
+                let view = sample.view().unwrap();
+                let envelope: ActionEventEnvelope<'_> = view.body.get();
+                assert_eq!(envelope.action_id(), Some(action_id.as_str()));
+                assert_eq!(envelope.at_ns(), stamp);
+                assert_eq!(view.header.get().seq(), index);
+                assert!(sample.metadata().observer_seq > 0);
+                mirror_received = true;
+            }
+            if primary_received && mirror_received {
                 break;
             }
             assert!(
                 clock.now() < deadline,
-                "工厂返回的 owner 必须保持真实消息可达"
+                "工厂返回的 owner 必须保持正式消息及真实镜像可达"
             );
             std::thread::sleep(Duration::from_millis(1));
         }
+        // 双路真实回执证明镜像已完成初始化，再锁定其 Node 和线程的生命周期。
+        let node_directories = owned_node_directories(3);
+        assert!(node_directories.is_superset(&subscriber_directories));
+        let factory_directories = node_directories
+            .difference(&subscriber_directories)
+            .cloned()
+            .collect();
+        let active_threads = owned_thread_ids();
+        assert!(active_threads.is_superset(&initial_threads));
+        assert_eq!(active_threads.len(), initial_threads.len() + 1);
+        drop(observer);
         drop(subscriber);
-        drop(node);
         drop(publisher);
+        assert_eq!(
+            owned_thread_ids(),
+            initial_threads,
+            "工厂镜像线程必须真实回收"
+        );
+        assert_eq!(owned_node_directories(1), subscriber_directories);
+        assert_node_directories_released(&factory_directories);
+        drop(node);
+        assert!(owned_node_directories(0).is_empty());
         assert_node_directories_released(&node_directories);
     }
 }

@@ -1,10 +1,11 @@
 # 文档导航
 
-当前（2026-09-08）：v0.5 候选 E 受监督功能 demo 已完成；post-E 通信故障硬化
-Spec / 函数级 Plan 已批准，正按包实施与独立评审。继续工作先读
-[`post-E Spec`](../team-swe/specs/post_e_comm_fault_hardening.md) 与
-[`当前交接`](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
-真实执行证据见 [`9 月 1 日真机总结`](handoffs/v0.5_demo_run_2026-09-01_summary.md)，D15 保持 OPEN。
+当前（2026-09-29）：v0.5 受监督功能 demo 已完成；通信故障诊断分类已软件验收，
+独立 Rerun 观测桥已完成软件验收，文件/实时 Viewer 与最终 Linux 全仓回归均通过。
+使用方式见 [Rerun 入口](02_start_here.md#rerun-观测工具当前开发入口)，实际完成状态与边界见
+[V1–V8 验收](10_verification.md)和[当前交接](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+真机仍保留右 H2 整体 FAIL、D15 OPEN、`deployable=false`；本轮可视化未部署 Orin。
+通信故障后续依据为 [post-E Spec](../team-swe/specs/post_e_comm_fault_hardening.md)。
 
 | 文件 | 用途 |
 |------|------|

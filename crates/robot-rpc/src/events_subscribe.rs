@@ -744,7 +744,9 @@ mod tests {
             bytes
         }
 
-        fn owned_node_directories() -> std::collections::BTreeSet<std::path::PathBuf> {
+        fn owned_node_directories(
+            expected: usize,
+        ) -> std::collections::BTreeSet<std::path::PathBuf> {
             // 只观察本隔离子进程实际打开的 Node details；不遍历或删除全局资源。
             let paths: std::collections::BTreeSet<_> = std::fs::read_dir("/proc/self/fd")
                 .unwrap()
@@ -758,8 +760,8 @@ mod tests {
                 .collect();
             assert_eq!(
                 paths.len(),
-                2,
-                "本轮必须观察到真实 publisher / subscriber 的两个 Node"
+                expected,
+                "本轮真实主节点、镜像 worker 和 subscriber 的 Node 数必须匹配生命周期阶段"
             );
             assert!(paths.iter().all(|path| path.is_dir()));
             paths
@@ -848,14 +850,38 @@ mod tests {
             let topic = format!("/{robot_id}/s1/action_events/{action_id}");
             // 对照端正常持有 Node；被测 subscriber 只经真实 gateway 入口创建。
             let node = NodeBuilder::new().create::<IxService>().unwrap();
+            let primary_directories = owned_node_directories(1);
             let mut publisher =
                 open_pub::<markers::ActionEventEnvelope>(&node, &topic, TopicClass::TaskEvent)
                     .unwrap();
+            let observer = publisher.observer_monitor();
+            let ready_deadline = clock.now() + DurationNs::from_secs(2);
+            loop {
+                let stats = observer.snapshot();
+                assert_eq!(stats.initialization_failures, 0, "镜像必须真实启动");
+                assert!(!stats.finished, "镜像不能在本轮开始前退场");
+                if stats.ready {
+                    break;
+                }
+                assert!(clock.now() < ready_deadline, "镜像启动超时");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let publisher_directories = owned_node_directories(2);
+            assert!(publisher_directories.is_superset(&primary_directories));
+            let mirror_directories = publisher_directories
+                .difference(&primary_directories)
+                .cloned()
+                .collect();
             let mut cfg = cfg_for(robot_id, &action_id);
             cfg.poll_interval = Duration::from_millis(1);
             let request_id = cfg.request_id.clone();
             let (handle, mut rx) = spawn_events_subscribe_thread(cfg).unwrap();
-            let node_directories = owned_node_directories();
+            let node_directories = owned_node_directories(3);
+            assert!(node_directories.is_superset(&publisher_directories));
+            let subscriber_directories = node_directories
+                .difference(&publisher_directories)
+                .cloned()
+                .collect();
             let stamp = clock.now().0;
             publish_envelope(
                 &mut publisher,
@@ -885,8 +911,23 @@ mod tests {
             handle.request_stop();
             handle.join().unwrap();
             drop(rx);
+            assert_eq!(owned_node_directories(2), publisher_directories);
+            assert_node_directories_released(&subscriber_directories);
             drop(publisher);
+            let stats = observer.snapshot();
+            assert!(
+                stats.finished && stats.reaped,
+                "镜像线程必须真实完成并 join"
+            );
+            assert_eq!(stats.initialization_failures, 0);
+            assert_eq!(stats.join_failures, 0);
+            assert_eq!(stats.pending_frames, 0);
+            assert_eq!(stats.pending_bytes, 0);
+            assert_eq!(stats.estimated_shm_bytes, 0);
+            assert_eq!(owned_node_directories(1), primary_directories);
+            assert_node_directories_released(&mirror_directories);
             drop(node);
+            assert!(owned_node_directories(0).is_empty());
             assert_node_directories_released(&node_directories);
         }
     }

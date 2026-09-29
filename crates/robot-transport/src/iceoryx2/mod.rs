@@ -26,6 +26,7 @@
 //!   走 `s0_ipc_thread` 代理）。
 
 pub mod attributes;
+pub mod observer;
 pub mod publisher;
 pub mod qos;
 pub mod request_response;
@@ -34,6 +35,11 @@ pub mod subscriber;
 
 pub use attributes::{
     ATTR_SCHEMA_ID, ATTR_SCHEMA_VERSION, schema_attribute_spec, schema_attribute_verifier,
+};
+pub use observer::{
+    ObserverDiscovery, ObserverMetadata, ObserverMonitor, ObserverSample, ObserverStats,
+    ObserverSubscriber, ObserverTopic, list_observers, list_observers_filtered,
+    observer_subscriber, observer_topic,
 };
 pub use publisher::{Iceoryx2Publisher, Iceoryx2SampleWriter};
 pub use qos::{QosProfile, TopicClass, profile_of};
@@ -151,9 +157,18 @@ pub fn channel<T: BodyMarker>(
         .create()
         .map_err(|e| TransportError::Backend(format!("iceoryx2 subscriber create: {e:?}")))?;
 
+    let observer = observer::ObserverDispatcher::start(
+        node,
+        topic,
+        T::SCHEMA_ID,
+        profile_of(class).max_publishers,
+        max_bytes,
+        publisher.id().value().to_le_bytes(),
+    );
     Ok((
         Iceoryx2Publisher {
             inner: publisher,
+            observer,
             loan_tok: 0,
             _ty: PhantomData,
         },
@@ -209,8 +224,17 @@ pub fn publisher<T: BodyMarker>(
         .initial_max_slice_len(max_bytes)
         .create()
         .map_err(|e| TransportError::Backend(format!("iceoryx2 publisher create: {e:?}")))?;
+    let observer = observer::ObserverDispatcher::start(
+        node,
+        topic,
+        T::SCHEMA_ID,
+        profile_of(class).max_publishers,
+        max_bytes,
+        pub_.id().value().to_le_bytes(),
+    );
     Ok(Iceoryx2Publisher {
         inner: pub_,
+        observer,
         loan_tok: 0,
         _ty: PhantomData,
     })

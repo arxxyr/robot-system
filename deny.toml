@@ -23,15 +23,16 @@ all-features = true
 # ---------------------------------------------------------------------------
 [advisories]
 version = 2
-# `yanked = "deny"` 意味任何 Cargo.lock 里的 yanked 版本立即失败，
-# 迫使我们在 Cargo.lock 里不留历史 yank；切实际由 `cargo update -p <crate>`
-# 解决。
+# 除显式登记的精确版本例外外，Cargo.lock 中的 yanked 版本立即失败。
+# 例外不替代后续独立依赖升级与使用域回归。
 yanked = "deny"
 
-# ignore 按公告 ID 列：
-# ignore = ["RUSTSEC-YYYY-NNNN"]
+# ignore 仅按公告 ID 或精确撤回包版本登记，不关闭整类检查。
 # 加条目前必须先在 docs/CHANGELOG.md 登记 "偏离" 条，写明豁免理由 + 复审触发。
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "Rerun 0.38.1 间接使用 paste 1.0.15 编译期宏；上游停止维护且无修复版本；SDK/paste、依赖路径或公告变化及下次发布审计时复审，替代落地后移除" },
+    { crate = "serialport@4.10.0", reason = "保留已验 Linux aarch64 控制基线，本轮旧锁及包 checksum 未变；版本、平台或公告变化及下次发布审计时复审，独立串口升级回归后移除" },
+]
 
 # ---------------------------------------------------------------------------
 # 许可证白名单
@@ -59,11 +60,15 @@ confidence-threshold = 0.93
 # 内部 workspace crate（robot-*）用 "Proprietary"（非 SPDX），且 publish=false
 # 不上 crates.io；`private.ignore` 让 cargo-deny 跳过这些 crate 的许可证校验。
 private = { ignore = true }
-# 补登记既有依赖的许可证，仅覆盖复核过的精确版本。
-# 使用域、许可证文件与复审触发见 CHANGELOG 2026-09-08 依赖升级条。
+# 仅覆盖复核过的精确包版本；使用域及复审触发见 CHANGELOG
+# 2026-09-08 依赖升级条与 2026-09-29 Rerun 依赖审计偏离条。
 exceptions = [
     { name = "assert_no_alloc", version = "=1.1.2", allow = ["BSD-1-Clause"] },
     { name = "serialport", version = "=4.10.0", allow = ["MPL-2.0"] },
+    { name = "indent", version = "=0.1.1", allow = ["MPL-2.0"] },
+    { name = "option-ext", version = "=0.2.0", allow = ["MPL-2.0"] },
+    { name = "webpki-roots", version = "=1.0.9", allow = ["CDLA-Permissive-2.0"] },
+    { name = "xxhash-rust", version = "=0.8.19", allow = ["BSL-1.0"] },
 ]
 
 # ---------------------------------------------------------------------------

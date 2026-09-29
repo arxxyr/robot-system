@@ -1,5 +1,10 @@
 # post-E 运行时架构与进度
 
+> 此图是 C5 软件验收时的历史快照，保留原始图源、HTML、哈希与截图。
+> 后续右 H2、诊断分类和 Rerun 开发的当前状态，以
+> [验收清单](../10_verification.md)及[当前交接](../../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)为准。
+> 图内“可视化桥尚未落地”等表述只适用于该历史阶段。
+
 [打开 Archify 交互架构图](post_e_runtime.html) · [编辑图源](post_e_runtime.architecture.json)
 
 依据冻结设计 v0.1.2、当前源码与 post-E PLAN。C1–C4 已评审提交；C5 当前源码

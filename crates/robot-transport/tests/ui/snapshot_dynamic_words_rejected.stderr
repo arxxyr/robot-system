@@ -12,5 +12,7 @@ help: the trait `SnapshotWords` is implemented for `[u64; N]`
 note: required by a bound in `robot_transport::SnapshotValue::Words`
   --> src/snapshot.rs
    |
+   | pub trait SnapshotValue: Copy + Send + Sync + 'static {
+   |     /// 固定长度的字数组。
    |     type Words: SnapshotWords;
    |                 ^^^^^^^^^^^^^ required by this bound in `SnapshotValue::Words`

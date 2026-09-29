@@ -16,8 +16,8 @@
 
 ## 当前状态
 
-最新持续目标：完成 Rerun 可视化接入或额度剩余 15%。独立 `robot-viz` 与隔离观测镜像
-实施中，当前完成条件以 [V1–V8](10_verification.md) 为准，不把方案评审当作实现验收。
+独立 `robot-viz` 与隔离观测镜像已完成软件验收，文件/实时 Viewer 与最终 Linux 全仓回归均通过。
+当前完成状态以 [V1–V8](10_verification.md) 和[证据摘要](../.verify/robot_viz_2026-09-29/summary.json)为准。
 右 H2、D15 和正式退役保持原结论；本次只推进软件，不需要重做硬件动作。
 
 2026-09-29后续已做双臂各一次腕部小幅真机探针并完成断扭收尾；头部/底盘未测主动运动。
@@ -146,6 +146,65 @@ Orin调试/RT必要时直接sudo；标定沿已核Python JSON。新版5952498不
 ---
 
 ## 工作方式
+
+### Rerun 观测工具（当前开发入口）
+
+完成状态看页首及 [V1–V8](10_verification.md)，以下命令不启动任何控制服务。
+桥只打开发布者创建的 `/_robot_observe/v1/...` 镜像；既有旧二进制没有这些镜像，
+需后续按独立部署流程更新发布者才会出现真实数据。本轮没有更新 Orin 正式安装件。
+
+```bash
+# 使用现有 nightly；观测工具的专用 profile 保留 unwind。
+cargo build --locked --profile release-tools -p robot-viz
+
+# 与本机发布者处于同一共享内存环境，录制有限会话。
+./target/release-tools/robot-viz \
+  --config configs/xlerobot_left_arm.toml \
+  --config configs/xlerobot_right_arm.toml \
+  --save /tmp/robot-observation.rrd --duration-ms 10000 --max-frames 1000 \
+  --report /tmp/robot-observation.json
+
+# 同版外部 Viewer 打开记录；无需向机器人进程引入完整 Viewer。
+uvx --from rerun-sdk==0.38.1 rerun /tmp/robot-observation.rrd
+
+# 实时查看：先在一个终端启动仅监听本机的 Viewer。
+uvx --from rerun-sdk==0.38.1 rerun --bind 127.0.0.1 --port 9876
+
+# 再在另一个终端连接；默认持续到 Ctrl-C。
+./target/release-tools/robot-viz \
+  --config configs/xlerobot_left_arm.toml \
+  --config configs/xlerobot_right_arm.toml \
+  --connect rerun+http://127.0.0.1:9876/proxy \
+  --report /tmp/robot-live.json
+```
+
+文件模式默认 10 秒或 1000 帧，单文件最多 10000 帧；`--duration-ms` 与 `--max-frames`
+可显式缩小会话。实时模式没有默认总时长限制，断连或 SDK 无进展会报错收尾。
+使用 `robot_time` 查看源采样时间；`published_time`、`received_time` 和整数 `source_seq`
+保留发布与接收关系。图像、点云和张量支持仅表示转换能力，当前并不代表生产相机已接入。
+`velocity_wire`、`effort_wire` 和 depth16 保留源值，不补造速度、力矩或深度的物理单位。
+镜像允许丢失，缺包/拒绝/陈旧须结合报告判断，画面不能作为控制执行或物理安全确认。
+默认曲线按单位分组；媒体按来源独立显示。当前官方 Viewer 默认字体缺少中文字形，
+视图标题与固定状态采用 ASCII，中文原始事件仍原样保存。`OBSERVATION_ONLY` 表示只读观测，
+`NO_DATA` 表示没有有效数据，`STALE` 表示源时间陈旧；`UNKNOWN_NOT_SAFE` 不提供物理安全确认。
+张量与点云强度按当前帧的有限数值范围呈色，不是跨帧固定量程。支持的 CPU 张量数值
+统一无损转为 f64 记录，原 dtype 留在来源描述中；呈色不会改写这些数值。
+超出 GPU 预览能力时显示 `GPU_PREVIEW_LIMIT`，不能把可记录的 f64 数据等同于 GPU 保真显示。
+同一 topic 的多个发布者持续积压时，底层接收从首连接扫描，其他实例可能长期不可见。
+序号缺口只覆盖已观察到的实例，不能发现从未收到的发布者，也不能作为完整事件审计。
+
+官方 Viewer 加载文件是异步过程。自动截图前应确认 recording 与视图已经打开；
+仅 `rrd verify` 成功或截图命令退出为 0，都不能证明画面正确。
+Viewer 的 `--save` 接收器被 SIGINT 中断后可能缺少文件 footer；这种临时捕获与桥自身
+正常关闭的 `--save` 文件分别验收，不能把传输成功当作完整文件验收。
+
+显式跨进程软件回归入口（无硬件）：
+
+```bash
+ROBOT_VIZ_TEST_ARTIFACTS="$PWD/target/robot-viz-evidence" \
+  cargo test --locked -p robot-viz --test observer_roundtrip \
+  -- --ignored --test-threads=1 --nocapture
+```
 
 - **先核事实再推进**。围绕当前任务报告进度、风险与验证证据。
 - **先读后写**。修改任何文件前先 `Read` 一次。

@@ -95,6 +95,8 @@ impl Process {
         command
             .env_remove("NOTIFY_SOCKET")
             .env_remove("INVOCATION_ID")
+            .env_remove("ROBOT_LOG_FORMAT")
+            .env("NO_COLOR", "1")
             .env("ROBOT_TEST_OBSERVATION_PATH", observation)
             .env("RUST_LOG", "info")
             .arg("--config")
@@ -139,6 +141,10 @@ impl Process {
 
     fn wait_exit(&mut self, timeout_ms: u64) -> i32 {
         let deadline = SystemClock.now().0 + timeout_ms * 1_000_000;
+        self.wait_exit_until(deadline)
+    }
+
+    fn wait_exit_until(&mut self, deadline: u64) -> i32 {
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {
                 return status
@@ -148,6 +154,36 @@ impl Process {
             assert!(
                 SystemClock.now().0 < deadline,
                 "等待退出超时\n{}",
+                self.log()
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    fn wait_snapshot_exhaustion_exit(&mut self) -> i32 {
+        // READY 后的耗尽等待仍限原 15 秒；运行监督就绪时间不是关闭武装时间。
+        let exhaustion_deadline = SystemClock.now().0 + 15_000_000_000;
+        loop {
+            // 先检查退出再读页，避免退出前最后一次 ticket 发布与读页交错而误拒。
+            let status = self.child.try_wait().unwrap();
+            let observed = self.page.snapshot();
+            assert!(
+                SystemClock.now().0 < exhaustion_deadline,
+                "等待快照耗尽关闭 ticket 超时：{observed:?}\n{}",
+                self.log()
+            );
+            if observed.shutdown_deadline_ns != 0 {
+                // 该字段来自真实 arm 返回的原 ticket；只加既有回收余量，
+                // 不能从父进程观察到它的时刻重新开始 10 秒预算。
+                let deadline = observed
+                    .shutdown_deadline_ns
+                    .checked_add(SHUTDOWN_MARGIN.0)
+                    .expect("真实关闭期限加回收余量不得溢出");
+                return self.wait_exit_until(deadline);
+            }
+            assert!(
+                status.is_none(),
+                "子进程退出但未导出真实关闭 ticket：{status:?} {observed:?}\n{}",
                 self.log()
             );
             std::thread::sleep(Duration::from_millis(5));
@@ -378,7 +414,7 @@ fn executor_snapshot_version_exhaustion_after_ready_terminates_standalone_daemon
     );
     let ready = process.wait_ready(4000);
     assert!(ready.ready_reached);
-    assert_eq!(process.wait_exit(15_000), 1);
+    assert_eq!(process.wait_snapshot_exhaustion_exit(), 1);
     let observed = process.page.snapshot();
     assert!(observed.ready_reached);
     assert_ne!(observed.disabled_ns, 0);
@@ -439,7 +475,7 @@ fn ipc_state_snapshot_version_exhaustion_after_ready_terminates_standalone_daemo
     );
     let ready = process.wait_ready(4000);
     assert!(ready.ready_reached);
-    assert_eq!(process.wait_exit(15_000), 1);
+    assert_eq!(process.wait_snapshot_exhaustion_exit(), 1);
     let reaped_at = SystemClock.now().0;
     let observed = process.page.snapshot();
     assert!(observed.ready_reached);

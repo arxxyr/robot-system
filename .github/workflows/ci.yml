@@ -5,6 +5,8 @@
 # 构建假设 + docs/01_implementation_steps.md Step 5 macOS 烟测）。
 # Step 6+ 的 Linux-only 工作（SCHED_FIFO / mlockall / sd_notify）用后续独立
 # workflow 或 matrix 过滤，本文件不先配。
+# robot-viz 的跨平台纯软件门独立运行；旧 test job 的根 Clippy 平台限制
+# 仍保留，不让该既有问题阻止本轮观测桥检查。
 #
 # sccache：.cargo/config.toml 默认 rustc-wrapper = "sccache"，CI 必须装，
 # 否则第一次 cargo 命令直接失败。用官方 action 注入。
@@ -83,6 +85,81 @@ jobs:
         run: cargo build --release --workspace
 
       - name: sccache stats
+        run: sccache --show-stats
+
+  robot-viz:
+    name: robot-viz software (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    # 无 needs: test；旧根 job 的 Linux API 限制仍是独立未解决问题。
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        # 显式 bash 保持 pipefail，tee 不掩盖 Cargo 的失败退出码。
+        shell: bash
+    env:
+      ROBOT_VIZ_TEST_ARTIFACTS: ${{ github.workspace }}/target/robot-viz-ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Prepare robot-viz software evidence
+        run: |
+          mkdir -p "$ROBOT_VIZ_TEST_ARTIFACTS"
+          git rev-parse HEAD > "$ROBOT_VIZ_TEST_ARTIFACTS/source_commit.txt"
+          rustc --version --verbose > "$ROBOT_VIZ_TEST_ARTIFACTS/toolchain.txt"
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check 2>&1 | tee "$ROBOT_VIZ_TEST_ARTIFACTS/fmt.log"
+
+      - name: cargo clippy robot-viz and robot-transport
+        timeout-minutes: 20
+        run: |
+          cargo clippy --locked -p robot-viz -p robot-transport --all-targets \
+            -- -D warnings 2>&1 | tee "$ROBOT_VIZ_TEST_ARTIFACTS/clippy.log"
+
+      - name: robot-viz library tests
+        timeout-minutes: 20
+        run: |
+          cargo test --locked -p robot-viz --lib \
+            2>&1 | tee "$ROBOT_VIZ_TEST_ARTIFACTS/lib_tests.log"
+
+      # 六项 ignored 场景显式串行执行，只使用测试 topic / loopback。
+      # 覆盖真实 SHM → Rerun 文件、拒绝路径、进程退出与短命 topic 回收。
+      - name: robot-viz observer roundtrip
+        timeout-minutes: 10
+        run: |
+          cargo test --locked -p robot-viz --test observer_roundtrip \
+            -- --ignored --test-threads=1 --nocapture \
+            2>&1 | tee "$ROBOT_VIZ_TEST_ARTIFACTS/roundtrip.log"
+
+      # 观测工具使用 unwind profile；不改变原 S0 / S1 release 构建门。
+      - name: cargo build robot-viz release-tools
+        timeout-minutes: 25
+        run: |
+          cargo build --locked --profile release-tools -p robot-viz \
+            2>&1 | tee "$ROBOT_VIZ_TEST_ARTIFACTS/release_tools.log"
+
+      - name: Upload robot-viz software evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: robot-viz-${{ matrix.os }}
+          path: target/robot-viz-ci/
+          if-no-files-found: warn
+
+      - name: sccache stats
+        if: ${{ always() }}
         run: sccache --show-stats
 
   matrix-build:

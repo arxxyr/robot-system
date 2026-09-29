@@ -10,7 +10,7 @@
 
 ---
 
-## 2026-09-29 · Rerun 观测桥与发布隔离（方案已审，实施中）
+## 2026-09-29 · Rerun 观测桥与发布隔离（软件验收完成）
 
 涉及冻结设计 §2.4、§8、§9。用户最新目标要求完成 Rerun 接入，因此先行推进独立观测软件；
 这不代表通信硬化的硬件门通过，也不关闭 D15 或执行正式退役。冻结设计正文不变。
@@ -26,9 +26,38 @@
 worker 使用有限 SDK 创建等待，正常及错误退出回收，不宣称覆盖任意内核或 SDK 永久卡死。
 
 `robot-viz` 独立进程使用精确版本 Rerun 0.38.1 SDK，支持文件与显式 Viewer 连接；
-不引入 Viewer/analytics 到机器人控制进程。新工具 profile 保留 unwind，既有 S0/S1 release
-行为不变。完成条件和当前证据状态见 `docs/10_verification.md` 的 V1–V8。
-审阅：独立 reviewer 提出背压与生命周期约束，root 接受镜像隔离；实现验收待完成。
+关闭 Rerun 的默认、analytics 与 native_viewer features，SDK 依赖限于独立 viz 工具。
+SDK 的认证依赖仍会传递编译 `re_analytics` 包，不能据此宣称依赖图没有该包；
+S0/S1 不依赖 Rerun SDK，但其非实时发布者会新增镜像 worker。新工具 profile 保留 unwind，
+既有 S0/S1 release 行为不变。完成条件和当前证据状态见 `docs/10_verification.md` 的 V1–V8。
+审阅：独立 reviewer 提出背压与生命周期约束，root 接受镜像隔离；源码及真实 Viewer 已复核，最终 Linux 根 fmt/Clippy、完整串行 workspace、13 项退出、609 项 S0+rt_guard 和优化构建通过，V1–V8 与原失败见验收清单。
+
+## 2026-09-29 · Rerun 依赖审计偏离（精确例外）
+
+涉及 §9 依赖契约与 `deny.toml`。本轮首次 `cargo deny` 因四项新增许可证、
+`paste` 停止维护公告及既有 `serialport` 版本撤回而失败；原
+`target/robot_viz_20260929/logs/deny_r1.log` 保留，不以配置调整改写历史结果。
+
+Rerun 0.38.1 依赖树新增的 `indent =0.1.1`、`option-ext =0.2.0` 仅放行
+`MPL-2.0`，`webpki-roots =1.0.9` 仅放行 `CDLA-Permissive-2.0`，
+`xxhash-rust =0.8.19` 仅放行 `BSL-1.0`。均使用包名与精确版本例外，
+不扩大全局许可证允许列表；升级、替换、许可证声明或使用域变化时逐项复审。
+
+同一 SDK 树引入 `paste 1.0.15` 编译期宏。RustSec `RUSTSEC-2024-0436`
+记录上游停止维护且无修复版本，本轮仅豁免该公告 ID，接受当前维护风险；
+不称漏洞已经修复，也不忽略其他公告。SDK/paste 版本或依赖路径、公告内容变化
+以及下次发布审计时复审，若上游移除或提供可采用替代则移除例外。
+
+`serialport 4.10.0` 已在本轮之前的锁文件中，包 checksum 未变，属于既有控制依赖；
+本轮只对 `serialport@4.10.0` 登记撤回版本例外，保留全局 `yanked = "deny"`。
+上游 4.10.1 修复 Linux PowerPC 编译错误，相关函数不进入当前 Linux aarch64
+构建；此项是后续版本修复证据，未证实维护者撤回 4.10.0 的直接原因。
+保留已验串口基线，后续独立升级须执行控制串口与退出回归并同步许可证例外；
+版本、目标平台或相关公告变化以及下次发布审计时复审，完成替换即移除此豁免。
+
+本条例外调整不再修改锁文件中的既有依赖版本、串口实现或硬件安全边界。独立只读核查及来源归档于
+`target/robot_viz_20260929/dependency_review.md`；配置修改后的 `cargo deny`
+已复验，四类检查均通过，既有重复版本警告仍保留。审阅：独立核查提出精确范围，root 采纳授权。
 
 ## 2026-09-29 · Feetech 中止诊断分类
 

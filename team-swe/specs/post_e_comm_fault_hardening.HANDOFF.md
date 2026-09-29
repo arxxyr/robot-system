@@ -2,10 +2,31 @@
 
 ## 当前步骤
 
-**后续目标已恢复：持续开发至 Rerun 可视化接入完成或额度剩余 15%。** 新 `robot-viz`
-与有界观测镜像正在实施，验收清单见 `docs/10_verification.md` 的 V1–V8；当前仅方案
-评审通过，未宣称软件完成。原控制 QoS 不因可视化改成有损，Rerun 不进入控制关键路径。
-Orin 信任问题仍未解除，本地 Linux ARM 虚拟机已通过诊断阶段软件门；Rerun 门待跑，不替代 Orin/硬件验收。
+**2026-09-29 Rerun 软件接入已验收。** 独立 `robot-viz` 支持十类 pub/sub 的文件录制和
+实时 Viewer；有界非实时观测镜像保留原主通道 QoS、返回值和接收者计数，S0/S1 不链接
+Rerun SDK。原始布局、时钟、实例和拒绝/丢失统计保留，Unknown 不表示物理安全。
+
+macOS/Linux 分别通过 17 项转换/布局单测与 6 项显式 SHM 集成，真实 Viewer 0.38.1
+展示曲线、事件、图像、点云及 Tensor，已核时间游标和实际 live Recording。
+正常录制 1000 帧、10 类、11 实例、gap/drop/reject 为 0；有数据后 SIGINT 为 80 帧/10 类、
+67 gap，worker 正常回收。真实断连负例失败退出并回收；观测有损和首连接饥饿限制保留。
+
+Linux r6 的根 fmt/Clippy 与完整串行 workspace、13 项退出通过；r4 的 609 项 S0+rt_guard
+及优化构建/真实 help 启动通过，r3 的 transport 默认/mock 与可视化专项通过。
+620 输入最终 manifest `abb7029420438ed69d12b0aab541cea9558f027485af68c196d4342359f430d2` 前后相同。
+r3 后仅修三处 Linux 测试：RPC/S1 Node 生命周期、退出日志颜色和父监督阶段计时；
+生产 10 秒预算及 9.75–10.1 秒退出判据未改。原 Clippy、golden、夹具、节点和退出 FAIL
+全部保留；不把串行通过用于关闭 S1 既有并发根因，ignored 和托管 CI 均不冒称通过。
+
+两份接收器中断捕获缺 footer，官方 verify FAIL；桥自身正常录制 verify PASS，分别记账。
+Viewer 实时加载初期一次 Timeline 警告保留。媒体仅软件夹具、GPU/字体/范围限制详
+[V1–V8](../../docs/10_verification.md)。使用命令见[上手指南](../../docs/02_start_here.md#rerun-观测工具当前开发入口)，
+证据入口为[摘要](../../.verify/robot_viz_2026-09-29/summary.json)、
+[索引](../../.verify/robot_viz_2026-09-29/archive.json)和[原件包](../../.verify/robot_viz_2026-09-29/evidence.tar.gz)。
+
+本阶段仅本地提交，不 push。Orin 的 SSH 信任条目仍待核，本轮未传输/正式安装或新硬件动作；
+右 H2、D15、`deployable=false` 保持。下一步先恢复可信 SSH 并在 Orin 验证观测，再继续通信
+硬件门和 D15 退役决策；可视化先行完成不自动关闭这些条件。
 
 **2026-09-29硬件小幅检查后的诊断分类软件门通过。** 两侧各一次腕部往返功能探针通过，
 结束后17电机分总线读回断扭/零速、EStop双写恢复1，正式服务停止；头部/底盘只有状态

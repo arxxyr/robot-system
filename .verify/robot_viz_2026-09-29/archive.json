@@ -1,0 +1,8 @@
+{
+  "archive": "evidence.tar.gz",
+  "sha256": "df272f6b9c8faf6bd8500b3e90c3844e4cce8540b41e37ee0224268c24b771ce",
+  "bytes": 90282506,
+  "indexed_files": 1258,
+  "root_verified_every_member": true,
+  "scope": "软件证据，失败原件保留；无Orin安装/真实硬件验收"
+}

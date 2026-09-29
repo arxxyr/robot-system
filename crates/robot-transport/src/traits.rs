@@ -116,9 +116,13 @@ impl<T: BodyMarker> Publisher<T> for crate::iceoryx2::Iceoryx2Publisher<T> {
         // 一次 disjoint 分裂：iceoryx2 publisher 给 writer（延迟 loan 用），
         // loan_tok 做 `&'a mut u8` 的 borrow 锁。borrow checker 允许同方法内
         // 同时拿两个不相交字段的 &mut。
-        let (pub_ref, tok) = self.split_for_loan();
-        let writer =
-            crate::iceoryx2::Iceoryx2SampleWriter::new_disjoint(pub_ref, T::SCHEMA_ID, size);
+        let (pub_ref, observer, tok) = self.split_for_loan();
+        let writer = crate::iceoryx2::Iceoryx2SampleWriter::new_disjoint(
+            pub_ref,
+            observer,
+            T::SCHEMA_ID,
+            size,
+        );
         Ok(SampleWriter::from_iceoryx2(writer, tok))
     }
 }

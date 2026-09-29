@@ -46,6 +46,7 @@ pub(crate) type IxPubSubPublisher = IxPublisher<IxService, [u8], ()>;
 /// 本 commit 只落 trait impl 所需类型。
 pub struct Iceoryx2Publisher<T: BodyMarker> {
     pub(crate) inner: IxPubSubPublisher,
+    pub(crate) observer: super::observer::ObserverDispatcher,
     /// 同 `MockPublisher::loan_tok`：placeholder `&'a mut u8` borrow，编译期
     /// 阻止 writer 存活期间再次 `loan()`。
     pub(crate) loan_tok: u8,
@@ -67,8 +68,20 @@ impl<T: BodyMarker> Iceoryx2Publisher<T> {
     /// 给外层 `SampleWriter::_borrow: &'a mut u8` 做编译期锁。直接分开调
     /// 两个 `&mut self` 方法会被 borrow checker 拒绝，一次性 disjoint split
     /// 规避。
-    pub(crate) fn split_for_loan(&mut self) -> (&mut IxPubSubPublisher, &mut u8) {
-        (&mut self.inner, &mut self.loan_tok)
+    pub(crate) fn split_for_loan(
+        &mut self,
+    ) -> (
+        &mut IxPubSubPublisher,
+        &super::observer::ObserverDispatcher,
+        &mut u8,
+    ) {
+        (&mut self.inner, &self.observer, &mut self.loan_tok)
+    }
+
+    /// 独立观测计数；保留 monitor 可以在 publisher Drop 后核对真实回收。
+    #[must_use]
+    pub fn observer_monitor(&self) -> super::observer::ObserverMonitor {
+        self.observer.monitor()
     }
 
     /// 显式刷新 subscriber 连接并向**新连上的** subscriber 补发 history。
@@ -98,6 +111,7 @@ impl<T: BodyMarker> Iceoryx2Publisher<T> {
 /// iceoryx2 loan。drop without publish = 不调 iceoryx2（buffer 丢弃即可）。
 pub struct Iceoryx2SampleWriter<'a> {
     publisher: &'a mut IxPubSubPublisher,
+    observer: &'a super::observer::ObserverDispatcher,
     schema_id: u32,
     schema_version: u16,
     max_sample_size: usize,
@@ -126,11 +140,13 @@ impl<'a> Iceoryx2SampleWriter<'a> {
     /// 调用方见 `Publisher::loan` 实现（`traits.rs`）。
     pub(crate) fn new_disjoint(
         publisher: &'a mut IxPubSubPublisher,
+        observer: &'a super::observer::ObserverDispatcher,
         schema_id: u32,
         max_sample_size: usize,
     ) -> Self {
         Self {
             publisher,
+            observer,
             schema_id,
             schema_version: 1,
             max_sample_size,
@@ -181,6 +197,8 @@ impl Iceoryx2SampleWriter<'_> {
         })?;
         let sample = sample.write_from_slice(&wire);
         let recipients = sample.send().map_err(classify_send_error)?;
+        // 主发送已成功；这里只 move owned wire + try_send，不做镜像 IPC 或等待。
+        self.observer.enqueue(wire);
         self.consumed = true;
         Ok(recipients)
     }

@@ -78,14 +78,16 @@
            同日后续：ca14冻结件双臂腕部各一次往返及断扭收尾PASS，头部/底盘未测主动运动。
            已加穷尽诊断分类，本机147+5、隔离Linux ARM根Clippy及167+42通过；Orin待SSH信任核实。
            原日志不回填Revoked，读早退/过期tick问题独立OPEN；详情见HANDOFF及hardware_smoke报告。
-           最新持续目标：Rerun可视化接入完成或额度剩余15%；独立robot-viz与隔离观测镜像实施中。
-           方案已审，V1–V8尚未验收；原控制QoS保持，Linux ARM环境已准备，不关闭D15/右H2。
+           Rerun软件接入已验收：独立robot-viz、十类pub/sub、有界隔离镜像及真实Viewer文件/实时画面。
+           macOS与Linux专项17+6通过；Linux根fmt/Clippy、完整串行workspace、13退出、609 RT库测试及优化构建通过。
+           源码/动态独审已完成，原失败及有损/多发布者公平性限制保留；证据见 .verify/robot_viz_2026-09-29/summary.json。
+           未push、未部署Orin；SSH信任仍待核，右H2/D15与deployable=false不变。下一步先做可信Orin观测验证。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。
            RX 重同步 / 串口 reopen 已移出本候选。
-           后续硬序 ①通信故障硬化 → ②D15 退役决策 → ③robot-viz Rerun 桥
-           → ④F7 baseline 判据小件；通信硬化不自动关闭 D15。
+           后续仍需 ①通信故障硬化硬件门 → ②D15 退役决策 → ③F7 baseline 判据小件；
+           Rerun软件按用户后续目标先行完成，Orin部署/硬件观测另验，通信硬化不自动关闭D15。
            详 docs/handoffs/v0.5_demo_run_2026-09-01_summary.md
            + docs/CHANGELOG.md 2026-09-01 两条。
 
