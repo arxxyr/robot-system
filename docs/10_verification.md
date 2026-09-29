@@ -9,6 +9,20 @@
 
 ---
 
+## 2026-09-29 · 最终 Disable 延迟回执软件回归
+
+`robot_tests::comm_fault_rpc` 是 Linux H2 工具与跨平台回环测试的同一调用入口：GetState 确认状态3后发送非dry-run Disable，逐项核对Ack身份、dry-run及非零完成戳。业务期限2000ms、gateway grace 500ms、普通传输2s与最终传输3s保持原值。
+
+显式 `final_stop_transport` 集成测试共6项、9场景：2100ms合法Ack成功，同2100ms普通连接与3300ms最终连接被tonic超时拒绝；服务端错误、三种错误Ack、两种状态失败保持拒绝。每个场景先关闭并join服务任务，再确认active requests为0。客户端RAW时间只作记录，不与Tokio时钟的精确边界比较。模拟服务不验证真实gateway grace、RR/Lower退休或硬件断扭。
+
+本机macOS定向Clippy、2项新单测和6项集成测试通过；全workspace仍受既有S0 Linux接口限制，扩大Python测试同样遇到Linux专用接口缺失。4处新nightly lint已等价修复，S0平台语义未改。
+
+Orin独立目录的603项来源逐SHA核验，最终fmt和实际重查的根Clippy零警告；测量工具三项feature闭包实际编译检查通过。lib 4项（含新2项）+工具182项、回环6测试/9场景、66Python及工具dev构建通过；延迟正例实测2101190176ns。绑定本次S1故障测试peer等三件后，完整workspace串行通过；原有ignored不计通过。正式源ca14f0e仍clean，四安装件、六停止服务与无控制进程的前后快照一致。
+
+首默认workspace缺fault peer的两例FAIL、另轮S1默认并行284/2超时、macOS限制及旧mtime缓存门均保留。14项隔离串行和完整串行通过不关闭原并发根因；最终根Clippy以刷新mtime后实际重查为准。完整命令、计数、源码和原件见[本轮摘要](../.verify/post_e_comm_fault_hardening/S49_final_stop_transport.json)与HANDOFF。
+
+历史右H2整体FAIL、D15 OPEN、`deployable=false`保持；本轮未执行硬件重测或正式安装，未重读现场marker/latch，物理现状UNKNOWN。
+
 ## 2026-09-23 · 右H2真实长测：测量四组PASS，整体FAIL
 
 runtime `1ac4548`、实际build `5952498`；四组各100预热+1000正式样本的原P99门逐组通过，SLA-B P99依次为10.168864、6.811968、10.145344、6.914688ms。最终非dry-run Disable约2.001秒返回`Cancelled: Timeout expired`，因此原run/report均FAIL，右H2未通过。EStop/Disarm、GetState安全态3及有效final_trace不替代DisableAck或物理断电。
@@ -252,7 +266,9 @@ RR20、真实TOML1、roundtrip6通过；workspace1950通过/1既有ignored，doc
 ignored**；lib / bins **1461 PASS 包含在 1643 内，不相加**。原有 ignored 未计为通过，
 完整执行证据见 [report.json](../.verify/dependency_upgrade_2026-09-08/report.json)。
 
-## 当前候选：post-E 通信故障硬化（2026-09-08）
+## 历史候选基线：post-E 通信故障硬化（2026-09-08）
+
+以下为2026-09-08至09-09当时基线；当前软件、硬件与授权状态以页首及HANDOFF为准。
 
 权威验收条件见 [Spec 的 AC-1–AC-24](../team-swe/specs/post_e_comm_fault_hardening.md)，
 函数与命令映射见 [正式 Plan](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md)，
@@ -903,3 +919,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-22：登记右H13 pidfd能力兼容的本地27/独立5/Orin27与默认入口；首22方法3FAIL/3ERROR保留，仅软件、已归档。
 
 - 2026-09-23：登记右H1/H3各100+1000及真实回收/清场；保留两次前置FAIL，右H2未测，已验收归档。
+
+- 2026-09-29：登记最终Disable共用RPC入口、2.1秒真实回环正负控及Orin软件验收；保留历史失败和硬件边界。

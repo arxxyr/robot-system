@@ -292,8 +292,7 @@ impl EventsDrainRegistry {
         let handles = self
             .inner
             .lock()
-            .map(|mut g| std::mem::take(&mut *g))
-            .unwrap_or_default();
+            .map_or_else(|_| Vec::new(), |mut g| std::mem::take(&mut *g));
         let mut first_err: Option<Box<dyn std::any::Any + Send>> = None;
         for h in handles {
             if let Err(e) = h.join()

@@ -27,17 +27,16 @@ use tonic::transport::Channel;
 use super::control::{ControlPort, wait_applied};
 use super::harness::{Case, isolated_command, stop, wait_log};
 use super::heartbeat::HeartbeatFeed;
-use super::rpc::{command_meta, connect, connect_with_request_timeout, gateway_command};
+use super::rpc::{command_meta, connect, gateway_command};
 use super::sla_background::{Background, BackgroundHealth, RR_IN_FLIGHT_LIMIT};
 use super::{Args, Phase};
+#[cfg(test)]
+pub(super) use robot_tests::comm_fault_rpc::confirm_and_disable;
+use robot_tests::comm_fault_rpc::{ack_evidence, final_stop_rpc};
 
 const WARMUP: usize = 100;
 const SAMPLES: usize = 1000;
 const MAX_ATTEMPTS: usize = (WARMUP + SAMPLES) * 10;
-pub(super) const FINAL_DISABLE_TIMEOUT_MS: u64 = 2000;
-// 最终 Disable 的业务期限 2000ms + gateway RR grace 500ms 小于此传输期限。
-// GetState 与 Disable 共用此连接，避免客户端在网关完成原责任前先取消请求。
-pub(super) const FINAL_STOP_TRANSPORT_TIMEOUT: Duration = Duration::from_secs(3);
 static COMMAND_SEQ: AtomicU64 = AtomicU64::new(10_000);
 
 const ORDINARY_CPUS: [usize; 4] = [0, 1, 2, 3];
@@ -972,22 +971,6 @@ fn check_background(health: Option<&BackgroundHealth>) -> Result<(), String> {
     health.map_or(Ok(()), BackgroundHealth::check)
 }
 
-pub(super) fn ack_evidence(
-    response: Result<robot_rpc::proto::Ack, tonic::Status>,
-    request_id: &str,
-    dry_run: bool,
-) -> Value {
-    match response {
-        Ok(ack) => {
-            json!({"ok":ack.request_id == request_id && ack.dry_run == dry_run && ack.cleared_at_ns != 0,
-            "kind":"ack","request_id":ack.request_id,"dry_run":ack.dry_run,"cleared_at_ns":ack.cleared_at_ns})
-        }
-        Err(error) => {
-            json!({"ok":false,"kind":"status","code":format!("{:?}",error.code()),"message":error.message()})
-        }
-    }
-}
-
 /// 两个 future 直到各自步骤才被 poll。首错不取消已经发出的 live 动作。
 pub(super) async fn recover_writes<C, E>(
     health: Option<&BackgroundHealth>,
@@ -1717,39 +1700,7 @@ async fn final_stop(
         Err(error) => Err(error),
     };
     tokio::time::sleep(Duration::from_millis(700)).await;
-    let observed = match connect_with_request_timeout(address, FINAL_STOP_TRANSPORT_TIMEOUT).await {
-        Ok(mut client) => {
-            let meta = command_meta(false, FINAL_DISABLE_TIMEOUT_MS);
-            let mut disable_client = client.clone();
-            let command = SetEnabledCommand {
-                meta: Some(meta.clone()),
-                enabled: false,
-            };
-            let mut observed = confirm_and_disable(
-                async move {
-                    client
-                        .get_state(GetStateRequest {
-                            hardware_id: hardware_id.to_owned(),
-                        })
-                        .await
-                        .map(tonic::Response::into_inner)
-                },
-                async move {
-                    disable_client
-                        .set_enabled(command)
-                        .await
-                        .map(tonic::Response::into_inner)
-                },
-                &meta.request_id,
-            )
-            .await;
-            observed["disable"]["request"] = json!({"request_id":meta.request_id,
-                "idempotency_key":meta.idempotency_key,"dry_run":false,"enabled":false});
-            observed
-        }
-        Err(error) => json!({"ok":false,"get_state":{"attempted":false,"ok":false,"error":error},
-            "disable":{"attempted":false,"ok":false,"reason":"连接失败"}}),
-    };
+    let observed = final_stop_rpc(address, hardware_id).await;
     let evidence = json!({"ok":disarmed.is_ok() && estop.is_ok() && observed["ok"] == true,
         "disarmed":format!("{disarmed:?}"),"estop":format!("{estop:?}"),
         "get_state":observed["get_state"],"disable":observed["disable"]});
@@ -1759,32 +1710,6 @@ async fn final_stop(
     } else {
         Err(format!("H2 真实收尾未完成：{evidence}"))
     }
-}
-
-/// 真实收尾使用同一顺序接缝：状态 3 成功并不代表随后 Disable 成功。
-pub(super) async fn confirm_and_disable<G, D>(get_state: G, disable: D, request_id: &str) -> Value
-where
-    G: std::future::Future<Output = Result<robot_rpc::proto::RobotState, tonic::Status>>,
-    D: std::future::Future<Output = Result<robot_rpc::proto::Ack, tonic::Status>>,
-{
-    let observed = match get_state.await {
-        Ok(state) => json!({"attempted":true,"ok":state.safety_state == 3,
-            "safety_state":state.safety_state,"state_stamp_ns":state.stamp_ns}),
-        Err(error) => {
-            json!({"attempted":true,"ok":false,"code":format!("{:?}",error.code()),"error":error.message()})
-        }
-    };
-    let disabled = if observed["ok"] == true {
-        let started = SystemClock.now().0;
-        let mut value = ack_evidence(disable.await, request_id, false);
-        value["attempted"] = json!(true);
-        value["started_ns"] = json!(started);
-        value["finished_ns"] = json!(SystemClock.now().0);
-        value
-    } else {
-        json!({"attempted":false,"ok":false,"reason":"未取得真实状态3确认"})
-    };
-    json!({"ok":observed["ok"] == true && disabled["ok"] == true,"get_state":observed,"disable":disabled})
 }
 
 pub(super) async fn run(args: &Args) -> Result<Value, String> {

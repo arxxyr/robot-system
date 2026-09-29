@@ -1,5 +1,7 @@
 # post-E 通信故障硬化 · 函数级实施计划
 
+> **2026-09-29续作（本包软件已验收，详HANDOFF）**：用户重新要求按进度继续开发。将最终RPC连接、GetState、Disable及Ack证据校验抽为工具与跨平台测试共用的入口，再以真实tonic回环覆盖2.1秒回执、普通2秒期限负控、3秒超时和错误回执。显式集成测试与默认单测隔离；不调整D1预算或S0/网关语义，不触现场硬件。root负责整合与质量门，开发子agent实现，另一子agent独立评审；结果见HANDOFF。
+
 > 历史批准稿（以下状态仅指2026-09-09）：日期：2026-09-09。版本：Plan Approved + S-40 至 S-46 Reverse Sync；S-47合入S-48。状态：**C1–C5、S-44与S-45软件已评审提交；左H1/H3 PASS，左H2两次FAIL保留，现场已确认左臂断电；S-46本地通过/Orin wire4满FAIL，S-48 A1文件事务本地及独立评审通过；右臂未测，D15 OPEN**。
 > 权威：[`post_e_comm_fault_hardening.md`](post_e_comm_fault_hardening.md)（round 21 Spec Approved）。
 > 代码基线：`bd081cb`；工作分支：`feat/post-e-comm-fault-hardening`。
@@ -10,7 +12,7 @@
 > S-40 至 S-43 均经主 agent 与独立 reviewer ACK；当前文件新 hash 由主 agent 写入 HANDOFF。
 > C4 包含生产总装、test hook、独立 IPC/marker/startup 验收；C5 工具与剩余验收单独提交。
 
-> 当前状态（2026-09-23）：左H1/H2/H3通过。本次H2 runtime c5daa67/build fb600fd，
+> 历史交接（截至2026-09-25，当前续作以页首为准）：左H1/H2/H3通过。本次H2 runtime c5daa67/build fb600fd，
 > 四组各100+1000及原P99门、真实stop/reap/清场已独审/root验收；第三组max52.502592ms保留。
 > 三次旧真实FAIL与一次前置拒绝不回写；本轮值守解除、电源UNKNOWN，左H2证据已收口10cff7a。
 > 右工具0047920/W1测试2e5b515已本地集成并验证64Python/最终SHA默认并行10项，
@@ -26,7 +28,7 @@
 
 **历史分工（2026-09-09 A2 当时）**：root负责方案与评审，`cc-claude`负责
 具体实现、测试与Cargo；A2执行委托见`target/post_e_h2_rt/s48/a2/cc_claude_task.md`。
-当时约定root提交且不push；此段不覆盖页首2026-09-23原生子agent开发、独审和本轮push授权。
+当时约定root提交且不push；此段不覆盖2026-09-23原生子agent开发、独审和当时push授权。2026-09-29续作不自动继承历史push授权。
 独立评审仍由root或Codex子agent承担，实施者不能自行批准自己的包。
 
 唯一 Dev 负责生产代码、模块导出、Cargo 清单和模块单测；reviewer 只读独立评审，

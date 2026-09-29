@@ -130,6 +130,28 @@ class ArtifactTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     a.validate_cargo_build(ref, "production", "s0")
 
+    def test_measurement_tool_accepts_transitive_rpc_feature_without_recipe_change(self):
+        # 独立固定实际 Cargo 输出闭包，不能从待测 BUILD_SPECS 复制期望值。
+        features = ["comm-fault-e2e", "comm-fault-rpc", "real-hw"]
+        ref = self.cargo("measurement", "tool", lambda rows: rows[0].update(features=features))
+        row, artifacts = a.validate_cargo_build(ref, "measurement", "tool")
+        self.assertEqual(artifacts["comm_fault_e2e"]["features"], features)
+        self.assertEqual(row["argv"], [
+            "cargo", "build", "--locked", "--release", "--message-format=json", "-p", "robot-tests",
+            "--bin", "comm_fault_e2e", "--no-default-features", "--features", "comm-fault-e2e,real-hw",
+        ])
+
+    def test_measurement_tool_rejects_missing_extra_and_duplicate_features(self):
+        for features in (
+            ["comm-fault-e2e", "real-hw"],
+            ["comm-fault-e2e", "comm-fault-rpc", "real-hw", "supervised-demo"],
+            ["comm-fault-e2e", "comm-fault-rpc", "comm-fault-rpc", "real-hw"],
+        ):
+            with self.subTest(features=features):
+                ref = self.cargo("measurement", "tool", lambda rows: rows[0].update(features=features))
+                with self.assertRaisesRegex(ValueError, "实际 Cargo feature 闭包错误"):
+                    a.validate_cargo_build(ref, "measurement", "tool")
+
     def test_dependency_test_feature_rejected(self):
         def mutate(records):
             records.insert(0, {"reason": "compiler-artifact", "features": ["test-bad"]})

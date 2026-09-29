@@ -12,3 +12,6 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod config_fixture;
+
+#[cfg(feature = "comm-fault-rpc")]
+pub mod comm_fault_rpc;

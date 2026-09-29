@@ -250,19 +250,23 @@ robot-kinematics-xlerobot = { workspace = true, optional = true }
 robot-adapter-feetech = { workspace = true, optional = true }
 
 [features]
+# 跨平台 RPC 收尾共享模块及显式 loopback 回归，不启用 Linux 验收 binary。
+comm-fault-rpc = [
+    "dep:robot-rpc",
+    "robot-rpc/client",
+    "dep:tokio",
+    "dep:tonic",
+    "dep:serde_json",
+]
 # 独立启用真实验收依赖，不继承旧 freeze hook；现场串口仍需另外启用 real-hw。
 comm-fault-e2e = [
+    "comm-fault-rpc",
     "dep:blake3",
     "dep:robot-s0",
     "robot-s0/test-comm-fault-hook",
     "robot-s0/mock",
     "robot-s0/feetech",
-    "dep:robot-rpc",
-    "robot-rpc/client",
     "dep:robot-adapter-feetech",
-    "dep:tokio",
-    "dep:tonic",
-    "dep:serde_json",
 ]
 # v0.3 A2-3 freeze systemd smoke 入口 feature。
 # - 生产 release **不**带本 feature（freeze_systemd_smoke binary 不参编译）。
@@ -378,3 +382,9 @@ workspace = true
 [dev-dependencies]
 # R4c manager的原命令/launcher单测临时目录；不进入实际验收binary依赖。
 tempfile = { workspace = true }
+
+# 真实 loopback 传输回归由 --ignored 显式运行，不混作纯单测。
+[[test]]
+name = "final_stop_transport"
+path = "tests/final_stop_transport.rs"
+required-features = ["comm-fault-rpc"]

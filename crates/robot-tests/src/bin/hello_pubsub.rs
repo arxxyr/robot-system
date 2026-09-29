@@ -60,8 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             view.header.stamp_ns(),
             js.layout_id(),
             js.position_rad()
-                .map(|v| v.iter().collect::<Vec<f64>>())
-                .unwrap_or_default(),
+                .map_or_else(Vec::new, |v| v.iter().collect::<Vec<f64>>()),
         );
     } else {
         println!("  sub latest → (empty; publisher 未到？)");

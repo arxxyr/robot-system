@@ -106,8 +106,7 @@ pub fn joint_state_fb_to_robot_state(
 ) -> RobotState {
     let position_rad = fb
         .position_rad()
-        .map(|v| v.iter().collect::<Vec<f64>>())
-        .unwrap_or_default();
+        .map_or_else(Vec::new, |v| v.iter().collect::<Vec<f64>>());
     RobotState {
         robot_id: robot_id.to_string(),
         hardware_id: hardware_id.to_string(),

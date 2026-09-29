@@ -117,10 +117,7 @@ pub fn decode_invoke_request(
         deadline_ns: req.deadline_ns(),
         priority: req.priority(),
         payload_schema_id: req.payload_schema_id(),
-        payload: req
-            .payload()
-            .map(|v| v.bytes().to_vec())
-            .unwrap_or_default(),
+        payload: req.payload().map_or_else(Vec::new, |v| v.bytes().to_vec()),
         stamp_ns: req.stamp_ns(),
     })
 }

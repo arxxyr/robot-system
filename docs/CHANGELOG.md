@@ -10,6 +10,14 @@
 
 ---
 
+## 2026-09-29 · 最终 Disable 真实传输回归（软件）
+
+将H2工具的连接、请求元数据和最终GetState/Disable/Ack确认提取到`robot_tests::comm_fault_rpc`，窄feature `comm-fault-rpc`允许macOS/Linux共享同一实现，`comm-fault-e2e`继承该feature。原业务、传输和SLA预算不变；最终请求证据增加`timeout_ms`，既有报告字段及拒绝判据保留。
+
+产物身份校验同步接受测量工具的完整三项feature闭包；原CLI构建recipe保持不变，缺失、多余或重复feature继续拒绝。
+
+新增显式tonic回环集成测试及CI入口，验证2.1秒合法回执、普通2秒连接负控、超过最终期限及错误回执拒绝，服务任务均在判定前真实回收。仅模拟响应服务，不把通过外推为真实gateway/RR/硬件结果。另将4处`map(...).unwrap_or_default()`等价改为`map_or_else`以适配新nightly Clippy，不调整S0平台或安全语义。源码独审已通过；最终检查与证据边界见HANDOFF和10_verification。
+
 ## 2026-09-22 · 右H13 pidfd能力兼容（仅软件验证）
 
 首Orin uv Python3.12.13缺少`os.pidfd_open`，原22方法3FAIL/3ERROR保留。新r3仅在open/send两API均可调用时用pidfd；缺接口走自有未回收child监督，真实资源异常仍FAIL，不放宽身份或wait门。

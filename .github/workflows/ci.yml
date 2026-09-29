@@ -65,6 +65,14 @@ jobs:
       - name: cargo test --workspace --all-features
         run: cargo test --workspace --all-features
 
+      # H2 最终 Disable 的真实 TCP/tonic 预算回归，显式执行以隔离默认单测。
+      # 仅绑定本机随机端口；不启动 S0、不访问串口或现场硬件。
+      - name: H2 final Disable transport regression
+        timeout-minutes: 5
+        run: >-
+          cargo test --locked -p robot-tests --features comm-fault-rpc
+          --test final_stop_transport -- --ignored --test-threads=1 --nocapture
+
       # 4. iceoryx2 feature off 的保底编译 + 测试（隔离保底，docs/01_implementation_steps.md
       #    Step 5 退出标准）
       - name: cargo test -p robot-transport --no-default-features --features mock

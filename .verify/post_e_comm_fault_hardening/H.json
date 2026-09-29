@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "stage": "H",
-  "work_state": "PAUSED_AFTER_RIGHT_H2_FAIL_CA14_SOFTWARE_ACCEPTED_HANDOFF",
-  "resume_from": "右H2四组测量文件PASS但final Disable超时，原run/report整体FAIL；ca14f0e已提交推送且Orin源码ff-only对齐，生产4/测量3及mock/定向单测仅软件PASS；未正式安装、未硬件重测。用户2026-09-23要求暂停，2026-09-25仅授权handoff提交推送；下一开发或硬件动作需新指令与当次现场事实，D15 OPEN。",
+  "work_state": "S49_FINAL_DISABLE_TRANSPORT_SOFTWARE_ACCEPTED",
+  "resume_from": "2026-09-29软件续作已验收：最终Disable真实tonic回环、Orin编译/定向测试及绑定peer串行workspace通过；默认并行S1两例超时仍OPEN。右H2原整体FAIL、D15 OPEN；未正式安装或硬件重测。下一真实尝试需新来源/产物准备、当次现场事实和独立GO。",
   "base_commit": "a161a7b099e7ca3f8c3e6e9bc0e48bda648500b6",
   "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
   "source_input_count": 309,
-  "status": "S48_RIGHT_H2_FAIL_CA14_SOFTWARE_ACCEPTED_HANDOFF_READY",
-  "review_status": "APPROVED_INDEPENDENT_HANDOFF_REVIEW",
+  "status": "S49_SOFTWARE_ACCEPTED_RIGHT_H2_REMAINS_FAIL",
+  "review_status": "APPROVED_INDEPENDENT_S49_SOFTWARE_REVIEW",
   "deployable": false,
-  "scope": "右H2原失败及清场、后到物理答复和两次前置FAIL保留；ca14 Orin原生构建/mock/定向单测仅软件通过，未正式安装或真机重测，D15 OPEN。",
+  "scope": "共享最终Disable实际调用路径、显式回环集成测试、产物feature闭包同步及4处等价nightly lint；不改变冻结设计/预算，不安装或操作硬件。",
   "software": {
     "s44": {
       "local": {
@@ -4140,6 +4140,81 @@
           }
         }
       }
+    },
+    "s49": {
+      "status": "SOFTWARE_ACCEPTED_WITH_BASELINE_LIMITS",
+      "base_commit": "5213848efb37bb382c451892334ae7a25bb6c26a",
+      "evidence_root": "target/post_e_h2_rt/s49/delayed_ack_20260929",
+      "source_manifest_sha256": "5fcbda255164cf91455d76183f2579abe737a2706c43ec36e634027220752539",
+      "remote_workspace": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s49/rpc_transport_20260929_01",
+      "remote_formal_source_head": "ca14f0e6cf6df8ecc6baaaa8dff2dddb64abbd0a",
+      "hardware_started": false,
+      "formally_installed": false,
+      "scope": "仅软件，模拟回执不证明真实gateway grace/RR/Lower或物理断扭。",
+      "summary": {
+        "path": ".verify/post_e_comm_fault_hardening/S49_final_stop_transport.json",
+        "bytes": 7402,
+        "sha256": "9103b7111d4450fc6cbca3281e96b82672867d233d9cd0601483115da061f520"
+      },
+      "evidence_archive": {
+        "path": ".verify/post_e_comm_fault_hardening/S49_final_stop_transport_evidence.tar.gz",
+        "bytes": 405538,
+        "sha256": "b34206c95c8c727a18c84bb4c76bc7a88a1920e8e008bcb82edd2fad98684c58",
+        "members": 131,
+        "indexed_files": 130,
+        "index_sha256": "862680cac4e805a19769008235449deddd6a9219324f205d7093f0ad4991a3b1",
+        "per_file_sha256_verified": true,
+        "orin_original_files": 42
+      },
+      "review": {
+        "status": "APPROVED_INDEPENDENT_SOFTWARE_REVIEW",
+        "member": "independent_review.md",
+        "sha256": "e95ac44f9f350949ead4ab367cf0be6eae56c91e05ceb4a95a212f46ac66f096"
+      },
+      "validation": {
+        "required_gates": [
+          "fmt_recompiled_source",
+          "clippy_recompiled_workspace",
+          "clippy_final_measurement",
+          "test_final_comm_fault",
+          "integration_final_rpc_transport",
+          "python_final_h2",
+          "unit_s1_runtime_isolated",
+          "build_final_comm_fault",
+          "build_b4_peers",
+          "test_workspace_bound_peers_serial"
+        ],
+        "robot_tests_lib_passed": 4,
+        "new_rpc_unit_included": 2,
+        "comm_fault_tool_passed": 182,
+        "loopback_tests_passed": 6,
+        "loopback_scenarios": 9,
+        "positive_server_elapsed_ns": 2101190176,
+        "servers_joined_with_zero_active_requests": 9,
+        "python_passed": 66,
+        "s1_runtime_isolated_passed": 14,
+        "workspace_serial": {
+          "passed": 2214,
+          "failed": 0,
+          "ignored": 9,
+          "test_threads": 1,
+          "bound_test_peers": "orin/b4_peers_manifest.json",
+          "count_scope": "72个独立测试或doc组，2223个具名条目无重复；不同gate计数不相加"
+        },
+        "default_parallel_status": "OPEN_S1_EVENT_RECEIVE_TIMEOUT"
+      },
+      "operational_state": {
+        "all_nonempty_lines_match": true,
+        "normalization": "仅忽略systemctl批量输出新增空行；所有身份、版本、状态、SHA和进程输出逐行相同",
+        "before_sha256": "026adb8753e135bdf49a1bedb0b678811624608bc84ed240b05c1dccfcaeab40",
+        "after_sha256": "0c4f9b1eb18c1ff390823242fedd0fe80b3eb08373646fb30d251cab2c460ee3",
+        "formal_source_head": "ca14f0e6cf6df8ecc6baaaa8dff2dddb64abbd0a",
+        "formal_binaries_unchanged": 4,
+        "services_inactive_dead_pid0": 6,
+        "controller_processes_observed": 0,
+        "physical_state": "UNKNOWN",
+        "physical_marker_latch_rechecked": false
+      }
     }
   },
   "hardware": {
@@ -4768,8 +4843,8 @@
   },
   "plan": {
     "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
-    "lines": 2871,
-    "sha256": "42b7d92a660d470f242322e7dd3471f2afb650a8e9f0dc73fc65ecc35d6e788e"
+    "lines": 2873,
+    "sha256": "28aa78b41f56c0efb677f59b3172d3f076a5568d35bd5950b4ebfb6ea33dc288"
   },
   "evidence_archive": {
     "path": ".verify/post_e_comm_fault_hardening/H_evidence.tar.gz",
@@ -4781,8 +4856,8 @@
     "per_file_sha256_verified": true,
     "verification_method": "旧5b0c32c0包66038索引完整前缀保留；ca14 Orin软件原件新增104件逐SHA验证，含7 ELF及sidecar，排除重复worktree；右H2原FAIL不改写。"
   },
-  "retention": "旧65918索引及全部历史FAIL保全；右H2原失败115件、断电2件、通电澄清3件、ca14 Orin软件104件增量归包。软件归包回执与最终handoff评审/提交回执为包外后生件，留待后续包承接。",
-  "updated_at": "2026-09-25T17:05:15.162773+00:00",
+  "retention": "旧65918索引及全部历史FAIL保全；右H2原失败115件、断电2件、通电澄清3件、ca14 Orin软件104件增量归包。软件归包回执与最终handoff评审/提交回执为包外后生件，留待后续包承接。 S49独立小包另保存本轮42份Orin原件及本机日志/源码/评审；旧H大包SHA和全部硬件记录不变。",
+  "updated_at": "2026-09-29T18:55:02.099615+00:00",
   "review": {
     "reviewer": "inspect_current_specs",
     "source_hash": "c07a9886d74675cc0ecb232c60802c778cb1d2ec210e485a18e7de14905514b1",
@@ -4802,20 +4877,20 @@
       "三native实际CargoJSON/manifest/SHA及最终无进程/服务停用/正式与持久态不变",
       "新H2驱动PLAN ACK：仅一次授权启动，新commit clean与新物理完成信号均必需"
     ],
-    "scope_note": "原review保留S45历史；最新左H2真实通过见software.s48.h2_retry/hardware.left.H2，延时软件验收见h2_delay；旧真实FAIL已完整移入hardware.left.H2_previous_runs。 本轮5952498软件与122原件独审见software.s48.h2_arm_native，原S45 review不改写。 右H13仅本地软件与目录权限窄修验收见software.s48.right_h13_preparation，未增加真实右硬件结果。 r3 pidfd兼容及新Orin软件验收见software.s48.right_h13_native，首轮原生失败保留，不增加右硬件结果。 本次右H1/H3实际结果见hardware.right及right_h13_run/review/raw_review.json；前述未测表述均为各旧阶段当时边界。 右H2本次真实结果见hardware.right.H2：四组测量文件PASS、最终Disable超时导致整体FAIL；右H2失败原件与ca14 Orin软件原件已分别核验；本次handoff最终独立复审通过，软件修复不等于硬件通过。"
+    "scope_note": "原review保留S45历史；最新左H2真实通过见software.s48.h2_retry/hardware.left.H2，延时软件验收见h2_delay；旧真实FAIL已完整移入hardware.left.H2_previous_runs。 本轮5952498软件与122原件独审见software.s48.h2_arm_native，原S45 review不改写。 右H13仅本地软件与目录权限窄修验收见software.s48.right_h13_preparation，未增加真实右硬件结果。 r3 pidfd兼容及新Orin软件验收见software.s48.right_h13_native，首轮原生失败保留，不增加右硬件结果。 本次右H1/H3实际结果见hardware.right及right_h13_run/review/raw_review.json；前述未测表述均为各旧阶段当时边界。 右H2本次真实结果见hardware.right.H2：四组测量文件PASS、最终Disable超时导致整体FAIL；右H2失败原件与ca14 Orin软件原件已分别核验；本次handoff最终独立复审通过，软件修复不等于硬件通过。 2026-09-29最终Disable软件回归独审通过，实际来源/42原件/串行workspace及前后快照见software.s49；默认并行S1失败保持OPEN，不改变右H2整体FAIL。"
   },
   "next_h2": {
     "status": "RIGHT_H2_FAILED_NEW_HARDWARE_GO_REQUIRED",
     "driver": "scripts/run_post_e_h2.py",
     "driver_sha256": "37ff52be7893dc992eca0fca9b8133b790c745433222bc33dff1beaa01c0a699",
     "plan_review": "ACK",
-    "default_plan_only": "两端新版64Python通过，5952498新原生绑定通过；默认PLAN_ONLY不构成硬件授权。",
-    "runtime_head_policy": "运行时两端最新HEAD一致且clean；571编译源及三Python逐字绑定批准build来源；文档提交可严格祖先继承，不回填build HEAD。",
+    "default_plan_only": "默认PLAN_ONLY不构成硬件授权；5952498和64Python为历史已验基线，本轮66Python纯软件通过不授权新H2。",
+    "runtime_head_policy": "下一真实尝试须两端最新HEAD一致且clean；全部编译源及三Python逐字绑定本次批准build manifest，不沿用历史571项或5952498产物。文档提交可按既有严格祖先政策继承，不回填build HEAD；本轮603项为隔离软件及辅助来源快照，不是新的正式测量件批准。",
     "physical_reset_after_failed_h2_confirmed": true,
     "remote_bin_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_delay/native_20260922T110924Z_fa37abea/measurement",
     "remote_run_dir": "/home/loosqk/repo/robot/robot-system/target/post_e_h2_rt/s48/h2_retry/precheck_20260922T113258Z_b78558d3/left_h2_run",
     "prior_driver_state": "c5daa67本次左H2已PASS并真实退出，目录与授权已消费，不复用。",
-    "current_resume_note": "右H2原run/report整体FAIL；ca14f0e Orin软件验收PASS但未正式安装或硬件重测。用户已暂停，重插答复不是新H2授权；未来先补软件延迟回执覆盖，再取得新现场事实、独立GO与新输出目录。",
+    "current_resume_note": "本轮最终Disable延迟回执软件回归及Orin串行workspace已通过；默认并行S1两例超时仍OPEN。右H2原run/report仍整体FAIL。未来真实重测需新源码/正式测量产物、现场事实、独立GO和新输出目录，旧重插答复及已消费输出不可复用。",
     "current_s48_driver": {
       "path": "scripts/run_post_e_h2.py",
       "sha256": "37ff52be7893dc992eca0fca9b8133b790c745433222bc33dff1beaa01c0a699",
@@ -4884,7 +4959,8 @@
         "sha256": "b48301258ebadf7c42b0759228d8ca6f858177bb3947fc642473dfd71b712a57"
       },
       "scope": "仅已结束左H2历史产物（fb600fd）；不能供当前新版三Python使用或冒称新版原生验收。"
-    }
+    },
+    "physical_reset_confirmation_scope": "physical_reset_after_failed_h2_confirmed仅记录2026-09-23当时用户重插报告；next_attempt_physical_confirmation_received仍false，本轮没有新的现场物理确认。"
   },
   "cleanup": {
     "local": "local/s45/cleanup.json",
@@ -4893,37 +4969,19 @@
   },
   "source_identity_scope": "顶层base_commit/source_hash/source_input_count保留S45硬件候选基线；各后续软件包的实际来源与状态以software对应子项为准。",
   "stop_after_current": {
-    "user_request": "2026-09-23暂停；2026-09-25把当前进度写到handoff并传到git，用户将在其他地方开发。",
+    "user_request": "2026-09-29：根据目前项目进度，继续开发；可以直接在 orin 上编译测试。",
     "weekly_remaining_stop_percent": null,
-    "current_package": "S48_RIGHT_H2_FAIL_CA14_SOFTWARE_HANDOFF",
-    "next_package_authorized_to_start": false,
-    "state": "仅本次handoff/证据评审、提交、推送；后续开发与真机测试暂停。右H2仍FAIL，2026-09-23最后一次用户答复通电，本次交接时现状未知。",
+    "current_package": "S49_FINAL_DISABLE_TRANSPORT_REGRESSION",
+    "next_package_authorized_to_start": true,
+    "state": "软件阶段已验收，按既有规则提交且本轮不push；新硬件和正式安装须另具当次现场事实及授权。",
+    "policy": "阶段评审和必要质量门通过后commit；本轮不自动push，不复用历史硬件GO。",
+    "pause_after_each_major_stage": false,
+    "current_stage_authorized_to_resume": true,
+    "resume_requires_explicit_user_continue": false,
     "supersedes": [
-      "b 阶段完成后暂停",
-      "周额度剩余20%停止点",
-      "周额度剩余35%停止点",
-      "每一个大阶段完成就暂停让我检查",
-      "周额度剩余25%停止点"
+      "2026-09-25仅handoff收口后的开发暂停"
     ],
-    "policy": "本次文档和证据可提交推送；提交后停工，新的开发需用户明确继续，硬件另需本次现场事实与GO。",
-    "manual_pause": {
-      "at": "2026-09-20T10:54:55.011346+00:00",
-      "weekly_remaining_percent": 89,
-      "receipt": "target/post_e_h2_rt/s48/p7/pause_receipt.json"
-    },
-    "pause_after_each_major_stage": true,
-    "major_stage_boundary": "当前交接完成后暂停，不自动进入右H2复测或D15。",
-    "resume_requires_explicit_user_continue": true,
-    "current_stage_authorized_to_resume": false,
-    "current_pause_receipt": {
-      "requested_on": "2026-09-23",
-      "scope": "用户说“暂停吧，没有额度了”；2026-09-25仅授权handoff提交推送。"
-    },
-    "historical_right_h13_policy_receipt": {
-      "path": "target/post_e_h2_rt/s48/right_h13_run/root_operator_authorization.json",
-      "bytes": 861,
-      "sha256": "a3b4afd5c61dd14beef53e54f6730dd469e449f99ae18f9890f9558db63a8c63"
-    }
+    "major_stage_boundary": "软件阶段验收后收口；右H2重测仍须本次新现场事实与独立GO。"
   },
   "next_h13": {
     "status": "EXECUTED_PASS_CLEANED",
@@ -5002,5 +5060,45 @@
     "execution_authorized": false,
     "default_plan_only": true,
     "scope": "新右H1/H3物理重置、支撑、在场事实及root当次GO齐备后才执行；软件测试目录与原左确认不能作为现场授权。"
+  },
+  "historical_handoff_20260925": {
+    "work_state": "PAUSED_AFTER_RIGHT_H2_FAIL_CA14_SOFTWARE_ACCEPTED_HANDOFF",
+    "resume_from": "右H2四组测量文件PASS但final Disable超时，原run/report整体FAIL；ca14f0e已提交推送且Orin源码ff-only对齐，生产4/测量3及mock/定向单测仅软件PASS；未正式安装、未硬件重测。用户2026-09-23要求暂停，2026-09-25仅授权handoff提交推送；下一开发或硬件动作需新指令与当次现场事实，D15 OPEN。",
+    "status": "S48_RIGHT_H2_FAIL_CA14_SOFTWARE_ACCEPTED_HANDOFF_READY",
+    "review_status": "APPROVED_INDEPENDENT_HANDOFF_REVIEW",
+    "scope": "右H2原失败及清场、后到物理答复和两次前置FAIL保留；ca14 Orin原生构建/mock/定向单测仅软件通过，未正式安装或真机重测，D15 OPEN。",
+    "stop_after_current": {
+      "user_request": "2026-09-23暂停；2026-09-25把当前进度写到handoff并传到git，用户将在其他地方开发。",
+      "weekly_remaining_stop_percent": null,
+      "current_package": "S48_RIGHT_H2_FAIL_CA14_SOFTWARE_HANDOFF",
+      "next_package_authorized_to_start": false,
+      "state": "仅本次handoff/证据评审、提交、推送；后续开发与真机测试暂停。右H2仍FAIL，2026-09-23最后一次用户答复通电，本次交接时现状未知。",
+      "supersedes": [
+        "b 阶段完成后暂停",
+        "周额度剩余20%停止点",
+        "周额度剩余35%停止点",
+        "每一个大阶段完成就暂停让我检查",
+        "周额度剩余25%停止点"
+      ],
+      "policy": "本次文档和证据可提交推送；提交后停工，新的开发需用户明确继续，硬件另需本次现场事实与GO。",
+      "manual_pause": {
+        "at": "2026-09-20T10:54:55.011346+00:00",
+        "weekly_remaining_percent": 89,
+        "receipt": "target/post_e_h2_rt/s48/p7/pause_receipt.json"
+      },
+      "pause_after_each_major_stage": true,
+      "major_stage_boundary": "当前交接完成后暂停，不自动进入右H2复测或D15。",
+      "resume_requires_explicit_user_continue": true,
+      "current_stage_authorized_to_resume": false,
+      "current_pause_receipt": {
+        "requested_on": "2026-09-23",
+        "scope": "用户说“暂停吧，没有额度了”；2026-09-25仅授权handoff提交推送。"
+      },
+      "historical_right_h13_policy_receipt": {
+        "path": "target/post_e_h2_rt/s48/right_h13_run/root_operator_authorization.json",
+        "bytes": 861,
+        "sha256": "a3b4afd5c61dd14beef53e54f6730dd469e449f99ae18f9890f9558db63a8c63"
+      }
+    }
   }
 }

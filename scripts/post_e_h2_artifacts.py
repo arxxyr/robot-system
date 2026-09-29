@@ -41,7 +41,8 @@ BUILD_SPECS = {
         "gateway": ("robot-rpc", ("robot_rpc_gateway",),
                     ("--no-default-features", "--features", "test-comm-fault-hook"), ("test-comm-fault-hook",)),
         "tool": ("robot-tests", ("comm_fault_e2e",),
-                 ("--no-default-features", "--features", "comm-fault-e2e,real-hw"), ("comm-fault-e2e", "real-hw")),
+                 ("--no-default-features", "--features", "comm-fault-e2e,real-hw"),
+                 ("comm-fault-e2e", "comm-fault-rpc", "real-hw")),
     },
 }
 

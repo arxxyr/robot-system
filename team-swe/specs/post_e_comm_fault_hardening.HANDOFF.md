@@ -2,6 +2,20 @@
 
 ## 当前步骤
 
+**2026-09-29软件阶段已验收：补齐最终Disable的真实tonic延迟回执回归。** 用户重新要求按进度继续开发，并允许直接在Orin编译测试。共享`robot_tests::comm_fault_rpc`现在同时供Linux工具与回环测试调用；业务2000ms、gateway grace 500ms、最终传输3s、普通RPC 2s均保持。同步测量工具的三项feature闭包校验，并完成4处等价nightly Clippy修正；冻结设计、S0/RR安全语义和硬件SLA未改。
+
+源码基线`5213848`加本次变更；Orin独立目录`target/post_e_h2_rt/s49/rpc_transport_20260929_01`逐项核验603个来源（含辅助文件及符号链接），清单SHA `5fcbda255164cf91455d76183f2579abe737a2706c43ec36e634027220752539`。后续本地CLAUDE只更新状态文档，13项软件变更均与已验快照一致。未用本轮dev产物替代正式release测量件批准。
+
+本机窄feature的2项新单测、6项回环及定向Clippy通过。Orin最终源码fmt、实际重新检查的全workspace Clippy、测量feature Clippy、lib 4项（含新2项）、工具182项、6项回环/9场景、66项Python及工具构建通过。正例实际等待2101190176ns后收到合法Ack；普通2秒连接负控、3300ms回执及错误Ack/状态均拒绝，9场景的服务均已join且active为0。绑定本轮冻结测试peer后，完整workspace串行回归通过；显式网络回归与默认忽略项分别记账。模拟服务不证明真实gateway grace、RR/Lower退休或物理断扭。
+
+原失败保留：macOS全workspace存在Linux API限制，扩大Python测试也受Linux接口限制；首Orin默认workspace缺S1 `test-fault-backend`，两例失败。另一次默认并行S1库284 PASS/2 FAIL发生事件接收超时；14项隔离串行及完整串行回归随后通过，但具体并发根因仍OPEN，不能称默认并行全绿。同步tar的旧mtime可能命中缓存，0.44秒根Clippy不作为最终来源证明；刷新隔离源mtime后实际重查通过。
+
+正式Orin源码仍为`ca14f0e`且clean，四个原安装件SHA、六服务inactive/dead/MainPID0及无控制进程的前后快照相同；未访问真实串口、正式安装或重测硬件。marker/latch本轮未重读，现场电源、支撑与接触区UNKNOWN。**右H2原run/report仍整体FAIL，D15 OPEN、`deployable=false`**。下一真实尝试仍需新源码/产物绑定、当次现场事实和独立GO；旧输出目录与旧GO不可复用。
+
+本轮原件入口`target/post_e_h2_rt/s49/delayed_ack_20260929/`，持久摘要及独立小证据包见[软件验收摘要](../../.verify/post_e_comm_fault_hardening/S49_final_stop_transport.json)与[H.json](../../.verify/post_e_comm_fault_hardening/H.json)。旧H大包及历史FAIL保持原样；本轮按阶段规则提交，不push。
+
+### 2026-09-25历史交接（原事实与失败保留）
+
 **2026-09-25 交接状态：按用户要求暂停开发，仅完成本次 handoff/证据提交并推送。** 工作分支为`feat/post-e-comm-fault-hardening`；继续开发或启动真机测试须后续明确指令。左H1/H2/H3与右H1/H3已通过；右H2仍为**整体FAIL**，D15 OPEN、`deployable=false`，没有正式安装或退役。六个正式服务在最后一次Orin软件验收前后均为inactive/dead/MainPID0；这只是当时快照，不代表未来现场状态。
 
 2026-09-23右H2真机本轮整体**FAIL**：runtime `1ac4548`、实际build仍`5952498`；四组各100预热+1000正式测量文件逐组PASS，SLA-B P99依序10.168864/6.811968/10.145344/6.914688ms，但最终非dry-run Disable约2.001秒返回`Cancelled: Timeout expired`，故原`run.json`/`report.json`均FAIL，不称右H2通过。EStop/Disarm及GetState安全态3、final_trace有效均为局部事实，不能代替DisableAck或物理断电。
