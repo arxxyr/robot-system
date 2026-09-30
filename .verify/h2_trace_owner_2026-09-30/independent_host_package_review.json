@@ -1,0 +1,26 @@
+{
+  "schema": "H2_TRACE_OWNER_INDEPENDENT_HOST_REVIEW_V1",
+  "status": "PASS",
+  "archive": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-owner-evidence.tar.gz",
+    "sha256": "1e1942aad80ebf775ca47144c5fb6a242568fdb77118dbeed3ea334864fb1721",
+    "bytes": 91505591
+  },
+  "index": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-owner-evidence.index.json",
+    "sha256": "85586c40c87fda17797cc0bd93964eb8e5ee2b88166082168e690b9bbb214348",
+    "bytes": 22098
+  },
+  "indexed": 119,
+  "regular_members": 120,
+  "all_sha_bytes_executable": true,
+  "internal_index_name": "outer-index.json",
+  "summary": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-owner/summary.json",
+    "sha256": "4c62e24b74960801c3fc6b7b963ff4c9e10966450ed944d28b8d12fc199980ce",
+    "bytes": 36246
+  },
+  "scope": "仅软件SLA非RT证据工具，不改变原右H2 FAIL及原件",
+  "native_independent_report": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-owner/reviews/independent_native_r4_review.json",
+  "r1_failure_preserved": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-owner/reviews/independent_host_package_review.r1_failure.json"
+}

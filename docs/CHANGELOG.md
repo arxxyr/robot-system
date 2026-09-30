@@ -10,6 +10,12 @@
 
 ---
 
+## 2026-09-30 · H2 非 RT 证据工具的整次归属与完整 CAS 派生
+
+真实 Arm/Ready 的 sample_seq owner 保留至两个 child 回收后一次尾 drain，原始批次/capture/spool 不覆盖；新 run 按 epoch 稳定排序并重算完整 CAS，原统计另存。未知/故障/错代次/重复成功仍 FAIL，原 RT/authority、采样群体、SLA A/B 与 Python 严格门不变。
+登记新增共享工具容量门：44,000 owner、单 epoch 8,192 事件/256 bytes 行、每组每类 8,192 retry bins；有界读取与 checked 计数，溢出留原件且硬拒，适用于 SoftwareProbe/SoftwareLoad，不冒称旧长载已重验。
+隔离 Linux 最新 nightly5c 的 fmt/根及 feature Clippy、194 默认并行（含12新oracle）、4,401/4,000合成合同与5反例、短mock4×2及提交前uv合同复验通过；两轮lint与准备/独审原FAIL保留。[软件证据](../.verify/h2_trace_owner_2026-09-30/summary.json)。未部署/安装/push或关闭原硬件H2/D15。
+
 ## 2026-09-30 · S1 事件测试的连接就绪与资源回收
 
 只修 cfg(test) 夹具，独立 Node/端口 RAII、发送前刷新订阅连接，并用同帧双订阅者验证实际投递和未连接遗漏；生产代码、20ms/2s与默认并行不变。

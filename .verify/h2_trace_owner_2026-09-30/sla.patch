@@ -1,0 +1,1735 @@
+diff --git a/crates/robot-tests/src/comm_fault/sla.rs b/crates/robot-tests/src/comm_fault/sla.rs
+index af29a2e..266e1cc 100644
+--- a/crates/robot-tests/src/comm_fault/sla.rs
++++ b/crates/robot-tests/src/comm_fault/sla.rs
+@@ -1,8 +1,8 @@
+ //! H2：真实 S0 的两种 `EStop` 入口、事务执行权内载荷与完整物理确认时序。
+ 
+-use std::collections::BTreeSet;
+-use std::io::Write;
+-use std::path::Path;
++use std::collections::{BTreeMap, BTreeSet};
++use std::io::{Read, Write};
++use std::path::{Path, PathBuf};
+ use std::sync::atomic::{AtomicU64, Ordering};
+ use std::time::Duration;
+ 
+@@ -37,6 +37,11 @@ use robot_tests::comm_fault_rpc::{ack_evidence, final_stop_rpc};
+ const WARMUP: usize = 100;
+ const SAMPLES: usize = 1000;
+ const MAX_ATTEMPTS: usize = (WARMUP + SAMPLES) * 10;
++const MAX_SAMPLE_OWNERS: usize = MAX_ATTEMPTS * 4;
++// 工具证据容量门；不改变 S0 事件环、采样期限或 SLA 预算。
++const MAX_EPOCH_EVENTS: usize = TRACE_CAPACITY;
++const MAX_EVENT_ROW_BYTES: usize = 256;
++const MAX_RETRY_BINS: usize = 8192;
+ static COMMAND_SEQ: AtomicU64 = AtomicU64::new(10_000);
+ 
+ const ORDINARY_CPUS: [usize; 4] = [0, 1, 2, 3];
+@@ -1069,28 +1074,591 @@ async fn recover(
+     }
+ }
+ 
+-fn save_events(
+-    csv: &mut std::fs::File,
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++struct SampleOwner {
+     attempt: usize,
+     external: bool,
+-    events: &[TraceEvent],
++    in_flight: bool,
++}
++
++struct OwnerEntry {
++    owner: SampleOwner,
++    generation: Option<u32>,
++    unique: [bool; 6],
++    event_count: usize,
++    formal: bool,
++}
++
++#[derive(Default)]
++struct RetryHistogram {
++    bins: BTreeMap<u64, usize>,
++    count: usize,
++}
++
++impl RetryHistogram {
++    fn observe(&mut self, value: u64) -> Result<(), String> {
++        if !self.bins.contains_key(&value) && self.bins.len() >= MAX_RETRY_BINS {
++            return Err("CAS 分布 distinct-bin 容量越界，禁止截断".to_owned());
++        }
++        let count = self.count.checked_add(1).ok_or("CAS 总计数溢出")?;
++        let bin = self
++            .bins
++            .get(&value)
++            .copied()
++            .unwrap_or(0)
++            .checked_add(1)
++            .ok_or("CAS 分箱计数溢出")?;
++        self.bins.insert(value, bin);
++        self.count = count;
++        Ok(())
++    }
++
++    fn evidence(&self) -> Result<Value, String> {
++        if self.count == 0 {
++            return if self.bins.is_empty() {
++                Ok(Value::Null)
++            } else {
++                Err("CAS 空集与分箱不对应".to_owned())
++            };
++        }
++        let percentile = |fraction: usize| -> Result<u64, String> {
++            let index = self
++                .count
++                .checked_mul(fraction)
++                .ok_or("CAS 百分位索引乘法溢出")?
++                .div_ceil(100)
++                .saturating_sub(1);
++            let mut total = 0usize;
++            for (&value, &count) in &self.bins {
++                total = total.checked_add(count).ok_or("CAS 分箱累计溢出")?;
++                if total > index {
++                    return Ok(value);
++                }
++            }
++            Err("CAS 百分位缺少对应计数".to_owned())
++        };
++        let total = self
++            .bins
++            .values()
++            .try_fold(0usize, |total, &count| total.checked_add(count))
++            .ok_or("CAS 分箱累计溢出")?;
++        if total != self.count || self.bins.values().any(|&count| count == 0) {
++            return Err("CAS 总计数与分箱不对应".to_owned());
++        }
++        Ok(
++            json!({"count":self.count,"p50":percentile(50)?,"p99":percentile(99)?,
++            "max":self.bins.last_key_value().ok_or("CAS 分箱为空")?.0}),
++        )
++    }
++}
++
++#[derive(Default)]
++struct DerivedCas {
++    groups: BTreeMap<(bool, bool), [RetryHistogram; 3]>,
++    formal_sequences: BTreeMap<(bool, bool), Vec<u64>>,
++}
++
++/// 整次测量保留 owner，不按组清理；采集原件与最终排序派生件分别保存。
++struct TraceJournal {
++    directory: PathBuf,
++    owners: BTreeMap<u64, OwnerEntry>,
++    raw: std::fs::File,
++    capture: std::fs::File,
++    registrations: std::fs::File,
++    first_error: Option<String>,
++    final_drained: bool,
++    owner_limit: usize,
++    epoch_limit: usize,
++    derived_cas: Option<DerivedCas>,
++}
++
++fn event_row(owner: SampleOwner, event: &TraceEvent) -> String {
++    format!(
++        "{},{},{},{},{:?},{},{},{},{},{}\n",
++        owner.attempt,
++        owner.external,
++        event.sample_seq,
++        event.stamp_ns,
++        event.kind,
++        event.source,
++        event.normal_seq,
++        event.generation,
++        event.a,
++        event.b
++    )
++}
++
++impl TraceJournal {
++    fn new(directory: &Path) -> Result<Self, String> {
++        Self::with_limits(directory, MAX_SAMPLE_OWNERS, MAX_EPOCH_EVENTS)
++    }
++
++    fn with_limits(
++        directory: &Path,
++        owner_limit: usize,
++        epoch_limit: usize,
++    ) -> Result<Self, String> {
++        std::fs::create_dir(directory.join("trace_epochs")).map_err(|error| error.to_string())?;
++        let new_file = |name| {
++            std::fs::OpenOptions::new()
++                .write(true)
++                .create_new(true)
++                .open(directory.join(name))
++                .map_err(|error| error.to_string())
++        };
++        let mut capture = new_file("events_capture.csv")?;
++        write_event_header(&mut capture)?;
++        Ok(Self {
++            directory: directory.to_owned(),
++            owners: BTreeMap::new(),
++            raw: new_file("trace_drains.jsonl")?,
++            capture,
++            registrations: new_file("trace_owners.jsonl")?,
++            first_error: None,
++            final_drained: false,
++            owner_limit,
++            epoch_limit,
++            derived_cas: None,
++        })
++    }
++
++    fn remember(&mut self, result: Result<(), String>) {
++        if let Err(error) = result
++            && self.first_error.is_none()
++        {
++            self.first_error = Some(error);
++        }
++    }
++
++    fn status(&self) -> Result<(), String> {
++        self.first_error.clone().map_or(Ok(()), Err)
++    }
++
++    fn spool(&self, sequence: u64) -> PathBuf {
++        self.directory
++            .join("trace_epochs")
++            .join(format!("{sequence}.csv"))
++    }
++
++    fn register(
++        &mut self,
++        sequence: u64,
++        mode: SampleMode,
++        ready: BoundarySnapshot,
++        owner: SampleOwner,
++    ) -> Result<(), String> {
++        let validation = match mode {
++            SampleMode::Disarm => Err("Disarm 不能注册为采样 owner".to_owned()),
++            _ if sequence == 0 => Err("采样 owner 序号不能为零".to_owned()),
++            _ if owner.in_flight != (mode == SampleMode::ArmInflight) => {
++                Err("采样 owner 与实际 Arm 模式不对应".to_owned())
++            }
++            _ if self.owners.contains_key(&sequence) => {
++                Err("采样 owner 重复注册，禁止覆盖".to_owned())
++            }
++            _ if self.owners.len() >= self.owner_limit => {
++                Err("采样 owner 容量越界，禁止淘汰".to_owned())
++            }
++            _ => {
++                sample_boundary_ready(sequence, mode, &ready, ready.ready_ns).and_then(|matched| {
++                    if matched {
++                        Ok(())
++                    } else {
++                        Err("owner 缺少匹配的真实 Arm/Ready".to_owned())
++                    }
++                })
++            }
++        };
++        let row = json!({"sequence":sequence,"attempt":owner.attempt,"external":owner.external,
++            "requested_in_flight":owner.in_flight,"mode":format!("{mode:?}"),
++            "ready":boundary_evidence(ready),"registered":validation.is_ok(),"error":validation.as_ref().err()});
++        let saved = writeln!(self.registrations, "{row}")
++            .and_then(|()| self.registrations.flush())
++            .map_err(|error| error.to_string());
++        self.remember(saved);
++        self.remember(validation);
++        self.status()?;
++        std::fs::OpenOptions::new()
++            .write(true)
++            .create_new(true)
++            .open(self.spool(sequence))
++            .map_err(|error| {
++                let error = format!("创建 owner spool 失败：{error}");
++                self.remember(Err(error.clone()));
++                error
++            })?;
++        self.owners.insert(
++            sequence,
++            OwnerEntry {
++                owner,
++                generation: None,
++                unique: [false; 6],
++                event_count: 0,
++                formal: false,
++            },
++        );
++        Ok(())
++    }
++
++    fn capture(&mut self, stage: &str, events: &[TraceEvent]) -> Result<(), String> {
++        let raw_events: Vec<_> = events.iter().map(|event| {
++            let owner = self.owners.get(&event.sample_seq).map(|entry| json!({
++                "attempt":entry.owner.attempt,"external":entry.owner.external,
++                "requested_in_flight":entry.owner.in_flight}));
++            json!({"owner":owner,"event":{"sample_seq":event.sample_seq,"stamp_ns":event.stamp_ns,
++                "kind":format!("{:?}",event.kind),"source":event.source,"normal_seq":event.normal_seq,
++                "generation":event.generation,"a":event.a,"b":event.b}})
++        }).collect();
++        // 整批原字段先写入；未知 owner 不伪造 CSV 标签，仍留下完整原件并 sticky FAIL。
++        let row = json!({"stage":stage,"events":raw_events});
++        let saved = writeln!(self.raw, "{row}")
++            .and_then(|()| self.raw.flush())
++            .map_err(|error| error.to_string());
++        self.remember(saved);
++        let mut spools: BTreeMap<u64, String> = BTreeMap::new();
++        for event in events {
++            let Some(entry) = self.owners.get_mut(&event.sample_seq) else {
++                self.remember(Err(format!(
++                    "事件 epoch {} 未注册真实 Arm/Ready owner",
++                    event.sample_seq
++                )));
++                continue;
++            };
++            let row = event_row(entry.owner, event);
++            let saved = self
++                .capture
++                .write_all(row.as_bytes())
++                .map_err(|error| error.to_string());
++            spools.entry(event.sample_seq).or_default().push_str(&row);
++            entry.event_count = entry.event_count.saturating_add(1);
++            let validated = validate_owned_event(entry, event, self.epoch_limit).and_then(|()| {
++                if row.len() <= MAX_EVENT_ROW_BYTES {
++                    Ok(())
++                } else {
++                    Err("事件 CSV 行容量越界".to_owned())
++                }
++            });
++            self.remember(saved);
++            self.remember(validated);
++        }
++        // 一项归属、解析或写入错误不能跳过本批后续事件及其它 owner spool。
++        for (sequence, rows) in spools {
++            let saved = std::fs::OpenOptions::new()
++                .append(true)
++                .open(self.spool(sequence))
++                .and_then(|mut file| file.write_all(rows.as_bytes()).and_then(|()| file.flush()))
++                .map_err(|error| error.to_string());
++            self.remember(saved);
++        }
++        let flushed = self.capture.flush().map_err(|error| error.to_string());
++        self.remember(flushed);
++        self.status()
++    }
++
++    fn route(
++        &mut self,
++        stage: &str,
++        sequence: u64,
++        current: &mut Vec<TraceEvent>,
++        batch: Vec<TraceEvent>,
++    ) -> Result<(), String> {
++        let captured = self.capture(stage, &batch);
++        // 当前解析只取本 epoch；旧 epoch 已按不可变 owner 完整保存并严格校验。
++        current.extend(
++            batch
++                .into_iter()
++                .filter(|event| event.sample_seq == sequence),
++        );
++        captured
++    }
++
++    fn complete(&mut self, sequence: u64, events: &[TraceEvent]) -> Result<(), String> {
++        let primitive = events
++            .iter()
++            .find(|event| event.kind == TraceKind::PrimitiveCommitted)
++            .ok_or("完成样本缺少真实 PrimitiveCommitted")?;
++        let entry = self.owners.get_mut(&sequence).ok_or("完成样本缺少 owner")?;
++        validate_event_membership(events, entry.owner.external, primitive.generation)?;
++        entry.generation = Some(primitive.generation);
++        Ok(())
++    }
++
++    fn mark_formal(
++        &mut self,
++        sequence: u64,
++        actual_in_flight: bool,
++        warmup: bool,
++    ) -> Result<(), String> {
++        let entry = self.owners.get_mut(&sequence).ok_or("正式样本缺少 owner")?;
++        if entry.generation.is_none() {
++            return Err("正式样本尚未完成严格解析".to_owned());
++        }
++        // 集合由原 group 的 matched/warmup 决策唯一确定，不由尾部统计重选。
++        entry.formal = actual_in_flight == entry.owner.in_flight && !warmup;
++        Ok(())
++    }
++
++    fn render_csv(&self) -> Result<DerivedCas, String> {
++        let pending = self.directory.join("events.csv.pending");
++        let mut csv = std::fs::OpenOptions::new()
++            .write(true)
++            .create_new(true)
++            .open(&pending)
++            .map_err(|error| error.to_string())?;
++        write_event_header(&mut csv)?;
++        let mut derived = DerivedCas::default();
++        for (&sequence, entry) in &self.owners {
++            if entry.event_count > self.epoch_limit {
++                return Err("单 epoch 事件数越界；spool 保留，禁止截断派生 CSV".to_owned());
++            }
++            let path = self.spool(sequence);
++            let metadata = path.symlink_metadata().map_err(|error| error.to_string())?;
++            let byte_limit = self
++                .epoch_limit
++                .checked_mul(MAX_EVENT_ROW_BYTES)
++                .ok_or("spool 容量计算溢出")?;
++            if !metadata.file_type().is_file() || metadata.len() > byte_limit as u64 {
++                return Err("spool 不是有界普通文件".to_owned());
++            }
++            let file = std::fs::File::open(&path).map_err(|error| error.to_string())?;
++            if !file
++                .metadata()
++                .map_err(|error| error.to_string())?
++                .file_type()
++                .is_file()
++            {
++                return Err("打开的 spool 不是普通文件".to_owned());
++            }
++            let mut bytes = Vec::new();
++            file.take(byte_limit as u64 + 1)
++                .read_to_end(&mut bytes)
++                .map_err(|error| error.to_string())?;
++            if bytes.len() > byte_limit {
++                return Err("spool 读取期间容量越界，原件保留".to_owned());
++            }
++            let text = std::str::from_utf8(&bytes).map_err(|error| error.to_string())?;
++            let mut rows = Vec::new();
++            for row in text.split_inclusive('\n') {
++                let fields: Vec<_> = row.trim_end_matches('\n').split(',').collect();
++                if !row.ends_with('\n')
++                    || row.len() > MAX_EVENT_ROW_BYTES
++                    || fields.len() != 10
++                    || fields[0] != entry.owner.attempt.to_string()
++                    || fields[1] != entry.owner.external.to_string()
++                    || fields[2] != sequence.to_string()
++                {
++                    return Err("spool 行截断、容量或 owner 字段异常".to_owned());
++                }
++                rows.push((
++                    fields[3]
++                        .parse::<u64>()
++                        .map_err(|error| error.to_string())?,
++                    row,
++                ));
++            }
++            if rows.len() != entry.event_count || rows.len() > self.epoch_limit {
++                return Err("spool 行数与真实捕获计数不对应".to_owned());
++            }
++            // 稳定排序保留同 stamp 的原观测顺序，不改原 raw/capture/spool。
++            rows.sort_by_key(|(stamp, _)| *stamp);
++            let identity = (entry.owner.external, entry.owner.in_flight);
++            if entry.formal {
++                derived
++                    .formal_sequences
++                    .entry(identity)
++                    .or_default()
++                    .push(sequence);
++            }
++            for (_, row) in rows {
++                csv.write_all(row.as_bytes())
++                    .map_err(|error| error.to_string())?;
++                if entry.formal {
++                    let fields: Vec<_> = row.trim_end_matches('\n').split(',').collect();
++                    let kind = match fields[4] {
++                        "NormalAcquire" => Some(0),
++                        "SerialClaim" => Some(1),
++                        "IpcClaim" => Some(2),
++                        _ => None,
++                    };
++                    if let Some(kind) = kind {
++                        derived
++                            .groups
++                            .entry(identity)
++                            .or_insert_with(|| std::array::from_fn(|_| RetryHistogram::default()))
++                            [kind]
++                            .observe(
++                                fields[8]
++                                    .parse::<u64>()
++                                    .map_err(|error| error.to_string())?,
++                            )?;
++                    }
++                }
++            }
++        }
++        self.publish_csv(csv, pending)?;
++        Ok(derived)
++    }
++
++    fn publish_csv(&self, mut csv: std::fs::File, pending: PathBuf) -> Result<(), String> {
++        csv.flush().map_err(|error| error.to_string())?;
++        let destination = self.directory.join("events.csv");
++        if destination.exists() {
++            return Err("禁止覆盖既有 events.csv".to_owned());
++        }
++        std::fs::rename(pending, destination).map_err(|error| error.to_string())
++    }
++
++    fn synchronize_cas(&self, measurement: &mut Value) -> Result<(), String> {
++        self.status()?;
++        let derived = self
++            .derived_cas
++            .as_ref()
++            .ok_or("尾部完整 CSV/CAS 派生件尚未完成")?;
++        let groups = measurement["groups"]
++            .as_array_mut()
++            .ok_or("物理组报告缺少数组")?;
++        let mut evidence = Vec::new();
++        if groups.len() != 4 {
++            return Err("物理组报告不是四组".to_owned());
++        }
++        for (group, (external, in_flight)) in
++            groups
++                .iter_mut()
++                .zip([(false, false), (false, true), (true, false), (true, true)])
++        {
++            if group["external"] != external || group["in_flight"] != in_flight {
++                return Err("CAS 派生组身份与原四组不对应".to_owned());
++            }
++            let sequences = derived
++                .formal_sequences
++                .get(&(external, in_flight))
++                .ok_or("正式样本集合未知")?;
++            if sequences.len() != SAMPLES {
++                return Err("CAS 派生正式样本集合不是原1000项".to_owned());
++            }
++            let before = group.clone();
++            let histograms = derived.groups.get(&(external, in_flight));
++            let fields = [
++                "acquire_cas_retries",
++                "serial_claim_cas_retries",
++                "ipc_claim_cas_retries",
++            ];
++            for (index, field) in fields.iter().enumerate() {
++                group[field] =
++                    histograms.map_or(Ok(Value::Null), |values| values[index].evidence())?;
++            }
++            let mut original_non_cas = before.clone();
++            let mut final_non_cas = group.clone();
++            for field in fields {
++                original_non_cas
++                    .as_object_mut()
++                    .ok_or("采集组不是对象")?
++                    .remove(field);
++                final_non_cas
++                    .as_object_mut()
++                    .ok_or("派生组不是对象")?
++                    .remove(field);
++            }
++            if original_non_cas != final_non_cas {
++                return Err("CAS 同步改变了原 SLA/population 字段".to_owned());
++            }
++            write_json(
++                &self
++                    .directory
++                    .join(format!("sla_{external}_{in_flight}.json")),
++                group,
++            )?;
++            evidence.push(
++                json!({"external":external,"in_flight":in_flight,"formal_sequences":sequences,
++                "non_cas_fields_unchanged":true,"capture":before,"derived":group}),
++            );
++        }
++        write_json(
++            &self.directory.join("cas_derivation.json"),
++            &json!({
++            "source":"真实reap后一次尾drain的完整owner spool；正式集合按原matched/warmup登记",
++            "events_csv":self.directory.join("events.csv"),"retry_bin_limit":MAX_RETRY_BINS,"groups":evidence}),
++        )
++    }
++
++    fn finish(
++        &mut self,
++        children_stopped: bool,
++        drain: impl FnOnce() -> Vec<TraceEvent>,
++    ) -> Result<(), String> {
++        if !children_stopped || self.final_drained {
++            self.remember(Err(
++                "尾部 drain 要求真实 stop/reap，且整次只能执行一次".to_owned()
++            ));
++            return self.status();
++        }
++        self.final_drained = true;
++        let events = drain();
++        // 即使已有 sticky 失败，仍保存整批尾部事件并尝试生成完整派生件。
++        let captured = self.capture("after_children_reaped", &events);
++        let rendered = self.render_csv();
++        self.remember(captured);
++        match rendered {
++            Ok(derived) => self.derived_cas = Some(derived),
++            Err(error) => self.remember(Err(error)),
++        }
++        self.status()
++    }
++}
++
++fn validate_owned_event(
++    entry: &mut OwnerEntry,
++    event: &TraceEvent,
++    limit: usize,
+ ) -> Result<(), String> {
+-    for event in events {
+-        writeln!(
+-            csv,
+-            "{attempt},{external},{},{},{:?},{},{},{},{},{}",
+-            event.sample_seq,
+-            event.stamp_ns,
++    if entry.event_count > limit {
++        return Err("单 epoch 事件容量越界，原件保留且样本 invalid".to_owned());
++    }
++    if event.a == u64::MAX
++        && matches!(
+             event.kind,
+-            event.source,
+-            event.normal_seq,
+-            event.generation,
+-            event.a,
+-            event.b
++            TraceKind::NormalAcquire
++                | TraceKind::NormalRelease
++                | TraceKind::SerialClaim
++                | TraceKind::IpcClaim
++                | TraceKind::PrimitiveCommitted
+         )
+-        .map_err(|e| e.to_string())?;
++    {
++        return Err("owner epoch 的 CAS 次数缺失或耗尽".to_owned());
++    }
++    let unique = match event.kind {
++        TraceKind::TopicReceived if !entry.owner.external => Some(0),
++        TraceKind::ExternalEnter if entry.owner.external => Some(0),
++        TraceKind::PrimitiveCommitted => Some(1),
++        TraceKind::SerialClaim if event.b == 1 => Some(2),
++        TraceKind::IpcClaim if event.b == 1 => Some(3),
++        TraceKind::IpcEStopCommit => Some(4),
++        TraceKind::AllOffTrusted => Some(5),
++        TraceKind::NormalAcquire
++        | TraceKind::NormalRelease
++        | TraceKind::SerialClaim
++        | TraceKind::IpcClaim
++        | TraceKind::SafetyStart
++        | TraceKind::SafetyReturn
++        | TraceKind::ConfirmReturn
++        | TraceKind::InjectedDelay => None,
++        _ => {
++            return Err(format!(
++                "owner epoch 的故障、未知 kind 或错误入口：{:?}",
++                event.kind
++            ));
++        }
++    };
++    if let Some(index) = unique {
++        if entry.unique[index] {
++            return Err(format!("owner epoch 的 {:?} 成功/唯一事件重复", event.kind));
++        }
++        entry.unique[index] = true;
+     }
+-    csv.flush().map_err(|e| e.to_string())
++    if let Some(generation) = entry.generation {
++        validate_event_membership(&[*event], entry.owner.external, generation)?;
++    }
++    Ok(())
+ }
+ 
+ async fn collect(
+@@ -1099,11 +1667,15 @@ async fn collect(
+     s0: &mut tokio::process::Child,
+     events: &mut Vec<TraceEvent>,
+     health: Option<&BackgroundHealth>,
++    journal: &mut TraceJournal,
+ ) -> Result<(), String> {
+-    let collected = collect_batches(
++    let collected = collect_routed_batches(
+         sequence,
+         events,
+-        || trace.drain(TRACE_CAPACITY),
++        |events| {
++            let batch = trace.drain(TRACE_CAPACITY);
++            journal.route("collect", sequence, events, batch)
++        },
+         || trace.dropped(),
+         || {
+             check_background(health)?;
+@@ -1117,17 +1689,38 @@ async fn collect(
+ }
+ 
+ /// 与真实采集器共用的循环；可替换的只有一次 drain 与外部存活事实。
++#[cfg(test)]
+ pub(super) async fn collect_batches(
+     sequence: u64,
+     events: &mut Vec<TraceEvent>,
+     mut drain: impl FnMut() -> Vec<TraceEvent>,
+     dropped: impl Fn() -> u64,
++    alive: impl FnMut() -> Result<bool, String>,
++) -> Result<(), String> {
++    collect_routed_batches(
++        sequence,
++        events,
++        |events| {
++            events.extend(drain());
++            Ok(())
++        },
++        dropped,
++        alive,
++    )
++    .await
++}
++
++async fn collect_routed_batches(
++    sequence: u64,
++    events: &mut Vec<TraceEvent>,
++    mut capture: impl FnMut(&mut Vec<TraceEvent>) -> Result<(), String>,
++    dropped: impl Fn() -> u64,
+     mut alive: impl FnMut() -> Result<bool, String>,
+ ) -> Result<(), String> {
+     let deadline = SystemClock.now().0 + 2_000_000_000;
+     loop {
+         // 已消费的原始事件必须全部交还调用方保存；不能先过滤外代再宣称完整。
+-        events.extend(drain());
++        capture(events)?;
+         if events.iter().any(|event| event.sample_seq != sequence) {
+             return Err("采集过程中混入其它 epoch，原始事件已保留".to_owned());
+         }
+@@ -1167,7 +1760,7 @@ struct SlaRunner<'a> {
+     s0: &'a mut tokio::process::Child,
+     client: &'a mut RobotControlClient<Channel>,
+     topic: &'a mut Iceoryx2Publisher<markers::EStopEvent>,
+-    csv: &'a mut std::fs::File,
++    journal: &'a mut TraceJournal,
+     attempts: std::fs::File,
+     hardware_id: &'a str,
+     health: Option<&'a BackgroundHealth>,
+@@ -1293,6 +1886,11 @@ impl SlaRunner<'_> {
+                 "matched": matched, "warmup": stats.completed < WARMUP,
+                 "t0_ns": sample.t0_ns, "t1_ns": sample.t1_ns, "all_off_ns": sample.all_off_ns}),
+             )?;
++            self.journal.mark_formal(
++                events[0].sample_seq,
++                sample.in_flight,
++                stats.completed < WARMUP,
++            )?;
+             if matched {
+                 stats.accept(sample, &events);
+             } else {
+@@ -1307,7 +1905,7 @@ impl SlaRunner<'_> {
+             &self
+                 .case
+                 .directory
+-                .join(format!("sla_{external}_{in_flight}.json")),
++                .join(format!("sla_{external}_{in_flight}_capture.json")),
+             &result,
+         )?;
+         if !result["passed"].as_bool().unwrap_or(false) {
+@@ -1329,22 +1927,29 @@ impl SlaRunner<'_> {
+     ) -> Result<(Sample, Vec<TraceEvent>), String> {
+         recover(self.client, self.hardware_id, self.health, self.writes).await?;
+         let unarmed = self.trace.drain(TRACE_CAPACITY);
+-        // 上一 epoch 必须已完整消费并解除采样；迟到事件同样保留，不静默丢弃。
+-        save_events(self.csv, attempt, external, &unarmed)?;
+-        let (sequence, _) = send_sample_request(
+-            self.port,
+-            self.case,
+-            self.s0,
+-            self.trace,
+-            if in_flight {
+-                SampleMode::ArmInflight
+-            } else {
+-                SampleMode::ArmIdle
++        // 迟到事件按整次登记的旧 owner 保存，不借用当前 attempt/入口标签。
++        self.journal.capture("between_samples", &unarmed)?;
++        let mode = if in_flight {
++            SampleMode::ArmInflight
++        } else {
++            SampleMode::ArmIdle
++        };
++        let (sequence, ready) =
++            send_sample_request(self.port, self.case, self.s0, self.trace, mode).await?;
++        let registered = self.journal.register(
++            sequence,
++            mode,
++            ready,
++            SampleOwner {
++                attempt,
++                external,
++                in_flight,
+             },
+-        )
+-        .await?;
++        );
+         let mut events = Vec::new();
+         let captured = async {
++            // 注册失败也必须经过下面独立的 Disarm 和最外层安全 finally。
++            registered?;
+             if in_flight {
+                 self.wait_acquired(sequence, &mut events).await?;
+             }
+@@ -1363,7 +1968,15 @@ impl SlaRunner<'_> {
+             } else {
+                 publish_estop(self.topic, sequence)?;
+             }
+-            collect(self.trace, sequence, self.s0, &mut events, self.health).await
++            collect(
++                self.trace,
++                sequence,
++                self.s0,
++                &mut events,
++                self.health,
++                self.journal,
++            )
++            .await
+         }
+         .await;
+         let disarmed = send_sample_request(
+@@ -1375,12 +1988,15 @@ impl SlaRunner<'_> {
+         )
+         .await;
+         // 回执确认真实 lease 完整退场后才收尾；失败也保存已消费的全部原始事件。
+-        events.extend(self.trace.drain(TRACE_CAPACITY));
++        let tail = self.trace.drain(TRACE_CAPACITY);
++        let tail_saved = self
++            .journal
++            .route("after_disarm", sequence, &mut events, tail);
+         events.sort_by_key(|event| event.stamp_ns);
+-        save_events(self.csv, attempt, external, &events)?;
+         let disarm_ok = matches!(&disarmed, Ok((_, snapshot)) if snapshot.failure.is_none());
+         let disarm_result = format!("{disarmed:?}");
+         let interpreted = captured
++            .and(tail_saved)
+             .and(disarmed.and_then(|(_, snapshot)| match snapshot.failure {
+                 Some(failure) => Err(format!(
+                     "采样边界保留失败：seq={} {failure:?}",
+@@ -1393,6 +2009,7 @@ impl SlaRunner<'_> {
+                 if in_flight && sample.in_flight {
+                     validate_inflight_delay(&events, &sample)?;
+                 }
++                self.journal.complete(sequence, &events)?;
+                 Ok(sample)
+             });
+         match interpreted {
+@@ -1415,7 +2032,9 @@ impl SlaRunner<'_> {
+     ) -> Result<(), String> {
+         let deadline = SystemClock.now().0 + 1_000_000_000;
+         loop {
+-            events.extend(self.trace.drain(TRACE_CAPACITY));
++            let batch = self.trace.drain(TRACE_CAPACITY);
++            self.journal
++                .route("wait_acquired", sequence, events, batch)?;
+             check_background(self.health)?;
+             if self.trace.dropped() != 0 {
+                 return Err("事件环累计 dropped>0，整次运行无效".to_owned());
+@@ -1537,14 +2156,13 @@ pub(super) fn configure_h2_gateway(
+ const LOAD_MIN_NS: u64 = 360_000_000_000;
+ const LOAD_MAX_NS: u64 = 600_000_000_000;
+ 
+-fn create_event_csv(directory: &Path) -> Result<std::fs::File, String> {
+-    let mut csv = std::fs::File::create(directory.join("events.csv")).map_err(|e| e.to_string())?;
++fn write_event_header(csv: &mut std::fs::File) -> Result<(), String> {
+     writeln!(
+         csv,
+         "attempt,external,sample_seq,stamp_ns,kind,source,normal_seq,generation,a,b"
+     )
+     .map_err(|e| e.to_string())?;
+-    Ok(csv)
++    csv.flush().map_err(|e| e.to_string())
+ }
+ 
+ async fn measure(
+@@ -1554,6 +2172,7 @@ async fn measure(
+     client: &mut RobotControlClient<Channel>,
+     hardware_id: &str,
+     kind: SlaRunKind,
++    journal: &mut TraceJournal,
+ ) -> Result<Value, String> {
+     let physical = matches!(kind, SlaRunKind::Physical);
+     let long_load = matches!(kind, SlaRunKind::SoftwareLoad { .. });
+@@ -1571,7 +2190,6 @@ async fn measure(
+         TopicClass::SafetyEvent,
+     )
+     .map_err(|e| e.to_string())?;
+-    let mut csv = create_event_csv(&case.directory)?;
+     let attempts =
+         std::fs::File::create(case.directory.join("attempts.jsonl")).map_err(|e| e.to_string())?;
+     send_control(port, case, s0, HookCommandKind::ExternalEStop, 0, 0, 0).await?;
+@@ -1593,7 +2211,7 @@ async fn measure(
+         s0,
+         client,
+         topic: &mut topic,
+-        csv: &mut csv,
++        journal,
+         attempts,
+         hardware_id,
+         health: health.as_ref(),
+@@ -1795,13 +2413,26 @@ pub(super) fn final_trace_evidence(
+             "failure":format!("{:?}",value.failure)}))})
+ }
+ 
+-fn save_final_trace(case: &Case, children_stopped: bool) -> Result<Value, String> {
+-    let observation = case.trace("s0").map(|trace| FinalTraceObservation {
+-        installed: trace.installed(),
+-        dropped: trace.dropped(),
+-        boundary: trace.boundary_snapshot(),
++fn save_final_trace(
++    case: &Case,
++    children_stopped: bool,
++    journal: &mut TraceJournal,
++    measurement: Option<&mut Value>,
++) -> Result<Value, String> {
++    let observation = case.trace("s0").map(|trace| {
++        let finished = journal.finish(children_stopped, || trace.drain(TRACE_CAPACITY));
++        journal.remember(finished);
++        FinalTraceObservation {
++            installed: trace.installed(),
++            dropped: trace.dropped(),
++            boundary: trace.boundary_snapshot(),
++        }
+     });
+-    let evidence = final_trace_evidence(children_stopped, &observation);
++    if let Some(measurement) = measurement {
++        let synchronized = journal.synchronize_cas(measurement);
++        journal.remember(synchronized);
++    }
++    let evidence = journal_trace_evidence(children_stopped, &observation, journal);
+     write_json(&case.directory.join("final_trace.json"), &evidence)?;
+     if evidence["valid"] != true {
+         return Err(format!("最终采样有效性失败：{}", evidence["error"]));
+@@ -1809,6 +2440,29 @@ fn save_final_trace(case: &Case, children_stopped: bool) -> Result<Value, String
+     Ok(evidence)
+ }
+ 
++fn journal_trace_evidence(
++    children_stopped: bool,
++    observation: &Result<FinalTraceObservation, String>,
++    journal: &TraceJournal,
++) -> Value {
++    let mut evidence = final_trace_evidence(children_stopped, observation);
++    evidence["event_capture_error"] = json!(journal.first_error);
++    evidence["final_events_drained"] = json!(journal.final_drained);
++    evidence["owner_count"] = json!(journal.owners.len());
++    evidence["owner_limit"] = json!(journal.owner_limit);
++    evidence["epoch_event_limit"] = json!(journal.epoch_limit);
++    evidence["event_row_byte_limit"] = json!(MAX_EVENT_ROW_BYTES);
++    evidence["retry_distinct_bin_limit"] = json!(MAX_RETRY_BINS);
++    if let Some(error) = &journal.first_error {
++        evidence["valid"] = json!(false);
++        evidence["error"] = json!(format!(
++            "最终 trace 捕获有效性失败：{error}；边界：{}",
++            evidence["error"]
++        ));
++    }
++    evidence
++}
++
+ async fn run_instance(
+     case: Case,
+     hardware_id: &str,
+@@ -1833,10 +2487,12 @@ async fn run_instance(
+             .collect::<Vec<_>>()
+     );
+     write_json(&case.directory.join("environment.json"), &environment)?;
++    // Owner/证据文件必须在子进程启动前可创建，随后持续持有至真实 stop/reap 后。
++    let mut journal = TraceJournal::new(&case.directory)?;
+     let mut s0 = case.spawn("s0", s0_command(&case, hardware_id, physical)?)?;
+     let mut gateway = None;
+     let mut scheduling = Value::Null;
+-    let result = async {
++    let mut result = async {
+         gateway = Some(case.spawn("gateway", gateway_config)?);
+         wait_log(&case, &mut s0, "s0", "boot_ready", Duration::from_secs(15)).await?;
+         wait_log(
+@@ -1857,7 +2513,16 @@ async fn run_instance(
+                 gateway.as_ref().and_then(tokio::process::Child::id),
+             )?;
+         }
+-        measure(&case, &port, &mut s0, &mut client, hardware_id, kind).await
++        measure(
++            &case,
++            &port,
++            &mut s0,
++            &mut client,
++            hardware_id,
++            kind,
++            &mut journal,
++        )
++        .await
+     }
+     .await;
+     let final_state = final_stop(&case, &port, &mut s0, &address, hardware_id).await;
+@@ -1867,7 +2532,12 @@ async fn run_instance(
+     };
+     let s0_stop = stop(&mut s0).await;
+     // 两个真实 stop 均已尝试；此后只读核验，不以较早 final_stop 回执代替尾部状态。
+-    let final_trace = save_final_trace(&case, gateway_stop.is_ok() && s0_stop.is_ok());
++    let final_trace = save_final_trace(
++        &case,
++        gateway_stop.is_ok() && s0_stop.is_ok(),
++        &mut journal,
++        if physical { result.as_mut().ok() } else { None },
++    );
+     if let SlaRunKind::SoftwareLoad { cache_entries } = kind {
+         let lifecycle = json!({"measurement_ok":result.is_ok() && final_trace.is_ok(),"measurement_error":result.as_ref().err(),
+             "final_trace_ok":final_trace.is_ok(),"final_trace_error":final_trace.as_ref().err(),
+@@ -1892,3 +2562,762 @@ async fn run_instance(
+         other => Err(format!("H2 测量或收尾失败：{other:?}")),
+     }
+ }
++
++#[cfg(test)]
++mod owner_tests {
++    use super::*;
++    use std::sync::mpsc;
++
++    fn owner(attempt: usize, external: bool, in_flight: bool) -> SampleOwner {
++        SampleOwner {
++            attempt,
++            external,
++            in_flight,
++        }
++    }
++
++    fn ready(sequence: u64, in_flight: bool) -> BoundarySnapshot {
++        let mode = if in_flight {
++            SampleMode::ArmInflight
++        } else {
++            SampleMode::ArmIdle
++        };
++        BoundarySnapshot {
++            request_seq: sequence,
++            request_mode: Some(mode),
++            request_deadline_ns: 1000,
++            receipt_seq: sequence,
++            mode: Some(mode),
++            status: SampleStatus::Ready,
++            ready_ns: 100,
++            idle_deadline_ns: if in_flight { 0 } else { 1100 },
++            armed_seq: sequence,
++            gate_active: !in_flight,
++            gate_release: None,
++            failure_seq: 0,
++            failure: None,
++        }
++    }
++
++    fn claim(sequence: u64, stamp: u64) -> TraceEvent {
++        TraceEvent {
++            sample_seq: sequence,
++            stamp_ns: stamp,
++            kind: TraceKind::IpcClaim,
++            source: 1,
++            normal_seq: 0,
++            generation: 7,
++            a: 0,
++            b: 0,
++        }
++    }
++
++    fn complete_events(sequence: u64, external: bool) -> Vec<TraceEvent> {
++        [
++            (
++                if external {
++                    TraceKind::ExternalEnter
++                } else {
++                    TraceKind::TopicReceived
++                },
++                10,
++                0,
++                0,
++            ),
++            (TraceKind::PrimitiveCommitted, 11, 2, 0),
++            (TraceKind::SerialClaim, 12, 3, 1),
++            (TraceKind::IpcClaim, 13, 5, 1),
++            (TraceKind::SafetyStart, 14, 1, 0),
++            (TraceKind::SafetyReturn, 15, 1, 1),
++            (TraceKind::IpcEStopCommit, 16, 0, 0),
++            (TraceKind::ConfirmReturn, 17, 0, 1),
++            (TraceKind::AllOffTrusted, 17, 0, 0),
++        ]
++        .into_iter()
++        .map(|(kind, stamp_ns, a, b)| TraceEvent {
++            kind,
++            stamp_ns,
++            a,
++            b,
++            ..claim(sequence, stamp_ns)
++        })
++        .collect()
++    }
++
++    fn register(journal: &mut TraceJournal, sequence: u64, value: SampleOwner) {
++        journal
++            .register(
++                sequence,
++                if value.in_flight {
++                    SampleMode::ArmInflight
++                } else {
++                    SampleMode::ArmIdle
++                },
++                ready(sequence, value.in_flight),
++                value,
++            )
++            .unwrap();
++    }
++
++    fn complete(journal: &mut TraceJournal, sequence: u64, value: SampleOwner) -> Vec<TraceEvent> {
++        register(journal, sequence, value);
++        let events = complete_events(sequence, value.external);
++        journal.capture("complete_sample", &events).unwrap();
++        analyze(&events, value.external).unwrap();
++        journal.complete(sequence, &events).unwrap();
++        events
++    }
++
++    fn raw_events(directory: &Path) -> Vec<Value> {
++        std::fs::read_to_string(directory.join("trace_drains.jsonl"))
++            .unwrap()
++            .lines()
++            .flat_map(|line| {
++                serde_json::from_str::<Value>(line).unwrap()["events"]
++                    .as_array()
++                    .unwrap()
++                    .clone()
++            })
++            .collect()
++    }
++
++    #[test]
++    fn paused_old_reservation_after_empty_disarm_routes_to_old_owner_across_group() {
++        // 同规则受控队列 oracle；不调用或声称复现真实 RT ring 的私有暂停 hook。
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::new(directory.path()).unwrap();
++        let previous = owner(9, false, true);
++        register(&mut journal, 73, previous);
++        let (reserved_tx, reserved_rx) = mpsc::channel();
++        let (release_tx, release_rx) = mpsc::channel();
++        let (published_tx, published_rx) = mpsc::channel();
++        let delayed = claim(73, 14);
++        let publisher = std::thread::spawn(move || {
++            reserved_tx.send(()).unwrap();
++            release_rx.recv().unwrap();
++            published_tx.send(delayed).unwrap();
++        });
++        reserved_rx.recv().unwrap();
++        assert!(matches!(
++            published_rx.try_recv(),
++            Err(mpsc::TryRecvError::Empty)
++        ));
++        journal.capture("after_disarm", &[]).unwrap();
++        register(&mut journal, 75, owner(0, true, false));
++        release_tx.send(()).unwrap();
++        publisher.join().unwrap();
++        let next_drain = [published_rx.recv().unwrap()];
++        journal.capture("between_samples", &next_drain).unwrap();
++        assert_eq!(journal.owners[&73].owner, previous);
++        assert_eq!(journal.owners.len(), 2);
++        assert_eq!(
++            std::fs::read_to_string(directory.path().join("events_capture.csv"))
++                .unwrap()
++                .lines()
++                .last()
++                .unwrap(),
++            "9,false,73,14,IpcClaim,1,0,7,0,0"
++        );
++        assert_eq!(
++            raw_events(directory.path())[0]["owner"]["requested_in_flight"],
++            true
++        );
++        assert_eq!(
++            next_drain
++                .iter()
++                .filter(|event| event.sample_seq == 75)
++                .count(),
++            0
++        );
++    }
++
++    #[test]
++    fn final_drain_occurs_once_only_after_real_child_wait_and_keeps_last_epoch_tail() {
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::new(directory.path()).unwrap();
++        complete(
++            &mut journal,
++            u64::from(u32::MAX) + 73,
++            owner(1099, true, false),
++        );
++        let mut child = std::process::Command::new("/bin/sh")
++            .args(["-c", "exit 0"])
++            .spawn()
++            .unwrap();
++        let waited = child.wait().unwrap();
++        assert_eq!(child.try_wait().unwrap(), Some(waited));
++        let late = claim(u64::from(u32::MAX) + 73, 12);
++        let mut drains = 0;
++        journal
++            .finish(waited.success(), || {
++                drains += 1;
++                vec![late]
++            })
++            .unwrap();
++        assert_eq!(drains, 1);
++        let csv = std::fs::read_to_string(directory.path().join("events.csv")).unwrap();
++        assert!(csv.contains(&event_row(owner(1099, true, false), &late)));
++        assert!(
++            journal
++                .finish(true, || {
++                    drains += 1;
++                    vec![]
++                })
++                .is_err()
++        );
++        assert_eq!(drains, 1);
++        let directory = tempfile::tempdir().unwrap();
++        let mut not_reaped = TraceJournal::new(directory.path()).unwrap();
++        assert!(
++            not_reaped
++                .finish(false, || panic!("未reap不能drain"))
++                .is_err()
++        );
++        assert!(!not_reaped.final_drained);
++    }
++
++    #[tokio::test]
++    async fn production_route_collects_current_sample_and_preserves_legal_old_owner() {
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::new(directory.path()).unwrap();
++        complete(&mut journal, 73, owner(9, false, false));
++        register(&mut journal, 75, owner(0, true, false));
++        let late = claim(73, 12);
++        let current_events = complete_events(75, true);
++        let mut batch = vec![late];
++        batch.extend(current_events.clone());
++        let mut batch = Some(batch);
++        let mut current = Vec::new();
++        collect_routed_batches(
++            75,
++            &mut current,
++            |events| {
++                journal.route(
++                    "collect",
++                    75,
++                    events,
++                    batch.take().expect("只drain一次完整批"),
++                )
++            },
++            || 0,
++            || panic!("完整当前样本无需等待下一轮"),
++        )
++        .await
++        .unwrap();
++        assert_eq!(current, current_events);
++        analyze(&current, true).unwrap();
++        assert_eq!(raw_events(directory.path()).len(), 19);
++        assert!(
++            std::fs::read_to_string(directory.path().join("events_capture.csv"))
++                .unwrap()
++                .contains("9,false,73,12,IpcClaim,1,0,7,0,0")
++        );
++        journal.complete(75, &current).unwrap();
++        journal.finish(true, Vec::new).unwrap();
++    }
++
++    #[tokio::test]
++    async fn production_route_rejects_old_generation_fault_or_unknown_after_saving_whole_batch() {
++        for changed in 0..3 {
++            let directory = tempfile::tempdir().unwrap();
++            let mut journal = TraceJournal::new(directory.path()).unwrap();
++            complete(&mut journal, 73, owner(9, false, false));
++            register(&mut journal, 75, owner(0, true, false));
++            let mut bad = claim(73, 12);
++            match changed {
++                0 => bad.generation += 1,
++                1 => bad.kind = TraceKind::FaultIpcCommit,
++                _ => bad.sample_seq = 74,
++            }
++            let current_events = complete_events(75, true);
++            let mut batch = vec![bad];
++            batch.extend(current_events.clone());
++            let mut batch = Some(batch);
++            let mut current = Vec::new();
++            assert!(
++                collect_routed_batches(
++                    75,
++                    &mut current,
++                    |events| { journal.route("collect", 75, events, batch.take().unwrap()) },
++                    || 0,
++                    || panic!("归属错误应在完整落盘后立即拒绝")
++                )
++                .await
++                .is_err()
++            );
++            assert_eq!(current, current_events);
++            let raw = raw_events(directory.path());
++            assert_eq!(raw.len(), 19);
++            assert_eq!(raw[9]["event"]["sample_seq"], bad.sample_seq);
++            assert_eq!(
++                std::fs::read_to_string(journal.spool(75))
++                    .unwrap()
++                    .lines()
++                    .count(),
++                9
++            );
++            assert!(journal.finish(true, Vec::new).is_err());
++        }
++    }
++
++    #[test]
++    fn late_rows_sort_stably_without_rewriting_capture_or_raw() {
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::new(directory.path()).unwrap();
++        complete(&mut journal, 73, owner(10, false, false));
++        let first = TraceEvent {
++            a: 21,
++            ..claim(73, 12)
++        };
++        let second = TraceEvent {
++            a: 22,
++            ..claim(73, 12)
++        };
++        journal.capture("next_group", &[first, second]).unwrap();
++        let capture = std::fs::read(directory.path().join("events_capture.csv")).unwrap();
++        let raw = std::fs::read(directory.path().join("trace_drains.jsonl")).unwrap();
++        journal.finish(true, Vec::new).unwrap();
++        assert_eq!(
++            std::fs::read(directory.path().join("events_capture.csv")).unwrap(),
++            capture
++        );
++        assert!(
++            std::fs::read(directory.path().join("trace_drains.jsonl"))
++                .unwrap()
++                .starts_with(&raw)
++        );
++        let csv = std::fs::read_to_string(directory.path().join("events.csv")).unwrap();
++        let rows: Vec<_> = csv.lines().skip(1).collect();
++        let stamps: Vec<u64> = rows
++            .iter()
++            .map(|row| row.split(',').nth(3).unwrap().parse().unwrap())
++            .collect();
++        assert!(stamps.windows(2).all(|pair| pair[0] <= pair[1]));
++        let tied: Vec<_> = rows
++            .iter()
++            .filter(|row| row.split(',').nth(3) == Some("12"))
++            .copied()
++            .collect();
++        assert!(tied[1].ends_with(",21,0") && tied[2].ends_with(",22,0"));
++        assert_eq!(rows.len(), 11);
++    }
++
++    #[test]
++    fn unknown_epochs_keep_entire_batch_and_make_clean_final_boundary_fail() {
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::new(directory.path()).unwrap();
++        complete(&mut journal, 73, owner(3, false, false));
++        let batch = [claim(0, 18), claim(74, 19), claim(73, 20), claim(75, 21)];
++        assert!(
++            journal
++                .capture("unknown_control_disarm_epochs", &batch)
++                .is_err()
++        );
++        let raw = raw_events(directory.path());
++        assert_eq!(raw.len(), 13);
++        for (row, event) in raw[9..].iter().zip(batch) {
++            assert_eq!(row["event"]["sample_seq"], event.sample_seq);
++            assert_eq!(row["event"]["stamp_ns"], event.stamp_ns);
++        }
++        assert!(
++            raw[9]["owner"].is_null() && raw[10]["owner"].is_null() && raw[12]["owner"].is_null()
++        );
++        assert!(
++            std::fs::read_to_string(directory.path().join("events_capture.csv"))
++                .unwrap()
++                .contains("3,false,73,20,")
++        );
++        assert!(journal.finish(true, Vec::new).is_err());
++        let mut boundary = ready(76, false);
++        boundary.request_mode = Some(SampleMode::Disarm);
++        boundary.mode = Some(SampleMode::Disarm);
++        boundary.status = SampleStatus::Disarmed;
++        boundary.armed_seq = 0;
++        boundary.gate_active = false;
++        let observation = Ok(FinalTraceObservation {
++            installed: true,
++            dropped: 0,
++            boundary: Some(boundary),
++        });
++        assert_eq!(final_trace_evidence(true, &observation)["valid"], true);
++        let evidence = journal_trace_evidence(true, &observation, &journal);
++        assert_eq!(evidence["valid"], false);
++        assert!(
++            evidence["event_capture_error"]
++                .as_str()
++                .unwrap()
++                .contains("epoch 0")
++        );
++    }
++
++    #[test]
++    fn completed_owner_rejects_late_fault_unknown_generation_and_duplicate_success() {
++        for changed in 0..5 {
++            let directory = tempfile::tempdir().unwrap();
++            let mut journal = TraceJournal::new(directory.path()).unwrap();
++            complete(&mut journal, 73, owner(2, false, false));
++            let mut late = claim(73, 18);
++            match changed {
++                0 => late.kind = TraceKind::FaultIpcCommit,
++                1 => late.kind = TraceKind::W4TokenBefore,
++                2 => late.generation += 1,
++                3 => late.b = 1,
++                _ => late.a = u64::MAX,
++            }
++            let following = claim(73, 19);
++            assert!(journal.capture("bad_late", &[late, following]).is_err());
++            assert_eq!(raw_events(directory.path()).len(), 11);
++            assert_eq!(
++                std::fs::read_to_string(journal.spool(73))
++                    .unwrap()
++                    .lines()
++                    .count(),
++                11
++            );
++            assert!(journal.finish(true, Vec::new).is_err());
++        }
++    }
++
++    #[test]
++    fn owner_registration_requires_matching_arm_ready_and_never_overwrites_or_evicts() {
++        for changed in 0..6 {
++            let directory = tempfile::tempdir().unwrap();
++            let mut journal =
++                TraceJournal::with_limits(directory.path(), 1, MAX_EPOCH_EVENTS).unwrap();
++            let previous = owner(9, false, false);
++            register(&mut journal, 73, previous);
++            let mut sequence = 74;
++            let mut mode = SampleMode::ArmIdle;
++            let mut snapshot = ready(74, false);
++            match changed {
++                0 => sequence = 0,
++                1 => sequence = 73,
++                2 => mode = SampleMode::Disarm,
++                3 => snapshot.receipt_seq += 1,
++                4 => snapshot.armed_seq += 1,
++                _ => {}
++            }
++            assert!(
++                journal
++                    .register(sequence, mode, snapshot, owner(0, true, false))
++                    .is_err()
++            );
++            assert_eq!(journal.owners.len(), 1);
++            assert_eq!(journal.owners[&73].owner, previous);
++        }
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::new(directory.path()).unwrap();
++        let mut mismatch = ready(74, true);
++        mismatch.receipt_seq = 73;
++        assert!(
++            journal
++                .register(74, SampleMode::ArmInflight, mismatch, owner(0, true, true))
++                .is_err()
++        );
++        assert!(journal.owners.is_empty());
++    }
++
++    #[test]
++    fn epoch_capacity_and_oversized_spool_fail_without_truncating_originals() {
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::with_limits(directory.path(), 2, 2).unwrap();
++        register(&mut journal, 73, owner(0, false, false));
++        let batch = [claim(73, 1), claim(73, 2), claim(73, 3), claim(73, 4)];
++        assert!(journal.capture("overflow", &batch).is_err());
++        assert_eq!(
++            std::fs::read_to_string(journal.spool(73))
++                .unwrap()
++                .lines()
++                .count(),
++            4
++        );
++        assert_eq!(raw_events(directory.path()).len(), 4);
++        assert!(journal.finish(true, Vec::new).is_err());
++        assert!(!directory.path().join("events.csv").exists());
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::with_limits(directory.path(), 2, 2).unwrap();
++        register(&mut journal, 73, owner(0, false, false));
++        let blob = vec![b'x'; 2 * MAX_EVENT_ROW_BYTES + 1];
++        std::fs::write(journal.spool(73), &blob).unwrap();
++        assert!(journal.finish(true, Vec::new).is_err());
++        assert_eq!(std::fs::read(journal.spool(73)).unwrap(), blob);
++        assert!(!directory.path().join("events.csv").exists());
++    }
++
++    #[test]
++    fn late_cas_changes_old_count_but_complete_spool_preserves_sla_and_population() {
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::new(directory.path()).unwrap();
++        let events = complete(&mut journal, 73, owner(100, false, false));
++        let sample = analyze(&events, false).unwrap();
++        let mut stats = GroupStats {
++            completed: WARMUP,
++            ..GroupStats::default()
++        };
++        stats.accept(sample, &events);
++        let captured = stats.evidence(false, false);
++        journal.mark_formal(73, false, false).unwrap();
++        let late = claim(73, 12);
++        journal.finish(true, || vec![late]).unwrap();
++        let derived = journal.derived_cas.as_ref().unwrap().groups[&(false, false)][2]
++            .evidence()
++            .unwrap();
++        assert_eq!(captured["ipc_claim_cas_retries"]["count"], 1);
++        assert_eq!(derived["count"], 2, "旧采集分布应被完整CSV oracle拒绝");
++        assert_ne!(captured["ipc_claim_cas_retries"], derived);
++        assert_eq!(derived, distribution(&[5, 0]));
++        let mut synchronized = captured.clone();
++        synchronized["ipc_claim_cas_retries"] = derived;
++        for field in [
++            "sla_a_ns",
++            "sla_b_ns",
++            "samples",
++            "warmup",
++            "class_mismatch_retries",
++            "sla_b_target_ns",
++            "passed",
++        ] {
++            assert_eq!(captured[field], synchronized[field]);
++        }
++        assert_eq!(
++            journal.derived_cas.as_ref().unwrap().formal_sequences[&(false, false)],
++            vec![73]
++        );
++        assert_eq!(sample.t0_ns, 10);
++        assert_eq!(sample.t1_ns, 11);
++        assert_eq!(sample.all_off_ns, 17);
++    }
++
++    fn formal_oracle_events(
++        sequence: u64,
++        external: bool,
++        actual_in_flight: bool,
++    ) -> Vec<TraceEvent> {
++        let mut events = complete_events(sequence, external);
++        for event in &mut events {
++            event.stamp_ns *= 1_000_000;
++            if matches!(
++                event.kind,
++                TraceKind::PrimitiveCommitted | TraceKind::SerialClaim | TraceKind::IpcClaim
++            ) {
++                event.a = 1;
++            }
++            if actual_in_flight && event.kind == TraceKind::PrimitiveCommitted {
++                event.b = 1;
++                event.normal_seq = 37;
++            }
++        }
++        if actual_in_flight {
++            events.extend([
++                TraceEvent {
++                    kind: TraceKind::NormalAcquire,
++                    stamp_ns: 9_000_000,
++                    normal_seq: 37,
++                    a: 1,
++                    b: 1,
++                    ..claim(sequence, 0)
++                },
++                TraceEvent {
++                    kind: TraceKind::InjectedDelay,
++                    stamp_ns: 9_500_000,
++                    normal_seq: 37,
++                    a: 1_000_000,
++                    b: 1_000_000,
++                    ..claim(sequence, 0)
++                },
++                TraceEvent {
++                    kind: TraceKind::NormalRelease,
++                    stamp_ns: 12_500_000,
++                    normal_seq: 37,
++                    a: 1,
++                    b: 1,
++                    ..claim(sequence, 0)
++                },
++            ]);
++        }
++        events.sort_by_key(|event| event.stamp_ns);
++        events
++    }
++
++    fn export_formal_oracle(
++        directory: &Path,
++        attempts: &[Value],
++        captured_groups: &[Value],
++        measurement: &Value,
++    ) {
++        // 显式隔离软件验收可导出 fixture 给未改的 Python reporter；普通单测不留下文件。
++        if let Some(destination) = std::env::var_os("H2_OWNER_SOFTWARE_FIXTURE_DIR") {
++            let destination = PathBuf::from(destination);
++            assert!(destination.is_absolute());
++            std::fs::create_dir(&destination).unwrap();
++            for name in [
++                "events.csv",
++                "events_capture.csv",
++                "trace_drains.jsonl",
++                "trace_owners.jsonl",
++                "cas_derivation.json",
++            ] {
++                std::fs::copy(directory.join(name), destination.join(name)).unwrap();
++            }
++            for external in [false, true] {
++                for in_flight in [false, true] {
++                    for suffix in ["", "_capture"] {
++                        let name = format!("sla_{external}_{in_flight}{suffix}.json");
++                        std::fs::copy(directory.join(&name), destination.join(name)).unwrap();
++                    }
++                }
++            }
++            write_json(&destination.join("fixture.json"), &json!({
++                "kind":"SYNTHETIC_OWNER_SOFTWARE_ORACLE","attempts":attempts,
++                "captured_groups":captured_groups,"derived_measurement":measurement,
++                "physical_uart":false,"scope":"确定性同规则软件fixture，不是真实RT ring或H2硬件证据"})).unwrap();
++        }
++    }
++
++    fn assert_non_cas_unchanged(captured_groups: &[Value], measurement: &Value) {
++        for (captured, final_group) in captured_groups
++            .iter()
++            .zip(measurement["groups"].as_array().unwrap())
++        {
++            assert_eq!(captured["ipc_claim_cas_retries"]["count"], SAMPLES);
++            assert_eq!(final_group["ipc_claim_cas_retries"]["count"], SAMPLES + 1);
++            assert_eq!(
++                final_group["ipc_claim_cas_retries"]["max"], 1,
++                "mismatch/预热显著值不得污染正式CAS"
++            );
++            let mut original = captured.clone();
++            let mut final_non_cas = final_group.clone();
++            for field in [
++                "acquire_cas_retries",
++                "serial_claim_cas_retries",
++                "ipc_claim_cas_retries",
++            ] {
++                original.as_object_mut().unwrap().remove(field);
++                final_non_cas.as_object_mut().unwrap().remove(field);
++            }
++            assert_eq!(original, final_non_cas);
++        }
++    }
++
++    #[test]
++    fn synchronize_cas_preserves_four_groups_with_original_thousand_formal_members() {
++        let directory = tempfile::tempdir().unwrap();
++        let mut journal = TraceJournal::new(directory.path()).unwrap();
++        let mut groups = Vec::new();
++        let mut attempts = Vec::new();
++        let mut late = Vec::new();
++        let mut sequence = 73u64;
++        for external in [false, true] {
++            for in_flight in [false, true] {
++                let mut stats = GroupStats::default();
++                let extra_mismatch = !external && in_flight;
++                for attempt in 0..WARMUP + SAMPLES + usize::from(extra_mismatch) {
++                    let matched = !(extra_mismatch && attempt == 0);
++                    let actual_in_flight = in_flight && matched;
++                    let value = owner(attempt, external, in_flight);
++                    register(&mut journal, sequence, value);
++                    let events = formal_oracle_events(sequence, external, actual_in_flight);
++                    journal.capture("synthetic_formal_set", &events).unwrap();
++                    let sample = analyze(&events, external).unwrap();
++                    assert_eq!(sample.in_flight, actual_in_flight);
++                    if actual_in_flight {
++                        validate_inflight_delay(&events, &sample).unwrap();
++                    }
++                    journal.complete(sequence, &events).unwrap();
++                    journal
++                        .mark_formal(sequence, sample.in_flight, stats.completed < WARMUP)
++                        .unwrap();
++                    attempts.push(json!({"sequence":sequence,"attempt":attempt,"external":external,
++                        "requested_in_flight":in_flight,"matched":matched,"warmup":stats.completed<WARMUP,
++                        "t0_ns":sample.t0_ns,"t1_ns":sample.t1_ns,"all_off_ns":sample.all_off_ns}));
++                    if matched {
++                        if stats.completed == 0 {
++                            late.push(TraceEvent {
++                                a: 888_888,
++                                ..claim(sequence, 12_000_000)
++                            });
++                        }
++                        if stats.completed == WARMUP {
++                            late.push(claim(sequence, 12_000_000));
++                        }
++                        stats.accept(sample, &events);
++                    } else {
++                        late.push(TraceEvent {
++                            a: 999_999,
++                            ..claim(sequence, 12_000_000)
++                        });
++                        stats.mismatches += 1;
++                    }
++                    if attempt == WARMUP + usize::from(extra_mismatch) {
++                        assert!(journal.owners[&sequence].formal);
++                    }
++                    sequence += 2;
++                }
++                let group = stats.evidence(external, in_flight);
++                assert_eq!(group["passed"], true);
++                assert_eq!(group["class_mismatch_retries"], usize::from(extra_mismatch));
++                write_json(
++                    &directory
++                        .path()
++                        .join(format!("sla_{external}_{in_flight}_capture.json")),
++                    &group,
++                )
++                .unwrap();
++                groups.push(group);
++            }
++        }
++        let captured_groups = groups.clone();
++        let mut measurement = json!({"groups":groups});
++        journal.finish(true, || late).unwrap();
++        journal.synchronize_cas(&mut measurement).unwrap();
++        assert_non_cas_unchanged(&captured_groups, &measurement);
++        let formal = &journal.derived_cas.as_ref().unwrap().formal_sequences;
++        for (identity, sequences) in formal {
++            let expected: Vec<_> = attempts
++                .iter()
++                .filter(|row| {
++                    row["external"] == identity.0
++                        && row["requested_in_flight"] == identity.1
++                        && row["matched"] == true
++                        && row["warmup"] == false
++                })
++                .map(|row| row["sequence"].as_u64().unwrap())
++                .collect();
++            assert_eq!(sequences, &expected);
++            assert_eq!(sequences.len(), SAMPLES);
++        }
++        assert_eq!(formal.len(), 4);
++        export_formal_oracle(directory.path(), &attempts, &captured_groups, &measurement);
++    }
++
++    #[test]
++    fn retry_histogram_matches_original_distribution_and_rejects_overflow() {
++        for values in [
++            vec![],
++            vec![7],
++            vec![5, 5, 5],
++            vec![4, 1, 2, 3],
++            vec![9, 0, 9, 4, 4],
++            (0..101).rev().collect(),
++        ] {
++            let mut histogram = RetryHistogram::default();
++            for &value in &values {
++                histogram.observe(value).unwrap();
++            }
++            assert_eq!(histogram.evidence().unwrap(), distribution(&values));
++        }
++        let mut full = RetryHistogram::default();
++        for value in 0..MAX_RETRY_BINS as u64 {
++            full.observe(value).unwrap();
++        }
++        assert!(full.observe(MAX_RETRY_BINS as u64).is_err());
++        assert_eq!(full.count, MAX_RETRY_BINS);
++        assert_eq!(full.bins.len(), MAX_RETRY_BINS);
++        let mut overflow = RetryHistogram {
++            bins: BTreeMap::from([(0, usize::MAX)]),
++            count: usize::MAX,
++        };
++        assert!(overflow.observe(0).is_err());
++        assert!(overflow.evidence().is_err());
++    }
++}

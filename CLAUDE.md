@@ -127,6 +127,13 @@
            原s49两例超时和Mac/Linux/独审/root各原FAIL保留，历史具体归因OPEN_UNCONFIRMED。
            .verify/s1_parallel_events_2026-09-30/summary.json已验收；下一步非RT工具trace归属/尾采集软件修复。
            无正式安装/部署/push，D15 OPEN/DEFERRED、deployable=false不变；新硬件整轮须新准备/现场事实/GO。
+           同日非RT SLA工具修复：整次真实Arm/Ready owner与一次真实reap后尾drain，raw/capture/spool保留。
+           新run稳定排序/完整CAS派生，A/B、原正式集合、RT/authority与Python严格门不改；未知/错代次/故障等仍FAIL。
+           新共享工具容量门44000owner/8192epoch事件/256B行/8192retry bins，溢出留原件硬拒，旧长载未重验。
+           隔离Lima最新nightly5c：fmt/根及featureClippy、默认并行194含12oracle、合成4401/4000与5反例、短mock4×2通过。
+           主树589输入83048e98仅sla变化，独审/root与提交前fmt→根Clippy、uv合同复验通过；原FAIL保留。
+           .verify/h2_trace_owner_2026-09-30/summary.json；非完整workspace、未Orin新V2冻结/真实RT环暂停/硬件H2。
+           用户另确认现场条件后推进独立维护层硬件验证，结果与本软件阶段分开；旧H2/D15/Unknown/deployable=false不变。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

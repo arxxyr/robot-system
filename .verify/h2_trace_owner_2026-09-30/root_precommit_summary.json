@@ -1,0 +1,302 @@
+{
+  "schema": "H2_TRACE_ROOT_PRECOMMIT_V1",
+  "status": "PASS",
+  "scope": "提交前fmt/根Clippy与uv合同补验，纯软件；不重跑194/长载，不是新硬件。",
+  "main_head": "148663b88753c182192b2c1420eb4be68c065e53",
+  "main_fmt": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_trace_root_integration/main_fmt_result.json",
+    "sha256": "f4952cc3774692b9897b7070fd7e1b4e3d2bec1ff2bbfae9f9b15c16566542c7",
+    "bytes": 4459
+  },
+  "guest_result": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_trace_root_integration/native-extracted/result.json",
+    "sha256": "7b1f5efe735fafeedc7f041cacda2aaa86833fc5bf6dae2c1db8aa07a834ab32",
+    "bytes": 11148
+  },
+  "main_guest_source_equal": true,
+  "source_files": 589,
+  "aggregate": "83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f",
+  "sla": {
+    "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-tests/src/comm_fault/sla.rs",
+    "sha256": "167dc63b2a274b53d9c53fe72c811d242d8ca96d5f031e1bf0ea9981cbd78e18",
+    "bytes": 128812
+  },
+  "compiler_and_source_before_after_equal": true,
+  "nightly_updated_both_hosts": true,
+  "guest_rustc": "rustc 1.101.0-nightly (5c543b0b8 2026-09-29)\nbinary: rustc\ncommit-hash: 5c543b0b8c73c7b72bc8284ced4fb22ead15734d\ncommit-date: 2026-09-29\nhost: aarch64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.1\n",
+  "guest_cargo": "cargo 1.101.0-nightly (3d7cf6e93 2026-09-25)\n",
+  "commands": "主树cargo fmt --all，guest cargo fmt --all → cargo clippy --locked --offline --all --all-targets -- -D warnings",
+  "uv_python_oracle": {
+    "status": "PASS",
+    "uv": "uv 0.12.20 (aarch64-unknown-linux-gnu)\n",
+    "python": {
+      "executable": "/usr/bin/python3",
+      "version": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+      "version_info": [
+        3,
+        12,
+        3,
+        "final",
+        0
+      ]
+    },
+    "oracle": {
+      "path": "/home/loosqk.guest/robot-checks/h2-trace-owner-20260930-r4/control/python_oracle.py",
+      "sha256": "a4d264d1323940d0fbf7766116e98fec8a92ef8975e5559ecf1288bc42200bc5",
+      "bytes": 7166
+    },
+    "result": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/h2_trace_root_integration/native-extracted/python-oracle-uv-final/result.json",
+      "sha256": "a1f0334bb602e9d6172472d4fa59e91f94e8d489f17b4fca513c31ecda84cbb4",
+      "bytes": 1393
+    },
+    "same_as_original_r4_contract_result": true,
+    "fixture_before_after_equal": true,
+    "source_and_compiler_before_after_equal": true,
+    "scope": "同冻结oracle及4401epoch/4000formal合成fixture，以uv入口全新输出重复严格合同验证，不累计新Rust测试/硬件PASS。",
+    "invocation": [
+      "uv",
+      "run",
+      "--no-project",
+      "python",
+      "/home/loosqk.guest/robot-checks/h2-trace-owner-20260930-r4/control/python_oracle.py",
+      "/home/loosqk.guest/robot-checks/h2-trace-owner-20260930-r4/source",
+      "/home/loosqk.guest/robot-checks/h2-trace-owner-20260930-r4/synthetic-owner-fixture",
+      "/home/loosqk.guest/robot-checks/h2-trace-owner-20260930-r4/root-precommit/python-oracle-uv-final"
+    ]
+  },
+  "native_archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_trace_root_integration/root_precommit.native.tar.gz",
+    "sha256": "18b0cee1fe284c680a3e75e40a6055443d42e15c69894b9d2696fd073aa601fc",
+    "bytes": 5472527
+  },
+  "native_index": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_trace_root_integration/root_precommit.native.index.json",
+    "sha256": "975b130a19a55eec1e40b2ec2e06c8d1bb298b1aea871543fc4ce94d5f87ff45",
+    "bytes": 20434
+  },
+  "indexed_files": 107,
+  "members": 108,
+  "identity_and_mode_verified": true,
+  "actual_owned_receipts": 30,
+  "receipts": [
+    {
+      "path": "control/collect_guest.owner/result.json",
+      "owner_pid": 65992,
+      "child_pid": 65993,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/download_guest_archive.owner/result.json",
+      "owner_pid": 66042,
+      "child_pid": 66045,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/download_guest_index.owner/result.json",
+      "owner_pid": 66043,
+      "child_pid": 66044,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/guest_precommit.owner/result.json",
+      "owner_pid": 65461,
+      "child_pid": 65462,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/main_cargo.owner/result.json",
+      "owner_pid": 64969,
+      "child_pid": 64978,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/main_fmt.owner/result.json",
+      "owner_pid": 64969,
+      "child_pid": 64979,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/main_head.owner/result.json",
+      "owner_pid": 64969,
+      "child_pid": 64971,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/main_inventory_after.owner/result.json",
+      "owner_pid": 64969,
+      "child_pid": 64982,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/main_inventory_before.owner/result.json",
+      "owner_pid": 64969,
+      "child_pid": 64970,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/main_nightly_update.owner/result.json",
+      "owner_pid": 64969,
+      "child_pid": 64973,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/main_rustc.owner/result.json",
+      "owner_pid": 64969,
+      "child_pid": 64977,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/main_status_after.owner/result.json",
+      "owner_pid": 64969,
+      "child_pid": 64983,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/main_status_before.owner/result.json",
+      "owner_pid": 64969,
+      "child_pid": 64972,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/cargo_after.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25666,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/cargo_before.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25615,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/diff_check.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25674,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/fmt.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25620,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/head_after.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25672,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/head_before.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25594,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/inventory_after.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25671,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/inventory_before.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25593,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/nightly_update.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25596,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/python_oracle_uv.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25654,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/root_clippy.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25631,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/rustc_after.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25660,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/rustc_before.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25609,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/status_after.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25673,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/status_before.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25595,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/uv_identity.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25647,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/uv_python_identity.owner/result.json",
+      "owner_pid": 25592,
+      "child_pid": 25648,
+      "wait_returncode": 0,
+      "reaped": true
+    }
+  ],
+  "owned_sessions_remaining": [],
+  "native_process_check": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_trace_root_integration/native-extracted/owned_sessions_after.json",
+    "sha256": "b61d0b8065d448b2077eb33bf99e3c166180a2a551fee30a3a6b7b6ce969c858",
+    "bytes": 249
+  },
+  "frozen_previous_summary_and_archive_unchanged": true,
+  "integration": "root负责提交，无源码内容变化、安装、Orin/UART访问或commit/push。"
+}

@@ -9,6 +9,13 @@
 
 ---
 
+## 2026-09-30 · H2 轨迹归属与尾部证据（软件通过）
+
+非 RT 工具登记整次真实 Arm/Ready owner，旧事件按原采样序号保存；两 child 真实回收后补一次尾 drain。raw/capture/spool 不改，新 CSV 稳定排序及 CAS 统计派生，原 A/B、100+1000、正式集合和严格 Python 门不变。
+44,000 owner、每 epoch 8,192 事件/256 bytes 行、每类每组 8,192 retry bins 有界门溢出仍保留原件并 FAIL；共享软件模式同样受此门约束，未重跑旧长载。
+隔离 Lima 最新 nightly5c 下 fmt、根/feature Clippy、默认并行 194 项通过，12 新 oracle 为子集。4,401 epoch/4,000 正式集合的预热/mismatch 排除、Python 旧统计拒绝/新统计通过及5反例、无UART短mock4×2通过；uv合同与提交前门复验通过。
+589 输入聚合83048e98，独审/root 已验收；原 lint/准备/独审 FAIL 保留。[证据入口](../.verify/h2_trace_owner_2026-09-30/summary.json)。未做完整workspace、Orin新冻结、真实RT环暂停或硬件H2，旧H2整体FAIL、D15 OPEN/DEFERRED与deployable=false不变。
+
 ## 2026-09-30 · S1 默认并行夹具（软件通过）
 
 仅 cfg(test) 独立 Node/端口 RAII 与发送前连接刷新；原两个终态用例及同帧双 subscriber 正负控通过，生产前缀25,621B、20ms/2s与默认并行不变。
@@ -1113,3 +1120,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-30：登记 SerialRT 周期读恢复与过期调度点跳过的定向软件结果：最新 nightly5c543b0b8、本机fmt与原生fmt/根Clippy、调度6/诊断7/S0lib710/串口e2e5通过，全部0失败/0ignored，调度6与诊断7均为710子集不累计；两端589输入逐项一致、验证后复核一致，聚合c0388807，三变更SHA批次首尾一致。原red断言FAIL及首次联网setup SIGINT130保留；`.verify/serial_periodic_recovery_2026-09-30/summary.json` 已归档，独审与root验收通过。未跑完整workspace/release构建/硬件，未部署/未push；当前539d832 H2准备不含补丁，新源码须新build/冻结/对齐，不复用旧V2。历史H2FAIL、34Unknown未证实归因、D15 OPEN/DEFERRED和deployable=false不变。
 
 - 2026-09-30：登记 b01603b 同源 H2 新 V2 六配方/七件与本轮实际定向检查，710+5 仅引用周期恢复原件；原生独审/root 软件验收通过，正式安装隔离状态一致。非完整 workspace，硬件 H2 原 FAIL、D15 OPEN/DEFERRED 保持。
+
+- 2026-09-30：登记非RT SLA整次owner/真实回收后一次尾采集、有界完整CSV/CAS派生；194默认并行含12新oracle、4401/4000与5严格反例、短mock4×2及提交前uv合同通过。589输入83048e98，仅sla变化，原FAIL保留；软件独审/root通过，不关闭旧硬件H2/D15，也不冒称新Orin冻结或头/底盘运行时接入。

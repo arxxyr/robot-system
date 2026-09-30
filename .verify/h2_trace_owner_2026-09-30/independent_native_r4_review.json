@@ -1,0 +1,177 @@
+{
+  "schema": "H2_TRACE_OWNER_INDEPENDENT_NATIVE_REVIEW_V1",
+  "status": "PASS",
+  "reviewed_at_ns": 1790801066965281000,
+  "software_only": true,
+  "checks": [
+    "archive安全成员逐SHA/bytes/executable与外索引/解包原件",
+    "80自然wait及原FAIL保留",
+    "五同源窗口与589源逐项",
+    "12oracle/194默认并行真实日志",
+    "未改Python完整合同旧统计拒绝/新Rust统计通过及五反例",
+    "三mock ELF与sidecar绑定及唯一4x2软件样本",
+    "owner原语冷审与CAS固定集合、RT/authority不改"
+  ],
+  "archive": {
+    "artifact": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-owner/linux-r4/native-evidence.tar.gz",
+      "sha256": "39197009b3f8715f65ff8e0b57637db697e0ffaca322c0ff16fae495622af470",
+      "bytes": 95468912
+    },
+    "index": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-owner/linux-r4/native-evidence.index.json",
+      "sha256": "f9942d1c6f6af5f222e48ec751ee7b800f4a61e65911e0cbf621d92072aaa069",
+      "bytes": 217717
+    },
+    "indexed_originals": 1065,
+    "regular_members": 1066,
+    "every_member_sha_bytes_executable": true,
+    "safe_members": true
+  },
+  "lifecycle": {
+    "natural_wait_reap_receipts": 80,
+    "nonzero_originals_preserved": [
+      {
+        "name": "r2/control/clippy_feature.owner/result.json",
+        "exit_code": 101,
+        "pid": 15002
+      },
+      {
+        "name": "r3/control/clippy_feature.owner/result.json",
+        "exit_code": 101,
+        "pid": 15923
+      }
+    ],
+    "signals_sent": 0
+  },
+  "source": {
+    "sla": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/crates/robot-tests/src/comm_fault/sla.rs",
+      "sha256": "167dc63b2a274b53d9c53fe72c811d242d8ca96d5f031e1bf0ea9981cbd78e18",
+      "bytes": 128812
+    },
+    "manifest_sha256": "83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f",
+    "files": 589,
+    "equal_five_windows": true,
+    "only_change_from_committed_s1": [
+      "crates/robot-tests/src/comm_fault/sla.rs"
+    ],
+    "python_driver_report_artifacts_byte_unchanged": true,
+    "compiler_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+    "compiler": "nightly 5c543b0b8"
+  },
+  "software_validation": {
+    "root_fmt_clippy": true,
+    "feature_clippy": true,
+    "full_feature_default_parallel": {
+      "passed": 194,
+      "failed": 0,
+      "ignored": 0,
+      "test_threads_override": null,
+      "owner_tests_subset": 12
+    },
+    "owner_tests_subset_names": [
+      "paused_old_reservation_after_empty_disarm_routes_to_old_owner_across_group",
+      "final_drain_occurs_once_only_after_real_child_wait_and_keeps_last_epoch_tail",
+      "production_route_collects_current_sample_and_preserves_legal_old_owner",
+      "production_route_rejects_old_generation_fault_or_unknown_after_saving_whole_batch",
+      "late_rows_sort_stably_without_rewriting_capture_or_raw",
+      "unknown_epochs_keep_entire_batch_and_make_clean_final_boundary_fail",
+      "completed_owner_rejects_late_fault_unknown_generation_and_duplicate_success",
+      "owner_registration_requires_matching_arm_ready_and_never_overwrites_or_evicts",
+      "epoch_capacity_and_oversized_spool_fail_without_truncating_originals",
+      "late_cas_changes_old_count_but_complete_spool_preserves_sla_and_population",
+      "synchronize_cas_preserves_four_groups_with_original_thousand_formal_members",
+      "retry_histogram_matches_original_distribution_and_rejects_overflow"
+    ],
+    "python_contract": {
+      "status": "PASS",
+      "kind": "SYNTHETIC_SOFTWARE_ORACLE",
+      "physical_uart": false,
+      "rust_trace_verified_epochs": 4401,
+      "original_formal_sequences": 4000,
+      "groups": 4,
+      "class_mismatch_retries_preserved": 1,
+      "full_reporter_baseline": "PASS",
+      "old_cas_stats": "EXPECTED_REJECTION",
+      "old_cas_error": "CAS 分布与原trace不同",
+      "rust_derived_cas_complete_report": "PASS",
+      "sla_non_cas_and_attempts_unchanged": true,
+      "strict_negatives": [
+        {
+          "scenario": "fault",
+          "status": "EXPECTED_REJECTION",
+          "error": "trace混入故障/未知事件/另一轮"
+        },
+        {
+          "scenario": "unknown_kind",
+          "status": "EXPECTED_REJECTION",
+          "error": "trace混入故障/未知事件/另一轮"
+        },
+        {
+          "scenario": "wrong_generation",
+          "status": "EXPECTED_REJECTION",
+          "error": "trace IpcClaim 不唯一/缺失"
+        },
+        {
+          "scenario": "unregistered_epoch",
+          "status": "EXPECTED_REJECTION",
+          "error": "trace混入未采样epoch"
+        },
+        {
+          "scenario": "duplicate_success_claim",
+          "status": "EXPECTED_REJECTION",
+          "error": "trace IpcClaim 不唯一/缺失"
+        }
+      ],
+      "reporter": {
+        "path": "/home/loosqk.guest/robot-checks/h2-trace-owner-20260930-r4/source/scripts/post_e_h2_report.py",
+        "sha256": "bd35923146c3841ec5f4547b85b99494abbd93970cb1b805ce0fb7692b368387",
+        "bytes": 28682
+      }
+    },
+    "short_mock": {
+      "cases": 1,
+      "groups": 4,
+      "samples": 8,
+      "physical_uart": false,
+      "hardware_pass": false
+    },
+    "no_full_workspace_test_claim": true
+  },
+  "mock_artifacts": {
+    "s0_daemon": {
+      "sha256": "de17d63c014f5711929cbbbdadf01cf4b1f77ef7fb23d3dd22d5dddc04ca5f20",
+      "bytes": 80820432,
+      "features": [
+        "mock",
+        "rt_guard",
+        "test-comm-fault-hook"
+      ],
+      "profile": "dev"
+    },
+    "robot_rpc_gateway": {
+      "sha256": "8d96b5bd8ec657f61c0ddc6a5d4ebe6a0e7f240dbf0690692e789a20830b0d6f",
+      "bytes": 121607048,
+      "features": [
+        "test-comm-fault-hook"
+      ],
+      "profile": "dev"
+    },
+    "comm_fault_e2e": {
+      "sha256": "5e08679064adb51db3d866f6da806167cbb8a50b350001684004e2ff6ad796e3",
+      "bytes": 147431888,
+      "features": [
+        "comm-fault-e2e",
+        "comm-fault-rpc"
+      ],
+      "profile": "dev"
+    }
+  },
+  "limits": [
+    "仅隔离Lima软件；没有Orin硬件、UART、正式安装或生产freeze宣称",
+    "现有右H2整体FAIL和原trace不改变；D15 OPEN/DEFERRED、deployable=false",
+    "新源上Orin独立六配方与V2产物冻结仍待后续；不自动重跑H2"
+  ],
+  "finished_ns": 1790801068003217000
+}

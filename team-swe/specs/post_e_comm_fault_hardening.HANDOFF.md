@@ -2,6 +2,20 @@
 
 ## 当前步骤
 
+### H2 非 RT 轨迹归属与尾部采集（2026-09-30，软件已验收）
+
+仅改共享 SLA 证据工具 `comm_fault/sla.rs`：整次 Arm/Ready owner 按真实 u64 sample_seq 登记，旧事件保留原 owner；两个 child 真实 stop/reap 后只补一次尾 drain。
+原 raw、capture、owner spool 保留；新 run 的 CSV 按 epoch 稳定排序派生，完整 CAS 分布按原 matched/warmup 正式集合重算，原采集统计另存。未知 owner/kind、故障、错代次、重复成功及容量溢出仍 sticky FAIL。
+新增工具容量门为 44,000 owner、每 epoch 8,192 事件/每行 256 bytes、每组每类 8,192 retry bins；有界读取和 checked 计数，不截断或回退。此门也作用于共享 SoftwareProbe/SoftwareLoad，旧长负载未重验。
+不改 RT trace ring/authority、原 100+1000、SLA A/B 数值与 P99 预算、Python 严格 reporter 或 final_stop/停止顺序。
+最新浮动 nightly 5c543b0b8 下，隔离 Lima Linux ARM fmt/根及 feature Clippy、默认并行 feature 194 项通过，0 failed/ignored；12 项新 oracle 为其子集。
+实际同步方法验证 4,401 epoch/4,000 正式成员，排除预热及分类不匹配的显著迟到值；未改 Python 门验证旧 CAS 拒绝、新完整分布通过、5 个严格反例拒绝，A/B 与尝试集合不变。
+无 real-hw 的冻结三件短 mock 四组各 2 样本、最终 Disable/两 child 回收及一次尾采集通过；不是新硬件或旧长载通过。
+589 输入聚合 `83048e98`，相对 S1 阶段仅 sla.rs 变化；独审/root 同源核验及提交前 fmt→根 Clippy 通过，Python 合同另按 uv 复验并保留原直跑回执。
+两轮 feature lint FAIL、首准备 NOT_LAUNCHED 及独审自索引名误用 FAIL 保留；[软件证据入口](../../.verify/h2_trace_owner_2026-09-30/summary.json)。
+本阶段未做 Orin 新 V2 六配方、完整 workspace、真实 RT 环暂停或新 H2；旧整体 FAIL、34 Unknown 未证实归因、D15 OPEN/DEFERRED 与 deployable=false 保持。
+用户随后重新确认现场条件并要求硬件验证；独立维护层准备与本软件阶段分开，不以其寄存器/最小动作结果关闭 H2 或宣称头部/底盘已接入 S0/S1。
+
 ### S1 默认并行事件夹具修复（2026-09-30，软件已验收）
 
 仅改 `events_drain/runtime.rs` 的 cfg(test)：独立 Node/端口 RAII 代替 leak，publisher ready 后先刷新 subscriber 连接，再发送事件；生产前缀 25,621 bytes 逐字不变。
