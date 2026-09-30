@@ -1,16 +1,21 @@
 # 候选 E D15 硬件 fail-safe 闭环工作单
 
-> 状态：**待硬件事实与方案决策；非 Spec Approved，非实施完成，非验收通过**。
+> 状态（2026-09-30）：**OPEN/DEFERRED，按用户决定暂缓实施与验收；非 Spec Approved，非硬件实现，非 PASS**。
 > 代码证据基线：`59120e34bebd991accac41696425b1c743870a19`，2026-09-30 只读核对。
 > 本工作单不修改冻结设计，不授权采购、接线、寄存器写入或硬件测试，不替代当次现场事实与独立 GO。
 > 权威边界为[候选 E Spec](v0_5_dimos_replace.md) 的 D15 / D15-R 及其既有偏离登记；当前进度由 [HANDOFF](post_e_comm_fault_hardening.HANDOFF.md)统一维护。
+
+用户确认当前**无独立自动断电保护**，决定“这部分可以记下暂时搁置，先通过”。
+本工作单据此保留为后续恢复时的 CodeMap 与建议，不把搁置视作 AC-E25 通过或正式退役批准；
+`deployable=false` 保持。受监督 demo 沿既有 D15-R 条件继续，下一步为右 H2 完整复测，原整体 FAIL 保留。
+供电分域仍未知，本轮不再追问、选型、采购或接线；以下未知事实与方案建议留待恢复 D15 时处理。
 
 ## 1. 三条验收边界
 
 | 项目 | 实际目标 | 当前边界 |
 |---|---|---|
 | 通信候选 H2 / AC-12 | S0 存活时，通信故障下抢占、收敛、真实 Disable 回执及完整收尾 | 右 H2 历史四组测量文件 PASS，但最终 Disable 失败，原 run/report 整体 FAIL 保留；后续超时修复及真实 tonic 回环仅为软件证据 |
-| **候选 E D15 / AC-E25** | Enabled 真机 S0 被 `kill -9` 后，**<500 ms** 进入 torque disable / zero / brake | 正式退役硬门，仍 OPEN；H2 通过也不会自动关闭本项 |
+| **候选 E D15 / AC-E25** | Enabled 真机 S0 被 `kill -9` 后，**<500 ms** 进入 torque disable / zero / brake | 正式退役硬门，OPEN/DEFERRED；H2 通过也不会自动关闭本项 |
 | 通信规范 D15 | 观测面、mock transport、marker、notify、冻结与并发注入测试基线 | 与候选 E 的硬件 D15 同号不同义，不是进程死亡后的硬件保护证明 |
 
 依据：[候选 E Spec](v0_5_dimos_replace.md) 的 AC-E25、D15 / D15-R，以及[通信 Spec](post_e_comm_fault_hardening.md) 的 D15「观测面与测试基线」。精确原文位置分别为该基线的候选 E Spec 第 766、903–995 行与通信 Spec 第 1595 行。
@@ -38,9 +43,10 @@ D15-R 已批内容是受监督 demo 例外及文档级集成契约：`arm / kick
 
 现有关闭链也不能覆盖 S0 死亡：[信号入口](../../crates/robot-s0/src/bin/s0_daemon.rs#L87)只处理 SIGINT/SIGTERM，[`finish_runtime_owned`](../../crates/robot-s0/src/bin/s0_daemon.rs#L1347)依赖仍存活的线程完成 ACK、持久化和 join；[`BootSupervisor`](../../crates/robot-s0/src/boot_supervisor.rs#L1)也是同进程线程，最终可 `_exit`，不是外部断电装置。SIGKILL 后这些路径都不再执行。[`freeze_systemd_smoke`](../../crates/robot-tests/src/bin/freeze_systemd_smoke.rs#L3)验证 mock worker 停滞触发 systemd 重启，没有测量真机安全输出。
 
-## 3. 待确认的硬件事实
+## 3. 恢复 D15 时再确认的硬件事实
 
-以下均待当前现场或可追溯硬件资料确认，不从历史日志或软件配置推断：
+用户已确认无独立自动断电保护；以下细节仍未知，待恢复 D15 时再从现场或可追溯硬件资料确认，
+本轮不追加询问或方案选型，不从历史日志或软件配置推断：
 
 | 事实 | 必须得到的内容 |
 |---|---|
@@ -99,4 +105,4 @@ D15-R 已批内容是受监督 demo 例外及文档级集成契约：`arm / kick
 - 原件：设备读回、journal/串口/测量日志、信号与真实进程回收记录、前后状态、原文件 SHA 清单及未执行项。
 - 结论：实测间隔及计算方法、对应已批判据、PASS/FAIL/INCONCLUSIVE、覆盖范围与未覆盖故障；不得以聚合摘要覆盖失败原件。
 
-本工作单完成不改变 **D15 OPEN、右 H2 历史整体 FAIL、deployable=false**。硬件事实、方案批准、实现、软件验证、真机验收和正式退役是不同交付状态。
+本工作单完成不改变 **D15 OPEN/DEFERRED、右 H2 历史整体 FAIL、deployable=false**。硬件事实、方案批准、实现、软件验证、真机验收和正式退役是不同交付状态。

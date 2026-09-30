@@ -25,9 +25,10 @@ sidecar 对应，生产件先冻结，release 独审通过；V1 仅可显式历�
 release/post/archive 独审与 root 软件验收通过；253 份原件及本机证据已归档至
 [最终证据入口](../.verify/h2_nightly_v2_2026-09-30/summary.json)。04:29:11 UTC 正式后验为 ca14 clean、四 SHA 未变、
 六服务 inactive、无控制进程；不推断物理电源或扭矩。本阶段无安装/push、未执行新 H2 硬件测试。
-右 H2 原整体 FAIL、D15 OPEN、`deployable=false` 不变；
-[D15 工作单](../team-swe/specs/d15_hardware_fail_safe.CLOSURE.md)的 CodeMap/建议矩阵不是批准规格或硬件实现，
-现场硬件事实尚待回复。
+2026-09-30 用户确认无独立自动断电保护，决定暂缓 D15 实施与验收；**OPEN/DEFERRED**，
+不记 PASS，AC-E25 原判据及 `deployable=false` 保持。受监督 demo 沿既有 D15-R 继续，
+下一步右 H2 完整复测，原整体 FAIL 不改写。[D15 工作单](../team-swe/specs/d15_hardware_fail_safe.CLOSURE.md)
+的 CodeMap/建议矩阵不是批准规格或硬件实现；供电分域未知，本轮不再追问、选型、采购或接线。
 
 ## 2026-09-30 · Orin 原生 Rerun 软件验证（已验收）
 
@@ -1062,3 +1063,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-30：登记恢复严格 SSH 后的 Orin 最新浮动 nightly 定向软件门、最终桥同六项复验、官方 RRD 核验与正式快照比对；已验收归档、独审/root通过，不复用 Lima 结果冒称本轮全仓通过。
 
 - 2026-09-30：登记 H2 V2 六条原生配方/七冻结件、71 Python/helper14/help7/mock AC-12/真实 tonic 定向软件门；release/post/archive 独审与 root 验收通过并归档，不外推完整 workspace 或硬件通过。
+
+- 2026-09-30：按用户确认记录无独立自动断电保护，D15 实施/验收暂缓为 OPEN/DEFERRED，不记 PASS；既有 D15-R、右 H2 原 FAIL 与 deployable=false 保持，下一步右 H2 完整复测。

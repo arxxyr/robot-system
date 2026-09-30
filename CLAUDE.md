@@ -98,8 +98,9 @@
            冻结测量件mock AC12四组各2软件样本、同源tonic6测试/9场景通过，硬件H2未测。
            release/post/archive独审与root验收通过，253原件及本机证据已归档至 .verify/h2_nightly_v2_2026-09-30/summary.json。
            04:29:11UTC正式后验ca14 clean、四SHA未变、六服务inactive且无控制进程；本阶段无安装/push。
-           D15工作单已有CodeMap与建议矩阵，非Spec Approved或硬件实现；现场硬件事实尚待回复。
-           已纠正target内STS3215自带100ms watchdog误述；右H2原FAIL、D15 OPEN、deployable=false保持。
+           9/30用户确认无独立自动断电保护，决定暂缓D15实施/验收；状态OPEN/DEFERRED，不记PASS。
+           D15工作单保留CodeMap与建议矩阵，非Spec Approved或硬件实现；供电分域未知，本轮不再追问/选型/采购/接线。
+           受监督demo沿既有D15-R继续；下一步右H2完整复测，原FAIL与deployable=false保持。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

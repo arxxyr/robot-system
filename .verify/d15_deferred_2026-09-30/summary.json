@@ -1,0 +1,29 @@
+{
+  "status": "DOCUMENTATION_QUALITY_PASS",
+  "user_decision": "2026-09-30用户确认没有独立自动断电，D15暂时搁置；该决定不等于硬件PASS",
+  "candidate_e_d15": "OPEN / DEFERRED",
+  "deployable": false,
+  "checks": {
+    "local_cargo_fmt": "PASS",
+    "native_cargo_fmt_check": "PASS",
+    "native_root_clippy": "PASS",
+    "source_files": 589,
+    "source_manifest_sha256": "48360e9faeaf8c1e6f32c82f10312f8316f57551bb4406c64df1916e2de73e93",
+    "native_source_head": "59120e34bebd991accac41696425b1c743870a19",
+    "current_local_source_identical": true,
+    "new_tests_run": false
+  },
+  "archive": {
+    "path": "evidence.tar.gz",
+    "sha256": "af95754c4dd5a6df0ffed34d0112cc8fa03e4507469b7f44bae1f8a44f31ec28",
+    "files": 12,
+    "readback_verified": true
+  },
+  "limits": [
+    "仅文档决策与提交质量验证",
+    "没有新H2或D15真机动作",
+    "右H2历史整体FAIL保持",
+    "D15自动断电缺失不推定现场人工切电能力缺失或具备",
+    "未push"
+  ]
+}

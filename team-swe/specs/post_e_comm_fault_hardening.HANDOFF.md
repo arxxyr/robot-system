@@ -4,7 +4,7 @@
 
 ### H2 / D15 闭环路径（2026-09-30，原生软件准备已验收）
 
-用户要求继续闭合 H2 与 D15，两者分别验收。**H2** 沿通信候选 AC-12：
+当前先推进右 H2 完整复测；D15 按下述用户决定暂缓，两者分别裁决。**H2** 沿通信候选 AC-12：
 topic / external × idle / inflight 四组，每组 100 次预热 + 1000 个正式样本；
 SLA-A P99 ≤2 ms，SLA-B idle P99 ≤20 ms、inflight P99 ≤75 ms，原 RT、
 负载和真实采样边界不变。还必须最终 Disable 返回合法 Ack、工具/driver 真实退出回收、
@@ -27,12 +27,14 @@ torque disable / zero / brake，并有真实硬件及测量证据；D15-R 只是
 例外，人工值守、EStop 发布成功或更快 systemd 重启均不能代替闭环。
 主机冻结/失效、USB 断链以及重力/夹持物掉落的安全输出与独立测量属于**建议新增的
 验收覆盖，须另行拍板**；不能冒称原 AC-E25 已批准这些场景或已经验证。
-供电拓扑、看门狗型号等现场资料待确认，硬件未选型；已补
-[D15 闭环工作单](d15_hardware_fail_safe.CLOSURE.md)的 CodeMap、待确认事实、
-建议故障矩阵及原始证据格式。该工作单非 Spec Approved；接口仅沿已批文档契约，
-未写 no-op watchdog，未作硬件接线或动作。
+2026-09-30 用户确认**无独立自动断电保护**，决定暂缓 D15 实施与验收；状态为
+**OPEN/DEFERRED**，不记 PASS。受监督 demo 沿既有 D15-R 继续；供电分域仍未知，
+本轮不再追问、选型、采购或接线。[D15 闭环工作单](d15_hardware_fail_safe.CLOSURE.md)
+保留 CodeMap、建议故障矩阵及原始证据格式，非 Spec Approved 或硬件实现；未写 no-op watchdog。
 依据：[通信 AC-12](post_e_comm_fault_hardening.md)、[候选 E D15 / D15-R](v0_5_dimos_replace.md)。
-右 H2 原整体 FAIL、D15 OPEN、`deployable=false` 不变，历史原件保留。
+下一步为右 H2 完整复测，原整体 FAIL、`deployable=false` 不变，历史原件保留。
+本次仅调整范围记录；提交前本机 fmt、Orin 根 Clippy 通过，589 项编译输入仍与
+已验原生源码逐项相同，见[文档阶段检查](../../.verify/d15_deferred_2026-09-30/summary.json)。
 
 ### 已验收的 Orin Rerun 软件阶段
 
