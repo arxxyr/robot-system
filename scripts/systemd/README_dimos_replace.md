@@ -107,8 +107,16 @@ P-E 的 dev/mock/hook 产物或旧 C5 四件补成“当前正式包”。
    unit 的有效合并配置。不可只备份仓库文件后声称备份了已安装系统。
 
 正式四件须在 Orin **原生 ARM release、无任何 `test-*` feature** 构建；本阶段
-产物准备合同固定 `nightly-2026-09-10`、`--locked --release --message-format=json`、
-jobs=2，分别按包构建并保存实际 feature 闭包：S0 与 guard 保留 default 并使用
+产物准备采用 `P7_RELEASE_ARTIFACTS_V2`，准备执行器先成功完成 `rustup update nightly`，
+再以 `RUSTUP_TOOLCHAIN=nightly` 执行 `--locked --release --message-format=json`、
+jobs=2；不默认固定日期或沿用历史编译器。六条构建共用同一对实际 `rustc -vV`
+自然完成回执（`rustc_before` / `rustc_after`）和完整环境、源码 cwd、boot_id。
+`rustc_identity` 严格绑定唯一 `release`（nightly）、40 位 `commit_hash` 和原生 `host`；
+前后身份必须相同，且 `before.end <= build.start <= build.end <= after.start`。
+日期和 SHA 用于本轮溯源，不改变默认跟随最新 nightly 的项目策略。验证器不联网或更新工具链。
+V1 仅允许显式 `allow_legacy=True` 历史只读验读；真实 H2 execute 强制两套 V2 及同一对回执，
+不会把旧包默认放行为新 run。源、ELF、feature/profile、sidecar、真实 wait 与正式件隔离门保持。
+分别按包构建并保存实际 feature 闭包：S0 与 guard 保留 default 并使用
 `--features xlerobot-real`，S1 保留默认组合（含 `scripted`），Gateway 使用
 `--no-default-features` 且不加测试 feature。两个配置实际选
 `[s1.profile].backends = ["scripted"]`，构建清单须证明该后端存在。

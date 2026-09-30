@@ -31,12 +31,12 @@
 | 项 | 型号 / 规格 | 接口 | 备注 |
 |---|---|---|---|
 | 控制器 | NVIDIA Jetson Orin（dimos 项目默认；兼容 Orange Pi / 其他 aarch64 Linux） | Linux aarch64 | v0.4 部署目标机 |
-| 手臂电机 | Feetech STS3215 × 5 × 2 = 10 | 2 × USB-RS485（每臂一条总线） | 位置模式 + PID；硬件层 command timeout（典型 100 ms） |
+| 手臂电机 | Feetech STS3215 × 5 × 2 = 10 | 2 × USB-RS485（每臂一条总线） | 位置模式 + PID；无已文档化、可配置的 command watchdog，失联断扭保证仍缺失（D15 OPEN） |
 | 底盘电机 | Feetech STS3215 × 3（三轮全向） | USB-RS485（可与一条手臂共总线或独立，TBD） | 速度模式 |
 | 夹爪 / Gripper | TBD（取决于具体装机，dimos 支持可选 2 × Feetech） | 同手臂总线 | |
 | 视觉传感器 | Intel RealSense（具体型号 TBD，典型 D435i / D435）× 1 | USB-3.0 | RGB + depth + IMU |
 | 辅助相机 | USB Webcam × N（可选） | USB-2.0 | |
-| 实时内核 | Linux 主线内核（非必须 RT，因 STS3215 自带 command timeout 作硬件 fail-safe） | — | Orin 默认即可。Step 6.5 RT 调优搁置，详 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 "Step 6.5 RT 调优搁置 + XLeRobot 不卡 §10.1 RT 硬门槛" |
+| 实时内核 | Linux 主线内核；内核/调度要求与硬件 fail-safe 分别验证 | — | 原“STS3215 自带 command timeout”的 RT 豁免依据不成立；硬件边界按候选 E D15 / D15-R |
 
 **DoF 布局（v0.4 起以此为准；具体编号 TBD）**：
 - 左臂 5 DoF（肩 3 + 肘 1 + 腕 1，或类似，TBD 从 URDF 导出）
@@ -90,10 +90,11 @@
 
 - 上游定义：dimos `docs/06_lerobot_replace_spec.md`
 - 契约项（高层）：
-  - 位置模式初始化序列（使能字、PID、max torque、command timeout 等）
+  - 位置模式初始化序列（使能字、PID、max torque 等）；不得假定存在可写的 command watchdog 寄存器
   - 位置读 / 写的帧格式与期待响应
   - 异常帧（超时、overload、过热）的解析与分级
-  - 硬件 fail-safe：`command timeout` 默认 100 ms，超时电机自动停转 / 断力
+  - 硬件 fail-safe：STS3215 无已文档化、可配置的 command watchdog，历史真机失联仍持续带扭；主机串口 IO 超时不等于电机侧保护
+- 安全边界沿已批[候选 E D15 / D15-R](../../team-swe/specs/v0_5_dimos_replace.md)：D15 保持 OPEN，AC-E25 的 S0 死亡后 <500 ms 安全态仍是正式退役硬门；D15-R 仅为受监督 demo 例外，不能宣称硬件闭环。独立保护方案尚未选定
 - **v0.2 Step 10 已引用此 spec**（见 `docs/01_implementation_steps.md` Step 10），XLeRobot v0.4 继续沿用
 - `robot-adapters/feetech` 是 Rust 侧实现，**逐寄存器复刻**原 spec
 - TBD：是否存在 XLeRobot 特有的 STS3215 自定义参数（扭矩上限 / PID / deadband）
@@ -136,7 +137,7 @@
 1. §2.1 关节角度编码：`raw_per_rad` / `raw_zero` 训练 / 部署一致。
 2. §2.2 校准 offset：必须从校准 JSON 加载；**禁止上电即零位**。无校准 → 拒进 READY。
 3. §2.3 三轮全向运动学矩阵：训练 / 部署一致；反向 odom 用于 RL 观测时尤为关键。
-4. §2.4 Feetech command timeout：Rust adapter 必须设置（典型 100 ms），作为硬件 fail-safe。
+4. §2.4 硬件 fail-safe：不得把主机 IO 超时或失联持位当作电机侧保护；沿 D15 / D15-R 保留 OPEN 与受监督 demo 边界，正式退役前须补齐保护方案及 AC-E25 实测。
 5. §2.5 软限位双层：下位机寄存器 + 上位机每帧检查，任一层触发都 → EStop。
 6. §2.6 `cmd_vel` clip 训练 / 部署一致。
 7. §2.7 视觉外参 / 分辨率 / 帧率训练 / 部署一致；外参改动**必须**走 target-contract 登记。
@@ -254,7 +255,7 @@ RS485 是半双工，单 bus 不能同时 read+write，所以 "pipeline 读写" 
 
 **参考**：
 - 寄存器序列：dimos `~/repo/robot/dimos/docs/06_lerobot_replace_spec.md`
-- 硬件 fail-safe：STS3215 `command timeout`（典型 100 ms）—— `robot-adapters/feetech` 必须设置
+- 硬件 fail-safe：[候选 E D15 / D15-R](../../team-swe/specs/v0_5_dimos_replace.md) 已确认无已文档化、可配置的 command watchdog；不得把未核实的 watchdog 寄存器作为 adapter 初始化要求，独立保护与 AC-E25 仍待闭环
 
 ### 5.2 `robot-adapters/realsense`（**新 crate**，v0.4）
 

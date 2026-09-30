@@ -435,6 +435,7 @@ class RealBackend:
         result = {}
         for kind in ("production", "measurement"):
             manifest = pinned_json(self.inputs[kind])
+            require(manifest.get("schema") == "P7_RELEASE_ARTIFACTS_V2", "新现场执行只接受 V2 产物合同")
             ancestor = False
             if manifest["build_head"] != self.options.expected_head:
                 self.command(["git", "-C", self.inputs["repository"], "merge-base", "--is-ancestor",
@@ -448,6 +449,8 @@ class RealBackend:
             result[kind] = artifacts.validate_artifact_set(manifest, source_manifest=self.source,
                 expected_kind=kind, expected_head=self.options.expected_head, build_ancestor_verified=ancestor)
             setattr(self, kind, manifest)
+        for key in ("rustc_before", "rustc_after", "rustc_identity"):
+            require(self.production[key] == self.measurement[key], "生产与测量必须共用同一对 rustc 身份回执")
         self.bin_dir = Path(self.measurement["artifact_directory"])
         require(self.bin_dir != Path(self.production["artifact_directory"]), "生产/测量冻结目录复用")
         return result

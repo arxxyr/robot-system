@@ -2,6 +2,34 @@
 
 ## 当前步骤
 
+### H2 / D15 闭环路径（2026-09-30，准备中）
+
+用户要求继续闭合 H2 与 D15，两者分别验收。**H2** 沿通信候选 AC-12：
+topic / external × idle / inflight 四组，每组 100 次预热 + 1000 个正式样本；
+SLA-A P99 ≤2 ms，SLA-B idle P99 ≤20 ms、inflight P99 ≤75 ms，原 RT、
+负载和真实采样边界不变。还必须最终 Disable 返回合法 Ack、工具/driver 真实退出回收、
+断扭读回及清场完整通过，不能用四组测量 PASS 覆盖最终收尾 FAIL。
+本轮最新 nightly 来源/产物校验 V2 已完成产品独审及软件验收：本机定向 20 项、
+Orin 完整 71 项 Python 通过；提交前 fmt / 根 Clippy 通过，589 项当前 Rust 编译输入
+已逐项绑定被检查的隔离源码（聚合 `48360e9f`）。编译器为实际更新检查后的浮动
+nightly `1.101.0-nightly / 5c543b0b8`。V2 两套产物共用真实编译器前后回执及身份，
+V1 仅显式历史只读；新 execute 拒绝 V1。原 macOS 平台失败与辅助驱动评审修订保留。
+证据见 `.verify/h2_nightly_v2_2026-09-30/precommit.json`；新六配方 release 仍待构建验收，
+本次没有硬件 PASS。
+新右 H2 仍需当次供电/USB 重置、支撑/清场/持续值守事实与独立 GO，不自动重试。
+
+**候选 E D15** 的已批硬门是 AC-E25：Enabled 真机 `kill -9 s0_daemon` 后 **<500 ms** 进入
+torque disable / zero / brake，并有真实硬件及测量证据；D15-R 只是受监督 demo
+例外，人工值守、EStop 发布成功或更快 systemd 重启均不能代替闭环。
+主机冻结/失效、USB 断链以及重力/夹持物掉落的安全输出与独立测量属于**建议新增的
+验收覆盖，须另行拍板**；不能冒称原 AC-E25 已批准这些场景或已经验证。
+供电拓扑、看门狗型号等现场资料待确认，硬件未选型；当前可先补 CodeMap、故障矩阵
+及证据格式，接口仅沿已批文档契约，不写 no-op watchdog。
+依据：[通信 AC-12](post_e_comm_fault_hardening.md)、[候选 E D15 / D15-R](v0_5_dimos_replace.md)。
+右 H2 原整体 FAIL、D15 OPEN、`deployable=false` 不变，历史原件保留。
+
+### 已验收的 Orin Rerun 软件阶段
+
 **2026-09-30 Orin 原生 Rerun 定向软件已验收归档，独审与 root 通过。** 严格 SSH 已恢复；
 独立目录使用 `a6957cc` 的 620 项源码快照，浮动 nightly 更新为
 `2026-09-30 / rustc 1.101.0-nightly (5c543b0b8)`。工具链日期用于溯源，默认仍跟随最新，

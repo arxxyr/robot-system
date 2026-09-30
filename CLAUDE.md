@@ -92,6 +92,9 @@
            新证据入口 .verify/robot_viz_orin_2026-09-30/summary.json；本轮未重跑完整workspace。
            正式ca14安装未改、未做新硬件动作，右H2/D15与deployable=false不变。
            本阶段仅本地提交、不push；下一步真实发布者观测及硬件门仍需各自验证。
+           同日H2续作：产物校验V2跟随最新nightly，前后真实编译器身份绑定六配方；新执行拒V1。
+           产品独审、本机定向20及Orin完整71 Python、fmt/根Clippy通过；新release准备中，未触硬件。
+           已纠正target内STS3215自带100ms watchdog误述；右H2原FAIL、D15 OPEN、deployable=false保持。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

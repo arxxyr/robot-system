@@ -18,7 +18,7 @@ class ArtifactTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.target = self.root / "cache"
         (self.target / "release").mkdir(parents=True)
         self.source_root = self.root / "source"
@@ -44,7 +44,7 @@ class ArtifactTests(unittest.TestCase):
         out.write_text(stdout)
         err.write_text("")
         row = {"name": "fixture", "argv": argv, "cwd": str(self.source_root), "env": self.env,
-               "removed_env_keys": [], "started_at": "fixture", "started_monotonic_ns": 1,
+               "removed_env_keys": [], "started_at": "fixture", "started_monotonic_ns": self.counter * 10,
                "timeout_seconds": None, "stdout": str(out), "stderr": str(err),
                "launch_receipt": str(directory / "launch.json"),
                "completion_receipt": str(directory / "completion.json"), "pid": 42,
@@ -52,7 +52,7 @@ class ArtifactTests(unittest.TestCase):
                             "exe": "/fixture/cargo"},
                "signals": [], "reaped": False, "exit_code": None}
         Path(row["launch_receipt"]).write_text(json.dumps(row))
-        row.update(reaped=True, exit_code=0, ended_monotonic_ns=2)
+        row.update(reaped=True, exit_code=0, ended_monotonic_ns=self.counter * 10 + 1)
         for key in ("stdout", "stderr"):
             path = Path(row[key])
             row[key + "_sha256"] = a.sha256(path)
@@ -83,18 +83,41 @@ class ArtifactTests(unittest.TestCase):
             mutate(records)
         return self.receipt(a.build_argv(kind, build), "\n".join(json.dumps(r) for r in records))
 
-    def manifest(self, kind):
+    def version(self, commit="b" * 40, release="1.101.0-nightly", host="aarch64-unknown-linux-gnu"):
+        return f"rustc {release}\nbinary: rustc\ncommit-hash: {commit}\ncommit-date: 2026-09-30\nhost: {host}\nrelease: {release}\nLLVM version: 23.1.0\n"
+
+    def rewrite_receipt(self, reference, mutate):
+        """修改夹具原始 launch/completion，两者仍一致，专测更内层合同。"""
+        row = a.read_pinned_json(reference)
+        mutate(row)
+        launch = {k: v for k, v in row.items() if k not in (
+            "ended_monotonic_ns", "stdout_sha256", "stdout_bytes", "stderr_sha256", "stderr_bytes")}
+        launch.update(reaped=False, exit_code=None)
+        Path(row["launch_receipt"]).write_text(json.dumps(launch))
+        for key in ("stdout", "stderr"):
+            path = Path(row[key])
+            row[key + "_sha256"] = a.sha256(path)
+            row[key + "_bytes"] = path.stat().st_size
+        return self.write(Path(reference["path"]).relative_to(self.root), row)
+
+    def manifest(self, kind, legacy=False):
         directory = self.root / kind
         directory.mkdir()
-        rustc = self.receipt(["rustc", "-vV"], "commit-hash: " + a.RUSTC_COMMIT + "\nhost: aarch64-unknown-linux-gnu\n")
-        result = {"schema": "P7_RELEASE_ARTIFACTS_V1", "kind": kind, "deployable": False,
+        self.env["RUSTUP_TOOLCHAIN"] = a.LEGACY_TOOLCHAIN if legacy else a.TOOLCHAIN
+        version = self.version(commit=a.LEGACY_RUSTC_COMMIT) if legacy else self.version()
+        rustc = self.receipt(["rustc", "-vV"], version)
+        result = {"schema": "P7_RELEASE_ARTIFACTS_V1" if legacy else "P7_RELEASE_ARTIFACTS_V2", "kind": kind, "deployable": False,
                   "build_head": self.head, "build_root": str(self.source_root), "toolchain": a.TOOLCHAIN,
-                  "rustc_commit": a.RUSTC_COMMIT, "machine": 183, "rustc_receipt": rustc,
+                  "machine": 183,
                   "source_manifest": self.source_ref, "source_manifest_sha256": self.source["source_manifest_sha256"],
                   "artifact_directory": str(directory), "builds": {}, "artifacts": {}}
+        if legacy:
+            result.update(toolchain=a.LEGACY_TOOLCHAIN, rustc_commit=a.LEGACY_RUSTC_COMMIT, rustc_receipt=rustc)
+        else:
+            result.update(rustc_before=rustc, rustc_identity=a.parse_rustc_identity(version))
         for build in a.BUILD_SPECS[kind]:
             reference = self.cargo(kind, build)
-            row, records = a.validate_cargo_build(reference, kind, build)
+            row, records = a.validate_cargo_build(reference, kind, build, allow_legacy=legacy)
             result["builds"][build] = reference
             for name, record in records.items():
                 frozen = directory / name
@@ -105,6 +128,8 @@ class ArtifactTests(unittest.TestCase):
                         "build_head": self.head, "source_manifest_sha256": result["source_manifest_sha256"]}
                 sidecar = self.write(kind + "/" + name + ".build.json", item)
                 result["artifacts"][name] = {**item, "sidecar": sidecar}
+        if not legacy:
+            result["rustc_after"] = self.receipt(["rustc", "-vV"], version)
         return result
 
     def validate(self, manifest, **kwargs):
@@ -115,6 +140,72 @@ class ArtifactTests(unittest.TestCase):
         for kind in a.BUILD_SPECS:
             with self.subTest(kind=kind):
                 self.assertTrue(self.validate(self.manifest(kind))["valid"])
+
+    def test_legacy_requires_explicit_read_only_opt_in(self):
+        manifest = self.manifest("measurement", legacy=True)
+        with self.assertRaises(ValueError):
+            self.validate(manifest)
+        self.assertTrue(self.validate(manifest, allow_legacy=True)["valid"])
+
+    def test_rustc_identity_requires_unique_actual_nightly_fields(self):
+        self.assertEqual(a.parse_rustc_identity(self.version()), {
+            "commit_hash": "b" * 40, "release": "1.101.0-nightly", "host": "aarch64-unknown-linux-gnu"})
+        # 未来 nightly 同样通过；合同绑定本轮实际身份，不写死当前版本。
+        self.assertEqual(a.parse_rustc_identity(self.version(release="1.120.0-nightly"))["release"], "1.120.0-nightly")
+        for version in (
+            self.version(release="1.101.0"), self.version(release="1.101.0-beta.1"),
+            self.version(commit="unknown"), self.version(commit="b" * 39),
+            self.version(host="x86_64-unknown-linux-gnu"), self.version().replace("release: 1.101.0-nightly\n", ""),
+            self.version() + "commit-hash: " + "b" * 40 + "\n", self.version() + "release: 1.120.0-nightly\n",
+        ):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                a.parse_rustc_identity(version)
+
+    def test_toolchain_window_rejects_identity_environment_boot_and_time_drift(self):
+        original = self.manifest("measurement")
+        mutations = (
+            ("rustc_after", lambda r: Path(r["stdout"]).write_text(self.version(commit="c" * 40))),
+            ("rustc_after", lambda r: Path(r["stdout"]).write_text(self.version(release="1.120.0-nightly"))),
+            ("rustc_after", lambda r: Path(r["stdout"]).write_text(self.version(host="x86_64-unknown-linux-gnu"))),
+            ("rustc_after", lambda r: r["env"].update(PATH="/other/bin")),
+            ("rustc_after", lambda r: r["identity"].update(boot_id="b" * 8 + "-" + "b" * 27)),
+            ("rustc_before", lambda r: r.update(cwd="/other/source")),
+            ("rustc_before", lambda r: r.update(argv=["rustc", "-V"])),
+            ("rustc_before", lambda r: r["env"].update(RUSTFLAGS="-C opt-level=0")),
+            ("rustc_after", lambda r: r.update(started_monotonic_ns=0)),
+            ("rustc_after", lambda r: r.update(exit_code=1)),
+            ("rustc_before", lambda r: r.update(reaped=False)),
+            ("rustc_after", lambda r: r.update(runner_error="timeout")),
+            ("rustc_after", lambda r: r.update(signals=["TERM"])),
+        )
+        for key, mutate in mutations:
+            reference = original[key]
+            row = a.read_pinned_json(reference)
+            output = Path(row["stdout"]).read_text()
+            manifest = copy.deepcopy(original)
+            manifest[key] = self.rewrite_receipt(reference, mutate)
+            with self.subTest(key=key, mutate=mutate), self.assertRaises(ValueError):
+                self.validate(manifest)
+            Path(row["stdout"]).write_text(output)
+            original[key] = self.rewrite_receipt(manifest[key], lambda r: (r.clear(), r.update(row)))
+
+    def test_each_build_must_use_same_boot_environment_and_bounded_window(self):
+        manifest = self.manifest("measurement")
+        for build in a.BUILD_SPECS["measurement"]:
+            original = a.read_pinned_json(manifest["builds"][build])
+            for mutate in (
+                lambda r: r["identity"].update(boot_id="c" * 8 + "-" + "c" * 27),
+                lambda r: r["env"].update(PATH="/other/bin"),
+                lambda r: r["env"].update(CARGO_TARGET_DIR=str(self.source_root)),
+                lambda r: r.update(cwd="/other/source"),
+                lambda r: r.update(started_monotonic_ns=0),
+                lambda r: r.update(ended_monotonic_ns=1_000_000),
+            ):
+                manifest["builds"][build] = self.rewrite_receipt(manifest["builds"][build], mutate)
+                with self.subTest(build=build, mutate=mutate), self.assertRaises(ValueError):
+                    self.validate(manifest)
+                manifest["builds"][build] = self.rewrite_receipt(
+                    manifest["builds"][build], lambda r: (r.clear(), r.update(original)))
 
     def test_cargo_contract_rejections(self):
         mutations = [lambda r: r.pop(), lambda r: r.append(r[0]),
@@ -404,6 +495,7 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(env, shown)
         self.assertEqual(env["CARGO_BUILD_JOBS"], "2")
         self.assertEqual(env["RUSTC_WRAPPER"], "")
+        self.assertEqual(env["RUSTUP_TOOLCHAIN"], "nightly")
 
 
 if __name__ == "__main__":

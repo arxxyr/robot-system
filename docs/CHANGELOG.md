@@ -10,6 +10,33 @@
 
 ---
 
+## 2026-09-30 · H2 产物校验跟随最新 nightly（V2）
+
+移除 H2 新准备对 `nightly-2026-09-10` 的固定依赖。`P7_RELEASE_ARTIFACTS_V2`
+用实际 `rustc -vV` 前后完成回执绑定六条构建的 nightly 身份、环境、源码根、boot
+和时间窗；生产/测量两套清单共用同一对回执。V1 仅显式历史只读，新执行拒绝 V1。
+原源码、feature/profile、ELF、真实 wait、安装隔离及 H2 时延预算不变。
+
+产品独审通过；本机定向 20 项、Orin 完整 71 项 Python、提交前 fmt / 根 Clippy 通过。
+旧 macOS 平台失败保留。检查的 589 项 Rust 输入与当前逐项相同；新 release
+构建仍在准备，未触硬件、正式服务或安装件。右 H2 原整体 FAIL、D15 OPEN、
+`deployable=false` 保持，证据见 `.verify/h2_nightly_v2_2026-09-30/precommit.json`。
+
+## 2026-09-30 · XLeRobot command watchdog 能力勘误（target-contract）
+
+涉及 `targets/xlerobot.md` §2.4 寄存器序列及 §2.9 安全契约。旧条目要求配置
+“STS3215 默认 100 ms command timeout”，与已批候选 E D15 / D15-R 的能力核实冲突：
+准确结论是“无已文档化、可配置的 command watchdog，历史真机失联持续带扭”。
+主机串口 IO 超时不是电机侧失联保护；移除无能力依据的 watchdog 初始化要求，同步纠正
+§1 / §5 的相关说明，不扩改其余硬件、DoF 或 TBD 骨架，也不改冻结 `00_design.md`。
+
+D15 保持 OPEN；D15-R 只授权受监督 demo 例外，AC-E25 的 S0 死亡后 <500 ms
+安全态仍为正式退役硬门。硬件方案待供电拓扑、看门狗型号等现场资料确认后另行评审，
+不预选方案或新增 no-op 实现。H2 与 D15 闭环路径见 HANDOFF；本轮 H2 最新 nightly
+来源/产物校验 V2 的软件验收见上条，新 release 与硬件验收尚未完成。
+审阅：独立只读审查指出矛盾，root 授权本次勘误；依据为候选 E D15 / D15-R 及
+2026-07-15 例外登记，不改变既有安全判据。
+
 ## 2026-09-30 · 最新浮动 nightly 与 Orin 原生软件验证
 
 涉及 §9 工具链约定。按用户“Rust 默认都用 nightly 最新版本”的最新要求，

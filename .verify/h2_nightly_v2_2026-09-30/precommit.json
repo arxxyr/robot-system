@@ -1,0 +1,77 @@
+{
+  "status": "PRODUCT_SOFTWARE_PASS_RELEASE_PREPARATION_PENDING",
+  "archive": {
+    "path": "precommit.tar.gz",
+    "sha256": "b577b339eb024a2ca8bc943b7c8108919826f607186fa855aa9ce155c2db1cf4",
+    "bytes": 172524,
+    "indexed_files": 41,
+    "readback_verified": true
+  },
+  "code_base": "a1e0ad3cb76f59d7c11306753d4976cf19b11e5e",
+  "changed_product_files": [
+    {
+      "path": "scripts/post_e_h2_artifacts.py",
+      "sha256": "bd2b3f7bb8527cd9ecec73894171638e9cf378656b89e284a585c3baa37b8731",
+      "bytes": 28863
+    },
+    {
+      "path": "scripts/run_post_e_h2.py",
+      "sha256": "1a679114cf9f6a719e4369486214a71280b35efbea46f69cb9fa5c53710b1c13",
+      "bytes": 41559
+    },
+    {
+      "path": "scripts/tests/test_post_e_h2_artifacts.py",
+      "sha256": "120e9f2f872aaeffdb705b84f356219a3da27978f4277ab3a8b2546411f61d79",
+      "bytes": 27871
+    },
+    {
+      "path": "scripts/tests/test_run_post_e_h2.py",
+      "sha256": "43b91727a4e8fea580f85fe185fa1f1ca453a15c15d208dae1805a4dffab4a1c",
+      "bytes": 64871
+    },
+    {
+      "path": "scripts/systemd/README_dimos_replace.md",
+      "sha256": "091cd3c8d1a3bc9d9fa88e38c981c076aad4de73c7487269faefc504ede48cc0",
+      "bytes": 47915
+    },
+    {
+      "path": "team-swe/specs/post_e_comm_fault_hardening.PLAN.md",
+      "sha256": "dfea11530ab617356b4c619a015d251d071e0e7bb4a8a44285f4a7af018f41ef",
+      "bytes": 230550
+    }
+  ],
+  "source": {
+    "files": 589,
+    "sha256": "48360e9faeaf8c1e6f32c82f10312f8316f57551bb4406c64df1916e2de73e93",
+    "binding": "当前 Rust 编译域逐项与已有隔离源码相同；本轮新执行 fmt / 根 Clippy，不是新 release 构建"
+  },
+  "toolchain": {
+    "channel": "nightly",
+    "release": "1.101.0-nightly",
+    "commit": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+    "update_status": "真实 rustup update nightly 成功，已是最新；原 nightly 目录完整备份"
+  },
+  "checks": {
+    "local_fmt": "PASS",
+    "native_fmt": "PASS",
+    "native_root_clippy": "PASS",
+    "native_python_tests": 71,
+    "native_plan_only": "PASS",
+    "local_targeted_tests": 20
+  },
+  "retained_failures": {
+    "mac_broader": "68 中 65 PASS、2 FAIL + 1 ERROR；另 3 项 Linux 专属未运行，平台原因见原件；原生完整 71 已 PASS",
+    "initial_fixture": "临时目录规范路径夹具首轮 FAIL 保留"
+  },
+  "review": {
+    "product_independent": "/root/next_step_review，六产品文件静态独审通过",
+    "root": "原生结果、源码绑定、产品差异及目标文档勘误已验收"
+  },
+  "limits": [
+    "新七件 release 尚未构建验收",
+    "未启动硬件、正式业务服务或安装",
+    "右 H2 仍原整体 FAIL",
+    "候选 E D15 OPEN",
+    "deployable=false"
+  ]
+}

@@ -10,8 +10,10 @@ import shlex
 import stat
 import subprocess
 
-TOOLCHAIN = "nightly-2026-09-10"
-RUSTC_COMMIT = "a36d05efab632d1ddf902b6a5c33b6d5d3b64131"
+TOOLCHAIN = "nightly"
+# 仅显式历史验读使用；新准备与现场 execute 不接受旧合同。
+LEGACY_TOOLCHAIN = "nightly-2026-09-10"
+LEGACY_RUSTC_COMMIT = "a36d05efab632d1ddf902b6a5c33b6d5d3b64131"
 INPUT_DOMAINS = (
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo", "crates", "configs",
     "3rd-party/Cargo.toml", "3rd-party/Cargo.lock", "3rd-party/iceoryx2",
@@ -163,14 +165,20 @@ def validate_completion(reference):
     return row
 
 
-def validate_cargo_build(reference, kind, build):
-    row = validate_completion(reference)
-    require(row["argv"] == build_argv(kind, build), "Cargo 命令不属于批准 release 构建")
-    env = row["env"]
-    require(env.get("RUSTUP_TOOLCHAIN") == TOOLCHAIN and env.get("RUSTC_WRAPPER") == ""
+def validate_build_environment(env, toolchain=TOOLCHAIN):
+    """rustc 与 Cargo 共用完整显式环境，不允许额外编译覆盖。"""
+    require(env.get("RUSTUP_TOOLCHAIN") == toolchain and env.get("RUSTC_WRAPPER") == ""
             and env.get("CARGO_BUILD_JOBS") == "2" and env.get("CARGO_TERM_COLOR") == "never", "构建环境不符")
     require(set(env) == {"RUSTUP_TOOLCHAIN", "RUSTC_WRAPPER", "CARGO_BUILD_JOBS", "CARGO_TERM_COLOR",
                          "CARGO_TARGET_DIR", "PATH"}, "构建环境清单有未批准覆盖")
+    require(isinstance(env["PATH"], str) and env["PATH"], "构建 PATH 缺失")
+
+
+def validate_cargo_build(reference, kind, build, *, allow_legacy=False):
+    row = validate_completion(reference)
+    require(row["argv"] == build_argv(kind, build), "Cargo 命令不属于批准 release 构建")
+    env = row["env"]
+    validate_build_environment(env, LEGACY_TOOLCHAIN if allow_legacy else TOOLCHAIN)
     target_root = _absolute(env["CARGO_TARGET_DIR"]).resolve(strict=True)
     records = [strict_json(line) for line in Path(row["stdout"]).read_text().splitlines() if line.strip()]
     finished = [r for r in records if r.get("reason") == "build-finished"]
@@ -212,9 +220,43 @@ def elf_identity(path, expected_machine=183):
             "elf_machine": expected_machine}
 
 
+def parse_rustc_identity(version, expected_machine=183):
+    """严格解析实际 -vV 的唯一字段；未知提交、非 nightly 和异架构均拒绝。"""
+    fields = {}
+    for line in version.splitlines():
+        if ": " in line:
+            key, value = line.split(": ", 1)
+            require(key not in fields, "rustc -vV 字段重复：" + key)
+            fields[key] = value
+    require(all(key in fields for key in ("release", "commit-hash", "host")), "rustc -vV 必要字段缺失")
+    require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+-nightly", fields["release"]), "实际 rustc 不是 nightly")
+    require(re.fullmatch(r"[0-9a-f]{40}", fields["commit-hash"]), "实际 rustc 提交未知或非法")
+    hosts = {183: "aarch64-unknown-linux-gnu", 62: "x86_64-unknown-linux-gnu"}
+    require(expected_machine in hosts and fields["host"] == hosts[expected_machine], "实际 rustc host 与 ELF 架构不符")
+    return {"release": fields["release"], "commit_hash": fields["commit-hash"], "host": fields["host"]}
+
+
+def validate_toolchain_window(manifest, expected_machine):
+    """验证准备驱动已固定的前后身份与时间窗；本函数不更新工具链或联网。"""
+    require(manifest.get("toolchain") == TOOLCHAIN, "V2 只接受浮动 nightly 准备合同")
+    before, after = [validate_completion(manifest[key]) for key in ("rustc_before", "rustc_after")]
+    for row in (before, after):
+        require(row["argv"] == ["rustc", "-vV"], "缺实际 rustc -vV 工具链回执")
+        validate_build_environment(row["env"])
+        require(row["cwd"] == manifest["build_root"], "rustc 与构建根目录不一致")
+        identity = parse_rustc_identity(Path(row["stdout"]).read_text(), expected_machine)
+        require(identity == manifest.get("rustc_identity"), "前后实际 rustc 身份与清单不符")
+    require(before["env"] == after["env"], "前后 rustc 环境变化")
+    require(before["identity"]["boot_id"] == after["identity"]["boot_id"], "前后 rustc 跨 boot")
+    require(before["ended_monotonic_ns"] <= after["started_monotonic_ns"], "rustc 前后时间窗倒序")
+    return before, after
+
+
 def validate_artifact_set(manifest, *, source_manifest, expected_kind, expected_head,
-                          expected_machine=183, build_ancestor_verified=False):
-    require(manifest.get("schema") == "P7_RELEASE_ARTIFACTS_V1" and manifest.get("kind") == expected_kind,
+                          expected_machine=183, build_ancestor_verified=False, allow_legacy=False):
+    legacy = manifest.get("schema") == "P7_RELEASE_ARTIFACTS_V1"
+    require((manifest.get("schema") == "P7_RELEASE_ARTIFACTS_V2" or (legacy and allow_legacy is True))
+            and manifest.get("kind") == expected_kind,
             "产物集合类型错误")
     require(expected_kind in BUILD_SPECS and manifest.get("deployable") is False, "产物不得宣称可部署")
     require(re.fullmatch(r"[0-9a-f]{40}", expected_head) and re.fullmatch(r"[0-9a-f]{40}", manifest["build_head"]),
@@ -224,23 +266,32 @@ def validate_artifact_set(manifest, *, source_manifest, expected_kind, expected_
     validate_source_manifest(source_manifest)
     require(read_pinned_json(manifest["source_manifest"]) == source_manifest, "完整编译输入变化，不能继承产物")
     require(manifest["source_manifest_sha256"] == source_manifest["source_manifest_sha256"], "源摘要不符")
-    require(manifest["toolchain"] == TOOLCHAIN and manifest["rustc_commit"] == RUSTC_COMMIT
-            and manifest["machine"] == expected_machine, "工具链或架构不符")
-    rustc = validate_completion(manifest["rustc_receipt"])
-    require(rustc["argv"] == ["rustc", "-vV"] and rustc["env"].get("RUSTUP_TOOLCHAIN") == TOOLCHAIN,
-            "缺实际 rustc 工具链回执")
-    version = Path(rustc["stdout"]).read_text()
-    host = "aarch64-unknown-linux-gnu" if expected_machine == 183 else "x86_64-unknown-linux-gnu"
-    require("commit-hash: " + RUSTC_COMMIT + "\n" in version and "host: " + host + "\n" in version,
-            "真实 rustc 身份不符")
+    require(manifest["machine"] == expected_machine, "产物架构不符")
+    if legacy:
+        require(manifest["toolchain"] == LEGACY_TOOLCHAIN and manifest["rustc_commit"] == LEGACY_RUSTC_COMMIT,
+                "历史工具链不符")
+        rustc = validate_completion(manifest["rustc_receipt"])
+        require(rustc["argv"] == ["rustc", "-vV"] and rustc["env"].get("RUSTUP_TOOLCHAIN") == LEGACY_TOOLCHAIN,
+                "缺历史 rustc 工具链回执")
+        version = Path(rustc["stdout"]).read_text()
+        host = "aarch64-unknown-linux-gnu" if expected_machine == 183 else "x86_64-unknown-linux-gnu"
+        require("commit-hash: " + LEGACY_RUSTC_COMMIT + "\n" in version and "host: " + host + "\n" in version,
+                "历史 rustc 身份不符")
+    else:
+        before, after = validate_toolchain_window(manifest, expected_machine)
     specs = BUILD_SPECS[expected_kind]
     require(set(manifest["builds"]) == set(specs), "构建回执集合不完整")
     expected_names = {name for spec in specs.values() for name in spec[1]}
     require(set(manifest["artifacts"]) == expected_names, "产物集合不完整")
     frozen_paths = set()
     for build, reference in manifest["builds"].items():
-        row, artifacts = validate_cargo_build(reference, expected_kind, build)
+        row, artifacts = validate_cargo_build(reference, expected_kind, build, allow_legacy=legacy)
         require(row["cwd"] == manifest["build_root"], "构建根目录不一致")
+        if not legacy:
+            require(row["env"] == before["env"] and row["identity"]["boot_id"] == before["identity"]["boot_id"],
+                    "Cargo 与 rustc 环境或 boot 不同")
+            require(before["ended_monotonic_ns"] <= row["started_monotonic_ns"]
+                    <= row["ended_monotonic_ns"] <= after["started_monotonic_ns"], "Cargo 不在 rustc 前后身份时间窗内")
         for name, actual in artifacts.items():
             item = manifest["artifacts"][name]
             require(item["build"] == build and item["compiler_artifact"] == actual

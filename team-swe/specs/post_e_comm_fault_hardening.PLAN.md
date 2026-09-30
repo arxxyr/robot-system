@@ -2763,8 +2763,16 @@ Orin本轮8质量+3构建+3行为门全满足原期望，无重试。922远端�
 `CARGO_TARGET_DIR=target/rr-r4db-arm/root`已有缓存，Cargo前拒绝输出路径或inode
 与安装件重合。不能在准备构建时覆盖现役文件，不cargo clean。
 
-原生AArch64、nightly-2026-09-10、jobs=2，所有构建使用
+原生AArch64、浮动最新nightly、jobs=2，所有构建使用
 `--locked --release --message-format=json`，清除profile/RUSTFLAGS/wrapper及测试环境覆盖。
+产物合同升级为`P7_RELEASE_ARTIFACTS_V2`；准备执行器先真实完成`rustup update nightly`，
+再以`RUSTUP_TOOLCHAIN=nightly`执行六recipe。两套清单共用同一对`rustc_before`/
+`rustc_after`原始`rustc -vV`完成回执，`rustc_identity`含唯一release（nightly）、
+40位commit_hash及匹配AArch64的host；前后身份、完整环境、cwd、boot相同。
+每条自然成功构建须在`before.end <= build.start <= build.end <= after.start`窗内。
+共享验证器仅只读校验，不联网/更新。V1历史固定编译器仅显式`allow_legacy=True`验读；
+真实execute只接受V2且生产/测量共用前后身份，所有源/ELF/features/profile/sidecar及
+真实启动/wait/安装隔离门保持；不改变H2预算或D15判据。
 生产四件先冻结到独占拒覆盖目录：S0和guard保留default，使用`xlerobot-real`；
 S1保留默认组合（含实际配置所需scripted）；Gateway无默认feature。核实际完整feature
 闭包无test-*、Cargo原始artifact executable、源/HEAD/lock/toolchain/ELF183身份、

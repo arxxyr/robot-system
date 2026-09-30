@@ -341,6 +341,37 @@ class RealBackendTests(unittest.TestCase):
     def options(self, root):
         return argparse.Namespace(output=root, expected_head="a"*40, inputs_sha256="b"*64)
 
+    def test_execute_artifacts_require_v2_and_one_shared_compiler_window(self):
+        # 复用完整离线 ELF/原始 Cargo 回执夹具，实际走 artifact_check 与共享校验器。
+        from test_post_e_h2_artifacts import ArtifactTests
+        fixture = ArtifactTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        production = fixture.manifest("production")
+        measurement = fixture.manifest("measurement")
+        options = self.options(fixture.root)
+        backend = driver.RealBackend(options, driver.Journal(fixture.root, options))
+        backend.source = fixture.source
+        backend.command = lambda argv: self.fail("相同 HEAD 不应启动 git 子进程")
+
+        def check(prod, measured):
+            backend.inputs = {"production": fixture.write("production.json", prod),
+                              "measurement": fixture.write("measurement.json", measured)}
+            return backend.artifact_check()
+
+        # 两套各自合法但没有同一对回执，不能进入本次现场执行。
+        with self.assertRaisesRegex(ValueError, "共用同一对"):
+            check(production, measurement)
+        production["rustc_after"] = measurement["rustc_after"]
+        measurement["rustc_before"] = production["rustc_before"]
+        self.assertEqual(set(check(production, measurement)), {"production", "measurement"})
+        for kind in ("production", "measurement"):
+            changed = copy.deepcopy(production if kind == "production" else measurement)
+            changed["schema"] = "P7_RELEASE_ARTIFACTS_V1"
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "只接受 V2"):
+                check(changed if kind == "production" else production,
+                      changed if kind == "measurement" else measurement)
+
     def test_real_launch_owns_child_before_return_signal_and_exception(self):
         for fault in ("signal", "exception", "disk"):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temp:
