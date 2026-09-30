@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "archive": "host-evidence.tar.gz",
+  "archive_sha256": "d21e2bd2e9125551500214ad838c959b41f0f65d6319fa0759f2c348fe52eba5",
+  "archive_bytes": 178941,
+  "index_sha256": "a5650d41822d386c7aa6d6e86171cad0abb3413fc49b05cc7578d59f3173ee3b",
+  "indexed_files": 144,
+  "readback_verified": true
+}

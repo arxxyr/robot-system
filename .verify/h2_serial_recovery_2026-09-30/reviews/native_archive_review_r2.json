@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "scope": "仅归档完整性独审；不解包、不执行成员，不替代软件/H2/D15 验收。",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/native-evidence.tar.gz",
+    "sha256": "f7283639df1317eb2593e52cae220532ae9e8582e1054a9630081139fdd23770",
+    "bytes": 14288202
+  },
+  "index": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/native-evidence.tar.gz.index.json",
+    "sha256": "6ed47a7f4fbf0d51622bc910aabb539ef6082e003f8d96f9f5ea921641666408",
+    "bytes": 70043
+  },
+  "metadata": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/native-evidence.tar.gz.metadata.json",
+    "sha256": "0953979b54817d9b6bf9ecefa80db0b8731465f612a00dfcc0d0bcf3d30822c5",
+    "bytes": 985
+  },
+  "verified": {
+    "files": 239,
+    "directories": 53,
+    "members": 293,
+    "original_bytes": 39501650,
+    "gzip_eof": true,
+    "tar_tail_zero": true,
+    "all_member_bytes_sha_and_attributes": true,
+    "internal_external_index_identical": true,
+    "no_missing_extra_duplicate_traversal_or_link": true,
+    "input_before_after_unchanged": true
+  },
+  "preserved_nonpass_completions": [],
+  "nonpass_scope": "这些原始 completion 逐字保留；其中预期负例与实际失败的业务判定由软件证据审查负责。",
+  "blocking_findings": [],
+  "reviewer_script_sha256": "db81841e5869f8b43e5af441baa01056fdbaf465f9c7d329c4876f45d11886a5"
+}

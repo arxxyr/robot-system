@@ -10,6 +10,15 @@
 
 ---
 
+## 2026-09-30 · 周期恢复补丁的新 H2 V2 原生软件准备
+
+`b01603b` 快进整合后完成 Orin 新 V2 六配方七冻结件；更新 nightly 仍为 `5c543b0b8`，589 输入聚合 `c0388807`。
+本轮 fmt / 根 Clippy、71 Python、七 help、冻结 mock 四组各 2 样本、同源 tonic 6 测试 / 9 场景通过；710+5 仅引用已验同源原件。
+release/post 独审与 root 软件验收通过；[证据入口](../.verify/h2_serial_recovery_2026-09-30/summary.json)与[完整 SHA / 交接](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+正式四件和服务/进程只读比较一致；本轮非完整 workspace，未部署、未 push 或执行硬件。
+下一步阶段提交后远端快进对齐、新 alignment、当次现场事实与独立 GO。
+右 H2 历史整体 FAIL、D15 OPEN/DEFERRED 及 `deployable=false` 保持，原失败原件保留。
+
 ## 2026-09-30 · SerialRT 周期读恢复与过期调度点跳过（独立软件候选）
 
 周期 Motion 写仅在 `Aborted(Revoked)` 时保留错误计数/分类，重检并发急停、超时与

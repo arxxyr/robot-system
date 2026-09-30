@@ -24,10 +24,14 @@ SIGINT/exit130 保留。最新浮动 nightly `5c543b0b8` 下，本机 fmt、原�
 均为 0 failed / 0 ignored；调度 6 与诊断 7 均为 710 的子集，不累计。两端 589 项构建输入逐项一致，
 验证后复核一致，聚合 `c0388807`；三处变更源码 SHA 在批次首尾一致。定向软件门已通过；
 [证据入口](../.verify/serial_periodic_recovery_2026-09-30/summary.json)已归档，独立审查、root 验收及封包读回通过。
-本轮未跑完整 workspace 或 release 构建；未部署、未 push，不构成新硬件 PASS，
+该周期恢复候选验收阶段未跑完整 workspace 或 release 构建；未部署、未 push，不构成新硬件 PASS，
 也不改变历史 34 条 Unknown 的未证实归因。
-当前 `539d832` H2 冻结准备不含此补丁；如改用新源码，须重新原生构建、冻结和两端对齐，
-不能复用旧 V2 清单。D15 暂缓、右 H2 历史整体 FAIL 及 `deployable=false` 保持。
+同日续作已将 `b01603b` 快进整合，新 Orin V2 六配方与七件冻结使用更新后的 nightly `5c543b0b8`，589 项输入聚合 `c0388807`。
+本轮 fmt / 根 Clippy、71 Python、七个 help、冻结 mock 四组各 2 样本及同源 tonic 6 测试 / 9 场景通过；710+5 只引用周期恢复原件。
+原生 release/post 独审与 root 软件验收通过；[证据入口](../.verify/h2_serial_recovery_2026-09-30/summary.json)，完整 SHA 见 [HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+正式 ca14 四件与六服务/控制进程状态只读比较一致，本轮非完整 workspace，未部署、未 push 或执行硬件。
+下一步在阶段提交与远端源码快进对齐后取得新 alignment，再确认本次现场事实并由 root 给出独立 GO。
+右 H2 历史整体 FAIL、D15 OPEN/DEFERRED 及 `deployable=false` 保持。
 
 2026-09-30 当前 H2 软件准备：`59120e34` 在更新后的浮动 nightly `5c543b0b8` 下完成
 六条原生 release 配方及七个冻结件，589 项编译输入前后聚合 `48360e9f` 一致。

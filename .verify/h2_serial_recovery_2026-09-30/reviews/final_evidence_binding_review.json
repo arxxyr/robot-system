@@ -1,0 +1,121 @@
+{
+  "schema": "P7_S52_FINAL_EVIDENCE_BINDING_REVIEW_V1",
+  "status": "PASS",
+  "checks": {
+    "fresh_release_text_files_hash_bytes_equal_archive_index": 86,
+    "fresh_589_source_and_frozen_8_elf": true,
+    "formal_services_process_prefix_during_after_equal": true,
+    "services_inactive_dead_pid0": 6,
+    "readback_34_read_only_command_identity_sequence_subsystem_map": true,
+    "new_readtool_manifest_sha_and_completion_pinned": true
+  },
+  "formal_timing": {
+    "release_started_utc": "2026-09-30T16:27:43.742647+00:00",
+    "during_snapshot": "2026-09-30T16:27:55.620042+00:00",
+    "after_snapshot": "2026-09-30T16:47:09.620402+00:00",
+    "scope": "服务/控制进程仅批次中与完成后两个只读时刻相同；正式四文件完整窗口另见release/post原件"
+  },
+  "root_snapshots": {
+    "during_pid": 17282,
+    "after_pid": 19759,
+    "fresh_review_pid": 19801,
+    "all_wait0_reaped": true
+  },
+  "input_index": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/acceptance_fresh_r1.owner/result.json",
+      "sha256": "a5aa1834a802ccd823281b1545f4e84685f816e77c7438344d49fbd71e9110c1",
+      "bytes": 1479
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/reviews/fresh_readonly.sh",
+      "sha256": "9ae14f6aaac48f5e9c9711a2a4fede917c760ff32b8a1dd65875da11fbd97bfd",
+      "bytes": 3605
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/acceptance_fresh_r1.owner/child.log",
+      "sha256": "1af5a91bf5f5ad690ce2fcd6a67cb62370fdb92e1e57d399a44dcdfff77b9395",
+      "bytes": 191777
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/native-evidence.tar.gz.index.json",
+      "sha256": "6ed47a7f4fbf0d51622bc910aabb539ef6082e003f8d96f9f5ea921641666408",
+      "bytes": 70043
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/current_formal_before.owner/result.json",
+      "sha256": "76b783feb362d778bd396f8249625a83bf78413722da1c5d25b631f0f4954ceb",
+      "bytes": 1480
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/current_formal_before.sh",
+      "sha256": "4f58322c5703f565bbc20d4e8b911608659813792f3379dcc92b4df1b2914c1e",
+      "bytes": 934
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/current_formal_before.owner/child.log",
+      "sha256": "6b1089e046d6329ba50281b06412e0bca14e6625de4a910443d87f6dacecf1c2",
+      "bytes": 1559
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/current_formal_after.owner/result.json",
+      "sha256": "be31b70d657abeeef2a1350448ec0d619c2f9a57b1bde6f46feda863ac102d2c",
+      "bytes": 1479
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/current_formal_before.sh",
+      "sha256": "4f58322c5703f565bbc20d4e8b911608659813792f3379dcc92b4df1b2914c1e",
+      "bytes": 934
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/current_formal_after.owner/child.log",
+      "sha256": "b53a559fd243ed8173158bac80855ca100c7b99d82961510a8079bff5e0362ab",
+      "bytes": 1559
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/native-extracted/release-r1/result.json",
+      "sha256": "cb9902726bb75c8723ca5059d566626f649354bc28002850d67b2295a04d18af",
+      "bytes": 6328
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/native-extracted/post-release-r1/post_release_result.json",
+      "sha256": "63d7f6d17ab537217356cf0079b71fe613a10fa9eadf223448c7e6e2c35dcdd7",
+      "bytes": 4702
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/readback_plan.json",
+      "sha256": "1966dc076d3b8f32d63ddbd173e4865c640f43e82779d8cadfbe0b89dad11f87",
+      "bytes": 17913
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/native-extracted/readback-tool-r1/result.json",
+      "sha256": "f17b198cf6a64f6f6df3e8dc00f36c6f28957d1f55bc15143df181794a1b65a5",
+      "bytes": 4141
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/readback_tool_identity.owner/result.json",
+      "sha256": "d70c4ec16430ee316e49f52b5737e7c4469b9371643e7ff108bcf92743129039",
+      "bytes": 1481
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/readback_tool_identity.sh",
+      "sha256": "5c2298aaeb09b0e1e3594e227604aa44b726978afc2cf9d0e542a361714dd128",
+      "bytes": 1737
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/readback_tool_identity.owner/child.log",
+      "sha256": "5455921caf7d7cd16f5fd67829b217f85bd6a353d38c48c4e2cbd3bc617e9bc3",
+      "bytes": 514
+    }
+  ],
+  "preserved_reviewer_failures": [
+    "native_archive_review.json:审查端索引短名FileNotFound",
+    "native_dynamic_review_r1.json:审查端installed列表误作dict导致AttributeError"
+  ],
+  "limits": [
+    "未执行硬件H2或34条寄存器读回；PLAN_ONLY/NOT_AUTHORIZED保持。",
+    "本轮软件验收不关闭右H2原FAIL、D15 OPEN/DEFERRED或deployable=false。",
+    "本轮不是完整workspace测试；旧710+5只按同源同compiler复用，不计fresh。"
+  ],
+  "blocking_findings": []
+}

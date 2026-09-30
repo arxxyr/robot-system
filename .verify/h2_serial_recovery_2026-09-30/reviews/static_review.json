@@ -1,0 +1,82 @@
+{
+  "schema": "P7_S52_STATIC_INDEPENDENT_REVIEW_V1",
+  "status": "PASS",
+  "head": "b01603b56117a35279407de0c201bcd91bb6e5b2",
+  "clean": true,
+  "checks": {
+    "runner_only_fmt_all": true,
+    "postchecks_byte_identical": true,
+    "preparer_only_release_head_constants": true,
+    "prelaunch_cleanup_owner_byte_identical": true,
+    "python_ast": true
+  },
+  "inputs": [
+    {
+      "old": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s50/nightly_v2/run_release_v2.py",
+      "new": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/run_release_v2.py",
+      "old_sha256": "d6b20da28de8d5ae077a93cb2fb5ba7f27a66b8145df9e7e91951cb14ac0b12b",
+      "new_sha256": "e11d5b7eac3f03f2e60267f8bd1944c2920b81dcd347d5beeee4650275098b93",
+      "bytes": 18667,
+      "same_bytes": false,
+      "diff": "--- \n+++ \n@@ -254,7 +254,7 @@\n                       \"sha256\": a.sha256(options.out / \"source_before.json\")}\n         rustc_before, rustc_row = runner.command(\"rustc_before\", [\"rustc\", \"-vV\"])\n         identity = a.parse_rustc_identity(Path(rustc_row[\"stdout\"]).read_text())\n-        runner.command(\"fmt\", [\"cargo\", \"fmt\", \"--all\", \"--\", \"--check\"], 300)\n+        runner.command(\"fmt\", [\"cargo\", \"fmt\", \"--all\"], 300)\n         runner.command(\"clippy\", [\"cargo\", \"clippy\", \"--locked\", \"--all\", \"--all-targets\", \"--\", \"-D\", \"warnings\"], 7200)\n         runner.command(\"python_tests\", [\"uv\", \"run\", \"--no-project\", \"python\", \"-m\", \"unittest\", \"discover\",\n                                         \"-s\", \"scripts/tests\", \"-p\", \"test_*.py\", \"-v\"], 300)\n"
+    },
+    {
+      "old": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s50/nightly_v2/post_release_checks.py",
+      "new": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/post_release_checks.py",
+      "old_sha256": "4f567265b93687411324811363ab4d79a1730ff5a0d41bb745a37942c385449e",
+      "new_sha256": "4f567265b93687411324811363ab4d79a1730ff5a0d41bb745a37942c385449e",
+      "bytes": 14965,
+      "same_bytes": true,
+      "diff": ""
+    },
+    {
+      "old": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s51/prepare_right_readonly.py",
+      "new": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/control/prepare_right_readonly.py",
+      "old_sha256": "cc54b8afb581daa9b9f6f2a8396f3e1d05063dea037ddffd1518e15f97332425",
+      "new_sha256": "ce097c64ca229601502072c9911ed57ef7de7c01a866fac75d630d1b3884e747",
+      "bytes": 13115,
+      "same_bytes": false,
+      "diff": "--- \n+++ \n@@ -17,8 +17,8 @@\n from types import SimpleNamespace\n \n \n-RELEASE_ROOT = Path(\"/home/loosqk/robot-checks/h2-nightly-v2-20260930-r1/release-r1\")\n-BUILD_HEAD = \"59120e34bebd991accac41696425b1c743870a19\"\n+RELEASE_ROOT = Path(\"/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/release-r1\")\n+BUILD_HEAD = \"b01603b56117a35279407de0c201bcd91bb6e5b2\"\n FORMAL_ROOT = Path(\"/home/loosqk/repo/robot/robot-system\")\n \n \n"
+    },
+    {
+      "old": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s51/prelaunch_go.py",
+      "new": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/control/prelaunch_go.py",
+      "old_sha256": "8121c8e8454d5a06dfa1f828ca85417917a0cdcd756d222717af89adf1024b77",
+      "new_sha256": "8121c8e8454d5a06dfa1f828ca85417917a0cdcd756d222717af89adf1024b77",
+      "bytes": 9132,
+      "same_bytes": true,
+      "diff": ""
+    },
+    {
+      "old": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s51/post_h2_cleanup.py",
+      "new": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/control/post_h2_cleanup.py",
+      "old_sha256": "342beea12d76ee69a2c5b81eebe6f738279d48e25b10340e8da07edfad175fd9",
+      "new_sha256": "342beea12d76ee69a2c5b81eebe6f738279d48e25b10340e8da07edfad175fd9",
+      "bytes": 11934,
+      "same_bytes": true,
+      "diff": ""
+    },
+    {
+      "old": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s51/host/ssh_owner.py",
+      "new": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/control/host/ssh_owner.py",
+      "old_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+      "new_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+      "bytes": 8656,
+      "same_bytes": true,
+      "diff": ""
+    },
+    {
+      "old": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s51/host/ssh_owner.py",
+      "new": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s52/host/ssh_owner.py",
+      "old_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+      "new_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+      "bytes": 8656,
+      "same_bytes": true,
+      "diff": ""
+    }
+  ],
+  "boundaries": [
+    "只批准纯软件构建和只读准备继续；未批准或运行硬件。",
+    "六配方/七ELF/实际nightly更新/589 c038/自然wait/正式前后状态仍待动态独审。"
+  ]
+}

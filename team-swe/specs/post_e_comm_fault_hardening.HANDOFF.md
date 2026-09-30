@@ -2,6 +2,23 @@
 
 ## 当前步骤
 
+### 周期恢复源码的新 H2 V2 准备（2026-09-30，软件已验收）
+
+周期恢复 `b01603b` 已快进整合到开发分支；Orin 使用新的隔离源码与 release-r1，固定 build HEAD 为 `b01603b56117a35279407de0c201bcd91bb6e5b2`。
+使用前实际更新浮动 nightly，仍为 `rustc 1.101.0-nightly (5c543b0b8)`；589 项输入两端及构建前后逐项一致，聚合 `c03888074cbd4005837bc0291aafdf72fff4a59f473d75f52298b1da42182a96`。
+本轮实际执行 fmt / 根 Clippy、71 Python、六条 release 配方 / 生产四件与测量三件冻结、七 help；均通过。
+冻结测量件 mock 四组各 2 软件样本、同源 tonic 6 测试 / 9 场景通过，包含 2.1 秒合法 Ack 与普通 2 秒/最终 3 秒期限反例。
+S0 lib 710 与 serial_rt_e2e 5 只引用周期恢复阶段同源原件，不计本轮重跑或累计；本轮未跑完整 workspace。
+原生 release/post 独审与 root 软件验收通过，入口为[本轮证据](../../.verify/h2_serial_recovery_2026-09-30/summary.json)。
+source_before JSON SHA：`38958610ca73ec30c0623ec221666dafb61d69bbf7c053f4d06b3a010ea6f280`；production / measurement 清单 SHA：`b33933680a19c867c322f5b1053475a46ae7e013a389d9a1f49ec5b0d1f10605` / `bae41b6feaceb0f7fa5c0a1c5c1565bb5867a619b32346739853a6f3a461c7e2`。
+原生原件包共 239 份 / 14,288,202 bytes，SHA：`f7283639df1317eb2593e52cae220532ae9e8582e1054a9630081139fdd23770`；首次源码 bundle 准备命令 exit128 原件保留，归类为准备失败，不计测试失败。
+两次审查端 FAIL 原件保留：归档索引路径误传及安装件列表形态误用，修正审查调用后独审通过；生产实现与测试未改。
+正式 ca14 四安装件、六服务与控制进程状态在批次中/后只读比较一致；正式后验时刻 `2026-09-30T16:47:09.620402+00:00`。
+同源读回工具新冻结 SHA：`f2014ee4008311e7a8725235a39f0d1b3913391f17cbd977b7441f120539114b` / 1,469,904 bytes / ELF 183；34 条计划 SHA：`1966dc076d3b8f32d63ddbd173e4865c640f43e82779d8cadfbe0b89dad11f87`，未执行工具。
+三个 helper 上传/读回与最小迁移静审通过；只读 prepare/alignment 模板和 34 条寄存器读回计划保留为未授权准备，未生成 physical/GO、未创建真实 H2 输出。
+本轮未安装、未部署、未 push 或执行硬件；历史右 H2 整体 FAIL、34 条 Unknown 未证实归因、D15 OPEN/DEFERRED 与 `deployable=false` 保持。
+下一步阶段文档提交后远端独立 source 快进对齐，589 再次逐项同源，再生成新 alignment；只接受该对齐时刻之后的本次现场事实，由 root 独立 GO 后执行一次右 H2 完整复测。
+
 ### SerialRT 周期恢复（2026-09-30，独立软件候选）
 
 周期 Motion 写仅在 `Aborted(Revoked)` 后重检原急停/超时/收敛门，再由 PeriodicRead
@@ -16,8 +33,8 @@
 `c03888074cbd4005837bc0291aafdf72fff4a59f473d75f52298b1da42182a96`；三处变更源码 SHA 在批次首尾一致。
 定向软件门、独立审查与 root 验收通过，48 份原件已归档并逐项读回核验；入口为
 [周期恢复证据](../../.verify/serial_periodic_recovery_2026-09-30/summary.json)。未跑完整 workspace 或 release 构建。
-本候选未部署、未 push；当前 `539d832` H2 冻结准备不含这些补丁，
-新源码如用于 H2，必须重新原生构建、冻结及两端对齐，不能复用旧 V2 清单。
+该周期恢复候选当时未部署、未 push；当时 `539d832` H2 冻结准备不含这些补丁。
+同日上节的新 V2 软件阶段已按新源码重新原生构建与冻结，未复用旧 V2 清单。
 既有 H2 来源只读 r4 的 16 项通过、授权/启动均为 0，正式安装件、六服务及保护文件未变，
 仅作为未部署旁证，不构成硬件 PASS。
 历史右 H2 整体 FAIL、34 条 Unknown 未证实归因、D15 OPEN/DEFERRED 与 `deployable=false` 保持。

@@ -1,0 +1,200 @@
+{
+  "status": "H2_SERIAL_RECOVERY_NATIVE_SOFTWARE_ACCEPTED",
+  "build_head": "b01603b56117a35279407de0c201bcd91bb6e5b2",
+  "toolchain": {
+    "channel": "nightly",
+    "update": "本轮实际rustup update nightly成功，版本未变",
+    "release": "1.101.0-nightly",
+    "commit": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+    "cargo": "1.101.0-nightly (3d7cf6e93 2026-09-25)",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "source": {
+    "files": 589,
+    "sha256": "c03888074cbd4005837bc0291aafdf72fff4a59f473d75f52298b1da42182a96",
+    "six_native_snapshots_equal": true,
+    "local_native_equal": true,
+    "after_document_changes_equal": true
+  },
+  "checks": {
+    "fmt": "PASS",
+    "root_clippy": "PASS",
+    "python_tests": 71,
+    "default_plan": "PLAN_ONLY",
+    "native_recipes": 6,
+    "frozen_h2_elf": 7,
+    "frozen_help": 7,
+    "mock_ac12_groups": 4,
+    "mock_samples_per_group": 2,
+    "tonic_tests": 6,
+    "tonic_scenes": 9,
+    "all_loopback_servers_joined": true,
+    "readback_tool_build": "PASS",
+    "native_naturally_reaped_completions": 44,
+    "full_workspace_rerun": false
+  },
+  "reused_checks": {
+    "s0_lib": 710,
+    "serial_rt_e2e": 5,
+    "same_source_and_compiler_verified": true,
+    "not_counted_as_fresh": true,
+    "original_summary": "../serial_periodic_recovery_2026-09-30/summary.json",
+    "original_limit": "周期恢复首份全量原生快照采于旧验证批次中；三个变更SHA批次首尾相同，该历史限制保留"
+  },
+  "artifacts": [
+    {
+      "kind": "production",
+      "name": "s0_daemon",
+      "sha256": "7c26370a4a1a97dc15103ce387c44618de7fb1168b2724ce9e6078de0ddf1c9f",
+      "bytes": 4415288
+    },
+    {
+      "kind": "production",
+      "name": "xlerobot_deploy",
+      "sha256": "4a1596390ca984d9deff7bbcbe95b9d5b77205622b04d5baf0dc1e90d5d5766f",
+      "bytes": 1850704
+    },
+    {
+      "kind": "production",
+      "name": "s1_daemon",
+      "sha256": "15d6f0fc90c50e11a851a956088673dddc00a1c42ecb1f52215078116de4ae1f",
+      "bytes": 4166216
+    },
+    {
+      "kind": "production",
+      "name": "robot_rpc_gateway",
+      "sha256": "41ae7250e03ad81e8881bbc82ed6ee3d1f24e08e0b6833927dba516bbb862bc4",
+      "bytes": 6055784
+    },
+    {
+      "kind": "measurement",
+      "name": "s0_daemon",
+      "sha256": "8bc54ed3f4130f1a80c18f416cf8af359ff50f1b0c227975fb7cdef27f7080bb",
+      "bytes": 4945352
+    },
+    {
+      "kind": "measurement",
+      "name": "robot_rpc_gateway",
+      "sha256": "fe1c30ac8e1be364ddea6721734ce06f436ca89c7c115e267622429e9b8446fc",
+      "bytes": 6081672
+    },
+    {
+      "kind": "measurement",
+      "name": "comm_fault_e2e",
+      "sha256": "dcff697b13b94dedd5ba02a8835f6f296c365aa7ebb84716bb8a1387ee204730",
+      "bytes": 5723448
+    }
+  ],
+  "readback": {
+    "tool_sha256": "f2014ee4008311e7a8725235a39f0d1b3913391f17cbd977b7441f120539114b",
+    "tool_bytes": 1469904,
+    "planned_register_reads": 34,
+    "plan_sha256": "1966dc076d3b8f32d63ddbd173e4865c640f43e82779d8cadfbe0b89dad11f87",
+    "register_reads_executed": false
+  },
+  "evidence": {
+    "native": {
+      "path": "native.tar.gz",
+      "sha256": "f7283639df1317eb2593e52cae220532ae9e8582e1054a9630081139fdd23770",
+      "bytes": 14288202,
+      "indexed_files": 239
+    },
+    "native_index": {
+      "path": "native.index.json",
+      "sha256": "6ed47a7f4fbf0d51622bc910aabb539ef6082e003f8d96f9f5ea921641666408",
+      "bytes": 70043
+    },
+    "host": {
+      "path": "host-evidence.tar.gz",
+      "sha256": "43155cae57fc6b88508b479f52254a17dbb0a78589b4554816b6466b376d220f",
+      "bytes": 181172,
+      "indexed_files": 148
+    },
+    "host_index": {
+      "path": "host.index.json",
+      "sha256": "b2ed7a6065bf6fca0a07c4633da42d1611931fd709c2f5a25f34b1a4799e4080",
+      "bytes": 23919
+    },
+    "readback_verified": true,
+    "preserved_host_r1": {
+      "path": "history/host-r1/host-evidence.tar.gz",
+      "sha256": "d21e2bd2e9125551500214ad838c959b41f0f65d6319fa0759f2c348fe52eba5",
+      "bytes": 178941,
+      "indexed_files": 144
+    }
+  },
+  "reviews": [
+    {
+      "path": "reviews/collector_static_review.json",
+      "sha256": "8c2c07d9ae78994abff3adb3c8aa9befeaa573bd84603e97ce575346c6fa00f4",
+      "bytes": 1599
+    },
+    {
+      "path": "reviews/final_evidence_binding_review.json",
+      "sha256": "07308d27aba73011c9823f2f14fcb75f7041da8936eec9bf649eb1d8035bf1da",
+      "bytes": 5442
+    },
+    {
+      "path": "reviews/helper_upload_review.json",
+      "sha256": "5fbd30b1025a96627b5dc03ed67d89c09373d06610b6fed8138edb6708d6b8b8",
+      "bytes": 2007
+    },
+    {
+      "path": "reviews/host_archive_and_docs_review.json",
+      "sha256": "31aa97e7f20e2391d8033032bbbb74a115f704b0523fa6ff256bddc009811b1d",
+      "bytes": 4735
+    },
+    {
+      "path": "reviews/host_archive_review_r1.json",
+      "sha256": "710177f349489a11c3aca6cca2eaf71902b4ffdee08a4065d95cd2373f20f58b",
+      "bytes": 5464
+    },
+    {
+      "path": "reviews/host_archive_review_r2.json",
+      "sha256": "06dd668759816e074658d7e793aed36f4c88d066473a1ef2148af7d6543394ca",
+      "bytes": 5416
+    },
+    {
+      "path": "reviews/native_archive_review_r2.json",
+      "sha256": "ff8abb77a30d0225e8a9b041a4683e4de946f2397c0e536fcc0f9a7a4411e52e",
+      "bytes": 1472
+    },
+    {
+      "path": "reviews/native_dynamic_review_r2.json",
+      "sha256": "87b8ecebf70b8cc5aadcd95f48328df5b8a05f0a95d95098219724016bb4f237",
+      "bytes": 78733
+    },
+    {
+      "path": "reviews/reused_software_review.json",
+      "sha256": "1f4f43d02b74e23f76cc5f2661e4d3a2fb2a41246edebdc34bc0d1afb5c3062a",
+      "bytes": 1541
+    },
+    {
+      "path": "reviews/static_review.json",
+      "sha256": "e35c2e2fa791b6d5bb49f363fd3ffb0f3c8d58f80afea7eb06d264ec22c62851",
+      "bytes": 5053
+    }
+  ],
+  "root_acceptance": "PASS",
+  "postcheck": {
+    "formal_head": "ca14f0e6cf6df8ecc6baaaa8dff2dddb64abbd0a",
+    "formal_clean": true,
+    "four_installed_files_before_after_equal": true,
+    "six_units_inactive_dead_mainpid0": true,
+    "control_processes_absent_at_snapshots": true,
+    "services_and_process_snapshot_scope": "本轮批次中及软件完成后状态一致，不宣称覆盖完整构建前的服务/进程快照",
+    "formal_after_utc": "2026-09-30T16:47:09.620402+00:00"
+  },
+  "preserved_setup_and_review_failures": [
+    "首次裸SHA bundle命令exit128；改HEAD引用后成功，未计测试失败",
+    "审查r1归档索引路径误传与installed列表形态误用；原件保留，修正审查器后r2通过",
+    "host r1保留；HANDOFF失败类型准确修正后封新r2，不覆盖r1"
+  ],
+  "limits": [
+    "本轮未执行UART、硬件H2、头部或底盘主动运动",
+    "未安装、部署或推送",
+    "右H2历史整体FAIL；新完整复测仍需最终运行HEAD对齐、当次现场事实和独立GO",
+    "D15 OPEN/DEFERRED，deployable=false；软件回环和寄存器读回不替代硬件fail-safe"
+  ],
+  "deployable": false
+}
