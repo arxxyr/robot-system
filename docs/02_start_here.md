@@ -16,6 +16,19 @@
 
 ## 当前状态
 
+2026-09-30 当前新增独立软件候选：周期 Motion 写仅 `Aborted(Revoked)` 后重检原安全门，
+再由 PeriodicRead 独立申请读租约；外层 deadline 保留原相位并跳过错失周期，选择严格未来点。
+事务预算、急停优先级、RT setup 与停止门不变。两组 Orin red 原断言 FAIL 及首次联网 setup
+SIGINT/exit130 保留。最新浮动 nightly `5c543b0b8` 下，本机 fmt、原生 fmt / 根 Clippy、
+调度 6、诊断 7、`rt_guard + test-comm-fault-hook` S0 lib 710、`serial_rt_e2e` 5 全部通过，
+均为 0 failed / 0 ignored；调度 6 与诊断 7 均为 710 的子集，不累计。两端 589 项构建输入逐项一致，
+验证后复核一致，聚合 `c0388807`；三处变更源码 SHA 在批次首尾一致。定向软件门已通过；
+[证据入口](../.verify/serial_periodic_recovery_2026-09-30/summary.json)已归档，独立审查、root 验收及封包读回通过。
+本轮未跑完整 workspace 或 release 构建；未部署、未 push，不构成新硬件 PASS，
+也不改变历史 34 条 Unknown 的未证实归因。
+当前 `539d832` H2 冻结准备不含此补丁；如改用新源码，须重新原生构建、冻结和两端对齐，
+不能复用旧 V2 清单。D15 暂缓、右 H2 历史整体 FAIL 及 `deployable=false` 保持。
+
 2026-09-30 当前 H2 软件准备：`59120e34` 在更新后的浮动 nightly `5c543b0b8` 下完成
 六条原生 release 配方及七个冻结件，589 项编译输入前后聚合 `48360e9f` 一致。
 fmt / 根 Clippy、71 项 Python、默认 PLAN_ONLY、helper 14 项真实机制、七个 help、
@@ -81,7 +94,7 @@ authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TR
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN/DEFERRED
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     H2 V2原生release及定向软件已验收归档，独审/root通过；右H2仍整体FAIL
+当前步骤:     SerialRT周期恢复定向软件门已通过，已归档，独审与root验收通过；右H2仍整体FAIL
 当前授权:     2026-09-29继续开发及Orin独立目录纯软件编译测试；阶段验收后commit，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H2/H3 PASS；右 H1/H3通过、H2整体FAIL；所有历史FAIL保留

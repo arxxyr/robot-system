@@ -9,6 +9,26 @@
 
 ---
 
+## 2026-09-30 · SerialRT 周期恢复（定向软件门已通过）
+
+独立候选修复周期 Motion 写被 Revoked 后读路径过早返回，以及外层补跑过期 tick：
+读操作仍独立取租约并重检原安全门，调度保原相位、只选择严格未来周期点；原预算/急停/停止门不变。
+Orin 使用最新浮动 nightly `5c543b0b8`；本机 fmt、原生 fmt / 根 Clippy 通过。
+调度回归为 6 passed，`post_e_diag` 为 7 passed，启用 `rt_guard + test-comm-fault-hook`
+的 S0 lib 为 710 passed，`serial_rt_e2e` 为 5 passed，全部 0 failed / 0 ignored；
+调度 6 与诊断 7 均为 S0 lib 710 的子集，不累计。
+两端 589 项构建输入逐项一致，验证后复核一致，聚合为
+`c03888074cbd4005837bc0291aafdf72fff4a59f473d75f52298b1da42182a96`。
+首份清单采于 green 批次中，不据此声称覆盖整个 fmt/Clippy 起止；三处变更源码 SHA 在批次首尾一致。
+
+两组旧实现 red 断言 FAIL、首次联网 setup SIGINT/exit130 原件保留。
+[证据入口](../.verify/serial_periodic_recovery_2026-09-30/summary.json)已归档，独立审查、root 验收及封包读回通过。
+本轮未跑完整 workspace、release 构建或硬件测试，未部署/未 push。
+当前 `539d832` H2 冻结准备不含本补丁，新源码用于 H2 须重新原生构建/冻结/对齐，不复用旧 V2 清单。
+既有 H2 来源只读 r4 的 16 项通过、授权/启动均为 0，正式安装件、六服务与保护文件未变，
+仅作未部署旁证，不作为硬件验收。
+历史右 H2 整体 FAIL、34 条 Unknown 未证实归因、D15 OPEN/DEFERRED 与 `deployable=false` 不变。
+
 ## 2026-09-30 · H2 最新 nightly V2 软件准备（已验收）
 
 `59120e34` 在 Orin 独立目录更新浮动 nightly 后完成六条 release 配方、生产四件与测量三件冻结；
@@ -1065,3 +1085,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-30：登记 H2 V2 六条原生配方/七冻结件、71 Python/helper14/help7/mock AC-12/真实 tonic 定向软件门；release/post/archive 独审与 root 验收通过并归档，不外推完整 workspace 或硬件通过。
 
 - 2026-09-30：按用户确认记录无独立自动断电保护，D15 实施/验收暂缓为 OPEN/DEFERRED，不记 PASS；既有 D15-R、右 H2 原 FAIL 与 deployable=false 保持，下一步右 H2 完整复测。
+
+- 2026-09-30：登记 SerialRT 周期读恢复与过期调度点跳过的定向软件结果：最新 nightly5c543b0b8、本机fmt与原生fmt/根Clippy、调度6/诊断7/S0lib710/串口e2e5通过，全部0失败/0ignored，调度6与诊断7均为710子集不累计；两端589输入逐项一致、验证后复核一致，聚合c0388807，三变更SHA批次首尾一致。原red断言FAIL及首次联网setup SIGINT130保留；`.verify/serial_periodic_recovery_2026-09-30/summary.json` 已归档，独审与root验收通过。未跑完整workspace/release构建/硬件，未部署/未push；当前539d832 H2准备不含补丁，新源码须新build/冻结/对齐，不复用旧V2。历史H2FAIL、34Unknown未证实归因、D15 OPEN/DEFERRED和deployable=false不变。

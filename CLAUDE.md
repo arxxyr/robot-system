@@ -101,6 +101,15 @@
            9/30用户确认无独立自动断电保护，决定暂缓D15实施/验收；状态OPEN/DEFERRED，不记PASS。
            D15工作单保留CodeMap与建议矩阵，非Spec Approved或硬件实现；供电分域未知，本轮不再追问/选型/采购/接线。
            受监督demo沿既有D15-R继续；下一步右H2完整复测，原FAIL与deployable=false保持。
+           同日独立软件候选：周期Motion写仅Revoked后重检原安全门，由PeriodicRead独立申请读租约；
+           外层deadline保原相位、跳过错失周期至严格未来点，零周期拒绝、溢出保原pending移交。
+           两组Orin red原断言FAIL与首次联网setup SIGINT130保留；latest nightly5c543b0b8下定向软件门已通过。
+           本机fmt、原生fmt/根Clippy通过；调度6、诊断7、rt_guard+commhook S0lib710、serial_rt_e2e5全过/0ignored。
+           调度6与诊断7均为710子集，不累计；两端589输入逐项一致、验证后复核一致，聚合c0388807；三变更SHA批次首尾一致。
+           证据 .verify/serial_periodic_recovery_2026-09-30/summary.json，已归档，独审与root验收通过；未部署/未push。
+           本轮未跑完整workspace或release构建，不外推硬件通过。
+           当前539d832的H2冻结准备不含此补丁；新源码用于H2须重新原生build/冻结/对齐，不复用旧V2清单。
+           历史34条Unknown未证实归因、右H2整体FAIL、D15 OPEN/DEFERRED及deployable=false不变。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

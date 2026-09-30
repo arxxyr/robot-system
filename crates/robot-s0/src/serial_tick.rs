@@ -512,7 +512,11 @@ impl SerialTick {
             if let Err(error) = adapter.write_command(command) {
                 metrics.write_errors.fetch_add(1, Ordering::Relaxed);
                 self.route_periodic(error, context);
-                return;
+                if error != RobotError::Aborted(AbortReason::Revoked) {
+                    return;
+                }
+                // Motion 被撤权不等于禁止采样。先重检并发急停、超时与收敛门，
+                // 再由后续 PeriodicRead 独立申请真实租约；不复用被拒的写权限。
             }
             self.convergence.claim_estop(ctrl, diag, clock.now());
             self.convergence.retire_timeout(ctrl, diag, clock.now());

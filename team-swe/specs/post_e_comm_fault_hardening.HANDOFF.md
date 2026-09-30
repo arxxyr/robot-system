@@ -2,6 +2,26 @@
 
 ## 当前步骤
 
+### SerialRT 周期恢复（2026-09-30，独立软件候选）
+
+周期 Motion 写仅在 `Aborted(Revoked)` 后重检原急停/超时/收敛门，再由 PeriodicRead
+独立申请真实读租约；其他写错误仍早退，不放宽写权限。外层 deadline 保留原相位，
+直接跳到严格未来的首个周期点，不补跑错失 tick；零周期拒绝启动，溢出沿原出口移交 pending。
+原事务预算、急停优先级、RT setup 与停止门不变；长事务后的等待和实际 H2 SLA 须分别验证。
+
+两组 Orin red 的旧实现断言反例已独审核实，原 FAIL 与首次联网 setup 的 SIGINT/exit130 保留。
+最新浮动 nightly `5c543b0b8` 下，本机 fmt、原生 fmt / 根 Clippy、调度 6、诊断 7、
+`rt_guard + test-comm-fault-hook` S0 lib 710、`serial_rt_e2e` 5 均通过，全部 0 failed / 0 ignored；
+调度 6 与诊断 7 均为 710 的子集，不累计。两端 589 项构建输入逐项一致，验证后复核一致，聚合为
+`c03888074cbd4005837bc0291aafdf72fff4a59f473d75f52298b1da42182a96`；三处变更源码 SHA 在批次首尾一致。
+定向软件门、独立审查与 root 验收通过，48 份原件已归档并逐项读回核验；入口为
+[周期恢复证据](../../.verify/serial_periodic_recovery_2026-09-30/summary.json)。未跑完整 workspace 或 release 构建。
+本候选未部署、未 push；当前 `539d832` H2 冻结准备不含这些补丁，
+新源码如用于 H2，必须重新原生构建、冻结及两端对齐，不能复用旧 V2 清单。
+既有 H2 来源只读 r4 的 16 项通过、授权/启动均为 0，正式安装件、六服务及保护文件未变，
+仅作为未部署旁证，不构成硬件 PASS。
+历史右 H2 整体 FAIL、34 条 Unknown 未证实归因、D15 OPEN/DEFERRED 与 `deployable=false` 保持。
+
 ### H2 / D15 闭环路径（2026-09-30，原生软件准备已验收）
 
 当前先推进右 H2 完整复测；D15 按下述用户决定暂缓，两者分别裁决。**H2** 沿通信候选 AC-12：

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 
 use robot_core::adapter::{JointCommandBuf, RtClass, RtSnapshot};
-use robot_core::time::{Deadline, DurationNs, RobotClock};
+use robot_core::time::{Deadline, DurationNs, MonoRawNs, RobotClock};
 use robot_transport::{LatestCommandReader, RtSnapshotPublisher};
 
 use crate::serial_io_ctrl::SerialIoCtrlInner;
@@ -153,7 +153,7 @@ impl SerialIoThreadHandle {
 ///
 /// # Errors
 ///
-/// `std::io::Error` 当 adapter/控制块类型不匹配或真实线程创建失败。
+/// `std::io::Error` 当周期为零、adapter/控制块类型不匹配或真实线程创建失败。
 /// 设备 Connect 由启动门后的串口收敛机执行，结果通过原启动进度发布。
 #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 pub fn spawn_serial_io_thread<A>(
@@ -172,6 +172,12 @@ pub fn spawn_serial_io_thread<A>(
 where
     A: SerialRtAdapter + Send + 'static,
 {
+    if cfg.tick_period_ns == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "SerialRT tick 周期必须大于零",
+        ));
+    }
     #[cfg(feature = "test-comm-fault-hook")]
     let adapter = crate::comm_fault_adapter::CommFaultAdapter::new(
         adapter,
@@ -264,8 +270,26 @@ fn apply_serial_rt_setup(
     okay || !cfg.strict_rt
 }
 
+/// 保持原相位，丢弃错失周期，选择严格晚于当前时刻的首个周期点。
+/// 零周期或未来时刻无法表示时返回 None，不饱和后连续执行过期 tick。
+fn next_serial_deadline(
+    previous: Deadline,
+    now: MonoRawNs,
+    period: DurationNs,
+) -> Option<Deadline> {
+    let elapsed = now.0.saturating_sub(previous.0.0);
+    let periods = elapsed.checked_div(period.0)?.checked_add(1)?;
+    let advance = periods.checked_mul(period.0)?;
+    previous
+        .0
+        .0
+        .checked_add(advance)
+        .map(|next| Deadline(MonoRawNs(next)))
+}
+
 /// 八 worker 同源启动门打开后的唯一串口运行入口。
 /// 本函数不执行调用方 connect，首个设备动作由 SerialTick 的 StopIssue 决定。
+/// 长事务/调度迟到错失的周期直接丢弃，保留 spawned_at 相位，不补跑旧 tick。
 #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
     cfg: SerialIoThreadConfig,
@@ -301,7 +325,13 @@ pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
     ) {
         #[cfg(any(test, feature = "test-freeze-hook"))]
         crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock.as_ref(), &stop);
-        deadline = deadline + DurationNs(cfg.tick_period_ns);
+        let Some(next_deadline) =
+            next_serial_deadline(deadline, clock.now(), DurationNs(cfg.tick_period_ns))
+        else {
+            // 仍走统一 into_exit，保留可能存在的原 Pending execution。
+            break;
+        };
+        deadline = next_deadline;
         clock.sleep_until(deadline);
         if !crate::worker_stop::worker_running(
             crate::worker_stop::WorkerKind::Executor,
@@ -400,6 +430,7 @@ mod tests {
         /// 置位后 `read_state` **失败前故意部分写坏 out**（段(7) round 1 P0
         /// 回归锁用；trait 未禁止该行为，调用方必须防住）。
         read_fail: Arc<std::sync::atomic::AtomicBool>,
+        read_calls: Arc<AtomicU64>,
         after_read: Option<Box<dyn FnOnce() + Send>>,
         after_enable: Option<Box<dyn FnOnce() + Send>>,
         enable_true_calls: Arc<std::sync::atomic::AtomicU64>,
@@ -422,6 +453,7 @@ mod tests {
                 inner,
                 probe_mode: Arc::new(std::sync::atomic::AtomicU8::new(ProbeMode::Normal as u8)),
                 read_fail: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                read_calls: Arc::new(AtomicU64::new(0)),
                 after_read: None,
                 after_enable: None,
                 enable_true_calls: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -458,6 +490,7 @@ mod tests {
             self.inner.disconnect()
         }
         fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
+            self.read_calls.fetch_add(1, Ordering::Relaxed);
             if self.read_fail.load(Ordering::Acquire) {
                 // 失败前污染输出：调用方必须整体丢弃这次读。
                 out.positions[0] = READ_FAIL_POISON;
@@ -528,6 +561,213 @@ mod tests {
         fn assert_serial_rt<T: SerialRtAdapter>() {}
         assert_serial_rt::<MockHardRTAdapter>();
         assert_serial_rt::<SerialMockWrapper>();
+    }
+
+    #[test]
+    fn periodic_schedule_deadline_math_handles_zero_and_overflow() {
+        for (previous, now, period, expected) in [
+            (0, 0, 0, None),
+            (0, 0, 5, Some(5)),
+            (7, 20, 5, Some(22)),
+            (7, 22, 5, Some(27)),
+            (20, 7, 5, Some(25)),
+            (u64::MAX - 10, u64::MAX - 9, 5, Some(u64::MAX - 5)),
+            (u64::MAX - 10, u64::MAX - 5, 5, Some(u64::MAX)),
+            (u64::MAX - 10, u64::MAX, 5, None),
+            (0, u64::MAX, 1, None),
+            (u64::MAX - 1, u64::MAX - 1, 2, None),
+        ] {
+            assert_eq!(
+                next_serial_deadline(
+                    Deadline(MonoRawNs(previous)),
+                    MonoRawNs(now),
+                    DurationNs(period)
+                )
+                .map(|deadline| deadline.0.0),
+                expected,
+                "previous={previous}, now={now}, period={period}"
+            );
+        }
+    }
+
+    /// 只记录真实外层 loop 的 sleep 目标；最后一次 sleep 内置 stop 锁住睡后停止门。
+    struct ScheduleClock {
+        inner: robot_core::time::MockClock,
+        deadlines: std::sync::Mutex<Vec<u64>>,
+        stop: Arc<AtomicBool>,
+    }
+
+    impl RobotClock for ScheduleClock {
+        fn now(&self) -> robot_core::time::MonoRawNs {
+            self.inner.now()
+        }
+
+        fn sleep_until(&self, deadline: Deadline) {
+            let mut deadlines = self.deadlines.lock().unwrap();
+            deadlines.push(deadline.0.0);
+            self.inner.sleep_until(deadline);
+            if deadlines.len() == 6 {
+                self.stop.store(true, Ordering::Release);
+            }
+        }
+
+        fn sleep_for(&self, duration: DurationNs) {
+            self.inner.sleep_for(duration);
+        }
+    }
+
+    struct ScheduleObservation {
+        deadlines: Vec<u64>,
+        tick_count: u64,
+        read_calls: u64,
+        snapshot: RtSnapshot,
+    }
+
+    fn observe_periodic_schedule(
+        read_duration: DurationNs,
+        stop_after_read: bool,
+    ) -> ScheduleObservation {
+        let stop = Arc::new(AtomicBool::new(false));
+        let clock = Arc::new(ScheduleClock {
+            inner: robot_core::time::MockClock::new(robot_core::time::MonoRawNs(1_000_000)),
+            deadlines: std::sync::Mutex::new(Vec::new()),
+            stop: stop.clone(),
+        });
+        let mut adapter = SerialMockWrapper::new(MockHardRTAdapter::with_unlimited_limits(2));
+        let read_calls = adapter.read_calls.clone();
+        let read_clock = clock.clone();
+        let read_stop = stop.clone();
+        // 真实 Stop / Connect / Confirm 后，第 4 tick 的首次周期事务消耗指定时间。
+        adapter.after_read = Some(Box::new(move || {
+            read_clock.inner.advance(read_duration);
+            if stop_after_read {
+                read_stop.store(true, Ordering::Release);
+            }
+        }));
+        let ctrl = Arc::new(SerialIoCtrlInner::new_serial(
+            crate::hard_rt_ctrl::test_authority(true),
+        ));
+        let worker_clock: Arc<dyn RobotClock> = clock.clone();
+        let probe = Arc::new(crate::serial_preempt::SerialPreemptProbe::new(
+            worker_clock.clone(),
+            ctrl.clone(),
+        ));
+        let boot = Arc::new(crate::boot_supervisor::BootShared::new(clock.now()));
+        let (_commands, reader) = LatestCommandSlot::new(JointCommandBuf {
+            joint_count: 2,
+            ..JointCommandBuf::default()
+        });
+        let (publisher, snapshot) = RtSnapshotPublisher::new(RtSnapshot::default());
+        let metrics = Arc::new(SerialIoThreadMetrics::default());
+        let exit = run_serial_hardened_io_loop(
+            SerialIoThreadConfig::default(),
+            worker_clock,
+            adapter,
+            reader,
+            publisher,
+            ctrl,
+            probe,
+            Arc::new(crate::diag::SerialDiagRing::new()),
+            true,
+            clock.now(),
+            stop,
+            metrics.clone(),
+            boot,
+        );
+        assert!(!exit.has_pending_enable());
+        let deadlines = clock.deadlines.lock().unwrap().clone();
+        ScheduleObservation {
+            deadlines,
+            tick_count: metrics.tick_count.load(Ordering::Relaxed),
+            read_calls: read_calls.load(Ordering::Relaxed),
+            snapshot: snapshot.load(),
+        }
+    }
+
+    fn assert_periodic_schedule(read_duration: DurationNs, expected: [u64; 6]) {
+        let observed = observe_periodic_schedule(read_duration, false);
+        assert_eq!(observed.deadlines, expected);
+        assert_eq!(
+            observed.tick_count, 5,
+            "跳过的周期和 stop 后都不得补记 tick"
+        );
+        assert_eq!(
+            observed.read_calls, 2,
+            "睡后 stop 必须阻止下一次 adapter 调用"
+        );
+        assert_eq!(observed.snapshot.tick_seq, 5);
+        assert_eq!(observed.snapshot.tick_deadline_ns, expected[4]);
+    }
+
+    #[test]
+    fn periodic_schedule_overrun_skips_expired_ticks_and_preserves_phase() {
+        assert_periodic_schedule(
+            DurationNs(17_000_000),
+            [
+                6_000_000, 11_000_000, 16_000_000, 21_000_000, 41_000_000, 46_000_000,
+            ],
+        );
+    }
+
+    #[test]
+    fn periodic_schedule_equal_boundary_selects_strictly_future_tick() {
+        assert_periodic_schedule(
+            DurationNs(5_000_000),
+            [
+                6_000_000, 11_000_000, 16_000_000, 21_000_000, 31_000_000, 36_000_000,
+            ],
+        );
+    }
+
+    #[test]
+    fn periodic_schedule_normal_cadence_keeps_original_phase() {
+        assert_periodic_schedule(
+            DurationNs::ZERO,
+            [
+                6_000_000, 11_000_000, 16_000_000, 21_000_000, 26_000_000, 31_000_000,
+            ],
+        );
+    }
+
+    #[test]
+    fn periodic_schedule_stop_after_read_does_not_sleep_or_call_adapter_again() {
+        let observed = observe_periodic_schedule(DurationNs(17_000_000), true);
+        assert_eq!(
+            observed.deadlines,
+            [6_000_000, 11_000_000, 16_000_000, 21_000_000]
+        );
+        assert_eq!(observed.tick_count, 4);
+        assert_eq!(observed.read_calls, 1);
+        assert_eq!(observed.snapshot.tick_seq, 4);
+        assert_eq!(observed.snapshot.tick_deadline_ns, 21_000_000);
+    }
+
+    #[test]
+    fn periodic_schedule_zero_period_is_rejected_before_spawn() {
+        let clock: Arc<dyn RobotClock> = Arc::new(robot_core::time::MockClock::default());
+        let (_commands, reader) = LatestCommandSlot::new(JointCommandBuf::default());
+        let (publisher, _snapshot) = RtSnapshotPublisher::new(RtSnapshot::default());
+        let result = spawn_test_serial(
+            SerialIoThreadConfig {
+                tick_period_ns: 0,
+                ..SerialIoThreadConfig::default()
+            },
+            clock,
+            SerialMockWrapper::new(MockHardRTAdapter::with_unlimited_limits(2)),
+            reader,
+            publisher,
+            Arc::new(SerialIoCtrlInner::new_serial(
+                crate::hard_rt_ctrl::test_authority(true),
+            )),
+        );
+        match result {
+            Err(error) => assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput),
+            Ok(handle) => {
+                handle.request_stop();
+                join_clean(handle);
+                panic!("零周期必须在创建 worker 前拒绝");
+            }
+        }
     }
 
     /// 父进程监督 stop / 真版本耗尽；孩子保原 Exit/owner/lease 到进程退出。

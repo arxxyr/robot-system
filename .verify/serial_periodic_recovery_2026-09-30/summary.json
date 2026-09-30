@@ -1,0 +1,87 @@
+{
+  "status": "SOFTWARE_ACCEPTED",
+  "base_head": "539d83227e91a7786a8f422683d59300214b2857",
+  "branch": "fix/serial-periodic-recovery",
+  "changes": [
+    "Motion写被Revoked后重新检查急停/超时/收敛门，再由PeriodicRead独立申请租约",
+    "保持原相位并跳过过期调度点，零周期拒绝、溢出沿原出口保留pending"
+  ],
+  "compiler": "rustc 1.101.0-nightly (5c543b0b8 2026-09-29)",
+  "source": {
+    "files": 589,
+    "sha256": "c03888074cbd4005837bc0291aafdf72fff4a59f473d75f52298b1da42182a96",
+    "local_native_equal": true,
+    "native_during_and_after_equal": true,
+    "changed_files_before_after_equal": true,
+    "limits": "首份全量原生快照采于验证批次中，不包住整个fmt/Clippy起止；三个变更文件SHA在批次首尾一致"
+  },
+  "checks": {
+    "local_fmt": "PASS",
+    "native_fmt": "PASS",
+    "native_root_clippy": "PASS",
+    "deadline_targeted": {
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0
+    },
+    "diagnosis_targeted": {
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0
+    },
+    "s0_lib_rt_guard_and_comm_hook": {
+      "passed": 710,
+      "failed": 0,
+      "ignored": 0
+    },
+    "serial_rt_e2e": {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    "targeted_tests_are_subset_of_s0_lib": true
+  },
+  "red": {
+    "deadline": {
+      "passed": 2,
+      "failed": 3,
+      "exit": 101
+    },
+    "periodic_read": {
+      "passed": 2,
+      "failed": 2,
+      "exit": 101
+    },
+    "original_setup_interruption": {
+      "exit": 130,
+      "tests_ran": false,
+      "reason": "误用默认Cargo缓存停在联网索引；保留原件并停止本次自有Cargo，再使用已验证离线缓存"
+    }
+  },
+  "review": {
+    "independent": "PASS",
+    "root": "PASS",
+    "path": "verification/final_review.json"
+  },
+  "archive": {
+    "path": "evidence.tar.gz",
+    "sha256": "bc7b8095bcbd28ddffdd5b18bd08169f0539c30789e8e6283a16cd6e64fc9da1",
+    "bytes": 445311,
+    "indexed_files": 48,
+    "readback_verified": true
+  },
+  "postcheck": {
+    "source_head": "539d83227e91a7786a8f422683d59300214b2857",
+    "readonly_checks": 16,
+    "authorization_attempts": 0,
+    "launch_attempts": 0,
+    "formal_and_services_and_protection_unchanged": true
+  },
+  "limits": [
+    "未跑完整workspace或release构建",
+    "未推送、未部署、未执行硬件H2；原H2冻结准备不含本补丁，新源码用于H2须重新构建冻结对齐",
+    "原右H2整体FAIL、D15 OPEN/DEFERRED、deployable=false及34条历史Unknown未证实归因不变",
+    "长事务后等待下个相位点最多增加一个周期等待，真实H2 SLA仍须硬件验证"
+  ],
+  "deployable": false
+}
