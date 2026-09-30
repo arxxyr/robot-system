@@ -9,6 +9,26 @@
 
 ---
 
+## 2026-09-30 · H2 最新 nightly V2 软件准备（已验收）
+
+`59120e34` 在 Orin 独立目录更新浮动 nightly 后完成六条 release 配方、生产四件与测量三件冻结；
+实际 rustc 为 `1.101.0-nightly / 5c543b0b8`，两套 V2 共用真实编译器前后回执、身份和构建时间窗。
+589 项编译输入前后聚合 `48360e9f` 一致，七 ELF 的 SHA/bytes/mode/ARM183 与原 Cargo JSON、
+sidecar 对应，生产件先冻结，release 独审通过；V1 仅可显式历史只读，新执行拒绝 V1。
+
+已通过 fmt、根 Clippy、71 项 Python、默认 PLAN_ONLY、helper 14 项真实进程机制、七个 help。
+冻结测量件 mock AC-12 四组各 2 个软件样本通过；同源真实 tonic 回环 6 测试/9 场景通过，
+包含 2.1 秒合法回执、普通 2 秒与最终 3 秒期限的超时反例。mock 小样本不替代硬件四组
+各 100 次预热+1000 正式样本、原 P99 门或最终 DisableAck/真实回收/断扭读回。
+本轮未重跑完整 workspace。原 macOS 平台失败、helper 修订及首次只读取证失败保留。
+
+release/post/archive 独审与 root 软件验收通过；253 份原件及本机证据已归档至
+[最终证据入口](../.verify/h2_nightly_v2_2026-09-30/summary.json)。04:29:11 UTC 正式后验为 ca14 clean、四 SHA 未变、
+六服务 inactive、无控制进程；不推断物理电源或扭矩。本阶段无安装/push、未执行新 H2 硬件测试。
+右 H2 原整体 FAIL、D15 OPEN、`deployable=false` 不变；
+[D15 工作单](../team-swe/specs/d15_hardware_fail_safe.CLOSURE.md)的 CodeMap/建议矩阵不是批准规格或硬件实现，
+现场硬件事实尚待回复。
+
 ## 2026-09-30 · Orin 原生 Rerun 软件验证（已验收）
 
 严格 SSH 已恢复；在独立目录验证 `a6957cc` 的 620 项源码快照，未替换正式 ca14 安装件。
@@ -1040,3 +1060,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-29：更新 Rerun V1–V8 真实软件、Viewer 和故障证据；记录镜像丢失/公平性、GPU 与中断捕获限制；最终 Linux 软件门通过，按本节边界验收。
 
 - 2026-09-30：登记恢复严格 SSH 后的 Orin 最新浮动 nightly 定向软件门、最终桥同六项复验、官方 RRD 核验与正式快照比对；已验收归档、独审/root通过，不复用 Lima 结果冒称本轮全仓通过。
+
+- 2026-09-30：登记 H2 V2 六条原生配方/七冻结件、71 Python/helper14/help7/mock AC-12/真实 tonic 定向软件门；release/post/archive 独审与 root 验收通过并归档，不外推完整 workspace 或硬件通过。

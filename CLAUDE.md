@@ -93,7 +93,12 @@
            正式ca14安装未改、未做新硬件动作，右H2/D15与deployable=false不变。
            本阶段仅本地提交、不push；下一步真实发布者观测及硬件门仍需各自验证。
            同日H2续作：产物校验V2跟随最新nightly，前后真实编译器身份绑定六配方；新执行拒V1。
-           产品独审、本机定向20及Orin完整71 Python、fmt/根Clippy通过；新release准备中，未触硬件。
+           59120e34原生六配方/七冻结件通过，浮动nightly实际更新为5c543b0b8；589源聚合48360e9f前后相同。
+           fmt/根Clippy、71 Python、默认PLAN_ONLY、helper14真实机制及七help通过；非完整workspace。
+           冻结测量件mock AC12四组各2软件样本、同源tonic6测试/9场景通过，硬件H2未测。
+           release/post/archive独审与root验收通过，253原件及本机证据已归档至 .verify/h2_nightly_v2_2026-09-30/summary.json。
+           04:29:11UTC正式后验ca14 clean、四SHA未变、六服务inactive且无控制进程；本阶段无安装/push。
+           D15工作单已有CodeMap与建议矩阵，非Spec Approved或硬件实现；现场硬件事实尚待回复。
            已纠正target内STS3215自带100ms watchdog误述；右H2原FAIL、D15 OPEN、deployable=false保持。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，

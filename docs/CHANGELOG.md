@@ -17,10 +17,14 @@
 和时间窗；生产/测量两套清单共用同一对回执。V1 仅显式历史只读，新执行拒绝 V1。
 原源码、feature/profile、ELF、真实 wait、安装隔离及 H2 时延预算不变。
 
-产品独审通过；本机定向 20 项、Orin 完整 71 项 Python、提交前 fmt / 根 Clippy 通过。
-旧 macOS 平台失败保留。检查的 589 项 Rust 输入与当前逐项相同；新 release
-构建仍在准备，未触硬件、正式服务或安装件。右 H2 原整体 FAIL、D15 OPEN、
-`deployable=false` 保持，证据见 `.verify/h2_nightly_v2_2026-09-30/precommit.json`。
+产品独审及本机定向 20 项通过；`59120e34` 在更新后的浮动 nightly `5c543b0b8` 下，
+Orin 六条原生 release 配方/七冻结件、fmt / 根 Clippy、71 Python、默认 PLAN_ONLY、
+helper 14 项真实机制与七个 help 通过。589 项源聚合 `48360e9f` 前后一致；
+冻结测量件 mock AC-12 四组各 2 个软件样本、同源 tonic 6 测试/9 场景通过，非完整 workspace。
+release/post/archive 独审与 root 软件验收通过；253 份原件及本机证据已归档至
+`.verify/h2_nightly_v2_2026-09-30/summary.json`。旧 macOS 平台失败和各轮取证失败保留。
+正式 ca14 四件及服务状态后验未变，本阶段无安装/push 或新硬件测试；
+右 H2 原整体 FAIL、D15 OPEN、`deployable=false` 保持。
 
 ## 2026-09-30 · XLeRobot command watchdog 能力勘误（target-contract）
 
@@ -33,7 +37,7 @@
 D15 保持 OPEN；D15-R 只授权受监督 demo 例外，AC-E25 的 S0 死亡后 <500 ms
 安全态仍为正式退役硬门。硬件方案待供电拓扑、看门狗型号等现场资料确认后另行评审，
 不预选方案或新增 no-op 实现。H2 与 D15 闭环路径见 HANDOFF；本轮 H2 最新 nightly
-来源/产物校验 V2 的软件验收见上条，新 release 与硬件验收尚未完成。
+来源/产物校验 V2 的软件验收见上条，硬件尚未验收。
 审阅：独立只读审查指出矛盾，root 授权本次勘误；依据为候选 E D15 / D15-R 及
 2026-07-15 例外登记，不改变既有安全判据。
 

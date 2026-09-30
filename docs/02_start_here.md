@@ -16,7 +16,18 @@
 
 ## 当前状态
 
-2026-09-30：严格 SSH 已恢复，`a6957cc` 的 Orin 原生定向软件验证已验收。
+2026-09-30 当前 H2 软件准备：`59120e34` 在更新后的浮动 nightly `5c543b0b8` 下完成
+六条原生 release 配方及七个冻结件，589 项编译输入前后聚合 `48360e9f` 一致。
+fmt / 根 Clippy、71 项 Python、默认 PLAN_ONLY、helper 14 项真实机制、七个 help、
+冻结测量件 mock AC-12 四组各 2 个软件样本、同源 tonic 6 测试/9 场景均通过；未重跑完整 workspace。
+release/post/archive 独审与 root 软件验收通过；253 份原件及本机证据已归档至
+[最终证据入口](../.verify/h2_nightly_v2_2026-09-30/summary.json)。04:29:11 UTC 正式后验为 ca14 clean、四 SHA 不变、
+六服务 inactive、无控制进程；本阶段无安装或 push。
+新 H2 硬件未测，右 H2 原整体 FAIL、D15 OPEN、`deployable=false` 不变。
+[D15 工作单](../team-swe/specs/d15_hardware_fail_safe.CLOSURE.md)仅完成 CodeMap 与建议矩阵，
+不是 Spec Approved 或硬件实现，现场硬件事实仍待回复；详[当前交接](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+
+同日先前：严格 SSH 已恢复，`a6957cc` 的 Orin 原生 Rerun 定向软件验证已验收。
 更新后的浮动 nightly 为 `2026-09-30 / rustc 1.101.0-nightly (5c543b0b8)`；
 620 项来源快照的 fmt、根 Clippy、17 项单测、9 项镜像测试（另 1 项子夹具 ignored）、
 6 项显式 SHM、独立优化构建与 help 已通过。独立构建与首集成桥 SHA 不同，
@@ -68,7 +79,7 @@ authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TR
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     Rerun Orin定向软件已验收归档，独审/root通过；右H2仍整体FAIL
+当前步骤:     H2 V2原生release及定向软件已验收归档，独审/root通过；右H2仍整体FAIL
 当前授权:     2026-09-29继续开发及Orin独立目录纯软件编译测试；阶段验收后commit，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H2/H3 PASS；右 H1/H3通过、H2整体FAIL；所有历史FAIL保留

@@ -1,13 +1,17 @@
 # 文档导航
 
-当前（2026-09-30）：Orin 严格 SSH 已恢复，Rerun 在最新浮动 nightly 下的原生定向软件门通过，
-最终桥同六项复验、官方 RRD 核验与正式快照比对也通过；已归档，独审与 root 验收通过，
-见[证据摘要](../.verify/robot_viz_orin_2026-09-30/summary.json)。
+当前（2026-09-30）：H2 V2 的 `59120e34` 已在最新浮动 nightly 下通过 Orin 六条 release
+配方、七冻结件及定向软件门，release/post/archive 独审与 root 软件验收通过，
+253 份原件及本机证据已归档至[最终证据入口](../.verify/h2_nightly_v2_2026-09-30/summary.json)。
+未重跑完整 workspace；新 H2 硬件未测，D15 工作单仅为 CodeMap 与建议矩阵，现场资料仍待回复。
+同日先前 Rerun 原生定向软件、最终桥复验、官方 RRD 核验及正式快照比对已验收归档，
+见[Rerun 证据摘要](../.verify/robot_viz_orin_2026-09-30/summary.json)。
 9/29 的 Rerun 文件/实时 Viewer 与隔离 Lima Linux 全仓回归已验收，不代表本轮重跑全仓。
 使用方式见 [Rerun 入口](02_start_here.md#rerun-观测工具当前开发入口)，实际完成状态与边界见
 [V1–V8 验收](10_verification.md)和[当前交接](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
 正式 ca14 安装件未改，本轮未部署或执行新硬件动作；右 H2 整体 FAIL、D15 OPEN、`deployable=false` 保持。
-通信故障后续依据为 [post-E Spec](../team-swe/specs/post_e_comm_fault_hardening.md)。
+通信故障后续依据为 [post-E Spec](../team-swe/specs/post_e_comm_fault_hardening.md)，
+[D15 工作单](../team-swe/specs/d15_hardware_fail_safe.CLOSURE.md)尚非批准规格或硬件实现。
 
 | 文件 | 用途 |
 |------|------|

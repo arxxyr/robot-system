@@ -1,0 +1,22 @@
+{
+  "archive": "/home/loosqk/robot-checks/h2-nightly-v2-20260930-r1-evidence.tar.gz",
+  "archive_bytes": 13584441,
+  "archive_sha256": "a6d67d7bf85d633a562413202b0c8b42ee1ae35bc8d9ec0ffd330e2cb3376846",
+  "base": "/home/loosqk/robot-checks/h2-nightly-v2-20260930-r1",
+  "collector_sha256": "c6f504835416659089aafff58c4a1d93bc29ea1ed185e0374b46b5e76d832520",
+  "finished_at": "2026-09-30T04:29:17.464928+00:00",
+  "index": "/home/loosqk/robot-checks/h2-nightly-v2-20260930-r1-evidence.tar.gz.index.json",
+  "index_sha256": "31085d5ffe92f17c21f20cf8142f8500ff8057b972c93822ded3c29b1c6a3b6e",
+  "indexed_files": 253,
+  "original_bytes": 37674288,
+  "readback": {
+    "directories": 60,
+    "files": 253,
+    "members": 314
+  },
+  "schema": "P7_NATIVE_EVIDENCE_COLLECTION_V1",
+  "scope": "仅归档一致性；原始失败保留，不代表 release/H2/D15 验收。",
+  "source_before_after": "PASS",
+  "started_at": "2026-09-30T04:29:10.895080+00:00",
+  "status": "PASS"
+}

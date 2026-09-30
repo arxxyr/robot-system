@@ -1,0 +1,418 @@
+{
+  "schema": "P7_POST_RELEASE_RUNTIME_INDEPENDENT_REVIEW_V1",
+  "status": "PASS",
+  "reviewed_at_utc": "2026-09-30T04:39:54.939987+00:00",
+  "reviewer": "delayed_ack_impl",
+  "scope": "仅本地只读核对下载原件；未运行 runner、ELF、Cargo、SSH、硬件或服务。",
+  "archive": {
+    "path": "target/post_e_h2_rt/s50/nightly_v2/host/h2-nightly-v2-20260930-r1-evidence.tar.gz",
+    "bytes": 13584441,
+    "sha256": "a6d67d7bf85d633a562413202b0c8b42ee1ae35bc8d9ec0ffd330e2cb3376846"
+  },
+  "archive_index": {
+    "path": "target/post_e_h2_rt/s50/nightly_v2/host/native-extracted/archive-index.json",
+    "bytes": 74773,
+    "sha256": "31085d5ffe92f17c21f20cf8142f8500ff8057b972c93822ded3c29b1c6a3b6e"
+  },
+  "post_report": {
+    "path": "target/post_e_h2_rt/s50/nightly_v2/host/native-extracted/post-release-r1/post_release_result.json",
+    "bytes": 4617,
+    "sha256": "f05d6922acf37fb845a106aa991003711ec38f66417a51f2a3eec4e74e79dc11"
+  },
+  "build_head": "59120e34bebd991accac41696425b1c743870a19",
+  "source_files": 589,
+  "source_manifest_sha256": "48360e9faeaf8c1e6f32c82f10312f8316f57551bb4406c64df1916e2de73e93",
+  "rustc_identity": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "counts": {
+    "indexed_files_verified": 253,
+    "post_commands": 17,
+    "post_launch_completion_pairs": 17,
+    "post_stdout_stderr_pairs": 17,
+    "referenced_release_commands_verified": 8,
+    "frozen_elf": 7,
+    "help": 7,
+    "mock_cases": 1,
+    "mock_groups": 4,
+    "mock_samples": 8,
+    "mock_raw_csv_events": 285,
+    "mock_recovery_writes": 16,
+    "loopback_tests": 6,
+    "loopback_scenes": 9,
+    "formal_unchanged": 4
+  },
+  "checks": {
+    "archive_and_253_original_sha_bytes": "PASS",
+    "source_589_before_after_release_post_and_local_sha": "PASS",
+    "head59120_clean_git_inventory": "PASS",
+    "same_nightly_identity_boot_env_and_windows": "PASS",
+    "all17_launch_completion_gate_pid_wait_logs": "PASS",
+    "all17_no_signals_no_residual": "PASS",
+    "frozen7_arm183_sha_original_mode_sidecar_cargo_record": "PASS",
+    "seven_help_exact_frozen_paths": "PASS",
+    "actual_mock_config_isolated_id_latch_trust_roles": "PASS",
+    "mock8_samples_attempts_and_raw_events": "PASS",
+    "mock16_recovery_acks_and_final_disable_identity": "PASS",
+    "mock_final_trace_and_s0_gateway_shutdown": "PASS",
+    "loopback6_9_raw_scenarios": "PASS",
+    "formal4_release_post_before_after_and_after_log": "PASS",
+    "root_outer_wait_and_logs": "PASS"
+  },
+  "positive_loopback_ack_delay_ns": 2101141888,
+  "mock_final_disable_request_id": "00061c4f-0000-7000-8000-000000000011",
+  "mock_s0_exit": {
+    "at_ns": 2495164406245568,
+    "pid": 400474,
+    "executable": {
+      "dev": 66305,
+      "ino": 15236705
+    },
+    "ack": true,
+    "clear": true,
+    "flushed": 1,
+    "residual": 0,
+    "writer_join": "stopped",
+    "fallback_tag": 0,
+    "fallback_settle": 0,
+    "stop_trace": [
+      {
+        "kind": "ClearRr",
+        "at_ns": 2495164335424000
+      },
+      {
+        "kind": "SetRr",
+        "at_ns": 2495164335427072
+      },
+      {
+        "kind": "Publisher",
+        "at_ns": 2495164335427200
+      },
+      {
+        "kind": "Io",
+        "at_ns": 2495164335427296
+      },
+      {
+        "kind": "HookControl",
+        "at_ns": 2495164335427520
+      },
+      {
+        "kind": "HealthMonitor",
+        "at_ns": 2495164335428000
+      },
+      {
+        "kind": "Executor",
+        "at_ns": 2495164340459616
+      },
+      {
+        "kind": "Ipc",
+        "at_ns": 2495164350572800
+      },
+      {
+        "kind": "LatchWriter",
+        "at_ns": 2495164350573728
+      },
+      {
+        "kind": "Watchdog",
+        "at_ns": 2495164350574720
+      }
+    ],
+    "joined": [
+      {
+        "kind": "ClearRr",
+        "ok": true
+      },
+      {
+        "kind": "SetRr",
+        "ok": true
+      },
+      {
+        "kind": "Publisher",
+        "ok": true
+      },
+      {
+        "kind": "Io",
+        "ok": true
+      },
+      {
+        "kind": "Watchdog",
+        "ok": true
+      },
+      {
+        "kind": "HookControl",
+        "ok": true
+      },
+      {
+        "kind": "HealthMonitor",
+        "ok": true
+      },
+      {
+        "kind": "LatchWriter",
+        "ok": true
+      },
+      {
+        "kind": "Ipc",
+        "ok": true
+      },
+      {
+        "kind": "Executor",
+        "ok": true
+      }
+    ],
+    "failures": []
+  },
+  "frozen_artifacts": [
+    {
+      "kind": "production",
+      "name": "s0_daemon",
+      "sha256": "65d7f52f8d577476555f5cae97d4861e8d7df8fe36978ce130753baf02a76ec2",
+      "bytes": 4419456,
+      "mode": 509,
+      "elf_machine": 183,
+      "local_extracted_mode": 493
+    },
+    {
+      "kind": "production",
+      "name": "xlerobot_deploy",
+      "sha256": "4a1596390ca984d9deff7bbcbe95b9d5b77205622b04d5baf0dc1e90d5d5766f",
+      "bytes": 1850704,
+      "mode": 509,
+      "elf_machine": 183,
+      "local_extracted_mode": 493
+    },
+    {
+      "kind": "production",
+      "name": "s1_daemon",
+      "sha256": "15d6f0fc90c50e11a851a956088673dddc00a1c42ecb1f52215078116de4ae1f",
+      "bytes": 4166216,
+      "mode": 509,
+      "elf_machine": 183,
+      "local_extracted_mode": 493
+    },
+    {
+      "kind": "production",
+      "name": "robot_rpc_gateway",
+      "sha256": "41ae7250e03ad81e8881bbc82ed6ee3d1f24e08e0b6833927dba516bbb862bc4",
+      "bytes": 6055784,
+      "mode": 509,
+      "elf_machine": 183,
+      "local_extracted_mode": 493
+    },
+    {
+      "kind": "measurement",
+      "name": "s0_daemon",
+      "sha256": "3343ee29ac3849da0d00a2e6df09972446eb9342752c83436eababd3ebb439b2",
+      "bytes": 4945328,
+      "mode": 509,
+      "elf_machine": 183,
+      "local_extracted_mode": 493
+    },
+    {
+      "kind": "measurement",
+      "name": "robot_rpc_gateway",
+      "sha256": "fe1c30ac8e1be364ddea6721734ce06f436ca89c7c115e267622429e9b8446fc",
+      "bytes": 6081672,
+      "mode": 509,
+      "elf_machine": 183,
+      "local_extracted_mode": 493
+    },
+    {
+      "kind": "measurement",
+      "name": "comm_fault_e2e",
+      "sha256": "dcff697b13b94dedd5ba02a8835f6f296c365aa7ebb84716bb8a1387ee204730",
+      "bytes": 5723448,
+      "mode": 509,
+      "elf_machine": 183,
+      "local_extracted_mode": 493
+    }
+  ],
+  "commands": [
+    {
+      "name": "source_before_head",
+      "pid": 400433,
+      "started_at": "2026-09-30T04:19:41.910324+00:00",
+      "finished_at": "2026-09-30T04:19:41.963781+00:00",
+      "elapsed_ns": 53420457,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "50fc4f8107d467b7b3d37aca80d04d3ade0a5a634532df99c40d8c196f5f8e9c"
+    },
+    {
+      "name": "source_before_status",
+      "pid": 400434,
+      "started_at": "2026-09-30T04:19:41.984795+00:00",
+      "finished_at": "2026-09-30T04:19:42.038029+00:00",
+      "elapsed_ns": 53210569,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "b6bce07009aff9bec4e091c595be5e7de9fdcbe2c5fb67d632f723714a122d7e"
+    },
+    {
+      "name": "source_before_files",
+      "pid": 400435,
+      "started_at": "2026-09-30T04:19:42.058900+00:00",
+      "finished_at": "2026-09-30T04:19:42.111800+00:00",
+      "elapsed_ns": 52876647,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "86a97477a3e24900ebcafad5e2ce7ed78a740d4401c34788eb98bdac1aa8e96a"
+    },
+    {
+      "name": "rustc_before",
+      "pid": 400436,
+      "started_at": "2026-09-30T04:19:43.585232+00:00",
+      "finished_at": "2026-09-30T04:19:43.670543+00:00",
+      "elapsed_ns": 85278489,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "f23d1d43823db7b789690b6691a50ee54aea2be9345eb3cb9a9af7fc5562e1d9"
+    },
+    {
+      "name": "help_production_s0_daemon",
+      "pid": 400442,
+      "started_at": "2026-09-30T04:19:43.691902+00:00",
+      "finished_at": "2026-09-30T04:19:43.744848+00:00",
+      "elapsed_ns": 52918409,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "cd89e8912e88fe4bbf00d5298ac6275d606960ccd18b91cb995ac22b94090362"
+    },
+    {
+      "name": "help_production_xlerobot_deploy",
+      "pid": 400444,
+      "started_at": "2026-09-30T04:19:43.765852+00:00",
+      "finished_at": "2026-09-30T04:19:43.818780+00:00",
+      "elapsed_ns": 52902601,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "5e7eb34ab0e0906f8274f45cacea04a5c1f523fa608784005ad68db4daaf1ae2"
+    },
+    {
+      "name": "help_production_s1_daemon",
+      "pid": 400445,
+      "started_at": "2026-09-30T04:19:43.839890+00:00",
+      "finished_at": "2026-09-30T04:19:43.892733+00:00",
+      "elapsed_ns": 52817672,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "e11b11ef006e0747fdd6da14a04578584969462c39cf9813bd45f88402feadb2"
+    },
+    {
+      "name": "help_production_robot_rpc_gateway",
+      "pid": 400446,
+      "started_at": "2026-09-30T04:19:43.913706+00:00",
+      "finished_at": "2026-09-30T04:19:43.966282+00:00",
+      "elapsed_ns": 52552774,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "15d536466b79f11b91392f854481d3c35389b999ff83528b1655929a9cb34f3f"
+    },
+    {
+      "name": "help_measurement_s0_daemon",
+      "pid": 400451,
+      "started_at": "2026-09-30T04:19:43.987197+00:00",
+      "finished_at": "2026-09-30T04:19:44.039847+00:00",
+      "elapsed_ns": 52625543,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "3e423fddef1b0ab5f9f9669ceb5722fd8be588da587378a353980173c27dde99"
+    },
+    {
+      "name": "help_measurement_robot_rpc_gateway",
+      "pid": 400453,
+      "started_at": "2026-09-30T04:19:44.060785+00:00",
+      "finished_at": "2026-09-30T04:19:44.113553+00:00",
+      "elapsed_ns": 52744969,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "7286f44f0d90662741f47af32ff34ada7f9603b9123357c30fba9d980c7cd4fa"
+    },
+    {
+      "name": "help_measurement_comm_fault_e2e",
+      "pid": 400458,
+      "started_at": "2026-09-30T04:19:44.134605+00:00",
+      "finished_at": "2026-09-30T04:19:44.187233+00:00",
+      "elapsed_ns": 52603848,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "30fd954c94a138d2695237b734acfdb9a0d45b7851d08e09a07e17bc1d0fa025"
+    },
+    {
+      "name": "run_mock_ac12",
+      "pid": 400463,
+      "started_at": "2026-09-30T04:19:44.208273+00:00",
+      "finished_at": "2026-09-30T04:19:50.696183+00:00",
+      "elapsed_ns": 6487886170,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "2cbff4a84a0084fcbf6d5eca99980cdebe1a2af5a3960d46a6b916320e6a65d4"
+    },
+    {
+      "name": "final_stop_transport",
+      "pid": 400506,
+      "started_at": "2026-09-30T04:19:50.718829+00:00",
+      "finished_at": "2026-09-30T04:24:08.653568+00:00",
+      "elapsed_ns": 257934710911,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "313cfdc9be9e44031fb37e64116bf8758977bd9fa9680da9f8b84d70dd7d6b4b"
+    },
+    {
+      "name": "rustc_after",
+      "pid": 405184,
+      "started_at": "2026-09-30T04:24:08.677219+00:00",
+      "finished_at": "2026-09-30T04:24:08.762499+00:00",
+      "elapsed_ns": 85252211,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "223a836f79f9c9cc0d6a24e3a4a38003d6ba587f24d2e53300c1c8f14c2b3cfe"
+    },
+    {
+      "name": "source_after_head",
+      "pid": 405190,
+      "started_at": "2026-09-30T04:24:08.783221+00:00",
+      "finished_at": "2026-09-30T04:24:08.835700+00:00",
+      "elapsed_ns": 52456944,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "4f372840c1924b856c7541850f16fbf73d7f84ce6bbc7660de93371beb94f429"
+    },
+    {
+      "name": "source_after_status",
+      "pid": 405191,
+      "started_at": "2026-09-30T04:24:08.856456+00:00",
+      "finished_at": "2026-09-30T04:24:08.908905+00:00",
+      "elapsed_ns": 52423503,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "27b4d9d5a904ff53b1b9a307558fc54cc6d92b2588e25581690e536aea3d40ba"
+    },
+    {
+      "name": "source_after_files",
+      "pid": 405192,
+      "started_at": "2026-09-30T04:24:08.929274+00:00",
+      "finished_at": "2026-09-30T04:24:08.981797+00:00",
+      "elapsed_ns": 52497297,
+      "exit_code": 0,
+      "reaped": true,
+      "completion_sha256": "07bd3addde9a9ce90015de23ab51a9830125267664c4cb823fb93cf46b1c179b"
+    }
+  ],
+  "blocking_findings": [],
+  "audit_corrections": [
+    "首次局部核验将本地提取后的 0755 与 Orin 原 mode 0775 直接比较而停止；随后逐 tar header 与 index 核对原 0775，七件字节及 SHA 均相同。未修改任何原件。",
+    "原始 CSV 外部入口事件实际名称为 ExternalEnter；审阅脚本曾误用 ExternalCaptured 而停止，按真实 schema 更正后八个样本均与原事件相符。此为审阅脚本纠正，不是被测运行失败。"
+  ],
+  "boundaries": [
+    "软件准备通过不关闭右 H2 历史整体 FAIL、D15 OPEN 或 deployable=false，不构成新的现场 GO。",
+    "mock 使用真实测试 S0/gateway 进程和内存 MockSerialRT/MockTransport；无 UART 结论来自本次配置、绑定源码路径与环境原件，不声称附有内核 syscall/UART 电气监测。",
+    "loopback 为当前绑定源的窄 feature 测试可执行文件，未作为冻结 comm_fault_e2e ELF；真实冻结 measurement ELF 已另跑 AC-12 mock。",
+    "17 条 reaped 是已审监督器对直接 child 的真实 wait 回执；后代用原场景停止/退出日志与空 session 交叉核查，不将扫描冒充逐后代 wait。",
+    "Python 监督器 monotonic 与 RobotClock RAW 是不同计时域；各自内部核时序，不跨域以绝对数值比较。",
+    "正式四件逐属性前后不变；根补充后验日志六服务 inactive/MainPID=0。本审阅不远程探测当下硬件状态。",
+    "旧失败与各阶段非绿记录原样保留，不称完整 H2/D15 单轮通过。"
+  ]
+}

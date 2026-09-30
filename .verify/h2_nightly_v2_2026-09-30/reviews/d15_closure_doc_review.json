@@ -1,0 +1,28 @@
+{
+  "status": "APPROVED_STATIC",
+  "scope": "只读复核 D15 工作单与 59120e34 现有源码/权威 Spec；未编辑产品、未 SSH、未运行 Cargo/服务/设备或硬件测量。",
+  "document": {
+    "path": "/Users/loosqk/repo/rust/robot-system/team-swe/specs/d15_hardware_fail_safe.CLOSURE.md",
+    "sha256": "7491e80d01700fc190d888aaf7484a29143543267a7ddfb5509f70e29bfd65ac",
+    "bytes": 11772
+  },
+  "code_baseline": "59120e34bebd991accac41696425b1c743870a19",
+  "baseline_check": "所引用的 16 个源码/双臂 unit 文件及两份权威 Spec 与基线 git diff --numstat 无差异。",
+  "checks": [
+    "三条验收边界准确区分：通信 H2/AC-12、候选 E D15/AC-E25、通信规范 D15 观测测试基线；未用软件回环覆盖硬件保护。",
+    "现有 CodeMap 与源码相符：handoff 双 bus 17 电机/20 写并逐项读回；guard 最终 exec S0；显式 auto_enable=false；Enable/authority 门、Goal=Present 与 TorqueOff 确认均依赖存活软件链。",
+    "power_ok 当前确实直接为 true；两臂 S0 unit WatchdogSec=2s，robot-health usec/2 对应 1s，RestartSec=2s。文档没有把这些作为 <500ms 硬件 gate。",
+    "S1 心跳 watchdog 默认 200ms/10ms 轮询与 systemd 四源 liveness 分开描述；SIGINT/SIGTERM 关闭链及 BootSupervisor 均不能在 SIGKILL 后执行。freeze_systemd_smoke 明确 mock 重启范围。",
+    "D15-R 仅已批受监督 demo 例外和文档接口契约；无已文档化可配置 STS3215 command watchdog 的历史口径未被夸大为本轮测量。",
+    "未来保护接入位置、硬件事实和方案均明确待定；没有承诺已实现外部 gate，未批准采购、接线、写寄存器或硬件测试。",
+    "原 AC-E25 Enabled kill -9 后实际安全态 <500ms 与待批准扩充矩阵分开；未知/精度不足不得 PASS，失败原件和真实物理终点要求明确。"
+  ],
+  "retained_limits": [
+    "D15 OPEN",
+    "右 H2 历史整体 FAIL",
+    "deployable=false",
+    "没有当次硬件授权或通过声明",
+    "本报告不是 Spec Approved、实施或硬件验收"
+  ],
+  "blocking_findings": []
+}

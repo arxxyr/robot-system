@@ -2,20 +2,24 @@
 
 ## 当前步骤
 
-### H2 / D15 闭环路径（2026-09-30，准备中）
+### H2 / D15 闭环路径（2026-09-30，原生软件准备已验收）
 
 用户要求继续闭合 H2 与 D15，两者分别验收。**H2** 沿通信候选 AC-12：
 topic / external × idle / inflight 四组，每组 100 次预热 + 1000 个正式样本；
 SLA-A P99 ≤2 ms，SLA-B idle P99 ≤20 ms、inflight P99 ≤75 ms，原 RT、
 负载和真实采样边界不变。还必须最终 Disable 返回合法 Ack、工具/driver 真实退出回收、
 断扭读回及清场完整通过，不能用四组测量 PASS 覆盖最终收尾 FAIL。
-本轮最新 nightly 来源/产物校验 V2 已完成产品独审及软件验收：本机定向 20 项、
-Orin 完整 71 项 Python 通过；提交前 fmt / 根 Clippy 通过，589 项当前 Rust 编译输入
-已逐项绑定被检查的隔离源码（聚合 `48360e9f`）。编译器为实际更新检查后的浮动
-nightly `1.101.0-nightly / 5c543b0b8`。V2 两套产物共用真实编译器前后回执及身份，
-V1 仅显式历史只读；新 execute 拒绝 V1。原 macOS 平台失败与辅助驱动评审修订保留。
-证据见 `.verify/h2_nightly_v2_2026-09-30/precommit.json`；新六配方 release 仍待构建验收，
-本次没有硬件 PASS。
+`59120e34` 已完成 Orin 六条原生 release 配方、生产四件与测量三件冻结，release 独审通过。
+浮动 nightly 实际更新为 `1.101.0-nightly / 5c543b0b8`；589 项编译输入前后聚合 `48360e9f` 一致。
+V2 两套产物共用真实编译器前后回执及身份，V1 仅显式历史只读，新 execute 拒绝 V1。
+fmt / 根 Clippy、71 Python、默认 PLAN_ONLY、helper 14 项真实机制和七个 help 通过；
+冻结测量件 mock AC-12 四组各 2 个软件样本、同源 tonic 6 测试/9 场景通过，
+含 2.1 秒合法回执、普通 2 秒与最终 3 秒期限的超时反例。本轮非完整 workspace，亦未重测硬件 H2。
+release/post/archive 独审与 root 软件验收通过；253 份原件及本机证据已归档至
+[最终证据入口](../../.verify/h2_nightly_v2_2026-09-30/summary.json)。
+原 macOS 平台失败、辅助驱动修订及首次只读取证失败保留。
+04:29:11 UTC 正式后验为 ca14 clean、四 SHA 不变、六服务 inactive、无控制进程；
+本阶段无安装/push，不从软件快照推断物理电源、扭矩或支撑状态。
 新右 H2 仍需当次供电/USB 重置、支撑/清场/持续值守事实与独立 GO，不自动重试。
 
 **候选 E D15** 的已批硬门是 AC-E25：Enabled 真机 `kill -9 s0_daemon` 后 **<500 ms** 进入
@@ -23,8 +27,10 @@ torque disable / zero / brake，并有真实硬件及测量证据；D15-R 只是
 例外，人工值守、EStop 发布成功或更快 systemd 重启均不能代替闭环。
 主机冻结/失效、USB 断链以及重力/夹持物掉落的安全输出与独立测量属于**建议新增的
 验收覆盖，须另行拍板**；不能冒称原 AC-E25 已批准这些场景或已经验证。
-供电拓扑、看门狗型号等现场资料待确认，硬件未选型；当前可先补 CodeMap、故障矩阵
-及证据格式，接口仅沿已批文档契约，不写 no-op watchdog。
+供电拓扑、看门狗型号等现场资料待确认，硬件未选型；已补
+[D15 闭环工作单](d15_hardware_fail_safe.CLOSURE.md)的 CodeMap、待确认事实、
+建议故障矩阵及原始证据格式。该工作单非 Spec Approved；接口仅沿已批文档契约，
+未写 no-op watchdog，未作硬件接线或动作。
 依据：[通信 AC-12](post_e_comm_fault_hardening.md)、[候选 E D15 / D15-R](v0_5_dimos_replace.md)。
 右 H2 原整体 FAIL、D15 OPEN、`deployable=false` 不变，历史原件保留。
 
