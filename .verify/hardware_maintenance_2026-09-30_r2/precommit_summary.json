@@ -1,0 +1,197 @@
+{
+  "schema": "H2_HARDWARE_STAGE_COMMIT_SOFTWARE_GATE_V1",
+  "status": "PASS",
+  "scope": "本次硬件证据/文档阶段提交前新执行的软件门；同R4源码，无主仓/docs修改、全仓测试、SSH robot/Orin、UART或提交/推送。",
+  "main_head_readonly_binding": "11be2c8877b07b32677c198f26815b4a484c7d91",
+  "same_main_guest_source": true,
+  "source_files": 589,
+  "aggregate": "83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f",
+  "sla_sha256": "167dc63b2a274b53d9c53fe72c811d242d8ca96d5f031e1bf0ea9981cbd78e18",
+  "sla_bytes": 128812,
+  "identity": {
+    "hostname": "lima-robot-viz-check",
+    "machine": "aarch64",
+    "uid": 501,
+    "boot_id": "89175acb-84ae-405a-9a16-01beeea84953"
+  },
+  "actual_current_execution": [
+    "rustup update nightly --no-self-update",
+    "cargo fmt --all",
+    "cargo clippy --locked --offline --all --all-targets -- -D warnings"
+  ],
+  "rustc": "rustc 1.101.0-nightly (5c543b0b8 2026-09-29)\nbinary: rustc\ncommit-hash: 5c543b0b8c73c7b72bc8284ced4fb22ead15734d\ncommit-date: 2026-09-29\nhost: aarch64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.1\n",
+  "cargo": "cargo 1.101.0-nightly (3d7cf6e93 2026-09-25)\n",
+  "compiler_and_source_before_after_equal": true,
+  "result": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/native-extracted/result.json",
+    "sha256": "4ceb852f37327bd9a342d998804efeceab0e4b73f0521e405ee49413c9250006",
+    "bytes": 7719
+  },
+  "fmt_receipt": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/native-extracted/control/fmt.owner/result.json",
+    "sha256": "73796f6c1c534597e824303f66df8f7e25d685e52dde412df29e05cb8740e902",
+    "bytes": 1129
+  },
+  "fmt_log": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/native-extracted/control/fmt.owner/child.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "root_clippy_receipt": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/native-extracted/control/root_clippy.owner/result.json",
+    "sha256": "dafe9dcbfb8aad14816e17341b46d423170f3cb8d4282202fd7ba2901aced3dc",
+    "bytes": 1232
+  },
+  "root_clippy_log": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/native-extracted/control/root_clippy.owner/child.log",
+    "sha256": "7c958b867acc0452a58e559b4310ee00280193f2a5a46105e10217dafec5332c",
+    "bytes": 70
+  },
+  "native_archive": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/native.tar.gz",
+    "sha256": "83041fd209fd2271559ebca1948b53b6f9dc7c06653017a43c73454bda65a7f7",
+    "bytes": 90447
+  },
+  "native_index": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/native.index.json",
+    "sha256": "e640ba54daaa49e8f3b0fa5cfd81d4c08b376c4c2b877c306d76dc4300566913",
+    "bytes": 11571
+  },
+  "native_files": 63,
+  "native_members": 64,
+  "native_hash_bytes_mode_verified": true,
+  "guest_owned_waits": 14,
+  "outer_owned_waits": 4,
+  "total_owned_waits": 18,
+  "receipts": [
+    {
+      "path": "control/collect_guest.owner/result.json",
+      "owner_pid": 70758,
+      "child_pid": 70759,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/download_archive.owner/result.json",
+      "owner_pid": 70815,
+      "child_pid": 70818,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/download_index.owner/result.json",
+      "owner_pid": 70816,
+      "child_pid": 70817,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "control/execute_gate.owner/result.json",
+      "owner_pid": 70562,
+      "child_pid": 70563,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/cargo_after.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26256,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/cargo_before.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26218,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/diff_check.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26264,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/fmt.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26223,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/head_after.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26262,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/head_before.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26197,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/inventory_after.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26261,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/inventory_before.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26196,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/nightly_update.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26199,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/root_clippy.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26234,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/rustc_after.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26250,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/rustc_before.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26212,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/status_after.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26263,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "path": "native-extracted/control/status_before.owner/result.json",
+      "owner_pid": 26195,
+      "child_pid": 26198,
+      "wait_returncode": 0,
+      "reaped": true
+    }
+  ],
+  "owned_sessions_remaining": [],
+  "hardware_boundary": "不代表硬件PASS；root告知的维护run02整体FAIL保持，不改原run或硬件状态。",
+  "deployable": false
+}

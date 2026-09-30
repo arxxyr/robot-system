@@ -1,0 +1,15 @@
+{
+  "schema": "MAINTENANCE_REMOTE_ARCHIVE_VERIFICATION_V1",
+  "status": "PASS",
+  "archive_sha256": "1e252fdf56054f19f0af29ab05ef17da803e2a503f3be918b078583902de5758",
+  "archive_bytes": 183529,
+  "regular_members": 759,
+  "reports_verified": 4,
+  "command_raw_outputs_verified": 736,
+  "run02_commands": 300,
+  "run02_UART_reads": 235,
+  "run02_UART_writes": 5,
+  "remote_selftest_methods": 19,
+  "run02_sha256": "bef993bf6c7b4746985b449f08ad38b4048939bcff012d34be4de92d947040a6",
+  "physical_power": "USER_CONFIRMATION_PENDING"
+}

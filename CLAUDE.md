@@ -134,6 +134,11 @@
            主树589输入83048e98仅sla变化，独审/root与提交前fmt→根Clippy、uv合同复验通过；原FAIL保留。
            .verify/h2_trace_owner_2026-09-30/summary.json；非完整workspace、未Orin新V2冻结/真实RT环暂停/硬件H2。
            用户另确认现场条件后推进独立维护层硬件验证，结果与本软件阶段分开；旧H2/D15/Unknown/deployable=false不变。
+           同日维护硬件：现场XLeRobot底盘前8/左7/右9既有速度模式1只读确认；脚本两端同19项/仅计划与独审通过。
+           首uv父壳前置拒绝UART0；新run仅左腕947→967→953，回程+6超±4/800ms，整体FAIL，未重试。
+           断扭ACK、17电机终读零扭矩/零速度、300child回收及独立无UART后验通过；原入口/位置/后验FAIL保留。
+           右腕/头部/底盘动作未执行，未接S0/S1；原NEEDS_MANUAL_POWER_CUT不回填，物理断电确认待答/供电UNKNOWN。
+           .verify/hardware_maintenance_2026-09-30_r2/summary.json；本轮无后续动作、无安装/部署/push，H2/D15/deployable=false不变。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

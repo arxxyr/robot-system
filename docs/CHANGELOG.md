@@ -10,6 +10,12 @@
 
 ---
 
+## 2026-09-30 · XLeRobot 映射的独立硬件维护与回程失败
+
+底盘沿现场上游前8/左7/右9与既有速度模式1；本次不写模式/EEPROM，不改变冻结架构或正式双臂执行面。裸wire维护脚本两端同19项测试/仅计划与独审通过。
+新run仅左腕947→967→953，回程误差6超过原±4/800ms门，整体FAIL，原NEEDS_MANUAL_POWER_CUT及通知保留；其余动作NOT_RUN。最后断扭ACK、17电机三个停止寄存器均0；独立无UART后验确认ca14/产物/保护不变、服务与进程停稳。uv入口误拒和fuser后验合同误拒原FAIL保留，未放宽动作门或重试。
+[本轮证据](../.verify/hardware_maintenance_2026-09-30_r2/summary.json)。物理断电确认待答，供电UNKNOWN；不关闭右H2/D15，不宣称头部/底盘运行时或整车运动学通过，无部署/安装/push。
+
 ## 2026-09-30 · H2 非 RT 证据工具的整次归属与完整 CAS 派生
 
 真实 Arm/Ready 的 sample_seq owner 保留至两个 child 回收后一次尾 drain，原始批次/capture/spool 不覆盖；新 run 按 epoch 稳定排序并重算完整 CAS，原统计另存。未知/故障/错代次/重复成功仍 FAIL，原 RT/authority、采样群体、SLA A/B 与 Python 严格门不变。

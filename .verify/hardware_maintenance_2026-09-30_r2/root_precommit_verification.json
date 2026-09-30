@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "outer_indexed": 26,
+  "outer_members": 27,
+  "native_indexed": 63,
+  "guest_real_waits": 14,
+  "summary_sha256": "8477e1713613db6919b186f4d6a74693cb9f6af178aeae84f673b9111636245c"
+}

@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+### 双臂 / 头部 / XLeRobot 底盘维护验证（2026-09-30，动作 FAIL、软件收尾完成）
+
+用户重新确认双臂空载支撑、电源/USB复位、地面底盘空间与持续看护，随后要求底盘按 XLeRobot 模式。现场上游原件及实际寄存器确认前8/左7/右9，三轮既有 Operating_Mode=1；未写模式或 EEPROM。正式 ca14 执行面仍为双臂，头部/底盘未接入 S0/S1，本次仅独立裸wire维护，不能关闭 H2/D15 或宣称整车运动学通过。
+冻结维护脚本本机/Orin各19项确定性测试、默认PLAN_ONLY和独审通过；两端是同19项，不累计为38。新GO逐次绑定主机/boot、USB代次、工具SHA、保护文件及标定；持四合作锁，异常仍真实等待自有child并独立断扭。
+首run01被uv父壳命中严格进程门拒绝，12命令全部为前置查询，UART读写/上扭均0；原FAIL保留。启动方式改为直接exec由uv管理的解释器，未放宽进程门，新run02/GO重新绑定。
+run02仅执行左腕ID5：锚点947、目标971，实测到967（+20）；回程953（+6）未在800ms内进入±4门，**整体FAIL**。最后Torque_Enable=0写ACK成功，235次UART读取/5次写入、300个自有child全部真实回收；17电机终读的Torque_Enable/Present_Velocity/Goal_Velocity均0，其余16个电机六寄存器不变。
+原run因位置精度门先拒绝，后续refs/服务/USB核验未执行，并保守记NEEDS_MANUAL_POWER_CUT；root立即通知人工切断电机电源，未自动重试、加速或扩大容差。软件断扭读回不等于物理断电。右腕、头部两轴及底盘三轮动作均NOT_RUN。
+独立无UART后验28命令通过：runner退出、双USB/四锁无持有者、六正式服务停止、ca14 clean及四产物SHA/保护refs不变。首后验误要求fuser退出0而FAIL，原件保留；按既有空占用退出1合同复核通过，不修改原硬件FAIL。当前人工断电确认仍待用户答复，物理供电UNKNOWN；本轮无后续动作，不能宣称现场安全确认已经结束。
+[证据与逐SHA索引](../../.verify/hardware_maintenance_2026-09-30_r2/summary.json)。下一步先完成断电确认，分别核对舵机位置死区与维护工具的精度/停止分类；头部和底盘动作留待新的现场事实与GO。旧右H2整体FAIL、D15 OPEN/DEFERRED、deployable=false不变，无正式安装/部署/push。
+
 ### H2 非 RT 轨迹归属与尾部采集（2026-09-30，软件已验收）
 
 仅改共享 SLA 证据工具 `comm_fault/sla.rs`：整次 Arm/Ready owner 按真实 u64 sample_seq 登记，旧事件保留原 owner；两个 child 真实 stop/reap 后只补一次尾 drain。

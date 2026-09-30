@@ -1,0 +1,77 @@
+{
+  "schema": "MAINTENANCE_INDEPENDENT_REVIEW_V1",
+  "status": "PASS",
+  "candidate": "r4",
+  "source_sha256": "791079cfc1abfa5eab72d8acfbf6be78146423e7d7dfd2b0c7e759158600f048",
+  "source_bytes": 34243,
+  "plan_sha256": "b8accf570f6a6b2a1e54411561f62dc6c2556cf626cefdd8d48997ee9de3061b",
+  "verified_files": [
+    {
+      "name": "run_maintenance.py",
+      "sha256": "791079cfc1abfa5eab72d8acfbf6be78146423e7d7dfd2b0c7e759158600f048",
+      "bytes": 34243
+    },
+    {
+      "name": "proc_identity.py",
+      "sha256": "da28b6eee270a09bfbdb7f90613f2fe9f0d73537c076a8b54fb811648cadb70f",
+      "bytes": 10882
+    },
+    {
+      "name": "test_maintenance.py",
+      "sha256": "65a1512025717b82f2ac4062c82f4cf6ffc70b7a7714e8303e78f9256d28d131",
+      "bytes": 13914
+    },
+    {
+      "name": "build_bindings.py",
+      "sha256": "ef9dfe3d44f2a3872451de1086937dbddd8201d6956d226612799a75c8aa0fcb",
+      "bytes": 3020
+    },
+    {
+      "name": "bindings.json",
+      "sha256": "3c61903c7574eba68d6889d34c5e328ec5c891930bcf7a518bb546221e0585ba",
+      "bytes": 14000
+    },
+    {
+      "name": "selftest_r4.owner.json",
+      "sha256": "7823c57140446779dcff88a3f805e8a289dd11cfea9371f7895cbf5e9e384dbb",
+      "bytes": 404
+    },
+    {
+      "name": "selftest_r4.stderr",
+      "sha256": "367910f05c481da09e0a3fe07768f9e6623bad63c508e185751cba259c70568e",
+      "bytes": 2769
+    },
+    {
+      "name": "plan_r4.owner.json",
+      "sha256": "97b2c0c744bce8131469806cc049fee947dceabdb0283e87d39cee5af6a97ba7",
+      "bytes": 524
+    },
+    {
+      "name": "plan_r4.stdout",
+      "sha256": "b6983c29d65ce731d1f8d5b451cdc44693c6f088e54222eac6497497cc9b168f",
+      "bytes": 17000
+    }
+  ],
+  "reviewed": [
+    "witness_position无上扭前漂移门；实际在50ms后、Torque_Enable1前检查当前位置与锚点差≤4，拒绝追旧目标。正常3步出程/3步回程oracle覆盖。",
+    "正式六服务名及旧单元/handoff状态；既有process_snapshot含冻结poke；普通/sudo两USB和四保护锁fuser、持四独占flock贯穿17初读/串行动作/17终读。",
+    "USB serial/VID/PID/driver、DEVPATH/USEC_INITIALIZED、tty/rdev与本次实际采证绑定；未引入未采devnum门。",
+    "位置仅L5/R5/L7/L8，mode0、标定范围、follow-current读回、+24真实出程及回锚点；头原Goal0不得直接上扭。",
+    "轮仅R8/R7/R9逐个mode1，signed raw±20/150ms，Goal读回、实际速度符号与|V|≤40、编码器方向及3≤|delta|≤64；不写EEPROM/模式/Lock。",
+    "每child从Popen持有至真实wait/reap，无kill/terminate/总超时；wait/证据IO/信号异常仍独立执行收尾，不续下一电机。",
+    "GoalVelocity0失败仍独立Torque0；cleanup睡眠失败仍逐项读回；停机不确定提示人工断电；最终17电机静止、非目标Goal/mode及保护原值核验。",
+    "root当次完整plan/script/host/boot/physical/time GO，输出和消费claim不覆盖；默认PLAN_ONLY。NEEDS_MANUAL_POWER_CUT不会被report/journal错误降级。",
+    "19 unittest实际wait0/reap、完整OK日志与逐SHA索引；假执行器先实施写副作用再注入ACK失败；真正短命child signal/wait异常/证据错误负控；PLAN_ONLY真实exit0。"
+  ],
+  "limitations": [
+    "PASS仅软件及计划绑定审查；真实动作未由本审查者执行，root须绑定当次GO并串行执行。",
+    "flock约束合作进程，fuser是瞬时快照；现场持续看护/人工断电事实来自用户当前确认，不由软件推断。",
+    "150ms为软件目标、1秒为实测拒绝门，不提供硬件自动截止；D15 OPEN/DEFERRED。",
+    "raw20若因地面摩擦位移不足，本次FAIL并停止，无自动提速/重试，不直接判硬件损坏。",
+    "裸wire单电机维护层；非整车运动学、S0/S1头底盘接入、H2整体PASS或deployable。"
+  ],
+  "hardware_commands_by_reviewer": 0,
+  "ssh_by_reviewer": 0,
+  "tests_rerun_by_reviewer": 0,
+  "source_modified_by_reviewer": false
+}

@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "scope": "run01零UART前置拒绝证据及run02最小启动修正冷审",
+  "launcher_sha256": "95336623c3177f59fd467716a5696ea5cae05965066547e422e14e7589eb22ce",
+  "launcher_bytes": 3717,
+  "go_sha256": "07ce480553b781daab73c6b6f5b98065824749bdbeabcb04d82e1e5a46deded2",
+  "plan_sha256": "d8101f4eaaecd562755f116b68df7993bf86ccc5b1e1fa4b4bd18011771c4a49",
+  "source_sha256": "791079cfc1abfa5eab72d8acfbf6be78146423e7d7dfd2b0c7e759158600f048",
+  "run01": {
+    "result": "FAIL",
+    "commands": 12,
+    "uart_reads": 0,
+    "uart_writes": 0,
+    "torque_enable": 0,
+    "all_children_reaped": true,
+    "related_pid": 431920,
+    "reason": "uv父进程包含本次output，原严格process_snapshot正确拒绝；不放宽、不排除此父进程"
+  },
+  "fix": "uv python find3.12查询完成后，shell exec taskset直接exec该解释器；无存活uv父壳；新run02/GO/消费claim，r4脚本和bindings原值保持",
+  "limitations": "入口冷审通过不证明新运行通过；仍执行完整原前置与动作/安全回收门，root执行；旧run01 FAIL保留",
+  "reviewer_ssh": 0,
+  "reviewer_hardware": 0,
+  "reviewer_tests_rerun": 0
+}

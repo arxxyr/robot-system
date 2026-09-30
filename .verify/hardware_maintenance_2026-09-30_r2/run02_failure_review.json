@@ -1,0 +1,52 @@
+{
+  "schema": "MAINTENANCE_RUN02_INDEPENDENT_REVIEW_V1",
+  "status": "PASS",
+  "hardware_result_preserved": "NEEDS_MANUAL_POWER_CUT",
+  "overall_functional_result": "FAIL",
+  "evidence": {
+    "execute_run02.owner": {
+      "log_sha256": "e5b3f96ef923dd00cd44d9fbe9e9d3f0543396a840a4c5330834cc68f84a1e29",
+      "log_bytes": 359,
+      "ssh_pid": 68742,
+      "wait_returncode": 1,
+      "reaped": true
+    },
+    "read_run02.owner": {
+      "log_sha256": "bef993bf6c7b4746985b449f08ad38b4048939bcff012d34be4de92d947040a6",
+      "log_bytes": 354795,
+      "ssh_pid": 68785,
+      "wait_returncode": 0,
+      "reaped": true
+    }
+  },
+  "facts": {
+    "own_children": 300,
+    "all_natural_reaped": true,
+    "uart_reads_total": 235,
+    "uart_writes": 5,
+    "writes_only": "left:5",
+    "before_reads": 102,
+    "after_reads": 102,
+    "anchor": 947,
+    "command_goal": 971,
+    "outward_observed_end": 967,
+    "outward_delta": 20,
+    "final_position": 953,
+    "return_error": 6,
+    "required_return_tolerance": 4,
+    "return_budget_ms": 800,
+    "torque_off_write_sequence": 196,
+    "torque_off_write_wait": 0,
+    "cleanup_errors": [],
+    "all_17_final_Torque_PresentVelocity_GoalVelocity": 0,
+    "other_16_six_register_rows_unchanged": true,
+    "head_right_wrist_base_motion": "NOT_RUN"
+  },
+  "classification": "左腕真实位置动作存在；出程满足原门，回程未在800ms内进入±4tick，最终+6tick，位置精度/回程门FAIL。TorqueEnable0写已ACK且真实回收，17电机断扭/零速度读回已确认，不能描述为未证实断扭或电机持续输出。但原finalvalidate_snapshot把未回锚点保守映射NEEDS_MANUAL_POWER_CUT，原件/整体结果不得改成PASS。",
+  "pending": "run内最终validate_snapshot先失败，保护refs/服务/进程/USB后验随后语句未执行；由root独立非UART后验补证。物理断电仍由用户确认，软件寄存器零值不代表供电已关闭。",
+  "limits": "不重试、不增预算/容差，不推定机械损坏/通信故障根因；未执行头/右腕/底盘动作，H2/D15及deployable状态不变。",
+  "reviewer_ssh": 0,
+  "reviewer_uart": 0,
+  "tests_rerun": 0,
+  "original_evidence_modified": false
+}

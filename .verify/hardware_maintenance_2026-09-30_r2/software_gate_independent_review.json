@@ -1,0 +1,203 @@
+{
+  "schema": "H2_STAGE_SOFTWARE_GATE_INDEPENDENT_REVIEW_V1",
+  "status": "PASS",
+  "boundary": "本地只读原件独审；未SSH、未重跑测试、未修改源码；仅fmt/Clippy软件门，不外推硬件或完整workspace。",
+  "outer_archive": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1.tar.gz",
+    "sha256": "b0013fc75b49910c3a75c98b6023a38698f3a9f8723464e7bded22de44946ff7",
+    "bytes": 151778
+  },
+  "outer_index": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1.index.json",
+    "sha256": "dfe44181ccd5f594e38d7bb622009ad1bf2ee49ea336a87cd15262ccc25b0a80",
+    "bytes": 4740
+  },
+  "native_archive": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/native.tar.gz",
+    "sha256": "83041fd209fd2271559ebca1948b53b6f9dc7c06653017a43c73454bda65a7f7",
+    "bytes": 90447
+  },
+  "native_index": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/native.index.json",
+    "sha256": "e640ba54daaa49e8f3b0fa5cfd81d4c08b376c4c2b877c306d76dc4300566913",
+    "bytes": 11571
+  },
+  "summary": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-hardware-stage-gate-r1/summary.json",
+    "sha256": "ddb3109938aaced4b5c0a5e7e950d985d409116bdf408f2f7b02d4f209660eac",
+    "bytes": 6876
+  },
+  "native_members": 64,
+  "outer_members": 27,
+  "source_files": 589,
+  "source_aggregate": "83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f",
+  "sla_sha256": "167dc63b2a274b53d9c53fe72c811d242d8ca96d5f031e1bf0ea9981cbd78e18",
+  "frozen_main_head": "11be2c8877b07b32677c198f26815b4a484c7d91",
+  "main_head_at_read": "11be2c8877b07b32677c198f26815b4a484c7d91",
+  "guest_git_head": "4a8e171f27bf18625973aa4f3a6097e9b9fbed18",
+  "guest_source_equal_main": true,
+  "rustc_commit": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+  "guest_waits": 14,
+  "outer_waits": 4,
+  "receipts": [
+    {
+      "domain": "guest",
+      "path": "control/cargo_after.owner/result.json",
+      "child_pid": 26256,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/cargo_before.owner/result.json",
+      "child_pid": 26218,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/diff_check.owner/result.json",
+      "child_pid": 26264,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/fmt.owner/result.json",
+      "child_pid": 26223,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/head_after.owner/result.json",
+      "child_pid": 26262,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/head_before.owner/result.json",
+      "child_pid": 26197,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/inventory_after.owner/result.json",
+      "child_pid": 26261,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/inventory_before.owner/result.json",
+      "child_pid": 26196,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/nightly_update.owner/result.json",
+      "child_pid": 26199,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/root_clippy.owner/result.json",
+      "child_pid": 26234,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/rustc_after.owner/result.json",
+      "child_pid": 26250,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/rustc_before.owner/result.json",
+      "child_pid": 26212,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/status_after.owner/result.json",
+      "child_pid": 26263,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "guest",
+      "path": "control/status_before.owner/result.json",
+      "child_pid": 26198,
+      "owner_pid": 26195,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "outer",
+      "path": "control/collect_guest.owner/result.json",
+      "child_pid": 70759,
+      "owner_pid": 70758,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "outer",
+      "path": "control/download_archive.owner/result.json",
+      "child_pid": 70818,
+      "owner_pid": 70815,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "outer",
+      "path": "control/download_index.owner/result.json",
+      "child_pid": 70817,
+      "owner_pid": 70816,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "domain": "outer",
+      "path": "control/execute_gate.owner/result.json",
+      "child_pid": 70563,
+      "owner_pid": 70562,
+      "wait_returncode": 0,
+      "reaped": true
+    }
+  ],
+  "run_window": {
+    "fmt_started": "2026-09-30T21:18:28.386561+00:00",
+    "fmt_finished": "2026-09-30T21:18:29.150468+00:00",
+    "clippy_started": "2026-09-30T21:18:29.189202+00:00",
+    "clippy_finished": "2026-09-30T21:18:29.409073+00:00"
+  },
+  "limits": [
+    "Only fresh fmt/root Clippy; no fresh test/build gate in this small package",
+    "Native14 child session absence is archived point-in-time /proc evidence, not live current process observation",
+    "Native guest Git HEAD differs from main HEAD;589 complete compile-domain bytes/modes prove source equivalence",
+    "Hardware run02 overall FAIL/H2/D15/deployable unchanged"
+  ],
+  "check_count": 993,
+  "failed_checks": [],
+  "checked_at_utc": "2026-09-30T21:26:00.049117+00:00"
+}
