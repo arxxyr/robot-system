@@ -2,6 +2,34 @@
 
 ## 当前步骤
 
+**2026-09-30 Orin 原生 Rerun 定向软件已验收归档，独审与 root 通过。** 严格 SSH 已恢复；
+独立目录使用 `a6957cc` 的 620 项源码快照，浮动 nightly 更新为
+`2026-09-30 / rustc 1.101.0-nightly (5c543b0b8)`。工具链日期用于溯源，默认仍跟随最新，
+仅真实编译回归才按 `CLAUDE.md` 登记临时日期回退及解除条件。
+
+已确认 fmt、根 Clippy、17 项 viz 单测、9 项镜像测试（另 1 项 ignored 子夹具不计通过）、
+6 项显式 SHM 集成及独立 `release-tools` 优化构建/help 通过。
+独立构建与首轮六项集成实际使用的桥 SHA 不同；原测试可执行文件已针对最终桥
+`0097228bb6cf42c8f580752620837017c6e79e65e5f0160c0817b95d087b90eb`
+补跑同六项，严格 6/0/0，Popen 395114 实际 wait=0/reaped；源码与进程边界、
+测试和桥两个产物的前后 SHA 全通过。共 32 项不同测试加同六项复验，不计为 38 项。
+最终桥正常记录 1000 帧、10 类、11 实例，gap/drop/reject 为 0；官方同版 RRD verify
+报告 `1 file verified without error`。本轮 SIGINT 夹具为 0 帧，只证明生命周期收尾，
+不挪用下节历史 80 帧 live GUI 结果。Orin 定向软件门及最终独立核证通过。
+本轮没有重跑完整 workspace 或下述 Lima RT/退出专项，不混用平台、工具链和产物身份。
+
+新[摘要](../../.verify/robot_viz_orin_2026-09-30/summary.json)与
+[原件包](../../.verify/robot_viz_orin_2026-09-30/evidence.tar.gz)已归档。
+最终只读快照于 02:52:27 UTC 完成，比对通过：正式 ca14 clean、四安装件 SHA 未变，
+六服务 inactive/dead/MainPID0、无控制进程。旧 nightly 备份保留于本轮隔离根目录的
+`nightly-before`，未完成的 9/29 工具链已移除，原有 9/10 工具链保留。
+未部署新发布者或执行新硬件动作；软件快照不推断物理电源、扭矩或支撑状态。右 H2 整体 FAIL、D15 OPEN、
+`deployable=false` 和正式退役边界不变。旧 FAIL 原样保留。
+本阶段仅本地提交，不 push；下一步真实发布者观测另按独立部署流程验证，
+硬件门仍须当次现场事实与独立 GO。
+
+### 9/29 Rerun 软件阶段（以下为该阶段事实）
+
 **2026-09-29 Rerun 软件接入已验收。** 独立 `robot-viz` 支持十类 pub/sub 的文件录制和
 实时 Viewer；有界非实时观测镜像保留原主通道 QoS、返回值和接收者计数，S0/S1 不链接
 Rerun SDK。原始布局、时钟、实例和拒绝/丢失统计保留，Unknown 不表示物理安全。
@@ -24,9 +52,9 @@ Viewer 实时加载初期一次 Timeline 警告保留。媒体仅软件夹具、
 证据入口为[摘要](../../.verify/robot_viz_2026-09-29/summary.json)、
 [索引](../../.verify/robot_viz_2026-09-29/archive.json)和[原件包](../../.verify/robot_viz_2026-09-29/evidence.tar.gz)。
 
-本阶段仅本地提交，不 push。Orin 的 SSH 信任条目仍待核，本轮未传输/正式安装或新硬件动作；
-右 H2、D15、`deployable=false` 保持。下一步先恢复可信 SSH 并在 Orin 验证观测，再继续通信
-硬件门和 D15 退役决策；可视化先行完成不自动关闭这些条件。
+该阶段仅本地提交，不 push；Orin 的 SSH 信任条目当时待核，未传输/正式安装或新硬件动作。
+严格 SSH 与 Orin 后续验证状态见页首；通信硬件门和 D15 退役决策仍待推进，
+可视化先行完成不自动关闭这些条件。
 
 **2026-09-29硬件小幅检查后的诊断分类软件门通过。** 两侧各一次腕部往返功能探针通过，
 结束后17电机分总线读回断扭/零速、EStop双写恢复1，正式服务停止；头部/底盘只有状态
@@ -40,7 +68,7 @@ Revoked权限窗口解释高度吻合，但缺原AbortReason/Enable提交时戳�
 及测试收集器首次惰性分配失败保留。隔离Lima Ubuntu 24.04 ARM/nightly-2026-09-29第四轮
 fmt→根Clippy、Feetech147+5+12+3及SerialRT42通过，605项来源前后核验一致。
 CLI/S0三处lint等价修正；前三轮lint/格式FAIL保留。原生快照不含Rerun/镜像。
-Orin仍待核本机known_hosts缺失的两主机记录，严格SSH拒绝，未传输/安装或新硬件动作。
+该诊断阶段Orin因本机known_hosts缺失的两主机记录而被严格SSH拒绝，未传输/安装或新硬件动作。
 读早退/过期tick、右H2、D15保持OPEN。
 可恢复的软件验证入口为[诊断分类摘要](../../.verify/hardware_smoke_2026-09-29/diagnosis_summary.json)
 和[本机证据包](../../.verify/hardware_smoke_2026-09-29/diagnosis_local_evidence.tar.gz)、

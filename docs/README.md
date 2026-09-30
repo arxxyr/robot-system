@@ -1,10 +1,12 @@
 # 文档导航
 
-当前（2026-09-29）：v0.5 受监督功能 demo 已完成；通信故障诊断分类已软件验收，
-独立 Rerun 观测桥已完成软件验收，文件/实时 Viewer 与最终 Linux 全仓回归均通过。
+当前（2026-09-30）：Orin 严格 SSH 已恢复，Rerun 在最新浮动 nightly 下的原生定向软件门通过，
+最终桥同六项复验、官方 RRD 核验与正式快照比对也通过；已归档，独审与 root 验收通过，
+见[证据摘要](../.verify/robot_viz_orin_2026-09-30/summary.json)。
+9/29 的 Rerun 文件/实时 Viewer 与隔离 Lima Linux 全仓回归已验收，不代表本轮重跑全仓。
 使用方式见 [Rerun 入口](02_start_here.md#rerun-观测工具当前开发入口)，实际完成状态与边界见
 [V1–V8 验收](10_verification.md)和[当前交接](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
-真机仍保留右 H2 整体 FAIL、D15 OPEN、`deployable=false`；本轮可视化未部署 Orin。
+正式 ca14 安装件未改，本轮未部署或执行新硬件动作；右 H2 整体 FAIL、D15 OPEN、`deployable=false` 保持。
 通信故障后续依据为 [post-E Spec](../team-swe/specs/post_e_comm_fault_hardening.md)。
 
 | 文件 | 用途 |

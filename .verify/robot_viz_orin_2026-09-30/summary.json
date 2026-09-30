@@ -1,0 +1,515 @@
+{
+  "status": "SOFTWARE_ACCEPTED",
+  "date_utc": "2026-09-30",
+  "base_commit": "a6957cc1b104922e047743ed474ca6d109dd62b6",
+  "scope": "Orin aarch64 上以最新浮动 nightly 验收独立 Rerun 观测桥；仅软件夹具，不正式安装或触发硬件动作",
+  "toolchain": {
+    "channel": "nightly",
+    "channel_date_utc": "2026-09-30",
+    "rustc": "1.101.0-nightly",
+    "commit": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+    "host": "aarch64-unknown-linux-gnu",
+    "manifest": {
+      "path": "nightly-channel.toml",
+      "sha256": "83f7fe5ed30678a5417a140659fa2231c08601161e4538bbcdbafa93854e1824",
+      "bytes": 923466
+    },
+    "readback": "remote_snapshot_final.log",
+    "backup": "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/nightly-before",
+    "policy": "默认浮动最新 nightly；本轮记录实际日期与提交仅用于溯源，没有 pin 项目"
+  },
+  "source": {
+    "files": 620,
+    "manifest": {
+      "path": "source_manifest.json",
+      "sha256": "5b5f37773d41c7b71046cb94d3430c1051c0c0ae741cf8a6a0a4f12b93da1dec",
+      "bytes": 110647
+    },
+    "archive": {
+      "path": "source.tar.gz",
+      "sha256": "cfb3f8908fc436f1cc5faa1572cbea4f362ab9c19985202dc36a723587eba12c",
+      "bytes": 9426449
+    },
+    "remote_before_after_match": true,
+    "host_document_only_differences": [
+      {
+        "path": "CLAUDE.md",
+        "before": {
+          "sha256": "2ed1f614cd7923b8ea3745dfde00fba8fae801cae53d45faa202d9c75ffd768d",
+          "bytes": 18241
+        },
+        "after": {
+          "sha256": "66f46f82d5d80d4c8f8773287a2db2415273a61765eeb0063e33c07187139ca2",
+          "bytes": 19468
+        }
+      }
+    ]
+  },
+  "gates": [
+    {
+      "receipt": "remote/evidence/01_fmt.json",
+      "label": "01_fmt",
+      "command": [
+        "cargo",
+        "+nightly",
+        "fmt",
+        "--all"
+      ],
+      "test_summary": null,
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 3458939406,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "receipt": "remote/evidence/02_clippy.json",
+      "label": "02_clippy",
+      "command": [
+        "cargo",
+        "+nightly",
+        "clippy",
+        "--locked",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "test_summary": null,
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 273486176159,
+      "log_sha256": "20cf3e75c8edd975442b0cf41061af12958dd12f3bb2fc392a697bb8ef973925"
+    },
+    {
+      "receipt": "remote/evidence/03_viz_units_build.json",
+      "label": "03_viz_units_build",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--locked",
+        "--profile",
+        "release-tools",
+        "-p",
+        "robot-viz",
+        "--lib",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "test_summary": null,
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 717504537066,
+      "log_sha256": "c1ecff12fd300100ac277d047deaa583a4e8be752f59dbb7d32b82d458d54ded"
+    },
+    {
+      "receipt": "remote/evidence/03_viz_units.json",
+      "label": "03_viz_units",
+      "command": [
+        "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/build/release-tools/build/robot-viz/13e38e38afcaf26a/out/robot_viz-13e38e38afcaf26a",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "test_summary": [
+        [
+          17,
+          0,
+          0
+        ]
+      ],
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 71518770,
+      "log_sha256": "8c25bc48d88e955d4bb38bea3817eb40600875e2791303c8e402e1497907a9eb"
+    },
+    {
+      "receipt": "remote/evidence/04_observer_mirror_build.json",
+      "label": "04_observer_mirror_build",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--locked",
+        "--profile",
+        "release-tools",
+        "-p",
+        "robot-transport",
+        "--test",
+        "observer_mirror",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "test_summary": null,
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 110384938526,
+      "log_sha256": "3f63c8df4e16db1c2f9262ccaabae2e63a6f8af0d822e992bc103f73e21c73ed"
+    },
+    {
+      "receipt": "remote/evidence/04_observer_mirror.json",
+      "label": "04_observer_mirror",
+      "command": [
+        "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/build/release-tools/build/robot-transport/6ab4814da874b8e9/out/observer_mirror-6ab4814da874b8e9",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "test_summary": [
+        [
+          9,
+          0,
+          1
+        ]
+      ],
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 404010036,
+      "log_sha256": "8d3637bc62206f799ed264251be542b12d588bb9241a01f8437b3d9b7c8c54ce"
+    },
+    {
+      "receipt": "remote/evidence/05_observer_roundtrip_build.json",
+      "label": "05_observer_roundtrip_build",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--locked",
+        "--profile",
+        "release-tools",
+        "-p",
+        "robot-viz",
+        "--test",
+        "observer_roundtrip",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "test_summary": null,
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 165350211350,
+      "log_sha256": "386f778b0ee579264866a97d0e44c147b25e75396ff50ab3445149947610b053"
+    },
+    {
+      "receipt": "remote/evidence/05_observer_roundtrip.json",
+      "label": "05_observer_roundtrip",
+      "command": [
+        "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/build/release-tools/build/robot-viz/613aa852f8ec42e3/out/observer_roundtrip-613aa852f8ec42e3",
+        "--ignored",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "test_summary": [
+        [
+          6,
+          0,
+          0
+        ]
+      ],
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 31546158321,
+      "log_sha256": "0fc09885154b30dffcc7daede8c585d49724f55d43d63887dff879f02377c4c2"
+    },
+    {
+      "receipt": "remote/evidence/06_viz_build.json",
+      "label": "06_viz_build",
+      "command": [
+        "cargo",
+        "+nightly",
+        "build",
+        "--locked",
+        "--profile",
+        "release-tools",
+        "-p",
+        "robot-viz",
+        "--message-format=json"
+      ],
+      "test_summary": null,
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 289080248881,
+      "log_sha256": "c1a503a9e1e94d44b558acda2b35d940e92073f2790af69440e426d711b0d176"
+    },
+    {
+      "receipt": "remote/evidence/07_viz_help.json",
+      "label": "07_viz_help",
+      "command": [
+        "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/build/release-tools/robot-viz",
+        "--help"
+      ],
+      "test_summary": null,
+      "wait_returncode": 0,
+      "reaped": true,
+      "elapsed_ns": 41903563,
+      "log_sha256": "2182d48203d39bd32386d921e5558c089719b99bd7053690fdf77ca4def755e9"
+    }
+  ],
+  "distinct_tests_passed": 32,
+  "ignored_child_fixtures": 1,
+  "standalone_final": {
+    "scope": "不同 Cargo 构建的桥 SHA 不同，另用原测试程序对最终桥复跑同一组6项；不计为6项新增测试",
+    "receipt": {
+      "label": "standalone_roundtrip",
+      "command": [
+        "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/build/release-tools/build/robot-viz/613aa852f8ec42e3/out/observer_roundtrip-613aa852f8ec42e3",
+        "--ignored",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "cwd": "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/source",
+      "pid": 395114,
+      "session_id": 395114,
+      "wait_returncode": 0,
+      "reaped": true,
+      "reaped_scope": "仅 Popen 直接 child 的实际 wait",
+      "started_utc": "2026-09-30T02:51:47.690660+00:00",
+      "finished_utc": "2026-09-30T02:52:19.237344+00:00",
+      "elapsed_ns": 31546696394,
+      "timeout_seconds": 600,
+      "timed_out": false,
+      "interrupted_signal": null,
+      "status": "PASS",
+      "error": null,
+      "test_summary": [
+        [
+          6,
+          0,
+          0
+        ]
+      ],
+      "log": "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/evidence/standalone_final/standalone_roundtrip.log",
+      "log_sha256": "6e64ba8bd1b464ec38824a32e551fb4c2d3337f5e81ecc2c84b82be7073c59cb",
+      "log_bytes": 1948,
+      "cleanup_signals": [],
+      "session_residual_before_cleanup": [],
+      "session_residual_after_cleanup": []
+    },
+    "identities": {
+      "test_executable": {
+        "path": "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/build/release-tools/build/robot-viz/613aa852f8ec42e3/out/observer_roundtrip-613aa852f8ec42e3",
+        "sha256": "fbab389e04dba2c78d2a5f5ffc296115d00f3bd85c529773c961739488bc48f4",
+        "bytes": 6298152
+      },
+      "standalone_bridge": {
+        "path": "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/build/release-tools/robot-viz",
+        "sha256": "0097228bb6cf42c8f580752620837017c6e79e65e5f0160c0817b95d087b90eb",
+        "bytes": 11679408
+      }
+    },
+    "original_integration_bridge": {
+      "path": "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/build/release-tools/robot-viz",
+      "sha256": "76fec32ee7bdbcac99e8f729d8fc4990fd3bdf74e29ce5a4b8141e6ef57f3dfc",
+      "bytes": 11683848,
+      "profile": "release-tools",
+      "cargo_binding": "05_integration_bridge_before.json"
+    },
+    "standalone_bridge": {
+      "path": "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/build/release-tools/robot-viz",
+      "sha256": "0097228bb6cf42c8f580752620837017c6e79e65e5f0160c0817b95d087b90eb",
+      "bytes": 11679408,
+      "format": "ELF64 little-endian AArch64",
+      "profile": "release-tools"
+    },
+    "source_and_process_postchecks": "PASS"
+  },
+  "recording": {
+    "file": "example.rrd",
+    "sha256": "fc5c876edff9f92fe8330e1289c3b1ecabc57b41c281eefc86a0dd496d35f050",
+    "bytes": 9256554,
+    "original": "remote/evidence/standalone_final/artifacts/viz_all_395114_2489881589513280_1/observation.rrd",
+    "official_verify": {
+      "command": [
+        "uvx",
+        "--from",
+        "rerun-sdk==0.38.1",
+        "rerun",
+        "rrd",
+        "verify",
+        "target/robot_viz_20260929/orin-native-r1/remote/evidence/standalone_final/artifacts/viz_all_395114_2489881589513280_1/observation.rrd"
+      ],
+      "pid": 3847,
+      "wait_returncode": 0,
+      "reaped": true,
+      "timed_out": false,
+      "started_utc": "2026-09-30T02:53:06.844499+00:00",
+      "finished_utc": "2026-09-30T02:53:08.670535+00:00",
+      "elapsed_ns": 1825948208,
+      "log": "final_rrd_verify.log",
+      "log_sha256": "e3ededa558f9eb8e55ea5dbc352a37efc95553ff1332d5d6ebecfd9f866b75f3",
+      "log_bytes": 31
+    },
+    "normal_report": {
+      "frames_received": 1000,
+      "frames_logged": 1000,
+      "frames_rejected": 0,
+      "per_schema": {
+        "1": {
+          "received": 111,
+          "logged": 111,
+          "rejected": 0
+        },
+        "2": {
+          "received": 111,
+          "logged": 111,
+          "rejected": 0
+        },
+        "3": {
+          "received": 110,
+          "logged": 110,
+          "rejected": 0
+        },
+        "256": {
+          "received": 110,
+          "logged": 110,
+          "rejected": 0
+        },
+        "512": {
+          "received": 110,
+          "logged": 110,
+          "rejected": 0
+        },
+        "513": {
+          "received": 110,
+          "logged": 110,
+          "rejected": 0
+        },
+        "514": {
+          "received": 111,
+          "logged": 111,
+          "rejected": 0
+        },
+        "768": {
+          "received": 6,
+          "logged": 6,
+          "rejected": 0
+        },
+        "769": {
+          "received": 111,
+          "logged": 111,
+          "rejected": 0
+        },
+        "1034": {
+          "received": 110,
+          "logged": 110,
+          "rejected": 0
+        }
+      },
+      "reject_reasons": [],
+      "topics_seen": [
+        "/viz_all_395114_2489881589513280_1/events/estop",
+        "/viz_all_395114_2489881589513280_1/policy/test/observation",
+        "/viz_all_395114_2489881589513280_1/s0/arm/layout",
+        "/viz_all_395114_2489881589513280_1/s0/arm/state",
+        "/viz_all_395114_2489881589513280_1/s0/heartbeat",
+        "/viz_all_395114_2489881589513280_1/s1/action_events/019ded00000070008000000000000001",
+        "/viz_all_395114_2489881589513280_1/s1/arm/command",
+        "/viz_all_395114_2489881589513280_1/s1/cmd_vel",
+        "/viz_all_395114_2489881589513280_1/sensors/camera/color",
+        "/viz_all_395114_2489881589513280_1/sensors/lidar/points"
+      ],
+      "topics_discovered_total": 10,
+      "topics_retired": 0,
+      "observer_dropped": 0,
+      "observer_sequence_gaps": 0,
+      "publisher_instances_seen": 11,
+      "instance_cache_evictions": 0,
+      "output_status": "success",
+      "error": null,
+      "worker_reaped": true
+    },
+    "scope": "1000帧、10类与11实例均为本轮软件夹具；本轮 SIGINT 测试0帧，仅证明生命周期，不复用历史80帧证据"
+  },
+  "formal_state": {
+    "status": "PASS",
+    "formal_repository_head": "ca14f0e6cf6df8ecc6baaaa8dff2dddb64abbd0a",
+    "formal_repository_clean": true,
+    "services_inactive_mainpid_zero": 6,
+    "installed_binary_hashes_unchanged": true,
+    "control_processes_found": false,
+    "snapshots": {
+      "remote_snapshot_before": {
+        "log_sha256": "cb48b74bf656fef210d89f948f4b7c1b9c8758cc3698086531222bdce1c52f55",
+        "finished_utc": "2026-09-30T02:02:41.809286+00:00",
+        "formal_tail": "MainPID=0\nId=xlerobot-s0-left-arm.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s0-right-arm.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s1-left.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s1-right.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-gateway-left.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-gateway-right.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n461aec751fc5a41a24ab4dcc3778ca1e88783c4c96467254419f7bf13d1fde7f  /home/loosqk/repo/robot/robot-system/target/release/s0_daemon\n7d0cfa3da22610e9a34749d1fbb0d081239a728ed1a30cb9836e01c909dff5c3  /home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy\n1c9037443f9786f09631705bd8800bc5f85333a45c7e9b08d6fcfaf26738de93  /home/loosqk/repo/robot/robot-system/target/release/s1_daemon\n9e8d029c30472bcd5371b6ae1fb6e4f98446086f420c567d11891dab81cc8d78  /home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+        "installed": {
+          "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon": "461aec751fc5a41a24ab4dcc3778ca1e88783c4c96467254419f7bf13d1fde7f",
+          "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy": "7d0cfa3da22610e9a34749d1fbb0d081239a728ed1a30cb9836e01c909dff5c3",
+          "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon": "1c9037443f9786f09631705bd8800bc5f85333a45c7e9b08d6fcfaf26738de93",
+          "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway": "9e8d029c30472bcd5371b6ae1fb6e4f98446086f420c567d11891dab81cc8d78"
+        }
+      },
+      "remote_snapshot_final": {
+        "log_sha256": "8dcf3afc5dd5a7da30b5d3bf8a5005c77c1083960105ee6abcfedba9dabc8a4e",
+        "finished_utc": "2026-09-30T02:52:27.816922+00:00",
+        "formal_tail": "MainPID=0\nId=xlerobot-s0-left-arm.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s0-right-arm.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s1-left.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s1-right.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-gateway-left.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-gateway-right.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n461aec751fc5a41a24ab4dcc3778ca1e88783c4c96467254419f7bf13d1fde7f  /home/loosqk/repo/robot/robot-system/target/release/s0_daemon\n7d0cfa3da22610e9a34749d1fbb0d081239a728ed1a30cb9836e01c909dff5c3  /home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy\n1c9037443f9786f09631705bd8800bc5f85333a45c7e9b08d6fcfaf26738de93  /home/loosqk/repo/robot/robot-system/target/release/s1_daemon\n9e8d029c30472bcd5371b6ae1fb6e4f98446086f420c567d11891dab81cc8d78  /home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+        "installed": {
+          "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon": "461aec751fc5a41a24ab4dcc3778ca1e88783c4c96467254419f7bf13d1fde7f",
+          "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy": "7d0cfa3da22610e9a34749d1fbb0d081239a728ed1a30cb9836e01c909dff5c3",
+          "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon": "1c9037443f9786f09631705bd8800bc5f85333a45c7e9b08d6fcfaf26738de93",
+          "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway": "9e8d029c30472bcd5371b6ae1fb6e4f98446086f420c567d11891dab81cc8d78"
+        }
+      }
+    },
+    "scope": "只读软件状态；不推断物理电源、断扭、支撑或无人值守安全"
+  },
+  "native_archive": {
+    "command": [
+      "ssh",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "StrictHostKeyChecking=yes",
+      "-o",
+      "ConnectTimeout=15",
+      "robot",
+      "set -eu; cd /home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1; printf '%s\\n' '1ee63bd3c17493b32c9b205944453d4b852eae69da7c682b8c55153013753212  collect_native.py' | sha256sum -c - >&2; exec /home/loosqk/.local/bin/uv run --no-project python collect_native.py --base /home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1"
+    ],
+    "pid": 3743,
+    "wait_returncode": 0,
+    "reaped": true,
+    "timed_out": false,
+    "started_utc": "2026-09-30T02:52:27.950283+00:00",
+    "finished_utc": "2026-09-30T02:52:30.920985+00:00",
+    "elapsed_ns": 2970620458,
+    "archive_sha256": "d6f85ca7866f6ea186c08b192cee90ac02cad473d0677c5be4d6c8ae2d69e61c",
+    "archive_bytes": 6901157,
+    "stderr_sha256": "1ff71349b7791f2cba1b6fb6e782644f336d4f7d242f35b7bd13e28f8ed902f3",
+    "verified": true,
+    "indexed_files": 118,
+    "run_status": "PASS"
+  },
+  "independent_review": {
+    "path": "native_independent_review.json",
+    "sha256": "7b942a38b2c0ffc44fd3d836f16f750231c5885ffb78d6ad09878b6d63aa51ab",
+    "bytes": 19360
+  },
+  "preserved_nonpass": [
+    {
+      "receipt": "remote_before.json",
+      "fact": "首次固定日期工具链探测触发自动下载，90秒外层超时；真实SSH wait255，保留原FAIL"
+    },
+    {
+      "receipt": "toolchain_readback.json",
+      "fact": "外层exit0但内容为安装缺失错误，不计成功"
+    },
+    {
+      "receipt": "update_latest_nightly.json",
+      "fact": "首次浮动latest在线更新慢，精确中断自有rustup；实际wait-2，随后校验官方缓存并另次更新通过"
+    },
+    {
+      "receipt": "preparation.json",
+      "fact": "历史PREPARED_NOT_RUN和日期工具链计划，仅准备，不冒充本轮验收结果"
+    }
+  ],
+  "boundaries": [
+    "本輪未重跑完整 workspace 测试或托管 CI；根 Clippy 全仓通过与17+9+6定向测试分别记账",
+    "软件发布者与媒体夹具，不证明机器人实时传感器画面；本轮仅官方文件校验，真实Viewer GUI证据来自9月29日阶段",
+    "观测镜像有损；首连接饥饿和多发布者公平性限制保留",
+    "原S1并行超时根因、Feetech读早退/过期tick问题未关闭",
+    "右H2仍整体FAIL；D15 OPEN；deployable=false；物理电源/支撑状态未由本轮核实",
+    "正式源仍ca14f0e，四安装件未变，六正式服务停止；未更新生产发布者",
+    "仅本地阶段提交，不push"
+  ],
+  "evidence": "evidence.tar.gz（外层索引archive.json；原生原件位于orin-native-r1/native_evidence.tar.gz，内含118项索引）",
+  "next_step": "按独立部署与现场授权流程验证真实机器人发布者的观测，再继续通信硬件门及D15；当前软件PASS不关闭硬件条件"
+}

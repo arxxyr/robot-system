@@ -16,13 +16,25 @@
 
 ## 当前状态
 
-独立 `robot-viz` 与隔离观测镜像已完成软件验收，文件/实时 Viewer 与最终 Linux 全仓回归均通过。
-当前完成状态以 [V1–V8](10_verification.md) 和[证据摘要](../.verify/robot_viz_2026-09-29/summary.json)为准。
-右 H2、D15 和正式退役保持原结论；本次只推进软件，不需要重做硬件动作。
+2026-09-30：严格 SSH 已恢复，`a6957cc` 的 Orin 原生定向软件验证已验收。
+更新后的浮动 nightly 为 `2026-09-30 / rustc 1.101.0-nightly (5c543b0b8)`；
+620 项来源快照的 fmt、根 Clippy、17 项单测、9 项镜像测试（另 1 项子夹具 ignored）、
+6 项显式 SHM、独立优化构建与 help 已通过。独立构建与首集成桥 SHA 不同，
+最终 `0097228b` 桥已补跑同六项通过；共 32 项不同测试，不计为 38 项。
+源码、产物前后身份及真实回收已核；正式 ca14 clean、四安装件 SHA 不变、六服务停止且无控制进程。
+最终正常 RRD 的官方同版 verify 已通过；证据已归档，独审与 root 验收通过。
+见[证据摘要](../.verify/robot_viz_orin_2026-09-30/summary.json)及原件包，
+精确进度见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+本轮未重跑完整 workspace，未替换正式 ca14 安装件或执行新硬件动作；右 H2、D15、
+`deployable=false` 与正式退役边界不变。
+
+2026-09-29 的独立 `robot-viz` 与隔离观测镜像软件验收已完成，文件/实时 Viewer 与
+隔离 Lima Linux 全仓回归均通过。该阶段结果见 [V1–V8](10_verification.md) 和
+[既有证据摘要](../.verify/robot_viz_2026-09-29/summary.json)，不冒充本轮 Orin 全仓回归。
 
 2026-09-29后续已做双臂各一次腕部小幅真机探针并完成断扭收尾；头部/底盘未测主动运动。
 已按用户要求加入穷尽类型分类，本机147＋5、隔离Linux ARM根Clippy及167＋42测试通过；
-历史34条Unknown不回填原因，Orin回归仍待SSH信任核实。精确当前状态见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)
+历史34条Unknown不回填原因，该诊断阶段Orin因SSH信任待核未测。精确当前状态见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)
 和[硬件检查](handoffs/hardware_smoke_2026-09-29_summary.md)；下段为同日先前软件阶段。
 
 2026-09-29用户重新要求按当前进度继续开发，并明确允许在Orin编译测试。最终Disable延迟2.1秒的真实tonic回环、工具构建及绑定测试peer的Orin串行workspace已通过，原S1默认并行两例失败仍待查；完整验收结果见[HANDOFF](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。下方暂停指令仅为9月25日历史状态；本轮在独立目录进行纯软件验证，右H2仍整体FAIL，D15 OPEN、deployable=false，新的硬件动作仍需当次现场事实与独立GO。
@@ -56,7 +68,7 @@ authorize/launch均0，未访问电机。修复1b6db3e/4191bf0共用身份/RT/TR
 设计版本:     v0.1.2 已冻结（docs/00_design.md）
 实施阶段:     v0.5 候选 E 受监督功能 demo 完结；D15 硬件 fail-safe OPEN
 当前候选:     post-E 通信故障硬化，Spec Approved（2026-09-05 round 21）
-当前步骤:     最终Disable延迟回执软件回归已验收；硬件复测需新准备，右H2仍整体FAIL
+当前步骤:     Rerun Orin定向软件已验收归档，独审/root通过；右H2仍整体FAIL
 当前授权:     2026-09-29继续开发及Orin独立目录纯软件编译测试；阶段验收后commit，不push
 执行入口:     team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
 平台:         左 H1/H2/H3 PASS；右 H1/H3通过、H2整体FAIL；所有历史FAIL保留
@@ -123,7 +135,7 @@ Orin调试/RT必要时直接sudo；标定沿已核Python JSON。新版5952498不
 1. **不改 `docs/00_design.md`**。架构已冻结。发现语义问题 → 写 `docs/CHANGELOG.md` 讨论，不直接改设计。
 2. **不跳当前候选的依赖与验收门**。v0.2 十步已收口，当前按批准的 Spec / Plan 推进。
 3. **commit 前零警告**：`cargo fmt --all --check && cargo clippy --all --all-targets -- -D warnings`。
-4. **Rust nightly 是硬要求，严格不用 stable**（对应 `docs/00_design.md` §9）。**核心 crate**（`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`）**原则上不写 `#![feature(...)]`**，目的是降低 nightly 升级回归风险（不是为了留 stable 后门）；确需启用必须 crate 顶部注释 + review。
+4. **Rust 默认使用最新 nightly，严格不用 stable**（对应 `docs/00_design.md` §9）。使用前更新浮动 `nightly`，实际版本记录用于溯源；仅真实编译回归允许按 `CLAUDE.md` 登记临时日期回退及解除条件。**核心 crate**（`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`）**原则上不写 `#![feature(...)]`**；确需启用必须 crate 顶部注释 + review。
 5. **业务代码禁用 API**：
    - `std::time::Instant::now` / `SystemTime::now` / `tokio::time::Instant::now` → 走 `robot-core::time::RobotClock`
    - `google.protobuf.Any` 作为 RPC payload → 用 `CommandMeta` + 强类型 Command
@@ -154,7 +166,8 @@ Orin调试/RT必要时直接sudo；标定沿已核Python JSON。新版5952498不
 需后续按独立部署流程更新发布者才会出现真实数据。本轮没有更新 Orin 正式安装件。
 
 ```bash
-# 使用现有 nightly；观测工具的专用 profile 保留 unwind。
+# 使用前更新浮动 nightly；观测工具的专用 profile 保留 unwind。
+rustup update nightly
 cargo build --locked --profile release-tools -p robot-viz
 
 # 与本机发布者处于同一共享内存环境，录制有限会话。

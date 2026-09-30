@@ -9,6 +9,32 @@
 
 ---
 
+## 2026-09-30 · Orin 原生 Rerun 软件验证（已验收）
+
+严格 SSH 已恢复；在独立目录验证 `a6957cc` 的 620 项源码快照，未替换正式 ca14 安装件。
+工具链使用更新后的浮动 `nightly`，实际为 `2026-09-30 / rustc 1.101.0-nightly (5c543b0b8)`；
+日期只作本次溯源，不默认固定仓库工具链。
+
+已通过 fmt、根 Clippy、17 项 viz 单测、9 项镜像测试（另 1 项 ignored 子夹具不计通过）、
+6 项显式 SHM 集成，以及 `release-tools` 独立优化构建和 help。
+独立构建与首轮六项所用的集成桥 SHA 不同；原测试可执行文件已针对最终桥
+`0097228bb6cf42c8f580752620837017c6e79e65e5f0160c0817b95d087b90eb`
+补跑同六项，严格 `6 passed / 0 failed / 0 ignored`，直接 child 实际 wait=0/reaped，
+源码、进程边界与测试/桥产物前后 SHA 均核验通过。合计 32 项不同测试加同六项复验，
+不是 38 项不同测试。最终桥正常记录 1000 帧、10 类、11 实例，gap/drop/reject 均为 0，
+官方同版 RRD verify 报告 `1 file verified without error`。本轮 SIGINT 夹具报告 0 帧，
+通过只证明其生命周期收尾；下节历史 80 帧实时 GUI 结果不计入本次 Orin 验收。
+Orin 定向软件已验收，独审与 root 验收通过。
+正式快照比对通过：ca14 源 clean、四安装件 SHA 未变、六服务 inactive/dead/MainPID0，
+未发现控制进程；这不推断物理电源、扭矩或支撑状态。
+本轮没有重跑完整 workspace、Lima 的 609 项 RT 库测试或 13 项退出专项，
+不将下节 9/29 的结果归入本次 Orin 实测。
+
+本轮[摘要](../.verify/robot_viz_orin_2026-09-30/summary.json)与
+[原件包](../.verify/robot_viz_orin_2026-09-30/evidence.tar.gz)已归档。
+未执行新硬件动作或正式部署；右 H2 整体 FAIL、D15 OPEN、`deployable=false` 不变，
+历史失败保留。
+
 ## 2026-09-29 · Rerun 观测桥（软件验收完成）
 
 独立 `robot-viz` 已实现，正常录制与真实 Viewer 文件/实时画面已验证，最终 Linux 根回归通过。
@@ -69,7 +95,7 @@ CPU Tensor 支持值统一无损转 f64、来源 dtype 留元数据；GPU 预览
 包含失败、各轮源码、实际 Viewer 画面与真实退出回执；[示例记录](../.verify/robot_viz_2026-09-29/example.rrd)
 可用同版 Viewer 打开。
 
-Orin 严格 SSH 因本机信任条目缺失拒绝连接，本轮改用隔离 Lima Ubuntu 24.04 ARM、
+在该 9/29 阶段，Orin 严格 SSH 因本机信任条目缺失拒绝连接，改用隔离 Lima Ubuntu 24.04 ARM、
 `nightly-2026-09-29` 执行 Linux 软件门。未更新 Orin 安装件，未执行新硬件动作；
 CI 只完成配置/actionlint 检查，尚未 push 或运行远端工作流。使用入口见
 [观测工具命令](02_start_here.md#rerun-观测工具当前开发入口)。
@@ -87,7 +113,7 @@ ca14冻结件左右腕部各一次小幅往返和收尾通过；头部/底盘只
 只覆盖经公开Safety入口注入错误的固定诊断路径，不证明周期执行整链无分配。
 
 初轮Clippy风格错误、测试Mutex首次惰性分配触发64字节SIGABRT保留；修复测试设施后5项通过。
-独立源码及本机证据审查通过。**本轮Orin检查尚未开始**：known_hosts两主机条目缺失导致
+独立源码及本机证据审查通过。**该诊断阶段Orin检查未开始**：known_hosts两主机条目缺失导致
 严格SSH拒绝，未向Orin传输源码。隔离Lima Ubuntu 24.04 ARM、nightly-2026-09-29 的第四轮
 实际fmt→根workspace Clippy通过；Feetech real-hw测试147+5+12+3项、SerialRT convergence/rt_guard
 42项通过，605项输入前后SHA一致。前三轮CLI lint、格式、S0 lint失败保留，三处写法等价修正。
@@ -1012,3 +1038,5 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-29：按持续目标登记 Rerun 全量观测桥 V1–V8 完成条件；方案已审、实施中，所有新验收结果待补。
 
 - 2026-09-29：更新 Rerun V1–V8 真实软件、Viewer 和故障证据；记录镜像丢失/公平性、GPU 与中断捕获限制；最终 Linux 软件门通过，按本节边界验收。
+
+- 2026-09-30：登记恢复严格 SSH 后的 Orin 最新浮动 nightly 定向软件门、最终桥同六项复验、官方 RRD 核验与正式快照比对；已验收归档、独审/root通过，不复用 Lima 结果冒称本轮全仓通过。

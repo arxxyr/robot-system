@@ -76,12 +76,22 @@
            默认并行S1两例超时仍OPEN，旧FAIL不覆盖；已更新HANDOFF，阶段提交、不push。
            此次未核现场物理状态，右H2仍整体FAIL，D15 OPEN、deployable=false。
            同日后续：ca14冻结件双臂腕部各一次往返及断扭收尾PASS，头部/底盘未测主动运动。
-           已加穷尽诊断分类，本机147+5、隔离Linux ARM根Clippy及167+42通过；Orin待SSH信任核实。
+           已加穷尽诊断分类，本机147+5、隔离Linux ARM根Clippy及167+42通过；该阶段Orin因SSH信任待核未测。
            原日志不回填Revoked，读早退/过期tick问题独立OPEN；详情见HANDOFF及hardware_smoke报告。
-           Rerun软件接入已验收：独立robot-viz、十类pub/sub、有界隔离镜像及真实Viewer文件/实时画面。
+           9/29 Rerun软件接入已验收：独立robot-viz、十类pub/sub、有界隔离镜像及真实Viewer文件/实时画面。
            macOS与Linux专项17+6通过；Linux根fmt/Clippy、完整串行workspace、13退出、609 RT库测试及优化构建通过。
            源码/动态独审已完成，原失败及有损/多发布者公平性限制保留；证据见 .verify/robot_viz_2026-09-29/summary.json。
-           未push、未部署Orin；SSH信任仍待核，右H2/D15与deployable=false不变。下一步先做可信Orin观测验证。
+           该阶段未push、未部署Orin，SSH信任当时待核；上述Linux全仓结果来自隔离Lima。
+           当前续作（2026-09-30）：严格SSH已恢复，Orin独立目录验证a6957cc的620项源码快照。
+           已更新浮动nightly至2026-09-30/rustc1.101.0-nightly(5c543b0b8)，fmt/根Clippy、
+           17单测、9镜像测试（另1子夹具ignored）、6显式SHM、独立优化构建/help通过。
+           独立构建与首集成桥SHA不同，最终0097228b桥已补跑同六项通过；共32项不同测试，不计为38项。
+           源码/产物前后身份及真实回收通过；正式ca14 clean、四件SHA不变、六服务停止且无控制进程。
+           最终正常RRD官方同版verify通过：1000帧/10类/11实例，gap/drop/reject均0。
+           Orin定向软件已验收归档，独审/root通过；本轮SIGINT夹具0帧仅证明生命周期。
+           新证据入口 .verify/robot_viz_orin_2026-09-30/summary.json；本轮未重跑完整workspace。
+           正式ca14安装未改、未做新硬件动作，右H2/D15与deployable=false不变。
+           本阶段仅本地提交、不push；下一步真实发布者观测及硬件门仍需各自验证。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。
@@ -200,11 +210,11 @@ robot-system/
 
 ## Rust 规范
 
-- **Rust nightly 是硬要求**，**严格不用 stable**（`rust-toolchain.toml` pin `channel = "nightly"` 或 `nightly-YYYY-MM-DD`）。对应 `docs/00_design.md` §9。
-- **Edition 2024**。**不写 `rust-version`**：自动跟随最新 nightly；需要复现构建时用 `rust-toolchain.toml` pin `nightly-YYYY-MM-DD`。
+- **Rust 默认使用最新 nightly，严格不用 stable**。`rust-toolchain.toml` 保持浮动 `channel = "nightly"`，使用前先更新最新工具链；对应 `docs/00_design.md` §9。
+- **Edition 2024**。**不写 `rust-version`**；记录实际 `rustc -Vv` / `cargo -V` 用于溯源，不因记录或复现需求默认 pin 日期。
 - **核心 crate 默认不用 nightly-only feature**：`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1` 原则上不写 `#![feature(...)]`；确需启用必须在 crate 顶部注释列出并过 review。目的是**降低 nightly 升级导致的回归风险**，不是留 stable 后门。
 - 工具类 crate（`robot-cli` / `robot-viz` / `robot-rpc` / `robot-s2-bridge` / `robot-tests` / `robot-recorder`）可自由使用 nightly feature。
-- nightly 回归风险靠**pin 具体日期 + 原地回滚到上一已验证日期**解决；CI 不跑 stable 回退演练。
+- 新 nightly lint 优先就地修复；仅真实编译回归阻断时临时回退已验证日期，并登记原因、影响范围与解除条件，修复后恢复浮动 nightly。CI 不跑 stable 回退演练。
 - Allocator 按 §0 表：S0/S1 用系统默认 + RT 禁 alloc；外部工具（cli/viz/rpc/s2-bridge）用 mimalloc。
 - `panic = "abort"` **仅限** `[profile.release.package.robot-s0]` / `[profile.release.package.robot-s1]`；其他 crate 保留 unwind。
 - 控制流多分支用 `match`，避免 if-else 链（全局 §5）。
