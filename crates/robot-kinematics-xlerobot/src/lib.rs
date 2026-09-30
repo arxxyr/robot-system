@@ -1,4 +1,8 @@
-//! `XLeRobot` 5-DOF 手臂 IK 实现。
+//! `XLeRobot` 5-DOF 手臂 IK 与三轮全向底盘纯运动学。
+//!
+//! [`base`] 提供具名 SI 机身/轮速、正逆变换和同比缩放；几何与轮速上限须由调用方显式提供。
+//! 该模块不含寄存器 raw 换算、固件 Phase/模式处理、里程计、通用底盘 trait 或 S0/S1 接入。
+//! 下面的算法与接口说明仅适用于手臂 IK。
 //!
 //! # 算法源
 //!
@@ -84,6 +88,8 @@
 //! 完成；本 impl crate 不做 startup 校验，只暴露 `info()` 元数据）。
 //!
 //! [`KinematicInfo::joint_names`]: robot_kinematics::KinematicInfo
+
+pub mod base;
 
 use robot_kinematics::{ArmIkSolver, IkError, IkSolution, JointLimit, KinematicInfo, Pose};
 

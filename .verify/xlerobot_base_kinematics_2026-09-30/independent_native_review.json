@@ -1,0 +1,59 @@
+{
+  "schema": "XLEROBOT_BASE_SI_INDEPENDENT_NATIVE_REVIEW_V1",
+  "status": "PASS",
+  "scope": "纯运动学软件/实际QA/归档完整性综合独审；未运行Cargo/测试/SSH/UART或改候选。",
+  "summary": {
+    "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r2/summary.json",
+    "sha256": "ffe3e31765b64af9bf24ce463c54464a16ad08b7ed1cef25abdf66bed4d24927",
+    "bytes": 90628
+  },
+  "reviews": {
+    "dynamic": {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r2/independent_dynamic_review.json",
+      "sha256": "3933201aa833d5b1b795e62f55f7b6e6960273f8f68f8b420922d2507fff31dd",
+      "bytes": 1293
+    },
+    "inner_archives": {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/independent_archive_review.json",
+      "sha256": "913ff3717e2397fb86ab72ccc76378a6301e7ff0bb184e6ac508910836713c04",
+      "bytes": 1935
+    },
+    "outer_archive": {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/independent_outer_archive_review.json",
+      "sha256": "6698222dff3fa1833b813447223f90a7c89aa5306675d0565533f54643e5a0b5",
+      "bytes": 1205
+    }
+  },
+  "verified": {
+    "source_files": 590,
+    "source_aggregate": "0e580bd954d29014534c6d04707873c8e779e75ffb7b93add2a5095d136d4eaa",
+    "base_sha256": "8c49aded71bc718ee03487e5ae5fc1a59b6cf1358e099ed9d899f802234e4488",
+    "lib_sha256": "a919d5f6dc30d51b9a674a28b541025d0503381cde746e6ff52feed58112ebd1",
+    "QA": "actual latestnightly update→fmt→根Clippy→完整crate30(21新base+9既有Arm)，0failed/0ignored/默认线程；一次。",
+    "precommit": "独立新fmt→根Clippy，同source/compiler，19直接完成；未重跑30。",
+    "natural_reaps": "76直接child含r1的28，17本机owner，原launch/session/logSHA/deadline/预算与真实wait绑定；无kill。",
+    "r1_preserved": "原Clippy101与首hostexit1保留，原30NOT_RUN；新r2未覆盖旧结果。",
+    "archives": "r1 720+自索引+156目录=877；r2 805+自索引+176目录=982；外115+自索引=116。CRC/安全集合/逐SHAbytesmode、内文件uidgid/副本逐字通过；目录不臆测未索引uidgid。",
+    "old_H2": "589/83048源、七ELF及两原生包/manifest所有前后身份相同且对应原已审文件。"
+  },
+  "reviewer_failure_retained": {
+    "cause": "首审查器误要求已知Clippy101 runner_error为空，修正为精确允许原nonzero-exit字段；只改审查器不改源/原件/测试门。",
+    "originals": [
+      {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r2/independent_dynamic_review_r1_failure.json",
+        "sha256": "b25d76e1abc5b822053444c59c8f2adbe3e459d671b087d06f0911f3aacb9bae",
+        "bytes": 684
+      },
+      {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r2/independent_verify_dynamic.r1.py",
+        "sha256": "d5286b21fc27989bb1d41170a823d94afdcd42758ddfd3bdd1b5bf5bcb6cea8b",
+        "bytes": 14929
+      }
+    ]
+  },
+  "limits": [
+    "纯数学通过，不是S0/S1底盘速度/停止链路接入、固件Phase/单位/零速合同或硬件动作验收。",
+    "本轮未跑全workspace/release/H2六配方，原H2硬件FAIL/维护run02FAIL/NEEDS、供电PENDING和D15 OPEN/DEFERRED不变。",
+    "审查附件产生于原包冻结后，另归档，不回填原包或原summary；B0仅隔离草稿非本数学590。"
+  ]
+}

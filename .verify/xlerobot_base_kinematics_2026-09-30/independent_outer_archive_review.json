@@ -1,0 +1,30 @@
+{
+  "schema": "XLEROBOT_MATH_OUTER_ARCHIVE_INDEPENDENT_REVIEW_V1",
+  "status": "PASS",
+  "result": {
+    "archive": {
+      "sha256": "075b1802d6e3fe554945bc03f548c3cae872c079fad380d72005e078a431e977",
+      "bytes": 19785482
+    },
+    "index": {
+      "sha256": "3cc17eecc6420ede7451f6ea36de254bfd761b93ce9962365573e079ae5b3618",
+      "bytes": 25495
+    },
+    "counts": {
+      "indexed_files": 115,
+      "regular_members": 116,
+      "directories": 0
+    },
+    "status": "PASS",
+    "checks": 585,
+    "failures": []
+  },
+  "inner_review": {
+    "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/independent_archive_review.json",
+    "sha256": "913ff3717e2397fb86ab72ccc76378a6301e7ff0bb184e6ac508910836713c04",
+    "bytes": 1935,
+    "status": "PASS"
+  },
+  "scope": "完整gzip CRC/ISIZE、安全唯一116个regular成员、115个原件逐SHA/bytes/mode/executable与索引及包内逐字相同、内外索引原文一致、两内包完整SHA绑定、全部原件及包/索引首尾不变。",
+  "limits": "仅归档完整性；不审算法或动态结果，不改变r1 FAIL/冻结summary；没有运行测试/Cargo/SSH/UART，只新增两份审查报告。"
+}

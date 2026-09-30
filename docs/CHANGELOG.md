@@ -10,6 +10,11 @@
 
 ---
 
+## 2026-09-30 · XLeRobot 三轮SI运动学
+
+新增 `robot-kinematics-xlerobot::base`：前8/左7/右9正逆运动学、显式几何和轮速上限、同比缩放及保守舍入修复；异常数值和轮序拒绝，原手臂IK不改。Orin最新浮动nightly5c、fmt/根Clippy与crate30（21新底盘+9原手臂）通过，首Clippy101/测试NOT_RUN保留；[软件证据](../.verify/xlerobot_base_kinematics_2026-09-30/summary.json)按590输入0e580bd9绑定。
+运动学供后续S1使用，raw/Phase合同、S0/S1速度执行链和实际底盘动作仍待闭环；无安装/push/新GO。人工断电PENDING，原硬件FAIL、D15 OPEN/DEFERRED及deployable=false保持。
+
 ## 2026-09-30 · 独立维护的精度/停止证据分类与新原生冻结
 
 维护软件将精度、完整停止字段和逐项身份后验分开，安全收尾失败粘性不被最终零值覆盖；原步幅/±4/800ms不扩，新V2绑定显式维护根目录且拒旧GO。两端同35与默认零动作入口通过，r4未执行轮漂移漏项修复并保留原件。底盘固件合同未知，live入口固定三轮DEFERRED，快照允许READ但不WRITE/enable；旧硬件NEEDS/回程FAIL不改。

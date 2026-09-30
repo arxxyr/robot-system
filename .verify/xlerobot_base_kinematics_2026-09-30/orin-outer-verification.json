@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "archive": {
+    "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-si-orin-evidence.tar.gz",
+    "sha256": "075b1802d6e3fe554945bc03f548c3cae872c079fad380d72005e078a431e977",
+    "bytes": 19785482
+  },
+  "index": {
+    "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-si-orin-evidence.index.json",
+    "sha256": "3cc17eecc6420ede7451f6ea36de254bfd761b93ce9962365573e079ae5b3618",
+    "bytes": 25495
+  },
+  "indexed_files": 115,
+  "tar_members": 116,
+  "sha_bytes_mode_verified": true,
+  "independent_reviews": "另行归档，原包不回填"
+}

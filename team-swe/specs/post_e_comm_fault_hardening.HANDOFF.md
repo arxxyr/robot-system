@@ -2,6 +2,14 @@
 
 ## 当前步骤
 
+### XLeRobot 三轮纯运动学（2026-09-30，Orin 软件门通过）
+
+按现场上游布局实现具名SI机身速度与轮角速度，电机顺序固定前8/左7/右9；正逆变换留在 `robot-kinematics-xlerobot::base`，没有默认几何或实测轮速上限。超限三轮使用同一比例，浮点舍入略超上限时统一比例保守下调一ULP，重算仍超限即拒绝；不逐轮裁剪。所有输入及中间非有限值、非法几何/顺序和比例下溢0均显式拒绝，原手臂IK算法与接口不变。
+新Orin隔离候选基于1c5758，仅两源变化；590项输入聚合 `0e580bd954d29014534c6d04707873c8e779e75ffb7b93add2a5095d136d4eaa`。实际更新浮动nightly仍5c543b0b8，fmt/根Clippy及完整crate lib默认并行30项通过、0failed/ignored；21新底盘是30子集，另9为原手臂，非全workspace或H2六配方。
+首轮Clippy similar_names/101及30项NOT_RUN保留；仅改cfg(test)局部命名后新候选通过，不回填旧轮。主树相同两源已整合，提交前实际fmt→根Clippy与590逐项绑定通过；[独审/root与归档入口](../../.verify/xlerobot_base_kinematics_2026-09-30/summary.json)保存本机37原件/自索引及115原件/自索引的两轮Orin统一外包。首本机normalize与动态审查器runner_error口径误拒原件亦保留；封包后独审另附，不回填原包/summary。
+该阶段不含raw轮速换算、Phase/零速语义、里程计、通用BaseKinematics trait或S0/S1执行链。1c的旧H2七件与本候选分开；以新HEAD做H2须另行同源原生冻结。下一小件先补Phase和正反向死区只读诊断元数据，新增名在bus所有四写API及poke开串口前拒写，尚未实现/读硬件。
+没有UART、上扭、模式/EEPROM写、正式安装/服务启动/push或新GO；人工断电确认PENDING，旧右H2整体FAIL、本次左腕回程FAIL、D15 OPEN/DEFERRED及deployable=false不变。
+
 ### 维护精度/停止分类与 H2 新 Orin 冻结（2026-09-30，纯软件门通过）
 
 新增维护入口 `scripts/run_hardware_maintenance.py`，默认 PLAN_ONLY。分别记录位置精度、17×3 停止寄存器及身份后验；精度 FAIL 不短路每件保护/引用、每个服务、进程、USB 占用和身份核验。停止字段必须完整且为 int0，收尾 ACK/读取失败保持粘性 NEEDS；后来的零值不覆盖旧失败。原 +24raw、±4raw、800ms 保持，超过期限才返回的合格读值也拒绝。

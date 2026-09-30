@@ -9,6 +9,11 @@
 
 ---
 
+## 2026-09-30 · XLeRobot 三轮纯运动学软件门
+
+前8/左7/右9具名SI正逆变换、显式几何/轮速上限、三轮同一比例限速与一ULP保守舍入修复；非有限输入/中间值、非法几何或轮序及scale下溢0拒绝，原手臂IK算法不改。Orin最新nightly5c下fmt/根Clippy、crate lib默认并行30项/0failed/ignored通过；21新底盘为30子集，9原手臂，不称全仓或硬件。首Clippy101/30NOT_RUN保留。
+两源整合及提交前质量门按590输入聚合0e580bd9绑定，[证据入口](../.verify/xlerobot_base_kinematics_2026-09-30/summary.json)。无raw/Phase/模式/里程计或S0/S1执行链；底盘动作未验证，人工断电PENDING、旧H2/左腕FAIL、D15 OPEN/DEFERRED及deployable=false保持。
+
 ## 2026-09-30 · 维护分类与 H2 新 Orin 冻结（纯软件）
 
 维护入口分别判定精度、完整17×3停止字段和逐项身份后验，收尾失败保持粘性；原+24/±4/800ms不扩。两端同35方法/default PLAN_ONLY通过，root复验是同35；r4未动作轮漂移漏项已修，原FAIL保留。三轮固定DEFERRED，完整假执行204READ/底盘0WRITE与0enable，不能整体PASS；旧run02的NEEDS及+6误差不改。

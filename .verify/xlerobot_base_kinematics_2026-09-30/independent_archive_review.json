@@ -1,0 +1,60 @@
+{
+  "schema": "XLEROBOT_MATH_NATIVE_ARCHIVE_INDEPENDENT_REVIEW_V1",
+  "status": "PASS",
+  "archives": [
+    {
+      "run": "xlerobot-base-orin-r1",
+      "archive": {
+        "sha256": "e63fe7369d93aa7d51bea91808b7a2fed88073808d2515886bd56cf59b0d61eb",
+        "bytes": 9673172
+      },
+      "index": {
+        "sha256": "5eaf9d3584371abf62cfbde093b986a8bf6d4301d917931e8c9c3cab6a8ba7af",
+        "bytes": 226016
+      },
+      "counts": {
+        "indexed_files": 720,
+        "indexed_directories": 156,
+        "regular_members": 721,
+        "total_members": 877
+      },
+      "directory_uid_gid_observed": [
+        [
+          0,
+          0
+        ]
+      ],
+      "status": "PASS",
+      "checks": 4645,
+      "failures": []
+    },
+    {
+      "run": "xlerobot-base-orin-r2",
+      "archive": {
+        "sha256": "a1e4758091408501a655f838509e5b765f00bce7353465bd94d536ab5655219b",
+        "bytes": 9873777
+      },
+      "index": {
+        "sha256": "4dd2689f229517ed62d92b066aa406dec9e53887e1eb616655ce617a3a43785d",
+        "bytes": 250397
+      },
+      "counts": {
+        "indexed_files": 805,
+        "indexed_directories": 176,
+        "regular_members": 806,
+        "total_members": 982
+      },
+      "directory_uid_gid_observed": [
+        [
+          0,
+          0
+        ]
+      ],
+      "status": "PASS",
+      "checks": 5195,
+      "failures": []
+    }
+  ],
+  "scope": "只核归档完整性；完整gzip至EOF验证CRC/ISIZE、安全且唯一成员集合、无链接/特殊文件、全部文件SHA/bytes/mode/uid/gid与索引相符、内外索引原文相同、全部native-extracted逐字及mode/成员集合相同、首尾身份不变。目录索引只含path/mode，目录uid/gid记录观察值，不假称绑定未索引字段。",
+  "limits": "不审自己算法，不重判动态结果；r1原Clippy FAIL及r2真实结果保持原文；无测试/Cargo/SSH/UART，无原件/源码/summary修改。"
+}

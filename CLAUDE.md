@@ -140,6 +140,10 @@
            12是历史194子集，本轮非全仓/硬件；维护35另源另门不混入71。提交前fmt/根Clippy再次通过。
            独审/root通过；证据 .verify/hardware_maintenance_classification_2026-09-30/summary.json，两份Orin原包不回填。
            人工断电待答、H2/左腕原FAIL/D15 OPEN_DEFERRED/deployable=false不变；底盘纯运动学独立实施、未接S0/S1。
+           当前底盘阶段A：XLeRobot前8/左7/右9具名SI正逆变换/同比限速，几何与上限显式，原ArmIK不变。
+           Orin latest nightly5c、fmt/根Clippy、crate30（21底盘子集+9手臂）通过；590聚合0e580bd9，首lint101/30NOT_RUN保留。
+           独审/root及提交前质量绑定通过；证据 .verify/xlerobot_base_kinematics_2026-09-30/summary.json，非S0/S1/raw/Phase/硬件。
+           下一小件Phase/正反死区只读诊断元数据，当前仅设计审查；人工断电PENDING、H2/左腕FAIL、D15/deployable=false保持。
            同日维护硬件：现场XLeRobot底盘前8/左7/右9既有速度模式1只读确认；脚本两端同19项/仅计划与独审通过。
            首uv父壳前置拒绝UART0；新run仅左腕947→967→953，回程+6超±4/800ms，整体FAIL，未重试。
            断扭ACK、17电机终读零扭矩/零速度、300child回收及独立无UART后验通过；原入口/位置/后验FAIL保留。

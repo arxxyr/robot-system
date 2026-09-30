@@ -1,0 +1,2957 @@
+{
+  "status": "PASS",
+  "source_files": 590,
+  "aggregate": "0e580bd954d29014534c6d04707873c8e779e75ffb7b93add2a5095d136d4eaa",
+  "files": {
+    ".cargo/config.toml": {
+      "sha256": "76e0476676c2eef3995a4963cb110de7227dd31b7a48384ca6520b408181444f",
+      "bytes": 886,
+      "executable": false
+    },
+    "3rd-party/Cargo.lock": {
+      "sha256": "0ed49167c8975cf68b3e2ac12c3a82ab6719d3d30effc2aa4d57c415a30baf17",
+      "bytes": 26646,
+      "executable": false
+    },
+    "3rd-party/Cargo.toml": {
+      "sha256": "64a4f016188a0ab7b67a7f69ec36c7827bce7eacadfdfec68f6e92ab0264d5ec",
+      "bytes": 1383,
+      "executable": false
+    },
+    "3rd-party/flatc/README.md": {
+      "sha256": "8372de816611cffc2bd2e7cc71c7caf616c71286ce9a4f14867ec7cb0b5c196b",
+      "bytes": 3795,
+      "executable": false
+    },
+    "3rd-party/flatc/VERSION": {
+      "sha256": "67181dc585e906a7ee8ca415c68caf9dfbfc7a75c9304c0a35fb79f0ae8141b1",
+      "bytes": 9,
+      "executable": false
+    },
+    "3rd-party/flatc/checksums.sha256": {
+      "sha256": "ad51a961b68c82384a606cf0388a6a4315d505e7ca107e54999e4796bba8db85",
+      "bytes": 256,
+      "executable": false
+    },
+    "3rd-party/flatc/darwin-arm64/flatc": {
+      "sha256": "7ff99c0fd907bfa9c8bfff408ffe317885f2754752f03625a464b1b79ce5d4d7",
+      "bytes": 7335904,
+      "executable": true
+    },
+    "3rd-party/flatc/linux-aarch64/flatc": {
+      "sha256": "910f4fd21e2f9768bfe961ae5e9a86304c06e345ebe30575375d8870a33be8fc",
+      "bytes": 4194568,
+      "executable": true
+    },
+    "3rd-party/flatc/linux-x86_64/flatc": {
+      "sha256": "7d16cbedc9721dc6985a810438038531cd8e4e6e11630af707d3a4c0c40f91f4",
+      "bytes": 6738128,
+      "executable": true
+    },
+    "3rd-party/iceoryx2-cal/.cargo_vcs_info.json": {
+      "sha256": "56ac8a3cf653b53de426f4fbfd761203063c8f838bc1d10acaf24052be02e829",
+      "bytes": 106,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/BUILD.bazel": {
+      "sha256": "3aa17c2721245805b37b654625101d25e4e32043eabb357e03cb506584365fa6",
+      "bytes": 2151,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/Cargo.lock": {
+      "sha256": "db9f384d850c38980e1ae2e18aca0c8688f179e2db5780aabcbef0570d966ccb",
+      "bytes": 26423,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/Cargo.toml": {
+      "sha256": "1757794813ae1f18f900fb0482ca03497c04c1a67861987a8e8453fe44df6172",
+      "bytes": 2901,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/Cargo.toml.orig": {
+      "sha256": "ccf1cd0087eab903d59049888d8f0415f9bdf35b511df09744a38947e7d9215b",
+      "bytes": 1954,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/LICENSE-APACHE": {
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+      "bytes": 9723,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/LICENSE-MIT": {
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "bytes": 1023,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/NOTICE.md": {
+      "sha256": "4001e4a44dc66b4092318f2cc7d464df72de96e3fa2ac43ac65665e5e67b601c",
+      "bytes": 1718,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/arc_sync_policy/mod.rs": {
+      "sha256": "fbd0f1a917937e612f480ec121708f26a2a6d513070333b5f1d58d8b8b13c107",
+      "bytes": 4315,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/arc_sync_policy/mutex_protected.rs": {
+      "sha256": "b855cc73c14e663589685c8a6604c401ad4645e2aaa026c35f83929ee385b5f7",
+      "bytes": 4302,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/arc_sync_policy/single_threaded.rs": {
+      "sha256": "4c62925bb0b4a3da25e0c8d995e8758f654aa84283f98b427ba3f41a8b346393",
+      "bytes": 2302,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/arc_sync_policy/single_threaded_compile_tests.rs": {
+      "sha256": "e25dda7833eb7a8b95e447acddea15999275ad35f024e81e4fb4c25f4bccbc8d",
+      "bytes": 1429,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/communication_channel/mod.rs": {
+      "sha256": "ca00d3c02a2eee65c0f692673a434dc3626ba2cbd760106c189e49c2a2573d82",
+      "bytes": 9920,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/communication_channel/posix_shared_memory.rs": {
+      "sha256": "d7ddda6de21963c3001d87a4996bf1f3df093db082eefb41124a49427a5e50a3",
+      "bytes": 10488,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/communication_channel/process_local.rs": {
+      "sha256": "fad335077339bd72430476f0bb3405692d59dc16c3f55fa9a63f2f5f566b8389",
+      "bytes": 12781,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/communication_channel/recommended.rs": {
+      "sha256": "35d9745d9743b290c66b93da542292700f7a4917bb7654b68e52edce43d50ddf",
+      "bytes": 982,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/communication_channel/unix_datagram.rs": {
+      "sha256": "bf7d190efcbe5b750e3344cdf818df58d2de2ab54d8dd02dda932c15d3f42d87",
+      "bytes": 16815,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/dynamic_storage/dynamic_storage_configuration.rs": {
+      "sha256": "08f1d22a116f3508ae92b0377be743ec217781326a168287ba71b488ff9fd3aa",
+      "bytes": 3762,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/dynamic_storage/file.rs": {
+      "sha256": "4b294d67093d913f945903fb64877c5574016106d12f0c2769342cc745550ef2",
+      "bytes": 23219,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/dynamic_storage/mod.rs": {
+      "sha256": "2558186c05a7b55d9466f3a5f6713d37e6341d7e7f034abbb8dd61cc888179cf",
+      "bytes": 8650,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/dynamic_storage/posix_shared_memory.rs": {
+      "sha256": "16c1650fbd59df1a503938c14cb66f1aae577a71f62fe82a32901ec99da51f7e",
+      "bytes": 20922,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/dynamic_storage/process_local.rs": {
+      "sha256": "a2a8beb502dcc46e888bc9c56a3203e9efc634e3bb7ef97dc3a198027edfdac7",
+      "bytes": 17886,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/dynamic_storage/recommended.rs": {
+      "sha256": "ba1d4807f2f872826027702a8192013a37be91ecf17f81d546cd1ee2a2a6c0b6",
+      "bytes": 1570,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/common.rs": {
+      "sha256": "012f65467ca334aa48aa1ba24dd63b504480ececec86578179c74ee930835c51",
+      "bytes": 24187,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/id_tracker/bit_set.rs": {
+      "sha256": "5e7811f470596b7430c0d8c7a2d060bd185a461933ba73f24d51a61d8e7171cd",
+      "bytes": 1441,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/id_tracker/mod.rs": {
+      "sha256": "afbe81356e9c81c8f39529aa5e7467222d2dafdf9efe5b6dc6a80ead4f943588",
+      "bytes": 1999,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/mod.rs": {
+      "sha256": "2748b562422a5f8315e8782c036078471bc8c0333b5b76ea8dac432532fe00f7",
+      "bytes": 4655,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/process_local_socketpair.rs": {
+      "sha256": "4df0492431b0dab854270965fd191f05165fe4b53b18de658ef4cd960931d7ec",
+      "bytes": 16528,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/recommended.rs": {
+      "sha256": "92a4d7f2a7a6570279919e20125eff479d382eb7c37d65436bf02dab3c32d698",
+      "bytes": 867,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/sem_bitset_posix_shared_memory.rs": {
+      "sha256": "75799e64e92447d01466cb855245736d4ad2f6d4727793a93a6af100905bd889",
+      "bytes": 886,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/sem_bitset_process_local.rs": {
+      "sha256": "1adc28d1ae2b69dceca0c600bf910cc89f16e7d4025f312519f315d0d00bfcef",
+      "bytes": 880,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/signal_mechanism/mod.rs": {
+      "sha256": "7bd118edc14474ba8d6a90a438a59e4e05b091e7f1071247371d0d7bd50fa7a9",
+      "bytes": 3099,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/signal_mechanism/semaphore.rs": {
+      "sha256": "68495f71e3d0d86ae5b49acab5238d84c4e5a249fc4aa9735cb0cf0cd5504aac",
+      "bytes": 3524,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/event/unix_datagram_socket.rs": {
+      "sha256": "517049d5e48c6f5a207a7d57205e36d1b17456063e5c28aca8a76dfbd85dae7f",
+      "bytes": 13870,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/hash/mod.rs": {
+      "sha256": "d00766849914b855a2b7c22db97f2636f0942d28edd5e64947e6ae03b1bc7f91",
+      "bytes": 1911,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/hash/recommended.rs": {
+      "sha256": "e9f6ac30026a29b4d6c943e7cad407e716982827804a6fef68993934ff21402a",
+      "bytes": 654,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/hash/sha1.rs": {
+      "sha256": "fc8f0b02bd5ba7a0292e9c32c5b61c77dc6a96f3cadfe1119beff5cc98216a7a",
+      "bytes": 1171,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/lib.rs": {
+      "sha256": "aeb668024bde74dfc7a825f798e32da7f5e0f7306afd5cd93416db0bfb58bc32",
+      "bytes": 1119,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/monitoring/file_lock.rs": {
+      "sha256": "36081e62ba32f7693e308aeb255b31dbf87afbd800160eb36e80da3ff4480bf4",
+      "bytes": 14238,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/monitoring/mod.rs": {
+      "sha256": "95c345bf88202713f7e6a94285752cb3801f1c847db20a00731a7c994001b5e4",
+      "bytes": 7938,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/monitoring/process_local.rs": {
+      "sha256": "bdfd2929cafaebd19a98535d072c581acc4460829ede03fbbb905a14c453d582",
+      "bytes": 12021,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/monitoring/recommended.rs": {
+      "sha256": "c8ae2165943ef60e72712b49b69f025ec226b5a4f98ea92ae29cf60309847d45",
+      "bytes": 915,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/named_concept.rs": {
+      "sha256": "79ede26302695e93e0075b56b05d04a084e21dbe7857235f4b6bf5685472ca06",
+      "bytes": 9925,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/reactor/epoll.rs": {
+      "sha256": "6e32f54fde71a5b7e01f5a093b14d61046a51e69f345fd970f2085bbd5307b20",
+      "bytes": 6359,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/reactor/mod.rs": {
+      "sha256": "98d6fd6c258215025824d1fc623edc7922a8e225c9aa2ca6729205ffc4baddf0",
+      "bytes": 2961,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/reactor/posix_select.rs": {
+      "sha256": "410d87ddeebb1e88afb9f9a785f979cde73056e02e647f1d793339dd36a4b6b4",
+      "bytes": 5641,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/reactor/recommended.rs": {
+      "sha256": "80470db4b87aee743c39678a9de91035a05912878f62927b5b7bf8402e6c45c0",
+      "bytes": 1083,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/resizable_shared_memory/dynamic.rs": {
+      "sha256": "75e0334452a3ecd7e1b7712602735db07bdf5a4bb15d15c052c7f18531d640b4",
+      "bytes": 30094,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/resizable_shared_memory/mod.rs": {
+      "sha256": "c6eb5ceb45324d5e1a2d9c5a36b0e0a3e32d153ce91ab44b0eed3660c7df6231",
+      "bytes": 12315,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/resizable_shared_memory/recommended.rs": {
+      "sha256": "50a41c423d408457f713d671111400fc7efec89600f675bd680eaa80e677d54b",
+      "bytes": 1159,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/serialize/cdr.rs": {
+      "sha256": "314e6e5b0573480d357dd6d049a3185640368ba2946f950f9bc9337d1c7af62b",
+      "bytes": 1475,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/serialize/mod.rs": {
+      "sha256": "5b2cf3e557cfd5920948303b6e2229ba668ed941d05a20a1e9a254e045137a61",
+      "bytes": 2663,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/serialize/postcard.rs": {
+      "sha256": "cfa781de41199ae3247aea4190aebcc2caff0fb943753969ffbfeffd6678233c",
+      "bytes": 1585,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/serialize/recommended.rs": {
+      "sha256": "f701305d9d0084795f1ee7e10d70bcfdf7301fe555a5a31b316e2d6295fe2a59",
+      "bytes": 789,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/serialize/toml.rs": {
+      "sha256": "b479ca520fbfbeb634110e521638a8762ac3cb6f7a5824735684ab7f7923325f",
+      "bytes": 1610,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shared_memory/common.rs": {
+      "sha256": "b8d4cf070488f20fabf3bfa7efe1de69873c15327a861fc045be35f95b7e2587",
+      "bytes": 17966,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shared_memory/file.rs": {
+      "sha256": "4dd542d2d0ba62eee12f542d00b3490afb219a4a329ed653c82608207f890614",
+      "bytes": 715,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shared_memory/mod.rs": {
+      "sha256": "60b0ba0f56f17bd11756defb4ff925ccc28cc649d9297b02cbf7c802bb1de506",
+      "bytes": 8372,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shared_memory/posix.rs": {
+      "sha256": "a7f234292b0c091edca0fcfe38dffb8f7cdc6ea7e03e82c72df00d3f8b9df32f",
+      "bytes": 730,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shared_memory/process_local.rs": {
+      "sha256": "bc6932bab664649024bec4eb4e9ff05e9de98cf2b6526ba37a6ddeddb735f9ae",
+      "bytes": 724,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shared_memory/recommended.rs": {
+      "sha256": "c62721a6a219cf0d1cb7b99c07e02321c8921fcf53e88da01e7fee3606895d24",
+      "bytes": 947,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shm_allocator/bump_allocator.rs": {
+      "sha256": "b19fb62bfc1a6c91f54638520853fada7cf65fbf223071d2d3dd0b1d8abfc9d7",
+      "bytes": 4686,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shm_allocator/mod.rs": {
+      "sha256": "5f012aeaf6a3ee5dbfdab87f037e8dbd025da150d51225a9b1a51bfa4f35cd3e",
+      "bytes": 6098,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shm_allocator/pointer_offset.rs": {
+      "sha256": "e0a8ff78c22496427ffa01965404b8bb31bea562d2e854d6b16e8c9177591f36",
+      "bytes": 3347,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/shm_allocator/pool_allocator.rs": {
+      "sha256": "bbc80dc8dd5c33d9c233f14cff7cb543f3fe757cf7247cab96aabe7f3b3a190f",
+      "bytes": 7985,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/static_storage/file.rs": {
+      "sha256": "ee0b13004d230a419c287b3a9b9d250b0c2d352830fb31e1f6ff6bde17ffcf65",
+      "bytes": 18193,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/static_storage/mod.rs": {
+      "sha256": "15f48dad6c099a78022a12f6e8dc54bf6e1d314d218fdb4a7f856e5069db8100",
+      "bytes": 6230,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/static_storage/process_local.rs": {
+      "sha256": "17dfd61e5c832982a9fee4908b849ba3cf9993283b05cee98a5bf0eed0e09562",
+      "bytes": 12754,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/static_storage/recommended.rs": {
+      "sha256": "4669f5ae22dac9fbbcde201a08f6539e405d9964ce4e71d674bd62596bd4859e",
+      "bytes": 912,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/testing.rs": {
+      "sha256": "0896514caa08d316bae273142990826fd8342bb72ea260dd3971867a70458745",
+      "bytes": 1222,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/zero_copy_connection/channel_state.rs": {
+      "sha256": "98a37e994d3ee550494ebde10dc7e87767ee29c4bee4b69120bf1ef0fb533fbc",
+      "bytes": 10154,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/zero_copy_connection/common.rs": {
+      "sha256": "a89bc3df85868edc96f8463b0a648cbeefd7e4528d7d5b91c1552ae9a819b28e",
+      "bytes": 60964,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/zero_copy_connection/file.rs": {
+      "sha256": "ffc8e177ee52352d4fb16ba27d47bf7e44cbea111cdb6b8708e7a65a2825bd5f",
+      "bytes": 676,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/zero_copy_connection/mod.rs": {
+      "sha256": "514e9a3eb81ff9970f610ea0074ca97edf29db5f51230f1ead21dddf17365fb3",
+      "bytes": 27561,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/zero_copy_connection/posix_shared_memory.rs": {
+      "sha256": "9a891442acbf2cbcc6128f78b4b9225e61ccf3273cde60b595728ccb98099f29",
+      "bytes": 694,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/zero_copy_connection/process_local.rs": {
+      "sha256": "1d815ebecf82b5291f1bf49042d045d6eda03a0a62f11ca994fee6f11dd92c1a",
+      "bytes": 688,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/zero_copy_connection/recommended.rs": {
+      "sha256": "1893e65b730de8c189e2f4f8454da28c9d29bf0291c99bbcf0000fe097295d99",
+      "bytes": 977,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/zero_copy_connection/tests.rs": {
+      "sha256": "5bc9725edde33ad69f12818ba061fb068472781cf8eb9fdbdff88fa33202ad5d",
+      "bytes": 69892,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/src/zero_copy_connection/used_chunk_list.rs": {
+      "sha256": "126b3c5775173d8675a433dabdc98d5537eb112f4dd2a3aab9cd860691d1140b",
+      "bytes": 7350,
+      "executable": false
+    },
+    "3rd-party/iceoryx2-cal/tests/tests.rs": {
+      "sha256": "22ff127ea915b7a6f9778504c7df0aaac4ac214b420ab34a76af2bab80dde0a2",
+      "bytes": 581,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/.cargo_vcs_info.json": {
+      "sha256": "550b0fb130f540c7577385dc90f170c30d5d96b5a8336b7788ecbc47de6b35ed",
+      "bytes": 102,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/BUILD.bazel": {
+      "sha256": "2d877ad681065cf8aef95df368680a0f80dd4cb7a53a568b258760696a154163",
+      "bytes": 2231,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/Cargo.lock": {
+      "sha256": "4f2452e94c8bbe90ea24a4f3657965d041733f518b4533aaa5d909e2ee05850b",
+      "bytes": 28170,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/Cargo.toml": {
+      "sha256": "0c1ec0900bdd7925e9ed3676902b95dac807a7c8293e89beb2e8cb4dd4add799",
+      "bytes": 3082,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/Cargo.toml.orig": {
+      "sha256": "ec79ec5d1d0d4649f5517a73de4ca923fa9d297db54570ecf8e96f1a2d4b3625",
+      "bytes": 2254,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/LICENSE-APACHE": {
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+      "bytes": 9723,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/LICENSE-MIT": {
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "bytes": 1023,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/NOTICE.md": {
+      "sha256": "4001e4a44dc66b4092318f2cc7d464df72de96e3fa2ac43ac65665e5e67b601c",
+      "bytes": 1718,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/README.md": {
+      "sha256": "542930a981c3e0e6284a6f6469353bc31586c924102a8fedac9d6c946fec4586",
+      "bytes": 10579,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/active_request.rs": {
+      "sha256": "054f2e09e549bd9780102a40571c5ab17add9a549635c4940efd5ea6cd82d731",
+      "bytes": 25524,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/config.rs": {
+      "sha256": "75f796e8116362d0d55bb66e23a254274aaffd639296e0274e0150b2301e7f21",
+      "bytes": 33647,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/constants.rs": {
+      "sha256": "b626f4abd706398770eed3dced5a25c6d30c8b61728170645f3798ba18a69ffe",
+      "bytes": 1818,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/identifiers.rs": {
+      "sha256": "56a534e7b581aaf510e28a6d924ca48ed949a79cb1b549ae75ac2c7e9dc79d43",
+      "bytes": 6486,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/lib.rs": {
+      "sha256": "efb6af9df25b2e8b812d48524a6d2b0a960498dd2ca4960c33e190b65f9ac377",
+      "bytes": 20473,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/node/global_management_segment.rs": {
+      "sha256": "bf834c427519a42d44383a19448714d2e1081de3d5aa07a6929ad772a976cec7",
+      "bytes": 3223,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/node/mod.rs": {
+      "sha256": "2a84ffa920ccf0d21a772e47a214727374492ee2145a80c688052c749bf3c392",
+      "bytes": 64508,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/node/node_name.rs": {
+      "sha256": "4ccddfc4185d2cb7e4aab6790ff88d7f92211797acae6f4a0214952aef4fc542",
+      "bytes": 3526,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/pending_response.rs": {
+      "sha256": "810c72582f413e3f5ec3d7f2dd5df5a3e561153a3f2239d52739dbc64a587c92",
+      "bytes": 17258,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/backpressure_strategy.rs": {
+      "sha256": "32e215f95c861a29f5895bb59bc2f5e71e0ad93a246918932583f7b4114235cc",
+      "bytes": 2194,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/client.rs": {
+      "sha256": "6f7027f543c4456594de09e2e08b1f8ad1ee6d2e2384734215bb2ca7efb94f9d",
+      "bytes": 55421,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/details/chunk.rs": {
+      "sha256": "bda344021c5dafced363cb199d94d20b2370911d39bd3350a5fb2ab0fbe75fb4",
+      "bytes": 1976,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/details/chunk_details.rs": {
+      "sha256": "7114beaca19514234e772c844448d857bbd19a98254edc09938d6735ada5a619",
+      "bytes": 761,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/details/data_segment.rs": {
+      "sha256": "046f4bcad307253efd909e971df309c7a848ace9ae990625b4d9b562d95402fc",
+      "bytes": 14833,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/details/mod.rs": {
+      "sha256": "20df9efd3130f5ed99476fb452e7f12f5e55a0180380932481aaf91f471b9cfc",
+      "bytes": 661,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/details/receiver.rs": {
+      "sha256": "a09f5d81dcfce001654b11cef7c23ca10a3b839781ae8fbed34d626f944f08e8",
+      "bytes": 43333,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/details/segment_state.rs": {
+      "sha256": "66ad618193af4d64c6d80c7ed2c7fd18557e7c609630e65baca9218e47435687",
+      "bytes": 2268,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/details/sender.rs": {
+      "sha256": "30caed3496b621e6834cb1d741ddc8faeed48a1838cb9c66fccbd1a36a740e4e",
+      "bytes": 30923,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/event_id.rs": {
+      "sha256": "d8fa4495ebb21232d07a06f2c5e3fb59df3da7cad8016286efcda1d936fe49ba",
+      "bytes": 1386,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/listener.rs": {
+      "sha256": "6fcc0090bf791c39f59addba2098435fc359f9f6911360f741498706e4ef6338",
+      "bytes": 14853,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/mod.rs": {
+      "sha256": "fc4427fb564f9d2f08bae6187ce0c7c8cf7f338d8706de4eca04787975303d11",
+      "bytes": 11076,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/notifier.rs": {
+      "sha256": "c852444a8516308984c22503d4376fe1090f6bfd1599aae3ef8147468214fdb9",
+      "bytes": 21454,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/publisher.rs": {
+      "sha256": "3b0e54c2d399a888a5f24d5a26ffd28783383424c3d0c5f80278770d7c102a95",
+      "bytes": 34623,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/pubsub_r2_tests.rs": {
+      "sha256": "cced58ed7de13378df7339492cf83fb3ed6baba6d76466bb0b14df7a55cd5cb8",
+      "bytes": 24849,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/reader.rs": {
+      "sha256": "2256cc182b52caf0a50b8c83b0c33c9e7202c6a14d755612be55fd5ac55955ca",
+      "bytes": 21939,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/server.rs": {
+      "sha256": "e0d3ba3931d218061bf3146acdfc94f523f15354634606d944eb3442f03b2084",
+      "bytes": 39318,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/subscriber.rs": {
+      "sha256": "03047ec16f7a9d8371c23c90dc39d43b1f0bdc8bb5567f7e67aacc16fbef191b",
+      "bytes": 20850,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/update_connections.rs": {
+      "sha256": "24b7d0314c4eced60c816febb1388081f74ed57d743dae5a0f5f3acbb3a692ab",
+      "bytes": 3472,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/port/writer.rs": {
+      "sha256": "5427e45c8dcea87e948d545d4a6231a38427178d3b0020a9de71ee75aad5ce1a",
+      "bytes": 30975,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/prelude.rs": {
+      "sha256": "bea924b8f5093d30efd36a3cb41edca58dd1f49e4dbc2e5232ad86fd73d9ad4e",
+      "bytes": 2301,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/raw_sample.rs": {
+      "sha256": "8cb402f9287535b4238ab0181d18c8f43bb8dc0f51dde6e14849c6b6b13fd333",
+      "bytes": 7117,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/request_mut.rs": {
+      "sha256": "4ec71b47577dcc0e4a94d5764d6c38d5d406c421da6c9716d4e245842abc468b",
+      "bytes": 9168,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/request_mut_uninit.rs": {
+      "sha256": "7f44bb0b28c18f49050bd86e19db504b781b679f2db5c4358ab2e316d91a62d6",
+      "bytes": 11859,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/response.rs": {
+      "sha256": "d92c44c86cfdd252a252443911b3d364f94d2317368c46269d1c6250e8a20fed",
+      "bytes": 5096,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/response_mut.rs": {
+      "sha256": "7561521bdffc363c57621713035c329e2736398197779f4400e957c7306cac48",
+      "bytes": 12517,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/response_mut_uninit.rs": {
+      "sha256": "88c90ea3ac6beca311aa9fc271cb4970e78330337a91db422df20b9ceb687208",
+      "bytes": 16082,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/sample.rs": {
+      "sha256": "3897cdfa4952e44280cc64cd2f6444b15a7136a0cf4af6f52d31161b00aa2227",
+      "bytes": 4491,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/sample_mut.rs": {
+      "sha256": "423e0327eccc7b6279abc41f98ce3c97331330265c0d8bc222c41a7530dafc22",
+      "bytes": 10758,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/sample_mut_uninit.rs": {
+      "sha256": "197ac3accf47f9920cfcee4e4ae96b16a7e117efe9f87839d3f684d0230e0961",
+      "bytes": 16296,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/attribute.rs": {
+      "sha256": "a2a399d134026f07ab55c3e74163dd078fe41199e1de6a9724f00d863339faa1",
+      "bytes": 15616,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/builder/blackboard.rs": {
+      "sha256": "1ba922ee1ea3bdae3b7a8348ca0141fb47ed3873ea6703823190da7a734dad30",
+      "bytes": 47423,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/builder/event.rs": {
+      "sha256": "c044720e928423e1e55ed5fd32c89eec910715c285e429df5575d6a2e2dea3f1",
+      "bytes": 31022,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/builder/mod.rs": {
+      "sha256": "7158a8c344a0bb11a9e4df326528c844fc74c1d73e9673372d1aee1737e90c19",
+      "bytes": 20002,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/builder/publish_subscribe.rs": {
+      "sha256": "3af0feeb5260cd8ffd1e8ee7a44c732dabe78c4de2906acb66bd03d7133a6413",
+      "bytes": 43572,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/builder/request_response.rs": {
+      "sha256": "38071ff2ad8c228343279c4b5ea8af38159fe7a39ab5675d6d36352ba87c9bf4",
+      "bytes": 63544,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/config_scheme.rs": {
+      "sha256": "fe35593e238bdcb5e7d203d52e2a838982a63ad29286869cf473d902556093b6",
+      "bytes": 6897,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/dynamic_config/blackboard.rs": {
+      "sha256": "777936c8939d4c3185c4ff7f166e909a9835bb9389de59068864239723ec16db",
+      "bytes": 7323,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/dynamic_config/event.rs": {
+      "sha256": "74e9b27c2e760eb970fd644bbcdc55a8e403f4408ae981d5fc52778447302a9d",
+      "bytes": 7873,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/dynamic_config/mod.rs": {
+      "sha256": "3a30f4fcf1f544face95f3fc9e6f7de46597c703da242f387bf2595c57116a65",
+      "bytes": 9397,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/dynamic_config/publish_subscribe.rs": {
+      "sha256": "c441c049789e6652295e693096a1c13c8a6cac3381fd993c19a9b7ab17e12229",
+      "bytes": 8728,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/dynamic_config/request_response.rs": {
+      "sha256": "13168a7bbd43042a71451405d48ee4eafc35319667e762b95f4c4171e2d518b5",
+      "bytes": 8335,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/header/mod.rs": {
+      "sha256": "0ea7f2271ae504581f28ea9ae7185411366d3909ec367e14b00e71a67e78842d",
+      "bytes": 836,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/header/publish_subscribe.rs": {
+      "sha256": "5100f57883674b1993f764436f6a4317a4ff7b9e96b08eacfe2b0b67cac544fd",
+      "bytes": 2925,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/header/request_response.rs": {
+      "sha256": "5ea7e121e1d41a95d02763714afc4e47ca6ce194c14e05d0896c35495dda6831",
+      "bytes": 3786,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/ipc.rs": {
+      "sha256": "8c106d22071fc32b83ddb7d336cb8369f9156f21ba8fa7a999bad12b68c2f592",
+      "bytes": 2680,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/ipc_threadsafe.rs": {
+      "sha256": "b04245adb09c1f4236d96ed5cf839b1ae0676599830cf0d2ace5847f663220f9",
+      "bytes": 2692,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/local.rs": {
+      "sha256": "bf8ae4941d52922063dce48589eef61d14e445c0f1caea9653c4e96a2367dd89",
+      "bytes": 2695,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/local_threadsafe.rs": {
+      "sha256": "f53f5412ea97dca87c0e9f84b3bdb7a851cd7e6049f954b5e16aa92ad1a505a5",
+      "bytes": 2706,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/messaging_pattern.rs": {
+      "sha256": "d362eb5c01f89fa485126a2af8725a87805b9b221ec1164ebac6762dd4f07c96",
+      "bytes": 3266,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/mod.rs": {
+      "sha256": "84fbd07a852bd1f6a870c01f8db7148e5ae8ecbda9568f7c49b82c34bbdf21b7",
+      "bytes": 48210,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/naming_scheme.rs": {
+      "sha256": "83ec77ef64497c2c7d0883789e446514f8bc1e69553a0635e3f7c0b6194d375f",
+      "bytes": 2555,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/blackboard.rs": {
+      "sha256": "b5fb9f5070294392aaee9f5f7f0c3ec875a2be54b35ebb1cf7a4e3cae9b900cd",
+      "bytes": 8762,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/client.rs": {
+      "sha256": "70c4109f51744669b1f6b9632d07a0f048b70e69a15974806b77ae3109fd74b4",
+      "bytes": 13294,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/event.rs": {
+      "sha256": "15a31a2f0dc3eeb06a520c4c8bd896bbae66258791a4e78bed44b6a8740ee771",
+      "bytes": 6382,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/listener.rs": {
+      "sha256": "aec61cda867435c7bc89fd0287a6c31547da3a0b7d3c424142d5439b38b21790",
+      "bytes": 1867,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/mod.rs": {
+      "sha256": "2116eee68e442fe004658e5ada6fcfb6dbaf8b14cfbfb765603c477cf620c459",
+      "bytes": 7892,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/notifier.rs": {
+      "sha256": "b6c03fcc5dd53d50688c0b4e39ce0a39f6e593316eaffe86cf824cf25062c276",
+      "bytes": 2490,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/publish_subscribe.rs": {
+      "sha256": "0ebed253f175670d5734e079b8fc71a6443cd1d85d989e3fd01a2e16a6219ca5",
+      "bytes": 8232,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/publisher.rs": {
+      "sha256": "fca795b03b408e32ee9790aa41756d995b17ebfb241ea13edbb1ba3d70e64d95",
+      "bytes": 10159,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/reader.rs": {
+      "sha256": "60b6b0fdd05df09e3cafdecd844c0ae70e2af9ff6111df8fccbbff4417e7b34c",
+      "bytes": 2323,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/request_response.rs": {
+      "sha256": "168b8d8a08b549d29e7cee7fabdf09e8f30ece285cd1872b6481e6f32968f8fb",
+      "bytes": 9753,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/server.rs": {
+      "sha256": "384dc2def97edffc915e53db7a593b39ce2599a5788d906bb81cf70c1c08fc77",
+      "bytes": 14334,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/subscriber.rs": {
+      "sha256": "b2bfd59877ec5af4455760ddb24b0b4bab608f2b5d36057f605b33a9b34ebeef",
+      "bytes": 4299,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/port_factory/writer.rs": {
+      "sha256": "e8c3672eeb885a9229cbd0d3bb5bae208ce7c56e606dcb6edeb0429a64742f21",
+      "bytes": 2323,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/service_hash.rs": {
+      "sha256": "6554ccad8146c03486d9d56ca19f22f5855f421579e5c55957ab4e9f2df2f48e",
+      "bytes": 2256,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/service_name.rs": {
+      "sha256": "4cd42369dd0f394ca58f069e7f5fe37b1733a5a2e69d23d2e37ab0a8512ee6db",
+      "bytes": 5512,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/stale_resource_cleanup.rs": {
+      "sha256": "5a9a9d9e99c3799d4a3d39a7714e3e429e5bb3b91b941c6e31b8356a74780c99",
+      "bytes": 9010,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/static_config/blackboard.rs": {
+      "sha256": "18915db6d5b91fc6ffad46b7ebb886e1e824d011c683603463cca05aaef5fd52",
+      "bytes": 2659,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/static_config/event.rs": {
+      "sha256": "16d992d87e9d5d35bf64caefca4c279767a71d4e1ad3dce177f921a01e41fcca",
+      "bytes": 5668,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/static_config/message_type_details.rs": {
+      "sha256": "c2902bca8478e122989ec2f590b822a4915985e927cf347b5b0378f2446cc1dc",
+      "bytes": 17166,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/static_config/messaging_pattern.rs": {
+      "sha256": "e3ea06ac4245ab0078d02f256b79b8ec8cf20f4f436a4c537a26228e97b0ac5e",
+      "bytes": 7515,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/static_config/mod.rs": {
+      "sha256": "65fe4607cea2e5c5612d681e0cc86380d8698c2c6377cf0ec05dfd2084106115",
+      "bytes": 8675,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/static_config/publish_subscribe.rs": {
+      "sha256": "479f0c817a3d3a759e535fff445c6bacc7acddc772e46ddfeb01dd93a39efb41",
+      "bytes": 5516,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/service/static_config/request_response.rs": {
+      "sha256": "7bcd0a05158bc4fecc67858289628f532109efe4c6162519c2b79f38543bcade",
+      "bytes": 9643,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/signal_handling_mode.rs": {
+      "sha256": "109ae9bd1c3d1e1de8577e43a3c42ed921eafaec1a7739d3cc80879592f87a4a",
+      "bytes": 1144,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/strict/client.rs": {
+      "sha256": "664a32a166f20d5f9c8065692e57baa15e7b051bc11fa99336f2832e16fdacaf",
+      "bytes": 41926,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/strict/fixture_tests.rs": {
+      "sha256": "83e66ef25e02c5e40a3b2ad6d2dd7fd61f223c6d98c3911a0c7fa97f22a4797b",
+      "bytes": 30300,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/strict/mod.rs": {
+      "sha256": "60eccebffe17d0d2595c28dea270d44b81155b8435cf5601a699058aebe1d560",
+      "bytes": 6818,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/strict/server.rs": {
+      "sha256": "1caf64714a43f6739cc8b185386b478bcf36cd0eded8f503d9964d8b88315372",
+      "bytes": 38127,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/strict/test_support.rs": {
+      "sha256": "838487c75303a3860ae55a1d5128fff8044ec36f66c952c2d34056749e102b66",
+      "bytes": 14519,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/strict/tests.rs": {
+      "sha256": "da6b29133742386077d21b96bbfd28639bf7968ecaa9a87eeed9b1794e65a4e7",
+      "bytes": 121730,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/testing.rs": {
+      "sha256": "99e95aaeeb5e1abc1d8bf3b59e35b6306d990691ac844d21ccfa6aca0bbe5d54",
+      "bytes": 2291,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/src/waitset.rs": {
+      "sha256": "fae665efde28f90dddf09565c8ac898a045875a544f9988d9265bb2179d75667",
+      "bytes": 39234,
+      "executable": false
+    },
+    "3rd-party/iceoryx2/tests/tests.rs": {
+      "sha256": "2214b74657c3693d5fe5fa76998367462f1c6bf6c59a8edf67bda1522cdea764",
+      "bytes": 577,
+      "executable": false
+    },
+    "Cargo.lock": {
+      "sha256": "44bebebce3f2042e4be87ae61426c5cfa745eeb1d5bf4dbe1fa44a795050700a",
+      "bytes": 147048,
+      "executable": false
+    },
+    "Cargo.toml": {
+      "sha256": "acad8a4e262968039ea28f1559c160ffdae25e29bdf7c30ef125a6e2ef2048a6",
+      "bytes": 13922,
+      "executable": false
+    },
+    "configs/clear_estop_e2e.toml": {
+      "sha256": "8d7a571ad47036c7bdea0ba4217f29052573aef82e918e2eaca7cc8cafca3398",
+      "bytes": 1032,
+      "executable": false
+    },
+    "configs/crash_restart_smoke.toml": {
+      "sha256": "3c1a9fe6c564edf04438e936b976ed5879b9e4aac5530a41665be9e5616efb0d",
+      "bytes": 1531,
+      "executable": false
+    },
+    "configs/ik_backend_smoke.toml": {
+      "sha256": "6944b39ee2d245843bc991c5256723bdd6ccb1a393714c268755026e1dd2a2fb",
+      "bytes": 1692,
+      "executable": false
+    },
+    "configs/robotctl_smoke.toml": {
+      "sha256": "99bdb1822a4ab47c54ff497a4699ca0c86a6b35e2c1b04128c96aa80e2bc2d10",
+      "bytes": 1440,
+      "executable": false
+    },
+    "configs/rpc_roles.toml": {
+      "sha256": "6b989264dccf599d22a83808226f049f05481fe57e2eb04519bbcfc3dab3278f",
+      "bytes": 3434,
+      "executable": false
+    },
+    "configs/scripted_backend_smoke.toml": {
+      "sha256": "d07343ad3da2fbf122d79867ec523a5c81cd2493e6324d43980a66649790d9af",
+      "bytes": 1447,
+      "executable": false
+    },
+    "configs/xlerobot.toml": {
+      "sha256": "530bd32432aa2959f49b645f705f8b9dbc71fa15e79e5d25b3fdc6abb1b7ce21",
+      "bytes": 1746,
+      "executable": false
+    },
+    "configs/xlerobot_bus1_full.toml": {
+      "sha256": "f5e77992ded8572c1620f7e95aaebdfa2d35241d24f4198d8d7b8d821653332c",
+      "bytes": 2721,
+      "executable": false
+    },
+    "configs/xlerobot_bus2_full.toml": {
+      "sha256": "fe8553e5f7ac21521c4fda2893ed763a9500a63a389bc2939034c6ceecb6a22d",
+      "bytes": 6457,
+      "executable": false
+    },
+    "configs/xlerobot_bus2_right_arm_full.toml": {
+      "sha256": "46f13632e91ef211d9a4d99b5404d6583c92de69aedd3a00536b24544a5e786a",
+      "bytes": 3275,
+      "executable": false
+    },
+    "configs/xlerobot_left_arm.toml": {
+      "sha256": "720979785a149f8f25a9a48f5bab10202e32f6e312a998267c4ce3c20d4a6194",
+      "bytes": 2161,
+      "executable": false
+    },
+    "configs/xlerobot_right_arm.toml": {
+      "sha256": "ce46c7b1317811ce7cb267db3863624462823c58518cd5e044df4dbc54fd3992",
+      "bytes": 1589,
+      "executable": false
+    },
+    "configs/xlerobot_task28_single_joint.toml": {
+      "sha256": "e109dc59e2b98d511d7090d5210f95abab3815b92788d039101f0ef7ce1f79ed",
+      "bytes": 1030,
+      "executable": false
+    },
+    "configs/xlerobot_task29_right_gripper.toml": {
+      "sha256": "480b689bd0369f1a9f610fb72713e448b163cbd7045818be06dc1d4a2d00c804",
+      "bytes": 1295,
+      "executable": false
+    },
+    "configs/xlerobot_task29_single_joint.toml": {
+      "sha256": "740ddc92aa24b0e51eb42b195be30da2cbab04059c828733799b8669303100ca",
+      "bytes": 2064,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/Cargo.toml": {
+      "sha256": "10eaa7b01080ad94db0a92ba605f0573a095213498cf6ad8b521b7d952b034d8",
+      "bytes": 2963,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/benches/feetech_bench.rs": {
+      "sha256": "04aa940f2dc98b994e1baee8a85e8846518f165fe1f5248a38a380fe1911a163",
+      "bytes": 10796,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/examples/feetech_poke.rs": {
+      "sha256": "5297bc9c238f5ec209ffd9e9e06e4cfd820b5eea0261ad693546946857732588",
+      "bytes": 7703,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/adapter.rs": {
+      "sha256": "3e39280b11fb5b42c407ffa22b3838ebda55f0e61d22c855d30e6d90937e4915",
+      "bytes": 66618,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/bus.rs": {
+      "sha256": "3e271e8c09034cd5226c4bf7b7c19d9825e1ddc6982e81590efd53aa65d842df",
+      "bytes": 35209,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/calibration.rs": {
+      "sha256": "b62058c09ccddc7386cb309a92c0ae9eba3871eb03a259552632c1832b0867a2",
+      "bytes": 11223,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/calibration_io.rs": {
+      "sha256": "ed2e27a269612839c34073bb5949e8e4960c3a3c5205d07f32092a5bae315bc5",
+      "bytes": 13379,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/convert.rs": {
+      "sha256": "4225a6b94feb85367226f6f5c37ce6d16daa5d55de1240e0ab5d84a4ea5dd6da",
+      "bytes": 4021,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/diagnostic.rs": {
+      "sha256": "4868a83662468cd8be7d39c0f361a5ea8c370eaec16b4753e5f03c5a63d3750c",
+      "bytes": 9663,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/encoding.rs": {
+      "sha256": "b5a0f64bb198df08afa2722fc30024ed4c40d51141cbf22b9c60f25228fea7a1",
+      "bytes": 10214,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/error.rs": {
+      "sha256": "6f72eb4553cf98d18cee1be9baaef546f0ba5bc9c61d9335ea5ea54b11492c03",
+      "bytes": 13668,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/factory.rs": {
+      "sha256": "59e02d9d9a165416ccb3cf89b92cedb7c854467df4339039364e23fa9c37c2e5",
+      "bytes": 8053,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/lib.rs": {
+      "sha256": "baf609156ffd12d805c4d363e6ba001da0cbfb8666754db62d7f94aee17c4a20",
+      "bytes": 4332,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/post_e_transport_acceptance.rs": {
+      "sha256": "c23c02f648144f3e700c24c93ea9027a114ebc0105e87375c0e510b397de1882",
+      "bytes": 11559,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/protocol.rs": {
+      "sha256": "2526a5c2ea633f7b0d1d92d4576b188745412f916a6ccbc02e026311eb136fe9",
+      "bytes": 19529,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/registers.rs": {
+      "sha256": "a49b7e660d809bb94c6a6f8e4096c563f4a936c36549b1616b14b63b2eeed673",
+      "bytes": 10529,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/transport.rs": {
+      "sha256": "f772b36e445cb2fc645b647f26fe1664d8b9d6db7548be31661f26c7c215b1ab",
+      "bytes": 19082,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/types.rs": {
+      "sha256": "538e92b02eaa09fe45fd502380b630ee3cdab741b1edc97c0929884951366b2a",
+      "bytes": 6425,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/tests/abort_diagnostics.rs": {
+      "sha256": "1925dc2c2aca824c813193cea2c27f37bec533ad532680b97fa987a3cd9a2ded",
+      "bytes": 17877,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/tests/comm_fault_transport.rs": {
+      "sha256": "dbd6199284d3325053a1b9adaa00b00c33a0e25b032fc951864273a93de244da",
+      "bytes": 19267,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/tests/integration_smoke.rs": {
+      "sha256": "05af3a69df0b9b4959152d5d1c8ddb2bcc7d84bffa1b82371dd7d4c9aa8b5e3d",
+      "bytes": 6038,
+      "executable": false
+    },
+    "crates/robot-adapters/mock/Cargo.toml": {
+      "sha256": "0e9b9eb1a61fa4efb69cbc40cceb553e7f4297973ad29f66325a588846a1a0be",
+      "bytes": 723,
+      "executable": false
+    },
+    "crates/robot-adapters/mock/src/lib.rs": {
+      "sha256": "2e89900ca0d515353ecda375b0914e3c051741292fcb376941d202587622e7c3",
+      "bytes": 26907,
+      "executable": false
+    },
+    "crates/robot-cli/Cargo.toml": {
+      "sha256": "3765b5fadd3aeb8c87501206b22e9a487d6277166ffac63aa5f5867a17b6cb9c",
+      "bytes": 1738,
+      "executable": false
+    },
+    "crates/robot-cli/src/bin/robotctl.rs": {
+      "sha256": "d247e09f9bb237e280c714ed43ea902a18dcd86bacaecfe8e65b268b8f8b5de2",
+      "bytes": 16143,
+      "executable": false
+    },
+    "crates/robot-cli/src/cli_args.rs": {
+      "sha256": "14f5b283dca9f76c536d3f9cf2a435040ec9cd0c5d8f6d7eaa7e319c841bf31b",
+      "bytes": 21762,
+      "executable": false
+    },
+    "crates/robot-cli/src/dispatch.rs": {
+      "sha256": "2908b6eb647966c2aaac38577ac82fdc9ae1be391fc30fb95862da0af5ad7422",
+      "bytes": 33325,
+      "executable": false
+    },
+    "crates/robot-cli/src/exit_code.rs": {
+      "sha256": "b9d644361b8782c82608208f2b3846d4e3b3aa0f6bf78c34bb5822d8bca98bb9",
+      "bytes": 3699,
+      "executable": false
+    },
+    "crates/robot-cli/src/gateway_client.rs": {
+      "sha256": "4e3373c960d9b69eac807ce683be21ad9c829e508ad6fa640aacc69e5399a125",
+      "bytes": 2552,
+      "executable": false
+    },
+    "crates/robot-cli/src/json_out.rs": {
+      "sha256": "0fb0975f80a3f5cfe67d97e2104df990742ee7f8a7718fe9560a3be2d8b872ab",
+      "bytes": 22039,
+      "executable": false
+    },
+    "crates/robot-cli/src/lib.rs": {
+      "sha256": "782286f7c344f2b97e76859d5d115d9a53325e0b2eb4bf95137cd828cab4a317",
+      "bytes": 5403,
+      "executable": false
+    },
+    "crates/robot-cli/src/meta.rs": {
+      "sha256": "5a454a17dfb777dcd3ce86573cb3ca734710b76162ded22d01308a4475a4cc12",
+      "bytes": 7070,
+      "executable": false
+    },
+    "crates/robot-cli/src/payload.rs": {
+      "sha256": "f185656a8dd22c0934700559fab8825c27048bfa3c2dcd0400617886896c2cb1",
+      "bytes": 12772,
+      "executable": false
+    },
+    "crates/robot-cli/src/uuid_v7.rs": {
+      "sha256": "0768fb39000f96ef6e3a0a16b417c89c5909506af9fdbfe8e804d85dbf6f94cb",
+      "bytes": 1130,
+      "executable": false
+    },
+    "crates/robot-cli/src/validate.rs": {
+      "sha256": "c1247f60357ec637c6bf773f3d764d058f79ed714b97643c9f077455f47a792e",
+      "bytes": 12035,
+      "executable": false
+    },
+    "crates/robot-core/Cargo.toml": {
+      "sha256": "121fa18e3aeda297f34ad86bc9e42ce97cb1f3e86d4aecc5915a6b24653d689b",
+      "bytes": 1826,
+      "executable": false
+    },
+    "crates/robot-core/src/adapter.rs": {
+      "sha256": "854f4c8c200c4ec5b535502f7a48389f41319996e35953219dd1739ae3c7e06d",
+      "bytes": 22503,
+      "executable": false
+    },
+    "crates/robot-core/src/config.rs": {
+      "sha256": "ee85a51996cda80040de9107068d44dfd7f4e9e6e420542f9c1d04c74ddcc732",
+      "bytes": 9846,
+      "executable": false
+    },
+    "crates/robot-core/src/control_authority.rs": {
+      "sha256": "69742bbc5d284c954eadaaa9c55502465e16ef056ecee342c3e1d72b0b7cdb4c",
+      "bytes": 90848,
+      "executable": false
+    },
+    "crates/robot-core/src/control_authority/tests.rs": {
+      "sha256": "aa1dfaebae80dc445fdd42995037c1132d89bdca0b19a41a8c877d72bd203e4a",
+      "bytes": 97353,
+      "executable": false
+    },
+    "crates/robot-core/src/control_authority/word.rs": {
+      "sha256": "847733451cbf07ea6f74d21eada22f8fc6c445ec982a5af3b2015f696ff5a717",
+      "bytes": 4459,
+      "executable": false
+    },
+    "crates/robot-core/src/diag.rs": {
+      "sha256": "220cc677259ae7beaa3aacea6fa61d2542870cc11bfd7a304f4a9aab81c319f4",
+      "bytes": 543,
+      "executable": false
+    },
+    "crates/robot-core/src/error.rs": {
+      "sha256": "c20a0b9eb54fd1b099aaaf6f4066c16436454cfd4fdcf6d687ece1f7962a0e69",
+      "bytes": 5866,
+      "executable": false
+    },
+    "crates/robot-core/src/executor_ctrl.rs": {
+      "sha256": "d570d2cf763d29c2bc4a7aec6149be72755cd9ceb971905560790f29638095c9",
+      "bytes": 33948,
+      "executable": false
+    },
+    "crates/robot-core/src/factory.rs": {
+      "sha256": "be831ae4b94c11c30c0d745a393edff6179bdf2d497bca97f1429fc94751b924",
+      "bytes": 14139,
+      "executable": false
+    },
+    "crates/robot-core/src/lib.rs": {
+      "sha256": "111023dfc6165e5f1a33802c68aa6cf870b2552e7f237979ee46ce943b0149c1",
+      "bytes": 970,
+      "executable": false
+    },
+    "crates/robot-core/src/rt_guard.rs": {
+      "sha256": "eca3729939d4f96bca739186ab69d5dcd571274c03ecea7deaf596b2c89b5d41",
+      "bytes": 8840,
+      "executable": false
+    },
+    "crates/robot-core/src/serial_services.rs": {
+      "sha256": "4ab6282f842192a557ac639b048ff25b125582b18112031edece4bb3472f8419",
+      "bytes": 9452,
+      "executable": false
+    },
+    "crates/robot-core/src/thread.rs": {
+      "sha256": "1a20cab40d62a4500fb9378b634b06e315eb88f19e148fcfc4a7dbdba280f5ea",
+      "bytes": 6699,
+      "executable": false
+    },
+    "crates/robot-core/src/time.rs": {
+      "sha256": "3ed91260784730b05afb573c0ee1c3bede53acc3dc9eaa44c5a2c550138b81c6",
+      "bytes": 25945,
+      "executable": false
+    },
+    "crates/robot-core/tests/bus_lease_bridge.rs": {
+      "sha256": "737d8fea89f00cfb72f31a7e2aea80c2925a7f901b7bdc0c2b3a5e51e810ff10",
+      "bytes": 6033,
+      "executable": false
+    },
+    "crates/robot-health/Cargo.toml": {
+      "sha256": "5129267e71da86895f061f69bfb6317e89506fe5dcf1839f1bf5ac6e01c90a32",
+      "bytes": 1194,
+      "executable": false
+    },
+    "crates/robot-health/src/lib.rs": {
+      "sha256": "e33249e73a701d41b3c93b7ff83adf6d472d2ff2cad8b764dc49a4458ca05f40",
+      "bytes": 32252,
+      "executable": false
+    },
+    "crates/robot-health/src/proc.rs": {
+      "sha256": "26a64bac431802c99ec6c4217d80bc1a1a6bc872fde5412730c1427b24f1d26b",
+      "bytes": 21724,
+      "executable": false
+    },
+    "crates/robot-health/src/systemd.rs": {
+      "sha256": "aaaf9c3ac002bddad2f8cfe4dce2ed28c64cd9d6729081087ab12351eecd8bfa",
+      "bytes": 38798,
+      "executable": false
+    },
+    "crates/robot-health/src/test_comm_fault.rs": {
+      "sha256": "608a8b67a9a8c6ff51ca692e792f8a60acb2773d48437049a4d9d98bde94f6aa",
+      "bytes": 9715,
+      "executable": false
+    },
+    "crates/robot-kinematics-xlerobot/Cargo.toml": {
+      "sha256": "59d08ec05d26b581e5ded47821ec3bf85348da68955c1731aef2bfa23e123331",
+      "bytes": 992,
+      "executable": false
+    },
+    "crates/robot-kinematics-xlerobot/src/base.rs": {
+      "sha256": "8c49aded71bc718ee03487e5ae5fc1a59b6cf1358e099ed9d899f802234e4488",
+      "bytes": 24270,
+      "executable": false
+    },
+    "crates/robot-kinematics-xlerobot/src/lib.rs": {
+      "sha256": "a919d5f6dc30d51b9a674a28b541025d0503381cde746e6ff52feed58112ebd1",
+      "bytes": 31501,
+      "executable": false
+    },
+    "crates/robot-kinematics/Cargo.toml": {
+      "sha256": "8afe69c6f49cf96a971911d80cbfe1bc51f0c6955ed21a73168c0c173acefcdf",
+      "bytes": 947,
+      "executable": false
+    },
+    "crates/robot-kinematics/src/lib.rs": {
+      "sha256": "72c4f908017fe3c3d2c5ab84902278fb2bbacceaff05242a216a9090fda787d4",
+      "bytes": 11407,
+      "executable": false
+    },
+    "crates/robot-logging/Cargo.toml": {
+      "sha256": "aeaedc009ac9f2b79e6ae18152b8a1fe47e27480ee6373ea455d20ba17425ae5",
+      "bytes": 1191,
+      "executable": false
+    },
+    "crates/robot-logging/src/lib.rs": {
+      "sha256": "58a88d2fb0613ad2ed694cfa3fcb1bc78b7d16c7acbaa592eb67a7d131928ac8",
+      "bytes": 12097,
+      "executable": false
+    },
+    "crates/robot-msg/Cargo.toml": {
+      "sha256": "3331bf44cc25fd58718e093a49e25c7005ce1d430488039bf2f6740101d746b8",
+      "bytes": 791,
+      "executable": false
+    },
+    "crates/robot-msg/build.rs": {
+      "sha256": "7bc03ec4a3a6d47d07b3e4122c2c9bcdbcc8041a08269ea5682b0a822d240eca",
+      "bytes": 7697,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/action_event.fbs": {
+      "sha256": "2eb1323b025c1058c33e3fef4cd0235a8eb60e9fc004978d66751a13658d89d7",
+      "bytes": 4504,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/action_request.fbs": {
+      "sha256": "4208b55dfdec64cbc237a8f83a7483f331367cd6a4d9077ed8b581b5ee9c66a3",
+      "bytes": 6705,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/action_status.fbs": {
+      "sha256": "baa1b742ce3d51d94f5b21e473e564a7034bc1448edf0cbfa653031dedd57b66",
+      "bytes": 12526,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/blob.fbs": {
+      "sha256": "b3f0c5f6ae99a6305af6621ce4c7a8d2c52e4907cfb7745ed311dd0f1d9ed111",
+      "bytes": 1255,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/clear_estop.fbs": {
+      "sha256": "e406afb2a57e275133c3c86e9f3a0b0fb25fea89642c8b6ca3ae6c29790ccc13",
+      "bytes": 12364,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/event.fbs": {
+      "sha256": "7a7791e04cb7697afdbfd006e13fb874d27a001d9907681a6593b0c4e34f5f88",
+      "bytes": 1605,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/frame_header.fbs": {
+      "sha256": "1267b556b34af4e8774ac65788d820a0cc4a0f5acfbddee59c99d26820dbb5c7",
+      "bytes": 1645,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/ik_payload.fbs": {
+      "sha256": "683d340fa4154d58c0946f370f5025306a464d858cf55a6b54edcb8cdde11b8c",
+      "bytes": 3142,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/image.fbs": {
+      "sha256": "e59c180067917f4a6b7e3ad345f93a9319ccd46c15169c19356aa4c20e60260f",
+      "bytes": 664,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/joint.fbs": {
+      "sha256": "dd121a616b4b27c1db548ce03501f326af377c7228188f3d7a498c287b5fe4e1",
+      "bytes": 4593,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/old/action_request_v0.fbs": {
+      "sha256": "7d9a69ccb8239914b33d02c27d3a8a6d7c43c34518258a3ff935b8858dae510b",
+      "bytes": 6238,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/old/action_status_v0.fbs": {
+      "sha256": "ec6b17545c8a1bbc65365eeaab62137327c35859e3e322b8bb1954c230502e13",
+      "bytes": 12384,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/old/clear_estop_v0.fbs": {
+      "sha256": "0f9d823b77c12f346a34f477fee7b50ac5c64ab1a09615db52c31be187b42824",
+      "bytes": 11444,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/old/joint_v0.fbs": {
+      "sha256": "76ba207e2957701a984a89832f3a45190bc5b7a51b34d27477d96edc4f4d0d93",
+      "bytes": 853,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/old/set_enabled_v0.fbs": {
+      "sha256": "0ba7a95ee291ac4053cccfd2afb0a03581b3216e3595ec00099f2230d3b0984d",
+      "bytes": 4671,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/pointcloud.fbs": {
+      "sha256": "a36708e074a695ab284044fd35b74460c7855f93a6421ee058539dc6843fa728",
+      "bytes": 460,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/scripted_payload.fbs": {
+      "sha256": "b515b1602186f54eaaa502c9dde00d22b1227b7a884a8f3cd0fff78a54789d4f",
+      "bytes": 1814,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/set_enabled.fbs": {
+      "sha256": "531a0a160ff4016f1d4430fbd06e80a6354a48117670b302ac0897e2d93cc084",
+      "bytes": 4810,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/tensor.fbs": {
+      "sha256": "87966bd421b5cf161d049a892310fa6d549b5f0ffd02c23a3af84baf71bd138a",
+      "bytes": 523,
+      "executable": false
+    },
+    "crates/robot-msg/schemas/twist.fbs": {
+      "sha256": "e61a42390590b7086ef9bcb9c8755b0185ce1bb9586a7f4784a54140489effd6",
+      "bytes": 330,
+      "executable": false
+    },
+    "crates/robot-msg/src/bin/schema_lint.rs": {
+      "sha256": "d06d4701c52589207afad85ad478ee367210fd72ef8c9fb52155d669bb4e6522",
+      "bytes": 15992,
+      "executable": false
+    },
+    "crates/robot-msg/src/build_helpers.rs": {
+      "sha256": "4ff55f31a0fdf110954e9b4d8d6255dd789cbb099d2b509971eb4295cf669dd9",
+      "bytes": 41736,
+      "executable": false
+    },
+    "crates/robot-msg/src/capability.rs": {
+      "sha256": "86421a412b9c334027c2071dc9a0078c23528c54b2fe3be69f48b9d05c89913f",
+      "bytes": 4518,
+      "executable": false
+    },
+    "crates/robot-msg/src/joint_layout.rs": {
+      "sha256": "35e8a71160123519ab4648d45dea679206db13820d30ac571c71c518f243ad2f",
+      "bytes": 5718,
+      "executable": false
+    },
+    "crates/robot-msg/src/lib.rs": {
+      "sha256": "291d41dac392b82e25b8a9d829edb458fa82d44d25a7db9208b2e374db8bc429",
+      "bytes": 3191,
+      "executable": false
+    },
+    "crates/robot-msg/src/markers.rs": {
+      "sha256": "81b7585488e15883179c838f03cf27efaea3dc99446b04719985f5f3a385fc84",
+      "bytes": 15728,
+      "executable": false
+    },
+    "crates/robot-msg/src/schema_id.rs": {
+      "sha256": "5983846f111aa8f33b156e03287e995d4a590a2da7ba8686513ee689680f972c",
+      "bytes": 10281,
+      "executable": false
+    },
+    "crates/robot-msg/src/size_tier.rs": {
+      "sha256": "040141ee4b6ac90ba7283c322ad61f6d6fbc3f3a59bbd2ee1f86522f0d99896e",
+      "bytes": 7186,
+      "executable": false
+    },
+    "crates/robot-msg/tests/compat.rs": {
+      "sha256": "92dc68e54edf512b1ed467a5ef281dc23eadabff6db2d737f6cfb3d3e6e95d6c",
+      "bytes": 46561,
+      "executable": false
+    },
+    "crates/robot-rpc/Cargo.toml": {
+      "sha256": "e352dd8318f9650a587d8ae09b2be9e057dfd52144ec3d0ef58541f1c29429ae",
+      "bytes": 9809,
+      "executable": false
+    },
+    "crates/robot-rpc/build.rs": {
+      "sha256": "227ed319367efcc0c4183d433fa622b1a6585ef322ead071e05aa62f2e9816f5",
+      "bytes": 1805,
+      "executable": false
+    },
+    "crates/robot-rpc/proto/robot_control.proto": {
+      "sha256": "99312cf28aab3732714cf389a4af2173668a61ad851ded18bf63bcf05b945050",
+      "bytes": 20948,
+      "executable": false
+    },
+    "crates/robot-rpc/src/auth.rs": {
+      "sha256": "825e61cc56bc865202762a40e055398e2b71b60fe178f0f3af19e66db6435dfb",
+      "bytes": 20269,
+      "executable": false
+    },
+    "crates/robot-rpc/src/bin/robot_rpc_gateway.rs": {
+      "sha256": "abf308bf2eb98e737f8e182fb197272aeec900807bb4504b5adbd8b921f39bae",
+      "bytes": 21315,
+      "executable": false
+    },
+    "crates/robot-rpc/src/class_cache.rs": {
+      "sha256": "f2e775455b3e1a128fc4843f210dee7a3c1462bbdd45dfb9668cd08ea22b6475",
+      "bytes": 45238,
+      "executable": false
+    },
+    "crates/robot-rpc/src/clear_estop.rs": {
+      "sha256": "ff748661dd4f0f7111884ff312aa6ec864d6764bca94bf6ae1762f570f636c13",
+      "bytes": 26247,
+      "executable": false
+    },
+    "crates/robot-rpc/src/client/baseline_shim.rs": {
+      "sha256": "29dda2dd1366a2bc436def9098fefd0390f88f492ef005f070a215ab4a4accbc",
+      "bytes": 11168,
+      "executable": false
+    },
+    "crates/robot-rpc/src/client/dual_arm_workflow.rs": {
+      "sha256": "1a65b82908919095e3a014bea8d79925fc2e42634c2fb8bc3d37b731e73b53bd",
+      "bytes": 95201,
+      "executable": false
+    },
+    "crates/robot-rpc/src/client/layout.rs": {
+      "sha256": "ffbe31c3bf338831444ccf77561fba288f40019910be0b26d284ba8a73644f58",
+      "bytes": 7470,
+      "executable": false
+    },
+    "crates/robot-rpc/src/client/mod.rs": {
+      "sha256": "aa1f6a52aba669f9eecab9390b179074b03608b0f2ec569e7434e722a1f2a2a3",
+      "bytes": 1405,
+      "executable": false
+    },
+    "crates/robot-rpc/src/client/trajectory.rs": {
+      "sha256": "aceb52c7d8eb4dce3b411d329862bcafe84a4bd0fd54ed27c2440f9b478fd1a2",
+      "bytes": 29718,
+      "executable": false
+    },
+    "crates/robot-rpc/src/estop.rs": {
+      "sha256": "22ec53e788df445ab13af0a2ffed7075b8a9473948fd1346cc9ad29d1cd92b81",
+      "bytes": 9108,
+      "executable": false
+    },
+    "crates/robot-rpc/src/estop_pub_thread.rs": {
+      "sha256": "4e7fc75a0b5c00b50033ea3fcd14b95cb73e81dc272be457afdb115c5c026de5",
+      "bytes": 30266,
+      "executable": false
+    },
+    "crates/robot-rpc/src/events_subscribe.rs": {
+      "sha256": "b5731dcf572db395dc41f7360d419e157dc7b54405163f11eafd32dffb7a9bf0",
+      "bytes": 44489,
+      "executable": false
+    },
+    "crates/robot-rpc/src/forward_queue.rs": {
+      "sha256": "dccbc69b2addd13cfd78cacc50e38a9f4c5ad710cab3b5b7f51988ce8b2f7cfa",
+      "bytes": 29379,
+      "executable": false
+    },
+    "crates/robot-rpc/src/freeze_control.rs": {
+      "sha256": "22740e5d4ca47868fd146837563651dc8f3156941858298d82028da136a0334e",
+      "bytes": 16990,
+      "executable": false
+    },
+    "crates/robot-rpc/src/gateway.rs": {
+      "sha256": "8a74d0d17baefae86dad819bfe55321b223c79d234af598b6ef8c3abdf04a02c",
+      "bytes": 199632,
+      "executable": false
+    },
+    "crates/robot-rpc/src/gateway_ledger.rs": {
+      "sha256": "ca1a2d7e0f73d5209a95549f7cec8defd47c2f2daee2f58e9e2f419bc86483b9",
+      "bytes": 42261,
+      "executable": false
+    },
+    "crates/robot-rpc/src/idempotency.rs": {
+      "sha256": "54244910df9c45673c3a180714592c97fddad038a14dfa0315d1585fc1a63925",
+      "bytes": 36726,
+      "executable": false
+    },
+    "crates/robot-rpc/src/lib.rs": {
+      "sha256": "56e8022b5a0d98cdb2d3f82d45b6f0c03d74ff6cca8582dad663e8231a9e97ef",
+      "bytes": 6164,
+      "executable": false
+    },
+    "crates/robot-rpc/src/liveness.rs": {
+      "sha256": "fb84b44ab2e46c299c85d6f939968ddaa0889da5e2a1cc4b08d6192d8b021fa2",
+      "bytes": 6612,
+      "executable": false
+    },
+    "crates/robot-rpc/src/reply_classify.rs": {
+      "sha256": "f6fd3fc477df1720ef7292e9a0457199948ab5fa547f86e80155a59c907cbe8c",
+      "bytes": 15324,
+      "executable": false
+    },
+    "crates/robot-rpc/src/rr_io_thread.rs": {
+      "sha256": "47938ec1347193cc4f06cc0688a976f7de0977d9a7f546a165260e9a609219a0",
+      "bytes": 73523,
+      "executable": false
+    },
+    "crates/robot-rpc/src/set_enabled.rs": {
+      "sha256": "242826e27f7d4f6f21f6572cda0cbdb1c72fc892bbfc2eaad9f9e9b226704762",
+      "bytes": 9824,
+      "executable": false
+    },
+    "crates/robot-rpc/src/state_convert.rs": {
+      "sha256": "d05988cfc26e87ca38daaf5331cd8eed5cf9140a8ef9471fe1756d25ca709e90",
+      "bytes": 11917,
+      "executable": false
+    },
+    "crates/robot-rpc/src/state_pool.rs": {
+      "sha256": "f78bb40ad89294cdce1948e116ef438b8d72b1a6194002bc4d0749058c629134",
+      "bytes": 14601,
+      "executable": false
+    },
+    "crates/robot-rpc/src/systemd_probe.rs": {
+      "sha256": "22fd7c81e9b7bce704c9d6391a3e467cfe0f08bbb28efa8628bebfcf328c17b4",
+      "bytes": 14424,
+      "executable": false
+    },
+    "crates/robot-rpc/src/task_handlers.rs": {
+      "sha256": "a0863c0d028cf65a6b790a4861503bfb36ac6287aa9508361bb411e3bf37ba31",
+      "bytes": 67420,
+      "executable": false
+    },
+    "crates/robot-rpc/src/wire_credit.rs": {
+      "sha256": "3ab68dfc28f7715792ffdbab82b2143353d78ab79ae940ec435c702bb363bd79",
+      "bytes": 10332,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/case_ctx.rs": {
+      "sha256": "233c6f9492d1eae4fe9d4e6117e8864eb3157bc5d155d90ab35daadbc1f64213",
+      "bytes": 18165,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/client.rs": {
+      "sha256": "7cde03cfcd4d983d312d5100bc45d03c3267672490de8529685d2837bca991dc",
+      "bytes": 4557,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/dual_ctx.rs": {
+      "sha256": "a46b219f6bd8c6294005a9f74d8206a03cf9b2402275cc6888c4fdc4f62ad0fc",
+      "bytes": 31944,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/fake_heartbeat.rs": {
+      "sha256": "579aa360ecb80c53443d89ff45a5694fd587f49ab0b211d90a0794b11fbb030d",
+      "bytes": 4997,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/fake_state.rs": {
+      "sha256": "bb3787f09e48ddb8433893676f4f7ee43709c48e83644faa286d7d1c5be701f8",
+      "bytes": 6273,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/mod.rs": {
+      "sha256": "b46d7b89fbc9b628f2e03d5abbcfe3b9a41ab96ee2fad803e5a2167e43703adc",
+      "bytes": 1723,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/pair_endpoint.rs": {
+      "sha256": "20037cd3b7b7060e3c8030e8f5016eaa6fc4834bbae9743eee436df279a6772d",
+      "bytes": 7464,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/raw_s0.rs": {
+      "sha256": "7ae375225f23c5491759c18a833f26e62859d091beed7a03d1771e35e5023851",
+      "bytes": 5486,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/ready.rs": {
+      "sha256": "bb83fa43d4d3f5f905b948df7c08b9f003aff9f799c1111c75c5e68cd9bb4b5f",
+      "bytes": 6197,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/common/subprocess.rs": {
+      "sha256": "218611e302c8bb2b8697b9c5d6bb68ddb1354975df0c6ebe073bd6ba198566a9",
+      "bytes": 20442,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/dimos_workflow_e2e.rs": {
+      "sha256": "d5e7a388262828f105a05a36534323a1fb10d9694635d44822580e6d763fffd7",
+      "bytes": 34527,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/estop_e2e.rs": {
+      "sha256": "52958f02f8d6ee5dd2cdb9ec6185e891b54da2b080c35a2e9097755c0a7c3e3e",
+      "bytes": 29396,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/set_enabled_e2e.rs": {
+      "sha256": "3d30742b06a422e36efc91f2d358731015bd0066edf4b06cfc0f11005eca0e39",
+      "bytes": 29038,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/state_rpc_e2e.rs": {
+      "sha256": "7cf63e253244e68d9901a07f99fbb139ef73fbb777cc99709313963c35863fa3",
+      "bytes": 22992,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/task_rpc_e2e.rs": {
+      "sha256": "64fa94f17a6f889475c8f2734c4d075d53522c8ce163236f234d8532fd71ce9a",
+      "bytes": 19747,
+      "executable": false
+    },
+    "crates/robot-rpc/tests/w3_gateway_owned.rs": {
+      "sha256": "81f49aacf5bb041331bce59693f27e26b9a654708fa8880671da2da801aa414c",
+      "bytes": 20385,
+      "executable": false
+    },
+    "crates/robot-s0/Cargo.toml": {
+      "sha256": "e87edef8c8015c468454c0b526fae0a503cc3a5f2d15e0624f7c99ce0e4931e1",
+      "bytes": 5893,
+      "executable": false
+    },
+    "crates/robot-s0/src/bin/s0_daemon.rs": {
+      "sha256": "ba2f8c5a0fb183670b32adc432bc00238332339b23b6f13ff0fbb4283fcb64c7",
+      "bytes": 120325,
+      "executable": false
+    },
+    "crates/robot-s0/src/bin/xlerobot_deploy.rs": {
+      "sha256": "7ecca937703c8f87fcecda536fae2aead567a52cd17c9ae34af407da56b8d55a",
+      "bytes": 12740,
+      "executable": false
+    },
+    "crates/robot-s0/src/boot_supervisor.rs": {
+      "sha256": "7c861b147d57dbd5e0880c5839e3b70e03c6ad72b3866ebe8ecc8695994ba5d0",
+      "bytes": 24630,
+      "executable": false
+    },
+    "crates/robot-s0/src/clear_coordination.rs": {
+      "sha256": "ee6dcd89a0f3be47f3fe0683c1c8f58045ebc1195c3fffeb5dba6076f8f05d12",
+      "bytes": 69766,
+      "executable": false
+    },
+    "crates/robot-s0/src/clear_estop_action.rs": {
+      "sha256": "2f4414f8723df2b095d2bc666cd2827814190cffbf511c741b9cdd08390672e9",
+      "bytes": 1167,
+      "executable": false
+    },
+    "crates/robot-s0/src/clear_estop_transaction.rs": {
+      "sha256": "1b0b7897e5d2fc680d302ee9716e7b0316aae3c190ced0ab5250e214513b4b57",
+      "bytes": 47440,
+      "executable": false
+    },
+    "crates/robot-s0/src/clear_estop_transaction/credential.rs": {
+      "sha256": "24dd3e2ef9fea5787daa1733cb2ed69a59ad0af91721b4261c841037afb3e4aa",
+      "bytes": 10377,
+      "executable": false
+    },
+    "crates/robot-s0/src/clear_estop_transaction/dirfd.rs": {
+      "sha256": "f251e631178a1ef429649e461e9ced03a1bf29b66d4128a24283929d4b0718a4",
+      "bytes": 8601,
+      "executable": false
+    },
+    "crates/robot-s0/src/clear_estop_transaction/guard.rs": {
+      "sha256": "cf15b44792a29286533fadd7d0c679948c626a82eeb37b257914ed91357d8a1b",
+      "bytes": 4779,
+      "executable": false
+    },
+    "crates/robot-s0/src/clear_estop_transaction/tests.rs": {
+      "sha256": "9bc36637f62f524ac5dc641e6345fe87b6c3a3a8521a14ca9b0d9a33a63b02dd",
+      "bytes": 74518,
+      "executable": false
+    },
+    "crates/robot-s0/src/clear_estop_transaction/w4_tests.rs": {
+      "sha256": "237a96f6dfae93f181c411597f8b4faf1f5df544a96f9da30a82d12254527eb4",
+      "bytes": 3471,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_adapter.rs": {
+      "sha256": "938e1ea2f5185387feba3b1d90fb89c6dae92d175c11046b44a4bc1a8cfb5049",
+      "bytes": 7671,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_hook.rs": {
+      "sha256": "24c97cdba478e7c641b25caff222890eb7b796f133820265509c603b1ec233b2",
+      "bytes": 28383,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_hook/supervision.rs": {
+      "sha256": "e8ba5347c0d6f220ec732b2166021e027886a92f5b4640908a65804d35d52acb",
+      "bytes": 15955,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_hook/supervision/tests.rs": {
+      "sha256": "65232ef015688cc1511ad2e989363c0744fa75d1653d88a4ce87115f65fe1920",
+      "bytes": 5521,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_hook/w4_file_fault.rs": {
+      "sha256": "a5eb107c8aab72e58792e0b259a2fd26fd13cbb0a037e6707347999e6be53dd6",
+      "bytes": 30650,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_hook/w4_file_fault/tests.rs": {
+      "sha256": "cf3a31d704bf8f88b130cd87cc5c638931f4e9d67d92d4011abbc93dfd4b8608",
+      "bytes": 42053,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_hook/w4_file_kill.rs": {
+      "sha256": "7766656327bcb034e7ec4c1973592f6157286a1e51f11d361201c4f4cf03d903",
+      "bytes": 29996,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_hook/w4_file_kill/tests.rs": {
+      "sha256": "fbbb2f21d53691d877fffce41de6ccfe24c110ea175919715523f585bf37bae0",
+      "bytes": 38590,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_hook/w4_recovery_kill.rs": {
+      "sha256": "3feca822815e04c769be2bcda7c32dde27ab93e0cc298d8530c5c096acf1ccf9",
+      "bytes": 9611,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_hook/w4_recovery_kill/tests.rs": {
+      "sha256": "98efcc6aeac1284b7351553b7dd6b24385221ca03d49ee7112472497fde71ee2",
+      "bytes": 15966,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_observation.rs": {
+      "sha256": "ea09064c016619adb56f014e622d8f978e3757f621d4cbe74a1e9af8b40bc693",
+      "bytes": 18467,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_observation/supervision.rs": {
+      "sha256": "66b47fab097f97256950efd143de38a873eb673544ca05183e63dd01a9be27bf",
+      "bytes": 13047,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_sample.rs": {
+      "sha256": "eb76623c5d61797f43aa625c57ea636d0bea8ca59582e508a433f950e01006cb",
+      "bytes": 11855,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_trace.rs": {
+      "sha256": "f6647a7a306ca325f7fbc80b5beefd6592ce75e1ea8caab62442cc7336e0655a",
+      "bytes": 19334,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_trace/w4.rs": {
+      "sha256": "97b4f79b8d61489f7105b23d0ed438d0f3b7e1b520ddbc3513bfed3810ed4f61",
+      "bytes": 21979,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_trace/w4/tests.rs": {
+      "sha256": "d30f93225b7a093ab13d1b62d98febfd8fe119cea9ef96014c95441e097c8995",
+      "bytes": 8247,
+      "executable": false
+    },
+    "crates/robot-s0/src/comm_fault_trace_acceptance.rs": {
+      "sha256": "68fc6b323f15ce0ecfa9da703dd1b44618f2ef747223b34b920a2b40ac99c11c",
+      "bytes": 14473,
+      "executable": false
+    },
+    "crates/robot-s0/src/config_loader.rs": {
+      "sha256": "7824424bb66eeb1b18574e2a66cc62d8fdc20bcc8eb43c912dd0ef14f74e384d",
+      "bytes": 24597,
+      "executable": false
+    },
+    "crates/robot-s0/src/deploy/counter.rs": {
+      "sha256": "d8da8be31dac0919511acebb49d3c4e5093268aa5b5acedf96b5b1b49e0e1292",
+      "bytes": 16045,
+      "executable": false
+    },
+    "crates/robot-s0/src/deploy/guard.rs": {
+      "sha256": "49fa1933bb35a0b27bcd4b76a2a7cb52e4d1ff79730acea9562b2ee9452c247f",
+      "bytes": 55152,
+      "executable": false
+    },
+    "crates/robot-s0/src/deploy/identity.rs": {
+      "sha256": "299c491132611111e611cdaffda888ff6863e0b4023020e27ae834efd73f0fda",
+      "bytes": 21249,
+      "executable": false
+    },
+    "crates/robot-s0/src/deploy/mod.rs": {
+      "sha256": "67571ce61a04f8c6d22a342d259a1a8139e8b89dc8975524d94ce2dab4f906ab",
+      "bytes": 2209,
+      "executable": false
+    },
+    "crates/robot-s0/src/deploy/preflight.rs": {
+      "sha256": "034ac9f5abb0f6045eb652df89da65e50de6488a4476c30a042665425b15dcd0",
+      "bytes": 23669,
+      "executable": false
+    },
+    "crates/robot-s0/src/deploy/provision.rs": {
+      "sha256": "4af822eb5a6c557cb96dba509a14a6a0fe4496ced3aeca51f9dbd034940b87d7",
+      "bytes": 30926,
+      "executable": false
+    },
+    "crates/robot-s0/src/deploy/types.rs": {
+      "sha256": "deae9bb61608d880e3577396cc850047fbd003e0ee138a0c2dc99a957e8a0881",
+      "bytes": 4883,
+      "executable": false
+    },
+    "crates/robot-s0/src/diag.rs": {
+      "sha256": "e02ea4fc13ebf13aaf5adc38ceb0750b694c693a73c143a4cc4bcb9bf939d957",
+      "bytes": 5848,
+      "executable": false
+    },
+    "crates/robot-s0/src/estop_latch.rs": {
+      "sha256": "4ae545bf4511d201e66f20a413f81456a74b6a5285d12cea3f919b5a0df1665c",
+      "bytes": 29060,
+      "executable": false
+    },
+    "crates/robot-s0/src/event_ingress.rs": {
+      "sha256": "fca0844258d20167ea0f1a82a48f0a9bb3d6e98afb85a52260f59582a591e9a4",
+      "bytes": 21234,
+      "executable": false
+    },
+    "crates/robot-s0/src/freeze_control.rs": {
+      "sha256": "dd69c5efbf29261d836ce5575a96de5d3d0ddb799226fa073ed5e0f5e17fb2c7",
+      "bytes": 26463,
+      "executable": false
+    },
+    "crates/robot-s0/src/freeze_hook.rs": {
+      "sha256": "2984116fce3cf512aca3b192b6e8631185d431adf62351b78ca4f0727c9e1756",
+      "bytes": 5970,
+      "executable": false
+    },
+    "crates/robot-s0/src/hard_rt_ctrl.rs": {
+      "sha256": "4a02710a4c50e82cc7955180ec20c95985e4b0440841622b9ffbd08e787a470f",
+      "bytes": 54576,
+      "executable": false
+    },
+    "crates/robot-s0/src/io_thread.rs": {
+      "sha256": "3e1ddf83eb2eff2cf1e692650e5c33900033ed699396ca524ab1f48967450aff",
+      "bytes": 9297,
+      "executable": false
+    },
+    "crates/robot-s0/src/ipc_pending.rs": {
+      "sha256": "571d684d7db29c04d9d23a2c83d3fcf9ab1d3412fb8894d6eb349d53f036cdca",
+      "bytes": 123112,
+      "executable": false
+    },
+    "crates/robot-s0/src/ipc_runtime.rs": {
+      "sha256": "37837cea1a30f6ba44b1901054987f9766d922bd000f50c601760cf645c4156f",
+      "bytes": 102632,
+      "executable": false
+    },
+    "crates/robot-s0/src/ipc_thread.rs": {
+      "sha256": "6c9388654f84e228adb60078130c3dc531d8128bd4c7128c405557552b68fde5",
+      "bytes": 107898,
+      "executable": false
+    },
+    "crates/robot-s0/src/latch_lock.rs": {
+      "sha256": "899f5ef00da20d4b07100b526db90d79db7f6d34e3b565262b4f7fb69dcb3127",
+      "bytes": 42481,
+      "executable": false
+    },
+    "crates/robot-s0/src/latch_writer.rs": {
+      "sha256": "587dba9e5f91788bb217953e9c53a3ee15d2bc0e8fa014e1e43e57e0830c0ff7",
+      "bytes": 2791,
+      "executable": false
+    },
+    "crates/robot-s0/src/latch_writer/announce.rs": {
+      "sha256": "75fae69aee19c37c1748219f2b0ea5032c0658bbe1fbe010ed601b27224b9611",
+      "bytes": 5558,
+      "executable": false
+    },
+    "crates/robot-s0/src/latch_writer/core.rs": {
+      "sha256": "1dc3ed32dcc27ce5df4dc13f7164bdaa01827afa35902f7749e0c6b78669bf46",
+      "bytes": 74404,
+      "executable": false
+    },
+    "crates/robot-s0/src/latch_writer/obligation.rs": {
+      "sha256": "8d0e1a8559e39bbcbeefe3ed22020f7d28886daf5ba2e623506ddff2d704dba2",
+      "bytes": 21340,
+      "executable": false
+    },
+    "crates/robot-s0/src/latch_writer/pairing.rs": {
+      "sha256": "2043ab798bb4c82f70d751410f253d74b1e8dee6e9888b45cd072ff4e24a214f",
+      "bytes": 20724,
+      "executable": false
+    },
+    "crates/robot-s0/src/latch_writer/progress.rs": {
+      "sha256": "cd101031b9520f42bcf47b96c40e9f9a2b5712a8ff088ee2c6f5c1baa7987b68",
+      "bytes": 8528,
+      "executable": false
+    },
+    "crates/robot-s0/src/latch_writer/protocol.rs": {
+      "sha256": "ac968c2cd60c7920da88fc88d56e058a23f17c77ffabb60cddb12427e34d6ce0",
+      "bytes": 20058,
+      "executable": false
+    },
+    "crates/robot-s0/src/latch_writer/supervision.rs": {
+      "sha256": "0522a77f43c7482b525655343179bab9cef3304a1e847e670b95d4fef4f4f593",
+      "bytes": 16989,
+      "executable": false
+    },
+    "crates/robot-s0/src/lib.rs": {
+      "sha256": "52dfd183055e5112dd5f8773165c73c90e79f49ec82e17f11f75a1d2f28130d9",
+      "bytes": 5474,
+      "executable": false
+    },
+    "crates/robot-s0/src/persist_health.rs": {
+      "sha256": "35130c4ccb30f6e4fe5d72fc18ae7413043f06583e00a06726c8064d3996b248",
+      "bytes": 7687,
+      "executable": false
+    },
+    "crates/robot-s0/src/post_e_acceptance.rs": {
+      "sha256": "1926a57930864758cfd68952e414766c2f24d5a422200b93fda71d45dcd73379",
+      "bytes": 21698,
+      "executable": false
+    },
+    "crates/robot-s0/src/post_e_convergence_acceptance.rs": {
+      "sha256": "2e36a31797bb2dbef39c04051f68f8c3e4d2e2a7caace1175b6661df8b032e28",
+      "bytes": 106710,
+      "executable": false
+    },
+    "crates/robot-s0/src/post_e_diag_acceptance.rs": {
+      "sha256": "9e4720fdcc5ffc88c75cd3a422f6098f8696cd1a6f72b605678abf3b0706e9ff",
+      "bytes": 29107,
+      "executable": false
+    },
+    "crates/robot-s0/src/post_e_ipc_acceptance.rs": {
+      "sha256": "1cd961224b6e3bbd23803f24f2d743a0ba5d50f2fc7158657c9a712bec1227e4",
+      "bytes": 58244,
+      "executable": false
+    },
+    "crates/robot-s0/src/pub_thread.rs": {
+      "sha256": "d91e358ff8f37ab876e05a10d6b680fe02add4ed41236d29ad1517b054b94173",
+      "bytes": 41918,
+      "executable": false
+    },
+    "crates/robot-s0/src/rr_admission.rs": {
+      "sha256": "784930b75ae7b3229508a86127629ee1332414e7c27037e10af933821e27d4ef",
+      "bytes": 22110,
+      "executable": false
+    },
+    "crates/robot-s0/src/rr_server_thread.rs": {
+      "sha256": "e6701c3a1fa16b71e2cc2476b08a1f834d2d7d11221ccf7f8450ea4ab7a39ed8",
+      "bytes": 50293,
+      "executable": false
+    },
+    "crates/robot-s0/src/rt_thread.rs": {
+      "sha256": "8b1d80938fae120578113662d558a66b018525411983226e34ccd62b4e1d3530",
+      "bytes": 79346,
+      "executable": false
+    },
+    "crates/robot-s0/src/rx_trust.rs": {
+      "sha256": "a7e1a24d43f083dd4cf79b40de13917c1ad7417c019ad2f0fc58de2ff76b0106",
+      "bytes": 17642,
+      "executable": false
+    },
+    "crates/robot-s0/src/serial_convergence.rs": {
+      "sha256": "9f1e490e62a65cd2ec83b8c4e34a62dda8d959afb7a5a1bd688240d96d4e4988",
+      "bytes": 49784,
+      "executable": false
+    },
+    "crates/robot-s0/src/serial_io_ctrl.rs": {
+      "sha256": "5744a46435a5020618fad0b8480fd9737772721ab2f36b188841b5a1e8747792",
+      "bytes": 6452,
+      "executable": false
+    },
+    "crates/robot-s0/src/serial_io_thread.rs": {
+      "sha256": "4ce09da2b881079f622adc8bdc39217dfd65744a9b7ce700813fd58ed751e703",
+      "bytes": 59079,
+      "executable": false
+    },
+    "crates/robot-s0/src/serial_preempt.rs": {
+      "sha256": "d13850a1d7e3e405d4b9a4c5105e9c798a98687e2bc297da5a7cd26e6b9f68b8",
+      "bytes": 17795,
+      "executable": false
+    },
+    "crates/robot-s0/src/serial_tick.rs": {
+      "sha256": "a79a52fe48c297abbe32dd9754d86223667833bd73d4a6054a1984c55c35afaa",
+      "bytes": 24174,
+      "executable": false
+    },
+    "crates/robot-s0/src/set_enabled_action.rs": {
+      "sha256": "e5c02cf3c90119f3e66e3d59d21894bd3a59617eb92664fbeebf044948e48f87",
+      "bytes": 7031,
+      "executable": false
+    },
+    "crates/robot-s0/src/set_enabled_rr_server.rs": {
+      "sha256": "5adc73b919bf4909f91e8982005dfecc997eed53f4db5224ecdb831ff7406254",
+      "bytes": 34404,
+      "executable": false
+    },
+    "crates/robot-s0/src/shutdown_mechanism.rs": {
+      "sha256": "dc109c37e887c8f9f137c1f21b69db095e8eac6bb4310bb2f0529e424f112372",
+      "bytes": 60003,
+      "executable": false
+    },
+    "crates/robot-s0/src/state_machine.rs": {
+      "sha256": "533f4d6b01cf2ae54736e88a3ba2d53ee4b90658d5bfefeff1c51c2d24ce6c71",
+      "bytes": 42872,
+      "executable": false
+    },
+    "crates/robot-s0/src/state_snapshot_codec.rs": {
+      "sha256": "fd19a7b44bcf88a2aa0162efc1d1696e21a4b95880ba42493b55fa9764925251",
+      "bytes": 15395,
+      "executable": false
+    },
+    "crates/robot-s0/src/test_util.rs": {
+      "sha256": "19582daf381f1bc5e5c18a9f3d821d9ffb1effe651a45c0a58a523247e636e28",
+      "bytes": 4299,
+      "executable": false
+    },
+    "crates/robot-s0/src/watchdog.rs": {
+      "sha256": "97ae917d1f8cd8c974785ae371da89c0b95040df70cedb84687765de0a0425bb",
+      "bytes": 12036,
+      "executable": false
+    },
+    "crates/robot-s0/src/worker_stop.rs": {
+      "sha256": "1758b239c8259dbc27afe9753355778f1b3f2ea8c12b1382de7ca5700553bdd4",
+      "bytes": 5767,
+      "executable": false
+    },
+    "crates/robot-s0/tests/clear_coordination_acceptance.rs": {
+      "sha256": "95384f9d8fe400ce99b06a884cab33a5f27e6c01ac15b4e7c7725df32de57c06",
+      "bytes": 39552,
+      "executable": false
+    },
+    "crates/robot-s0/tests/clear_estop_transaction_acceptance.rs": {
+      "sha256": "861973cfc8e67d655f0c74e6e13071d18571b9d9c58a41a56ccdca23259c12a7",
+      "bytes": 20572,
+      "executable": false
+    },
+    "crates/robot-s0/tests/comm_fault_startup.rs": {
+      "sha256": "61fe856df3aad1f6163e267a81bcd2f7369fe32ea6fff6baf9f4e3130cd01380",
+      "bytes": 26043,
+      "executable": false
+    },
+    "crates/robot-s0/tests/control_authority_acceptance.rs": {
+      "sha256": "cfc87d02bf6ec13c4b06b2f494e30c008645fec5a23d9ae4919ea164a81c8c1e",
+      "bytes": 70553,
+      "executable": false
+    },
+    "crates/robot-s0/tests/deploy_guard_kill.rs": {
+      "sha256": "172644dc959b7c51b965d20cc8572b5b8a55f36a4fbe11759cd35c46d1e1e24f",
+      "bytes": 7097,
+      "executable": false
+    },
+    "crates/robot-s0/tests/deploy_units.rs": {
+      "sha256": "e17d83caaed4fcdcd532a073f5e3fc38bf1610fccf98d8785d9cd9fe72570421",
+      "bytes": 18490,
+      "executable": false
+    },
+    "crates/robot-s0/tests/latch_lock_acceptance.rs": {
+      "sha256": "7bf685e8a14002d7220152b4e12139d3b18e3cce6bbfb56099510d9dfb7a8288",
+      "bytes": 32458,
+      "executable": false
+    },
+    "crates/robot-s0/tests/latch_lock_daemon.rs": {
+      "sha256": "3ae6de8af21e6a9b558e29f8306d3fd1e46510350adfba058f085736c46f4c89",
+      "bytes": 20097,
+      "executable": false
+    },
+    "crates/robot-s0/tests/latch_writer_acceptance.rs": {
+      "sha256": "b7ddd3458b099b4ff7ce8ecbe5a468969d4700512ea5722ad52e7c3d4c1c5e8d",
+      "bytes": 51809,
+      "executable": false
+    },
+    "crates/robot-s0/tests/priority_primitives.rs": {
+      "sha256": "cf76de9cd8a7eb1810bfeded8262ae9227a53427608aa8056f7067f26436747d",
+      "bytes": 15091,
+      "executable": false
+    },
+    "crates/robot-s0/tests/rt_guard_soak.rs": {
+      "sha256": "780a4d9d63c5d0420786a2f38d641c65eec130b9a84519b2cf9c113bd047de9f",
+      "bytes": 10350,
+      "executable": false
+    },
+    "crates/robot-s0/tests/rx_trust_faults.rs": {
+      "sha256": "b093ce2277196351bdab566b881e3b4f83a8d3978ece1f7f2bacf78aa9c4e4e9",
+      "bytes": 2261,
+      "executable": false
+    },
+    "crates/robot-s0/tests/serial_rt_e2e.rs": {
+      "sha256": "62fed185e5dda0ffb21489e1e6ce69c308be99191f635cff381ebfcae838f91d",
+      "bytes": 39045,
+      "executable": false
+    },
+    "crates/robot-s0/tests/shutdown_mechanism_acceptance.rs": {
+      "sha256": "d8122b961e097751a3a67bd6b30d55141653cd91f5c4543b232c666c83a3ff37",
+      "bytes": 45352,
+      "executable": false
+    },
+    "crates/robot-s0/tests/snapshot_alloc_guard.rs": {
+      "sha256": "13452c852107593e9e1a2463d056f6eee5aab1d7f35ce18917b6033949809082",
+      "bytes": 12086,
+      "executable": false
+    },
+    "crates/robot-s0/tests/support/post_e_marker.rs": {
+      "sha256": "53cda0d0aafdcfc7dc69f6520be7f3ed65c233620b95bcbeab39f5e8c55ea552",
+      "bytes": 12469,
+      "executable": false
+    },
+    "crates/robot-s0/tests/w3_execution_bridge.rs": {
+      "sha256": "c7ea4e0cf3b5d0d0a4e1d216b5426e3977a7193654475bdbe80a3aa816fd0d1e",
+      "bytes": 15151,
+      "executable": false
+    },
+    "crates/robot-s0/tests/xlerobot_deploy_provision.rs": {
+      "sha256": "29b0c7ef85a37e5094840a160d5c46ebb798c261b0ce2b5afb6a53bac307246b",
+      "bytes": 5492,
+      "executable": false
+    },
+    "crates/robot-s1/Cargo.toml": {
+      "sha256": "a220778137a7813ee1ffd5d8a9be8e719e4aee5e250dd0b43645bfb9fa2a2d07",
+      "bytes": 7623,
+      "executable": false
+    },
+    "crates/robot-s1/src/action.rs": {
+      "sha256": "e3b62b5c71555b565a1e24b2e773c34f63533d3aff7eef3c484c4b2506b692e3",
+      "bytes": 51064,
+      "executable": false
+    },
+    "crates/robot-s1/src/action_backend/fault_inject.rs": {
+      "sha256": "788b165617394c529d69fcc2458d0a0c97de1f448cccf7335def785ae2991155",
+      "bytes": 16258,
+      "executable": false
+    },
+    "crates/robot-s1/src/action_backend/hold_pose.rs": {
+      "sha256": "ad7150b7313c6d073cc7633c71c3c573fa2cfc383258fcd58f4075b59f8d2c7e",
+      "bytes": 19782,
+      "executable": false
+    },
+    "crates/robot-s1/src/action_backend/ik.rs": {
+      "sha256": "1d170bc48c1acd426c3e6a27d323e51a8c4a9d806184ef3fbe42120980140eac",
+      "bytes": 44313,
+      "executable": false
+    },
+    "crates/robot-s1/src/action_backend/mock_dwell.rs": {
+      "sha256": "8d99f12553536736980b20267b0da1815387a98ecf422bf6444ca0251d787cbd",
+      "bytes": 18525,
+      "executable": false
+    },
+    "crates/robot-s1/src/action_backend/mod.rs": {
+      "sha256": "249f215d8fb880c6785bf3df1de705dac48eb4c13fbc9ed87714bf56d46f61b9",
+      "bytes": 16268,
+      "executable": false
+    },
+    "crates/robot-s1/src/action_backend/scripted.rs": {
+      "sha256": "29056055c7ddd03f84eec850b9be11ad6f237739f439803f728930cc93007a1e",
+      "bytes": 70989,
+      "executable": false
+    },
+    "crates/robot-s1/src/bin/mock_s1.rs": {
+      "sha256": "584ff1756bd98517d959a3e80feb3edc0ce7faaee01c30c586454706f2f77e5b",
+      "bytes": 25870,
+      "executable": false
+    },
+    "crates/robot-s1/src/bin/s1_daemon.rs": {
+      "sha256": "612df4881a52ec4946bd2c186cdf53073e70e7ae7e992ad142bb2d627c40287e",
+      "bytes": 58198,
+      "executable": false
+    },
+    "crates/robot-s1/src/coordinator.rs": {
+      "sha256": "b8b8fc32e9fddc25262ad2f5226c6cef8308bd33481604a64a4b5cfdd37a6d0a",
+      "bytes": 178807,
+      "executable": false
+    },
+    "crates/robot-s1/src/events_drain/mod.rs": {
+      "sha256": "2dded7d4372acf59349451251532a7cbef9e4cf60a70d96a5079fbc34d2201c8",
+      "bytes": 3769,
+      "executable": false
+    },
+    "crates/robot-s1/src/events_drain/runtime.rs": {
+      "sha256": "f0aaae567e7100ed903acef64504c038ce9f0cda6cd5b394ab8539afecbd0a40",
+      "bytes": 47074,
+      "executable": false
+    },
+    "crates/robot-s1/src/events_drain/wire.rs": {
+      "sha256": "c1f28479a97bbac0ee109b43838bb9d8e9f1810d82493f38bdfa4712a84bd5d4",
+      "bytes": 8641,
+      "executable": false
+    },
+    "crates/robot-s1/src/freeze_control.rs": {
+      "sha256": "0afc3af08f020db3b16e22e2d6fec15c2e8565395be3b76bb80bb473db7b4de2",
+      "bytes": 17640,
+      "executable": false
+    },
+    "crates/robot-s1/src/lib.rs": {
+      "sha256": "54b0d77d39a8902af84bce1095f5c77e612142283fb2d6ff2b2b015956463ea9",
+      "bytes": 4339,
+      "executable": false
+    },
+    "crates/robot-s1/src/liveness.rs": {
+      "sha256": "1a7c3627ca7227ff51ffdc5134b134ad064d8b4c410e07a37160c07fd53c5c96",
+      "bytes": 4886,
+      "executable": false
+    },
+    "crates/robot-s1/src/rr_server/handler.rs": {
+      "sha256": "0b00fdd7a0cb0642df0b52b27c5eb29138dd6a407dd4663ce43feb1c89f7d8f4",
+      "bytes": 59705,
+      "executable": false
+    },
+    "crates/robot-s1/src/rr_server/mod.rs": {
+      "sha256": "b07e3caa40795db7acddf4cde6f8ec76c752ec82c1a74b14853d567c44215d16",
+      "bytes": 5268,
+      "executable": false
+    },
+    "crates/robot-s1/src/rr_server/runtime.rs": {
+      "sha256": "5929063fff011b7953f2b27295f1761d0923913c98fe61655251ce94deeb7128",
+      "bytes": 43293,
+      "executable": false
+    },
+    "crates/robot-s1/src/rr_server/wire.rs": {
+      "sha256": "e8f16aea50a61ba321f17d2120ff6ef376be49c47e046423d006d837f9ba8bba",
+      "bytes": 25516,
+      "executable": false
+    },
+    "crates/robot-s1/src/state_cache.rs": {
+      "sha256": "212690286606443d15a61d3fbcaadc3f784c2068cafaa1dc790885325ad24e32",
+      "bytes": 37988,
+      "executable": false
+    },
+    "crates/robot-s1/tests/action_dispatch.rs": {
+      "sha256": "f95e78ae429d9e30ad805ca821000d7a6d206090ffe6abfd195f1d207f3c3b54",
+      "bytes": 43318,
+      "executable": false
+    },
+    "crates/robot-s1/tests/g1_hold_target.rs": {
+      "sha256": "f3b0d71f7d7cc6c1fa415de8d115daecadd20e66b6b91344deea1a0c5e85716d",
+      "bytes": 26321,
+      "executable": false
+    },
+    "crates/robot-s1/tests/s1_layout_conflict.rs": {
+      "sha256": "ea3cb615ce4813430384eb8816374a9d8dc339df91da5bc268faa019771a6d89",
+      "bytes": 1744,
+      "executable": false
+    },
+    "crates/robot-s1/tests/tick_loop_in_process.rs": {
+      "sha256": "5af8228294e350c7ebd9c3b6f621d9cfeb5a983ea56684356926af26c763da7e",
+      "bytes": 10757,
+      "executable": false
+    },
+    "crates/robot-tests/Cargo.toml": {
+      "sha256": "82bba10ababef0ca4498fb70a8a93ade20fb4b38e9d4f9577023d89094a54ef9",
+      "bytes": 20417,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/clear_estop_e2e.rs": {
+      "sha256": "4de03a17a3cc0af31142c990b80af95aba2ffdf6b5a78025f3262dca573081aa",
+      "bytes": 52745,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/comm_fault_e2e.rs": {
+      "sha256": "91e4e0e8c27f00c6826a9d199e27b7d269f22c9050b7b04bcf7f17739b4bc9f4",
+      "bytes": 234,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/crash_restart_smoke.rs": {
+      "sha256": "d2a1884a4d62c47f9bcfb32e9d31c6552a5d3a211abe9539edb97f61572af2ed",
+      "bytes": 33587,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/freeze_systemd_smoke.rs": {
+      "sha256": "2b2cb7efaa0ca9496f871e274f294ac997e83326f3ecb52abff8013f1013037b",
+      "bytes": 34208,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/hello_pubsub.rs": {
+      "sha256": "c5f459429924eeaa0c00e97b48046c5bcd35d6f681582da6bde22bbf91fd76ac",
+      "bytes": 2724,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/iceoryx2_rt_baseline.rs": {
+      "sha256": "c80875c88b16ec5191b1684ea73be4aaac7d6fdbb8daaa8919a1bc6a44b00999",
+      "bytes": 19261,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/ik_backend_smoke.rs": {
+      "sha256": "c16808308d2ffbe23f2f812e39b5638c3e0d9065334eb6c3616db53262eb617d",
+      "bytes": 64864,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/pubsub_cleanup_smoke.rs": {
+      "sha256": "2c8115e93c64de77349033f3848cc874aa8579011f4bfa01e3b993dd2c229567",
+      "bytes": 97966,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/robotctl_smoke.rs": {
+      "sha256": "37a254ce805d25461c3491ee2b3ab74523f6d9dd5f5f3da832935bc05a77933a",
+      "bytes": 58857,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/scripted_backend_smoke.rs": {
+      "sha256": "91ff1e7010d824c3a2cc594257443a0137e736a2e6cab64a52dcab794822b2eb",
+      "bytes": 68811,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/sd_watchdog_smoke.rs": {
+      "sha256": "eaa73fdc752697f282e5e7f58d750daed729e19de948f3d6ff5a5aac832ac28e",
+      "bytes": 49934,
+      "executable": false
+    },
+    "crates/robot-tests/src/bin/supervised_demo.rs": {
+      "sha256": "34d940e43d4101c9a145817181db53485ba79ce9ca2520bdeb8e56de4137d6de",
+      "bytes": 107053,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/control.rs": {
+      "sha256": "01290513f08bcdc3319f3b7a4acd431e580a0bc9105e4a9def3a2f79b07329d8",
+      "bytes": 13104,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/gateway_exhaustion.rs": {
+      "sha256": "44a90afcfef5e9e75c232d29dd3c6417f06a19df5d066734a17a132b43efdfab",
+      "bytes": 14252,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/gateway_exhaustion/oracle.rs": {
+      "sha256": "c9d5239b2ebcc44712b94c0c8d23e5facd29acd94474b6252cf53ede5c524496",
+      "bytes": 7876,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/hardware.rs": {
+      "sha256": "07b78e0adbd3aefc0f24f7a60334b2a12e47f50804e760043a627e95d3d1b4ff",
+      "bytes": 48168,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/harness.rs": {
+      "sha256": "6de90b749c02479b11d34b15dabc982e5c4c62376ec0a011bb2f3ba481d47381",
+      "bytes": 8321,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/heartbeat.rs": {
+      "sha256": "829415aa44c6a1055845f081db0e198b36858b6c3c802b2041d9f42908f4265e",
+      "bytes": 2920,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/manager.rs": {
+      "sha256": "45ed21af83f88de739810444c3ef1bd7bcf3b6a531ff5b71229b58ad5acc0928",
+      "bytes": 52139,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/manager/command.rs": {
+      "sha256": "046ee7ef0b54119b96b9043270bf05993367253f45c665d715952f2a59cafb8e",
+      "bytes": 7762,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/manager/launcher.rs": {
+      "sha256": "e0d8213517bb87daae1dc58ab46a32566fba539b861eb3a2aa8a5df6f853fa35",
+      "bytes": 14248,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/manager/oracle.rs": {
+      "sha256": "eae0f68ba9d7529f238f0e701954d202891a24d4ea710ac887b16db53ad0e668",
+      "bytes": 11934,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/manager/tests.rs": {
+      "sha256": "0478f240733aff723852859d6b669bfb515030619be0fedca978753fe4c79bd2",
+      "bytes": 14114,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/manager/unit_reference.rs": {
+      "sha256": "b1d7f575e42a4a51a5bc40a2c544f04065778b202dc723347f3e4266eec55778",
+      "bytes": 10661,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/mod.rs": {
+      "sha256": "688639be3557a8e8a9699aad1d4f98920e33a895c411ab7c71b6c8ed26494aef",
+      "bytes": 17094,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/report.rs": {
+      "sha256": "836e3270ea4e5cab427a011681078f137d1be34c10a5b0ee4aaf2e5017f31e14",
+      "bytes": 7821,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/report_acceptance.rs": {
+      "sha256": "c01f86af18ca0cb1658fd0c80062b748500ec5dcb2d6b3eb3ef562f9e492b563",
+      "bytes": 10095,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/rpc.rs": {
+      "sha256": "b1862331f291b80de1081306983896becf899a985d0d31552fcee0543e219a84",
+      "bytes": 36746,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/rpc_acceptance.rs": {
+      "sha256": "3c26ea23715c0d1946eaa1f1cb1c366dc1f3c2ee19dc69ab19837d725009545f",
+      "bytes": 2540,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/runtime_supervision.rs": {
+      "sha256": "42965c65f4d3066ddbfc460b97766d1fc33ed4aa2e1ce713b2f3a7049b470608",
+      "bytes": 13463,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/runtime_supervision/oracle.rs": {
+      "sha256": "ea81e23ba1aa0f7012478f143c961a561b8b5542bdeaab66e6f25db952571a9c",
+      "bytes": 12968,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/scenarios.rs": {
+      "sha256": "6587b4e51c8937f8cd05bd3827f2a917b102ff6c27e0ea1e473f4824b875f248",
+      "bytes": 13663,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/sla.rs": {
+      "sha256": "167dc63b2a274b53d9c53fe72c811d242d8ca96d5f031e1bf0ea9981cbd78e18",
+      "bytes": 128812,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/sla_acceptance.rs": {
+      "sha256": "86ef0885e5cddcd09e60b9893ead237a3ef73269d7c5668a11af010a88aaa6e4",
+      "bytes": 47868,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/sla_background.rs": {
+      "sha256": "17626531fef14ff968fb1d8fb0a2ca82b05e559a4c4e4e65fc0d0c607f76039e",
+      "bytes": 37458,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/sla_cache.rs": {
+      "sha256": "dc4dafd86b36d5d44134601a9b8d374d68831111251f43120638063b303c9524",
+      "bytes": 34599,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/startup.rs": {
+      "sha256": "bce2f7ac97b8aa0f0ec0d09d1808f70d3352b1bf1fd75ce484076ea21629857c",
+      "bytes": 31201,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/supervision.rs": {
+      "sha256": "5623547505528bb015e47646acc65c94adc96921a5c8a8d99aa6d9b716fe2d14",
+      "bytes": 26635,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w3.rs": {
+      "sha256": "e19a5869ee4bede20d10c3c3fbf3ea09a36ff4f204ca05104ff5da3cd8de3664",
+      "bytes": 33369,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_crash.rs": {
+      "sha256": "abadaaa2b01aa2b8e6b5bba3f75b935ee33de97d98d7e9b67bcdb0f4110d6d6d",
+      "bytes": 42480,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_resync.rs": {
+      "sha256": "75e449e00bbe307a9f455909b28f0e2c747ae11fe7b69cb29c1d86358459e305",
+      "bytes": 21873,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_retry_exhaustion.rs": {
+      "sha256": "763f6b6b0f6c0f59fd839e82106e474592f44b3f9ce2692515eca86a5cd5ce7e",
+      "bytes": 22363,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_retry_exhaustion/oracle.rs": {
+      "sha256": "c89f4455ad00e83549b97eaaf687675389b4504877a3349d3f4502b067a71c2b",
+      "bytes": 36720,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_sigkill.rs": {
+      "sha256": "4cb539504335b39e038eee5638c92733c78d11a604c68fefe3223983296b1c87",
+      "bytes": 86939,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_sigkill/batch.rs": {
+      "sha256": "8a8f865a56556e83a18fe39db2ae95b467d2df58f2fe9cc86c63f146f9b8fe19",
+      "bytes": 9423,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_sigkill/batch/tests.rs": {
+      "sha256": "4e337e51521e749cb521b4073df3df845bf59543e64942d55f72b0f8af9a15e4",
+      "bytes": 20095,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_sigkill/recovery.rs": {
+      "sha256": "8201e455879c27509d85082204604ba245ba44086f746721de52db3cd0000bec",
+      "bytes": 14791,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_sigkill/recovery/record.rs": {
+      "sha256": "3491d5bbe1e717378067eb9ff12d74aa07608a1b3e51cd98a35f541d565cc3ef",
+      "bytes": 6474,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_sigkill/recovery/record/tests.rs": {
+      "sha256": "97dc15a0a564485c1d4626704f6593fb968dd0d5ceca29ce15b785e7c1c30aa3",
+      "bytes": 4809,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/w4_latch_sigkill/recovery/tests.rs": {
+      "sha256": "c2fd07f384eb4723ae76514eff37e66455c76a921237c09e128a73da70a74103",
+      "bytes": 5501,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault/watchdog.rs": {
+      "sha256": "287ee8efd51ed1f4c24c0083daff79364ec32076e5d6c0c13ef820031da8c0d3",
+      "bytes": 17775,
+      "executable": false
+    },
+    "crates/robot-tests/src/comm_fault_rpc.rs": {
+      "sha256": "50da8702533d4734415c9066472f87145e240f5f8249cc208f49584d933e1e8b",
+      "bytes": 8112,
+      "executable": false
+    },
+    "crates/robot-tests/src/config_fixture.rs": {
+      "sha256": "8e2319bdd48c8e3a8615fdead08e697410216455c9195b4a093c0736a830a3a0",
+      "bytes": 3917,
+      "executable": false
+    },
+    "crates/robot-tests/src/lib.rs": {
+      "sha256": "6023645487b8c190e39cdd1d70f3416edba86b6797612cc4a163251adf053b29",
+      "bytes": 830,
+      "executable": false
+    },
+    "crates/robot-tests/src/pubsub_resource_oracle.rs": {
+      "sha256": "9bad2104e10029c6d789d16e4e3deb83f9e5cd045ef3a1e74e72ee00b5ebb6c1",
+      "bytes": 9616,
+      "executable": false
+    },
+    "crates/robot-tests/tests/final_stop_transport.rs": {
+      "sha256": "4a217afad76a19b7c64cb16f7c9d4c3af68728d8cd5064756364a3028d3e3ba8",
+      "bytes": 14862,
+      "executable": false
+    },
+    "crates/robot-transport/Cargo.toml": {
+      "sha256": "411e1ec890cd252a0a8b017ea79eb1993c8ce2323222994a463780aec6c3431e",
+      "bytes": 2157,
+      "executable": false
+    },
+    "crates/robot-transport/src/command_slot.rs": {
+      "sha256": "5fb398dfb27f459103d0cb1fa03280857f78425e14d865d1aac44684ac123042",
+      "bytes": 5577,
+      "executable": false
+    },
+    "crates/robot-transport/src/error.rs": {
+      "sha256": "ac1591195cb01a7975cb59dc2790b1ccada70dc993b2d1de41269bc98a4e1432",
+      "bytes": 3092,
+      "executable": false
+    },
+    "crates/robot-transport/src/iceoryx2/attributes.rs": {
+      "sha256": "91a0f4b60b8105a58e4c50b230deb6ff20e4985786a204f38369fecba7d4b9fe",
+      "bytes": 4021,
+      "executable": false
+    },
+    "crates/robot-transport/src/iceoryx2/mod.rs": {
+      "sha256": "e15110c8fbf1c7facb865b2063e361a556fe5bb265f9b6926e60e10a86901e65",
+      "bytes": 12007,
+      "executable": false
+    },
+    "crates/robot-transport/src/iceoryx2/observer.rs": {
+      "sha256": "9ab4abb36a8fcaaa114c80ecde5a4b651709e60e624c328a182c37e614aa6216",
+      "bytes": 29065,
+      "executable": false
+    },
+    "crates/robot-transport/src/iceoryx2/publisher.rs": {
+      "sha256": "c1b18c6bd00a3161dbadc1c87440b610745754635ca6816a97148127b919a4e6",
+      "bytes": 14310,
+      "executable": false
+    },
+    "crates/robot-transport/src/iceoryx2/qos.rs": {
+      "sha256": "afb7fa743ac78f97c9844a4d754e4cd3a9d53dccff74f05635b86364261e2a2b",
+      "bytes": 11326,
+      "executable": false
+    },
+    "crates/robot-transport/src/iceoryx2/request_response.rs": {
+      "sha256": "98ad737ee194e8fdebcaad185506731c8bc4f6817e7196d08fac85400260ca00",
+      "bytes": 71646,
+      "executable": false
+    },
+    "crates/robot-transport/src/iceoryx2/service_name.rs": {
+      "sha256": "6df9b5eb4bc2d7f080915234cb7b920a6cab28249b5d79a479a81a2bf10a082c",
+      "bytes": 2367,
+      "executable": false
+    },
+    "crates/robot-transport/src/iceoryx2/subscriber.rs": {
+      "sha256": "98c86e1e76717cea638c2c7cd1fee2d5cd3028aef50ee62d3755b73ee3e3ac37",
+      "bytes": 4615,
+      "executable": false
+    },
+    "crates/robot-transport/src/lib.rs": {
+      "sha256": "edd34936f5912e3066981619f5d94e81eb192aa7e088a7d7753cbfec8574b664",
+      "bytes": 2554,
+      "executable": false
+    },
+    "crates/robot-transport/src/metrics.rs": {
+      "sha256": "27ba8445ed9e749223ae08353ade6153c6258e05e9a11c917d517e49a8568ac8",
+      "bytes": 5871,
+      "executable": false
+    },
+    "crates/robot-transport/src/mock.rs": {
+      "sha256": "3a71fabdea381dd62641ee00e8addd77c42bf76ee7260416ae49b519532b4646",
+      "bytes": 12778,
+      "executable": false
+    },
+    "crates/robot-transport/src/parser.rs": {
+      "sha256": "207f35b4de40eafd03dfeeba2d40313d5b45e6a6a518e169513248c8879b54bf",
+      "bytes": 11249,
+      "executable": false
+    },
+    "crates/robot-transport/src/sample.rs": {
+      "sha256": "dd50769923e3709d5c6b3c6655c24446f0fb45a7bf7ec7890232b5208400c713",
+      "bytes": 9852,
+      "executable": false
+    },
+    "crates/robot-transport/src/snapshot.rs": {
+      "sha256": "94ddbaed682f015695543fff45b8ca88db57f719a25f18a6eceb23e776c49327",
+      "bytes": 18397,
+      "executable": false
+    },
+    "crates/robot-transport/src/snapshot_codec.rs": {
+      "sha256": "8f8097c2d2b09ecea2a8d96dea172b189069e25b3be1fdef3618588bb9e6a8f2",
+      "bytes": 9483,
+      "executable": false
+    },
+    "crates/robot-transport/src/traits.rs": {
+      "sha256": "9d37dfadc8fba5b3e6ae0efbc22652d5b3b4fe29d4a5b271df53f6b05a25ff91",
+      "bytes": 5724,
+      "executable": false
+    },
+    "crates/robot-transport/src/writer.rs": {
+      "sha256": "07e28a439137b4e3f812e0a2a5b69d271fdd57df23e4809ee141c5e80b942e97",
+      "bytes": 10030,
+      "executable": false
+    },
+    "crates/robot-transport/tests/iceoryx2_roundtrip.rs": {
+      "sha256": "4ffc12a8a9bd3d137ba6b7bef9830136530a86a497b6340c830f816c53caf944",
+      "bytes": 14426,
+      "executable": false
+    },
+    "crates/robot-transport/tests/iox2_sub_first_repro.rs": {
+      "sha256": "4f7e82d25881798bf1be88648f6177d76eb871e5ab5f77ed50a2f8c555d421e5",
+      "bytes": 14203,
+      "executable": false
+    },
+    "crates/robot-transport/tests/observer_mirror.rs": {
+      "sha256": "030e9ff4aae3c425792f21ff2c461c81dd5149590eb51d6f56800bfa702ec61d",
+      "bytes": 15079,
+      "executable": false
+    },
+    "crates/robot-transport/tests/parser.rs": {
+      "sha256": "554fa1ffac8cd35d236778185389a5ac38dfcc1a48ddd2cd146e2df759ffcaaa",
+      "bytes": 19720,
+      "executable": false
+    },
+    "crates/robot-transport/tests/rr_profile_host_config.rs": {
+      "sha256": "4d63b6d4f1d550f55b59c1e21c9ed43346bf5dc14a47fd9f6c9f21cc4c95e877",
+      "bytes": 2624,
+      "executable": false
+    },
+    "crates/robot-transport/tests/sample.rs": {
+      "sha256": "2fa9ff01255aa39cffa6717bd81687eb8dd0e2946eb687d14026a052e31520e9",
+      "bytes": 14320,
+      "executable": false
+    },
+    "crates/robot-transport/tests/trybuild.rs": {
+      "sha256": "01be6d122b19861edd3354e29b084053192e37afc2a8dfeda1b0aaab5a9f02e8",
+      "bytes": 3756,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/second_loan_before_publish.rs": {
+      "sha256": "82f09b70ad630a6421af223b12460dc7dab83320b34c86930f2d5bcef24fa362",
+      "bytes": 901,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/second_loan_before_publish.stderr": {
+      "sha256": "5ccbb58279f6941182cd55298d80c75d5c0b99b61a7341d953d3d0f8c9540ae8",
+      "bytes": 591,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/snapshot_dynamic_words_rejected.rs": {
+      "sha256": "4138bc33c05c3540aeed1a368cb9963c8eef1d1bc2482abc789a92217f9b3b80",
+      "bytes": 522,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/snapshot_dynamic_words_rejected.stderr": {
+      "sha256": "cdb46852719154930ce6bef2a727266479a709233dc3492387e94dbaafa4376e",
+      "bytes": 777,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/snapshot_publish_through_arc.rs": {
+      "sha256": "a6a7fea526d9cdfe92c6c51e1de90bb9769f22f6b7976ee616942f4ae6371418",
+      "bytes": 659,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/snapshot_publish_through_arc.stderr": {
+      "sha256": "f90d98facefe0c2ebdbffd282350530bcf7b211eac9198b054f0a7a42123afd6",
+      "bytes": 394,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/snapshot_publish_through_shared_ref.rs": {
+      "sha256": "537aa12fd9dbc402769a7c80b2e6e8696babdb311a352906bbdf253c80455ad2",
+      "bytes": 355,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/snapshot_publish_through_shared_ref.stderr": {
+      "sha256": "25365322981e24bf68ed9349ece489bd4ba2da93c49c41aebbaf26e5b3f38c70",
+      "bytes": 447,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/snapshot_publisher_not_clone.rs": {
+      "sha256": "e47a6c47f01ce6d2ea7875f3debb70991c43688d052f0d7d7eaa44f5e054c9f8",
+      "bytes": 252,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/snapshot_publisher_not_clone.stderr": {
+      "sha256": "99bb16f5e9d622fb8f9fc43dc4b936cdc695522795d57f6d8c064940bb4c6955",
+      "bytes": 296,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/view_outlives_lease.rs": {
+      "sha256": "a8905a51627ed11f2b16d3c466f10f46ad5bcedc8b86c8cfa9a157b2e600f867",
+      "bytes": 1338,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/view_outlives_lease.stderr": {
+      "sha256": "48ead8eab361f5bbfb870082529c6b2826403c13c3bd9643daa06c0cced3babe",
+      "bytes": 587,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/writer_use_after_publish.rs": {
+      "sha256": "cb6584da25ee9bb69ec04631cf27ddb7bf69a48cbb4da02c050bcfabca27a594",
+      "bytes": 560,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/writer_use_after_publish.stderr": {
+      "sha256": "69a774f2ed56a4a9f7debf5c82f5ac6345b230fca2eae2f42466543b222738dd",
+      "bytes": 780,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/writer_use_after_publish_typed.rs": {
+      "sha256": "53ecd4d6fb7dddabe1e082528c3bfd8ba8bfc727b5d0b2135ea9eb8e0beeaf9f",
+      "bytes": 419,
+      "executable": false
+    },
+    "crates/robot-transport/tests/ui/writer_use_after_publish_typed.stderr": {
+      "sha256": "c7c16ad0b03766055c94a92c98898e321b66fd069f5abc2214e5fa7f55f14ed9",
+      "bytes": 781,
+      "executable": false
+    },
+    "crates/robot-viz/Cargo.toml": {
+      "sha256": "7f7efdec4435b844cc02350530b4f9a7ece797014daa8208e8fde99f7c21e11a",
+      "bytes": 844,
+      "executable": false
+    },
+    "crates/robot-viz/src/config.rs": {
+      "sha256": "c9e6326f24c67bb4e74a5c0857ca9160ec7c3d19973ba41c3e94aab539122478",
+      "bytes": 6063,
+      "executable": false
+    },
+    "crates/robot-viz/src/decode.rs": {
+      "sha256": "b1aa7fe1813252f28d78f00fd8f893fa1f79046505aef3b74a8ce938faf8daf8",
+      "bytes": 19082,
+      "executable": false
+    },
+    "crates/robot-viz/src/input.rs": {
+      "sha256": "76797e4828dc7c1c05590a45772eae18d20061c4e55eb2118d21644cc1c96aee",
+      "bytes": 2510,
+      "executable": false
+    },
+    "crates/robot-viz/src/lib.rs": {
+      "sha256": "aa363e3dbefd58c33fb88166c90964e9b86a542db72ee5ee00039978a820ea27",
+      "bytes": 939,
+      "executable": false
+    },
+    "crates/robot-viz/src/main.rs": {
+      "sha256": "a11cf8fe5a21a4c8593544c846de8c32d55aaef794e592a27000202896cad9ac",
+      "bytes": 1293,
+      "executable": false
+    },
+    "crates/robot-viz/src/media.rs": {
+      "sha256": "42adbaa45ba4e26db2bc5abe96b09943976deface8813c3135e79f5e6add90e2",
+      "bytes": 17959,
+      "executable": false
+    },
+    "crates/robot-viz/src/output.rs": {
+      "sha256": "9bc1f652cf9028ff81c7edbe12a04035ef91b2d74b8410991136beb1968b6e0f",
+      "bytes": 28114,
+      "executable": false
+    },
+    "crates/robot-viz/src/runtime.rs": {
+      "sha256": "a72861ad03cf06e1d7da854fadb868aaca1d12c5a16d609bb6233443d94e1a83",
+      "bytes": 19902,
+      "executable": false
+    },
+    "crates/robot-viz/src/supervisor.rs": {
+      "sha256": "d209b399696a6afe07bddfa7e0e2a87b8c111cb5891b002ff49eaf5d659fba5a",
+      "bytes": 6585,
+      "executable": false
+    },
+    "crates/robot-viz/tests/observer_roundtrip.rs": {
+      "sha256": "ede06db45c74a69750eb444054970a8c568906a15c01a3d75c7946e5531ad23f",
+      "bytes": 33916,
+      "executable": false
+    },
+    "crates/robot-viz/tests/support/fixtures.rs": {
+      "sha256": "82d1683a017f1fa4b033d27e44e8c03e039a3aa1ea140554688275538d7b59bb",
+      "bytes": 15205,
+      "executable": false
+    },
+    "rust-toolchain.toml": {
+      "sha256": "75827257738ec9af6b3b5c7604c8b9ad0bf96d68efd62c4a664b42e70a9fe4ed",
+      "bytes": 1136,
+      "executable": false
+    },
+    "tools/rr-memory-model/Cargo.lock": {
+      "sha256": "5282f440ab639fffbb55adb1a11d63f1b13c4f17893cf9c05901f08e0f69420c",
+      "bytes": 6905,
+      "executable": false
+    },
+    "tools/rr-memory-model/Cargo.toml": {
+      "sha256": "9c4af74a2ceae9e6f17cc3f7d86ac86d094fe86b5f69772fe989887d043801a8",
+      "bytes": 1187,
+      "executable": false
+    },
+    "tools/rr-memory-model/README.md": {
+      "sha256": "bbe682436724f754d1afae6fe8a138053b9f2168acb4b3fd3dc4dcd5d3e88cbd",
+      "bytes": 7559,
+      "executable": false
+    },
+    "tools/rr-memory-model/src/lib.rs": {
+      "sha256": "9d5e86e6f53b2fa7b38b625cdd2121bdafb06f229a9a18a1832084da25ed1397",
+      "bytes": 35832,
+      "executable": false
+    }
+  }
+}
