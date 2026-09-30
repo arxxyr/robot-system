@@ -115,6 +115,13 @@
            本轮非完整workspace；阶段文档提交后remote快进对齐，再新alignment/当次现场事实/独立GO。
            右H2历史整体FAIL、D15 OPEN/DEFERRED及deployable=false保持；详HANDOFF。
            历史34条Unknown未证实归因、右H2整体FAIL、D15 OPEN/DEFERRED及deployable=false不变。
+           同日右H2实际一次：runtime4a8e171/buildb01603b，四组各100+1000原P99门全过，第四组1分类不匹配保留。
+           最终非dry Disable Ack/Disarm与工具exit0/reap通过；driver严格trace门拒3条IpcClaim跨轮标签，整体FAIL。
+           driver/SSH exit1真实回收，独立11项清场、17电机34项零扭矩使能/零速度读回、后11+16门通过。
+           正式四件未改、六服务停止、无控制/读回进程，两USB/两侧锁无持有者；右Dirty/LATCHED、左保护文件不变。
+           19:01:19UTC收尾后值守已解除，现场电源/支撑UNKNOWN；头部/底盘主动运动未测。
+           证据 .verify/right_h2_2026-09-30/summary.json；整体FAIL及历史Unknown保留，下一步先闭环trace上下文软件问题。
+           无正式安装/部署/push，D15 OPEN/DEFERRED、deployable=false不变；新硬件整轮须新准备/现场事实/GO。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

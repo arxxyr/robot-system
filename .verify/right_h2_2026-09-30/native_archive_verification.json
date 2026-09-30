@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "checked_files": 123,
+  "input_bytes": 159068259,
+  "archive": {
+    "path": "hardware-evidence-r1/native.tar.gz",
+    "sha256": "ac986c6b472f9203d01f5487a241d4ab5f0b9f984770c33bdb1662ece84beb0c",
+    "bytes": 12670720
+  },
+  "manifest_sha256": "04f48665a6baf8b5f52d7bcb65377e6a327aafdcd536335ab1fe9f9650dd9ed0",
+  "regular_files_only": true,
+  "all_names_and_hashes_match": true
+}

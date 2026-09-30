@@ -2,6 +2,23 @@
 
 ## 当前步骤
 
+### 右 H2 本次完整复测（2026-09-30，整体 FAIL，收尾完成）
+
+本次依据用户当前“现场条件可以测试”确认生成独立 physical/GO；17:59:27–18:55:49 UTC 只执行一次，authorize/launch 各 1，无整轮重试。
+实际 runtime HEAD `4a8e171f27bf18625973aa4f3a6097e9b9fbed18`，固定 build `b01603b56117a35279407de0c201bcd91bb6e5b2`；589 编译输入聚合仍为 `c0388807`，使用已验收的新 V2 冻结件。
+四组各 100 预热 + 1000 有效正式样本，SLA-A P99 分别为 0.025536 / 0.025632 / 0.021120 / 0.020864 ms；SLA-B 为 10.292192 / 15.490912 / 10.255968 / 15.334496 ms，均通过原门。
+顺序为 topic-idle、topic-inflight、external-idle、external-inflight；第四组另有 1 次分类不匹配，完整保留，不计入 1000 有效样本。
+最终非 dry-run Disable 返回合法 Ack，Disarm 无 sticky failure、children_stopped=true；工具 exit0 真实回收。
+但 driver 的严格 `verify_trace` 拒绝“trace混入故障/未知事件/另一轮”，driver/SSH exit1 真实回收，**本次整体 FAIL**；不得以工具四组及收尾 PASS 覆盖。
+只读定位为第一组 3 条 IpcClaim 的 sample_seq 与 attempt 标签跨轮，尚待上下文打标路径闭环；这不是未知 kind，不先宣称测量误报或修改原 trace。
+
+独立清场 11 项通过；随后逐条读回左 1–8 / 右 1–9 共 17 电机的 Torque_Enable / Present_Velocity，34 项均为 0，所有 child 真实回收。
+读回后再验 11 项清场及双总线 16 项追加门：正式 ca14 四 SHA 未改、六服务 inactive/dead/MainPID0，无控制/读回进程，两 USB 及两侧锁普通/sudo 持有者均空。
+右 marker/latch 保持 Dirty/LATCHED，左保护文件与准备基线相同；19:01:19 UTC 最终门完成，已明确解除本次值守，此后现场电源/支撑状态 UNKNOWN。
+头部/底盘此次通过寄存器通信与抽样静止状态检查，**未测试主动运动**；不外推连续安全输出、D15 或无人值守。
+[本轮证据入口](../../.verify/right_h2_2026-09-30/summary.json)保存原 FAIL、原件与当次绑定；历史右 H2 FAIL 和 34 条 Unknown 未证实归因均保留。
+本轮无正式安装/部署或 push；D15 **OPEN/DEFERRED**、`deployable=false` 不变。下一步先闭环轨迹上下文软件问题，新的硬件整轮须重新准备并取得当次重置/支撑/在场事实与独立 GO。
+
 ### 周期恢复源码的新 H2 V2 准备（2026-09-30，软件已验收）
 
 周期恢复 `b01603b` 已快进整合到开发分支；Orin 使用新的隔离源码与 release-r1，固定 build HEAD 为 `b01603b56117a35279407de0c201bcd91bb6e5b2`。

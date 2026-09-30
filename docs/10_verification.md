@@ -9,6 +9,14 @@
 
 ---
 
+## 2026-09-30 · 右 H2 完整复测（整体 FAIL，收尾完成）
+
+`4a8e171` runtime / `b01603b` build，本次独立 physical/GO 下 authorize/launch 各 1；四组各 100 预热 + 1000 有效正式样本按原 P99 门全通过，第四组 1 次分类不匹配原件保留。
+最终 Disable 非 dry-run Ack、Disarm/children_stopped 与工具 exit0/真实回收通过；driver `verify_trace` 因 3 条 IpcClaim 跨轮标签拒绝，driver/SSH exit1/真实回收，**整体 FAIL**，不回填 PASS。
+独立清场 11 项、17 电机的 34 项 Torque_Enable/Present_Velocity 零值读回、读回后 11 项清场与双总线 16 项门均通过；19:01:19 UTC 解除值守后物理现状 UNKNOWN。
+头部/底盘仅通信及抽样寄存器状态通过，主动运动未测；原 FAIL、34 条 Unknown 未证实归因保留。无正式安装/部署/push，D15 OPEN/DEFERRED、deployable=false 不变。
+[证据入口](../.verify/right_h2_2026-09-30/summary.json)；下一步轨迹打标软件闭环，新硬件运行需新现场事实及独立 GO。
+
 ## 2026-09-30 · 周期恢复源码的 H2 新 V2 软件准备（已验收）
 
 `b01603b` 新冻结件使用更新后的 nightly `5c543b0b8`，589 项输入两端/构建前后逐项一致，聚合 `c0388807`。

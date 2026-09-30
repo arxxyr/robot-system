@@ -1,0 +1,8 @@
+{
+  "status": "LOCAL_REVIEWER_FAILURE",
+  "error": "KeyError: measurement",
+  "reason": "首本机检查误把 tool report 当 case evidence；实际 measurement 位于 cases[0].evidence。",
+  "original_files_modified": false,
+  "ssh_or_hardware_reexecuted": false,
+  "correction": "按实际 report schema 读取，并保持 tool PASS 与 driver FAIL 分离。"
+}

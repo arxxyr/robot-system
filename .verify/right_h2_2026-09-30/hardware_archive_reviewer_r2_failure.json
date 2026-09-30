@@ -1,0 +1,8 @@
+{
+  "status": "LOCAL_REVIEWER_FAILURE",
+  "error": "AssertionError at received_signals",
+  "reason": "独审器误用 SSH owner 的 received_signals={} 类型；reader 原件该字段为 []，含义均为空。",
+  "original_files_modified": false,
+  "ssh_or_hardware_reexecuted": false,
+  "correction": "使用 reader 自有字段类型 []；继续严格断言不存在已收信号。"
+}
