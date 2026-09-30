@@ -676,29 +676,83 @@ mod tests {
         format!("/s1_evt_drain_{}_{}_{suffix}", std::process::id(), seq)
     }
 
-    /// 构造测试主线程的 subscriber（独立 Node + leak），跟 drain thread 内
-    /// 独立 Node + leak 的 publisher 通过 iceoryx2 service name 串通。沿
-    /// `rr_server_thread` 测试同款"两端独立 Node"模式。
-    fn make_subscriber(topic: &str) -> Iceoryx2Subscriber<markers::ActionEventEnvelope> {
-        let test_node: &'static _ =
-            Box::leak(Box::new(NodeBuilder::new().create::<IxService>().unwrap()));
-        open_sub::<markers::ActionEventEnvelope>(test_node, topic, TopicClass::TaskEvent)
-            .expect("subscriber open")
+    /// 两端使用独立 Node；端口字段先析构，Node 最后释放。
+    struct TestSubscriber {
+        subscriber: Iceoryx2Subscriber<markers::ActionEventEnvelope>,
+        _node: Node<IxService>,
+    }
+
+    impl std::ops::Deref for TestSubscriber {
+        type Target = Iceoryx2Subscriber<markers::ActionEventEnvelope>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.subscriber
+        }
+    }
+
+    impl std::ops::DerefMut for TestSubscriber {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.subscriber
+        }
+    }
+
+    fn make_subscriber(topic: &str) -> TestSubscriber {
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let subscriber =
+            open_sub::<markers::ActionEventEnvelope>(&node, topic, TopicClass::TaskEvent)
+                .expect("subscriber open");
+        TestSubscriber {
+            subscriber,
+            _node: node,
+        }
     }
 
     fn make_publisher_factory(
         topic: String,
-    ) -> impl FnOnce() -> Iceoryx2Publisher<markers::ActionEventEnvelope> + Send + 'static {
+    ) -> impl FnOnce() -> EventsPublisherGuard + Send + 'static {
         move || {
             let pub_node = NodeBuilder::new().create::<IxService>().unwrap();
             let publisher =
                 open_pub::<markers::ActionEventEnvelope>(&pub_node, &topic, TopicClass::TaskEvent)
                     .expect("publisher open");
-            // node 持 publisher 内部 shm fd；leak 让 publisher 整个生命周期
-            // 内 node 不被 drop（同 A1 s0_daemon / 1/3-b s1_daemon 同款）。
-            Box::leak(Box::new(pub_node));
-            publisher
+            let publisher_guard = EventsPublisherGuard::owned(publisher, pub_node);
+            publisher_guard
+                .update_connections()
+                .expect("publisher 连接检查");
+            publisher_guard
         }
+    }
+
+    fn spawn_unconnected_drain_thread(
+        cfg: EventsDrainThreadConfig,
+        events_rx: Receiver<ActionEvent>,
+    ) -> EventsDrainThreadHandle {
+        let topic = cfg.topic.clone();
+        spawn_owned_events_drain_thread(
+            cfg,
+            events_rx,
+            make_publisher_factory(topic),
+            Arc::new(SystemClock::new()),
+            2,
+        )
+        .unwrap()
+    }
+
+    /// publisher 的 ready 只证明端口创建；首次空读取同步刷新接收连接。
+    /// 事件必须在本函数返回后发送，后续终态读回才验证连接生效。
+    fn spawn_connected_drain_thread(
+        cfg: EventsDrainThreadConfig,
+        events_rx: Receiver<ActionEvent>,
+        sub: &mut TestSubscriber,
+    ) -> EventsDrainThreadHandle {
+        let handle = spawn_unconnected_drain_thread(cfg, events_rx);
+        let connected = matches!(sub.latest(), Ok(None));
+        if !connected {
+            handle.request_stop();
+            handle.join().unwrap();
+            panic!("subscriber 连接检查失败或夹具在就绪前已发事件");
+        }
+        handle
     }
 
     fn fresh_action_id() -> ActionId {
@@ -745,14 +799,7 @@ mod tests {
         let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
         let action_id_hex = action_id.to_string();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
 
         events_tx
             .send(ActionEvent::Started { at_ns: 12345 })
@@ -773,14 +820,7 @@ mod tests {
         let mut sub = make_subscriber(&topic);
         let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
 
         events_tx
             .send(ActionEvent::Progress {
@@ -803,14 +843,7 @@ mod tests {
         let mut sub = make_subscriber(&topic);
         let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
 
         events_tx
             .send(ActionEvent::Completed {
@@ -818,13 +851,14 @@ mod tests {
                 at_ns: 1,
             })
             .unwrap();
+        // 确定顺序：完整回收 publisher 后才首次读取业务事件。
+        // 先刷新连接；join 后能读到终态才证明生效，不依赖 20ms 内恰好轮询到。
+        let metrics = handle.metrics();
+        handle.join().unwrap();
         let (bytes, _) = wait_for_envelope(&mut sub, Duration::from_secs(2));
         let env = flatbuffers::root::<FbEnv>(&bytes).unwrap();
         assert_eq!(env.kind(), FbKind::Completed);
 
-        // terminal_seen → break 后 sleep grace（20ms）；join 在 ~30ms 内返。
-        let metrics = handle.metrics();
-        handle.join().unwrap();
         assert_eq!(metrics.terminal_events.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.stopped_by_signal.load(Ordering::Relaxed), 0);
         assert_eq!(metrics.stopped_by_disconnect.load(Ordering::Relaxed), 0);
@@ -836,14 +870,7 @@ mod tests {
         let mut sub = make_subscriber(&topic);
         let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
 
         events_tx
             .send(ActionEvent::Failed {
@@ -866,37 +893,75 @@ mod tests {
         let mut sub = make_subscriber(&topic);
         let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
 
         events_tx.send(ActionEvent::Cancelled { at_ns: 1 }).unwrap();
+        handle.join().unwrap();
         let (bytes, _) = wait_for_envelope(&mut sub, Duration::from_secs(2));
         let env = flatbuffers::root::<FbEnv>(&bytes).unwrap();
         assert_eq!(env.kind(), FbKind::Cancelled);
+    }
 
-        handle.join().unwrap();
+    /// 同 topic 两端共享一次终态：刷新端必须收到，未刷新端不能在端口退出后补接。
+    /// 使用 send → join → receive 顺序；刷新端解码排除本次帧零投递导致负控假过。
+    #[test]
+    fn unconnected_subscriber_misses_terminal_after_publisher_join() {
+        for (suffix, event, expected_kind) in [
+            (
+                "unconnected_completed",
+                ActionEvent::Completed {
+                    outcome: ActionOutcome::Success,
+                    at_ns: 1,
+                },
+                FbKind::Completed,
+            ),
+            (
+                "unconnected_cancelled",
+                ActionEvent::Cancelled { at_ns: 1 },
+                FbKind::Cancelled,
+            ),
+        ] {
+            let topic = fresh_topic(suffix);
+            let mut connected_sub = make_subscriber(&topic);
+            let mut unconnected_sub = make_subscriber(&topic);
+            let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
+            let action_id = fresh_action_id();
+            let action_id_hex = action_id.to_string();
+            let handle = spawn_connected_drain_thread(
+                cfg_for(action_id, &topic),
+                events_rx,
+                &mut connected_sub,
+            );
+            let metrics = handle.metrics();
+
+            events_tx.send(event).unwrap();
+            handle.join().unwrap();
+
+            assert_eq!(metrics.events_published.load(Ordering::Relaxed), 1);
+            assert_eq!(metrics.publish_errors.load(Ordering::Relaxed), 0);
+            assert_eq!(metrics.terminal_events.load(Ordering::Relaxed), 1);
+            let (bytes, seq) = wait_for_envelope(&mut connected_sub, Duration::from_secs(2));
+            let envelope = flatbuffers::root::<FbEnv>(&bytes).unwrap();
+            assert_eq!(envelope.action_id().unwrap(), action_id_hex);
+            assert_eq!(envelope.kind(), expected_kind);
+            assert_eq!(envelope.at_ns(), 1);
+            assert_eq!(seq, 0);
+            assert!(
+                unconnected_sub
+                    .latest()
+                    .expect("subscriber latest")
+                    .is_none()
+            );
+        }
     }
 
     #[test]
     fn stop_signal_exits_loop_without_terminal() {
         let topic = fresh_topic("stop_sig");
-        let _sub = make_subscriber(&topic);
+        let mut sub = make_subscriber(&topic);
         let (_events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
 
         let metrics = handle.metrics();
         let start = std::time::Instant::now();
@@ -910,17 +975,10 @@ mod tests {
     #[test]
     fn channel_disconnect_exits_loop_without_terminal() {
         let topic = fresh_topic("disconnect");
-        let _sub = make_subscriber(&topic);
+        let mut sub = make_subscriber(&topic);
         let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
 
         let metrics = handle.metrics();
         drop(events_tx);
@@ -935,14 +993,7 @@ mod tests {
         let mut sub = make_subscriber(&topic);
         let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
 
         // 串行 send-recv 配对：每次 wait_for_envelope 拿一帧 + seq；
         // iceoryx2 keep-last 只保留最新 sample，必须读完 sample 才 send 下
@@ -976,17 +1027,10 @@ mod tests {
     #[test]
     fn registry_stop_and_join_all_one_thread() {
         let topic = fresh_topic("registry");
-        let _sub = make_subscriber(&topic);
+        let mut sub = make_subscriber(&topic);
         let (_events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
 
         let registry = EventsDrainRegistry::new();
         registry.register(handle);
@@ -1020,17 +1064,10 @@ mod tests {
     #[test]
     fn reap_finished_after_terminal_returns_one() {
         let topic = fresh_topic("reap_terminal");
-        let _sub = make_subscriber(&topic);
+        let mut sub = make_subscriber(&topic);
         let (events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
         let registry = EventsDrainRegistry::new();
         registry.register(handle);
         assert_eq!(registry.len(), 1);
@@ -1063,17 +1100,10 @@ mod tests {
     #[test]
     fn reap_finished_active_handle_not_reaped() {
         let topic = fresh_topic("reap_active_not_reaped");
-        let _sub = make_subscriber(&topic);
+        let mut sub = make_subscriber(&topic);
         let (_events_tx, events_rx) = mpsc::channel::<ActionEvent>();
         let action_id = fresh_action_id();
-        let handle = spawn_events_drain_thread(
-            cfg_for(action_id, &topic),
-            events_rx,
-            make_publisher_factory(topic.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle = spawn_connected_drain_thread(cfg_for(action_id, &topic), events_rx, &mut sub);
         let registry = EventsDrainRegistry::new();
         registry.register(handle);
 
@@ -1097,28 +1127,16 @@ mod tests {
     fn reap_finished_then_stop_and_join_all_is_noop_for_reaped() {
         let topic_a = fresh_topic("reap_noop_a");
         let topic_b = fresh_topic("reap_noop_b");
-        let _sub_a = make_subscriber(&topic_a);
-        let _sub_b = make_subscriber(&topic_b);
+        let mut sub_a = make_subscriber(&topic_a);
+        let mut sub_b = make_subscriber(&topic_b);
         let (events_tx_a, events_rx_a) = mpsc::channel::<ActionEvent>();
         let (_events_tx_b, events_rx_b) = mpsc::channel::<ActionEvent>();
         let action_id_a = fresh_action_id();
         let action_id_b = fresh_action_id();
-        let handle_a = spawn_events_drain_thread(
-            cfg_for(action_id_a, &topic_a),
-            events_rx_a,
-            make_publisher_factory(topic_a.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
-        let handle_b = spawn_events_drain_thread(
-            cfg_for(action_id_b, &topic_b),
-            events_rx_b,
-            make_publisher_factory(topic_b.clone()),
-            Arc::new(SystemClock::new()),
-            2,
-        )
-        .unwrap();
+        let handle_a =
+            spawn_connected_drain_thread(cfg_for(action_id_a, &topic_a), events_rx_a, &mut sub_a);
+        let handle_b =
+            spawn_connected_drain_thread(cfg_for(action_id_b, &topic_b), events_rx_b, &mut sub_b);
 
         let registry = EventsDrainRegistry::new();
         registry.register(handle_a);

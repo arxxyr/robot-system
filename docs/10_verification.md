@@ -9,6 +9,13 @@
 
 ---
 
+## 2026-09-30 · S1 默认并行夹具（软件通过）
+
+仅 cfg(test) 独立 Node/端口 RAII 与发送前连接刷新；原两个终态用例及同帧双 subscriber 正负控通过，生产前缀25,621B、20ms/2s与默认并行不变。
+Mac 定向15及libClippy通过；隔离Lima Linux ARM根fmt/Clippy与S1完整lib默认并行287通过，0 failed/ignored，不是Orin或完整workspace测试。
+589输入仅runtime测试文件变动，聚合72ac7a50，root最终集成同源/提交前门通过；原s49超时与各轮FAIL保留，历史具体归因OPEN_UNCONFIRMED。
+[证据入口](../.verify/s1_parallel_events_2026-09-30/summary.json)。无硬件复测/安装/部署/push，右H2整体FAIL、D15 OPEN/DEFERRED保持。
+
 ## 2026-09-30 · 右 H2 完整复测（整体 FAIL，收尾完成）
 
 `4a8e171` runtime / `b01603b` build，本次独立 physical/GO 下 authorize/launch 各 1；四组各 100 预热 + 1000 有效正式样本按原 P99 门全通过，第四组 1 次分类不匹配原件保留。

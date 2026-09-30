@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+### S1 默认并行事件夹具修复（2026-09-30，软件已验收）
+
+仅改 `events_drain/runtime.rs` 的 cfg(test)：独立 Node/端口 RAII 代替 leak，publisher ready 后先刷新 subscriber 连接，再发送事件；生产前缀 25,621 bytes 逐字不变。
+两个原终态正例改为 send→真实 join→首次业务 receive；同 topic 双 subscriber 负控要求同一次终态在刷新端解码正确、未刷新端 None，排除零投递假过。20 ms grace、2 s 接收预算和默认并行保持。
+Mac 定向默认并行 15 项 / lib Clippy 通过；隔离 Lima Linux ARM 更新浮动 nightly5c543b0b8 后，fmt / 根 Clippy、S1 完整 lib 默认并行 287 项通过，0 failed / 0 ignored，无 test_threads/env 覆盖；不是 Orin 验证或完整 workspace 测试。
+589 输入前后聚合 `72ac7a50`，只有该 cfg(test) 文件相对4a8基线变化；root 最终集成同源核验及提交前 fmt/根Clippy 再验通过。
+旧 s49 两例超时、Mac 既有 Linux-only handler lint FAIL、Linux 首缺 rustfmt FAIL、独审/root 包读取错误全部保留；历史两次具体根因仍 OPEN_UNCONFIRMED，不追认。
+[证据入口](../../.verify/s1_parallel_events_2026-09-30/summary.json)：82 原件 + 自索引，内嵌 Linux 747 原件，独审/root 软件验收通过；未安装/部署/push 或重跑硬件。
+本次右 H2 仍整体 FAIL，D15 OPEN/DEFERRED、deployable=false；下一步仅非RT SLA工具的跨轮归属/尾部采集软件修复，不修改RT或Python原严格门，不自动复测硬件。
+
 ### 右 H2 本次完整复测（2026-09-30，整体 FAIL，收尾完成）
 
 本次依据用户当前“现场条件可以测试”确认生成独立 physical/GO；17:59:27–18:55:49 UTC 只执行一次，authorize/launch 各 1，无整轮重试。

@@ -1,0 +1,418 @@
+{
+  "schema": "S1_PARALLEL_FIXTURE_EVIDENCE_V1",
+  "source_sha256": "f0aaae567e7100ed903acef64504c038ce9f0cda6cd5b394ab8539afecbd0a40",
+  "source_head": "4a8e171f27bf18625973aa4f3a6097e9b9fbed18",
+  "files": {
+    "README.md": {
+      "sha256": "6c2f7375acc0fa9bcd28dd32788b8eb1a583684b2bdc996c5c1fd8c63ce03bba",
+      "bytes": 1064,
+      "executable": false
+    },
+    "cargo-after-version.txt": {
+      "sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+      "bytes": 45,
+      "executable": false
+    },
+    "cargo-version.txt": {
+      "sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+      "bytes": 45,
+      "executable": false
+    },
+    "clippy-s1-all-targets-r4.log": {
+      "sha256": "07e72adff1141106fc9ea3c45d0a0c345d01fe225bb84cff0eb65b04d355d822",
+      "bytes": 621,
+      "executable": false
+    },
+    "clippy-s1-all-targets.log": {
+      "sha256": "401f6b887f4709ceb96931de49a50cfd29bc5c4bd1d3677a0740a1fc1a616106",
+      "bytes": 4712,
+      "executable": false
+    },
+    "clippy-s1-lib-r3.log": {
+      "sha256": "e81897e34e6c42737c8e2d0439aaa41b4f1b0fc93fab913834da7c1b1337a094",
+      "bytes": 186,
+      "executable": false
+    },
+    "clippy-s1-lib-r4.log": {
+      "sha256": "efafc0b6565eb3ad7f7bcfaeab20de4ccf2809e39cabbba152e4802a2cc29e5b",
+      "bytes": 186,
+      "executable": false
+    },
+    "clippy-s1-lib.log": {
+      "sha256": "efafc0b6565eb3ad7f7bcfaeab20de4ccf2809e39cabbba152e4802a2cc29e5b",
+      "bytes": 186,
+      "executable": false
+    },
+    "finalize_evidence.py": {
+      "sha256": "eb894619f3a3dd5fc46bbc52779f6073ba3dce3eb8d0eb2745577b522edebb0e",
+      "bytes": 9854,
+      "executable": false
+    },
+    "fmt-r2.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "executable": false
+    },
+    "fmt-r3.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "executable": false
+    },
+    "fmt-r4.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "executable": false
+    },
+    "fmt.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "executable": false
+    },
+    "historical-originals/test_final_affected.log": {
+      "sha256": "171a77b17c98872010753dea5607decfe17cceb5d01f08c6f08ed798afdeff93",
+      "bytes": 66473,
+      "executable": false
+    },
+    "linux-r1/control/candidate.patch": {
+      "sha256": "eeb5fad0a9189d678ad9517ae0e42839c6980a234e67030b143e5dc9deee28bd",
+      "bytes": 16966,
+      "executable": false
+    },
+    "linux-r1/control/expected_inputs.json": {
+      "sha256": "83e4992a5d4858e4d52cf41a86a51a5a3d12d13159134a696493ab67bace1ca3",
+      "bytes": 113331,
+      "executable": false
+    },
+    "linux-r1/control/linux_validation.owner/child.log": {
+      "sha256": "acb73ca108794fe63d035c914d99fe635a5a77e1aa50738f16d18f7a3f316a73",
+      "bytes": 15347,
+      "executable": false
+    },
+    "linux-r1/control/linux_validation.owner/launch.json": {
+      "sha256": "dfdfe28ecd0d9ebfb0db4b58b66269a1bc8d2fcfa0681ac9d2fb52ce753d55d5",
+      "bytes": 1039,
+      "executable": false
+    },
+    "linux-r1/control/linux_validation.owner/result.json": {
+      "sha256": "059a7617d495a51c8298ec231dc4f95824b0239a22f8f00acfb3c604831a6222",
+      "bytes": 1536,
+      "executable": false
+    },
+    "linux-r1/control/linux_validation.owner/status.json": {
+      "sha256": "059a7617d495a51c8298ec231dc4f95824b0239a22f8f00acfb3c604831a6222",
+      "bytes": 1536,
+      "executable": false
+    },
+    "linux-r1/control/owner.py": {
+      "sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+      "bytes": 8656,
+      "executable": false
+    },
+    "linux-r1/control/run_linux.py": {
+      "sha256": "0fac7ecaa23fe9a852f6f0f5b28788a8b94c62b47ff22de564f9acb10bada4f7",
+      "bytes": 8421,
+      "executable": false
+    },
+    "linux-r1/control/runtime.rs": {
+      "sha256": "f0aaae567e7100ed903acef64504c038ce9f0cda6cd5b394ab8539afecbd0a40",
+      "bytes": 47074,
+      "executable": false
+    },
+    "linux-r1/control/setup_and_run.sh": {
+      "sha256": "6ebbb6ada9ff238ca4236ead5441bb548a1051257a9d93101ead1f56a31697be",
+      "bytes": 259941,
+      "executable": false
+    },
+    "linux-r1/control/vm_failure_probe.owner/child.log": {
+      "sha256": "ac28133f00187d38647164cd0efd1132621f4d67ba8a0d7d40fea08649568f90",
+      "bytes": 731,
+      "executable": false
+    },
+    "linux-r1/control/vm_failure_probe.owner/launch.json": {
+      "sha256": "2ba3a183dffe6bde525d5e1e0d4278aacefa55555b0bd6c826e9f042175f1ea4",
+      "bytes": 1039,
+      "executable": false
+    },
+    "linux-r1/control/vm_failure_probe.owner/result.json": {
+      "sha256": "aee59dbb0141bf24ea37c1a7c2a1020fc7e7f664f97202de8256acf4af1c4ae2",
+      "bytes": 1529,
+      "executable": false
+    },
+    "linux-r1/control/vm_failure_probe.owner/status.json": {
+      "sha256": "aee59dbb0141bf24ea37c1a7c2a1020fc7e7f664f97202de8256acf4af1c4ae2",
+      "bytes": 1529,
+      "executable": false
+    },
+    "linux-r1/control/vm_failure_probe.sh": {
+      "sha256": "d66ddf2d49508978bb58f1545c9f87a61b41accfcb77e10c68f3c1f8255f6fd8",
+      "bytes": 265,
+      "executable": false
+    },
+    "linux-r1/control/vm_identity.owner/child.log": {
+      "sha256": "16220548209bca3b64318bf36104274f154325c57b17e05e239e72004c70e982",
+      "bytes": 745,
+      "executable": false
+    },
+    "linux-r1/control/vm_identity.owner/launch.json": {
+      "sha256": "b098ba8dd386ebbc8b76134d80fe09fb30987f478f51275e6141f2f7c22f110a",
+      "bytes": 1034,
+      "executable": false
+    },
+    "linux-r1/control/vm_identity.owner/result.json": {
+      "sha256": "f1a3fe1b38101fc629fc83c6305c037d06ed34459961785d0f7dc3d80e5a2e86",
+      "bytes": 1519,
+      "executable": false
+    },
+    "linux-r1/control/vm_identity.owner/status.json": {
+      "sha256": "f1a3fe1b38101fc629fc83c6305c037d06ed34459961785d0f7dc3d80e5a2e86",
+      "bytes": 1519,
+      "executable": false
+    },
+    "linux-r1/control/vm_identity.sh": {
+      "sha256": "d15c127be6786f536a96261da38fc94f2f5db0f5971c37c80df14e3f1a01a107",
+      "bytes": 197,
+      "executable": false
+    },
+    "linux-r1/control/vm_start.owner/child.log": {
+      "sha256": "a89a81546ef301db7af2e01a1c6a11ee855c2d4c7fc88e21e232fc198ab73d01",
+      "bytes": 3680,
+      "executable": false
+    },
+    "linux-r1/control/vm_start.owner/launch.json": {
+      "sha256": "c5c185b14997594dc48d9c3d50e33d19d29425f0677bd62ef6d0ddd4ef08b30d",
+      "bytes": 724,
+      "executable": false
+    },
+    "linux-r1/control/vm_start.owner/result.json": {
+      "sha256": "2848e8229bb74e9c841570b322508902593ef70205a643d4201c1c06bc04e061",
+      "bytes": 1210,
+      "executable": false
+    },
+    "linux-r1/control/vm_start.owner/status.json": {
+      "sha256": "2848e8229bb74e9c841570b322508902593ef70205a643d4201c1c06bc04e061",
+      "bytes": 1210,
+      "executable": false
+    },
+    "linux-r2/control/candidate.patch": {
+      "sha256": "eeb5fad0a9189d678ad9517ae0e42839c6980a234e67030b143e5dc9deee28bd",
+      "bytes": 16966,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive.owner/child.log": {
+      "sha256": "4dd2f70cef2bfa95f3c4e19ecb981cc4a62f6c8eb7d845e4a0ceadc6774fbfd2",
+      "bytes": 3823,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive.owner/launch.json": {
+      "sha256": "ec5d50de0358e0de1051cb96a2ac73d5e08f9a1effa4f634887a7f1700c50e60",
+      "bytes": 1039,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive.owner/result.json": {
+      "sha256": "d16e1c601864432c2913d8187cc59f3ec07e3381550f79b133cdfe42ba94d858",
+      "bytes": 1532,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive.owner/status.json": {
+      "sha256": "d16e1c601864432c2913d8187cc59f3ec07e3381550f79b133cdfe42ba94d858",
+      "bytes": 1532,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive.py": {
+      "sha256": "820cc58b9e312c9fcd957250c085b157b6fd69fbde6335e3c9bb78bc9da2078c",
+      "bytes": 6816,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive.sh": {
+      "sha256": "3851c8838f9a3887a4c013de178367543adece46df91d22b650a74f4b80114e0",
+      "bytes": 6861,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive_r2.owner/child.log": {
+      "sha256": "d6097d5312c740653baa9e4d09e7b06d5d20f8b7e4d23e9c254cc2ef5851d40a",
+      "bytes": 3832,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive_r2.owner/launch.json": {
+      "sha256": "ecedfa3a985ead8a7844cdd5d22241c7442ba3b6ea51eb5415a39a5cfbd359a1",
+      "bytes": 1042,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive_r2.owner/result.json": {
+      "sha256": "47e19ed7031e4f32e5f8412ded4e8abe8ccdd30668747eee1f85b0be74c4daa1",
+      "bytes": 1538,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive_r2.owner/status.json": {
+      "sha256": "47e19ed7031e4f32e5f8412ded4e8abe8ccdd30668747eee1f85b0be74c4daa1",
+      "bytes": 1538,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive_r2.py": {
+      "sha256": "12c1f2ff6d3422d528bccc7cd695a8f575636072c767bf77282c3818933e4979",
+      "bytes": 7077,
+      "executable": false
+    },
+    "linux-r2/control/collect_archive_r2.sh": {
+      "sha256": "f48440503e3a308433fc1089b1ac594901a64449ed1d6001050fe382bd170bbb",
+      "bytes": 7122,
+      "executable": false
+    },
+    "linux-r2/control/download_archive.owner/child.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "executable": false
+    },
+    "linux-r2/control/download_archive.owner/launch.json": {
+      "sha256": "8e00c71d5fe9d163ca9629004cffe9c2f3aa9d74667eaf8f29c123722c06ac70",
+      "bytes": 915,
+      "executable": false
+    },
+    "linux-r2/control/download_archive.owner/result.json": {
+      "sha256": "450ba302207cde3a70cb4f51d0ea2cee8ca15f81268a1a8a4434f60b6348d028",
+      "bytes": 1402,
+      "executable": false
+    },
+    "linux-r2/control/download_archive.owner/status.json": {
+      "sha256": "450ba302207cde3a70cb4f51d0ea2cee8ca15f81268a1a8a4434f60b6348d028",
+      "bytes": 1402,
+      "executable": false
+    },
+    "linux-r2/control/download_index.owner/child.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "executable": false
+    },
+    "linux-r2/control/download_index.owner/launch.json": {
+      "sha256": "e09c7b4e2895be9e76b6aa07f5f95c1e091a9dae825519601e0d56550918188f",
+      "bytes": 923,
+      "executable": false
+    },
+    "linux-r2/control/download_index.owner/result.json": {
+      "sha256": "bb1f34ffdac4ff37dc27f4768e62e606b85a98d6250a5cf1c81ddb121f8b3c27",
+      "bytes": 1408,
+      "executable": false
+    },
+    "linux-r2/control/download_index.owner/status.json": {
+      "sha256": "bb1f34ffdac4ff37dc27f4768e62e606b85a98d6250a5cf1c81ddb121f8b3c27",
+      "bytes": 1408,
+      "executable": false
+    },
+    "linux-r2/control/expected_inputs.json": {
+      "sha256": "83e4992a5d4858e4d52cf41a86a51a5a3d12d13159134a696493ab67bace1ca3",
+      "bytes": 113331,
+      "executable": false
+    },
+    "linux-r2/control/linux_validation.owner/child.log": {
+      "sha256": "f55b97e32eb00c68fb1fdeb34332da89ef0fe9e52ad15082bc0afea8cb29fcce",
+      "bytes": 27891,
+      "executable": false
+    },
+    "linux-r2/control/linux_validation.owner/launch.json": {
+      "sha256": "89a8e504d6f0a03fba4c36bccf7ec0d4ab4f9d130fbc997f54bbc0815d7ce9ef",
+      "bytes": 1039,
+      "executable": false
+    },
+    "linux-r2/control/linux_validation.owner/result.json": {
+      "sha256": "8728e2e0f5b0487a099e8ffa1f9e2006bcdcc37e57c187556b0cafc528bec4f4",
+      "bytes": 1537,
+      "executable": false
+    },
+    "linux-r2/control/linux_validation.owner/status.json": {
+      "sha256": "8728e2e0f5b0487a099e8ffa1f9e2006bcdcc37e57c187556b0cafc528bec4f4",
+      "bytes": 1537,
+      "executable": false
+    },
+    "linux-r2/control/owner.py": {
+      "sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+      "bytes": 8656,
+      "executable": false
+    },
+    "linux-r2/control/run_linux.py": {
+      "sha256": "c7eaa6da1d7764fe745d7bb436c9c999a1a9bcf12b3a752d6e876e53ff95d75b",
+      "bytes": 8538,
+      "executable": false
+    },
+    "linux-r2/control/runtime.rs": {
+      "sha256": "f0aaae567e7100ed903acef64504c038ce9f0cda6cd5b394ab8539afecbd0a40",
+      "bytes": 47074,
+      "executable": false
+    },
+    "linux-r2/control/setup_and_run.sh": {
+      "sha256": "664705b6f697c09e0732373c63e7977f45c704099819277ed31574f1b6035402",
+      "bytes": 260097,
+      "executable": false
+    },
+    "linux-r2/native-evidence.index.json": {
+      "sha256": "f5d77575e0c9b58107fe6e281a184c507ccecc95ad9082eb66c2abc376ea4b58",
+      "bytes": 156612,
+      "executable": false
+    },
+    "linux-r2/native-evidence.tar.gz": {
+      "sha256": "344266724d24d4dc585e811e94345554a2fb9ca63552a365303a8421368dc8f0",
+      "bytes": 9666062,
+      "executable": false
+    },
+    "linux-r2/native_archive_verification.json": {
+      "sha256": "d9bc01c827f58b66fa2691fed69a1d0eb4cdf4a74dbd88e9a424a300a468c70d",
+      "bytes": 5455,
+      "executable": false
+    },
+    "mac_summary_before_linux.json": {
+      "sha256": "7acf7f6b724fdf4385dfd4625724b4154ba1edd5afc127893dd9ec899c967363",
+      "bytes": 6034,
+      "executable": false
+    },
+    "runtime-default-parallel-r2.log": {
+      "sha256": "b3cd3013130240efb2527014c05ab8c05055f5ae8422db655e93062b45093fe3",
+      "bytes": 2704,
+      "executable": false
+    },
+    "runtime-default-parallel-r3.log": {
+      "sha256": "5f7e722e65aca3207a25a83cf21ee86d5bf1901d9d97a072c6923bddb8063e68",
+      "bytes": 2689,
+      "executable": false
+    },
+    "runtime-default-parallel-r4.log": {
+      "sha256": "6d7d3fb2e9a626ab975d983c63c1dc453074ac10a3e74c6773a5ef61bdf71245",
+      "bytes": 2700,
+      "executable": false
+    },
+    "runtime-default-parallel.log": {
+      "sha256": "3e2477272abece7e2125a354f8abca8c09cc29eced01a1e96b06f41dc20b84a4",
+      "bytes": 7667,
+      "executable": false
+    },
+    "rustc-after-vv.txt": {
+      "sha256": "61f9d90a93023801556b20bbf897d19c22d08cc9fa3d0296535a98dec9da41a2",
+      "bytes": 210,
+      "executable": false
+    },
+    "rustc-vv.txt": {
+      "sha256": "61f9d90a93023801556b20bbf897d19c22d08cc9fa3d0296535a98dec9da41a2",
+      "bytes": 210,
+      "executable": false
+    },
+    "s1-fixture.patch": {
+      "sha256": "eeb5fad0a9189d678ad9517ae0e42839c6980a234e67030b143e5dc9deee28bd",
+      "bytes": 16966,
+      "executable": false
+    },
+    "source_comparison.json": {
+      "sha256": "edbdfc4fde2bf78b371ea0f68e28e2af01b07826fc2ec9e57b4746999e6c07b3",
+      "bytes": 1184,
+      "executable": false
+    },
+    "static_review.json": {
+      "sha256": "acfabfbbf6524b97571c61659cff0d59c523ed7d89e7d0266eb952692079f07e",
+      "bytes": 2447,
+      "executable": false
+    },
+    "summary.json": {
+      "sha256": "0f38ed80dc49ca87cc0eb39ab1d9c92634bdf0222279788173db7b0f376ba127",
+      "bytes": 14809,
+      "executable": false
+    }
+  },
+  "scope": "Mac 原件 + Linux native 原件包 + 本地真实 wait 回执 + 比较与摘要；native-extracted 不重复装入"
+}

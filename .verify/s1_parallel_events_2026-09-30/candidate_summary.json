@@ -1,0 +1,335 @@
+{
+  "status": "SOFTWARE_CANDIDATE_PASS_PENDING_ROOT_ACCEPTANCE",
+  "worktree": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system",
+  "head": "4a8e171f27bf18625973aa4f3a6097e9b9fbed18",
+  "modified_files": [
+    "crates/robot-s1/src/events_drain/runtime.rs"
+  ],
+  "scope": "仅cfg(test)夹具连接就绪与Node/端口RAII；无生产代码、架构、超时或并行策略改变",
+  "source": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/crates/robot-s1/src/events_drain/runtime.rs",
+    "sha256": "f0aaae567e7100ed903acef64504c038ce9f0cda6cd5b394ab8539afecbd0a40",
+    "bytes": 47074
+  },
+  "baseline_sha256": "42cd161f6e750c231d9b10731673159b4c1ec8f78fc13178dbd9955a40cd3898",
+  "production_prefix_unchanged": true,
+  "production_prefix_bytes": 25621,
+  "production_prefix_sha256": "b0095d0bfb85b076d589a1d332a17c69bdd9b0283cf533aa6f1a68fe2f4bfb1b",
+  "checks": [
+    {
+      "command": "rustup update nightly --no-self-update",
+      "exit": 0,
+      "observed_tool_result": "Mac nightly实际从c1070d693更新为5c543b0b8；原始命令输出在会话工具回执，未伪造为落盘原件"
+    },
+    {
+      "command": "cargo fmt --all",
+      "exit": 0,
+      "log": {
+        "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/fmt-r4.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "command": "RUSTC_WRAPPER= CARGO_BUILD_JOBS=2 cargo test --locked --offline -p robot-s1 --lib events_drain::runtime::tests -- --nocapture",
+      "exit": 0,
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0,
+      "test_threads_override": null,
+      "log": {
+        "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/runtime-default-parallel-r4.log",
+        "sha256": "6d7d3fb2e9a626ab975d983c63c1dc453074ac10a3e74c6773a5ef61bdf71245",
+        "bytes": 2700
+      },
+      "rust_test_threads_env": null
+    },
+    {
+      "command": "RUSTC_WRAPPER= CARGO_BUILD_JOBS=2 cargo clippy --locked --offline -p robot-s1 --lib -- -D warnings",
+      "exit": 0,
+      "boundary": "lib Clippy未宣称为all-targets/test Clippy",
+      "log": {
+        "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/clippy-s1-lib-r4.log",
+        "sha256": "efafc0b6565eb3ad7f7bcfaeab20de4ccf2809e39cabbba152e4802a2cc29e5b",
+        "bytes": 186
+      }
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    }
+  ],
+  "original_failures_preserved": [
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/clippy-s1-all-targets.log",
+      "sha256": "401f6b887f4709ceb96931de49a50cfd29bc5c4bd1d3677a0740a1fc1a616106",
+      "bytes": 4712
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/clippy-s1-all-targets-r4.log",
+      "sha256": "07e72adff1141106fc9ea3c45d0a0c345d01fe225bb84cff0eb65b04d355d822",
+      "bytes": 621
+    }
+  ],
+  "mac_first_all_targets_clippy": {
+    "exit": 101,
+    "errors": [
+      "既有cfg(test) EventsPublisherGuard.update_connections未引用；后续夹具实际覆盖",
+      "既有s1_daemon Linux-only signal注册在Mac留下unused handler；本任务未改生产文件"
+    ],
+    "rerun_all_targets": false
+  },
+  "controlled_mechanism": {
+    "negative": "同topic同publisher同时两个独立subscriber；一个刷新、另一个不刷新；Completed/Cancelled分别只send一次→真实join→刷新端decode相同action_id/kind/at_ns=1/seq=0，未刷新端None；publish1/error0",
+    "positive": "原Completed/Cancelled两个用例也先send→真实join→首次业务receive得到对应终态",
+    "historical_failure_root_cause": "OPEN_UNCONFIRMED"
+  },
+  "terminal_grace_ms": 20,
+  "receive_deadline_seconds": 2,
+  "linux_default_parallel": {
+    "passed": 287,
+    "failed": 0,
+    "ignored": 0,
+    "test_threads_override": null,
+    "same_frame_controls": "PASS"
+  },
+  "hardware_ssh_uart_install_commit_push": "NOT_PERFORMED",
+  "artifacts": [
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/rustc-vv.txt",
+      "sha256": "61f9d90a93023801556b20bbf897d19c22d08cc9fa3d0296535a98dec9da41a2",
+      "bytes": 210
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/cargo-version.txt",
+      "sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+      "bytes": 45
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/rustc-after-vv.txt",
+      "sha256": "61f9d90a93023801556b20bbf897d19c22d08cc9fa3d0296535a98dec9da41a2",
+      "bytes": 210
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/cargo-after-version.txt",
+      "sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+      "bytes": 45
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/s1-fixture.patch",
+      "sha256": "eeb5fad0a9189d678ad9517ae0e42839c6980a234e67030b143e5dc9deee28bd",
+      "bytes": 16966
+    }
+  ],
+  "compiler_before_after_equal": true,
+  "review_annotation": "空读取只同步刷新连接；终态join后decode证明该连接实际生效，不把Ok(None)单独当成连接成功证明",
+  "mac_final_all_targets_clippy": {
+    "exit": 101,
+    "errors": [
+      "仅既有s1_daemon Linux-only signal注册在Mac留下unused handler"
+    ],
+    "log": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/clippy-s1-all-targets-r4.log",
+      "sha256": "07e72adff1141106fc9ea3c45d0a0c345d01fe225bb84cff0eb65b04d355d822",
+      "bytes": 621
+    },
+    "new_test_fixture_lint_errors": 0,
+    "all_targets_pass": false
+  },
+  "checks_platform": "macOS；Linux 完整门见 linux_validation",
+  "source_comparison": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/source_comparison.json",
+    "sha256": "edbdfc4fde2bf78b371ea0f68e28e2af01b07826fc2ec9e57b4746999e6c07b3",
+    "bytes": 1184
+  },
+  "linux_validation": {
+    "status": "PASS",
+    "environment": "隔离 Lima robot-viz-check；没有 robot/Orin SSH 或硬件访问",
+    "vm_identity": {
+      "hostname": "lima-robot-viz-check",
+      "machine": "aarch64",
+      "uid": 501,
+      "boot_id": "89175acb-84ae-405a-9a16-01beeea84953"
+    },
+    "compiler": "1.101.0-nightly / 5c543b0b8c73c7b72bc8284ced4fb22ead15734d / aarch64-unknown-linux-gnu",
+    "cargo": "1.101.0-nightly (3d7cf6e93 2026-09-25)",
+    "checks": [
+      {
+        "name": "nightly_update",
+        "argv": [
+          "rustup",
+          "update",
+          "nightly",
+          "--no-self-update"
+        ],
+        "exit": 0,
+        "reaped": true,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/nightly_update.owner/result.json",
+          "sha256": "868e186eb2b75f2ff903e98f02734842811693525de1272af8dcedddfb6c3d56",
+          "bytes": 1146
+        },
+        "log": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/nightly_update.owner/child.log",
+          "sha256": "41b85bf1bf3eccf56527805fab4c30ac6dda34b6495fb9c86a3fc37d5f158e6a",
+          "bytes": 163
+        }
+      },
+      {
+        "name": "nightly_components",
+        "argv": [
+          "rustup",
+          "component",
+          "add",
+          "--toolchain",
+          "nightly",
+          "rustfmt",
+          "clippy"
+        ],
+        "exit": 0,
+        "reaped": true,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/nightly_components.owner/result.json",
+          "sha256": "85e228876568c9f7fb64cc2f4e400646c03035488c4f4e01026a7ff744d6c3f5",
+          "bytes": 1187
+        },
+        "log": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/nightly_components.owner/child.log",
+          "sha256": "4ae2551ea6202e5136e5d7344c5cd841fb1b981ec6798b8e0c525a228d335c72",
+          "bytes": 31
+        }
+      },
+      {
+        "name": "fmt",
+        "argv": [
+          "cargo",
+          "fmt",
+          "--all"
+        ],
+        "exit": 0,
+        "reaped": true,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/fmt.owner/result.json",
+          "sha256": "a2324d9c38dc330ad6377a6386d065d37ebbdaba7b84c70a3f3515f07a79a1c7",
+          "bytes": 1101
+        },
+        "log": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/fmt.owner/child.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        }
+      },
+      {
+        "name": "clippy_all",
+        "argv": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--offline",
+          "--all",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0,
+        "reaped": true,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/clippy_all.owner/result.json",
+          "sha256": "926a36d87bcd29f14a3ebd93f301b2bd0538ae0e84e8bbddb429bb1c79ae4f1f",
+          "bytes": 1212
+        },
+        "log": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/clippy_all.owner/child.log",
+          "sha256": "75e2bb87e3dcc25e24b37d791396c4e233bce0388821cda1a5c55fa8037d2a38",
+          "bytes": 16938
+        }
+      },
+      {
+        "name": "s1_lib_default_parallel",
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "robot-s1",
+          "--lib"
+        ],
+        "exit": 0,
+        "reaped": true,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/s1_lib_default_parallel.owner/result.json",
+          "sha256": "dad26d362f379038abcc1db1662d50f89de3dfd5b59a49d41b95e64004edae9b",
+          "bytes": 1191
+        },
+        "log": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/control/s1_lib_default_parallel.owner/child.log",
+          "sha256": "483032ab599bc9a6bad52ec7cc200f880c107063642065887f7443ee3976bd03",
+          "bytes": 27246
+        }
+      }
+    ],
+    "full_s1_lib_default_parallel": {
+      "passed": 287,
+      "failed": 0,
+      "ignored": 0,
+      "test_threads_override": null,
+      "same_frame_controls": "PASS"
+    },
+    "source_before_after_equal": true,
+    "compiler_before_after_equal": true,
+    "same_source_589": "72ac7a50c9aeddaa0ac47f21543f3c21e3f05a2c72e7b7e3108246b2d6e4cc02",
+    "original_r1_fmt_failure_preserved": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r1/control/fmt.owner/child.log",
+      "sha256": "4185314a7781d3c839a15547510626e8c41ff4458ef1f0e76f71d953adf992d1",
+      "bytes": 192
+    },
+    "original_r1_fmt_failure_exit": 1,
+    "r1_not_run": [
+      "root Clippy",
+      "S1 lib"
+    ],
+    "r2_software_result": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/result.json",
+      "sha256": "c79ddd00d68bfe84bf801ff76cf90a3930b0fbaa807a550888d6d6ec1974a060",
+      "bytes": 10083
+    },
+    "postchecks": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-extracted/r2/postchecks-r2.json",
+      "sha256": "6cdebd30cbdb60f724e8762c8e53343a2ecb9a4c882c63269feeef68d051e818",
+      "bytes": 119651
+    },
+    "native_archive": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-evidence.tar.gz",
+      "sha256": "344266724d24d4dc585e811e94345554a2fb9ca63552a365303a8421368dc8f0",
+      "bytes": 9666062
+    },
+    "native_index": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native-evidence.index.json",
+      "sha256": "f5d77575e0c9b58107fe6e281a184c507ccecc95ad9082eb66c2abc376ea4b58",
+      "bytes": 156612
+    },
+    "native_archive_verification": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/linux-r2/native_archive_verification.json",
+      "sha256": "d9bc01c827f58b66fa2691fed69a1d0eb4cdf4a74dbd88e9a424a300a468c70d",
+      "bytes": 5455
+    },
+    "actual_vm_waits": 35,
+    "owned_sessions_remaining_at_postcheck": [],
+    "vm_last_observed_state": "Running；测试命令均已真实回收"
+  },
+  "independent_static_review": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events/static_review.json",
+    "sha256": "acfabfbbf6524b97571c61659cff0d59c523ed7d89e7d0266eb952692079f07e",
+    "bytes": 2447
+  },
+  "historical_failure_root_cause": "OPEN_UNCONFIRMED；受控连接窗口机制已复现，不回填历史归因",
+  "historical_s49_failure": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/post_e_h2_rt/s49/delayed_ack_20260929/orin/test_final_affected.log",
+    "sha256": "171a77b17c98872010753dea5607decfe17cceb5d01f08c6f08ed798afdeff93",
+    "bytes": 66473
+  },
+  "parent_integration": "候选冻结；root 验收、合并与提交另行处理；没有自动 merge/commit/push",
+  "verification_boundary": "未跑完整 workspace test；完整 S1 lib 默认并行、根 all-targets Clippy 已跑。Mac all-targets 既有 handler lint 保持 FAIL。硬件 H2/D15 不由本报告外推。"
+}

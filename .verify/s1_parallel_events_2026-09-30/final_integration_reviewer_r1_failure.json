@@ -1,0 +1,8 @@
+{
+  "status": "LOCAL_REVIEWER_FAILURE",
+  "error": "KeyError: bytes",
+  "reason": "独审器误要求summary的所有引用都含bytes，实际部分引用仅记录path和sha256。",
+  "original_files_modified": false,
+  "tests_or_remote_commands_reexecuted": false,
+  "correction": "逐引用重新读回实测SHA和bytes，声明bytes的再逐项相等；原件身份未放宽。"
+}

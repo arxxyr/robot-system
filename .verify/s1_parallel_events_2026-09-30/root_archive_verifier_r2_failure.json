@@ -1,0 +1,6 @@
+{
+  "status": "FAIL",
+  "scope": "root索引读取形态错误，非候选测试失败",
+  "error": "KeyError(0)：files是字典，误按列表读。原工具回执保留",
+  "candidate_not_modified": true
+}

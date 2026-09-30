@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "indexed_files": 82,
+  "tar_members": 83,
+  "all_sha_bytes_executable_verified": true,
+  "archive": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events-evidence.tar.gz",
+    "sha256": "ba9524eacb16d4935c4bf81e9bc07592646671b38c34d3027a9aae0de337488f",
+    "bytes": 10008148
+  },
+  "index": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/s1-parallel-events-evidence.index.json",
+    "sha256": "42513a9c4c593c1b376a18b400f60f404eeaf73fe0231c37d031646634fb86af",
+    "bytes": 15424
+  }
+}

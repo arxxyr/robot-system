@@ -1,0 +1,6 @@
+{
+  "status": "FAIL",
+  "scope": "root首轮包审读取错误，非候选测试失败",
+  "error": "根审误把82个原件等同82个tar成员；未先区分目录成员。AssertionError原工具回执保留，不覆盖归档",
+  "candidate_not_modified": true
+}

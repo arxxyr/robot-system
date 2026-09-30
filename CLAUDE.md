@@ -121,6 +121,11 @@
            正式四件未改、六服务停止、无控制/读回进程，两USB/两侧锁无持有者；右Dirty/LATCHED、左保护文件不变。
            19:01:19UTC收尾后值守已解除，现场电源/支撑UNKNOWN；头部/底盘主动运动未测。
            证据 .verify/right_h2_2026-09-30/summary.json；整体FAIL及历史Unknown保留，下一步先闭环trace上下文软件问题。
+           同日S1测试夹具软件修复：仅cfg(test)独立Node/端口RAII与发送前连接刷新，生产25621B前缀不变。
+           Mac定向默认并行15/libClippy、隔离Lima根fmt/Clippy及S1完整默认并行287通过，0failed/ignored。
+           589输入仅该测试文件变动、聚合72ac7a50，root最终集成同源及提交前门通过；非Orin/非完整workspace。
+           原s49两例超时和Mac/Linux/独审/root各原FAIL保留，历史具体归因OPEN_UNCONFIRMED。
+           .verify/s1_parallel_events_2026-09-30/summary.json已验收；下一步非RT工具trace归属/尾采集软件修复。
            无正式安装/部署/push，D15 OPEN/DEFERRED、deployable=false不变；新硬件整轮须新准备/现场事实/GO。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，

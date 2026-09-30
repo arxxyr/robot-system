@@ -1,0 +1,104 @@
+{
+  "schema": "P7_S1_PARALLEL_FIXTURE_CLOSURE_V1",
+  "status": "SOFTWARE_ACCEPTED",
+  "date": "2026-09-30",
+  "scope": "仅cfg(test)事件夹具连接刷新与Node/端口RAII，生产前缀逐字不变",
+  "root_integration_parent": "9480f581247a4f98da1869b8b566e30fc435cc69",
+  "validation_baseline": "4a8e171f27bf18625973aa4f3a6097e9b9fbed18",
+  "compiled_inputs_589_sha256": "72ac7a50c9aeddaa0ac47f21543f3c21e3f05a2c72e7b7e3108246b2d6e4cc02",
+  "runtime": {
+    "path": "crates/robot-s1/src/events_drain/runtime.rs",
+    "sha256": "f0aaae567e7100ed903acef64504c038ce9f0cda6cd5b394ab8539afecbd0a40",
+    "bytes": 47074,
+    "production_prefix_bytes": 25621,
+    "production_prefix_unchanged": true
+  },
+  "checks": {
+    "mac_runtime_default_parallel": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0
+    },
+    "mac_lib_clippy": "PASS",
+    "mac_all_targets_clippy": "FAIL_EXISTING_LINUX_ONLY_SIGNAL_HANDLER_UNUSED_PRESERVED",
+    "linux_runtime": "隔离Lima aarch64，不是Orin",
+    "nightly": "1.101.0-nightly / 5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+    "linux_root_fmt_clippy": "PASS",
+    "linux_s1_complete_lib_default_parallel": {
+      "passed": 287,
+      "failed": 0,
+      "ignored": 0,
+      "test_threads_override": null
+    },
+    "not_full_workspace_test": true,
+    "root_precommit_fmt_clippy": "PASS",
+    "root_precommit_589_equal_before_after": true,
+    "real_wait_reap": "PASS"
+  },
+  "mechanism": "同topic同publisher一次send→join，两subscriber中刷新端解码同一ActionId/kind/at1/seq0，未刷新端None；旧两个终态正例也join后业务读回",
+  "unchanged_budgets": {
+    "terminal_grace_ms": 20,
+    "receive_deadline_seconds": 2,
+    "default_parallel": true
+  },
+  "historical_two_timeout_root_cause": "OPEN_UNCONFIRMED",
+  "original_failures_preserved": [
+    "原s49两例超时",
+    "Mac早轮未用测试连接API及最终既有handler lint",
+    "Linux r1缺rustfmt",
+    "原生独审首should-panic注记计数遗漏",
+    "root包读形态三次错误，未改候选/原件"
+  ],
+  "archive": {
+    "path": "evidence.tar.gz",
+    "sha256": "ba9524eacb16d4935c4bf81e9bc07592646671b38c34d3027a9aae0de337488f",
+    "bytes": 10008148,
+    "indexed_originals": 82,
+    "self_index": "evidence-index.json",
+    "members": 83,
+    "native_nested_originals": 747
+  },
+  "candidate_summary": {
+    "path": "candidate_summary.json",
+    "sha256": "0f38ed80dc49ca87cc0eb39ab1d9c92634bdf0222279788173db7b0f376ba127"
+  },
+  "source_comparison": {
+    "path": "source_comparison.json",
+    "sha256": "edbdfc4fde2bf78b371ea0f68e28e2af01b07826fc2ec9e57b4746999e6c07b3"
+  },
+  "review": [
+    {
+      "path": "static_review.json",
+      "sha256": "acfabfbbf6524b97571c61659cff0d59c523ed7d89e7d0266eb952692079f07e",
+      "bytes": 2447
+    },
+    {
+      "path": "independent_native_review.json",
+      "sha256": "4d8b22542c18a2990fcc522d6246e9a13ff25b3ab799dc2bcd54a20d85bd94da",
+      "bytes": 436035
+    },
+    {
+      "path": "outer_archive_review.json",
+      "sha256": "d77d4a0a5494c8a7901ab0d140e7f34dd8160f116849929679e9a2af05c341f0",
+      "bytes": 4783
+    }
+  ],
+  "root_acceptance": "PASS_CFG_TEST_ONLY_SAME_INPUTS_AND_BUDGETS",
+  "hardware_run": "NOT_PERFORMED",
+  "formal_installation": "NOT_MODIFIED",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "push_performed": false,
+  "independent_native_original_failure": {
+    "path": "independent_native_review.r1.json",
+    "sha256": "cfb733540cf4598fdfcac4810f007390ad39a5b98f8184fcdad5545f1e37037c",
+    "bytes": 422337
+  },
+  "final_integration_review": {
+    "path": "final_integration_review.json",
+    "sha256": "6a2c304de1e2d6dc01c0e546fee0398d8e264974746a69f72b885535b494f482",
+    "bytes": 4222,
+    "status": "PASS"
+  },
+  "final_integration_reviewer_original_failure": "final_integration_reviewer_r1_failure.json"
+}
