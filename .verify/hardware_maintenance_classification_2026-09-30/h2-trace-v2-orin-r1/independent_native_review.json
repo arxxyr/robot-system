@@ -1,0 +1,34 @@
+{
+  "schema": "H2_TRACE_V2_INDEPENDENT_REVIEW_V1",
+  "status": "PASS",
+  "scope": "仅本地软件原件/冻结/回收验收；不SSH、重跑测试、访问UART或修改候选。",
+  "verified": {
+    "indexed_files": 877,
+    "self_index_files": 1,
+    "directories": 187,
+    "members": 1065,
+    "source_files": 589,
+    "source_aggregate": "83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f",
+    "build_head": "1c5758f97b7c502a38c850e8352ce970216bea53",
+    "direct_child_receipts": 52,
+    "host_owned_receipts": 20,
+    "elf_artifacts": 7,
+    "recipes": 6,
+    "tests": {
+      "python_existing": 71,
+      "owner_subset": 12,
+      "tonic_tests": 6,
+      "tonic_scenes": 9,
+      "mock_groups": 4,
+      "mock_samples": 8
+    }
+  },
+  "check_count": 6904,
+  "limits": [
+    "12为历史194子集，本轮未跑194/完整workspace。",
+    "旧H2硬件FAIL及D15 OPEN/DEFERRED、deployable=false保持；没有新hardware GO。",
+    "服务/进程仅当次前后快照，mock运行期间有本轮自有软件进程；不宣称全过程无模拟进程。",
+    "当前维护35候选不进入589 Rust域，也未混入本轮旧71Python结果。"
+  ],
+  "reviewer_source_sha256": "1b5c295ab594014b14619f635a7a94007fe6ae842a014594a27155816b915e88"
+}

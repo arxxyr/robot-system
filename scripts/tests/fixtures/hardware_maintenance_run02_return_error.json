@@ -1,0 +1,291 @@
+{
+  "source_sha256": "bef993bf6c7b4746985b449f08ad38b4048939bcff012d34be4de92d947040a6",
+  "original_result": "NEEDS_MANUAL_POWER_CUT",
+  "boundary": "旧run原结果保留；fixture只提取真实before/after数值，不解析或修改原error字符串。",
+  "before": {
+    "left:1": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1972,
+      "Present_Velocity": 0,
+      "Goal_Position": 1972,
+      "Goal_Velocity": 0
+    },
+    "left:2": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1216,
+      "Present_Velocity": 0,
+      "Goal_Position": 1216,
+      "Goal_Velocity": 0
+    },
+    "left:3": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 3155,
+      "Present_Velocity": 0,
+      "Goal_Position": 3155,
+      "Goal_Velocity": 0
+    },
+    "left:4": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2084,
+      "Present_Velocity": 0,
+      "Goal_Position": 2084,
+      "Goal_Velocity": 0
+    },
+    "left:5": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 947,
+      "Present_Velocity": 0,
+      "Goal_Position": 942,
+      "Goal_Velocity": 0
+    },
+    "left:6": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1424,
+      "Present_Velocity": 0,
+      "Goal_Position": 1424,
+      "Goal_Velocity": 0
+    },
+    "left:7": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2635,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "left:8": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2088,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "right:1": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2108,
+      "Present_Velocity": 0,
+      "Goal_Position": 2108,
+      "Goal_Velocity": 0
+    },
+    "right:2": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1075,
+      "Present_Velocity": 0,
+      "Goal_Position": 1075,
+      "Goal_Velocity": 0
+    },
+    "right:3": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2995,
+      "Present_Velocity": 0,
+      "Goal_Position": 2995,
+      "Goal_Velocity": 0
+    },
+    "right:4": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2264,
+      "Present_Velocity": 0,
+      "Goal_Position": 2264,
+      "Goal_Velocity": 0
+    },
+    "right:5": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 875,
+      "Present_Velocity": 0,
+      "Goal_Position": 875,
+      "Goal_Velocity": 0
+    },
+    "right:6": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1393,
+      "Present_Velocity": 0,
+      "Goal_Position": 1393,
+      "Goal_Velocity": 0
+    },
+    "right:7": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 357,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "right:8": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 3776,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "right:9": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 3493,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    }
+  },
+  "after": {
+    "left:1": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1972,
+      "Present_Velocity": 0,
+      "Goal_Position": 1972,
+      "Goal_Velocity": 0
+    },
+    "left:2": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1216,
+      "Present_Velocity": 0,
+      "Goal_Position": 1216,
+      "Goal_Velocity": 0
+    },
+    "left:3": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 3155,
+      "Present_Velocity": 0,
+      "Goal_Position": 3155,
+      "Goal_Velocity": 0
+    },
+    "left:4": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2084,
+      "Present_Velocity": 0,
+      "Goal_Position": 2084,
+      "Goal_Velocity": 0
+    },
+    "left:5": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 953,
+      "Present_Velocity": 0,
+      "Goal_Position": 947,
+      "Goal_Velocity": 0
+    },
+    "left:6": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1424,
+      "Present_Velocity": 0,
+      "Goal_Position": 1424,
+      "Goal_Velocity": 0
+    },
+    "left:7": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2635,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "left:8": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2088,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "right:1": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2108,
+      "Present_Velocity": 0,
+      "Goal_Position": 2108,
+      "Goal_Velocity": 0
+    },
+    "right:2": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1075,
+      "Present_Velocity": 0,
+      "Goal_Position": 1075,
+      "Goal_Velocity": 0
+    },
+    "right:3": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2995,
+      "Present_Velocity": 0,
+      "Goal_Position": 2995,
+      "Goal_Velocity": 0
+    },
+    "right:4": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2264,
+      "Present_Velocity": 0,
+      "Goal_Position": 2264,
+      "Goal_Velocity": 0
+    },
+    "right:5": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 875,
+      "Present_Velocity": 0,
+      "Goal_Position": 875,
+      "Goal_Velocity": 0
+    },
+    "right:6": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1393,
+      "Present_Velocity": 0,
+      "Goal_Position": 1393,
+      "Goal_Velocity": 0
+    },
+    "right:7": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 357,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "right:8": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 3776,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "right:9": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 3493,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    }
+  },
+  "probe": {
+    "side": "left",
+    "motor": 5,
+    "name": "left_arm_wrist_roll",
+    "kind": "position",
+    "status": "FAIL",
+    "anchor_raw": 947,
+    "goal_raw": 971,
+    "cleanup_errors": []
+  }
+}

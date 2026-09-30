@@ -9,6 +9,12 @@
 
 ---
 
+## 2026-09-30 · 维护分类与 H2 新 Orin 冻结（纯软件）
+
+维护入口分别判定精度、完整17×3停止字段和逐项身份后验，收尾失败保持粘性；原+24/±4/800ms不扩。两端同35方法/default PLAN_ONLY通过，root复验是同35；r4未动作轮漂移漏项已修，原FAIL保留。三轮固定DEFERRED，完整假执行204READ/底盘0WRITE与0enable，不能整体PASS；旧run02的NEEDS及+6误差不改。
+固定1c5758 Orin新V2六配方/七件通过；latest nightly5c、589聚合83048、fmt/根Clippy、既有71Python、7help、mock4×2、tonic6/9和12owner子集通过。本轮非194/全workspace/长载/硬件。新维护35不计入冻结源71。提交前同源fmt→根Clippy再次通过；ca14安装/六服务与保护文件保持。
+人工断电确认PENDING，右H2整体FAIL、D15 OPEN/DEFERRED、deployable=false不变。底盘纯运动学独立实施，S0/S1接入及真实动作另验；[归档与软件验收入口](../.verify/hardware_maintenance_classification_2026-09-30/summary.json)保留本机49原件及两份不可变Orin外包，封包后独审为单独附件。
+
 ## 2026-09-30 · 双臂 / 头部 / XLeRobot 底盘独立维护（整体 FAIL）
 
 现场映射为底盘前8/左7/右9，三轮既有速度模式1已读回；未写EEPROM或模式。维护脚本两端同19项测试/默认PLAN_ONLY及独审通过，不能替代S0/S1集成或硬件门。

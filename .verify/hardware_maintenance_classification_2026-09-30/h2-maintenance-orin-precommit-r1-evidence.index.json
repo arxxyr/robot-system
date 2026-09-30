@@ -1,0 +1,291 @@
+{
+  "files": {
+    "candidate/scripts/run_hardware_maintenance.py": {
+      "bytes": 48027,
+      "executable": false,
+      "sha256": "76825d205f3cda5a0bbb52897948ee961bc874855505cc91bb577d537f530bb0"
+    },
+    "candidate/scripts/tests/fixtures/hardware_maintenance_run02_return_error.json": {
+      "bytes": 6971,
+      "executable": false,
+      "sha256": "a7bfa3fbfc3f3039be9db68973348ba4db156b74f807e57a01eecda8dfd27948"
+    },
+    "candidate/scripts/tests/test_hardware_maintenance.py": {
+      "bytes": 37060,
+      "executable": false,
+      "sha256": "bcb7387b71eb2950d1a1cb9c806fde618f2026b9da5e7523d9ade7a62c7820ba"
+    },
+    "candidate_inputs.json": {
+      "bytes": 488,
+      "executable": false,
+      "sha256": "2655e4bdf4bef42b6a67c225275f644c1a4f025936aed2fcb306375cc71dfe8e"
+    },
+    "collect_native.py": {
+      "bytes": 12843,
+      "executable": false,
+      "sha256": "c347f5828aca642484cef1460a7a28cdcfede52c1d19c3bc8aa97d65cf603650"
+    },
+    "collector_delta.diff": {
+      "bytes": 1245,
+      "executable": false,
+      "sha256": "910d13fff1eaa233ac8d9454cd5d33c5809b32de65602618bb21484c1f8504dc"
+    },
+    "finalize_evidence.py": {
+      "bytes": 6996,
+      "executable": false,
+      "sha256": "7960cd015e83ab83cbdcdce8efdd36f83c86c48f86b292959fa786192f08f544"
+    },
+    "host/checks.owner/child.log": {
+      "bytes": 7933,
+      "executable": false,
+      "sha256": "3b35150d863d180cbf4a34e1adcec35bcea7b7cdbb31da11b49b79d904616f14"
+    },
+    "host/checks.owner/launch.json": {
+      "bytes": 1066,
+      "executable": false,
+      "sha256": "645ffacb839e090fb771ecd866665180ed2f503d60d607dd8483d40e291b3e10"
+    },
+    "host/checks.owner/result.json": {
+      "bytes": 1553,
+      "executable": false,
+      "sha256": "fdd5fec0064b06147353a5abcdd17db289ca859cda0995d9ff7c16251e776e8f"
+    },
+    "host/checks.owner/status.json": {
+      "bytes": 1553,
+      "executable": false,
+      "sha256": "fdd5fec0064b06147353a5abcdd17db289ca859cda0995d9ff7c16251e776e8f"
+    },
+    "host/collect.sh": {
+      "bytes": 513,
+      "executable": false,
+      "sha256": "5c4dd7c04fd3b9cdf6bf3582d32338d6e323b359c7d323c91d51f9c1349f1148"
+    },
+    "host/collect_native.owner/child.log": {
+      "bytes": 967,
+      "executable": false,
+      "sha256": "975761fb30001875ba4d3d5f7c0e6f110f3f9112e12f26f537f02499f7333d6c"
+    },
+    "host/collect_native.owner/launch.json": {
+      "bytes": 1060,
+      "executable": false,
+      "sha256": "c88c7ea9201039909c847408e25b9bb0e2079592498e7adbce6cbee06fce1952"
+    },
+    "host/collect_native.owner/result.json": {
+      "bytes": 1551,
+      "executable": false,
+      "sha256": "13485eabe1935635507d85af2a5218dd8882606f46ff1fa2eb39af0ed7f1542f"
+    },
+    "host/collect_native.owner/status.json": {
+      "bytes": 1551,
+      "executable": false,
+      "sha256": "13485eabe1935635507d85af2a5218dd8882606f46ff1fa2eb39af0ed7f1542f"
+    },
+    "host/download_archive.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "host/download_archive.owner/launch.json": {
+      "bytes": 923,
+      "executable": false,
+      "sha256": "befb9f32e3fbcdc5dc89269bfcb2c3c8f3995a8019a6acec1bd1e8d5b72c3e9b"
+    },
+    "host/download_archive.owner/result.json": {
+      "bytes": 1412,
+      "executable": false,
+      "sha256": "c5bee00e1494ba34353b94bdc40e4b8c628be1e5ea4cf78b03890ac159858208"
+    },
+    "host/download_archive.owner/status.json": {
+      "bytes": 1412,
+      "executable": false,
+      "sha256": "c5bee00e1494ba34353b94bdc40e4b8c628be1e5ea4cf78b03890ac159858208"
+    },
+    "host/download_index.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "host/download_index.owner/launch.json": {
+      "bytes": 938,
+      "executable": false,
+      "sha256": "74a4a6d8e986fa096a1512f6727b7ad569869ec48776c0604ada852743648a95"
+    },
+    "host/download_index.owner/result.json": {
+      "bytes": 1425,
+      "executable": false,
+      "sha256": "efa7202c42780364b564bcc9f9e4379431f29990de76b97c64725cd7ccb7e22b"
+    },
+    "host/download_index.owner/status.json": {
+      "bytes": 1425,
+      "executable": false,
+      "sha256": "efa7202c42780364b564bcc9f9e4379431f29990de76b97c64725cd7ccb7e22b"
+    },
+    "host/download_metadata.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "host/download_metadata.owner/launch.json": {
+      "bytes": 944,
+      "executable": false,
+      "sha256": "67291dd13cc334ea0ebc93dc94dfb9fa81833d9057ed97fc18e636b3310ca185"
+    },
+    "host/download_metadata.owner/result.json": {
+      "bytes": 1434,
+      "executable": false,
+      "sha256": "0d592718c2fd7de557b1d6997e5b891e770b63ac01bd3e6385295486cca20fc2"
+    },
+    "host/download_metadata.owner/status.json": {
+      "bytes": 1434,
+      "executable": false,
+      "sha256": "0d592718c2fd7de557b1d6997e5b891e770b63ac01bd3e6385295486cca20fc2"
+    },
+    "host/launch_checks.sh": {
+      "bytes": 752,
+      "executable": false,
+      "sha256": "98b07bc45df1e00d82f5818f53e0ddc6f62df1c602d0bb7c5aaf338097264cb3"
+    },
+    "host/prepare.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "host/prepare.owner/launch.json": {
+      "bytes": 1060,
+      "executable": false,
+      "sha256": "9b70233b0dafbcfdad25be1beb4b6aed062e9845cffe86884791fe6f7c436000"
+    },
+    "host/prepare.owner/result.json": {
+      "bytes": 1540,
+      "executable": false,
+      "sha256": "a7dcb1c2207291c0cd93f75beb9b8b44f8fc2c2c879f923b4f0392ce41b9e514"
+    },
+    "host/prepare.owner/status.json": {
+      "bytes": 1540,
+      "executable": false,
+      "sha256": "a7dcb1c2207291c0cd93f75beb9b8b44f8fc2c2c879f923b4f0392ce41b9e514"
+    },
+    "host/prepare.sh": {
+      "bytes": 406,
+      "executable": false,
+      "sha256": "b81e8dbd239903271c3bc69c3306c9b83c8b4ec329aed0f223e24055f091d388"
+    },
+    "host/ssh_owner.py": {
+      "bytes": 8656,
+      "executable": false,
+      "sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a"
+    },
+    "host/upload_bootstrap.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "host/upload_bootstrap.owner/launch.json": {
+      "bytes": 1052,
+      "executable": false,
+      "sha256": "0bba16b18edbc7b59a2e91759f7bb82c9e59427e69baf17aebdb7c5b66b9fbfd"
+    },
+    "host/upload_bootstrap.owner/result.json": {
+      "bytes": 1541,
+      "executable": false,
+      "sha256": "27750f09bbf3f2bf71bdcf7974f0d34ce043db9552c417b8917a8d79a1fe6b6a"
+    },
+    "host/upload_bootstrap.owner/status.json": {
+      "bytes": 1541,
+      "executable": false,
+      "sha256": "27750f09bbf3f2bf71bdcf7974f0d34ce043db9552c417b8917a8d79a1fe6b6a"
+    },
+    "host/upload_candidate.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "host/upload_candidate.owner/launch.json": {
+      "bytes": 925,
+      "executable": false,
+      "sha256": "2849cc8e91f0fab8168659d07811ca1043dce3fbb906a1b88897805b1d6d0d95"
+    },
+    "host/upload_candidate.owner/result.json": {
+      "bytes": 1414,
+      "executable": false,
+      "sha256": "ef8617e5e52c69544bacbb4a8df9524a9a24757b65a7a8547a29895e693240f7"
+    },
+    "host/upload_candidate.owner/status.json": {
+      "bytes": 1414,
+      "executable": false,
+      "sha256": "ef8617e5e52c69544bacbb4a8df9524a9a24757b65a7a8547a29895e693240f7"
+    },
+    "host/upload_collector.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "host/upload_collector.owner/launch.json": {
+      "bytes": 915,
+      "executable": false,
+      "sha256": "8a511802af6e4974a88fbb57414743730639b5fc2f7efed2aae6c9620b97dd79"
+    },
+    "host/upload_collector.owner/result.json": {
+      "bytes": 1404,
+      "executable": false,
+      "sha256": "598a6b3fc2b7c1065fd477522666dc511e071c6fd396fc2ddad8b0babbe7f6cf"
+    },
+    "host/upload_collector.owner/status.json": {
+      "bytes": 1404,
+      "executable": false,
+      "sha256": "598a6b3fc2b7c1065fd477522666dc511e071c6fd396fc2ddad8b0babbe7f6cf"
+    },
+    "independent_review_r5.json": {
+      "bytes": 3332,
+      "executable": false,
+      "sha256": "cbd691c17f68209ea93d4a98c1875226e54587d6970e00e484879c5687de11ca"
+    },
+    "native-evidence.index.json": {
+      "bytes": 31464,
+      "executable": false,
+      "sha256": "d87560084b724a57be318df702b173e21c8b8f6c55d709f2af04ab1d04835159"
+    },
+    "native-evidence.metadata.json": {
+      "bytes": 995,
+      "executable": false,
+      "sha256": "1f6ffd26f51da9f7cd29acf700b8c72cea628ef5de7a2e3ee0f2f3d829876ec8"
+    },
+    "native-evidence.tar.gz": {
+      "bytes": 161383,
+      "executable": false,
+      "sha256": "baae00f0d4c7d66c168909569ae4a6c9ccfd4e3f97ad9a7cd152de56fc0a4316"
+    },
+    "native_archive_verification.json": {
+      "bytes": 667,
+      "executable": false,
+      "sha256": "81b17850eb084e42beef7260a4d1ba4016b43e8676db94cd51ec1b2c15b1e43e"
+    },
+    "package_evidence.py": {
+      "bytes": 2439,
+      "executable": false,
+      "sha256": "73ee5ed1c07f9637c36c8490ee6206f5fce8b520cf19f3d763beeb472e8c7f4a"
+    },
+    "protection_expected.json": {
+      "bytes": 3654,
+      "executable": false,
+      "sha256": "1674be3c565d67f76eb8649f63cf2316ddee0664e844729cb1713a118a920c0c"
+    },
+    "run_checks.py": {
+      "bytes": 8797,
+      "executable": false,
+      "sha256": "0a749558b43197a989ccc050ceef56b1ea267a75d7c50d3a39c7cd78bdab2155"
+    },
+    "summary.json": {
+      "bytes": 29153,
+      "executable": false,
+      "sha256": "25d11a19a880932308efc3198b4de8913c7c915e5f4b005000211fe246f2e53f"
+    },
+    "verify_native_archive.py": {
+      "bytes": 3576,
+      "executable": false,
+      "sha256": "2013f0f4ba11265fc3e6b95dde9114f4d9ce100c7de813be3318116cc0f6c1e3"
+    }
+  },
+  "schema": "H2_MAINTENANCE_R5_ORIN_PRECOMMIT_OUTER_ARCHIVE_V1",
+  "source_sha256": "167dc63b2a274b53d9c53fe72c811d242d8ca96d5f031e1bf0ea9981cbd78e18"
+}

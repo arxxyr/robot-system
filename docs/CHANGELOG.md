@@ -10,6 +10,11 @@
 
 ---
 
+## 2026-09-30 · 独立维护的精度/停止证据分类与新原生冻结
+
+维护软件将精度、完整停止字段和逐项身份后验分开，安全收尾失败粘性不被最终零值覆盖；原步幅/±4/800ms不扩，新V2绑定显式维护根目录且拒旧GO。两端同35与默认零动作入口通过，r4未执行轮漂移漏项修复并保留原件。底盘固件合同未知，live入口固定三轮DEFERRED，快照允许READ但不WRITE/enable；旧硬件NEEDS/回程FAIL不改。
+固定1c5758的Orin新V2六配方/七件、589同源/最新nightly5c、fmt/根Clippy、既有71Python、7help/mock4×2/tonic6+9/12owner子集通过，不冒称194或全仓/硬件。提交前质量门再次通过，正式安装、服务及保护保持。无安装/部署/push/新动作；物理断电PENDING，H2FAIL、D15 OPEN/DEFERRED及deployable=false保持。[原件与软件验收入口](../.verify/hardware_maintenance_classification_2026-09-30/summary.json)保留旧FAIL；独审/root通过，两份Orin原包不回填。
+
 ## 2026-09-30 · XLeRobot 映射的独立硬件维护与回程失败
 
 底盘沿现场上游前8/左7/右9与既有速度模式1；本次不写模式/EEPROM，不改变冻结架构或正式双臂执行面。裸wire维护脚本两端同19项测试/仅计划与独审通过。

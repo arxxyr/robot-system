@@ -1,0 +1,79 @@
+{
+  "schema": "HARDWARE_MAINTENANCE_CLASSIFICATION_FINAL_INTEGRATION_REVIEW_V1",
+  "status": "PASS",
+  "scope": "仅最终源码/已审原包复制/文档/本轮质量回执绑定；不重复完整包遍历、测试、SSH或UART。",
+  "summary": {
+    "path": "summary.json",
+    "sha256": "1dabde3a1ca70a5975de04c093dbc23b518e2b89b7eb51b4f43145843430b5d0",
+    "bytes": 5549
+  },
+  "maintenance_sources": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "76825d205f3cda5a0bbb52897948ee961bc874855505cc91bb577d537f530bb0",
+      "bytes": 48027
+    },
+    "scripts/tests/fixtures/hardware_maintenance_run02_return_error.json": {
+      "sha256": "a7bfa3fbfc3f3039be9db68973348ba4db156b74f807e57a01eecda8dfd27948",
+      "bytes": 6971
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "bcb7387b71eb2950d1a1cb9c806fde618f2026b9da5e7523d9ade7a62c7820ba",
+      "bytes": 37060
+    }
+  },
+  "source": {
+    "files": 589,
+    "aggregate": "83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f",
+    "build_HEAD": "1c5758f97b7c502a38c850e8352ce970216bea53"
+  },
+  "original_bindings": {
+    "V2_summary_sha256": "3a15ebc256b1c5d32a428336a6b703cdc1628cd9ba1c409c9c0ad7c59d3e5a09",
+    "additional_summary_sha256": "25d11a19a880932308efc3198b4de8913c7c915e5f4b005000211fe246f2e53f",
+    "V2_outer_sha256": "db264b37ea0d00bcb23bb0eccf57a5fca6dd0befadf279d33fd2209ec3f1b83f",
+    "additional_outer_sha256": "004859d28cdd5108f911a9c4de59f0b65d9fd6e791ed4c5c77bffbdd4520549d",
+    "sidecars": "b393/074f/51d39各原SHA匹配，封包后独审单独附件，原包/summary不改。"
+  },
+  "actual_quality": {
+    "main_fmt_pid": 77594,
+    "main_fmt": "PASS_WAIT0_REAPED",
+    "root_same35_pid": 77267,
+    "root_same35": "PASS_WAIT0_REAPED_NOT_ADDITIVE",
+    "Orin": "追加原包已独审22直接完成/9host回收，latestupdate→fmt→根Clippy及同35/defaultPLAN通过；与V2 52完成分开。"
+  },
+  "docs": {
+    "CLAUDE.md": {
+      "sha256": "b99b8139b75a37cb185b5661c8db96f833b9a7549cd2f29dad720d7d550c5ef7",
+      "bytes": 26465
+    },
+    "docs/10_verification.md": {
+      "sha256": "9cbd74bc27ed37e24f6b61be38c2deb4ae8fc6648861982cbe0cd0bc52161152",
+      "bytes": 94432
+    },
+    "docs/CHANGELOG.md": {
+      "sha256": "64f589248704b31718e5216d0382fed6271d75151889a1ea9ecd944ce4678fe5",
+      "bytes": 425049
+    },
+    "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md": {
+      "sha256": "dc94683f1a0f597556098ef02fafaf1b4a50e832e0f0677bde8044eb4c10f4de",
+      "bytes": 54918
+    }
+  },
+  "hardware_boundary": {
+    "physical_power_cut": "PENDING_UNKNOWN",
+    "new_hardware_GO": false,
+    "UART": false,
+    "right_H2": "OVERALL_FAIL_UNCHANGED",
+    "D15": "OPEN_DEFERRED",
+    "deployable": false,
+    "formal_installation_changed": false,
+    "push": false,
+    "base_S0_S1_integration": "NOT_IMPLEMENTED",
+    "isolated_math": "SEPARATE_NEXT_STAGE"
+  },
+  "limits": [
+    "35/71/12子集保持不同候选范围，未本轮194/完整workspace/长载。",
+    "原run02 NEEDS/+6FAIL与右H2整体FAIL不回填；物理断电PENDING/UNKNOWN。",
+    "livebase固定DEFERRED，只有完整快照允许READ；数学在隔离树尚未主树整合/S0S1接入。",
+    "可提交本软件阶段；无新硬件GO/动作/安装/push。"
+  ]
+}

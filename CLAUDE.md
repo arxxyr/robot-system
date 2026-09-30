@@ -134,6 +134,12 @@
            主树589输入83048e98仅sla变化，独审/root与提交前fmt→根Clippy、uv合同复验通过；原FAIL保留。
            .verify/h2_trace_owner_2026-09-30/summary.json；非完整workspace、未Orin新V2冻结/真实RT环暂停/硬件H2。
            用户另确认现场条件后推进独立维护层硬件验证，结果与本软件阶段分开；旧H2/D15/Unknown/deployable=false不变。
+           当前维护分类续作：精度/17×3停止/逐项身份后验分开，收尾失败粘性与+24/±4/800ms保持。
+           本机/Orin同35及默认零动作通过；r4未动作轮漂移漏项已修并保留原FAIL；三轮live固定DEFERRED。
+           1c5758新Orin V2六配方/七件、589聚合83048、latest nightly5c及71Python/7help/mock4×2/tonic6+9/12owner通过。
+           12是历史194子集，本轮非全仓/硬件；维护35另源另门不混入71。提交前fmt/根Clippy再次通过。
+           独审/root通过；证据 .verify/hardware_maintenance_classification_2026-09-30/summary.json，两份Orin原包不回填。
+           人工断电待答、H2/左腕原FAIL/D15 OPEN_DEFERRED/deployable=false不变；底盘纯运动学独立实施、未接S0/S1。
            同日维护硬件：现场XLeRobot底盘前8/左7/右9既有速度模式1只读确认；脚本两端同19项/仅计划与独审通过。
            首uv父壳前置拒绝UART0；新run仅左腕947→967→953，回程+6超±4/800ms，整体FAIL，未重试。
            断扭ACK、17电机终读零扭矩/零速度、300child回收及独立无UART后验通过；原入口/位置/后验FAIL保留。

@@ -1,0 +1,786 @@
+{
+  "schema": "HARDWARE_MAINTENANCE_R5_ORIN_SOFTWARE_PRECOMMIT_V1",
+  "status": "SOFTWARE_PASS_PENDING_INDEPENDENT_AND_ROOT_ACCEPTANCE",
+  "scope": "维护r5独立三文件35方法/defaultPLAN及同589本轮提交前门；无UART、真实bindings/GO、安装或服务启动。",
+  "source": {
+    "head": "1c5758f97b7c502a38c850e8352ce970216bea53",
+    "files": 589,
+    "aggregate": "83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f",
+    "source_before_after_equal": true,
+    "current_main_589_equal": true,
+    "base_v2_summary": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-v2-orin-r1/summary.json",
+      "sha256": "3a15ebc256b1c5d32a428336a6b703cdc1628cd9ba1c409c9c0ad7c59d3e5a09",
+      "bytes": 74467
+    },
+    "base_v2_unchanged": true
+  },
+  "maintenance": {
+    "methods": 35,
+    "failed": 0,
+    "default_plan": {
+      "result": "PLAN_ONLY",
+      "actions_started": 0,
+      "required": [
+        "bindings",
+        "output",
+        "run-id",
+        "artifact-root"
+      ],
+      "scope": "单电机独立维护；不运行硬件、不改保护"
+    },
+    "candidate_inputs": {
+      "scripts/run_hardware_maintenance.py": {
+        "sha256": "76825d205f3cda5a0bbb52897948ee961bc874855505cc91bb577d537f530bb0",
+        "bytes": 48027
+      },
+      "scripts/tests/test_hardware_maintenance.py": {
+        "sha256": "bcb7387b71eb2950d1a1cb9c806fde618f2026b9da5e7523d9ade7a62c7820ba",
+        "bytes": 37060
+      },
+      "scripts/tests/fixtures/hardware_maintenance_run02_return_error.json": {
+        "sha256": "a7bfa3fbfc3f3039be9db68973348ba4db156b74f807e57a01eecda8dfd27948",
+        "bytes": 6971
+      }
+    },
+    "physical_uart": false,
+    "real_bindings_or_go": false
+  },
+  "precommit": {
+    "fmt": "PASS",
+    "root_clippy_all_all_targets_deny_warnings": "PASS",
+    "latest_nightly_actual_update": true,
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "compiler_before_update_after_equal": true,
+    "source_files": 589,
+    "aggregate": "83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f"
+  },
+  "checks_result": {
+    "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/result.json",
+    "sha256": "008f00d31dfd8181ea99b0baf0b4001bfea41bcfaf0c36932e03e1d40b57de92",
+    "bytes": 6864
+  },
+  "identity": {
+    "host": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+    "uv": "uv 0.11.5 (aarch64-unknown-linux-gnu)\n",
+    "python": "{\"executable\": \"/home/loosqk/.local/share/uv/python/cpython-3.12-linux-aarch64-gnu/bin/python3.12\", \"version\": \"3.12.13\"}\n"
+  },
+  "formal": {
+    "head": "ca14f0e6cf6df8ecc6baaaa8dff2dddb64abbd0a",
+    "clean": true,
+    "four_sha_equal_to_v2_and_before_after": true,
+    "four_files": [
+      {
+        "path": "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon",
+        "resolved": "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon",
+        "exists": true,
+        "link_target": null,
+        "mode": 509,
+        "uid": 1000,
+        "gid": 1000,
+        "bytes": 3968152,
+        "device": 66305,
+        "inode": 14051956,
+        "sha256": "461aec751fc5a41a24ab4dcc3778ca1e88783c4c96467254419f7bf13d1fde7f"
+      },
+      {
+        "path": "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy",
+        "resolved": "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy",
+        "exists": true,
+        "link_target": null,
+        "mode": 509,
+        "uid": 1000,
+        "gid": 1000,
+        "bytes": 1818776,
+        "device": 66305,
+        "inode": 14051962,
+        "sha256": "7d0cfa3da22610e9a34749d1fbb0d081239a728ed1a30cb9836e01c909dff5c3"
+      },
+      {
+        "path": "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon",
+        "resolved": "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon",
+        "exists": true,
+        "link_target": null,
+        "mode": 509,
+        "uid": 1000,
+        "gid": 1000,
+        "bytes": 4033312,
+        "device": 66305,
+        "inode": 14051978,
+        "sha256": "1c9037443f9786f09631705bd8800bc5f85333a45c7e9b08d6fcfaf26738de93"
+      },
+      {
+        "path": "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+        "resolved": "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+        "exists": true,
+        "link_target": null,
+        "mode": 509,
+        "uid": 1000,
+        "gid": 1000,
+        "bytes": 5883280,
+        "device": 66305,
+        "inode": 14052064,
+        "sha256": "9e8d029c30472bcd5371b6ae1fb6e4f98446086f420c567d11891dab81cc8d78"
+      }
+    ],
+    "six_services": "loaded/inactive/dead/MainPID0",
+    "services_receipt": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/formal_services/completion.json",
+      "sha256": "4b49e702398b13a55624de014ebcc4588364c15a01dbf18814985d90cc346a10",
+      "bytes": 3463
+    },
+    "control_processes_after": []
+  },
+  "protection": {
+    "reference": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/protection_expected.json",
+      "sha256": "1674be3c565d67f76eb8649f63cf2316ddee0664e844729cb1713a118a920c0c",
+      "bytes": 3654
+    },
+    "original_reference_source": "/Users/loosqk/repo/rust/robot-system/target/hardware_verify_20260930_r2/maintenance/bindings.json",
+    "fields": "path/hex/SHA/bytes/mode/uid/gid/inode逐字段",
+    "file_count": 12,
+    "locks_read_only_not_held": 4,
+    "exact_pinned_and_before_after_equal": true,
+    "before": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/protection_before.json",
+      "sha256": "1674be3c565d67f76eb8649f63cf2316ddee0664e844729cb1713a118a920c0c",
+      "bytes": 3654
+    },
+    "after": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/protection_after.json",
+      "sha256": "1674be3c565d67f76eb8649f63cf2316ddee0664e844729cb1713a118a920c0c",
+      "bytes": 3654
+    }
+  },
+  "true_waits": {
+    "direct_receipts": 22,
+    "maintenance": 4,
+    "precommit_and_formal": 18,
+    "commands": [
+      {
+        "phase": "maintenance",
+        "name": "uv_identity",
+        "argv": [
+          "uv",
+          "--version"
+        ],
+        "pid": 440455,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 53226127,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/maintenance/uv_identity/completion.json",
+          "sha256": "2198916b8e13f7d970ece7b56c4b7fb51400f815e5aab9200d35fd0f409c2536",
+          "bytes": 2775
+        }
+      },
+      {
+        "phase": "maintenance",
+        "name": "python_identity",
+        "argv": [
+          "uv",
+          "run",
+          "--no-project",
+          "python",
+          "-c",
+          "import sys,platform,json;print(json.dumps({\"executable\":sys.executable,\"version\":platform.python_version()}))"
+        ],
+        "pid": 440456,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 185282091,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/maintenance/python_identity/completion.json",
+          "sha256": "2ceff4ee1090ba5e98bd3423f0b4ce87643f9a85ff7a4e5802add52a062fc3af",
+          "bytes": 3115
+        }
+      },
+      {
+        "phase": "maintenance",
+        "name": "deterministic_35",
+        "argv": [
+          "uv",
+          "run",
+          "--no-project",
+          "python",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "scripts/tests",
+          "-p",
+          "test_hardware_maintenance.py"
+        ],
+        "pid": 440462,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 300,
+        "elapsed_ns": 885209410,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/maintenance/deterministic_35/completion.json",
+          "sha256": "124b597f44582d9c797724e9ebd860231c3d5388eee476122a4cf8bc4f9ff5d6",
+          "bytes": 3097
+        }
+      },
+      {
+        "phase": "maintenance",
+        "name": "default_plan",
+        "argv": [
+          "uv",
+          "run",
+          "--no-project",
+          "python",
+          "scripts/run_hardware_maintenance.py"
+        ],
+        "pid": 440477,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 300,
+        "elapsed_ns": 234281836,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/maintenance/default_plan/completion.json",
+          "sha256": "851d212b9fe60b8745d2b08d50e0a5ac83d33ab1be7ef2087590ad45211e02df",
+          "bytes": 2925
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "source_before_head",
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "pid": 440483,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52496253,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/source_before_head/completion.json",
+          "sha256": "e103c52dae3c6bd65e62e3d133fdc3fbf0eadd790e9c4c00a0f361ed85d6f70d",
+          "bytes": 2818
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "source_before_status",
+        "argv": [
+          "git",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all"
+        ],
+        "pid": 440484,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52559486,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/source_before_status/completion.json",
+          "sha256": "cfdcac6b62bf264017e752fd611194e5400bafd5a04917a3e91c28d0ae5fb5b4",
+          "bytes": 2899
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "source_before_files",
+        "argv": [
+          "git",
+          "ls-files",
+          "-z",
+          "--cached",
+          "--others",
+          "--exclude-standard"
+        ],
+        "pid": 440485,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52459676,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/source_before_files/completion.json",
+          "sha256": "acfdd1d3399b8e5d2468ee10e5331c546b97d77ca00df4d3180b7deb1fecfc64",
+          "bytes": 2936
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "rustc_before",
+        "argv": [
+          "rustc",
+          "-vV"
+        ],
+        "pid": 440486,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 84873771,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/rustc_before/completion.json",
+          "sha256": "37c39173a94fe5746ec75e6724df789798d8a6d622da716565d9419460ec0b9d",
+          "bytes": 2757
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "cargo_before",
+        "argv": [
+          "cargo",
+          "-V"
+        ],
+        "pid": 440492,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52469020,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/cargo_before/completion.json",
+          "sha256": "3bbbe5af32a5d6678043d93a2ebdcc252a215147e100276ed2dad558f2268868",
+          "bytes": 2754
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "latest_nightly_update",
+        "argv": [
+          "rustup",
+          "update",
+          "nightly",
+          "--no-self-update"
+        ],
+        "pid": 440497,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 300,
+        "elapsed_ns": 435053965,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/latest_nightly_update/completion.json",
+          "sha256": "6069f37086251940b9351fac20eb75bddf7ccd1ce65281b8b8a405f379152251",
+          "bytes": 2890
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "rustc_after_update",
+        "argv": [
+          "rustc",
+          "-vV"
+        ],
+        "pid": 440511,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 84902603,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/rustc_after_update/completion.json",
+          "sha256": "2cf969a7123d5dc33c6da01ae3c1d354336b7e584dc3f6e039d12f050e54b748",
+          "bytes": 2787
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "cargo_after_update",
+        "argv": [
+          "cargo",
+          "-V"
+        ],
+        "pid": 440517,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52665025,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/cargo_after_update/completion.json",
+          "sha256": "d59d1daeab786870e93731b06ce2e94e171785387c09963eb3c4eb6f247abba9",
+          "bytes": 2784
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "fmt",
+        "argv": [
+          "cargo",
+          "fmt",
+          "--all"
+        ],
+        "pid": 440522,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 300,
+        "elapsed_ns": 3436455630,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/fmt/completion.json",
+          "sha256": "4c2b710df8c0aa5b1bc20d144d3022f80892a15dc144297ea9b438d1f1d16aed",
+          "bytes": 2739
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "clippy",
+        "argv": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--all",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "pid": 440533,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 7200,
+        "elapsed_ns": 1085360185,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/clippy/completion.json",
+          "sha256": "3db7034eb80aacf6ac7e32f56570a0ec2cced154ad17fd8f2d143c6fb2dc897b",
+          "bytes": 2908
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "rustc_after",
+        "argv": [
+          "rustc",
+          "-vV"
+        ],
+        "pid": 440549,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 84893484,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/rustc_after/completion.json",
+          "sha256": "ecda43df7a8a6c264a0ead2118edaec7b5564c5570a2a5fd2fe864281e892656",
+          "bytes": 2752
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "cargo_after",
+        "argv": [
+          "cargo",
+          "-V"
+        ],
+        "pid": 440555,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52635873,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/cargo_after/completion.json",
+          "sha256": "0d21398cda09cc616d3e9986c810a4028719477145240c815e90c0d48d18be23",
+          "bytes": 2749
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "formal_head",
+        "argv": [
+          "git",
+          "-C",
+          "/home/loosqk/repo/robot/robot-system",
+          "rev-parse",
+          "HEAD"
+        ],
+        "pid": 440560,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52700546,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/formal_head/completion.json",
+          "sha256": "75a22ebe49e6746d8b3c608b2e0ee5df8f08e8b921d4178366d46f0d93d9fa1e",
+          "bytes": 2891
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "formal_status",
+        "argv": [
+          "git",
+          "-C",
+          "/home/loosqk/repo/robot/robot-system",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all"
+        ],
+        "pid": 440561,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52709410,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/formal_status/completion.json",
+          "sha256": "1b2bdc63a8f8743289a56ac352ab4fd6f0f8c7fb46e49683092bf5a33d3efa19",
+          "bytes": 2972
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "formal_services",
+        "argv": [
+          "systemctl",
+          "show",
+          "xlerobot-s0-left-arm.service",
+          "xlerobot-s0-right-arm.service",
+          "xlerobot-s1-left.service",
+          "xlerobot-s1-right.service",
+          "xlerobot-gateway-left.service",
+          "xlerobot-gateway-right.service",
+          "-p",
+          "Id",
+          "-p",
+          "LoadState",
+          "-p",
+          "ActiveState",
+          "-p",
+          "SubState",
+          "-p",
+          "MainPID"
+        ],
+        "pid": 440562,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 135106252,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/formal_services/completion.json",
+          "sha256": "4b49e702398b13a55624de014ebcc4588364c15a01dbf18814985d90cc346a10",
+          "bytes": 3463
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "source_after_head",
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "pid": 440563,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52631712,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/source_after_head/completion.json",
+          "sha256": "7bf58d35763dfd0305c35d25bcb08f2355d42ab0932fdd7e1bc11ef3eed5e6e7",
+          "bytes": 2813
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "source_after_status",
+        "argv": [
+          "git",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all"
+        ],
+        "pid": 440564,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52745443,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/source_after_status/completion.json",
+          "sha256": "c2539ae5d2cb322212c19bc45a3236708c62907c665769544576a88d71e8c636",
+          "bytes": 2894
+        }
+      },
+      {
+        "phase": "precommit",
+        "name": "source_after_files",
+        "argv": [
+          "git",
+          "ls-files",
+          "-z",
+          "--cached",
+          "--others",
+          "--exclude-standard"
+        ],
+        "pid": 440565,
+        "exit_code": 0,
+        "reaped": true,
+        "timeout_seconds": 60,
+        "elapsed_ns": 52576031,
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted/checks-r1/precommit/source_after_files/completion.json",
+          "sha256": "359e26ec2cbec6a545aaf2180ff20fe5b84cf933b7d8af6b7b84fc040f99d634",
+          "bytes": 2931
+        }
+      }
+    ],
+    "local_owned_receipts": 9,
+    "local_owners": [
+      {
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/host/checks.owner/result.json",
+          "sha256": "fdd5fec0064b06147353a5abcdd17db289ca859cda0995d9ff7c16251e776e8f",
+          "bytes": 1553
+        },
+        "owner_pid": 77778,
+        "child_pid": 77779,
+        "wait_returncode": 0,
+        "reaped": true
+      },
+      {
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/host/collect_native.owner/result.json",
+          "sha256": "13485eabe1935635507d85af2a5218dd8882606f46ff1fa2eb39af0ed7f1542f",
+          "bytes": 1551
+        },
+        "owner_pid": 77899,
+        "child_pid": 77900,
+        "wait_returncode": 0,
+        "reaped": true
+      },
+      {
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/host/download_archive.owner/result.json",
+          "sha256": "c5bee00e1494ba34353b94bdc40e4b8c628be1e5ea4cf78b03890ac159858208",
+          "bytes": 1412
+        },
+        "owner_pid": 77973,
+        "child_pid": 77975,
+        "wait_returncode": 0,
+        "reaped": true
+      },
+      {
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/host/download_index.owner/result.json",
+          "sha256": "efa7202c42780364b564bcc9f9e4379431f29990de76b97c64725cd7ccb7e22b",
+          "bytes": 1425
+        },
+        "owner_pid": 77972,
+        "child_pid": 77976,
+        "wait_returncode": 0,
+        "reaped": true
+      },
+      {
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/host/download_metadata.owner/result.json",
+          "sha256": "0d592718c2fd7de557b1d6997e5b891e770b63ac01bd3e6385295486cca20fc2",
+          "bytes": 1434
+        },
+        "owner_pid": 77971,
+        "child_pid": 77974,
+        "wait_returncode": 0,
+        "reaped": true
+      },
+      {
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/host/prepare.owner/result.json",
+          "sha256": "a7dcb1c2207291c0cd93f75beb9b8b44f8fc2c2c879f923b4f0392ce41b9e514",
+          "bytes": 1540
+        },
+        "owner_pid": 77640,
+        "child_pid": 77641,
+        "wait_returncode": 0,
+        "reaped": true
+      },
+      {
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/host/upload_bootstrap.owner/result.json",
+          "sha256": "27750f09bbf3f2bf71bdcf7974f0d34ce043db9552c417b8917a8d79a1fe6b6a",
+          "bytes": 1541
+        },
+        "owner_pid": 77755,
+        "child_pid": 77756,
+        "wait_returncode": 0,
+        "reaped": true
+      },
+      {
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/host/upload_candidate.owner/result.json",
+          "sha256": "ef8617e5e52c69544bacbb4a8df9524a9a24757b65a7a8547a29895e693240f7",
+          "bytes": 1414
+        },
+        "owner_pid": 77708,
+        "child_pid": 77709,
+        "wait_returncode": 0,
+        "reaped": true
+      },
+      {
+        "receipt": {
+          "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/host/upload_collector.owner/result.json",
+          "sha256": "598a6b3fc2b7c1065fd477522666dc511e071c6fd396fc2ddad8b0babbe7f6cf",
+          "bytes": 1404
+        },
+        "owner_pid": 77862,
+        "child_pid": 77863,
+        "wait_returncode": 0,
+        "reaped": true
+      }
+    ],
+    "kill_retry_signals": false
+  },
+  "evidence": {
+    "native_archive": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-evidence.tar.gz",
+      "sha256": "baae00f0d4c7d66c168909569ae4a6c9ccfd4e3f97ad9a7cd152de56fc0a4316",
+      "bytes": 161383
+    },
+    "native_index": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-evidence.index.json",
+      "sha256": "d87560084b724a57be318df702b173e21c8b8f6c55d709f2af04ab1d04835159",
+      "bytes": 31464
+    },
+    "native_metadata": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-evidence.metadata.json",
+      "sha256": "1f6ffd26f51da9f7cd29acf700b8c72cea628ef5de7a2e3ee0f2f3d829876ec8",
+      "bytes": 995
+    },
+    "verification": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native_archive_verification.json",
+      "sha256": "81b17850eb084e42beef7260a4d1ba4016b43e8676db94cd51ec1b2c15b1e43e",
+      "bytes": 667
+    },
+    "files": 105,
+    "directories": 30,
+    "members": 136,
+    "extracted": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/native-extracted"
+  },
+  "mechanisms": {
+    "wrapper": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/run_checks.py",
+      "sha256": "0a749558b43197a989ccc050ceef56b1ea267a75d7c50d3a39c7cd78bdab2155",
+      "bytes": 8797
+    },
+    "helper_frozen": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-v2-orin-r1/run_release_v2.py",
+      "sha256": "dad9bbc9405b8fac4d60d6efe794b36750e6a6f9ce9fdeba3debf7d3e1b9a471",
+      "bytes": 17585
+    },
+    "candidate_review": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/independent_review_r5.json",
+      "sha256": "cbd691c17f68209ea93d4a98c1875226e54587d6970e00e484879c5687de11ca",
+      "bytes": 3332
+    },
+    "collector": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/collect_native.py",
+      "sha256": "c347f5828aca642484cef1460a7a28cdcfede52c1d19c3bc8aa97d65cf603650",
+      "bytes": 12843
+    },
+    "collector_delta": {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/collector_delta.diff",
+      "sha256": "910d13fff1eaa233ac8d9454cd5d33c5809b32de65602618bb21484c1f8504dc",
+      "bytes": 1245
+    }
+  },
+  "count_boundary": "35为独立维护方法，不混入原1c的71、12owner或历史194；本补充不重跑六配方/7help/mock/tonic。",
+  "unchanged_hardware": "原H2与维护run02整体FAIL、D15 OPEN/DEFERRED、deployable=false保持；未动作、未消费旧watch/GO。"
+}

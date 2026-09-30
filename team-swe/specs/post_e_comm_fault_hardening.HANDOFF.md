@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+### 维护精度/停止分类与 H2 新 Orin 冻结（2026-09-30，纯软件门通过）
+
+新增维护入口 `scripts/run_hardware_maintenance.py`，默认 PLAN_ONLY。分别记录位置精度、17×3 停止寄存器及身份后验；精度 FAIL 不短路每件保护/引用、每个服务、进程、USB 占用和身份核验。停止字段必须完整且为 int0，收尾 ACK/读取失败保持粘性 NEEDS；后来的零值不覆盖旧失败。原 +24raw、±4raw、800ms 保持，超过期限才返回的合格读值也拒绝。
+本机和 Orin 同源 35 方法、默认零动作入口通过；root 另跑同35，不累计为105。r4 独审发现 NOT_RUN 三轮误作已测试目标，r5 修复并验证非目标 +4 接受/+5 拒绝，原 r4/开发失败原件保留。旧 run02 的 NEEDS_MANUAL_POWER_CUT 和回程 +6 FAIL 原件不改；新分类软件通过不确认当前物理断电。
+现场 Phase/零速语义/速度单位尚未核实，新 V2 维护计划固定三轮 DEFERRED/BASE_FIRMWARE_CONTRACT_UNVERIFIED，完成四位置项后首次 wheel 调用前拒绝；伪 verified 字段无效。完整假执行保留204次快照READ，底盘WRITE/enable为0，整体仍FAIL；不是新硬件动作。三轮运动学按前8/左7/右9及统一比例限幅在独立工作树实施，尚未接入S0/S1。
+
+H2另使用固定 build HEAD `1c5758f97b7c502a38c850e8352ce970216bea53` 完成新 Orin V2 六配方/七冻结件。589项输入前后聚合 `83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f`；浮动nightly实际更新仍5c543b0b8。原生fmt/根Clippy、冻结源既有71 Python、7help、mock四组各2、tonic6测试/9场景与12owner定向测试通过；12为历史194子集，本轮不是194或完整workspace。新维护35与既有71分属候选，不混计或回填V2构建来源。
+本轮提交前再次实际更新nightly并完成fmt→根Clippy；同589 Rust输入未改变。正式ca14 clean、四安装件SHA、六服务inactive/dead/MainPID0和无控制进程状态保持，保护12件与本轮维护绑定逐字段一致。[软件验收与逐SHA归档入口](../../.verify/hardware_maintenance_classification_2026-09-30/summary.json)包含49份本机原件及自索引、两份不可变Orin外包（V2 116原件、追加57原件，均另含自索引）。封包后产生的独审另存附件，不回填原包或原summary；无正式安装/部署/push/UART或新GO。
+当前人工断电确认仍待答，供电UNKNOWN；旧右H2整体FAIL、本次左腕精度FAIL、D15 OPEN/DEFERRED和deployable=false保持。下一硬件步骤仍须当次事实与独立GO，不能由上述软件通过自动重测。
+
 ### 双臂 / 头部 / XLeRobot 底盘维护验证（2026-09-30，动作 FAIL、软件收尾完成）
 
 用户重新确认双臂空载支撑、电源/USB复位、地面底盘空间与持续看护，随后要求底盘按 XLeRobot 模式。现场上游原件及实际寄存器确认前8/左7/右9，三轮既有 Operating_Mode=1；未写模式或 EEPROM。正式 ca14 执行面仍为双臂，头部/底盘未接入 S0/S1，本次仅独立裸wire维护，不能关闭 H2/D15 或宣称整车运动学通过。
