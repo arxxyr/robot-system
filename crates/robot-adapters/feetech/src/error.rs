@@ -12,6 +12,9 @@ pub enum FeetechError {
     #[error("unknown register: {0}")]
     UnknownRegister(&'static str),
 
+    #[error("本项目诊断专用寄存器禁止写入：{0}")]
+    DiagnosticRegisterWriteForbidden(&'static str),
+
     #[error("unknown motor name: {0}")]
     UnknownMotor(String),
 
@@ -196,6 +199,9 @@ impl From<FeetechError> for robot_core::error::RobotError {
     fn from(e: FeetechError) -> Self {
         use FeetechError as F;
         match e {
+            F::DiagnosticRegisterWriteForbidden(_) => {
+                Self::InvalidParameter("诊断专用寄存器禁止写入")
+            }
             F::NotConnected => Self::Comm(robot_core::serial_services::CommErrorKind::Disconnected),
             F::AlreadyConnected => Self::Busy,
             F::Aborted(reason) => Self::Aborted(reason),
@@ -249,6 +255,18 @@ mod tests {
     use super::*;
     use robot_core::error::RobotError;
     use robot_core::serial_services::{AbortReason, CommErrorKind as C};
+
+    #[test]
+    fn diagnostic_write_denial_is_a_parameter_error_without_communication_kind() {
+        for name in ["Phase", "CW_Dead_Zone", "CCW_Dead_Zone"] {
+            let error = FeetechError::DiagnosticRegisterWriteForbidden(name);
+            assert_eq!(error.comm_kind(), None);
+            assert_eq!(
+                RobotError::from(error),
+                RobotError::InvalidParameter("诊断专用寄存器禁止写入")
+            );
+        }
+    }
 
     #[test]
     fn transport_and_protocol_errors_keep_their_communication_classes() {

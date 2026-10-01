@@ -38,7 +38,9 @@ use crate::protocol::{
     StatusPacket, build_ping, build_read, build_sync_read, build_sync_write, build_write,
     parse_status,
 };
-use crate::registers::{MODEL_NUMBER_STS3215, get_register, sign_bit_for};
+use crate::registers::{
+    MODEL_NUMBER_STS3215, ensure_not_diagnostic_write, get_register, sign_bit_for,
+};
 use crate::transport::{DrainReport, SerialTransport};
 use crate::types::Motor;
 
@@ -318,6 +320,7 @@ impl<T: SerialTransport> FeetechBus<T> {
         motor_name: &str,
         value: i32,
     ) -> Result<(), FeetechError> {
+        ensure_not_diagnostic_write(reg_name)?;
         let reg = get_register(reg_name)?;
         let id = self.motor_id(motor_name)?;
         let encoded = encode_value(reg_name, value)?;
@@ -391,6 +394,7 @@ impl<T: SerialTransport> FeetechBus<T> {
         reg_name: &'static str,
         values: &[(&str, i32)],
     ) -> Result<(), FeetechError> {
+        ensure_not_diagnostic_write(reg_name)?;
         let reg = get_register(reg_name)?;
         let length_usize = usize::from(reg.length);
 
@@ -485,6 +489,7 @@ impl<T: SerialTransport> FeetechBus<T> {
         reg_name: &'static str,
         entries: &[(u8, i32)],
     ) -> Result<(), FeetechError> {
+        ensure_not_diagnostic_write(reg_name)?;
         let reg = get_register(reg_name)?;
         let length_usize = usize::from(reg.length);
 
@@ -540,6 +545,7 @@ impl<T: SerialTransport> FeetechBus<T> {
         entries: &[(u8, i32)],
         frame_buf: &mut [u8],
     ) -> Result<(), FeetechError> {
+        ensure_not_diagnostic_write(reg_name)?;
         let reg = get_register(reg_name)?;
         let length_usize = usize::from(reg.length); // v9 fix：字段名 length
         let n = entries.len();
@@ -649,6 +655,59 @@ mod tests {
     use super::*;
     use crate::protocol::checksum;
     use crate::transport::MockTransport;
+    use robot_core::serial_services::{AbortReason, CommErrorKind, PreemptProbe};
+    use robot_core::time::DurationNs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const DIAGNOSTIC_NAMES: [&str; 3] = ["Phase", "CW_Dead_Zone", "CCW_Dead_Zone"];
+    // 请求 checksum 是独立 golden，读回故意超过死区资料范围并保留高位。
+    const DIAGNOSTIC_READ_CASES: [(&str, u8, u8, u8, u8); 3] = [
+        ("Phase", 18, 0xa5, 0xe5, 0x63),
+        ("CW_Dead_Zone", 26, 0xff, 0xdd, 0x5b),
+        ("CCW_Dead_Zone", 27, 0x81, 0xdc, 0x5a),
+    ];
+
+    #[derive(Default)]
+    struct RejectOnLeaseProbe {
+        attempts: AtomicUsize,
+    }
+
+    impl PreemptProbe for RejectOnLeaseProbe {
+        fn should_abort(&self, _class: BusOpClass) -> Option<AbortReason> {
+            panic!("诊断写入拒绝前不得查询服务")
+        }
+
+        fn checkpoint(&self) {
+            panic!("诊断写入拒绝前不得进入 IO 检查点")
+        }
+
+        fn sleep_or_abort(&self, _class: BusOpClass, _dur: DurationNs) -> Result<(), AbortReason> {
+            panic!("诊断写入拒绝前不得等待")
+        }
+
+        fn operation_class(&self) -> BusOpClass {
+            panic!("诊断写入拒绝前不得查询操作域")
+        }
+
+        fn confirmation_trusted(&self) -> bool {
+            panic!("诊断写入拒绝前不得查询信任状态")
+        }
+
+        fn report_comm_error(&self, _kind: CommErrorKind) {
+            panic!("诊断写入拒绝不得变成通信故障")
+        }
+    }
+
+    impl LeasedPreemptProbe for RejectOnLeaseProbe {
+        fn begin_leased(&self, _class: BusOpClass) -> Result<BusLease, AbortReason> {
+            self.attempts.fetch_add(1, Ordering::Relaxed);
+            Err(AbortReason::Emergency)
+        }
+
+        fn finish_leased(&self, _lease: BusLease) {
+            panic!("拒绝租约的夹具不得归还不存在的租约")
+        }
+    }
 
     fn make_bus(
         motors: &[(&str, u8)],
@@ -670,6 +729,181 @@ mod tests {
         out.extend_from_slice(params);
         out.push(checksum(&out[2..]));
         out
+    }
+
+    fn install_rejecting_lease(bus: &mut FeetechBus<MockTransport>) -> Arc<RejectOnLeaseProbe> {
+        let probe = Arc::new(RejectOnLeaseProbe::default());
+        let service: Arc<dyn LeasedPreemptProbe> = probe.clone();
+        bus.set_services(Some(service), None);
+        probe
+    }
+
+    fn assert_diagnostic_denied(
+        result: Result<(), FeetechError>,
+        expected_name: &'static str,
+        handle: &crate::transport::MockHandle,
+        probe: &RejectOnLeaseProbe,
+    ) {
+        let error = result.expect_err("诊断专用寄存器必须拒写");
+        assert!(matches!(
+            error,
+            FeetechError::DiagnosticRegisterWriteForbidden(got) if got == expected_name
+        ));
+        assert_eq!(handle.peek_tx(), [0_u8; 0]);
+        assert_eq!(probe.attempts.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn diagnostic_single_write_is_rejected_before_io_or_lease() {
+        for name in DIAGNOSTIC_NAMES {
+            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+            let probe = install_rejecting_lease(&mut bus);
+            assert_diagnostic_denied(bus.write(name, "j1", 7), name, &handle, &probe);
+        }
+    }
+
+    #[test]
+    fn diagnostic_sync_write_is_rejected_before_io_or_lease() {
+        for name in DIAGNOSTIC_NAMES {
+            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+            let probe = install_rejecting_lease(&mut bus);
+            assert_diagnostic_denied(bus.sync_write(name, &[("j1", 7)]), name, &handle, &probe);
+        }
+    }
+
+    #[test]
+    fn diagnostic_sync_write_by_id_is_rejected_before_io_or_lease() {
+        for name in DIAGNOSTIC_NAMES {
+            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+            let probe = install_rejecting_lease(&mut bus);
+            assert_diagnostic_denied(bus.sync_write_by_id(name, &[(1, 7)]), name, &handle, &probe);
+        }
+    }
+
+    #[test]
+    fn diagnostic_preallocated_write_is_rejected_before_io_or_lease() {
+        for name in DIAGNOSTIC_NAMES {
+            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+            let probe = install_rejecting_lease(&mut bus);
+            let mut buffer = [0xa5; 256];
+            assert_diagnostic_denied(
+                bus.sync_write_by_id_into(name, &[(1, 7)], &mut buffer),
+                name,
+                &handle,
+                &probe,
+            );
+            assert_eq!(buffer, [0xa5; 256]);
+        }
+    }
+
+    #[test]
+    fn diagnostic_denial_precedes_empty_batch_invalid_motor_value_and_buffer_checks() {
+        for name in DIAGNOSTIC_NAMES {
+            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+            let probe = install_rejecting_lease(&mut bus);
+            assert_diagnostic_denied(bus.write(name, "missing", i32::MIN), name, &handle, &probe);
+            assert_diagnostic_denied(bus.sync_write(name, &[]), name, &handle, &probe);
+            assert_diagnostic_denied(
+                bus.sync_write(name, &[("missing", i32::MIN)]),
+                name,
+                &handle,
+                &probe,
+            );
+            assert_diagnostic_denied(bus.sync_write_by_id(name, &[]), name, &handle, &probe);
+            assert_diagnostic_denied(
+                bus.sync_write_by_id(name, &[(0, i32::MIN)]),
+                name,
+                &handle,
+                &probe,
+            );
+            assert_diagnostic_denied(
+                bus.sync_write_by_id_into(name, &[], &mut []),
+                name,
+                &handle,
+                &probe,
+            );
+            assert_diagnostic_denied(
+                bus.sync_write_by_id_into(name, &[(0, i32::MIN)], &mut []),
+                name,
+                &handle,
+                &probe,
+            );
+        }
+    }
+
+    #[test]
+    fn existing_write_still_reaches_the_installed_lease_service() {
+        let (mut bus, handle) = make_bus(&[("j1", 1)]);
+        let probe = install_rejecting_lease(&mut bus);
+        assert!(matches!(
+            bus.write("Goal_Position", "j1", 7),
+            Err(FeetechError::Aborted(AbortReason::Emergency))
+        ));
+        assert_eq!(probe.attempts.load(Ordering::Relaxed), 1);
+        assert_eq!(handle.peek_tx(), [0_u8; 0]);
+    }
+
+    #[test]
+    fn unknown_register_writes_keep_the_original_lookup_error() {
+        let (mut bus, handle) = make_bus(&[("j1", 1)]);
+        for result in [
+            bus.write("Unknown_Register", "j1", 7),
+            bus.sync_write("Unknown_Register", &[("j1", 7)]),
+            bus.sync_write_by_id("Unknown_Register", &[(1, 7)]),
+            bus.sync_write_by_id_into("Unknown_Register", &[(1, 7)], &mut [0; 256]),
+        ] {
+            assert!(matches!(
+                result,
+                Err(FeetechError::UnknownRegister("Unknown_Register"))
+            ));
+        }
+        assert_eq!(handle.peek_tx(), [0_u8; 0]);
+    }
+
+    #[test]
+    fn diagnostic_single_read_preserves_raw_byte_and_exact_request() {
+        for (name, address, raw, golden_checksum, _) in DIAGNOSTIC_READ_CASES {
+            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+            handle.push_rx(&fake_status(1, 0, &[raw]));
+            assert_eq!(bus.read(name, "j1").unwrap(), i32::from(raw));
+            assert_eq!(
+                handle.drain_tx(),
+                [0xff, 0xff, 1, 4, 2, address, 1, golden_checksum]
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_sync_read_preserves_raw_bytes_and_exact_request() {
+        for (name, address, raw, _, golden_checksum) in DIAGNOSTIC_READ_CASES {
+            let (mut bus, handle) = make_bus(&[("j1", 1), ("j2", 2)]);
+            handle.push_rx(&fake_status(1, 0, &[raw]));
+            handle.push_rx(&fake_status(2, 0, &[0xff]));
+            let result = bus.sync_read(name, &["j1", "j2"]).unwrap();
+            assert_eq!(result.get("j1"), Some(&i32::from(raw)));
+            assert_eq!(result.get("j2"), Some(&255));
+            assert_eq!(
+                handle.drain_tx(),
+                [0xff, 0xff, 0xfe, 6, 0x82, address, 1, 1, 2, golden_checksum]
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_sync_read_by_id_preserves_raw_bytes_and_exact_request() {
+        for (name, address, raw, _, golden_checksum) in DIAGNOSTIC_READ_CASES {
+            let (mut bus, handle) = make_bus(&[("j1", 1), ("j2", 2)]);
+            handle.push_rx(&fake_status(1, 0, &[raw]));
+            handle.push_rx(&fake_status(2, 0, &[0xff]));
+            let mut result = [i32::MIN; 2];
+            bus.sync_read_by_id_into(name, &[1, 2], &mut result)
+                .unwrap();
+            assert_eq!(result, [i32::from(raw), 255]);
+            assert_eq!(
+                handle.drain_tx(),
+                [0xff, 0xff, 0xfe, 6, 0x82, address, 1, 1, 2, golden_checksum]
+            );
+        }
     }
 
     // ── ping ──────────────────────────────────────────────────────────

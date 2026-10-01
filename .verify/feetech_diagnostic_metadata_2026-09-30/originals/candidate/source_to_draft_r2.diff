@@ -1,0 +1,553 @@
+diff --git a/orig/crates/robot-adapters/feetech/src/registers.rs b/candidate/crates/robot-adapters/feetech/src/registers.rs
+index 931efd3..3bcbb47 100644
+--- a/orig/crates/robot-adapters/feetech/src/registers.rs
++++ b/candidate/crates/robot-adapters/feetech/src/registers.rs
+@@ -3,10 +3,12 @@
+ //!
+ //! ## 寄存器分区
+ //!
+-//! - **EEPROM**（addr 0–39）：永久存储。`Lock = 1` 时写保护；写之前必须先
+-//!   `Torque_Enable = 0` + `Lock = 0`（[`is_eeprom_register`] 标记的全部寄存器）。
++//! - **EEPROM**（addr 0–39）：永久存储。`Lock = 1` 时写保护；对其余既有允许写
++//!   条目，写之前必须先 `Torque_Enable = 0` + `Lock = 0`，区段分类不提供写授权。
+ //! - **SRAM**（addr 40–69）：RAM，不受 `Lock` 影响。
+ //! - **只读**：`Model_Number` / `Present_*`。
++//! - **本项目诊断专用**：`Phase` / `CW_Dead_Zone` / `CCW_Dead_Zone` 仅允许读取。
++//!   厂家将其列为可写 EEPROM；本项目禁止写入，不依赖 `Lock` 的现场状态。
+ //!
+ //! ## sign-magnitude 编码
+ //!
+@@ -72,9 +74,12 @@ pub const STS3215_CONTROL_TABLE: &[(&str, Register)] = &[
+     ("Baud_Rate", Register::new(6, 1)),
+     ("Min_Position_Limit", Register::new(9, 2)),
+     ("Max_Position_Limit", Register::new(11, 2)),
++    ("Phase", Register::new(18, 1)), // 本项目诊断专用，保留 raw unsigned 值
+     ("P_Coefficient", Register::new(21, 1)),
+     ("D_Coefficient", Register::new(22, 1)),
+     ("I_Coefficient", Register::new(23, 1)),
++    ("CW_Dead_Zone", Register::new(26, 1)), // 本项目诊断专用
++    ("CCW_Dead_Zone", Register::new(27, 1)), // 本项目诊断专用
+     ("Homing_Offset", Register::new(31, 2)), // sign-magnitude bit 11
+     ("Operating_Mode", Register::new(33, 1)),
+     // ── SRAM ──────────────────────────────────────────────────────────
+@@ -98,6 +103,22 @@ pub fn get_register(name: &'static str) -> Result<Register, FeetechError> {
+         .ok_or(FeetechError::UnknownRegister(name))
+ }
+ 
++/// 仅拒绝本项目三个诊断专用寄存器的写入，零分配。
++///
++/// 这不是全部寄存器的可写性校验；其他名称仍由既有查表与编码逻辑处理，
++/// 未知名称在此返回成功不表示可写。EEPROM 分区也不代替本门。
++///
++/// # Errors
++/// 三个诊断名称返回 [`FeetechError::DiagnosticRegisterWriteForbidden`]。
++pub fn ensure_not_diagnostic_write(name: &'static str) -> Result<(), FeetechError> {
++    match name {
++        "Phase" | "CW_Dead_Zone" | "CCW_Dead_Zone" => {
++            Err(FeetechError::DiagnosticRegisterWriteForbidden(name))
++        }
++        _ => Ok(()),
++    }
++}
++
+ // ============================================================================
+ // sign-magnitude 编码表
+ // ============================================================================
+@@ -131,14 +152,19 @@ const EEPROM_REGISTERS: &[&str] = &[
+     "Baud_Rate",
+     "Min_Position_Limit",
+     "Max_Position_Limit",
++    "Phase",
+     "P_Coefficient",
+     "D_Coefficient",
+     "I_Coefficient",
++    "CW_Dead_Zone",
++    "CCW_Dead_Zone",
+     "Homing_Offset",
+     "Operating_Mode",
+ ];
+ 
+-/// `true` 表示该寄存器在 EEPROM 区，写之前需要 `Torque_Enable = 0` + `Lock = 0`。
++/// `true` 仅表示该寄存器在 EEPROM 区，不提供写授权。
++/// 三个诊断专用条目仍被 [`ensure_not_diagnostic_write`] 拒写；其余既有允许写
++/// 条目在写之前需要 `Torque_Enable = 0` + `Lock = 0`。
+ #[must_use]
+ pub fn is_eeprom_register(name: &str) -> bool {
+     EEPROM_REGISTERS.contains(&name)
+@@ -174,6 +200,34 @@ pub enum TorqueMode {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn diagnostic_metadata_is_raw_one_byte_eeprom() {
++        for (name, address) in [("Phase", 18), ("CW_Dead_Zone", 26), ("CCW_Dead_Zone", 27)] {
++            assert_eq!(get_register(name).unwrap(), Register::new(address, 1));
++            assert!(is_eeprom_register(name));
++            assert_eq!(sign_bit_for(name), None);
++            assert!(matches!(
++                ensure_not_diagnostic_write(name),
++                Err(FeetechError::DiagnosticRegisterWriteForbidden(got)) if got == name
++            ));
++        }
++    }
++
++    #[test]
++    fn diagnostic_guard_does_not_reclassify_existing_or_unknown_names() {
++        for (name, _) in STS3215_CONTROL_TABLE {
++            match *name {
++                "Phase" | "CW_Dead_Zone" | "CCW_Dead_Zone" => {}
++                _ => assert!(ensure_not_diagnostic_write(name).is_ok()),
++            }
++        }
++        assert!(ensure_not_diagnostic_write("Unknown_Register").is_ok());
++        assert!(matches!(
++            get_register("Unknown_Register"),
++            Err(FeetechError::UnknownRegister("Unknown_Register"))
++        ));
++    }
++
+     #[test]
+     fn known_register_lookup() {
+         assert_eq!(get_register("Goal_Position").unwrap(), Register::new(42, 2));
+diff --git a/orig/crates/robot-adapters/feetech/src/error.rs b/candidate/crates/robot-adapters/feetech/src/error.rs
+index 66bb3d6..56506ba 100644
+--- a/orig/crates/robot-adapters/feetech/src/error.rs
++++ b/candidate/crates/robot-adapters/feetech/src/error.rs
+@@ -12,6 +12,9 @@ pub enum FeetechError {
+     #[error("unknown register: {0}")]
+     UnknownRegister(&'static str),
+ 
++    #[error("本项目诊断专用寄存器禁止写入：{0}")]
++    DiagnosticRegisterWriteForbidden(&'static str),
++
+     #[error("unknown motor name: {0}")]
+     UnknownMotor(String),
+ 
+@@ -196,6 +199,9 @@ impl From<FeetechError> for robot_core::error::RobotError {
+     fn from(e: FeetechError) -> Self {
+         use FeetechError as F;
+         match e {
++            F::DiagnosticRegisterWriteForbidden(_) => {
++                Self::InvalidParameter("诊断专用寄存器禁止写入")
++            }
+             F::NotConnected => Self::Comm(robot_core::serial_services::CommErrorKind::Disconnected),
+             F::AlreadyConnected => Self::Busy,
+             F::Aborted(reason) => Self::Aborted(reason),
+@@ -250,6 +256,18 @@ mod tests {
+     use robot_core::error::RobotError;
+     use robot_core::serial_services::{AbortReason, CommErrorKind as C};
+ 
++    #[test]
++    fn diagnostic_write_denial_is_a_parameter_error_without_communication_kind() {
++        for name in ["Phase", "CW_Dead_Zone", "CCW_Dead_Zone"] {
++            let error = FeetechError::DiagnosticRegisterWriteForbidden(name);
++            assert_eq!(error.comm_kind(), None);
++            assert_eq!(
++                RobotError::from(error),
++                RobotError::InvalidParameter("诊断专用寄存器禁止写入")
++            );
++        }
++    }
++
+     #[test]
+     fn transport_and_protocol_errors_keep_their_communication_classes() {
+         for (error, expected) in [
+diff --git a/orig/crates/robot-adapters/feetech/src/bus.rs b/candidate/crates/robot-adapters/feetech/src/bus.rs
+index bbe0351..762582b 100644
+--- a/orig/crates/robot-adapters/feetech/src/bus.rs
++++ b/candidate/crates/robot-adapters/feetech/src/bus.rs
+@@ -38,7 +38,7 @@ use crate::protocol::{
+     StatusPacket, build_ping, build_read, build_sync_read, build_sync_write, build_write,
+     parse_status,
+ };
+-use crate::registers::{MODEL_NUMBER_STS3215, get_register, sign_bit_for};
++use crate::registers::{MODEL_NUMBER_STS3215, ensure_not_diagnostic_write, get_register, sign_bit_for};
+ use crate::transport::{DrainReport, SerialTransport};
+ use crate::types::Motor;
+ 
+@@ -318,6 +318,7 @@ impl<T: SerialTransport> FeetechBus<T> {
+         motor_name: &str,
+         value: i32,
+     ) -> Result<(), FeetechError> {
++        ensure_not_diagnostic_write(reg_name)?;
+         let reg = get_register(reg_name)?;
+         let id = self.motor_id(motor_name)?;
+         let encoded = encode_value(reg_name, value)?;
+@@ -391,6 +392,7 @@ impl<T: SerialTransport> FeetechBus<T> {
+         reg_name: &'static str,
+         values: &[(&str, i32)],
+     ) -> Result<(), FeetechError> {
++        ensure_not_diagnostic_write(reg_name)?;
+         let reg = get_register(reg_name)?;
+         let length_usize = usize::from(reg.length);
+ 
+@@ -485,6 +487,7 @@ impl<T: SerialTransport> FeetechBus<T> {
+         reg_name: &'static str,
+         entries: &[(u8, i32)],
+     ) -> Result<(), FeetechError> {
++        ensure_not_diagnostic_write(reg_name)?;
+         let reg = get_register(reg_name)?;
+         let length_usize = usize::from(reg.length);
+ 
+@@ -540,6 +543,7 @@ impl<T: SerialTransport> FeetechBus<T> {
+         entries: &[(u8, i32)],
+         frame_buf: &mut [u8],
+     ) -> Result<(), FeetechError> {
++        ensure_not_diagnostic_write(reg_name)?;
+         let reg = get_register(reg_name)?;
+         let length_usize = usize::from(reg.length); // v9 fix：字段名 length
+         let n = entries.len();
+@@ -649,6 +653,59 @@ mod tests {
+     use super::*;
+     use crate::protocol::checksum;
+     use crate::transport::MockTransport;
++    use robot_core::serial_services::{AbortReason, CommErrorKind, PreemptProbe};
++    use robot_core::time::DurationNs;
++    use std::sync::atomic::{AtomicUsize, Ordering};
++
++    const DIAGNOSTIC_NAMES: [&str; 3] = ["Phase", "CW_Dead_Zone", "CCW_Dead_Zone"];
++    // 请求 checksum 是独立 golden，读回故意超过死区资料范围并保留高位。
++    const DIAGNOSTIC_READ_CASES: [(&str, u8, u8, u8, u8); 3] = [
++        ("Phase", 18, 0xa5, 0xe5, 0x63),
++        ("CW_Dead_Zone", 26, 0xff, 0xdd, 0x5b),
++        ("CCW_Dead_Zone", 27, 0x81, 0xdc, 0x5a),
++    ];
++
++    #[derive(Default)]
++    struct RejectOnLeaseProbe {
++        attempts: AtomicUsize,
++    }
++
++    impl PreemptProbe for RejectOnLeaseProbe {
++        fn should_abort(&self, _class: BusOpClass) -> Option<AbortReason> {
++            panic!("诊断写入拒绝前不得查询服务")
++        }
++
++        fn checkpoint(&self) {
++            panic!("诊断写入拒绝前不得进入 IO 检查点")
++        }
++
++        fn sleep_or_abort(&self, _class: BusOpClass, _dur: DurationNs) -> Result<(), AbortReason> {
++            panic!("诊断写入拒绝前不得等待")
++        }
++
++        fn operation_class(&self) -> BusOpClass {
++            panic!("诊断写入拒绝前不得查询操作域")
++        }
++
++        fn confirmation_trusted(&self) -> bool {
++            panic!("诊断写入拒绝前不得查询信任状态")
++        }
++
++        fn report_comm_error(&self, _kind: CommErrorKind) {
++            panic!("诊断写入拒绝不得变成通信故障")
++        }
++    }
++
++    impl LeasedPreemptProbe for RejectOnLeaseProbe {
++        fn begin_leased(&self, _class: BusOpClass) -> Result<BusLease, AbortReason> {
++            self.attempts.fetch_add(1, Ordering::Relaxed);
++            Err(AbortReason::Emergency)
++        }
++
++        fn finish_leased(&self, _lease: BusLease) {
++            panic!("拒绝租约的夹具不得归还不存在的租约")
++        }
++    }
+ 
+     fn make_bus(
+         motors: &[(&str, u8)],
+@@ -672,6 +729,155 @@ mod tests {
+         out
+     }
+ 
++    fn install_rejecting_lease(bus: &mut FeetechBus<MockTransport>) -> Arc<RejectOnLeaseProbe> {
++        let probe = Arc::new(RejectOnLeaseProbe::default());
++        let service: Arc<dyn LeasedPreemptProbe> = probe.clone();
++        bus.set_services(Some(service), None);
++        probe
++    }
++
++    fn assert_diagnostic_denied(
++        result: Result<(), FeetechError>,
++        expected_name: &'static str,
++        handle: &crate::transport::MockHandle,
++        probe: &RejectOnLeaseProbe,
++    ) {
++        assert!(matches!(
++            result,
++            Err(FeetechError::DiagnosticRegisterWriteForbidden(got)) if got == expected_name
++        ));
++        assert!(handle.peek_tx().is_empty());
++        assert_eq!(probe.attempts.load(Ordering::Relaxed), 0);
++    }
++
++    #[test]
++    fn diagnostic_single_write_is_rejected_before_io_or_lease() {
++        for name in DIAGNOSTIC_NAMES {
++            let (mut bus, handle) = make_bus(&[("j1", 1)]);
++            let probe = install_rejecting_lease(&mut bus);
++            assert_diagnostic_denied(bus.write(name, "j1", 7), name, &handle, &probe);
++        }
++    }
++
++    #[test]
++    fn diagnostic_sync_write_is_rejected_before_io_or_lease() {
++        for name in DIAGNOSTIC_NAMES {
++            let (mut bus, handle) = make_bus(&[("j1", 1)]);
++            let probe = install_rejecting_lease(&mut bus);
++            assert_diagnostic_denied(bus.sync_write(name, &[("j1", 7)]), name, &handle, &probe);
++        }
++    }
++
++    #[test]
++    fn diagnostic_sync_write_by_id_is_rejected_before_io_or_lease() {
++        for name in DIAGNOSTIC_NAMES {
++            let (mut bus, handle) = make_bus(&[("j1", 1)]);
++            let probe = install_rejecting_lease(&mut bus);
++            assert_diagnostic_denied(bus.sync_write_by_id(name, &[(1, 7)]), name, &handle, &probe);
++        }
++    }
++
++    #[test]
++    fn diagnostic_preallocated_write_is_rejected_before_io_or_lease() {
++        for name in DIAGNOSTIC_NAMES {
++            let (mut bus, handle) = make_bus(&[("j1", 1)]);
++            let probe = install_rejecting_lease(&mut bus);
++            let mut buffer = [0xa5; 256];
++            assert_diagnostic_denied(
++                bus.sync_write_by_id_into(name, &[(1, 7)], &mut buffer),
++                name,
++                &handle,
++                &probe,
++            );
++            assert_eq!(buffer, [0xa5; 256]);
++        }
++    }
++
++    #[test]
++    fn diagnostic_denial_precedes_empty_batch_invalid_motor_value_and_buffer_checks() {
++        for name in DIAGNOSTIC_NAMES {
++            let (mut bus, handle) = make_bus(&[("j1", 1)]);
++            let probe = install_rejecting_lease(&mut bus);
++            assert_diagnostic_denied(bus.write(name, "missing", i32::MIN), name, &handle, &probe);
++            assert_diagnostic_denied(bus.sync_write(name, &[]), name, &handle, &probe);
++            assert_diagnostic_denied(
++                bus.sync_write(name, &[("missing", i32::MIN)]), name, &handle, &probe,
++            );
++            assert_diagnostic_denied(bus.sync_write_by_id(name, &[]), name, &handle, &probe);
++            assert_diagnostic_denied(
++                bus.sync_write_by_id(name, &[(0, i32::MIN)]), name, &handle, &probe,
++            );
++            assert_diagnostic_denied(
++                bus.sync_write_by_id_into(name, &[], &mut []), name, &handle, &probe,
++            );
++            assert_diagnostic_denied(
++                bus.sync_write_by_id_into(name, &[(0, i32::MIN)], &mut []), name, &handle, &probe,
++            );
++        }
++    }
++
++    #[test]
++    fn existing_write_still_reaches_the_installed_lease_service() {
++        let (mut bus, handle) = make_bus(&[("j1", 1)]);
++        let probe = install_rejecting_lease(&mut bus);
++        assert!(matches!(
++            bus.write("Goal_Position", "j1", 7),
++            Err(FeetechError::Aborted(AbortReason::Emergency))
++        ));
++        assert_eq!(probe.attempts.load(Ordering::Relaxed), 1);
++        assert!(handle.peek_tx().is_empty());
++    }
++
++    #[test]
++    fn unknown_register_writes_keep_the_original_lookup_error() {
++        let (mut bus, handle) = make_bus(&[("j1", 1)]);
++        for result in [
++            bus.write("Unknown_Register", "j1", 7),
++            bus.sync_write("Unknown_Register", &[("j1", 7)]),
++            bus.sync_write_by_id("Unknown_Register", &[(1, 7)]),
++            bus.sync_write_by_id_into("Unknown_Register", &[(1, 7)], &mut [0; 256]),
++        ] {
++            assert!(matches!(result, Err(FeetechError::UnknownRegister("Unknown_Register"))));
++        }
++        assert!(handle.peek_tx().is_empty());
++    }
++
++    #[test]
++    fn diagnostic_single_read_preserves_raw_byte_and_exact_request() {
++        for (name, address, raw, golden_checksum, _) in DIAGNOSTIC_READ_CASES {
++            let (mut bus, handle) = make_bus(&[("j1", 1)]);
++            handle.push_rx(&fake_status(1, 0, &[raw]));
++            assert_eq!(bus.read(name, "j1").unwrap(), i32::from(raw));
++            assert_eq!(handle.drain_tx(), [0xff, 0xff, 1, 4, 2, address, 1, golden_checksum]);
++        }
++    }
++
++    #[test]
++    fn diagnostic_sync_read_preserves_raw_bytes_and_exact_request() {
++        for (name, address, raw, _, golden_checksum) in DIAGNOSTIC_READ_CASES {
++            let (mut bus, handle) = make_bus(&[("j1", 1), ("j2", 2)]);
++            handle.push_rx(&fake_status(1, 0, &[raw]));
++            handle.push_rx(&fake_status(2, 0, &[0xff]));
++            let result = bus.sync_read(name, &["j1", "j2"]).unwrap();
++            assert_eq!(result.get("j1"), Some(&i32::from(raw)));
++            assert_eq!(result.get("j2"), Some(&255));
++            assert_eq!(handle.drain_tx(), [0xff, 0xff, 0xfe, 6, 0x82, address, 1, 1, 2, golden_checksum]);
++        }
++    }
++
++    #[test]
++    fn diagnostic_sync_read_by_id_preserves_raw_bytes_and_exact_request() {
++        for (name, address, raw, _, golden_checksum) in DIAGNOSTIC_READ_CASES {
++            let (mut bus, handle) = make_bus(&[("j1", 1), ("j2", 2)]);
++            handle.push_rx(&fake_status(1, 0, &[raw]));
++            handle.push_rx(&fake_status(2, 0, &[0xff]));
++            let mut result = [i32::MIN; 2];
++            bus.sync_read_by_id_into(name, &[1, 2], &mut result).unwrap();
++            assert_eq!(result, [i32::from(raw), 255]);
++            assert_eq!(handle.drain_tx(), [0xff, 0xff, 0xfe, 6, 0x82, address, 1, 1, 2, golden_checksum]);
++        }
++    }
++
+     // ── ping ──────────────────────────────────────────────────────────
+ 
+     #[test]
+diff --git a/orig/crates/robot-adapters/feetech/examples/feetech_poke.rs b/candidate/crates/robot-adapters/feetech/examples/feetech_poke.rs
+index b98a6fa..0fa3cad 100644
+--- a/orig/crates/robot-adapters/feetech/examples/feetech_poke.rs
++++ b/candidate/crates/robot-adapters/feetech/examples/feetech_poke.rs
+@@ -62,9 +62,9 @@ use std::collections::HashMap;
+ use std::path::Path;
+ use std::process::ExitCode;
+ 
+-use robot_adapter_feetech::registers::STS3215_CONTROL_TABLE;
++use robot_adapter_feetech::registers::{STS3215_CONTROL_TABLE, ensure_not_diagnostic_write};
+ use robot_adapter_feetech::transport::real::RealSerialTransport;
+-use robot_adapter_feetech::{DEFAULT_BAUDRATE, FeetechBus, Motor};
++use robot_adapter_feetech::{DEFAULT_BAUDRATE, FeetechBus, FeetechError, Motor};
+ 
+ /// 把用户输入的 register 名对齐到 `STS3215_CONTROL_TABLE` 里的 `&'static str`。
+ ///
+@@ -77,6 +77,20 @@ fn static_register_name(name: &str) -> Option<&'static str> {
+         .map(|(n, _)| *n)
+ }
+ 
++/// 纯参数预检，仅在打开串口前拒绝三个诊断专用名称的 write。
++/// 其他名称与参数继续由原分发处理；本门放行不表示写入合法。
++fn preflight_diagnostic_write(args: &[String]) -> Result<(), FeetechError> {
++    match args.get(3).map(String::as_str) {
++        Some("write") => match args.get(4).and_then(|name| static_register_name(name)) {
++            Some(name @ ("Phase" | "CW_Dead_Zone" | "CCW_Dead_Zone")) => {
++                ensure_not_diagnostic_write(name)
++            }
++            _ => Ok(()),
++        },
++        _ => Ok(()),
++    }
++}
++
+ fn usage(prog: &str) -> String {
+     format!(
+         "usage:\n  \
+@@ -171,6 +185,11 @@ fn main() -> ExitCode {
+     };
+     let action = args[3].as_str();
+ 
++    if let Err(error) = preflight_diagnostic_write(&args) {
++        eprintln!("error: {error}");
++        return ExitCode::from(2);
++    }
++
+     // 构造 bus：单 motor 名统一叫 "m"（本工具不关心名字语义）
+     let transport = match RealSerialTransport::open(Path::new(address), DEFAULT_BAUDRATE) {
+         Ok(t) => t,
+@@ -216,3 +235,88 @@ fn main() -> ExitCode {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn arguments(action: &str, register: &str, value: Option<&str>) -> Vec<String> {
++        let mut args = vec![
++            "feetech_poke".to_string(),
++            "/dev/never-open".to_string(),
++            "1".to_string(),
++            action.to_string(),
++            register.to_string(),
++        ];
++        if let Some(value) = value {
++            args.push(value.to_string());
++        }
++        args
++    }
++
++    #[test]
++    fn diagnostic_write_preflight_denies_even_missing_or_invalid_values() {
++        for name in ["Phase", "CW_Dead_Zone", "CCW_Dead_Zone"] {
++            for value in [None, Some("bad-value"), Some("255"), Some("2147483648")] {
++                let args = arguments("write", name, value);
++                assert!(matches!(
++                    preflight_diagnostic_write(&args),
++                    Err(FeetechError::DiagnosticRegisterWriteForbidden(got)) if got == name
++                ));
++            }
++        }
++    }
++
++    #[test]
++    fn existing_write_preflight_keeps_supported_arguments() {
++        for (register, value) in [
++            ("Goal_Position", "-100"),
++            ("Goal_Velocity", "20"),
++            ("Torque_Enable", "0"),
++            ("Operating_Mode", "1"),
++            ("Model_Number", "777"),
++        ] {
++            assert!(preflight_diagnostic_write(&arguments("write", register, Some(value))).is_ok());
++        }
++    }
++
++    #[test]
++    fn existing_missing_invalid_and_unknown_arguments_remain_for_original_dispatch() {
++        for register in ["Goal_Position", "Unknown_Register"] {
++            for value in [None, Some("bad-value"), Some("2147483648")] {
++                assert!(preflight_diagnostic_write(&arguments("write", register, value)).is_ok());
++            }
++        }
++        let args: Vec<String> = ["feetech_poke", "/dev/never-open", "1", "write"]
++            .into_iter().map(str::to_string).collect();
++        assert!(preflight_diagnostic_write(&args).is_ok());
++    }
++
++    #[test]
++    fn original_do_write_still_rejects_bad_arguments_without_mock_io() {
++        let (transport, handle) = robot_adapter_feetech::transport::MockTransport::new();
++        let mut motors = HashMap::new();
++        motors.insert("m".to_string(), Motor::new(1).unwrap());
++        let mut bus = FeetechBus::new(transport, motors).unwrap();
++        for args in [
++            arguments("write", "Goal_Position", None),
++            arguments("write", "Goal_Position", Some("bad-value")),
++            arguments("write", "Goal_Position", Some("2147483648")),
++            arguments("write", "Unknown_Register", Some("1")),
++        ] {
++            assert!(preflight_diagnostic_write(&args).is_ok());
++            assert_eq!(do_write(&mut bus, 1, &args, "feetech_poke"), ExitCode::from(2));
++        }
++        assert!(handle.peek_tx().is_empty());
++    }
++
++    #[test]
++    fn read_and_ping_preflight_preserve_existing_dispatch() {
++        for name in ["Phase", "CW_Dead_Zone", "CCW_Dead_Zone", "Present_Position"] {
++            assert!(preflight_diagnostic_write(&arguments("read", name, None)).is_ok());
++        }
++        let args: Vec<String> = ["feetech_poke", "/dev/never-open", "1", "ping"]
++            .into_iter().map(str::to_string).collect();
++        assert!(preflight_diagnostic_write(&args).is_ok());
++    }
++}

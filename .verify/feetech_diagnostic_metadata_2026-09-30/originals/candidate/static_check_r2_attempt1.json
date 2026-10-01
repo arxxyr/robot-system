@@ -1,0 +1,9 @@
+{
+  "schema": "B0_STATIC_REVIEW_CHECKER_FAILURE_V1",
+  "status": "FAIL_RETAINED",
+  "attempt": 1,
+  "stage": "registers仅注释变化的文本比较",
+  "output": "Traceback (most recent call last):\n  File \"<stdin>\", line 15, in <module>\nAssertionError\n",
+  "cause": "首比较器把每条注释替换成空串而保留换行，新is_eeprom说明从1行变3行，造成空行差异。未发现逻辑变化；仅修比较器为逐行排除注释，候选源保持原SHA。",
+  "not_claimed": "不是编译/测试结果，也未将此FAIL回填PASS。"
+}

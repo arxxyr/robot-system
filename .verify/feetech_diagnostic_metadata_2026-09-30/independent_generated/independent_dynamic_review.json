@@ -1,0 +1,55 @@
+{
+  "schema": "B0_INDEPENDENT_DYNAMIC_REVIEW_V1",
+  "status": "PASS",
+  "checks": 9398,
+  "summary": {
+    "sha256": "2085292296e00a2ac872fcc547829bbeca1ca0b445dbd1d9679b4d3b3300c6fe",
+    "bytes": 174662
+  },
+  "source_files": 590,
+  "final_aggregate": "3d8491ee8b82bdaed1182e572bfaac6cbb5a47e6088d4dc91ea40cc8949cbcde",
+  "rounds": [
+    {
+      "round": 1,
+      "status": "FAIL",
+      "aggregate": "4136d5ef284acc0cf44dc2a3aa4382caac0932b4bda719c8c83117c2a8732e95",
+      "direct_children": 28,
+      "host_owners": 9
+    },
+    {
+      "round": 2,
+      "status": "FAIL",
+      "aggregate": "e81e417ea5adca3de92db7d1d72c363d180656af25e0e733b3fcc9e70a3e4fed",
+      "direct_children": 28,
+      "host_owners": 9
+    },
+    {
+      "round": 3,
+      "status": "PASS",
+      "aggregate": "3d8491ee8b82bdaed1182e572bfaac6cbb5a47e6088d4dc91ea40cc8949cbcde",
+      "direct_children": 41,
+      "host_owners": 8
+    }
+  ],
+  "naturally_reaped": {
+    "direct": 97,
+    "host": 26,
+    "preserved_direct_exit101": 2,
+    "compiled_expected_exit2": 9
+  },
+  "tests": "165不同方法=160库+5example；18新方法为子集，既有literal方法补三案例，不计新方法。",
+  "release_ELF": {
+    "sha256": "2daabe75878989abfa759920ec07773d3c97b017042a42b3906483c3da4f5a71",
+    "bytes": 1470368,
+    "machine": 183
+  },
+  "boundary": "纯软件；不代表H2、全workspace、Phase现场合同、头/底盘动作或S0/S1速度接入；人工断电PENDING，旧硬件FAIL/D15 OPEN_DEFERRED/deployable=false不变。",
+  "current_formal_site_claim": "本轮未执行新正式状态探针；仅软件检查范围未改正式安装/无UART，不能声明现场最近已确认。",
+  "actions_this_review": {
+    "Cargo": false,
+    "SSH": false,
+    "UART": false,
+    "hardware": false,
+    "source_modified": false
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "scope": "不可变原包及汇总逐SHA副本，不改原件",
+  "files": [
+    {
+      "source_path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-evidence.tar.gz",
+      "archive_path": "native/evidence.tar.gz",
+      "sha256": "be158e6632ca356cc944566de844196de8896a20c030fd1b513dfe7abd256b5b",
+      "bytes": 31962858
+    },
+    {
+      "source_path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-evidence.index.json",
+      "archive_path": "native/evidence.index.json",
+      "sha256": "213cfe3dab5229eea2144c9cf0e52504252478952950a649b807452faad54a1e",
+      "bytes": 47743
+    },
+    {
+      "source_path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/summary.json",
+      "archive_path": "native/original_summary.json",
+      "sha256": "2085292296e00a2ac872fcc547829bbeca1ca0b445dbd1d9679b4d3b3300c6fe",
+      "bytes": 174662
+    }
+  ]
+}

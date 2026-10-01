@@ -1,0 +1,37 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "REAPED",
+  "status": "PASS",
+  "owner_pid": 90638,
+  "command": [
+    "cargo",
+    "fmt",
+    "--all"
+  ],
+  "pid": 90639,
+  "started_utc": "2026-09-30T23:51:42.859704+00:00",
+  "started_monotonic_ns": 58494720489833,
+  "observe_seconds": 5,
+  "wait_returncode": 0,
+  "reaped": true,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 1,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "launched_utc": "2026-09-30T23:51:42.862113+00:00",
+  "start_new_session": true,
+  "child_session_id": 90639,
+  "child_end_class": "EXIT_STATUS",
+  "child_signal": null,
+  "finished_utc": "2026-09-30T23:51:43.757618+00:00",
+  "observed_utc": "2026-09-30T23:51:43.757037+00:00",
+  "elapsed_ns": 897829667,
+  "log_bytes_observed": 0,
+  "log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_maintenance_classification/b0_r3_main_fmt.owner/child.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  }
+}

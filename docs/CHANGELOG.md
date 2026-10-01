@@ -10,6 +10,11 @@
 
 ---
 
+## 2026-09-30 · Feetech 底盘诊断元数据（B0，原生软件门通过）
+
+新增Phase18/CW_Dead_Zone26/CCW_Dead_Zone27，均按1字节原始无符号值读取；厂家EEPROM分类与本项目只读策略分开。四具名bus写API在查表、租约及IO前共享拒写门，poke仅三诊断write在打开串口前拒绝，其他参数及原do_read/do_write行为保持。
+五源已格式化整合，590编译输入聚合3d8491ee；首Orin Clippy实际E0004/101保留，后续NOT_RUN。诊断分类补入既有参数错误及编码(8,1,0)，原literal方法增加三名断言，不增18方法数；第二轮四条测试lint/101保留，仅调整结果消耗和空TX断言。Orin最新nightly5c、fmt/两根Clippy、完整库160+例子5及release通过，18新方法为165子集；九次NX拒写真实exit2/回收，源码与编译器前后一致；[归档及独审/root软件验收](../.verify/feetech_diagnostic_metadata_2026-09-30/summary.json)通过。旧r1 CLI普通坏参数时序改变的scope失败保留；无UART/安装/push，实际Phase/速度单位、S0/S1底盘执行链和底盘动作仍未验证。
+
 ## 2026-09-30 · XLeRobot 三轮SI运动学
 
 新增 `robot-kinematics-xlerobot::base`：前8/左7/右9正逆运动学、显式几何和轮速上限、同比缩放及保守舍入修复；异常数值和轮序拒绝，原手臂IK不改。Orin最新浮动nightly5c、fmt/根Clippy与crate30（21新底盘+9原手臂）通过，首Clippy101/测试NOT_RUN保留；[软件证据](../.verify/xlerobot_base_kinematics_2026-09-30/summary.json)按590输入0e580bd9绑定。

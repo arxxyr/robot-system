@@ -1,0 +1,124 @@
+{
+  "status": "PASS",
+  "scope": "本地独立归档完整性审查；未运行Cargo/SSH/UART/测试，不解释动态QA，r1 E0004/Clippy101、r2 test-lint101及其NOT_RUN原语义保留。",
+  "reports": [
+    {
+      "round": "r1",
+      "scope": "仅完整性；原QA失败、NOT_RUN及报告语义不重判",
+      "status": "PASS",
+      "archive": {
+        "sha256": "754c64f0e4992d9dbb400e61c19c997e8be49d4b7a85057b7d676d43f0ab6865",
+        "bytes": 9873999,
+        "mode": 420
+      },
+      "index": {
+        "sha256": "ce24229e88e0f4cd6e4ab77925fd35e3cc240148781f753ac69fe757dcf37407",
+        "bytes": 229010,
+        "mode": 420
+      },
+      "metadata": {
+        "sha256": "085ab9d5089df18b20007a07b52f739717d571310a64f0f2dc46d388df354eba",
+        "bytes": 990,
+        "mode": 420
+      },
+      "indexed_regular_files": 733,
+      "directories": 156,
+      "total_members": 890,
+      "original_bytes": 31023046,
+      "gzip_eof_crc_isize": true,
+      "uncompressed_bytes": 31887360,
+      "safe_unique_exact_members": true,
+      "no_links_or_special_members": true,
+      "all_file_sha_bytes_mode_uid_gid": true,
+      "directory_mode": true,
+      "inner_outer_index_identical": true,
+      "extracted_bytes_modes_exact_set": true,
+      "source_identity_before_after": true,
+      "index_member_observed": {
+        "mode": 420,
+        "uid": 0,
+        "gid": 0
+      },
+      "directory_uid_gid_limit": "索引目录仅绑定path/mode；目录uid/gid未宣称由索引绑定。"
+    },
+    {
+      "round": "r2",
+      "scope": "仅完整性；原QA失败、NOT_RUN及报告语义不重判",
+      "status": "PASS",
+      "archive": {
+        "sha256": "3fce4317fd6ab2feb9cefd47bfec7783d645e1b503e322ec683c6915150a96e1",
+        "bytes": 9903047,
+        "mode": 420
+      },
+      "index": {
+        "sha256": "337016b6daf6f756fc425e6b8157457f57bdb472d573dcfe2eb6d9ebe7f90c39",
+        "bytes": 229267,
+        "mode": 420
+      },
+      "metadata": {
+        "sha256": "3daa89586ccf51233bae1d9bcc94af0bd9549c3cd02fb20e61c04f302db0d08c",
+        "bytes": 990,
+        "mode": 420
+      },
+      "indexed_regular_files": 734,
+      "directories": 156,
+      "total_members": 891,
+      "original_bytes": 31164298,
+      "gzip_eof_crc_isize": true,
+      "uncompressed_bytes": 32030720,
+      "safe_unique_exact_members": true,
+      "no_links_or_special_members": true,
+      "all_file_sha_bytes_mode_uid_gid": true,
+      "directory_mode": true,
+      "inner_outer_index_identical": true,
+      "extracted_bytes_modes_exact_set": true,
+      "source_identity_before_after": true,
+      "index_member_observed": {
+        "mode": 420,
+        "uid": 0,
+        "gid": 0
+      },
+      "directory_uid_gid_limit": "索引目录仅绑定path/mode；目录uid/gid未宣称由索引绑定。"
+    },
+    {
+      "round": "r3",
+      "scope": "仅完整性；原QA失败、NOT_RUN及报告语义不重判",
+      "status": "PASS",
+      "archive": {
+        "sha256": "0635daff6fb516bc34d2329c4ac160d0187a6acf71767d8874a509bdf505a3c1",
+        "bytes": 11446131,
+        "mode": 420
+      },
+      "index": {
+        "sha256": "74a7ff5f3fd6ecf584f82d1f7a92bd0c69a41899215f5dcb2fc15926bea85890",
+        "bytes": 251425,
+        "mode": 420
+      },
+      "metadata": {
+        "sha256": "8d57c43cf961b059bee78b761a01e92824b3b530fe874e791ca91c6573f9ab63",
+        "bytes": 991,
+        "mode": 420
+      },
+      "indexed_regular_files": 813,
+      "directories": 169,
+      "total_members": 983,
+      "original_bytes": 36042783,
+      "gzip_eof_crc_isize": true,
+      "uncompressed_bytes": 36997120,
+      "safe_unique_exact_members": true,
+      "no_links_or_special_members": true,
+      "all_file_sha_bytes_mode_uid_gid": true,
+      "directory_mode": true,
+      "inner_outer_index_identical": true,
+      "extracted_bytes_modes_exact_set": true,
+      "source_identity_before_after": true,
+      "index_member_observed": {
+        "mode": 420,
+        "uid": 0,
+        "gid": 0
+      },
+      "directory_uid_gid_limit": "索引目录仅绑定path/mode；目录uid/gid未宣称由索引绑定。"
+    }
+  ],
+  "archive_originals_modified": false
+}

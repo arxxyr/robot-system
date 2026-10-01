@@ -1,0 +1,38 @@
+{
+  "status": "PRESERVED_BEFORE_TEST_ONLY_LINT_FIX",
+  "failure": "root报告的第二轮cfg(test) Clippy FAIL，原回执与590源聚合不改",
+  "original_source_manifest_sha256": "e81e417ea5adca3de92db7d1d72c363d180656af25e0e733b3fcc9e70a3e4fed",
+  "five_sources": [
+    {
+      "relative_path": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+      "sha256": "00f87e857e2ac6070de67ba615f194383b8e01b0ffc38c96ce930cebf9fe0513",
+      "bytes": 11866
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/bus.rs",
+      "sha256": "267aac059e9b258bf108f1e3d0004e0fa8668f7b86ec420fe3503f470b18440d",
+      "bytes": 44043
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/diagnostic.rs",
+      "sha256": "f4155b2a4f71aec7489ca724a90cc2865219a9920ba4a51494d2267298335e8c",
+      "bytes": 10235
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/error.rs",
+      "sha256": "d3d4c8c005d712f124755ce8c3530ff93b1302855f07b9ec915e04c887a276c5",
+      "bytes": 14398
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/registers.rs",
+      "sha256": "b7d40b8ae3557632c6996fbbc52a76c4e5dc508d8cc217abc28a39a4c13bbb36",
+      "bytes": 12888
+    }
+  ],
+  "saved_sources": [
+    "crates/robot-adapters/feetech/src/bus.rs",
+    "crates/robot-adapters/feetech/examples/feetech_poke.rs"
+  ],
+  "original_binding_sha256": "faefb7bcd6b3159116ffa6c6b58fcd92b1896c905bc71466c0b18f0df21da380",
+  "checks": "仅本地保存和逐SHA核对；未执行Cargo/SSH/UART"
+}

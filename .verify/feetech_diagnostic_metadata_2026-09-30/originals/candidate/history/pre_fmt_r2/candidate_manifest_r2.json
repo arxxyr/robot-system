@@ -1,0 +1,108 @@
+{
+  "schema": "B0_DIAGNOSTIC_CANDIDATE_MANIFEST_V2",
+  "status": "R2_DRAFT_FROZEN_STATIC_CHECK_ONLY_NOT_COMPILED_NOT_TESTED",
+  "root": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate",
+  "source_head_at_copy": "a09c6b1e2d6aeccb2fef26599c98ab008e3d6671",
+  "source_head_at_finish": "a09c6b1e2d6aeccb2fef26599c98ab008e3d6671",
+  "originals": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/originals.json",
+    "sha256": "7ea69d8a9ef8df9b57ef801bb8f08c3edb55d5ac1398d58cd6636d0eb72cb692",
+    "bytes": 1702,
+    "source_and_orig_unchanged": true
+  },
+  "history_r1": {
+    "root": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/candidate/history/r1",
+    "four_sources_manifest_and_diff_preserved": true,
+    "manifest_sha256": "3e61d326780e2875a085fa751014b367e33c84419c346fe7ff55c3cc635d4f99",
+    "manifest_bytes": 4286,
+    "scope_failure_retained": "r1 CLI预检提前拒普通坏参数改变原合同；只修三诊断名预检，不把旧候选当通过。"
+  },
+  "files": [
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/registers.rs",
+      "path": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/candidate/crates/robot-adapters/feetech/src/registers.rs",
+      "sha256": "8b670afe68a34d9e215d07b2aea6db709e7ef1ef8fb567a353ef01e2005e5589",
+      "bytes": 12887,
+      "source_sha256": "a49b7e660d809bb94c6a6f8e4096c563f4a936c36549b1616b14b63b2eeed673",
+      "source_bytes": 10529,
+      "tests_before": 8,
+      "tests_after": 10
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/error.rs",
+      "path": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/candidate/crates/robot-adapters/feetech/src/error.rs",
+      "sha256": "d3d4c8c005d712f124755ce8c3530ff93b1302855f07b9ec915e04c887a276c5",
+      "bytes": 14398,
+      "source_sha256": "6f72eb4553cf98d18cee1be9baaef546f0ba5bc9c61d9335ea5ea54b11492c03",
+      "source_bytes": 13668,
+      "tests_before": 2,
+      "tests_after": 3
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/bus.rs",
+      "path": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/candidate/crates/robot-adapters/feetech/src/bus.rs",
+      "sha256": "8f854e5e9653ac2a72a436c65c61a48824da3777cdd0230e620c87af2df4299a",
+      "bytes": 43643,
+      "source_sha256": "3e271e8c09034cd5226c4bf7b7c19d9825e1ddc6982e81590efd53aa65d842df",
+      "source_bytes": 35209,
+      "tests_before": 13,
+      "tests_after": 23
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+      "path": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/candidate/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+      "sha256": "2bac83d7d7a21457b7065d50a231d2f3b33cc078046c584f349b8ce974be3b15",
+      "bytes": 11768,
+      "source_sha256": "5297bc9c238f5ec209ffd9e9e06e4cfd820b5eea0261ad693546946857732588",
+      "source_bytes": 7703,
+      "tests_before": 0,
+      "tests_after": 5
+    }
+  ],
+  "diffs": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/source_to_draft_r2.diff",
+      "sha256": "01557fa14d151590d78e4c4fe563a71e0ae15f5263a9c235449824f41b01fb01",
+      "bytes": 23302
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/r1_to_r2.diff",
+      "sha256": "0a2f55c96a618697fc98f41fc84e35bbb88659fb78e204aa1746c1ecbfa0486b",
+      "bytes": 8437
+    }
+  ],
+  "r2_scope_correction": "仅poke的preflight_diagnostic_write(action=write且名称为三诊断项)在open/handshake前返回typed拒写；诊断value缺失/非法/合法/i32溢出均拒绝。其他有效或unknown/缺值/非法参数由该门放行，原do_write维持原校验与拒绝时序，这不意味着普通坏参数合法或不开串口。registers仅两处注释澄清区段分类不是授权，三项依旧拒写。",
+  "static_checks": {
+    "each_file_diff_check_no_output": true,
+    "error_and_bus_equal_r1": true,
+    "registers_logic_equal_r1_only_two_doc_changes": true,
+    "do_read_and_do_write_equal_original": true,
+    "diagnostic_preflight_has_no_value_parse_and_is_before_open_handshake": true,
+    "source_and_orig_and_history_r1_all_unchanged": true,
+    "first_checker_failure_retained": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/static_check_r2_attempt1.json",
+    "comment_comparator_corrected_without_source_changes": true
+  },
+  "oracles_not_executed": {
+    "diagnostic_write_cases": 12,
+    "diagnostic_read_api_register_combinations": 9,
+    "cli_diagnostic_name_value_cases": 12,
+    "additional": [
+      "空批次/未知motor/非法值/空buffer均先拒写，0tx/0lease及正常lease正控",
+      "错误InvalidParameter/comm_kind None",
+      "原非诊断参数由预检放行、原do_write拒错误仍0mock tx",
+      "read/ping预检保持原分发",
+      "raw字节不裁剪/不解释Phase或死区"
+    ]
+  },
+  "test_methods_added": 18,
+  "limits": {
+    "cargo_fmt_clippy_build_tests": 0,
+    "nightly_update": 0,
+    "ssh_uart_hardware": 0,
+    "commit_push": 0,
+    "existing_source_doc_or_config_edits": 0,
+    "no_general_register_writability_or_eeprom_unlock": true,
+    "no_model_phase_unit_or_live_runtime_claim": true
+  },
+  "next": "root/parent冷审后决定正式隔离树整合，由native实际运行最新nightly质量门；本draft不能用于硬件。"
+}

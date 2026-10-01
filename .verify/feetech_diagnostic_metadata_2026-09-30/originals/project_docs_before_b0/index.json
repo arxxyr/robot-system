@@ -1,0 +1,22 @@
+[
+  {
+    "path": "CLAUDE.md",
+    "sha256": "c96c529e4b3aba246fa969d0ef6ff9c401eefc76ec97cd4c09368a6c414d854e",
+    "bytes": 27050
+  },
+  {
+    "path": "docs/CHANGELOG.md",
+    "sha256": "79accc8ba1093eb357a0fd95dd3dfb11f64b90e5b26a6421f50e27587e9f4c00",
+    "bytes": 425724
+  },
+  {
+    "path": "docs/10_verification.md",
+    "sha256": "cb70020fcf715eedb7bb86dee87ebf5a7e113d9f0a94a040f002b21491da6185",
+    "bytes": 95195
+  },
+  {
+    "path": "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md",
+    "sha256": "a0084aa6069de98570378432e0bf0e5744d18c512aa6babcbe3616ba57b764ba",
+    "bytes": 56836
+  }
+]

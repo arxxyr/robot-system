@@ -1,0 +1,26 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "WAITING",
+  "status": "RUNNING",
+  "owner_pid": 91479,
+  "command": [
+    "cargo",
+    "fmt",
+    "--all"
+  ],
+  "pid": 91480,
+  "started_utc": "2026-10-01T00:02:33.118275+00:00",
+  "started_monotonic_ns": 59144982708166,
+  "observe_seconds": 5,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "launched_utc": "2026-10-01T00:02:33.120722+00:00",
+  "start_new_session": true,
+  "child_session_id": 91480
+}

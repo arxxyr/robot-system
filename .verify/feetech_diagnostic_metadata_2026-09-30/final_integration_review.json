@@ -1,0 +1,184 @@
+{
+  "schema": "FEETECH_B0_FINAL_MAIN_INTEGRATION_REVIEW_V1",
+  "status": "PASS",
+  "scope": "最小main最终绑定；不重审完整原包、不重跑Cargo/SSH/UART。",
+  "summary": {
+    "sha256": "6e64b1709cb73142c0f3ba241df2636017da9b288869eaf49b2c2c27f9d2d5fd",
+    "bytes": 4838
+  },
+  "referenced_files": {
+    "originals_index": {
+      "sha256": "d458c3fda61d3d3bcbf06c0017e12fc40884214e1fa0a53c53526b6d6ee755e5",
+      "bytes": 20152
+    },
+    "native_original_summary": {
+      "sha256": "2085292296e00a2ac872fcc547829bbeca1ca0b445dbd1d9679b4d3b3300c6fe",
+      "bytes": 174662
+    },
+    "native_outer_archive": {
+      "sha256": "be158e6632ca356cc944566de844196de8896a20c030fd1b513dfe7abd256b5b",
+      "bytes": 31962858
+    },
+    "native_outer_index": {
+      "sha256": "213cfe3dab5229eea2144c9cf0e52504252478952950a649b807452faad54a1e",
+      "bytes": 47743
+    },
+    "root_source_quality_binding": {
+      "sha256": "099620bc05272339aafb223cf93e1f1dfb7412e4ed1bbc10df65310b79f3934d",
+      "bytes": 3548
+    },
+    "independent_native_software_review": {
+      "sha256": "aa734acfb3aef3b11ed8643f455d0ae8ab02273fcc15136c4b8d858277ab0d37",
+      "bytes": 6522
+    },
+    "post_seal_independent_attachments": {
+      "sha256": "a91a99f0290a5429eab05eccf2512d472990800d0deeba7e054ff20bddc24bae",
+      "bytes": 3319
+    }
+  },
+  "fixed_index": {
+    "files": 94,
+    "sha256": "d458c3fda61d3d3bcbf06c0017e12fc40884214e1fa0a53c53526b6d6ee755e5",
+    "every_indexed_file_SHA_bytes_mode_regular_readback": "PASS",
+    "index_excludes_later_generated_attachments": true
+  },
+  "postseal_attachments": {
+    "count": 9,
+    "each_SHA_bytes_and_source_copy_match": true,
+    "receipt": {
+      "sha256": "a91a99f0290a5429eab05eccf2512d472990800d0deeba7e054ff20bddc24bae",
+      "bytes": 3319
+    }
+  },
+  "source": {
+    "native_git_HEAD": "1c5758f97b7c502a38c850e8352ce970216bea53",
+    "main_base_HEAD": "d5ac7aa7acaa11bef1d318e762d17a4443718120",
+    "files": 590,
+    "aggregate": "3d8491ee8b82bdaed1182e572bfaac6cbb5a47e6088d4dc91ea40cc8949cbcde",
+    "current_main_all_inputs_equal_native_before_after": true,
+    "B0_five_files": [
+      {
+        "relative_path": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+        "sha256": "25fa97a762e3815febff53d97ff71ca2131a0b3fd83241be71ca5f8b3a8b2c5d",
+        "bytes": 11869,
+        "executable": false
+      },
+      {
+        "relative_path": "crates/robot-adapters/feetech/src/bus.rs",
+        "sha256": "211ce25a1a819e2c3ecec293a830c7c0561ffb35b6d564d64e548da02dd3f659",
+        "bytes": 44122,
+        "executable": false
+      },
+      {
+        "relative_path": "crates/robot-adapters/feetech/src/diagnostic.rs",
+        "sha256": "f4155b2a4f71aec7489ca724a90cc2865219a9920ba4a51494d2267298335e8c",
+        "bytes": 10235,
+        "executable": false
+      },
+      {
+        "relative_path": "crates/robot-adapters/feetech/src/error.rs",
+        "sha256": "d3d4c8c005d712f124755ce8c3530ff93b1302855f07b9ec915e04c887a276c5",
+        "bytes": 14398,
+        "executable": false
+      },
+      {
+        "relative_path": "crates/robot-adapters/feetech/src/registers.rs",
+        "sha256": "b7d40b8ae3557632c6996fbbc52a76c4e5dc508d8cc217abc28a39a4c13bbb36",
+        "bytes": 12888,
+        "executable": false
+      }
+    ],
+    "old_math_two_sources": "仍8c49/a919；已包含590域，不混入五个B0变更。"
+  },
+  "precommit_quality": {
+    "order": "实际fmt→根默认Clippy→real-hw根Clippy，同590与原launch/log自然回收证据由已通过动态独审绑定，本次再核六completion SHA/PID/命令/时序。",
+    "receipts": [
+      {
+        "name": "fmt",
+        "pid": 444631,
+        "completion_sha256": "79106e65f0d37c2bd23ac235b87e547622f5245b9969a647591d8850baab0c4d",
+        "wait_exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "clippy_default",
+        "pid": 444645,
+        "completion_sha256": "0ca8d40d6bbe1e8a7fd24bb7236b38cca7491c4a03de34240bc59d2afe0356cb",
+        "wait_exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "clippy_real_hw",
+        "pid": 445140,
+        "completion_sha256": "ef5d8a785114f5e8bbb52b1d44be0e65e77af7b6c19a9c4491f4acd64390f725",
+        "wait_exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "adapter_lib",
+        "pid": 445464,
+        "completion_sha256": "3d1868af25651176d3b4bb723754f66f61aee99477a47e1cddba8683e48cbfbd",
+        "wait_exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "example_tests",
+        "pid": 446422,
+        "completion_sha256": "28c9d356b79a6aebd09cff9eb4d08b46df16f70995a5a39b861221fcc19397cd",
+        "wait_exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "release_example",
+        "pid": 446701,
+        "completion_sha256": "fbf897efbd050e279189077a4911493174d8ea9373f11e62e53074c36a8560a1",
+        "wait_exit": 0,
+        "reaped": true
+      }
+    ],
+    "tests": "165不同=160库+5例子；18新方法是子集，既有分类方法加三literal不增方法。",
+    "refusals": "9固定NX编译工具真实exit2，保真实code、不接受其他非零；不是UART验证。"
+  },
+  "docs": {
+    "CLAUDE.md": {
+      "sha256": "0537d35dbc6d70d5e8627b6e138810ae0a1912d04b4ac141e8328a43139553be",
+      "bytes": 27571
+    },
+    "docs/10_verification.md": {
+      "sha256": "0dc34779d25f92d82cfaa3bd21515b5700a6e637eedee6cba57aae3fc2b39a91",
+      "bytes": 96922
+    },
+    "docs/CHANGELOG.md": {
+      "sha256": "a66c7024347169896dcdcb4733f5cde91318a0ca0d28884446db0f153112973b",
+      "bytes": 426844
+    },
+    "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md": {
+      "sha256": "8580bc3e26209befad2fc3772814a210991a6781e6e664148796dafccac69191",
+      "bytes": 58452
+    }
+  },
+  "doc_scope": "四文档真实软件通过/18子集/9退出2、首E0004与第二test lint101/NOT_RUN均保留；94固定原件与后生附件分开；不称全workspace/H2六配方/固件合同/速度链/硬件闭环，B1仅未批准计划。",
+  "originals_preserved": "原native summary/三内包/外包不回填；开发scope拒绝与native/独审检查器误拒均单存。",
+  "hardware_boundary": {
+    "phase_or_deadzone_field_values": "UNKNOWN_NOT_READ",
+    "unit_or_zero_speed_contract": "UNVERIFIED",
+    "S0_S1_base_velocity_chain": "NOT_IMPLEMENTED",
+    "B1_runtime_plan": "PLAN_ONLY_NOT_SPEC_APPROVED",
+    "formal_install_service_or_push_mutations": "NONE_THIS_STAGE",
+    "fresh_formal_or_field_state_check": "NOT_CLAIMED",
+    "manual_motor_power_cut_confirmation": "PENDING",
+    "old_right_H2_overall": "FAIL_PRESERVED",
+    "old_left_wrist_precision": "FAIL_PRESERVED",
+    "D15": "OPEN/DEFERRED",
+    "deployable": false
+  },
+  "decision": "允许本阶段软件提交，不push；人工断电PENDING、原右H2/左腕FAIL、D15 OPEN_DEFERRED与deployable=false不变。",
+  "actions_this_review": {
+    "Cargo": false,
+    "SSH": false,
+    "UART": false,
+    "hardware": false,
+    "source_edits": false
+  },
+  "blockers": []
+}

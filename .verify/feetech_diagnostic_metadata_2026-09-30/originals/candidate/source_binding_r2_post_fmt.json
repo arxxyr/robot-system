@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "files": 590,
+  "source_manifest_sha256": "4136d5ef284acc0cf44dc2a3aa4382caac0932b4bda719c8c83117c2a8732e95",
+  "manifest": "/Users/loosqk/repo/rust/robot-system/target/b0_diagnostic_candidate/expected_source_r2_post_fmt.json",
+  "manifest_sha256": "6b598a575a3e4add6adec97ac1326f75df017a9ac980a2f99e6226196dc786f2",
+  "stage_a_manifest": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r2/native-extracted/source-inputs-r1/source_before.json",
+  "stage_a_aggregate": "0e580bd954d29014534c6d04707873c8e779e75ffb7b93add2a5095d136d4eaa",
+  "changed_from_stage_a": [
+    "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "crates/robot-adapters/feetech/src/bus.rs",
+    "crates/robot-adapters/feetech/src/error.rs",
+    "crates/robot-adapters/feetech/src/registers.rs"
+  ],
+  "post_fmt_binding_equal": true,
+  "math_sources_unchanged": true
+}

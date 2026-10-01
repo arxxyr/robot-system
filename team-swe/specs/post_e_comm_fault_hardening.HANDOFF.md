@@ -2,12 +2,18 @@
 
 ## 当前步骤
 
+### Feetech B0 诊断元数据（2026-09-30，原生软件门通过）
+
+Phase18/CW_Dead_Zone26/CCW_Dead_Zone27以1字节原始无符号值读取，不解码Phase、推定单位或死区归因。厂家可写EEPROM与本项目只读写策略分开；四个具名bus写入口在查表/参数/租约/IO前拒三个诊断名，poke仅这些write在open前拒绝，其他有效/坏/unknown参数和原do_read/do_write行为不改。
+主树基于d5ac7aa，五源已格式化整合；590输入聚合3d8491ee。首Orin QA根Clippy实际E0004/101（漏既有diagnostic穷尽分类）及后续NOT_RUN保留，最窄补诊断参数类及原编码(8,1,0)，原分类literal方法加三名断言、不增方法。第二轮四条cfg(test) lint/101及后续NOT_RUN保留，仅改结果消耗和空TX断言、生产前缀不变。第三轮新同源Orin最新nightly5c、fmt/两根Clippy、库160+例子5、优化工具release及九次NX拒写通过；18新增是165子集，三条新增分类literal不增方法。九拒写保真实exit2/回收及精确类型错误，编译器/590源码前后保持，[软件验收入口](../../.verify/feetech_diagnostic_metadata_2026-09-30/summary.json)已归档、独审/root通过。94份固定原件/副本另有自索引，后产独审附件单独引用，不回填三轮原包及原summary。r1 CLI普通坏参数提前拒绝导致的scope失败及r2注释比较器误拒原件保留。
+本小件不触UART/上扭/模式或EEPROM写，不接S0/S1，不改正式安装或推送；实际Phase/速度单位未知。人工断电待答，旧右H2整体FAIL/左腕回程FAIL、D15 OPEN/DEFERRED及deployable=false保持。
+
 ### XLeRobot 三轮纯运动学（2026-09-30，Orin 软件门通过）
 
 按现场上游布局实现具名SI机身速度与轮角速度，电机顺序固定前8/左7/右9；正逆变换留在 `robot-kinematics-xlerobot::base`，没有默认几何或实测轮速上限。超限三轮使用同一比例，浮点舍入略超上限时统一比例保守下调一ULP，重算仍超限即拒绝；不逐轮裁剪。所有输入及中间非有限值、非法几何/顺序和比例下溢0均显式拒绝，原手臂IK算法与接口不变。
 新Orin隔离候选基于1c5758，仅两源变化；590项输入聚合 `0e580bd954d29014534c6d04707873c8e779e75ffb7b93add2a5095d136d4eaa`。实际更新浮动nightly仍5c543b0b8，fmt/根Clippy及完整crate lib默认并行30项通过、0failed/ignored；21新底盘是30子集，另9为原手臂，非全workspace或H2六配方。
 首轮Clippy similar_names/101及30项NOT_RUN保留；仅改cfg(test)局部命名后新候选通过，不回填旧轮。主树相同两源已整合，提交前实际fmt→根Clippy与590逐项绑定通过；[独审/root与归档入口](../../.verify/xlerobot_base_kinematics_2026-09-30/summary.json)保存本机37原件/自索引及115原件/自索引的两轮Orin统一外包。首本机normalize与动态审查器runner_error口径误拒原件亦保留；封包后独审另附，不回填原包/summary。
-该阶段不含raw轮速换算、Phase/零速语义、里程计、通用BaseKinematics trait或S0/S1执行链。1c的旧H2七件与本候选分开；以新HEAD做H2须另行同源原生冻结。下一小件先补Phase和正反向死区只读诊断元数据，新增名在bus所有四写API及poke开串口前拒写，尚未实现/读硬件。
+该阶段不含raw轮速换算、Phase/零速语义、里程计、通用BaseKinematics trait或S0/S1执行链。1c的旧H2七件与本候选分开；以新HEAD做H2须另行同源原生冻结。后续B0已整合诊断元数据，软件动态门及实际固件合同分别验收，不由运动学通过自动关闭。
 没有UART、上扭、模式/EEPROM写、正式安装/服务启动/push或新GO；人工断电确认PENDING，旧右H2整体FAIL、本次左腕回程FAIL、D15 OPEN/DEFERRED及deployable=false不变。
 
 ### 维护精度/停止分类与 H2 新 Orin 冻结（2026-09-30，纯软件门通过）

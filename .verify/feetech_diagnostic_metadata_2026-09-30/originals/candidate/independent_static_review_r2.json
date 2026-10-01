@@ -1,0 +1,121 @@
+{
+  "schema": "B0_DIAGNOSTIC_METADATA_STATIC_REVIEW_V2",
+  "status": "PASS_STATIC_READY_FOR_NATIVE_QA",
+  "root_plan_decision": "允许B0此最小范围进入独立Orin同源软件QA；尚未动态验收，不签硬件GO。",
+  "main_base_HEAD": "d5ac7aa7acaa11bef1d318e762d17a4443718120",
+  "scope": "仅registers/error/bus/feetech_poke四源；Phase18/1Byte、CW_Dead_Zone26/1Byte、CCW_Dead_Zone27/1Byte，EEPROM分类、保留unsigned原字节，不解释现场固件或速度。",
+  "post_fmt_binding": {
+    "sha256": "0c1a1298d88acfc82c0379a472869b3d5da6c19d19a907d3b3216f9b6af4f231",
+    "bytes": 971
+  },
+  "candidate_manifest_r2": {
+    "sha256": "ada1d720ba2fe323f7811f2910fc2cf396fb3d7115378e6b9b1973d8010e68dd",
+    "bytes": 5481
+  },
+  "current_sources": [
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/registers.rs",
+      "sha256": "b7d40b8ae3557632c6996fbbc52a76c4e5dc508d8cc217abc28a39a4c13bbb36",
+      "bytes": 12888
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/error.rs",
+      "sha256": "d3d4c8c005d712f124755ce8c3530ff93b1302855f07b9ec915e04c887a276c5",
+      "bytes": 14398
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/src/bus.rs",
+      "sha256": "267aac059e9b258bf108f1e3d0004e0fa8668f7b86ec420fe3503f470b18440d",
+      "bytes": 44043
+    },
+    {
+      "relative_path": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+      "sha256": "00f87e857e2ac6070de67ba615f194383b8e01b0ffc38c96ce930cebf9fe0513",
+      "bytes": 11866
+    }
+  ],
+  "guards": {
+    "shared_policy": "仅三诊断名，强类型DiagnosticRegisterWriteForbidden；不是通用可写性校验，也不依赖现场Lock。",
+    "named_write_APIs": [
+      "write",
+      "sync_write",
+      "sync_write_by_id",
+      "sync_write_by_id_into"
+    ],
+    "placement": "四入口首条，在查表/电机/编码/buffer/租约/发送前拒；私有lease.write与纯protocol组包不是第五个按reg名写入口。",
+    "error": "RobotError::InvalidParameter静态信息；comm_kind None，不伪装通信故障。",
+    "CLI": "纯参数预检仅action=write且三诊断名；缺失/非法/溢出value仍拒，位于open/connect/PING/ModelNumber前；非诊断unknown或坏参数继续原分发。",
+    "old_CLI_functions": "do_read/do_write与HEAD逐字相同；原read/ping分发和其他写流程不弱化。"
+  },
+  "new_tests": {
+    "methods": 18,
+    "status": "NOT_RUN",
+    "names": {
+      "crates/robot-adapters/feetech/src/registers.rs": [
+        "diagnostic_metadata_is_raw_one_byte_eeprom",
+        "diagnostic_guard_does_not_reclassify_existing_or_unknown_names"
+      ],
+      "crates/robot-adapters/feetech/src/error.rs": [
+        "diagnostic_write_denial_is_a_parameter_error_without_communication_kind"
+      ],
+      "crates/robot-adapters/feetech/src/bus.rs": [
+        "diagnostic_single_write_is_rejected_before_io_or_lease",
+        "diagnostic_sync_write_is_rejected_before_io_or_lease",
+        "diagnostic_sync_write_by_id_is_rejected_before_io_or_lease",
+        "diagnostic_preallocated_write_is_rejected_before_io_or_lease",
+        "diagnostic_denial_precedes_empty_batch_invalid_motor_value_and_buffer_checks",
+        "existing_write_still_reaches_the_installed_lease_service",
+        "unknown_register_writes_keep_the_original_lookup_error",
+        "diagnostic_single_read_preserves_raw_byte_and_exact_request",
+        "diagnostic_sync_read_preserves_raw_bytes_and_exact_request",
+        "diagnostic_sync_read_by_id_preserves_raw_bytes_and_exact_request"
+      ],
+      "crates/robot-adapters/feetech/examples/feetech_poke.rs": [
+        "diagnostic_write_preflight_denies_even_missing_or_invalid_values",
+        "existing_write_preflight_keeps_supported_arguments",
+        "existing_missing_invalid_and_unknown_arguments_remain_for_original_dispatch",
+        "original_do_write_still_rejects_bad_arguments_without_mock_io",
+        "read_and_ping_preflight_preserve_existing_dispatch"
+      ]
+    },
+    "oracles": [
+      "4×3写名/API组合typed拒绝、0TX/0lease；empty/非法motor/value/buffer优先拒",
+      "preallocated拒绝保持原buffer；既有Goal_Position到达真实mock lease服务的正控",
+      "未知reg仍原查表错误，错误转换非Comm",
+      "3×3读API/address/width/golden checksum/高位raw不截断",
+      "CLI三名×4value拒绝，非诊断坏/unknown/缺参预检放行；原do_write自行拒绝且mock零TX"
+    ]
+  },
+  "preserved": {
+    "r1_scope_FAILURE": "CLI曾提前拒普通坏参数，原四源/manifest/diff仍在candidate/history/r1；不把r1记为通过。",
+    "r1_manifest": {
+      "sha256": "3e61d326780e2875a085fa751014b367e33c84419c346fe7ff55c3cc635d4f99",
+      "bytes": 4286
+    },
+    "native_r1_cold_review": {
+      "sha256": "1e6f15fa3115ce027d6718220970b64682c16720dcb8bdfcd364341a5d23d543",
+      "bytes": 7763
+    },
+    "original_r2_before_fmt": "history/pre_fmt_r2四源逐SHA/bytes等冻结r2manifest。"
+  },
+  "followup_required": [
+    "独立Orin实际最新nightly update及590新源/编译器绑定",
+    "fmt→根Clippy→Feetech库/CLI新增及既有回归实际执行和自然wait/reap",
+    "动态证据封包后另审；不能以本静审替代软件运行结果或硬件验证"
+  ],
+  "boundary": {
+    "full_workspace_tests": "NOT_RUN_THIS_REVIEW",
+    "UART": false,
+    "hardware": false,
+    "new_GO": false,
+    "physical_power_cut": "PENDING_UNKNOWN",
+    "right_H2": "OVERALL_FAIL_UNCHANGED",
+    "left_wrist_return": "FAIL_UNCHANGED",
+    "D15": "OPEN_DEFERRED",
+    "deployable": false,
+    "Phase_firmware_contract": "UNVERIFIED",
+    "base_active_hardware_motion": "NOT_RUN",
+    "S0_S1_integration": "NOT_IMPLEMENTED_BY_B0"
+  },
+  "blockers": []
+}

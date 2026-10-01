@@ -1,0 +1,246 @@
+{
+  "schema": "XLEROBOT_BASE_B1_MINIMAL_CODE_PLAN_V1",
+  "status": "CODE_PLAN_ONLY_ROOT_DECISIONS_PENDING_NOT_SPEC_APPROVED_NOT_IMPLEMENTED",
+  "base_head": "d5ac7aa7acaa11bef1d318e762d17a4443718120",
+  "prior_review": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/xlerobot_base_runtime_next_plan_review.json",
+    "sha256": "a10c5d7a2e6a73711aa1ee3d927ecacb1376c412e8442e73ae1c8ab47b17ffce",
+    "bytes": 21895,
+    "reuse": "沿用其B1范围及B2共USB混合role冲突；不复制历史/不修改原报告。"
+  },
+  "proposed_scope": "仅底盘三轮front8/left7/right9的SI轮角速度路径；右臂停止，bus2只有一个SerialRT transport owner。先纯软件fake验收，固件合同未知时生产enable与Goal_Velocity写固定拒绝。不是9电机混合控制、cmd_vel流接入、odom或生产部署。",
+  "terminology_corrections": [
+    {
+      "ref": "frame:22",
+      "fact": "FrameHeader仅封装schema/source/stamp/seq/offset等，无mode；控制mode在joint:14/120的JointCommand body。既有FB Velocity=1、POD ControlModeRepr Velocity=2，必须显式映射，不能按数值cast。"
+    },
+    {
+      "ref": "s1_action:195 / pod:115,172",
+      "fact": "在已检索crates和schema中无生产类型CommandPayload；实际是JointCommandBody(Vec<u8>)、JointCommandBuf和借用JointCommandView。新BaseVelocity请求payload是提议新类型，不得冒称已有。"
+    }
+  ],
+  "current_code_gaps": [
+    {
+      "ref": "s0_ipc:923,1015",
+      "fact": "poll_command只有layout拒绝；parse把所有target写positions，截断至MAX_JOINTS且未做finite/f32溢出校验，on_timeout不进入POD。新增速度分支需拒绝而非静默截断。"
+    },
+    {
+      "ref": "s0_tick:484 / s0_loop:296",
+      "fact": "SerialTick.periodic把ActiveForward/ReadyHold/HoldCurrent/ZeroCommand都交同一command给adapter。loop已有唯一owner且借用POD；不能加第二UART进程。"
+    },
+    {
+      "ref": "s0_ipc:646,724,962 / s0_daemon:1644",
+      "fact": "heartbeat共享last_hb_ns存在，初值now，接收时存本地now；生产guards固定Position/CtrlLostHold。轮速需明确seen/producer freshness及速度profile初始化，不能仅把原hint当已验证。"
+    },
+    {
+      "ref": "s1_coord:453,1080,1093,2041 / s1_action:418",
+      "fact": "Idle/Degraded发送Position anchor；Continue(None)不发命令，Completed/取消终态不发新命令。新轮速profile必须有独立零输出，不继续旧非零轮速或使用位置anchor。"
+    },
+    {
+      "ref": "adapter:575,612,640",
+      "fact": "非Position write_command现在Ok/noop；set_mode写全配置电机Operating_Mode；enable(true)对全配置电机位置follow-current。三个行为均不能复用为轮速闭环。"
+    },
+    {
+      "ref": "adapter:495,697 / s0_runtime:1353 / policy:44",
+      "fact": "快速安全停是Torque0广播且既有确认只读torque mask；CmdDeadlineExpired已走disable/stop/revoke。ReadyHold冻结注释是不发goal，ZeroCommand注释为Stop。不得用新增普通GoalV0拖延急停，也不得把torque确认改称物理速度归零。"
+    }
+  ],
+  "ordered_implementation": [
+    {
+      "candidate": "B1-SW1（推荐下一小件，纯软件且保持生产门关闭）",
+      "changes": [
+        {
+          "where": "新增robot-s0内部wheel_command.rs；s0_ipc:923/1015调用点",
+          "function": "WheelCommandContract::validate / decode_wheel_command（提议名）",
+          "change": "显式轮layout/[8,7,9]/Velocity/恰好3个rad/s target；逐项finite及f32可表示、source/seq/stamp/deadline一致。非法不更新slot或accepted freshness。先对base固定on_timeout=Zero，拒绝其他值，避免立刻扩POD/全仓codec；若root选择允许Hold/Stop，再另做typed超时字段。旧Position分支保持原合同。"
+        },
+        {
+          "where": "新增robot-s0内部wheel_output.rs；s0_tick:484，s0_loop:338",
+          "function": "select_wheel_output（提议纯函数）",
+          "change": "固定数组、借用/Copy输出决策，输入policy/命令/RobotClock时刻/已见且新鲜HB/固件信任事实。只有ActiveForward且全部门通过才Forward；失效不会再传原非零目标。ReadyHold保冻结不发goal；HoldCurrent/ZeroCommand在速度profile的解释等待root决定，不默改arm语义。StopTorque/Disabled仍由既有安全链负责。期限溢出、未来stamp、未知policy/合同均禁止非零。"
+        },
+        {
+          "where": "adapter:575/640和新wheel_firmware_contract.rs",
+          "function": "WheelFirmwareRequirement / ObservedWheelFirmware / ValidatedWheelFirmwareContract（提议类型）",
+          "change": "private验证构造，Unverified默认只允许独立Torque0及raw诊断，禁止enable、GoalV0和非零GoalV写，禁止用verified=true配置或测试token进入live。先实现闭门分支及mock接口；未知单位不伪造SI速度0。实际Phase解释/换算只有root批准完整合同后才加入。"
+        }
+      ],
+      "acceptance": "实际validator/selector调用点的fake测试，旧arm回归；此小件仍不宣称S1端到端或Goal_Velocity生产实现完成。"
+    },
+    {
+      "candidate": "B1-SW2（root决定新请求合同后，完成S1及S0软件闭环）",
+      "changes": [
+        {
+          "where": "s1_action:153、rr_server/handler.rs kind映射、robot-rpc/proto/robot_control.proto、action_request.fbs及schema registry",
+          "change": "提议BaseVelocity kind及具名SI(vx_m_s,vy_m_s,wz_rad_s)+duration payload，复用InvokeTask auth/idempotency/cancel/RR账本；root分配新kind/schema编号，append兼容。不得借Scripted.positions传速度。"
+        },
+        {
+          "where": "新增action_backend/base_velocity.rs；s1_coord:1349/2041；s1_daemon:420/522",
+          "change": "新profile显式r/L/max_wheel_rad_s，无默认几何；同源阶段A数学在S1生成8/7/9轮rad/s，build_joint_command Velocity+Zero。新feature/profile不默认启动。Idle/Degraded/失败/取消/完成的base分支零速，position原行为不变。普通完成和取消先Continue(Some(zero))，下一成功publish周期才terminal；错误/publisher失效由S0期限兜底，不能把terminal事件称硬件停机。"
+        },
+        {
+          "where": "s0_daemon:1644/2132，s0_ipc:962，s0_loop构造期",
+          "change": "base profile guards显式Velocity/CtrlLostZero/auto_enable=false；沿已有共享HB在构造期安装轮速所需seen/accepted producer freshness镜像，hot path不Arc clone/drop、不alloc。旧frame/command topics保持当前成对路径，cmd_vel不在本小件接入。"
+        }
+      ],
+      "acceptance": "真S1 backend→实际FB/sample→实际IPC parser/slot→SerialTick输出决策→mock adapter；终态/缺HB/期限/撤权全覆盖。固件未验证仍0enable和0GoalV WRITE。"
+    },
+    {
+      "candidate": "B1-SW3（root批准固件解释及停止合同后，仅软件wire验收）",
+      "changes": [
+        {
+          "where": "factory_ctx:77 / factory:44（拟独立wheel factory），adapter:575/612/640，convert.rs",
+          "change": "显式wheel role/固件要求传入factory；同一bus owner连接后读取Model/Mode/Phase并绑定本连接的观察与批准要求。单位/零速/范围未匹配不生成Validated token。不调用原set_mode，不写EEPROM；SI到raw仅一处依据批准单位转换、范围及量化，不借位置rad_to_raw，也不给raw→m/s默认。"
+        },
+        {
+          "where": "adapter:575/640/697及S0安全/Confirm调用点",
+          "change": "Verified后mode1初始化GoalV0→读回→Torque1；写速度只固定三轮ID和addr46/sign-magnitude。普通零速/停止失败保sticky并独立Torque0。急停保持首要快速Torque0；是否之后Confirm域读取/清Goal0需root决定，不增加普通动作前置阻塞。轮速度SI read_state只有已核单位才发布，Goal/Present/Torque停止诊断与既有torque确认分开。"
+        }
+      ],
+      "acceptance": "通过明确标为模拟固件合同的fake UART验证量化/符号/地址/目标ID/停止顺序和故障注入；mock配置不得打开production gate。现场READ、配置启用、enable和动作均另授权。"
+    }
+  ],
+  "output_oracles_for_whole_B1": [
+    "FB Velocity=1→POD Velocity=2；只写velocities且positions不装速度。错layout/ID顺序/个数/NaN/Inf/f32 overflow/未知mode均拒且slot/accepted freshness不变。",
+    "producer stamp未来/过期、旧seq/不相等header与body seq、deadline过期或溢出、未见/旧HB不能发非零。原无HB初值now不构成已见HB。边界now==deadline拒绝。100ms属于冻结cmd_vel流要求；本task候选的精确预算由root明确，不能自行套不同入口。",
+    "ActiveForward唯一可非零；ReadyHold不重放旧goal；HoldCurrent/ZeroCommand不重放旧非零；StopTorque/Disabled走原安全链。mock记录实际指令而非仅policy枚举。",
+    "base Idle/Degraded/取消/正常完成发零；Continue(None)/失败/publisher异常无法无限保旧速度，S0本地期限独立拒绝。terminal只证明任务软件状态，不证明物理停机。",
+    "Unknown Model/Mode/Phase/零含义/单位/连接epoch全为0enable/0GoalV writes；normal Stop/急停Torque0不依赖速度单位，不能以Goal0替代断扭。",
+    "Verified fake才验证Goal0初始化/读回先于Torque1、固定8/7/9、46/2B、bit15符号及唯一单位换算；不得写42/Operating_Mode/Lock/Homing/Phase/EPROM。",
+    "ACK失败发生在写已生效后仍sticky失败，普通stop任一GoalV0失败仍独立Torque0；急停不因zero失败/lease被撤而跳过已有Safety链。读回成功不能覆盖曾失败ACK/卫生门。",
+    "保留arm Position/follow-current/通信故障硬化/Disable/责任回执/RT零alloc及唯一writer测试；三个轮的stop证据不得宣称9或17电机均已确认。"
+  ],
+  "root_decisions_before_implementation": [
+    {
+      "id": "D1",
+      "decision": "是否按B1-SW1先做validator/selector及Unverified关闭门，再审新kind/wire；还是合成一个更大软件候选。此文件不自行授权实现。"
+    },
+    {
+      "id": "D2",
+      "decision": "新BaseVelocity task+duration及编号/兼容合同，或接cmd_vel流。推荐task先行；Twist现无duration，ActionRequest deadline的执行含义须明确，不能从冻结设计推定。"
+    },
+    {
+      "id": "D3",
+      "decision": "速度profile固定on_timeout=Zero并拒Hold/Stop是否认可；ReadyHold不发goal、HoldCurrent速度语义及ControlMode::Stop断扭含义须明确，不改既有Position合同。"
+    },
+    {
+      "id": "D4",
+      "decision": "deadline/HB producer freshness/拒未来和重放的具体预算及terminal先零发布顺序。冻结cmd_vel 100ms不能未经决定套成新task的预算。"
+    },
+    {
+      "id": "D5",
+      "decision": "唯一bus2 owner仅三轮控制，右臂六电机由前置确认断扭且服务停止；本候选安全确认范围仅三轮。若要求九电机全覆盖则需要后续同owner mixed-role/扩展安全合同，不能偷偷扩大layout或双writer。"
+    },
+    {
+      "id": "D6",
+      "decision": "批准Model/Phase raw位解释、0=stop、速度单位、gear/encoder换算、raw范围/量化与强类型factory传入方式；所有未知保持Unverified，不加默认值/伪verified。"
+    },
+    {
+      "id": "D7",
+      "decision": "normal stop零速→断扭与急停首Torque0后可否Confirm域清Goal0/读Goal和Present速度，既有torque StopConfirmed是否保持原语义。推荐保持现有安全优先级与确认语义，新增轮停机诊断独立。"
+    },
+    {
+      "id": "D8",
+      "decision": "冻结/s0/hw/command示例与实际/s1/hw/command对应关系由root明确；本小件保成对实际路径，不新增cmd_vel订阅或让S2直接驱动底盘。"
+    }
+  ],
+  "field_gates_not_done": "Phase/速度单位/零含义现场未读；底盘主动动作NOT_RUN，物理断电PENDING。无正式config安装/服务启动或GO，旧硬件FAIL/H2/D15不由此计划关闭。",
+  "code_inputs": {
+    "frame": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-msg/schemas/frame_header.fbs",
+      "sha256": "1267b556b34af4e8774ac65788d820a0cc4a0f5acfbddee59c99d26820dbb5c7",
+      "bytes": 1645
+    },
+    "joint": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-msg/schemas/joint.fbs",
+      "sha256": "dd121a616b4b27c1db548ce03501f326af377c7228188f3d7a498c287b5fe4e1",
+      "bytes": 4593
+    },
+    "pod": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-core/src/adapter.rs",
+      "sha256": "854f4c8c200c4ec5b535502f7a48389f41319996e35953219dd1739ae3c7e06d",
+      "bytes": 22503
+    },
+    "factory_ctx": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-core/src/factory.rs",
+      "sha256": "be831ae4b94c11c30c0d745a393edff6179bdf2d497bca97f1429fc94751b924",
+      "bytes": 14139
+    },
+    "policy": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-core/src/executor_ctrl.rs",
+      "sha256": "d570d2cf763d29c2bc4a7aec6149be72755cd9ceb971905560790f29638095c9",
+      "bytes": 33948
+    },
+    "s0_ipc": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-s0/src/ipc_thread.rs",
+      "sha256": "6c9388654f84e228adb60078130c3dc531d8128bd4c7128c405557552b68fde5",
+      "bytes": 107898
+    },
+    "s0_loop": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-s0/src/serial_io_thread.rs",
+      "sha256": "4ce09da2b881079f622adc8bdc39217dfd65744a9b7ce700813fd58ed751e703",
+      "bytes": 59079
+    },
+    "s0_tick": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-s0/src/serial_tick.rs",
+      "sha256": "a79a52fe48c297abbe32dd9754d86223667833bd73d4a6054a1984c55c35afaa",
+      "bytes": 24174
+    },
+    "s0_runtime": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-s0/src/ipc_runtime.rs",
+      "sha256": "37837cea1a30f6ba44b1901054987f9766d922bd000f50c601760cf645c4156f",
+      "bytes": 102632
+    },
+    "s0_daemon": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-s0/src/bin/s0_daemon.rs",
+      "sha256": "ba2f8c5a0fb183670b32adc432bc00238332339b23b6f13ff0fbb4283fcb64c7",
+      "bytes": 120325
+    },
+    "s1_action": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-s1/src/action.rs",
+      "sha256": "e3b62b5c71555b565a1e24b2e773c34f63533d3aff7eef3c484c4b2506b692e3",
+      "bytes": 51064
+    },
+    "s1_coord": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-s1/src/coordinator.rs",
+      "sha256": "b8b8fc32e9fddc25262ad2f5226c6cef8308bd33481604a64a4b5cfdd37a6d0a",
+      "bytes": 178807
+    },
+    "s1_daemon": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-s1/src/bin/s1_daemon.rs",
+      "sha256": "612df4881a52ec4946bd2c186cdf53073e70e7ae7e992ad142bb2d627c40287e",
+      "bytes": 58198
+    },
+    "adapter": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/adapter.rs",
+      "sha256": "3e39280b11fb5b42c407ffa22b3838ebda55f0e61d22c855d30e6d90937e4915",
+      "bytes": 66618
+    },
+    "factory": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/factory.rs",
+      "sha256": "59e02d9d9a165416ccb3cf89b92cedb7c854467df4339039364e23fa9c37c2e5",
+      "bytes": 8053
+    },
+    "convert": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/convert.rs",
+      "sha256": "4225a6b94feb85367226f6f5c37ce6d16daa5d55de1240e0ab5d84a4ea5dd6da",
+      "bytes": 4021
+    },
+    "math": {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-kinematics-xlerobot/src/base.rs",
+      "sha256": "8c49aded71bc718ee03487e5ae5fc1a59b6cf1358e099ed9d899f802234e4488",
+      "bytes": 24270
+    },
+    "design": {
+      "path": "/Users/loosqk/repo/rust/robot-system/docs/00_design.md",
+      "sha256": "6136622120bb9bb8fb88b723763e82fed3e0c2e3b764e3caf88d26fcff1ae4e6",
+      "bytes": 85360
+    }
+  },
+  "verification": {
+    "read_only_inspection": true,
+    "cargo_tests_ssh_uart": 0,
+    "source_doc_config_edits": 0,
+    "new_plan_artifact_only": true
+  }
+}

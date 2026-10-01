@@ -1,0 +1,1292 @@
+{
+  "aggregate": "3d8491ee8b82bdaed1182e572bfaac6cbb5a47e6088d4dc91ea40cc8949cbcde",
+  "files": {
+    "b0-diagnostic-orin-r1/candidate/crates/robot-adapters/feetech/examples/feetech_poke.rs": {
+      "bytes": 11866,
+      "executable": false,
+      "mode": 420,
+      "sha256": "00f87e857e2ac6070de67ba615f194383b8e01b0ffc38c96ce930cebf9fe0513"
+    },
+    "b0-diagnostic-orin-r1/candidate/crates/robot-adapters/feetech/src/bus.rs": {
+      "bytes": 44043,
+      "executable": false,
+      "mode": 420,
+      "sha256": "267aac059e9b258bf108f1e3d0004e0fa8668f7b86ec420fe3503f470b18440d"
+    },
+    "b0-diagnostic-orin-r1/candidate/crates/robot-adapters/feetech/src/error.rs": {
+      "bytes": 14398,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d3d4c8c005d712f124755ce8c3530ff93b1302855f07b9ec915e04c887a276c5"
+    },
+    "b0-diagnostic-orin-r1/candidate/crates/robot-adapters/feetech/src/registers.rs": {
+      "bytes": 12888,
+      "executable": false,
+      "mode": 420,
+      "sha256": "b7d40b8ae3557632c6996fbbc52a76c4e5dc508d8cc217abc28a39a4c13bbb36"
+    },
+    "b0-diagnostic-orin-r1/candidate/crates/robot-kinematics-xlerobot/src/base.rs": {
+      "bytes": 24270,
+      "executable": false,
+      "mode": 420,
+      "sha256": "8c49aded71bc718ee03487e5ae5fc1a59b6cf1358e099ed9d899f802234e4488"
+    },
+    "b0-diagnostic-orin-r1/candidate/crates/robot-kinematics-xlerobot/src/lib.rs": {
+      "bytes": 31501,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a919d5f6dc30d51b9a674a28b541025d0503381cde746e6ff52feed58112ebd1"
+    },
+    "b0-diagnostic-orin-r1/cold_review_r2_post_fmt.json": {
+      "bytes": 1799,
+      "executable": false,
+      "mode": 420,
+      "sha256": "79bb9d8668616ffbeac0c37865495bc5cb8692b7c1bd46f041bc08816057f1a7"
+    },
+    "b0-diagnostic-orin-r1/collect_native.py": {
+      "bytes": 13120,
+      "executable": false,
+      "mode": 420,
+      "sha256": "904fd8ead314d16fb33eb7e7ade3c242fb7aab7f87fd35752d9906317a1d53a3"
+    },
+    "b0-diagnostic-orin-r1/diagnostic.py": {
+      "bytes": 1851,
+      "executable": false,
+      "mode": 420,
+      "sha256": "4463de6355826d1f9abb2e6d727df2e490943e89a976a51d2b203cb57da57bf8"
+    },
+    "b0-diagnostic-orin-r1/expected_source.json": {
+      "bytes": 113526,
+      "executable": false,
+      "mode": 420,
+      "sha256": "6b598a575a3e4add6adec97ac1326f75df017a9ac980a2f99e6226196dc786f2"
+    },
+    "b0-diagnostic-orin-r1/expected_tests.json": {
+      "bytes": 1501,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ebe7ffe178339b1b6031ed8f01287f204e48fc6c5954dd5cc7655ec27954e67d"
+    },
+    "b0-diagnostic-orin-r1/failed-r1/result.json": {
+      "bytes": 5092,
+      "executable": false,
+      "mode": 420,
+      "sha256": "77773cb291689f87bf9449f1f61e436677b843c918d3197d19d6f572480b4d1b"
+    },
+    "b0-diagnostic-orin-r1/failed-r1/stderr.log": {
+      "bytes": 2012,
+      "executable": false,
+      "mode": 420,
+      "sha256": "247a300b2af7e370fe6df30a229dfc50a8074297815f534a5f4ef06446bd6d37"
+    },
+    "b0-diagnostic-orin-r1/frozen_inputs.json": {
+      "bytes": 956,
+      "executable": false,
+      "mode": 420,
+      "sha256": "08b908604c8a6fdfb5b90a1cd87f25a34e6284ff94e302ba2707ccee5fe6a029"
+    },
+    "b0-diagnostic-orin-r1/host/checks.owner/child.log": {
+      "bytes": 6605,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3e9549a39ba61ba7940c8f437ba9e582237e0687e04cc29d4528a917db35f5f3"
+    },
+    "b0-diagnostic-orin-r1/host/checks.owner/launch.json": {
+      "bytes": 1056,
+      "executable": false,
+      "mode": 420,
+      "sha256": "876b8a210ad9fb49f73dc918aad5a060b0c368c23c8aa43037f3acfad8aafc6a"
+    },
+    "b0-diagnostic-orin-r1/host/checks.owner/result.json": {
+      "bytes": 1532,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a4154601a8e2e7da6156b078148fe15d233cee3207f43f3ef7096b5b28b2544b"
+    },
+    "b0-diagnostic-orin-r1/host/checks.owner/status.json": {
+      "bytes": 1532,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a4154601a8e2e7da6156b078148fe15d233cee3207f43f3ef7096b5b28b2544b"
+    },
+    "b0-diagnostic-orin-r1/host/collect_failure_source.sh": {
+      "bytes": 701,
+      "executable": false,
+      "mode": 420,
+      "sha256": "088abcaf3b73285335e42811fdad9aa9705344a723303739cda27ec7b55ff620"
+    },
+    "b0-diagnostic-orin-r1/host/collect_native.owner/child.log": {
+      "bytes": 962,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3ee783dc0d71e8048d89a4f1db5726cc8511f4b89a7340c8b24218290345f0af"
+    },
+    "b0-diagnostic-orin-r1/host/collect_native.owner/launch.json": {
+      "bytes": 1056,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a7b92eeeb55470b144a0925af2167c521366686a918a7bd1f41526dab9bfbbcc"
+    },
+    "b0-diagnostic-orin-r1/host/collect_native.owner/result.json": {
+      "bytes": 1537,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ef11cc767d9bd62c7544852c0cb14ca2e8c712c25d438c9cb9e01f606b2a1779"
+    },
+    "b0-diagnostic-orin-r1/host/collect_native.owner/status.json": {
+      "bytes": 1537,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ef11cc767d9bd62c7544852c0cb14ca2e8c712c25d438c9cb9e01f606b2a1779"
+    },
+    "b0-diagnostic-orin-r1/host/collect_native.sh": {
+      "bytes": 504,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e943ed89183495c98f2ecc33a0586c90c16389e1a01fc919ce5bd0b4773c1e72"
+    },
+    "b0-diagnostic-orin-r1/host/download_failure.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r1/host/download_failure.owner/launch.json": {
+      "bytes": 1006,
+      "executable": false,
+      "mode": 420,
+      "sha256": "c768ddec819fd30115767f4ecad515493c88d48cb031e6f4a9a01ef5b10e6019"
+    },
+    "b0-diagnostic-orin-r1/host/download_failure.owner/result.json": {
+      "bytes": 1485,
+      "executable": false,
+      "mode": 420,
+      "sha256": "756aeda50d0e09ed4165b401c7a661c2c504635a4648cc36457ea75e376daf1a"
+    },
+    "b0-diagnostic-orin-r1/host/download_failure.owner/status.json": {
+      "bytes": 1485,
+      "executable": false,
+      "mode": 420,
+      "sha256": "756aeda50d0e09ed4165b401c7a661c2c504635a4648cc36457ea75e376daf1a"
+    },
+    "b0-diagnostic-orin-r1/host/download_native.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r1/host/download_native.owner/launch.json": {
+      "bytes": 1086,
+      "executable": false,
+      "mode": 420,
+      "sha256": "bb8b48970c1589bbe95634860d55177e3f05790b41f7f0c0f5e4e2ad2bf71d1d"
+    },
+    "b0-diagnostic-orin-r1/host/download_native.owner/result.json": {
+      "bytes": 1564,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d9e2fd93fc4c386eb69bebd994d7b477a2e1ab03d01584d543feba10713b41df"
+    },
+    "b0-diagnostic-orin-r1/host/download_native.owner/status.json": {
+      "bytes": 1564,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d9e2fd93fc4c386eb69bebd994d7b477a2e1ab03d01584d543feba10713b41df"
+    },
+    "b0-diagnostic-orin-r1/host/failure_source.owner/child.log": {
+      "bytes": 2807,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ac7af27680da71509717adbf939f769e44b74a5c011f63ea4fad1e5d801c6bd1"
+    },
+    "b0-diagnostic-orin-r1/host/failure_source.owner/launch.json": {
+      "bytes": 1064,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3141e1350ddb8e9908489cc90d31af71486292f36e37d8734bebf344cc436c4b"
+    },
+    "b0-diagnostic-orin-r1/host/failure_source.owner/result.json": {
+      "bytes": 1547,
+      "executable": false,
+      "mode": 420,
+      "sha256": "77dabeede0d448114193d0a92061f5192a9dacad5a58f818b20c379ffd70905c"
+    },
+    "b0-diagnostic-orin-r1/host/failure_source.owner/status.json": {
+      "bytes": 1547,
+      "executable": false,
+      "mode": 420,
+      "sha256": "77dabeede0d448114193d0a92061f5192a9dacad5a58f818b20c379ffd70905c"
+    },
+    "b0-diagnostic-orin-r1/host/launch_checks.sh": {
+      "bytes": 2443,
+      "executable": false,
+      "mode": 420,
+      "sha256": "29ee626d7193df91a9aab68ffd803204bc0ee62b44a670cf6cb8f416b5a0d69c"
+    },
+    "b0-diagnostic-orin-r1/host/prepare_source.owner/child.log": {
+      "bytes": 175,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a1cafebb0c12b881674217c4b6f41e8678857442fa1bd365d365d19046e86603"
+    },
+    "b0-diagnostic-orin-r1/host/prepare_source.owner/launch.json": {
+      "bytes": 1057,
+      "executable": false,
+      "mode": 420,
+      "sha256": "9378c5ae014e0b3e30f9a4c4b5ba3d0435b2c23281e8f64ab3a80dc840ea8386"
+    },
+    "b0-diagnostic-orin-r1/host/prepare_source.owner/result.json": {
+      "bytes": 1539,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3edcf6f206ca29ac9a3e8bd7ec6bd0867531a8c5aeb079f87375adc25f18cbc1"
+    },
+    "b0-diagnostic-orin-r1/host/prepare_source.owner/status.json": {
+      "bytes": 1539,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3edcf6f206ca29ac9a3e8bd7ec6bd0867531a8c5aeb079f87375adc25f18cbc1"
+    },
+    "b0-diagnostic-orin-r1/host/prepare_source.sh": {
+      "bytes": 1201,
+      "executable": false,
+      "mode": 420,
+      "sha256": "9661ddfdb96dc401aca3a9e18acd0e0dac791439443c4c7916e23688a6aabe0c"
+    },
+    "b0-diagnostic-orin-r1/host/seed_cache.owner/child.log": {
+      "bytes": 547,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ddccaa9c01f6114bf7016f11702871ed542faf9a6e01c433881c36931079e6ae"
+    },
+    "b0-diagnostic-orin-r1/host/seed_cache.owner/launch.json": {
+      "bytes": 1053,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3ac3cb3c6aaf4b6cf787114a723c1f2e093f0328362412f0b2aa42f70d44c9d9"
+    },
+    "b0-diagnostic-orin-r1/host/seed_cache.owner/result.json": {
+      "bytes": 1531,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d2be3cec3ccf070618a3ba80ec2ec2b37cd0344a3398b08df1f2522f653073b7"
+    },
+    "b0-diagnostic-orin-r1/host/seed_cache.owner/status.json": {
+      "bytes": 1531,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d2be3cec3ccf070618a3ba80ec2ec2b37cd0344a3398b08df1f2522f653073b7"
+    },
+    "b0-diagnostic-orin-r1/host/seed_cache.sh": {
+      "bytes": 1222,
+      "executable": false,
+      "mode": 420,
+      "sha256": "2de575a5211e01b97c04ad0611df3059d91637b82729970c49f874fcba66b4f4"
+    },
+    "b0-diagnostic-orin-r1/host/ssh_owner.py": {
+      "bytes": 8656,
+      "executable": false,
+      "mode": 420,
+      "sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a"
+    },
+    "b0-diagnostic-orin-r1/host/upload_candidate.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r1/host/upload_candidate.owner/launch.json": {
+      "bytes": 2814,
+      "executable": false,
+      "mode": 420,
+      "sha256": "f89e2c3d93219ca1166491520156413356f4ad8b26533f458350a5944a5aa051"
+    },
+    "b0-diagnostic-orin-r1/host/upload_candidate.owner/result.json": {
+      "bytes": 3293,
+      "executable": false,
+      "mode": 420,
+      "sha256": "65c10a3bc55a9c8b8fb9bfe9fccb1a4ce2c26fe9eb7aa463013778e5a8c2f840"
+    },
+    "b0-diagnostic-orin-r1/host/upload_candidate.owner/status.json": {
+      "bytes": 3293,
+      "executable": false,
+      "mode": 420,
+      "sha256": "65c10a3bc55a9c8b8fb9bfe9fccb1a4ce2c26fe9eb7aa463013778e5a8c2f840"
+    },
+    "b0-diagnostic-orin-r1/host/upload_candidate_command.txt": {
+      "bytes": 2197,
+      "executable": false,
+      "mode": 420,
+      "sha256": "46de39a8d92b5c50fd05ba9528002d6c8ce5f6acab4c7160d374751d9aa4f567"
+    },
+    "b0-diagnostic-orin-r1/host/upload_evidence_helpers.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r1/host/upload_evidence_helpers.owner/launch.json": {
+      "bytes": 1006,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e6ba19d57fdcb19c068df49f6583027c86a033fc5d18e5cfb29090231ec80c5f"
+    },
+    "b0-diagnostic-orin-r1/host/upload_evidence_helpers.owner/result.json": {
+      "bytes": 1491,
+      "executable": false,
+      "mode": 420,
+      "sha256": "644a69926e46432e35ae4ed0420913c47fe84f88fd42d67165e9e04ead7ffa7b"
+    },
+    "b0-diagnostic-orin-r1/host/upload_evidence_helpers.owner/status.json": {
+      "bytes": 1491,
+      "executable": false,
+      "mode": 420,
+      "sha256": "644a69926e46432e35ae4ed0420913c47fe84f88fd42d67165e9e04ead7ffa7b"
+    },
+    "b0-diagnostic-orin-r1/native-evidence.index.json": {
+      "bytes": 229010,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ce24229e88e0f4cd6e4ab77925fd35e3cc240148781f753ac69fe757dcf37407"
+    },
+    "b0-diagnostic-orin-r1/native-evidence.metadata.json": {
+      "bytes": 990,
+      "executable": false,
+      "mode": 420,
+      "sha256": "085ab9d5089df18b20007a07b52f739717d571310a64f0f2dc46d388df354eba"
+    },
+    "b0-diagnostic-orin-r1/native-evidence.tar.gz": {
+      "bytes": 9873999,
+      "executable": false,
+      "mode": 420,
+      "sha256": "754c64f0e4992d9dbb400e61c19c997e8be49d4b7a85057b7d676d43f0ab6865"
+    },
+    "b0-diagnostic-orin-r1/native_archive_verification.json": {
+      "bytes": 658,
+      "executable": false,
+      "mode": 420,
+      "sha256": "9981a20c698f8208833bbb0bff4aa71f73eccd23ee16efa63ee72c6563b7190f"
+    },
+    "b0-diagnostic-orin-r1/post_fmt_binding.json": {
+      "bytes": 971,
+      "executable": false,
+      "mode": 420,
+      "sha256": "0c1a1298d88acfc82c0379a472869b3d5da6c19d19a907d3b3216f9b6af4f231"
+    },
+    "b0-diagnostic-orin-r1/preservation_pins.json": {
+      "bytes": 252980,
+      "executable": false,
+      "mode": 420,
+      "sha256": "0b0369f8fda15f81ca9855c7d47141324882659d90dc0301e15059b940df7eb6"
+    },
+    "b0-diagnostic-orin-r1/root_static_review.json": {
+      "bytes": 1931,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e572ebaf8c58476c4ac8e2d92f8729e4fc9496ff654d1fc8cbfa9d7dfb6dca9d"
+    },
+    "b0-diagnostic-orin-r1/run_checks.py": {
+      "bytes": 14395,
+      "executable": false,
+      "mode": 420,
+      "sha256": "5820a8475cca58aa4b7ac333319e3137b06070ba8a8bf03b1d015048b39c1e8b"
+    },
+    "b0-diagnostic-orin-r1/run_release_v2.diff": {
+      "bytes": 1699,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ed5f1a7276ae84d90358956d76a93caf6a14367ecdcd59fa3d818ece338466e7"
+    },
+    "b0-diagnostic-orin-r1/run_release_v2.original.py": {
+      "bytes": 17585,
+      "executable": false,
+      "mode": 420,
+      "sha256": "dad9bbc9405b8fac4d60d6efe794b36750e6a6f9ce9fdeba3debf7d3e1b9a471"
+    },
+    "b0-diagnostic-orin-r1/run_release_v2.py": {
+      "bytes": 17649,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e96e7a235988fd63507cbe4cc20c2c7ec12ccbb6bd23b086bb687c82353c0f87"
+    },
+    "b0-diagnostic-orin-r1/snapshot_inputs.py": {
+      "bytes": 4488,
+      "executable": false,
+      "mode": 420,
+      "sha256": "1901f4766e2d0dd95b03e5dcc33ee0077e34df21d6cc78c3a76ad69702e520a0"
+    },
+    "b0-diagnostic-orin-r1/source_binding_r2_post_fmt.json": {
+      "bytes": 923,
+      "executable": false,
+      "mode": 420,
+      "sha256": "da74f8b2076bfb5484bceed9c749d1f9a282e52e75bb013e3e16f59cbc7df5a4"
+    },
+    "b0-diagnostic-orin-r1/verify_native_archive.py": {
+      "bytes": 3987,
+      "executable": false,
+      "mode": 420,
+      "sha256": "628798c7ca9841bc508dc23b102b52a4f3edded81bb746d0f4f49f92b5bb3452"
+    },
+    "b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/examples/feetech_poke.rs": {
+      "bytes": 11866,
+      "executable": false,
+      "mode": 420,
+      "sha256": "00f87e857e2ac6070de67ba615f194383b8e01b0ffc38c96ce930cebf9fe0513"
+    },
+    "b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/src/bus.rs": {
+      "bytes": 44043,
+      "executable": false,
+      "mode": 420,
+      "sha256": "267aac059e9b258bf108f1e3d0004e0fa8668f7b86ec420fe3503f470b18440d"
+    },
+    "b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/src/diagnostic.rs": {
+      "bytes": 10235,
+      "executable": false,
+      "mode": 420,
+      "sha256": "f4155b2a4f71aec7489ca724a90cc2865219a9920ba4a51494d2267298335e8c"
+    },
+    "b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/src/error.rs": {
+      "bytes": 14398,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d3d4c8c005d712f124755ce8c3530ff93b1302855f07b9ec915e04c887a276c5"
+    },
+    "b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/src/registers.rs": {
+      "bytes": 12888,
+      "executable": false,
+      "mode": 420,
+      "sha256": "b7d40b8ae3557632c6996fbbc52a76c4e5dc508d8cc217abc28a39a4c13bbb36"
+    },
+    "b0-diagnostic-orin-r2/candidate/crates/robot-kinematics-xlerobot/src/base.rs": {
+      "bytes": 24270,
+      "executable": false,
+      "mode": 420,
+      "sha256": "8c49aded71bc718ee03487e5ae5fc1a59b6cf1358e099ed9d899f802234e4488"
+    },
+    "b0-diagnostic-orin-r2/candidate/crates/robot-kinematics-xlerobot/src/lib.rs": {
+      "bytes": 31501,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a919d5f6dc30d51b9a674a28b541025d0503381cde746e6ff52feed58112ebd1"
+    },
+    "b0-diagnostic-orin-r2/cold_review_r3.json": {
+      "bytes": 822,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d53c9a55a97933305c9a4ea3ee4263278f5634876d8baecac351eca118619df0"
+    },
+    "b0-diagnostic-orin-r2/collect_native.py": {
+      "bytes": 13137,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ca35ae7d7169ec81d0dc8745eab7bcee714eac0734ecdbd3f78cf6c9de5b1d83"
+    },
+    "b0-diagnostic-orin-r2/diagnostic.py": {
+      "bytes": 1851,
+      "executable": false,
+      "mode": 420,
+      "sha256": "af9b211cc94d7cb7a15ddae899633dfb593ea446035417e8479d977268492b37"
+    },
+    "b0-diagnostic-orin-r2/expected_source.json": {
+      "bytes": 113527,
+      "executable": false,
+      "mode": 420,
+      "sha256": "645f09c416f5a0b2100788ea8fba8fece4e100407e94de1d9b9c0d3991825259"
+    },
+    "b0-diagnostic-orin-r2/expected_tests.json": {
+      "bytes": 1501,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ebe7ffe178339b1b6031ed8f01287f204e48fc6c5954dd5cc7655ec27954e67d"
+    },
+    "b0-diagnostic-orin-r2/failed-r2/result.json": {
+      "bytes": 5092,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3358f7642cd94a3a9418071b16f04d5062978434d2ca78df5212f1ed0b61c9a8"
+    },
+    "b0-diagnostic-orin-r2/failed-r2/stderr.log": {
+      "bytes": 3986,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a74b91a780f266c1ca0795ae4ee1085cc85ffb3b393fec232a1875f436dd931a"
+    },
+    "b0-diagnostic-orin-r2/frozen_inputs.json": {
+      "bytes": 1117,
+      "executable": false,
+      "mode": 420,
+      "sha256": "297200ba469f7c3cf9c0398d9d72af2ee34fbd5233da0f7b2e7a149fdd52ca2a"
+    },
+    "b0-diagnostic-orin-r2/host/checks.owner/child.log": {
+      "bytes": 6623,
+      "executable": false,
+      "mode": 420,
+      "sha256": "bdcc0098fe86baa0240c6f293eb50e764d006adbe6592eb6377cfabab8ea0a53"
+    },
+    "b0-diagnostic-orin-r2/host/checks.owner/launch.json": {
+      "bytes": 1056,
+      "executable": false,
+      "mode": 420,
+      "sha256": "2ae876a7bf9bd549df2786c899d99e99d8be4118e151f57521eaf121b6a88818"
+    },
+    "b0-diagnostic-orin-r2/host/checks.owner/result.json": {
+      "bytes": 1532,
+      "executable": false,
+      "mode": 420,
+      "sha256": "8724a2f7225415a214cea53d9eb8dd031b7f2183c25e919d4c6bd94486040144"
+    },
+    "b0-diagnostic-orin-r2/host/checks.owner/status.json": {
+      "bytes": 1532,
+      "executable": false,
+      "mode": 420,
+      "sha256": "8724a2f7225415a214cea53d9eb8dd031b7f2183c25e919d4c6bd94486040144"
+    },
+    "b0-diagnostic-orin-r2/host/collect_failure_source.sh": {
+      "bytes": 701,
+      "executable": false,
+      "mode": 420,
+      "sha256": "539c6775d748c10bbba61772ea22892f590a95dc09b884e107438ca7fae2c22d"
+    },
+    "b0-diagnostic-orin-r2/host/collect_native.owner/child.log": {
+      "bytes": 962,
+      "executable": false,
+      "mode": 420,
+      "sha256": "899d909d12479d87051efa9ab7f5750731fb335409a939468c3bfa1949513e1c"
+    },
+    "b0-diagnostic-orin-r2/host/collect_native.owner/launch.json": {
+      "bytes": 1063,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3b8ae5d75c38039b265c0888a8ab0f6fc65e8b0fa739e6a7b37d642a6817203d"
+    },
+    "b0-diagnostic-orin-r2/host/collect_native.owner/result.json": {
+      "bytes": 1544,
+      "executable": false,
+      "mode": 420,
+      "sha256": "0e13c60683ffad5ccea5750add8e724446cb95e91936d06cea02ca5a0480d2f7"
+    },
+    "b0-diagnostic-orin-r2/host/collect_native.owner/status.json": {
+      "bytes": 1544,
+      "executable": false,
+      "mode": 420,
+      "sha256": "0e13c60683ffad5ccea5750add8e724446cb95e91936d06cea02ca5a0480d2f7"
+    },
+    "b0-diagnostic-orin-r2/host/download_failure.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r2/host/download_failure.owner/launch.json": {
+      "bytes": 1006,
+      "executable": false,
+      "mode": 420,
+      "sha256": "18ec6b84b09619a91d16cba7216f9a542feba999aef02366f834708f23d09dfe"
+    },
+    "b0-diagnostic-orin-r2/host/download_failure.owner/result.json": {
+      "bytes": 1485,
+      "executable": false,
+      "mode": 420,
+      "sha256": "dc351813509cfbb48ae333925a0dd2efaf27f8f4afc947f353b6e03f1aaf7964"
+    },
+    "b0-diagnostic-orin-r2/host/download_failure.owner/status.json": {
+      "bytes": 1485,
+      "executable": false,
+      "mode": 420,
+      "sha256": "dc351813509cfbb48ae333925a0dd2efaf27f8f4afc947f353b6e03f1aaf7964"
+    },
+    "b0-diagnostic-orin-r2/host/download_native.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r2/host/download_native.owner/launch.json": {
+      "bytes": 1155,
+      "executable": false,
+      "mode": 420,
+      "sha256": "1eeb57a4e198e313e4ba02f13d74a82d0a713add7f1e45213f2478986c20d4b6"
+    },
+    "b0-diagnostic-orin-r2/host/download_native.owner/result.json": {
+      "bytes": 1633,
+      "executable": false,
+      "mode": 420,
+      "sha256": "58efe54cab16e3e5a246fb8e203dcda43c7f647dd992959b1c78062f94159273"
+    },
+    "b0-diagnostic-orin-r2/host/download_native.owner/status.json": {
+      "bytes": 1633,
+      "executable": false,
+      "mode": 420,
+      "sha256": "58efe54cab16e3e5a246fb8e203dcda43c7f647dd992959b1c78062f94159273"
+    },
+    "b0-diagnostic-orin-r2/host/failure_source.owner/child.log": {
+      "bytes": 2807,
+      "executable": false,
+      "mode": 420,
+      "sha256": "7771f8784f4d0794eebcf4331cc6f3977b7e8b20c45fac99bff411cb43c1c801"
+    },
+    "b0-diagnostic-orin-r2/host/failure_source.owner/launch.json": {
+      "bytes": 1064,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d17d24a6065b9400adf378eb4393384c9da7cdc2151f77f8fe46fad0ae6293c8"
+    },
+    "b0-diagnostic-orin-r2/host/failure_source.owner/result.json": {
+      "bytes": 1547,
+      "executable": false,
+      "mode": 420,
+      "sha256": "8c73bd08a845a409749ffece0fe81ef31d35e68ce27a2cae2bb67f385663c8d6"
+    },
+    "b0-diagnostic-orin-r2/host/failure_source.owner/status.json": {
+      "bytes": 1547,
+      "executable": false,
+      "mode": 420,
+      "sha256": "8c73bd08a845a409749ffece0fe81ef31d35e68ce27a2cae2bb67f385663c8d6"
+    },
+    "b0-diagnostic-orin-r2/host/launch_checks.sh": {
+      "bytes": 2605,
+      "executable": false,
+      "mode": 420,
+      "sha256": "751720bdb94c84b48c1720936af263ea14fd0745ba09e06153c10a1b0d245827"
+    },
+    "b0-diagnostic-orin-r2/host/launch_collect_native.sh": {
+      "bytes": 647,
+      "executable": false,
+      "mode": 420,
+      "sha256": "c72db15b9d632d09fca93edf822cd2841beca995ec5320a9d0d2023e28a667a1"
+    },
+    "b0-diagnostic-orin-r2/host/launch_snapshot_inputs.sh": {
+      "bytes": 492,
+      "executable": false,
+      "mode": 420,
+      "sha256": "2e5b65be1d041c44e80b8c11d7d3d2df403aa6ce36f43626c45d40e0a94ea815"
+    },
+    "b0-diagnostic-orin-r2/host/prepare_source.owner/child.log": {
+      "bytes": 175,
+      "executable": false,
+      "mode": 420,
+      "sha256": "dc9ec3968530b0766e4b8eee4a010f63ab04780d0670a2215e5e9393d29e6697"
+    },
+    "b0-diagnostic-orin-r2/host/prepare_source.owner/launch.json": {
+      "bytes": 1057,
+      "executable": false,
+      "mode": 420,
+      "sha256": "68d2b1d27907e42d5d99dbd21273462c2ff47d230c171231bb18fc4ff367c2df"
+    },
+    "b0-diagnostic-orin-r2/host/prepare_source.owner/result.json": {
+      "bytes": 1538,
+      "executable": false,
+      "mode": 420,
+      "sha256": "6176e8a7a0cf44ef9ad1e3e55b801a48d34cc383945bf6b446dbde6e2039b587"
+    },
+    "b0-diagnostic-orin-r2/host/prepare_source.owner/status.json": {
+      "bytes": 1538,
+      "executable": false,
+      "mode": 420,
+      "sha256": "6176e8a7a0cf44ef9ad1e3e55b801a48d34cc383945bf6b446dbde6e2039b587"
+    },
+    "b0-diagnostic-orin-r2/host/prepare_source.sh": {
+      "bytes": 1201,
+      "executable": false,
+      "mode": 420,
+      "sha256": "4593fdb1411276bd6c7a44ee92f0fd258f20c51c4587b040897cf323cdf9de48"
+    },
+    "b0-diagnostic-orin-r2/host/seed_cache.owner/child.log": {
+      "bytes": 547,
+      "executable": false,
+      "mode": 420,
+      "sha256": "62e79aade91fa30dfaf54ca6876f90eabc64e12be8350ef42b5e172b342e55ad"
+    },
+    "b0-diagnostic-orin-r2/host/seed_cache.owner/launch.json": {
+      "bytes": 1053,
+      "executable": false,
+      "mode": 420,
+      "sha256": "629dff78ae963bf0d089a890ec9d0ce01cd7844f4139b72becd30a002d31b8e6"
+    },
+    "b0-diagnostic-orin-r2/host/seed_cache.owner/result.json": {
+      "bytes": 1531,
+      "executable": false,
+      "mode": 420,
+      "sha256": "acb004e5c6531733cb8087030a875ae1fea49bb1a7b068d42e9ee3e48fce7530"
+    },
+    "b0-diagnostic-orin-r2/host/seed_cache.owner/status.json": {
+      "bytes": 1531,
+      "executable": false,
+      "mode": 420,
+      "sha256": "acb004e5c6531733cb8087030a875ae1fea49bb1a7b068d42e9ee3e48fce7530"
+    },
+    "b0-diagnostic-orin-r2/host/seed_cache.sh": {
+      "bytes": 1222,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ac13d7ff2215c14e528d231c3308b30eba308d7cc4c74a630ade41c6818ac1c9"
+    },
+    "b0-diagnostic-orin-r2/host/ssh_owner.py": {
+      "bytes": 8656,
+      "executable": false,
+      "mode": 420,
+      "sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a"
+    },
+    "b0-diagnostic-orin-r2/host/upload_candidate.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r2/host/upload_candidate.owner/launch.json": {
+      "bytes": 2977,
+      "executable": false,
+      "mode": 420,
+      "sha256": "697b6cc64a3680168f22320cf3199e338f79005bfa690df1ee787aea0b9a859f"
+    },
+    "b0-diagnostic-orin-r2/host/upload_candidate.owner/result.json": {
+      "bytes": 3456,
+      "executable": false,
+      "mode": 420,
+      "sha256": "52e447baadb0cf683319775ce0fb76c670149e218e212779442ddb89229d6416"
+    },
+    "b0-diagnostic-orin-r2/host/upload_candidate.owner/status.json": {
+      "bytes": 3456,
+      "executable": false,
+      "mode": 420,
+      "sha256": "52e447baadb0cf683319775ce0fb76c670149e218e212779442ddb89229d6416"
+    },
+    "b0-diagnostic-orin-r2/host/upload_candidate_command.txt": {
+      "bytes": 2353,
+      "executable": false,
+      "mode": 420,
+      "sha256": "c660ac37b595f000ad2dace66351329d0b0e8a8ca5392dfcb45f434eae3b4863"
+    },
+    "b0-diagnostic-orin-r2/host/upload_evidence_helpers.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r2/host/upload_evidence_helpers.owner/launch.json": {
+      "bytes": 1006,
+      "executable": false,
+      "mode": 420,
+      "sha256": "0e19612f26769447e3db87f70c8fa5237dfe4543b3130de64053f5002940a97c"
+    },
+    "b0-diagnostic-orin-r2/host/upload_evidence_helpers.owner/result.json": {
+      "bytes": 1491,
+      "executable": false,
+      "mode": 420,
+      "sha256": "07f3f54437909eda3a5f2e1525155e56527af387fc3760dac917d578737d0e11"
+    },
+    "b0-diagnostic-orin-r2/host/upload_evidence_helpers.owner/status.json": {
+      "bytes": 1491,
+      "executable": false,
+      "mode": 420,
+      "sha256": "07f3f54437909eda3a5f2e1525155e56527af387fc3760dac917d578737d0e11"
+    },
+    "b0-diagnostic-orin-r2/native-evidence.index.json": {
+      "bytes": 229267,
+      "executable": false,
+      "mode": 420,
+      "sha256": "337016b6daf6f756fc425e6b8157457f57bdb472d573dcfe2eb6d9ebe7f90c39"
+    },
+    "b0-diagnostic-orin-r2/native-evidence.metadata.json": {
+      "bytes": 990,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3daa89586ccf51233bae1d9bcc94af0bd9549c3cd02fb20e61c04f302db0d08c"
+    },
+    "b0-diagnostic-orin-r2/native-evidence.tar.gz": {
+      "bytes": 9903047,
+      "executable": false,
+      "mode": 420,
+      "sha256": "3fce4317fd6ab2feb9cefd47bfec7783d645e1b503e322ec683c6915150a96e1"
+    },
+    "b0-diagnostic-orin-r2/native_archive_verification.json": {
+      "bytes": 658,
+      "executable": false,
+      "mode": 420,
+      "sha256": "6e3f70eaa174deca51995c3364313a26dfc484c4812116934dd4aeb3ca91bd89"
+    },
+    "b0-diagnostic-orin-r2/post_fmt_binding.json": {
+      "bytes": 1886,
+      "executable": false,
+      "mode": 420,
+      "sha256": "faefb7bcd6b3159116ffa6c6b58fcd92b1896c905bc71466c0b18f0df21da380"
+    },
+    "b0-diagnostic-orin-r2/preservation_pins.json": {
+      "bytes": 379262,
+      "executable": false,
+      "mode": 420,
+      "sha256": "6182957d1931fe3154447492e92c615f83b75c1665ff427d8bd12d8393109d67"
+    },
+    "b0-diagnostic-orin-r2/run_checks.py": {
+      "bytes": 14462,
+      "executable": false,
+      "mode": 420,
+      "sha256": "de8493354c87c994082308b6595fd6016d32f4e733d855575a7805e875ce9c68"
+    },
+    "b0-diagnostic-orin-r2/run_release_v2.diff": {
+      "bytes": 1699,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ed5f1a7276ae84d90358956d76a93caf6a14367ecdcd59fa3d818ece338466e7"
+    },
+    "b0-diagnostic-orin-r2/run_release_v2.original.py": {
+      "bytes": 17585,
+      "executable": false,
+      "mode": 420,
+      "sha256": "dad9bbc9405b8fac4d60d6efe794b36750e6a6f9ce9fdeba3debf7d3e1b9a471"
+    },
+    "b0-diagnostic-orin-r2/run_release_v2.py": {
+      "bytes": 17649,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e96e7a235988fd63507cbe4cc20c2c7ec12ccbb6bd23b086bb687c82353c0f87"
+    },
+    "b0-diagnostic-orin-r2/snapshot_inputs.py": {
+      "bytes": 4540,
+      "executable": false,
+      "mode": 420,
+      "sha256": "01e52e59f3791b7f9a742766b46f8122f92253aff7a38b747d22097f9d5f802a"
+    },
+    "b0-diagnostic-orin-r2/verify_native_archive.py": {
+      "bytes": 3987,
+      "executable": false,
+      "mode": 420,
+      "sha256": "f581a7aa5fecf91edcf089a0b3c0dd604f88da070534661b4cb9c2dba4a10eac"
+    },
+    "b0-diagnostic-orin-r3/build_summary.py": {
+      "bytes": 8594,
+      "executable": false,
+      "mode": 420,
+      "sha256": "55bc6ba632473843415b53e380ca9040ea28f15837c76bf6e38aa557c3e818e9"
+    },
+    "b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/examples/feetech_poke.rs": {
+      "bytes": 11869,
+      "executable": false,
+      "mode": 420,
+      "sha256": "25fa97a762e3815febff53d97ff71ca2131a0b3fd83241be71ca5f8b3a8b2c5d"
+    },
+    "b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/src/bus.rs": {
+      "bytes": 44122,
+      "executable": false,
+      "mode": 420,
+      "sha256": "211ce25a1a819e2c3ecec293a830c7c0561ffb35b6d564d64e548da02dd3f659"
+    },
+    "b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/src/diagnostic.rs": {
+      "bytes": 10235,
+      "executable": false,
+      "mode": 420,
+      "sha256": "f4155b2a4f71aec7489ca724a90cc2865219a9920ba4a51494d2267298335e8c"
+    },
+    "b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/src/error.rs": {
+      "bytes": 14398,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d3d4c8c005d712f124755ce8c3530ff93b1302855f07b9ec915e04c887a276c5"
+    },
+    "b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/src/registers.rs": {
+      "bytes": 12888,
+      "executable": false,
+      "mode": 420,
+      "sha256": "b7d40b8ae3557632c6996fbbc52a76c4e5dc508d8cc217abc28a39a4c13bbb36"
+    },
+    "b0-diagnostic-orin-r3/candidate/crates/robot-kinematics-xlerobot/src/base.rs": {
+      "bytes": 24270,
+      "executable": false,
+      "mode": 420,
+      "sha256": "8c49aded71bc718ee03487e5ae5fc1a59b6cf1358e099ed9d899f802234e4488"
+    },
+    "b0-diagnostic-orin-r3/candidate/crates/robot-kinematics-xlerobot/src/lib.rs": {
+      "bytes": 31501,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a919d5f6dc30d51b9a674a28b541025d0503381cde746e6ff52feed58112ebd1"
+    },
+    "b0-diagnostic-orin-r3/cold_review_r4.json": {
+      "bytes": 444,
+      "executable": false,
+      "mode": 420,
+      "sha256": "7d85124bbd65620c0c6a428396bf421a898bbe2c5f196ded4afe9be629e0d72b"
+    },
+    "b0-diagnostic-orin-r3/collect_native.py": {
+      "bytes": 13119,
+      "executable": false,
+      "mode": 420,
+      "sha256": "49f9be9376767730ec1b1ca28a1ebc5ac9739ce0adf461e46749c0a08474ec03"
+    },
+    "b0-diagnostic-orin-r3/expected_source.json": {
+      "bytes": 113527,
+      "executable": false,
+      "mode": 420,
+      "sha256": "03d56d03f871cfa92739803e89598da591dea07f9e5fa21c24a1d04fcfc69216"
+    },
+    "b0-diagnostic-orin-r3/expected_tests.json": {
+      "bytes": 1501,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ebe7ffe178339b1b6031ed8f01287f204e48fc6c5954dd5cc7655ec27954e67d"
+    },
+    "b0-diagnostic-orin-r3/frozen_inputs.json": {
+      "bytes": 1117,
+      "executable": false,
+      "mode": 420,
+      "sha256": "6f402c0d13e92af1b55dedc91b0c704e19c4c0f95cc530ed39c1675ca51a57c3"
+    },
+    "b0-diagnostic-orin-r3/history/build_summary_initial.py": {
+      "bytes": 8461,
+      "executable": false,
+      "mode": 420,
+      "sha256": "33d3a1dc352bff2a116eb8fe799fabf7c0b92bead2ae0088aecc329fe9592f20"
+    },
+    "b0-diagnostic-orin-r3/history/build_summary_initial_error.txt": {
+      "bytes": 145,
+      "executable": false,
+      "mode": 420,
+      "sha256": "80fdedd624f23da5e2b6a85844690fbd9956d442b2e5e9b229e101bcc154fd57"
+    },
+    "b0-diagnostic-orin-r3/history/build_summary_zero_error_assumption.py": {
+      "bytes": 8420,
+      "executable": false,
+      "mode": 420,
+      "sha256": "134041c494af2afcc9fedbcaf7bfef0aea1501d519c60bd28ab5883fdcb9150a"
+    },
+    "b0-diagnostic-orin-r3/history/build_summary_zero_error_assumption_error.txt": {
+      "bytes": 170,
+      "executable": false,
+      "mode": 420,
+      "sha256": "fb13107de9faad1f609a7fc31343c13016202a42706c8723c98c1729f5e3eeae"
+    },
+    "b0-diagnostic-orin-r3/host/checks.owner/child.log": {
+      "bytes": 27046,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ce8249c425251954f15036b392d163082117d6c813730e2f856230dac30c5a29"
+    },
+    "b0-diagnostic-orin-r3/host/checks.owner/launch.json": {
+      "bytes": 1056,
+      "executable": false,
+      "mode": 420,
+      "sha256": "4e1daa48623739d88cba7ac32979c935ab1c335bdbbdc24d6fc35497b31e414e"
+    },
+    "b0-diagnostic-orin-r3/host/checks.owner/result.json": {
+      "bytes": 1536,
+      "executable": false,
+      "mode": 420,
+      "sha256": "26d78f68f7ad5e455f3c3e17e910b47322c6bb3506cf15104e591ca62222f989"
+    },
+    "b0-diagnostic-orin-r3/host/checks.owner/status.json": {
+      "bytes": 1536,
+      "executable": false,
+      "mode": 420,
+      "sha256": "26d78f68f7ad5e455f3c3e17e910b47322c6bb3506cf15104e591ca62222f989"
+    },
+    "b0-diagnostic-orin-r3/host/collect_native.owner/child.log": {
+      "bytes": 963,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ad474c903bf4f5ca7c16605691e23c216ac15f95fe15086cca091318c95ecc1d"
+    },
+    "b0-diagnostic-orin-r3/host/collect_native.owner/launch.json": {
+      "bytes": 1063,
+      "executable": false,
+      "mode": 420,
+      "sha256": "4da66fe02be863a078f10cf6633d6f3832a7670a4507fe7b51608eadcac7fbaa"
+    },
+    "b0-diagnostic-orin-r3/host/collect_native.owner/result.json": {
+      "bytes": 1544,
+      "executable": false,
+      "mode": 420,
+      "sha256": "2550ae3dcdd77a4d5f708ab6be7959d609a755de1acba3f42a5c610ed5b07e7c"
+    },
+    "b0-diagnostic-orin-r3/host/collect_native.owner/status.json": {
+      "bytes": 1544,
+      "executable": false,
+      "mode": 420,
+      "sha256": "2550ae3dcdd77a4d5f708ab6be7959d609a755de1acba3f42a5c610ed5b07e7c"
+    },
+    "b0-diagnostic-orin-r3/host/download_native.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r3/host/download_native.owner/launch.json": {
+      "bytes": 1155,
+      "executable": false,
+      "mode": 420,
+      "sha256": "0c3f3ee5cc34e2f33ce7fb31ea2ebf8853d27ac6227dbad023a9b9816cc15720"
+    },
+    "b0-diagnostic-orin-r3/host/download_native.owner/result.json": {
+      "bytes": 1633,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a1fd87e0575bdefebdba031dbf7f532b19bfebadbb04d839fd40a59e24ce5080"
+    },
+    "b0-diagnostic-orin-r3/host/download_native.owner/status.json": {
+      "bytes": 1633,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a1fd87e0575bdefebdba031dbf7f532b19bfebadbb04d839fd40a59e24ce5080"
+    },
+    "b0-diagnostic-orin-r3/host/launch_checks.sh": {
+      "bytes": 2605,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ba0a4d48b8f65af11cf9fa8ccb2d609bbbea8480a04082f2a655d690d965d830"
+    },
+    "b0-diagnostic-orin-r3/host/launch_collect_native.sh": {
+      "bytes": 647,
+      "executable": false,
+      "mode": 420,
+      "sha256": "f499d860934aa91be0af30bd048dab0bb58e28eeb419a9554c39552886d6374c"
+    },
+    "b0-diagnostic-orin-r3/host/launch_snapshot_inputs.sh": {
+      "bytes": 492,
+      "executable": false,
+      "mode": 420,
+      "sha256": "99c1fdb2b57f5340d1cd3c37a521a238282874ab4ec55179d07a8eb2921c67ff"
+    },
+    "b0-diagnostic-orin-r3/host/prepare_source.owner/child.log": {
+      "bytes": 175,
+      "executable": false,
+      "mode": 420,
+      "sha256": "b3624f788c1c1bb45a230ac161b1b04e9dea96e532aa903ad51b8f8eb8aa3161"
+    },
+    "b0-diagnostic-orin-r3/host/prepare_source.owner/launch.json": {
+      "bytes": 1057,
+      "executable": false,
+      "mode": 420,
+      "sha256": "cbb08a787909c8b64282d2d97c24ac9fac2aca75c46cb26477eb7c4686ea5d76"
+    },
+    "b0-diagnostic-orin-r3/host/prepare_source.owner/result.json": {
+      "bytes": 1538,
+      "executable": false,
+      "mode": 420,
+      "sha256": "f453a568fff033903351d645a00d57c329e3c99172c29df11aba9868943de79f"
+    },
+    "b0-diagnostic-orin-r3/host/prepare_source.owner/status.json": {
+      "bytes": 1538,
+      "executable": false,
+      "mode": 420,
+      "sha256": "f453a568fff033903351d645a00d57c329e3c99172c29df11aba9868943de79f"
+    },
+    "b0-diagnostic-orin-r3/host/prepare_source.sh": {
+      "bytes": 1201,
+      "executable": false,
+      "mode": 420,
+      "sha256": "bd5731aa842ee5a0c7c789fb55509fca833d2d16a6dca51a2b65babfb32b8562"
+    },
+    "b0-diagnostic-orin-r3/host/seed_cache.owner/child.log": {
+      "bytes": 547,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a49f9d391fe8f89eaac75e92a8f01c396fb52e811a90f99f4226b1fa79855dbd"
+    },
+    "b0-diagnostic-orin-r3/host/seed_cache.owner/launch.json": {
+      "bytes": 1053,
+      "executable": false,
+      "mode": 420,
+      "sha256": "c6bfcb71212f512d2ea1da19a982beb90e603a43ccebf3ab40f3f8728eae14c8"
+    },
+    "b0-diagnostic-orin-r3/host/seed_cache.owner/result.json": {
+      "bytes": 1531,
+      "executable": false,
+      "mode": 420,
+      "sha256": "fb0dca02b379a7ac27371888841841e717a296336109693759bb4f308e94d239"
+    },
+    "b0-diagnostic-orin-r3/host/seed_cache.owner/status.json": {
+      "bytes": 1531,
+      "executable": false,
+      "mode": 420,
+      "sha256": "fb0dca02b379a7ac27371888841841e717a296336109693759bb4f308e94d239"
+    },
+    "b0-diagnostic-orin-r3/host/seed_cache.sh": {
+      "bytes": 1222,
+      "executable": false,
+      "mode": 420,
+      "sha256": "070c6156b464d4bc8e16e09fff955eb0a997530fa7a9e6136c81d9cf6f78b099"
+    },
+    "b0-diagnostic-orin-r3/host/snapshot_inputs.owner/child.log": {
+      "bytes": 2082,
+      "executable": false,
+      "mode": 420,
+      "sha256": "cafd71c07762ec108a9b3ecab92e6f45179d1ddcb3ec8e7f7b4493d06d0476f3"
+    },
+    "b0-diagnostic-orin-r3/host/snapshot_inputs.owner/launch.json": {
+      "bytes": 1064,
+      "executable": false,
+      "mode": 420,
+      "sha256": "d5ebe376a6e97076dccdf5496b3f847e8d41f6e85a0765f5ba82c9f33d98db39"
+    },
+    "b0-diagnostic-orin-r3/host/snapshot_inputs.owner/result.json": {
+      "bytes": 1548,
+      "executable": false,
+      "mode": 420,
+      "sha256": "809e4025177ed75fb9d19d0aee142131689222e9310536d787214f435b741dc3"
+    },
+    "b0-diagnostic-orin-r3/host/snapshot_inputs.owner/status.json": {
+      "bytes": 1548,
+      "executable": false,
+      "mode": 420,
+      "sha256": "809e4025177ed75fb9d19d0aee142131689222e9310536d787214f435b741dc3"
+    },
+    "b0-diagnostic-orin-r3/host/ssh_owner.py": {
+      "bytes": 8656,
+      "executable": false,
+      "mode": 420,
+      "sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a"
+    },
+    "b0-diagnostic-orin-r3/host/upload_candidate.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r3/host/upload_candidate.owner/launch.json": {
+      "bytes": 2977,
+      "executable": false,
+      "mode": 420,
+      "sha256": "41317014dd336256d2adf0a1e5d0cd7715b569c603b34de95a4a67c0958814f6"
+    },
+    "b0-diagnostic-orin-r3/host/upload_candidate.owner/result.json": {
+      "bytes": 3456,
+      "executable": false,
+      "mode": 420,
+      "sha256": "32fe0af314336d05d157df48dc176df7e400177bab88fa22f46ef85f619b3198"
+    },
+    "b0-diagnostic-orin-r3/host/upload_candidate.owner/status.json": {
+      "bytes": 3456,
+      "executable": false,
+      "mode": 420,
+      "sha256": "32fe0af314336d05d157df48dc176df7e400177bab88fa22f46ef85f619b3198"
+    },
+    "b0-diagnostic-orin-r3/host/upload_candidate_command.txt": {
+      "bytes": 2353,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ebbcfed8b66df9122071a78bba0a87ea5d94cffb8f009544558452031b7c1331"
+    },
+    "b0-diagnostic-orin-r3/host/upload_evidence_helpers.owner/child.log": {
+      "bytes": 0,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "b0-diagnostic-orin-r3/host/upload_evidence_helpers.owner/launch.json": {
+      "bytes": 1094,
+      "executable": false,
+      "mode": 420,
+      "sha256": "2c253c6bfca2e080ba35cd9fb84c16bc00d366fbf9b2149c69788dc88ce2319e"
+    },
+    "b0-diagnostic-orin-r3/host/upload_evidence_helpers.owner/result.json": {
+      "bytes": 1579,
+      "executable": false,
+      "mode": 420,
+      "sha256": "6d8e3daee46b7be2dc5e6213a6d5c0b18a7a24f76743451934ad63425ca10262"
+    },
+    "b0-diagnostic-orin-r3/host/upload_evidence_helpers.owner/status.json": {
+      "bytes": 1579,
+      "executable": false,
+      "mode": 420,
+      "sha256": "6d8e3daee46b7be2dc5e6213a6d5c0b18a7a24f76743451934ad63425ca10262"
+    },
+    "b0-diagnostic-orin-r3/native-evidence.index.json": {
+      "bytes": 251425,
+      "executable": false,
+      "mode": 420,
+      "sha256": "74a7ff5f3fd6ecf584f82d1f7a92bd0c69a41899215f5dcb2fc15926bea85890"
+    },
+    "b0-diagnostic-orin-r3/native-evidence.metadata.json": {
+      "bytes": 991,
+      "executable": false,
+      "mode": 420,
+      "sha256": "8d57c43cf961b059bee78b761a01e92824b3b530fe874e791ca91c6573f9ab63"
+    },
+    "b0-diagnostic-orin-r3/native-evidence.tar.gz": {
+      "bytes": 11446131,
+      "executable": false,
+      "mode": 420,
+      "sha256": "0635daff6fb516bc34d2329c4ac160d0187a6acf71767d8874a509bdf505a3c1"
+    },
+    "b0-diagnostic-orin-r3/native_archive_verification.json": {
+      "bytes": 659,
+      "executable": false,
+      "mode": 420,
+      "sha256": "2608a1c1002c6767a3a1e79aa4dd1c811cf53dd30aabdfeac3817057f9de3141"
+    },
+    "b0-diagnostic-orin-r3/package_evidence.py": {
+      "bytes": 3295,
+      "executable": false,
+      "mode": 420,
+      "sha256": "c498167b494aa4be74fa1e5663f4a39c0b39d0d1b041da0127ffefe336799c09"
+    },
+    "b0-diagnostic-orin-r3/post_fmt_binding.json": {
+      "bytes": 1749,
+      "executable": false,
+      "mode": 420,
+      "sha256": "1dcd64def7120dba5111204427f6ece9185b656925f017611afdcd4eeed92f9f"
+    },
+    "b0-diagnostic-orin-r3/preservation_pins.json": {
+      "bytes": 504934,
+      "executable": false,
+      "mode": 420,
+      "sha256": "1ffbc5d2602abc93079ee3fc6bb19d144101589b1bea89c4f7973f9e3e60af7c"
+    },
+    "b0-diagnostic-orin-r3/previous_math_local_archive_frozen_refs.json": {
+      "bytes": 1722,
+      "executable": false,
+      "mode": 420,
+      "sha256": "4a2e199b716f28aa9311c5b763dae6e72524b2ff3bacaaee56f91343b3a70473"
+    },
+    "b0-diagnostic-orin-r3/r3_to_r4.diff": {
+      "bytes": 1567,
+      "executable": false,
+      "mode": 420,
+      "sha256": "18a7294fd308b9a1977f64e91ae4f32df54b6cc812994d695b8ab91e5c0c459b"
+    },
+    "b0-diagnostic-orin-r3/run_checks.py": {
+      "bytes": 14462,
+      "executable": false,
+      "mode": 420,
+      "sha256": "be262024472e8653a9f23ee1a9bb9b4d18128853918eb6f045151b79cb4a9dbd"
+    },
+    "b0-diagnostic-orin-r3/run_release_v2.diff": {
+      "bytes": 1699,
+      "executable": false,
+      "mode": 420,
+      "sha256": "ed5f1a7276ae84d90358956d76a93caf6a14367ecdcd59fa3d818ece338466e7"
+    },
+    "b0-diagnostic-orin-r3/run_release_v2.original.py": {
+      "bytes": 17585,
+      "executable": false,
+      "mode": 420,
+      "sha256": "dad9bbc9405b8fac4d60d6efe794b36750e6a6f9ce9fdeba3debf7d3e1b9a471"
+    },
+    "b0-diagnostic-orin-r3/run_release_v2.py": {
+      "bytes": 17649,
+      "executable": false,
+      "mode": 420,
+      "sha256": "e96e7a235988fd63507cbe4cc20c2c7ec12ccbb6bd23b086bb687c82353c0f87"
+    },
+    "b0-diagnostic-orin-r3/snapshot_inputs.py": {
+      "bytes": 4540,
+      "executable": false,
+      "mode": 420,
+      "sha256": "a75a1c76f7b2b4035f417a5df3fc539a296ddcecca2bdb217080d6461b4180f6"
+    },
+    "b0-diagnostic-orin-r3/summary.json": {
+      "bytes": 174662,
+      "executable": false,
+      "mode": 420,
+      "sha256": "2085292296e00a2ac872fcc547829bbeca1ca0b445dbd1d9679b4d3b3300c6fe"
+    },
+    "b0-diagnostic-orin-r3/verify_native_archive.py": {
+      "bytes": 3987,
+      "executable": false,
+      "mode": 420,
+      "sha256": "556e959a113d754b7bc04244eb08d36afa313c0e9e5f363d93eb6ad3ca479f04"
+    }
+  },
+  "frozen_base_sha256": "8c49aded71bc718ee03487e5ae5fc1a59b6cf1358e099ed9d899f802234e4488",
+  "schema": "FEETECH_B0_DIAGNOSTIC_ORIN_OUTER_ARCHIVE_V1",
+  "source_head": "1c5758f97b7c502a38c850e8352ce970216bea53"
+}

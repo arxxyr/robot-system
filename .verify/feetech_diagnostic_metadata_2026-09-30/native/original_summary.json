@@ -1,0 +1,4321 @@
+{
+  "schema": "FEETECH_B0_DIAGNOSTIC_NATIVE_SOFTWARE_V1",
+  "status": "PASS_AFTER_TWO_PRESERVED_FAILURES",
+  "scope": "B0诊断元数据/3寄存器拒写纯软件候选；非新硬件、非H2六配方、非全workspace。",
+  "native_git_head": "1c5758f97b7c502a38c850e8352ce970216bea53",
+  "native_dirty_inputs": 7,
+  "main_integration_head_before_B0_commit": "d5ac7aa7acaa11bef1d318e762d17a4443718120",
+  "main_dirty_B0_inputs": 5,
+  "final_source_files": 590,
+  "final_aggregate": "3d8491ee8b82bdaed1182e572bfaac6cbb5a47e6088d4dc91ea40cc8949cbcde",
+  "main_final_590_each_path_bytes_sha_exec_equal": true,
+  "final_inputs": {
+    "crates/robot-adapters/feetech/examples/feetech_poke.rs": {
+      "sha256": "25fa97a762e3815febff53d97ff71ca2131a0b3fd83241be71ca5f8b3a8b2c5d",
+      "bytes": 11869
+    },
+    "crates/robot-adapters/feetech/src/bus.rs": {
+      "sha256": "211ce25a1a819e2c3ecec293a830c7c0561ffb35b6d564d64e548da02dd3f659",
+      "bytes": 44122
+    },
+    "crates/robot-adapters/feetech/src/diagnostic.rs": {
+      "sha256": "f4155b2a4f71aec7489ca724a90cc2865219a9920ba4a51494d2267298335e8c",
+      "bytes": 10235
+    },
+    "crates/robot-adapters/feetech/src/error.rs": {
+      "sha256": "d3d4c8c005d712f124755ce8c3530ff93b1302855f07b9ec915e04c887a276c5",
+      "bytes": 14398
+    },
+    "crates/robot-adapters/feetech/src/registers.rs": {
+      "sha256": "b7d40b8ae3557632c6996fbbc52a76c4e5dc508d8cc217abc28a39a4c13bbb36",
+      "bytes": 12888
+    },
+    "crates/robot-kinematics-xlerobot/src/base.rs": {
+      "sha256": "8c49aded71bc718ee03487e5ae5fc1a59b6cf1358e099ed9d899f802234e4488",
+      "bytes": 24270
+    },
+    "crates/robot-kinematics-xlerobot/src/lib.rs": {
+      "sha256": "a919d5f6dc30d51b9a674a28b541025d0503381cde746e6ff52feed58112ebd1",
+      "bytes": 31501
+    }
+  },
+  "iterations": [
+    {
+      "native_iteration": 1,
+      "logical_candidate_revision": 2,
+      "status": "FAIL",
+      "aggregate": "4136d5ef284acc0cf44dc2a3aa4382caac0932b4bda719c8c83117c2a8732e95",
+      "source_files": 590,
+      "qa_result": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/native-extracted/qa-r1/result.json",
+        "sha256": "77773cb291689f87bf9449f1f61e436677b843c918d3197d19d6f572480b4d1b",
+        "bytes": 5092
+      },
+      "compiler": {
+        "release": "1.101.0-nightly",
+        "commit_hash": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+        "host": "aarch64-unknown-linux-gnu"
+      },
+      "compiler_before_update": {
+        "release": "1.101.0-nightly",
+        "commit_hash": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+        "host": "aarch64-unknown-linux-gnu"
+      },
+      "input_before_after_fmt_equal": true,
+      "prior_sources_elves_archives_unchanged": true,
+      "native_archive": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/native-evidence.tar.gz",
+        "sha256": "754c64f0e4992d9dbb400e61c19c997e8be49d4b7a85057b7d676d43f0ab6865",
+        "bytes": 9873999
+      },
+      "native_index": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/native-evidence.index.json",
+        "sha256": "ce24229e88e0f4cd6e4ab77925fd35e3cc240148781f753ac69fe757dcf37407",
+        "bytes": 229010
+      },
+      "native_metadata": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/native-evidence.metadata.json",
+        "sha256": "085ab9d5089df18b20007a07b52f739717d571310a64f0f2dc46d388df354eba",
+        "bytes": 990
+      },
+      "archive_verification": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/native_archive_verification.json",
+        "sha256": "9981a20c698f8208833bbb0bff4aa71f73eccd23ee16efa63ee72c6563b7190f",
+        "bytes": 658
+      },
+      "extracted": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/native-extracted",
+      "direct_children": [
+        {
+          "name": "source_before_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443152,
+          "identity": {
+            "pid": 443152,
+            "start_ticks": 256524617,
+            "pgid": 443152,
+            "sid": 443152,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53616128,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443153,
+          "identity": {
+            "pid": 443153,
+            "start_ticks": 256524625,
+            "pgid": 443153,
+            "sid": 443153,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53048400,
+          "timeout_seconds": 60,
+          "stdout_sha256": "8ce4e0b2c051fb03d71930582cf226ec13d68e56cc161424edb3bb1104e19798",
+          "stdout_bytes": 293,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 443154,
+          "identity": {
+            "pid": 443154,
+            "start_ticks": 256524632,
+            "pgid": 443154,
+            "sid": 443154,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52881932,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "before_old_head",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443155,
+          "identity": {
+            "pid": 443155,
+            "start_ticks": 256524659,
+            "pgid": 443155,
+            "sid": 443155,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 55183630,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "before_old_status",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443156,
+          "identity": {
+            "pid": 443156,
+            "start_ticks": 256524667,
+            "pgid": 443156,
+            "sid": 443156,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52678085,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "rustc_before_update",
+          "argv": [
+            "rustc",
+            "-vV"
+          ],
+          "pid": 443157,
+          "identity": {
+            "pid": 443157,
+            "start_ticks": 256524770,
+            "pgid": 443157,
+            "sid": 443157,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 185536933,
+          "timeout_seconds": 60,
+          "stdout_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+          "stdout_bytes": 215,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "cargo_before_update",
+          "argv": [
+            "cargo",
+            "-V"
+          ],
+          "pid": 443163,
+          "identity": {
+            "pid": 443163,
+            "start_ticks": 256524791,
+            "pgid": 443163,
+            "sid": 443163,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 84937666,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+          "stdout_bytes": 45,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "latest_nightly_update",
+          "argv": [
+            "rustup",
+            "update",
+            "nightly",
+            "--no-self-update"
+          ],
+          "pid": 443168,
+          "identity": {
+            "pid": 443168,
+            "start_ticks": 256524801,
+            "pgid": 443168,
+            "sid": 443168,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 385587691,
+          "timeout_seconds": 300,
+          "stdout_sha256": "22bef63b44fcc43b4b717e00d8f41358cb95ea748c41a71f4fc2c12318c8fdf9",
+          "stdout_bytes": 95,
+          "stderr_sha256": "2f7e950dca3bf65baf02406cdbfb0f7b4d3234c86b67aaedcfe07bdde9657c25",
+          "stderr_bytes": 68,
+          "runner_error": null
+        },
+        {
+          "name": "rustc_after_update",
+          "argv": [
+            "rustc",
+            "-vV"
+          ],
+          "pid": 443182,
+          "identity": {
+            "pid": 443182,
+            "start_ticks": 256524842,
+            "pgid": 443182,
+            "sid": 443182,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 84927586,
+          "timeout_seconds": 60,
+          "stdout_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+          "stdout_bytes": 215,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "cargo_after_update",
+          "argv": [
+            "cargo",
+            "-V"
+          ],
+          "pid": 443188,
+          "identity": {
+            "pid": 443188,
+            "start_ticks": 256524853,
+            "pgid": 443188,
+            "sid": 443188,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53157620,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+          "stdout_bytes": 45,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "fmt",
+          "argv": [
+            "cargo",
+            "fmt",
+            "--all"
+          ],
+          "pid": 443193,
+          "identity": {
+            "pid": 443193,
+            "start_ticks": 256524880,
+            "pgid": 443193,
+            "sid": 443193,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 3486934272,
+          "timeout_seconds": 300,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_fmt_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443204,
+          "identity": {
+            "pid": 443204,
+            "start_ticks": 256525249,
+            "pgid": 443204,
+            "sid": 443204,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53056722,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_fmt_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443205,
+          "identity": {
+            "pid": 443205,
+            "start_ticks": 256525256,
+            "pgid": 443205,
+            "sid": 443205,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52692711,
+          "timeout_seconds": 60,
+          "stdout_sha256": "8ce4e0b2c051fb03d71930582cf226ec13d68e56cc161424edb3bb1104e19798",
+          "stdout_bytes": 293,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_fmt_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 443206,
+          "identity": {
+            "pid": 443206,
+            "start_ticks": 256525264,
+            "pgid": 443206,
+            "sid": 443206,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52634213,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "clippy_default",
+          "argv": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--all",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "pid": 443207,
+          "identity": {
+            "pid": 443207,
+            "start_ticks": 256525309,
+            "pgid": 443207,
+            "sid": 443207,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 101,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 10531046167,
+          "timeout_seconds": 7200,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "247a300b2af7e370fe6df30a229dfc50a8074297815f534a5f4ef06446bd6d37",
+          "stderr_bytes": 2012,
+          "runner_error": "ValueError('命令原始退出码非预期')"
+        },
+        {
+          "name": "source_after_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443333,
+          "identity": {
+            "pid": 443333,
+            "start_ticks": 256526364,
+            "pgid": 443333,
+            "sid": 443333,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52794027,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443334,
+          "identity": {
+            "pid": 443334,
+            "start_ticks": 256526371,
+            "pgid": 443334,
+            "sid": 443334,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52711433,
+          "timeout_seconds": 60,
+          "stdout_sha256": "8ce4e0b2c051fb03d71930582cf226ec13d68e56cc161424edb3bb1104e19798",
+          "stdout_bytes": 293,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 443335,
+          "identity": {
+            "pid": 443335,
+            "start_ticks": 256526379,
+            "pgid": 443335,
+            "sid": 443335,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52743242,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "after_old_head",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443336,
+          "identity": {
+            "pid": 443336,
+            "start_ticks": 256526406,
+            "pgid": 443336,
+            "sid": 443336,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 72416191,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "after_old_status",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443337,
+          "identity": {
+            "pid": 443337,
+            "start_ticks": 256526416,
+            "pgid": 443337,
+            "sid": 443337,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52869358,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443493,
+          "identity": {
+            "pid": 443493,
+            "start_ticks": 256546474,
+            "pgid": 443493,
+            "sid": 443493,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52895081,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443494,
+          "identity": {
+            "pid": 443494,
+            "start_ticks": 256546481,
+            "pgid": 443494,
+            "sid": 443494,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52656609,
+          "timeout_seconds": 60,
+          "stdout_sha256": "8ce4e0b2c051fb03d71930582cf226ec13d68e56cc161424edb3bb1104e19798",
+          "stdout_bytes": 293,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 443495,
+          "identity": {
+            "pid": 443495,
+            "start_ticks": 256546489,
+            "pgid": 443495,
+            "sid": 443495,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52588832,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443496,
+          "identity": {
+            "pid": 443496,
+            "start_ticks": 256546550,
+            "pgid": 443496,
+            "sid": 443496,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52759333,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443497,
+          "identity": {
+            "pid": 443497,
+            "start_ticks": 256546557,
+            "pgid": 443497,
+            "sid": 443497,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52309400,
+          "timeout_seconds": 60,
+          "stdout_sha256": "8ce4e0b2c051fb03d71930582cf226ec13d68e56cc161424edb3bb1104e19798",
+          "stdout_bytes": 293,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 443498,
+          "identity": {
+            "pid": 443498,
+            "start_ticks": 256546565,
+            "pgid": 443498,
+            "sid": 443498,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52607936,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "rustc_after_failure",
+          "argv": [
+            "rustc",
+            "-vV"
+          ],
+          "pid": 443477,
+          "identity": {
+            "pid": 443477,
+            "start_ticks": 256546436,
+            "pgid": 443477,
+            "sid": 443477,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 85267034,
+          "timeout_seconds": 60,
+          "stdout_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+          "stdout_bytes": 215,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "cargo_after_failure",
+          "argv": [
+            "cargo",
+            "-V"
+          ],
+          "pid": 443483,
+          "identity": {
+            "pid": 443483,
+            "start_ticks": 256546447,
+            "pgid": 443483,
+            "sid": 443483,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 84820589,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+          "stdout_bytes": 45,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        }
+      ],
+      "direct_count": 28,
+      "host_owners": [
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/host/checks.owner/result.json",
+          "sha256": "a4154601a8e2e7da6156b078148fe15d233cee3207f43f3ef7096b5b28b2544b",
+          "bytes": 1532,
+          "owner_pid": 90205,
+          "pid": 90206,
+          "wait_returncode": 1,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/host/collect_native.owner/result.json",
+          "sha256": "ef11cc767d9bd62c7544852c0cb14ca2e8c712c25d438c9cb9e01f606b2a1779",
+          "bytes": 1537,
+          "owner_pid": 90596,
+          "pid": 90597,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/host/download_failure.owner/result.json",
+          "sha256": "756aeda50d0e09ed4165b401c7a661c2c504635a4648cc36457ea75e376daf1a",
+          "bytes": 1485,
+          "owner_pid": 90300,
+          "pid": 90301,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r1/qa-r1/clippy_default/stderr.log",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r1/qa-r1/result.json",
+            "target/b0-diagnostic-orin-r1/failed-r1/"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/host/download_native.owner/result.json",
+          "sha256": "d9e2fd93fc4c386eb69bebd994d7b477a2e1ab03d01584d543feba10713b41df",
+          "bytes": 1564,
+          "owner_pid": 90659,
+          "pid": 90660,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-native-r1.tar.gz",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-native-r1.tar.gz.index.json",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-native-r1.tar.gz.metadata.json",
+            "target/b0-diagnostic-orin-r1/"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/host/failure_source.owner/result.json",
+          "sha256": "77dabeede0d448114193d0a92061f5192a9dacad5a58f818b20c379ffd70905c",
+          "bytes": 1547,
+          "owner_pid": 90539,
+          "pid": 90540,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/host/prepare_source.owner/result.json",
+          "sha256": "3edcf6f206ca29ac9a3e8bd7ec6bd0867531a8c5aeb079f87375adc25f18cbc1",
+          "bytes": 1539,
+          "owner_pid": 89565,
+          "pid": 89566,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/host/seed_cache.owner/result.json",
+          "sha256": "d2be3cec3ccf070618a3ba80ec2ec2b37cd0344a3398b08df1f2522f653073b7",
+          "bytes": 1531,
+          "owner_pid": 89988,
+          "pid": 89989,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/host/upload_candidate.owner/result.json",
+          "sha256": "65c10a3bc55a9c8b8fb9bfe9fccb1a4ce2c26fe9eb7aa463013778e5a8c2f840",
+          "bytes": 3293,
+          "owner_pid": 90177,
+          "pid": 90178,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/candidate/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/candidate/crates/robot-adapters/feetech/src/bus.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/candidate/crates/robot-adapters/feetech/src/error.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/candidate/crates/robot-adapters/feetech/src/registers.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/candidate/crates/robot-kinematics-xlerobot/src/base.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/candidate/crates/robot-kinematics-xlerobot/src/lib.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/run_checks.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/run_release_v2.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/run_release_v2.original.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/run_release_v2.diff",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/expected_source.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/frozen_inputs.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/expected_tests.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/preservation_pins.json",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r1/bootstrap/"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/host/upload_evidence_helpers.owner/result.json",
+          "sha256": "644a69926e46432e35ae4ed0420913c47fe84f88fd42d67165e9e04ead7ffa7b",
+          "bytes": 1491,
+          "owner_pid": 90513,
+          "pid": 90514,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "target/b0-diagnostic-orin-r1/snapshot_inputs.py",
+            "target/b0-diagnostic-orin-r1/diagnostic.py",
+            "target/b0-diagnostic-orin-r1/collect_native.py",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r1/bootstrap/"
+          ]
+        }
+      ],
+      "host_owner_count": 9,
+      "error": "ValueError('clippy_default 失败；保留原始回执')",
+      "not_run": [
+        "clippy_real_hw",
+        "adapter_lib",
+        "example_tests",
+        "release_example",
+        "9_compiled_denial_smokes"
+      ],
+      "failure_stderr": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r1/native-extracted/qa-r1/clippy_default/stderr.log",
+        "sha256": "247a300b2af7e370fe6df30a229dfc50a8074297815f534a5f4ef06446bd6d37",
+        "bytes": 2012
+      },
+      "compiler_after_failure_equal": true
+    },
+    {
+      "native_iteration": 2,
+      "logical_candidate_revision": 3,
+      "status": "FAIL",
+      "aggregate": "e81e417ea5adca3de92db7d1d72c363d180656af25e0e733b3fcc9e70a3e4fed",
+      "source_files": 590,
+      "qa_result": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/native-extracted/qa-r1/result.json",
+        "sha256": "3358f7642cd94a3a9418071b16f04d5062978434d2ca78df5212f1ed0b61c9a8",
+        "bytes": 5092
+      },
+      "compiler": {
+        "release": "1.101.0-nightly",
+        "commit_hash": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+        "host": "aarch64-unknown-linux-gnu"
+      },
+      "compiler_before_update": {
+        "release": "1.101.0-nightly",
+        "commit_hash": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+        "host": "aarch64-unknown-linux-gnu"
+      },
+      "input_before_after_fmt_equal": true,
+      "prior_sources_elves_archives_unchanged": true,
+      "native_archive": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/native-evidence.tar.gz",
+        "sha256": "3fce4317fd6ab2feb9cefd47bfec7783d645e1b503e322ec683c6915150a96e1",
+        "bytes": 9903047
+      },
+      "native_index": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/native-evidence.index.json",
+        "sha256": "337016b6daf6f756fc425e6b8157457f57bdb472d573dcfe2eb6d9ebe7f90c39",
+        "bytes": 229267
+      },
+      "native_metadata": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/native-evidence.metadata.json",
+        "sha256": "3daa89586ccf51233bae1d9bcc94af0bd9549c3cd02fb20e61c04f302db0d08c",
+        "bytes": 990
+      },
+      "archive_verification": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/native_archive_verification.json",
+        "sha256": "6e3f70eaa174deca51995c3364313a26dfc484c4812116934dd4aeb3ca91bd89",
+        "bytes": 658
+      },
+      "extracted": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/native-extracted",
+      "direct_children": [
+        {
+          "name": "source_before_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443812,
+          "identity": {
+            "pid": 443812,
+            "start_ticks": 256585630,
+            "pgid": 443812,
+            "sid": 443812,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53041866,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443813,
+          "identity": {
+            "pid": 443813,
+            "start_ticks": 256585637,
+            "pgid": 443813,
+            "sid": 443813,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52640190,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 443814,
+          "identity": {
+            "pid": 443814,
+            "start_ticks": 256585645,
+            "pgid": 443814,
+            "sid": 443814,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52477017,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "before_old_head",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443815,
+          "identity": {
+            "pid": 443815,
+            "start_ticks": 256585672,
+            "pgid": 443815,
+            "sid": 443815,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53129485,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "before_old_status",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443816,
+          "identity": {
+            "pid": 443816,
+            "start_ticks": 256585680,
+            "pgid": 443816,
+            "sid": 443816,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52759042,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "rustc_before_update",
+          "argv": [
+            "rustc",
+            "-vV"
+          ],
+          "pid": 443817,
+          "identity": {
+            "pid": 443817,
+            "start_ticks": 256585828,
+            "pgid": 443817,
+            "sid": 443817,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 185553713,
+          "timeout_seconds": 60,
+          "stdout_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+          "stdout_bytes": 215,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "cargo_before_update",
+          "argv": [
+            "cargo",
+            "-V"
+          ],
+          "pid": 443823,
+          "identity": {
+            "pid": 443823,
+            "start_ticks": 256585849,
+            "pgid": 443823,
+            "sid": 443823,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 85127877,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+          "stdout_bytes": 45,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "latest_nightly_update",
+          "argv": [
+            "rustup",
+            "update",
+            "nightly",
+            "--no-self-update"
+          ],
+          "pid": 443828,
+          "identity": {
+            "pid": 443828,
+            "start_ticks": 256585859,
+            "pgid": 443828,
+            "sid": 443828,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 385618706,
+          "timeout_seconds": 300,
+          "stdout_sha256": "22bef63b44fcc43b4b717e00d8f41358cb95ea748c41a71f4fc2c12318c8fdf9",
+          "stdout_bytes": 95,
+          "stderr_sha256": "2f7e950dca3bf65baf02406cdbfb0f7b4d3234c86b67aaedcfe07bdde9657c25",
+          "stderr_bytes": 68,
+          "runner_error": null
+        },
+        {
+          "name": "rustc_after_update",
+          "argv": [
+            "rustc",
+            "-vV"
+          ],
+          "pid": 443842,
+          "identity": {
+            "pid": 443842,
+            "start_ticks": 256585900,
+            "pgid": 443842,
+            "sid": 443842,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 85183911,
+          "timeout_seconds": 60,
+          "stdout_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+          "stdout_bytes": 215,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "cargo_after_update",
+          "argv": [
+            "cargo",
+            "-V"
+          ],
+          "pid": 443848,
+          "identity": {
+            "pid": 443848,
+            "start_ticks": 256585911,
+            "pgid": 443848,
+            "sid": 443848,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53200591,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+          "stdout_bytes": 45,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "fmt",
+          "argv": [
+            "cargo",
+            "fmt",
+            "--all"
+          ],
+          "pid": 443853,
+          "identity": {
+            "pid": 443853,
+            "start_ticks": 256585938,
+            "pgid": 443853,
+            "sid": 443853,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 3436832633,
+          "timeout_seconds": 300,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_fmt_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 443864,
+          "identity": {
+            "pid": 443864,
+            "start_ticks": 256586303,
+            "pgid": 443864,
+            "sid": 443864,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53004362,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_fmt_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 443865,
+          "identity": {
+            "pid": 443865,
+            "start_ticks": 256586310,
+            "pgid": 443865,
+            "sid": 443865,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52823876,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_fmt_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 443866,
+          "identity": {
+            "pid": 443866,
+            "start_ticks": 256586318,
+            "pgid": 443866,
+            "sid": 443866,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52629598,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "clippy_default",
+          "argv": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--all",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "pid": 443867,
+          "identity": {
+            "pid": 443867,
+            "start_ticks": 256586363,
+            "pgid": 443867,
+            "sid": 443867,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 101,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 12099259029,
+          "timeout_seconds": 7200,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "a74b91a780f266c1ca0795ae4ee1085cc85ffb3b393fec232a1875f436dd931a",
+          "stderr_bytes": 3986,
+          "runner_error": "ValueError('命令原始退出码非预期')"
+        },
+        {
+          "name": "source_after_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 444108,
+          "identity": {
+            "pid": 444108,
+            "start_ticks": 256587575,
+            "pgid": 444108,
+            "sid": 444108,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52739202,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 444109,
+          "identity": {
+            "pid": 444109,
+            "start_ticks": 256587583,
+            "pgid": 444109,
+            "sid": 444109,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52664287,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 444110,
+          "identity": {
+            "pid": 444110,
+            "start_ticks": 256587590,
+            "pgid": 444110,
+            "sid": 444110,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52667008,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "after_old_head",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 444111,
+          "identity": {
+            "pid": 444111,
+            "start_ticks": 256587617,
+            "pgid": 444111,
+            "sid": 444111,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52920328,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "after_old_status",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 444112,
+          "identity": {
+            "pid": 444112,
+            "start_ticks": 256587624,
+            "pgid": 444112,
+            "sid": 444112,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53074444,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 444278,
+          "identity": {
+            "pid": 444278,
+            "start_ticks": 256635626,
+            "pgid": 444278,
+            "sid": 444278,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52843170,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 444279,
+          "identity": {
+            "pid": 444279,
+            "start_ticks": 256635633,
+            "pgid": 444279,
+            "sid": 444279,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52413569,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 444280,
+          "identity": {
+            "pid": 444280,
+            "start_ticks": 256635640,
+            "pgid": 444280,
+            "sid": 444280,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52350720,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 444281,
+          "identity": {
+            "pid": 444281,
+            "start_ticks": 256635703,
+            "pgid": 444281,
+            "sid": 444281,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52805796,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 444282,
+          "identity": {
+            "pid": 444282,
+            "start_ticks": 256635710,
+            "pgid": 444282,
+            "sid": 444282,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52492738,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 444283,
+          "identity": {
+            "pid": 444283,
+            "start_ticks": 256635717,
+            "pgid": 444283,
+            "sid": 444283,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52713763,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "rustc_after_failure",
+          "argv": [
+            "rustc",
+            "-vV"
+          ],
+          "pid": 444262,
+          "identity": {
+            "pid": 444262,
+            "start_ticks": 256635591,
+            "pgid": 444262,
+            "sid": 444262,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 85607653,
+          "timeout_seconds": 60,
+          "stdout_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+          "stdout_bytes": 215,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "cargo_after_failure",
+          "argv": [
+            "cargo",
+            "-V"
+          ],
+          "pid": 444268,
+          "identity": {
+            "pid": 444268,
+            "start_ticks": 256635602,
+            "pgid": 444268,
+            "sid": 444268,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53004610,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+          "stdout_bytes": 45,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        }
+      ],
+      "direct_count": 28,
+      "host_owners": [
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/host/checks.owner/result.json",
+          "sha256": "8724a2f7225415a214cea53d9eb8dd031b7f2183c25e919d4c6bd94486040144",
+          "bytes": 1532,
+          "owner_pid": 91008,
+          "pid": 91009,
+          "wait_returncode": 1,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/host/collect_native.owner/result.json",
+          "sha256": "0e13c60683ffad5ccea5750add8e724446cb95e91936d06cea02ca5a0480d2f7",
+          "bytes": 1544,
+          "owner_pid": 91713,
+          "pid": 91714,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/host/download_failure.owner/result.json",
+          "sha256": "dc351813509cfbb48ae333925a0dd2efaf27f8f4afc947f353b6e03f1aaf7964",
+          "bytes": 1485,
+          "owner_pid": 91109,
+          "pid": 91110,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r2/qa-r1/clippy_default/stderr.log",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r2/qa-r1/result.json",
+            "target/b0-diagnostic-orin-r2/failed-r2/"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/host/download_native.owner/result.json",
+          "sha256": "58efe54cab16e3e5a246fb8e203dcda43c7f647dd992959b1c78062f94159273",
+          "bytes": 1633,
+          "owner_pid": 91779,
+          "pid": 91780,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-native-r2.tar.gz",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-native-r2.tar.gz.index.json",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-native-r2.tar.gz.metadata.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/host/failure_source.owner/result.json",
+          "sha256": "8c73bd08a845a409749ffece0fe81ef31d35e68ce27a2cae2bb67f385663c8d6",
+          "bytes": 1547,
+          "owner_pid": 91592,
+          "pid": 91593,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/host/prepare_source.owner/result.json",
+          "sha256": "6176e8a7a0cf44ef9ad1e3e55b801a48d34cc383945bf6b446dbde6e2039b587",
+          "bytes": 1538,
+          "owner_pid": 90850,
+          "pid": 90851,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/host/seed_cache.owner/result.json",
+          "sha256": "acb004e5c6531733cb8087030a875ae1fea49bb1a7b068d42e9ee3e48fce7530",
+          "bytes": 1531,
+          "owner_pid": 90907,
+          "pid": 90910,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/host/upload_candidate.owner/result.json",
+          "sha256": "52e447baadb0cf683319775ce0fb76c670149e218e212779442ddb89229d6416",
+          "bytes": 3456,
+          "owner_pid": 90913,
+          "pid": 90914,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/src/bus.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/src/diagnostic.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/src/error.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/candidate/crates/robot-adapters/feetech/src/registers.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/candidate/crates/robot-kinematics-xlerobot/src/base.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/candidate/crates/robot-kinematics-xlerobot/src/lib.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/run_checks.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/run_release_v2.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/run_release_v2.original.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/run_release_v2.diff",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/expected_source.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/frozen_inputs.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/expected_tests.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/preservation_pins.json",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r2/bootstrap/"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/host/upload_evidence_helpers.owner/result.json",
+          "sha256": "07f3f54437909eda3a5f2e1525155e56527af387fc3760dac917d578737d0e11",
+          "bytes": 1491,
+          "owner_pid": 91282,
+          "pid": 91283,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "target/b0-diagnostic-orin-r2/snapshot_inputs.py",
+            "target/b0-diagnostic-orin-r2/diagnostic.py",
+            "target/b0-diagnostic-orin-r2/collect_native.py",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r2/bootstrap/"
+          ]
+        }
+      ],
+      "host_owner_count": 9,
+      "error": "ValueError('clippy_default 失败；保留原始回执')",
+      "not_run": [
+        "clippy_real_hw",
+        "adapter_lib",
+        "example_tests",
+        "release_example",
+        "9_compiled_denial_smokes"
+      ],
+      "failure_stderr": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r2/native-extracted/qa-r1/clippy_default/stderr.log",
+        "sha256": "a74b91a780f266c1ca0795ae4ee1085cc85ffb3b393fec232a1875f436dd931a",
+        "bytes": 3986
+      },
+      "compiler_after_failure_equal": true
+    },
+    {
+      "native_iteration": 3,
+      "logical_candidate_revision": 4,
+      "status": "PASS",
+      "aggregate": "3d8491ee8b82bdaed1182e572bfaac6cbb5a47e6088d4dc91ea40cc8949cbcde",
+      "source_files": 590,
+      "qa_result": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/native-extracted/qa-r1/result.json",
+        "sha256": "1199241df3bfdc3fa26ab040b8be7d07a2e19f3b954c64880e55cefbc3907dd1",
+        "bytes": 27110
+      },
+      "compiler": {
+        "release": "1.101.0-nightly",
+        "commit_hash": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+        "host": "aarch64-unknown-linux-gnu"
+      },
+      "compiler_before_update": {
+        "release": "1.101.0-nightly",
+        "commit_hash": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+        "host": "aarch64-unknown-linux-gnu"
+      },
+      "input_before_after_fmt_equal": true,
+      "prior_sources_elves_archives_unchanged": true,
+      "native_archive": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/native-evidence.tar.gz",
+        "sha256": "0635daff6fb516bc34d2329c4ac160d0187a6acf71767d8874a509bdf505a3c1",
+        "bytes": 11446131
+      },
+      "native_index": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/native-evidence.index.json",
+        "sha256": "74a7ff5f3fd6ecf584f82d1f7a92bd0c69a41899215f5dcb2fc15926bea85890",
+        "bytes": 251425
+      },
+      "native_metadata": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/native-evidence.metadata.json",
+        "sha256": "8d57c43cf961b059bee78b761a01e92824b3b530fe874e791ca91c6573f9ab63",
+        "bytes": 991
+      },
+      "archive_verification": {
+        "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/native_archive_verification.json",
+        "sha256": "2608a1c1002c6767a3a1e79aa4dd1c811cf53dd30aabdfeac3817057f9de3141",
+        "bytes": 659
+      },
+      "extracted": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/native-extracted",
+      "direct_children": [
+        {
+          "name": "source_before_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 444590,
+          "identity": {
+            "pid": 444590,
+            "start_ticks": 256652095,
+            "pgid": 444590,
+            "sid": 444590,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 54332453,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 444591,
+          "identity": {
+            "pid": 444591,
+            "start_ticks": 256652103,
+            "pgid": 444591,
+            "sid": 444591,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53300348,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 444592,
+          "identity": {
+            "pid": 444592,
+            "start_ticks": 256652111,
+            "pgid": 444592,
+            "sid": 444592,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52899385,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "before_old_head",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 444593,
+          "identity": {
+            "pid": 444593,
+            "start_ticks": 256652138,
+            "pgid": 444593,
+            "sid": 444593,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52983641,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "before_old_status",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 444594,
+          "identity": {
+            "pid": 444594,
+            "start_ticks": 256652145,
+            "pgid": 444594,
+            "sid": 444594,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53181116,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "rustc_before_update",
+          "argv": [
+            "rustc",
+            "-vV"
+          ],
+          "pid": 444595,
+          "identity": {
+            "pid": 444595,
+            "start_ticks": 256652300,
+            "pgid": 444595,
+            "sid": 444595,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 135511252,
+          "timeout_seconds": 60,
+          "stdout_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+          "stdout_bytes": 215,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "cargo_before_update",
+          "argv": [
+            "cargo",
+            "-V"
+          ],
+          "pid": 444601,
+          "identity": {
+            "pid": 444601,
+            "start_ticks": 256652316,
+            "pgid": 444601,
+            "sid": 444601,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 85433812,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+          "stdout_bytes": 45,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "latest_nightly_update",
+          "argv": [
+            "rustup",
+            "update",
+            "nightly",
+            "--no-self-update"
+          ],
+          "pid": 444606,
+          "identity": {
+            "pid": 444606,
+            "start_ticks": 256652326,
+            "pgid": 444606,
+            "sid": 444606,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 886551762,
+          "timeout_seconds": 300,
+          "stdout_sha256": "22bef63b44fcc43b4b717e00d8f41358cb95ea748c41a71f4fc2c12318c8fdf9",
+          "stdout_bytes": 95,
+          "stderr_sha256": "2f7e950dca3bf65baf02406cdbfb0f7b4d3234c86b67aaedcfe07bdde9657c25",
+          "stderr_bytes": 68,
+          "runner_error": null
+        },
+        {
+          "name": "rustc_after_update",
+          "argv": [
+            "rustc",
+            "-vV"
+          ],
+          "pid": 444620,
+          "identity": {
+            "pid": 444620,
+            "start_ticks": 256652417,
+            "pgid": 444620,
+            "sid": 444620,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 85406423,
+          "timeout_seconds": 60,
+          "stdout_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+          "stdout_bytes": 215,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "cargo_after_update",
+          "argv": [
+            "cargo",
+            "-V"
+          ],
+          "pid": 444626,
+          "identity": {
+            "pid": 444626,
+            "start_ticks": 256652428,
+            "pgid": 444626,
+            "sid": 444626,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53581348,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+          "stdout_bytes": 45,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "fmt",
+          "argv": [
+            "cargo",
+            "fmt",
+            "--all"
+          ],
+          "pid": 444631,
+          "identity": {
+            "pid": 444631,
+            "start_ticks": 256652454,
+            "pgid": 444631,
+            "sid": 444631,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 3487504733,
+          "timeout_seconds": 300,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_fmt_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 444642,
+          "identity": {
+            "pid": 444642,
+            "start_ticks": 256652824,
+            "pgid": 444642,
+            "sid": 444642,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53332201,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_fmt_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 444643,
+          "identity": {
+            "pid": 444643,
+            "start_ticks": 256652831,
+            "pgid": 444643,
+            "sid": 444643,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53125606,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_fmt_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 444644,
+          "identity": {
+            "pid": 444644,
+            "start_ticks": 256652839,
+            "pgid": 444644,
+            "sid": 444644,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52863716,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "clippy_default",
+          "argv": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--all",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "pid": 444645,
+          "identity": {
+            "pid": 444645,
+            "start_ticks": 256652884,
+            "pgid": 444645,
+            "sid": 444645,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 49082790161,
+          "timeout_seconds": 7200,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "47e98aa770a1535465e8add58ef49917b064b6760aef6b2be3fcfd9f62c6d09a",
+          "stderr_bytes": 2171,
+          "runner_error": null
+        },
+        {
+          "name": "clippy_real_hw",
+          "argv": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--all",
+            "--all-targets",
+            "--features",
+            "robot-adapter-feetech/real-hw",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "pid": 445140,
+          "identity": {
+            "pid": 445140,
+            "start_ticks": 256657833,
+            "pgid": 445140,
+            "sid": 445140,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 45161429582,
+          "timeout_seconds": 7200,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "25522c0b2d6a6ae0c68871e7e4febe71f735c0bf1f483da8b3ddd84d7cbf048b",
+          "stderr_bytes": 2409,
+          "runner_error": null
+        },
+        {
+          "name": "adapter_lib",
+          "argv": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "robot-adapter-feetech",
+            "--lib"
+          ],
+          "pid": 445464,
+          "identity": {
+            "pid": 445464,
+            "start_ticks": 256662389,
+            "pgid": 445464,
+            "sid": 445464,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 71678963942,
+          "timeout_seconds": 7200,
+          "stdout_sha256": "0d2b42d0f7a5c2bf90c9d7131377981ef63cf2bd0da68b8356184d2090e4b496",
+          "stdout_bytes": 11432,
+          "stderr_sha256": "c0e88f222007e14d6b8db80bfeaa1fa073beec30e623a5e4f5141b92edae31c3",
+          "stderr_bytes": 1555,
+          "runner_error": null
+        },
+        {
+          "name": "example_tests",
+          "argv": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "robot-adapter-feetech",
+            "--example",
+            "feetech_poke",
+            "--features",
+            "real-hw"
+          ],
+          "pid": 446422,
+          "identity": {
+            "pid": 446422,
+            "start_ticks": 256669598,
+            "pgid": 446422,
+            "sid": 446422,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 20748062476,
+          "timeout_seconds": 7200,
+          "stdout_sha256": "5fe51d5d52aa945722db7cf56bcb33aa5b0242d4061eeda6779918582827451a",
+          "stdout_bytes": 513,
+          "stderr_sha256": "ed4ce6b5f1c88197d67328f425ddd7753faa5a99d2219462d4f5e7ca7039cb19",
+          "stderr_bytes": 537,
+          "runner_error": null
+        },
+        {
+          "name": "release_example",
+          "argv": [
+            "cargo",
+            "build",
+            "--locked",
+            "--release",
+            "--message-format=json",
+            "-p",
+            "robot-adapter-feetech",
+            "--example",
+            "feetech_poke",
+            "--features",
+            "real-hw"
+          ],
+          "pid": 446701,
+          "identity": {
+            "pid": 446701,
+            "start_ticks": 256671713,
+            "pgid": 446701,
+            "sid": 446701,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 21196069828,
+          "timeout_seconds": 7200,
+          "stdout_sha256": "658c94786fde206a1acd6295ac4257042b8836d9d456341b7aeeab458703a711",
+          "stdout_bytes": 104437,
+          "stderr_sha256": "85246c079ebd932685752c0fb51660d4f8442b325acfee64bffeb88e25b2ec6a",
+          "stderr_bytes": 446,
+          "runner_error": null
+        },
+        {
+          "name": "deny_Phase_missing",
+          "argv": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/never-open-device",
+            "1",
+            "write",
+            "Phase"
+          ],
+          "pid": 446746,
+          "identity": {
+            "pid": 446746,
+            "start_ticks": 256673875,
+            "pgid": 446746,
+            "sid": 446746,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 2,
+          "expected_exit": 2,
+          "reaped": true,
+          "elapsed_ns": 53094643,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "88fa61f25a37c5aa52d808eac4046b9bf556663945f4f8f3c951eb862bf71f19",
+          "stderr_bytes": 58,
+          "runner_error": null
+        },
+        {
+          "name": "deny_Phase_bad",
+          "argv": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/never-open-device",
+            "1",
+            "write",
+            "Phase",
+            "bad-value"
+          ],
+          "pid": 446747,
+          "identity": {
+            "pid": 446747,
+            "start_ticks": 256673921,
+            "pgid": 446747,
+            "sid": 446747,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 2,
+          "expected_exit": 2,
+          "reaped": true,
+          "elapsed_ns": 52975026,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "88fa61f25a37c5aa52d808eac4046b9bf556663945f4f8f3c951eb862bf71f19",
+          "stderr_bytes": 58,
+          "runner_error": null
+        },
+        {
+          "name": "deny_Phase_legal",
+          "argv": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/never-open-device",
+            "1",
+            "write",
+            "Phase",
+            "255"
+          ],
+          "pid": 446748,
+          "identity": {
+            "pid": 446748,
+            "start_ticks": 256673967,
+            "pgid": 446748,
+            "sid": 446748,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 2,
+          "expected_exit": 2,
+          "reaped": true,
+          "elapsed_ns": 53215927,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "88fa61f25a37c5aa52d808eac4046b9bf556663945f4f8f3c951eb862bf71f19",
+          "stderr_bytes": 58,
+          "runner_error": null
+        },
+        {
+          "name": "deny_CW_Dead_Zone_missing",
+          "argv": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/never-open-device",
+            "1",
+            "write",
+            "CW_Dead_Zone"
+          ],
+          "pid": 446749,
+          "identity": {
+            "pid": 446749,
+            "start_ticks": 256674012,
+            "pgid": 446749,
+            "sid": 446749,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 2,
+          "expected_exit": 2,
+          "reaped": true,
+          "elapsed_ns": 52924273,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "8164aa529a1dc0668f18e855ab91ddb614f4fb321eeb1cb78b0e17e31a198dc4",
+          "stderr_bytes": 65,
+          "runner_error": null
+        },
+        {
+          "name": "deny_CW_Dead_Zone_bad",
+          "argv": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/never-open-device",
+            "1",
+            "write",
+            "CW_Dead_Zone",
+            "bad-value"
+          ],
+          "pid": 446750,
+          "identity": {
+            "pid": 446750,
+            "start_ticks": 256674058,
+            "pgid": 446750,
+            "sid": 446750,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 2,
+          "expected_exit": 2,
+          "reaped": true,
+          "elapsed_ns": 52910706,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "8164aa529a1dc0668f18e855ab91ddb614f4fb321eeb1cb78b0e17e31a198dc4",
+          "stderr_bytes": 65,
+          "runner_error": null
+        },
+        {
+          "name": "deny_CW_Dead_Zone_legal",
+          "argv": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/never-open-device",
+            "1",
+            "write",
+            "CW_Dead_Zone",
+            "255"
+          ],
+          "pid": 446751,
+          "identity": {
+            "pid": 446751,
+            "start_ticks": 256674104,
+            "pgid": 446751,
+            "sid": 446751,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 2,
+          "expected_exit": 2,
+          "reaped": true,
+          "elapsed_ns": 53314713,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "8164aa529a1dc0668f18e855ab91ddb614f4fb321eeb1cb78b0e17e31a198dc4",
+          "stderr_bytes": 65,
+          "runner_error": null
+        },
+        {
+          "name": "deny_CCW_Dead_Zone_missing",
+          "argv": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/never-open-device",
+            "1",
+            "write",
+            "CCW_Dead_Zone"
+          ],
+          "pid": 446752,
+          "identity": {
+            "pid": 446752,
+            "start_ticks": 256674150,
+            "pgid": 446752,
+            "sid": 446752,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 2,
+          "expected_exit": 2,
+          "reaped": true,
+          "elapsed_ns": 52861332,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "cac742f0437bcfdc452c77a06264da04a35b11a54893486297e16489bb468b06",
+          "stderr_bytes": 66,
+          "runner_error": null
+        },
+        {
+          "name": "deny_CCW_Dead_Zone_bad",
+          "argv": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/never-open-device",
+            "1",
+            "write",
+            "CCW_Dead_Zone",
+            "bad-value"
+          ],
+          "pid": 446753,
+          "identity": {
+            "pid": 446753,
+            "start_ticks": 256674195,
+            "pgid": 446753,
+            "sid": 446753,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 2,
+          "expected_exit": 2,
+          "reaped": true,
+          "elapsed_ns": 52904916,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "cac742f0437bcfdc452c77a06264da04a35b11a54893486297e16489bb468b06",
+          "stderr_bytes": 66,
+          "runner_error": null
+        },
+        {
+          "name": "deny_CCW_Dead_Zone_legal",
+          "argv": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/never-open-device",
+            "1",
+            "write",
+            "CCW_Dead_Zone",
+            "255"
+          ],
+          "pid": 446754,
+          "identity": {
+            "pid": 446754,
+            "start_ticks": 256674241,
+            "pgid": 446754,
+            "sid": 446754,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 2,
+          "expected_exit": 2,
+          "reaped": true,
+          "elapsed_ns": 52891604,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "cac742f0437bcfdc452c77a06264da04a35b11a54893486297e16489bb468b06",
+          "stderr_bytes": 66,
+          "runner_error": null
+        },
+        {
+          "name": "rustc_after",
+          "argv": [
+            "rustc",
+            "-vV"
+          ],
+          "pid": 446755,
+          "identity": {
+            "pid": 446755,
+            "start_ticks": 256674267,
+            "pgid": 446755,
+            "sid": 446755,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 85209226,
+          "timeout_seconds": 60,
+          "stdout_sha256": "c1f8b232fe93b6e7d7f6458069b3b7d291400af7ef2045cf762b54b4c66a4dcd",
+          "stdout_bytes": 215,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "cargo_after",
+          "argv": [
+            "cargo",
+            "-V"
+          ],
+          "pid": 446761,
+          "identity": {
+            "pid": 446761,
+            "start_ticks": 256674278,
+            "pgid": 446761,
+            "sid": 446761,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52857204,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f0e5615fa93406c98c44217db0fe5ac7a2f5d45dacdab1ba934f4b9a94f7deaf",
+          "stdout_bytes": 45,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 446766,
+          "identity": {
+            "pid": 446766,
+            "start_ticks": 256674286,
+            "pgid": 446766,
+            "sid": 446766,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52923894,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 446767,
+          "identity": {
+            "pid": 446767,
+            "start_ticks": 256674293,
+            "pgid": 446767,
+            "sid": 446767,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 84940647,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 446768,
+          "identity": {
+            "pid": 446768,
+            "start_ticks": 256674304,
+            "pgid": 446768,
+            "sid": 446768,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52777139,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "after_old_head",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 446769,
+          "identity": {
+            "pid": 446769,
+            "start_ticks": 256674331,
+            "pgid": 446769,
+            "sid": 446769,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52833268,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "after_old_status",
+          "argv": [
+            "git",
+            "-C",
+            "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 446770,
+          "identity": {
+            "pid": 446770,
+            "start_ticks": 256674338,
+            "pgid": 446770,
+            "sid": 446770,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 84819524,
+          "timeout_seconds": 60,
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 446810,
+          "identity": {
+            "pid": 446810,
+            "start_ticks": 256678930,
+            "pgid": 446810,
+            "sid": 446810,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 53164043,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 446811,
+          "identity": {
+            "pid": 446811,
+            "start_ticks": 256678938,
+            "pgid": 446811,
+            "sid": 446811,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52379966,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_before_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 446812,
+          "identity": {
+            "pid": 446812,
+            "start_ticks": 256678945,
+            "pgid": 446812,
+            "sid": 446812,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52285181,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_head",
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ],
+          "pid": 446813,
+          "identity": {
+            "pid": 446813,
+            "start_ticks": 256679007,
+            "pgid": 446813,
+            "sid": 446813,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52634884,
+          "timeout_seconds": 60,
+          "stdout_sha256": "db45b9076e5914f0bb9b5f44238370c2a8f35888acdba0bb96c0f37ff595d71b",
+          "stdout_bytes": 41,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_status",
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all"
+          ],
+          "pid": 446814,
+          "identity": {
+            "pid": 446814,
+            "start_ticks": 256679014,
+            "pgid": 446814,
+            "sid": 446814,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52413408,
+          "timeout_seconds": 60,
+          "stdout_sha256": "5a24be47a38f12988057954d7670e85b51791b28a344d6ea5bace556e53c74b9",
+          "stdout_bytes": 344,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        },
+        {
+          "name": "source_after_files",
+          "argv": [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard"
+          ],
+          "pid": 446815,
+          "identity": {
+            "pid": 446815,
+            "start_ticks": 256679021,
+            "pgid": 446815,
+            "sid": 446815,
+            "state": "R",
+            "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+            "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+          },
+          "exit_code": 0,
+          "expected_exit": 0,
+          "reaped": true,
+          "elapsed_ns": 52421697,
+          "timeout_seconds": 60,
+          "stdout_sha256": "f08f29a983bce63b30b9eaae26b9a4fb95f75c9a180fe215c160161b743518e2",
+          "stdout_bytes": 40798,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_bytes": 0,
+          "runner_error": null
+        }
+      ],
+      "direct_count": 41,
+      "host_owners": [
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/host/checks.owner/result.json",
+          "sha256": "26d78f68f7ad5e455f3c3e17e910b47322c6bb3506cf15104e591ca62222f989",
+          "bytes": 1536,
+          "owner_pid": 91957,
+          "pid": 91958,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/host/collect_native.owner/result.json",
+          "sha256": "2550ae3dcdd77a4d5f708ab6be7959d609a755de1acba3f42a5c610ed5b07e7c",
+          "bytes": 1544,
+          "owner_pid": 92377,
+          "pid": 92378,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/host/download_native.owner/result.json",
+          "sha256": "a1fd87e0575bdefebdba031dbf7f532b19bfebadbb04d839fd40a59e24ce5080",
+          "bytes": 1633,
+          "owner_pid": 92459,
+          "pid": 92460,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-native-r3.tar.gz",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-native-r3.tar.gz.index.json",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-native-r3.tar.gz.metadata.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/host/prepare_source.owner/result.json",
+          "sha256": "f453a568fff033903351d645a00d57c329e3c99172c29df11aba9868943de79f",
+          "bytes": 1538,
+          "owner_pid": 91754,
+          "pid": 91755,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/host/seed_cache.owner/result.json",
+          "sha256": "fb0dca02b379a7ac27371888841841e717a296336109693759bb4f308e94d239",
+          "bytes": 1531,
+          "owner_pid": 91822,
+          "pid": 91825,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/host/snapshot_inputs.owner/result.json",
+          "sha256": "809e4025177ed75fb9d19d0aee142131689222e9310536d787214f435b741dc3",
+          "bytes": 1548,
+          "owner_pid": 92323,
+          "pid": 92324,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "robot",
+            "/bin/bash",
+            "-s"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/host/upload_candidate.owner/result.json",
+          "sha256": "32fe0af314336d05d157df48dc176df7e400177bab88fa22f46ef85f619b3198",
+          "bytes": 3456,
+          "owner_pid": 91828,
+          "pid": 91829,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/src/bus.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/src/diagnostic.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/src/error.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/candidate/crates/robot-adapters/feetech/src/registers.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/candidate/crates/robot-kinematics-xlerobot/src/base.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/candidate/crates/robot-kinematics-xlerobot/src/lib.rs",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/run_checks.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/run_release_v2.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/run_release_v2.original.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/run_release_v2.diff",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/expected_source.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/frozen_inputs.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/expected_tests.json",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/preservation_pins.json",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/bootstrap/"
+          ]
+        },
+        {
+          "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/host/upload_evidence_helpers.owner/result.json",
+          "sha256": "6d8e3daee46b7be2dc5e6213a6d5c0b18a7a24f76743451934ad63425ca10262",
+          "bytes": 1579,
+          "owner_pid": 92104,
+          "pid": 92105,
+          "wait_returncode": 0,
+          "reaped": true,
+          "command": [
+            "/usr/bin/scp",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/snapshot_inputs.py",
+            "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-orin-r3/collect_native.py",
+            "robot:/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/bootstrap/"
+          ]
+        }
+      ],
+      "host_owner_count": 8,
+      "tests": {
+        "adapter_lib": {
+          "passed": 160,
+          "failed": 0,
+          "ignored": 0,
+          "names": [
+            "adapter::diagnostic::tests::communication_classes_match_existing_error_mapping",
+            "adapter::diagnostic::tests::typed_classes_keep_literal_diagnostic_codes",
+            "adapter::tests::calibration_derived_limits_override_pm_pi",
+            "adapter::tests::calibration_id_mismatch_rejected_at_construction",
+            "adapter::tests::calibration_length_mismatch_rejected",
+            "adapter::tests::enable_false_stops_on_first_communication_error_without_retry_or_next_motor",
+            "adapter::tests::enable_false_writes_torque_off_per_joint",
+            "adapter::tests::enable_true_does_not_retry_a_failed_initial_present_read",
+            "adapter::tests::enable_true_follows_dimos_sequence",
+            "adapter::tests::hold_current_position_syncs_goal_to_present",
+            "adapter::tests::info_reports_serial_rt_manipulator",
+            "adapter::tests::limits_default_to_pm_pi",
+            "adapter::tests::output_safety_probe_all_off_confirmed",
+            "adapter::tests::output_safety_probe_joint_count_reports",
+            "adapter::tests::output_safety_probe_mixed_state",
+            "adapter::tests::output_safety_probe_short_out_rejected",
+            "adapter::tests::raw_rad_round_trip_at_center",
+            "adapter::tests::raw_rad_round_trip_quarter_turn",
+            "adapter::tests::read_state_decodes_positions_to_rad",
+            "adapter::tests::safety_stop_fast_before_connect_sends_all_configured_motors",
+            "adapter::tests::safety_stop_fast_broadcasts_torque_disable",
+            "adapter::tests::safety_stop_fast_is_alloc_free",
+            "adapter::tests::safety_stop_uses_fast_path_one_broadcast_frame",
+            "adapter::tests::set_mode_torque_rejected",
+            "adapter::tests::sync_goal_to_present_retries_on_readback_mismatch",
+            "adapter::tests::sync_goal_to_present_returns_error_after_max_attempts",
+            "adapter::tests::sync_goal_to_present_tolerance_accepts_small_drift",
+            "adapter::tests::sync_read_device_status_diagnostic_identifies_the_failed_response_motor",
+            "adapter::tests::sync_write_by_id_into_is_alloc_free",
+            "adapter::tests::sync_write_by_id_into_rejects_too_many_motors",
+            "adapter::tests::sync_write_by_id_into_short_frame_buf_returns_byte_length_mismatch",
+            "adapter::tests::torque_communication_failure_diagnostic_retains_motor_and_error_kind",
+            "adapter::tests::torque_device_status_diagnostic_retains_motor_status_and_retry_count",
+            "adapter::tests::torque_nack_retry_has_three_attempts_and_preserves_first_device_failure",
+            "adapter::tests::write_command_converts_rad_to_raw_sync_write",
+            "adapter::tests::write_command_no_calibration_no_clamp",
+            "adapter::tests::write_command_non_position_mode_is_noop_with_warning",
+            "adapter::tests::write_command_silent_clamp_when_calibration_present",
+            "bus::tests::diagnostic_denial_precedes_empty_batch_invalid_motor_value_and_buffer_checks",
+            "bus::tests::diagnostic_preallocated_write_is_rejected_before_io_or_lease",
+            "bus::tests::diagnostic_single_read_preserves_raw_byte_and_exact_request",
+            "bus::tests::diagnostic_single_write_is_rejected_before_io_or_lease",
+            "bus::tests::diagnostic_sync_read_by_id_preserves_raw_bytes_and_exact_request",
+            "bus::tests::diagnostic_sync_read_preserves_raw_bytes_and_exact_request",
+            "bus::tests::diagnostic_sync_write_by_id_is_rejected_before_io_or_lease",
+            "bus::tests::diagnostic_sync_write_is_rejected_before_io_or_lease",
+            "bus::tests::existing_write_still_reaches_the_installed_lease_service",
+            "bus::tests::handshake_fails_when_motor_silent",
+            "bus::tests::handshake_passes_when_all_motors_respond_with_correct_model",
+            "bus::tests::new_rejects_duplicate_motor_id",
+            "bus::tests::ping_known_motor_returns_model_number",
+            "bus::tests::ping_no_response_returns_none",
+            "bus::tests::read_present_position_decodes_sign_magnitude",
+            "bus::tests::sync_read_present_position_two_motors",
+            "bus::tests::sync_read_response_id_mismatch_rejected",
+            "bus::tests::sync_write_goal_position_two_motors_no_ack_required",
+            "bus::tests::unknown_motor_rejected",
+            "bus::tests::unknown_register_rejected_at_read_boundary",
+            "bus::tests::unknown_register_writes_keep_the_original_lookup_error",
+            "bus::tests::write_goal_position_encodes_and_acks",
+            "bus::tests::write_status_error_byte_propagates",
+            "calibration::tests::reset_calibration_writes_three_eeprom_regs_per_motor",
+            "calibration::tests::set_half_turn_homings_computes_offset_from_present",
+            "calibration::tests::set_half_turn_homings_negative_offset",
+            "calibration::tests::unlock_eeprom_writes_torque_off_then_lock_off_per_motor",
+            "calibration::tests::write_calibration_unlocks_writes_then_locks",
+            "calibration_io::tests::clamp_raw_above_upper_bound_clamps_down",
+            "calibration_io::tests::clamp_raw_below_lower_bound_clamps_up",
+            "calibration_io::tests::clamp_raw_equal_bounds_pins_value",
+            "calibration_io::tests::clamp_raw_inside_range_returns_value",
+            "calibration_io::tests::clamp_raw_negative_bounds_work",
+            "calibration_io::tests::load_file_malformed_json_returns_parse_error",
+            "calibration_io::tests::load_file_drive_mode_defaults_to_zero",
+            "calibration_io::tests::load_and_merge_combines_bus1_files",
+            "calibration_io::tests::load_and_merge_duplicate_motor_name_rejected",
+            "calibration_io::tests::load_file_missing_returns_io_error",
+            "calibration_io::tests::load_file_non_object_top_level_rejected",
+            "calibration_io::tests::load_file_out_of_range_homing_offset_rejected",
+            "calibration_io::tests::load_file_parses_left_arm_fixture",
+            "calibration_io::tests::load_file_range_min_over_4095_rejected",
+            "convert::tests::center_is_zero_rad",
+            "convert::tests::full_12bit_range_round_trips_exactly",
+            "convert::tests::half_turn_maps_to_full_scale_edges",
+            "calibration_io::tests::load_file_range_over_u16_max_is_parse_error",
+            "convert::tests::negative_raw_after_sign_magnitude_decode",
+            "convert::tests::quarter_turn_is_1024_ticks",
+            "convert::tests::rad_per_tick_matches_resolution",
+            "convert::tests::rounding_is_nearest_tick",
+            "encoding::tests::combine_four_byte_little_endian",
+            "encoding::tests::combine_length_mismatch_rejected",
+            "encoding::tests::combine_one_byte",
+            "encoding::tests::combine_two_byte_little_endian",
+            "encoding::tests::sign_magnitude_boundary_values",
+            "encoding::tests::sign_magnitude_negative_one_is_0x8001_for_sign_bit_15",
+            "encoding::tests::sign_magnitude_negative_one_is_0x801_for_sign_bit_11",
+            "encoding::tests::sign_magnitude_positive_uses_lower_bits",
+            "encoding::tests::sign_magnitude_present_position_use_case",
+            "encoding::tests::sign_magnitude_roundtrip_random_set",
+            "encoding::tests::sign_magnitude_zero_no_direction_bit",
+            "encoding::tests::split_combine_roundtrip",
+            "encoding::tests::split_four_byte_little_endian",
+            "encoding::tests::split_one_byte",
+            "encoding::tests::split_one_byte_overflow_rejected",
+            "encoding::tests::split_two_byte_little_endian",
+            "encoding::tests::split_two_byte_overflow_rejected",
+            "encoding::tests::split_unsupported_length_rejected",
+            "error::tests::device_faults_configuration_and_abort_do_not_become_unknown_communication",
+            "error::tests::diagnostic_write_denial_is_a_parameter_error_without_communication_kind",
+            "error::tests::transport_and_protocol_errors_keep_their_communication_classes",
+            "protocol::tests::build_out_buffer_too_small_rejected",
+            "protocol::tests::build_ping_id1_matches_known_bytes",
+            "protocol::tests::build_read_present_position_id5",
+            "protocol::tests::build_sync_read_three_motors",
+            "protocol::tests::build_sync_write_data_length_mismatch_rejected",
+            "protocol::tests::build_sync_write_two_motors",
+            "protocol::tests::build_then_locally_parse_as_status",
+            "protocol::tests::build_too_long_params_rejected",
+            "protocol::tests::build_write_goal_position_2048_id1",
+            "protocol::tests::checksum_known_values",
+            "protocol::tests::find_header_in_clean_buffer",
+            "protocol::tests::find_header_partial_returns_none",
+            "protocol::tests::find_header_skips_noise",
+            "protocol::tests::parse_status_bad_checksum_rejected",
+            "protocol::tests::parse_status_bad_header_rejected",
+            "protocol::tests::parse_status_ping_response",
+            "protocol::tests::parse_status_too_short_rejected",
+            "protocol::tests::parse_status_truncated_payload_rejected",
+            "protocol::tests::parse_status_with_two_byte_payload",
+            "protocol::tests::parse_status_zero_length_rejected",
+            "registers::tests::constants_match_dimos",
+            "registers::tests::diagnostic_guard_does_not_reclassify_existing_or_unknown_names",
+            "registers::tests::diagnostic_metadata_is_raw_one_byte_eeprom",
+            "registers::tests::eeprom_registers_match_dimos",
+            "registers::tests::enums_have_expected_repr_values",
+            "registers::tests::known_register_lookup",
+            "registers::tests::no_duplicate_addresses_per_length",
+            "registers::tests::no_duplicate_register_names",
+            "registers::tests::sign_bit_lookup_matches_dimos",
+            "registers::tests::unknown_register_errors",
+            "transport::post_e_acceptance::a_received_byte_restarts_only_the_quiet_window",
+            "transport::post_e_acceptance::continuous_noise_cannot_extend_the_drain_absolute_deadline",
+            "transport::post_e_acceptance::drain_read_errors_are_classified_as_discard_failures",
+            "transport::post_e_acceptance::empty_buffers_do_not_start_io_or_install_a_timeout",
+            "transport::post_e_acceptance::interrupted_and_would_block_retry_only_the_remaining_budget",
+            "transport::post_e_acceptance::native_timeout_before_absolute_deadline_does_not_end_the_packet",
+            "transport::post_e_acceptance::next_call_gets_a_fresh_budget_after_a_short_success",
+            "transport::post_e_acceptance::read_drip_preserves_got_and_one_absolute_deadline",
+            "transport::post_e_acceptance::timeout_install_failure_prevents_all_following_io",
+            "transport::post_e_acceptance::write_drip_reports_actual_progress_and_tx_timeout_kind",
+            "transport::post_e_acceptance::zero_progress_and_terminal_io_errors_do_not_spin_or_retry",
+            "transport::tests::push_rx_then_read_exact",
+            "transport::tests::read_exact_short_returns_timeout",
+            "transport::tests::set_timeout_does_not_fail",
+            "transport::tests::write_then_drain_roundtrip",
+            "types::tests::calibration_homing_offset_boundary",
+            "types::tests::calibration_identity_is_full_range",
+            "types::tests::calibration_range_boundary",
+            "types::tests::motor_id_254_or_255_rejected",
+            "types::tests::motor_id_valid_range",
+            "types::tests::motor_id_zero_rejected"
+          ],
+          "new_subset": [
+            "registers::tests::diagnostic_guard_does_not_reclassify_existing_or_unknown_names",
+            "registers::tests::diagnostic_metadata_is_raw_one_byte_eeprom",
+            "error::tests::diagnostic_write_denial_is_a_parameter_error_without_communication_kind",
+            "bus::tests::diagnostic_denial_precedes_empty_batch_invalid_motor_value_and_buffer_checks",
+            "bus::tests::diagnostic_preallocated_write_is_rejected_before_io_or_lease",
+            "bus::tests::diagnostic_single_read_preserves_raw_byte_and_exact_request",
+            "bus::tests::diagnostic_single_write_is_rejected_before_io_or_lease",
+            "bus::tests::diagnostic_sync_read_by_id_preserves_raw_bytes_and_exact_request",
+            "bus::tests::diagnostic_sync_read_preserves_raw_bytes_and_exact_request",
+            "bus::tests::diagnostic_sync_write_by_id_is_rejected_before_io_or_lease",
+            "bus::tests::diagnostic_sync_write_is_rejected_before_io_or_lease",
+            "bus::tests::existing_write_still_reaches_the_installed_lease_service",
+            "bus::tests::unknown_register_writes_keep_the_original_lookup_error"
+          ]
+        },
+        "example_tests": {
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0,
+          "names": [
+            "tests::diagnostic_write_preflight_denies_even_missing_or_invalid_values",
+            "tests::existing_missing_invalid_and_unknown_arguments_remain_for_original_dispatch",
+            "tests::original_do_write_still_rejects_bad_arguments_without_mock_io",
+            "tests::existing_write_preflight_keeps_supported_arguments",
+            "tests::read_and_ping_preflight_preserve_existing_dispatch"
+          ],
+          "new_subset": [
+            "tests::diagnostic_write_preflight_denies_even_missing_or_invalid_values",
+            "tests::existing_write_preflight_keeps_supported_arguments",
+            "tests::existing_missing_invalid_and_unknown_arguments_remain_for_original_dispatch",
+            "tests::original_do_write_still_rejects_bad_arguments_without_mock_io",
+            "tests::read_and_ping_preflight_preserve_existing_dispatch"
+          ]
+        },
+        "distinct_total": 165,
+        "new_distinct_subset": 18,
+        "lib_real_hw_duplicate": "NOT_RERUN",
+        "full_workspace": "NOT_RUN"
+      },
+      "compiled_smoke": [
+        {
+          "name": "deny_Phase_missing",
+          "exit_code": 2,
+          "completion": {
+            "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/deny_Phase_missing/completion.json",
+            "sha256": "2c12ecf515e29179adc078fb9652c4d5602c32c1fc2260c3e08942ea230a9c36"
+          }
+        },
+        {
+          "name": "deny_Phase_bad",
+          "exit_code": 2,
+          "completion": {
+            "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/deny_Phase_bad/completion.json",
+            "sha256": "a9d6914ac3606fa7858d60c78c76ffa75b6c7c08531cc263b6e3ce02768c5d76"
+          }
+        },
+        {
+          "name": "deny_Phase_legal",
+          "exit_code": 2,
+          "completion": {
+            "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/deny_Phase_legal/completion.json",
+            "sha256": "795cf2d96c0effdb0d068d34fd4075c570e16e38b8711c2bc47da8da6603ec24"
+          }
+        },
+        {
+          "name": "deny_CW_Dead_Zone_missing",
+          "exit_code": 2,
+          "completion": {
+            "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/deny_CW_Dead_Zone_missing/completion.json",
+            "sha256": "3d8f977f257cfea21a1218f0eba89c605621d33326f08db5fe89501ac78cce07"
+          }
+        },
+        {
+          "name": "deny_CW_Dead_Zone_bad",
+          "exit_code": 2,
+          "completion": {
+            "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/deny_CW_Dead_Zone_bad/completion.json",
+            "sha256": "200e27aea979f741c6a55f93eb96ed51d4a111476a755c4c571d34f83d617b2a"
+          }
+        },
+        {
+          "name": "deny_CW_Dead_Zone_legal",
+          "exit_code": 2,
+          "completion": {
+            "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/deny_CW_Dead_Zone_legal/completion.json",
+            "sha256": "abfb6af3f828a9124adee43ae8712cf617b61a3ce71acda832b6ef431c355cd5"
+          }
+        },
+        {
+          "name": "deny_CCW_Dead_Zone_missing",
+          "exit_code": 2,
+          "completion": {
+            "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/deny_CCW_Dead_Zone_missing/completion.json",
+            "sha256": "d453e7a2026f0ae1723d987708401b04b737cd9260006a82d1214f99dc92d0e9"
+          }
+        },
+        {
+          "name": "deny_CCW_Dead_Zone_bad",
+          "exit_code": 2,
+          "completion": {
+            "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/deny_CCW_Dead_Zone_bad/completion.json",
+            "sha256": "e547158ce725ec5f573666d1a2ed00a6e92268c3e7bdb87b6c685ac93607418b"
+          }
+        },
+        {
+          "name": "deny_CCW_Dead_Zone_legal",
+          "exit_code": 2,
+          "completion": {
+            "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/deny_CCW_Dead_Zone_legal/completion.json",
+            "sha256": "4de81cdfe7e279a326f9c35ac1d8cfff901cf095a0c795771d76a7e1628750f1"
+          }
+        }
+      ],
+      "read_tool": {
+        "schema": "FEETECH_B0_READ_TOOL_SOFTWARE_V1",
+        "deployable": false,
+        "native_git_head": "1c5758f97b7c502a38c850e8352ce970216bea53",
+        "main_integration_head": "d5ac7aa7acaa11bef1d318e762d17a4443718120",
+        "source_files": 590,
+        "source_manifest_sha256": "3d8491ee8b82bdaed1182e572bfaac6cbb5a47e6088d4dc91ea40cc8949cbcde",
+        "rustc_identity": {
+          "release": "1.101.0-nightly",
+          "commit_hash": "5c543b0b8c73c7b72bc8284ced4fb22ead15734d",
+          "host": "aarch64-unknown-linux-gnu"
+        },
+        "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/read-tool-r1/feetech_poke",
+        "elf": {
+          "sha256": "2daabe75878989abfa759920ec07773d3c97b017042a42b3906483c3da4f5a71",
+          "bytes": 1470368,
+          "mode": 509,
+          "elf_machine": 183
+        },
+        "compiler_artifact": {
+          "reason": "compiler-artifact",
+          "package_id": "path+file:///home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/source/crates/robot-adapters/feetech#robot-adapter-feetech@0.1.2",
+          "manifest_path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/source/crates/robot-adapters/feetech/Cargo.toml",
+          "target": {
+            "kind": [
+              "example"
+            ],
+            "crate_types": [
+              "bin"
+            ],
+            "name": "feetech_poke",
+            "src_path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/source/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+            "edition": "2024",
+            "required-features": [
+              "real-hw"
+            ],
+            "doc": false,
+            "doctest": false,
+            "test": false
+          },
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          },
+          "features": [
+            "default",
+            "real-hw"
+          ],
+          "filenames": [
+            "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/build/release/examples/feetech_poke"
+          ],
+          "executable": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/build/release/examples/feetech_poke",
+          "fresh": false
+        },
+        "build_completion": {
+          "path": "/home/loosqk/robot-checks/feetech-diagnostic-b0-20260930-r3/qa-r1/release_example/completion.json",
+          "sha256": "fbf897efbd050e279189077a4911493174d8ea9373f11e62e53074c36a8560a1"
+        }
+      },
+      "compiler_after_update_after_equal": true
+    }
+  ],
+  "ownership": {
+    "direct_child_count": 97,
+    "host_owner_count": 26,
+    "all_naturally_waited_reaped": true,
+    "no_kill_no_observation_timeout_restart": true
+  },
+  "distinct_tests": {
+    "adapter_lib": {
+      "passed": 160,
+      "failed": 0,
+      "ignored": 0,
+      "names": [
+        "adapter::diagnostic::tests::communication_classes_match_existing_error_mapping",
+        "adapter::diagnostic::tests::typed_classes_keep_literal_diagnostic_codes",
+        "adapter::tests::calibration_derived_limits_override_pm_pi",
+        "adapter::tests::calibration_id_mismatch_rejected_at_construction",
+        "adapter::tests::calibration_length_mismatch_rejected",
+        "adapter::tests::enable_false_stops_on_first_communication_error_without_retry_or_next_motor",
+        "adapter::tests::enable_false_writes_torque_off_per_joint",
+        "adapter::tests::enable_true_does_not_retry_a_failed_initial_present_read",
+        "adapter::tests::enable_true_follows_dimos_sequence",
+        "adapter::tests::hold_current_position_syncs_goal_to_present",
+        "adapter::tests::info_reports_serial_rt_manipulator",
+        "adapter::tests::limits_default_to_pm_pi",
+        "adapter::tests::output_safety_probe_all_off_confirmed",
+        "adapter::tests::output_safety_probe_joint_count_reports",
+        "adapter::tests::output_safety_probe_mixed_state",
+        "adapter::tests::output_safety_probe_short_out_rejected",
+        "adapter::tests::raw_rad_round_trip_at_center",
+        "adapter::tests::raw_rad_round_trip_quarter_turn",
+        "adapter::tests::read_state_decodes_positions_to_rad",
+        "adapter::tests::safety_stop_fast_before_connect_sends_all_configured_motors",
+        "adapter::tests::safety_stop_fast_broadcasts_torque_disable",
+        "adapter::tests::safety_stop_fast_is_alloc_free",
+        "adapter::tests::safety_stop_uses_fast_path_one_broadcast_frame",
+        "adapter::tests::set_mode_torque_rejected",
+        "adapter::tests::sync_goal_to_present_retries_on_readback_mismatch",
+        "adapter::tests::sync_goal_to_present_returns_error_after_max_attempts",
+        "adapter::tests::sync_goal_to_present_tolerance_accepts_small_drift",
+        "adapter::tests::sync_read_device_status_diagnostic_identifies_the_failed_response_motor",
+        "adapter::tests::sync_write_by_id_into_is_alloc_free",
+        "adapter::tests::sync_write_by_id_into_rejects_too_many_motors",
+        "adapter::tests::sync_write_by_id_into_short_frame_buf_returns_byte_length_mismatch",
+        "adapter::tests::torque_communication_failure_diagnostic_retains_motor_and_error_kind",
+        "adapter::tests::torque_device_status_diagnostic_retains_motor_status_and_retry_count",
+        "adapter::tests::torque_nack_retry_has_three_attempts_and_preserves_first_device_failure",
+        "adapter::tests::write_command_converts_rad_to_raw_sync_write",
+        "adapter::tests::write_command_no_calibration_no_clamp",
+        "adapter::tests::write_command_non_position_mode_is_noop_with_warning",
+        "adapter::tests::write_command_silent_clamp_when_calibration_present",
+        "bus::tests::diagnostic_denial_precedes_empty_batch_invalid_motor_value_and_buffer_checks",
+        "bus::tests::diagnostic_preallocated_write_is_rejected_before_io_or_lease",
+        "bus::tests::diagnostic_single_read_preserves_raw_byte_and_exact_request",
+        "bus::tests::diagnostic_single_write_is_rejected_before_io_or_lease",
+        "bus::tests::diagnostic_sync_read_by_id_preserves_raw_bytes_and_exact_request",
+        "bus::tests::diagnostic_sync_read_preserves_raw_bytes_and_exact_request",
+        "bus::tests::diagnostic_sync_write_by_id_is_rejected_before_io_or_lease",
+        "bus::tests::diagnostic_sync_write_is_rejected_before_io_or_lease",
+        "bus::tests::existing_write_still_reaches_the_installed_lease_service",
+        "bus::tests::handshake_fails_when_motor_silent",
+        "bus::tests::handshake_passes_when_all_motors_respond_with_correct_model",
+        "bus::tests::new_rejects_duplicate_motor_id",
+        "bus::tests::ping_known_motor_returns_model_number",
+        "bus::tests::ping_no_response_returns_none",
+        "bus::tests::read_present_position_decodes_sign_magnitude",
+        "bus::tests::sync_read_present_position_two_motors",
+        "bus::tests::sync_read_response_id_mismatch_rejected",
+        "bus::tests::sync_write_goal_position_two_motors_no_ack_required",
+        "bus::tests::unknown_motor_rejected",
+        "bus::tests::unknown_register_rejected_at_read_boundary",
+        "bus::tests::unknown_register_writes_keep_the_original_lookup_error",
+        "bus::tests::write_goal_position_encodes_and_acks",
+        "bus::tests::write_status_error_byte_propagates",
+        "calibration::tests::reset_calibration_writes_three_eeprom_regs_per_motor",
+        "calibration::tests::set_half_turn_homings_computes_offset_from_present",
+        "calibration::tests::set_half_turn_homings_negative_offset",
+        "calibration::tests::unlock_eeprom_writes_torque_off_then_lock_off_per_motor",
+        "calibration::tests::write_calibration_unlocks_writes_then_locks",
+        "calibration_io::tests::clamp_raw_above_upper_bound_clamps_down",
+        "calibration_io::tests::clamp_raw_below_lower_bound_clamps_up",
+        "calibration_io::tests::clamp_raw_equal_bounds_pins_value",
+        "calibration_io::tests::clamp_raw_inside_range_returns_value",
+        "calibration_io::tests::clamp_raw_negative_bounds_work",
+        "calibration_io::tests::load_file_malformed_json_returns_parse_error",
+        "calibration_io::tests::load_file_drive_mode_defaults_to_zero",
+        "calibration_io::tests::load_and_merge_combines_bus1_files",
+        "calibration_io::tests::load_and_merge_duplicate_motor_name_rejected",
+        "calibration_io::tests::load_file_missing_returns_io_error",
+        "calibration_io::tests::load_file_non_object_top_level_rejected",
+        "calibration_io::tests::load_file_out_of_range_homing_offset_rejected",
+        "calibration_io::tests::load_file_parses_left_arm_fixture",
+        "calibration_io::tests::load_file_range_min_over_4095_rejected",
+        "convert::tests::center_is_zero_rad",
+        "convert::tests::full_12bit_range_round_trips_exactly",
+        "convert::tests::half_turn_maps_to_full_scale_edges",
+        "calibration_io::tests::load_file_range_over_u16_max_is_parse_error",
+        "convert::tests::negative_raw_after_sign_magnitude_decode",
+        "convert::tests::quarter_turn_is_1024_ticks",
+        "convert::tests::rad_per_tick_matches_resolution",
+        "convert::tests::rounding_is_nearest_tick",
+        "encoding::tests::combine_four_byte_little_endian",
+        "encoding::tests::combine_length_mismatch_rejected",
+        "encoding::tests::combine_one_byte",
+        "encoding::tests::combine_two_byte_little_endian",
+        "encoding::tests::sign_magnitude_boundary_values",
+        "encoding::tests::sign_magnitude_negative_one_is_0x8001_for_sign_bit_15",
+        "encoding::tests::sign_magnitude_negative_one_is_0x801_for_sign_bit_11",
+        "encoding::tests::sign_magnitude_positive_uses_lower_bits",
+        "encoding::tests::sign_magnitude_present_position_use_case",
+        "encoding::tests::sign_magnitude_roundtrip_random_set",
+        "encoding::tests::sign_magnitude_zero_no_direction_bit",
+        "encoding::tests::split_combine_roundtrip",
+        "encoding::tests::split_four_byte_little_endian",
+        "encoding::tests::split_one_byte",
+        "encoding::tests::split_one_byte_overflow_rejected",
+        "encoding::tests::split_two_byte_little_endian",
+        "encoding::tests::split_two_byte_overflow_rejected",
+        "encoding::tests::split_unsupported_length_rejected",
+        "error::tests::device_faults_configuration_and_abort_do_not_become_unknown_communication",
+        "error::tests::diagnostic_write_denial_is_a_parameter_error_without_communication_kind",
+        "error::tests::transport_and_protocol_errors_keep_their_communication_classes",
+        "protocol::tests::build_out_buffer_too_small_rejected",
+        "protocol::tests::build_ping_id1_matches_known_bytes",
+        "protocol::tests::build_read_present_position_id5",
+        "protocol::tests::build_sync_read_three_motors",
+        "protocol::tests::build_sync_write_data_length_mismatch_rejected",
+        "protocol::tests::build_sync_write_two_motors",
+        "protocol::tests::build_then_locally_parse_as_status",
+        "protocol::tests::build_too_long_params_rejected",
+        "protocol::tests::build_write_goal_position_2048_id1",
+        "protocol::tests::checksum_known_values",
+        "protocol::tests::find_header_in_clean_buffer",
+        "protocol::tests::find_header_partial_returns_none",
+        "protocol::tests::find_header_skips_noise",
+        "protocol::tests::parse_status_bad_checksum_rejected",
+        "protocol::tests::parse_status_bad_header_rejected",
+        "protocol::tests::parse_status_ping_response",
+        "protocol::tests::parse_status_too_short_rejected",
+        "protocol::tests::parse_status_truncated_payload_rejected",
+        "protocol::tests::parse_status_with_two_byte_payload",
+        "protocol::tests::parse_status_zero_length_rejected",
+        "registers::tests::constants_match_dimos",
+        "registers::tests::diagnostic_guard_does_not_reclassify_existing_or_unknown_names",
+        "registers::tests::diagnostic_metadata_is_raw_one_byte_eeprom",
+        "registers::tests::eeprom_registers_match_dimos",
+        "registers::tests::enums_have_expected_repr_values",
+        "registers::tests::known_register_lookup",
+        "registers::tests::no_duplicate_addresses_per_length",
+        "registers::tests::no_duplicate_register_names",
+        "registers::tests::sign_bit_lookup_matches_dimos",
+        "registers::tests::unknown_register_errors",
+        "transport::post_e_acceptance::a_received_byte_restarts_only_the_quiet_window",
+        "transport::post_e_acceptance::continuous_noise_cannot_extend_the_drain_absolute_deadline",
+        "transport::post_e_acceptance::drain_read_errors_are_classified_as_discard_failures",
+        "transport::post_e_acceptance::empty_buffers_do_not_start_io_or_install_a_timeout",
+        "transport::post_e_acceptance::interrupted_and_would_block_retry_only_the_remaining_budget",
+        "transport::post_e_acceptance::native_timeout_before_absolute_deadline_does_not_end_the_packet",
+        "transport::post_e_acceptance::next_call_gets_a_fresh_budget_after_a_short_success",
+        "transport::post_e_acceptance::read_drip_preserves_got_and_one_absolute_deadline",
+        "transport::post_e_acceptance::timeout_install_failure_prevents_all_following_io",
+        "transport::post_e_acceptance::write_drip_reports_actual_progress_and_tx_timeout_kind",
+        "transport::post_e_acceptance::zero_progress_and_terminal_io_errors_do_not_spin_or_retry",
+        "transport::tests::push_rx_then_read_exact",
+        "transport::tests::read_exact_short_returns_timeout",
+        "transport::tests::set_timeout_does_not_fail",
+        "transport::tests::write_then_drain_roundtrip",
+        "types::tests::calibration_homing_offset_boundary",
+        "types::tests::calibration_identity_is_full_range",
+        "types::tests::calibration_range_boundary",
+        "types::tests::motor_id_254_or_255_rejected",
+        "types::tests::motor_id_valid_range",
+        "types::tests::motor_id_zero_rejected"
+      ],
+      "new_subset": [
+        "registers::tests::diagnostic_guard_does_not_reclassify_existing_or_unknown_names",
+        "registers::tests::diagnostic_metadata_is_raw_one_byte_eeprom",
+        "error::tests::diagnostic_write_denial_is_a_parameter_error_without_communication_kind",
+        "bus::tests::diagnostic_denial_precedes_empty_batch_invalid_motor_value_and_buffer_checks",
+        "bus::tests::diagnostic_preallocated_write_is_rejected_before_io_or_lease",
+        "bus::tests::diagnostic_single_read_preserves_raw_byte_and_exact_request",
+        "bus::tests::diagnostic_single_write_is_rejected_before_io_or_lease",
+        "bus::tests::diagnostic_sync_read_by_id_preserves_raw_bytes_and_exact_request",
+        "bus::tests::diagnostic_sync_read_preserves_raw_bytes_and_exact_request",
+        "bus::tests::diagnostic_sync_write_by_id_is_rejected_before_io_or_lease",
+        "bus::tests::diagnostic_sync_write_is_rejected_before_io_or_lease",
+        "bus::tests::existing_write_still_reaches_the_installed_lease_service",
+        "bus::tests::unknown_register_writes_keep_the_original_lookup_error"
+      ]
+    },
+    "example_tests": {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "names": [
+        "tests::diagnostic_write_preflight_denies_even_missing_or_invalid_values",
+        "tests::existing_missing_invalid_and_unknown_arguments_remain_for_original_dispatch",
+        "tests::original_do_write_still_rejects_bad_arguments_without_mock_io",
+        "tests::existing_write_preflight_keeps_supported_arguments",
+        "tests::read_and_ping_preflight_preserve_existing_dispatch"
+      ],
+      "new_subset": [
+        "tests::diagnostic_write_preflight_denies_even_missing_or_invalid_values",
+        "tests::existing_write_preflight_keeps_supported_arguments",
+        "tests::existing_missing_invalid_and_unknown_arguments_remain_for_original_dispatch",
+        "tests::original_do_write_still_rejects_bad_arguments_without_mock_io",
+        "tests::read_and_ping_preflight_preserve_existing_dispatch"
+      ]
+    },
+    "distinct_total": 165,
+    "new_distinct_subset": 18,
+    "lib_real_hw_duplicate": "NOT_RERUN",
+    "full_workspace": "NOT_RUN"
+  },
+  "compiled_refusal_cases": 9,
+  "new_methods_subset_included": 18,
+  "three_diagnostic_literal_cases": "existing method扩展，不计为新增方法",
+  "lib_real_hw_repeat": "NOT_RUN",
+  "full_workspace": "NOT_RUN",
+  "hardware": "NOT_RUN",
+  "deployment_install_push": "NOT_RUN",
+  "physical_power_off": "PENDING",
+  "old_H2_overall_FAIL": "PRESERVED",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "previous_H2_local_archives_unchanged": [
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-v2-orin-r1/summary.json",
+      "sha256": "3a15ebc256b1c5d32a428336a6b703cdc1628cd9ba1c409c9c0ad7c59d3e5a09",
+      "bytes": 74467
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-v2-orin-r1/independent_native_review.json",
+      "sha256": "b393bdc9459aa86e98b2a8a3c3454cb25194688c83820fb3b879e55733731af5",
+      "bytes": 1272
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-v2-orin-r1-evidence.tar.gz",
+      "sha256": "db264b37ea0d00bcb23bb0eccf57a5fca6dd0befadf279d33fd2209ec3f1b83f",
+      "bytes": 23356642
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-trace-v2-orin-r1-evidence.index.json",
+      "sha256": "e75b2a8a6b0913e4ca2aa09445d1865e669252edf7977d9907237697ef07ea9c",
+      "bytes": 21379
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/summary.json",
+      "sha256": "25d11a19a880932308efc3198b4de8913c7c915e5f4b005000211fe246f2e53f",
+      "bytes": 29153
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1/independent_native_review.json",
+      "sha256": "074f1e3a4bf9d80a7df20504dcd66d402b9352bbf562dd2e0e1f3773d347e5a2",
+      "bytes": 1229
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1-evidence.tar.gz",
+      "sha256": "004859d28cdd5108f911a9c4de59f0b65d9fd6e791ed4c5c77bffbdd4520549d",
+      "bytes": 224149
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/h2-maintenance-orin-precommit-r1-evidence.index.json",
+      "sha256": "a2eca390de862682efc8669a8a038293bf075b410940c6a45d8c06360b0984b2",
+      "bytes": 10427
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/serial-periodic-recovery/robot-system/target/independent_outer_archive_review.json",
+      "sha256": "51d39fc30f06c9e860f61b432706f949eb4c75fbfc6bcfd7e2974857cb19a519",
+      "bytes": 485281
+    }
+  ],
+  "previous_math_local_archives": [
+    {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r2/summary.json",
+      "sha256": "ffe3e31765b64af9bf24ce463c54464a16ad08b7ed1cef25abdf66bed4d24927",
+      "bytes": 90628
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r1/native-evidence.tar.gz",
+      "sha256": "e63fe7369d93aa7d51bea91808b7a2fed88073808d2515886bd56cf59b0d61eb",
+      "bytes": 9673172
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r1/native-evidence.index.json",
+      "sha256": "5eaf9d3584371abf62cfbde093b986a8bf6d4301d917931e8c9c3cab6a8ba7af",
+      "bytes": 226016
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r2/native-evidence.tar.gz",
+      "sha256": "a1e4758091408501a655f838509e5b765f00bce7353465bd94d536ab5655219b",
+      "bytes": 9873777
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-orin-r2/native-evidence.index.json",
+      "sha256": "4dd2689f229517ed62d92b066aa406dec9e53887e1eb616655ce617a3a43785d",
+      "bytes": 250397
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-si-orin-evidence.tar.gz",
+      "sha256": "075b1802d6e3fe554945bc03f548c3cae872c079fad380d72005e078a431e977",
+      "bytes": 19785482
+    },
+    {
+      "path": "/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/xlerobot-base-si-orin-evidence.index.json",
+      "sha256": "3cc17eecc6420ede7451f6ea36de254bfd761b93ce9962365573e079ae5b3618",
+      "bytes": 25495
+    }
+  ],
+  "frozen_summary_immutable": true
+}

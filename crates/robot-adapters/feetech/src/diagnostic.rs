@@ -53,6 +53,7 @@ impl FeetechDiagnostic {
                 status: *status,
             },
             F::UnknownRegister(_)
+            | F::DiagnosticRegisterWriteForbidden(_)
             | F::UnknownMotor(_)
             | F::InvalidMotorId(_)
             | F::DuplicateMotorId(_)
@@ -121,6 +122,21 @@ mod tests {
         for (error, expected, encoded) in [
             (
                 F::UnknownRegister("unknown"),
+                D::InvalidParameter(P::Argument),
+                (8, 1, 0),
+            ),
+            (
+                F::DiagnosticRegisterWriteForbidden("Phase"),
+                D::InvalidParameter(P::Argument),
+                (8, 1, 0),
+            ),
+            (
+                F::DiagnosticRegisterWriteForbidden("CW_Dead_Zone"),
+                D::InvalidParameter(P::Argument),
+                (8, 1, 0),
+            ),
+            (
+                F::DiagnosticRegisterWriteForbidden("CCW_Dead_Zone"),
                 D::InvalidParameter(P::Argument),
                 (8, 1, 0),
             ),

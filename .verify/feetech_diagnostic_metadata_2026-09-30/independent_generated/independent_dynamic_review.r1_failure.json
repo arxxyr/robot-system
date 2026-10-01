@@ -1,0 +1,8 @@
+{
+  "schema": "B0_INDEPENDENT_DYNAMIC_REVIEW_V1",
+  "status": "FAIL_REVIEWER_OR_EVIDENCE_MISMATCH",
+  "checks": 1228,
+  "error": "ValueError('bootstrap目标argv')",
+  "traceback": "Traceback (most recent call last):\n  File \"/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-archive-review/independent_dynamic_check.py\", line 215, in <module>\n    report = main()\n             ^^^^^^\n  File \"/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-archive-review/independent_dynamic_check.py\", line 121, in main\n    rows.append(completion(path, extracted, remote, n < 3 and path.parent.name == 'clippy_default'))\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-archive-review/independent_dynamic_check.py\", line 66, in completion\n    need(row['bootstrap_argv'][3:] == row['argv'], 'bootstrap目标argv')\n  File \"/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-archive-review/independent_dynamic_check.py\", line 19, in need\n    raise ValueError(message)\nValueError: bootstrap目标argv\n",
+  "source_and_originals_modified": false
+}
