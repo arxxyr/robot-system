@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_absolute_write_2026-10-08/original-evidence.tar.gz",
+    "bytes": 13484318,
+    "sha256": "10498bde5ec2c12fbd03f481293db4a54ede97f5749e15397d291f334bcdc9e3",
+    "mode": 420
+  },
+  "index": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_absolute_write_2026-10-08/original-evidence.index.json",
+    "bytes": 406718,
+    "sha256": "67962039eff636eece022d1229cb37b4035c29a84597e9f421748745853940a6",
+    "mode": 420
+  },
+  "all_archive_member_bytes_sha_mode_match": true,
+  "original_before_after_equal": true,
+  "source_tar_duplicate_identities_verified": true,
+  "main_input_before": {
+    "count": 596,
+    "aggregate": "bfe2318fd0bbac6e5f3c34766237ceca634f72331091053b7d2450e5b0ee0f40",
+    "all_sha_bytes_exec_equal": true
+  },
+  "main_input_after": {
+    "count": 596,
+    "aggregate": "bfe2318fd0bbac6e5f3c34766237ceca634f72331091053b7d2450e5b0ee0f40",
+    "all_sha_bytes_exec_equal": true
+  },
+  "local_only_no_cargo_ssh_uart": true
+}

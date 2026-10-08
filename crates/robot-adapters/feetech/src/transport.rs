@@ -10,9 +10,40 @@ use std::io::{self, Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use robot_core::time::RobotClock;
+#[cfg(any(test, feature = "real-hw"))]
+use robot_core::time::MonoRawNs;
+use robot_core::time::{Deadline, RobotClock};
 
-use crate::error::FeetechError;
+use crate::error::{AbsoluteWriteFailure, AbsoluteWriteReason, FeetechError};
+
+/// 显式借用原来源的时钟和绝对期限，不授予执行权，也不刷新期限。
+///
+/// 调用方须从同一时基生成期限；该类型不认证来源或两个 Clock 实例物理同源。
+#[derive(Clone, Copy)]
+pub struct SourceWriteDeadline<'clock> {
+    clock: &'clock dyn RobotClock,
+    source_deadline: Deadline,
+}
+
+impl<'clock> SourceWriteDeadline<'clock> {
+    #[must_use]
+    pub const fn new(clock: &'clock dyn RobotClock, source_deadline: Deadline) -> Self {
+        Self {
+            clock,
+            source_deadline,
+        }
+    }
+
+    #[must_use]
+    pub const fn clock(self) -> &'clock dyn RobotClock {
+        self.clock
+    }
+
+    #[must_use]
+    pub const fn source_deadline(self) -> Deadline {
+        self.source_deadline
+    }
+}
 
 // ============================================================================
 // trait
@@ -33,6 +64,25 @@ pub trait SerialTransport: Send {
     /// # Errors
     /// 写失败 → [`FeetechError::TransportWrite`]。
     fn write_all(&mut self, buf: &[u8]) -> Result<(), FeetechError>;
+
+    /// 显式来源绝对期限写入。未知实现固定拒绝，绝不回退旧 write_all。
+    ///
+    /// # Errors
+    /// 默认返回 Unsupported，即使输入为空也不读取时钟或触发任何 IO。
+    fn write_all_until(
+        &mut self,
+        buf: &[u8],
+        deadline: SourceWriteDeadline<'_>,
+    ) -> Result<(), FeetechError> {
+        Err(FeetechError::AbsoluteWriteFailure(
+            AbsoluteWriteFailure::before_write(
+                AbsoluteWriteReason::Unsupported,
+                buf.len(),
+                deadline.source_deadline(),
+                None,
+            ),
+        ))
+    }
 
     /// 阻塞读 `buf.len()` 字节。
     ///
@@ -72,6 +122,133 @@ pub struct DrainReport {
 #[cfg_attr(not(any(test, feature = "real-hw")), allow(dead_code))]
 trait SerialPortTimeout {
     fn apply_timeout(&mut self, timeout: Duration) -> io::Result<()>;
+}
+
+/// 新路径仅提取固定 ErrorKind；旧 timeout 桥及其错误行为保持不变。
+#[cfg(any(test, feature = "real-hw"))]
+trait DeadlinePortTimeout {
+    fn apply_timeout_kind(&mut self, timeout: Duration) -> Result<(), io::ErrorKind>;
+}
+
+#[cfg(any(test, feature = "real-hw"))]
+fn check_absolute_write_time(
+    deadline: SourceWriteDeadline<'_>,
+    failure: &mut AbsoluteWriteFailure,
+    previous: &mut MonoRawNs,
+) -> Result<MonoRawNs, FeetechError> {
+    let now = deadline.clock().now();
+    failure.previous_at = Some(*previous);
+    failure.observed_at = Some(now);
+    let reason = match now {
+        value if value < *previous => Some(AbsoluteWriteReason::ClockRegressed {
+            previous_at: *previous,
+        }),
+        value if value >= deadline.source_deadline().as_mono_raw_ns() => {
+            Some(AbsoluteWriteReason::SourceExpired)
+        }
+        value
+            if failure
+                .call_deadline
+                .is_some_and(|limit| value >= limit.as_mono_raw_ns()) =>
+        {
+            Some(AbsoluteWriteReason::CallBudgetExpired)
+        }
+        _ => None,
+    };
+    *previous = now;
+    match reason {
+        Some(reason) => {
+            failure.reason = reason;
+            Err(FeetechError::AbsoluteWriteFailure(*failure))
+        }
+        None => Ok(now),
+    }
+}
+
+/// 真串口和固定夹具共用同一核心，不重放已知前缀、不续期或添加 flush。
+///
+/// 最后一次时钟读与内核写之间不能原子化；相对 native timeout 不构成 OS 硬截止。
+/// foreign backend 自行创建的 String/IO 错误可能已分配，本核心不添加动态错误。
+#[cfg(any(test, feature = "real-hw"))]
+fn write_all_until_bounded<P: Write + DeadlinePortTimeout + ?Sized>(
+    port: &mut P,
+    deadline: SourceWriteDeadline<'_>,
+    call_budget: Duration,
+    buf: &[u8],
+) -> Result<(), FeetechError> {
+    let start = deadline.clock().now();
+    let mut failure = AbsoluteWriteFailure::before_write(
+        AbsoluteWriteReason::SourceExpired,
+        buf.len(),
+        deadline.source_deadline(),
+        Some(start),
+    );
+    if start >= deadline.source_deadline().as_mono_raw_ns() {
+        return Err(FeetechError::AbsoluteWriteFailure(failure));
+    }
+    let call_deadline = u64::try_from(call_budget.as_nanos())
+        .ok()
+        .and_then(|budget| start.0.checked_add(budget));
+    let Some(call_deadline) = call_deadline else {
+        failure.reason = AbsoluteWriteReason::BudgetOverflow;
+        return Err(FeetechError::AbsoluteWriteFailure(failure));
+    };
+    failure.call_deadline = Some(Deadline(MonoRawNs(call_deadline)));
+    let mut previous = start;
+    check_absolute_write_time(deadline, &mut failure, &mut previous)?;
+    if buf.is_empty() {
+        return Ok(());
+    }
+    loop {
+        let now = check_absolute_write_time(deadline, &mut failure, &mut previous)?;
+        let remaining = deadline
+            .source_deadline()
+            .as_mono_raw_ns()
+            .0
+            .min(call_deadline)
+            - now.0;
+        if let Err(kind) = port.apply_timeout_kind(Duration::from_nanos(remaining)) {
+            failure.reason = AbsoluteWriteReason::TimeoutConfiguration { kind };
+            return Err(FeetechError::AbsoluteWriteFailure(failure));
+        }
+        // 安装 native timeout 本身也可能耗时，安装成功后仍要重新核原两期限。
+        check_absolute_write_time(deadline, &mut failure, &mut previous)?;
+        failure.write_attempted = true;
+        let outcome = port.write(&buf[failure.got..]);
+        failure.last_io_error = outcome.as_ref().err().map(io::Error::kind);
+        if let Ok(count) = outcome.as_ref()
+            && *count > buf.len() - failure.got
+        {
+            // 损坏的计数优先，不据它累计进度；时钟只作事实观测，不覆盖主因。
+            failure.previous_at = Some(previous);
+            failure.observed_at = Some(deadline.clock().now());
+            failure.reason = AbsoluteWriteReason::InvalidWriteCount { reported: *count };
+            return Err(FeetechError::AbsoluteWriteFailure(failure));
+        }
+        let terminal = match outcome {
+            Ok(0) => Some(AbsoluteWriteReason::WriteZero),
+            Ok(count) => {
+                failure.got += count;
+                None
+            }
+            Err(error) => match error.kind() {
+                io::ErrorKind::Interrupted
+                | io::ErrorKind::WouldBlock
+                | io::ErrorKind::TimedOut => None,
+                kind => Some(AbsoluteWriteReason::WriteIo { kind }),
+            },
+        };
+        // 先保合法进度，再检查完成时刻；即使 got==wanted，等号或晚到仍失败。
+        check_absolute_write_time(deadline, &mut failure, &mut previous)?;
+        if let Some(reason) = terminal {
+            failure.reason = reason;
+            return Err(FeetechError::AbsoluteWriteFailure(failure));
+        }
+        if failure.got == buf.len() {
+            return Ok(());
+        }
+        // 下一次 partial/retry 重新观测时钟；两个截止值均固定，不重新取起点。
+    }
 }
 
 fn duration_ns(duration: Duration) -> u64 {
@@ -357,7 +534,11 @@ impl MockHandle {
     #[must_use]
     pub fn drain_tx(&self) -> Vec<u8> {
         let mut buf = self.tx_log.lock().expect("mock tx_log poisoned");
-        std::mem::take(&mut *buf)
+        // 非热捕获取出接口：在调用处为下一轮保留原容量，避免清空握手日志后
+        // 将预留buffer换成cap0，令之后受guard保护的Mock写入重新分配。
+        // replacement本身会分配；此接口须在零分配保护窗外调用。
+        let replacement = Vec::with_capacity(buf.capacity());
+        std::mem::replace(&mut *buf, replacement)
     }
 
     /// 不清空地 peek。
@@ -381,8 +562,9 @@ impl MockHandle {
 #[cfg(feature = "real-hw")]
 pub mod real {
     use super::{
-        Arc, DrainReport, Duration, FeetechError, RobotClock, SerialPortTimeout, SerialTransport,
-        drain_until_quiet_bounded, read_exact_bounded, write_all_bounded,
+        Arc, DeadlinePortTimeout, DrainReport, Duration, FeetechError, RobotClock,
+        SerialPortTimeout, SerialTransport, SourceWriteDeadline, drain_until_quiet_bounded,
+        read_exact_bounded, write_all_bounded, write_all_until_bounded,
     };
     use std::path::Path;
 
@@ -446,9 +628,28 @@ pub mod real {
         }
     }
 
+    impl DeadlinePortTimeout for dyn serialport::SerialPort {
+        fn apply_timeout_kind(&mut self, timeout: Duration) -> Result<(), std::io::ErrorKind> {
+            self.set_timeout(timeout).map_err(|error| match error.kind {
+                serialport::ErrorKind::NoDevice => std::io::ErrorKind::NotFound,
+                serialport::ErrorKind::InvalidInput => std::io::ErrorKind::InvalidInput,
+                serialport::ErrorKind::Unknown => std::io::ErrorKind::Other,
+                serialport::ErrorKind::Io(kind) => kind,
+            })
+        }
+    }
+
     impl SerialTransport for RealSerialTransport {
         fn write_all(&mut self, buf: &[u8]) -> Result<(), FeetechError> {
             write_all_bounded(&mut *self.port, self.clock.as_ref(), self.call_timeout, buf)
+        }
+
+        fn write_all_until(
+            &mut self,
+            buf: &[u8],
+            deadline: SourceWriteDeadline<'_>,
+        ) -> Result<(), FeetechError> {
+            write_all_until_bounded(&mut *self.port, deadline, self.call_timeout, buf)
         }
 
         fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), FeetechError> {

@@ -22,6 +22,7 @@ pub(super) enum FeetechDiagnostic {
     InvalidParameter(ParameterReason),
     GoalReadbackMismatch,
     AlreadyConnected,
+    AbsoluteWrite { reason: u8, progress: u8 },
 }
 
 impl FeetechDiagnostic {
@@ -31,6 +32,10 @@ impl FeetechDiagnostic {
         use FeetechError as F;
         use ParameterReason as P;
         match error {
+            F::AbsoluteWriteFailure(failure) => Self::AbsoluteWrite {
+                reason: failure.reason.diagnostic_code(),
+                progress: failure.diagnostic_progress(),
+            },
             F::NotConnected => Self::Communication(C::Disconnected),
             F::TransportTimeout { .. } => Self::Communication(C::Timeout),
             F::TransportWriteTimeout { .. } | F::TransportWrite(_) => {
@@ -108,6 +113,7 @@ impl FeetechDiagnostic {
             ),
             Self::GoalReadbackMismatch => (8, 6, 0),
             Self::AlreadyConnected => (8, 7, 0),
+            Self::AbsoluteWrite { reason, progress } => (9, reason, progress),
         }
     }
 }
@@ -116,7 +122,12 @@ impl FeetechDiagnostic {
 mod tests {
     use super::{FeetechDiagnostic as D, ParameterReason as P};
     use crate::error::FeetechError as F;
+    use crate::error::{AbsoluteWriteFailure, AbsoluteWriteReason as R};
+    use robot_core::error::RobotError;
+    use robot_core::serial_services::BusOpClass;
     use robot_core::serial_services::{AbortReason, CommErrorKind as C};
+    use robot_core::time::{Deadline, MonoRawNs};
+    use std::io;
 
     #[test]
     fn typed_classes_keep_literal_diagnostic_codes() {
@@ -298,6 +309,107 @@ mod tests {
             let diagnostic = D::classify(&error, 7);
             assert_eq!(diagnostic, D::Communication(kind));
             assert_eq!(diagnostic.encode(), (0, code, 0));
+        }
+    }
+    #[test]
+    fn absolute_error_conversion_and_diagnostic_reason_are_exhaustive() {
+        let reasons = [
+            R::Unsupported,
+            R::SourceExpired,
+            R::CallBudgetExpired,
+            R::ClockRegressed {
+                previous_at: MonoRawNs(8),
+            },
+            R::BudgetOverflow,
+            R::TimeoutConfiguration {
+                kind: io::ErrorKind::PermissionDenied,
+            },
+            R::WriteZero,
+            R::WriteIo {
+                kind: io::ErrorKind::BrokenPipe,
+            },
+            R::InvalidOperationClass {
+                class: BusOpClass::Safety,
+            },
+            R::InvalidWriteCount {
+                reported: usize::MAX,
+            },
+            R::NoAuthorityProbe,
+        ];
+        for (index, reason) in reasons.into_iter().enumerate() {
+            let capability = matches!(
+                reason,
+                R::Unsupported
+                    | R::BudgetOverflow
+                    | R::InvalidOperationClass { .. }
+                    | R::NoAuthorityProbe
+            );
+            for (attempt, got, progress) in [
+                (false, 0, 0),
+                (true, 0, 1),
+                (true, usize::MAX - 1, 2),
+                (true, usize::MAX, 3),
+            ] {
+                if capability && attempt {
+                    continue;
+                }
+                let value = AbsoluteWriteFailure {
+                    reason,
+                    wanted: usize::MAX,
+                    got,
+                    source_deadline: Deadline(MonoRawNs(100)),
+                    call_deadline: Some(Deadline(MonoRawNs(50))),
+                    observed_at: Some(MonoRawNs(10)),
+                    previous_at: Some(MonoRawNs(9)),
+                    last_io_error: Some(io::ErrorKind::BrokenPipe),
+                    write_attempted: attempt,
+                };
+                assert_no_alloc::assert_no_alloc(|| {
+                    let error = F::AbsoluteWriteFailure(value);
+                    assert_eq!(
+                        D::classify(&error, 0).encode(),
+                        (9, u8::try_from(index + 1).unwrap(), progress)
+                    );
+                    let expected_comm = match reason {
+                        R::Unsupported
+                        | R::BudgetOverflow
+                        | R::InvalidOperationClass { .. }
+                        | R::NoAuthorityProbe => None,
+                        R::SourceExpired | R::CallBudgetExpired if !attempt => {
+                            Some(C::PendingDeadline)
+                        }
+                        _ => Some(C::IoWrite),
+                    };
+                    assert_eq!(error.comm_kind(), expected_comm);
+                    let converted = RobotError::from(error);
+                    let expected = match reason {
+                        R::Unsupported => RobotError::InvalidParameter("绝对期限写入不受支持"),
+                        R::BudgetOverflow => RobotError::InvalidParameter("写入预算不可表示"),
+                        R::InvalidOperationClass { .. } => {
+                            RobotError::InvalidParameter("来源期限仅用于普通写入")
+                        }
+                        R::NoAuthorityProbe => {
+                            RobotError::InvalidParameter("来源期限写入缺少执行权探针")
+                        }
+                        _ => RobotError::Comm(expected_comm.unwrap()),
+                    };
+                    assert_eq!(converted, expected);
+                    assert_eq!(
+                        (
+                            value.wanted,
+                            value.got,
+                            value.source_deadline,
+                            value.last_io_error
+                        ),
+                        (
+                            usize::MAX,
+                            got,
+                            Deadline(MonoRawNs(100)),
+                            Some(io::ErrorKind::BrokenPipe)
+                        )
+                    );
+                });
+            }
         }
     }
 }

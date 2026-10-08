@@ -33,7 +33,7 @@ use robot_core::serial_services::{BusLease, BusOpClass, LeasedPreemptProbe};
 use crate::encoding::{
     combine_bytes_le, decode_sign_magnitude, encode_sign_magnitude, split_bytes_le,
 };
-use crate::error::FeetechError;
+use crate::error::{AbsoluteWriteFailure, AbsoluteWriteReason, FeetechError};
 use crate::protocol::{
     StatusPacket, build_ping, build_read, build_sync_read, build_sync_write, build_write,
     parse_status,
@@ -42,7 +42,7 @@ use crate::registers::{
     MODEL_NUMBER_STS3215, ensure_not_diagnostic_write, ensure_not_firmware_readonly_write,
     get_register, sign_bit_for,
 };
-use crate::transport::{DrainReport, SerialTransport};
+use crate::transport::{DrainReport, SerialTransport, SourceWriteDeadline};
 use crate::types::Motor;
 
 /// 一条 Feetech bus。`T` 是 [`SerialTransport`] 实现（`MockTransport` /
@@ -83,6 +83,19 @@ impl<'a> BusTransactionLease<'a> {
 
     fn write<T: SerialTransport>(&self, transport: &mut T, buf: &[u8]) -> Result<(), FeetechError> {
         let result = transport.write_all(buf);
+        if let Some(probe) = self.probe {
+            probe.checkpoint();
+        }
+        result
+    }
+
+    fn write_until<T: SerialTransport>(
+        &self,
+        transport: &mut T,
+        buf: &[u8],
+        deadline: SourceWriteDeadline<'_>,
+    ) -> Result<(), FeetechError> {
+        let result = transport.write_all_until(buf, deadline);
         if let Some(probe) = self.probe {
             probe.checkpoint();
         }
@@ -549,39 +562,61 @@ impl<T: SerialTransport> FeetechBus<T> {
         entries: &[(u8, i32)],
         frame_buf: &mut [u8],
     ) -> Result<(), FeetechError> {
-        ensure_not_diagnostic_write(reg_name)?;
-        ensure_not_firmware_readonly_write(reg_name)?;
-        let reg = get_register(reg_name)?;
-        let length_usize = usize::from(reg.length); // v9 fix：字段名 length
-        let n = entries.len();
-        if n > robot_core::adapter::MAX_JOINTS {
-            return Err(FeetechError::ByteLengthMismatch {
-                expected: robot_core::adapter::MAX_JOINTS,
-                actual: n,
-            });
-        }
-
-        // 栈数组（无 alloc）。`MAX_JOINTS = 32` 恒小，单帧最坏 32×4 = 128 byte。
-        let mut data_bufs: [[u8; 4]; robot_core::adapter::MAX_JOINTS] =
-            [[0; 4]; robot_core::adapter::MAX_JOINTS];
-
-        // ===== 阶段 1：mut 写 data_bufs[..n]（每个 i 独立无借用冲突）=====
-        for (i, (_id, value)) in entries.iter().enumerate() {
-            let encoded = encode_value(reg_name, *value)?;
-            split_bytes_le(encoded, length_usize, &mut data_bufs[i][..length_usize])?;
-        }
-        // 阶段 1 结束 —— mut borrow drop
-
-        // ===== 阶段 2：shared 构造 entry_refs[..n]（data_bufs 不再 mut，借用 OK） =====
-        let mut entry_refs: [(u8, &[u8]); robot_core::adapter::MAX_JOINTS] =
-            [(0u8, &[] as &[u8]); robot_core::adapter::MAX_JOINTS];
-        for (i, (id, _)) in entries.iter().enumerate() {
-            entry_refs[i] = (*id, &data_bufs[i][..length_usize]);
-        }
-
-        let n_bytes = build_sync_write(reg.addr, reg.length, &entry_refs[..n], frame_buf)?;
+        let n_bytes = prepare_sync_write_frame(reg_name, entries, frame_buf)?;
         let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
         lease.write(&mut self.transport, &frame_buf[..n_bytes])
+    }
+
+    /// 显式来源期限的普通 broadcast 写入；必须显式提供探针，真实性由调用方保证。
+    ///
+    /// 不读取 ACK，不授权 Enable，也不自动接 Position/Safety/Confirm 或运行时。
+    /// # Errors
+    /// 保留原寄存器/编码/帧容量错误优先级；类别、缺探针、过期前置不申请lease。
+    /// 透传原 Aborted 或固定绝对期限错误；传输未知实现不得回退旧 write_all。
+    pub fn sync_write_by_id_into_until(
+        &mut self,
+        reg_name: &'static str,
+        entries: &[(u8, i32)],
+        frame_buf: &mut [u8],
+        deadline: SourceWriteDeadline<'_>,
+    ) -> Result<(), FeetechError> {
+        let n_bytes = prepare_sync_write_frame(reg_name, entries, frame_buf)?;
+        match self.op_class {
+            BusOpClass::NormalEffectful | BusOpClass::PeriodicWrite => {}
+            class => {
+                return Err(FeetechError::AbsoluteWriteFailure(
+                    AbsoluteWriteFailure::before_write(
+                        AbsoluteWriteReason::InvalidOperationClass { class },
+                        n_bytes,
+                        deadline.source_deadline(),
+                        None,
+                    ),
+                ));
+            }
+        }
+        let Some(probe) = self.preempt.as_deref() else {
+            return Err(FeetechError::AbsoluteWriteFailure(
+                AbsoluteWriteFailure::before_write(
+                    AbsoluteWriteReason::NoAuthorityProbe,
+                    n_bytes,
+                    deadline.source_deadline(),
+                    None,
+                ),
+            ));
+        };
+        let now = deadline.clock().now();
+        if now >= deadline.source_deadline().as_mono_raw_ns() {
+            return Err(FeetechError::AbsoluteWriteFailure(
+                AbsoluteWriteFailure::before_write(
+                    AbsoluteWriteReason::SourceExpired,
+                    n_bytes,
+                    deadline.source_deadline(),
+                    Some(now),
+                ),
+            ));
+        }
+        let lease = BusTransactionLease::acquire(Some(probe), self.op_class)?;
+        lease.write_until(&mut self.transport, &frame_buf[..n_bytes], deadline)
     }
 
     // ── 工具 ──────────────────────────────────────────────────────────
@@ -608,6 +643,45 @@ impl<T: SerialTransport> FeetechBus<T> {
     pub fn all_motor_names(&self) -> Vec<String> {
         self.motors.keys().cloned().collect()
     }
+}
+
+/// 原 `_into` 的纯固定栈编码准备；新旧入口共用原拒写和参数检查顺序。
+fn prepare_sync_write_frame(
+    reg_name: &'static str,
+    entries: &[(u8, i32)],
+    frame_buf: &mut [u8],
+) -> Result<usize, FeetechError> {
+    ensure_not_diagnostic_write(reg_name)?;
+    ensure_not_firmware_readonly_write(reg_name)?;
+    let reg = get_register(reg_name)?;
+    let length_usize = usize::from(reg.length); // v9 fix：字段名 length
+    let n = entries.len();
+    if n > robot_core::adapter::MAX_JOINTS {
+        return Err(FeetechError::ByteLengthMismatch {
+            expected: robot_core::adapter::MAX_JOINTS,
+            actual: n,
+        });
+    }
+
+    // 栈数组（无 alloc）。`MAX_JOINTS = 32` 恒小，单帧最坏 32×4 = 128 byte。
+    let mut data_bufs: [[u8; 4]; robot_core::adapter::MAX_JOINTS] =
+        [[0; 4]; robot_core::adapter::MAX_JOINTS];
+
+    // ===== 阶段 1：mut 写 data_bufs[..n]（每个 i 独立无借用冲突）=====
+    for (i, (_id, value)) in entries.iter().enumerate() {
+        let encoded = encode_value(reg_name, *value)?;
+        split_bytes_le(encoded, length_usize, &mut data_bufs[i][..length_usize])?;
+    }
+    // 阶段 1 结束 —— mut borrow drop
+
+    // ===== 阶段 2：shared 构造 entry_refs[..n]（data_bufs 不再 mut，借用 OK） =====
+    let mut entry_refs: [(u8, &[u8]); robot_core::adapter::MAX_JOINTS] =
+        [(0u8, &[] as &[u8]); robot_core::adapter::MAX_JOINTS];
+    for (i, (id, _)) in entries.iter().enumerate() {
+        entry_refs[i] = (*id, &data_bufs[i][..length_usize]);
+    }
+
+    build_sync_write(reg.addr, reg.length, &entry_refs[..n], frame_buf)
 }
 
 // ============================================================================

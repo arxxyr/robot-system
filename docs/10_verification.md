@@ -9,6 +9,16 @@
 
 ---
 
+## 2026-10-08 · Feetech 来源绝对期限写入的同源软件验证
+
+六份Feetech源码已整合来源绝对期限写入：`SourceWriteDeadline`借用`RobotClock`并保存固定source期限，共享核心保留transport调用的固定预算，首写、partial-write、timeout安装后和返回后均严格以`now >= deadline`拒绝，不续期、不整帧重放。固定错误保留wanted/got、前后观测时刻、是否尝试写入和当次IO错误kind；非法count优先，合法进度记录后按时钟回退/source/call到期顺序判定。新普通写API必须显式提供probe，真实性由调用方保证；无probe在lease/transport前拒绝，未知transport默认Unsupported。旧Position/Safety/Confirm调用保留原API，未改冻结架构。
+
+Mac与Orin分别通过217个不同方法：完整库200加集成12/5，0failed/ignored；默认/real-hw库同名200、29新增和24过滤子集不重复累计，负控child不另计方法。Orin r2实际fmt→默认根Clippy→real-hw根Clippy/default库200均通过，批次因Linux负控固定`(core dumped)`显示后缀被误拒而保持原FAIL/owner exit1；r3只运行剩余real-hw200和12/5门并通过。两批19个原生命令、42个596项源码窗口及实际浮动nightly `1d81eb4ad`一致，所有自有child真实自然wait/reap；这是同源两批合并软件PASS，不称单批全过。root整合后实际主树fmt0与596输入聚合`bfe2318fd0bbac6e5f3c34766237ceca634f72331091053b7d2450e5b0ee0f40`逐项相同，复用上述原生质量门，未称Mac根Clippy通过。Mac旧helper/lint/compile/allocator失败、原生准备失败及r2原FAIL完整封存。
+
+本lib真实allocator已复验新路径和旧热路径；Mock捕获`drain_tx`在guard外保留容量，接口自身仍分配，foreign backend自行构造String错误的分配未由fixture证明零分配。clock回退检测限于core观测窗，call预算从transport start计；native timeout不能撤回已发字节。本件未接S0/S1、新鲜度事件桥、真实轮速TX或Enable授权，无完整workspace/release/H2六配方、新硬件动作、正式安装、部署或push，无syscalltrace。头1回程+8、右9停止字段-50、左腕和右H2原FAIL保持；用户已人工切两个电机电源并保持手臂支撑，未核独立电源遥测且无新GO。现场Firmware未读、Phase12未改，D15 OPEN/DEFERRED、deployable=false保持。
+
+[准确名单、两批原件与主树质量绑定](../.verify/feetech_absolute_write_2026-10-08/summary.json)。
+
 ## 2026-10-08 · 底盘输入组件 Orin 同源软件验证
 
 本阶段合入三项纯软件组件：样本系统header的完整128bit发布Node/Port身份、显式米/米/弧度每秒轮速参数，以及底盘输入的固定容量状态机。身份不是密码学认证；当前一组和退休一组来源不构成无限历史注册表。状态机要求原生产者时间/严格TTL、同Node不同Port的完整心跳与命令pair、checked非零接收计数、零Ack committed投影之后的新输入及当前Enable committed投影；Lost只凭心跳不能恢复，Ready恢复仍待Enable完成。票据/计数耗尽原因粘性保留，时钟回退检查限于已保存生产者时间与绑定边界。只有Active且新鲜的gated_command可构造固定POD；生命周期字段仍只是受信运行时投影，不能代替真实authority/硬件结果。
@@ -1193,3 +1203,4 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-30：补登记维护精度/完整停止/逐项身份后验分类软件门，同35方法与独立H2新V2定向原生准备已归档；两候选不混计，原硬件FAIL与人工断电待答保持。
 - 2026-09-30：补登记XLeRobot具名SI三轮纯运动学，Orin同源590输入、根fmt/Clippy及crate30通过，21新底盘是30子集；首lint失败保留，未接S0/S1或验证底盘动作。
 - 2026-09-30：登记B0三个原始字节诊断项和四API/CLI拒写策略，五源590输入3d8491ee已绑定；首Clippy E0004/101保留，补既有参数类(8,1,0)及三名原方法断言；原生库160+例子5、两根Clippy/release/九次真实exit2拒写通过，18为165子集，归档及独审/root软件验收通过；实际Phase/单位与底盘执行链未验证。
+- 2026-10-08：登记来源绝对期限写六源、Mac/Orin分别217去重方法、Orin r2质量/default200与r3剩余门的合并软件验收及主树同596/实际fmt质量绑定；保留全部原FAIL，无真实轮速接入、硬件、release/全仓、部署或push，D15暂缓与deployable=false保持。

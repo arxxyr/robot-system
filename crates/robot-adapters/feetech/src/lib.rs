@@ -62,6 +62,11 @@
     clippy::float_cmp
 )]
 
+// 只启用在本库测试二进制；生产及独立 integration test 的 allocator 不变。
+#[cfg(test)]
+#[global_allocator]
+static TEST_ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
+
 pub mod adapter;
 pub mod bus;
 pub mod calibration;

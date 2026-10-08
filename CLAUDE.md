@@ -188,6 +188,16 @@
            两轮Clippy101与r4名单夹具FAIL保留；证据 .verify/b1_ingress_components_2026-10-08/summary.json。
            非完整workspace/release/RT/H2或硬件门，无安装/服务激活/push；断电确认后无UART/新GO。
            下一步来源绝对期限串口写仅函数方案，尚未实现；FW未读/Phase12未改，左腕/头1/H2 FAIL、D15 OPEN/DEFERRED、deployable=false保持。
+           同日来源绝对期限写六源已整合：借RobotClock的固定source/call期限，首写、partial及返回时严格到期拒绝，
+           不续期/整帧重放；新普通写入口强制显式probe，未知transport默认拒绝，旧Position/Safety/Confirm保持。
+           Mac与Orin分别217不同方法（库200+集成12/5）；29新增及default/real-hw同名200不重复累计。
+           Orin r2实际fmt→两根Clippy/default200通过、负控Display误拒原batch FAIL保留；r3仅剩余门通过。
+           两批19原生命令/42源码窗同596 bfe2318f及nightly1d81，所有自有child自然回收，不称单批全过。
+           root主树实际fmt0、整合后全部596同原生，复用上述同源质量门；旧Mac r1-r6/定位/native准备FAIL保留。
+           .verify/feetech_absolute_write_2026-10-08/summary.json封必要原件与唯一源码tar，独审/root软件验收通过。
+           未接S0/S1或真实轮速TX，下一步专用wheel adapter另验；无全workspace/release/H2/新硬件/部署/push。
+           头1回程+8、右9停止读值-50原FAIL保持；用户已人工切两个电源并支撑，无新GO，FW未读/Phase12未改。
+           左腕/右H2 FAIL、D15 OPEN/DEFERRED及deployable=false保持。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。
