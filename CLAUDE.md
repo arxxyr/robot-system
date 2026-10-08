@@ -164,6 +164,15 @@
            P1A身份/P1B轮速配置仅孤立Mac软件候选、未整合；真实wire期限和底盘固件合同未闭环。
            用户已重新确认电源/USB复位、支撑和持续看护；本软件阶段未下发新硬件GO，不回填旧NEEDS/FAIL。
            本阶段未正式安装/硬件动作/完整workspace测试/release/push；H2/左腕FAIL、D15 OPEN/DEFERRED、deployable=false保持。
+           同日独立维护：固定位置目标选择的本机/Orin同源40项PASS（新5为子集）；READ独立170项/211child PASS。
+           使用历史f201位置维护ELF，重新核本体，非最新nightly新Rust控制产物；B0工具不作位置替代件。
+           本次仅右5→左7→左8，右5往返PASS，head1回程2642/2634、+8超原±4/800ms而FAIL；head2/左腕/base主动动作NOT_RUN。
+           最终STOP 50/51整数零，right9 PV=-50/TE0/GV0而FAIL，报告NEEDS_MANUAL_POWER_CUT；base主动写0/DEFERRED。
+           359driver及52wrapper child真wait/reap、216非UART后验/正式ca14四SHA/六服务停/四锁释放/保护不变PASS不能覆盖FAIL。
+           人工断两个电源已通知、确认PENDING；停止本轮，禁止后续UART/动作/自动重试，不推断-50来源、单位或轮转动。
+           厂家STS内存表（门户version=181）：Phase12 bit3使零目标为最高速度；现场FW主/次未读，未作Phase/Lock/PID/模式/EEPROM写。
+           .verify/hardware_selected_targets_2026-10-08/summary.json封本轮原件，前置/漏fixture等旧FAIL全保留。
+           下一步仅独立纯软件固件READ保护/typed profile，硬件门另验；左腕/H2 FAIL、D15 OPEN/DEFERRED、deployable=false保持。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

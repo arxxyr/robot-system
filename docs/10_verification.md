@@ -9,6 +9,16 @@
 
 ---
 
+## 2026-10-08 · 目标选择软件通过，实机维护 NEEDS_MANUAL_POWER_CUT
+
+固定位置目标选择的本机与Orin同源40项软件测试通过，新增5项是40子集，不累计重复轮次；默认/三目标PLAN_ONLY均零动作，重复或未知目标拒绝。此前B0工具独立READ通过：17电机×10项共170唯一寄存器请求、211个自有child真实回收；连接有额外只读握手帧，不称170为全部wire帧。本次位置动作使用历史`f2014ee4`维护ELF（1469904B），重新核本体身份，未称最新nightly新Rust控制产物或使用B0工具代替位置工具。
+
+root逐项审核具体计划与当次GO后，仅运行一次右5→左7→左8。右腕往返PASS（875→895，目标899；回程879，终值878/goal875）；头1回程2642/goal2634、+8超原±4/800ms门，位置FAIL；头2、左腕及底盘主动动作NOT_RUN，底盘DEFERRED/主动写0。最终17×3停止字段有50个整数零，右9唯一Present_Velocity=-50、Torque_Enable0/Goal_Velocity0，STOP FAIL，原报告**NEEDS_MANUAL_POWER_CUT**保持。右5/左7断扭ACK、359个driver child真实wait/reap、52个外层child真实回收及216项独立非UART身份后验PASS不能覆盖失败；ca14 clean、四正式SHA、六服务停稳、四保护锁释放与保护refs不变。
+
+人工断电确认**PENDING**，已通知现场切两个电机电源，禁止后续UART/动作/自动重试；不推定右9读值的来源、单位或实际轮转动。厂家STS内存表（门户version=181）定义Phase bit3=1时零目标为最高速度，现场Phase12包含该位；现场固件主/次版本未读取，厂家文档版本不是现场版本。本轮无Phase/Lock/PID/模式或EEPROM写；后续仅继续固件READ保护/typed profile等独立纯软件小件，真实硬件门另验。左腕历史FAIL、右H2整体FAIL、D15 OPEN/DEFERRED、deployable=false保持。
+
+[本轮原件、分类及逐SHA索引](../.verify/hardware_selected_targets_2026-10-08/summary.json)；准备封装参数失败、漏fixture的6ERROR及原硬件失败完整保留，不回填PASS。只读分诊关联head1稳定+8的原样本和right9命令339的实际设备/ID/PID/stdout SHA；UART原始帧未捕获，工具输出字节不当作寄存器原字节。
+
 ## 2026-10-08 · Velocity 入站与 SerialTick 归零基础（Orin 软件门通过）
 
 本阶段只覆盖Velocity独立解码与SerialTick Forward/Skip/VelocityZero。数量/数值/时间窗/Zero策略拒绝保持latest-slot与commands_applied不变、parse_errors递增；栈上同数量归零不修改原命令，Revoked后保持原安全复检及独立PeriodicRead。真实wire写入前/途中期限、底盘固件Phase/单位/零速合同和完整B1执行链尚未闭环，不能由当前probe检查外推。
@@ -1088,6 +1098,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-10-08 | 固定目标同源40软件PASS与独立READ PASS；右5PASS/head1+8FAIL/head2/base动作NOT_RUN，STOP右9 PV=-50/TE0/GV0而NEEDS；359child/reap和独立身份PASS不覆盖，断电PENDING/原FAIL保留，无Phase/Lock写 | Codex |
 | 2026-10-08 | Velocity入站/SerialTick归零基础Orin软件门通过：590输入43b9d675、最新nightly1d81、两根Clippy、641/734/5按名单去重739；24为子集，原FAIL与本机wait/reap UNKNOWN保留，归档独审/root及提交前质量门通过，旧ELF仅身份和追加包stat名册未持久化的限界保留，非完整workspace/release/B1/硬件 | Codex |
 | 2026-09-25 | 右H2原整体FAIL与后到通电答复保留；ca14f0e Orin原生构建/mock/定向单测仅软件通过，未正式安装或硬件重测，D15 OPEN；按用户要求交接并暂停 | Codex |
 | 2026-09-15 | RR R2正式26门、源码独审及真实故障验证通过；R3/R4/Orin待验证 | Codex |

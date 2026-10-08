@@ -1,0 +1,19 @@
+{
+  "schema": "ROOT_SELECTED_MAINTENANCE_STAGE_ACCEPTANCE_R1",
+  "recorded_at_ns": 1791440222743794000,
+  "software": "ACCEPTED_40_UNIQUE_METHODS_EACH_HOST_5_NEW_SUBSET",
+  "hardware": "NEEDS_MANUAL_POWER_CUT_PRESERVED",
+  "physical_power_cut": "PENDING_USER_RESPONSE",
+  "main_rust_compilation_inputs": {
+    "count": 590,
+    "aggregate": "43b9d67550d885549f18cc43e5afd748a587f3d57a8800a61ab6f216dcff46c3",
+    "unchanged_by_python_and_docs": true
+  },
+  "precommit_quality": "ACTUAL_MAIN_FMT_ZERO_THEN_SAME_SOURCE_LINUX_FMT_ROOT_CLIPPY_ZERO",
+  "mac_root_clippy": "ORIGINAL_101_LINUX_ONLY_API_WITH_OUTPUT_TRUNCATION_LIMIT",
+  "independent_motion_and_archive_reviews": "ACCEPTED_WITH_ORIGINAL_FAILURE_AND_BYTE_CLOSURE_LIMITS",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "formal_install_or_push": false,
+  "stage_scope": "维护目标选择代码/测试和本轮READ/硬件失败证据；不称硬件门通过"
+}

@@ -17,7 +17,7 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import run_hardware_maintenance as m
 
-PLAN = {'position_delta_raw':24,'minimum_excursion_raw':12,'return_tolerance_raw':4,
+PLAN = {'position_targets':m.TARGETS, 'position_delta_raw':24,'minimum_excursion_raw':12,'return_tolerance_raw':4,
         'position_wait_ms':800,'base_raw':[20,-20],'pulse_target_ms':150,
         'nonzero_window_fail_ns':1_000_000_000,'observed_velocity_raw_max':40,
         'observed_wheel_delta_raw_min':3,'observed_wheel_delta_raw_max':64}
@@ -225,7 +225,8 @@ class OwnerTests(unittest.TestCase):
             if not args:self.assertEqual(json.loads(out)['actions_started'],0)
 
     def test_go_rejects_wrong_plan_missing_facts_and_expiration(self):
-        plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test', 'bindings':{'host':{'boot_id':'test'}}}
+        plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test',
+              'position_targets':m.TARGETS, 'bindings':{'host':{'boot_id':'test'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root','plan_sha256':m.digest(plan),
             'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],'source':'当次用户现场答复',
             'physical':{s:{**{f:True for f in m.FACTS},'confirmed_at_ns':100} for s in m.SERIALS}}
@@ -464,6 +465,84 @@ class ClassificationTests(unittest.TestCase):
                 'position_verification':{'status':'PASS'},'probes':[{'status':'PASS'}]*7}
         self.assertEqual(m.classify_run_result(report),'FAIL')
 
+    def test_selected_plan_defaults_order_and_go_digest_bind_exact_targets(self):
+        bindings={'schema':'MAINTENANCE_BINDINGS_V1','tool':{'sha256':m.TOOL_SHA,'bytes':m.TOOL_BYTES},
+                  'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
+                  'host':{'boot_id':'selection-fixture'}}
+        root='/home/loosqk/robot-checks/selected-test'
+        default=m.make_plan(bindings,root+'/run','run',root)
+        explicit_default=m.make_plan(bindings,root+'/run','run',root,list(m.POSITION_TARGETS))
+        selected=m.make_plan(bindings,root+'/run','run',root,['head-2','right-wrist'])
+        self.assertEqual(default['position_targets'],m.TARGETS)
+        self.assertEqual(m.digest(default),m.digest(explicit_default))
+        self.assertEqual(selected['position_targets'],[('left',8,'head_motor_2'),('right',5,'right_arm_wrist_roll')])
+        self.assertNotEqual(m.digest(default),m.digest(selected))
+        reversed_plan=m.make_plan(bindings,root+'/run','run',root,['right-wrist','head-2'])
+        self.assertNotEqual(m.digest(selected),m.digest(reversed_plan))
+        go={'schema':'MAINTENANCE_GO_V2','issued_by':'root','artifact_root':root,'plan_sha256':m.digest(default),
+            'issued_at_ns':100,'expires_at_ns':1000,'host':bindings['host'],'source':'仅本地夹具，无硬件授权',
+            'physical':{side:{**{f:True for f in m.FACTS},'confirmed_at_ns':100} for side in m.SERIALS}}
+        m.validate_go(go,default,200)
+        with self.assertRaises(ValueError):m.validate_go(go,selected,200)
+
+    def test_invalid_target_selection_and_plan_refuse_zero_launch(self):
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('错误目标不许启动child')) as launch:
+            for names in ([],['left-wrist','left-wrist'],['unknown'],[''],'head-1'):
+                with self.subTest(names=names),self.assertRaises(ValueError):m.select_position_targets(names)
+            for args in (['--position-target','left-wrist','--position-target','left-wrist'],
+                         ['--position-target','unknown'],['--position-target',''],['--position-target']):
+                with self.subTest(args=args),contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises((ValueError,SystemExit)):m.main(args)
+            for targets in ([],[m.TARGETS[0],m.TARGETS[0]],[('right',9,'base_right_wheel')],
+                            [('left',5,'head_motor_1')],[('left',False,'left_arm_wrist_roll')]):
+                plan={'schema':'MAINTENANCE_PLAN_V2','position_targets':targets}
+                called=[];engine=SimpleNamespace(rows=[],position=lambda *a:called.append(a))
+                with self.subTest(targets=targets),self.assertRaises(ValueError):m.run_motion_probes(engine,{},plan)
+                self.assertEqual(called,[])
+                with self.assertRaises(ValueError):m.execute(plan,{},Path('/never-write-go'))
+            launch.assert_not_called()
+
+    def test_selected_dispatch_uses_only_plan_order_and_preserves_base_deferred(self):
+        selected=[('left',8,'head_motor_2'),('right',5,'right_arm_wrist_roll')]
+        plan={**PLAN,'position_targets':selected}
+        executor=FakeIO();engine=m.ProbeEngine(executor,plan)
+        bindings={'calibrations':{name:{'id':motor,'range_min':73,'range_max':3864} for side,motor,name in selected}}
+        with (patch.object(m,'TARGETS',[('right',9,'forbidden-global-target')]),
+              patch.object(engine,'wheel',side_effect=AssertionError('base不许运动')) as wheel,
+              self.assertRaisesRegex(ValueError,'BASE_FIRMWARE_CONTRACT_UNVERIFIED')):
+            m.run_motion_probes(engine,bindings,plan)
+        wheel.assert_not_called()
+        self.assertEqual([(r['side'],r['motor'],r['name']) for r in engine.rows[:2]],selected)
+        self.assertEqual([r['status'] for r in engine.rows],['PASS','PASS','NOT_RUN','NOT_RUN','NOT_RUN'])
+        self.assertTrue(all(r['decision']=='DEFERRED' for r in engine.rows[2:]))
+        self.assertEqual({(c[0],c[1]) for c in executor.calls if len(c)==6}, {('left',8),('right',5)})
+
+    def test_selected_target_keeps_all_17_stop_and_nontarget_position_checks(self):
+        before=idle_rows();after=copy.deepcopy(before)
+        after['left:5']['Present_Position']+=5
+        probes=[{'side':'left','motor':7,'name':'head_motor_1','kind':'position','status':'PASS',
+                 'anchor_raw':1000,'position_accuracy':{'status':'PASS'}}]
+        probes += [{'side':side,'motor':motor,'name':name,'kind':'velocity','status':'NOT_RUN','decision':'DEFERRED'}
+                   for side,motor,name in m.BASE_TARGETS]
+        report,called,executor=self.finish(before,after,probes)
+        self.assertEqual(report['stop_verification']['status'],'PASS')
+        self.assertEqual(len(executor.reads),17*len(m.REGS))
+        self.assertEqual(len([r for r in executor.reads if r[1] in m.STOP_REGS]),17*3)
+        self.assertEqual(called,self.identity_calls())
+        issue=next(e for e in report['position_verification']['issues'] if e['code']=='NONTARGET_POSITION_CHANGED')
+        self.assertEqual((issue['motor'],issue['signed_error_raw']),('left:5',5))
+        self.assertEqual(report['result'],'FAIL')
+        self.assertEqual(self.fixture()['original_result'],'NEEDS_MANUAL_POWER_CUT')
+
+    def test_cli_selected_plan_only_lists_requested_order_without_child(self):
+        with (patch.object(m.subprocess,'Popen',side_effect=AssertionError('PLAN_ONLY不許child')) as launch,
+              contextlib.redirect_stdout(io.StringIO()) as output):
+            self.assertEqual(m.main(['--position-target','head-2','--position-target','right-wrist']),0)
+        reply=json.loads(output.getvalue())
+        self.assertEqual(reply['actions_started'],0)
+        self.assertEqual(reply['position_targets'],[['left',8,'head_motor_2'],['right',5,'right_arm_wrist_roll']])
+        launch.assert_not_called()
+
     def test_execute_route_four_positions_pass_base_blocked_still_all_postchecks(self):
         class IntegratedIO:
             def __init__(self,tool,output):
@@ -529,7 +608,7 @@ class ClassificationTests(unittest.TestCase):
             self.assertTrue(all(Path(r['path']).read_bytes()==b'unchanged\n' for files in protection.values() for r in files.values()))
 
     def test_v1_go_and_changed_artifact_root_rejected(self):
-        plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/new-run',
+        plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/new-run','position_targets':m.TARGETS,
               'bindings':{'host':{'boot_id':'same'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root','plan_sha256':m.digest(plan),
             'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],'source':'当前现场确认',

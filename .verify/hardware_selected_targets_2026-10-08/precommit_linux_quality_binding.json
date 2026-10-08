@@ -1,0 +1,61 @@
+{
+  "schema": "HARDWARE_SELECTED_TARGETS_PRECOMMIT_LINUX_QUALITY_BINDING_R1",
+  "status": "PASS_SCOPED_LINUX_FMT_ROOT_CLIPPY",
+  "root": "/Users/loosqk/repo/rust/robot-system",
+  "head": "e8a5172963bcc9dddb943566e1fb453a8ec822c0",
+  "source_count": 590,
+  "source_aggregate": "43b9d67550d885549f18cc43e5afd748a587f3d57a8800a61ab6f216dcff46c3",
+  "python_sources": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "caf87b36f0689b4e40fb8fade0f4577ef0a6ff691732c157a10ed620b9a6d4f4",
+      "bytes": 50013
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "0c817f14a3b56cb84b0f0453d6d8e74eeaeedc1d044dfd9f047f253e67fce25b",
+      "bytes": 43122
+    }
+  },
+  "docs_identity_at_quality": {
+    "CLAUDE.md": {
+      "sha256": "d51e6634451df557eba57bf767a3e44a91e2be66eba4c5ba8a1cd1ec67682cd3",
+      "bytes": 30230
+    },
+    "docs/CHANGELOG.md": {
+      "sha256": "583e9ab5c5c28d359e6e029659084b267626c1d84741f2d4a1ca563a6dad3bc8",
+      "bytes": 431419
+    },
+    "docs/10_verification.md": {
+      "sha256": "d0a26efab6da4f3a834f99d3a7dab13bfdf8a5a7f744eac07c2677ec9b8864ad",
+      "bytes": 102286
+    },
+    "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md": {
+      "sha256": "998cea7c779f728fedb2321101ce86077c1bc935f4559ed311681a37b8f8bce7",
+      "bytes": 64359
+    }
+  },
+  "rustc_commit": "1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6",
+  "rustc_host": "aarch64-unknown-linux-gnu",
+  "nightly_floating": true,
+  "source_compiler_before_after_same": true,
+  "commands": [
+    "cargo fmt --all",
+    "cargo clippy --locked --all --all-targets -- -D warnings"
+  ],
+  "native_child_count": 6,
+  "native_children_real_reaped_exit0": true,
+  "local_quality_owner": 53780,
+  "local_ssh_pid": 53781,
+  "local_ssh_real_wait_exit0": true,
+  "tool_session": 47250,
+  "tool_owner_actual_exit0": true,
+  "summary": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_selected_targets/precommit_orin_20261008_r1/summary.json",
+    "sha256": "b98a926d5b0409060e1d8329695a9969ec58464d90896a4df01194c951e0daca",
+    "bytes": 85458
+  },
+  "full_originals_index": "/Users/loosqk/repo/rust/robot-system/target/hardware_selected_targets/precommit_orin_20261008_r1/artifact_index.json",
+  "not_test_or_release_or_hardware": true,
+  "mac_original_clippy_101": "S0 Linux专属thread/O_PATH，原FAIL保留，不修改平台/安全语义",
+  "old_r7_owner_unknown": "保留，不回填",
+  "deployable": false
+}

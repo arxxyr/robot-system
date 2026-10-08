@@ -10,6 +10,16 @@
 
 ---
 
+## 2026-10-08 · 固定目标维护与头部回程/停止字段失败
+
+固定位置目标选择的本机与Orin同源40项软件测试通过，新增5项是40子集，不累计重复轮次；默认/三目标PLAN_ONLY均零动作，重复或未知目标拒绝。此前B0工具独立READ通过：17电机×10项共170唯一寄存器请求、211个自有child真实回收；连接有额外只读握手帧，不称170为全部wire帧。本次位置动作使用历史`f2014ee4`维护ELF（1469904B），重新核本体身份，未称最新nightly新Rust控制产物或使用B0工具代替位置工具。
+
+root逐项审核具体计划与当次GO后，仅运行一次右5→左7→左8。右腕往返PASS（875→895，目标899；回程879，终值878/goal875）；头1回程2642/goal2634、+8超原±4/800ms门，位置FAIL；头2、左腕及底盘主动动作NOT_RUN，底盘DEFERRED/主动写0。最终17×3停止字段有50个整数零，右9唯一Present_Velocity=-50、Torque_Enable0/Goal_Velocity0，STOP FAIL，原报告**NEEDS_MANUAL_POWER_CUT**保持。右5/左7断扭ACK、359个driver child真实wait/reap、52个外层child真实回收及216项独立非UART身份后验PASS不能覆盖失败；ca14 clean、四正式SHA、六服务停稳、四保护锁释放与保护refs不变。
+
+人工断电确认**PENDING**，已通知现场切两个电机电源，禁止后续UART/动作/自动重试；不推定右9读值的来源、单位或实际轮转动。厂家STS内存表（门户version=181）定义Phase bit3=1时零目标为最高速度，现场Phase12包含该位；现场固件主/次版本未读取，厂家文档版本不是现场版本。本轮无Phase/Lock/PID/模式或EEPROM写；后续仅继续固件READ保护/typed profile等独立纯软件小件，真实硬件门另验。左腕历史FAIL、右H2整体FAIL、D15 OPEN/DEFERRED、deployable=false保持。
+
+[本轮原件、分类及逐SHA索引](../.verify/hardware_selected_targets_2026-10-08/summary.json)；准备封装参数失败、漏fixture的6ERROR及原硬件失败完整保留，不回填PASS。只读分诊关联head1稳定+8的原样本和right9命令339的实际设备/ID/PID/stdout SHA；UART原始帧未捕获，工具输出字节不当作寄存器原字节。
+
 ## 2026-10-08 · Velocity 入站与 SerialTick 归零基础（Orin 软件门通过）
 
 Velocity 使用独立解码路径，严格校验数量、有限值/f32范围、时间窗及Zero策略；拒绝不更新latest-slot或commands_applied。SerialTick分开Forward/Skip/VelocityZero，归零使用同数量栈上数组和新预算，不改源命令；Revoked后仍复检原安全门并独立申请PeriodicRead。当前probe只检查存活，不宣称真实wire写入前/途中期限拒绝；完整底盘B1、固件Phase/单位/零速合同仍待实现与验证。冻结设计未改。

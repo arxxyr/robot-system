@@ -36,6 +36,7 @@ REGS = ("Operating_Mode", "Torque_Enable", "Present_Position", "Present_Velocity
         "Goal_Position", "Goal_Velocity")
 TARGETS = [("left", 5, "left_arm_wrist_roll"), ("right", 5, "right_arm_wrist_roll"),
            ("left", 7, "head_motor_1"), ("left", 8, "head_motor_2")]
+POSITION_TARGETS = dict(zip(('left-wrist', 'right-wrist', 'head-1', 'head-2'), TARGETS))
 BASE_TARGETS = [('right',8,'base_front_wheel'),('right',7,'base_left_wheel'),('right',9,'base_right_wheel')]
 
 
@@ -105,7 +106,34 @@ def verify_ref(reference, *, executable=False):
     return data
 
 
-def make_plan(bindings, output, run_id, artifact_root):
+def select_position_targets(names=None):
+    """缺省保持四项原顺序；显式选择非空且唯一，按输入顺序绑定具体电机。"""
+    if names is None:
+        names = list(POSITION_TARGETS)
+    require(isinstance(names, (list, tuple)) and names, '位置目标计划必须非空')
+    require(all(type(name) is str and name in POSITION_TARGETS for name in names), '未知位置目标')
+    require(len(set(names)) == len(names), '位置目标重复，禁止开串口')
+    return [POSITION_TARGETS[name] for name in names]
+
+
+def position_targets_from_plan(plan):
+    """执行只接受计划中已绑定的目标；不从全局四项列表补跑未选电机。"""
+    values = plan.get('position_targets')
+    require(isinstance(values, (list, tuple)) and values, '缺少非空位置目标计划')
+    targets = []
+    for value in values:
+        require(isinstance(value, (list, tuple)) and len(value) == 3
+                and type(value[0]) is str and type(value[1]) is int and type(value[2]) is str,
+                '位置目标字段错误')
+        target = tuple(value)
+        require(target in POSITION_TARGETS.values(), '位置目标不在固定白名单')
+        require(target not in targets, '位置目标计划重复')
+        targets.append(target)
+    return targets
+
+
+def make_plan(bindings, output, run_id, artifact_root, position_target_names=None):
+    position_targets = select_position_targets(position_target_names)
     require(bindings["schema"] == "MAINTENANCE_BINDINGS_V1", "绑定 schema 错误")
     require(bindings["tool"]["sha256"] == TOOL_SHA and bindings["tool"]["bytes"] == TOOL_BYTES,
             "必须采用 root 指定冻结 poke")
@@ -121,7 +149,7 @@ def make_plan(bindings, output, run_id, artifact_root):
     require(Path(output).is_relative_to(root) and Path(output)!=root,'输出不在显式维护根目录内')
     return {"schema": "MAINTENANCE_PLAN_V2", "run_id": run_id, "output": str(output), "artifact_root":str(root),
             "bindings": bindings, "script_sha256": hashlib.sha256(script).hexdigest(), "script_bytes": len(script),
-            "position_targets": TARGETS, "position_delta_raw": 24, "minimum_excursion_raw": 12,
+            "position_targets": position_targets, "position_delta_raw": 24, "minimum_excursion_raw": 12,
             "return_tolerance_raw": 4, "position_wait_ms": 800, "base_order": [8, 7, 9],
             "base_raw": [20, -20], "pulse_target_ms": 150, "nonzero_window_fail_ns": 1_000_000_000,
             "observed_velocity_raw_max": 40, "observed_wheel_delta_raw_min": 3, "observed_wheel_delta_raw_max": 64,
@@ -133,6 +161,7 @@ def make_plan(bindings, output, run_id, artifact_root):
 
 
 def validate_go(go, plan, now_ns):
+    position_targets_from_plan(plan)
     require(plan['schema']=='MAINTENANCE_PLAN_V2' and go["schema"] == "MAINTENANCE_GO_V2" and go["issued_by"] == "root"
             and go["plan_sha256"] == digest(plan) and go['artifact_root']==plan['artifact_root'],
             "拒绝旧V1或未绑定显式根目录的root当次GO")
@@ -693,7 +722,7 @@ def classify_run_result(report):
 
 
 def run_motion_probes(engine,bindings,plan):
-    for side,motor,name in TARGETS:
+    for side,motor,name in position_targets_from_plan(plan):
         engine.position(side,motor,name,bindings['calibrations'][name])
     # 固定拒绝未闭合的固件合同；任何bindings里的verified布尔值都不是可接受证明。
     # 动作分支不调用wheel/pulse，无底盘motion WRITE/enable；17电机固定快照仍只读。
@@ -727,6 +756,7 @@ def validate_snapshot(values, before=None, probes=()):
 
 def execute(plan, go, approval):
     require(plan['schema']=='MAINTENANCE_PLAN_V2','拒绝旧V1计划')
+    position_targets_from_plan(plan)
     bindings = plan['bindings']
     host = bindings['host']
     require(sys.platform == 'linux' and os.uname().machine == 'aarch64'
@@ -839,13 +869,18 @@ def main(argv=None):
     parser.add_argument('--artifact-root',type=Path)
     parser.add_argument('--execute',action='store_true')
     parser.add_argument('--approval',type=Path)
+    parser.add_argument('--position-target', action='append', choices=tuple(POSITION_TARGETS),
+                        help='可重复指定腕部/头部目标，按指定顺序执行；缺省为原四项')
     options=parser.parse_args(argv)
+    selected_targets = select_position_targets(options.position_target)
     if not all((options.bindings,options.output,options.run_id,options.artifact_root)):
         require(not options.execute,'执行参数不完整')
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'required':['bindings','output','run-id','artifact-root'],
+                          'position_targets':selected_targets,
                           'scope':'单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
         return 0
-    plan=make_plan(strict_json(options.bindings.read_text()),options.output,options.run_id,options.artifact_root)
+    plan=make_plan(strict_json(options.bindings.read_text()),options.output,options.run_id,options.artifact_root,
+                   options.position_target)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

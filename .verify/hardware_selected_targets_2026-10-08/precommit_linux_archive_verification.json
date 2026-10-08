@@ -1,0 +1,9 @@
+{
+  "status": "PASS_ALL_ORIGINAL_FILES_AND_ARCHIVE_IDENTITIES",
+  "files": 74,
+  "archive_sha256": "8912d4b0ead995b23b49f852ae63b8a82d45a0376bb86b70a7bc96b309ed6f67",
+  "index_sha256": "807ebf75d3df2718aabc8477b338b4d4ac5749a33896fe53e101db5f641f2268",
+  "source_files_before_after_same": true,
+  "member_sha_bytes_mode_all_same": true,
+  "summary_sha256": "b98a926d5b0409060e1d8329695a9969ec58464d90896a4df01194c951e0daca"
+}

@@ -1,0 +1,675 @@
+{
+  "schema": "SELECTED_MOTION_INDEPENDENT_REVIEW_R1_V1",
+  "created_utc": "2026-10-08T06:03:25.584231+00:00",
+  "reviewer": "acceptance_resume",
+  "review_scope": "仅本机读取实际原件；新增独审附件；不SSH/UART/Cargo/重试动作",
+  "evidence_review_status": "PASS",
+  "acceptance_decision": "EVIDENCE_CONFIRMED_ORIGINAL_FAILURE",
+  "actual_hardware_result": "NEEDS_MANUAL_POWER_CUT",
+  "manual_power_cut_confirmation": "PENDING；只确认存在原件告警，不推定现场已执行断电",
+  "observed_hardware_failures": [
+    "head_motor_1回程POSITION_ACCURACY_TIMEOUT，最终+8超过±4",
+    "right:9最终Present_Velocity=-50；Torque_Enable和Goal_Velocity均0，仍STOP FAIL"
+  ],
+  "sources": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/motion_selected_r1.owner/child.log",
+      "sha256": "fa40a946c699ccf2e31ac3a7a307b8b73bfdb6d7c78a95b19132cd6136dea287",
+      "bytes": 1191048
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/motion_selected_r1.owner/result.json",
+      "sha256": "8d02b14c117f789443888c9866eaba9f2c5403b7d0b278511cb340be3042cd6c",
+      "bytes": 1561
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/manifest.json",
+      "sha256": "d0fa1b6cea01c574562bed0b6af57eb11c4a02e6223621818810e51da8c3aaee",
+      "bytes": 1496
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/summary.json",
+      "sha256": "7bf6ba1051723e52b0aea7b0844acf62c4f67b73029662246d8aac3ba0c1219f",
+      "bytes": 11562
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/run.json",
+      "sha256": "402ff5fc956228f44888fed70c7cfcbc2f7f75ab80815ffee016551e8acd661c",
+      "bytes": 495119
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/commands.jsonl",
+      "sha256": "bbadfbbb9e8aa70520908ad08274a17ddc0a7cc50f1802dd45a3bbabccce034a",
+      "bytes": 327375
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/stop_verification.json",
+      "sha256": "fc81c46705f9d471215ada82f0b2165facda9c584bbfab1d757de966c7897b73",
+      "bytes": 2812
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/register_matrix.csv",
+      "sha256": "9c9f3ec033a04d82654d05f5f221d6da62e40a8099729841de9b94b11f3f2bdb",
+      "bytes": 1131
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/right_head_plan_r1.json",
+      "sha256": "480e45ba47cd2af520a777b0a25e95a48f2c32f8b6938e210fcb346714e6dd68",
+      "bytes": 26876
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/root_motion_go_conditional_r1.json",
+      "sha256": "c8acc58c3f246c1f92d1922aaa8d36e5b0d2ac4ccbb6d24b37e4a393bc203d79",
+      "bytes": 1851
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/execute_selected_r1.sh",
+      "sha256": "d623e59009587b4287c3a5780f20e81444d615187a363ef5d44070939f846bc3",
+      "bytes": 71154
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/independent_selected_plan_review_r1.json",
+      "sha256": "a06ec1e2efab8b5d0032bc02d6ea83ac5a8a667c9cd57ac751ed1be933f201fa",
+      "bytes": 4619
+    }
+  ],
+  "checks": [
+    {
+      "name": "原始包装日志身份",
+      "status": "PASS",
+      "details": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/motion_selected_r1.owner/child.log",
+        "sha256": "fa40a946c699ccf2e31ac3a7a307b8b73bfdb6d7c78a95b19132cd6136dea287",
+        "bytes": 1191048
+      }
+    },
+    {
+      "name": "派生文件逐项字节绑定",
+      "status": "PASS",
+      "details": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/run.json",
+          "sha256": "402ff5fc956228f44888fed70c7cfcbc2f7f75ab80815ffee016551e8acd661c",
+          "bytes": 495119
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/commands.jsonl",
+          "sha256": "bbadfbbb9e8aa70520908ad08274a17ddc0a7cc50f1802dd45a3bbabccce034a",
+          "bytes": 327375
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/stop_verification.json",
+          "sha256": "fc81c46705f9d471215ada82f0b2165facda9c584bbfab1d757de966c7897b73",
+          "bytes": 2812
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/register_matrix.csv",
+          "sha256": "9c9f3ec033a04d82654d05f5f221d6da62e40a8099729841de9b94b11f3f2bdb",
+          "bytes": 1131
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/derived_motion_r1/summary.json",
+          "sha256": "7bf6ba1051723e52b0aea7b0844acf62c4f67b73029662246d8aac3ba0c1219f",
+          "bytes": 11562
+        }
+      ]
+    },
+    {
+      "name": "实际运行及命令原件与包装日志一致",
+      "status": "PASS",
+      "details": {
+        "run_reference": {
+          "path": "/home/loosqk/robot-checks/hardware-selected-targets-20261008-r1/right-head-run-01/run.json",
+          "sha256": "402ff5fc956228f44888fed70c7cfcbc2f7f75ab80815ffee016551e8acd661c",
+          "bytes": 495119
+        },
+        "commands_reference": {
+          "path": "/home/loosqk/robot-checks/hardware-selected-targets-20261008-r1/right-head-run-01/commands.jsonl",
+          "sha256": "bbadfbbb9e8aa70520908ad08274a17ddc0a7cc50f1802dd45a3bbabccce034a",
+          "bytes": 327375
+        },
+        "commands": 359
+      }
+    },
+    {
+      "name": "实际计划及一次GO绑定",
+      "status": "PASS",
+      "details": {
+        "canonical_plan_sha256": "a8ae2757e95acaca9524b2f1646fdfed4552c679c7df10f71d52f61369cb2f77",
+        "go_file": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/root_motion_go_conditional_r1.json",
+          "sha256": "c8acc58c3f246c1f92d1922aaa8d36e5b0d2ac4ccbb6d24b37e4a393bc203d79",
+          "bytes": 1851
+        },
+        "main_script": {
+          "path": "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py",
+          "sha256": "caf87b36f0689b4e40fb8fade0f4577ef0a6ff691732c157a10ed620b9a6d4f4",
+          "bytes": 50013
+        },
+        "driver_started_ns": 1791438785001501888,
+        "go_window_ns": [
+          1791438069255887000,
+          1791439869255887000
+        ]
+      }
+    },
+    {
+      "name": "所选目标和底盘延后门保持",
+      "status": "PASS",
+      "details": {
+        "position_targets": [
+          [
+            "right",
+            5,
+            "right_arm_wrist_roll"
+          ],
+          [
+            "left",
+            7,
+            "head_motor_1"
+          ],
+          [
+            "left",
+            8,
+            "head_motor_2"
+          ]
+        ],
+        "delta_raw": 24,
+        "tolerance_raw": 4,
+        "budget_ms": 800,
+        "base_targets": [
+          {
+            "side": "right",
+            "motor": 8,
+            "name": "base_front_wheel",
+            "decision": "DEFERRED",
+            "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+          },
+          {
+            "side": "right",
+            "motor": 7,
+            "name": "base_left_wheel",
+            "decision": "DEFERRED",
+            "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+          },
+          {
+            "side": "right",
+            "motor": 9,
+            "name": "base_right_wheel",
+            "decision": "DEFERRED",
+            "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+          }
+        ],
+        "head2": "NOT_RUN，实际probes无第三条；由剩余目标和无WRITE派生",
+        "left_wrist": "未选择"
+      }
+    },
+    {
+      "name": "右腕实际精度通过",
+      "status": "PASS",
+      "details": {
+        "anchor_raw": 875,
+        "goal_raw": 899,
+        "outward_last_raw": 895,
+        "outward_error_raw": -4,
+        "outward_elapsed_ns": 198909081,
+        "return_last_raw": 879,
+        "return_error_raw": 4,
+        "return_elapsed_ns": 138452643,
+        "final": {
+          "Operating_Mode": 0,
+          "Torque_Enable": 0,
+          "Present_Position": 878,
+          "Present_Velocity": 0,
+          "Goal_Position": 875,
+          "Goal_Velocity": 0
+        }
+      }
+    },
+    {
+      "name": "头部1原回程失败保持",
+      "status": "PASS",
+      "details": {
+        "anchor_raw": 2634,
+        "goal_raw": 2658,
+        "outward_last_raw": 2655,
+        "outward_error_raw": -3,
+        "return_final_raw": 2642,
+        "return_error_raw": 8,
+        "return_elapsed_ns": 851746629,
+        "budget_ms": 800,
+        "reason_code": "POSITION_ACCURACY_TIMEOUT",
+        "last_sample_ns": 3192039755570937,
+        "deadline_ns": 3192039753890366,
+        "final_anchor_issue": {
+          "code": "POSITION_FINAL_ANCHOR_ERROR",
+          "status": "FAIL",
+          "motor": "left:7",
+          "target_raw": 2634,
+          "actual_raw": 2642,
+          "goal_raw": 2634,
+          "signed_error_raw": 8,
+          "tolerance_raw": 4
+        }
+      }
+    },
+    {
+      "name": "真实写请求仅两个目标且无重试",
+      "status": "PASS",
+      "details": {
+        "writes": [
+          {
+            "sequence": 167,
+            "pid": 497230,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+            "motor": 5,
+            "register": "Goal_Position",
+            "value": 875,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "448edb2858e9679811aa563f5e49d4c517ece834cefbf8f5e84fc7d1120e86de",
+            "stdout_bytes": 32,
+            "ack_checksum_matches": true
+          },
+          {
+            "sequence": 170,
+            "pid": 497233,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+            "motor": 5,
+            "register": "Torque_Enable",
+            "value": 1,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "7eb7df5780e1d51a99c9546da40cbeae76ed27967e6c953928b78873c36b3094",
+            "stdout_bytes": 30,
+            "ack_checksum_matches": true
+          },
+          {
+            "sequence": 172,
+            "pid": 497235,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+            "motor": 5,
+            "register": "Goal_Position",
+            "value": 899,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "ca7755a7dda92ae49cece082ffd469934378edd1c1695469af85bc2103329b84",
+            "stdout_bytes": 32,
+            "ack_checksum_matches": true
+          },
+          {
+            "sequence": 178,
+            "pid": 497241,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+            "motor": 5,
+            "register": "Goal_Position",
+            "value": 875,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "448edb2858e9679811aa563f5e49d4c517ece834cefbf8f5e84fc7d1120e86de",
+            "stdout_bytes": 32,
+            "ack_checksum_matches": true
+          },
+          {
+            "sequence": 183,
+            "pid": 497246,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+            "motor": 5,
+            "register": "Torque_Enable",
+            "value": 0,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "819ecffc663603d06e5c1a27f1f57c56b96a4696f51def9a68813165100cce50",
+            "stdout_bytes": 30,
+            "ack_checksum_matches": true
+          },
+          {
+            "sequence": 208,
+            "pid": 497274,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "motor": 7,
+            "register": "Goal_Position",
+            "value": 2634,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "b06bc90a1687cec7b9664f91a6aa5a0acd86540f3ce677fb348d29d76fbd1026",
+            "stdout_bytes": 33,
+            "ack_checksum_matches": true
+          },
+          {
+            "sequence": 211,
+            "pid": 497277,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "motor": 7,
+            "register": "Torque_Enable",
+            "value": 1,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "d744f1c23042dc5d99ed2f111c2f095dbc01553e19b3d2725c49360cbe3d6c8b",
+            "stdout_bytes": 30,
+            "ack_checksum_matches": true
+          },
+          {
+            "sequence": 213,
+            "pid": 497279,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "motor": 7,
+            "register": "Goal_Position",
+            "value": 2658,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "61ba520a913de42372680453004cd039472d83bc8232a09f9f8d58cc57eede9b",
+            "stdout_bytes": 33,
+            "ack_checksum_matches": true
+          },
+          {
+            "sequence": 221,
+            "pid": 497287,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "motor": 7,
+            "register": "Goal_Position",
+            "value": 2634,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "b06bc90a1687cec7b9664f91a6aa5a0acd86540f3ce677fb348d29d76fbd1026",
+            "stdout_bytes": 33,
+            "ack_checksum_matches": true
+          },
+          {
+            "sequence": 237,
+            "pid": 497303,
+            "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "motor": 7,
+            "register": "Torque_Enable",
+            "value": 0,
+            "reaped": true,
+            "exit_code": 0,
+            "stdout_sha256": "34c8848bb360212647afea77f9bc3519e413fcaef544e8bbf80c1a4f105e96fc",
+            "stdout_bytes": 30,
+            "ack_checksum_matches": true
+          }
+        ],
+        "left_wrist_writes": 0,
+        "head2_writes": 0,
+        "base_writes": 0,
+        "goal_velocity_writes": 0,
+        "retry_writes": 0
+      }
+    },
+    {
+      "name": "两个动作均真实断扭ACK且清理无错误",
+      "status": "PASS",
+      "details": {
+        "torque_off_sequences": [
+          183,
+          237
+        ],
+        "cleanup_errors": [
+          [],
+          []
+        ]
+      }
+    },
+    {
+      "name": "前后102字段均与真实读回回执绑定",
+      "status": "PASS",
+      "details": [
+        {
+          "phase": "before",
+          "first_sequence": 43,
+          "last_sequence": 144,
+          "rows": 102,
+          "unique_fields": 102,
+          "matched_recorded_stdout_checksum_and_bytes": true
+        },
+        {
+          "phase": "after",
+          "first_sequence": 240,
+          "last_sequence": 341,
+          "rows": 102,
+          "unique_fields": 102,
+          "matched_recorded_stdout_checksum_and_bytes": true
+        }
+      ]
+    },
+    {
+      "name": "固定17乘3停止原FAIL保持",
+      "status": "PASS",
+      "details": {
+        "observed_motors": 17,
+        "observed_fields": 51,
+        "zero_fields": 50,
+        "nonzero": [
+          {
+            "motor": "right:9",
+            "register": "Present_Velocity",
+            "actual": -50
+          }
+        ],
+        "issues": [
+          {
+            "code": "STOP_REGISTER_NONZERO",
+            "status": "FAIL",
+            "motor": "right:9",
+            "register": "Present_Velocity",
+            "actual": -50
+          }
+        ],
+        "right9": {
+          "Operating_Mode": 1,
+          "Torque_Enable": 0,
+          "Present_Position": 3494,
+          "Present_Velocity": -50,
+          "Goal_Position": 0,
+          "Goal_Velocity": 0
+        },
+        "interpretation": "仅原始寄存器整数；来源、单位与实际运动原因未确认"
+      }
+    },
+    {
+      "name": "359个driver自有child均自然wait回收",
+      "status": "PASS",
+      "details": {
+        "owned_children": 359,
+        "unique_pid_count": 359,
+        "exit_code_counts": {
+          "0": 331,
+          "1": 28
+        },
+        "exit1_meaning": "28个fuser空持有者回执；不能据此改写动作driver整体exit1",
+        "signals_sent": [],
+        "over_budget": false,
+        "owner_errors": []
+      }
+    },
+    {
+      "name": "52个wrapper自有child及driver真实回收",
+      "status": "PASS",
+      "details": {
+        "owned_children": 52,
+        "contains_actual_driver_once": true,
+        "exit_code_counts": {
+          "0": 27,
+          "1": 25
+        },
+        "actual_driver_pid": 497050,
+        "actual_driver_exit_code": 1,
+        "actual_driver_elapsed_ns": 6986284789,
+        "wrapper_overall_status": "FAIL",
+        "note": "不是全部52个child exit1；24个fuser exit1加1个实际driver exit1"
+      }
+    },
+    {
+      "name": "本机SSH owner真实回收与远端证据分开",
+      "status": "PASS",
+      "details": {
+        "ssh_pid": 47151,
+        "exit_code": 1,
+        "reaped": true,
+        "remote_state_retained": "NOT_VERIFIED",
+        "elapsed_ns": 10487896000,
+        "interpretation": "本机reap不等于远端reap；远端依据前两项独立实际completion"
+      }
+    },
+    {
+      "name": "独立非UART身份后验保持",
+      "status": "PASS",
+      "details": {
+        "driver_identity_checks": 62,
+        "before_after_identical_fields": [
+          "identity",
+          "formal",
+          "services",
+          "protection",
+          "elf"
+        ],
+        "usb_stat_and_udev_stdout_same": true,
+        "fixed_refs": 30,
+        "payloads": 5,
+        "formal_head": "ca14f0e6cf6df8ecc6baaaa8dff2dddb64abbd0a",
+        "formal_porcelain": "",
+        "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+        "uid": 1000,
+        "arch": "aarch64",
+        "wrapper_UART_requests": 0
+      }
+    },
+    {
+      "name": "六服务停止四锁释放及无控制进程",
+      "status": "PASS",
+      "details": {
+        "services": {
+          "xlerobot-gateway-left.service": {
+            "MainPID": "0",
+            "Id": "xlerobot-gateway-left.service",
+            "LoadState": "loaded",
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          },
+          "xlerobot-gateway-right.service": {
+            "MainPID": "0",
+            "Id": "xlerobot-gateway-right.service",
+            "LoadState": "loaded",
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          },
+          "xlerobot-s1-left.service": {
+            "MainPID": "0",
+            "Id": "xlerobot-s1-left.service",
+            "LoadState": "loaded",
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          },
+          "xlerobot-s1-right.service": {
+            "MainPID": "0",
+            "Id": "xlerobot-s1-right.service",
+            "LoadState": "loaded",
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          },
+          "xlerobot-s0-left-arm.service": {
+            "MainPID": "0",
+            "Id": "xlerobot-s0-left-arm.service",
+            "LoadState": "loaded",
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          },
+          "xlerobot-s0-right-arm.service": {
+            "MainPID": "0",
+            "Id": "xlerobot-s0-right-arm.service",
+            "LoadState": "loaded",
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "fuser_empty_receipts": 12,
+        "protection_locks_acquired": [
+          {
+            "side": "left",
+            "name": "rx_trust.lock",
+            "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+            "owner_pid": 497050,
+            "inode": 15864273,
+            "exclusive_flock": true
+          },
+          {
+            "side": "left",
+            "name": "estop_latch.lock",
+            "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+            "owner_pid": 497050,
+            "inode": 15864354,
+            "exclusive_flock": true
+          },
+          {
+            "side": "right",
+            "name": "rx_trust.lock",
+            "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+            "owner_pid": 497050,
+            "inode": 15864348,
+            "exclusive_flock": true
+          },
+          {
+            "side": "right",
+            "name": "estop_latch.lock",
+            "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+            "owner_pid": 497050,
+            "inode": 15864358,
+            "exclusive_flock": true
+          }
+        ],
+        "release_basis": "真实driver回收后独立普通/特权fuser检查四锁共8个空持有者exit1",
+        "control_processes_clean": true,
+        "ordinary_denied": 2,
+        "privileged_rows": 2,
+        "privileged_basis": "原普通读取受限两PID经sudo按PID/start_ticks/boot/PGID/UID首尾核，分别sd-pam、sshd；不伪作无权限错误"
+      }
+    },
+    {
+      "name": "原严格分类门复核而不覆盖硬件FAIL",
+      "status": "PASS",
+      "details": {
+        "classification_from_current_pure_source_function": "NEEDS_MANUAL_POWER_CUT",
+        "stop_status": "FAIL",
+        "position_status": "FAIL",
+        "identity_status": "PASS",
+        "wrapper_check_count": 216,
+        "wrapper_checks_status": "PASS",
+        "wrapper_result": "FAIL",
+        "driver_result": "NEEDS_MANUAL_POWER_CUT",
+        "manual_cut_confirmation": "PENDING",
+        "S0_S1_head_base_integration": false,
+        "H2_D15_closed": false,
+        "deployable": false
+      }
+    },
+    {
+      "name": "审查未修改动作源",
+      "status": "PASS",
+      "details": {
+        "before": {
+          "path": "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py",
+          "sha256": "caf87b36f0689b4e40fb8fade0f4577ef0a6ff691732c157a10ed620b9a6d4f4",
+          "bytes": 50013
+        },
+        "after": {
+          "path": "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py",
+          "sha256": "caf87b36f0689b4e40fb8fade0f4577ef0a6ff691732c157a10ed620b9a6d4f4",
+          "bytes": 50013
+        }
+      }
+    }
+  ],
+  "check_count": 18,
+  "raw_output_boundary": "包装child的stdout/stderr原文在原始日志；driver逐child日志列path/SHA/bytes。本审以冻结poke完整stdout语法独立核204读回及10 ACK校验，不声称359个远端stdout文件字节已逐一在本机封存。",
+  "count_boundary": "359是driver自有子child，52是wrapper自有child且含driver一次；本机SSH另1。不把嵌套层的同一个driver或相同40项软件方法重复累计。",
+  "not_verified": [
+    "现场两个电源实际断电及时间仍PENDING",
+    "right:9原始-50原因、单位或是否真实运动未确认",
+    "head2未运动；底盘固件合同及主动运动DEFERRED",
+    "左腕历史FAIL、右H2历史整体FAIL、D15 OPEN/DEFERRED保持",
+    "不由本轮维护动作宣称S0/S1接入或deployable"
+  ],
+  "review_script_assumptions_corrected": [
+    "早期只读探查误用脚本文件名、将protection.valid布尔当容器、假设失败probe具有顶层return。均为独审器字段假设错误，未修改原件或伪作硬件计划FAIL。"
+  ]
+}
