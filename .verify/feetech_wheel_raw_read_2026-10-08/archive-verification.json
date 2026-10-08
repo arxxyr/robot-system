@@ -1,0 +1,31 @@
+{
+  "status": "PASS_BYTES_SHA_MODE_SAFE_MEMBERS_CURRENT_ORIGINALS",
+  "original_count": 277,
+  "original_tar_member_count": 277,
+  "source_tar_member_count": 597,
+  "original_bytes_sha_mode_before_after_same": true,
+  "source_archive_matches_frozen_expected": true,
+  "only_one_source_tar_in_this_package": true,
+  "no_nested_source_tar": true,
+  "no_parent_deadline_package_repacked": true,
+  "self_summary_excluded_from_index": true,
+  "main_source_before_after": "597/5c8c4c04 exact",
+  "tar": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_wheel_raw_read_2026-10-08/original-evidence.tar.gz",
+    "bytes": 1911268,
+    "sha256": "49162888c42e0ce8c23acc588536b4bc111a6c359bcf0fca4ff434bdb46a9508",
+    "mode": 420
+  },
+  "index": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_wheel_raw_read_2026-10-08/original-evidence.index.json",
+    "bytes": 92055,
+    "sha256": "202b9f1eea0a9c14a457dd5d6ab10efa05eb330bd58bc787f624a64d17f9683b",
+    "mode": 420
+  },
+  "source_tar": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_wheel_raw_read_2026-10-08/source-inputs.tar.gz",
+    "bytes": 9344227,
+    "sha256": "6217bdca0fa5cc3fad77b0a92225e76f7017a041ba3d38c9e3199dc69d7ab881",
+    "mode": 420
+  }
+}

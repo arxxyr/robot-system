@@ -1,0 +1,255 @@
+{
+  "schema": "FEETECH_WHEEL_RAW_READ_STAGE_ACCEPTANCE_R1",
+  "status": "MAIN_INTEGRATED_SCOPED_SOFTWARE_PASS",
+  "date": "2026-10-08",
+  "commit_status": "PENDING_ROOT_FINAL_REVIEW_AND_COMMIT",
+  "deployable": false,
+  "implemented": "公开raw-by-ID固定缓冲读取和私有测试模块；原完整单租约、状态帧校验与Drop/checkpoint；全部回包合法后一次提交，固定MAX32 u32 staging，原word和尾槽保持",
+  "source": {
+    "count": 597,
+    "aggregate": "5c8c4c049ba57874f550f4dad7a60c47d9c00df4514310c8f980979d3969ec9f",
+    "main_base_head": "fb390abf1b96177a1f1c48800d158cdaebdf5cfc",
+    "candidate_git_head": "66d39b8af6a61cc778371239447d5f8edd4d792d",
+    "origin": "候选HEAD66+冻结六deadline源+本件两源；主树从已提交fb390ab期限阶段精确叠加两源",
+    "native_git_head": null,
+    "native_kind": "exported snapshot",
+    "expected_manifest": {
+      "archive_member": "native-r1/expected_source.json",
+      "bytes": 114885,
+      "sha256": "e2b168721646cc1fd4e622d8b1fc746b8d6dbf8a62720fe9415c4ed6ca51b1b0"
+    },
+    "changed_sources": {
+      "crates/robot-adapters/feetech/src/bus.rs": {
+        "old": {
+          "sha256": "9c82121f400d3177827b720f4ece9fc1e15719c076f881eebd2b5888cfffbb1b",
+          "bytes": 49060,
+          "executable": false
+        },
+        "new": {
+          "sha256": "ec7454cec4ce85dadde79bd7297b3e89d08138e59ccfe265920d92b860df1dc9",
+          "bytes": 52492,
+          "executable": false
+        },
+        "frozen_source": {
+          "path": "/Users/loosqk/.codex/worktrees/feetech-wheel-raw-read/robot-system/target/wheel_raw_read/freeze_r1/source/crates/robot-adapters/feetech/src/bus.rs",
+          "bytes": 52492,
+          "sha256": "ec7454cec4ce85dadde79bd7297b3e89d08138e59ccfe265920d92b860df1dc9"
+        }
+      },
+      "crates/robot-adapters/feetech/src/bus_raw_read_tests.rs": {
+        "old": null,
+        "new": {
+          "sha256": "b4dda70fc78234bcca90ca4a14eda1813681770c3fc305045a1edb8198176a9a",
+          "bytes": 18157,
+          "executable": false
+        },
+        "frozen_source": {
+          "path": "/Users/loosqk/.codex/worktrees/feetech-wheel-raw-read/robot-system/target/wheel_raw_read/freeze_r1/source/crates/robot-adapters/feetech/src/bus_raw_read_tests.rs",
+          "bytes": 18157,
+          "sha256": "b4dda70fc78234bcca90ca4a14eda1813681770c3fc305045a1edb8198176a9a"
+        }
+      }
+    },
+    "root_integration": {
+      "archive_member": "main-evidence/root_integration_r1.json",
+      "bytes": 243260,
+      "sha256": "67c499109cdfc6f0d1ffd87778c77343c98df7c42a83e2735ebeb8e32f1f69a2"
+    },
+    "candidate_manifest": {
+      "archive_member": "mac/freeze_r1/candidate_manifest_r1.json",
+      "bytes": 4859,
+      "sha256": "f7b12ad1b9162f23b80a4ae527f32884d6253d46739930367cae1208989f1573"
+    },
+    "parent_deadline_phase": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_absolute_write_2026-10-08/summary.json",
+      "bytes": 9519,
+      "sha256": "07ee28e62c5ca024ce33703c573ce3de40af99df9897c10000b51f47d469163c",
+      "mode": 420
+    },
+    "parent_phase_repacked": false
+  },
+  "validation": {
+    "per_platform_distinct_methods": 230,
+    "lib_default": 213,
+    "lib_real_hw": 213,
+    "default_real_hw_overlap": 213,
+    "comm_fault_transport": 12,
+    "abort_diagnostics": 5,
+    "new_raw_methods": 13,
+    "new_methods_are_lib_subset": true,
+    "ignored": 0,
+    "Mac": {
+      "result": {
+        "archive_member": "mac/local_qa_r3/result.json",
+        "bytes": 84080,
+        "sha256": "cdc3f7098769ca66f41e8ffa8645ba6c712742149e30051907a30aed464d5871"
+      },
+      "owned_children": 12,
+      "actual_fmt_then_two_feetech_scoped_clippy": true,
+      "all_natural_wait_reap_exit0": true,
+      "host": "aarch64-apple-darwin",
+      "full_batch_manifest_count": 2,
+      "per_child_evidence": "保存runner确实计算与比较完整597；result仅持久化聚合和相等字段，没有24份完整快照原件",
+      "allocator_negative": "没有--nocapture；原负控方法的SIGABRT/8B/wait断言执行通过，nestedPID/子stderr未独立导出"
+    },
+    "Orin": {
+      "result": {
+        "archive_member": "native-r1/orin-originals/qa/result.json",
+        "bytes": 110812,
+        "sha256": "747fdfd461b3d6669b1dddc7d34e9200ff6fcbf6c729ad5e6f948664a4f448b7"
+      },
+      "actual_commands": 15,
+      "full_source_manifest_count": 32,
+      "local_external_owners": 7,
+      "actual_fmt_then_two_root_clippy": true,
+      "all_natural_wait_reap_exit0": true,
+      "host": "aarch64-unknown-linux-gnu",
+      "allocator_negative_children": [
+        {
+          "suite": "feetech_default",
+          "pid": 518003,
+          "raw_status": "signal: 6 (SIGABRT) (core dumped)",
+          "signal": 6,
+          "core_dump_displayed": true,
+          "reaped_by_test_wait_with_output": true,
+          "stdout_bytes": 16,
+          "stderr_bytes": 114,
+          "expected_nonzero_signal_termination": true,
+          "not_an_additional_Rust_method": true,
+          "raw_completion_in_stderr": true
+        },
+        {
+          "suite": "feetech_real_hw",
+          "pid": 518497,
+          "raw_status": "signal: 6 (SIGABRT) (core dumped)",
+          "signal": 6,
+          "core_dump_displayed": true,
+          "reaped_by_test_wait_with_output": true,
+          "stdout_bytes": 16,
+          "stderr_bytes": 114,
+          "expected_nonzero_signal_termination": true,
+          "not_an_additional_Rust_method": true,
+          "raw_completion_in_stderr": true
+        }
+      ],
+      "allocator_boundary": "两lib使用--nocapture；合并stderr保真实PID/SIGABRT(core dumped)/8B/wait原行；未单独封子stdout/完整子stderr，显示不证明core文件"
+    },
+    "compiler_commit": "1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6",
+    "floating_nightly": true,
+    "new_rustup_update_this_stage": false,
+    "dedup": "每平台213+12+5=230；两lib重叠213、13子集、两个负控child不重复累计；不将Mac和Orin相加"
+  },
+  "precommit_quality": {
+    "root_binding": {
+      "archive_member": "main-evidence/root_main_quality_binding_r1.json",
+      "bytes": 2714,
+      "sha256": "8527210fc49169fd910e4d6758789fe7bcb3211374f2c97dd8b53379c81d4026"
+    },
+    "status": "PASS_MAIN_POST_FMT_SAME_INPUT_AS_ACTUAL_ORIN_FMT_THEN_TWO_ROOT_CLIPPY",
+    "all_main_597_same_as_native": true,
+    "actual_main_fmt": "cargo +nightly fmt --all，session79808实际exit0；不是Mac根Clippy",
+    "reuse": "本轮Orin实际fmt→默认/real-hw根Clippy同源；main实际fmt后全597相同，不重复Linux门",
+    "main_fmt_receipt_boundary": "保存root质量回执和session79808实际exit0事实；未提供单独main fmt stdout/stderr，不虚构新增原件"
+  },
+  "review": {
+    "independent_static_mac": {
+      "archive_member": "main-evidence/independent_r1/review.json",
+      "bytes": 5565,
+      "sha256": "bb8375b0e941047aaccf8da8b8a04d94ddbc503be2d4d1e0417bae50f74394ce"
+    },
+    "independent_native": {
+      "archive_member": "main-evidence/independent_native_r1/review.json",
+      "bytes": 7714,
+      "sha256": "f2a26bd85b1ab5eaa85e0a807bb336698b43ff1ce931cdcffbdebeb84aa5b1d5"
+    },
+    "root_acceptance": {
+      "archive_member": "main-evidence/root_acceptance_r1.json",
+      "bytes": 1650,
+      "sha256": "6e600c3a783f1de07b3cdd50268fae98842f350fb726f2aa6a161f75fa893fd5"
+    },
+    "original_pending_labels_preserved": true,
+    "final_package_review": "PENDING_ROOT_FINAL_REVIEW"
+  },
+  "history": {
+    "Mac_r1": {
+      "original_result": {
+        "archive_member": "mac/local_qa_r1/result.json",
+        "bytes": 4749,
+        "sha256": "1175223e96643c30713fff17356b5f9c8783679106be345b59bf4f05a0dfb7d6"
+      },
+      "status": "FAIL",
+      "actual_commands": 4,
+      "failure": "Clippy101：三处private Register::new导致E0624；后续8门NOT_RUN",
+      "recovered_sources": {
+        "archive_member": "mac/freeze_r1/historical_failure_retention_r1.json",
+        "bytes": 1181,
+        "sha256": "3894cdecfec6e97ca680b379435fb8d84a213af60d13b9187adeb175439301e2"
+      },
+      "recovery_boundary": "历史两源逆替换恢复并匹配r1已持久化SHA；不是当时额外观测"
+    },
+    "Mac_r2": {
+      "original_result": {
+        "archive_member": "mac/local_qa_r2/result.json",
+        "bytes": 81257,
+        "sha256": "66390795b7eea770f99b862dcf5ea99f76b518638edf42d33b2e1ebded964477"
+      },
+      "status": "PASS",
+      "source_before": "c16177cf962398fc5fb59dcd22b6f970f77864e399fc91593b76245290fd94b6",
+      "source_after": "305ba11b493017bbcd373546d78e1898b4a00429c60dbb76ff3e086e4c0bb4bc",
+      "boundary": "fmt实际改变输入；保原PASS，但最终源码稳定窗口以新r3为准，不声称r2首尾相同"
+    },
+    "Mac_r3": "模块文档补正后完整新窗口绑定最终597/5c8c；未改变测试阈值、旧read权限或期限算法",
+    "parent_absolute_failures": "父阶段已提交证据原包不重封、不回填"
+  },
+  "contract_limits": [
+    "具名现表仅1/2B；4B对同生产private共享核心注入长度oracle，无虚构新寄存器",
+    "raw read仅承诺原transport调用预算，不新增来源绝对READ期限或USB/固件/权限认证",
+    "固定fixture/真实lib AllocDisabler守生产API或同生产核心；foreign backend自行分配错误不由fixture证明noalloc",
+    "未接S0/S1、轮速TX、完整B1或Enable/EEPROM/factory/runtime；旧Position/ArmIK/写算法保持",
+    "无完整workspace/release/RT/H2六配方、新UART/硬件、安装、服务激活、部署、push；无syscalltrace"
+  ],
+  "hardware_context": {
+    "new_GO": false,
+    "new_UART": false,
+    "human_power_cut": "用户已确认两个电机电源切断并保持手臂支撑；实际时刻/独立遥测未测",
+    "old_failures": "头1回程+8、右9停止PV=-50、左腕/右H2原FAIL保持，不推断-50成因",
+    "firmware": "现场FW未读、Phase12未改",
+    "D15": "OPEN/DEFERRED"
+  },
+  "documents": {
+    "archive_member": "main-evidence/doc_update_r1.json",
+    "bytes": 2714,
+    "sha256": "02db80441ef5b53c0adeb252bf1e18beccd442e004f6eeb060a62fec4ec214a3"
+  },
+  "archive": {
+    "original_evidence": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_wheel_raw_read_2026-10-08/original-evidence.tar.gz",
+      "bytes": 1911268,
+      "sha256": "49162888c42e0ce8c23acc588536b4bc111a6c359bcf0fca4ff434bdb46a9508",
+      "mode": 420
+    },
+    "index": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_wheel_raw_read_2026-10-08/original-evidence.index.json",
+      "bytes": 92055,
+      "sha256": "202b9f1eea0a9c14a457dd5d6ab10efa05eb330bd58bc787f624a64d17f9683b",
+      "mode": 420
+    },
+    "verification": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_wheel_raw_read_2026-10-08/archive-verification.json",
+      "bytes": 1261,
+      "sha256": "04645ad3fa2c0792bd815bb015c4ebe86b1b7fed1af8eb1569704abcbca25e3c",
+      "mode": 420
+    },
+    "source_tar": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_wheel_raw_read_2026-10-08/source-inputs.tar.gz",
+      "bytes": 9344227,
+      "sha256": "6217bdca0fa5cc3fad77b0a92225e76f7017a041ba3d38c9e3199dc69d7ab881",
+      "mode": 420
+    },
+    "original_count": 277,
+    "unique_original_tar_members": 277,
+    "source_member_count": 597,
+    "source_tar_copy_count_in_this_package": 1,
+    "source_tar_not_nested": true
+  }
+}

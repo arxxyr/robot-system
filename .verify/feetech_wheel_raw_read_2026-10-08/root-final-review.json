@@ -1,0 +1,17 @@
+{
+  "status": "PASS_ROOT_STAGE_REVIEW_APPROVED_FOR_LOCAL_COMMIT",
+  "source_count": 597,
+  "source_aggregate": "5c8c4c049ba57874f550f4dad7a60c47d9c00df4514310c8f980979d3969ec9f",
+  "base_head": "fb390abf1b96177a1f1c48800d158cdaebdf5cfc",
+  "summary_sha256": "b4408e5b7cd8662d6e4ea2d455d870f7846f53eee2b68f786d6e64087c40881d",
+  "root_direct_archive_refs_checked": 13,
+  "safe_archive_members": 277,
+  "archive_pins_checked": true,
+  "main_post_fmt_binding": "target/wheel_raw_read_integration_2026-10-08/root_main_quality_binding_r1.json",
+  "actual_native_fmt_then_two_root_clippy_exit0": true,
+  "different_methods_per_platform": 230,
+  "new_methods_are_subset": 13,
+  "original_failures_preserved": true,
+  "commit_metadata_boundary": "封包时PENDING字段是原记录；实际提交以Git历史为准",
+  "limits": "旧READ调用预算；非绝对READ deadline、完整B1、硬件/部署/推送。D15暂缓，deployable=false。"
+}

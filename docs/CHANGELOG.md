@@ -10,6 +10,12 @@
 
 ---
 
+## 2026-10-08 · Feetech 固定缓冲原始读回（软件验收）
+
+新增`sync_read_by_id_raw_into`及私有测试模块。ID、宽度和调用方三个缓冲容量在租约/IO前验证；MAX32固定`u32`暂存，沿原单租约与状态帧校验，完整组合法后才提交输出，保留原始无符号word及尾槽。旧读写接口不改；当前具名表仅1/2B，4B测试调用同生产私有执行核心，未新增虚构寄存器。此读接口沿旧transport调用预算，不承诺来源绝对READ截止或USB/固件认证，未改冻结架构。
+
+Mac与Orin各通过230个不同方法，13新增为完整lib213子集，两特性同213不重复累计；本机首轮编译FAIL与r2PASS保留。主树597项输入聚合`5c8c4c049ba57874f550f4dad7a60c47d9c00df4514310c8f980979d3969ec9f`及实际fmt绑定本轮Orin fmt→两根Clippy；各平台回执与allocator观测边界见[本件验收入口](../.verify/feetech_wheel_raw_read_2026-10-08/summary.json)。未接S0/S1、真实轮速TX或Enable链，无新UART/硬件、完整workspace/release/RT/H2、安装、部署或push；旧硬件FAIL、D15 OPEN/DEFERRED及deployable=false保持。
+
 ## 2026-10-08 · Feetech 来源绝对期限写入（软件验收）
 
 六份Feetech源码已整合来源绝对期限写入：`SourceWriteDeadline`借用`RobotClock`并保存固定source期限，共享核心保留transport调用的固定预算，首写、partial-write、timeout安装后和返回后均严格以`now >= deadline`拒绝，不续期、不整帧重放。固定错误保留wanted/got、前后观测时刻、是否尝试写入和当次IO错误kind；非法count优先，合法进度记录后按时钟回退/source/call到期顺序判定。新普通写API必须显式提供probe，真实性由调用方保证；无probe在lease/transport前拒绝，未知transport默认Unsupported。旧Position/Safety/Confirm调用保留原API，未改冻结架构。

@@ -13,8 +13,9 @@
 //!
 //! ## sign-magnitude 透明
 //!
-//! 调用方传入 / 收到的全部是 *带符号* 整数（i32），sign-magnitude 编解码由本
+//! 既有写入和解码读取接口使用 *带符号* 整数（i32），sign-magnitude 编解码由本
 //! 模块内部按 [`STS3215_SIGN_BIT`](crate::registers::STS3215_SIGN_BIT) 表透明处理。
+//! [`sync_read_by_id_raw_into`](FeetechBus::sync_read_by_id_raw_into) 单独保留无符号原字。
 //!
 //! ## 同步阻塞
 //!
@@ -495,6 +496,88 @@ impl<T: SerialTransport> FeetechBus<T> {
         Ok(())
     }
 
+    /// 固定缓冲批量读取原始无符号字，不进行 sign-magnitude 解码。
+    ///
+    /// IDs 必须非空、唯一且在 1..=253 内，最多 MAX_JOINTS 项。所有容量
+    /// 在租约和 IO 之前校验；整组回包合法后才提交 out，尾部槽位保持原值。
+    /// 一个租约覆盖请求及整组响应；仅沿用 transport 的调用预算，不赋予
+    /// 来源绝对读取期限、USB 身份证明或新的权限。
+    ///
+    /// # Errors
+    /// ID、数量、容量或寄存器宽度非法时返回原参数错误；回包非法或 IO
+    /// 失败时透传原协议/通信错误，out 全部保持原值。
+    pub fn sync_read_by_id_raw_into(
+        &mut self,
+        reg_name: &'static str,
+        ids: &[u8],
+        out: &mut [u32],
+        tx_buf: &mut [u8],
+        rx_buf: &mut [u8],
+    ) -> Result<(), FeetechError> {
+        let reg = get_register(reg_name)?;
+        self.sync_read_raw_register_into(reg, ids, out, tx_buf, rx_buf)
+    }
+
+    fn sync_read_raw_register_into(
+        &mut self,
+        reg: crate::registers::Register,
+        ids: &[u8],
+        out: &mut [u32],
+        tx_buf: &mut [u8],
+        rx_buf: &mut [u8],
+    ) -> Result<(), FeetechError> {
+        let n = ids.len();
+        if n == 0 || n > robot_core::adapter::MAX_JOINTS {
+            return Err(FeetechError::ByteLengthMismatch {
+                expected: if n == 0 {
+                    1
+                } else {
+                    robot_core::adapter::MAX_JOINTS
+                },
+                actual: n,
+            });
+        }
+        for (index, &id) in ids.iter().enumerate() {
+            if !(1..=253).contains(&id) {
+                return Err(FeetechError::InvalidMotorId(i32::from(id)));
+            }
+            if ids[..index].contains(&id) {
+                return Err(FeetechError::DuplicateMotorId(id));
+            }
+        }
+        let width = usize::from(reg.length);
+        if !matches!(width, 1 | 2 | 4) {
+            return Err(FeetechError::UnsupportedByteLength(width));
+        }
+        let request_len = 8 + n;
+        let per_status_len = 6 + width;
+        let response_len = n * per_status_len;
+        for (expected, actual) in [
+            (n, out.len()),
+            (request_len, tx_buf.len()),
+            (response_len, rx_buf.len()),
+        ] {
+            if actual < expected {
+                return Err(FeetechError::ByteLengthMismatch { expected, actual });
+            }
+        }
+
+        let written = build_sync_read(reg.addr, reg.length, ids, tx_buf)?;
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &tx_buf[..written])?;
+        lease.read(&mut self.transport, &mut rx_buf[..response_len])?;
+
+        let mut staged = [0_u32; robot_core::adapter::MAX_JOINTS];
+        for (index, &id) in ids.iter().enumerate() {
+            let start = index * per_status_len;
+            let packet = parse_status(&rx_buf[start..start + per_status_len])?;
+            validate_response(&packet, id, &mut self.device_status_motor)?;
+            staged[index] = combine_bytes_le(packet.params, width)?;
+        }
+        out[..n].copy_from_slice(&staged[..n]);
+        Ok(())
+    }
+
     /// by-id 版 [`sync_write`](FeetechBus::sync_write)：直接接 `&[(id, value)]`，
     /// 跳过 HashMap lookup。**不**等 ACK。
     ///
@@ -724,6 +807,10 @@ fn encode_value(reg_name: &'static str, value: i32) -> Result<u32, FeetechError>
 fn decode_value(reg_name: &'static str, raw: u32) -> i32 {
     sign_bit_for(reg_name).map_or_else(|| raw as i32, |bit| decode_sign_magnitude(raw, bit))
 }
+
+#[cfg(test)]
+#[path = "bus_raw_read_tests.rs"]
+mod raw_read_tests;
 
 // ============================================================================
 // Tests（用 MockTransport 喂虚假回包验 wire 正确性）

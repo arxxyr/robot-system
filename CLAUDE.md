@@ -198,6 +198,14 @@
            未接S0/S1或真实轮速TX，下一步专用wheel adapter另验；无全workspace/release/H2/新硬件/部署/push。
            头1回程+8、右9停止读值-50原FAIL保持；用户已人工切两个电源并支撑，无新GO，FW未读/Phase12未改。
            左腕/右H2 FAIL、D15 OPEN/DEFERRED及deployable=false保持。
+           同日固定缓冲原始读回两源已整合：MAX32固定staging，完整组校验后一次提交，原word/尾槽保持。
+           具名表仍仅1/2B，4B只核同生产私有核心；沿旧read调用预算，不证明绝对READ期限/USB身份。
+           Mac与Orin各230不同方法（lib213+集成12/5），13新增为213子集，default/real-hw213重叠不累计。
+           Mac最终12child自然回收，逐child只保存聚合/相等字段，批次首尾有完整597清单；未nocapture或导出nestedPID。
+           Orin本轮15child/32完整源清单/7本机owner均真实回收或核验；两8B负控SIGABRT(core dumped)原行保留。
+           main实际fmt0与597/5c8c4c04绑定本轮Orin fmt→两根Clippy及nightly1d81；Mac首轮编译FAIL/r2PASS保留。
+           .verify/feetech_wheel_raw_read_2026-10-08/summary.json为验收入口；无全workspace/release/RT/H2/新UART/安装/push。
+           未接S0/S1或真实轮速TX，连接/固件/Enable与专用wheel adapter另验；断电确认后无新GO，旧FAIL/D15状态不变。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

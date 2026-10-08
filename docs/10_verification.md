@@ -9,6 +9,16 @@
 
 ---
 
+## 2026-10-08 · 固定缓冲原始读回的同源软件验证
+
+Mac最终r3与Orin各通过230个不同测试方法：默认/real-hw完整lib213同名重叠，加comm12、diag5，0failed/ignored；13个原始读回方法是213子集。固定fixture在唯一真实AllocDisabler内直接调用生产API，4B样本调用其共享私有执行核心；现具名寄存器只有1/2B，不宣称公共具名接口已有4B条目。后轮坏帧、IO/短包、abort与租约回收等路径验证输出全组不半提交，原word与尾槽保持。
+
+Mac实际fmt、两套Feetech专项Clippy及12个自有child自然wait/reap通过。每child计算完整597输入并在原runner比较，结果只持久化聚合和相等字段；完整清单仅批次首尾各一份，不能称24份完整快照已归档。Mac命令没有`--nocapture`，负控方法内部的SIGABRT/8B/wait断言随完整库通过，但未独立导出nested PID或子stderr。
+
+Orin本轮实际fmt→默认根Clippy→real-hw根Clippy及全部限定测试通过，15个原生child、7个本机外部owner均自然wait/reap；32份完整597输入清单逐项相等，浮动nightly实际`1d81eb4ad`首尾一致。两库使用`--nocapture`，原stderr保留两个8B负控的真实PID518003/518497、SIGABRT及`(core dumped)`显示和自然wait完成行；显示后缀不证明core文件，子stdout/完整子stderr未单独封存，负控不另计Rust方法。root精确整合两源后实际main fmt0、全部597/`5c8c4c04…`与本轮原生输入相同，复用已执行质量门。Mac r1原编译FAIL/后续8门NOT_RUN与r2PASS原件保持，独审/root软件验收通过。
+
+本件read仅沿原transport调用预算，不新增绝对READ截止、权限或连接/固件认证。未接S0/S1、实际轮速TX或Enable链；无完整workspace/release/RT/H2、新UART/硬件、安装、服务激活、部署或push。用户人工断电与手臂支撑确认后无新GO，头1/右9停止及左腕/右H2原FAIL、D15 OPEN/DEFERRED和deployable=false保持。[必要原件、准确名单与主树绑定](../.verify/feetech_wheel_raw_read_2026-10-08/summary.json)。
+
 ## 2026-10-08 · Feetech 来源绝对期限写入的同源软件验证
 
 六份Feetech源码已整合来源绝对期限写入：`SourceWriteDeadline`借用`RobotClock`并保存固定source期限，共享核心保留transport调用的固定预算，首写、partial-write、timeout安装后和返回后均严格以`now >= deadline`拒绝，不续期、不整帧重放。固定错误保留wanted/got、前后观测时刻、是否尝试写入和当次IO错误kind；非法count优先，合法进度记录后按时钟回退/source/call到期顺序判定。新普通写API必须显式提供probe，真实性由调用方保证；无probe在lease/transport前拒绝，未知transport默认Unsupported。旧Position/Safety/Confirm调用保留原API，未改冻结架构。
@@ -1204,3 +1214,4 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 - 2026-09-30：补登记XLeRobot具名SI三轮纯运动学，Orin同源590输入、根fmt/Clippy及crate30通过，21新底盘是30子集；首lint失败保留，未接S0/S1或验证底盘动作。
 - 2026-09-30：登记B0三个原始字节诊断项和四API/CLI拒写策略，五源590输入3d8491ee已绑定；首Clippy E0004/101保留，补既有参数类(8,1,0)及三名原方法断言；原生库160+例子5、两根Clippy/release/九次真实exit2拒写通过，18为165子集，归档及独审/root软件验收通过；实际Phase/单位与底盘执行链未验证。
 - 2026-10-08：登记来源绝对期限写六源、Mac/Orin分别217去重方法、Orin r2质量/default200与r3剩余门的合并软件验收及主树同596/实际fmt质量绑定；保留全部原FAIL，无真实轮速接入、硬件、release/全仓、部署或push，D15暂缓与deployable=false保持。
+- 2026-10-08：登记固定缓冲原始读回两源整合、Mac/Orin各230方法及13子集、本机聚合字段与Orin32全清单/nocapture负控的观测区别、主树597同源质量绑定；保留Mac r1编译FAIL/r2PASS及旧硬件状态，无新UART、运行时接入、安装或push。
