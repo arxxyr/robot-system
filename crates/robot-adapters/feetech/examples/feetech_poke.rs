@@ -19,6 +19,7 @@
 //! ```bash
 //! feetech_poke <address> <motor_id> ping
 //! feetech_poke <address> <motor_id> read  <register>
+//! feetech_poke <address> <motor_id> read-raw <register>
 //! feetech_poke <address> <motor_id> write <register> <value>
 //! ```
 //!
@@ -28,6 +29,10 @@
 //!   `Goal_Position` / `Present_Position` / `Torque_Enable` / `Operating_Mode` /
 //!   `Homing_Offset`）
 //! - `<value>`：`i32`。sign-magnitude 编码由 bus 内部处理
+//! - `read-raw`：单ID的 `SYNC_READ`；完整校验后输出原始无符号word和本次
+//!   TX/RX JSON，不换算单位。`requested_register_address`是请求地址，
+//!   状态包不回显该地址；`serial_device`是CLI路径，不证明物理会话身份。
+//!   原`read`仍为单 `READ`，不能用新 `SYNC_READ` 回包回填历史读数或推定运动。
 //!
 //! ## 实例
 //!
@@ -65,6 +70,7 @@ use std::process::ExitCode;
 
 use robot_adapter_feetech::registers::{
     STS3215_CONTROL_TABLE, ensure_not_diagnostic_write, ensure_not_firmware_readonly_write,
+    get_register,
 };
 use robot_adapter_feetech::transport::real::RealSerialTransport;
 use robot_adapter_feetech::{DEFAULT_BAUDRATE, FeetechBus, FeetechError, Motor};
@@ -102,6 +108,7 @@ fn usage(prog: &str) -> String {
         "usage:\n  \
          {prog} <address> <motor_id> ping\n  \
          {prog} <address> <motor_id> read  <register>\n  \
+         {prog} <address> <motor_id> read-raw <register>\n  \
          {prog} <address> <motor_id> write <register> <value>\n"
     )
 }
@@ -128,6 +135,65 @@ fn do_read<T: robot_adapter_feetech::SerialTransport>(
         }
         Err(e) => {
             eprintln!("error: read {register}@{motor_id}: {e}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// 新动作的纯参数门；main在开串口前调用，执行函数复用相同校验。
+fn read_raw_register(args: &[String], motor_id: u8) -> Result<&'static str, String> {
+    if args.len() != 5 {
+        return Err("read-raw要求一个寄存器参数".to_string());
+    }
+    Motor::new(motor_id).map_err(|error| format!("motor_id {motor_id}: {error}"))?;
+    static_register_name(&args[4]).ok_or_else(|| format!("unknown register '{}'", args[4]))
+}
+
+fn do_read_raw<T: robot_adapter_feetech::SerialTransport>(
+    bus: &mut FeetechBus<T>,
+    motor_id: u8,
+    args: &[String],
+    output: &mut impl std::io::Write,
+) -> ExitCode {
+    let register = match read_raw_register(args, motor_id) {
+        Ok(name) => name,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    let metadata = match get_register(register) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    let mut tx = [0_u8; 9];
+    let mut rx = [0_u8; 10];
+    let mut raw = [0_u32; 1];
+    if let Err(error) =
+        bus.sync_read_by_id_raw_into(register, &[motor_id], &mut raw, &mut tx, &mut rx)
+    {
+        eprintln!("error: read-raw {register}@{motor_id}: {error}");
+        return ExitCode::from(1);
+    }
+    // 仅在整包校验成功后输出；这些是本次API实际填入的SYNC_READ片段。
+    let report = serde_json::json!({
+        "operation": "sync_read",
+        "serial_device": args[1],
+        "motor_id": motor_id,
+        "register": register,
+        "requested_register_address": metadata.addr,
+        "width": metadata.length,
+        "raw_unsigned": raw[0],
+        "tx": tx.as_slice(),
+        "rx": &rx[..6 + usize::from(metadata.length)],
+    });
+    match writeln!(output, "{report}") {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: read-raw JSON输出失败: {error}");
             ExitCode::from(1)
         }
     }
@@ -195,6 +261,12 @@ fn main() -> ExitCode {
         eprintln!("error: {error}");
         return ExitCode::from(2);
     }
+    if action == "read-raw"
+        && let Err(error) = read_raw_register(&args, motor_id)
+    {
+        eprintln!("error: {error}");
+        return ExitCode::from(2);
+    }
 
     // 构造 bus：单 motor 名统一叫 "m"（本工具不关心名字语义）
     let transport = match RealSerialTransport::open(Path::new(address), DEFAULT_BAUDRATE) {
@@ -234,6 +306,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "read" => do_read(&mut bus, motor_id, &args, &prog),
+        "read-raw" => do_read_raw(&mut bus, motor_id, &args, &mut std::io::stdout().lock()),
         "write" => do_write(&mut bus, motor_id, &args, &prog),
         other => {
             eprintln!("error: unknown action '{other}'\n{}", usage(&prog));
@@ -258,6 +331,165 @@ mod tests {
             args.push(value.to_string());
         }
         args
+    }
+
+    fn raw_fixture() -> (
+        FeetechBus<robot_adapter_feetech::transport::MockTransport>,
+        robot_adapter_feetech::transport::MockHandle,
+    ) {
+        let (transport, handle) = robot_adapter_feetech::transport::MockTransport::new();
+        let mut motors = HashMap::new();
+        motors.insert("m".to_string(), Motor::new(9).unwrap());
+        (FeetechBus::new(transport, motors).unwrap(), handle)
+    }
+
+    fn raw_arguments(register: &str) -> Vec<String> {
+        let mut args = arguments("read-raw", register, None);
+        args[2] = "9".to_string();
+        args
+    }
+
+    fn status_frame(id: u8, params: &[u8]) -> Vec<u8> {
+        let mut frame = vec![0xff, 0xff, id, u8::try_from(params.len() + 2).unwrap(), 0];
+        frame.extend_from_slice(params);
+        frame.push(robot_adapter_feetech::protocol::checksum(&frame[2..]));
+        frame
+    }
+
+    #[test]
+    fn read_raw_success_reports_requested_metadata_and_actual_sync_read_bytes() {
+        for (register, address, data, value) in [
+            ("Phase", 18, vec![12_u8], 12_u32),
+            ("Present_Velocity", 58, vec![0_u8, 128], 32768_u32),
+        ] {
+            let (mut bus, handle) = raw_fixture();
+            let response = status_frame(9, &data);
+            handle.push_rx(&response);
+            let mut output = Vec::new();
+            assert_eq!(
+                do_read_raw(&mut bus, 9, &raw_arguments(register), &mut output),
+                ExitCode::SUCCESS
+            );
+            assert_eq!(output.iter().filter(|&&byte| byte == b'\n').count(), 1);
+            let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(
+                report,
+                serde_json::json!({
+                    "operation": "sync_read", "serial_device": "/dev/never-open", "motor_id": 9,
+                    "register": register, "requested_register_address": address, "width": data.len(),
+                    "raw_unsigned": value, "tx": handle.peek_tx(), "rx": response,
+                })
+            );
+            assert_eq!(handle.peek_tx()[4], 0x82);
+        }
+        let (mut bus, handle) = raw_fixture();
+        handle.push_rx(&[0xff, 0xff, 9, 4, 0, 0, 128, 114]);
+        let mut output = Vec::new();
+        assert_eq!(
+            do_read_raw(&mut bus, 9, &raw_arguments("Present_Velocity"), &mut output),
+            ExitCode::SUCCESS
+        );
+        assert_eq!(handle.peek_tx(), [0xff, 0xff, 0xfe, 5, 0x82, 58, 2, 9, 53]);
+    }
+
+    #[test]
+    fn read_raw_keeps_bit15_words_unsigned_without_signed_or_si_fields() {
+        for word in [0x8000_u16, 0x8001, 0xffff, 0x7fff] {
+            let (mut bus, handle) = raw_fixture();
+            handle.push_rx(&status_frame(9, &word.to_le_bytes()));
+            let mut output = Vec::new();
+            assert_eq!(
+                do_read_raw(&mut bus, 9, &raw_arguments("Present_Velocity"), &mut output),
+                ExitCode::SUCCESS
+            );
+            let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(report["raw_unsigned"], u32::from(word));
+            assert_eq!(report.as_object().unwrap().len(), 9);
+        }
+    }
+
+    #[test]
+    fn read_raw_bad_checksum_has_exit1_and_no_json() {
+        let (mut bus, handle) = raw_fixture();
+        let mut response = status_frame(9, &[0, 128]);
+        *response.last_mut().unwrap() ^= 1;
+        handle.push_rx(&response);
+        let mut output = Vec::new();
+        assert_eq!(
+            do_read_raw(&mut bus, 9, &raw_arguments("Present_Velocity"), &mut output),
+            ExitCode::from(1)
+        );
+        assert!(output.is_empty());
+        assert_eq!(handle.peek_tx().len(), 9);
+    }
+
+    #[test]
+    fn read_raw_wrong_response_id_has_exit1_and_no_json() {
+        let (mut bus, handle) = raw_fixture();
+        handle.push_rx(&status_frame(8, &[0, 128]));
+        let mut output = Vec::new();
+        assert_eq!(
+            do_read_raw(&mut bus, 9, &raw_arguments("Present_Velocity"), &mut output),
+            ExitCode::from(1)
+        );
+        assert!(output.is_empty());
+        assert_eq!(handle.peek_tx().len(), 9);
+    }
+
+    #[test]
+    fn read_raw_missing_or_partial_reply_has_exit1_and_no_json() {
+        for response in [&[][..], &[0xff, 0xff, 9][..]] {
+            let (mut bus, handle) = raw_fixture();
+            handle.push_rx(response);
+            let mut output = Vec::new();
+            assert_eq!(
+                do_read_raw(&mut bus, 9, &raw_arguments("Present_Velocity"), &mut output),
+                ExitCode::from(1)
+            );
+            assert!(output.is_empty());
+            assert_eq!(handle.peek_tx().len(), 9);
+        }
+    }
+
+    #[test]
+    fn read_raw_preflight_rejects_bad_count_register_and_id_with_zero_mock_io() {
+        let missing = arguments("read-raw", "Present_Velocity", None)[..4].to_vec();
+        let extra = arguments("read-raw", "Present_Velocity", Some("extra"));
+        let unknown = raw_arguments("Unknown_Register");
+        for (args, id) in [
+            (missing, 9),
+            (extra, 9),
+            (unknown, 9),
+            (raw_arguments("Present_Velocity"), 0),
+            (raw_arguments("Present_Velocity"), 254),
+            (raw_arguments("Present_Velocity"), 255),
+        ] {
+            assert!(read_raw_register(&args, id).is_err());
+            let (mut bus, handle) = raw_fixture();
+            let mut output = Vec::new();
+            assert_eq!(
+                do_read_raw(&mut bus, id, &args, &mut output),
+                ExitCode::from(2)
+            );
+            assert!(output.is_empty());
+            assert!(handle.peek_tx().is_empty());
+        }
+    }
+
+    #[test]
+    fn original_read_still_sends_single_read_data() {
+        let (mut bus, handle) = raw_fixture();
+        handle.push_rx(&status_frame(9, &[1, 128]));
+        assert_eq!(
+            do_read(
+                &mut bus,
+                9,
+                &arguments("read", "Present_Velocity", None),
+                "feetech_poke"
+            ),
+            ExitCode::SUCCESS
+        );
+        assert_eq!(handle.peek_tx(), [0xff, 0xff, 9, 4, 2, 58, 2, 180]);
     }
 
     #[test]

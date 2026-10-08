@@ -1,0 +1,14 @@
+{
+  "status": "ROOT_ACCEPTED_SCOPED_SOFTWARE",
+  "source_count": 597,
+  "source_aggregate": "03a11e7855c3870bfd7bf7b24b45e90a3e673c4e4972591aece8170dab3480eb",
+  "main_after_final_fmt_exact_matches_native": true,
+  "actual_main_fmt_exit": 0,
+  "actual_main_diff_check_exit": 0,
+  "native_quality": "复用本轮同597输入的实际Orin fmt及两根Clippy0，不宣称Mac根Clippy",
+  "actual_native_test_stdout": "example13.stdout",
+  "actual_original_cache_failure": "original-cache-failure.stderr",
+  "source_changes": "仅feetech_poke.rs，另两当前状态文档，未混入P3-A/B草稿",
+  "field": "供电/看护事实待答；无新UART/硬件GO",
+  "root_review": "校验完整成功包才JSON、位15unsigned、tx/rx片段来源、前置拒绝位置及旧命令行为，AArch64 ELF与回传SHA一致"
+}

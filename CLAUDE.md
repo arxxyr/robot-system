@@ -206,6 +206,10 @@
            main实际fmt0与597/5c8c4c04绑定本轮Orin fmt→两根Clippy及nightly1d81；Mac首轮编译FAIL/r2PASS保留。
            .verify/feetech_wheel_raw_read_2026-10-08/summary.json为验收入口；无全workspace/release/RT/H2/新UART/安装/push。
            未接S0/S1或真实轮速TX，连接/固件/Enable与专用wheel adapter另验；断电确认后无新GO，旧FAIL/D15状态不变。
+           同日按用户“过度设计”反馈暂停P3-A打开会话/P3-B事务代次框架，未完成草稿保留工作树，未合主树。
+           第三件绝对READ合同暂缓未派实施；仅既有feetech_poke新增read-raw，Mac/Orin各13工具方法通过。
+           Orin fmt/两根Clippy/release通过，首离线缓存resolver101保留；主树同597/03a11，证据 .verify/feetech_poke_raw_2026-10-08/summary.json。
+           优先头1回程+8/右9终读-50的实际原帧、固件和参数事实，不改精度/停止门、不回填旧FAIL或缩减整机目标。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

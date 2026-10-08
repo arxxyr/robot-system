@@ -1,0 +1,19 @@
+{
+  "status": "SOFTWARE_PASS_ONLY",
+  "scope": "仅既有feetech_poke增加read-raw；通用P3框架暂停未整合，硬件故障未闭环",
+  "source_file": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+  "source_sha256": "98f42d7d2bf039477d0dafccd32dfd048db75b10f9f353aeae758eb3f5768860",
+  "source_count": 597,
+  "source_aggregate": "03a11e7855c3870bfd7bf7b24b45e90a3e673c4e4972591aece8170dab3480eb",
+  "root_checks": "实际main fmt0/diffcheck0；root逐字段核本机和Orin前后四份完整源清单完全相同，并亲核原生13方法stdout、两根Clippy/release真实wait与ELF SHA/架构",
+  "mac_tests": 13,
+  "orin_tests": 13,
+  "distinct_methods": 13,
+  "new_methods_subset": 7,
+  "quality": "Mac scoped real-hw Clippy0；Orin fmt0、缺缓存resolver101原失败保留，恢复既有离线CARGO_HOME后两根Clippy0、example13、release0、三参数前置实际exit2",
+  "binary_sha256": "cd4ba63c6729983cda69d54de46fca14d944f0ac903eb977e50747824ec6c9dd",
+  "native_result": "native-result.json",
+  "source_manifest": "source-manifest.json",
+  "limits": "无新UART/硬件/完整workspace测试/RT/H2/服务/正式安装/push；新SYNC_READ字节不回填旧单READ失败；未做syscalltrace",
+  "field_state": "最新人工确认两电源切断；新供电与看护事实待答，未获得新硬件GO；头1+8/右9-50/左腕/右H2 FAIL、D15 OPEN/DEFERRED、deployable=false保持"
+}
