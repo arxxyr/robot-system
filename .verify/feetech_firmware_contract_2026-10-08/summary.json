@@ -1,0 +1,399 @@
+{
+  "schema": "FEETECH_FIRMWARE_CONTRACT_STAGE_ARCHIVE_V2",
+  "date": "2026-10-08",
+  "created_at_utc": "2026-10-08T06:45:26.568081+00:00",
+  "archive_status": "SOFTWARE_STAGE_ARCHIVED_PENDING_INDEPENDENT_ROOT_ACCEPTANCE",
+  "deployable": false,
+  "source_binding": {
+    "source_count": 591,
+    "aggregate": "ddad9513566f51fecf915ac7f39e0cccc66b8ae93732847b70ac7c0315458294",
+    "root_integration": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/root_integration_r1.json",
+      "sha256": "e747553be9ed51a72dc98046b8056b264bbe8e16682caecf10e9283788fa4991"
+    },
+    "candidate_sha256": "9ab552b9542a8ca95f53345ac4c39a489b601af846af9231b69a9cf4a6a7b13d",
+    "every_591_current_file_same": true,
+    "native_source_snapshots_same": 28,
+    "head": "bfad2015f7772557b884d3ea4f6218aaa2ae4062",
+    "affected_sources": [
+      {
+        "path": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+        "bytes": 12881,
+        "sha256": "4b23ff70d16760de96b97b174d4baadd214d480d67a21242046e12af5c3c5e30"
+      },
+      {
+        "path": "crates/robot-adapters/feetech/src/bus.rs",
+        "bytes": 46207,
+        "sha256": "061f1f3044f352288502aeac41ab8c3dc19ec7f7199d20a1affa222604f477f6"
+      },
+      {
+        "path": "crates/robot-adapters/feetech/src/diagnostic.rs",
+        "bytes": 10652,
+        "sha256": "516226775c24776948a7e0a8d44d4ccf793f17aa1c0b87dc19f478812d4f8478"
+      },
+      {
+        "path": "crates/robot-adapters/feetech/src/error.rs",
+        "bytes": 15125,
+        "sha256": "8533c39c4731453fa612ebf6148fec4da3c86c52b892ebcffb5dd792cf035ec1"
+      },
+      {
+        "path": "crates/robot-adapters/feetech/src/lib.rs",
+        "bytes": 4358,
+        "sha256": "96656835769203a78140a6fe225cedb79fca201cf0282f4ef345a26faccd9dc6"
+      },
+      {
+        "path": "crates/robot-adapters/feetech/src/registers.rs",
+        "bytes": 14523,
+        "sha256": "73a6250d59fb59a93b36925326dd886168a6421785963cdddda77227946cbefe"
+      },
+      {
+        "path": "crates/robot-adapters/feetech/src/velocity_profile.rs",
+        "bytes": 17369,
+        "sha256": "0d62abc241149b8f7a3040c4d11b5168b666865a812e9559b2756d2461c61055"
+      }
+    ],
+    "native_originals_archive": "native-r1-original-evidence.tar.gz",
+    "native_members": 145,
+    "source_input_representation": "591 files retained once as the original source-inputs.tar.gz inside native archive; not repeatedly expanded"
+  },
+  "implemented": [
+    "Firmware_Major_Version 地址 0 和 Firmware_Minor_Version 地址 1 的单字节只读名称；四个具名写 API 和 CLI 在取得租约/发包/开串口前返回具体只读错误，原 B0 Phase/CW/CCW 拒写门保持。",
+    "固定三轮 role/ID、Model777/Mode1/精确预期 firmware 和 Phase 的纯 typed profile；Phase bit3=0 才有零停止数学合同构造正路径，不赋予 Enable 能力，Phase12 明确拒绝零速合同。预期 firmware 匹配不等于厂家适用性认证。",
+    "Phase bit2 为两档 nominal RPM 单位 0.732/0.0146，速度 46/58 使用 bit15 signed-magnitude 和小端；非有限值/算术溢出/表示越界/raw_limit 超限明确拒绝，无单轮静默 clamp。"
+  ],
+  "unchanged_integration_boundary": "纯 profile 未接入 adapter/S0/S1/runtime；现有 adapter Position 与 raw 速度读回未变，ArmIK 保持。没有 Phase/Lock/EEPROM 写副作用。",
+  "manufacturer_contract": {
+    "review": "manufacturer-review.json",
+    "review_status": "PRIMARY_CONTRACT_FOUND_DEVICE_FIRMWARE_BINDING_PENDING",
+    "raw_archive_prefix": "manufacturer/",
+    "raw_download_count": 29,
+    "public_chain": "doc.feetech.cn HTML → app JS/manifest/chunk11 → public GET getBysrcType FT-SMS-STS-emanual-229f4476422d4059abfb1cb0 → response.data.version=181 → exact memory-table MD",
+    "version181_meaning": "公开平台文档 version 字段；不是现场固件版本。官表没有给出现场 firmware 适用白名单。",
+    "table_lines": {
+      "firmware_major_minor": [
+        18,
+        19
+      ],
+      "phase18_range": [
+        38
+      ],
+      "mode1": [
+        51
+      ],
+      "goal_velocity46": [
+        66
+      ],
+      "lock55": [
+        69
+      ],
+      "present_velocity58": [
+        75
+      ],
+      "phase_unit_bit2": [
+        102
+      ],
+      "phase_zero_bit3": [
+        103
+      ]
+    },
+    "lock55_contract": "Lock0 下写 EPROM 掉电保存，Lock1 下写 EPROM 不保存；临时维护方案要求原 Lock1 且保持1，原 Lock0 默认拒绝，未实施。",
+    "firmware_field_read_on_real_device": "NOT_RUN",
+    "actual_phase12_changed": false,
+    "dimos_unit_6_rad_s_at_1023": "EMPIRICAL_REFERENCE_NOT_MANUFACTURER_CALIBRATION"
+  },
+  "software_validation": {
+    "mac_first_r1": {
+      "status": "FAIL",
+      "fmt_actual_exit": 0,
+      "crate_clippy_actual_exit": 101,
+      "reason": "新 profile 两处 match_bool lint；随后 QA 未执行，不把缺失编译器后验当漂移",
+      "archive_prefix": "mac/firmware_contract_qa_r1/"
+    },
+    "mac_r2": {
+      "status": "PASS_SCOPED_CRATE_SOFTWARE",
+      "fmt": 0,
+      "crate_real_hw_all_target_clippy": 0,
+      "lib": 171,
+      "poke": 6,
+      "failed": 0,
+      "ignored": 0,
+      "archive_prefix": "mac/firmware_contract_qa_r2/"
+    },
+    "compiler_mac": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6",
+      "host": "aarch64-apple-darwin",
+      "cargo": "cargo 1.101.0-nightly (f3865b2a4 2026-09-29)"
+    },
+    "native_r1": {
+      "status": "PASS_SCOPED_NATIVE_SOFTWARE_NOT_RUNTIME_HARDWARE",
+      "fmt_and_default_and_real_hw_root_clippy": "PASS",
+      "lib": 171,
+      "poke": 6,
+      "failed": 0,
+      "ignored": 0,
+      "quality_outer_children": 13,
+      "expected_exit2_inner_children": 3,
+      "distinct_native_children": 16,
+      "real_wait_reap": true,
+      "compiler": {
+        "release": "1.101.0-nightly",
+        "commit_hash": "1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6",
+        "host": "aarch64-unknown-linux-gnu"
+      },
+      "cargo": "cargo 1.101.0-nightly (f3865b2a4 2026-09-29)",
+      "compiler_before_after_same": true
+    },
+    "count_policy": {
+      "distinct_rust_methods": 177,
+      "new_methods_subset": 12,
+      "sample_count_in_one_method": 131072,
+      "mac_rerun_not_added_to_distinct": true,
+      "python_model_not_rust_tests": true
+    },
+    "release_artifact": {
+      "cargo_artifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/source/crates/robot-adapters/feetech#robot-adapter-feetech@0.1.2",
+        "manifest_path": "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/source/crates/robot-adapters/feetech/Cargo.toml",
+        "target": {
+          "kind": [
+            "example"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "feetech_poke",
+          "src_path": "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/source/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+          "edition": "2024",
+          "required-features": [
+            "real-hw"
+          ],
+          "doc": false,
+          "doctest": false,
+          "test": false
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": false
+        },
+        "features": [
+          "default",
+          "real-hw"
+        ],
+        "filenames": [
+          "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/release-build/release/examples/feetech_poke"
+        ],
+        "executable": "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/release-build/release/examples/feetech_poke",
+        "fresh": false
+      },
+      "release_completion": {
+        "path": "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/qa/release_poke/completion.json",
+        "sha256": "63b4509e2980177bc14e8b8f5a00aeedaad4c57409f1537385bea42e338b218c"
+      },
+      "cargo_path": "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/release-build/release/examples/feetech_poke",
+      "frozen_path": "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/qa/frozen/feetech_poke",
+      "identity": {
+        "sha256": "bde890bb1bd0ea20f63d5267f158a311edd539eaedbc7f04cf13f248b5272835",
+        "bytes": 1470648,
+        "mode": 509,
+        "elf_machine": 183
+      },
+      "source_aggregate": "ddad9513566f51fecf915ac7f39e0cccc66b8ae93732847b70ac7c0315458294",
+      "compiler": {
+        "release": "1.101.0-nightly",
+        "commit_hash": "1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6",
+        "host": "aarch64-unknown-linux-gnu"
+      },
+      "local_download": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/native-r1/orin-originals/frozen/feetech_poke",
+        "sha256": "bde890bb1bd0ea20f63d5267f158a311edd539eaedbc7f04cf13f248b5272835",
+        "bytes": 1470648
+      },
+      "elf_machine": 183,
+      "freeze_after_probes_same": true
+    },
+    "actual_probe_argv_and_wait": [
+      {
+        "name": "help",
+        "pid": 501414,
+        "identity": {
+          "pid": 501414,
+          "start_ticks": 319443653,
+          "pgid": 501414,
+          "sid": 501414,
+          "state": "R",
+          "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+        },
+        "actual_exit_code": 2,
+        "expected_exit_code": 2,
+        "reaped": true,
+        "argv": [
+          "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/qa/frozen/feetech_poke",
+          "--help"
+        ],
+        "completion": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/native-r1/orin-originals/expected_help/completion.json",
+          "sha256": "02113bc6f2d0f270bb8200a934eb5be4fbbdd2b3d8a382f8b3a58c77f1545feb",
+          "bytes": 1799
+        },
+        "zero_uart_evidence": "实际 argv 仅 --help，argc 前置检查返回用法且真实 exit2；没有足够串口/电机/动作参数，不是固件只读名称错误。没有 syscall trace，不声称系统调用级观测。",
+        "syscall_trace": "UNAVAILABLE_NOT_CLAIMED"
+      },
+      {
+        "name": "Firmware_Major_Version",
+        "pid": 501421,
+        "identity": {
+          "pid": 501421,
+          "start_ticks": 319443731,
+          "pgid": 501421,
+          "sid": 501421,
+          "state": "R",
+          "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+        },
+        "actual_exit_code": 2,
+        "expected_exit_code": 2,
+        "reaped": true,
+        "argv": [
+          "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/qa/frozen/feetech_poke",
+          "/dev/robot-checks-feetech-firmware-nonexistent",
+          "8",
+          "write",
+          "Firmware_Major_Version",
+          "1"
+        ],
+        "completion": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/native-r1/orin-originals/expected_Firmware_Major_Version/completion.json",
+          "sha256": "d999d01e5d831a92b17da6ec9ce189d40861a64f846a86407b23c6eab56afebb",
+          "bytes": 2000
+        },
+        "zero_uart_evidence": "同源main在RealSerialTransport::open前返回具体错误；实际exit2和错误文本、不存在路径前后、已通过四写API零TX/lease及poke preflight测试；没有syscall trace，不声称系统调用级观测",
+        "syscall_trace": "UNAVAILABLE_NOT_CLAIMED"
+      },
+      {
+        "name": "Firmware_Minor_Version",
+        "pid": 501428,
+        "identity": {
+          "pid": 501428,
+          "start_ticks": 319443813,
+          "pgid": 501428,
+          "sid": 501428,
+          "state": "R",
+          "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+        },
+        "actual_exit_code": 2,
+        "expected_exit_code": 2,
+        "reaped": true,
+        "argv": [
+          "/home/loosqk/robot-checks/feetech-firmware-contract-quality-20261008-r1/qa/frozen/feetech_poke",
+          "/dev/robot-checks-feetech-firmware-nonexistent",
+          "8",
+          "write",
+          "Firmware_Minor_Version",
+          "1"
+        ],
+        "completion": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/native-r1/orin-originals/expected_Firmware_Minor_Version/completion.json",
+          "sha256": "6c0d81b91b67d12ebb9d4d1b35734fb1045666f1366762ecf51cb7787a3a4d12",
+          "bytes": 2000
+        },
+        "zero_uart_evidence": "同源main在RealSerialTransport::open前返回具体错误；实际exit2和错误文本、不存在路径前后、已通过四写API零TX/lease及poke preflight测试；没有syscall trace，不声称系统调用级观测",
+        "syscall_trace": "UNAVAILABLE_NOT_CLAIMED"
+      }
+    ],
+    "probe_actual_motor_id": 8,
+    "help_actual_exit": 2,
+    "two_firmware_write_probe_actual_exit": [
+      2,
+      2
+    ],
+    "zero_uart_boundary": "同源早退控制流、实际具体只读错误/exit2、不存在 dev 路径前后、mock 零 TX/lease 与 CLI preflight 测试；Orin 无 strace，本轮没有 syscall trace，不声称系统调用层的零 IO 观测。",
+    "root_fmt_r1_preparation": {
+      "status": "FAIL_BEFORE_CARGO",
+      "actual_outer_exit": 1,
+      "cargo_children_launched": 0,
+      "archive_member": "root/root_precommit_fmt_r1/preparation_failure.json"
+    },
+    "root_fmt_r2": {
+      "status": "PASS",
+      "actual_children": 5,
+      "real_wait_reap": true,
+      "source_before_after_same": true,
+      "archive_prefix": "root/root_precommit_fmt_r2/"
+    },
+    "new_linux_precommit_gate": "SEPARATE_NEW_RECEIPT_PENDING_OUTSIDE_THIS_ARCHIVE",
+    "old_r7_local_owner_wait": "UNKNOWN_PRESERVED_NOT_BACKFILLED_FROM_NATIVE_PASS"
+  },
+  "human_power_cut_receipt": {
+    "file": "manual-power-cut-receipt-r1.json",
+    "bytes": 1072,
+    "sha256": "c509819ccf03acffd14f6b23019f574fcafe1be147bfa0d6f6ab4d696e015fd3",
+    "mode": 420,
+    "status": "HUMAN_REPORTED_BOTH_MOTOR_SUPPLIES_CUT_ARMS_SUPPORTED",
+    "received_at_utc": "2026-10-08 06:35:40 UTC",
+    "physical_cut_timestamp": null,
+    "independent_power_telemetry": null,
+    "new_go": false,
+    "watch_scope": "ENDED",
+    "original_NEEDS_MANUAL_POWER_CUT_and_FAIL": "PRESERVED"
+  },
+  "historical_hardware_boundary": {
+    "old_package_summary": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/hardware_selected_targets_2026-10-08/summary.json",
+      "bytes": 10374,
+      "sha256": "7557617916573a972d2cba84742fb0b97336e58ab6a28926cf566cac309f2c8d",
+      "mode": 420
+    },
+    "right_h2": "OVERALL_FAIL",
+    "left_wrist": "FAIL",
+    "head1": "RETURN_FAIL_PLUS8_AT_800MS",
+    "head2": "NOT_RUN",
+    "old_stop": "FAIL_NEEDS_MANUAL_POWER_CUT",
+    "d15": "OPEN/DEFERRED",
+    "deployable": false
+  },
+  "evidence_limits": [
+    "Mac r1 profile 原始文件未当时另存；后来由 r2 逆转已知修复，7 个文件严格匹配原 r1 manifest 的 bytes/SHA。明确标注事后精确恢复，不冒充同期抓取。",
+    "Mac r1 owner 工具 exit1 后置观察保留；未同期保存完整工具传输返回。Mac r2/native 原实际工具 wait 返回均另有原件。",
+    "root fmt r1 准备失败的完整 stderr 当时只由工具返回，未完整同期落盘；本包保留准备失败事实 receipt，不重构伪原件。",
+    "native run_orin.py 未执行草稿的 ELF 字段预检纠正保留；实际 run_orin_verified.py 执行，不将预检修正称运行失败。",
+    "原件 JSON 中绝对路径与远端路径保留；本包 index 给出 original_path 到 tar member 映射，远端路径不是本轮归档后重新探测结果。"
+  ],
+  "typed_reference_archive_closure": {
+    "report": "typed-reference-archive-closure.json",
+    "entry_jsons": 6,
+    "occurrences": 376,
+    "unique_resolved_files": 234,
+    "scope": "只六份独审入口的结构化 path/SHA 引用，7 候选源按 SHA 映射到 native archive 内 source-inputs.tar.gz 的 nested member；其他字符串路径保持历史语义，不概称全局闭合"
+  },
+  "not_done": [
+    "真实 firmware 0/1 READ",
+    "现场 Phase12 配置修改",
+    "UART或真实电机动作",
+    "adapter/runtime/S0/S1接入",
+    "H2六配方/真实RPC/RT或硬件门",
+    "完整workspace测试",
+    "正式安装/服务启动/部署/push",
+    "D15独立断电硬件实现或验收"
+  ],
+  "archive": {
+    "native_originals": "native-r1-original-evidence.tar.gz",
+    "native_index": "native-r1-original-evidence.index.json",
+    "native_verification": "native-r1-archive-verification.json",
+    "supporting_originals": "supporting-original-evidence.tar.gz",
+    "supporting_index": "supporting-original-evidence.index.json",
+    "supporting_members": 177,
+    "top_index": "artifact_index.json"
+  },
+  "summary_revision": "r2: only two scope wording corrections; original execution/raw bytes unchanged",
+  "historical_summary_correction": {
+    "preserved_r1": "history_r1/summary.json",
+    "r1_sha256": "0ecff5a1551404a2901c0de6d8c13b002cb9b4eeb02448712f475e1f320bbb97",
+    "native_summary_original": "native-r1-summary.json",
+    "native_summary_original_unchanged": true,
+    "meaning": "原生 summary 的 help 通用 zero_uart 描述为摘要误用；本 r2 按实际 --help argv/argc 用法早退纠正，不改实际原件/退出码/回收/177结果。"
+  }
+}

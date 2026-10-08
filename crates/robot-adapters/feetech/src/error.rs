@@ -15,6 +15,9 @@ pub enum FeetechError {
     #[error("本项目诊断专用寄存器禁止写入：{0}")]
     DiagnosticRegisterWriteForbidden(&'static str),
 
+    #[error("固件版本只读寄存器禁止写入：{0}")]
+    ReadOnlyRegisterWriteForbidden(&'static str),
+
     #[error("unknown motor name: {0}")]
     UnknownMotor(String),
 
@@ -202,6 +205,9 @@ impl From<FeetechError> for robot_core::error::RobotError {
             F::DiagnosticRegisterWriteForbidden(_) => {
                 Self::InvalidParameter("诊断专用寄存器禁止写入")
             }
+            F::ReadOnlyRegisterWriteForbidden(_) => {
+                Self::InvalidParameter("固件版本只读寄存器禁止写入")
+            }
             F::NotConnected => Self::Comm(robot_core::serial_services::CommErrorKind::Disconnected),
             F::AlreadyConnected => Self::Busy,
             F::Aborted(reason) => Self::Aborted(reason),
@@ -264,6 +270,18 @@ mod tests {
             assert_eq!(
                 RobotError::from(error),
                 RobotError::InvalidParameter("诊断专用寄存器禁止写入")
+            );
+        }
+    }
+
+    #[test]
+    fn firmware_readonly_denial_keeps_specific_parameter_error() {
+        for name in ["Firmware_Major_Version", "Firmware_Minor_Version"] {
+            let error = FeetechError::ReadOnlyRegisterWriteForbidden(name);
+            assert_eq!(error.comm_kind(), None);
+            assert_eq!(
+                RobotError::from(error),
+                RobotError::InvalidParameter("固件版本只读寄存器禁止写入")
             );
         }
     }

@@ -1,0 +1,35 @@
+{
+  "schema": "FEETECH_FIRMWARE_STAGE_CLOSURE_V2",
+  "status": "PASS_LOCAL_ARCHIVE_BYTES_SHA_MODE",
+  "native_member_count": 145,
+  "supporting_member_count": 177,
+  "no_duplicate_members": true,
+  "all_native_and_supporting_members_bytes_sha_mode_same": true,
+  "all_selected_originals_before_after_same": true,
+  "selected_originals_count": 325,
+  "copies_bytes_sha_mode_same": true,
+  "all_indexed_top_artifacts_same": true,
+  "artifact_index": {
+    "name": "artifact_index.json",
+    "bytes": 44774,
+    "sha256": "45e5cc965574478b0719c039e2b4f8b2f8a00f9a926591e346b18b502111cfaa",
+    "mode": 420
+  },
+  "summary": {
+    "name": "summary.json",
+    "bytes": 17652,
+    "sha256": "1a3faf7918153c3dae11726adc0d7563707e9fbbb99248ecfda488a210a3f56b",
+    "mode": 420
+  },
+  "closure_document_self_excluded": true,
+  "scope": "仅本机打包/流式校验；未展开591源码、未执行SSH/Cargo/UART、未修改旧硬件包或原PENDING receipt；本阶段尚待独审/root验收",
+  "summary_revision_receipt": {
+    "name": "summary-revision-r2.json",
+    "bytes": 2546,
+    "sha256": "8dbbf16c728e5fd9a85688ca8c712192ee049efd557ff0b6bf546858e7997ae7",
+    "mode": 420
+  },
+  "r1_top_bytes_preserved": true,
+  "original_packs_unchanged": true,
+  "revision_scope": "只两处摘要措辞；145原生/177补充原件包均原字节，不重新封包。尚待独审/root验收。"
+}

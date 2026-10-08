@@ -1,0 +1,336 @@
+{
+  "schema": "FEETECH_FIRMWARE_PRECOMMIT_QUALITY_BINDING_R1",
+  "status": "PASS_SCOPED_DEFAULT_ROOT_FMT_CLIPPY",
+  "deployable": false,
+  "source_count": 591,
+  "source_aggregate": "ddad9513566f51fecf915ac7f39e0cccc66b8ae93732847b70ac7c0315458294",
+  "main_source_before_after_same": true,
+  "native_source_windows": 14,
+  "native_source_windows_identical": true,
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "cargo": "cargo 1.101.0-nightly (f3865b2a4 2026-09-29)\n",
+  "compiler_cargo_before_after_same": true,
+  "commands": [
+    {
+      "name": "rustc_before",
+      "pid": 501684,
+      "identity": {
+        "pid": 501684,
+        "start_ticks": 319535042,
+        "pgid": 501684,
+        "sid": 501684,
+        "state": "R",
+        "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+        "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+      },
+      "argv": [
+        "rustc",
+        "+nightly",
+        "-vV"
+      ],
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "signals": [],
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/rustc_before/completion.json",
+        "bytes": 2796,
+        "sha256": "4bcd91e8b50e3cc3097fe0105f6a3095ead2633aa738858fb7c66d713cd39602",
+        "mode": 436
+      },
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/rustc_before/stdout.log",
+        "bytes": 215,
+        "sha256": "a3d4f3a0459f421dc9a7813a3c2b6cb4231a73776b5b0017b5565616a9f07b61",
+        "mode": 436
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/rustc_before/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mode": 436
+      }
+    },
+    {
+      "name": "cargo_before",
+      "pid": 501690,
+      "identity": {
+        "pid": 501690,
+        "start_ticks": 319535104,
+        "pgid": 501690,
+        "sid": 501690,
+        "state": "R",
+        "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+        "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "-V"
+      ],
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "signals": [],
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/cargo_before/completion.json",
+        "bytes": 2793,
+        "sha256": "d341c90db05d76e9a2d91e9001abd4bb4a08f142f3155bc6d72b3bbc1038f2ac",
+        "mode": 436
+      },
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/cargo_before/stdout.log",
+        "bytes": 45,
+        "sha256": "71de2de1f7d9ecf66030112aa59bf05781d6210a550634db5eba3920af9d08de",
+        "mode": 436
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/cargo_before/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mode": 436
+      }
+    },
+    {
+      "name": "fmt",
+      "pid": 501695,
+      "identity": {
+        "pid": 501695,
+        "start_ticks": 319535163,
+        "pgid": 501695,
+        "sid": 501695,
+        "state": "R",
+        "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+        "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "fmt",
+        "--all"
+      ],
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "signals": [],
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/fmt/completion.json",
+        "bytes": 2778,
+        "sha256": "ce2518efde7b193133043603ae902a2aa5e220cecb7ac91f2523377294a3c8eb",
+        "mode": 436
+      },
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/fmt/stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mode": 436
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/fmt/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mode": 436
+      }
+    },
+    {
+      "name": "clippy_default",
+      "pid": 501706,
+      "identity": {
+        "pid": 501706,
+        "start_ticks": 319535566,
+        "pgid": 501706,
+        "sid": 501706,
+        "state": "R",
+        "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+        "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "signals": [],
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/clippy_default/completion.json",
+        "bytes": 2954,
+        "sha256": "3fdcfef9a60cabb47b5a607dbedb200dfc3ec6830f0e70116649d6e519b50057",
+        "mode": 436
+      },
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/clippy_default/stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mode": 436
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/clippy_default/stderr.log",
+        "bytes": 70,
+        "sha256": "91a5a4dc0a8564cb2e4cc7de64b6d0dfb38fc0315f34751e511e5b1fddc994f0",
+        "mode": 436
+      }
+    },
+    {
+      "name": "rustc_after",
+      "pid": 501722,
+      "identity": {
+        "pid": 501722,
+        "start_ticks": 319535704,
+        "pgid": 501722,
+        "sid": 501722,
+        "state": "R",
+        "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+        "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+      },
+      "argv": [
+        "rustc",
+        "+nightly",
+        "-vV"
+      ],
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "signals": [],
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/rustc_after/completion.json",
+        "bytes": 2791,
+        "sha256": "96c5e16c8ab2730899e45601de58e72cb881140a66b6aae11f75ef4ddfbbefbd",
+        "mode": 436
+      },
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/rustc_after/stdout.log",
+        "bytes": 215,
+        "sha256": "a3d4f3a0459f421dc9a7813a3c2b6cb4231a73776b5b0017b5565616a9f07b61",
+        "mode": 436
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/rustc_after/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mode": 436
+      }
+    },
+    {
+      "name": "cargo_after",
+      "pid": 501728,
+      "identity": {
+        "pid": 501728,
+        "start_ticks": 319535766,
+        "pgid": 501728,
+        "sid": 501728,
+        "state": "R",
+        "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+        "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "-V"
+      ],
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "signals": [],
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/cargo_after/completion.json",
+        "bytes": 2788,
+        "sha256": "a1213ae1cedbe8ac08b45d6f40aef19307a8a7addcdcf216ba697c093a1125a8",
+        "mode": 436
+      },
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/cargo_after/stdout.log",
+        "bytes": 45,
+        "sha256": "71de2de1f7d9ecf66030112aa59bf05781d6210a550634db5eba3920af9d08de",
+        "mode": 436
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/cargo_after/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mode": 436
+      }
+    }
+  ],
+  "native_child_count": 6,
+  "all_owned_natural_reap_no_signals_no_residual": true,
+  "host_owners": [
+    {
+      "name": "create_remote.owner",
+      "owner_pid": 63188,
+      "pid": 63189,
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "reference": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/create_remote.owner/result.json",
+        "bytes": 1524,
+        "sha256": "58fa22277136ba78586606883757a19b44811fa242d72e424da6ab4aedc01de6",
+        "mode": 420
+      }
+    },
+    {
+      "name": "download_originals.owner",
+      "owner_pid": 63303,
+      "pid": 63304,
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "reference": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/download_originals.owner/result.json",
+        "bytes": 1467,
+        "sha256": "5bd6ebce85c474e626093e72e60fd3b99c44834fadb11e04e2c29f73a786546c",
+        "mode": 420
+      }
+    },
+    {
+      "name": "orin_precommit.owner",
+      "owner_pid": 63222,
+      "pid": 63223,
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "reference": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin_precommit.owner/result.json",
+        "bytes": 1527,
+        "sha256": "880baf95ed8d16ef0b865d9f0d2bbf79b437deec2f883913c4b848a856a6eed2",
+        "mode": 420
+      }
+    },
+    {
+      "name": "upload_helpers.owner",
+      "owner_pid": 63204,
+      "pid": 63205,
+      "actual_exit": 0,
+      "real_wait_reap": true,
+      "reference": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/upload_helpers.owner/result.json",
+        "bytes": 1827,
+        "sha256": "918088ba4d7219440771a33c5ac1fb6442f800261976573521b26b311ae0aaf7",
+        "mode": 420
+      }
+    }
+  ],
+  "tool_wait": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/tool_owner_wait.json",
+    "bytes": 1883,
+    "sha256": "28d22ba07503774cfcfdea5add7babf19fc845f75ea347b67dc64d754fe82318",
+    "mode": 420
+  },
+  "root_fmt_reference": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/root_precommit_fmt_r2/result.json",
+    "bytes": 4134,
+    "sha256": "2df40f4004dd635e5ee4fb2f3cb71bbcc07cd82d4bfdd52162a733c1ed9604e3",
+    "mode": 420
+  },
+  "native_result": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/orin-originals/result.json",
+    "bytes": 2358,
+    "sha256": "c05ee707dc5155f4175db5a0a599aaef04426adaaa55e6dc300fd60a3ceafa1f",
+    "mode": 436
+  },
+  "current_main_head": "bfad2015f7772557b884d3ea4f6218aaa2ae4062",
+  "scope": "仅nightly fmt→根默认Clippy；未重跑177/release/workspace/H2；无rustup变更、UART、服务、安装、硬件动作或push；旧UNKNOWN/FAIL不回填",
+  "resource_status": "CARGO_FINISHED_ALL_NATIVE_CHILD_SESSIONS_EMPTY"
+}

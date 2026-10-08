@@ -3,8 +3,9 @@
 //!
 //! ## 寄存器分区
 //!
-//! - **EEPROM**（addr 0–39）：永久存储。`Lock = 1` 时写保护；对其余既有允许写
-//!   条目，写之前必须先 `Torque_Enable = 0` + `Lock = 0`，区段分类不提供写授权。
+//! - **EPROM**（addr 0–39）：厂家内存表公开版本181规定，`Lock = 0` 写入掉电保存，
+//!   `Lock = 1` 写入掉电不保存；不据此推定现场固件一定接收临时写入。
+//!   区段分类不提供写授权，配置写入须独立确认断扭、保存语义和读回。
 //! - **SRAM**（addr 40–69）：RAM，不受 `Lock` 影响。
 //! - **只读**：`Model_Number` / `Present_*`。
 //! - **本项目诊断专用**：`Phase` / `CW_Dead_Zone` / `CCW_Dead_Zone` 仅允许读取。
@@ -68,8 +69,10 @@ impl Register {
 /// 线性扫描 < 100 ns，零依赖；adapter 启动时 `connect` 内可一次性 cache 到固定
 /// 数组进一步消除查表（v0.3 优化）。
 pub const STS3215_CONTROL_TABLE: &[(&str, Register)] = &[
-    // ── EEPROM (Lock=1 时写保护) ───────────────────────────────────────
-    ("Model_Number", Register::new(3, 2)), // read-only
+    // ── 版本只读与EPROM配置区（Lock控制掉电保存语义）────────────────────
+    ("Firmware_Major_Version", Register::new(0, 1)), // 厂家只读原始字节
+    ("Firmware_Minor_Version", Register::new(1, 1)), // 厂家只读原始字节
+    ("Model_Number", Register::new(3, 2)),           // read-only
     ("ID", Register::new(5, 1)),
     ("Baud_Rate", Register::new(6, 1)),
     ("Min_Position_Limit", Register::new(9, 2)),
@@ -114,6 +117,19 @@ pub fn ensure_not_diagnostic_write(name: &'static str) -> Result<(), FeetechErro
     match name {
         "Phase" | "CW_Dead_Zone" | "CCW_Dead_Zone" => {
             Err(FeetechError::DiagnosticRegisterWriteForbidden(name))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// 仅拒绝两个新增固件版本只读名字，保留原诊断门与其他名字的既有行为。
+///
+/// # Errors
+/// 两个版本名字返回 [`FeetechError::ReadOnlyRegisterWriteForbidden`]。
+pub fn ensure_not_firmware_readonly_write(name: &'static str) -> Result<(), FeetechError> {
+    match name {
+        "Firmware_Major_Version" | "Firmware_Minor_Version" => {
+            Err(FeetechError::ReadOnlyRegisterWriteForbidden(name))
         }
         _ => Ok(()),
     }
@@ -164,7 +180,7 @@ const EEPROM_REGISTERS: &[&str] = &[
 
 /// `true` 仅表示该寄存器在 EEPROM 区，不提供写授权。
 /// 三个诊断专用条目仍被 [`ensure_not_diagnostic_write`] 拒写；其余既有允许写
-/// 条目在写之前需要 `Torque_Enable = 0` + `Lock = 0`。
+/// 条目的保存语义由厂家Lock合同及现场固件决定，本分类不授权写入。
 #[must_use]
 pub fn is_eeprom_register(name: &str) -> bool {
     EEPROM_REGISTERS.contains(&name)
@@ -199,6 +215,28 @@ pub enum TorqueMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn firmware_version_entries_are_raw_readonly_and_not_eeprom_authority() {
+        for (name, address) in [("Firmware_Major_Version", 0), ("Firmware_Minor_Version", 1)] {
+            assert_eq!(get_register(name).unwrap(), Register::new(address, 1));
+            assert_eq!(sign_bit_for(name), None);
+            assert!(!is_eeprom_register(name));
+            assert!(ensure_not_diagnostic_write(name).is_ok());
+            assert!(
+                matches!(ensure_not_firmware_readonly_write(name), Err(FeetechError::ReadOnlyRegisterWriteForbidden(got)) if got == name)
+            );
+        }
+        for name in [
+            "Phase",
+            "CW_Dead_Zone",
+            "CCW_Dead_Zone",
+            "Goal_Velocity",
+            "Unknown_Register",
+        ] {
+            assert!(ensure_not_firmware_readonly_write(name).is_ok());
+        }
+    }
 
     #[test]
     fn diagnostic_metadata_is_raw_one_byte_eeprom() {

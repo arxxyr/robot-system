@@ -1,0 +1,37 @@
+{
+  "schema": "ROOT_FEETECH_FIRMWARE_STAGE_ACCEPTANCE_V1",
+  "status": "ACCEPTED_SCOPED_SOFTWARE_HARDWARE_FAILURES_PRESERVED",
+  "deployable": false,
+  "phase": "firmware readonly registers and pure wheel velocity contract",
+  "root_source_review": "seven source implementations and numeric/zero/write-policy boundaries reviewed",
+  "independent_review": {
+    "path": "independent_stage_acceptance_r2.json",
+    "sha256": "eb7fbbc2f34908a3fbcccdf6e532ffc205ab166129ec9353d8ee1e656eba8510"
+  },
+  "stage_summary": {
+    "path": "summary.json",
+    "sha256": "1a3faf7918153c3dae11726adc0d7563707e9fbbb99248ecfda488a210a3f56b",
+    "bytes": 17652
+  },
+  "precommit_quality": {
+    "path": "precommit_linux_quality_binding.json",
+    "sha256": "85f7f73ea659d65302424deab932a12ceff421e569b3e324d856810b3e7d6d95",
+    "bytes": 12617
+  },
+  "source_count": 591,
+  "source_aggregate": "ddad9513566f51fecf915ac7f39e0cccc66b8ae93732847b70ac7c0315458294",
+  "nightly_actual": "1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6",
+  "test_distinct": 177,
+  "new_subset": 12,
+  "hardware": "NO NEW ACTION; original head1/STOP/H2/left wrist FAIL unchanged",
+  "human_cut": "independent human-reported receipt c509819c; physical time/telemetry unknown; no new GO",
+  "d15": "OPEN/DEFERRED",
+  "not_claimed": [
+    "full workspace",
+    "complete B1/runtime or wire deadline",
+    "actual firmware read or Phase change",
+    "syscall trace",
+    "production deployment"
+  ],
+  "git": "local stage commit authorized; no push"
+}

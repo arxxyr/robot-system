@@ -39,7 +39,8 @@ use crate::protocol::{
     parse_status,
 };
 use crate::registers::{
-    MODEL_NUMBER_STS3215, ensure_not_diagnostic_write, get_register, sign_bit_for,
+    MODEL_NUMBER_STS3215, ensure_not_diagnostic_write, ensure_not_firmware_readonly_write,
+    get_register, sign_bit_for,
 };
 use crate::transport::{DrainReport, SerialTransport};
 use crate::types::Motor;
@@ -321,6 +322,7 @@ impl<T: SerialTransport> FeetechBus<T> {
         value: i32,
     ) -> Result<(), FeetechError> {
         ensure_not_diagnostic_write(reg_name)?;
+        ensure_not_firmware_readonly_write(reg_name)?;
         let reg = get_register(reg_name)?;
         let id = self.motor_id(motor_name)?;
         let encoded = encode_value(reg_name, value)?;
@@ -395,6 +397,7 @@ impl<T: SerialTransport> FeetechBus<T> {
         values: &[(&str, i32)],
     ) -> Result<(), FeetechError> {
         ensure_not_diagnostic_write(reg_name)?;
+        ensure_not_firmware_readonly_write(reg_name)?;
         let reg = get_register(reg_name)?;
         let length_usize = usize::from(reg.length);
 
@@ -490,6 +493,7 @@ impl<T: SerialTransport> FeetechBus<T> {
         entries: &[(u8, i32)],
     ) -> Result<(), FeetechError> {
         ensure_not_diagnostic_write(reg_name)?;
+        ensure_not_firmware_readonly_write(reg_name)?;
         let reg = get_register(reg_name)?;
         let length_usize = usize::from(reg.length);
 
@@ -546,6 +550,7 @@ impl<T: SerialTransport> FeetechBus<T> {
         frame_buf: &mut [u8],
     ) -> Result<(), FeetechError> {
         ensure_not_diagnostic_write(reg_name)?;
+        ensure_not_firmware_readonly_write(reg_name)?;
         let reg = get_register(reg_name)?;
         let length_usize = usize::from(reg.length); // v9 fix：字段名 length
         let n = entries.len();
@@ -751,6 +756,48 @@ mod tests {
         ));
         assert_eq!(handle.peek_tx(), [0_u8; 0]);
         assert_eq!(probe.attempts.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn firmware_version_writes_are_denied_before_io_lease_and_argument_checks() {
+        for name in ["Firmware_Major_Version", "Firmware_Minor_Version"] {
+            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+            let probe = install_rejecting_lease(&mut bus);
+            let mut buffer = [0xa5; 256];
+            for result in [
+                bus.write(name, "missing", i32::MIN),
+                bus.sync_write(name, &[]),
+                bus.sync_write(name, &[("missing", i32::MIN)]),
+                bus.sync_write_by_id(name, &[]),
+                bus.sync_write_by_id(name, &[(0, i32::MIN)]),
+                bus.sync_write_by_id_into(name, &[], &mut []),
+                bus.sync_write_by_id_into(name, &[(0, i32::MIN)], &mut buffer),
+            ] {
+                assert!(
+                    matches!(result, Err(FeetechError::ReadOnlyRegisterWriteForbidden(got)) if got == name)
+                );
+            }
+            assert_eq!(handle.peek_tx(), [0_u8; 0]);
+            assert_eq!(probe.attempts.load(Ordering::Relaxed), 0);
+            assert_eq!(buffer, [0xa5; 256]);
+        }
+    }
+
+    #[test]
+    fn firmware_version_reads_preserve_unsigned_byte_and_golden_request() {
+        // 请求校验字节独立取自协议和：ID1+长度4+READ2+地址+数据宽1。
+        for (name, address, raw, checksum) in [
+            ("Firmware_Major_Version", 0, 0xa5, 0xf7),
+            ("Firmware_Minor_Version", 1, 0xff, 0xf6),
+        ] {
+            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+            handle.push_rx(&fake_status(1, 0, &[raw]));
+            assert_eq!(bus.read(name, "j1").unwrap(), i32::from(raw));
+            assert_eq!(
+                handle.drain_tx(),
+                [0xff, 0xff, 1, 4, 2, address, 1, checksum]
+            );
+        }
     }
 
     #[test]

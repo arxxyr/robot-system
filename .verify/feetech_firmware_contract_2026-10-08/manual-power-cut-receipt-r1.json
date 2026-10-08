@@ -1,0 +1,22 @@
+{
+  "schema": "root_manual_power_cut_receipt_v1",
+  "received_at_utc": "2026-10-08 06:35:40 UTC",
+  "received_at_basis": "root first current-clock observation after user reply; physical cut time not measured",
+  "user_answer": "两个电机电源已切断，机械臂保持支撑",
+  "status": "HUMAN_REPORTED_BOTH_MOTOR_SUPPLIES_CUT_ARMS_SUPPORTED",
+  "physical_cut_timestamp": null,
+  "independent_power_telemetry": null,
+  "related_original_stop": {
+    "path": "target/hardware_readonly_2026-10-08/selected_motion_preparation_r1/root_hardware_session_stop_r1.json",
+    "sha256": "9ea6c1792ba71f242263bc3946245a98e8f206aaa8a3db3b401afb1af02e8e6a",
+    "bytes": 972
+  },
+  "original_run_status": "NEEDS_MANUAL_POWER_CUT",
+  "original_position_and_stop_failures_preserved": true,
+  "current_motion_permission": "ENDED",
+  "new_hardware_go": false,
+  "new_uart_or_motion_after_receipt": false,
+  "watch_scope": "This run ended on human-reported power cut; later re-energization or action needs fresh preparation and GO",
+  "deployable": false,
+  "d15": "OPEN/DEFERRED"
+}

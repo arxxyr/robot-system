@@ -54,6 +54,7 @@ impl FeetechDiagnostic {
             },
             F::UnknownRegister(_)
             | F::DiagnosticRegisterWriteForbidden(_)
+            | F::ReadOnlyRegisterWriteForbidden(_)
             | F::UnknownMotor(_)
             | F::InvalidMotorId(_)
             | F::DuplicateMotorId(_)
@@ -120,6 +121,16 @@ mod tests {
     #[test]
     fn typed_classes_keep_literal_diagnostic_codes() {
         for (error, expected, encoded) in [
+            (
+                F::ReadOnlyRegisterWriteForbidden("Firmware_Major_Version"),
+                D::InvalidParameter(P::Argument),
+                (8, 1, 0),
+            ),
+            (
+                F::ReadOnlyRegisterWriteForbidden("Firmware_Minor_Version"),
+                D::InvalidParameter(P::Argument),
+                (8, 1, 0),
+            ),
             (
                 F::UnknownRegister("unknown"),
                 D::InvalidParameter(P::Argument),

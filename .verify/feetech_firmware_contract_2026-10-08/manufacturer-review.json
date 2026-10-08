@@ -1,0 +1,949 @@
+{
+  "schema": 1,
+  "created_at": "2026-10-08T05:26:42.435460+00:00",
+  "status": "PRIMARY_CONTRACT_FOUND_DEVICE_FIRMWARE_BINDING_PENDING",
+  "scope": {
+    "mode": "仅公开主来源和本地上游只读调查",
+    "ssh": 0,
+    "uart": 0,
+    "cargo": 0,
+    "hardware_writes": 0,
+    "hardware_enable": 0,
+    "eeprom_writes": 0,
+    "formal_install": 0,
+    "project_source_changes_by_this_task": 0
+  },
+  "hardware_observations": {
+    "origin": "总管本次17舵机实际只读结果转交；本子任务没有自行测量",
+    "count": 17,
+    "model": 777,
+    "phase_raw": 12,
+    "cw_dead_zone": 1,
+    "ccw_dead_zone": 1,
+    "base_ids": {
+      "front": 8,
+      "left": 7,
+      "right": 9
+    },
+    "base_mode": 1,
+    "base_torque_enable": 0,
+    "base_goal_velocity_raw": 0,
+    "base_present_velocity_raw": 0,
+    "firmware_version": null,
+    "limit": "断扭时的零反馈不能证明使能后的零命令是停止；型号号也不能代替固件版本。"
+  },
+  "manufacturer_provenance": {
+    "public_page": "http://doc.feetech.cn/#/prodinfodownload?srcType=FT-SMS-STS-emanual-229f4476422d4059abfb1cb0",
+    "chain": [
+      {
+        "url": "http://doc.feetech.cn/",
+        "artifact": "web/official-http-portal.html",
+        "role": "公开厂家门户HTML引入app和manifest"
+      },
+      {
+        "url": "http://doc.feetech.cn/static/js/app.561305a3bb73c0bdfd0d.js",
+        "artifact": "web/official-app.js",
+        "role": "公开axios baseURL=http://longbos.com:9009；公开prodinfodownload路线加载chunk11"
+      },
+      {
+        "url": "http://doc.feetech.cn/static/js/manifest.a56f0d86ca317255e14f.js",
+        "artifact": "web/official-manifest.js",
+        "role": "chunk11映射e46da6449684fbc4f792"
+      },
+      {
+        "url": "http://doc.feetech.cn/static/js/11.e46da6449684fbc4f792.js",
+        "artifact": "web/official-doc-page.js",
+        "role": "srcType读取调用公开GET workflow/yf-specification/getBysrcType/{srcType}；响应data.mdcontent是展示内容"
+      },
+      {
+        "url": "http://longbos.com:9009/workflow/yf-specification/getBysrcType/FT-SMS-STS-emanual-229f4476422d4059abfb1cb0",
+        "artifact": "web/official-sms-sts-document-response.json",
+        "role": "无登录/令牌/认证头的公开GET，原JSON保留，status200"
+      }
+    ],
+    "metadata": {
+      "id": 100058,
+      "code": "FT-STS-emanual",
+      "name": "磁编码STS内存表手册",
+      "model": "STS",
+      "srcType": "FT-SMS-STS-emanual-229f4476422d4059abfb1cb0",
+      "version": 181,
+      "attribute": "MD文档",
+      "enable": true
+    },
+    "last_modified_at": "2026-08-27T12:08:28+00:00",
+    "version_meaning": "181是门户响应version字段，不冒充固件版本或第三方所写文档v1.1。",
+    "markdown": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/official-sms-sts-memory-table.md",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/official-sms-sts-memory-table.md",
+        "dev": 16777231,
+        "inode": 53714490,
+        "bytes": 10147,
+        "mtime_ns": 1791436805907084512,
+        "sha256": "b1e5a86cc8c96ce997e61a49e1d9040dff7100121e81298a0313ac1f83f1ddd3"
+      },
+      "derived_exactly_from_response_mdcontent": true
+    },
+    "response_identity": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/official-sms-sts-document-response.json",
+      "dev": 16777231,
+      "inode": 53714486,
+      "bytes": 10959,
+      "mtime_ns": 1791436805793747617,
+      "sha256": "58967dffbab63edf8fddd5662a8fe56e82ef1fa70c8ddab3063b9238257bb0cb"
+    },
+    "transport": "按厂商公开HTTP路线取证；HTTPS入口SSL失败，Web工具不能解析HTTP/9009。源自厂家页面实际JS接口链，非第三方转载；未使用登录、auth或绕过访问控制。"
+  },
+  "manufacturer_contract": {
+    "phase": {
+      "address_dec": 18,
+      "address_hex": "0x12",
+      "bytes": 1,
+      "source_lines": [
+        38,
+        102,
+        103
+      ],
+      "bit2": {
+        "mask": 4,
+        "zero": "0.732 RPM/raw",
+        "one": "0.0146 RPM/raw"
+      },
+      "bit3": {
+        "mask": 8,
+        "zero": "目标速度0为停止",
+        "one": "目标速度0为最高速度"
+      }
+    },
+    "mode": {
+      "address_dec": 33,
+      "mode1": "电机恒速模式",
+      "source_lines": [
+        51,
+        55,
+        57
+      ],
+      "limit": "当前通用STS内存表没有将bit3说明限定为Mode0；Mode1在同表使用速度环与46速度目标。因此必须按Phase决定零值，不能用旧SDK例子覆盖原表。尚未读取现场0/1固件版本，不能宣称特定固件已通过使能验证。"
+    },
+    "goal_velocity": {
+      "address_dec": 46,
+      "bytes": 2,
+      "signed_range": [
+        -32767,
+        32767
+      ],
+      "direction_bit": 15,
+      "units_follow_phase": true,
+      "precision_rpm_even_when_fine_unit": 0.732,
+      "source_lines": [
+        66
+      ]
+    },
+    "present_velocity": {
+      "address_dec": 58,
+      "bytes": 2,
+      "direction_bit": 15,
+      "units_follow_phase": true,
+      "source_lines": [
+        75
+      ]
+    },
+    "torque": {
+      "address_dec": 40,
+      "off_value": 0,
+      "on_value": 1,
+      "source_lines": [
+        62
+      ]
+    },
+    "lock": {
+      "address_dec": 55,
+      "zero": "EPROM地址写入掉电保存",
+      "one": "EPROM地址写入掉电不保存",
+      "source_lines": [
+        69
+      ],
+      "limit": "不得继续把Lock1描述为必然拒收EEPROM地址写；是否支持临时RAM变更仍需现场固件绑定与单次读回证明。"
+    },
+    "units_limit": "厂家字面合同是0.0146RPM，不能据此宣称精确1step/s；XLeRobot的4096steps/rev换算是上游实现假设。精度也不等于该最小命令单位。"
+  },
+  "primary_code_sources": [
+    {
+      "repository": "ftservo/FTServo_Linux",
+      "commit": "06fd3356dbd7bccd886b5a70d7ae0fccc6c76d38",
+      "repository_path": "src/SMS_STS.h",
+      "source_url": "https://github.com/ftservo/FTServo_Linux/blob/06fd3356dbd7bccd886b5a70d7ae0fccc6c76d38/src/SMS_STS.h",
+      "snapshot": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_linux--src--SMS_STS.h",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_linux--src--SMS_STS.h",
+        "dev": 16777231,
+        "inode": 53718168,
+        "bytes": 2678,
+        "mtime_ns": 1791436883157728857,
+        "sha256": "610a34cc8c50743551ebf2717792801df1844e51d2d707260d35c49dfc6e3a0f"
+      },
+      "line_hits": {
+        "SMS_STS_MODE": [
+          13,
+          14,
+          27
+        ],
+        "SMS_STS_ACC": [
+          31
+        ],
+        "SMS_STS_GOAL_SPEED": [
+          36,
+          37
+        ],
+        "SMS_STS_PRESENT_SPEED": [
+          45,
+          46
+        ]
+      }
+    },
+    {
+      "repository": "ftservo/FTServo_Linux",
+      "commit": "06fd3356dbd7bccd886b5a70d7ae0fccc6c76d38",
+      "repository_path": "src/SMS_STS.cpp",
+      "source_url": "https://github.com/ftservo/FTServo_Linux/blob/06fd3356dbd7bccd886b5a70d7ae0fccc6c76d38/src/SMS_STS.cpp",
+      "snapshot": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_linux--src--SMS_STS.cpp",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_linux--src--SMS_STS.cpp",
+        "dev": 16777231,
+        "inode": 53718167,
+        "bytes": 4878,
+        "mtime_ns": 1791436883156891313,
+        "sha256": "5e87cb2ba22194d6b487a131addcb696d71e44d717bb4f7b0a3130b9a6418e5d"
+      },
+      "line_hits": {
+        "WheelMode": [
+          99
+        ],
+        "WriteSpe": [
+          79,
+          104
+        ],
+        "ReadSpeed": [
+          165
+        ],
+        "1<<15": [
+          27,
+          42,
+          59,
+          85,
+          108,
+          158,
+          159,
+          175,
+          176,
+          240,
+          241
+        ],
+        "genWrite(ID, SMS_STS_ACC, bBuf, 7)": [
+          35,
+          116
+        ]
+      }
+    },
+    {
+      "repository": "ftservo/FTServo_Linux",
+      "commit": "06fd3356dbd7bccd886b5a70d7ae0fccc6c76d38",
+      "repository_path": "examples/SMS_STS/WriteSpe/WriteSpe.cpp",
+      "source_url": "https://github.com/ftservo/FTServo_Linux/blob/06fd3356dbd7bccd886b5a70d7ae0fccc6c76d38/examples/SMS_STS/WriteSpe/WriteSpe.cpp",
+      "snapshot": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_linux--examples--SMS_STS--WriteSpe--WriteSpe.cpp",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_linux--examples--SMS_STS--WriteSpe--WriteSpe.cpp",
+        "dev": 16777231,
+        "inode": 53718166,
+        "bytes": 1194,
+        "mtime_ns": 1791436883121856525,
+        "sha256": "9d02c6d0bdaa196d2ce1099c5d545c7cc8d83ceaf2715113f8d95da6c2de8afa"
+      },
+      "line_hits": {
+        "WriteSpe(1, 0": [
+          26,
+          36
+        ],
+        "0.732": [
+          20,
+          30
+        ],
+        "WheelMode": [
+          17
+        ]
+      }
+    },
+    {
+      "repository": "ftservo/FTServo_Python",
+      "commit": "cbcfa64674d592f7e5028ae72af42580f60500b4",
+      "repository_path": "scservo_sdk/sms_sts.py",
+      "source_url": "https://github.com/ftservo/FTServo_Python/blob/cbcfa64674d592f7e5028ae72af42580f60500b4/scservo_sdk/sms_sts.py",
+      "snapshot": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_python--scservo_sdk--sms_sts.py",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_python--scservo_sdk--sms_sts.py",
+        "dev": 16777231,
+        "inode": 53718162,
+        "bytes": 4095,
+        "mtime_ns": 1791436882350847171,
+        "sha256": "5d148d69b5c0211a8354e5ca376802a2bdb301e92cde3faba57bd37d169d4558"
+      },
+      "line_hits": {
+        "WheelMode": [
+          101
+        ],
+        "WriteSpec": [
+          104
+        ],
+        "scs_toscs(speed, 15)": [
+          105
+        ],
+        "ReadSpeed": [
+          74
+        ]
+      }
+    },
+    {
+      "repository": "ftservo/FTServo_Python",
+      "commit": "cbcfa64674d592f7e5028ae72af42580f60500b4",
+      "repository_path": "scservo_sdk/protocol_packet_handler.py",
+      "source_url": "https://github.com/ftservo/FTServo_Python/blob/cbcfa64674d592f7e5028ae72af42580f60500b4/scservo_sdk/protocol_packet_handler.py",
+      "snapshot": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_python--scservo_sdk--protocol_packet_handler.py",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_python--scservo_sdk--protocol_packet_handler.py",
+        "dev": 16777231,
+        "inode": 53718160,
+        "bytes": 18622,
+        "mtime_ns": 1791436882342581193,
+        "sha256": "60ac1bbb56ff94b2ae26ed26746b03da9c9b812459c34488ea6ca12d8919171c"
+      },
+      "line_hits": {
+        "def scs_tohost": [
+          37
+        ],
+        "def scs_toscs": [
+          43
+        ],
+        "1<<b": [
+          38,
+          39,
+          45
+        ]
+      }
+    },
+    {
+      "repository": "ftservo/FTServo_Python",
+      "commit": "cbcfa64674d592f7e5028ae72af42580f60500b4",
+      "repository_path": "sms_sts/wheel.py",
+      "source_url": "https://github.com/ftservo/FTServo_Python/blob/cbcfa64674d592f7e5028ae72af42580f60500b4/sms_sts/wheel.py",
+      "snapshot": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_python--sms_sts--wheel.py",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/ftservo_python--sms_sts--wheel.py",
+        "dev": 16777231,
+        "inode": 53718161,
+        "bytes": 2906,
+        "mtime_ns": 1791436882262512131,
+        "sha256": "4a1bae685d1d59eebd1e55af173a5024f85e694e440987bafb4d5d9fbe4637b1"
+      },
+      "line_hits": {
+        "WriteSpec(1, 0": [
+          58,
+          76
+        ],
+        "0.732": [
+          48,
+          66
+        ],
+        "WheelMode": [
+          41
+        ]
+      }
+    },
+    {
+      "repository": "huggingface/lerobot",
+      "commit": "ca69a2068462a37f7cdcb74180927a2f863d2bf7",
+      "repository_path": "src/lerobot/motors/feetech/feetech.py",
+      "source_url": "https://github.com/huggingface/lerobot/blob/ca69a2068462a37f7cdcb74180927a2f863d2bf7/src/lerobot/motors/feetech/feetech.py",
+      "snapshot": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/lerobot--src--lerobot--motors--feetech--feetech.py",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/lerobot--src--lerobot--motors--feetech--feetech.py",
+        "dev": 16777231,
+        "inode": 53718170,
+        "bytes": 19643,
+        "mtime_ns": 1791436884267189815,
+        "sha256": "0460413cd6a641cede015ac19ac53d2cfe9c343af1bd18ed74e1951229f64ff2"
+      },
+      "line_hits": {
+        "Clear bit 4": [
+          219
+        ],
+        "self.write(\"Phase\"": [
+          225
+        ],
+        "VELOCITY = 1": [
+          57
+        ],
+        "_read_firmware_version": [
+          146,
+          431
+        ]
+      }
+    },
+    {
+      "repository": "huggingface/lerobot",
+      "commit": "ca69a2068462a37f7cdcb74180927a2f863d2bf7",
+      "repository_path": "src/lerobot/motors/feetech/tables.py",
+      "source_url": "https://github.com/huggingface/lerobot/blob/ca69a2068462a37f7cdcb74180927a2f863d2bf7/src/lerobot/motors/feetech/tables.py",
+      "snapshot": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/lerobot--src--lerobot--motors--feetech--tables-r2.py",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/lerobot--src--lerobot--motors--feetech--tables-r2.py",
+        "dev": 16777231,
+        "inode": 53718466,
+        "bytes": 7687,
+        "mtime_ns": 1791436959636338815,
+        "sha256": "71f7f7beb17169781bd26a33b165ed4c5c3df7b9c477d36860f9d6011eb00428"
+      },
+      "line_hits": {
+        "FIRMWARE_MAJOR_VERSION": [
+          15,
+          43,
+          106
+        ],
+        "\"Phase\"": [
+          56,
+          119
+        ],
+        "\"Goal_Velocity\"": [
+          80,
+          135,
+          211
+        ],
+        "\"Present_Velocity\"": [
+          84,
+          138,
+          214
+        ],
+        "\"sts3215\": 777": [
+          243
+        ]
+      }
+    },
+    {
+      "repository": "Vector-Wangel/XLeRobot",
+      "commit": "b017b5e6354bd9f61f4247a920c72622ca0aade0",
+      "repository_path": "software/src/robots/xlerobot/xlerobot.py",
+      "source_url": "https://github.com/Vector-Wangel/XLeRobot/blob/b017b5e6354bd9f61f4247a920c72622ca0aade0/software/src/robots/xlerobot/xlerobot.py",
+      "snapshot": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/xlerobot--software--src--robots--xlerobot--xlerobot.py",
+      "identity": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/web/xlerobot--software--src--robots--xlerobot--xlerobot.py",
+        "dev": 16777231,
+        "inode": 53718177,
+        "bytes": 28194,
+        "mtime_ns": 1791436885474636893,
+        "sha256": "077a83faf06babbcb87ef4828226f37f9112c01c48090a9febce515a9ce93ef1"
+      },
+      "line_hits": {
+        "configure_motors": [
+          306,
+          310
+        ],
+        "OperatingMode.VELOCITY": [
+          338
+        ],
+        "def _degps_to_raw": [
+          359
+        ],
+        "4096.0 / 360.0": [
+          360,
+          372,
+          426
+        ],
+        "def stop_base": [
+          634
+        ],
+        "Goal_Velocity": [
+          626,
+          635
+        ],
+        "Phase": []
+      }
+    }
+  ],
+  "code_findings": [
+    "厂家Linux/Python SDK：负速度转正幅度并置bit15，读回反向还原；不是i16二补码。+60编码0x003c，-60编码0x803c；-32768超出原表范围。",
+    "厂家WheelMode写33=1；WriteSpe/WriteSpec从41写连续7字节，同时写Acceleration/GoalPosition/GoalTime/GoalVelocity，不能作为只写46的维护动作代用。",
+    "厂家旧wheel示例采用0.732RPM/raw并注释0停，但不读/设置Phase或绑定固件。只能作为缺前提对比，不能推翻当前厂家原表bit3合同。",
+    "LeRobot configure_motors只清Phase bit4(0x10)来设位置反馈单圈，保留其他位；对raw12没有Phase写入。Phase bit2/bit3没有由该配置解决。",
+    "XLeRobot三轮源调用LeRobot configure_motors、写Mode1、上扭；自身5个xlerobot源文件没有Phase出现。速度按4096/360转steps/s；stop_base直接写GoalVelocity0。该代码仅证明其实现策略，不证明现场Phase12的零目标安全。"
+  ],
+  "local_upstream": {
+    "root": "/Users/loosqk/repo/robot/dimos",
+    "head": "9ece6bd0e1ffda95248820c1e54b23541747cee0",
+    "findings": [
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/registers.py",
+        "identity": {
+          "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/registers.py",
+          "dev": 16777231,
+          "inode": 8363699,
+          "bytes": 4046,
+          "mtime_ns": 1776001715873225136,
+          "sha256": "a11b129444177344a3d71bf86dbfba71c10131d3ffa70812df7655d8bd83139e"
+        },
+        "finding": "仅列使用的寄存器，没有Phase项；Mode1及速度bit15符号幅度与官方SDK一致。",
+        "line_hits": {
+          "MODEL_NUMBER_STS3215": [
+            14
+          ],
+          "\"Operating_Mode\"": [
+            43,
+            102
+          ],
+          "\"Goal_Velocity\"": [
+            47,
+            66
+          ],
+          "\"Present_Velocity\"": [
+            50,
+            68
+          ],
+          "\"Goal_Velocity\":    15": [
+            66
+          ],
+          "VELOCITY = 1": [
+            78
+          ]
+        }
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/encoding.py",
+        "identity": {
+          "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/encoding.py",
+          "dev": 16777231,
+          "inode": 8363697,
+          "bytes": 2956,
+          "mtime_ns": 1776001715873111386,
+          "sha256": "7e8c95b05ee4ae7ee0f65a874dbbf420a972c9302d6be52a0919b7f42e6590c6"
+        },
+        "finding": "符号幅度最大32767；小端拆装。",
+        "line_hits": {
+          "def encode_sign_magnitude": [
+            12
+          ],
+          "max_magnitude": [
+            27,
+            29,
+            31
+          ],
+          "return (direction_bit": [
+            35
+          ],
+          "def decode_sign_magnitude": [
+            38
+          ]
+        }
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/config.py",
+        "identity": {
+          "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/config.py",
+          "dev": 16777231,
+          "inode": 8363690,
+          "bytes": 7421,
+          "mtime_ns": 1776001715872651424,
+          "sha256": "28073a3ee621738a8af08bdf6f72999907506f6ccfe89ac021bbe4fab4e72c1f"
+        },
+        "finding": "6rad/s对应1023是注释明确的经验假设，非厂商单位标定。",
+        "line_hits": {
+          "经验值": [
+            72
+          ],
+          "max_wheel_rad_per_sec": [
+            73
+          ],
+          "raw_at_max_speed": [
+            74
+          ]
+        }
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/units.py",
+        "identity": {
+          "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/units.py",
+          "dev": 16777231,
+          "inode": 8363702,
+          "bytes": 6790,
+          "mtime_ns": 1776001715873446471,
+          "sha256": "c7512eddfa3db04465bcbe99c28dc83519262a3e447e1ba40640c0d99cc6bdb1"
+        },
+        "finding": "按配置比例换算SI，不读取Phase选择单位。",
+        "line_hits": {
+          "def rad_per_sec_to_raw_velocity": [
+            140
+          ],
+          "raw_at_max_speed": [
+            145,
+            148,
+            149,
+            155
+          ],
+          "def raw_velocity_to_rad_per_sec": [
+            153
+          ]
+        }
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/adapters/bus2_base.py",
+        "identity": {
+          "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/adapters/bus2_base.py",
+          "dev": 16777231,
+          "inode": 8363682,
+          "bytes": 12959,
+          "mtime_ns": 1776001715872145253,
+          "sha256": "0d1e4967c703154d816fd6717d09c21d9204076072f578aac071eb222334f435"
+        },
+        "finding": "连接时断扭/解锁/Mode1/重新锁；使能前写GoalVelocity0，停止也写0，未显式Phase读取或写入。",
+        "line_hits": {
+          "OperatingMode.VELOCITY": [
+            142
+          ],
+          "sync_write(\"Goal_Velocity\", zeros)": [
+            272,
+            296
+          ],
+          "write(\"Torque_Enable\", motor_name, target_value)": [
+            304
+          ],
+          "def write_enable": [
+            282
+          ],
+          "def write_stop": [
+            267
+          ]
+        }
+      }
+    ],
+    "read_scope_files": [
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/adapters/bus2_base.py",
+        "dev": 16777231,
+        "inode": 8363682,
+        "bytes": 12959,
+        "mtime_ns": 1776001715872145253,
+        "sha256": "0d1e4967c703154d816fd6717d09c21d9204076072f578aac071eb222334f435"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/__init__.py",
+        "dev": 16777231,
+        "inode": 8363688,
+        "bytes": 88,
+        "mtime_ns": 1776001715872504464,
+        "sha256": "f4f1ccfb98015c706275c080e185c92b243eadc0f3b8d69c4d11a882c371ff3f"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/calibration.py",
+        "dev": 16777231,
+        "inode": 8363689,
+        "bytes": 3213,
+        "mtime_ns": 1776001715872572840,
+        "sha256": "f3092bb2dfc2981455b417e54d77b4a18e87ffc2c949116010c253ba995c2c70"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/config.py",
+        "dev": 16777231,
+        "inode": 8363690,
+        "bytes": 7421,
+        "mtime_ns": 1776001715872651424,
+        "sha256": "28073a3ee621738a8af08bdf6f72999907506f6ccfe89ac021bbe4fab4e72c1f"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/errors.py",
+        "dev": 16777231,
+        "inode": 8363691,
+        "bytes": 1031,
+        "mtime_ns": 1776001715872705049,
+        "sha256": "fc2adb34ed94ebf0793ed8bc75d342a5dcdc157251dcaaf20db59b862e6633f5"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/__init__.py",
+        "dev": 16777231,
+        "inode": 8363693,
+        "bytes": 1761,
+        "mtime_ns": 1776001715872793883,
+        "sha256": "899a31c76e74085585c5f85fe7658e0524efc8d65e31b98c912c49d603f8d630"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/_ranges_input.py",
+        "dev": 16777231,
+        "inode": 8363694,
+        "bytes": 1014,
+        "mtime_ns": 1776001715872851342,
+        "sha256": "b93765cb4defba21fc5042ce6f89c17d720ae8f754eb3f1762a6a40ed438a14a"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/bus.py",
+        "dev": 16777231,
+        "inode": 8363695,
+        "bytes": 14304,
+        "mtime_ns": 1776001715872960718,
+        "sha256": "706a7d9fad50a3d25dfe8dfc3f7d592a743b48cb7469fec8d822ce4fb90806c7"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/calibration.py",
+        "dev": 16777231,
+        "inode": 8363696,
+        "bytes": 6714,
+        "mtime_ns": 1776001715873053177,
+        "sha256": "905ca73e31932e80559319336379bd6e413155ff921edf728dc432bb34a6f577"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/encoding.py",
+        "dev": 16777231,
+        "inode": 8363697,
+        "bytes": 2956,
+        "mtime_ns": 1776001715873111386,
+        "sha256": "7e8c95b05ee4ae7ee0f65a874dbbf420a972c9302d6be52a0919b7f42e6590c6"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/patches.py",
+        "dev": 16777231,
+        "inode": 8363698,
+        "bytes": 1122,
+        "mtime_ns": 1776001715873167678,
+        "sha256": "12af93818456729760e84c3976b87fc17166c0b65517408a8f6c7e711d0e766e"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/registers.py",
+        "dev": 16777231,
+        "inode": 8363699,
+        "bytes": 4046,
+        "mtime_ns": 1776001715873225136,
+        "sha256": "a11b129444177344a3d71bf86dbfba71c10131d3ffa70812df7655d8bd83139e"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/types.py",
+        "dev": 16777231,
+        "inode": 8363700,
+        "bytes": 1581,
+        "mtime_ns": 1776001715873281304,
+        "sha256": "638be44dae884ef87b21e0161cd027eb2a41dc5e01c083f457e82813af63443a"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/shared_bus.py",
+        "dev": 16777231,
+        "inode": 8363701,
+        "bytes": 5847,
+        "mtime_ns": 1776001715873368554,
+        "sha256": "7da8a5290863967f44fa291a95488c938eb6f1ed0c24b539de52be0dd4ce644c"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/units.py",
+        "dev": 16777231,
+        "inode": 8363702,
+        "bytes": 6790,
+        "mtime_ns": 1776001715873446471,
+        "sha256": "c7512eddfa3db04465bcbe99c28dc83519262a3e447e1ba40640c0d99cc6bdb1"
+      }
+    ],
+    "phase_register_observation": "本地common/feetech_io源码没有Phase项或Phase配置；其他Phase2字符串是开发阶段注释。",
+    "before_after_identical": true,
+    "after": [
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/adapters/bus2_base.py",
+        "dev": 16777231,
+        "inode": 8363682,
+        "bytes": 12959,
+        "mtime_ns": 1776001715872145253,
+        "sha256": "0d1e4967c703154d816fd6717d09c21d9204076072f578aac071eb222334f435"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/__init__.py",
+        "dev": 16777231,
+        "inode": 8363688,
+        "bytes": 88,
+        "mtime_ns": 1776001715872504464,
+        "sha256": "f4f1ccfb98015c706275c080e185c92b243eadc0f3b8d69c4d11a882c371ff3f"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/calibration.py",
+        "dev": 16777231,
+        "inode": 8363689,
+        "bytes": 3213,
+        "mtime_ns": 1776001715872572840,
+        "sha256": "f3092bb2dfc2981455b417e54d77b4a18e87ffc2c949116010c253ba995c2c70"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/config.py",
+        "dev": 16777231,
+        "inode": 8363690,
+        "bytes": 7421,
+        "mtime_ns": 1776001715872651424,
+        "sha256": "28073a3ee621738a8af08bdf6f72999907506f6ccfe89ac021bbe4fab4e72c1f"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/errors.py",
+        "dev": 16777231,
+        "inode": 8363691,
+        "bytes": 1031,
+        "mtime_ns": 1776001715872705049,
+        "sha256": "fc2adb34ed94ebf0793ed8bc75d342a5dcdc157251dcaaf20db59b862e6633f5"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/__init__.py",
+        "dev": 16777231,
+        "inode": 8363693,
+        "bytes": 1761,
+        "mtime_ns": 1776001715872793883,
+        "sha256": "899a31c76e74085585c5f85fe7658e0524efc8d65e31b98c912c49d603f8d630"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/_ranges_input.py",
+        "dev": 16777231,
+        "inode": 8363694,
+        "bytes": 1014,
+        "mtime_ns": 1776001715872851342,
+        "sha256": "b93765cb4defba21fc5042ce6f89c17d720ae8f754eb3f1762a6a40ed438a14a"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/bus.py",
+        "dev": 16777231,
+        "inode": 8363695,
+        "bytes": 14304,
+        "mtime_ns": 1776001715872960718,
+        "sha256": "706a7d9fad50a3d25dfe8dfc3f7d592a743b48cb7469fec8d822ce4fb90806c7"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/calibration.py",
+        "dev": 16777231,
+        "inode": 8363696,
+        "bytes": 6714,
+        "mtime_ns": 1776001715873053177,
+        "sha256": "905ca73e31932e80559319336379bd6e413155ff921edf728dc432bb34a6f577"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/encoding.py",
+        "dev": 16777231,
+        "inode": 8363697,
+        "bytes": 2956,
+        "mtime_ns": 1776001715873111386,
+        "sha256": "7e8c95b05ee4ae7ee0f65a874dbbf420a972c9302d6be52a0919b7f42e6590c6"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/patches.py",
+        "dev": 16777231,
+        "inode": 8363698,
+        "bytes": 1122,
+        "mtime_ns": 1776001715873167678,
+        "sha256": "12af93818456729760e84c3976b87fc17166c0b65517408a8f6c7e711d0e766e"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/registers.py",
+        "dev": 16777231,
+        "inode": 8363699,
+        "bytes": 4046,
+        "mtime_ns": 1776001715873225136,
+        "sha256": "a11b129444177344a3d71bf86dbfba71c10131d3ffa70812df7655d8bd83139e"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/types.py",
+        "dev": 16777231,
+        "inode": 8363700,
+        "bytes": 1581,
+        "mtime_ns": 1776001715873281304,
+        "sha256": "638be44dae884ef87b21e0161cd027eb2a41dc5e01c083f457e82813af63443a"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/shared_bus.py",
+        "dev": 16777231,
+        "inode": 8363701,
+        "bytes": 5847,
+        "mtime_ns": 1776001715873368554,
+        "sha256": "7da8a5290863967f44fa291a95488c938eb6f1ed0c24b539de52be0dd4ce644c"
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/common/units.py",
+        "dev": 16777231,
+        "inode": 8363702,
+        "bytes": 6790,
+        "mtime_ns": 1776001715873446471,
+        "sha256": "c7512eddfa3db04465bcbe99c28dc83519262a3e447e1ba40640c0d99cc6bdb1"
+      }
+    ]
+  },
+  "deductions": {
+    "phase12": {
+      "raw": 12,
+      "hex": "0x0c",
+      "bit2": 1,
+      "bit3": 1,
+      "nominal_unit": "0.0146RPM/raw",
+      "zero_contract": "按厂家当前STS合同为最高速度，不是停止",
+      "status": "具体厂家合同已找到，禁止把断扭零反馈充当上扭停转证明"
+    },
+    "positive_software_gate": "Model777/Mode1且新鲜Phase已读、bit3=0，才允许Enable与ZeroCommand；Phase12和未知/过期Phase均须拒绝。速度Motion同样要绑定明确单位/上下限。独立TorqueDisable安全收尾入口应保留，不以零命令合同阻断断扭。",
+    "hardware_claim": "本任务没有上扭/动作，因此不宣称硬件停止/速度标定PASS。",
+    "deployment": "deployable=false；D15仍OPEN/DEFERRED；H2和左腕历史FAIL不变。"
+  },
+  "maintenance_proposal_not_execution": {
+    "authorization": "仅方案；本任务没有获得或执行Phase/EEPROM/上扭新写授权。",
+    "targets": {
+      "right_bus_only": true,
+      "ids": [
+        8,
+        7,
+        9
+      ],
+      "count": 3,
+      "exclude_arm_and_head": true
+    },
+    "transform": {
+      "expression": "new_phase = original_phase & ~0x08",
+      "expected_before": 12,
+      "expected_after": 4,
+      "preserves_bit2_and_all_other_bits": true,
+      "only_changed_bit": 3
+    },
+    "preconditions": [
+      "先将本次READ原件绑定每轮bus/USB/model/ID/固件0、1/Phase/Mode/CW/CCW/Lock/扭矩/目标及当前速度；固件版本与该STS表适用关系明确后再决定维护写。",
+      "新执行仍需明确Phase维护写范围及现场看护/立即手动断电事实；所有17舵机断扭、底盘静止且目标0；独占UART与原严格时限/回收门。",
+      "对3目标逐项保存原始寄存器字节及文件SHA备份（不是下发硬件Backup指令）；固化预计raw12。每笔写前重读仍为同一设备/Mode1/Torque0/Phase12，漂移即停。"
+    ],
+    "preferred_reversible_trial": [
+      "可优先评估原Lock1下仅Phase18临时RAM写4的单次断扭维护：依据厂家Lock合同掉电不保存；不解锁、不自动上扭、不顺带改Mode/单位位/PID/校准。若固件不支持或读回不同，立即停止，不自动转为EEPROM写。",
+      "读回Phase必须精确4且只有bit3变化，再确认Torque0/Mode1/Goal0/Present0及其他寄存器没有漂移；可再次独立READ复核。读回通过也不等于已经做了上扭停转测试。"
+    ],
+    "persistent_followup_separate_scope": [
+      "只有后续明确授权持久Phase修正时，断扭状态保存原Lock并按表解锁0，只写18=4，逐项读回，恢复原Lock，保留每笔回执/原件；不能借原Mode1或硬件运动授权自动扩为EEPROM写。",
+      "通过人工断电重启后新只读核Phase4/Mode1/model/firmware、扭矩0/目标0/反馈0，证明掉电保存；不得软件重启或改服务代替真实电机断电。"
+    ],
+    "stop_and_motion_gate": [
+      "在Phase12或未知Phase时停止链走独立TorqueDisable，不下发可能最高速的GoalVelocity0；Phase4新鲜读回通过后才允许使用ZeroCommand。",
+      "后续受监督最小上扭零目标测试与小幅正/反速度测试各需独立GO及现场条件，按已有严格预算/停止/终读/真实回收门执行；需要实测停止和单位标定才能关闭硬件合同，D15不会因此关闭。"
+    ],
+    "rollback": [
+      "失败先断扭并确认静止；只在相同3目标/固件身份匹配且Torque0时依据备份恢复原Phase12（临时或持久路径按已授权范围），再精确读回/恢复原Lock。",
+      "回滚到12后保持使能/Motion/ZeroCommand门拒绝；不能为了恢复旧运行状态顺带上扭。断扭未证实或回读失败时要求现场手动断电，并保留失败，不循环重试。"
+    ],
+    "final_evidence": "保留全部成功/失败原件；17舵机扭矩/目标/速度与逐项身份后验、UART锁释放、自有child真实回收分别判定，旧marker/latch与正式安装不修改。"
+  },
+  "third_party_hypotheses": {
+    "state": "第三方bit2/bit3说法现已由公开厂家原表单独证实；结论主证据只引用厂家原JSON/MD。",
+    "not_relied_on": [
+      "Scribd转载",
+      "钜犀科技转载",
+      "microduck第三方整理"
+    ]
+  },
+  "retrieval_limits_and_preserved_failures": [
+    "Web工具官方PDF/HTTPS门户/Gitee显示Internal Error；HTTPS curl门户exit35，HTTP公开门户及其JS/公开GET均成功，不重复循环失败路线。",
+    "13源下载首轮1个LeRobot tables TLS失败exit35，下载helper真实exit1原download_manifest保留；另存tables-r2文件已获取并按pin/source内容复核。该shell最终exit0不单独充当curl wait证据，不把首轮改写为全成功。"
+  ],
+  "evidence_index": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_contract_2026-10-08/evidence_index.json",
+    "dev": 16777231,
+    "inode": 53719630,
+    "bytes": 9898,
+    "mtime_ns": 1791437202437272174,
+    "sha256": "b80ea74c05b706737a1ea077c908dc6408d0d4d0acba5c351a0a493d91e3995b"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "FEETECH_FIRMWARE_STAGE_CLOSURE_V1",
+  "status": "PASS_LOCAL_ARCHIVE_BYTES_SHA_MODE",
+  "native_member_count": 145,
+  "supporting_member_count": 177,
+  "no_duplicate_members": true,
+  "all_native_and_supporting_members_bytes_sha_mode_same": true,
+  "all_selected_originals_before_after_same": true,
+  "selected_originals_count": 325,
+  "copies_bytes_sha_mode_same": true,
+  "all_indexed_top_artifacts_same": true,
+  "artifact_index": {
+    "name": "artifact_index.json",
+    "bytes": 43739,
+    "sha256": "623f2cc9516aba1ab1237c30bbf2d0ce43937feb08cff9543f7fe6fb48d7374c",
+    "mode": 420
+  },
+  "summary": {
+    "name": "summary.json",
+    "bytes": 17070,
+    "sha256": "0ecff5a1551404a2901c0de6d8c13b002cb9b4eeb02448712f475e1f320bbb97",
+    "mode": 420
+  },
+  "closure_document_self_excluded": true,
+  "scope": "仅本机打包/流式校验；未展开591源码、未执行SSH/Cargo/UART、未修改旧硬件包或原PENDING receipt；本阶段尚待独审/root验收"
+}

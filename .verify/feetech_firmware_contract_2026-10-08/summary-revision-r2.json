@@ -1,0 +1,75 @@
+{
+  "schema": "FEETECH_FIRMWARE_STAGE_SUMMARY_REVISION_R2",
+  "status": "TWO_WORDING_FIXES_ONLY",
+  "original_top_versions_preserved": [
+    {
+      "original_top_name": "summary.json",
+      "preserved_as": "history_r1/summary.json",
+      "bytes": 17070,
+      "sha256": "0ecff5a1551404a2901c0de6d8c13b002cb9b4eeb02448712f475e1f320bbb97",
+      "mode": 420
+    },
+    {
+      "original_top_name": "artifact_index.json",
+      "preserved_as": "history_r1/artifact_index.json",
+      "bytes": 43739,
+      "sha256": "623f2cc9516aba1ab1237c30bbf2d0ce43937feb08cff9543f7fe6fb48d7374c",
+      "mode": 420
+    },
+    {
+      "original_top_name": "archive-verification.json",
+      "preserved_as": "history_r1/archive-verification.json",
+      "bytes": 987,
+      "sha256": "0ba3b3c63a714877582399c4a44ec3520ae2c07db6b71bb4edf4ae1453feeb81",
+      "mode": 420
+    }
+  ],
+  "current_summary": {
+    "bytes": 17652,
+    "sha256": "1a3faf7918153c3dae11726adc0d7563707e9fbbb99248ecfda488a210a3f56b",
+    "mode": 420
+  },
+  "unchanged_original_artifacts": {
+    "native-r1-original-evidence.tar.gz": {
+      "bytes": 11032663,
+      "sha256": "4645c597aa9bb48058917639c09a34be588e5d2682a5e332e1ca3a785182d515",
+      "mode": 420
+    },
+    "native-r1-original-evidence.index.json": {
+      "bytes": 51503,
+      "sha256": "28ce76f60b8ca10e39b97c4c66011755cecf0ee17c3bcc5035552dfe00963388",
+      "mode": 420
+    },
+    "native-r1-archive-verification.json": {
+      "bytes": 419,
+      "sha256": "1618f2a2058a531bf8c7c5639427ab044d8448d6e77d24e0f6e4810c9449cda9",
+      "mode": 420
+    },
+    "native-r1-summary.json": {
+      "bytes": 124049,
+      "sha256": "4f0c3286d83c3ad36033805c5dde355f1b256ad1027010c68aa92236eeb8daa7",
+      "mode": 420
+    },
+    "supporting-original-evidence.tar.gz": {
+      "bytes": 536290,
+      "sha256": "1798b824e81c0659df6f0969e5eb87f862e5be2e9c709e26f19cf053f6cd3a1a",
+      "mode": 420
+    },
+    "supporting-original-evidence.index.json": {
+      "bytes": 109007,
+      "sha256": "f6b8846c78bc0734026c1b605fc28678bf44c92ded9f4910d155580190c7d17c",
+      "mode": 420
+    },
+    "manual-power-cut-receipt-r1.json": {
+      "bytes": 1072,
+      "sha256": "c509819ccf03acffd14f6b23019f574fcafe1be147bfa0d6f6ab4d696e015fd3",
+      "mode": 420
+    }
+  },
+  "changes": [
+    "纯 profile 有零停止数学合同，无 Enable API/能力",
+    "help 为 argc 不足时用法早退/exit2，固件只读写拒绝两项仍按实际 motor8/exits2"
+  ],
+  "original_packs_resealed": false,
+  "source_or_execution_changes": false
+}

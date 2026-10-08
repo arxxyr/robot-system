@@ -51,8 +51,9 @@
 //!   sleep 50ms → Torque_Enable=1`）。手动 `write Torque_Enable 1` 前一定要先
 //!   `write Goal_Position <当前 Present>`，否则 motor 会追寄存器里残留的旧 Goal。
 //! - 写 EEPROM 区寄存器（`Homing_Offset` / `Min_Position_Limit` / `Max_Position_
-//!   Limit` / `Operating_Mode` / `Lock`）需要先 `write Torque_Enable 0` + `write
-//!   Lock 0`，否则**静默失败**（motor 不报错但不生效）。
+//!   Limit` / `Operating_Mode` / `Lock`）的保存语义须独立确认。厂家表公开版本181
+//!   规定Lock0写EPROM掉电保存、Lock1不保存；不能从中推定现场临时写一定生效。
+//!   配置写入需断扭、明确授权及逐项读回；Phase与死区仍为本项目诊断只读。
 //! - 大幅度 `Goal_Position` 跳变（超过 Goal Acceleration 能追上的范围）可能引起
 //!   机械冲击 —— bring-up 阶段尽量小步推进。
 
@@ -62,7 +63,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::ExitCode;
 
-use robot_adapter_feetech::registers::{STS3215_CONTROL_TABLE, ensure_not_diagnostic_write};
+use robot_adapter_feetech::registers::{
+    STS3215_CONTROL_TABLE, ensure_not_diagnostic_write, ensure_not_firmware_readonly_write,
+};
 use robot_adapter_feetech::transport::real::RealSerialTransport;
 use robot_adapter_feetech::{DEFAULT_BAUDRATE, FeetechBus, FeetechError, Motor};
 
@@ -77,13 +80,16 @@ fn static_register_name(name: &str) -> Option<&'static str> {
         .map(|(n, _)| *n)
 }
 
-/// 纯参数预检，仅在打开串口前拒绝三个诊断专用名称的 write。
+/// 纯参数预检，在打开串口前保留三个诊断拒写门并拒绝两个固件版本write。
 /// 其他名称与参数继续由原分发处理；本门放行不表示写入合法。
 fn preflight_diagnostic_write(args: &[String]) -> Result<(), FeetechError> {
     match args.get(3).map(String::as_str) {
         Some("write") => match args.get(4).and_then(|name| static_register_name(name)) {
             Some(name @ ("Phase" | "CW_Dead_Zone" | "CCW_Dead_Zone")) => {
                 ensure_not_diagnostic_write(name)
+            }
+            Some(name @ ("Firmware_Major_Version" | "Firmware_Minor_Version")) => {
+                ensure_not_firmware_readonly_write(name)
             }
             _ => Ok(()),
         },
@@ -264,6 +270,19 @@ mod tests {
                     Err(FeetechError::DiagnosticRegisterWriteForbidden(got)) if got == name
                 ));
             }
+        }
+    }
+
+    #[test]
+    fn firmware_version_preflight_rejects_write_and_preserves_read_before_open() {
+        for name in ["Firmware_Major_Version", "Firmware_Minor_Version"] {
+            assert_eq!(static_register_name(name), Some(name));
+            for value in [None, Some("bad-value"), Some("255"), Some("2147483648")] {
+                assert!(
+                    matches!(preflight_diagnostic_write(&arguments("write", name, value)), Err(FeetechError::ReadOnlyRegisterWriteForbidden(got)) if got == name)
+                );
+            }
+            assert!(preflight_diagnostic_write(&arguments("read", name, None)).is_ok());
         }
     }
 

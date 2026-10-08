@@ -9,6 +9,16 @@
 
 ---
 
+## 2026-10-08 · 固件合同 Orin 软件验证与独立断电确认
+
+七份Feetech源码新增固件主/次版本地址0/1的原始无符号只读名，四个写API与poke在获取连接/打开串口前拒绝写入；既有Phase/CW/CCW诊断写禁令保持。纯轮速profile逐项绑定前8/左7/右9、型号777、模式1、明确固件原字节、完整Phase和1..32767的raw上限；Phase bit3=1的零即最高速配置拒绝构造，版本相符不等于厂家兼容性认证。速度采用厂家名义0.732/0.0146RPM与bit15符号幅度，超出单轮上限直接拒绝，由上层统一比例限速；细单位不宣称精确步数每秒。本件无串口、Enable权限或运行时接入，当前FeetechAdapter Velocity仍未完成TX。
+
+Orin独立591项源码输入聚合`ddad9513566f51fecf915ac7f39e0cccc66b8ae93732847b70ac7c0315458294`，实际最新浮动nightly为`1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6`；fmt、默认根Clippy及仅Feetech real-hw特性根Clippy通过。real-hw库171和poke6共177个不同方法全部通过，0failed/ignored，新增12为其中子集；131072个wire样本是一个测试内部输入，不另累计方法。独立release构建冻结ELF183 `bde890bb1bd0ea20f63d5267f158a311edd539eaedbc7f04cf13f248b5272835`，1470648B；help与两固件名写入探针真实预期exit2、具体错误及不存在设备路径首尾一致，13外层质量命令和3内层探针共16不同自有child自然wait/reap，源码/工具链/产物首尾相同。Orin未装strace，零UART依据早退控制流、只读拒写测试和不存在路径探针，不宣称系统调用跟踪。非完整workspace、H2六配方或真实RT/硬件门；无正式安装、服务启动或push。Mac首轮Clippy101与后续未运行门保留，原失败不回填。
+
+现场用户随后确认“两个电机电源已切断，机械臂保持支撑”，root于2026-10-08 06:35:40UTC记录收到回复；实际断电时刻与独立电源遥测未测。此新收尾确认结束本轮看护，不修改上一轮head1位置FAIL、right9停止FAIL或原NEEDS_MANUAL_POWER_CUT，不构成新硬件GO；确认后未执行UART/动作。现场固件版本未读、Phase12未改，旧左腕与右H2仍FAIL，D15 OPEN/DEFERRED、deployable=false保持。下一步只推进发布者身份/显式轮速配置/新鲜度状态机软件候选，真实执行链与硬件门另验。
+
+[原件、准确名单及软件验收入口](../.verify/feetech_firmware_contract_2026-10-08/summary.json)。
+
 ## 2026-10-08 · 目标选择软件通过，实机维护 NEEDS_MANUAL_POWER_CUT
 
 固定位置目标选择的本机与Orin同源40项软件测试通过，新增5项是40子集，不累计重复轮次；默认/三目标PLAN_ONLY均零动作，重复或未知目标拒绝。此前B0工具独立READ通过：17电机×10项共170唯一寄存器请求、211个自有child真实回收；连接有额外只读握手帧，不称170为全部wire帧。本次位置动作使用历史`f2014ee4`维护ELF（1469904B），重新核本体身份，未称最新nightly新Rust控制产物或使用B0工具代替位置工具。

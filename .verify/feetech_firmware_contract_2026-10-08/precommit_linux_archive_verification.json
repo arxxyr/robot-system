@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "members": 72,
+  "all_originals_before_after_same": true,
+  "all_members_sha_bytes_mode_same": true,
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1-original-evidence.tar.gz",
+    "bytes": 621104,
+    "sha256": "956bf0f56d37d47586447002ad42adf0d8eb579092f50a1eaab010ee2c7e08c3",
+    "mode": 420
+  },
+  "index": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1-original-evidence.index.json",
+    "bytes": 25130,
+    "sha256": "317c3a432235ecd05561bfa1dd78e58c2f6a28a4553d266c22b6d2a504d0d93c",
+    "mode": 420
+  },
+  "summary": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_firmware_integration_2026-10-08/precommit-r1/summary.json",
+    "bytes": 12617,
+    "sha256": "85f7f73ea659d65302424deab932a12ceff421e569b3e324d856810b3e7d6d95",
+    "mode": 420
+  }
+}

@@ -172,7 +172,15 @@
            人工断两个电源已通知、确认PENDING；停止本轮，禁止后续UART/动作/自动重试，不推断-50来源、单位或轮转动。
            厂家STS内存表（门户version=181）：Phase12 bit3使零目标为最高速度；现场FW主/次未读，未作Phase/Lock/PID/模式/EEPROM写。
            .verify/hardware_selected_targets_2026-10-08/summary.json封本轮原件，前置/漏fixture等旧FAIL全保留。
-           下一步仅独立纯软件固件READ保护/typed profile，硬件门另验；左腕/H2 FAIL、D15 OPEN/DEFERRED、deployable=false保持。
+           随后用户确认两个电机电源已切断、机械臂保持支撑；root于06:35:40UTC记录收到确认，实际断电时刻/遥测未知。
+           新确认结束本轮看护收尾，不回填原NEEDS/FAIL或构成新GO；其后没有UART/动作。
+           同日固件合同七源：新增地址0/1只读版本名，四写API及poke开串口前拒写；普通Phase写禁令保持。
+           纯typed轮速profile要求具名ID/777/模式1/明确FW/完整Phase与raw上限，拒bit3零即最高速，不赋予Enable权限。
+           bit2按厂家名义0.732/0.0146RPM换算、bit15符号幅度；超限拒绝而不单轮clamp，现场FW/单位合同仍未硬件验证。
+           Orin591输入ddad9513、最新nightly1d81、fmt/默认及real-hw根Clippy、171库+6poke通过，新增12为177子集。
+           新独立release ELF bde890bb已冻结，help/两固件名写入预期exit2；16不同child真reap，源/工具/ELF首尾一致。
+           未做strace/全workspace/H2六配方/新RT硬件门或正式安装；证据 .verify/feetech_firmware_contract_2026-10-08/summary.json。
+           下一步P1A/P1B/P1C仍为独立软件候选；左腕/头1/H2 FAIL、D15 OPEN/DEFERRED、deployable=false保持。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

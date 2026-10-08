@@ -75,6 +75,7 @@ pub mod protocol;
 pub mod registers;
 pub mod transport;
 pub mod types;
+pub mod velocity_profile;
 
 pub use adapter::FeetechAdapter;
 pub use bus::FeetechBus;
