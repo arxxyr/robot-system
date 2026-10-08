@@ -1,0 +1,13 @@
+{
+  "status": "PASS_SOURCE_AND_SOFTWARE_EVIDENCE",
+  "source_sha256": {
+    "crates/robot-adapters/feetech/src/adapter.rs": "9787d14b3f6b84aaf26037c6e0a2ee8327e9be9af3148d25a37d77f0ec9c5bee",
+    "crates/robot-s0/src/serial_tick.rs": "a527ff857fa5afd82dfc2fd13f646460960b2d139e13ea198a838f195e26dc46"
+  },
+  "s0_production_prefix": {
+    "bytes": 27905,
+    "sha256": "cd00065466240e5279c0126a8837fa6e0b8033ea546c45969d09492e4d7beec3",
+    "equal_to_parent": true
+  },
+  "findings": "Position原TX和标定保留，Stop零事务保留，三未实现模式在事务前Unsupported；S0测试沿生产tick真实调用mock断扭与确认。root已核原stdout的215+17唯一方法、退出码和597源一致；不是硬件停止证明。"
+}

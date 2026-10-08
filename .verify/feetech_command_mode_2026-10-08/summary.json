@@ -1,0 +1,21 @@
+{
+  "status": "SOFTWARE_PASS_ONLY",
+  "change": "Feetech write_command的Velocity/Torque/ServoPosition不再无TX返回成功，明确Unsupported；Position/Stop保持",
+  "source_delta": "source-delta.json",
+  "source_count": 597,
+  "source_aggregate": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "nightly": "1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6",
+  "quality": "本机fmt与crate Clippy通过；Orin根默认/real-hw Clippy和真正提交前fmt→根Clippy通过，同源且真实wait",
+  "tests": {
+    "mac_feetech": 215,
+    "orin_feetech": 215,
+    "orin_serial_tick": 17,
+    "distinct_methods": 232,
+    "failed": 0,
+    "ignored": 0,
+    "s0_other_methods_filtered": 661
+  },
+  "original_failure": "本机测试Clippy两处assert_is_empty exit101原输出保留；修复后通过，Mac215日志仅原工具可恢复摘录，身份组合命令exit未知",
+  "scope": "仅两源码和交接记录；S0生产前缀不变，无完整workspace测试/release/H2/UART/硬件动作/安装/服务/push",
+  "open": "轮速执行未实现；头1+8、右9-50、左腕/右H2原FAIL保持；现场供电/看护问题待答；D15 OPEN/DEFERRED，deployable=false"
+}

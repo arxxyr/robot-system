@@ -2,6 +2,10 @@
 
 ## 当前步骤
 
+### 未实现控制模式不再假成功（2026-10-08，软件修复）
+
+`FeetechAdapter::write_command` 原先对 Velocity、Torque、ServoPosition 不发送指令却返回成功；现明确返回 `Unsupported` 并保留原诊断。Position 与 Stop 行为不变。仅改两份源码，S0 生产逻辑逐字不变；新增软件回归验证拒绝时无租约/无 TX，以及 S0 错误后实际调用 mock 断扭和确认。Mac Feetech 库215项、Orin Feetech库及 S0 周期控制17项通过，根Clippy通过；准确原件与提交前质量门见 [.verify/feetech_command_mode_2026-10-08/summary.json](../../.verify/feetech_command_mode_2026-10-08/summary.json)。本修复仍未实现轮速执行，不关闭头部/右轮/右H2原FAIL；本轮无UART、硬件动作、安装或push，现场供电与看护答复仍待确认，D15 OPEN/DEFERRED、deployable=false保持。
+
 ### 收缩后续设计范围（2026-10-08，具体硬件诊断优先）
 
 用户指出过度设计后，root 暂停尚未整合的 P3-A 打开会话框架和 P3-B 事务/RX 代次框架，保留两工作树未完成草稿；两者均未执行 fmt/Clippy/test，不能称完成。第三件绝对 READ 合同暂缓、未派实施。先前“会话/USB与预算接缝”为历史计划，本节取代其自动续作安排；已有软件提交不回退，完整底盘运行与机械臂/头部/底盘实机成功目标不缩减。

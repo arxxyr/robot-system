@@ -808,6 +808,7 @@ mod tests {
         confirms: usize,
         last_confirm_all_off: bool,
         read_error: Option<RobotError>,
+        write_error: Option<RobotError>,
     }
 
     impl ManipulatorAdapter for RecordingAdapter {
@@ -837,6 +838,9 @@ mod tests {
 
         fn write_command(&mut self, target: &JointCommandView<'_>) -> Result<(), RobotError> {
             self.write_attempts += 1;
+            if let Some(error) = self.write_error.take() {
+                return Err(error);
+            }
             let lease = self
                 .probe
                 .begin_leased(BusOpClass::PeriodicWrite)
@@ -932,6 +936,7 @@ mod tests {
                     confirms: 0,
                     last_confirm_all_off: false,
                     read_error: None,
+                    write_error: None,
                 },
             };
             let boot = command(ControlMode::Velocity);
@@ -1331,6 +1336,41 @@ mod tests {
             fixture.step(&target);
             fixture.assert_fault_then_stop(&target);
         }
+    }
+
+    #[test]
+    fn tick_unsupported_periodic_write_faults_then_stops_and_confirms_without_normal_io() {
+        let mut fixture = Fixture::new(true);
+        fixture.set_policy(OutputPolicy::ActiveForward);
+        fixture.adapter.write_error = Some(RobotError::Unsupported("夹具拒绝未实现的控制模式"));
+        let source = command(ControlMode::Velocity);
+        fixture.step(&source.as_view());
+        let fault = fixture.ctrl.mailbox_snapshot().unwrap();
+        assert_eq!(fault.code, FaultCode::AdapterErr);
+        assert_eq!(fault.detail, 0);
+        assert_eq!(fault.origin, FaultOrigin::Periodic);
+        assert_eq!(fixture.metrics.write_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::StopIssue);
+        assert!(!fixture.ctrl.authority().snapshot().normal_io_active);
+
+        // 错误只记录一次；随后的 tick 真正执行断扭与确认，不能继续普通 IO。
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.stops, 2);
+        assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::Confirm);
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.confirms, 2);
+        assert!(fixture.adapter.last_confirm_all_off);
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.write_attempts, 1);
+        assert_eq!(fixture.adapter.writes, 0);
+        assert_eq!(fixture.adapter.reads, 0);
+        assert_eq!(fixture.metrics.write_errors.load(Ordering::Relaxed), 1);
+        assert_ne!(fixture.ctrl.inhibit_bits(), 0);
+        assert_ne!(fixture.ctrl.safety_state(), OutputSafetyState::TorqueOn);
+        assert_eq!(
+            fixture.ctrl.mailbox_snapshot().unwrap().generation,
+            fault.generation
+        );
     }
 
     #[test]

@@ -1,0 +1,34 @@
+{
+  "base_manifest": "../feetech_poke_raw_2026-10-08/source-manifest.json",
+  "base_manifest_file_sha256": "96c7b3e2249390e88241e8f7ebbff252e993cd9d11e3a473760036602b36048b",
+  "count": 597,
+  "source_aggregate": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "changed": {
+    "crates/robot-adapters/feetech/src/adapter.rs": {
+      "before": {
+        "sha256": "3e39280b11fb5b42c407ffa22b3838ebda55f0e61d22c855d30e6d90937e4915",
+        "bytes": 66618,
+        "executable": false
+      },
+      "after": {
+        "bytes": 70951,
+        "executable": false,
+        "sha256": "9787d14b3f6b84aaf26037c6e0a2ee8327e9be9af3148d25a37d77f0ec9c5bee"
+      }
+    },
+    "crates/robot-s0/src/serial_tick.rs": {
+      "before": {
+        "sha256": "ac0a5cf2d2266605cde07c3747b77c9e8696f3cc7bdb8a0d21cac2ec2e040b68",
+        "bytes": 53861,
+        "executable": false
+      },
+      "after": {
+        "bytes": 55843,
+        "executable": false,
+        "sha256": "a527ff857fa5afd82dfc2fd13f646460960b2d139e13ea198a838f195e26dc46"
+      }
+    }
+  },
+  "remaining_595_equal": true,
+  "root_checked_native_before_after_and_final_main": true
+}

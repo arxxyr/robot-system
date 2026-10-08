@@ -1,0 +1,22 @@
+
+running 17 tests
+test serial_tick::tests::active_velocity_accepts_stamp_and_rejects_deadline_boundaries ... ok
+test serial_tick::tests::active_velocity_rejects_invalid_shape_and_nonfinite_targets ... ok
+test serial_tick::tests::non_velocity_selector_preserves_every_legacy_policy ... ok
+test serial_tick::tests::ready_velocity_read_failure_uses_original_fault_and_safety_route ... ok
+test serial_tick::tests::disabled_and_stop_velocity_do_not_write_ordinary_goal ... ok
+test serial_tick::tests::revoked_velocity_motion_keeps_independently_authorized_read ... ok
+test serial_tick::tests::tick_hold_and_zero_clear_all_goal_vectors_without_mutating_source ... ok
+test serial_tick::tests::tick_invalid_active_velocity_faults_before_write_then_executes_safety_stop ... ok
+test serial_tick::tests::tick_ready_velocity_skips_goal_but_keeps_periodic_read ... ok
+test serial_tick::tests::tick_non_velocity_policies_keep_original_adapter_calls ... ok
+test serial_tick::tests::tick_zero_deadline_overflow_faults_without_fabricating_fresh_goal ... ok
+test serial_tick::tests::tick_active_velocity_forwards_exact_goal_and_reads_with_independent_lease ... ok
+test serial_tick::tests::velocity_deadline_bounds_probe_progress_without_claiming_wire_rejection ... ok
+test serial_tick::tests::velocity_estop_uses_fast_safety_chain_without_periodic_write ... ok
+test serial_tick::tests::velocity_skip_policies_do_not_validate_unused_goals ... ok
+test serial_tick::tests::velocity_zero_selector_uses_only_shape_and_bounded_local_time ... ok
+test serial_tick::tests::tick_unsupported_periodic_write_faults_then_stops_and_confirms_without_normal_io ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 661 filtered out; finished in 0.00s
+

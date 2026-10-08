@@ -1,0 +1,14 @@
+    Checking robot-adapter-feetech v0.1.2 (/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/source/crates/robot-adapters/feetech)
+    Checking robot-viz v0.1.2 (/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/source/crates/robot-viz)
+    Checking robot-s0 v0.1.2 (/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/source/crates/robot-s0)
+    Checking robot-tests v0.1.2 (/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/source/crates/robot-tests)
+warning: unused dependency `robot-adapter-feetech`
+   --> crates/robot-tests/Cargo.toml:250:1
+    |
+250 | robot-adapter-feetech = { workspace = true, optional = true }
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `cargo::unused_dependencies` is set to `warn` by default
+help: consider removing the dependency on `robot-adapter-feetech`
+warning: `robot-tests` (manifest) generated 1 warning
+    Finished `dev` profile [optimized + debuginfo] target(s) in 17.20s

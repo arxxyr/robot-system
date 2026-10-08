@@ -575,14 +575,16 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     fn write_command(&mut self, cmd: &JointCommandView) -> Result<(), RobotError> {
         self.require_connected().map_err(RobotError::from)?;
         self.bus.set_op_class(BusOpClass::PeriodicWrite);
-        // v0.2 仅支持 Position 模式；其他模式静默忽略 + 警告
-        if !matches!(cmd.mode, ControlMode::Position) {
-            // 不报错，因为 state machine 的 holding command 也走这条路；只在
-            // 非 stop 模式给警告
-            if !matches!(cmd.mode, ControlMode::Stop) {
+        match cmd.mode {
+            ControlMode::Position => {}
+            // Stop 的真正断扭沿现有 safety_stop 路径执行，这里保持零事务。
+            ControlMode::Stop => return Ok(()),
+            ControlMode::Velocity | ControlMode::Torque | ControlMode::ServoPosition => {
                 self.record(5, 3, 0, 0, 0);
+                return Err(RobotError::Unsupported(
+                    "feetech: write_command 不支持此控制模式",
+                ));
             }
-            return Ok(());
         }
 
         // Step 7 task 27c follow-up：复用预分配 cmd_entries 缓冲 + by-id API。
@@ -773,6 +775,56 @@ mod tests {
     impl DiagSink for CapturedDiagnostics {
         fn record(&self, event: DiagEvent) {
             self.0.lock().unwrap().push(event);
+        }
+    }
+
+    /// 命令分派拒绝和 Stop 空操作不得进入总线事务或权限服务。
+    struct NoTransactionProbe;
+
+    impl robot_core::serial_services::PreemptProbe for NoTransactionProbe {
+        fn should_abort(
+            &self,
+            _class: BusOpClass,
+        ) -> Option<robot_core::serial_services::AbortReason> {
+            panic!("零事务命令不得查询中止状态")
+        }
+
+        fn checkpoint(&self) {
+            panic!("零事务命令不得进入 IO 检查点")
+        }
+
+        fn sleep_or_abort(
+            &self,
+            _class: BusOpClass,
+            _dur: DurationNs,
+        ) -> Result<(), robot_core::serial_services::AbortReason> {
+            panic!("零事务命令不得等待")
+        }
+
+        fn operation_class(&self) -> BusOpClass {
+            panic!("零事务命令不得查询操作域")
+        }
+
+        fn confirmation_trusted(&self) -> bool {
+            panic!("零事务命令不得查询确认信任")
+        }
+
+        fn report_comm_error(&self, _kind: CommErrorKind) {
+            panic!("命令拒绝不得伪装成通信错误")
+        }
+    }
+
+    impl LeasedPreemptProbe for NoTransactionProbe {
+        fn begin_leased(
+            &self,
+            _class: BusOpClass,
+        ) -> Result<robot_core::serial_services::BusLease, robot_core::serial_services::AbortReason>
+        {
+            panic!("零事务命令不得申请租约")
+        }
+
+        fn finish_leased(&self, _lease: robot_core::serial_services::BusLease) {
+            panic!("零事务命令没有租约可归还")
         }
     }
 
@@ -1286,8 +1338,11 @@ mod tests {
     }
 
     #[test]
-    fn write_command_non_position_mode_is_noop_with_warning() {
+    fn write_command_stop_remains_noop_without_transaction_or_diagnostic() {
         let (mut a, h) = make_adapter(&[("j1", 1)]);
+        let diag = Arc::new(CapturedDiagnostics::default());
+        a.diag = Some(diag.clone());
+        a.bus.set_services(Some(Arc::new(NoTransactionProbe)), None);
         let buf = robot_core::adapter::JointCommandBuf {
             joint_count: 1,
             mode: robot_core::adapter::ControlModeRepr::Stop,
@@ -1298,6 +1353,72 @@ mod tests {
         // tx 应空（Stop 模式不发包）
         let tx = h.drain_tx();
         assert!(tx.is_empty(), "Stop mode 不应发 sync_write");
+        assert!(diag.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn write_command_unsupported_modes_rejected_without_transaction() {
+        for mode in [
+            ControlMode::Velocity,
+            ControlMode::Torque,
+            ControlMode::ServoPosition,
+        ] {
+            let (mut adapter, handle) = make_adapter(&[("j1", 1)]);
+            let diag = Arc::new(CapturedDiagnostics::default());
+            adapter.diag = Some(diag.clone());
+            adapter
+                .bus
+                .set_services(Some(Arc::new(NoTransactionProbe)), None);
+            let command = robot_core::adapter::JointCommandBuf {
+                joint_count: 1,
+                mode: mode.into(),
+                ..robot_core::adapter::JointCommandBuf::default()
+            };
+            assert_eq!(
+                adapter.write_command(&command.as_view()),
+                Err(RobotError::Unsupported(
+                    "feetech: write_command 不支持此控制模式"
+                ))
+            );
+            assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+            let events = diag.0.lock().unwrap();
+            assert_eq!(events.len(), 1);
+            let event = events[0];
+            assert_eq!(
+                (event.site, event.kind, event.a, event.b, event.seq_lo),
+                (5, 3, 0, 0, 0)
+            );
+        }
+    }
+
+    #[test]
+    fn write_command_disconnected_takes_priority_over_mode_dispatch() {
+        let (mut adapter, handle) = make_adapter(&[("j1", 1)]);
+        adapter.disconnect().unwrap();
+        let diag = Arc::new(CapturedDiagnostics::default());
+        adapter.diag = Some(diag.clone());
+        adapter
+            .bus
+            .set_services(Some(Arc::new(NoTransactionProbe)), None);
+        for mode in [
+            ControlMode::Position,
+            ControlMode::Velocity,
+            ControlMode::Torque,
+            ControlMode::ServoPosition,
+            ControlMode::Stop,
+        ] {
+            let command = robot_core::adapter::JointCommandBuf {
+                joint_count: 1,
+                mode: mode.into(),
+                ..robot_core::adapter::JointCommandBuf::default()
+            };
+            assert_eq!(
+                adapter.write_command(&command.as_view()),
+                Err(RobotError::Comm(CommErrorKind::Disconnected))
+            );
+        }
+        assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+        assert!(diag.0.lock().unwrap().is_empty());
     }
 
     #[test]

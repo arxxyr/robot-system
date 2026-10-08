@@ -1,0 +1,1 @@
+{"name": "fmt", "argv": ["cargo", "+nightly", "fmt", "--all"], "pid": 525413, "exit": 0, "actual_wait_returned": true}

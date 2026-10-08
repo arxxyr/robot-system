@@ -1,0 +1,101 @@
+{
+  "schema": "feetech-command-mode-mac-tool-result-recovery-v1",
+  "provenance": "来自本 agent 已发生的 functions.exec / exec_command / write_stdin 工具结果；原先未落盘。仅恢复实际显示的原输出和返回码，本次没有重新执行检查。",
+  "output_streams": "工具返回 output 为未区分 stdout/stderr 的文本；文件名不宣称原生分流日志。",
+  "limitations": [
+    "215 项测试原工具返回明确截断，现存文件只是可恢复的必要摘录，不是完整连续日志。",
+    "rustc/cargo 身份输出来自原组合命令；当时只保留 output，组合命令的 exit_code 未打印或落盘，标为 UNKNOWN。",
+    "S0 新测试本机未运行，Mac 结果不代替 Orin 或硬件验收。"
+  ],
+  "source_sha256": {
+    "crates/robot-adapters/feetech/src/adapter.rs": "9787d14b3f6b84aaf26037c6e0a2ee8327e9be9af3148d25a37d77f0ec9c5bee",
+    "crates/robot-s0/src/serial_tick.rs": "a527ff857fa5afd82dfc2fd13f646460960b2d139e13ea198a838f195e26dc46"
+  },
+  "checks": [
+    {
+      "name": "nightly_update",
+      "command": "rustup update nightly",
+      "session_id": 75244,
+      "initial_chunk_id": "1b46d6",
+      "terminal_chunk_id": "94efea",
+      "exit_code": 0,
+      "reaped": true,
+      "output_file": "rustup.tool-output.txt",
+      "output_scope": "初次结果全部输出；终态追加输出为空"
+    },
+    {
+      "name": "toolchain_identity",
+      "command": "sed -n '206,255p' crates/robot-core/src/serial_services.rs && rg -n 'NotConnected =>' crates/robot-adapters/feetech/src/error.rs && git diff -- crates/robot-adapters/feetech/src/adapter.rs && rustc -Vv && cargo -V",
+      "exit_code": null,
+      "exit_code_status": "UNKNOWN_NOT_RETAINED",
+      "output_file": "toolchain.tool-output.excerpt.txt",
+      "output_scope": "仅 rustc -Vv / cargo -V 身份段"
+    },
+    {
+      "name": "fmt_r1",
+      "command": "cargo fmt --all",
+      "terminal_chunk_id": "6678f1",
+      "exit_code": 0,
+      "reaped": true,
+      "output_file": "fmt.tool-output.txt",
+      "output_scope": "终态输出为空"
+    },
+    {
+      "name": "lib_clippy",
+      "command": "CARGO_NET_OFFLINE=true cargo clippy -p robot-adapter-feetech --lib --features real-hw -- -D warnings",
+      "session_id": 9812,
+      "initial_chunk_id": "0a55e6",
+      "terminal_chunk_id": "96af37",
+      "exit_code": 0,
+      "reaped": true,
+      "output_file": "lib-clippy.tool-output.excerpt.txt",
+      "output_scope": "保留终态必要完成行；未恢复全部编译进度行"
+    },
+    {
+      "name": "tests_clippy_r1_original_failure",
+      "command": "CARGO_NET_OFFLINE=true cargo clippy -p robot-adapter-feetech --lib --tests --features real-hw -- -D warnings",
+      "session_id": 46249,
+      "initial_chunk_id": "9e5a45",
+      "terminal_chunk_id": "b7337c",
+      "exit_code": 101,
+      "reaped": true,
+      "output_file": "tests-clippy-r1.tool-output.excerpt.txt",
+      "output_scope": "完整两处 lint 错误段；省略无关编译进度行"
+    },
+    {
+      "name": "fmt_r2_after_lint_fix",
+      "command": "cargo fmt --all",
+      "terminal_chunk_id": "7ec315",
+      "exit_code": 0,
+      "reaped": true,
+      "output_file": "fmt.tool-output.txt",
+      "output_scope": "终态输出为空"
+    },
+    {
+      "name": "tests_clippy_r2",
+      "command": "CARGO_NET_OFFLINE=true cargo clippy -p robot-adapter-feetech --lib --tests --features real-hw -- -D warnings",
+      "terminal_chunk_id": "6fc089",
+      "exit_code": 0,
+      "reaped": true,
+      "output_file": "tests-clippy-r2.tool-output.txt",
+      "output_scope": "原终态全部输出"
+    },
+    {
+      "name": "lib_test_215",
+      "command": "CARGO_NET_OFFLINE=true cargo test -p robot-adapter-feetech --lib --features real-hw",
+      "session_id": 37350,
+      "initial_chunk_id": "96ac51",
+      "terminal_chunk_id": "80ae84",
+      "exit_code": 0,
+      "reaped": true,
+      "tool_output_truncated": true,
+      "original_terminal_token_count": 4696,
+      "passed": 215,
+      "failed": 0,
+      "ignored": 0,
+      "output_file": "test-215.tool-output.excerpt.txt",
+      "output_scope": "编译结束、测试入口、相关六方法和总计原行；未恢复被工具截断的中段"
+    }
+  ]
+}
+

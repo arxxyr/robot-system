@@ -1,0 +1,30 @@
+error: used `assert!` to check that a value is empty
+    --> crates/robot-adapters/feetech/src/adapter.rs:1383:13
+     |
+1383 |             assert!(handle.drain_tx().is_empty());
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#assert_is_empty
+     = note: `-D clippy::assert-is-empty` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::assert_is_empty)]`
+help: use `assert_eq!` to show the value on failure
+     |
+1383 -             assert!(handle.drain_tx().is_empty());
+1383 +             assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+     |
+
+error: used `assert!` to check that a value is empty
+    --> crates/robot-adapters/feetech/src/adapter.rs:1420:9
+     |
+1420 |         assert!(handle.drain_tx().is_empty());
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1420 -         assert!(handle.drain_tx().is_empty());
+1420 +         assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+     |
+
+error: could not compile `robot-adapter-feetech` (lib test) due to 2 previous errors
+

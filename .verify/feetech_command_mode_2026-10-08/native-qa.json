@@ -1,0 +1,97 @@
+{
+  "status": "PASS",
+  "commands": [
+    {
+      "name": "fmt_check",
+      "argv": [
+        "cargo",
+        "+nightly",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "pid": 522374,
+      "exit": 0,
+      "actual_wait_returned": true
+    },
+    {
+      "name": "clippy_default",
+      "argv": [
+        "cargo",
+        "+nightly",
+        "clippy",
+        "--locked",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "pid": 522388,
+      "exit": 0,
+      "actual_wait_returned": true
+    },
+    {
+      "name": "clippy_real_hw",
+      "argv": [
+        "cargo",
+        "+nightly",
+        "clippy",
+        "--locked",
+        "--all",
+        "--all-targets",
+        "--features",
+        "robot-adapter-feetech/real-hw",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "pid": 522632,
+      "exit": 0,
+      "actual_wait_returned": true
+    },
+    {
+      "name": "feetech_lib215",
+      "argv": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--locked",
+        "-p",
+        "robot-adapter-feetech",
+        "--lib"
+      ],
+      "pid": 522762,
+      "exit": 0,
+      "actual_wait_returned": true
+    },
+    {
+      "name": "serial_tick_module",
+      "argv": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--locked",
+        "-p",
+        "robot-s0",
+        "--lib",
+        "serial_tick::tests"
+      ],
+      "pid": 523229,
+      "exit": 0,
+      "actual_wait_returned": true
+    }
+  ],
+  "source_before_same": true,
+  "source_count": 597,
+  "source_aggregate": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "not_run": [],
+  "source_after_same": true,
+  "compiler_after": {
+    "pid": 525257,
+    "exit": 0,
+    "actual_wait_returned": true
+  },
+  "compiler_same": true
+}
