@@ -1,0 +1,171 @@
+{
+  "schema": "B1_INGRESS_COMPONENTS_STAGE_INDEPENDENT_SCOPE_REVIEW_R1",
+  "status": "PASS_STAGE_SCOPE_AND_ARCHIVE_NO_BLOCKER_PENDING_ROOT_COMMIT",
+  "created_at": "2026-10-08T08:12:44.806662+00:00",
+  "stage_summary": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/summary.json",
+    "bytes": 10642,
+    "sha256": "b1600fde28e4d5b851e45d9b7b96fa86faf301e49baa0af57c8a9b5438271934",
+    "mode": 420
+  },
+  "archives": [
+    {
+      "archive": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/original-evidence.tar.gz",
+        "bytes": 43403463,
+        "sha256": "676e4ce1fe5db72593a4e19492d25d106c2a6ce5e6ef679fb022b4d4e2eab275",
+        "mode": 420
+      },
+      "index": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/original-evidence.index.json",
+        "bytes": 1402877,
+        "sha256": "f0f3cd1dbc71d4d5d63195ee30df47b25f5e3f70cb2cda570ff024d13091b37d",
+        "mode": 420
+      },
+      "members": 1337,
+      "all_safe_unique_regular_and_original_member_bytes_sha_mode_equal": true
+    },
+    {
+      "archive": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/main-binding-review.tar.gz",
+        "bytes": 6285,
+        "sha256": "ef55006a41e30532fb5ea9e171fe5dfec694c0060f48a4792011015248f1f1ca",
+        "mode": 420
+      },
+      "index": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/main-binding-review.index.json",
+        "bytes": 4982,
+        "sha256": "304f7d7afa0612d4b1857df24fa63b9ebbe039f44da79ab11fed51762d81cbbf",
+        "mode": 420
+      },
+      "members": 6,
+      "all_safe_unique_regular_and_original_member_bytes_sha_mode_equal": true
+    }
+  ],
+  "total_outer_members": 1343,
+  "typed_member_reference_checks": 13,
+  "member_references": [
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "reviews-and-quality/root_integration_r1.json",
+      "sha256": "c6694c50e61e46258d29f6a34bb660c0aca38f40e50d7468678f16e967e59265",
+      "bytes": 379794
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "native-summary/native-r5-summary.json",
+      "sha256": "ed0491172989729a573a7f81d19f7981efab59483909bb87772bc0db920454b5",
+      "bytes": 152363
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "native-packages/native-r5-original-evidence.tar.gz",
+      "sha256": "313d441472e3c3e3bc20f3b2aa5d58b13a7f8ef59b06dba1ccdaad82b2974b1b",
+      "bytes": 10910022
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "reviews-and-quality/independent_native_r5/review.json",
+      "sha256": "ea62f8af800fea05392776ce381508c389594236ada5d23383aa47e7a6d3e301",
+      "bytes": 6686
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "reviews-and-quality/independent_native_r5/index.json",
+      "sha256": "8db14d700d3bb93fa274459afa83614e1c82cfc4f0bd028f264e91db0aa0bdd7",
+      "bytes": 3120
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "reviews-and-quality/root_precommit_quality_binding_r1.json",
+      "sha256": "91d3ef07e96f1f4a781b1db86c5a0def04d531220d5a2d8102ac2abd45735232",
+      "bytes": 35808
+    },
+    {
+      "archive": "main-binding-review.tar.gz",
+      "member": "independent_main_binding_r1/review.json",
+      "sha256": "b4b52c33bfcf0363cd5191d00ddb8be268060c3426be659a0c70533b9c5360dc",
+      "bytes": 9218
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "native-packages/native-r2-original-evidence.tar.gz",
+      "sha256": "ee9232b2ab2e9d1a2a492b36ec118f7b365d059d6acd38ee21e267a4daadafb8",
+      "bytes": 10052037
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "native-packages/native-r3-original-evidence.tar.gz",
+      "sha256": "707c2ccdc388db117ed4e2aa48866f635181f0facb1dfc09e23aaa52e748575d",
+      "bytes": 10053600
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "native-packages/native-r4-original-evidence.tar.gz",
+      "sha256": "a7527aac964f4cd41a9080499d862e9b228cde1965b5455b4ed3c97c1c589c10",
+      "bytes": 10191170
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "planning/next_serial_execution_codemap_r1.json",
+      "sha256": "fd37ed52b198663b043d09f06616772f36db89f87f1857b8cfccf89eee9672d3",
+      "bytes": 43421
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "planning/absolute_write_plan_r1.json",
+      "sha256": "040d33d5de81473f724ac3768a201f6dd408ed64d7feba98661d45aff567c370",
+      "bytes": 38136
+    },
+    {
+      "archive": "original-evidence.tar.gz",
+      "member": "reviews-and-quality/root_decisions_r1.json",
+      "sha256": "253193e8bdeb0b9a9af9bf34e3f09f4c4c171891ae216a701650a481a971b010",
+      "bytes": 4225
+    }
+  ],
+  "accepted_scope": "主树已整合P1A/P1B/P1C十一源纯软件组件，596/b919同r5原生及root质量绑定；313不同Rust方法、doc compile_fail1另计，库原2/doc原2 ignored保留。",
+  "non_additive": "mock61在默认transport129内；P1C默认36在guard37内，guard内部36调用不加；Mac143不加Linux147，trybuild8子例不加成8方法。",
+  "precommit_binding": "现存root main596/mainfmt7child及r5实际fmt→根Clippy同源闭合；native旧future REQUIRED记录不改，新旁包main PASS提供后续事实。",
+  "historical_failures": [
+    {
+      "round": "r2",
+      "status": "FAIL_DEFAULT_ROOT_CLIPPY_ORIGINAL_PRESERVED",
+      "original_native_members": 93,
+      "Rust_method_executions": 0,
+      "nested_container_sha_checked_not_reexecuted": true
+    },
+    {
+      "round": "r3",
+      "status": "FAIL_DEFAULT_ROOT_CLIPPY_ORIGINAL_PRESERVED",
+      "original_native_members": 87,
+      "Rust_method_executions": 0,
+      "nested_container_sha_checked_not_reexecuted": true
+    },
+    {
+      "round": "r4",
+      "status": "FAIL_CORE_LIST_DISPLAY_EXPECTATION_ORIGINAL_PRESERVED",
+      "original_native_members": 100,
+      "Rust_method_executions": 0,
+      "nested_container_sha_checked_not_reexecuted": true
+    }
+  ],
+  "scope_limits": [
+    "next absolute deadline写执行25拟议oracle仅FUNCTION_PLAN_APPROVED，未实现/未测试，不计313。",
+    "非完整workspace/release/H2/完整B1运行接入/真实RT WCET或硬件验收；未读取现场FW/改Phase。",
+    "没有新UART/GO/部署/安装/push，硬件FAIL与D15 OPEN/DEFERRED、deployable=false保持；断电收尾不回填旧PENDING。",
+    "嵌套native档以已核container SHA封存，不重复动态审；工具链及外部工具binary仅身份记录，不宣称byte封存。"
+  ],
+  "blockers": [],
+  "remaining": [
+    "root最终commit仍PENDING；本报告不改stage summary/旧reviews或原FAIL。"
+  ],
+  "operations": {
+    "Cargo": 0,
+    "SSH": 0,
+    "UART": 0,
+    "source_edits": 0,
+    "stage_original_edits": 0,
+    "old_review_edits": 0
+  }
+}

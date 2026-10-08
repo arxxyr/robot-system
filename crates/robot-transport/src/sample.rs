@@ -57,6 +57,23 @@ impl<T: BodyMarker> core::fmt::Debug for SampleLease<T> {
 }
 
 impl<T: BodyMarker> SampleLease<T> {
+    /// 返回本样本的底层发布节点与端口身份；未知或旧 mock 来源返回 `None`。
+    ///
+    /// 此读取不分配、不克隆 `Arc`，也不验证应用 header/body 或来源权限。
+    /// 真实身份来自 iceoryx2 系统 header，不是 `FrameHeader.source_id`。
+    #[inline]
+    #[must_use]
+    pub fn publisher_origin(&self) -> Option<crate::PublisherOrigin> {
+        match &self.inner {
+            #[cfg(feature = "mock")]
+            SampleLeaseInner::Mock(lease) => lease.publisher_origin(),
+            #[cfg(feature = "iceoryx2")]
+            SampleLeaseInner::Iceoryx2(lease) => Some(lease.publisher_origin()),
+            #[cfg(not(any(feature = "mock", feature = "iceoryx2")))]
+            SampleLeaseInner::Unavailable(_) => None,
+        }
+    }
+
     #[cfg(feature = "mock")]
     #[must_use]
     pub(crate) fn from_mock(mock: crate::mock::MockSampleLease) -> Self {

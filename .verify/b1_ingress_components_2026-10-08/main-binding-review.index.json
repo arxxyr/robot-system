@@ -1,0 +1,151 @@
+{
+  "schema": "B1_MAIN_BINDING_REVIEW_SUPPORT_INDEX_R1",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/main-binding-review.tar.gz",
+    "sha256": "ef55006a41e30532fb5ea9e171fe5dfec694c0060f48a4792011015248f1f1ca",
+    "bytes": 6285,
+    "mode": 420
+  },
+  "files": [
+    {
+      "name": "independent_main_binding_r1/index.json",
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/b1_freshness_integration_2026-10-08/independent_main_binding_r1/index.json",
+      "bytes": 1453,
+      "sha256": "9b6584a97accba46bdd21c46ec3daed94285218966aae48c933bb88fd5d9ea00",
+      "mode": 420,
+      "identity_before": {
+        "dev": 16777231,
+        "ino": 53789043,
+        "bytes": 1453,
+        "mtime_ns": 1791446645172917442,
+        "ctime_ns": 1791446645172917442,
+        "mode": 420
+      },
+      "identity_after": {
+        "dev": 16777231,
+        "ino": 53789043,
+        "bytes": 1453,
+        "mtime_ns": 1791446645172917442,
+        "ctime_ns": 1791446645172917442,
+        "mode": 420
+      }
+    },
+    {
+      "name": "independent_main_binding_r1/review.json",
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/b1_freshness_integration_2026-10-08/independent_main_binding_r1/review.json",
+      "bytes": 9218,
+      "sha256": "b4b52c33bfcf0363cd5191d00ddb8be268060c3426be659a0c70533b9c5360dc",
+      "mode": 420,
+      "identity_before": {
+        "dev": 16777231,
+        "ino": 53789041,
+        "bytes": 9218,
+        "mtime_ns": 1791446645172599441,
+        "ctime_ns": 1791446645172599441,
+        "mode": 420
+      },
+      "identity_after": {
+        "dev": 16777231,
+        "ino": 53789041,
+        "bytes": 9218,
+        "mtime_ns": 1791446645172599441,
+        "ctime_ns": 1791446645172599441,
+        "mode": 420
+      }
+    },
+    {
+      "name": "independent_main_binding_r1/review.md",
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/b1_freshness_integration_2026-10-08/independent_main_binding_r1/review.md",
+      "bytes": 755,
+      "sha256": "8adb0179f3aeff1d8b88794781668167908ed2c54e9f1be8f5f831e699e0f542",
+      "mode": 420,
+      "identity_before": {
+        "dev": 16777231,
+        "ino": 53789042,
+        "bytes": 755,
+        "mtime_ns": 1791446645172697983,
+        "ctime_ns": 1791446645172697983,
+        "mode": 420
+      },
+      "identity_after": {
+        "dev": 16777231,
+        "ino": 53789042,
+        "bytes": 755,
+        "mtime_ns": 1791446645172697983,
+        "ctime_ns": 1791446645172697983,
+        "mode": 420
+      }
+    },
+    {
+      "name": "independent_main_binding_r1/verification_attempt1_failure.json",
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/b1_freshness_integration_2026-10-08/independent_main_binding_r1/verification_attempt1_failure.json",
+      "bytes": 708,
+      "sha256": "5f432110ddb83c1a870c46e7b62cf7e3d0866721b18fee1cf5c4e6ad40d1017d",
+      "mode": 420,
+      "identity_before": {
+        "dev": 16777231,
+        "ino": 53788999,
+        "bytes": 708,
+        "mtime_ns": 1791446629187342503,
+        "ctime_ns": 1791446629187342503,
+        "mode": 420
+      },
+      "identity_after": {
+        "dev": 16777231,
+        "ino": 53788999,
+        "bytes": 708,
+        "mtime_ns": 1791446629187342503,
+        "ctime_ns": 1791446629187342503,
+        "mode": 420
+      }
+    },
+    {
+      "name": "independent_main_binding_r1/verify.attempt1.py",
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/b1_freshness_integration_2026-10-08/independent_main_binding_r1/verify.attempt1.py",
+      "bytes": 8799,
+      "sha256": "d4da828f3a9d0d0ea11880f16c7df4e811c30707530b102ef6b91f0e42fb5031",
+      "mode": 420,
+      "identity_before": {
+        "dev": 16777231,
+        "ino": 53788998,
+        "bytes": 8799,
+        "mtime_ns": 1791446617007312916,
+        "ctime_ns": 1791446629187240961,
+        "mode": 420
+      },
+      "identity_after": {
+        "dev": 16777231,
+        "ino": 53788998,
+        "bytes": 8799,
+        "mtime_ns": 1791446617007312916,
+        "ctime_ns": 1791446629187240961,
+        "mode": 420
+      }
+    },
+    {
+      "name": "independent_main_binding_r1/verify.py",
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/b1_freshness_integration_2026-10-08/independent_main_binding_r1/verify.py",
+      "bytes": 8994,
+      "sha256": "78b8359e5cf17a2ba22643d7ede881ac033197a94bf52822ff180e7639576ce6",
+      "mode": 420,
+      "identity_before": {
+        "dev": 16777231,
+        "ino": 53788847,
+        "bytes": 8994,
+        "mtime_ns": 1791446645059570656,
+        "ctime_ns": 1791446645059570656,
+        "mode": 420
+      },
+      "identity_after": {
+        "dev": 16777231,
+        "ino": 53788847,
+        "bytes": 8994,
+        "mtime_ns": 1791446645059570656,
+        "ctime_ns": 1791446645059570656,
+        "mode": 420
+      }
+    }
+  ],
+  "member_count": 6,
+  "self_excluded": true
+}

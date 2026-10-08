@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+### 底盘输入组件（2026-10-08，软件通过，真实执行链另验）
+
+本阶段合入三项纯软件组件：样本系统header的完整128bit发布Node/Port身份、显式米/米/弧度每秒轮速参数，以及底盘输入的固定容量状态机。身份不是密码学认证；当前一组和退休一组来源不构成无限历史注册表。状态机要求原生产者时间/严格TTL、同Node不同Port的完整心跳与命令pair、checked非零接收计数、零Ack committed投影之后的新输入及当前Enable committed投影；Lost只凭心跳不能恢复，Ready恢复仍待Enable完成。票据/计数耗尽原因粘性保留，时钟回退检查限于已保存生产者时间与绑定边界。只有Active且新鲜的gated_command可构造固定POD；生命周期字段仍只是受信运行时投影，不能代替真实authority/硬件结果。
+
+Orin独立596项编译输入聚合`b919cd320dd81693ae49612dcd0778b98e6ee97191d2344bdf87cefd69c2eed0`，实际浮动nightly为`1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6`。fmt、默认根Clippy及rt_guard+Feetech real-hw组合特性根Clippy通过；core147、transport默认129、状态机guard37共313个不同Rust测试方法通过。mock61和状态机默认36为上述子集，guard内部重复调用也不累计；另1项compile_fail文档测试通过，原2项库/集成ignored和2项doc ignored及其原因保持。18个原生命令、5个本机SSH/SCP child均自然wait/reap，38个源码窗口和编译器首尾一致；主树精确整合11源、实际fmt与整合后596逐项相等单独闭环提交前质量绑定。原两轮Clippy101及r4名单展示夹具FAIL/零测试执行完整保留；新通过不覆盖旧失败。
+
+本件未接入生产IPC/RPC、实际连接代次、唯一writer或Enable链；FeetechAdapter Velocity仍无TX。下一件已定案为来源绝对期限写入的首字节/partial-write检查，当前仅函数方案，不是实现。无完整workspace/release/H2六配方或真实RT/硬件验收，无正式安装、服务激活或push。人工断电收尾已独立确认，此后没有UART/新动作；现场Firmware尚未读、Phase12未改，底盘动作DEFERRED，左腕/头1/右H2原FAIL、D15 OPEN/DEFERRED及deployable=false保持。
+
+[原件、准确名单与整合验收入口](../../.verify/b1_ingress_components_2026-10-08/summary.json)。
+
 ### 固件合同与人工断电收尾（2026-10-08，软件通过）
 
 七份Feetech源码新增固件主/次版本地址0/1的原始无符号只读名，四个写API与poke在获取连接/打开串口前拒绝写入；既有Phase/CW/CCW诊断写禁令保持。纯轮速profile逐项绑定前8/左7/右9、型号777、模式1、明确固件原字节、完整Phase和1..32767的raw上限；Phase bit3=1的零即最高速配置拒绝构造，版本相符不等于厂家兼容性认证。速度采用厂家名义0.732/0.0146RPM与bit15符号幅度，超出单轮上限直接拒绝，由上层统一比例限速；细单位不宣称精确步数每秒。本件无串口、Enable权限或运行时接入，当前FeetechAdapter Velocity仍未完成TX。

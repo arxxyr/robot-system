@@ -1,0 +1,29 @@
+{
+  "schema": "B1_STAGE_SCOPE_REVIEW_INDEX",
+  "files": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/b1_freshness_integration_2026-10-08/independent_stage_scope_r1/review.json",
+      "bytes": 7009,
+      "sha256": "10467df4e6354ea39759244e8c2c3ba20f848a3ee6e6bafc205316ab6317d074",
+      "mode": 420
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/b1_freshness_integration_2026-10-08/independent_stage_scope_r1/review.md",
+      "bytes": 1035,
+      "sha256": "fc4768a108c9f94e8daa85938770987741897e25bfd749d9f7e884b2c668e8bf",
+      "mode": 420
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/b1_freshness_integration_2026-10-08/independent_stage_scope_r1/verify.py",
+      "bytes": 10519,
+      "sha256": "7347d79d99d4d920b70b143a7a8d66d726ff64f6418d203be284d15f4cb3ead6",
+      "mode": 420
+    }
+  ],
+  "stage_summary": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/summary.json",
+    "bytes": 10642,
+    "sha256": "b1600fde28e4d5b851e45d9b7b96fa86faf301e49baa0af57c8a9b5438271934",
+    "mode": 420
+  }
+}

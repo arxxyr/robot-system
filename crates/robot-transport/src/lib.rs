@@ -10,6 +10,7 @@
 //! - [`error`]：`TransportError` 顶层错误分类（聚合 `ParseError` + typed
 //!   验证失败 + 后端错误）。
 //! - [`sample`]：`SampleLease<T>` / `MessageView` / `BodyView` / `BlobView`。
+//! - [`origin`]：可选的完整发布节点/端口身份，不代替消息验证或来源授权。
 //! - [`writer`]：`SampleWriter<'_, T>` 及其按值消费的 `publish(self)`。
 //! - [`traits`]：`LatestSubscriber<T>` / `Publisher<T>` / `RequestClient<Req, Resp>`。
 //! - [`mock`]（`feature = "mock"`，默认开启）：内存后端，测试用 `MockChannel`
@@ -32,6 +33,7 @@
 pub mod command_slot;
 pub mod error;
 pub mod metrics;
+pub mod origin;
 pub mod parser;
 pub mod sample;
 pub mod snapshot;
@@ -49,6 +51,7 @@ pub mod iceoryx2;
 pub use command_slot::{LatestCommandReader, LatestCommandSlot, LatestCommandWriter};
 pub use error::TransportError;
 pub use metrics::ParseMetrics;
+pub use origin::{PublisherNodeId, PublisherOrigin, PublisherPortId};
 pub use parser::{ParseError, ParsedSample, parse_sample};
 pub use sample::{BlobView, BodyView, HeaderView, MessageView, SampleLease};
 pub use snapshot::{

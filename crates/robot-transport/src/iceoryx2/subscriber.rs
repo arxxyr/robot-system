@@ -105,6 +105,16 @@ impl core::fmt::Debug for Iceoryx2SampleLease {
 }
 
 impl Iceoryx2SampleLease {
+    /// 从本样本的系统 header 复制完整身份，不使用本地 subscriber 或配置源编号。
+    #[inline]
+    pub(crate) fn publisher_origin(&self) -> crate::PublisherOrigin {
+        let header = self.sample.header();
+        crate::PublisherOrigin::from_native_values(
+            header.node_id().value(),
+            header.publisher_id().value(),
+        )
+    }
+
     /// 调用者已完整校验观测前缀长度，原正式 wire 从此 offset 开始。
     pub(crate) const fn with_offset(sample: IxPubSubSample, payload_offset: usize) -> Self {
         Self {

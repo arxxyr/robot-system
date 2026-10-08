@@ -1,0 +1,44 @@
+{
+  "schema": "B1_MAIN_BINDING_REVIEW_SUPPORT_APPEND_RECEIPT_R1",
+  "status": "PASS",
+  "created_at": "2026-10-08T08:07:50.170248+00:00",
+  "old_summary": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/summary.json",
+    "sha256": "dd6c89737670cb85d01f50f8449dfddd0ffea9a155a53b15465877583df39c97",
+    "bytes": 9342,
+    "mode": 420
+  },
+  "new_summary": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/summary.json",
+    "sha256": "b1600fde28e4d5b851e45d9b7b96fa86faf301e49baa0af57c8a9b5438271934",
+    "bytes": 10642,
+    "mode": 420
+  },
+  "big_archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/original-evidence.tar.gz",
+    "sha256": "676e4ce1fe5db72593a4e19492d25d106c2a6ce5e6ef679fb022b4d4e2eab275",
+    "bytes": 43403463,
+    "mode": 420
+  },
+  "big_archive_unchanged": true,
+  "support_archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/main-binding-review.tar.gz",
+    "sha256": "ef55006a41e30532fb5ea9e171fe5dfec694c0060f48a4792011015248f1f1ca",
+    "bytes": 6285,
+    "mode": 420
+  },
+  "support_index": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/main-binding-review.index.json",
+    "sha256": "304f7d7afa0612d4b1857df24fa63b9ebbe039f44da79ab11fed51762d81cbbf",
+    "bytes": 4982,
+    "mode": 420
+  },
+  "support_verification": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/main-binding-review.verification.json",
+    "sha256": "b8f5d1215299a7d879648965ce5e70bb20d8e8b9121c2935ff3b0d20005b93d2",
+    "bytes": 949,
+    "mode": 420
+  },
+  "members": 6,
+  "note": "原summary增补新真实独审引用；原大包/索引、native REQUIRED及之前PENDING计划不改。"
+}

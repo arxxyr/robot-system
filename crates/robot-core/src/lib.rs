@@ -21,6 +21,7 @@ pub mod serial_services;
 #[cfg(target_os = "linux")]
 pub mod thread;
 pub mod time;
+pub mod wheel_velocity_profile;
 
 // 只为本 crate 的 RT 禁分配测试安装真实拦截器，不改变生产 allocator。
 #[cfg(all(test, feature = "rt_guard"))]

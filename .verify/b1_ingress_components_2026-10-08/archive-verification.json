@@ -1,0 +1,24 @@
+{
+  "schema": "B1_INGRESS_COMPONENTS_ARCHIVE_SELF_VERIFICATION_R1",
+  "status": "PASS",
+  "created_at": "2026-10-08T08:05:31.777729+00:00",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/original-evidence.tar.gz",
+    "sha256": "676e4ce1fe5db72593a4e19492d25d106c2a6ce5e6ef679fb022b4d4e2eab275",
+    "bytes": 43403463,
+    "mode": 420
+  },
+  "index": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/b1_ingress_components_2026-10-08/original-evidence.index.json",
+    "sha256": "f0f3cd1dbc71d4d5d63195ee30df47b25f5e3f70cb2cda570ff024d13091b37d",
+    "bytes": 1402877,
+    "mode": 420
+  },
+  "member_count": 1337,
+  "all_regular_safe_relative_unique": true,
+  "all_bytes_sha_mode_match": true,
+  "all_current_originals_identity_and_bytes_before_after_match": true,
+  "member_manifest_sha256": "84dd89a94643ff032d81bee30fcfac859d3fd98ec374dd4f45c108e21e768ce2",
+  "self_index_and_summary_excluded": true,
+  "not_claimed": "此为封存自核，不是另一次独立动态验收；native语义结论引用实际peer/root原件；工具链/外部原执行binary只有identity与回执，未收binary。"
+}

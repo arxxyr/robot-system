@@ -37,7 +37,10 @@ use crate::error::TransportError;
 // MockChannel —— 一条 "单 publisher + 单 subscriber" 的逻辑通道
 // ---------------------------------------------------------------------------
 
-/// Mock 通道：持最近一份 sample（latest slot）+ 观测计数。Clone 共享同一底层。
+/// Mock 通道：持最近一份 sample（latest slot）+ 观测计数。
+///
+/// 一个通道表示一个固定逻辑发布端口；Clone 与重复 `publisher()` 共享此端口。
+/// 独立逻辑发布者必须各自创建通道并提供自己的身份，没有修改通道身份的 setter。
 #[derive(Debug, Clone)]
 pub struct MockChannel<T: BodyMarker> {
     inner: Arc<MockChannelInner>,
@@ -55,6 +58,20 @@ impl<T: BodyMarker> MockChannel<T> {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(MockChannelInner::default()),
+            _ty: PhantomData,
+        }
+    }
+
+    /// 创建显式发布身份的 mock 通道；同一逻辑通道表示一个发布端口。
+    ///
+    /// 原 `new` / `default` 通道保持未知身份，不能用默认零值冒充已见来源。
+    #[must_use]
+    pub fn with_publisher_origin(origin: crate::PublisherOrigin) -> Self {
+        Self {
+            inner: Arc::new(MockChannelInner {
+                publisher_origin: Some(origin),
+                ..MockChannelInner::default()
+            }),
             _ty: PhantomData,
         }
     }
@@ -101,11 +118,19 @@ impl<T: BodyMarker> MockChannel<T> {
 
 #[derive(Debug, Default)]
 pub(crate) struct MockChannelInner {
-    slot: Mutex<Option<Arc<Vec<u8>>>>,
+    publisher_origin: Option<crate::PublisherOrigin>,
+    slot: Mutex<Option<Arc<MockPublishedSample>>>,
     loan_count: AtomicU64,
     publish_count: AtomicU64,
     active_leases: AtomicI64,
     active_writers: AtomicI64,
+}
+
+/// 发布后 payload 与身份共同不可变；旧 lease 不从通道重新读取身份。
+#[derive(Debug)]
+struct MockPublishedSample {
+    bytes: Vec<u8>,
+    publisher_origin: Option<crate::PublisherOrigin>,
 }
 
 // ---------------------------------------------------------------------------
@@ -172,9 +197,9 @@ impl<T: BodyMarker> MockSubscriber<T> {
             .map_err(|e| TransportError::Backend(format!("slot mutex poisoned: {e}")))?;
         match slot.as_ref() {
             None => Ok(None),
-            Some(bytes) => {
+            Some(sample) => {
                 let lease = MockSampleLease {
-                    bytes: Arc::clone(bytes),
+                    sample: Arc::clone(sample),
                     channel: Arc::clone(&self.inner),
                 };
                 self.inner.active_leases.fetch_add(1, Ordering::Relaxed);
@@ -235,7 +260,10 @@ impl MockSampleWriter {
                 .slot
                 .lock()
                 .map_err(|e| TransportError::Backend(format!("slot mutex poisoned: {e}")))?;
-            *slot = Some(Arc::new(bytes));
+            *slot = Some(Arc::new(MockPublishedSample {
+                bytes,
+                publisher_origin: self.channel.publisher_origin,
+            }));
         }
         self.channel.publish_count.fetch_add(1, Ordering::Relaxed);
         self.consumed = true; // drop 只减 writer 计数，不再当作 discard
@@ -347,14 +375,20 @@ fn encode_header(args: &FrameHeaderArgs) -> Vec<u8> {
 
 #[derive(Debug)]
 pub struct MockSampleLease {
-    bytes: Arc<Vec<u8>>,
+    sample: Arc<MockPublishedSample>,
     channel: Arc<MockChannelInner>,
 }
 
 impl MockSampleLease {
+    /// 身份随实际样本保存；只复制元数据，不读通道、不增加 `Arc` 引用。
+    #[inline]
+    pub(crate) fn publisher_origin(&self) -> Option<crate::PublisherOrigin> {
+        self.sample.publisher_origin
+    }
+
     #[inline]
     pub(crate) fn bytes(&self) -> &[u8] {
-        &self.bytes
+        &self.sample.bytes
     }
 }
 

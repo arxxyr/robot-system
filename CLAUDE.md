@@ -180,7 +180,14 @@
            Orin591输入ddad9513、最新nightly1d81、fmt/默认及real-hw根Clippy、171库+6poke通过，新增12为177子集。
            新独立release ELF bde890bb已冻结，help/两固件名写入预期exit2；16不同child真reap，源/工具/ELF首尾一致。
            未做strace/全workspace/H2六配方/新RT硬件门或正式安装；证据 .verify/feetech_firmware_contract_2026-10-08/summary.json。
-           下一步P1A/P1B/P1C仍为独立软件候选；左腕/头1/H2 FAIL、D15 OPEN/DEFERRED、deployable=false保持。
+           同日P1A/P1B/P1C十一源已整合：完整Node/Port来源、显式轮速参数、纯有界新鲜度/重建状态机。
+           生命周期投影不代替authority；当前/退休各一组来源，无生产IPC/writer/Enable接入，Velocity仍无TX。
+           Orin596/b919cd32、实际浮动nightly1d81，fmt/默认及rt_guard+real-hw根Clippy通过。
+           core147+transport129+guard37共313不同Rust方法及doc1通过；mock61/default36不累计，原库ignored2/docignored2保持。
+           18原生/5本机child自然回收、38源窗口/编译器同；主树整合后596与实际fmt绑定原生提交前门。
+           两轮Clippy101与r4名单夹具FAIL保留；证据 .verify/b1_ingress_components_2026-10-08/summary.json。
+           非完整workspace/release/RT/H2或硬件门，无安装/服务激活/push；断电确认后无UART/新GO。
+           下一步来源绝对期限串口写仅函数方案，尚未实现；FW未读/Phase12未改，左腕/头1/H2 FAIL、D15 OPEN/DEFERRED、deployable=false保持。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。
