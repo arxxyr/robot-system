@@ -1,0 +1,4380 @@
+{
+  "schema": "PRECOMMIT_INDEPENDENT_REVIEW_R1",
+  "scope": "仅只读提交前追加质量门及归档；未重跑Cargo/SSH/UART/测试",
+  "checks": [
+    {
+      "name": "追加tar与index原绑定身份",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/download_orin_originals.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/download_orin_originals.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/download_orin_originals.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/download_orin_originals.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/host_owner.py",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/launch_orin.sh",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_after.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_after.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_after.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_after.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_after.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_after.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_after.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_before.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_before.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_before.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_before.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_before.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_before.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_cargo_before.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_final_inventory.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_final_inventory.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_final_inventory.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_final_inventory.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_fmt.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_fmt.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_fmt.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_fmt.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_fmt.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_fmt.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_fmt.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_after.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_after.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_after.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_after.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_after.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_after.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_after.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_before.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_before.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_before.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_before.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_before.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_before.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_rustc_before.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_after.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_after_inventory.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_after_inventory.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_after_inventory.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_after_inventory.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_after_inventory.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_after_inventory.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_after_inventory.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_before.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_before_inventory.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_before_inventory.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_before_inventory.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_before_inventory.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_before_inventory.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_before_inventory.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/main_source_before_inventory.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/cargo_after/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/cargo_after/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/cargo_after/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/cargo_after/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/cargo_before/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/cargo_before/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/cargo_before/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/cargo_before/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/clippy_default/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/clippy_default/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/clippy_default/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/clippy_default/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/rustc_after/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/rustc_after/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/rustc_after/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/rustc_after/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/rustc_before/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/rustc_before/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/rustc_before/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/rustc_before/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/source_after.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin-originals/source_before.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin_precommit.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin_precommit.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin_precommit.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/orin_precommit.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/run_main.py",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/run_orin.py",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/upload_orin_script.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/upload_orin_script.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/upload_orin_script.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "包内原件SHA/bytes/mode/upload_orin_script.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "自索引原字节且无循环",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "95原件/96普通成员精确集合",
+      "status": "PASS",
+      "details": {
+        "unsafe_members": []
+      }
+    },
+    {
+      "name": "当前原件与追加包原字节/download_orin_originals.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/download_orin_originals.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/download_orin_originals.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/download_orin_originals.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/host_owner.py",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/launch_orin.sh",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_after.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_after.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_after.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_after.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_after.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_after.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_after.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_before.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_before.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_before.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_before.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_before.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_before.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_cargo_before.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_final_inventory.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_final_inventory.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_final_inventory.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_final_inventory.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_fmt.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_fmt.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_fmt.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_fmt.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_fmt.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_fmt.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_fmt.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_after.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_after.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_after.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_after.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_after.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_after.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_after.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_before.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_before.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_before.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_before.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_before.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_before.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_rustc_before.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_after.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_after_inventory.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_after_inventory.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_after_inventory.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_after_inventory.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_after_inventory.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_after_inventory.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_after_inventory.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_before.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_before_inventory.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_before_inventory.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_before_inventory.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_before_inventory.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_before_inventory.wrapper.completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_before_inventory.wrapper.stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/main_source_before_inventory.wrapper.stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/cargo_after/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/cargo_after/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/cargo_after/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/cargo_after/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/cargo_before/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/cargo_before/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/cargo_before/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/cargo_before/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/clippy_default/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/clippy_default/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/clippy_default/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/clippy_default/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/rustc_after/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/rustc_after/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/rustc_after/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/rustc_after/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/rustc_before/completion.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/rustc_before/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/rustc_before/stderr.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/rustc_before/stdout.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/source_after.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin-originals/source_before.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin_precommit.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin_precommit.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin_precommit.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/orin_precommit.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/run_main.py",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/run_orin.py",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/upload_orin_script.owner/child.log",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/upload_orin_script.owner/launch.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/upload_orin_script.owner/result.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前原件与追加包原字节/upload_orin_script.owner/status.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机和Orin实际结果非异常成功",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "两端590源码首尾清单同冻结r7",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "源码清单聚合独算",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本次freshGit编译域完整590集合",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/.cargo/config.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/Cargo.lock",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/flatc/README.md",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/flatc/VERSION",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/flatc/checksums.sha256",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/flatc/darwin-arm64/flatc",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/flatc/linux-aarch64/flatc",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/flatc/linux-x86_64/flatc",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/.cargo_vcs_info.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/BUILD.bazel",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/Cargo.lock",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/Cargo.toml.orig",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/LICENSE-APACHE",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/LICENSE-MIT",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/NOTICE.md",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/arc_sync_policy/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/arc_sync_policy/mutex_protected.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/arc_sync_policy/single_threaded.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/arc_sync_policy/single_threaded_compile_tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/communication_channel/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/communication_channel/posix_shared_memory.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/communication_channel/process_local.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/communication_channel/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/communication_channel/unix_datagram.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/dynamic_storage/dynamic_storage_configuration.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/dynamic_storage/file.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/dynamic_storage/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/dynamic_storage/posix_shared_memory.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/dynamic_storage/process_local.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/dynamic_storage/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/common.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/id_tracker/bit_set.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/id_tracker/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/process_local_socketpair.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/sem_bitset_posix_shared_memory.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/sem_bitset_process_local.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/signal_mechanism/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/signal_mechanism/semaphore.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/event/unix_datagram_socket.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/hash/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/hash/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/hash/sha1.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/monitoring/file_lock.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/monitoring/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/monitoring/process_local.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/monitoring/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/named_concept.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/reactor/epoll.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/reactor/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/reactor/posix_select.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/reactor/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/resizable_shared_memory/dynamic.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/resizable_shared_memory/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/resizable_shared_memory/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/serialize/cdr.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/serialize/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/serialize/postcard.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/serialize/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/serialize/toml.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shared_memory/common.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shared_memory/file.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shared_memory/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shared_memory/posix.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shared_memory/process_local.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shared_memory/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shm_allocator/bump_allocator.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shm_allocator/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shm_allocator/pointer_offset.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/shm_allocator/pool_allocator.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/static_storage/file.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/static_storage/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/static_storage/process_local.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/static_storage/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/testing.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/zero_copy_connection/channel_state.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/zero_copy_connection/common.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/zero_copy_connection/file.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/zero_copy_connection/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/zero_copy_connection/posix_shared_memory.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/zero_copy_connection/process_local.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/zero_copy_connection/recommended.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/zero_copy_connection/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/src/zero_copy_connection/used_chunk_list.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2-cal/tests/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/.cargo_vcs_info.json",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/BUILD.bazel",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/Cargo.lock",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/Cargo.toml.orig",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/LICENSE-APACHE",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/LICENSE-MIT",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/NOTICE.md",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/README.md",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/active_request.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/config.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/constants.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/identifiers.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/node/global_management_segment.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/node/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/node/node_name.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/pending_response.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/backpressure_strategy.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/client.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/details/chunk.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/details/chunk_details.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/details/data_segment.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/details/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/details/receiver.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/details/segment_state.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/details/sender.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/event_id.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/listener.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/notifier.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/publisher.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/pubsub_r2_tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/reader.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/server.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/subscriber.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/update_connections.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/port/writer.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/prelude.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/raw_sample.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/request_mut.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/request_mut_uninit.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/response.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/response_mut.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/response_mut_uninit.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/sample.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/sample_mut.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/sample_mut_uninit.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/attribute.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/builder/blackboard.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/builder/event.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/builder/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/builder/publish_subscribe.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/builder/request_response.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/config_scheme.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/dynamic_config/blackboard.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/dynamic_config/event.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/dynamic_config/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/dynamic_config/publish_subscribe.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/dynamic_config/request_response.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/header/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/header/publish_subscribe.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/header/request_response.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/ipc.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/ipc_threadsafe.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/local.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/local_threadsafe.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/messaging_pattern.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/naming_scheme.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/blackboard.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/client.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/event.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/listener.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/notifier.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/publish_subscribe.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/publisher.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/reader.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/request_response.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/server.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/subscriber.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/port_factory/writer.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/service_hash.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/service_name.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/stale_resource_cleanup.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/static_config/blackboard.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/static_config/event.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/static_config/message_type_details.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/static_config/messaging_pattern.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/static_config/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/static_config/publish_subscribe.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/service/static_config/request_response.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/signal_handling_mode.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/strict/client.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/strict/fixture_tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/strict/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/strict/server.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/strict/test_support.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/strict/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/testing.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/src/waitset.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/3rd-party/iceoryx2/tests/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/Cargo.lock",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/clear_estop_e2e.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/crash_restart_smoke.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/ik_backend_smoke.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/robotctl_smoke.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/rpc_roles.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/scripted_backend_smoke.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/xlerobot.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/xlerobot_bus1_full.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/xlerobot_bus2_full.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/xlerobot_bus2_right_arm_full.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/xlerobot_left_arm.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/xlerobot_right_arm.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/xlerobot_task28_single_joint.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/xlerobot_task29_right_gripper.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/configs/xlerobot_task29_single_joint.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/benches/feetech_bench.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/adapter.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/bus.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/calibration.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/calibration_io.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/convert.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/diagnostic.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/encoding.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/error.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/factory.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/post_e_transport_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/protocol.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/registers.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/transport.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/src/types.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/tests/abort_diagnostics.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/tests/comm_fault_transport.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/feetech/tests/integration_smoke.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/mock/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-adapters/mock/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/bin/robotctl.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/cli_args.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/dispatch.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/exit_code.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/gateway_client.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/json_out.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/meta.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/payload.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/uuid_v7.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-cli/src/validate.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/adapter.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/config.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/control_authority.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/control_authority/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/control_authority/word.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/diag.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/error.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/executor_ctrl.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/factory.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/rt_guard.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/serial_services.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/thread.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/src/time.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-core/tests/bus_lease_bridge.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-health/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-health/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-health/src/proc.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-health/src/systemd.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-health/src/test_comm_fault.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-kinematics-xlerobot/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-kinematics-xlerobot/src/base.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-kinematics-xlerobot/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-kinematics/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-kinematics/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-logging/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-logging/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/build.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/action_event.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/action_request.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/action_status.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/blob.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/clear_estop.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/event.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/frame_header.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/ik_payload.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/image.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/joint.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/old/action_request_v0.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/old/action_status_v0.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/old/clear_estop_v0.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/old/joint_v0.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/old/set_enabled_v0.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/pointcloud.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/scripted_payload.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/set_enabled.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/tensor.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/schemas/twist.fbs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/src/bin/schema_lint.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/src/build_helpers.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/src/capability.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/src/joint_layout.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/src/markers.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/src/schema_id.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/src/size_tier.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-msg/tests/compat.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/build.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/proto/robot_control.proto",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/auth.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/bin/robot_rpc_gateway.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/class_cache.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/clear_estop.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/client/baseline_shim.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/client/dual_arm_workflow.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/client/layout.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/client/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/client/trajectory.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/estop.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/estop_pub_thread.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/events_subscribe.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/forward_queue.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/freeze_control.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/gateway.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/gateway_ledger.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/idempotency.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/liveness.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/reply_classify.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/rr_io_thread.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/set_enabled.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/state_convert.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/state_pool.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/systemd_probe.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/task_handlers.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/src/wire_credit.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/case_ctx.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/client.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/dual_ctx.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/fake_heartbeat.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/fake_state.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/pair_endpoint.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/raw_s0.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/ready.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/common/subprocess.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/dimos_workflow_e2e.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/estop_e2e.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/set_enabled_e2e.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/state_rpc_e2e.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/task_rpc_e2e.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-rpc/tests/w3_gateway_owned.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/bin/s0_daemon.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/bin/xlerobot_deploy.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/boot_supervisor.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/clear_coordination.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/clear_estop_action.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/clear_estop_transaction.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/clear_estop_transaction/credential.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/clear_estop_transaction/dirfd.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/clear_estop_transaction/guard.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/clear_estop_transaction/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/clear_estop_transaction/w4_tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_adapter.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_hook.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_hook/supervision.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_hook/supervision/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_hook/w4_file_fault.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_hook/w4_file_fault/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_hook/w4_file_kill.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_hook/w4_file_kill/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_hook/w4_recovery_kill.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_hook/w4_recovery_kill/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_observation.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_observation/supervision.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_sample.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_trace.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_trace/w4.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_trace/w4/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/comm_fault_trace_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/config_loader.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/deploy/counter.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/deploy/guard.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/deploy/identity.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/deploy/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/deploy/preflight.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/deploy/provision.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/deploy/types.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/diag.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/estop_latch.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/event_ingress.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/freeze_control.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/freeze_hook.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/hard_rt_ctrl.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/io_thread.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/ipc_pending.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/ipc_runtime.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/ipc_thread.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/latch_lock.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/latch_writer.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/latch_writer/announce.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/latch_writer/core.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/latch_writer/obligation.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/latch_writer/pairing.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/latch_writer/progress.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/latch_writer/protocol.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/latch_writer/supervision.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/persist_health.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/post_e_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/post_e_convergence_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/post_e_diag_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/post_e_ipc_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/pub_thread.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/rr_admission.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/rr_server_thread.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/rt_thread.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/rx_trust.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/serial_convergence.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/serial_io_ctrl.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/serial_io_thread.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/serial_preempt.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/serial_tick.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/set_enabled_action.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/set_enabled_rr_server.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/shutdown_mechanism.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/state_machine.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/state_snapshot_codec.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/test_util.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/watchdog.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/src/worker_stop.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/clear_coordination_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/clear_estop_transaction_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/comm_fault_startup.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/control_authority_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/deploy_guard_kill.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/deploy_units.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/latch_lock_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/latch_lock_daemon.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/latch_writer_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/priority_primitives.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/rt_guard_soak.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/rx_trust_faults.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/serial_rt_e2e.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/shutdown_mechanism_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/snapshot_alloc_guard.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/support/post_e_marker.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/w3_execution_bridge.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s0/tests/xlerobot_deploy_provision.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/action.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/action_backend/fault_inject.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/action_backend/hold_pose.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/action_backend/ik.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/action_backend/mock_dwell.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/action_backend/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/action_backend/scripted.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/bin/mock_s1.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/bin/s1_daemon.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/coordinator.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/events_drain/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/events_drain/runtime.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/events_drain/wire.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/freeze_control.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/liveness.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/rr_server/handler.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/rr_server/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/rr_server/runtime.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/rr_server/wire.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/src/state_cache.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/tests/action_dispatch.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/tests/g1_hold_target.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/tests/s1_layout_conflict.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-s1/tests/tick_loop_in_process.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/clear_estop_e2e.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/comm_fault_e2e.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/crash_restart_smoke.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/freeze_systemd_smoke.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/hello_pubsub.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/iceoryx2_rt_baseline.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/ik_backend_smoke.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/pubsub_cleanup_smoke.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/robotctl_smoke.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/scripted_backend_smoke.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/sd_watchdog_smoke.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/bin/supervised_demo.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/control.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/gateway_exhaustion.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/gateway_exhaustion/oracle.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/hardware.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/harness.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/heartbeat.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/manager.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/manager/command.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/manager/launcher.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/manager/oracle.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/manager/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/manager/unit_reference.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/report.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/report_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/rpc.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/rpc_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/runtime_supervision.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/runtime_supervision/oracle.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/scenarios.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/sla.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/sla_acceptance.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/sla_background.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/sla_cache.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/startup.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/supervision.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w3.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_crash.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_resync.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_retry_exhaustion.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_retry_exhaustion/oracle.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_sigkill.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_sigkill/batch.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_sigkill/batch/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_sigkill/recovery.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_sigkill/recovery/record.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_sigkill/recovery/record/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/w4_latch_sigkill/recovery/tests.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault/watchdog.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/comm_fault_rpc.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/config_fixture.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/src/pubsub_resource_oracle.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-tests/tests/final_stop_transport.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/command_slot.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/error.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/iceoryx2/attributes.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/iceoryx2/mod.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/iceoryx2/observer.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/iceoryx2/publisher.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/iceoryx2/qos.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/iceoryx2/request_response.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/iceoryx2/service_name.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/iceoryx2/subscriber.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/metrics.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/mock.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/parser.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/sample.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/snapshot.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/snapshot_codec.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/traits.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/src/writer.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/iceoryx2_roundtrip.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/iox2_sub_first_repro.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/observer_mirror.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/parser.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/rr_profile_host_config.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/sample.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/trybuild.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/second_loan_before_publish.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/second_loan_before_publish.stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/snapshot_dynamic_words_rejected.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/snapshot_dynamic_words_rejected.stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/snapshot_publish_through_arc.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/snapshot_publish_through_arc.stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/snapshot_publish_through_shared_ref.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/snapshot_publish_through_shared_ref.stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/snapshot_publisher_not_clone.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/snapshot_publisher_not_clone.stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/view_outlives_lease.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/view_outlives_lease.stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/writer_use_after_publish.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/writer_use_after_publish.stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/writer_use_after_publish_typed.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-transport/tests/ui/writer_use_after_publish_typed.stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/src/config.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/src/decode.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/src/input.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/src/main.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/src/media.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/src/output.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/src/runtime.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/src/supervisor.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/tests/observer_roundtrip.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/crates/robot-viz/tests/support/fixtures.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/rust-toolchain.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/tools/rr-memory-model/Cargo.lock",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/tools/rr-memory-model/Cargo.toml",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/tools/rr-memory-model/README.md",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "当前提交前编译源逐项/tools/rr-memory-model/src/lib.rs",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "最终Git原始inventory编译域一致",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/download_orin_originals.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/download_orin_originals.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/download_orin_originals.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/download_orin_originals.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/main_cargo_after.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/main_cargo_after.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/main_cargo_after.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/main_cargo_after.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/main_cargo_before.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/main_cargo_before.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/main_cargo_before.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/main_cargo_before.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/main_final_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/main_final_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/main_final_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/main_final_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/main_fmt.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/main_fmt.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/main_fmt.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/main_fmt.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/main_rustc_after.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/main_rustc_after.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/main_rustc_after.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/main_rustc_after.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/main_rustc_before.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/main_rustc_before.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/main_rustc_before.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/main_rustc_before.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/main_source_after_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/main_source_after_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/main_source_after_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/main_source_after_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/main_source_before_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/main_source_before_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/main_source_before_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/main_source_before_inventory.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/orin_precommit.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/orin_precommit.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/orin_precommit.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/orin_precommit.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner真实wait/reap/upload_orin_script.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner启动完成绑定/upload_orin_script.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "本机owner原日志/upload_orin_script.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "入口owner与原result无改写/upload_orin_script.owner",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "真实11本机child含8本机3SSH/SCP",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "实际主树fmt参数及先于SSH启动",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原completion引用SHA/rustc_before",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin真实自然退出无超预算/rustc_before",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原launch与completion身份/rustc_before",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/rustc_before/stdout",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/rustc_before/stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原completion引用SHA/cargo_before",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin真实自然退出无超预算/cargo_before",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原launch与completion身份/cargo_before",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/cargo_before/stdout",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/cargo_before/stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原completion引用SHA/clippy_default",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin真实自然退出无超预算/clippy_default",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原launch与completion身份/clippy_default",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/clippy_default/stdout",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/clippy_default/stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原completion引用SHA/rustc_after",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin真实自然退出无超预算/rustc_after",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原launch与completion身份/rustc_after",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/rustc_after/stdout",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/rustc_after/stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原completion引用SHA/cargo_after",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin真实自然退出无超预算/cargo_after",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原launch与completion身份/cargo_after",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/cargo_after/stdout",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "Orin原始输出/cargo_after/stderr",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "远端5实际child严格顺序与原绑定",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "最终默认根Clippy原参数及输出",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "两端实际编译器窗口及Cargo身份",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "rustc与cargo实际原始输出首尾一致",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "原owner未知回收状态未覆盖",
+      "status": "PASS",
+      "details": null
+    },
+    {
+      "name": "builder曾执行的完整身份比较实现保留",
+      "status": "PASS",
+      "details": null
+    }
+  ],
+  "limits": [
+    {
+      "code": "HISTORICAL_FULL_STAT_LIST_NOT_PERSISTED",
+      "detail": "95原件字节/SHA/mode/index/tar可逐项独核；dev/ino/nlink/mtime/ctime封包首尾比较由已执行builder实现及完成绑定派生，历史逐项before/after完整列表未持久化，不宣称可逐项重新核验历史stat。"
+    },
+    {
+      "code": "BOOTSTRAP_PROCESS_IDENTITY",
+      "detail": "远端原身份记录阶段为bootstrap；收到GO后同PID exec。不可称记录的exe已是cargo最终运行映像。"
+    },
+    {
+      "code": "NO_NEW_TEST_COUNT",
+      "detail": "本次只有提交前fmt与默认根Clippy及身份命令；739沿r7历史原件，不增加测试数量、不证明完整workspace/release/硬件或B1。"
+    }
+  ],
+  "binding": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_velocity_foundation_2026-10-08/precommit_quality_binding.json",
+    "sha256": "80312df81b68e7bf4363abad5daa30aa2f7098951b714fdb1fdb191227c1e806",
+    "bytes": 36498
+  },
+  "archive": {
+    "path": "precommit-quality.tar.gz",
+    "sha256": "a5a265e62db4592aa0000034b4b9020a57c9fe24c2ae9c26c386a595dd23a73c",
+    "bytes": 173862,
+    "mode": 420,
+    "indexed_files": 95,
+    "regular_members": 96
+  },
+  "index": {
+    "path": "precommit-quality.index.json",
+    "sha256": "85585a8277a8afa42b95c619c4f2cba228521987f4b10f0eb1ac8a27dee20e89",
+    "bytes": 16703,
+    "mode": 420
+  },
+  "builder": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_velocity_foundation_2026-10-08/build_precommit_archive.py",
+    "sha256": "e4f86ebfd8be1cd6a8a1f1214654a07fdc8f993cdd70d2b8265e282881a0fb90",
+    "bytes": 10286
+  },
+  "counts": {
+    "archive_originals": 95,
+    "regular_tar_members": 96,
+    "local_direct_owned_children": 11,
+    "remote_direct_owned_children": 5,
+    "fresh_source_inputs": 590,
+    "new_tests_run": 0
+  },
+  "status": "ACCEPTED_PRECOMMIT_SOFTWARE_QUALITY_WITH_HISTORICAL_STAT_LIMIT"
+}

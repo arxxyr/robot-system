@@ -1,0 +1,106 @@
+{
+  "schema": "ROOT_VELOCITY_FOUNDATION_ACCEPTANCE_V1",
+  "status": "ACCEPTED_SOFTWARE_WITH_PROVENANCE_LIMITS",
+  "recorded_at": "2026-10-08T05:17:06.094332+00:00",
+  "source_files": {
+    "crates/robot-core/src/executor_ctrl.rs": {
+      "sha256": "22efa72656bb95d2bf7152e928c7979e21a3f83ce6205c43c11ac21a95f88da8",
+      "bytes": 34013,
+      "executable": false
+    },
+    "crates/robot-core/src/serial_services.rs": {
+      "sha256": "70d4de1c8beda2ab4be5b025df70663cf885f681305fc4cef1f16508a5a82a4a",
+      "bytes": 9452,
+      "executable": false
+    },
+    "crates/robot-logging/src/lib.rs": {
+      "sha256": "315f21628033e6dea22bc206064ae317fd164a6843fffa290fff52f467842bb4",
+      "bytes": 12101,
+      "executable": false
+    },
+    "crates/robot-rpc/src/liveness.rs": {
+      "sha256": "88f1115113684c2630a4fd32faccd79add3bcb0a462205594c183d58b6015dbe",
+      "bytes": 6612,
+      "executable": false
+    },
+    "crates/robot-s0/src/ipc_thread.rs": {
+      "sha256": "85ee8458ad9b5a9e598b4397c53bd15f7f55190ddf9bbd5ca82275e1e69ee5cd",
+      "bytes": 122177,
+      "executable": false
+    },
+    "crates/robot-s0/src/serial_tick.rs": {
+      "sha256": "ac0a5cf2d2266605cde07c3747b77c9e8696f3cc7bdb8a0d21cac2ec2e040b68",
+      "bytes": 53861,
+      "executable": false
+    }
+  },
+  "source_inputs": 590,
+  "aggregate": "43b9d67550d885549f18cc43e5afd748a587f3d57a8800a61ab6f216dcff46c3",
+  "independent_reviews": {
+    "independent_archive_review_r1.json": {
+      "sha256": "2d21c5deda853dbfd8aa758f8634ffebdf085fa609752c4f4229e47620f1ff7b",
+      "bytes": 413036,
+      "status": "FINAL_ARCHIVE_SOURCE_AND_RAW_RECEIPTS_ACCEPTED_WITH_IDENTITY_ONLY_ELF_LIMIT",
+      "checks": 1047
+    },
+    "precommit_independent_review.json": {
+      "sha256": "9852e1cfd4cf875d1d42983306f13af653d949d66c195443b049efecd4205643",
+      "bytes": 129106,
+      "status": "ACCEPTED_PRECOMMIT_SOFTWARE_QUALITY_WITH_HISTORICAL_STAT_LIMIT",
+      "checks": 865
+    }
+  },
+  "precommit_quality": "实际主fmt→同源Orin根Clippy，最新1d81，完整真实回执；本次未重跑测试或增加739",
+  "summary_before_sha256": "13d1475f268c37ac8ac7368d872c1ca717949b88423097cdf66eb58dbfa99c2a",
+  "summary_after_sha256": "abb560006a18f3f22a7c4481799b0622cd3c673156ca8e0eb59d8e67f5e0a30c",
+  "final_documentation": {
+    "CLAUDE.md": {
+      "before_sha256": "834ccf38596a0891fe7fea996f90f40456c248b5f47e6cad63b1575dfb389c2c",
+      "after_sha256": "4070307bb7e8915b4aab81f976fc4a96fd81bbbd019357a21ea339d73db70092"
+    },
+    "docs/CHANGELOG.md": {
+      "before_sha256": "06c5d498f06c8b37e225f294a0f9c8727c60f0ecbaf88fdd8a60615d0b168519",
+      "after_sha256": "e9fe9719cb2e0e603c458e48b7ddf3d1ba15987175bf9fa6104bdb8f6767bc5c"
+    },
+    "docs/10_verification.md": {
+      "before_sha256": "50e1c3ba336183f330ad9a196e272dabed4a93fe910ba798052ca1dcf3ec917f",
+      "after_sha256": "8b8b558607a3a3c2e5e011c0723e76d9c2ae0ddea1b86402313965b17283b5a4"
+    },
+    "team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md": {
+      "before_sha256": "75b2d508d785accc3129f605333b655fbef8f569b9927aae21468dda93b20c15",
+      "after_sha256": "20b51fbb439e0ad870e9daafaee1dafca563f8e650bc61badad00c8109fcfbc8"
+    }
+  },
+  "limits": {
+    "full_workspace_tests": "NOT_RUN",
+    "release_build": "NOT_RUN",
+    "H2_six_recipes_or_new_V2_freeze": "NOT_RUN",
+    "full_B1": "NOT_IMPLEMENTED",
+    "real_wire_deadline_gate": "NOT_IMPLEMENTED;当前probe只检查存活，不声称真实写入前/途中期限拒绝。",
+    "base_firmware_Phase_units_zero_contract": "UNVERIFIED",
+    "P1A_P1B": "孤立Mac软件候选，未整合；不作为本阶段已验收实现。",
+    "right_H2": "OVERALL_FAIL_UNCHANGED",
+    "left_wrist_return": "FAIL_UNCHANGED",
+    "D15": "OPEN_DEFERRED",
+    "deployable": false,
+    "this_software_stage_hardware_motion": "NOT_RUN",
+    "UART": false,
+    "new_hardware_GO": false,
+    "formal_installation_or_service_activation": false,
+    "push": false,
+    "formal_runtime_identity": "本软件阶段未做新的正式安装件/服务健康后验，不引用历史快照冒称当前状态。",
+    "identity_only_unarchived_runtime_files": [
+      {
+        "path": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261001-r2/build/debug/build/robot-s0/79cfab88a8d40b86/out/robot_s0-79cfab88a8d40b86",
+        "sha256": "564f37a7b0c19b7b1a9354235d52c579aef0afc3cdec74d876bf593313a6d259",
+        "bytes": 88772656,
+        "mode": 509,
+        "machine": 183,
+        "scope": "旧r2诊断ELF仅保存实际历史身份与执行回执，未封存ELF字节"
+      }
+    ],
+    "precommit_historical_stat_inventory": "封包器已执行内存首尾检查并完成，但95输入逐项历史dev/ino/nlink/mtime/ctime名册未持久化；字节/索引/tar与源码590首尾清单可逐项独核。"
+  },
+  "hardware_READ_is_separate_stage": true,
+  "no_push": true
+}

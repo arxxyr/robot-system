@@ -153,6 +153,17 @@
            断扭ACK、17电机终读零扭矩/零速度、300child回收及独立无UART后验通过；原入口/位置/后验FAIL保留。
            右腕/头部/底盘动作未执行，未接S0/S1；原NEEDS_MANUAL_POWER_CUT不回填，物理断电确认待答/供电UNKNOWN。
            .verify/hardware_maintenance_2026-09-30_r2/summary.json；本轮无后续动作、无安装/部署/push，H2/D15/deployable=false不变。
+           当前续作（2026-10-08）：Velocity入站与SerialTick归零基础六源已整合，非完整底盘B1。
+           Orin独立导出源基于8fb17b+六处dirty，native_git_head=null；590聚合43b9d675首尾一致。
+           最新nightly1d81eb4ad、fmt/默认及组合根Clippy、串行S0lib641/734与serial_rt_e2e5通过。
+           库去重734+独立e2e5=739，24新方法为库子集不累计；原六轮FAIL/NOT_RUN/网络255保留。
+           r7远端13条命令原回执exit0/reap通过；旧本机owner/SSH缺失，wait/reap UNKNOWN，不由远端PASS回填。
+           原RR超时具体归因仍UNCONFIRMED，旧ELF单项PASS与keep-going诊断均不计739。
+           .verify/xlerobot_velocity_foundation_2026-10-08/summary.json已归档，独审/root及提交前fmt→同源根Clippy通过。
+           旧ELF仅身份未封存；追加包历史stat名册未持久化，原件字节与源码首尾可独核。
+           P1A身份/P1B轮速配置仅孤立Mac软件候选、未整合；真实wire期限和底盘固件合同未闭环。
+           用户已重新确认电源/USB复位、支撑和持续看护；本软件阶段未下发新硬件GO，不回填旧NEEDS/FAIL。
+           本阶段未正式安装/硬件动作/完整workspace测试/release/push；H2/左腕FAIL、D15 OPEN/DEFERRED、deployable=false保持。
            历史规则：2026-09-23用户因额度要求暂停；2026-09-25仅授权将当前进度
            写入handoff并推送Git，之后到别处开发。本次交接经独审/root验收后commit/push，
            当时暂停开发及真机测试；真实H2仍需新物理重置/支撑/在场事实与独立GO。

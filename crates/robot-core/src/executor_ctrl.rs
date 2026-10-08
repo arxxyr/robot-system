@@ -45,7 +45,7 @@ use crate::error::RobotError;
 /// | Ready | `ReadyHold` | torque on，但只读 / 不下发 goal |
 /// | Enabled.Active | `ActiveForward` | 正常下发 latest_cmd |
 /// | Enabled.CtrlLostHold | `HoldCurrent` | goal = 当前 present |
-/// | Enabled.CtrlLostZero | `ZeroCommand` | mode=Stop |
+/// | Enabled.CtrlLostZero | `ZeroCommand` | 速度归零（velocity mode）；SerialRT 的 Velocity 路径发零目标 |
 /// | Enabled.CtrlLostStop | `StopTorque` | torque off（软停） |
 /// | Fault / Stopping | `Disabled` 或 `StopTorque` | 由具体 transition 决定 |
 #[repr(u8)]

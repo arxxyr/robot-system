@@ -29,9 +29,11 @@ use crate::state_machine::FaultCode;
 use crossbeam_channel::unbounded;
 use crossbeam_channel::{Receiver, Sender};
 use robot_core::adapter::{ControlModeRepr, JointCommandBuf, MAX_JOINTS};
-use robot_core::time::RobotClock;
+use robot_core::time::{MonoRawNs, RobotClock};
 use robot_msg::markers;
-use robot_msg::msg::{ControlMode as FbControlMode, JointCommand as FbJointCommand};
+use robot_msg::msg::{
+    ControlMode as FbControlMode, JointCommand as FbJointCommand, StaleAction as FbStaleAction,
+};
 use robot_transport::iceoryx2::Iceoryx2Subscriber;
 use robot_transport::{LatestCommandWriter, LatestSubscriber, RtSnapshotPublisher};
 
@@ -344,7 +346,7 @@ pub struct IpcThreadMetrics {
     /// `JointCommand` 帧数（`AtomicU64::fetch_add(1, Relaxed)`；丢弃 =
     /// 不写 `LatestCommandSlot`，防错位命令驱动错关节集）。
     pub unknown_layout_count: AtomicU64,
-    /// `JointCommand` 解析失败（schema mismatch / verify 失败）次数。
+    /// `JointCommand` 解析失败及 Velocity 数值、超时策略、时效门拒绝次数。
     pub command_parse_errors: AtomicU64,
     /// `Heartbeat` 成功接收数。
     pub heartbeats_received: AtomicU64,
@@ -882,6 +884,7 @@ fn run_loop(
             &mut ports.subscribers.command,
             cmd_writer,
             cfg.authoritative_layout,
+            clock,
             metrics,
         );
         #[cfg(feature = "test-comm-fault-hook")]
@@ -924,6 +927,7 @@ fn poll_command(
     cmd_sub: &mut Iceoryx2Subscriber<markers::JointCommand>,
     cmd_writer: &LatestCommandWriter<JointCommandBuf>,
     authoritative_layout: u64,
+    clock: &dyn RobotClock,
     metrics: &IpcThreadMetrics,
 ) {
     let Ok(Some(lease)) = cmd_sub.latest() else {
@@ -951,7 +955,10 @@ fn poll_command(
         return;
     }
     let stamp_ns = view.header.stamp_ns();
-    let buf = parse_joint_command(&fb_cmd, stamp_ns);
+    let Ok(buf) = parse_joint_command(&fb_cmd, stamp_ns, clock.now()) else {
+        metrics.command_parse_errors.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
     cmd_writer.store(buf);
     metrics.commands_applied.fetch_add(1, Ordering::Relaxed);
 }
@@ -1007,25 +1014,76 @@ fn poll_estop(
 // FlatBuffers JointCommand → JointCommandBuf POD
 // ============================================================================
 
+/// 仅 Velocity 的新增接收校验错误；其他模式保留既有解码合同。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JointCommandParseError {
+    EmptyVelocityTargets,
+    TooManyVelocityTargets,
+    NonFiniteVelocityTarget,
+    VelocityTargetOutOfRange,
+    UnsupportedVelocityTimeout,
+    InvalidVelocityWindow,
+}
+
 /// `FlatBuffers` `JointCommand` → POD [`JointCommandBuf`]。
 ///
-/// f64 → f32 的 narrowing cast：`docs/00_design.md` §3.5 明确底层 adapter 用
-/// f32（HardRT 寄存器精度），网关 schema 用 f64 统一公开接口。精度损失对关节
-/// 控制不影响（位置误差 < 1e-7 rad）。
-fn parse_joint_command(fb: &FbJointCommand<'_>, stamp_ns: u64) -> JointCommandBuf {
+/// Velocity 必须有非空有界目标、Zero 超时策略及接收时仍有效的绝对期限；
+/// f64 目标在窄化前校验有限性与 f32 范围，失败时不交出可写槽的命令。
+/// Position、ServoPosition、Torque 与未知模式沿用原 positions 映射与截断规则。
+fn parse_joint_command(
+    fb: &FbJointCommand<'_>,
+    stamp_ns: u64,
+    now: MonoRawNs,
+) -> Result<JointCommandBuf, JointCommandParseError> {
     let mut buf = JointCommandBuf::default();
 
     let target = fb.target();
-    let n = target.map_or(0, |v| v.len().min(MAX_JOINTS));
+    let n = match fb.mode() {
+        FbControlMode::Velocity => {
+            if fb.on_timeout() != FbStaleAction::Zero {
+                return Err(JointCommandParseError::UnsupportedVelocityTimeout);
+            }
+            let deadline_ns = fb.deadline_ns();
+            if stamp_ns > now.0 || now.0 >= deadline_ns || deadline_ns <= stamp_ns {
+                return Err(JointCommandParseError::InvalidVelocityWindow);
+            }
+            let n = target.map_or(0, |values| values.len());
+            if n == 0 {
+                return Err(JointCommandParseError::EmptyVelocityTargets);
+            }
+            if n > MAX_JOINTS {
+                return Err(JointCommandParseError::TooManyVelocityTargets);
+            }
+            n
+        }
+        _ => target.map_or(0, |values| values.len().min(MAX_JOINTS)),
+    };
     #[allow(clippy::cast_possible_truncation)]
     {
         buf.joint_count = n as u8;
     }
     if let Some(v) = target {
-        for (i, slot) in buf.positions.iter_mut().enumerate().take(n) {
+        let slots = match fb.mode() {
+            FbControlMode::Velocity => &mut buf.velocities,
+            _ => &mut buf.positions,
+        };
+        for (i, slot) in slots.iter_mut().enumerate().take(n) {
+            let value = v.get(i);
+            if fb.mode() == FbControlMode::Velocity {
+                if !value.is_finite() {
+                    return Err(JointCommandParseError::NonFiniteVelocityTarget);
+                }
+                if value.abs() > f64::from(f32::MAX) {
+                    return Err(JointCommandParseError::VelocityTargetOutOfRange);
+                }
+            }
             #[allow(clippy::cast_possible_truncation)]
             {
-                *slot = v.get(i) as f32;
+                let narrowed = value as f32;
+                if fb.mode() == FbControlMode::Velocity && !narrowed.is_finite() {
+                    return Err(JointCommandParseError::VelocityTargetOutOfRange);
+                }
+                *slot = narrowed;
             }
         }
     }
@@ -1033,7 +1091,7 @@ fn parse_joint_command(fb: &FbJointCommand<'_>, stamp_ns: u64) -> JointCommandBu
     buf.stamp_ns = stamp_ns;
     buf.deadline_ns = fb.deadline_ns();
     buf.seq = fb.source_task_id();
-    buf
+    Ok(buf)
 }
 
 /// FB `ControlMode` → `ControlModeRepr`。FB 生成的 enum 是独立类型，需要显式映射。
@@ -1084,6 +1142,291 @@ mod tests {
     static TEST_SEQ: AtomicU32 = AtomicU32::new(0);
     const WAIT: Duration = Duration::from_secs(3);
     const LAYOUT: u64 = 0xCAFE_0001;
+
+    fn command_body(
+        mode: FbControlMode,
+        targets: Option<&[f64]>,
+        deadline_ns: u64,
+        on_timeout: StaleAction,
+    ) -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let target = targets.map(|values| builder.create_vector(values));
+        let command = FbJointCommand::create(
+            &mut builder,
+            &robot_msg::msg::JointCommandArgs {
+                layout_id: LAYOUT,
+                mode,
+                target,
+                deadline_ns,
+                priority: 10,
+                source_task_id: 7,
+                on_timeout,
+            },
+        );
+        builder.finish(command, None);
+        builder.finished_data().to_vec()
+    }
+
+    fn parse_command_body(
+        body: &[u8],
+        stamp_ns: u64,
+        now: MonoRawNs,
+    ) -> Result<JointCommandBuf, JointCommandParseError> {
+        let command = flatbuffers::root::<FbJointCommand<'_>>(body).unwrap();
+        parse_joint_command(&command, stamp_ns, now)
+    }
+
+    #[test]
+    fn velocity_command_decodes_signed_and_zero_targets_into_only_velocities() {
+        let body = command_body(
+            FbControlMode::Velocity,
+            Some(&[1.5, -2.0, 0.0, -0.0]),
+            200,
+            StaleAction::Zero,
+        );
+        let command = parse_command_body(&body, 100, MonoRawNs(150)).unwrap();
+        let mut expected = [0.0_f32; MAX_JOINTS];
+        expected[..4].copy_from_slice(&[1.5, -2.0, 0.0, -0.0]);
+        assert_eq!(
+            command.velocities.map(f32::to_bits),
+            expected.map(f32::to_bits)
+        );
+        assert_eq!(command.positions.map(f32::to_bits), [0_u32; MAX_JOINTS]);
+        assert_eq!(command.torques.map(f32::to_bits), [0_u32; MAX_JOINTS]);
+        assert_eq!(command.joint_count, 4);
+        assert_eq!(command.mode, ControlModeRepr::Velocity);
+        assert_eq!(
+            (command.stamp_ns, command.deadline_ns, command.seq),
+            (100, 200, 7)
+        );
+    }
+
+    #[test]
+    fn velocity_command_accepts_f32_endpoints_and_finite_underflow() {
+        let limit = f64::from(f32::MAX);
+        let body = command_body(
+            FbControlMode::Velocity,
+            Some(&[limit, -limit, f64::MIN_POSITIVE]),
+            1,
+            StaleAction::Zero,
+        );
+        let command = parse_command_body(&body, 0, MonoRawNs(0)).unwrap();
+        assert_eq!(command.velocities[0].to_bits(), f32::MAX.to_bits());
+        assert_eq!(command.velocities[1].to_bits(), (-f32::MAX).to_bits());
+        assert_eq!(command.velocities[2].to_bits(), 0.0_f32.to_bits());
+        assert!(command.velocities.iter().all(|value| value.is_finite()));
+    }
+
+    #[test]
+    fn velocity_command_rejects_nonfinite_and_out_of_f32_range_targets() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let body = command_body(
+                FbControlMode::Velocity,
+                Some(&[1.0, value]),
+                200,
+                StaleAction::Zero,
+            );
+            assert_eq!(
+                parse_command_body(&body, 100, MonoRawNs(150)),
+                Err(JointCommandParseError::NonFiniteVelocityTarget),
+            );
+        }
+        let just_outside = f64::from(f32::MAX) * (1.0 + f64::EPSILON);
+        for value in [just_outside, -just_outside, f64::MAX, f64::MIN] {
+            let body = command_body(
+                FbControlMode::Velocity,
+                Some(&[1.0, value]),
+                200,
+                StaleAction::Zero,
+            );
+            assert_eq!(
+                parse_command_body(&body, 100, MonoRawNs(150)),
+                Err(JointCommandParseError::VelocityTargetOutOfRange),
+            );
+        }
+    }
+
+    #[test]
+    fn velocity_command_requires_nonempty_targets_without_truncating() {
+        for targets in [None, Some(&[] as &[f64])] {
+            let body = command_body(FbControlMode::Velocity, targets, 200, StaleAction::Zero);
+            assert_eq!(
+                parse_command_body(&body, 100, MonoRawNs(150)),
+                Err(JointCommandParseError::EmptyVelocityTargets),
+            );
+        }
+        let values = [1.0_f64; MAX_JOINTS + 1];
+        let body = command_body(
+            FbControlMode::Velocity,
+            Some(&values),
+            200,
+            StaleAction::Zero,
+        );
+        assert_eq!(
+            parse_command_body(&body, 100, MonoRawNs(150)),
+            Err(JointCommandParseError::TooManyVelocityTargets),
+        );
+        let body = command_body(
+            FbControlMode::Velocity,
+            Some(&values[..MAX_JOINTS]),
+            200,
+            StaleAction::Zero,
+        );
+        let command = parse_command_body(&body, 100, MonoRawNs(150)).unwrap();
+        assert_eq!(usize::from(command.joint_count), MAX_JOINTS);
+        assert_eq!(
+            command.velocities.map(f32::to_bits),
+            [1.0_f32.to_bits(); MAX_JOINTS]
+        );
+    }
+
+    #[test]
+    fn velocity_command_enforces_absolute_window_with_zero_clock_origin() {
+        for (stamp_ns, now_ns, deadline_ns) in [
+            (0, 0, 1),
+            (100, 100, 101),
+            (100, 199, 200),
+            (0, 0, u64::MAX),
+            (u64::MAX - 2, u64::MAX - 1, u64::MAX),
+        ] {
+            let body = command_body(
+                FbControlMode::Velocity,
+                Some(&[0.0]),
+                deadline_ns,
+                StaleAction::Zero,
+            );
+            assert!(parse_command_body(&body, stamp_ns, MonoRawNs(now_ns)).is_ok());
+        }
+        // 绝对期限不推断发送端历史；包括回绕后不成立的区间，均按同一接收门拒绝。
+        for (stamp_ns, now_ns, deadline_ns) in [
+            (0, 0, 0),
+            (100, 200, 200),
+            (100, 201, 200),
+            (151, 150, 200),
+            (100, 100, 100),
+            (100, 100, 99),
+            (u64::MAX - 1, u64::MAX, 1),
+        ] {
+            let body = command_body(
+                FbControlMode::Velocity,
+                Some(&[0.0]),
+                deadline_ns,
+                StaleAction::Zero,
+            );
+            assert_eq!(
+                parse_command_body(&body, stamp_ns, MonoRawNs(now_ns)),
+                Err(JointCommandParseError::InvalidVelocityWindow),
+            );
+        }
+    }
+
+    #[test]
+    fn velocity_command_requires_zero_timeout_policy() {
+        for on_timeout in [StaleAction::Hold, StaleAction::Stop, StaleAction(99)] {
+            let body = command_body(FbControlMode::Velocity, Some(&[0.0]), 200, on_timeout);
+            assert_eq!(
+                parse_command_body(&body, 100, MonoRawNs(150)),
+                Err(JointCommandParseError::UnsupportedVelocityTimeout),
+            );
+        }
+    }
+
+    #[test]
+    fn velocity_validation_preserves_other_modes_original_decode_contract() {
+        let values = [1.5_f64; MAX_JOINTS + 1];
+        for (mode, expected) in [
+            (FbControlMode::Position, ControlModeRepr::Position),
+            (FbControlMode::ServoPosition, ControlModeRepr::ServoPosition),
+            (FbControlMode::Torque, ControlModeRepr::Torque),
+            (FbControlMode::Stop, ControlModeRepr::Stop),
+            (FbControlMode(99), ControlModeRepr::Stop),
+        ] {
+            let body = command_body(mode, Some(&values), 0, StaleAction::Hold);
+            let command = parse_command_body(&body, 100, MonoRawNs(0)).unwrap();
+            assert_eq!(command.mode, expected);
+            assert_eq!(usize::from(command.joint_count), MAX_JOINTS);
+            assert_eq!(
+                command.positions.map(f32::to_bits),
+                [1.5_f32.to_bits(); MAX_JOINTS]
+            );
+            assert_eq!(command.velocities.map(f32::to_bits), [0_u32; MAX_JOINTS]);
+            assert_eq!(command.torques.map(f32::to_bits), [0_u32; MAX_JOINTS]);
+            let body = command_body(mode, None, 0, StaleAction::Hold);
+            assert_eq!(
+                parse_command_body(&body, 100, MonoRawNs(0))
+                    .unwrap()
+                    .joint_count,
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn poll_command_velocity_rejections_preserve_slot_and_counters_over_real_pubsub() {
+        let id = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+        let topic = format!("/b1_velocity_{}_{id}/cmd", std::process::id());
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let mut receiver =
+            subscriber::<markers::JointCommand>(&node, &topic, TopicClass::S0Command).unwrap();
+        let mut transmitter =
+            publisher::<markers::JointCommand>(&node, &topic, TopicClass::S0Command).unwrap();
+        // 首次空读取同步刷新接收连接；后续计数与读槽断言验证实际投递生效。
+        assert!(receiver.latest().unwrap().is_none());
+        transmitter.update_connections().unwrap();
+        let initial_body =
+            command_body(FbControlMode::Position, Some(&[3.0]), 0, StaleAction::Hold);
+        let initial = parse_command_body(&initial_body, 50, MonoRawNs(0)).unwrap();
+        let (writer, reader) = LatestCommandSlot::new(initial);
+        let clock = MockClock::new(MonoRawNs(150));
+        let metrics = IpcThreadMetrics::default();
+        let overlong = [1.0_f64; MAX_JOINTS + 1];
+        let cases: [(Option<&[f64]>, u64, u64, StaleAction); 8] = [
+            (Some(&[1.0, f64::NAN]), 100, 200, StaleAction::Zero),
+            (Some(&[f64::MAX]), 100, 200, StaleAction::Zero),
+            (None, 100, 200, StaleAction::Zero),
+            (Some(&overlong), 100, 200, StaleAction::Zero),
+            (Some(&[1.0]), 100, 150, StaleAction::Zero),
+            (Some(&[1.0]), 151, 200, StaleAction::Zero),
+            (Some(&[1.0]), 100, 0, StaleAction::Zero),
+            (Some(&[1.0]), 100, 200, StaleAction::Hold),
+        ];
+        let mut rejected = 0;
+        for (targets, stamp_ns, deadline_ns, on_timeout) in cases {
+            let body = command_body(FbControlMode::Velocity, targets, deadline_ns, on_timeout);
+            let mut sample = transmitter.loan(1024 + body.len()).unwrap();
+            sample.set_stamp_ns(stamp_ns);
+            sample.set_body_bytes(&body);
+            sample.publish().unwrap();
+            poll_command(&mut receiver, &writer, LAYOUT, &clock, &metrics);
+            rejected += 1;
+            assert_eq!(**reader.load(), initial);
+            assert_eq!(
+                metrics.command_parse_errors.load(Ordering::Relaxed),
+                rejected
+            );
+            assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 0);
+            assert_eq!(metrics.unknown_layout_count.load(Ordering::Relaxed), 0);
+        }
+        let body = command_body(
+            FbControlMode::Velocity,
+            Some(&[-2.0, 0.0]),
+            200,
+            StaleAction::Zero,
+        );
+        let mut sample = transmitter.loan(1024 + body.len()).unwrap();
+        sample.set_stamp_ns(100);
+        sample.set_body_bytes(&body);
+        sample.publish().unwrap();
+        poll_command(&mut receiver, &writer, LAYOUT, &clock, &metrics);
+        let expected = parse_command_body(&body, 100, clock.now()).unwrap();
+        assert_eq!(**reader.load(), expected);
+        assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            metrics.command_parse_errors.load(Ordering::Relaxed),
+            rejected
+        );
+        assert!(receiver.latest().unwrap().is_none());
+    }
 
     fn wait_until(mut condition: impl FnMut() -> bool, budget: Duration) {
         let end = std::time::Instant::now() + budget;
@@ -2732,8 +3075,27 @@ mod tests {
             None,
             true,
         );
-        rig.set("adapter-error", true, u64::MAX);
+        // 初始化就绪不替代首次订阅轮询；先观察实际 tick，再发布一次心跳。
+        wait_until(
+            || rig.handle().metrics().tick_count.load(Ordering::Acquire) > 0,
+            WAIT,
+        );
         rig.heartbeat();
+        wait_until(
+            || {
+                rig.handle()
+                    .metrics()
+                    .heartbeats_received
+                    .load(Ordering::Acquire)
+                    > 0
+            },
+            WAIT,
+        );
+        rig.set("adapter-error", true, u64::MAX);
+        wait_until(
+            || rig.inner.pending_normal.load(Ordering::Acquire) != 0,
+            WAIT,
+        );
         rig.execute();
         assert_eq!(rig.set_reply().payload, SetEnabledRrPayload::AdapterError);
         assert!(rig.inner.authority().snapshot().disabled);

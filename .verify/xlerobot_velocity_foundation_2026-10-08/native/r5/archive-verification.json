@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "indexed_files": 621,
+  "directories": 130,
+  "tar_members": 752,
+  "archive_sha256": "b452901b21a91aad97d83ad87f147f606a638f6324cd0e84649025989d65576e",
+  "archive_bytes": 9602028,
+  "index_sha256": "2ea779e603138fba7edbcf3f463c6a7c7e670c4a9e60e0291588e4c9c2264574",
+  "source_files": 590,
+  "aggregate": "c8e95fbce71b10d141e0f02fd0f99d7d12c844f79649727cd3dbbf0c89135c9b",
+  "all_bytes_sha_mode_verified": true,
+  "extracted": "/Users/loosqk/repo/rust/robot-system/target/xlerobot_velocity_foundation/native-r5/native-extracted",
+  "scope": "原件完整性和安全解包，不代表硬件或测试新增通过。"
+}

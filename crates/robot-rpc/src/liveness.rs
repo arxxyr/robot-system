@@ -43,44 +43,6 @@ pub fn freeze_check(freeze_until_ns: &AtomicU64, clock: &dyn RobotClock, stop: &
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use robot_core::time::SystemClock;
-    use std::time::{Duration, Instant};
-
-    #[test]
-    fn freeze_check_returns_immediately_when_zero() {
-        let clock = SystemClock::new();
-        let t0 = Instant::now();
-        freeze_check(&AtomicU64::new(0), &clock, &AtomicBool::new(false));
-        assert!(t0.elapsed() < Duration::from_millis(5));
-    }
-
-    #[test]
-    fn freeze_check_spins_until_expiry_or_stop() {
-        let clock = SystemClock::new();
-        let t0 = Instant::now();
-        freeze_check(
-            &AtomicU64::new(clock.now().0 + 30_000_000),
-            &clock,
-            &AtomicBool::new(false),
-        );
-        let el = t0.elapsed();
-        assert!(
-            el >= Duration::from_millis(25) && el < Duration::from_millis(500),
-            "{el:?}"
-        );
-        let t0 = Instant::now();
-        freeze_check(
-            &AtomicU64::new(clock.now().0 + 10_000_000_000),
-            &clock,
-            &AtomicBool::new(true),
-        );
-        assert!(t0.elapsed() < Duration::from_millis(50));
-    }
-}
-
 /// 外层持有的异步任务槽。等待 future 只借句柄，取消后保留原等待阶段和原计时器。
 pub(crate) struct TaskSlot<T> {
     task: Option<tokio::task::JoinHandle<T>>,
@@ -178,5 +140,43 @@ impl<T> TaskSlot<T> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use robot_core::time::SystemClock;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn freeze_check_returns_immediately_when_zero() {
+        let clock = SystemClock::new();
+        let t0 = Instant::now();
+        freeze_check(&AtomicU64::new(0), &clock, &AtomicBool::new(false));
+        assert!(t0.elapsed() < Duration::from_millis(5));
+    }
+
+    #[test]
+    fn freeze_check_spins_until_expiry_or_stop() {
+        let clock = SystemClock::new();
+        let t0 = Instant::now();
+        freeze_check(
+            &AtomicU64::new(clock.now().0 + 30_000_000),
+            &clock,
+            &AtomicBool::new(false),
+        );
+        let el = t0.elapsed();
+        assert!(
+            el >= Duration::from_millis(25) && el < Duration::from_millis(500),
+            "{el:?}"
+        );
+        let t0 = Instant::now();
+        freeze_check(
+            &AtomicU64::new(clock.now().0 + 10_000_000_000),
+            &clock,
+            &AtomicBool::new(true),
+        );
+        assert!(t0.elapsed() < Duration::from_millis(50));
     }
 }

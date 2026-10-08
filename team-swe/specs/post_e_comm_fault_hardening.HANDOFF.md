@@ -2,6 +2,18 @@
 
 ## 当前步骤
 
+### Velocity 入站与 SerialTick 归零基础（2026-10-08，Orin 软件门通过）
+
+当前六源候选基于主树`8fb17b153f4eb85cb1b88ca935cc115087784256`加六处dirty；Orin为独立导出编译输入快照，`native_git_head=null`，不是带该HEAD的原生Git checkout。590项源码聚合`43b9d67550d885549f18cc43e5afd748a587f3d57a8800a61ab6f216dcff46c3`，各门前后与整个批次首尾一致。Velocity独立校验数量、有限值/f32范围、时间窗与Zero策略，拒绝不更新latest-slot/commands_applied；SerialTick以Forward/Skip/VelocityZero分流，同数量栈上归零不修改原命令，Revoked后仍复检原安全门并独立申请PeriodicRead。
+
+r7实际更新浮动nightly至`1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6`；fmt/默认根Clippy/`robot-s0/rt_guard,robot-s0/test-comm-fault-hook,robot-s0/xlerobot-real`组合根Clippy通过。S0默认lib641、guard+hook lib734、serial_rt_e2e5全部串行通过，0failed/0ignored；按方法名单库去重734加另5集成方法，共739，24新增为库子集不累计。r7远端13条原命令均自然exit0/真实reap且无信号/残留，源与实际编译器窗口通过。
+
+旧本机r7 owner36112/SSH36113在turn中断后实际已缺失，工具句柄不可用、原status仍RUNNING且result缺失；真实wait/reap保持UNKNOWN。新只读SSH核主机/boot、远端原结果及PID缺失，新本机观察/收集/下载各自真实回收；这些事实不能回填旧本机owner。本阶段[归档入口](../../.verify/xlerobot_velocity_foundation_2026-10-08/summary.json)保存七轮原native tar/index/metadata而不重复解包590×7源码，另有620份本机原件和自索引；648份固定输入封包前后身份逐项一致。归档独审/root与提交前主树fmt→Orin同源根Clippy通过，仅阶段提交、不push。367条typed引用中366条原件逐项归档闭合，旧ELF仅历史身份及真实执行回执、未封存其字节；追加质量包95份原件可独核，封包器完整历史stat名册未持久化。
+
+原r1测试lint/Clippy101、r2旧RR测试640PASS/1timeoutFAIL、r3两处logging文档lint101、r4liveness test模块位置lint101、r5更新自然exit0但3393.452秒超过原300秒预算/窗口错误/后六门NOT_RUN、r6serial_services test模块lint101与后四门NOT_RUN均保留；网络255及独立keep-going101不回填。r7只将原serial_services test模块逐字移EOF；liveness原test模块和断言也仅移动，logging只补两处反引号。旧RR夹具仅等真实tick/心跳/pending就绪，原3秒预算与生产不改；具体旧超时根因仍UNCONFIRMED。旧ELF精确单项PASS仅一次诊断，不计739；resume_r1摘要KeyError原FAIL另存，resume_r2仅按实际成功回执可省略runner_error读取None，非零和超预算仍严格匹配原错误。
+
+这不是完整底盘B1：当前probe期限用于存活检查，尚无真实wire写入前/途中期限拒绝；固件Phase/速度单位/零速合同未验证。P1A发布者身份与P1B轮速配置仅孤立Mac软件候选、未整合，不作为本阶段已验收实现。用户现已重新确认两个电源/USB复位、空载支撑与持续看护，现事实与旧run分开，不回填旧NEEDS_MANUAL_POWER_CUT/FAIL；本软件阶段未下发新硬件GO或执行硬件动作。无正式安装/服务激活、完整workspace测试、release或push；右H2整体FAIL、左腕回程FAIL、D15 OPEN/DEFERRED、deployable=false保持。本阶段未新核正式安装件及服务健康，不以历史ca14快照证明当前后验。下一步推进身份/显式配置及完整B1；硬件验证另行绑定新原生冻结与当次现场事实。
+
 ### Feetech B0 诊断元数据（2026-09-30，原生软件门通过）
 
 Phase18/CW_Dead_Zone26/CCW_Dead_Zone27以1字节原始无符号值读取，不解码Phase、推定单位或死区归因。厂家可写EEPROM与本项目只读写策略分开；四个具名bus写入口在查表/参数/租约/IO前拒三个诊断名，poke仅这些write在open前拒绝，其他有效/坏/unknown参数和原do_read/do_write行为不改。

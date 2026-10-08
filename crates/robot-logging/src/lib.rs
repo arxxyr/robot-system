@@ -218,7 +218,7 @@ pub fn init() -> bool {
 /// `main()` 不需要写 `robot_logging::init()` 那行。
 ///
 /// Rust 1.80+ 配 LLD linker 下实测稳定（`#[ctor]` 内部 `#[used]` 防 DCE）。
-/// 如果 bin 需要**覆盖** ROBOT_LOG_FORMAT / RUST_LOG 默认值，**必须**在启动
+/// 如果 bin 需要**覆盖** `ROBOT_LOG_FORMAT` / `RUST_LOG` 默认值，**必须**在启动
 /// 脚本或 shell 里设环境变量（而不是 main 里）—— ctor 在环境变量读取之后
 /// 立刻跑，main 里修改 `std::env::set_var` 为时已晚。
 ///

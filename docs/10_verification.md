@@ -9,6 +9,18 @@
 
 ---
 
+## 2026-10-08 · Velocity 入站与 SerialTick 归零基础（Orin 软件门通过）
+
+本阶段只覆盖Velocity独立解码与SerialTick Forward/Skip/VelocityZero。数量/数值/时间窗/Zero策略拒绝保持latest-slot与commands_applied不变、parse_errors递增；栈上同数量归零不修改原命令，Revoked后保持原安全复检及独立PeriodicRead。真实wire写入前/途中期限、底盘固件Phase/单位/零速合同和完整B1执行链尚未闭环，不能由当前probe检查外推。
+
+Orin实际更新浮动nightly至`1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6`；fmt、默认根Clippy及`robot-s0/rt_guard,robot-s0/test-comm-fault-hook,robot-s0/xlerobot-real`组合根Clippy通过。S0默认lib641、guard+hook lib734、serial_rt_e2e5均按`--test-threads=1`通过，全部0failed/0ignored；库方法名单去重734、另5集成方法，共739。24新增方法为641和734的共同子集，不另加；旧ELF单项PASS及独立keep-going诊断不计本轮测试数。
+
+来源主树`8fb17b`加六处dirty，原生是独立导出的590项编译输入快照而非Git checkout，`native_git_head=null`；聚合`43b9d67550d885549f18cc43e5afd748a587f3d57a8800a61ab6f216dcff46c3`与实际编译器首尾一致。[阶段证据](../.verify/xlerobot_velocity_foundation_2026-10-08/summary.json)保存全部方法名单、七轮不可变原包与620份本机原件/自索引；648份固定输入封包前后身份一致，独审/root与提交前主树fmt→Orin同源根Clippy通过。旧ELF仅历史身份及执行回执、未封存字节；追加包95份原件可逐项解出，完整历史stat名册未持久化。
+
+前六轮FAIL/NOT_RUN、网络255、r5原300秒更新预算超限及工具链窗口错误完整保留；RR夹具仅加真实tick/心跳/pending同步，原3秒预算不扩，旧超时具体根因仍UNCONFIRMED。r7远端13条原命令exit0/真实reap/无信号或残留，旧本机owner/SSH缺失且无真实wait/reap回执，保持UNKNOWN；新ps旁证和resume_r1摘要KeyError原FAIL另存，不能以远端PASS补本机回收。
+
+P1A身份/P1B配置仍是未整合的孤立Mac软件候选。用户已重新确认复位/USB/支撑及持续看护，本软件阶段未执行硬件动作或新GO；没有正式安装/服务激活、完整workspace测试、release或push。旧右H2整体FAIL、左腕回程FAIL、D15 OPEN/DEFERRED与deployable=false保持；本阶段未新核正式安装件/服务健康，不把历史快照称为当前后验。
+
 ## 2026-09-30 · Feetech B0 原始诊断读取（原生软件门通过）
 
 Phase18/CW26/CCW27均1字节，新增项目拒写策略覆盖四个具名bus写入口和poke开串口前的三诊断write。读取不解码Phase或裁剪原始字节；其他原参数时序保持，厂家EEPROM不表示本项目写授权。
@@ -1076,6 +1088,7 @@ xlerobot-s0-<side>-arm.service)`，两层取证）：
 
 | 日期 | 变更 | 作者 |
 |---|---|---|
+| 2026-10-08 | Velocity入站/SerialTick归零基础Orin软件门通过：590输入43b9d675、最新nightly1d81、两根Clippy、641/734/5按名单去重739；24为子集，原FAIL与本机wait/reap UNKNOWN保留，归档独审/root及提交前质量门通过，旧ELF仅身份和追加包stat名册未持久化的限界保留，非完整workspace/release/B1/硬件 | Codex |
 | 2026-09-25 | 右H2原整体FAIL与后到通电答复保留；ca14f0e Orin原生构建/mock/定向单测仅软件通过，未正式安装或硬件重测，D15 OPEN；按用户要求交接并暂停 | Codex |
 | 2026-09-15 | RR R2正式26门、源码独审及真实故障验证通过；R3/R4/Orin待验证 | Codex |
 | 2026-09-14 | RR R1本地21门/CAL45/模型6通过；源码与证据独审，R2/R3/R4及Orin未验证 | Codex |

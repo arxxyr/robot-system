@@ -1,0 +1,22 @@
+{
+  "archive": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261007-r4-native-evidence.tar.gz",
+  "archive_bytes": 9732834,
+  "archive_sha256": "a264f83e5db09e93fccf767aa9a43ca1d2c247138769ddd9a8ed314763ddb1a6",
+  "base": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261007-r4",
+  "collector_sha256": "2789406bf0dddbe80f91f0b28dfa735a96ad66227f4cf07cf50aa2ec084bb8c5",
+  "finished_at": "2026-10-08T02:01:44.673971+00:00",
+  "index": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261007-r4-native-evidence.tar.gz.index.json",
+  "index_sha256": "f9be12b048e35cb3e816e974f90dac2c7592944cd29b69fa73bd79b1e2dd6110",
+  "indexed_files": 645,
+  "original_bytes": 30435419,
+  "readback": {
+    "directories": 135,
+    "files": 645,
+    "members": 781
+  },
+  "schema": "P7_NATIVE_EVIDENCE_COLLECTION_V1",
+  "scope": "仅归档一致性；原始失败保留，不代表 release/H2/D15 验收。",
+  "source_before_after": "PASS",
+  "started_at": "2026-10-08T02:01:38.270832+00:00",
+  "status": "PASS"
+}

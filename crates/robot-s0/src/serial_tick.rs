@@ -3,7 +3,7 @@
 use std::sync::atomic::Ordering;
 
 use robot_core::adapter::{
-    ControlMode, JointCommandView, JointStateBuf, RtSnapshot, SerialRtAdapter,
+    ControlMode, JointCommandView, JointStateBuf, MAX_JOINTS, RtSnapshot, SerialRtAdapter,
 };
 use robot_core::diag::DiagSink;
 use robot_core::error::RobotError;
@@ -30,6 +30,66 @@ use robot_core::control_authority::{EnableResult, SafetyOperation};
 const ACTION_RETIRE_BUDGET_NS: u64 = 1_105_000_000;
 const PERIODIC_READ_BUDGET_NS: u64 = 200_000_000;
 const PERIODIC_WRITE_BUDGET_NS: u64 = 50_000_000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PeriodicOutput {
+    Skip,
+    Forward,
+    VelocityZero {
+        joint_count: usize,
+        stamp_ns: u64,
+        deadline_ns: u64,
+    },
+}
+
+fn velocity_joint_count(command: &JointCommandView<'_>) -> Result<usize, RobotError> {
+    let count = command.velocities.len();
+    if !(1..=MAX_JOINTS).contains(&count)
+        || command.positions.len() != count
+        || command.torques.len() != count
+    {
+        return Err(RobotError::InvalidParameter("速度目标维度无效"));
+    }
+    Ok(count)
+}
+
+/// 仅速度模式改变周期输出；其它模式保留既有策略调用合同。
+fn select_periodic_output(
+    command: &JointCommandView<'_>,
+    policy: OutputPolicy,
+    now: MonoRawNs,
+) -> Result<PeriodicOutput, RobotError> {
+    match (command.mode, policy) {
+        (_, OutputPolicy::StopTorque | OutputPolicy::Disabled)
+        | (ControlMode::Velocity, OutputPolicy::ReadyHold) => Ok(PeriodicOutput::Skip),
+        (ControlMode::Velocity, OutputPolicy::ActiveForward) => {
+            velocity_joint_count(command)?;
+            if command.velocities.iter().any(|value| !value.is_finite()) {
+                return Err(RobotError::InvalidParameter("速度目标必须有限"));
+            }
+            if command.stamp_ns > now.0 {
+                return Err(RobotError::InvalidParameter("速度目标时间戳来自未来"));
+            }
+            if now.0 >= command.deadline_ns {
+                return Err(RobotError::DeadlineExceeded);
+            }
+            Ok(PeriodicOutput::Forward)
+        }
+        (ControlMode::Velocity, OutputPolicy::HoldCurrent | OutputPolicy::ZeroCommand) => {
+            let joint_count = velocity_joint_count(command)?;
+            let deadline_ns = now
+                .0
+                .checked_add(PERIODIC_WRITE_BUDGET_NS)
+                .ok_or(RobotError::InvalidParameter("速度归零截止时间溢出"))?;
+            Ok(PeriodicOutput::VelocityZero {
+                joint_count,
+                stamp_ns: now.0,
+                deadline_ns,
+            })
+        }
+        _ => Ok(PeriodicOutput::Forward),
+    }
+}
 
 pub(crate) struct SerialTickContext<'a> {
     pub ctrl: &'a SerialIoCtrlInner,
@@ -481,12 +541,12 @@ impl SerialTick {
         )
     }
 
-    fn periodic<A: SerialRtAdapter>(
+    fn periodic_write<A: SerialRtAdapter>(
         &mut self,
         adapter: &mut A,
         command: &JointCommandView<'_>,
         context: &SerialTickContext<'_>,
-    ) {
+    ) -> bool {
         let SerialTickContext {
             ctrl,
             probe,
@@ -495,35 +555,74 @@ impl SerialTick {
             metrics,
         } = *context;
         let policy = OutputPolicy::from_u8(ctrl.policy.load(Ordering::Acquire));
-        if matches!(
-            policy,
-            OutputPolicy::ActiveForward
-                | OutputPolicy::ReadyHold
-                | OutputPolicy::HoldCurrent
-                | OutputPolicy::ZeroCommand
-        ) {
-            probe.set_context(
-                BusOpClass::PeriodicWrite,
-                InstalledIntent::Motion,
-                0,
-                MonoRawNs(clock.now().0.saturating_add(PERIODIC_WRITE_BUDGET_NS)),
-                self.convergence.evidence_trusted(ctrl),
-            );
-            if let Err(error) = adapter.write_command(command) {
+        let zeros = [0.0_f32; MAX_JOINTS];
+        // 同一分派时刻同时约束来源有效性与本次事务预算，不用第二次取时延长窗口。
+        let dispatched_at = clock.now();
+        let output = match select_periodic_output(command, policy, dispatched_at) {
+            Ok(PeriodicOutput::Skip) => return true,
+            Ok(PeriodicOutput::Forward) => *command,
+            Ok(PeriodicOutput::VelocityZero {
+                joint_count,
+                stamp_ns,
+                deadline_ns,
+            }) => JointCommandView {
+                positions: &zeros[..joint_count],
+                velocities: &zeros[..joint_count],
+                torques: &zeros[..joint_count],
+                mode: ControlMode::Velocity,
+                stamp_ns,
+                deadline_ns,
+            },
+            Err(error) => {
                 metrics.write_errors.fetch_add(1, Ordering::Relaxed);
                 self.route_periodic(error, context);
-                if error != RobotError::Aborted(AbortReason::Revoked) {
-                    return;
-                }
-                // Motion 被撤权不等于禁止采样。先重检并发急停、超时与收敛门，
-                // 再由后续 PeriodicRead 独立申请真实租约；不复用被拒的写权限。
+                return false;
             }
-            self.convergence.claim_estop(ctrl, diag, clock.now());
-            self.convergence.retire_timeout(ctrl, diag, clock.now());
-            if !self.convergence.normal_io_allowed(ctrl) {
-                return;
+        };
+        // 零目标只借用本地栈数组，不改来源命令或 latest slot；仍申请原 Motion 租约。
+        let transaction_deadline = dispatched_at.0.saturating_add(PERIODIC_WRITE_BUDGET_NS);
+        let write_deadline = match output.mode {
+            ControlMode::Velocity => output.deadline_ns.min(transaction_deadline),
+            _ => transaction_deadline,
+        };
+        // probe 截止时间约束 checkpoint/liveness；此处不宣称串口 wire 已有硬拒写期限。
+        probe.set_context(
+            BusOpClass::PeriodicWrite,
+            InstalledIntent::Motion,
+            0,
+            MonoRawNs(write_deadline),
+            self.convergence.evidence_trusted(ctrl),
+        );
+        if let Err(error) = adapter.write_command(&output) {
+            metrics.write_errors.fetch_add(1, Ordering::Relaxed);
+            self.route_periodic(error, context);
+            if error != RobotError::Aborted(AbortReason::Revoked) {
+                return false;
             }
+            // Motion 被撤权不等于禁止采样。先重检并发急停、超时与收敛门，
+            // 再由后续 PeriodicRead 独立申请真实租约；不复用被拒的写权限。
         }
+        self.convergence.claim_estop(ctrl, diag, clock.now());
+        self.convergence.retire_timeout(ctrl, diag, clock.now());
+        self.convergence.normal_io_allowed(ctrl)
+    }
+
+    fn periodic<A: SerialRtAdapter>(
+        &mut self,
+        adapter: &mut A,
+        command: &JointCommandView<'_>,
+        context: &SerialTickContext<'_>,
+    ) {
+        if !self.periodic_write(adapter, command, context) {
+            return;
+        }
+        let SerialTickContext {
+            ctrl,
+            probe,
+            clock,
+            metrics,
+            ..
+        } = *context;
         let started = clock.now();
         let mut candidate = self.state;
         probe.set_context(
@@ -632,5 +731,677 @@ fn execute_serial_normal<A: SerialRtAdapter>(
             RobotError::Unsupported(_) | RobotError::InvalidParameter(_) => AdapterErr::Unsupported,
             _ => AdapterErr::HardwareFault,
         }),
+    }
+}
+
+#[cfg(all(test, feature = "mock"))]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    use robot_adapter_mock::MockSerialRTAdapter;
+    use robot_core::adapter::{AdapterInfo, JointCommandBuf, JointLimits, ManipulatorAdapter};
+    use robot_core::executor_ctrl::OutputSafetyProbe;
+    use robot_core::serial_services::LeasedPreemptProbe;
+    use robot_core::time::MockClock;
+
+    use crate::diag::SerialDiagRing;
+    use crate::hard_rt_ctrl::test_authority;
+
+    const POLICIES: [OutputPolicy; 6] = [
+        OutputPolicy::Disabled,
+        OutputPolicy::ReadyHold,
+        OutputPolicy::ActiveForward,
+        OutputPolicy::HoldCurrent,
+        OutputPolicy::ZeroCommand,
+        OutputPolicy::StopTorque,
+    ];
+    const NON_VELOCITY_MODES: [ControlMode; 4] = [
+        ControlMode::Position,
+        ControlMode::Torque,
+        ControlMode::ServoPosition,
+        ControlMode::Stop,
+    ];
+
+    fn command(mode: ControlMode) -> JointCommandBuf {
+        JointCommandBuf {
+            positions: [1.0; MAX_JOINTS],
+            velocities: [2.0; MAX_JOINTS],
+            torques: [3.0; MAX_JOINTS],
+            mode: mode.into(),
+            stamp_ns: 100,
+            deadline_ns: 200,
+            joint_count: 3,
+            seq: 71,
+        }
+    }
+
+    fn assert_same_command(actual: &JointCommandBuf, expected: &JointCommandBuf) {
+        assert_eq!(
+            actual.positions.map(f32::to_bits),
+            expected.positions.map(f32::to_bits)
+        );
+        assert_eq!(
+            actual.velocities.map(f32::to_bits),
+            expected.velocities.map(f32::to_bits)
+        );
+        assert_eq!(
+            actual.torques.map(f32::to_bits),
+            expected.torques.map(f32::to_bits)
+        );
+        assert_eq!(actual.mode, expected.mode);
+        assert_eq!(actual.joint_count, expected.joint_count);
+        assert_eq!(actual.stamp_ns, expected.stamp_ns);
+        assert_eq!(actual.deadline_ns, expected.deadline_ns);
+        assert_eq!(actual.seq, expected.seq);
+    }
+
+    /// 记录真正交给 adapter 的目标；每次普通 IO 均取得并归还同一 authority 的租约。
+    struct RecordingAdapter {
+        inner: MockSerialRTAdapter,
+        probe: Arc<SerialPreemptProbe>,
+        last_command: Option<JointCommandBuf>,
+        write_attempts: usize,
+        writes: usize,
+        reads: usize,
+        stops: usize,
+        confirms: usize,
+        last_confirm_all_off: bool,
+        read_error: Option<RobotError>,
+    }
+
+    impl ManipulatorAdapter for RecordingAdapter {
+        fn info(&self) -> AdapterInfo {
+            self.inner.info()
+        }
+        fn connect(&mut self) -> Result<(), RobotError> {
+            self.inner.connect()
+        }
+        fn disconnect(&mut self) -> Result<(), RobotError> {
+            self.inner.disconnect()
+        }
+
+        fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
+            let lease = self
+                .probe
+                .begin_leased(BusOpClass::PeriodicRead)
+                .map_err(RobotError::Aborted)?;
+            self.reads += 1;
+            let result = match self.read_error.take() {
+                Some(error) => Err(error),
+                None => self.inner.read_state(out),
+            };
+            self.probe.finish_leased(lease);
+            result
+        }
+
+        fn write_command(&mut self, target: &JointCommandView<'_>) -> Result<(), RobotError> {
+            self.write_attempts += 1;
+            let lease = self
+                .probe
+                .begin_leased(BusOpClass::PeriodicWrite)
+                .map_err(RobotError::Aborted)?;
+            let mut recorded = JointCommandBuf {
+                mode: target.mode.into(),
+                stamp_ns: target.stamp_ns,
+                deadline_ns: target.deadline_ns,
+                joint_count: u8::try_from(target.velocities.len()).unwrap(),
+                ..JointCommandBuf::default()
+            };
+            recorded.positions[..target.positions.len()].copy_from_slice(target.positions);
+            recorded.velocities[..target.velocities.len()].copy_from_slice(target.velocities);
+            recorded.torques[..target.torques.len()].copy_from_slice(target.torques);
+            self.last_command = Some(recorded);
+            self.writes += 1;
+            let result = self.inner.write_command(target);
+            self.probe.finish_leased(lease);
+            result
+        }
+
+        fn set_mode(&mut self, mode: ControlMode) -> Result<(), RobotError> {
+            self.inner.set_mode(mode)
+        }
+        fn enable(&mut self, on: bool) -> Result<(), RobotError> {
+            self.inner.enable(on)
+        }
+
+        fn safety_stop(&mut self) -> Result<(), RobotError> {
+            let lease = self
+                .probe
+                .begin_leased(BusOpClass::Safety)
+                .map_err(RobotError::Aborted)?;
+            self.stops += 1;
+            let result = self.inner.safety_stop();
+            self.probe.finish_leased(lease);
+            result
+        }
+
+        fn limits(&self) -> &JointLimits {
+            self.inner.limits()
+        }
+    }
+
+    impl OutputSafetyProbe for RecordingAdapter {
+        fn read_torque_enable_mask(&mut self, out: &mut [bool]) -> Result<(), RobotError> {
+            let lease = self
+                .probe
+                .begin_leased(BusOpClass::Confirm)
+                .map_err(RobotError::Aborted)?;
+            self.confirms += 1;
+            let result = self.inner.read_torque_enable_mask(out);
+            self.last_confirm_all_off = result.is_ok() && out.iter().all(|enabled| !enabled);
+            self.probe.finish_leased(lease);
+            result
+        }
+
+        fn joint_count(&self) -> usize {
+            self.inner.joint_count()
+        }
+    }
+
+    struct Fixture {
+        clock: Arc<MockClock>,
+        ctrl: Arc<SerialIoCtrlInner>,
+        probe: Arc<SerialPreemptProbe>,
+        diag: SerialDiagRing,
+        metrics: SerialIoThreadMetrics,
+        tick: SerialTick,
+        adapter: RecordingAdapter,
+    }
+
+    impl Fixture {
+        fn new(enabled: bool) -> Self {
+            let clock = Arc::new(MockClock::new(MonoRawNs(100)));
+            let ctrl = Arc::new(SerialIoCtrlInner::new_serial(test_authority(true)));
+            let probe = Arc::new(SerialPreemptProbe::new(clock.clone(), ctrl.clone()));
+            let mut fixture = Self {
+                clock,
+                ctrl,
+                probe: probe.clone(),
+                diag: SerialDiagRing::new(),
+                metrics: SerialIoThreadMetrics::default(),
+                tick: SerialTick::new(true, 3, MonoRawNs(100)),
+                adapter: RecordingAdapter {
+                    inner: MockSerialRTAdapter::with_unlimited_limits(3),
+                    probe,
+                    last_command: None,
+                    write_attempts: 0,
+                    writes: 0,
+                    reads: 0,
+                    stops: 0,
+                    confirms: 0,
+                    last_confirm_all_off: false,
+                    read_error: None,
+                },
+            };
+            let boot = command(ControlMode::Velocity);
+            for _ in 0..3 {
+                fixture.step(&boot.as_view());
+            }
+            assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::Idle);
+            assert!(fixture.tick.convergence.normal_io_allowed(&fixture.ctrl));
+            assert_eq!(fixture.adapter.stops, 1);
+            assert_eq!(fixture.adapter.confirms, 1);
+            if enabled {
+                let authority = fixture.ctrl.authority();
+                let (owner, view) = authority.reserve_enable().unwrap();
+                let execution = authority.start_enable(view).unwrap();
+                fixture.adapter.enable(true).unwrap();
+                authority
+                    .finish_enable(execution, EnableResult::Succeeded)
+                    .unwrap();
+                authority.commit_enable(owner).unwrap();
+            }
+            fixture
+        }
+
+        fn step(&mut self, target: &JointCommandView<'_>) {
+            let context = SerialTickContext {
+                ctrl: &self.ctrl,
+                probe: &self.probe,
+                diag: &self.diag,
+                clock: self.clock.as_ref(),
+                metrics: &self.metrics,
+            };
+            self.tick
+                .tick(&mut self.adapter, target, &context, MonoRawNs(1_000));
+        }
+
+        fn set_policy(&self, policy: OutputPolicy) {
+            self.ctrl.policy.store(policy.to_u8(), Ordering::Release);
+        }
+
+        fn assert_fault_then_stop(&mut self, target: &JointCommandView<'_>) {
+            assert_eq!(self.adapter.write_attempts, 0);
+            assert_eq!(self.adapter.reads, 0);
+            assert_eq!(self.metrics.write_errors.load(Ordering::Relaxed), 1);
+            assert_ne!(self.ctrl.fault_mailbox.load(Ordering::Acquire), 0);
+            assert_eq!(self.tick.convergence.phase(), ConvergePhase::StopIssue);
+            self.step(target);
+            assert_eq!(self.adapter.stops, 2);
+            assert_eq!(self.tick.convergence.phase(), ConvergePhase::Confirm);
+            self.step(target);
+            assert_eq!(self.adapter.confirms, 2);
+            assert!(self.adapter.last_confirm_all_off);
+            assert_eq!(self.adapter.write_attempts, 0);
+            assert_eq!(self.adapter.reads, 0);
+            assert_ne!(self.ctrl.inhibit_bits(), 0);
+            // 原故障路由可保留不可信确认；这里只证明真实停止与读回，不能补成可信 PASS。
+            assert_ne!(self.ctrl.safety_state(), OutputSafetyState::TorqueOn);
+        }
+    }
+
+    #[test]
+    fn non_velocity_selector_preserves_every_legacy_policy() {
+        for mode in NON_VELOCITY_MODES {
+            let mut source = command(mode);
+            source.stamp_ns = u64::MAX;
+            source.deadline_ns = 0;
+            for policy in POLICIES {
+                let expected = match policy {
+                    OutputPolicy::Disabled | OutputPolicy::StopTorque => PeriodicOutput::Skip,
+                    _ => PeriodicOutput::Forward,
+                };
+                assert_eq!(
+                    select_periodic_output(&source.as_view(), policy, MonoRawNs(100)),
+                    Ok(expected)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn active_velocity_accepts_stamp_and_rejects_deadline_boundaries() {
+        let source = command(ControlMode::Velocity);
+        for now in [100, 199] {
+            assert_eq!(
+                select_periodic_output(
+                    &source.as_view(),
+                    OutputPolicy::ActiveForward,
+                    MonoRawNs(now)
+                ),
+                Ok(PeriodicOutput::Forward)
+            );
+        }
+        for now in [200, 201] {
+            assert_eq!(
+                select_periodic_output(
+                    &source.as_view(),
+                    OutputPolicy::ActiveForward,
+                    MonoRawNs(now)
+                ),
+                Err(RobotError::DeadlineExceeded)
+            );
+        }
+        assert_eq!(
+            select_periodic_output(
+                &source.as_view(),
+                OutputPolicy::ActiveForward,
+                MonoRawNs(99)
+            ),
+            Err(RobotError::InvalidParameter("速度目标时间戳来自未来"))
+        );
+    }
+
+    #[test]
+    fn active_velocity_rejects_invalid_shape_and_nonfinite_targets() {
+        let source = command(ControlMode::Velocity);
+        let oversized = [0.0_f32; MAX_JOINTS + 1];
+        for (positions, velocities, torques) in [
+            (&[][..], &[][..], &[][..]),
+            (&oversized[..], &oversized[..], &oversized[..]),
+            (
+                &source.positions[..2],
+                &source.velocities[..3],
+                &source.torques[..3],
+            ),
+            (
+                &source.positions[..3],
+                &source.velocities[..3],
+                &source.torques[..2],
+            ),
+        ] {
+            let target = JointCommandView {
+                positions,
+                velocities,
+                torques,
+                ..source.as_view()
+            };
+            assert_eq!(
+                select_periodic_output(&target, OutputPolicy::ActiveForward, MonoRawNs(100)),
+                Err(RobotError::InvalidParameter("速度目标维度无效"))
+            );
+        }
+        for count in [1, MAX_JOINTS] {
+            let mut valid = source;
+            valid.joint_count = u8::try_from(count).unwrap();
+            assert_eq!(
+                select_periodic_output(
+                    &valid.as_view(),
+                    OutputPolicy::ActiveForward,
+                    MonoRawNs(100)
+                ),
+                Ok(PeriodicOutput::Forward)
+            );
+        }
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut invalid = source;
+            invalid.velocities[2] = value;
+            assert_eq!(
+                select_periodic_output(
+                    &invalid.as_view(),
+                    OutputPolicy::ActiveForward,
+                    MonoRawNs(100)
+                ),
+                Err(RobotError::InvalidParameter("速度目标必须有限"))
+            );
+        }
+    }
+
+    #[test]
+    fn velocity_zero_selector_uses_only_shape_and_bounded_local_time() {
+        let mut source = command(ControlMode::Velocity);
+        source.stamp_ns = u64::MAX;
+        source.deadline_ns = 0;
+        source.velocities[0] = f32::NAN;
+        for policy in [OutputPolicy::HoldCurrent, OutputPolicy::ZeroCommand] {
+            assert_eq!(
+                select_periodic_output(&source.as_view(), policy, MonoRawNs(100)),
+                Ok(PeriodicOutput::VelocityZero {
+                    joint_count: 3,
+                    stamp_ns: 100,
+                    deadline_ns: 100 + PERIODIC_WRITE_BUDGET_NS
+                })
+            );
+            assert_eq!(
+                select_periodic_output(
+                    &source.as_view(),
+                    policy,
+                    MonoRawNs(u64::MAX - PERIODIC_WRITE_BUDGET_NS)
+                ),
+                Ok(PeriodicOutput::VelocityZero {
+                    joint_count: 3,
+                    stamp_ns: u64::MAX - PERIODIC_WRITE_BUDGET_NS,
+                    deadline_ns: u64::MAX
+                })
+            );
+            assert_eq!(
+                select_periodic_output(
+                    &source.as_view(),
+                    policy,
+                    MonoRawNs(u64::MAX - PERIODIC_WRITE_BUDGET_NS + 1)
+                ),
+                Err(RobotError::InvalidParameter("速度归零截止时间溢出"))
+            );
+            let empty = JointCommandView {
+                positions: &[],
+                velocities: &[],
+                torques: &[],
+                ..source.as_view()
+            };
+            assert_eq!(
+                select_periodic_output(&empty, policy, MonoRawNs(100)),
+                Err(RobotError::InvalidParameter("速度目标维度无效"))
+            );
+        }
+    }
+
+    #[test]
+    fn velocity_skip_policies_do_not_validate_unused_goals() {
+        let source = command(ControlMode::Velocity);
+        let unused = JointCommandView {
+            positions: &[],
+            velocities: &[f32::NAN],
+            torques: &[],
+            stamp_ns: u64::MAX,
+            deadline_ns: 0,
+            ..source.as_view()
+        };
+        for policy in [
+            OutputPolicy::ReadyHold,
+            OutputPolicy::Disabled,
+            OutputPolicy::StopTorque,
+        ] {
+            assert_eq!(
+                select_periodic_output(&unused, policy, MonoRawNs(u64::MAX)),
+                Ok(PeriodicOutput::Skip)
+            );
+        }
+    }
+
+    #[test]
+    fn tick_active_velocity_forwards_exact_goal_and_reads_with_independent_lease() {
+        let mut fixture = Fixture::new(true);
+        fixture.set_policy(OutputPolicy::ActiveForward);
+        let source = command(ControlMode::Velocity);
+        fixture.step(&source.as_view());
+        let mut expected = source;
+        expected.seq = 0; // 借用视图不带来源 seq；记录器不伪造 slot 元数据。
+        expected.positions[3..].fill(0.0);
+        expected.velocities[3..].fill(0.0);
+        expected.torques[3..].fill(0.0);
+        assert_same_command(&fixture.adapter.last_command.unwrap(), &expected);
+        assert_eq!(fixture.adapter.writes, 1);
+        assert_eq!(fixture.adapter.reads, 1);
+        assert_eq!(fixture.tick.state.stamp_ns, 100);
+        assert!(!fixture.ctrl.authority().snapshot().normal_io_active);
+    }
+
+    #[test]
+    fn tick_ready_velocity_skips_goal_but_keeps_periodic_read() {
+        let mut fixture = Fixture::new(true);
+        fixture.set_policy(OutputPolicy::ReadyHold);
+        let source = command(ControlMode::Velocity);
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.write_attempts, 0);
+        assert_eq!(fixture.adapter.reads, 1);
+        assert_eq!(fixture.tick.state.stamp_ns, 100);
+        assert_eq!(fixture.metrics.write_errors.load(Ordering::Relaxed), 0);
+        assert_eq!(fixture.ctrl.fault_mailbox.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn velocity_deadline_bounds_probe_progress_without_claiming_wire_rejection() {
+        for deadline_ns in [101, 1_000_000_000] {
+            let mut fixture = Fixture::new(true);
+            fixture.set_policy(OutputPolicy::ActiveForward);
+            let mut source = command(ControlMode::Velocity);
+            source.deadline_ns = deadline_ns;
+            let context = SerialTickContext {
+                ctrl: &fixture.ctrl,
+                probe: &fixture.probe,
+                diag: &fixture.diag,
+                clock: fixture.clock.as_ref(),
+                metrics: &fixture.metrics,
+            };
+            fixture.probe.begin_tick();
+            assert!(
+                fixture
+                    .tick
+                    .periodic_write(&mut fixture.adapter, &source.as_view(), &context)
+            );
+            assert_eq!(fixture.adapter.writes, 1);
+            let progress = fixture.ctrl.liveness_counter.load(Ordering::Relaxed);
+            fixture
+                .clock
+                .set(MonoRawNs(deadline_ns.min(100 + PERIODIC_WRITE_BUDGET_NS)));
+            fixture.probe.checkpoint();
+            assert_eq!(
+                fixture.ctrl.liveness_counter.load(Ordering::Relaxed),
+                progress
+            );
+            assert!(!fixture.probe.tick_progress_allowed());
+        }
+        let mut fixture = Fixture::new(true);
+        fixture.set_policy(OutputPolicy::ActiveForward);
+        let mut source = command(ControlMode::Position);
+        source.deadline_ns = 101;
+        let context = SerialTickContext {
+            ctrl: &fixture.ctrl,
+            probe: &fixture.probe,
+            diag: &fixture.diag,
+            clock: fixture.clock.as_ref(),
+            metrics: &fixture.metrics,
+        };
+        fixture.probe.begin_tick();
+        assert!(
+            fixture
+                .tick
+                .periodic_write(&mut fixture.adapter, &source.as_view(), &context)
+        );
+        fixture.clock.set(MonoRawNs(101));
+        assert!(fixture.probe.tick_progress_allowed());
+    }
+
+    #[test]
+    fn tick_hold_and_zero_clear_all_goal_vectors_without_mutating_source() {
+        for policy in [OutputPolicy::HoldCurrent, OutputPolicy::ZeroCommand] {
+            let mut fixture = Fixture::new(true);
+            fixture.set_policy(policy);
+            let mut source = command(ControlMode::Velocity);
+            source.deadline_ns = 0;
+            source.velocities[0] = f32::NAN;
+            let original = source;
+            fixture.step(&source.as_view());
+            let zero = fixture.adapter.last_command.unwrap();
+            assert_eq!(ControlMode::from(zero.mode), ControlMode::Velocity);
+            assert_eq!(zero.joint_count, source.joint_count);
+            assert_eq!(zero.positions.map(f32::to_bits), [0; MAX_JOINTS]);
+            assert_eq!(zero.velocities.map(f32::to_bits), [0; MAX_JOINTS]);
+            assert_eq!(zero.torques.map(f32::to_bits), [0; MAX_JOINTS]);
+            assert_eq!(zero.stamp_ns, 100);
+            assert_eq!(zero.deadline_ns, 100 + PERIODIC_WRITE_BUDGET_NS);
+            assert_same_command(&source, &original);
+            assert_eq!(fixture.adapter.writes, 1);
+            assert_eq!(fixture.adapter.reads, 1);
+        }
+    }
+
+    #[test]
+    fn tick_non_velocity_policies_keep_original_adapter_calls() {
+        for mode in NON_VELOCITY_MODES {
+            for policy in POLICIES {
+                let mut fixture = Fixture::new(true);
+                fixture.set_policy(policy);
+                let source = command(mode);
+                fixture.step(&source.as_view());
+                let expected_writes = usize::from(!matches!(
+                    policy,
+                    OutputPolicy::Disabled | OutputPolicy::StopTorque
+                ));
+                assert_eq!(fixture.adapter.writes, expected_writes);
+                assert_eq!(fixture.adapter.reads, 1);
+                if let Some(actual) = fixture.adapter.last_command {
+                    assert_eq!(ControlMode::from(actual.mode), mode);
+                    assert_eq!(actual.positions[0].to_bits(), source.positions[0].to_bits());
+                    assert_eq!(
+                        actual.velocities[0].to_bits(),
+                        source.velocities[0].to_bits()
+                    );
+                    assert_eq!(actual.torques[0].to_bits(), source.torques[0].to_bits());
+                    assert_eq!(actual.stamp_ns, source.stamp_ns);
+                    assert_eq!(actual.deadline_ns, source.deadline_ns);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tick_invalid_active_velocity_faults_before_write_then_executes_safety_stop() {
+        let mut expired = command(ControlMode::Velocity);
+        expired.deadline_ns = 100;
+        let mut future = command(ControlMode::Velocity);
+        future.stamp_ns = 101;
+        let mut nonfinite = command(ControlMode::Velocity);
+        nonfinite.velocities[1] = f32::INFINITY;
+        let empty = JointCommandView {
+            positions: &[],
+            velocities: &[],
+            torques: &[],
+            ..expired.as_view()
+        };
+        for target in [
+            expired.as_view(),
+            future.as_view(),
+            nonfinite.as_view(),
+            empty,
+        ] {
+            let mut fixture = Fixture::new(true);
+            fixture.set_policy(OutputPolicy::ActiveForward);
+            fixture.step(&target);
+            fixture.assert_fault_then_stop(&target);
+        }
+    }
+
+    #[test]
+    fn tick_zero_deadline_overflow_faults_without_fabricating_fresh_goal() {
+        for policy in [OutputPolicy::HoldCurrent, OutputPolicy::ZeroCommand] {
+            let mut fixture = Fixture::new(true);
+            fixture.clock.set(MonoRawNs(u64::MAX));
+            fixture.set_policy(policy);
+            let source = command(ControlMode::Velocity);
+            fixture.step(&source.as_view());
+            fixture.assert_fault_then_stop(&source.as_view());
+        }
+    }
+
+    #[test]
+    fn revoked_velocity_motion_keeps_independently_authorized_read() {
+        let mut fixture = Fixture::new(false);
+        fixture.set_policy(OutputPolicy::ZeroCommand);
+        let source = command(ControlMode::Velocity);
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.write_attempts, 1);
+        assert_eq!(fixture.adapter.writes, 0);
+        assert_eq!(fixture.adapter.reads, 1);
+        assert_eq!(fixture.metrics.write_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(fixture.ctrl.fault_mailbox.load(Ordering::Acquire), 0);
+        assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::Idle);
+        assert!(!fixture.ctrl.authority().snapshot().normal_io_active);
+    }
+
+    #[test]
+    fn ready_velocity_read_failure_uses_original_fault_and_safety_route() {
+        let mut fixture = Fixture::new(true);
+        fixture.set_policy(OutputPolicy::ReadyHold);
+        fixture.adapter.read_error = Some(RobotError::HardwareFault("确定性读失败"));
+        let source = command(ControlMode::Velocity);
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.write_attempts, 0);
+        assert_eq!(fixture.adapter.reads, 1);
+        assert_eq!(fixture.metrics.read_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(fixture.tick.state.stamp_ns, 0);
+        assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::StopIssue);
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.stops, 2);
+        assert_eq!(fixture.adapter.write_attempts, 0);
+    }
+
+    #[test]
+    fn disabled_and_stop_velocity_do_not_write_ordinary_goal() {
+        for policy in [OutputPolicy::Disabled, OutputPolicy::StopTorque] {
+            let mut fixture = Fixture::new(false);
+            fixture.set_policy(policy);
+            let source = command(ControlMode::Velocity);
+            fixture.step(&source.as_view());
+            assert_eq!(fixture.adapter.write_attempts, 0);
+            assert_eq!(fixture.adapter.reads, 1);
+            assert_eq!(fixture.adapter.stops, 1);
+        }
+    }
+
+    #[test]
+    fn velocity_estop_uses_fast_safety_chain_without_periodic_write() {
+        let mut fixture = Fixture::new(true);
+        fixture.set_policy(OutputPolicy::StopTorque);
+        let _ = fixture.ctrl.authority().estop();
+        let source = command(ControlMode::Velocity);
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.stops, 2);
+        assert_eq!(fixture.adapter.write_attempts, 0);
+        assert_eq!(fixture.adapter.reads, 0);
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.confirms, 2);
+        assert!(fixture.adapter.last_confirm_all_off);
     }
 }

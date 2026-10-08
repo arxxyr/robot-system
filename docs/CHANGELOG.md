@@ -10,6 +10,16 @@
 
 ---
 
+## 2026-10-08 · Velocity 入站与 SerialTick 归零基础（Orin 软件门通过）
+
+Velocity 使用独立解码路径，严格校验数量、有限值/f32范围、时间窗及Zero策略；拒绝不更新latest-slot或commands_applied。SerialTick分开Forward/Skip/VelocityZero，归零使用同数量栈上数组和新预算，不改源命令；Revoked后仍复检原安全门并独立申请PeriodicRead。当前probe只检查存活，不宣称真实wire写入前/途中期限拒绝；完整底盘B1、固件Phase/单位/零速合同仍待实现与验证。冻结设计未改。
+
+六源按590编译输入聚合`43b9d67550d885549f18cc43e5afd748a587f3d57a8800a61ab6f216dcff46c3`绑定，Orin为独立导出快照，来源`8fb17b`加六处dirty，`native_git_head=null`。实际更新最新浮动nightly至`1d81eb4ad`，fmt/默认及组合特性根Clippy、串行S0默认lib641/guard+hook lib734/serial_rt_e2e5均通过，0failed/ignored；库去重734加独立e2e5为739，24新增为库子集不累计。原RR测试仅等待真实tick/心跳/pending就绪，原3秒预算与生产不改；最新lint仅修两处文档标识及两个既有test模块移EOF。
+
+[阶段证据](../.verify/xlerobot_velocity_foundation_2026-10-08/summary.json)保存七轮原生包及本机原件，打包前后648份固定输入身份一致；独审与root软件验收通过，提交前主树fmt→Orin同源根Clippy通过。前六轮FAIL/NOT_RUN、网络255、r5更新超原300秒预算与工具链窗口错误均保留；旧RR具体归因仍UNCONFIRMED，旧ELF单项PASS及keep-going诊断不计739。r7远端13条原命令exit0/真实reap通过，旧本机owner/SSH已缺失但无真实wait回执，保持UNKNOWN；远端PASS不回填本机回收。旧ELF仅保留历史身份及实际执行回执，未封存其字节；追加质量包95份原件可逐项解出，封包器的历史完整stat名册未持久化，不冒称该列表可独核。
+
+P1A发布者身份/P1B轮速配置仅孤立Mac软件候选、未整合，不作为本阶段已验收实现。用户已重新确认电源/USB复位、支撑及持续看护，本软件阶段未下发新硬件GO或执行硬件动作；不回填旧NEEDS/FAIL。未正式安装、服务激活、完整workspace测试、release或push；右H2/左腕FAIL、D15 OPEN/DEFERRED和deployable=false保持。
+
 ## 2026-09-30 · Feetech 底盘诊断元数据（B0，原生软件门通过）
 
 新增Phase18/CW_Dead_Zone26/CCW_Dead_Zone27，均按1字节原始无符号值读取；厂家EEPROM分类与本项目只读策略分开。四具名bus写API在查表、租约及IO前共享拒写门，poke仅三诊断write在打开串口前拒绝，其他参数及原do_read/do_write行为保持。

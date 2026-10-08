@@ -129,39 +129,6 @@ pub trait PreemptProbe: Send + Sync {
     fn report_comm_error(&self, kind: CommErrorKind);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn trust_clearing_classification_is_exhaustive() {
-        for raw in 0_u8..=u8::MAX {
-            let kind = CommErrorKind::from_u8(raw);
-            assert_eq!(kind.clears_trust(), !matches!(raw, 4 | 9), "raw={raw}");
-            assert_eq!(CommErrorKind::from_u8(kind.to_u8()), kind);
-        }
-    }
-
-    #[test]
-    fn abort_tag_decoding_never_masks_invalid_bits() {
-        assert_eq!(NormalAbortTarget::decode(0), Ok(None));
-        assert_eq!(
-            NormalAbortTarget::decode(ABORT_UNSUBMITTED),
-            Ok(Some(NormalAbortTarget::Unsubmitted))
-        );
-        for seq in [1, 2, SEQ_MASK] {
-            let target = NormalAbortTarget::Submitted { seq };
-            assert_eq!(target.encode(), Some(seq));
-            assert_eq!(NormalAbortTarget::decode(seq), Ok(Some(target)));
-            assert!(NormalAbortTarget::decode(seq | ABORT_UNSUBMITTED).is_err());
-        }
-        for seq in [0, SEQ_MASK + 1, u64::MAX] {
-            assert_eq!(NormalAbortTarget::Submitted { seq }.encode(), None);
-        }
-        assert!(NormalAbortTarget::decode(SEQ_MASK + 1).is_err());
-    }
-}
-
 use crate::control_authority::{
     ControlAuthority, NormalIoIntent, NormalIoLease, NormalIoReleased, Refused,
 };
@@ -287,4 +254,37 @@ impl BusLease {
 pub trait LeasedPreemptProbe: PreemptProbe {
     fn begin_leased(&self, class: BusOpClass) -> Result<BusLease, AbortReason>;
     fn finish_leased(&self, lease: BusLease);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trust_clearing_classification_is_exhaustive() {
+        for raw in 0_u8..=u8::MAX {
+            let kind = CommErrorKind::from_u8(raw);
+            assert_eq!(kind.clears_trust(), !matches!(raw, 4 | 9), "raw={raw}");
+            assert_eq!(CommErrorKind::from_u8(kind.to_u8()), kind);
+        }
+    }
+
+    #[test]
+    fn abort_tag_decoding_never_masks_invalid_bits() {
+        assert_eq!(NormalAbortTarget::decode(0), Ok(None));
+        assert_eq!(
+            NormalAbortTarget::decode(ABORT_UNSUBMITTED),
+            Ok(Some(NormalAbortTarget::Unsubmitted))
+        );
+        for seq in [1, 2, SEQ_MASK] {
+            let target = NormalAbortTarget::Submitted { seq };
+            assert_eq!(target.encode(), Some(seq));
+            assert_eq!(NormalAbortTarget::decode(seq), Ok(Some(target)));
+            assert!(NormalAbortTarget::decode(seq | ABORT_UNSUBMITTED).is_err());
+        }
+        for seq in [0, SEQ_MASK + 1, u64::MAX] {
+            assert_eq!(NormalAbortTarget::Submitted { seq }.encode(), None);
+        }
+        assert!(NormalAbortTarget::decode(SEQ_MASK + 1).is_err());
+    }
 }
