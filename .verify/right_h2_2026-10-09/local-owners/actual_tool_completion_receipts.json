@@ -1,0 +1,45 @@
+{
+  "source": "实际 functions.exec/write_stdin 返回；不声称未采集的 PID 或逐 child receipt",
+  "completed_tool_sessions": [
+    {
+      "session_id": 9228,
+      "exit_code": 2,
+      "kind": "H2前拒SSHowner"
+    },
+    {
+      "session_id": 95683,
+      "exit_code": 1,
+      "kind": "实际H2 SSHowner"
+    },
+    {
+      "session_id": 58491,
+      "exit_code": 0,
+      "kind": "辅助纯只读monitor自然结束"
+    },
+    {
+      "session_id": 1633,
+      "exit_code": 1,
+      "kind": "原11非UART清场组合保留driverFAIL"
+    },
+    {
+      "session_id": 37326,
+      "exit_code": 0,
+      "kind": "34raw STOP SSHowner"
+    },
+    {
+      "session_id": 21545,
+      "exit_code": 1,
+      "kind": "读回后11非UART组合保留driverFAIL"
+    },
+    {
+      "session_id": 68012,
+      "exit_code": 0,
+      "kind": "最终两USB四锁非UART SSHowner"
+    },
+    {
+      "session_id": 6972,
+      "exit_code": 0,
+      "kind": "完整原包SCP"
+    }
+  ]
+}

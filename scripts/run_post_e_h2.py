@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -133,6 +134,7 @@ def _proc_probe(pid, expected=None, details=True, root="/proc"):
             return dict(result, status="replaced")
         return dict(result, status="observed", identity=identity)
     except FileNotFoundError as error:
+        result.update(error_errno=error.errno, error_filename=error.filename)
         # exe缺失不等于PID退出；只在同一dirfd的stat也消失时报告vanished。
         if directory is not None:
             try:
@@ -560,7 +562,29 @@ class RealBackend:
         if snapshot["privileged_probe"] or snapshot["unreadable"]:
             journal.state["last_process_snapshot"] = snapshot
             journal.save()
-        require(not snapshot["unreadable"], f"本轮进程身份不可读：{snapshot}")
+        if snapshot["unreadable"]:
+            row = snapshot["unreadable"][0] if len(snapshot["unreadable"]) == 1 else {}
+            before, remaining = row.get("before", {}), row.get("remaining_stat", {})
+            expected = journal.state.get("launch_identity", {})
+            identity_fields = {"pid", "start_ticks", "boot_id", "pgid", "uids"}
+            stat_fields = {"pid", "start_ticks", "pgid"}
+            owned_exit = (process is self.process and journal.state.get("tool_pid") == process.pid
+                and row.get("pid") == process.pid and row.get("status") == "unreadable"
+                and row.get("error_errno") == errno.ENOENT
+                and row.get("error_filename") in {"stat", "status", "cmdline", "exe"}
+                and isinstance(expected, dict) and isinstance(before, dict) and isinstance(remaining, dict)
+                and identity_fields <= expected.keys() and identity_fields <= before.keys()
+                and expected["pid"] == process.pid and _PROC_READER["_stable"](expected, before)
+                and stat_fields <= remaining.keys()
+                and all(remaining[key] == before[key] for key in stat_fields))
+            require(owned_exit, f"本轮进程身份不可读：{snapshot}")
+            # 仅自有child的PID字段退出竞态可由真实wait消解；原扫描和其他失败均保留。
+            started = time.time_ns()
+            exit_code = process.wait(timeout=1)
+            journal.state["owned_child_exit_observation"] = {
+                "tool_pid": process.pid, "launch_identity": expected, "snapshot": snapshot,
+                "wait_started_ns": started, "wait_finished_ns": time.time_ns(), "exit_code": exit_code}
+            journal.save()
         for row in snapshot["related"]:
             key = f"{row['pid']}:{row.get('start_ticks')}"
             if key not in self.identities:

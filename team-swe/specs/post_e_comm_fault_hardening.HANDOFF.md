@@ -2,6 +2,24 @@
 
 ## 当前步骤
 
+### 自有 H2 工具退出观察修复（2026-10-09，软件验收）
+
+仅在现有/proc探针中保留FileNotFoundError原errno/filename，并对唯一自有Popen、tool PID、完整launch/before与remaining同代次的PID相对字段ENOENT做一次真实wait；成功后单独保存原snapshot全文及退出观察，通用unreadable与其他PID/权限/错代次/仍活/未知字段仍严格拒绝。supervise/execute/report/cleanup、失败粘性及P99/RT/authority门不改，非零工具退出仍FAIL；旧硬件run没有新增字段，不追补PASS。
+
+原单例red→green和Mac定向负控通过，Mac原58平台batch FAIL保留。Orin r2实际nightly更新、fmt→根Clippy通过；r4同源完整124方法（H2 61、artifact19、维护44）0失败/0skip，新9为61子集。同一Linux方法的额外采集不累计：无害child的真实exe ENOENT、同PID/start_ticks残stat为Z、Popen真实wait0及随后waitpid ECHILD均已核，不称精确复现旧R瞬间。
+
+两批597编译输入与两Python overlay首尾相同，实际a30；本机更新nightly/fmt及完整597与Orin逐项绑定通过。原QA r1更新路径FAIL、r2权限夹具umask FAIL、r3可选字段KeyError保留，验收组合为r2 Rust门+r4 Python/机制，不称单批全过。原件见 [.verify/h2_owned_child_exit_2026-10-09](../../.verify/h2_owned_child_exit_2026-10-09/summary.json)。本阶段无新硬件、六配方release或完整Rustworkspace测试；同步提交后准备新V2，新现场事实/GO后再做一次右H2。旧H2/左腕/头1 FAIL及头2/三轮动作待验保持，D15 OPEN/DEFERRED、deployable=false不变。
+
+### 右 H2 四组测量通过、退出观察 FAIL 与停止读回完成（2026-10-09）
+
+本次用户重新确认电源/USB复位、空载支撑、活动区域清空和持续看护；runtime为aa03、七件build仍c800，597项Rust输入及三个H2跟踪helper满足既有继承门，实际nightly为a30。首120秒GO在启动前过期被拒，driver/工具/UART均未启动，原exit2保留；新600秒GO在有效窗内消费，仅一次真实右H2，不是硬件重试。
+
+四组各100预热+1000正式样本按原P99门通过，4430次原attempt保留，两组inflight各15次分类重采样。RT/authority/trace门、最终非dry Disable Ack/Disarm、S0/gateway退出和工具真实wait0均通过。driver在唯一自有tool退出窗口读取/proc遇到FileNotFoundError、同代次stat仍R，约7.686456ms后真实wait0；原driver整体FAIL及后续不可覆盖FAIL保持。旧异常未保存具体缺失字段，不推断一定是exe缺失，也不由测量PASS回填整轮PASS。
+
+独立11清场、17电机34项原帧Torque_Enable/Present_Velocity正零、读取后的11后验及两USB/四锁17项核验通过。40个读取/前置child、14个最终非UARTchild及实际SSHowner均自然回收，无信号；右9旧-50此次未复现，旧FAIL保持。正式ca14四件未改、六服务停止、保护状态保持、无控制进程或占用；未安装/激活服务。本次看护已解除，已通知在支撑下可关闭两电源，实际断电仍UNKNOWN。
+
+原件与构建/工具来源见 [.verify/right_h2_2026-10-09](../../.verify/right_h2_2026-10-09/summary.json)。下一步只修复自有child退出观察的窄软件路径，再做新右H2；新批次须新现场事实和GO，不自动重试。左腕+6、头1+8及头2/三轮主动运动待验仍保留，完整双臂/头部/底盘目标不缩减；D15 OPEN/DEFERRED、deployable=false不变。
+
 ### 维护位置读取到期收尾（2026-10-09，软件修复）
 
 原头1记录中，回程目标2634已读回；190.694–801.681ms连续11样本均为2642，原+8精度FAIL保持。另定位到维护脚本在读取已经到期后仍固定等待50ms的独立缺陷。本次只在原PASS判据后增加到期失败立即退出采样的三行分支；±4/800ms、正常采样间隔、断扭收尾与停止读回门不改，不宣称取消跨期IO或解决实际位置偏差。

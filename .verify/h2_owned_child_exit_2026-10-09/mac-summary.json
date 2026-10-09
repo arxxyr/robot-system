@@ -1,0 +1,119 @@
+{
+  "status": "MAC_PARTIAL_SOFTWARE_CANDIDATE_LINUX_PENDING",
+  "baseline_head": "aa03ca51a819fee45c9ffe029e0ee11fb535a6e7",
+  "files": [
+    {
+      "path": "scripts/run_post_e_h2.py",
+      "sha256": "3b69527eb66115a3770b96ab55aa06d99716270399bb5cf2b0d84c1c9c51b9ae"
+    },
+    {
+      "path": "scripts/tests/test_run_post_e_h2.py",
+      "sha256": "28c9beee78f800b0d5c8b667144162875ff1924c76b81bf3a6893513de8dd119"
+    }
+  ],
+  "diff": {
+    "path": "candidate.diff",
+    "sha256": "c231c5756ff71d0b7c866329fb1f92e199f6c1b7c8e6068d6081c73b7cf6464c"
+  },
+  "driver_ast_changed_functions": [
+    "PROC_PROBE_CODE._proc_probe",
+    "RealBackend.observe"
+  ],
+  "driver_added_or_removed_functions": [],
+  "static_invariants": [
+    "FileNotFoundError仅追加原异常errno/filename；通用observed/replaced/permission/unreadable/vanished状态语义不改。",
+    "仅唯一直接unreadable行、同一self.process/Popen、journal.tool_pid一致、完整launch/before PID/start/boot/PGID/UID对应和remaining_stat同PID/start/PGID、PID相对字段ENOENT才能尝试该child wait(timeout=1)。",
+    "wait成功后另存owned_child_exit_observation的原snapshot全文、原launch身份、wait起止及原exit_code；snapshot不删行、不修改status/clean。",
+    "wait仍活/失败、Permission、未知路径、其他PID、身份改变或其他unreadable都继续严格拒绝。",
+    "supervise/execute/report/cleanup及失败粘性、报告/P99/RT/authority/全局清场未修改；wait非0仍由原execute工具退出码门拒绝。"
+  ],
+  "tests": {
+    "old_run_h2_methods": 52,
+    "new_run_h2_methods": 61,
+    "added_methods": 9,
+    "added_methods_are_old_set_subset": false,
+    "added_methods_are_current_61_subset": true,
+    "changed_existing_methods": [
+      "ProcProbeTests.test_dirfd_replacement_missing_exe_and_exit_are_distinguished"
+    ],
+    "changed_existing_detail": "仅增加原ENOENT的errno/filename断言；原身份替换、missing exe unreadable、vanished和start变化断言保持。",
+    "red": {
+      "receipt": "red.json",
+      "exit_code": 1,
+      "total": 1,
+      "errors": 1,
+      "driver_was_baseline": true
+    },
+    "same_case_green": {
+      "receipt": "green_one.json",
+      "exit_code": 0,
+      "total": 1,
+      "passed": 1
+    },
+    "new9_mac": {
+      "receipt": "new9.json",
+      "exit_code": 0,
+      "total": 9,
+      "passed": 8,
+      "skipped": 1
+    },
+    "original_enoent": {
+      "receipt": "original_enoent.json",
+      "exit_code": 0,
+      "total": 1,
+      "passed": 1,
+      "counts_as_subtest_of_current_set": true
+    },
+    "artifacts": {
+      "receipt": "artifacts19.json",
+      "exit_code": 0,
+      "total": 19,
+      "passed": 19
+    },
+    "mac_original_batch_fail": {
+      "receipt": "mac58_original_fail.json",
+      "exit_code": 1,
+      "total": 58,
+      "passed": 54,
+      "errors": 2,
+      "failures": 1,
+      "skipped": 1,
+      "preserved": true
+    },
+    "mac_final_subset": {
+      "receipt": "mac56_subset.json",
+      "exit_code": 0,
+      "total": 56,
+      "passed": 55,
+      "skipped": 1,
+      "excluded_linux_methods": [
+        "test_run_post_e_h2.LifecycleTests.test_single_authorize_single_launch_and_real_natural_wait",
+        "test_run_post_e_h2.ProcProbeTests.test_real_non_dumpable_denial_with_fixture_probe_and_natural_reap",
+        "test_run_post_e_h2.RuntimePreconditionTests.test_readonly_inspection_does_not_create_or_spawn_and_validator_rejects_bad_trust",
+        "test_run_post_e_h2.RealBackendTests.test_fresh_source_head_dirty_content_and_executable_gate",
+        "test_run_post_e_h2.SideTests.test_backend_preflight_wrong_returned_trust_rejects_before_commands"
+      ],
+      "tempdir": "仅执行器将Mac临时目录取真实路径；生产和原平台断言未改。"
+    },
+    "unique_mac_pass_methods": 74,
+    "count_basis": "末Mac子集55 + artifact19；单case和定向new9/原ENOENT均重叠，不累计。",
+    "linux_full_contract_total": 80,
+    "linux_full_contract_status": "NOT_RUN",
+    "linux_actual_exit_status": "NOT_RUN_ON_MAC_CAPABILITY_SKIP",
+    "linux_command": "uv run --no-project --python 3.12 python -m unittest discover -s scripts/tests -p test_run_post_e_h2.py -v",
+    "linux_artifact_command": "uv run --no-project --python 3.12 python -m unittest discover -s scripts/tests -p test_post_e_h2_artifacts.py -v",
+    "linux_mechanism_basis": "新增实际Linux方法使用现有测试文件；无害stdin child在真readlink(exe)之前退出，WNOWAIT仅观察退出，真readlink产生ENOENT并保留同dirfd stat，再由同Popen真实wait及二次waitpid无child验证。可能remaining state Z；不宣称复现旧轮R。"
+  },
+  "diff_check": {
+    "command": "git diff --check",
+    "exit_code": 0,
+    "tool_chunk_id": "fdc952",
+    "output": ""
+  },
+  "boundaries": [
+    "本任务未SSH、UART、硬件、Cargo、提交或修改HANDOFF；父agent其他文档修改不属于本diff。",
+    "本次硬件旧FAIL无errno/filename，不能套新候选追补为PASS；历史硬件原件未修改。",
+    "Mac新9中的Child是确定性wait夹具，不是Linux实际wait/reap实证；实际机制需Orin。",
+    "red/green前期源码窗口未另导出历史快照，不补造历史SHA；red时driver为已记录baseline HEAD，原完整工具回执副本均保存。"
+  ]
+}

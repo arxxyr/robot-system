@@ -1,0 +1,82 @@
+{
+  "schema": "RIGHT_H2_INDEPENDENT_RECEIPT_REVIEW_R1",
+  "review_status": "PASS_READBACK_AND_POSTFLIGHT_FULL_ARCHIVE_PENDING",
+  "reviewed_at_utc": "2026-10-09T17:55:28.596324+00:00",
+  "read_only_review": true,
+  "hardware_h2_status": "FAIL_PRESERVED",
+  "raw_reads": 34,
+  "captured_sync_frames": 34,
+  "readback_owned_commands": 40,
+  "readback_uart_tool_children": 34,
+  "readback_non_uart_children": 6,
+  "all_readback_40_naturally_reaped": true,
+  "zero_torque_enable_motors": 17,
+  "zero_present_velocity_motors": 17,
+  "all_raw_words": "positive_zero_0x0000",
+  "raw_checks": [
+    "exact_plan_order_device_id_register_width",
+    "actual_stdout_sha_size_and_json_equality",
+    "exact_tx_packet_and_checksum",
+    "rx_id_length_status0_checksum_and_LE_word",
+    "original_h2_fail_and_bound_GO_EXEC_PID_preserved"
+  ],
+  "postflight_checks": 11,
+  "final_bus_checks": 17,
+  "final_bus_owned_commands": 14,
+  "final_bus_14_naturally_reaped": true,
+  "protection_source_artifacts_formal_services_device_before_after_exact_equal": true,
+  "final_processes_clean": true,
+  "two_ssh_owners": "natural_wait0_reaped_no_signals_exact_input_SHA",
+  "physical_power_cut": "UNKNOWN_NO_NEW_CONFIRMATION",
+  "full_run_archive": "PENDING_TRANSFER_NOT_YET_CLAIMED",
+  "reader_initial_failure": "首审把 fuser 名称误按 holder 标签判断退出码，断言失败；按实际 argv fuser 的合法 exit1 更正后复核，未修改任何原件或实现",
+  "limits": [
+    "34个目标SYNC_READ原帧，不称102个握手在内的全部请求均捕获",
+    "40命令为34UART工具child加6非UARTchild，不称40项寄存器读取",
+    "STOP采样不证明连续静止或独立硬件断电",
+    "D15 OPEN/DEFERRED，deployable=false",
+    "原H2整体FAIL不能由工具PASS或STOP回填"
+  ],
+  "originals": [
+    {
+      "path": "target/h2_native_prepare_2026-10-09/right-h2-readback-post-r1/register-readback-r1/result.json",
+      "sha256": "37d6a0fd644bbc0b95e27c96b836f662693d02d9e75a5f075b0a45a3922def5d",
+      "bytes": 109201
+    },
+    {
+      "path": "target/h2_native_prepare_2026-10-09/right-h2-readback-post-r1/right-h2-post-readback-r1/result.json",
+      "sha256": "33502205c3285242088a56c6854b8273fed17399960180ffc65da70a0c65f5b1",
+      "bytes": 55687
+    },
+    {
+      "path": "target/h2_native_prepare_2026-10-09/right-h2-readback-post-r1/final-buses-r1/result.json",
+      "sha256": "d9321752d1c4f0899848e4e18d9cebed63c212a795747701a17321dc017fe71a",
+      "bytes": 10915
+    },
+    {
+      "path": "target/h2_native_prepare_2026-10-09/right-h2-small-execution-r1/right-h2-run-01/run.json",
+      "sha256": "3f735d4658ceb9429c920c6a50531f806c9a258d81ef9cd5f21f91c2fc86a124",
+      "bytes": 680655
+    },
+    {
+      "path": "target/h2_native_prepare_2026-10-09/right-h2-small-execution-r1/right-h2-run-01/report.json",
+      "sha256": "d375dcdeba658a2a42bb79f745054a339b07eb409d586cf22447c9ae52cfd9c3",
+      "bytes": 64555214
+    },
+    {
+      "path": "target/h2_native_prepare_2026-10-09/control-r2/right_h2_r2.owner/result.json",
+      "sha256": "0cd22496831925daa9e8abb6fc400bf1cc4d1a23b2ab43603910315254d1c4ed",
+      "bytes": 1498
+    },
+    {
+      "path": "target/h2_native_prepare_2026-10-09/control-r2/right_raw_stop_r1.owner/result.json",
+      "sha256": "30dae0fe6e554c4a104c352a5ce18629400d43f1c2c6d5ea19b4205f785a0504",
+      "bytes": 1502
+    },
+    {
+      "path": "target/h2_native_prepare_2026-10-09/control-r2/final_buses_r1.owner/result.json",
+      "sha256": "ba5a673d33376802bc8f0b1b78b8571f674d5943889efe6d9e08aeaae9a809b4",
+      "bytes": 1504
+    }
+  ]
+}

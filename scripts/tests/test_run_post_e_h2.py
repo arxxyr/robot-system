@@ -702,7 +702,9 @@ class ProcProbeTests(unittest.TestCase):
             changed=dict(expected,start_ticks=41)
             self.assertEqual(driver.read_process(123,expected=changed,proc=root)["status"],"replaced")
             (directory/"exe").unlink()
-            self.assertEqual(driver.read_process(123,proc=root)["status"],"unreadable")
+            missing = driver.read_process(123,proc=root)
+            self.assertEqual(missing["status"],"unreadable")
+            self.assertEqual((missing["error_errno"], missing["error_filename"]), (2, "exe"))
             self.assertEqual(driver.read_process(456,proc=root)["status"],"vanished")
             actual_stat=driver._PROC_READER["_stat_at"]
             calls=0
@@ -743,6 +745,221 @@ sys.stdin.buffer.read(1)
             self.assertEqual(child.wait(timeout=5),0)
             child.stdout.close()
         with self.assertRaises(ChildProcessError):os.waitpid(child.pid,os.WNOHANG)
+
+
+class OwnedChildExitTests(unittest.TestCase):
+    identity = {"pid": 123, "start_ticks": 42, "pgid": 123, "state": "R",
+                "boot_id": ProcProbeTests.boot, "uids": [1000] * 4}
+
+    class Child:
+        pid = 123
+
+        def __init__(self, exit_code=0, error=None):
+            self.exit_code, self.error = exit_code, error
+            self.returncode = None
+            self.waits = []
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            self.waits.append(timeout)
+            if self.error is not None:
+                raise self.error
+            self.returncode = self.exit_code
+            return self.returncode
+
+    def fixture(self, root, child=None):
+        options = argparse.Namespace(output=root, expected_head="a" * 40,
+                                     inputs_sha256="b" * 64)
+        journal = driver.Journal(root, options)
+        backend = driver.RealBackend(options, journal)
+        backend.process = child or self.Child()
+        backend.bin_dir = root
+        backend.measurement = {"artifacts": {"comm_fault_e2e": {}}}
+        journal.state.update(tool_pid=123, launch_identity=copy.deepcopy(self.identity))
+        row = {"pid": 123, "status": "unreadable", "before": copy.deepcopy(self.identity),
+               "remaining_stat": {key: self.identity[key] for key in ("pid", "start_ticks", "pgid", "state")},
+               "error": "FileNotFoundError(2, 'No such file or directory')",
+               "error_errno": 2, "error_filename": "exe"}
+        snapshot = {"related": [], "unreadable": [row], "vanished": [],
+                    "ordinary_denied": [], "privileged_probe": None, "clean": False}
+        return backend, journal, snapshot
+
+    def test_owned_enoent_is_resolved_only_after_child_wait_and_keeps_raw_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            backend, journal, snapshot = self.fixture(Path(temp))
+            original = copy.deepcopy(snapshot)
+            with patch.object(driver, "process_snapshot", return_value=snapshot):
+                backend.observe(backend.process, journal)
+            self.assertEqual(backend.process.waits, [1])
+            self.assertEqual(snapshot, original)
+            receipt = journal.state["owned_child_exit_observation"]
+            self.assertEqual(receipt["snapshot"], original)
+            self.assertEqual(receipt["exit_code"], 0)
+            self.assertGreaterEqual(receipt["wait_finished_ns"], receipt["wait_started_ns"])
+            self.assertEqual(journal.state["failures"], [])
+
+    def test_process_relative_missing_fields_keep_their_original_enoent(self):
+        for field in ("stat", "status", "cmdline", "exe"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as temp:
+                backend, journal, snapshot = self.fixture(Path(temp))
+                snapshot["unreadable"][0]["error_filename"] = field
+                snapshot["unreadable"][0]["remaining_stat"]["state"] = "Z"
+                with patch.object(driver, "process_snapshot", return_value=snapshot):
+                    backend.observe(backend.process, journal)
+                self.assertEqual(journal.state["owned_child_exit_observation"]["snapshot"], snapshot)
+                self.assertEqual(backend.process.waits, [1])
+
+    def test_still_live_or_failed_wait_cannot_resolve_enoent(self):
+        for error in (subprocess.TimeoutExpired("自有child", 1), OSError("wait失败")):
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as temp:
+                backend, journal, snapshot = self.fixture(Path(temp), self.Child(error=error))
+                with patch.object(driver, "process_snapshot", return_value=snapshot), self.assertRaises(type(error)):
+                    backend.observe(backend.process, journal)
+                self.assertEqual(backend.process.waits, [1])
+                self.assertIsNone(backend.process.returncode)
+                self.assertNotIn("owned_child_exit_observation", journal.state)
+                self.assertEqual(journal.state["last_process_snapshot"], snapshot)
+
+    def test_changed_or_missing_identity_is_not_an_owned_exit(self):
+        changes = [("before", key, value) for key, value in (
+            ("pid", 124), ("start_ticks", 43), ("boot_id", "other"), ("pgid", 124), ("uids", [0] * 4))]
+        changes += [("remaining_stat", key, value) for key, value in (
+            ("pid", 124), ("start_ticks", 43), ("pgid", 124))]
+        changes += [("before", "start_ticks", None), ("remaining_stat", "start_ticks", None)]
+        for section, key, value in changes:
+            with self.subTest(section=section, key=key, value=value), tempfile.TemporaryDirectory() as temp:
+                backend, journal, snapshot = self.fixture(Path(temp))
+                if value is None:
+                    snapshot["unreadable"][0][section].pop(key)
+                else:
+                    snapshot["unreadable"][0][section][key] = value
+                with patch.object(driver, "process_snapshot", return_value=snapshot), self.assertRaises(ValueError):
+                    backend.observe(backend.process, journal)
+                self.assertEqual(backend.process.waits, [])
+
+    def test_missing_binding_foreign_pid_and_permission_remain_failures(self):
+        for fault in ("popen", "tool_pid", "launch_identity", "row_pid", "other_pid", "two_rows", "permission"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temp:
+                backend, journal, snapshot = self.fixture(Path(temp))
+                process = backend.process
+                if fault == "popen":
+                    process = self.Child()
+                elif fault == "tool_pid":
+                    journal.state["tool_pid"] = 124
+                elif fault == "launch_identity":
+                    journal.state.pop("launch_identity")
+                elif fault == "row_pid":
+                    snapshot["unreadable"][0]["pid"] = 124
+                elif fault == "other_pid":
+                    snapshot["unreadable"] = [{"pid": 124, "status": "unreadable"}]
+                elif fault == "two_rows":
+                    snapshot["unreadable"].append({"pid": 124, "status": "unreadable"})
+                else:
+                    snapshot["unreadable"][0]["status"] = "permission"
+                with patch.object(driver, "process_snapshot", return_value=snapshot), self.assertRaises(ValueError):
+                    backend.observe(process, journal)
+                self.assertEqual(process.waits, [])
+                self.assertNotIn("owned_child_exit_observation", journal.state)
+
+    def test_unknown_errno_and_non_pid_paths_cannot_use_child_wait(self):
+        for errno, filename in ((13, "exe"), (None, "exe"), (2, None), (2, "other"),
+                                (2, "/proc/sys/kernel/random/boot_id"), (2, "/proc/123/exe")):
+            with self.subTest(errno=errno, filename=filename), tempfile.TemporaryDirectory() as temp:
+                backend, journal, snapshot = self.fixture(Path(temp))
+                snapshot["unreadable"][0].update(error_errno=errno, error_filename=filename)
+                with patch.object(driver, "process_snapshot", return_value=snapshot), self.assertRaises(ValueError):
+                    backend.observe(backend.process, journal)
+                self.assertEqual(backend.process.waits, [])
+
+    def test_owned_exit_observation_does_not_clear_prior_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            backend, journal, snapshot = self.fixture(Path(temp))
+            journal.fail("既有观察失败")
+            original = copy.deepcopy(journal.state["failures"])
+            with patch.object(driver, "process_snapshot", return_value=snapshot):
+                backend.observe(backend.process, journal)
+            self.assertEqual(journal.state["failures"], original)
+            self.assertEqual(journal.state["status"], "FAIL")
+
+    def test_nonzero_owned_exit_is_still_rejected_by_original_execute_gate(self):
+        class Backend(FakeBackend):
+            observe = driver.RealBackend.observe
+
+            def __init__(self, options, journal):
+                super().__init__(options, journal)
+                self.bin_dir = options.output
+                self.measurement = {"artifacts": {"comm_fault_e2e": {}}}
+                self.identities = {}
+
+            def identity(self, pid):
+                return copy.deepcopy(OwnedChildExitTests.identity)
+
+            def launch(self):
+                self.actions.append("Popen")
+                self.process = OwnedChildExitTests.Child(exit_code=7)
+                return self.process
+
+        FakeBackend.failure = None
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            _, _, snapshot = self.fixture(root)
+            options = argparse.Namespace(output=root / "run", expected_head="a" * 40,
+                                         inputs_sha256="b" * 64)
+            with patch.object(driver, "process_snapshot", return_value=snapshot):
+                result = driver.execute(options, Backend)
+            state = json.loads((options.output / "run.json").read_text())
+            self.assertEqual(result, 1)
+            self.assertEqual(state["status"], "FAIL")
+            self.assertEqual(state["tool_exit"], 7)
+            self.assertTrue(state["tool_naturally_reaped"])
+            self.assertEqual(state["owned_child_exit_observation"]["exit_code"], 7)
+            self.assertTrue(any("工具原退出码 7" in row["error"] for row in state["failures"]))
+            backend = Backend.instances[-1]
+            self.assertEqual(backend.actions.count("authorize"), 1)
+            self.assertEqual(backend.actions.count("Popen"), 1)
+
+    @unittest.skipUnless(Path("/proc/self/stat").is_file() and hasattr(os, "waitid") and hasattr(os, "WNOWAIT"),
+                         "真实proc退出机制仅在支持WNOWAIT的Linux运行")
+    def test_linux_real_exe_enoent_then_owned_wait_and_no_second_waitable_child(self):
+        # 仅暂停在既有proc读点；退出、ENOENT及wait回收均由真实无害child产生。
+        child = subprocess.Popen([sys.executable, "-c", "import sys; print('ready', flush=True); sys.stdin.buffer.read(1)"],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "ready")
+            identity = driver.process_identity(child.pid)
+            original_readlink = driver.os.readlink
+            exits = []
+
+            def at_exit(name, *, dir_fd=None):
+                if name == "exe" and dir_fd is not None and original_readlink(f"/proc/self/fd/{dir_fd}") == f"/proc/{child.pid}":
+                    child.stdin.close()
+                    exits.append(os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOWAIT))
+                return original_readlink(name, dir_fd=dir_fd)
+
+            with tempfile.TemporaryDirectory() as temp:
+                backend, journal, _ = self.fixture(Path(temp), child)
+                journal.state.update(tool_pid=child.pid, launch_identity=identity)
+                with patch.object(driver.os, "readlink", side_effect=at_exit), \
+                     patch.object(Path, "iterdir", return_value=[Path("/proc") / str(child.pid)]):
+                    backend.observe(child, journal)
+                receipt = journal.state["owned_child_exit_observation"]
+                row = receipt["snapshot"]["unreadable"][0]
+                self.assertEqual((row["error_errno"], row["error_filename"]), (2, "exe"))
+                self.assertTrue(driver._PROC_READER["_stable"](identity, row["before"]))
+                self.assertEqual(row["remaining_stat"]["start_ticks"], identity["start_ticks"])
+                self.assertEqual(receipt["exit_code"], 0)
+                self.assertEqual(child.returncode, 0)
+            self.assertEqual(len(exits), 1)
+            self.assertEqual((exits[0].si_pid, exits[0].si_code, exits[0].si_status), (child.pid, os.CLD_EXITED, 0))
+            with self.assertRaises(ChildProcessError):
+                os.waitpid(child.pid, os.WNOHANG)
+        finally:
+            if not child.stdin.closed:
+                child.stdin.close()
+            child.wait(timeout=5)
+            child.stdout.close()
 
 
 class RuntimePreconditionTests(unittest.TestCase):

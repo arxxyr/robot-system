@@ -1,0 +1,19 @@
+{
+  "schema": "RIGHT_H2_INDEPENDENT_PERMANENT_ARCHIVE_REVIEW_R1",
+  "reviewed_at_utc": "2026-10-09T18:00:15.674615+00:00",
+  "review_status": "PASS",
+  "hardware_package_sha256": "2f06fd80a455983decc5458cd0b3c1e94345a99d0d85394c7541650c0955027a",
+  "preparation_package_sha256": "eb44db7a531fb69a244ba7855713035367a6def2d96ba5a5cdce09299efadbbe",
+  "preparation_files": 227,
+  "preparation_bytes": 6266968,
+  "all227_preparation_files_equal_actual_local_originals": true,
+  "all24_required_build_complement_included": true,
+  "all21_local_owner_files_equal_originals": true,
+  "summary_member_refs_verified": 6,
+  "summary_member_ref_gaps": [],
+  "ELF_bodies": "excluded_and_summary_accurate",
+  "hardware_h2_result": "FAIL_PRESERVED",
+  "physical_power_cut": "UNKNOWN_NO_CONFIRMATION",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

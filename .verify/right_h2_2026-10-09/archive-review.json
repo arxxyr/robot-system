@@ -1,0 +1,99 @@
+{
+  "schema": "RIGHT_H2_INDEPENDENT_ARCHIVE_REVIEW_R1",
+  "review_status": "PASS_HARDWARE_ARCHIVE_WITH_LOCAL_BUILD_SOURCE_COMPLEMENT",
+  "reviewed_at_utc": "2026-10-09T17:59:00.872958+00:00",
+  "archive": {
+    "path": "target/h2_native_prepare_2026-10-09/right-h2-originals-r1/right-h2-originals-r1.tar.gz",
+    "bytes": 19077802,
+    "sha256": "2f06fd80a455983decc5458cd0b3c1e94345a99d0d85394c7541650c0955027a",
+    "regular_files": 4634,
+    "expanded_bytes": 242178109,
+    "safe_unique_regular_paths": true
+  },
+  "hardware_original_hashes_verified": 18,
+  "capture_and_derived": "4组与cas_derivation各自capture/derived对应，A/B/样本/预热/原passed完全相同；独立原capture未覆盖",
+  "trace_epoch_spool_files": 4430,
+  "trace_originals": {
+    "trace_owners.jsonl": {
+      "sha256": "d047c448045ac23aabc0761a3c052d2b023dd411c7540bfcbd359fa233b1cb98",
+      "bytes": 1949145
+    },
+    "trace_drains.jsonl": {
+      "sha256": "d87ac547eb82523cf36dd351758b259b6dedc19f3f351554e41743bba7ad290c",
+      "bytes": 49588563
+    },
+    "cas_derivation.json": {
+      "sha256": "e8cf974fbbff36c33b8f678464d2498d2608669afeccea9b15af6c30db065349",
+      "bytes": 71337
+    },
+    "s0.trace": {
+      "sha256": "aedc051c8d42aae1e52ae7635ee54e72141a613eeb9ee738b04e1bdc03b4e260",
+      "bytes": 1052672
+    },
+    "gateway.trace": {
+      "sha256": "af1d36e652f0eb4d670c01ddc35e4e6f0ac36f69bbfa9181b848c9526cc0c69a",
+      "bytes": 1052672
+    },
+    "events_capture.csv": {
+      "sha256": "88d84ad2c84b67d62b2cdf376fa66257609b1b75614654ad0a8b16827c82f447",
+      "bytes": 12964821
+    },
+    "events.csv": {
+      "sha256": "af99056029e152ba9f13a5517669e36c6df9c4416472ba239f4524ff5b94ab9f",
+      "bytes": 12964821
+    },
+    "attempts.jsonl": {
+      "sha256": "aa4cef2d4394c346c0cd14f6f994bf813462d04d6e7a4189a0ee44537c399e7f",
+      "bytes": 828007
+    },
+    "boundary.jsonl": {
+      "sha256": "a62b3e5060ee1df60d142a6e6b87abf620743e1ddfc2f2585f41e2139661e097",
+      "bytes": 3767751
+    }
+  },
+  "three_tracked_helpers": "原run完整git show stdout与aa03 Git源码逐字相同",
+  "six_build_completion_seven_sidecar_source_manifest": "包内pinned SHA核符，build_head保持c800",
+  "local_owner_files": 21,
+  "two_entry_failures": "原GO前拒exit2，实际driver/SSH exit1原件保留；toolexit0不覆盖driverFAIL",
+  "compiler_and_build_command_logs": "下列原件在本机来源目录，不在tar内；永久归档须共同保留或引用已归档软件证据",
+  "local_build_complement": [
+    "target/h2_native_prepare_2026-10-09/readback-tool-r1/release/stderr.log",
+    "target/h2_native_prepare_2026-10-09/readback-tool-r1/release/stdout.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/measurement_gateway/launch.json",
+    "target/h2_native_prepare_2026-10-09/release-r1/measurement_gateway/stderr.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/measurement_gateway/stdout.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/measurement_s0/launch.json",
+    "target/h2_native_prepare_2026-10-09/release-r1/measurement_s0/stderr.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/measurement_s0/stdout.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/measurement_tool/launch.json",
+    "target/h2_native_prepare_2026-10-09/release-r1/measurement_tool/stderr.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/measurement_tool/stdout.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/production_gateway/launch.json",
+    "target/h2_native_prepare_2026-10-09/release-r1/production_gateway/stderr.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/production_gateway/stdout.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/production_s0/launch.json",
+    "target/h2_native_prepare_2026-10-09/release-r1/production_s0/stderr.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/production_s0/stdout.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/production_s1/launch.json",
+    "target/h2_native_prepare_2026-10-09/release-r1/production_s1/stderr.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/production_s1/stdout.log",
+    "target/h2_native_prepare_2026-10-09/release-r1/rustc_after/completion.json",
+    "target/h2_native_prepare_2026-10-09/release-r1/rustc_before/completion.json",
+    "target/h2_native_prepare_2026-10-09/release-r1/source_after.json",
+    "target/h2_native_prepare_2026-10-09/release-r1/source_before.json"
+  ],
+  "actual_tool_completion_receipts": {
+    "path": "target/h2_native_prepare_2026-10-09/right-h2-local-owners-r1/actual_tool_completion_receipts.json",
+    "sha256": "f9822bca066e3a06a0d111aa139fd0a8ef85746c4a7339060ec10e0f21a1a39b",
+    "note": "仅实际tool session完成回执，不补未采集PID"
+  },
+  "review_reader_failures": [
+    "首审误推定capture等于派生CSV，断言失败；改按原cas_derivation各自核对应关系",
+    "次审误将completion.stdout字符串当ref字典，TypeError；按原stdout_sha256/stdout_bytes字段复核；原件/实现均未改"
+  ],
+  "elf_contents": "tar只有构建身份/sidecar/receipt，不含七ELF或读回ELF本体",
+  "hardware_h2_status": "FAIL_PRESERVED",
+  "physical_power_cut": "UNKNOWN_NO_NEW_CONFIRMATION",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

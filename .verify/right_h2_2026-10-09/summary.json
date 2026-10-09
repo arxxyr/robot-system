@@ -1,0 +1,282 @@
+{
+  "schema": "P7_H2_RIGHT_HARDWARE_CLOSURE_V1",
+  "date": "2026-10-09",
+  "status": "H2_RUN_FAILED_AND_SAFELY_CLOSED",
+  "scope": "仅本次一次右H2、17电机停止读回及独立清场；完整双臂/头部/底盘目标保持",
+  "runtime_head": "aa03ca51a819fee45c9ffe029e0ee11fb535a6e7",
+  "build_head": "c800f86f81c3a9290e51a1a516a033a69efbf800",
+  "source_files": 597,
+  "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "compiler": "1.101.0-nightly / a30aa9064df6a504b6a323c6884a2f4cfbfff666",
+  "authorization": {
+    "human_reply": "全部已就绪，可持续看护并立即断电",
+    "human_receipt_utc": "2026-10-09 11:40:07 UTC",
+    "human_receipt_precision": "seconds; physical reset actual time unknown",
+    "authorization_attempts": 1,
+    "launch_attempts": 1,
+    "whole_hardware_retry": false,
+    "preexec_refusal": "首次120秒GO过期被拒、driver未启动/UART0；原exit2保留。第二GO600秒窗内真实EXEC，仅一次真实硬件批次。"
+  },
+  "hardware_result": {
+    "status": "FAIL",
+    "tool_status": "PASS",
+    "driver_exit": 1,
+    "tool_exit": 0,
+    "tool_naturally_reaped": true,
+    "driver_pid": 547357,
+    "tool_pid": 547417,
+    "run": {
+      "archive": "right-h2-originals-r1.tar.gz",
+      "path": "h2-right-ready-20261009-r2/right-h2-run-01/run.json",
+      "sha256": "3f735d4658ceb9429c920c6a50531f806c9a258d81ef9cd5f21f91c2fc86a124",
+      "bytes": 680655
+    },
+    "report": {
+      "archive": "right-h2-originals-r1.tar.gz",
+      "path": "h2-right-ready-20261009-r2/right-h2-run-01/report.json",
+      "sha256": "d375dcdeba658a2a42bb79f745054a339b07eb409d586cf22447c9ae52cfd9c3",
+      "bytes": 64555214
+    },
+    "failure_summary": "唯一自有tool的/proc身份读取FileNotFoundError但同代次stat仍R；7.686456ms后真实wait0，原观察FAIL及后续不可覆盖FAIL保持。旧异常未保存缺失字段，不推断一定exe缺失。"
+  },
+  "measurement": {
+    "groups": [
+      {
+        "external": false,
+        "in_flight": false,
+        "passed": true,
+        "warmup": 100,
+        "class_mismatch_retries": 0,
+        "sla_a_ns": {
+          "count": 1000,
+          "max": 31648,
+          "p50": 4192,
+          "p99": 24448
+        },
+        "sla_b_ns": {
+          "count": 1000,
+          "max": 24489984,
+          "p50": 8562144,
+          "p99": 9934560
+        },
+        "sla_b_target_ns": 20000000
+      },
+      {
+        "external": false,
+        "in_flight": true,
+        "passed": true,
+        "warmup": 100,
+        "class_mismatch_retries": 15,
+        "sla_a_ns": {
+          "count": 1000,
+          "max": 35168,
+          "p50": 4224,
+          "p99": 24288
+        },
+        "sla_b_ns": {
+          "count": 1000,
+          "max": 16669984,
+          "p50": 11122944,
+          "p99": 15415648
+        },
+        "sla_b_target_ns": 75000000
+      },
+      {
+        "external": true,
+        "in_flight": false,
+        "passed": true,
+        "warmup": 100,
+        "class_mismatch_retries": 0,
+        "sla_a_ns": {
+          "count": 1000,
+          "max": 47104,
+          "p50": 896,
+          "p99": 22208
+        },
+        "sla_b_ns": {
+          "count": 1000,
+          "max": 50590912,
+          "p50": 8348896,
+          "p99": 9928448
+        },
+        "sla_b_target_ns": 20000000
+      },
+      {
+        "external": true,
+        "in_flight": true,
+        "passed": true,
+        "warmup": 100,
+        "class_mismatch_retries": 15,
+        "sla_a_ns": {
+          "count": 1000,
+          "max": 28192,
+          "p50": 928,
+          "p99": 21344
+        },
+        "sla_b_ns": {
+          "count": 1000,
+          "max": 49050848,
+          "p50": 10985344,
+          "p99": 15738656
+        },
+        "sla_b_target_ns": 75000000
+      }
+    ],
+    "valid_formal_samples": 4000,
+    "accepted_warmup": 400,
+    "total_attempts": 4430,
+    "rt_preflight_passed": true,
+    "trace_dropped": 0,
+    "final_stop": {
+      "disable": {
+        "attempted": true,
+        "cleared_at_ns": 3321076361861568,
+        "dry_run": false,
+        "finished_ns": 3321076362940448,
+        "kind": "ack",
+        "ok": true,
+        "request": {
+          "dry_run": false,
+          "enabled": false,
+          "idempotency_key": "00085a59-0000-7000-8000-000000012d52",
+          "request_id": "00085a59-0000-7000-8000-000000012d52",
+          "timeout_ms": 2000
+        },
+        "request_id": "00085a59-0000-7000-8000-000000012d52",
+        "started_ns": 3321076335217632
+      },
+      "disarmed": "Ok((21081, BoundarySnapshot { request_seq: 21081, request_mode: Some(Disarm), request_deadline_ns: 3321076603430400, receipt_seq: 21081, mode: Some(Disarm), status: Disarmed, ready_ns: 3321075606544928, idle_deadline_ns: 0, armed_seq: 0, gate_active: false, gate_release: None, failure_seq: 0, failure: None }))",
+      "estop": "Ok(21080)",
+      "get_state": {
+        "attempted": true,
+        "ok": true,
+        "safety_state": 3,
+        "state_stamp_ns": 3321076316545440
+      },
+      "ok": true
+    },
+    "final_trace": {
+      "boundary": {
+        "armed_seq": 0,
+        "failure": "None",
+        "failure_seq": 0,
+        "gate_active": false,
+        "mode": "Some(Disarm)",
+        "receipt_seq": 21081,
+        "request_mode": "Some(Disarm)",
+        "request_seq": 21081,
+        "status": "Disarmed"
+      },
+      "children_stopped": true,
+      "dropped": 0,
+      "epoch_event_limit": 8192,
+      "error": null,
+      "event_capture_error": null,
+      "event_row_byte_limit": 256,
+      "final_events_drained": true,
+      "installed": true,
+      "owner_count": 4430,
+      "owner_limit": 44000,
+      "read_error": null,
+      "retry_distinct_bin_limit": 8192,
+      "valid": true
+    },
+    "sla_b_max_note": "第三组最大50.590912ms按原P99门通过；不改为max门、不删超时尾样本。"
+  },
+  "independent_cleanup": {
+    "status": "PASS",
+    "checks": 11,
+    "combined_status": "FAIL",
+    "result": {
+      "archive": "right-h2-originals-r1.tar.gz",
+      "path": "h2-right-ready-20261009-r2/right-h2-cleanup-r1/result.json",
+      "sha256": "a3d7b62467fc908c6722c466848e41921076889d2f93722fc59309771e4f252b",
+      "bytes": 55687
+    }
+  },
+  "stop_readback": {
+    "status": "PASS",
+    "steps": 34,
+    "motors": 17,
+    "torque_enable": 17,
+    "present_velocity": 17,
+    "all_decoded_integer_zero": true,
+    "commands": 40,
+    "all_commands_reaped": true,
+    "read_only": true,
+    "original_h2_unchanged": true,
+    "result": {
+      "archive": "right-h2-originals-r1.tar.gz",
+      "path": "h2-right-ready-20261009-r2/register-readback-r1/result.json",
+      "sha256": "37d6a0fd644bbc0b95e27c96b836f662693d02d9e75a5f075b0a45a3922def5d",
+      "bytes": 109201
+    },
+    "right9": "原帧正零0x0000；旧-50未复现，不回填旧FAIL"
+  },
+  "final_post_checks": {
+    "post_cleanup_status": "PASS",
+    "post_checks": 11,
+    "combined_status": "FAIL",
+    "post": {
+      "archive": "right-h2-originals-r1.tar.gz",
+      "path": "h2-right-ready-20261009-r2/right-h2-post-readback-r1/result.json",
+      "sha256": "33502205c3285242088a56c6854b8273fed17399960180ffc65da70a0c65f5b1",
+      "bytes": 55687
+    },
+    "bus_status": "PASS",
+    "bus_checks": 17,
+    "bus_commands": 14,
+    "all_bus_commands_reaped": true,
+    "bus": {
+      "archive": "right-h2-originals-r1.tar.gz",
+      "path": "h2-right-ready-20261009-r2/final-buses-r1/result.json",
+      "sha256": "d9321752d1c4f0899848e4e18d9cebed63c212a795747701a17321dc017fe71a",
+      "bytes": 10915
+    }
+  },
+  "archive": {
+    "path": "right-h2-originals-r1.tar.gz",
+    "sha256": "2f06fd80a455983decc5458cd0b3c1e94345a99d0d85394c7541650c0955027a",
+    "bytes": 19077802,
+    "files": 4634,
+    "input_bytes": 242178109,
+    "excluded": "ELF/source tar/Cargo caches",
+    "local_owners": "local-owners"
+  },
+  "watch_released": true,
+  "physical_state_after_watch_release": "UNKNOWN; 已通知保持支撑下可关闭两电源，没有实际断电确认",
+  "formal_installation": "ca14四件不变、六服务inactive/MainPID0、无控制进程/两USB四锁占用；无安装/服务激活",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "head_base_active_motion": "本轮未执行，左腕+6/头1+8/头2NOT_RUN/三轮主动运动待验保持",
+  "hardware_failure_preserved": true,
+  "next": "最小自有child退出观察软件修复；新右H2需新准备/现场事实/GO，不自动重试。",
+  "software_preparation": {
+    "archive": "preparation-originals.tar.gz",
+    "sha256": "eb44db7a531fb69a244ba7855713035367a6def2d96ba5a5cdce09299efadbbe",
+    "bytes": 688769,
+    "files": 227,
+    "input_bytes": 6266968,
+    "scope": "六配方原生fmt/根Clippy/111Python/默认PLAN_ONLY/6构建及前后来源；读工具13方法+构建；mock四组各2/两轮只读前置及新alignment。真实原件复用，不重新计作本轮测试。",
+    "binary_bodies_included": false
+  },
+  "reviews": [
+    {
+      "path": "readback-review.json",
+      "sha256": "bd8179abf40a4a6fb2e5c2a44a39811027988f4d54677719f02f071bbd1b4abb"
+    },
+    {
+      "path": "archive-review.json",
+      "sha256": "107180ef250476a118c5984ed22405a3790893a8b8d5b0dfe1762c59e0c67c7f"
+    },
+    {
+      "path": "permanent-review.json",
+      "sha256": "7e737fd8165348f2914beff3e0042fffca97183acdb6b64971122e2920133af4"
+    },
+    {
+      "path": "summary-path-review-gap.json",
+      "sha256": "52c4fed34dc5d8eeac7891a6931f5fda2541f404f05a287645cf7016d8db4d01"
+    }
+  ],
+  "root_archive_acceptance": "原硬件FAIL与安全收尾分别接受；两个原件压缩包逐成员可读/数量及字节已核；软件修复另验。"
+}

@@ -1,0 +1,20 @@
+{
+  "schema": "LOCAL_TOOL_RESULTS_V1",
+  "scope": "本机实际nightly更新完成回执及实际fmt；根Clippy由同源Orin另验",
+  "nightly_update_completion": {
+    "chunk_id": "b5be1e",
+    "wall_time_seconds": 0.000007958,
+    "exit_code": 0,
+    "original_token_count": 0,
+    "output": ""
+  },
+  "cargo_fmt": {
+    "chunk_id": "f0d6cc",
+    "wall_time_seconds": 0.70002275,
+    "exit_code": 0,
+    "original_token_count": 0,
+    "output": ""
+  },
+  "compiler": "1.101.0-nightly/a30aa9064df6a504b6a323c6884a2f4cfbfff666",
+  "source": "main_source_after_fmt.json"
+}

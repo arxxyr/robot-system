@@ -1,0 +1,57 @@
+{
+  "schema": "H2_OWNED_CHILD_EXIT_INDEPENDENT_STATIC_REVIEW_R1",
+  "review_status": "PASS_STATIC_PENDING_NATIVE_DYNAMIC_VALIDATION",
+  "reviewed_at_utc": "2026-10-09T18:01:12.545750+00:00",
+  "source": {
+    "path": "scripts/run_post_e_h2.py",
+    "sha256": "3b69527eb66115a3770b96ab55aa06d99716270399bb5cf2b0d84c1c9c51b9ae"
+  },
+  "tests": {
+    "path": "scripts/tests/test_run_post_e_h2.py",
+    "sha256": "28c9beee78f800b0d5c8b667144162875ff1924c76b81bf3a6893513de8dd119"
+  },
+  "baseline": "aa03ca51a819fee45c9ffe029e0ee11fb535a6e7",
+  "all_top_level_functions_AST_unchanged": true,
+  "RealBackend_methods_except_observe_AST_unchanged": true,
+  "proc_generic_status_semantics": "原unreadable/vanished/replaced/permission不改，仅原FileNotFoundError追加errno/filename",
+  "owned_exit_boundary": [
+    "唯一unreadable row",
+    "同一backend.process Popen对象与tool_pid",
+    "完整launch/before PID/start_ticks/boot_id/PGID/UIDs一致",
+    "remaining PID/start_ticks/PGID相同",
+    "原ENOENT且相对stat/status/cmdline/exe字段名",
+    "真实wait成功后才写退出观察，全snapshot保留"
+  ],
+  "negative_control_coverage": [
+    "缺Popen/PID绑定或launch身份",
+    "错PID/start_ticks/boot/PGID/UIDs或缺字段",
+    "多unreadable/外来PID",
+    "权限/未知errno/未知或绝对字段路径",
+    "child仍存活/TimeoutExpired或OSError",
+    "非零exit保留原execute失败",
+    "既有粘性FAIL不清"
+  ],
+  "new_test_methods": [
+    "test_owned_enoent_is_resolved_only_after_child_wait_and_keeps_raw_snapshot",
+    "test_process_relative_missing_fields_keep_their_original_enoent",
+    "test_still_live_or_failed_wait_cannot_resolve_enoent",
+    "test_changed_or_missing_identity_is_not_an_owned_exit",
+    "test_missing_binding_foreign_pid_and_permission_remain_failures",
+    "test_unknown_errno_and_non_pid_paths_cannot_use_child_wait",
+    "test_owned_exit_observation_does_not_clear_prior_failure",
+    "test_nonzero_owned_exit_is_still_rejected_by_original_execute_gate",
+    "test_linux_real_exe_enoent_then_owned_wait_and_no_second_waitable_child"
+  ],
+  "linux_mechanism": "原exe读点配合真实child/WNOWAIT制造ENOENT，实际wait0与二次ECHILD；原生门必须实际执行不skip",
+  "unchanged_gates": [
+    "supervise",
+    "execute sticky FAIL",
+    "report",
+    "cleanup",
+    "RT",
+    "P99",
+    "authority",
+    "originalhardwareFAIL"
+  ],
+  "not_claimed": "未运行新候选测试/Clippy/硬件，原Mac3既有平台FAIL保持"
+}
