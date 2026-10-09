@@ -1,0 +1,60 @@
+{
+  "name": "nightly_update",
+  "argv": [
+    "rustup",
+    "update",
+    "nightly"
+  ],
+  "cwd": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/source",
+  "env": {
+    "RUSTUP_TOOLCHAIN": "nightly",
+    "RUSTC_WRAPPER": "",
+    "CARGO_TERM_COLOR": "never",
+    "CARGO_TARGET_DIR": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build",
+    "CARGO_BUILD_JOBS": "2",
+    "PATH": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin:/home/loosqk/.cargo/bin:/home/loosqk/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+  },
+  "removed_env_keys": [],
+  "started_at": "2026-10-09T05:17:45.034548+00:00",
+  "started_monotonic_ns": 3276314495355239,
+  "timeout_seconds": 900,
+  "stdout": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r1/commands/nightly_update/stdout.log",
+  "stderr": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r1/commands/nightly_update/stderr.log",
+  "launch_receipt": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r1/commands/nightly_update/launch.json",
+  "completion_receipt": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r1/commands/nightly_update/completion.json",
+  "pid": 529708,
+  "identity": {
+    "pid": 529708,
+    "start_ticks": 327631449,
+    "pgid": 529708,
+    "sid": 529708,
+    "state": "R",
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+    "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+  },
+  "signals": [],
+  "reaped": true,
+  "exit_code": 1,
+  "bootstrap_argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12-linux-aarch64-gnu/bin/python3.12",
+    "-c",
+    "import os, sys\ngate = int(sys.argv[1])\npermit = os.read(gate, 1)\nos.close(gate)\nif permit != b'G':\n    os._exit(125)\nos.execvpe(sys.argv[2], sys.argv[2:], os.environ)\n",
+    "5",
+    "rustup",
+    "update",
+    "nightly"
+  ],
+  "bootstrap_sha256": "b8b20c758579a004616382eead77a3298270a12be5394118cffb2eab139d45fc",
+  "identity_phase": "bootstrap",
+  "argv_semantics": "收到父进程 GO 后同 PID exec 的目标命令",
+  "exec_gate_released": true,
+  "ended_monotonic_ns": 3276333448089278,
+  "finished_at": "2026-10-09T05:18:03.987352+00:00",
+  "session_residual_before_cleanup": [],
+  "session_residual_after_cleanup": [],
+  "runner_error": "ValueError('命令原始退出码非零')",
+  "stdout_bytes": 130,
+  "stdout_sha256": "65993804dd7383ffc3cdc0b55341e403c5ec6a81652765a2c6b9d2e56207e67e",
+  "stderr_bytes": 602,
+  "stderr_sha256": "f82b69262f9fcada1d933d5a6b18187b8386688d770be0e0cf62812e0d99a922"
+}

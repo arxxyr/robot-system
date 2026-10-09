@@ -1,0 +1,61 @@
+{
+  "status": "FAIL",
+  "source_files": 597,
+  "source_aggregate_before": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "git_inventory": [
+    {
+      "source": "/home/loosqk/robot-checks/h2-trace-owner-v2-20260930-r1/source",
+      "git_present": true,
+      "head": {
+        "exit": 0,
+        "stdout": "1c5758f97b7c502a38c850e8352ce970216bea53\n",
+        "stderr": ""
+      },
+      "status": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "has_73f4210": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: git cat-file: could not get object info\n"
+      }
+    },
+    {
+      "source": "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/source",
+      "git_present": true,
+      "head": {
+        "exit": 0,
+        "stdout": "4a8e171f27bf18625973aa4f3a6097e9b9fbed18\n",
+        "stderr": ""
+      },
+      "status": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "has_73f4210": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: git cat-file: could not get object info\n"
+      }
+    },
+    {
+      "source": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/source",
+      "git_present": false
+    },
+    {
+      "source": "/home/loosqk/robot-checks/feetech-poke-raw-20261008-r1/source",
+      "git_present": false
+    }
+  ],
+  "scope": "仅更新nightly与实际fmt随后根Clippy；不测试/构建H2/部署/服务/串口",
+  "error": "ValueError('nightly_update 失败；保留原始回执')",
+  "receipts": [
+    {
+      "path": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-precommit-r2/nightly_update/completion.json",
+      "sha256": "2791e10fb5d2f4505b4f50e17866aac7df67c8f60319ec9d14de8637e4a54ab3"
+    }
+  ]
+}

@@ -2,6 +2,14 @@
 
 ## 当前步骤
 
+### 头部与右轮只读诊断（2026-10-09，实机事实）
+
+用户本次确认恢复供电、支撑/看护就绪及可立即断电后，在原Orin仅执行一次40项只读：17个电机Torque_Enable均0；左头7与右轮9型号777、固件主/次原字节3/10、Phase12。头部Mode0、P/D/I=16/43/0、双向死区1/1、Present_Position2642、复位后的Goal_Position0、当前速度0；右轮Mode1、Lock1、位置3494、目标/当前速度均为原帧正零0x0000。40条SYNC_READ帧独立核验通过、40工具child及SSH真实回收；120条请求包含未捕获的握手，不称120份原帧。
+
+原-50此次未复现，具体根因仍未知；本次没有回程，不能关闭头部+8。厂家当前通用内存表门户版本201，bit3说明与保存181相同，和Phase12存在零速语义风险；未找到FW3/10在Mode1下的官方例外，也未实测启扭验证，断扭零反馈不作为零目标安全证明。未修改PID/Phase/Lock/模式或EEPROM，未启扭/运动，不改原验收门。
+
+前后非UART核验通过，正式ca14四件、保护文件及USB身份保持，六服务停止，无控制/读回进程，两USB/四锁无占用。本次读取已结束，已通知可在保持支撑下关闭电源并结束看护；新的实际断电确认尚未收到。数据见[只读结果](../../.verify/hardware_readonly_2026-10-09/summary.json)。旧H2/左腕/头部FAIL、D15 OPEN/DEFERRED及deployable=false保持；暂停草稿不恢复，无安装、服务启动或push。本机实际fmt、同597项源码的Orin实际fmt→根Clippy已通过，浮动nightly更新至a30aa9064；代理10.0.1.80:10808及tmux已实测用于更新/检查。原下载超时与rustup自更新失败保留。现有H2七件待重新构建，本轮尚未做新H2。
+
 ### 未实现控制模式不再假成功（2026-10-08，软件修复）
 
 `FeetechAdapter::write_command` 原先对 Velocity、Torque、ServoPosition 不发送指令却返回成功；现明确返回 `Unsupported` 并保留原诊断。Position 与 Stop 行为不变。仅改两份源码，S0 生产逻辑逐字不变；新增软件回归验证拒绝时无租约/无 TX，以及 S0 错误后实际调用 mock 断扭和确认。Mac Feetech 库215项、Orin Feetech库及 S0 周期控制17项通过，根Clippy通过；准确原件与提交前质量门见 [.verify/feetech_command_mode_2026-10-08/summary.json](../../.verify/feetech_command_mode_2026-10-08/summary.json)。本修复仍未实现轮速执行，不关闭头部/右轮/右H2原FAIL；本轮无UART、硬件动作、安装或push，现场供电与看护答复仍待确认，D15 OPEN/DEFERRED、deployable=false保持。

@@ -1,0 +1,42 @@
+{
+  "status": "PASS_ACTUAL_FMT_THEN_ROOT_CLIPPY",
+  "source_files": 597,
+  "source_aggregate_before": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "proxy": "http://10.0.1.80:10808",
+  "tmux_session": "robot-h2-20261009-proxy-r1",
+  "scope": "仅更新nightly与实际fmt随后根Clippy；不测试/构建H2/部署/服务/串口",
+  "rustc_identity": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "a30aa9064df6a504b6a323c6884a2f4cfbfff666",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "source_aggregate_after": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "source_before_after_equal": true,
+  "compiler_before_after_equal": true,
+  "receipts": [
+    {
+      "path": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r2/commands/nightly_update/completion.json",
+      "sha256": "5ed40ac74f96a32fe08fb74c05f9f8f608b8893e5924b10a66536e2e0817998b"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r2/commands/rustc/completion.json",
+      "sha256": "0e9fe8b522d38ef37a2751478fc3f3ee8fbdef86c098703c74f697c201b53d81"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r2/commands/cargo_version/completion.json",
+      "sha256": "626c6efebe3024d267973a2f1840cf98cb23bdbb12f6379989970fba10d838ed"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r2/commands/fmt/completion.json",
+      "sha256": "7c278de51c776f32e7a2cede2e6978dbbb86257ea06063d8894f555ca0ab4b59"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r2/commands/clippy/completion.json",
+      "sha256": "7490df01471e113e4951c760e7ed74b653941debfd675c43e1a03433ba3e0f58"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/feetech-command-mode-20261008-r1/readonly-20261009-proxy-r2/commands/rustc_after/completion.json",
+      "sha256": "1d544c874da0c756edf8ab1ef24cc641aa0f2df2b3025afd1e36f8c2febd4df9"
+    }
+  ]
+}

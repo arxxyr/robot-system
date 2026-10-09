@@ -1,0 +1,24 @@
+{
+  "scope": "已执行的代理与会话能力探针结果复录",
+  "tmux": {
+    "path": "/usr/bin/tmux",
+    "exit": 0,
+    "stdout": "tmux 3.2a\n"
+  },
+  "screen": {
+    "path": "/usr/bin/screen",
+    "exit": 0,
+    "stdout": "Screen version 4.09.00 (GNU) 30-Jan-22\n"
+  },
+  "curl": {
+    "proxy": "http://10.0.1.80:10808",
+    "url": "https://static.rust-lang.org/dist/channel-rust-nightly.toml.sha256",
+    "exit": 0,
+    "connect": 200,
+    "http_code": 200,
+    "stdout": "930f5f10135531883913e308093fdc56c4223465fec412023566fd2efc5e711c  channel-rust-nightly.toml\n\nHTTP_CODE:200 CONNECT:200\n",
+    "stderr": ""
+  },
+  "socks5h": "未执行，HTTP实际通过",
+  "global_proxy_config_changed": false
+}
