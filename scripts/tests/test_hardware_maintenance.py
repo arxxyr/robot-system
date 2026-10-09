@@ -637,4 +637,84 @@ class ClassificationTests(unittest.TestCase):
             with self.assertRaises(ValueError):m.artifact_path(link/'run',root)
 
 
+class RecordingClockIO:
+    def __init__(self, reads):
+        self.t = 0
+        self.reads = iter(reads)
+        self.read_count = 0
+        self.sleeps = []
+
+    def now(self):
+        return self.t
+
+    def poke(self, side, motor, action, register, *, cleanup=False):
+        assert (side, motor, action, register, cleanup) == (
+            'left', 7, 'read', 'Present_Position', False
+        )
+        delay_ms, position = next(self.reads)
+        self.t += delay_ms * 1_000_000
+        self.read_count += 1
+        return position
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.t += int(seconds * 1_000_000_000)
+
+
+class DeadlineExhaustionTests(unittest.TestCase):
+    def engine(self, reads):
+        io = RecordingClockIO(reads)
+        plan = {'position_wait_ms': 800, 'return_tolerance_raw': 4}
+        return io, m.ProbeEngine(io, plan)
+
+    def test_plus_eight_at_or_after_deadline_fails_without_extra_sleep(self):
+        for delay_ms in (800, 801):
+            with self.subTest(delay_ms=delay_ms):
+                io, engine = self.engine([(delay_ms, 2642)])
+                evidence = {}
+                with self.assertRaises(m.PositionAccuracyError):
+                    engine.witness_position('left', 7, 2634, 2634, 'return', evidence)
+                row = evidence['return']
+                self.assertEqual(row['status'], 'FAIL')
+                self.assertEqual(row['failure_code'], 'POSITION_ACCURACY_TIMEOUT')
+                self.assertEqual(row['final_signed_error_raw'], 8)
+                self.assertEqual(row['samples'][0]['position_raw'], 2642)
+                self.assertEqual(io.read_count, 1)
+                self.assertEqual(io.sleeps, [])
+                self.assertEqual(row['elapsed_ns'], delay_ms * 1_000_000)
+
+    def test_late_in_tolerance_sample_still_fails_without_extra_sleep(self):
+        io, engine = self.engine([(801, 2634)])
+        evidence = {}
+        with self.assertRaises(m.PositionAccuracyError):
+            engine.witness_position('left', 7, 2634, 2634, 'return', evidence)
+        row = evidence['return']
+        self.assertEqual(row['status'], 'FAIL')
+        self.assertEqual(row['final_signed_error_raw'], 0)
+        self.assertEqual(row['elapsed_ns'], 801_000_000)
+        self.assertEqual(io.read_count, 1)
+        self.assertEqual(io.sleeps, [])
+
+    def test_on_time_success_keeps_existing_sample_and_sleep_path(self):
+        io, engine = self.engine([(25, 2642), (10, 2638)])
+        evidence = {}
+        samples = engine.witness_position('left', 7, 2634, 2634, 'return', evidence)
+        self.assertEqual([s['position_raw'] for s in samples], [2642, 2638])
+        self.assertEqual(evidence['return']['status'], 'PASS')
+        self.assertEqual(evidence['return']['final_signed_error_raw'], 4)
+        self.assertEqual(evidence['return']['elapsed_ns'], 85_000_000)
+        self.assertEqual(io.read_count, 2)
+        self.assertEqual(io.sleeps, [0.05])
+
+    def test_exact_deadline_in_tolerance_remains_pass(self):
+        io, engine = self.engine([(800, 2638)])
+        evidence = {}
+        engine.witness_position('left', 7, 2634, 2634, 'return', evidence)
+        self.assertEqual(evidence['return']['status'], 'PASS')
+        self.assertEqual(evidence['return']['elapsed_ns'], 800_000_000)
+        self.assertEqual(io.read_count, 1)
+        self.assertEqual(io.sleeps, [])
+
+
+
 if __name__=='__main__': unittest.main(verbosity=2)

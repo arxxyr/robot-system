@@ -1,0 +1,13 @@
+{
+  "command": "cargo fmt --all",
+  "cwd": "/Users/loosqk/repo/rust/robot-system",
+  "compiler_commit": "a30aa9064df6a504b6a323c6884a2f4cfbfff666",
+  "tool_result": {
+    "chunk_id": "48d917",
+    "wall_time_seconds": 0.926894459,
+    "exit_code": 0,
+    "original_token_count": 0,
+    "output": ""
+  },
+  "scope": "本机实际格式化；此回执不代替Orin Clippy或硬件验证"
+}

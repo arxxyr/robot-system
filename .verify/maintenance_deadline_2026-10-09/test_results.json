@@ -1,0 +1,80 @@
+{
+  "schema": "HEAD1_DEADLINE_LOCAL_DRAFT_TESTS_V1",
+  "scope": "本机临时隔离草稿；无SSH/UART/现场动作",
+  "original_production_unchanged": true,
+  "results": [
+    {
+      "name": "red",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "/Users/loosqk/repo/rust/robot-system/target/h2_native_prepare_2026-10-09/triage-head-local/baseline/scripts/tests",
+        "-p",
+        "test_deadline_exhaustion.py",
+        "-v"
+      ],
+      "pid": 30246,
+      "started_ns": 1791533334606467000,
+      "finished_ns": 1791533334682689000,
+      "returncode": 1,
+      "wait_returncode": 1,
+      "reaped": true,
+      "log": "red.log",
+      "log_sha256": "820a3ab1d18cb3e6d8d1c3da6f675108bfc080ee49ac66498ba86579d6c30f51",
+      "log_bytes": 3426
+    },
+    {
+      "name": "green",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "/Users/loosqk/repo/rust/robot-system/target/h2_native_prepare_2026-10-09/triage-head-local/draft/scripts/tests",
+        "-p",
+        "test*.py",
+        "-v"
+      ],
+      "pid": 30247,
+      "started_ns": 1791533334682786000,
+      "finished_ns": 1791533335077157000,
+      "returncode": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "log": "green.log",
+      "log_sha256": "d89b8f4f4484f2a1bb4d147b1474b0c5f86c5bcc6c1b65b169b2532d4c8d55aa",
+      "log_bytes": 7310
+    }
+  ],
+  "sources": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "caf87b36f0689b4e40fb8fade0f4577ef0a6ff691732c157a10ed620b9a6d4f4",
+      "bytes": 50013
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "0c817f14a3b56cb84b0f0453d6d8e74eeaeedc1d044dfd9f047f253e67fce25b",
+      "bytes": 43122
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/h2_native_prepare_2026-10-09/triage-head-local/draft/scripts/run_hardware_maintenance.py": {
+      "sha256": "dc12de3b2f00f506213c47441f4cceec2f4d534e308e87a65e98167aaaabacfa",
+      "bytes": 50148
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/h2_native_prepare_2026-10-09/triage-head-local/draft/scripts/tests/test_deadline_exhaustion.py": {
+      "sha256": "8e58ebf54b4a42ab497e23848d2e52c8d4640b7e30b68a2ed19eb4352778cc07",
+      "bytes": 3677
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/h2_native_prepare_2026-10-09/triage-head-local/implementation.diff": {
+      "sha256": "c5cb923bf8ccf68e480838e96935c7ea52fb5c425ec80b89c33b27a5f1779b3d",
+      "bytes": 612
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/h2_native_prepare_2026-10-09/triage-head-local/tests-only.diff": {
+      "sha256": "a634129926d6c323b6d7e652cc04ce81cb438fb1168f875257599434d3f5098c",
+      "bytes": 3846
+    }
+  },
+  "count_note": "原40方法+新增4方法=44；red4方法其中2方法失败（3个失败断言/子项），green44方法通过；不记为硬件修复验证"
+}

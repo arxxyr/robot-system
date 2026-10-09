@@ -1,0 +1,81 @@
+{
+  "status": "PASS_ACTUAL_FMT_THEN_ROOT_CLIPPY_MAINTENANCE44",
+  "scope": "仅实际fmt→根Clippy→44维护测试；c800+2dirty，不构建/测试全仓/执行硬件",
+  "native_git_head": "c800f86f81c3a9290e51a1a516a033a69efbf800",
+  "native_git_clean": false,
+  "expected_overlays": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "dc12de3b2f00f506213c47441f4cceec2f4d534e308e87a65e98167aaaabacfa",
+      "bytes": 50148
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "acf784db1d2f7e7232bbab88eb4bc5c3345d13b368748a0a235a58aa448c522d",
+      "bytes": 46509
+    }
+  },
+  "rustc_before": {
+    "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/rustc_before/completion.json",
+    "sha256": "fc9d598c3340479593e1a19cd2dd3d22f71dc44e5baa7f278d063783edd7f77c"
+  },
+  "maintenance44": {
+    "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/maintenance44/completion.json",
+    "sha256": "e77849ec941f80442e273c8a964ce3a81baf0c8ae0ef702cefef550056bfe486"
+  },
+  "rustc_identity": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "a30aa9064df6a504b6a323c6884a2f4cfbfff666",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "source_after": "PASS",
+  "rustc_after": {
+    "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/rustc_after/completion.json",
+    "sha256": "ac5a82d56458216b4641333c339ee5e81fbcd2b6de33651db3a1f85284bae164"
+  },
+  "compiler_after": "PASS",
+  "receipts": [
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/source_before_head/completion.json",
+      "sha256": "469fe2afdb6c3766b1c595bec29794e506540814008c81ede426ea8b8f72fcae"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/source_before_status/completion.json",
+      "sha256": "8aebcda590319bf634124d2497329e533ed873be607248f97f8cd1c432a62149"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/source_before_files/completion.json",
+      "sha256": "0d5867d87342a12399099fafa48a359c7b0aaf892ffbf212c5480bb6cb5efc31"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/rustc_before/completion.json",
+      "sha256": "fc9d598c3340479593e1a19cd2dd3d22f71dc44e5baa7f278d063783edd7f77c"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/fmt/completion.json",
+      "sha256": "ea8507278665a4199f88310c60c7aeffe4a55460459088fd3ae32ae52dc7f443"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/clippy/completion.json",
+      "sha256": "796233dcb285c1c099834550592c38923a05f571b19accf93e7a80ecf4caa443"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/maintenance44/completion.json",
+      "sha256": "e77849ec941f80442e273c8a964ce3a81baf0c8ae0ef702cefef550056bfe486"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/source_after_head/completion.json",
+      "sha256": "f7489e63d0fe027ea2018624e65967b06189f63245e5f2274fc798939c466491"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/source_after_status/completion.json",
+      "sha256": "7e98070b9ee7a012da979e67f5caccd7c7eccb91991c88fc0c622de82982a65f"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/source_after_files/completion.json",
+      "sha256": "9be67ff0bce2819f4e5ad46784b3a2a1f04e3cb28514760469c560d3c0c17a7f"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/qa-r1/rustc_after/completion.json",
+      "sha256": "ac5a82d56458216b4641333c339ee5e81fbcd2b6de33651db3a1f85284bae164"
+    }
+  ]
+}

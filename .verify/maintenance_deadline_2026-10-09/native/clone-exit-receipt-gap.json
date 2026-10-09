@@ -1,0 +1,20 @@
+{
+  "status": "UNKNOWN_EMPTY_EXIT_FILE",
+  "scope": "仅保存自有源准备回执缺口；不覆盖旧回执、不回填child完成",
+  "remote_exit_path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r2/prepare-source.exit",
+  "observed_exit_bytes": 0,
+  "actual_script_tail": "printf 0\n >\"$base/prepare-source.exit\"\n",
+  "cause": "本次准备脚本单引号经shell传输丢失；输出0与重定向分成两条命令",
+  "pane_id": "%8",
+  "pane_pid": 543615,
+  "pane_dead": 1,
+  "pane_dead_status": 0,
+  "independent_git_identity_before_overlay": {
+    "head": "c800f86f81c3a9290e51a1a516a033a69efbf800",
+    "porcelain": "",
+    "origin": "ssh://git@git.yang.cafe:20080/loosqk/robot-system.git",
+    "source_target_exists": false
+  },
+  "receipt_not_rewritten": true,
+  "clone_not_repeated": true
+}

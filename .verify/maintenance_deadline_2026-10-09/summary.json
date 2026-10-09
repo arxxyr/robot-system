@@ -1,0 +1,60 @@
+{
+  "status": "PASS_SOFTWARE_FIX_HARDWARE_PENDING",
+  "change": "witness_position到期失败样本直接结束采样，移除多余50ms等待",
+  "production_files": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "dc12de3b2f00f506213c47441f4cceec2f4d534e308e87a65e98167aaaabacfa",
+      "bytes": 50148
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "acf784db1d2f7e7232bbab88eb4bc5c3345d13b368748a0a235a58aa448c522d",
+      "bytes": 46509
+    }
+  },
+  "base_head": "c800f86f81c3a9290e51a1a516a033a69efbf800",
+  "native_source_state": "c800加批准两份Python修改，非clean新提交构建",
+  "rust_source_files": 597,
+  "rust_source_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "compiler_commit": "a30aa9064df6a504b6a323c6884a2f4cfbfff666",
+  "validation": {
+    "local_methods": 44,
+    "native_methods": 44,
+    "new_method_subset": 4,
+    "methods_not_summed_across_hosts": true,
+    "native_owned_commands": 11,
+    "native_actual_fmt_then_root_clippy": true,
+    "native_commands_naturally_reaped": true,
+    "local_actual_fmt": "local/cargo_fmt_tool_result.json",
+    "original_red_preserved": "red.log",
+    "main_local_result": "local/result.json",
+    "native_result": "native/result.json"
+  },
+  "unchanged_gates": {
+    "tolerance_raw": 4,
+    "budget_ms": 800,
+    "on_time_exact_deadline_allowed": true,
+    "late_in_tolerance_rejected": true,
+    "plus_eight_rejected": true,
+    "normal_sample_sleep_ms": 50,
+    "safe_off_unchanged": true
+  },
+  "original_hardware_evidence": {
+    "archive": "../hardware_selected_targets_2026-10-08/original-evidence.tar.gz",
+    "sha256": "dac2699bcb191b57199ff95a21d9c85882a40f9ac3b46f57e4429fc7203c2e7a",
+    "head1_return": "2634目标已读回，190.694–801.681ms连续11样本2642，原FAIL不变"
+  },
+  "root_review": "最小三行分支、原40测试AST保持及日志/源身份复核通过；不宣称取消进行中的IO",
+  "limitations": [
+    "未执行新UART/动作/实机回程复验",
+    "不是H2/底盘零速或位置根因闭环",
+    "原生clone空exit原件为UNKNOWN，另存native/clone-exit-receipt-gap.json",
+    "完整workspace测试、release新构建未跑且不需要此Python修复替代证明",
+    "H2沿既有祖先/3helper不变门继承c800产物，不能重贴build_head"
+  ],
+  "right_H2": "历史FAIL；当次现场七事实待回复",
+  "left_wrist": "历史FAIL",
+  "head1": "历史FAIL",
+  "base": "主动动作DEFERRED",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

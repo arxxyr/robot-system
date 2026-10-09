@@ -367,6 +367,9 @@ class ProbeEngine:
             if stamp<=deadline and abs(position - target) <= self.plan["return_tolerance_raw"]:
                 row['status']='PASS'
                 return row['samples']
+            # 已到期限的失败样本直接收尾，不额外延迟断扭。
+            if stamp>=deadline:
+                break
             self.io.sleep(0.05)
         row.update(failure_code='POSITION_ACCURACY_TIMEOUT',finished_ns=self.io.now(),elapsed_ns=self.io.now()-started)
         raise PositionAccuracyError(row)
