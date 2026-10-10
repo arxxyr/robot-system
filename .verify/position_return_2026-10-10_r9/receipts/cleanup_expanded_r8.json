@@ -1,0 +1,27 @@
+{
+  "status": "PASS_DUPLICATE_EXPANDED_R8_CLEANUP",
+  "recorded_at_ns": 1791626502510212000,
+  "authorization": "用户旧target及时清理；仅已永久归档且逐字节相同的R8解压副本",
+  "removed": [
+    {
+      "expanded_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/native-preparation/head1-outward-observation-r8-originals",
+      "archive_path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r8/originals/head1-outward-observation-r8-originals.tar.gz",
+      "archive_sha256": "a4bd2f7b6b13e0d76209ce4c990533ec5a33d88d2f7548ad06d6773eb8352575",
+      "files": 757,
+      "bytes": 1673819,
+      "every_file_actual_bytes_equal": true
+    },
+    {
+      "expanded_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/commit-quality-r8/commit-quality-r7-r8-originals",
+      "archive_path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r8/originals/commit-quality-r7-r8-originals.tar.gz",
+      "archive_sha256": "1ea20010ae71d908c504b4d59d0e70da421018aae33dfd989e8c4648f02f4573",
+      "files": 58,
+      "bytes": 582241,
+      "every_file_actual_bytes_equal": true
+    }
+  ],
+  "files": 815,
+  "bytes": 2256060,
+  "archives_unchanged": true,
+  "hardware_actions": 0
+}

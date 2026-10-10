@@ -1,0 +1,30 @@
+{
+  "name": "head1-reverse-observation-plan-only",
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/head1_reverse_observation_r9.py",
+    "--helper",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r6/p24_trial_head1_wire_r6.py",
+    "--maintenance",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/maintenance_bindings_head_reverse_r9.json",
+    "--output",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/head1-reverse-observation-r8",
+    "--run-id",
+    "head1-reverse-observation-r8",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/position-return-20261010-r1"
+  ],
+  "pid": 625597,
+  "started_ns": 1791625053200996696,
+  "finished_ns": 1791625053308366673,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout_bytes": 33181,
+  "stdout_sha256": "1580855d8393fb642b54ba39f672192d5c609abcc7d2d935b45a95f0a2d108ba",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

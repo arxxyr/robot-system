@@ -1,0 +1,27 @@
+{
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/head1_reverse_observation_r9.py",
+    "--helper",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r6/p24_trial_head1_wire_r6.py",
+    "--maintenance",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/maintenance_bindings_head_reverse_r9.json",
+    "--output",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/head1-reverse-observation-r9",
+    "--run-id",
+    "head1-reverse-observation-r9",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/position-return-20261010-r1"
+  ],
+  "pid": 625808,
+  "started_ns": 1791625446807197597,
+  "finished_ns": 1791625446915735155,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "uart_operations": 0,
+  "motor_actions": 0
+}

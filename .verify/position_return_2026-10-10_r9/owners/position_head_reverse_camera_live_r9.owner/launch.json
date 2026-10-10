@@ -1,0 +1,38 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "WAITING",
+  "status": "RUNNING",
+  "owner_pid": 64402,
+  "command": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 64403,
+  "started_utc": "2026-10-10T09:50:31.203525+00:00",
+  "started_monotonic_ns": 64017960218500,
+  "observe_seconds": 1.0,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/single_ssh_root_reviewed_head_reverse_camera_r9_r2.sh",
+    "sha256": "c1c16619bbb9378c9f8baf6cf2ca2c954d3f458bb6abdea7f33892fa43585b97",
+    "bytes": 30640
+  },
+  "launched_utc": "2026-10-10T09:50:31.206154+00:00",
+  "start_new_session": true,
+  "child_session_id": 64403
+}

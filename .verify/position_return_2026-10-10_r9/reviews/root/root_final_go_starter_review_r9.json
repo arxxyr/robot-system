@@ -1,0 +1,23 @@
+{
+  "status": "ROOT_R9_FINAL_STARTER_AND_GO_ACCEPTED_SINGLE_RUN",
+  "recorded_at_ns": 1791625743434077000,
+  "field_stamp_ns": 1791625743426329000,
+  "field": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/field_confirmation_r9.json",
+    "sha256": "92f9e48b491d2de1733b8949a58fc7113f7928b6529e2c653ebe9f7e27cbab18",
+    "bytes": 704
+  },
+  "go": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/head1-reverse-observation-r9.go.json",
+    "sha256": "4877e142cbd26089c49c7c823b6ccdce70b031d94d87a3d9699c3282bfd53f60",
+    "bytes": 1271
+  },
+  "starter": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/start_head1_reverse_with_camera_once_r9.sh",
+    "sha256": "69446498c106541824f5c8aa6059fea85ead499684ae64c5cb7d89d982bb6e89",
+    "bytes": 10181
+  },
+  "only_three_allowed_placeholder_substitutions": true,
+  "scope": "只头1left7原P16/I0一次-24往返，出程首次合格后观察至原800ms再回程，原±4/800ms及17电机停止门保持，三路相机独立同步记录，底盘不动作",
+  "no_execute_yet": true
+}

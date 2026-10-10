@@ -1,0 +1,22 @@
+{
+  "status": "ROOT_R9_COMMIT_QUALITY_ACCEPTED",
+  "checked_at_ns": 1791626317624472000,
+  "main_actual_fmt_exit": 0,
+  "native_actual_fmt_then_root_clippy": true,
+  "source_files": 597,
+  "source_sha256": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+  "host_native_three_windows_actual_equal": true,
+  "compiler_commit": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+  "direct_receipts_checked": 10,
+  "output_streams_checked": 20,
+  "quality_tar_files_bytes": [
+    58,
+    582451
+  ],
+  "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+  "native_worktree": "five changed sources; not clean",
+  "fmt_pid": 626468,
+  "clippy_pid": 626479,
+  "first_local_parse_error": "KeyError source_fmt_after.json；实际原件fmt_after.json，仅修本地读取，不重跑远端质量",
+  "scope": "无新测试、release、升级、UART、安装或控制运行时变更"
+}

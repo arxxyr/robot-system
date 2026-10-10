@@ -1,0 +1,126 @@
+{
+  "status": "INDEPENDENT_R9_ORIGINALS_REVIEW_PASS_HARDWARE_FAIL_RETAINED",
+  "scope": "仅直接读取本机原tar及已选图，无SSH/UART/动作/采图/主源改动",
+  "tar": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/head1-reverse-observation-r9-originals.tar.gz",
+    "sha256": "8cb8c6686e0d641478077d065104f2133218c0492cae0c028c92ac11c1ad5cfe",
+    "bytes": 381925
+  },
+  "tar_regular_files": 770,
+  "tar_regular_bytes": 2402339,
+  "run_sha256": "895425b12d88fe96725499b361d924ce6d67b00447e8cda1743804b3ca053220",
+  "run_bytes": 515548,
+  "motor_direct_children": 347,
+  "motor_streams_checked": 694,
+  "motor_exit_counts": {
+    "0": 319,
+    "1": 28
+  },
+  "all_motor_direct_reaped": true,
+  "write_scope": "仅left7 GP2668/TE1/GP2644/TE0，共4write；PDI/base写0",
+  "anchor_raw": 2668,
+  "goal_raw": 2644,
+  "outward": {
+    "status": "FAIL",
+    "last_position_raw": 2650,
+    "last_error_raw": 6,
+    "samples": 14,
+    "tolerance_raw": 4,
+    "budget_ms": 800,
+    "elapsed_ns": 802333485,
+    "plus6_within_deadline": 8,
+    "late_samples": 1,
+    "never_qualified": true
+  },
+  "return": "NOT_RUN_OUTWARD_PRECISION_FAILED",
+  "after_head1": {
+    "Present_Position": 2650,
+    "Goal_Position": 2644,
+    "anchor_error_raw": -18
+  },
+  "stop_integer_zero_fields": 51,
+  "identity": "PASS_72",
+  "manual_power_cut_required": false,
+  "hardware_result": "FAIL",
+  "camera_capture_children_natural_exit0_reaped": 3,
+  "selection_manifest": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/selected-motion-frames-r9/selection_manifest_r9.json",
+    "sha256": "9a03408cc25891ec48ddc75624ff27fed932da617c45dd92a9bbade7dafa0d2b",
+    "bytes": 11624
+  },
+  "selected_rows_format": [
+    "camera",
+    "label",
+    "sequence",
+    "frame_monotonic_us",
+    "motor_minus_frame_ns"
+  ],
+  "selected_rows": [
+    [
+      "sonix-usb-2_1",
+      "before_enable",
+      71,
+      3379091161647,
+      46202540
+    ],
+    [
+      "sonix-usb-2_1",
+      "outward_end",
+      79,
+      3379091958061,
+      99232376
+    ],
+    [
+      "sonix-usb-2_2",
+      "before_enable",
+      70,
+      3379091119025,
+      88824540
+    ],
+    [
+      "sonix-usb-2_2",
+      "outward_end",
+      79,
+      3379092014970,
+      42323376
+    ],
+    [
+      "realsense-043323051347-rgb",
+      "before_enable",
+      227,
+      3379091195944,
+      11905540
+    ],
+    [
+      "realsense-043323051347-rgb",
+      "outward_end",
+      252,
+      3379092029882,
+      27411376
+    ]
+  ],
+  "nearest_valid_frame_at_or_before_each_event": true,
+  "outward_selected_frames_before_TE0": true,
+  "return_end_image_created": false,
+  "selection_convert_children_natural_exit0_reaped": 2,
+  "owners": [
+    [
+      "position_head_reverse_camera_live_r9.owner",
+      64402,
+      64403,
+      "natural0/reap"
+    ],
+    [
+      "position_existing_motion_frames_select_r9.owner",
+      64647,
+      64648,
+      "natural0/reap"
+    ]
+  ],
+  "limits": [
+    "三路整raw仍native保留；本地验证选出raw bytes与camera缓冲SHA/offset/bytesused一致，未重新核整raw所有payload",
+    "曝光原时间微秒、motor时间纳秒；时点前末帧用于观察，不能当作纳秒曝光或根因证明",
+    "原51为整数停止读回，未在本审扩展成51原帧；原FAIL/旧±50/D15状态不覆盖"
+  ],
+  "local_preview_note": "只读schema预览将valid_frames整数当list调用len误拒，原tool错误保留；未重跑真实采集"
+}

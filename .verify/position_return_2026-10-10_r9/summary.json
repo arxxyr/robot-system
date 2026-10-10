@@ -1,0 +1,287 @@
+{
+  "schema": "POSITION_RETURN_R9_ARCHIVE_V1",
+  "status": "EVIDENCE_REVIEW_PASS_HARDWARE_OUTWARD_FAIL_RETAINED",
+  "recorded_at": "2026-10-10T10:02:53.730285+00:00",
+  "scope": "头1left7原P16/I0单次负向24，三相机独立20秒观测；原±4/800ms/STOP51保持，出程失败后不自动回程",
+  "software": {
+    "candidate": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/head1_reverse_observation_r9.py",
+      "sha256": "c30a0e129cc3435cc647480200c9a31ab83a72f0828c28caaf2efb60cd7a6aaa",
+      "bytes": 12658
+    },
+    "memory_methods": 6,
+    "direct_uv_children": 3,
+    "streams": 6,
+    "default_PLAN_ONLY_zero_execute": true,
+    "missing_GO_exit2_zero_execute": true,
+    "PDI_controller_changed": false,
+    "base_control_changed": false,
+    "Rust_TX_path_changed": false,
+    "new_Rust_control_build": false
+  },
+  "plan_lineage": {
+    "old_run_id": "head1-reverse-observation-r8",
+    "old_plan_sha256": "efdcb1e662414ece9180e72f873904780ec83b2b5a20475b6f1b7e8bfeabc516",
+    "effective_run_id": "head1-reverse-observation-r9",
+    "effective_plan_sha256": "c504ce371a83601936af9490711fbc4ad42cb91d067e95e70d748a4c39de470c",
+    "only_run_id_output_renamed": true,
+    "candidate_bindings_unchanged": true,
+    "both_PLAN_zero_actions": true
+  },
+  "authorization": {
+    "GO_consumed_once": true,
+    "GO": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/head1-reverse-observation-r9.go.json",
+      "sha256": "4877e142cbd26089c49c7c823b6ccdce70b031d94d87a3d9699c3282bfd53f60",
+      "bytes": 1271
+    },
+    "field": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/field_confirmation_r9.json",
+      "sha256": "92f9e48b491d2de1733b8949a58fc7113f7928b6529e2c653ebe9f7e27cbab18",
+      "bytes": 704
+    },
+    "effective_starter": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/start_head1_reverse_with_camera_once_r9.sh",
+      "sha256": "69446498c106541824f5c8aa6059fea85ead499684ae64c5cb7d89d982bb6e89",
+      "bytes": 10181
+    },
+    "no_motor_retry": true
+  },
+  "hardware": {
+    "result": "FAIL",
+    "run_sha256": "895425b12d88fe96725499b361d924ce6d67b00447e8cda1743804b3ca053220",
+    "run_bytes": 515548,
+    "runtime_pid": 625927,
+    "anchor_raw": 2668,
+    "goal_raw": 2644,
+    "outward": {
+      "status": "FAIL",
+      "last_position_raw": 2650,
+      "last_error_raw": 6,
+      "samples": 14,
+      "tolerance_raw": 4,
+      "budget_ms": 800,
+      "elapsed_ns": 802333485,
+      "plus6_within_deadline": 8,
+      "late_samples": 1,
+      "never_qualified": true
+    },
+    "return": "NOT_RUN_OUTWARD_PRECISION_FAILED",
+    "final_PP_raw": 2650,
+    "final_GP_raw": 2644,
+    "final_anchor_error_raw": -18,
+    "writes": "left7 GP2668/TE1/GP2644/TE0共4write",
+    "PDI_writes": 0,
+    "base_writes": 0,
+    "camera_control_writes": 0,
+    "parameter_changes": 0,
+    "direct_children": 347,
+    "original_streams": 694,
+    "all_direct_natural_reaped": true,
+    "stop": {
+      "status": "PASS",
+      "integer_zero_fields": 51,
+      "all_51_raw_frames_exported": false
+    },
+    "identity": "PASS_72",
+    "manual_power_cut_required": false,
+    "precision_FAIL_not_overwritten": true
+  },
+  "camera": {
+    "status": "PASS_CAMERA_ONLY",
+    "valid_frames": [
+      201,
+      201,
+      601
+    ],
+    "capture_children_natural_exit0_reaped": 3,
+    "direct_children": 12,
+    "streams": 24,
+    "during_original_nonuart_17": "PASS",
+    "after_original_nonuart_17": "PASS",
+    "raw_bytes_native_only": 102941432,
+    "raw_downloaded_into_archive": false,
+    "selected_original_files": 13,
+    "selected_display_images": 6,
+    "selected_RS_raw_frames": 2,
+    "selected_points": [
+      "before_enable",
+      "outward_end"
+    ],
+    "return_end": "NOT_RUN_OUTWARD_PRECISION_FAILED",
+    "nearest_valid_frame_at_or_before_events": true,
+    "frame_event_lags_ns": [
+      [
+        "sonix-usb-2_1",
+        "before_enable",
+        71,
+        3379091161647,
+        46202540
+      ],
+      [
+        "sonix-usb-2_1",
+        "outward_end",
+        79,
+        3379091958061,
+        99232376
+      ],
+      [
+        "sonix-usb-2_2",
+        "before_enable",
+        70,
+        3379091119025,
+        88824540
+      ],
+      [
+        "sonix-usb-2_2",
+        "outward_end",
+        79,
+        3379092014970,
+        42323376
+      ],
+      [
+        "realsense-043323051347-rgb",
+        "before_enable",
+        227,
+        3379091195944,
+        11905540
+      ],
+      [
+        "realsense-043323051347-rgb",
+        "outward_end",
+        252,
+        3379092029882,
+        27411376
+      ]
+    ],
+    "selected_payload_SHA_verified": true,
+    "original_error_buffer_rule": "ERROR/empty metadata保留，raw offset按实际正常非空写入推进；零错误时间不参与有效连续性",
+    "two_image_conversion_children_natural_exit0_reaped": 2
+  },
+  "visual": {
+    "root_actual_images_viewed": 6,
+    "actual_observation": {
+      "realsense": "同期前后图的桌沿、沙发和柱子整体移位",
+      "sonix_usb_2_1": "同期前后图背景基本不变",
+      "sonix_usb_2_2": "同期前后图背景基本不变"
+    },
+    "root_inference": "与本轮仅头1动作及编码器2668→2650一致，支持实际头部运动",
+    "limits": [
+      "相机具体安装位置未人工确认",
+      "不能由图像测出6个计数的精确误差",
+      "不能仅由两帧判断线束拉扯、壳体接触、齿隙或摩擦根因",
+      "未执行回程，return_end为NOT_RUN",
+      "图片不替代±4/800ms或STOP门"
+    ],
+    "mechanical_cause": "OPEN",
+    "camera_installation": "UNCONFIRMED"
+  },
+  "owners": [
+    {
+      "name": "position_head_reverse_camera_live_r9.owner",
+      "owner_pid": 64402,
+      "ssh_pid": 64403,
+      "natural_wait_exit": 0,
+      "reaped": true,
+      "input": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/single_ssh_root_reviewed_head_reverse_camera_r9_r2.sh",
+        "sha256": "c1c16619bbb9378c9f8baf6cf2ca2c954d3f458bb6abdea7f33892fa43585b97",
+        "bytes": 30640
+      },
+      "log": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_head_reverse_camera_live_r9.owner/child.log",
+        "sha256": "58bd97520184462dfc81f6ebe918345c197264ca6dcd46769eb4a4849196a8e5",
+        "bytes": 535517
+      },
+      "log_archived": true
+    },
+    {
+      "name": "position_existing_motion_frames_select_r9.owner",
+      "owner_pid": 64647,
+      "ssh_pid": 64648,
+      "natural_wait_exit": 0,
+      "reaped": true,
+      "input": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/select_existing_motion_frames_r9.sh",
+        "sha256": "5c6319eb7daefaca9cd6a628da283f08bdabca27f78ca2190580f665de6aafbe",
+        "bytes": 4382
+      },
+      "log": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_existing_motion_frames_select_r9.owner/child.log",
+        "sha256": "7ad0b0657140c5a1b08d585e714db052da5cbca1090ebfb296466e3f3b88f94f",
+        "bytes": 1187568
+      },
+      "log_archived": false
+    },
+    {
+      "name": "position_commit_quality_r7_r9.owner",
+      "owner_pid": 66903,
+      "ssh_pid": 66904,
+      "natural_wait_exit": 0,
+      "reaped": true,
+      "input": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/commit-quality-r9/commit_quality_r7_r9_single_ssh.sh",
+        "sha256": "67068ee9662b9dcb675f568c63dbb87e105761f387accf7f95605245a9afaacf",
+        "bytes": 13660
+      },
+      "log": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_commit_quality_r7_r9.owner/child.log",
+        "sha256": "392248c50e4b69beebf47dd984f57d8c4af364aac4566f4a88f87f732c9ff7d6",
+        "bytes": 181014
+      },
+      "log_archived": false
+    }
+  ],
+  "preparation_failures": {
+    "rename_owner_input_FileNotFoundError": "保留原FAIL，pid=null、未分配SSH child，零UART/零动作；成功更名仅重新生成PLAN，非motor重试",
+    "quality_local_KeyError": "root本地误找source_fmt_after.json，实际fmt_after.json，保留root评审原记录；没有远端质量重跑",
+    "independent_local_schema_preview": "首只读预览把valid_frames整数当list调用len，原tool错误与短独审说明保留，非硬件重试"
+  },
+  "later_commit_quality": {
+    "status": "PASS",
+    "source_files": 597,
+    "source_aggregate": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+    "compiler_commit": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_worktree": "five changed sources; not clean",
+    "actual_fmt_then_root_clippy": true,
+    "direct_children": 10,
+    "streams": 20,
+    "no_new_tests_release_UART_install": true
+  },
+  "physical_status": {
+    "last_user_confirmation": "ON",
+    "independent_electrical_telemetry": "UNKNOWN",
+    "power_off_request_reason": "支撑下近距离检查头1线束/壳体/支撑，不强扳关节",
+    "power_off_confirmation": "PENDING",
+    "inspection_report": "PENDING",
+    "not_a_STOP_failure_power_cut_requirement": true
+  },
+  "remaining": {
+    "head1_precision": "FAIL，本轮出程+6、回程未执行；不由图像关闭精度门",
+    "mechanical_root_cause": "OPEN",
+    "historical_right8_right9_plus_minus50_cause": "OPEN",
+    "base_motion": "NOT_RUN",
+    "H2_this_round": "NOT_RUN，历史状态不覆盖",
+    "D15": "OPEN/DEFERRED",
+    "deployable": false,
+    "formal_install_changed": false
+  },
+  "archive": {
+    "unique_original_tars": 2,
+    "regular_files_inside_tars": 828,
+    "regular_bytes_inside_tars": 2984790,
+    "no_770_or_58_tree_copy": true,
+    "no_native_102MB_raw_copy": true,
+    "older_inputs_owner_logs": "只引用原回执路径/SHA，未重复复制；当前动作owner含完整child.log，选图大base64日志保留target并引用，实际13原件完整入包"
+  },
+  "agent_actions": {
+    "new_SSH": 0,
+    "UART": 0,
+    "motor_actions": 0,
+    "new_camera_capture": 0,
+    "tests_rerun": 0,
+    "main_source_or_docs_changed": 0,
+    "commit_push": 0
+  }
+}

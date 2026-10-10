@@ -1,0 +1,18 @@
+{
+  "name": "default-plan-only",
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/head1_reverse_observation_r9.py"
+  ],
+  "pid": 625596,
+  "started_ns": 1791625053134539827,
+  "finished_ns": 1791625053196831139,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout_bytes": 233,
+  "stdout_sha256": "58d60564cd6037a702f6d7c881e79161faddedf89486b5e1e1c61097f1479e25",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

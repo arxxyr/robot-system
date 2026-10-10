@@ -1,0 +1,126 @@
+{
+  "scope": "R9_SINGLE_HEAD1_NEGATIVE24_P16_I0_AND_SEPARATE_CAMERA",
+  "result": "FAIL",
+  "outward": {
+    "anchor": 2668,
+    "goal": 2644,
+    "samples": 14,
+    "final_present": 2650,
+    "final_error": 6,
+    "first_qualified_sample": null
+  },
+  "return": "NOT_RUN",
+  "stop51": "PASS",
+  "identity": "PASS",
+  "manual_power_cut_required": false,
+  "motor_direct_children": 347,
+  "motor_child_output_sha_bytes_checked": 694,
+  "motor_all_naturally_reaped": true,
+  "camera_direct_children": 12,
+  "camera_output_sha_bytes_checked": 24,
+  "camera_all_naturally_reaped": true,
+  "same_ssh_direct_children": 8,
+  "same_ssh_all_reaped": true,
+  "camera_frames": [
+    201,
+    201,
+    601
+  ],
+  "camera_raw_retained_native": [
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/camera-record-r9/sonix-usb-2_1.raw",
+      "bytes": 15965048,
+      "sha256": "73aaa4c36bd9afdb399e83c45b223037ed81c5e90535eb5d099bb53b2e564724"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/camera-record-r9/sonix-usb-2_2.raw",
+      "bytes": 17741184,
+      "sha256": "ddbf61ceae906768f126517c4e1a419aed539ab000b2a42952ebbdec8e2f57cc"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/camera-record-r9/realsense-043323051347-rgb.raw",
+      "bytes": 69235200,
+      "sha256": "f50603ab9166c7a117773254b125945d0a38aa9b9f9a1e26eb05092a0981aeef"
+    }
+  ],
+  "camera_format_control_after": {
+    "sonix-usb-2_1": {
+      "format_fps_preserved": true,
+      "control_read_values_equal": true
+    },
+    "sonix-usb-2_2": {
+      "format_fps_preserved": true,
+      "control_read_values_equal": true
+    },
+    "realsense-043323051347-rgb": {
+      "format_fps_preserved": true,
+      "control_read_values_equal": true
+    }
+  },
+  "nonuart_during_17": "PASS_NON_UART_CURRENT_FACTS",
+  "nonuart_after_17": "PASS_NON_UART_CURRENT_FACTS",
+  "motor_write_argv": [
+    [
+      "7",
+      "write",
+      "Goal_Position",
+      "2668"
+    ],
+    [
+      "7",
+      "write",
+      "Torque_Enable",
+      "1"
+    ],
+    [
+      "7",
+      "write",
+      "Goal_Position",
+      "2644"
+    ],
+    [
+      "7",
+      "write",
+      "Torque_Enable",
+      "0"
+    ]
+  ],
+  "pdi_writes": 0,
+  "base_writes": 0,
+  "camera_control_writes": 0,
+  "new_uart_after_terminal": 0,
+  "retries": 0,
+  "evidence_refs": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/head1-reverse-observation-r9-originals.tar.gz",
+      "sha256": "8cb8c6686e0d641478077d065104f2133218c0492cae0c028c92ac11c1ad5cfe",
+      "bytes": 381925
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/head1-reverse-observation-r9-originals/head1-reverse-observation-r9/run.json",
+      "sha256": "895425b12d88fe96725499b361d924ce6d67b00447e8cda1743804b3ca053220",
+      "bytes": 515548
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/head1-reverse-observation-r9-originals/camera-record-r9/result.json",
+      "sha256": "b30b2bd1e01a404cefa0103a58e903f45028913b2c0eb96a65a8797709d7e674",
+      "bytes": 451189
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/head1-reverse-observation-r9-originals/head1-reverse-observation-launch-r9/nonuart-during-camera.stdout",
+      "sha256": "e713534e6eee2ba55c655f322461e8f7ea8c8718689bae0d73744b42f2cb9f26",
+      "bytes": 176291
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/head1-reverse-observation-r9-originals/head1-reverse-observation-launch-r9/nonuart_after.stdout",
+      "sha256": "b1dc190bc65388a260f62435fb6caaca8b05758e2ed76588a99350fda4aa353e",
+      "bytes": 176291
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-reverse-preparation-r9/native-preparation/selected-motion-frames-r9/selection_manifest_r9.json",
+      "sha256": "9a03408cc25891ec48ddc75624ff27fed932da617c45dd92a9bbade7dafa0d2b",
+      "bytes": 11624
+    }
+  ],
+  "source_limits": "冻结d97/f201/13c，非新Rust控制产物；图片不替代原精度门；D15 OPEN/DEFERRED/deployable=false保持；原FAIL保留"
+}

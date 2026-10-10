@@ -1,0 +1,45 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "NOT_LAUNCHED",
+  "status": "FAIL",
+  "owner_pid": 62476,
+  "command": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": null,
+  "started_utc": "2026-10-10T09:43:48.272736+00:00",
+  "started_monotonic_ns": 63615031569500,
+  "observe_seconds": 1.0,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [
+    {
+      "kind": "owner",
+      "error": "FileNotFoundError(2, 'No such file or directory')",
+      "count": 1,
+      "first_utc": "2026-10-10T09:43:48.273012+00:00",
+      "last_utc": "2026-10-10T09:43:48.273015+00:00"
+    }
+  ],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_head_reverse_rename_plan_r9.owner/child.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "finished_utc": "2026-10-10T09:43:48.273047+00:00",
+  "elapsed_ns": 173250
+}

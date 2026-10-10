@@ -1,0 +1,12 @@
+{
+  "status": "ROOT_R9_RENAMED_PLAN_ACCEPTED_ZERO_ACTION",
+  "reviewed_at_ns": 1791625675564675000,
+  "plan_sha256": "c504ce371a83601936af9490711fbc4ad42cb91d067e95e70d748a4c39de470c",
+  "old_basename_r8_plan_retained": true,
+  "changes_only": [
+    "plan.run_id",
+    "plan.output"
+  ],
+  "candidate_and_bindings_unchanged": true,
+  "motor_go_created": false
+}
