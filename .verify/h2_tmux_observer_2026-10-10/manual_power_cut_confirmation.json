@@ -1,0 +1,14 @@
+{
+  "received_at_utc": "2026-10-10 03:37:12 UTC",
+  "source": "用户在本聊天直接回复现场断电询问",
+  "answer": "两个电机电源已切断，机械臂保持支撑",
+  "reported_motor_power": "OFF",
+  "reported_arm_support": true,
+  "actual_cut_time": "UNKNOWN",
+  "independent_power_telemetry": "NOT_MEASURED",
+  "watch": "本次看护收尾结束",
+  "new_hardware_go": false,
+  "original_h2_status": "FAIL",
+  "original_stop34": "NOT_RUN",
+  "subsequent_uart": "NONE"
+}

@@ -1,0 +1,38 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "WAITING",
+  "status": "RUNNING",
+  "owner_pid": 56091,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 56093,
+  "started_utc": "2026-10-10T03:34:35.300014+00:00",
+  "started_monotonic_ns": 41462167856083,
+  "observe_seconds": 5,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_tmux_observer_2026-10-10_r1/inherit_hooks_readonly_r1.sh",
+    "sha256": "be3796cc3d4a6365e6e7fceb29f7e49ce81b18989cfd24d3d951989763d4b8ee",
+    "bytes": 1769
+  },
+  "launched_utc": "2026-10-10T03:34:35.302272+00:00",
+  "start_new_session": true,
+  "child_session_id": 56093
+}

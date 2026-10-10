@@ -2,6 +2,22 @@
 
 ## 当前步骤
 
+### 右 H2 通知式观察候选及最新 nightly 冻结（2026-10-10，软件已验收）
+
+未改生产driver、Rust源码、P99/RT/authority或未知进程FAIL门。仅把一次性SSH观察副本的2秒tmux/date/sleep轮询换成pane局部`pane-died`通知和每观察者独立channel；保留`exec`启动链、仅一次launch/断线后只观察、原最终run终态门。候选仍绑定旧a96和旧基址，不具备新现场事实或GO，不能直接用于新真实H2。
+
+Orin tmux3.2a无害夹具六类场景PASS：退出0/1、退出后续接、双观察者、提前/错误通知拒绝、退出先于wait注册。9个observer实际自然wait/ECHILD，driver仅以tmux真实pane_dead/status证明退出；首夹具r1 FAIL保留。实际继承的pane-died没有命令，不外推未来配置；未主动注入真实SSH断线或tmux服务器重启。
+
+另一次纯软件机制实验自然运行32个自有child、501次读取，其中188次exe ENOENT为161次R→R及27次R→Z；另1个受控child独立记录，33个均自然wait0/ECHILD且后验缺失。该机制可自然复现，不证明旧PID585588归属或具体根因。入口为 [.verify/h2_tmux_observer_2026-10-10](../../.verify/h2_tmux_observer_2026-10-10/summary.json)，原件按字节保留，不新增框架/index/verifier。
+
+本轮实际浮动nightly更新至32dba69d6，原生fmt→根Clippy及13条命令自然回收通过；主树352与原生a96的597项逐项相同、聚合5970c9be。六配方/生产4测量3/七help/默认PLAN_ONLY已实际通过；新测量件短mock4组各2样本及tonic6方法9场景、全部server joined通过，分别33及12个直接child exit0自然回收。四份597源码、编译器、七件/两manifest、正式四件/六服务及控制进程前后保持；实际build仍a96，运行文档352祖先继承已核，不改贴HEAD。
+新原包release-post-32d-r2-originals.tar.gz为425017字节/254文件、SHA8d420169…，仅保存必要原件，不含七ELF、完整源码或共享Runner正文。未执行的f92草稿与唯一实际5f5稿均保留；后者仅同步post回执中的CARGO_HOME/proxy记录，V2构建六变量合同保持。独审与root软件验收通过，范围/环境展示及复用边界见入口review.md；无新硬件或完整Rustworkspace测试，软件PASS不作为H2成功。
+
+root于03:37:12UTC收到用户“两个电机电源已切断，机械臂保持支撑”，本轮看护收尾结束；实际断电时刻/独立遥测未知，不回填原H2 FAIL或STOP34 NOT_RUN，不构成新现场准备/GO。确认后无新增UART/动作、安装或服务操作；旧左腕/头1 FAIL、头2/三轮动作待验、D15 OPEN/DEFERRED及deployable=false保持。
+
+同轮独立只读核对底盘参考，不计入H2软件门：[官方XLeRobot固定b017的stop_base](https://github.com/Vector-Wangel/XLeRobot/blob/b017b5e6354bd9f61f4247a920c72622ca0aade0/software/src/robots/xlerobot/xlerobot.py#L634-L636)确实对三轮写Goal_Velocity=0。[飞特官方教程](https://www.feetechrc.com/Data/feetechrc/upload/file/20220618/%E5%85%88%E7%9C%8B%E8%BF%99%E9%87%8C-%E5%85%A5%E6%89%8B%E6%95%99%E7%A8%8B2-1.pdf#page=5)第5页§10先设Mode1、第6页明确零速停止；完整PDF SHA1db8cf7421b61c45f8d271ef8bb6fa58bb8fbbaa5e307a1b63b3c705ad328438。[飞特SDK示例](https://github.com/ftservo/FTServo_Linux/blob/06fd3356dbd7bccd886b5a70d7ae0fccc6c76d38/examples/SMS_STS/WriteSpe/WriteSpe.cpp#L17-L26)同样零速停止，但实际WriteSpe还写ACC/位置/时间，与单2B速度事务不同。
+这些来源没有绑定现场右9的FW3/10、Phase12；已归档portal201内存表bit3也未明确限定仅位置模式。通用Mode1零停意图已证实，现场组合和bit3模式适用仍UNKNOWN，不由断扭零反馈推出启扭安全，不改profile/参数/门。本核对未访问机器人。
+
 ### 右 H2 测量通过、未知进程观察 FAIL（2026-10-10，本轮已停止）
 
 本次仅一次真实右H2，runtime/build为a96，597项Rust输入仍为5970c9be；authorize/launch各1，四组4000正式+400预热、4428原attempt及测量report PASS，最终非dry Disable Ack/Disarm通过。

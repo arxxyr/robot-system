@@ -1,0 +1,87 @@
+{
+  "schema": "TMUX_HOOK_INHERITANCE_READONLY_V1",
+  "observed_utc": "2026-10-10T03:34:36.037631+00:00",
+  "queries": [
+    {
+      "scope": "server全局session hook",
+      "argv": [
+        "tmux",
+        "show-hooks",
+        "-g"
+      ],
+      "pid": 597318,
+      "wait_returncode": 0,
+      "naturally_reaped": true,
+      "sent_signals": [],
+      "stdout": "after-bind-key\nafter-capture-pane\nafter-copy-mode\nafter-display-message\nafter-display-panes\nafter-kill-pane\nafter-list-buffers\nafter-list-clients\nafter-list-keys\nafter-list-panes\nafter-list-sessions\nafter-list-windows\nafter-load-buffer\nafter-lock-server\nafter-new-session\nafter-new-window\nafter-paste-buffer\nafter-pipe-pane\nafter-queue\nafter-refresh-client\nafter-rename-session\nafter-rename-window\nafter-resize-pane\nafter-resize-window\nafter-save-buffer\nafter-select-layout\nafter-select-pane\nafter-select-window\nafter-send-keys\nafter-set-buffer\nafter-set-environment\nafter-set-hook\nafter-set-option\nafter-show-environment\nafter-show-messages\nafter-show-options\nafter-split-window\nafter-unbind-key\nalert-activity\nalert-bell\nalert-silence\nclient-attached\nclient-detached\nclient-resized\nclient-session-changed\nsession-closed\nsession-created\nsession-renamed\nsession-window-changed\n",
+      "stderr": "",
+      "pane_died_lines": []
+    },
+    {
+      "scope": "server全局window hook",
+      "argv": [
+        "tmux",
+        "show-hooks",
+        "-gw"
+      ],
+      "pid": 597319,
+      "wait_returncode": 0,
+      "naturally_reaped": true,
+      "sent_signals": [],
+      "stdout": "pane-died\npane-exited\npane-focus-in\npane-focus-out\npane-mode-changed\npane-set-clipboard\npane-title-changed\nwindow-layout-changed\nwindow-linked\nwindow-pane-changed\nwindow-renamed\nwindow-unlinked\n",
+      "stderr": "",
+      "pane_died_lines": []
+    },
+    {
+      "scope": "真实session本地hook",
+      "argv": [
+        "tmux",
+        "show-hooks",
+        "-t",
+        "robot-h2-20261009-proxy-r1"
+      ],
+      "pid": 597320,
+      "wait_returncode": 0,
+      "naturally_reaped": true,
+      "sent_signals": [],
+      "stdout": "",
+      "stderr": "",
+      "pane_died_lines": []
+    },
+    {
+      "scope": "该session当前window本地hook，不自动等同新window",
+      "argv": [
+        "tmux",
+        "show-hooks",
+        "-w",
+        "-t",
+        "robot-h2-20261009-proxy-r1"
+      ],
+      "pid": 597321,
+      "wait_returncode": 0,
+      "naturally_reaped": true,
+      "sent_signals": [],
+      "stdout": "",
+      "stderr": "",
+      "pane_died_lines": []
+    },
+    {
+      "scope": "真实session当前window身份",
+      "argv": [
+        "tmux",
+        "display-message",
+        "-p",
+        "-t",
+        "robot-h2-20261009-proxy-r1",
+        "#{session_name} #{window_id} #{window_index} #{window_name}"
+      ],
+      "pid": 597322,
+      "wait_returncode": 0,
+      "naturally_reaped": true,
+      "sent_signals": [],
+      "stdout": "robot-h2-20261009-proxy-r1 @18 16 h2-exit-qa-r4\n",
+      "stderr": "",
+      "pane_died_lines": []
+    }
+  ]
+}

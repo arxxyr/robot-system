@@ -1,0 +1,11 @@
+{
+  "root_head": "35298f57be983e2fdae0c2ef567fa800b9457b69",
+  "native_build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+  "files": 597,
+  "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "main_matches_native_before_and_after": true,
+  "production_driver_and_rust_changed": false,
+  "root_actual_fmt_before_commit_exit": 0,
+  "main_after_fmt_matches_native_quality": true,
+  "native_quality": "commit-quality-originals-r2.tar.gz: actual fmt then root Clippy"
+}

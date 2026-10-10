@@ -1,0 +1,102 @@
+{
+  "status": "PASS_SOFTWARE_CANDIDATE_ONLY",
+  "scope": "自然/proc机制实验、通知式一次性观察副本及同源提交前Rust质量门；不改生产driver/Rust/验收门，不执行新硬件。",
+  "candidate": {
+    "path": "tmux_h2_observer_event_once_r1.sh",
+    "sha256": "7965389884c47215d2969502288046061f46d6f10d9e9e380889bd9369ed203c",
+    "bytes": 3617
+  },
+  "tmux_software": {
+    "path": "native-software-originals-r1.tar.gz",
+    "sha256": "30acde500d1f683a50899ec8ec6bbd4a08033cb3966945d76b79d017306cccff",
+    "bytes": 20943,
+    "regular_files": 170
+  },
+  "quality": {
+    "path": "commit-quality-originals-r2.tar.gz",
+    "sha256": "d36baf8e82af7aa3bdb0ba3543f001549d7cdba61383f0d4ecc55c6441890fd1",
+    "bytes": 99186,
+    "regular_files": 60
+  },
+  "main_native_binding": "main_native_binding.json",
+  "software_original_summary": "tmux-software-summary-original.json",
+  "natural_experiment": {
+    "path": "proc_short_child_r1/result.json",
+    "natural_children": 32,
+    "natural_reads": 501,
+    "natural_exe_enoent": 188,
+    "natural_R_to_R": 161,
+    "natural_R_to_Z": 27,
+    "controlled_children": 1,
+    "own_children_natural_wait0_ECHILD": 33,
+    "old_pid_585588_attribution": "UNKNOWN"
+  },
+  "native_release32d": {
+    "status": "PASS_SOFTWARE",
+    "review": "PASS_SOFTWARE_SCOPE",
+    "archive": {
+      "path": "release-post-32d-r2-originals.tar.gz",
+      "sha256": "8d4201695af3f8741ff424dc931af92138ba37792b5d007a0c909b9eb8dec175",
+      "bytes": 425017,
+      "regular_files": 254
+    },
+    "build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+    "runtime_head": "35298f57be983e2fdae0c2ef567fa800b9457b69",
+    "runtime_ancestor_verified": true,
+    "source_files": 597,
+    "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+    "rustc_identity": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "six_recipes": "PASS",
+    "production": 4,
+    "measurement": 3,
+    "helps": 7,
+    "default_entry": "PLAN_ONLY",
+    "direct_children": {
+      "prepare": 33,
+      "post": 12,
+      "exit_code": 0,
+      "reaped": true
+    },
+    "mock": {
+      "cases": 1,
+      "groups": 4,
+      "samples": 8,
+      "physical_uart": false,
+      "hardware_pass": false
+    },
+    "loopback": {
+      "tests": 6,
+      "scenes": 9,
+      "all_servers_joined": true
+    },
+    "artifacts_formal_services_source_before_after": "PASS",
+    "not_run": [
+      "完整Rustworkspace测试",
+      "新RT硬件门",
+      "UART",
+      "新H2",
+      "正式安装",
+      "服务激活"
+    ]
+  },
+  "fresh_real_h2": "NOT_RUN",
+  "uart": "NOT_OPENED",
+  "formal_services_installation": "NOT_TOUCHED",
+  "power_cut_confirmation": "manual_power_cut_confirmation.json",
+  "original_h2_status": "FAIL",
+  "original_stop34": "NOT_RUN",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "not_proven": [
+    "旧PID585588的归属及具体根因",
+    "真实SSH断线或tmux服务器重启",
+    "新真实H2",
+    "左腕/头部/底盘整机目标"
+  ],
+  "review": "review.md",
+  "root_acceptance": "PASS_SOFTWARE_SCOPE"
+}
