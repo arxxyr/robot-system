@@ -1,0 +1,16 @@
+{
+  "recorded_utc": "2026-10-10T06:17:24.142971+00:00",
+  "recorded_at_ns": 1791613044143090000,
+  "source": "本轮用户异步答复",
+  "answer": "已供电并就绪，支撑不阻挡回程",
+  "scope": "左腕left5及头部left7/left8，小幅往返和必要小I临时对照，底盘暂不动作",
+  "physical": {
+    "motor_supplies_on": true,
+    "continuous_watch": true,
+    "immediate_manual_power_cut": true,
+    "arms_unloaded_supported": true,
+    "areas_clear": true,
+    "support_does_not_block_return": true
+  },
+  "power_cycle_or_usb_replug": "本轮未要求且未确认，不推定"
+}

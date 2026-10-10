@@ -1,0 +1,30 @@
+{
+  "status": "PASS_NON_UART_CURRENT_FACTS",
+  "started_utc": "2026-10-10T06:36:25.481787+00:00",
+  "finished_utc": "2026-10-10T06:36:26.232010+00:00",
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "formal_head": "ca14f0e6cf6df8ecc6baaaa8dff2dddb64abbd0a",
+  "formal_clean": true,
+  "formal_four_and_two_tools_unchanged": true,
+  "six_services_stopped": true,
+  "holders_empty": 12,
+  "processes_clean": true,
+  "commands_naturally_reaped": 26,
+  "owned_pane_removed": "%42/@42 dead1 exit1 driver615633 recorded; no live pane removed",
+  "hardware_stop_status": "FAIL",
+  "actual_power_state": "PENDING_ROOT_USER_CONFIRMATION",
+  "uart_or_writes": false,
+  "owner_pid": 89012,
+  "ssh_pid": 89013,
+  "ssh_wait_returncode": 0,
+  "ssh_reaped": true,
+  "original_stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/maintenance_nonuart_2026-10-10_r1/baseline-post-r1.owner/child.log",
+    "sha256": "70e144a9b0a1340f47ca890c33711284ffe5e4dc6f229ba45c283ce69ab046ac",
+    "bytes": 184438
+  },
+  "snapshot": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/baseline-control-r1/baseline_nonuart_post_r1.json",
+    "sha256": "e51e3f5c76fba4a428548bd00a41322697b92ed26b1a6445761aeae06c18568a"
+  }
+}

@@ -2,6 +2,20 @@
 
 ## 当前步骤
 
+### 左腕原参数出程与整机停止失败（2026-10-10，等待人工断电确认）
+
+root于06:17:24UTC收到用户“已供电并就绪，支撑不阻挡回程”；本次仅授权左腕及头部的小幅位置测试，底盘暂不动作。维护GO改为当次支撑、空载、活动区、持续看护和立即断电五项事实，不再强制电源复位、USB重插或底盘落地事实；底盘分支仍固定DEFERRED，原精度、停止、身份、锁与GO有效期门未变。本机与Orin同源46个维护测试方法通过。
+
+实际只读74次均自然退出并回收：17电机Torque_Enable为0；left5/7/8均Model777、FW3/10、Mode0、Phase12、P16/D43/I0、Lock1、双死区1。各自内置限位覆盖当前起点及+24目标。位置执行件复用f201、原帧读取件复用13c/c800-a30；本次未重新编译这些冻结件。
+
+随后仅执行一次左腕原参数基线，driver615633、pane%42：锚点953、出程目标977，期限内停在972，误差-5，未进入回程。四次写入仅left5的GP953、TE1、GP977、TE0，没有I、头部或底盘写入。最终17×3停止字段有50个整数零，right7的Present_Velocity为+50、Torque_Enable/Goal_Velocity为0，停止FAIL，原run为NEEDS_MANUAL_POWER_CUT。该+50只有旧位置工具的解析整数，没有对应原UART帧；原因、单位与实际轮运动未证实，不回填旧right9的-50或左腕回程+6。
+
+左腕断扭ACK、62项身份后验、310个不同自有child自然回收及独立非UART清场均通过，不能覆盖精度/停止FAIL。06:36:26UTC非UART收尾完成：仅移除已记录dead1/exit1的自有pane，正式ca14四件未变、六服务停止、两USB/四锁无持有者、无已知控制或读回进程。已要求现场切断两个电机电源并保持机械臂支撑；实际断电确认仍PENDING，后续没有UART或动作。
+
+固定left5临时I=1对照仅为本地候选：复用原+24/±4/800ms位置门，入口及恢复前要求目标TE/PV为0、恢复写前Lock1，最后恢复I0并核P/D/死区；停止或恢复未知即封锁后续UART。最终8个内存方法及默认PLAN_ONLY通过，未上传、签GO或执行参数写入，不能称为偏差修复。证据入口 [.verify/position_return_2026-10-10_r1](../../.verify/position_return_2026-10-10_r1/summary.json)。右H2本次完整PASS与旧失败分别保留；头1旧+8、头2/三轮主动运动待验、D15 OPEN/DEFERRED及deployable=false保持。
+
+本机实际更新nightly、执行fmt退出0；Orin本次实际更新nightly→fmt→根Clippy零警告通过，编译器仍32dba69d6。主树与原生597项Rust输入逐项同字节/权限，格式化前后及批次首尾保持；19个直接child及3份SSHowner自然exit0回收，不外推Cargo内部未导出的PID。原件在本轮commit_quality/；没有新release、完整workspace测试、UART、安装或服务操作。
+
 ### 右 H2 完整通过（2026-10-10，本轮已收尾）
 
 root于04:26:45UTC收到用户当次“全部已就绪，可持续看护并立即断电”确认；新的alignment/七项现场事实/600秒GO分别绑定本次runtime894、run02。实际EXEC_HANDOFF于04:28:59.799200UTC核验，在GO有效窗内消费；authorize/launch各1，没有整轮重试。

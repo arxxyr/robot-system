@@ -1,0 +1,72 @@
+{
+  "status": "PASS_SOFTWARE_ONLY",
+  "recorded_utc": "2026-10-10T06:40:18.073236+00:00",
+  "different_test_methods": 8,
+  "refs": [
+    {
+      "path": "target/position_return_2026-10-10_r1/i1_trial_left5_candidate_r1.py",
+      "bytes": 9656,
+      "sha256": "fbac1e26e3a12e5f2a7c257122127408a2479cd5e5c5fa6da80dee5a67a1b91e"
+    },
+    {
+      "path": "target/position_return_2026-10-10_r1/test_i1_candidate_r1.py",
+      "bytes": 6940,
+      "sha256": "a39490a2b71cc8dfac01eeb4d7484ebf0cf060b5e9bb35a835779e237dfbea32"
+    }
+  ],
+  "commands": [
+    {
+      "label": "eight_tests",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "target/position_return_2026-10-10_r1/test_i1_candidate_r1.py",
+        "-v"
+      ],
+      "pid": 89507,
+      "started_at_ns": 1791614417971552000,
+      "finished_at_ns": 1791614418026841000,
+      "wait_returncode": 0,
+      "reaped": true,
+      "sent_signals": [],
+      "stdout": {
+        "bytes": 440,
+        "sha256": "46120df5313ae10880ab4de7cc4bdc9d2e42e2ef1aa8ee066f6d6b13195f3e70"
+      },
+      "stderr": {
+        "bytes": 1355,
+        "sha256": "843d96f1f5663165ce22fdea631203ede218b4a21ba1c2ba2345e68084bc8ca0"
+      }
+    },
+    {
+      "label": "default_plan_only",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "target/position_return_2026-10-10_r1/i1_trial_left5_candidate_r1.py"
+      ],
+      "pid": 89509,
+      "started_at_ns": 1791614418026870000,
+      "finished_at_ns": 1791614418073138000,
+      "wait_returncode": 0,
+      "reaped": true,
+      "sent_signals": [],
+      "stdout": {
+        "bytes": 114,
+        "sha256": "e2d08e099a59e0d6c0fd37640718845890ceaf556ff3755574bc785e28a99bfe"
+      },
+      "stderr": {
+        "bytes": 59,
+        "sha256": "dd7241fb9634d51d4b90a8782d9a26dd3fe2ada28ad873374b2d9b28b76827ef"
+      }
+    }
+  ],
+  "uart": false,
+  "hardware_i_trial": "NOT_RUN",
+  "hardware_stop": "FAIL",
+  "actual_power": "PENDING_USER_CONFIRMATION"
+}

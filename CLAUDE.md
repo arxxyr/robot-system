@@ -21,13 +21,14 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-10右H2仅一次真实批次完整PASS：四组各100+1000原P99/RT/trace、
-           最终非dry Disable、tool/driver exit0自然回收及17电机34原帧整数零均通过。
-           独立前11/后11清场、最终17核验与硬件阶段受记录child/SSH回收通过；无整轮重试。
-           runtime894/builda96，597源聚合5970c9be，冻结件实际nightly32d；读回件仍c800/a30。
-           原件 .verify/right_h2_2026-10-10_r2/summary.json；旧FAIL与585588身份未知保留。
-           05:31:39UTC已解除本轮看护并通知可支撑下关闭两电源，实际断电UNKNOWN。
-           正式ca14四件未改、六服务停止；约202MiB已归档旧源码解包缓存已清理。
+本轮最新:  2026-10-10左腕仅一次原参数基线：953→977，实测972，出程-5 FAIL，回程未执行。
+           17×3停止50零/right7 PV+50、TE0/GV0而FAIL；原NEEDS_MANUAL_POWER_CUT保持。
+           left5断扭ACK/62身份/310child与非UART清场通过，实际人工断电确认PENDING。
+           只读74次通过；left5/7/8 P16/D43/I0、Lock1/FW3.10，内置限位覆盖+24。
+           维护五项当次事实两端46方法通过；I1候选本地8方法及默认零动作通过，未写参数。
+           位置件仍f201、raw件13c/c800-a30；正式ca14未改、六服务停、USB/锁释放，无后续UART。
+           原件 .verify/position_return_2026-10-10_r1/summary.json；头部/底盘本轮未动作。
+           前一轮右H2完整PASS保留于 .verify/right_h2_2026-10-10_r2/summary.json，旧FAIL不覆盖。
            左腕/头1旧FAIL、头2/三轮主动运动待验、D15 OPEN/DEFERRED及deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +

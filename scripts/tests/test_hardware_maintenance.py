@@ -238,6 +238,36 @@ class OwnerTests(unittest.TestCase):
             if change=='expire':bad['expires_at_ns']=150
             with self.subTest(change=change),self.assertRaises(ValueError):m.validate_go(bad,plan,200)
 
+    def test_go_accepts_current_five_facts_without_power_cycle_or_usb_replug(self):
+        facts={'supported':True,'unloaded':True,'area_clear':True,
+               'continuous_presence_until_cleanup':True,'immediate_power_cut':True}
+        self.assertEqual(set(m.FACTS),set(facts))
+        plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test',
+              'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
+        go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root',
+            'plan_sha256':m.digest(plan),'issued_at_ns':100,'expires_at_ns':1000,
+            'host':plan['bindings']['host'],'source':'当次用户现场答复',
+            'physical':{side:{**facts,'confirmed_at_ns':100} for side in m.SERIALS}}
+        m.validate_go(go,plan,200)
+
+    def test_go_rejects_missing_or_false_watch_and_immediate_power_cut(self):
+        facts={'supported':True,'unloaded':True,'area_clear':True,
+               'continuous_presence_until_cleanup':True,'immediate_power_cut':True}
+        plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test',
+              'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
+        go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root',
+            'plan_sha256':m.digest(plan),'issued_at_ns':100,'expires_at_ns':1000,
+            'host':plan['bindings']['host'],'source':'当次用户现场答复',
+            'physical':{side:{**facts,'confirmed_at_ns':100} for side in m.SERIALS}}
+        for side in m.SERIALS:
+            for key in ('continuous_presence_until_cleanup','immediate_power_cut'):
+                for missing in (False,True):
+                    bad=copy.deepcopy(go)
+                    if missing:del bad['physical'][side][key]
+                    else:bad['physical'][side][key]=False
+                    with self.subTest(side=side,key=key,missing=missing),self.assertRaises(ValueError):
+                        m.validate_go(bad,plan,200)
+
     def test_strict_poke_stdout_rejects_extra_lines(self):
         with tempfile.TemporaryDirectory() as d:
             e=self.make_io(d)

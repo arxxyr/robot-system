@@ -29,8 +29,9 @@ MAINTENANCE_NAMESPACE = Path('/home/loosqk/robot-checks')
 STOP_REGS = ('Torque_Enable','Present_Velocity','Goal_Velocity')
 MOTOR_KEYS = tuple(f'{side}:{motor}' for side in SERIALS
                    for motor in range(1,9 if side=='left' else 10))
-FACTS = ("motor_power_cycle", "usb_replug", "supported", "unloaded", "area_clear",
-         "base_on_ground_with_space", "continuous_presence_until_cleanup", "immediate_power_cut")
+# 维护动作只要求当次现场安全条件；底盘动作仍固定 DEFERRED。
+FACTS = ("supported", "unloaded", "area_clear",
+         "continuous_presence_until_cleanup", "immediate_power_cut")
 WRITE_REGS = {"Torque_Enable", "Goal_Position", "Goal_Velocity"}
 REGS = ("Operating_Mode", "Torque_Enable", "Present_Position", "Present_Velocity",
         "Goal_Position", "Goal_Velocity")
