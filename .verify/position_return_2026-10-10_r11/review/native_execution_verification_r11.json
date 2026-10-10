@@ -1,0 +1,262 @@
+{
+  "scope": "仅核已取回原件，没有新增SSH/UART。",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/native-preparation/head1-d0-trial-r11-originals.tar.gz",
+    "sha256": "9116ad52853e35ffff4c7259b8dfa5717931cd3873af94e34aa7b55c09a9eb71",
+    "bytes": 308081,
+    "files": 824,
+    "source_bytes": 1951238
+  },
+  "run": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/native-preparation/head1-d0-trial-r11-originals/head1-d0-trial-r11/run.json",
+    "sha256": "cd98a8c4ee88e2b4d69cb812e1986d5a12f34c0907a5d34c1c5d9f17dc26b583",
+    "bytes": 592727,
+    "result": "FAIL"
+  },
+  "driver_children": 394,
+  "driver_output_hashes_verified": 788,
+  "driver_unreaped": [],
+  "driver_owner_errors": [],
+  "stop51": "PASS_INTEGER_ZERO",
+  "identity": "PASS",
+  "manual_power_cut_required": false,
+  "stages": {
+    "outward": {
+      "status": "PASS",
+      "target_raw": 2146,
+      "anchor_raw": 2122,
+      "tolerance_raw": 4,
+      "budget_ms": 800,
+      "first_qualified_elapsed_ns": 251024002,
+      "final_signed_error_raw": -4,
+      "elapsed_ns": 800063598,
+      "failure_code": null
+    },
+    "return": {
+      "status": "FAIL",
+      "target_raw": 2122,
+      "anchor_raw": 2122,
+      "tolerance_raw": 4,
+      "budget_ms": 800,
+      "first_qualified_elapsed_ns": null,
+      "final_signed_error_raw": 6,
+      "elapsed_ns": 842434602,
+      "failure_code": "POSITION_ACCURACY_TIMEOUT"
+    }
+  },
+  "d0_readback": 0,
+  "restore_status": "PASS",
+  "restore_raw_values": {
+    "Torque_Enable": 0,
+    "Present_Velocity": 0,
+    "Lock": 1,
+    "P_Coefficient": 16,
+    "D_Coefficient": 43,
+    "I_Coefficient": 0,
+    "CW_Dead_Zone": 1,
+    "CCW_Dead_Zone": 1
+  },
+  "writes": [
+    {
+      "sequence": 200,
+      "pid": 628610,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "D_Coefficient",
+        "0"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "532979ac6caa14a11cc97dbded5273a3648800c5d1c744d006eec5e49adc48b3",
+      "stdout_bytes": 30
+    },
+    {
+      "sequence": 225,
+      "pid": 628638,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Goal_Position",
+        "2122"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "059f7a78d259ecf08cc725d3a3cb05baefea1fd2d6564f133215649f27d800f3",
+      "stdout_bytes": 33
+    },
+    {
+      "sequence": 228,
+      "pid": 628641,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Torque_Enable",
+        "1"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "d744f1c23042dc5d99ed2f111c2f095dbc01553e19b3d2725c49360cbe3d6c8b",
+      "stdout_bytes": 30
+    },
+    {
+      "sequence": 230,
+      "pid": 628643,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Goal_Position",
+        "2146"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "1b4febdf38016ca045996f96cbd5f8189aa8e2cda67446df098299c5c9552150",
+      "stdout_bytes": 33
+    },
+    {
+      "sequence": 246,
+      "pid": 628659,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Goal_Position",
+        "2122"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "059f7a78d259ecf08cc725d3a3cb05baefea1fd2d6564f133215649f27d800f3",
+      "stdout_bytes": 33
+    },
+    {
+      "sequence": 262,
+      "pid": 628675,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Torque_Enable",
+        "0"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "34c8848bb360212647afea77f9bc3519e413fcaef544e8bbf80c1a4f105e96fc",
+      "stdout_bytes": 30
+    },
+    {
+      "sequence": 268,
+      "pid": 628681,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "D_Coefficient",
+        "43"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "ff399c4f0a0a3a0d2948c6a675dd716c09dc26e213c6ce1892b76c16ea8e0d33",
+      "stdout_bytes": 31
+    }
+  ],
+  "load_raw_reads": 0,
+  "camera_starts": 0,
+  "base_writes": 0,
+  "same_ssh_receipts": [
+    {
+      "name": "root-reviewed-single-start",
+      "pid": 628344,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "name": "same-pane-observer",
+      "pid": 628382,
+      "exit_code": 1,
+      "wait_returncode": 1,
+      "reaped": true
+    },
+    {
+      "name": "terminal-identity",
+      "pid": 628821,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "name": "reclaim-natural-dead-owned-pane",
+      "pid": 628822,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "name": "post-nonuart",
+      "pid": 628823,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    }
+  ],
+  "nonuart_pre_post": {
+    "checks_each": 17,
+    "nested_children_each": 23,
+    "all_natural_reap": true
+  },
+  "owner_result": {
+    "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+    "phase": "REAPED",
+    "status": "PASS",
+    "owner_pid": 89725,
+    "command": [
+      "ssh",
+      "-oBatchMode=yes",
+      "-oStrictHostKeyChecking=yes",
+      "-oConnectTimeout=15",
+      "robot",
+      "bash",
+      "-s"
+    ],
+    "pid": 89727,
+    "started_utc": "2026-10-10T11:37:54.829565+00:00",
+    "started_monotonic_ns": 70461550954333,
+    "observe_seconds": 5.0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "owner_sent_signals": [],
+    "received_signals": {},
+    "errors": [],
+    "observations": 3,
+    "remote_state": "NOT_VERIFIED",
+    "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+    "input": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/native-preparation/single_ssh_root_reviewed_head_d0_r11.sh",
+      "sha256": "f7cf4bf006f88132db1284d8446a6c6cdc6d4602538494156eda4867dc1911fa",
+      "bytes": 23686
+    },
+    "launched_utc": "2026-10-10T11:37:54.831697+00:00",
+    "start_new_session": true,
+    "child_session_id": 89727,
+    "observed_utc": "2026-10-10T11:38:07.323972+00:00",
+    "elapsed_ns": 12495904542,
+    "log_bytes_observed": 447434,
+    "child_end_class": "EXIT_STATUS",
+    "child_signal": null,
+    "finished_utc": "2026-10-10T11:38:07.325636+00:00",
+    "log": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_head_d0_execute_r11.owner/child.log",
+      "sha256": "3a986ee9625127a57ac00384f4b5faaed273515958134c2d267d54223d03a02a",
+      "bytes": 447434
+    }
+  },
+  "go_consumed": true,
+  "limits": [
+    "D地址22为厂家EEPROM区，本次Lock1且无Lock/保存命令；掉电持久性NOT_VERIFIED",
+    "不同起点/方向，仅本次功能精度结果，不证明D因果。"
+  ]
+}

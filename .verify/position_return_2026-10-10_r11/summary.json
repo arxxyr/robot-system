@@ -1,0 +1,217 @@
+{
+  "schema": "POSITION_RETURN_HEAD_D0_HARDWARE_ARCHIVE_R11_V1",
+  "recorded_at_utc": "2026-10-10T11:48:02.964838+00:00",
+  "archive_status": "HARDWARE_ORIGINAL_FAIL_PRESERVED_WITH_D_RESTORE_AND_STOP_PASS",
+  "run_result": "FAIL",
+  "root_acceptance": "review/root_actual_hardware_review_r11.json",
+  "independent_review": "review/independent_hardware_wire_review_r11.json",
+  "native_verification": "review/native_execution_verification_r11.json",
+  "scope": "本次独立GO仅left7临时D43→0→43，一次+24往返；P16/I0、原±4/800ms、±32/min12与STOP51不变。归档不重跑硬件。",
+  "hardware": {
+    "motor": "left:7/head_motor_1",
+    "anchor_raw": 2122,
+    "target_raw": 2146,
+    "outward_status": "PASS",
+    "outward_samples": 14,
+    "outward_final_position_raw": 2142,
+    "outward_final_signed_error_raw": -4,
+    "outward_first_qualified_elapsed_ns": 251024002,
+    "outward_elapsed_ns": 800063598,
+    "return_status": "FAIL",
+    "return_samples": 14,
+    "return_target_raw": 2122,
+    "return_final_position_raw": 2128,
+    "return_final_signed_error_raw": 6,
+    "return_first_qualified_sample": null,
+    "return_last_sample_elapsed_ns": 792370511,
+    "return_finished_elapsed_ns": 842434602,
+    "original_tolerance_raw": 4,
+    "original_budget_ms": 800,
+    "precision_failure_code": "POSITION_ACCURACY_TIMEOUT",
+    "deadline_scope": "回程原800ms门内没有合格样本；最后样本后原d97的50ms sleep使判定完成于842.434602ms，不表示门续期，也不称恰800ms结束。"
+  },
+  "parameter_trial": {
+    "D_address": 22,
+    "D_before_raw": 43,
+    "D_trial_raw": 0,
+    "D_trial_write_and_readback": "PASS",
+    "D_restoration": "PASS",
+    "restored_raw": {
+      "Torque_Enable": 0,
+      "Present_Velocity": 0,
+      "Lock": 1,
+      "P_Coefficient": 16,
+      "D_Coefficient": 43,
+      "I_Coefficient": 0,
+      "CW_Dead_Zone": 1,
+      "CCW_Dead_Zone": 1
+    },
+    "Lock_writes": 0,
+    "P_I_Phase_dead_zone_writes": 0,
+    "storage_scope": "D22属于厂家EPROM/EEPROM配置区，实际临时写D0及D43；Lock1且没有保存/Lock写入。未做掉电后持久化验证。",
+    "control_loop_adoption": "NOT_VERIFIED；写ACK和原帧值正确不证明FW3.10即时采用，功能FAIL也不能反证未采用。",
+    "official_source": ".verify/feetech_return_metadata_2026-10-10/manufacturer/official-sms-sts-memory-table.md:25,41-43,69",
+    "causal_scope": "本轮不同起点和方向，仅测试原精度功能是否通过，不与R10作D因果比较。"
+  },
+  "writes": {
+    "count": 7,
+    "motor": "left:7",
+    "sequence": [
+      {
+        "register": "D_Coefficient",
+        "value": 0
+      },
+      {
+        "register": "Goal_Position",
+        "value": 2122
+      },
+      {
+        "register": "Torque_Enable",
+        "value": 1
+      },
+      {
+        "register": "Goal_Position",
+        "value": 2146
+      },
+      {
+        "register": "Goal_Position",
+        "value": 2122
+      },
+      {
+        "register": "Torque_Enable",
+        "value": 0
+      },
+      {
+        "register": "D_Coefficient",
+        "value": 43
+      }
+    ],
+    "base_writes": 0,
+    "Load_reads": 0,
+    "camera_starts": 0,
+    "automatic_retries": 0,
+    "tools": "原13c只D0/43写与raw读；原f201仅GP/TE动作。整个poke仍有旧写入口，不称ELF整体只读。"
+  },
+  "cleanup": {
+    "STOP51": "PASS_INTEGER_ZERO",
+    "stop_raw_wire_scope": "51项为普通解析整数零；仅四right8/9普通PV strace独核24完整TTY帧/PV0000，不外推51项全有原帧。",
+    "identity": "PASS",
+    "identity_checks": 76,
+    "manual_power_cut_required": false,
+    "pre_non_uart_17": "PASS",
+    "post_non_uart_17": "PASS",
+    "driver_commands": 394,
+    "driver_output_streams": 788,
+    "raw_TX_RX_pairs_verified": 30,
+    "unreaped_direct_children": [],
+    "owner_errors": [],
+    "over_budget_commands": [],
+    "driver_pid": 628379,
+    "driver_exit": 1,
+    "driver_lifecycle": "tmux%67观察自然dead/exit1后回收自有pane，不冒充root直接waitpid。",
+    "local_owner_pid": 89725,
+    "ssh_pid": 89727,
+    "local_owner_ssh_exit": 0,
+    "local_owner_ssh_reaped": true,
+    "local_owner_started_at_utc": "2026-10-10T11:37:54.829565+00:00",
+    "local_owner_finished_at_utc": "2026-10-10T11:38:07.325636+00:00",
+    "same_ssh_direct_children": 5
+  },
+  "authorization": {
+    "current_field_member": "native-originals.tar.gz::field_confirmation_r11.json",
+    "go_member": "native-originals.tar.gz::head1-d0-trial-r11.go.json",
+    "go_consumed": true,
+    "future_action_authorized": false,
+    "current_watch": "本轮看护已解除，无新的GO/UART；归档不构成再次动作授权。",
+    "latest_power_fact": "USER_REPORTED_ON_DURING_THIS_RUN",
+    "independent_electrical_telemetry": "UNKNOWN"
+  },
+  "software_candidate": {
+    "source": "candidate/head1_d0_trial_r11.py",
+    "sha256": "593bbe72c352f619bc550261ddaf58f5e345c8eb491f8eb8ee67292f42b274b5",
+    "bytes": 12517,
+    "original_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/head1_d0_trial_r11.py",
+    "final_local_methods": 10,
+    "final_native_methods": 10,
+    "counting": "各端10个不同内存方法，不跨平台/修订累计为20。",
+    "local_r1": "原9PASS/1ERROR保留；本机夹具路径不在冻结命名空间而正确拒绝。后仅修夹具及旧GO时间字段，控制候选不变。",
+    "local_r2": "10PASS、默认exit0零动作、完整flags缺GO真实exit2；三个自有uv child自然回收。",
+    "native_first_attempt": "原FAIL保留：准备脚本错名旧GO夹具，非真实动作重试；候选/测试/verify未改。",
+    "native_r2": "10PASS、default0/missingGO2/fullPLAN0，完整PLAN已包含硬件tar，不重复复制。",
+    "plan_sha256": "1e364dfa8ee1b895639c975aef7eeb9a943bdef12cd00c11c6ae5008f01433fa",
+    "bindings_sha256": "9c771450d3a9f0de844b0a5c4c414b90775ef08917f6c7c1b4d512b53f7cc7b6",
+    "local_readonly_probe_failures": "两个KeyError原文本保留，仅本机只读展示/归档解析错误，无远端重跑。"
+  },
+  "software_quality": {
+    "scope": "Orin实际fmt→根Clippy，零警告；无新Rust测试、release/控制ELF构建、安装或服务激活。",
+    "source_files": 597,
+    "source_sha256": "3a4cc12e5e28f9c9164b8e7cdf9e2861b7127d7536ab291e7db8cced6d7aa4e9",
+    "native_three_windows_host_before_after": "全部597项bytes/SHA/executable一致，root另即时复算当前主树同源。",
+    "native_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_worktree": "five changed sources; not clean",
+    "host_git_head_at_quality_input": "c64cfdec418d6d2d8af41e5af63c8d389b7e9ab0",
+    "nightly_release": "1.101.0-nightly",
+    "nightly_commit": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "fmt": {
+      "pid": 628267,
+      "started_at_utc": "2026-10-10T11:36:14.321063+00:00",
+      "finished_at_utc": "2026-10-10T11:36:17.844048+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    "root_clippy": {
+      "pid": 628278,
+      "started_at_utc": "2026-10-10T11:36:18.066175+00:00",
+      "finished_at_utc": "2026-10-10T11:36:18.838438+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    "runner_direct_children": 10,
+    "actual_output_streams_verified": 20,
+    "same_ssh_direct_children": 4,
+    "prior_rust_230": ".verify/present_load_read_2026-10-10_r10/summary.json；仅引用原验收，不累计到本候选10方法。"
+  },
+  "native_originals": {
+    "path": "native-originals.tar.gz",
+    "sha256": "9116ad52853e35ffff4c7259b8dfa5717931cd3873af94e34aa7b55c09a9eb71",
+    "bytes": 308081,
+    "regular_files": 824,
+    "original_file_bytes": 1951238,
+    "run_member": "head1-d0-trial-r11/run.json",
+    "run_sha256": "cd98a8c4ee88e2b4d69cb812e1986d5a12f34c0907a5d34c1c5d9f17dc26b583",
+    "run_bytes": 592727,
+    "representation": "唯一原硬件包，含完整PLAN/GO/现场确认/launch/394输出，不重复展开824件。"
+  },
+  "quality_originals": {
+    "path": "quality-originals.tar.gz",
+    "sha256": "b0a8f071a7cae2a2feddf1dad99ae9b3a0f7ac84869d5695805dc675cacc0a1c",
+    "bytes": 134661,
+    "regular_files": 58,
+    "original_file_bytes": 582584,
+    "result_member": "commit-quality-r11/result.json",
+    "result_sha256": "5a62990fd08e891de6ea006f87732868a46cf5d9a21b55d62c435cf3640b1b25",
+    "result_bytes": 3213,
+    "representation": "独立质量原包，不重复展开58件。"
+  },
+  "unresolved": {
+    "next_step": "暂不盲调PID或扩大设计，先明确当前FW的参数生效条件，再处理左腕/头部精度。",
+    "parameter_effectiveness": "OPEN",
+    "mechanical_cause": "OPEN",
+    "R10_outward": "+8 FAIL/return NOT_RUN，Load unsigned44只支持采样时报告非零驱动占空比，不等于扭矩或根因。",
+    "R9_outward": "+6 FAIL/return NOT_RUN",
+    "R8_return": "+7 FAIL",
+    "R5_I2_R6_P24_return": "+6 FAIL",
+    "old_wheel_plus_minus_50": "OPEN",
+    "left_wrist": "仅临时I1 PASS且恢复I0，长期参数/精度未验收。",
+    "head2": "旧FAIL保持",
+    "base": "三轮主动运动NOT_RUN",
+    "D15": "OPEN/DEFERRED"
+  },
+  "limitations": [
+    "原整体/回程精度FAIL保留；恢复、STOP、身份与生命周期PASS不能覆盖。",
+    "不同起点/方向只作功能试验，不宣称D因果、根因或软件已修复。",
+    "本轮正式ca14四件/六服务沿既有状态，不称新的正式部署后验；右H2完整PASS保持。",
+    "无新GO/UART，本轮已结束看护；独立电气遥测与掉电持久化未知。"
+  ],
+  "deployable": false
+}

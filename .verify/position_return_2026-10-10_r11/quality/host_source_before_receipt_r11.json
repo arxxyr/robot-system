@@ -1,0 +1,39 @@
+[
+  {
+    "argv": [
+      "git",
+      "rev-parse",
+      "HEAD"
+    ],
+    "pid": 88353,
+    "started_ns": 1791632159598172000,
+    "finished_ns": 1791632159606568000,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "stdout_sha256": "2270d06c24549bce136f9a7178204c8d41ec487076faa09259a0f88f81814b9c",
+    "stdout_bytes": 41,
+    "stderr": "",
+    "signals_sent": []
+  },
+  {
+    "argv": [
+      "git",
+      "ls-files",
+      "-z",
+      "--cached",
+      "--others",
+      "--exclude-standard"
+    ],
+    "pid": 88354,
+    "started_ns": 1791632159606786000,
+    "finished_ns": 1791632159626218000,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "stdout_sha256": "9f5fd35b40913dfd1055f1f170f6467ac3d88242b92f74276d92b3391b294c19",
+    "stdout_bytes": 150946,
+    "stderr": "",
+    "signals_sent": []
+  }
+]

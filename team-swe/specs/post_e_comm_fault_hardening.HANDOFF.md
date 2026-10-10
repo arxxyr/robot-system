@@ -2,6 +2,18 @@
 
 ## 当前步骤
 
+### 头1临时D0功能试验仍回程 +6（2026-10-10，R11实机已收尾）
+
+本次独立GO仅允许left7临时D43→0→43与一次+24往返，P16/I0、Phase、死区、Lock均未写，原±4/800ms、±32/min12及17×3停止门保持。候选复用既有R6参数恢复、R8出程观察和d97回程/收尾；本机和Orin各10个不同内存方法、默认零动作及缺GO真实exit2通过，不跨平台累计为20。原本机r1的9PASS/1ERROR是冻结路径命名空间夹具被正确拒绝；原首native FAIL是准备脚本错名旧GO夹具。后续修正仅对应夹具，控制候选未改，原FAIL分别保留，不称单轮全过。
+
+真实锚点2122、目标2146：出程14样本，251.024002ms首次进入±4，继续观察至同一原窗口800.063598ms，末位置2142/-4 PASS。回程14样本，目标2122、末位置2128/+6，原800ms内没有合格样本；末样本792.370511ms，随后原d97的50ms sleep使失败判定完成于842.434602ms，不代表精度门续期，也不称实际恰800ms结束。原整体FAIL与POSITION_ACCURACY_TIMEOUT保持。D0写ACK/原帧0及Lock1通过，finally恢复D43真实读回通过，收尾P16/D43/I0、Lock1、CW/CCW死区1、TE0/PV0。
+
+仅七次left7写入：D0、GP2122、TE1、GP2146、GP2122、TE0、D43；使用原13c参数/raw工具与f201位置工具，底盘写、Load采样、相机和自动重试均0。STOP51解析整数零、76项身份和独立非UART前后各17项通过，manual_power_cut_required=false。394直属child/788实际输出已逐件核SHA/字节并自然wait/reap，30条raw TX/RX独审通过；四次right8/9普通PV strace的24个完整TTY帧均PV0000，不外推STOP51全部都有原帧。driver628379由tmux%67观察自然dead/exit1后回收自有pane，本机owner89725/SSH89727于11:37:54.830→11:38:07.326UTC自然exit0/reap，不冒充root对driver直接waitpid。必要原件：[R11摘要](../../.verify/position_return_2026-10-10_r11/summary.json)；824件硬件原tar及58件质量原tar各保留原字节，不重复展开。
+
+Orin实际cargo fmt --all于11:36:14.321→17.844UTC通过，随后根cargo clippy --all --all-targets -- -D warnings于11:36:18.066→18.838UTC零警告通过，10直属质量child/20实际输出及同SSH四个child自然回收。native HEAD8940847加五处源码dirty，与host c64cfde不同，以597输入主树及原生三窗逐项bytes/SHA/executable一致绑定，聚合3a4cc12e、nightly32d首尾一致；root另即时复算当前主树相同。本轮没有新Rust测试、release/控制ELF构建、正式安装或服务激活；两个本机只读展示/归档KeyError原文本保留，未因此重跑远端门。
+
+厂家表将D22列在EPROM/EEPROM配置区，本轮实际临时写D0及D43，Lock1且没有Lock/保存写入；不能称EEPROM写0或已验证掉电后不持久化。官方已存表第25、41–43、69行说明配置区、系数和保存语义，没有明确证明FW3.10在Lock1写读回后何时进入控制环。正确ACK/原字不是即时采用证明，本次FAIL也不能反证未采用。不同起点/方向只作原精度功能试验，不与R10作D因果比较。下一步先明确参数生效条件，暂不继续盲调PID或扩大设计；左腕仅临时I1 PASS后恢复I0、头2旧FAIL、长期参数及三轮主动运动仍未验收。旧R10/R9/R8/R5/R6及±50原FAIL保持，D15 OPEN/DEFERRED、deployable=false、右H2完整PASS不变。GO已消耗、看护已解除，无新GO/UART；最新供电仅为本轮用户报告ON，独立电气遥测UNKNOWN，正式ca14及六服务沿既有状态，不称新的正式后验。
+
 ### 头1负向出程 +8，平台驱动输出原字44（2026-10-10，R10实机已收尾）
 
 root收到本轮“现场仍就绪，可执行本次头1测试”，仅签一次left7原P16/D43/I0负向24尝试与平台最多一次Present_Load原帧。候选最终r3在本机/Orin各14内存方法、默认零动作、缺GO拒绝与完整PLAN准备通过；原r1的12方法PASS、r2的14方法PASS保留，r2随后发现普通Load故障被包装为精度错误的分类问题，经r3修正为ACTION_FAILED后验收，原结果不回填、不累计不同修订的方法数。原±4/800ms、±32保护及STOP51保持，不续期限或改参数；相机未重复采集。

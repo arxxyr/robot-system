@@ -1,0 +1,114 @@
+{
+  "status": "ACCEPTED_HARDWARE_ORIGINAL_FAIL_AND_SAFE_CLEANUP",
+  "recorded_at_ns": 1791632411988473000,
+  "native_tar": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/native-preparation/head1-d0-trial-r11-originals.tar.gz",
+    "bytes": 308081,
+    "sha256": "9116ad52853e35ffff4c7259b8dfa5717931cd3873af94e34aa7b55c09a9eb71",
+    "regular_members": 824,
+    "original_bytes": 1951238
+  },
+  "run": {
+    "member": "head1-d0-trial-r11/run.json",
+    "bytes": 592727,
+    "sha256": "cd98a8c4ee88e2b4d69cb812e1986d5a12f34c0907a5d34c1c5d9f17dc26b583"
+  },
+  "result": "FAIL",
+  "motion": {
+    "outward": {
+      "status": "PASS",
+      "target_raw": 2146,
+      "final_signed_error_raw": -4,
+      "samples": 14,
+      "elapsed_ns": 800063598,
+      "first_qualified_elapsed_ns": 251024002
+    },
+    "return": {
+      "status": "FAIL",
+      "target_raw": 2122,
+      "final_signed_error_raw": 6,
+      "samples": 14,
+      "elapsed_ns": 842434602,
+      "first_qualified_elapsed_ns": null
+    }
+  },
+  "position_accuracy": "FAIL",
+  "d_restore_status": "PASS",
+  "restored_raw": {
+    "Torque_Enable": 0,
+    "Present_Velocity": 0,
+    "Lock": 1,
+    "P_Coefficient": 16,
+    "D_Coefficient": 43,
+    "I_Coefficient": 0,
+    "CW_Dead_Zone": 1,
+    "CCW_Dead_Zone": 1
+  },
+  "direct_children": 394,
+  "actual_streams_verified": 788,
+  "all_natural_reaped": true,
+  "writes": [
+    [
+      "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+      "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "7",
+      "write",
+      "D_Coefficient",
+      "0"
+    ],
+    [
+      "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+      "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "7",
+      "write",
+      "Goal_Position",
+      "2122"
+    ],
+    [
+      "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+      "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "7",
+      "write",
+      "Torque_Enable",
+      "1"
+    ],
+    [
+      "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+      "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "7",
+      "write",
+      "Goal_Position",
+      "2146"
+    ],
+    [
+      "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+      "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "7",
+      "write",
+      "Goal_Position",
+      "2122"
+    ],
+    [
+      "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+      "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "7",
+      "write",
+      "Torque_Enable",
+      "0"
+    ],
+    [
+      "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+      "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "7",
+      "write",
+      "D_Coefficient",
+      "43"
+    ]
+  ],
+  "stop_status": "PASS",
+  "identity_status": "PASS",
+  "manual_power_cut_required": false,
+  "child_active": false,
+  "watch": "ROOT_NOTIFIED_RELEASED_AFTER_TERMINAL",
+  "scope": "单头1D0/43原+24尝试，原±4/800ms保持，回程+6原FAIL；无新动作GO、无重试"
+}

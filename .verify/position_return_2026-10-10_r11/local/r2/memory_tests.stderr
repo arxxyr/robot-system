@@ -1,0 +1,16 @@
+WARN `--no-project` was provided, but no project was found
+test_complete_plan_binds_frozen_helpers_and_rejects_old_go (__main__.D0Cases.test_complete_plan_binds_frozen_helpers_and_rejects_old_go) ... ok
+test_d0_ack_unknown_or_readback_mismatch_restores_without_motion (__main__.D0Cases.test_d0_ack_unknown_or_readback_mismatch_restores_without_motion) ... ok
+test_default_zero_and_complete_missing_go_refuse_before_loading (__main__.D0Cases.test_default_zero_and_complete_missing_go_refuse_before_loading) ... ok
+test_entry_and_post_d0_lock_failures_sticky_block_uart_and_restore (__main__.D0Cases.test_entry_and_post_d0_lock_failures_sticky_block_uart_and_restore) ... ok
+test_exact_d_write_command_type_and_ack_contract (__main__.D0Cases.test_exact_d_write_command_type_and_ack_contract) ... ok
+test_happy_restore_reads_all_original_parameters_and_only_writes_d (__main__.D0Cases.test_happy_restore_reads_all_original_parameters_and_only_writes_d) ... ok
+test_original_accuracy_failure_remains_fail_after_successful_restore (__main__.D0Cases.test_original_accuracy_failure_remains_fail_after_successful_restore) ... ok
+test_original_parameter_target_limit_and_write_whitelist_rejections (__main__.D0Cases.test_original_parameter_target_limit_and_write_whitelist_rejections) ... ok
+test_original_position_and_r8_observation_holds_deadline_or_fails_without_return (__main__.D0Cases.test_original_position_and_r8_observation_holds_deadline_or_fails_without_return) ... ok
+test_stop_restore_ack_or_parameter_uncertainty_blocks_every_later_uart (__main__.D0Cases.test_stop_restore_ack_or_parameter_uncertainty_blocks_every_later_uart) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.024s
+
+OK

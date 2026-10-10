@@ -1,0 +1,35 @@
+WARN `--no-project` was provided, but no project was found
+test_complete_plan_binds_frozen_helpers_and_rejects_old_go (__main__.D0Cases.test_complete_plan_binds_frozen_helpers_and_rejects_old_go) ... ERROR
+test_d0_ack_unknown_or_readback_mismatch_restores_without_motion (__main__.D0Cases.test_d0_ack_unknown_or_readback_mismatch_restores_without_motion) ... ok
+test_default_zero_and_complete_missing_go_refuse_before_loading (__main__.D0Cases.test_default_zero_and_complete_missing_go_refuse_before_loading) ... ok
+test_entry_and_post_d0_lock_failures_sticky_block_uart_and_restore (__main__.D0Cases.test_entry_and_post_d0_lock_failures_sticky_block_uart_and_restore) ... ok
+test_exact_d_write_command_type_and_ack_contract (__main__.D0Cases.test_exact_d_write_command_type_and_ack_contract) ... ok
+test_happy_restore_reads_all_original_parameters_and_only_writes_d (__main__.D0Cases.test_happy_restore_reads_all_original_parameters_and_only_writes_d) ... ok
+test_original_accuracy_failure_remains_fail_after_successful_restore (__main__.D0Cases.test_original_accuracy_failure_remains_fail_after_successful_restore) ... ok
+test_original_parameter_target_limit_and_write_whitelist_rejections (__main__.D0Cases.test_original_parameter_target_limit_and_write_whitelist_rejections) ... ok
+test_original_position_and_r8_observation_holds_deadline_or_fails_without_return (__main__.D0Cases.test_original_position_and_r8_observation_holds_deadline_or_fails_without_return) ... ok
+test_stop_restore_ack_or_parameter_uncertainty_blocks_every_later_uart (__main__.D0Cases.test_stop_restore_ack_or_parameter_uncertainty_blocks_every_later_uart) ... ok
+
+======================================================================
+ERROR: test_complete_plan_binds_frozen_helpers_and_rejects_old_go (__main__.D0Cases.test_complete_plan_binds_frozen_helpers_and_rejects_old_go)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/test_head1_d0_trial_r11.py", line 108, in test_complete_plan_binds_frozen_helpers_and_rejects_old_go
+    self.assertEqual(c.main(argv), 0)
+                     ^^^^^^^^^^^^
+  File "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/head1_d0_trial_r11.py", line 188, in main
+    plan = m.make_plan(bindings, options.output, options.run_id, options.artifact_root, ['head-1'])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py", line 149, in make_plan
+    root=validate_artifact_root(artifact_root)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py", line 75, in validate_artifact_root
+    require(root.is_relative_to(MAINTENANCE_NAMESPACE) and root!=MAINTENANCE_NAMESPACE,
+  File "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py", line 46, in require
+    raise ValueError(reason)
+ValueError: 维护根目录必须是robot-checks内独立子目录
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.010s
+
+FAILED (errors=1)

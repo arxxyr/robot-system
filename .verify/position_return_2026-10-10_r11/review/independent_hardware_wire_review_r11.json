@@ -1,0 +1,211 @@
+{
+  "status": "ACCEPTED_ORIGINAL_FAIL_WITH_STOP_PASS",
+  "recorded_at_utc": "2026-10-10T11:42:20.176439+00:00",
+  "run": {
+    "sha256": "cd98a8c4ee88e2b4d69cb812e1986d5a12f34c0907a5d34c1c5d9f17dc26b583",
+    "bytes": 592727,
+    "result": "FAIL"
+  },
+  "tar": {
+    "sha256": "9116ad52853e35ffff4c7259b8dfa5717931cd3873af94e34aa7b55c09a9eb71",
+    "bytes": 308081,
+    "regular_files": 824,
+    "original_file_bytes": 1951238
+  },
+  "direct_children": 394,
+  "verified_output_streams": 788,
+  "unique_direct_pids": 394,
+  "unreaped": [],
+  "signalled": [],
+  "owner_errors": [],
+  "raw_reads_verified": 30,
+  "d_readback": [
+    [
+      175,
+      43
+    ],
+    [
+      201,
+      0
+    ],
+    [
+      270,
+      43
+    ]
+  ],
+  "seven_actual_writes": [
+    {
+      "sequence": 200,
+      "register": "D_Coefficient",
+      "value": 0
+    },
+    {
+      "sequence": 225,
+      "register": "Goal_Position",
+      "value": 2122
+    },
+    {
+      "sequence": 228,
+      "register": "Torque_Enable",
+      "value": 1
+    },
+    {
+      "sequence": 230,
+      "register": "Goal_Position",
+      "value": 2146
+    },
+    {
+      "sequence": 246,
+      "register": "Goal_Position",
+      "value": 2122
+    },
+    {
+      "sequence": 262,
+      "register": "Torque_Enable",
+      "value": 0
+    },
+    {
+      "sequence": 268,
+      "register": "D_Coefficient",
+      "value": 43
+    }
+  ],
+  "ordinary_read_traces": [
+    {
+      "sequence": 136,
+      "motor": 8,
+      "sha256": "6502b3a49b9b173ca854a6126d06adfd4c96508236592cc3d536f983d2195fb4",
+      "bytes": 10036,
+      "uart_frames": 6,
+      "present_velocity_word": "0000",
+      "status": "PASS"
+    },
+    {
+      "sequence": 142,
+      "motor": 9,
+      "sha256": "2c62c08c44aa38251dd87d82975965bc8bf9d42abbb1d6a803ca0702950b8423",
+      "bytes": 10036,
+      "uart_frames": 6,
+      "present_velocity_word": "0000",
+      "status": "PASS"
+    },
+    {
+      "sequence": 368,
+      "motor": 8,
+      "sha256": "a827069a8aee2c2850a7048d7ac44020f8cd3dd2067798e8b6efd63c53f44507",
+      "bytes": 10036,
+      "uart_frames": 6,
+      "present_velocity_word": "0000",
+      "status": "PASS"
+    },
+    {
+      "sequence": 374,
+      "motor": 9,
+      "sha256": "8bfa209b956d29b0dda58197f66a0852f9ad21684cdc263a245159dd267ae0f0",
+      "bytes": 10036,
+      "uart_frames": 6,
+      "present_velocity_word": "0000",
+      "status": "PASS"
+    }
+  ],
+  "precision": {
+    "outward": {
+      "status": "PASS",
+      "first_qualified_elapsed_ns": 251024002,
+      "error_raw": -4,
+      "observation_elapsed_ns": 800063598,
+      "samples": 14
+    },
+    "return": {
+      "status": "FAIL",
+      "error_raw": 6,
+      "samples": 14,
+      "last_sample_elapsed_ns": 792370511,
+      "deadline_budget_ns": 800000000,
+      "actual_finished_elapsed_ns": 842434602,
+      "timing_boundary": "原d97最后50ms sleep跨deadline；无合格样本、期限不续，原FAIL保持。"
+    }
+  },
+  "restoration": {
+    "status": "PASS",
+    "D": 43,
+    "P": 16,
+    "I": 0,
+    "Lock": 1,
+    "CW_Dead_Zone": 1,
+    "CCW_Dead_Zone": 1
+  },
+  "STOP51": "PASS_INTEGER_ZERO",
+  "identity_checks": 76,
+  "manual_power_cut_required": false,
+  "GO": "当次GO与run.plan/start receipt SHA一致；m.execute消费路径在原源固定，新GO不复用",
+  "sticky_fault_scope": "先前已静审593/4b8b未知TE/PV/Lock/恢复失败禁UART；本次没有实际故障注入，不以正常运行证明故障分支硬件触发。",
+  "limits": [
+    "D写仅argv/成功ACK与相邻SYNC_READ原帧证明当前43→0→43；没有D写TX的strace原帧。",
+    "四普通PV原帧为零，不外推全51停止原帧，不解释旧±50。",
+    "读回正确不证明现场控制环采用D0，也不证明D因果或长期精度闭环。"
+  ],
+  "new_ssh": 0,
+  "new_uart": 0,
+  "tests_rerun": 0,
+  "main_files_changed": 0,
+  "same_ssh_receipts": [
+    {
+      "name": "root-reviewed-single-start",
+      "pid": 628344,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    },
+    {
+      "name": "same-pane-observer",
+      "pid": 628382,
+      "exit_code": 1,
+      "wait_returncode": 1,
+      "reaped": true,
+      "signals_sent": []
+    },
+    {
+      "name": "terminal-identity",
+      "pid": 628821,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    },
+    {
+      "name": "reclaim-natural-dead-owned-pane",
+      "pid": 628822,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    },
+    {
+      "name": "post-nonuart",
+      "pid": 628823,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    }
+  ],
+  "driver_terminal": {
+    "original": "%67 628379 1 1",
+    "meaning": "同pane/PID自然dead/exit1，之后只清自有dead pane；不是root直接waitpid。"
+  },
+  "nonuart_before_after": "原17项两端均PASS",
+  "go_time_binding": "本轮field确认时间等于双方physical stamp，唯一tmux真实start在当前GO期间且总600秒；旧GO不可复用。",
+  "local_owner_ssh": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_head_d0_execute_r11.owner/result.json",
+    "sha256": "744ad9728ac8a68700889e7cbed23e438c14a5072540b4cdcc4687b257bd9da8",
+    "bytes": 1543,
+    "owner_pid": 89725,
+    "ssh_pid": 89727,
+    "exit_code": 0,
+    "reaped": true,
+    "signals": [],
+    "boundary": "本机owner/SSH真实回收；远端driver自然终态由同pane/PID原件另证。"
+  }
+}

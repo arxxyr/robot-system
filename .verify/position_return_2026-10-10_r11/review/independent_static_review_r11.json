@@ -1,0 +1,21 @@
+{
+  "status": "ACCEPTED_STATIC_ONLY",
+  "recorded_at_utc": "2026-10-10T11:32:18.441061+00:00",
+  "actual_sources": {
+    "head1_d0_trial_r11.py": {
+      "sha256": "593bbe72c352f619bc550261ddaf58f5e345c8eb491f8eb8ee67292f42b274b5",
+      "bytes": 12517
+    },
+    "test_head1_d0_trial_r11.py": {
+      "sha256": "4b8b252a9fbf2133176faa734a0368df9dd4279c1aff21b2dde1ba4670c92bbe",
+      "bytes": 21239
+    }
+  },
+  "findings": [],
+  "scope": "已完成窄静态阅读；确认D43→0→43恢复、停止/Lock未知粘性封UART、ACK不确定先确认停止再恢复、原参数/预算/冻结helper与新GO引用不变。",
+  "new_tests_run": 0,
+  "ssh_operations": 0,
+  "uart_operations": 0,
+  "files_changed_by_review": "仅本target原件小回执",
+  "interpretation_boundary": "有限功能试验；正确读回不证明现场FW控制环即时采用D、因果或长期参数闭环。"
+}

@@ -1,0 +1,8 @@
+爸爸，永久归档准备中的本机只读元数据探查错误；未调用机器人、重跑recipe或修改原件。
+先已成功打印两原tar的实际SHA/字节/成员数，随后把旧manifest的文件字典键误写为files，触发以下原工具输出末段：
+
+Traceback (most recent call last):
+  File "<stdin>", line 15, in <module>
+KeyError: 'files'
+
+只更正后续只读解析使用实际键，不回填这次原失败，不影响原软件/硬件判定。

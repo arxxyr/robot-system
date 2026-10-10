@@ -1,0 +1,24 @@
+{
+  "status": "ACCEPTED_FRESH_FIELD_GO_AND_SINGLE_STARTER",
+  "recorded_at_ns": 1791632119758001000,
+  "field": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/field_confirmation_r11.json",
+    "sha256": "1a6434077e7a94a6b2aea5a58ae35337869780e6bb521e12140bd89dca34882b",
+    "bytes": 727
+  },
+  "go": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/head1-d0-trial-r11.go.json",
+    "sha256": "b02ca867dbe2b68725102a223b9bd4e2dd645ec7d9250fac80c20db3e0bd5a9a",
+    "bytes": 1308
+  },
+  "starter": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/native-preparation/start_head1_d0_trial_once_r11.root-reviewed.sh",
+    "sha256": "1f62a2dda4aa6266b91bf899f4197795253419fcaea9ff4e64b567bed6e470ee",
+    "bytes": 8034
+  },
+  "plan_sha256": "1e364dfa8ee1b895639c975aef7eeb9a943bdef12cd00c11c6ae5008f01433fa",
+  "expires_at_ns": 1791632719758001000,
+  "independent_starter_static_accepted": true,
+  "only_changes_from_static_draft": "三项root现场/GO pin由None替换为本次新回执；唯一launcher不变",
+  "hardware_started": false
+}

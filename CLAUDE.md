@@ -21,18 +21,20 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-10 R10头1保持P16/D43/I0，仅一次-24：2138→2122，目标2114，出程+8 FAIL。
-           原±4/800ms内14样本从未合格，回程NOT_RUN；平台仅补读一次Present_Load原字44。
-           Load帧ID7/地址60/2B/status0/checksum通过，夹前后PP均2122/+8；不换算扭矩或判定机械根因。
-           STOP51整数零、74项身份及独立非UART后验PASS，manualcut=false；348直属child/696输出自然回收。
-           仅left7四次GP/TE写，PDI/base写0、相机0，无重试，本轮GO已消耗、看护已收尾。
-           原件 .verify/position_return_2026-10-10_r10/summary.json；旧R9+6/R8+7及R5/I2、R6/P24原FAIL保持。
-           现场先回复“没有卡住”、恢复供电，随后本轮持续看护重新确认；最新供电仅用户报告ON，遥测UNKNOWN。
-           Present_Load软件两端各217库+13工具=230不同方法，597输入同3a4cc12e、nightly32d。
-           Orin实际fmt→根Clippy/release/exit2拒写通过；新2949诊断ELF不替代f201/13c。
-           Rust软件原分类FAIL及reconciliation原件 .verify/present_load_read_2026-10-10_r10/summary.json。
-           旧±50原因OPEN；左腕仅临时I1 PASS后恢复I0、头2旧FAIL，长期参数与三轮主动运动未验。
-           本阶段未正式安装/激活服务，正式ca14及六服务沿用既有状态；右H2完整PASS保持。
+本轮最新:  2026-10-10 R11头1仅临时D43→0→43、一次+24往返：锚2122、目标2146。
+           出程14样本，251.024002ms首次±4，观察至800.063598ms，末2142/-4 PASS；回程2128/+6 FAIL。
+           回程原800ms内14样本从未合格，末样本792.370511ms，原循环判定完成842.434602ms；精度门未续期。
+           D0写/读0、D43恢复及P16/I0/Lock1/死区1读回PASS；配置区实际临时写，不称EEPROM写0。
+           控制环即时采用与掉电持久化未证；不同起点/方向只测功能，不作D因果或修复宣称。
+           STOP51整数零、76项身份及独立非UART前后验PASS，manualcut=false；394直属child/788输出自然回收。
+           仅left7七次D/GP/TE写，底盘/Load/相机0，无重试；本轮GO已消耗、看护已收尾，无新GO/UART。
+           原件 .verify/position_return_2026-10-10_r11/summary.json；软件本机r1与首native FAIL、r2 PASS均保留。
+           候选两端各10不同内存方法、默认零动作/缺GO拒绝通过；Orin实际fmt→根Clippy通过。
+           597输入主树/原生三窗首尾同3a4cc12e、nightly32d；本轮无新Rust测试或release/控制ELF构建。
+           最新供电仅本轮用户报告ON，独立遥测UNKNOWN；下一步先明确参数生效条件，暂不盲调PID或扩大设计。
+           R10出程+8/Load原字44、R9+6/R8+7及R5/I2、R6/P24原FAIL保持，旧±50原因OPEN。
+           左腕仅临时I1 PASS后恢复I0、头2旧FAIL，长期参数与三轮主动运动未验；右H2完整PASS保持。
+           本阶段未正式安装/激活服务，正式ca14及六服务沿用既有状态。
            D15 OPEN/DEFERRED、deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +

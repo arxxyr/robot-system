@@ -1,0 +1,68 @@
+{
+  "phase": "R11_FIRST_SOFTWARE_FAILURE_ORIGINALS_ONLY",
+  "files": [
+    {
+      "name": "head1_d0_trial_r11.py",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/head1_d0_trial_r11.py",
+      "sha256": "593bbe72c352f619bc550261ddaf58f5e345c8eb491f8eb8ee67292f42b274b5",
+      "bytes": 12517
+    },
+    {
+      "name": "test_head1_d0_trial_r11.py",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/test_head1_d0_trial_r11.py",
+      "sha256": "4b8b252a9fbf2133176faa734a0368df9dd4279c1aff21b2dde1ba4670c92bbe",
+      "bytes": 21239
+    },
+    {
+      "name": "verify_local_r11.py",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/verify_local_r11.py",
+      "sha256": "3ba894f97b4ce5e0fe53da488228d533aeba40d4e06e6d70cbe429efc5a88d7e",
+      "bytes": 4917
+    },
+    {
+      "name": "maintenance_bindings_head_d0_r11.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/maintenance_bindings_head_d0_r11.json",
+      "sha256": "9c771450d3a9f0de844b0a5c4c414b90775ef08917f6c7c1b4d512b53f7cc7b6",
+      "bytes": 26944
+    },
+    {
+      "name": "fresh-nonuart.stdout",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/fresh-nonuart.stdout",
+      "sha256": "e8800230754bc49c775925a4b6bc00fbe05bd08c46adf2de03e750037f7db667",
+      "bytes": 176291
+    },
+    {
+      "name": "fresh-nonuart.stderr",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/fresh-nonuart.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "fresh-nonuart.receipt.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/fresh-nonuart.receipt.json",
+      "sha256": "753907878a0366e7c850a565ffd08864674e7433ca1e5f7f08f3263cef544137",
+      "bytes": 576
+    },
+    {
+      "name": "native-memory10.stdout",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/native-memory10.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "native-memory10.stderr",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/native-memory10.stderr",
+      "sha256": "2e98da52c8b20ff4acc05d73b15c0af6b39750b3e7023d6c5e4decb81df3cc56",
+      "bytes": 3129
+    },
+    {
+      "name": "native-memory10.receipt.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/native-memory10.receipt.json",
+      "sha256": "ec297813a95fd1bb3d37540ae0e98f6709bf6eeaaa93c21e50d2279ded605537",
+      "bytes": 736
+    }
+  ],
+  "go_exists": false,
+  "output_exists": false,
+  "record_exists": false
+}

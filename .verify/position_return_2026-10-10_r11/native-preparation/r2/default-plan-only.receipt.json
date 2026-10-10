@@ -1,0 +1,19 @@
+{
+  "name": "default-plan-only",
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/head1_d0_trial_r11.py"
+  ],
+  "pid": 628202,
+  "started_ns": 1791631876981029411,
+  "finished_ns": 1791631877042705411,
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout_sha256": "763bd3c6faaba16100f96c9825b6580fbe4647432c0e5ac01d8228ca68777a6b",
+  "stdout_bytes": 277,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 0
+}

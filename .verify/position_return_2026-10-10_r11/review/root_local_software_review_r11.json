@@ -1,0 +1,32 @@
+{
+  "status": "ACCEPTED_LOCAL_SOFTWARE_ONLY",
+  "recorded_at_ns": 1791631606963459000,
+  "candidate": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/head1_d0_trial_r11.py",
+    "bytes": 12517,
+    "sha256": "593bbe72c352f619bc550261ddaf58f5e345c8eb491f8eb8ee67292f42b274b5"
+  },
+  "tests": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/test_head1_d0_trial_r11.py",
+    "bytes": 21239,
+    "sha256": "4b8b252a9fbf2133176faa734a0368df9dd4279c1aff21b2dde1ba4670c92bbe"
+  },
+  "result": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-d0-preparation-r11/software-verification-r11-r2/result.json",
+    "bytes": 11829,
+    "sha256": "3190619a6477c3ce3398283373f7cb70f8b92407b7c0be1dc3142a3c75307026"
+  },
+  "distinct_memory_methods": 10,
+  "original_r1_fail_retained": true,
+  "direct_children": 3,
+  "all_reaped": true,
+  "static_scope": "D43→0→43，P16/I0/Lock1保持；未知停止/Lock或恢复失败后粘性禁UART；原R8观测与d97回程/停止门，旧GO不可用",
+  "root_and_independent_static_accepted": true,
+  "actual_uart": 0,
+  "go_issued": false,
+  "limitations": [
+    "参数写读回不证明控制环即时采用",
+    "不同起点/方向仅验功能，不证明D因果",
+    "D22配置区临时写并保持Lock1，不作掉电持久性保证"
+  ]
+}
