@@ -1,0 +1,143 @@
+{
+  "status": "ROOT_HEAD1_I1_ACCURACY_FAIL_RESTORE_STOP_IDENTITY_PASS",
+  "reviewed_at_ns": 1791616982671506000,
+  "run_sha256": "9a62bacbfbc18346faa1e706c2156b89a94dfea4c8816599ab6e6955ba59d402",
+  "I0_restored": true,
+  "parameters_unchanged_after_restore": true,
+  "outward": {
+    "stage": "outward",
+    "status": "PASS",
+    "target_raw": 2666,
+    "anchor_raw": 2642,
+    "tolerance_raw": 4,
+    "budget_ms": 800,
+    "started_ns": 3370027680982763,
+    "deadline_ns": 3370028480982763,
+    "samples": [
+      {
+        "stamp_ns": 3370027691015836,
+        "position_raw": 2642,
+        "signed_error_raw": -24
+      },
+      {
+        "stamp_ns": 3370027751131365,
+        "position_raw": 2646,
+        "signed_error_raw": -20
+      },
+      {
+        "stamp_ns": 3370027811222190,
+        "position_raw": 2657,
+        "signed_error_raw": -9
+      },
+      {
+        "stamp_ns": 3370027871315478,
+        "position_raw": 2660,
+        "signed_error_raw": -6
+      },
+      {
+        "stamp_ns": 3370027931449055,
+        "position_raw": 2662,
+        "signed_error_raw": -4
+      }
+    ],
+    "final_signed_error_raw": -4,
+    "finished_ns": 3370027931449055,
+    "elapsed_ns": 250466292
+  },
+  "return": {
+    "stage": "return",
+    "status": "FAIL",
+    "target_raw": 2642,
+    "anchor_raw": 2642,
+    "tolerance_raw": 4,
+    "budget_ms": 800,
+    "started_ns": 3370027951519491,
+    "deadline_ns": 3370028751519491,
+    "samples": [
+      {
+        "stamp_ns": 3370027961588949,
+        "position_raw": 2662,
+        "signed_error_raw": 20
+      },
+      {
+        "stamp_ns": 3370028021716350,
+        "position_raw": 2661,
+        "signed_error_raw": 19
+      },
+      {
+        "stamp_ns": 3370028081886311,
+        "position_raw": 2652,
+        "signed_error_raw": 10
+      },
+      {
+        "stamp_ns": 3370028142158642,
+        "position_raw": 2650,
+        "signed_error_raw": 8
+      },
+      {
+        "stamp_ns": 3370028202317115,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      },
+      {
+        "stamp_ns": 3370028262482757,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      },
+      {
+        "stamp_ns": 3370028322658830,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      },
+      {
+        "stamp_ns": 3370028382824408,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      },
+      {
+        "stamp_ns": 3370028443074850,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      },
+      {
+        "stamp_ns": 3370028503260493,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      },
+      {
+        "stamp_ns": 3370028563410457,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      },
+      {
+        "stamp_ns": 3370028623604325,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      },
+      {
+        "stamp_ns": 3370028683763537,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      },
+      {
+        "stamp_ns": 3370028743914108,
+        "position_raw": 2648,
+        "signed_error_raw": 6
+      }
+    ],
+    "final_signed_error_raw": 6,
+    "finished_ns": 3370028793982870,
+    "elapsed_ns": 842463923,
+    "failure_code": "POSITION_ACCURACY_TIMEOUT"
+  },
+  "whole_run_preserved": "FAIL",
+  "original_head1_plus8_failure": "UNCHANGED",
+  "direct_children": 385,
+  "output_originals_verified": 770,
+  "51_stop_integer_zero": true,
+  "stop_wire_frames": "NOT_CAPTURED_BY_F201_NORMAL_READ",
+  "head2": "PENDING_ONCE_BASELINE",
+  "base": "NOT_RUN",
+  "automatic_I2_retry": false,
+  "post_nonuart": "PASS"
+}

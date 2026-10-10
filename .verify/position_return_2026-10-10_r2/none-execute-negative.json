@@ -1,0 +1,14 @@
+{
+  "status": "PASS_NONE_REJECTED_BEFORE_OUT_EXECUTOR_UART",
+  "argv": [
+    "/home/loosqk/robot-checks/position-return-20261010-r1/right7-readonly-r2/read_right7_diagnostic_r3.py",
+    "--execute"
+  ],
+  "exception": "ValueError('当前现场回执缺失，零UART拒绝')",
+  "stdout": "",
+  "field_confirmation": null,
+  "output_created": false,
+  "executor_created": false,
+  "uart_open_or_read": false,
+  "finished_ns": 1791615667925460062
+}

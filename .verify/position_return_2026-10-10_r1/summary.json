@@ -668,5 +668,11 @@
       "bytes": 2030,
       "sha256": "fa740362e8792f6be2640253ba903338d992dc8209de6d620e9c0b35ccfd8a31"
     }
-  ]
+  ],
+  "latest_field_receipt": {
+    "path": ".verify/position_return_2026-10-10_r1/manual_power_cut_confirmation.json",
+    "bytes": 871,
+    "sha256": "a424dcd493381ec0bf542e31377dba2712f67df40c33696110dc8cd2a4ba07af"
+  },
+  "latest_actual_power_state": "USER_CONFIRMED_OFF"
 }

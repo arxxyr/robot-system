@@ -2,7 +2,31 @@
 
 ## 当前步骤
 
-### 左腕原参数出程与整机停止失败（2026-10-10，等待人工断电确认）
+### 头1临时 I1 回程失败，头2出程及整机停止失败（2026-10-10，本轮已收尾，用户确认断电）
+
+root于07:16:21UTC记录用户“现场仍就绪，可以继续看护”，本次明确覆盖头1一次I1恢复0及头2一次原参数往返，底盘不动作。头1候选仅将已验left5逻辑固定到left7、实测19项备份与motor7原帧/ACK身份；最终3c44源的8个内存方法与默认零动作已root实际复验，不将同方法重复累计。
+
+头1锚点2642、目标2666，出程最后2662（-4/250.466292ms）通过；回程目标2642，期限内10个样本停在2648（+6），原±4/800ms判据FAIL。I1写/读回、I0恢复及Lock1/P16/D43/双死区1全部通过，17×3停止51项整数零、身份及独立非UART后验通过。driver617600及observer自然exit1/reap，385个不同直接child与770输出原件已核，原精度FAIL不覆盖。
+
+root在头1安全收尾与后验通过后，沿本次覆盖两目标的现场事实签了独立head2原参数GO，无头1重试。头2仅4次left8写：GP2087、TE1、GP2111、TE0；出程目标2111但平台2106，-5超门，回程NOT_RUN，没有I/Phase/底盘写。最终51停止字段中right8 Present_Velocity=-50、right9=+50，二者TE0/GV0，其余整数零；原NEEDS_MANUAL_POWER_CUT与STOP FAIL保持。异常速度只有f201普通读解析整数，没有对应原UART帧；不因编码器读值相同或只差1就推断实际轮静止/转动、单位或根因。driver618150和observer自然exit1/reap，310不同直接child及620输出原件已核；非UART后验通过，所有自有pane确认自然dead/exit后回收、SSH全部回收，不以这些PASS覆盖停止FAIL。
+
+原失败收尾时已要求现场立即切断两个电机电源并保持支撑，原件确认PENDING不回填。root随后收到用户“两个电机电源已切断，机械臂保持支撑”，记录于2026-10-10T07:29:36.929775+00:00；最新供电USER_CONFIRMED_OFF，实际切断时刻/独立电气遥测UNKNOWN，本轮看护结束。这不是新GO；停止所有后续UART、动作或自动重试。头1固定临时I2候选fa97仅本地软件准备，8个内存方法、默认零动作和0/2写白名单mock通过，未上传或签GO/执行。左腕I1单次精度已通过但恢复I0，长期参数仍未设置；头部精度未闭环，三轮主动运动仍未验，D15 OPEN/DEFERRED、deployable=false保持。证据入口 [.verify/position_return_2026-10-10_r3](../../.verify/position_return_2026-10-10_r3/summary.json)。
+
+本次提交前质量门与r2共用同597输入：Orin实际更新nightly后仍32d，fmt07:14:17→21UTC、根Clippy07:14:21→22UTC零警告，四源窗/两端逐项一致、19直接child及38输出原件已root核。native源HEAD894和hostHEAD406不同，Rust输入聚合相同5970c9be；后续只有本轮Python候选/原件及文档变化，Rust源不变。没有全workspace测试、新release、正式安装或服务激活。
+
+
+### 左腕临时 I1 对照通过，长期参数与头部仍待验证（2026-10-10）
+
+用户先确认两个电机电源已切断并保持支撑，随后确认“已恢复供电，所有现场条件就绪”；root于07:03:54UTC记录本次供电、空载支撑、活动区空旷、支撑不挡回程、持续看护与立即人工断电事实。首次非UART入口因左USB的device/link inode变化拒绝，UART启动0；核得序列号5A7C121427、devpath、ttyACM0与rdev一致后，按root明确授权使用新身份绑定，不要求再次重插。旧None现场负控和该入口FAIL均保留。
+
+只执行一次35项原帧诊断：17电机Torque_Enable均为0，right7读到777/FW3.10/Mode1/Phase12，Goal_Velocity和Present_Velocity为0；五组顺序位置/速度原帧均为358/0，35个工具child自然exit0/reap。这里只证明当次采集通过，不能覆盖旧right7解析整数+50的停止FAIL、补造其原UART帧，或证明实际轮不动。
+
+随后仅执行一次left5临时I1对照，候选fbac与维护d97、原+24/±4/800ms位置门保持。锚点973、出程目标997，最后993，误差-4/499.499503ms；回程目标973，最后976，误差+3/491.765066ms。两方向、I恢复、17×3停止、身份后验及独立非UART清场均通过。I1写ACK及原帧读回1/Lock1，恢复I0写ACK及原帧读回0/Lock1/P16/D43/CW1/CCW1；7次写仅left5，384个不同直接child自然回收，无后续head/base UART。停止51项是f201普通读的整数零，不宣称51项原帧。
+
+driver616776和observer自然exit1回收；整轮run仍因三轮BASE_FIRMWARE_CONTRACT_UNVERIFIED/DEFERRED保留FAIL，不改为整体PASS。本轮没有设置长期I1，当前已恢复I0；单次对照通过不等于断电后配置或长期精度已闭环。正式ca14四件、六停止服务、两USB及12个保护文件保持，底盘未驱动。证据入口 [.verify/position_return_2026-10-10_r2](../../.verify/position_return_2026-10-10_r2/summary.json)。该左腕阶段结束时，头1I1恢复0候选与头2原参数检查正在准备，后续新现场答复与两个独立GO见上述头部阶段；D15 OPEN/DEFERRED、deployable=false保持。
+
+
+### 左腕原参数出程与整机停止失败（2026-10-10，本轮已收尾，用户确认断电）
 
 root于06:17:24UTC收到用户“已供电并就绪，支撑不阻挡回程”；本次仅授权左腕及头部的小幅位置测试，底盘暂不动作。维护GO改为当次支撑、空载、活动区、持续看护和立即断电五项事实，不再强制电源复位、USB重插或底盘落地事实；底盘分支仍固定DEFERRED，原精度、停止、身份、锁与GO有效期门未变。本机与Orin同源46个维护测试方法通过。
 
@@ -10,9 +34,9 @@ root于06:17:24UTC收到用户“已供电并就绪，支撑不阻挡回程”�
 
 随后仅执行一次左腕原参数基线，driver615633、pane%42：锚点953、出程目标977，期限内停在972，误差-5，未进入回程。四次写入仅left5的GP953、TE1、GP977、TE0，没有I、头部或底盘写入。最终17×3停止字段有50个整数零，right7的Present_Velocity为+50、Torque_Enable/Goal_Velocity为0，停止FAIL，原run为NEEDS_MANUAL_POWER_CUT。该+50只有旧位置工具的解析整数，没有对应原UART帧；原因、单位与实际轮运动未证实，不回填旧right9的-50或左腕回程+6。
 
-左腕断扭ACK、62项身份后验、310个不同自有child自然回收及独立非UART清场均通过，不能覆盖精度/停止FAIL。06:36:26UTC非UART收尾完成：仅移除已记录dead1/exit1的自有pane，正式ca14四件未变、六服务停止、两USB/四锁无持有者、无已知控制或读回进程。已要求现场切断两个电机电源并保持机械臂支撑；实际断电确认仍PENDING，后续没有UART或动作。
+左腕断扭ACK、62项身份后验、310个不同自有child自然回收及独立非UART清场均通过，不能覆盖精度/停止FAIL。06:36:26UTC非UART收尾完成：仅移除已记录dead1/exit1的自有pane，正式ca14四件未变、六服务停止、两USB/四锁无持有者、无已知控制或读回进程。当时已要求现场切断两个电机电源并保持机械臂支撑，断电确认PENDING记录保持。root于06:52:28UTC收到用户“两个电机电源已切断，机械臂保持支撑”，最新状态为USER_CONFIRMED_OFF，本轮看护收尾结束；实际切断时刻/独立遥测UNKNOWN。新回执为本轮manual_power_cut_confirmation.json，只更新最新现场状态，不回填原NEEDS/STOP FAIL或tar原件，也不构成新GO；截至该轮断电收尾，没有后续UART或动作。
 
-固定left5临时I=1对照仅为本地候选：复用原+24/±4/800ms位置门，入口及恢复前要求目标TE/PV为0、恢复写前Lock1，最后恢复I0并核P/D/死区；停止或恢复未知即封锁后续UART。最终8个内存方法及默认PLAN_ONLY通过，未上传、签GO或执行参数写入，不能称为偏差修复。证据入口 [.verify/position_return_2026-10-10_r1](../../.verify/position_return_2026-10-10_r1/summary.json)。右H2本次完整PASS与旧失败分别保留；头1旧+8、头2/三轮主动运动待验、D15 OPEN/DEFERRED及deployable=false保持。
+该原参数阶段的固定left5临时I=1对照仅为本地候选：复用原+24/±4/800ms位置门，入口及恢复前要求目标TE/PV为0、恢复写前Lock1，最后恢复I0并核P/D/死区；停止或恢复未知即封锁后续UART。最终8个内存方法及默认PLAN_ONLY通过，未上传、签GO或执行参数写入，不能称为偏差修复。证据入口 [.verify/position_return_2026-10-10_r1](../../.verify/position_return_2026-10-10_r1/summary.json)。右H2本次完整PASS与旧失败分别保留；头1旧+8、头2/三轮主动运动待验、D15 OPEN/DEFERRED及deployable=false保持。
 
 本机实际更新nightly、执行fmt退出0；Orin本次实际更新nightly→fmt→根Clippy零警告通过，编译器仍32dba69d6。主树与原生597项Rust输入逐项同字节/权限，格式化前后及批次首尾保持；19个直接child及3份SSHowner自然exit0回收，不外推Cargo内部未导出的PID。原件在本轮commit_quality/；没有新release、完整workspace测试、UART、安装或服务操作。
 

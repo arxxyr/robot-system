@@ -1,0 +1,19 @@
+{
+  "schema": "USER_MANUAL_POWER_CUT_CONFIRMATION_V1",
+  "recorded_utc": "2026-10-10T06:54:56.659340+00:00",
+  "received_by": "root",
+  "root_received_utc": "2026-10-10T06:52:28Z",
+  "user_answer": "两个电机电源已切断，机械臂保持支撑",
+  "reported_actual_power_state": "USER_CONFIRMED_OFF",
+  "two_motor_supplies_off_user_confirmed": true,
+  "arms_supported_user_confirmed": true,
+  "actual_power_cut_time": "UNKNOWN",
+  "independent_power_telemetry": "UNKNOWN",
+  "verification_basis": "USER_CONFIRMATION_ONLY",
+  "current_watch_cleanup": "ENDED",
+  "original_baseline_result": "NEEDS_MANUAL_POWER_CUT",
+  "original_stop_status": "FAIL",
+  "does_not_rewrite_original_results": true,
+  "new_GO": false,
+  "authorization_limit": "本次确认仅结束本轮现场看护收尾；不覆盖原NEEDS/STOP FAIL，不构成新UART、参数或运动授权。"
+}

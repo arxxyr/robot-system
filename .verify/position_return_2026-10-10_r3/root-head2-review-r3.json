@@ -1,0 +1,161 @@
+{
+  "status": "ROOT_HEAD2_ACCURACY_STOP_FAIL_IDENTITY_REAP_PASS",
+  "reviewed_at_ns": 1791617212735178000,
+  "run_sha256": "d11d9d9d8b1e7969a660c6c48460bf89282bc07754ba2294b49baf3ca5629dc1",
+  "raw_original_frames_for_nonzero": "NOT_CAPTURED",
+  "outward": {
+    "stage": "outward",
+    "status": "FAIL",
+    "target_raw": 2111,
+    "anchor_raw": 2087,
+    "tolerance_raw": 4,
+    "budget_ms": 800,
+    "started_ns": 3370185790022759,
+    "deadline_ns": 3370186590022759,
+    "samples": [
+      {
+        "stamp_ns": 3370185800221617,
+        "position_raw": 2087,
+        "signed_error_raw": -24
+      },
+      {
+        "stamp_ns": 3370185860427772,
+        "position_raw": 2090,
+        "signed_error_raw": -21
+      },
+      {
+        "stamp_ns": 3370185920589638,
+        "position_raw": 2101,
+        "signed_error_raw": -10
+      },
+      {
+        "stamp_ns": 3370185980737264,
+        "position_raw": 2104,
+        "signed_error_raw": -7
+      },
+      {
+        "stamp_ns": 3370186040923098,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      },
+      {
+        "stamp_ns": 3370186101077412,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      },
+      {
+        "stamp_ns": 3370186161353168,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      },
+      {
+        "stamp_ns": 3370186221522235,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      },
+      {
+        "stamp_ns": 3370186281677477,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      },
+      {
+        "stamp_ns": 3370186341813454,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      },
+      {
+        "stamp_ns": 3370186401957368,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      },
+      {
+        "stamp_ns": 3370186462072705,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      },
+      {
+        "stamp_ns": 3370186522206797,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      },
+      {
+        "stamp_ns": 3370186582366424,
+        "position_raw": 2106,
+        "signed_error_raw": -5
+      }
+    ],
+    "final_signed_error_raw": -5,
+    "finished_ns": 3370186632429660,
+    "elapsed_ns": 842407349,
+    "failure_code": "POSITION_ACCURACY_TIMEOUT"
+  },
+  "return": "NOT_RUN",
+  "stop_nonzero": [
+    {
+      "motor": "right:8",
+      "register": "Present_Velocity",
+      "decoded_integer": -50,
+      "wire_frame": "NOT_CAPTURED_BY_F201_NORMAL_READ"
+    },
+    {
+      "motor": "right:9",
+      "register": "Present_Velocity",
+      "decoded_integer": 50,
+      "wire_frame": "NOT_CAPTURED_BY_F201_NORMAL_READ"
+    }
+  ],
+  "direct_children": 310,
+  "stdout_stderr_originals_verified": 620,
+  "writes": [
+    {
+      "sequence": 167,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "8",
+        "write",
+        "Goal_Position",
+        "2087"
+      ]
+    },
+    {
+      "sequence": 170,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "8",
+        "write",
+        "Torque_Enable",
+        "1"
+      ]
+    },
+    {
+      "sequence": 172,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "8",
+        "write",
+        "Goal_Position",
+        "2111"
+      ]
+    },
+    {
+      "sequence": 188,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "8",
+        "write",
+        "Torque_Enable",
+        "0"
+      ]
+    }
+  ],
+  "I_writes": 0,
+  "base_writes": 0,
+  "post_nonuart": "PASS",
+  "original_NEEDS_unchanged": true,
+  "manual_power_cut": "PENDING_USER_CONFIRMATION",
+  "no_UART_after_failure": true
+}

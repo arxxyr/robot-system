@@ -1,0 +1,15 @@
+{
+  "recorded_at_ns": 1791617376929775000,
+  "recorded_utc": "2026-10-10T07:29:36.929775+00:00",
+  "source": "本轮用户异步答复",
+  "answer": "两个电机电源已切断，机械臂保持支撑",
+  "latest_actual_power": "USER_CONFIRMED_OFF",
+  "arms_supported": true,
+  "actual_cut_time": "UNKNOWN",
+  "independent_electrical_telemetry": "UNKNOWN",
+  "original_NEEDS_MANUAL_POWER_CUT": "UNCHANGED",
+  "original_STOP_FAIL": "UNCHANGED",
+  "watch_ended": true,
+  "new_GO": false,
+  "UART_after_failure": false
+}

@@ -1,0 +1,17 @@
+{
+  "recorded_utc": "2026-10-10T07:03:54.842306+00:00",
+  "recorded_at_ns": 1791615834842306000,
+  "source": "本轮用户异步答复",
+  "answer": "已恢复供电，所有现场条件就绪",
+  "scope": "固定35项只读right7原帧诊断；通过后一次left5小I=1往返并恢复I=0，不驱动底盘",
+  "physical": {
+    "motor_supplies_on": true,
+    "continuous_watch": true,
+    "immediate_manual_power_cut": true,
+    "arms_unloaded_supported": true,
+    "areas_clear": true,
+    "support_does_not_block_return": true
+  },
+  "power_cycle_or_usb_replug": "此前用户确认两个电机电源已切断；本次确认恢复供电，USB未要求重插且不推定",
+  "prior_failure_unchanged": true
+}

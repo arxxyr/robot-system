@@ -1,0 +1,33 @@
+{
+  "schema": "MAINTENANCE_GO_V2",
+  "issued_by": "root",
+  "plan_sha256": "7b6ca64f893046165189159ead8725e1ee4100cc5d747b95cc1c9d767784266d",
+  "artifact_root": "/home/loosqk/robot-checks/position-return-20261010-r1",
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "source": "用户本轮答复“已恢复供电，所有现场条件就绪”；field_confirmation_r2.json SHA71071cc51838dfb941341458d029dfdf1cbb36b8fe28ff336c6145c16d39becd；35原帧与后非UART已root核验，仅一次left5 I1往返并恢复I0",
+  "issued_at_ns": 1791616196934276000,
+  "expires_at_ns": 1791616796934276000,
+  "physical": {
+    "left": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791615834842306000
+    },
+    "right": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791615834842306000
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "status": "PASS_SOFTWARE_ONLY",
+  "recorded_utc": "2026-10-10T07:23:48.456751+00:00",
+  "refs": [
+    {
+      "path": "target/position_return_2026-10-10_r1/head-preparation-r3/i2_trial_head1_candidate_r1.py",
+      "bytes": 9630,
+      "sha256": "fa97b6337fc1f4211f008fd23e8de304b3e631f08a4355dcc2f360e0e6f8a47e"
+    },
+    {
+      "path": "target/position_return_2026-10-10_r1/head-preparation-r3/test_i2_head1_candidate_r1.py",
+      "bytes": 6957,
+      "sha256": "8ce3ba25cfa68e064ee613ca1b9eb292a8cfbc77fc94816e6ca4a88f725db062"
+    },
+    {
+      "path": "target/position_return_2026-10-10_r1/head-preparation-r3/i1_trial_head1_candidate_r1.py",
+      "bytes": 9630,
+      "sha256": "3c44bf1f3940cafc9010251814e1fcab6a7e291ee13283cfa39d561d0d32dad5"
+    },
+    {
+      "path": "target/position_return_2026-10-10_r1/head-preparation-r3/test_i1_head1_candidate_r1.py",
+      "bytes": 6956,
+      "sha256": "c7f3a9e78879d1dbe5f3a8ba0927006eb396526700773ac2351d38d59678ad18"
+    },
+    {
+      "path": "scripts/run_hardware_maintenance.py",
+      "bytes": 50168,
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41"
+    }
+  ],
+  "commands": [
+    {
+      "label": "eight_tests",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "target/position_return_2026-10-10_r1/head-preparation-r3/test_i2_head1_candidate_r1.py",
+        "-v"
+      ],
+      "direct_uv_pid": 23239,
+      "started_at_ns": 1791617028317975000,
+      "finished_at_ns": 1791617028373858000,
+      "wait_returncode": 0,
+      "expected_returncode": 0,
+      "reaped": true,
+      "sent_signals": [],
+      "stdout": {
+        "bytes": 440,
+        "sha256": "46120df5313ae10880ab4de7cc4bdc9d2e42e2ef1aa8ee066f6d6b13195f3e70"
+      },
+      "stderr": {
+        "bytes": 1355,
+        "sha256": "7ef367d34b9c2e9348315b13bf6b319fdbc3bfc3662ea7ddae9a8367c1833312"
+      }
+    },
+    {
+      "label": "default_plan_only",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "target/position_return_2026-10-10_r1/head-preparation-r3/i2_trial_head1_candidate_r1.py"
+      ],
+      "direct_uv_pid": 23241,
+      "started_at_ns": 1791617028374183000,
+      "finished_at_ns": 1791617028415806000,
+      "wait_returncode": 0,
+      "expected_returncode": 0,
+      "reaped": true,
+      "sent_signals": [],
+      "stdout": {
+        "bytes": 107,
+        "sha256": "f68a7d784a0ea8bafe1d81e29202c6cf2415f3461e7d8d248e2d9fa09585349e"
+      },
+      "stderr": {
+        "bytes": 59,
+        "sha256": "dd7241fb9634d51d4b90a8782d9a26dd3fe2ada28ad873374b2d9b28b76827ef"
+      }
+    },
+    {
+      "label": "i_write_whitelist_memory",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "-c",
+        "from pathlib import Path\nimport importlib.util,json\nfrom types import SimpleNamespace\np=Path('target/position_return_2026-10-10_r1/head-preparation-r3/i2_trial_head1_candidate_r1.py');spec=importlib.util.spec_from_file_location('head1_i2_memory',p);c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c);calls=[]\ndef command(argv,**kw):\n assert argv==[c.RAW_TOOL['path'],'memory-left','7','write','I_Coefficient',argv[-1]]\n calls.append((argv[-1],kw.get('cleanup')));return f'write I_Coefficient@7 <- {argv[-1]} ok\\n'\nm=SimpleNamespace(verify_ref=lambda *a,**k:None,DEVICES={'left':'memory-left'});e=SimpleNamespace(io=SimpleNamespace(command=command))\nc.write_i(m,e,2);c.write_i(m,e,0,cleanup=True)\ntry:c.write_i(m,e,1)\nexcept ValueError as error:assert '仅本轮I0/I2' in str(error)\nelse:raise AssertionError('I1应在command前拒绝')\nassert calls==[('2',False),('0',True)] and c.TARGET==('left',7,'head_motor_1')\nprint(json.dumps({'status':'PASS_MEMORY_ONLY','approved_i_values':[2,0],'i1_rejected_before_command':True,'mock_command_calls':2,'motor':7,'UART':False,'real_tool_started':0}))\n"
+      ],
+      "direct_uv_pid": 23243,
+      "started_at_ns": 1791617028416089000,
+      "finished_at_ns": 1791617028456186000,
+      "wait_returncode": 0,
+      "expected_returncode": 0,
+      "reaped": true,
+      "sent_signals": [],
+      "stdout": {
+        "bytes": 172,
+        "sha256": "1f7b6108f5a56a99381dd3545bea8e1c7c52abd8ac6ec74374bb6a3500a930cd"
+      },
+      "stderr": {
+        "bytes": 59,
+        "sha256": "dd7241fb9634d51d4b90a8782d9a26dd3fe2ada28ad873374b2d9b28b76827ef"
+      }
+    }
+  ],
+  "different_memory_test_methods": 8,
+  "source_basis": "已验head1 I1 3c44，仅固定临时值2、相应I2日志/读回/ACK范围与plan temporary_i2；不增加CLI通用参数",
+  "target": [
+    "left",
+    7,
+    "head_motor_1"
+  ],
+  "backup_i": 0,
+  "lock_required": 1,
+  "temporary_i": 2,
+  "restore_i": 0,
+  "position_delta_raw": 24,
+  "return_tolerance_raw": 4,
+  "position_wait_ms": 800,
+  "original_position_stop_identity_sticky_uart_gates": "UNCHANGED",
+  "direct_uv_children": 3,
+  "nested_python_pid": "NOT_EXPORTED_NO_PER_PID_REAP_CLAIM",
+  "UART": false,
+  "upload": "NOT_RUN",
+  "GO": "NOT_CREATED",
+  "hardware_i2_trial": "NOT_RUN",
+  "old_I1_hardware_FAIL": "UNCHANGED_NOT_REWRITTEN",
+  "failure": null,
+  "verification_scope": "8个适配内存方法、默认PLANONLY、最小I0/I2写白名单mock；没有真实工具或UART。"
+}

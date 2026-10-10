@@ -1,0 +1,957 @@
+{
+  "schema": "POSITION_RETURN_20261010_R2",
+  "recorded_at_ns": 1791616476467438000,
+  "scope": "右7一次35项只读与left5一次临时I1往返；不驱动头部或底盘",
+  "runtime_source": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+  "position_tool": "历史f201冻结ELF，不宣称本轮nightly新编译",
+  "raw_tool": "历史13c冻结ELF",
+  "diagnostic": {
+    "status": "PASS_DIAGNOSTIC_CAPTURE_35",
+    "run_sha256": "84524938708c86e8957c70ea0591237122cbd8b3ce16e687212f29d8a89df842",
+    "reads": 35,
+    "direct_children": 35,
+    "17_torque_enable": 0,
+    "right7": {
+      "model": 777,
+      "firmware": [
+        3,
+        10
+      ],
+      "mode": 1,
+      "phase": 12,
+      "goal_velocity_raw": 0,
+      "present_velocity_raw": 0,
+      "five_sequential_PP_PV": [
+        [
+          358,
+          0
+        ],
+        [
+          358,
+          0
+        ],
+        [
+          358,
+          0
+        ],
+        [
+          358,
+          0
+        ],
+        [
+          358,
+          0
+        ]
+      ]
+    },
+    "no_writes": true,
+    "full_stop_verification": false,
+    "original_tx_rx": true
+  },
+  "left5_I1": {
+    "status": "ROOT_I1_POSITION_RESTORE_STOP_IDENTITY_PASS",
+    "reviewed_at_ns": 1791616445364791000,
+    "run_sha256": "3bc5620a7dc3e18ea8b3dc795d8bb7313c7ec0d76c520bfa96dc32171af8cba1",
+    "whole_run_result_preserved": "FAIL_BASE_DEFERRED",
+    "stages": {
+      "outward": {
+        "last_position": 993,
+        "target": 997,
+        "signed_error": -4,
+        "elapsed_ms": 499.499503
+      },
+      "return": {
+        "last_position": 976,
+        "target": 973,
+        "signed_error": 3,
+        "elapsed_ms": 491.765066
+      }
+    },
+    "direct_children": 384,
+    "stdout_stderr_originals_verified": 768,
+    "writes": [
+      {
+        "seq": 200,
+        "argv": [
+          "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+          "5",
+          "write",
+          "I_Coefficient",
+          "1"
+        ],
+        "exit_code": 0
+      },
+      {
+        "seq": 225,
+        "argv": [
+          "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+          "5",
+          "write",
+          "Goal_Position",
+          "973"
+        ],
+        "exit_code": 0
+      },
+      {
+        "seq": 228,
+        "argv": [
+          "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+          "5",
+          "write",
+          "Torque_Enable",
+          "1"
+        ],
+        "exit_code": 0
+      },
+      {
+        "seq": 230,
+        "argv": [
+          "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+          "5",
+          "write",
+          "Goal_Position",
+          "997"
+        ],
+        "exit_code": 0
+      },
+      {
+        "seq": 241,
+        "argv": [
+          "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+          "5",
+          "write",
+          "Goal_Position",
+          "973"
+        ],
+        "exit_code": 0
+      },
+      {
+        "seq": 252,
+        "argv": [
+          "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+          "5",
+          "write",
+          "Torque_Enable",
+          "0"
+        ],
+        "exit_code": 0
+      },
+      {
+        "seq": 258,
+        "argv": [
+          "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+          "5",
+          "write",
+          "I_Coefficient",
+          "0"
+        ],
+        "exit_code": 0
+      }
+    ],
+    "restored_I": 0,
+    "permanent_I1_configuration": false,
+    "full_stop_integer_zero_count": 51,
+    "stop_wire_frames": "NOT_CAPTURED_BY_F201_NORMAL_READ",
+    "no_head_or_base_motion": true,
+    "post_nonuart": "PASS"
+  },
+  "preentry_failures_retained": [
+    {
+      "failure": "旧USB inode比较拒绝",
+      "uart_launches": 0,
+      "old_left_inodes": [
+        1527,
+        1531
+      ],
+      "new_left_inodes": [
+        1544,
+        1547
+      ],
+      "same_serial": "5A7C121427",
+      "same_devpath": true,
+      "unpersisted_first_fresh_snapshot": "UNKNOWN_NOT_RECREATED"
+    },
+    {
+      "failure": "field_confirmation=None负控拒绝",
+      "uart_launches": 0
+    }
+  ],
+  "manual_power_cut_receipt_previous_phase": ".verify/position_return_2026-10-10_r1/manual_power_cut_confirmation.json",
+  "original_baseline_and_right7_plus50_failure": "UNCHANGED",
+  "head": "NOT_RUN",
+  "base": "NOT_RUN_DEFERRED",
+  "permanent_I1_setting": "NOT_DONE_RESTORED_I0",
+  "D15": "OPEN_DEFERRED",
+  "deployable": false,
+  "quality": {
+    "status": "ROOT_FRESH_QUALITY_ACCEPTED",
+    "reviewed_at_ns": 1791616683639733000,
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "all597_root_inputs_equal_native": true,
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "host_git_head": "4060f89b32842f8b2218c592326f05d591e9767a",
+    "fmt_before_clippy": true,
+    "direct_children": 19,
+    "stdout_stderr_originals_verified": 38,
+    "full_workspace_test_run": false,
+    "release": false,
+    "UART": false
+  },
+  "archives": {
+    "field_confirmation_r2.json": {
+      "path": ".verify/position_return_2026-10-10_r2/field_confirmation_r2.json",
+      "sha256": "71071cc51838dfb941341458d029dfdf1cbb36b8fe28ff336c6145c16d39becd",
+      "bytes": 712
+    },
+    "left-wrist-i1-r2.go.json": {
+      "path": ".verify/position_return_2026-10-10_r2/left-wrist-i1-r2.go.json",
+      "sha256": "96e8dbdcb1b9396fdcf486032a99ee5411871aa52bf3229fac2f55486163e523",
+      "bytes": 1154
+    },
+    "root_capture_review_r2.json": {
+      "path": ".verify/position_return_2026-10-10_r2/root_capture_review_r2.json",
+      "sha256": "f39fce8c16ab79eacd2e073a6fd57cb7bfc64e810fd5bb12339da4545d2f7b81",
+      "bytes": 394
+    },
+    "root_i1_review_r2.json": {
+      "path": ".verify/position_return_2026-10-10_r2/root_i1_review_r2.json",
+      "sha256": "3f38a26fdd8135282203392d8e6fa732c7e55c809af5ce260bf52df58b8c8f89",
+      "bytes": 3014
+    },
+    "right7-readonly-r2-originals.tar.gz": {
+      "path": ".verify/position_return_2026-10-10_r2/right7-readonly-r2-originals.tar.gz",
+      "sha256": "2fb13557fe2a2911ade812d7961c6603017eb0b1ef89f409adbc3ac407b07d9d",
+      "bytes": 235605
+    },
+    "left-wrist-i1-r2-originals.tar.gz": {
+      "path": ".verify/position_return_2026-10-10_r2/left-wrist-i1-r2-originals.tar.gz",
+      "sha256": "2ad237bcf152ca1e98bedfd33f625cdc34cc2170e531c3639012a68a60edc7c1",
+      "bytes": 200521
+    },
+    "none-execute-negative.json": {
+      "path": ".verify/position_return_2026-10-10_r2/none-execute-negative.json",
+      "sha256": "d9cd942ff6ca0126d84538e30a4f098aa5d9e762f24798d83524487eb95c16ae",
+      "bytes": 447
+    },
+    "local-control-originals-r2.tar.gz": {
+      "path": ".verify/position_return_2026-10-10_r2/local-control-originals-r2.tar.gz",
+      "sha256": "c4230456a25765d0dc0a8a20ba6397e63bd7751c67ed09c1f4aac640812cb6cb",
+      "bytes": 649245,
+      "owner_dirs": 10
+    },
+    "position-quality-r2-originals.tar.gz": {
+      "path": ".verify/position_return_2026-10-10_r2/position-quality-r2-originals.tar.gz",
+      "sha256": "1b978c624d52ed4bdce0c2a9b9ca5c64c150887ca25dc5f16f4f4e6b54984041",
+      "bytes": 228959
+    },
+    "quality-result-r2.json": {
+      "path": ".verify/position_return_2026-10-10_r2/quality-result-r2.json",
+      "sha256": "9d8780b9e3b8c52d38fbff893955366c7d2efaaf9505453906564e44b90d3ca0",
+      "bytes": 6424
+    },
+    "root-quality-review-r2.json": {
+      "path": ".verify/position_return_2026-10-10_r2/root-quality-review-r2.json",
+      "sha256": "77ece6c49cfb048113aae512fca792a3145f4d92e205715baf7a23e7478ea980",
+      "bytes": 585
+    },
+    "quality-local-control-originals-r2.tar.gz": {
+      "path": ".verify/position_return_2026-10-10_r2/quality-local-control-originals-r2.tar.gz",
+      "sha256": "a223de8a90d51fa1be5950eff598d07f59922ba6125cc0aed4e870137f05a458",
+      "bytes": 234108,
+      "owner_dirs": 3
+    }
+  },
+  "owner_rows": [
+    {
+      "label": "position_diag35_first_uart_r3.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 18969,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 18971,
+        "started_utc": "2026-10-10T07:06:49.310524+00:00",
+        "started_monotonic_ns": 54196127149833,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 4,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/start_diag_fresh_inode_once_r3.sh",
+          "sha256": "e1ed554be6bb9ed852fa036f8785f3a556b5eb3ef6f6ad305eeda685d6227852",
+          "bytes": 36212
+        },
+        "launched_utc": "2026-10-10T07:06:49.312487+00:00",
+        "start_new_session": true,
+        "child_session_id": 18971,
+        "observed_utc": "2026-10-10T07:06:53.078836+00:00",
+        "elapsed_ns": 3771000375,
+        "log_bytes_observed": 194419,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:06:53.081635+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_diag35_first_uart_r3.owner/child.log",
+          "sha256": "166084f5824ebdb8fab49c8984f5b62e95d63c32c6a38f0ccd615a4a16c560e1",
+          "bytes": 194419
+        }
+      }
+    },
+    {
+      "label": "position_diag35_observer_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 19027,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 19028,
+        "started_utc": "2026-10-10T07:07:13.335346+00:00",
+        "started_monotonic_ns": 54220151855583,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 3,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/observe_diag35_r2.sh",
+          "sha256": "58fe233755a2c355511d14c405e37c4a84f80774ba8778a16c40ea129dce761c",
+          "bytes": 3028
+        },
+        "launched_utc": "2026-10-10T07:07:13.337280+00:00",
+        "start_new_session": true,
+        "child_session_id": 19028,
+        "observed_utc": "2026-10-10T07:07:15.788905+00:00",
+        "elapsed_ns": 2455091125,
+        "log_bytes_observed": 18580,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:07:15.790526+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_diag35_observer_r2.owner/child.log",
+          "sha256": "287751718e22912463a265cc900653a2c916bcf9a43b2b49db1c54f6a8752a0d",
+          "bytes": 18580
+        }
+      }
+    },
+    {
+      "label": "position_diag35_post_fetch_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 19589,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 19590,
+        "started_utc": "2026-10-10T07:08:29.906802+00:00",
+        "started_monotonic_ns": 54296723029166,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 4,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/post_fetch_diag_r2.sh",
+          "sha256": "17b1d814751b230a66d892473ef80ab7a6a5706d38b49160008f9bd3f5fa8fbb",
+          "bytes": 3678
+        },
+        "launched_utc": "2026-10-10T07:08:29.908302+00:00",
+        "start_new_session": true,
+        "child_session_id": 19590,
+        "observed_utc": "2026-10-10T07:08:33.851415+00:00",
+        "elapsed_ns": 3946757042,
+        "log_bytes_observed": 508574,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:08:33.853665+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_diag35_post_fetch_r2.owner/child.log",
+          "sha256": "157055382b70d2b876247b0de8a6148be5742caa5d79b10c74c0f2423ff646a2",
+          "bytes": 508574
+        }
+      }
+    },
+    {
+      "label": "position_diag35_start_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "FAIL",
+        "owner_pid": 18837,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 18838,
+        "started_utc": "2026-10-10T07:05:17.476381+00:00",
+        "started_monotonic_ns": 54104293352208,
+        "observe_seconds": 1.0,
+        "wait_returncode": 1,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 3,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/start_diag_once_r2.sh",
+          "sha256": "61b4721467f5f53726a60fc368a98496c8729367d466aa842cd5cf4729adec4d",
+          "bytes": 34149
+        },
+        "launched_utc": "2026-10-10T07:05:17.478070+00:00",
+        "start_new_session": true,
+        "child_session_id": 18838,
+        "observed_utc": "2026-10-10T07:05:20.143134+00:00",
+        "elapsed_ns": 2669030125,
+        "log_bytes_observed": 89,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:05:20.145512+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_diag35_start_r2.owner/child.log",
+          "sha256": "7e946a4d5d516867bf74b947014b88f7fc928f3b84ff275ee3aa3e8c71ae1414",
+          "bytes": 89
+        }
+      }
+    },
+    {
+      "label": "position_diag35_usb_observe_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 18902,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 18903,
+        "started_utc": "2026-10-10T07:06:02.279196+00:00",
+        "started_monotonic_ns": 54149095983916,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 2,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/usb_change_observation_r2.sh",
+          "sha256": "f6a3b7477bac17264c13f3ced41fbb168b2a988c1f398c751b4a2995dd27c162",
+          "bytes": 2244
+        },
+        "launched_utc": "2026-10-10T07:06:02.280990+00:00",
+        "start_new_session": true,
+        "child_session_id": 18903,
+        "observed_utc": "2026-10-10T07:06:03.798713+00:00",
+        "elapsed_ns": 1521431125,
+        "log_bytes_observed": 41734,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:06:03.800711+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_diag35_usb_observe_r2.owner/child.log",
+          "sha256": "b1e3f3a0ab8ce62d8994ff7f0ed4b50d488f1add1629099221ca3e5a8fbe8e69",
+          "bytes": 41734
+        }
+      }
+    },
+    {
+      "label": "position_i1_left5_observer_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "FAIL",
+        "owner_pid": 20395,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 20396,
+        "started_utc": "2026-10-10T07:11:29.023311+00:00",
+        "started_monotonic_ns": 54475838839500,
+        "observe_seconds": 1.0,
+        "wait_returncode": 1,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 2,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/observe_i1_r2.sh",
+          "sha256": "4564e77246804a3e41ffed7e3b97fa46a99dbe875e25690e73e4fc9d8c2b1c41",
+          "bytes": 3400
+        },
+        "launched_utc": "2026-10-10T07:11:29.025053+00:00",
+        "start_new_session": true,
+        "child_session_id": 20396,
+        "observed_utc": "2026-10-10T07:11:30.370576+00:00",
+        "elapsed_ns": 1349497625,
+        "log_bytes_observed": 15896,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:11:30.372894+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_i1_left5_observer_r2.owner/child.log",
+          "sha256": "c8b5bfb458a623a7c977bd8d7d99b39bcaaaa799a80cf69b947d50ae6a825e4c",
+          "bytes": 15896
+        }
+      }
+    },
+    {
+      "label": "position_i1_left5_post_fetch_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 20636,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 20637,
+        "started_utc": "2026-10-10T07:12:20.215366+00:00",
+        "started_monotonic_ns": 54527030702375,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 4,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/post_fetch_i1_r2.sh",
+          "sha256": "69897f920eecb2b45d17e3880af0015e58e3f376c4645eefa2987238fbfe62b3",
+          "bytes": 4150
+        },
+        "launched_utc": "2026-10-10T07:12:20.217197+00:00",
+        "start_new_session": true,
+        "child_session_id": 20637,
+        "observed_utc": "2026-10-10T07:12:23.949561+00:00",
+        "elapsed_ns": 3738784500,
+        "log_bytes_observed": 461841,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:12:23.954255+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_i1_left5_post_fetch_r2.owner/child.log",
+          "sha256": "480d0abd021c156038accf47dfb62492c9a6fc3106348c9fe21a7a35abc4b5b7",
+          "bytes": 461841
+        }
+      }
+    },
+    {
+      "label": "position_i1_left5_start_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 20245,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 20246,
+        "started_utc": "2026-10-10T07:10:42.515921+00:00",
+        "started_monotonic_ns": 54429331657916,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 2,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/start_i1_once_r2.sh",
+          "sha256": "2d7e88b4d2c7a36e6fc13d11eead1750e28e37cd71c7d501700fa01c4600411c",
+          "bytes": 10508
+        },
+        "launched_utc": "2026-10-10T07:10:42.517960+00:00",
+        "start_new_session": true,
+        "child_session_id": 20246,
+        "observed_utc": "2026-10-10T07:10:44.068250+00:00",
+        "elapsed_ns": 1553679542,
+        "log_bytes_observed": 859,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:10:44.069719+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_i1_left5_start_r2.owner/child.log",
+          "sha256": "59697d9db2057dce51e69ef588f4036eb0b2678921c155148096632b3af980e7",
+          "bytes": 859
+        }
+      }
+    },
+    {
+      "label": "position_nextprep_bindings_plans_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 17922,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 17923,
+        "started_utc": "2026-10-10T07:01:06.006527+00:00",
+        "started_monotonic_ns": 53852823809875,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 3,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/refresh_bindings_two_plan_only_r2.sh",
+          "sha256": "09b325b3fd9cf7ccf5c2688fdef9d7009985142a56a27df24ef4c1443cbd84c4",
+          "bytes": 533957
+        },
+        "launched_utc": "2026-10-10T07:01:06.008452+00:00",
+        "start_new_session": true,
+        "child_session_id": 17923,
+        "observed_utc": "2026-10-10T07:01:08.052963+00:00",
+        "elapsed_ns": 2047730666,
+        "log_bytes_observed": 86804,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:01:08.054361+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_nextprep_bindings_plans_r2.owner/child.log",
+          "sha256": "819d46bd7843478f68f53a9f42171b61379ba98e676a2c2dbf838f9f93c4f118",
+          "bytes": 86804
+        }
+      }
+    },
+    {
+      "label": "position_nextprep_upload_nonuart_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 17559,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 17560,
+        "started_utc": "2026-10-10T06:58:32.591214+00:00",
+        "started_monotonic_ns": 53699409104875,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 3,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/next-preparation-r2/upload_and_nonuart_r2.sh",
+          "sha256": "2f50f773d46dc4631ce2730b512609592f26f59ccfc7246986203f710c732415",
+          "bytes": 46085
+        },
+        "launched_utc": "2026-10-10T06:58:32.593289+00:00",
+        "start_new_session": true,
+        "child_session_id": 17560,
+        "observed_utc": "2026-10-10T06:58:35.101795+00:00",
+        "elapsed_ns": 2512101208,
+        "log_bytes_observed": 176859,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T06:58:35.103418+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_nextprep_upload_nonuart_r2.owner/child.log",
+          "sha256": "e49b3628a586041f6fc9307536100a7a26b7a5fd4763967246c44d18f7e94826",
+          "bytes": 176859
+        }
+      }
+    }
+  ],
+  "no_formal_install": true,
+  "next_step": "新现场已确认继续看护，头1I1恢复0与头2原参数计划准备中，尚未下发GO",
+  "quality_owner_rows": [
+    {
+      "label": "position_quality_fetch_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 21037,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 21038,
+        "started_utc": "2026-10-10T07:14:54.829885+00:00",
+        "started_monotonic_ns": 54681644620125,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 3,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/commit-quality-r2/fetch_quality_originals_r2.sh",
+          "sha256": "0d9efc87f03bd2ed453895d2d9eb8630533c15b34486b59fcb24178d271744fb",
+          "bytes": 1469
+        },
+        "launched_utc": "2026-10-10T07:14:54.831621+00:00",
+        "start_new_session": true,
+        "child_session_id": 21038,
+        "observed_utc": "2026-10-10T07:14:57.338694+00:00",
+        "elapsed_ns": 2511788833,
+        "log_bytes_observed": 305562,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:14:57.341769+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_quality_fetch_r2.owner/child.log",
+          "sha256": "99329d904a71ad128fc42c25e44525178840151c90a0e01ba91c93726a3c822e",
+          "bytes": 305562
+        }
+      }
+    },
+    {
+      "label": "position_quality_observer_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 21002,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 21003,
+        "started_utc": "2026-10-10T07:14:37.512840+00:00",
+        "started_monotonic_ns": 54664327631708,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 3,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/commit-quality-r2/observe_quality_once_r2.sh",
+          "sha256": "83a4b547cb0e7d4a94cc7624f0ffd704f6cdf3b00f783478bcdf824ef431c39f",
+          "bytes": 2994
+        },
+        "launched_utc": "2026-10-10T07:14:37.514419+00:00",
+        "start_new_session": true,
+        "child_session_id": 21003,
+        "observed_utc": "2026-10-10T07:14:39.597547+00:00",
+        "elapsed_ns": 2086909833,
+        "log_bytes_observed": 449,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:14:39.599838+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_quality_observer_r2.owner/child.log",
+          "sha256": "f4337c95f7362e476e52c83ff4bcd5bfa3573f4452924c98970739ce1049472c",
+          "bytes": 449
+        }
+      }
+    },
+    {
+      "label": "position_quality_start_r2.owner",
+      "result": {
+        "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+        "phase": "REAPED",
+        "status": "PASS",
+        "owner_pid": 20964,
+        "command": [
+          "/usr/bin/ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "ConnectTimeout=15",
+          "robot",
+          "bash",
+          "-s"
+        ],
+        "pid": 20965,
+        "started_utc": "2026-10-10T07:14:13.982533+00:00",
+        "started_monotonic_ns": 54640797415541,
+        "observe_seconds": 1.0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "owner_sent_signals": [],
+        "received_signals": {},
+        "errors": [],
+        "observations": 2,
+        "remote_state": "NOT_VERIFIED",
+        "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+        "input": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/commit-quality-r2/start_quality_once_r2.sh",
+          "sha256": "2bb7df078c0a9279187bcef31736141a83606c3b046cc95e73d99f0a9586c948",
+          "bytes": 163481
+        },
+        "launched_utc": "2026-10-10T07:14:13.984065+00:00",
+        "start_new_session": true,
+        "child_session_id": 20965,
+        "observed_utc": "2026-10-10T07:14:15.840516+00:00",
+        "elapsed_ns": 1859756417,
+        "log_bytes_observed": 920,
+        "child_end_class": "EXIT_STATUS",
+        "child_signal": null,
+        "finished_utc": "2026-10-10T07:14:15.842371+00:00",
+        "log": {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_quality_start_r2.owner/child.log",
+          "sha256": "e8d13a2276ff3763963ab0ef9a4c3c84dbdf8976c48f9e5c0df4064e98d5c456",
+          "bytes": 920
+        }
+      }
+    }
+  ]
+}
