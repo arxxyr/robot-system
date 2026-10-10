@@ -1,0 +1,141 @@
+{
+  "status": "PASS_HEAD1_OUTWARD_OBSERVATION_R8_PREPARATION_ONLY",
+  "candidate": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/head1_outward_observation_r8.py",
+    "sha256": "11b86f6768359bc7f6f0063bd188868b08c8baf164a59d89a62acdb557d7fc5e",
+    "bytes": 9328
+  },
+  "original_binding_sha256": "f7649ee42c25494b6238f85606b414be46735aeec66dbda57797400d5b5b299d",
+  "binding_change": "append one candidate ref only; every other dictionary/list unchanged",
+  "refs": 40,
+  "plan_sha256": "2cdef1e26daf0a2dfd38c4fd83053e336cb849d61bc1f03be18fe7aa7f58e98d",
+  "direct_children": 3,
+  "post_nonuart_status": "PASS_NON_UART_CURRENT_FACTS",
+  "post_nonuart_direct_children": 23,
+  "uart_operations": 0,
+  "go_created": false,
+  "output_created": false,
+  "launch_record_created": false,
+  "hardware_started": false,
+  "files": [
+    {
+      "name": "head1_outward_observation_r8.py",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/head1_outward_observation_r8.py",
+      "sha256": "11b86f6768359bc7f6f0063bd188868b08c8baf164a59d89a62acdb557d7fc5e",
+      "bytes": 9328
+    },
+    {
+      "name": "maintenance_bindings_head_settle_r8.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/maintenance_bindings_head_settle_r8.json",
+      "sha256": "43b6f0d3e75db611ec2e64299c4f654b4979fa888cebb5941e75de4bd13b2311",
+      "bytes": 25186
+    },
+    {
+      "name": "default-plan-only.stdout",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/default-plan-only.stdout",
+      "sha256": "27f34f294f985566ed73ccb695b0f35f3c008c8b7edfe09cca5513c35b776b4a",
+      "bytes": 232
+    },
+    {
+      "name": "default-plan-only.stderr",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/default-plan-only.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "default-plan-only.receipt.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/default-plan-only.receipt.json",
+      "sha256": "374a3531080dc5679438267288741b071f45a0f1d105d10bac5bd7f8c00df038",
+      "bytes": 639
+    },
+    {
+      "name": "head1-outward-observation-plan-only.stdout",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/head1-outward-observation-plan-only.stdout",
+      "sha256": "a760f6c3eb26e034e088f786687f3328f071cb41d4842bc557abcf6cb46d3e86",
+      "bytes": 32952
+    },
+    {
+      "name": "head1-outward-observation-plan-only.stderr",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/head1-outward-observation-plan-only.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "head1-outward-observation-plan-only.receipt.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/head1-outward-observation-plan-only.receipt.json",
+      "sha256": "65900a8428837f0b9f3f0db6f57d259223c81401dda5d55fbd7926c8203b01f7",
+      "bytes": 1310
+    },
+    {
+      "name": "post-nonuart.stdout",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/post-nonuart.stdout",
+      "sha256": "c88f6da2d245f9a17b51b18578aa4334a33023f07b5dd25924eaa56a173d9721",
+      "bytes": 176291
+    },
+    {
+      "name": "post-nonuart.stderr",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/post-nonuart.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "post-nonuart.receipt.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/post-nonuart.receipt.json",
+      "sha256": "72d382d2d56f28a1d5418c04e9ea490998415376226badbfb67f4424d92099da",
+      "bytes": 548
+    }
+  ],
+  "owner_result": {
+    "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+    "phase": "REAPED",
+    "status": "PASS",
+    "owner_pid": 55006,
+    "command": [
+      "/usr/bin/ssh",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "StrictHostKeyChecking=yes",
+      "-o",
+      "ConnectTimeout=15",
+      "robot",
+      "bash",
+      "-s"
+    ],
+    "pid": 55007,
+    "started_utc": "2026-10-10T09:10:49.550331+00:00",
+    "started_monotonic_ns": 61636319831125,
+    "observe_seconds": 1.0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "owner_sent_signals": [],
+    "received_signals": {},
+    "errors": [],
+    "observations": 4,
+    "remote_state": "NOT_VERIFIED",
+    "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+    "input": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/native-preparation/prepare_head_settle_r8.sh",
+      "sha256": "afa279c305d7677da1c1e65533f5a632de9e5a626a12a76cd1a99f4d1c83857b",
+      "bytes": 20844
+    },
+    "launched_utc": "2026-10-10T09:10:49.552966+00:00",
+    "start_new_session": true,
+    "child_session_id": 55007,
+    "observed_utc": "2026-10-10T09:10:52.801116+00:00",
+    "elapsed_ns": 3252180083,
+    "log_bytes_observed": 332377,
+    "child_end_class": "EXIT_STATUS",
+    "child_signal": null,
+    "finished_utc": "2026-10-10T09:10:52.802642+00:00",
+    "log": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_head_settle_prepare_r8.owner/child.log",
+      "sha256": "d63f57641b4765517c2bc9a29934884b1a144a1635ff95aa9ac4d124907d52c3",
+      "bytes": 332377
+    }
+  },
+  "post_checks": 17,
+  "post_commands": 23,
+  "post_output_sha_bytes_checked": 46,
+  "old_binding_dictionary_unchanged": true
+}

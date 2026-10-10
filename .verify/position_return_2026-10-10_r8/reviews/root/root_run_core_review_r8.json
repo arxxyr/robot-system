@@ -1,0 +1,15 @@
+{
+  "status": "ROOT_R8_RUN_CORE_ACCEPTED_WIRE_INDEPENDENT_PENDING",
+  "run_sha256": "08a3a5cd487daba50b82cedd64655c761f48148f3e502d9311f9b696301b5210",
+  "direct_children": 363,
+  "streams_checked": 726,
+  "stop_fields_integer_zero": 51,
+  "outward_first_qualified_ns": 251205164,
+  "outward_final_error_raw": -4,
+  "outward_observed_elapsed_ns": 800063244,
+  "return_error_raw": 7,
+  "return_result": "FAIL",
+  "manual_power_cut_required": false,
+  "identity": "PASS",
+  "old_failures_unchanged": true
+}

@@ -1,0 +1,1 @@
+爸爸，本地quality原包首次解析KeyError exit_code：误把result.receipts引用当逐child回执。tar SHA/bytes/58件及result已核落盘；远端已自然0/reap，未重跑软件检查，后按引用读取原child JSON。

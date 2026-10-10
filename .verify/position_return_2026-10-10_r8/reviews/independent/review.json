@@ -1,0 +1,421 @@
+{
+  "status": "INDEPENDENT_LOCAL_ORIGINALS_REVIEW_PASS",
+  "hardware_result_unchanged": "FAIL",
+  "run": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/native-preparation/head1-outward-observation-r8-originals/head1-outward-observation-r8/run.json",
+    "sha256": "08a3a5cd487daba50b82cedd64655c761f48148f3e502d9311f9b696301b5210",
+    "bytes": 544340
+  },
+  "direct_children": 363,
+  "streams_checked": 726,
+  "expected_fuser_exit1": 28,
+  "write_count": 5,
+  "writes": [
+    {
+      "sequence": 204,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Goal_Position",
+        "2661"
+      ],
+      "pid": 624976,
+      "cleanup": false
+    },
+    {
+      "sequence": 207,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Torque_Enable",
+        "1"
+      ],
+      "pid": 624979,
+      "cleanup": false
+    },
+    {
+      "sequence": 209,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Goal_Position",
+        "2685"
+      ],
+      "pid": 624981,
+      "cleanup": false
+    },
+    {
+      "sequence": 225,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Goal_Position",
+        "2661"
+      ],
+      "pid": 624997,
+      "cleanup": false
+    },
+    {
+      "sequence": 241,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Torque_Enable",
+        "0"
+      ],
+      "pid": 625013,
+      "cleanup": true
+    }
+  ],
+  "parameter_writes": 0,
+  "base_writes": 0,
+  "raw_entry_parameters": {
+    "Torque_Enable": 0,
+    "Present_Velocity": 0,
+    "Model_Number": 777,
+    "Firmware_Major_Version": 3,
+    "Firmware_Minor_Version": 10,
+    "Operating_Mode": 0,
+    "Goal_Position": 2655,
+    "Present_Position": 2661,
+    "Goal_Velocity": 0,
+    "Phase": 12,
+    "P_Coefficient": 16,
+    "D_Coefficient": 43,
+    "I_Coefficient": 0,
+    "CW_Dead_Zone": 1,
+    "CCW_Dead_Zone": 1,
+    "Lock": 1,
+    "Min_Position_Limit": 797,
+    "Max_Position_Limit": 3081,
+    "Homing_Offset": 1303
+  },
+  "outward": {
+    "stage": "outward",
+    "status": "PASS",
+    "target_raw": 2685,
+    "anchor_raw": 2661,
+    "tolerance_raw": 4,
+    "budget_ms": 800,
+    "started_ns": 3376892420774115,
+    "deadline_ns": 3376893220774115,
+    "samples": [
+      {
+        "stamp_ns": 3376892431058599,
+        "position_raw": 2661,
+        "signed_error_raw": -24
+      },
+      {
+        "stamp_ns": 3376892491277665,
+        "position_raw": 2664,
+        "signed_error_raw": -21
+      },
+      {
+        "stamp_ns": 3376892551508379,
+        "position_raw": 2675,
+        "signed_error_raw": -10
+      },
+      {
+        "stamp_ns": 3376892611739957,
+        "position_raw": 2679,
+        "signed_error_raw": -6
+      },
+      {
+        "stamp_ns": 3376892671979279,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      },
+      {
+        "stamp_ns": 3376892732284074,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      },
+      {
+        "stamp_ns": 3376892792530565,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      },
+      {
+        "stamp_ns": 3376892852688925,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      },
+      {
+        "stamp_ns": 3376892912863894,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      },
+      {
+        "stamp_ns": 3376892972984973,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      },
+      {
+        "stamp_ns": 3376893033264136,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      },
+      {
+        "stamp_ns": 3376893093502754,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      },
+      {
+        "stamp_ns": 3376893153703708,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      },
+      {
+        "stamp_ns": 3376893213928470,
+        "position_raw": 2681,
+        "signed_error_raw": -4
+      }
+    ],
+    "final_signed_error_raw": -4,
+    "first_qualified_sample": {
+      "stamp_ns": 3376892671979279,
+      "position_raw": 2681,
+      "signed_error_raw": -4
+    },
+    "first_qualified_elapsed_ns": 251205164,
+    "observation_policy": "FIRST_QUALIFIED_WITHIN_ORIGINAL_DEADLINE_THEN_OBSERVE_TO_SAME_DEADLINE",
+    "finished_ns": 3376893220837359,
+    "elapsed_ns": 800063244
+  },
+  "return": {
+    "stage": "return",
+    "status": "FAIL",
+    "target_raw": 2661,
+    "anchor_raw": 2661,
+    "tolerance_raw": 4,
+    "budget_ms": 800,
+    "started_ns": 3376893241239188,
+    "deadline_ns": 3376894041239188,
+    "samples": [
+      {
+        "stamp_ns": 3376893251399254,
+        "position_raw": 2681,
+        "signed_error_raw": 20
+      },
+      {
+        "stamp_ns": 3376893311594767,
+        "position_raw": 2680,
+        "signed_error_raw": 19
+      },
+      {
+        "stamp_ns": 3376893371810377,
+        "position_raw": 2671,
+        "signed_error_raw": 10
+      },
+      {
+        "stamp_ns": 3376893432063011,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376893492399744,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376893552691132,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376893612875029,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376893673054831,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376893733239912,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376893793403297,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376893853573179,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376893913740724,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376893973916877,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      },
+      {
+        "stamp_ns": 3376894042384703,
+        "position_raw": 2668,
+        "signed_error_raw": 7
+      }
+    ],
+    "final_signed_error_raw": 7,
+    "finished_ns": 3376894042391871,
+    "elapsed_ns": 801153067,
+    "failure_code": "POSITION_ACCURACY_TIMEOUT"
+  },
+  "return_plus7_within_deadline": 10,
+  "return_plus7_after_deadline": 1,
+  "stop_integer_zero_fields": 51,
+  "identity_checks": 72,
+  "clean_process_snapshots": 5,
+  "manual_power_cut_required": false,
+  "software_direct_children": 3,
+  "software_methods": 6,
+  "quality_direct_children": 10,
+  "quality_streams": 20,
+  "quality": {
+    "status": "PASS",
+    "scope": "仅本次提交前fmt→根Clippy，无UART/重跑测试/release/正式安装",
+    "started_at": "2026-10-10T09:15:07.352530+00:00",
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_worktree": "five changed sources; not clean",
+    "source_file_count": 597,
+    "source_manifest_sha256": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+    "compiler_expected": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "source_before_after": "PASS",
+    "compiler_before_after": "PASS",
+    "finished_at": "2026-10-10T09:15:13.806515+00:00",
+    "receipts": [
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/source_before_head/completion.json",
+        "sha256": "d6265febd473568e6e58cd7e250ccc17460ec4d9029bfa3863d2a6b43c28b659"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/source_before_status/completion.json",
+        "sha256": "4806d4399362ea5c0d7f7e9c8732f1b1cde6f86e4df998f03eea0efb2e09ada7"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/source_before_files/completion.json",
+        "sha256": "a708e121f04a1bf27ba2819007cb950a2041453fb5e78ce8bd57b466b801adce"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/rustc_before/completion.json",
+        "sha256": "ede1afe5c8acbda05a1a3b78d0cf12d99875405f3922b3236d22f939fd6e1139"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/fmt/completion.json",
+        "sha256": "2db0f8ff6eddcf99982c6354e47748a80342c0b2a8c0e7a640d9dac3167ae5ad"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/clippy/completion.json",
+        "sha256": "4a416762ab93f9cfa26e3c95bc156b5181ff414b1f4b3f80f25f6a209ea71ea1"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/source_after_head/completion.json",
+        "sha256": "8fd1ec482a7a2dd9a5b807e00c3cfb134425d8da76392ecadf7cfa2c063945f0"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/source_after_status/completion.json",
+        "sha256": "243229c228e24d9ecd8cab5d433dcfc994789e978b7370327d347663809d66dc"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/source_after_files/completion.json",
+        "sha256": "ea2f0da3e2f085dbda92111c7d89e83358b031747f40a99d472bd17d6bfe6be6"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/commit-quality-r8/rustc_after/completion.json",
+        "sha256": "68d55fbe8db215cf38fe063448cd1f30cd20aed87a75ecc48128606fb9710c14"
+      }
+    ]
+  },
+  "owners": [
+    {
+      "name": "position_head_settle_prepare_r8.owner",
+      "owner_pid": 55006,
+      "ssh_pid": 55007,
+      "wait_returncode": 0,
+      "reaped": true,
+      "result": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_head_settle_prepare_r8.owner/result.json",
+        "sha256": "a2fb1d26704d0846ab08d3a470ba8074cbff6610e95e80e00d02e08204b46972",
+        "bytes": 1567
+      }
+    },
+    {
+      "name": "position_head_settle_live_r8.owner",
+      "owner_pid": 55538,
+      "ssh_pid": 55539,
+      "wait_returncode": 0,
+      "reaped": true,
+      "result": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_head_settle_live_r8.owner/result.json",
+        "sha256": "f72492e1839a9d3d8a6a7365f79414815fa8b086e1bfe68d6ab603317af10b39",
+        "bytes": 1583
+      }
+    },
+    {
+      "name": "position_register_commit_quality_r7_r8.owner",
+      "owner_pid": 55815,
+      "ssh_pid": 55816,
+      "wait_returncode": 0,
+      "reaped": true,
+      "result": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_register_commit_quality_r7_r8.owner/result.json",
+        "sha256": "fcc437994ebfec1364c48d0d66095cd44ffac712515932ab35feda751467cd40",
+        "bytes": 1582
+      }
+    }
+  ],
+  "wire_independent_review": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/stop-wire-independent-review-r8/review.json",
+    "sha256": "fc08ad7e316a1ba2682bec8aa6463d8945088d42b2360c202db21824b351d988",
+    "bytes": 20542
+  },
+  "archives": [
+    {
+      "archive": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/native-preparation/head1-outward-observation-r8-originals.tar.gz",
+        "sha256": "a4bd2f7b6b13e0d76209ce4c990533ec5a33d88d2f7548ad06d6773eb8352575",
+        "bytes": 258102
+      },
+      "regular_files": 757,
+      "regular_bytes": 1673819
+    },
+    {
+      "archive": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/commit-quality-r8/commit-quality-r7-r8-originals.tar.gz",
+        "sha256": "1ea20010ae71d908c504b4d59d0e70da421018aae33dfd989e8c4648f02f4573",
+        "bytes": 134557
+      },
+      "regular_files": 58,
+      "regular_bytes": 582241
+    }
+  ],
+  "limits": [
+    "四普通READ原帧不是全部51停止字段原帧",
+    "nested strace ELF PID未计入363直属child，trace未采wait/exec",
+    "旧±50根因仍OPEN，实际历史轮转动UNKNOWN",
+    "本轮回程失败；无底盘动作、H2/D15关闭或正式安装",
+    "没有SSH、UART、GO、重跑或源代码修改"
+  ]
+}

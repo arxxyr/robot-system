@@ -1,0 +1,49 @@
+{
+  "status": "ROOT_R8_WIRE_AND_WRITE_SCOPE_ACCEPTED",
+  "trace_files": [
+    {
+      "file": "right8-normal-read-command_0136.strace",
+      "bytes": 10036,
+      "sha256": "7d7153d4c563674bf8c9f7edc1cc308d7fa6b1cda72761c9493e8d72a27d92cd",
+      "mid": 8,
+      "six_frames_valid": true,
+      "velocity_raw_hex": "0000",
+      "velocity_decoded": 0
+    },
+    {
+      "file": "right8-normal-read-command_0337.strace",
+      "bytes": 10036,
+      "sha256": "185c091f71cdb28ac375e827da20ad8a47ea732d9cf23b89c788fd25f2b4863d",
+      "mid": 8,
+      "six_frames_valid": true,
+      "velocity_raw_hex": "0000",
+      "velocity_decoded": 0
+    },
+    {
+      "file": "right9-normal-read-command_0142.strace",
+      "bytes": 10036,
+      "sha256": "abd7ca3e949adc06348563ebdfac8a29489c7124ded6c3955ac09eb0e343cf16",
+      "mid": 9,
+      "six_frames_valid": true,
+      "velocity_raw_hex": "0000",
+      "velocity_decoded": 0
+    },
+    {
+      "file": "right9-normal-read-command_0343.strace",
+      "bytes": 10036,
+      "sha256": "dfd6f0bcd6491d1b903b73ac918acd0ff5c806db160fa7c5e05cb4070b9e4826",
+      "mid": 9,
+      "six_frames_valid": true,
+      "velocity_raw_hex": "0000",
+      "velocity_decoded": 0
+    }
+  ],
+  "validated_frames": 24,
+  "parameter_writes": 0,
+  "base_writes": 0,
+  "position_and_te_writes": 5,
+  "stop51_remains_integer_readbacks_not_all_raw": true,
+  "historical_plus_minus_50_root_cause": "OPEN",
+  "physical_wheel_motion": "UNKNOWN",
+  "root_local_parser_first_assertion_failure": "未按TTY char166:1筛选同号fd，误纳入普通文件读取而本地AssertionError；原失败保留在tool输出，未远端重跑或UART"
+}

@@ -1,0 +1,15 @@
+{
+  "status": "ROOT_R8_SOFTWARE_ACCEPTED",
+  "recorded_at_ns": 1791623307160105000,
+  "source_sha256": "11b86f6768359bc7f6f0063bd188868b08c8baf164a59d89a62acdb557d7fc5e",
+  "source_bytes": 9328,
+  "memory_methods": 6,
+  "direct_uv_child_reaped": 3,
+  "stdout_stderr_verified": 6,
+  "default_exit": 0,
+  "missing_GO_exit": 2,
+  "scope": "原P16/I0；仅出程首次合格后观察至原800ms截止，再原函数回程；原+24/±4/±32/STOP51保持",
+  "parameter_writes": 0,
+  "hardware_execution": 0,
+  "new_field_and_GO": "REQUIRED_NOT_CREATED"
+}

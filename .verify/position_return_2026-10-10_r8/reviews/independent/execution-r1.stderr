@@ -1,0 +1,6 @@
+WARN `--no-project` was provided, but no project was found
+Traceback (most recent call last):
+  File "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/independent-review-r8/check_local.py", line 112, in <module>
+    assert jsonl == commands
+           ^^^^^^^^^^^^^^^^^
+AssertionError

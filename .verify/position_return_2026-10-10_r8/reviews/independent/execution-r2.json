@@ -1,0 +1,29 @@
+{
+  "scope": "仅本地原件独审，不启动硬件入口",
+  "argv": [
+    "uv",
+    "run",
+    "--no-project",
+    "python",
+    "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/independent-review-r8/check_local.py"
+  ],
+  "source_sha256": "560e95581c479e6d0557908c15838d1cb94ddc7fea9483e60f02e704a8539191",
+  "pid": 58053,
+  "started_ns": 1791624254370758000,
+  "finished_ns": 1791624254451383000,
+  "returncode": 1,
+  "wait_returncode": 1,
+  "natural_communicate_wait": true,
+  "echild_after_wait": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/independent-review-r8/execution-r2.stdout",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/independent-review-r8/execution-r2.stderr",
+    "sha256": "6b49e4fafb1e00feb54ef18bd4a22fadfa382404cb76e0ae2e90d03c3bd89fbc",
+    "bytes": 445
+  }
+}

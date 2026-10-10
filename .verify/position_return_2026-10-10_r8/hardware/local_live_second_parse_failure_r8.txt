@@ -1,0 +1,1 @@
+爸爸，第二次本地分析断言失败：错误把历史f201普通read stdout预期为数字0，而原文为read Present_Velocity@8/9 = 0；尚未到后续错误4write假设。纠正本地核验为本轮实际CLI原文与5项原Goal/Torque写，原件/远端不变，未重跑UART。

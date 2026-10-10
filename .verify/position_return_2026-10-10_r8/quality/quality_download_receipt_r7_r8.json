@@ -1,0 +1,108 @@
+{
+  "phase": "COMMIT_QUALITY_ARCHIVE_READY",
+  "sha256": "1ea20010ae71d908c504b4d59d0e70da421018aae33dfd989e8c4648f02f4573",
+  "bytes": 134557,
+  "files": 58,
+  "source_bytes": 582241,
+  "runtime_pid": 625219,
+  "pane_exit": 0,
+  "result_sha256": "e4e4048eacda6ecffeab2d93af521a9887595d26c3b70cdfa9e9e014e0cd2085",
+  "result_bytes": 3131,
+  "status": "PASS",
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "source_597_aggregate": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+  "full_source_before_fmt_after_source_after_equal": true,
+  "receipts": 10,
+  "original_outputs_sha_bytes_checked": 20,
+  "quality": [
+    {
+      "name": "fmt",
+      "pid": 625240,
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "started_at": "2026-10-10T09:15:07.881538+00:00",
+      "finished_at": "2026-10-10T09:15:11.404422+00:00",
+      "exit_code": 0,
+      "reaped": true,
+      "signals": []
+    },
+    {
+      "name": "clippy",
+      "pid": 625251,
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at": "2026-10-10T09:15:11.624145+00:00",
+      "finished_at": "2026-10-10T09:15:13.259798+00:00",
+      "exit_code": 0,
+      "reaped": true,
+      "signals": []
+    }
+  ],
+  "outer_direct_children": 4,
+  "owner_result": {
+    "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+    "phase": "REAPED",
+    "status": "PASS",
+    "owner_pid": 55815,
+    "command": [
+      "/usr/bin/ssh",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "StrictHostKeyChecking=yes",
+      "-o",
+      "ConnectTimeout=15",
+      "robot",
+      "bash",
+      "-s"
+    ],
+    "pid": 55816,
+    "started_utc": "2026-10-10T09:15:05.243542+00:00",
+    "started_monotonic_ns": 61892011758291,
+    "observe_seconds": 1.0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "owner_sent_signals": [],
+    "received_signals": {},
+    "errors": [],
+    "observations": 9,
+    "remote_state": "NOT_VERIFIED",
+    "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+    "input": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/commit-quality-r8/commit_quality_r7_r8_single_ssh.sh",
+      "sha256": "b9bbcd2adad32f4bea25edc30b62964091b850b3ff42e6746107deda0e61810a",
+      "bytes": 13572
+    },
+    "launched_utc": "2026-10-10T09:15:05.245490+00:00",
+    "start_new_session": true,
+    "child_session_id": 55816,
+    "observed_utc": "2026-10-10T09:15:14.139613+00:00",
+    "elapsed_ns": 8898212834,
+    "log_bytes_observed": 180866,
+    "child_end_class": "EXIT_STATUS",
+    "child_signal": null,
+    "finished_utc": "2026-10-10T09:15:14.141899+00:00",
+    "log": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_register_commit_quality_r7_r8.owner/child.log",
+      "sha256": "402c240b081e9052b712d7631212bcb98a450220c239b65bb4c1d9fa27da0b4d",
+      "bytes": 180866
+    }
+  },
+  "archive_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/commit-quality-r8/commit-quality-r7-r8-originals.tar.gz",
+  "result_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-settle-preparation-r8/commit-quality-r8/commit-quality-r7-r8-originals/commit-quality-r8/result.json",
+  "local_parse_failure_original": "local_quality_first_parse_failure_r8.txt"
+}

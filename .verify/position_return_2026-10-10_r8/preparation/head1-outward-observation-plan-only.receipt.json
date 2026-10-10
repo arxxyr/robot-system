@@ -1,0 +1,30 @@
+{
+  "name": "head1-outward-observation-plan-only",
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/head1_outward_observation_r8.py",
+    "--helper",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r6/p24_trial_head1_wire_r6.py",
+    "--maintenance",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/maintenance_bindings_head_settle_r8.json",
+    "--output",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/head1-outward-observation-r8",
+    "--run-id",
+    "head1-outward-observation-r8",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/position-return-20261010-r1"
+  ],
+  "pid": 624668,
+  "started_ns": 1791623451645432401,
+  "finished_ns": 1791623451751251735,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout_bytes": 32952,
+  "stdout_sha256": "a760f6c3eb26e034e088f786687f3328f071cb41d4842bc557abcf6cb46d3e86",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

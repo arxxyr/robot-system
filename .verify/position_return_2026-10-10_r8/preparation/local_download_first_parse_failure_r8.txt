@@ -1,0 +1,1 @@
+爸爸，首次本地下载解析失败：KeyError stdout_path；源为非UARThelper commands使用 stdout/stderr 嵌套字段而非维护RealExecutor路径字段。11份小原件已SHA/bytes验证写入；远端prepare已exit0且未重跑，无UART。
