@@ -1,0 +1,188 @@
+{
+  "schema": "POSITION_RETURN_READONLY15_STAGE_ARCHIVE_R7_V1",
+  "recorded_at_utc": "2026-10-10T09:08:20.537388+00:00",
+  "archive_status": "只读原件独审和root硬件review均PASS，归档本身待root验收",
+  "run_status": "PASS_READONLY15_CAPTURE",
+  "scope": "唯一一次左5/7/8：先6项TE/PV，再9项24/25/30原参数，未增加终读/UART/写/动作",
+  "root_review": "review/root_readonly15_hardware_review_r7.json",
+  "independent_review": "review/review.json",
+  "raw_table": "review/review.md",
+  "raw_parameters": {
+    "5": {
+      "Minimum_Starting_Torque": 16,
+      "Integral_Limit": 0,
+      "Angle_Resolution": 1,
+      "Torque_Enable": 0,
+      "Present_Velocity": 0
+    },
+    "7": {
+      "Minimum_Starting_Torque": 16,
+      "Integral_Limit": 0,
+      "Angle_Resolution": 1,
+      "Torque_Enable": 0,
+      "Present_Velocity": 0
+    },
+    "8": {
+      "Minimum_Starting_Torque": 16,
+      "Integral_Limit": 0,
+      "Angle_Resolution": 1,
+      "Torque_Enable": 0,
+      "Present_Velocity": 0
+    }
+  },
+  "wire_review": {
+    "actual_readouts": 15,
+    "register_metadata": {
+      "Torque_Enable": [
+        40,
+        1
+      ],
+      "Present_Velocity": [
+        58,
+        2
+      ],
+      "Minimum_Starting_Torque": [
+        24,
+        1
+      ],
+      "Integral_Limit": [
+        25,
+        1
+      ],
+      "Angle_Resolution": [
+        30,
+        1
+      ]
+    },
+    "instruction": "工具捕获实际SYNC_READ请求0x82与完整响应；RX error=0",
+    "checked": "15项TX/RX header、ID、addr、width、length、checksum、error、payload与raw_unsigned、原stdout及command_sequence均一致",
+    "syscall_trace": "本轮没有strace，不宣称系统调用级观测",
+    "UART_command_sequences": [
+      43,
+      62,
+      81,
+      100,
+      119,
+      138,
+      157,
+      176,
+      195,
+      214,
+      233,
+      252,
+      271,
+      290,
+      309
+    ]
+  },
+  "process_evidence": {
+    "driver_pid": 624034,
+    "driver_tmux_pane": "%56",
+    "driver_terminal_exit": 0,
+    "direct_unique_children": 327,
+    "direct_stdout_stderr_verified": 654,
+    "natural_reap_all": true,
+    "actual_exit_counts": {
+      "0": 251,
+      "1": 76
+    },
+    "exit1_scope": "76项fuser/sudo fuser空输出的预期无占用状态；不得写为327项全exit0",
+    "final18_cleanup_scope": "310~327按原finally仅非UART后验cleanup=true；15UART均false",
+    "nonUART_post": "5/5 PASS",
+    "process_snapshots_clean": 17,
+    "local_owner_pid": 52564,
+    "local_SSH_pid": 52565,
+    "local_SSH_reaped": true,
+    "outer_same_SSH_children": 5
+  },
+  "run_binding": {
+    "archive": "readonly15-originals.tar.gz",
+    "member": "readonly15-evidence-r7/run.json",
+    "sha256": "4a85ec3573a5acb7cf1a36f3409ac7fbe5f0d7b101482395d164d5c91d0e5d92",
+    "bytes": 542801,
+    "script_sha256": "189bb003f9ddd5abc0897c88d8d8dc301f4528a2de9fc68dbcc816b6d4ce927d",
+    "script_bytes": 17224,
+    "maintenance_sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+    "schema_scope": "plan.script为候选完整身份；顶层script_sha256继承原维护脚本",
+    "GO_within_original_window": true,
+    "original_plan_GO_not_modified": true
+  },
+  "diagnostic_tool": {
+    "sha256": "5621358b3e5e18be01b8fb94ff7fa85affda60812e27d46bf3c1d1b8978a339f",
+    "bytes": 1514432,
+    "purpose": "本轮独立只读诊断；未替换f201/13c历史控制件"
+  },
+  "software_entry_gate": {
+    "final_result": "software/software-verification-go-cycle-r2/result.json",
+    "distinct_memory_methods": 9,
+    "direct_children": 3,
+    "actual_exit_codes": [
+      0,
+      0,
+      2
+    ],
+    "checks": "9内存门、默认PLAN_ONLY零启动、缺新GO execute拒绝",
+    "old_eight": "原8方法PASS但旧99候选被root因GO/config摘要循环拒绝；不称硬件失败或最终候选通过",
+    "first_nine": "原FAIL保留：旧R6负控夹具config_ref缺path ERROR；源码未因此放宽",
+    "counting": "8与9重叠，按最终9个不同内存方法计；不重复累计"
+  },
+  "following_commit_quality": {
+    "separate_stage": true,
+    "scope": "只读采集之后的软件提交前门，不回填原run，不增加UART/test/release",
+    "r2": {
+      "archive": "quality/commit-quality-r2-originals.tar.gz",
+      "status": "FAIL",
+      "reason": "rustc_before因PATH缺失失败",
+      "actual_direct_children": 4,
+      "stdout_stderr": 8,
+      "fmt": "NOT_RUN",
+      "clippy": "NOT_RUN"
+    },
+    "r3": {
+      "archive": "quality/commit-quality-r3-originals.tar.gz",
+      "result_member": "commit-quality-r3/result.json",
+      "result_sha256": "1328f03c2381acb1bdda87cd8e49769d1ccf477800219d72d44f2bb4fc966b05",
+      "result_bytes": 3131,
+      "status": "PASS",
+      "actual_order": "cargo fmt --all→cargo clippy --all --all-targets -- -D warnings",
+      "actual_direct_children": 10,
+      "stdout_stderr": 20,
+      "native_HEAD": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+      "native_worktree": "five dirty sources，禁止标为clean或host当前HEAD",
+      "source_inputs": 597,
+      "source_aggregate": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+      "compiler": "rustc1.101.0-nightly32d / aarch64-unknown-linux-gnu",
+      "root_review": "review/root_quality_review_r7_r3.json",
+      "tests_rerun": 0,
+      "release_rerun": 0
+    }
+  },
+  "manufacturer_reference": {
+    "archive_summary": ".verify/feetech_return_metadata_2026-10-10/summary.json",
+    "summary_sha256": "100dc7d377764c45b6a308232dcf9f12708d3ab522c6411fc118a794f7b565a3",
+    "table_path": ".verify/feetech_return_metadata_2026-10-10/manufacturer/official-sms-sts-memory-table.md",
+    "table_sha256": "b1e5a86cc8c96ce997e61a49e1d9040dff7100121e81298a0313ac1f83f1ddd3",
+    "lines": [
+      44,
+      45,
+      49
+    ],
+    "nominal": "addr24 raw×0.1%；addr25 raw×4且0关闭积分限制而非积分控制；addr30传感器最小分辨角放大系数",
+    "现场FW": "本轮未读主/次FW；公开平台文档version181不是现场FW值，名义含义不保证现场适用性"
+  },
+  "local_interpretation_failures": "review/两份local_review_*assertion_failure.txt原文保留；cleanup与继承script字段的本地解读误断言，不记真实采集/硬件FAIL",
+  "storage": "三个unique原tar分别692/32/58原件；不复制展开654输出或597清单进git；rootGO/候选/关键软件门/owner输入终态为必要小件",
+  "limitations": [
+    "非17电机整机停止验收；TE/PV各一次在参数前，不追加最终停止读回",
+    "非左腕/头部回程修复验收，旧I1/I2/P24头1回+6 FAIL保持",
+    "三电机参数相同不证明回程故障根因，旧±50原因OPEN、实际轮运动UNKNOWN",
+    "无写参数/Enable/模式/EEPROM/Lock/Phase操作，无底盘动作或自动重试/人工断电要求",
+    "无后续R8结果或新动作授权；原GO不是后续操作授权",
+    "正式安装/六服务状态无本轮写入，D15与deployable边界不变"
+  ],
+  "register_writes": 0,
+  "motion_commands": 0,
+  "manual_power_cut_requested": false,
+  "deployable": false,
+  "D15": "OPEN/DEFERRED"
+}

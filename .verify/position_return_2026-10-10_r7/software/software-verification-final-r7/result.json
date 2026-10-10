@@ -1,0 +1,158 @@
+{
+  "status": "PASS",
+  "scope": "本地八个内存方法与默认零动作、缺新GO入口；未执行SSH/UART/真实工具，不声明嵌套child回收",
+  "checks": {
+    "all_expected_returncodes": true,
+    "all_direct_children_naturally_reaped": true,
+    "source_identity_unchanged": true,
+    "memory_method_count_eight": true,
+    "default_zero_actions": true,
+    "missing_go_rejected": true
+  },
+  "source_before": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/readonly15_r7.py",
+      "sha256": "99e0a817f890ff49f84409b494951e27a3ca17911b0cc5359ccf1139683782cd",
+      "bytes": 16898
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/test_readonly15_r7.py",
+      "sha256": "ec2fde4cb8132025096a7d8ac27792e0a629ad32d5b3b9b596e58dc145b7af91",
+      "bytes": 9673
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/config-template-r7.json",
+      "sha256": "a648d8b9cd01d42f9cdb045f7165daff53ac290d23329fc2bf6b0ffff2e2f75a",
+      "bytes": 844
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/normal_read_capture_r4.py",
+      "sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7",
+      "bytes": 14217
+    }
+  ],
+  "source_after": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/readonly15_r7.py",
+      "sha256": "99e0a817f890ff49f84409b494951e27a3ca17911b0cc5359ccf1139683782cd",
+      "bytes": 16898
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/test_readonly15_r7.py",
+      "sha256": "ec2fde4cb8132025096a7d8ac27792e0a629ad32d5b3b9b596e58dc145b7af91",
+      "bytes": 9673
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/config-template-r7.json",
+      "sha256": "a648d8b9cd01d42f9cdb045f7165daff53ac290d23329fc2bf6b0ffff2e2f75a",
+      "bytes": 844
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/normal_read_capture_r4.py",
+      "sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7",
+      "bytes": 14217
+    }
+  ],
+  "commands": [
+    {
+      "name": "eight_memory_methods",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/test_readonly15_r7.py"
+      ],
+      "pid": 48806,
+      "started_ns": 1791622049359133000,
+      "finished_ns": 1791622049452023000,
+      "expected_returncode": 0,
+      "returncode": 0,
+      "wait_returncode": 0,
+      "natural_communicate_wait": true,
+      "signals_sent": [],
+      "echild_after_wait": true,
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/software-verification-final-r7/eight_memory_methods.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/software-verification-final-r7/eight_memory_methods.stderr",
+        "sha256": "f8541e08ab54238c38661a6be9890bb96c67c3257528895742baca98c39cffcc",
+        "bytes": 1355
+      }
+    },
+    {
+      "name": "default_plan_only",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/readonly15_r7.py"
+      ],
+      "pid": 48808,
+      "started_ns": 1791622049452121000,
+      "finished_ns": 1791622049508421000,
+      "expected_returncode": 0,
+      "returncode": 0,
+      "wait_returncode": 0,
+      "natural_communicate_wait": true,
+      "signals_sent": [],
+      "echild_after_wait": true,
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/software-verification-final-r7/default_plan_only.stdout",
+        "sha256": "db5efb84181369ddf1ff3a41b649774c21281a3fd992c469953187fb99385b9a",
+        "bytes": 917
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/software-verification-final-r7/default_plan_only.stderr",
+        "sha256": "dd7241fb9634d51d4b90a8782d9a26dd3fe2ada28ad873374b2d9b28b76827ef",
+        "bytes": 59
+      }
+    },
+    {
+      "name": "execute_missing_go",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/readonly15_r7.py",
+        "--execute",
+        "--config",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/config-template-r7.json"
+      ],
+      "pid": 48811,
+      "started_ns": 1791622049508516000,
+      "finished_ns": 1791622049566672000,
+      "expected_returncode": 2,
+      "returncode": 2,
+      "wait_returncode": 2,
+      "natural_communicate_wait": true,
+      "signals_sent": [],
+      "echild_after_wait": true,
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/software-verification-final-r7/execute_missing_go.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/software-verification-final-r7/execute_missing_go.stderr",
+        "sha256": "a555eecdc2879b215f206a7db8dde9fc5fdb0c8472d8fc5e97546c3468d6e6db",
+        "bytes": 158
+      }
+    }
+  ]
+}

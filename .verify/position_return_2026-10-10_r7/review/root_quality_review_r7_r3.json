@@ -1,0 +1,19 @@
+{
+  "status": "ROOT_COMMIT_QUALITY_R3_ACCEPTED",
+  "recorded_at_ns": 1791623138454236000,
+  "actual_order": "cargo fmt --all → cargo clippy --all --all-targets -- -D warnings",
+  "direct_child_natural_reap": 10,
+  "verified_stdout_stderr": 20,
+  "source_inputs": 597,
+  "source_aggregate": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "source_before_fmt_after_and_after": "same as current host 597 inputs",
+  "prior_quality_r2": "PATH failure kept; fmt/Clippy NOT_RUN; not hardware failure",
+  "UART": 0,
+  "tests_rerun": 0,
+  "release_rerun": 0
+}

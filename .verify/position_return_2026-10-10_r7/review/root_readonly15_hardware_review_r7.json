@@ -1,0 +1,40 @@
+{
+  "status": "ROOT_READONLY15_CAPTURE_ACCEPTED",
+  "recorded_at_ns": 1791622818211554000,
+  "run_sha256": "4a85ec3573a5acb7cf1a36f3409ac7fbe5f0d7b101482395d164d5c91d0e5d92",
+  "run_bytes": 542801,
+  "readouts": 15,
+  "direct_children_reaped": 327,
+  "stdout_stderr_verified": 654,
+  "expected_fuser_exit1": 76,
+  "register_writes": 0,
+  "motion_commands": 0,
+  "raw_parameter_rows": {
+    "5": {
+      "Minimum_Starting_Torque": 16,
+      "Integral_Limit": 0,
+      "Angle_Resolution": 1,
+      "Torque_Enable": 0,
+      "Present_Velocity": 0
+    },
+    "7": {
+      "Minimum_Starting_Torque": 16,
+      "Integral_Limit": 0,
+      "Angle_Resolution": 1,
+      "Torque_Enable": 0,
+      "Present_Velocity": 0
+    },
+    "8": {
+      "Minimum_Starting_Torque": 16,
+      "Integral_Limit": 0,
+      "Angle_Resolution": 1,
+      "Torque_Enable": 0,
+      "Present_Velocity": 0
+    }
+  },
+  "candidate_nonuart_post": "5/5 PASS",
+  "scope": "左5/7/8的6个TE/PV与9参数原帧采集；非17电机整机停止验收，非回程修复或底盘动作",
+  "head1_return": "旧I1/I2/P24 +6 FAIL保持，三参数无差异不证明原因",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

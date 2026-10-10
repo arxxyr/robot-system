@@ -1,0 +1,34 @@
+{
+  "schema": "MAINTENANCE_GO_V2",
+  "issued_by": "root",
+  "plan_sha256": "fe535d70c29ec3ebf87f9c78679e56968607f60c33b45ad446b33f7c2c29dff4",
+  "artifact_root": "/home/loosqk/robot-checks/position-return-20261010-r1",
+  "issued_at_ns": 1791622509865631000,
+  "expires_at_ns": 1791623079260866000,
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "source": "人类本轮答复：现场仍就绪，可执行本次15项只读采集；现场回执SHA ba08d860abdff01517bfb307743f2881a8c149ee39f9ec2920d8400557f8e68a",
+  "physical": {
+    "left": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791622479260866000
+    },
+    "right": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791622479260866000
+    }
+  },
+  "scope": "只读左5、左7、左8各TE/PV及地址24/25/30参数各一次；不启用电机、不改参数、不动作"
+}

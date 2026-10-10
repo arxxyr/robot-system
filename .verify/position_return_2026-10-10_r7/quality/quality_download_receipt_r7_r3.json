@@ -1,0 +1,48 @@
+{
+  "status": "PASS_R3_ORIGINALS_REVIEW",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/commit-quality-r3/commit-quality-r7-r3-originals.tar.gz",
+    "sha256": "4be65e6837000a5e1a517edba94c24c9ac41b0a1f52c05e00d4a7601563322ec",
+    "bytes": 134563,
+    "files": 58,
+    "original_bytes": 582241
+  },
+  "result": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/commit-quality-r3/commit-quality-r7-r3-originals/commit-quality-r3/result.json",
+    "sha256": "1328f03c2381acb1bdda87cd8e49769d1ccf477800219d72d44f2bb4fc966b05",
+    "bytes": 3131
+  },
+  "source_before_fmt_after_after_equal_host597": true,
+  "aggregate": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+  "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+  "native_worktree": "five changed sources; not clean",
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "direct_children": 10,
+  "stdout_stderr_byte_checked": 20,
+  "outer_children": 4,
+  "owner": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_register_commit_quality_r7_r3.owner",
+  "owner_pid": 54126,
+  "ssh_pid": 54127,
+  "owner_ssh_reaped": true,
+  "fmt": {
+    "pid": 624584,
+    "started_at": "2026-10-10T09:03:59.870175+00:00",
+    "finished_at": "2026-10-10T09:04:03.356641+00:00"
+  },
+  "clippy": {
+    "pid": 624595,
+    "started_at": "2026-10-10T09:04:03.577689+00:00",
+    "finished_at": "2026-10-10T09:04:04.365393+00:00"
+  },
+  "r2_original_fail": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/commit-quality-r2/commit-quality-r7-r2-originals.tar.gz",
+    "sha256": "b102ae66915c58eab64da07e9237df1f0d767bec4dc81f4b475b3ec2f100553d",
+    "reason": "rustc-before PATH缺~/.cargo/bin，exit1，fmt/Clippy未执行",
+    "original_receipts": 4
+  },
+  "scope": "仅fmt→根Clippy提交门；不重复tests/release；无UART/正式安装/服务变化"
+}

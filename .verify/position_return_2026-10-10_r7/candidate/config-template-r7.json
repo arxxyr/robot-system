@@ -1,0 +1,20 @@
+{
+  "schema": "READONLY15_CONFIG_R7",
+  "artifact_root": "/home/loosqk/robot-checks/position-return-20261010-r1",
+  "output": "/home/loosqk/robot-checks/position-return-20261010-r1/register-diagnostic-r7/readonly15-evidence-r7",
+  "run_id": "readonly-parameters-r7",
+  "maintenance": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+    "bytes": 50168
+  },
+  "support": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+    "sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7",
+    "bytes": 14217
+  },
+  "bindings": null,
+  "diagnostic_tool": null,
+  "field_confirmation": null,
+  "approval": null
+}

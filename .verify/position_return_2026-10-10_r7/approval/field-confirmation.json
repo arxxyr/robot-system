@@ -1,0 +1,13 @@
+{
+  "recorded_at_ns": 1791622479260866000,
+  "source": "本轮人类对15项只读现场问题的直接答复；root实际收到并记录时间",
+  "answer": "现场仍就绪，可执行本次15项只读采集",
+  "scope": "只读左5、左7、左8各TE/PV及地址24/25/30参数各一次；不启用电机、不改参数、不动作",
+  "physical": {
+    "motor_supplies_on": true,
+    "continuous_watch": true,
+    "immediate_manual_power_cut": true,
+    "arms_unloaded_supported": true,
+    "areas_clear": true
+  }
+}

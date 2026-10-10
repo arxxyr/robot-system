@@ -1,0 +1,27 @@
+WARN `--no-project` was provided, but no project was found
+test_GO_reference_can_be_signed_without_circular_config_digest (__main__.Fixed15MemoryCases.test_GO_reference_can_be_signed_without_circular_config_digest) ... ok
+test_child_signal_or_evidence_failure_never_starts_second_read (__main__.Fixed15MemoryCases.test_child_signal_or_evidence_failure_never_starts_second_read) ... ok
+test_default_plan_only_has_no_loader_file_or_executor (__main__.Fixed15MemoryCases.test_default_plan_only_has_no_loader_file_or_executor) ... ok
+test_existing_R6_motion_GO_cannot_authorize_new_fifteen_plan (__main__.Fixed15MemoryCases.test_existing_R6_motion_GO_cannot_authorize_new_fifteen_plan) ... ERROR
+test_expired_field_has_zero_read_starts (__main__.Fixed15MemoryCases.test_expired_field_has_zero_read_starts) ... ok
+test_fifteen_unique_reads_all_six_stop_fields_before_parameters (__main__.Fixed15MemoryCases.test_fifteen_unique_reads_all_six_stop_fields_before_parameters) ... ok
+test_nonzero_TE_or_PV_stops_once_and_remains_latched (__main__.Fixed15MemoryCases.test_nonzero_TE_or_PV_stops_once_and_remains_latched) ... ok
+test_unbound_tool_or_missing_current_refs_reject_before_loader (__main__.Fixed15MemoryCases.test_unbound_tool_or_missing_current_refs_reject_before_loader) ... ok
+test_unknown_or_wrong_frame_stops_before_second_read (__main__.Fixed15MemoryCases.test_unknown_or_wrong_frame_stops_before_second_read) ... ok
+
+======================================================================
+ERROR: test_existing_R6_motion_GO_cannot_authorize_new_fifteen_plan (__main__.Fixed15MemoryCases.test_existing_R6_motion_GO_cannot_authorize_new_fifteen_plan)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/test_readonly15_r7.py", line 184, in test_existing_R6_motion_GO_cannot_authorize_new_fifteen_plan
+    plan = c.make_plan(m, config, {'MEMORY_CONFIG': True}, {'MEMORY_SOURCE': True}, bindings)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/register-diagnostic-preparation-r7/readonly15_candidate/readonly15_r7.py", line 98, in make_plan
+    plan.update(configuration_path=config_ref['path'],
+                                   ~~~~~~~~~~^^^^^^^^
+KeyError: 'path'
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.003s
+
+FAILED (errors=1)

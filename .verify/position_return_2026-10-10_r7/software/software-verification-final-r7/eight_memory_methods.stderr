@@ -1,0 +1,14 @@
+WARN `--no-project` was provided, but no project was found
+test_child_signal_or_evidence_failure_never_starts_second_read (__main__.Fixed15MemoryCases.test_child_signal_or_evidence_failure_never_starts_second_read) ... ok
+test_default_plan_only_has_no_loader_file_or_executor (__main__.Fixed15MemoryCases.test_default_plan_only_has_no_loader_file_or_executor) ... ok
+test_existing_R6_motion_GO_cannot_authorize_new_fifteen_plan (__main__.Fixed15MemoryCases.test_existing_R6_motion_GO_cannot_authorize_new_fifteen_plan) ... ok
+test_expired_field_has_zero_read_starts (__main__.Fixed15MemoryCases.test_expired_field_has_zero_read_starts) ... ok
+test_fifteen_unique_reads_all_six_stop_fields_before_parameters (__main__.Fixed15MemoryCases.test_fifteen_unique_reads_all_six_stop_fields_before_parameters) ... ok
+test_nonzero_TE_or_PV_stops_once_and_remains_latched (__main__.Fixed15MemoryCases.test_nonzero_TE_or_PV_stops_once_and_remains_latched) ... ok
+test_unbound_tool_or_missing_current_refs_reject_before_loader (__main__.Fixed15MemoryCases.test_unbound_tool_or_missing_current_refs_reject_before_loader) ... ok
+test_unknown_or_wrong_frame_stops_before_second_read (__main__.Fixed15MemoryCases.test_unknown_or_wrong_frame_stops_before_second_read) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.004s
+
+OK

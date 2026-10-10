@@ -1,0 +1,7 @@
+本地独审元数据解读第二失败原输出：
+WARN `--no-project` was provided, but no project was found
+Traceback (most recent call last):
+  File "<stdin>", line 49, in <module>
+AssertionError
+
+原因后核：plan顶层script_sha256/script_bytes继承原d97维护脚本，不能作为候选自ref；真实候选完整身份在plan.script=189bb/17224，维护身份在plan.maintenance=d97/50168，原源与当前主树匹配。原plan/run/tar未改；不计为采集或硬件失败。
