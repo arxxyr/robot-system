@@ -1,0 +1,11 @@
+{
+  "stage": "首次永久目录创建前检查",
+  "status": "LOCAL_ZERO_WRITE_REFUSAL",
+  "hardware_failure": false,
+  "remote_access_in_this_failed_command": false,
+  "writes_before_error": 0,
+  "reason": "共享目录已由root提交质量任务创建，仅含commit_quality；首次assert not out.exists零写退出，后续在同目录独立noclobber新增",
+  "original_stdout_stderr": "WARN `--no-project` was provided, but no project was found\nTraceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError\n",
+  "failed_statement": "assert not out.exists();out.mkdir()",
+  "exit_code": 1
+}

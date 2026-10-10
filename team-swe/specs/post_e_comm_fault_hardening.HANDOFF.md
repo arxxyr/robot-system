@@ -2,6 +2,24 @@
 
 ## 当前步骤
 
+### 右 H2 完整通过（2026-10-10，本轮已收尾）
+
+root于04:26:45UTC收到用户当次“全部已就绪，可持续看护并立即断电”确认；新的alignment/七项现场事实/600秒GO分别绑定本次runtime894、run02。实际EXEC_HANDOFF于04:28:59.799200UTC核验，在GO有效窗内消费；authorize/launch各1，没有整轮重试。
+
+本次原run/report均PASS：四组各100预热+1000正式，4000正式/400预热/4432原attempt；分类重采0/11/0/21共32保留。原P99/RT/authority/trace门、最终非dry Disable Ack/Disarm全部通过，工具605107及driver605045自然exit0回收，原pane为%39。两个观察SSH均自然exit0/reap，未知进程门未修改；此次通过不证明旧585588的归属或具体原因，旧FAIL原件保持。
+
+四组A P99依次23.008/23.264/19.872/19.840微秒，B P99为10.039744/15.941728/9.909024/16.058784毫秒；两个idle的原B max54.796672/60.363744毫秒仍保留，验收判据为原P99。最终trace valid/children_stopped/final_events_drained均true，dropped0。
+
+独立前11清场、17电机34项原帧Torque_Enable/Present_Velocity整数零、后11清场及最后17项非UART身份/占用者核验全部PASS。40个读取/前置child、14个最终非UARTchild及硬件阶段9份SSHowner均自然回收，无信号；两USB/四锁无持有者，正式ca14四件未改、六服务停止、保护状态保持。头部/底盘的停止读回不能当作主动运动通过。
+
+本次runtime为8940847，冻结控制/测量build仍a96c34a，597项Rust输入聚合5970c9be、实际冻结nightly32dba69d6；独立停止读回ELF仍来自c800/a30，不重贴最新编译器。证据入口 [.verify/right_h2_2026-10-10_r2](../../.verify/right_h2_2026-10-10_r2/summary.json) 与旧FAIL包分别保存。05:31:39UTC已通知可在机械臂保持支撑下关闭两电机电源、结束本轮看护；实际断电时刻/遥测UNKNOWN，此后没有新UART/动作或正式部署。
+
+提交前本机实际rustup update nightly与fmt退出0，Orin实际nightly更新→fmt→根Clippy通过，仍为32d；13条原生命令及6个受记录质量SSHowner均自然exit0回收，597份输入主树与原生首尾逐项相同。质量原件在本轮commit_quality/，非完整workspace测试或新release。早期两份上传回执仅有exit0、缺PID/reap记录，不由后续回收补写。
+
+按用户“旧target及时清理”授权，仅删七个旧source解包副本，约202.1MiB；每个590文件与永久归档逐项同字节，删除前无占用，归档前后SHA不变。必要产物、实时H2原件与其余缓存保留，清理回执随本轮保存。
+
+下一步仍是左腕回程+6、头1回程+8及头2/三轮主动运动闭环，完整整机目标未缩减。头1目标2634与期限内2642编码/算术均正确；旧超期采样等待修复不解释+8，左腕仅有历史夹具不能推定稳定平台。底盘通用Mode1零停合同已有厂家教程/SDK和XLeRobot源码支持；Phase bit3在现场FW3/10、Mode1、Phase12、单addr46写入中的适用范围仍有文档冲突，保持保守拒绝、普通Phase写禁令及原精度/停止门。D15按用户决定OPEN/DEFERRED，deployable=false保持；新物理动作另需当次现场事实与具体GO。
+
 ### 右 H2 通知式观察候选及最新 nightly 冻结（2026-10-10，软件已验收）
 
 未改生产driver、Rust源码、P99/RT/authority或未知进程FAIL门。仅把一次性SSH观察副本的2秒tmux/date/sleep轮询换成pane局部`pane-died`通知和每观察者独立channel；保留`exec`启动链、仅一次launch/断线后只观察、原最终run终态门。候选仍绑定旧a96和旧基址，不具备新现场事实或GO，不能直接用于新真实H2。

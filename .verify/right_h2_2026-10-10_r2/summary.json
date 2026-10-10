@@ -1,0 +1,375 @@
+{
+  "schema": "P7_H2_RIGHT_HARDWARE_CLOSURE_V1",
+  "date": "2026-10-10",
+  "status": "H2_PASS_AND_STOP_READBACK_CLOSED",
+  "scope": "本次一次右H2、17电机34原帧停止读回、首次11及后11+17清场；不外推头部/底盘主动运动",
+  "runtime_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+  "build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+  "source_files": 597,
+  "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "authorization": {
+    "physical_receipt": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-right-physical-r2.json",
+      "sha256": "2443e1d13dafa358d889cc72fb7d3826fd84ca63c220fcc9e6e6730b118d53fd",
+      "bytes": 1147
+    },
+    "inputs": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-right-inputs-r2.json",
+      "sha256": "764ff19d88e57473b7f633d7a016ec3d30e519f67a2843ff0a41d209347bb79c",
+      "bytes": 1923
+    },
+    "alignment": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-alignment-r2.json",
+      "sha256": "0f249a533187f12fd32a6632ed8d18b6ceeb216373fe988addb0e35d941f273e",
+      "bytes": 784
+    },
+    "go": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-right-go-r2.json",
+      "sha256": "6febf5a229d3bb6549632895b1edc2bc358bec74352a86ed2f406ee6f77db41b",
+      "bytes": 715
+    },
+    "authorization_attempts": 1,
+    "launch_attempts": 1,
+    "whole_hardware_retry": false,
+    "exec_checked_at_ns": 1791606539799200002,
+    "driver_pid": 605045,
+    "tool_pid": 605107,
+    "tmux_pane": "%39",
+    "tmux_window": "@39"
+  },
+  "hardware_result": {
+    "status": "PASS",
+    "driver_exit": 0,
+    "tool_exit": 0,
+    "tool_naturally_reaped": true,
+    "run": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/right-h2-run-02/run.json",
+      "sha256": "0087b8945543d6199c214e386f8fbf5be5485bcd4bdb47bc3d512924711d09cb",
+      "bytes": 700604
+    },
+    "report": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/right-h2-run-02/report.json",
+      "sha256": "7cb5f6cb23a182cc605ae06cf3ebd84d4da8b066cfa52cf12d47bffceee08124",
+      "bytes": 64765352
+    }
+  },
+  "measurement": {
+    "groups": [
+      {
+        "external": false,
+        "in_flight": false,
+        "passed": true,
+        "samples": 1000,
+        "warmup": 100,
+        "class_mismatch_retries": 0,
+        "sla_a_ns": {
+          "count": 1000,
+          "max": 30688,
+          "p50": 4256,
+          "p99": 23008
+        },
+        "sla_b_ns": {
+          "count": 1000,
+          "max": 54796672,
+          "p50": 8571616,
+          "p99": 10039744
+        },
+        "sla_b_target_ns": 20000000
+      },
+      {
+        "external": false,
+        "in_flight": true,
+        "passed": true,
+        "samples": 1000,
+        "warmup": 100,
+        "class_mismatch_retries": 11,
+        "sla_a_ns": {
+          "count": 1000,
+          "max": 27744,
+          "p50": 4288,
+          "p99": 23264
+        },
+        "sla_b_ns": {
+          "count": 1000,
+          "max": 16921248,
+          "p50": 10970560,
+          "p99": 15941728
+        },
+        "sla_b_target_ns": 75000000
+      },
+      {
+        "external": true,
+        "in_flight": false,
+        "passed": true,
+        "samples": 1000,
+        "warmup": 100,
+        "class_mismatch_retries": 0,
+        "sla_a_ns": {
+          "count": 1000,
+          "max": 25536,
+          "p50": 960,
+          "p99": 19872
+        },
+        "sla_b_ns": {
+          "count": 1000,
+          "max": 60363744,
+          "p50": 8289664,
+          "p99": 9909024
+        },
+        "sla_b_target_ns": 20000000
+      },
+      {
+        "external": true,
+        "in_flight": true,
+        "passed": true,
+        "samples": 1000,
+        "warmup": 100,
+        "class_mismatch_retries": 21,
+        "sla_a_ns": {
+          "count": 1000,
+          "max": 28128,
+          "p50": 992,
+          "p99": 19840
+        },
+        "sla_b_ns": {
+          "count": 1000,
+          "max": 16922272,
+          "p50": 11045184,
+          "p99": 16058784
+        },
+        "sla_b_target_ns": 75000000
+      }
+    ],
+    "valid_formal_samples": 4000,
+    "accepted_warmup": 400,
+    "total_attempts": 4432,
+    "class_mismatch_retries": 32,
+    "rt_preflight": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/right-h2-run-02/orin_sla_right/rt_preflight.json",
+      "sha256": "990c4ece6fcc1413686a782f951e4539227882ffca8a624c5eb6bbc31931f830",
+      "bytes": 10536
+    },
+    "final_stop": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/right-h2-run-02/orin_sla_right/final_stop.json",
+      "sha256": "fca001f88dd21750da466cca7daade471a27d7930800cacb55c4ce8ea635e73b",
+      "bytes": 983
+    },
+    "final_trace": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/right-h2-run-02/orin_sla_right/final_trace.json",
+      "sha256": "8f28a570a08781acc1af2276ad1442eec26d794fde66be2eeab0deeefac7cf58",
+      "bytes": 582
+    },
+    "disable_non_dry_ack_disarmed": true,
+    "trace_valid_children_stopped_drained": true,
+    "trace_dropped": 0,
+    "sla_b_max_note": "topic/RR idle原max54.796672/60.363744ms保留；原判据P99，不宣称每样本小于20ms"
+  },
+  "independent_cleanup": {
+    "status": "PASS",
+    "checks": 11,
+    "result": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/right-h2-cleanup-r2/result.json",
+      "sha256": "3fc76faaa121bedf761ee5589d37ff3eebf3e91d66d7907127cba92b00c86fd2",
+      "bytes": 39942
+    }
+  },
+  "stop_readback": {
+    "status": "PASS",
+    "motors": 17,
+    "steps": 34,
+    "all_raw_frames_checksum_length_id_register_valid": true,
+    "all_decoded_integer_zero": true,
+    "commands": 40,
+    "all_commands_naturally_reaped": true,
+    "result": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/register-readback-r2/result.json",
+      "sha256": "76999f8706a8e1238e21e591283ada5a89fc46a75612bfcb5c87b47e20790b89",
+      "bytes": 109201
+    },
+    "build_head": "c800f86f81c3a9290e51a1a516a033a69efbf800",
+    "compiler": "1.101.0-nightly / a30aa9064df6a504b6a323c6884a2f4cfbfff666",
+    "elf": {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+      "sha256": "13c97115b89d9f8780ea8b9cac80a091ddcc2b73549d34b2d5cbad83c718ffe1",
+      "bytes": 1510912,
+      "elf_machine": 183
+    },
+    "continuous_stillness_or_independent_failsafe_proven": false,
+    "right9": "本次原帧正零0x0000；不回填旧-50 FAIL"
+  },
+  "final_post_checks": {
+    "post_status": "PASS",
+    "post_checks": 11,
+    "post": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/right-h2-final-readonly-r2/result.json",
+      "sha256": "440ca45b9501f8cbcbebf29c8f2170bece0e44f549ee2e19070ea5ede16293c8",
+      "bytes": 39942
+    },
+    "bus_status": "PASS",
+    "bus_checks": 17,
+    "bus_commands": 14,
+    "all_bus_commands_naturally_reaped": true,
+    "bus": {
+      "archive": "right-h2-originals-r2.tar.gz",
+      "path": "robot-checks/h2-exit-observation-20261009-r1/final-buses-r2/result.json",
+      "sha256": "035bf58c1d498f2c7de75b9a656349b97bf8f51160707f5bb873f00e66e131cf",
+      "bytes": 10915
+    }
+  },
+  "archive": {
+    "path": "right-h2-originals-r2.tar.gz",
+    "sha256": "0a07068b16dc12df48abdab62414640d610732f0b40a57f57a830145ce74ff71",
+    "bytes": 18523553,
+    "files": 4609,
+    "input_bytes": 243145335,
+    "excluded": "ELF/source tar/Cargo caches/历史重复包"
+  },
+  "verification_scope": {
+    "native_all_members_read_and_hashed": 4609,
+    "native_safe_regular_paths": 4609,
+    "driver_original_hashes_matched": 18,
+    "prior_terminal_originals_matched": 12,
+    "stop34_raw_frames_checked": 34,
+    "stop34_stdout_stderr_logs_matched": 80,
+    "final_bus_stdout_stderr_logs_matched": 28,
+    "source_artifacts_formal_before_after_equal": true,
+    "readonly_preparation_status": "PASS",
+    "readonly_preparation_checks": 16,
+    "source_sync_original_result": "source-sync-r2/result.json",
+    "source_sync_commands": 24,
+    "new_tests_or_hardware_runs_for_archiving": 0
+  },
+  "local_ssh_owners": [
+    {
+      "path": "local-owners/archive_fetch_r2.owner/result.json",
+      "sha256": "9d65351bb092ba7286ed149e48e1cfa68470f6068c9f93b0c6768c53c49e1773",
+      "owner_pid": 78704,
+      "ssh_pid": 78705,
+      "exit": 0,
+      "reaped": true
+    },
+    {
+      "path": "local-owners/right_h2_894_event_once_r2.owner/result.json",
+      "sha256": "defeed688d2222d29ca9ebbfd088471315f7ec161e382249b95df672f7ac18bb",
+      "owner_pid": 69449,
+      "ssh_pid": 69450,
+      "exit": 0,
+      "reaped": true
+    },
+    {
+      "path": "local-owners/right_h2_cleanup_r2.owner/result.json",
+      "sha256": "d84b8e42ce5ba9ebfa0e8c3a04a64279b7cde879c546da2792de6f9a2b8d951f",
+      "owner_pid": 77554,
+      "ssh_pid": 77555,
+      "exit": 0,
+      "reaped": true
+    },
+    {
+      "path": "local-owners/right_h2_final_buses_r2.owner/result.json",
+      "sha256": "caeef5e5e22373a92851c72181096acd4cdc1d6208235bf0392a08a538401a3b",
+      "owner_pid": 77925,
+      "ssh_pid": 77926,
+      "exit": 0,
+      "reaped": true
+    },
+    {
+      "path": "local-owners/right_h2_final_cleanup_r2.owner/result.json",
+      "sha256": "2fae0d636197cbf76c14ae48f59305301a1d370f9842e128d0a24ac5b0d65aec",
+      "owner_pid": 77912,
+      "ssh_pid": 77913,
+      "exit": 0,
+      "reaped": true
+    },
+    {
+      "path": "local-owners/right_h2_status_readonly_r2.owner/result.json",
+      "sha256": "f7de338b0bd68f8cbb5f2fcba072ed9e097062970babc30efc95f1d9bbd61a65",
+      "owner_pid": 70591,
+      "ssh_pid": 70592,
+      "exit": 0,
+      "reaped": true
+    },
+    {
+      "path": "local-owners/right_h2_stop34_r2.owner/result.json",
+      "sha256": "3f0f153520055f7e82f749d74bad4bfde1d4e4709bfa712038ef6f614824d826",
+      "owner_pid": 77880,
+      "ssh_pid": 77881,
+      "exit": 0,
+      "reaped": true
+    },
+    {
+      "path": "local-owners/terminal_fetch_r2.owner/result.json",
+      "sha256": "9b784d98be2426b361306737ef5600dbbaf7e5c132aa9f40567663aa380962a6",
+      "owner_pid": 77705,
+      "ssh_pid": 77706,
+      "exit": 0,
+      "reaped": true
+    },
+    {
+      "path": "local-owners/upload_readback_bindings_r2.owner/result.json",
+      "sha256": "617c04fa826847982b0dcbde26ddd985fb46d088227dc7284e8a54cea1064a19",
+      "owner_pid": 77860,
+      "ssh_pid": 77861,
+      "exit": 0,
+      "reaped": true
+    }
+  ],
+  "transport_payload_storage": {
+    "archive_fetch_raw_child_log_is": "right-h2-originals-r2.tar.gz",
+    "terminal_fetch_raw_body_omitted_as_duplicate": false,
+    "terminal_fetch_original_body_sha256": "d723b0250803b1f3f0267e7d133a2a0383a0ff7b2d082314889a40c588b361d0",
+    "terminal_fetch_original_body_bytes": 87367286,
+    "terminal_fetch_decoded_originals_in_native_archive": 12,
+    "old_two_upload_receipts": "只记录exit0；未记录PID/reap，不由后续owner回填",
+    "terminal_fetch_compressed_original_body": {
+      "path": "local-owners/terminal_fetch_r2.owner/child.log.gz",
+      "sha256": "dbeb1e06ce70c3cc24c2fcf2726d277473e8809a4bbb7e5cb400f54a08130c17",
+      "bytes": 5796881,
+      "uncompressed_sha256": "d723b0250803b1f3f0267e7d133a2a0383a0ff7b2d082314889a40c588b361d0",
+      "uncompressed_bytes": 87367286
+    },
+    "archive_local_first_refusal": "archive-local-first-refusal.json"
+  },
+  "software_preparation_reference": {
+    "path": "../h2_tmux_observer_2026-10-10/release-post-32d-r2-originals.tar.gz",
+    "sha256": "8d4201695af3f8741ff424dc931af92138ba37792b5d007a0c909b9eb8dec175",
+    "bytes": 425017,
+    "files": 254,
+    "scope": "引用已验32d原始六配方/七冻结件及post软件阶段，不重跑或重复计数"
+  },
+  "readback_build_reference": {
+    "path": "../right_h2_2026-10-09/preparation-originals.tar.gz",
+    "sha256": "eb44db7a531fb69a244ba7855713035367a6def2d96ba5a5cdce09299efadbbe",
+    "scope": "独立c800/a30读回冻结工具真实构建/编译器回执；本次不是32d重编译"
+  },
+  "old_target_cleanup": {
+    "path": "old-target-cleanup-receipt.json",
+    "sha256": "6c852117c6e985ad5f8bd5e51ab3fd41f41e0a90e31ae31d11a5d4e3afa31eea",
+    "scope": "仅已逐字永久归档的native-r1至r7旧source解包，7路径/每项590文件/206976KiB；不清其他缓存"
+  },
+  "watch_release_notification_utc": "2026-10-10 05:31:39 UTC",
+  "watch_released": true,
+  "physical_state_after_watch_release": "UNKNOWN；root通知可保持支撑关闭两个电源，未收到实际断电确认；现场报告也不替代独立遥测",
+  "formal_installation": "原ca14四件不变、六服务inactive/MainPID0、无控制进程/两USB四锁占用；未安装/激活服务",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "head_base_active_motion": "本轮未执行；左腕+6/头1+8原FAIL、头2及三轮主动运动待验保持",
+  "historical_failures_preserved": true,
+  "next": "继续分别闭环头部/左腕精度及底盘固件/主动运动；新硬件动作须单独当前现场事实与授权"
+}

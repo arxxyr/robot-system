@@ -21,13 +21,13 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-09右H2仅一次真实批次：四组各100+1000原P99/RT/trace与最终Disable通过，
-           tool exit0真实回收；driver因自有tool退出窗口/proc不可读保留整体FAIL。
-           独立11清场、17电机34原帧整数零、后11+17核验与全部自有child/SSH回收通过。
-           原件 .verify/right_h2_2026-10-09/summary.json；首过期GO零启动exit2保留。
-           看护已解除，实际断电UNKNOWN；退出观察窄修复已软件验收：r2 fmt/根Clippy，
-           r4完整124/0fail/0skip及Linux真实wait/ECHILD，同597/a30/两Python SHA前后不变。
-           前序QA/Mac FAIL保留；.verify/h2_owned_child_exit_2026-10-09/summary.json，不自动重测。
+本轮最新:  2026-10-10右H2仅一次真实批次完整PASS：四组各100+1000原P99/RT/trace、
+           最终非dry Disable、tool/driver exit0自然回收及17电机34原帧整数零均通过。
+           独立前11/后11清场、最终17核验与硬件阶段受记录child/SSH回收通过；无整轮重试。
+           runtime894/builda96，597源聚合5970c9be，冻结件实际nightly32d；读回件仍c800/a30。
+           原件 .verify/right_h2_2026-10-10_r2/summary.json；旧FAIL与585588身份未知保留。
+           05:31:39UTC已解除本轮看护并通知可支撑下关闭两电源，实际断电UNKNOWN。
+           正式ca14四件未改、六服务停止；约202MiB已归档旧源码解包缓存已清理。
            左腕/头1旧FAIL、头2/三轮主动运动待验、D15 OPEN/DEFERRED及deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +

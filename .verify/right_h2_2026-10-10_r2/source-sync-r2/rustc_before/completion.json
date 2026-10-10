@@ -1,0 +1,59 @@
+{
+  "name": "rustc_before",
+  "argv": [
+    "rustc",
+    "-vV"
+  ],
+  "cwd": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source",
+  "env": {
+    "RUSTUP_TOOLCHAIN": "nightly",
+    "RUSTC_WRAPPER": "",
+    "CARGO_TERM_COLOR": "never",
+    "CARGO_TARGET_DIR": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build",
+    "CARGO_BUILD_JOBS": "2",
+    "PATH": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin:/home/loosqk/.cargo/bin:/home/loosqk/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+    "GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15",
+    "H2_EXPECTED_HEAD": "894084738d95a7239611c2b8fbecfe081d3a7fc9"
+  },
+  "removed_env_keys": [],
+  "started_at": "2026-10-10T04:19:49.661847+00:00",
+  "started_monotonic_ns": 3359239122613359,
+  "timeout_seconds": 60,
+  "stdout": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source-sync-r2/rustc_before/stdout.log",
+  "stderr": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source-sync-r2/rustc_before/stderr.log",
+  "launch_receipt": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source-sync-r2/rustc_before/launch.json",
+  "completion_receipt": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source-sync-r2/rustc_before/completion.json",
+  "pid": 604425,
+  "identity": {
+    "pid": 604425,
+    "start_ticks": 335923912,
+    "pgid": 604425,
+    "sid": 604425,
+    "state": "R",
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+    "exe": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3.12"
+  },
+  "signals": [],
+  "reaped": true,
+  "exit_code": 0,
+  "bootstrap_argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12-linux-aarch64-gnu/bin/python3.12",
+    "-c",
+    "import os, sys\ngate = int(sys.argv[1])\npermit = os.read(gate, 1)\nos.close(gate)\nif permit != b'G':\n    os._exit(125)\nos.execvpe(sys.argv[2], sys.argv[2:], os.environ)\n",
+    "5",
+    "rustc",
+    "-vV"
+  ],
+  "bootstrap_sha256": "b8b20c758579a004616382eead77a3298270a12be5394118cffb2eab139d45fc",
+  "identity_phase": "bootstrap",
+  "argv_semantics": "收到父进程 GO 后同 PID exec 的目标命令",
+  "exec_gate_released": true,
+  "ended_monotonic_ns": 3359239207187955,
+  "finished_at": "2026-10-10T04:19:49.746447+00:00",
+  "session_residual_before_cleanup": [],
+  "session_residual_after_cleanup": [],
+  "stdout_bytes": 215,
+  "stdout_sha256": "89160d895e340526027d8556d3f15f4818c3056961ee8e113fd4c29de35f368a",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

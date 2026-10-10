@@ -1,0 +1,109 @@
+{
+  "frozen": {
+    "production/s0_daemon": {
+      "sha256": "fb0605e9901c66f5cbccc0c8a1fc95195ba1f0031f5d11568d54a5f789f4f992",
+      "bytes": 4423520,
+      "mode": 448,
+      "elf_machine": 183
+    },
+    "production/xlerobot_deploy": {
+      "sha256": "1886b4f476b53931081df94fb0d52b8163ac2124326aad905a261af6861d0321",
+      "bytes": 1861544,
+      "mode": 448,
+      "elf_machine": 183
+    },
+    "production/s1_daemon": {
+      "sha256": "e7004596b11f1dbe80785bd9920f48ce8b50a35ea41418a29b3faf19f1d6ff47",
+      "bytes": 4165208,
+      "mode": 448,
+      "elf_machine": 183
+    },
+    "production/robot_rpc_gateway": {
+      "sha256": "a87a82a8f0d1a9234698c94910c14127773c1b3472963bed07aa2cbda40a9c20",
+      "bytes": 6044848,
+      "mode": 448,
+      "elf_machine": 183
+    },
+    "measurement/s0_daemon": {
+      "sha256": "ce08b2b181b93bc1bf2a5fa0a8f8c9945456b74601305affc009cadbe1fc0a07",
+      "bytes": 4954896,
+      "mode": 448,
+      "elf_machine": 183
+    },
+    "measurement/robot_rpc_gateway": {
+      "sha256": "dcda20ebb587350684f19931292a2abaa0f64d6c2bb223321717baba719a5943",
+      "bytes": 6079056,
+      "mode": 448,
+      "elf_machine": 183
+    },
+    "measurement/comm_fault_e2e": {
+      "sha256": "7780688ce68864a310175f3c4c51596640f137caa220e02149c75cc0775231a3",
+      "bytes": 5799824,
+      "mode": 448,
+      "elf_machine": 183
+    }
+  },
+  "formal": {
+    "s0_daemon": {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon",
+      "resolved": "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon",
+      "exists": true,
+      "link_target": null,
+      "mode": 509,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 3968152,
+      "device": 66305,
+      "inode": 14051956,
+      "sha256": "461aec751fc5a41a24ab4dcc3778ca1e88783c4c96467254419f7bf13d1fde7f"
+    },
+    "xlerobot_deploy": {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy",
+      "resolved": "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy",
+      "exists": true,
+      "link_target": null,
+      "mode": 509,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 1818776,
+      "device": 66305,
+      "inode": 14051962,
+      "sha256": "7d0cfa3da22610e9a34749d1fbb0d081239a728ed1a30cb9836e01c909dff5c3"
+    },
+    "s1_daemon": {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon",
+      "resolved": "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon",
+      "exists": true,
+      "link_target": null,
+      "mode": 509,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 4033312,
+      "device": 66305,
+      "inode": 14051978,
+      "sha256": "1c9037443f9786f09631705bd8800bc5f85333a45c7e9b08d6fcfaf26738de93"
+    },
+    "robot_rpc_gateway": {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+      "resolved": "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+      "exists": true,
+      "link_target": null,
+      "mode": 509,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 5883280,
+      "device": 66305,
+      "inode": 14052064,
+      "sha256": "9e8d029c30472bcd5371b6ae1fb6e4f98446086f420c567d11891dab81cc8d78"
+    }
+  },
+  "manifests": {
+    "production": "bf61ac0a2cf16c959c7f970b9649a4cd68339a4f3d48605e778484d1e757a4ce",
+    "measurement": "831464669486870c7180a6e7ed94c05352baf6981f0abed0b5089f7401a4115c"
+  },
+  "helpers": {
+    "run_post_e_h2.py": "3b69527eb66115a3770b96ab55aa06d99716270399bb5cf2b0d84c1c9c51b9ae",
+    "post_e_h2_report.py": "bd35923146c3841ec5f4547b85b99494abbd93970cb1b805ce0fb7692b368387",
+    "post_e_h2_artifacts.py": "bd2b3f7bb8527cd9ecec73894171638e9cf378656b89e284a585c3baa37b8731"
+  }
+}

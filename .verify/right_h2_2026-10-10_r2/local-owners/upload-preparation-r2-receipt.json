@@ -1,0 +1,64 @@
+{
+  "argv": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "started_ns": 1791606494371454000,
+  "finished_ns": 1791606497579533000,
+  "exit_code": 0,
+  "stdout": "{\"path\": \"/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/control-v3/prelaunch_go.py\", \"sha256\": \"8121c8e8454d5a06dfa1f828ca85417917a0cdcd756d222717af89adf1024b77\", \"bytes\": 9132}\n{\"path\": \"/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/control-v3/post_h2_cleanup.py\", \"sha256\": \"342beea12d76ee69a2c5b81eebe6f738279d48e25b10340e8da07edfad175fd9\", \"bytes\": 11934}\n{\"path\": \"/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/control-v3/ssh_owner.py\", \"sha256\": \"96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a\", \"bytes\": 8656}\n{\"path\": \"/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/control-v3/tmux_h2_observer_event_once_r2.sh\", \"sha256\": \"6607d148409e708dfcd4802ea2ccbf1d26d5e01877efc679a36aee7e8cb582b8\", \"bytes\": 3618}\n{\"path\": \"/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-right-physical-r2.json\", \"sha256\": \"2443e1d13dafa358d889cc72fb7d3826fd84ca63c220fcc9e6e6730b118d53fd\", \"bytes\": 1147}\n{\"path\": \"/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-right-inputs-r2.json\", \"sha256\": \"764ff19d88e57473b7f633d7a016ec3d30e519f67a2843ff0a41d209347bb79c\", \"bytes\": 1923}\n{\"path\": \"/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-alignment-r2.json\", \"sha256\": \"0f249a533187f12fd32a6632ed8d18b6ceeb216373fe988addb0e35d941f273e\", \"bytes\": 784}\nPASS: noclobber上传7件；run02/event-r2/log-r2未创建；未执行入口/GO/UART\n",
+  "stderr": "",
+  "files": [
+    {
+      "name": "prelaunch_go.py",
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/control-v3/prelaunch_go.py",
+      "sha256": "8121c8e8454d5a06dfa1f828ca85417917a0cdcd756d222717af89adf1024b77",
+      "bytes": 9132
+    },
+    {
+      "name": "post_h2_cleanup.py",
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/control-v3/post_h2_cleanup.py",
+      "sha256": "342beea12d76ee69a2c5b81eebe6f738279d48e25b10340e8da07edfad175fd9",
+      "bytes": 11934
+    },
+    {
+      "name": "ssh_owner.py",
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/control-v3/ssh_owner.py",
+      "sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+      "bytes": 8656
+    },
+    {
+      "name": "tmux_h2_observer_event_once_r2.sh",
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/control-v3/tmux_h2_observer_event_once_r2.sh",
+      "sha256": "6607d148409e708dfcd4802ea2ccbf1d26d5e01877efc679a36aee7e8cb582b8",
+      "bytes": 3618
+    },
+    {
+      "name": "s52-right-physical-r2.json",
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-right-physical-r2.json",
+      "sha256": "2443e1d13dafa358d889cc72fb7d3826fd84ca63c220fcc9e6e6730b118d53fd",
+      "bytes": 1147
+    },
+    {
+      "name": "s52-right-inputs-r2.json",
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-right-inputs-r2.json",
+      "sha256": "764ff19d88e57473b7f633d7a016ec3d30e519f67a2843ff0a41d209347bb79c",
+      "bytes": 1923
+    },
+    {
+      "name": "s52-alignment-r2.json",
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-alignment-r2.json",
+      "sha256": "0f249a533187f12fd32a6632ed8d18b6ceeb216373fe988addb0e35d941f273e",
+      "bytes": 784
+    }
+  ],
+  "scope": "仅noclobber上传与hash读回，不执行任何入口"
+}

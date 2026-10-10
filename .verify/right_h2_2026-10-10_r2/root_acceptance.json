@@ -1,0 +1,17 @@
+{
+  "status": "ROOT_ACCEPTED",
+  "at_ns": 1791610787729818000,
+  "scope": "本次右H2完整实机门和本阶段文档/证据提交",
+  "hardware_summary_sha256": "19538434f9e0ca1cf7e25891b67ac984b970d3c43466772b3ee0e84af03d4b30",
+  "quality_summary_sha256": "2189dd9909203f9ffc83c4b6e4af20f1c923a1b2576166d3eee91a631bb6c944",
+  "local_597_equals_native_before_after": true,
+  "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "rust_source_changed": false,
+  "hardware_build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+  "runtime_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+  "full_robot_goal_complete": false,
+  "independent_review": "ACCEPT",
+  "physical_power_after_watch_release": "UNKNOWN",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

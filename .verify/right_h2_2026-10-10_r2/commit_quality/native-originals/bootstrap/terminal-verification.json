@@ -1,0 +1,19 @@
+{
+  "terminal": [
+    "h2-right-r2-quality-20261010-r1",
+    "@40",
+    "%40",
+    "614935",
+    "1",
+    "0"
+  ],
+  "owner": {
+    "pid": 614945,
+    "start_ticks": 336368114,
+    "pgid": 614935,
+    "sid": 614935,
+    "state": "R"
+  },
+  "owner_pid_absent": true,
+  "receipts": 13
+}

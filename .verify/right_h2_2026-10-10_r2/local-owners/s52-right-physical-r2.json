@@ -1,0 +1,20 @@
+{
+  "schema": "P7_H2_PHYSICAL_CONFIRMATION_V1",
+  "side": "right",
+  "issued_by": "root",
+  "expected_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+  "output": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/right-h2-run-02",
+  "measurement_manifest_sha256": "831464669486870c7180a6e7ed94c05352baf6981f0abed0b5089f7401a4115c",
+  "alignment_sha256": "0f249a533187f12fd32a6632ed8d18b6ceeb216373fe988addb0e35d941f273e",
+  "confirmed_at_ns": 1791606405000000000,
+  "source": "本轮用户直接回复：全部已就绪，可持续看护并立即断电。root本轮收到后首次时钟2026-10-10 04:26:45 UTC。确认问题明确包含已恢复供电、USB重插、双臂空载有支撑、所有活动区空旷；授权仅本次一次右H2四组、最终Disable、17电机34停止读回和清场，实际物理复位时刻未提供。",
+  "user_reply": "全部已就绪，可持续看护并立即断电",
+  "issued_at_ns": 1791606441808080000,
+  "supported": true,
+  "unloaded": true,
+  "area_clear": true,
+  "motor_power_cycle": true,
+  "usb_replug": true,
+  "continuous_presence_until_cleanup": true,
+  "immediate_power_cut": true
+}
