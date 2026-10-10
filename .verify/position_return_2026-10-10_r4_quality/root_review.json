@@ -1,0 +1,43 @@
+{
+  "status": "ROOT_R4_COMMIT_QUALITY_ACCEPTED",
+  "reviewed_at_ns": 1791619880189475000,
+  "native_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+  "host_precommit_head": "76b3df0d185bfa237e48fc4c0cf73987b683cce6",
+  "same_597_source": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "rustc": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "cargo": "cargo 1.101.0-nightly (29c5daa1a 2026-10-07)",
+  "actual_update_then_fmt_then_root_clippy": true,
+  "natural_direct_children": 19,
+  "original_stdout_stderr_verified": 38,
+  "raw_receipt_sha256": "dd3384b01c6b8af6d91dd0b8e2b17daaefa09b17f79b16e6e53b62f11a076c70",
+  "archive_sha256": "7839237b79b324c8be7ab4e076d540d64700148ed267edabb368a830fd7a5886",
+  "source_unchanged": true,
+  "tests_release_hardware": "NOT_RUN",
+  "prior_local_keyerror_preserved": true,
+  "files": [
+    {
+      "path": "position-quality-r3-originals.tar.gz",
+      "sha256": "7839237b79b324c8be7ab4e076d540d64700148ed267edabb368a830fd7a5886",
+      "bytes": 231334
+    },
+    {
+      "path": "native_result.json",
+      "sha256": "dd3384b01c6b8af6d91dd0b8e2b17daaefa09b17f79b16e6e53b62f11a076c70",
+      "bytes": 6424
+    },
+    {
+      "path": "first_local_parse_failure.txt",
+      "sha256": "87d6d8e4dc029764f519d72fc8820d1d16991ae82b4e7173e9beb35be5ba520d",
+      "bytes": 197
+    },
+    {
+      "path": "host_source.json",
+      "sha256": "8f89561d4fe826cec48aa672f8137b299634082c9ac38613fddbb4f8b0c34670",
+      "bytes": 114885
+    }
+  ]
+}

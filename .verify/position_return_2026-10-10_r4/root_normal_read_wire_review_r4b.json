@@ -1,0 +1,253 @@
+{
+  "status": "ROOT_NORMAL_READ_WIRE_REVIEW_PASS",
+  "reviewed_at_ns": 1791619348980159000,
+  "run_sha256": "096bb17b3164368365fcccf359f12e4188a83735ab2449f3ce15edd88f1fd80f",
+  "direct_children": 80,
+  "original_outputs_verified": 160,
+  "direct_children_all_naturally_reaped": true,
+  "wire_reads": [
+    {
+      "motor_id": 8,
+      "tty": "/dev/ttyACM1",
+      "fd": 3,
+      "events": [
+        {
+          "time": "1791619229.129137",
+          "operation": "write",
+          "frame": "ff ff 08 02 01 f4",
+          "payload": [
+            255,
+            255,
+            8,
+            2,
+            1,
+            244
+          ]
+        },
+        {
+          "time": "1791619229.129703",
+          "operation": "read",
+          "frame": "ff ff 08 02 00 f5",
+          "payload": [
+            255,
+            255,
+            8,
+            2,
+            0,
+            245
+          ]
+        },
+        {
+          "time": "1791619229.129772",
+          "operation": "write",
+          "frame": "ff ff 08 04 02 03 02 ec",
+          "payload": [
+            255,
+            255,
+            8,
+            4,
+            2,
+            3,
+            2,
+            236
+          ]
+        },
+        {
+          "time": "1791619229.130383",
+          "operation": "read",
+          "frame": "ff ff 08 04 00 09 03 e7",
+          "payload": [
+            255,
+            255,
+            8,
+            4,
+            0,
+            9,
+            3,
+            231
+          ]
+        },
+        {
+          "time": "1791619229.130450",
+          "operation": "write",
+          "frame": "ff ff 08 04 02 3a 02 b5",
+          "payload": [
+            255,
+            255,
+            8,
+            4,
+            2,
+            58,
+            2,
+            181
+          ]
+        },
+        {
+          "time": "1791619229.131055",
+          "operation": "read",
+          "frame": "ff ff 08 04 00 00 00 f3",
+          "payload": [
+            255,
+            255,
+            8,
+            4,
+            0,
+            0,
+            0,
+            243
+          ]
+        }
+      ],
+      "model_number": 777,
+      "pv_raw_unsigned": 0,
+      "pv_decoded_integer": 0,
+      "status_error": 0,
+      "complete_checksums_pass": true,
+      "protocol_register_writes": 0,
+      "trace_sha256": "a1f9f191754d10ce2e6e20041e56400d0fa4c0cd51bbda6ffe828339a67f69cb",
+      "trace_bytes": 10036,
+      "limits": "响应帧不含地址或事务代次；按本次请求与紧随接收顺序关联，不能解释旧±50"
+    },
+    {
+      "motor_id": 9,
+      "tty": "/dev/ttyACM1",
+      "fd": 3,
+      "events": [
+        {
+          "time": "1791619229.628677",
+          "operation": "write",
+          "frame": "ff ff 09 02 01 f3",
+          "payload": [
+            255,
+            255,
+            9,
+            2,
+            1,
+            243
+          ]
+        },
+        {
+          "time": "1791619229.629237",
+          "operation": "read",
+          "frame": "ff ff 09 02 00 f4",
+          "payload": [
+            255,
+            255,
+            9,
+            2,
+            0,
+            244
+          ]
+        },
+        {
+          "time": "1791619229.629306",
+          "operation": "write",
+          "frame": "ff ff 09 04 02 03 02 eb",
+          "payload": [
+            255,
+            255,
+            9,
+            4,
+            2,
+            3,
+            2,
+            235
+          ]
+        },
+        {
+          "time": "1791619229.629927",
+          "operation": "read",
+          "frame": "ff ff 09 04 00 09 03 e6",
+          "payload": [
+            255,
+            255,
+            9,
+            4,
+            0,
+            9,
+            3,
+            230
+          ]
+        },
+        {
+          "time": "1791619229.629995",
+          "operation": "write",
+          "frame": "ff ff 09 04 02 3a 02 b4",
+          "payload": [
+            255,
+            255,
+            9,
+            4,
+            2,
+            58,
+            2,
+            180
+          ]
+        },
+        {
+          "time": "1791619229.630588",
+          "operation": "read",
+          "frame": "ff ff 09 04 00 00 00 f2",
+          "payload": [
+            255,
+            255,
+            9,
+            4,
+            0,
+            0,
+            0,
+            242
+          ]
+        }
+      ],
+      "model_number": 777,
+      "pv_raw_unsigned": 0,
+      "pv_decoded_integer": 0,
+      "status_error": 0,
+      "complete_checksums_pass": true,
+      "protocol_register_writes": 0,
+      "trace_sha256": "a3492ba49af6c9a25a545add8111d394df5e375f45eb6ac53621e954ea0d876c",
+      "trace_bytes": 10036,
+      "limits": "响应帧不含地址或事务代次；按本次请求与紧随接收顺序关联，不能解释旧±50"
+    }
+  ],
+  "PV_queries": 2,
+  "protocol_queries_total": 6,
+  "parameter_writes": 0,
+  "motion_commands": 0,
+  "nonuart_post": [
+    {
+      "name": "host",
+      "status": "PASS"
+    },
+    {
+      "name": "refs_and_protection",
+      "status": "PASS"
+    },
+    {
+      "name": "tool",
+      "status": "PASS"
+    },
+    {
+      "name": "strace",
+      "status": "PASS"
+    },
+    {
+      "name": "idle",
+      "status": "PASS"
+    },
+    {
+      "name": "usb",
+      "status": "PASS"
+    }
+  ],
+  "not_a_full_17_motor_stop_test": true,
+  "prior_pm50_failures": "OPEN_UNCONFIRMED_UNCHANGED",
+  "archive": {
+    "sha256": "a397cf3a59e4f0a4f42a6d9e82eebb86f8b011f33326cea726d9d44646ec5791",
+    "bytes": 40434,
+    "files": 183,
+    "original_bytes": 295756
+  },
+  "old_failures_preserved": true
+}

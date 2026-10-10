@@ -1,0 +1,20 @@
+{
+  "name": "default-plan",
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+    "--config",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/config.none.json"
+  ],
+  "pid": 618963,
+  "started_ns": 1791618426374592237,
+  "finished_ns": 1791618426440683631,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout_bytes": 643,
+  "stderr_bytes": 0,
+  "stdout_sha256": "1cf72c919e2023a372d77ff97f2e87879fc863656114fb720584b507a00b66c8",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

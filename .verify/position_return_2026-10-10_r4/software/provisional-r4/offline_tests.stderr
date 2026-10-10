@@ -1,0 +1,15 @@
+WARN `--no-project` was provided, but no project was found
+test_default_plan_only_does_not_load_source_or_create_output (__main__.CaptureCases.test_default_plan_only_does_not_load_source_or_create_output) ... ok
+test_expired_confirmation_rejects_before_output_executor_and_uart (__main__.CaptureCases.test_expired_confirmation_rejects_before_output_executor_and_uart) ... ok
+test_first_child_failure_never_launches_second_read (__main__.CaptureCases.test_first_child_failure_never_launches_second_read) ... ok
+test_first_nonzero_never_launches_second_read (__main__.CaptureCases.test_first_nonzero_never_launches_second_read) ... ok
+test_fixed_order_two_zero_observations_preserves_trace (__main__.CaptureCases.test_fixed_order_two_zero_observations_preserves_trace) ... ok
+test_identity_or_expiry_gate_before_command_has_zero_start (__main__.CaptureCases.test_identity_or_expiry_gate_before_command_has_zero_start) ... ok
+test_missing_confirmation_rejects_before_output_executor_and_uart (__main__.CaptureCases.test_missing_confirmation_rejects_before_output_executor_and_uart) ... ok
+test_trace_failure_or_signal_never_launches_second_read (__main__.CaptureCases.test_trace_failure_or_signal_never_launches_second_read) ... ok
+test_watch_or_cut_fact_missing_rejects_before_output_executor (__main__.CaptureCases.test_watch_or_cut_fact_missing_rejects_before_output_executor) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.004s
+
+OK

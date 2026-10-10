@@ -1,0 +1,17 @@
+{
+  "recorded_at_ns": 1791618190517833000,
+  "recorded_at": "2026-10-10T07:43:10.517833+00:00",
+  "answer": "已恢复供电，支撑和持续看护就绪，可立即断电",
+  "scope": "只读右8、右9速度原帧各一次；不启用电机、不改参数",
+  "physical": {
+    "motor_supplies_on": true,
+    "continuous_watch": true,
+    "immediate_manual_power_cut": true,
+    "arms_unloaded_supported": true,
+    "areas_clear": true,
+    "support_does_not_block_return": true
+  },
+  "physical_restore_time": "UNKNOWN",
+  "independent_electrical_telemetry": "UNKNOWN",
+  "new_motion_GO": false
+}

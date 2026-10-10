@@ -1,0 +1,69 @@
+{
+  "status": "PASS_LINUX_PLAN_AND_NONE_NEGATIVE_ZERO_UART",
+  "source": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+    "sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7",
+    "bytes": 14217
+  },
+  "field_confirmation": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/field_confirmation_r4.json",
+    "bytes": 601,
+    "sha256": "1fb512645eb4399a1d0603627fe579a09344dc5bd98f437883e6451d22e81383"
+  },
+  "bindings": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_execution_bindings_r4.json",
+    "bytes": 23027,
+    "sha256": "de170c49a476b9144040179488e6251a52047cee6e364ec576819ee2256cd352"
+  },
+  "commands": [
+    {
+      "name": "default-plan",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+        "--config",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/config.none.json"
+      ],
+      "pid": 618963,
+      "started_ns": 1791618426374592237,
+      "finished_ns": 1791618426440683631,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_bytes": 643,
+      "stderr_bytes": 0,
+      "stdout_sha256": "1cf72c919e2023a372d77ff97f2e87879fc863656114fb720584b507a00b66c8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "none-negative",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+        "--config",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/config.none.json",
+        "--execute"
+      ],
+      "pid": 618964,
+      "started_ns": 1791618426441080467,
+      "finished_ns": 1791618426505659981,
+      "exit_code": 2,
+      "wait_returncode": 2,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_bytes": 0,
+      "stderr_bytes": 91,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "b350ecc5bb64b745edde829f16287fd3bd2993e425733c09e6901623e4bcdee4"
+    }
+  ],
+  "output_exists": false,
+  "uart_operations": 0,
+  "live_executed": false,
+  "field_checked_at_ns": 1791618426545294617,
+  "field_recorded_at_ns": 1791618190517833000,
+  "field_age_ns": 236027461617,
+  "field_ttl_ns": 600000000000,
+  "finished_ns": 1791618426545671867
+}

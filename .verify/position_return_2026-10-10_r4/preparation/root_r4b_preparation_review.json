@@ -1,0 +1,9 @@
+{
+  "status": "ROOT_REF_AND_WRAPPER_R4B_ACCEPTED_WAIT_NEW_FIELD_FACTS",
+  "source_changed": false,
+  "refs_changed": "仅补列原f201工具引用",
+  "wrapper_single_launch_compiled": true,
+  "new_physical_reply": null,
+  "sampling_uart_count_total": 0,
+  "old_syntax_and_entry_fail_preserved": true
+}

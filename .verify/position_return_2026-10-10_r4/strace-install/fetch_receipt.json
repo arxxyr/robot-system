@@ -1,0 +1,48 @@
+{
+  "status": "PASS_STRACE_ONLY_INSTALL_AND_TRUE_PTRACE",
+  "sha256": "166effdda1247fddac1428bfe4c6db52fea97f6cbaf84f8c0c6ee99495753719",
+  "bytes": 7814,
+  "files": 38,
+  "source_bytes": 22939,
+  "result_sha256": "5818f734cbf3c1453d8f18d8396219243cda345de430d6f2060f14d03782ab21",
+  "version": "strace -- version 5.16\nCopyright (c) 1991-2022 The strace developers <https://strace.io>.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\nOptional features enabled: no-m32-mpers\n",
+  "dpkg_after": "installed\t5.16-0ubuntu3\n",
+  "commands": [
+    {
+      "argv": [
+        "tmux",
+        "display-message",
+        "-p",
+        "-t",
+        "%49",
+        "#{session_name}|#{window_id}|#{pane_id}|#{pane_dead}|#{pane_dead_status}|#{pane_pid}"
+      ],
+      "pid": 618852,
+      "started_ns": 1791617790988515130,
+      "finished_ns": 1791617790991906331,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "position-strace-install-20261010-r2|@49|%49|1|0|618696\n",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "argv": [
+        "tmux",
+        "kill-pane",
+        "-t",
+        "%49"
+      ],
+      "pid": 618853,
+      "started_ns": 1791617790991923099,
+      "finished_ns": 1791617790994557319,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "schema": "STRACE_TRUE_LOCAL_HEX_PATH_CHECK_V1",
+  "raw_sha256": "893d3e64d6be717eb66e64d59117c24d00e3ef245e2d0f00c256cfd216fa2ef9",
+  "raw_bytes": 2158,
+  "hex_escapes_decoded": true,
+  "tty_paths": [],
+  "openat_paths": [
+    "/etc/ld.so.cache",
+    "/lib/aarch64-linux-gnu/libc.so.6"
+  ],
+  "scope": "Only captured /usr/bin/true trace; not feetech/UART"
+}

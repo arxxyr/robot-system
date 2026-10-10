@@ -1,0 +1,234 @@
+{
+  "schema": "STRACE_SCOPED_TOOL_PREPARATION_V1",
+  "uart_operations": 0,
+  "commands": [
+    {
+      "name": "path-before",
+      "argv": [
+        "bash",
+        "-c",
+        "command -v strace"
+      ],
+      "pid": 618699,
+      "started_ns": 1791617741617621351,
+      "finished_ns": 1791617741620563419,
+      "exit_code": 1,
+      "wait_returncode": 1,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr_bytes": 0
+    },
+    {
+      "name": "dpkg-before",
+      "argv": [
+        "dpkg-query",
+        "-W",
+        "-f",
+        "${db:Status-Status}\t${Version}\n",
+        "strace"
+      ],
+      "pid": 618700,
+      "started_ns": 1791617741620885380,
+      "finished_ns": 1791617741665979137,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_sha256": "2d5ca994d516382f52640f4adc565b72ed2da2d483954e39115580220cedacdd",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 15,
+      "stderr_bytes": 0
+    },
+    {
+      "name": "sudo-capability",
+      "argv": [
+        "sudo",
+        "-n",
+        "true"
+      ],
+      "pid": 618701,
+      "started_ns": 1791617741666287594,
+      "finished_ns": 1791617741679343548,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr_bytes": 0
+    },
+    {
+      "name": "simulate-r1",
+      "argv": [
+        "sudo",
+        "-n",
+        "apt-get",
+        "-o",
+        "Acquire::http::Proxy=http://10.0.1.80:10808",
+        "-o",
+        "Acquire::https::Proxy=http://10.0.1.80:10808",
+        "-s",
+        "--no-upgrade",
+        "--no-install-recommends",
+        "install",
+        "strace"
+      ],
+      "pid": 618704,
+      "started_ns": 1791617741679646341,
+      "finished_ns": 1791617744894070115,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_sha256": "e91eebe24a136e799b03b37868e4cea1a8308edd8a464346f2db8a17748c21e8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 311,
+      "stderr_bytes": 0
+    },
+    {
+      "name": "install",
+      "argv": [
+        "sudo",
+        "-n",
+        "apt-get",
+        "-o",
+        "Acquire::http::Proxy=http://10.0.1.80:10808",
+        "-o",
+        "Acquire::https::Proxy=http://10.0.1.80:10808",
+        "-y",
+        "--no-upgrade",
+        "--no-install-recommends",
+        "install",
+        "strace"
+      ],
+      "pid": 618710,
+      "started_ns": 1791617744894702197,
+      "finished_ns": 1791617752587408246,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_sha256": "87a16df46bcaaee916a99719e6521a4af3de38e4e6f57773fa499c761c785d21",
+      "stderr_sha256": "f77216c41aadf6c667ac1a602069951966cea350daab793ffe11ae0de1225ddc",
+      "stdout_bytes": 1284,
+      "stderr_bytes": 74
+    },
+    {
+      "name": "dpkg-after",
+      "argv": [
+        "dpkg-query",
+        "-W",
+        "-f",
+        "${db:Status-Status}\t${Version}\n",
+        "strace"
+      ],
+      "pid": 618774,
+      "started_ns": 1791617752587701278,
+      "finished_ns": 1791617752615369776,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_sha256": "96ba695d1e17ed8373511ef8441c7cb364aa8553a1fc1b11bbb4e99f3e01e7d5",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 24,
+      "stderr_bytes": 0
+    },
+    {
+      "name": "version",
+      "argv": [
+        "/usr/bin/strace",
+        "-V"
+      ],
+      "pid": 618775,
+      "started_ns": 1791617752615619543,
+      "finished_ns": 1791617752617525645,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_sha256": "44a74d72500533363735657e08bdb447451e7309bdb03d72015b87b52a1ea5de",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 282,
+      "stderr_bytes": 0
+    },
+    {
+      "name": "true-trace",
+      "argv": [
+        "/usr/bin/strace",
+        "-ttt",
+        "-xx",
+        "-s",
+        "256",
+        "-yy",
+        "-e",
+        "trace=openat,close,read,write,ioctl",
+        "-o",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/strace-install-r2/true.trace",
+        "/usr/bin/true"
+      ],
+      "pid": 618776,
+      "started_ns": 1791617752617734163,
+      "finished_ns": 1791617752621781766,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr_bytes": 0
+    }
+  ],
+  "status": "PASS_STRACE_ONLY_INSTALL_AND_TRUE_PTRACE",
+  "uid": 1000,
+  "euid": 1000,
+  "started_ns": 1791617741617231196,
+  "os_release": {
+    "PRETTY_NAME": "Ubuntu 22.04.5 LTS",
+    "NAME": "Ubuntu",
+    "VERSION_ID": "22.04",
+    "VERSION": "22.04.5 LTS (Jammy Jellyfish)",
+    "VERSION_CODENAME": "jammy",
+    "ID": "ubuntu",
+    "ID_LIKE": "debian",
+    "HOME_URL": "https://www.ubuntu.com/",
+    "SUPPORT_URL": "https://help.ubuntu.com/",
+    "BUG_REPORT_URL": "https://bugs.launchpad.net/ubuntu/",
+    "PRIVACY_POLICY_URL": "https://www.ubuntu.com/legal/terms-and-policies/privacy-policy",
+    "UBUNTU_CODENAME": "jammy"
+  },
+  "absolute_strace_before": {
+    "exists": false,
+    "executable": false
+  },
+  "package_before": "not-installed\t\n",
+  "dpkg_before_exit": 0,
+  "accepted_simulation": {
+    "install": [
+      "strace"
+    ],
+    "configure": [
+      "strace"
+    ],
+    "remove": [],
+    "summary": "0 upgraded, 1 newly installed, 0 to remove and 72 not upgraded"
+  },
+  "strace_binary": {
+    "path": "/usr/bin/strace",
+    "sha256": "5392f54d889a87341d49f970d91e21ab8c1f70a835ac9ead6ee4d17e532ae7f7",
+    "bytes": 1583504
+  },
+  "true_trace": {
+    "sha256": "893d3e64d6be717eb66e64d59117c24d00e3ef245e2d0f00c256cfd216fa2ef9",
+    "bytes": 2158,
+    "tty_paths_found": false,
+    "tested_program": "/usr/bin/true",
+    "ordinary_uid": 1000
+  },
+  "finished_ns": 1791617752624544373
+}

@@ -1,0 +1,11 @@
+{
+  "status": "ROOT_READONLY_CANDIDATE_ACCEPTED",
+  "source_sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7",
+  "different_test_methods": 9,
+  "tests_reused_not_rerun": true,
+  "six_outputs_verified": true,
+  "static_scope": "仅8到9各一次普通PV READ及strace原件，无运动/写寄存器路径，失败后无第二UART",
+  "UART": "NOT_RUN",
+  "recorded_at_ns": 1791618339004635000,
+  "field_remaining_s": 451
+}

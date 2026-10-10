@@ -1,0 +1,11 @@
+{
+  "status": "ROOT_STRACE_SOFTWARE_PREPARATION_PASS",
+  "reviewed_at": "2026-10-10T07:37:49.416909+00:00",
+  "native_result_sha256": "5818f734cbf3c1453d8f18d8396219243cda345de430d6f2060f14d03782ab21",
+  "command_count": 8,
+  "original_stdout_stderr_count": 16,
+  "true_trace_sha256": "893d3e64d6be717eb66e64d59117c24d00e3ef245e2d0f00c256cfd216fa2ef9",
+  "decoded_TTY_paths": false,
+  "new_hardware_execution": false,
+  "GO": null
+}

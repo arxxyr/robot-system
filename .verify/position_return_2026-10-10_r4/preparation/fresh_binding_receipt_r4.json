@@ -1,0 +1,71 @@
+{
+  "status": "PASS_NONUART_FRESH_R4_BINDINGS_ONLY",
+  "files": [
+    {
+      "name": "normal_read_bindings_r4.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_bindings_r4.json",
+      "bytes": 22797,
+      "sha256": "a50298716dd355b231ae890ce46aa6f108d070885f3f41bed827dd6641a32114"
+    },
+    {
+      "name": "nonuart_snapshot_r4.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_snapshot_r4.json",
+      "bytes": 176291,
+      "sha256": "6c05b85402641d407a598613587b0d285e237c858c3817ee6151471e3b83b036"
+    },
+    {
+      "name": "nonuart_probe_r4.stderr",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "prepare_owner_r4.json",
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/prepare_owner_r4.json",
+      "bytes": 522,
+      "sha256": "ce92a093d208f352b04bcbd6a13098d713d430491f063bfa591414bfccc437bc"
+    }
+  ],
+  "usb": {
+    "left": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496,
+      "mode": 432,
+      "uid": 0,
+      "gid": 20,
+      "device_inode": 1544,
+      "link_inode": 1547,
+      "link_target": "../../ttyACM0",
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3368981464912"
+    },
+    "right": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497,
+      "mode": 432,
+      "uid": 0,
+      "gid": 20,
+      "device_inode": 1537,
+      "link_inode": 1540,
+      "link_target": "../../ttyACM1",
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336"
+    }
+  },
+  "refs": 33,
+  "binary_paths": [
+    "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+    "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon",
+    "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon",
+    "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy",
+    "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+    "/usr/bin/strace"
+  ],
+  "field_confirmation": null,
+  "uart_operations": 0,
+  "go_created": false
+}

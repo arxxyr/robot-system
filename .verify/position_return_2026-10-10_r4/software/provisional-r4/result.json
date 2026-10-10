@@ -1,0 +1,114 @@
+{
+  "status": "PASS",
+  "scope": "仅本地内存门、默认PLAN_ONLY与缺现场确认拒绝；零Orin访问、零UART",
+  "direct_children": [
+    {
+      "name": "offline_tests",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/test_normal_read_capture_r4.py"
+      ],
+      "pid": 28392,
+      "started_ns": 1791618252475903000,
+      "finished_ns": 1791618252551757000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "expected_exit_code": 0,
+      "status": "PASS",
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/software-verification-r4/offline_tests.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/software-verification-r4/offline_tests.stderr",
+        "sha256": "10f3269aaf6c7894b18931cb5562c7221581085868e7f7f61a2dff63897bbfc5",
+        "bytes": 1482
+      }
+    },
+    {
+      "name": "default_plan_only",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/normal_read_capture_r4.py"
+      ],
+      "pid": 28394,
+      "started_ns": 1791618252552046000,
+      "finished_ns": 1791618252592269000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "expected_exit_code": 0,
+      "status": "PASS",
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/software-verification-r4/default_plan_only.stdout",
+        "sha256": "1cf72c919e2023a372d77ff97f2e87879fc863656114fb720584b507a00b66c8",
+        "bytes": 643
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/software-verification-r4/default_plan_only.stderr",
+        "sha256": "dd7241fb9634d51d4b90a8782d9a26dd3fe2ada28ad873374b2d9b28b76827ef",
+        "bytes": 59
+      }
+    },
+    {
+      "name": "missing_field_negative",
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "python",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/normal_read_capture_r4.py",
+        "--config",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/config-template-r4.json",
+        "--execute"
+      ],
+      "pid": 28396,
+      "started_ns": 1791618252592534000,
+      "finished_ns": 1791618252633325000,
+      "exit_code": 2,
+      "wait_returncode": 2,
+      "reaped": true,
+      "signals_sent": [],
+      "expected_exit_code": 2,
+      "status": "PASS",
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/software-verification-r4/missing_field_negative.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/normal-read-preparation-r4/software-verification-r4/missing_field_negative.stderr",
+        "sha256": "13744d4cffd53ef8ae5d42ce6084812078f40beec128e0ad5e0ea240122951a8",
+        "bytes": 150
+      }
+    }
+  ],
+  "nested_pid_exported": false,
+  "different_test_methods": 9,
+  "hardware_executed": false,
+  "uploaded": false,
+  "sources": {
+    "normal_read_capture_r4.py": {
+      "sha256": "118bcdc66180cc8929d01c5e2926aa1991e7d51b87b8931b0d4b3dbea3fd087d",
+      "bytes": 14217
+    },
+    "test_normal_read_capture_r4.py": {
+      "sha256": "7eb33045834917c2e749d38a8a4c74bc3b1cad5a4a49d332bef84bd4379bae63",
+      "bytes": 7278
+    },
+    "config-template-r4.json": {
+      "sha256": "c3ad79e1f130aabf08e4d5e9be070a10e2c9728b5412aa5bc04edf4163d88fb8",
+      "bytes": 668
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schema": "NORMAL_READ_CAPTURE_CONFIG_R4",
+  "maintenance": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+    "bytes": 50168
+  },
+  "bindings": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_execution_bindings_r4b.json",
+    "sha256": "42e8a811c2a9eac7f89ff41a1f72aaa90e6a96ce6cd2ab5f8311bf1b179e7789",
+    "bytes": 23460
+  },
+  "field_confirmation": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/field_confirmation_r4b.json",
+    "bytes": 678,
+    "sha256": "cc7da981f2b0ff36b09c62ed44078407bd5b39b1a7f56636f3ebae913f205a7d"
+  },
+  "strace": {
+    "path": "/usr/bin/strace",
+    "sha256": "5392f54d889a87341d49f970d91e21ab8c1f70a835ac9ead6ee4d17e532ae7f7",
+    "bytes": 1583504
+  },
+  "artifact_root": "/home/loosqk/robot-checks/position-return-20261010-r1",
+  "output": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/evidence-r4b"
+}
