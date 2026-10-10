@@ -1,0 +1,37 @@
+{
+  "repository": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source",
+  "source": {
+    "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/source_before.json",
+    "sha256": "8f89561d4fe826cec48aa672f8137b299634082c9ac38613fddbb4f8b0c34670"
+  },
+  "production": {
+    "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/production.json",
+    "sha256": "b08a0aaf6c5f354cd73dd984a0409c51937771895b53fd583697e71392185eec"
+  },
+  "measurement": {
+    "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement.json",
+    "sha256": "3c4ce88c9a66204250d92dc22cb3e6e0d02351e6b6b7a6e031ae90a50475dda7"
+  },
+  "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "installed": {
+    "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/right-readonly-r1/installed_before.json",
+    "sha256": "00c262bbbea00c8c2eff7c21b321a0b2ee82600c5e3d2362b8f2e6e46936a690"
+  },
+  "config_sha256": "ce46c7b1317811ce7cb267db3863624462823c58518cd5e044df4dbc54fd3992",
+  "calibration": {
+    "path": "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",
+    "sha256": "98ad69369b4bcfeb1cc84051116d8722709fe2d38b987c077e6e1453c2cea03e"
+  },
+  "schema": "P7_H2_INPUTS_V1",
+  "side": "right",
+  "expected_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+  "output": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/right-h2-run-01",
+  "alignment": {
+    "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-alignment-r1.json",
+    "sha256": "3952785d57107a08816327c8b39a19dab5b097181c7c41e96d97b519e293e2e0"
+  },
+  "physical": {
+    "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/bootstrap/s52-right-physical-r1.json",
+    "sha256": "7590f0e50b0ac5e5a5be8ec2b4dc7d9e7fe3fab96ed7a178e798c26d7cdd7e8d"
+  }
+}

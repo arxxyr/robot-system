@@ -1,0 +1,14 @@
+{
+  "schema": "P7_H2_RIGHT_ROOT_GO_V1",
+  "approved": true,
+  "issued_by": "root",
+  "side": "right",
+  "expected_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+  "output": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/right-h2-run-01",
+  "inputs_sha256": "46dde8fae6fa9a25bd187ad61863ae4243d6bd81e21ed7754961a0ca9f8a3a24",
+  "physical_sha256": "7590f0e50b0ac5e5a5be8ec2b4dc7d9e7fe3fab96ed7a178e798c26d7cdd7e8d",
+  "alignment_sha256": "3952785d57107a08816327c8b39a19dab5b097181c7c41e96d97b519e293e2e0",
+  "signed_at_ns": 1791597889086665000,
+  "expires_at_ns": 1791598489086665000,
+  "scope": "仅本次一次右H2，原四组与Disable、17电机34停止读回及清场；不自动重试"
+}

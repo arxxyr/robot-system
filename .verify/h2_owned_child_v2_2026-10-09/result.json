@@ -1,0 +1,293 @@
+{
+  "schema": "P7_NATIVE_PREPARATION_V2",
+  "status": "PASS",
+  "deployable": false,
+  "started_at": "2026-10-09T18:48:48.272992+00:00",
+  "scope": "仅源码同步、新V2六配方七件及默认计划/help；无UART/安装/服务激活",
+  "runner_sha256": "d6b20da28de8d5ae077a93cb2fb5ba7f27a66b8145df9e7e91951cb14ac0b12b",
+  "preparation_sha256": "e3455dc8ecaae299d0d6d60d0d4c8a00556d10b4de3695e57c847a3b25fe9afd",
+  "artifacts_module_sha256": "bd2b3f7bb8527cd9ecec73894171638e9cf378656b89e284a585c3baa37b8731",
+  "proxy_runtime_overrides": {
+    "http_proxy": "http://10.0.1.80:10808",
+    "https_proxy": "http://10.0.1.80:10808",
+    "HTTP_PROXY": "http://10.0.1.80:10808",
+    "HTTPS_PROXY": "http://10.0.1.80:10808"
+  },
+  "stage_cargo_home": {
+    "nightly_update": "/home/loosqk/.cargo",
+    "cargo": "/home/loosqk/robot-checks/viz-orin-a6957cc-20260930-r1/cargo-home"
+  },
+  "helpers_before": {
+    "run_post_e_h2.py": "3b69527eb66115a3770b96ab55aa06d99716270399bb5cf2b0d84c1c9c51b9ae",
+    "post_e_h2_report.py": "bd35923146c3841ec5f4547b85b99494abbd93970cb1b805ce0fb7692b368387",
+    "post_e_h2_artifacts.py": "bd2b3f7bb8527cd9ecec73894171638e9cf378656b89e284a585c3baa37b8731"
+  },
+  "formal_before": [
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-gateway-left.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-gateway-right.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-s1-left.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-s1-right.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-s0-left-arm.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-s0-right-arm.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    }
+  ],
+  "reused_quality": {
+    "fmt": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/qa-r2/fmt/completion.json",
+      "sha256": "b554435a73d48c0345845d08200d21c1f0e9bcff540150a31ded613718a23e4f"
+    },
+    "clippy": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/qa-r2/clippy/completion.json",
+      "sha256": "297408f3efb7b3e32431915351342340383ca6ffc375806551b956eb4f1f9de3"
+    },
+    "python124": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/qa-r4/python_contracts/completion.json",
+      "sha256": "31d60cb92c75ff34ded6b7ca8b0f451228291f07a26fc3ce2f3bf085ac7c7e3a"
+    }
+  },
+  "artifacts": {
+    "production": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/production.json",
+      "sha256": "b08a0aaf6c5f354cd73dd984a0409c51937771895b53fd583697e71392185eec",
+      "validation": {
+        "valid": true,
+        "actual_build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+        "runtime_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+        "inherited_from_ancestor": false,
+        "kind": "production",
+        "artifacts": {
+          "s0_daemon": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/production/s0_daemon",
+          "xlerobot_deploy": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/production/xlerobot_deploy",
+          "s1_daemon": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/production/s1_daemon",
+          "robot_rpc_gateway": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/production/robot_rpc_gateway"
+        }
+      }
+    },
+    "measurement": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement.json",
+      "sha256": "3c4ce88c9a66204250d92dc22cb3e6e0d02351e6b6b7a6e031ae90a50475dda7",
+      "validation": {
+        "valid": true,
+        "actual_build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+        "runtime_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+        "inherited_from_ancestor": false,
+        "kind": "measurement",
+        "artifacts": {
+          "s0_daemon": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement/s0_daemon",
+          "robot_rpc_gateway": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement/robot_rpc_gateway",
+          "comm_fault_e2e": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement/comm_fault_e2e"
+        }
+      }
+    }
+  },
+  "source_after": "PASS",
+  "helpers_after": {
+    "run_post_e_h2.py": "3b69527eb66115a3770b96ab55aa06d99716270399bb5cf2b0d84c1c9c51b9ae",
+    "post_e_h2_report.py": "bd35923146c3841ec5f4547b85b99494abbd93970cb1b805ce0fb7692b368387",
+    "post_e_h2_artifacts.py": "bd2b3f7bb8527cd9ecec73894171638e9cf378656b89e284a585c3baa37b8731"
+  },
+  "isolation_after": "PASS",
+  "formal_after": [
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-gateway-left.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-gateway-right.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-s1-left.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-s1-right.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-s0-left-arm.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "MainPID": "0",
+      "Id": "xlerobot-s0-right-arm.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    }
+  ],
+  "finished_at": "2026-10-09T19:01:19.634248+00:00",
+  "receipts": [
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/sync_status/completion.json",
+      "sha256": "cc7f89056d0ba30601fc0b8a6c352153ef5f42dfd14effe7e139a5d0c756ab61"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/fetch/completion.json",
+      "sha256": "3cc2d48e0681f109167e3a1569f218a70ad390d69969105c4869dd1111d91d2a"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/remote_head/completion.json",
+      "sha256": "3835b37a02f45b308b169752a4641e5334cc146a4ed1350fb2ce193d2ab3116c"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/remote_overlay_0/completion.json",
+      "sha256": "6c3f24fbdc9ca740b37c66367a32626eee1037bb155b1a9dccd3d19452b878ed"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/remote_overlay_1/completion.json",
+      "sha256": "d8306173f70f7865d1b8333e04112abb5f44da09e1811944853e2efb381ee58e"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/restore_owned_overlays/completion.json",
+      "sha256": "cbffa436f507ec86f06e77522697f5ba0e13c3cf034f47a468428fccfd9228e6"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/ff/completion.json",
+      "sha256": "d3b0a94e4274e35c2e5327e1fc2a2f3155a08c24ea09438c22bdca54bd61c42e"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/source_before_head/completion.json",
+      "sha256": "87c03799ce59f296fb70ff7178e1dd933f37888035c856ac85833b94be34a37d"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/source_before_status/completion.json",
+      "sha256": "9e87891db6615e530c49fd4b8feb54d2c5f35cf75645108936a68e3f36d2e270"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/source_before_files/completion.json",
+      "sha256": "c97e6ae8c9a278ca089c9e2b1d3ff19c9f42b0518d943a6d48f588acfcb5cf89"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/formal_before_services/completion.json",
+      "sha256": "994085b4a99b089b9c0f70f4765253ec7de68bac583f39cc0bcb1b514d6c2986"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/nightly_update/completion.json",
+      "sha256": "5c2b5a229c4c90d144d6120ff1cb2501dc841f18656951946e9eae3657aead62"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/rustc_before/completion.json",
+      "sha256": "041454e96e7bdd8268b7b2430751719bc1c267e135cdc53f27ad5374230165c9"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/cargo_version/completion.json",
+      "sha256": "ba0c81e9866d0b47408e0cef7688b64535ab1abfbe07478e4de8877883ea305b"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/default_plan/completion.json",
+      "sha256": "9b5a2692d3c20d045fee5f86857d86517fdcb59868e6750ae3cac0053ea151ad"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/production_s0/completion.json",
+      "sha256": "9d7feaacb5a214806235a7cc766df4b538be0c9c30ee89d7b6c04d29061229a3"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/production_s1/completion.json",
+      "sha256": "dab0aa4254ebe5109cdc44688927483e79466a6b77e148f90fabf6727c0dfd36"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/production_gateway/completion.json",
+      "sha256": "29d31f584a303792a7df63d19c45c3654c6c6575a778dff936dfcc18fd61a0e2"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement_s0/completion.json",
+      "sha256": "df4f3cf80c2957f75dbad9e0569b0bc45e0e9f244eb730aed5413724fda944dc"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement_gateway/completion.json",
+      "sha256": "5da32c3a09329e0df27a8889cfd6a20ed7055a3abec3e031fae9b1e918915918"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement_tool/completion.json",
+      "sha256": "2e83c41dc323b97a14e445da620a39971e1a6e338be74ba8806a66d52281bfa8"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/rustc_after/completion.json",
+      "sha256": "0ec708a781720563ad6f7e47b2a4fd8d6534b4663711bd4d18243d4df39fcd46"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/help_production_s0_daemon/completion.json",
+      "sha256": "cfea34f0964da599eb543c2295ff0dc1e1d5c28c9e0a7d2370e8ce856318337b"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/help_production_xlerobot_deploy/completion.json",
+      "sha256": "1618fcbbe33201c0315d794ab6e8319fd04aabb9be69bd1866be8a701212cc4b"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/help_production_s1_daemon/completion.json",
+      "sha256": "d982659b0713f322992c37a1261eb1464130f556b4f914440c2493e9c4a3deae"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/help_production_robot_rpc_gateway/completion.json",
+      "sha256": "4437b515889b87793ba492f42997a752709a52b8487e96300d79d048f8193c94"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/help_measurement_s0_daemon/completion.json",
+      "sha256": "431a8be33efeb795bf8c9109640dd8b59954daf2b1906a6f3d33e652941e406f"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/help_measurement_robot_rpc_gateway/completion.json",
+      "sha256": "5ca1dcce80396c3f623acbc1c12bb7cef546110dd27c5a6249f6be1c3dc690f6"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/help_measurement_comm_fault_e2e/completion.json",
+      "sha256": "d281ae4ada341cefbf9cb319b11bde6668e83c4a4325a0d3c0ddc1a5faebe92b"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/source_after_head/completion.json",
+      "sha256": "679860f388d04f1235da5a697f675e657193df599a94058a7ec4b9e65dbffb70"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/source_after_status/completion.json",
+      "sha256": "5cb9634e6f77af8169ed79349a7f0f8117f8dc17ec2678a341e17d1a31acd594"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/source_after_files/completion.json",
+      "sha256": "2edc45608f74b6475922ee31c06807fc05a8d0fe5b9cb7d8dbb10c55dba5a145"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/formal_after_services/completion.json",
+      "sha256": "f10bdcd6f70967bac20d9d4df6e3a13e0f37f3f11a2317851f750616de876241"
+    }
+  ],
+  "interrupted_signal": null
+}

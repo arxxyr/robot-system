@@ -1,0 +1,45 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "NOT_LAUNCHED",
+  "status": "FAIL",
+  "owner_pid": 29819,
+  "command": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": null,
+  "started_utc": "2026-10-10T02:05:01.991585+00:00",
+  "started_monotonic_ns": 36088863939416,
+  "observe_seconds": 5,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [
+    {
+      "kind": "owner",
+      "error": "ValueError('input 要求规范绝对路径')",
+      "count": 1,
+      "first_utc": "2026-10-10T02:05:01.991855+00:00",
+      "last_utc": "2026-10-10T02:05:01.991858+00:00"
+    }
+  ],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v2/right_h2_a96_once.owner/child.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "finished_utc": "2026-10-10T02:05:01.991892+00:00",
+  "elapsed_ns": 176250
+}

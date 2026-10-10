@@ -2,6 +2,28 @@
 
 ## 当前步骤
 
+### 右 H2 测量通过、未知进程观察 FAIL（2026-10-10，本轮已停止）
+
+本次仅一次真实右H2，runtime/build为a96，597项Rust输入仍为5970c9be；authorize/launch各1，四组4000正式+400预热、4428原attempt及测量report PASS，最终非dry Disable Ack/Disarm通过。
+工具自然wait0/reap；driver整体FAIL/退出1，本机重连observer自然wait1/reap，不能以工具PASS覆盖。PID585588的exe读取ENOENT/errno2，同PID/start335412890、PGID571196、remaining R，当时归属与argv未证实。
+后续vanished或PGID leader为bash不用于推断该PID身份或追补PASS；首owner相对路径NOT_LAUNCHED、实际SSH首次自然255及只重连观察原pane的回执均保留，没有再次启动H2。
+两批非UART清场各11项只读门PASS；原整体cleanup均继承driver FAIL/退出1。final_buses17项/14child及本机SSH自然0通过，正式四件/六服务前后未变，重复11项不累计。
+17电机34项STOP寄存器读回本次NOT_RUN：root已要求立即断两个电机电源并支撑，其后不新增UART；实际断电确认PENDING、扭矩状态UNKNOWN，未记录解除看护。
+原件永久入口为 [.verify/right_h2_2026-10-10](../../.verify/right_h2_2026-10-10/summary.json)：4510文件原包SHA4286825d…、六owner目录及实际control/inputs/physical/GO与失败/最终run均按字节保存；不新增框架/index/verifier、源码tar或七ELF本体。
+旧H2/左腕/头1 FAIL、头2/底盘主动运动未验、D15 OPEN/DEFERRED及deployable=false保持；等待实际断电确认，本轮停止、不自动重试。
+提交前原生软件包已补：实际更新浮动nightly至32dba69d6，fmt→根Clippy及源码/编译器/Cargo后验通过，13条child自然exit0/reap、无信号/残留；主树与原生首尾597项逐项相同。硬件实际冻结build仍a30，不贴32d；无新增测试执行/release/UART/服务操作，软件PASS不覆盖硬件FAIL。两次独审与root核验范围见上述入口的review.md，原件commit-quality-originals-r1.tar.gz保留，不称4510文件全量封装审计。
+软件静查已定位扫描门：先详细读取同UID进程，完整身份后才分类related；585588在exe ENOENT而stat仍在时先进入unreadable。观察脚本有短进程churn，但原件未绑定该PID父子关系，不能确证自干扰或按不同PGID放行；未改代码/验收门。当前H2复授权仍按已批准D9执行电源复位与USB重插，普通连续调试不一概要求重插；新简化路径未批准/实现。
+
+### 自有 H2 退出观察修复后的 V2 准备（2026-10-09，软件原件已保存）
+
+原生源码/实际产物 HEAD 为 `a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d`；597项Rust输入聚合 `5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7`，实际nightly `a30aa9064`。
+六条实际release配方、七件冻结、33个直接命令exit0自然回收、七help及默认PLAN_ONLY通过；七ELF与旧c800同字节，不称全量fresh编译、完整Rustworkspace或新H2通过。
+r2实际fmt→根Clippy及r4完整124Python按同源复用，本轮未重跑；独审与root已核软件原件，正式四件和六服务前后未变。
+16项只读预检与当时两端同HEAD/clean/源alignment通过；本归档新增本地文档/证据，下一批须重新核当次alignment。
+简洁永久入口为 [.verify/h2_owned_child_v2_2026-10-09](../../.verify/h2_owned_child_v2_2026-10-09/summary.json)：149文件原包、直接JSON和一次性prepare/control原件按字节保存；不含七ELF本体、完整源码或旧Runner正文。
+root于2026-10-10 02:02:47UTC收到用户本次“全部已就绪，可持续看护并立即断电”确认；仅一次右H2四组、Disable、17电机34项停止读取及清场的现场授权已生效，新GO尚未生成、新硬件NOT_RUN。
+旧H2/左腕/头1 FAIL、头2/三轮主动运动待验、D15 OPEN/DEFERRED及deployable=false保持；仍须当次alignment核验和独立GO。本记录步骤无远端/UART、测试、服务操作或提交。
+
 ### 自有 H2 工具退出观察修复（2026-10-09，软件验收）
 
 仅在现有/proc探针中保留FileNotFoundError原errno/filename，并对唯一自有Popen、tool PID、完整launch/before与remaining同代次的PID相对字段ENOENT做一次真实wait；成功后单独保存原snapshot全文及退出观察，通用unreadable与其他PID/权限/错代次/仍活/未知字段仍严格拒绝。supervise/execute/report/cleanup、失败粘性及P99/RT/authority门不改，非零工具退出仍FAIL；旧硬件run没有新增字段，不追补PASS。

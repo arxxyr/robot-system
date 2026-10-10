@@ -1,0 +1,40 @@
+{
+  "status": "V2_SOFTWARE_PREPARED_HARDWARE_NOT_RUN",
+  "build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+  "native_base": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1",
+  "release_result": "PASS",
+  "source_after": "PASS",
+  "isolation_after": "PASS",
+  "actual_direct_commands": 33,
+  "actual_build_recipes": 6,
+  "frozen_artifacts": 7,
+  "helpers_before_after_equal": true,
+  "archive_sha256": "618144ca098964ebef92db746e25b9347cdb13aef94150d66147c1087ca67cc5",
+  "quality_reused": {
+    "fmt": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/qa-r2/fmt/completion.json",
+      "sha256": "b554435a73d48c0345845d08200d21c1f0e9bcff540150a31ded613718a23e4f"
+    },
+    "clippy": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/qa-r2/clippy/completion.json",
+      "sha256": "297408f3efb7b3e32431915351342340383ca6ffc375806551b956eb4f1f9de3"
+    },
+    "python124": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/qa-r4/python_contracts/completion.json",
+      "sha256": "31d60cb92c75ff34ded6b7ca8b0f451228291f07a26fc3ce2f3bf085ac7c7e3a"
+    }
+  },
+  "seven_elf_bytes_identical_to_previous_c800": true,
+  "hardware_old_fail_preserved": true,
+  "current_physical_state": "AWAITING_CURRENT_USER_CONFIRMATION",
+  "next": "新alignment/当前现场事实/一次右H2/17电机34停止读取/清场",
+  "d15": "OPEN/DEFERRED",
+  "deployable": false,
+  "readonly_checks": 16,
+  "readonly_status": "PASS",
+  "alignment_sha256": "3952785d57107a08816327c8b39a19dab5b097181c7c41e96d97b519e293e2e0",
+  "alignment_status": "PASS",
+  "hardware_new_run": "NOT_RUN",
+  "independent_dynamic_review": "PASS",
+  "independent_v2_review": "PASS"
+}

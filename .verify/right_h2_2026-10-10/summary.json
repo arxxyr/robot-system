@@ -1,0 +1,201 @@
+{
+  "schema": "RIGHT_H2_2026_10_10_ONCE_V1",
+  "status": "FAIL",
+  "scope": "仅一次真实右H2；本归档步骤只有本地复制与交接记录，无远端/UART/测试/提交。",
+  "runtime_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+  "source_binding": {
+    "rust_inputs": 597,
+    "sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+    "preparation": "../h2_owned_child_v2_2026-10-09/summary.json"
+  },
+  "execution": {
+    "authorization_attempts": 1,
+    "launch_attempts": 1,
+    "tool_pid": 568217,
+    "supervisor_pid": 568165,
+    "tool_exit": 0,
+    "tool_naturally_reaped": true,
+    "driver_exit": 1,
+    "driver_status": "FAIL",
+    "reconnected_local_observer_exit": 1,
+    "scope_note": "SSH255后只重连观察原tmux pane，没有再次启动H2。"
+  },
+  "measurement": {
+    "report": "PASS",
+    "groups": 4,
+    "formal_samples": 4000,
+    "warmup_samples": 400,
+    "attempts": 4428,
+    "judgement": "原P99/RT/authority/trace门；测量report PASS不能覆盖driver整体FAIL。",
+    "final_disable": "非dry Disable Ack/Disarm通过；原final_stop ok=true。"
+  },
+  "failure": {
+    "at_ns": 1791600881501180721,
+    "pid": 585588,
+    "error_filename": "exe",
+    "error_errno": 2,
+    "before_start_ticks": 335412890,
+    "remaining_start_ticks": 335412890,
+    "pgid": 571196,
+    "remaining_state": "R",
+    "ownership": "当时未证实归属，argv未知。",
+    "interpretation": "后续vanished或PGID leader为bash不能推断该PID当时argv/所有权，不能追补PASS。",
+    "originals": [
+      "control-v2/during_failure_run.json",
+      "control-v2/final_run.json"
+    ]
+  },
+  "preserved_entry_failures": {
+    "relative_owner_path": "NOT_LAUNCHED，未创建SSH child。",
+    "first_actual_ssh": "自然wait255/reap，原FAIL保留。",
+    "reconnect": "仅观察原pane，真实wait1/reap，原FAIL保留。"
+  },
+  "local_owner_receipts": {
+    "cleanup_final_readonly_r1.owner": {
+      "phase": "REAPED",
+      "status": "FAIL",
+      "wait_returncode": 1,
+      "reaped": true,
+      "owner_sent_signals": [],
+      "started_utc": "2026-10-10T03:04:39.360930+00:00",
+      "finished_utc": "2026-10-10T03:04:42.462621+00:00"
+    },
+    "cleanup_once_r1.owner": {
+      "phase": "REAPED",
+      "status": "FAIL",
+      "wait_returncode": 1,
+      "reaped": true,
+      "owner_sent_signals": [],
+      "started_utc": "2026-10-10T03:03:37.578583+00:00",
+      "finished_utc": "2026-10-10T03:03:40.976448+00:00"
+    },
+    "final_buses_r1.owner": {
+      "phase": "REAPED",
+      "status": "PASS",
+      "wait_returncode": 0,
+      "reaped": true,
+      "owner_sent_signals": [],
+      "started_utc": "2026-10-10T03:05:00.421597+00:00",
+      "finished_utc": "2026-10-10T03:05:02.702090+00:00"
+    },
+    "right_h2_a96_observe_only_r1.owner": {
+      "phase": "REAPED",
+      "status": "FAIL",
+      "wait_returncode": 1,
+      "reaped": true,
+      "owner_sent_signals": [],
+      "started_utc": "2026-10-10T02:15:54.135792+00:00",
+      "finished_utc": "2026-10-10T03:02:25.312191+00:00"
+    },
+    "right_h2_a96_once.owner": {
+      "phase": "NOT_LAUNCHED",
+      "status": "FAIL",
+      "wait_returncode": null,
+      "reaped": false,
+      "owner_sent_signals": [],
+      "started_utc": "2026-10-10T02:05:01.991585+00:00",
+      "finished_utc": "2026-10-10T02:05:01.991892+00:00"
+    },
+    "right_h2_a96_once_r2.owner": {
+      "phase": "REAPED",
+      "status": "FAIL",
+      "wait_returncode": 255,
+      "reaped": true,
+      "owner_sent_signals": [],
+      "started_utc": "2026-10-10T02:05:07.767008+00:00",
+      "finished_utc": "2026-10-10T02:11:21.465449+00:00"
+    }
+  },
+  "stop_readback_17_motors_34_registers": {
+    "status": "NOT_RUN",
+    "reason": "root已要求现场立即断两个电机电源并支撑，其后不新增UART。",
+    "register_readback": "NOT_PERFORMED",
+    "physical_torque_state": "UNKNOWN"
+  },
+  "cleanup": {
+    "first_non_uart_checks": 11,
+    "second_non_uart_checks": 11,
+    "readonly_checks": "两批均PASS；重复同门不累计为22项不同检查。",
+    "overall_cleanup_reports": "两批原status=FAIL、readonly_cleanup_status=PASS；各本机SSHowner自然wait1/reap，失败粘性保持。",
+    "final_buses": {
+      "status": "PASS",
+      "checks": 17,
+      "commands": 14,
+      "uart_opened": false,
+      "local_ssh_exit": 0,
+      "local_ssh_reaped": true
+    },
+    "formal_four_and_six_services_before_after_equal": true
+  },
+  "physical_power": {
+    "immediate_two_motor_power_cut_requested": true,
+    "confirmation": "PENDING",
+    "actual_cut_at": "UNKNOWN",
+    "supervision": "未记录解除看护；等待用户确认实际断电并保持机械臂支撑。"
+  },
+  "archive": {
+    "path": "hardware-originals-r1.tar.gz",
+    "sha256": "4286825dd8fdcf4c982cf3464cd097eb3cfc4d2e91647aa2d41caa4da53c5b00",
+    "bytes": 18729202,
+    "files": 4510,
+    "coverage": "原生完整H2、raw/capture/spool、两批清场/17aux、bootstrap实际脚本与GO；无新增框架/index/verifier/源码tar或七ELF本体。"
+  },
+  "copied_local_originals": {
+    "owner_directories": [
+      "cleanup_final_readonly_r1.owner",
+      "cleanup_once_r1.owner",
+      "final_buses_r1.owner",
+      "right_h2_a96_observe_only_r1.owner",
+      "right_h2_a96_once.owner",
+      "right_h2_a96_once_r2.owner"
+    ],
+    "control_files": [
+      "h2_launch_r1.sh",
+      "tmux_h2_observer_r1.sh",
+      "tmux_h2_observe_only_r1.sh",
+      "cleanup_once_r1.sh",
+      "cleanup_final_readonly_r1.sh",
+      "final_buses_r1.sh",
+      "ssh_owner.py",
+      "post_h2_cleanup.py",
+      "prelaunch_go.py",
+      "s52-right-inputs-r1.json",
+      "s52-right-physical-r1.json",
+      "s52-right-go-r1.json",
+      "during_failure_run.json",
+      "final_run.json"
+    ],
+    "files_including_archive": 38,
+    "all_copies_byte_equal": true
+  },
+  "preserved_state": {
+    "H2": "本次及旧整体FAIL保持",
+    "left_wrist": "FAIL保持",
+    "head1": "FAIL保持",
+    "head2_and_base_active_motion": "未验",
+    "D15": "OPEN/DEFERRED",
+    "deployable": false
+  },
+  "commit_quality": {
+    "status": "PASS",
+    "archive": "commit-quality-originals-r1.tar.gz",
+    "sha256": "e85e383dba8f992b33ecf960b996b6c049193f532f4ae2d470681fefa308a02c",
+    "bytes": 104521,
+    "files": 60,
+    "actual_commands": 13,
+    "quality_order": "实际rustup update nightly、身份、cargo fmt --all、cargo clippy --all --all-targets -- -D warnings、源码/编译器/Cargo后验；均exit0、自然reap、无信号/残留。",
+    "compiler": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "native_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+    "main_and_native_before_after_597_equal": true,
+    "scope": "软件检查，无测试执行、release、UART、机器人服务操作；硬件实际冻结产物仍由a30编译，不贴为32d产物，不覆盖H2整体FAIL。",
+    "main_actual_nightly_update_and_fmt": "PASS：本机实际更新至32dba69d6后cargo fmt --all退出0，597项再次与原生Clippy源码逐项相等；未称本机Clippy通过。"
+  },
+  "review": {
+    "status": "PASS",
+    "scope": "独审抽核必要硬件核心原件及完整13条提交前软件回执；root另核主树与原生597项逐项相同。不是全量4510文件封装审计。",
+    "record": "review.md",
+    "hardware_overall": "FAIL",
+    "observer_self_interference": "机制可能、具体归属UNKNOWN，未修改代码或观察门。"
+  },
+  "next": "等待现场实际断电确认；本轮停止，不新增UART、硬件动作或自动重试。"
+}

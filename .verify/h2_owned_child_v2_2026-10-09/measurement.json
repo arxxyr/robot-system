@@ -1,0 +1,265 @@
+{
+  "schema": "P7_RELEASE_ARTIFACTS_V2",
+  "kind": "measurement",
+  "deployable": false,
+  "build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+  "build_root": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source",
+  "toolchain": "nightly",
+  "machine": 183,
+  "source_manifest": {
+    "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/source_before.json",
+    "sha256": "8f89561d4fe826cec48aa672f8137b299634082c9ac38613fddbb4f8b0c34670"
+  },
+  "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+  "artifact_directory": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement",
+  "builds": {
+    "s0": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement_s0/completion.json",
+      "sha256": "df4f3cf80c2957f75dbad9e0569b0bc45e0e9f244eb730aed5413724fda944dc"
+    },
+    "gateway": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement_gateway/completion.json",
+      "sha256": "5da32c3a09329e0df27a8889cfd6a20ed7055a3abec3e031fae9b1e918915918"
+    },
+    "tool": {
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement_tool/completion.json",
+      "sha256": "2e83c41dc323b97a14e445da620a39971e1a6e338be74ba8806a66d52281bfa8"
+    }
+  },
+  "artifacts": {
+    "s0_daemon": {
+      "sha256": "2add2048ad964729be5f3370e953d99909e2425b2401e5fbe191d5d47a1d2d26",
+      "bytes": 4958296,
+      "mode": 448,
+      "elf_machine": 183,
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement/s0_daemon",
+      "cargo_path": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/s0_daemon",
+      "build": "s0",
+      "compiler_artifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/crates/robot-s0#0.1.2",
+        "manifest_path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/crates/robot-s0/Cargo.toml",
+        "target": {
+          "kind": [
+            "bin"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "s0_daemon",
+          "src_path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/crates/robot-s0/src/bin/s0_daemon.rs",
+          "edition": "2024",
+          "doc": true,
+          "doctest": false,
+          "test": true
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": false
+        },
+        "features": [
+          "feetech",
+          "mock",
+          "rt_guard",
+          "test-comm-fault-hook",
+          "xlerobot",
+          "xlerobot-real"
+        ],
+        "filenames": [
+          "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/s0_daemon"
+        ],
+        "executable": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/s0_daemon",
+        "fresh": false
+      },
+      "features": [
+        "feetech",
+        "mock",
+        "rt_guard",
+        "test-comm-fault-hook",
+        "xlerobot",
+        "xlerobot-real"
+      ],
+      "profile": "release",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--message-format=json",
+        "-p",
+        "robot-s0",
+        "--bin",
+        "s0_daemon",
+        "--no-default-features",
+        "--features",
+        "xlerobot-real,rt_guard,test-comm-fault-hook"
+      ],
+      "exit_code": 0,
+      "build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+      "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+      "sidecar": {
+        "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement/s0_daemon.build.json",
+        "sha256": "2bf429c53bc1f0c3209e9747e28d8da5e4b1e0e468c1d3a5c319bec29724478d"
+      }
+    },
+    "robot_rpc_gateway": {
+      "sha256": "0b40c61ffb9d0519c53ed6a81896b0904bddbddfd0ae6c8e76a31da266ce726a",
+      "bytes": 6073512,
+      "mode": 448,
+      "elf_machine": 183,
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement/robot_rpc_gateway",
+      "cargo_path": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/robot_rpc_gateway",
+      "build": "gateway",
+      "compiler_artifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/crates/robot-rpc#0.1.2",
+        "manifest_path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/crates/robot-rpc/Cargo.toml",
+        "target": {
+          "kind": [
+            "bin"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "robot_rpc_gateway",
+          "src_path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/crates/robot-rpc/src/bin/robot_rpc_gateway.rs",
+          "edition": "2024",
+          "doc": true,
+          "doctest": false,
+          "test": true
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": false
+        },
+        "features": [
+          "test-comm-fault-hook"
+        ],
+        "filenames": [
+          "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/robot_rpc_gateway"
+        ],
+        "executable": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/robot_rpc_gateway",
+        "fresh": false
+      },
+      "features": [
+        "test-comm-fault-hook"
+      ],
+      "profile": "release",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--message-format=json",
+        "-p",
+        "robot-rpc",
+        "--bin",
+        "robot_rpc_gateway",
+        "--no-default-features",
+        "--features",
+        "test-comm-fault-hook"
+      ],
+      "exit_code": 0,
+      "build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+      "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+      "sidecar": {
+        "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement/robot_rpc_gateway.build.json",
+        "sha256": "af4b670fce0acae22ab982d88b6d5bbedb4414580abb1d51b8c836007dee8156"
+      }
+    },
+    "comm_fault_e2e": {
+      "sha256": "f6b70668c5d0927bd868c4ce7abec77fcbfb2279c22e97b97612c3faaac9ae09",
+      "bytes": 5798272,
+      "mode": 448,
+      "elf_machine": 183,
+      "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement/comm_fault_e2e",
+      "cargo_path": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/comm_fault_e2e",
+      "build": "tool",
+      "compiler_artifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/crates/robot-tests#0.1.2",
+        "manifest_path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/crates/robot-tests/Cargo.toml",
+        "target": {
+          "kind": [
+            "bin"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "comm_fault_e2e",
+          "src_path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/crates/robot-tests/src/bin/comm_fault_e2e.rs",
+          "edition": "2024",
+          "required-features": [
+            "comm-fault-e2e"
+          ],
+          "doc": true,
+          "doctest": false,
+          "test": true
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": false
+        },
+        "features": [
+          "comm-fault-e2e",
+          "comm-fault-rpc",
+          "real-hw"
+        ],
+        "filenames": [
+          "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/comm_fault_e2e"
+        ],
+        "executable": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/comm_fault_e2e",
+        "fresh": false
+      },
+      "features": [
+        "comm-fault-e2e",
+        "comm-fault-rpc",
+        "real-hw"
+      ],
+      "profile": "release",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--message-format=json",
+        "-p",
+        "robot-tests",
+        "--bin",
+        "comm_fault_e2e",
+        "--no-default-features",
+        "--features",
+        "comm-fault-e2e,real-hw"
+      ],
+      "exit_code": 0,
+      "build_head": "a96c34ae26b56fc9e8d2deef17c3b829c3d87d0d",
+      "source_manifest_sha256": "5970c9bed0ab02f99b47d88d47eb3718c6a748155ca4fafd5c18050a68ec6cf7",
+      "sidecar": {
+        "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/measurement/comm_fault_e2e.build.json",
+        "sha256": "c5621b832043bcd70c1d9dd84dfc43d2d567380fbb697eb4942ff337862648bc"
+      }
+    }
+  },
+  "rustc_before": {
+    "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/rustc_before/completion.json",
+    "sha256": "041454e96e7bdd8268b7b2430751719bc1c267e135cdc53f27ad5374230165c9"
+  },
+  "rustc_after": {
+    "path": "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/release-r1/rustc_after/completion.json",
+    "sha256": "0ec708a781720563ad6f7e47b2a4fd8d6534b4663711bd4d18243d4df39fcd46"
+  },
+  "rustc_identity": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "a30aa9064df6a504b6a323c6884a2f4cfbfff666",
+    "host": "aarch64-unknown-linux-gnu"
+  }
+}
