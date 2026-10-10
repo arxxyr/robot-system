@@ -1,0 +1,222 @@
+{
+  "schema": "PRESENT_LOAD_READ_SOFTWARE_ARCHIVE_MANIFEST_R10_V1",
+  "recorded_at_utc": "2026-10-10T11:05:17.815925+00:00",
+  "manifest_self_sha": "自引用排除；由root验收回执绑定本文件",
+  "archive_relative_files": {
+    "native-originals.tar.gz": {
+      "sha256": "69205bf6d55724abc8835f1cb0e8ba671e96d8d03bf15190b9a0de2e58c6951a",
+      "bytes": 297659,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals.tar.gz"
+    },
+    "local/local-r1/cargo_before.receipt.json": {
+      "sha256": "0d7751fc77a9df96c9faa0e13530613c5a7c90c990f6e89aec37f8337303f6d4",
+      "bytes": 775,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/cargo_before.receipt.json"
+    },
+    "local/local-r1/cargo_before.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/cargo_before.stderr"
+    },
+    "local/local-r1/cargo_before.stdout": {
+      "sha256": "556474e0da49f393e6995d22dc01577bc3f1f40ff823e027d535c0a53fbab080",
+      "bytes": 353,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/cargo_before.stdout"
+    },
+    "local/local-r1/clippy.receipt.json": {
+      "sha256": "3dd9e8c3a378903675ede885b30e95fdb7523ec456b293b453663316762b20fb",
+      "bytes": 905,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/clippy.receipt.json"
+    },
+    "local/local-r1/clippy.stderr": {
+      "sha256": "4358f3030a589347fc169efba2aaed271a79b7281ff08943d73217ef803b9366",
+      "bytes": 181,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/clippy.stderr"
+    },
+    "local/local-r1/clippy.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/clippy.stdout"
+    },
+    "local/local-r1/first_local_receipt_classification_failure.txt": {
+      "sha256": "b8445ac4d62544268ba76ba23b77c9ed78e1efc922ed3c3056de83ad213f977c",
+      "bytes": 297,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/first_local_receipt_classification_failure.txt"
+    },
+    "local/local-r1/fmt.receipt.json": {
+      "sha256": "fc9ca2795c78cdf498656338f0acea1d214a5f2786057532436468e5d0f18f26",
+      "bytes": 759,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/fmt.receipt.json"
+    },
+    "local/local-r1/fmt.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/fmt.stderr"
+    },
+    "local/local-r1/fmt.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/fmt.stdout"
+    },
+    "local/local-r1/lib_default.receipt.json": {
+      "sha256": "6ef3144b05ee657fe0b5336806b22687fe1962a4a02f783d8399a4c466de3202",
+      "bytes": 845,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/lib_default.receipt.json"
+    },
+    "local/local-r1/lib_default.stderr": {
+      "sha256": "bc8aac9b75b011da620b9b147e13aa9dd64a341f75adb7828fbb3f8bec552e0a",
+      "bytes": 520,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/lib_default.stderr"
+    },
+    "local/local-r1/lib_default.stdout": {
+      "sha256": "76c1fec683b8dd6e915640f9fa48054be6164ea7fc44b2f7b7700272471ad11e",
+      "bytes": 17191,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/lib_default.stdout"
+    },
+    "local/local-r1/poke.receipt.json": {
+      "sha256": "a4d39becabdb99643dd9651a3312bc3f33d6f11b0e8aaaa8e474ebde501f0127",
+      "bytes": 880,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/poke.receipt.json"
+    },
+    "local/local-r1/poke.stderr": {
+      "sha256": "8bf072870c32eeb79410e33188de0aae7b21c6c25c09b6d8f1edfb59b4891334",
+      "bytes": 324,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/poke.stderr"
+    },
+    "local/local-r1/poke.stdout": {
+      "sha256": "1197aee3a4fca5fb73888d741b9158152a70bddd986ff40c53855a1cc15b525c",
+      "bytes": 1137,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/poke.stdout"
+    },
+    "local/local-r1/preopen_denial.receipt.json": {
+      "sha256": "8efd061c8319fc6aa63f8adf0dc6c26de67ab42074e723a8e2a0682113006b99",
+      "bytes": 1033,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/preopen_denial.receipt.json"
+    },
+    "local/local-r1/preopen_denial.stderr": {
+      "sha256": "58cb8d068e23b5b4d9015a1aca8f45b6b757761a4c2f3efb23fa8b32b95367e9",
+      "bytes": 343,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/preopen_denial.stderr"
+    },
+    "local/local-r1/preopen_denial.stdout": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/preopen_denial.stdout"
+    },
+    "local/local-r1/result.json": {
+      "sha256": "e95526d2dbabba3c2073cdeefa548ce82b3767c21991668b2ed6a7fea551909b",
+      "bytes": 6999,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/result.json"
+    },
+    "local/local-r1/rustc_before.receipt.json": {
+      "sha256": "22b127d588da5ce45a9584e69166bb84d4d88f53c7ae99f9a1841708280adb69",
+      "bytes": 775,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/rustc_before.receipt.json"
+    },
+    "local/local-r1/rustc_before.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/rustc_before.stderr"
+    },
+    "local/local-r1/rustc_before.stdout": {
+      "sha256": "780be7daa749ad72ae552568862821c9eaa320eab12330a8cfa73693e116c3a5",
+      "bytes": 210,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/rustc_before.stdout"
+    },
+    "local/local-r1/source_after.json": {
+      "sha256": "52eebda930aaf494c3f8c4403b61635e78210323fe61961ac168dccfbc18a8a5",
+      "bytes": 875,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/source_after.json"
+    },
+    "local/local-r1/source_before.json": {
+      "sha256": "19ebe1049bf56130f1ec9f42816b9b6e507f2947316daeb99db7a7506eb0b51e",
+      "bytes": 875,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/source_before.json"
+    },
+    "local/local-reconciliation-r1/cargo_after.receipt.json": {
+      "sha256": "486a6a43dd2675c2555bcdf92e0845b3fbff8028a4dce553126fa9a39fb2e13d",
+      "bytes": 759,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-reconciliation-r1/cargo_after.receipt.json"
+    },
+    "local/local-reconciliation-r1/cargo_after.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-reconciliation-r1/cargo_after.stderr"
+    },
+    "local/local-reconciliation-r1/cargo_after.stdout": {
+      "sha256": "556474e0da49f393e6995d22dc01577bc3f1f40ff823e027d535c0a53fbab080",
+      "bytes": 353,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-reconciliation-r1/cargo_after.stdout"
+    },
+    "local/local-reconciliation-r1/rustc_after.receipt.json": {
+      "sha256": "aff567cf60a010f408de3edabdc14dc3845fcc3b7baf3bfb874d4579e423130c",
+      "bytes": 759,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-reconciliation-r1/rustc_after.receipt.json"
+    },
+    "local/local-reconciliation-r1/rustc_after.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-reconciliation-r1/rustc_after.stderr"
+    },
+    "local/local-reconciliation-r1/rustc_after.stdout": {
+      "sha256": "780be7daa749ad72ae552568862821c9eaa320eab12330a8cfa73693e116c3a5",
+      "bytes": 210,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-reconciliation-r1/rustc_after.stdout"
+    },
+    "local/local-reconciliation-r1/summary.json": {
+      "sha256": "8589062a4495b46dbd117add3f3527eadf18ec3831605c0c490e70643a9f89a8",
+      "bytes": 4744,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-reconciliation-r1/summary.json"
+    },
+    "review/root_native_software_review_r10.json": {
+      "sha256": "096da3eeb39ac08e633295da894b48ca9f668e502975ccac5b8a27349e342a7d",
+      "bytes": 12050,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/root_native_software_review_r10.json"
+    },
+    "review/native_original_verification_r10.json": {
+      "sha256": "d421bec4d62709ac2c481a150e5135c8030e85e9b82015b7a4434a8eddd086a5",
+      "bytes": 24423,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/native_original_verification_r10.json"
+    },
+    "review/native_download_receipt_r10.json": {
+      "sha256": "b1804a555652127ba86d1cc9b2d757e6ffd96bad1e9886aacbc65a480ed7937a",
+      "bytes": 3590,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/native_download_receipt_r10.json"
+    },
+    "lifecycle/local-ssh-owner/launch.json": {
+      "sha256": "fd26dcc697cd3109912265ba4f67901dad3cfa54f8354d4effdfc76f0b56cc29",
+      "bytes": 1037,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_load_software_r10.owner/launch.json"
+    },
+    "lifecycle/local-ssh-owner/result.json": {
+      "sha256": "a60a83795f89c3832a1d09f60269fc57315896adf632aa10b610eb130e97b4d1",
+      "bytes": 1521,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_load_software_r10.owner/result.json"
+    },
+    "lifecycle/local-ssh-owner/child.log": {
+      "sha256": "4442594bb45a3f6c646aa972f7f6a13bfb2c24b7a1220aae05ca63a6b88d119b",
+      "bytes": 449468,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_load_software_r10.owner/child.log"
+    },
+    "field/field_inspection_reply_r10.json": {
+      "sha256": "145b8af4e0a5159b84f8e3a77b79099818f204f33306959d21c422375e1b54a6",
+      "bytes": 635,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-mechanical-diagnosis-r10/field_inspection_reply_r10.json"
+    },
+    "field/power_restored_r10.json": {
+      "sha256": "f226ea1ce6dcef00531566ac3a7d1d8006dbc4e9e28ee220e4eddba5c11a81aa",
+      "bytes": 419,
+      "original_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-mechanical-diagnosis-r10/power_restored_r10.json"
+    },
+    "summary.json": {
+      "sha256": "626b75c248d5bbe5d64d2d7e7ccfbff403d5664f8d870c267ec3233ab94a02e0",
+      "bytes": 8731,
+      "kind": "本次派生归档元数据"
+    }
+  },
+  "native_tar": {
+    "path": "native-originals.tar.gz",
+    "regular_files": 136,
+    "original_file_bytes": 1430259
+  }
+}

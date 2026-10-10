@@ -2,6 +2,26 @@
 
 ## 当前步骤
 
+### 头1负向出程 +8，平台驱动输出原字44（2026-10-10，R10实机已收尾）
+
+root收到本轮“现场仍就绪，可执行本次头1测试”，仅签一次left7原P16/D43/I0负向24尝试与平台最多一次Present_Load原帧。候选最终r3在本机/Orin各14内存方法、默认零动作、缺GO拒绝与完整PLAN准备通过；原r1的12方法PASS、r2的14方法PASS保留，r2随后发现普通Load故障被包装为精度错误的分类问题，经r3修正为ACTION_FAILED后验收，原结果不回填、不累计不同修订的方法数。原±4/800ms、±32保护及STOP51保持，不续期限或改参数；相机未重复采集。
+
+本次锚点2138、目标2114，约190.721ms起停在2122（+8）；14个位置样本未进入原±4门，出程窗口800.059801ms后FAIL，回程NOT_RUN。平台首次符合采集条件时仅执行一次left7地址60/2B read-raw，约出程313.371ms启动、8.378ms返回，原响应`ff ff 07 04 00 2c 00 c8`，ID/长度/status0/checksum与unsigned44一致；夹前后PP均2122/+8。厂家把此字段名义描述为当前驱动占空比，非零只支持该瞬间仍报告驱动输出，不能换算成实测扭矩、确认整个窗口持续驱动，或证明摩擦/齿隙/负载/安装等机械根因，现场FW3.10单位语义未另验。
+
+仅left7四次写GP2138、TE1、GP2114、TE0，PDI、底盘与相机启动均0，无自动重试。最终17电机STOP51整数零、74项身份和独立17项非UART后验通过，manual_power_cut_required=false；STOP读回不替代实际断电事实。348直属child/696输出已核并自然wait/reap，driver627613由tmux观测自然dead/exit1，自有dead pane终态后回收；本机owner83539/SSH83540自然exit0/reap，不冒充root对driver直接waitpid。整体run33c89057/542385B与精度FAIL保持，必要原件：[R10硬件摘要](../../.verify/position_return_2026-10-10_r10/summary.json)；唯一原tar含732件，归档不重复展开或复制ELF。
+
+本轮GO已消耗，root已告本轮看护收尾，不构成再次动作授权。最后供电事实是用户报告已恢复、当次现场持续看护确认，独立电气遥测UNKNOWN；没有因STOP失败要求人工断电。前述“没有卡住”只支持未报告明显硬卡，仍未闭环根因。本次没有新Rust测试/构建、正式安装或服务激活；Present_Load软件验收与本次候选/硬件分包，Rust43件归档保持原字节。R9负向出程+6/回程NOT_RUN、R8回程+7及更早FAIL、旧±50 OPEN均保留；左腕仅临时I1 PASS后恢复I0、头2旧FAIL、长期参数及三轮主动运动尚未验收，D15 OPEN/DEFERRED、deployable=false不变。
+
+### Present_Load只读小件软件验收，真实采集未执行（2026-10-10，R10）
+
+现有表新增Present_Load@60/2B unsigned，仅read/read-raw保留原word；四具名写API及poke在开串口前复用DiagnosticRegisterWriteForbidden。未加入符号metadata、单位换算、EEPROM或位置控制行为。READ1/SYNC3 golden校验分别0xba/0x22；厂家表名义为当前驱动占空比，不等于已验证扭矩或现场FW3.10语义。
+
+本机fmt→crate Clippy、217库与13工具方法通过，实际拒写CLI exit2且自然回收。首分类脚本误要求英文diagnostic，实际中文“本项目诊断专用寄存器禁止写入：Present_Load”正确，原batch FAIL保留；后继reconciliation只解析原stderr并补编译器尾部身份，没有重跑上述门。Orin实际fmt→根Clippy、同217库+13工具、独立release及help/Present_Load写入两个真实ELF预期exit2通过。每平台去重230，不累计为460；24 Runner/48输出、两个真实ELF child、同SSH四个child与本机owner77380/SSH77381均自然wait/reap。nested Cargo PID未导出，无TTY系统调用trace，不宣称系统调用级观测。
+
+两端597输入与原生三窗口逐项相同、聚合3a4cc12e，nightly1.101.0/32d首尾相同；native894加五处源码dirty，与host HEAD不同，以同源窗口绑定。新诊断ELF2949ccb2/1514376B仅独立诊断，不替换冻结f201位置控制或13c原始读回工具；本批没有完整workspace测试、RT/H2、正式安装、服务激活或新的正式四件后验。root第一次本地归档窗口名解析失败与本机摘要KeyError均为本机只读解读错误，原FAIL/工具输出保留，未重跑远端recipe。必要原件：[R10只读软件摘要](../../.verify/present_load_read_2026-10-10_r10/summary.json)；唯一136件原tar、本机原FAIL/reconciliation、owner原三流和现场回复均保留，不重复展开或复制ELF。
+
+现场对机械检查请求回复“没有卡住”，只支持未报告明显硬卡；未提供实际断电确认，不能排除摩擦、齿隙、负载或证明根因。随后回复“刚插上的电源”，最新仅为用户报告恢复供电，独立电气遥测UNKNOWN，不能替代新的持续看护确认或动作授权。R10薄候选已完成两端14方法与默认零动作/缺GO及PLAN准备，另属动作准备，不计入本Rust软件包；本软件阶段记录时，新现场看护问询仍待答，尚无新GO、真实Load/UART读取或动作；其后的独立R10实机事实见上方最新阶段。原P16/D43/I0保持，D0对照未执行；原±4/800ms和STOP51未改。R9出程+6 FAIL/回程NOT_RUN、R8回程+7、R5/I2与R6/P24回程+6、旧±50 OPEN保持；左腕仅临时I1 PASS后恢复I0、头2旧FAIL、长期参数与底盘主动运动未验，D15 OPEN/DEFERRED、deployable=false不变。
+
 ### 头1反向出程 +6，同期图像支持实动（2026-10-10，R9已收尾）
 
 用户确认照明和背景静止后，三路相机短时取图通过；录图期间原17项非UART门通过。随后收到本轮“现场仍就绪，可执行本次往返并同步拍摄”，root于09:49:03.426329UTC记录当前现场事实，只签一次原P16/I0头1负向24动作及独立三路录图。候选仅适配负向目标范围和最小实际行程，六个内存方法、默认零动作及缺GO拒绝通过；原±4/800ms、±32保护、停止和身份门保持。

@@ -1,0 +1,40 @@
+{
+  "name": "preopen_denial",
+  "argv": [
+    "cargo",
+    "run",
+    "--locked",
+    "-p",
+    "robot-adapter-feetech",
+    "--features",
+    "real-hw",
+    "--example",
+    "feetech_poke",
+    "--",
+    "/dev/never-open",
+    "1",
+    "write",
+    "Present_Load",
+    "bad-value"
+  ],
+  "pid": 76891,
+  "started_ns": 1791628852138777000,
+  "finished_ns": 1791628852749852000,
+  "exit_code": 2,
+  "expected_exit_code": 2,
+  "wait_returncode": 2,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/preopen_denial.stdout",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/preopen_denial.stderr",
+    "bytes": 343,
+    "sha256": "58cb8d068e23b5b4d9015a1aca8f45b6b757761a4c2f3efb23fa8b32b95367e9"
+  },
+  "denial_text_confirmed": false,
+  "pass": false
+}

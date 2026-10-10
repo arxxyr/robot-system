@@ -1,0 +1,95 @@
+{
+  "scope": "本机模板静态检查；没有SSH/上传/新tmux/UART/动作/GO签发。",
+  "files": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-load-preparation-r10/native-preparation/start_head1_load_observation_once_r10.draft.sh",
+      "sha256": "7dd040aa88aed153292d6bdacb1b59efe97cc94285440e91058c00c157ef34c8",
+      "bytes": 8295
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-load-preparation-r10/native-preparation/launch_head1_load_observation_r10.draft.sh",
+      "sha256": "ddf1e4b115711c17b1770c2947bf2770fc46c317272789e81b5c82edbca1a139",
+      "bytes": 1274
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-load-preparation-r10/native-preparation/observe_once_r10.draft.sh",
+      "sha256": "7a4e1c26c15b24db83edb376c72c70290083288f9374b78dd13ff694684ea8bf",
+      "bytes": 3543
+    }
+  ],
+  "ast_compile": "PASS",
+  "decoded_launcher_equals_saved_bytes": true,
+  "single_tmux_call": 1,
+  "candidate_execute_count": 1,
+  "root_fields_placeholder": [
+    "FIELD_STAMP",
+    "FIELD_EXPECTED",
+    "GO_EXPECTED"
+  ],
+  "no_go_zero_start_boundary": "首个assert在任何refs读取/目录创建/Popen之前；仅静态检查，未实际调用原生starter。",
+  "syntax_children": [
+    {
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-load-preparation-r10/native-preparation/start_head1_load_observation_once_r10.draft.sh"
+      ],
+      "pid": 82613,
+      "started_ns": 1791630426364593000,
+      "finished_ns": 1791630426370197000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-load-preparation-r10/native-preparation/launch_head1_load_observation_r10.draft.sh"
+      ],
+      "pid": 82614,
+      "started_ns": 1791630426370265000,
+      "finished_ns": 1791630426375373000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-load-preparation-r10/native-preparation/observe_once_r10.draft.sh"
+      ],
+      "pid": 82615,
+      "started_ns": 1791630426375447000,
+      "finished_ns": 1791630426380142000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    }
+  ],
+  "previous_software_deadpane": {
+    "original_path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/bootstrap/load-r10/same_ssh_direct_receipts_r10.json",
+    "original_sha256": "d1496d7ce43d6c7093bf957d8bbdddc223331fc49ec75082633a18be9286bf03",
+    "original_bytes": 4988,
+    "kind": "software",
+    "session": "position-load-software-20261010-r10",
+    "window": "@64",
+    "pane": "%64",
+    "runtime_pid": 626726,
+    "verified_natural_dead": 1,
+    "verified_exit": 0,
+    "identity_child_pid": 627444,
+    "reclaim_dead_child_pid": 627445,
+    "status": "原批次已清理dead owned pane，本轮没有再次SSH查询或清理。"
+  }
+}

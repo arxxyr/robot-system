@@ -1,0 +1,3 @@
+   Compiling robot-adapter-feetech v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech)
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.78s
+     Running unittests examples/feetech_poke.rs (target/debug/build/robot-adapter-feetech/b056ef31f84cd7f0/out/feetech_poke-b056ef31f84cd7f0)

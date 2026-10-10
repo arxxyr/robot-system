@@ -1,0 +1,18 @@
+{
+  "status": "ROOT_FIELD_AND_ONCE_STARTER_ACCEPTED",
+  "recorded_at_ns": 1791630439554292000,
+  "plan_sha256": "258aa3953afc67cde3cfd4f836749181892914dcc487ea78c2e554cee16209a5",
+  "candidate_sha256": "8855037db957317ea1a5de8d9e517e314878376dc7b3beec505df25352788c31",
+  "field_sha256": "814c5d43d916e455c032abfc6816132edb2957c7bc66455321362f231eb6b1f9",
+  "field_bytes": 704,
+  "go_sha256": "19238585e98c69926ac6621a2adfbe56c05d15a651200725d774343cb75d0eb3",
+  "go_bytes": 1311,
+  "field_confirmed_at_ns": 1791630439551636000,
+  "go_expires_at_ns": 1791631039551636000,
+  "starter_sha256": "f7446d05a7fb9a3a0a9cfd776c2501a5f35f9bd2515b1cd67ae429b655d82d1d",
+  "starter_bytes": 8449,
+  "motor_launcher_sha256": "ddf1e4b115711c17b1770c2947bf2770fc46c317272789e81b5c82edbca1a139",
+  "camera_starts": 0,
+  "hardware_started_by_this_local_review": 0,
+  "scope": "仅头1left7原P16/D43/I0一次-24尝试往返，原±4/800ms和±32保持，平台最多一次Present_Load原帧，出程FAIL不强行回程，最终Disable与17电机STOP51；底盘不动作、参数写0、相机不重复采集"
+}

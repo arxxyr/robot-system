@@ -1,0 +1,281 @@
+{
+  "scope": "只核已到达本机R10原件；没有新增SSH/UART。",
+  "run_sha256": "33c8905710428a1bccbbe6af928776f7fdaab4511869899ded79bb5e442a5136",
+  "run_bytes": 542385,
+  "result": "FAIL",
+  "precision": {
+    "status": "FAIL",
+    "stage": "outward",
+    "anchor_raw": 2138,
+    "target_raw": 2114,
+    "final_position_raw": 2122,
+    "final_error_raw": 8,
+    "samples": 14,
+    "budget_ms": 800,
+    "tolerance_raw": 4,
+    "return": "NOT_RUN"
+  },
+  "load": {
+    "command_sequence": 217,
+    "pid": 627861,
+    "status": "SAMPLED",
+    "raw_unsigned": 44,
+    "raw": {
+      "motor_id": 7,
+      "operation": "sync_read",
+      "raw_unsigned": 44,
+      "register": "Present_Load",
+      "requested_register_address": 60,
+      "rx": [
+        255,
+        255,
+        7,
+        4,
+        0,
+        44,
+        0,
+        200
+      ],
+      "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "tx": [
+        255,
+        255,
+        254,
+        5,
+        130,
+        60,
+        2,
+        7,
+        53
+      ],
+      "width": 2
+    },
+    "elapsed_from_outward_start_ns": 313370678,
+    "read_duration_ns": 8377755,
+    "bracket_before": {
+      "stamp_ns": 3383779457870796,
+      "position_raw": 2122,
+      "signed_error_raw": 8
+    },
+    "bracket_after": {
+      "stamp_ns": 3383779478558954,
+      "position_raw": 2122,
+      "signed_error_raw": 8
+    },
+    "plateau_bracket_confirmed": true,
+    "interpretation": "只保留原unsigned，不解码单位、扭矩、电流或机械根因。"
+  },
+  "stop51": {
+    "status": "PASS",
+    "integer_zero_fields": 51
+  },
+  "identity_status": "PASS",
+  "manual_power_cut_required": false,
+  "writes": [
+    {
+      "sequence": 204,
+      "pid": 627848,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Goal_Position",
+        "2138"
+      ],
+      "exit_code": 0,
+      "started_ns": 3383779006784745,
+      "finished_ns": 3383779014956543
+    },
+    {
+      "sequence": 207,
+      "pid": 627851,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Torque_Enable",
+        "1"
+      ],
+      "exit_code": 0,
+      "started_ns": 3383779107666286,
+      "finished_ns": 3383779115805028
+    },
+    {
+      "sequence": 209,
+      "pid": 627853,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Goal_Position",
+        "2114"
+      ],
+      "exit_code": 0,
+      "started_ns": 3383779127998021,
+      "finished_ns": 3383779136229661
+    },
+    {
+      "sequence": 226,
+      "pid": 627870,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+        "7",
+        "write",
+        "Torque_Enable",
+        "0"
+      ],
+      "exit_code": 0,
+      "started_ns": 3383779948503896,
+      "finished_ns": 3383779956669199
+    }
+  ],
+  "driver_commands": 348,
+  "driver_output_hashes_verified": 696,
+  "driver_unreaped": [],
+  "driver_owner_errors": [],
+  "over_budget_commands": [],
+  "same_ssh_receipts": [
+    {
+      "name": "root-reviewed-single-start",
+      "pid": 627578,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "name": "same-pane-observer",
+      "pid": 627616,
+      "exit_code": 1,
+      "wait_returncode": 1,
+      "reaped": true
+    },
+    {
+      "name": "terminal-identity",
+      "pid": 628006,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "name": "reclaim-natural-dead-owned-pane",
+      "pid": 628007,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "name": "post-nonuart",
+      "pid": 628008,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    }
+  ],
+  "nonuart_before_status": "PASS_NON_UART_CURRENT_FACTS",
+  "nonuart_after_status": "PASS_NON_UART_CURRENT_FACTS",
+  "start_receipt": {
+    "status": "STARTED_SINGLE_HEAD1_LOAD_OBSERVATION",
+    "tmux_identity": "position-head1-load-observation-20261010-r10 @65 %65 627613",
+    "motor_identity": "position-head1-load-observation-20261010-r10 @65 %65 627613",
+    "motor_tmux": {
+      "argv": [
+        "tmux",
+        "new-session",
+        "-d",
+        "-s",
+        "position-head1-load-observation-20261010-r10",
+        "-P",
+        "-F",
+        "#{session_name} #{window_id} #{pane_id} #{pane_pid}",
+        "bash /home/loosqk/robot-checks/position-return-20261010-r1/head-load-observation-r10/head1-load-observation-launch-r10/launch_head1_load_observation_r10.sh"
+      ],
+      "pid": 627612,
+      "started_ns": 1791630525847887586,
+      "finished_ns": 1791630525853711437,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "position-head1-load-observation-20261010-r10 @65 %65 627613\n",
+      "stderr": "",
+      "signals_sent": []
+    },
+    "go_sha256": "19238585e98c69926ac6621a2adfbe56c05d15a651200725d774343cb75d0eb3",
+    "go_bytes": 1311,
+    "plan_sha256": "258aa3953afc67cde3cfd4f836749181892914dcc487ea78c2e554cee16209a5",
+    "motor_launcher_sha256": "ddf1e4b115711c17b1770c2947bf2770fc46c317272789e81b5c82edbca1a139",
+    "camera_processes_started": 0
+  },
+  "owner_result": {
+    "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+    "phase": "REAPED",
+    "status": "PASS",
+    "owner_pid": 83539,
+    "command": [
+      "ssh",
+      "-oBatchMode=yes",
+      "-oStrictHostKeyChecking=yes",
+      "-oConnectTimeout=15",
+      "robot",
+      "bash",
+      "-s"
+    ],
+    "pid": 83540,
+    "started_utc": "2026-10-10T11:08:42.424996+00:00",
+    "started_monotonic_ns": 68709160743125,
+    "observe_seconds": 5.0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "owner_sent_signals": [],
+    "received_signals": {},
+    "errors": [],
+    "observations": 3,
+    "remote_state": "NOT_VERIFIED",
+    "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+    "input": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-load-preparation-r10/native-preparation/single_ssh_root_reviewed_head_load_r10.sh",
+      "sha256": "332eb6573e2b4ebc6704b919229bcdd9c2c098a84123615be5435f9aeed5fe2f",
+      "bytes": 24240
+    },
+    "launched_utc": "2026-10-10T11:08:42.427478+00:00",
+    "start_new_session": true,
+    "child_session_id": 83540,
+    "observed_utc": "2026-10-10T11:08:54.291820+00:00",
+    "elapsed_ns": 11867140958,
+    "log_bytes_observed": 437276,
+    "child_end_class": "EXIT_STATUS",
+    "child_signal": null,
+    "finished_utc": "2026-10-10T11:08:54.292462+00:00",
+    "log": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_head_load_execute_r10.owner/child.log",
+      "sha256": "d75030b90ffc625ccbf88c21e2725ea436c0073bc865312b854bd2f6d324727c",
+      "bytes": 437276
+    }
+  },
+  "go_consumed": true,
+  "archive_scope": "原批次732普通文件/1861864B，没有ELF或完整源码树，旧FAIL未覆盖。",
+  "nonuart_direct_nested_children": {
+    "before": 23,
+    "after": 23,
+    "natural_reaped": 46,
+    "expected_fuser_exit1_each": 12,
+    "other_exit0_each": 11
+  },
+  "starter_pre_nonuart_owner_receipt": {
+    "argv": [
+      "bash",
+      "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.sh"
+    ],
+    "pid": 627579,
+    "started_ns": 1791630524964682889,
+    "finished_ns": 1791630525807311130,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "signals_sent": []
+  },
+  "verification_boundary": "348 driver直属child的reaped/exit/owner_errors及696输出SHA/bytes；46非UART直属nested child自然wait；5同SSH直属child及1nested tmux启动真实回收。Cargo等不存在于本硬件轮；tmux driver终态为pane自然dead1/exit1，由tmux观察证明，不冒充root直接waitpid。"
+}

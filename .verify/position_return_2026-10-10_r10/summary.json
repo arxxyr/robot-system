@@ -1,0 +1,196 @@
+{
+  "schema": "POSITION_RETURN_HEAD_LOAD_HARDWARE_ARCHIVE_R10_V1",
+  "recorded_at_utc": "2026-10-10T11:19:31.629231+00:00",
+  "archive_status": "HARDWARE_ORIGINAL_FAIL_PRESERVED_WITH_STOP_PASS",
+  "run_result": "FAIL",
+  "root_acceptance": "review/root_actual_hardware_review_r10.json",
+  "native_verification": "review/native_execution_verification_r10.json",
+  "scope": "本次独立GO仅left7保持P16/D43/I0一次-24尝试，偏差平台最多一次Present_Load原字；出程FAIL不自动回程。归档/摘要不会重跑硬件。",
+  "hardware": {
+    "motor": "left:7/head_motor_1",
+    "anchor_raw": 2138,
+    "target_raw": 2114,
+    "final_position_raw": 2122,
+    "final_signed_error_raw": 8,
+    "outward_status": "FAIL",
+    "return_status": "NOT_RUN",
+    "original_tolerance_raw": 4,
+    "original_budget_ms": 800,
+    "outward_samples": 14,
+    "outward_elapsed_ns": 800059801,
+    "first_qualified_sample": null,
+    "first_plus8_elapsed_ns": 190720863,
+    "precision_failure_code": "POSITION_ACCURACY_TIMEOUT",
+    "final_anchor_issue": {
+      "actual_raw": 2122,
+      "anchor_raw": 2138,
+      "signed_error_raw": -16,
+      "scope": "未执行回程，保留原POSITION_FINAL_ANCHOR_ERROR；不能称往返完成"
+    }
+  },
+  "platform_load": {
+    "status": "SAMPLED",
+    "register": "Present_Load",
+    "address": 60,
+    "width": 2,
+    "operation": "sync_read",
+    "raw_unsigned": 44,
+    "command_sequence": 217,
+    "direct_pid": 627861,
+    "tx_hex": "ff ff fe 05 82 3c 02 07 35",
+    "rx_hex": "ff ff 07 04 00 2c 00 c8",
+    "response_error": 0,
+    "checksum": "PASS",
+    "raw_read_attempts": 1,
+    "bracket_before": {
+      "stamp_ns": 3383779457870796,
+      "position_raw": 2122,
+      "signed_error_raw": 8
+    },
+    "bracket_after": {
+      "stamp_ns": 3383779478558954,
+      "position_raw": 2122,
+      "signed_error_raw": 8
+    },
+    "plateau_bracket_confirmed": true,
+    "elapsed_from_outward_start_ns": 313370678,
+    "read_duration_ns": 8377755,
+    "interpretation": "厂家名义为当前驱动占空比，非零支持该瞬间仍报告驱动输出；不作符号或单位换算，不当作实测扭矩/电流，也不证明机械原因或整段连续驱动。",
+    "read_deadline_contract": "原command预算，不宣称硬实时绝对READ截止；原800ms观察期限未延长"
+  },
+  "writes": {
+    "count": 4,
+    "motor": "left:7",
+    "sequence": [
+      {
+        "sequence": 204,
+        "register": "Goal_Position",
+        "value": 2138,
+        "exit_code": 0
+      },
+      {
+        "sequence": 207,
+        "register": "Torque_Enable",
+        "value": 1,
+        "exit_code": 0
+      },
+      {
+        "sequence": 209,
+        "register": "Goal_Position",
+        "value": 2114,
+        "exit_code": 0
+      },
+      {
+        "sequence": 226,
+        "register": "Torque_Enable",
+        "value": 0,
+        "exit_code": 0
+      }
+    ],
+    "PDI_writes": 0,
+    "base_writes": 0,
+    "camera_starts": 0,
+    "automatic_retries": 0
+  },
+  "cleanup": {
+    "STOP51": "PASS_INTEGER_ZERO",
+    "stop_raw_wire_scope": "51项是普通读解析整数零；不宣称51项均有原帧",
+    "identity": "PASS",
+    "identity_checks": 74,
+    "manual_power_cut_required": false,
+    "post_non_uart_17": "PASS",
+    "driver_commands": 348,
+    "driver_output_streams": 696,
+    "unreaped_direct_children": [],
+    "owner_errors": [],
+    "over_budget_commands": [],
+    "driver_pid": 627613,
+    "driver_exit": 1,
+    "driver_lifecycle": "tmux观察自然dead/exit1后回收自有pane，不冒充root直接waitpid",
+    "local_owner_pid": 83539,
+    "ssh_pid": 83540,
+    "local_owner_ssh_exit": 0,
+    "local_owner_ssh_reaped": true,
+    "same_ssh_direct_children": 5,
+    "nested_tmux_start_children": 1,
+    "nonuart_nested_direct_children": 46
+  },
+  "authorization": {
+    "current_field": "authorization/field_confirmation_r10.json",
+    "go": "authorization/head1-load-observation-r10.go.json",
+    "go_consumed": true,
+    "future_action_authorized": false,
+    "current_watch": "本轮看护已收尾；后续动作需要新的当次现场事实与独立GO",
+    "latest_power_fact": "USER_REPORTED_RESTORED",
+    "independent_electrical_telemetry": "UNKNOWN",
+    "manual_power_cut_requested_for_stop_failure": false
+  },
+  "software_candidate": {
+    "source": "candidate/head1_load_observation_r10.py",
+    "sha256": "8855037db957317ea1a5de8d9e517e314878376dc7b3beec505df25352788c31",
+    "bytes": 15017,
+    "final_local_methods": 14,
+    "final_native_methods": 14,
+    "counting": "各端14个不同方法；不累加R1/R2/R3修订或跨平台",
+    "local_r1": "原12方法PASS保留，尚未包括后加触发负控",
+    "local_r2": "原14方法PASS保留；后来发现普通Load故障误包装精度错误的分类合同不足，不回填原结果",
+    "local_r3": "普通Load故障裸raise保ACTION_FAILED；实际PP越界保POSITION_ACCURACY_FAILED，14方法PASS",
+    "default_plan": "零启动",
+    "missing_go": "真实exit2，零UART/动作",
+    "native_preparation": "native-preparation/prepare-result-r10.json",
+    "plan_sha256": "258aa3953afc67cde3cfd4f836749181892914dcc487ea78c2e554cee16209a5",
+    "bindings_sha256": "c2416172179df7a4698dc30c17a22e037c3e6ef1af4208d454352ccf5232eb06",
+    "starter": "launch/start_head1_load_observation_once_r10.sh",
+    "first_template_read_error": "native-preparation/first_starter_template_read_error.txt；本机wrong template extraction，非motor重试"
+  },
+  "software_rust_stage": {
+    "archive": ".verify/present_load_read_2026-10-10_r10/summary.json",
+    "files": 43,
+    "scope": "已验收的具名只读表/禁写门；本归档不重复复制该包、其唯一tar或ELF，也不混计230与候选14",
+    "source_files": 597,
+    "source_sha256": "3a4cc12e5e28f9c9164b8e7cdf9e2861b7127d7536ab291e7db8cced6d7aa4e9",
+    "nightly_commit": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "PDI_current": "P16/D43/I0",
+    "diagnostic_elf_sha256": "2949ccb2a1735ee2091b2c562c428500461e31fbf5ec967a9c543eec0b1016f3",
+    "control_tool_scope": "f201/13c冻结身份保持，未由新诊断ELF替代",
+    "new_rust_tests_or_builds_in_hardware_stage": false
+  },
+  "native_originals": {
+    "path": "native-originals.tar.gz",
+    "sha256": "f1009881fcd7bf6ded4c6414e19388cb1f7f186a794127a5d7f9f93a41406c56",
+    "bytes": 301024,
+    "regular_files": 732,
+    "original_file_bytes": 1861864,
+    "run_member": "head1-load-observation-r10/run.json",
+    "run_sha256": "33c8905710428a1bccbbe6af928776f7fdaab4511869899ded79bb5e442a5136",
+    "run_bytes": 542385,
+    "necessary_launch_members": [
+      "head1-load-observation-launch-r10/launch_head1_load_observation_r10.sh",
+      "head1-load-observation-launch-r10/observe_once_r10.sh",
+      "head1-load-observation-launch-r10/same_ssh_direct_receipts.json",
+      "head1-load-observation-launch-r10/post_probe_owner.json",
+      "head1-load-observation-launch-r10/nonuart_after.stdout"
+    ],
+    "representation": "唯一原包，不重复展开732件"
+  },
+  "unresolved": {
+    "R9_outward": "+6 FAIL/return NOT_RUN",
+    "R8_return": "+7 FAIL",
+    "R5_I2_R6_P24_return": "+6 FAIL",
+    "old_wheel_plus_minus_50": "OPEN",
+    "mechanical_cause": "OPEN；现场仅报告没有卡住，不能解释本次+8",
+    "left_wrist": "仅临时I1 PASS并恢复I0，长期精度/参数未验收",
+    "head2": "旧FAIL保持",
+    "base": "三轮主动运动NOT_RUN",
+    "D0_trial": "NOT_RUN",
+    "D15": "OPEN/DEFERRED"
+  },
+  "limitations": [
+    "保留原精度FAIL；STOP/身份/子进程收尾PASS不能覆盖精度失败。",
+    "Load只一次unsigned原帧，未验证现场FW3.10具体单位，不作为实测扭矩。",
+    "本轮未复拍相机，不用旧图片证明当前动作精度或根因。",
+    "本轮无正式安装/服务激活/完整workspace/RT/H2；正式ca14及六服务沿既有状态，不称新后验。",
+    "本轮GO已消耗，不复用看护或对下一候选构成硬件授权。"
+  ],
+  "deployable": false
+}

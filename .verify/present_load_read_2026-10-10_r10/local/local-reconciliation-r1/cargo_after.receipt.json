@@ -1,0 +1,24 @@
+{
+  "name": "cargo_after",
+  "argv": [
+    "cargo",
+    "-vV"
+  ],
+  "pid": 77077,
+  "started_ns": 1791628888459798000,
+  "finished_ns": 1791628888479525000,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-reconciliation-r1/cargo_after.stdout",
+    "bytes": 353,
+    "sha256": "556474e0da49f393e6995d22dc01577bc3f1f40ff823e027d535c0a53fbab080"
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-reconciliation-r1/cargo_after.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

@@ -14,6 +14,8 @@
 //!   厂家公开表181名义：最小启动扭矩为0.1%，积分上限为raw×4且0关闭积分限制功能，
 //!   不表示关闭积分控制；角度分辨率为传感器最小分辨角放大系数。
 //!   不换算，也不保证现场固件语义。
+//!   `Present_Load` 为只读 SRAM 字段，仅保留两个原始字节的 unsigned 值，
+//!   不解码符号，也不换算单位。
 //!
 //! ## sign-magnitude 编码
 //!
@@ -98,6 +100,7 @@ pub const STS3215_CONTROL_TABLE: &[(&str, Register)] = &[
     ("Lock", Register::new(55, 1)),
     ("Present_Position", Register::new(56, 2)), // read-only sign-magnitude bit 15
     ("Present_Velocity", Register::new(58, 2)), // read-only sign-magnitude bit 15
+    ("Present_Load", Register::new(60, 2)),     // 本项目诊断只读，保留 raw unsigned 值
 ];
 
 /// 查 `STS3215_CONTROL_TABLE` 拿 `Register`。未知名返回
@@ -112,13 +115,13 @@ pub fn get_register(name: &'static str) -> Result<Register, FeetechError> {
         .ok_or(FeetechError::UnknownRegister(name))
 }
 
-/// 仅拒绝本项目六个诊断专用寄存器的写入，零分配。
+/// 仅拒绝本项目七个诊断专用寄存器的写入，零分配。
 ///
 /// 这不是全部寄存器的可写性校验；其他名称仍由既有查表与编码逻辑处理，
 /// 未知名称在此返回成功不表示可写。EEPROM 分区也不代替本门。
 ///
 /// # Errors
-/// 六个诊断名称返回 [`FeetechError::DiagnosticRegisterWriteForbidden`]。
+/// 七个诊断名称返回 [`FeetechError::DiagnosticRegisterWriteForbidden`]。
 pub fn ensure_not_diagnostic_write(name: &'static str) -> Result<(), FeetechError> {
     match name {
         "Phase"
@@ -126,7 +129,8 @@ pub fn ensure_not_diagnostic_write(name: &'static str) -> Result<(), FeetechErro
         | "Integral_Limit"
         | "CW_Dead_Zone"
         | "CCW_Dead_Zone"
-        | "Angle_Resolution" => Err(FeetechError::DiagnosticRegisterWriteForbidden(name)),
+        | "Angle_Resolution"
+        | "Present_Load" => Err(FeetechError::DiagnosticRegisterWriteForbidden(name)),
         _ => Ok(()),
     }
 }
@@ -191,7 +195,7 @@ const EEPROM_REGISTERS: &[&str] = &[
 ];
 
 /// `true` 仅表示该寄存器在 EEPROM 区，不提供写授权。
-/// 六个诊断专用条目仍被 [`ensure_not_diagnostic_write`] 拒写；其余既有允许写
+/// 六个 EEPROM 诊断专用条目仍被 [`ensure_not_diagnostic_write`] 拒写；其余既有允许写
 /// 条目的保存语义由厂家Lock合同及现场固件决定，本分类不授权写入。
 #[must_use]
 pub fn is_eeprom_register(name: &str) -> bool {
@@ -246,6 +250,7 @@ mod tests {
             "CW_Dead_Zone",
             "CCW_Dead_Zone",
             "Angle_Resolution",
+            "Present_Load",
             "Goal_Velocity",
             "Unknown_Register",
         ] {
@@ -274,6 +279,19 @@ mod tests {
     }
 
     #[test]
+    fn present_load_is_raw_two_byte_readonly_sram() {
+        assert_eq!(get_register("Present_Load").unwrap(), Register::new(60, 2));
+        assert!(!is_eeprom_register("Present_Load"));
+        assert_eq!(sign_bit_for("Present_Load"), None);
+        assert!(matches!(
+            ensure_not_diagnostic_write("Present_Load"),
+            Err(FeetechError::DiagnosticRegisterWriteForbidden(
+                "Present_Load"
+            ))
+        ));
+    }
+
+    #[test]
     fn diagnostic_guard_does_not_reclassify_existing_or_unknown_names() {
         for (name, _) in STS3215_CONTROL_TABLE {
             match *name {
@@ -282,7 +300,8 @@ mod tests {
                 | "Integral_Limit"
                 | "CW_Dead_Zone"
                 | "CCW_Dead_Zone"
-                | "Angle_Resolution" => {}
+                | "Angle_Resolution"
+                | "Present_Load" => {}
                 _ => assert!(ensure_not_diagnostic_write(name).is_ok()),
             }
         }

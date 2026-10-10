@@ -204,25 +204,27 @@ fn assert_no_io(bus: &FeetechBus<FixedTransport>, probe: &ReadLeaseProbe, out: &
 }
 
 #[test]
-fn three_wheel_raw_words_preserve_negative_zero_and_exact_request() {
+fn two_byte_raw_words_preserve_high_bits_and_exact_request() {
     let values = [0x8000, 0x8001, 0xffff];
-    let (mut bus, probe) = fixture(&IDS, 2, &values);
-    let mut out = [UNCHANGED; 5];
-    let mut tx = [0xa5; 16];
-    let mut rx = [0x5a; 32];
-    let result = assert_no_alloc::assert_no_alloc(|| {
-        bus.sync_read_by_id_raw_into("Present_Velocity", &IDS, &mut out, &mut tx, &mut rx)
-    });
-    result.unwrap();
-    assert_eq!(out, [0x8000, 0x8001, 0xffff, UNCHANGED, UNCHANGED]);
-    assert_eq!(
-        &bus.transport.tx[..11],
-        &[0xff, 0xff, 0xfe, 7, 0x82, 58, 2, 8, 7, 9, 0x24]
-    );
-    assert_eq!(&tx[11..], &[0xa5; 5]);
-    assert_eq!(&rx[24..], &[0x5a; 8]);
-    assert_eq!((bus.transport.writes, bus.transport.reads), (1, 1));
-    probe.assert_counts(1, 2, 1);
+    for (name, address, checksum) in [("Present_Velocity", 58, 0x24), ("Present_Load", 60, 0x22)] {
+        let (mut bus, probe) = fixture(&IDS, 2, &values);
+        let mut out = [UNCHANGED; 5];
+        let mut tx = [0xa5; 16];
+        let mut rx = [0x5a; 32];
+        let result = assert_no_alloc::assert_no_alloc(|| {
+            bus.sync_read_by_id_raw_into(name, &IDS, &mut out, &mut tx, &mut rx)
+        });
+        result.unwrap();
+        assert_eq!(out, [0x8000, 0x8001, 0xffff, UNCHANGED, UNCHANGED]);
+        assert_eq!(
+            &bus.transport.tx[..11],
+            &[0xff, 0xff, 0xfe, 7, 0x82, address, 2, 8, 7, 9, checksum]
+        );
+        assert_eq!(&tx[11..], &[0xa5; 5]);
+        assert_eq!(&rx[24..], &[0x5a; 8]);
+        assert_eq!((bus.transport.writes, bus.transport.reads), (1, 1));
+        probe.assert_counts(1, 2, 1);
+    }
 }
 
 #[test]

@@ -60,6 +60,7 @@
 //!   规定Lock0写EPROM掉电保存、Lock1不保存；不能从中推定现场临时写一定生效。
 //!   配置写入需断扭、明确授权及逐项读回；Phase、死区、最小启动扭矩、积分限制值、
 //!   角度分辨率仍为本项目诊断只读，新增三项保留厂家名义原始字节，不换算现场单位。
+//!   `Present_Load` 也是诊断只读，保留两个字节的 unsigned 原始值，不解码符号或单位。
 //! - 大幅度 `Goal_Position` 跳变（超过 Goal Acceleration 能追上的范围）可能引起
 //!   机械冲击 —— bring-up 阶段尽量小步推进。
 
@@ -87,7 +88,7 @@ fn static_register_name(name: &str) -> Option<&'static str> {
         .map(|(n, _)| *n)
 }
 
-/// 纯参数预检，在打开串口前保留六个诊断拒写门并拒绝两个固件版本write。
+/// 纯参数预检，在打开串口前保留七个诊断拒写门并拒绝两个固件版本write。
 /// 其他名称与参数继续由原分发处理；本门放行不表示写入合法。
 fn preflight_diagnostic_write(args: &[String]) -> Result<(), FeetechError> {
     match args.get(3).map(String::as_str) {
@@ -98,7 +99,8 @@ fn preflight_diagnostic_write(args: &[String]) -> Result<(), FeetechError> {
                 | "Integral_Limit"
                 | "CW_Dead_Zone"
                 | "CCW_Dead_Zone"
-                | "Angle_Resolution"),
+                | "Angle_Resolution"
+                | "Present_Load"),
             ) => ensure_not_diagnostic_write(name),
             Some(name @ ("Firmware_Major_Version" | "Firmware_Minor_Version")) => {
                 ensure_not_firmware_readonly_write(name)
@@ -370,6 +372,7 @@ mod tests {
             ("Integral_Limit", 25, vec![165_u8], 165_u32),
             ("Angle_Resolution", 30, vec![128_u8], 128_u32),
             ("Present_Velocity", 58, vec![0_u8, 128], 32768_u32),
+            ("Present_Load", 60, vec![1_u8, 128], 32769_u32),
         ] {
             let (mut bus, handle) = raw_fixture();
             let response = status_frame(9, &data);
@@ -403,17 +406,19 @@ mod tests {
 
     #[test]
     fn read_raw_keeps_bit15_words_unsigned_without_signed_or_si_fields() {
-        for word in [0x8000_u16, 0x8001, 0xffff, 0x7fff] {
-            let (mut bus, handle) = raw_fixture();
-            handle.push_rx(&status_frame(9, &word.to_le_bytes()));
-            let mut output = Vec::new();
-            assert_eq!(
-                do_read_raw(&mut bus, 9, &raw_arguments("Present_Velocity"), &mut output),
-                ExitCode::SUCCESS
-            );
-            let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-            assert_eq!(report["raw_unsigned"], u32::from(word));
-            assert_eq!(report.as_object().unwrap().len(), 9);
+        for register in ["Present_Velocity", "Present_Load"] {
+            for word in [0x8000_u16, 0x8001, 0xffff, 0x7fff] {
+                let (mut bus, handle) = raw_fixture();
+                handle.push_rx(&status_frame(9, &word.to_le_bytes()));
+                let mut output = Vec::new();
+                assert_eq!(
+                    do_read_raw(&mut bus, 9, &raw_arguments(register), &mut output),
+                    ExitCode::SUCCESS
+                );
+                let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+                assert_eq!(report["raw_unsigned"], u32::from(word));
+                assert_eq!(report.as_object().unwrap().len(), 9);
+            }
         }
     }
 
@@ -510,6 +515,7 @@ mod tests {
             "CW_Dead_Zone",
             "CCW_Dead_Zone",
             "Angle_Resolution",
+            "Present_Load",
         ] {
             for value in [None, Some("bad-value"), Some("255"), Some("2147483648")] {
                 let args = arguments("write", name, value);
@@ -591,6 +597,7 @@ mod tests {
             "CW_Dead_Zone",
             "CCW_Dead_Zone",
             "Angle_Resolution",
+            "Present_Load",
             "Present_Position",
         ] {
             for action in ["read", "read-raw"] {

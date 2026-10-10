@@ -1,0 +1,1 @@
+原临时判定要求stderr含英文diagnostic，实际工具按项目规则输出中文“本项目诊断专用寄存器禁止写入：Present_Load”。CLI真实exit2且在开串口前拒绝，原result.json的pass=false保留。只重新解析已存stderr，未重跑fmt/Clippy/库/poke/CLI。

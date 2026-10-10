@@ -1,0 +1,18 @@
+{
+  "recorded_at_ns": 1791628487776255000,
+  "recorded_at_utc": "2026-10-10T10:34:47.776256+00:00",
+  "source": "用户对头1断电后局部机械检查请求的直接回复",
+  "exact_reply": "没有卡住",
+  "inspection_observation": "现场未发现卡住",
+  "motor_power_off_confirmation": "NOT_PROVIDED",
+  "current_power_and_watch_status": "UNKNOWN_NOT_A_NEW_GO",
+  "supports": "未报告明显机械硬卡",
+  "does_not_prove": [
+    "已实际切断两个电机电源",
+    "无摩擦/齿隙/负载影响",
+    "机械根因闭环",
+    "新的电机动作授权"
+  ],
+  "new_uart_operations": 0,
+  "new_motor_actions": 0
+}

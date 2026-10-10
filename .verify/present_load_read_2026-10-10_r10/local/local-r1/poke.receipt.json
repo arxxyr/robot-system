@@ -1,0 +1,33 @@
+{
+  "name": "poke",
+  "argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "robot-adapter-feetech",
+    "--features",
+    "real-hw",
+    "--example",
+    "feetech_poke"
+  ],
+  "pid": 76866,
+  "started_ns": 1791628850986339000,
+  "finished_ns": 1791628852135697000,
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/poke.stdout",
+    "bytes": 1137,
+    "sha256": "1197aee3a4fca5fb73888d741b9158152a70bddd986ff40c53855a1cc15b525c"
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/poke.stderr",
+    "bytes": 324,
+    "sha256": "8bf072870c32eeb79410e33188de0aae7b21c6c25c09b6d8f1edfb59b4891334"
+  },
+  "pass": true
+}

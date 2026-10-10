@@ -1,0 +1,523 @@
+{
+  "status": "PASS",
+  "scope": "只核本批已存在原件；无新SSH/UART/测试/构建。",
+  "source_597": {
+    "aggregate": "3a4cc12e5e28f9c9164b8e7cdf9e2861b7127d7536ab291e7db8cced6d7aa4e9",
+    "same_native_source_before_fmt_after_source_after_and_current_host": true,
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_worktree": "five changed sources; not clean",
+    "host_git_head": "7b53dd186e5a76691712e5fb585e646ac520c62a"
+  },
+  "runner_direct_receipts": [
+    {
+      "name": "native_before_head",
+      "pid": 626736,
+      "started_at": "2026-10-10T10:44:13.897452+00:00",
+      "ended_monotonic_ns": 3382303411089397,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/native_before_head/completion.json",
+        "sha256": "234d6d5b4aa632bd1edf3c470bf8dfc6955394bd3741518c85164733d7f753c1",
+        "bytes": 2851
+      }
+    },
+    {
+      "name": "native_before_status",
+      "pid": 626737,
+      "started_at": "2026-10-10T10:44:13.970723+00:00",
+      "ended_monotonic_ns": 3382303483882534,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/native_before_status/completion.json",
+        "sha256": "ec0bf7361e068577240d7245222d155f62f7c9ef7da463a3a7231f7e65786ca8",
+        "bytes": 2934
+      }
+    },
+    {
+      "name": "native_before_files",
+      "pid": 626740,
+      "started_at": "2026-10-10T10:44:14.043210+00:00",
+      "ended_monotonic_ns": 3382303556391170,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/native_before_files/completion.json",
+        "sha256": "f77b561e3b7e288aef5f4899bb7c9a0c11cb593c9d578dd64e6c6b1c309b6fc5",
+        "bytes": 2969
+      }
+    },
+    {
+      "name": "source_before_head",
+      "pid": 626741,
+      "started_at": "2026-10-10T10:44:14.343095+00:00",
+      "ended_monotonic_ns": 3382303857371533,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/source_before_head/completion.json",
+        "sha256": "c225fdc8cb703681b5f5eb27ec50c0de86070a4226cb792a59cdfc59454da13d",
+        "bytes": 2851
+      }
+    },
+    {
+      "name": "source_before_status",
+      "pid": 626742,
+      "started_at": "2026-10-10T10:44:14.416873+00:00",
+      "ended_monotonic_ns": 3382303930049011,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/source_before_status/completion.json",
+        "sha256": "eb56b65be8cdad99e072d55216c068603010df1f7b4c7f036f1952f69ca19c56",
+        "bytes": 2934
+      }
+    },
+    {
+      "name": "source_before_files",
+      "pid": 626745,
+      "started_at": "2026-10-10T10:44:14.490484+00:00",
+      "ended_monotonic_ns": 3382304003803554,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/source_before_files/completion.json",
+        "sha256": "34b7cd7648bbdcbe3f09148d494317f347610cb279733e6a359a68611bb80a94",
+        "bytes": 2969
+      }
+    },
+    {
+      "name": "nightly_update",
+      "pid": 626746,
+      "started_at": "2026-10-10T10:44:14.765859+00:00",
+      "ended_monotonic_ns": 3382305162183517,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/nightly_update/completion.json",
+        "sha256": "726952da8fbbf11e25379f86dc0e65fff4f0bb5eb3433c84f7a049b35b9da285",
+        "bytes": 2929
+      }
+    },
+    {
+      "name": "rustc_before",
+      "pid": 626759,
+      "started_at": "2026-10-10T10:44:15.722050+00:00",
+      "ended_monotonic_ns": 3382305267605552,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/rustc_before/completion.json",
+        "sha256": "10c646bb00267f68a9ee732a3bde388e115ae4066ab43cf929840b3f5e84e4b4",
+        "bytes": 2877
+      }
+    },
+    {
+      "name": "cargo_before",
+      "pid": 626765,
+      "started_at": "2026-10-10T10:44:15.827630+00:00",
+      "ended_monotonic_ns": 3382305341110058,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/cargo_before/completion.json",
+        "sha256": "c6c8923c21adf359dd59d60bf308d62a933eb0f0b9eee128ba5347b39d87ef5d",
+        "bytes": 2874
+      }
+    },
+    {
+      "name": "fmt",
+      "pid": 626770,
+      "started_at": "2026-10-10T10:44:15.900837+00:00",
+      "ended_monotonic_ns": 3382308847890055,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/fmt/completion.json",
+        "sha256": "3e42cb80876bc491bb65518bb844ad544ee1e47b0ed9b790b1582a65d5fbba67",
+        "bytes": 2857
+      }
+    },
+    {
+      "name": "fmt_after_head",
+      "pid": 626781,
+      "started_at": "2026-10-10T10:44:19.407230+00:00",
+      "ended_monotonic_ns": 3382308920567098,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/fmt_after_head/completion.json",
+        "sha256": "4855ab65242d1d46b9a70b97134353f44010ee9fcd9da343198d3920eecf8a88",
+        "bytes": 2918
+      }
+    },
+    {
+      "name": "fmt_after_status",
+      "pid": 626782,
+      "started_at": "2026-10-10T10:44:19.480240+00:00",
+      "ended_monotonic_ns": 3382308993345396,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/fmt_after_status/completion.json",
+        "sha256": "007a9098fe865269889a8fc163ef38b41551b712c463c35215ee93a87586b142",
+        "bytes": 3001
+      }
+    },
+    {
+      "name": "fmt_after_files",
+      "pid": 626785,
+      "started_at": "2026-10-10T10:44:19.552767+00:00",
+      "ended_monotonic_ns": 3382309065838043,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/fmt_after_files/completion.json",
+        "sha256": "862852cb1a60136aea88d340547c61136a1f47317b4d2257df0243dac0ae788b",
+        "bytes": 3036
+      }
+    },
+    {
+      "name": "clippy",
+      "pid": 626786,
+      "started_at": "2026-10-10T10:44:19.832928+00:00",
+      "ended_monotonic_ns": 3382316682828994,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/clippy/completion.json",
+        "sha256": "7ca57e258b54ae4e6db850e108dc6085540dae7483730fb0393b4fa637b3415c",
+        "bytes": 2995
+      }
+    },
+    {
+      "name": "feetech_default",
+      "pid": 626874,
+      "started_at": "2026-10-10T10:44:27.242215+00:00",
+      "ended_monotonic_ns": 3382323691992154,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/feetech_default/completion.json",
+        "sha256": "76c8908ebe2e176db7243f5a05aa46d93833ac54f464764e9bde53e1db353dd6",
+        "bytes": 3104
+      }
+    },
+    {
+      "name": "poke_tests",
+      "pid": 627240,
+      "started_at": "2026-10-10T10:44:34.252267+00:00",
+      "ended_monotonic_ns": 3382327236315882,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/poke_tests/completion.json",
+        "sha256": "9a32d19e6015d14d8f9127025109185a7fa55714949101e03ca0c7d48fbfa4da",
+        "bytes": 3192
+      }
+    },
+    {
+      "name": "release_poke",
+      "pid": 627389,
+      "started_at": "2026-10-10T10:44:37.796102+00:00",
+      "ended_monotonic_ns": 3382348401095756,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/release_poke/completion.json",
+        "sha256": "d130bcfd9893b76ca121bf25c623733aa4af4e1a2992b52b67019a848dd62113",
+        "bytes": 3268
+      }
+    },
+    {
+      "name": "probe_help",
+      "pid": 627420,
+      "started_at": "2026-10-10T10:44:58.970864+00:00",
+      "ended_monotonic_ns": 3382348616710930,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/probe_help/completion.json",
+        "sha256": "f087e7df63e591083f0b5b4911268db40022597d58eb91fa39194cae9c26ab64",
+        "bytes": 3418
+      }
+    },
+    {
+      "name": "probe_Present_Load",
+      "pid": 627422,
+      "started_at": "2026-10-10T10:44:59.176142+00:00",
+      "ended_monotonic_ns": 3382348821736999,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/probe_Present_Load/completion.json",
+        "sha256": "d411d366293710f2f7dae63bfb1301a9e03247e70bed5c4db580b5076bbe4a43",
+        "bytes": 3475
+      }
+    },
+    {
+      "name": "source_after_head",
+      "pid": 627424,
+      "started_at": "2026-10-10T10:44:59.385373+00:00",
+      "ended_monotonic_ns": 3382348898555443,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/source_after_head/completion.json",
+        "sha256": "b8853b20b3ed53cf2c7cca30d30ce851b35474ab72b2eaf05fdd4ef0b7902b66",
+        "bytes": 2933
+      }
+    },
+    {
+      "name": "source_after_status",
+      "pid": 627425,
+      "started_at": "2026-10-10T10:44:59.457999+00:00",
+      "ended_monotonic_ns": 3382348970910302,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/source_after_status/completion.json",
+        "sha256": "408fa15d9d4f612c4c910624c92bdde9ca7db33bea825129ea6a48f4e2cd2c36",
+        "bytes": 3016
+      }
+    },
+    {
+      "name": "source_after_files",
+      "pid": 627428,
+      "started_at": "2026-10-10T10:44:59.530228+00:00",
+      "ended_monotonic_ns": 3382349043291562,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/source_after_files/completion.json",
+        "sha256": "16f825afe7fdca29d75b4d3f743c38b6ae786bbf458d1c41acd767f12c3a6857",
+        "bytes": 3051
+      }
+    },
+    {
+      "name": "rustc_after",
+      "pid": 627429,
+      "started_at": "2026-10-10T10:44:59.806327+00:00",
+      "ended_monotonic_ns": 3382349351974644,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/rustc_after/completion.json",
+        "sha256": "ad561e82d5f5a1242a88a37c99f9ab3da632d334442671bb4a672cb46b597ebf",
+        "bytes": 2872
+      }
+    },
+    {
+      "name": "cargo_after",
+      "pid": 627435,
+      "started_at": "2026-10-10T10:44:59.911652+00:00",
+      "ended_monotonic_ns": 3382349424843648,
+      "exit_code": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/cargo_after/completion.json",
+        "sha256": "a46ccda7a792ce4904149c99dcfdeece90480b3045c4d1ae0d6f5d4bc7909a03",
+        "bytes": 2869
+      }
+    }
+  ],
+  "runner_direct_child_count": 24,
+  "runner_direct_outputs": 48,
+  "probe_nested_elf_direct_children": [
+    {
+      "name": "help",
+      "pid": 627421,
+      "actual_elf_exit": 2,
+      "helper_runner_exit": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/expected_help/completion.json",
+        "sha256": "6afa8ae33bdd9107adfe96376d261066519438739a5c8e108a8f081527749c94",
+        "bytes": 1796
+      },
+      "zero_uart_evidence": "同源main在RealSerialTransport::open前返回具体错误；实际exit2和错误文本、不存在路径前后、已通过四写API零TX/lease及poke preflight测试；没有syscall trace，不声称系统调用级观测"
+    },
+    {
+      "name": "Present_Load",
+      "pid": 627423,
+      "actual_elf_exit": 2,
+      "helper_runner_exit": 0,
+      "reaped": true,
+      "completion": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/expected_Present_Load/completion.json",
+        "sha256": "33bee32d974362bccc0edb188f38495b48151d0d6b6140aacad2cb836373416b",
+        "bytes": 1915
+      },
+      "zero_uart_evidence": "同源main在RealSerialTransport::open前返回具体错误；实际exit2和错误文本、不存在路径前后、已通过四写API零TX/lease及poke preflight测试；没有syscall trace，不声称系统调用级观测"
+    }
+  ],
+  "same_ssh_direct_children": [
+    {
+      "name": "single-software-start",
+      "argv": [
+        "bash",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/bootstrap/load-r10/start_software_once_r10.sh"
+      ],
+      "pid": 626724,
+      "started_ns": 1791629053755641291,
+      "finished_ns": 1791629053824604157,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "{\"argv\": [\"tmux\", \"new-session\", \"-d\", \"-s\", \"position-load-software-20261010-r10\", \"-P\", \"-F\", \"#{session_name} #{window_id} #{pane_id} #{pane_pid}\", \"bash /home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/bootstrap/load-r10/launch_software_r10.sh\"], \"pid\": 626725, \"started_ns\": 1791629053804623456, \"finished_ns\": 1791629053810309662, \"exit_code\": 0, \"wait_returncode\": 0, \"reaped\": true, \"stdout\": \"position-load-software-20261010-r10 @64 %64 626726\\n\", \"stderr\": \"\", \"signals_sent\": [], \"input_sha256\": \"b6769107ff6e599b748d0f899ac45e4e7f86bba57a77e4a0745414c239f79c5a\"}\n",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "name": "same-software-pane-observer",
+      "argv": [
+        "bash",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/bootstrap/load-r10/observer_software_r10.sh"
+      ],
+      "pid": 626729,
+      "started_ns": 1791629053825249672,
+      "finished_ns": 1791629100065385394,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "{\"status\": \"SOFTWARE_QUALITY_REAL_TERMINAL\", \"pane_pid\": 626726, \"pane_exit\": 0, \"result_status\": \"PASS\", \"result_sha256\": \"2228bdf84c200e92796ba4c0c9f2d4a4faa64bf697ac59e2c36e55bfd85beb00\", \"result_bytes\": 44611, \"compiler_window\": \"PASS\", \"source_before_after\": \"PASS\", \"artifact\": {\"path\": \"/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/load-readback-tool-r10/feetech_poke\", \"sha256\": \"2949ccb2a1735ee2091b2c562c428500461e31fbf5ec967a9c543eec0b1016f3\", \"bytes\": 1514376, \"mode\": 448, \"elf_machine\": 183, \"cargo_path\": \"/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/examples/feetech_poke\", \"compiler\": {\"release\": \"1.101.0-nightly\", \"commit_hash\": \"32dba69d69c5b10ea89a4042de8d0619f7756203\", \"host\": \"aarch64-unknown-linux-gnu\"}, \"native_git_head\": \"894084738d95a7239611c2b8fbecfe081d3a7fc9\", \"native_worktree\": \"five dirty sources\", \"source_manifest_sha256\": \"3a4cc12e5e28f9c9164b8e7cdf9e2861b7127d7536ab291e7db8cced6d7aa4e9\", \"cargo_artifact\": {\"reason\": \"compiler-artifact\", \"package_id\": \"path+file:///home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/source/crates/robot-adapters/feetech#robot-adapter-feetech@0.1.2\", \"manifest_path\": \"/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/source/crates/robot-adapters/feetech/Cargo.toml\", \"target\": {\"kind\": [\"example\"], \"crate_types\": [\"bin\"], \"name\": \"feetech_poke\", \"src_path\": \"/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/source/crates/robot-adapters/feetech/examples/feetech_poke.rs\", \"edition\": \"2024\", \"required-features\": [\"real-hw\"], \"doc\": false, \"doctest\": false, \"test\": false}, \"profile\": {\"opt_level\": \"3\", \"debuginfo\": 0, \"debug_assertions\": false, \"overflow_checks\": false, \"test\": false}, \"features\": [\"default\", \"real-hw\"], \"filenames\": [\"/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/examples/feetech_poke\"], \"executable\": \"/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/examples/feetech_poke\", \"fresh\": false}, \"completion\": {\"path\": \"/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/load-software-r10/release_poke/completion.json\", \"sha256\": \"d130bcfd9893b76ca121bf25c623733aa4af4e1a2992b52b67019a848dd62113\"}, \"deployable\": false}, \"tests\": {\"feetech_default\": 217, \"poke_tests\": 13}, \"receipts\": 24, \"error\": null}\n",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "name": "software-terminal-identity",
+      "argv": [
+        "tmux",
+        "display-message",
+        "-p",
+        "-t",
+        "%64",
+        "#{session_name}|#{window_id}|#{pane_id}|#{pane_dead}|#{pane_dead_status}|#{pane_pid}"
+      ],
+      "pid": 627444,
+      "started_ns": 1791629100066185989,
+      "finished_ns": 1791629100069081025,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "position-load-software-20261010-r10|@64|%64|1|0|626726\n",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "name": "reclaim-natural-dead-software-pane",
+      "argv": [
+        "tmux",
+        "kill-pane",
+        "-t",
+        "%64"
+      ],
+      "pid": 627445,
+      "started_ns": 1791629100069104514,
+      "finished_ns": 1791629100071606212,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    }
+  ],
+  "nested_tmux_start_child": {
+    "argv": [
+      "tmux",
+      "new-session",
+      "-d",
+      "-s",
+      "position-load-software-20261010-r10",
+      "-P",
+      "-F",
+      "#{session_name} #{window_id} #{pane_id} #{pane_pid}",
+      "bash /home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/bootstrap/load-r10/launch_software_r10.sh"
+    ],
+    "pid": 626725,
+    "started_ns": 1791629053804623456,
+    "finished_ns": 1791629053810309662,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "stdout": "position-load-software-20261010-r10 @64 %64 626726\n",
+    "stderr": "",
+    "signals_sent": [],
+    "input_sha256": "b6769107ff6e599b748d0f899ac45e4e7f86bba57a77e4a0745414c239f79c5a"
+  },
+  "owner": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_load_software_r10.owner/result.json",
+    "sha256": "a60a83795f89c3832a1d09f60269fc57315896adf632aa10b610eb130e97b4d1",
+    "bytes": 1521
+  },
+  "tool": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/load-readback-tool-r10/feetech_poke",
+    "sha256": "2949ccb2a1735ee2091b2c562c428500461e31fbf5ec967a9c543eec0b1016f3",
+    "bytes": 1514376,
+    "mode": 448,
+    "elf_machine": 183,
+    "cargo_path": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/examples/feetech_poke",
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_worktree": "five dirty sources",
+    "source_manifest_sha256": "3a4cc12e5e28f9c9164b8e7cdf9e2861b7127d7536ab291e7db8cced6d7aa4e9",
+    "cargo_artifact": {
+      "reason": "compiler-artifact",
+      "package_id": "path+file:///home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/source/crates/robot-adapters/feetech#robot-adapter-feetech@0.1.2",
+      "manifest_path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/source/crates/robot-adapters/feetech/Cargo.toml",
+      "target": {
+        "kind": [
+          "example"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "feetech_poke",
+        "src_path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/source/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+        "edition": "2024",
+        "required-features": [
+          "real-hw"
+        ],
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": false
+      },
+      "features": [
+        "default",
+        "real-hw"
+      ],
+      "filenames": [
+        "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/examples/feetech_poke"
+      ],
+      "executable": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/release/examples/feetech_poke",
+      "fresh": false
+    },
+    "completion": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/load-software-r10/release_poke/completion.json",
+      "sha256": "d130bcfd9893b76ca121bf25c623733aa4af4e1a2992b52b67019a848dd62113"
+    },
+    "deployable": false
+  },
+  "result": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/native-preparation/load-software-r10-originals/load-software-r10/result.json",
+    "sha256": "2228bdf84c200e92796ba4c0c9f2d4a4faa64bf697ac59e2c36e55bfd85beb00",
+    "bytes": 44611
+  },
+  "nested_cargo_pid_exported": false,
+  "trace_of_tty_syscalls": "NOT_CLAIMED",
+  "no_evidence_of_hardware_read": "仅软件命令、help和/dev/never-open拒写，无真实设备路径",
+  "formal_reverified_this_batch": false
+}

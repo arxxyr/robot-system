@@ -825,13 +825,14 @@ mod tests {
     use robot_core::time::DurationNs;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    const DIAGNOSTIC_NAMES: [&str; 6] = [
+    const DIAGNOSTIC_NAMES: [&str; 7] = [
         "Phase",
         "Minimum_Starting_Torque",
         "Integral_Limit",
         "CW_Dead_Zone",
         "CCW_Dead_Zone",
         "Angle_Resolution",
+        "Present_Load",
     ];
     // 请求 checksum 是独立 golden，读回保留高位与超厂家名义范围的原始字节。
     const DIAGNOSTIC_READ_CASES: [(&str, u8, u8, u8, u8); 6] = [
@@ -1088,6 +1089,17 @@ mod tests {
                 handle.drain_tx(),
                 [0xff, 0xff, 1, 4, 2, address, 1, golden_checksum]
             );
+        }
+    }
+
+    #[test]
+    fn present_load_single_read_preserves_unsigned_word_and_exact_request() {
+        for raw in [0x8000_u16, 0x8001, 0xffff] {
+            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+            handle.push_rx(&fake_status(1, 0, &raw.to_le_bytes()));
+            assert_eq!(bus.read("Present_Load", "j1").unwrap(), i32::from(raw));
+            // ID1 + 长度4 + READ2 + 地址60 + 数据宽2 的独立请求校验字节。
+            assert_eq!(handle.drain_tx(), [0xff, 0xff, 1, 4, 2, 60, 2, 0xba]);
         }
     }
 

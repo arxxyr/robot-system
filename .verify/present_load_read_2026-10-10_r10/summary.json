@@ -1,0 +1,204 @@
+{
+  "schema": "PRESENT_LOAD_READ_SOFTWARE_ARCHIVE_R10_V1",
+  "recorded_at_utc": "2026-10-10T11:05:17.815925+00:00",
+  "archive_status": "SOFTWARE_ACCEPTED_HARDWARE_NOT_RUN",
+  "root_software_acceptance": "review/root_native_software_review_r10.json",
+  "scope": "仅Present_Load具名只读表、原始读值和既有诊断禁写门的软件验收；不包含R10动作候选14方法及其PLAN准备",
+  "implemented": [
+    {
+      "name": "Present_Load",
+      "address": 60,
+      "bytes": 2,
+      "interpretation": "unsigned原word；不加符号metadata或换算。厂家表描述当前驱动占空比，不能把raw作为已验证扭矩或现场固件单位。"
+    }
+  ],
+  "write_policy": {
+    "ordinary_reads": [
+      "read",
+      "read-raw"
+    ],
+    "forbidden_named_write_apis": [
+      "write",
+      "sync_write",
+      "sync_write_by_id",
+      "sync_write_by_id_into"
+    ],
+    "error": "DiagnosticRegisterWriteForbidden",
+    "until_api_scope": "共用既有prepare_sync_write_frame，保持拒写",
+    "cli_boundary": "RealSerialTransport::open前拒绝Present_Load写入，缺值/坏值也拒绝",
+    "production_control_behavior_changed": false,
+    "eeprom_changed": false,
+    "sign_decode_added": false,
+    "golden_read1_checksum": "0xba",
+    "golden_sync3_checksum": "0x22"
+  },
+  "changed_sources": {
+    "crates/robot-adapters/feetech/src/registers.rs": {
+      "sha256": "77636990a7abd1bb201b07299d0c63673b751f1053363007fbf87fd8277cf2db",
+      "bytes": 16521
+    },
+    "crates/robot-adapters/feetech/src/bus.rs": {
+      "sha256": "57a8e9d31d3cd8958cc60478d54c2f800ec7708975fc9bef9e51f6a4e8f5d9f1",
+      "bytes": 53340
+    },
+    "crates/robot-adapters/feetech/src/bus_raw_read_tests.rs": {
+      "sha256": "f84d466fe20f841b94494804c30c80c007aca34ab60e46b9f3b403dd3755b77f",
+      "bytes": 18657
+    },
+    "crates/robot-adapters/feetech/src/diagnostic.rs": {
+      "sha256": "58e2657bae6397c98acda2c1ed311709c161cd78228e819b00e76b57b5e9f504",
+      "bytes": 15375
+    },
+    "crates/robot-adapters/feetech/examples/feetech_poke.rs": {
+      "sha256": "b30fd4d19f825b61d7535c198a031741e42d4692667ac3b5be81ca6e04d0a2ed",
+      "bytes": 23095
+    }
+  },
+  "source_binding": {
+    "host_git_head": "7b53dd186e5a76691712e5fb585e646ac520c62a",
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_worktree": "five changed sources; not clean",
+    "source_files": 597,
+    "aggregate_sha256": "3a4cc12e5e28f9c9164b8e7cdf9e2861b7127d7536ab291e7db8cced6d7aa4e9",
+    "head_scope": "主机HEAD不同；按597个输入逐项相同和三窗口绑定，不称native clean",
+    "source_windows_in_tar": [
+      "load-software-r10/source_before.json",
+      "load-software-r10/fmt_after.json",
+      "load-software-r10/source_after.json"
+    ],
+    "five_sources_in_tar": "bootstrap/load-r10/export-5/"
+  },
+  "local_verification": {
+    "original_result": "local/local-r1/result.json",
+    "original_batch_pass": false,
+    "original_failure": "临时回执分类脚本误要求英文diagnostic；实际中文拒写与exit2正确，原FAIL保留",
+    "reconciliation": "local/local-reconciliation-r1/summary.json",
+    "reconciliation_scope": "仅解析既有stderr与追加编译器首尾读值；未重跑fmt/Clippy/库/poke/拒写CLI",
+    "software_gates_accepted": true,
+    "actual_order": [
+      "fmt",
+      "crate Clippy --all-targets --features real-hw -D warnings",
+      "default库217",
+      "poke13",
+      "实际开串口前拒写exit2"
+    ],
+    "distinct_methods": 230,
+    "counting": "217库+13poke；不与Orin重复累加",
+    "direct_children": 9,
+    "lifecycle": "原7个直属child及2个编译器尾部child均自然wait/reap；nested PID未导出",
+    "root_clippy_run_on_local": false
+  },
+  "native_verification": {
+    "result_status": "PASS",
+    "actual_order": [
+      "nightly更新与身份",
+      "cargo fmt --all",
+      "cargo clippy --all --all-targets -- -D warnings",
+      "default库217",
+      "poke13",
+      "独立release feetech_poke",
+      "help与Present_Load写禁令真实ELF exit2",
+      "首尾编译器/源/产物身份"
+    ],
+    "compiler_release": "1.101.0-nightly",
+    "compiler_commit": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "library_default": 217,
+    "poke": 13,
+    "distinct_methods": 230,
+    "counting": "各平台230不同方法；本机和Orin不相加，未执行额外real-hw库217",
+    "runner_direct_children": 24,
+    "runner_output_streams": 48,
+    "actual_nested_elf_children": 2,
+    "actual_nested_elf_exits": [
+      2,
+      2
+    ],
+    "same_ssh_direct_children": 4,
+    "tmux_start_child": 626725,
+    "lifecycle": "已核各直属child自然wait/reap、两真ELF预期exit2；自有dead pane真实终态后回收",
+    "nested_cargo_pids_exported": false,
+    "tty_syscall_trace": "NOT_CLAIMED",
+    "formal_reverified_this_batch": false,
+    "original_first_review_failure": {
+      "stage": "LOCAL_ARCHIVE_WINDOW_NAME",
+      "actual_error": "RuntimeError: 窗口名字不符；原件保留，仅本机核验",
+      "wrong_expected_name": "source_fmt_after.json",
+      "actual_original_name": "fmt_after.json",
+      "native_or_test_rerun": false
+    }
+  },
+  "diagnostic_tool": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/load-readback-tool-r10/feetech_poke",
+    "sha256": "2949ccb2a1735ee2091b2c562c428500461e31fbf5ec967a9c543eec0b1016f3",
+    "bytes": 1514376,
+    "mode": 448,
+    "elf_machine": 183,
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+      "host": "aarch64-unknown-linux-gnu"
+    }
+  },
+  "diagnostic_tool_scope": "新2949ELF只用于独立诊断；不替代f201位置控制或13c原写身份；归档不另复制ELF本体",
+  "native_originals": {
+    "path": "native-originals.tar.gz",
+    "sha256": "69205bf6d55724abc8835f1cb0e8ba671e96d8d03bf15190b9a0de2e58c6951a",
+    "bytes": 297659,
+    "regular_files": 136,
+    "original_file_bytes": 1430259,
+    "result_member": "load-software-r10/result.json",
+    "result_sha256": "2228bdf84c200e92796ba4c0c9f2d4a4faa64bf697ac59e2c36e55bfd85beb00",
+    "result_bytes": 44611,
+    "representation": "唯一原tar；未在本归档重复展开136件"
+  },
+  "owner_completion": {
+    "path": "lifecycle/local-ssh-owner/result.json",
+    "owner_pid": 77380,
+    "ssh_pid": 77381,
+    "status": "PASS",
+    "exit_code": 0,
+    "reaped": true,
+    "received_signals": {},
+    "scope": "本机owner及SSH回收；远端软件接受另由原包和review证明"
+  },
+  "field_state": {
+    "inspection_receipt": "field/field_inspection_reply_r10.json",
+    "exact_inspection_reply": "没有卡住",
+    "interpretation": "未报告明显硬卡，未提供实际断电确认，也不证明摩擦、负载、齿隙等原因闭环",
+    "power_receipt": "field/power_restored_r10.json",
+    "exact_power_reply": "刚插上的电源",
+    "latest_power": "USER_REPORTED_RESTORED",
+    "independent_electrical_telemetry": "UNKNOWN",
+    "current_watch": "NOT_YET_RECONFIRMED_FOR_NEW_ACTION",
+    "new_hardware_go": "NOT_ISSUED_AS_OF_ARCHIVE"
+  },
+  "manufacturer_source": {
+    "path": ".verify/feetech_return_metadata_2026-10-10/manufacturer/official-sms-sts-memory-table.md",
+    "sha256": "b1e5a86cc8c96ce997e61a49e1d9040dff7100121e81298a0313ac1f83f1ddd3",
+    "scope": "仅厂家原表字段名义解释；未验证现场FW3.10实际Load语义"
+  },
+  "hardware_actions": 0,
+  "real_hardware_load_reads": 0,
+  "new_hardware_go_issued_in_this_stage": false,
+  "new_hardware_uart_operations": 0,
+  "unresolved": {
+    "R9_outward_accuracy": "目标2644，末2650/+6 FAIL；return NOT_RUN",
+    "R8_return_accuracy": "+7 FAIL",
+    "R5_I2_R6_P24_return": "+6 FAIL，原FAIL不回填",
+    "old_wheel_plus_minus_50": "OPEN",
+    "left_wrist": "仅临时I1往返PASS后恢复I0；长期精度/参数未验收",
+    "head2": "旧FAIL保持",
+    "base": "主动运动NOT_RUN",
+    "D0_trial": "NOT_RUN",
+    "PDI_current": "P16/D43/I0，未在本阶段更改",
+    "D15": "OPEN/DEFERRED"
+  },
+  "limitations": [
+    "本阶段只验收Rust只读软件，R10薄候选测试与准备不计入此包。",
+    "无真实Load/UART采集或动作GO；恢复供电不构成新看护/动作授权。",
+    "未执行完整workspace测试、RT/H2、正式安装、服务激活或新的正式四件后验。",
+    "本机临时读取native result时误访问source_before键的KeyError仅为本机摘要解析错误，未重跑任何recipe或硬件；原工具输出保留。",
+    "PDI写读回正确不等于已证现场位置控制环实际采用，未改变该证据边界。"
+  ],
+  "deployable": false
+}

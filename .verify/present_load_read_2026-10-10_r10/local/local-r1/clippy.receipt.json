@@ -1,0 +1,35 @@
+{
+  "name": "clippy",
+  "argv": [
+    "cargo",
+    "clippy",
+    "--locked",
+    "-p",
+    "robot-adapter-feetech",
+    "--all-targets",
+    "--features",
+    "real-hw",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "pid": 76639,
+  "started_ns": 1791628844301098000,
+  "finished_ns": 1791628845348528000,
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/clippy.stdout",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/present_load_preparation_2026-10-10_r10/local-r1/clippy.stderr",
+    "bytes": 181,
+    "sha256": "4358f3030a589347fc169efba2aaed271a79b7281ff08943d73217ef803b9366"
+  },
+  "pass": true
+}

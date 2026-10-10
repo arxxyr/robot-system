@@ -21,18 +21,18 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-10 R9头1原P16/I0仅一次-24：2668→2650，目标2644，出程+6 FAIL，
-           原±4/800ms内未合格，未执行回程；STOP51整数零、身份与非UART后验PASS。
-           347直属child/694输出已核并自然回收，PDI写0、底盘写0、未重试。
-           三路独立20秒同期录图：201/201/601有效帧；D435背景整体移位，双USB基本不变，支持实动。
-           六张前/出程末原图按同主机单调时钟选取，图片不替代精度门或证明机械干涉原因。
-           原件 .verify/position_return_2026-10-10_r9/summary.json；R8回程+7原FAIL保持。
-           负方向在两个目标均残留+6/+7；已请求断电支撑下检查头1线束/壳体/支撑，现场报告待答。
-           R5/I2及R6/P24回程+6 FAIL、R7参数只读16/0/1与旧±50原FAIL分别保留，原因仍OPEN。
-           左腕I1仅临时往返PASS且恢复I0；头2旧FAIL、长期参数未设，底盘主动运动未验。
-           R9候选六个内存方法与默认零动作通过；Orin最新nightly32d、实际fmt→根Clippy通过。
-           597输入本机及原生格式化前后同913f4353；复用历史f201/13c，无新Rust控制产物。
-           本轮动作授权已消耗；正式ca14四件未改/六服务停，右H2完整PASS保持。
+本轮最新:  2026-10-10 R10头1保持P16/D43/I0，仅一次-24：2138→2122，目标2114，出程+8 FAIL。
+           原±4/800ms内14样本从未合格，回程NOT_RUN；平台仅补读一次Present_Load原字44。
+           Load帧ID7/地址60/2B/status0/checksum通过，夹前后PP均2122/+8；不换算扭矩或判定机械根因。
+           STOP51整数零、74项身份及独立非UART后验PASS，manualcut=false；348直属child/696输出自然回收。
+           仅left7四次GP/TE写，PDI/base写0、相机0，无重试，本轮GO已消耗、看护已收尾。
+           原件 .verify/position_return_2026-10-10_r10/summary.json；旧R9+6/R8+7及R5/I2、R6/P24原FAIL保持。
+           现场先回复“没有卡住”、恢复供电，随后本轮持续看护重新确认；最新供电仅用户报告ON，遥测UNKNOWN。
+           Present_Load软件两端各217库+13工具=230不同方法，597输入同3a4cc12e、nightly32d。
+           Orin实际fmt→根Clippy/release/exit2拒写通过；新2949诊断ELF不替代f201/13c。
+           Rust软件原分类FAIL及reconciliation原件 .verify/present_load_read_2026-10-10_r10/summary.json。
+           旧±50原因OPEN；左腕仅临时I1 PASS后恢复I0、头2旧FAIL，长期参数与三轮主动运动未验。
+           本阶段未正式安装/激活服务，正式ca14及六服务沿用既有状态；右H2完整PASS保持。
            D15 OPEN/DEFERRED、deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
