@@ -1,0 +1,38 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "WAITING",
+  "status": "RUNNING",
+  "owner_pid": 37113,
+  "command": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 37114,
+  "started_utc": "2026-10-10T08:25:34.837467+00:00",
+  "started_monotonic_ns": 58921622518666,
+  "observe_seconds": 1.0,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-p24-preparation-r6/native-preparation/prepare_p24_wire_r6.sh",
+    "sha256": "3f6533e8cb9ab9cb2b29ba85bccaaef1035f5eb330cf8239ac3de114c65f6e5d",
+    "bytes": 23121
+  },
+  "launched_utc": "2026-10-10T08:25:34.839660+00:00",
+  "start_new_session": true,
+  "child_session_id": 37114
+}

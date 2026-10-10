@@ -1,0 +1,199 @@
+{
+  "schema": "POSITION_RETURN_R5_ARCHIVAL_SUMMARY_V1",
+  "archived_at_utc": "2026-10-10T08:26:33.510898+00:00",
+  "result": "FAIL",
+  "target": "head1 left7 临时I2一次+24往返后恢复I0",
+  "archive": {
+    "path": "head1-i2-wire-r5-originals.tar.gz",
+    "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+    "bytes": 262075,
+    "regular_files": 799,
+    "source_bytes": 1725392,
+    "local_member_bytes_verified": 799
+  },
+  "run": {
+    "archive_member": "head1-i2-wire-r5/run.json",
+    "sha256": "3c6fe1c01108239360a0b772b4f8c7d26a0ab23f1d25f384fbe9e0f46d8b62d4",
+    "bytes": 572279,
+    "original_unchanged": true
+  },
+  "position": {
+    "outward": {
+      "status": "PASS",
+      "anchor_raw": 2648,
+      "target_raw": 2672,
+      "last_raw": 2668,
+      "signed_error_raw": -4,
+      "elapsed_ms": 251.226524
+    },
+    "return": {
+      "status": "FAIL",
+      "target_raw": 2648,
+      "last_in_budget_raw": 2654,
+      "signed_error_raw": 6,
+      "in_budget_plateau_samples": 8,
+      "budget_ms": 800,
+      "failure_report_elapsed_ms": 821.775705
+    }
+  },
+  "restore": {
+    "status": "PASS",
+    "raw_readback": {
+      "Torque_Enable": 0,
+      "Present_Velocity": 0,
+      "Lock": 1,
+      "I_Coefficient": 0,
+      "P_Coefficient": 16,
+      "D_Coefficient": 43,
+      "CW_Dead_Zone": 1,
+      "CCW_Dead_Zone": 1
+    },
+    "persistent_I2": false,
+    "original_I0_restored": true
+  },
+  "stop": {
+    "status": "PASS",
+    "motors": 17,
+    "integer_zero_fields": 51,
+    "registers": [
+      "Torque_Enable",
+      "Present_Velocity",
+      "Goal_Velocity"
+    ],
+    "complete_ordinary_READ_PV_traces": 4,
+    "wire_scope": "right8/right9初始及停止PV；不是所有51字段原帧"
+  },
+  "identity": {
+    "status": "PASS",
+    "before_errors": [],
+    "after_errors": [],
+    "evidence_errors": [],
+    "nonUART_post": "PASS_NON_UART_CURRENT_FACTS"
+  },
+  "ownership": {
+    "direct_child_commands": 384,
+    "direct_child_natural_reaped": 384,
+    "verified_original_outputs": 768,
+    "exit_codes": {
+      "0": 352,
+      "1": 32
+    },
+    "exit1_note": "原fuser无持有者探测允许exit1，不称384个全部exit0",
+    "hardware_driver": {
+      "pid": 619638,
+      "terminal": "tmux pane %53/@53 exit1（位置FAIL）；tmux负责driver等待，非Popen直接reap声明"
+    },
+    "SSH_owners": {
+      "prepare": {
+        "owner_pid": 34366,
+        "ssh_pid": 34367,
+        "wait_returncode": 0,
+        "reaped": true,
+        "started_utc": "2026-10-10T08:13:38.737219+00:00",
+        "finished_utc": "2026-10-10T08:13:40.311041+00:00",
+        "log_sha256": "2641623334cc9236fa11981a2a8ca185cab95eaaf7a2c93878ec10dd31355c11",
+        "log_bytes": 95856,
+        "input_sha256": "86ca6de5e2c91032901ccf46b1accaae25504ff15d50727a8e9765f8de25c1e5"
+      },
+      "live": {
+        "owner_pid": 34840,
+        "ssh_pid": 34841,
+        "wait_returncode": 0,
+        "reaped": true,
+        "started_utc": "2026-10-10T08:16:54.757172+00:00",
+        "finished_utc": "2026-10-10T08:17:06.204189+00:00",
+        "log_sha256": "bde7cb34b8c182f849278dd6bf26794181a1053c9f0468028fe9b36875fef712",
+        "log_bytes": 378933,
+        "input_sha256": "8c4f395788d7a07df03cc2e0f1c6b2fb2706dd1f58486e6f415372cc4c6c3380"
+      }
+    },
+    "nested_f201_wait_exported": false
+  },
+  "wire_review": {
+    "path": "reviews/independent_wire_review_r5.json",
+    "status": "ACCEPT_FOUR_PV_TRACE_EVIDENCE_ONLY",
+    "PV_raw_words": [
+      "0x0000",
+      "0x0000",
+      "0x0000",
+      "0x0000"
+    ],
+    "PV_decoded_integers": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "pm50_reproduced": false,
+    "historical_pm50": "OPEN_UNCONFIRMED",
+    "physical_wheel_motion": "UNKNOWN"
+  },
+  "software": {
+    "accepted_candidate": {
+      "path": "software/accepted-d74/i2_trial_head1_wire_r5.py",
+      "sha256": "d74d390848e180f89ef27bc7123d3e026067af3f209d7ee9400d36ed88d38caf",
+      "bytes": 12349,
+      "test_sha256": "e70f7036b16d1504b72980e5c558a9fd3492f855c80c510511ed7be0616544f6",
+      "distinct_methods": 27,
+      "result_path": "software/accepted-d74/original-results/result.json",
+      "result_sha256": "46036755871bedc2cab75031274d3bb113f586455df638b4ba62a4f4cd31bea9"
+    },
+    "old_metadata_candidate": {
+      "path": "software/metadata-rejected-2f/i2_trial_head1_wire_r5.py",
+      "sha256": "2f4c82e1a7c96008f78482ea4b898b243aed5a8bdaad71a519de1c2e5ba14309",
+      "bytes": 12199,
+      "disposition": "ROOT_REJECTED_METADATA_FORMAT_INCOMPATIBLE",
+      "original_software_distinct_methods": 22,
+      "original_software_result": "PASS_PRESERVED_NOT_INTERFACE_ACCEPTANCE",
+      "rejection_reason": "整dict equality拒绝真实bindings附带uid/gid/mode/device/inode等元数据；d74按固定path/SHA/bytes匹配并保留整refs供原身份门核验",
+      "evidence": "旧/新源字节差异与reviews/root_review_r5.json old_incompatible_2f_preserved；未发现独立旧root拒绝回执，不虚构实机入口失败",
+      "result_path": "software/metadata-rejected-2f/original-results/result.json"
+    },
+    "tests_counting": "最终27个方法；旧22与其重叠，不累计49；本次归档不重跑测试",
+    "maintenance_source_sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+    "frozen_position_ELF_sha256": "f2014ee4008311e7a8725235a39f0d1b3913391f17cbd977b7441f120539114b",
+    "frozen_raw_ELF_sha256": "13c97115b89d9f8780ea8b9cac80a091ddcc2b73549d34b2d5cbad83c718ffe1",
+    "no_new_Rust_build": true
+  },
+  "history_refs": [
+    {
+      "path": "../position_return_2026-10-10_r3/i2_trial_head1_candidate_r1.py",
+      "sha256": "fa97b6337fc1f4211f008fd23e8de304b3e631f08a4355dcc2f360e0e6f8a47e",
+      "bytes": 9630,
+      "note": "fa97原I2 trial；不重复历史源码包或硬件包"
+    },
+    {
+      "path": "../position_return_2026-10-10_r3/summary.json",
+      "note": "头1I1/头2原参数历史FAIL保留"
+    },
+    {
+      "path": "../position_return_2026-10-10_r4/summary.json",
+      "note": "此前只读零帧不回填旧±50"
+    }
+  ],
+  "field_and_GO": {
+    "field": "preparation/field_confirmation_r5.json",
+    "GO": "preparation/head1-i2-wire-r5.go.json",
+    "scope": "本次头1一次往返；无自动续用",
+    "manual_power_cut_required": false,
+    "actual_power_after_batch": "UNKNOWN_NO_INDEPENDENT_TELEMETRY",
+    "watch_end": "NOT_INFERRED_FROM_READ_OR_ARCHIVE"
+  },
+  "base": {
+    "active_writes": 0,
+    "motion": "NOT_RUN_DEFERRED"
+  },
+  "retry_count": 0,
+  "manual_power_cut_requested": false,
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "limits": [
+    "仅四份普通READ PV有完整strace原帧，其余停止字段为f201解析整数。",
+    "本次±50未复现，历史来源与物理轮运动未闭环。",
+    "384直属child/768输出身份本地逐项核；nested f201未独立wait导出。",
+    "未执行新Rust fmt/Clippy/workspace测试/release编译；复用历史冻结ELF。",
+    "仅新归档目录写文件，未SSH/UART/动作/主文档修改/提交。",
+    "原run整体FAIL与原review中的PENDING字段保持历史原件，不回填。"
+  ],
+  "manifest": "manifest.json"
+}

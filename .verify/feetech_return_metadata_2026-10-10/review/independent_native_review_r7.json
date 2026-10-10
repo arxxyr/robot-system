@@ -1,0 +1,565 @@
+{
+  "status": "PASS_INDEPENDENT_LOCAL_BYTE_REVIEW",
+  "reviewer": "/root/head_i2_stop_wire",
+  "recorded_at_utc": "2026-10-10T08:49:44.952808+00:00",
+  "native_original_files": 160,
+  "native_original_bytes": 1515560,
+  "native_archive_sha256": "eb1de9652cbe6762e6119f683fc0ff47addb4d2086cc3eb592690dae5a6ccf22",
+  "native_result_sha256": "0c74d25e3d62418738588ee3b51808f1fec751b59f12aa415aa5b94527c2f9c5",
+  "verified_Runner_children": [
+    {
+      "name": "clone_native_source",
+      "pid": 620897,
+      "argv": [
+        "git",
+        "clone",
+        "--no-hardlinks",
+        "/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/source"
+      ],
+      "started_at": "2026-10-10T08:39:05.983977+00:00",
+      "finished_at": "2026-10-10T08:39:13.572633+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "clone_before_head",
+      "pid": 620900,
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "started_at": "2026-10-10T08:39:13.593542+00:00",
+      "finished_at": "2026-10-10T08:39:13.646199+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "clone_before_status",
+      "pid": 620901,
+      "argv": [
+        "git",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all"
+      ],
+      "started_at": "2026-10-10T08:39:13.666522+00:00",
+      "finished_at": "2026-10-10T08:39:14.251025+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "clone_before_files",
+      "pid": 620904,
+      "argv": [
+        "git",
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard"
+      ],
+      "started_at": "2026-10-10T08:39:14.271154+00:00",
+      "finished_at": "2026-10-10T08:39:14.323572+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "source_before_head",
+      "pid": 620905,
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "started_at": "2026-10-10T08:39:14.572932+00:00",
+      "finished_at": "2026-10-10T08:39:14.625422+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "source_before_status",
+      "pid": 620906,
+      "argv": [
+        "git",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all"
+      ],
+      "started_at": "2026-10-10T08:39:14.646227+00:00",
+      "finished_at": "2026-10-10T08:39:14.698536+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "source_before_files",
+      "pid": 620909,
+      "argv": [
+        "git",
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard"
+      ],
+      "started_at": "2026-10-10T08:39:14.718832+00:00",
+      "finished_at": "2026-10-10T08:39:14.771141+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "nightly_update",
+      "pid": 620910,
+      "argv": [
+        "rustup",
+        "update",
+        "nightly",
+        "--no-self-update"
+      ],
+      "started_at": "2026-10-10T08:39:14.995415+00:00",
+      "finished_at": "2026-10-10T08:39:16.017086+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "rustc_before",
+      "pid": 620923,
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-10T08:39:16.037570+00:00",
+      "finished_at": "2026-10-10T08:39:16.122088+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "cargo_before",
+      "pid": 620929,
+      "argv": [
+        "cargo",
+        "-V"
+      ],
+      "started_at": "2026-10-10T08:39:16.142828+00:00",
+      "finished_at": "2026-10-10T08:39:16.227320+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "fmt",
+      "pid": 620934,
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "started_at": "2026-10-10T08:39:16.247611+00:00",
+      "finished_at": "2026-10-10T08:39:19.801457+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "fmt_after_head",
+      "pid": 620945,
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "started_at": "2026-10-10T08:39:19.821296+00:00",
+      "finished_at": "2026-10-10T08:39:19.873751+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "fmt_after_status",
+      "pid": 620946,
+      "argv": [
+        "git",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all"
+      ],
+      "started_at": "2026-10-10T08:39:19.893789+00:00",
+      "finished_at": "2026-10-10T08:39:19.945962+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "fmt_after_files",
+      "pid": 620949,
+      "argv": [
+        "git",
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard"
+      ],
+      "started_at": "2026-10-10T08:39:19.965981+00:00",
+      "finished_at": "2026-10-10T08:39:20.018252+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "clippy",
+      "pid": 620950,
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at": "2026-10-10T08:39:20.243455+00:00",
+      "finished_at": "2026-10-10T08:40:08.573127+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "feetech_default",
+      "pid": 621413,
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "robot-adapter-feetech",
+        "--lib",
+        "--",
+        "--test-threads=1"
+      ],
+      "started_at": "2026-10-10T08:40:08.593244+00:00",
+      "finished_at": "2026-10-10T08:41:35.227700+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "feetech_real_hw",
+      "pid": 622628,
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "robot-adapter-feetech",
+        "--lib",
+        "--features",
+        "real-hw",
+        "--",
+        "--test-threads=1"
+      ],
+      "started_at": "2026-10-10T08:41:35.248791+00:00",
+      "finished_at": "2026-10-10T08:42:07.352138+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "poke_tests",
+      "pid": 623275,
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "robot-adapter-feetech",
+        "--example",
+        "feetech_poke",
+        "--features",
+        "real-hw",
+        "--",
+        "--test-threads=1"
+      ],
+      "started_at": "2026-10-10T08:42:07.372769+00:00",
+      "finished_at": "2026-10-10T08:42:14.761564+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "release_poke",
+      "pid": 623518,
+      "argv": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "-p",
+        "robot-adapter-feetech",
+        "--example",
+        "feetech_poke",
+        "--features",
+        "real-hw",
+        "--message-format=json-render-diagnostics"
+      ],
+      "started_at": "2026-10-10T08:42:14.781741+00:00",
+      "finished_at": "2026-10-10T08:43:17.616376+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "probe_help",
+      "pid": 623885,
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/bootstrap/expected_exit2_probe_r7.py",
+        "help",
+        "5621358b3e5e18be01b8fb94ff7fa85affda60812e27d46bf3c1d1b8978a339f"
+      ],
+      "started_at": "2026-10-10T08:43:17.650317+00:00",
+      "finished_at": "2026-10-10T08:43:17.834951+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "probe_Minimum_Starting_Torque",
+      "pid": 623887,
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/bootstrap/expected_exit2_probe_r7.py",
+        "Minimum_Starting_Torque",
+        "5621358b3e5e18be01b8fb94ff7fa85affda60812e27d46bf3c1d1b8978a339f"
+      ],
+      "started_at": "2026-10-10T08:43:17.854857+00:00",
+      "finished_at": "2026-10-10T08:43:18.039417+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "probe_Integral_Limit",
+      "pid": 623889,
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/bootstrap/expected_exit2_probe_r7.py",
+        "Integral_Limit",
+        "5621358b3e5e18be01b8fb94ff7fa85affda60812e27d46bf3c1d1b8978a339f"
+      ],
+      "started_at": "2026-10-10T08:43:18.059539+00:00",
+      "finished_at": "2026-10-10T08:43:18.244193+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "probe_Angle_Resolution",
+      "pid": 623891,
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/bootstrap/expected_exit2_probe_r7.py",
+        "Angle_Resolution",
+        "5621358b3e5e18be01b8fb94ff7fa85affda60812e27d46bf3c1d1b8978a339f"
+      ],
+      "started_at": "2026-10-10T08:43:18.264463+00:00",
+      "finished_at": "2026-10-10T08:43:18.449292+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "source_after_head",
+      "pid": 623893,
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "started_at": "2026-10-10T08:43:18.473789+00:00",
+      "finished_at": "2026-10-10T08:43:18.526052+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "source_after_status",
+      "pid": 623894,
+      "argv": [
+        "git",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all"
+      ],
+      "started_at": "2026-10-10T08:43:18.546352+00:00",
+      "finished_at": "2026-10-10T08:43:18.598780+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "source_after_files",
+      "pid": 623897,
+      "argv": [
+        "git",
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard"
+      ],
+      "started_at": "2026-10-10T08:43:18.619049+00:00",
+      "finished_at": "2026-10-10T08:43:18.671357+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "rustc_after",
+      "pid": 623898,
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-10T08:43:18.894565+00:00",
+      "finished_at": "2026-10-10T08:43:18.979387+00:00",
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "cargo_after",
+      "pid": 623904,
+      "argv": [
+        "cargo",
+        "-V"
+      ],
+      "started_at": "2026-10-10T08:43:18.999812+00:00",
+      "finished_at": "2026-10-10T08:43:19.052421+00:00",
+      "exit_code": 0,
+      "reaped": true
+    }
+  ],
+  "verified_Runner_streams": 56,
+  "verified_nested_ELF_children": [
+    {
+      "name": "help",
+      "pid": 623886,
+      "exit_code": 2,
+      "reaped": true,
+      "syscall_trace": "UNAVAILABLE_NOT_CLAIMED"
+    },
+    {
+      "name": "Minimum_Starting_Torque",
+      "pid": 623888,
+      "exit_code": 2,
+      "reaped": true,
+      "syscall_trace": "UNAVAILABLE_NOT_CLAIMED"
+    },
+    {
+      "name": "Integral_Limit",
+      "pid": 623890,
+      "exit_code": 2,
+      "reaped": true,
+      "syscall_trace": "UNAVAILABLE_NOT_CLAIMED"
+    },
+    {
+      "name": "Angle_Resolution",
+      "pid": 623892,
+      "exit_code": 2,
+      "reaped": true,
+      "syscall_trace": "UNAVAILABLE_NOT_CLAIMED"
+    }
+  ],
+  "verified_nested_ELF_streams": 8,
+  "source_windows": "host/source_before/fmt_after/source_after/current597逐项一致",
+  "source_aggregate": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+  "distinct_Rust_methods": 228,
+  "default_real_hw_overlap": 215,
+  "poke_methods": 13,
+  "compiler_identity": "1.101.0-nightly32d / aarch64-unknown-linux-gnu，前后一致",
+  "build_identity": "native894+5dirty 与hosteffe不同，不记clean/newgithead",
+  "artifact": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/readback-tool-r1/feetech_poke",
+    "sha256": "5621358b3e5e18be01b8fb94ff7fa85affda60812e27d46bf3c1d1b8978a339f",
+    "bytes": 1514432,
+    "mode": 448,
+    "elf_machine": 183
+  },
+  "artifact_byte_scope": "本地不含ELF本体；核原生build/result/cargo-artifact和4真实ELF回执一致，不声称本地重新hash ELF",
+  "local_originals": [
+    {
+      "name": "local-r1",
+      "result_sha256": "1069c8b3c975d400e6e3182acdfc01892702a5279ba93438532b52ee5cda5882",
+      "result_bytes": 5247,
+      "children": [
+        {
+          "name": "compiler_before",
+          "pid": 40868,
+          "exit_code": 0,
+          "reaped": true
+        },
+        {
+          "name": "fmt",
+          "pid": 40869,
+          "exit_code": 0,
+          "reaped": true
+        },
+        {
+          "name": "crate_clippy",
+          "pid": 40879,
+          "exit_code": 101,
+          "reaped": true
+        }
+      ]
+    },
+    {
+      "name": "local-r2",
+      "result_sha256": "a50f16742fb087e1814236eca9d446522da71bc5d1f0d26e8e7ec25c5c74bf7c",
+      "result_bytes": 8076,
+      "children": [
+        {
+          "name": "compiler_before",
+          "pid": 42369,
+          "exit_code": 0,
+          "reaped": true
+        },
+        {
+          "name": "fmt",
+          "pid": 42370,
+          "exit_code": 0,
+          "reaped": true
+        },
+        {
+          "name": "crate_clippy",
+          "pid": 42374,
+          "exit_code": 0,
+          "reaped": true
+        },
+        {
+          "name": "lib_tests",
+          "pid": 42395,
+          "exit_code": 0,
+          "reaped": true
+        },
+        {
+          "name": "poke_tests",
+          "pid": 42812,
+          "exit_code": 0,
+          "reaped": true
+        },
+        {
+          "name": "compiler_after",
+          "pid": 42836,
+          "exit_code": 0,
+          "reaped": true
+        }
+      ]
+    }
+  ],
+  "outer_owner_pid": 45047,
+  "outer_SSH_pid": 45048,
+  "outer_SSH_reaped": true,
+  "native_same_SSH_direct_children": 4,
+  "tmux_creation_child_reaped": true,
+  "pane_terminal": "%55 620887 1 0",
+  "source_contract": "3名24/25/30均1B unsigned，原4具名写API复用禁写守卫、CLI预开串口拒写；仅read/read-raw；厂家raw0积分限制关闭不代表积分控制关闭",
+  "failures_preserved": [
+    "本机r1 crateClippy exit101：113行测试触发too_many_lines；r2保留原件并通过",
+    "root/native本地KeyError path仅解读失败，软件recipe与真实硬件未失败"
+  ],
+  "limits": [
+    "非全workspace/H2/RT/硬件采集",
+    "无正式安装/服务操作/控制参数修改",
+    "新ELF仅诊断用途，旧f201/13c控制身份不变",
+    "旧±50原因OPEN、实轮运动UNKNOWN；P24/I2回程FAIL不回填",
+    "后续只读15尚未执行；不包含其候选或未来结果"
+  ],
+  "UART": 0,
+  "hardware_actions": 0,
+  "deployable": false,
+  "D15": "OPEN/DEFERRED"
+}

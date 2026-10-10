@@ -1,0 +1,101 @@
+{
+  "phase": "ORIGINAL_ARCHIVE_READY",
+  "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+  "bytes": 262075,
+  "files": 799,
+  "source_bytes": 1725392,
+  "runtime_pid": 619638,
+  "pane_exit": 1,
+  "run_exists": true,
+  "result_sha256": "3c6fe1c01108239360a0b772b4f8c7d26a0ab23f1d25f384fbe9e0f46d8b62d4",
+  "local_archive": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals.tar.gz",
+  "local_originals": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals",
+  "run_sha256": "3c6fe1c01108239360a0b772b4f8c7d26a0ab23f1d25f384fbe9e0f46d8b62d4",
+  "run_bytes": 572279,
+  "direct_commands": 384,
+  "outputs_bytes_hash_checked": 768,
+  "trace_refs": [
+    {
+      "sequence": 136,
+      "pid": 619793,
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/head1-i2-wire-r5/right8-normal-read-command_0136.strace",
+      "bytes": 10036,
+      "sha256": "dffebe8c77c5951b4a038355879d2c759b72444795a45a96b0105741ed6423d5",
+      "original_argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "8",
+        "read",
+        "Present_Velocity"
+      ],
+      "wire_frame_review": "PENDING_ROOT_REVIEW_OF_COMPLETE_STRACE",
+      "local_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals/head1-i2-wire-r5/right8-normal-read-command_0136.strace",
+      "original_stdout": "read Present_Velocity@8 = 0\n",
+      "nested_pid_wait_exported": false
+    },
+    {
+      "sequence": 142,
+      "pid": 619802,
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/head1-i2-wire-r5/right9-normal-read-command_0142.strace",
+      "bytes": 10036,
+      "sha256": "491f53ba129e3c045a56a6db4ccf1b42ecef6efc4818f602b9c4ac4918122040",
+      "original_argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "9",
+        "read",
+        "Present_Velocity"
+      ],
+      "wire_frame_review": "PENDING_ROOT_REVIEW_OF_COMPLETE_STRACE",
+      "local_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals/head1-i2-wire-r5/right9-normal-read-command_0142.strace",
+      "original_stdout": "read Present_Velocity@9 = 0\n",
+      "nested_pid_wait_exported": false
+    },
+    {
+      "sequence": 358,
+      "pid": 620033,
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/head1-i2-wire-r5/right8-normal-read-command_0358.strace",
+      "bytes": 10036,
+      "sha256": "c198d9f4fd7f12499dbb2bcb96bc1e846cc88cd5803a0fca4b56b6f748439fe9",
+      "original_argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "8",
+        "read",
+        "Present_Velocity"
+      ],
+      "wire_frame_review": "PENDING_ROOT_REVIEW_OF_COMPLETE_STRACE",
+      "local_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals/head1-i2-wire-r5/right8-normal-read-command_0358.strace",
+      "original_stdout": "read Present_Velocity@8 = 0\n",
+      "nested_pid_wait_exported": false
+    },
+    {
+      "sequence": 364,
+      "pid": 620042,
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/head1-i2-wire-r5/right9-normal-read-command_0364.strace",
+      "bytes": 10036,
+      "sha256": "04c6eda42fcf13b734425ed19f202c1ffec4d715092a9a7be7e1fc1592ed7a92",
+      "original_argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "9",
+        "read",
+        "Present_Velocity"
+      ],
+      "wire_frame_review": "PENDING_ROOT_REVIEW_OF_COMPLETE_STRACE",
+      "local_path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals/head1-i2-wire-r5/right9-normal-read-command_0364.strace",
+      "original_stdout": "read Present_Velocity@9 = 0\n",
+      "nested_pid_wait_exported": false
+    }
+  ],
+  "outer_direct_commands": 5,
+  "post_direct_commands": 23,
+  "result": "FAIL",
+  "position_status": "FAIL",
+  "stop_status": "PASS",
+  "restore_status": "PASS",
+  "manual_power_cut_required": false,
+  "ssh_owner_result": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/position_head1_i2_wire_live_r5.owner/result.json",
+  "source_binding": "d74 candidate/d97 maintenance/native894; f201+13c historical frozen ELF; no new Rust build",
+  "no_nested_wait_claim": true
+}

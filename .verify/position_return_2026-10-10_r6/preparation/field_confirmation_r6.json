@@ -1,0 +1,14 @@
+{
+  "recorded_at_ns": 1791620690978077000,
+  "source": "human_question_reply",
+  "question_item_id": "[\"request_user_input_async\",\"call_2WQcF4HPh9kYNzeUbZUqboCd\",0]",
+  "answer": "现场仍就绪，可执行本次P=24往返",
+  "powered": true,
+  "arms_empty_supported": true,
+  "support_does_not_block_head": true,
+  "head_activity_clear": true,
+  "continuous_watch": true,
+  "can_immediately_cut_motor_power": true,
+  "scope": "本次仅头1left7临时P16→24、I0下+24往返一次后恢复P16；±4/800ms；底盘不动作",
+  "independent_telemetry": "UNKNOWN"
+}

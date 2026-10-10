@@ -1,0 +1,197 @@
+{
+  "status": "PASS_REMOVED_ONLY_TWO_EXPANDED_DUPLICATES",
+  "started_at_utc": "2026-10-10T08:35:28.524472+00:00",
+  "finished_at_utc": "2026-10-10T08:35:28.588917+00:00",
+  "authorization": "root依据用户此前“旧target及时清理”授权仅删除精确两个展开副本",
+  "agent_not_in_use_confirmations": {
+    "/root": "明确已完成R5/R6核验，不再访问两originals展开树；要求另外两agent不用且无占用后清理",
+    "/root/head_i2_stop_wire": "确认不再使用两originals树；当前只使用prep小草稿/源/软件回执与主树新表",
+    "/root/native_v2_32d_prepare": "确认已结束两树使用；R7只复用Runner/cache/native894源与原tar软件helper",
+    "/root/tmux_observer_impl": "文档与归档核验完毕；本次逐成员核对后不再读取两树"
+  },
+  "deleted_directories": [
+    {
+      "phase": "r5",
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals",
+      "regular_files": 799,
+      "file_bytes": 1725392,
+      "tar_members_byte_equal": 799,
+      "verify_tar_before": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r5/head1-i2-wire-r5-originals.tar.gz",
+        "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+        "bytes": 262075
+      },
+      "target_tar_before": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals.tar.gz",
+        "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+        "bytes": 262075
+      },
+      "process_holder_check": {
+        "argv": [
+          "/usr/sbin/lsof",
+          "+D",
+          "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals"
+        ],
+        "pid": 43008,
+        "started_at_ns": 1791621328178492000,
+        "finished_at_ns": 1791621328311768000,
+        "wait_returncode": 1,
+        "reaped": true,
+        "stdout": "",
+        "stderr": "",
+        "interpretation": "lsof exit1且双输出空，无列出的占用；所有当前agent已另明确不使用"
+      },
+      "reason": "永久.verify与target原tar完整同字节，删除仅完整展开重复副本以清理旧target",
+      "deleted": true,
+      "verify_tar_after": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r5/head1-i2-wire-r5-originals.tar.gz",
+        "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+        "bytes": 262075
+      },
+      "target_tar_after": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals.tar.gz",
+        "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+        "bytes": 262075
+      }
+    },
+    {
+      "phase": "r6",
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-p24-preparation-r6/native-preparation/head1-p24-wire-r6-originals",
+      "regular_files": 797,
+      "file_bytes": 1711171,
+      "tar_members_byte_equal": 797,
+      "verify_tar_before": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r6/head1-p24-wire-r6-originals.tar.gz",
+        "sha256": "41bd514cec9b73c36f22735da74021a0ee2f7c877c85518801805db921af71b7",
+        "bytes": 262024
+      },
+      "target_tar_before": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-p24-preparation-r6/native-preparation/head1-p24-wire-r6-originals.tar.gz",
+        "sha256": "41bd514cec9b73c36f22735da74021a0ee2f7c877c85518801805db921af71b7",
+        "bytes": 262024
+      },
+      "process_holder_check": {
+        "argv": [
+          "/usr/sbin/lsof",
+          "+D",
+          "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-p24-preparation-r6/native-preparation/head1-p24-wire-r6-originals"
+        ],
+        "pid": 43012,
+        "started_at_ns": 1791621328395796000,
+        "finished_at_ns": 1791621328524111000,
+        "wait_returncode": 1,
+        "reaped": true,
+        "stdout": "",
+        "stderr": "",
+        "interpretation": "lsof exit1且双输出空，无列出的占用；所有当前agent已另明确不使用"
+      },
+      "reason": "永久.verify与target原tar完整同字节，删除仅完整展开重复副本以清理旧target",
+      "deleted": true,
+      "verify_tar_after": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r6/head1-p24-wire-r6-originals.tar.gz",
+        "sha256": "41bd514cec9b73c36f22735da74021a0ee2f7c877c85518801805db921af71b7",
+        "bytes": 262024
+      },
+      "target_tar_after": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-p24-preparation-r6/native-preparation/head1-p24-wire-r6-originals.tar.gz",
+        "sha256": "41bd514cec9b73c36f22735da74021a0ee2f7c877c85518801805db921af71b7",
+        "bytes": 262024
+      }
+    }
+  ],
+  "regular_files_total": 1596,
+  "file_bytes_total": 3436563,
+  "protected_files_before": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r5/head1-i2-wire-r5-originals.tar.gz",
+      "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+      "bytes": 262075
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals.tar.gz",
+      "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+      "bytes": 262075
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r6/head1-p24-wire-r6-originals.tar.gz",
+      "sha256": "41bd514cec9b73c36f22735da74021a0ee2f7c877c85518801805db921af71b7",
+      "bytes": 262024
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-p24-preparation-r6/native-preparation/head1-p24-wire-r6-originals.tar.gz",
+      "sha256": "41bd514cec9b73c36f22735da74021a0ee2f7c877c85518801805db921af71b7",
+      "bytes": 262024
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r5/summary.json",
+      "sha256": "159e4ace9048f033a47a7226268e09ecf0cd86132f697d5e911293f09616935d",
+      "bytes": 7199
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r5/manifest.json",
+      "sha256": "edc7be79aa45f48b141fb191822b4426d80049ae6fed2d9a72530e17bafe1089",
+      "bytes": 16489
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r6/summary.json",
+      "sha256": "316d971e729b08dbc0fa5183bf22702b106c115289f428a5245bf208b865eb1b",
+      "bytes": 7598
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r6/manifest.json",
+      "sha256": "c707b3978458474b9d4caff4964bbdd21a8f38154993e9f0f5fe6a244f574bd8",
+      "bytes": 13063
+    }
+  ],
+  "protected_files_after": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r5/head1-i2-wire-r5-originals.tar.gz",
+      "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+      "bytes": 262075
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/head1-i2-wire-r5-originals.tar.gz",
+      "sha256": "f463588a788ea7388e5dc66c2752653543c45f85eb0f8d26accc846ee69c4e5c",
+      "bytes": 262075
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r6/head1-p24-wire-r6-originals.tar.gz",
+      "sha256": "41bd514cec9b73c36f22735da74021a0ee2f7c877c85518801805db921af71b7",
+      "bytes": 262024
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-p24-preparation-r6/native-preparation/head1-p24-wire-r6-originals.tar.gz",
+      "sha256": "41bd514cec9b73c36f22735da74021a0ee2f7c877c85518801805db921af71b7",
+      "bytes": 262024
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r5/summary.json",
+      "sha256": "159e4ace9048f033a47a7226268e09ecf0cd86132f697d5e911293f09616935d",
+      "bytes": 7199
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r5/manifest.json",
+      "sha256": "edc7be79aa45f48b141fb191822b4426d80049ae6fed2d9a72530e17bafe1089",
+      "bytes": 16489
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r6/summary.json",
+      "sha256": "316d971e729b08dbc0fa5183bf22702b106c115289f428a5245bf208b865eb1b",
+      "bytes": 7598
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r6/manifest.json",
+      "sha256": "c707b3978458474b9d4caff4964bbdd21a8f38154993e9f0f5fe6a244f574bd8",
+      "bytes": 13063
+    }
+  ],
+  "protected_SHA_bytes_equal": true,
+  "errors": [],
+  "scope_limits": [
+    "保留.verify唯一原tar与summary/manifest。",
+    "保留target native-preparation原tar、smallrefs/source/reviews；不改主源码或文档。",
+    "未清target/release、native源、ELF或R7共享cargo缓存。",
+    "没有SSH/UART/动作/提交；仅本机清理展开副本。",
+    "进程占用结论限lsof本次输出与当前agent明确确认，不构造其他机器事实。"
+  ]
+}

@@ -8,8 +8,12 @@
 //!   区段分类不提供写授权，配置写入须独立确认断扭、保存语义和读回。
 //! - **SRAM**（addr 40–69）：RAM，不受 `Lock` 影响。
 //! - **只读**：`Model_Number` / `Present_*`。
-//! - **本项目诊断专用**：`Phase` / `CW_Dead_Zone` / `CCW_Dead_Zone` 仅允许读取。
+//! - **本项目诊断专用**：`Phase` / `Minimum_Starting_Torque` / `Integral_Limit` /
+//!   `CW_Dead_Zone` / `CCW_Dead_Zone` / `Angle_Resolution` 仅允许读取原始字节。
 //!   厂家将其列为可写 EEPROM；本项目禁止写入，不依赖 `Lock` 的现场状态。
+//!   厂家公开表181名义：最小启动扭矩为0.1%，积分上限为raw×4且0关闭积分限制功能，
+//!   不表示关闭积分控制；角度分辨率为传感器最小分辨角放大系数。
+//!   不换算，也不保证现场固件语义。
 //!
 //! ## sign-magnitude 编码
 //!
@@ -62,8 +66,7 @@ impl Register {
     }
 }
 
-/// 全部已支持寄存器条目（**仅** dimos / lerobot 用到的部分；扩展见 module-level
-/// docs）。
+/// 全部已支持寄存器条目（dimos / lerobot使用部分及厂家诊断原始字段；扩展见模块说明）。
 ///
 /// 用 `&[(name, Register)]` 而非 `HashMap<&str, Register>`：v0.2 寄存器数 14 个，
 /// 线性扫描 < 100 ns，零依赖；adapter 启动时 `connect` 内可一次性 cache 到固定
@@ -81,9 +84,12 @@ pub const STS3215_CONTROL_TABLE: &[(&str, Register)] = &[
     ("P_Coefficient", Register::new(21, 1)),
     ("D_Coefficient", Register::new(22, 1)),
     ("I_Coefficient", Register::new(23, 1)),
-    ("CW_Dead_Zone", Register::new(26, 1)),  // 本项目诊断专用
-    ("CCW_Dead_Zone", Register::new(27, 1)), // 本项目诊断专用
-    ("Homing_Offset", Register::new(31, 2)), // sign-magnitude bit 11
+    ("Minimum_Starting_Torque", Register::new(24, 1)), // 本项目诊断专用
+    ("Integral_Limit", Register::new(25, 1)),          // 本项目诊断专用
+    ("CW_Dead_Zone", Register::new(26, 1)),            // 本项目诊断专用
+    ("CCW_Dead_Zone", Register::new(27, 1)),           // 本项目诊断专用
+    ("Angle_Resolution", Register::new(30, 1)),        // 本项目诊断专用
+    ("Homing_Offset", Register::new(31, 2)),           // sign-magnitude bit 11
     ("Operating_Mode", Register::new(33, 1)),
     // ── SRAM ──────────────────────────────────────────────────────────
     ("Torque_Enable", Register::new(40, 1)),
@@ -106,18 +112,21 @@ pub fn get_register(name: &'static str) -> Result<Register, FeetechError> {
         .ok_or(FeetechError::UnknownRegister(name))
 }
 
-/// 仅拒绝本项目三个诊断专用寄存器的写入，零分配。
+/// 仅拒绝本项目六个诊断专用寄存器的写入，零分配。
 ///
 /// 这不是全部寄存器的可写性校验；其他名称仍由既有查表与编码逻辑处理，
 /// 未知名称在此返回成功不表示可写。EEPROM 分区也不代替本门。
 ///
 /// # Errors
-/// 三个诊断名称返回 [`FeetechError::DiagnosticRegisterWriteForbidden`]。
+/// 六个诊断名称返回 [`FeetechError::DiagnosticRegisterWriteForbidden`]。
 pub fn ensure_not_diagnostic_write(name: &'static str) -> Result<(), FeetechError> {
     match name {
-        "Phase" | "CW_Dead_Zone" | "CCW_Dead_Zone" => {
-            Err(FeetechError::DiagnosticRegisterWriteForbidden(name))
-        }
+        "Phase"
+        | "Minimum_Starting_Torque"
+        | "Integral_Limit"
+        | "CW_Dead_Zone"
+        | "CCW_Dead_Zone"
+        | "Angle_Resolution" => Err(FeetechError::DiagnosticRegisterWriteForbidden(name)),
         _ => Ok(()),
     }
 }
@@ -172,14 +181,17 @@ const EEPROM_REGISTERS: &[&str] = &[
     "P_Coefficient",
     "D_Coefficient",
     "I_Coefficient",
+    "Minimum_Starting_Torque",
+    "Integral_Limit",
     "CW_Dead_Zone",
     "CCW_Dead_Zone",
+    "Angle_Resolution",
     "Homing_Offset",
     "Operating_Mode",
 ];
 
 /// `true` 仅表示该寄存器在 EEPROM 区，不提供写授权。
-/// 三个诊断专用条目仍被 [`ensure_not_diagnostic_write`] 拒写；其余既有允许写
+/// 六个诊断专用条目仍被 [`ensure_not_diagnostic_write`] 拒写；其余既有允许写
 /// 条目的保存语义由厂家Lock合同及现场固件决定，本分类不授权写入。
 #[must_use]
 pub fn is_eeprom_register(name: &str) -> bool {
@@ -229,8 +241,11 @@ mod tests {
         }
         for name in [
             "Phase",
+            "Minimum_Starting_Torque",
+            "Integral_Limit",
             "CW_Dead_Zone",
             "CCW_Dead_Zone",
+            "Angle_Resolution",
             "Goal_Velocity",
             "Unknown_Register",
         ] {
@@ -240,7 +255,14 @@ mod tests {
 
     #[test]
     fn diagnostic_metadata_is_raw_one_byte_eeprom() {
-        for (name, address) in [("Phase", 18), ("CW_Dead_Zone", 26), ("CCW_Dead_Zone", 27)] {
+        for (name, address) in [
+            ("Phase", 18),
+            ("Minimum_Starting_Torque", 24),
+            ("Integral_Limit", 25),
+            ("CW_Dead_Zone", 26),
+            ("CCW_Dead_Zone", 27),
+            ("Angle_Resolution", 30),
+        ] {
             assert_eq!(get_register(name).unwrap(), Register::new(address, 1));
             assert!(is_eeprom_register(name));
             assert_eq!(sign_bit_for(name), None);
@@ -255,7 +277,12 @@ mod tests {
     fn diagnostic_guard_does_not_reclassify_existing_or_unknown_names() {
         for (name, _) in STS3215_CONTROL_TABLE {
             match *name {
-                "Phase" | "CW_Dead_Zone" | "CCW_Dead_Zone" => {}
+                "Phase"
+                | "Minimum_Starting_Torque"
+                | "Integral_Limit"
+                | "CW_Dead_Zone"
+                | "CCW_Dead_Zone"
+                | "Angle_Resolution" => {}
                 _ => assert!(ensure_not_diagnostic_write(name).is_ok()),
             }
         }

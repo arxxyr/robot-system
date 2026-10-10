@@ -1,0 +1,138 @@
+{
+  "schema": "FEETECH_RETURN_METADATA_SOFTWARE_ARCHIVE_R7_V1",
+  "recorded_at_utc": "2026-10-10T08:51:02.553207+00:00",
+  "archive_status": "软件原件已核验归档，待root验收归档本身",
+  "root_software_acceptance": "review/root_native_review_r7.json",
+  "scope": "仅新增地址24/25/30的具名只读原始字节诊断工具；本包不含后续硬件采集",
+  "implemented": [
+    {
+      "name": "Minimum_Starting_Torque",
+      "address": 24,
+      "bytes": 1,
+      "interpretation": "unsigned raw，厂家表名义0.1%仅作资料说明，不在工具换算"
+    },
+    {
+      "name": "Integral_Limit",
+      "address": 25,
+      "bytes": 1,
+      "interpretation": "unsigned raw；厂家0关闭积分限制功能，不表示关闭积分控制"
+    },
+    {
+      "name": "Angle_Resolution",
+      "address": 30,
+      "bytes": 1,
+      "interpretation": "unsigned raw；厂家名义传感器最小分辨角放大系数，不保证现场版本适用"
+    }
+  ],
+  "write_policy": "仅read/read-raw；既有四具名写API复用DiagnosticRegisterWriteForbidden、poke预开串口拒写；Phase/CW/CCW禁写及PDI、RT、安全/验收预算不变",
+  "changed_sources": {
+    "crates/robot-adapters/feetech/examples/feetech_poke.rs": {
+      "sha256": "ff1f9e23d6afea42916930a193f5230e3da45a5c06e916dd283fa7d44990e04e",
+      "bytes": 22720,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/bus.rs": {
+      "sha256": "f1d001f36895af5fbb00ed22f5a8b9b0894762da392b0b523bdf9e442f68cc46",
+      "bytes": 52779,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/bus_raw_read_tests.rs": {
+      "sha256": "4d769fb396dce1b228c2fdee2c682f56d800af05d0f12970f1a1a2ec473f8b85",
+      "bytes": 18495,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/diagnostic.rs": {
+      "sha256": "828382e47b0ac0cc3ed5a75bd53a4945585f389e6f20bea3f4888fbd9696fe7a",
+      "bytes": 15347,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/registers.rs": {
+      "sha256": "b4eb0f6de2d7441aaae18be17999aa5869ca6c32daa103400cfc735a5d332058",
+      "bytes": 15721,
+      "executable": false
+    }
+  },
+  "source_binding": {
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_worktree": "five dirty sources",
+    "host_git_head": "effe0e3809778b617ca6eb30dd2fe79e47bcea78",
+    "count": 597,
+    "aggregate": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+    "three_native_windows_host_and_current": "逐项同源PASS",
+    "head_scope": "两个HEAD不同，禁止记为clean或重新贴build标签",
+    "source_manifest": "native-originals.tar.gz 内 bootstrap/host_source_r7.json 与 software-r1/source_before.json、fmt_after.json、source_after.json",
+    "five_source_bytes": "native-originals.tar.gz 内 bootstrap/export-5/"
+  },
+  "local_verification": {
+    "r1": "原FAIL保留：实际fmt0后crateClippy101，测试函数113行触发too_many_lines；库和poke未执行",
+    "r2": "实际fmt→real-hw crateClippy→215lib+13poke全通过，6 direct child自然wait/reap",
+    "originals": "local/local-r1/ 与 local/local-r2/",
+    "distinct_methods": 228,
+    "scope": "非本机根Clippy、全仓测试或release"
+  },
+  "native_verification": {
+    "actual_order": "latest nightly update→cargo fmt --all→root cargo clippy --all --all-targets -- -D warnings→default215→real-hw215→poke13→release及4ELF探针",
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "default_library": 215,
+    "real_hw_library": 215,
+    "overlapping_library_methods": 215,
+    "poke_methods": 13,
+    "distinct_methods": 228,
+    "test_counting": "同名215不累计为430；本机同228也不再累计",
+    "Runner_direct_children": 28,
+    "Runner_stdout_stderr_verified": 56,
+    "nested_ELF_children": 4,
+    "nested_ELF_stdout_stderr_verified": 8,
+    "actual_ELF_exits": "--help及三个新寄存器写入口均预期exit2；三个写拒绝在不存在/dev/never-open路径运行",
+    "process_lifecycle": "28 Runner、4 ELF、4同SSH外层child与tmux创建child原件全部自然回收，local SSH owner45047/child45048真实reap",
+    "syscall_evidence": "未使用strace，不能宣称系统调用观测；零UART由同源preopen逻辑、负控/错误输出及不存在路径前后事实支持"
+  },
+  "diagnostic_tool": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/readback-tool-r1/feetech_poke",
+    "sha256": "5621358b3e5e18be01b8fb94ff7fa85affda60812e27d46bf3c1d1b8978a339f",
+    "bytes": 1514432,
+    "mode": 448,
+    "elf_machine": 183,
+    "purpose": "本轮独立诊断ELF，未替代f201位置控制或13c原始写工具",
+    "local_artifact_scope": "本包保存原生build/cargo-artifact/探针身份原件，不含ELF本体，不声称本地重新hash ELF"
+  },
+  "native_originals": {
+    "path": "native-originals.tar.gz",
+    "sha256": "eb1de9652cbe6762e6119f683fc0ff47addb4d2086cc3eb592690dae5a6ccf22",
+    "bytes": 303662,
+    "members": 160,
+    "original_file_bytes": 1515560,
+    "result_member": "software-r1/result.json",
+    "result_sha256": "0c74d25e3d62418738588ee3b51808f1fec751b59f12aa415aa5b94527c2f9c5",
+    "result_bytes": 61904,
+    "representation": "仅保留一个原包，不展开或重复复制160项"
+  },
+  "local_parse_failure": "review/local_download_parse_first_failure_r7.txt保留KeyError path与错误文件名查找；仅本地原件解读失败，不记软件recipe或真实硬件FAIL",
+  "manufacturer_source": {
+    "path": "manufacturer/official-sms-sts-memory-table.md",
+    "sha256": "b1e5a86cc8c96ce997e61a49e1d9040dff7100121e81298a0313ac1f83f1ddd3",
+    "publisher": "飞特公开SMS/STS内存表，平台文档version181，不是现场固件版本",
+    "lines": [
+      44,
+      45,
+      49
+    ],
+    "nominal_contract_scope": "仅按厂家名义说明raw，不向现场版本作适用保证"
+  },
+  "cleanup_reference": "maintenance/cleanup_expanded_duplicates_r5_r6.json：只删除两完整展开副本，1596文件/3436563B；八个受保护原tar/source/小refs首尾同，R7缓存保留",
+  "limitations": [
+    "非全workspace/H2/RT/硬件采集验收",
+    "无正式安装或服务激活；未设置长期参数",
+    "旧±50原因OPEN、实际轮运动UNKNOWN，旧原FAIL不回填",
+    "R5 I2、R6 P24回程仍+6；软件通过不证明回程已修复",
+    "后续只读15不在本软件阶段结果内；底盘未因本轮软件动作"
+  ],
+  "hardware_actions": 0,
+  "UART": 0,
+  "deployable": false,
+  "D15": "OPEN/DEFERRED"
+}

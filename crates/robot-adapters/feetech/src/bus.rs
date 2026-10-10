@@ -825,12 +825,22 @@ mod tests {
     use robot_core::time::DurationNs;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    const DIAGNOSTIC_NAMES: [&str; 3] = ["Phase", "CW_Dead_Zone", "CCW_Dead_Zone"];
-    // 请求 checksum 是独立 golden，读回故意超过死区资料范围并保留高位。
-    const DIAGNOSTIC_READ_CASES: [(&str, u8, u8, u8, u8); 3] = [
+    const DIAGNOSTIC_NAMES: [&str; 6] = [
+        "Phase",
+        "Minimum_Starting_Torque",
+        "Integral_Limit",
+        "CW_Dead_Zone",
+        "CCW_Dead_Zone",
+        "Angle_Resolution",
+    ];
+    // 请求 checksum 是独立 golden，读回保留高位与超厂家名义范围的原始字节。
+    const DIAGNOSTIC_READ_CASES: [(&str, u8, u8, u8, u8); 6] = [
         ("Phase", 18, 0xa5, 0xe5, 0x63),
+        ("Minimum_Starting_Torque", 24, 0xff, 0xdf, 0x5d),
+        ("Integral_Limit", 25, 0xa5, 0xde, 0x5c),
         ("CW_Dead_Zone", 26, 0xff, 0xdd, 0x5b),
         ("CCW_Dead_Zone", 27, 0x81, 0xdc, 0x5a),
+        ("Angle_Resolution", 30, 0x80, 0xd9, 0x57),
     ];
 
     #[derive(Default)]

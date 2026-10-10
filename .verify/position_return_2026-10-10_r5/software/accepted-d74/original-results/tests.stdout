@@ -1,0 +1,81 @@
+爸爸，I对照停止/恢复未确认，请立即人工断电；不再UART或动作。
+爸爸，I对照停止/恢复未确认，请立即人工断电；不再UART或动作。
+爸爸，I对照停止/恢复未确认，请立即人工断电；不再UART或动作。
+爸爸，I对照停止/恢复未确认，请立即人工断电；不再UART或动作。
+爸爸，I对照停止/恢复未确认，请立即人工断电；不再UART或动作。
+{"status": "PLAN_ONLY", "target": ["left", 7, "head_motor_1"], "register_writes": 0, "motion_commands": 0}
+{
+  "status": "PLAN_ONLY",
+  "plan_sha256": "本地计划",
+  "plan": {
+    "i_trial": {
+      "wrapper": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/i2_trial_head1_wire_r5.py",
+        "sha256": "d74d390848e180f89ef27bc7123d3e026067af3f209d7ee9400d36ed88d38caf",
+        "bytes": 12349
+      },
+      "raw_tool": {
+        "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+        "sha256": "13c97115b89d9f8780ea8b9cac80a091ddcc2b73549d34b2d5cbad83c718ffe1",
+        "bytes": 1510912
+      },
+      "target": [
+        "left",
+        7,
+        "head_motor_1"
+      ],
+      "original_raw_backup": {
+        "Model_Number": 777,
+        "Firmware_Major_Version": 3,
+        "Firmware_Minor_Version": 10,
+        "Operating_Mode": 0,
+        "Torque_Enable": 0,
+        "Goal_Position": 0,
+        "Present_Position": 2642,
+        "Goal_Velocity": 0,
+        "Present_Velocity": 0,
+        "Phase": 12,
+        "P_Coefficient": 16,
+        "D_Coefficient": 43,
+        "I_Coefficient": 0,
+        "CW_Dead_Zone": 1,
+        "CCW_Dead_Zone": 1,
+        "Lock": 1,
+        "Min_Position_Limit": 797,
+        "Max_Position_Limit": 3081,
+        "Homing_Offset": 1303
+      },
+      "original_readonly_result_sha256": "f189503bc9fd8d125f39f2a1b86f7d24b6e23e7848d858ee25e34bc3f12015e6",
+      "temporary_i": 2,
+      "restore_i": 0,
+      "ordinary_stop_wire": {
+        "tool": {
+          "path": "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+          "sha256": "f2014ee4008311e7a8725235a39f0d1b3913391f17cbd977b7441f120539114b",
+          "bytes": 1469904
+        },
+        "strace": {
+          "path": "/usr/bin/strace",
+          "sha256": "5392f54d889a87341d49f970d91e21ab8c1f70a835ac9ead6ee4d17e532ae7f7",
+          "bytes": 1583504
+        },
+        "flags": [
+          "-ttt",
+          "-xx",
+          "-s",
+          "256",
+          "-yy",
+          "-e",
+          "trace=openat,close,read,write,ioctl"
+        ],
+        "right_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "motors": [
+          8,
+          9
+        ],
+        "additional_uart_reads": 0,
+        "wire_frame_review": "PENDING_ROOT_REVIEW_OF_COMPLETE_STRACE"
+      }
+    }
+  }
+}

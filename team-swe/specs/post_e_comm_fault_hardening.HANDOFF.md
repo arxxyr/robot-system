@@ -2,6 +2,20 @@
 
 ## 当前步骤
 
+### 回程诊断增加三个只读原字段，Orin软件验收通过（2026-10-10，R7）
+
+头1I1/I2/P24的回程均停在+6，继续增大P/I缺少依据。仅补现有控制表的Minimum_Starting_Torque@24、Integral_Limit@25、Angle_Resolution@30，均1B unsigned；复用诊断拒写门，四具名写API及poke开串口前拒写，普通read/read-raw保留完整原字节。厂家名义值只作字段说明，不换算或保证现场语义；积分限制值0表示关闭限制功能，不等于关闭积分控制。未修改Phase、PDI控制行为、精度或停止门，未新增框架。
+
+本机真实nightly32d、fmt→定向Clippy、215库与13工具方法通过，首轮测试函数too_many_lines原FAIL保留。Orin独立源为894加五处修改，主树effe与原生597输入逐项相同、聚合913f4353，三份完整首尾窗口及实际fmt→根Clippy通过；default/real-hw库各215重叠，工具13，去重228。独立release诊断ELF5621358b/1514432B，help及三名拒写均真实exit2；28个Runner child和四个实际ELF child自然回收，SSH与dead pane已收尾。必要原件在[只读参数软件摘要](../../.verify/feetech_return_metadata_2026-10-10/summary.json)；两个本地归档解析KeyError保留，均未改或重跑远端recipe。本批无UART、硬件动作、完整workspace测试、H2或正式安装。下一步仅左腕/头1/头2固定15项只读采集，尚无新GO；原精度FAIL、旧±50 OPEN、D15 OPEN/DEFERRED、deployable=false保持。
+
+### 头1临时 I2 往返仍回程 +6（2026-10-10，R5）
+
+当次现场确认和独立GO后，仅执行一次left7临时I2、+24往返并恢复I0。锚点2648、目标2672，出程2668（-4/251.226524ms）PASS；回程800ms内8个样本停在2654（+6），原±4门FAIL。I0/P16/Lock1/D43/CW1/CCW1恢复、STOP51整数零、身份和非UART后验PASS，384个直属child及768份输出原件已核。右8/9初始及停止四个普通READ PV响应原帧均为0，完整ID/LEN/checksum/bit15与stdout一致，不能称全51停止字段都有原帧；旧±50原因仍OPEN，不回填旧FAIL或推断物理轮运动。底盘主动写0，无重试或人工断电要求；原run整体FAIL保持。[R5必要原件与摘要](../../.verify/position_return_2026-10-10_r5/summary.json)。
+
+### 头1临时 P24 对照仍回程 +6（2026-10-10，R6）
+
+新现场确认和独立GO后，仅执行一次left7在I0下P16→24、+24往返并恢复P16。锚点2655、目标2679，出程2675（-4/190.497993ms）PASS；回程800ms内13个有效样本中11个停在2661（+6），仍FAIL。P16/I0/Lock1/D43/CW1/CCW1恢复、STOP51整数零、身份和非UART后验PASS，383个直属child及766份输出原件已核；7次写仅left7，底盘主动写0，无重试或人工断电要求。[R6必要原件与摘要](../../.verify/position_return_2026-10-10_r6/summary.json)保留整体FAIL。头1I1/I2/P24回程均+6；R5/R6合计8个右8/9 PV原帧零不解释旧±50。左腕I1仅临时PASS且已恢复I0，头2仍旧FAIL，长期参数未设置、底盘动作未验，D15 OPEN/DEFERRED、deployable=false保持。两轮未新建Rust控制产物；R6收尾时地址24/25/30只读工具尚在实现，后续软件验收见上方R7。本次root已核两轮原件、独审及R7同源Orin fmt→根Clippy；尚未执行15项参数实机采集。
+
 ### 右8、右9普通 READ 原帧通过，旧异常原因仍待闭环（2026-10-10）
 
 用户先确认已恢复供电、支撑和持续看护就绪；两个软件入口分别因启动稿 SyntaxError、必要引用漏列而拒绝，均在实际 UART 前退出，原 FAIL 保留。准备耗过原600秒现场门后，root于07:59:01UTC记录用户“现场仍就绪，可继续看护并立即断电”，重新绑定当次回执，不续写旧时间、不要求额外电源复位或USB重插。

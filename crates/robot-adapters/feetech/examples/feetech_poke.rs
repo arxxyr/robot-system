@@ -58,7 +58,8 @@
 //! - 写 EEPROM 区寄存器（`Homing_Offset` / `Min_Position_Limit` / `Max_Position_
 //!   Limit` / `Operating_Mode` / `Lock`）的保存语义须独立确认。厂家表公开版本181
 //!   规定Lock0写EPROM掉电保存、Lock1不保存；不能从中推定现场临时写一定生效。
-//!   配置写入需断扭、明确授权及逐项读回；Phase与死区仍为本项目诊断只读。
+//!   配置写入需断扭、明确授权及逐项读回；Phase、死区、最小启动扭矩、积分限制值、
+//!   角度分辨率仍为本项目诊断只读，新增三项保留厂家名义原始字节，不换算现场单位。
 //! - 大幅度 `Goal_Position` 跳变（超过 Goal Acceleration 能追上的范围）可能引起
 //!   机械冲击 —— bring-up 阶段尽量小步推进。
 
@@ -86,14 +87,19 @@ fn static_register_name(name: &str) -> Option<&'static str> {
         .map(|(n, _)| *n)
 }
 
-/// 纯参数预检，在打开串口前保留三个诊断拒写门并拒绝两个固件版本write。
+/// 纯参数预检，在打开串口前保留六个诊断拒写门并拒绝两个固件版本write。
 /// 其他名称与参数继续由原分发处理；本门放行不表示写入合法。
 fn preflight_diagnostic_write(args: &[String]) -> Result<(), FeetechError> {
     match args.get(3).map(String::as_str) {
         Some("write") => match args.get(4).and_then(|name| static_register_name(name)) {
-            Some(name @ ("Phase" | "CW_Dead_Zone" | "CCW_Dead_Zone")) => {
-                ensure_not_diagnostic_write(name)
-            }
+            Some(
+                name @ ("Phase"
+                | "Minimum_Starting_Torque"
+                | "Integral_Limit"
+                | "CW_Dead_Zone"
+                | "CCW_Dead_Zone"
+                | "Angle_Resolution"),
+            ) => ensure_not_diagnostic_write(name),
             Some(name @ ("Firmware_Major_Version" | "Firmware_Minor_Version")) => {
                 ensure_not_firmware_readonly_write(name)
             }
@@ -360,6 +366,9 @@ mod tests {
     fn read_raw_success_reports_requested_metadata_and_actual_sync_read_bytes() {
         for (register, address, data, value) in [
             ("Phase", 18, vec![12_u8], 12_u32),
+            ("Minimum_Starting_Torque", 24, vec![255_u8], 255_u32),
+            ("Integral_Limit", 25, vec![165_u8], 165_u32),
+            ("Angle_Resolution", 30, vec![128_u8], 128_u32),
             ("Present_Velocity", 58, vec![0_u8, 128], 32768_u32),
         ] {
             let (mut bus, handle) = raw_fixture();
@@ -494,7 +503,14 @@ mod tests {
 
     #[test]
     fn diagnostic_write_preflight_denies_even_missing_or_invalid_values() {
-        for name in ["Phase", "CW_Dead_Zone", "CCW_Dead_Zone"] {
+        for name in [
+            "Phase",
+            "Minimum_Starting_Torque",
+            "Integral_Limit",
+            "CW_Dead_Zone",
+            "CCW_Dead_Zone",
+            "Angle_Resolution",
+        ] {
             for value in [None, Some("bad-value"), Some("255"), Some("2147483648")] {
                 let args = arguments("write", name, value);
                 assert!(matches!(
@@ -568,8 +584,18 @@ mod tests {
 
     #[test]
     fn read_and_ping_preflight_preserve_existing_dispatch() {
-        for name in ["Phase", "CW_Dead_Zone", "CCW_Dead_Zone", "Present_Position"] {
-            assert!(preflight_diagnostic_write(&arguments("read", name, None)).is_ok());
+        for name in [
+            "Phase",
+            "Minimum_Starting_Torque",
+            "Integral_Limit",
+            "CW_Dead_Zone",
+            "CCW_Dead_Zone",
+            "Angle_Resolution",
+            "Present_Position",
+        ] {
+            for action in ["read", "read-raw"] {
+                assert!(preflight_diagnostic_write(&arguments(action, name, None)).is_ok());
+            }
         }
         let args: Vec<String> = ["feetech_poke", "/dev/never-open", "1", "ping"]
             .into_iter()

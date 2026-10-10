@@ -1,0 +1,19 @@
+{
+  "recorded_at_ns": 1791619988515064000,
+  "recorded_at": "2026-10-10T08:13:08.515064+00:00",
+  "question_item_id": "[\"request_user_input_async\",\"call_u8JJ4xrEvz1Xd1d1KjnrSrSa\",0]",
+  "answer": "现场仍就绪，可以执行本次头1往返",
+  "scope": "仅头1(left7)临时I2一次+24小幅往返，恢复I0；不驱动底盘；原±4/800ms及17×3停止门不变",
+  "physical": {
+    "motor_supplies_on": true,
+    "arms_unloaded_supported": true,
+    "areas_clear": true,
+    "head_area_clear": true,
+    "support_does_not_block_return": true,
+    "continuous_watch": true,
+    "immediate_manual_power_cut": true
+  },
+  "independent_power_telemetry": "UNKNOWN",
+  "no_power_or_USB_reset_requested": true,
+  "old_FAIL_unchanged": true
+}

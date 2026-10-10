@@ -1,0 +1,238 @@
+{
+  "status": "PASS",
+  "owner_pid": 42368,
+  "commands": [
+    {
+      "label": "compiler_before",
+      "argv": [
+        "rustc",
+        "-Vv"
+      ],
+      "pid": 42369,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "started_at_ns": 1791621293687224000,
+      "finished_at_ns": 1791621293732297000,
+      "outputs": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/compiler_before.stdout",
+          "bytes": 210,
+          "sha256": "780be7daa749ad72ae552568862821c9eaa320eab12330a8cfa73693e116c3a5"
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/compiler_before.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "label": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "pid": 42370,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "started_at_ns": 1791621293732338000,
+      "finished_at_ns": 1791621294657538000,
+      "outputs": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/fmt.stdout",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/fmt.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "label": "crate_clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "robot-adapter-feetech",
+        "--all-targets",
+        "--features",
+        "real-hw",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "pid": 42374,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "started_at_ns": 1791621294657570000,
+      "finished_at_ns": 1791621295635961000,
+      "outputs": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/crate_clippy.stdout",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/crate_clippy.stderr",
+          "bytes": 181,
+          "sha256": "62be6cdc546692a06b86789d331569f631b37759a5e365ee5bbb49495837d4e2"
+        }
+      ]
+    },
+    {
+      "label": "lib_tests",
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "robot-adapter-feetech",
+        "--features",
+        "real-hw",
+        "--lib"
+      ],
+      "pid": 42395,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "started_at_ns": 1791621295635989000,
+      "finished_at_ns": 1791621309300386000,
+      "outputs": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/lib_tests.stdout",
+          "bytes": 17034,
+          "sha256": "1637466c012abc930eae0a775f8128b3cf1e846b956ede58a2063a9ec8512f66"
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/lib_tests.stderr",
+          "bytes": 2544,
+          "sha256": "ca9affba94bb2d590a29555b9a9a7b391d39cad089228d4b07bb727e74ab9b17"
+        }
+      ]
+    },
+    {
+      "label": "poke_tests",
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "robot-adapter-feetech",
+        "--features",
+        "real-hw",
+        "--example",
+        "feetech_poke"
+      ],
+      "pid": 42812,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "started_at_ns": 1791621309300428000,
+      "finished_at_ns": 1791621310802965000,
+      "outputs": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/poke_tests.stdout",
+          "bytes": 1137,
+          "sha256": "0fd00e0e916628b77f365ded0583dbd213e0473f1e1ccde65f6eaf1b20892811"
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/poke_tests.stderr",
+          "bytes": 324,
+          "sha256": "199cfcfbbbb79cd5d24702151c2bc54ce3b31e189279e620eec7421aa822c76e"
+        }
+      ]
+    },
+    {
+      "label": "compiler_after",
+      "argv": [
+        "rustc",
+        "-Vv"
+      ],
+      "pid": 42836,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "started_at_ns": 1791621310803029000,
+      "finished_at_ns": 1791621310852538000,
+      "outputs": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/compiler_after.stdout",
+          "bytes": 210,
+          "sha256": "780be7daa749ad72ae552568862821c9eaa320eab12330a8cfa73693e116c3a5"
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/target/feetech_return_metadata_2026-10-10/local-r2/verification/compiler_after.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ],
+  "sources_before_fmt": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/registers.rs",
+      "bytes": 15721,
+      "sha256": "b4eb0f6de2d7441aaae18be17999aa5869ca6c32daa103400cfc735a5d332058"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/bus.rs",
+      "bytes": 52779,
+      "sha256": "f1d001f36895af5fbb00ed22f5a8b9b0894762da392b0b523bdf9e442f68cc46"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/diagnostic.rs",
+      "bytes": 15347,
+      "sha256": "828382e47b0ac0cc3ed5a75bd53a4945585f389e6f20bea3f4888fbd9696fe7a"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/bus_raw_read_tests.rs",
+      "bytes": 18495,
+      "sha256": "4d769fb396dce1b228c2fdee2c682f56d800af05d0f12970f1a1a2ec473f8b85"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+      "bytes": 22720,
+      "sha256": "ff1f9e23d6afea42916930a193f5230e3da45a5c06e916dd283fa7d44990e04e"
+    }
+  ],
+  "sources_after": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/registers.rs",
+      "bytes": 15721,
+      "sha256": "b4eb0f6de2d7441aaae18be17999aa5869ca6c32daa103400cfc735a5d332058"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/bus.rs",
+      "bytes": 52779,
+      "sha256": "f1d001f36895af5fbb00ed22f5a8b9b0894762da392b0b523bdf9e442f68cc46"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/diagnostic.rs",
+      "bytes": 15347,
+      "sha256": "828382e47b0ac0cc3ed5a75bd53a4945585f389e6f20bea3f4888fbd9696fe7a"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/src/bus_raw_read_tests.rs",
+      "bytes": 18495,
+      "sha256": "4d769fb396dce1b228c2fdee2c682f56d800af05d0f12970f1a1a2ec473f8b85"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+      "bytes": 22720,
+      "sha256": "ff1f9e23d6afea42916930a193f5230e3da45a5c06e916dd283fa7d44990e04e"
+    }
+  ],
+  "hardware_actions": 0,
+  "SSH": 0,
+  "UART": 0,
+  "register_writes": 0,
+  "limits": "本机定向软件门；非Orin根Clippy、全仓测试、独立release或硬件验收"
+}

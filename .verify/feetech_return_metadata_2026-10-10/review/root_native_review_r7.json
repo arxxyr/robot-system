@@ -1,0 +1,35 @@
+{
+  "status": "ROOT_R7_ORIN_SOFTWARE_ACCEPTED",
+  "recorded_at_ns": 1791621988700023000,
+  "native_result_sha256": "0c74d25e3d62418738588ee3b51808f1fec751b59f12aa415aa5b94527c2f9c5",
+  "native_result_bytes": 61904,
+  "actual_order": "nightly update→cargo fmt --all→root cargo clippy --all --all-targets -- -D warnings",
+  "native_direct_Runner_children": 28,
+  "actual_frozen_ELF_children": 4,
+  "actual_ELF_expected_exit": 2,
+  "verified_streams": 64,
+  "unique_Rust_methods": 228,
+  "library_configurations_overlap": 215,
+  "poke_methods": 13,
+  "source_inputs": 597,
+  "source_before_after_and_root_current": "PASS",
+  "aggregate": "913f4353a925acf0e4762e01b54f6264b682ae4635da43783405a8cf1ac038c8",
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "32dba69d69c5b10ea89a4042de8d0619f7756203",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "frozen_tool": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/readback-tool-r1/feetech_poke",
+    "sha256": "5621358b3e5e18be01b8fb94ff7fa85affda60812e27d46bf3c1d1b8978a339f",
+    "bytes": 1514432,
+    "mode": 448,
+    "elf_machine": 183
+  },
+  "build_identity": "native894+5dirty, hosteffe; no relabeling as clean/newgithead",
+  "hardware_UART": 0,
+  "software_recipe_failures": 0,
+  "read_capture": "NOT_RUN_NO_GO",
+  "deployable": false,
+  "D15": "OPEN/DEFERRED"
+}

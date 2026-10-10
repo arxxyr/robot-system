@@ -1,0 +1,6 @@
+本地原件解析失败原文（未运行远端命令、未改原件）：
+Traceback (most recent call last):
+  File "<stdin>", line 39, in <module>
+KeyError: 'path'
+原因：inputs.software_sources按filename映射SHA/bytes，不含path；应以bootstrap/filename定位。
+此前本地cat错误路径expected_exit2_Integral_Limit.json不存在；实际原件目录software-r1/expected_Integral_Limit/completion.json，无远端错误。

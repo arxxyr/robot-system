@@ -1,0 +1,25 @@
+{
+  "status": "ROOT_SINGLE_HEAD1_I2_WIRE_START_AUTHORIZED",
+  "reviewed_at_ns": 1791620132982919000,
+  "plan_digest": "152db1499304d154abc5ed6c45a04bfc63e70701a7070ffab40b07cff471565a",
+  "source_sha256": "d74d390848e180f89ef27bc7123d3e026067af3f209d7ee9400d36ed88d38caf",
+  "go_sha256": "2012da1c2817246ee682b3db14b828b6d518113f8b70eed528a4526e33d220bf",
+  "launcher_sha256": "b584a63fdda5dfddf2cb1e68c3dd7672ca152acc473dc1432bc3491ade3d4185",
+  "reviewed_start": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-10_r1/head-i2-preparation-r5/revision-r2/native-preparation/start_head1_i2_wire_once_r5_root_reviewed.sh",
+    "sha256": "7036177256c2d7260a42bfb06f5b8b8e861bd0457e4b521c5d3b3abca0e55650",
+    "bytes": 5770
+  },
+  "exactly_one_execute": true,
+  "target": "left7 head1 I2 +24 outward/return then I0",
+  "base_actions": 0,
+  "no_auto_retry": true,
+  "checks": [
+    "source/bindings/default plan/field/GO fixed SHA",
+    "all original refs/protection/boot/USB",
+    "source original GO validation+600s confirmed facts",
+    "new record/session/output",
+    "original raw_read/write_i/run_trial/load_source AST unchanged"
+  ],
+  "actual_motion": "NOT_RUN_AT_REVIEW"
+}

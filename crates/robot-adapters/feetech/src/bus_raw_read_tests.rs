@@ -228,19 +228,28 @@ fn three_wheel_raw_words_preserve_negative_zero_and_exact_request() {
 #[test]
 fn one_byte_raw_values_have_independent_golden_request() {
     let values = [0xff, 0x80, 2];
-    let (mut bus, probe) = fixture(&IDS, 1, &values);
-    let mut out = [UNCHANGED; 4];
-    assert_no_alloc::assert_no_alloc(|| {
-        bus.sync_read_by_id_raw_into("Phase", &IDS, &mut out, &mut [0; 11], &mut [0; 21])
-    })
-    .unwrap();
-    assert_eq!(&out[..3], &values);
-    assert_eq!(out[3], UNCHANGED);
-    assert_eq!(
-        &bus.transport.tx[..11],
-        &[0xff, 0xff, 0xfe, 7, 0x82, 18, 1, 8, 7, 9, 0x4d]
-    );
-    probe.assert_counts(1, 2, 1);
+    for (name, address, checksum) in [
+        ("Phase", 18, 0x4d),
+        ("Minimum_Starting_Torque", 24, 0x47),
+        ("Integral_Limit", 25, 0x46),
+        ("CW_Dead_Zone", 26, 0x45),
+        ("CCW_Dead_Zone", 27, 0x44),
+        ("Angle_Resolution", 30, 0x41),
+    ] {
+        let (mut bus, probe) = fixture(&IDS, 1, &values);
+        let mut out = [UNCHANGED; 4];
+        assert_no_alloc::assert_no_alloc(|| {
+            bus.sync_read_by_id_raw_into(name, &IDS, &mut out, &mut [0; 11], &mut [0; 21])
+        })
+        .unwrap();
+        assert_eq!(&out[..3], &values);
+        assert_eq!(out[3], UNCHANGED);
+        assert_eq!(
+            &bus.transport.tx[..11],
+            &[0xff, 0xff, 0xfe, 7, 0x82, address, 1, 8, 7, 9, checksum]
+        );
+        probe.assert_counts(1, 2, 1);
+    }
 }
 
 #[test]

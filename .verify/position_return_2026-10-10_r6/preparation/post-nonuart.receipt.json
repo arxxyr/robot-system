@@ -1,0 +1,18 @@
+{
+  "name": "post-nonuart",
+  "pid": 620151,
+  "argv": [
+    "bash",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.sh"
+  ],
+  "started_ns": 1791620737024864880,
+  "finished_ns": 1791620737846759352,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout_bytes": 176291,
+  "stdout_sha256": "0e5e4d25e2dd53db2d7d6e59decb95e2de57dc5ffd858e028b95eed834f3b98f",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

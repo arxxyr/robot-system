@@ -148,21 +148,6 @@ mod tests {
                 (8, 1, 0),
             ),
             (
-                F::DiagnosticRegisterWriteForbidden("Phase"),
-                D::InvalidParameter(P::Argument),
-                (8, 1, 0),
-            ),
-            (
-                F::DiagnosticRegisterWriteForbidden("CW_Dead_Zone"),
-                D::InvalidParameter(P::Argument),
-                (8, 1, 0),
-            ),
-            (
-                F::DiagnosticRegisterWriteForbidden("CCW_Dead_Zone"),
-                D::InvalidParameter(P::Argument),
-                (8, 1, 0),
-            ),
-            (
                 F::ValueExceedsByteRange {
                     value: 256,
                     max_bytes: 1,
@@ -228,6 +213,20 @@ mod tests {
             let diagnostic = D::classify(&error, 7);
             assert_eq!(diagnostic, expected);
             assert_eq!(diagnostic.encode(), encoded);
+        }
+        for name in [
+            "Phase",
+            "Minimum_Starting_Torque",
+            "Integral_Limit",
+            "CW_Dead_Zone",
+            "CCW_Dead_Zone",
+            "Angle_Resolution",
+        ] {
+            let error = F::DiagnosticRegisterWriteForbidden(name);
+            assert_eq!(error.comm_kind(), None);
+            let diagnostic = D::classify(&error, 7);
+            assert_eq!(diagnostic, D::InvalidParameter(P::Argument));
+            assert_eq!(diagnostic.encode(), (8, 1, 0));
         }
     }
 

@@ -1,0 +1,28 @@
+{
+  "name": "head1-i2-wire-plan-only",
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/i2_trial_head1_wire_r5.py",
+    "--maintenance",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/maintenance_bindings_i2_wire_r5.json",
+    "--output",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/head1-i2-wire-r5",
+    "--run-id",
+    "head1-i2-wire-r5",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/position-return-20261010-r1"
+  ],
+  "pid": 619601,
+  "started_ns": 1791620020060959413,
+  "finished_ns": 1791620020164105911,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout_bytes": 32066,
+  "stdout_sha256": "125fcdda166f9a1d0ccf89801388c70adb50e0b3727c7f203cfc2d8f53314dac",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
