@@ -2,6 +2,18 @@
 
 ## 当前步骤
 
+### 头1临时P32单次往返功能通过（2026-10-11，R13已收尾）
+
+root于03:54:50.976641UTC记录人类“现场仍就绪，可执行本次 P=32 往返”，签独立600秒GO后仅执行一次left7 P16→32→16、+24往返，I0/D43不写。锚2128、目标2152；出程14样本，130.620547ms首次进入±4，继续观察至同一原窗口800.065599ms，末2150/-2 PASS；回程4样本，2132/+4于190.561352ms通过。原±4/800ms、±32及最小12保持，没有目标补偿或精度门续期。P32写ACK和原值32、P16恢复及D43/I0/Lock1/CW1/CCW1读回通过；仅七次具名写入P32、GP2128、TE1、GP2152、GP2128、TE0、P16，均为left7。配置区实际临时写入，不称EEPROM写0；未写Lock、保存、Phase、死区或底盘。
+
+HEAD1_SINGLE_FUNCTION_PASS与原整轮FAIL分别记录：原run779e0942/546834B仍为BASE_FIRMWARE_CONTRACT_UNVERIFIED，三轮DEFERRED/NOT_RUN，不改为整体PASS。STOP51均整数零，79项身份、独立17项非UART清场及47个bound refs完整前后身份一致；manual_power_cut_required=false。384直属child及768原输出逐字核验，352 exit0、32空fuser/sudo fuser预期idle exit1，全部自然回收。29项具名raw TX/RX和右8/9前后四次普通PV READ的完整原帧独核均匹配，四次PV原字均0，不解释旧±50或替代物理轮静止证明。driver641514经同tmux@74/%74观察自然dead/status1后仅回收该自有pane；本机启动owner28274/SSH28275、观察owner28289/SSH28290真实wait/reap，不冒充root直接waitpid远端driver。
+
+必要原件入口：[R13摘要](../../.verify/position_return_2026-10-11_r13/summary.json)，软件准备、实际动作、质量和首质量前置失败各保留唯一原tar，不重复展开。两端各10不同内存方法、默认零动作、缺GO预期exit2、完整PLAN和原生非UART17项通过。首collector误用旧报告字段在清场/独立17项之前拒绝，修字段后仅收同一原run，未重启动作；首质量脚本错名清单在Runner/Cargo之前拒绝，后续实际fmt→根Clippy仅执行一次。原FAIL及本地展示解析错误保留，不称单轮全过。
+
+提交前Orin实际fmt于04:05:03.659791→07.183856UTC、根Clippy于04:05:07.404375→08.184472UTC零警告通过；10质量child/20输出自然回收。597输入主树及原生前/after-fmt/后三窗逐项一致，聚合068277d8，nightly6f5首尾相同；native HEAD894加五处dirty，不称Git对齐。root另实际fmt退出0并复核同597。未新增Rust测试、release/控制ELF构建、正式安装或服务激活；实机沿历史冻结f201位置和13c参数工具，完整身份前后相同。
+
+本轮GO已消耗，看护已通知结束，最新供电仅本轮用户报告ON、独立电气遥测UNKNOWN。一次当前姿态P32功能通过，收尾已恢复P16，不证明P因果、PID即时采用、重复性、长期参数或掉电持久化；R11及更早回程FAIL完整保留。下一步仅头2left8同类P16→32→16、I0/D43不写、一次+24往返，原门与停止链不变；R14本机/Orin软件准备通过，完整PLAN/starter待root审查及新的当次现场确认，尚无GO/UART。左腕长期参数、头2及三轮主动运动未闭环；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false及旧±50 OPEN保持。
+
 ### 三处关节12项运行限制实机只读通过（2026-10-11，R12已收尾）
 
 root于03:37:33.720347UTC记录本会话直接人类答复“现场仍就绪，可执行本次12项只读采集”，仅签固定left5/7/8各TE/PV、Acceleration41/1B、Torque_Limit48/2B各一次的600秒GO。03:41:04.021→03:41:11.234UTC实机12项均通过：三处各TE=0、PV=0、Acceleration=0、Torque_Limit=1000。工具实际捕获请求SYNC_READ和完整响应，12帧ID/地址/宽度/status/checksum/payload与unsigned值逐项独核；请求外握手不冒充只发生12个TTY帧。只报告原值，现场固件单位与控制环即时采用仍未另证；未见低扭矩限制设定，不据此宣称已关闭摩擦或PID根因。

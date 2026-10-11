@@ -1,0 +1,6 @@
+{
+  "status": "FAIL_LOCAL_SCRIPT_GENERATION_ONLY",
+  "cause": "heredoc末尾缺换行，未SSH；r1原件保留。r2先改壳再放payload，避免改动base64内容",
+  "ssh_started": false,
+  "uart_operations": 0
+}

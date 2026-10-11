@@ -1,0 +1,114 @@
+{
+  "status": "HARDWARE_R13_ARCHIVE_READY",
+  "sha256": "c4f502da7ea05a95ce3a3ab559ab0d88a723b92959556a50b0368de29f0d9c88",
+  "bytes": 256637,
+  "files": 810,
+  "source_bytes": 1595502,
+  "report": {
+    "status": "PASS_R13_NONUART_CLEANUP_ORIGINAL_OVERALL_FAIL_PRESERVED",
+    "terminal": "position-head1-p32-trial-20261011-r13|@74|%74|641514|1|1",
+    "driver_pid": 641514,
+    "original_run_status": "FAIL",
+    "original_run_sha256": "779e094205df5fb51168d4a911da95a3c70c00a74d406ba8226e5aa77e46df78",
+    "original_run_bytes": 546834,
+    "original_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+    "position": {
+      "status": "PASS",
+      "issues": []
+    },
+    "stop": "PASS",
+    "direct_hardware_children": 384,
+    "all_hardware_children_reaped": true,
+    "evidence_errors": [],
+    "manualcut": false,
+    "independent_nonUART_checks": 17,
+    "independent_nonUART_children": 23,
+    "bound_refs": 47,
+    "bound_refs_before_after_equal": true,
+    "native_source_files": 597,
+    "native_source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "collector_direct_children": [
+      {
+        "name": "terminal-owned-pane",
+        "argv": [
+          "tmux",
+          "display-message",
+          "-p",
+          "-t",
+          "%74",
+          "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+        ],
+        "started_ns": 1791691105259729480,
+        "signals_sent": [],
+        "reaped": true,
+        "pid": 642038,
+        "finished_ns": 1791691105335921621,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "stdout": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1-p32-seal-r13/terminal-owned-pane.stdout",
+          "bytes": 57,
+          "sha256": "c74e313633cf7e83e1fe0a7400fed7cf6cda8033dbb32e7166aef49f2ae9e611"
+        },
+        "stderr": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1-p32-seal-r13/terminal-owned-pane.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "reclaim-only-owned-dead-pane",
+        "argv": [
+          "tmux",
+          "kill-pane",
+          "-t",
+          "%74"
+        ],
+        "started_ns": 1791691105436046068,
+        "signals_sent": [],
+        "reaped": true,
+        "pid": 642039,
+        "finished_ns": 1791691105470027994,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "stdout": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1-p32-seal-r13/reclaim-only-owned-dead-pane.stdout",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1-p32-seal-r13/reclaim-only-owned-dead-pane.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "independent-nonuart17",
+        "argv": [
+          "bash",
+          "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.sh"
+        ],
+        "started_ns": 1791691105485250140,
+        "signals_sent": [],
+        "reaped": true,
+        "pid": 642040,
+        "finished_ns": 1791691106320831595,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "stdout": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1-p32-seal-r13/independent-nonuart17.stdout",
+          "bytes": 176291,
+          "sha256": "4f503129e968497b239ed35f0edf99aa51f02c39ee9dc14235c7abacb6e5220b"
+        },
+        "stderr": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1-p32-seal-r13/independent-nonuart17.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    ],
+    "new_UART": 0,
+    "new_writes": 0,
+    "new_GO": false
+  }
+}

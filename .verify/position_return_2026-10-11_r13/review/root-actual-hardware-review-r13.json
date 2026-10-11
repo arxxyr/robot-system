@@ -1,0 +1,153 @@
+{
+  "status": "ROOT_ACCEPTED_HEAD1_SINGLE_FUNCTION_PASS_OVERALL_FAIL_RETAINED",
+  "reviewed_ns": 1791691567227462000,
+  "run_sha256": "779e094205df5fb51168d4a911da95a3c70c00a74d406ba8226e5aa77e46df78",
+  "hardware_archive_sha256": "c4f502da7ea05a95ce3a3ab559ab0d88a723b92959556a50b0368de29f0d9c88",
+  "head1_function": "PASS",
+  "anchor_raw": 2128,
+  "goal_raw": 2152,
+  "outward_samples": 14,
+  "return_samples": 4,
+  "outward_first_qualified_ns": 130620547,
+  "outward_final_error": -2,
+  "return_qualified_ns": 190561352,
+  "return_final_error": 4,
+  "overall_run": "FAIL",
+  "overall_reason": "BASE_FIRMWARE_CONTRACT_UNVERIFIED",
+  "base_actuation_commands": 0,
+  "parameter_restore": "PASS_P16_D43_I0_LOCK1_DEADZONES1",
+  "named_write_commands": 7,
+  "named_write_target": "left7",
+  "direct_children": 384,
+  "streams_verified": 768,
+  "exit_counts": {
+    "0": 352,
+    "1": 32
+  },
+  "idle_fuser_expected_exit1": 32,
+  "raw_register_frames_verified": 29,
+  "ordinary_stop_reads_verified": [
+    {
+      "path": "head1-p32-trial-r13/right8-normal-read-command_0136.strace",
+      "motor": 8,
+      "sequence": 136,
+      "ordinary_read_tx": [
+        255,
+        255,
+        8,
+        4,
+        2,
+        58,
+        2,
+        181
+      ],
+      "rx": [
+        255,
+        255,
+        8,
+        4,
+        0,
+        0,
+        0,
+        243
+      ],
+      "raw_unsigned": 0,
+      "sha256": "a7cb607d64027d7d52d53d2b3b05cbc652f0a8c8e77165c4ad4e7f50dbdc970f"
+    },
+    {
+      "path": "head1-p32-trial-r13/right8-normal-read-command_0358.strace",
+      "motor": 8,
+      "sequence": 358,
+      "ordinary_read_tx": [
+        255,
+        255,
+        8,
+        4,
+        2,
+        58,
+        2,
+        181
+      ],
+      "rx": [
+        255,
+        255,
+        8,
+        4,
+        0,
+        0,
+        0,
+        243
+      ],
+      "raw_unsigned": 0,
+      "sha256": "2b94995ab0bd394d6f416a63d5ad4ee4b9c50b84e5a5a7b622da1af441bcd786"
+    },
+    {
+      "path": "head1-p32-trial-r13/right9-normal-read-command_0142.strace",
+      "motor": 9,
+      "sequence": 142,
+      "ordinary_read_tx": [
+        255,
+        255,
+        9,
+        4,
+        2,
+        58,
+        2,
+        180
+      ],
+      "rx": [
+        255,
+        255,
+        9,
+        4,
+        0,
+        0,
+        0,
+        242
+      ],
+      "raw_unsigned": 0,
+      "sha256": "a8fd26d70281f62ad48e2eeae9e765318476621bcb4b16631cc5ce44236a2c2e"
+    },
+    {
+      "path": "head1-p32-trial-r13/right9-normal-read-command_0364.strace",
+      "motor": 9,
+      "sequence": 364,
+      "ordinary_read_tx": [
+        255,
+        255,
+        9,
+        4,
+        2,
+        58,
+        2,
+        180
+      ],
+      "rx": [
+        255,
+        255,
+        9,
+        4,
+        0,
+        0,
+        0,
+        242
+      ],
+      "raw_unsigned": 0,
+      "sha256": "57dd0663bfcb4ce696f0e5554500549d442971e164e72a67d0c44f7e6a52a88c"
+    }
+  ],
+  "stop_integer_zero_fields": 51,
+  "identity_checks": 79,
+  "independent_cleanup_checks": 17,
+  "bound_refs_unchanged": 47,
+  "native_source_inputs": 597,
+  "native_source_manifest_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "manual_power_cut_required": false,
+  "new_actions": 0,
+  "limitations": [
+    "仅一次当前姿态+24功能；P32已恢复为16，长期参数与重复性未验",
+    "不证明P因果、PID即时采用或掉电持久化",
+    "停止寄存器与原帧不替代物理轮静止或独立断电证明；旧±50原因未闭环",
+    "左腕长期参数、头2、底盘主动动作尚未闭环；D15 OPEN/DEFERRED、deployable=false"
+  ]
+}

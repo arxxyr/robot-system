@@ -1,0 +1,204 @@
+{
+  "schema": "POSITION_RETURN_HEAD1_P32_R13_ARCHIVE_V1",
+  "status": "HEAD1_SINGLE_FUNCTION_PASS_OVERALL_FAIL_BASE_DEFERRED",
+  "recorded_at_utc": "2026-10-11T04:09:42.887422+00:00",
+  "scope": "本次仅头1左7临时P16→32→16、I0/D43保持，一次+24小幅往返；按原±4/800ms与17电机STOP51验收。",
+  "run_original": {
+    "archive": "archives/hardware-originals-r13.tar.gz",
+    "member": "head1-p32-trial-r13/run.json",
+    "sha256": "779e094205df5fb51168d4a911da95a3c70c00a74d406ba8226e5aa77e46df78",
+    "bytes": 546834,
+    "driver_pid": 641514,
+    "result": "FAIL",
+    "reason": "BASE_FIRMWARE_CONTRACT_UNVERIFIED",
+    "base_actuation_commands": 0,
+    "direct_children": 384,
+    "streams_verified": 768,
+    "exit_counts": {
+      "0": 352,
+      "1": 32
+    },
+    "expected_idle_fuser_exit1": 32,
+    "all_children_reaped": true,
+    "manual_power_cut_required": false,
+    "evidence_errors": []
+  },
+  "head1_single_function": {
+    "status": "PASS",
+    "anchor_raw": 2128,
+    "goal_raw": 2152,
+    "outward_samples": 14,
+    "outward_first_qualified_ms": 130.620547,
+    "outward_final_raw": 2150,
+    "outward_final_error": -2,
+    "outward_observed_ms": 800.065599,
+    "return_samples": 4,
+    "return_final_raw": 2132,
+    "return_final_error": 4,
+    "return_qualified_ms": 190.561352,
+    "acceptance": "原±4/800ms；单次当前姿态，不外推重复性或所有姿态"
+  },
+  "parameters": {
+    "temporary_P": 32,
+    "restored_P": 16,
+    "D": 43,
+    "I": 0,
+    "Lock": 1,
+    "CW_CCW_deadzone": [
+      1,
+      1
+    ],
+    "restore": "PASS_RAW_READBACK",
+    "named_write_commands": 7,
+    "target": "left7",
+    "long_term_parameter_fix": "NOT_IMPLEMENTED"
+  },
+  "stop_and_identity": {
+    "integer_zero_fields": 51,
+    "stop": "PASS_TE_PV_GV_17_MOTORS",
+    "identity_checks": 79,
+    "raw_register_frames_verified": 29,
+    "ordinary_RIGHT8_RIGHT9_PV_reads": 4,
+    "ordinary_READ_raw_integer_values": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "physical_wheel_stationarity": "NOT_INDEPENDENTLY_VERIFIED",
+    "independent_nonUART17": "PASS",
+    "independent_nonUART_children": 23,
+    "all_reaped": true,
+    "bound_refs_before_after_equal": 47
+  },
+  "lifecycle": {
+    "hardware_terminal": "@74/%74 driver641514 natural dead1/status1 matched before reclaiming only owned dead pane",
+    "single_hardware_launches": 1,
+    "collector_direct_children": 3,
+    "new_GO_after_terminal": 0,
+    "watch": "root已通知本轮看护结束",
+    "GO": "CONSUMED",
+    "power": "本次启动仅用户报告ON；独立遥测UNKNOWN；不推断收尾实际断电",
+    "new_UART_after_terminal": 0
+  },
+  "software_preparation": {
+    "host_methods": 10,
+    "native_methods": 10,
+    "distinct_methods_per_platform": 10,
+    "cross_platform_counts_not_added": true,
+    "default_plan_actions": 0,
+    "missing_GO_exit": 2,
+    "full_PLAN_only": "PASS",
+    "native_nonUART17": "PASS",
+    "draft_starter": "三个现场/GO字段None，仅模板；实际带本次GO的starter原件单独归档"
+  },
+  "source_and_commit_quality": {
+    "source_files": 597,
+    "source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "native_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_state": "five changed sources; not clean",
+    "native_quality_windows": 3,
+    "native_seal_source_windows": 1,
+    "host_quality_before_after_equal": true,
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "6f5da406b56c2db6607202b63daee73aa8c61297",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "actual_checks": [
+      {
+        "name": "fmt",
+        "pid": 642441,
+        "argv": [
+          "cargo",
+          "fmt",
+          "--all"
+        ],
+        "started_at": "2026-10-11T04:05:03.659791+00:00",
+        "finished_at": "2026-10-11T04:05:07.183856+00:00",
+        "exit_code": 0,
+        "reaped": true
+      },
+      {
+        "name": "clippy",
+        "pid": 642452,
+        "argv": [
+          "cargo",
+          "clippy",
+          "--all",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "started_at": "2026-10-11T04:05:07.404375+00:00",
+        "finished_at": "2026-10-11T04:05:08.184472+00:00",
+        "exit_code": 0,
+        "reaped": true
+      }
+    ],
+    "Runner_children": 10,
+    "same_SSH_children": 4,
+    "owner": 32384,
+    "SSH": 32385,
+    "exit": 0,
+    "reaped": true,
+    "native_driver": 642420,
+    "pane": "@76/%76 natural exit0 then only owned dead pane reclaimed",
+    "tests": 0,
+    "release_builds": 0,
+    "UART": 0,
+    "nightly_update": 0,
+    "root_actual_host_fmt": "root报告actual cargo fmt --all exit0；独核主树597与原生三窗口相同"
+  },
+  "archives": {
+    "native_preparation": {
+      "path": "archives/native-preparation-originals-r13.tar.gz",
+      "members": 48
+    },
+    "hardware": {
+      "path": "archives/hardware-originals-r13.tar.gz",
+      "members": 810,
+      "sha256": "c4f502da7ea05a95ce3a3ab559ab0d88a723b92959556a50b0368de29f0d9c88"
+    },
+    "commit_quality": {
+      "path": "archives/commit-quality-originals-r13.tar.gz",
+      "members": 61,
+      "sha256": "351a553dd331c29cd7cabf57ad148be49ccc7af33fe8296ad5ae8623dbd4db39"
+    },
+    "commit_quality_first_failure": {
+      "path": "archives/commit-quality-first-originals-r13.tar.gz",
+      "members": 17,
+      "Cargo_commands": 0
+    }
+  },
+  "failure_preservation": [
+    "local generation helper initial repeated marker FAIL before tests/native/UART",
+    "native SSH input generation missing newline FAIL before SSH",
+    "first collector schema KeyError(pid) before terminal/cleanup/nonUART commands; owner29091/SSH29092 natural exit1/reap",
+    "first quality historical manifest name FileNotFound before Runner/Cargo; @75/%75 driver642308 natural exit1 then owned dead pane reclaimed, owner32148/SSH32149 natural exit1/reap",
+    "actual hardware observer owner28289/SSH28290 natural exit1/reap: original overall FAIL retained; no action retry",
+    "root local quality-display JSONDecodeError from git ls-files stdout parsed as JSON; corrected to existing source JSON windows, no Cargo/SSH/UART repeat"
+  ],
+  "review": "review/root-actual-hardware-review-r13.json",
+  "limitations": [
+    "仅一次当前姿态+24功能；P32已恢复为16，长期参数与重复性未验",
+    "不证明P因果、PID即时采用或掉电持久化",
+    "停止寄存器与原帧不替代物理轮静止或独立断电证明；旧±50原因未闭环",
+    "左腕长期参数、头2、底盘主动动作尚未闭环；D15 OPEN/DEFERRED、deployable=false"
+  ],
+  "unchanged_open_items": {
+    "legacy_precision_FAIL": "PRESERVED",
+    "legacy_right8_right9_plus_minus50": "OPEN_UNCONFIRMED",
+    "left_wrist_long_term_gain": "UNVERIFIED",
+    "head2_precision": "UNVERIFIED",
+    "base_active_motion": "NOT_RUN_DEFERRED",
+    "D15": "OPEN/DEFERRED",
+    "deployable": false,
+    "goal_complete": false,
+    "formal_install_or_service_activation": false,
+    "commit_push_by_this_agent": false
+  },
+  "quality_review": "review/root-commit-quality-review-r13.json",
+  "archive_recorded_at_utc": "2026-10-11T04:10:01.704215+00:00"
+}

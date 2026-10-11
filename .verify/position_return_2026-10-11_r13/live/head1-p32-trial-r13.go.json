@@ -1,0 +1,34 @@
+{
+  "schema": "MAINTENANCE_GO_V2",
+  "issued_by": "root",
+  "plan_sha256": "580ff47a66591c36b406b84188fe8a0a296acfc274492bee207b2438c9160f49",
+  "artifact_root": "/home/loosqk/robot-checks/position-return-20261010-r1",
+  "issued_at_ns": 1791690890976641000,
+  "expires_at_ns": 1791691490976641000,
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "source": "本轮人类直接答复现场仍就绪，可执行本次 P=32 往返；field_confirmation SHA6af06b6c595edff3d99d3f7158201827df1a77e981a40b81f6a0013cd089a2d0",
+  "physical": {
+    "left": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791690890976641000
+    },
+    "right": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791690890976641000
+    }
+  },
+  "scope": "仅头1left7 P16临时改32后单次+24尝试往返，最后恢复16并核PDI/Lock/死区；I0/D43不写，原±4/800ms、±32、最小12及STOP51保持；出程FAIL不强行回程，无Load/相机/底盘动作，无自动重试"
+}

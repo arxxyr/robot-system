@@ -1,0 +1,1268 @@
+{
+  "status": "HEAD1_P32_TRIAL_REAL_TERMINAL",
+  "pane_pid": 641514,
+  "pane_exit": 1,
+  "result_status": "FAIL",
+  "result_sha256": "779e094205df5fb51168d4a911da95a3c70c00a74d406ba8226e5aa77e46df78",
+  "result_bytes": 546834,
+  "stop_verification": {
+    "status": "PASS",
+    "issues": [],
+    "observed": {
+      "left:1": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:2": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:3": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:4": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:5": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:6": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:7": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:8": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:1": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:2": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:3": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:4": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:5": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:6": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:7": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:8": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:9": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      }
+    },
+    "motors_expected": 17,
+    "registers": [
+      "Torque_Enable",
+      "Present_Velocity",
+      "Goal_Velocity"
+    ]
+  },
+  "position_verification": {
+    "status": "PASS",
+    "issues": []
+  },
+  "identity_status": "PASS",
+  "probes": [
+    {
+      "side": "left",
+      "motor": 7,
+      "name": "head_motor_1",
+      "kind": "position",
+      "status": "PASS",
+      "position_accuracy": {
+        "status": "PASS",
+        "stages": {
+          "outward": {
+            "stage": "outward",
+            "status": "PASS",
+            "target_raw": 2152,
+            "anchor_raw": 2128,
+            "tolerance_raw": 4,
+            "budget_ms": 800,
+            "started_ns": 3444198396086843,
+            "deadline_ns": 3444199196086843,
+            "samples": [
+              {
+                "stamp_ns": 3444198406188612,
+                "position_raw": 2128,
+                "signed_error_raw": -24
+              },
+              {
+                "stamp_ns": 3444198466467985,
+                "position_raw": 2135,
+                "signed_error_raw": -17
+              },
+              {
+                "stamp_ns": 3444198526707390,
+                "position_raw": 2148,
+                "signed_error_raw": -4
+              },
+              {
+                "stamp_ns": 3444198586915785,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444198647102356,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444198707296512,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444198767454282,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444198827685335,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444198887846721,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444198948079277,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444199008275353,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444199068509221,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444199128663664,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              },
+              {
+                "stamp_ns": 3444199188841147,
+                "position_raw": 2150,
+                "signed_error_raw": -2
+              }
+            ],
+            "final_signed_error_raw": -2,
+            "first_qualified_sample": {
+              "stamp_ns": 3444198526707390,
+              "position_raw": 2148,
+              "signed_error_raw": -4
+            },
+            "first_qualified_elapsed_ns": 130620547,
+            "observation_policy": "FIRST_QUALIFIED_WITHIN_ORIGINAL_DEADLINE_THEN_OBSERVE_TO_SAME_DEADLINE",
+            "finished_ns": 3444199196152442,
+            "elapsed_ns": 800065599
+          },
+          "return": {
+            "stage": "return",
+            "status": "PASS",
+            "target_raw": 2128,
+            "anchor_raw": 2128,
+            "tolerance_raw": 4,
+            "budget_ms": 800,
+            "started_ns": 3444199216503600,
+            "deadline_ns": 3444200016503600,
+            "samples": [
+              {
+                "stamp_ns": 3444199226591417,
+                "position_raw": 2150,
+                "signed_error_raw": 22
+              },
+              {
+                "stamp_ns": 3444199286791557,
+                "position_raw": 2145,
+                "signed_error_raw": 17
+              },
+              {
+                "stamp_ns": 3444199346948207,
+                "position_raw": 2133,
+                "signed_error_raw": 5
+              },
+              {
+                "stamp_ns": 3444199407064952,
+                "position_raw": 2132,
+                "signed_error_raw": 4
+              }
+            ],
+            "final_signed_error_raw": 4,
+            "finished_ns": 3444199407064952,
+            "elapsed_ns": 190561352
+          }
+        }
+      },
+      "anchor_raw": 2128,
+      "goal_raw": 2152,
+      "outward": [
+        {
+          "stamp_ns": 3444198406188612,
+          "position_raw": 2128,
+          "signed_error_raw": -24
+        },
+        {
+          "stamp_ns": 3444198466467985,
+          "position_raw": 2135,
+          "signed_error_raw": -17
+        },
+        {
+          "stamp_ns": 3444198526707390,
+          "position_raw": 2148,
+          "signed_error_raw": -4
+        },
+        {
+          "stamp_ns": 3444198586915785,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444198647102356,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444198707296512,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444198767454282,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444198827685335,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444198887846721,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444198948079277,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444199008275353,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444199068509221,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444199128663664,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        },
+        {
+          "stamp_ns": 3444199188841147,
+          "position_raw": 2150,
+          "signed_error_raw": -2
+        }
+      ],
+      "return": [
+        {
+          "stamp_ns": 3444199226591417,
+          "position_raw": 2150,
+          "signed_error_raw": 22
+        },
+        {
+          "stamp_ns": 3444199286791557,
+          "position_raw": 2145,
+          "signed_error_raw": 17
+        },
+        {
+          "stamp_ns": 3444199346948207,
+          "position_raw": 2133,
+          "signed_error_raw": 5
+        },
+        {
+          "stamp_ns": 3444199407064952,
+          "position_raw": 2132,
+          "signed_error_raw": 4
+        }
+      ],
+      "cleanup_errors": [],
+      "error": null,
+      "p_trial": {
+        "status": "PASS",
+        "original_backup": {
+          "Model_Number": 777,
+          "Firmware_Major_Version": 3,
+          "Firmware_Minor_Version": 10,
+          "Operating_Mode": 0,
+          "Torque_Enable": 0,
+          "Goal_Position": 0,
+          "Present_Position": 2642,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 0,
+          "Phase": 12,
+          "P_Coefficient": 16,
+          "D_Coefficient": 43,
+          "I_Coefficient": 0,
+          "CW_Dead_Zone": 1,
+          "CCW_Dead_Zone": 1,
+          "Lock": 1,
+          "Min_Position_Limit": 797,
+          "Max_Position_Limit": 3081,
+          "Homing_Offset": 1303
+        },
+        "before_raw": {
+          "Torque_Enable": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 0,
+            "register": "Torque_Enable",
+            "requested_register_address": 40,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              0,
+              245
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              40,
+              1,
+              7,
+              74
+            ],
+            "width": 1
+          },
+          "Present_Velocity": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 0,
+            "register": "Present_Velocity",
+            "requested_register_address": 58,
+            "rx": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              0,
+              0,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              58,
+              2,
+              7,
+              55
+            ],
+            "width": 2
+          },
+          "Lock": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 1,
+            "register": "Lock",
+            "requested_register_address": 55,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              1,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              55,
+              1,
+              7,
+              59
+            ],
+            "width": 1
+          },
+          "Model_Number": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 777,
+            "register": "Model_Number",
+            "requested_register_address": 3,
+            "rx": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              9,
+              3,
+              232
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              3,
+              2,
+              7,
+              110
+            ],
+            "width": 2
+          },
+          "Firmware_Major_Version": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 3,
+            "register": "Firmware_Major_Version",
+            "requested_register_address": 0,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              3,
+              242
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              0,
+              1,
+              7,
+              114
+            ],
+            "width": 1
+          },
+          "Firmware_Minor_Version": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 10,
+            "register": "Firmware_Minor_Version",
+            "requested_register_address": 1,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              10,
+              235
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              1,
+              1,
+              7,
+              113
+            ],
+            "width": 1
+          },
+          "Operating_Mode": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 0,
+            "register": "Operating_Mode",
+            "requested_register_address": 33,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              0,
+              245
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              33,
+              1,
+              7,
+              81
+            ],
+            "width": 1
+          },
+          "Goal_Position": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 2122,
+            "register": "Goal_Position",
+            "requested_register_address": 42,
+            "rx": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              74,
+              8,
+              162
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              42,
+              2,
+              7,
+              71
+            ],
+            "width": 2
+          },
+          "Present_Position": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 2128,
+            "register": "Present_Position",
+            "requested_register_address": 56,
+            "rx": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              80,
+              8,
+              156
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              56,
+              2,
+              7,
+              57
+            ],
+            "width": 2
+          },
+          "Goal_Velocity": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 0,
+            "register": "Goal_Velocity",
+            "requested_register_address": 46,
+            "rx": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              0,
+              0,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              46,
+              2,
+              7,
+              67
+            ],
+            "width": 2
+          },
+          "Phase": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 12,
+            "register": "Phase",
+            "requested_register_address": 18,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              12,
+              233
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              18,
+              1,
+              7,
+              96
+            ],
+            "width": 1
+          },
+          "P_Coefficient": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 16,
+            "register": "P_Coefficient",
+            "requested_register_address": 21,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              16,
+              229
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              21,
+              1,
+              7,
+              93
+            ],
+            "width": 1
+          },
+          "D_Coefficient": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 43,
+            "register": "D_Coefficient",
+            "requested_register_address": 22,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              43,
+              202
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              22,
+              1,
+              7,
+              92
+            ],
+            "width": 1
+          },
+          "I_Coefficient": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 0,
+            "register": "I_Coefficient",
+            "requested_register_address": 23,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              0,
+              245
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              23,
+              1,
+              7,
+              91
+            ],
+            "width": 1
+          },
+          "CW_Dead_Zone": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 1,
+            "register": "CW_Dead_Zone",
+            "requested_register_address": 26,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              1,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              26,
+              1,
+              7,
+              88
+            ],
+            "width": 1
+          },
+          "CCW_Dead_Zone": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 1,
+            "register": "CCW_Dead_Zone",
+            "requested_register_address": 27,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              1,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              27,
+              1,
+              7,
+              87
+            ],
+            "width": 1
+          },
+          "Min_Position_Limit": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 797,
+            "register": "Min_Position_Limit",
+            "requested_register_address": 9,
+            "rx": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              29,
+              3,
+              212
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              9,
+              2,
+              7,
+              104
+            ],
+            "width": 2
+          },
+          "Max_Position_Limit": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 3081,
+            "register": "Max_Position_Limit",
+            "requested_register_address": 11,
+            "rx": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              9,
+              12,
+              223
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              11,
+              2,
+              7,
+              102
+            ],
+            "width": 2
+          },
+          "Homing_Offset": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 1303,
+            "register": "Homing_Offset",
+            "requested_register_address": 31,
+            "rx": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              23,
+              5,
+              216
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              31,
+              2,
+              7,
+              82
+            ],
+            "width": 2
+          }
+        },
+        "p32_raw": {
+          "P_Coefficient": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 32,
+            "register": "P_Coefficient",
+            "requested_register_address": 21,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              32,
+              213
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              21,
+              1,
+              7,
+              93
+            ],
+            "width": 1
+          },
+          "Lock": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 1,
+            "register": "Lock",
+            "requested_register_address": 55,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              1,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              55,
+              1,
+              7,
+              59
+            ],
+            "width": 1
+          }
+        },
+        "restore_raw": {
+          "Torque_Enable": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 0,
+            "register": "Torque_Enable",
+            "requested_register_address": 40,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              0,
+              245
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              40,
+              1,
+              7,
+              74
+            ],
+            "width": 1
+          },
+          "Present_Velocity": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 0,
+            "register": "Present_Velocity",
+            "requested_register_address": 58,
+            "rx": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              0,
+              0,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              58,
+              2,
+              7,
+              55
+            ],
+            "width": 2
+          },
+          "Lock": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 1,
+            "register": "Lock",
+            "requested_register_address": 55,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              1,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              55,
+              1,
+              7,
+              59
+            ],
+            "width": 1
+          },
+          "P_Coefficient": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 16,
+            "register": "P_Coefficient",
+            "requested_register_address": 21,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              16,
+              229
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              21,
+              1,
+              7,
+              93
+            ],
+            "width": 1
+          },
+          "D_Coefficient": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 43,
+            "register": "D_Coefficient",
+            "requested_register_address": 22,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              43,
+              202
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              22,
+              1,
+              7,
+              92
+            ],
+            "width": 1
+          },
+          "I_Coefficient": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 0,
+            "register": "I_Coefficient",
+            "requested_register_address": 23,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              0,
+              245
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              23,
+              1,
+              7,
+              91
+            ],
+            "width": 1
+          },
+          "CW_Dead_Zone": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 1,
+            "register": "CW_Dead_Zone",
+            "requested_register_address": 26,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              1,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              26,
+              1,
+              7,
+              88
+            ],
+            "width": 1
+          },
+          "CCW_Dead_Zone": {
+            "motor_id": 7,
+            "operation": "sync_read",
+            "raw_unsigned": 1,
+            "register": "CCW_Dead_Zone",
+            "requested_register_address": 27,
+            "rx": [
+              255,
+              255,
+              7,
+              3,
+              0,
+              1,
+              244
+            ],
+            "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+            "tx": [
+              255,
+              255,
+              254,
+              5,
+              130,
+              27,
+              1,
+              7,
+              87
+            ],
+            "width": 1
+          }
+        },
+        "restore_status": "PASS",
+        "p32_write_attempted": true,
+        "errors": [],
+        "interpretation": "只验当前起点原精度功能；不同姿态/方向不证明P因果或PID即时采用"
+      }
+    },
+    {
+      "side": "right",
+      "motor": 8,
+      "name": "base_front_wheel",
+      "kind": "velocity",
+      "status": "NOT_RUN",
+      "decision": "DEFERRED",
+      "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+    },
+    {
+      "side": "right",
+      "motor": 7,
+      "name": "base_left_wheel",
+      "kind": "velocity",
+      "status": "NOT_RUN",
+      "decision": "DEFERRED",
+      "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+    },
+    {
+      "side": "right",
+      "motor": 9,
+      "name": "base_right_wheel",
+      "kind": "velocity",
+      "status": "NOT_RUN",
+      "decision": "DEFERRED",
+      "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+    }
+  ],
+  "error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+  "before_errors": [],
+  "after_errors": [],
+  "evidence_errors": [],
+  "manual_power_cut_required": false,
+  "child_count": 384,
+  "unreaped": [],
+  "child_active": false
+}

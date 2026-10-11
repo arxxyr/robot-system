@@ -1,0 +1,6 @@
+{
+  "status": "LOCAL_REVIEW_PARSE_FAILURE_RETAINED",
+  "failure": "JSONDecodeError Expecting value: attempted to parse source_before_files git ls-files stdout as JSON",
+  "effect": "发生在本地检查后段；已核十completion与二十流，不新增远端/Cargo/UART；改读原生三个独立JSON源码清单",
+  "reported_at_ns": 1791691733038015000
+}

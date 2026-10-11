@@ -1,0 +1,29 @@
+{
+  "status": "ROOT_ACCEPTED_STARTER_TEMPLATE_ONLY",
+  "reviewed_ns": 1791690858417300000,
+  "draft": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r13/native-preparation/start_head1_p32_trial_once_r13.draft.sh",
+    "sha256": "19a51da6192075e33e0509be3fe770a22609077056ef5ff0414ba431bb3c95a2",
+    "bytes": 7893
+  },
+  "launcher": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r13/native-preparation/launch_head1_p32_trial_r13.draft.sh",
+    "sha256": "e8dfae50f240546670e586a2a3816f0e71acff87ec5e442402d79e15cff1071b",
+    "bytes": 1226
+  },
+  "observer": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r13/native-preparation/observe_once_r13.draft.sh",
+    "sha256": "26bc8a9832795364dd1fd9675b903cee2e9efb7a859bf795118bf11ba3fb867c",
+    "bytes": 3501
+  },
+  "approval_pins": {
+    "FIELD_STAMP": null,
+    "FIELD_EXPECTED": null,
+    "GO_EXPECTED": null
+  },
+  "plan_sha256": "580ff47a66591c36b406b84188fe8a0a296acfc274492bee207b2438c9160f49",
+  "unique_execute": true,
+  "root_review": "已完整阅读starter、decoded launcher及observer；沿原R11终态与STOP链，无新门；当前field/GO均未绑定，草稿不运行",
+  "go_created": false,
+  "hardware_actions": 0
+}

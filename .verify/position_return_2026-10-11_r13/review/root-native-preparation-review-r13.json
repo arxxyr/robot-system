@@ -1,0 +1,33 @@
+{
+  "status": "ROOT_ACCEPTED_NATIVE_PREPARATION_ONLY",
+  "reviewed_ns": 1791690722532292000,
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r13/native-preparation/native-preparation-originals-r13.tar.gz",
+    "bytes": 199452,
+    "sha256": "82521fc4e44f7b2db08cb659b5c4a5e4c2c481d6c2675ea6072130a40cc1ed4e",
+    "files": 48
+  },
+  "plan_sha256": "580ff47a66591c36b406b84188fe8a0a296acfc274492bee207b2438c9160f49",
+  "native_direct_children": 5,
+  "native_streams_verified": 10,
+  "memory_unique_methods": 10,
+  "motor_target": [
+    "left",
+    7,
+    "head_motor_1"
+  ],
+  "p_trial": [
+    32,
+    16
+  ],
+  "i_fixed": 0,
+  "d_fixed": 43,
+  "delta_raw": 24,
+  "tolerance_raw": 4,
+  "wait_ms": 800,
+  "base_decision": "DEFERRED",
+  "new_go": false,
+  "current_field_confirmation": false,
+  "hardware_execution": false,
+  "limits": "仅准备软件；旧GO不能复用，实际功能、参数即时采用及持久化均未验证"
+}

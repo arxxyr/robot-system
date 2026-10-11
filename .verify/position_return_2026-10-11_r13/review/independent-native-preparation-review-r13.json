@@ -1,0 +1,129 @@
+{
+  "schema": "INDEPENDENT_R13_NATIVE_SOFTWARE_PREPARATION_REVIEW_V1",
+  "status": "PASS_SOFTWARE_PREPARATION_ONLY",
+  "review_scope": "仅核已完成原生软件准备包；未发现本范围实质阻碍",
+  "reviewer": "p32_native_review",
+  "archive": {
+    "path": "target/position_return_2026-10-11_r13/native-preparation/native-preparation-originals-r13.tar.gz",
+    "sha256": "82521fc4e44f7b2db08cb659b5c4a5e4c2c481d6c2675ea6072130a40cc1ed4e",
+    "bytes": 199452,
+    "regular_files": 48
+  },
+  "plan": {
+    "archive_member": "head-p32-trial-r13/full-plan-only.stdout",
+    "sha256": "768bd8011c1055509bfd86d7452a3d08944258d3591230f7d8b82123664ce35c",
+    "bytes": 37158,
+    "canonical_plan_sha256": "580ff47a66591c36b406b84188fe8a0a296acfc274492bee207b2438c9160f49",
+    "canonical_digest_recomputed": true
+  },
+  "candidate": {
+    "sha256": "e0275b2c42bd8c9e528ff196cc07c5b26f6541e157aec70db9f2b4c0ac8903be",
+    "bytes": 12619
+  },
+  "bindings": {
+    "sha256": "26195ada947329f6f74b0796b544323f8b0f1257dc57050586fae6a788002988",
+    "bytes": 27768,
+    "references": 47
+  },
+  "checks": {
+    "archived_candidate_helpers_13_fixtures_bindings_plan_sha_and_size": "PASS",
+    "direct_child_receipts_and_10_streams_sha_size": "PASS",
+    "native_tests": {
+      "different_methods": 10,
+      "failed": 0,
+      "status": "PASS",
+      "rerun_by_reviewer": false
+    },
+    "default_plan": {
+      "status": "PLAN_ONLY",
+      "actions_started": 0,
+      "parameter_writes": 0,
+      "motion_commands": 0,
+      "load_raw_reads": 0
+    },
+    "missing_go": {
+      "exit_code": 2,
+      "refusal_before_loading": true
+    },
+    "non_uart": {
+      "checks": 17,
+      "commands": 23,
+      "exit_zero": 11,
+      "expected_empty_fuser_exit_one": 12,
+      "all_reaped": true,
+      "signals_sent": 0,
+      "cleanup": false,
+      "output_sha_and_size_verified": true,
+      "status": "PASS"
+    },
+    "host_and_frozen_f201_13c_identity_before_after_equal": true,
+    "usb_matches_binding": true,
+    "six_services_inactive": true,
+    "related_control_or_readback_processes": 0,
+    "protected_and_refs_called_before_and_after_in_native_preparer": true,
+    "driver_log_equals_prepare_result": true
+  },
+  "child_evidence": {
+    "native_prepare_direct_children": 5,
+    "native_prepare_direct_child_exit_codes": {
+      "zero": 4,
+      "expected_missing_go_two": 1
+    },
+    "native_prepare_direct_child_pids": [
+      641365,
+      641398,
+      641399,
+      641400,
+      641401
+    ],
+    "native_prepare_direct_children_reaped": 5,
+    "non_uart_nested_children": 23,
+    "same_ssh_children": 4,
+    "same_ssh_child_pids": [
+      641354,
+      641357,
+      641405,
+      641406
+    ],
+    "same_ssh_children_reaped": 4,
+    "signals_sent": 0,
+    "tmux": {
+      "pane": "%73",
+      "driver_pid": 641355,
+      "observed_natural_dead": true,
+      "pane_dead_status": 0,
+      "only_owned_dead_pane_reclaimed": true,
+      "reviewer_remote_waitpid": false
+    }
+  },
+  "trial_scope": {
+    "target": [
+      "left",
+      7,
+      "head_motor_1"
+    ],
+    "temporary_p": 32,
+    "restore_p": 16,
+    "fixed_i": 0,
+    "fixed_d": 43,
+    "delta_raw": 24,
+    "minimum_excursion_raw": 12,
+    "tolerance_raw": 4,
+    "position_wait_ms": 800,
+    "base_decision": "DEFERRED",
+    "stop_gate": "原STOP51保持"
+  },
+  "blocking_findings": [],
+  "boundaries": {
+    "software_preparation_only": true,
+    "starter_reviewed": false,
+    "hardware_execution_reviewed": false,
+    "new_field_confirmation_and_new_go_required": true,
+    "old_go_must_not_be_reused": true,
+    "reviewer_ssh_calls": 0,
+    "reviewer_uart_operations": 0,
+    "reviewer_test_reruns": 0,
+    "reviewer_changes_before_this_report": 0,
+    "additional_checks_for_report_creation": 0
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "status": "STARTED_SINGLE_HEAD1_P32_TRIAL",
+  "tmux_identity": "position-head1-p32-trial-20261011-r13 @74 %74 641514",
+  "motor_identity": "position-head1-p32-trial-20261011-r13 @74 %74 641514",
+  "motor_tmux": {
+    "argv": [
+      "tmux",
+      "new-session",
+      "-d",
+      "-s",
+      "position-head1-p32-trial-20261011-r13",
+      "-P",
+      "-F",
+      "#{session_name} #{window_id} #{pane_id} #{pane_pid}",
+      "bash /home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1-p32-trial-launch-r13/launch_head1_p32_trial_r13.sh"
+    ],
+    "pid": 641513,
+    "started_ns": 1791690944564807762,
+    "finished_ns": 1791690944570444934,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "stdout": "position-head1-p32-trial-20261011-r13 @74 %74 641514\n",
+    "stderr": "",
+    "signals_sent": []
+  },
+  "go_sha256": "943e166438dc063d8d444f2de694025ab4a2dc97982d7cb941c4766d3220fd6b",
+  "go_bytes": 1318,
+  "plan_sha256": "580ff47a66591c36b406b84188fe8a0a296acfc274492bee207b2438c9160f49",
+  "motor_launcher_sha256": "e8dfae50f240546670e586a2a3816f0e71acff87ec5e442402d79e15cff1071b",
+  "camera_processes_started": 0
+}

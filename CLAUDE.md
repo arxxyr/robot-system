@@ -21,28 +21,22 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-11 R12实机固定12只读PASS：left5/7/8各TE0/PV0、Acceleration0、Torque_Limit1000。
-           12请求原帧和值、270直属child/540原流、非UART后验及独立17项清场PASS；无写/Enable/动作。
-           64空fuser预期exit1、206exit0；driver640784/%71自然dead0后回收，仅本机owner真wait/reap。
-           本轮供电仅用户报告ON，独立遥测UNKNOWN；GO已消耗，看护已收尾，无新动作GO。
-           原件 .verify/position_return_2026-10-11_r12/summary.json；不回填旧回程或±50 FAIL。
-           下一步仅准备head1 P16→32→16、I0/D43保持、一次+24往返，原精度/停止门不变。
-           以下R12诊断软件阶段已验收并提交推送57f6ad0：Acceleration41/1B、Torque_Limit48/2B原值读取。
-           两字段为unsigned/SRAM，既有四写API及poke开串口前拒写；S0/S1控制路径不变。
-           本机与Orin各库218+poke13=231不同方法通过，不跨平台或参数展开累计。
-           Orin实际fmt→默认及real-hw根Clippy零警告、独立poke release/help/两拒写通过。
-           597输入主树/原生首尾同068277d8，latest nightly6f5；native HEAD894加五dirty，不称clean。
-           新诊断ELF15ab06ca仅独立冻结，不替换f201位置/13c旧读回工具或正式ca14。
-           官方Lock1为掉电不保存语义，普通WRITE无需ACTION；FW3.10的PID即时采用仍未证。
-           不盲调PID；下一步只读左腕/头1/头2各TE/PV、Acceleration/Torque_Limit共12项。
-           固定12只读两端各9内存/默认零动作/缺GO拒绝、Orin完整PLAN及17非UART准备通过。
-           该软件阶段无GO/UART/硬件动作、控制ELF构建、全workspace测试、安装或服务激活。
-           软件原件 .verify/feetech_runtime_limits_2026-10-11/summary.json；原准备FAIL保留。
-           R11临时D43→0→43：锚2122→2146，出程末2142/-4 PASS、回程2128/+6 FAIL。
-           D43及P16/I0/Lock1/死区1恢复、STOP51/身份/非UART后验PASS，原件R11摘要保留。
-           R11的GO已消耗、看护已结束，不复用旧答复；本轮R12现场确认只覆盖12只读。
-           左腕仅临时I1 PASS后恢复I0，头1/头2精度与三轮主动运动未验，旧±50原因OPEN。
-           右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
+本轮最新:  2026-10-11 R13头1临时P16→32→16单次+24往返功能PASS：锚2128、目标2152。
+           出程14样本，130.620547ms首次±4、观察至原800ms，末2150/-2；回程2132/+4、190.561352ms PASS。
+           P16/D43/I0/Lock1/死区1恢复、STOP51整数零、79身份及独立17项清场PASS，manualcut=false。
+           384直属child/768输出、29 raw原帧、右8/9前后四普通READ原帧均核；七次具名写仅left7。
+           原run整体FAIL因BASE_FIRMWARE_CONTRACT_UNVERIFIED/三轮DEFERRED保持，不改为整体PASS。
+           本机/Orin各10不同内存方法、默认零动作/缺GO拒绝及完整PLAN通过；原准备FAIL保留。
+           Orin实际fmt→根Clippy零警告；597主树/原生三窗同068277d8，latest nightly6f5。
+           native HEAD894加五dirty，不称Git对齐；f201位置/13c参数冻结件身份不变，无新控制ELF构建。
+           原件 .verify/position_return_2026-10-11_r13/summary.json；P32实际临时配置写，不称EEPROM写0。
+           仅一次当前姿态功能通过，P32已恢复16；不证明P因果、PID即时采用、重复性或掉电持久化。
+           本轮GO已消耗、看护已结束；供电仅用户报告ON，独立遥测UNKNOWN，无新动作GO。
+           下一步仅头2left8同类P32→16试验：I0/D43不写，原±4/800ms、±32/min12及STOP51不变。
+           R14两端软件准备通过，完整PLAN/starter仍须root审查及本次新现场确认，无UART/GO。
+           R12三目标12只读PASS/运行限制软件231方法见各自摘要；R11回程+6等旧FAIL完整保留。
+           左腕仅临时I1 PASS后恢复I0；长期参数、头2及三轮主动运动未闭环，旧±50原因OPEN。
+           正式ca14及六服务沿既有状态；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
            双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =
