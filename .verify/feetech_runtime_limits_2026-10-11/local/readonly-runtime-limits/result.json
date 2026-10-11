@@ -1,0 +1,208 @@
+{
+  "scope": "本机fmt及Feetech定向软件门；无UART/远端/完整workspace验证",
+  "result": "PASS",
+  "commands": [
+    {
+      "name": "compiler-before",
+      "argv": [
+        "rustc",
+        "+nightly",
+        "-Vv"
+      ],
+      "pid": 12036,
+      "started": {
+        "utc": "2026-10-11T03:15:20.296465+00:00",
+        "mono_ns": 1543884345916
+      },
+      "finished": {
+        "utc": "2026-10-11T03:15:20.411076+00:00",
+        "mono_ns": 1543998890375
+      },
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/compiler-before.stdout",
+        "bytes": 210,
+        "sha256": "95e95c532f1139f239a12944290b0a0d22470643cfeba31609146de830d8af5b"
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/compiler-before.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "pid": 12037,
+      "started": {
+        "utc": "2026-10-11T03:15:20.411483+00:00",
+        "mono_ns": 1543999253000
+      },
+      "finished": {
+        "utc": "2026-10-11T03:15:22.350209+00:00",
+        "mono_ns": 1545938002166
+      },
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/fmt.stdout",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/fmt.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "crate-clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "robot-adapter-feetech",
+        "--all-targets",
+        "--features",
+        "real-hw",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "pid": 12044,
+      "started": {
+        "utc": "2026-10-11T03:15:22.350566+00:00",
+        "mono_ns": 1545938336583
+      },
+      "finished": {
+        "utc": "2026-10-11T03:15:31.389319+00:00",
+        "mono_ns": 1554977113166
+      },
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/crate-clippy.stdout",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/crate-clippy.stderr",
+        "bytes": 2853,
+        "sha256": "ee908516bd33e79e1f66eef9ba81bb7a69aacfb284321bdde3a854e6c2623506"
+      }
+    },
+    {
+      "name": "lib-tests",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "robot-adapter-feetech",
+        "--features",
+        "real-hw",
+        "--lib"
+      ],
+      "pid": 13159,
+      "started": {
+        "utc": "2026-10-11T03:15:31.389757+00:00",
+        "mono_ns": 1554977527041
+      },
+      "finished": {
+        "utc": "2026-10-11T03:15:42.664142+00:00",
+        "mono_ns": 1566251949625
+      },
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/lib-tests.stdout",
+        "bytes": 17258,
+        "sha256": "002ca4634e5bbba11d1b6215f2d56d62164a9801f719f9c2c9ad4745456dced2"
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/lib-tests.stderr",
+        "bytes": 2544,
+        "sha256": "74301c282aaa8ca1d741c59880156f2f4c721c401c6ba7b26aea7af189cd35eb"
+      }
+    },
+    {
+      "name": "poke-tests",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "robot-adapter-feetech",
+        "--features",
+        "real-hw",
+        "--example",
+        "feetech_poke"
+      ],
+      "pid": 13557,
+      "started": {
+        "utc": "2026-10-11T03:15:42.664506+00:00",
+        "mono_ns": 1566252275416
+      },
+      "finished": {
+        "utc": "2026-10-11T03:15:44.137862+00:00",
+        "mono_ns": 1567725715000
+      },
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/poke-tests.stdout",
+        "bytes": 1137,
+        "sha256": "f2e86079f2355f6d2ff401b8a5c3972abd25d75e1d4fb4d59762913d0f3bcda8"
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/poke-tests.stderr",
+        "bytes": 324,
+        "sha256": "e42afa4a74e896e2ee4fba7f3e6f8a3b941b3240a3d64b111fb86a9117bf29c1"
+      }
+    },
+    {
+      "name": "compiler-after",
+      "argv": [
+        "rustc",
+        "+nightly",
+        "-Vv"
+      ],
+      "pid": 13584,
+      "started": {
+        "utc": "2026-10-11T03:15:44.138690+00:00",
+        "mono_ns": 1567726461791
+      },
+      "finished": {
+        "utc": "2026-10-11T03:15:44.182700+00:00",
+        "mono_ns": 1567770509791
+      },
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/compiler-after.stdout",
+        "bytes": 210,
+        "sha256": "95e95c532f1139f239a12944290b0a0d22470643cfeba31609146de830d8af5b"
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/compiler-after.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ]
+}

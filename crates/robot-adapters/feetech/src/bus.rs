@@ -825,23 +825,26 @@ mod tests {
     use robot_core::time::DurationNs;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    const DIAGNOSTIC_NAMES: [&str; 7] = [
+    const DIAGNOSTIC_NAMES: [&str; 9] = [
         "Phase",
         "Minimum_Starting_Torque",
         "Integral_Limit",
         "CW_Dead_Zone",
         "CCW_Dead_Zone",
         "Angle_Resolution",
+        "Acceleration",
+        "Torque_Limit",
         "Present_Load",
     ];
     // 请求 checksum 是独立 golden，读回保留高位与超厂家名义范围的原始字节。
-    const DIAGNOSTIC_READ_CASES: [(&str, u8, u8, u8, u8); 6] = [
+    const DIAGNOSTIC_READ_CASES: [(&str, u8, u8, u8, u8); 7] = [
         ("Phase", 18, 0xa5, 0xe5, 0x63),
         ("Minimum_Starting_Torque", 24, 0xff, 0xdf, 0x5d),
         ("Integral_Limit", 25, 0xa5, 0xde, 0x5c),
         ("CW_Dead_Zone", 26, 0xff, 0xdd, 0x5b),
         ("CCW_Dead_Zone", 27, 0x81, 0xdc, 0x5a),
         ("Angle_Resolution", 30, 0x80, 0xd9, 0x57),
+        ("Acceleration", 41, 0xff, 0xce, 0x4c),
     ];
 
     #[derive(Default)]
@@ -1093,13 +1096,20 @@ mod tests {
     }
 
     #[test]
-    fn present_load_single_read_preserves_unsigned_word_and_exact_request() {
-        for raw in [0x8000_u16, 0x8001, 0xffff] {
-            let (mut bus, handle) = make_bus(&[("j1", 1)]);
-            handle.push_rx(&fake_status(1, 0, &raw.to_le_bytes()));
-            assert_eq!(bus.read("Present_Load", "j1").unwrap(), i32::from(raw));
-            // ID1 + 长度4 + READ2 + 地址60 + 数据宽2 的独立请求校验字节。
-            assert_eq!(handle.drain_tx(), [0xff, 0xff, 1, 4, 2, 60, 2, 0xba]);
+    fn diagnostic_word_single_read_preserves_unsigned_value_and_exact_request() {
+        for (name, address, golden_checksum) in
+            [("Present_Load", 60, 0xba), ("Torque_Limit", 48, 0xc6)]
+        {
+            for raw in [0x8000_u16, 0x8001, 0xffff] {
+                let (mut bus, handle) = make_bus(&[("j1", 1)]);
+                handle.push_rx(&fake_status(1, 0, &raw.to_le_bytes()));
+                assert_eq!(bus.read(name, "j1").unwrap(), i32::from(raw));
+                // ID1 + 长度4 + READ2 + 地址 + 数据宽2 的独立请求校验字节。
+                assert_eq!(
+                    handle.drain_tx(),
+                    [0xff, 0xff, 1, 4, 2, address, 2, golden_checksum]
+                );
+            }
         }
     }
 

@@ -16,6 +16,8 @@
 //!   不换算，也不保证现场固件语义。
 //!   `Present_Load` 为只读 SRAM 字段，仅保留两个原始字节的 unsigned 值，
 //!   不解码符号，也不换算单位。
+//!   `Acceleration` / `Torque_Limit` 为厂家可写 SRAM 字段；本项目仅允许
+//!   诊断读取原始 unsigned 值，不提供写授权或现场固件单位换算。
 //!
 //! ## sign-magnitude 编码
 //!
@@ -95,8 +97,10 @@ pub const STS3215_CONTROL_TABLE: &[(&str, Register)] = &[
     ("Operating_Mode", Register::new(33, 1)),
     // ── SRAM ──────────────────────────────────────────────────────────
     ("Torque_Enable", Register::new(40, 1)),
+    ("Acceleration", Register::new(41, 1)), // 本项目诊断只读，保留 raw unsigned 值
     ("Goal_Position", Register::new(42, 2)), // sign-magnitude bit 15
     ("Goal_Velocity", Register::new(46, 2)), // sign-magnitude bit 15
+    ("Torque_Limit", Register::new(48, 2)), // 本项目诊断只读，保留 raw unsigned 值
     ("Lock", Register::new(55, 1)),
     ("Present_Position", Register::new(56, 2)), // read-only sign-magnitude bit 15
     ("Present_Velocity", Register::new(58, 2)), // read-only sign-magnitude bit 15
@@ -115,13 +119,13 @@ pub fn get_register(name: &'static str) -> Result<Register, FeetechError> {
         .ok_or(FeetechError::UnknownRegister(name))
 }
 
-/// 仅拒绝本项目七个诊断专用寄存器的写入，零分配。
+/// 仅拒绝本项目九个诊断专用寄存器的写入，零分配。
 ///
 /// 这不是全部寄存器的可写性校验；其他名称仍由既有查表与编码逻辑处理，
 /// 未知名称在此返回成功不表示可写。EEPROM 分区也不代替本门。
 ///
 /// # Errors
-/// 七个诊断名称返回 [`FeetechError::DiagnosticRegisterWriteForbidden`]。
+/// 九个诊断名称返回 [`FeetechError::DiagnosticRegisterWriteForbidden`]。
 pub fn ensure_not_diagnostic_write(name: &'static str) -> Result<(), FeetechError> {
     match name {
         "Phase"
@@ -130,6 +134,8 @@ pub fn ensure_not_diagnostic_write(name: &'static str) -> Result<(), FeetechErro
         | "CW_Dead_Zone"
         | "CCW_Dead_Zone"
         | "Angle_Resolution"
+        | "Acceleration"
+        | "Torque_Limit"
         | "Present_Load" => Err(FeetechError::DiagnosticRegisterWriteForbidden(name)),
         _ => Ok(()),
     }
@@ -250,6 +256,8 @@ mod tests {
             "CW_Dead_Zone",
             "CCW_Dead_Zone",
             "Angle_Resolution",
+            "Acceleration",
+            "Torque_Limit",
             "Present_Load",
             "Goal_Velocity",
             "Unknown_Register",
@@ -292,6 +300,19 @@ mod tests {
     }
 
     #[test]
+    fn runtime_limits_are_raw_readonly_sram() {
+        for (name, address, width) in [("Acceleration", 41, 1), ("Torque_Limit", 48, 2)] {
+            assert_eq!(get_register(name).unwrap(), Register::new(address, width));
+            assert!(!is_eeprom_register(name));
+            assert_eq!(sign_bit_for(name), None);
+            assert!(matches!(
+                ensure_not_diagnostic_write(name),
+                Err(FeetechError::DiagnosticRegisterWriteForbidden(got)) if got == name
+            ));
+        }
+    }
+
+    #[test]
     fn diagnostic_guard_does_not_reclassify_existing_or_unknown_names() {
         for (name, _) in STS3215_CONTROL_TABLE {
             match *name {
@@ -301,6 +322,8 @@ mod tests {
                 | "CW_Dead_Zone"
                 | "CCW_Dead_Zone"
                 | "Angle_Resolution"
+                | "Acceleration"
+                | "Torque_Limit"
                 | "Present_Load" => {}
                 _ => assert!(ensure_not_diagnostic_write(name).is_ok()),
             }

@@ -1,0 +1,28 @@
+{
+  "name": "local-memory9",
+  "owner_pid": 21282,
+  "argv": [
+    "uv",
+    "run",
+    "--no-project",
+    "python",
+    "target/position_return_2026-10-11_r12/readonly12-candidate/native-preparation/local-bound-fixtures-r12/candidate/test_readonly12_r12.py"
+  ],
+  "pid": 21283,
+  "started_ns": 1791689446262339000,
+  "finished_ns": 1791689446379468000,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly12-candidate/native-preparation/local-memory9.stdout",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly12-candidate/native-preparation/local-memory9.stderr",
+    "bytes": 1514,
+    "sha256": "f7405a2a63c1ed9daa6104b5f7a1469aac9bcc3dd519358979d259421d31e614"
+  }
+}

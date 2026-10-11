@@ -1,0 +1,6 @@
+{
+  "status": "FAIL",
+  "error": "generator selected reassigned observer ast.Call instead of original literal; corrected with first assignment selection",
+  "ssh_starts": 0,
+  "cargo_starts": 0
+}

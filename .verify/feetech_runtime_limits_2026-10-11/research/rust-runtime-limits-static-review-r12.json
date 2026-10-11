@@ -1,0 +1,275 @@
+{
+  "schema": "FEETECH_RUNTIME_LIMITS_RUST_STATIC_REVIEW_R12_V1",
+  "recorded_at_utc": "2026-10-11T03:19:56.850492+00:00",
+  "verdict": "PASS_SCOPED_STATIC_REVIEW_AND_EXISTING_LOCAL_RESULTS",
+  "source_count": 597,
+  "source_aggregate": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "changed_sources": {
+    "crates/robot-adapters/feetech/src/registers.rs": {
+      "sha256": "cd803f78c3d9177b9b1dbffd8a65a81c0f61338b8e5461bb74b1a2df9cacf205",
+      "bytes": 17594,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/bus.rs": {
+      "sha256": "5aeb0c4c94bb4258986d51ade80b6f8bb2960c1ad3b67b648855c7576d567205",
+      "bytes": 53667,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/bus_raw_read_tests.rs": {
+      "sha256": "cd548199e3693714efea8cdfb3a6dc34b3340cb7c815a3799f81bd5ac34dc144",
+      "bytes": 18752,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/src/diagnostic.rs": {
+      "sha256": "f1d837be8029490328010de20a833881a7b26754dd04ffbbd8097eb5256e6520",
+      "bytes": 15431,
+      "executable": false
+    },
+    "crates/robot-adapters/feetech/examples/feetech_poke.rs": {
+      "sha256": "d22e35c993d38522ecd822c7482a0d2386e4d8b77c788b95812d76c4ecfed92e",
+      "bytes": 23499,
+      "executable": false
+    }
+  },
+  "scope": "只读审查现有5源diff和原件，不执行Cargo、SSH或UART；不改候选/test。",
+  "key_checks": [
+    {
+      "name": "two_names_only",
+      "result": "PASS",
+      "source": "crates/robot-adapters/feetech/src/registers.rs",
+      "lines": [
+        100,
+        103
+      ],
+      "evidence": "仅新增Acceleration41/1B、Torque_Limit48/2B；本项目仅diagnostic raw读取。"
+    },
+    {
+      "name": "write_guards",
+      "result": "PASS",
+      "source": "crates/robot-adapters/feetech/src/registers.rs",
+      "lines": [
+        129,
+        137,
+        138,
+        139
+      ],
+      "evidence": "两个新名称追加到既有DiagnosticRegisterWriteForbidden，不扩展其他名字写权限。"
+    },
+    {
+      "name": "four_named_and_commonprep",
+      "result": "PASS",
+      "source": "crates/robot-adapters/feetech/src/bus.rs",
+      "lines": [
+        338,
+        413,
+        591,
+        648,
+        666,
+        737
+      ],
+      "evidence": "write、sync_write、sync_write_by_id、sync_write_by_id_into在lease/I/O前拒绝；原绝对期限until同用prepare_sync_write_frame，也被拒。整个bus生产前缀与HEAD字节完全相同。"
+    },
+    {
+      "name": "preopen_cli",
+      "result": "PASS",
+      "source": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+      "lines": [
+        94,
+        104,
+        105,
+        107,
+        271,
+        283
+      ],
+      "evidence": "新名字参与既有纯参数拒写；main在RealSerialTransport::open之前调用，缺/坏/越界value仍先拒诊断写。"
+    },
+    {
+      "name": "unsigned_and_EEPROM",
+      "result": "PASS",
+      "source": "crates/robot-adapters/feetech/src/registers.rs",
+      "lines": [
+        164,
+        175,
+        185,
+        207,
+        300
+      ],
+      "evidence": "SIGN_BIT与EEPROM名单内容与HEAD完全相同；两新名不带符号位、不在EEPROM，无现场单位转换。u8/u16高位与超厂家名义值保持raw用于诊断。"
+    },
+    {
+      "name": "raw_read_core_unchanged",
+      "result": "PASS",
+      "source": "crates/robot-adapters/feetech/src/bus.rs",
+      "lines": [
+        509,
+        521,
+        565,
+        570,
+        807
+      ],
+      "evidence": "固定staging、整组成功后输出和decode既有语义不改；新增测试覆盖41的u8=255以及48的bit15/ffff与独立golden READ/SYNC_READ。"
+    },
+    {
+      "name": "diagnostic_classification",
+      "result": "PASS",
+      "source": "crates/robot-adapters/feetech/src/diagnostic.rs",
+      "lines": [
+        61,
+        224,
+        225,
+        229,
+        232
+      ],
+      "evidence": "仅test名称集合增加2项；诊断生产前缀与HEAD完全相同，仍参数Argument编码(8,1,0)，comm_kind None。"
+    },
+    {
+      "name": "no_runtime_integration",
+      "result": "PASS",
+      "evidence": "git diff只有这5源，bus与diagnostic运行实现字节相同；无新增S0/S1路径、authority/Enable、PID、Phase、Lock写或单位模型。"
+    }
+  ],
+  "local_results_review": {
+    "scope": "独立读回原结果与全部18输出流的bytes/SHA；不是本审查重新执行。",
+    "commands": [
+      {
+        "name": "compiler-before",
+        "pid": 12036,
+        "argv": [
+          "rustc",
+          "+nightly",
+          "-Vv"
+        ],
+        "exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "fmt",
+        "pid": 12037,
+        "argv": [
+          "cargo",
+          "fmt",
+          "--all"
+        ],
+        "exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "crate-clippy",
+        "pid": 12044,
+        "argv": [
+          "cargo",
+          "clippy",
+          "-p",
+          "robot-adapter-feetech",
+          "--all-targets",
+          "--features",
+          "real-hw",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "lib-tests",
+        "pid": 13159,
+        "argv": [
+          "cargo",
+          "test",
+          "-p",
+          "robot-adapter-feetech",
+          "--features",
+          "real-hw",
+          "--lib"
+        ],
+        "exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "poke-tests",
+        "pid": 13557,
+        "argv": [
+          "cargo",
+          "test",
+          "-p",
+          "robot-adapter-feetech",
+          "--features",
+          "real-hw",
+          "--example",
+          "feetech_poke"
+        ],
+        "exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "compiler-after",
+        "pid": 13584,
+        "argv": [
+          "rustc",
+          "+nightly",
+          "-Vv"
+        ],
+        "exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "rename-verification.json",
+        "pid": 13616,
+        "argv": [
+          "cargo",
+          "fmt",
+          "--all"
+        ],
+        "exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "rename-verification.json",
+        "pid": 13619,
+        "argv": [
+          "cargo",
+          "test",
+          "-p",
+          "robot-adapter-feetech",
+          "--features",
+          "real-hw",
+          "--lib",
+          "diagnostic_word_single_read_preserves_unsigned_value_and_exact_request"
+        ],
+        "exit": 0,
+        "reaped": true
+      },
+      {
+        "name": "rename-verification.json",
+        "pid": 13643,
+        "argv": [
+          "rustc",
+          "+nightly",
+          "-Vv"
+        ],
+        "exit": 0,
+        "reaped": true
+      }
+    ],
+    "library_methods": 218,
+    "poke_methods": 13,
+    "distinct_methods": 231,
+    "renamed_word_method_recheck": 1,
+    "counting": "旧Load测试更名为diagnostic_word后再验同方法，不计为232；bus的更名属于测试名变化，运行与断言逻辑保持。",
+    "compiler": "rustc 1.101.0-nightly (6f5da406b 2026-10-10)\nbinary: rustc\ncommit-hash: 6f5da406b56c2db6607202b63daee73aa8c61297\ncommit-date: 2026-10-10\nhost: aarch64-apple-darwin\nrelease: 1.101.0-nightly\nLLVM version: 23.1.3\n",
+    "quality_limits": "本机crateClippy不是根Clippy；更名后只做fmt与该方法重验，完整最终根Clippy待原生/root独立绑定。"
+  },
+  "unresolved": [
+    "Orin原生结果正在由另一执行者验证，本审查没有验收native或新ELF。",
+    "现场Acceleration/Torque_Limit值未读，无新现场/GO，本轮软件不能宣称实机参数或精度闭环。",
+    "FW3.10 PID采用条件、左腕/头1/头2长期精度、底盘主动运动和旧±50仍OPEN，D15 OPEN/DEFERRED、deployable=false。",
+    "候选新ELF绑定后的差异review由root处理，本静态审查不放行动作。"
+  ],
+  "non_actions": {
+    "Cargo_runs": 0,
+    "UART": 0,
+    "motor_writes": 0,
+    "source_changes": 0
+  }
+}

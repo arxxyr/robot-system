@@ -1,0 +1,9 @@
+{
+  "status": "FAIL",
+  "phase": "LOCAL_GENERATION_ONLY",
+  "error": "unscoped placeholder REMOTE matched heredoc PYREMOTE; compilation caught before SSH",
+  "ssh_started": 0,
+  "updates_started": 0,
+  "invalid_draft_sha256": "27f2ad85638e2b3169c841ae30aca407d7a70dfe7eea42f342b19ab83ce8947a",
+  "corrected_input_sha256": "3e0f7703f618c98f58194477338600992320ad861de7851f0f11fb8bcb3c7b0b"
+}

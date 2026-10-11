@@ -1,0 +1,95 @@
+{
+  "status": "PASS_READONLY12_SOFTWARE_PREPARATION_REVIEWED",
+  "candidate": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/readonly12_r12.py",
+    "sha256": "827e83378949f6f2dd458a113e4e3b122f74689ddf4fdaf6dbe3a70fda92938b",
+    "bytes": 17307
+  },
+  "config": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/config.readonly12.r12.json",
+    "sha256": "3dbda6835976161b8bdbf86299142f95c474ebb77b33d0a8f26d1d86ba51a618",
+    "bytes": 1502
+  },
+  "bindings": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/readonly12_bindings_r12.json",
+    "sha256": "d6660df1a7693328dd13f87a7edcaa1e53222988ac42e57912a96429c4c6673d",
+    "bytes": 24253
+  },
+  "tool": {
+    "path": "/home/loosqk/robot-checks/position-return-20261011-r12/readback-tool-r12/feetech_poke",
+    "sha256": "15ab06cab40f0fca7f9cba3b9c1831f2e408905c27a99e94db54c4751d9ec8d4",
+    "bytes": 1511200,
+    "mode": 448,
+    "device": 66305,
+    "inode": 17173944,
+    "mtime_ns": 1791689302850460700,
+    "ctime_ns": 1791689302878461787,
+    "nlink": 1,
+    "symlink": false,
+    "uid": 1000,
+    "gid": 1000,
+    "elf_machine": 183
+  },
+  "plan_sha256": "5b1a0882765429c088874921aad6477d4bbbf4cc55485f9c6cdec80a0f40dae1",
+  "plan_output": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/config-plan-only.stdout",
+    "sha256": "274eb35a7d8e5164e53e975a8200c3c2cfa3dba132cd7d39725352950a73bad0",
+    "bytes": 30777
+  },
+  "local_memory_tests": 9,
+  "native_memory_tests": 9,
+  "non_uart_checks": 17,
+  "non_uart_command_children": 23,
+  "prepare_direct_children": 5,
+  "same_ssh_children": 4,
+  "all_claimed_children_reaped": true,
+  "ssh": {
+    "owner_pid": 21615,
+    "pid": 21616,
+    "argv": [
+      "/usr/bin/ssh",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "StrictHostKeyChecking=yes",
+      "-o",
+      "ConnectTimeout=15",
+      "robot",
+      "bash",
+      "-s"
+    ],
+    "started_ns": 1791689544093824000,
+    "input": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly12-candidate/native-preparation/single_ssh_readonly12_prepare_r12.sh",
+      "bytes": 81288,
+      "sha256": "8478fd6d6e167a7a15b1e5897113e9435f4d371f0c63c33b3a7a3c1c179633e1"
+    },
+    "signals_sent": [],
+    "finished_ns": 1791689546837045000,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "stdout_sha256": "c03e822dfd94fc2d83fab5acad36afece61abd65b9f4d3a2624d41c82a0165d2",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly12-candidate/native-preparation/readonly12-preparation-originals.tar.gz",
+    "bytes": 106471,
+    "sha256": "d2b0e9e4daa1d63200814ce0c86d603aee2b7cb5f8685a9cbdcfd084ac8544df",
+    "files": 42
+  },
+  "starter": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly12-candidate/native-preparation/start_readonly12_once_r12.software-bound-draft.sh",
+    "bytes": 6198,
+    "sha256": "664be4a14be1de6a7726f683bf8cd83009accdfa1260bd5d507eaf500e91ff07",
+    "candidate_and_bindings_bound": true,
+    "final_config_and_plan_bound": false,
+    "go_and_field_bound": false
+  },
+  "uart_operations": 0,
+  "go_created": false,
+  "field_created": false,
+  "hardware_started": false,
+  "old_failures_unchanged": true,
+  "scope": "本机及Orin只读软件准备；不是硬件12项读值；missingGO只是执行入口零loader负控；旧GO只作byteequal内存fixture"
+}

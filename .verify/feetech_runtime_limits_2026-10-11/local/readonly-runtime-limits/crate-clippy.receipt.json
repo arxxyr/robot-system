@@ -1,0 +1,38 @@
+{
+  "name": "crate-clippy",
+  "argv": [
+    "cargo",
+    "clippy",
+    "-p",
+    "robot-adapter-feetech",
+    "--all-targets",
+    "--features",
+    "real-hw",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "pid": 12044,
+  "started": {
+    "utc": "2026-10-11T03:15:22.350566+00:00",
+    "mono_ns": 1545938336583
+  },
+  "finished": {
+    "utc": "2026-10-11T03:15:31.389319+00:00",
+    "mono_ns": 1554977113166
+  },
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/crate-clippy.stdout",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/crate-clippy.stderr",
+    "bytes": 2853,
+    "sha256": "ee908516bd33e79e1f66eef9ba81bb7a69aacfb284321bdde3a854e6c2623506"
+  }
+}

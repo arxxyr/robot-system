@@ -1,0 +1,75 @@
+{
+  "status": "PASS_ROOT_SOURCE_AND_BOUND_CANDIDATE_REVIEW",
+  "recorded_at_utc": "2026-10-11T03:32:18.659140+00:00",
+  "source_files": 597,
+  "source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "native_actual_fmt_then_root_clippy": {
+    "fmt": {
+      "pid": 631451,
+      "started_at": "2026-10-11T03:19:35.486645+00:00",
+      "finished_at": "2026-10-11T03:19:39.009994+00:00",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ]
+    },
+    "clippy": {
+      "pid": 631462,
+      "started_at": "2026-10-11T03:19:39.228058+00:00",
+      "finished_at": "2026-10-11T03:24:09.023473+00:00",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ]
+    },
+    "clippy_real_hw": {
+      "pid": 635991,
+      "started_at": "2026-10-11T03:24:09.044025+00:00",
+      "finished_at": "2026-10-11T03:24:56.094340+00:00",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--features",
+        "robot-adapter-feetech/real-hw",
+        "--",
+        "-D",
+        "warnings"
+      ]
+    }
+  },
+  "tests_unique_per_host": 231,
+  "bound_candidate_only_change": "APPROVED_TOOL full measured ref",
+  "candidate": {
+    "sha256": "827e83378949f6f2dd458a113e4e3b122f74689ddf4fdaf6dbe3a70fda92938b",
+    "bytes": 17307
+  },
+  "tool_ref": {
+    "path": "/home/loosqk/robot-checks/position-return-20261011-r12/readback-tool-r12/feetech_poke",
+    "sha256": "15ab06cab40f0fca7f9cba3b9c1831f2e408905c27a99e94db54c4751d9ec8d4",
+    "bytes": 1511200,
+    "mode": 448,
+    "device": 66305,
+    "inode": 17173944,
+    "mtime_ns": 1791689302850460700,
+    "ctime_ns": 1791689302878461787,
+    "nlink": 1,
+    "symlink": false,
+    "uid": 1000,
+    "gid": 1000,
+    "elf_machine": 183
+  },
+  "write_policy": "two new names diagnostics only; four APIs/shared absolute preparation and poke pre-open refusal",
+  "hardware_not_run": true,
+  "no_go_created": true,
+  "native_readonly_preparation": "PENDING",
+  "prior_precision_and_wheel_failures": "UNCHANGED",
+  "goal_complete": false
+}

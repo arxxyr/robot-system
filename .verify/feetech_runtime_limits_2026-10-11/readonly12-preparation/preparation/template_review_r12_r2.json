@@ -1,0 +1,9 @@
+{
+  "status": "FAIL_LOCAL_REVIEW_HELPER_ONLY",
+  "error": "IndexError: list index out of range",
+  "cause": "复核帮助脚本误把PYREMOTE heredoc delimiter认作PY；4个bash -n已通过，未执行任何模板",
+  "exit_code": 1,
+  "ssh_executed": false,
+  "uart_operations": 0,
+  "native_template_executed": false
+}

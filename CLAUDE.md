@@ -21,21 +21,22 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-10 R11头1仅临时D43→0→43、一次+24往返：锚2122、目标2146。
-           出程14样本，251.024002ms首次±4，观察至800.063598ms，末2142/-4 PASS；回程2128/+6 FAIL。
-           回程原800ms内14样本从未合格，末样本792.370511ms，原循环判定完成842.434602ms；精度门未续期。
-           D0写/读0、D43恢复及P16/I0/Lock1/死区1读回PASS；配置区实际临时写，不称EEPROM写0。
-           控制环即时采用与掉电持久化未证；不同起点/方向只测功能，不作D因果或修复宣称。
-           STOP51整数零、76项身份及独立非UART前后验PASS，manualcut=false；394直属child/788输出自然回收。
-           仅left7七次D/GP/TE写，底盘/Load/相机0，无重试；本轮GO已消耗、看护已收尾，无新GO/UART。
-           原件 .verify/position_return_2026-10-10_r11/summary.json；软件本机r1与首native FAIL、r2 PASS均保留。
-           候选两端各10不同内存方法、默认零动作/缺GO拒绝通过；Orin实际fmt→根Clippy通过。
-           597输入主树/原生三窗首尾同3a4cc12e、nightly32d；本轮无新Rust测试或release/控制ELF构建。
-           最新供电仅本轮用户报告ON，独立遥测UNKNOWN；下一步先明确参数生效条件，暂不盲调PID或扩大设计。
-           R10出程+8/Load原字44、R9+6/R8+7及R5/I2、R6/P24原FAIL保持，旧±50原因OPEN。
-           左腕仅临时I1 PASS后恢复I0、头2旧FAIL，长期参数与三轮主动运动未验；右H2完整PASS保持。
-           本阶段未正式安装/激活服务，正式ca14及六服务沿用既有状态。
-           D15 OPEN/DEFERRED、deployable=false保持。
+本轮最新:  2026-10-11 R12仅增加Acceleration41/1B、Torque_Limit48/2B诊断原值读取。
+           两字段为unsigned/SRAM，既有四写API及poke开串口前拒写；S0/S1控制路径不变。
+           本机与Orin各库218+poke13=231不同方法通过，不跨平台或参数展开累计。
+           Orin实际fmt→默认及real-hw根Clippy零警告、独立poke release/help/两拒写通过。
+           597输入主树/原生首尾同068277d8，latest nightly6f5；native HEAD894加五dirty，不称clean。
+           新诊断ELF15ab06ca仅独立冻结，不替换f201位置/13c旧读回工具或正式ca14。
+           官方Lock1为掉电不保存语义，普通WRITE无需ACTION；FW3.10的PID即时采用仍未证。
+           不盲调PID；下一步只读左腕/头1/头2各TE/PV、Acceleration/Torque_Limit共12项。
+           固定12只读两端各9内存/默认零动作/缺GO拒绝、Orin完整PLAN及17非UART通过；现场待答。
+           本轮无GO/UART/硬件动作、控制ELF构建、全workspace测试、安装或服务激活。
+           软件原件 .verify/feetech_runtime_limits_2026-10-11/summary.json；原准备FAIL保留。
+           R11临时D43→0→43：锚2122→2146，出程末2142/-4 PASS、回程2128/+6 FAIL。
+           D43及P16/I0/Lock1/死区1恢复、STOP51/身份/非UART后验PASS，原件R11摘要保留。
+           R11的GO已消耗、看护已结束；当前供电/支撑/看护未知，不复用旧答复作新动作授权。
+           左腕仅临时I1 PASS后恢复I0，头1/头2精度与三轮主动运动未验，旧±50原因OPEN。
+           右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
            双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =

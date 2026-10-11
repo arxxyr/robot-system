@@ -1,0 +1,252 @@
+diff --git a/crates/robot-adapters/feetech/examples/feetech_poke.rs b/crates/robot-adapters/feetech/examples/feetech_poke.rs
+index d61e975..154be7c 100644
+--- a/crates/robot-adapters/feetech/examples/feetech_poke.rs
++++ b/crates/robot-adapters/feetech/examples/feetech_poke.rs
+@@ -61,6 +61,7 @@
+ //!   配置写入需断扭、明确授权及逐项读回；Phase、死区、最小启动扭矩、积分限制值、
+ //!   角度分辨率仍为本项目诊断只读，新增三项保留厂家名义原始字节，不换算现场单位。
+ //!   `Present_Load` 也是诊断只读，保留两个字节的 unsigned 原始值，不解码符号或单位。
++//!   `Acceleration` / `Torque_Limit` 仅诊断读取原始 unsigned 值，禁止写入。
+ //! - 大幅度 `Goal_Position` 跳变（超过 Goal Acceleration 能追上的范围）可能引起
+ //!   机械冲击 —— bring-up 阶段尽量小步推进。
+ 
+@@ -88,7 +89,7 @@ fn static_register_name(name: &str) -> Option<&'static str> {
+         .map(|(n, _)| *n)
+ }
+ 
+-/// 纯参数预检，在打开串口前保留七个诊断拒写门并拒绝两个固件版本write。
++/// 纯参数预检，在打开串口前保留九个诊断拒写门并拒绝两个固件版本write。
+ /// 其他名称与参数继续由原分发处理；本门放行不表示写入合法。
+ fn preflight_diagnostic_write(args: &[String]) -> Result<(), FeetechError> {
+     match args.get(3).map(String::as_str) {
+@@ -100,6 +101,8 @@ fn preflight_diagnostic_write(args: &[String]) -> Result<(), FeetechError> {
+                 | "CW_Dead_Zone"
+                 | "CCW_Dead_Zone"
+                 | "Angle_Resolution"
++                | "Acceleration"
++                | "Torque_Limit"
+                 | "Present_Load"),
+             ) => ensure_not_diagnostic_write(name),
+             Some(name @ ("Firmware_Major_Version" | "Firmware_Minor_Version")) => {
+@@ -371,6 +374,8 @@ mod tests {
+             ("Minimum_Starting_Torque", 24, vec![255_u8], 255_u32),
+             ("Integral_Limit", 25, vec![165_u8], 165_u32),
+             ("Angle_Resolution", 30, vec![128_u8], 128_u32),
++            ("Acceleration", 41, vec![255_u8], 255_u32),
++            ("Torque_Limit", 48, vec![1_u8, 128], 32769_u32),
+             ("Present_Velocity", 58, vec![0_u8, 128], 32768_u32),
+             ("Present_Load", 60, vec![1_u8, 128], 32769_u32),
+         ] {
+@@ -406,7 +411,7 @@ mod tests {
+ 
+     #[test]
+     fn read_raw_keeps_bit15_words_unsigned_without_signed_or_si_fields() {
+-        for register in ["Present_Velocity", "Present_Load"] {
++        for register in ["Present_Velocity", "Present_Load", "Torque_Limit"] {
+             for word in [0x8000_u16, 0x8001, 0xffff, 0x7fff] {
+                 let (mut bus, handle) = raw_fixture();
+                 handle.push_rx(&status_frame(9, &word.to_le_bytes()));
+@@ -515,6 +520,8 @@ mod tests {
+             "CW_Dead_Zone",
+             "CCW_Dead_Zone",
+             "Angle_Resolution",
++            "Acceleration",
++            "Torque_Limit",
+             "Present_Load",
+         ] {
+             for value in [None, Some("bad-value"), Some("255"), Some("2147483648")] {
+@@ -597,6 +604,8 @@ mod tests {
+             "CW_Dead_Zone",
+             "CCW_Dead_Zone",
+             "Angle_Resolution",
++            "Acceleration",
++            "Torque_Limit",
+             "Present_Load",
+             "Present_Position",
+         ] {
+diff --git a/crates/robot-adapters/feetech/src/bus.rs b/crates/robot-adapters/feetech/src/bus.rs
+index 5e4ba3e..a7890dd 100644
+--- a/crates/robot-adapters/feetech/src/bus.rs
++++ b/crates/robot-adapters/feetech/src/bus.rs
+@@ -825,23 +825,26 @@ mod tests {
+     use robot_core::time::DurationNs;
+     use std::sync::atomic::{AtomicUsize, Ordering};
+ 
+-    const DIAGNOSTIC_NAMES: [&str; 7] = [
++    const DIAGNOSTIC_NAMES: [&str; 9] = [
+         "Phase",
+         "Minimum_Starting_Torque",
+         "Integral_Limit",
+         "CW_Dead_Zone",
+         "CCW_Dead_Zone",
+         "Angle_Resolution",
++        "Acceleration",
++        "Torque_Limit",
+         "Present_Load",
+     ];
+     // 请求 checksum 是独立 golden，读回保留高位与超厂家名义范围的原始字节。
+-    const DIAGNOSTIC_READ_CASES: [(&str, u8, u8, u8, u8); 6] = [
++    const DIAGNOSTIC_READ_CASES: [(&str, u8, u8, u8, u8); 7] = [
+         ("Phase", 18, 0xa5, 0xe5, 0x63),
+         ("Minimum_Starting_Torque", 24, 0xff, 0xdf, 0x5d),
+         ("Integral_Limit", 25, 0xa5, 0xde, 0x5c),
+         ("CW_Dead_Zone", 26, 0xff, 0xdd, 0x5b),
+         ("CCW_Dead_Zone", 27, 0x81, 0xdc, 0x5a),
+         ("Angle_Resolution", 30, 0x80, 0xd9, 0x57),
++        ("Acceleration", 41, 0xff, 0xce, 0x4c),
+     ];
+ 
+     #[derive(Default)]
+@@ -1093,13 +1096,20 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn present_load_single_read_preserves_unsigned_word_and_exact_request() {
+-        for raw in [0x8000_u16, 0x8001, 0xffff] {
+-            let (mut bus, handle) = make_bus(&[("j1", 1)]);
+-            handle.push_rx(&fake_status(1, 0, &raw.to_le_bytes()));
+-            assert_eq!(bus.read("Present_Load", "j1").unwrap(), i32::from(raw));
+-            // ID1 + 长度4 + READ2 + 地址60 + 数据宽2 的独立请求校验字节。
+-            assert_eq!(handle.drain_tx(), [0xff, 0xff, 1, 4, 2, 60, 2, 0xba]);
++    fn diagnostic_word_single_read_preserves_unsigned_value_and_exact_request() {
++        for (name, address, golden_checksum) in
++            [("Present_Load", 60, 0xba), ("Torque_Limit", 48, 0xc6)]
++        {
++            for raw in [0x8000_u16, 0x8001, 0xffff] {
++                let (mut bus, handle) = make_bus(&[("j1", 1)]);
++                handle.push_rx(&fake_status(1, 0, &raw.to_le_bytes()));
++                assert_eq!(bus.read(name, "j1").unwrap(), i32::from(raw));
++                // ID1 + 长度4 + READ2 + 地址 + 数据宽2 的独立请求校验字节。
++                assert_eq!(
++                    handle.drain_tx(),
++                    [0xff, 0xff, 1, 4, 2, address, 2, golden_checksum]
++                );
++            }
+         }
+     }
+ 
+diff --git a/crates/robot-adapters/feetech/src/bus_raw_read_tests.rs b/crates/robot-adapters/feetech/src/bus_raw_read_tests.rs
+index baa3664..3ce8cf2 100644
+--- a/crates/robot-adapters/feetech/src/bus_raw_read_tests.rs
++++ b/crates/robot-adapters/feetech/src/bus_raw_read_tests.rs
+@@ -206,7 +206,11 @@ fn assert_no_io(bus: &FeetechBus<FixedTransport>, probe: &ReadLeaseProbe, out: &
+ #[test]
+ fn two_byte_raw_words_preserve_high_bits_and_exact_request() {
+     let values = [0x8000, 0x8001, 0xffff];
+-    for (name, address, checksum) in [("Present_Velocity", 58, 0x24), ("Present_Load", 60, 0x22)] {
++    for (name, address, checksum) in [
++        ("Present_Velocity", 58, 0x24),
++        ("Present_Load", 60, 0x22),
++        ("Torque_Limit", 48, 0x2e),
++    ] {
+         let (mut bus, probe) = fixture(&IDS, 2, &values);
+         let mut out = [UNCHANGED; 5];
+         let mut tx = [0xa5; 16];
+@@ -237,6 +241,7 @@ fn one_byte_raw_values_have_independent_golden_request() {
+         ("CW_Dead_Zone", 26, 0x45),
+         ("CCW_Dead_Zone", 27, 0x44),
+         ("Angle_Resolution", 30, 0x41),
++        ("Acceleration", 41, 0x36),
+     ] {
+         let (mut bus, probe) = fixture(&IDS, 1, &values);
+         let mut out = [UNCHANGED; 4];
+diff --git a/crates/robot-adapters/feetech/src/diagnostic.rs b/crates/robot-adapters/feetech/src/diagnostic.rs
+index 7625349..00b0f9e 100644
+--- a/crates/robot-adapters/feetech/src/diagnostic.rs
++++ b/crates/robot-adapters/feetech/src/diagnostic.rs
+@@ -221,6 +221,8 @@ mod tests {
+             "CW_Dead_Zone",
+             "CCW_Dead_Zone",
+             "Angle_Resolution",
++            "Acceleration",
++            "Torque_Limit",
+             "Present_Load",
+         ] {
+             let error = F::DiagnosticRegisterWriteForbidden(name);
+diff --git a/crates/robot-adapters/feetech/src/registers.rs b/crates/robot-adapters/feetech/src/registers.rs
+index 6e6c306..912fdbf 100644
+--- a/crates/robot-adapters/feetech/src/registers.rs
++++ b/crates/robot-adapters/feetech/src/registers.rs
+@@ -16,6 +16,8 @@
+ //!   不换算，也不保证现场固件语义。
+ //!   `Present_Load` 为只读 SRAM 字段，仅保留两个原始字节的 unsigned 值，
+ //!   不解码符号，也不换算单位。
++//!   `Acceleration` / `Torque_Limit` 为厂家可写 SRAM 字段；本项目仅允许
++//!   诊断读取原始 unsigned 值，不提供写授权或现场固件单位换算。
+ //!
+ //! ## sign-magnitude 编码
+ //!
+@@ -95,8 +97,10 @@ pub const STS3215_CONTROL_TABLE: &[(&str, Register)] = &[
+     ("Operating_Mode", Register::new(33, 1)),
+     // ── SRAM ──────────────────────────────────────────────────────────
+     ("Torque_Enable", Register::new(40, 1)),
++    ("Acceleration", Register::new(41, 1)), // 本项目诊断只读，保留 raw unsigned 值
+     ("Goal_Position", Register::new(42, 2)), // sign-magnitude bit 15
+     ("Goal_Velocity", Register::new(46, 2)), // sign-magnitude bit 15
++    ("Torque_Limit", Register::new(48, 2)), // 本项目诊断只读，保留 raw unsigned 值
+     ("Lock", Register::new(55, 1)),
+     ("Present_Position", Register::new(56, 2)), // read-only sign-magnitude bit 15
+     ("Present_Velocity", Register::new(58, 2)), // read-only sign-magnitude bit 15
+@@ -115,13 +119,13 @@ pub fn get_register(name: &'static str) -> Result<Register, FeetechError> {
+         .ok_or(FeetechError::UnknownRegister(name))
+ }
+ 
+-/// 仅拒绝本项目七个诊断专用寄存器的写入，零分配。
++/// 仅拒绝本项目九个诊断专用寄存器的写入，零分配。
+ ///
+ /// 这不是全部寄存器的可写性校验；其他名称仍由既有查表与编码逻辑处理，
+ /// 未知名称在此返回成功不表示可写。EEPROM 分区也不代替本门。
+ ///
+ /// # Errors
+-/// 七个诊断名称返回 [`FeetechError::DiagnosticRegisterWriteForbidden`]。
++/// 九个诊断名称返回 [`FeetechError::DiagnosticRegisterWriteForbidden`]。
+ pub fn ensure_not_diagnostic_write(name: &'static str) -> Result<(), FeetechError> {
+     match name {
+         "Phase"
+@@ -130,6 +134,8 @@ pub fn ensure_not_diagnostic_write(name: &'static str) -> Result<(), FeetechErro
+         | "CW_Dead_Zone"
+         | "CCW_Dead_Zone"
+         | "Angle_Resolution"
++        | "Acceleration"
++        | "Torque_Limit"
+         | "Present_Load" => Err(FeetechError::DiagnosticRegisterWriteForbidden(name)),
+         _ => Ok(()),
+     }
+@@ -250,6 +256,8 @@ mod tests {
+             "CW_Dead_Zone",
+             "CCW_Dead_Zone",
+             "Angle_Resolution",
++            "Acceleration",
++            "Torque_Limit",
+             "Present_Load",
+             "Goal_Velocity",
+             "Unknown_Register",
+@@ -291,6 +299,19 @@ mod tests {
+         ));
+     }
+ 
++    #[test]
++    fn runtime_limits_are_raw_readonly_sram() {
++        for (name, address, width) in [("Acceleration", 41, 1), ("Torque_Limit", 48, 2)] {
++            assert_eq!(get_register(name).unwrap(), Register::new(address, width));
++            assert!(!is_eeprom_register(name));
++            assert_eq!(sign_bit_for(name), None);
++            assert!(matches!(
++                ensure_not_diagnostic_write(name),
++                Err(FeetechError::DiagnosticRegisterWriteForbidden(got)) if got == name
++            ));
++        }
++    }
++
+     #[test]
+     fn diagnostic_guard_does_not_reclassify_existing_or_unknown_names() {
+         for (name, _) in STS3215_CONTROL_TABLE {
+@@ -301,6 +322,8 @@ mod tests {
+                 | "CW_Dead_Zone"
+                 | "CCW_Dead_Zone"
+                 | "Angle_Resolution"
++                | "Acceleration"
++                | "Torque_Limit"
+                 | "Present_Load" => {}
+                 _ => assert!(ensure_not_diagnostic_write(name).is_ok()),
+             }

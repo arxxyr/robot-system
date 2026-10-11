@@ -1,0 +1,53 @@
+{
+  "status": "PASS_LOCAL_TEMPLATE_R12_LABEL_AND_SYNTAX_R4",
+  "shells": [
+    {
+      "file": "launch_readonly12_once_r12.template.sh",
+      "bytes": 517,
+      "sha256": "3a517a053183a9481869b5be5d6ec9398ab4e276e0a4d406839b149fd54351c2",
+      "python_ast": "NONE",
+      "prior_bash_syntax_exit": 0
+    },
+    {
+      "file": "observe_readonly12_r12.template.sh",
+      "bytes": 3682,
+      "sha256": "2f230445f2cfc7a5f19fd933d8287bbe00180985543048a46944f6bd8973e8fe",
+      "python_ast": "PASS",
+      "prior_bash_syntax_exit": 0
+    },
+    {
+      "file": "prepare_readonly12_r12.template.sh",
+      "bytes": 11623,
+      "sha256": "d8cf1b08955b42daeee38208c8c411239cbdc3fdf464bcaab34605ad0dc6bfda",
+      "python_ast": "PASS",
+      "prior_bash_syntax_exit": 0
+    },
+    {
+      "file": "start_readonly12_once_r12.template.sh",
+      "bytes": 5803,
+      "sha256": "7c4103cc3429f023f27c6d3bb20f230ad358fbf0fd16b964529c30184251f52b",
+      "python_ast": "PASS",
+      "prior_bash_syntax_exit": 0
+    }
+  ],
+  "prepare_python_bytes": 11458,
+  "prepare_python_sha256": "5636fd190c5fa55ad2786fe8247e24a6e27ea4eeeb4584b374aa606f544f9ee6",
+  "prepare_shell_payload_byteequal": true,
+  "changed_start_syntax": {
+    "argv": [
+      "bash",
+      "-n",
+      "target/position_return_2026-10-11_r12/readonly12-candidate/native-preparation/start_readonly12_once_r12.template.sh"
+    ],
+    "exit_code": 0,
+    "pid": 15582,
+    "reaped": true
+  },
+  "observer_depends_on_start_status_label": false,
+  "templates_finalized": false,
+  "native_template_executed": false,
+  "ssh_executed": false,
+  "uart_operations": 0,
+  "new_go_or_field": false,
+  "scope": "仅修正R12标签、复核本机模板；native9项和完整configPLAN尚未执行；r1/r2/r3原回执保留"
+}

@@ -1,0 +1,31 @@
+{
+  "name": "fmt",
+  "argv": [
+    "cargo",
+    "fmt",
+    "--all"
+  ],
+  "pid": 12037,
+  "started": {
+    "utc": "2026-10-11T03:15:20.411483+00:00",
+    "mono_ns": 1543999253000
+  },
+  "finished": {
+    "utc": "2026-10-11T03:15:22.350209+00:00",
+    "mono_ns": 1545938002166
+  },
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/fmt.stdout",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly-runtime-limits/fmt.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

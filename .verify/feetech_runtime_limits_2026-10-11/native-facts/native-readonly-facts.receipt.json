@@ -1,0 +1,24 @@
+{
+  "argv": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 10748,
+  "started_ns": 1791688323872845000,
+  "finished_ns": 1791688325868107000,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout_sha256": "2bb65ab5c3b324b4128818f5850d27d6d6b8d94d90a20c88d949898001f48722",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "scope": "只读SSH元信息，无UART、服务写入或电机动作"
+}

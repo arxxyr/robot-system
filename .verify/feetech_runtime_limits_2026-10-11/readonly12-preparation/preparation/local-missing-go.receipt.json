@@ -1,0 +1,31 @@
+{
+  "name": "local-missing-go",
+  "owner_pid": 21282,
+  "argv": [
+    "uv",
+    "run",
+    "--no-project",
+    "python",
+    "target/position_return_2026-10-11_r12/readonly12-candidate/readonly12_r12.py",
+    "--config",
+    "target/position_return_2026-10-11_r12/readonly12-candidate/config-template-r12.json",
+    "--execute"
+  ],
+  "pid": 21287,
+  "started_ns": 1791689446451072000,
+  "finished_ns": 1791689446524813000,
+  "exit_code": 2,
+  "wait_returncode": 2,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly12-candidate/native-preparation/local-missing-go.stdout",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly12-candidate/native-preparation/local-missing-go.stderr",
+    "bytes": 158,
+    "sha256": "0bb6612931e55f7c2ecd0146cbb352f70cd6b4e4d3a3e5b9eafa9473b048c260"
+  }
+}

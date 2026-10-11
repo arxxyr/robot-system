@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "git",
+    "diff",
+    "--no-ext-diff",
+    "--",
+    "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "crates/robot-adapters/feetech/src/bus.rs",
+    "crates/robot-adapters/feetech/src/bus_raw_read_tests.rs",
+    "crates/robot-adapters/feetech/src/diagnostic.rs",
+    "crates/robot-adapters/feetech/src/registers.rs"
+  ],
+  "pid": 21402,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "source_baseline": "62a40964bd2f91b005fd28f43e6e346fc2321737",
+  "source_manifest_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "stdout_sha256": "ea907e5ea95f4a5395a4901ec90bf7b5116a61b7c4b970ce89920fa5df9a5d3f",
+  "stdout_bytes": 11921,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 0
+}

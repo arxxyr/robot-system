@@ -206,7 +206,11 @@ fn assert_no_io(bus: &FeetechBus<FixedTransport>, probe: &ReadLeaseProbe, out: &
 #[test]
 fn two_byte_raw_words_preserve_high_bits_and_exact_request() {
     let values = [0x8000, 0x8001, 0xffff];
-    for (name, address, checksum) in [("Present_Velocity", 58, 0x24), ("Present_Load", 60, 0x22)] {
+    for (name, address, checksum) in [
+        ("Present_Velocity", 58, 0x24),
+        ("Present_Load", 60, 0x22),
+        ("Torque_Limit", 48, 0x2e),
+    ] {
         let (mut bus, probe) = fixture(&IDS, 2, &values);
         let mut out = [UNCHANGED; 5];
         let mut tx = [0xa5; 16];
@@ -237,6 +241,7 @@ fn one_byte_raw_values_have_independent_golden_request() {
         ("CW_Dead_Zone", 26, 0x45),
         ("CCW_Dead_Zone", 27, 0x44),
         ("Angle_Resolution", 30, 0x41),
+        ("Acceleration", 41, 0x36),
     ] {
         let (mut bus, probe) = fixture(&IDS, 1, &values);
         let mut out = [UNCHANGED; 4];

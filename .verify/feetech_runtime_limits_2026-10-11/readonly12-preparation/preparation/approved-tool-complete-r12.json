@@ -1,0 +1,15 @@
+{
+  "path": "/home/loosqk/robot-checks/position-return-20261011-r12/readback-tool-r12/feetech_poke",
+  "sha256": "15ab06cab40f0fca7f9cba3b9c1831f2e408905c27a99e94db54c4751d9ec8d4",
+  "bytes": 1511200,
+  "mode": 448,
+  "device": 66305,
+  "inode": 17173944,
+  "mtime_ns": 1791689302850460700,
+  "ctime_ns": 1791689302878461787,
+  "nlink": 1,
+  "symlink": false,
+  "uid": 1000,
+  "gid": 1000,
+  "elf_machine": 183
+}

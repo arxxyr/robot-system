@@ -1,0 +1,24 @@
+{
+  "argv": [
+    "rustc",
+    "+nightly",
+    "-Vv"
+  ],
+  "pid": 13643,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "started_at_utc": "2026-10-11T03:16:01.696364+00:00",
+  "finished_at_utc": "2026-10-11T03:16:01.738676+00:00",
+  "stdout": {
+    "path": "target/position_return_2026-10-11_r12/readonly-runtime-limits/rename-compiler.stdout",
+    "bytes": 210,
+    "sha256": "95e95c532f1139f239a12944290b0a0d22470643cfeba31609146de830d8af5b"
+  },
+  "stderr": {
+    "path": "target/position_return_2026-10-11_r12/readonly-runtime-limits/rename-compiler.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

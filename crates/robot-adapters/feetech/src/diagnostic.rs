@@ -221,6 +221,8 @@ mod tests {
             "CW_Dead_Zone",
             "CCW_Dead_Zone",
             "Angle_Resolution",
+            "Acceleration",
+            "Torque_Limit",
             "Present_Load",
         ] {
             let error = F::DiagnosticRegisterWriteForbidden(name);

@@ -1,0 +1,18 @@
+{
+  "phase": "READONLY12_SOFTWARE_PREPARE_ARCHIVE_READY",
+  "sha256": "d2b0e9e4daa1d63200814ce0c86d603aee2b7cb5f8685a9cbdcfd084ac8544df",
+  "bytes": 106471,
+  "files": 42,
+  "source_bytes": 432486,
+  "runtime_pid": 640551,
+  "pane_exit": 0,
+  "prepare_result": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/prepare-result-r12.json",
+    "sha256": "86ad5802993a1a44c84e205952af33e5e55e81a05ed4166a06f81c275690b6a1",
+    "bytes": 7922
+  },
+  "identity_mismatch": null,
+  "uart_operations": 0,
+  "go_created": false,
+  "field_created": false
+}
