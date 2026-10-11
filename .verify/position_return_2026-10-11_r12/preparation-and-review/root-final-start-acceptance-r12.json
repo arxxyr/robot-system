@@ -1,0 +1,51 @@
+{
+  "status": "ROOT_ACCEPTED_SINGLE_READONLY12_START",
+  "recorded_at_ns": 1791690055237162000,
+  "starter": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly12-live/start_readonly12_once_r12_fixed_draft.sh",
+    "bytes": 6850,
+    "sha256": "9873088cd3525ef68763c634ef8aafc71b10497986e80611b04114ad97088c75"
+  },
+  "refs": {
+    "status": "PASS_LOCAL_FINAL_CONFIG_PLAN_GO_CONCRETIZED",
+    "field": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/field-confirmation-r12.json",
+      "sha256": "013c11b7403c7d44803b9da71abeef97bbc059b26c2ce55fdd41abb41e9731c6",
+      "bytes": 602
+    },
+    "go": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/root-go-r12.json",
+      "sha256": "76514282ab9b881c78bbb8a487b42adddf3bf2216250e3d94a9b6c21ebcd43df",
+      "bytes": 1266
+    },
+    "config": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/config.readonly12.r12.json",
+      "sha256": "66338db72bf4a61968ea1042b9327d05147fb513627d01a8fbef4c8ca5e7cf41",
+      "bytes": 1924
+    },
+    "plan": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/PLAN.readonly12.final.r12.json",
+      "sha256": "d292f7d7cef4c3849a7beb2fa6b382048b71de041b9e10b9a01e14c3c644e8c7",
+      "bytes": 29010
+    },
+    "plan_sha256": "d2db36eee6453de9d0eb6a5b83d3106d12b1fe4374c3d4732316717fc0c59cfc",
+    "candidate": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/readonly12_r12.py",
+      "sha256": "827e83378949f6f2dd458a113e4e3b122f74689ddf4fdaf6dbe3a70fda92938b",
+      "bytes": 17307
+    },
+    "bindings": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/runtime-limits-r12/readonly12_bindings_r12.json",
+      "sha256": "d6660df1a7693328dd13f87a7edcaa1e53222988ac42e57912a96429c4c6673d",
+      "bytes": 24253
+    },
+    "expires_at_ns": 1791690453720347000,
+    "original_field_recorded_at_ns": 1791689853720347000,
+    "uart_operations": 0,
+    "starter_executed": false
+  },
+  "go_expiry_not_extended": true,
+  "human_direct_answer": "现场仍就绪，可执行本次12项只读采集",
+  "old_D0_GO_not_reused": true,
+  "hardware_launches_before_this": 0
+}

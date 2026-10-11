@@ -1,0 +1,29 @@
+{
+  "owner_pid": 24122,
+  "pid": 24123,
+  "argv": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "started_ns": 1791689968528449000,
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r12/readonly12-live/upload_final_plan_r12.sh",
+    "bytes": 51049,
+    "sha256": "9f8b99d6d20c43c413596f9e3ec59feef911d413d91b03390fbbfd1a3244a95a"
+  },
+  "signals_sent": [],
+  "finished_ns": 1791689970623526000,
+  "exit_code": 1,
+  "wait_returncode": 1,
+  "reaped": true,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "bf53059c107ba95f4d2c9716876f1f50941290d5a0b05def202eadfdbc55269d"
+}

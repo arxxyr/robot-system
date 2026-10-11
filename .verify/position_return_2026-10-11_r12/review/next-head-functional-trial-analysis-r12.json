@@ -1,0 +1,262 @@
+{
+  "status": "ANALYSIS_ONLY_NO_NEW_GO",
+  "recommendation": {
+    "next_one_trial": "头1 left7 临时P16→32，I0/D43保持；一次原+24往返后恢复P16。",
+    "purpose": "验证一个有理由的比例系数增量能否把持续6计数残差压入原±4/800ms；目标位置仍为当次锚点+24及当次锚点。",
+    "scope": "复用既有临时P写/读回/恢复与往返候选；沿用当前既有800ms出程观察、原回程精度门、最终Disable和17电机停止门；不改验收，不补偿目标，不驱动底盘。",
+    "authorization": "仅建议；没有执行或新GO。",
+    "after_failure": "一次FAIL后恢复/收尾，不自动尝试P40、I4或复测；由root依原件判断后续。"
+  },
+  "verified_history": [
+    {
+      "trial": "R2 左腕I1",
+      "boundary": "曾功能PASS后恢复I0；不能移作头1I生效或机械根因证明。"
+    },
+    {
+      "trial": "R3 头1I1",
+      "anchor": 2642,
+      "outward_error": -4,
+      "outward_first_qualified_ms": 250.466292,
+      "return_error": 6,
+      "functional": "FAIL; restore/STOP PASS"
+    },
+    {
+      "trial": "R5 头1I2",
+      "anchor": 2648,
+      "outward_error": -4,
+      "outward_first_qualified_ms": 251.226524,
+      "return_error": 6,
+      "functional": "FAIL; restore/STOP PASS"
+    },
+    {
+      "trial": "R6 头1P24/I0",
+      "anchor": 2655,
+      "outward_error": -4,
+      "outward_first_qualified_ms": 190.497993,
+      "return_error": 6,
+      "functional": "FAIL; restore/STOP PASS"
+    },
+    {
+      "trial": "R10 原P16/I0/D43负方向",
+      "anchor": 2138,
+      "target": 2114,
+      "outward_error": 8,
+      "return": "NOT_RUN",
+      "platform_load_unsigned": 44,
+      "load_boundary": "一次44是驱动输出占空比原字，不是扭矩/电流；不得与不同时刻R12限制读值拼成整段运行饱和证明。"
+    },
+    {
+      "trial": "R11 D0/P16/I0",
+      "anchor": 2122,
+      "outward_error": -4,
+      "outward_first_qualified_ms": 251.024002,
+      "return_error": 6,
+      "functional": "FAIL; restore/STOP PASS"
+    }
+  ],
+  "reasoning_inferences": [
+    "厂家表21是位置比例系数；32在厂家表0..254范围。P24已有临时写/恢复路径，P32是该路径下一单变量增量，较24增加三分之一；不是新PID搜索框架。",
+    "R10偏差平台同时仍报告非零驱动输出，R12又未读到低加速度/低转矩限值。比例驱动增大可能克服小残差平台，这是可检验假设，不能据此宣称静摩擦或增益不足已确诊。",
+    "P24那轮首次合格时间190ms、I1/I2和D0约250ms只说明各轮观测；起点/时间不同，不能把速度差归因于PID采用或据此预测P32必过。",
+    "头1I1/I2均回程+6，I4仍是可做的功能选项；R7已读Integral_Limit25=0，按厂家名义是关闭积分限制。当前优先保持I0，避免新积分状态并复用已试过的P路径，不同时改变P和I；不以未读积分限制作为理由。"
+  ],
+  "official_and_limit_facts": {
+    "source": ".verify/feetech_return_metadata_2026-10-10/manufacturer/official-sms-sts-memory-table.md",
+    "P21": "比例系数，范围0..254，名义系数1/4",
+    "I23": "积分系数，范围0..254",
+    "integral_limit25": "R7左5/7/8三处原字均0；厂家名义最大积分值=字值*4，0关闭限制。FW3.10具体控制环采用仍未证，不推断积分不能起作用。",
+    "Acceleration41": "厂家名义0表示最大加速度；R12三个关节原字均0。",
+    "Torque_Limit48": "厂家表范围0..1000；R12三个关节原字均1000。",
+    "boundary": "这些运行限制的当前原字未显示人为低设定；不证明前轮全程没有限流、保护、机械干涉或FW内部限制。"
+  },
+  "PID_adoption": {
+    "status": "NOT_VERIFIED",
+    "not_a_permanent_external_block": "厂家正文未定义明确apply步骤，不能自动判定无法继续功能实测；ACK/原帧确认字值后，直接按原精度目标测一次可回答当次功能是否过门。",
+    "no_claim": "一次不同锚点功能PASS/FAIL仍不证明FW3.10控制环即时采用或掉电持久化；不需要先证明全部PID因果才允许有界功能试验。"
+  },
+  "readonly12_owner_terminal_independent_check": {
+    "owner_result_sha256": "b67538f5296c86e5037a0d594792f5c8bbad751e73b68f1a99809c192248b53e",
+    "owner_log_sha256": "8b57b4674fa6e0190769b183eb43427b289bbf1475b1e881b495ce9a2b430dd8",
+    "owner_ssh_pid": 24252,
+    "owner_natural_exit": 0,
+    "pane_pid": 640784,
+    "pane_exit": 0,
+    "remote_result_sha256": "99c5652288551d5618a0e80438b75fe20884d32416f80f2ba31cd63ef1330354",
+    "frames": [
+      {
+        "motor": 5,
+        "register": "Torque_Enable",
+        "address": 40,
+        "width": 1,
+        "raw_unsigned": 0,
+        "command_sequence": 43,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 5,
+        "register": "Present_Velocity",
+        "address": 58,
+        "width": 2,
+        "raw_unsigned": 0,
+        "command_sequence": 62,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 7,
+        "register": "Torque_Enable",
+        "address": 40,
+        "width": 1,
+        "raw_unsigned": 0,
+        "command_sequence": 81,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 7,
+        "register": "Present_Velocity",
+        "address": 58,
+        "width": 2,
+        "raw_unsigned": 0,
+        "command_sequence": 100,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 8,
+        "register": "Torque_Enable",
+        "address": 40,
+        "width": 1,
+        "raw_unsigned": 0,
+        "command_sequence": 119,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 8,
+        "register": "Present_Velocity",
+        "address": 58,
+        "width": 2,
+        "raw_unsigned": 0,
+        "command_sequence": 138,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 5,
+        "register": "Acceleration",
+        "address": 41,
+        "width": 1,
+        "raw_unsigned": 0,
+        "command_sequence": 157,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 5,
+        "register": "Torque_Limit",
+        "address": 48,
+        "width": 2,
+        "raw_unsigned": 1000,
+        "command_sequence": 176,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 7,
+        "register": "Acceleration",
+        "address": 41,
+        "width": 1,
+        "raw_unsigned": 0,
+        "command_sequence": 195,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 7,
+        "register": "Torque_Limit",
+        "address": 48,
+        "width": 2,
+        "raw_unsigned": 1000,
+        "command_sequence": 214,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 8,
+        "register": "Acceleration",
+        "address": 41,
+        "width": 1,
+        "raw_unsigned": 0,
+        "command_sequence": 233,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      },
+      {
+        "motor": 8,
+        "register": "Torque_Limit",
+        "address": 48,
+        "width": 2,
+        "raw_unsigned": 1000,
+        "command_sequence": 252,
+        "tx_checksum": "PASS",
+        "rx_checksum": "PASS",
+        "response_error": 0
+      }
+    ],
+    "terminal_report_child_count": 270,
+    "boundary": "独核owner已wait/reap终态及其terminal里的12帧校验/ID/地址/宽度/无符号值；未在本检查独核270 child全部原件，不当全17 STOP、不回填旧回程及STOP FAIL。"
+  },
+  "references": [
+    {
+      "path": ".verify/position_return_2026-10-10_r2/summary.json",
+      "sha256": "03c77e4b68e3c9a5d23add8477cb11a0a893db290ba823698761e6ca4a6ab524",
+      "bytes": 33717
+    },
+    {
+      "path": ".verify/position_return_2026-10-10_r3/summary.json",
+      "sha256": "90635f4f3d82adbbd39f509dddc8fa02788deda70b7c64b3043d740c7e6cb96f",
+      "bytes": 23641
+    },
+    {
+      "path": ".verify/position_return_2026-10-10_r5/summary.json",
+      "sha256": "159e4ace9048f033a47a7226268e09ecf0cd86132f697d5e911293f09616935d",
+      "bytes": 7199
+    },
+    {
+      "path": ".verify/position_return_2026-10-10_r6/summary.json",
+      "sha256": "316d971e729b08dbc0fa5183bf22702b106c115289f428a5245bf208b865eb1b",
+      "bytes": 7598
+    },
+    {
+      "path": ".verify/position_return_2026-10-10_r10/summary.json",
+      "sha256": "61a220eb6f09095ff67d92b81e86617db1b3764f0f8d62301c62f944c75c6030",
+      "bytes": 8037
+    },
+    {
+      "path": ".verify/position_return_2026-10-10_r11/summary.json",
+      "sha256": "ffcffa5f5ef57f627293de4937cea5b8911abf15086edaef83b535a5d8ea5065",
+      "bytes": 9624
+    },
+    {
+      "path": ".verify/position_return_2026-10-10_r7/summary.json",
+      "sha256": "83f5f1e9463d2c3154529542e443ac456aeeb347103cdea90a53cdf2d53e9bd1",
+      "bytes": 7157
+    }
+  ],
+  "external_block": "现有证据没有确定的外部阻碍可据以停止所有头1功能试验；机械情况与FW内部采用未知仍保留。",
+  "performed": "仅本地只读分析与此review保存；无新UART/Cargo/SSH/外部通信。",
+  "correction_retained": "分析初稿误称Integral_Limit25未读；root指出R7三处0后直接核原归档并纠正。P32建议仍基于单变量P路径/I0保持，不把P24较快当PID生效因果。"
+}

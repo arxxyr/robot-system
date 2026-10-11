@@ -1,0 +1,105 @@
+{
+  "status": "PASS_ROOT_270_CHILD_540_STREAM_12_FRAME_REVIEW",
+  "recorded_at_utc": "2026-10-11T03:45:00.363843+00:00",
+  "run_sha256": "99c5652288551d5618a0e80438b75fe20884d32416f80f2ba31cd63ef1330354",
+  "run_bytes": 420119,
+  "requested_values": [
+    [
+      5,
+      "Torque_Enable",
+      0
+    ],
+    [
+      5,
+      "Present_Velocity",
+      0
+    ],
+    [
+      7,
+      "Torque_Enable",
+      0
+    ],
+    [
+      7,
+      "Present_Velocity",
+      0
+    ],
+    [
+      8,
+      "Torque_Enable",
+      0
+    ],
+    [
+      8,
+      "Present_Velocity",
+      0
+    ],
+    [
+      5,
+      "Acceleration",
+      0
+    ],
+    [
+      5,
+      "Torque_Limit",
+      1000
+    ],
+    [
+      7,
+      "Acceleration",
+      0
+    ],
+    [
+      7,
+      "Torque_Limit",
+      1000
+    ],
+    [
+      8,
+      "Acceleration",
+      0
+    ],
+    [
+      8,
+      "Torque_Limit",
+      1000
+    ]
+  ],
+  "direct_children": 270,
+  "verified_streams": 540,
+  "child_exit_counts": {
+    "0": 206,
+    "1": 64
+  },
+  "all_natural_reap": true,
+  "full17_motor_STOP_this_run": false,
+  "register_writes": 0,
+  "motion_commands": 0,
+  "manual_power_cut_requested": false,
+  "non_uart_post": [
+    {
+      "name": "host",
+      "status": "PASS"
+    },
+    {
+      "name": "refs_protection",
+      "status": "PASS"
+    },
+    {
+      "name": "tool",
+      "status": "PASS"
+    },
+    {
+      "name": "idle",
+      "status": "PASS"
+    },
+    {
+      "name": "usb",
+      "status": "PASS"
+    }
+  ],
+  "prior_precision_failures": "UNCHANGED",
+  "old_wheel_plus_minus_50": "OPEN",
+  "goal_complete": false,
+  "exit1_classification": "64 fuser/sudo fuser empty expected idle results; no blanket exit0 claim"
+}

@@ -1,0 +1,240 @@
+{
+  "schema": "POSITION_RETURN_READONLY12_R12_ARCHIVE_V1",
+  "status": "PASS_READONLY12_CAPTURE_NO_MOTION",
+  "recorded_at_utc": "2026-10-11T03:46:54.823222+00:00",
+  "scope": "仅左5/7/8各TE/PV/Acceleration/Torque_Limit一次raw读取，共12；不修改参数、不Enable、不动作。",
+  "run_original": {
+    "archive": "archives/hardware-originals-r12.tar.gz",
+    "member": "readonly12-evidence-r12/run.json",
+    "sha256": "99c5652288551d5618a0e80438b75fe20884d32416f80f2ba31cd63ef1330354",
+    "bytes": 420119,
+    "pid": 640784,
+    "status": "PASS_READONLY12_CAPTURE",
+    "direct_children": 270,
+    "streams_verified": 540,
+    "exit0": 206,
+    "exit1": 64,
+    "exit1_scope": "all fuser/sudo fuser expected idle: empty stdout and stderr",
+    "all_children_reaped": true,
+    "manualcut": false,
+    "errors": [],
+    "evidence_errors": [],
+    "run_nonUART_post": [
+      {
+        "name": "host",
+        "status": "PASS"
+      },
+      {
+        "name": "refs_protection",
+        "status": "PASS"
+      },
+      {
+        "name": "tool",
+        "status": "PASS"
+      },
+      {
+        "name": "idle",
+        "status": "PASS"
+      },
+      {
+        "name": "usb",
+        "status": "PASS"
+      }
+    ]
+  },
+  "readouts": [
+    [
+      5,
+      "Torque_Enable",
+      0
+    ],
+    [
+      5,
+      "Present_Velocity",
+      0
+    ],
+    [
+      7,
+      "Torque_Enable",
+      0
+    ],
+    [
+      7,
+      "Present_Velocity",
+      0
+    ],
+    [
+      8,
+      "Torque_Enable",
+      0
+    ],
+    [
+      8,
+      "Present_Velocity",
+      0
+    ],
+    [
+      5,
+      "Acceleration",
+      0
+    ],
+    [
+      5,
+      "Torque_Limit",
+      1000
+    ],
+    [
+      7,
+      "Acceleration",
+      0
+    ],
+    [
+      7,
+      "Torque_Limit",
+      1000
+    ],
+    [
+      8,
+      "Acceleration",
+      0
+    ],
+    [
+      8,
+      "Torque_Limit",
+      1000
+    ]
+  ],
+  "stop_scope": "仅左5/7/8 TE/PV零；不是17电机STOP51或底盘主动运动通过。",
+  "archive_original_files": {
+    "hardware": 575,
+    "final_preparation": 9,
+    "commit_quality": 61
+  },
+  "lifecycle": {
+    "initial_input_refusal": {
+      "owner": 24227,
+      "child": null,
+      "SSH_launches": 0,
+      "phase": "NOT_LAUNCHED; no launch.json existed; original status/result/empty child.log retained"
+    },
+    "single_hardware_start": {
+      "owner": 24234,
+      "SSH": 24235,
+      "exit": 0,
+      "reaped": true
+    },
+    "observer": {
+      "owner": 24251,
+      "SSH": 24252,
+      "exit": 0,
+      "reaped": true
+    },
+    "collection": {
+      "owner": 24594,
+      "SSH": 24595,
+      "exit": 0,
+      "reaped": true
+    },
+    "real_terminal": "@71/%71/640784 dead1/status0 independently matched before reclaiming only owned dead pane",
+    "collection_direct_children": 3,
+    "independent_nonUART17": {
+      "checks": 17,
+      "children": 23,
+      "all_reaped": true,
+      "UART": 0,
+      "formal_ca14_clean": true,
+      "six_services_inactive": true
+    }
+  },
+  "source_and_commit_quality": {
+    "source_files": 597,
+    "source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "native_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_state": "five changed sources; not clean",
+    "native_quality_windows": 3,
+    "native_seal_source_windows": 1,
+    "host_quality_before_after_equal": true,
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "6f5da406b56c2db6607202b63daee73aa8c61297",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "actual_checks": [
+      "cargo fmt --all",
+      "cargo clippy --all --all-targets -- -D warnings"
+    ],
+    "Runner_children": 10,
+    "same_SSH_children": 4,
+    "owner": 25043,
+    "SSH": 25044,
+    "exit": 0,
+    "reaped": true,
+    "native_driver": 641247,
+    "pane": "%72/@72 natural exit0 then owned dead pane reclaimed",
+    "tests": 0,
+    "release_builds": 0,
+    "UART": 0,
+    "fmt": {
+      "pid": 641268,
+      "started_at": "2026-10-11T03:44:21.771413+00:00",
+      "finished_at": "2026-10-11T03:44:25.295477+00:00",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "exit_code": 0,
+      "reaped": true
+    },
+    "clippy": {
+      "pid": 641279,
+      "started_at": "2026-10-11T03:44:25.516717+00:00",
+      "finished_at": "2026-10-11T03:44:26.304320+00:00",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "reaped": true
+    }
+  },
+  "failure_preservation": [
+    "local final-generation helper FAIL before upload",
+    "native upload tuple/list FAIL and corrected resume final upload original receipts",
+    "initial owner input absolute-path prelaunch refusal: SSH0",
+    "local quality archive verifier schema FAILs; no Cargo/SSH repeat"
+  ],
+  "post_run_authority": {
+    "watch_ended": "root notified user this watch may end",
+    "new_GO": false,
+    "new_UART_after_run": 0,
+    "power_telemetry": "UNKNOWN",
+    "physical_current_state": "not inferred from prior field confirmation"
+  },
+  "prior_hardware_failures": {
+    "left_wrist_precision": "UNCHANGED",
+    "head1_R11_return_plus6": "FAIL unchanged",
+    "head2": "old FAIL unchanged",
+    "old_wheel_plus_minus50": "OPEN",
+    "base_active_motion": "NOT_RUN"
+  },
+  "parameter_control_loop_apply_condition": "NOT_VERIFIED",
+  "next_trial": "review/next-head-functional-trial-analysis-r12.json is proposal/reason only; P32 not executed; R7 integral0 correction preserved",
+  "software_archive_reference": ".verify/feetech_runtime_limits_2026-10-11/summary.json unchanged",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "goal_complete": false,
+  "archive_actions": {
+    "Cargo_or_SSH_after_quality": 0,
+    "UART_after_run": 0,
+    "service_changes": 0,
+    "commit": 0,
+    "push": 0,
+    "expanded_native_or_run_originals_copied": false
+  }
+}

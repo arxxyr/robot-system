@@ -21,7 +21,13 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-11 R12仅增加Acceleration41/1B、Torque_Limit48/2B诊断原值读取。
+本轮最新:  2026-10-11 R12实机固定12只读PASS：left5/7/8各TE0/PV0、Acceleration0、Torque_Limit1000。
+           12请求原帧和值、270直属child/540原流、非UART后验及独立17项清场PASS；无写/Enable/动作。
+           64空fuser预期exit1、206exit0；driver640784/%71自然dead0后回收，仅本机owner真wait/reap。
+           本轮供电仅用户报告ON，独立遥测UNKNOWN；GO已消耗，看护已收尾，无新动作GO。
+           原件 .verify/position_return_2026-10-11_r12/summary.json；不回填旧回程或±50 FAIL。
+           下一步仅准备head1 P16→32→16、I0/D43保持、一次+24往返，原精度/停止门不变。
+           以下R12诊断软件阶段已验收并提交推送57f6ad0：Acceleration41/1B、Torque_Limit48/2B原值读取。
            两字段为unsigned/SRAM，既有四写API及poke开串口前拒写；S0/S1控制路径不变。
            本机与Orin各库218+poke13=231不同方法通过，不跨平台或参数展开累计。
            Orin实际fmt→默认及real-hw根Clippy零警告、独立poke release/help/两拒写通过。
@@ -29,12 +35,12 @@
            新诊断ELF15ab06ca仅独立冻结，不替换f201位置/13c旧读回工具或正式ca14。
            官方Lock1为掉电不保存语义，普通WRITE无需ACTION；FW3.10的PID即时采用仍未证。
            不盲调PID；下一步只读左腕/头1/头2各TE/PV、Acceleration/Torque_Limit共12项。
-           固定12只读两端各9内存/默认零动作/缺GO拒绝、Orin完整PLAN及17非UART通过；现场待答。
-           本轮无GO/UART/硬件动作、控制ELF构建、全workspace测试、安装或服务激活。
+           固定12只读两端各9内存/默认零动作/缺GO拒绝、Orin完整PLAN及17非UART准备通过。
+           该软件阶段无GO/UART/硬件动作、控制ELF构建、全workspace测试、安装或服务激活。
            软件原件 .verify/feetech_runtime_limits_2026-10-11/summary.json；原准备FAIL保留。
            R11临时D43→0→43：锚2122→2146，出程末2142/-4 PASS、回程2128/+6 FAIL。
            D43及P16/I0/Lock1/死区1恢复、STOP51/身份/非UART后验PASS，原件R11摘要保留。
-           R11的GO已消耗、看护已结束；当前供电/支撑/看护未知，不复用旧答复作新动作授权。
+           R11的GO已消耗、看护已结束，不复用旧答复；本轮R12现场确认只覆盖12只读。
            左腕仅临时I1 PASS后恢复I0，头1/头2精度与三轮主动运动未验，旧±50原因OPEN。
            右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
 

@@ -1,0 +1,5 @@
+{
+  "status": "FAIL_LOCAL_ARCHIVE_VERIFIER",
+  "error": "KeyError: 'wait_returncode'",
+  "cause": "Existing Runner completion schema requires reading actual original fields. No SSH/Cargo repeat."
+}

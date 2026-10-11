@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+### 三处关节12项运行限制实机只读通过（2026-10-11，R12已收尾）
+
+root于03:37:33.720347UTC记录本会话直接人类答复“现场仍就绪，可执行本次12项只读采集”，仅签固定left5/7/8各TE/PV、Acceleration41/1B、Torque_Limit48/2B各一次的600秒GO。03:41:04.021→03:41:11.234UTC实机12项均通过：三处各TE=0、PV=0、Acceleration=0、Torque_Limit=1000。工具实际捕获请求SYNC_READ和完整响应，12帧ID/地址/宽度/status/checksum/payload与unsigned值逐项独核；请求外握手不冒充只发生12个TTY帧。只报告原值，现场固件单位与控制环即时采用仍未另证；未见低扭矩限制设定，不据此宣称已关闭摩擦或PID根因。
+
+run99c56522/420119B保持PASS_READONLY12_CAPTURE，270直属child/540输出逐项字节与SHA通过并自然回收；206 exit0、64空fuser/sudo fuser为预期idle exit1，不称全部exit0。末五项非UART后验、独立17项清场通过，manual_power_cut_requested=false。driver640784由tmux@71/%71观察自然dead/exit0后仅回收自有pane；启动owner24234/SSH24235及观察owner24251/SSH24252均真wait0/reap，不冒充root直接waitpid远端driver。全程无参数写入、Enable、动作或底盘命令，未做本轮17电机STOP51，不把三目标TE/PV零读回扩成整机物理停止证明。
+
+必要原件入口：[R12硬件摘要](../../.verify/position_return_2026-10-11_r12/summary.json)，575件原tar唯一保留、不重复展开，现场、GO、最终config/PLAN及软件准备原FAIL另存。首native配置帮助脚本tuple/list比对FAIL发生在已保存原config、上传部分原件之后，未替换finalconfig/启动PLAN/UART；仅修序列化比较后续完。root首ownedSSH帮助脚本因相对input路径前置拒绝，child=null/SSH=0，保留原FAIL；随后使用绝对路径只启动一次实际采集，不算硬件重试。
+
+本轮看护已通知结束，最新供电仅本轮用户报告ON，独立电气遥测UNKNOWN；GO已消耗，无新UART或动作授权。回程精度、旧±50、D15 OPEN/DEFERRED、deployable=false及右H2完整PASS保持。下一步仅准备头1 P16→32→16、I0/D43不写、一次+24往返，复用原800ms出程观察和±4/800ms、±32/min12、STOP51门；P24首次出程190ms为不同起点功能事实，不据此证明P已采用或因果，不保证P32通过。左腕长期参数、头2与三轮主动运动仍未闭环。
+
 ### 回程诊断增加两个运行参数读取（2026-10-11，R12软件已验收，硬件未执行）
 
 仅增加Acceleration@41/1B、Torque_Limit@48/2B的具名unsigned原值读取，两字段按厂家表属于SRAM；本项目继续将其归为诊断只读。既有四个写API、共用绝对期限写准备入口及poke打开串口前均拒绝写入，缺值或坏值也不能绕过。新增原帧golden和高位保留检查；未加入单位换算、目标补偿或新的控制框架，S0/S1控制路径不变。

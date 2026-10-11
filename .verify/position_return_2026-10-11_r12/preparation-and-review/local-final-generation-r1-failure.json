@@ -1,0 +1,6 @@
+{
+  "status": "FAIL_LOCAL_GENERATOR_ONLY",
+  "cause": "硬编码完整现场SHA与实际不符，root只提供013c11b7前缀；尚未生成任何GO/config/远端操作",
+  "uart_operations": 0,
+  "ssh_started": false
+}

@@ -1,0 +1,5 @@
+{
+  "status": "FAIL_LOCAL_ARCHIVE_VERIFIER",
+  "error": "KeyError: 'reaped'",
+  "cause": "Runner result receipt is a paths index; actual reap is in original completion.json, not this index. No new SSH/Cargo or remote repeat."
+}
