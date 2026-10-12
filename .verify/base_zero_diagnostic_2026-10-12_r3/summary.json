@@ -1,6 +1,6 @@
 {
   "schema": "BASE_ZERO_R3_STARTUP_FIX_STAGE_V1",
-  "status": "SOFTWARE_STDIN_HOLD_FIX_VERIFIED_HARDWARE_NOT_RUN_MANUAL_CUT_PENDING",
+  "status": "SOFTWARE_STDIN_HOLD_FIX_VERIFIED_HARDWARE_NOT_RUN_POWER_OFF_CONFIRMED",
   "recorded_at_utc": "2026-10-12T05:49:44.915797+00:00",
   "round": 3,
   "profile_run_id": "base-zero-diagnostic-r1",
@@ -110,12 +110,13 @@
   "field": {
     "question_id": "call_0f14a15eec9443f99ab0f47d4cc623a6",
     "same_current_user_confirm_used": "R2零启动拒绝后仅原一次R3尝试；未续原600秒现场期限",
-    "latest_direct_power_report": "ON_USER_REPORTED",
-    "current_physical_power": "UNKNOWN_AFTER_MANUAL_CUT_REQUEST",
+    "latest_direct_power_report": "OFF_USER_CONFIRMED",
+    "current_physical_power": "OFF_USER_CONFIRMED",
     "independent_electrical_telemetry": "UNKNOWN",
-    "manual_cut_confirmation": "PENDING",
-    "watch": "WAITING_FOR_REQUESTED_PHYSICAL_POWER_OFF_CONFIRMATION",
-    "old_GO_status": "EXPIRED_AND_ROUND_TERMINATED_NOT_REUSABLE"
+    "manual_cut_confirmation": "RECEIVED_DIRECT_HUMAN",
+    "watch": "R3_ENDED_AFTER_MANUAL_CUT_CONFIRMATION",
+    "old_GO_status": "EXPIRED_AND_ROUND_TERMINATED_NOT_REUSABLE",
+    "original_pending_at_incident": "PRESERVED_IN_STARTUP_INCIDENT_R3_JSON"
   },
   "hardware_base_contract": "OPEN",
   "base_three_targets": "DEFERRED/NOT_RUN",
@@ -128,5 +129,7 @@
   "formal_install": false,
   "services_started": false,
   "control_ELF_built": false,
-  "next_step": "收到本轮实际断电收尾确认后；下一轮只在当次供电/三轮架空稳定支撑/看护事实后采USB当前枚举并生成新绑定/PLAN/GO，使用已验-c入口做一次right9零目标。原FAIL全部保留，不复用旧GO，不扩大设计。"
+  "next_step": "R4仅准备已验-c入口及收尾副本；当次恢复供电和看护事实后，先非UART核当前USB枚举，再新binding/PLAN/GO，一次right9零目标。此次断电回复不构成新GO。",
+  "original_status_before_power_off_followup": "SOFTWARE_STDIN_HOLD_FIX_VERIFIED_HARDWARE_NOT_RUN_MANUAL_CUT_PENDING",
+  "manual_power_cut_followup": "followups/manual-power-cut-confirmation-r3.json"
 }

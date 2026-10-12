@@ -2,6 +2,20 @@
 
 ## 当前步骤
 
+### R4脚本准备与提交质量通过，等待恢复供电后的当前事实（2026-10-12）
+
+R3断电回执已记录并结束看护，当前仅用户OFF确认、独立电气遥测UNKNOWN；原启动/观察FAIL、driver真实reap NOT_OBSERVED和硬件零速/STOP51 NOT_RUN全部保持。R4逐字复用已验`-c` launcher和body填七pins后整体shell引用的starter，observer/seal只换本轮路径/标签，保留新GO.consumed原件。新软件recipe四个当前原件输入pins均None，只接供电后本次新非UART17 stdout及真实wait/reap回执；以347a65冻结binding为基线，只有两端device_inode/link_inode/usec按新事实更新，其它serial/devpath/tty/rdev/权限、host、55refs、保护和校准固定。一个无execute的PLAN child，不额外运行非UART或创建GO/现场文件。父fd0静态调用链四冻结件已核，未见父stdin关闭/重定向；子进程TemporaryFile/DEVNULL不关闭父0，不宣称修复实际硬件入口已经通过。
+
+本机AST、六语法child自然0/reap、七虚拟pins引用往返及独审通过；R4新的native binding/PLAN准备仍NOT_RUN。root实际fmt0，Orin唯一latest nightly更新（仍080）→fmt→根Clippy0/零警告；11child/22原流真回收，597源三窗068277d8逐份同、两编译器窗相同，原生Git仍894加五dirty。53件唯一质量包b0a28423/134568B已核，软件driver655005/@99/%99自然dead0后只回收所属pane，owner70072/SSH70073真wait/reap0。无新Rust测试、release/控制ELF、旧夹具重跑、GO、UART、硬件动作、安装或服务激活。[R4永久摘要](../../.verify/base_zero_diagnostic_2026-10-12_r4/summary.json)记录准备分界。
+
+新的现场问题已发出：实际恢复供电、三轮架空稳定、空载双臂支撑、接触区空旷及持续看护/立即断电，尚未答复。本轮不由断电回执签GO。收到当次事实后先采当前USB枚举，再生成并核新binding/PLAN/GO，填已验入口，只一次right9 Goal0→Enable→原0/200/400ms三PV→Disable及STOP51；原500ms/三写/三轮DEFERRED不改，不要求重插USB或额外断电。D15 OPEN/DEFERRED、deployable=false及长期参数/旧±50保持，以下历史原文不改。
+
+### R3后续人工断电确认，下一轮先按供电后的当前枚举绑定（2026-10-12）
+
+用户直接确认“两个电机电源已切断，机械臂和底盘仍有稳定支撑”；root已记录收到确认并结束R3看护。[独立后续回执](../../.verify/base_zero_diagnostic_2026-10-12_r3/followups/manual-power-cut-confirmation-r3.json)单独保存，实际断电时刻及独立电气遥测UNKNOWN。更新当前供电为OFF_USER_CONFIRMED；原启动/观察FAIL、driver真实wait/reap NOT_OBSERVED、硬件零速和STOP51 NOT_RUN保持，原事件pending字段仍是当时原件，不回填为PASS。
+
+本回复只完成收尾，不构成新GO。R4仅准备已验`-c`入口和本轮独占观察/封包副本，不重新运行夹具或改候选。下一次在实际恢复供电和持续看护确认后，先用已有非UART门取得USB当前枚举，再生成新binding/PLAN/GO并只做一次right9零目标；避免在断电期间绑定后又因恢复供电发生枚举变化。不强制重插USB或额外断电，原500ms三PV、三写及STOP51门保持。以下历史原文不改。
+
 ### 底盘启动入口修复软件通过，零目标实测仍未运行（2026-10-12，R3已终止）
 
 用户本轮直接确认恢复供电、三轮架空稳定及看护就绪。R2实际starter在USB前置断言拒绝，record/tmux/candidate均未到，UART和电机写0；只读17项/23child核实左侧5A7C121427的serial/devpath/tty/rdev不变，仅device_inode1544→1552、link_inode1547→1555、USEC_INITIALIZED3368981464912→3536208877616，右端全部不变。R3只更新这三字段并使用新独占binding/PLAN，55refs/保护/校准和冻结f59455候选、406295 helper保持。一次PLAN child654519自然0/reap，复用同一17项原件，不重跑或扩大诊断。沿同一人类确认只签新的plan GO，原600秒现场期限没有续期；R2前置FAIL完整保留，[R2追加摘要](../../.verify/base_zero_diagnostic_2026-10-12_r2/summary.json)。

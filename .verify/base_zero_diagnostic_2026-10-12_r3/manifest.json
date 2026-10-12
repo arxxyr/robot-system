@@ -164,10 +164,10 @@
       "copy_verified": true
     },
     "summary.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/summary.json",
-      "sha256": "04835d7057f2ded6abdda2b21f36e54697adffa6ffd809c4d9940383f9303188",
-      "bytes": 5697,
-      "copy_verified": true
+      "source_path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r3/summary.json",
+      "sha256": "7853bfe82d58fb3d5eb45a642a2d502be9f2f0dabb5b9e2d3bd8bb4f925b1b39",
+      "bytes": 5898,
+      "generated_current_followup": true
     },
     "upload_field_go_base_zero_r3.actual.sh": {
       "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/upload_field_go_base_zero_r3.actual.sh",
@@ -624,6 +624,12 @@
       "sha256": "aa0ec038abe0692957b4390ecb3c34976716c80fadd0288f0a772da53607ace9",
       "bytes": 434,
       "copy_verified": true
+    },
+    "followups/manual-power-cut-confirmation-r3.json": {
+      "source_path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r3/followups/manual-power-cut-confirmation-r3.json",
+      "sha256": "158638760e4a1e8797bfd0f7b2ec784adf9ee543439fb17b3abec66b6898e093",
+      "bytes": 857,
+      "generated_current_followup": true
     }
   }
 }

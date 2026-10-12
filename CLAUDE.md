@@ -21,20 +21,20 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-12 R2前置USB枚举拒绝、R3实际启动/观察FAIL；底盘零速NOT_RUN。
-           左USB仍同serial/devpath/tty，只2inode及usec变化；新binding347a65/55refs，右及保护不变。
-           同次现场原600秒未续；R2零tmux/UART，R3仅一次tmux654721/@96/%96，日志no such pane。
-           R3无output/run/GO.consumed、UART/电机写0、STOP51未测；driver真实wait/reap仍NOT_OBSERVED。
-           仅-p的旧夹具漏测here-doc+日志重定向；新纯软件-c保留stdin PTY的机制已验证。
-           旧软件stdin pipe/marker未到及no such pane保留；新654935/@98/%98自然dead0、marker同PID。
-           新单option child654938真wait/reap、6 collector child全0/reap；首collector身份断言FAIL/旧缺回执保持。
-           future R4只改-c及body填7pins后整体quote，所有实际pins仍None，无新GO/硬件准备或动作。
-           本机实际fmt及Orin最新nightly080→fmt→根Clippy零警告，11child/22流，597三窗068277d8同。
-           R3证据 .verify/base_zero_diagnostic_2026-10-12_r3/summary.json；R1/R2历史FAIL不回填。
-           本轮已通知人工切两电源并保持机械臂/架空底盘支撑，实际断电回复PENDING；当前物理供电UNKNOWN。
-           下轮先在当次供电/三轮架空稳定/看护事实后核USB当前枚举，再新binding/PLAN/GO，仅右9零目标。
-           头部临时P32双向单次PASS已恢复P16、左腕I1单次PASS已恢复I0；长期参数/三轮/旧±50 OPEN。
+本轮最新:  2026-10-12 R3用户后续确认两电源切断、机械臂/架空底盘稳定支撑保持，root结束看护。
+           电气遥测与实际切电时刻UNKNOWN；原R3启动/观察FAIL、driver真实reap未观察、硬件NOT_RUN保持。
+           R4本机最小脚本及提交质量已就绪，原生新binding/PLAN准备未执行；现场/GO全None、UART0。
+           -c launcher5b5a6e/starter32d5ee逐字复用，observer/seal只换R4独占路径，GO.consumed保留。
+           新软件recipe仅接本轮新nonUART17原件/真实child回执，4输入pinsNone；不复用R3枚举、现场或GO。
+           仅两端device_inode/link_inode/usec允许按当前事实更新，其它55refs/身份/保护/校准均固定。
+           父fd0静态链未见关闭/重定向，子DEVNULL不算父关闭；不外推实际硬件入口已通过。
+           本机fmt0，Orin最新nightly080→fmt→根Clippy0/零warn；11child/22流，597三窗068277d8同。
+           本轮未新Rust测试/release/控制ELF/夹具/UART/动作；R4入口 .verify/base_zero_diagnostic_2026-10-12_r4/summary.json。
+           已询问恢复供电和新的架空/支撑/看护事实，答复尚未收到；断电收尾不是新动作GO。
+           下轮先在当前供电与看护确认后采非UART USB枚举，再新binding/PLAN/GO，仅一次右9零目标。
+           R1/R2/R3旧FAIL不回填；左腕/头部长期参数、底盘三轮与旧±50 OPEN。
            右H2完整PASS，D15 OPEN/DEFERRED、deployable=false；正式安装与服务未改。
+
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
            双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =
            "机器人控制执行面受监督功能 demo 跑通"）。

@@ -1,0 +1,20 @@
+{
+  "schema": "BASE_ZERO_R3_MANUAL_POWER_OFF_FOLLOWUP_V1",
+  "received_at_ns": 1791784607250189000,
+  "received_at_utc": "2026-10-12T05:56:47.250190+00:00",
+  "question_id": "call_ha7BoFQY8c37g6oCQPhgvzKC",
+  "direct_human_answer": "两个电机电源已切断，机械臂和底盘仍有稳定支撑",
+  "power": "OFF_USER_CONFIRMED",
+  "support": "ARM_AND_OFF_GROUND_BASE_STABLE_USER_CONFIRMED",
+  "actual_power_cut_time": "UNKNOWN",
+  "independent_electrical_telemetry": "UNKNOWN",
+  "watch": "R3_ENDED_AFTER_MANUAL_CUT_CONFIRMATION",
+  "original_startup_observer_FAIL": "PRESERVED",
+  "driver_real_wait_reap": "NOT_OBSERVED_ORIGINAL_NOT_BACKFILLED",
+  "hardware_zero_diag": "NOT_RUN",
+  "STOP51": "NOT_RUN",
+  "new_GO": false,
+  "new_UART": 0,
+  "new_hardware_actions": 0,
+  "authorization": "仅完成本轮收尾；非下一轮恢复供电/动作GO"
+}
