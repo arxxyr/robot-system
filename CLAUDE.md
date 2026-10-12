@@ -21,21 +21,19 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-11客户端本地日期R16头1临时P32负向单次功能PASS，已收尾。
-           仅left7 P16→32→16、一次−24往返，D43/I0不写；锚2132、目标2108。
-           出程14样本，190.781587ms首次±4，末2112/+4；观察结束800.063911ms不延原800ms资格期限。
-           回程3样本2128/−4于130.582209ms PASS；实际负向位移20，原±4/800ms、±32/min12保持，反馈未镜像。
-           P16/D43/I0/Lock1/CW1/CCW1恢复、STOP51整数零、82项身份及独立17项非UART/23child通过，manualcut=false。
-           七次具名写仅left7；383直属child/766原输出逐SHA/尺寸核验并自然回收，底盘写/相机/重试均0。
-           p_trial保存29raw字段、实际30次read-raw（Lock恢复前后各一次）；右8/9前后四次普通PV完整原帧均正零。
-           原整轮FAIL仅BASE_FIRMWARE_CONTRACT_UNVERIFIED，三轮DEFERRED/NOT_RUN，不改为整体PASS。
-           实际Orin nightly080 fmt→根Clippy零警告，11质量child/22原流及53质量原件已验收；597源三窗同068277d8。
-           本轮没有新Rust测试、release/控制ELF构建、正式安装或服务激活；native HEAD894加五dirty，不称Git对齐。
-           永久入口 .verify/position_return_2026-10-11_r16/summary.json；83件逐字与manifest覆盖已root验收。
-           本轮GO已消耗、看护已结束；最新供电仅用户报告ON，独立电气遥测UNKNOWN，无新动作GO。
-           下一步只补头2P32−24同类单次；R17本地候选开发中，尚无新GO，不提前驱动底盘。
-           左腕临时I1已恢复I0、头部临时P32已恢复P16，长期参数未实施；单次功能不证明P因果、即时采用或重复性。
-           底盘零速合同与旧±50原因仍OPEN；R15及以下HANDOFF原文保留，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
+本轮最新:  2026-10-11客户端本地日期R17头2临时P32负向单次功能PASS，已收尾。
+           仅left8 P16→32→16、−24往返，D43/I0不写；锚2090、目标2066。
+           出程14样本，130.567212ms首次±4、末2069/+3；回程3样本2087/−3于130.425830ms PASS。
+           原±4/800ms、±32/min12不变，实际负向位移21、反馈未镜像；观察结束800.062744ms不延资格期限。
+           P16等原参数恢复、STOP51/85身份/53refs及独立非UART17项通过，manualcut=false；383child/766原流自然回收。
+           原整轮FAIL仅BASE_FIRMWARE_CONTRACT_UNVERIFIED，三轮DEFERRED/NOT_RUN；底盘写/运动0，零速合同仍OPEN。
+           collector r2本次仅四行形态实际通过，一行FAIL分支未实机触发；30次read-raw/29保存字段，四普通PV原帧正零。
+           独审/root通过；实际fmt→Orin根Clippy零警告，597源068277d8、最新nightly080首尾同；永久87件已核。
+           入口 .verify/position_return_2026-10-11_r17/summary.json；无新Rust测试/控制ELF，原生Git仍894加五dirty。
+           GO已消耗、看护结束，供电仅用户报告ON/独立电气遥测UNKNOWN；下一步仅准备right9裸Goal_Velocity=0诊断，不扫参或加框架。
+           用户仅确认可安排三轮架空稳定支撑，实际到位/本次看护与底盘GO仍待新确认，无新UART。
+           左腕已恢复I0、头部已恢复P16，长期参数未实施；单次功能不证明P因果、即时采用或重复性。
+           R16及以下原文保留；底盘主动运动和旧±50仍OPEN，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
            双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =

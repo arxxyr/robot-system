@@ -1,0 +1,30 @@
+{
+  "status": "LOCAL_R17_INPUT_READY_EXECUTION_AUTHORIZED_BY_ROOT",
+  "recorded_at_utc": "2026-10-12T03:52:41.595425+00:00",
+  "files": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r17/native-quality/commit_quality_once_r17.py",
+      "sha256": "ef63e3f039efa7590fee34adf660d48e6bda903246e6f8606fce106ba27f8f35",
+      "bytes": 5236
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r17/native-quality/single_ssh_commit_quality_r17.sh",
+      "sha256": "7c474eb26946f65ba437e2c0d982a51163eeee1792deac0f809fbd3f8db14cf8",
+      "bytes": 11085
+    }
+  ],
+  "source_files": 597,
+  "source_manifest_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "compiler_expected": "080cc27146389dbb5c8772c476b1937be9c6110f",
+  "native_phase": "/home/loosqk/robot-checks/position-return-20261011-r17/head2-reverse-commit-quality",
+  "recipe": "既有nightly_update经单一HTTP/HTTPS代理确认最新；随后唯一fmt→根Clippy，11 Runner命令；只收自有自然终态和原件",
+  "SSH_prior_launches": 0,
+  "UART": 0,
+  "Rust_tests": 0,
+  "release": 0,
+  "local_bash_n": {
+    "pid": 17768,
+    "exit_code": 0,
+    "reaped": true
+  }
+}

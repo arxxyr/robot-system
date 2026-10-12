@@ -1,0 +1,116 @@
+{
+  "status": "HARDWARE_R17_ARCHIVE_READY",
+  "sha256": "b3130ef58316266be5d67dcc0862f0af523f9b119eb5d2ae327544b97aaedfa8",
+  "bytes": 261986,
+  "files": 808,
+  "source_bytes": 1618124,
+  "report": {
+    "status": "PASS_R17_NONUART_CLEANUP_ORIGINAL_RESULT_PRESERVED",
+    "terminal": "position-head2-p32-reverse-20261011-r17|@88|%88|652798|1|1",
+    "driver_pid": 652798,
+    "original_run_status": "FAIL",
+    "original_run_sha256": "70df328206fe870351889d1956664b0462edfc4296a95b17784ee13573532a45",
+    "original_run_bytes": 553452,
+    "original_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+    "position": {
+      "status": "PASS",
+      "issues": []
+    },
+    "stop": "PASS",
+    "restore": "PASS",
+    "identity": "PASS",
+    "direct_hardware_children": 383,
+    "all_hardware_children_reaped": true,
+    "evidence_errors": [],
+    "manualcut": false,
+    "independent_nonUART_checks": 17,
+    "independent_nonUART_children": 23,
+    "bound_refs": 53,
+    "bound_refs_before_after_equal": true,
+    "native_source_files": 597,
+    "native_source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "collector_direct_children": [
+      {
+        "name": "terminal-owned-pane",
+        "argv": [
+          "tmux",
+          "display-message",
+          "-p",
+          "-t",
+          "%88",
+          "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+        ],
+        "started_ns": 1791776950987843121,
+        "signals_sent": [],
+        "reaped": true,
+        "pid": 653294,
+        "finished_ns": 1791776950997085229,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "stdout": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2-p32-reverse-seal-r17/terminal-owned-pane.stdout",
+          "bytes": 59,
+          "sha256": "9f716bd935ea93cb809f6f3141ff665a7ef59d27f92080bbd613155eb4e0f0af"
+        },
+        "stderr": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2-p32-reverse-seal-r17/terminal-owned-pane.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "reclaim-only-owned-dead-pane",
+        "argv": [
+          "tmux",
+          "kill-pane",
+          "-t",
+          "%88"
+        ],
+        "started_ns": 1791776950999859391,
+        "signals_sent": [],
+        "reaped": true,
+        "pid": 653295,
+        "finished_ns": 1791776951002884028,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "stdout": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2-p32-reverse-seal-r17/reclaim-only-owned-dead-pane.stdout",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2-p32-reverse-seal-r17/reclaim-only-owned-dead-pane.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "independent-nonuart17",
+        "argv": [
+          "bash",
+          "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.sh"
+        ],
+        "started_ns": 1791776951005973915,
+        "signals_sent": [],
+        "reaped": true,
+        "pid": 653296,
+        "finished_ns": 1791776951845451132,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "stdout": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2-p32-reverse-seal-r17/independent-nonuart17.stdout",
+          "bytes": 176291,
+          "sha256": "c7bd2707c1d38eba04db4f0ac1f708f9e912697cc051ffd378f8c21e618bbfa5"
+        },
+        "stderr": {
+          "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2-p32-reverse-seal-r17/independent-nonuart17.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    ],
+    "new_UART": 0,
+    "new_writes": 0,
+    "new_GO": false
+  }
+}

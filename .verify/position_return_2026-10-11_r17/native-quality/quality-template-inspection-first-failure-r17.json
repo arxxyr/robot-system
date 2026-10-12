@@ -1,0 +1,8 @@
+{
+  "status": "LOCAL_TEMPLATE_INSPECTION_FAIL",
+  "error": "StopIteration: template uses payload assignment, initial lookup used files",
+  "native_runs_started": 0,
+  "cargo_runs_started": 0,
+  "files_written_before_failure": 0,
+  "recovery": "read payload assignment actual name; no remote command repeated"
+}

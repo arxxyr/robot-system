@@ -1,0 +1,27 @@
+{
+  "status": "ROOT_ACCEPTED_R17_NATIVE_SOFTWARE_PREPARATION_ONLY",
+  "reviewed_ns": 1791776600489085000,
+  "tar_sha256": "33e71f1d69507901b3d1ad647257bd0326dbb256fc21897a715bde3bec7f0bc9",
+  "tar_files": 41,
+  "software_children": 5,
+  "streams_verified": 10,
+  "native_memory_methods": 10,
+  "nonUART_checks": 17,
+  "nonUART_children": 23,
+  "old_refs_preserved": 50,
+  "binding_refs": 53,
+  "canonical_plan_sha256": "46bf22742beb59c57ba465c1bde2f5e1afe0e9022be03381c4e97c9345d04c85",
+  "old_R14_R16_go_rejections": [
+    {
+      "old_go": "head2-p32-trial-r14.go.json",
+      "rejected": true,
+      "reason": "拒绝旧V1或未绑定显式根目录的root当次GO"
+    },
+    {
+      "old_go": "head1-p32-reverse-r16.go.json",
+      "rejected": true,
+      "reason": "拒绝旧V1或未绑定显式根目录的root当次GO"
+    }
+  ],
+  "new_GO_UART_actions": false
+}

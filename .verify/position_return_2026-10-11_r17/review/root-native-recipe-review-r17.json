@@ -1,0 +1,17 @@
+{
+  "status": "ROOT_ACCEPTED_R17_SINGLE_NATIVE_SOFTWARE_PREPARATION_RECIPE",
+  "recipe_sha256": "aed01aa6345dbbd967be60d9a5b77c26595297f566a814294109a5612bfb158e",
+  "recipe_bytes": 310780,
+  "payload_files": 17,
+  "payload_bytes": 227526,
+  "memory_inputs": 16,
+  "candidate_sha256": "32f4f9d5033710b6eeffeb47782c2156a402ba1d31f82cc285e08039802b71e5",
+  "old_binding_sha256": "fb94a118feaf074ca495fe7311b710807668ee0eff0beba3c660b12e9183f660",
+  "old_binding_refs": 50,
+  "new_refs_expected": 53,
+  "actual_hardware_output_or_GO_created": false,
+  "software_commands_expected": 5,
+  "software_only": true,
+  "UART_Cargo_actions": 0,
+  "reviewed_ns": 1791776469507775000
+}

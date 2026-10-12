@@ -2,6 +2,14 @@
 
 ## 当前步骤
 
+### 头2临时P32负向单次往返功能通过（客户端本地2026-10-11，R17已收尾）
+
+本次独立GO仅执行一次left8 P16→32→16、−24往返，D43/I0不写。锚2090、目标2066；出程14样本，130.567212ms首次±4、末2069/+3，观察结束800.062744ms不延原800ms资格期限；回程3样本2087/−3于130.425830ms通过。实际负向位移21，原±4/800ms、±32/min12保持，反馈与原READ一致、未镜像。头2本次功能PASS；原整轮仍FAIL，仅因BASE_FIRMWARE_CONTRACT_UNVERIFIED及三轮DEFERRED/NOT_RUN。
+
+七次具名写仅left8；P16/D43/I0/Lock1/CW1/CCW1恢复、STOP51整数零、85项身份及独立非UART17项/23child通过，manualcut=false。383直属child/766原流核验并自然回收；351 exit0、32空fuser为预期idle exit1。53refs收集前后完整stat一致，入口33完整stat/20历史最小绑定的边界保留。30次read-raw保存29字段（两次Lock1原输出均保留）；右8/9四次普通PV完整原帧均正零，不解释旧±50或证明物理轮静止。driver652798/@88/%88自然dead/status1后只回收自有pane。collector r2实际仅走四行形态，一行FAIL分支未实机触发，不记动态PASS；首独审误要求vanished为空的Assertion及PID651761原观测保留，按既有clean规则核验，不推断该PID用途或退出原因。
+
+9619B独立硬件报告及root验收通过。本机实际fmt、Orin实际fmt→根Clippy零警告；11个不同Runner child/22原流/53质量原件、597输入068277d8及最新nightly080首尾一致，原生HEAD894加五dirty，不称Git对齐。无新Rust测试、release或控制ELF。永久87件逐份核验，三个原包分别41/808/53原件，[摘要入口R17](../../.verify/position_return_2026-10-11_r17/summary.json)。本轮GO已消耗、看护结束，供电仅用户报告ON、独立电气遥测UNKNOWN。下一步仅准备right9的XLeRobot裸Goal_Velocity=0单轮诊断；用户仅确认可安排三轮架空稳定支撑，实际到位和新看护/GO未确认，无新UART。左腕已恢复I0、头部已恢复P16，长期参数未实施，单次功能不证明P因果、即时采用、重复性或掉电持久化。底盘主动运动与零速合同、旧±50仍OPEN，不扫参或加框架。R16及以下原文全部保留，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
+
 ### 头1临时P32负向单次往返功能通过（客户端本地2026-10-11，R16已收尾）
 
 本次独立GO仅执行一次left7 P16→32→16、−24往返，D43/I0不写。锚2132、目标2108；出程14样本，190.781587ms首次进入±4，末2112/+4，观察结束800.063911ms不延长原800ms资格期限。回程3样本2128/−4于130.582209ms通过。实际负向位移20，原±4/800ms、±32/min12保持；各样本与原始READ输出相同，反馈未镜像。HEAD1_REVERSE_SINGLE_FUNCTION_PASS与原整轮FAIL分开：整体仍为BASE_FIRMWARE_CONTRACT_UNVERIFIED，三轮DEFERRED/NOT_RUN。

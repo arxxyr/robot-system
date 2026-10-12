@@ -1,0 +1,295 @@
+{
+  "schema": "POSITION_RETURN_HEAD2_P32_REVERSE_R17_ARCHIVE_V1",
+  "status": "HEAD2_REVERSE_SINGLE_FUNCTION_PASS_OVERALL_FAIL_BASE_DEFERRED",
+  "recorded_at_utc": "2026-10-12T04:23:59.369353+00:00",
+  "scope": "仅left8 P16→32→16、D43/I0不写、一次−24往返；原±4/800ms、±32/min12及STOP51保持",
+  "run_original": {
+    "member": "head2-p32-reverse-r17/run.json",
+    "sha256": "70df328206fe870351889d1956664b0462edfc4296a95b17784ee13573532a45",
+    "bytes": 553452,
+    "original_result": "FAIL",
+    "reason": "BASE_FIRMWARE_CONTRACT_UNVERIFIED",
+    "manualcut": false,
+    "archive": "archives/hardware-originals-r17.tar.gz"
+  },
+  "head2_reverse_single_function": {
+    "status": "PASS",
+    "anchor_raw": 2090,
+    "goal_raw": 2066,
+    "outward_samples": 14,
+    "outward_first_qualified_ms": 130.567212,
+    "outward_final_raw": 2069,
+    "outward_final_error": 3,
+    "outward_last_sample_ms": 792.310136,
+    "outward_observation_finished_ms": 800.062744,
+    "qualification_deadline_ms": 800,
+    "deadline_extended": false,
+    "return_samples": 3,
+    "return_final_raw": 2087,
+    "return_final_error": -3,
+    "return_qualified_ms": 130.42583,
+    "actual_negative_excursion_raw": 21,
+    "feedback_mirrored": false
+  },
+  "parameters": {
+    "temporary_P": 32,
+    "restored_P": 16,
+    "D": 43,
+    "I": 0,
+    "Lock": 1,
+    "CW_CCW_deadzone": [
+      1,
+      1
+    ],
+    "restore": "PASS_RAW_READBACK",
+    "named_write_commands": 7,
+    "target": "left8",
+    "actual_temporary_configuration_write": true,
+    "long_term_parameter_fix": "NOT_IMPLEMENTED"
+  },
+  "children": {
+    "direct": 383,
+    "all_reaped": true,
+    "outputs_SHA_and_bytes_verified": 766,
+    "exit0": 351,
+    "empty_fuser_expected_exit1": 32,
+    "owner_errors": []
+  },
+  "stop": {
+    "status": "PASS",
+    "motors": 17,
+    "integer_zero_fields": 51,
+    "last_READ_stdout_and_after_snapshot_match": true,
+    "physical_wheel_stop_proven": false
+  },
+  "identity_cleanup": {
+    "status": "PASS",
+    "checks": 85,
+    "refs": 53,
+    "full_actual_ref_metadata_before_after_equal": true,
+    "all_existing_binding_fields_match": true,
+    "binding_full_stat_refs": 33,
+    "binding_path_SHA_size_only_refs": 20,
+    "terminal": "position-head2-p32-reverse-20261011-r17|@88|%88|652798|1|1",
+    "driver": 652798,
+    "owned_dead_pane_reclaimed": "%88",
+    "observer_exit1_is_original_run_FAIL": true,
+    "collector_children": 3,
+    "independent_nonUART_checks": 17,
+    "independent_nonUART_children": 23,
+    "all_naturally_reaped": true,
+    "new_UART": 0,
+    "new_writes": 0,
+    "new_GO": false,
+    "vanished_observations_preserved": [
+      {
+        "snapshot": 1,
+        "records": [
+          {
+            "pid": 651761,
+            "status": "vanished",
+            "error": "FileNotFoundError(2, 'No such file or directory')"
+          }
+        ]
+      }
+    ],
+    "vanished_PID_is_owned_hardware_child": false,
+    "vanished_PID_use_or_exit_cause_inferred": false
+  },
+  "raw_parameter_frames": {
+    "reviewer": "/root/position_path_review/r16_raw_frames",
+    "status": "PASS",
+    "saved_stage_fields": 29,
+    "actual_read_raw_commands": 30,
+    "sequences": [
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      201,
+      202,
+      254,
+      255,
+      256,
+      258,
+      259,
+      260,
+      261,
+      262,
+      263
+    ],
+    "left8_register_address_width_complete_TX_RX_error0_checksum_LE_unsigned_verified": true,
+    "all_raw_cli_exit0_reap_stdout_stderr_hash_size_verified": true,
+    "P_address": 21,
+    "P_width": 1,
+    "P_sequence": [
+      16,
+      32,
+      16
+    ],
+    "D_before_after": 43,
+    "I_before_after": 0,
+    "Lock_before_after": 1,
+    "CW_CCW_before_after": [
+      1,
+      1
+    ],
+    "duplicate_restore_Lock_commands": [
+      256,
+      261
+    ],
+    "duplicate_Lock_stdout_sha256": "87ff8dad7f138d1074bd912ae309b9c6c8e5f3e04ae46ec4d88a2ba3da00080c",
+    "count_note": "恢复前后各读Lock1，restore_raw同键保存后者；两原输出保留，实际30次、保存29字段分别报告。",
+    "current_before_raw": {
+      "Goal_Position": 2086,
+      "Present_Position": 2090,
+      "Model_Number": 777,
+      "Firmware_Major_Version": 3,
+      "Firmware_Minor_Version": 10,
+      "Operating_Mode": 0,
+      "Phase": 12,
+      "Min_Position_Limit": 678,
+      "Max_Position_Limit": 3454,
+      "Homing_Offset_unsigned": 3604
+    },
+    "old_backup_PP2087_not_used_as_current_read": true
+  },
+  "ordinary_right8_right9_READ": {
+    "reviewer": "/root/position_path_review/r16_raw_frames",
+    "status": "PASS",
+    "captures": [
+      {
+        "member": "head2-p32-reverse-r17/right8-normal-read-command_0136.strace",
+        "sha256": "95d427223e21a1f88a4aae9c33131a0e7bdc5431b3eec9a5f83961d1f4544d93",
+        "bytes": 10036,
+        "owner_pid": 652946
+      },
+      {
+        "member": "head2-p32-reverse-r17/right9-normal-read-command_0142.strace",
+        "sha256": "6f41f177d4d812291185fcdc9ab20806aa4fa28cfaf0f998b311bc1d1499fe7b",
+        "bytes": 10036,
+        "owner_pid": 652955
+      },
+      {
+        "member": "head2-p32-reverse-r17/right8-normal-read-command_0357.strace",
+        "sha256": "68b248877b89eabf1a6de5f7c680ae67b1c611238becbe72a973b5d637ba50ee",
+        "bytes": 10036,
+        "owner_pid": 653182
+      },
+      {
+        "member": "head2-p32-reverse-r17/right9-normal-read-command_0363.strace",
+        "sha256": "86a30317a0223101829837b0d55ccfdf711f50c0628d1bda933a8e86ce3ca496",
+        "bytes": 10036,
+        "owner_pid": 653191
+      }
+    ],
+    "each_capture_complete_three_TX_three_RX_ping_model777_PV58_width2": true,
+    "all_frame_error0_checksum_unsigned_verified": true,
+    "PV_payload": "00 00",
+    "PV_raw_unsigned": 0,
+    "serial_exclusive_lock_release_close_trace_exit0": true,
+    "cli_stdout_matches_trace_stdout_write": true,
+    "all_cli_exit0_reaped": true,
+    "all_stdout_bytes": 28,
+    "all_stderr_bytes": 0,
+    "right8_stdout_sha256": "bcd9cffc9dbf33a0c8aa137c5620284fd9f487ce511ffe60b1591971f602359a",
+    "right9_stdout_sha256": "a46b688ac86eb83abaeec185e55aa3260aa2cf1737285302aa4dab822f57294d",
+    "empty_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "original_PENDING_ROOT_REVIEW_OF_COMPLETE_STRACE_preserved": true,
+    "physical_wheel_stop_or_old_plus_minus50_cause_proven": false
+  },
+  "software_preparation": {
+    "host_methods": 10,
+    "native_methods": 10,
+    "not_added_across_platforms": true,
+    "default_actions": 0,
+    "missing_GO_exit": 2,
+    "full_plan": "PASS",
+    "native_nonUART17": "PASS",
+    "native_original_files": 41
+  },
+  "source_and_commit_quality": {
+    "status": "PASS_ROOT_REVIEW_R17_NATIVE_QUALITY",
+    "archive_sha256": "ac4096e6bb838ea00bd36b1d2ebf23b019fa61a31b0beb1614f3668348eed822",
+    "archive_bytes": 134622,
+    "archive_files": 53,
+    "distinct_runner_children": 11,
+    "streams": 22,
+    "fmt_pid": 653394,
+    "clippy_pid": 653405,
+    "clippy_warning_lines": [],
+    "actual_root_fmt": {
+      "chunk_id": "728bef",
+      "exit_code": 0,
+      "wall_seconds": 0.938255833
+    },
+    "source_inputs": 597,
+    "source_aggregate": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "root_native_per_file_bytes_hash_mode_equal": true,
+    "compiler_commit": "080cc27146389dbb5c8772c476b1937be9c6110f",
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_git_clean": false,
+    "driver_pid": 653366,
+    "SSH_owner": 17784,
+    "SSH_child": 17785,
+    "original_local_inspection_failures": [
+      {
+        "chunk_id": "419717",
+        "exit_code": 1,
+        "error": "KeyError: 'clippy_warning_lines'",
+        "scope": "只读检查错误地假设可选回执字段存在；改从原Clippy stderr核验，无Cargo重跑"
+      },
+      {
+        "chunk_id": "fa67a5",
+        "exit_code": 1,
+        "error": "KeyError: 0",
+        "scope": "只读查看source.files误按list取首项；实际为dict，无原件修改"
+      }
+    ],
+    "limits": "仅提交前fmt与根Clippy质量门；无Rust测试、release、UART或新控制ELF"
+  },
+  "lifecycle": {
+    "hardware_launches": 1,
+    "GO": "CONSUMED",
+    "watch": "ENDED",
+    "power": "仅启动前用户报告ON；独立电气遥测UNKNOWN，不推断收尾供电状态",
+    "new_UART_after_terminal": 0,
+    "new_GO_after_terminal": 0
+  },
+  "failures_preserved": [
+    "原run整体FAIL及三base DEFERRED/NOT_RUN",
+    "provenance首刷新误将嵌套函数当顶层，StopIteration保留，无软件三命令重跑",
+    "质量模板查看误查files变量导致StopIteration，实际payload；远端启动前修复",
+    "独审首误要求vanished为空，AssertionError及PID651761原观测保留，不推断用途/退出原因",
+    "root两次只读展示元数据字段/容器类型假设错误保留，未重跑Cargo或改原件",
+    "root首归档检查错误地把原error完整repr与reason_code短名比较，da59a7/exit1在写文件前拒绝；改核原完整repr及decision/status字段",
+    "原run四command附加ordinary_read_trace，journal无该字段；共同原字段核对，不称整表逐字相等或回填PENDING"
+  ],
+  "collector_r2": {
+    "actual_branch": "4_ROWS_POSITION_PASS_BASE3_DEFERRED",
+    "one_row_FAIL_branch_hardware_triggered": false,
+    "one_row_FAIL_dynamic_PASS_claimed": false
+  },
+  "limits": [
+    "头1R13/R16和头2R14/R17分别正负向各一次通过，参数已恢复；不证明重复性、P因果、即时采用或掉电持久化",
+    "左腕仅临时I1单次通过后恢复I0，长期左腕/头部参数未实施",
+    "三轮主动运动、零速固件合同和旧±50来源OPEN；停止读回不证明物理轮静止",
+    "右H2完整PASS，D15 OPEN/DEFERRED，deployable=false；无正式安装/服务激活"
+  ],
+  "next_step": "仅准备right9 XLeRobot裸Goal_Velocity=0诊断；用户确认可安排三轮架空支撑，尚未确认实际到位或下发新GO"
+}

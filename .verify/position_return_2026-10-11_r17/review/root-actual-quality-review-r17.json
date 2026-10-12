@@ -1,0 +1,40 @@
+{
+  "status": "PASS_ROOT_REVIEW_R17_NATIVE_QUALITY",
+  "archive_sha256": "ac4096e6bb838ea00bd36b1d2ebf23b019fa61a31b0beb1614f3668348eed822",
+  "archive_bytes": 134622,
+  "archive_files": 53,
+  "distinct_runner_children": 11,
+  "streams": 22,
+  "fmt_pid": 653394,
+  "clippy_pid": 653405,
+  "clippy_warning_lines": [],
+  "actual_root_fmt": {
+    "chunk_id": "728bef",
+    "exit_code": 0,
+    "wall_seconds": 0.938255833
+  },
+  "source_inputs": 597,
+  "source_aggregate": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "root_native_per_file_bytes_hash_mode_equal": true,
+  "compiler_commit": "080cc27146389dbb5c8772c476b1937be9c6110f",
+  "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+  "native_git_clean": false,
+  "driver_pid": 653366,
+  "SSH_owner": 17784,
+  "SSH_child": 17785,
+  "original_local_inspection_failures": [
+    {
+      "chunk_id": "419717",
+      "exit_code": 1,
+      "error": "KeyError: 'clippy_warning_lines'",
+      "scope": "只读检查错误地假设可选回执字段存在；改从原Clippy stderr核验，无Cargo重跑"
+    },
+    {
+      "chunk_id": "fa67a5",
+      "exit_code": 1,
+      "error": "KeyError: 0",
+      "scope": "只读查看source.files误按list取首项；实际为dict，无原件修改"
+    }
+  ],
+  "limits": "仅提交前fmt与根Clippy质量门；无Rust测试、release、UART或新控制ELF"
+}

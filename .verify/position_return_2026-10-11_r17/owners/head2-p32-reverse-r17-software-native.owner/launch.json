@@ -1,0 +1,38 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "WAITING",
+  "status": "RUNNING",
+  "owner_pid": 13135,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 13136,
+  "started_utc": "2026-10-12T03:41:43.962926+00:00",
+  "started_monotonic_ns": 14589847711166,
+  "observe_seconds": 5,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r17/preparation/minimal_software_prepare_r17.draft.sh",
+    "sha256": "aed01aa6345dbbd967be60d9a5b77c26595297f566a814294109a5612bfb158e",
+    "bytes": 310780
+  },
+  "launched_utc": "2026-10-12T03:41:43.965003+00:00",
+  "start_new_session": true,
+  "child_session_id": 13136
+}

@@ -1,0 +1,80 @@
+{
+  "status": "PASS_R17_NATIVE_SOFTWARE_PREPARATION_ONLY_LOCAL_COLLECTION",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r17/native-preparation/native-preparation-originals-r17.tar.gz",
+    "sha256": "33e71f1d69507901b3d1ad647257bd0326dbb256fc21897a715bde3bec7f0bc9",
+    "bytes": 127841,
+    "files": 41
+  },
+  "owner_result": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/head2-p32-reverse-r17-software-native.owner/result.json",
+  "owner_launch": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/head2-p32-reverse-r17-software-native.owner/launch.json",
+  "owner_log": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/head2-p32-reverse-r17-software-native.owner/child.log",
+  "owner_pid": 13135,
+  "SSH_pid": 13136,
+  "owner_started_utc": "2026-10-12T03:41:43.962926+00:00",
+  "owner_finished_utc": "2026-10-12T03:41:47.938510+00:00",
+  "owner_wait_returncode": 0,
+  "owner_reaped": true,
+  "remote_terminal": "head2-p32-reverse-software-20261011-r17|@87|%87|652646|1|0",
+  "remote_driver_pid": 652646,
+  "owned_dead_pane_reclaimed": true,
+  "software_direct_children": [
+    {
+      "name": "fresh-nonuart",
+      "pid": 652650,
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "native-memory10",
+      "pid": 652685,
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "default-plan-only",
+      "pid": 652687,
+      "exit_code": 0,
+      "reaped": true
+    },
+    {
+      "name": "missing-go",
+      "pid": 652688,
+      "exit_code": 2,
+      "reaped": true
+    },
+    {
+      "name": "full-plan-only",
+      "pid": 652689,
+      "exit_code": 0,
+      "reaped": true
+    }
+  ],
+  "software_streams": 10,
+  "fresh_nonUART_checks": 17,
+  "fresh_nonUART_commands": 23,
+  "binding_refs": 53,
+  "memory_input_refs": 16,
+  "candidate": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2_p32_reverse_trial_r17.py",
+    "sha256": "32f4f9d5033710b6eeffeb47782c2156a402ba1d31f82cc285e08039802b71e5",
+    "bytes": 16246
+  },
+  "helper": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/helpers/parameter_stop_head2_r14.py",
+    "sha256": "0ceb8ed58ea22db416ddce9cf7df6f221c277df1ac619a4df0980e3c23805657",
+    "bytes": 12425
+  },
+  "observation": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/helpers/head2_outward_observation_r14.py",
+    "sha256": "4595e3f21c9e6a48a8718cbdec710f4a3a41f2c7281389d225ed4ab4109c4863",
+    "bytes": 9338
+  },
+  "plan_sha256": "46bf22742beb59c57ba465c1bde2f5e1afe0e9022be03381c4e97c9345d04c85",
+  "UART": 0,
+  "motor_actions": 0,
+  "parameter_writes": 0,
+  "new_field": false,
+  "new_GO": false,
+  "actual_output_created": false
+}

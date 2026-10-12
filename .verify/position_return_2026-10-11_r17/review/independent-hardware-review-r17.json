@@ -1,0 +1,310 @@
+{
+  "schema": "R17_INDEPENDENT_ACTUAL_HARDWARE_REVIEW_V1",
+  "status": "PASS_NARROW_HARDWARE_REVIEW_ORIGINAL_RUN_FAIL_PRESERVED",
+  "scope": "仅本地tar/originals，不SSH/UART/Cargo/Git，不执行新测试或改原件",
+  "archive": {
+    "path": "target/position_return_2026-10-11_r17/hardware/hardware-originals-r17.tar.gz",
+    "sha256": "b3130ef58316266be5d67dcc0862f0af523f9b119eb5d2ae327544b97aaedfa8",
+    "bytes": 261986,
+    "regular_members": 808,
+    "all_originals_byte_equal": true
+  },
+  "run": {
+    "member": "head2-p32-reverse-r17/run.json",
+    "sha256": "70df328206fe870351889d1956664b0462edfc4296a95b17784ee13573532a45",
+    "bytes": 553452,
+    "original_result": "FAIL",
+    "reason": "BASE_FIRMWARE_CONTRACT_UNVERIFIED",
+    "manualcut": false
+  },
+  "children": {
+    "direct": 383,
+    "all_reaped": true,
+    "outputs_SHA_and_bytes_verified": 766,
+    "exit0": 351,
+    "empty_fuser_expected_exit1": 32,
+    "owner_errors": []
+  },
+  "writes": {
+    "count": 7,
+    "only_left8": true,
+    "sequence": [
+      {
+        "sequence": 200,
+        "register": "P_Coefficient",
+        "value": 32
+      },
+      {
+        "sequence": 225,
+        "register": "Goal_Position",
+        "value": 2090
+      },
+      {
+        "sequence": 228,
+        "register": "Torque_Enable",
+        "value": 1
+      },
+      {
+        "sequence": 230,
+        "register": "Goal_Position",
+        "value": 2066
+      },
+      {
+        "sequence": 246,
+        "register": "Goal_Position",
+        "value": 2090
+      },
+      {
+        "sequence": 251,
+        "register": "Torque_Enable",
+        "value": 0
+      },
+      {
+        "sequence": 257,
+        "register": "P_Coefficient",
+        "value": 16
+      }
+    ],
+    "D_I_Phase_Mode_Lock_or_base_writes": 0
+  },
+  "position": {
+    "status": "PASS",
+    "anchor": 2090,
+    "goal": 2066,
+    "delta": -24,
+    "negative_excursion_raw": 21,
+    "minimum_excursion_raw": 12,
+    "sample_values_match_real_unmirrored_READ_stdout": true,
+    "tolerance_raw": 4,
+    "budget_ms": 800,
+    "stages": {
+      "outward": {
+        "samples": 14,
+        "final_raw": 2069,
+        "final_error_raw": 3,
+        "first_qualified_ns": 130567212,
+        "finished_elapsed_ns": 800062744,
+        "deadline_ns_from_start": 800000000
+      },
+      "return": {
+        "samples": 3,
+        "final_raw": 2087,
+        "final_error_raw": -3,
+        "first_qualified_ns": 130425830,
+        "finished_elapsed_ns": 130425830,
+        "deadline_ns_from_start": 800000000
+      }
+    },
+    "deadline_extended": false
+  },
+  "stop": {
+    "status": "PASS",
+    "motors": 17,
+    "integer_zero_fields": 51,
+    "last_READ_stdout_and_after_snapshot_match": true,
+    "physical_wheel_stop_proven": false
+  },
+  "identity_cleanup": {
+    "status": "PASS",
+    "checks": 85,
+    "refs": 53,
+    "full_actual_ref_metadata_before_after_equal": true,
+    "all_existing_binding_fields_match": true,
+    "binding_full_stat_refs": 33,
+    "binding_path_SHA_size_only_refs": 20,
+    "terminal": "position-head2-p32-reverse-20261011-r17|@88|%88|652798|1|1",
+    "driver": 652798,
+    "owned_dead_pane_reclaimed": "%88",
+    "observer_exit1_is_original_run_FAIL": true,
+    "collector_children": 3,
+    "independent_nonUART_checks": 17,
+    "independent_nonUART_children": 23,
+    "all_naturally_reaped": true,
+    "new_UART": 0,
+    "new_writes": 0,
+    "new_GO": false,
+    "vanished_observations_preserved": [
+      {
+        "snapshot": 1,
+        "records": [
+          {
+            "pid": 651761,
+            "status": "vanished",
+            "error": "FileNotFoundError(2, 'No such file or directory')"
+          }
+        ]
+      }
+    ],
+    "vanished_PID_is_owned_hardware_child": false,
+    "vanished_PID_use_or_exit_cause_inferred": false
+  },
+  "source_plan": {
+    "candidate_sha256": "32f4f9d5033710b6eeffeb47782c2156a402ba1d31f82cc285e08039802b71e5",
+    "candidate_bytes": 16246,
+    "candidate_equals_reviewed_local": true,
+    "canonical_plan_sha256": "46bf22742beb59c57ba465c1bde2f5e1afe0e9022be03381c4e97c9345d04c85",
+    "fullPLAN_GO_run_equal": true,
+    "GO_sha256": "a3d2c0b86c7936df6864ba118b7ca0abc85aa575d0758929f092c95c3aad31cf",
+    "GO_seconds": 600,
+    "field_sha256": "8e9757468e530e362f15bed03526b11517fee705edf7e0d5e766bf077088eb4b"
+  },
+  "collector_r2": {
+    "actual_branch": "4_ROWS_POSITION_PASS_BASE3_DEFERRED",
+    "one_row_FAIL_branch_hardware_triggered": false,
+    "one_row_FAIL_dynamic_PASS_claimed": false
+  },
+  "base": {
+    "three": "DEFERRED_NOT_RUN",
+    "motion": 0,
+    "zero_speed_contract": "OPEN"
+  },
+  "review_diagnostics_preserved": [
+    {
+      "stage": "首本地审查脚本",
+      "error": "AssertionError line53",
+      "cause": "审查额外假定所有vanished为空；原第2快照PID651761观测时已不存在且原clean为true",
+      "resolution": "按原clean/related/unreadable分类，不新增门、不推断该PID用途或退出原因；原件未改"
+    }
+  ],
+  "limits": [
+    "当前单次姿态功能不证明P因果、即时采用、重复性、长期参数或掉电持久化",
+    "停止整数零不证明物理轮静止；旧±50根因未证",
+    "53refs后验不回填旧最小绑定的入口stat",
+    "整轮FAIL、底盘DEFERRED、D15 OPEN/DEFERRED及deployable=false保持"
+  ],
+  "raw_parameter_frames": {
+    "reviewer": "/root/position_path_review/r16_raw_frames",
+    "status": "PASS",
+    "saved_stage_fields": 29,
+    "actual_read_raw_commands": 30,
+    "sequences": [
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      201,
+      202,
+      254,
+      255,
+      256,
+      258,
+      259,
+      260,
+      261,
+      262,
+      263
+    ],
+    "left8_register_address_width_complete_TX_RX_error0_checksum_LE_unsigned_verified": true,
+    "all_raw_cli_exit0_reap_stdout_stderr_hash_size_verified": true,
+    "P_address": 21,
+    "P_width": 1,
+    "P_sequence": [
+      16,
+      32,
+      16
+    ],
+    "D_before_after": 43,
+    "I_before_after": 0,
+    "Lock_before_after": 1,
+    "CW_CCW_before_after": [
+      1,
+      1
+    ],
+    "duplicate_restore_Lock_commands": [
+      256,
+      261
+    ],
+    "duplicate_Lock_stdout_sha256": "87ff8dad7f138d1074bd912ae309b9c6c8e5f3e04ae46ec4d88a2ba3da00080c",
+    "count_note": "恢复前后各读Lock1，restore_raw同键保存后者；两原输出保留，实际30次、保存29字段分别报告。",
+    "current_before_raw": {
+      "Goal_Position": 2086,
+      "Present_Position": 2090,
+      "Model_Number": 777,
+      "Firmware_Major_Version": 3,
+      "Firmware_Minor_Version": 10,
+      "Operating_Mode": 0,
+      "Phase": 12,
+      "Min_Position_Limit": 678,
+      "Max_Position_Limit": 3454,
+      "Homing_Offset_unsigned": 3604
+    },
+    "old_backup_PP2087_not_used_as_current_read": true
+  },
+  "ordinary_right8_right9_READ": {
+    "reviewer": "/root/position_path_review/r16_raw_frames",
+    "status": "PASS",
+    "captures": [
+      {
+        "member": "head2-p32-reverse-r17/right8-normal-read-command_0136.strace",
+        "sha256": "95d427223e21a1f88a4aae9c33131a0e7bdc5431b3eec9a5f83961d1f4544d93",
+        "bytes": 10036,
+        "owner_pid": 652946
+      },
+      {
+        "member": "head2-p32-reverse-r17/right9-normal-read-command_0142.strace",
+        "sha256": "6f41f177d4d812291185fcdc9ab20806aa4fa28cfaf0f998b311bc1d1499fe7b",
+        "bytes": 10036,
+        "owner_pid": 652955
+      },
+      {
+        "member": "head2-p32-reverse-r17/right8-normal-read-command_0357.strace",
+        "sha256": "68b248877b89eabf1a6de5f7c680ae67b1c611238becbe72a973b5d637ba50ee",
+        "bytes": 10036,
+        "owner_pid": 653182
+      },
+      {
+        "member": "head2-p32-reverse-r17/right9-normal-read-command_0363.strace",
+        "sha256": "86a30317a0223101829837b0d55ccfdf711f50c0628d1bda933a8e86ce3ca496",
+        "bytes": 10036,
+        "owner_pid": 653191
+      }
+    ],
+    "each_capture_complete_three_TX_three_RX_ping_model777_PV58_width2": true,
+    "all_frame_error0_checksum_unsigned_verified": true,
+    "PV_payload": "00 00",
+    "PV_raw_unsigned": 0,
+    "serial_exclusive_lock_release_close_trace_exit0": true,
+    "cli_stdout_matches_trace_stdout_write": true,
+    "all_cli_exit0_reaped": true,
+    "all_stdout_bytes": 28,
+    "all_stderr_bytes": 0,
+    "right8_stdout_sha256": "bcd9cffc9dbf33a0c8aa137c5620284fd9f487ce511ffe60b1591971f602359a",
+    "right9_stdout_sha256": "a46b688ac86eb83abaeec185e55aa3260aa2cf1737285302aa4dab822f57294d",
+    "empty_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "original_PENDING_ROOT_REVIEW_OF_COMPLETE_STRACE_preserved": true,
+    "physical_wheel_stop_or_old_plus_minus50_cause_proven": false
+  },
+  "findings": [
+    {
+      "kind": "计数边界",
+      "detail": "raw实际30次/保存29字段；两次Lock1原输出相同、均保留，非动作重试。"
+    },
+    {
+      "kind": "进程观测边界",
+      "detail": "第2快照PID651761观测时vanished，原检查clean；非383所属child，不推断其用途或退出原因。首审误加vanished为空假定的Assertion保留。"
+    },
+    {
+      "kind": "绑定边界",
+      "detail": "53refs实际收集前后完整stat相等；入口33完整stat、20历史path/SHA/bytes，不以后验回填入口stat。"
+    },
+    {
+      "kind": "collector覆盖边界",
+      "detail": "r2实际仅走四行成功形态；一行FAIL分支未实机触发，不称动态PASS。"
+    }
+  ]
+}

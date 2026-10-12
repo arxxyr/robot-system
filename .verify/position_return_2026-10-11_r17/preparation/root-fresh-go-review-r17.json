@@ -1,0 +1,13 @@
+{
+  "status": "ROOT_BOUND_FRESH_R17_ONLY_GO_AND_STARTER",
+  "field_sha256": "8e9757468e530e362f15bed03526b11517fee705edf7e0d5e766bf077088eb4b",
+  "field_bytes": 1275,
+  "go_sha256": "a3d2c0b86c7936df6864ba118b7ca0abc85aa575d0758929f092c95c3aad31cf",
+  "go_bytes": 1333,
+  "issued_at_ns": 1791776802071295000,
+  "expires_at_ns": 1791777402071295000,
+  "plan_sha256": "46bf22742beb59c57ba465c1bde2f5e1afe0e9022be03381c4e97c9345d04c85",
+  "starter_sha256": "569bf02c6e724ee24a31620dd34b0029029054ea8c473fe3ef6c0658801840ae",
+  "only_three_field_none_pins_changed_from_ready": true,
+  "scope": "仅头2left8 P16临时改32后单次−24尝试往返，最后恢复16并核PDI/Lock/死区；I0/D43不写，原±4/800ms、±32、最小12及STOP51保持；出程FAIL不强行回程，无Load/相机/底盘动作，无自动重试"
+}
