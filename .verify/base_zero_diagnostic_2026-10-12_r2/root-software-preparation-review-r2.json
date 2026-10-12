@@ -1,0 +1,45 @@
+{
+  "status": "PASS_ROOT_R2_SOFTWARE_PREPARATION",
+  "archive_sha256": "56abcb6c3db226e01c3edd1cdf86d88b0cd6369f05e3e77b650421213850a754",
+  "archive_bytes": 49007,
+  "archive_files": 7,
+  "actual_software_children": [
+    {
+      "pid": 654192,
+      "name": "full-plan-only-r2",
+      "exit": 0,
+      "reaped": true
+    },
+    {
+      "pid": 654193,
+      "name": "fresh-nonuart-r2",
+      "exit": 0,
+      "reaped": true
+    }
+  ],
+  "streams": 4,
+  "full_plan_sha256": "3f840ab0a74f2ebedd561abd299a027c256e01bc315486ef5546eeb2159fd143",
+  "changed_keys_from_r1": [
+    "output"
+  ],
+  "frozen_profile_run_id": "base-zero-diagnostic-r1",
+  "actual_round": 2,
+  "refs": 55,
+  "nonUART_checks": 17,
+  "nonUART_commands": 23,
+  "new_GO": false,
+  "new_hardware_output": false,
+  "new_launch": false,
+  "new_field": false,
+  "new_UART": 0,
+  "root_source_body_byte_equal": true,
+  "first_local_inspection_failure": {
+    "chunk": "7e8466",
+    "exit": 1,
+    "error": "AssertionError",
+    "reason": "本地只读误将inline原body与rstrip过的正文比较，复核实际逐字相等",
+    "dependent_software_execution": "本地检查返回后同exec后续ownedSSH仍启动；未等待该断言修正，原生仅已读且同SHA的两条零UART软件命令；真实结果与原件保留，未重跑"
+  },
+  "power": "OFF_USER_CONFIRMED",
+  "hardware_entry": "READY_ONLY_REQUIRES_NEW_POWER_ON_FIELD_AND_GO"
+}

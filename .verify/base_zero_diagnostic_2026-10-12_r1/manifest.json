@@ -764,9 +764,15 @@
       "copy_verified": true
     },
     "summary.json": {
-      "source_path": "root derived stage summary",
-      "sha256": "cddddc133d2702f13153229468c92b9ef2712904820290d39fd200f5dfa9b9f7",
-      "bytes": 12079,
+      "source_path": "root derived stage summary updated only with later user confirmation",
+      "sha256": "cee6b01c583b83aba92341d5b685c345bb146dc97a12ff866f65582bb0a04dbb",
+      "bytes": 12170,
+      "copy_verified": true
+    },
+    "followups/manual-power-cut-confirmation-r1.json": {
+      "source_path": "direct human reply call_24040b9096e442e4855174680e4e1f51",
+      "sha256": "9a6885ea82a3419a5c0f3a9b5d599479b5607dba3d82eb321cc676054dc0df2c",
+      "bytes": 669,
       "copy_verified": true
     }
   }

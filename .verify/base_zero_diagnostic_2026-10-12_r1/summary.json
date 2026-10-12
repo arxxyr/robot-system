@@ -312,10 +312,12 @@
     "original_reply_question": "call_9a95a33a7fcf48f08f7d3e9befb09090",
     "original_report": "三轮已实际架空稳定支撑、供电、空载双臂支撑、持续看护/立即断电",
     "subsequent_manual_cut_request": "SENT_AFTER_OBSERVER_FAILED",
-    "actual_power_cut_confirmation": "PENDING",
+    "actual_power_cut_confirmation": "OFF_USER_CONFIRMED",
     "current_independent_power_telemetry": "UNKNOWN",
     "original_GO": "EXPIRED_AND_OPERATIONALLY_TERMINATED_NEVER_CONSUMED_BY_CANDIDATE",
-    "hardware_retries": 0
+    "hardware_retries": 0,
+    "watch": "ENDED",
+    "followup_receipt": "followups/manual-power-cut-confirmation-r1.json"
   },
   "counts_and_limits": [
     "10个不同Python内存方法/平台，r1-r4及两平台不重复累计",
@@ -327,5 +329,5 @@
     "底盘三轮DEFERRED/NOT_RUN、零速合同和旧±50原因OPEN",
     "右H2完整PASS、D15 OPEN/DEFERRED、deployable=false，无安装/服务动作"
   ],
-  "next_step": "收到现场断电状态后，按新独占output/launch/GO/fullPLAN与当次就绪事实准备一次right9零目标实测，使用已软件验证的-p修复；不复用本轮GO，不扫参或扩大框架"
+  "next_step": "在保持电源断开的条件下仅完成R2独占PLAN/启动收尾软件准备；准备后另确认恢复供电、实际三轮架空稳定支撑及本次持续看护，再绑定新GO。"
 }

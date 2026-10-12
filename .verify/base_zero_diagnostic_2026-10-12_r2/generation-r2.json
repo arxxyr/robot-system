@@ -1,0 +1,74 @@
+{
+  "status": "LOCAL_BASE_ZERO_R2_DRAFTS_AST_ONLY_NOT_EXECUTED",
+  "round": 2,
+  "base": "/home/loosqk/robot-checks/position-return-20261010-r1",
+  "phase": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1",
+  "profile_run_id": "base-zero-diagnostic-r1",
+  "new_output": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base-zero-diagnostic-r2",
+  "new_launch": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base-zero-diagnostic-launch-r2",
+  "new_go": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base-zero-diagnostic-r2.go.json",
+  "new_field": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/field_confirmation_base_zero_r2.json",
+  "new_plan": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/full-plan-only-r2.stdout",
+  "new_prepare_result": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/prepare-result-base-zero-r2.json",
+  "artifacts": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/candidate/base_zero_diagnostic_r1.py",
+      "sha256": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+      "bytes": 19556,
+      "reused_frozen": true
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/candidate/raw_right9_from_r14_r1.py",
+      "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa",
+      "bytes": 12216,
+      "reused_frozen": true
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/native-preparation/maintenance_bindings_base_zero_diagnostic_r1.json",
+      "sha256": "60c1ce479a89e198bc237cc3c29ccf3d9b9cd81434c47026b9cf2b5c1dd03e1c",
+      "bytes": 30051,
+      "reused_frozen": true
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/minimal_software_prepare_base_zero_r2.draft.sh",
+      "sha256": "933a0ac058341e0579830517a6b8e32fff1785630d12ad0cb8d6ed5bf063d493",
+      "bytes": 8716,
+      "derived_from": null
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/launch_base_zero_diagnostic_r2.draft.sh",
+      "sha256": "bce76df2cf9fd8219a5eac82bc298d94da55e5a207b0612228500eb2861672ea",
+      "bytes": 2091,
+      "derived_from": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/launcher-pane-fix/launch_base_zero_diagnostic_future.fixed-unbound.sh"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/start_base_zero_diagnostic_once_r2.draft.sh",
+      "sha256": "b579df3ff13dbe84d851491887eebc4f808b13c29da3399ff85b9b82ef9309de",
+      "bytes": 10844,
+      "derived_from": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/preparation/start_base_zero_diagnostic_once_r1.draft.sh"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/observe_base_zero_diagnostic_once_r2.draft.sh",
+      "sha256": "7eaf4dd7f5e9e251eaaf650c1e2f62b1312ecbaf1aa7689375408e4f8042e371",
+      "bytes": 3786,
+      "derived_from": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/preparation/observe_base_zero_diagnostic_once_r1.draft.sh"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/seal_base_zero_diagnostic_r2.draft.sh",
+      "sha256": "2223a2bb9f889da5983c2b24725719b7c532295361f4c4d0971cdaad92c818d6",
+      "bytes": 13737,
+      "derived_from": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/preparation/seal_base_zero_diagnostic_r1.draft.sh"
+    }
+  ],
+  "actual_pins": "全部None，observer的pane_identity为None占位",
+  "native_recipe_started": false,
+  "SSH": false,
+  "GO_created": false,
+  "UART": false,
+  "hardware_started": false,
+  "candidate_helper_binding_changed": false,
+  "software_recipe": "验证冻结输入与55refs→无execute生成一次新fullPLAN→一次非UART17→独占保存与真实wait/reap",
+  "reused_software": "R1同SHA10方法/默认零动作/缺GO拒绝及-p纯软件fixture，不重跑",
+  "profile_semantics": "zero_diag可单项PASS，三轮仍DEFERRED，候选总体run仍FAIL，不宣称零速合同完成",
+  "nonuart_script_pin_basis": ".verify/position_return_2026-10-11_r17/archives/hardware-originals-r17.tar.gz:head2-p32-reverse-seal-r17/existing-nonuart-probe-r4.sh，20020B/e3962ec7；独立pin不改变55refs"
+}

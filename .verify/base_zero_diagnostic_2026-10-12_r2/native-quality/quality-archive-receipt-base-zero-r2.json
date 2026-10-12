@@ -1,0 +1,82 @@
+{
+  "status": "BASE_ZERO_R2_COMMIT_QUALITY_COLLECTED",
+  "driver_pid": 654089,
+  "pane": "%94",
+  "exit_code": 0,
+  "archive_sha256": "bc5644aad5348eca9e4a28bb977bfb4cdf48f3474e499c6adf248b6a16a658fe",
+  "archive_bytes": 134613,
+  "archive_files": 53,
+  "result": {
+    "schema": "BASE_ZERO_R2_COMMIT_QUALITY_V1",
+    "status": "PASS",
+    "started_at": "2026-10-12T05:04:24.467538+00:00",
+    "scope": "代理更新nightly后仅实际fmt→根Clippy一次；不测试/release/UART/GO/服务",
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_worktree": "five changed sources; not clean",
+    "source_before_install_expected": "3a4cc12e5e28f9c9164b8e7cdf9e2861b7127d7536ab291e7db8cced6d7aa4e9",
+    "source_expected": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "compiler_expected": "080cc27146389dbb5c8772c476b1937be9c6110f",
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "080cc27146389dbb5c8772c476b1937be9c6110f",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "source_before_after": "PASS",
+    "compiler_before_after": "PASS",
+    "tests_run": 0,
+    "release_builds": 0,
+    "UART_operations": 0,
+    "finished_at": "2026-10-12T05:04:30.904339+00:00",
+    "receipts": [
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/nightly_update/completion.json",
+        "sha256": "847f9f083d82e351544a0a0bd80de1d9e0f764c0621643f6a82b0f2da42efcd6"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/source_before_head/completion.json",
+        "sha256": "de0a132265f8f4bb626db3c64b8662be7a4aabc2c752258893712aa655761a4b"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/source_before_status/completion.json",
+        "sha256": "0ccf6400a8caf97eba0f5739ad6aedbbc71224b90f53c2bb2d5c3aa37882ff60"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/source_before_files/completion.json",
+        "sha256": "e7bff5b432faf6cde49b1396e505afee0f950865355b372ccf1f9dc0d07cce63"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/rustc_before/completion.json",
+        "sha256": "27f56903be8219e2abecbac72e5c69480e6f21cddca9c625972c277c9cfc4b47"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/fmt/completion.json",
+        "sha256": "ae684cd3d561331ab930ea07b90b6531d29586793bab584a09a1767946efa686"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/clippy/completion.json",
+        "sha256": "3f6b2aa940503d694ed476d491b36cb7c6c27a0c8602072bbb4bcfe79f11d392"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/source_after_head/completion.json",
+        "sha256": "278007ffc0e7788994b2b2efe23ba109592c156bf0f75571c4fe60a7959a7603"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/source_after_status/completion.json",
+        "sha256": "478a1d7776199a85b4304611f57f4ebb1dc81362311dcacc49bb0259f95d49bd"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/source_after_files/completion.json",
+        "sha256": "8db581042069dc4b36d34c40510e0cf182f7cb6bd70d8be6e9f8089a125618f1"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r2-quality/quality/rustc_after/completion.json",
+        "sha256": "ce0abf675613bfec6539c3634a4d2da2862b5b1a9c66a8db3537f69fdfb03231"
+      }
+    ]
+  },
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/native-quality/commit-quality-originals-base-zero-r2.tar.gz",
+    "sha256": "bc5644aad5348eca9e4a28bb977bfb4cdf48f3474e499c6adf248b6a16a658fe",
+    "bytes": 134613
+  }
+}

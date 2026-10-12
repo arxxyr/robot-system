@@ -1,0 +1,142 @@
+{
+  "status": "PASS_BASE_ZERO_R2_NATIVE_SOFTWARE_PREPARATION_ONLY",
+  "round": 2,
+  "profile_run_id": "base-zero-diagnostic-r1",
+  "output": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base-zero-diagnostic-r2",
+  "launch": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base-zero-diagnostic-launch-r2",
+  "new_go_path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base-zero-diagnostic-r2.go.json",
+  "new_field_path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/field_confirmation_base_zero_r2.json",
+  "plan_sha256": "3f840ab0a74f2ebedd561abd299a027c256e01bc315486ef5546eeb2159fd143",
+  "plan": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/full-plan-only-r2.stdout",
+    "sha256": "f691498aa8e689fbbc8fd456fe36f027cf3d3d4096eb670c80b3abef1afbca46",
+    "bytes": 38231
+  },
+  "candidate": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base_zero_diagnostic_r1.py",
+    "sha256": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+    "bytes": 19556
+  },
+  "helper": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/helpers/raw_right9_from_r14_r1.py",
+    "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa",
+    "bytes": 12216
+  },
+  "bindings": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/maintenance_bindings_base_zero_diagnostic_r1.json",
+    "sha256": "60c1ce479a89e198bc237cc3c29ccf3d9b9cd81434c47026b9cf2b5c1dd03e1c",
+    "bytes": 30051
+  },
+  "maintenance": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+    "bytes": 50168
+  },
+  "frozen_refs": [
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base_zero_diagnostic_r1.py",
+      "sha256": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+      "bytes": 19556
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/helpers/raw_right9_from_r14_r1.py",
+      "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa",
+      "bytes": 12216
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/maintenance_bindings_base_zero_diagnostic_r1.json",
+      "sha256": "60c1ce479a89e198bc237cc3c29ccf3d9b9cd81434c47026b9cf2b5c1dd03e1c",
+      "bytes": 30051
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/full-plan-only.stdout",
+      "sha256": "1d049b491e69d0756e074cee388beaf814edb8e95013fdfce1ecc9d8d4ee0555",
+      "bytes": 38231
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.sh",
+      "sha256": "e3962ec7841a9d5ed783ca8279ed718c8f29ed718701de528c226f0588b91527",
+      "bytes": 20020
+    }
+  ],
+  "bound_refs": 55,
+  "bound_refs_verified_before_after": true,
+  "plan_changed_keys_from_r1": [
+    "output"
+  ],
+  "direct_children": [
+    {
+      "name": "full-plan-only-r2",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base_zero_diagnostic_r1.py",
+        "--maintenance",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+        "--raw-helper",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/helpers/raw_right9_from_r14_r1.py",
+        "--bindings",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/maintenance_bindings_base_zero_diagnostic_r1.json",
+        "--output",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base-zero-diagnostic-r2",
+        "--artifact-root",
+        "/home/loosqk/robot-checks/position-return-20261010-r1"
+      ],
+      "pid": 654192,
+      "started_ns": 1791781586177861904,
+      "finished_ns": 1791781586288726109,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/full-plan-only-r2.stdout",
+        "sha256": "f691498aa8e689fbbc8fd456fe36f027cf3d3d4096eb670c80b3abef1afbca46",
+        "bytes": 38231
+      },
+      "stderr": {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/full-plan-only-r2.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "name": "fresh-nonuart-r2",
+      "argv": [
+        "bash",
+        "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.sh"
+      ],
+      "pid": 654193,
+      "started_ns": 1791781586305068307,
+      "finished_ns": 1791781587140763708,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/fresh-nonuart-r2.stdout",
+        "sha256": "0ddb7c4349fbf2f606adf77c723b72207d082eeb8105bb432015ec9fbd8c0185",
+        "bytes": 176291
+      },
+      "stderr": {
+        "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/fresh-nonuart-r2.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    }
+  ],
+  "nonuart_checks": 17,
+  "nonuart_commands": 23,
+  "uart_operations": 0,
+  "motor_actions": 0,
+  "parameter_writes": 0,
+  "go_created": false,
+  "field_confirmation_created": false,
+  "output_created": false,
+  "launch_record_created": false,
+  "reused_software_gates": "同SHA R1十方法/默认零动作/缺GO拒绝及-p纯软件fixture，本次未重跑"
+}

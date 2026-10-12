@@ -1,0 +1,125 @@
+{
+  "status": "PASS_LOCAL_R2_BASH_SYNTAX_AST_ONLY",
+  "round": 2,
+  "native_recipe": "NOT_RUN",
+  "native_PLAN": "NOT_RUN",
+  "native_nonUART17": "NOT_RUN",
+  "syntax_children": [
+    {
+      "name": "minimal_software_prepare_base_zero_r2.draft.sh",
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/minimal_software_prepare_base_zero_r2.draft.sh"
+      ],
+      "pid": 53152,
+      "started_ns": 1791781481509376000,
+      "finished_ns": 1791781481515477000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "name": "launch_base_zero_diagnostic_r2.draft.sh",
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/launch_base_zero_diagnostic_r2.draft.sh"
+      ],
+      "pid": 53153,
+      "started_ns": 1791781481516642000,
+      "finished_ns": 1791781481522367000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "name": "start_base_zero_diagnostic_once_r2.draft.sh",
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/start_base_zero_diagnostic_once_r2.draft.sh"
+      ],
+      "pid": 53154,
+      "started_ns": 1791781481522768000,
+      "finished_ns": 1791781481528588000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "name": "observe_base_zero_diagnostic_once_r2.draft.sh",
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/observe_base_zero_diagnostic_once_r2.draft.sh"
+      ],
+      "pid": 53155,
+      "started_ns": 1791781481529659000,
+      "finished_ns": 1791781481534920000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    },
+    {
+      "name": "seal_base_zero_diagnostic_r2.draft.sh",
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/seal_base_zero_diagnostic_r2.draft.sh"
+      ],
+      "pid": 53156,
+      "started_ns": 1791781481535352000,
+      "finished_ns": 1791781481540166000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "stdout": "",
+      "stderr": "",
+      "signals_sent": []
+    }
+  ],
+  "all_children_real_wait_reaped": true,
+  "actual_None_pin_counts": {
+    "launch_base_zero_diagnostic_r2.draft.sh": 7,
+    "start_base_zero_diagnostic_once_r2.draft.sh": 7,
+    "seal_base_zero_diagnostic_r2.draft.sh": 14
+  },
+  "observer_pane_placeholder": "None",
+  "software_command_call_count": 2,
+  "software_command_names": [
+    "full-plan-only-r2",
+    "fresh-nonuart-r2"
+  ],
+  "embedded_launcher_equals_file": true,
+  "launcher_diff": "仅R2 output/launch/GO路径；已验-p保持",
+  "recipe": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/minimal_software_prepare_base_zero_r2.draft.sh",
+    "sha256": "933a0ac058341e0579830517a6b8e32fff1785630d12ad0cb8d6ed5bf063d493",
+    "bytes": 8716
+  },
+  "recipe_inline_body": {
+    "sha256": "0f05b5f127be71525519bbb47a508ac8dcff072681de84fc90931d0ab91b25e7",
+    "bytes": 8463
+  },
+  "memory10": "REUSED_R1_NOT_RERUN",
+  "Cargo": "NOT_RUN",
+  "fixture": "REUSED_R1_NOT_RERUN",
+  "SSH": false,
+  "GO_created": false,
+  "UART": 0,
+  "motor_writes": 0,
+  "initial_validation_failure": "local-validation-initial-failure-r2.json"
+}

@@ -2,6 +2,22 @@
 
 ## 当前步骤
 
+### R2零目标诊断软件准备通过，尚无新GO（2026-10-12）
+
+R1用户已确认两个电机电源切断、机械臂及架空底盘支撑保持，root结束本轮看护；后续回执单独保存，原启动/观察FAIL及driver真实wait/reap未观察到不回填。当前保持断电，以下软件准备未打开电机串口。
+
+复用固定f59455候选、406295 helper和55refs binding，profile run_id沿r1表示同一程序版本；本次round2使用新独占output/launch/GO/field/fullPLAN，PLAN仅output变，canonical3f840ab0a74f2ebedd561abd299a027c256e01bc315486ef5546eeb2159fd143。launcher保留已验证-p，四份实际启动/观察/收集草稿只变本轮路径/标签，全部现场与终态待root绑定；ready入口新现场/GO三pins仍None。原样保留三base DEFERRED及firmware_contract_verified=false；zero_diag若通过也不改整轮FAIL为PASS。
+
+唯一Orin软件准备仅两个直属child654192/654193，完整PLAN与非UART17/23命令均自然exit0/reap、四原流核验，七新原件tar56abcb6c/49007B。R1同SHA各平台10内存方法/default0/missingGO2和-p纯软件fixture复用，不计新方法。首本地验证换行断言及root只读body/rstrip断言FAIL保持；实际recipe正文逐字同，原生没有重跑，详永久root核验记录。
+
+提交前本机实际fmt0、Orin独立latest更新→fmt→根Clippy0/零警告，11质量child/22流及53原件bc5644aa/134613B通过；源597三窗逐项同068277d8，编译器两窗同080，原生Git仍894加五dirty。无新Rust测试/release/控制ELF、GO、UART、动作、安装或服务启动。[永久R2摘要](../../.verify/base_zero_diagnostic_2026-10-12_r2/summary.json)及48件逐份核验。
+
+下一步软件已就绪；实际试验需当次恢复供电、三轮架空稳定支撑、空载双臂支撑、区域空旷和持续看护/立即断电的新确认。只安排一次right9裸Goal0→Enable→原500ms内0/200/400ms三个PV原帧→Disable/原STOP51；不复用R1或断电回执作为新GO，无需USB重插或重复断电。头部/左腕长期参数和底盘零速/旧±50仍OPEN，D15 OPEN/DEFERRED、deployable=false。以下全部原交接字节保留。
+
+### R1后续人工断电确认（2026-10-12）
+
+用户直接回复“两个电机电源已切断，机械臂和底盘仍有稳定支撑”；root记录收到确认并结束本轮看护。实际断电时刻及独立电气遥测未知，[后续回执](../../.verify/base_zero_diagnostic_2026-10-12_r1/followups/manual-power-cut-confirmation-r1.json)单独保存，不回填原启动/观察FAIL、driver未观察到真实wait/reap或实机NOT_RUN。永久130件已核；以下R1原记录中的pending为当时状态，完整保留。该回复仅完成收尾，不授权新动作或恢复供电；下一步保持断电，仅准备R2独占PLAN及使用-p修复的启动/收尾脚本，实际运行前再绑定当次现场事实及新GO。
+
 ### 底盘零目标诊断启动失败，实机诊断未运行（客户端本地2026-10-12，R1已终止）
 
 仅准备right9/base_right_wheel裸Goal_Velocity=0→Enable→固定500ms内0/200/400ms三次PV原帧→Disable的独立诊断，可能转动，要求当次三轮实际架空稳定支撑和持续看护。原STOP51、身份及四锁门保留，三轮仍DEFERRED/NOT_RUN、BASE_FIRMWARE_CONTRACT_UNVERIFIED；没有改模式、Phase、PID或接入生产路径。本机和Orin各10个Python内存方法、默认零动作、缺GO预期exit2、55refs/完整PLAN与17项非UART软件准备通过，不跨平台累计为20。原生准备唯一30件原包12701a0f/110013B保留，五个软件child及十份输出自然回收；准备不等于实机零速语义通过。

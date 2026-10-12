@@ -1,0 +1,17 @@
+{
+  "name": "seal_base_zero_diagnostic_r2.draft.sh",
+  "argv": [
+    "bash",
+    "-n",
+    "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/seal_base_zero_diagnostic_r2.draft.sh"
+  ],
+  "pid": 53156,
+  "started_ns": 1791781481535352000,
+  "finished_ns": 1791781481540166000,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "stdout": "",
+  "stderr": "",
+  "signals_sent": []
+}

@@ -1,0 +1,17 @@
+{
+  "name": "start_base_zero_diagnostic_once_r2.draft.sh",
+  "argv": [
+    "bash",
+    "-n",
+    "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/start_base_zero_diagnostic_once_r2.draft.sh"
+  ],
+  "pid": 53154,
+  "started_ns": 1791781481522768000,
+  "finished_ns": 1791781481528588000,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "stdout": "",
+  "stderr": "",
+  "signals_sent": []
+}

@@ -21,19 +21,18 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-12 R1 right9裸Goal_Velocity=0诊断实机NOT_RUN，启动/观察FAIL。
-           Python本机/Orin各10方法、默认零动作/缺GO exit2、55refs/fullPLAN及17非UART软件准备通过。
-           唯一次启动返回driver653725/@91/%91，launcher在候选exec前设remain-on-exit时报no such window: %91。
-           observer随后FAIL；run/output/GO.consumed均无，原执行顺序印证本次UART/电机写0，未做STOP51或零速合同验收。
-           driver进程后来已未见，真实wait/reap仍NOT_OBSERVED；R17同式曾成功，具体tmux差异UNCONFIRMED。
-           42件失败原包a216fb8b/152527B保持；本机fmt和Orin实际fmt→根Clippy零警告，597源三窗同068277d8、nightly080首尾同。
-           11质量child/22原流真实回收，53件唯一质量包6605b6b5；无新Rust测试、release/控制ELF或服务动作。
-           仅-w→-p修复已通过Orin纯软件fixture：driver654024/@93/%93自然dead0、保留退出状态并回收；无实机重跑。
-           已要求现场断两个电源，实际断电确认待答；本轮GO已过期终止，不复用现场答复/GO，不自动重试。
-           永久129件逐份核验，入口 .verify/base_zero_diagnostic_2026-10-12_r1/summary.json；原启动/观察FAIL保持。
-           头部P32正/负向各单次功能PASS后恢复P16；左腕临时I1 PASS后恢复I0，长期设置仍OPEN。
-           底盘三轮DEFERRED/NOT_RUN、零速合同及旧±50仍OPEN；不扫参/加框架/改mode或Phase。
-           右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持，原HANDOFF全部历史保留。
+本轮最新:  2026-10-12 R1断电后续确认及R2软件准备已收口，R2实机NOT_RUN。
+           用户确认两电源已切断、机械臂/架空底盘支撑保持，root结束R1看护；电气遥测UNKNOWN。
+           R1启动/观察FAIL原件及driver真实wait/reap NOT_OBSERVED完整保留；无run/STOP51，不回填PASS。
+           R1永久130件含独立后续回执；R2永久48件，入口 .verify/base_zero_diagnostic_2026-10-12_r2/summary.json。
+           固定f59455候选/helper406295/binding55不改，新独占output/launch/GO/field/PLAN，profile run_id沿r1。
+           R2仅2条软件命令生成PLAN与非UART17/23，均自然0/reap；7原件/4原流，不重跑10memory或fixture。
+           新PLAN canonical3f840ab0，只output变；launcher保留已验-p，新现场/GO三pins仍None，零启动。
+           本机实际fmt、Orinupdate→fmt→根Clippy零警告；597源三窗068277d8、nightly080首尾同。
+           11质量child/22原流真实回收、53质量原件；native HEAD894加五dirty，不称Git对齐。
+           R2没有新GO/现场确认/UART/动作/服务/控制ELF；供电当前仅用户OFF报告，实际运行需新ON事实。
+           头部P32双向单次PASS已恢复P16、左腕I1单次PASS已恢复I0，长期设置OPEN。
+           底盘三轮DEFERRED、零速合同/旧±50 OPEN；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
            双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =
