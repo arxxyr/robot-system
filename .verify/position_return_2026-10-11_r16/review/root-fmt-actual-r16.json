@@ -1,0 +1,15 @@
+{
+  "status": "ROOT_ACTUAL_CARGO_FMT_PASS",
+  "command": [
+    "cargo",
+    "fmt",
+    "--all"
+  ],
+  "exit_code": 0,
+  "exec_chunk_id": "fe013c",
+  "wall_time_seconds": 0.921617791,
+  "stdout_bytes": 0,
+  "recorded_utc": "2026-10-12T03:25:45.851130+00:00",
+  "compiler_commit": "080cc27146389dbb5c8772c476b1937be9c6110f",
+  "same_input_expected": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8"
+}

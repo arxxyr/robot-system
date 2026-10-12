@@ -1,0 +1,24 @@
+{
+  "status": "ROOT_ACCEPTED_R16_SINGLE_STARTER_TEMPLATE_NO_GO",
+  "starter_sha256": "4cc12a939007b25abaffec747272981b86e57b083f7fc10d7c89fc17dece520e",
+  "launcher_sha256": "1d0ce0de446bcc18ab06eb81780491c81baf1d63bccc1ba2fe8aefda09f1aed0",
+  "three_field_GO_pins": null,
+  "canonical_plan_sha256": "3fdee55f82900593ed9acceb0f4e83368206064a6a807657936a2ed8baed4090",
+  "phase": "/home/loosqk/robot-checks/position-return-20261010-r1/head1-p32-reverse-r16",
+  "expected_refs": {
+    "head1_p32_reverse_trial_r16.py": [
+      "cf6dc28a66dbff6677183d15c6cc0568ccf7514f8b58c745758470c5420c7923",
+      16254
+    ],
+    "maintenance_bindings_head1_p32_reverse_r16.json": [
+      "10875042e01a2789970031d0977f661cb9f29ce273c31142bf17e4779cb12a1f",
+      28620
+    ],
+    "full-plan-only.stdout": [
+      "43c745629f102a8cf101298d4691de818596f812416e789d8ec46b575956d7e1",
+      38234
+    ]
+  },
+  "origin": "R14启动器同逻辑，仅具名路径/绑定ref/canonical/launcher改R16；不改TTL/非UART/单次start/自然reap",
+  "new_UART_GO": false
+}

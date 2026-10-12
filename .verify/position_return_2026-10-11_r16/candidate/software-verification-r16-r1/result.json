@@ -1,0 +1,304 @@
+{
+  "status": "PASS",
+  "scope": "LOCAL_MEMORY_SOFTWARE_ONLY_NO_SSH_UART_MOTION",
+  "distinct_memory_methods": 10,
+  "expected_memory_methods": 10,
+  "methods": [
+    "test_complete_plan_binds_frozen_helpers_and_rejects_old_go",
+    "test_default_zero_and_complete_missing_go_refuse_before_loading",
+    "test_entry_and_post_p32_lock_failures_sticky_block_uart_and_restore",
+    "test_exact_p_write_command_type_and_ack_contract",
+    "test_happy_restore_reads_all_original_parameters_and_only_writes_p",
+    "test_original_accuracy_failure_remains_fail_after_successful_restore",
+    "test_original_parameter_target_limit_and_write_whitelist_rejections",
+    "test_original_position_and_r8_observation_holds_deadline_or_fails_without_return",
+    "test_p32_ack_unknown_or_readback_mismatch_restores_without_motion",
+    "test_stop_restore_ack_or_parameter_uncertainty_blocks_every_later_uart"
+  ],
+  "source_before": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/verify_local_r16.py",
+      "sha256": "0713eb0b82b57f5138a9f853f1d265205e0358e75b0ea9c73ab85cc1f6e983c0",
+      "bytes": 4947
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/head1_p32_reverse_trial_r16.py",
+      "sha256": "cf6dc28a66dbff6677183d15c6cc0568ccf7514f8b58c745758470c5420c7923",
+      "bytes": 16254
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/test_head1_p32_reverse_trial_r16.py",
+      "sha256": "3dfec31c39a0b58cbeea7891a374d0a617b6f86e84e34034090b0b96758da3be",
+      "bytes": 22885
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/scripts/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/p24_trial_head1_wire_r6.py",
+      "sha256": "939e590b9e0ef829a465e9b3bc620d14cb114c01f7c2f2d591d3d34db3c47c81",
+      "bytes": 12425
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/head1_outward_observation_r8.py",
+      "sha256": "11b86f6768359bc7f6f0063bd188868b08c8baf164a59d89a62acdb557d7fc5e",
+      "bytes": 9328
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/test_p24_head1_wire_r6.py",
+      "sha256": "51a6b11212289f7609b68018c51937fce6eabd30a06c45955757253d3186d2e6",
+      "bytes": 24774
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/test_head1_outward_observation_r8.py",
+      "sha256": "f490470be238efa5fbf75aa533af52dbee65929f904c76c1b9f34ef9c9a70e5f",
+      "bytes": 10821
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-d0-trial-r11.go.json",
+      "sha256": "b02ca867dbe2b68725102a223b9bd4e2dd645ec7d9250fac80c20db3e0bd5a9a",
+      "bytes": 1308
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-load-observation-r10.go.json",
+      "sha256": "19238585e98c69926ac6621a2adfbe56c05d15a651200725d774343cb75d0eb3",
+      "bytes": 1311
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-outward-observation-r8.go.json",
+      "sha256": "5dc195fffb9e1453547ae93476090a60bd29439e8c17857ede43d14f20d1350b",
+      "bytes": 1227
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-p24-wire-r6.go.json",
+      "sha256": "f523c7bf976bf9ae78d18c902ca333f8156e2d1c374e2a9fb61a1b688bd344a6",
+      "bytes": 1211
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-p32-trial-r13.go.json",
+      "sha256": "943e166438dc063d8d444f2de694025ab4a2dc97982d7cb941c4766d3220fd6b",
+      "bytes": 1318
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/maintenance_bindings_head_settle_r8.json",
+      "sha256": "43b6f0d3e75db611ec2e64299c4f654b4979fa888cebb5941e75de4bd13b2311",
+      "bytes": 25186
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/target/position_return_2026-10-10_r1/head-p24-preparation-r6/p24_trial_head1_wire_r6.py",
+      "sha256": "939e590b9e0ef829a465e9b3bc620d14cb114c01f7c2f2d591d3d34db3c47c81",
+      "bytes": 12425
+    }
+  ],
+  "source_after": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/verify_local_r16.py",
+      "sha256": "0713eb0b82b57f5138a9f853f1d265205e0358e75b0ea9c73ab85cc1f6e983c0",
+      "bytes": 4947
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/head1_p32_reverse_trial_r16.py",
+      "sha256": "cf6dc28a66dbff6677183d15c6cc0568ccf7514f8b58c745758470c5420c7923",
+      "bytes": 16254
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/test_head1_p32_reverse_trial_r16.py",
+      "sha256": "3dfec31c39a0b58cbeea7891a374d0a617b6f86e84e34034090b0b96758da3be",
+      "bytes": 22885
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/scripts/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/p24_trial_head1_wire_r6.py",
+      "sha256": "939e590b9e0ef829a465e9b3bc620d14cb114c01f7c2f2d591d3d34db3c47c81",
+      "bytes": 12425
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/head1_outward_observation_r8.py",
+      "sha256": "11b86f6768359bc7f6f0063bd188868b08c8baf164a59d89a62acdb557d7fc5e",
+      "bytes": 9328
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/test_p24_head1_wire_r6.py",
+      "sha256": "51a6b11212289f7609b68018c51937fce6eabd30a06c45955757253d3186d2e6",
+      "bytes": 24774
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/test_head1_outward_observation_r8.py",
+      "sha256": "f490470be238efa5fbf75aa533af52dbee65929f904c76c1b9f34ef9c9a70e5f",
+      "bytes": 10821
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-d0-trial-r11.go.json",
+      "sha256": "b02ca867dbe2b68725102a223b9bd4e2dd645ec7d9250fac80c20db3e0bd5a9a",
+      "bytes": 1308
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-load-observation-r10.go.json",
+      "sha256": "19238585e98c69926ac6621a2adfbe56c05d15a651200725d774343cb75d0eb3",
+      "bytes": 1311
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-outward-observation-r8.go.json",
+      "sha256": "5dc195fffb9e1453547ae93476090a60bd29439e8c17857ede43d14f20d1350b",
+      "bytes": 1227
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-p24-wire-r6.go.json",
+      "sha256": "f523c7bf976bf9ae78d18c902ca333f8156e2d1c374e2a9fb61a1b688bd344a6",
+      "bytes": 1211
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/head1-p32-trial-r13.go.json",
+      "sha256": "943e166438dc063d8d444f2de694025ab4a2dc97982d7cb941c4766d3220fd6b",
+      "bytes": 1318
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/fixtures/maintenance_bindings_head_settle_r8.json",
+      "sha256": "43b6f0d3e75db611ec2e64299c4f654b4979fa888cebb5941e75de4bd13b2311",
+      "bytes": 25186
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/target/position_return_2026-10-10_r1/head-p24-preparation-r6/p24_trial_head1_wire_r6.py",
+      "sha256": "939e590b9e0ef829a465e9b3bc620d14cb114c01f7c2f2d591d3d34db3c47c81",
+      "bytes": 12425
+    }
+  ],
+  "source_unchanged": true,
+  "commands": [
+    {
+      "label": "memory_tests",
+      "argv": [
+        "/Users/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "python",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/test_head1_p32_reverse_trial_r16.py"
+      ],
+      "pid": 93836,
+      "owner_pid": 93835,
+      "started_ns": 1791773997377016000,
+      "finished_ns": 1791773997513298000,
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/software-verification-r16-r1/memory_tests.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/software-verification-r16-r1/memory_tests.stderr",
+        "sha256": "8ccc28cc71d95b91a3069de192b1a5f74e7e7dc00ff4184cc20b0e2763df5bb1",
+        "bytes": 1752
+      }
+    },
+    {
+      "label": "default_plan",
+      "argv": [
+        "/Users/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "python",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/head1_p32_reverse_trial_r16.py"
+      ],
+      "pid": 93839,
+      "owner_pid": 93835,
+      "started_ns": 1791773997513665000,
+      "finished_ns": 1791773997554746000,
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/software-verification-r16-r1/default_plan.stdout",
+        "sha256": "76781d39b59555aeb7a70a46e3640c72f6b01a22d7d2c9f93789c64ef0084109",
+        "bytes": 423
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/software-verification-r16-r1/default_plan.stderr",
+        "sha256": "dd7241fb9634d51d4b90a8782d9a26dd3fe2ada28ad873374b2d9b28b76827ef",
+        "bytes": 59
+      }
+    },
+    {
+      "label": "missing_go",
+      "argv": [
+        "/Users/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "python",
+        "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/head1_p32_reverse_trial_r16.py",
+        "--execute",
+        "--maintenance",
+        "/MEMORY_ONLY/source",
+        "--helper",
+        "/MEMORY_ONLY/helper",
+        "--observation-helper",
+        "/MEMORY_ONLY/observation",
+        "--bindings",
+        "/MEMORY_ONLY/bindings",
+        "--output",
+        "/MEMORY_ONLY/output",
+        "--run-id",
+        "head1-p32-reverse-r16",
+        "--artifact-root",
+        "/MEMORY_ONLY"
+      ],
+      "pid": 93841,
+      "owner_pid": 93835,
+      "started_ns": 1791773997555090000,
+      "finished_ns": 1791773997594959000,
+      "exit_code": 2,
+      "expected_exit_code": 2,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/software-verification-r16-r1/missing_go.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/software-verification-r16-r1/missing_go.stderr",
+        "sha256": "9642d7a2540dad0b8d991ce0124be85e94efcb2097e64ddad825103530eb54f6",
+        "bytes": 191
+      }
+    }
+  ],
+  "default_plan": {
+    "status": "PLAN_ONLY",
+    "run_id": "head1-p32-reverse-r16",
+    "scope": "仅头1left7临时P16→32→16、D43/I0不写，一次−24往返及原STOP51；不驱动底盘",
+    "target": [
+      "left",
+      7,
+      "head_motor_1"
+    ],
+    "fixed_d": 43,
+    "fixed_i": 0,
+    "temporary_p": 32,
+    "restore_p": 16,
+    "delta_raw": -24,
+    "tolerance_raw": 4,
+    "position_wait_ms": 800,
+    "actions_started": 0,
+    "parameter_writes": 0,
+    "motion_commands": 0,
+    "load_raw_reads": 0
+  },
+  "hardware_actions": 0,
+  "uart_reads": 0,
+  "parameter_writes": 0,
+  "limitations": [
+    "全部参数/动作输出为内存夹具，未执行远端工具",
+    "P21属于厂家EEPROM配置区；计划P32/16写，Lock1且不发送保存/Lock写；掉电持久性未验证",
+    "不同起点/方向只验原精度功能，不能证明P因果或PID即时采用或长期参数闭环",
+    "沿既有command预算，不提供硬实时绝对READ截止"
+  ]
+}

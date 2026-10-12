@@ -21,22 +21,21 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-11客户端本地日期R15六项底盘只读PASS，2026-10-12 02:34UTC已收尾。
-           right7/right8各FWmajor=3、FWminor=10、Phase=12；地址0/1/18均1B，各读一次。
-           六项raw请求/响应ID、地址、宽度、status、checksum与unsigned值逐项核验。
-           156直属child/312原输出均自然回收：116 exit0、40空fuser预期idle exit1。
-           寄存器写/Enable/动作均0；末5项非UART后验及独立17项/23child清场PASS。
-           driver646895由同tmux@81/%81观察自然dead/status0后，仅回收该自有pane。
-           本轮没有完整17电机STOP51，不以六项只读或非UART清场替代物理停机证明。
-           两端各8不同内存方法（同方法不累计为16），默认PLAN exit0、缺GO exit2、完整PLAN通过。
-           原生软件准备5child、17项非UART/23child及51 refs已验收；复用冻结13c，无新ELF。
-           原件 .verify/base_firmware_read_2026-10-11_r15/summary.json，66件封包与root/独审验收通过。
-           两端nightly更新080；Orin新版唯一fmt→根Clippy零警告，597源三窗同068277d8。
-           本轮新现场GO已消耗、看护已结束；供电USER_REPORTED_ON，独立电气遥测UNKNOWN。
-           厂家资料仍未明确Mode1/FW3.10/Phase12组合零义；底盘零速合同OPEN，不盲改Phase或松停止门。
-           R14/R13各头部P32单次功能PASS后已恢复P16；历史整轮FAIL与更早原FAIL保持。
-           左腕临时I1 PASS后恢复I0；长期左腕/头部参数及三轮主动运动未闭环，旧±50原因OPEN。
-           R14及以下历史在HANDOFF原样保留；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
+本轮最新:  2026-10-11客户端本地日期R16头1临时P32负向单次功能PASS，已收尾。
+           仅left7 P16→32→16、一次−24往返，D43/I0不写；锚2132、目标2108。
+           出程14样本，190.781587ms首次±4，末2112/+4；观察结束800.063911ms不延原800ms资格期限。
+           回程3样本2128/−4于130.582209ms PASS；实际负向位移20，原±4/800ms、±32/min12保持，反馈未镜像。
+           P16/D43/I0/Lock1/CW1/CCW1恢复、STOP51整数零、82项身份及独立17项非UART/23child通过，manualcut=false。
+           七次具名写仅left7；383直属child/766原输出逐SHA/尺寸核验并自然回收，底盘写/相机/重试均0。
+           p_trial保存29raw字段、实际30次read-raw（Lock恢复前后各一次）；右8/9前后四次普通PV完整原帧均正零。
+           原整轮FAIL仅BASE_FIRMWARE_CONTRACT_UNVERIFIED，三轮DEFERRED/NOT_RUN，不改为整体PASS。
+           实际Orin nightly080 fmt→根Clippy零警告，11质量child/22原流及53质量原件已验收；597源三窗同068277d8。
+           本轮没有新Rust测试、release/控制ELF构建、正式安装或服务激活；native HEAD894加五dirty，不称Git对齐。
+           永久入口 .verify/position_return_2026-10-11_r16/summary.json；83件逐字与manifest覆盖已root验收。
+           本轮GO已消耗、看护已结束；最新供电仅用户报告ON，独立电气遥测UNKNOWN，无新动作GO。
+           下一步只补头2P32−24同类单次；R17本地候选开发中，尚无新GO，不提前驱动底盘。
+           左腕临时I1已恢复I0、头部临时P32已恢复P16，长期参数未实施；单次功能不证明P因果、即时采用或重复性。
+           底盘零速合同与旧±50原因仍OPEN；R15及以下HANDOFF原文保留，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
            双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =

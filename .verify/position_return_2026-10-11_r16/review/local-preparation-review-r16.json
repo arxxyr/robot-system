@@ -1,0 +1,54 @@
+{
+  "status": "PASS_R16_LOCAL_PREPARATION_ONLY",
+  "candidate": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/head1_p32_reverse_trial_r16.py",
+    "bytes": 16254,
+    "sha256": "cf6dc28a66dbff6677183d15c6cc0568ccf7514f8b58c745758470c5420c7923"
+  },
+  "test": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/test_head1_p32_reverse_trial_r16.py",
+    "bytes": 22885,
+    "sha256": "3dfec31c39a0b58cbeea7891a374d0a617b6f86e84e34034090b0b96758da3be"
+  },
+  "source": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/scripts/run_hardware_maintenance.py",
+    "bytes": 50168,
+    "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41"
+  },
+  "r9_reverse_position_source": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-10_r9/candidate/head1_reverse_observation_r9.py",
+    "bytes": 12658,
+    "sha256": "c30a0e129cc3435cc647480200c9a31ab83a72f0828c28caaf2efb60cd7a6aaa"
+  },
+  "reverse_position_ast_identical_to_r9": true,
+  "normalized_reverse_position_ast_identical_to_d97_after_only_two_direction_semantics": true,
+  "semantic_changes": [
+    "calibration lower<=goal<=anchor<=upper",
+    "minimum outward uses max(anchor-actual_position)>=12"
+  ],
+  "helpers_byteequal": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/p24_trial_head1_wire_r6.py",
+      "bytes": 12425,
+      "sha256": "939e590b9e0ef829a465e9b3bc620d14cb114c01f7c2f2d591d3d34db3c47c81"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/helpers/head1_outward_observation_r8.py",
+      "bytes": 9328,
+      "sha256": "11b86f6768359bc7f6f0063bd188868b08c8baf164a59d89a62acdb557d7fc5e"
+    }
+  ],
+  "local_verification": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r16/candidate/software-verification-r16-r1/result.json",
+    "bytes": 13239,
+    "sha256": "f63854db8c18e05ee1f6eac5c0f789d37bf008df4ad087e60ea174e3166d2f19"
+  },
+  "distinct_memory_methods": 10,
+  "field_confirmation": null,
+  "approval": null,
+  "native_preparation_executed": false,
+  "ssh_operations": 0,
+  "uart_operations": 0,
+  "motion_commands": 0,
+  "parameter_writes": 0
+}

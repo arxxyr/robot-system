@@ -1,0 +1,6 @@
+{
+  "status": "PRESERVED_LOCAL_INSPECTION_KEYERROR_NO_REMOTE_EFFECT",
+  "error": "KeyError same_ssh；新receipt同SSH字段在terminal.same_ssh_children并单列reclaim",
+  "original_bytes_unchanged": true,
+  "new_ssh_or_cargo": false
+}

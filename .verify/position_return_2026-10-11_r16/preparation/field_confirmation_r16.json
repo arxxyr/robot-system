@@ -1,0 +1,31 @@
+{
+  "schema": "R16_DIRECT_FIELD_CONFIRMATION",
+  "recorded_at_ns": 1791775387015717000,
+  "recorded_at_utc": "2026-10-12T03:23:07.015720+00:00",
+  "question_id": "call_wLfoO3CXnKdBKrm9GwK6Y7XA",
+  "question": "头1反方向P32，单次−24，现场仍供电、双臂空载有支撑且不阻挡头部、区域空旷、持续看护并立即断电",
+  "human_answer": "现场仍就绪，可执行本次头1反向P32往返",
+  "power": "ON_USER_REPORTED",
+  "independent_power_telemetry": "UNKNOWN",
+  "scope": "仅头1left7 P16临时改32后单次−24尝试往返，最后恢复16并核PDI/Lock/死区；I0/D43不写，原±4/800ms、±32、最小12及STOP51保持；出程FAIL不强行回程，无Load/相机/底盘动作，无自动重试",
+  "physical": {
+    "left": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791775387015717000
+    },
+    "right": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791775387015717000
+    }
+  },
+  "usb_replug_required": false,
+  "power_reset_required": false
+}

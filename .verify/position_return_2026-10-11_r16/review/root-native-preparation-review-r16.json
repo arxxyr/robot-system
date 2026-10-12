@@ -1,0 +1,14 @@
+{
+  "status": "ROOT_ACCEPTED_R16_ORIN_SOFTWARE_PREPARATION",
+  "reviewed_ns": 1791774521947520000,
+  "native_originals": 39,
+  "memory_methods": 10,
+  "software_children": 5,
+  "streams_verified": 10,
+  "nonUART_checks": 17,
+  "nonUART_children": 23,
+  "binding_refs": 50,
+  "canonical_plan_sha256": "3fdee55f82900593ed9acceb0f4e83368206064a6a807657936a2ed8baed4090",
+  "old_R13_binding_preserved": true,
+  "new_field_GO_UART": false
+}

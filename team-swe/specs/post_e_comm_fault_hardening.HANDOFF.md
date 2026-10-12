@@ -2,6 +2,18 @@
 
 ## 当前步骤
 
+### 头1临时P32负向单次往返功能通过（客户端本地2026-10-11，R16已收尾）
+
+本次独立GO仅执行一次left7 P16→32→16、−24往返，D43/I0不写。锚2132、目标2108；出程14样本，190.781587ms首次进入±4，末2112/+4，观察结束800.063911ms不延长原800ms资格期限。回程3样本2128/−4于130.582209ms通过。实际负向位移20，原±4/800ms、±32/min12保持；各样本与原始READ输出相同，反馈未镜像。HEAD1_REVERSE_SINGLE_FUNCTION_PASS与原整轮FAIL分开：整体仍为BASE_FIRMWARE_CONTRACT_UNVERIFIED，三轮DEFERRED/NOT_RUN。
+
+七次具名写仅left7：P32、GP2132、TE1、GP2108、GP2132、TE0、P16。P16/D43/I0/Lock1/CW1/CCW1恢复，STOP51均整数零、82项身份及独立17项非UART清场/23child通过，manual_power_cut_required=false。383直属child与766原输出逐SHA/尺寸核验并自然回收；351 exit0、32空fuser/sudo fuser为预期idle exit1，不称全部exit0。driver651861经同tmux@84/%84观察自然dead/status1后仅回收自有pane，不冒充root直接waitpid远端driver。本轮GO已消耗、看护已结束；供电仅用户报告ON，独立电气遥测UNKNOWN。
+
+p_trial保存29个raw字段，实际read-raw调用30次：Lock恢复前后各一次，两份原输出均保留，不是动作重试。右8/9前后四次普通PV READ的完整ping/model/PV原帧均核验为正零，不解释旧±50或替代物理轮静止证明。50refs收集前后完整stat一致；入口binding中33项完整stat、17项历史path/SHA/bytes，不回填为全部入口已有完整stat。run中四条普通READ附加ordinary_read_trace元数据，journal没有该字段；共同字段一致，不称两表逐字相同，原PENDING_ROOT_REVIEW_OF_COMPLETE_STRACE未改。独立硬件验收报告9477B已通过。
+
+质量依据root-actual-quality-review-r16.json：Orin在nightly080cc27146389dbb5c8772c476b1937be9c6110f下实际fmt于2026-10-12 03:26:08.822277→12.345701UTC、随后根Clippy于03:26:12.568688→13.404522UTC零警告通过。11质量child/22原流及53质量原件验收通过；597输入主树与原生前/after-fmt/后三窗逐项一致，聚合068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8。native HEAD894加五dirty，不称Git对齐或clean。没有新Rust测试、release/控制ELF构建、正式安装或服务激活。永久入口：[R16摘要](../../.verify/position_return_2026-10-11_r16/summary.json)，83件逐字复制与manifest完整覆盖已由root验收；硬件808件、软件准备39件、质量53件各保留唯一原tar。
+
+R13正向与R16负向各一次当前起点功能通过，不证明同一姿态重复性、P因果、PID即时采用、长期参数或掉电持久化。左腕临时I1已恢复I0、头部临时P32已恢复P16，长期参数未实施；底盘三轮主动运动、Mode1/FW3.10/Phase12零义与旧±50原因仍未闭环。下一步只补头2P32−24同类单次，R17本地候选开发中，尚无新GO。R15及以下HANDOFF原文全部保留，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
+
 ### 底盘右7/右8六项固件原值只读通过（客户端本地2026-10-11，R15已收尾）
 
 本次独立新现场GO仅覆盖right7、right8各Firmware_Major_Version@0、Firmware_Minor_Version@1、Phase@18，全部1B，各一次。实际六项均通过：两轮均FW3.10、Phase12；六项SYNC_READ请求及完整响应的ID、地址、宽度、status、checksum、payload和unsigned原值逐项核验。复用冻结13c原帧工具，没有新ELF；寄存器写、Enable、动作均0，没有自动UART重试。本次没有完整17电机STOP51，不能把六项只读、既有停止反馈或非UART清场当作物理停机证明，也不能据此确认启扭时零目标的固件语义。

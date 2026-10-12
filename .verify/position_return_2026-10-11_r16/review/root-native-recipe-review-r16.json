@@ -1,0 +1,12 @@
+{
+  "status": "ROOT_ACCEPTED_R16_NATIVE_SOFTWARE_PREPARE_RECIPE",
+  "reviewed_ns": 1791774300905355000,
+  "recipe_sha256": "f795205d7c9c1c13034c77b5a25a3fa96302ddbdb73a20c9ba9790e45e273c68",
+  "prepare_sha256": "260bbb56a67cd9f28babbebd47e2b9539450181a57366a1e38c1d3dd7c444c94",
+  "payload_originals_byteequal": 15,
+  "old_R13_binding_original_verified": true,
+  "software_commands": 5,
+  "memory_methods": 10,
+  "new_UART_field_GO_Cargo_ELF_services": false,
+  "source_tree_copy": false
+}

@@ -1,0 +1,163 @@
+--- .verify/position_return_2026-10-11_r13/candidate/test_head1_p32_trial_r13.py
++++ target/position_return_2026-10-11_r16/candidate/test_head1_p32_reverse_trial_r16.py
+@@ -24,15 +24,15 @@
+     return value
+ 
+ 
+-c = module(HERE / 'head1_p32_trial_r13.py', 'head1_p32_candidate_memory')
+-HELPER = BASE / 'head-p24-preparation-r6/p24_trial_head1_wire_r6.py'
+-OBSERVATION = BASE / 'head-settle-preparation-r8/head1_outward_observation_r8.py'
++c = module(HERE / 'head1_p32_reverse_trial_r16.py', 'head1_p32_reverse_r16_candidate_memory')
++HELPER = BASE / 'helpers/p24_trial_head1_wire_r6.py'
++OBSERVATION = BASE / 'helpers/head1_outward_observation_r8.py'
+ h, _ = c.load_frozen(HELPER, c.HELPER_SHA, c.HELPER_BYTES, 'head1_p32_original_parameter_memory')
+ observation, _ = c.load_frozen(OBSERVATION, c.OBSERVATION_SHA, c.OBSERVATION_BYTES, 'head1_p32_original_observation_memory')
+ m = h.load_source(ROOT / 'scripts/run_hardware_maintenance.py')
+-r6_fixture = module(BASE / 'head-p24-preparation-r6/test_p24_head1_wire_r6.py', 'head1_p32_r6_fixture')
+-r8_fixture = module(BASE / 'head-settle-preparation-r8/test_head1_outward_observation_r8.py', 'head1_p32_r8_fixture')
+-PLAN = {'position_delta_raw': 24, 'minimum_excursion_raw': 12, 'return_tolerance_raw': 4, 'position_wait_ms': 800}
++r6_fixture = module(BASE / 'helpers/test_p24_head1_wire_r6.py', 'head1_p32_r6_fixture')
++r8_fixture = module(BASE / 'helpers/test_head1_outward_observation_r8.py', 'head1_p32_r8_fixture')
++PLAN = {'position_delta_raw': -24, 'minimum_excursion_raw': 12, 'return_tolerance_raw': 4, 'position_wait_ms': 800}
+ 
+ 
+ class P32Cases(unittest.TestCase):
+@@ -84,18 +84,18 @@
+             self.assertEqual(c.main([]), 0)
+             with self.assertRaisesRegex(ValueError, '输入不完整'):
+                 c.main(['--execute'])
+-            with self.assertRaisesRegex(ValueError, '新P32功能试验GO'):
++            with self.assertRaisesRegex(ValueError, '新P32反向功能试验GO'):
+                 c.main(['--execute', '--maintenance', '/MEMORY_ONLY/source', '--helper', '/MEMORY_ONLY/helper',
+                         '--observation-helper', '/MEMORY_ONLY/observation', '--bindings', '/MEMORY_ONLY/bindings',
+-                        '--output', '/MEMORY_ONLY/output', '--artifact-root', '/MEMORY_ONLY', '--run-id', 'memory-r13'])
++                        '--output', '/MEMORY_ONLY/output', '--artifact-root', '/MEMORY_ONLY', '--run-id', c.RUN_ID])
+         row = json.loads(output.getvalue())
+         self.assertEqual(tuple(row[key] for key in ('actions_started', 'parameter_writes', 'motion_commands', 'load_raw_reads')),
+                          (0, 0, 0, 0))
+         self.assertEqual((row['temporary_p'], row['restore_p'], row['delta_raw'], row['tolerance_raw'], row['position_wait_ms']),
+-                         (32, 16, 24, 4, 800))
++                         (32, 16, -24, 4, 800))
+ 
+     def test_complete_plan_binds_frozen_helpers_and_rejects_old_go(self):
+-        bindings = json.loads((BASE / 'head-settle-preparation-r8/native-preparation/maintenance_bindings_head_settle_r8.json').read_text())
++        bindings = json.loads((BASE / 'fixtures/maintenance_bindings_head_settle_r8.json').read_text())
+         refs = [c.reference(Path(c.__file__)), c.reference(HELPER), c.reference(OBSERVATION)]
+         bindings['refs'].extend(refs)
+         with tempfile.TemporaryDirectory() as directory:
+@@ -103,13 +103,13 @@
+             path.write_text(json.dumps(bindings))
+             argv = ['--maintenance', str(ROOT / 'scripts/run_hardware_maintenance.py'), '--helper', str(HELPER),
+                     '--observation-helper', str(OBSERVATION), '--bindings', str(path),
+-                    '--output', '/home/loosqk/robot-checks/memory-only-r13/run',
+-                    '--artifact-root', '/home/loosqk/robot-checks/memory-only-r13', '--run-id', 'memory-r13']
++                    '--output', '/home/loosqk/robot-checks/memory-only-r16/run',
++                    '--artifact-root', '/home/loosqk/robot-checks/memory-only-r16', '--run-id', c.RUN_ID]
+             with contextlib.redirect_stdout(io.StringIO()) as output, patch.object(m, 'execute', side_effect=AssertionError('不执行')):
+                 self.assertEqual(c.main(argv), 0)
+             result = json.loads(output.getvalue())
+             plan = result['plan']
+-            self.assertEqual(plan['position_delta_raw'], 24)
++            self.assertEqual(plan['position_delta_raw'], -24)
+             self.assertEqual(plan['position_targets'], [list(c.TARGET)])
+             trial = plan['head1_p32_trial']
+             self.assertEqual(trial['wrapper'], refs[0])
+@@ -117,10 +117,10 @@
+             self.assertEqual((trial['fixed_d'], trial['fixed_i'], trial['temporary_p'], trial['restore_p'], trial['load_raw_reads']),
+                              (43, 0, 32, 16, 0))
+             self.assertIn('不证明P因果', trial['interpretation'])
+-            for old in ('head-p24-preparation-r6/head1-p24-wire-r6.go.json',
+-                        'head-settle-preparation-r8/head1-outward-observation-r8.go.json',
+-                        'head-load-preparation-r10/head1-load-observation-r10.go.json',
+-                        'head-d0-preparation-r11/head1-d0-trial-r11.go.json'):
++            for old in ('fixtures/head1-p24-wire-r6.go.json',
++                        'fixtures/head1-outward-observation-r8.go.json',
++                        'fixtures/head1-load-observation-r10.go.json',
++                        'fixtures/head1-d0-trial-r11.go.json', 'fixtures/head1-p32-trial-r13.go.json'):
+                 go = json.loads((BASE / old).read_text())
+                 with self.subTest(old=old), self.assertRaises(ValueError):
+                     m.validate_go(go, plan, go['issued_at_ns'])
+@@ -234,7 +234,7 @@
+                 self.run_candidate()
+             self.assertFalse(any(event[0] == 'write' for event in self.events))
+         self.setUp()
+-        self.values['Present_Position'] = 3070
++        self.values['Present_Position'] = 810
+         with self.assertRaisesRegex(ValueError, '内置限位'):
+             self.run_candidate()
+         self.assertFalse(any(event[0] == 'write' for event in self.events))
+@@ -275,8 +275,9 @@
+             c.write_p(m, h, self.engine, 32)
+ 
+     def test_original_position_and_r8_observation_holds_deadline_or_fails_without_return(self):
+-        for defect in (None, 'not_qualified', 'late_qualified', 'read_error', 'excursion', 'return_error'):
+-            # 原R8正向夹具直接复用；仅接入同一command guard和本轮P读写原值。
++        for defect in (None, 'not_qualified', 'late_qualified', 'read_error', 'excursion', 'return_error',
++                       'wrong_direction', 'calibration_limit'):
++            # 原R8夹具对象复用；此方法的反馈原值明确为负向，另核错方向和负向标定限位。
+             executor = r8_fixture.MemoryIO(defect)
+             executor.tool = h.TOOL
+             executor.registers.update({key: value for key, value in h.BACKUP.items()
+@@ -295,10 +296,13 @@
+                 result = old_poke('left', 7, action, register, value, kwargs.get('cleanup', False))
+                 if action == 'read' and register == 'Present_Position' and executor.registers['Torque_Enable'] == 1:
+                     if executor.registers['Goal_Position'] != 2655:
+-                        if defect == 'not_qualified': return 2673
++                        if defect == 'not_qualified': return 2637
++                        if defect == 'wrong_direction': return 2675
++                        if defect == 'excursion' and executor.outward_reads == 2: return 2622
+                         if defect == 'late_qualified':
+                             executor.clock += 801_000_000
+-                            return 2679
++                            return 2631
++                        return 2635
+                     elif defect == 'return_error':
+                         return 2661
+                 return result
+@@ -311,18 +315,29 @@
+             engine = m.ProbeEngine(executor, dict(PLAN))
+             def read(module, current, register, cleanup=False):
+                 return {'raw_unsigned': executor.registers[register]}
++            calibration = {'id': 7, 'range_min': 2640 if defect == 'calibration_limit' else 797, 'range_max': 3081}
++            negative_position = lambda current, side, motor, name, calibration: c.reverse_position(
++                m, current, side, motor, name, calibration)
+             original_witness = m.ProbeEngine.witness_position
+             wrapper = lambda current, side, motor, target, anchor, stage, evidence: observation.witness_position(
+                 m, current, side, motor, target, anchor, stage, evidence, original_witness)
+             with self.subTest(defect=defect), patch.object(m, 'verify_ref'), patch.object(m.ProbeEngine, 'witness_position', wrapper):
+                 if defect is None:
+-                    c.run_trial(m, h, engine, *c.TARGET, {'id': 7, 'range_min': 797, 'range_max': 3081},
+-                                m.ProbeEngine.position, reader=read)
++                    c.run_trial(m, h, engine, *c.TARGET, calibration,
++                                negative_position, reader=read)
+                 else:
+                     with self.assertRaisesRegex(ValueError, '位置维护失败'):
+-                        c.run_trial(m, h, engine, *c.TARGET, {'id': 7, 'range_min': 797, 'range_max': 3081},
+-                                    m.ProbeEngine.position, reader=read)
++                        c.run_trial(m, h, engine, *c.TARGET, calibration,
++                                    negative_position, reader=read)
+             row = engine.rows[0]
++            if defect == 'calibration_limit':
++                self.assertIn('锚点/目标超标定范围', row['error'])
++                self.assertEqual(row['position_accuracy']['stages'], {})
++                self.assertEqual(p_writes, [(32, False), (16, True)])
++                self.assertEqual(row['p_trial']['restore_status'], 'PASS')
++                self.assertFalse(any(register == 'Goal_Position' for _, register, _, _ in executor.writes))
++                continue
++            self.assertEqual((row['anchor_raw'], row['goal_raw']), (2655, 2631))
+             out = row['position_accuracy']['stages']['outward']
+             self.assertEqual(out['deadline_ns'], out['started_ns'] + 800_000_000)
+             self.assertEqual(p_writes, [(32, False), (16, True)])
+@@ -332,6 +347,12 @@
+             self.assertTrue(all(argv[4] in ('Goal_Position', 'Torque_Enable')
+                                 for argv in commands if argv[0] == h.TOOL['path'] and argv[3] == 'write'))
+             anchors = [event for event in executor.writes if event[1:3] == ('Goal_Position', 2655)]
++            if defect is None:
++                self.assertEqual(row['outward'][0]['position_raw'], 2635)
++                self.assertGreaterEqual(max(2655 - value['position_raw'] for value in row['outward']), 12)
++            if defect == 'wrong_direction':
++                self.assertTrue(all(value['position_raw'] == 2675 for value in out['samples']))
++                self.assertIsNone(out['first_qualified_sample'])
+             if defect is None or defect == 'return_error':
+                 self.assertEqual(len(anchors), 2)
+                 self.assertGreaterEqual(anchors[1][0], out['deadline_ns'])

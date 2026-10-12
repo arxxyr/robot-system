@@ -1,0 +1,11 @@
+{
+  "status": "R16_WATCH_ENDED_AFTER_INDEPENDENT17_CLEANUP",
+  "recorded_at_ns": 1791775457770028000,
+  "run_sha256": "54de24c93ad2a2e59674882647976cf507f48fbe1a0afa1e6d363484cb758d75",
+  "all_children_reaped": true,
+  "owned_pane_reclaimed": true,
+  "new_hardware_GO": false,
+  "power": "ON_LAST_USER_REPORTED",
+  "power_telemetry": "UNKNOWN",
+  "scope": "本次GO已消耗；现场看护结束。后续动作须新现场事实。"
+}

@@ -1,0 +1,7 @@
+{
+  "status": "LOCAL_INPUT_SELECTION_ASSERTION_FAILURE_RETAINED",
+  "error": "首次把整个candidate目录加入native inputs，包含本地verify_local与已完成验证日志，14项数量断言拒绝",
+  "effect": "在body/transport写入前退出；SSH/Cargo/UART0",
+  "correction": "明确只选candidate与test两件，保留其余12份必要冻结夹具",
+  "recorded_at_utc": "2026-10-12T03:03:12.922039+00:00"
+}
