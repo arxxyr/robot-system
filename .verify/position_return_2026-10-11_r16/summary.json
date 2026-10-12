@@ -131,7 +131,7 @@
     "首观察草稿继承R14目录/标签和collector遗留head2/left8名，仅未执行草稿修r2",
     "本地草稿解析假设PYREMOTE但原observer为PY导致IndexError；未SSH/UART",
     "root只读展示仍假设旧same_ssh顶层字段，KeyError后按新terminal读取；无远端重跑或原件改写",
-    "原journal四行附加ordinary_read_trace元数据；不称增补前后整表逐字相等，也不改PENDING原状态"
+    "原run四条commands附加ordinary_read_trace元数据，journal没有该字段；不称两表逐字相等，也不改PENDING原状态"
   ],
   "limits": [
     "R13正向及本R16负向各一次功能通过，不证明同一姿态重复性、P因果、PID即时采用、长期参数或掉电持久化",
