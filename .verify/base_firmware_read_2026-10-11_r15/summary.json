@@ -1,0 +1,119 @@
+{
+  "schema": "BASE_FIRMWARE_READ6_R15_ARCHIVE_V1",
+  "status": "PASS_READONLY_FACTS_BASE_ZERO_SPEED_CONTRACT_OPEN",
+  "client_local_date": "2026-10-11",
+  "hardware_UTC": "2026-10-12 02:34",
+  "scope": "仅right7/right8各固件主次与Phase共6只读，不写参数、不Enable、不动作",
+  "raw_facts": {
+    "right7": {
+      "FW_major": 3,
+      "FW_minor": 10,
+      "Phase": 12
+    },
+    "right8": {
+      "FW_major": 3,
+      "FW_minor": 10,
+      "Phase": 12
+    }
+  },
+  "run_original": {
+    "archive": "archives/hardware-originals-r15.tar.gz",
+    "member": "read6-evidence-r15/run.json",
+    "sha256": "61343b42d36266df63c7bf19115bdb154d1944eb70b7f7243043a071d06465c9",
+    "bytes": 259669,
+    "status": "PASS_BASE_FIRMWARE_READ6_CAPTURE",
+    "driver_pid": 646895,
+    "direct_children": 156,
+    "streams_verified": 312,
+    "exit_counts": {
+      "0": 116,
+      "1": 40
+    },
+    "idle_fuser_exit1_expected": true,
+    "all_children_naturally_reaped": true,
+    "raw_TX_RX_frames": 6,
+    "manual_power_cut_requested": false,
+    "errors": []
+  },
+  "stop_and_cleanup": {
+    "full_17_motor_STOP51": "NOT_PERFORMED_THIS_READ_ONLY_RUN",
+    "nonUART_post": 5,
+    "independent_nonUART_checks": 17,
+    "independent_nonUART_children": 23,
+    "same_owned_terminal": "@81/%81 driver646895 naturaldead1/status0 verified then only owned pane reclaimed",
+    "physical_wheel_stationarity": "NOT_PROVEN",
+    "writes_Enable_motion": 0
+  },
+  "software_preparation": {
+    "host_methods": 8,
+    "native_methods": 8,
+    "unique_per_platform": 8,
+    "cross_platform_not_added": true,
+    "default_exit": 0,
+    "missing_GO_exit": 2,
+    "full_PLAN_only": "PASS",
+    "native_direct_children": 5,
+    "native_streams": 10,
+    "nonUART_checks": 17,
+    "nonUART_children": 23,
+    "bound_refs": 51,
+    "old_R14_binding_preserved": true,
+    "frozen_raw_tool": "13c97115b89d9f8780ea8b9cac80a091ddcc2b73549d34b2d5cbad83c718ffe1; no new control ELF"
+  },
+  "quality": {
+    "status": "ROOT_ACCEPTED_R15_UPDATED_NIGHTLY_FMT_THEN_CLIPPY",
+    "reviewed_ns": 1791773363165799000,
+    "archive_sha256": "c9042f82feaf55c9f87b88e08aa9b16f46aaea8c4b7974d8d1856638c36ee42b",
+    "archive_files": 69,
+    "quality_children": 12,
+    "quality_streams_verified": 24,
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "080cc27146389dbb5c8772c476b1937be9c6110f",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "source597_root_and_native_three_windows_equal": true,
+    "source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "root_latest_nightly_fmt_exit": 0,
+    "native_fmt_pid": 647270,
+    "native_clippy_pid": 647281,
+    "native_update_pid": 647215,
+    "source_native_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_state": "five dirty; not Git aligned",
+    "new_Rust_tests_release_controlELF_UART_GO_services": 0
+  },
+  "field_and_GO": {
+    "field_recorded_ns": 1791772464025036000,
+    "expires_ns": 1791773064025036000,
+    "source": "本次人类明确确认六项只读，旧R14未复用",
+    "watch": "本轮已通知结束",
+    "GO": "CONSUMED",
+    "power": "USER_REPORTED_ON; independent telemetry UNKNOWN",
+    "new_hardware_GO": false
+  },
+  "review": "root raw/312streams/cleanup and independent narrow review PASS; original reports unchanged",
+  "diagnostics_preserved": [
+    "首live starter未执行草稿run_id/status旧标识已修r2，原稿与diff保留，实际只启动r2填充版一次",
+    "首quality AST审查误当payload为literal dict，实际json.loads(literal)，本机ValueError修字段解析；无额外SSH/Cargo",
+    "root旧6f5 fmt exit0后发现nightly更新080，再实际新版fmt；不把旧fmt当新版质量",
+    "quality r2运输为未执行草稿；实际只用已审f4 recipe一次"
+  ],
+  "base_contract": {
+    "status": "OPEN_UNVERIFIED",
+    "facts_completed": true,
+    "mode1_vs_Phase12_zero_meaning": "厂家资料未明确FW3.10/Phase12适用或Mode1豁免，不能宣称现场必然最高速或已可靠零停",
+    "profile_gate": "现有Phase bit3拒绝保持；不盲改Phase或松停止门",
+    "primary_refs": [
+      "http://doc.feetech.cn/#/prodinfodownload?srcType=FT-SMS-STS-emanual-229f4476422d4059abfb1cb0",
+      "https://github.com/ftservo/FTServo_Linux/blob/06fd3356dbd7bccd886b5a70d7ae0fccc6c76d38/examples/SMS_STS/WriteSpe/WriteSpe.cpp#L25-L26"
+    ],
+    "new_wheel_actuation": "NOT_RUN"
+  },
+  "limits": [
+    "R13/R14各头部单次P32功能PASS后恢复P16；不证明长期参数或重复性",
+    "左腕I1仅单次PASS后恢复I0，长期参数未闭环",
+    "旧±50根因OPEN，历史FAIL不回填",
+    "右H2完整PASS、D15 OPEN/DEFERRED、deployable=false不变"
+  ],
+  "archive_recorded_at_UTC": "2026-10-12T02:51:04.207285+00:00"
+}

@@ -1,0 +1,273 @@
+{
+  "status": "PASS_BASE_FIRMWARE_READ6_CAPTURE",
+  "manual_power_cut_requested": false,
+  "driver_pid": 646895,
+  "exit_code": 0,
+  "readouts": [
+    {
+      "side": "right",
+      "motor_id": 7,
+      "register": "Firmware_Major_Version",
+      "command_sequence": 43,
+      "raw": {
+        "motor_id": 7,
+        "operation": "sync_read",
+        "raw_unsigned": 3,
+        "register": "Firmware_Major_Version",
+        "requested_register_address": 0,
+        "rx": [
+          255,
+          255,
+          7,
+          3,
+          0,
+          3,
+          242
+        ],
+        "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          0,
+          1,
+          7,
+          114
+        ],
+        "width": 1
+      }
+    },
+    {
+      "side": "right",
+      "motor_id": 7,
+      "register": "Firmware_Minor_Version",
+      "command_sequence": 62,
+      "raw": {
+        "motor_id": 7,
+        "operation": "sync_read",
+        "raw_unsigned": 10,
+        "register": "Firmware_Minor_Version",
+        "requested_register_address": 1,
+        "rx": [
+          255,
+          255,
+          7,
+          3,
+          0,
+          10,
+          235
+        ],
+        "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          1,
+          1,
+          7,
+          113
+        ],
+        "width": 1
+      }
+    },
+    {
+      "side": "right",
+      "motor_id": 7,
+      "register": "Phase",
+      "command_sequence": 81,
+      "raw": {
+        "motor_id": 7,
+        "operation": "sync_read",
+        "raw_unsigned": 12,
+        "register": "Phase",
+        "requested_register_address": 18,
+        "rx": [
+          255,
+          255,
+          7,
+          3,
+          0,
+          12,
+          233
+        ],
+        "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          18,
+          1,
+          7,
+          96
+        ],
+        "width": 1
+      }
+    },
+    {
+      "side": "right",
+      "motor_id": 8,
+      "register": "Firmware_Major_Version",
+      "command_sequence": 100,
+      "raw": {
+        "motor_id": 8,
+        "operation": "sync_read",
+        "raw_unsigned": 3,
+        "register": "Firmware_Major_Version",
+        "requested_register_address": 0,
+        "rx": [
+          255,
+          255,
+          8,
+          3,
+          0,
+          3,
+          241
+        ],
+        "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          0,
+          1,
+          8,
+          113
+        ],
+        "width": 1
+      }
+    },
+    {
+      "side": "right",
+      "motor_id": 8,
+      "register": "Firmware_Minor_Version",
+      "command_sequence": 119,
+      "raw": {
+        "motor_id": 8,
+        "operation": "sync_read",
+        "raw_unsigned": 10,
+        "register": "Firmware_Minor_Version",
+        "requested_register_address": 1,
+        "rx": [
+          255,
+          255,
+          8,
+          3,
+          0,
+          10,
+          234
+        ],
+        "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          1,
+          1,
+          8,
+          112
+        ],
+        "width": 1
+      }
+    },
+    {
+      "side": "right",
+      "motor_id": 8,
+      "register": "Phase",
+      "command_sequence": 138,
+      "raw": {
+        "motor_id": 8,
+        "operation": "sync_read",
+        "raw_unsigned": 12,
+        "register": "Phase",
+        "requested_register_address": 18,
+        "rx": [
+          255,
+          255,
+          8,
+          3,
+          0,
+          12,
+          232
+        ],
+        "serial_device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          18,
+          1,
+          8,
+          95
+        ],
+        "width": 1
+      }
+    }
+  ],
+  "direct_children": 156,
+  "independent_nonuart_checks": 17,
+  "independent_nonuart_children": 23,
+  "archive_files": 324,
+  "archive_bytes": 125157,
+  "archive_sha256": "9b1e347752e94940b268338715d744d920c2ac913428a636015d3d5e7b6c14dd",
+  "owner": {
+    "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+    "phase": "REAPED",
+    "status": "PASS",
+    "owner_pid": 76640,
+    "command": [
+      "ssh",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "StrictHostKeyChecking=yes",
+      "-o",
+      "ConnectTimeout=15",
+      "robot",
+      "bash",
+      "-s"
+    ],
+    "pid": 76641,
+    "started_utc": "2026-10-12T02:34:45.758435+00:00",
+    "started_monotonic_ns": 10571659710041,
+    "observe_seconds": 5.0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "owner_sent_signals": [],
+    "received_signals": {},
+    "errors": [],
+    "observations": 1,
+    "remote_state": "NOT_VERIFIED",
+    "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+    "input": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/live/observe_collect_read6_r15.sh",
+      "sha256": "57d96c54709a7cddea31a11edcaca61b21dc1ffab88e0f90f1c14f89b138c32b",
+      "bytes": 3889
+    },
+    "launched_utc": "2026-10-12T02:34:45.760440+00:00",
+    "start_new_session": true,
+    "child_session_id": 76641,
+    "child_end_class": "EXIT_STATUS",
+    "child_signal": null,
+    "finished_utc": "2026-10-12T02:34:48.592101+00:00",
+    "observed_utc": "2026-10-12T02:34:48.590783+00:00",
+    "elapsed_ns": 2833572709,
+    "log_bytes_observed": 169660,
+    "log": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-read6-r15-observe-collect-root.owner/child.log",
+      "sha256": "99e43116e33eba21f9103f84d59a51ff6d5a7123abd0351915a68673131c3daa",
+      "bytes": 169660
+    }
+  }
+}

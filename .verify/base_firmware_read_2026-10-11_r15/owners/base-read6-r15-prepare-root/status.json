@@ -1,0 +1,49 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "REAPED",
+  "status": "PASS",
+  "owner_pid": 74221,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 74222,
+  "started_utc": "2026-10-12T02:31:31.456635+00:00",
+  "started_monotonic_ns": 10377357643291,
+  "observe_seconds": 5.0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 1,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/preparation/minimal_software_prepare_r15.sh",
+    "sha256": "0ba959b319f7504cd02342d27960a58b5e416b2e2898037a257da69630481f48",
+    "bytes": 63463
+  },
+  "launched_utc": "2026-10-12T02:31:31.458395+00:00",
+  "start_new_session": true,
+  "child_session_id": 74222,
+  "child_end_class": "EXIT_STATUS",
+  "child_signal": null,
+  "finished_utc": "2026-10-12T02:31:35.150036+00:00",
+  "observed_utc": "2026-10-12T02:31:35.149400+00:00",
+  "elapsed_ns": 3693316625,
+  "log_bytes_observed": 131847,
+  "log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-read6-r15-prepare-root.owner/child.log",
+    "sha256": "4b7001f75b5e1f8655dc0601ce3e819f558cd19080c7efe9765ffcccbce6e7f0",
+    "bytes": 131847
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "status": "ROOT_ACCEPTED_R15_UPDATE_THEN_FMT_CLIPPY_RECIPE",
+  "reviewed_ns": 1791772861977826000,
+  "sha256": "f4ba9f3e3f8ee978d9651c671b3ccb488532ced57e13fe2cd093c57ecc4e02ad",
+  "payload_files": 2,
+  "payload_byteequal": true,
+  "latest_observed_root_compiler": "080cc27146389dbb5c8772c476b1937be9c6110f",
+  "R12_legacy_source_reference": "PRESERVED",
+  "original_source_597_sha": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "new_UART_GO_services": false,
+  "one_update_and_one_new_compiler_fmt_clippy": true,
+  "local_review_diagnostic_preserved": "首审查假设payload为literal dict，实际为json.loads(literal)。ValueError发生于本机审查，无SSH/Cargo/原件改动；仅解析既有字段。"
+}

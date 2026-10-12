@@ -2,6 +2,18 @@
 
 ## 当前步骤
 
+### 底盘右7/右8六项固件原值只读通过（客户端本地2026-10-11，R15已收尾）
+
+本次独立新现场GO仅覆盖right7、right8各Firmware_Major_Version@0、Firmware_Minor_Version@1、Phase@18，全部1B，各一次。实际六项均通过：两轮均FW3.10、Phase12；六项SYNC_READ请求及完整响应的ID、地址、宽度、status、checksum、payload和unsigned原值逐项核验。复用冻结13c原帧工具，没有新ELF；寄存器写、Enable、动作均0，没有自动UART重试。本次没有完整17电机STOP51，不能把六项只读、既有停止反馈或非UART清场当作物理停机证明，也不能据此确认启扭时零目标的固件语义。
+
+156个直属child与312份原输出逐项核验并自然回收：116 exit0、40空fuser/sudo fuser为预期idle exit1，不称全部exit0。末5项非UART后验及独立17项清场/23个child通过。driver646895由同tmux@81/%81观察自然dead/status0后，仅回收该自有pane，不冒充root直接waitpid远端driver。2026-10-12 02:34UTC已完成收尾（客户端本地日期2026-10-11）；本轮GO已消耗、看护已结束，供电仅USER_REPORTED_ON、独立电气遥测UNKNOWN，无新UART或动作GO。
+
+软件准备两端各8个不同内存方法通过，同名方法不累计为16；默认PLAN exit0、缺GO预期exit2、完整PLAN及原生51 refs通过。原生准备的5个软件child、17项非UART/23个child已验收；这些软件事实不替代真实六项采集。必要原件入口：[R15摘要](../../.verify/base_firmware_read_2026-10-11_r15/summary.json)，66件永久归档覆盖与原件字节相等已由root验收；软件33件、硬件324件、质量69件各保留唯一原tar。首未执行starter旧run-id/status修r2，最终config独立新文件，原稿与diff保留，实际只启动一次；首quality AST解析假设错误在本机审查修正，无额外SSH/Cargo或原件改动。
+
+提交前两端nightly实际更新6f5→080cc27146389dbb5c8772c476b1937be9c6110f。Orin通过指定10.0.1.80:10808代理更新，update PID647215于02:42:03.485508→26.887474UTC自然exit0/reap；新版唯一fmt PID647270于02:42:27.425930→30.949027、根Clippy PID647281于02:42:31.170137→02:47:00.218648UTC零警告通过。11 Runner child及独立update child共12直属、24原流逐SHA/尺寸核验并自然回收，owner79416/SSH79417及同SSH四child自然收尾；driver647199在@82/%82自然dead/status0后只回收所属pane。597源码主树与原生前/after-fmt/后三窗逐项一致，聚合068277d8，实际080编译器首尾一致；native HEAD894加五dirty，不称Git对齐。root另实际新版fmt退出0；旧6f5 fmt不冒充新版检查。没有新Rust测试、release/控制ELF构建、UART/GO、正式安装或服务激活；r2质量运输草稿未执行，实际仅已审f4 recipe一次。
+
+厂家资料窄核仍未明确Mode1/FW3.10/Phase12组合的零目标语义：厂家表bit3和地址46没有Mode0限定，官方Mode1零停示例没有Phase/FW适用声明；不能据此判现场必然最高速或已经可靠零停。底盘零速合同仍OPEN，不盲改Phase、不放宽原停止门、不自动驱动三轮。R14/R13头部P32各仅单次当前姿态功能PASS，收尾已恢复P16，不证明长期参数、重复性或掉电持久化；左腕I1单次通过后已恢复I0，长期左腕和头部参数、三轮主动运动未闭环。旧±50原因OPEN、原FAIL不回填，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。R14及以下历史原文继续保留。
+
 ### 头2临时P32单次往返功能通过（2026-10-11，R14已验收收尾）
 
 本次独立GO仅执行一次left8 P16→32→16、+24往返，I0/D43不写。锚2086、目标2110；出程14样本，131.118331ms首次进入±4，末2107/-3于801.213057ms读完，原±4资格仍须在800ms内，未延长判据。回程3样本，2088/+2于138.449869ms通过。P16/D43/I0/Lock1/CW1/CCW1恢复，七次具名写仅left8：P32、GP2086、TE1、GP2110、GP2086、TE0、P16；配置区实际临时写入，不称EEPROM写0。HEAD2_SINGLE_FUNCTION_PASS与原整轮FAIL分开，BASE_FIRMWARE_CONTRACT_UNVERIFIED及三轮DEFERRED/NOT_RUN保持。

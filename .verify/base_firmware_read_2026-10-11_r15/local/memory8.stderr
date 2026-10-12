@@ -1,0 +1,13 @@
+test_GO_reference_can_be_signed_without_circular_config_digest (__main__.Fixed6MemoryCases.test_GO_reference_can_be_signed_without_circular_config_digest) ... ok
+test_child_signal_or_evidence_failure_never_starts_second_read (__main__.Fixed6MemoryCases.test_child_signal_or_evidence_failure_never_starts_second_read) ... ok
+test_default_plan_only_has_no_loader_file_or_executor (__main__.Fixed6MemoryCases.test_default_plan_only_has_no_loader_file_or_executor) ... ok
+test_existing_R6_motion_GO_cannot_authorize_new_six_read_plan (__main__.Fixed6MemoryCases.test_existing_R6_motion_GO_cannot_authorize_new_six_read_plan) ... ok
+test_expired_field_has_zero_read_starts (__main__.Fixed6MemoryCases.test_expired_field_has_zero_read_starts) ... ok
+test_six_unique_right_bus_reads_only_once_without_writes (__main__.Fixed6MemoryCases.test_six_unique_right_bus_reads_only_once_without_writes) ... ok
+test_unbound_tool_or_missing_current_refs_reject_before_loader (__main__.Fixed6MemoryCases.test_unbound_tool_or_missing_current_refs_reject_before_loader) ... ok
+test_unknown_or_wrong_frame_stops_before_second_read (__main__.Fixed6MemoryCases.test_unknown_or_wrong_frame_stops_before_second_read) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.012s
+
+OK

@@ -1,0 +1,100 @@
+{
+  "status": "PASS_LOCAL_SOFTWARE_ONLY",
+  "memory_methods": 8,
+  "direct_children": [
+    {
+      "name": "memory8",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/candidate/test_base_firmware_read6_r15.py"
+      ],
+      "pid": 57628,
+      "started_ns": 1791771847348037000,
+      "finished_ns": 1791771847522159000,
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/local-verification/memory8.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/local-verification/memory8.stderr",
+        "sha256": "478740d90ea40c7760c1c05830c9f3e944305f85489c8e50abd03df271c8691b",
+        "bytes": 1296
+      }
+    },
+    {
+      "name": "default-plan",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/candidate/base_firmware_read6_r15.py"
+      ],
+      "pid": 57806,
+      "started_ns": 1791771847522960000,
+      "finished_ns": 1791771847567900000,
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/local-verification/default-plan.stdout",
+        "sha256": "c2006aa9c9eae8b41884a65f09b7baf71bec6fdfcfbdafbf12b8aa9455af65a2",
+        "bytes": 767
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/local-verification/default-plan.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "name": "missing-go",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/candidate/base_firmware_read6_r15.py",
+        "--config",
+        "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/candidate/config-template-r15.json",
+        "--execute"
+      ],
+      "pid": 57818,
+      "started_ns": 1791771847568429000,
+      "finished_ns": 1791771847602053000,
+      "exit_code": 2,
+      "expected_exit_code": 2,
+      "wait_returncode": 2,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/local-verification/missing-go.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/local-verification/missing-go.stderr",
+        "sha256": "70f93683849b7feff6c837e9ee9f243e212625fc9bf152f67f3aba65fbcdd6ac",
+        "bytes": 106
+      }
+    }
+  ],
+  "uart_operations": 0,
+  "register_writes": 0,
+  "motion_commands": 0,
+  "native_preparation_executed": false,
+  "field_created": false,
+  "go_created": false,
+  "candidate": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/candidate/base_firmware_read6_r15.py",
+    "sha256": "39506725bc4008f018e9aa8af615e8f64a6bd3a7974f3433f585599df475b88b",
+    "bytes": 16721
+  },
+  "test": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_firmware_read_2026-10-11_r15/candidate/test_base_firmware_read6_r15.py",
+    "sha256": "d6389ccffbab724cdb1540ce21e96ad494d3157be4820a5fc0f3f4acb11a7eeb",
+    "bytes": 12565
+  }
+}

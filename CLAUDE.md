@@ -21,22 +21,22 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-11 R14头2临时P16→32→16单次+24往返功能PASS：锚2086、目标2110。
-           出程14样本，131.118331ms首次±4，末2107/-3于801.213057ms读完；原±4资格800ms未延长。
-           回程3样本，2088/+2于138.449869ms PASS；P16/D43/I0/Lock1/CW1/CCW1恢复。
-           STOP51整数零、82身份、50 refs前后同及独立17项清场PASS，manualcut=false。
-           383直属child/766输出，七次具名写仅left8；p_trial保存29 raw字段，实际read-raw30次。
-           Lock恢复前后各读一次，不称30个新测量字段或重试；右8/9前后四普通READ PV原帧均零。
-           原run整体FAIL因BASE_FIRMWARE_CONTRACT_UNVERIFIED/三轮DEFERRED保持，不改为整体PASS。
-           Orin实际fmt→根Clippy零警告；597主树/原生三窗同068277d8，latest nightly6f5。
-           native HEAD894加五dirty，不称Git对齐；f201位置/13c参数冻结件身份不变，无新控制ELF构建。
-           原件 .verify/position_return_2026-10-11_r14/summary.json，root源码/原帧/归档验收通过。
-           仅一次当前姿态功能通过，P32已恢复16；不证明P因果、PID即时采用、重复性或掉电持久化。
-           本轮GO已消耗、看护已结束；供电仅用户报告ON，独立遥测UNKNOWN，无新动作GO。
-           下一步仅right7/right8各FWmajor/FWminor/Phase共6只读；软件准备进行中，无新GO/UART。
-           R13头1单次功能PASS及R12事实见各自摘要；R11回程+6等旧FAIL完整保留。
-           左腕仅临时I1 PASS后恢复I0；长期左腕和头部参数、三轮主动运动未闭环，旧±50原因OPEN。
-           正式ca14及六服务沿既有状态；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
+本轮最新:  2026-10-11客户端本地日期R15六项底盘只读PASS，2026-10-12 02:34UTC已收尾。
+           right7/right8各FWmajor=3、FWminor=10、Phase=12；地址0/1/18均1B，各读一次。
+           六项raw请求/响应ID、地址、宽度、status、checksum与unsigned值逐项核验。
+           156直属child/312原输出均自然回收：116 exit0、40空fuser预期idle exit1。
+           寄存器写/Enable/动作均0；末5项非UART后验及独立17项/23child清场PASS。
+           driver646895由同tmux@81/%81观察自然dead/status0后，仅回收该自有pane。
+           本轮没有完整17电机STOP51，不以六项只读或非UART清场替代物理停机证明。
+           两端各8不同内存方法（同方法不累计为16），默认PLAN exit0、缺GO exit2、完整PLAN通过。
+           原生软件准备5child、17项非UART/23child及51 refs已验收；复用冻结13c，无新ELF。
+           原件 .verify/base_firmware_read_2026-10-11_r15/summary.json，66件封包与root/独审验收通过。
+           两端nightly更新080；Orin新版唯一fmt→根Clippy零警告，597源三窗同068277d8。
+           本轮新现场GO已消耗、看护已结束；供电USER_REPORTED_ON，独立电气遥测UNKNOWN。
+           厂家资料仍未明确Mode1/FW3.10/Phase12组合零义；底盘零速合同OPEN，不盲改Phase或松停止门。
+           R14/R13各头部P32单次功能PASS后已恢复P16；历史整轮FAIL与更早原FAIL保持。
+           左腕临时I1 PASS后恢复I0；长期左腕/头部参数及三轮主动运动未闭环，旧±50原因OPEN。
+           R14及以下历史在HANDOFF原样保留；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
            双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =

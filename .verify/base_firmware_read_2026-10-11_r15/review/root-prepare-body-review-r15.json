@@ -1,0 +1,11 @@
+{
+  "status": "ROOT_ACCEPTED_R15_PREPARE_BODY_ONLY_SSH_RECIPE_PENDING",
+  "reviewed_ns": 1791771985713120000,
+  "prepare_sha256": "9ab7a19a0a099bc383a7cb9d3eee88bd49a1856da6a87196972425cbf15af914",
+  "bytes": 12319,
+  "input_refs": 4,
+  "old_R14_binding_sha256": "fb94a118feaf074ca495fe7311b710807668ee0eff0beba3c660b12e9183f660",
+  "candidate_and_13c_refs_MATCH": true,
+  "scope": "fresh非UART快照及五软件child，8内存方法/默认0/缺GO2/fullPLAN，无UART/GO/field/Cargo/ELF",
+  "new_control_framework": false
+}

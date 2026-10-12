@@ -1,0 +1,44 @@
+--- target/base_firmware_read_2026-10-11_r15/preparation/start_base_firmware_read6_once_r15.draft.sh
++++ target/base_firmware_read_2026-10-11_r15/preparation/start_base_firmware_read6_once_r15.draft-r2.sh
+@@ -18,12 +18,12 @@
+           'base_firmware_read6_bindings_r15.json':(APPROVED_BINDINGS_REF['sha256'],APPROVED_BINDINGS_REF['bytes'])}
+ for name,(sha,size) in expected.items():
+  path=phase/name;raw=path.read_bytes();assert path==path.resolve() and stat.S_ISREG(path.lstat().st_mode) and len(raw)==size and hashlib.sha256(raw).hexdigest()==sha
+-config_path=phase/'config.base_firmware_read6.r15.json';raw=config_path.read_bytes()
++config_path=phase/'config.final.base_firmware_read6.r15.json';raw=config_path.read_bytes()
+ assert APPROVED_FINAL_CONFIG['path']==str(config_path) and stat.S_ISREG(config_path.lstat().st_mode) and len(raw)==APPROVED_FINAL_CONFIG['bytes'] and hashlib.sha256(raw).hexdigest()==APPROVED_FINAL_CONFIG['sha256']
+ candidate=phase/'candidate/base_firmware_read6_r15.py';spec=importlib.util.spec_from_file_location('base_firmware_read6_fixed_candidate',candidate);c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
+ config=json.loads(raw);h=c.load_support(config['support']);m=h.load_source(config['maintenance']);config=m.strict_json(raw.decode())
+ bindings=m.strict_json(m.verify_ref(config['bindings']).decode());assert config['bindings']['path']==str(phase/'base_firmware_read6_bindings_r15.json') and config['bindings']['sha256']==expected['base_firmware_read6_bindings_r15.json'][0]
+-assert config['run_id']=='readonly-base-firmware-read-r15' and config['artifact_root']==str(base) and config['output']==str(phase/'read6-evidence-r15')
++assert config['run_id']=='base-firmware-read6-r15' and config['artifact_root']==str(base) and config['output']==str(phase/'read6-evidence-r15')
+ assert config['field_confirmation']==APPROVED_FIELD_REF and config['approval']==APPROVED_GO_REF
+ m.verify_ref(APPROVED_FIELD_REF);m.verify_ref(APPROVED_GO_REF)
+ field=c.confirmation(m,config['field_confirmation'],time.time_ns())
+@@ -36,15 +36,15 @@
+ # 全部无UART核验后再检查原人类时间与原GO，不续期。
+ c.confirmation(m,config['field_confirmation'],time.time_ns());m.validate_go(go,plan,time.time_ns())
+ output=phase/'read6-evidence-r15';record=phase/'read6-launch-record-r15';assert not output.exists() and not record.exists()
+-launcher=b'#!/bin/bash\nset -eu\numask 077\nexport PYTHONDONTWRITEBYTECODE=1\ntmux set-option -p remain-on-exit on\nexec /home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/candidate/base_firmware_read6_r15.py --config /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/config.base_firmware_read6.r15.json --execute > /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/read6-launch-record-r15/driver.log 2>&1\n'
+-assert hashlib.sha256(launcher).hexdigest()=='0748db6b6ba70ddafd1ff76bcf2d21bcd2b5e514fe63306a157417c5a85255d2'
++launcher=b'#!/bin/bash\nset -eu\numask 077\nexport PYTHONDONTWRITEBYTECODE=1\ntmux set-option -p remain-on-exit on\nexec /home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/candidate/base_firmware_read6_r15.py --config /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/config.final.base_firmware_read6.r15.json --execute > /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/read6-launch-record-r15/driver.log 2>&1\n'
++assert hashlib.sha256(launcher).hexdigest()=='181d6229529bffea21551e43e363ce19639d4079fa6e71f26506eb0aa5df18f2'
+ record.mkdir(mode=0o700)
+ launch_path=record/'launch_base_firmware_read6_once_r15.sh'
+ with launch_path.open('xb') as f:f.write(launcher);f.flush();os.fsync(f.fileno())
+ assert launch_path.read_bytes()==launcher
+ argv=['tmux','new-session','-d','-s','base-firmware-read6-20261011-r15','-P','-F','#{session_name} #{window_id} #{pane_id} #{pane_pid}','bash '+str(launch_path)]
+ started=time.time_ns();child=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE);stdout,stderr=child.communicate();code=child.wait()
+-result={'status':'STARTED_SINGLE_BASE_FIRMWARE_READ6_R12' if code==0 else 'TMUX_START_FAIL','tmux_identity':stdout.decode().strip(),'tmux_launch':{'argv':argv,'pid':child.pid,'started_ns':started,'finished_ns':time.time_ns(),'exit_code':code,'wait_returncode':code,'reaped':True,'stdout':stdout.decode(),'stderr':stderr.decode(),'signals_sent':[]},'go_sha256':hashlib.sha256(go_raw).hexdigest(),'go_bytes':len(go_raw),'launcher_sha256':hashlib.sha256(launcher).hexdigest(),'plan_sha256':m.digest(plan),'config_ref':APPROVED_FINAL_CONFIG}
++result={'status':'STARTED_SINGLE_BASE_FIRMWARE_READ6_R15' if code==0 else 'TMUX_START_FAIL','tmux_identity':stdout.decode().strip(),'tmux_launch':{'argv':argv,'pid':child.pid,'started_ns':started,'finished_ns':time.time_ns(),'exit_code':code,'wait_returncode':code,'reaped':True,'stdout':stdout.decode(),'stderr':stderr.decode(),'signals_sent':[]},'go_sha256':hashlib.sha256(go_raw).hexdigest(),'go_bytes':len(go_raw),'launcher_sha256':hashlib.sha256(launcher).hexdigest(),'plan_sha256':m.digest(plan),'config_ref':APPROVED_FINAL_CONFIG}
+ with (record/'start_receipt_r15.json').open('x') as f:json.dump(result,f,ensure_ascii=False,indent=2);f.write('\n');f.flush();os.fsync(f.fileno())
+ print(json.dumps(result,ensure_ascii=False),flush=True)
+ assert code==0 and not stderr
+--- target/base_firmware_read_2026-10-11_r15/preparation/launch_base_firmware_read6_once_r15.draft.sh
++++ target/base_firmware_read_2026-10-11_r15/preparation/launch_base_firmware_read6_once_r15.draft-r2.sh
+@@ -3,4 +3,4 @@
+ umask 077
+ export PYTHONDONTWRITEBYTECODE=1
+ tmux set-option -p remain-on-exit on
+-exec /home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/candidate/base_firmware_read6_r15.py --config /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/config.base_firmware_read6.r15.json --execute > /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/read6-launch-record-r15/driver.log 2>&1
++exec /home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/candidate/base_firmware_read6_r15.py --config /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/config.final.base_firmware_read6.r15.json --execute > /home/loosqk/robot-checks/position-return-20261010-r1/base-firmware-read-r15/read6-launch-record-r15/driver.log 2>&1

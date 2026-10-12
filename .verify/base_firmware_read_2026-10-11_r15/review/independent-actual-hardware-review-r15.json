@@ -1,0 +1,291 @@
+{
+  "schema": "R15_INDEPENDENT_ACTUAL_READONLY_REVIEW_V1",
+  "status": "PASS_NARROW_READONLY6_ARCHIVE_REVIEW",
+  "scope": "仅本地归档窄核；无SSH/UART/Cargo/新增测试或修改原件",
+  "archive": {
+    "path": "target/base_firmware_read_2026-10-11_r15/live/hardware-originals-r15.tar.gz",
+    "sha256": "9b1e347752e94940b268338715d744d920c2ac913428a636015d3d5e7b6c14dd",
+    "bytes": 125157,
+    "regular_members": 324
+  },
+  "run": {
+    "member": "read6-evidence-r15/run.json",
+    "sha256": "61343b42d36266df63c7bf19115bdb154d1944eb70b7f7243043a071d06465c9",
+    "bytes": 259669,
+    "status": "PASS_BASE_FIRMWARE_READ6_CAPTURE",
+    "driver_pid": 646895,
+    "register_writes": 0,
+    "motion_commands": 0,
+    "manual_power_cut_requested": false,
+    "old_failures_unchanged": true,
+    "stop_verification": "NOT_FULL_17_MOTOR_STOP_VERIFICATION"
+  },
+  "raw_reads": {
+    "count": 6,
+    "right_only": true,
+    "observed_motor7": {
+      "Firmware_Major_Version": 3,
+      "Firmware_Minor_Version": 10,
+      "Phase": 12
+    },
+    "observed_motor8": {
+      "Firmware_Major_Version": 3,
+      "Firmware_Minor_Version": 10,
+      "Phase": 12
+    },
+    "id_address_width_checksum_error0_and_unsigned_payload_verified": true,
+    "output_matches_run_raw": true,
+    "frames": [
+      {
+        "side": "right",
+        "motor_id": 7,
+        "register": "Firmware_Major_Version",
+        "address": 0,
+        "width": 1,
+        "raw_unsigned": 3,
+        "command_sequence": 43,
+        "stdout_member": "read6-evidence-r15/command_0043.stdout",
+        "stdout_sha256": "d45656871baf7e771c73b2e679c7d229fabfd7349e31faf9c40cae8b6e02372d",
+        "stdout_bytes": 274,
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          0,
+          1,
+          7,
+          114
+        ],
+        "rx": [
+          255,
+          255,
+          7,
+          3,
+          0,
+          3,
+          242
+        ]
+      },
+      {
+        "side": "right",
+        "motor_id": 7,
+        "register": "Firmware_Minor_Version",
+        "address": 1,
+        "width": 1,
+        "raw_unsigned": 10,
+        "command_sequence": 62,
+        "stdout_member": "read6-evidence-r15/command_0062.stdout",
+        "stdout_sha256": "3565d13b127114d43e88b4c14ff79e12ce3f6de2dbcd46eef63723a5d2a4306e",
+        "stdout_bytes": 276,
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          1,
+          1,
+          7,
+          113
+        ],
+        "rx": [
+          255,
+          255,
+          7,
+          3,
+          0,
+          10,
+          235
+        ]
+      },
+      {
+        "side": "right",
+        "motor_id": 7,
+        "register": "Phase",
+        "address": 18,
+        "width": 1,
+        "raw_unsigned": 12,
+        "command_sequence": 81,
+        "stdout_member": "read6-evidence-r15/command_0081.stdout",
+        "stdout_sha256": "d029febe4dc2ed24c9aa3950cbbc4083120fe0dfe9cfab6b0ea2148b281be4c5",
+        "stdout_bytes": 260,
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          18,
+          1,
+          7,
+          96
+        ],
+        "rx": [
+          255,
+          255,
+          7,
+          3,
+          0,
+          12,
+          233
+        ]
+      },
+      {
+        "side": "right",
+        "motor_id": 8,
+        "register": "Firmware_Major_Version",
+        "address": 0,
+        "width": 1,
+        "raw_unsigned": 3,
+        "command_sequence": 100,
+        "stdout_member": "read6-evidence-r15/command_0100.stdout",
+        "stdout_sha256": "8a1a207f5346a65ca9926da63bfd600774bdd8bbd4ce438538c40481d220aec2",
+        "stdout_bytes": 274,
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          0,
+          1,
+          8,
+          113
+        ],
+        "rx": [
+          255,
+          255,
+          8,
+          3,
+          0,
+          3,
+          241
+        ]
+      },
+      {
+        "side": "right",
+        "motor_id": 8,
+        "register": "Firmware_Minor_Version",
+        "address": 1,
+        "width": 1,
+        "raw_unsigned": 10,
+        "command_sequence": 119,
+        "stdout_member": "read6-evidence-r15/command_0119.stdout",
+        "stdout_sha256": "1c940bcde211176027d50b81e3b63d73c275c7987e1825edcf49670cd1b11f0b",
+        "stdout_bytes": 276,
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          1,
+          1,
+          8,
+          112
+        ],
+        "rx": [
+          255,
+          255,
+          8,
+          3,
+          0,
+          10,
+          234
+        ]
+      },
+      {
+        "side": "right",
+        "motor_id": 8,
+        "register": "Phase",
+        "address": 18,
+        "width": 1,
+        "raw_unsigned": 12,
+        "command_sequence": 138,
+        "stdout_member": "read6-evidence-r15/command_0138.stdout",
+        "stdout_sha256": "04f4320fcf0b23a0d16ad8c411c6642a4b0fef99d411cf8f848abcdeff3fd4b0",
+        "stdout_bytes": 260,
+        "tx": [
+          255,
+          255,
+          254,
+          5,
+          130,
+          18,
+          1,
+          8,
+          95
+        ],
+        "rx": [
+          255,
+          255,
+          8,
+          3,
+          0,
+          12,
+          232
+        ]
+      }
+    ]
+  },
+  "direct_children": {
+    "count": 156,
+    "unique_pids": 156,
+    "all_reaped": true,
+    "outputs_sha_size_verified": 312,
+    "exit0": 116,
+    "expected_empty_fuser_exit1": 40,
+    "signals_sent": 0,
+    "owner_errors": []
+  },
+  "authorization_binding": {
+    "plan_sha256": "3c78194f6014d46523d86eec49772f98d514e1d40c7a93b710db05fc9b38dd90",
+    "config_sha256": "2b29d86740b490b047844b9b594e3bc2de245cae0092672d48b70f6532061511",
+    "config_bytes": 1923,
+    "field_sha256": "852082bbeec8fec92a7557a9c8c2d7828e451970f66b600a0f1e4f0076a35464",
+    "field_bytes": 640,
+    "field_recorded_at_ns": 1791772464025036000,
+    "go_sha256": "370499711badde765ea2c0f6ba4dfd3a24e60f1aded42e05a5df08fb20b5c7be",
+    "go_bytes": 1190,
+    "go_issued_at_ns": 1791772464025036000,
+    "go_expires_at_ns": 1791773064025036000,
+    "go_lifetime_seconds": 600,
+    "run_completed_within_GO_window": true,
+    "configuration_scope_and_fixed6_match": true,
+    "prep_bindings_path": "target/base_firmware_read_2026-10-11_r15/native-preparation/base_firmware_read6_bindings_r15.json",
+    "prep_binding_sha256": "34c7523c12ecc04c688738afb4dcd03779d819945c4e03e322bad80346eb4326",
+    "prep_binding_bytes": 28968,
+    "prep_binding_refs": 51,
+    "embedded_run_binding_equals_native_prep_binding": true,
+    "full_final_plan_matches_run_plan": true
+  },
+  "nonUART_cleanup": {
+    "run_postflight_checks": 5,
+    "run_postflight_names": [
+      "host",
+      "refs_protection",
+      "tool",
+      "idle",
+      "usb"
+    ],
+    "all_run_postflight_PASS": true,
+    "independent_checks": 17,
+    "independent_children": 23,
+    "all_independent_children_reaped_and_embedded_output_hash_size_equal": true,
+    "formal_file_and_host_before_after_equal": true,
+    "six_services_valid_inactive": true,
+    "same_terminal": "base-firmware-read6-20261011-r15|@81|%81|646895|1|0",
+    "naturally_dead_exit0": true,
+    "only_owned_dead_pane_reclaimed": "%81",
+    "launch_terminal_reclaim_postflight_children_reaped": true
+  },
+  "findings": [],
+  "limits": [
+    "FW3.10与Phase12仅记录轮子自身事实；不证明厂家Mode1零停止语义适用或底盘固件合同通过",
+    "只捕获六次目标SYNC_READ的TX/RX；CLI额外只读握手不计为六个已捕获目标帧",
+    "本轮未读取17电机STOP51，不补记STOP51 PASS或物理轮子停止",
+    "软件8方法不重跑；历史失败、底盘DEFERRED、D15 OPEN/DEFERRED和deployable=false保持"
+  ]
+}
