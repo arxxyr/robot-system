@@ -1,0 +1,28 @@
+{
+  "status": "PASS_ROOT_BASE_ZERO_R3_COMMIT_QUALITY",
+  "root_actual_fmt": {
+    "initial_chunk": "00678b",
+    "session": 78120,
+    "completion_chunk": "c7cc52",
+    "exit_code": 0
+  },
+  "native_commands": 11,
+  "native_streams": 22,
+  "source_files": 597,
+  "source_windows": 3,
+  "source_aggregate": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "root_per_file_source_equal": true,
+  "compiler_windows_equal": true,
+  "compiler_commit": "080cc27146389dbb5c8772c476b1937be9c6110f",
+  "clippy_zero_warnings": true,
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/native-quality/commit-quality-originals-base-zero-r3.tar.gz",
+    "sha256": "8ec6dd5b4f889117e0710868a41578d315bb6e6d998a45d9aeb55f10fef76aba",
+    "bytes": 134607,
+    "files": 53
+  },
+  "owner_reaped": true,
+  "UART": 0,
+  "Rust_tests": 0,
+  "control_ELF_build": 0
+}

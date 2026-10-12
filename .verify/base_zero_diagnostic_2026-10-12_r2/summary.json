@@ -1,6 +1,6 @@
 {
   "schema": "BASE_ZERO_R2_SOFTWARE_PREPARATION_STAGE_V1",
-  "status": "SOFTWARE_READY_HARDWARE_NOT_RUN_NO_GO",
+  "status": "PRESTART_FAIL_USB_ENUMERATION_CHANGED_HARDWARE_NOT_RUN",
   "recorded_at_utc": "2026-10-12T05:09:29.089388+00:00",
   "round": 2,
   "profile_run_id": "base-zero-diagnostic-r1",
@@ -78,10 +78,10 @@
   },
   "launcher_change": "已验-p保留，只换R2独占output/launch/GO/field/PLAN路径，诊断程序不改",
   "historical_gates_reused": "R1同SHA每平台10内存方法、default0/missingGO2、-p纯软件fixture；本轮不重跑，不累计为新方法",
-  "power_state": "OFF_USER_CONFIRMED",
+  "power_state": "ON_USER_REPORTED_BY_NEW_R2_CONFIRMATION",
   "closure_receipt": "../base_zero_diagnostic_2026-10-12_r1/followups/manual-power-cut-confirmation-r1.json",
-  "watch": "R1_ENDED;R2_NOT_AUTHORIZED",
-  "new_GPIO_GO": false,
+  "watch": "R2_ZERO_START_REJECTED;SAME_FIELD_USED_FOR_R3_SINGLE_ATTEMPT",
+  "new_GPIO_GO": true,
   "hardware_actions": 0,
   "UART": 0,
   "hardware_zero_contract": "OPEN",
@@ -90,5 +90,9 @@
   "driver_prior_real_wait": "NOT_OBSERVED",
   "D15": "OPEN/DEFERRED",
   "deployable": false,
-  "next_step": "在新的当次供电/三轮架空稳定支撑/空载机械臂支撑/区域空旷/持续看护立即断电确认后，仅签R2新GO进行一次right9零目标试验；无需USB重插或重复断电。"
+  "next_step": "R2原件保持；R3核当前左枚举三字段后另用新binding/PLAN/GO，仅原一次actual right9诊断。R3后续状态见独立摘要，不由R2推断。",
+  "original_software_stage_status": "SOFTWARE_READY_HARDWARE_NOT_RUN_NO_GO",
+  "execution_followup": "execution-followup/prestart-rejection-r2.json",
+  "go_consumed": false,
+  "actual_tmux_starts": 0
 }

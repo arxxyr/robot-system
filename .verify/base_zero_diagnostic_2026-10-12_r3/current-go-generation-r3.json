@@ -1,0 +1,17 @@
+{
+  "status": "R3_CURRENT_ENUMERATION_NEW_GO_SAME_FIELD_TTL",
+  "field_stamp": 1791782992615353000,
+  "field_expected": [
+    "d76689d74a5ceeff127af556d3182f255d73d07b959a37113be8d7296017f9d8",
+    1766
+  ],
+  "go_expected": [
+    "f883e3bd423dc9256fbfe230c5fe74e731f63b12e020c9f0e9c79819f0baedc5",
+    1781
+  ],
+  "plan_sha256": "aa66be3595a28b645d328fd16018a80478c7f671c0ddc51d0d3b435a8900c454",
+  "issued_at_ns": 1791783280472920000,
+  "expires_at_ns": 1791783592615353000,
+  "field_ttl_extended": false,
+  "actual_hardware_starts_before": 0
+}

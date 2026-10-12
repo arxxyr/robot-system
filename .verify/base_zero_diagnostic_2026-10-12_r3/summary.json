@@ -1,0 +1,132 @@
+{
+  "schema": "BASE_ZERO_R3_STARTUP_FIX_STAGE_V1",
+  "status": "SOFTWARE_STDIN_HOLD_FIX_VERIFIED_HARDWARE_NOT_RUN_MANUAL_CUT_PENDING",
+  "recorded_at_utc": "2026-10-12T05:49:44.915797+00:00",
+  "round": 3,
+  "profile_run_id": "base-zero-diagnostic-r1",
+  "R2_zero_start_refusal": "../base_zero_diagnostic_2026-10-12_r2/execution-followup/prestart-rejection-r2.json",
+  "R2_actual_UART": 0,
+  "R2_rejection_before_record_and_tmux": true,
+  "new_USB_binding": {
+    "left_changed_fields": {
+      "device_inode": 1552,
+      "link_inode": 1555,
+      "usec_initialized": "3536208877616"
+    },
+    "right_changed_fields": {},
+    "binding": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/maintenance_bindings_base_zero_diagnostic_r3.json",
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    },
+    "same_serial_devpath_vendor_product_driver_boot": true,
+    "frozen_refs": 55,
+    "calibration_protection_mode_params_unchanged": true
+  },
+  "software_preparation": {
+    "status": "PASS_BASE_ZERO_R3_NATIVE_SOFTWARE_PREPARATION_ONLY",
+    "direct_children": 1,
+    "actual_PLAN_pid": 654519,
+    "natural_exit0_reaped": true,
+    "reused_fresh_nonUART17": true,
+    "nonUART_children": 23,
+    "new_nonUART_retest_during_prepare": 0,
+    "plan_sha256": "aa66be3595a28b645d328fd16018a80478c7f671c0ddc51d0d3b435a8900c454",
+    "plan_changed": "仅output与左USB三元数据字段，不改candidate/helper/动作合同"
+  },
+  "hardware_attempt": {
+    "tmux_start_requests": 1,
+    "driver_pid": 654721,
+    "driver_window": "@96",
+    "driver_pane": "%96",
+    "actual_motor_candidate_starts": 0,
+    "driver_real_wait_reap": "NOT_OBSERVED",
+    "driver_log": "no such pane: %96\n",
+    "output_run_go_claim_not_created": true,
+    "UART": 0,
+    "motor_register_writes": 0,
+    "STOP51": "NOT_RUN",
+    "zero_diag": "NOT_RUN",
+    "original_START_OBSERVER_FAIL": "PRESERVED",
+    "incident_archive": {
+      "sha256": "8b01f11a8cac886d481950ace224b1cbe8f76de719df699c55c91fe5298d4642",
+      "bytes": 95821,
+      "files": 22
+    }
+  },
+  "stdin_hold_fix": {
+    "change": "同Python正文here-doc改-c保留stdin PTY；body填七pins后整体shell quote；只换R4独占路径",
+    "software_new_c_test": "PASS_FIRST_NEW_C_SOFTWARE_MARKER",
+    "new_marker_driver_pid": 654935,
+    "new_marker_terminal": "@98/%98 natural dead0",
+    "new_marker_option_child": 654938,
+    "collector_children": 6,
+    "inner_option_children": 1,
+    "positive_children_reaped": true,
+    "new_case_started_once": true,
+    "old_case_restarted": false,
+    "old_software_driver_exit": "NOT_OBSERVED",
+    "initial_collector_identity_assertion_FAIL": "PRESERVED_AND_OLD_START_OBSERVE_RECEIPTS_NOT_RECONSTRUCTED",
+    "mechanism_boundary": "与tmux3.2a PTY错误删除逻辑及原R3失败一致；直接历史HUP/内核时间线未采，不宣称所有历史根因闭环",
+    "launcher": "5b5a6e514141edb379491d456e854e5df024e59f2be11af1dda745427e2ca8f1",
+    "starter": "32d5ee207010dd00e6ddb5b150666de86b466fc9d69f1824f2a2e12564f6bd63",
+    "all_new_actual_pins_None": true,
+    "new_hardware_go": false,
+    "new_hardware_preparation": "NOT_RUN_REQUIRES_CURRENT_POWER_AND_USB_ENUMERATION",
+    "native_repro_archive": {
+      "archive_sha256": "f435d6cbf4eca08e3ee820ecf12b80e2f476d61d1a2e58dff52ef11d38cd07df",
+      "archive_bytes": 11224,
+      "archive_files": 20
+    }
+  },
+  "commit_quality": {
+    "status": "PASS_ROOT_BASE_ZERO_R3_COMMIT_QUALITY",
+    "root_actual_fmt": {
+      "initial_chunk": "00678b",
+      "session": 78120,
+      "completion_chunk": "c7cc52",
+      "exit_code": 0
+    },
+    "native_commands": 11,
+    "native_streams": 22,
+    "source_files": 597,
+    "source_windows": 3,
+    "source_aggregate": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "root_per_file_source_equal": true,
+    "compiler_windows_equal": true,
+    "compiler_commit": "080cc27146389dbb5c8772c476b1937be9c6110f",
+    "clippy_zero_warnings": true,
+    "archive": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/native-quality/commit-quality-originals-base-zero-r3.tar.gz",
+      "sha256": "8ec6dd5b4f889117e0710868a41578d315bb6e6d998a45d9aeb55f10fef76aba",
+      "bytes": 134607,
+      "files": 53
+    },
+    "owner_reaped": true,
+    "UART": 0,
+    "Rust_tests": 0,
+    "control_ELF_build": 0
+  },
+  "field": {
+    "question_id": "call_0f14a15eec9443f99ab0f47d4cc623a6",
+    "same_current_user_confirm_used": "R2零启动拒绝后仅原一次R3尝试；未续原600秒现场期限",
+    "latest_direct_power_report": "ON_USER_REPORTED",
+    "current_physical_power": "UNKNOWN_AFTER_MANUAL_CUT_REQUEST",
+    "independent_electrical_telemetry": "UNKNOWN",
+    "manual_cut_confirmation": "PENDING",
+    "watch": "WAITING_FOR_REQUESTED_PHYSICAL_POWER_OFF_CONFIRMATION",
+    "old_GO_status": "EXPIRED_AND_ROUND_TERMINATED_NOT_REUSABLE"
+  },
+  "hardware_base_contract": "OPEN",
+  "base_three_targets": "DEFERRED/NOT_RUN",
+  "legacy_plus_minus50_cause": "OPEN",
+  "head_long_term_params": "OPEN_TEMP_P32_RESTORED16",
+  "left_wrist_long_term_params": "OPEN_TEMP_I1_RESTORED0",
+  "right_H2": "FULL_PASS_PREVIOUS_RUN_ONLY",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "formal_install": false,
+  "services_started": false,
+  "control_ELF_built": false,
+  "next_step": "收到本轮实际断电收尾确认后；下一轮只在当次供电/三轮架空稳定支撑/看护事实后采USB当前枚举并生成新绑定/PLAN/GO，使用已验-c入口做一次right9零目标。原FAIL全部保留，不复用旧GO，不扩大设计。"
+}

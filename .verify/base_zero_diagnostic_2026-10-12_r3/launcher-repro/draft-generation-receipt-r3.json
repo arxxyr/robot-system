@@ -1,0 +1,67 @@
+{
+  "schema": "BASE_ZERO_R3_LAUNCHER_REPRO_DRAFT_V1",
+  "status": "DRAFT_ONLY_AST_BASH_N_PASS_NOT_RUN",
+  "phase": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1",
+  "recipe": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-repro/single_ssh_launcher_repro_r3.draft.sh",
+    "sha256": "1e77f50f97ba15f1e7df4e32c1253920273f6fb5cd38f37073c9274a7ac2ece0",
+    "bytes": 12719
+  },
+  "files": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-repro/new-c.body.py",
+      "sha256": "c23316aad5b2e23733e17cc695bbbfbe5710c960df1d2b751b689b3c1c464d6d",
+      "bytes": 2340
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-repro/new-c.launcher.draft.sh",
+      "sha256": "a267736980f34fd607f7ec4763fc5623ba85e35e2118aaa5e299295840e89f1a",
+      "bytes": 3022
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-repro/old-heredoc.body.py",
+      "sha256": "c7ea962841517f6ec64b2588aff845e3086174c9d22849307971e0b15f3611d5",
+      "bytes": 2352
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-repro/old-heredoc.launcher.draft.sh",
+      "sha256": "feb42e5a606d4429500aeef7d3fba32f04a074fc627cd88de31b1c5a75c9190c",
+      "bytes": 2516
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-repro/single_ssh_launcher_repro_r3.draft.sh",
+      "sha256": "1e77f50f97ba15f1e7df4e32c1253920273f6fb5cd38f37073c9274a7ac2ece0",
+      "bytes": 12719
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-repro/software_driver_body.template.py",
+      "sha256": "00a03dcc8e2ac65fb1268fa8bbbe277b0a1ac0c71c5e22a6b9a1b575331200e1",
+      "bytes": 2224
+    }
+  ],
+  "cases": [
+    {
+      "case": "old-heredoc",
+      "delivery": "heredoc",
+      "phase": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/old-heredoc",
+      "session": "base-zero-launcher-old-heredoc-20261012-r1",
+      "launcher_sha256": "feb42e5a606d4429500aeef7d3fba32f04a074fc627cd88de31b1c5a75c9190c",
+      "launcher_bytes": 2516
+    },
+    {
+      "case": "new-c",
+      "delivery": "python-c",
+      "phase": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/new-c",
+      "session": "base-zero-launcher-new-c-20261012-r1",
+      "launcher_sha256": "a267736980f34fd607f7ec4763fc5623ba85e35e2118aaa5e299295840e89f1a",
+      "launcher_bytes": 3022
+    }
+  ],
+  "single_changed_variable": "Python源交付方式here-doc与-c；body除独占case路径/标签完全相同",
+  "option_call": "单次subprocess.run(tmux set-option -p -t TMUX_PANE remain-on-exit on,check=True)，无前置show-options",
+  "marker": "仅os.execv同Python解释器写纯软件marker，核同driver PID",
+  "context": "两case相同只读fd/env采样，context-before在dup2前持久化；不采密钥或全量env",
+  "execution": "尚未SSH/原生启动；由root审查并运行一次",
+  "no_hardware": "不导入维护/candidate/helper；无GO/binding/UART/服务或参数写入",
+  "newline_AST": "追加AST常量核验确认body/marker/外层save的newline均精确LF；源字节无需修正，未运行fixture。"
+}

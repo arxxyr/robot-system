@@ -1,0 +1,80 @@
+{
+  "status": "PASS_LOCAL_R3_LIVE_DRAFTS_AST_BASH_SYNTAX_ONLY",
+  "profile_run_id": "base-zero-diagnostic-r1",
+  "round": 3,
+  "None_pin_counts": {
+    "launch_base_zero_diagnostic_r3.draft.sh": 7,
+    "start_base_zero_diagnostic_once_r3.draft.sh": 7,
+    "seal_base_zero_diagnostic_r3.draft.sh": 14
+  },
+  "observer_pane_placeholder": "None",
+  "embedded_launcher_exact": true,
+  "syntax_children": [
+    {
+      "name": "launch_base_zero_diagnostic_r3.draft.sh",
+      "pid": 65303,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    },
+    {
+      "name": "start_base_zero_diagnostic_once_r3.draft.sh",
+      "pid": 65304,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    },
+    {
+      "name": "observe_base_zero_diagnostic_once_r3.draft.sh",
+      "pid": 65305,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    },
+    {
+      "name": "seal_base_zero_diagnostic_r3.draft.sh",
+      "pid": 65306,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launch_base_zero_diagnostic_r3.draft.sh",
+      "sha256": "b519078076980dc6e27961d609350d7be9a1efbdb63e9ee47eb22354b1ebe0d3",
+      "bytes": 2091,
+      "derived_from": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/launch_base_zero_diagnostic_r2.draft.sh"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/start_base_zero_diagnostic_once_r3.draft.sh",
+      "sha256": "d5221f1e7a0d06cd2c809bedb489032f32db5cd518b6a487aab6504b34806bcc",
+      "bytes": 10844,
+      "derived_from": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/start_base_zero_diagnostic_once_r2.draft.sh"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/observe_base_zero_diagnostic_once_r3.draft.sh",
+      "sha256": "98bfb6c2e888972b2573ae6f806828c8f740c3a4ed9fd6048df861a69ee503eb",
+      "bytes": 3786,
+      "derived_from": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/observe_base_zero_diagnostic_once_r2.draft.sh"
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/seal_base_zero_diagnostic_r3.draft.sh",
+      "sha256": "b495c2a24fc547bf990e0116db150ea8ef2b88cd5f436bdda5ee8854d6af791d",
+      "bytes": 13780,
+      "derived_from": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/seal_base_zero_diagnostic_r2.draft.sh"
+    }
+  ],
+  "collector_includes_new_GO_consumed": true,
+  "candidate_helper_changed": false,
+  "SSH": false,
+  "UART": 0,
+  "native_recipe_executed_by_this_agent": false,
+  "GO_created": false,
+  "field_created": false,
+  "hardware_started": false
+}

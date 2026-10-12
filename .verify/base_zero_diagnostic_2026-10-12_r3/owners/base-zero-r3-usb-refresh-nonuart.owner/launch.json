@@ -1,0 +1,38 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "WAITING",
+  "status": "RUNNING",
+  "owner_pid": 64700,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 64701,
+  "started_utc": "2026-10-12T05:31:22.625199+00:00",
+  "started_monotonic_ns": 21168474876125,
+  "observe_seconds": 5.0,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/readonly_nonuart17_usb_refresh_r3.sh",
+    "sha256": "67a75fec0406c801e88d7f3df9b13564537da0b10a7c71cd46c9d4e560a5ff59",
+    "bytes": 1817
+  },
+  "launched_utc": "2026-10-12T05:31:22.627169+00:00",
+  "start_new_session": true,
+  "child_session_id": 64701
+}

@@ -2,6 +2,18 @@
 
 ## 当前步骤
 
+### 底盘启动入口修复软件通过，零目标实测仍未运行（2026-10-12，R3已终止）
+
+用户本轮直接确认恢复供电、三轮架空稳定及看护就绪。R2实际starter在USB前置断言拒绝，record/tmux/candidate均未到，UART和电机写0；只读17项/23child核实左侧5A7C121427的serial/devpath/tty/rdev不变，仅device_inode1544→1552、link_inode1547→1555、USEC_INITIALIZED3368981464912→3536208877616，右端全部不变。R3只更新这三字段并使用新独占binding/PLAN，55refs/保护/校准和冻结f59455候选、406295 helper保持。一次PLAN child654519自然0/reap，复用同一17项原件，不重跑或扩大诊断。沿同一人类确认只签新的plan GO，原600秒现场期限没有续期；R2前置FAIL完整保留，[R2追加摘要](../../.verify/base_zero_diagnostic_2026-10-12_r2/summary.json)。
+
+R3仅一次tmux创建回执返回654721/@96/%96，实际launcher七pins逐字核实；但driver.log仅18B `no such pane: %96`，随后observer也失败。output/run/GO.consumed均未创建，结合冻结执行顺序本轮未进入UART和电机操作；零速诊断及STOP51都NOT_RUN。driver后续已未见不等于真实wait/reap，保留NOT_OBSERVED；不将软件入口故障写成零速电机失败或清场PASS。22件原包8b01f11a/95821B及原启动、观察、独审证据永久保留。
+
+此次软件对照补上旧夹具未覆盖的stdio差异：旧here-doc stdin为pipe，stdout/stderr重定向后复现`no such pane: %97`、marker未到；改成同正文`python -c`，stdin保持PTY，新软件driver654935/@98/%98自然dead0、marker同PID，单option child654938自然wait0/ECHILD，六collector child全0/reap，只回收所属软件pane。首collector第31行身份断言FAIL及旧start/observe回执未落盘完整保留，没有重启oldcase；只读收old原件后首次执行new-c。机制与[tmux3.2a PTY错误删除逻辑](https://raw.githubusercontent.com/tmux/tmux/3.2a/window.c)一致，但未采历史直接HUP/内核时间线，不宣称全部历史根因闭环。新软件原包20件/f435d6cb/11224B。future R4 launcher只保留stdin；starter先在Python正文填七pins，再整体shell引用，避免repr单引号破坏-c参数。实际pins全部None，静态引用/独审通过，没有R4 GO、现场准备、UART或硬件动作。
+
+本机实际fmt0及Orin经既定代理最新nightly080更新→fmt→根Clippy0/零警告通过；11质量child/22原流与597输入三窗068277d8逐份同，原生Git894加五dirty，不称Git对齐。没有新Rust测试/release/控制ELF构建、正式安装或服务激活。[R3永久摘要](../../.verify/base_zero_diagnostic_2026-10-12_r3/summary.json)保存软件通过与硬件未运行的分界。
+
+root因进程观察失败已通知现场立即切断两个电机电源并保持机械臂/架空底盘支撑；本轮实际断电确认仍待答，最后直接用户供电报告为ON、当前物理状态及独立遥测UNKNOWN。GO已过期、本轮终止，不复用现场或旧GO，不再硬件重试。下一轮先在当次供电/架空稳定支撑/持续看护确认后核USB当前枚举，再签新binding/PLAN/GO，仅一次right9裸Goal0→Enable→原0/200/400ms三PV→Disable/STOP51；不要求为本软件修复重插USB。长期左腕/头部参数、三轮主动运动/零速合同与旧±50仍OPEN；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。以下全部旧交接字节保留。
+
 ### R2零目标诊断软件准备通过，尚无新GO（2026-10-12）
 
 R1用户已确认两个电机电源切断、机械臂及架空底盘支撑保持，root结束本轮看护；后续回执单独保存，原启动/观察FAIL及driver真实wait/reap未观察到不回填。当前保持断电，以下软件准备未打开电机串口。

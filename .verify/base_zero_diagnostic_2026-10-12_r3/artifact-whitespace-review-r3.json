@@ -1,0 +1,11 @@
+{
+  "status": "SOURCE_DOC_DIFF_CHECK_PASS_RAW_ARTIFACT_BYTES_PRESERVED",
+  "initial_cached_check": {
+    "chunk": "e055d8",
+    "exit_code": 2,
+    "findings": "仅归档script/diff原始尾空白；不清洗/改变原SHA"
+  },
+  "scoped_source_doc_check": "仅CLAUDE/HANDOFF通过，Rust597未变及实际fmt/Clippy通过",
+  "artifact_validation": "manifest中104+66永久字节逐SHA/size覆盖通过",
+  "no_new_test_run": true
+}

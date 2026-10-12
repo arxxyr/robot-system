@@ -1,0 +1,13 @@
+{
+  "status": "PASS_STATIC_R4_STDIN_HOLD_AND_SEVEN_PIN_QUOTING",
+  "launcher_sha256": "5b5a6e514141edb379491d456e854e5df024e59f2be11af1dda745427e2ca8f1",
+  "starter_sha256": "32d5ee207010dd00e6ddb5b150666de86b466fc9d69f1824f2a2e12564f6bd63",
+  "starter_bytes": 11648,
+  "all_actual_pins_None": true,
+  "mock_pin_AST_equal": true,
+  "shell_quote_roundtrip_exact": true,
+  "candidate_changed": false,
+  "UART": 0,
+  "new_GO": false,
+  "native_repro": "PENDING_ORIGINAL_NEGATIVE_OBSERVER_FAIL_PRESERVED"
+}

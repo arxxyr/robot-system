@@ -1,0 +1,323 @@
+{
+  "status": "COLLECTED_OLD_READONLY_NEW_C_FIRST_RESULT",
+  "result": {
+    "schema": "BASE_ZERO_R3_LAUNCHER_REPRO_RESUME_V1",
+    "status": "COLLECTED_OLD_READONLY_NEW_C_FIRST_RESULT",
+    "old_existing_files": [
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/old-heredoc/launcher.sh",
+        "exists": true,
+        "is_symlink": false,
+        "sha256": "feb42e5a606d4429500aeef7d3fba32f04a074fc627cd88de31b1c5a75c9190c",
+        "bytes": 2516,
+        "base64": "IyEvYmluL2Jhc2gKc2V0IC1ldQpleHBvcnQgUFlUSE9ORE9OVFdSSVRFQllURUNPREU9MQpleGVjIC9ob21lL2xvb3Nxay8ubG9jYWwvc2hhcmUvdXYvcHl0aG9uL2NweXRob24tMy4xMi4xMy1saW51eC1hYXJjaDY0LWdudS9iaW4vcHl0aG9uMyAtIDw8J1BZTEFVTkNIJwppbXBvcnQgZXJybm8sanNvbixvcyxzdWJwcm9jZXNzLHN5cyx0aW1lCmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aApDQVNFPVBhdGgoJy9ob21lL2xvb3Nxay9yb2JvdC1jaGVja3MvYmFzZS16ZXJvLXIzLWxhdW5jaGVyLXJlcHJvLTIwMjYxMDEyLXIxL29sZC1oZXJlZG9jJykKUFlUSE9OPScvaG9tZS9sb29zcWsvLmxvY2FsL3NoYXJlL3V2L3B5dGhvbi9jcHl0aG9uLTMuMTIuMTMtbGludXgtYWFyY2g2NC1nbnUvYmluL3B5dGhvbjMnCmFzc2VydCBDQVNFLmlzX2Fic29sdXRlKCkgYW5kIENBU0UuaXNfZGlyKCkKY29udGV4dD17J3Njb3BlJzonU09GVFdBUkVfT05MWV9MQVVOQ0hFUl9SRVBSTycsJ2RyaXZlcl9waWQnOm9zLmdldHBpZCgpLCdwcGlkJzpvcy5nZXRwcGlkKCksJ2Nhc2UnOidvbGQtaGVyZWRvYycsJ3N0YXJ0ZWRfbnMnOnRpbWUudGltZV9ucygpLCdjd2QnOm9zLmdldGN3ZCgpLCdlbnYnOntrZXk6b3MuZW52aXJvbi5nZXQoa2V5KSBmb3Iga2V5IGluICgnVE1VWCcsJ1RNVVhfUEFORScsJ1RNVVhfVE1QRElSJywnVEVSTScsJ1BBVEgnKX0sJ2ZkX2JlZm9yZSc6e3N0cihmZCk6eyd0YXJnZXQnOm9zLnJlYWRsaW5rKCcvcHJvYy9zZWxmL2ZkLycrc3RyKGZkKSksJ2lzYXR0eSc6b3MuaXNhdHR5KGZkKSwnbW9kZSc6b3MuZnN0YXQoZmQpLnN0X21vZGV9IGZvciBmZCBpbiAoMCwxLDIpfX0Kd2l0aCAoQ0FTRS8nY29udGV4dC1iZWZvcmUuanNvbicpLm9wZW4oJ3gnKSBhcyBzdHJlYW06anNvbi5kdW1wKGNvbnRleHQsc3RyZWFtLGVuc3VyZV9hc2NpaT1GYWxzZSxpbmRlbnQ9Mik7c3RyZWFtLndyaXRlKCdcbicpCmxvZz1vcy5vcGVuKHN0cihDQVNFLydkcml2ZXIubG9nJyksb3MuT19XUk9OTFl8b3MuT19DUkVBVHxvcy5PX0VYQ0wsMG82MDApCm9zLmR1cDIobG9nLDEpO29zLmR1cDIobG9nLDIpO29zLmNsb3NlKGxvZykKcmVhbF9wb3Blbj1zdWJwcm9jZXNzLlBvcGVuCmNoaWxkcmVuPVtdCmRlZiByZWNvcmRpbmdfcG9wZW4oKmFyZ3MsKiprd2FyZ3MpOgogY2hpbGQ9cmVhbF9wb3BlbigqYXJncywqKmt3YXJncyk7Y2hpbGRyZW4uYXBwZW5kKChjaGlsZCx0aW1lLnRpbWVfbnMoKSkpO3JldHVybiBjaGlsZApzdWJwcm9jZXNzLlBvcGVuPXJlY29yZGluZ19wb3Blbgpyb3c9eydzY29wZSc6J1NPRlRXQVJFX09OTFlfTEFVTkNIRVJfUkVQUk8nLCdkcml2ZXJfcGlkJzpvcy5nZXRwaWQoKSwncGFuZSc6b3MuZW52aXJvblsnVE1VWF9QQU5FJ10sJ2FmdGVyX29wdGlvbl9yZWFjaGVkJzpGYWxzZSwnY2hpbGRyZW4nOltdLCdmZF9hZnRlcic6e3N0cihmZCk6eyd0YXJnZXQnOm9zLnJlYWRsaW5rKCcvcHJvYy9zZWxmL2ZkLycrc3RyKGZkKSksJ2lzYXR0eSc6b3MuaXNhdHR5KGZkKX0gZm9yIGZkIGluICgwLDEsMil9LCdVQVJUJzowLCdHTyc6RmFsc2UsJ2hhcmR3YXJlX2NhbmRpZGF0ZV9zdGFydGVkJzpGYWxzZX0KdHJ5Ogogc3VicHJvY2Vzcy5ydW4oWyd0bXV4Jywnc2V0LW9wdGlvbicsJy1wJywnLXQnLG9zLmVudmlyb25bJ1RNVVhfUEFORSddLCdyZW1haW4tb24tZXhpdCcsJ29uJ10sY2hlY2s9VHJ1ZSkKIHJvd1snYWZ0ZXJfb3B0aW9uX3JlYWNoZWQnXT1UcnVlCmZpbmFsbHk6CiBzdWJwcm9jZXNzLlBvcGVuPXJlYWxfcG9wZW4KIGZvciBjaGlsZCxzdGFydGVkIGluIGNoaWxkcmVuOgogIHJldHVybmVkPWNoaWxkLndhaXQoKTtyZWFwZWQ9RmFsc2UKICB0cnk6b3Mud2FpdHBpZChjaGlsZC5waWQsb3MuV05PSEFORykKICBleGNlcHQgQ2hpbGRQcm9jZXNzRXJyb3IgYXMgZXJyb3I6cmVhcGVkPWVycm9yLmVycm5vPT1lcnJuby5FQ0hJTEQKICByb3dbJ2NoaWxkcmVuJ10uYXBwZW5kKHsnYXJndic6Y2hpbGQuYXJncywncGlkJzpjaGlsZC5waWQsJ3N0YXJ0ZWRfbnMnOnN0YXJ0ZWQsJ3dhaXRfcmV0dXJuY29kZSc6cmV0dXJuZWQsJ2V4aXRfY29kZSc6cmV0dXJuZWQsJ3JlYXBlZCc6cmVhcGVkLCdzaWduYWxzX3NlbnQnOltdfSkKIHJvd1snZmluaXNoZWRfbnMnXT10aW1lLnRpbWVfbnMoKQogd2l0aCAoQ0FTRS8nZHJpdmVyLXJlY2VpcHQuanNvbicpLm9wZW4oJ3gnKSBhcyBzdHJlYW06anNvbi5kdW1wKHJvdyxzdHJlYW0sZW5zdXJlX2FzY2lpPUZhbHNlLGluZGVudD0yKTtzdHJlYW0ud3JpdGUoJ1xuJykKbWFya2VyPSJpbXBvcnQganNvbixvcztmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGg7UGF0aCgiK3JlcHIoc3RyKENBU0UvJ21hcmtlci5qc29uJykpKyIpLndyaXRlX3RleHQoanNvbi5kdW1wcyh7J3N0YXR1cyc6J1NPRlRXQVJFX09OTFlfUkVBQ0hFRCcsJ3BpZCc6b3MuZ2V0cGlkKCksJ1VBUlQnOjAsJ0dPJzpGYWxzZX0pKydcXG4nKSIKb3MuZXhlY3YoUFlUSE9OLFtQWVRIT04sJy1jJyxtYXJrZXJdKQpQWUxBVU5DSAo="
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/old-heredoc/context-before.json",
+        "exists": true,
+        "is_symlink": false,
+        "sha256": "bc120ba0048a4a62063d9d9d4b13b06a0d33a522fc69f0519427d4062be17fa3",
+        "bytes": 716,
+        "base64": "ewogICJzY29wZSI6ICJTT0ZUV0FSRV9PTkxZX0xBVU5DSEVSX1JFUFJPIiwKICAiZHJpdmVyX3BpZCI6IDY1NDg4OCwKICAicHBpZCI6IDUyOTY5NSwKICAiY2FzZSI6ICJvbGQtaGVyZWRvYyIsCiAgInN0YXJ0ZWRfbnMiOiAxNzkxNzgzODExNjIyNTE3NDc2LAogICJjd2QiOiAiL2hvbWUvbG9vc3FrIiwKICAiZW52IjogewogICAgIlRNVVgiOiAiL3RtcC90bXV4LTEwMDAvZGVmYXVsdCw1Mjk2OTUsNjEiLAogICAgIlRNVVhfUEFORSI6ICIlOTciLAogICAgIlRNVVhfVE1QRElSIjogbnVsbCwKICAgICJURVJNIjogInNjcmVlbiIsCiAgICAiUEFUSCI6ICIvdXNyL2xvY2FsL3NiaW46L3Vzci9sb2NhbC9iaW46L3Vzci9zYmluOi91c3IvYmluOi9zYmluOi9iaW46L3Vzci9nYW1lczovdXNyL2xvY2FsL2dhbWVzOi9zbmFwL2JpbiIKICB9LAogICJmZF9iZWZvcmUiOiB7CiAgICAiMCI6IHsKICAgICAgInRhcmdldCI6ICJwaXBlOls4NjE5ODU2XSIsCiAgICAgICJpc2F0dHkiOiBmYWxzZSwKICAgICAgIm1vZGUiOiA0NDgwCiAgICB9LAogICAgIjEiOiB7CiAgICAgICJ0YXJnZXQiOiAiL2Rldi9wdHMvMCIsCiAgICAgICJpc2F0dHkiOiB0cnVlLAogICAgICAibW9kZSI6IDg1OTIKICAgIH0sCiAgICAiMiI6IHsKICAgICAgInRhcmdldCI6ICIvZGV2L3B0cy8wIiwKICAgICAgImlzYXR0eSI6IHRydWUsCiAgICAgICJtb2RlIjogODU5MgogICAgfQogIH0KfQo=",
+        "value": {
+          "scope": "SOFTWARE_ONLY_LAUNCHER_REPRO",
+          "driver_pid": 654888,
+          "ppid": 529695,
+          "case": "old-heredoc",
+          "started_ns": 1791783811622517476,
+          "cwd": "/home/loosqk",
+          "env": {
+            "TMUX": "/tmp/tmux-1000/default,529695,61",
+            "TMUX_PANE": "%97",
+            "TMUX_TMPDIR": null,
+            "TERM": "screen",
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+          },
+          "fd_before": {
+            "0": {
+              "target": "pipe:[8619856]",
+              "isatty": false,
+              "mode": 4480
+            },
+            "1": {
+              "target": "/dev/pts/0",
+              "isatty": true,
+              "mode": 8592
+            },
+            "2": {
+              "target": "/dev/pts/0",
+              "isatty": true,
+              "mode": 8592
+            }
+          }
+        }
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/old-heredoc/driver.log",
+        "exists": true,
+        "is_symlink": false,
+        "sha256": "0b831972cac88aa1454e43cff4256fa41a5d6569b85b4541717f8209b1694bc3",
+        "bytes": 18,
+        "base64": "bm8gc3VjaCBwYW5lOiAlOTcK"
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/old-heredoc/driver-receipt.json",
+        "exists": false,
+        "is_symlink": false
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/old-heredoc/marker.json",
+        "exists": false,
+        "is_symlink": false
+      },
+      {
+        "path": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/old-heredoc/case-result.json",
+        "exists": false,
+        "is_symlink": false
+      }
+    ],
+    "old_readonly_current_metadata": {
+      "observed_ns": 1791784038376763869,
+      "old_driver_pid_from_saved_context": 654888,
+      "old_driver_proc_exists": false,
+      "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+      "collector_env": {
+        "TMUX": null,
+        "TMUX_PANE": null,
+        "TMUX_TMPDIR": null,
+        "TERM": null,
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+      },
+      "original_old_start_observe_receipts": "NOT_PERSISTED_AND_NOT_RECONSTRUCTED",
+      "original_collector_exit": 1,
+      "old_driver_wait_reap": "NOT_OBSERVED",
+      "current_outer_tmux_list": {
+        "name": "old-readonly-list-panes",
+        "argv": [
+          "tmux",
+          "list-panes",
+          "-a",
+          "-F",
+          "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+        ],
+        "pid": 654933,
+        "started_ns": 1791784038376951363,
+        "finished_ns": 1791784038380707805,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "position-quality-20261010-r1|@43|%43|616124|1|0\nrobot-h2-20261009-proxy-r1|@0|%0|529696|1|1\nrobot-h2-20261009-proxy-r1|@1|%1|530005|1|0\nrobot-h2-20261009-proxy-r1|@2|%2|534841|1|0\nrobot-h2-20261009-proxy-r1|@3|%3|535072|1|0\nrobot-h2-20261009-proxy-r1|@6|%6|542875|1|0\nrobot-h2-20261009-proxy-r1|@7|%7|543217|1|0\nrobot-h2-20261009-proxy-r1|@8|%8|543615|1|0\nrobot-h2-20261009-proxy-r1|@9|%9|543871|1|0\nrobot-h2-20261009-proxy-r1|@10|%10|545014|1|0\nrobot-h2-20261009-proxy-r1|@11|%11|545181|1|0\nrobot-h2-20261009-proxy-r1|@12|%12|547008|1|2\nrobot-h2-20261009-proxy-r1|@13|%13|547357|1|1\nrobot-h2-20261009-proxy-r1|@14|%14|562861|1|0\nrobot-h2-20261009-proxy-r1|@15|%15|563087|1|1\nrobot-h2-20261009-proxy-r1|@16|%16|563267|1|1\nrobot-h2-20261009-proxy-r1|@17|%17|564208|1|1\nrobot-h2-20261009-proxy-r1|@18|%18|564363|1|0\nrobot-h2-20261009-proxy-r1|@19|%19|565132|1|0\nrobot-h2-20261009-proxy-r1|@20|%20|567615|1|0\nrobot-h2-20261009-proxy-r1|@21|%21|568165|1|1\nrobot-h2-20261009-proxy-r1|@22|%22|589037|1|0\nrobot-h2-20261009-proxy-r1|@23|%23|593932|1|0\nrobot-h2-20261009-proxy-r1|@24|%24|594399|1|0\nrobot-h2-20261009-proxy-r1|@36|%36|595541|1|0\nrobot-h2-20261009-proxy-r1|@37|%37|599482|1|0\nrobot-h2-20261009-proxy-r1|@38|%38|604407|1|0\nrobot-h2-20261009-proxy-r1|@39|%39|605045|1|0\n",
+        "stderr": "",
+        "persisted_receipt": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/resume-collector-r1/commands/001-old-readonly-list-panes.json"
+      }
+    },
+    "new_c_first_result": {
+      "case": "new-c",
+      "scope": "SOFTWARE_ONLY_FIRST_EXECUTION",
+      "status": "OBSERVED_NATURAL_DEAD",
+      "terminal": "base-zero-launcher-new-c-20261012-r1|@98|%98|654935|1|0",
+      "driver_exit": 0,
+      "reclaimed": true,
+      "signals_sent": [],
+      "UART": 0,
+      "GO": false,
+      "first_start": {
+        "name": "new-c-first-start",
+        "argv": [
+          "tmux",
+          "new-session",
+          "-d",
+          "-s",
+          "base-zero-launcher-new-c-20261012-r1",
+          "-P",
+          "-F",
+          "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}",
+          "bash /home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/new-c/launcher.sh"
+        ],
+        "pid": 654934,
+        "started_ns": 1791784038389723168,
+        "finished_ns": 1791784038395153744,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "base-zero-launcher-new-c-20261012-r1|@98|%98|654935\n",
+        "stderr": "",
+        "persisted_receipt": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/resume-collector-r1/commands/002-new-c-first-start.json"
+      },
+      "window": "@98",
+      "pane": "%98",
+      "driver_pid": 654935,
+      "reclaim": {
+        "name": "new-c-reclaim-only-owned-natural-dead",
+        "argv": [
+          "tmux",
+          "kill-pane",
+          "-t",
+          "%98"
+        ],
+        "pid": 654942,
+        "started_ns": 1791784038515860815,
+        "finished_ns": 1791784038518425506,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "",
+        "stderr": "",
+        "persisted_receipt": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/resume-collector-r1/commands/006-new-c-reclaim-only-owned-natural-dead.json"
+      },
+      "driver_proc_exists_after_observation": false,
+      "software_checks": {
+        "natural_dead_exit0": true,
+        "same_driver_pid_marker": true,
+        "driver_receipt_matches": true,
+        "single_option_exit0_reaped": true
+      },
+      "software_result": "PASS_FIRST_NEW_C_SOFTWARE_MARKER"
+    },
+    "direct_children": [
+      {
+        "name": "old-readonly-list-panes",
+        "argv": [
+          "tmux",
+          "list-panes",
+          "-a",
+          "-F",
+          "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+        ],
+        "pid": 654933,
+        "started_ns": 1791784038376951363,
+        "finished_ns": 1791784038380707805,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "position-quality-20261010-r1|@43|%43|616124|1|0\nrobot-h2-20261009-proxy-r1|@0|%0|529696|1|1\nrobot-h2-20261009-proxy-r1|@1|%1|530005|1|0\nrobot-h2-20261009-proxy-r1|@2|%2|534841|1|0\nrobot-h2-20261009-proxy-r1|@3|%3|535072|1|0\nrobot-h2-20261009-proxy-r1|@6|%6|542875|1|0\nrobot-h2-20261009-proxy-r1|@7|%7|543217|1|0\nrobot-h2-20261009-proxy-r1|@8|%8|543615|1|0\nrobot-h2-20261009-proxy-r1|@9|%9|543871|1|0\nrobot-h2-20261009-proxy-r1|@10|%10|545014|1|0\nrobot-h2-20261009-proxy-r1|@11|%11|545181|1|0\nrobot-h2-20261009-proxy-r1|@12|%12|547008|1|2\nrobot-h2-20261009-proxy-r1|@13|%13|547357|1|1\nrobot-h2-20261009-proxy-r1|@14|%14|562861|1|0\nrobot-h2-20261009-proxy-r1|@15|%15|563087|1|1\nrobot-h2-20261009-proxy-r1|@16|%16|563267|1|1\nrobot-h2-20261009-proxy-r1|@17|%17|564208|1|1\nrobot-h2-20261009-proxy-r1|@18|%18|564363|1|0\nrobot-h2-20261009-proxy-r1|@19|%19|565132|1|0\nrobot-h2-20261009-proxy-r1|@20|%20|567615|1|0\nrobot-h2-20261009-proxy-r1|@21|%21|568165|1|1\nrobot-h2-20261009-proxy-r1|@22|%22|589037|1|0\nrobot-h2-20261009-proxy-r1|@23|%23|593932|1|0\nrobot-h2-20261009-proxy-r1|@24|%24|594399|1|0\nrobot-h2-20261009-proxy-r1|@36|%36|595541|1|0\nrobot-h2-20261009-proxy-r1|@37|%37|599482|1|0\nrobot-h2-20261009-proxy-r1|@38|%38|604407|1|0\nrobot-h2-20261009-proxy-r1|@39|%39|605045|1|0\n",
+        "stderr": "",
+        "persisted_receipt": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/resume-collector-r1/commands/001-old-readonly-list-panes.json"
+      },
+      {
+        "name": "new-c-first-start",
+        "argv": [
+          "tmux",
+          "new-session",
+          "-d",
+          "-s",
+          "base-zero-launcher-new-c-20261012-r1",
+          "-P",
+          "-F",
+          "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}",
+          "bash /home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/new-c/launcher.sh"
+        ],
+        "pid": 654934,
+        "started_ns": 1791784038389723168,
+        "finished_ns": 1791784038395153744,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "base-zero-launcher-new-c-20261012-r1|@98|%98|654935\n",
+        "stderr": "",
+        "persisted_receipt": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/resume-collector-r1/commands/002-new-c-first-start.json"
+      },
+      {
+        "name": "new-c-observe",
+        "argv": [
+          "tmux",
+          "display-message",
+          "-p",
+          "-t",
+          "%98",
+          "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+        ],
+        "pid": 654937,
+        "started_ns": 1791784038397878152,
+        "finished_ns": 1791784038400878633,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "base-zero-launcher-new-c-20261012-r1|@98|%98|654935|0|\n",
+        "stderr": "",
+        "persisted_receipt": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/resume-collector-r1/commands/003-new-c-observe.json"
+      },
+      {
+        "name": "new-c-observe",
+        "argv": [
+          "tmux",
+          "display-message",
+          "-p",
+          "-t",
+          "%98",
+          "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+        ],
+        "pid": 654939,
+        "started_ns": 1791784038453888123,
+        "finished_ns": 1791784038457072066,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "base-zero-launcher-new-c-20261012-r1|@98|%98|654935|0|\n",
+        "stderr": "",
+        "persisted_receipt": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/resume-collector-r1/commands/004-new-c-observe.json"
+      },
+      {
+        "name": "new-c-observe",
+        "argv": [
+          "tmux",
+          "display-message",
+          "-p",
+          "-t",
+          "%98",
+          "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+        ],
+        "pid": 654941,
+        "started_ns": 1791784038509847885,
+        "finished_ns": 1791784038513064117,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "base-zero-launcher-new-c-20261012-r1|@98|%98|654935|1|0\n",
+        "stderr": "",
+        "persisted_receipt": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/resume-collector-r1/commands/005-new-c-observe.json"
+      },
+      {
+        "name": "new-c-reclaim-only-owned-natural-dead",
+        "argv": [
+          "tmux",
+          "kill-pane",
+          "-t",
+          "%98"
+        ],
+        "pid": 654942,
+        "started_ns": 1791784038515860815,
+        "finished_ns": 1791784038518425506,
+        "exit_code": 0,
+        "wait_returncode": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "",
+        "stderr": "",
+        "persisted_receipt": "/home/loosqk/robot-checks/base-zero-r3-launcher-repro-20261012-r1/resume-collector-r1/commands/006-new-c-reclaim-only-owned-natural-dead.json"
+      }
+    ],
+    "old_case_restarted": false,
+    "new_c_option_retried": false,
+    "UART": 0,
+    "GO": false,
+    "hardware_candidate_started": false,
+    "limitations": [
+      "原collector line31身份断言FAIL保留；旧start/observe回执未持久化，不补造",
+      "本次old只读快照不补原driver wait/reap、终态或因果",
+      "PTY假设需两次原件事实独立分析；observer控制FAIL不能单独证明根因",
+      "collection退出0不等于oldcase或new-c软件测试PASS；new-c失败不自动重试"
+    ]
+  },
+  "archive_sha256": "f435d6cbf4eca08e3ee820ecf12b80e2f476d61d1a2e58dff52ef11d38cd07df",
+  "archive_bytes": 11224,
+  "archive_files": 20
+}

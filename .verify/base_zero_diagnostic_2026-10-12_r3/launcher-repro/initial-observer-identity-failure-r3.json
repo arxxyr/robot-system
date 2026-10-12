@@ -1,0 +1,59 @@
+{
+  "status": "FAIL_INITIAL_SOFTWARE_COLLECTOR_EXPECTED_IDENTITY",
+  "owner": {
+    "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+    "phase": "REAPED",
+    "status": "FAIL",
+    "owner_pid": 66629,
+    "command": [
+      "ssh",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "StrictHostKeyChecking=yes",
+      "-o",
+      "ConnectTimeout=15",
+      "robot",
+      "bash",
+      "-s"
+    ],
+    "pid": 66630,
+    "started_utc": "2026-10-12T05:43:30.256833+00:00",
+    "started_monotonic_ns": 21896101360166,
+    "observe_seconds": 5.0,
+    "wait_returncode": 1,
+    "reaped": true,
+    "owner_sent_signals": [],
+    "received_signals": {},
+    "errors": [],
+    "observations": 1,
+    "remote_state": "NOT_VERIFIED",
+    "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+    "input": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-repro/single_ssh_launcher_repro_r3.draft.sh",
+      "sha256": "1e77f50f97ba15f1e7df4e32c1253920273f6fb5cd38f37073c9274a7ac2ece0",
+      "bytes": 12719
+    },
+    "launched_utc": "2026-10-12T05:43:30.258764+00:00",
+    "start_new_session": true,
+    "child_session_id": 66630,
+    "child_end_class": "EXIT_STATUS",
+    "child_signal": null,
+    "finished_utc": "2026-10-12T05:43:31.703903+00:00",
+    "observed_utc": "2026-10-12T05:43:31.701658+00:00",
+    "elapsed_ns": 1446998834,
+    "log_bytes_observed": 89,
+    "log": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r3-launcher-pure-repro.owner/child.log",
+      "sha256": "f72b5dc3df5e7d755fb257bbb3d786eeccf3cc2f0bba2cbfe4423a5b58908f63",
+      "bytes": 89
+    }
+  },
+  "original_log": "Traceback (most recent call last):\n  File \"<stdin>\", line 31, in <module>\nAssertionError\n",
+  "old_case": "START_REACHED_BEFORE_IDENTITY_ASSERTION",
+  "old_driver_actual_exit": "UNKNOWN",
+  "old_start_observe_child_original_receipts": "NOT_PERSISTED_BEFORE_ASSERTION",
+  "new_c_case": "NOT_REACHED_BY_INITIAL_RECIPE",
+  "hardware": 0,
+  "root_first_extract_assertion": "73d56c/exit1因ownerFAIL拒绝解析，不补造fixturePASS"
+}

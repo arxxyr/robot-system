@@ -1,0 +1,123 @@
+{
+  "status": "R3_STARTUP_INCIDENT_ORIGINALS_READONLY_COLLECTED",
+  "sha256": "8b01f11a8cac886d481950ace224b1cbe8f76de719df699c55c91fe5298d4642",
+  "bytes": 95821,
+  "files": 22,
+  "manifest": [
+    {
+      "path": "maintenance_bindings_base_zero_diagnostic_r3.json",
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    },
+    {
+      "path": "full-plan-only-r3.stdout",
+      "sha256": "28f7bf60eab714204110aad93e5734c750c30ae451e212aab9db8765db41d9fd",
+      "bytes": 38231
+    },
+    {
+      "path": "full-plan-only-r3.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "full-plan-only-r3.receipt.json",
+      "sha256": "d29e5f7d16a2e07cfdf885b9f1842b16eafb92a57afd04999b950a523c0264ac",
+      "bytes": 1534
+    },
+    {
+      "path": "prepare-result-base-zero-r3.json",
+      "sha256": "166d327b5e50615f3329e135447a24cc1f62ce6cfcfc14752cf7e3f30b873ff1",
+      "bytes": 5112
+    },
+    {
+      "path": "usb-stat-before-r3.json",
+      "sha256": "57b452b4a524fd8386795e830f162bb4b93f3aceea6b0422d0e4b1bd647a0e7b",
+      "bytes": 558
+    },
+    {
+      "path": "usb-stat-after-r3.json",
+      "sha256": "57b452b4a524fd8386795e830f162bb4b93f3aceea6b0422d0e4b1bd647a0e7b",
+      "bytes": 558
+    },
+    {
+      "path": "usb-refresh-nonuart-r3.stdout",
+      "sha256": "f497a4b2b49d94428096419cc24d034ee86913f8e6462408acd768ea28ada06e",
+      "bytes": 176291
+    },
+    {
+      "path": "usb-refresh-nonuart-r3.receipt.json",
+      "sha256": "6533a306d71958a3cfb9ed39c721b77de6c0ec67873deacdaed1de63663c1709",
+      "bytes": 584
+    },
+    {
+      "path": "usb-refresh-nonuart-r3.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "field_confirmation_base_zero_r3.json",
+      "sha256": "d76689d74a5ceeff127af556d3182f255d73d07b959a37113be8d7296017f9d8",
+      "bytes": 1766
+    },
+    {
+      "path": "base-zero-diagnostic-r3.go.json",
+      "sha256": "f883e3bd423dc9256fbfe230c5fe74e731f63b12e020c9f0e9c79819f0baedc5",
+      "bytes": 1781
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/driver.log",
+      "sha256": "e5be51c7ff0682c81ba92037cf699ccece23674aa314dd99acd06e31270de355",
+      "bytes": 18
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/launch_base_zero_diagnostic_r3.sh",
+      "sha256": "c78dc05a8914cdd880f86719337356002013a343f5dbfef5d747ccdac8a6299b",
+      "bytes": 2520
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/launch_base_zero_diagnostic_r3.sh.tmux-receipt.json",
+      "sha256": "233b5d56ab9adcf29511b5eb01ba4a19bc420906394c531a7f922885c0e1034c",
+      "bytes": 611
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/motor-pane.txt",
+      "sha256": "0fe4dc0d8b9d3e29f648534a4c4e0cdbfaa0cfec628661e81ed059cbf352b399",
+      "bytes": 54
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/nonuart-before-motor.receipt.json",
+      "sha256": "cbea85b3185029d5b64127e279e2f386a6c340e45ea073fb835bd3d4495dd055",
+      "bytes": 301
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/nonuart-before-motor.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/nonuart-before-motor.stdout",
+      "sha256": "6f673679d183f03717bf1858f49167073cbb5b9957b8a70c28b8c6be17db4074",
+      "bytes": 176291
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/observer-event-base-zero-r3/observer-654755.channel",
+      "sha256": "33c549bdcb5392e4a36987fd52eb8b096c6b5e1fdfb0f5e93187ed56d0210556",
+      "bytes": 46
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/observer-event-base-zero-r3/pane.txt",
+      "sha256": "d00a6f1712ce47dfdeff4e22ee10f9ec7fd43c734b7d7f38f12b9c27400d4a99",
+      "bytes": 15
+    },
+    {
+      "path": "base-zero-diagnostic-launch-r3/start_receipt_base_zero_r3.json",
+      "sha256": "9e7959fbb782ccba3660b20d2eb43f8e268bcabe8645ee9b4fbef8d3efa450ad",
+      "bytes": 1196
+    }
+  ],
+  "run_exists": false,
+  "go_consumed_exists": false,
+  "new_UART": 0,
+  "new_GO": false,
+  "new_writes": 0
+}

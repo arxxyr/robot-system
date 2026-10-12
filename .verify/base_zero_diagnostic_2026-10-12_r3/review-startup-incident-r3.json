@@ -1,0 +1,186 @@
+{
+  "schema": "BASE_ZERO_R3_INDEPENDENT_STARTUP_INCIDENT_REVIEW_V1",
+  "status": "READ_ONLY_REVIEW_FAIL_ORIGINALS_PRESERVED",
+  "reviewer_task": "base_zero_r2_prepare",
+  "evidence": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/readonly-startup-incident-result-r3.json",
+      "sha256": "9e2c7116fdba489290fd15dc521521d5c4e68588f16a491bfa5f310780418c82",
+      "bytes": 6222
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/start_base_zero_diagnostic_once_r3.actual.sh",
+      "sha256": "6fc277846c486a915d9090b8e3d4d574db7f9e597d96cf5ff5c648226d63c4c2",
+      "bytes": 11273
+    }
+  ],
+  "actual_launcher": {
+    "sha256": "c78dc05a8914cdd880f86719337356002013a343f5dbfef5d747ccdac8a6299b",
+    "bytes": 2520,
+    "template_SHA": "b519078076980dc6e27961d609350d7be9a1efbdb63e9ee47eb22354b1ebe0d3",
+    "seven_pins_filled_exactly_once": true,
+    "reconstructed_from_template_and_actual_starter_byte_equal": true,
+    "all_seven_AST_values_match": true,
+    "pin_checks": [
+      {
+        "pin": "FIELD_EXPECTED",
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/field_confirmation_base_zero_r3.json",
+        "sha256": "d76689d74a5ceeff127af556d3182f255d73d07b959a37113be8d7296017f9d8",
+        "bytes": 1766,
+        "matches": true
+      },
+      {
+        "pin": "GO_EXPECTED",
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/base-zero-diagnostic-r3.go.json",
+        "sha256": "f883e3bd423dc9256fbfe230c5fe74e731f63b12e020c9f0e9c79819f0baedc5",
+        "bytes": 1781,
+        "matches": true
+      },
+      {
+        "pin": "BINDING_EXPECTED",
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/native-preparation/maintenance_bindings_base_zero_diagnostic_r3.json",
+        "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+        "bytes": 30051,
+        "matches": true
+      },
+      {
+        "pin": "PLAN_EXPECTED",
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/native-preparation/full-plan-only-r3.stdout",
+        "sha256": "28f7bf60eab714204110aad93e5734c750c30ae451e212aab9db8765db41d9fd",
+        "bytes": 38231,
+        "matches": true
+      },
+      {
+        "pin": "NATIVE_PREPARATION_EXPECTED",
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/native-preparation/prepare-result-base-zero-r3.json",
+        "sha256": "166d327b5e50615f3329e135447a24cc1f62ce6cfcfc14752cf7e3f30b873ff1",
+        "bytes": 5112,
+        "matches": true
+      },
+      {
+        "pin": "PLAN_CANONICAL_SHA",
+        "value": "aa66be3595a28b645d328fd16018a80478c7f671c0ddc51d0d3b435a8900c454",
+        "matches": true
+      },
+      {
+        "pin": "FIELD_STAMP",
+        "value": 1791782992615353000,
+        "matches_go_both_sides": true
+      }
+    ]
+  },
+  "actual_facts": {
+    "tmux_start_from_root": "base-zero-diagnostic-trial-20261012-r3 @96 %96 654721,tmux-start exit0",
+    "driver_log": {
+      "bytes": 18,
+      "sha256": "e5be51c7ff0682c81ba92037cf699ccece23674aa314dd99acd06e31270de355",
+      "exact_text": "no such pane: %96\n"
+    },
+    "output_exists": false,
+    "run_exists": false,
+    "GO_consumed_exists": false,
+    "driver_proc_exists_at_readonly_sample": false,
+    "driver_real_wait_reap": "NOT_OBSERVED_NO_PARENT_WAIT_OR_TMUX_TERMINAL_STATUS",
+    "candidate_execution": "NOT_REACHED_BY_RECORDED_LAUNCHER_ORDER",
+    "UART_operations": 0,
+    "motor_writes": 0,
+    "actual_startup_status": "FAIL",
+    "actual_observation_status": "FAIL"
+  },
+  "order_comparison": {
+    "actual": [
+      "python3 - here-doc replaces stdin",
+      "7 pin assertion",
+      "open exclusive driver.log",
+      "dup2 logfile to stdout/stderr then close extra logfd",
+      "tmux set-option -p -t TMUX_PANE remain-on-exit on",
+      "os.execv immutable hardware candidate"
+    ],
+    "old_pure_fixture": [
+      "python3 option_driver.py preserves stdin PTY",
+      "redirect stdout/stderr to log",
+      "show-options explicit own pane",
+      "set-option -p explicit own pane",
+      "show-options explicit own pane",
+      "exec software marker"
+    ],
+    "R3_quality": [
+      "bash launcher retains stdin PTY",
+      "tmux set-option -p with default target",
+      "exec python3 file with stdout/stderr redirected to log"
+    ],
+    "coverage_limit": "旧fixture的第一条tmux命令/输入FD/启动shell均与实际不同；quality又在重定向前设置选项，均不能覆盖实际here-doc+先dup2形态"
+  },
+  "primary_hypothesis": {
+    "status": "PLAUSIBLE_NOT_YET_REPRODUCED_FOR_ACTUAL_R3",
+    "cause": "here-doc先移走stdin，再dup2移走stdout/stderr，可能关闭最后的PTY slave引用；tmux处理PTY错误/EOF后在remain-on-exit未设置时删除%96，随后的-p查找自然失败",
+    "supports": [
+      "实际只留下no such pane %96，已打开log，candidate exec尚在后面",
+      "旧软件fixture保留stdin PTY，且第一条show-options成功后才set",
+      "quality保留stdin PTY且先set",
+      "tmux3.2a窗口代码以PTY事件标记PANE_EXITED并走删除，pane_dead与wait状态分开"
+    ],
+    "limits": [
+      "R3未记录当时/proc/PID/fd及TMUX/socket环境，不能把假设记成已证实历史根因",
+      "没有driver自身退出码/真实wait，不能推断driver reap或具体终止信号",
+      "根因软件复现尚由root另一个agent执行，本review不运行"
+    ]
+  },
+  "secondary_hypotheses": [
+    {
+      "hypothesis": "TMUX/socket/PATH或环境指向其它server",
+      "status": "UNCONFIRMED_NO_ENVIRONMENT_OR_SOCKET_ORIGINALS",
+      "priority": "次于已见stdio差异"
+    },
+    {
+      "hypothesis": "纯粹pane创建尚未注册",
+      "status": "WEAKER_UNCONFIRMED",
+      "reason": "上游3.2a在fork child前已window_add_pane并设置TMUX_PANE；仍不能排除配置/hook/外部删除"
+    }
+  ],
+  "upstream_primary_sources": [
+    {
+      "url": "https://raw.githubusercontent.com/tmux/tmux/3.2a/window.c",
+      "functions": "window_pane_error_callback lines913-923;window_pane_destroy_ready lines349-363",
+      "finding": "PTY错误设置PANE_EXITED并可立即调用删除，不要求PANE_STATUSREADY"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/tmux/tmux/3.2a/server-fn.c",
+      "functions": "server_destroy_pane lines292-363",
+      "finding": "remain-on-exit=0分支移除pane；非零时可等真实status准备"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/tmux/tmux/3.2a/format.c",
+      "functions": "format_cb_pane_dead/format_cb_pane_dead_status lines1606-1629",
+      "finding": "pane_dead依据fd=-1，dead_status另要求PANE_STATUSREADY；仅前移set不能证明不会早判终态"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/tmux/tmux/3.2a/spawn.c",
+      "functions": "spawn_pane lines239-248,281-285,335-351",
+      "finding": "pane和TMUX_PANE在fork前已建立"
+    }
+  ],
+  "minimal_next_software_check": {
+    "owner": "root另一质量agent",
+    "scope": "无候选导入/GO/UART，仅一次精确bad形态与一次同body python-c形态对照",
+    "difference": "here-doc输入改为python -c加shlex.quote，其余body/dup2/显式-p/exec软件marker保持",
+    "must_record": [
+      "stdin/stdout/stderr tty身份",
+      "TMUX/TMUX_PANE与socket身份",
+      "set-option真实child wait/退出值",
+      "同driver PID完整终态/dead_status",
+      "软件marker是否达到",
+      "保留bad原FAIL，不把new PASS覆盖历史"
+    ],
+    "reject_alternative": "不选只前移set-option；PTY提前EOF仍可能令pane_dead先于真实退出"
+  },
+  "work_done": {
+    "SSH": false,
+    "hardware": false,
+    "UART": false,
+    "new_GO": false,
+    "candidate_changed": false,
+    "review_json_only_write": true
+  },
+  "unchanged_safety_status": "R1与R3启动/观察FAIL；R2前置拒绝；零速合同/底盘三轮仍OPEN或DEFERRED，禁止后续UART/动作及自动重试"
+}

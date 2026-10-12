@@ -1,0 +1,51 @@
+--- /Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/seal_base_zero_diagnostic_r2.draft.sh
++++ /Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/seal_base_zero_diagnostic_r3.draft.sh
+@@ -20,11 +20,11 @@
+ PLAN_EXPECTED=None
+ PLAN_CANONICAL_SHA=None
+ NATIVE_PREPARATION_EXPECTED=None
+-assert type(APPROVED_RUN_SHA256) is str and len(APPROVED_RUN_SHA256)==64 and type(APPROVED_RUN_BYTES) is int and APPROVED_RUN_BYTES>0, '爸爸，BASE_ZERO_R2收集草稿未绑定本轮run原件，零I/O拒绝。'
+-assert all(type(v) is str and v for v in (APPROVED_SESSION,APPROVED_WINDOW,APPROVED_PANE)) and type(APPROVED_DRIVER_PID) is int and APPROVED_DRIVER_PID>0 and type(APPROVED_PANE_EXIT) is int and APPROVED_PANE_EXIT in (0,1) and type(APPROVED_HARDWARE_CHILD_COUNT) is int and APPROVED_HARDWARE_CHILD_COUNT>0, '爸爸，BASE_ZERO_R2收集草稿未绑定本轮唯一终态，零I/O拒绝。'
+-assert APPROVED_SESSION=='base-zero-diagnostic-trial-20261012-r2', '爸爸，终态session不是本轮BASE_ZERO_R2，零I/O拒绝。'
++assert type(APPROVED_RUN_SHA256) is str and len(APPROVED_RUN_SHA256)==64 and type(APPROVED_RUN_BYTES) is int and APPROVED_RUN_BYTES>0, '爸爸，BASE_ZERO_R3收集草稿未绑定本轮run原件，零I/O拒绝。'
++assert all(type(v) is str and v for v in (APPROVED_SESSION,APPROVED_WINDOW,APPROVED_PANE)) and type(APPROVED_DRIVER_PID) is int and APPROVED_DRIVER_PID>0 and type(APPROVED_PANE_EXIT) is int and APPROVED_PANE_EXIT in (0,1) and type(APPROVED_HARDWARE_CHILD_COUNT) is int and APPROVED_HARDWARE_CHILD_COUNT>0, '爸爸，BASE_ZERO_R3收集草稿未绑定本轮唯一终态，零I/O拒绝。'
++assert APPROVED_SESSION=='base-zero-diagnostic-trial-20261012-r3', '爸爸，终态session不是本轮BASE_ZERO_R3，零I/O拒绝。'
+ assert all(v is not None for v in (FIELD_EXPECTED,GO_EXPECTED,BINDING_EXPECTED,PLAN_EXPECTED,NATIVE_PREPARATION_EXPECTED)) and type(PLAN_CANONICAL_SHA) is str and len(PLAN_CANONICAL_SHA)==64, '爸爸，零目标收集草稿未绑定本轮现场/GO/软件准备原件，零I/O拒绝。'
+-base=Path('/home/loosqk/robot-checks/position-return-20261010-r1');phase=base/'base-zero-diagnostic-r1';evidence=phase/'base-zero-diagnostic-r2';launch=phase/'base-zero-diagnostic-launch-r2';out=phase/'base-zero-diagnostic-seal-r2'
++base=Path('/home/loosqk/robot-checks/position-return-20261010-r1');phase=base/'base-zero-diagnostic-r1';evidence=phase/'base-zero-diagnostic-r3';launch=phase/'base-zero-diagnostic-launch-r3';out=phase/'base-zero-diagnostic-seal-r3'
+ runraw=(evidence/'run.json').read_bytes();run=json.loads(runraw)
+ assert hashlib.sha256(runraw).hexdigest()==APPROVED_RUN_SHA256 and len(runraw)==APPROVED_RUN_BYTES
+ assert run['schema']=='MAINTENANCE_RUN_V2' and run['plan']['run_id']=='base-zero-diagnostic-r1'
+@@ -74,13 +74,13 @@
+           or (error==repr(ValueError('原分散请求时刻已错过，不补读')) and missed)
+           or (error==repr(ValueError('500ms原期限已到，不补读')) and expired)), '爸爸，仅收合法PV非零/原期限失败；未知ACK、raw、停止和信号不归为普通诊断失败。'
+ assert APPROVED_PANE_EXIT==(0 if run['result']=='PASS' else 1)
+-expected={'field_confirmation_base_zero_r2.json':FIELD_EXPECTED,'base-zero-diagnostic-r2.go.json':GO_EXPECTED,'maintenance_bindings_base_zero_diagnostic_r1.json':BINDING_EXPECTED,'full-plan-only-r2.stdout':PLAN_EXPECTED,'prepare-result-base-zero-r2.json':NATIVE_PREPARATION_EXPECTED}
++expected={'field_confirmation_base_zero_r3.json':FIELD_EXPECTED,'base-zero-diagnostic-r3.go.json':GO_EXPECTED,'maintenance_bindings_base_zero_diagnostic_r3.json':BINDING_EXPECTED,'full-plan-only-r3.stdout':PLAN_EXPECTED,'prepare-result-base-zero-r3.json':NATIVE_PREPARATION_EXPECTED}
+ for name,(sha,size) in expected.items():
+  path=phase/name;raw=path.read_bytes();assert path.is_file() and not path.is_symlink() and hashlib.sha256(raw).hexdigest()==sha and len(raw)==size
+-full=json.loads((phase/'full-plan-only-r2.stdout').read_text());assert full['plan_sha256']==PLAN_CANONICAL_SHA and hashlib.sha256(json.dumps(full['plan'],sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()==PLAN_CANONICAL_SHA and run['plan']==full['plan'] and run['go']['plan_sha256']==PLAN_CANONICAL_SHA
++full=json.loads((phase/'full-plan-only-r3.stdout').read_text());assert full['plan_sha256']==PLAN_CANONICAL_SHA and hashlib.sha256(json.dumps(full['plan'],sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()==PLAN_CANONICAL_SHA and run['plan']==full['plan'] and run['go']['plan_sha256']==PLAN_CANONICAL_SHA
+ out.mkdir(mode=0o700,exist_ok=True);assert not any(out.iterdir())
+-start=json.loads((launch/'start_receipt_base_zero_r2.json').read_text());assert start['tmux_identity']==' '.join((APPROVED_SESSION,APPROVED_WINDOW,APPROVED_PANE,str(APPROVED_DRIVER_PID)))
+-bindings=json.loads((phase/'maintenance_bindings_base_zero_diagnostic_r1.json').read_text())
++start=json.loads((launch/'start_receipt_base_zero_r3.json').read_text());assert start['tmux_identity']==' '.join((APPROVED_SESSION,APPROVED_WINDOW,APPROVED_PANE,str(APPROVED_DRIVER_PID)))
++bindings=json.loads((phase/'maintenance_bindings_base_zero_diagnostic_r3.json').read_text())
+ def pins():
+  values=[]
+  for ref in bindings['refs']:
+@@ -105,10 +105,10 @@
+  art=Path('/home/loosqk/robot-checks/h2-exit-observation-20261009-r1/source/scripts/post_e_h2_artifacts.py');assert hashlib.sha256(art.read_bytes()).hexdigest()=='bd2b3f7bb8527cd9ecec73894171638e9cf378656b89e284a585c3baa37b8731'
+  spec=importlib.util.spec_from_file_location('base_zero_r1_seal_existing_artifacts',art);a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a)
+  source=base/'position-return-r7/source';expected=json.loads(Path('/home/loosqk/robot-checks/position-return-20261011-r12/native-quality/boot/host_source_final_r12.json').read_text());snapshot=a.snapshot_source(source,list(expected['files']));assert snapshot==expected;save('native-source-seal-window.json',snapshot)
+-report={'status':'BASE_ZERO_R2_INCIDENT_ORIGINALS_COLLECTED_MANUAL_CUT_REQUIRED' if manual else 'PASS_BASE_ZERO_R2_NONUART_COLLECTION_ORIGINAL_RESULT_PRESERVED','terminal':state,'driver_pid':APPROVED_DRIVER_PID,'original_run_status':run['result'],'original_run_sha256':hashlib.sha256(runraw).hexdigest(),'original_run_bytes':len(runraw),'original_error':run.get('error'),'zero_diag':run.get('zero_diag'),'position':run.get('position_verification'),'stop':run.get('stop_verification'),'identity':run.get('identity_verification'),'probes':run.get('probes'),'direct_hardware_children':len(run['commands']),'all_hardware_children_reaped':all(v['reaped'] is True for v in run['commands']),'child_active':run['child_active'],'evidence_errors':run['evidence_errors'],'manualcut':manual,'independent_nonUART_checks':len(fresh['checks']) if fresh else None,'independent_nonUART_children':len(fresh['commands']) if fresh else None,'manual_incident_extra_postchecks':'NOT_RUN_ORIGINAL_FAILURE_PRESERVED' if manual else None,'bound_refs':len(bindings['refs']),'bound_refs_before_after_equal':before==after if not manual else None,'native_source_files':len(snapshot['files']) if snapshot else None,'native_source_sha256':snapshot['source_manifest_sha256'] if snapshot else None,'collector_direct_children':rows,'new_UART':0,'new_writes':0,'new_GO':False};save('seal-result-base-zero-r2.json',report)
+-selected=['base_zero_diagnostic_r1.py','maintenance_bindings_base_zero_diagnostic_r1.json','helpers/raw_right9_from_r14_r1.py','full-plan-only-r2.stdout','prepare-result-base-zero-r2.json','field_confirmation_base_zero_r2.json','base-zero-diagnostic-r2.go.json'];paths=sorted(x for d in [evidence,launch,out] for x in d.rglob('*') if x.is_file());paths += [phase/n for n in selected];assert all(x.is_file() and not x.is_symlink() for x in paths)
+-archive=phase/'hardware-originals-base-zero-r2.tar.gz'
++report={'status':'BASE_ZERO_R3_INCIDENT_ORIGINALS_COLLECTED_MANUAL_CUT_REQUIRED' if manual else 'PASS_BASE_ZERO_R3_NONUART_COLLECTION_ORIGINAL_RESULT_PRESERVED','terminal':state,'driver_pid':APPROVED_DRIVER_PID,'original_run_status':run['result'],'original_run_sha256':hashlib.sha256(runraw).hexdigest(),'original_run_bytes':len(runraw),'original_error':run.get('error'),'zero_diag':run.get('zero_diag'),'position':run.get('position_verification'),'stop':run.get('stop_verification'),'identity':run.get('identity_verification'),'probes':run.get('probes'),'direct_hardware_children':len(run['commands']),'all_hardware_children_reaped':all(v['reaped'] is True for v in run['commands']),'child_active':run['child_active'],'evidence_errors':run['evidence_errors'],'manualcut':manual,'independent_nonUART_checks':len(fresh['checks']) if fresh else None,'independent_nonUART_children':len(fresh['commands']) if fresh else None,'manual_incident_extra_postchecks':'NOT_RUN_ORIGINAL_FAILURE_PRESERVED' if manual else None,'bound_refs':len(bindings['refs']),'bound_refs_before_after_equal':before==after if not manual else None,'native_source_files':len(snapshot['files']) if snapshot else None,'native_source_sha256':snapshot['source_manifest_sha256'] if snapshot else None,'collector_direct_children':rows,'new_UART':0,'new_writes':0,'new_GO':False};save('seal-result-base-zero-r3.json',report)
++selected=['base_zero_diagnostic_r1.py','maintenance_bindings_base_zero_diagnostic_r3.json','helpers/raw_right9_from_r14_r1.py','full-plan-only-r3.stdout','prepare-result-base-zero-r3.json','field_confirmation_base_zero_r3.json','base-zero-diagnostic-r3.go.json','base-zero-diagnostic-r3.go.json.consumed'];paths=sorted(x for d in [evidence,launch,out] for x in d.rglob('*') if x.is_file());paths += [phase/n for n in selected];assert all(x.is_file() and not x.is_symlink() for x in paths)
++archive=phase/'hardware-originals-base-zero-r3.tar.gz'
+ with tarfile.open(archive,'x:gz') as t:
+  for path in paths:t.add(path,arcname=str(path.relative_to(phase)),recursive=False)
+-raw=archive.read_bytes();print(json.dumps({'status':'HARDWARE_BASE_ZERO_R2_ARCHIVE_READY','sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'files':len(paths),'source_bytes':sum(x.stat().st_size for x in paths),'report':report,'base64':base64.b64encode(raw).decode()},ensure_ascii=False),flush=True)
++raw=archive.read_bytes();print(json.dumps({'status':'HARDWARE_BASE_ZERO_R3_ARCHIVE_READY','sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'files':len(paths),'source_bytes':sum(x.stat().st_size for x in paths),'report':report,'base64':base64.b64encode(raw).decode()},ensure_ascii=False),flush=True)
+ PYREMOTE

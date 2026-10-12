@@ -278,10 +278,119 @@
       "copy_verified": true
     },
     "summary.json": {
-      "source_path": "root derived",
-      "sha256": "f08d91f268f3eede83325b5a3490b149c93530ce5497c43a45ea670bcd00bc85",
-      "bytes": 3687,
-      "copy_verified": true
+      "source_path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r2/summary.json",
+      "sha256": "617c33e521b7226bab98645ad56c4d6ee8b2114ca58ecad66d88e557601264ec",
+      "bytes": 3918,
+      "copy_verified": true,
+      "generated_current_state": true
+    },
+    "execution-followup/base-zero-diagnostic-r2.go.json": {
+      "sha256": "1924ab7ed959053dcc8c2880419e119bfa1cab3aa1514387fafd77329ebc6e9e",
+      "bytes": 1744,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/base-zero-diagnostic-r2.go.json"
+    },
+    "execution-followup/current-go-generation-r2.json": {
+      "sha256": "3392fe37b6f27dc510c3e8e3367382d3520ae1c2e48ad248c6e2606224a19886",
+      "bytes": 721,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/current-go-generation-r2.json"
+    },
+    "execution-followup/field_confirmation_base_zero_r2.json": {
+      "sha256": "b7f84a477da1331660998a9bfcbb4fbedbe908015a607a05e92da51ec113cfd7",
+      "bytes": 1553,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/field_confirmation_base_zero_r2.json"
+    },
+    "execution-followup/owners/base-zero-r2-current-field-go-upload.owner/child.log": {
+      "sha256": "d95e8db5c1bfb5e6b95f46ef493264e53c5bb2fc88786f6c7a7a99693b8faa81",
+      "bytes": 443,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r2-current-field-go-upload.owner/child.log"
+    },
+    "execution-followup/owners/base-zero-r2-current-field-go-upload.owner/launch.json": {
+      "sha256": "cc650a07556139121994d8714004b49dde5b2706280a1b32e2baa67a4e5c3e70",
+      "bytes": 1042,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r2-current-field-go-upload.owner/launch.json"
+    },
+    "execution-followup/owners/base-zero-r2-current-field-go-upload.owner/result.json": {
+      "sha256": "10ce9878989a8b8550904adcb674492748c14a2a3addd76e3bbf6c781a83a8c7",
+      "bytes": 1528,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r2-current-field-go-upload.owner/result.json"
+    },
+    "execution-followup/owners/base-zero-r2-single-hardware-start.owner/child.log": {
+      "sha256": "d9ea0351e38468c65d13bd68ece0c8e27acb654380ffee23111f76655edf8c49",
+      "bytes": 89,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r2-single-hardware-start.owner/child.log"
+    },
+    "execution-followup/owners/base-zero-r2-single-hardware-start.owner/launch.json": {
+      "sha256": "9b62c31bd9ed4ca8176ad6d089ae9dad86899a8621c5191e35b6726b4fc23b5a",
+      "bytes": 1049,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r2-single-hardware-start.owner/launch.json"
+    },
+    "execution-followup/owners/base-zero-r2-single-hardware-start.owner/result.json": {
+      "sha256": "a27909fb1b92dfe3115d72f3737e8b4181d96f4954b5ab293bdf9f48955a23ad",
+      "bytes": 1531,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r2-single-hardware-start.owner/result.json"
+    },
+    "execution-followup/owners/base-zero-r2-usb-prestart-readonly.owner/child.log": {
+      "sha256": "f6e10ceebde3e9058f17bb08d7c48bdc9c8162a43f266ff469a5fef949644f05",
+      "bytes": 1547,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r2-usb-prestart-readonly.owner/child.log"
+    },
+    "execution-followup/owners/base-zero-r2-usb-prestart-readonly.owner/launch.json": {
+      "sha256": "9d1b5bd670418c13eecbf1136f9c6a31ee6ba98861081ac5b4ece0fcafbd15bc",
+      "bytes": 1047,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r2-usb-prestart-readonly.owner/launch.json"
+    },
+    "execution-followup/owners/base-zero-r2-usb-prestart-readonly.owner/result.json": {
+      "sha256": "adcf42004f771380bc2b7e494d97a6efd5d69be001e4aca176a0dc39954c1b3c",
+      "bytes": 1533,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r2-usb-prestart-readonly.owner/result.json"
+    },
+    "execution-followup/prestart-rejection-r2.json": {
+      "sha256": "d7aba118ef54d5a7504e9a13f4a62f68892c35ecb7be38a4ef82c6635cd39717",
+      "bytes": 4715,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/prestart-rejection-r2.json"
+    },
+    "execution-followup/readonly_nonuart17_usb_refresh_r3.sh": {
+      "sha256": "67a75fec0406c801e88d7f3df9b13564537da0b10a7c71cd46c9d4e560a5ff59",
+      "bytes": 1817,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/readonly_nonuart17_usb_refresh_r3.sh"
+    },
+    "execution-followup/readonly_usb_after_prestart_rejection_r2.sh": {
+      "sha256": "f465a2244edd19b48a11b368e322404eb4fb56ada7879e20ce3e926f02808a71",
+      "bytes": 1259,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/readonly_usb_after_prestart_rejection_r2.sh"
+    },
+    "execution-followup/review-prestart-usb-r2.json": {
+      "sha256": "2c37a8ef8e9ffd241f8206b721df1ebffbf56a8b1c6daafd15722f1476ac508c",
+      "bytes": 5559,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/review-prestart-usb-r2.json"
+    },
+    "execution-followup/start_base_zero_diagnostic_once_r2.actual.sh": {
+      "sha256": "e74df33145e95bc614c1addb0f4ac02266d4032d16ee82a1d1650fc3060294c5",
+      "bytes": 11273,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/start_base_zero_diagnostic_once_r2.actual.sh"
+    },
+    "execution-followup/upload_field_go_base_zero_r2.actual.sh": {
+      "sha256": "4c665ecfee65fc05820a06448c63a2bdb09c4cb153ecedbc6812eda27819ff9f",
+      "bytes": 5164,
+      "copy_verified": true,
+      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r2/upload_field_go_base_zero_r2.actual.sh"
     }
   }
 }

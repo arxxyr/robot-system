@@ -21,19 +21,20 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-12 R1断电后续确认及R2软件准备已收口，R2实机NOT_RUN。
-           用户确认两电源已切断、机械臂/架空底盘支撑保持，root结束R1看护；电气遥测UNKNOWN。
-           R1启动/观察FAIL原件及driver真实wait/reap NOT_OBSERVED完整保留；无run/STOP51，不回填PASS。
-           R1永久130件含独立后续回执；R2永久48件，入口 .verify/base_zero_diagnostic_2026-10-12_r2/summary.json。
-           固定f59455候选/helper406295/binding55不改，新独占output/launch/GO/field/PLAN，profile run_id沿r1。
-           R2仅2条软件命令生成PLAN与非UART17/23，均自然0/reap；7原件/4原流，不重跑10memory或fixture。
-           新PLAN canonical3f840ab0，只output变；launcher保留已验-p，新现场/GO三pins仍None，零启动。
-           本机实际fmt、Orinupdate→fmt→根Clippy零警告；597源三窗068277d8、nightly080首尾同。
-           11质量child/22原流真实回收、53质量原件；native HEAD894加五dirty，不称Git对齐。
-           R2没有新GO/现场确认/UART/动作/服务/控制ELF；供电当前仅用户OFF报告，实际运行需新ON事实。
-           头部P32双向单次PASS已恢复P16、左腕I1单次PASS已恢复I0，长期设置OPEN。
-           底盘三轮DEFERRED、零速合同/旧±50 OPEN；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false。
-
+本轮最新:  2026-10-12 R2前置USB枚举拒绝、R3实际启动/观察FAIL；底盘零速NOT_RUN。
+           左USB仍同serial/devpath/tty，只2inode及usec变化；新binding347a65/55refs，右及保护不变。
+           同次现场原600秒未续；R2零tmux/UART，R3仅一次tmux654721/@96/%96，日志no such pane。
+           R3无output/run/GO.consumed、UART/电机写0、STOP51未测；driver真实wait/reap仍NOT_OBSERVED。
+           仅-p的旧夹具漏测here-doc+日志重定向；新纯软件-c保留stdin PTY的机制已验证。
+           旧软件stdin pipe/marker未到及no such pane保留；新654935/@98/%98自然dead0、marker同PID。
+           新单option child654938真wait/reap、6 collector child全0/reap；首collector身份断言FAIL/旧缺回执保持。
+           future R4只改-c及body填7pins后整体quote，所有实际pins仍None，无新GO/硬件准备或动作。
+           本机实际fmt及Orin最新nightly080→fmt→根Clippy零警告，11child/22流，597三窗068277d8同。
+           R3证据 .verify/base_zero_diagnostic_2026-10-12_r3/summary.json；R1/R2历史FAIL不回填。
+           本轮已通知人工切两电源并保持机械臂/架空底盘支撑，实际断电回复PENDING；当前物理供电UNKNOWN。
+           下轮先在当次供电/三轮架空稳定/看护事实后核USB当前枚举，再新binding/PLAN/GO，仅右9零目标。
+           头部临时P32双向单次PASS已恢复P16、左腕I1单次PASS已恢复I0；长期参数/三轮/旧±50 OPEN。
+           右H2完整PASS，D15 OPEN/DEFERRED、deployable=false；正式安装与服务未改。
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
            双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =
            "机器人控制执行面受监督功能 demo 跑通"）。

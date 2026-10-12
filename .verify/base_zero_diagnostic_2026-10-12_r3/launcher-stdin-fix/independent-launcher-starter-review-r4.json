@@ -1,0 +1,84 @@
+{
+  "schema": "BASE_ZERO_R4_INDEPENDENT_STATIC_REVIEW_V1",
+  "status": "PASS_STATIC_REVIEW_NATIVE_MECHANISM_PENDING",
+  "launcher": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-stdin-fix/launch_base_zero_diagnostic_r4.fixed-unbound.sh",
+    "sha256": "5b5a6e514141edb379491d456e854e5df024e59f2be11af1dda745427e2ca8f1",
+    "bytes": 2288
+  },
+  "starter": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-stdin-fix/start_base_zero_diagnostic_once_r4.fixed-unbound.sh",
+    "sha256": "32d5ee207010dd00e6ddb5b150666de86b466fc9d69f1824f2a2e12564f6bd63",
+    "bytes": 11648
+  },
+  "all_actual_pins_None": true,
+  "pin_counts": {
+    "launcher": 7,
+    "starter": 7
+  },
+  "embedded_launcher_byte_equal": true,
+  "body_matches_R3_after_R4_paths_AST": true,
+  "body_text_equal_except_new_paths_and_trailing_LF": true,
+  "starter_gates_and_tail_AST_unchanged_after_R4_names": true,
+  "actual_decode_fill_quote_AST_block_checked": true,
+  "seven_virtual_pin_literal_roundtrip": true,
+  "shell_quoted_body_single_argument_roundtrip_exact": true,
+  "first_gate_before_target_IO": true,
+  "launcher_stdin_delivery": "python-c不重定向stdin；在tmux正常stdin=PTY的前提下，dup2只移走stdout/stderr，stdin继续持有PTY直到同PID os.execv后的自然退出",
+  "explicit_p_option_unchanged": true,
+  "unique_tmux_launch_call_count": 1,
+  "candidate_sha256": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+  "candidate_bytes": 19556,
+  "candidate_changed": false,
+  "one_zero_diag_and_original_STOP51_semantics_unchanged": true,
+  "syntax_children": [
+    {
+      "name": "launcher",
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-stdin-fix/launch_base_zero_diagnostic_r4.fixed-unbound.sh"
+      ],
+      "pid": 67053,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    },
+    {
+      "name": "starter",
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/launcher-stdin-fix/start_base_zero_diagnostic_once_r4.fixed-unbound.sh"
+      ],
+      "pid": 67054,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    },
+    {
+      "name": "memory-rendered-seven-virtual-pins",
+      "argv": [
+        "bash",
+        "-n"
+      ],
+      "pid": 67055,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": []
+    }
+  ],
+  "native_software_repro": "PENDING_ROOT_QUALITY_AGENT_NEW_C_CASE;原old-case observer identity FAIL保持，不能写new-case PASS",
+  "hardware": "NOT_RUN",
+  "R4_bindings_and_PLAN": "尚须对应当次只读事实准备；当前pins全None，不能直接执行",
+  "fresh_field_GO": "NOT_CREATED;旧R3确认/GO不转为R4授权",
+  "writes_this_review": "仅本JSON，未存储virtual绑定launcher",
+  "SSH": false,
+  "UART": 0,
+  "new_GO": false,
+  "GO_consumed": false,
+  "candidate_started": false
+}

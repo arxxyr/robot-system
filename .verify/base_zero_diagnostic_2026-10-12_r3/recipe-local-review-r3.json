@@ -1,0 +1,23 @@
+{
+  "status": "PASS_R3_RECIPE_AST_BASH_SYNTAX_ONLY_NOT_EXECUTED",
+  "recipe": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r3/minimal_software_prepare_base_zero_r3.draft.sh",
+    "sha256": "46b08b76027fbfe353144b07ca4be8ffbd4b59b53c32e73957c9e3726fdce8c9",
+    "bytes": 10435
+  },
+  "body": {
+    "sha256": "b07f6b6295a68d1315510d7f3d0c7f63bb894fd6828b60d11ec59fe39fe12f53",
+    "bytes": 10178
+  },
+  "Popen_count": 1,
+  "new_nonUART_runs": 0,
+  "syntax_child": {
+    "pid": 65210,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true
+  },
+  "SSH": false,
+  "UART": 0,
+  "GO": false
+}

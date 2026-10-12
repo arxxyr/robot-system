@@ -1,0 +1,21 @@
+{
+  "pid": 654450,
+  "started_ns": 1791783083895538195,
+  "finished_ns": 1791783084735518050,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "argv": [
+    "bash",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.sh"
+  ],
+  "usb-refresh-nonuart-r3.stdout": {
+    "sha256": "f497a4b2b49d94428096419cc24d034ee86913f8e6462408acd768ea28ada06e",
+    "bytes": 176291
+  },
+  "usb-refresh-nonuart-r3.stderr": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  }
+}
