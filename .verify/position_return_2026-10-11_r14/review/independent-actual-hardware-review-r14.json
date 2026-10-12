@@ -1,0 +1,260 @@
+{
+  "schema": "R14_INDEPENDENT_ACTUAL_HARDWARE_REVIEW_V1",
+  "status": "PASS_NARROW_ARCHIVE_REVIEW_ORIGINAL_RUN_FAIL_PRESERVED",
+  "scope": "仅本地唯一tar原件核验，无SSH/UART/Cargo/新测试/修改原件",
+  "archive": {
+    "path": "target/position_return_2026-10-11_r14/live/hardware-originals-r14.tar.gz",
+    "sha256": "3c92c37cbf3ca0121e5d47fc46b8d540c7a046082241776c98c1a02df042edf9",
+    "bytes": 257715,
+    "regular_members": 808
+  },
+  "run": {
+    "member": "head2-p32-trial-r14/run.json",
+    "sha256": "37a801ff6e12ca3d991d11faadf7d0f288e6ce80a9677bded13f2db51423314e",
+    "bytes": 548160,
+    "original_result": "FAIL",
+    "original_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+    "manual_power_cut_required": false
+  },
+  "children": {
+    "hardware_count": 383,
+    "unique_pids": 383,
+    "all_reaped": true,
+    "output_sha256_and_size_verified": 766,
+    "exit0": 351,
+    "expected_empty_fuser_exit1": 32,
+    "owner_errors": []
+  },
+  "writes": {
+    "count": 7,
+    "side": "left",
+    "motor_id": 8,
+    "sequence": [
+      {
+        "sequence": 200,
+        "register": "P_Coefficient",
+        "value": 32,
+        "cleanup": false
+      },
+      {
+        "sequence": 225,
+        "register": "Goal_Position",
+        "value": 2086,
+        "cleanup": false
+      },
+      {
+        "sequence": 228,
+        "register": "Torque_Enable",
+        "value": 1,
+        "cleanup": false
+      },
+      {
+        "sequence": 230,
+        "register": "Goal_Position",
+        "value": 2110,
+        "cleanup": false
+      },
+      {
+        "sequence": 246,
+        "register": "Goal_Position",
+        "value": 2086,
+        "cleanup": false
+      },
+      {
+        "sequence": 251,
+        "register": "Torque_Enable",
+        "value": 0,
+        "cleanup": true
+      },
+      {
+        "sequence": 257,
+        "register": "P_Coefficient",
+        "value": 16,
+        "cleanup": true
+      }
+    ],
+    "D_I_Phase_Mode_Lock_writes": 0,
+    "base_writes": 0
+  },
+  "position": {
+    "status": "PASS",
+    "anchor_raw": 2086,
+    "goal_raw": 2110,
+    "tolerance_raw": 4,
+    "budget_ms": 800,
+    "stages": {
+      "outward": {
+        "target_raw": 2110,
+        "final_raw": 2107,
+        "final_signed_error_raw": -3,
+        "first_qualified_elapsed_ns": 131118331,
+        "recorded_elapsed_ns": 801219009,
+        "deadline_delta_ns": 800000000,
+        "sample_count": 14
+      },
+      "return": {
+        "target_raw": 2086,
+        "final_raw": 2088,
+        "final_signed_error_raw": 2,
+        "first_qualified_elapsed_ns": 138449869,
+        "recorded_elapsed_ns": 138449869,
+        "deadline_delta_ns": 800000000,
+        "sample_count": 3
+      }
+    },
+    "deadline_extended": false
+  },
+  "stop": {
+    "status": "PASS",
+    "motors": 17,
+    "integer_zero_fields": 51,
+    "cross_checked_final_ordinary_READ_stdout": true,
+    "physical_wheel_stop_proven": false
+  },
+  "identity_cleanup": {
+    "run_checks": 82,
+    "bound_refs": 50,
+    "actual_complete_ref_metadata_before_after_equal": true,
+    "all_existing_binding_fields_equal": true,
+    "binding_full_stat_refs": 33,
+    "binding_path_sha_size_only_refs": 17,
+    "driver_pid": 642733,
+    "tmux_terminal": "position-head2-p32-trial-20261011-r14|@78|%78|642733|1|1",
+    "observer_exit1": "原run FAIL终态，非读取失败",
+    "only_owned_dead_pane_reclaimed": "%78",
+    "collector_direct_children": 3,
+    "independent_nonUART_checks": 17,
+    "independent_nonUART_children": 23,
+    "all_children_reaped": true,
+    "new_UART": 0,
+    "new_writes": 0,
+    "new_GO": false
+  },
+  "base": {
+    "decision": "DEFERRED",
+    "status": "NOT_RUN",
+    "target_count": 3,
+    "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+  },
+  "review_diagnostics_preserved": [
+    {
+      "stage": "本地审查脚本首次运行",
+      "error": "KeyError: mode",
+      "cause": "审查脚本误假定历史50refs均包含完整stat；17旧ref仅path/SHA/bytes",
+      "resolution": "仅核已有绑定字段；实际收集前后完整stat仍50项逐项相等；无原件更改或新采集"
+    }
+  ],
+  "limits": [
+    "仅当前起点和方向功能通过，不证明P因果、PID即时采用或长期参数有效",
+    "停止零读回不证明物理轮子持续静止，旧±50根因未证",
+    "原整轮FAIL、三轮DEFERRED、D15 OPEN/DEFERRED及deployable=false保持"
+  ],
+  "raw_parameter_frames": {
+    "reviewer": "/root/position_path_review/p32_static_review",
+    "status": "PASS",
+    "saved_unique_stage_fields": 29,
+    "actual_read_raw_commands": 30,
+    "actual_read_raw_sequences": [
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      201,
+      202,
+      254,
+      255,
+      256,
+      258,
+      259,
+      260,
+      261,
+      262,
+      263
+    ],
+    "exact_sync_read_tx_rx_id_address_width_length_checksum_and_LE_unsigned_value": true,
+    "all_raw_stdout_stderr_hash_size_exit0_reap_verified": true,
+    "P_readback_sequence": [
+      16,
+      32,
+      16
+    ],
+    "unchanged_parameters_before_and_after": {
+      "D_Coefficient": 43,
+      "I_Coefficient": 0,
+      "Lock": 1,
+      "CW_Dead_Zone": 1,
+      "CCW_Dead_Zone": 1
+    },
+    "count_note": "保存19+2+8=29字段；恢复前command_0256与恢复后command_0261各读Lock=1，restore_raw同键覆盖，实际30原输出均保留；非动作重试。",
+    "PID_immediate_activation_proven": false
+  },
+  "ordinary_right8_right9_read_trace": {
+    "reviewer": "/root/position_path_review/p32_static_review",
+    "status": "PASS",
+    "command_count": 4,
+    "captures": [
+      {
+        "member": "head2-p32-trial-r14/right8-normal-read-command_0136.strace",
+        "sha256": "9e90cd29f37900b8113a990b8c0b12a5a490b4cde014083c051c7ece76920034",
+        "bytes": 10036,
+        "sequence": 136,
+        "motor_id": 8
+      },
+      {
+        "member": "head2-p32-trial-r14/right9-normal-read-command_0142.strace",
+        "sha256": "1003d3287df8fa5edcfac8b8a58cf1c10066df995129893c28ee0f011d404cc6",
+        "bytes": 10036,
+        "sequence": 142,
+        "motor_id": 9
+      },
+      {
+        "member": "head2-p32-trial-r14/right8-normal-read-command_0357.strace",
+        "sha256": "0c41d03a0871c84b92b00c8846e92281d01321aaa2daf1a88f82baef8e0593ff",
+        "bytes": 10036,
+        "sequence": 357,
+        "motor_id": 8
+      },
+      {
+        "member": "head2-p32-trial-r14/right9-normal-read-command_0363.strace",
+        "sha256": "3c85445ae64b6115f2a25869ba5e98d46529a469263640aeb6e7fdb71c5319e8",
+        "bytes": 10036,
+        "sequence": 363,
+        "motor_id": 9
+      }
+    ],
+    "six_complete_serial_syscalls_per_capture": true,
+    "complete_ping_model777_and_PV_address58_width2_request_response_verified": true,
+    "all_frame_id_error0_length_checksum_verified": true,
+    "PV_raw_unsigned": 0,
+    "PV_rx_payload_hex": "00 00",
+    "all_cli_stdout_PV0_stderr_empty_exit0_reaped": true,
+    "all_strace_exit0": true,
+    "physical_wheel_stop_proven": false,
+    "old_plus_minus50_cause_proven": false
+  },
+  "findings": [
+    {
+      "severity": "计数口径",
+      "detail": "29保存参数字段与30次实际read-raw必须分别报告；全部原输出保存且均通过。"
+    },
+    {
+      "severity": "证据边界",
+      "detail": "50refs收集前后完整stat相等；绑定中33项含完整stat、17旧项仅path/SHA/bytes，后验stat不能回填成动作入口已有完整stat绑定。"
+    }
+  ]
+}

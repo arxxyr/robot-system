@@ -1,0 +1,12 @@
+{
+  "status": "ROOT_ACCEPTED_R14_UNBOUND_COLLECTOR",
+  "reviewed_ns": 1791692222036838000,
+  "sha256": "d1e1ffde50e040ac5d162bd99071f82992fb69a55e7437aef6095599e23e533f",
+  "bytes": 7814,
+  "pins_none": 8,
+  "actual_schema_restore_raw_compatible": true,
+  "actual_identity_pending": true,
+  "executed": false,
+  "new_uart": 0,
+  "new_hardware_actions": 0
+}

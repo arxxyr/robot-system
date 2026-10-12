@@ -1,0 +1,29 @@
+{
+  "owner_pid": 33910,
+  "pid": 33911,
+  "argv": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "started_ns": 1791691753785222000,
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r14/native-preparation/single_ssh_prepare_r14.sh",
+    "bytes": 392650,
+    "sha256": "14ff32c6aa5b6b89ee956ee22b76c10b527543797bb4dcac672d63d9f432445b"
+  },
+  "signals_sent": [],
+  "finished_ns": 1791691761533974000,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "stdout_sha256": "4da426130b70bea54e61344a3fd94d544f1a2cc2806bf937e85f6708cd19e508",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

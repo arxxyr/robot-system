@@ -21,21 +21,21 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-11 R13头1临时P16→32→16单次+24往返功能PASS：锚2128、目标2152。
-           出程14样本，130.620547ms首次±4、观察至原800ms，末2150/-2；回程2132/+4、190.561352ms PASS。
-           P16/D43/I0/Lock1/死区1恢复、STOP51整数零、79身份及独立17项清场PASS，manualcut=false。
-           384直属child/768输出、29 raw原帧、右8/9前后四普通READ原帧均核；七次具名写仅left7。
+本轮最新:  2026-10-11 R14头2临时P16→32→16单次+24往返功能PASS：锚2086、目标2110。
+           出程14样本，131.118331ms首次±4，末2107/-3于801.213057ms读完；原±4资格800ms未延长。
+           回程3样本，2088/+2于138.449869ms PASS；P16/D43/I0/Lock1/CW1/CCW1恢复。
+           STOP51整数零、82身份、50 refs前后同及独立17项清场PASS，manualcut=false。
+           383直属child/766输出，七次具名写仅left8；p_trial保存29 raw字段，实际read-raw30次。
+           Lock恢复前后各读一次，不称30个新测量字段或重试；右8/9前后四普通READ PV原帧均零。
            原run整体FAIL因BASE_FIRMWARE_CONTRACT_UNVERIFIED/三轮DEFERRED保持，不改为整体PASS。
-           本机/Orin各10不同内存方法、默认零动作/缺GO拒绝及完整PLAN通过；原准备FAIL保留。
            Orin实际fmt→根Clippy零警告；597主树/原生三窗同068277d8，latest nightly6f5。
            native HEAD894加五dirty，不称Git对齐；f201位置/13c参数冻结件身份不变，无新控制ELF构建。
-           原件 .verify/position_return_2026-10-11_r13/summary.json；P32实际临时配置写，不称EEPROM写0。
+           原件 .verify/position_return_2026-10-11_r14/summary.json，root源码/原帧/归档验收通过。
            仅一次当前姿态功能通过，P32已恢复16；不证明P因果、PID即时采用、重复性或掉电持久化。
            本轮GO已消耗、看护已结束；供电仅用户报告ON，独立遥测UNKNOWN，无新动作GO。
-           下一步仅头2left8同类P32→16试验：I0/D43不写，原±4/800ms、±32/min12及STOP51不变。
-           R14两端软件准备通过，完整PLAN/starter仍须root审查及本次新现场确认，无UART/GO。
-           R12三目标12只读PASS/运行限制软件231方法见各自摘要；R11回程+6等旧FAIL完整保留。
-           左腕仅临时I1 PASS后恢复I0；长期参数、头2及三轮主动运动未闭环，旧±50原因OPEN。
+           下一步仅right7/right8各FWmajor/FWminor/Phase共6只读；软件准备进行中，无新GO/UART。
+           R13头1单次功能PASS及R12事实见各自摘要；R11回程+6等旧FAIL完整保留。
+           左腕仅临时I1 PASS后恢复I0；长期左腕和头部参数、三轮主动运动未闭环，旧±50原因OPEN。
            正式ca14及六服务沿既有状态；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +

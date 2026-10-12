@@ -1,0 +1,14 @@
+{
+  "status": "ROOT_FINAL_HEAD2_GO_AND_STARTER_ACCEPTED",
+  "recorded_at_ns": 1791692681095370000,
+  "scope": "仅头2left8 P16临时改32后单次+24尝试往返，最后恢复16并核PDI/Lock/死区；I0/D43不写，原±4/800ms、±32、最小12及STOP51保持；出程FAIL不强行回程，无Load/相机/底盘动作，无自动重试",
+  "plan_sha256": "faf87162281223bd9ff8dcbd406c306a4273a7b83059162af44f16e825e46d6d",
+  "three_constants_only_changed": true,
+  "field_sha256": "6e6ad65616c2a53e2d69532016ee5a5ab8a951839fbe315ded3560342b17b18c",
+  "go_sha256": "29a11bc0c5463bce4e73c61cddd4480c43c52c5ea7d2f71812cfa15febd9eeb1",
+  "starter_sha256": "659e5be30d694fc3582cb753ad5e5d83946b959731e4f25648be388cdb2902a2",
+  "expiry_ns": 1791693281095370000,
+  "human_question_id": "call_f401b41c6f7e4d06be7f2ed701348a74",
+  "uart": 0,
+  "actions_started": 0
+}

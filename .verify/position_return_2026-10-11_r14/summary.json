@@ -1,0 +1,138 @@
+{
+  "schema": "POSITION_RETURN_HEAD2_P32_R14_ARCHIVE_V1",
+  "status": "HEAD2_SINGLE_FUNCTION_PASS_OVERALL_FAIL_BASE_DEFERRED",
+  "recorded_at_utc": "2026-10-12T02:22:48.713362+00:00",
+  "scope": "仅left8临时P16→32→16、I0/D43不写，一次+24往返；原±4/800ms、±32/min12和STOP51不变。",
+  "run_original": {
+    "archive": "archives/hardware-originals-r14.tar.gz",
+    "member": "head2-p32-trial-r14/run.json",
+    "sha256": "37a801ff6e12ca3d991d11faadf7d0f288e6ce80a9677bded13f2db51423314e",
+    "bytes": 548160,
+    "driver_pid": 642733,
+    "result": "FAIL",
+    "reason": "BASE_FIRMWARE_CONTRACT_UNVERIFIED",
+    "base_actuation_commands": 0,
+    "direct_children": 383,
+    "streams_verified": 766,
+    "exit_counts": {
+      "0": 351,
+      "1": 32
+    },
+    "expected_idle_fuser_exit1": 32,
+    "all_children_reaped": true,
+    "manual_power_cut_required": false,
+    "evidence_errors": []
+  },
+  "head2_single_function": {
+    "status": "PASS",
+    "anchor_raw": 2086,
+    "goal_raw": 2110,
+    "outward_samples": 14,
+    "outward_first_qualified_ms": 131.118331,
+    "outward_final_raw": 2107,
+    "outward_final_error": -3,
+    "outward_last_sample_ms": 801.213057,
+    "outward_observation_finished_ms": 801.219009,
+    "qualification_deadline_ms": 800,
+    "deadline_extended": false,
+    "return_samples": 3,
+    "return_final_raw": 2088,
+    "return_final_error": 2,
+    "return_qualified_ms": 138.449869,
+    "acceptance": "只在原800ms内首次达到±4即资格通过；出程观察末读完成在801.2ms，不延长资格期限。仅单次当前姿态。"
+  },
+  "parameters": {
+    "temporary_P": 32,
+    "restored_P": 16,
+    "D": 43,
+    "I": 0,
+    "Lock": 1,
+    "CW_CCW_deadzone": [
+      1,
+      1
+    ],
+    "restore": "PASS_RAW_READBACK",
+    "named_write_commands": 7,
+    "target": "left8",
+    "actual_temporary_configuration_write": true,
+    "long_term_parameter_fix": "NOT_IMPLEMENTED"
+  },
+  "stop_and_identity": {
+    "integer_zero_fields": 51,
+    "stop": "PASS_TE_PV_GV_17_MOTORS",
+    "identity_checks": 82,
+    "saved_raw_stage_fields": 29,
+    "actual_read_raw_commands": 30,
+    "raw_count_note": "恢复前后各读Lock1，restore_raw同键覆盖；30份原输出全部保存，非动作重试。",
+    "ordinary_RIGHT8_RIGHT9_PV_reads": 4,
+    "ordinary_READ_raw_integer_values": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "physical_wheel_stationarity": "NOT_INDEPENDENTLY_VERIFIED",
+    "independent_nonUART17": "PASS",
+    "independent_nonUART_children": 23,
+    "all_reaped": true,
+    "bound_refs_before_after_equal": 50,
+    "binding_full_stat_refs": 33,
+    "binding_path_SHA_size_only_refs": 17,
+    "binding_limit": "50项实际收集前后完整stat同；不回填17旧ref为GO入口完整stat绑定。"
+  },
+  "lifecycle": {
+    "hardware_terminal": "@78/%78 driver642733 natural dead1/status1 matched before reclaiming only owned dead pane",
+    "single_hardware_launches": 1,
+    "collector_direct_children": 3,
+    "new_GO_after_terminal": 0,
+    "watch": "本轮看护已通知结束",
+    "GO": "CONSUMED",
+    "power": "本次启动仅用户报告ON；独立遥测UNKNOWN，不推断收尾实际电源状态",
+    "new_UART_after_terminal": 0
+  },
+  "software_preparation": {
+    "host_methods": 10,
+    "native_methods": 10,
+    "distinct_methods_per_platform": 10,
+    "cross_platform_counts_not_added": true,
+    "default_plan_actions": 0,
+    "missing_GO_exit": 2,
+    "full_PLAN_only": "PASS",
+    "native_nonUART17": "PASS"
+  },
+  "source_and_commit_quality": {
+    "source_files": 597,
+    "source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "native_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_state": "five changed sources; not clean; not Git aligned",
+    "native_quality_windows": 3,
+    "compiler": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "6f5da406b56c2db6607202b63daee73aa8c61297",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "actual_native_fmt_then_root_clippy": "PASS_ZERO_WARNINGS_ONCE",
+    "quality_direct_children": 10,
+    "quality_streams": 20,
+    "root_actual_fmt": "PASS_exit0_before_this_native_quality",
+    "root_source_597_now": "PASS_BYTE_HASH_EXECUTABLE_EQUAL",
+    "new_Rust_tests": 0,
+    "new_release_or_control_ELF_builds": 0,
+    "formal_install_or_service_activation": 0
+  },
+  "failures_preserved": [
+    "原run整体FAIL及三轮DEFERRED/NOT_RUN",
+    "原准备/本地生成FAIL",
+    "collector首未执行草稿误假定probes1，实际4；修r2仅收同一run，无新UART或动作重试",
+    "质量本地派生AST与review路径假设失败，均在SSH/Cargo之前；实际质量仅一次",
+    "审查KeyError mode/p_trial及strace正则混入proc读错误，修审查假设；不改原件或重采"
+  ],
+  "limits": [
+    "仅当前起点和正方向单次功能通过；不证明P因果、PID即时采用、重复性、长期参数或掉电持久化",
+    "旧左腕/头部FAIL不回填；左腕I1、头1/2P32已恢复原参数",
+    "底盘未主动运动，旧±50原因OPEN",
+    "右H2完整PASS，D15 OPEN/DEFERRED，deployable=false保持"
+  ],
+  "next_step": "仅right7/right8各FWmajor/FWminor/Phase共6只读；软件准备中，无新现场GO或UART。",
+  "archive_recorded_at_utc": "2026-10-12T02:22:48.827908+00:00"
+}

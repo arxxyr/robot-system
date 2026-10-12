@@ -1,0 +1,83 @@
+{
+  "status": "ROOT_ACCEPTED_HEAD2_SINGLE_FUNCTION_ORIGINAL_OVERALL_FAIL",
+  "reviewed_ns": 1791692975024016000,
+  "run_sha256": "37a801ff6e12ca3d991d11faadf7d0f288e6ce80a9677bded13f2db51423314e",
+  "run_bytes": 548160,
+  "tar_files": 808,
+  "direct_children_verified": 383,
+  "stream_files_verified": 766,
+  "exit_counts": {
+    "0": 351,
+    "1": 32
+  },
+  "expected_idle_fuser_exit1": 32,
+  "all_direct_children_naturally_reaped": true,
+  "only_left8_named_writes": [
+    [
+      "8",
+      "write",
+      "P_Coefficient",
+      "32"
+    ],
+    [
+      "8",
+      "write",
+      "Goal_Position",
+      "2086"
+    ],
+    [
+      "8",
+      "write",
+      "Torque_Enable",
+      "1"
+    ],
+    [
+      "8",
+      "write",
+      "Goal_Position",
+      "2110"
+    ],
+    [
+      "8",
+      "write",
+      "Goal_Position",
+      "2086"
+    ],
+    [
+      "8",
+      "write",
+      "Torque_Enable",
+      "0"
+    ],
+    [
+      "8",
+      "write",
+      "P_Coefficient",
+      "16"
+    ]
+  ],
+  "STOP_integer_zero_fields": 51,
+  "identity_checks": 82,
+  "bound_refs_before_after": 50,
+  "original_precision_gate": "±4/800ms, delta24/min12 unchanged",
+  "outward_first_qualified_ms": 131.118331,
+  "outward_last_sample_ms": 801.213057,
+  "outward_observation_finished_ms": 801.219009,
+  "outward_final_error": -3,
+  "return_qualified_ms": 138.449869,
+  "return_final_error": 2,
+  "manualcut_required": false,
+  "full_raw_and_strace_review": "ROOT_VERIFIED_30_RAW_COMMANDS_AND_FOUR_ORDINARY_READ_TRACES",
+  "overall_result": "FAIL_BASE_FIRMWARE_CONTRACT_UNVERIFIED_PRESERVED",
+  "physical_power_telemetry": "UNKNOWN",
+  "repeatability_and_long_term_parameter_fix": "NOT_VERIFIED",
+  "saved_raw_stage_fields": 29,
+  "actual_read_raw_commands": 30,
+  "binding_full_stat_refs": 33,
+  "binding_path_sha_size_only_refs": 17,
+  "reviewer_assumption_errors_preserved": [
+    "首次展示把p_trial误当run顶层：KeyError",
+    "首strace正则混入/proc/maps读：AssertionError，改为已有ttyACM1字符设备字段；无原件修改/新采集"
+  ],
+  "final_reviewed_ns": 1791771698934641000
+}

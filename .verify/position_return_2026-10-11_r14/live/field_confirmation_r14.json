@@ -1,0 +1,14 @@
+{
+  "recorded_at_ns": 1791692681095370000,
+  "recorded_at_utc": "2026-10-11T04:24:41.095370+00:00",
+  "question_id": "call_f401b41c6f7e4d06be7f2ed701348a74",
+  "user_answer": "现场仍就绪，可执行本次头2P32往返",
+  "power": "USER_REPORTED_ON",
+  "observer": "USER_REPORTED_READY_CAN_IMMEDIATELY_CUT_POWER",
+  "arms": "USER_REPORTED_UNLOADED_SUPPORTED",
+  "head_range": "USER_REPORTED_CLEAR_SUPPORT_DOES_NOT_BLOCK",
+  "scope": "head2 left8 temporary P32 and restore16, I0 D43 unchanged, once +24 outward/back, original STOP51",
+  "physical_telemetry": "UNKNOWN",
+  "validity_ns": 600000000000,
+  "old_go_reused": false
+}

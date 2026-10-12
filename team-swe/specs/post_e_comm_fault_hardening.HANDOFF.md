@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+### 头2临时P32单次往返功能通过（2026-10-11，R14已验收收尾）
+
+本次独立GO仅执行一次left8 P16→32→16、+24往返，I0/D43不写。锚2086、目标2110；出程14样本，131.118331ms首次进入±4，末2107/-3于801.213057ms读完，原±4资格仍须在800ms内，未延长判据。回程3样本，2088/+2于138.449869ms通过。P16/D43/I0/Lock1/CW1/CCW1恢复，七次具名写仅left8：P32、GP2086、TE1、GP2110、GP2086、TE0、P16；配置区实际临时写入，不称EEPROM写0。HEAD2_SINGLE_FUNCTION_PASS与原整轮FAIL分开，BASE_FIRMWARE_CONTRACT_UNVERIFIED及三轮DEFERRED/NOT_RUN保持。
+
+STOP51均整数零、82项身份、50个bound refs前后一致及独立非UART17项清场通过，manual_power_cut_required=false。50项实际收集前后完整stat一致；入口binding中33项完整stat、17项历史path/SHA/bytes，不回填成全部入口已绑定完整stat。383直属child/766原输出、独立清场23个child均自然回收；p_trial保存29个raw字段，实际read-raw调用30次，包含Lock恢复前后各一次，不称30个新测量字段或重试。右8/9前后四次普通PV READ原帧均为零，不解释旧±50或替代物理轮静止证明。driver642733经同tmux@78/%78观察自然dead/status1后仅回收该自有pane；本轮看护已通知结束，GO已消耗，供电仅用户报告ON、独立电气遥测UNKNOWN。
+
+Orin唯一一次实际fmt于04:28:50.960902→54.448085UTC、根Clippy于04:28:54.671883→55.447179UTC零警告通过；10质量child/20原输出及同SSH四个child自然回收，owner38089/SSH38090自然exit0/reap，driver643297的@79/%79自然dead/status0后仅回收所属pane。主树前后及原生前/after-fmt/后三窗597输入逐项相同，聚合068277d8，已冻结最新nightly6f5首尾同；native HEAD894加五处dirty，不称Git对齐或clean。root实际fmt退出0并复核597项与原生逐项相同。没有新Rust测试、release/控制ELF构建、nightly更新、正式安装或服务激活。必要原件入口：[R14摘要](../../.verify/position_return_2026-10-11_r14/summary.json)，84件永久归档覆盖与原件字节相等已由root验收，软件准备、硬件808件、质量61件各保留唯一原tar。原准备FAIL、本地派生解析FAIL及质量review路径前置拒绝保留；后二者发生于SSH/Cargo之前。首未执行collector草稿误假定probes为1，实际为位置1加三轮DEFERRED；修r2仅收同一run，没有新UART、动作重试或质量重跑。审查脚本字段及正则假设错误另存，不改原件或重采。
+
+一次当前姿态功能通过，收尾已恢复P16，不证明P因果、PID即时采用、重复性、长期参数或掉电持久化；R13及更早记录在下方原样保留。长期左腕和头部参数、三轮主动运动未闭环，旧±50 OPEN、右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。下一步仅right7/right8各Firmware_Major_Version、Firmware_Minor_Version、Phase共6项只读；目前软件准备进行中，无新GO/UART。
+
 ### 头1临时P32单次往返功能通过（2026-10-11，R13已收尾）
 
 root于03:54:50.976641UTC记录人类“现场仍就绪，可执行本次 P=32 往返”，签独立600秒GO后仅执行一次left7 P16→32→16、+24往返，I0/D43不写。锚2128、目标2152；出程14样本，130.620547ms首次进入±4，继续观察至同一原窗口800.065599ms，末2150/-2 PASS；回程4样本，2132/+4于190.561352ms通过。原±4/800ms、±32及最小12保持，没有目标补偿或精度门续期。P32写ACK和原值32、P16恢复及D43/I0/Lock1/CW1/CCW1读回通过；仅七次具名写入P32、GP2128、TE1、GP2152、GP2128、TE0、P16，均为left7。配置区实际临时写入，不称EEPROM写0；未写Lock、保存、Phase、死区或底盘。

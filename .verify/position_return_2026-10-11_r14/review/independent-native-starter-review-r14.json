@@ -1,0 +1,187 @@
+{
+  "schema": "INDEPENDENT_R14_NATIVE_AND_STARTER_REVIEW_V1",
+  "status": "PASS_SOFTWARE_PREPARATION_AND_UNBOUND_STARTER_REVIEW",
+  "reviewer": "p32_native_review",
+  "scope": "现有原生准备原件、完整PLAN及未绑定GO/field的starter/launcher/observer静态窄评审",
+  "archive": {
+    "path": "target/position_return_2026-10-11_r14/native-preparation/native-preparation-originals-r14.tar.gz",
+    "sha256": "f62e0036f8c8e61b3d05aa7883a77c5d3fd85347f7aba512ed745e4d033d2c36",
+    "bytes": 220286,
+    "regular_files": 51
+  },
+  "plan": {
+    "sha256": "3334cf4e5cf73631301009f52959b63d9010ffdc25e08ef4921768eaaea5333f",
+    "bytes": 38072,
+    "canonical_plan_sha256": "faf87162281223bd9ff8dcbd406c306a4273a7b83059162af44f16e825e46d6d",
+    "canonical_digest_recomputed": true
+  },
+  "candidate": {
+    "sha256": "5053419d3659efbacafea0238e3d0c03d9351963c6b93224b3e99587889e9015",
+    "bytes": 12633
+  },
+  "helper": {
+    "sha256": "0ceb8ed58ea22db416ddce9cf7df6f221c277df1ac619a4df0980e3c23805657",
+    "bytes": 12425
+  },
+  "observation_helper": {
+    "sha256": "4595e3f21c9e6a48a8718cbdec710f4a3a41f2c7281389d225ed4ab4109c4863",
+    "bytes": 9338
+  },
+  "bindings": {
+    "sha256": "fb94a118feaf074ca495fe7311b710807668ee0eff0beba3c660b12e9183f660",
+    "bytes": 28598,
+    "references": 50
+  },
+  "native_result": {
+    "sha256": "ec0bd1042a80e1d3cdb4389d9ffddfd52419e03bd2c153a4e294cc3540bf0c37",
+    "bytes": 13116,
+    "status": "PASS_R14_NATIVE_SOFTWARE_PREPARATION_ONLY"
+  },
+  "checks": {
+    "candidate_helpers_bindings_plan_16_fixtures_sha_and_size": "PASS",
+    "direct_child_receipts_and_10_streams_sha_and_size": "PASS",
+    "driver_log_byteequal_prepare_result": true,
+    "local_native_reviewed_views_byteequal_archive": true,
+    "native_tests": {
+      "different_methods": 10,
+      "failed": 0,
+      "status": "PASS",
+      "rerun_by_reviewer": false
+    },
+    "default_plan": {
+      "status": "PLAN_ONLY",
+      "actions_started": 0,
+      "parameter_writes": 0,
+      "motion_commands": 0,
+      "load_raw_reads": 0
+    },
+    "missing_go": {
+      "exit_code": 2,
+      "refusal_before_loading": true
+    },
+    "non_uart": {
+      "checks": 17,
+      "commands": 23,
+      "exit_zero": 11,
+      "expected_empty_fuser_exit_one": 12,
+      "all_reaped": true,
+      "signals_sent": 0,
+      "cleanup": false,
+      "output_sha_and_size_verified": true,
+      "errors": [],
+      "status": "PASS"
+    },
+    "host_and_frozen_f201_13c_identity_before_after_equal": true,
+    "usb_matches_binding": true,
+    "six_services_inactive": true,
+    "related_control_or_readback_processes": 0,
+    "protected_and_all_refs_checked_before_after_by_native_preparer": true
+  },
+  "child_evidence": {
+    "native_prepare_direct_children": 5,
+    "native_prepare_direct_child_pids": [
+      642541,
+      642574,
+      642575,
+      642576,
+      642577
+    ],
+    "native_prepare_direct_child_exit_codes": {
+      "zero": 4,
+      "expected_missing_go_two": 1
+    },
+    "native_prepare_direct_children_reaped": 5,
+    "non_uart_nested_children": 23,
+    "same_ssh_children": 4,
+    "same_ssh_child_pids": [
+      642530,
+      642533,
+      642581,
+      642582
+    ],
+    "same_ssh_children_reaped": 4,
+    "signals_sent": 0,
+    "tmux": {
+      "pane": "%77",
+      "window": "@77",
+      "driver_pid": 642531,
+      "observed_natural_dead": true,
+      "pane_dead_status": 0,
+      "only_owned_dead_pane_reclaimed": true,
+      "reviewer_remote_waitpid": false
+    }
+  },
+  "starter_refs": {
+    "start_head2_p32_trial_once_r14.draft.sh": {
+      "sha256": "49dd3a95d3f34aebd1f9429cdb6bf793cb80cedf3a9ee492ff46811256d5b0d7",
+      "bytes": 7908
+    },
+    "launch_head2_p32_trial_r14.draft.sh": {
+      "sha256": "a54d9a917fcb2e2696243ee53381034ae17dfe8048ddf41f8031aa5642498593",
+      "bytes": 1236
+    },
+    "observe_once_r14.draft.sh": {
+      "sha256": "5114f9d9246ff8ef83249aaa97616168525b333864b1ef7d862e3a6ad9f2acb2",
+      "bytes": 3503
+    }
+  },
+  "starter_static_review": {
+    "field_stamp": null,
+    "field_expected": null,
+    "go_expected": null,
+    "first_guard_rejects_draft_before_path_io_or_child": true,
+    "pins_candidate_bindings_plan_and_future_field_go_sha_size": true,
+    "full_refs_protection_usb_boot_checked": true,
+    "canonical_plan_matches_native": true,
+    "go_and_field_original_600_second_limit_checked_before_and_after_nonuart": true,
+    "output_and_launch_record_refuse_repeat": true,
+    "tmux_start_calls": 1,
+    "embedded_launcher_byteequal_named_launcher": true,
+    "execute_occurrences_in_launcher": 1,
+    "launcher_names_only_r14_head2_candidate_and_r14_go": true,
+    "observer_pane_pid_window_placeholder_unbound": true,
+    "observer_same_pane_and_driver_pid_checked": true,
+    "observer_only_accepts_real_dead_status_zero_or_one_and_matching_run_result": true,
+    "observer_run_id": "head2-p32-trial-r14",
+    "drafts_executed": false
+  },
+  "trial_scope": {
+    "target": [
+      "left",
+      8,
+      "head_motor_2"
+    ],
+    "temporary_p": 32,
+    "restore_p": 16,
+    "fixed_i": 0,
+    "fixed_d": 43,
+    "i_or_d_writes": 0,
+    "delta_raw": 24,
+    "minimum_excursion_raw": 12,
+    "tolerance_raw": 4,
+    "position_wait_ms": 800,
+    "stop_gate": "原STOP51保持",
+    "base_decision": "DEFERRED",
+    "save_command_sent": false,
+    "power_cycle_persistence": "NOT_VERIFIED"
+  },
+  "blocking_findings": [],
+  "inspection_diagnostics": [
+    {
+      "kind": "REVIEWER_AST_FIXED_INDEX_ASSUMPTION",
+      "status": "CORRECTED",
+      "detail": "首次本地静态检查误把首个assert置于固定AST下标而退出1；按源代码首个assert及实际行序核对后通过。未运行starter或测试、未改变原件。"
+    }
+  ],
+  "boundaries": {
+    "software_preparation_and_unbound_templates_only": true,
+    "hardware_execution_reviewed": false,
+    "new_field_confirmation_and_new_go_required": true,
+    "old_go_must_not_be_reused": true,
+    "reviewer_ssh_calls": 0,
+    "reviewer_uart_operations": 0,
+    "reviewer_test_reruns": 0,
+    "new_quality_gates_added": 0,
+    "only_this_review_report_written": true
+  }
+}

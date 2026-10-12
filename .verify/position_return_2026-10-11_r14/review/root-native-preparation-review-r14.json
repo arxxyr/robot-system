@@ -1,0 +1,23 @@
+{
+  "status": "ROOT_ACCEPTED_R14_NATIVE_PREPARATION_NO_GO",
+  "reviewed_ns": 1791692089936689000,
+  "canonical_plan_sha256": "faf87162281223bd9ff8dcbd406c306a4273a7b83059162af44f16e825e46d6d",
+  "tar_members": 51,
+  "native_unique_memory_methods": 10,
+  "direct_children": 5,
+  "streams_verified": 10,
+  "all_direct_children_reaped": true,
+  "bound_refs": 50,
+  "target": [
+    "left",
+    8,
+    "head_motor_2"
+  ],
+  "original_gates_preserved": true,
+  "backup_and_all_available_refs_verified": true,
+  "independent_review": "independent-native-starter-review-r14.json",
+  "new_go": false,
+  "new_field": false,
+  "uart": 0,
+  "hardware_actions": 0
+}

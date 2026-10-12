@@ -1,0 +1,5 @@
+{
+  "stage": "LOCAL_GENERATION_BEFORE_TESTS",
+  "error": "重复替换plan键：head1_p32已先替换为head2_p32，断言未命中；candidate/helpers已生成，test/runner尚未保存",
+  "SSH_UART_GO_actions": 0
+}

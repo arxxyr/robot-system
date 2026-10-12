@@ -1,0 +1,23 @@
+{
+  "status": "ROOT_ACCEPTED_R14_ACTUAL_FMT_THEN_ROOT_CLIPPY",
+  "reviewed_ns": 1791771698917799000,
+  "tar_sha256": "a68bc4fe1cc0e00a38605397881e70686affec42f59744e0570d5dc7fedbc5b0",
+  "tar_regular_files": 61,
+  "native_direct_children": 10,
+  "streams_verified": 20,
+  "native_three_source_windows_equal": true,
+  "root_597_files_verified_now": true,
+  "source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "actual_fmt_pid": 643318,
+  "actual_clippy_pid": 643329,
+  "all_naturally_reaped": true,
+  "root_fmt": "本轮前序实际cargo fmt --all exit0；无Rust文件变化",
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "6f5da406b56c2db6607202b63daee73aa8c61297",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+  "native_git_state": "五项dirty，不称Git对齐",
+  "UART": 0
+}
