@@ -1,0 +1,17 @@
+{
+  "status": "READ_ONLY_STARTUP_INCIDENT_ORIGINALS",
+  "files": 42,
+  "sha256": "a216fb8bbdb735184c6dc0a0dd2cd9a5d543579d3faf7f99f098279c5764e6c6",
+  "bytes": 152527,
+  "original_GO_consumed": false,
+  "original_output_exists": false,
+  "driver_proc_exists": false,
+  "archive": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/hardware/startup-incident-originals-r1.tar.gz",
+  "original_observer": "FAIL_NO_SUCH_PANE",
+  "control_sequence": "已验actual launcher的tmux check=True失败位于candidate execv之前；d97 consumed在RealExecutor/UART之前，缺output/consumed印证未达到UART",
+  "hardware_action_test": "NOT_RUN",
+  "physical_power_cut_confirmation": "PENDING",
+  "driver_natural_wait_reap": "NOT_OBSERVED_PANE_DISAPPEARED",
+  "new_GO_allowed": false,
+  "root_policy": "本次授权终止，不复用，不重跑。仅软件修复和必要原件采集。"
+}

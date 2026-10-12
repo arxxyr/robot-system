@@ -1,0 +1,121 @@
+{
+  "schema": "BASE_ZERO_R1_INDEPENDENT_STARTUP_INCIDENT_REVIEW_V1",
+  "reviewer": "/root/position_path_review",
+  "status": "ORIGINAL_STARTUP_OBSERVATION_FAIL_PRESERVED",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/hardware/startup-incident-originals-r1.tar.gz",
+    "sha256": "a216fb8bbdb735184c6dc0a0dd2cd9a5d543579d3faf7f99f098279c5764e6c6",
+    "bytes": 152527,
+    "files": 42
+  },
+  "actual_starter": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/preparation/start_base_zero_diagnostic_once_r1.sh",
+    "sha256": "952005b9d45edda4eff237ce6a8df1f51b2e0af2dad988b86fdad1a0a4d0ceca",
+    "bytes": 11178
+  },
+  "actual_launcher": {
+    "sha256": "27d1704400e4c81a2b24bbccef86514f99afd5d30657e6e7d4a460d45e800116",
+    "bytes": 2520,
+    "member": "base-zero-diagnostic-launch-r1/launch_base_zero_diagnostic_r1.sh",
+    "byteequal_to_actual_starter_seven_pin_substitution": true,
+    "AST_parse": "PASS"
+  },
+  "driver_log": {
+    "sha256": "b7aee822ded0d3f0f06d9cc2bd2b4530e4b94bc42e2ba67160e84f8e5f0f402a",
+    "bytes": 20,
+    "content": "no such window: %91\n"
+  },
+  "observer_log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r1-single-observe.owner/child.log",
+    "sha256": "761a380ac8b1ddd5771f888ce8f9e5a82be2107237f9d342946ede32643ee2ac",
+    "bytes": 18
+  },
+  "actual_identity": "base-zero-diagnostic-trial-20261012-r1 @91 %91 653725",
+  "checks": {
+    "fixed_candidate_and_helper_bytes": true,
+    "archive_hash_size_members": true,
+    "actual_launcher_bindings_byteequal": true,
+    "candidate_exec_after_failed_tmux_check_true": true,
+    "run_exists": false,
+    "GO_consumed_exists": false,
+    "driver_proc_exists_at_readonly_snapshot": false,
+    "hardware_action_test": "NOT_RUN",
+    "UART_for_this_attempt": 0
+  },
+  "UART_evidence_boundary": "实际launcher第17行tmux命令失败在第18行候选exec之前；run/output及consumed均缺失，冻结d97第778-781行先output/consumed再RealExecutor，任何UART均在该消费之后。结论仅针对本轮授权控制路径，不推断其他进程或物理电源。",
+  "root_cause": "UNCONFIRMED_TMUX_WINDOW_TARGET_OR_STATE_DETAIL",
+  "root_cause_boundary": "R17实际已通过launcher同样使用-w/-t/$TMUX_PANE；本轮目标为何无法定位未证，不预记-P修复通过。",
+  "retention_gap": "保留设置在launcher内；设置自身或之前guard/log失败时，pane可在默认非保留状态消失。starter仅核new-session命令成功，不证明driver留存或候选执行。",
+  "driver_natural_wait_reap": "NOT_OBSERVED_PANE_DISAPPEARED",
+  "SSH_owners": [
+    {
+      "name": "base-zero-r1-single-start",
+      "result_ref": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r1-single-start.owner/result.json",
+        "sha256": "7638159819c3d724f02e4bef25bab8ce9dbbd0c04e90a241ab781e9f827ca3b3",
+        "bytes": 1531
+      },
+      "owner_pid": 36176,
+      "SSH_pid": 36177,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals": [],
+      "errors": []
+    },
+    {
+      "name": "base-zero-r1-single-observe",
+      "result_ref": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r1-single-observe.owner/result.json",
+        "sha256": "168c951bbed1648dddccc0c9dfb9d85072444d073d81289f8ad3552b81f7259d",
+        "bytes": 1530
+      },
+      "owner_pid": 36217,
+      "SSH_pid": 36218,
+      "wait_returncode": 1,
+      "reaped": true,
+      "signals": [],
+      "errors": []
+    },
+    {
+      "name": "base-zero-r1-failed-launch-readonly",
+      "result_ref": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r1-failed-launch-readonly.owner/result.json",
+        "sha256": "1c911be3e0fad94c487817e36090ca74645af037a698bdb3b805dd7fd88311a1",
+        "bytes": 1531
+      },
+      "owner_pid": 36565,
+      "SSH_pid": 36566,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals": [],
+      "errors": []
+    },
+    {
+      "name": "base-zero-r1-startup-incident-readonly-archive",
+      "result_ref": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r1-startup-incident-readonly-archive.owner/result.json",
+        "sha256": "c143490e589279316c7a531467a50975bd52cdd392ba2bf0c976143e1996c5f7",
+        "bytes": 1556
+      },
+      "owner_pid": 37878,
+      "SSH_pid": 37880,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals": [],
+      "errors": []
+    }
+  ],
+  "physical_power_cut_confirmation": "PENDING_AS_REPORTED_BY_ROOT_AT_THIS_REVIEW_REQUEST",
+  "GO_policy": "本轮尝试已经终止，不能复用现场答复或原GO；本报告不授权重试。",
+  "original_local_review_assumption_failure": {
+    "error": "KeyError:path",
+    "scope": "首只读JSONL查看误把最后proc状态行当path行；已用get分支读取，原件未改、未新增远端调用。"
+  },
+  "new_actions": {
+    "SSH": 0,
+    "UART": 0,
+    "new_GO": false,
+    "relaunch": false,
+    "candidate_edits": false
+  }
+}

@@ -1,0 +1,16 @@
+WARN `--no-project` was provided, but no project was found
+test_default_missing_go_refuse_before_loading (__main__.ZeroCases.test_default_missing_go_refuse_before_loading) ... ok
+test_diag_separate_from_deferred_rows_and_original_finish_identity (__main__.ZeroCases.test_diag_separate_from_deferred_rows_and_original_finish_identity) ... ok
+test_empty_position_and_current_airborne_go_strictly_bound (__main__.ZeroCases.test_empty_position_and_current_airborne_go_strictly_bound) ... ok
+test_happy_fixed_distributed_samples_and_only_three_writes (__main__.ZeroCases.test_happy_fixed_distributed_samples_and_only_three_writes) ... ok
+test_metadata_goal_readback_and_stop_failures_latch (__main__.ZeroCases.test_metadata_goal_readback_and_stop_failures_latch) ... ok
+test_original_deadline_late_or_missed_slot_keeps_fail_no_makeup (__main__.ZeroCases.test_original_deadline_late_or_missed_slot_keeps_fail_no_makeup) ... ok
+test_original_raw_frame_retarget_and_bad_frame_stop (__main__.ZeroCases.test_original_raw_frame_retarget_and_bad_frame_stop) ... ok
+test_uncertain_writes_latch_and_forbid_every_later_uart (__main__.ZeroCases.test_uncertain_writes_latch_and_forbid_every_later_uart) ... ok
+test_valid_nonzero_raw_immediate_single_disable_no_retry (__main__.ZeroCases.test_valid_nonzero_raw_immediate_single_disable_no_retry) ... ok
+test_write_whitelist_no_other_motor_nonzero_or_seven_byte_path (__main__.ZeroCases.test_write_whitelist_no_other_motor_nonzero_or_seven_byte_path) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.023s
+
+OK

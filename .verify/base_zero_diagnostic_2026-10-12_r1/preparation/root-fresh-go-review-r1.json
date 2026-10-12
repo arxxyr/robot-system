@@ -1,0 +1,16 @@
+{
+  "status": "PASS_FRESH_GO_BOUND_TO_ACTUAL_AIRBORNE_CONFIRMATION",
+  "field_stamp": 1791779943356024000,
+  "field": [
+    "1f50e2702a78732bf18f887469a4ed9c1e5d86d57cd38097bbbb6e4ca91f5c97",
+    1541
+  ],
+  "go": [
+    "c38354601430df6f3c7c546ea880a88de39f43fc2134c108f22b91a5bef84235",
+    1732
+  ],
+  "starter_sha256": "952005b9d45edda4eff237ce6a8df1f51b2e0af2dad988b86fdad1a0a4d0ceca",
+  "starter_bytes": 11178,
+  "no_reuse_of_capability_only_reply": true,
+  "GO_consumed": false
+}

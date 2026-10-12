@@ -1,0 +1,7 @@
+{
+  "status": "LOCAL_DRAFT_PATCH_REFUSED",
+  "error": "apply_patch invalid patch: multiple operations target same fixture path",
+  "remote_runs": 0,
+  "files_changed_by_failed_patch": 0,
+  "recovery": "update driver separately and replace own unexecuted fixture body"
+}

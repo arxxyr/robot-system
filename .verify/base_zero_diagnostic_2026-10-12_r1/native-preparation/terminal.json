@@ -1,0 +1,124 @@
+{
+  "terminal": "base-zero-diagnostic-software-20261012-r1|@90|%90|653545|1|0",
+  "driver_pid": 653545,
+  "exit_code": 0,
+  "same_ssh_children": [
+    {
+      "name": "start-software-only",
+      "argv": [
+        "tmux",
+        "new-session",
+        "-d",
+        "-s",
+        "base-zero-diagnostic-software-20261012-r1",
+        "-P",
+        "-F",
+        "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}",
+        "bash /home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/boot/launch_software_prepare_base_zero_r1.sh"
+      ],
+      "pid": 653544,
+      "started_ns": 1791779529254544814,
+      "finished_ns": 1791779529260241754,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "base-zero-diagnostic-software-20261012-r1|@90|%90|653545\n",
+      "stderr": ""
+    },
+    {
+      "name": "observe-owned-pane",
+      "argv": [
+        "tmux",
+        "display-message",
+        "-p",
+        "-t",
+        "%90",
+        "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+      ],
+      "pid": 653547,
+      "started_ns": 1791779529260272187,
+      "finished_ns": 1791779529263248501,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "base-zero-diagnostic-software-20261012-r1|@90|%90|653545|0|\n",
+      "stderr": ""
+    },
+    {
+      "name": "observe-owned-pane",
+      "argv": [
+        "tmux",
+        "display-message",
+        "-p",
+        "-t",
+        "%90",
+        "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+      ],
+      "pid": 653568,
+      "started_ns": 1791779529763383500,
+      "finished_ns": 1791779529766544619,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "base-zero-diagnostic-software-20261012-r1|@90|%90|653545|0|\n",
+      "stderr": ""
+    },
+    {
+      "name": "observe-owned-pane",
+      "argv": [
+        "tmux",
+        "display-message",
+        "-p",
+        "-t",
+        "%90",
+        "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+      ],
+      "pid": 653583,
+      "started_ns": 1791779530266673572,
+      "finished_ns": 1791779530270293457,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "base-zero-diagnostic-software-20261012-r1|@90|%90|653545|0|\n",
+      "stderr": ""
+    },
+    {
+      "name": "observe-owned-pane",
+      "argv": [
+        "tmux",
+        "display-message",
+        "-p",
+        "-t",
+        "%90",
+        "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+      ],
+      "pid": 653585,
+      "started_ns": 1791779530770420619,
+      "finished_ns": 1791779530774042136,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "base-zero-diagnostic-software-20261012-r1|@90|%90|653545|0|\n",
+      "stderr": ""
+    },
+    {
+      "name": "observe-owned-pane",
+      "argv": [
+        "tmux",
+        "display-message",
+        "-p",
+        "-t",
+        "%90",
+        "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+      ],
+      "pid": 653590,
+      "started_ns": 1791779531274160211,
+      "finished_ns": 1791779531277356756,
+      "exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "base-zero-diagnostic-software-20261012-r1|@90|%90|653545|1|0\n",
+      "stderr": ""
+    }
+  ]
+}

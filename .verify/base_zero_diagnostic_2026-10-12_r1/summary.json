@@ -1,0 +1,331 @@
+{
+  "schema": "BASE_ZERO_DIAGNOSTIC_R1_STAGE_V1",
+  "status": "STARTUP_ENTRY_FAIL_HARDWARE_NOT_RUN_SOFTWARE_FIXTURE_PASS",
+  "recorded_at_utc": "2026-10-12T04:54:32.288416+00:00",
+  "target": [
+    "right",
+    9,
+    "base_right_wheel"
+  ],
+  "frozen_candidate_sha256": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+  "software_preparation": {
+    "status": "PASS_ROOT_NATIVE_SOFTWARE_PREPARATION_REVIEW",
+    "archive": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/native-preparation/native-preparation-originals-base-zero-r1.tar.gz",
+      "sha256": "12701a0f300f717a9578c43ecbf62f4ed1f3d286aa95ee6eadc3fb3634d9e3a2",
+      "bytes": 110013,
+      "files": 30
+    },
+    "plan_sha256": "37bb533e461a88cfafebdef966e601a1f21b8d67c04ea6b03e7852d6b21f9323",
+    "software_children": 5,
+    "streams_verified": 10,
+    "memory_methods_per_platform": 10,
+    "not_added_across_platforms": true,
+    "fresh_nonUART_checks": 17,
+    "fresh_nonUART_commands": 23,
+    "preserved_refs": 53,
+    "refs": 55,
+    "original_binding_other_fields_equal": true,
+    "default_actions": 0,
+    "missing_GO_exit": 2,
+    "driver": 653545,
+    "natural_dead_status": 0,
+    "only_owned_pane_reclaimed": true,
+    "UART": 0,
+    "GO": 0,
+    "actual_output": 0,
+    "limits": "本轮仅Python输入/纯内存/PLAN/非UART验证，未新测native Rust597/编译器或构建ELF；硬件零速含义仍OPEN"
+  },
+  "original_startup_incident": {
+    "status": "READ_ONLY_STARTUP_INCIDENT_ORIGINALS",
+    "files": 42,
+    "sha256": "a216fb8bbdb735184c6dc0a0dd2cd9a5d543579d3faf7f99f098279c5764e6c6",
+    "bytes": 152527,
+    "original_GO_consumed": false,
+    "original_output_exists": false,
+    "driver_proc_exists": false,
+    "archive": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/hardware/startup-incident-originals-r1.tar.gz",
+    "original_observer": "FAIL_NO_SUCH_PANE",
+    "control_sequence": "已验actual launcher的tmux check=True失败位于candidate execv之前；d97 consumed在RealExecutor/UART之前，缺output/consumed印证未达到UART",
+    "hardware_action_test": "NOT_RUN",
+    "physical_power_cut_confirmation": "PENDING",
+    "driver_natural_wait_reap": "NOT_OBSERVED_PANE_DISAPPEARED",
+    "new_GO_allowed": false,
+    "root_policy": "本次授权终止，不复用，不重跑。仅软件修复和必要原件采集。"
+  },
+  "launcher_fix": {
+    "status": "FIXED_LAUNCHER_TEMPLATE_ZERO_IO_UNBOUND",
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/launcher-pane-fix/launch_base_zero_diagnostic_future.fixed-unbound.sh",
+    "sha256": "d548a4d20ad82849de486b7c2691c561fac6aec5d8726b3b6fc02a7647eabe27",
+    "bytes": 2091,
+    "change": "仅具名tmux调用-w→-p",
+    "fixed_hardware_candidate_sha": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+    "original_bad_launcher_preserved": true,
+    "new_hardware_run": false,
+    "future_requirement": "模板仍含本轮R1路径用于精确对比；新一轮必须独占新output/launch/GO/fullPLAN并填root本次新现场pins，禁止直接重用旧R1路径/GO"
+  },
+  "software_fixture": {
+    "status": "PASS_SOFTWARE_ONLY_PANE_OPTION_FIXTURE",
+    "result": {
+      "status": "PASS_SOFTWARE_ONLY_PANE_OPTION_FIXTURE",
+      "session": "base-zero-pane-option-candidate-p-20261012-r1",
+      "window": "@93",
+      "pane": "%93",
+      "driver_pid": 654024,
+      "terminal": "base-zero-pane-option-candidate-p-20261012-r1|@93|%93|654024|1|0",
+      "driver_receipt": {
+        "scope": "SOFTWARE_ONLY_TMUX_OPTION_FIXTURE",
+        "driver_pid": 654024,
+        "pane": "%93",
+        "flag": "-p",
+        "started_ns": 1791780743264054179,
+        "after_option_reached": true,
+        "children": [
+          {
+            "argv": [
+              "tmux",
+              "show-options",
+              "-p",
+              "-v",
+              "-t",
+              "%93",
+              "remain-on-exit"
+            ],
+            "pid": 654027,
+            "started_ns": 1791780743264763642,
+            "exit_code": 0,
+            "real_wait_returncode": 0,
+            "reaped": true,
+            "signals_sent": []
+          },
+          {
+            "argv": [
+              "tmux",
+              "set-option",
+              "-p",
+              "-t",
+              "%93",
+              "remain-on-exit",
+              "on"
+            ],
+            "pid": 654028,
+            "started_ns": 1791780743267949060,
+            "exit_code": 0,
+            "real_wait_returncode": 0,
+            "reaped": true,
+            "signals_sent": []
+          },
+          {
+            "argv": [
+              "tmux",
+              "show-options",
+              "-p",
+              "-v",
+              "-t",
+              "%93",
+              "remain-on-exit"
+            ],
+            "pid": 654029,
+            "started_ns": 1791780743270657117,
+            "exit_code": 0,
+            "real_wait_returncode": 0,
+            "reaped": true,
+            "signals_sent": []
+          }
+        ],
+        "UART": 0,
+        "GO": false,
+        "remain_on_exit_before": "",
+        "remain_on_exit_after": "on\n",
+        "finished_ns": 1791780743273081389,
+        "option_wrapper_exit": 0
+      },
+      "software_marker_exists": true,
+      "owned_dead_pane_reclaimed": true,
+      "tmux_version": {
+        "name": "version",
+        "argv": [
+          "tmux",
+          "-V"
+        ],
+        "pid": 654022,
+        "started_ns": 1791780743211397012,
+        "finished_ns": 1791780743213749410,
+        "exit_code": 0,
+        "reaped": true,
+        "signals_sent": [],
+        "stdout": "tmux 3.2a\n",
+        "stderr": ""
+      },
+      "direct_children": [
+        {
+          "name": "version",
+          "argv": [
+            "tmux",
+            "-V"
+          ],
+          "pid": 654022,
+          "started_ns": 1791780743211397012,
+          "finished_ns": 1791780743213749410,
+          "exit_code": 0,
+          "reaped": true,
+          "signals_sent": [],
+          "stdout": "tmux 3.2a\n",
+          "stderr": ""
+        },
+        {
+          "name": "start",
+          "argv": [
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            "base-zero-pane-option-candidate-p-20261012-r1",
+            "-P",
+            "-F",
+            "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}",
+            "exec /home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 /home/loosqk/robot-checks/position-return-20261010-r1/launcher-pane-option-fixture-r1/option_driver.py /home/loosqk/robot-checks/position-return-20261010-r1/launcher-pane-option-fixture-r1/candidate-p"
+          ],
+          "pid": 654023,
+          "started_ns": 1791780743213944328,
+          "finished_ns": 1791780743219187158,
+          "exit_code": 0,
+          "reaped": true,
+          "signals_sent": [],
+          "stdout": "base-zero-pane-option-candidate-p-20261012-r1|@93|%93|654024\n",
+          "stderr": ""
+        },
+        {
+          "name": "observe",
+          "argv": [
+            "tmux",
+            "display-message",
+            "-p",
+            "-t",
+            "%93",
+            "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+          ],
+          "pid": 654026,
+          "started_ns": 1791780743219217623,
+          "finished_ns": 1791780743222165816,
+          "exit_code": 0,
+          "reaped": true,
+          "signals_sent": [],
+          "stdout": "base-zero-pane-option-candidate-p-20261012-r1|@93|%93|654024|0|\n",
+          "stderr": ""
+        },
+        {
+          "name": "observe",
+          "argv": [
+            "tmux",
+            "display-message",
+            "-p",
+            "-t",
+            "%93",
+            "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+          ],
+          "pid": 654030,
+          "started_ns": 1791780743272285715,
+          "finished_ns": 1791780743275053231,
+          "exit_code": 0,
+          "reaped": true,
+          "signals_sent": [],
+          "stdout": "base-zero-pane-option-candidate-p-20261012-r1|@93|%93|654024|0|\n",
+          "stderr": ""
+        },
+        {
+          "name": "observe",
+          "argv": [
+            "tmux",
+            "display-message",
+            "-p",
+            "-t",
+            "%93",
+            "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+          ],
+          "pid": 654032,
+          "started_ns": 1791780743325159465,
+          "finished_ns": 1791780743328364243,
+          "exit_code": 0,
+          "reaped": true,
+          "signals_sent": [],
+          "stdout": "base-zero-pane-option-candidate-p-20261012-r1|@93|%93|654024|1|0\n",
+          "stderr": ""
+        },
+        {
+          "name": "reclaim-owned-dead",
+          "argv": [
+            "tmux",
+            "kill-pane",
+            "-t",
+            "%93"
+          ],
+          "pid": 654033,
+          "started_ns": 1791780743328769057,
+          "finished_ns": 1791780743331345014,
+          "exit_code": 0,
+          "reaped": true,
+          "signals_sent": [],
+          "stdout": "",
+          "stderr": ""
+        }
+      ],
+      "UART": 0,
+      "hardware_candidate_started": false,
+      "new_GO": false,
+      "limitations": [
+        "仅本次-p纯软件调用及retention；旧启动/观察FAIL保留",
+        "未重跑-w负控，不解释旧R17同式成功的具体原因"
+      ]
+    },
+    "archive_sha256": "f8f2da30acd3d9d9cbfa07d519a3c2815611bcffa12035f4450db180369ffbfd",
+    "archive_bytes": 2887,
+    "files": 5,
+    "archive_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/launcher-pane-fix/pane-option-fixture-originals-r1.tar.gz"
+  },
+  "source_commit_quality": {
+    "status": "PASS_ROOT_BASE_ZERO_COMMIT_QUALITY",
+    "archive_sha256": "6605b6b5c898efc166e260eddefd770994d9d8fc969dfc90c1185dcb15789b4b",
+    "archive_bytes": 134604,
+    "archive_files": 53,
+    "children": 11,
+    "streams": 22,
+    "fmt_pid": 653942,
+    "clippy_pid": 653953,
+    "zero_warnings": true,
+    "root_actual_fmt": {
+      "chunk": "0c8d16",
+      "exit_code": 0,
+      "wall_seconds": 0.889425959
+    },
+    "root_native_597_per_file_equal": true,
+    "source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "compiler_commit": "080cc27146389dbb5c8772c476b1937be9c6110f",
+    "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+    "native_git_clean": false,
+    "UART": 0,
+    "new_GO": 0,
+    "Rust_tests": 0,
+    "release": 0
+  },
+  "field": {
+    "original_reply_question": "call_9a95a33a7fcf48f08f7d3e9befb09090",
+    "original_report": "三轮已实际架空稳定支撑、供电、空载双臂支撑、持续看护/立即断电",
+    "subsequent_manual_cut_request": "SENT_AFTER_OBSERVER_FAILED",
+    "actual_power_cut_confirmation": "PENDING",
+    "current_independent_power_telemetry": "UNKNOWN",
+    "original_GO": "EXPIRED_AND_OPERATIONALLY_TERMINATED_NEVER_CONSUMED_BY_CANDIDATE",
+    "hardware_retries": 0
+  },
+  "counts_and_limits": [
+    "10个不同Python内存方法/平台，r1-r4及两平台不重复累计",
+    "纯软件fixture一例不计作底盘或Rust方法",
+    "本轮没有run/STOP51或PV测量，不能记零速/物理停止PASS",
+    "driver653725真实wait/reap NOT_OBSERVED，未从进程消失推成功",
+    "R17同式-w曾成功，具体失败差异UNCONFIRMED",
+    "head1/2 P32正负向各单次功能PASS后恢复P16；左腕临时I1恢复I0，长期设置OPEN",
+    "底盘三轮DEFERRED/NOT_RUN、零速合同和旧±50原因OPEN",
+    "右H2完整PASS、D15 OPEN/DEFERRED、deployable=false，无安装/服务动作"
+  ],
+  "next_step": "收到现场断电状态后，按新独占output/launch/GO/fullPLAN与当次就绪事实准备一次right9零目标实测，使用已软件验证的-p修复；不复用本轮GO，不扫参或扩大框架"
+}

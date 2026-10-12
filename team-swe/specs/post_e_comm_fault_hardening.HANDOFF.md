@@ -2,6 +2,18 @@
 
 ## 当前步骤
 
+### 底盘零目标诊断启动失败，实机诊断未运行（客户端本地2026-10-12，R1已终止）
+
+仅准备right9/base_right_wheel裸Goal_Velocity=0→Enable→固定500ms内0/200/400ms三次PV原帧→Disable的独立诊断，可能转动，要求当次三轮实际架空稳定支撑和持续看护。原STOP51、身份及四锁门保留，三轮仍DEFERRED/NOT_RUN、BASE_FIRMWARE_CONTRACT_UNVERIFIED；没有改模式、Phase、PID或接入生产路径。本机和Orin各10个Python内存方法、默认零动作、缺GO预期exit2、55refs/完整PLAN与17项非UART软件准备通过，不跨平台累计为20。原生准备唯一30件原包12701a0f/110013B保留，五个软件child及十份输出自然回收；准备不等于实机零速语义通过。
+
+本轮收到实际架空、稳定支撑和看护就绪答复后，root仅启动一次。starter返回driver653725/@91/%91，但实际launcher在候选exec之前执行`tmux set-option -w -t $TMUX_PANE remain-on-exit on`失败，driver.log仅20B `no such window: %91`；随后observer报`no such pane: %91`，观察FAIL保留。2520B实际launcher与已验starter七项pins替换结果逐字相同；run、动作output及GO.consumed均不存在。结合冻结d97先创建output/consumed、再创建RealExecutor及进行UART的执行顺序，本次程序路径UART和电机写均为0，zero诊断NOT_RUN；不记零速合同、STOP51或物理轮停止PASS。后续只读快照中driver进程已未见，但真实自然wait/reap仍NOT_OBSERVED，不能写成driver回收通过。R17实际launcher同式命令曾成功，本轮具体tmux目标解析/状态差异UNCONFIRMED，不把推测写成根因。
+
+失败原件唯一42件tar为a216fb8bbdb735184c6dc0a0dd2cd9a5d543579d3faf7f99f098279c5764e6c6/152527B，候选f59455a6、helper406295f0及原件保持字节不变；[独立启动事件核验](../../.verify/base_zero_diagnostic_2026-10-12_r1/review/independent-startup-incident-review-r1.json)保留完整边界。root已要求现场立即切断两个电机电源并保持支撑，实际断电确认仍待答；本轮GO已过期、尝试终止，不复用已用现场答复或GO，不自动重试。
+
+提交前root本机实际fmt退出0；Orin经10.0.1.80:10808代理实际更新nightly频道，结果仍为080cc27146389dbb5c8772c476b1937be9c6110f，随后实际fmt→根Clippy零警告通过。11个不同Runner child/22原流与597输入三窗逐项核验，聚合068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8；driver653914/@92/%92自然dead/status0后仅回收自有pane，owner39082/SSH39083自然wait0/reap。53件唯一质量原包6605b6b5/134604B，[质量核验](../../.verify/base_zero_diagnostic_2026-10-12_r1/native-quality/quality-verification-base-zero-r1.json)通过；native HEAD894加五dirty，不称Git对齐或clean。该质量检查无新Rust测试、release/控制ELF构建、UART、GO、服务启动或实机launcher重跑。只将launcher的-w改为-p，Orin tmux3.2a单例纯软件fixture已通过：654024/@93/%93自然dead/status0，option读回on，随后只回收自有deadpane；六外层/三option内层child均真实wait/reap。五件fixture原包f8f2da30/2887B，仍未执行硬件候选或新GO；固定新模板七项pins均None，旧actual失败launcher不改。永久129件逐份核验，[本轮摘要](../../.verify/base_zero_diagnostic_2026-10-12_r1/summary.json)。
+
+下一步收到实际断电状态后，使用新独占output/launch/GO/fullPLAN及当次现场事实，准备一次right9零目标实测；本段不构成动作授权。头部P32正/负向各单次功能已通过并恢复P16，左腕临时I1通过后恢复I0；长期参数设置仍OPEN，单次功能不证明PID因果、即时采用、重复性或掉电持久化。底盘零速合同/主动运动及旧±50仍OPEN，不扫参、加框架或改变模式/Phase。原R17及以下HANDOFF整段原文保留，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false不变。
+
 ### 头2临时P32负向单次往返功能通过（客户端本地2026-10-11，R17已收尾）
 
 本次独立GO仅执行一次left8 P16→32→16、−24往返，D43/I0不写。锚2090、目标2066；出程14样本，130.567212ms首次±4、末2069/+3，观察结束800.062744ms不延原800ms资格期限；回程3样本2087/−3于130.425830ms通过。实际负向位移21，原±4/800ms、±32/min12保持，反馈与原READ一致、未镜像。头2本次功能PASS；原整轮仍FAIL，仅因BASE_FIRMWARE_CONTRACT_UNVERIFIED及三轮DEFERRED/NOT_RUN。

@@ -1,0 +1,1 @@
+{"status": "PLAN_ONLY", "run_id": "base-zero-diagnostic-r1", "target": ["right", 9, "base_right_wheel"], "scope": "仅右9/base_right_wheel一次裸Goal_Velocity0→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑", "actions_started": 0, "register_writes": 0, "motion_commands": 0, "position_targets": [], "new_GO": false}

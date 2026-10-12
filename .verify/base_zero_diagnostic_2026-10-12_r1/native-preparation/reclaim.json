@@ -1,0 +1,17 @@
+{
+  "name": "reclaim-only-natural-dead-owned-pane",
+  "argv": [
+    "tmux",
+    "kill-pane",
+    "-t",
+    "%90"
+  ],
+  "pid": 653591,
+  "started_ns": 1791779531277902148,
+  "finished_ns": 1791779531280359567,
+  "exit_code": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": "",
+  "stderr": ""
+}

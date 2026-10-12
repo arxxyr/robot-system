@@ -1,0 +1,140 @@
+{
+  "schema": "BASE_ZERO_DIAGNOSTIC_INDEPENDENT_STATIC_REVIEW_R1",
+  "reviewer": "/root/position_path_review",
+  "result": "STATIC_ACCEPT_FOR_FIXED_APPROVED_ENTRY",
+  "refs": {
+    "candidate": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/candidate/base_zero_diagnostic_r1.py",
+      "sha256": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+      "bytes": 19556
+    },
+    "raw_helper": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/candidate/raw_right9_from_r14_r1.py",
+      "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa",
+      "bytes": 12216
+    },
+    "raw_helper_diff": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/candidate/raw-helper-diff-vs-r14.patch",
+      "sha256": "ce090b958f2c19a1f10d9300f1a43075f1ffd4a08c8b9451727d16d0b703f498",
+      "bytes": 3929
+    },
+    "original_maintenance": {
+      "path": "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    }
+  },
+  "checks": [
+    {
+      "name": "固定范围及默认入口",
+      "status": "STATIC_ACCEPT",
+      "evidence": [
+        "candidate:13-26,51-64,333-357"
+      ],
+      "detail": "仅right9/base_right_wheel；position_targets为空；默认无输入仅PLAN_ONLY，缺GO在load_frozen前拒绝；完整PLAN构造有本地文件读取但无UART。"
+    },
+    {
+      "name": "当次架空现场与独立GO",
+      "status": "STATIC_ACCEPT",
+      "evidence": [
+        "candidate:67-78",
+        "original_maintenance:164-180,770,780,809-816"
+      ],
+      "detail": "GO绑定本PLAN/host/boot/root来源，最多600秒；要求三轮实际已离地且底盘稳定支撑、CURRENT_SETUP_READY/非空当次答案/固定scope及600秒新鲜度，沿原双端看护/支撑/可立即断电门。仅检验GO声明，不能由软件独立证明物理架空。"
+    },
+    {
+      "name": "写名单及raw读原字",
+      "status": "STATIC_ACCEPT",
+      "evidence": [
+        "candidate:131-182,195-225,263-270",
+        "raw_helper:63-72"
+      ],
+      "detail": "只有冻结f201 right9 Goal_Velocity=0、Torque_Enable=1、cleanup Torque_Enable=0按顺序一次；raw仅right9九字段。Goal46/2B、TE40/1B、PV58/2B。raw TX/RX/ID/宽度/状态/校验和及unsigned小端吻合，0x8000不折算成零。原值未知/帧错会粘性封锁，不继续UART。"
+    },
+    {
+      "name": "分散采样及原期限",
+      "status": "STATIC_ACCEPT_WITH_EXPLICIT_BOUNDARY",
+      "evidence": [
+        "candidate:22-25,96-98,227-252"
+      ],
+      "detail": "TE1 ACK及rawTE1=1确认后建立唯一500ms deadline。目标偏移0/200/400ms、恰三次PV，错过下一目标时间或原帧完成越过deadline即FAIL且无补读/重试；调度lateness实际记录。窗口不是Enable到Disable的硬件时限，不证明连续500ms物理静止。最后sleep返回略晚不延长样本资格。"
+    },
+    {
+      "name": "停止失败即封锁及原STOP51粘性",
+      "status": "STATIC_ACCEPT",
+      "evidence": [
+        "candidate:103-128,145-181,263-270,321-330",
+        "original_maintenance:328-350,572-612,662-710,713-725,841-843"
+      ],
+      "detail": "有效非零PV或时间资格FAIL仅单次Disable，停止确认通过时保留诊断FAIL。写不确定、raw未知、普通cleanup STOP READ异常/完整stdout身份未知/非零立即block_uart；safe_off虽原逐catch，下一工具调用在guard首门本地拒绝。最终STOP51原整数零门/完整身份不删改，manual_cut作为sticky cleanup错误进入STOP分类，非PASS整体NEEDS_MANUAL_POWER_CUT；零诊断错误和三轮DEFERRED不可能整轮PASS。"
+    },
+    {
+      "name": "原身份与fourlocks",
+      "status": "STATIC_ACCEPT",
+      "evidence": [
+        "original_maintenance:790-825",
+        "candidate:321-330"
+      ],
+      "detail": "复用d97 protected refs/protection、proc/USB/service/holders和四合作锁取得；finish仍在四锁持有范围，未清保护/重绑USB/重启服务或新增生产接入。初始17电机快照保持原d97流程，诊断内command守卫在run_zero_diag入口安装。"
+    },
+    {
+      "name": "普通READ和WRITE原件捕获",
+      "status": "STATIC_ACCEPT_WITH_PENDING_ACTUAL_FRAMES",
+      "evidence": [
+        "candidate:274-303,329-330",
+        "raw_helper:30-61"
+      ],
+      "detail": "两个exact谓词互斥且不增加UART：R14 right8/9普通PV读取捕获保留，同stdout供原STOP；right9三写保存独占普通strace、真实成功返回要求exited with 0终态。写ACK沿冻结f201具名write路径，候选只核精确stdout并保留完整strace；未新增自动帧解析器，实际Goal0/TE完整TX/ACK仍明确PENDING root对真实原件审查，不能把本静审称为实机帧通过。"
+    },
+    {
+      "name": "helper派生与批准入口边界",
+      "status": "STATIC_ACCEPT",
+      "evidence": [
+        "raw_helper_diff",
+        "raw_helper:5-16,24-28,63-81",
+        "candidate:81-99,148-155,347-357"
+      ],
+      "detail": "helper改动仅TARGET/META和raw_read的right9目标/帧ID；旧head2/P24 BACKUP/write_p/run_trial/main字节保留，不是right9参数证据且批准主入口不调用。结论仅对本候选入口；不授权独立执行旧helper入口。"
+    },
+    {
+      "name": "三底盘合同仍未知",
+      "status": "STATIC_ACCEPT",
+      "evidence": [
+        "candidate:53-55,95-98,306-326",
+        "original_maintenance:713-725"
+      ],
+      "detail": "zero_diag单独存放，不写入position结果；每次motion finally保持原三轮具名DEFERRED/NOT_RUN及BASE_FIRMWARE_CONTRACT_UNVERIFIED，firmware_contract_verified=False；整体仍FAIL或停止未知时NEEDS_MANUAL_POWER_CUT，不声明Mode1/Phase12零语义闭合。"
+    }
+  ],
+  "closed_static_findings": [
+    {
+      "finding": "原right8/9普通PV帧捕获未安装",
+      "resolution": "candidate329安装原hook，330追加互斥写捕获；未增加读取。"
+    },
+    {
+      "finding": "safe_off逐catch使首普通停止READ未知后仍可能发下一UART",
+      "resolution": "candidate172-181即时粘性block，后续工具调用145-146首门拒绝。"
+    },
+    {
+      "finding": "WRITE捕获缺成功终态验核",
+      "resolution": "candidate284-302成功返回时要求strace自然exited with 0；实际frame审查保留PENDING。"
+    }
+  ],
+  "executed_by_this_review": {
+    "source_reads": true,
+    "ast_parse_only": true,
+    "candidate_import_or_execution": false,
+    "selftests": false,
+    "native_prepare": false,
+    "SSH": false,
+    "UART": false,
+    "new_GO": false,
+    "Cargo": false,
+    "tracked_changes": false
+  },
+  "limits": [
+    "本报告不替代实现agent自测或root原生软件准备/实际PLAN评审。",
+    "本报告不构成新现场确认/GO或任何UART动作授权。",
+    "软件零速度读回不等于物理轮静止，STOP51整数零不等于硬件fail-safe/D15闭合。"
+  ]
+}

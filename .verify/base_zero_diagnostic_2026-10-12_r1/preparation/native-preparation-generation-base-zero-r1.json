@@ -1,0 +1,83 @@
+{
+  "status": "LOCAL_DRAFT_WAIT_ROOT_APPROVAL_NO_SSH",
+  "recorded_at_utc": "2026-10-12T04:29:58.746371+00:00",
+  "files": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/preparation/prepare_base_zero_diagnostic_r1.draft.py",
+      "sha256": "d05e2b8b9709b4b31d754c879339f1c7072493af4a0df1a175125880c35e4532",
+      "bytes": 8305
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/preparation/minimal_software_prepare_base_zero_r1.draft.sh",
+      "sha256": "c6ba61e5ade36b0e4b17d269cf4b41dc1d541de4649c1eab7f2c50464a1abacb",
+      "bytes": 206519
+    }
+  ],
+  "phase": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1",
+  "old_binding": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r17/native-preparation/maintenance_bindings_head2_p32_reverse_r17.json",
+    "sha256": "274a2be1541725aaf18b4fff4b39f1c93f54e31ba6f142b7bb5c47af1e7840ef",
+    "bytes": 29452,
+    "remote_path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/maintenance_bindings_head2_p32_reverse_r17.json",
+    "old_refs": 53,
+    "new_refs_expected": 55,
+    "other_fields_preserved": true
+  },
+  "memory_inputs": {
+    "candidate/base_zero_diagnostic_r1.py": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/memory-root/candidate/base_zero_diagnostic_r1.py",
+      "sha256": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+      "bytes": 19556
+    },
+    "candidate/test_base_zero_diagnostic_r1.py": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/memory-root/candidate/test_base_zero_diagnostic_r1.py",
+      "sha256": "304af8245696f60e457da3516b13f15956ac76fd5fd2a29c5f4892c78d6634f7",
+      "bytes": 18881
+    },
+    "candidate/raw_right9_from_r14_r1.py": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/memory-root/candidate/raw_right9_from_r14_r1.py",
+      "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa",
+      "bytes": 12216
+    },
+    "scripts/run_hardware_maintenance.py": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/memory-root/scripts/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    ".verify/position_return_2026-10-11_r14/helpers/parameter_stop_head2_r14.py": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/memory-root/.verify/position_return_2026-10-11_r14/helpers/parameter_stop_head2_r14.py",
+      "sha256": "0ceb8ed58ea22db416ddce9cf7df6f221c277df1ac619a4df0980e3c23805657",
+      "bytes": 12425
+    },
+    "target/position_return_2026-10-11_r17/native-preparation/maintenance_bindings_head2_p32_reverse_r17.json": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/memory-root/target/position_return_2026-10-11_r17/native-preparation/maintenance_bindings_head2_p32_reverse_r17.json",
+      "sha256": "274a2be1541725aaf18b4fff4b39f1c93f54e31ba6f142b7bb5c47af1e7840ef",
+      "bytes": 29452
+    }
+  },
+  "payload_sources": {
+    "memory-root/candidate/base_zero_diagnostic_r1.py": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/candidate/base_zero_diagnostic_r1.py",
+    "memory-root/candidate/test_base_zero_diagnostic_r1.py": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/candidate/test_base_zero_diagnostic_r1.py",
+    "memory-root/candidate/raw_right9_from_r14_r1.py": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/candidate/raw_right9_from_r14_r1.py",
+    "memory-root/scripts/run_hardware_maintenance.py": "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py",
+    "memory-root/.verify/position_return_2026-10-11_r14/helpers/parameter_stop_head2_r14.py": "/Users/loosqk/repo/rust/robot-system/.verify/position_return_2026-10-11_r14/helpers/parameter_stop_head2_r14.py",
+    "memory-root/target/position_return_2026-10-11_r17/native-preparation/maintenance_bindings_head2_p32_reverse_r17.json": "/Users/loosqk/repo/rust/robot-system/target/position_return_2026-10-11_r17/native-preparation/maintenance_bindings_head2_p32_reverse_r17.json",
+    "boot/prepare_base_zero_diagnostic_r1.py": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/preparation/prepare_base_zero_diagnostic_r1.draft.py"
+  },
+  "payload_files": 7,
+  "payload_bytes": 151003,
+  "local_source_files": 597,
+  "local_source_manifest_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "source_tree_transported": false,
+  "local_bash_n": {
+    "pid": 33835,
+    "exit_code": 0,
+    "reaped": true
+  },
+  "SSH": 0,
+  "Cargo": 0,
+  "UART": 0,
+  "GO_created": false,
+  "field_created": false,
+  "actual_output_created": false
+}

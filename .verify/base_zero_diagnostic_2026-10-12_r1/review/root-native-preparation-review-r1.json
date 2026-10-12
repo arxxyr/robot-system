@@ -1,0 +1,28 @@
+{
+  "status": "PASS_ROOT_NATIVE_SOFTWARE_PREPARATION_REVIEW",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r1/native-preparation/native-preparation-originals-base-zero-r1.tar.gz",
+    "sha256": "12701a0f300f717a9578c43ecbf62f4ed1f3d286aa95ee6eadc3fb3634d9e3a2",
+    "bytes": 110013,
+    "files": 30
+  },
+  "plan_sha256": "37bb533e461a88cfafebdef966e601a1f21b8d67c04ea6b03e7852d6b21f9323",
+  "software_children": 5,
+  "streams_verified": 10,
+  "memory_methods_per_platform": 10,
+  "not_added_across_platforms": true,
+  "fresh_nonUART_checks": 17,
+  "fresh_nonUART_commands": 23,
+  "preserved_refs": 53,
+  "refs": 55,
+  "original_binding_other_fields_equal": true,
+  "default_actions": 0,
+  "missing_GO_exit": 2,
+  "driver": 653545,
+  "natural_dead_status": 0,
+  "only_owned_pane_reclaimed": true,
+  "UART": 0,
+  "GO": 0,
+  "actual_output": 0,
+  "limits": "本轮仅Python输入/纯内存/PLAN/非UART验证，未新测native Rust597/编译器或构建ELF；硬件零速含义仍OPEN"
+}
