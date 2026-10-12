@@ -1,0 +1,32 @@
+{
+  "pins": {
+    "FIELD_STAMP": 1791785581689362000,
+    "FIELD_EXPECTED": [
+      "17d1e866fa2717d6ffe5d1149f84bde8034b145a82ecbba3c03c074e7efaa6a7",
+      1545
+    ],
+    "GO_EXPECTED": [
+      "23df442acb35668d1e5f9c5dd64190e7f3e2c597fd3322c26299a04e865d0cd1",
+      1754
+    ],
+    "BINDING_EXPECTED": [
+      "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      30051
+    ],
+    "PLAN_EXPECTED": [
+      "489beb14a275f472a8306f27660daeb89a7770e66beb4fc04935f9d91bb6640b",
+      38231
+    ],
+    "NATIVE_PREPARATION_EXPECTED": [
+      "678f557e23142fcf5d249f5edf669eebc88dda9bed97af4fabaef85c5509b000",
+      5035
+    ],
+    "PLAN_CANONICAL_SHA": "3fc25e07d637bad4e1c5c2e683d4211fdeb5cdc04dba5f1b690040916f82facb"
+  },
+  "go_expiry_ns": 1791786181689362000,
+  "field_ttl_extended": false,
+  "recipe_sha256": "272694de9fd336c8a0bf9678e6b382b59f39ecdc916dc298bd507670c24748b4",
+  "source_preparation_child": 655208,
+  "old_SSH255": "PRESERVED_NOT_BACKFILLED",
+  "GO_new": true
+}

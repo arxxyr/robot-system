@@ -1,0 +1,9 @@
+{
+  "status": "DIRECT_CURRENT_R4_FIELD_RECORDED_NO_GO",
+  "field_stamp": 1791785581689362000,
+  "field_sha256": "17d1e866fa2717d6ffe5d1149f84bde8034b145a82ecbba3c03c074e7efaa6a7",
+  "field_bytes": 1545,
+  "question_id": "call_lwNEmG2ndmEw4PYpwCfmgOF8",
+  "new_GO": false,
+  "UART": 0
+}

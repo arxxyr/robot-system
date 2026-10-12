@@ -1,0 +1,900 @@
+{
+  "schema": "MAINTENANCE_BINDINGS_V1",
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "tool": {
+    "path": "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+    "sha256": "f2014ee4008311e7a8725235a39f0d1b3913391f17cbd977b7441f120539114b",
+    "bytes": 1469904,
+    "uid": 1000,
+    "gid": 1000,
+    "mode": 509,
+    "device": 66305,
+    "inode": 15618634,
+    "mtime_ns": 1790786705801501454,
+    "ctime_ns": 1790786705801501454,
+    "elf_machine": 183
+  },
+  "usb": {
+    "left": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496,
+      "mode": 432,
+      "uid": 0,
+      "gid": 20,
+      "device_inode": 1552,
+      "link_inode": 1555,
+      "link_target": "../../ttyACM0",
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3536208877616"
+    },
+    "right": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497,
+      "mode": 432,
+      "uid": 0,
+      "gid": 20,
+      "device_inode": 1537,
+      "link_inode": 1540,
+      "link_target": "../../ttyACM1",
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336"
+    }
+  },
+  "protection": {
+    "left": {
+      "rx_trust_marker": {
+        "path": "/var/lib/robot/xlerobot_left/rx_trust_marker",
+        "hex": "310a",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15864277,
+        "mtime_ns": 1790710985695936226,
+        "ctime_ns": 1790710985699936395,
+        "valid": true
+      },
+      "rx_trust_marker.bak": {
+        "path": "/var/lib/robot/xlerobot_left/rx_trust_marker.bak",
+        "hex": "310a",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15864361,
+        "mtime_ns": 1790710985691936056,
+        "ctime_ns": 1790710985695936226,
+        "valid": true
+      },
+      "estop_latch": {
+        "path": "/var/lib/robot/xlerobot_left/estop_latch",
+        "hex": "310a",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "mode": 416,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15864353,
+        "mtime_ns": 1790710994912328740,
+        "ctime_ns": 1790710994916328911,
+        "valid": true
+      },
+      "estop_latch.bak": {
+        "path": "/var/lib/robot/xlerobot_left/estop_latch.bak",
+        "hex": "310a",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "mode": 416,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15864309,
+        "mtime_ns": 1790710994920329082,
+        "ctime_ns": 1790710994920329082,
+        "valid": true
+      },
+      "rx_trust.lock": {
+        "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+        "hex": "3338303933310a",
+        "sha256": "286950220e7f240be3315cfc9bddda53b1a84f6c94651a41fd1ae80c097a2152",
+        "bytes": 7,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15864273,
+        "mtime_ns": 1790710985687935887,
+        "ctime_ns": 1790710985687935887,
+        "valid": true
+      },
+      "estop_latch.lock": {
+        "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+        "hex": "3338303933310a",
+        "sha256": "286950220e7f240be3315cfc9bddda53b1a84f6c94651a41fd1ae80c097a2152",
+        "bytes": 7,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15864354,
+        "mtime_ns": 1790710985687935887,
+        "ctime_ns": 1790710985687935887,
+        "valid": true
+      }
+    },
+    "right": {
+      "rx_trust_marker": {
+        "path": "/var/lib/robot/xlerobot_right/rx_trust_marker",
+        "hex": "310a",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15859902,
+        "mtime_ns": 1791606541847583522,
+        "ctime_ns": 1791606541851583745,
+        "valid": true
+      },
+      "rx_trust_marker.bak": {
+        "path": "/var/lib/robot/xlerobot_right/rx_trust_marker.bak",
+        "hex": "310a",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15859891,
+        "mtime_ns": 1791606541839583076,
+        "ctime_ns": 1791606541843583299,
+        "valid": true
+      },
+      "estop_latch": {
+        "path": "/var/lib/robot/xlerobot_right/estop_latch",
+        "hex": "310a",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15859906,
+        "mtime_ns": 1791609967960876371,
+        "ctime_ns": 1791609967968875946,
+        "valid": true
+      },
+      "estop_latch.bak": {
+        "path": "/var/lib/robot/xlerobot_right/estop_latch.bak",
+        "hex": "310a",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15859890,
+        "mtime_ns": 1791609967972875733,
+        "ctime_ns": 1791609967972875733,
+        "valid": true
+      },
+      "rx_trust.lock": {
+        "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+        "hex": "3630353132380a",
+        "sha256": "7fd6205070c4e850c58b160d32107dbc74399278a116f162bfa578f0914c0f7a",
+        "bytes": 7,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15864348,
+        "mtime_ns": 1791606541839583076,
+        "ctime_ns": 1791606541839583076,
+        "valid": true
+      },
+      "estop_latch.lock": {
+        "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+        "hex": "3630353132380a",
+        "sha256": "7fd6205070c4e850c58b160d32107dbc74399278a116f162bfa578f0914c0f7a",
+        "bytes": 7,
+        "mode": 384,
+        "uid": 1000,
+        "gid": 1000,
+        "device": 66305,
+        "inode": 15864358,
+        "mtime_ns": 1791606541839583076,
+        "ctime_ns": 1791606541839583076,
+        "valid": true
+      }
+    }
+  },
+  "refs": [
+    {
+      "path": "/etc/robot/xlerobot_left_arm.toml",
+      "sha256": "720979785a149f8f25a9a48f5bab10202e32f6e312a998267c4ce3c20d4a6194",
+      "bytes": 2161,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29887825,
+      "mtime_ns": 1788168348475238803,
+      "ctime_ns": 1788168348475238803,
+      "valid": true
+    },
+    {
+      "path": "/etc/robot/xlerobot_right_arm.toml",
+      "sha256": "ce46c7b1317811ce7cb267db3863624462823c58518cd5e044df4dbc54fd3992",
+      "bytes": 1589,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29887826,
+      "mtime_ns": 1788168348487238970,
+      "ctime_ns": 1788168348487238970,
+      "valid": true
+    },
+    {
+      "path": "/etc/robot/rpc_roles.toml",
+      "sha256": "6b989264dccf599d22a83808226f049f05481fe57e2eb04519bbcfc3dab3278f",
+      "bytes": 3434,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29887828,
+      "mtime_ns": 1788168348499239136,
+      "ctime_ns": 1788168348499239136,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+      "sha256": "9e8d029c30472bcd5371b6ae1fb6e4f98446086f420c567d11891dab81cc8d78",
+      "bytes": 5883280,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 509,
+      "nlink": 2,
+      "device": 66305,
+      "inode": 14052064,
+      "mtime_ns": 1788893840237424890,
+      "ctime_ns": 1788893840309426294,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon",
+      "sha256": "461aec751fc5a41a24ab4dcc3778ca1e88783c4c96467254419f7bf13d1fde7f",
+      "bytes": 3968152,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 509,
+      "nlink": 2,
+      "device": 66305,
+      "inode": 14051956,
+      "mtime_ns": 1788893624317631230,
+      "ctime_ns": 1788893624373632091,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon",
+      "sha256": "1c9037443f9786f09631705bd8800bc5f85333a45c7e9b08d6fcfaf26738de93",
+      "bytes": 4033312,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 509,
+      "nlink": 2,
+      "device": 66305,
+      "inode": 14051978,
+      "mtime_ns": 1788893728867357102,
+      "ctime_ns": 1788893728927358156,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy",
+      "sha256": "7d0cfa3da22610e9a34749d1fbb0d081239a728ed1a30cb9836e01c909dff5c3",
+      "bytes": 1818776,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 509,
+      "nlink": 2,
+      "device": 66305,
+      "inode": 14051962,
+      "mtime_ns": 1788893645361959647,
+      "ctime_ns": 1788893645397960217,
+      "valid": true
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-s0-left-arm.service",
+      "sha256": "842e732b55677567e914e2ad6862ccf561ef5b39c2bbe8647c42e2fef50332db",
+      "bytes": 5247,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29886791,
+      "mtime_ns": 1788250404811585809,
+      "ctime_ns": 1788250404811585809,
+      "valid": true
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-s0-right-arm.service",
+      "sha256": "08d3b928d9206b7cc282efdad174ef1f4e66f61971f3d09f4e651a1f70c3e579",
+      "bytes": 5259,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29886794,
+      "mtime_ns": 1788250405287579227,
+      "ctime_ns": 1788250405287579227,
+      "valid": true
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-s1-left.service",
+      "sha256": "e8ceafd7540f6a78076ad7f7d51845a2df005f9e84998120e70e273dec62b0b2",
+      "bytes": 1830,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29887832,
+      "mtime_ns": 1788168348519239414,
+      "ctime_ns": 1788168348519239414,
+      "valid": true
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-s1-right.service",
+      "sha256": "faa3d9dbe85e721f383ec2e6a81a153aa136c4397c44603f64d421ba3125575f",
+      "bytes": 1839,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29887833,
+      "mtime_ns": 1788168348519239414,
+      "ctime_ns": 1788168348519239414,
+      "valid": true
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-gateway-left.service",
+      "sha256": "1b0afa5c17a2be42b6b5286f2e3707471be1aa37390f65017fecc07c19839ea7",
+      "bytes": 2117,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29887834,
+      "mtime_ns": 1788168348519239414,
+      "ctime_ns": 1788168348519239414,
+      "valid": true
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-gateway-right.service",
+      "sha256": "1233ce1571c626af494f87b26a9e084117fc6b8761ce6e39b24fae377502bd71",
+      "bytes": 2125,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29887835,
+      "mtime_ns": 1788168348519239414,
+      "ctime_ns": 1788168348519239414,
+      "valid": true
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-handoff.service",
+      "sha256": "4cce48f85d40642bab7c7646e06be38f37e3412bcc51031b29737b5527e03ace",
+      "bytes": 3367,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 29887829,
+      "mtime_ns": 1788168348519239414,
+      "ctime_ns": 1788168348519239414,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/base.json",
+      "sha256": "c35a8c47615293628fb88e28f0c90deb0b9cff6e3634e21f7de32790a7b4d671",
+      "bytes": 387,
+      "uid": 1000,
+      "gid": 20,
+      "mode": 436,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13900989,
+      "mtime_ns": 1775792155827958628,
+      "ctime_ns": 1775792155827958628,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/head.json",
+      "sha256": "a1f251d5c2baecb7bbdd7c8c7f8988d839977c32a190f4c31189cfe9829114ee",
+      "bytes": 263,
+      "uid": 1000,
+      "gid": 20,
+      "mode": 436,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13900997,
+      "mtime_ns": 1775807011783731289,
+      "ctime_ns": 1775807011783731289,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/left_arm.json",
+      "sha256": "d946abf3d0f4b68f63c81eb21a95b6e35dd66406d5bf5c3219b19d8ae8c6f7de",
+      "bytes": 824,
+      "uid": 1000,
+      "gid": 20,
+      "mode": 436,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13900993,
+      "mtime_ns": 1775806707590046233,
+      "ctime_ns": 1775806707590046233,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",
+      "sha256": "98ad69369b4bcfeb1cc84051116d8722709fe2d38b987c077e6e1453c2cea03e",
+      "bytes": 833,
+      "uid": 1000,
+      "gid": 20,
+      "mode": 436,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13900992,
+      "mtime_ns": 1775804173231726966,
+      "ctime_ns": 1775804173231726966,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/adapters/bus2_base.py",
+      "sha256": "0d1e4967c703154d816fd6717d09c21d9204076072f578aac071eb222334f435",
+      "bytes": 12959,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901003,
+      "mtime_ns": 1775828042029956109,
+      "ctime_ns": 1775828042029956109,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/config.py",
+      "sha256": "28073a3ee621738a8af08bdf6f72999907506f6ccfe89ac021bbe4fab4e72c1f",
+      "bytes": 7421,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901018,
+      "mtime_ns": 1775814600452283626,
+      "ctime_ns": 1775814600452283626,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/__init__.py",
+      "sha256": "899a31c76e74085585c5f85fe7658e0524efc8d65e31b98c912c49d603f8d630",
+      "bytes": 1761,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901304,
+      "mtime_ns": 1775828039545867523,
+      "ctime_ns": 1775828039545867523,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/_ranges_input.py",
+      "sha256": "b93765cb4defba21fc5042ce6f89c17d720ae8f754eb3f1762a6a40ed438a14a",
+      "bytes": 1014,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901303,
+      "mtime_ns": 1775828039465864670,
+      "ctime_ns": 1775828039465864670,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/bus.py",
+      "sha256": "706a7d9fad50a3d25dfe8dfc3f7d592a743b48cb7469fec8d822ce4fb90806c7",
+      "bytes": 14304,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901297,
+      "mtime_ns": 1775980950813770617,
+      "ctime_ns": 1775980950813770617,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/calibration.py",
+      "sha256": "905ca73e31932e80559319336379bd6e413155ff921edf728dc432bb34a6f577",
+      "bytes": 6714,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901298,
+      "mtime_ns": 1775828039133852830,
+      "ctime_ns": 1775828039133852830,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/encoding.py",
+      "sha256": "7e8c95b05ee4ae7ee0f65a874dbbf420a972c9302d6be52a0919b7f42e6590c6",
+      "bytes": 2956,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901299,
+      "mtime_ns": 1775828039205855398,
+      "ctime_ns": 1775828039205855398,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/patches.py",
+      "sha256": "12af93818456729760e84c3976b87fc17166c0b65517408a8f6c7e711d0e766e",
+      "bytes": 1122,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901300,
+      "mtime_ns": 1775828039257857252,
+      "ctime_ns": 1775828039257857252,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/registers.py",
+      "sha256": "a11b129444177344a3d71bf86dbfba71c10131d3ffa70812df7655d8bd83139e",
+      "bytes": 4046,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901301,
+      "mtime_ns": 1775828039325859677,
+      "ctime_ns": 1775828039325859677,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/types.py",
+      "sha256": "638be44dae884ef87b21e0161cd027eb2a41dc5e01c083f457e82813af63443a",
+      "bytes": 1581,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901302,
+      "mtime_ns": 1775828039401862388,
+      "ctime_ns": 1775828039401862388,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/units.py",
+      "sha256": "c7512eddfa3db04465bcbe99c28dc83519262a3e447e1ba40640c0d99cc6bdb1",
+      "bytes": 6790,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13901021,
+      "mtime_ns": 1775821892726629407,
+      "ctime_ns": 1775821892726629407,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/robot-checks/hardware-verify-20260930-r2/maintenance/proc_identity.py",
+      "sha256": "da28b6eee270a09bfbdb7f90613f2fe9f0d73537c076a8b54fb811648cadb70f",
+      "bytes": 10882,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 13275038,
+      "mtime_ns": 1790802489540317490,
+      "ctime_ns": 1790802489540317490,
+      "valid": true
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+      "sha256": "13c97115b89d9f8780ea8b9cac80a091ddcc2b73549d34b2d5cbad83c718ffe1",
+      "bytes": 1510912
+    },
+    {
+      "path": "/usr/bin/strace",
+      "sha256": "5392f54d889a87341d49f970d91e21ab8c1f70a835ac9ead6ee4d17e532ae7f7",
+      "bytes": 1583504
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+      "sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7",
+      "bytes": 14217
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+      "sha256": "f2014ee4008311e7a8725235a39f0d1b3913391f17cbd977b7441f120539114b",
+      "bytes": 1469904,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 509,
+      "device": 66305,
+      "inode": 15618634,
+      "mtime_ns": 1790786705801501454,
+      "ctime_ns": 1790786705801501454,
+      "elf_machine": 183
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/i2_trial_head1_candidate_r1.py",
+      "sha256": "fa97b6337fc1f4211f008fd23e8de304b3e631f08a4355dcc2f360e0e6f8a47e",
+      "bytes": 9630
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+      "sha256": "13c97115b89d9f8780ea8b9cac80a091ddcc2b73549d34b2d5cbad83c718ffe1",
+      "bytes": 1510912,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 509,
+      "device": 66305,
+      "inode": 16908610,
+      "mtime_ns": 1791532094529877671,
+      "ctime_ns": 1791532094529877671,
+      "elf_machine": 183
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/i2_trial_head1_wire_r5.py",
+      "sha256": "d74d390848e180f89ef27bc7123d3e026067af3f209d7ee9400d36ed88d38caf",
+      "bytes": 12349
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r6/p24_trial_head1_wire_r6.py",
+      "sha256": "939e590b9e0ef829a465e9b3bc620d14cb114c01f7c2f2d591d3d34db3c47c81",
+      "bytes": 12425
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/head1_reverse_observation_r9.py",
+      "sha256": "c30a0e129cc3435cc647480200c9a31ab83a72f0828c28caaf2efb60cd7a6aaa",
+      "bytes": 12658
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/load-readback-tool-r10/feetech_poke",
+      "sha256": "2949ccb2a1735ee2091b2c562c428500461e31fbf5ec967a9c543eec0b1016f3",
+      "bytes": 1514376,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 448,
+      "nlink": 1,
+      "device": 66305,
+      "inode": 17170777,
+      "mtime_ns": 1791629098959847412,
+      "ctime_ns": 1791629098959847412,
+      "elf_machine": 183
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-load-observation-r10/head1_load_observation_r10.py",
+      "sha256": "8855037db957317ea1a5de8d9e517e314878376dc7b3beec505df25352788c31",
+      "bytes": 15017
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/head1_outward_observation_r8.py",
+      "sha256": "11b86f6768359bc7f6f0063bd188868b08c8baf164a59d89a62acdb557d7fc5e",
+      "bytes": 9328
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/head1_d0_trial_r11.py",
+      "sha256": "593bbe72c352f619bc550261ddaf58f5e345c8eb491f8eb8ee67292f42b274b5",
+      "bytes": 12517
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1_p32_trial_r13.py",
+      "sha256": "e0275b2c42bd8c9e528ff196cc07c5b26f6541e157aec70db9f2b4c0ac8903be",
+      "bytes": 12619
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/helpers/p24_trial_head1_wire_r6.py",
+      "sha256": "939e590b9e0ef829a465e9b3bc620d14cb114c01f7c2f2d591d3d34db3c47c81",
+      "bytes": 12425
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/helpers/head1_outward_observation_r8.py",
+      "sha256": "11b86f6768359bc7f6f0063bd188868b08c8baf164a59d89a62acdb557d7fc5e",
+      "bytes": 9328
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-trial-r14/head2_p32_trial_r14.py",
+      "sha256": "5053419d3659efbacafea0238e3d0c03d9351963c6b93224b3e99587889e9015",
+      "bytes": 12633
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-trial-r14/helpers/parameter_stop_head2_r14.py",
+      "sha256": "0ceb8ed58ea22db416ddce9cf7df6f221c277df1ac619a4df0980e3c23805657",
+      "bytes": 12425
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-trial-r14/helpers/head2_outward_observation_r14.py",
+      "sha256": "4595e3f21c9e6a48a8718cbdec710f4a3a41f2c7281389d225ed4ab4109c4863",
+      "bytes": 9338
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2_p32_reverse_trial_r17.py",
+      "sha256": "32f4f9d5033710b6eeffeb47782c2156a402ba1d31f82cc285e08039802b71e5",
+      "bytes": 16246
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/helpers/parameter_stop_head2_r14.py",
+      "sha256": "0ceb8ed58ea22db416ddce9cf7df6f221c277df1ac619a4df0980e3c23805657",
+      "bytes": 12425
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/helpers/head2_outward_observation_r14.py",
+      "sha256": "4595e3f21c9e6a48a8718cbdec710f4a3a41f2c7281389d225ed4ab4109c4863",
+      "bytes": 9338
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base_zero_diagnostic_r1.py",
+      "sha256": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+      "bytes": 19556
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/helpers/raw_right9_from_r14_r1.py",
+      "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa",
+      "bytes": 12216
+    }
+  ],
+  "proc_helper": {
+    "path": "/home/loosqk/robot-checks/hardware-verify-20260930-r2/maintenance/proc_identity.py",
+    "sha256": "da28b6eee270a09bfbdb7f90613f2fe9f0d73537c076a8b54fb811648cadb70f",
+    "bytes": 10882,
+    "uid": 1000,
+    "gid": 1000,
+    "mode": 416,
+    "nlink": 1,
+    "device": 66305,
+    "inode": 13275038,
+    "mtime_ns": 1790802489540317490,
+    "ctime_ns": 1790802489540317490,
+    "valid": true
+  },
+  "binary_paths": [
+    "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+    "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon",
+    "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon",
+    "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy",
+    "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+    "/usr/bin/strace",
+    "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/load-readback-tool-r10/feetech_poke",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1_p32_trial_r13.py",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-trial-r14/head2_p32_trial_r14.py",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2_p32_reverse_trial_r17.py",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base_zero_diagnostic_r1.py"
+  ],
+  "calibrations": {
+    "left_arm_wrist_roll": {
+      "id": 5,
+      "drive_mode": 0,
+      "homing_offset": -296,
+      "range_min": 73,
+      "range_max": 3864
+    },
+    "right_arm_wrist_roll": {
+      "id": 5,
+      "drive_mode": 0,
+      "homing_offset": -1177,
+      "range_min": 114,
+      "range_max": 3884
+    },
+    "head_motor_1": {
+      "id": 7,
+      "drive_mode": 0,
+      "homing_offset": 1303,
+      "range_min": 797,
+      "range_max": 3081
+    },
+    "head_motor_2": {
+      "id": 8,
+      "drive_mode": 0,
+      "homing_offset": -1556,
+      "range_min": 678,
+      "range_max": 3454
+    }
+  },
+  "origin": {
+    "basis": "r4b current refs/USB/protection plus fresh nonUART r5 only",
+    "current_non_uart_snapshot": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/fresh-nonuart.stdout",
+      "sha256": "7baaf33d501952f4d59c033d48c6fc057d8def8ec3f5b99a4db29b988437e08f",
+      "bytes": 176291,
+      "started_ns": 1791619475353627102,
+      "finished_ns": 1791619476097562993
+    },
+    "field_confirmation": null,
+    "hardware_authorization": "PREPARATION_ONLY; no GO, no UART, head1 I2 needs root current authorization",
+    "candidate": {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/i2_trial_head1_candidate_r1.py",
+      "sha256": "fa97b6337fc1f4211f008fd23e8de304b3e631f08a4355dcc2f360e0e6f8a47e",
+      "bytes": 9630
+    },
+    "raw_tool": {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+      "sha256": "13c97115b89d9f8780ea8b9cac80a091ddcc2b73549d34b2d5cbad83c718ffe1",
+      "bytes": 1510912,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 509,
+      "device": 66305,
+      "inode": 16908610,
+      "mtime_ns": 1791532094529877671,
+      "ctime_ns": 1791532094529877671,
+      "elf_machine": 183
+    }
+  },
+  "load_tool": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/load-readback-tool-r10/feetech_poke",
+    "sha256": "2949ccb2a1735ee2091b2c562c428500461e31fbf5ec967a9c543eec0b1016f3",
+    "bytes": 1514376,
+    "uid": 1000,
+    "gid": 1000,
+    "mode": 448,
+    "nlink": 1,
+    "device": 66305,
+    "inode": 17170777,
+    "mtime_ns": 1791629098959847412,
+    "ctime_ns": 1791629098959847412,
+    "elf_machine": 183
+  }
+}

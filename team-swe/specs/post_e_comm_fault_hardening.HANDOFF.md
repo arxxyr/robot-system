@@ -2,6 +2,20 @@
 
 ## 当前步骤
 
+### 右轮零目标实际失败，启动入口已通过（2026-10-12，R4人工断电待确认）
+
+用户本轮直接确认“已恢复供电，三轮稳定架空，现场全部就绪，可执行本次右轮测试”；root在06:13:01.689362UTC记录现场事实，原600秒期限没有续期。先核供电后当前非UART17项/23child与USB枚举，均通过且两端身份仍同347a65冻结binding；仅一个PLAN child655208完成新准备。准备SSH遭网络255，原超时输出和真实wait/reap回执保留；随后只读取回已经完成的七原件，未重跑准备或增加UART。root本地metadata生成的TextIOWrapper变量覆盖TypeError及0B pins原件也保留，修复后只执行一次。新canonical PLAN为3fc25e07；签GO时剩16.786409秒，未延长现场TTL，所有已抓36条UART事件都在GO内，末RX距过期9.46815秒；不将本轮失败归因为GO过期。
+
+实际`python -c`入口保留stdin PTY并进入候选：driver655312/@100/%100自然dead/status1，GO.consumed及原run已封存，只回收所属dead pane。右9初始原帧TE0/PV0/GV0/Model777/FW主3次10/Mode1/Phase12/Lock1。仅三条具名WRITE：Goal_Velocity0、Torque_Enable1、Torque_Enable0，三ACK均有效；GV0和TE1原读回正确。原500ms窗口内0/200/400ms三次PV原帧为0、0、+50，第三帧`FF FF 09 04 00 32 00 C0`完整校验通过，观察于410.528625ms结束，三次零值门FAIL。随后立即Disable ACK通过、TE普通读为0，但普通PV为**−50**，响应`FF FF 09 04 00 32 80 40`有效；与前一+50帧分别保存，不推断实际轮转动、方向、速度单位或Phase因果。TE0普通读没有该次完整strace，不冒充原帧证据。
+
+最后UART child为seq217；非零停止读回触发粘性拒绝，后102项电机读取未执行，STOP51和完整身份后验UNKNOWN，原run为NEEDS_MANUAL_POWER_CUT。235不同直属child/470输出、六strace及509件硬件原包逐SHA/字节核实，203 exit0、32空fuser查询为既定exit1，所有child真实wait/reap，无信号、超预算或活跃child。收集仅两个非UART终态/所属pane回收child自然0，没有增加独立17项后验、UART或动作。原硬件包f259c47c/161450B、run0b5b6aa8/427606B永久保留；[R4摘要与原件索引](../../.verify/base_zero_diagnostic_2026-10-12_r4/summary.json)、[独立帧审查](../../.verify/base_zero_diagnostic_2026-10-12_r4/independent-hardware-frames-review-r4.json)与root审查记录分开保存。
+
+root已要求现场立即切断两个电机电源并保持机械臂和架空底盘支撑，实际断电确认仍PENDING。当前最后用户供电报告为ON、独立电气遥测UNKNOWN；进程退出、TE0和ACK不代替物理停止或断电。GO已消耗并过期，没有后续UART、Phase/Mode/Lock/PID/EEPROM写入、自动重试或新动作GO。
+
+仅外网只读核对厂家当前公开内存表：门户响应version201，区别于旧version181和现场FW3.10，原响应/逐字MD及HTTP200回执已保存。[窄候选与官方引用](../../.verify/base_zero_diagnostic_2026-10-12_r4/research/narrow-next-step-candidate.md)记录bit3的零目标含义和Lock1写配置掉电不保存的资料说法；未明确绑定FW3.10/Mode1或证明临时Phase即时采用。Phase12含bit3，仅是待核假设。官方SDK从41写7字节与XLeRobot裸Goal46写不同，不同时引入两处变化。Phase12→4临时对照仅资料候选，没有实现、GO、UART或厂商联系，不放开普通工具Phase写禁令。
+
+提交前root实际fmt0；Orin唯一最新nightly更新（仍080）→实际fmt→根Clippy0/零警告，11质量child/22流真reap。597源三窗及主树逐件同068277d8，编译器两窗相同；原生Git仍894加五dirty，不称Git对齐。53件唯一质量包bf813fd1/134620B已核，软件driver655707/@101/%101自然dead0后仅回收所属pane，owner77375/SSH77376真实wait0/reap。没有新Rust测试、release或控制ELF构建、安装或服务激活。下一步先完成人工断电收尾，只核厂家Phase bit3/Lock1与当前FW组合的窄资料及具体候选，不新增框架。三轮主动运动和零速合同、旧±50、左腕/头部长期参数仍OPEN；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。以下已提交准备态和旧FAIL原文全部保留，不回填。
+
 ### R4脚本准备与提交质量通过，等待恢复供电后的当前事实（2026-10-12）
 
 R3断电回执已记录并结束看护，当前仅用户OFF确认、独立电气遥测UNKNOWN；原启动/观察FAIL、driver真实reap NOT_OBSERVED和硬件零速/STOP51 NOT_RUN全部保持。R4逐字复用已验`-c` launcher和body填七pins后整体shell引用的starter，observer/seal只换本轮路径/标签，保留新GO.consumed原件。新软件recipe四个当前原件输入pins均None，只接供电后本次新非UART17 stdout及真实wait/reap回执；以347a65冻结binding为基线，只有两端device_inode/link_inode/usec按新事实更新，其它serial/devpath/tty/rdev/权限、host、55refs、保护和校准固定。一个无execute的PLAN child，不额外运行非UART或创建GO/现场文件。父fd0静态调用链四冻结件已核，未见父stdin关闭/重定向；子进程TemporaryFile/DEVNULL不关闭父0，不宣称修复实际硬件入口已经通过。

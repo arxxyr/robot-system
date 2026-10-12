@@ -21,18 +21,21 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-12 R3用户后续确认两电源切断、机械臂/架空底盘稳定支撑保持，root结束看护。
-           电气遥测与实际切电时刻UNKNOWN；原R3启动/观察FAIL、driver真实reap未观察、硬件NOT_RUN保持。
-           R4本机最小脚本及提交质量已就绪，原生新binding/PLAN准备未执行；现场/GO全None、UART0。
-           -c launcher5b5a6e/starter32d5ee逐字复用，observer/seal只换R4独占路径，GO.consumed保留。
-           新软件recipe仅接本轮新nonUART17原件/真实child回执，4输入pinsNone；不复用R3枚举、现场或GO。
-           仅两端device_inode/link_inode/usec允许按当前事实更新，其它55refs/身份/保护/校准均固定。
-           父fd0静态链未见关闭/重定向，子DEVNULL不算父关闭；不外推实际硬件入口已通过。
-           本机fmt0，Orin最新nightly080→fmt→根Clippy0/零warn；11child/22流，597三窗068277d8同。
-           本轮未新Rust测试/release/控制ELF/夹具/UART/动作；R4入口 .verify/base_zero_diagnostic_2026-10-12_r4/summary.json。
-           已询问恢复供电和新的架空/支撑/看护事实，答复尚未收到；断电收尾不是新动作GO。
-           下轮先在当前供电与看护确认后采非UART USB枚举，再新binding/PLAN/GO，仅一次右9零目标。
-           R1/R2/R3旧FAIL不回填；左腕/头部长期参数、底盘三轮与旧±50 OPEN。
+本轮最新:  2026-10-12 R4右9裸Goal0诊断实际FAIL，原run NEEDS_MANUAL_POWER_CUT保持。
+           本次用户确认恢复供电、三轮稳定架空及看护；原600秒现场期限未续，独立GO仅一次。
+           当前nonUART17/23child、供电后USB、唯一PLAN/binding通过；原SSH255仅只读取回，不重跑。
+           -c入口实际通过：driver655312/@100/%100自然dead/exit1，所属dead pane已回收。
+           right9初值TE0/PV0/GV0/Model777/FW3.10/Mode1/Phase12/Lock1；仅GV0、TE1、TE0三写。
+           三写ACK有效；500ms内0/200/400ms PV原帧为0、0、+50，410.528625ms结束。
+           Disable后TE普通读0、PV普通读-50（原RX32 80），不能把两次±50混成同帧。
+           粘性停止后新UART0，STOP51/完整身份后验UNKNOWN，不以TE0或回收宣称物理停止。
+           235直属child/470原流及509原件逐件核；所有已抓UART在GO内，最后RX距过期9.46815s。
+           收集仅2child，无新UART/独立17后验；原件f259c47c、run0b5b6aa8已永久归档。
+           已请求立即人工断两个电源，实际断电确认PENDING；最后用户报告ON，独立遥测UNKNOWN。
+           主树fmt0，Orinlatest nightly080→fmt→根Clippy0/零warn；11child/22流、597三窗068277d8同。
+           无新Rust测试/release/控制ELF/正式安装/服务启动；R4永久摘要记录准备与实际运行分界。
+           下一步先断电收尾，仅窄核Phase bit3/Lock1厂家资料；不复用GO、不自动重试或写Phase。
+           R1/R2/R3旧FAIL不回填；实际轮转动/Phase因果、左腕/头部长期参数、底盘三轮与旧±50 OPEN。
            右H2完整PASS，D15 OPEN/DEFERRED、deployable=false；正式安装与服务未改。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +

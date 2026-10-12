@@ -1,0 +1,53 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "REAPED",
+  "status": "FAIL",
+  "owner_pid": 76335,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ServerAliveCountMax=2",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 76336,
+  "started_utc": "2026-10-12T06:23:23.715337+00:00",
+  "started_monotonic_ns": 24289542296833,
+  "observe_seconds": 5.0,
+  "wait_returncode": 1,
+  "reaped": true,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 1,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/observe_base_zero_diagnostic_once_r4.actual.sh",
+    "sha256": "d081c7f94b8e87809474cd4abfd833e5aae93e88119739a7b79f96299b4659e5",
+    "bytes": 3798
+  },
+  "launched_utc": "2026-10-12T06:23:23.717299+00:00",
+  "start_new_session": true,
+  "child_session_id": 76336,
+  "child_end_class": "EXIT_STATUS",
+  "child_signal": null,
+  "finished_utc": "2026-10-12T06:23:25.021174+00:00",
+  "observed_utc": "2026-10-12T06:23:25.019743+00:00",
+  "elapsed_ns": 1305743458,
+  "log_bytes_observed": 38990,
+  "log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-zero-r4-single-hardware-observer.owner/child.log",
+    "sha256": "cccd16d48b37e7ebb78607aeb0b512b02c5aa4e9f64b268d885f1fdd184df37a",
+    "bytes": 38990
+  }
+}

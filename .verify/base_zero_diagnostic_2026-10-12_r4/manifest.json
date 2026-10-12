@@ -1,167 +1,391 @@
 {
-  "schema": "BASE_ZERO_R4_MANIFEST_V1",
+  "schema": "BASE_ZERO_R4_ACTUAL_MANIFEST_V1",
   "files": {
-    "independent-preparation-and-parent-fd0-review-r4.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/independent-preparation-and-parent-fd0-review-r4.json",
-      "sha256": "960c54825c17db7f174b86c25f32853589cd5453874509c77876c48c94f61cd3",
-      "bytes": 5491,
-      "copy_verified": true
+    "actual-observer-terminal-r4.json": {
+      "sha256": "8dfaf214c090fc7ceec39c0670fdde3afb9f16b3bbd2d43474b8cc1e4fe9d4c8",
+      "bytes": 56523
     },
-    "launch_base_zero_diagnostic_r4.fixed-unbound.sh": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/launch_base_zero_diagnostic_r4.fixed-unbound.sh",
-      "sha256": "5b5a6e514141edb379491d456e854e5df024e59f2be11af1dda745427e2ca8f1",
-      "bytes": 2288,
-      "copy_verified": true
-    },
-    "local-preparation-r4.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/local-preparation-r4.json",
-      "sha256": "0d4cc385f171fffef00427b21e12bfb93404ca2539aee925294c4c3825b6cc25",
-      "bytes": 10612,
-      "copy_verified": true
-    },
-    "minimal_software_prepare_base_zero_r4.draft.sh": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/minimal_software_prepare_base_zero_r4.draft.sh",
-      "sha256": "b656a9710757ed08d077779fdf94ab8cd2f3251df0ed9e14a01c5dd93e01a399",
-      "bytes": 11345,
-      "copy_verified": true
-    },
-    "native-quality/commit_quality_once_base_zero_r4.py": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/commit_quality_once_base_zero_r4.py",
-      "sha256": "a830238586ce5dcf27eca215cf4bce7d042e0c7ae667e49419dbccf6b2912874",
-      "bytes": 5200,
-      "copy_verified": true
-    },
-    "native-quality/commit_quality_once_base_zero_r4.py.diff-vs-r3.patch": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/commit_quality_once_base_zero_r4.py.diff-vs-r3.patch",
-      "sha256": "aef250dafdeaf585e0ecc83e795a52a7d410ccb238516b3aa8b5fd52f4b7d966",
-      "bytes": 1549,
-      "copy_verified": true
-    },
-    "native-quality/owner/child.log": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/owner/child.log",
-      "sha256": "bcefcb7800feba13ffb9fd0c06527789a82d33776bd8ecc4c46f3e66a1499ed2",
-      "bytes": 182556,
-      "copy_verified": true
-    },
-    "native-quality/owner/launch.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/owner/launch.json",
-      "sha256": "04b5fb45965e07044975b1f4139cee0686f19d1bf9663bba14a1b8cdfe0df36a",
-      "bytes": 1061,
-      "copy_verified": true
-    },
-    "native-quality/owner/result.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/owner/result.json",
-      "sha256": "d9acaeca4a816c82543d623004dfbd0cf7680920ea0ecde4c008e475d588283f",
-      "bytes": 1545,
-      "copy_verified": true
-    },
-    "native-quality/owner/status.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/owner/status.json",
-      "sha256": "d9acaeca4a816c82543d623004dfbd0cf7680920ea0ecde4c008e475d588283f",
-      "bytes": 1545,
-      "copy_verified": true
-    },
-    "native-quality/quality-archive-receipt-base-zero-r4.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/quality-archive-receipt-base-zero-r4.json",
-      "sha256": "d8828a7d568fa659f4d3fac788a6978412270461bcc04265974c6c69e4a86a4f",
-      "bytes": 3836,
-      "copy_verified": true
-    },
-    "native-quality/quality-generation-receipt-base-zero-r4.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/quality-generation-receipt-base-zero-r4.json",
-      "sha256": "b0f47ad8e4c61e8c13176942a65e14992cf3259890431008e56b44e46f3706e8",
-      "bytes": 1371,
-      "copy_verified": true
-    },
-    "native-quality/quality-originals-manifest-base-zero-r4.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/quality-originals-manifest-base-zero-r4.json",
-      "sha256": "74314baff1cea03a897127c8a64ad5b85f6a4799f5cb6490afaad45dab2dda48",
-      "bytes": 9757,
-      "copy_verified": true
-    },
-    "native-quality/quality-verification-base-zero-r4.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/quality-verification-base-zero-r4.json",
-      "sha256": "26b9e888591b3b9e7fb4f0f25f4570e165f1ede4dac55c40aa32166d119ad54f",
-      "bytes": 19138,
-      "copy_verified": true
-    },
-    "native-quality/single_ssh_commit_quality_base_zero_r4.sh": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/single_ssh_commit_quality_base_zero_r4.sh",
-      "sha256": "484844255e242f096468a741f14751adb3d798aadf5086ad20e79b91015d3ac5",
-      "bytes": 11048,
-      "copy_verified": true
-    },
-    "native-quality/single_ssh_commit_quality_base_zero_r4.sh.diff-vs-r3.patch": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/single_ssh_commit_quality_base_zero_r4.sh.diff-vs-r3.patch",
-      "sha256": "f490d59214efb6d5e8d6cb371ee49a67747901ccd029c51c149d48d65cd43e99",
-      "bytes": 17552,
-      "copy_verified": true
-    },
-    "observe_base_zero_diagnostic_once_r4.draft.sh": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/observe_base_zero_diagnostic_once_r4.draft.sh",
-      "sha256": "e3b77fd1fc8e9f15f7ba310a3b6eb3ad7aac2a517568269ad93698a91e8004f8",
-      "bytes": 3786,
-      "copy_verified": true
-    },
-    "observe_base_zero_diagnostic_once_r4.draft.sh.diff": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/observe_base_zero_diagnostic_once_r4.draft.sh.diff",
-      "sha256": "fe2873657174e3eeb1ecc94d7c855559cde89130b3ab96cf4f044f09059842cb",
-      "bytes": 3815,
-      "copy_verified": true
-    },
-    "prepare_base_zero_diagnostic_r4.draft.py": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/prepare_base_zero_diagnostic_r4.draft.py",
-      "sha256": "15dd76099738f23a432914e739a8ff7ed9a86219023a8521815f46ab4d79fbcf",
-      "bytes": 11092,
-      "copy_verified": true
-    },
-    "readonly_nonuart17_usb_refresh_r4.sh": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/readonly_nonuart17_usb_refresh_r4.sh",
-      "sha256": "c851ed7a1be6aef0d809df96beea947ee57cc0d62b18cdb2568501d75b592d7d",
-      "bytes": 1817,
-      "copy_verified": true
-    },
-    "root-native-quality-review-r4.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/root-native-quality-review-r4.json",
-      "sha256": "d7663d45d03f3b9b5c1307d48e5dc4383fea229cd6872622386bb61b57aebb60",
-      "bytes": 953,
-      "copy_verified": true
-    },
-    "root-readonly-capture-review-r4.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/root-readonly-capture-review-r4.json",
-      "sha256": "b4eae44113fe4559ff5520f734d43097520f6ad0a719558039983eac281ba364",
-      "bytes": 666,
-      "copy_verified": true
-    },
-    "seal_base_zero_diagnostic_r4.draft.sh": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/seal_base_zero_diagnostic_r4.draft.sh",
-      "sha256": "4bda339e4ad98bc5506de1e33915b2e6d5ad861427fe8fb29908607516825cc3",
-      "bytes": 13780,
-      "copy_verified": true
-    },
-    "seal_base_zero_diagnostic_r4.draft.sh.diff": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/seal_base_zero_diagnostic_r4.draft.sh.diff",
-      "sha256": "5e69cf5604e0b2d8179cc956d24c703b68ad0a0215005838d3938b9100e3caa4",
-      "bytes": 10678,
-      "copy_verified": true
-    },
-    "start_base_zero_diagnostic_once_r4.fixed-unbound.sh": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/start_base_zero_diagnostic_once_r4.fixed-unbound.sh",
-      "sha256": "32d5ee207010dd00e6ddb5b150666de86b466fc9d69f1824f2a2e12564f6bd63",
-      "bytes": 11648,
-      "copy_verified": true
-    },
-    "summary.json": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/summary.json",
-      "sha256": "6fa85351990597d2edbb5c97159b20d16582ed2575e58f1210c1ed7ba66eab20",
-      "bytes": 3712,
-      "copy_verified": true
+    "archives/commit-quality-originals-base-zero-r4-run.tar.gz": {
+      "sha256": "bf813fd1077f1ed7ad0360dd2bfb606f6449c45c43e656562b25c0d62cfe985a",
+      "bytes": 134620
     },
     "archives/commit-quality-originals-base-zero-r4.tar.gz": {
-      "source_path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/native-quality/commit-quality-originals-base-zero-r4.tar.gz",
       "sha256": "b0a284237af461c1acbddb9e6321f35431cf1c177af3404d7a936174b485f02b",
-      "bytes": 134568,
-      "copy_verified": true
+      "bytes": 134568
+    },
+    "archives/hardware-originals-base-zero-r4.tar.gz": {
+      "sha256": "f259c47c17bb00486e821f3e24bbeb6547ff21dbf53108f511281aca589ba471",
+      "bytes": 161450
+    },
+    "artifact-whitespace-review-r4.json": {
+      "sha256": "3e19c3b30d8ee597ed4290fa4017a2c7a9990f2e7670bca97382e2da9584c908",
+      "bytes": 2083
+    },
+    "base-zero-diagnostic-r4.go.json": {
+      "sha256": "23df442acb35668d1e5f9c5dd64190e7f3e2c597fd3322c26299a04e865d0cd1",
+      "bytes": 1754
+    },
+    "current-field-receipt-r4.json": {
+      "sha256": "687ebec1bdf6ab7a236c42143e8f6dc148d9ae10a8701358ffe8cbcd2f393ffb",
+      "bytes": 286
+    },
+    "current-go-and-starter-pins-r4.json": {
+      "sha256": "6201903acfe1ea395dd2b5a422ef855aac90bfdf069d884fd6ceab8dd1c741b4",
+      "bytes": 1003
+    },
+    "current-software-input-pins-r4.json": {
+      "sha256": "b35da4ab1bfdd6c5bd76c353ed13f331b367ff84874be465b79702cc76ca8f59",
+      "bytes": 994
+    },
+    "current-software-input-pins.initial-empty-r4.json": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "field_confirmation_base_zero_r4.json": {
+      "sha256": "17d1e866fa2717d6ffe5d1149f84bde8034b145a82ecbba3c03c074e7efaa6a7",
+      "bytes": 1545
+    },
+    "hardware-archive-receipt-r4.json": {
+      "sha256": "85f72b957fb2a20b3c9d472f550bcf40fd53cd0095d9e48dbf0edc9ca5be1ca1",
+      "bytes": 83040
+    },
+    "independent-hardware-frames-review-r4.json": {
+      "sha256": "6ad11587b173045b6006fed951e411b4d8a004239987a2cda82ecf932fdd4915",
+      "bytes": 7307
+    },
+    "independent-preparation-and-parent-fd0-review-r4.json": {
+      "sha256": "960c54825c17db7f174b86c25f32853589cd5453874509c77876c48c94f61cd3",
+      "bytes": 5491
+    },
+    "launch_base_zero_diagnostic_r4.fixed-unbound.sh": {
+      "sha256": "5b5a6e514141edb379491d456e854e5df024e59f2be11af1dda745427e2ca8f1",
+      "bytes": 2288
+    },
+    "local-preparation-r4.json": {
+      "sha256": "0d4cc385f171fffef00427b21e12bfb93404ca2539aee925294c4c3825b6cc25",
+      "bytes": 10612
+    },
+    "minimal_software_prepare_base_zero_r4.actual.sh": {
+      "sha256": "71c01ee92cca748f2a6ca1fe5ec22f7ca60e21ca2c33428b41c61104d1320212",
+      "bytes": 11702
+    },
+    "minimal_software_prepare_base_zero_r4.draft.sh": {
+      "sha256": "b656a9710757ed08d077779fdf94ab8cd2f3251df0ed9e14a01c5dd93e01a399",
+      "bytes": 11345
+    },
+    "native-preparation/full-plan-only-r4.receipt.json": {
+      "sha256": "8abf78460690aa0cf55118734bbbf2155c44a7f969cb5bef00a1da29da34cb71",
+      "bytes": 1534
+    },
+    "native-preparation/full-plan-only-r4.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "native-preparation/full-plan-only-r4.stdout": {
+      "sha256": "489beb14a275f472a8306f27660daeb89a7770e66beb4fc04935f9d91bb6640b",
+      "bytes": 38231
+    },
+    "native-preparation/maintenance_bindings_base_zero_diagnostic_r4.json": {
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    },
+    "native-preparation/prepare-result-base-zero-r4.json": {
+      "sha256": "678f557e23142fcf5d249f5edf669eebc88dda9bed97af4fabaef85c5509b000",
+      "bytes": 5035
+    },
+    "native-preparation/usb-stat-after-r4.json": {
+      "sha256": "57b452b4a524fd8386795e830f162bb4b93f3aceea6b0422d0e4b1bd647a0e7b",
+      "bytes": 558
+    },
+    "native-preparation/usb-stat-before-r4.json": {
+      "sha256": "57b452b4a524fd8386795e830f162bb4b93f3aceea6b0422d0e4b1bd647a0e7b",
+      "bytes": 558
+    },
+    "native-quality/commit_quality_once_base_zero_r4.py": {
+      "sha256": "a830238586ce5dcf27eca215cf4bce7d042e0c7ae667e49419dbccf6b2912874",
+      "bytes": 5200
+    },
+    "native-quality/commit_quality_once_base_zero_r4.py.diff-vs-r3.patch": {
+      "sha256": "aef250dafdeaf585e0ecc83e795a52a7d410ccb238516b3aa8b5fd52f4b7d966",
+      "bytes": 1549
+    },
+    "native-quality/owner/child.log": {
+      "sha256": "bcefcb7800feba13ffb9fd0c06527789a82d33776bd8ecc4c46f3e66a1499ed2",
+      "bytes": 182556
+    },
+    "native-quality/owner/launch.json": {
+      "sha256": "04b5fb45965e07044975b1f4139cee0686f19d1bf9663bba14a1b8cdfe0df36a",
+      "bytes": 1061
+    },
+    "native-quality/owner/result.json": {
+      "sha256": "d9acaeca4a816c82543d623004dfbd0cf7680920ea0ecde4c008e475d588283f",
+      "bytes": 1545
+    },
+    "native-quality/owner/status.json": {
+      "sha256": "d9acaeca4a816c82543d623004dfbd0cf7680920ea0ecde4c008e475d588283f",
+      "bytes": 1545
+    },
+    "native-quality/quality-archive-receipt-base-zero-r4.json": {
+      "sha256": "d8828a7d568fa659f4d3fac788a6978412270461bcc04265974c6c69e4a86a4f",
+      "bytes": 3836
+    },
+    "native-quality/quality-generation-receipt-base-zero-r4.json": {
+      "sha256": "b0f47ad8e4c61e8c13176942a65e14992cf3259890431008e56b44e46f3706e8",
+      "bytes": 1371
+    },
+    "native-quality/quality-originals-manifest-base-zero-r4.json": {
+      "sha256": "74314baff1cea03a897127c8a64ad5b85f6a4799f5cb6490afaad45dab2dda48",
+      "bytes": 9757
+    },
+    "native-quality/quality-verification-base-zero-r4.json": {
+      "sha256": "26b9e888591b3b9e7fb4f0f25f4570e165f1ede4dac55c40aa32166d119ad54f",
+      "bytes": 19138
+    },
+    "native-quality/single_ssh_commit_quality_base_zero_r4.sh": {
+      "sha256": "484844255e242f096468a741f14751adb3d798aadf5086ad20e79b91015d3ac5",
+      "bytes": 11048
+    },
+    "native-quality/single_ssh_commit_quality_base_zero_r4.sh.diff-vs-r3.patch": {
+      "sha256": "f490d59214efb6d5e8d6cb371ee49a67747901ccd029c51c149d48d65cd43e99",
+      "bytes": 17552
+    },
+    "observe_base_zero_diagnostic_once_r4.actual.sh": {
+      "sha256": "d081c7f94b8e87809474cd4abfd833e5aae93e88119739a7b79f96299b4659e5",
+      "bytes": 3798
+    },
+    "observe_base_zero_diagnostic_once_r4.draft.sh": {
+      "sha256": "e3b77fd1fc8e9f15f7ba310a3b6eb3ad7aac2a517568269ad93698a91e8004f8",
+      "bytes": 3786
+    },
+    "observe_base_zero_diagnostic_once_r4.draft.sh.diff": {
+      "sha256": "fe2873657174e3eeb1ecc94d7c855559cde89130b3ab96cf4f044f09059842cb",
+      "bytes": 3815
+    },
+    "owners/base-zero-r4-current-usb-plan-prepare/child.log": {
+      "sha256": "8093048dfac2f1451a8e6edd29f4c52cc2c7df02c91e32bb4382d3c59c0c68a9",
+      "bytes": 87
+    },
+    "owners/base-zero-r4-current-usb-plan-prepare/launch.json": {
+      "sha256": "6688cfd0a7bbc88a748223f9099b407d19607ecda28226e9b236e27d42444d7b",
+      "bytes": 1052
+    },
+    "owners/base-zero-r4-current-usb-plan-prepare/result.json": {
+      "sha256": "2e412188fe7e00ab1d7ff00d88195041fe4a3d83e20e1697c8e98a309c4a39cc",
+      "bytes": 1542
+    },
+    "owners/base-zero-r4-current-usb-plan-prepare/status.json": {
+      "sha256": "2e412188fe7e00ab1d7ff00d88195041fe4a3d83e20e1697c8e98a309c4a39cc",
+      "bytes": 1542
+    },
+    "owners/base-zero-r4-current-usb-refresh-nonuart/child.log": {
+      "sha256": "a5dab8185dad866976c2640d98f2cec2351c44677a45c1cebce6f91bfe2b2156",
+      "bytes": 236479
+    },
+    "owners/base-zero-r4-current-usb-refresh-nonuart/launch.json": {
+      "sha256": "0edd3461cb42841c72c0add5b8516ac5b3a79e4426188c812191f260980ec264",
+      "bytes": 1040
+    },
+    "owners/base-zero-r4-current-usb-refresh-nonuart/result.json": {
+      "sha256": "182166093d95accb3beae46afa768882c1923c1c0827a3634c60b1c2efcc2ab9",
+      "bytes": 1536
+    },
+    "owners/base-zero-r4-current-usb-refresh-nonuart/status.json": {
+      "sha256": "182166093d95accb3beae46afa768882c1923c1c0827a3634c60b1c2efcc2ab9",
+      "bytes": 1536
+    },
+    "owners/base-zero-r4-original-manual-incident-collection/child.log": {
+      "sha256": "6416383d9c095d7ca4c9afb351ecb623716e4ba728aeda871029ff71a7155e8e",
+      "bytes": 268125
+    },
+    "owners/base-zero-r4-original-manual-incident-collection/launch.json": {
+      "sha256": "398032cdfa31b79790d6c1849314de0386c348015f3a1ad40f893d2a87da63ac",
+      "bytes": 1122
+    },
+    "owners/base-zero-r4-original-manual-incident-collection/result.json": {
+      "sha256": "268db28d8cbf1242a3e8248c83d70565cd7aae5bcff0c63ec4c0e1c990cd62cc",
+      "bytes": 1626
+    },
+    "owners/base-zero-r4-original-manual-incident-collection/status.json": {
+      "sha256": "268db28d8cbf1242a3e8248c83d70565cd7aae5bcff0c63ec4c0e1c990cd62cc",
+      "bytes": 1626
+    },
+    "owners/base-zero-r4-readonly-native-prep-after-network255/child.log": {
+      "sha256": "a40334837cd45d13fd504fc1f037edb6b18efacc6b60e5ae8604f321ef32743d",
+      "bytes": 102649
+    },
+    "owners/base-zero-r4-readonly-native-prep-after-network255/launch.json": {
+      "sha256": "5ae7afa456736929d31e44eecaf97223eeae3de55884b9c1e94ac4a137b09eae",
+      "bytes": 1126
+    },
+    "owners/base-zero-r4-readonly-native-prep-after-network255/result.json": {
+      "sha256": "9f0a271aa6fa5e2bc9eab59786e95ff6dc3836df77199e477222a1662ace6ebe",
+      "bytes": 1632
+    },
+    "owners/base-zero-r4-readonly-native-prep-after-network255/status.json": {
+      "sha256": "9f0a271aa6fa5e2bc9eab59786e95ff6dc3836df77199e477222a1662ace6ebe",
+      "bytes": 1632
+    },
+    "owners/base-zero-r4-run-quality-native/child.log": {
+      "sha256": "67f18ce2069b2959753fab7060f4ff782234e6a654b1af94f5d5fbd8cedb92a6",
+      "bytes": 182673
+    },
+    "owners/base-zero-r4-run-quality-native/launch.json": {
+      "sha256": "034b71220734a59e13046ae0fc5febe61ebea0b15482a61d3baaa872fb22d809",
+      "bytes": 1058
+    },
+    "owners/base-zero-r4-run-quality-native/result.json": {
+      "sha256": "d8ffdca2a008e84bd2ecc1b640b7c699e8444257c0c2da8b2ade28992917ba6a",
+      "bytes": 1546
+    },
+    "owners/base-zero-r4-run-quality-native/status.json": {
+      "sha256": "d8ffdca2a008e84bd2ecc1b640b7c699e8444257c0c2da8b2ade28992917ba6a",
+      "bytes": 1546
+    },
+    "owners/base-zero-r4-single-hardware-observer/child.log": {
+      "sha256": "cccd16d48b37e7ebb78607aeb0b512b02c5aa4e9f64b268d885f1fdd184df37a",
+      "bytes": 38990
+    },
+    "owners/base-zero-r4-single-hardware-observer/launch.json": {
+      "sha256": "9b367457341969bf32667c66dfb707a68f208bf3f18c07a346696d4a41fde4f6",
+      "bytes": 1129
+    },
+    "owners/base-zero-r4-single-hardware-observer/result.json": {
+      "sha256": "9dcaedc551f473473a51c7f2c08d0a7a9670fafdf724fbd8b6fd9240327384d0",
+      "bytes": 1620
+    },
+    "owners/base-zero-r4-single-hardware-observer/status.json": {
+      "sha256": "9dcaedc551f473473a51c7f2c08d0a7a9670fafdf724fbd8b6fd9240327384d0",
+      "bytes": 1620
+    },
+    "owners/base-zero-r4-single-hardware-start/child.log": {
+      "sha256": "5d94d0db3dff4e11159ee584594253d6632a194940e78d09cbfa30bd4d3470b4",
+      "bytes": 1365
+    },
+    "owners/base-zero-r4-single-hardware-start/launch.json": {
+      "sha256": "7215478dd89866deff4481a549822de537168f64983a817014ec535d1ae913cb",
+      "bytes": 1128
+    },
+    "owners/base-zero-r4-single-hardware-start/result.json": {
+      "sha256": "936e98ebb15152471b750954536a1d662022ce533939eb253a97df1006d8e422",
+      "bytes": 1614
+    },
+    "owners/base-zero-r4-single-hardware-start/status.json": {
+      "sha256": "936e98ebb15152471b750954536a1d662022ce533939eb253a97df1006d8e422",
+      "bytes": 1614
+    },
+    "prepare_base_zero_diagnostic_r4.draft.py": {
+      "sha256": "15dd76099738f23a432914e739a8ff7ed9a86219023a8521815f46ab4d79fbcf",
+      "bytes": 11092
+    },
+    "readonly_native_prep_after_network255_r4.sh": {
+      "sha256": "6b3a3e0563a5345a23a734cb4c141c5839ce71daa446e2af0f8efed9a3722a43",
+      "bytes": 1191
+    },
+    "readonly_nonuart17_usb_refresh_r4.sh": {
+      "sha256": "c851ed7a1be6aef0d809df96beea947ee57cc0d62b18cdb2568501d75b592d7d",
+      "bytes": 1817
+    },
+    "research/narrow-next-step-candidate.md": {
+      "sha256": "6cda8701cc9f51d5b424dda050a6019d99883390f0f1810b0d1d770425f9d42c",
+      "bytes": 2550
+    },
+    "research/official-sts-version201-acquisition-receipt.json": {
+      "sha256": "2a0f4a49014b6117688692dd06151026acb5e44713e3aa8725a954ebf1c54413",
+      "bytes": 7040
+    },
+    "research/official-sts-version201-memory-table.md": {
+      "sha256": "eb62b5b4791d1ce9ef4a57a610fb9324170c79a7fd923bee531d3159565460b9",
+      "bytes": 10138
+    },
+    "research/official-sts-version201-response.json": {
+      "sha256": "6d256e2f17b0cb7e6ebd02b3edbb57507cd70916837151300870546d11dfe67e",
+      "bytes": 10951
+    },
+    "root-actual-evidence-review-r4.json": {
+      "sha256": "b82c283ed5a509a8953d48db7e8fd95717e21f76717c4e01e482b9c0c2e82c4d",
+      "bytes": 3275
+    },
+    "root-native-quality-review-r4.json": {
+      "sha256": "d7663d45d03f3b9b5c1307d48e5dc4383fea229cd6872622386bb61b57aebb60",
+      "bytes": 953
+    },
+    "root-readonly-capture-review-r4.json": {
+      "sha256": "b4eae44113fe4559ff5520f734d43097520f6ad0a719558039983eac281ba364",
+      "bytes": 666
+    },
+    "run-quality/commit_quality_once_base_zero_r4.py": {
+      "sha256": "deff2d57ed9982b5184bd70fbb5e6eea8c652c5d71a5b68cb040580efdb59ac3",
+      "bytes": 5204
+    },
+    "run-quality/commit_quality_once_base_zero_r4.py.diff-vs-pre-run.patch": {
+      "sha256": "16a7bc43834214e255cf11d67806a42db4ffe3a41a7200a35665e5935c6c299d",
+      "bytes": 421
+    },
+    "run-quality/quality-archive-receipt-base-zero-r4-run.json": {
+      "sha256": "66b6d8e72c10b339278af874e06d225785c72ab5d2eaaef0eb9c2e5329c08f88",
+      "bytes": 3882
+    },
+    "run-quality/quality-generation-receipt-base-zero-r4-run.json": {
+      "sha256": "8421e7ee433a85c8dcbd8f24ac28e8e3178c0b22e5aab60ce2b6cc3177254603",
+      "bytes": 1365
+    },
+    "run-quality/quality-originals-manifest-base-zero-r4-run.json": {
+      "sha256": "72afb33cb6e855059b75dc1d0f44471a883b617091700561da57f847a43af461",
+      "bytes": 9766
+    },
+    "run-quality/quality-verification-base-zero-r4-run.json": {
+      "sha256": "868f5ffa85940148409e1e87e7b5f398567aed89c14c675396a918ae6f5f1c20",
+      "bytes": 19061
+    },
+    "run-quality/single_ssh_commit_quality_base_zero_r4.sh": {
+      "sha256": "312c28b66f3181a7cbf9cd43910ba148941ec5da36ca36a23b4b23e02deb2ed0",
+      "bytes": 11064
+    },
+    "run-quality/single_ssh_commit_quality_base_zero_r4.sh.diff-vs-pre-run.patch": {
+      "sha256": "733be9fa0cd8d843313068090c1d6d6430141ce8ce9b4f0ca1805f7270f14d4a",
+      "bytes": 16430
+    },
+    "seal_base_zero_diagnostic_r4.actual.sh": {
+      "sha256": "74321d7ea35f26928a350e836982146d06c7e701dd90e44e6e937e1df5cf5f01",
+      "bytes": 14296
+    },
+    "seal_base_zero_diagnostic_r4.draft.sh": {
+      "sha256": "4bda339e4ad98bc5506de1e33915b2e6d5ad861427fe8fb29908607516825cc3",
+      "bytes": 13780
+    },
+    "seal_base_zero_diagnostic_r4.draft.sh.diff": {
+      "sha256": "5e69cf5604e0b2d8179cc956d24c703b68ad0a0215005838d3938b9100e3caa4",
+      "bytes": 10678
+    },
+    "start_base_zero_diagnostic_once_r4.actual.sh": {
+      "sha256": "4c00d28450c6b9772d98d49d90e29c1801babe4a9b7c3c24bef97593fc9bb153",
+      "bytes": 12077
+    },
+    "start_base_zero_diagnostic_once_r4.fixed-unbound.sh": {
+      "sha256": "32d5ee207010dd00e6ddb5b150666de86b466fc9d69f1824f2a2e12564f6bd63",
+      "bytes": 11648
+    },
+    "summary.json": {
+      "sha256": "0b4e4d8f2f8b00ffa37cbfffedf799c54bb33eaf5a59b5f567ce75a5bfe50265",
+      "bytes": 5082
+    },
+    "summary.preparation-stage-r4.json": {
+      "sha256": "6fa85351990597d2edbb5c97159b20d16582ed2575e58f1210c1ed7ba66eab20",
+      "bytes": 3712
+    },
+    "upload_and_start_base_zero_once_r4.actual.sh": {
+      "sha256": "272694de9fd336c8a0bf9678e6b382b59f39ecdc916dc298bd507670c24748b4",
+      "bytes": 17202
+    },
+    "usb-refresh-nonuart-r4.receipt.json": {
+      "sha256": "7c117798c001bda3c6fd54bd698425e3277ce19bd70d3b2316293427031010ec",
+      "bytes": 584
+    },
+    "usb-refresh-nonuart-r4.stdout": {
+      "sha256": "928e5e978179d95a6a34436ccc0abd1ff545c65529290ea2a404e68e623fad88",
+      "bytes": 176291
     }
-  }
+  },
+  "files_total": 96,
+  "all_copy_pairs_byte_equal": true
 }

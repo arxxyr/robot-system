@@ -1,0 +1,11 @@
+--- 
++++ 
+@@ -11,7 +11,7 @@
+ import time
+ from types import SimpleNamespace
+ 
+-BASE = Path('/home/loosqk/robot-checks/base-zero-r4-quality')
++BASE = Path('/home/loosqk/robot-checks/base-zero-r4-run-quality')
+ SOURCE = Path('/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/source')
+ TARGET = Path('/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build')
+ OUT = BASE / 'quality'

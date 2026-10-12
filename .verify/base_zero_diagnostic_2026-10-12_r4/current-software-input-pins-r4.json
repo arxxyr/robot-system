@@ -1,0 +1,25 @@
+{
+  "status": "CURRENT_NONUART17_INPUTS_VERIFIED",
+  "pins": {
+    "NONUART_STDOUT_PATH": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/usb-refresh-nonuart-r4.stdout",
+    "NONUART_STDOUT_EXPECTED": [
+      "928e5e978179d95a6a34436ccc0abd1ff545c65529290ea2a404e68e623fad88",
+      176291
+    ],
+    "NONUART_RECEIPT_PATH": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/usb-refresh-nonuart-r4.receipt.json",
+    "NONUART_RECEIPT_EXPECTED": [
+      "7c117798c001bda3c6fd54bd698425e3277ce19bd70d3b2316293427031010ec",
+      584
+    ]
+  },
+  "USB_changes": {
+    "left": {},
+    "right": {}
+  },
+  "checks": 17,
+  "children": 23,
+  "all_reaped": true,
+  "UART": 0,
+  "actual_recipe_sha256": "71c01ee92cca748f2a6ca1fe5ec22f7ca60e21ca2c33428b41c61104d1320212",
+  "initial_root_local_failure": "ad1e31/exit1 TypeError因file变量覆盖fresh对象；首次输入原件/actualrecipe及空JSON保留，未重跑nonUART或native准备"
+}

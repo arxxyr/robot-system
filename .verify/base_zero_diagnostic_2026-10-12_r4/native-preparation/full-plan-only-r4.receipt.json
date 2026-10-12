@@ -1,0 +1,34 @@
+{
+  "name": "full-plan-only-r4",
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base_zero_diagnostic_r1.py",
+    "--maintenance",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "--raw-helper",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/helpers/raw_right9_from_r14_r1.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/maintenance_bindings_base_zero_diagnostic_r4.json",
+    "--output",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base-zero-diagnostic-r4",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/position-return-20261010-r1"
+  ],
+  "pid": 655208,
+  "started_ns": 1791785952583742064,
+  "finished_ns": 1791785952694073708,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/full-plan-only-r4.stdout",
+    "sha256": "489beb14a275f472a8306f27660daeb89a7770e66beb4fc04935f9d91bb6640b",
+    "bytes": 38231
+  },
+  "stderr": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/full-plan-only-r4.stderr",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  }
+}
