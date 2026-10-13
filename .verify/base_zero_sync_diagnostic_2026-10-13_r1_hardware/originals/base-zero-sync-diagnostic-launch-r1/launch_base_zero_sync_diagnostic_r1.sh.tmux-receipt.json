@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "tmux",
+    "new-session",
+    "-d",
+    "-s",
+    "base-zero-sync-diagnostic-trial-20261013-r1",
+    "-P",
+    "-F",
+    "#{session_name} #{window_id} #{pane_id} #{pane_pid}",
+    "bash /home/loosqk/robot-checks/base-zero-sync-diagnostic-r1/base-zero-sync-diagnostic-launch-r1/launch_base_zero_sync_diagnostic_r1.sh"
+  ],
+  "pid": 668950,
+  "started_ns": 1791879225517765105,
+  "finished_ns": 1791879225523460092,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "stdout": "base-zero-sync-diagnostic-trial-20261013-r1 @110 %110 668951\n",
+  "stderr": "",
+  "signals_sent": []
+}

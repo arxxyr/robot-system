@@ -1,0 +1,42 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "WAITING",
+  "status": "RUNNING",
+  "owner_pid": 2863,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ServerAliveCountMax=2",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 2864,
+  "started_utc": "2026-10-13T08:15:47.062150+00:00",
+  "started_monotonic_ns": 66427840174333,
+  "observe_seconds": 5,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/scripts/seal_base_zero_sync_diagnostic_r1.bound.sh",
+    "sha256": "64376f1a0390f4d911bedfe157f9c701856b34435163c16628d235dca9528975",
+    "bytes": 15343
+  },
+  "launched_utc": "2026-10-13T08:15:47.064248+00:00",
+  "start_new_session": true,
+  "child_session_id": 2864
+}

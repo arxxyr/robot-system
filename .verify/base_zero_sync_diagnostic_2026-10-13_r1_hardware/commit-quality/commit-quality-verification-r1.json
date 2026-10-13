@@ -1,0 +1,117 @@
+{
+  "status": "PASS_COMMIT_QUALITY_ISOLATED_SOURCE_ACTUAL_LATEST_FMT_DEFAULT_ROOT_CLIPPY",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/commit-quality/native-originals-commit-quality-r1.tar.gz",
+    "sha256": "86c4b6b65b89e91f1bd9b8c5901f7cac61fdea470c47b784a7d1b1eb9fb065af",
+    "bytes": 138277,
+    "files": 34
+  },
+  "compiler_actual_before_after": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "e9bbadf6824e65b3583c2dda3a0926ec76df9143",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "source597_three_native_windows_and_current_ROOT_equal": true,
+  "source_manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+  "root_git_head_provenance_only": "5ee8a9c427c2010fe760c2090aac78acc0c64623",
+  "native_git_head": null,
+  "commands": [
+    {
+      "name": "nightly_update",
+      "argv": [
+        "rustup",
+        "update",
+        "nightly",
+        "--no-self-update"
+      ],
+      "pid": 669462,
+      "exit_code": 0,
+      "reaped": true,
+      "signals": []
+    },
+    {
+      "name": "rustc_before",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "pid": 669475,
+      "exit_code": 0,
+      "reaped": true,
+      "signals": []
+    },
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "pid": 669481,
+      "exit_code": 0,
+      "reaped": true,
+      "signals": []
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "pid": 669492,
+      "exit_code": 0,
+      "reaped": true,
+      "signals": []
+    },
+    {
+      "name": "rustc_after",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "pid": 669508,
+      "exit_code": 0,
+      "reaped": true,
+      "signals": []
+    }
+  ],
+  "native_stdout_stderr_files": 10,
+  "driver": "base-zero-sync-r1-commit-quality-20261013-r1|@111|%111|669458|1|0",
+  "wrapper_children": 4,
+  "owner": {
+    "owner_pid": 4280,
+    "ssh_pid": 4281,
+    "exit_code": 0,
+    "reaped": true,
+    "log": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/commit-quality/tools/base-zero-sync-r1-commit-quality-20261013-r1.owner/child.log",
+      "sha256": "fc609d521585ea1a7b31a806fc3465b102b41de6da9bfc99e5ce408fa418a5ea",
+      "bytes": 186614
+    }
+  },
+  "tests_run": 0,
+  "real_hw_Clippy_runs": 0,
+  "release_builds": 0,
+  "ELF_executions": 0,
+  "UART_operations": 0,
+  "USB_fuser_or_nonUART17_checks": 0,
+  "GO_created": false,
+  "services_touched": 0,
+  "shared_old_r7_SOURCE_writes": 0,
+  "hardware_stop_or_identity_proof": false,
+  "hardware_original_run_result": "NEEDS_MANUAL_POWER_CUT_UNCHANGED",
+  "physical_cut_confirmation_at_dispatch": "PENDING_NOT_INFERRED_FROM_QUALITY",
+  "actual_exec": {
+    "start_chunk": "582f2d",
+    "session_id": 4059,
+    "completion_chunk": "0eed6f",
+    "exit_code": 0,
+    "session_closed": true
+  },
+  "original_static_checker_false_positive_preserved": "45fb29"
+}

@@ -1,0 +1,28 @@
+{
+  "status": "QUALITY_RECIPE_CREATED_NOT_RUN",
+  "phase": "/home/loosqk/robot-checks/base-zero-sync-r1-commit-quality-20261013",
+  "SOURCE": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source",
+  "source597_manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+  "root_git_head_provenance_only": "5ee8a9c427c2010fe760c2090aac78acc0c64623",
+  "native_git_head": null,
+  "direct_quality_commands": 5,
+  "wrapper": {
+    "sha256": "b35ae816d134b2d409aa180a20dc2b3e275083f0fc934008fe9ec29abe92607b",
+    "bytes": 165230
+  },
+  "driver": {
+    "sha256": "a96e77903a8cf76f20eb6f334203438e4ec29cfb302da6b8e11d7cd0f6f525d4",
+    "bytes": 4474
+  },
+  "uploaded": {
+    "boot/commit_quality_once_base_zero_sync_r1.py": {
+      "sha256": "a96e77903a8cf76f20eb6f334203438e4ec29cfb302da6b8e11d7cd0f6f525d4",
+      "bytes": 4474
+    },
+    "boot/host-source-root597.json": {
+      "sha256": "6ada0f253666eaa11884067fc963280f5309f6a5d7d246e7662d7ce73333775b",
+      "bytes": 114885
+    }
+  },
+  "quality_cannot_override_hardware_NEEDS_MANUAL_POWER_CUT": true
+}

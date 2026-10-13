@@ -21,20 +21,24 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-13 XLeRobot单ID SYNC零值诊断软件PASS，实机Enable尚未执行。
-           既有feetech_poke只加sync-zero：addr46/2B/0x83/单ID/固定0，无ACK，不自动Enable。
-           原XLeRobot2B SYNC接口与旧普通WRITE区别已核；不换41/7B，不写Phase/Lock/模式或PID。
-           Orin隔离597源ae00cf4f、latest nightlye9bbadf6；实际fmt→两根Clippy零警告、15例子方法通过。
-           新2方法为15子集；仅诊断例子release ELF b2bfedb1/1507224B冻结，非生产控制产物。
-           Mac旧nightly080的15方法单独保留；原生Git=null，源导出67d8b2a+单Rustdirty，不称Git对齐。
-           main3b681657/27496B、teste97bda49/20991B；Mac/Orin各同6方法通过，不累计。
-           Orin唯一3child原exit0/0/2真wait/reap，默认PLAN/缺GO拒绝通过；无USB/UART/GO或动作。
-           只准备一次right9 SYNC Goal0→至少50ms→Enable→原500ms/三PV原帧→TE0及STOP51。
-           旧候选/原回执与DEVICE0旧finding保留，新一行窄补闭环；完整身份/粘性停止与失败不重试保持。
-           .verify/xlerobot_sync_zero_2026-10-13_software/summary.json；七份未绑定运行草稿已核，须新现场确认/GO。
-           先前R2只读诊断/STOP51/身份PASS已提交67d8b2a；整轮固件DEFERRED原FAIL、旧±50不回填。
-           R2看护已结束/GO消费；最新供电仅用户ON，遥测UNKNOWN，不构成新零速Enable授权。
-           腕部/头部长期参数、三轮主动运动与固件合同OPEN；右H2完整PASS，D15 OPEN/DEFERRED。
+本轮最新:  2026-10-13 右9 SYNC零值短窗子项PASS，但最终前轮8 PV+50，整run NEEDS人工断电。
+           本次ON/架空/看护事实08:08固定600秒，08:18原截止未续；fresh17/23与USB两侧无变更。
+           58refs/唯一PLAN child668879真0/reap，canonical85a1defa；独立GO一次、仅right9三写。
+           新b2 ELF单ID9 SYNC46/2B固定0无ACK，原TE1/TE0两ACK有效；发送到Enable539.24678ms。
+           三PV原帧0/200/400均0，完成19.731616/211.676957/419.639071ms，原500ms判据通过。
+           观察实际finished-start500.609105ms/另elapsed500.609649ms保留，不称整个观察≤500ms。
+           最终right8 seq311普通READ请求58/2B，RX有效08/0032=+50，与原stdout同；不是历史-50。
+           STOP51 UNKNOWN/粘性cleanup FAIL，后right9停止未读/完整身份UNKNOWN；全局结果不记PASS。
+           driver668951/@110/%110自然dead1，329child/658原流全真回收；最后UART311，后18非UART。
+           collector仅核自dead pane/回收2child，无独立17后验或新UART；701原包9ecb11a6/197876B封存。
+           立即切两电源已请求，实际断电回执PENDING；最后用户ON/遥测UNKNOWN，禁止新UART/动作。
+           .verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/summary.json；旧FAIL/±50原因不回填。
+           首owner相对input本地NOT_LAUNCHED/SSH0保留；改绝对路径后才唯一fresh，未重试硬件。
+           提交前Orin latest e9→fmt→默认根Clippy零警告，597三窗与主树同ae00，5child/10流真回收。
+           34软件原包86c4b6b6/138277B封存；不作停止证明，无新测试/release/安装/服务启动。
+           前一软件候选5ee8a9c已提交，三次push网络断开未完成，最后远端仍67d8b2a。
+           下一步先断电收尾，再只窄核前轮原READ与SYNC_READ事实，不写Phase或放宽停止门。
+           腕部/头部长期参数与三轮主动运动/固件合同OPEN；右H2完整PASS，D15 OPEN/DEFERRED。
            deployable=false；架构、正式安装、S0/S1接口与服务未改。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +

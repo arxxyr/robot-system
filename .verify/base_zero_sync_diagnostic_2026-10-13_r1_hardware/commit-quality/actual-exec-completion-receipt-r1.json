@@ -1,0 +1,16 @@
+{
+  "status": "ACTUAL_NATIVE_EXEC_AND_ORIGINALS_REVIEW_COMPLETED",
+  "start_chunk": "582f2d",
+  "session_id": 4059,
+  "completion_chunk": "0eed6f",
+  "actual_exit_code": 0,
+  "actual_session_closed": true,
+  "archive_collection_exec_chunk": "5ef94f",
+  "archive_collection_exit_code": 0,
+  "final_byte_review_exec_chunk": "b3c062",
+  "final_byte_review_exit_code": 0,
+  "verification_summary_sha256": "5ceee01825a0044a88fe3242db83c48d78834b35360a36b3b0b0cfc3ab41d454",
+  "archive_sha256": "86c4b6b65b89e91f1bd9b8c5901f7cac61fdea470c47b784a7d1b1eb9fb065af",
+  "hardware_stop_or_identity_proof": false,
+  "new_checks_after_final_review": 0
+}

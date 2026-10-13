@@ -1,0 +1,17 @@
+{
+  "FIELD_STAMP": 1791878880000000000,
+  "FIELD_EXPECTED": [
+    "41bc0953cc7b59bb511264e044f87a4af47a9f67ef4ba2aa4a9b84ec0dee177b",
+    1682
+  ],
+  "NONUART_STDOUT_PATH": "/home/loosqk/robot-checks/base-zero-sync-diagnostic-r1/usb-refresh-nonuart-r1.stdout",
+  "NONUART_STDOUT_EXPECTED": [
+    "d1240b33da211595337b62a34041e3ac571c70c93dee1338f3fe8f04da7b2777",
+    176291
+  ],
+  "NONUART_RECEIPT_PATH": "/home/loosqk/robot-checks/base-zero-sync-diagnostic-r1/usb-refresh-nonuart-r1.receipt.json",
+  "NONUART_RECEIPT_EXPECTED": [
+    "3b20e0ec17a1caa75b2b650d2e517f51a2ed70f90a82d11573e22d05c2b7917b",
+    804
+  ]
+}

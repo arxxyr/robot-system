@@ -1,0 +1,49 @@
+{
+  "schema": "BASE_ZERO_SYNC_R1_COMMIT_QUALITY_V1",
+  "status": "PASS",
+  "started_at": "2026-10-13T08:24:47.041659+00:00",
+  "scope": "latestnightly→实际fmt→仅默认根Clippy；597三窗/编译器前后；不测试/release/ELF/UART/USB/GO/服务",
+  "native_git_head": null,
+  "root_git_head_provenance_only": "5ee8a9c427c2010fe760c2090aac78acc0c64623",
+  "source_expected": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+  "hardware_run_result": "NEEDS_MANUAL_POWER_CUT_UNCHANGED",
+  "physical_cut_confirmation_at_dispatch": "PENDING",
+  "hardware_stop_or_identity_proof": false,
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "e9bbadf6824e65b3583c2dda3a0926ec76df9143",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "source_before_after": "PASS",
+  "compiler_before_after": "PASS",
+  "tests_run": 0,
+  "release_builds": 0,
+  "ELF_executions": 0,
+  "UART_operations": 0,
+  "USB_checks": 0,
+  "GO_created": false,
+  "services_touched": 0,
+  "finished_at": "2026-10-13T08:24:53.144089+00:00",
+  "receipts": [
+    {
+      "path": "/home/loosqk/robot-checks/base-zero-sync-r1-commit-quality-20261013/quality/nightly_update/completion.json",
+      "sha256": "f65f991eb31f2edfc5f6da3604f4ed9aefa12232bdf6a0634301bc737e35bb44"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/base-zero-sync-r1-commit-quality-20261013/quality/rustc_before/completion.json",
+      "sha256": "3379ed713171fd0be14d0cadfb7387ec63d81e2e36d140da1dac2cdf40d9737a"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/base-zero-sync-r1-commit-quality-20261013/quality/fmt/completion.json",
+      "sha256": "8e4a3f9cd11b5750c005f71dbdbb9a3e46614951c8fe1ef107a9043198e5bd01"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/base-zero-sync-r1-commit-quality-20261013/quality/clippy/completion.json",
+      "sha256": "4f40d6b1a6a85b5d0efb3d7189c12e3072bdbcae42ca50f56344b71bdb840518"
+    },
+    {
+      "path": "/home/loosqk/robot-checks/base-zero-sync-r1-commit-quality-20261013/quality/rustc_after/completion.json",
+      "sha256": "278d01697e0ecccd26ae05b07e5b42f13fc76f20a5e94134e7ee9c02536cbef9"
+    }
+  ]
+}

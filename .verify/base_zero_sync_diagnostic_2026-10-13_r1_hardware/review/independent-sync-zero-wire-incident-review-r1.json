@@ -1,0 +1,338 @@
+{
+  "schema": "BASE_ZERO_SYNC_R1_NARROW_INDEPENDENT_WIRE_INCIDENT_REVIEW_V1",
+  "recorded_at_utc": "2026-10-13T08:22:39.336473+00:00",
+  "evidence_root": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/originals/base-zero-sync-diagnostic-r1",
+  "review_status": "PASS_NARROW_EVIDENCE_REVIEW_ORIGINAL_NEEDS_PRESERVED",
+  "original_run": {
+    "file": "run.json",
+    "sha256": "447e79d52d39c86acffb8953800a2c114e7c044bd6a654384d170fa608fa8b45",
+    "bytes": 492509
+  },
+  "original_result": "NEEDS_MANUAL_POWER_CUT",
+  "manual_power_cut_required": true,
+  "manual_power_cut_confirmation": "PENDING_AS_PARENT_CURRENT_REPORT",
+  "zero_diag_substep_status": "PASS",
+  "zero_diag_final_uart_blocked": true,
+  "STOP_original_status": "UNKNOWN",
+  "identity_original_status": "UNKNOWN",
+  "stop_reason": "right8 seq311完整有效PV返回+50，guard拒后未纳入snapshot，原STOP记录UNKNOWN并含sticky cleanup FAIL；原值与分类不改。",
+  "trace_frames": [
+    {
+      "sequence": 130,
+      "kind": "ordinary",
+      "motor_id": 7,
+      "trace": {
+        "file": "right7-normal-read-command_0130.strace",
+        "sha256": "945a105815e0746a7ef5fede8ba87dbeb49b3ba07c51494240fb9b4440484990",
+        "bytes": 10036
+      },
+      "tx_frames": [
+        "ff ff 07 02 01 f5",
+        "ff ff 07 04 02 03 02 ed",
+        "ff ff 07 04 02 3a 02 b6"
+      ],
+      "rx_frames": [
+        "ff ff 07 02 00 f6",
+        "ff ff 07 04 00 09 03 e8",
+        "ff ff 07 04 00 00 00 f4"
+      ],
+      "all_frame_length_ID_checksum_and_IO_bytes_valid": true,
+      "stdout": "read Present_Velocity@7 = 0\n",
+      "stdout_SHA_bytes_match_run": true,
+      "final_operation": {
+        "PV_tx": "ff ff 07 04 02 3a 02 b6",
+        "PV_rx": "ff ff 07 04 00 00 00 f4",
+        "raw_unsigned": 0,
+        "decoded_stdout_integer": 0
+      }
+    },
+    {
+      "sequence": 136,
+      "kind": "ordinary",
+      "motor_id": 8,
+      "trace": {
+        "file": "right8-normal-read-command_0136.strace",
+        "sha256": "06874f6a55e03537ec214a46c2c9d58f3bf489564ce7f4482ef9bc764cf685a2",
+        "bytes": 10036
+      },
+      "tx_frames": [
+        "ff ff 08 02 01 f4",
+        "ff ff 08 04 02 03 02 ec",
+        "ff ff 08 04 02 3a 02 b5"
+      ],
+      "rx_frames": [
+        "ff ff 08 02 00 f5",
+        "ff ff 08 04 00 09 03 e7",
+        "ff ff 08 04 00 00 00 f3"
+      ],
+      "all_frame_length_ID_checksum_and_IO_bytes_valid": true,
+      "stdout": "read Present_Velocity@8 = 0\n",
+      "stdout_SHA_bytes_match_run": true,
+      "final_operation": {
+        "PV_tx": "ff ff 08 04 02 3a 02 b5",
+        "PV_rx": "ff ff 08 04 00 00 00 f3",
+        "raw_unsigned": 0,
+        "decoded_stdout_integer": 0
+      }
+    },
+    {
+      "sequence": 142,
+      "kind": "ordinary",
+      "motor_id": 9,
+      "trace": {
+        "file": "right9-normal-read-command_0142.strace",
+        "sha256": "5026ae58fe888fa0304189b4de0ab90c221638ffda096ec80a58f9b00f4e45f1",
+        "bytes": 10036
+      },
+      "tx_frames": [
+        "ff ff 09 02 01 f3",
+        "ff ff 09 04 02 03 02 eb",
+        "ff ff 09 04 02 3a 02 b4"
+      ],
+      "rx_frames": [
+        "ff ff 09 02 00 f4",
+        "ff ff 09 04 00 09 03 e6",
+        "ff ff 09 04 00 00 00 f2"
+      ],
+      "all_frame_length_ID_checksum_and_IO_bytes_valid": true,
+      "stdout": "read Present_Velocity@9 = 0\n",
+      "stdout_SHA_bytes_match_run": true,
+      "final_operation": {
+        "PV_tx": "ff ff 09 04 02 3a 02 b4",
+        "PV_rx": "ff ff 09 04 00 00 00 f2",
+        "raw_unsigned": 0,
+        "decoded_stdout_integer": 0
+      }
+    },
+    {
+      "sequence": 190,
+      "kind": "sync",
+      "motor_id": 9,
+      "trace": {
+        "file": "right9-zero-write-command_0190.strace",
+        "sha256": "64f3bc7cb630606a1dcdfa5c242976cba9b8265d494a6468310ae5c91026cecb",
+        "bytes": 10257
+      },
+      "tx_frames": [
+        "ff ff 09 02 01 f3",
+        "ff ff 09 04 02 03 02 eb",
+        "ff ff fe 07 83 2e 02 09 00 00 3e"
+      ],
+      "rx_frames": [
+        "ff ff 09 02 00 f4",
+        "ff ff 09 04 00 09 03 e6"
+      ],
+      "all_frame_length_ID_checksum_and_IO_bytes_valid": true,
+      "stdout": "sync-zero Goal_Velocity@9 <- 0: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n",
+      "stdout_SHA_bytes_match_run": true,
+      "final_operation": {
+        "SYNC_tx": "ff ff fe 07 83 2e 02 09 00 00 3e",
+        "post_SYNC_tty_read_attempts": 0,
+        "ACK": "NONE_OBSERVED_OR_CONSUMED_BY_THIS_COMMAND"
+      }
+    },
+    {
+      "sequence": 210,
+      "kind": "te1",
+      "motor_id": 9,
+      "trace": {
+        "file": "right9-zero-write-command_0210.strace",
+        "sha256": "4f7cc8483a2b97fd5b49ed1b804b3d818f55a2c1fdff0b2b581e3c83964050af",
+        "bytes": 10036
+      },
+      "tx_frames": [
+        "ff ff 09 02 01 f3",
+        "ff ff 09 04 02 03 02 eb",
+        "ff ff 09 04 03 28 01 c6"
+      ],
+      "rx_frames": [
+        "ff ff 09 02 00 f4",
+        "ff ff 09 04 00 09 03 e6",
+        "ff ff 09 02 00 f4"
+      ],
+      "all_frame_length_ID_checksum_and_IO_bytes_valid": true,
+      "stdout": "write Torque_Enable@9 <- 1 ok\n",
+      "stdout_SHA_bytes_match_run": true,
+      "final_operation": {
+        "TE_value": 1,
+        "TE_tx": "ff ff 09 04 03 28 01 c6",
+        "ACK_rx": "ff ff 09 02 00 f4",
+        "ACK_valid": true
+      }
+    },
+    {
+      "sequence": 215,
+      "kind": "te0",
+      "motor_id": 9,
+      "trace": {
+        "file": "right9-zero-write-command_0215.strace",
+        "sha256": "7b4acacb8206fa8dda5c308b84e9860b369ed6ed94b9a6cbb5514c626146a2e6",
+        "bytes": 10036
+      },
+      "tx_frames": [
+        "ff ff 09 02 01 f3",
+        "ff ff 09 04 02 03 02 eb",
+        "ff ff 09 04 03 28 00 c7"
+      ],
+      "rx_frames": [
+        "ff ff 09 02 00 f4",
+        "ff ff 09 04 00 09 03 e6",
+        "ff ff 09 02 00 f4"
+      ],
+      "all_frame_length_ID_checksum_and_IO_bytes_valid": true,
+      "stdout": "write Torque_Enable@9 <- 0 ok\n",
+      "stdout_SHA_bytes_match_run": true,
+      "final_operation": {
+        "TE_value": 0,
+        "TE_tx": "ff ff 09 04 03 28 00 c7",
+        "ACK_rx": "ff ff 09 02 00 f4",
+        "ACK_valid": true
+      }
+    },
+    {
+      "sequence": 305,
+      "kind": "ordinary",
+      "motor_id": 7,
+      "trace": {
+        "file": "right7-normal-read-command_0305.strace",
+        "sha256": "a6a92984e295ba3978ebdee95242282a5513599cf8767671ba45a6746c14beb2",
+        "bytes": 10036
+      },
+      "tx_frames": [
+        "ff ff 07 02 01 f5",
+        "ff ff 07 04 02 03 02 ed",
+        "ff ff 07 04 02 3a 02 b6"
+      ],
+      "rx_frames": [
+        "ff ff 07 02 00 f6",
+        "ff ff 07 04 00 09 03 e8",
+        "ff ff 07 04 00 00 00 f4"
+      ],
+      "all_frame_length_ID_checksum_and_IO_bytes_valid": true,
+      "stdout": "read Present_Velocity@7 = 0\n",
+      "stdout_SHA_bytes_match_run": true,
+      "final_operation": {
+        "PV_tx": "ff ff 07 04 02 3a 02 b6",
+        "PV_rx": "ff ff 07 04 00 00 00 f4",
+        "raw_unsigned": 0,
+        "decoded_stdout_integer": 0
+      }
+    },
+    {
+      "sequence": 311,
+      "kind": "ordinary",
+      "motor_id": 8,
+      "trace": {
+        "file": "right8-normal-read-command_0311.strace",
+        "sha256": "8b6fc1ad3b6ad29d59929bffb0098743237b4311786dffe16b181f1a49cb7a6c",
+        "bytes": 10040
+      },
+      "tx_frames": [
+        "ff ff 08 02 01 f4",
+        "ff ff 08 04 02 03 02 ec",
+        "ff ff 08 04 02 3a 02 b5"
+      ],
+      "rx_frames": [
+        "ff ff 08 02 00 f5",
+        "ff ff 08 04 00 09 03 e7",
+        "ff ff 08 04 00 32 00 c1"
+      ],
+      "all_frame_length_ID_checksum_and_IO_bytes_valid": true,
+      "stdout": "read Present_Velocity@8 = 50\n",
+      "stdout_SHA_bytes_match_run": true,
+      "final_operation": {
+        "PV_tx": "ff ff 08 04 02 3a 02 b5",
+        "PV_rx": "ff ff 08 04 00 32 00 c1",
+        "raw_unsigned": 50,
+        "decoded_stdout_integer": 50
+      }
+    }
+  ],
+  "three_raw_PV": [
+    {
+      "sequence": 212,
+      "requested_offset_ns": 0,
+      "completed_offset_ns": 19731616,
+      "rx_frame": "ff ff 09 04 00 00 00 f2",
+      "declared_sync_read_tx": "ff ff fe 05 82 3a 02 09 35",
+      "raw_unsigned": 0,
+      "stdout": {
+        "file": "command_0212.stdout",
+        "sha256": "ead175d631ec660b0fbfc808b1254eda53c227198504e6b8def3980be6394a76",
+        "bytes": 271
+      },
+      "checksum_valid": true,
+      "completed_in_budget": true
+    },
+    {
+      "sequence": 213,
+      "requested_offset_ns": 200000000,
+      "completed_offset_ns": 211676957,
+      "rx_frame": "ff ff 09 04 00 00 00 f2",
+      "declared_sync_read_tx": "ff ff fe 05 82 3a 02 09 35",
+      "raw_unsigned": 0,
+      "stdout": {
+        "file": "command_0213.stdout",
+        "sha256": "ead175d631ec660b0fbfc808b1254eda53c227198504e6b8def3980be6394a76",
+        "bytes": 271
+      },
+      "checksum_valid": true,
+      "completed_in_budget": true
+    },
+    {
+      "sequence": 214,
+      "requested_offset_ns": 400000000,
+      "completed_offset_ns": 419639071,
+      "rx_frame": "ff ff 09 04 00 00 00 f2",
+      "declared_sync_read_tx": "ff ff fe 05 82 3a 02 09 35",
+      "raw_unsigned": 0,
+      "stdout": {
+        "file": "command_0214.stdout",
+        "sha256": "ead175d631ec660b0fbfc808b1254eda53c227198504e6b8def3980be6394a76",
+        "bytes": 271
+      },
+      "checksum_valid": true,
+      "completed_in_budget": true
+    }
+  ],
+  "timing": {
+    "send_complete_to_TE1_attempt_ns": 539246780,
+    "minimum_settle_ns": 50000000,
+    "observation_finished_minus_start_ns": 500609105,
+    "recorded_elapsed_ns": 500609649,
+    "read_completion_budget_ns": 500000000,
+    "whole_observation_strictly_within_500ms": false
+  },
+  "post_stop": {
+    "last_UART_command_sequence": 311,
+    "following_commands": 18,
+    "following_recorded_UART_children": 0,
+    "right9_final_STOP_values": "NOT_READ_UNKNOWN"
+  },
+  "child_metadata": {
+    "commands": 329,
+    "all_reaped": true,
+    "child_active": false,
+    "full_stream_hash_wait_and_archive_review": "ROOT_PARALLEL_SCOPE_NOT_DUPLICATED_HERE"
+  },
+  "coverage": {
+    "write_straces": 3,
+    "initial_final_ordinary_PV_straces": 5,
+    "raw_PV_stdout_frames": 3,
+    "extra_right9_cleanup_0217_trace": "EXISTS_NOT_INCLUDED_IN_THIS_NARROW_5_TRACE_SELECTION"
+  },
+  "limits": [
+    "SYNC无ACK是本命令不读ACK/未观测ACK，不证明电机收到或无物理响应。",
+    "raw PV三份TX为原stdout声明；本审只校原完整RX及元数据/帧checksum，不冒充额外syscall wire采集。",
+    "不从right8+50/右9PV0推定轮转动、单位、量化、物理停转或因果关系；历史±50/固件合同仍OPEN。",
+    "只核指定frame及本run的后续命令边界，不将子项PASS回填整轮NEEDS或断电确认。"
+  ],
+  "review_actions": {
+    "SSH": 0,
+    "UART": 0,
+    "GO_created": false,
+    "tests_rerun": 0,
+    "originals_modified": false
+  },
+  "findings": []
+}

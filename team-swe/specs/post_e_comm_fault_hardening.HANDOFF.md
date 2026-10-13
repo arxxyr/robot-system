@@ -2,6 +2,18 @@
 
 ## 当前步骤
 
+### 右轮SYNC零值子项通过，前轮最终+50导致停止未确认（2026-10-13）
+
+用户本次直接确认供电、三轮稳定架空、空载双臂支撑、区域空旷及持续看护可立即断电。root首次观察08:08:00UTC固定原600秒至08:18，不续期；本次fresh17项/23child、当前USB双方changes{}及58refs/唯一完整PLAN通过。PLAN child668879真实0/reap，canonical85a1defa；root和独立窄审均核实。首owner1497因相对input在本机NOT_LAUNCHED/pidnull、SSH0拒绝并完整保留；修绝对路径后owner1560/SSH1561才执行唯一fresh，没有硬件自动重试。独立GO仅一次，START owner2276/SSH2277真实0/reap，driver668951/@110/%110自然exit1后所属dead pane已回收。
+
+本次仅right9/base_right_wheel三写：新冻结b2 ELF发单ID SYNC_WRITE46/2B Goal0，无ACK；原工具写TE1/TE0两份有效ACK。发送完成到Enable实际539.24678ms（≥50ms下界，不称精确50ms，也不据此归因）。0/200/400ms三份SYNC_READ PV原字均0，完成19.731616/211.676957/419.639071ms均在原500ms内，zero_diag记录子项PASS。观察finished-start500.609105ms，另elapsed500.609649ms保留；只证明三个离散读回，不证明连续物理静止、零速启扭通用安全、SYNC指令或等待改变的因果。
+
+最终停止读取在前轮right8 seq311普通READ返回`read Present_Velocity@8 = 50\n`。同份strace保存PING、Model777及地址58/2B请求；TX `ff ff 08 04 02 3a 02 b5`，RX `ff ff 08 04 00 32 00 c1`，ID/长度/实IO字节/checksum有效，原字0032与stdout+50一致，不混同历史8032/-50。有效状态包不回显请求地址，不据单包推定运动或具体原因。原STOP51 UNKNOWN且粘性cleanup FAIL，right9最终STOP未读、完整身份UNKNOWN；zero_diag最终uart_blocked=true，不能外推整轮PASS。原run447e79d5/492509B为NEEDS_MANUAL_POWER_CUT，旧FAIL全部保留。
+
+329直属child/658原流全真实回收；215 UART CLI调用（含三写），最后seq311，此后18条仅非UART，粘性封锁后新UART0。OBSERVE owner2650/SSH2651实际exit1/reap与同driver自然dead1已观察；从实际START入口至死态观察结束的整段壁钟边界均在本次GO内。collector仅核同dead pane并回收两个child，owner2863/SSH2864真实0/reap，不做独立17项后验或UART。701原包9ecb11a6/197876B逐件封存，[本轮摘要](../../.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/summary.json)、[root原件审查](../../.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/review/root-hardware-incident-review-r1.json)分别记录子项读回和整轮停止失败。
+
+已立即请求现场切断两个电机电源并保持机械臂和架空底盘支撑，实际断电回执PENDING；最后供电只有用户本次ON，独立遥测UNKNOWN。禁止后续UART、动作、GO复用或自动重试；下一步先完成断电收尾，再只准备前轮普通READ与SYNC_READ的窄核，不写Phase或放宽停止门。提交前唯一纯软件门使用原隔离SOURCE，latest nightly实际e9bbadf6更新→fmt→默认根Clippy0/零警告；597源三窗与主树同ae00cf4f，native_git_head=null，来源标签为rootGit5ee8a9c，不称原生Git对齐。5Runner child/10原流、driver669458/@111/%111自然0、自pane回收及owner4280/SSH4281真实0/reap，无信号。34件唯一原包86c4b6b6/138277B保全，[提交质量](../../.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/commit-quality/commit-quality-verification-r1.json)不作为硬件停止后验；没有新real-hw检查、测试、release、ELF执行、USB/独立17后验、安装或服务激活。 [独立帧审查](../../.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/review/independent-sync-zero-wire-incident-review-r1.json)与root证据审查均通过，但原NEEDS及断电PENDING保持。前一软件提交5ee8a9c三次push因网络断开未完成，最后远端仍67d8b2a。本轮三轮固件/主动运动、腕部和头部长期参数仍OPEN，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false保持。以下历史原件和原失败全部保留。
+
 ### 单轮SYNC零值候选软件通过，实机尚未启用（2026-10-13）
 
 原XLeRobot采用地址46、2B的SYNC_WRITE（0x83）发Goal_Velocity，旧R4采用普通WRITE（0x03）；旧栈发送零值后至少等待50ms才Enable。这里只做这两个差异的单轮对照准备，不解释旧±50因果，不改Phase/Lock/Mode/PID或使用厂家另一种地址41/7B接口。既有feetech_poke新增固定`sync-zero`，不接受寄存器/数值参数，沿既有型号握手及sync_write_by_id；明确无ACK，只报告发送，不证明收到、静止或零值启扭安全。无新总线API、依赖、事务框架或生产速度入口。

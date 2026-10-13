@@ -1,0 +1,33 @@
+{
+  "terminal_identity": [
+    "base-zero-sync-r1-commit-quality-20261013-r1",
+    "@111",
+    "%111",
+    669458
+  ],
+  "start": {
+    "name": "start-software-only",
+    "argv": [
+      "tmux",
+      "new-session",
+      "-d",
+      "-s",
+      "base-zero-sync-r1-commit-quality-20261013-r1",
+      "-P",
+      "-F",
+      "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}",
+      "bash /home/loosqk/robot-checks/base-zero-sync-r1-commit-quality-20261013/boot/launch_commit_quality_base_zero_sync_r1.sh"
+    ],
+    "pid": 669457,
+    "started_ns": 1791879886951376547,
+    "finished_ns": 1791879886957199042,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "signals_sent": [],
+    "stdout": "base-zero-sync-r1-commit-quality-20261013-r1|@111|%111|669458\n",
+    "stderr": ""
+  },
+  "scope": "仅纯软件；不接触UART/USB/服务/GO",
+  "observations": "/home/loosqk/robot-checks/base-zero-sync-r1-commit-quality-20261013/boot/observations.jsonl"
+}

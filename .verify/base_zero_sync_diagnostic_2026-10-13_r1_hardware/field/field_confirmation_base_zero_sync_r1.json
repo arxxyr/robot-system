@@ -1,0 +1,36 @@
+{
+  "schema": "BASE_ZERO_SYNC_R1_DIRECT_FIELD_CONFIRMATION",
+  "recorded_at_ns": 1791878880000000000,
+  "recorded_at_utc": "2026-10-13T08:08:00+00:00",
+  "timestamp_basis": "本轮root首次观察直接用户回复的工具时刻；不因准备延后刷新",
+  "question_id": "call_TSdqOTTcGUBpVfBrOS2hFhmj",
+  "human_answer": "现场全部就绪，可执行本次右轮对照",
+  "power": "ON_USER_REPORTED",
+  "independent_power_telemetry": "UNKNOWN",
+  "scope": "仅右9/base_right_wheel一次单ID9 SYNC_WRITE Goal_Velocity0（无ACK）→发送完成后至少50ms→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑",
+  "physical": {
+    "left": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791878880000000000
+    },
+    "right": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1791878880000000000,
+      "all_three_wheels_off_ground": true,
+      "base_stably_supported": true,
+      "base_confirmation_kind": "CURRENT_SETUP_READY",
+      "base_confirmation_answer": "现场全部就绪，可执行本次右轮对照",
+      "base_confirmation_scope": "仅右9/base_right_wheel一次单ID9 SYNC_WRITE Goal_Velocity0（无ACK）→发送完成后至少50ms→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑"
+    }
+  },
+  "usb_replug_required": false,
+  "power_reset_required": false
+}

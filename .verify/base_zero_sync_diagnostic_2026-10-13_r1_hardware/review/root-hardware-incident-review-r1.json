@@ -1,0 +1,79 @@
+{
+  "status": "PASS_ROOT_INCIDENT_EVIDENCE_REVIEW_NOT_HARDWARE_PASS",
+  "hardware_result": "NEEDS_MANUAL_POWER_CUT",
+  "manual_cut_required": true,
+  "manual_cut_confirmation": "PENDING",
+  "direct_children": 329,
+  "all_children_reaped": true,
+  "raw_streams": 658,
+  "all_raw_stream_SHA_bytes_match": true,
+  "UART_CLI_calls": 215,
+  "writes": [
+    {
+      "sequence": 190,
+      "argv": [
+        "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "9",
+        "sync-zero"
+      ]
+    },
+    {
+      "sequence": 210,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "9",
+        "write",
+        "Torque_Enable",
+        "1"
+      ]
+    },
+    {
+      "sequence": 215,
+      "argv": [
+        "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "9",
+        "write",
+        "Torque_Enable",
+        "0"
+      ]
+    }
+  ],
+  "last_UART_sequence": 311,
+  "commands_after_latch": 18,
+  "new_UART_after_latch": 0,
+  "same_GO_whole_start_to_dead_observe_wallclock_bound": true,
+  "original_field_expiry_ns": 1791879480000000000,
+  "right9_diagnostic_status": "PASS",
+  "right9_final_uart_blocked": true,
+  "right9_PV_raw": [
+    0,
+    0,
+    0
+  ],
+  "right9_sample_completion_ms": [
+    19.731616,
+    211.676957,
+    419.639071
+  ],
+  "SYNC_to_Enable_ms": 539.24678,
+  "observation_finished_minus_started_ms": 500.609105,
+  "separate_elapsed_ms": 500.609649,
+  "failed_stop": {
+    "motor": "right8/base_front_wheel",
+    "ordinary_READ_value": 50,
+    "TX": "ff ff 08 04 02 3a 02 b5",
+    "RX": "ff ff 08 04 00 32 00 c1",
+    "valid_packet": true,
+    "source": "command_0311"
+  },
+  "STOP_status": "UNKNOWN",
+  "identity_status": "UNKNOWN",
+  "right9_final_STOP": "NOT_READ_AFTER_STICKY_LATCH",
+  "firmware_contract": false,
+  "physical_wheel_movement": "UNKNOWN_NOT_CONFIRMED",
+  "cause": "OPEN_UNCONFIRMED",
+  "no_more_UART": true
+}

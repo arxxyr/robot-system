@@ -1,0 +1,26 @@
+{
+  "name": "reclaim-only-owned-dead-pane",
+  "argv": [
+    "tmux",
+    "kill-pane",
+    "-t",
+    "%110"
+  ],
+  "started_ns": 1791879350024105753,
+  "signals_sent": [],
+  "reaped": true,
+  "pid": 669408,
+  "finished_ns": 1791879350027171302,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "stdout": {
+    "path": "/home/loosqk/robot-checks/base-zero-sync-diagnostic-r1/base-zero-sync-diagnostic-seal-r1/reclaim-only-owned-dead-pane.stdout",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stderr": {
+    "path": "/home/loosqk/robot-checks/base-zero-sync-diagnostic-r1/base-zero-sync-diagnostic-seal-r1/reclaim-only-owned-dead-pane.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

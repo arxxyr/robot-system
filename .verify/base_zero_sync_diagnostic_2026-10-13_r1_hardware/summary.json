@@ -1,0 +1,157 @@
+{
+  "schema": "BASE_ZERO_SYNC_R1_HARDWARE_INCIDENT_SUMMARY",
+  "status": "NEEDS_MANUAL_POWER_CUT_CONFIRMATION_PENDING",
+  "recorded_ns": 1791879891197371000,
+  "software_commit": "5ee8a9c427c2010fe760c2090aac78acc0c64623",
+  "software_scope": "本轮唯一frozen b2 ELF，仅单right9 SYNC零值/Enable/Disable；无生产安装或S0/S1接入",
+  "field": {
+    "first_root_observed_UTC": "2026-10-13T08:08:00+00:00",
+    "expires_at_ns": 1791879480000000000,
+    "TTL_not_renewed": true,
+    "source": "直接用户call_TSdqOTTcGUBpVfBrOS2hFhmj",
+    "latest_reported_power": "ON",
+    "independent_power_telemetry": "UNKNOWN",
+    "manual_cut_requested": true,
+    "manual_cut_confirmation": "PENDING",
+    "no_more_UART": true
+  },
+  "prepare": {
+    "fresh_checks": 17,
+    "fresh_children": 23,
+    "current_USB_changes": {
+      "left": {},
+      "right": {}
+    },
+    "refs": 58,
+    "full_PLAN_once": true,
+    "full_PLAN_child": 668879,
+    "canonical_PLAN": "85a1defa5c8b9e9e9ff9b0e707411fcc3f21a7184e95b1528c33181aec683e4f",
+    "Go_once": true,
+    "early_local_rejection": "relative input owner1497 NOT_LAUNCHED/pidnull/SSH0 preserved; absolute owner1560/1561 actual0/reap"
+  },
+  "runtime": {
+    "driver": 668951,
+    "window": "@110",
+    "pane": "%110",
+    "natural_exit": 1,
+    "owned_dead_pane_reclaimed": true,
+    "run": {
+      "path": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/originals/base-zero-sync-diagnostic-r1/run.json",
+      "sha256": "447e79d52d39c86acffb8953800a2c114e7c044bd6a654384d170fa608fa8b45",
+      "bytes": 492509
+    },
+    "hardware_result": "NEEDS_MANUAL_POWER_CUT",
+    "children": 329,
+    "streams": 658,
+    "all_reaped": true,
+    "UART_calls": 215,
+    "UART_operations": {
+      "read": 198,
+      "read-raw": 14,
+      "sync-zero": 1,
+      "write": 2
+    },
+    "last_UART_sequence": 311,
+    "subsequent_commands": 18,
+    "subsequent_UART": 0,
+    "new_GO": false
+  },
+  "right9_subdiagnostic": {
+    "recorded_status": "PASS",
+    "scope": "三个离散SYNC_READ PV原帧均0且原500ms内完成；不证明连续静止、零值启扭通用安全或±50因果",
+    "SYNC_no_ACK": true,
+    "TE1_TE0_ACK_valid": true,
+    "SYNC_to_Enable_ms": 539.24678,
+    "sample_completion_ms": [
+      19.731616,
+      211.676957,
+      419.639071
+    ],
+    "raw_PV": [
+      0,
+      0,
+      0
+    ],
+    "observation_finished_minus_started_ms": 500.609105,
+    "separate_elapsed_ms": 500.609649,
+    "post_stop_uart_blocked": true,
+    "physical_motion": "UNKNOWN_NOT_REPORTED"
+  },
+  "failure": {
+    "motor": "right8/base_front_wheel",
+    "sequence": 311,
+    "ordinary_READ_stdout": "read Present_Velocity@8 = 50\n",
+    "requested_TX": "ff ff 08 04 02 3a 02 b5",
+    "valid_RX": "ff ff 08 04 00 32 00 c1",
+    "RX_word": "0x0032",
+    "cause": "OPEN_UNCONFIRMED",
+    "stop_status": "UNKNOWN",
+    "right9_final_STOP": "NOT_READ_AFTER_STICKY_LATCH",
+    "full_identity_status": "UNKNOWN"
+  },
+  "collector": {
+    "direct_children": 2,
+    "UART": 0,
+    "independent_nonUART17": "NOT_RUN_MANUAL_INCIDENT",
+    "full_identity": "UNKNOWN",
+    "archive": {
+      "path": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/archives/hardware-originals-base-zero-sync-r1.tar.gz",
+      "sha256": "9ecb11a623f89f78c9e1943072ae45012248d7b701a4c6e9eb509c32c336d771",
+      "bytes": 197876
+    },
+    "archive_files": 701
+  },
+  "quality": {
+    "status": "PASS_COMMIT_QUALITY_ISOLATED_SOURCE_ACTUAL_LATEST_FMT_DEFAULT_ROOT_CLIPPY",
+    "evidence": {
+      "path": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/commit-quality/commit-quality-verification-r1.json",
+      "sha256": "5ceee01825a0044a88fe3242db83c48d78834b35360a36b3b0b0cfc3ab41d454",
+      "bytes": 3145
+    },
+    "actual_latest_nightly": "e9bbadf6824e65b3583c2dda3a0926ec76df9143",
+    "actual_fmt_then_default_root_Clippy_zero_warnings": true,
+    "distinct_Runner_children": 5,
+    "streams": 10,
+    "source597_three_windows_and_root": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+    "native_git_head": null,
+    "no_UART_or_hardware_postverification": true
+  },
+  "unchanged": {
+    "old_FAIL_preserved": true,
+    "three_wheel_active_motion": "DEFERRED",
+    "firmware_contract_verified": false,
+    "left_wrist_head_long_term_parameters": "OPEN",
+    "right_H2": "PASS_PREVIOUS_COMPLETE",
+    "D15": "OPEN_DEFERRED",
+    "deployable": false,
+    "formal_installation_services": "NO_MUTATION"
+  },
+  "next_step": "先收实际断电回执；随后只准备前轮+50与READ/SYNC_READ行为的最小核对，不复用本轮GO、不自动重试或改Phase/停止门",
+  "evidence": [
+    {
+      "path": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/review/root-hardware-incident-review-r1.json",
+      "sha256": "acdbf5a42c7c47386b4e63cb65e8105a5ffb33ba5cdbf578a4108f2fdfc4a093",
+      "bytes": 2226
+    },
+    {
+      "path": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/field/observed-terminal.json",
+      "sha256": "830a1c1b5b8ffe4bd4d69ce9acb06ff19ece3fd89c239ad73e08826467088f5b",
+      "bytes": 23797
+    },
+    {
+      "path": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/field/seal-result.json",
+      "sha256": "ef8a13b042287a803c08e4495464baeb9191242156cd5cc69f3de8b13240475e",
+      "bytes": 55522
+    },
+    {
+      "path": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/commit-quality/commit-quality-verification-r1.json",
+      "sha256": "5ceee01825a0044a88fe3242db83c48d78834b35360a36b3b0b0cfc3ab41d454",
+      "bytes": 3145
+    },
+    {
+      "path": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/review/independent-sync-zero-wire-incident-review-r1.json",
+      "sha256": "2e9221ab1e5d926d17028b9ee40409069bde7d0f267eafc16d54be829000f8bd",
+      "bytes": 10966
+    }
+  ]
+}
