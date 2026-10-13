@@ -1,0 +1,27 @@
+{
+  "field_stamp": 1791870170000000000,
+  "field_expected": [
+    "4454145c392d430a99b0b31b796fab4ece625528438f11cfcffbb7fd6e0d0892",
+    1645
+  ],
+  "field_scope": "CURRENT_POWER_ON_AND_SUSPENDED_WHEELS_READONLY_READY",
+  "pid": 664405,
+  "started_ns": 1791870201337499674,
+  "finished_ns": 1791870202178783829,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "argv": [
+    "bash",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.sh"
+  ],
+  "usb-refresh-nonuart-r2.stdout": {
+    "sha256": "3f8fd6885643835037d06267f6d8e356675cf9ee8d91c1f524d75cebc3fb1a8b",
+    "bytes": 176291
+  },
+  "usb-refresh-nonuart-r2.stderr": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  }
+}

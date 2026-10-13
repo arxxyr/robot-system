@@ -1,0 +1,33 @@
+{
+  "status": "ACTUAL_OWNED_SSH_EXEC_AND_NATIVE_COMPLETION_PRESERVED",
+  "start_tool_chunk": "293eb5",
+  "exec_session_id": 33817,
+  "completion_tool_chunk": "9a7ec9",
+  "completion_exit_code": 0,
+  "independent_raw_review_chunk": "1e3691",
+  "independent_raw_review_exit_code": 0,
+  "owner_result": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2_hardware/tools/base-feedback-r2-commit-quality-20261013-r1.owner/result.json",
+  "owner_pid": 28913,
+  "SSH_pid": 28914,
+  "actual_wait_returncode": 0,
+  "reaped": true,
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2_hardware/commit-quality/single_ssh_commit_quality_base_feedback_r2.sh",
+    "sha256": "e74c9f2a0e40cc40e897bbec284fcd9f87779a65c766423dc9da2fb144fdcdd2",
+    "bytes": 11389
+  },
+  "output": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2_hardware/tools/base-feedback-r2-commit-quality-20261013-r1.owner/child.log",
+    "sha256": "7c78ecc4c8e9608a36966a8ee4d5b2972c0207e9262d1fdcfa4f8b3818449028",
+    "bytes": 183463
+  },
+  "native_driver": {
+    "pid": 665024,
+    "pane": "%107",
+    "terminal": "base-feedback-r2-commit-quality-20261013-r1|@107|%107|665024|1|0",
+    "owned_dead_pane_reclaimed": true
+  },
+  "native_quality_status": "PASS",
+  "batch_reruns": 0,
+  "UART_operations": 0
+}

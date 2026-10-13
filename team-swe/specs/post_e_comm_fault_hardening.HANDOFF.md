@@ -2,6 +2,20 @@
 
 ## 当前步骤
 
+### R2断扭只读诊断通过，三轮主动运动仍待验证（2026-10-13）
+
+用户本次直接确认恢复供电、稳定架空及持续看护。root固定首次观察05:42:50UTC、原600秒截止05:52:50UTC，没有续期；新非UART17项/23child、当前USB（两侧变更字段均空）、57refs和完整PLAN经root/独审通过。maincf651bb2/helper70d777bd使用已核actual fixtures路径，只签一个独立GO、启动一次driver664542/@106/%106，无寄存器写、Enable或动作。
+
+三轮初始和最终共六份普通PV strace全部保存，逐份为PING、READ型号、READ速度三对收发；ID、长度、IO实字节数和checksum有效，型号777、PV原字0000、bit15解码0与原stdout一致。它们证明本次读回和解码一致，不能解释R1/旧R4的±50或证明物理轮转动。右9七项raw preflight实际为Model777/FW3.10/Mode1/Phase12/Lock1/GV0；0/200/400ms三组TE→PP→PV均TE0/PV0，9次读取在原500ms内完成，最后434.377775ms。整段观察finished-start为500.560522ms，另一次elapsed采样500.560906ms，原值全部保留，不称严格500ms内结束。
+
+本轮只读diagnostic、STOP51全整数零、完整身份及独立nonUART17项/23child均PASS；298直属child/596原流真实回收，220 UART调用为204普通read和16read-raw，末seq280后18条仅非UART。唯一tmux启动前至同driver真实dead观察者结束的整段壁钟界限均在原GO时效内。driver自然exit1并回收自dead pane，原整轮run5996ae29/435402B的FAIL仅为BASE_FIRMWARE_CONTRACT_UNVERIFIED：三轮仍DEFERRED，没有主动wheel/pulse；不回填PASS。644件原包3d41791e/268820B永久保存，[本轮摘要](../../.verify/base_feedback_diagnostic_2026-10-13_r2_hardware/summary.json)、[root原帧审查](../../.verify/base_feedback_diagnostic_2026-10-13_r2_hardware/review/root-hardware-readonly-review-r2.json)区分只读通过与整机未闭环。[独审](../../.verify/base_feedback_diagnostic_2026-10-13_r2_hardware/review/independent-hardware-readonly-review-r2.json)与root验收均通过。独审首轮把journal和run.commands要求整dict相等而误拒，原FAIL报告另存；六行ordinary_read_trace是冻结helper在journal落盘后追加的元数据，共享字段逐项一致且六原帧SHA/bytes吻合，只修审查口径，不改原run/journal或重跑硬件。
+
+本机实际fmt0（515af8）后，本轮独立Orin纯软件门最新nightlye9bbadf6→fmt→根Clippy0/零警告通过，597输入三窗与当前主树逐字节及exec-bit同068277d8；Git894+5dirty不称Git对齐。11child/22原流、driver665024/@107/%107自然dead0和owner28913/SSH28914真实0/reap，54原包9c4acea9/135060B已保全。[提交质量](../../.verify/base_feedback_diagnostic_2026-10-13_r2_hardware/commit-quality/commit-quality-verification-r2.json)不覆盖硬件结果；未重跑Rust/31Python测试、release或新控制ELF。
+
+GO已消费，本轮看护已结束；最新供电仍仅用户本次报告ON，独立电气遥测UNKNOWN。正式ca14/六服务沿本轮非UART检查状态，未安装、启动或改生产运行。旧R1 NEEDS及人工断电回执、旧R4实际FAIL/±50根因仍保留，腕部/头部长期参数、三轮主动运动OPEN，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false不变。
+
+原XLeRobot源码采用addr46、2B的Goal_Velocity SYNC_WRITE(0x83)，不是厂家WriteSpe的addr41/7B；与旧R4普通WRITE(0x03)的包格式存在区别。下一步仅另阶段准备单ID SYNC_WRITE/addr46/2B/零值的受监督对照，不写Phase、不换41/7B、不改原期限/停止门；仍只是诊断，不预称现场FW3.10/Mode1/Phase12下零速启扭安全，不复用本轮GO。以下历史原件和原失败不改。
+
 ### 右轮只读R1因左轮初始PV非零而停止，人工断电收尾已确认（2026-10-13）
 
 R2正确辅助路径草稿的[窄独审](../../.verify/base_feedback_diagnostic_2026-10-13_r2/independent-runtime-helper-fixtures-review-r2.json)及root验收已通过；软件ready，现场/当前USB/PLAN/GO仍未绑定。下一轮先核新现场及当前USB，仅读一次，原停止门通过后才采右轮三组，不启用电机、不改参数、不自动重试。

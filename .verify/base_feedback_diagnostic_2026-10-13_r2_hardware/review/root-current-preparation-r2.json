@@ -1,0 +1,19 @@
+{
+  "status": "ROOT_PASS_CURRENT_PREPARATION_ONLY",
+  "original_archive": {
+    "sha256": "4c56bdee3a56bee48631bc4f6ff53de48bc07e6095946711e32a0133b5d76b91",
+    "bytes": 53912,
+    "files": 9
+  },
+  "owner_pid": 25883,
+  "SSH_pid": 25884,
+  "plan_child_pid": 664474,
+  "plan_sha256": "bfd13186961ca75be190caa1c9ba8ae50ff843c3f9f35d8329e6fb0ca2ad1bfc",
+  "refs": 57,
+  "usb_changed_fields": {
+    "left": {},
+    "right": {}
+  },
+  "uart": 0,
+  "new_go": false
+}

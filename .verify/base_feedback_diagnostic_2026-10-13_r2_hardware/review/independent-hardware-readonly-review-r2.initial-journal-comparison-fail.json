@@ -1,0 +1,739 @@
+{
+  "schema": "BASE_FEEDBACK_R2_INDEPENDENT_ACTUAL_READONLY_REVIEW_V1",
+  "status": "FAIL_ORIGINALS_REVIEW",
+  "scope": "仅本机离线原件审查；没有SSH/新UART/测试/控制或其他文件修改",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2_hardware/archives/hardware-originals-base-feedback-r2.tar.gz",
+    "sha256": "3d41791ece6195af838174751b212cf4158a9d36d75d5dcaf4ba315f7b1013c5",
+    "bytes": 268820,
+    "regular_files": 644,
+    "unique_members": 644,
+    "member_sizes_verified": true,
+    "member_manifest_sha256": "e3c518adb46a655ad017713716603d50b86438a7abea80fd5ad115ed0e34495d"
+  },
+  "run": {
+    "member": "base-feedback-diagnostic-r2/run.json",
+    "sha256": "5996ae295deaba683645ad827cc5ef0f17c3975b792599ca6d72a6d42cc06f97",
+    "bytes": 435402,
+    "original_result": "FAIL",
+    "original_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：三轮DEFERRED，无wheel/pulse或WRITE')",
+    "diag": "PASS",
+    "STOP51": "PASS",
+    "identity": "PASS",
+    "position": "PASS",
+    "manual_power_cut_required": false,
+    "three_wheels": "DEFERRED/NOT_RUN；firmware_contract_verified=false，原全局FAIL不回填"
+  },
+  "children": {
+    "count": 298,
+    "unique_pids": 298,
+    "recorded_real_wait_reaped": true,
+    "wait_provenance": "归档d97在child.wait成功返回后才记录exit_code/reaped=True；298 rows无signal/owner_errors/over_budget，journal逐row完全相同",
+    "exit_codes": {
+      "0": 274,
+      "1": 24
+    },
+    "command_stdout_stderr_SHA_bytes_verified": 596,
+    "driver_pid": 664542,
+    "driver_terminal": "base-feedback-diagnostic-trial-20261013-r2|@106|%106|664542|1|1",
+    "driver_natural_dead_status": 1,
+    "only_own_dead_pane_reclaimed": true,
+    "collector_children_waited": 3,
+    "seal_local_owner": 27461,
+    "seal_SSH_pid": 27462,
+    "seal_owned_SSH_wait_returncode": 0
+  },
+  "ordinary_wire": {
+    "trace_count": 6,
+    "captured_UART_TX_frames": 18,
+    "opcode_counts": {
+      "PING_0x01": 6,
+      "READ_0x02": 12
+    },
+    "motor_REGISTER_WRITE_opcodes": 0,
+    "frames": [
+      {
+        "sequence": 130,
+        "motor_id": 7,
+        "member": "base-feedback-diagnostic-r2/right7-normal-read-command_0130.strace",
+        "sha256": "4bc581a789f4077dce53ad33ce30eeb3e8ad59bb5e243ce8fd05af48b2200a13",
+        "bytes": 10036,
+        "UART_pairs": [
+          {
+            "operation": "write",
+            "epoch_ns": 1791870317945878000,
+            "bytes": [
+              255,
+              255,
+              7,
+              2,
+              1,
+              245
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870317946435000,
+            "bytes": [
+              255,
+              255,
+              7,
+              2,
+              0,
+              246
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870317946508000,
+            "bytes": [
+              255,
+              255,
+              7,
+              4,
+              2,
+              3,
+              2,
+              237
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870317947110000,
+            "bytes": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              9,
+              3,
+              232
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870317947179000,
+            "bytes": [
+              255,
+              255,
+              7,
+              4,
+              2,
+              58,
+              2,
+              182
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870317947782000,
+            "bytes": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              0,
+              0,
+              244
+            ]
+          }
+        ],
+        "PV_raw_unsigned": 0
+      },
+      {
+        "sequence": 136,
+        "motor_id": 8,
+        "member": "base-feedback-diagnostic-r2/right8-normal-read-command_0136.strace",
+        "sha256": "5d31e2e6f37a8e4bd7df2fc00f213b3be305de1bccbd35c040687fd386ed1767",
+        "bytes": 10036,
+        "UART_pairs": [
+          {
+            "operation": "write",
+            "epoch_ns": 1791870318024390000,
+            "bytes": [
+              255,
+              255,
+              8,
+              2,
+              1,
+              244
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870318025011000,
+            "bytes": [
+              255,
+              255,
+              8,
+              2,
+              0,
+              245
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870318025086000,
+            "bytes": [
+              255,
+              255,
+              8,
+              4,
+              2,
+              3,
+              2,
+              236
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870318025685000,
+            "bytes": [
+              255,
+              255,
+              8,
+              4,
+              0,
+              9,
+              3,
+              231
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870318025756000,
+            "bytes": [
+              255,
+              255,
+              8,
+              4,
+              2,
+              58,
+              2,
+              181
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870318026363000,
+            "bytes": [
+              255,
+              255,
+              8,
+              4,
+              0,
+              0,
+              0,
+              243
+            ]
+          }
+        ],
+        "PV_raw_unsigned": 0
+      },
+      {
+        "sequence": 142,
+        "motor_id": 9,
+        "member": "base-feedback-diagnostic-r2/right9-normal-read-command_0142.strace",
+        "sha256": "2c97ebc3f018609bc08e571da8cc83f14be5dfc64c0be6e984ebe9f191497330",
+        "bytes": 10036,
+        "UART_pairs": [
+          {
+            "operation": "write",
+            "epoch_ns": 1791870318103286000,
+            "bytes": [
+              255,
+              255,
+              9,
+              2,
+              1,
+              243
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870318103860000,
+            "bytes": [
+              255,
+              255,
+              9,
+              2,
+              0,
+              244
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870318103935000,
+            "bytes": [
+              255,
+              255,
+              9,
+              4,
+              2,
+              3,
+              2,
+              235
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870318104544000,
+            "bytes": [
+              255,
+              255,
+              9,
+              4,
+              0,
+              9,
+              3,
+              230
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870318104616000,
+            "bytes": [
+              255,
+              255,
+              9,
+              4,
+              2,
+              58,
+              2,
+              180
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870318105260000,
+            "bytes": [
+              255,
+              255,
+              9,
+              4,
+              0,
+              0,
+              0,
+              242
+            ]
+          }
+        ],
+        "PV_raw_unsigned": 0
+      },
+      {
+        "sequence": 266,
+        "motor_id": 7,
+        "member": "base-feedback-diagnostic-r2/right7-normal-read-command_0266.strace",
+        "sha256": "3e1fb831ff6f1ba7bc937a6fc3112dec414625144ab14c31216ae6f907a452a6",
+        "bytes": 10036,
+        "UART_pairs": [
+          {
+            "operation": "write",
+            "epoch_ns": 1791870320215214000,
+            "bytes": [
+              255,
+              255,
+              7,
+              2,
+              1,
+              245
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870320215804000,
+            "bytes": [
+              255,
+              255,
+              7,
+              2,
+              0,
+              246
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870320215877000,
+            "bytes": [
+              255,
+              255,
+              7,
+              4,
+              2,
+              3,
+              2,
+              237
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870320216483000,
+            "bytes": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              9,
+              3,
+              232
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870320216550000,
+            "bytes": [
+              255,
+              255,
+              7,
+              4,
+              2,
+              58,
+              2,
+              182
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870320217150000,
+            "bytes": [
+              255,
+              255,
+              7,
+              4,
+              0,
+              0,
+              0,
+              244
+            ]
+          }
+        ],
+        "PV_raw_unsigned": 0
+      },
+      {
+        "sequence": 272,
+        "motor_id": 8,
+        "member": "base-feedback-diagnostic-r2/right8-normal-read-command_0272.strace",
+        "sha256": "ce2a8701cf8705567ffedc6fa45c7a41abbbdca299c1e605a090010d0873928c",
+        "bytes": 10036,
+        "UART_pairs": [
+          {
+            "operation": "write",
+            "epoch_ns": 1791870320293326000,
+            "bytes": [
+              255,
+              255,
+              8,
+              2,
+              1,
+              244
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870320293916000,
+            "bytes": [
+              255,
+              255,
+              8,
+              2,
+              0,
+              245
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870320294047000,
+            "bytes": [
+              255,
+              255,
+              8,
+              4,
+              2,
+              3,
+              2,
+              236
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870320294666000,
+            "bytes": [
+              255,
+              255,
+              8,
+              4,
+              0,
+              9,
+              3,
+              231
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870320294751000,
+            "bytes": [
+              255,
+              255,
+              8,
+              4,
+              2,
+              58,
+              2,
+              181
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870320295356000,
+            "bytes": [
+              255,
+              255,
+              8,
+              4,
+              0,
+              0,
+              0,
+              243
+            ]
+          }
+        ],
+        "PV_raw_unsigned": 0
+      },
+      {
+        "sequence": 278,
+        "motor_id": 9,
+        "member": "base-feedback-diagnostic-r2/right9-normal-read-command_0278.strace",
+        "sha256": "67570c388bf51715370c5f90e13cb6e7d9426b2a8ecdf20a463e9a9cd8e42ad5",
+        "bytes": 10036,
+        "UART_pairs": [
+          {
+            "operation": "write",
+            "epoch_ns": 1791870320371343000,
+            "bytes": [
+              255,
+              255,
+              9,
+              2,
+              1,
+              243
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870320371904000,
+            "bytes": [
+              255,
+              255,
+              9,
+              2,
+              0,
+              244
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870320371973000,
+            "bytes": [
+              255,
+              255,
+              9,
+              4,
+              2,
+              3,
+              2,
+              235
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870320372582000,
+            "bytes": [
+              255,
+              255,
+              9,
+              4,
+              0,
+              9,
+              3,
+              230
+            ]
+          },
+          {
+            "operation": "write",
+            "epoch_ns": 1791870320372649000,
+            "bytes": [
+              255,
+              255,
+              9,
+              4,
+              2,
+              58,
+              2,
+              180
+            ]
+          },
+          {
+            "operation": "read",
+            "epoch_ns": 1791870320373251000,
+            "bytes": [
+              255,
+              255,
+              9,
+              4,
+              0,
+              0,
+              0,
+              242
+            ]
+          }
+        ],
+        "PV_raw_unsigned": 0
+      }
+    ],
+    "boundary": "完整串口write/read payload、请求/返回长度、ID、checksum有效；PING+型号READ+PV READ不能称为只有READ opcode。其他普通read无strace，本审不冒充全部220请求均有wire capture"
+  },
+  "right9_raw_diag": {
+    "preflight_complete_frames": 7,
+    "group_complete_frames": 9,
+    "raw_tool_TX_opcode": "SYNC_READ_0x82",
+    "group_TE_PP_PV_unsigned": [
+      [
+        0,
+        3420,
+        0
+      ],
+      [
+        0,
+        3420,
+        0
+      ],
+      [
+        0,
+        3420,
+        0
+      ]
+    ],
+    "original_offsets_ns": [
+      0,
+      200000000,
+      400000000
+    ],
+    "deadline_ns": 3623568662572717,
+    "all_nine_reads_completed_by_500ms": true,
+    "reads": [
+      {
+        "sequence": 170,
+        "register": "Torque_Enable",
+        "raw_unsigned": 0,
+        "requested_offset_ns": 26465,
+        "completed_offset_ns": 11708000
+      },
+      {
+        "sequence": 171,
+        "register": "Present_Position",
+        "raw_unsigned": 3420,
+        "requested_offset_ns": 11719808,
+        "completed_offset_ns": 23274172
+      },
+      {
+        "sequence": 172,
+        "register": "Present_Velocity",
+        "raw_unsigned": 0,
+        "requested_offset_ns": 23282716,
+        "completed_offset_ns": 34801718
+      },
+      {
+        "sequence": 173,
+        "register": "Torque_Enable",
+        "raw_unsigned": 0,
+        "requested_offset_ns": 200076742,
+        "completed_offset_ns": 211526462
+      },
+      {
+        "sequence": 174,
+        "register": "Present_Position",
+        "raw_unsigned": 3420,
+        "requested_offset_ns": 211533726,
+        "completed_offset_ns": 222925204
+      },
+      {
+        "sequence": 175,
+        "register": "Present_Velocity",
+        "raw_unsigned": 0,
+        "requested_offset_ns": 222932788,
+        "completed_offset_ns": 234252584
+      },
+      {
+        "sequence": 176,
+        "register": "Torque_Enable",
+        "raw_unsigned": 0,
+        "requested_offset_ns": 400073097,
+        "completed_offset_ns": 411562754
+      },
+      {
+        "sequence": 177,
+        "register": "Present_Position",
+        "raw_unsigned": 3420,
+        "requested_offset_ns": 411571458,
+        "completed_offset_ns": 422966264
+      },
+      {
+        "sequence": 178,
+        "register": "Present_Velocity",
+        "raw_unsigned": 0,
+        "requested_offset_ns": 422974329,
+        "completed_offset_ns": 434377775
+      }
+    ],
+    "last_read_completed_offset_ns": 434377775,
+    "observation_recorded_elapsed_ns": 500560906,
+    "observation_finished_minus_started_ns": 500560522,
+    "end_field_difference_ns": 384,
+    "end_boundary": "观察elapsed记录500.560906ms，finished-start为500.560522ms，源码finally两次独立io.now取时差384ns；九读取已在434.377775ms全部完成，不能称整段严格500ms内结束",
+    "PP_boundary": "3420只是三次原unsigned读值，不推断单位、量化、位移或物理静止"
+  },
+  "STOP51_and_post": {
+    "motors": 17,
+    "stop_integer_zero_values": 51,
+    "snapshot_before_after_errors": 0,
+    "independent_nonUART_checks": 17,
+    "independent_nonUART_children_reaped": 23,
+    "source_files": 597,
+    "source_manifest_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+    "source_recomputed_SHA_and_exact_quality_before_after": true,
+    "bound_refs": 57,
+    "refs_metadata_before_after_exact_equal": true,
+    "new_collector_UART": 0,
+    "new_motor_WRITE_or_Enable": 0
+  },
+  "GO_window": {
+    "field_stamp_ns": 1791870170000000000,
+    "issued_at_ns": 1791870287689246000,
+    "expires_at_ns": 1791870770000000000,
+    "original_field_duration_ns": 600000000000,
+    "actual_GO_duration_ns": 482310754000,
+    "spawn_epoch_ns": 1791870315462138057,
+    "driver_dead_epoch_observed_by_ns": 1791870384938627173,
+    "dead_observation_margin_to_expiry_ns": 385061372827,
+    "captured_UART_first_epoch_ns": 1791870317945878000,
+    "captured_UART_last_epoch_ns": 1791870320373251000,
+    "all_220_UART_inside_original_window": "实际源guard每UART前/成功返回后校验当次GO；同次UART在spawn之后、已dead epoch观测之前，整个因果上界仍在GO内；六trace另有直接epoch证据。未将monotonic数值直接换算为epoch",
+    "UART_read_argv_counts": {
+      "read": 204,
+      "read-raw": 16
+    },
+    "last_UART_sequence": 280,
+    "after_last_UART_nonUART_commands": 18
+  },
+  "limits": [
+    "PASS仅原件审查及本次断扭只读观察；未Enable、未做主动零速功能合同或轮运动验收",
+    "三轮DEFERRED/固件合同未验证与整轮FAIL保持；TE/PV/GV读0不构成独立电气/物理停止证明",
+    "R1原-50/缺帧FAIL不由本次PV0重写，不推断历史根因"
+  ],
+  "errors": [
+    "journal rows exact"
+  ]
+}

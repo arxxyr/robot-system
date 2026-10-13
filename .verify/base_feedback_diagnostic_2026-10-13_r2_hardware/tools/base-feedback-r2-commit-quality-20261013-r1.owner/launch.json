@@ -1,0 +1,42 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "WAITING",
+  "status": "RUNNING",
+  "owner_pid": 28913,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ServerAliveCountMax=2",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 28914,
+  "started_utc": "2026-10-13T05:49:56.173624+00:00",
+  "started_monotonic_ns": 57676998727750,
+  "observe_seconds": 5.0,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2_hardware/commit-quality/single_ssh_commit_quality_base_feedback_r2.sh",
+    "sha256": "e74c9f2a0e40cc40e897bbec284fcd9f87779a65c766423dc9da2fb144fdcdd2",
+    "bytes": 11389
+  },
+  "launched_utc": "2026-10-13T05:49:56.178447+00:00",
+  "start_new_session": true,
+  "child_session_id": 28914
+}

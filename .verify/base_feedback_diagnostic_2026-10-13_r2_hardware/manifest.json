@@ -1,0 +1,684 @@
+{
+  "schema": "BASE_FEEDBACK_R2_HARDWARE_PERMANENT_MANIFEST_V1",
+  "recorded_at_utc": "2026-10-13T06:02:34.743128+00:00",
+  "scope": "本轮只读实际/唯一原包/现场GO/五SSH与独立提交前软件质量原件；不含下一阶段Rust候选",
+  "files": [
+    {
+      "path": "archives/hardware-originals-base-feedback-r2.tar.gz",
+      "sha256": "3d41791ece6195af838174751b212cf4158a9d36d75d5dcaf4ba315f7b1013c5",
+      "bytes": 268820
+    },
+    {
+      "path": "archives/prepare-originals-base-feedback-r2.tar.gz",
+      "sha256": "4c56bdee3a56bee48631bc4f6ff53de48bc07e6095946711e32a0133b5d76b91",
+      "bytes": 53912
+    },
+    {
+      "path": "commit-quality/actual-exec-completion-receipt-r2.json",
+      "sha256": "55cbae890a8e7d75c91ba7183cfccc7d78fb082f8888964e158c9ccad5c0d22d",
+      "bytes": 1406
+    },
+    {
+      "path": "commit-quality/commit-quality-originals-base-feedback-r2.tar.gz",
+      "sha256": "9c4acea9af9502141d363ca3ab362688c36888e783f1dde7289c503fea85678f",
+      "bytes": 135060
+    },
+    {
+      "path": "commit-quality/commit-quality-originals-manifest-r2.json",
+      "sha256": "91f2bb87c5c20576864cc585bccdd619ea4eb994292065735df75c5a0a40b1f9",
+      "bytes": 7881
+    },
+    {
+      "path": "commit-quality/commit-quality-verification-r2.json",
+      "sha256": "9810bf4cda33111e7b4b475675b2b611b4db558955746ff40d1f472255f67286",
+      "bytes": 5080
+    },
+    {
+      "path": "commit-quality/commit_quality_once_base_feedback_r2.py",
+      "sha256": "f1c3611007b60335dde2bac8097fd8a1baeb87f316cfe5ac9af7cf46a24de169",
+      "bytes": 5243
+    },
+    {
+      "path": "commit-quality/commit_quality_once_base_feedback_r2.py.diff-vs-r1.patch",
+      "sha256": "11e021a6db1e7f070b88cb7045f1b14c8af3f2cb2ae15d503825c8c735ed4c21",
+      "bytes": 1869
+    },
+    {
+      "path": "commit-quality/originals/boot/base-feedback-r2-commit-quality-20261013-driver.log",
+      "sha256": "bd9b647ff1c32e266152cb757bfbc57bfc8c59d9026828c54610a9fa2f6c3fcf",
+      "bytes": 4002
+    },
+    {
+      "path": "commit-quality/originals/boot/commit_quality_once_base_feedback_r2.py",
+      "sha256": "f1c3611007b60335dde2bac8097fd8a1baeb87f316cfe5ac9af7cf46a24de169",
+      "bytes": 5243
+    },
+    {
+      "path": "commit-quality/originals/boot/launch_commit_quality_base_feedback_r2.sh",
+      "sha256": "5e367afe37b7f895da6448dad56c1b8e97f03eb02c8e7ea2f04902c513a06b3b",
+      "bytes": 420
+    },
+    {
+      "path": "commit-quality/originals/boot/reclaim.json",
+      "sha256": "03cee3441336f1f4c5732d47d9f9c60a0cd85799afa6b0b15123e177462de367",
+      "bytes": 302
+    },
+    {
+      "path": "commit-quality/originals/boot/start.json",
+      "sha256": "54a4090f8925af2e61d4cc2ad5b65c7474c1591a072d45bd2eb273cccb2a78a3",
+      "bytes": 854
+    },
+    {
+      "path": "commit-quality/originals/boot/terminal.json",
+      "sha256": "cefec4e1864cf31b4547a6da83f297ec690a5eb4964822096c9efb8c704950c0",
+      "bytes": 1917
+    },
+    {
+      "path": "commit-quality/originals/quality/clippy/completion.json",
+      "sha256": "194cabd62cebc385cc62d942f18a2b9bbc929a2faa6e1d564bf9d0d83f9bd278",
+      "bytes": 2793
+    },
+    {
+      "path": "commit-quality/originals/quality/clippy/launch.json",
+      "sha256": "478aba2ec3ff998ed64fb371b64b873c0ab1f7885931c7ce0a2a3c2bf8944f8b",
+      "bytes": 2374
+    },
+    {
+      "path": "commit-quality/originals/quality/clippy/stderr.log",
+      "sha256": "f1f6bb9f4c92589d81aca53390edc2bb418ee5ef960ef13dd79d9fbbf4882394",
+      "bytes": 70
+    },
+    {
+      "path": "commit-quality/originals/quality/clippy/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/fmt/completion.json",
+      "sha256": "4ee5c3ae04eeb4df94ad96900a85197d54e25526ba49a82f5801d05c06391e31",
+      "bytes": 2656
+    },
+    {
+      "path": "commit-quality/originals/quality/fmt/launch.json",
+      "sha256": "c6650689574280cf37ba40839116fe58ebbee2e0dac888a36a392d20e53ba79a",
+      "bytes": 2238
+    },
+    {
+      "path": "commit-quality/originals/quality/fmt/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/fmt/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/fmt_after.json",
+      "sha256": "252ab813198e765cae05db2e8dc333417415a253e33b75c3ed3a31158e822d2f",
+      "bytes": 114885
+    },
+    {
+      "path": "commit-quality/originals/quality/nightly_update/completion.json",
+      "sha256": "ad8f3210ba13e96ade025a874c14ea24648fba4fbd3f23f14274343a0a9d749c",
+      "bytes": 2774
+    },
+    {
+      "path": "commit-quality/originals/quality/nightly_update/launch.json",
+      "sha256": "dedc450f954e319422ae1ebee4de5137ab9fe1d5e0b65907f6f69b76881d782b",
+      "bytes": 2354
+    },
+    {
+      "path": "commit-quality/originals/quality/nightly_update/stderr.log",
+      "sha256": "2f7e950dca3bf65baf02406cdbfb0f7b4d3234c86b67aaedcfe07bdde9657c25",
+      "bytes": 68
+    },
+    {
+      "path": "commit-quality/originals/quality/nightly_update/stdout.log",
+      "sha256": "0605d2ac3376291a3f6204df47be75cc490d0c2e9a3bf95273c7a59868045c1a",
+      "bytes": 95
+    },
+    {
+      "path": "commit-quality/originals/quality/result.json",
+      "sha256": "bad6b9f18605d4fc5db0dd15506daa7a2b3adee2ea9e5203c72e83942ff3263a",
+      "bytes": 3406
+    },
+    {
+      "path": "commit-quality/originals/quality/rustc_after/completion.json",
+      "sha256": "d128036b102da7635d6898a3f3896ff7849a47dcba29be10105d5320b3709bc2",
+      "bytes": 2673
+    },
+    {
+      "path": "commit-quality/originals/quality/rustc_after/launch.json",
+      "sha256": "be59d549bb70e9e33b749d38422025c6ab6880dc726ed63bd8f6c9b347f9cc15",
+      "bytes": 2253
+    },
+    {
+      "path": "commit-quality/originals/quality/rustc_after/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/rustc_after/stdout.log",
+      "sha256": "c386bcb52abed803811f85e9a92ac5eac1c76b178e3c07f01b5618196bbf5650",
+      "bytes": 215
+    },
+    {
+      "path": "commit-quality/originals/quality/rustc_before/completion.json",
+      "sha256": "5b44c8db69c21faff1a4dfc6194c20723d30d7c56a080500724b97d2b0e54f9e",
+      "bytes": 2678
+    },
+    {
+      "path": "commit-quality/originals/quality/rustc_before/launch.json",
+      "sha256": "2eca33d78a37ff197c2c591df5f96e5eb0613e22de7bbca217e0d4a55bbac630",
+      "bytes": 2258
+    },
+    {
+      "path": "commit-quality/originals/quality/rustc_before/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/rustc_before/stdout.log",
+      "sha256": "c386bcb52abed803811f85e9a92ac5eac1c76b178e3c07f01b5618196bbf5650",
+      "bytes": 215
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after.json",
+      "sha256": "252ab813198e765cae05db2e8dc333417415a253e33b75c3ed3a31158e822d2f",
+      "bytes": 114885
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_files/completion.json",
+      "sha256": "ca586dabf3894e05fd2a11ccef1685c5e19c9c396d49486a8ee514224f03f757",
+      "bytes": 2852
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_files/launch.json",
+      "sha256": "27e63f23c7b0eb7b3e779a9d9054f7922e75c9f021be5baf80689bbeb46c6981",
+      "bytes": 2430
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_files/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_files/stdout.log",
+      "sha256": "47aa8c6ba3c7e89b5c9a3777482e9b88cd2cfbd1525207f860380f5574d0ca01",
+      "bytes": 83477
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_head/completion.json",
+      "sha256": "04adbf4a2807bdd20a82e4115c78054944ab6724e7705eb4fc210471d3a4b2bb",
+      "bytes": 2734
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_head/launch.json",
+      "sha256": "fadaef1bc5c639323994fd745df7c6813fab9c57fb70ab2be8972865e8e28c8d",
+      "bytes": 2315
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_head/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_head/stdout.log",
+      "sha256": "296260f3243fff4a5bdb3bf054d0eea35d713a2d4daf22d3f59629d80a64d0d6",
+      "bytes": 41
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_status/completion.json",
+      "sha256": "b73932663f0af5f5308615eb94cc973ea216ea76da058dadb0d4fe24e7d6beab",
+      "bytes": 2817
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_status/launch.json",
+      "sha256": "f46867be41e6c98a4bd043cb4b16d2816e34a99ae197c1f56bbc91e5f80ab940",
+      "bytes": 2397
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_status/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/source_after_status/stdout.log",
+      "sha256": "1a2b363ded9e71d532a1de0b093cb23dfabc6045d348c1e4989615ae133b4c06",
+      "bytes": 262
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before.json",
+      "sha256": "252ab813198e765cae05db2e8dc333417415a253e33b75c3ed3a31158e822d2f",
+      "bytes": 114885
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_files/completion.json",
+      "sha256": "5b56336014cd51e5c206005eaf6de0de4a4121d8eec30e2eb2696dd70670c826",
+      "bytes": 2857
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_files/launch.json",
+      "sha256": "3c017683e4cca3298d80b52d840c166ea41cf127186a9dcbf6cd97634856fc69",
+      "bytes": 2435
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_files/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_files/stdout.log",
+      "sha256": "47aa8c6ba3c7e89b5c9a3777482e9b88cd2cfbd1525207f860380f5574d0ca01",
+      "bytes": 83477
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_head/completion.json",
+      "sha256": "38ed52af341494f9bfad6c9d8ca5b5d18b93ea8b06bac905f1be8fe8ed097923",
+      "bytes": 2739
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_head/launch.json",
+      "sha256": "f940e2dcc625e112080863258e3bd1e840ebb6d85b43d61b27731c69eb440a9a",
+      "bytes": 2320
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_head/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_head/stdout.log",
+      "sha256": "296260f3243fff4a5bdb3bf054d0eea35d713a2d4daf22d3f59629d80a64d0d6",
+      "bytes": 41
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_status/completion.json",
+      "sha256": "7e5990afe927f1402eb8a795ac724d526695a457472ba6ded6f3ff063ffa2e22",
+      "bytes": 2822
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_status/launch.json",
+      "sha256": "6ab208cc4552ec29119ddfa273d91b7df47c352a9b6b20ec0fedb71057ce948c",
+      "bytes": 2402
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_status/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "commit-quality/originals/quality/source_before_status/stdout.log",
+      "sha256": "1a2b363ded9e71d532a1de0b093cb23dfabc6045d348c1e4989615ae133b4c06",
+      "bytes": 262
+    },
+    {
+      "path": "commit-quality/recipe-binding-and-generation-r2.json",
+      "sha256": "f2dc5fb32fd3a9fb1b6e420e434e43046944241d83ac41519237db4cf92985d0",
+      "bytes": 1581
+    },
+    {
+      "path": "commit-quality/root-source-597-same-native-r2.json",
+      "sha256": "3586906dbedde0e6f7cba5d196dd553dcc6771935c6faf0d0fa5279c4b1916b7",
+      "bytes": 114700
+    },
+    {
+      "path": "commit-quality/single_ssh_commit_quality_base_feedback_r2.sh",
+      "sha256": "e74c9f2a0e40cc40e897bbec284fcd9f87779a65c766423dc9da2fb144fdcdd2",
+      "bytes": 11389
+    },
+    {
+      "path": "commit-quality/single_ssh_commit_quality_base_feedback_r2.sh.diff-vs-r1.patch",
+      "sha256": "341b2388e5c57e67cd0d5ed9cb391b51b77f731a38e656d13c214133b1ab4d7e",
+      "bytes": 18189
+    },
+    {
+      "path": "field/base-feedback-diagnostic-r2.go.json",
+      "sha256": "387d11aa8aeda953b774ee25cc8ac3779cd920a94929afc18c1e49d4c079da3d",
+      "bytes": 1782
+    },
+    {
+      "path": "field/field_confirmation_base_feedback_r2.json",
+      "sha256": "4454145c392d430a99b0b31b796fab4ece625528438f11cfcffbb7fd6e0d0892",
+      "bytes": 1645
+    },
+    {
+      "path": "field/initial-pins.json",
+      "sha256": "f46615e14dc4c0fa1366b383b96868e97442df8210438e7ff5f46626031a2c1f",
+      "bytes": 149
+    },
+    {
+      "path": "field/preparation-pins.json",
+      "sha256": "b7c0004c10d260861f12d0b4feed0e9ee235704eab23c346a3b6a5a07f109384",
+      "bytes": 616
+    },
+    {
+      "path": "field/runtime-pins.json",
+      "sha256": "65b5ec9ac768a4eac2e636af1430248a08dee8cc70602105398111c7c8f96c9c",
+      "bytes": 686
+    },
+    {
+      "path": "originals/driver.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "originals/independent-nonuart17.receipt.json",
+      "sha256": "6632ab4702af9914e1ebe25e03cf23dfd80f4b3c6aa7b43ac1725bfaaab9e871",
+      "bytes": 835
+    },
+    {
+      "path": "originals/independent-nonuart17.stdout",
+      "sha256": "53c3af9a92c4afbbc61f0b55ad6e731093bfe5a5a7e5600f3ca8118d106a6065",
+      "bytes": 176291
+    },
+    {
+      "path": "originals/observed-terminal-local-copy-r2.json",
+      "sha256": "4897e068528363294c2c263a581641a50280e426a0d45c102221c4b0c6e64ff5",
+      "bytes": 22868
+    },
+    {
+      "path": "originals/prepare/full-plan-only-r2.receipt.json",
+      "sha256": "39d21899b95d2ab554456e625c80530bca0c497b86aa2cffae7a48c9bc069c1c",
+      "bytes": 1437
+    },
+    {
+      "path": "originals/prepare/full-plan-only-r2.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "originals/prepare/full-plan-only-r2.stdout",
+      "sha256": "034a118fb85677bf204a1428385bc83820d7ee6b13577df1044de98117449735",
+      "bytes": 38653
+    },
+    {
+      "path": "originals/prepare/maintenance_bindings_base_feedback_diagnostic_r2.json",
+      "sha256": "ac4c13d8c2c0d61216f8414ee141f7f8744f84a97d413d71c4a2ba91b624b669",
+      "bytes": 30529
+    },
+    {
+      "path": "originals/prepare/prepare-result-base-feedback-r2.json",
+      "sha256": "a929d202c53bd918ea8d3221a5ff1c9e9694be1d80b41ac5d7e69492887f44ea",
+      "bytes": 4809
+    },
+    {
+      "path": "originals/prepare/usb-refresh-nonuart-r2.receipt.json",
+      "sha256": "c2b461b5edcbb75b2079864bf6f70c681758d701915193c4aa6d822ed7e84578",
+      "bytes": 803
+    },
+    {
+      "path": "originals/prepare/usb-refresh-nonuart-r2.stdout",
+      "sha256": "3f8fd6885643835037d06267f6d8e356675cf9ee8d91c1f524d75cebc3fb1a8b",
+      "bytes": 176291
+    },
+    {
+      "path": "originals/prepare/usb-stat-after-r2.json",
+      "sha256": "57b452b4a524fd8386795e830f162bb4b93f3aceea6b0422d0e4b1bd647a0e7b",
+      "bytes": 558
+    },
+    {
+      "path": "originals/prepare/usb-stat-before-r2.json",
+      "sha256": "57b452b4a524fd8386795e830f162bb4b93f3aceea6b0422d0e4b1bd647a0e7b",
+      "bytes": 558
+    },
+    {
+      "path": "originals/right7-normal-read-command_0130.strace",
+      "sha256": "4bc581a789f4077dce53ad33ce30eeb3e8ad59bb5e243ce8fd05af48b2200a13",
+      "bytes": 10036
+    },
+    {
+      "path": "originals/right7-normal-read-command_0266.strace",
+      "sha256": "3e1fb831ff6f1ba7bc937a6fc3112dec414625144ab14c31216ae6f907a452a6",
+      "bytes": 10036
+    },
+    {
+      "path": "originals/right8-normal-read-command_0136.strace",
+      "sha256": "5d31e2e6f37a8e4bd7df2fc00f213b3be305de1bccbd35c040687fd386ed1767",
+      "bytes": 10036
+    },
+    {
+      "path": "originals/right8-normal-read-command_0272.strace",
+      "sha256": "ce2a8701cf8705567ffedc6fa45c7a41abbbdca299c1e605a090010d0873928c",
+      "bytes": 10036
+    },
+    {
+      "path": "originals/right9-normal-read-command_0142.strace",
+      "sha256": "2c97ebc3f018609bc08e571da8cc83f14be5dfc64c0be6e984ebe9f191497330",
+      "bytes": 10036
+    },
+    {
+      "path": "originals/right9-normal-read-command_0278.strace",
+      "sha256": "67570c388bf51715370c5f90e13cb6e7d9426b2a8ecdf20a463e9a9cd8e42ad5",
+      "bytes": 10036
+    },
+    {
+      "path": "originals/run-r2.json",
+      "sha256": "5996ae295deaba683645ad827cc5ef0f17c3975b792599ca6d72a6d42cc06f97",
+      "bytes": 435402
+    },
+    {
+      "path": "originals/seal-result-r2.json",
+      "sha256": "650c5bed49099d83d342f5cc7d141a5e8e87a14df1ee665d4ec49ae76456c29a",
+      "bytes": 56299
+    },
+    {
+      "path": "originals/start-receipt-local-copy-r2.json",
+      "sha256": "6df95a1a39a45df7a43681f61a0aa4fecd76212765e83a45ede39ff8f7011501",
+      "bytes": 1206
+    },
+    {
+      "path": "originals/usb-refresh-nonuart-r2.receipt.json",
+      "sha256": "c2b461b5edcbb75b2079864bf6f70c681758d701915193c4aa6d822ed7e84578",
+      "bytes": 803
+    },
+    {
+      "path": "originals/usb-refresh-nonuart-r2.stdout",
+      "sha256": "3f8fd6885643835037d06267f6d8e356675cf9ee8d91c1f524d75cebc3fb1a8b",
+      "bytes": 176291
+    },
+    {
+      "path": "review/bound-starter-bash-n-receipt.json",
+      "sha256": "04b1de3a1bd185daed0458e55a3a92d8340baa78bdcf8bc9c092dfff2c51139e",
+      "bytes": 393
+    },
+    {
+      "path": "review/cached-diff-whitespace-review-r2.json",
+      "sha256": "e7ab2b8708a126440de4d6a8d4d82e42ea62013bc07868e2815ba275e8c06903",
+      "bytes": 3568
+    },
+    {
+      "path": "review/independent-hardware-readonly-review-r2.initial-journal-comparison-fail.json",
+      "sha256": "3fc31118e32d5fc4f8bc30eef0bc3bf779d450b3a38a71efa3102f86bf5ed66d",
+      "bytes": 18646
+    },
+    {
+      "path": "review/independent-hardware-readonly-review-r2.json",
+      "sha256": "f48b8f6cd12d7e20c7baf9adb23966cbccaa0695e2f53aa3ff9d2868d172a329",
+      "bytes": 19853
+    },
+    {
+      "path": "review/next-step-original-xlerobot-wire.json",
+      "sha256": "2ef8ad5f8b56f9473f9cdef689349feee18761d766f1d8c4c10256a26a7156b1",
+      "bytes": 9476
+    },
+    {
+      "path": "review/root-current-preparation-r2.json",
+      "sha256": "c006160b15656183df67cf370e2cc935ce0bdc81135102b9f9366c7d29f1934a",
+      "bytes": 463
+    },
+    {
+      "path": "review/root-hardware-readonly-review-r2.json",
+      "sha256": "7746b7d19a9fddbb21558e2a5e829f06ca9ae4a731df9bce1c4279963ca8ba45",
+      "bytes": 17613
+    },
+    {
+      "path": "scripts/minimal_runtime_prepare_base_feedback_r2.bound.sh",
+      "sha256": "9ecb50efe00e8face58679d9355603e2193f8ea179521a4d15d839f06f2ccf5b",
+      "bytes": 13454
+    },
+    {
+      "path": "scripts/observe_base_feedback_diagnostic_once_r2.bound.sh",
+      "sha256": "2dc1411f89553d0d99824a596f3fbcde562195e28c5b020dfe1739a733b210bf",
+      "bytes": 3789
+    },
+    {
+      "path": "scripts/prepare_base_feedback_diagnostic_r2.bound.py",
+      "sha256": "8859b3141dbea7d82ba9207e7ddea2735be9a8ab01923d87244084202898226a",
+      "bytes": 13206
+    },
+    {
+      "path": "scripts/readonly_nonuart17_usb_refresh_r2.bound.sh",
+      "sha256": "2f4428162bec67fe1faae6765e780379b9e5eae0ddd5849706062b8dc7f1ce25",
+      "bytes": 2515
+    },
+    {
+      "path": "scripts/seal_base_feedback_diagnostic_r2.bound.sh",
+      "sha256": "eeca2c6aed9841dc1ec88bf12318866eeae581cab7c68fa707f980489118976c",
+      "bytes": 13991
+    },
+    {
+      "path": "scripts/start_base_feedback_diagnostic_once_r2.bound.sh",
+      "sha256": "04f8b365950691deeff396ba8a11e5ec6eacd30ae9a05a9edf7c15f35d8c6322",
+      "bytes": 12555
+    },
+    {
+      "path": "scripts/transmit-and-start-base-feedback-r2.sh",
+      "sha256": "75c735cb631c72468bd37410d6053f6c3ede399f56370209757ea24d53fec711",
+      "bytes": 18093
+    },
+    {
+      "path": "summary.json",
+      "sha256": "1232067d6bbbd651284af21096de40a39826e00116ca2bbfb31dbcfd51c88eb1",
+      "bytes": 5024
+    },
+    {
+      "path": "tools/base-feedback-r2-commit-quality-20261013-r1.owner/child.log",
+      "sha256": "7c78ecc4c8e9608a36966a8ee4d5b2972c0207e9262d1fdcfa4f8b3818449028",
+      "bytes": 183463
+    },
+    {
+      "path": "tools/base-feedback-r2-commit-quality-20261013-r1.owner/launch.json",
+      "sha256": "daa3a3beb9f4f86669ab39e99b8b8f34403ddd87b8433c373bb8074bc5e5c4b5",
+      "bytes": 1158
+    },
+    {
+      "path": "tools/base-feedback-r2-commit-quality-20261013-r1.owner/result.json",
+      "sha256": "50b42fae9e19f658f5f61459cf20a4921889394112a236b78b6097fe18c615ca",
+      "bytes": 1671
+    },
+    {
+      "path": "tools/base-feedback-r2-commit-quality-20261013-r1.owner/status.json",
+      "sha256": "50b42fae9e19f658f5f61459cf20a4921889394112a236b78b6097fe18c615ca",
+      "bytes": 1671
+    },
+    {
+      "path": "tools/fresh-r2.owner/child.log",
+      "sha256": "b8ec327f009794efaf61d8112a13eeb7867b965d422fd6058009a7377dc3d95c",
+      "bytes": 236972
+    },
+    {
+      "path": "tools/fresh-r2.owner/launch.json",
+      "sha256": "22220a7f2fe97738a41bdcd2001cce0509452fbfa58d7570b3beb0317958b2e4",
+      "bytes": 1147
+    },
+    {
+      "path": "tools/fresh-r2.owner/result.json",
+      "sha256": "c48256e5a4a9828e3dccbba2b810ca52f19c6f92e2130ff10c6bbf1fc9fca523",
+      "bytes": 1624
+    },
+    {
+      "path": "tools/fresh-r2.owner/status.json",
+      "sha256": "c48256e5a4a9828e3dccbba2b810ca52f19c6f92e2130ff10c6bbf1fc9fca523",
+      "bytes": 1624
+    },
+    {
+      "path": "tools/observe-r2.owner/child.log",
+      "sha256": "6c81c235f18b6a1e32383f98c93e13b1c980795d39a55665cf13b11e2f0b965e",
+      "bytes": 12892
+    },
+    {
+      "path": "tools/observe-r2.owner/launch.json",
+      "sha256": "c82b8c57266fd44518fa7731ec794df4cfba637055529babea0e105256e6bb7b",
+      "bytes": 1154
+    },
+    {
+      "path": "tools/observe-r2.owner/result.json",
+      "sha256": "aaa68e0557bb35d429870338d323d3850984d802d036c74466bcc1f05f317d28",
+      "bytes": 1631
+    },
+    {
+      "path": "tools/observe-r2.owner/status.json",
+      "sha256": "aaa68e0557bb35d429870338d323d3850984d802d036c74466bcc1f05f317d28",
+      "bytes": 1631
+    },
+    {
+      "path": "tools/prepare-r2.owner/child.log",
+      "sha256": "bcd9c7775b7a80888533a02120ec4069f6d38a6f34f86c850aa6413398996a8f",
+      "bytes": 76475
+    },
+    {
+      "path": "tools/prepare-r2.owner/launch.json",
+      "sha256": "6fdeae398dfae156a164f14844555fe40617b785bf9f194285473935b7941931",
+      "bytes": 1155
+    },
+    {
+      "path": "tools/prepare-r2.owner/result.json",
+      "sha256": "6f88d77d2407d7b7fe4ed53981e68e00274164abfdb5c90726fdec34f1015fc6",
+      "bytes": 1632
+    },
+    {
+      "path": "tools/prepare-r2.owner/status.json",
+      "sha256": "6f88d77d2407d7b7fe4ed53981e68e00274164abfdb5c90726fdec34f1015fc6",
+      "bytes": 1632
+    },
+    {
+      "path": "tools/seal-r2.owner/child.log",
+      "sha256": "cf6af964581dc97d0b8c3218a378623a66430deb258cc5b2985d8cee8479cfc5",
+      "bytes": 395580
+    },
+    {
+      "path": "tools/seal-r2.owner/launch.json",
+      "sha256": "a99777f4b7c50bcc6e8c0ce68f83499afeb4247b741d08028492080e23bb84ff",
+      "bytes": 1147
+    },
+    {
+      "path": "tools/seal-r2.owner/result.json",
+      "sha256": "950b252498b7d2dbbe90d4e489e12eea9738176379b6b85770d533f5e6bcb598",
+      "bytes": 1623
+    },
+    {
+      "path": "tools/seal-r2.owner/status.json",
+      "sha256": "950b252498b7d2dbbe90d4e489e12eea9738176379b6b85770d533f5e6bcb598",
+      "bytes": 1623
+    },
+    {
+      "path": "tools/ssh_owner.py",
+      "sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+      "bytes": 8656
+    },
+    {
+      "path": "tools/start-r2.owner/child.log",
+      "sha256": "0641b523e7e5bc2075aeea4ce78e2e8e37c6667a02761572a91b28b254f36006",
+      "bytes": 1082
+    },
+    {
+      "path": "tools/start-r2.owner/launch.json",
+      "sha256": "5c6b02abd075c789f4fb79fdd5d7a3402f05ad664da32497bb7c0b04f5203ade",
+      "bytes": 1144
+    },
+    {
+      "path": "tools/start-r2.owner/result.json",
+      "sha256": "a602d3fe7a5de0c7d6443f4fc9d03dacdbefd16b432c2b9678fd6045db7801d8",
+      "bytes": 1617
+    },
+    {
+      "path": "tools/start-r2.owner/status.json",
+      "sha256": "a602d3fe7a5de0c7d6443f4fc9d03dacdbefd16b432c2b9678fd6045db7801d8",
+      "bytes": 1617
+    }
+  ],
+  "files_excluding_manifest": 135,
+  "original_run_fail_preserved": true
+}

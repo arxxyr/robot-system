@@ -1,0 +1,24 @@
+{
+  "name": "independent-nonuart17",
+  "argv": [
+    "bash",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/nonuart_probe_r4.sh"
+  ],
+  "started_ns": 1791870384947525605,
+  "signals_sent": [],
+  "reaped": true,
+  "pid": 664952,
+  "finished_ns": 1791870385786908710,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "stdout": {
+    "path": "/home/loosqk/robot-checks/base-feedback-diagnostic-r2/base-feedback-diagnostic-seal-r2/independent-nonuart17.stdout",
+    "bytes": 176291,
+    "sha256": "53c3af9a92c4afbbc61f0b55ad6e731093bfe5a5a7e5600f3ca8118d106a6065"
+  },
+  "stderr": {
+    "path": "/home/loosqk/robot-checks/base-feedback-diagnostic-r2/base-feedback-diagnostic-seal-r2/independent-nonuart17.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}
