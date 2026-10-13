@@ -1,0 +1,28 @@
+{
+  "schema": "BASE_FEEDBACK_R1_ROOT_NATIVE_COMMIT_QUALITY_REVIEW_V1",
+  "recorded_at_utc": "2026-10-13T04:40:02.884280+00:00",
+  "status": "PASS_SAME_SOURCE_FMT_THEN_CLIPPY",
+  "files": 54,
+  "native_children": 11,
+  "native_streams": 22,
+  "source_files": 597,
+  "source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "source_three_windows_and_current_root_equal": true,
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "e9bbadf6824e65b3583c2dda3a0926ec76df9143",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "root_actual_fmt": {
+    "start_chunk": "05b65f",
+    "completion_chunk": "3fc497",
+    "exit_code": 0
+  },
+  "native_Git_alignment": "8940847 plus five dirty; not Git aligned with root",
+  "legacy_wrapper_missing_wait_returncode_preserved": true,
+  "agent_first_local_inspection_failure_preserved": true,
+  "root_first_local_inspection_failure": "review/root-quality-inspection-failure-r1.json",
+  "no_native_rerun_after_inspector_adaptation": true,
+  "UART_operations": 0,
+  "hardware_claim": "本质量门不回填实机FAIL或断电状态"
+}

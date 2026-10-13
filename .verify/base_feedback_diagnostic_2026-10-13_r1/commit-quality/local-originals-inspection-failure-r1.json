@@ -1,0 +1,10 @@
+{
+  "status": "LOCAL_INSPECTION_SCHEMA_FAIL_PRESERVED",
+  "command_chunk": "4ca7bc",
+  "exit_code": 1,
+  "error": "KeyError('wait_returncode')",
+  "boundary": "既有R4 collector run()原回执只有exit_code/reaped，程序实际code=child.wait()；不新增虚构raw字段",
+  "native_quality_status": "PASS",
+  "native_reruns": 0,
+  "fix_scope": "仅只读已封tar/解出的既有原件重新核对legacy回执schema"
+}

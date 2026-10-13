@@ -1,0 +1,16 @@
+{
+  "schema": "BASE_FEEDBACK_R2_FINAL_PRECOMMIT_REVIEW_V1",
+  "recorded_at_utc": "2026-10-13T05:17:57.998625+00:00",
+  "status": "ROOT_SOFTWARE_ACCEPTED_NO_HARDWARE_RETRY",
+  "native31_from_current_originals": "PASS",
+  "runtime_fixture_path_review": "PASS",
+  "root_source_files": 597,
+  "source_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "root_source_equal_actual_fmt_then_Clippy_native_snapshot": true,
+  "old_local_Mac31_and_owner_raw_losses": "NOT_BACKFILLED",
+  "oldR1_NEEDS_STOP_UNKNOWN": "PRESERVED",
+  "current_power": "OFF_USER_CONFIRMED",
+  "R2_field": null,
+  "R2_GO": false,
+  "R2_hardware_starts": 0
+}

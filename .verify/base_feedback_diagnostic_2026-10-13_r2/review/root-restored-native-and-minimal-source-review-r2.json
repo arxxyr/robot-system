@@ -1,0 +1,24 @@
+{
+  "schema": "BASE_FEEDBACK_R2_ROOT_RESTORED_SOURCE_AND_NATIVE_REVIEW_V1",
+  "reviewed_at_utc": "2026-10-13T05:02:58.671362+00:00",
+  "status": "PASS_EXISTING_NATIVE31_AND_MINIMAL_SOURCE_BYTE_REVIEW",
+  "recovery_archive_sha256": "670fd4ae29b9a1aecb56c7d14e80686dcdf22fc0b732e1cb86db6b2fbdbc8619",
+  "archive_files": 19,
+  "native_method_count": 31,
+  "old_Mac31_raw": "LOST_NOT_CURRENTLY_VERIFIABLE",
+  "old_local_owner93330_ssh93331_raw": "LOST_NOT_REPLACED_BY_NEW_COLLECTION",
+  "old_compressed_0af7": "LOST_NOT_RECONSTRUCTED",
+  "recovery_owner1442_ssh1443": "ACTUAL_REAPED_EXIT0",
+  "native_test_child664208": "ORIGINAL_REAPED_EXIT0",
+  "source_changes": {
+    "helper": "exactly two ID lists 8/9→7/8/9",
+    "main": "exactly RUN_ID/helper SHA/helper bytes constants"
+  },
+  "runtime_discovered_path_fix": "actual tested/helper file is candidate/fixtures/raw_right9_from_r14_r2.py; drafts being minimally corrected before hardware",
+  "UART_operations": 0,
+  "GO_created": false,
+  "source_five_before_after_equal": true,
+  "uploaded_seven_before_after_equal": true,
+  "source_five_original_hash_bytes_checked": true,
+  "native_test_batches": 1
+}

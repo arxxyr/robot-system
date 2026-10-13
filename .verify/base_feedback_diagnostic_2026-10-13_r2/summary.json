@@ -1,0 +1,80 @@
+{
+  "schema": "BASE_FEEDBACK_R2_SOFTWARE_READINESS_V1",
+  "recorded_at_utc": "2026-10-13T05:11:24.419766+00:00",
+  "status": "SOFTWARE_READY_WAIT_NEW_CURRENT_SITE",
+  "scope": "仅原同一次right7/8/9普通PV记录strace；raw仍只right9三组TE→PP→PV，原非零/未知/GO/500ms/STOP51门不变",
+  "candidate": {
+    "path": "candidate/base_feedback_diagnostic_r2.py",
+    "sha256": "cf651bb200d0ea56228282dd51b311bb090650945b631f51e8d7ff2f1e431b78",
+    "bytes": 18648
+  },
+  "helper": {
+    "path": "candidate/raw_right9_from_r14_r2.py",
+    "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+    "bytes": 12220,
+    "actual_native_path": "/home/loosqk/robot-checks/base-feedback-r2-software-20261013/candidate/fixtures/raw_right9_from_r14_r2.py"
+  },
+  "test": {
+    "path": "candidate/test_base_feedback_diagnostic_r2.py",
+    "sha256": "815ec4995e1bcd0c92e0446ad49d876da518185072f985f94f573f4eb7445417",
+    "bytes": 37227
+  },
+  "native_methods": 31,
+  "native_result": "PASS_EXISTING_ORIGINALS_RECOVERED_NOT_RETESTED",
+  "native_child": 664208,
+  "native_child_true_reaped_exit": 0,
+  "native_driver": {
+    "pid": 664204,
+    "pane": "%105",
+    "window": "@105",
+    "natural_dead_exit": 0,
+    "reclaimed_own_dead_pane": true
+  },
+  "native_existing_sources": 5,
+  "native_existing_uploaded_files": 7,
+  "native_batches": 1,
+  "Mac31_prior_actual_report": "PASS_31_CHILD90863_HISTORY_ONLY_ORIGINAL_RECEIPT_STREAMS_LOST",
+  "loss_boundary": "review/local-evidence-loss-boundary-r2.json",
+  "native_recovery": "native-python/recovery-collection-receipt-r2.json",
+  "native_root_review": "review/root-restored-native-and-minimal-source-review-r2.json",
+  "new_recovery_archive": {
+    "path": "archives/native-python-originals-recovery-r2-20261013.tar.gz",
+    "sha256": "670fd4ae29b9a1aecb56c7d14e80686dcdf22fc0b732e1cb86db6b2fbdbc8619",
+    "bytes": 46557,
+    "files": 19
+  },
+  "old0af7_compressed_bytes": "LOST_NOT_RECONSTRUCTED",
+  "old_local_owner93330_SSH93331_raw": "LOST_NOT_BACKFILLED_WITH_NEW_COLLECTION",
+  "current_power": "OFF_USER_CONFIRMED",
+  "current_watch": "R1_ENDED_NO_NEW_GO",
+  "manual_cut_reference": "../base_feedback_diagnostic_2026-10-13_r1/followups/manual-power-cut-confirmation-r1.json",
+  "new_GO": false,
+  "current_field": null,
+  "current_USB_binding": null,
+  "hardware_launches": 0,
+  "hardware_reads": 0,
+  "hardware_writes": 0,
+  "current_runtime_generation": "runtime-preparation/runtime-draft-generation-receipt-r2.json",
+  "current_runtime_verification": "runtime-preparation/runtime-draft-verification-r2.json",
+  "future_binding_refs": 57,
+  "refs_append_order": [
+    "actual_native_helper",
+    "actual_native_main"
+  ],
+  "before_helper_path_drafts": "archives/runtime-before-helper-fixtures-path-r2.tar.gz",
+  "old_root_runtime_review": "independent-runtime-review-r2.json",
+  "commit_quality_reference": "../base_feedback_diagnostic_2026-10-13_r1/review/root-native-commit-quality-review-r1.json",
+  "Rust597_source_unchanged": true,
+  "Rust_tests": 0,
+  "release_builds": 0,
+  "formal_install": false,
+  "services_started": false,
+  "rightH2": "PREVIOUS_FULL_PASS",
+  "wrists_head_longterm": "OPEN",
+  "base_three_active": "DEFERRED",
+  "D15": "OPEN_DEFERRED",
+  "deployable": false,
+  "next_step": "新的恢复供电/三轮稳定架空/支撑看护事实→当前USB/fresh17→57refs PLAN/新GO；仅读一次，原停止门通过才right9三组，不复用R1或自动重试。",
+  "runtime_independent_review": "independent-runtime-helper-fixtures-review-r2.json",
+  "root_runtime_review": "review/root-correct-helper-path-review-r2.json"
+}

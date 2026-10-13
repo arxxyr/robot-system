@@ -1,0 +1,17 @@
+--- /Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-12_r1/candidate/base_feedback_diagnostic_r1.py
++++ /Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/candidate/base_feedback_diagnostic_r2.py
+@@ -12,11 +12,11 @@
+ from types import SimpleNamespace
+ 
+ sys.dont_write_bytecode = True
+-RUN_ID = "base-feedback-diagnostic-r1"
++RUN_ID = "base-feedback-diagnostic-r2"
+ TARGET = ("right", 9, "base_right_wheel")
+ SOURCE_SHA = "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41"
+-HELPER_SHA = "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa"
+-HELPER_BYTES = 12216
++HELPER_SHA = "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c"
++HELPER_BYTES = 12220
+ FIELD_SCOPE = "仅右9/base_right_wheel在TE0/GV0下500ms内0/200/400ms三组TE0→PP56→PV58只读原帧及原STOP51；无WRITE/Enable，三轮已离地且底盘稳定支撑"
+ EXPECTED = {
+     "Model_Number": 777, "Firmware_Major_Version": 3, "Firmware_Minor_Version": 10,

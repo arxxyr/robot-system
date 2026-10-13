@@ -1,0 +1,47 @@
+--- /Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/run-quality/commit_quality_once_base_zero_r4.py
++++ /Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/commit-quality/commit_quality_once_base_feedback_r1.py
+@@ -1,4 +1,4 @@
+-"""爸爸，底盘零目标R4准备的独立原生软件质量检查；不接触 UART、GO、服务或正式安装。"""
++"""爸爸，底盘只读反馈R1本轮证据提交的独立原生软件质量检查；不接触 UART、GO、服务或正式安装。"""
+ 
+ import hashlib
+ import importlib.util
+@@ -11,14 +11,14 @@
+ import time
+ from types import SimpleNamespace
+ 
+-BASE = Path('/home/loosqk/robot-checks/base-zero-r4-run-quality')
++BASE = Path('/home/loosqk/robot-checks/base-feedback-r1-commit-quality-20261013')
+ SOURCE = Path('/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/source')
+ TARGET = Path('/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build')
+ OUT = BASE / 'quality'
+ HEAD = '894084738d95a7239611c2b8fbecfe081d3a7fc9'
+ OLD = '3a4cc12e5e28f9c9164b8e7cdf9e2861b7127d7536ab291e7db8cced6d7aa4e9'
+ NEW = '068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8'
+-COMPILER = '080cc27146389dbb5c8772c476b1937be9c6110f'
++HISTORICAL_COMPILER = '080cc27146389dbb5c8772c476b1937be9c6110f'
+ FIVE = ['crates/robot-adapters/feetech/examples/feetech_poke.rs',
+         'crates/robot-adapters/feetech/src/bus.rs',
+         'crates/robot-adapters/feetech/src/bus_raw_read_tests.rs',
+@@ -50,10 +50,10 @@
+ runner.env.update(HTTP_PROXY='http://10.0.1.80:10808', HTTPS_PROXY='http://10.0.1.80:10808', PYTHONDONTWRITEBYTECODE='1')
+ runner.shown.update(HTTP_PROXY=runner.env['HTTP_PROXY'], HTTPS_PROXY=runner.env['HTTPS_PROXY'])
+ raw_receipts = []
+-result = {'schema': 'BASE_ZERO_R4_COMMIT_QUALITY_V1', 'status': 'FAIL', 'started_at': r.utc(),
++result = {'schema': 'BASE_FEEDBACK_R1_COMMIT_QUALITY_V1', 'status': 'FAIL', 'started_at': r.utc(),
+           'scope': '代理更新nightly后仅实际fmt→根Clippy一次；不测试/release/UART/GO/服务',
+           'native_git_head': HEAD, 'native_worktree': 'five changed sources; not clean',
+-          'source_before_install_expected': OLD, 'source_expected': NEW, 'compiler_expected': COMPILER}
++          'historical_source_before_install_only': OLD, 'source_expected': NEW, 'historical_compiler_only_not_pin': HISTORICAL_COMPILER}
+ 
+ 
+ def text(name, argv, timeout=7200):
+@@ -76,7 +76,7 @@
+     runner.command('nightly_update', ['rustup', 'update', 'nightly', '--no-self-update'], 7200)
+     before = snapshot('source_before', NEW)
+     compiler = a.parse_rustc_identity(text('rustc_before', ['rustc', '-vV']))
+-    assert compiler['commit_hash'] == COMPILER and compiler['host'] == 'aarch64-unknown-linux-gnu'
++    assert compiler['host'] == 'aarch64-unknown-linux-gnu'
+     runner.command('fmt', ['cargo', 'fmt', '--all'], 300)
+     fmt_after = a.snapshot_source(SOURCE, list(expected['files']))
+     r.save(OUT / 'fmt_after.json', fmt_after)

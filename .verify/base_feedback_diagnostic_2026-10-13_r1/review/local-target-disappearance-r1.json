@@ -1,0 +1,40 @@
+{
+  "schema": "BASE_FEEDBACK_LOCAL_TARGET_DISAPPEARANCE_V1",
+  "recorded_at_ns": 1791866969526267000,
+  "recorded_at_utc": "2026-10-13T04:49:29.526269+00:00",
+  "authoritative_observation_tool_chunk": "feb444",
+  "target_directory_exists": false,
+  "root_git_HEAD": "28a5f664b44f760f452e376ce20b0638cc15c26d",
+  "confirmed_survivors": [
+    "R1硬件330原件tar",
+    "R1运行准备9原件tar",
+    "R1提交质量54原件tar",
+    "R1六组SSH原流与回执",
+    "R1实际现场/GO/启动/收尾脚本",
+    "R1用户断电followup"
+  ],
+  "lost_not_yet_recovered": [
+    "本机target中R2五个source/31测试原流/回执/独审报告/19原件tar/原owner93330-SSH93331日志",
+    "R2刚生成未验证的7runtime草稿和生成回执",
+    "其他历史target内容未审计"
+  ],
+  "concurrent_delete_plan_processes_observed": [
+    {
+      "pid": 94763,
+      "ppid": 6275,
+      "binary": "uv",
+      "workspace_root_text": "/Users/loosqk/repo/rust"
+    },
+    {
+      "pid": 94765,
+      "ppid": 94763,
+      "binary": "python3.12",
+      "workspace_root_text": "/Users/loosqk/repo/rust"
+    }
+  ],
+  "deleting_process_exact_cause": "UNCONFIRMED；同时存在带shutil.rmtree与清理计划标记进程，不据此断言某一PID删除了本目录",
+  "action": "不干预其他任务；从Orin只读取回已完成R2原包，转永久目录；不重跑验证或伪造丢失原流",
+  "current_power": "OFF_USER_CONFIRMED",
+  "new_hardware_GO": false,
+  "new_UART": 0
+}

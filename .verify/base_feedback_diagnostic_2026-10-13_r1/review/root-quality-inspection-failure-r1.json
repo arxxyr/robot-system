@@ -1,0 +1,10 @@
+{
+  "status": "LOCAL_CHECKER_FAIL_PRESERVED",
+  "tool_chunk": "459012",
+  "exit_code": 1,
+  "error": "TypeError: string indices must be integers, not str",
+  "reason": "root检查器误把旧Runner stdout/stderr路径字符串当作引用字典，且旧Runner使用monotonic/at字段",
+  "raw_originals_changed": false,
+  "native_rerun": false,
+  "source_of_error_record": "实际工具输出；未单独保存该临时检查程序原文件或原流，不伪造"
+}

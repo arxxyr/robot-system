@@ -1,0 +1,117 @@
+{
+  "schema": "BASE_FEEDBACK_R2_INDEPENDENT_FIXTURES_HELPER_RUNTIME_REVIEW_V1",
+  "status": "PASS_READONLY_FIXTURES_PATH_CORRECTION_REVIEW",
+  "scope": "仅本机读取现存7canonical/7diff及已有验证；未执行草稿/31/SSH/Cargo/GO，未覆盖旧a55或输入原件",
+  "generation": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/runtime-draft-generation-receipt-r2.json",
+    "sha256": "2c41da758f9646e9f502bf4f2d884f3b229f2958fe31f4287a06c2fe3f6a36ab",
+    "bytes": 17985
+  },
+  "verification": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/runtime-draft-verification-r2.json",
+    "sha256": "a2ae2033b69713685e8eb248584309e3f1f0f49f3ed5f276284970e9f516b167",
+    "bytes": 20349
+  },
+  "path_correction": {
+    "actual_remote_helper": {
+      "path": "/home/loosqk/robot-checks/base-feedback-r2-software-20261013/candidate/fixtures/raw_right9_from_r14_r2.py",
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    "main": {
+      "path": "/home/loosqk/robot-checks/base-feedback-r2-software-20261013/candidate/base_feedback_diagnostic_r2.py",
+      "sha256": "cf651bb200d0ea56228282dd51b311bb090650945b631f51e8d7ff2f1e431b78",
+      "bytes": 18648
+    },
+    "native_original_helper": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/native-python/originals/candidate/fixtures/raw_right9_from_r14_r2.py",
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    "evidence": "已恢复native19的uploaded-inputs-before/after及实际源码只有candidate/fixtures/helper；旧direct位置未列且恢复目录不存在。远端旧direct缺失另由root确认，本审未SSH",
+    "seven_diff_and_SHA_bytes": "逐项核7draft/7baseline/7diff；全等于helper绝对路径字面替换，starter另同步唯一B64内嵌launcher；没有其他语义变动",
+    "B64": "starter的旧/新B64解码分别逐字等旧/新launcher；新嵌入正文仅helper路径改变",
+    "unchanged_files": [
+      "observe_base_feedback_diagnostic_once_r2.draft.sh",
+      "readonly_nonuart17_usb_refresh_r2.draft.sh"
+    ]
+  },
+  "contracts_preserved": {
+    "refs": "prepare仍旧55完整保持，actual fixtures helper70/12220→maincf651/18648顺序追加至57；仅原3USB枚举字段可变",
+    "GO_STOP_window": "c.install(m,h,go)、None首门、独立GO/600秒现场TTL、TE/PV/GV整数零及sticky门、STOP51、500ms三组0/200/400、无WRITE/三轮DEFERRED均不变",
+    "PTY_quote": "launcher仍python -c保stdinPTY；starter先填7唯一None的完整正文再shlex.quote；-p及显式pane不变",
+    "manual_and_pane": "seal79/90-96的manual跳新增后验，无UART/WRITE/GO；71/87完整session/window/pane/PID/dead1/exit与启动回执吻合后，88仅回收自dead pane"
+  },
+  "preserved_before_correction": {
+    "archive": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/archives/runtime-before-helper-fixtures-path-r2.tar.gz",
+      "sha256": "6477647feb0690cdd23d98367b98e827063023b1351571e0b9a668d5a01d7f12",
+      "bytes": 29662
+    },
+    "archive_regular_files": 17,
+    "seventeen_tar_members_exact_bytes_match_before_directory_and_old_review": true,
+    "before_directory": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation-before-fixtures-r2",
+    "old_review": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/independent-runtime-review-r2.json",
+      "sha256": "a55fb0ed466d2353cb6800261098201954899cfc506198a8976262630b8d92cf",
+      "bytes": 6416
+    },
+    "old_review_limit": "a55原字节保留；其局部语法/None PASS不能证明旧helper远端direct路径存在，不回填或覆盖"
+  },
+  "existing_new_local_verification": {
+    "evidence_kind": "已有新验证回执/argv/输入SHA字段独核，本次没有重新执行或重wait历史进程",
+    "python_AST": 7,
+    "None_rejections": 6,
+    "None_target_IO_and_child_calls": 0,
+    "current_recorded_children": 7,
+    "PIDs": [
+      6856,
+      6859,
+      6860,
+      6861,
+      6862,
+      6863,
+      6864
+    ],
+    "exit_and_wait_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2
+    ],
+    "all_recorded_natural_wait_reaped": true,
+    "signals_sent": 0,
+    "stdout_stderr_bytes": 0,
+    "drafts_before_after_SHA_equal": true
+  },
+  "historical_verifier_failures": {
+    "records": [
+      {
+        "tool_chunk": "1d8fdf",
+        "failure": "先匹配-c子串误解析starter内嵌字符串",
+        "children_started": 0
+      },
+      {
+        "tool_chunk": "d03788",
+        "failure": "错误要求seal存在FIELD_STAMP，实际首门为APPROVED_RUN_SHA256=None",
+        "children_started": 0
+      },
+      {
+        "tool_chunk": "a5513d",
+        "failure": "错误要求py与wrapper尾LF逐字相同；AST原样相同，仅既有尾LF差别",
+        "children_started": 7,
+        "completion": "6bash-n exit0及observer None exit2均communicate+wait；后续验证器断言前未导出PID/流回执，原本机PID UNKNOWN，不以新7child回填"
+      }
+    ],
+    "boundary": "三次验证器FAIL均保留；第三次批次7child只在会话报告communicate/wait，PID/原流回执未持久化，仍UNKNOWN，不用新6856..6864回填。历史raw只会话merged输出，不重造"
+  },
+  "remaining_evidence_limits": [
+    "原Mac31三原件及旧本机owner93330/SSH93331原回执仍LOST；恢复native19不替代这些本机原字节",
+    "最初target首7草稿/receipt丢失且验证NOT_RUN仍保留；本PASS仅当前fixtures路径永久版本",
+    "无新现场ON/GO/UART；原R1现场FAIL/NEEDS/right9 NOT_RUN/wire缺失均不回填"
+  ],
+  "errors": []
+}

@@ -21,24 +21,26 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  客户端2026-10-12（软件原生运行UTC10-13），右9断扭反馈只读候选R1软件通过。
-           main87e3c135/testc20998e1；无WRITE/Enable/Phase改动，复用d97/406295/13c/f201。
-           构造时即装只读粘性门，覆盖初始/最终17电机停止读回；非零/未知后新UART0。
-           固定请求0/200/400ms三组TE→PP→PV，原500ms完成门；PP仅56/2B unsigned与时间。
-           不用PP稳定或±50接近名义精度推定物理停止、噪声或固件零义通过。
-           时钟误拒、窗口内GO检查及未启动样本关联旧stdout已修，原中间状态/29过1败保留。
-           有效拒绝帧FRAME_VALID_REJECTED，坏帧/未启动UNKNOWN；STOP51未知不回填PASS。
-           本机与Orin同30方法最终通过，跨平台不累计60；默认0/缺GO2及静态完整PLAN通过。
-           主树fmt0，Orin实际latest nightlye9bbadf6→fmt→根Clippy0/零warn；597三窗068277d8同。
-           12Runner child/24流、4嵌套child/8流真回收，driver658962/@102/%102自然dead0后回收。
-           唯一82件原包203f895f/203476B已核；.verify/base_feedback_diagnostic_2026-10-12_r1/summary.json。
-           本轮UART/硬件动作/GO0；新现场/currentUSB/硬件PLAN未绑定，旧USB只作静态fixture。
-           R4真实0/0/+50、TE0后PV-50与NEEDS/STOP51未知保持；用户后续确认两个电源已切断。
-           机械臂和架空底盘支撑保持、R4看护已结束；切电实际时刻/独立遥测UNKNOWN。
-           后续回执独立追加，不回填原NEEDS；本确认不授权恢复供电或新GO，当前用户报告OFF。
-           七份只读启动/观察/收尾草稿已独审，本机语法与None首门通过，仍未绑定/上传/执行。
-           下一步新现场事实后核当前USB与17项非UART，再独立PLAN/GO；不自动重试或写Phase。
-           无新Rust测试/release/控制ELF/正式安装/服务启动；长期腕部/头部、三轮主动运动及旧±50 OPEN。
+本轮最新:  2026-10-13 右9断扭只读R1实际FAIL：初始left轮right7普通PV=-50，right9三组NOT_RUN。
+           right7此前Mode1/TE0/PP1175，PV被原非零门拒；GP/GV及right8/9未读，不推定轮转动。
+           本轮WRITE/Enable/动作0；seq130后新UART0，STOP51/完整身份后验UNKNOWN，NEEDS保留。
+           原helper只抓right8/9，故本轮right7 wire未观测；88read argv不能代替实际TX/RX证明。
+           driver663805/@103/%103自然dead1，148child/296流真回收；collector仅2child回收自dead pane。
+           硬件330原包3ed0ea4d/142598B、准备9原件及独审已永久归档，未跑独立17后验。
+           用户后续确认两个电源已切断、机械臂/架空底盘支撑保持；R1看护结束，无新GO。
+           .verify/base_feedback_diagnostic_2026-10-13_r1/summary.json；原FAIL不回填。
+           R2软件仅把既有普通PV抓帧扩至7/8/9，raw目标仍right9，原非零/GO/500ms/STOP门不变。
+           新helper70d777bd/maincf651bb2/test815ec499；原87e3/406冻结件未改，不重试硬件。
+           本机31曾实际通过，后整个target消失，原本机流/回执丢失，当前仅会话记录；不重造或重测。
+           Orin同31唯一批PASS原19件已只读取回并核，恢复包670fd4ae/46557B；旧0af7压缩字节LOST。
+           新收集owner1442/SSH1443真0/reap，旧93330/93331本机回执LOST不回填；未重测。
+           同时有本机跨Rust目录清理进程，删除者具体因果未独证；R1永久原件/597源码未受影响。
+           本轮主树fmt0、Orinlatest nightlye9bbadf6→fmt→根Clippy0/零warn，597三窗068277d8同。
+           质量54原包da0ba617/135030B已核；两次本机旧schema检查FAIL保留，未重跑原生质量批。
+           R2七未绑定启动/收尾草稿已在永久目录派生并检查，57refs仅新增helper/main；无现场/GO。
+           草稿已改用Orin实测candidate/fixtures辅助路径；修正前17原件6477647f保留。
+           正确辅助路径版七草稿已窄独审/root验收；下一步新现场/当前USB后仅一次只读，不自动重试。
+           无新Rust测试/release/控制ELF/正式安装/服务启动；腕部/头部长期参数与底盘主动运动OPEN。
            右H2完整PASS，D15 OPEN/DEFERRED、deployable=false；正式安装与服务未改。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +

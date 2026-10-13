@@ -1,0 +1,20 @@
+{
+  "status": "ORIGINALS_COLLECTED_HARDWARE_FAILURE_PRESERVED",
+  "archive_sha256": "3ed0ea4df2b4e5de7bd7ad83a4caa5cca7e53ee925ede03fbfbbaf109557b653",
+  "archive_bytes": 142598,
+  "archive_files": 330,
+  "original_run_sha256": "2a3e8f75953397465bdebfa1f5523fceabe72e296b6141e7694da41780d698c5",
+  "hardware_child_count": 148,
+  "all_hardware_children_reaped": true,
+  "collection_children": 2,
+  "collection_new_UART": 0,
+  "independent_post17": "NOT_RUN_MANUAL_BRANCH",
+  "original_result": "NEEDS_MANUAL_POWER_CUT",
+  "first_before_error": {
+    "motor": "right:7",
+    "register": "Present_Velocity",
+    "error": "ValueError('普通READ停止值非零:Present_Velocity')"
+  },
+  "manual_cut_confirmation": "PENDING",
+  "power_last_report": "ON_USER_REPORTED"
+}

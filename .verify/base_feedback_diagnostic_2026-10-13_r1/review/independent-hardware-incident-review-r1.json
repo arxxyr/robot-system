@@ -1,0 +1,156 @@
+{
+  "schema": "BASE_FEEDBACK_R1_INDEPENDENT_INCIDENT_REVIEW_V1",
+  "evidence_review_status": "PASS",
+  "现场验证": "FAIL；原结果NEEDS_MANUAL_POWER_CUT，right9三组NOT_RUN，不回填为PASS",
+  "scope": "仅本机离线原件审查；无SSH/UART/测试/构建/GO签发/原件修改",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-originals-base-feedback-r1.tar.gz",
+    "bytes": 142598,
+    "sha256": "3ed0ea4df2b4e5de7bd7ad83a4caa5cca7e53ee925ede03fbfbbaf109557b653",
+    "regular_files": 330,
+    "verified_exact_bytes_members": 330,
+    "exact_expanded_file_set": true
+  },
+  "run": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-originals/base-feedback-diagnostic-r1/run.json",
+    "bytes": 289581,
+    "sha256": "2a3e8f75953397465bdebfa1f5523fceabe72e296b6141e7694da41780d698c5"
+  },
+  "children": {
+    "count": 148,
+    "unique_pids": 148,
+    "all_recorded_real_wait_reaped": true,
+    "wait_evidence": "冻结d97 reap在self.child.wait(timeout=0.1)成功返回后才置exit_code/reaped=True；所有148 row无owner_errors、无signals/over_budget，commands.jsonl逐row等run.commands",
+    "exit_code_counts": {
+      "0": 128,
+      "1": 20
+    },
+    "signals_sent": 0,
+    "journal_exact_equal": true,
+    "stream_files_verified": 296,
+    "stream_total_bytes": 11051
+  },
+  "driver": {
+    "pid": 663805,
+    "tmux_terminal": "base-feedback-diagnostic-trial-20261012-r1|@103|%103|663805|1|1",
+    "natural_dead_status": 1,
+    "only_owned_dead_pane_reclaimed": true,
+    "collector_children": 2,
+    "collector_streams_verified": 4,
+    "driver_own_wait_receipt": "tmux父进程观测pane_dead=1/pane_dead_status=1；不冒充本机子进程wait"
+  },
+  "uart_boundary": {
+    "ordinary_read_argv_count": 88,
+    "raw_read_argv_count": 0,
+    "strace_argv_count": 0,
+    "write_argv_count": 0,
+    "last_uart_sequence": 130,
+    "last_uart_monotonic_started_ns": 3619136061942624,
+    "last_uart_monotonic_finished_ns": 3619136070134233,
+    "after_block_non_uart_commands": 18,
+    "after_block_uart_commands": 0,
+    "before_errors": 15,
+    "after_errors": 102,
+    "after_all_motors_empty": true
+  },
+  "right7_actual_before": {
+    "Operating_Mode": 1,
+    "Torque_Enable": 0,
+    "Present_Position": 1175,
+    "ordinary_Present_Velocity": -50,
+    "PV_not_committed_to_before": "ordinary READ stdout已取得，非零guard拒绝后未赋入before",
+    "Goal_Position": "NOT_READ_STICKY_BLOCK",
+    "Goal_Velocity": "NOT_READ_STICKY_BLOCK",
+    "files": {
+      "127": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-originals/base-feedback-diagnostic-r1/command_0127.stdout",
+        "bytes": 26,
+        "sha256": "f80fbe4718d4379df6d34dcd6671e7d53f4e198836501316154fbd7d6b9559bc",
+        "exact_stdout": "read Operating_Mode@7 = 1\n"
+      },
+      "128": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-originals/base-feedback-diagnostic-r1/command_0128.stdout",
+        "bytes": 25,
+        "sha256": "8e44e1840990b1bc6607282fbfb3ca859ae1c1b32c110b465885ff78116dbf15",
+        "exact_stdout": "read Torque_Enable@7 = 0\n"
+      },
+      "129": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-originals/base-feedback-diagnostic-r1/command_0129.stdout",
+        "bytes": 31,
+        "sha256": "627574e17fb54d297c0ef0659bbbb1cc8b9997d6e19e6aee21e1529e83be3e19",
+        "exact_stdout": "read Present_Position@7 = 1175\n"
+      },
+      "130": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-originals/base-feedback-diagnostic-r1/command_0130.stdout",
+        "bytes": 30,
+        "sha256": "bfa326d2b17cc2f72389d666d0898e9e97f51dc830e81edccfbd795c074766c4",
+        "exact_stdout": "read Present_Velocity@7 = -50\n"
+      }
+    }
+  },
+  "right9": {
+    "before": {},
+    "Torque_Enable": "NOT_READ_STICKY_BLOCK",
+    "Present_Position": "NOT_READ_STICKY_BLOCK",
+    "diagnostic_status": "NOT_RUN",
+    "preflight_count": 0,
+    "group_count": 0,
+    "firmware_contract_verified": false
+  },
+  "wire_boundary": {
+    "status": "NOT_CAPTURED",
+    "trace_files": [],
+    "TX_RX_original_frames": "UNKNOWN",
+    "raw_unsigned_right7_PV": "UNKNOWN",
+    "all_actual_TX_READ_claim": "NOT_VERIFIED；仅88条argv确为read，缺实际TX帧",
+    "explanation": "冻结helper仅捕right8/9普通PV；初始right7 PV先触发封锁，本次未到任何捕帧目标，不从普通-50补造0x8032或RX checksum"
+  },
+  "GO_timing": {
+    "issued_at_ns": 1791865882030925000,
+    "expires_at_ns": 1791866215000000000,
+    "right_fact_confirmed_at_ns": 1791865615000000000,
+    "original_field_ttl_ns": 600000000000,
+    "actual_GO_ttl_ns": 332969075000,
+    "consumed_at_ns": 1791865884292402080,
+    "spawn_epoch_started_ns": 1791865884140717403,
+    "dead_terminal_epoch_observed_by_ns": 1791865952793136066,
+    "dead_observation_margin_before_expiry_ns": 262206863934,
+    "bounded_run_inside_GO": true,
+    "method": "GO/spawn/dead观测使用epoch；UART日志使用monotonic。真实UART先于run终态，driver已dead的epoch观测仍在GO内，故以同次进程因果顺序给有效窗上界；不把monotonic与epoch直接相减，不声称每帧精确epoch已观测"
+  },
+  "frozen_sources": {
+    "candidate/base_feedback_diagnostic_r1.py": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-originals/candidate/base_feedback_diagnostic_r1.py",
+      "bytes": 18648,
+      "sha256": "87e3c135e4c78f5232a8ba8aa88c999051d0826b339ed4c5b31795c794fb7b9c"
+    },
+    "helpers/raw_right9_from_r14_r1.py": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-originals/helpers/raw_right9_from_r14_r1.py",
+      "bytes": 12216,
+      "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa"
+    },
+    "scripts/run_hardware_maintenance.py": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-originals/scripts/run_hardware_maintenance.py",
+      "bytes": 50168,
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41"
+    }
+  },
+  "root_report_comparison": {
+    "root_report": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/hardware-root-originals-review-r1.json",
+      "bytes": 766,
+      "sha256": "8d5ba5dd19b5242a9c660012aa7973976931a8141fb5c3414b29c1e407f53dd1"
+    },
+    "count_hash_result_agreement": true,
+    "added_boundary": "root紧凑报告未给wire RX；本独审明确NOT_CAPTURED，不与普通PV -50混为原unsigned帧"
+  },
+  "stop_and_manual": {
+    "stop51": "UNKNOWN",
+    "full_identity": "UNKNOWN",
+    "result": "NEEDS_MANUAL_POWER_CUT",
+    "manual_power_cut_required": true,
+    "manual_cut_confirmation": "PENDING_AS_PARENT_TASK_REPORTED",
+    "physical_motion": "UNKNOWN，不从PV/PP/TE推断运动、量化或物理停止"
+  },
+  "errors": []
+}

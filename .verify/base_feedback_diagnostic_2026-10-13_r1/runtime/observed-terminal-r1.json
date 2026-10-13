@@ -1,0 +1,1637 @@
+{
+  "status": "BASE_FEEDBACK_DIAGNOSTIC_R1_REAL_TERMINAL",
+  "pane_pid": 663805,
+  "pane_exit": 1,
+  "result_status": "NEEDS_MANUAL_POWER_CUT",
+  "result_sha256": "2a3e8f75953397465bdebfa1f5523fceabe72e296b6141e7694da41780d698c5",
+  "result_bytes": 289581,
+  "stop_verification": {
+    "status": "UNKNOWN",
+    "issues": [
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:1",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:1",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:1",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:2",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:2",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:2",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:3",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:3",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:3",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:4",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:4",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:4",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:5",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:5",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:5",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:6",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:6",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:6",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:7",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:7",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:7",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:8",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:8",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:8",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:1",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:1",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:1",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:2",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:2",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:2",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:3",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:3",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:3",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:4",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:4",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:4",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:5",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:5",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:5",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:6",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:6",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:6",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:7",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:7",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:7",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:8",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:8",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:8",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:9",
+        "register": "Torque_Enable",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:9",
+        "register": "Present_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:9",
+        "register": "Goal_Velocity",
+        "actual": null
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:1",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:1",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:1",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:2",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:2",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:2",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:3",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:3",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:3",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:4",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:4",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:4",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:5",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:5",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:5",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:6",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:6",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:6",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:7",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:7",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:7",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:8",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:8",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "left:8",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:1",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:1",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:1",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:2",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:2",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:2",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:3",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:3",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:3",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:4",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:4",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:4",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:5",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:5",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:5",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:6",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:6",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:6",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:7",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:7",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:7",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:8",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:8",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:8",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:9",
+          "register": "Torque_Enable",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:9",
+          "register": "Present_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_READ_FAILED",
+        "status": "UNKNOWN",
+        "read_error": {
+          "motor": "right:9",
+          "register": "Goal_Velocity",
+          "error": "ValueError('粘性封锁：禁止后续UART')"
+        }
+      },
+      {
+        "code": "STOP_CLEANUP_FAILED",
+        "status": "FAIL",
+        "cleanup_error": {
+          "error": "已发生未确认的安全收尾，粘性失败不被最终零值覆盖"
+        }
+      }
+    ],
+    "observed": {
+      "left:1": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "left:2": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "left:3": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "left:4": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "left:5": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "left:6": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "left:7": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "left:8": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "right:1": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "right:2": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "right:3": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "right:4": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "right:5": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "right:6": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "right:7": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "right:8": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      },
+      "right:9": {
+        "Torque_Enable": null,
+        "Present_Velocity": null,
+        "Goal_Velocity": null
+      }
+    },
+    "motors_expected": 17,
+    "registers": [
+      "Torque_Enable",
+      "Present_Velocity",
+      "Goal_Velocity"
+    ]
+  },
+  "position_verification": {
+    "status": "UNKNOWN",
+    "issues": [
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:1"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:2"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:3"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:4"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:5"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:6"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:7"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "left:8"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:1"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:2"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:3"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:4"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:5"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:6"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:7"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:8"
+      },
+      {
+        "code": "POSITION_REGISTER_UNKNOWN",
+        "status": "UNKNOWN",
+        "motor": "right:9"
+      }
+    ]
+  },
+  "identity_status": "UNKNOWN",
+  "probes": [],
+  "feedback_diag": {
+    "side": "right",
+    "motor": 9,
+    "name": "base_right_wheel",
+    "kind": "feedback_diag",
+    "status": "NOT_RUN",
+    "preflight": [],
+    "errors": [
+      "ValueError('普通READ停止值非零:Present_Velocity')",
+      "ValueError('原STOP51或完整身份后验未确认')"
+    ],
+    "uart_blocked": true,
+    "register_writes": 0,
+    "motion_commands": 0,
+    "firmware_contract_verified": false,
+    "observation": {
+      "status": "NOT_RUN",
+      "groups": [],
+      "budget_ns": 500000000
+    }
+  },
+  "error": "ValueError('初始17电机读取失败')",
+  "before_errors": [
+    {
+      "motor": "right:7",
+      "register": "Present_Velocity",
+      "error": "ValueError('普通READ停止值非零:Present_Velocity')"
+    },
+    {
+      "motor": "right:7",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:7",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    }
+  ],
+  "after_errors": [
+    {
+      "motor": "left:1",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:1",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:1",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:1",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:1",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:1",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:2",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:2",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:2",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:2",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:2",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:2",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:3",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:3",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:3",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:3",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:3",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:3",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:4",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:4",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:4",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:4",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:4",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:4",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:5",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:5",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:5",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:5",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:5",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:5",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:6",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:6",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:6",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:6",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:6",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:6",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:7",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:7",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:7",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:7",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:7",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:7",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:8",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:8",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:8",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:8",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:8",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "left:8",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:1",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:1",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:1",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:1",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:1",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:1",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:2",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:2",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:2",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:2",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:2",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:2",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:3",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:3",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:3",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:3",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:3",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:3",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:4",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:4",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:4",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:4",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:4",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:4",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:5",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:5",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:5",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:5",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:5",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:5",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:6",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:6",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:6",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:6",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:6",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:6",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:7",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:7",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:7",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:7",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:7",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:7",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:8",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Operating_Mode",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Torque_Enable",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Present_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Present_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Goal_Position",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    },
+    {
+      "motor": "right:9",
+      "register": "Goal_Velocity",
+      "error": "ValueError('粘性封锁：禁止后续UART')"
+    }
+  ],
+  "evidence_errors": [],
+  "manual_power_cut_required": true,
+  "child_count": 148,
+  "unreaped": [],
+  "child_active": false
+}

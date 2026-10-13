@@ -1,0 +1,17 @@
+{
+  "schema": "BASE_FEEDBACK_R1_MANUAL_POWER_CUT_FOLLOWUP_V1",
+  "recorded_at_ns": 1791866529349815000,
+  "recorded_at_utc": "2026-10-13T04:42:09.349816+00:00",
+  "question_id": "call_b960a0fd41d54426846c4fb0c6e20400",
+  "answer": "两个电机电源已切断，机械臂和底盘仍有稳定支撑",
+  "human_power_report": "OFF_USER_CONFIRMED",
+  "arms_and_airborne_base_support": "STABLE_USER_CONFIRMED",
+  "actual_cut_at_ns": "UNKNOWN",
+  "independent_electrical_telemetry": "UNKNOWN",
+  "watch": "R1_ENDED",
+  "original_run_status": "NEEDS_MANUAL_POWER_CUT_PRESERVED",
+  "original_STOP51": "UNKNOWN_PRESERVED",
+  "new_supply_restore_authorization": false,
+  "new_hardware_GO": false,
+  "UART_after_receipt": 0
+}

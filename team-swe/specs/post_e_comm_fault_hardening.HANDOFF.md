@@ -2,6 +2,24 @@
 
 ## 当前步骤
 
+### 右轮只读R1因左轮初始PV非零而停止，人工断电收尾已确认（2026-10-13）
+
+R2正确辅助路径草稿的[窄独审](../../.verify/base_feedback_diagnostic_2026-10-13_r2/independent-runtime-helper-fixtures-review-r2.json)及root验收已通过；软件ready，现场/当前USB/PLAN/GO仍未绑定。下一轮先核新现场及当前USB，仅读一次，原停止门通过后才采右轮三组，不启用电机、不改参数、不自动重试。
+
+本次用户重新确认恢复供电、三轮稳定架空、空载支撑及持续看护。root以04:26:55UTC首次观察直接回复时刻固定原600秒期限，随后新非UART17项/23child、当前USB、本轮56项引用和完整PLAN均通过；独审无硬问题。只签一个GO、启动一次driver663805/@103/%103，没有Enable、参数写入或动作。硬件wrapper仍87e3，原帧辅助仍406，原冻结工具及正式安装未改。
+
+初始停止读取在left wheel `right7` 普通Present_Velocity返回`read Present_Velocity@7 = -50\n`，seq130原stdout30B/SHA bfa326d2保留；此前Mode1/TE0/PP1175实际读到，PV被guard拒后未赋入before，GP/GV未读。right8/right9及右9七项preflight、三组TE→PP→PV均NOT_RUN。148个child及296原流真实回收，最后88项UART均为普通read argv，seq131–148仅18项非UART，粘性停止后新UART0。原辅助只对right8/9普通PV抓strace，本轮没有任何完整TX/RX原帧；不以argv、TE0或进程退出证明物理停止、反馈量化或−50来源。
+
+原run2a3e8f75/289581B为NEEDS_MANUAL_POWER_CUT，STOP51和完整身份后验UNKNOWN；collector仅两child核已退出pane并回收自pane，未做独立17后验或新UART。330原包3ed0ea4d/142598B、9项运行准备原包、现场/GO/实际脚本和六组SSH原件已归档。[R1永久摘要](../../.verify/base_feedback_diagnostic_2026-10-13_r1/summary.json)与[独审](../../.verify/base_feedback_diagnostic_2026-10-13_r1/review/independent-hardware-incident-review-r1.json)分别记录现场失败与证据审查通过。
+
+用户随后直接确认两个电源已切断、机械臂和底盘支撑保持；root04:42:09UTC追加[收尾回执](../../.verify/base_feedback_diagnostic_2026-10-13_r1/followups/manual-power-cut-confirmation-r1.json)，结束R1看护。实际断电时刻/独立电气遥测UNKNOWN，不回填原NEEDS/FAIL，不授权下一轮恢复供电或GO。当前仅继续R2最小软件准备。
+
+本轮提交质量门另一个唯一纯软件批更新latest nightly仍e9bbadf6，实际fmt→根Clippy0/零警告，597源三窗及主树同068277d8；11child/22原流与54原包da0ba617/135030B已核。原本机agent检查器缺旧wait_returncode字段和root误把旧stdout路径当引用字典的FAIL均保留；只适配读取同原件，未重跑原生质量批。本机实际fmt0、无新Rust测试或release，不将质量门当硬件停止证明。
+
+R2仅将同一次普通PV读取的strace匹配由8/9扩到7/8/9并同步旧辅助元数据；main仅新RUN_ID和helper指纹，raw目标仍仅right9，不改任何非零/未知粘性门、GO前后时效、500ms/0-200-400ms或STOP51。helper70d777bd/12220B、maincf651bb2/18648B、test815ec499/37227B，旧87e3/406字节不变。原本机31方法实际通过并已报告，后整个target目录消失，原本机流、回执及原R2独审文件丢失；当前不能从这些原件独核，也不重造或重测。原生同31唯一批已从Orin仅取回现存19原件并核验：child664208原0/reap，driver664204/@105/%105原自然dead0后回收，五输入及七上传件前后同字节；没有重测。原0af7/46557B压缩字节未在Orin持久化且随本机target丢失，新恢复包670fd4ae/46557B另名保全现存原件，不能冒充旧包。新collect owner1442/SSH1443真实0/reap，不回填旧93330/93331本机原回执。首份七runtime草稿在验证前随target消失；永久新份逐SHA同，并单独做语法/None首门，不能声称首份已验证。
+
+本机同时存在带shutil.rmtree及跨Rust目录清理计划标记的进程，具体删除者因果未独证；R1永久原包、Git和597源码不变，未干预其他任务。后续临时工作使用永久证据目录，R2新binding须在旧55refs后追加helper→main至57，新现场事实和当前USB才能新PLAN/GO。root发现Orin实际helper只有`candidate/fixtures/raw_right9_from_r14_r2.py`，已令七草稿同步修正helper绝对路径及内嵌launcher，未额外复制或修改远端源；路径修正前17原件6477647f/29662B及旧独审保留，局部验证器的历史误断言/未持久化PID批次UNKNOWN照实记录，不回填。[目录消失记录](../../.verify/base_feedback_diagnostic_2026-10-13_r1/review/local-target-disappearance-r1.json)、[恢复回执](../../.verify/base_feedback_diagnostic_2026-10-13_r2/native-python/recovery-collection-receipt-r2.json)及[R2摘要](../../.verify/base_feedback_diagnostic_2026-10-13_r2/summary.json)如实保留边界。机械臂、头部长期参数及三轮主动运动未闭环，右H2既有完整PASS、D15 OPEN/DEFERRED、deployable=false保持；以下原历史不改。
+
 ### R4人工断电收尾已确认，下一轮只读尚无新现场事实
 
 用户直接确认“两个电机电源已切断，机械臂和底盘仍有稳定支撑”；root独立追加[R4后续回执](../../.verify/base_zero_diagnostic_2026-10-12_r4/followups/manual-power-cut-confirmation-r4.json)，结束R4看护。当前仅用户报告OFF，实际切电时刻及独立电气遥测UNKNOWN；原NEEDS_MANUAL_POWER_CUT、STOP51/身份UNKNOWN和真实±50 FAIL不回填。旧PENDING仍保留在运行、原生软件原件及[答复前软件摘要](../../.verify/base_feedback_diagnostic_2026-10-12_r1/summary.software-stage-before-followup.json)，当前摘要另指后续回执。

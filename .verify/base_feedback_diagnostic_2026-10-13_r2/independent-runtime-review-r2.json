@@ -1,0 +1,125 @@
+{
+  "schema": "BASE_FEEDBACK_R2_INDEPENDENT_RUNTIME_REVIEW_V1",
+  "status": "PASS_LOCAL_READONLY_DRAFT_REVIEW",
+  "scope": "只读现存永久7草稿/7diff/已有验证；未执行草稿、31测试、SSH、Cargo或GO，未修改输入原件",
+  "generation_receipt": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/runtime-draft-generation-receipt-r2.json",
+    "sha256": "73226f221ed04f851c7c07a076e60ee11364879808bfaadd947ebb8317cb72f5",
+    "bytes": 9914
+  },
+  "verification_receipt": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/runtime-draft-verification-r2.json",
+    "sha256": "d469710afe250fc416db2d663efb47c2c0d7727bfbd120fbe1531e949f10f0f5",
+    "bytes": 10345
+  },
+  "integrity": {
+    "drafts": {
+      "launch_base_feedback_diagnostic_r2.draft.sh": {
+        "sha256": "a1b8222d3da2486b6226e2a1c13d6163161754d45b836b65e8d58e06972a68b7",
+        "bytes": 2199
+      },
+      "start_base_feedback_diagnostic_once_r2.draft.sh": {
+        "sha256": "b3d397f93ea80b0ac0a12d9658bdb0106e53a4bfb5acf1a2ce7cfd717dec088b",
+        "bytes": 12105
+      },
+      "observe_base_feedback_diagnostic_once_r2.draft.sh": {
+        "sha256": "f2d601a1fe9c732ef721b92e744eb17411c268384f01fdc0599ac2c983f43b35",
+        "bytes": 3777
+      },
+      "seal_base_feedback_diagnostic_r2.draft.sh": {
+        "sha256": "47f01f018a5fc27fab95839b9c969b5bdaa95e0750083f3929a1860d2f79f233",
+        "bytes": 13462
+      },
+      "readonly_nonuart17_usb_refresh_r2.draft.sh": {
+        "sha256": "0288637fea12faa65ce24edbdb21ed05d37efd7a39ccf7e483fff93e6cd979bd",
+        "bytes": 2430
+      },
+      "prepare_base_feedback_diagnostic_r2.draft.py": {
+        "sha256": "ca03d88a91a405d4aa709cf4018f9f7945e712727f39292e575ad673d852d9b1",
+        "bytes": 12803
+      },
+      "minimal_runtime_prepare_base_feedback_r2.draft.sh": {
+        "sha256": "a0312406ee0e616ce5c986280b50abf6ddf2b39802263b87109b60929298fa22",
+        "bytes": 13051
+      }
+    },
+    "all_21_draft_baseline_diff_refs_SHA_bytes_verified": true,
+    "seven_diffs_exact_existing_baseline_to_new": true,
+    "seven_new_hashes_match_first_tool_records": true,
+    "first_files_or_receipt_recovered": false
+  },
+  "runtime_contract": {
+    "root": "/home/loosqk/robot-checks/base-feedback-diagnostic-r2",
+    "session": "base-feedback-diagnostic-trial-20261013-r2",
+    "candidate": {
+      "path": "/home/loosqk/robot-checks/base-feedback-r2-software-20261013/candidate/base_feedback_diagnostic_r2.py",
+      "sha256": "cf651bb200d0ea56228282dd51b311bb090650945b631f51e8d7ff2f1e431b78",
+      "bytes": 18648
+    },
+    "helper": {
+      "path": "/home/loosqk/robot-checks/base-feedback-r2-software-20261013/candidate/raw_right9_from_r14_r2.py",
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    "refs": "prepare109保持旧347a65/30051原55；154-158核新helper70/12220及maincf651/18648，依次追加至57，前55逐字不变",
+    "USB": "prepare132-150只允许device_inode/link_inode/usec_initialized；其他身份/host/protection保持原门",
+    "GO_STOP_window": "starter41 c.install(m,h,go)，42/63-71保600秒原现场/GO门；prepare187-188保0/200/400ms、500ms、TE→PP→PV及空WRITE；seal40及56-64保STOP51/整数PV0，三轮DEFERRED、firmwarefalse不变",
+    "launcher_quote": "starter75-81先shlex拆-c正文、各唯一None填repr，再对完整正文shlex.quote；既有验证记录7pin内存往返与嵌入launcher字节一致；stdinPTY/-p规则保持",
+    "exclusive_paths": "R2独占root/session/output/launch/GO/field与新None pins；starter拒已有输出/GO.consumed、独占写launch，不能复用R1 GO",
+    "manual_collection": "seal79及90-96在manual跳过新增后验；只保原NEEDS与原件，未新增UART/WRITE/GO；不把证据封包作为停止PASS",
+    "owned_pane": "seal25/71/87先核本轮session/window/pane/PID、启动回执、dead=1及真实exit；88仅kill已确认自有dead pane；observer33-56只读终态/run"
+  },
+  "existing_local_verification": {
+    "provenance": "已有verification回执字段/argv与当前草稿静态门吻合，本独审没有重新执行或向OS重wait历史child",
+    "python_AST_bodies": 7,
+    "None_body_rejections": 6,
+    "None_target_file_IO": 0,
+    "None_body_children": 0,
+    "syntax_bash_children": 6,
+    "observer_None_bash_child": 1,
+    "direct_shell_children": 7,
+    "child_pids": [
+      95300,
+      95301,
+      95302,
+      95303,
+      95304,
+      95305,
+      95306
+    ],
+    "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2
+    ],
+    "all_recorded_real_wait_reaped": true,
+    "signals_sent": 0,
+    "inline_stdout_stderr_all_empty": true
+  },
+  "loss_boundary": {
+    "permanent_boundary_record": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/review/local-evidence-loss-boundary-r2.json",
+      "sha256": "cba4afee77311d89e4283b70d7635123a4f7d095fe53d83c985ee9cb095e01e8",
+      "bytes": 1861
+    },
+    "first_target_runtime": "7原文件及ee081ea2/8128B生成回执LOST；首份验证NOT_RUN。新永久7件重新派生SHA相同，仅新份有本机验证，绝不回填首份",
+    "prior_Mac31": "SESSION_REPORTED_31_PASS/child90863/wait0；receipt/stdout/stderr完整原字节LOST，目前无法独立原流复核；未重测或重造回执",
+    "prior_R2_minimal_review": "5279ea47/4981B原文件LOST（prepare agent独审），不与本次新报告混算",
+    "prior_R1_incident_review": {
+      "status": "PRESERVED_ORIGINAL_BYTES_BY_ROOT_BEFORE_TARGET_LOSS",
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r1/review/independent-hardware-incident-review-r1.json",
+      "sha256": "b2c18a8fcfad7a535a5dfa1b0b2f6ae3434b7a4dbe63a2e5b0d6f0148d3a6181",
+      "bytes": 7264
+    },
+    "R1_watch": "已收到OFF/支撑稳定确认并结束R1看护；不构成R2 ON或GO，独立电气遥测仍未在此审查验证"
+  },
+  "limits": [
+    "PASS仅静态草稿与已有本机None/语法证据审查，不证明R2现场/当前USB/Orin入口或任何新硬件执行",
+    "原R1 NEEDS_MANUAL_POWER_CUT/right9 NOT_RUN及wire缺失不由此PASS覆盖；历史原因不推断"
+  ],
+  "errors": []
+}

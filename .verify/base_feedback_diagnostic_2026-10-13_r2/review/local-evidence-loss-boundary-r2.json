@@ -1,0 +1,43 @@
+{
+  "schema": "BASE_FEEDBACK_R2_LOCAL_EVIDENCE_LOSS_BOUNDARY_V1",
+  "recorded_at_utc": "2026-10-13T04:52:30.821131+00:00",
+  "scope": "只记录已有会话事实与当前缺失，不伪造旧回执/原流，不重跑验证",
+  "prior_Mac_test_session_report": {
+    "methods": 31,
+    "child_pid": 90863,
+    "reported_exit": 0,
+    "reported_true_wait_reap": true,
+    "stdout_expected_sha256": "aa7b9d72b906759c02761df7769e42b3a78eed6b03d7035f949051f6504f046d",
+    "stdout_expected_bytes": 190,
+    "stderr_expected_sha256": "f74edb08babd4c332fbcaafc438bbe25e21540769e0912f536bdf18c43801d59",
+    "stderr_expected_bytes": 4734,
+    "raw_receipt_and_streams": "LOST_WITH_TARGET_NOT_CURRENTLY_INDEPENDENTLY_VERIFIABLE",
+    "source": "删除前实际工具回执与子agent报告；此文件是后写边界记录"
+  },
+  "prior_minimal_review_file": {
+    "reported_sha256": "5279ea4729e3cc084b534ed2850b5d240d91c1d92d3912bada5ec3275d7037ae",
+    "reported_bytes": 4981,
+    "raw_file": "LOST_WITH_TARGET"
+  },
+  "prior_native_session": {
+    "test_child_pid": 664208,
+    "driver_pid": 664204,
+    "pane": "%105",
+    "window": "@105",
+    "reported_methods": 31,
+    "old_local_owner_pid": 93330,
+    "old_SSH_pid": 93331,
+    "original_local_owner_receipts_and_log": "LOST_WITH_TARGET",
+    "old_local_native_archive_expected_sha256": "0af7e60fafd5b5a806e67de036876b8fefa61d1abc4682ad359af5a0787df0bc",
+    "old_local_native_archive_expected_bytes": 46557,
+    "old_local_native_archive_expected_files": 19,
+    "recovery_status": "EXISTING_19_FILES_RECOVERED_NATIVE31_INDEPENDENTLY_VERIFIED_NO_RETEST",
+    "old_local_native_archive_status": "LOST_COMPRESSED_BYTES"
+  },
+  "unvalidated_first_runtime_drafts": "原7草稿/生成回执丢失，局部验证未执行；新永久份逐SHA同并独立验证，不回填首份",
+  "current_power": "OFF_USER_CONFIRMED",
+  "current_watch": "R1_ENDED_NO_NEW_GO",
+  "new_UART": 0,
+  "new_GO": false,
+  "recovery_receipt": "../native-python/recovery-collection-receipt-r2.json"
+}

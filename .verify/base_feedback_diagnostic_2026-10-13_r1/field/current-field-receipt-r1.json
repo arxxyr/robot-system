@@ -1,0 +1,11 @@
+{
+  "field_path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/field_confirmation_base_feedback_r1.json",
+  "field_stamp": 1791865615000000000,
+  "field_expected": [
+    "5d6f7e68c7555d7eb620728765e2af7f9ced248825d081e9f29e2937d845a9c4",
+    1657
+  ],
+  "actual_recipe": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/readonly_nonuart17_usb_refresh_r1.actual.sh",
+  "UART_operations": 0,
+  "scope": "仅右9/base_right_wheel在TE0/GV0下500ms内0/200/400ms三组TE0→PP56→PV58只读原帧及原STOP51；无WRITE/Enable，三轮已离地且底盘稳定支撑"
+}

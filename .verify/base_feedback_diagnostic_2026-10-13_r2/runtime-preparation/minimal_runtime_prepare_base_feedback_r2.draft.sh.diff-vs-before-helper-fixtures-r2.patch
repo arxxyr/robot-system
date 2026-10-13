@@ -1,0 +1,11 @@
+--- /Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation-before-fixtures-r2/minimal_runtime_prepare_base_feedback_r2.draft.sh
++++ /Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/minimal_runtime_prepare_base_feedback_r2.draft.sh
+@@ -36,7 +36,7 @@
+ PHASE = BASE
+ PYTHON = '/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3'
+ CANDIDATE = Path('/home/loosqk/robot-checks/base-feedback-r2-software-20261013/candidate/base_feedback_diagnostic_r2.py')
+-HELPER = Path('/home/loosqk/robot-checks/base-feedback-r2-software-20261013/candidate/raw_right9_from_r14_r2.py')
++HELPER = Path('/home/loosqk/robot-checks/base-feedback-r2-software-20261013/candidate/fixtures/raw_right9_from_r14_r2.py')
+ OLD_BINDING = LEGACY / 'base-zero-diagnostic-r1/maintenance_bindings_base_zero_diagnostic_r4.json'
+ BINDING = PHASE / 'maintenance_bindings_base_feedback_diagnostic_r2.json'
+ MAINTENANCE = LEGACY / 'software-facts-r1/scripts/run_hardware_maintenance.py'
