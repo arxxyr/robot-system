@@ -1,0 +1,261 @@
+{
+  "status": "PASS_LOCAL_RUNTIME_DRAFT_SYNTAX_AND_NONE_GATES",
+  "python_body_checks": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/launch_base_feedback_diagnostic_r1.draft.sh",
+      "AST": "PASS",
+      "unbound_first_gate": "REJECTED_BEFORE_FILE_OR_CHILD",
+      "reason": "爸爸，只读反馈launcher未绑定本轮现场/GO/软件准备，零I/O拒绝。",
+      "guard_child_calls": 0,
+      "guard_target_file_calls": 0,
+      "None_fields": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED",
+        "GO_EXPECTED",
+        "BINDING_EXPECTED",
+        "PLAN_EXPECTED",
+        "PLAN_CANONICAL_SHA",
+        "NATIVE_PREPARATION_EXPECTED"
+      ]
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh",
+      "AST": "PASS",
+      "unbound_first_gate": "REJECTED_BEFORE_FILE_OR_CHILD",
+      "reason": "爸爸，BASE_FEEDBACK_R1启动草稿未获root本次新GO，零启动。",
+      "guard_child_calls": 0,
+      "guard_target_file_calls": 0,
+      "None_fields": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED",
+        "GO_EXPECTED",
+        "BINDING_EXPECTED",
+        "PLAN_EXPECTED",
+        "NATIVE_PREPARATION_EXPECTED",
+        "PLAN_CANONICAL_SHA"
+      ]
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/seal_base_feedback_diagnostic_r1.draft.sh",
+      "AST": "PASS",
+      "unbound_first_gate": "REJECTED_BEFORE_FILE_OR_CHILD",
+      "reason": "爸爸，BASE_FEEDBACK_R1收集草稿未绑定本轮run原件，零I/O拒绝。",
+      "guard_child_calls": 0,
+      "guard_target_file_calls": 0,
+      "None_fields": [
+        "APPROVED_RUN_SHA256",
+        "APPROVED_RUN_BYTES",
+        "APPROVED_SESSION",
+        "APPROVED_WINDOW",
+        "APPROVED_PANE",
+        "APPROVED_DRIVER_PID",
+        "APPROVED_PANE_EXIT",
+        "APPROVED_HARDWARE_CHILD_COUNT",
+        "FIELD_EXPECTED",
+        "GO_EXPECTED",
+        "BINDING_EXPECTED",
+        "PLAN_EXPECTED",
+        "PLAN_CANONICAL_SHA",
+        "NATIVE_PREPARATION_EXPECTED",
+        "fresh",
+        "snapshot"
+      ]
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/readonly_nonuart17_usb_refresh_r1.draft.sh",
+      "AST": "PASS",
+      "unbound_first_gate": "REJECTED_BEFORE_FILE_OR_CHILD",
+      "reason": "爸爸，本轮恢复供电和新现场确认未绑定，零child/文件I/O。",
+      "guard_child_calls": 0,
+      "guard_target_file_calls": 0,
+      "None_fields": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED"
+      ]
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/prepare_base_feedback_diagnostic_r1.draft.py",
+      "AST": "PASS",
+      "unbound_first_gate": "REJECTED_BEFORE_FILE_OR_CHILD",
+      "reason": "爸爸，本轮恢复供电及新现场确认未固定，零I/O和child。",
+      "guard_child_calls": 0,
+      "guard_target_file_calls": 0,
+      "None_fields": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED",
+        "NONUART_STDOUT_PATH",
+        "NONUART_STDOUT_EXPECTED",
+        "NONUART_RECEIPT_PATH",
+        "NONUART_RECEIPT_EXPECTED"
+      ]
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/minimal_runtime_prepare_base_feedback_r1.draft.sh",
+      "AST": "PASS",
+      "unbound_first_gate": "REJECTED_BEFORE_FILE_OR_CHILD",
+      "reason": "爸爸，本轮恢复供电及新现场确认未固定，零I/O和child。",
+      "guard_child_calls": 0,
+      "guard_target_file_calls": 0,
+      "None_fields": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED",
+        "NONUART_STDOUT_PATH",
+        "NONUART_STDOUT_EXPECTED",
+        "NONUART_RECEIPT_PATH",
+        "NONUART_RECEIPT_EXPECTED"
+      ]
+    }
+  ],
+  "bash_syntax_children": 6,
+  "observer_None_exit": 2,
+  "local_direct_children": [
+    {
+      "name": "launch_base_feedback_diagnostic_r1.draft.sh-syntax",
+      "pid": 76802,
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/launch_base_feedback_diagnostic_r1.draft.sh"
+      ],
+      "started_ns": 1791861656857090000,
+      "finished_ns": 1791861656862208000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "start_base_feedback_diagnostic_once_r1.draft.sh-syntax",
+      "pid": 76803,
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh"
+      ],
+      "started_ns": 1791861656863849000,
+      "finished_ns": 1791861656868502000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "observe_base_feedback_diagnostic_once_r1.draft.sh-syntax",
+      "pid": 76804,
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/observe_base_feedback_diagnostic_once_r1.draft.sh"
+      ],
+      "started_ns": 1791861656868611000,
+      "finished_ns": 1791861656873001000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "seal_base_feedback_diagnostic_r1.draft.sh-syntax",
+      "pid": 76805,
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/seal_base_feedback_diagnostic_r1.draft.sh"
+      ],
+      "started_ns": 1791861656876676000,
+      "finished_ns": 1791861656881258000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "readonly_nonuart17_usb_refresh_r1.draft.sh-syntax",
+      "pid": 76806,
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/readonly_nonuart17_usb_refresh_r1.draft.sh"
+      ],
+      "started_ns": 1791861656882241000,
+      "finished_ns": 1791861656886579000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "minimal_runtime_prepare_base_feedback_r1.draft.sh-syntax",
+      "pid": 76807,
+      "argv": [
+        "bash",
+        "-n",
+        "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/minimal_runtime_prepare_base_feedback_r1.draft.sh"
+      ],
+      "started_ns": 1791861656890731000,
+      "finished_ns": 1791861656895392000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "observer-none-first-gate",
+      "pid": 76808,
+      "argv": [
+        "bash",
+        "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/observe_base_feedback_diagnostic_once_r1.draft.sh"
+      ],
+      "started_ns": 1791861656895409000,
+      "finished_ns": 1791861656899888000,
+      "exit_code": 2,
+      "wait_returncode": 2,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "embedded_launcher_byte_equal": true,
+  "launcher_argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "/home/loosqk/robot-checks/base-feedback-r1-software/candidate/base_feedback_diagnostic_r1.py",
+    "--raw-helper",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/helpers/raw_right9_from_r14_r1.py",
+    "--maintenance",
+    "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/base-feedback-diagnostic-r1/maintenance_bindings_base_feedback_diagnostic_r1.json",
+    "--output",
+    "/home/loosqk/robot-checks/base-feedback-diagnostic-r1/base-feedback-diagnostic-r1",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/base-feedback-diagnostic-r1",
+    "--execute",
+    "--approval",
+    "/home/loosqk/robot-checks/base-feedback-diagnostic-r1/base-feedback-diagnostic-r1.go.json"
+  ],
+  "SSH_executions": 0,
+  "UART_operations": 0,
+  "field_created": false,
+  "GO_created": false,
+  "quality_batches": 0,
+  "candidate_changed": false,
+  "native_evidence_changed": false,
+  "limitations": [
+    "本机语法与None首门不证明Orin当前USB、供电、看护或新GO",
+    "新非UART入口只在root绑定恢复供电后的新现场回执才允许",
+    "只读诊断PASS不等于主动零速、物理停止或底盘三轮通过"
+  ]
+}

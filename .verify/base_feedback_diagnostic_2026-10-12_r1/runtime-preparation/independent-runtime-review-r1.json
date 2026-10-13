@@ -1,0 +1,202 @@
+{
+  "schema": "BASE_FEEDBACK_R1_INDEPENDENT_RUNTIME_DRAFT_REVIEW_V1",
+  "status": "PASS_LOCAL_DRAFT_REVIEW_ONLY_UNBOUND_NOT_EXECUTED",
+  "reviewed_at_utc": "2026-10-13T03:25:15.488609+00:00",
+  "scope": "本机只读7草稿/逐diff及现有检查回执；本次仅新增此报告，不运行草稿/SSH/UART/GO/修改候选或新增测试矩阵",
+  "candidate": {
+    "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/base_feedback_diagnostic_r1.py",
+    "sha256": "87e3c135e4c78f5232a8ba8aa88c999051d0826b339ed4c5b31795c794fb7b9c",
+    "bytes": 18648
+  },
+  "drafts": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/launch_base_feedback_diagnostic_r1.draft.sh",
+      "sha256": "c5d007e6bd9b4a255f5bbb7393da208c7de4568544e346e7ac20a4915acb62ad",
+      "bytes": 2205
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh",
+      "sha256": "74b99784a6a537c46b16f105aa6e60212c8931bf20dc353ddcf8dfe5df625fc7",
+      "bytes": 12119
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/observe_base_feedback_diagnostic_once_r1.draft.sh",
+      "sha256": "2e62b9d2db838438fe902f4f407a18e535c57d709bc91c49847e21873a4896d2",
+      "bytes": 3777
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/seal_base_feedback_diagnostic_r1.draft.sh",
+      "sha256": "25a73f84430dfddbfc79be76c3c97d1b9edc108260d169f864a589befbbd80a7",
+      "bytes": 13468
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/readonly_nonuart17_usb_refresh_r1.draft.sh",
+      "sha256": "68360bbe5e9b641c6895e415a61cf642ffcf6c1f093b0c3609f2b9d9ed6b622c",
+      "bytes": 2430
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/prepare_base_feedback_diagnostic_r1.draft.py",
+      "sha256": "7655978b849668a33738c4617d8df29040aedf0a7d7d4f5293a21e3ec7334c43",
+      "bytes": 12418
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/minimal_runtime_prepare_base_feedback_r1.draft.sh",
+      "sha256": "8c765bbebbe849344d6fb76494da52ff2a524fda8902c26fb6aa5f33087ef970",
+      "bytes": 12666
+    }
+  ],
+  "patches": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/launch_base_feedback_diagnostic_r1.draft.sh.diff-vs-r4.patch",
+      "sha256": "3474df9e6625cab7ea2ec3d301bd588ae5ea0f0a2e7552056aaff81dece623e5",
+      "bytes": 4228
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh.diff-vs-r4.patch",
+      "sha256": "89b086c550c4439bf78586deb3a78fb2570e6657a7159453bcb5a197a96e5b7b",
+      "bytes": 16193
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/observe_base_feedback_diagnostic_once_r1.draft.sh.diff-vs-r4.patch",
+      "sha256": "a08867288bdd8e2a71a31195f95c928d21ccc28c01507ab862de90226260b418",
+      "bytes": 3987
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/seal_base_feedback_diagnostic_r1.draft.sh.diff-vs-r4.patch",
+      "sha256": "ade404af468f750ec3bbdb6be47c70cec03e861246317b6284e091bc0d5715f6",
+      "bytes": 19062
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/readonly_nonuart17_usb_refresh_r1.draft.sh.diff-vs-r4.patch",
+      "sha256": "88e61dcb52f75164c9f1e38c553b87a8cda31759a89aa113268cc3627c04679c",
+      "bytes": 3506
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/prepare_base_feedback_diagnostic_r1.draft.py.diff-vs-r4.patch",
+      "sha256": "5943a5fd8f6a9b6cb1feeb734fb8583de6e7cd25b86614b61cdde79a3f80a583",
+      "bytes": 12601
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/minimal_runtime_prepare_base_feedback_r1.draft.sh.diff-vs-r4.patch",
+      "sha256": "ec3f88b9844da0e4973f8551b9ff073210cb380ecc3c4c52c827a748e388223e",
+      "bytes": 12946
+    }
+  ],
+  "recorded_evidence": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/runtime-draft-generation-receipt.json",
+      "sha256": "a8859937e9aa3d9971fae5ed061aaa14dfdeedbbe9592aa9f3feb33ce609f224",
+      "bytes": 4723
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/runtime-draft-verification.json",
+      "sha256": "2e19baa064c299b2cdd8e743519fe4c7c78118c0777647a6358ee398d19236ed",
+      "bytes": 9317
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/runtime-body-review-r1.json",
+      "sha256": "43b24d81b91d20803f23bb2fd1b1454bc290de3ce8a0380505e305296ef11345",
+      "bytes": 2917
+    }
+  ],
+  "independent_static_checks": {
+    "all_seven_current_hash_bytes_equal_generation_and_body_review": true,
+    "all_seven_diff_exact_against_frozen_r4_baseline": true,
+    "all_seven_python_bodies_AST": "PASS",
+    "prepare_python_equals_shell_embedded_body": true,
+    "starter_embedded_launcher_byte_equal": true,
+    "repr_bind_seven_memory_pins_then_shlex_quote_roundtrip": "PASS_NO_EXECUTION",
+    "stdin_fd0_untouched_and_launcher_python_c": true,
+    "None_pin_names": {
+      "launch_base_feedback_diagnostic_r1.draft.sh": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED",
+        "GO_EXPECTED",
+        "BINDING_EXPECTED",
+        "PLAN_EXPECTED",
+        "PLAN_CANONICAL_SHA",
+        "NATIVE_PREPARATION_EXPECTED"
+      ],
+      "start_base_feedback_diagnostic_once_r1.draft.sh": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED",
+        "GO_EXPECTED",
+        "BINDING_EXPECTED",
+        "PLAN_EXPECTED",
+        "NATIVE_PREPARATION_EXPECTED",
+        "PLAN_CANONICAL_SHA"
+      ],
+      "observe_base_feedback_diagnostic_once_r1.draft.sh": [],
+      "seal_base_feedback_diagnostic_r1.draft.sh": [
+        "APPROVED_RUN_SHA256",
+        "APPROVED_RUN_BYTES",
+        "APPROVED_SESSION",
+        "APPROVED_WINDOW",
+        "APPROVED_PANE",
+        "APPROVED_DRIVER_PID",
+        "APPROVED_PANE_EXIT",
+        "APPROVED_HARDWARE_CHILD_COUNT",
+        "FIELD_EXPECTED",
+        "GO_EXPECTED",
+        "BINDING_EXPECTED",
+        "PLAN_EXPECTED",
+        "PLAN_CANONICAL_SHA",
+        "NATIVE_PREPARATION_EXPECTED",
+        "fresh",
+        "snapshot"
+      ],
+      "readonly_nonuart17_usb_refresh_r1.draft.sh": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED"
+      ],
+      "prepare_base_feedback_diagnostic_r1.draft.py": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED",
+        "NONUART_STDOUT_PATH",
+        "NONUART_STDOUT_EXPECTED",
+        "NONUART_RECEIPT_PATH",
+        "NONUART_RECEIPT_EXPECTED"
+      ],
+      "minimal_runtime_prepare_base_feedback_r1.draft.sh": [
+        "FIELD_STAMP",
+        "FIELD_EXPECTED",
+        "NONUART_STDOUT_PATH",
+        "NONUART_STDOUT_EXPECTED",
+        "NONUART_RECEIPT_PATH",
+        "NONUART_RECEIPT_EXPECTED"
+      ]
+    },
+    "observer_pane_identity": "None"
+  },
+  "existing_actual_check_receipts_review": {
+    "python_unbound_first_gate_checks": 6,
+    "target_file_and_child_calls": 0,
+    "bash_syntax_children": 6,
+    "bash_syntax_exit_wait_reaped": true,
+    "observer_None_child_exit": 2,
+    "observer_None_true_reaped": true,
+    "execution_provenance": "仅核已保存的7个本机自有child回执，本独审未重复执行"
+  },
+  "contract_conclusions": [
+    "新独占root=/home/loosqk/robot-checks/base-feedback-diagnostic-r1；新binding/output/launch/GO/field/PLAN/prep/session/封包名称均独立于R4，复用冻结candidate87e3及d97/406295/13c/f201。",
+    "恢复供电后的新field_stamp/field_expected均None；nonUART首门先拒绝，供电/架空事实只能由root后续绑定，原600秒时效不续。非UART父child真communicate+wait；prepare要求本轮17PASS/23reaped、同boot/保护/正式状态及供电后receipt时钟。",
+    "以冻结347a65/30051、55refs为基线；仅两端device_inode/link_inode/usec_initialized可变。serial/devpath/vendor/product/driver、tty/rdev/权限和其他binding字段保持；追加candidate唯一ownref至56，首尾USB stat及全部保护refs复核。",
+    "prepare只产生无execute的单PLAN child及独占原件，真wait/reap后严格核新feedback三组0/200/400ms、500ms、TE→PP→PV、write_sequence空与三轮DEFERRED；不创建现场文件/GO/硬件output。",
+    "starter七pin先拒绝，核准备与完整PLAN/GO后读入当次go并c.install(m,h,go)；非UART准备消耗时效后再次检GO与USB，唯一tmux。launcher保留-c stdinPTY、-p remain-on-exit，starter先repr填Python正文再整体shlex.quote。",
+    "observer仅实际pane/PID绑定后观察同一终态，输出feedback_diag包含groups；不会启动候选或覆盖原错误。",
+    "seal normal分支要求三组TE0/PPunsigned/PV0且STOP51/身份通过、所有writes为0；保留整体FAIL/三轮DEFERRED及position_function_test未动作。manual分支只封原件和回收所属dead pane，无新UART或独立17后验，不回填原FAIL。GO.consumed收入封包。"
+  ],
+  "hard_findings": [],
+  "current_physical_context": {
+    "R4_latest_direct_confirmation": "用户已确认两个电机电源OFF、支撑保持、看护结束",
+    "previous_R4_manual_cut_report": "历史NEEDS_MANUAL_POWER_CUT与零速FAIL不回填",
+    "new_round_power_on_field": "NOT_CONFIRMED_NOT_AUTHORIZED",
+    "new_GO": false
+  },
+  "limitations": [
+    "本机AST/diff/None门不证明Orin运行条件、当前USB或新现场",
+    "未运行任何绑定后的runtime脚本，也未执行SSH/UART",
+    "静态quote验证不等于新的tmux运行验收；保留既有R4入口证据",
+    "只读诊断PV0/PP原值不证明主动零速合同、反馈量化因果或连续物理停止"
+  ]
+}

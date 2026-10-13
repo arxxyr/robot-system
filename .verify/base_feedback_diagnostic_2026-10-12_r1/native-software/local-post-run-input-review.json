@@ -1,0 +1,64 @@
+{
+  "status": "PASS_LOCAL_FIVE_INPUTS_AND_TWO_SSH_OWNER_REVIEW",
+  "local_frozen_input_after": {
+    "candidate/base_feedback_diagnostic_r1.py": {
+      "sha256": "87e3c135e4c78f5232a8ba8aa88c999051d0826b339ed4c5b31795c794fb7b9c",
+      "bytes": 18648
+    },
+    "candidate/test_base_feedback_diagnostic_r1.py": {
+      "sha256": "c20998e1d7ff30f7a6e3ff75a4943fa47f0653e99dcac4e0dc9d96d9b0f28afc",
+      "bytes": 34451
+    },
+    "candidate/fixtures/run_hardware_maintenance.py": {
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    "candidate/fixtures/raw_right9_from_r14_r1.py": {
+      "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa",
+      "bytes": 12216
+    },
+    "candidate/fixtures/maintenance_bindings_base_zero_diagnostic_r4.json": {
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    }
+  },
+  "owned_ssh": [
+    {
+      "label": "base-feedback-r1-native-software",
+      "owner_pid": 72015,
+      "ssh_pid": 72016,
+      "wait_returncode": 0,
+      "reaped": true,
+      "input": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/native-software/single_ssh_native_software_base_feedback_r1.actual.sh",
+        "sha256": "0303e32c1277d3f7d140b0bcb71d99c9c6e48d2e09dbe447a195570e8b143379",
+        "bytes": 230143
+      },
+      "log": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-feedback-r1-native-software.owner/child.log",
+        "sha256": "1d7c4eb90026a2e22091d59bff8094b5fb9d0de8cfe8fd52631bca3691cfd7ae",
+        "bytes": 276861
+      }
+    },
+    {
+      "label": "base-feedback-r1-native-software-observe",
+      "owner_pid": 72551,
+      "ssh_pid": 72552,
+      "wait_returncode": 0,
+      "reaped": true,
+      "input": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/native-software/observe_existing_native_software_r1.sh",
+        "sha256": "faf3cbac605382eccbacfa350809bfbb21f546d7c8149c540a6e50ca3711c164",
+        "bytes": 3300
+      },
+      "log": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/h2_exit_observation_2026-10-09/control-v3/base-feedback-r1-native-software-observe.owner/child.log",
+        "sha256": "f6b7d486021e0a66047c849a009025244da973ca7cc0ffba3ccd5104d607976a",
+        "bytes": 4554
+      }
+    }
+  ],
+  "all_received_or_sent_signals": [],
+  "hardware_actions": 0,
+  "R4_manual_cut_confirmation": "PENDING_UNCHANGED"
+}

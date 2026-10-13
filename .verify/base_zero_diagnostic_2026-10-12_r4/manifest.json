@@ -45,6 +45,10 @@
       "sha256": "17d1e866fa2717d6ffe5d1149f84bde8034b145a82ecbba3c03c074e7efaa6a7",
       "bytes": 1545
     },
+    "followups/manual-power-cut-confirmation-r4.json": {
+      "sha256": "aded80c14c0c4cda4a704fc3bd3563f1e43619e969f446ad0e1d1a1c18e566c7",
+      "bytes": 705
+    },
     "hardware-archive-receipt-r4.json": {
       "sha256": "85f72b957fb2a20b3c9d472f550bcf40fd53cd0095d9e48dbf0edc9ca5be1ca1",
       "bytes": 83040
@@ -366,8 +370,8 @@
       "bytes": 11648
     },
     "summary.json": {
-      "sha256": "0b4e4d8f2f8b00ffa37cbfffedf799c54bb33eaf5a59b5f567ce75a5bfe50265",
-      "bytes": 5082
+      "sha256": "9fd93befdfeef3a109265163be1292fa59a7928644f22c3166223fe43c9a5395",
+      "bytes": 5370
     },
     "summary.preparation-stage-r4.json": {
       "sha256": "6fa85351990597d2edbb5c97159b20d16582ed2575e58f1210c1ed7ba66eab20",
@@ -386,6 +390,6 @@
       "bytes": 176291
     }
   },
-  "files_total": 96,
+  "files_total": 97,
   "all_copy_pairs_byte_equal": true
 }

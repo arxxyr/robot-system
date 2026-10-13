@@ -2,6 +2,28 @@
 
 ## 当前步骤
 
+### R4人工断电收尾已确认，下一轮只读尚无新现场事实
+
+用户直接确认“两个电机电源已切断，机械臂和底盘仍有稳定支撑”；root独立追加[R4后续回执](../../.verify/base_zero_diagnostic_2026-10-12_r4/followups/manual-power-cut-confirmation-r4.json)，结束R4看护。当前仅用户报告OFF，实际切电时刻及独立电气遥测UNKNOWN；原NEEDS_MANUAL_POWER_CUT、STOP51/身份UNKNOWN和真实±50 FAIL不回填。旧PENDING仍保留在运行、原生软件原件及[答复前软件摘要](../../.verify/base_feedback_diagnostic_2026-10-12_r1/summary.software-stage-before-followup.json)，当前摘要另指后续回执。
+
+本次确认仅完成收尾，不授权恢复供电、UART或新GO。右9只读取证候选的软件门已通过，七份复用已验`-c`入口的准备、启动、观察及收尾草稿现已独审；六项shell语法、六项Python首门和observer未绑定exit2均有本机真实回收回执，仍未上传或执行Orin运行前置。新现场、GO及USB当前绑定均为None；[root草稿验收](../../.verify/base_feedback_diagnostic_2026-10-12_r1/root-runtime-draft-review-r1.json)和[独审](../../.verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/independent-runtime-review-r1.json)仅证明本机草稿条件。
+
+收到本轮新的供电、架空支撑及持续看护事实后，先核USB当前枚举和17项非UART原件/23child真实回收，再绑定新PLAN/GO。旧binding仅允许三项枚举字段变化并追加候选引用，窗口前完整检查、窗口内轻量GO检查和原500ms/600秒门均保持。不要求重插USB、不复用R4现场TTL，不下发Enable或参数写入。目标仍为机械臂、头部与底盘实际成功，长期参数与三轮主动运动未闭环，D15 OPEN/DEFERRED、deployable=false保持。
+
+### 右轮断扭位置/速度原帧候选软件通过，实机未运行（客户端2026-10-12，原生UTC10-13）
+
+继续原整机成功目标，R4真实零目标FAIL与人工断电PENDING保持。本次没有新的现场事实、USB当前绑定或硬件GO，旧用户ON报告不当作当前供电遥测。公开资料仅提示Phase12小单位下raw50名义约0.73RPM，不能证明反馈量化、允许零速误差或解释物理轮转；R4使能后缺位置序列。因此先补无写入的位移取证，不实现Phase专用写入口或新运行时框架。
+
+新单次维护wrapper固定right9，复用冻结d97维护器、406295原帧辅助和13c/f201工具，仅本次加载辅助实例META增加PP56/2B。构造ProbeEngine时即封装只读门，覆盖初始和最终17电机普通停止读回；TE/PV/GV非零、未知stdout、坏帧、目标/前缀越界或GO失效均粘性封锁后续UART。raw只限右9九字段加PP，所有WRITE/Enable禁止，原17×3 STOP51及身份门保持。固定三组请求0/200/400ms，每组TE0→PP→PV，全部原帧完成资格仍为原500ms；保存实际请求/完成时间与lateness，不声称纳秒准时。PP仅unsigned原值，不解码单位、符号、量化或据此宣称物理停止；三轮DEFERRED/firmwarefalse保持，诊断成功不等于底盘主动运动或原整轮PASS。
+
+离线审查抓到并修复三处实际问题：首组/唤醒后真实单调时钟推进被过严时间门误拒；完整非UART门只放在窗口前，窗口内每次UART前/返回及尾部复用当次GO轻量校验；未启动请求不再冒领上一stdout，只有本次sequence与commands双增才绑定原件。有效非零或过期返回帧保留FRAME_VALID_REJECTED，坏帧/未启动UNKNOWN。r1/r2内存PASS不回填为这些问题已验证；初次独审29通过/1失败仅会话工具输出存在，无单独原流文件/回执，报告如实注明，未重造原字节或重跑旧SHA。[独立审查](../../.verify/base_feedback_diagnostic_2026-10-12_r1/review/independent-final-review-r1.json)与原阶段测试回执保留。
+
+最终main87e3c135/18648B、testc20998e1/34451B，本机r3同30方法PASS、child71691真实wait0/reap，五输入首尾相等；root另实际默认PLAN_ONLY0/缺GO2两child自然回收。唯一Orin纯软件batch更新浮动nightly到e9bbadf6824e65b3583c2dda3a0926ec76df9143，随后实际fmt→根Clippy0/零警告，597源三窗及主树逐项同068277d8，编译器首尾相同；080仅历史字段，不作为新硬pin。原生同30方法、默认0、缺GO2及旧binding静态完整PLAN均通过；跨平台不累计60，静态fixture不构成当前USB或硬件ready。
+
+12个Runner child/24原流、4个纯Python嵌套child/8原流及34个外层观察child均自然wait/reap；driver658962/@102/%102自然dead/exit0后仅回收所属pane，owner72015/SSH72016真回收0。等待过程中另一次严格只读观察核实同pane和Clippy659035真实存活，没有重启batch；观察owner72551/SSH72552与单tmux child自然回收。唯一82件原包203f895f/203476B、八上传原件和五候选/fixture输入已逐字节核验，原生Git仍894加五dirty，不称Git对齐。没有UART、硬件动作、GO、Rust测试、release/控制ELF构建、正式安装或服务操作。[永久摘要](../../.verify/base_feedback_diagnostic_2026-10-12_r1/summary.json)及root验收记录保存软件/硬件分界。
+
+已再次询问R4实际断电收尾，仍PENDING，仅收尾确认、不要求恢复供电或重插USB。下一步收到断电回执后，再按新的供电、架空稳定支撑及持续看护事实核当前USB，绑定新PLAN/GO，仅执行本只读取证；不复用R4现场TTL或GO，不自动试动作。R4原0/0/+50、TE0后−50、NEEDS/STOP51未知及所有历史FAIL保留；腕部/头部长期参数和三轮主动运动未闭环，右H2完整PASS、D15 OPEN/DEFERRED、deployable=false不变。以下历史原文全部保留。
+
 ### 右轮零目标实际失败，启动入口已通过（2026-10-12，R4人工断电待确认）
 
 用户本轮直接确认“已恢复供电，三轮稳定架空，现场全部就绪，可执行本次右轮测试”；root在06:13:01.689362UTC记录现场事实，原600秒期限没有续期。先核供电后当前非UART17项/23child与USB枚举，均通过且两端身份仍同347a65冻结binding；仅一个PLAN child655208完成新准备。准备SSH遭网络255，原超时输出和真实wait/reap回执保留；随后只读取回已经完成的七原件，未重跑准备或增加UART。root本地metadata生成的TextIOWrapper变量覆盖TypeError及0B pins原件也保留，修复后只执行一次。新canonical PLAN为3fc25e07；签GO时剩16.786409秒，未延长现场TTL，所有已抓36条UART事件都在GO内，末RX距过期9.46815秒；不将本轮失败归因为GO过期。

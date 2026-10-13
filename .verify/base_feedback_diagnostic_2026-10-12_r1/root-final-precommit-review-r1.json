@@ -1,0 +1,27 @@
+{
+  "schema": "BASE_FEEDBACK_R1_FINAL_PRECOMMIT_REVIEW_V1",
+  "recorded_at_utc": "2026-10-13T03:26:44.160738+00:00",
+  "source_files": 597,
+  "root_source_equal_native_actual_fmt_then_clippy_source": true,
+  "source_manifest_sha256": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "manifests": [
+    {
+      "stage": ".verify/base_feedback_diagnostic_2026-10-12_r1",
+      "files": 67,
+      "manifest_matches": true
+    },
+    {
+      "stage": ".verify/base_zero_diagnostic_2026-10-12_r4",
+      "files": 97,
+      "manifest_matches": true
+    }
+  ],
+  "full_cached_check_exit": 2,
+  "full_cached_check_stdout": ".verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/minimal_runtime_prepare_base_feedback_r1.draft.sh.diff-vs-r4.patch:17: trailing whitespace.\n+ \n.verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/minimal_runtime_prepare_base_feedback_r1.draft.sh.diff-vs-r4.patch:78: trailing whitespace.\n+ \n.verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/prepare_base_feedback_diagnostic_r1.draft.py.diff-vs-r4.patch:11: trailing whitespace.\n+ \n.verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/prepare_base_feedback_diagnostic_r1.draft.py.diff-vs-r4.patch:72: trailing whitespace.\n+ \n.verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh:14: trailing whitespace.\n+assert type(FIELD_STAMP) is int and FIELD_STAMP>0 and FIELD_EXPECTED is not None and GO_EXPECTED is not None, '爸爸，BASE_FEEDBACK_R1启动草稿未获root本次新GO，零启动。' \n.verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh.diff-vs-r4.patch:7: trailing whitespace.\n+-assert type(FIELD_STAMP) is int and FIELD_STAMP>0 and FIELD_EXPECTED is not None and GO_EXPECTED is not None, '爸爸，BASE_ZERO_R4启动草稿未获root本次新GO，零启动。' \n.verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh.diff-vs-r4.patch:11: trailing whitespace.\n++assert type(FIELD_STAMP) is int and FIELD_STAMP>0 and FIELD_EXPECTED is not None and GO_EXPECTED is not None, '爸爸，BASE_FEEDBACK_R1启动草稿未获root本次新GO，零启动。' \n.verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh.diff-vs-r4.patch:52: trailing whitespace.\n+ \n.verify/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh.diff-vs-r4.patch:84: trailing whitespace.\n+ \n",
+  "full_cached_check_stderr": "",
+  "scoped_cached_check_exit": 0,
+  "original_drafts_and_diff_bytes_preserved": true,
+  "quality_no_rerun_reason": "已实际fmt→原生根Clippy通过，597源码仍完全相同；仅当前断电回执、已验证脚本草稿和文档归档。",
+  "UART_operations": 0,
+  "new_GO": false
+}

@@ -1,0 +1,88 @@
+{
+  "status": "LOCAL_RUNTIME_DRAFTS_GENERATED_NOT_EXECUTED",
+  "drafts": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/launch_base_feedback_diagnostic_r1.draft.sh",
+      "sha256": "c5d007e6bd9b4a255f5bbb7393da208c7de4568544e346e7ac20a4915acb62ad",
+      "bytes": 2205,
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/launch_base_zero_diagnostic_r4.fixed-unbound.sh",
+        "sha256": "5b5a6e514141edb379491d456e854e5df024e59f2be11af1dda745427e2ca8f1",
+        "bytes": 2288
+      }
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/start_base_feedback_diagnostic_once_r1.draft.sh",
+      "sha256": "74b99784a6a537c46b16f105aa6e60212c8931bf20dc353ddcf8dfe5df625fc7",
+      "bytes": 12119,
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/start_base_zero_diagnostic_once_r4.fixed-unbound.sh",
+        "sha256": "32d5ee207010dd00e6ddb5b150666de86b466fc9d69f1824f2a2e12564f6bd63",
+        "bytes": 11648
+      }
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/observe_base_feedback_diagnostic_once_r1.draft.sh",
+      "sha256": "2e62b9d2db838438fe902f4f407a18e535c57d709bc91c49847e21873a4896d2",
+      "bytes": 3777,
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/observe_base_zero_diagnostic_once_r4.draft.sh",
+        "sha256": "e3b77fd1fc8e9f15f7ba310a3b6eb3ad7aac2a517568269ad93698a91e8004f8",
+        "bytes": 3786
+      }
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/seal_base_feedback_diagnostic_r1.draft.sh",
+      "sha256": "25a73f84430dfddbfc79be76c3c97d1b9edc108260d169f864a589befbbd80a7",
+      "bytes": 13468,
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/seal_base_zero_diagnostic_r4.draft.sh",
+        "sha256": "4bda339e4ad98bc5506de1e33915b2e6d5ad861427fe8fb29908607516825cc3",
+        "bytes": 13780
+      }
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/readonly_nonuart17_usb_refresh_r1.draft.sh",
+      "sha256": "68360bbe5e9b641c6895e415a61cf642ffcf6c1f093b0c3609f2b9d9ed6b622c",
+      "bytes": 2430,
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/readonly_nonuart17_usb_refresh_r4.sh",
+        "sha256": "c851ed7a1be6aef0d809df96beea947ee57cc0d62b18cdb2568501d75b592d7d",
+        "bytes": 1817
+      }
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/prepare_base_feedback_diagnostic_r1.draft.py",
+      "sha256": "7655978b849668a33738c4617d8df29040aedf0a7d7d4f5293a21e3ec7334c43",
+      "bytes": 12418,
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/prepare_base_zero_diagnostic_r4.draft.py",
+        "sha256": "15dd76099738f23a432914e739a8ff7ed9a86219023a8521815f46ab4d79fbcf",
+        "bytes": 11092
+      }
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/runtime-preparation/minimal_runtime_prepare_base_feedback_r1.draft.sh",
+      "sha256": "8c765bbebbe849344d6fb76494da52ff2a524fda8902c26fb6aa5f33087ef970",
+      "bytes": 12666,
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/target/base_zero_diagnostic_2026-10-12_r4/minimal_software_prepare_base_zero_r4.draft.sh",
+        "sha256": "b656a9710757ed08d077779fdf94ab8cd2f3251df0ed9e14a01c5dd93e01a399",
+        "bytes": 11345
+      }
+    }
+  ],
+  "new_root": "/home/loosqk/robot-checks/base-feedback-diagnostic-r1",
+  "new_session": "base-feedback-diagnostic-trial-20261012-r1",
+  "candidate": {
+    "path": "/home/loosqk/robot-checks/base-feedback-r1-software/candidate/base_feedback_diagnostic_r1.py",
+    "sha256": "87e3c135e4c78f5232a8ba8aa88c999051d0826b339ed4c5b31795c794fb7b9c",
+    "bytes": 18648
+  },
+  "SSH_executions": 0,
+  "UART_operations": 0,
+  "GO_created": false,
+  "field_created": false,
+  "R4_status": "人工断电已独立确认，旧NEEDS_MANUAL_POWER_CUT不回填，不授权本轮供电或动作",
+  "scope": "只读feedback_diag三组；原整体FAIL/三轮DEFERRED保持，不能宣称主动零速或物理停止PASS"
+}

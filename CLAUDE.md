@@ -21,21 +21,24 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-12 R4右9裸Goal0诊断实际FAIL，原run NEEDS_MANUAL_POWER_CUT保持。
-           本次用户确认恢复供电、三轮稳定架空及看护；原600秒现场期限未续，独立GO仅一次。
-           当前nonUART17/23child、供电后USB、唯一PLAN/binding通过；原SSH255仅只读取回，不重跑。
-           -c入口实际通过：driver655312/@100/%100自然dead/exit1，所属dead pane已回收。
-           right9初值TE0/PV0/GV0/Model777/FW3.10/Mode1/Phase12/Lock1；仅GV0、TE1、TE0三写。
-           三写ACK有效；500ms内0/200/400ms PV原帧为0、0、+50，410.528625ms结束。
-           Disable后TE普通读0、PV普通读-50（原RX32 80），不能把两次±50混成同帧。
-           粘性停止后新UART0，STOP51/完整身份后验UNKNOWN，不以TE0或回收宣称物理停止。
-           235直属child/470原流及509原件逐件核；所有已抓UART在GO内，最后RX距过期9.46815s。
-           收集仅2child，无新UART/独立17后验；原件f259c47c、run0b5b6aa8已永久归档。
-           已请求立即人工断两个电源，实际断电确认PENDING；最后用户报告ON，独立遥测UNKNOWN。
-           主树fmt0，Orinlatest nightly080→fmt→根Clippy0/零warn；11child/22流、597三窗068277d8同。
-           无新Rust测试/release/控制ELF/正式安装/服务启动；R4永久摘要记录准备与实际运行分界。
-           下一步先断电收尾，仅窄核Phase bit3/Lock1厂家资料；不复用GO、不自动重试或写Phase。
-           R1/R2/R3旧FAIL不回填；实际轮转动/Phase因果、左腕/头部长期参数、底盘三轮与旧±50 OPEN。
+本轮最新:  客户端2026-10-12（软件原生运行UTC10-13），右9断扭反馈只读候选R1软件通过。
+           main87e3c135/testc20998e1；无WRITE/Enable/Phase改动，复用d97/406295/13c/f201。
+           构造时即装只读粘性门，覆盖初始/最终17电机停止读回；非零/未知后新UART0。
+           固定请求0/200/400ms三组TE→PP→PV，原500ms完成门；PP仅56/2B unsigned与时间。
+           不用PP稳定或±50接近名义精度推定物理停止、噪声或固件零义通过。
+           时钟误拒、窗口内GO检查及未启动样本关联旧stdout已修，原中间状态/29过1败保留。
+           有效拒绝帧FRAME_VALID_REJECTED，坏帧/未启动UNKNOWN；STOP51未知不回填PASS。
+           本机与Orin同30方法最终通过，跨平台不累计60；默认0/缺GO2及静态完整PLAN通过。
+           主树fmt0，Orin实际latest nightlye9bbadf6→fmt→根Clippy0/零warn；597三窗068277d8同。
+           12Runner child/24流、4嵌套child/8流真回收，driver658962/@102/%102自然dead0后回收。
+           唯一82件原包203f895f/203476B已核；.verify/base_feedback_diagnostic_2026-10-12_r1/summary.json。
+           本轮UART/硬件动作/GO0；新现场/currentUSB/硬件PLAN未绑定，旧USB只作静态fixture。
+           R4真实0/0/+50、TE0后PV-50与NEEDS/STOP51未知保持；用户后续确认两个电源已切断。
+           机械臂和架空底盘支撑保持、R4看护已结束；切电实际时刻/独立遥测UNKNOWN。
+           后续回执独立追加，不回填原NEEDS；本确认不授权恢复供电或新GO，当前用户报告OFF。
+           七份只读启动/观察/收尾草稿已独审，本机语法与None首门通过，仍未绑定/上传/执行。
+           下一步新现场事实后核当前USB与17项非UART，再独立PLAN/GO；不自动重试或写Phase。
+           无新Rust测试/release/控制ELF/正式安装/服务启动；长期腕部/头部、三轮主动运动及旧±50 OPEN。
            右H2完整PASS，D15 OPEN/DEFERRED、deployable=false；正式安装与服务未改。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +

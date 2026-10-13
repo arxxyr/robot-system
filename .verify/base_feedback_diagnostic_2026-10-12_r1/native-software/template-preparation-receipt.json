@@ -1,0 +1,65 @@
+{
+  "status": "TEMPLATE_PREPARED_NOT_UPLOADED_NOT_EXECUTED",
+  "templates": {
+    "native_software_quality_base_feedback_r1.draft.py": {
+      "sha256": "55a1c732ff50a188c1b8274d347e35220c1fccec5a3188dd72450110b2c5465a",
+      "bytes": 6818
+    },
+    "verify_pure_base_feedback_r1.draft.py": {
+      "sha256": "f9327d5fbc7c3b56eefa9b1c125172a2f01a8060852a6863795536a2e9385ae6",
+      "bytes": 6495
+    },
+    "single_ssh_native_software_base_feedback_r1.draft.sh": {
+      "sha256": "148a6b9252dfcc3b20b207eaf5764abe75d3fabfc5aedd93bdf8ae6a9718a4b9",
+      "bytes": 5707
+    },
+    "bind_native_software_recipe.py": {
+      "sha256": "70f3283706d0deac7e2603f3089290646d5195d47fa528e6a71e1d13ee538880",
+      "bytes": 4756
+    }
+  },
+  "phase": "/home/loosqk/robot-checks/base-feedback-r1-software",
+  "session": "base-feedback-r1-software-20261012-r1",
+  "source_expected": "068277d843b191bc8283bab38e667b0f6a4d30e296e8c5a99a97cfe19654fcf8",
+  "native_git_head": "894084738d95a7239611c2b8fbecfe081d3a7fc9",
+  "native_dirty_files": 5,
+  "proxy": "http://10.0.1.80:10808",
+  "root_freeze_required": true,
+  "root_freeze_file_contract": {
+    "root_freeze_authorized": "true after root actual review",
+    "files": "5 relative keys with local_path,sha256,bytes",
+    "expected_methods": "complete ordered test_ method names",
+    "expected_default": "exact candidate default PLAN_ONLY JSON",
+    "missing_go_phrase": "exact unique rejection phrase"
+  },
+  "uploaded_fixture_layout": [
+    "candidate/base_feedback_diagnostic_r1.py",
+    "candidate/test_base_feedback_diagnostic_r1.py",
+    "candidate/fixtures/run_hardware_maintenance.py",
+    "candidate/fixtures/raw_right9_from_r14_r1.py",
+    "candidate/fixtures/maintenance_bindings_base_zero_diagnostic_r4.json"
+  ],
+  "native_gate_order": [
+    "rustup update nightly --no-self-update",
+    "source-before3 actual commands and manifest597",
+    "rustc -vV actual latest",
+    "cargo fmt --all",
+    "source-after-fmt unchanged597",
+    "cargo clippy --all --all-targets -- -D warnings",
+    "pure Python4child natural wait/reap with raw stdout/stderr",
+    "source-after3 and rustc-after",
+    "candidate/fixture/helper front-after hashes and wrapper all upload front-after"
+  ],
+  "no_current_physical_readiness": "旧binding仅STATIC_FIXTURE；不stat USB、不刷新现场、不生成GO/ready",
+  "native_software_executions": 0,
+  "SSH_executions": 0,
+  "UART_operations": 0,
+  "hardware_actions": 0,
+  "risks": [
+    "源码仅597输入对齐，不称894+5dirty native Git对齐",
+    "latest nightly可能更新；实际fmt改变源码或ClippyFAIL保留原FAIL并停，不回退",
+    "唯一phase已存在即拒绝；SSH观察255须只读现存start.json和同pane，不重启",
+    "既有Runner超时stop_owned可发信号；root待定本轮异常也自然wait替换",
+    "真实硬件状态未核，本模板软件通过也不构成新GO/底盘硬件通过"
+  ]
+}

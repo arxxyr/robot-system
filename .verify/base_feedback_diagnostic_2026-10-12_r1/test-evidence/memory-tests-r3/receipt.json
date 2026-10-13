@@ -1,0 +1,127 @@
+{
+  "argv": [
+    "uv",
+    "run",
+    "--no-project",
+    "python",
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/test_base_feedback_diagnostic_r1.py"
+  ],
+  "cwd": "/Users/loosqk/repo/rust/robot-system",
+  "child_pid": 71691,
+  "started_ns": 1791859109901456000,
+  "finished_ns": 1791859110017824000,
+  "elapsed_ns": 116816583,
+  "returncode": 0,
+  "wait_returncode": 0,
+  "poll_returncode": 0,
+  "child_reaped": true,
+  "evidence": {
+    "memory_tests.stdout": {
+      "bytes": 190,
+      "sha256": "aa7b9d72b906759c02761df7769e42b3a78eed6b03d7035f949051f6504f046d"
+    },
+    "memory_tests.stderr": {
+      "bytes": 4552,
+      "sha256": "c5a55ea6e9652ea111539a9e02990e95b3ec708aac927b619c3d8d7c70ac1439"
+    }
+  },
+  "input_before": {
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/base_feedback_diagnostic_r1.py": {
+      "bytes": 18648,
+      "sha256": "87e3c135e4c78f5232a8ba8aa88c999051d0826b339ed4c5b31795c794fb7b9c"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/test_base_feedback_diagnostic_r1.py": {
+      "bytes": 34451,
+      "sha256": "c20998e1d7ff30f7a6e3ff75a4943fa47f0653e99dcac4e0dc9d96d9b0f28afc"
+    },
+    "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py": {
+      "bytes": 50168,
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41"
+    },
+    "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/candidate/raw_right9_from_r14_r1.py": {
+      "bytes": 12216,
+      "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa"
+    },
+    "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r4/native-preparation/maintenance_bindings_base_zero_diagnostic_r4.json": {
+      "bytes": 30051,
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86"
+    }
+  },
+  "input_after": {
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/base_feedback_diagnostic_r1.py": {
+      "bytes": 18648,
+      "sha256": "87e3c135e4c78f5232a8ba8aa88c999051d0826b339ed4c5b31795c794fb7b9c"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/test_base_feedback_diagnostic_r1.py": {
+      "bytes": 34451,
+      "sha256": "c20998e1d7ff30f7a6e3ff75a4943fa47f0653e99dcac4e0dc9d96d9b0f28afc"
+    },
+    "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py": {
+      "bytes": 50168,
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41"
+    },
+    "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/candidate/raw_right9_from_r14_r1.py": {
+      "bytes": 12216,
+      "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa"
+    },
+    "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r4/native-preparation/maintenance_bindings_base_zero_diagnostic_r4.json": {
+      "bytes": 30051,
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86"
+    }
+  },
+  "inputs_unchanged": true,
+  "prior_evidence_before": {
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r1/memory_tests.stdout": {
+      "bytes": 190,
+      "sha256": "aa7b9d72b906759c02761df7769e42b3a78eed6b03d7035f949051f6504f046d"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r1/memory_tests.stderr": {
+      "bytes": 4552,
+      "sha256": "7c5cac5811ab26a139b976942f635d5cbd88a4674b267da9ce08597f46a2ee1c"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r1/receipt.json": {
+      "bytes": 830,
+      "sha256": "f672e2dd174da08b0c2b28d7429546dbd47838a24063d6055cc1ab006bfa0837"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r2/memory_tests.stdout": {
+      "bytes": 190,
+      "sha256": "aa7b9d72b906759c02761df7769e42b3a78eed6b03d7035f949051f6504f046d"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r2/memory_tests.stderr": {
+      "bytes": 4552,
+      "sha256": "ded5407e2e5febaa7e55a093e7a553adb5ad459d9fb7006984e437a689588ff3"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r2/receipt.json": {
+      "bytes": 3297,
+      "sha256": "e5f3c69cd5580c42dcf1d5b4a8eaa808139b6bf948baa735c396b4b95f770d6b"
+    }
+  },
+  "prior_evidence_after": {
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r1/memory_tests.stdout": {
+      "bytes": 190,
+      "sha256": "aa7b9d72b906759c02761df7769e42b3a78eed6b03d7035f949051f6504f046d"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r1/memory_tests.stderr": {
+      "bytes": 4552,
+      "sha256": "7c5cac5811ab26a139b976942f635d5cbd88a4674b267da9ce08597f46a2ee1c"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r1/receipt.json": {
+      "bytes": 830,
+      "sha256": "f672e2dd174da08b0c2b28d7429546dbd47838a24063d6055cc1ab006bfa0837"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r2/memory_tests.stdout": {
+      "bytes": 190,
+      "sha256": "aa7b9d72b906759c02761df7769e42b3a78eed6b03d7035f949051f6504f046d"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r2/memory_tests.stderr": {
+      "bytes": 4552,
+      "sha256": "ded5407e2e5febaa7e55a093e7a553adb5ad459d9fb7006984e437a689588ff3"
+    },
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r2/receipt.json": {
+      "bytes": 3297,
+      "sha256": "e5f3c69cd5580c42dcf1d5b4a8eaa808139b6bf948baa735c396b4b95f770d6b"
+    }
+  },
+  "prior_evidence_unchanged": true,
+  "scope": "OFFLINE_MEMORY_ONLY_NO_SSH_UART_GO_OR_BUILD"
+}

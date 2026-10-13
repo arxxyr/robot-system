@@ -10,10 +10,10 @@
   "field_recorded_at_ns": 1791785581689362000,
   "field_ttl_seconds": 600,
   "field_ttl_extended": false,
-  "power": "LAST_USER_ON_REPORT_MANUAL_CUT_CONFIRMATION_PENDING",
+  "power": "OFF_USER_CONFIRMED",
   "independent_electrical_telemetry": "UNKNOWN",
-  "current_manual_cut_confirmation": "PENDING",
-  "watch": "现场须完成本轮人工断电收尾，随后结束本轮看护；未重新授权后续动作。",
+  "current_manual_cut_confirmation": "RECEIVED_USER_REPORT",
+  "watch": "R4_ENDED_NO_NEW_GO",
   "preparation": {
     "nonUART_checks": 17,
     "nonUART_children": 23,
@@ -131,7 +131,7 @@
   "deployable": false,
   "formal_install": false,
   "services_started": false,
-  "next_step": "先完成本轮人工断电确认；仅核厂家Phase bit3/Lock1资料及具体下一步窄方案。旧GO和现场确认不复用，没有后续UART或Phase写入。",
+  "next_step": "R4人工断电已确认，仅当新的恢复供电/架空支撑/持续看护及当前USB就绪后，签只读候选的新PLAN/GO。旧FAIL与STOP_UNKNOWN不变。",
   "research": {
     "receipt": "research/official-sts-version201-acquisition-receipt.json",
     "candidate": "research/narrow-next-step-candidate.md",
@@ -140,5 +140,11 @@
     "firmware_applicability": "FW3.10/Mode1未明确绑定",
     "Phase_bit3_zero_contract": "仅资料含义/待核假设，不称实机因果",
     "temporary_Phase_write": "NOT_IMPLEMENTED_NOT_AUTHORIZED_NO_UART"
-  }
+  },
+  "manual_cut_followup": "followups/manual-power-cut-confirmation-r4.json",
+  "current_power": "OFF_USER_CONFIRMED",
+  "current_watch": "R4_ENDED_NO_NEW_GO",
+  "original_pending_and_fail_fields": "旧字段是当时原件，后续回执独立追加，不回填原NEEDS/UNKNOWN或旧PENDING",
+  "new_GO": false,
+  "run_end_power_report": "LAST_USER_ON_REPORT_MANUAL_CUT_CONFIRMATION_PENDING"
 }

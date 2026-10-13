@@ -1,0 +1,108 @@
+{
+  "schema": "BASE_FEEDBACK_DIAGNOSTIC_INDEPENDENT_FINAL_REVIEW_R1",
+  "reviewed_at_utc": "2026-10-13T02:43:09.789946+00:00",
+  "review_result": "SOURCE_AND_FINAL_LOCAL_MEMORY_EVIDENCE_ACCEPTED",
+  "scope": "本机只读源码及原件独审；本次仅新增报告，无候选修改/额外测试/SSH/UART/GO/现场文件或设备操作",
+  "frozen_inputs": {
+    "main": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/base_feedback_diagnostic_r1.py",
+      "sha256": "87e3c135e4c78f5232a8ba8aa88c999051d0826b339ed4c5b31795c794fb7b9c",
+      "bytes": 18648
+    },
+    "test": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/test_base_feedback_diagnostic_r1.py",
+      "sha256": "c20998e1d7ff30f7a6e3ff75a4943fa47f0653e99dcac4e0dc9d96d9b0f28afc",
+      "bytes": 34451
+    },
+    "final_memory_receipt": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r3/receipt.json",
+      "sha256": "1521796b4d816ad57fd03ffe4ce98626eeb4536ef145a232c4e773ac50edb985",
+      "bytes": 6400
+    }
+  },
+  "reused_frozen_source": {
+    "path": "/Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py",
+    "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+    "bytes": 50168
+  },
+  "reused_frozen_helper": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/candidate/raw_right9_from_r14_r1.py",
+    "sha256": "406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa",
+    "bytes": 12216
+  },
+  "actual_findings_and_minimal_repairs": [
+    {
+      "finding": "真实monotonic推进或sleep唤醒迟于目标纳秒时，原now<=scheduled门会误拒首组或正常唤醒；内存FakeClock.now不推进未暴露。",
+      "repair": "首组允许正常时钟推进；仍使用起点加0/200/400ms绝对slot，不重排补读；拒前组已跨下一预约时刻、唤醒跨下一slot或500ms；保存实际started_ns/request_lateness_ns。"
+    },
+    {
+      "finding": "初次调度修正移除窗内完整gate后，仅io.check查信号，不能继续保证500ms内每次UART仍在GO时效内。",
+      "repair": "production main传当次GO至install闭包；每个UART前/完整读取返回后及观察尾部调用原GO验证和本轮scope/600秒验证。完整非UARTgate留在窗口外，不新增框架。"
+    },
+    {
+      "finding": "未启动或前置拒绝的timed_raw若无条件关联commands[-1]，会冒领上一条命令的stdout指纹。",
+      "repair": "仅当sequence与commands长度均增长才记录本条command_sequence/stdout_bytes/stdout_sha256；未启动请求无这些引用。"
+    }
+  ],
+  "key_contract_review": {
+    "target": "仅right9/base_right_wheel诊断原帧；原17电机初始/STOP51只读继续保留",
+    "write_and_enable": "具名工具guard拒全部WRITE/Enable及前缀包装绕过；候选未调用helper旧P写/trial，无真实WRITE路径",
+    "initial_sticky": "ProbeEngine构造时装guard，位于初始snapshot之前；普通TE/PV/GV非零、未知或失败立即manual_cut+uart_blocked，后续UART尝试在原child启动前拒绝",
+    "raw_sticky": "完整ID/地址/宽度/设备/字节类型/集合/checksum校验；PV0032或8032按unsigned!=0即时拒绝；坏帧同样粘性封锁",
+    "frame_valid_rejected": "已校验完整raw但因非零停止值或返回时GO失效而拒绝时，保留原帧并标FRAME_VALID_REJECTED；不能当接受PASS。坏帧或未启动保持UNKNOWN。",
+    "position_raw": "helper新加载实例只复制META并加Present_Position=(56,2)，冻结正文未改。PP保存unsigned两字节/原帧/时钟，不解码符号、单位或推断运动，不放宽PV零门。",
+    "timing": "固定0/200/400ms三组TE→PP→PV，500ms内完成门保留，无补读/重试；请求及完成时钟记录",
+    "go_default": "默认PLAN_ONLY零动作；缺执行输入或缺GO在加载前拒绝。原GO须匹配新plan digest/本轮只读scope及当前现场时间，旧动作GO不能复用。",
+    "stop_and_result": "STOP51整数零/未知原门保留，未知不能回填PASS；manual粘性保持。三轮DEFERRED、固件合同未认证、position_function_test=NOT_RUN_NO_ACTIVE_MOTION。诊断PASS不等于整机或物理静止PASS。",
+    "raw_tool_source": "已只读核894084738d95a7239611c2b8fbecfe081d3a7fc9来源具名表支持PP56/2B和read-raw unsigned完整帧；未运行serial测试。",
+    "fixture_limits": "本机与native fixtures fallback分支静审；本独审未实际执行native fallback或原生设备入口。"
+  },
+  "initial_independent_memory_attempt": {
+    "argv": [
+      "uv",
+      "run",
+      "--no-project",
+      "python",
+      "target/base_feedback_diagnostic_2026-10-12_r1/candidate/test_base_feedback_diagnostic_r1.py"
+    ],
+    "observed_exit_code": 1,
+    "methods": 30,
+    "passed": 29,
+    "failed": 1,
+    "failed_method": "test_oversleep_cannot_shift_original_sample_schedule",
+    "observed_failure": "AssertionError: ValueError not raised；中间main调度已修、旧oversleep+1ns断言尚未同步",
+    "evidence_retention": "仅原工具会话输出保留；未保存原始stdout/stderr文件、merged字节文件或owner receipt。不能从当前工具状态恢复原字节，故不重造原件或声称流指纹。",
+    "conversation_tool_result_chunk_id": "3258f5",
+    "original_stdout_file": null,
+    "original_stderr_file": null,
+    "original_merged_output_file": null,
+    "original_receipt_file": null,
+    "input_binding_limit": "运行前未封存五输入首尾；此前静审main58e01a85，运行后读到main0c1fd912，不能声称该次执行准确绑定单一旧SHA。",
+    "preservation_rule": "原FAIL保留；未重跑旧SHA，最终PASS不回填此FAIL。"
+  },
+  "final_memory_evidence_review": {
+    "receipt": {
+      "path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/test-evidence/memory-tests-r3/receipt.json",
+      "sha256": "1521796b4d816ad57fd03ffe4ce98626eeb4536ef145a232c4e773ac50edb985",
+      "bytes": 6400
+    },
+    "distinct_methods": 30,
+    "status": "30_OF_30_PASS",
+    "child_pid": 71691,
+    "natural_exit_code": 0,
+    "wait_returncode": 0,
+    "child_reaped": true,
+    "stdout_stderr_sha_bytes_rechecked": true,
+    "five_inputs_current_and_before_after_equal": true,
+    "old_six_originals_current_and_before_after_equal": true,
+    "execution_provenance": "最终r3测试由测试agent执行；本独审只回读并核对应原件/指纹，没有重复最终矩阵。",
+    "counting": "30个不同方法，不把历史或复验轮次累计成更多测试。"
+  },
+  "unresolved_material_source_findings": [],
+  "verification_limits": [
+    "源码/本机内存门通过不能认证FW3.10、量化原因、物理轮动或停止",
+    "不构成现场供电事实或新GO",
+    "现场断电确认由root负责，不由本报告推断",
+    "此前R4实机FAIL/NEEDS_MANUAL_POWER_CUT保持"
+  ]
+}

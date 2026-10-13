@@ -1,0 +1,29 @@
+{
+  "argv": [
+    "uv",
+    "run",
+    "--no-project",
+    "python",
+    "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/test_base_feedback_diagnostic_r1.py"
+  ],
+  "cwd": "/Users/loosqk/repo/rust/robot-system",
+  "child_pid": 71046,
+  "started_ns": 1791858858083612000,
+  "finished_ns": 1791858858209782000,
+  "elapsed_ns": 126388375,
+  "returncode": 0,
+  "wait_returncode": 0,
+  "poll_returncode": 0,
+  "child_reaped": true,
+  "evidence": {
+    "memory_tests.stdout": {
+      "bytes": 190,
+      "sha256": "aa7b9d72b906759c02761df7769e42b3a78eed6b03d7035f949051f6504f046d"
+    },
+    "memory_tests.stderr": {
+      "bytes": 4552,
+      "sha256": "7c5cac5811ab26a139b976942f635d5cbd88a4674b267da9ce08597f46a2ee1c"
+    }
+  },
+  "scope": "OFFLINE_MEMORY_ONLY_NO_SSH_UART_GO_OR_BUILD"
+}

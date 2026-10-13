@@ -1,0 +1,63 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/base_feedback_diagnostic_r1.py"
+      ],
+      "pid": 71896,
+      "started_utc": "2026-10-13T02:40:31.979692+00:00",
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "local_path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/root-cli-evidence/default.stdout",
+        "sha256": "85e5ab3b6893e0db8f15a6f3d73f4fc841392edf1deabe6900c4793d5a3bf367",
+        "bytes": 389
+      },
+      "stderr": {
+        "local_path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/root-cli-evidence/default.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/candidate/base_feedback_diagnostic_r1.py",
+        "--execute",
+        "--maintenance",
+        "/MEMORY_ONLY/source",
+        "--raw-helper",
+        "/MEMORY_ONLY/helper",
+        "--bindings",
+        "/MEMORY_ONLY/bindings",
+        "--output",
+        "/MEMORY_ONLY/output",
+        "--artifact-root",
+        "/MEMORY_ONLY"
+      ],
+      "pid": 71897,
+      "started_utc": "2026-10-13T02:40:32.000570+00:00",
+      "exit_code": 2,
+      "wait_returncode": 2,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "local_path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/root-cli-evidence/missing-go.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "local_path": "/Users/loosqk/repo/rust/robot-system/target/base_feedback_diagnostic_2026-10-12_r1/root-cli-evidence/missing-go.stderr",
+        "sha256": "23b04f6dadbe7eb58d4ae58e230b774ebe9ed367acc72e1276e56c4cc9e8b209",
+        "bytes": 90
+      }
+    }
+  ],
+  "inputs_before_after_equal": true,
+  "SSH": 0,
+  "UART": 0,
+  "GO": false
+}
