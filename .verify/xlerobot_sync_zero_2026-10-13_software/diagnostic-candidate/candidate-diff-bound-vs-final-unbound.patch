@@ -1,0 +1,11 @@
+--- /Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/unbound-snapshot/base_zero_sync_diagnostic_r1.py
++++ /Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py
+@@ -25,7 +25,7 @@
+ SAMPLE_OFFSETS_NS = (0, 200_000_000, 400_000_000)
+ TTL_NS = 600_000_000_000
+ SYNC_SETTLE_NS = 50_000_000
+-SYNC_TOOL = None  # 爸爸，root核新原生ARM64 ELF后固定path/sha256/bytes；未绑定不得执行。
++SYNC_TOOL = {'path': '/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke', 'sha256': 'b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94', 'bytes': 1507224}  # 爸爸，root已核本轮唯一原生ARM64 ELF；无新现场GO。
+ SYNC_STDOUT = 'sync-zero Goal_Velocity@9 <- 0: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n'
+ WRITE_SEQUENCE = (('Goal_Velocity', 0), ('Torque_Enable', 1), ('Torque_Enable', 0))
+ 

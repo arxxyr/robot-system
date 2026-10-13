@@ -21,22 +21,21 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-13 R2断扭只读诊断PASS，整轮原FAIL因三轮固件合同仍DEFERRED而保留。
-           本次新ON/架空/看护事实固定05:42:50UTC、600秒未续；fresh17/23child及USB/57refs PLAN通过。
-           maincf651bb2/helper70d777bd按actual fixtures路径；独立GO仅一次，WRITE/Enable/动作0。
-           三轮初始/最终六份普通PV完整strace原字均0，逐份PING→READ型号777→READ58/2校验通过。
-           right9 raw七项=777/FW3.10/Mode1/Phase12/Lock1/GV0；0/200/400ms三组TE0→PP→PV0。
-           九读全在500ms内、最后434.377775ms；观察结束500.560522ms/另elapsed500.560906ms保留。
-           STOP51全整数0/完整身份PASS，298child/596原流真回收；220 UART=204read+16read-raw。
-           driver664542/@106/%106自然dead1；自dead pane回收及独立nonUART17/23、57refs/597同源通过。
-           硬件644原包3d41791e/268820B已封，run5996ae29/435402B原FAIL不改；GO已消费、看护结束。
-           最新供电仅用户本次报告ON、独立遥测及物理轮转动UNKNOWN；旧±50根因仍OPEN。
-           本机实际fmt0，Orinlatest nightlye9bbadf6→fmt→根Clippy0/零warn，597三窗068277d8及主树同。
-           本轮质量54原包9c4acea9/135060B保全，无新Rust测试/release/控制ELF/正式安装/服务启动。
-           .verify/base_feedback_diagnostic_2026-10-13_r2_hardware/summary.json；R1/旧R4 FAIL不回填。
-           原XLeRobot是addr46/2B SYNC_WRITE，厂家addr41/7B另接口；下一步仅准备单轮零值对照。
-           不写Phase、不换7B，不复用GO或预称零速启扭安全；腕部/头部长期参数与三轮主动运动OPEN。
-           右H2完整PASS，D15 OPEN/DEFERRED、deployable=false；正式安装与服务未改。
+本轮最新:  2026-10-13 XLeRobot单ID SYNC零值诊断软件PASS，实机Enable尚未执行。
+           既有feetech_poke只加sync-zero：addr46/2B/0x83/单ID/固定0，无ACK，不自动Enable。
+           原XLeRobot2B SYNC接口与旧普通WRITE区别已核；不换41/7B，不写Phase/Lock/模式或PID。
+           Orin隔离597源ae00cf4f、latest nightlye9bbadf6；实际fmt→两根Clippy零警告、15例子方法通过。
+           新2方法为15子集；仅诊断例子release ELF b2bfedb1/1507224B冻结，非生产控制产物。
+           Mac旧nightly080的15方法单独保留；原生Git=null，源导出67d8b2a+单Rustdirty，不称Git对齐。
+           main3b681657/27496B、teste97bda49/20991B；Mac/Orin各同6方法通过，不累计。
+           Orin唯一3child原exit0/0/2真wait/reap，默认PLAN/缺GO拒绝通过；无USB/UART/GO或动作。
+           只准备一次right9 SYNC Goal0→至少50ms→Enable→原500ms/三PV原帧→TE0及STOP51。
+           旧候选/原回执与DEVICE0旧finding保留，新一行窄补闭环；完整身份/粘性停止与失败不重试保持。
+           .verify/xlerobot_sync_zero_2026-10-13_software/summary.json；七份未绑定运行草稿已核，须新现场确认/GO。
+           先前R2只读诊断/STOP51/身份PASS已提交67d8b2a；整轮固件DEFERRED原FAIL、旧±50不回填。
+           R2看护已结束/GO消费；最新供电仅用户ON，遥测UNKNOWN，不构成新零速Enable授权。
+           腕部/头部长期参数、三轮主动运动与固件合同OPEN；右H2完整PASS，D15 OPEN/DEFERRED。
+           deployable=false；架构、正式安装、S0/S1接口与服务未改。
 
 实现阶段:  v0.5 候选 E ✅ 受监督功能 demo 完结（2026-09-01 真机：单臂×2 +
            双臂 + 双夹爪全 PASS + RT 三层加固回归全绿；收口宣称唯一口径 =

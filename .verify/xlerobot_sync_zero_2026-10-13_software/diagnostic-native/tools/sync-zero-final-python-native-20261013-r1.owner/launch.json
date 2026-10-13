@@ -1,0 +1,42 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "WAITING",
+  "status": "RUNNING",
+  "owner_pid": 82495,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ServerAliveCountMax=2",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 82496,
+  "started_utc": "2026-10-13T06:55:49.790593+00:00",
+  "started_monotonic_ns": 61630587750833,
+  "observe_seconds": 5.0,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-native/single_ssh_pure_sync_zero_r1.sh",
+    "sha256": "daf682be16dad1c24feffcd514e57a4c586d41c7d8967f3225ac65728fe18940",
+    "bytes": 206901
+  },
+  "launched_utc": "2026-10-13T06:55:49.792874+00:00",
+  "start_new_session": true,
+  "child_session_id": 82496
+}

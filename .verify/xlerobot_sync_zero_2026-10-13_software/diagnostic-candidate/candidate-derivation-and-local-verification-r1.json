@@ -1,0 +1,251 @@
+{
+  "status": "LOCAL_ONLY_BOUND_SYNC_ZERO_DIAGNOSTIC_CANDIDATE_SIX_METHODS_PASS_PENDING_ROOT_REVIEW",
+  "recorded_at_utc": "2026-10-13T06:34:10.994918+00:00",
+  "main": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+    "sha256": "221ff4e4ce4677c9dcfce2355b3347055aee344de424a4da36a94330b290cbf3",
+    "bytes": 27340
+  },
+  "test": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+    "sha256": "a60c2926a8d33f937964fb448f39604737f20feb8c78165b637b7d91a01e4645",
+    "bytes": 20170
+  },
+  "baseline_R4_archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r4/archives/hardware-originals-base-zero-r4.tar.gz",
+    "sha256": "f259c47c17bb00486e821f3e24bbeb6547ff21dbf53108f511281aca589ba471",
+    "bytes": 161450
+  },
+  "baseline_R4_main_member": {
+    "member": "base_zero_diagnostic_r1.py",
+    "sha256": "f59455a6b25f832efd5b725224d8f16229b421f28c1556cbe4416ed24ac6f314",
+    "bytes": 19556
+  },
+  "borrowed_R2_constructor_guard_source": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/candidate/base_feedback_diagnostic_r2.py",
+    "sha256": "cf651bb200d0ea56228282dd51b311bb090650945b631f51e8d7ff2f1e431b78",
+    "bytes": 18648
+  },
+  "borrowed_original_test": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_diagnostic_2026-10-12_r1/candidate/test_base_zero_diagnostic_r1.py",
+    "sha256": "304af8245696f60e457da3516b13f15956ac76fd5fd2a29c5f4892c78d6634f7",
+    "bytes": 18881
+  },
+  "fixtures_unchanged": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/fixtures/maintenance_bindings_base_zero_diagnostic_r4.json",
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py",
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/fixtures/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    }
+  ],
+  "SYNC_TOOL": {
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "bytes": 1507224
+  },
+  "pin_binding_diff_is_only_one_constant_line": true,
+  "unbound_originals": {
+    "main": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/unbound-snapshot/base_zero_sync_diagnostic_r1.py",
+      "sha256": "daed2897ec9360f7689a44c22f276d1d7479122f88e7719560459658c7a49d66",
+      "bytes": 27167
+    },
+    "test": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/unbound-snapshot/test_base_zero_sync_diagnostic_r1.py",
+      "sha256": "e3a51cbbf1ce9e4a32cc955106a991b122b4411c1ba2c723e8f4267392e8b2a0",
+      "bytes": 19633
+    },
+    "preservation_receipt": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/unbound-snapshot/preservation-receipt.json",
+      "sha256": "6b16f8a6b51209b639776e33a2e7864799b486a5867d257b83ed79aa647c38f5",
+      "bytes": 1892
+    }
+  },
+  "diffs": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/candidate-diff-vs-frozen-r4.patch",
+      "sha256": "0b193cab51db188e8d939dab95e0110c1bb2389921bc4763a74e595ed26770ae",
+      "bytes": 24609
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/candidate-diff-bound-vs-final-unbound.patch",
+      "sha256": "355c7d91a9f271151df28ba7b011fa1c73acb802bc53da6633930e4456a80331",
+      "bytes": 1020
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/tests-diff-vs-base-zero-r1.patch",
+      "sha256": "c61576d673aea8477f60ba465bc8fd58f37f0c2ac71f75740af610493dacd8a5",
+      "bytes": 30512
+    }
+  ],
+  "old_PASS_originals": [
+    {
+      "round": 1,
+      "receipt": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-r1/receipt.json",
+        "sha256": "c0ccffe04b0835150145567a25f2336ddaefc0042d299f4aa10a7e3a845bf3df",
+        "bytes": 3704
+      },
+      "status": "PASS_SAME_SIX_METHODS",
+      "candidate_tested": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+          "sha256": "923223799c9fd99db040a70389a1b3e46ca9a71df15cee7c9e0e933c9a7296b0",
+          "bytes": 25152
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+          "sha256": "6b54af1d6e3e73ba93fbc5a54a86ab63ea2e1d68e93c599745da79ee0e2ad981",
+          "bytes": 17761
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "receipt": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-r2/receipt.json",
+        "sha256": "ac9cfea4dab28b0db9c92286cdd7f6d414a9c45899a78664b5cd7e7101a5368d",
+        "bytes": 3843
+      },
+      "status": "PASS_SAME_SIX_METHODS",
+      "candidate_tested": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+          "sha256": "71cafc090aa69fe89e29adfcbe551cc6c985604f2ce423a605e1b1c93c694aed",
+          "bytes": 26731
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+          "sha256": "dd27faf31b2f593caa27bc2db1389fbba55314d66f0be80bd3d49a3c270be060",
+          "bytes": 18321
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "receipt": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-r3/receipt.json",
+        "sha256": "adc92027e657c95c58e31099b490eac9077cc42a38377a3042bf7b037e18dd01",
+        "bytes": 3903
+      },
+      "status": "PASS_SAME_SIX_METHODS",
+      "candidate_tested": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+          "sha256": "71cafc090aa69fe89e29adfcbe551cc6c985604f2ce423a605e1b1c93c694aed",
+          "bytes": 26731
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+          "sha256": "e775f6384d1029b3e657eb402e6685860cec6466d3ffb71afae2479b15f8e343",
+          "bytes": 18472
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "receipt": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-r4/receipt.json",
+        "sha256": "c825c1799c1e2464ad1685fcef8a8bb2aca719b4362f79b96f83ff326a8d868c",
+        "bytes": 3928
+      },
+      "status": "PASS_SAME_SIX_METHODS",
+      "candidate_tested": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+          "sha256": "daed2897ec9360f7689a44c22f276d1d7479122f88e7719560459658c7a49d66",
+          "bytes": 27167
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+          "sha256": "65f68659683d289a5218dfe9ab9f805f3a01e8ed1ccae2451c8fe8ca5ec56500",
+          "bytes": 19625
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "receipt": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-r5/receipt.json",
+        "sha256": "0c579196621bbfcc8195cac0bb5be0a2f40b01796a0ac8768af63258bd6e77a3",
+        "bytes": 3892
+      },
+      "status": "PASS_SAME_SIX_METHODS",
+      "candidate_tested": [
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+          "sha256": "daed2897ec9360f7689a44c22f276d1d7479122f88e7719560459658c7a49d66",
+          "bytes": 27167
+        },
+        {
+          "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+          "sha256": "e3a51cbbf1ce9e4a32cc955106a991b122b4411c1ba2c723e8f4267392e8b2a0",
+          "bytes": 19633
+        }
+      ]
+    }
+  ],
+  "final_bound_verification": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-bound-r1/receipt.json",
+    "sha256": "1a23f8b6040008592025ccd26f486d8aab564a56fc8307724f3064e5cb7433cd",
+    "bytes": 6546
+  },
+  "different_memory_method_count": 6,
+  "counts_limit": "各软件轮都复验同6方法，不累计为36；原r1-r3输入指纹保留但未另封中间main正文，不冒充最终未绑定源。",
+  "method_scope": {
+    "test_unbound_default_missing_ref_and_old_go_before_execution": "借原default/missing GO、empty PLAN/current GO合同；新增SYNC None、refs/binary缺项和58refs计数；旧GO scope/digest硬拒。",
+    "test_complete_sequence_fifty_ms_no_ack_three_writes_and_trace": "借原happy三PV/三写及write-strace替身；首写改单ID SYNC0且无ACK，Goal读回10/70ms下均按发送完成到Enable至少50ms。",
+    "test_constructor_initial_left7_stop_failure_sticky_without_later_uart": "借R2构造期guard：左7普通TE/PV/GV非零/未知在首次snapshot路径粘性，之后UART0/写0。",
+    "test_no_old_gv_write_unknown_tool_or_other_target": "借原write whitelist负控，新增拒普通GV0、新SYNC其他ID/extra值/未知工具/前缀绕过。",
+    "test_valid_nonzero_pv_keeps_te0_cleanup_unknown_frame_or_ack_latches": "借原有效PV0032/8032原TE0 cleanup、坏raw/Goal读回/写stdout未知与停止非零粘性。",
+    "test_lower_bound_expiry_and_original_deferred_stop_unknown": "借原DEFERRED/整体FAIL/STOPUNKNOWN及期限门；同一方法追加50ms提前Enable、生产数值GO到期前/后Enable与TE原读回0/2同点到期，私有到期不能掩盖原语义。"
+  },
+  "minimal_changes": [
+    "RUN_ID/scope/helper70及新SYNC pin入PLAN；55旧refs+helper70+newmain+SYNC应58，binary_paths仅追加本SYNC ELF。",
+    "原第一Goal0改精确sync-zero(noACK)，原TE1/TE0普通WRITE ACK与write_index/STOP51不变。",
+    "发送完成monotonic固定50ms下界，postGoal读回耗时计入，不续GO/补读/重试。",
+    "R2构造期普通停止读取粘性及轻量GO前后门；只有production now>=expires的私有GOExpired保原已尝试Enable后的TE0/停止读取cleanup。",
+    "同份raw完整帧及入口/Goal/TE语义先于返回GO；有效非零观察PV仍原TE0收尾，坏/未知/身份/停止非零仍manual禁所有后续UART。",
+    "只为精确SYNC+TE两WRITE加strace；helper70普通PV7/8/9捕获不新增UART，journal和run追加metadata差异保留。",
+    "timed_raw仅本次sequence及commands均增加才关联stdout；无法启动不冒领上一command。"
+  ],
+  "known_software_review_issues_fixed": [
+    "初版新增GO门会阻断独立cleanup：仅新数值到期私有类型分支修正；其他错误仍粘性。",
+    "完整raw值错误与同点到期可能掩盖TE1语义：现先同份原帧语义再返回GO。"
+  ],
+  "interface": {
+    "main": "base_zero_sync_diagnostic_r1.py",
+    "arguments": [
+      "--maintenance",
+      "--raw-helper",
+      "--bindings",
+      "--output",
+      "--artifact-root",
+      "--approval",
+      "--execute"
+    ],
+    "default": "PLAN_ONLY零动作；缺GO在source/binding/ELF读取前exit2。",
+    "full_PLAN": "必须本新main/helper70/SYNC完整refs，ARM64 executable逐项verify；PLAN digest锁0x83/46/2/only ID9/noACK/50ms。",
+    "new_GO_required": true,
+    "production_scope": "仅右9一次SYNC0→至少50ms→TE1→0/200/400ms rawPV/500ms→TE0及原STOP51；三轮DEFERRED/firmwarefalse/整体FAIL。"
+  },
+  "review_status": "子agent只读最终unbound逻辑PASS；当前绑定只改常量待同agent最后pin静审，root最终验收。",
+  "UART": 0,
+  "SSH": 0,
+  "new_GO_created": false,
+  "runtime_or_hardware_run": false,
+  "native_ELF_executed_locally": false,
+  "firmware_contract_verified": false,
+  "base_targets": "DEFERRED",
+  "hardware_safety_claim": "软件mock不证明电机接收、物理零速或Enable安全；不回填R4/R1/旧±50FAIL。"
+}

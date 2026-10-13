@@ -1,0 +1,163 @@
+{
+  "status": "PASS_BOUND_UNIQUE_NATIVE_SYNC_PIN_SAME_SIX_MEMORY_AND_TWO_ZERO_ACTION_ENTRIES",
+  "inputs_before": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+      "sha256": "221ff4e4ce4677c9dcfce2355b3347055aee344de424a4da36a94330b290cbf3",
+      "bytes": 27340
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+      "sha256": "a60c2926a8d33f937964fb448f39604737f20feb8c78165b637b7d91a01e4645",
+      "bytes": 20170
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/fixtures/maintenance_bindings_base_zero_diagnostic_r4.json",
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py",
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/fixtures/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    }
+  ],
+  "inputs_after": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+      "sha256": "221ff4e4ce4677c9dcfce2355b3347055aee344de424a4da36a94330b290cbf3",
+      "bytes": 27340
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+      "sha256": "a60c2926a8d33f937964fb448f39604737f20feb8c78165b637b7d91a01e4645",
+      "bytes": 20170
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/fixtures/maintenance_bindings_base_zero_diagnostic_r4.json",
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py",
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/fixtures/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    }
+  ],
+  "same_inputs_before_after": true,
+  "children": [
+    {
+      "name": "memory-tests",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "-B",
+        "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py"
+      ],
+      "pid": 75707,
+      "started_ns": 1791873172028608000,
+      "finished_ns": 1791873172173594000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "sha256": "bcc0ebec5d48a2575cbe455e83abd17be901a1b0175138af35ac7f4c2762d3ae",
+        "bytes": 1032
+      }
+    },
+    {
+      "name": "default-plan",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "-B",
+        "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py"
+      ],
+      "pid": 75708,
+      "started_ns": 1791873172174331000,
+      "finished_ns": 1791873172198764000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "sha256": "27e36f1430c2d2275e8dcff6cb3d48a4b0d0aec8ebcee409255ad81e2e7df921",
+        "bytes": 439
+      },
+      "stderr": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "name": "missing-go",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "-B",
+        "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+        "--execute",
+        "--maintenance",
+        "/MEMORY_ONLY/m",
+        "--raw-helper",
+        "/MEMORY_ONLY/h",
+        "--bindings",
+        "/MEMORY_ONLY/b",
+        "--output",
+        "/MEMORY_ONLY/o",
+        "--artifact-root",
+        "/MEMORY_ONLY"
+      ],
+      "pid": 75709,
+      "started_ns": 1791873172199119000,
+      "finished_ns": 1791873172222746000,
+      "exit_code": 2,
+      "wait_returncode": 2,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "sha256": "2864445b0dff699480ddb4cdf1f6a8158dd9c8dfa360ba590c69e7b610acaad3",
+        "bytes": 125
+      }
+    }
+  ],
+  "all_owned_children_naturally_waited_and_reaped": true,
+  "different_memory_methods": 6,
+  "actual_cli_default": {
+    "status": "PLAN_ONLY",
+    "run_id": "base-zero-sync-diagnostic-r1",
+    "target": [
+      "right",
+      9,
+      "base_right_wheel"
+    ],
+    "scope": "仅右9/base_right_wheel一次单ID9 SYNC_WRITE Goal_Velocity0（无ACK）→发送完成后至少50ms→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑",
+    "actions_started": 0,
+    "register_writes": 0,
+    "motion_commands": 0,
+    "position_targets": [],
+    "new_GO": false
+  },
+  "missing_go_input_load_or_execute": false,
+  "UART": 0,
+  "SSH": 0,
+  "GO_created": false,
+  "native_ELF_not_executed_locally": true,
+  "test_pin_scope": "仅MemoryIO模拟SYNC；production唯一b2bf pin来自root原生验收，不用本机mock证明原生ELF接收或电机速度"
+}

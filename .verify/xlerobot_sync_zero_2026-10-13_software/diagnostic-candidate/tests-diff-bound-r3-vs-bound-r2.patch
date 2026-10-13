@@ -1,0 +1,10 @@
+--- bound-r2
++++ bound-r3
+@@ -260,6 +260,7 @@
+             [SYNC_REF['path'], self.m.DEVICES['right'], '9', 'sync-zero', '0'],
+             ['/MEMORY_ONLY/unknown', self.m.DEVICES['right'], '9', 'sync-zero'],
+             ['/MEMORY_ONLY/unknown', self.m.DEVICES['right'], '9', 'other-op'],
++            [self.m.DEVICES['right']],
+             [h.STRACE['path'], h.TOOL['path'], self.m.DEVICES['right'], '9', 'write', 'Goal_Velocity', '0'],
+             [h.TOOL['path'], self.m.DEVICES['right'], '9', 'write', 'Phase', '0'],
+         ]

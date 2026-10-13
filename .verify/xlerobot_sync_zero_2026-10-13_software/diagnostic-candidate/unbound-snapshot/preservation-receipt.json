@@ -1,0 +1,38 @@
+{
+  "status": "UNBOUND_MAIN_AND_TEST_ORIGINAL_BYTE_PRESERVED_BEFORE_ONLY_SYNC_PIN_BINDING",
+  "records": [
+    {
+      "original": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+        "sha256": "daed2897ec9360f7689a44c22f276d1d7479122f88e7719560459658c7a49d66",
+        "bytes": 27167
+      },
+      "saved": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/unbound-snapshot/base_zero_sync_diagnostic_r1.py",
+        "sha256": "daed2897ec9360f7689a44c22f276d1d7479122f88e7719560459658c7a49d66",
+        "bytes": 27167
+      }
+    },
+    {
+      "original": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+        "sha256": "e3a51cbbf1ce9e4a32cc955106a991b122b4411c1ba2c723e8f4267392e8b2a0",
+        "bytes": 19633
+      },
+      "saved": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/unbound-snapshot/test_base_zero_sync_diagnostic_r1.py",
+        "sha256": "e3a51cbbf1ce9e4a32cc955106a991b122b4411c1ba2c723e8f4267392e8b2a0",
+        "bytes": 19633
+      }
+    }
+  ],
+  "r5_original_receipt": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-r5/receipt.json",
+    "sha256": "0c579196621bbfcc8195cac0bb5be0a2f40b01796a0ac8768af63258bd6e77a3",
+    "bytes": 3892
+  },
+  "old_r1_to_r5_streams_and_receipts_preserved": true,
+  "middle_source_limit": "r1-r3仅输入指纹在原回执，未另封中间main正文；不冒充最终unbound字节。最终r4/r5 main及r5 test按原字节保全。",
+  "GO_created": false,
+  "UART": 0
+}

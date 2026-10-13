@@ -1,0 +1,63 @@
+{
+  "schema": "SYNC_ZERO_CLI_NATIVE_INTERIM_INDEPENDENT_REVIEW_V1",
+  "status": "PASS_RUST_AND_NECESSARY_NATIVE_SOFTWARE_ONLY",
+  "scope": "只读Rust唯一diff及必要native raw/typedsource/ELF；没有重新执行测试/Cargo/ELF/SSH/UART/GO",
+  "Rust": {
+    "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "sha256": "2a6becdb1a4866f93aef05474a2780cdc208b8e1f60eeef051b8972ab13eb846",
+    "bytes": 27837
+  },
+  "golden_frame": "ff ff fe 07 83 2e 02 09 00 00 3e",
+  "CLI_contract": [
+    "仅sync-zero固定单ID Goal_Velocity0，addr46/width2/0x83；无寄存器或值参数，额外参数/invalid ID开串口前拒",
+    "不消费写ACK，不Enable；正常CLI仍既有PING/型号READ握手",
+    "旧Phase/诊断九项及固件两项通用拒写门不变"
+  ],
+  "native_verification": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/native-verification-r1.json",
+    "sha256": "ef154f74527b5dbfe02b7139133422aaca6c017f111f2c0a61625f4b912b8930",
+    "bytes": 3418
+  },
+  "archive_identity": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/native-originals-sync-zero-software-r1.tar.gz",
+    "sha256": "666dc4a7ac6b369779310495b0fec15d43efbaa59e9a6decc965a1c5405182f4",
+    "bytes": 10232733
+  },
+  "native_scope": {
+    "Runner_commands": 9,
+    "Runner_raw_streams_SHA_bytes_checked": 18,
+    "all_Runner_exit0_reaped_no_signals_or_session_residual": true,
+    "nested_parameter_rejections_original_exit2": 3,
+    "nested_raw_streams_SHA_bytes_checked": 6,
+    "distinct_example_tests": 15,
+    "new_methods_subset": 2,
+    "new_methods_not_added_to_15": true,
+    "default_and_real_hw_root_Clippy_zero_warnings": true,
+    "fmt_then_Clippy_actual_order_preserved": true,
+    "compiler_before_after_e9": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "e9bbadf6824e65b3583c2dda3a0926ec76df9143",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "typed_source_count": 597,
+    "source_aggregate": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+    "new_source_3_windows_and_root_full_dict_equal": true,
+    "only_changed_source": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "old_shared_r7_SOURCE_068_before_after_full_dict_same": true,
+    "only_diagnostic_example_release": true
+  },
+  "ELF": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/originals/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "bytes": 1507224,
+    "class": 64,
+    "endian": "little",
+    "e_machine": 183
+  },
+  "Python_candidate": "PENDING_ROOT_APPROVED_MINIMAL_UNKNOWN_DEVICE_METADATA_WHITELIST_CORRECTION；待prepare新main/test SHA到位后只静审，不抢改/重测；221ff4e4不是最终闭环版本",
+  "limits": [
+    "不证明电机接收、实际零速或Enable安全；没有新现场GO/硬件授权",
+    "未重复68大量JSON全包检验；只覆盖任务必要raw/source/output/ELF与Rustdiff"
+  ],
+  "errors": []
+}

@@ -1,0 +1,22 @@
+{
+  "boot/native_sync_zero_software_r1.py": {
+    "sha256": "e010ff4684ee036eb1448758023e75772ba02374800105684bd3c743bb77bc69",
+    "bytes": 9477
+  },
+  "boot/verify_parameter_rejections_r1.py": {
+    "sha256": "2ba5ac7de471df0fd2b59c4453c6cf5b58acdd88bfe920ebb59b763e074c1a55",
+    "bytes": 3505
+  },
+  "boot/host-source-root597.json": {
+    "sha256": "6ada0f253666eaa11884067fc963280f5309f6a5d7d246e7662d7ce73333775b",
+    "bytes": 114885
+  },
+  "boot/root-export-origin.json": {
+    "sha256": "a787a078bc475e47ae8d8586357c7eeca88d9d6edf4171fbd98561ab108675d8",
+    "bytes": 5225
+  },
+  "boot/source-inputs-root597.tar.gz": {
+    "sha256": "1613b227df99aefced567d075850ada6c0c6802dacad344dbdde3ef5bedd1c5d",
+    "bytes": 9349432
+  }
+}

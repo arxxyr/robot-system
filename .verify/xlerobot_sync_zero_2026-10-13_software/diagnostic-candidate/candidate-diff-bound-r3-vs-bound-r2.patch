@@ -1,0 +1,11 @@
+--- bound-r2
++++ bound-r3
+@@ -100,7 +100,7 @@
+                                    ["udevadm", "info", "--query=property", "--name", device])
+                            for device in m.DEVICES.values())
+             if (any(str(arg) in tool_paths for arg in argv[1:])
+-                    or (any(str(arg) in m.DEVICES.values() for arg in argv[1:]) and not metadata)):
++                    or (any(str(arg) in m.DEVICES.values() for arg in argv) and not metadata)):
+                 error = ValueError('未知工具或前缀不得绕过本轮UART名单')
+                 block_uart(engine, engine.zero_diag, error)
+                 raise error

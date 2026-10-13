@@ -1,0 +1,53 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "REAPED",
+  "status": "PASS",
+  "owner_pid": 71557,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ServerAliveCountMax=2",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 71558,
+  "started_utc": "2026-10-13T06:23:13.919805+00:00",
+  "started_monotonic_ns": 59674729593166,
+  "observe_seconds": 5.0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 1,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/observe_existing_sync_zero_software_r1.sh",
+    "sha256": "911937e9c2a58291293d4230ed4fa847e7796e3a4daf7133c6b0c4c9ae40b168",
+    "bytes": 3313
+  },
+  "launched_utc": "2026-10-13T06:23:13.921618+00:00",
+  "start_new_session": true,
+  "child_session_id": 71558,
+  "child_end_class": "EXIT_STATUS",
+  "child_signal": null,
+  "finished_utc": "2026-10-13T06:23:15.487865+00:00",
+  "observed_utc": "2026-10-13T06:23:15.487232+00:00",
+  "elapsed_ns": 1567960417,
+  "log_bytes_observed": 4895,
+  "log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/tools/xlerobot-sync-zero-native-observe-20261013-r1.owner/child.log",
+    "sha256": "cd80db87a1acdf4836b95b48fd0229f9b950fd640de53d67b68dffca84f141fc",
+    "bytes": 4895
+  }
+}

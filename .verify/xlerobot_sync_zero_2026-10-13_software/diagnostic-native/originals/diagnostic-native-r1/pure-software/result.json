@@ -1,0 +1,167 @@
+{
+  "status": "PASS",
+  "scope": "NATIVE_SINGLE_6_MEMORY_TESTS_DEFAULT_PLAN_MISSING_GO_NO_DEVICE_INSPECTION",
+  "source_before": {
+    "diagnostic-candidate/base_zero_sync_diagnostic_r1.py": {
+      "sha256": "3b68165786d7a603956f46843d8052a74316cb1fc061ba203dbb9737446001f7",
+      "bytes": 27496
+    },
+    "diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py": {
+      "sha256": "e97bda49241b3402a4972fae72d75ef96251b8f1d3f08ceae72ee82eee93549a",
+      "bytes": 20991
+    },
+    "diagnostic-candidate/fixtures/run_hardware_maintenance.py": {
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    "diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py": {
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    "diagnostic-candidate/fixtures/maintenance_bindings_base_zero_diagnostic_r4.json": {
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    }
+  },
+  "baseline_usb_current_state": "UNKNOWN，旧binding仅静态fixture；不构成当前binding/ready",
+  "hardware_actions": 0,
+  "uart_reads": 0,
+  "parameter_writes": 0,
+  "new_GO": false,
+  "Rust_tests_run": 0,
+  "release_builds": 0,
+  "source_after": {
+    "diagnostic-candidate/base_zero_sync_diagnostic_r1.py": {
+      "sha256": "3b68165786d7a603956f46843d8052a74316cb1fc061ba203dbb9737446001f7",
+      "bytes": 27496
+    },
+    "diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py": {
+      "sha256": "e97bda49241b3402a4972fae72d75ef96251b8f1d3f08ceae72ee82eee93549a",
+      "bytes": 20991
+    },
+    "diagnostic-candidate/fixtures/run_hardware_maintenance.py": {
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    "diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py": {
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    "diagnostic-candidate/fixtures/maintenance_bindings_base_zero_diagnostic_r4.json": {
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    }
+  },
+  "frozen_inputs_before_after": "PASS",
+  "methods": [
+    "test_complete_sequence_fifty_ms_no_ack_three_writes_and_trace",
+    "test_constructor_initial_left7_stop_failure_sticky_without_later_uart",
+    "test_lower_bound_expiry_and_original_deferred_stop_unknown",
+    "test_no_old_gv_write_unknown_tool_or_other_target",
+    "test_unbound_default_missing_ref_and_old_go_before_execution",
+    "test_valid_nonzero_pv_keeps_te0_cleanup_unknown_frame_or_ack_latches"
+  ],
+  "distinct_memory_methods": 6,
+  "expected_memory_methods": 6,
+  "native_test_batches": 1,
+  "canonical_candidate_path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+  "sync_tool_ref": {
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "bytes": 1507224
+  },
+  "default_PLAN_ONLY_exit": 0,
+  "missing_GO_original_exit": 2,
+  "input_loading_before_missing_GO": 0,
+  "commands": [
+    {
+      "label": "memory_tests",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py"
+      ],
+      "owner_pid": 668604,
+      "pid": 668608,
+      "started_ns": 1791874551626700307,
+      "finished_ns": 1791874552161494232,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "expected_exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-native-r1/pure-software/memory_tests.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-native-r1/pure-software/memory_tests.stderr",
+        "sha256": "0caa927583965f8cab62e1d8b96baf819ea0696d37f614758307b8b406b87eae",
+        "bytes": 1032
+      }
+    },
+    {
+      "label": "default_plan",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/base_zero_sync_diagnostic_r1.py"
+      ],
+      "owner_pid": 668604,
+      "pid": 668609,
+      "started_ns": 1791874552161858534,
+      "finished_ns": 1791874552229716934,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "expected_exit_code": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-native-r1/pure-software/default_plan.stdout",
+        "sha256": "27e36f1430c2d2275e8dcff6cb3d48a4b0d0aec8ebcee409255ad81e2e7df921",
+        "bytes": 439
+      },
+      "stderr": {
+        "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-native-r1/pure-software/default_plan.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "label": "missing_go",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+        "--execute",
+        "--maintenance",
+        "/MEMORY_ONLY/never-open/maintenance.py",
+        "--raw-helper",
+        "/MEMORY_ONLY/never-open/helper.py",
+        "--bindings",
+        "/MEMORY_ONLY/never-open/bindings.json",
+        "--output",
+        "/MEMORY_ONLY/never-open/must-not-create",
+        "--artifact-root",
+        "/MEMORY_ONLY/never-open"
+      ],
+      "owner_pid": 668604,
+      "pid": 668610,
+      "started_ns": 1791874552230056276,
+      "finished_ns": 1791874552297618632,
+      "exit_code": 2,
+      "wait_returncode": 2,
+      "expected_exit_code": 2,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-native-r1/pure-software/missing_go.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-native-r1/pure-software/missing_go.stderr",
+        "sha256": "2864445b0dff699480ddb4cdf1f6a8158dd9c8dfa360ba590c69e7b610acaad3",
+        "bytes": 125
+      }
+    }
+  ]
+}

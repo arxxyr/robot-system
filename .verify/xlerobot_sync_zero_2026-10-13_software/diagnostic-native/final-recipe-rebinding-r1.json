@@ -1,0 +1,57 @@
+{
+  "status": "FINAL_TWO_INPUT_PINS_BOUND_NO_NATIVE_RUN_YET",
+  "changed_candidate_inputs": [
+    {
+      "path": "diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+      "before": {
+        "sha256": "17c098ec1952f35c21c007e5bef05dc2089bba6387be23857bc1a7de5e7a1699",
+        "bytes": 27500
+      },
+      "after": {
+        "sha256": "3b68165786d7a603956f46843d8052a74316cb1fc061ba203dbb9737446001f7",
+        "bytes": 27496
+      }
+    },
+    {
+      "path": "diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+      "before": {
+        "sha256": "ee197854a2e9daefa84b4b4ccb82759b92ebddea4677357e8e005bd6f1481aa0",
+        "bytes": 20952
+      },
+      "after": {
+        "sha256": "e97bda49241b3402a4972fae72d75ef96251b8f1d3f08ceae72ee82eee93549a",
+        "bytes": 20991
+      }
+    }
+  ],
+  "preserved_held_directory": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-native/bound-17c-ee-held",
+  "candidate_inputs": {
+    "diagnostic-candidate/base_zero_sync_diagnostic_r1.py": {
+      "sha256": "3b68165786d7a603956f46843d8052a74316cb1fc061ba203dbb9737446001f7",
+      "bytes": 27496
+    },
+    "diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py": {
+      "sha256": "e97bda49241b3402a4972fae72d75ef96251b8f1d3f08ceae72ee82eee93549a",
+      "bytes": 20991
+    },
+    "diagnostic-candidate/fixtures/run_hardware_maintenance.py": {
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    },
+    "diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py": {
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    "diagnostic-candidate/fixtures/maintenance_bindings_base_zero_diagnostic_r4.json": {
+      "sha256": "347a65dbfe0b3d553f7df06b413507b1491c073ced8a283f498bf7a81f51be86",
+      "bytes": 30051
+    }
+  },
+  "distinct_test_methods": 6,
+  "native_child_expected_exit_codes": [
+    0,
+    0,
+    2
+  ],
+  "Rust_source_export_ELF_changes": 0
+}

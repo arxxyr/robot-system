@@ -1,0 +1,23 @@
+{
+  "status": "BOUND_R1_MAIN_TEST_ORIGINALS_PRESERVED_BEFORE_UNKNOWN_DEVICE_FALLBACK_FIX",
+  "records": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/bound-r1-snapshot/base_zero_sync_diagnostic_r1.py",
+      "sha256": "221ff4e4ce4677c9dcfce2355b3347055aee344de424a4da36a94330b290cbf3",
+      "bytes": 27340
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/bound-r1-snapshot/test_base_zero_sync_diagnostic_r1.py",
+      "sha256": "a60c2926a8d33f937964fb448f39604737f20feb8c78165b637b7d91a01e4645",
+      "bytes": 20170
+    }
+  ],
+  "bound_r1_receipt": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-bound-r1/receipt.json",
+    "sha256": "1a23f8b6040008592025ccd26f486d8aab564a56fc8307724f3064e5cb7433cd",
+    "bytes": 6546
+  },
+  "default_and_missing_GO_originals_preserved": true,
+  "UART": 0,
+  "GO_created": false
+}

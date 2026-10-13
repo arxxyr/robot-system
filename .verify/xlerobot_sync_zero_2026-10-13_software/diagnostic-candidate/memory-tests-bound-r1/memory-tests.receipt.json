@@ -1,0 +1,23 @@
+{
+  "name": "memory-tests",
+  "argv": [
+    "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+    "-B",
+    "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py"
+  ],
+  "pid": 75707,
+  "started_ns": 1791873172028608000,
+  "finished_ns": 1791873172173594000,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "stderr": {
+    "sha256": "bcc0ebec5d48a2575cbe455e83abd17be901a1b0175138af35ac7f4c2762d3ae",
+    "bytes": 1032
+  }
+}

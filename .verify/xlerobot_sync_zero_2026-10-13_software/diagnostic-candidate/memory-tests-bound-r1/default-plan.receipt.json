@@ -1,0 +1,23 @@
+{
+  "name": "default-plan",
+  "argv": [
+    "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+    "-B",
+    "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py"
+  ],
+  "pid": 75708,
+  "started_ns": 1791873172174331000,
+  "finished_ns": 1791873172198764000,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "sha256": "27e36f1430c2d2275e8dcff6cb3d48a4b0d0aec8ebcee409255ad81e2e7df921",
+    "bytes": 439
+  },
+  "stderr": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  }
+}

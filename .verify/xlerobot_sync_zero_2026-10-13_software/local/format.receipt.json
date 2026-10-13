@@ -1,0 +1,36 @@
+{
+  "label": "format",
+  "argv": [
+    "cargo",
+    "fmt",
+    "--all"
+  ],
+  "cwd": "/Users/loosqk/repo/rust/robot-system",
+  "child_pid": 60671,
+  "start_ns": 1791871502140753000,
+  "end_ns": 1791871503092650000,
+  "wait_returncode": 0,
+  "poll_returncode": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/local/format.stdout",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "stderr": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/local/format.stderr",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "source_before": {
+    "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "sha256": "fc2f022fe0843e7ef8994b15c6152c83b4f6f20962f33773d4be1c92f733610f",
+    "bytes": 27799
+  },
+  "source_after": {
+    "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "sha256": "2a6becdb1a4866f93aef05474a2780cdc208b8e1f60eeef051b8972ab13eb846",
+    "bytes": 27837
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "terminal_identity": [
+    "sync-zero-diagnostic-software-20261013-r1",
+    "@109",
+    "%109",
+    668604
+  ],
+  "start": {
+    "name": "start-software-only",
+    "argv": [
+      "tmux",
+      "new-session",
+      "-d",
+      "-s",
+      "sync-zero-diagnostic-software-20261013-r1",
+      "-P",
+      "-F",
+      "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}",
+      "bash /home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-native-r1/boot/launch_pure_sync_zero_r1.sh"
+    ],
+    "pid": 668603,
+    "started_ns": 1791874551565270127,
+    "finished_ns": 1791874551571057489,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "signals_sent": [],
+    "stdout": "sync-zero-diagnostic-software-20261013-r1|@109|%109|668604\n",
+    "stderr": ""
+  },
+  "scope": "仅纯软件；不接触UART/USB/服务/GO",
+  "observations": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-native-r1/boot/observations.jsonl"
+}

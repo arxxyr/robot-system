@@ -1,0 +1,88 @@
+{
+  "status": "PASS_INDEPENDENT_LATEST_NATIVE_SYNC_ZERO_SOFTWARE_REVIEW",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/native-originals-sync-zero-software-r1.tar.gz",
+    "sha256": "666dc4a7ac6b369779310495b0fec15d43efbaa59e9a6decc965a1c5405182f4",
+    "bytes": 10232733,
+    "files": 68
+  },
+  "owner": {
+    "owner_pid": 69718,
+    "ssh_pid": 69719,
+    "exit_code": 0,
+    "reaped": true,
+    "input": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/single_ssh_native_sync_zero_software_r1.sh",
+      "sha256": "ecb7653a7adff3c7ffb8fa8cb62fc9e4b6f13dc863756a58b17192c7853d36d8",
+      "bytes": 12651286
+    },
+    "log": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/tools/xlerobot-sync-zero-native-software-20261013-r1.owner/child.log",
+      "sha256": "ac6ac4de538b55e6d9806e1859f04771c8802534dcc49436e0ceca7344eeeb18",
+      "bytes": 13648141
+    },
+    "owner_result_path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/tools/xlerobot-sync-zero-native-software-20261013-r1.owner/result.json"
+  },
+  "driver": {
+    "pid": 665185,
+    "pane": "%108",
+    "terminal": "xlerobot-sync-zero-software-20261013-r1|@108|%108|665185|1|0",
+    "owned_dead_pane_reclaimed": true
+  },
+  "native_direct_children": 9,
+  "native_stdout_stderr_files": 18,
+  "parameter_nested_children": 3,
+  "parameter_nested_stdout_stderr": 6,
+  "parameter_original_exit_codes": [
+    2,
+    2,
+    2
+  ],
+  "wrapper_direct_children": 33,
+  "compiler": {
+    "release": "1.101.0-nightly",
+    "commit_hash": "e9bbadf6824e65b3583c2dda3a0926ec76df9143",
+    "host": "aarch64-unknown-linux-gnu"
+  },
+  "source_manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+  "source597_three_windows_and_root_equal": true,
+  "shared_old_r7_SOURCE": "068277d8 before/after equal, no writes",
+  "native_git_head": null,
+  "root_export_git_head": "67d8b2ad43c47956c05b60bd428679dc91b1dd12",
+  "root_compile_dirty_files": [
+    "crates/robot-adapters/feetech/examples/feetech_poke.rs"
+  ],
+  "distinct_example_tests": 15,
+  "new_methods_subset": 2,
+  "default_root_Clippy_zero_warnings": true,
+  "real_hw_root_Clippy_zero_warnings": true,
+  "only_diagnostic_example_release": true,
+  "frozen_ELF": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/originals/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "bytes": 1507224,
+    "mode": 509,
+    "elf_machine": 183
+  },
+  "frozen_ELF_before_after_equal": true,
+  "exact_parameter_rejections": 3,
+  "parameter_rejections_before_open": true,
+  "actual_signals": [],
+  "full_workspace_tests": 0,
+  "lib_tests": 0,
+  "RT_tests": 0,
+  "H2_runs": 0,
+  "production_control_builds": 0,
+  "formal_installations": 0,
+  "services_touched": 0,
+  "UART_operations": 0,
+  "GO_created": false,
+  "no_ACK_semantics": "仅软件证明固定addr46/2B单ID SYNC_WRITE且不消费ACK；不证明硬件接收、实际停止或零值启扭安全",
+  "actual_exec": {
+    "start_chunk": "050daa",
+    "session_id": 71694,
+    "completion_chunk": "404edc",
+    "exit_code": 0,
+    "independent_review": "CURRENT_TOOL_COMPLETION"
+  }
+}

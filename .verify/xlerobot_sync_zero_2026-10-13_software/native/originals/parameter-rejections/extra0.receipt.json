@@ -1,0 +1,29 @@
+{
+  "name": "extra0",
+  "argv": [
+    "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+    "/dev/never-open",
+    "9",
+    "sync-zero",
+    "0"
+  ],
+  "pid": 668479,
+  "owner_pid": 668478,
+  "started_ns": 1791872617919701404,
+  "finished_ns": 1791872617921588426,
+  "exit_code": 2,
+  "wait_returncode": 2,
+  "expected_exit_code": 2,
+  "reaped": true,
+  "signals_sent": [],
+  "stdout": {
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/parameter-rejections/extra0.stdout",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "stderr": {
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/parameter-rejections/extra0.stderr",
+    "sha256": "99ef2d7f0fc2e3c09d04616d622e88e0824ad761fcdc9d4735aa1ab58194a4c7",
+    "bytes": 50
+  }
+}

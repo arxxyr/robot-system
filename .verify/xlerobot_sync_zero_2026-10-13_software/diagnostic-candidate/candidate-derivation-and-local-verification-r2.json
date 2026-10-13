@@ -1,0 +1,105 @@
+{
+  "status": "PASS_FINAL_BOUND_SYNC_ZERO_SAME_SIX_METHODS_ONLY_UNKNOWN_EXPLICIT_DEVICE_FALLBACK_FIX_PENDING_ROOT_REVIEW",
+  "recorded_at_utc": "2026-10-13T06:43:27.309205+00:00",
+  "main": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+    "sha256": "17c098ec1952f35c21c007e5bef05dc2089bba6387be23857bc1a7de5e7a1699",
+    "bytes": 27500
+  },
+  "test": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+    "sha256": "ee197854a2e9daefa84b4b4ccb82759b92ebddea4677357e8e005bd6f1481aa0",
+    "bytes": 20952
+  },
+  "prior_derivation_original_unchanged": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/candidate-derivation-and-local-verification-r1.json",
+    "sha256": "69b387aaefc96a709a683783174f19620942cab2ef8ab0a64fb2e3138f1a35ba",
+    "bytes": 13654
+  },
+  "prior_bound_source_originals": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/bound-r1-snapshot/base_zero_sync_diagnostic_r1.py",
+      "sha256": "221ff4e4ce4677c9dcfce2355b3347055aee344de424a4da36a94330b290cbf3",
+      "bytes": 27340
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/bound-r1-snapshot/test_base_zero_sync_diagnostic_r1.py",
+      "sha256": "a60c2926a8d33f937964fb448f39604737f20feb8c78165b637b7d91a01e4645",
+      "bytes": 20170
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/bound-r1-snapshot/preservation-receipt.json",
+      "sha256": "600795fdf81e650e66482cfb49d156c02b2089c5058f32a03b7e261bc0b9f720",
+      "bytes": 1070
+    }
+  ],
+  "prior_bound_pass_and_actual_default_missing_GO_originals": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-bound-r1/receipt.json",
+    "sha256": "1a23f8b6040008592025ccd26f486d8aab564a56fc8307724f3064e5cb7433cd",
+    "bytes": 6546
+  },
+  "final_verification": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-bound-r2/receipt.json",
+    "sha256": "8105a8fc2df2d58eece11777d836bec115969e4fbf2ca118b172794c24ff6fc4",
+    "bytes": 3859
+  },
+  "different_memory_methods": 6,
+  "no_count_sum": "unbound r1-r5、bound r1/r2均为同6方法，不计42；旧PASS与最新PASS分别保留。",
+  "latest_minimal_change": "unknown路径携明确DEVICE token或known tool path均粘性拒；只有冻结3种精确非UART metadata argv允许携具名两侧DEVICE，不按basename匹配，不新增flag/命令。",
+  "allowed_device_metadata_exact_shapes": [
+    [
+      "fuser",
+      "DEVICE"
+    ],
+    [
+      "sudo",
+      "-n",
+      "fuser",
+      "DEVICE"
+    ],
+    [
+      "udevadm",
+      "info",
+      "--query=property",
+      "--name",
+      "DEVICE"
+    ]
+  ],
+  "test_scope_change": "仅现有whitelist方法加1个unknown DEVICE+other-op拒绝和3个metadata成功mock；不真实运行fuser/udevadm。",
+  "diffs": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/candidate-diff-bound-r2-vs-bound-r1.patch",
+      "sha256": "26de0bc6d5183a18a3c9252edeb4e4243e5f2751eac9820c35efb9be3ac56f75",
+      "bytes": 1206
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/tests-diff-bound-r2-vs-bound-r1.patch",
+      "sha256": "381b2b6e80b765fed51b9110f2534eb737732ac58466b5a488b623f6ae1cec76",
+      "bytes": 1853
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/candidate-diff-final-bound-r2-vs-frozen-r4.patch",
+      "sha256": "37a31ac2988bbd6c0427e0173e887e1170a9dc56f3ee05bd07db949f49252459",
+      "bytes": 24771
+    }
+  ],
+  "source_const_and_contracts_unchanged": "唯一b2bfedb1/1507224 SYNC_TOOL；GOExpired数值期限/unknown sticky/3写/至少50ms/500ms/PV原TE0/STOP51/完整身份与DEFERRED原样。",
+  "refs_expected": 58,
+  "ref_recipe": "55oldrefs + helper70 + new main当前SHA + unique SYNC ELF；binary_paths只增加该ELF。",
+  "old_helper_type_limit": "70冻结helper继承bool==int形式未在本批整改，不宣称闭环；真实13c Rust输出固定整数，需依实际完整帧证据，不由mock外推。",
+  "known_software_review_fixes": [
+    "构造期新轻量GO到期不能回归原已Enable的独立TE0 cleanup。",
+    "同份raw值门先于返回GO，不能以仅过期掩盖Goal/TE原读回不符。",
+    "unknown DEVICE+other-op不能fallback原executor；保留精确现有非UART metadata。"
+  ],
+  "current_default_missing_GO_validation_limit": "真实CLI0/2原回执属于bound-r1；本次未重跑两CLI。main/default与缺GO函数体逐字未变，最新同6方法仍校这两个纯入口。",
+  "review_status": "最终bound-r2新SHA已交quality窄静审，不冒称尚未产出的报告。",
+  "UART": 0,
+  "SSH": 0,
+  "GO_created": false,
+  "runtime_or_hardware_run": false,
+  "production_source_modified_by_this_agent": false,
+  "firmware_contract_verified": false,
+  "base_targets": "DEFERRED",
+  "whole_run_result_contract": "FAIL remains; no hardware/safety PASS claim"
+}

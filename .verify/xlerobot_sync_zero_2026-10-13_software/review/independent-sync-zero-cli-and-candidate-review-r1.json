@@ -1,0 +1,241 @@
+{
+  "schema": "SYNC_ZERO_CLI_AND_CANDIDATE_INDEPENDENT_REVIEW_V1",
+  "recorded_at_utc": "2026-10-13T06:53:30.150061+00:00",
+  "status": "REVIEW_COMPLETE_SOFTWARE_CORE_PASS_WITH_ONE_LITERAL_DEVICE0_ALLOWLIST_FINDING",
+  "scope": "只读Rust一处diff、必要native原件、当前bound-r2候选及现有6方法回执；仅新写本报告，不执行候选/ELF/Cargo/测试/SSH/UART，不生成GO",
+  "reviewed_candidate": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+    "sha256": "17c098ec1952f35c21c007e5bef05dc2089bba6387be23857bc1a7de5e7a1699",
+    "bytes": 27500
+  },
+  "reviewed_test": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/test_base_zero_sync_diagnostic_r1.py",
+    "sha256": "ee197854a2e9daefa84b4b4ccb82759b92ebddea4677357e8e005bd6f1481aa0",
+    "bytes": 20952
+  },
+  "Rust_native_status": "PASS",
+  "Rust_native_details": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/review/independent-sync-zero-cli-native-review-interim-r1.json",
+    "sha256": "5dc085d1e634dd0a25e663d43e8ddad6d4aaa57c34a71e7835294e0847d9f8d4",
+    "bytes": 3172
+  },
+  "Rust": {
+    "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "sha256": "2a6becdb1a4866f93aef05474a2780cdc208b8e1f60eeef051b8972ab13eb846",
+    "bytes": 27837
+  },
+  "golden_frame": "ff ff fe 07 83 2e 02 09 00 00 3e",
+  "CLI_contract": [
+    "仅sync-zero固定单ID Goal_Velocity0，addr46/width2/0x83；无寄存器或值参数，额外参数/invalid ID开串口前拒",
+    "不消费写ACK，不Enable；正常CLI仍既有PING/型号READ握手",
+    "旧Phase/诊断九项及固件两项通用拒写门不变"
+  ],
+  "native_verified_scope": {
+    "Runner_commands": 9,
+    "Runner_raw_streams_SHA_bytes_checked": 18,
+    "all_Runner_exit0_reaped_no_signals_or_session_residual": true,
+    "nested_parameter_rejections_original_exit2": 3,
+    "nested_raw_streams_SHA_bytes_checked": 6,
+    "distinct_example_tests": 15,
+    "new_methods_subset": 2,
+    "new_methods_not_added_to_15": true,
+    "default_and_real_hw_root_Clippy_zero_warnings": true,
+    "fmt_then_Clippy_actual_order_preserved": true,
+    "compiler_before_after_e9": {
+      "release": "1.101.0-nightly",
+      "commit_hash": "e9bbadf6824e65b3583c2dda3a0926ec76df9143",
+      "host": "aarch64-unknown-linux-gnu"
+    },
+    "typed_source_count": 597,
+    "source_aggregate": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+    "new_source_3_windows_and_root_full_dict_equal": true,
+    "only_changed_source": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "old_shared_r7_SOURCE_068_before_after_full_dict_same": true,
+    "only_diagnostic_example_release": true
+  },
+  "native_archive_identity": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/native-originals-sync-zero-software-r1.tar.gz",
+    "sha256": "666dc4a7ac6b369779310495b0fec15d43efbaa59e9a6decc965a1c5405182f4",
+    "bytes": 10232733
+  },
+  "ELF": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/native/originals/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "bytes": 1507224,
+    "class": 64,
+    "endian": "little",
+    "e_machine": 183
+  },
+  "candidate_core_status": "PASS_STATIC_EXECUTION_PATH_AND_EXISTING_SOFTWARE_EVIDENCE",
+  "candidate_contract_checks": [
+    {
+      "result": "PASS",
+      "lines": [
+        83,
+        178,
+        418,
+        427
+      ],
+      "detail": "ProbeEngine构造期即绑定io.command guard；初始/最终普通17电机STOP_REGS TE/PV/GV非零或完整stdout身份未知立即粘性manual_cut，后续所有具名UART均在original前拒；允许既有非UART元数据收尾。"
+    },
+    {
+      "result": "PASS",
+      "lines": [
+        118,
+        145
+      ],
+      "detail": "仅right9三写索引0/1/2：新唯一ELF sync-zero Goal0（46/2/0x83/no write ACK）→旧f201 TE1→独立cleanup TE0；无参数值、普通GV写、其它轮写、重复写或direct strace许可。"
+    },
+    {
+      "result": "PASS",
+      "lines": [
+        128,
+        139,
+        306
+      ],
+      "detail": "至少50ms以单调SYNC发送返回完成时刻为基准；GV0原读回后等待剩余下界并再gate，Enable guard再检查下界；无提前Enable。"
+    },
+    {
+      "result": "PASS",
+      "lines": [
+        138,
+        142,
+        150,
+        168
+      ],
+      "detail": "SYNC精确发送stdout、TE写ACK精确stdout、raw完整帧及入口/GV0/TE值、普通READ完整stdout/整数停止值均在返回GO门之前校验；坏ACK/坏帧/未知身份不能被随后GO到期转成cleanup例外。"
+    },
+    {
+      "result": "PASS",
+      "lines": [
+        171,
+        422
+      ],
+      "detail": "生产GOExpired仅由time.time_ns()>=当前GO.expires_at_ns数值处产生；只在已记录TE1尝试后保留原独立TE0+READ收尾。其它GO失效/引用/参数/原帧异常均sticky，不用GOExpired泛化UNKNOWN。"
+    },
+    {
+      "result": "PASS",
+      "lines": [
+        325,
+        347,
+        355
+      ],
+      "detail": "原0/200/400ms三个请求、500000000ns完成门与零PV门保持；既有错slot/越预算不补读不重试。等待至500ms后观察结束可有真实调度开销，不宣称整段严格500ms内结束。"
+    },
+    {
+      "result": "PASS",
+      "lines": [
+        365,
+        437,
+        444
+      ],
+      "detail": "valid非零观察PV交原TE0 safe_off；cleanup=True只能第三写TE0及原具名普通READ，raw不得冒充cleanup；原STOP51/完整身份未知或非零永久manual，不再UART。"
+    },
+    {
+      "result": "PASS",
+      "lines": [
+        98,
+        107
+      ],
+      "detail": "最新最小改动仅3现有完整argv metadata形态白名单与unknown显式DEVICE/known tool prefix拒绝；未增加函数或新flag。DEVICE位于argv[0]的字面边界另列finding，不能称全部任意argv闭环。"
+    },
+    {
+      "result": "PASS",
+      "lines": [
+        200,
+        214,
+        454,
+        472
+      ],
+      "detail": "GO新run/plan/输入完整引用、最大600s/当次架空支撑事实门保持；refs预期55old+helper70+当前main+唯一SYNC ELF共58。默认PLAN_ONLY/缺GO拒分支同旧bound main AST，production传真实go到install；三轮DEFERRED和BASE_FIRMWARE_CONTRACT_UNVERIFIED整轮FAIL口径保持。"
+    }
+  ],
+  "latest_diff": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/candidate-diff-bound-r2-vs-bound-r1.patch",
+    "sha256": "26de0bc6d5183a18a3c9252edeb4e4243e5f2751eac9820c35efb9be3ac56f75",
+    "bytes": 1206
+  },
+  "latest_test_diff": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/tests-diff-bound-r2-vs-bound-r1.patch",
+    "sha256": "381b2b6e80b765fed51b9110f2534eb737732ac58466b5a488b623f6ae1cec76",
+    "bytes": 1853
+  },
+  "saved_diff_recomputed_exact": true,
+  "candidate_function_names_unchanged_from_bound_r1": true,
+  "same_production_main_AST_from_bound_r1": true,
+  "current_memory_evidence": {
+    "receipt": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-bound-r2/receipt.json",
+      "sha256": "8105a8fc2df2d58eece11777d836bec115969e4fbf2ca118b172794c24ff6fc4",
+      "bytes": 3859
+    },
+    "pid": 78400,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "signals_sent": [],
+    "distinct_method_count": 6,
+    "five_current_inputs_equal_before_after": true,
+    "stdout": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-bound-r2/memory-tests.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "stderr": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-bound-r2/memory-tests.stderr",
+      "sha256": "8812e826bf7e0dbf46f742df95bb8621de4b7f7d0a86e30ec90cdc564cf39fff",
+      "bytes": 1032
+    },
+    "raw_stream_SHA_bytes_match_receipt": true,
+    "scope": "读取已有一次同6方法PASS；新增unknown DEVICE+other-op拒绝与3精确metadata纯替身，不运行真实metadata命令。相同方法历轮不累计为42。"
+  },
+  "older_evidence_preserved": {
+    "bound_r1_main": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/bound-r1-snapshot/base_zero_sync_diagnostic_r1.py",
+      "sha256": "221ff4e4ce4677c9dcfce2355b3347055aee344de424a4da36a94330b290cbf3",
+      "bytes": 27340
+    },
+    "bound_r1_test": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/bound-r1-snapshot/test_base_zero_sync_diagnostic_r1.py",
+      "sha256": "a60c2926a8d33f937964fb448f39604737f20feb8c78165b637b7d91a01e4645",
+      "bytes": 20170
+    },
+    "bound_r1_receipt": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/memory-tests-bound-r1/receipt.json",
+      "sha256": "1a23f8b6040008592025ccd26f486d8aab564a56fc8307724f3064e5cb7433cd",
+      "bytes": 6546
+    },
+    "unbound_main": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/unbound-snapshot/base_zero_sync_diagnostic_r1.py",
+      "sha256": "daed2897ec9360f7689a44c22f276d1d7479122f88e7719560459658c7a49d66",
+      "bytes": 27167
+    },
+    "limit": "实际默认75708 exit0和缺GO75709 exit2真wait/reap属于bound-r1，不回填为bound-r2实跑；bound-r2仅静态main不变及同6方法验证。"
+  },
+  "findings": [
+    {
+      "code": "UNKNOWN_EXPLICIT_DEVICE_AT_ARGV0_LITERAL_BOUNDARY",
+      "candidate_sha256": "17c098ec1952f35c21c007e5bef05dc2089bba6387be23857bc1a7de5e7a1699",
+      "line": 103,
+      "status": "PENDING_ROOT_CONTRACT_SCOPE_DECISION",
+      "fact": "DEVICE成员检测仅argv[1:]；argv=[m.DEVICES[\"right\"]]或DEVICE位于argv[0]时进入original且不设置sticky。3精确metadata白名单本身无错。",
+      "runtime_boundary": "冻结d97/helper执行路径不产生此形态；本次没有执行该argv，也不能据此宣称UART发生。此处只不满足“unknown任何明确DEVICE均粘性拒”的字面合同。",
+      "minimal_possible_fix": "仅DEVICE成员检查从argv[1:]改为argv全体；known tool prefix检查argv[1:]与所有其它门保持。已先交root及prepare裁定，本审查不修改候选/重测。"
+    }
+  ],
+  "limits": [
+    "没有新现场GO、UART、硬件运行；软件PASS不证明实际接收、零速、物理静止或Enable安全。",
+    "继承冻结helper70的bool==int元数据类型缺口未在本窄scope修正，真实13c输出固定整数；不宣称泛化畸形JSON全闭环。",
+    "仅复核必要native raw/source/output/ELF，未再次检验全68件大量JSON。",
+    "当前main终审版本为17c098ec；后续字节变化需另绑定及审查，不能由本报告自动覆盖。"
+  ],
+  "review_actions": {
+    "SSH": 0,
+    "UART": 0,
+    "GO_created": false,
+    "hardware_run": false,
+    "software_tests_rerun": 0,
+    "candidate_modified": false
+  },
+  "scope_outside_finding_errors": []
+}

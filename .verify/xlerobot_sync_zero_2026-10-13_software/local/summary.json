@@ -1,0 +1,26 @@
+{
+  "status": "PASS_LOCAL_SOFTWARE",
+  "actual_children": 6,
+  "receipts": [
+    "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/local/rustc-identity.receipt.json",
+    "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/local/cargo-identity.receipt.json",
+    "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/local/rustup-active.receipt.json",
+    "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/local/format.receipt.json",
+    "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/local/example-tests.receipt.json",
+    "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/local/example-clippy.receipt.json"
+  ],
+  "not_run": [
+    "full-workspace-tests",
+    "root-clippy",
+    "release-build",
+    "real-cli",
+    "SSH",
+    "UART",
+    "hardware"
+  ],
+  "source_after": {
+    "path": "/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "sha256": "2a6becdb1a4866f93aef05474a2780cdc208b8e1f60eeef051b8972ab13eb846",
+    "bytes": 27837
+  }
+}

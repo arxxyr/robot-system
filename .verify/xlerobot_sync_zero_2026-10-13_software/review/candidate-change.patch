@@ -1,0 +1,163 @@
+--- 67d8b2a/crates/robot-adapters/feetech/examples/feetech_poke.rs
++++ crates/robot-adapters/feetech/examples/feetech_poke.rs
+@@ -18,6 +18,7 @@
+ //!
+ //! ```bash
+ //! feetech_poke <address> <motor_id> ping
++//! feetech_poke <address> <motor_id> sync-zero
+ //! feetech_poke <address> <motor_id> read  <register>
+ //! feetech_poke <address> <motor_id> read-raw <register>
+ //! feetech_poke <address> <motor_id> write <register> <value>
+@@ -33,6 +34,8 @@
+ //!   TX/RX JSON，不换算单位。`requested_register_address`是请求地址，
+ //!   状态包不回显该地址；`serial_device`是CLI路径，不证明物理会话身份。
+ //!   原`read`仍为单 `READ`，不能用新 `SYNC_READ` 回包回填历史读数或推定运动。
++//! - `sync-zero`：固定发送单ID的 `Goal_Velocity=0`，地址46、宽度2字节。
++//!   `SYNC_WRITE` 无ACK，不启用电机，也不证明电机已接收、实际停止或零速启扭安全。
+ //!
+ //! ## 实例
+ //!
+@@ -118,10 +121,46 @@
+     format!(
+         "usage:\n  \
+          {prog} <address> <motor_id> ping\n  \
++         {prog} <address> <motor_id> sync-zero\n  \
+          {prog} <address> <motor_id> read  <register>\n  \
+          {prog} <address> <motor_id> read-raw <register>\n  \
+          {prog} <address> <motor_id> write <register> <value>\n"
+     )
++}
++
++/// 固定零值动作的纯参数门；main在开串口前调用，不接受寄存器或数值参数。
++fn sync_zero_arguments(args: &[String], motor_id: u8) -> Result<(), String> {
++    if args.len() != 4 {
++        return Err("sync-zero不接受寄存器或数值参数".to_string());
++    }
++    Motor::new(motor_id).map_err(|error| format!("motor_id {motor_id}: {error}"))?;
++    Ok(())
++}
++
++fn do_sync_zero<T: robot_adapter_feetech::SerialTransport>(
++    bus: &mut FeetechBus<T>,
++    motor_id: u8,
++    args: &[String],
++    output: &mut impl std::io::Write,
++) -> ExitCode {
++    if let Err(error) = sync_zero_arguments(args, motor_id) {
++        eprintln!("error: {error}");
++        return ExitCode::from(2);
++    }
++    if let Err(error) = bus.sync_write_by_id("Goal_Velocity", &[(motor_id, 0)]) {
++        eprintln!("error: sync-zero Goal_Velocity@{motor_id}: {error}");
++        return ExitCode::from(1);
++    }
++    match writeln!(
++        output,
++        "sync-zero Goal_Velocity@{motor_id} <- 0: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度"
++    ) {
++        Ok(()) => ExitCode::SUCCESS,
++        Err(error) => {
++            eprintln!("error: SYNC_WRITE已发送，但输出失败: {error}");
++            ExitCode::from(1)
++        }
++    }
+ }
+ 
+ fn do_read<T: robot_adapter_feetech::SerialTransport>(
+@@ -279,6 +318,13 @@
+         return ExitCode::from(2);
+     }
+ 
++    if action == "sync-zero"
++        && let Err(error) = sync_zero_arguments(&args, motor_id)
++    {
++        eprintln!("error: {error}");
++        return ExitCode::from(2);
++    }
++
+     // 构造 bus：单 motor 名统一叫 "m"（本工具不关心名字语义）
+     let transport = match RealSerialTransport::open(Path::new(address), DEFAULT_BAUDRATE) {
+         Ok(t) => t,
+@@ -316,6 +362,7 @@
+             println!("ping ok: motor_id={motor_id} on {address} (Model_Number=STS3215 777)");
+             ExitCode::SUCCESS
+         }
++        "sync-zero" => do_sync_zero(&mut bus, motor_id, &args, &mut std::io::stdout().lock()),
+         "read" => do_read(&mut bus, motor_id, &args, &prog),
+         "read-raw" => do_read_raw(&mut bus, motor_id, &args, &mut std::io::stdout().lock()),
+         "write" => do_write(&mut bus, motor_id, &args, &prog),
+@@ -365,6 +412,74 @@
+         frame.extend_from_slice(params);
+         frame.push(robot_adapter_feetech::protocol::checksum(&frame[2..]));
+         frame
++    }
++
++    #[test]
++    fn sync_zero_sends_exact_single_id_packet_without_ack_or_other_register_writes() {
++        let args: Vec<String> = ["feetech_poke", "/dev/never-open", "9", "sync-zero"]
++            .into_iter()
++            .map(str::to_string)
++            .collect();
++        for pending_reply in [false, true] {
++            let (mut bus, handle) = raw_fixture();
++            if pending_reply {
++                // 给下一次普通READ预置回包；零值SYNC_WRITE不得消费它。
++                handle.push_rx(&status_frame(9, &[0, 0]));
++            }
++            let mut output = Vec::new();
++            assert_eq!(
++                do_sync_zero(&mut bus, 9, &args, &mut output),
++                ExitCode::SUCCESS
++            );
++            assert_eq!(
++                handle.peek_tx(),
++                [
++                    0xff, 0xff, 0xfe, 0x07, 0x83, 0x2e, 0x02, 0x09, 0x00, 0x00, 0x3e
++                ]
++            );
++            assert_eq!(
++                String::from_utf8(output).unwrap(),
++                "sync-zero Goal_Velocity@9 <- 0: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n"
++            );
++            if pending_reply {
++                assert_eq!(bus.read("Present_Velocity", "m").unwrap(), 0);
++            }
++        }
++    }
++
++    #[test]
++    fn sync_zero_rejects_extra_arguments_and_invalid_ids_before_mock_io() {
++        let base: Vec<String> = ["feetech_poke", "/dev/never-open", "9", "sync-zero"]
++            .into_iter()
++            .map(str::to_string)
++            .collect();
++        let mut invalid = vec![base[..3].to_vec()];
++        for extra in [
++            vec!["1"],
++            vec!["0"],
++            vec!["Goal_Velocity"],
++            vec!["Goal_Velocity", "0"],
++            vec!["Torque_Enable", "1"],
++        ] {
++            let mut args = base.clone();
++            args.extend(extra.into_iter().map(str::to_string));
++            invalid.push(args);
++        }
++        for (args, id) in invalid.into_iter().map(|args| (args, 9)).chain([
++            (base.clone(), 0),
++            (base.clone(), 254),
++            (base, 255),
++        ]) {
++            assert!(sync_zero_arguments(&args, id).is_err());
++            let (mut bus, handle) = raw_fixture();
++            let mut output = Vec::new();
++            assert_eq!(
++                do_sync_zero(&mut bus, id, &args, &mut output),
++                ExitCode::from(2)
++            );
++            assert!(output.is_empty());
++            assert!(handle.peek_tx().is_empty());
++        }
+     }
+ 
+     #[test]

@@ -1,0 +1,29 @@
+{
+  "status": "PASS_CURRENT_MAIN_SOURCE_AND_FROZEN_ELF",
+  "source_windows": {
+    "source_before": {
+      "inputs": 597,
+      "all_same": true,
+      "mismatches": [],
+      "manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5"
+    },
+    "fmt_after": {
+      "inputs": 597,
+      "all_same": true,
+      "mismatches": [],
+      "manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5"
+    },
+    "source_after": {
+      "inputs": 597,
+      "all_same": true,
+      "mismatches": [],
+      "manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5"
+    }
+  },
+  "ELF": {
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "bytes": 1507224
+  },
+  "tests_rerun": 0,
+  "hardware_IO": 0
+}

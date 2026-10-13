@@ -1,0 +1,151 @@
+{
+  "status": "LOCAL_ONLY_SEVEN_UNBOUND_SYNC_ZERO_RUNTIME_DRAFTS_NOT_EXECUTED",
+  "recorded_at_utc": "2026-10-13T07:03:18.726141+00:00",
+  "remote_BASE": "/home/loosqk/robot-checks/base-zero-sync-diagnostic-r1",
+  "remote_session": "base-zero-sync-diagnostic-trial-20261013-r1",
+  "main": {
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+    "sha256": "3b68165786d7a603956f46843d8052a74316cb1fc061ba203dbb9737446001f7",
+    "bytes": 27496
+  },
+  "helper": {
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py",
+    "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+    "bytes": 12220
+  },
+  "SYNC_TOOL": {
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "bytes": 1507224
+  },
+  "refs_rule": "55oldrefs后按helper/main/ELF追加3至58；binary_paths仅追加新ELF",
+  "drafts": [
+    {
+      "draft": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/launch_base_zero_sync_diagnostic_r1.draft.sh",
+        "sha256": "0e424f9ddc5cc7a7fd720bec7526b3e1765729daf8d8434a249f5535bef3df1c",
+        "bytes": 2242
+      },
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/launch_base_feedback_diagnostic_r2.draft.sh",
+        "sha256": "19ee062ed3f33bb8d782d55b128eedbd8c0afd2a48c58dc840d61e9c665e38c4",
+        "bytes": 2208
+      },
+      "diff": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/launch_base_zero_sync_diagnostic_r1.draft.sh.diff-vs-feedback-r2.patch",
+        "sha256": "97387c4dce0ac1f634621b1d23064908bf7f5996bb988f5ff53df3e54cf393dd",
+        "bytes": 3783
+      }
+    },
+    {
+      "draft": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/start_base_zero_sync_diagnostic_once_r1.draft.sh",
+        "sha256": "9637925b9ddad8b5316b7c7f11a753f6d5ae1de959bcdc6434e60506af33a799",
+        "bytes": 13061
+      },
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/start_base_feedback_diagnostic_once_r2.draft.sh",
+        "sha256": "36c6a0f5789ec3c296223cdb012688d9a75174ea80ca336b31941306c97abbc9",
+        "bytes": 12126
+      },
+      "diff": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/start_base_zero_sync_diagnostic_once_r1.draft.sh.diff-vs-feedback-r2.patch",
+        "sha256": "e051897fa5002fadaa70862e05f5343d1c373f866abaf1444475e5f1f1829e4c",
+        "bytes": 16877
+      }
+    },
+    {
+      "draft": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/observe_base_zero_sync_diagnostic_once_r1.draft.sh",
+        "sha256": "826590c7b86b093d45380fa71c587d261736e079853f8f18f357e0deb88ddfa4",
+        "bytes": 3922
+      },
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/observe_base_feedback_diagnostic_once_r2.draft.sh",
+        "sha256": "f2d601a1fe9c732ef721b92e744eb17411c268384f01fdc0599ac2c983f43b35",
+        "bytes": 3777
+      },
+      "diff": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/observe_base_zero_sync_diagnostic_once_r1.draft.sh.diff-vs-feedback-r2.patch",
+        "sha256": "1174ba1536b43fa91393f50ef27b292e0e5c0f349ead5a93e6f30e211bc20980",
+        "bytes": 4215
+      }
+    },
+    {
+      "draft": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/seal_base_zero_sync_diagnostic_r1.draft.sh",
+        "sha256": "fc763efe7f990eba63660254175ae8632ede6654e85b021775dc952e481d609a",
+        "bytes": 14822
+      },
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/seal_base_feedback_diagnostic_r2.draft.sh",
+        "sha256": "dae698af6660e9f5e3c29a07f7a55cb0068413eafbadb1e2110f3b6934bdce71",
+        "bytes": 13471
+      },
+      "diff": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/seal_base_zero_sync_diagnostic_r1.draft.sh.diff-vs-feedback-r2.patch",
+        "sha256": "d7a13a3e1578b983f2fedc68673dddbca47d7f8be92edeaeb2c11e2e01522caf",
+        "bytes": 18671
+      }
+    },
+    {
+      "draft": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/readonly_nonuart17_usb_refresh_r1.draft.sh",
+        "sha256": "e21c5e8661857d6a9c205e22b340b7604e574e77ee2d479715926b1adf62e149",
+        "bytes": 2432
+      },
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/readonly_nonuart17_usb_refresh_r2.draft.sh",
+        "sha256": "0288637fea12faa65ce24edbdb21ed05d37efd7a39ccf7e483fff93e6cd979bd",
+        "bytes": 2430
+      },
+      "diff": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/readonly_nonuart17_usb_refresh_r1.draft.sh.diff-vs-feedback-r2.patch",
+        "sha256": "9558113f1c0036eb04615f03995cb6b720b72b7d50850482eebc8577ced35f1e",
+        "bytes": 3190
+      }
+    },
+    {
+      "draft": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/prepare_base_zero_sync_diagnostic_r1.draft.py",
+        "sha256": "fee3bb0c4d9f95d1b7cbce4cc6ca35b30f8c7f32ddc7b04015ee80d1540e3351",
+        "bytes": 13997
+      },
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/prepare_base_feedback_diagnostic_r2.draft.py",
+        "sha256": "966cbeba9389064a477d4f2d925d47fa65a2c0a1daacc6a23670d57bf5d1e273",
+        "bytes": 12812
+      },
+      "diff": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/prepare_base_zero_sync_diagnostic_r1.draft.py.diff-vs-feedback-r2.patch",
+        "sha256": "484e3341c3ab7adcb0de612899e77daebb2a8dbf77e9eefc67c9188d1dd10407",
+        "bytes": 12615
+      }
+    },
+    {
+      "draft": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/minimal_runtime_prepare_base_zero_sync_r1.draft.sh",
+        "sha256": "ab1bf15099b989caff3efe7166a3604f6901040c8f4903d32e9fb6b59c2d11c6",
+        "bytes": 14245
+      },
+      "baseline": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_feedback_diagnostic_2026-10-13_r2/runtime-preparation/minimal_runtime_prepare_base_feedback_r2.draft.sh",
+        "sha256": "0d7913bff2f7c45b343ce2bc09caa56fa4b9916cce6e0898e79df9076e3ec030",
+        "bytes": 13060
+      },
+      "diff": {
+        "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/minimal_runtime_prepare_base_zero_sync_r1.draft.sh.diff-vs-feedback-r2.patch",
+        "sha256": "7e4a59d831d8d2a19f9f795f377d25b0ceedbfeb782ffe7a6597fe2aa554e23d",
+        "bytes": 12772
+      }
+    }
+  ],
+  "FIELD_GO_fresh_terminal_pins": "ALL_NONE_FIRST_REFUSAL",
+  "normal_collection": "原STOP51/identity及真实终态通过才既有17/23；zero_diag FAIL partial保原件，PASS另校3writes/noACK/ACK/50ms/3PV500ms",
+  "manual_collection": "仅2自有tmux collector child；无新postchecks/UART",
+  "new_GO_created": false,
+  "UART": 0,
+  "SSH": 0,
+  "hardware_started": false,
+  "syntax_and_None_checks": "PENDING_LOCAL_ONLY"
+}

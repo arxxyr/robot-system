@@ -1,0 +1,33 @@
+{
+  "terminal_identity": [
+    "xlerobot-sync-zero-software-20261013-r1",
+    "@108",
+    "%108",
+    665185
+  ],
+  "start": {
+    "name": "start-software-only",
+    "argv": [
+      "tmux",
+      "new-session",
+      "-d",
+      "-s",
+      "xlerobot-sync-zero-software-20261013-r1",
+      "-P",
+      "-F",
+      "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}",
+      "bash /home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/boot/launch_native_sync_zero_software_r1.sh"
+    ],
+    "pid": 665184,
+    "started_ns": 1791872322149891235,
+    "finished_ns": 1791872322155810501,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "signals_sent": [],
+    "stdout": "xlerobot-sync-zero-software-20261013-r1|@108|%108|665185\n",
+    "stderr": ""
+  },
+  "scope": "仅纯软件；不接触UART/USB/服务/GO",
+  "observations": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/boot/observations.jsonl"
+}

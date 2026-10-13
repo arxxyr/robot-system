@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+### 单轮SYNC零值候选软件通过，实机尚未启用（2026-10-13）
+
+原XLeRobot采用地址46、2B的SYNC_WRITE（0x83）发Goal_Velocity，旧R4采用普通WRITE（0x03）；旧栈发送零值后至少等待50ms才Enable。这里只做这两个差异的单轮对照准备，不解释旧±50因果，不改Phase/Lock/Mode/PID或使用厂家另一种地址41/7B接口。既有feetech_poke新增固定`sync-zero`，不接受寄存器/数值参数，沿既有型号握手及sync_write_by_id；明确无ACK，只报告发送，不证明收到、静止或零值启扭安全。无新总线API、依赖、事务框架或生产速度入口。
+
+Orin独立导出源597项三窗与主树逐件同ae00cf4f，最新nightlye9bbadf6实际fmt→默认及real-hw根Clippy零警告、15例子方法（新增2为子集）、三条参数在开串口前原exit2拒绝通过。仅诊断例子release，新ARM64 ELF b2bfedb1/1507224B已冻结，正式产物未替换；原生Git=null，导出基于67d8b2a加单Rustdirty，不称Git对齐。Mac旧080nightly15方法独立保留，不称最新或累计。9原生Runner child/18流及3嵌套参数child/6流、driver665185/@108/%108、owner69718/SSH69719全部真回收；68原包666dc4a7/10232733B已封。
+
+候选main3b681657/27496B、teste97bda49/20991B，仅一次right9单ID SYNC Goal0→发送完成后至少50ms→原Enable→原0/200/400ms三PV及500ms预算→TE0/STOP51与完整身份。首写无ACK，两TE写沿原有效ACK；初始停止/不可信回包/写身份失败粘性禁止后续UART，有效非零PV先原TE0收尾；只数值GO到期保留已Enable的原独立TE0收尾，不借到期掩盖坏帧/坏ACK。三轮固件仍DEFERRED，诊断与整run结果分别保留。Mac最终同6方法child82052真实wait0/reap；旧17c审查发现DEVICE位于argv0字面边界，新一行与既有反例窄补闭环，旧审查/候选/回执全部保留。最后唯一Orin Python批次三个child668608/668609/668610原exit0/0/2真wait，6方法、默认PLAN及缺GO加载前拒绝通过；不累计Mac6或旧轮次数。25原包7bcb8823/45663B、driver668604/@109/%109自然0与owner82495/SSH82496真实0/reap已核。
+
+[本阶段摘要](../../.verify/xlerobot_sync_zero_2026-10-13_software/summary.json)、[原生Rust验收](../../.verify/xlerobot_sync_zero_2026-10-13_software/native/native-verification-r1.json)、[原生候选验收](../../.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-native/native-verification-r1.json)及两次窄独审均保存。本阶段USB/UART/新GO/动作0；七份未绑定运行草稿已完成：旧55refs只追加helper/main/ELF至58，binary_paths仅追加新ELF；原PTY/c入口和整体shlex.quote保持，所有现场/GO/PLAN/pane动态值None先拒绝。7 body AST、6 bash-n及None首门一轮通过，7验证child真wait/reap；normal依原STOP51/身份门保留diagnostic FAIL partial，manual只2collector/no新UART。root已静核关键门，实际fresh/完整绑定PLAN及GO仍未执行。先前R2只读/STOP51/身份通过已提交67d8b2a，R2看护结束/GO已消费，最新电源仅用户ON、独立遥测UNKNOWN。下一次实际Enable须当次三轮已稳定架空、空载双臂支撑、区域空旷和持续看护可立即断电的新确认及独立GO，无需重复断电或USB重插。腕部/头部长期参数、三轮主动运动及旧±50仍OPEN；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false；架构、S0/S1、正式安装与服务未改。以下全部历史原文保留。
+
 ### R2断扭只读诊断通过，三轮主动运动仍待验证（2026-10-13）
 
 用户本次直接确认恢复供电、稳定架空及持续看护。root固定首次观察05:42:50UTC、原600秒截止05:52:50UTC，没有续期；新非UART17项/23child、当前USB（两侧变更字段均空）、57refs和完整PLAN经root/独审通过。maincf651bb2/helper70d777bd使用已核actual fixtures路径，只签一个独立GO、启动一次driver664542/@106/%106，无寄存器写、Enable或动作。

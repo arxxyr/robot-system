@@ -1,0 +1,84 @@
+{
+  "status": "PASS_ROOT_FINAL_SOFTWARE_AND_UNBOUND_RUNTIME_REVIEW",
+  "recorded_ns": 1791875866603225000,
+  "candidate_sha256": "3b68165786d7a603956f46843d8052a74316cb1fc061ba203dbb9737446001f7",
+  "drafts": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/launch_base_zero_sync_diagnostic_r1.draft.sh",
+      "sha256": "0e424f9ddc5cc7a7fd720bec7526b3e1765729daf8d8434a249f5535bef3df1c",
+      "bytes": 2242
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/start_base_zero_sync_diagnostic_once_r1.draft.sh",
+      "sha256": "9637925b9ddad8b5316b7c7f11a753f6d5ae1de959bcdc6434e60506af33a799",
+      "bytes": 13061
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/observe_base_zero_sync_diagnostic_once_r1.draft.sh",
+      "sha256": "826590c7b86b093d45380fa71c587d261736e079853f8f18f357e0deb88ddfa4",
+      "bytes": 3922
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/seal_base_zero_sync_diagnostic_r1.draft.sh",
+      "sha256": "fc763efe7f990eba63660254175ae8632ede6654e85b021775dc952e481d609a",
+      "bytes": 14822
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/readonly_nonuart17_usb_refresh_r1.draft.sh",
+      "sha256": "e21c5e8661857d6a9c205e22b340b7604e574e77ee2d479715926b1adf62e149",
+      "bytes": 2432
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/prepare_base_zero_sync_diagnostic_r1.draft.py",
+      "sha256": "fee3bb0c4d9f95d1b7cbce4cc6ca35b30f8c7f32ddc7b04015ee80d1540e3351",
+      "bytes": 13997
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/minimal_runtime_prepare_base_zero_sync_r1.draft.sh",
+      "sha256": "ab1bf15099b989caff3efe7166a3604f6901040c8f4903d32e9fb6b59c2d11c6",
+      "bytes": 14245
+    }
+  ],
+  "checks": {
+    "fixed_main_helper_ELF_identity": true,
+    "refs_old55_plus3_total58": true,
+    "only_ELF_appended_to_binary_paths": true,
+    "only_USB_enumeration_three_fields_may_change": true,
+    "all_dynamic_field_GO_PLAN_pane_bindings_None_refuse_before_target_IO": true,
+    "launcher_same_PTY_exec_and_whole_shlex_quote": true,
+    "SYNC_no_ACK_then_two_ordinary_valid_ACK": true,
+    "minimum50ms_and_three_PV_original500ms": true,
+    "normal_failure_preserves_partial_and_original_STOP51_identity": true,
+    "manual_failure_only_two_collection_children_no_extra_UART": true,
+    "old_run_FAIL_DEFERRED_preserved": true,
+    "one_trial_no_retry_no_GO_reuse": true
+  },
+  "local_recipe_check": {
+    "path": ".verify/xlerobot_sync_zero_2026-10-13_software/runtime-preparation/runtime-draft-verification-r1.json",
+    "sha256": "69e5ded389d08498ec9dd5e95401518a5bad89b162143cf277306b491e700d96",
+    "bytes": 13732
+  },
+  "current_bytes_review": {
+    "path": ".verify/xlerobot_sync_zero_2026-10-13_software/review/root-runtime-draft-bytes-review-r1.json",
+    "sha256": "65ed65642b0613e90e41556caded7539bdd1e9440dc9ab039913f7caf1ef9cfe",
+    "bytes": 535
+  },
+  "code_quality_scope": {
+    "actual_native_fmt_then_root_clippy_pass": true,
+    "root_source597_same_actual_native_three_windows": true,
+    "new_Rust_checks_rerun": 0
+  },
+  "runtime_state": {
+    "native_current_USB": "NOT_RUN",
+    "full_bound_PLAN": "NOT_RUN",
+    "field_confirmation": "NOT_RECEIVED_FOR_ENABLE",
+    "GO": false,
+    "Enable_or_UART": 0
+  },
+  "unresolved": [
+    "SYNC和50ms是否影响真实固件下零速行为未验证",
+    "旧±50物理来源未验证",
+    "三轮固件合同及主动运动仍DEFERRED"
+  ],
+  "decision": "本阶段仅软件与未绑定运行准备通过；收到本次完整现场事实才核USB/唯一PLAN/新GO，后做一次单轮对照"
+}

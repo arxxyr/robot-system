@@ -1,0 +1,422 @@
+--- R4_ARCHIVE/base_zero_diagnostic_r1.py
++++ /Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py
+@@ -1,4 +1,4 @@
+-"""爸爸，右9轮裸46/2B零目标短窗诊断；可能转动，仅当次架空就绪及新GO允许执行。"""
++"""爸爸，右9轮单ID SYNC_WRITE46/2B零目标短窗诊断；可能转动，仅当次架空就绪及新GO允许执行。"""
+ import argparse
+ import hashlib
+ import importlib.util
+@@ -8,14 +8,15 @@
+ import stat
+ import sys
+ import time
++from types import SimpleNamespace
+ 
+ sys.dont_write_bytecode = True
+-RUN_ID = 'base-zero-diagnostic-r1'
++RUN_ID = 'base-zero-sync-diagnostic-r1'
+ TARGET = ('right', 9, 'base_right_wheel')
+ SOURCE_SHA = 'd97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41'
+-HELPER_SHA = '406295f0bf97ca4a482241a565500d2bae1e226c6a8959bcebbd3264c50b9dfa'
+-HELPER_BYTES = 12216
+-FIELD_SCOPE = '仅右9/base_right_wheel一次裸Goal_Velocity0→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑'
++HELPER_SHA = '70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c'
++HELPER_BYTES = 12220
++FIELD_SCOPE = '仅右9/base_right_wheel一次单ID9 SYNC_WRITE Goal_Velocity0（无ACK）→发送完成后至少50ms→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑'
+ EXPECTED = {'Torque_Enable': 0, 'Present_Velocity': 0, 'Goal_Velocity': 0,
+             'Model_Number': 777, 'Firmware_Major_Version': 3, 'Firmware_Minor_Version': 10,
+             'Operating_Mode': 1, 'Phase': 12, 'Lock': 1}
+@@ -23,6 +24,9 @@
+ SAMPLE_COUNT = 3
+ SAMPLE_OFFSETS_NS = (0, 200_000_000, 400_000_000)
+ TTL_NS = 600_000_000_000
++SYNC_SETTLE_NS = 50_000_000
++SYNC_TOOL = {'path': '/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke', 'sha256': 'b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94', 'bytes': 1507224}  # 爸爸，root已核本轮唯一原生ARM64 ELF；无新现场GO。
++SYNC_STDOUT = 'sync-zero Goal_Velocity@9 <- 0: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n'
+ WRITE_SEQUENCE = (('Goal_Velocity', 0), ('Torque_Enable', 1), ('Torque_Enable', 0))
+ 
+ 
+@@ -46,6 +50,132 @@
+     value = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(value)
+     return value, ref
++
++
++def validate_sync_tool():
++    require(isinstance(SYNC_TOOL, dict) and set(SYNC_TOOL) == {'path', 'sha256', 'bytes'},
++            '新SYNC原生ELF未绑定，零I/O拒绝；禁止代用旧ELF')
++    require(type(SYNC_TOOL['path']) is str and Path(SYNC_TOOL['path']).is_absolute()
++            and type(SYNC_TOOL['sha256']) is str and re.fullmatch('[0-9a-f]{64}', SYNC_TOOL['sha256'])
++            and type(SYNC_TOOL['bytes']) is int and SYNC_TOOL['bytes'] > 0, '新SYNC ELF pin字段错误')
++    return dict(SYNC_TOOL)
++
++
++def sync_contract():
++    return {'tool': validate_sync_tool(), 'instruction': 0x83, 'register_address': 46,
++            'width': 2, 'motor_ids': [9], 'raw_unsigned': 0, 'ack': 'NONE',
++            'result': 'sent_no_ACK', 'minimum_settle_ns': SYNC_SETTLE_NS,
++            'settle_clock': 'same_monotonic_from_send_completion_to_before_Enable'}
++
++
++class GOExpired(ValueError):
++    """爸爸，GO到期禁止新常规UART；已尝试Enable时保留原固定TE0独立收尾。"""
++
++
++def new_row():
++    return {'side': TARGET[0], 'motor': TARGET[1], 'name': TARGET[2], 'kind': 'zero_diag',
++            'status': 'NOT_RUN', 'before_raw': [], 'verification_raw': [], 'write_attempts': [],
++            'observation': {'status': 'NOT_RUN', 'samples': [], 'budget_ns': BUDGET_NS,
++                            'minimum_in_budget_pv0_samples': 3}, 'cleanup_errors': [], 'errors': [],
++            'uart_blocked': False, 'firmware_contract_verified': False}
++
++
++def install_guard(m, h, engine):
++    if not hasattr(engine, 'zero_diag'):
++        engine.zero_diag = new_row()
++    require(not getattr(engine.io, 'zero_guard_installed', False)
++            or getattr(engine.io, 'zero_guard_engine', None) is engine, '执行器归属改变')
++    if getattr(engine.io, 'zero_guard_installed', False):
++        return
++    original = engine.io.command
++    sync_tool = validate_sync_tool()
++    tool_paths = (h.TOOL['path'], h.RAW_TOOL['path'], h.STRACE['path'], sync_tool['path'])
++    write_index = 0
++
++    def command(argv, **kwargs):
++        nonlocal write_index
++        path = str(argv[0]) if argv else ''
++        if path not in tool_paths:
++            if (any(str(arg) in tool_paths for arg in argv[1:])
++                    or (len(argv) > 3 and argv[3] in ('write', 'read', 'read-raw', 'sync-zero')
++                        and any(str(arg) in m.DEVICES.values() for arg in argv[1:]))):
++                error = ValueError('未知工具或前缀不得绕过本轮UART名单')
++                block_uart(engine, engine.zero_diag, error)
++                raise error
++            return original(argv, **kwargs)
++        row = engine.zero_diag
++        require(not row['uart_blocked'] and not engine.manual_cut, '粘性封锁：禁止后续UART')
++        try:
++            check_go = getattr(engine, 'zero_go_check', None)
++            if check_go is not None and not kwargs.get('cleanup', False):
++                check_go()
++            require(path != h.STRACE['path'], '不得直接绕过具名工具名单')
++            sync = path == sync_tool['path']
++            writing = sync or (path == h.TOOL['path'] and len(argv) > 3 and argv[3] == 'write')
++            if writing:
++                require(write_index < 3, '只允许原三写，不重试')
++                if write_index == 0:
++                    require(sync and argv == [sync_tool['path'], m.DEVICES['right'], '9', 'sync-zero'],
++                            '首写仅新工具单ID9 SYNC Goal0；普通GV写禁止')
++                    m.verify_ref(sync_tool, executable=True)
++                else:
++                    require(not sync and len(argv) == 6 and argv[:4] == [h.TOOL['path'], m.DEVICES['right'], '9', 'write']
++                            and argv[4:] == ['Torque_Enable', str(WRITE_SEQUENCE[write_index][1])],
++                            '后两写仅原TE1→TE0；禁止其他目标或参数写')
++                    if write_index == 1:
++                        require(engine.io.now() >= row['sync_sent_finished_ns'] + SYNC_SETTLE_NS,
++                                'SYNC发送完成后未满原50ms，禁止Enable')
++                require((write_index == 2) == bool(kwargs.get('cleanup', False)), 'Disable仅独立收尾')
++                attempt = {'register': WRITE_SEQUENCE[write_index][0], 'value': WRITE_SEQUENCE[write_index][1],
++                           'started_ns': engine.io.now(), 'cleanup': bool(kwargs.get('cleanup', False)),
++                           'operation': 'SYNC_WRITE' if sync else 'WRITE', 'ack': 'NONE' if sync else 'REQUIRED'}
++                row['write_attempts'].append(attempt)
++                write_index += 1
++                text = original(argv, **kwargs)
++                if sync:
++                    require(text == SYNC_STDOUT, 'SYNC发送stdout未知；不能伪称ACK或接收')
++                    row['sync_sent_finished_ns'] = engine.io.now()
++                    attempt['result'] = 'sent_no_ACK'
++                else:
++                    require(text == f'write {argv[4]}@9 <- {argv[5]} ok\n', '写ACK stdout未知')
++                    attempt['result'] = 'ACK_STDOUT_VALID'
++                attempt['finished_ns'] = engine.io.now()
++            elif path == h.RAW_TOOL['path']:
++                require(len(argv) == 5 and argv[1:4] == [m.DEVICES['right'], '9', 'read-raw']
++                        and argv[4] in EXPECTED and not kwargs.get('cleanup', False),
++                        'raw仅right9入口/观察九字段只读，不冒充独立cleanup')
++                text = original(argv, **kwargs)
++                # 返回时GO门前先核同份原帧；到期不能掩盖坏帧或引出一次补读。
++                reader = SimpleNamespace(io=SimpleNamespace(command=lambda *args, **kw: text))
++                parser = SimpleNamespace(DEVICES=m.DEVICES, strict_json=m.strict_json,
++                                         verify_ref=lambda *args, **kw: None)
++                raw = h.raw_read(parser, reader, argv[4])
++                active = any(attempt['register'] == 'Torque_Enable' and attempt['value'] == 1
++                             for attempt in row['write_attempts'])
++                expected = 1 if argv[4] == 'Torque_Enable' and active else EXPECTED[argv[4]]
++                if argv[4] != 'Present_Velocity' or not active:
++                    require(raw['raw_unsigned'] == expected, '入口或Goal0/Enable原读回不符:' + argv[4])
++            else:
++                require(path == h.TOOL['path'] and len(argv) == 5 and argv[3] == 'read' and argv[4] in m.REGS
++                        and any(argv[1:3] == [m.DEVICES[side], motor]
++                                for side, motor in (key.split(':') for key in m.MOTOR_KEYS)), '原17电机读取名单错误')
++                text = original(argv, **kwargs)
++                match = re.fullmatch(rf'read {re.escape(argv[4])}@{argv[2]} = (-?\d+)\n', text)
++                require(match is not None, '普通READ完整stdout/身份未知')
++                require(argv[4] not in m.STOP_REGS or int(match[1]) == 0, '普通停止READ未确认零值:' + argv[4])
++            if check_go is not None and not kwargs.get('cleanup', False):
++                check_go()
++            return text
++        except BaseException as error:
++            attempted_enable = any(attempt['register'] == 'Torque_Enable' and attempt['value'] == 1
++                                   for attempt in row['write_attempts'])
++            if not isinstance(error, GOExpired) or not attempted_enable:
++                block_uart(engine, row, error)
++            raise
++
++    engine.io.command = command
++    engine.io.zero_guard_engine = engine
++    engine.io.zero_guard_installed = True
+ 
+ 
+ def validate_plan(m, plan):
+@@ -61,6 +191,7 @@
+             and trial['write_sequence'] == [list(row) for row in WRITE_SEQUENCE]
+             and trial['goal_velocity_address'] == 46 and trial['goal_velocity_width'] == 2,
+             '零目标/Enable/500ms/原帧名单不得变化')
++    require(trial['sync_write'] == sync_contract(), '本轮SYNC工具/0x83/单ID/无ACK/50ms合同不得变化')
+     return []
+ 
+ 
+@@ -79,6 +210,11 @@
+ 
+ 
+ def make_plan(m, h, bindings, output, artifact_root, own_ref, helper_ref):
++    sync_tool = validate_sync_tool()
++    require(any(h.same_reference(row, sync_tool) for row in bindings['refs'])
++            and sync_tool['path'] in bindings['binary_paths'], '新SYNC工具完整引用必须入refs及binary_paths')
++    require(sync_tool['path'] not in (h.TOOL['path'], h.RAW_TOOL['path'], h.STRACE['path']), '禁止旧ELF代替本轮SYNC工具')
++    m.verify_ref(sync_tool, executable=True)
+     h.required_references(bindings, own_ref)
+     require(any(h.same_reference(row, helper_ref) for row in bindings['refs']), '本轮raw辅助未入refs')
+     plan = m.make_plan(bindings, output, RUN_ID, artifact_root, ['head-2'])
+@@ -91,7 +227,7 @@
+                          'requested_pv_samples': SAMPLE_COUNT, 'minimum_in_budget_pv0_samples': 3,
+                          'sample_offsets_ns': list(SAMPLE_OFFSETS_NS),
+                          'write_sequence': [list(row) for row in WRITE_SEQUENCE],
+-                         'goal_velocity_address': 46, 'goal_velocity_width': 2,
++                         'goal_velocity_address': 46, 'goal_velocity_width': 2, 'sync_write': sync_contract(),
+                          'firmware_contract_verified': False,
+                          'limitations': ['本次可能转动；500ms仅软件观察预算，不保证硬件断扭时限',
+                                          '仅0/200/400ms三个分散时刻原PV0，不证明连续500ms物理静止；无补读/重试',
+@@ -109,79 +245,34 @@
+ 
+ def timed_raw(m, h, engine, row, register, destination, cleanup=False):
+     sample = {'register': register, 'started_ns': engine.io.now(), 'status': 'UNKNOWN'}
++    sequence_before = getattr(engine.io, 'sequence', None)
++    commands_before = len(getattr(engine.io, 'commands', []))
+     destination.append(sample)
+     try:
+         sample['raw'] = h.raw_read(m, engine, register, cleanup=cleanup)
+         sample['status'] = 'READ_VALID'
+-        sample['command_sequence'] = getattr(engine.io, 'sequence', None)
+         sample['raw_json_bytes'] = len(json.dumps(sample['raw'], separators=(',', ':')).encode())
+-        if getattr(engine.io, 'commands', None):
+-            command = engine.io.commands[-1]
+-            sample['stdout_bytes'] = command.get('stdout_bytes')
+-            sample['stdout_sha256'] = command.get('stdout_sha256')
+     except BaseException as error:
+         sample['error'] = repr(error)
+-        block_uart(engine, row, error)
++        if not isinstance(error, GOExpired):
++            block_uart(engine, row, error)
+         raise
+     finally:
+         sample['finished_ns'] = engine.io.now()
++        sequence_after = getattr(engine.io, 'sequence', None)
++        if (sequence_before is not None and sequence_after is not None and sequence_after > sequence_before
++                and len(getattr(engine.io, 'commands', [])) > commands_before):
++            sample['command_sequence'] = sequence_after
++            sample.update({key: engine.io.commands[-1].get(key) for key in ('stdout_bytes', 'stdout_sha256')})
+     return sample
+ 
+ 
+ def run_zero_diag(m, h, engine):
+     validate_plan(m, engine.plan)
+-    row = {'side': TARGET[0], 'motor': TARGET[1], 'name': TARGET[2], 'kind': 'zero_diag',
+-           'status': 'FAIL', 'before_raw': [], 'verification_raw': [], 'write_attempts': [],
+-           'observation': {'status': 'NOT_RUN', 'samples': [], 'budget_ns': BUDGET_NS,
+-                           'minimum_in_budget_pv0_samples': 3}, 'cleanup_errors': [], 'errors': [],
+-           'uart_blocked': False, 'firmware_contract_verified': False}
+-    engine.zero_diag = row
+-    original_command = engine.io.command
+-    write_index = 0
+-
+-    def guard(argv, **kwargs):
+-        nonlocal write_index
+-        path = str(argv[0])
+-        if path in (h.TOOL['path'], h.RAW_TOOL['path'], h.STRACE['path']):
+-            require(not row['uart_blocked'] and not engine.manual_cut, '粘性拒绝后续UART')
+-            require(path != h.STRACE['path'], '不得直接绕过具名工具名单')
+-            if path == h.RAW_TOOL['path']:
+-                require(len(argv) == 5 and argv[1:4] == [m.DEVICES['right'], '9', 'read-raw']
+-                        and argv[4] in EXPECTED, 'raw仅right9具名九字段只读')
+-            elif len(argv) > 3 and argv[3] == 'write':
+-                require(write_index < len(WRITE_SEQUENCE) and len(argv) == 6
+-                        and argv[1:3] == [m.DEVICES['right'], '9']
+-                        and argv[4:] == [WRITE_SEQUENCE[write_index][0], str(WRITE_SEQUENCE[write_index][1])],
+-                        '写只允许一次Goal0→TE1→TE0；禁止其他轮/非零/位置/参数写')
+-                require((write_index == 2) == bool(kwargs.get('cleanup', False)), 'Disable仅独立收尾')
+-                row['write_attempts'].append({'register': argv[4], 'value': int(argv[5]),
+-                                              'started_ns': engine.io.now(), 'cleanup': bool(kwargs.get('cleanup', False))})
+-                write_index += 1
+-                try:
+-                    text = original_command(argv, **kwargs)
+-                    require(text == f'write {argv[4]}@9 <- {argv[5]} ok\n', '写ACK stdout未知')
+-                    return text
+-                except BaseException as error:
+-                    block_uart(engine, row, error)
+-                    raise
+-            else:
+-                require(len(argv) == 5 and argv[3] == 'read' and argv[4] in m.REGS
+-                        and any(argv[1:3] == [m.DEVICES[side], str(motor)]
+-                                for side in m.SERIALS for motor in range(1, 9 if side == 'left' else 10)),
+-                        '原停止读取名单错误')
+-                try:
+-                    text = original_command(argv, **kwargs)
+-                    match = re.fullmatch(rf'read {re.escape(argv[4])}@{argv[2]} = (-?\d+)\n', text)
+-                    require(match is not None, '普通READ完整stdout/身份未知')
+-                    if kwargs.get('cleanup', False) and argv[4] in m.STOP_REGS:
+-                        require(int(match[1]) == 0, '普通停止READ未确认零值:' + argv[4])
+-                    return text
+-                except BaseException as failure:
+-                    block_uart(engine, row, failure)
+-                    raise
+-        return original_command(argv, **kwargs)
+-
+-    engine.io.command = guard
++    install_guard(m, h, engine)
++    row = engine.zero_diag
++    require(row['status'] == 'NOT_RUN' and not row['uart_blocked'], '本轮诊断仅首次执行')
++    row['status'] = 'FAIL'
+     attempted_enable = False
+     error = None
+     def gate():
+@@ -200,9 +291,9 @@
+                 raise failure
+         gate()
+         try:
+-            engine.write('right', 9, 'Goal_Velocity', 0)
++            engine.io.command([validate_sync_tool()['path'], m.DEVICES['right'], '9', 'sync-zero'])
+         except BaseException as failure:
+-            if not row['uart_blocked']:
++            if not row['uart_blocked'] and not isinstance(failure, GOExpired):
+                 block_uart(engine, row, failure)
+             raise
+         goal = timed_raw(m, h, engine, row, 'Goal_Velocity', row['verification_raw'])
+@@ -210,12 +301,18 @@
+             failure = ValueError('Goal0读回未确认')
+             block_uart(engine, row, failure)
+             raise failure
++        enable_deadline = row['sync_sent_finished_ns'] + SYNC_SETTLE_NS
++        row['enable_earliest_ns'] = enable_deadline
++        remaining = enable_deadline - engine.io.now()
++        if remaining > 0:
++            engine.io.sleep(remaining / 1_000_000_000)
++        require(engine.io.now() >= enable_deadline, '发送完成后的原50ms下界未到，禁止Enable')
+         gate()
+         attempted_enable = True
+         try:
+             engine.write('right', 9, 'Torque_Enable', 1)
+         except BaseException as failure:
+-            if not row['uart_blocked']:
++            if not row['uart_blocked'] and not isinstance(failure, GOExpired):
+                 block_uart(engine, row, failure)
+             raise
+         enabled = timed_raw(m, h, engine, row, 'Torque_Enable', row['verification_raw'])
+@@ -249,6 +346,8 @@
+         remaining = deadline - engine.io.now()
+         if remaining > 0:
+             engine.io.sleep(remaining / 1_000_000_000)
++        if getattr(engine, 'zero_go_check', None) is not None:
++            engine.zero_go_check()
+         observation.update(status='PASS', finished_ns=engine.io.now(), elapsed_ns=engine.io.now() - start)
+     except BaseException as failure:
+         error = failure
+@@ -274,7 +373,9 @@
+ def install_write_capture(m, h):
+     original = m.RealExecutor.command
+     def command(io, argv, **kwargs):
+-        exact = len(argv) == 6 and argv[:4] == [h.TOOL['path'], m.DEVICES['right'], '9', 'write'] and tuple(argv[4:]) in (('Goal_Velocity', '0'), ('Torque_Enable', '1'), ('Torque_Enable', '0'))
++        sync = argv == [validate_sync_tool()['path'], m.DEVICES['right'], '9', 'sync-zero']
++        exact = sync or (len(argv) == 6 and argv[:4] == [h.TOOL['path'], m.DEVICES['right'], '9', 'write']
++                         and tuple(argv[4:]) in (('Torque_Enable', '1'), ('Torque_Enable', '0')))
+         if not exact:
+             return original(io, argv, **kwargs)
+         m.verify_ref(h.STRACE, executable=True)
+@@ -296,19 +397,32 @@
+                         'WRITE strace原件未记录成功终态')
+             io.commands[-1]['diagnostic_write_trace'] = {'path': str(trace), 'bytes': len(raw),
+                 'sha256': hashlib.sha256(raw).hexdigest(), 'original_argv': list(argv),
+-                'requested_register_address': 46 if argv[4] == 'Goal_Velocity' else 40,
+-                'width': 2 if argv[4] == 'Goal_Velocity' else 1,
++                'requested_register_address': 46 if sync else 40, 'width': 2 if sync else 1,
++                'instruction': 0x83 if sync else 0x03, 'motor_ids': [9],
++                'ack': 'NONE_SYNC_WRITE' if sync else 'ORDINARY_WRITE_ACK_REQUIRED',
+                 'capture_status': 'NATURAL_SUCCESS_TERMINAL' if succeeded else 'ORIGINAL_COMMAND_FAILED',
+                 'wire_frame_review': 'PENDING_ROOT_REVIEW_OF_ACTUAL_WRITE_STRACE'}
+     m.RealExecutor.command = command
+ 
+ 
+-def install(m, h):
++def install(m, h, go=None):
++    require(not getattr(m, 'zero_wrapper_installed', False), '本轮wrapper不可重复安装')
+     original_targets = m.position_targets_from_plan
+     original_go = m.validate_go
+     original_finish = m.finish_verification
++    original_init, original_classify = m.ProbeEngine.__init__, m.classify_run_result
+     m.position_targets_from_plan = lambda plan: validate_plan(m, plan) if 'zero_diag' in plan else original_targets(plan)
+     m.validate_go = lambda go, plan, now: validate_base_go(m, original_go, go, plan, now)
++    def init(engine, *args, **kwargs):
++        original_init(engine, *args, **kwargs)
++        def check_go():
++            now = time.time_ns()
++            if now >= go['expires_at_ns']:
++                raise GOExpired('本次GO已到期，禁止后续常规UART；不续期，仅原TE0独立收尾')
++            validate_base_go(m, original_go, go, engine.plan, now)
++        engine.zero_go_check = check_go if go is not None else None
++        install_guard(m, h, engine)
++
+     def motion(engine, bindings, plan):
+         try:
+             run_zero_diag(m, h, engine)
+@@ -319,11 +433,16 @@
+                                     'reason_code': 'BASE_FIRMWARE_CONTRACT_UNVERIFIED'})
+         raise ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')
+     def finish(report, io, engine, bindings, proc):
+-        original_finish(report, io, engine, bindings, proc)
+-        report['zero_diag'] = getattr(engine, 'zero_diag', {'status': 'NOT_RUN'})
+-        report['position_function_test'] = 'NOT_RUN_NO_NEW_HEAD_OR_ARM_FUNCTION_RESULT'
+-        if report['stop_verification']['status'] != 'PASS' or report['identity_verification']['status'] != 'PASS':
+-            block_uart(engine, report['zero_diag'], ValueError('原STOP51或完整身份后验未确认'))
++        try:
++            original_finish(report, io, engine, bindings, proc)
++        finally:
++            report['zero_diag'] = engine.zero_diag
++            report['position_function_test'] = 'NOT_RUN_NO_NEW_HEAD_OR_ARM_FUNCTION_RESULT'
++            if report.get('stop_verification', {}).get('status') != 'PASS' or report.get('identity_verification', {}).get('status') != 'PASS':
++                block_uart(engine, report['zero_diag'], ValueError('原STOP51或完整身份后验未确认'))
++    m.ProbeEngine.__init__ = init
++    m.classify_run_result = lambda report: ('NEEDS_MANUAL_POWER_CUT' if report.get('zero_diag', {}).get('uart_blocked') else original_classify(report))
++    m.zero_wrapper_installed = True
+     m.run_motion_probes = motion
+     m.finish_verification = finish
+     h.install_stop_wire_capture(m)
+@@ -336,6 +455,8 @@
+         parser.add_argument('--' + name, type=Path)
+     parser.add_argument('--execute', action='store_true')
+     args = parser.parse_args(argv)
++    if args.execute:
++        validate_sync_tool()  # 未绑定先拒绝，不读取输入/创建输出/启动child。
+     if not all((args.maintenance, args.raw_helper, args.bindings, args.output, args.artifact_root)):
+         require(not args.execute, '执行输入不完整，零I/O拒绝')
+         print(json.dumps({'status': 'PLAN_ONLY', 'run_id': RUN_ID, 'target': TARGET,
+@@ -351,8 +472,8 @@
+     if not args.execute:
+         print(json.dumps({'status': 'PLAN_ONLY', 'actions_started': 0, 'plan_sha256': m.digest(plan), 'plan': plan}, ensure_ascii=False, indent=2))
+         return 0
+-    install(m, h)
+     go = m.strict_json(args.approval.read_text())
++    install(m, h, go)
+     m.validate_go(go, plan, time.time_ns())
+     return m.execute(plan, go, args.approval)
+ 

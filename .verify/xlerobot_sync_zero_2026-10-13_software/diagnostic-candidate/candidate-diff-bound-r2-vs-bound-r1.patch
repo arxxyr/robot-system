@@ -1,0 +1,16 @@
+--- /Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/bound-r1-snapshot/base_zero_sync_diagnostic_r1.py
++++ /Users/loosqk/repo/rust/robot-system/.verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py
+@@ -96,9 +96,11 @@
+         nonlocal write_index
+         path = str(argv[0]) if argv else ''
+         if path not in tool_paths:
++            metadata = any(argv in (["fuser", device], ["sudo", "-n", "fuser", device],
++                                   ["udevadm", "info", "--query=property", "--name", device])
++                           for device in m.DEVICES.values())
+             if (any(str(arg) in tool_paths for arg in argv[1:])
+-                    or (len(argv) > 3 and argv[3] in ('write', 'read', 'read-raw', 'sync-zero')
+-                        and any(str(arg) in m.DEVICES.values() for arg in argv[1:]))):
++                    or (any(str(arg) in m.DEVICES.values() for arg in argv[1:]) and not metadata)):
+                 error = ValueError('未知工具或前缀不得绕过本轮UART名单')
+                 block_uart(engine, engine.zero_diag, error)
+                 raise error
