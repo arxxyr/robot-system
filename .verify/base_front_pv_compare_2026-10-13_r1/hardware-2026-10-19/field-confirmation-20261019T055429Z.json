@@ -1,0 +1,15 @@
+{
+  "answer": "全部已就绪，可执行本次三项只读",
+  "physical": {
+    "all_three_wheels_off_ground": true,
+    "areas_clear": true,
+    "arms_unloaded_supported": true,
+    "base_stably_supported": true,
+    "continuous_watch": true,
+    "immediate_manual_power_cut": true,
+    "motor_supplies_on": true
+  },
+  "recorded_at_ns": 1792389269000000000,
+  "scope": "仅right8/base_front_wheel一次SYNC_READ TE40/1确认0→SYNC_READ PV58/2原word→普通READ PV58/2并留完整strace；任意TE/PV非零或未知立即封锁后续UART，不为凑pair补读；不Enable/Disable/参数写，不证明M17完整停止或物理轮动",
+  "source": "用户本轮答复 call_5b1532ca8671481aacfefba728459b37；root首次记录收到时间2026-10-19T05:54:29Z"
+}

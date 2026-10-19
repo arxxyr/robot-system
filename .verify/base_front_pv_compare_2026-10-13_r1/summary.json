@@ -123,5 +123,62 @@
     "field_confirmation": null,
     "approval": null,
     "uart_calls": 0
+  },
+  "hardware_2026_10_19": {
+    "status": "PASS_BASE_FRONT_THREE_READ_CAPTURE",
+    "started_UTC": "2026-10-19T05:55:16.880657+00:00",
+    "finished_UTC": "2026-10-19T05:55:19.681981+00:00",
+    "run": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/hardware-2026-10-19/base-front-pv-compare-r1/run.json",
+      "bytes": 179843,
+      "sha256": "1fe4c0cb83e345170b1b96ab9f00e385e2f5fb2ca0f73236a881eb11bb1a0382"
+    },
+    "collection": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/hardware-2026-10-19/collection.json",
+      "bytes": 37060,
+      "sha256": "3395e124ce4e3f78ea55b028278be1b3ea1514025e232f9b0d3119947fba9bcb"
+    },
+    "terminal_and_release": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/hardware-2026-10-19/terminal-and-release.json",
+      "bytes": 1062,
+      "sha256": "103e67d71857f0a1ea8479138e173f8b3caf14def2d2fea35961440c5c3f15b9"
+    },
+    "precommit_quality": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/hardware-2026-10-19/precommit-quality/result.json",
+      "bytes": 1843,
+      "sha256": "804de4981aa387c9722b60d68282fce2460ba0459eb75980c6b5d83b7d6c77ec"
+    },
+    "root_and_independent_wire_review": "PASS",
+    "complete_straces_reviewed": 3,
+    "uart_requests": 9,
+    "uart_responses": 9,
+    "all_response_ids": 8,
+    "all_response_errors": 0,
+    "all_frame_checksums_valid": true,
+    "model_number": 777,
+    "torque_enable_raw": 0,
+    "sync_velocity_raw_word": "0000",
+    "ordinary_velocity_raw_word": "0000",
+    "velocity_response_frame": "ff ff 08 04 00 00 00 f3",
+    "velocity_sampling_same_time": false,
+    "register_writes": 0,
+    "motion_commands": 0,
+    "direct_children_reaped": 99,
+    "raw_stream_files_verified": 198,
+    "collected_original_files": 209,
+    "collected_original_bytes": 377775,
+    "nonuart_post_checks": "PASS_6",
+    "serial_and_four_locks_unheld_after_exit": true,
+    "driver_natural_exit_code": 0,
+    "driver_pid_absent": true,
+    "own_dead_pane_removed": true,
+    "original_run_pending_review_fields_unchanged": true,
+    "prior_nonzero_feedback_root_cause": "UNKNOWN_NOT_REPRODUCED_THIS_RUN",
+    "full_M17_stop_verification": false,
+    "physical_wheel_motion": "UNKNOWN",
+    "field_supervision": "THIS_READ_ONLY_RUN_COMPLETED_NO_FURTHER_UART",
+    "D15": "OPEN_DEFERRED",
+    "deployable": false,
+    "next_step": "依据现有启用前后原件定位轮速异常条件；不重复本轮静态三读，不由本次授权扩大为启用或动作。"
   }
 }

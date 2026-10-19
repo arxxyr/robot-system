@@ -1,0 +1,96 @@
+{
+  "approval": {
+    "bytes": 1021,
+    "path": "/home/loosqk/robot-checks/base-front-pv-compare-r1/go-20261019T055429Z.json",
+    "sha256": "ddcb78d7085ae8f8abaad32161d13a7c3caf28a5f27359471d416773de98a13b"
+  },
+  "artifact_root": "/home/loosqk/robot-checks/base-front-pv-compare-r1",
+  "bindings": {
+    "bytes": 31781,
+    "path": "/home/loosqk/robot-checks/base-front-pv-compare-r1/current-bindings.json",
+    "sha256": "3e1f5261e259007055edb41f02b94ae6d1acaacd6f29f7a1a4851d621dc56911"
+  },
+  "current_tool_stat": {
+    "bytes": 1507224,
+    "ctime_ns": 1791872617842665275,
+    "device": 66305,
+    "elf_machine": 183,
+    "gid": 1000,
+    "inode": 17173933,
+    "mode": 509,
+    "mtime_ns": 1791872617842665275,
+    "nlink": 1,
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "symlink": false,
+    "uid": 1000
+  },
+  "current_usb": {
+    "left": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "device_inode": 1552,
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "gid": 20,
+      "link_inode": 1555,
+      "link_target": "../../ttyACM0",
+      "mode": 432,
+      "rdev": 42496,
+      "resolved": "/dev/ttyACM0",
+      "serial": "5A7C121427",
+      "uid": 0,
+      "usec_initialized": "3536208877616"
+    },
+    "right": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "device_inode": 1537,
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "gid": 20,
+      "link_inode": 1540,
+      "link_target": "../../ttyACM1",
+      "mode": 432,
+      "rdev": 42497,
+      "resolved": "/dev/ttyACM1",
+      "serial": "5A7C122340",
+      "uid": 0,
+      "usec_initialized": "3359632006336"
+    }
+  },
+  "diagnostic_tool": {
+    "bytes": 1507224,
+    "ctime_ns": 1791872617842665275,
+    "device": 66305,
+    "elf_machine": 183,
+    "gid": 1000,
+    "inode": 17173933,
+    "mode": 509,
+    "mtime_ns": 1791872617842665275,
+    "nlink": 1,
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "symlink": false,
+    "uid": 1000
+  },
+  "field_confirmation": {
+    "bytes": 766,
+    "path": "/home/loosqk/robot-checks/base-front-pv-compare-r1/field-confirmation-20261019T055429Z.json",
+    "sha256": "c2b2889ad3a2b856a5da6b807b2a9b8007545cc788cb080cd0a05bf3c3916d52"
+  },
+  "maintenance": {
+    "bytes": 50168,
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41"
+  },
+  "output": "/home/loosqk/robot-checks/base-front-pv-compare-r1/base-front-pv-compare-r1",
+  "run_id": "base-front-pv-compare-r1",
+  "schema": "BASE_FRONT_PV_COMPARE_CONFIG_R1",
+  "strace": {
+    "bytes": 1583504,
+    "path": "/usr/bin/strace",
+    "sha256": "5392f54d889a87341d49f970d91e21ab8c1f70a835ac9ead6ee4d17e532ae7f7"
+  },
+  "support": {
+    "bytes": 14217,
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+    "sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7"
+  }
+}

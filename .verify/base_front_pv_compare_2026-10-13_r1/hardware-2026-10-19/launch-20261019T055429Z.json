@@ -1,0 +1,10 @@
+{
+  "config": "/home/loosqk/robot-checks/base-front-pv-compare-r1/config-execute-20261019T055429Z.json",
+  "driver_log": "/home/loosqk/robot-checks/base-front-pv-compare-r1/driver-20261019T055429Z.log",
+  "identity": "front-read-20261019-055429 $82 %118 697073",
+  "launch_exit": 0,
+  "output": "/home/loosqk/robot-checks/base-front-pv-compare-r1/base-front-pv-compare-r1",
+  "recorded_at_ns": 1792389316734818764,
+  "session": "front-read-20261019-055429",
+  "stderr": ""
+}
