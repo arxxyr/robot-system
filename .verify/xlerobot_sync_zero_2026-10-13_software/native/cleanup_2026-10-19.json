@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-19",
+  "original_commit": "1045301ab53e91f2e133c2217351f297841068d9",
+  "scope": "仅删除旧会话备份及本轮软件采集的重复源码与封装；未改任何实机证据",
+  "removed": [
+    {
+      "path": "claude-session-backup-20260731.tar.gz",
+      "bytes": 14199700,
+      "sha256": "1819c658ef0ab44a95d0a697496822475ae2000f0f2dd9e3986d0a1ff2c00ac8",
+      "reason": "旧开发会话备份，不参与构建或运行"
+    },
+    {
+      "path": ".verify/xlerobot_sync_zero_2026-10-13_software/native/source-inputs-root597-sync-zero.tar.gz",
+      "bytes": 9349432,
+      "sha256": "1613b227df99aefced567d075850ada6c0c6802dacad344dbdde3ef5bedd1c5d",
+      "reason": "597项源码均与固定Git提交相同"
+    },
+    {
+      "path": ".verify/xlerobot_sync_zero_2026-10-13_software/native/originals/boot/source-inputs-root597.tar.gz",
+      "bytes": 9349432,
+      "sha256": "1613b227df99aefced567d075850ada6c0c6802dacad344dbdde3ef5bedd1c5d",
+      "reason": "与另一份源码包逐字节相同"
+    },
+    {
+      "path": ".verify/xlerobot_sync_zero_2026-10-13_software/native/single_ssh_native_sync_zero_software_r1.sh",
+      "bytes": 12651286,
+      "sha256": "ecb7653a7adff3c7ffb8fa8cb62fc9e4b6f13dc863756a58b17192c7853d36d8",
+      "reason": "一次性启动脚本内嵌重复源码载荷，原逻辑可按原提交恢复"
+    },
+    {
+      "path": ".verify/xlerobot_sync_zero_2026-10-13_software/native/native-originals-sync-zero-software-r1.tar.gz",
+      "bytes": 10232733,
+      "sha256": "666dc4a7ac6b369779310495b0fec15d43efbaa59e9a6decc965a1c5405182f4",
+      "reason": "68项均与originals展开文件逐字节相同；其中源码包改由Git恢复"
+    },
+    {
+      "path": ".verify/xlerobot_sync_zero_2026-10-13_software/native/tools/xlerobot-sync-zero-native-software-20261013-r1.owner/child.log",
+      "bytes": 13648141,
+      "sha256": "ac6ac4de538b55e6d9806e1859f04771c8802534dcc49436e0ceca7344eeeb18",
+      "reason": "仅去除archive_base64重复载荷，其余字段逐值保留至child.compact.json"
+    }
+  ],
+  "source_recovery": {
+    "commit": "1045301ab53e91f2e133c2217351f297841068d9",
+    "manifest": "originals/boot/host-source-root597.json",
+    "files": 597,
+    "all_bytes_matched": true
+  },
+  "native_originals": {
+    "retained_directory": "originals",
+    "matched_files_before_cleanup": 68,
+    "source_archive_replaced_by_git": true,
+    "other_files_unchanged": true
+  },
+  "child_log": {
+    "retained": "tools/xlerobot-sync-zero-native-software-20261013-r1.owner/child.compact.json",
+    "removed_field": "archive_base64",
+    "all_other_fields_equal": true
+  },
+  "historical_manifests": "保留当时记录，旧包路径及SHA按本清单解释，不表示旧包仍在当前树中"
+}

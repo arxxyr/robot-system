@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-19",
+  "scope": "只精简历史 H2 软件证据封装；不重做验收，不改变原 PASS/FAIL 或硬件状态。",
+  "original_archive": {
+    "path": "evidence.tar.gz",
+    "bytes": 91505591,
+    "sha256": "1e1942aad80ebf775ca47144c5fb6a242568fdb77118dbeed3ea334864fb1721"
+  },
+  "trimmed_archive": {
+    "path": "evidence.trimmed.tar.gz",
+    "bytes": 7351460,
+    "sha256": "723984239af893eb7f8e698b977af013a7c5bb68537fef3e409b0baa8ec3826f"
+  },
+  "source_git_commit": "1045301ab53e91f2e133c2217351f297841068d9",
+  "manifest": {
+    "path": "cleanup-manifest.tsv",
+    "bytes": 251997,
+    "sha256": "a0b3476c801d663a117c024a4dd2eec601f7bdb54396634271681cca8af66e94"
+  },
+  "expanded_containers": [
+    {
+      "path": "linux-r4/native-evidence.tar.gz",
+      "bytes": 95468912,
+      "sha256": "39197009b3f8715f65ff8e0b57637db697e0ffaca322c0ff16fae495622af470",
+      "action": "展开为 native/；内部原件另列"
+    }
+  ],
+  "member_counts": {
+    "keep": 393,
+    "duplicate": 222,
+    "git": 567,
+    "rebuild": 3
+  },
+  "verification": {
+    "original_leaf_count": 1185,
+    "new_archive_member_count": 393,
+    "retained_and_deduplicated_members_byte_equal": 615,
+    "git_references_byte_equal": 567,
+    "only_unavailable_unique_contents": [
+      "linux-r4/native-evidence.tar.gz!r4/post-mock/frozen/comm_fault_e2e",
+      "linux-r4/native-evidence.tar.gz!r4/post-mock/frozen/robot_rpc_gateway",
+      "linux-r4/native-evidence.tar.gz!r4/post-mock/frozen/s0_daemon"
+    ],
+    "unique_log_failure_identity_or_frame_contents_removed": 0,
+    "original_non_elf_contents_resolvable": true,
+    "all_other_files_in_directory_unchanged": true
+  },
+  "rebuild_note": "删除的三个 ELF 是软件 mock 构建产物。原字节 SHA、大小及原 .build.json 配方、构建输出、编译器身份仍可查；未重建，也不保证重新构建得到同一 ELF 字节。",
+  "hardware_note": "原包为软件验证证据，原摘要 new_hardware_h2=NOT_RUN；除三个 ELF 外的原叶子全部按原 SHA 可查，不删可能包含实机原帧的日志。"
+}

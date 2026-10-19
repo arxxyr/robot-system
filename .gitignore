@@ -71,3 +71,13 @@ perf*.data.old
 
 # 用户要求移除的历史大体积验收包，避免再次进入提交历史。
 /.verify/post_e_comm_fault_hardening/H_evidence.tar.gz
+
+# 已清理的旧会话、重复源码载荷及原封装；保留日志和精简包。
+/claude-session-backup-20260731.tar.gz
+/.verify/xlerobot_sync_zero_2026-10-13_software/native/source-inputs-root597-sync-zero.tar.gz
+/.verify/xlerobot_sync_zero_2026-10-13_software/native/originals/boot/source-inputs-root597.tar.gz
+/.verify/xlerobot_sync_zero_2026-10-13_software/native/single_ssh_native_sync_zero_software_r1.sh
+/.verify/xlerobot_sync_zero_2026-10-13_software/native/native-originals-sync-zero-software-r1.tar.gz
+/.verify/xlerobot_sync_zero_2026-10-13_software/native/tools/xlerobot-sync-zero-native-software-20261013-r1.owner/child.log
+/.verify/h2_trace_owner_2026-09-30/evidence.tar.gz
+/.verify/robot_viz_2026-09-29/evidence.tar.gz
