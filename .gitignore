@@ -68,3 +68,6 @@ perf*.data.old
 /logs
 
 .claude/*
+
+# 用户要求移除的历史大体积验收包，避免再次进入提交历史。
+/.verify/post_e_comm_fault_hardening/H_evidence.tar.gz

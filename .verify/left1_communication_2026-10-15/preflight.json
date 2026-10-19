@@ -1,0 +1,120 @@
+{
+  "observed_at_ns": 1792047349279034626,
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "uart_opened": false,
+  "tools": {
+    "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke": {
+      "sha256": "f2014ee4008311e7a8725235a39f0d1b3913391f17cbd977b7441f120539114b",
+      "bytes": 1469904,
+      "mode": 509
+    },
+    "/usr/bin/strace": {
+      "sha256": "5392f54d889a87341d49f970d91e21ab8c1f70a835ac9ead6ee4d17e532ae7f7",
+      "bytes": 1583504,
+      "mode": 493
+    }
+  },
+  "usb": {
+    "left": {
+      "exists": true,
+      "real": "/dev/ttyACM0",
+      "major": 166,
+      "minor": 0,
+      "inode": 1552,
+      "udev": {
+        "argv": [
+          "udevadm",
+          "info",
+          "--query=property",
+          "--name",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
+        ],
+        "exit": 0,
+        "stdout": "DEVPATH=/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0\nDEVNAME=/dev/ttyACM0\nMAJOR=166\nMINOR=0\nSUBSYSTEM=tty\nUSEC_INITIALIZED=3536208877616\nID_VENDOR=1a86\nID_VENDOR_ENC=1a86\nID_VENDOR_ID=1a86\nID_MODEL=USB_Single_Serial\nID_MODEL_ENC=USB\\x20Single\\x20Serial\nID_MODEL_ID=55d3\nID_REVISION=0445\nID_SERIAL=1a86_USB_Single_Serial_5A7C121427\nID_SERIAL_SHORT=5A7C121427\nID_TYPE=generic\nID_BUS=usb\nID_USB_INTERFACES=:020201:0a0000:\nID_USB_INTERFACE_NUM=00\nID_USB_DRIVER=cdc_acm\nID_USB_CLASS_FROM_DATABASE=Communications\nID_VENDOR_FROM_DATABASE=QinHeng Electronics\nID_PATH=platform-3610000.usb-usb-0:2.4.3:1.0\nID_PATH_TAG=platform-3610000_usb-usb-0_2_4_3_1_0\nID_MM_CANDIDATE=1\nDEVLINKS=/dev/serial/by-path/platform-3610000.usb-usb-0:2.4.3:1.0 /dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00\nTAGS=:systemd:\nCURRENT_TAGS=:systemd:\n",
+        "stderr": ""
+      },
+      "users": {
+        "argv": [
+          "fuser",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "right": {
+      "exists": true,
+      "real": "/dev/ttyACM1",
+      "major": 166,
+      "minor": 1,
+      "inode": 1537,
+      "udev": {
+        "argv": [
+          "udevadm",
+          "info",
+          "--query=property",
+          "--name",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00"
+        ],
+        "exit": 0,
+        "stdout": "DEVPATH=/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1\nDEVNAME=/dev/ttyACM1\nMAJOR=166\nMINOR=1\nSUBSYSTEM=tty\nUSEC_INITIALIZED=3359632006336\nID_VENDOR=1a86\nID_VENDOR_ENC=1a86\nID_VENDOR_ID=1a86\nID_MODEL=USB_Single_Serial\nID_MODEL_ENC=USB\\x20Single\\x20Serial\nID_MODEL_ID=55d3\nID_REVISION=0445\nID_SERIAL=1a86_USB_Single_Serial_5A7C122340\nID_SERIAL_SHORT=5A7C122340\nID_TYPE=generic\nID_BUS=usb\nID_USB_INTERFACES=:020201:0a0000:\nID_USB_INTERFACE_NUM=00\nID_USB_DRIVER=cdc_acm\nID_USB_CLASS_FROM_DATABASE=Communications\nID_VENDOR_FROM_DATABASE=QinHeng Electronics\nID_PATH=platform-3610000.usb-usb-0:2.4.4:1.0\nID_PATH_TAG=platform-3610000_usb-usb-0_2_4_4_1_0\nID_MM_CANDIDATE=1\nDEVLINKS=/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00 /dev/serial/by-path/platform-3610000.usb-usb-0:2.4.4:1.0\nTAGS=:systemd:\nCURRENT_TAGS=:systemd:\n",
+        "stderr": ""
+      },
+      "users": {
+        "argv": [
+          "fuser",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  },
+  "services": {
+    "argv": [
+      "systemctl",
+      "show",
+      "xlerobot-s0-left-arm.service",
+      "xlerobot-s1-left.service",
+      "xlerobot-gateway-left.service",
+      "xlerobot-s0-right-arm.service",
+      "xlerobot-s1-right.service",
+      "xlerobot-gateway-right.service",
+      "xlerobot-coordinator.service",
+      "xlerobot-web.service",
+      "xlerobot-s0-bus1.service",
+      "xlerobot-s0-bus2.service",
+      "--property=Id,LoadState,ActiveState,SubState,MainPID"
+    ],
+    "exit": 0,
+    "stdout": "MainPID=0\nId=xlerobot-s0-left-arm.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s1-left.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-gateway-left.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s0-right-arm.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s1-right.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-gateway-right.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-coordinator.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-web.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s0-bus1.service\nLoadState=not-found\nActiveState=inactive\nSubState=dead\n\nMainPID=0\nId=xlerobot-s0-bus2.service\nLoadState=not-found\nActiveState=inactive\nSubState=dead\n",
+    "stderr": ""
+  },
+  "recent_usb_kernel": {
+    "argv": [
+      "journalctl",
+      "-k",
+      "--since",
+      "2026-10-13 09:35:00 UTC",
+      "--grep",
+      "cdc_acm|USB disconnect|usb.*error",
+      "--no-pager",
+      "-n",
+      "35"
+    ],
+    "exit": 1,
+    "stdout": "-- No entries --\n",
+    "stderr": ""
+  },
+  "tmux": {
+    "argv": [
+      "tmux",
+      "-V"
+    ],
+    "exit": 0,
+    "stdout": "tmux 3.2a\n",
+    "stderr": ""
+  }
+}

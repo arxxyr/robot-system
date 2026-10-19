@@ -1,0 +1,9 @@
+{
+  "field_stamp": 1791884367000000000,
+  "field_expected": [
+    "ffa941a0857f28478cd62dcb016ad94a1669326e904d6c14f8beb09920ed32fb",
+    1880
+  ],
+  "original_expires_at_ns": 1791884967000000000,
+  "scope": "仅右9/base_right_wheel一次单ID9 SYNC_WRITE Goal_Velocity0（无ACK）→发送完成后至少50ms→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑"
+}

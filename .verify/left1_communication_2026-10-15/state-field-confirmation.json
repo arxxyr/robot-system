@@ -1,0 +1,12 @@
+{
+  "received_at_utc": "2026-10-15T13:19:36Z",
+  "field_seconds": 1792070376,
+  "expires_at_utc": "2026-10-15T13:29:36.000Z",
+  "user_statement": "继续，只读核对左1的模式、使能和速度，现场仍保持供电、支撑和持续看护，不扩大测试范围。",
+  "registers": [
+    "Operating_Mode",
+    "Torque_Enable",
+    "Present_Velocity"
+  ],
+  "scope": "仅左1固定三项只读，异常即停，无其他UART或动作"
+}

@@ -1,0 +1,53 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "REAPED",
+  "status": "FAIL",
+  "owner_pid": 10621,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ServerAliveCountMax=2",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": 10622,
+  "started_utc": "2026-10-13T08:58:55.510297+00:00",
+  "started_monotonic_ns": 69016270913625,
+  "observe_seconds": 5.0,
+  "wait_returncode": 255,
+  "reaped": true,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [],
+  "observations": 3,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "input": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/commit-quality/single_ssh_commit_quality_base_front_pv_compare_r1.sh",
+    "sha256": "2c29b5628a76746a07b4db2ca4b07b079e67f6cfc828375be5837d2b7409db94",
+    "bytes": 165359
+  },
+  "launched_utc": "2026-10-13T08:58:55.512335+00:00",
+  "start_new_session": true,
+  "child_session_id": 10622,
+  "observed_utc": "2026-10-13T08:59:10.545194+00:00",
+  "elapsed_ns": 15037308000,
+  "log_bytes_observed": 89,
+  "child_end_class": "EXIT_STATUS",
+  "child_signal": null,
+  "finished_utc": "2026-10-13T08:59:10.547762+00:00",
+  "log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/commit-quality/tools/base-front-pv-compare-r1-commit-quality-20261013-r1.owner/child.log",
+    "sha256": "5cb0c1231d33323ce235f9f008691e9d3289a9f68bba908efbb9e27d3d565890",
+    "bytes": 89
+  }
+}

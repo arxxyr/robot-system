@@ -1,0 +1,7 @@
+{
+  "received_at_utc": "2026-10-15T13:09:57Z",
+  "field_seconds": 1792069797,
+  "expires_at_utc": "2026-10-15T13:19:57.000Z",
+  "user_statement": "已恢复供电，机械臂和底盘支撑稳定，现场有人持续看护并能立即断电，直接执行本次左1只读握手采集。",
+  "scope": "一次固定 left1 ping（PING及型号READ），无寄存器写入或Enable"
+}

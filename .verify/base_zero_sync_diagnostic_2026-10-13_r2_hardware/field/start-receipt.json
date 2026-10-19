@@ -1,0 +1,32 @@
+{
+  "status": "STARTED_SINGLE_BASE_ZERO_SYNC_DIAGNOSTIC_R1",
+  "tmux_identity": "base-zero-sync-diagnostic-trial-20261013-r2 @112 %112 669897",
+  "motor_identity": "base-zero-sync-diagnostic-trial-20261013-r2 @112 %112 669897",
+  "motor_tmux": {
+    "argv": [
+      "tmux",
+      "new-session",
+      "-d",
+      "-s",
+      "base-zero-sync-diagnostic-trial-20261013-r2",
+      "-P",
+      "-F",
+      "#{session_name} #{window_id} #{pane_id} #{pane_pid}",
+      "bash /home/loosqk/robot-checks/base-zero-sync-diagnostic-r2/base-zero-sync-diagnostic-launch-r2/launch_base_zero_sync_diagnostic_r1.sh"
+    ],
+    "pid": 669896,
+    "started_ns": 1791885128625172797,
+    "finished_ns": 1791885128630939623,
+    "exit_code": 0,
+    "wait_returncode": 0,
+    "reaped": true,
+    "stdout": "base-zero-sync-diagnostic-trial-20261013-r2 @112 %112 669897\n",
+    "stderr": "",
+    "signals_sent": []
+  },
+  "go_sha256": "08881ee2e558f08e14a0f1da5f20a307cb7463222eead4bd026da89aa20abe70",
+  "go_bytes": 1808,
+  "plan_sha256": "5771568b91c43d7c086a9ca204bc2263f71abc279f5a417c3c5283e7770806c4",
+  "motor_launcher_sha256": "929f52c96b0f02b7851b3c7b6bb8ed7e3a02adfd1c86974f28c3610a272f0edc",
+  "camera_processes_started": 0
+}

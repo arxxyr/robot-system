@@ -1,0 +1,28 @@
+{
+  "name": "terminal-owned-pane",
+  "argv": [
+    "tmux",
+    "display-message",
+    "-p",
+    "-t",
+    "%112",
+    "#{session_name}|#{window_id}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}"
+  ],
+  "started_ns": 1791885342836805650,
+  "signals_sent": [],
+  "reaped": true,
+  "pid": 670051,
+  "finished_ns": 1791885343345589078,
+  "exit_code": 0,
+  "wait_returncode": 0,
+  "stdout": {
+    "path": "/home/loosqk/robot-checks/base-zero-sync-diagnostic-r2/base-zero-sync-diagnostic-seal-r2/terminal-owned-pane.stdout",
+    "bytes": 65,
+    "sha256": "b5bcf404f99fae19816c9c7d065f239c88066903bc7f36e881912f5657969c62"
+  },
+  "stderr": {
+    "path": "/home/loosqk/robot-checks/base-zero-sync-diagnostic-r2/base-zero-sync-diagnostic-seal-r2/terminal-owned-pane.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "status": "PASS_LOCAL_ONLY_THREE_METHOD_UNBOUND_RIGHT8_READ_COMPARISON_PENDING_ROOT_REVIEW",
+  "recorded_at_utc": "2026-10-13T09:23:03.696374+00:00",
+  "candidate": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/base_front_pv_compare_r1.py",
+    "sha256": "d6b74da1ec4a587a02366c4c6fa9647e0ae5abba9622b3021e459a01f8cb3886",
+    "bytes": 21849
+  },
+  "test": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/test_base_front_pv_compare_r1.py",
+    "sha256": "7902880807e304bd5a96324acd47f746f7e9f3bd5f7d9c955ebf9be36576d3dd",
+    "bytes": 9472
+  },
+  "config_template": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/config-template-r1.json",
+    "sha256": "860115ac4bf232a52240a19e0e5b9db101c78f0e960bf17cda0f7e4bdd9ba9d5",
+    "bytes": 1035
+  },
+  "readonly12_baseline": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/feetech_runtime_limits_2026-10-11/readonly12-preparation/candidate/readonly12_r12.py",
+    "sha256": "827e83378949f6f2dd458a113e4e3b122f74689ddf4fdaf6dbe3a70fda92938b",
+    "bytes": 17307
+  },
+  "diff": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/candidate-diff-vs-readonly12-r12.patch",
+    "sha256": "8de5785365a0336d2088e01f52f5d934d33baaa0ea7bdb479826d7dbe30c3064",
+    "bytes": 18239
+  },
+  "local_checks": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/local-checks-r1/receipt.json",
+    "sha256": "4d5c16bd9d6dec9977c9116c25c5ea67e2141511594b32137c1771feb4274d3b",
+    "bytes": 5377
+  },
+  "methods": [
+    "test_default_unbound_new_inputs_and_frozen_go_compatibility",
+    "test_three_zero_reads_and_comparison_without_motion_or_replay",
+    "test_nonzero_unknown_or_expired_gate_sticky_without_pair_or_retry"
+  ],
+  "different_memory_method_count": 3,
+  "actual_childs": [
+    {
+      "pid": 12402,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "pid": 12403,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true
+    },
+    {
+      "pid": 12404,
+      "exit_code": 2,
+      "wait_returncode": 2,
+      "reaped": true
+    }
+  ],
+  "default_PLAN_ONLY_and_unbound_execute": "actual local CLI exit0/exit2, no config read on unbound execute",
+  "frozen_tool": {
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "bytes": 1507224
+  },
+  "APPROVED_TOOL": null,
+  "current_tool_stat_USB_field_GO": "all None; no old inode, power-cut reply, or historic GO backfill",
+  "native_verification": "UNKNOWN; root reported two SSH banner timeouts, no local network attempt/retry",
+  "go_compatibility": "d97非空position目标规则不变。复用readonly12非动作身份字段，原3位置名单只为冻结GO元数据；不调用m.execute/ProbeEngine/motion/position/snapshot/finish。新scope/config/script摘要拒旧GO。",
+  "scope": [
+    "fixed right8/base_front_wheel; SYNC_READ Torque_Enable40/1 then SYNC_READ Present_Velocity58/2 then ordinary READ Present_Velocity58/2",
+    "same b2 ELF; all3 commands independently strace capture; no Enable/Disable/parameter/register writes/retry",
+    "any TE/PV nonzero or unknown immediately manual+sticky; no later UART to form pair",
+    "if both PV outputs exist compare raw unsigned versus ordinary CLI sign-magnitude representation only; different0x82/0x02 and physical motion UNKNOWN",
+    "live raw0032/8032 stops after second read, ordinary third NOT_RUN. Unit presentation50/50 and32818/-50 is synthetic existing-output formatting, never runtime bypass",
+    "not full17 motor stop; does not replace old STOP51; prior NEEDS/FAIL unchanged"
+  ],
+  "local_check_scope": [
+    "default/unbound/current inputs missing before source loader; simulate complete legal ELF metadata, frozen GO identity metadata and old digest rejection",
+    "three zero mock reads, exact whitelist, complete traces, no sequence replay and two scalar formatting examples without UART",
+    "TE1/rawPV0032/8032/bad checksum/ordinary unknown/expired gate sticky; no extra pair read"
+  ],
+  "trace_evidence_boundary": "complete raw SYNC JSON tx/rx checked by readonly12 parser. Ordinary raw word not derived from decoded stdout; complete strace retained PENDING_ROOT_REVIEW. Fake traces only local tests; no hardware frame claimed.",
+  "child_evidence_boundary": "production RealExecutor owns direct strace; nested b2 terminal stored in trace, no fabricated nested wait/PID",
+  "pending": [
+    "APPROVED_TOOL complete current ELF stat",
+    "current USB/binding/new candidate refs",
+    "current field/independent new GO",
+    "native verification and actual hardware startup decision byroot"
+  ],
+  "UART": 0,
+  "network": 0,
+  "GO_created": false,
+  "Rust_or_STOP_or_Phase_modified": false,
+  "seven_runtime_templates_created": false,
+  "old6_15_orCargo_retested": false,
+  "physical_motion": "UNKNOWN",
+  "full_M17_stop_verification": false
+}

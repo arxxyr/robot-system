@@ -2,6 +2,50 @@
 
 ## 当前步骤
 
+### 分支收尾规则与历史大包移除（2026-10-18）
+
+用户要求开发完成后仅保留 `master`、`dev`，并同步 `origin`、`github`。本次将已完成的源码和诊断记录收口，未完成工作树草稿保留。用户另明确要求删除 `.verify/post_e_comm_fault_hardening/H_evidence.tar.gz`，包括阻挡 GitHub 同步的历史版本；该路径已加入忽略规则。`H.json` 和下文验收结论作为历史记录保留，原文中的大包链接不再可用，不再声称可从该包复核旧原件。其他源码、诊断原件和硬件未通过事项不因 Git 整理改变；前轮三读仍未实际执行。
+
+提交前本机实际 fmt 通过，根 Clippy 因已有 Linux 专用 API 在 macOS 不可用而失败；未扩大范围修改跨平台代码。Orin 使用最新 nightly b6eeb93c9，按顺序实际执行 `cargo fmt --all` 和 `cargo clippy --all --all-targets -- -D warnings`，均退出0，597项构建输入前后同 ae00cf4f，未改 Rust 源码。本次提交统一收录下述10/13–10/16记录，其中“未提交”为当时状态；没有新硬件测试。
+
+### 前轮三读候选原生软件和运行准备通过，等待本次现场确认（2026-10-16）
+
+下一实际阻塞仍为前轮 right8 的非零速度反馈。复用原 d6b74da1 候选及 b2 冻结工具，只准备 TE 原帧→PV 原帧→普通 PV 三读，原非零/未知粘性封锁保持。Orin 在 tmux 内完成同三个软件方法、默认 CLI exit0、未绑定执行预期 exit2；输入前后相同，runner 自然退出0、PID消失，20份输出已取回并逐SHA核实。与旧本机三项为同组，不累计为六项；这不是实机验证。
+
+现有主机、双USB枚举、保护文件及旧引用检查通过；新增入口只绑定当前 b2 完整 stat，候选源码未改。现成配置的 PLAN exit0，缺现场/GO 时执行请求在启动前 exit2，硬件输出目录尚不存在。见[统一摘要](../../.verify/base_front_pv_compare_2026-10-13_r1/summary.json)及其原始结果引用。已询问本次供电、三轮稳定架空、机械臂支撑和持续看护；当前回执与GO为空，UART0，不复用昨日左1授权。收到确认后只绑定已有入口执行一次三读，不追加其他电机或动作。本轮未改Rust、未运行Cargo、未安装或操作服务，记录未提交；旧超时/±50原因、D15 OPEN/DEFERRED及deployable=false保持。
+
+### 左1握手及模式/使能/速度只读通过，旧超时原因仍未证实（2026-10-15）
+
+按用户要求先完成现有 XLeRobot 最小闭环，暂不为 RP1 扩展设计。R2 失败工具已核为旧 f201；`connect(true)` 中 PING 或型号 READ 的接收超时会折叠为“无响应”，尚未进入 Operating_Mode 读取，现有日志不能判断是否收过部分字节。
+
+用户当次确认已供电、机械臂和底盘支撑稳定、有人持续看护且可立即断电；13:09:57 UTC 记录确认，13:10:34–35 UTC 在 tmux 中以 sudo 执行已准备的单次 f201 `left1 ping`。当前 USB 身份、服务停止、目标串口无占用及四锁前置通过；只发 PING 和地址3/2字节型号 READ，收到两份 ID1、error0、校验正确的回复，型号777。工具及执行壳均退出0，stderr为空；原帧显示串口解除独占并关闭，非 UART 后验确认目标串口/四锁无人占用、所属两个 PID 已消失。
+
+用户随后明确继续仅查左1模式、使能和速度，并确认供电/支撑/持续看护保持；13:19:36 UTC记录本次确认。13:20:53–54 UTC在tmux内复用原工具及维护前置，按顺序完成三项READ：Operating_Mode=0（位置）、Torque_Enable=0、Present_Velocity=0（原字0000）。每项仅PING、型号READ、指定寄存器READ，合计九发九收，ID1/error0/地址/宽度/校验均正确；三个工具及壳退出0、stderr为空。串口正常关闭，非UART后验确认目标串口/四锁无人占用、所属PID已退出；没有追加其他电机、参数写或动作。
+
+两次采集及本次20份原件的两端SHA核对统一见[本轮摘要](../../.verify/left1_communication_2026-10-15/summary.json)，root及独立原帧复核通过。本次指定只读范围已完成，未构建Rust或改正式服务。结论为本次左1通信与三项状态读回通过，旧故障未复现且根因未证实，不外推长期稳定/整机停止。回到既定最小闭环时只选下一实际阻塞，不扩展左1扫描；D15 OPEN/DEFERRED、deployable=false 保持。
+
+### R2重复入口已执行，左1握手失败，右轮未启用；人工收尾已确认（2026-10-13）
+
+用户要求“再来一次，没看清”和“立即执行”。首09:39:27现场确认后的fresh17/23、当前USB无变化、58refs及唯一完整PLAN通过；root准备启动材料耗过原09:49:27期限，旧本地GO未上传或启动，原件保留。用户再次直接确认“现在仍全部就绪，立即执行”，root固定09:50:54至10:00:54新现场事实及独立GO，只启动一次driver669897/@112/%112；复用原main3b/helper70/b2，没有新Rust构建、软件重验或控制逻辑改动。
+
+实际首UART工具调用seq43为左1 `read Operating_Mode`，child669952原exit1、64.489704ms、over_budget=false，stdout0B，stderr72B为“error: bus.connect (handshake) motor_id=1: 握手电机无响应：id=1”。这是握手错误，未取得Mode值；没有本次完整原帧，不能据此判断供电、线缆、电机或具体收发原因。粘性封锁后新UART0；right9 zero_diag NOT_RUN，SYNC_WRITE/WRITE/Enable0，STOP51和完整电机身份UNKNOWN，原run3f804c06/213920B仍NEEDS_MANUAL_POWER_CUT。此次没有新的右轮动作观察结论，也没有重复前轮+50读回。
+
+61直属child/122原流逐SHA/字节核对并真实回收；driver自然dead1，START至同dead态观察结束均在新GO内。首observer绑定误用未加引号None标记在本机assert失败，owner27759随后NOT_LAUNCHED/pidnull；原回执保留，改正后owner27802/SSH27803仅观察同一进程，不重跑硬件。collector仅核终态并回收所属dead pane两个child，无独立17后验或UART。156件唯一原包715be0c1/123007B已收回，[本轮摘要](../../.verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/summary.json)保留失败与准备分界。
+
+用户直接确认两个电源已切断、机械臂和架空底盘仍稳定支撑，09:54:45UTC收到[断电回执](../../.verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/followups/manual-power-cut-confirmation-r2.json)。当前OFF_USER_REPORTED、看护结束；实际断电时刻和独立电气遥测UNKNOWN，不回填原NEEDS/STOP/身份。下一步先核对左侧电机供电和总线连接，当前不再自动重试右轮、执行新UART或放宽停止门。新front3候选仍仅本机验证，未用于本轮；SSH已恢复且此前软件质量目录实际不存在，未补跑fmt/Clippy，因此本轮记录未提交。架构、S0/S1、正式安装和服务未改；右H2完整PASS、D15 OPEN/DEFERRED、deployable=false及旧±50原因保持。
+
+### 前轮最小只读候选本机通过，Orin验证因SSH握手超时未确认（2026-10-13）
+
+断电回执已收到，当前OFF_USER_REPORTED，机械臂和架空底盘支撑由用户确认；本轮看护已结束。离线核对原seq311请求及有效RX0032，普通READ与SYNC_READ均使用地址58/2B，未发现此帧的地址、端序或符号转换错误；固件读值、两种读法的现场差异、旧±50原因和物理轮转动仍UNKNOWN。
+
+复用已有readonly12入口，候选d6b74da1仅固定right8三读：SYNC_READ TE、SYNC_READ PV、普通READ PV，同一b2冻结ELF，每次保留strace；任一非零或未知立即封锁后续UART，不为凑比较追加读取。位置名单仅作冻结GO身份元数据，不调用动作；APPROVED_TOOL及当前stat/USB/现场/GO均未绑定。本机3个不同内存方法通过，默认CLI0、未绑定执行2及三个直属child自然wait/reap，五输入当前与原回执一致。独立窄静审无实质发现，root核对候选和回执；不称原生或实机通过。[本轮摘要](../../.verify/base_front_pv_compare_2026-10-13_r1/summary.json)固定证据边界。
+
+一次Orin提交质量启动尝试及一次同阶段只读观察均SSH255，原错误为banner exchange超时；owner10621/SSH10622及owner10865/SSH10866真实回收，无信号。远端目录、pane/driver、源码/编译器窗和fmt/Clippy结果均UNKNOWN，不能据握手失败断言远端未运行。没有重启未知阶段或额外网络修复；本轮没有新Rust修改、GO、UART、动作、正式安装或服务操作。因实际提交前fmt及根Clippy未确认，当前断电记录和候选保持未提交。下一步连接恢复后先读取已有软件阶段状态，再补齐原生验证；实机读取另需当次现场事实和独立GO，当前不要求恢复供电。原NEEDS/STOP51及身份UNKNOWN、D15 OPEN/DEFERRED和deployable=false不变，以下历史原件不回填。
+
+### 本轮人工断电收尾已确认（2026-10-13）
+
+用户直接确认“两个电机电源已切断，机械臂和底盘仍有稳定支撑”；root于08:44:17UTC记录收到确认。当前电源为OFF_USER_REPORTED，实际断电时刻及独立电气遥测UNKNOWN。[断电回执](../../.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/followups/manual-power-cut-confirmation-r1.json)单独追加，原1eb89ee run/摘要/帧审查中的PENDING均为当时状态，不改原NEEDS、STOP51 UNKNOWN或身份UNKNOWN。本轮GO已消费、看护结束，回执不构成恢复供电或新读取/动作授权；此后不执行UART。下一步只离线核对前轮+50的普通READ与SYNC_READ路径，并准备最小只读比较，保留停止门和Phase。
+
 ### 右轮SYNC零值子项通过，前轮最终+50导致停止未确认（2026-10-13）
 
 用户本次直接确认供电、三轮稳定架空、空载双臂支撑、区域空旷及持续看护可立即断电。root首次观察08:08:00UTC固定原600秒至08:18，不续期；本次fresh17项/23child、当前USB双方changes{}及58refs/唯一完整PLAN通过。PLAN child668879真实0/reap，canonical85a1defa；root和独立窄审均核实。首owner1497因相对input在本机NOT_LAUNCHED/pidnull、SSH0拒绝并完整保留；修绝对路径后owner1560/SSH1561才执行唯一fresh，没有硬件自动重试。独立GO仅一次，START owner2276/SSH2277真实0/reap，driver668951/@110/%110自然exit1后所属dead pane已回收。

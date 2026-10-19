@@ -1,0 +1,27 @@
+{
+  "status": "LOCAL_R2_USB_COMPARISON_NO_NEW_PROBE",
+  "comparison_baseline": "R1actualfresh（仅变化报告，不替代本轮R2binding）",
+  "changes": [],
+  "current_USB": {
+    "left": {
+      "device_inode": 1552,
+      "link_inode": 1555,
+      "udev_usec_initialized": "3536208877616",
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496,
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0"
+    },
+    "right": {
+      "device_inode": 1537,
+      "link_inode": 1540,
+      "udev_usec_initialized": "3359632006336",
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497,
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1"
+    }
+  }
+}

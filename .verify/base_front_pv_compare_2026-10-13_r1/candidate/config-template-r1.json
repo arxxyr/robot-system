@@ -1,0 +1,27 @@
+{
+  "schema": "BASE_FRONT_PV_COMPARE_CONFIG_R1",
+  "artifact_root": "/home/loosqk/robot-checks/base-front-pv-compare-r1",
+  "output": "/home/loosqk/robot-checks/base-front-pv-compare-r1/base-front-pv-compare-r1",
+  "run_id": "base-front-pv-compare-r1",
+  "maintenance": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+    "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+    "bytes": 50168
+  },
+  "support": {
+    "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+    "sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7",
+    "bytes": 14217
+  },
+  "bindings": null,
+  "diagnostic_tool": null,
+  "field_confirmation": null,
+  "approval": null,
+  "current_tool_stat": null,
+  "current_usb": null,
+  "strace": {
+    "path": "/usr/bin/strace",
+    "sha256": "5392f54d889a87341d49f970d91e21ab8c1f70a835ac9ead6ee4d17e532ae7f7",
+    "bytes": 1583504
+  }
+}

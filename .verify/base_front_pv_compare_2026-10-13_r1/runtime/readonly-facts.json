@@ -1,0 +1,445 @@
+{
+  "observed_at_ns": 1792144666629139509,
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "machine": "aarch64",
+  "host_matches": true,
+  "refs": [
+    {
+      "path": "/etc/robot/xlerobot_left_arm.toml",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/etc/robot/xlerobot_right_arm.toml",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/etc/robot/rpc_roles.toml",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/robot_rpc_gateway",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/s0_daemon",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/s1_daemon",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-s0-left-arm.service",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-s0-right-arm.service",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-s1-left.service",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-s1-right.service",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-gateway-left.service",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-gateway-right.service",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/etc/systemd/system/xlerobot-handoff.service",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/base.json",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/head.json",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/left_arm.json",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/adapters/bus2_base.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/config.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/__init__.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/_ranges_input.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/bus.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/calibration.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/encoding.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/patches.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/registers.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/feetech_io/types.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/src/xlerobot_dimos/common/units.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/hardware-verify-20260930-r2/maintenance/proc_identity.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/usr/bin/strace",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/i2_trial_head1_candidate_r1.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-right-ready-20261009-r1/readback-tool-r1/feetech_poke",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/i2_trial_head1_wire_r5.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r6/p24_trial_head1_wire_r6.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-reverse-r9/head1_reverse_observation_r9.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/position-return-r7/load-readback-tool-r10/feetech_poke",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-load-observation-r10/head1_load_observation_r10.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-settle-r8/head1_outward_observation_r8.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-d0-trial-r11/head1_d0_trial_r11.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/head1_p32_trial_r13.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/helpers/p24_trial_head1_wire_r6.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head-p32-trial-r13/helpers/head1_outward_observation_r8.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-trial-r14/head2_p32_trial_r14.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-trial-r14/helpers/parameter_stop_head2_r14.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-trial-r14/helpers/head2_outward_observation_r14.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/head2_p32_reverse_trial_r17.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/helpers/parameter_stop_head2_r14.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/head2-p32-reverse-r17/helpers/head2_outward_observation_r14.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/base_zero_diagnostic_r1.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/base-zero-diagnostic-r1/helpers/raw_right9_from_r14_r1.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/position-return-20261010-r1/normal-read-r4/normal_read_capture_r4.py",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/usr/bin/strace",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "path": "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+      "match": true,
+      "differences": {}
+    }
+  ],
+  "protection": [
+    {
+      "side": "left",
+      "name": "rx_trust_marker",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "left",
+      "name": "rx_trust_marker.bak",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "left",
+      "name": "estop_latch",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "left",
+      "name": "estop_latch.bak",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "left",
+      "name": "rx_trust.lock",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "left",
+      "name": "estop_latch.lock",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "right",
+      "name": "rx_trust_marker",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "right",
+      "name": "rx_trust_marker.bak",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "right",
+      "name": "estop_latch",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "right",
+      "name": "estop_latch.bak",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "right",
+      "name": "rx_trust.lock",
+      "match": true,
+      "differences": {}
+    },
+    {
+      "side": "right",
+      "name": "estop_latch.lock",
+      "match": true,
+      "differences": {}
+    }
+  ],
+  "usb": {
+    "left": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496,
+      "mode": 432,
+      "uid": 0,
+      "gid": 20,
+      "device_inode": 1552,
+      "link_inode": 1555,
+      "link_target": "../../ttyACM0",
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3536208877616"
+    },
+    "right": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497,
+      "mode": 432,
+      "uid": 0,
+      "gid": 20,
+      "device_inode": 1537,
+      "link_inode": 1540,
+      "link_target": "../../ttyACM1",
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336"
+    }
+  },
+  "usb_matches_old": true,
+  "diagnostic_tool": {
+    "path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke",
+    "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94",
+    "bytes": 1507224,
+    "uid": 1000,
+    "gid": 1000,
+    "mode": 509,
+    "device": 66305,
+    "inode": 17173933,
+    "mtime_ns": 1791872617842665275,
+    "ctime_ns": 1791872617842665275,
+    "nlink": 1,
+    "symlink": false,
+    "elf_machine": 183
+  },
+  "prep_root_exists": false,
+  "uart_calls": 0
+}

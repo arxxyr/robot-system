@@ -1,0 +1,140 @@
+{
+  "status": "PASS",
+  "inputs_before": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/base_front_pv_compare_r1.py",
+      "sha256": "d6b74da1ec4a587a02366c4c6fa9647e0ae5abba9622b3021e459a01f8cb3886",
+      "bytes": 21849
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/test_base_front_pv_compare_r1.py",
+      "sha256": "7902880807e304bd5a96324acd47f746f7e9f3bd5f7d9c955ebf9be36576d3dd",
+      "bytes": 9472
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/config-template-r1.json",
+      "sha256": "860115ac4bf232a52240a19e0e5b9db101c78f0e960bf17cda0f7e4bdd9ba9d5",
+      "bytes": 1035
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/fixtures/normal_read_capture_r4.py",
+      "sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7",
+      "bytes": 14217
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/fixtures/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    }
+  ],
+  "inputs_after": [
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/base_front_pv_compare_r1.py",
+      "sha256": "d6b74da1ec4a587a02366c4c6fa9647e0ae5abba9622b3021e459a01f8cb3886",
+      "bytes": 21849
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/test_base_front_pv_compare_r1.py",
+      "sha256": "7902880807e304bd5a96324acd47f746f7e9f3bd5f7d9c955ebf9be36576d3dd",
+      "bytes": 9472
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/config-template-r1.json",
+      "sha256": "860115ac4bf232a52240a19e0e5b9db101c78f0e960bf17cda0f7e4bdd9ba9d5",
+      "bytes": 1035
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/fixtures/normal_read_capture_r4.py",
+      "sha256": "5f57211caa487717672e317b9441ae5e4a77983bb28899c1fac3e081ab3f9bd7",
+      "bytes": 14217
+    },
+    {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/fixtures/run_hardware_maintenance.py",
+      "sha256": "d97e0da9b792d048681053054296de66e7f3ef37cf392852784587b51a8b1d41",
+      "bytes": 50168
+    }
+  ],
+  "same_inputs": true,
+  "children": [
+    {
+      "name": "memory3",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "-B",
+        "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/test_base_front_pv_compare_r1.py"
+      ],
+      "pid": 12402,
+      "started_ns": 1791882667136027000,
+      "finished_ns": 1791882667194902000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "sha256": "f4a50e9a72de050ec72b809d61f4bcdd5ff26fc6f4c194be628d3ebf9b9db64c",
+        "bytes": 600
+      }
+    },
+    {
+      "name": "default",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "-B",
+        "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/base_front_pv_compare_r1.py"
+      ],
+      "pid": 12403,
+      "started_ns": 1791882667195152000,
+      "finished_ns": 1791882667214993000,
+      "exit_code": 0,
+      "wait_returncode": 0,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "sha256": "d068bdfe585fd965be92b27083c9fd5c242a72367836d9d54af7e1428fabb816",
+        "bytes": 556
+      },
+      "stderr": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "name": "unbound",
+      "argv": [
+        "/Users/loosqk/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+        "-B",
+        "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/candidate/base_front_pv_compare_r1.py",
+        "--execute",
+        "--config",
+        "/MEMORY_ONLY/never-read.json"
+      ],
+      "pid": 12404,
+      "started_ns": 1791882667215335000,
+      "finished_ns": 1791882667234482000,
+      "exit_code": 2,
+      "wait_returncode": 2,
+      "reaped": true,
+      "signals_sent": [],
+      "stdout": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "stderr": {
+        "sha256": "00872885f2aa6b6f35f9456f6664396c4a6af3f72c6ddf84806f9ea3af19f831",
+        "bytes": 132
+      }
+    }
+  ],
+  "all_owned_children_naturally_waited_and_reaped": true,
+  "different_memory_methods": 3,
+  "native_verification": "NOT_RUN_UNKNOWN_NETWORK_NOT_RETRIED",
+  "actual_tool_stat_USB_field_GO": "ALL_NONE_NOT_BACKFILLED",
+  "UART": 0,
+  "network": 0,
+  "GO_created": false,
+  "old6_or15_orCargo_rerun": false
+}

@@ -1,0 +1,127 @@
+{
+  "schema": "BASE_FRONT_PV_COMPARE_R1_PREPARATION_SUMMARY",
+  "recorded_at_UTC": "2026-10-13T09:29:18.711602+00:00",
+  "status": "NATIVE_SOFTWARE_AND_RUNTIME_PREPARATION_PASS_WAITING_CURRENT_FIELD_CONFIRMATION",
+  "root_git_provenance": "1eb89eef2e5b5508ab6cfca295e79fd6c24478c5",
+  "scope": "同一前轮right8、同一b2冻结工具；固定TE原读、PV原读、PV普通读三项，无写入。任一非零或未知立即封锁后续UART，不为凑比较追加读取。",
+  "evidence": {
+    "candidate": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/candidate/base_front_pv_compare_r1.py",
+      "sha256": "d6b74da1ec4a587a02366c4c6fa9647e0ae5abba9622b3021e459a01f8cb3886",
+      "bytes": 21849
+    },
+    "candidate_derivation": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/candidate/candidate-derivation-and-local-checks-r1.json",
+      "sha256": "d6de01003eab5a923513b2c910bfde3c681c9171f3bf88de58c09fc2668f301e",
+      "bytes": 5208
+    },
+    "local_checks": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/candidate/local-checks-r1/receipt.json",
+      "sha256": "4d5c16bd9d6dec9977c9116c25c5ea67e2141511594b32137c1771feb4274d3b",
+      "bytes": 5377
+    },
+    "network_status": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/commit-quality/commit-quality-network-status-r1.json",
+      "sha256": "1237979ea187186fac722948f7eb345a7dbbdb65817f3384fbb0a4f0ad47b2df",
+      "bytes": 2554
+    },
+    "manual_power_cut_receipt": {
+      "path": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/followups/manual-power-cut-confirmation-r1.json",
+      "sha256": "fceed0fc12f5338d57de5aa47cd2b03a38cc166128fe5c29be1899897062fcfd",
+      "bytes": 928
+    }
+  },
+  "local_validation": {
+    "different_memory_methods": 3,
+    "status": "PASS",
+    "actual_default_cli_exit": 0,
+    "actual_unbound_cli_exit": 2,
+    "direct_children": 3,
+    "natural_wait_and_reap": true,
+    "inputs_current_match_receipt": true
+  },
+  "review": {
+    "independent_narrow_static_review": "NO_MATERIAL_FINDING_REPORTED",
+    "root_candidate_and_receipt_review": "PASS_LOCAL_SCOPE_ONLY",
+    "new_tests_run_by_root": false
+  },
+  "host_read_path_finding": "原seq311的0x0032与+50一致；普通READ和SYNC_READ使用相同58/2B字段，未发现此帧的地址、端序或符号转换错误。这不解释固件读值或物理运动。",
+  "current_power": "UNKNOWN_CURRENT_FIELD_CONFIRMATION_PENDING",
+  "current_support": "UNKNOWN_CURRENT_FIELD_CONFIRMATION_PENDING",
+  "physical_wheel_motion": "UNKNOWN",
+  "native_quality": "NOT_RUN_THIS_CONTINUATION; previous quality directory confirmed absent, original SSH255 retained",
+  "native_python_candidate_validation": "PASS_3_METHODS_DEFAULT0_UNBOUND2_2026_10_16",
+  "remote_phase_identity": "OLD_COMMIT_QUALITY_DIRECTORY_ABSENT; NEW_NATIVE_SOFTWARE_TMUX_COMPLETED_EXIT0",
+  "current_ELF_stat_USB_field_GO": "ELF_STAT_USB_BOUND_AND_VERIFIED; FIELD_GO_UNBOUND",
+  "new_GO": false,
+  "new_UART": 0,
+  "new_hardware_actions": 0,
+  "Rust_modified_this_stage": false,
+  "committed": false,
+  "commit_blocker": "本轮提交要求的实际fmt及根Clippy未确认；不借旧门回填。",
+  "prior_run": "NEEDS_MANUAL_POWER_CUT_UNCHANGED_MANUAL_CLEANUP_ACK_APPENDED",
+  "prior_STOP51_and_identity": "UNKNOWN_UNCHANGED",
+  "D15": "OPEN_DEFERRED",
+  "deployable": false,
+  "next_step": "已询问本次现场供电、三轮架空、支撑和持续看护。收到真实确认后按原600秒期限绑定现成配置/计划GO，仅执行一次right8三读；未收到不执行UART。",
+  "last_updated_UTC": "2026-10-16T10:00:56.200790+00:00",
+  "native_software_2026_10_16": {
+    "started_UTC": "2026-10-16T09:57:13Z",
+    "finished_UTC": "2026-10-16T09:57:14Z",
+    "different_memory_methods": 3,
+    "same_methods_as_local_not_additive": true,
+    "python": "3.12.13",
+    "uv": "0.11.5",
+    "default_cli_exit": 0,
+    "unbound_cli_exit": 2,
+    "runner_exit": 0,
+    "originals": ".verify/base_front_pv_compare_2026-10-13_r1/native-software-2026-10-16",
+    "output_manifest": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/native-software-2026-10-16/output-sha256.txt",
+      "sha256": "ad500d6e0010fc733671c1c3e9422ce405a47c40cf0fb8876eadd1b54530e739",
+      "bytes": 1659
+    },
+    "root_verified_output_files": 20,
+    "input_bytes_unchanged": true,
+    "runner_pid": 681234,
+    "runner_natural_exit_and_absence_observed": true,
+    "uart_calls": 0
+  },
+  "runtime_preparation_2026_10_16": {
+    "checks": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/runtime/preparation-checks.json",
+      "sha256": "22c98c75cf2e3099269d1e6348f3f0cd817b138690f5374e28b9f1b9755712e0",
+      "bytes": 44518
+    },
+    "readonly_facts": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/runtime/readonly-facts.json",
+      "sha256": "4939b5236935693793cb4f2347d753b70e46a2d7592e6ccc3c4f2d6deadb1811",
+      "bytes": 12925
+    },
+    "entry": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/runtime/run_front_compare.py",
+      "sha256": "2a551f0c1f9bb8a79f6ba78d58f9cd136f661973803d3857fbba273d73ad64e4",
+      "bytes": 1570
+    },
+    "bindings": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/runtime/current-bindings.json",
+      "sha256": "3e1f5261e259007055edb41f02b94ae6d1acaacd6f29f7a1a4851d621dc56911",
+      "bytes": 31781
+    },
+    "config_draft": {
+      "path": ".verify/base_front_pv_compare_2026-10-13_r1/runtime/config-draft.json",
+      "sha256": "084c43a60af077c4b0ae05e6a8c6206e99eb3ddf1936db836512144f1f5baae1",
+      "bytes": 3058
+    },
+    "candidate_unchanged": true,
+    "fixed_target": "right8",
+    "read_count": 3,
+    "default_exit": 0,
+    "plan_exit": 0,
+    "missing_field_go_exit": 2,
+    "hardware_output_absent": true,
+    "field_confirmation": null,
+    "approval": null,
+    "uart_calls": 0
+  }
+}

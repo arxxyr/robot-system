@@ -1,0 +1,171 @@
+{
+  "status": "PASS_LEFT1_HANDSHAKE_AND_STATE_READS_ONLY",
+  "scope": "只排查 XLeRobot 左1握手；无 RP1 扩展、参数写入或运动",
+  "historical_failure": "旧 f201 工具的 connect(true) 接收超时；尚未执行 Operating_Mode READ。PING 与 Model_Number READ 哪一阶段超时、是否收到部分字节尚未知。",
+  "preflight": "preflight.json",
+  "command": "ping-once.sh",
+  "command_sha256": "1880480526bd976148c7351e74238002639bf4bf02b9a8e2294ed141f8a2a5d3",
+  "remote_command": "/home/loosqk/robot-checks/left1-communication-20261015/ping-once.sh",
+  "remote_command_sha256_matches": true,
+  "checks": {
+    "strict_ssh": "PASS",
+    "f201_and_strace_hashes": "PASS",
+    "left_usb_identity": "PASS",
+    "both_serial_ports_unoccupied_at_preflight": "PASS",
+    "control_services_stopped_at_preflight": "PASS",
+    "bash_syntax_local_and_orin": "PASS",
+    "missing_field_confirmation_exits_2_before_uart": "PASS_LOCAL",
+    "targeted_readonly_review": "NO_BLOCKING_FINDINGS"
+  },
+  "next_operation": "本次用户指定三项只读范围已完成，未追加其他电机读取或动作；返回现有 XLeRobot 最小闭环时另选一个已知阻塞，不继续扩展左1扫描。",
+  "hardware_actions_this_turn": 0,
+  "current_physical_power": "ON_USER_REPORTED_AT_FIELD_CONFIRMATION_NOT_INDEPENDENT_TELEMETRY",
+  "rust_changes_or_builds": false,
+  "formal_install_or_services_changed": false,
+  "D15": "OPEN_DEFERRED",
+  "deployable": false,
+  "preparation_recorded_at_utc": "2026-10-15T07:00:28Z",
+  "field_confirmation": "field-confirmation.json",
+  "started_at_utc": "2026-10-15T13:10:34Z",
+  "finished_at_utc": "2026-10-15T13:10:35Z",
+  "register_write_calls": 0,
+  "enable_calls": 0,
+  "frames": [
+    {
+      "timestamp": "1792069835.138066",
+      "direction": "TX",
+      "hex": "ff ff 01 02 01 fb"
+    },
+    {
+      "timestamp": "1792069835.138670",
+      "direction": "RX",
+      "hex": "ff ff 01 02 00 fc"
+    },
+    {
+      "timestamp": "1792069835.138805",
+      "direction": "TX",
+      "hex": "ff ff 01 04 02 03 02 f3"
+    },
+    {
+      "timestamp": "1792069835.143114",
+      "direction": "RX",
+      "hex": "ff ff 01 04 00 09 03 ee"
+    }
+  ],
+  "model_number": 777,
+  "tool_exit": 0,
+  "shell_exit": 0,
+  "stderr_empty": true,
+  "command_scope": "COMPLETED_SINGLE_READ_ONLY_HANDSHAKE_NO_AUTOMATIC_RETRY",
+  "process": {
+    "tmux_pane": "%113",
+    "tmux_pid": 677658,
+    "shell_pid": 677661,
+    "tool_pid": 677693
+  },
+  "cleanup": {
+    "uart_close_in_trace": true,
+    "target_serial_and_four_locks_unoccupied_after_exit": true,
+    "tmux_and_shell_pids_absent_after_exit": true,
+    "method": "root fuser and /proc checks; no UART"
+  },
+  "original_file_sha256": {
+    "ping/fuser.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ping/fuser.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ping/ping.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "ping/ping.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ping/ping.stdout": "e7bfe52f3f6fa7d001ae74d1fd620e787b0131e61f77dfbf54cdbf15bf80bb37",
+    "ping/services.txt": "3e3e9e794a351a2a39a9f9d3f89f48400da54fdede90a5c8eb583c8ac4544063",
+    "ping/start.txt": "6f2edc112d12c520180e40fa1de234b0e6007b35709a41d05f07bd3c479733f6",
+    "ping/terminal.txt": "4502f174d9bd5692213793a26d50c520bcd3e25ee10c7421c9a226a9146d222e",
+    "ping/uart.strace": "fe807e14ccc9a090e5c45379f7b32e5bb84d5a474166112980fa63ace3001874",
+    "ping/usb.txt": "c48ac6a802da247eb030d84a58d79ca14733b3d0beba28d0f64f6b1e803950b5",
+    "launch.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "launch.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "local_originals_match_remote": true,
+  "review": "root帧校验及独立只读复核通过",
+  "conclusion": "本次左1握手与模式/使能/当前速度读回通过，结果为位置模式、未使能、速度原字0000；旧超时未复现且根因未证实，不外推长期稳定或整机停止。",
+  "handshake_status": "PASS_SINGLE_LEFT1_HANDSHAKE_ONLY",
+  "handshake_UART_calls": 1,
+  "UART_calls_total": 4,
+  "state_read": {
+    "status": "PASS_THREE_READS_ONLY",
+    "field_confirmation": "state-field-confirmation.json",
+    "command": "state-read-command.sh",
+    "command_sha256": "d85daa9cd127697d66b1cab9145c51c467f2d821b2a46245b3a25bfb78064067",
+    "started_at_utc": "2026-10-15T13:20:53Z",
+    "finished_at_utc": "2026-10-15T13:20:54Z",
+    "registers": {
+      "Operating_Mode": {
+        "address": 33,
+        "width": 1,
+        "value": 0,
+        "meaning": "位置模式",
+        "response": "ff ff 01 03 00 00 fb"
+      },
+      "Torque_Enable": {
+        "address": 40,
+        "width": 1,
+        "value": 0,
+        "meaning": "未使能",
+        "response": "ff ff 01 03 00 00 fb"
+      },
+      "Present_Velocity": {
+        "address": 58,
+        "width": 2,
+        "value": 0,
+        "raw_data": "00 00",
+        "response": "ff ff 01 04 00 00 00 fa"
+      }
+    },
+    "UART_calls": 3,
+    "wire_TX_frames": 9,
+    "wire_RX_frames": 9,
+    "protocol_register_writes": 0,
+    "enable_calls": 0,
+    "exits": [
+      0,
+      0,
+      0
+    ],
+    "shell_exit": 0,
+    "stderr_empty": true,
+    "process": {
+      "tmux_pane": "%114",
+      "tmux_pid": 677817,
+      "shell_pid": 677820
+    },
+    "cleanup": {
+      "target_serial_and_four_locks_unoccupied": true,
+      "tmux_and_shell_pids_absent": true,
+      "ssh_exit": 0,
+      "method": "sudo fuser and /proc checks; no UART"
+    },
+    "original_file_sha256": {
+      "state/Operating_Mode.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "state/Operating_Mode.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "state/Operating_Mode.stdout": "b4efe0d0a143de8fc09d1fdf84050b12bfdfb1fc5e9385bf679c37c5399731f7",
+      "state/Operating_Mode.strace": "f33c22e1baa85ad84bcc7f757ea4ec54b5df641c22f3c4d0a68d35ac65001a0e",
+      "state/Present_Velocity.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "state/Present_Velocity.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "state/Present_Velocity.stdout": "a82e1b57a6cb3b4dd0c197c8ce2c65253e3b8eac18937c04ac6fd578387a3ac6",
+      "state/Present_Velocity.strace": "b952dc52fd19ce2e45c428d49bd22a38097fec61f1fc101b55ef1f32c79e7c97",
+      "state/Torque_Enable.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "state/Torque_Enable.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "state/Torque_Enable.stdout": "3a9c8a5005862a29ad015322117faa49be7f72c023c7abbd23e7e6e48f706460",
+      "state/Torque_Enable.strace": "1b01662b42e9db2f71a610ebf23f0943da137fa00ed0149c9ad5b905ac7b0980",
+      "state/fuser.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "state/fuser.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "state/services.txt": "3e3e9e794a351a2a39a9f9d3f89f48400da54fdede90a5c8eb583c8ac4544063",
+      "state/start.txt": "d8f49c0893b68c86b0b40bee43925ab4237b3ab3f3b9ca2e8c111b4a6e31751f",
+      "state/terminal.txt": "9f2017c142d89e6a2624f579daaa43f99bed38fb579c9182d1ff94184b4d1880",
+      "state/usb.txt": "c48ac6a802da247eb030d84a58d79ca14733b3d0beba28d0f64f6b1e803950b5",
+      "state-launch.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "state-launch.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "frame_review": "root及独立只读复核均通过，所有帧ID1/error0/checksum正确，速度原字0000，三次正常关闭退出",
+    "scope_complete": true,
+    "local_originals_match_remote": true
+  }
+}

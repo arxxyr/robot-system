@@ -1,0 +1,31 @@
+--- previous-SYNC-R1-quality
++++ front-compare-R1-quality
+@@ -1,4 +1,4 @@
+-"""爸爸，单轮SYNC零值R1本轮证据提交的独立原生软件质量检查；不接触 UART、GO、服务或正式安装。"""
++"""爸爸，前轮PV三项比较R1本轮证据提交的独立原生软件质量检查；不接触 UART、GO、服务或正式安装。"""
+ 
+ import hashlib
+ import importlib.util
+@@ -11,11 +11,11 @@
+ import time
+ from types import SimpleNamespace
+ 
+-BASE = Path('/home/loosqk/robot-checks/base-zero-sync-r1-commit-quality-20261013')
++BASE = Path('/home/loosqk/robot-checks/base-front-pv-compare-r1-commit-quality-20261013')
+ SOURCE = Path('/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source')
+ TARGET = Path('/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build')
+ OUT = BASE / 'quality'
+-HEAD = '5ee8a9c427c2010fe760c2090aac78acc0c64623'
++HEAD = '1eb89eef2e5b5508ab6cfca295e79fd6c24478c5'
+ NEW = 'ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5'
+ 
+ 
+@@ -43,7 +43,7 @@
+ runner.env.update(HTTP_PROXY='http://10.0.1.80:10808', HTTPS_PROXY='http://10.0.1.80:10808', PYTHONDONTWRITEBYTECODE='1')
+ runner.shown.update(HTTP_PROXY=runner.env['HTTP_PROXY'], HTTPS_PROXY=runner.env['HTTPS_PROXY'])
+ raw_receipts = []
+-result = {'schema': 'BASE_ZERO_SYNC_R1_COMMIT_QUALITY_V1', 'status': 'FAIL', 'started_at': r.utc(), 'scope': 'latestnightly→实际fmt→仅默认根Clippy；597三窗/编译器前后；不测试/release/ELF/UART/USB/GO/服务', 'native_git_head': None, 'root_git_head_provenance_only': HEAD, 'source_expected': NEW, 'hardware_run_result': 'NEEDS_MANUAL_POWER_CUT_UNCHANGED', 'physical_cut_confirmation_at_dispatch': 'PENDING', 'hardware_stop_or_identity_proof': False}
++result = {'schema': 'BASE_FRONT_PV_COMPARE_R1_COMMIT_QUALITY_V1', 'status': 'FAIL', 'started_at': r.utc(), 'scope': 'latestnightly→实际fmt→仅默认根Clippy；597三窗/编译器前后；不测试/release/ELF/UART/USB/GO/服务', 'native_git_head': None, 'root_git_head_provenance_only': HEAD, 'source_expected': NEW, 'hardware_run_result': 'NEEDS_MANUAL_POWER_CUT_UNCHANGED', 'physical_cut_confirmation_at_dispatch': 'USER_REPORTED_OFF_ACK_RECEIVED_2026-10-13T08:44:17Z', 'hardware_stop_or_identity_proof': False}
+ 
+ 
+ def text(name, argv, timeout=7200):

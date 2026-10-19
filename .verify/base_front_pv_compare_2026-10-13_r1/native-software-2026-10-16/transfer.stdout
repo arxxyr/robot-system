@@ -1,0 +1,7 @@
+.verify/base_front_pv_compare_2026-10-13_r1/candidate/base_front_pv_compare_r1.py: OK
+.verify/base_front_pv_compare_2026-10-13_r1/candidate/test_base_front_pv_compare_r1.py: OK
+.verify/base_front_pv_compare_2026-10-13_r1/candidate/config-template-r1.json: OK
+.verify/base_front_pv_compare_2026-10-13_r1/candidate/fixtures/run_hardware_maintenance.py: OK
+scripts/run_hardware_maintenance.py: OK
+.verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/originals/maintenance_bindings_base_zero_sync_diagnostic_r1.json: OK
+run.sh: OK

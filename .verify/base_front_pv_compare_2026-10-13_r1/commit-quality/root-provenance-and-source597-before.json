@@ -1,0 +1,24 @@
+{
+  "root_git_head": "1eb89eef2e5b5508ab6cfca295e79fd6c24478c5",
+  "native_git_head": null,
+  "root_source597_matches_ae00": true,
+  "source_manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+  "Git_child": {
+    "argv": [
+      "git",
+      "rev-parse",
+      "HEAD"
+    ],
+    "pid": 10555,
+    "started_ns": 1791881902040967000,
+    "finished_ns": 1791881902049585000,
+    "wait_returncode": 0,
+    "reaped": true,
+    "stdout_sha256": "d8116ae55ba10f69ef85d94e3715b0d2d830af899edd90b7c12185efeea9a874",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "cut_ack_received_at_UTC": "2026-10-13T08:44:17Z",
+  "cut_ack": "USER_REPORTED_BOTH_MOTOR_POWER_OFF_AND_SUPPORT_STABLE",
+  "hardware_stop_or_identity_proof": false,
+  "hardware_original_NEEDS_retained": true
+}

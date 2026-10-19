@@ -1,0 +1,49 @@
+{
+  "schema": "P7_H2_LOCAL_SSH_OWNER_V1",
+  "phase": "NOT_LAUNCHED",
+  "status": "FAIL",
+  "owner_pid": 27759,
+  "command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ServerAliveCountMax=2",
+    "robot",
+    "bash",
+    "-s"
+  ],
+  "pid": null,
+  "started_utc": "2026-10-13T09:52:37.641690+00:00",
+  "started_monotonic_ns": 72238389235125,
+  "observe_seconds": 5.0,
+  "wait_returncode": null,
+  "reaped": false,
+  "owner_sent_signals": [],
+  "received_signals": {},
+  "errors": [
+    {
+      "kind": "owner",
+      "error": "FileNotFoundError(2, 'No such file or directory')",
+      "count": 1,
+      "first_utc": "2026-10-13T09:52:37.641977+00:00",
+      "last_utc": "2026-10-13T09:52:37.641980+00:00"
+    }
+  ],
+  "observations": 0,
+  "remote_state": "NOT_VERIFIED",
+  "helper_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
+  "log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/tools/observe-base-zero-sync-r2-current.owner/child.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  "finished_utc": "2026-10-13T09:52:37.642011+00:00",
+  "elapsed_ns": 204875
+}

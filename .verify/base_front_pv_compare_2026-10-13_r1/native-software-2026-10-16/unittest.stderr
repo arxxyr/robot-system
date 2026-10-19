@@ -1,0 +1,8 @@
+test_default_unbound_new_inputs_and_frozen_go_compatibility (__main__.FrontCompareMemoryCases.test_default_unbound_new_inputs_and_frozen_go_compatibility) ... ok
+test_nonzero_unknown_or_expired_gate_sticky_without_pair_or_retry (__main__.FrontCompareMemoryCases.test_nonzero_unknown_or_expired_gate_sticky_without_pair_or_retry) ... ok
+test_three_zero_reads_and_comparison_without_motion_or_replay (__main__.FrontCompareMemoryCases.test_three_zero_reads_and_comparison_without_motion_or_replay) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.024s
+
+OK

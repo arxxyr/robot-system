@@ -1,0 +1,21 @@
+%115 681234 1 0
+0
+681234
+2026-10-16T09:57:13Z
+2026-10-16T09:57:14Z
+uv 0.11.5 (aarch64-unknown-linux-gnu)
+Python 3.12.13
+0
+0
+2
+test_default_unbound_new_inputs_and_frozen_go_compatibility (__main__.FrontCompareMemoryCases.test_default_unbound_new_inputs_and_frozen_go_compatibility) ... ok
+test_nonzero_unknown_or_expired_gate_sticky_without_pair_or_retry (__main__.FrontCompareMemoryCases.test_nonzero_unknown_or_expired_gate_sticky_without_pair_or_retry) ... ok
+test_three_zero_reads_and_comparison_without_motion_or_replay (__main__.FrontCompareMemoryCases.test_three_zero_reads_and_comparison_without_motion_or_replay) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.024s
+
+OK
+{"status": "PLAN_ONLY", "tool": null, "fixed_reads": [[8, "read-raw", "Torque_Enable"], [8, "read-raw", "Present_Velocity"], [8, "read", "Present_Velocity"]], "frozen_tool": {"path": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke", "sha256": "b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94", "bytes": 1507224}, "metadata": {"Torque_Enable": [40, 1], "Present_Velocity": [58, 2]}, "uart_tool_calls": 3, "actions_started": 0, "output_created": false, "register_writes": 0, "motion_commands": 0}
+爸爸，right8三读对照前置拒绝：ValueError('当前ELF完整stat/USB/现场/新GO未绑定，读取config前零I/O拒绝')
+RUNNER_PROC_ABSENT

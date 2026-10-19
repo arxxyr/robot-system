@@ -1,0 +1,95 @@
+{
+  "status": "R2_INCIDENT_ORIGINALS_BYTE_VERIFIED_NOT_HARDWARE_PASS",
+  "archive": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/archives/hardware-originals-base-zero-sync-r2.tar.gz",
+    "sha256": "715be0c195f703e1062b512e5eedeea1af40bc71e910eb51a0d3be1a2257a725",
+    "bytes": 123007,
+    "files": 156
+  },
+  "run": {
+    "sha256": "3f804c06f0e2a8b89d35a1da9117db1c53636187118e5278286bd9b00948cf95",
+    "bytes": 213920,
+    "result": "NEEDS_MANUAL_POWER_CUT",
+    "manual_power_cut_required": true,
+    "command_children": 61,
+    "stdout_stderr_files": 122,
+    "all_reaped": true,
+    "child_active": false
+  },
+  "first_failure": {
+    "sequence": 43,
+    "pid": 669952,
+    "argv": [
+      "/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke",
+      "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "1",
+      "read",
+      "Operating_Mode"
+    ],
+    "exit_code": 1,
+    "over_budget": false,
+    "duration_ns": 64489704,
+    "duration_ms": 64.489704,
+    "reaped": true,
+    "signals_sent": [],
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_bytes": 0,
+    "stderr_sha256": "8349c561bb8fc39d699f76c5637b928702d2324d310bbd5817877d6bc4419ffc",
+    "stderr_bytes": 72,
+    "stderr_exact": "error: bus.connect (handshake) motor_id=1: 握手电机无响应：id=1\n",
+    "classification": "bus.connect握手电机id1无响应；此child非超预算，具体物理原因未证实"
+  },
+  "actual_UART_tool_calls": 1,
+  "actual_register_write_tool_calls": 0,
+  "SYNC_write_calls": 0,
+  "Enable_calls": 0,
+  "right9_diagnostic_status": "NOT_RUN",
+  "right9_write_attempts": [],
+  "wire_frame_count": "UNKNOWN_NO_NEW_CAPTURE",
+  "STOP51": "UNKNOWN",
+  "full_identity": "UNKNOWN",
+  "GO": {
+    "plan_sha256": "5771568b91c43d7c086a9ca204bc2263f71abc279f5a417c3c5283e7770806c4",
+    "issued_at_ns": 1791885124767186000,
+    "expires_at_ns": 1791885654000000000,
+    "confirmed_at_ns": 1791885054000000000,
+    "consumed_at_ns": 1791885128774989857,
+    "consumed_inside_GO_interval": true,
+    "confirmed_setup_interval_ns": 600000000000,
+    "issued_and_consumed_under_final_new_FIELD": true
+  },
+  "seal": {
+    "terminal": "base-zero-sync-diagnostic-trial-20261013-r2|@112|%112|669897|1|1",
+    "direct_children": 2,
+    "all_reaped": true,
+    "independent_nonUART17_run": false,
+    "new_UART": 0,
+    "new_writes": 0,
+    "new_GO": false
+  },
+  "owner": {
+    "owner_pid": 28153,
+    "ssh_pid": 28154,
+    "wait_returncode": 0,
+    "reaped": true,
+    "log": {
+      "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/tools/seal-base-zero-sync-r2-20261013-r1.owner/child.log",
+      "sha256": "e5e1d5038d2d3847723d9f7782347a6280fcba594a3f0aae7fd0626034236bfd",
+      "bytes": 208490
+    }
+  },
+  "actual_exec": {
+    "start_chunk": "36bdb8",
+    "session_id": 10616,
+    "completion_chunk": "81cda5",
+    "exit_code": 0,
+    "session_closed": true
+  },
+  "cut_ack_received_at_UTC": "2026-10-13T09:54:45Z_USER_REPORTED_OFF_AND_SUPPORT_STABLE",
+  "original_failures_not_overwritten": true,
+  "local_original_review_false_rejection": {
+    "chunk": "b3f332",
+    "exit_code": 1,
+    "reason": "检查器误期望child_active为None；原件实际为bool False，仅修检查器，原件未改，未新测"
+  }
+}

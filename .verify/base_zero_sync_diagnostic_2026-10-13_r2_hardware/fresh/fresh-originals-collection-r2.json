@@ -1,0 +1,115 @@
+{
+  "status": "PASS_R2_FRESH17_23_TRUE_REAP_ORIGINAL_BYTES",
+  "phase": "/home/loosqk/robot-checks/base-zero-sync-diagnostic-r2",
+  "stdout_pin": [
+    "9e565cd4da2c14edf4ca2a206de2f98ddb19647075214dc663d3007e111f17e0",
+    176291
+  ],
+  "receipt_pin": [
+    "b323d6a145a74f7ffd6aba18a4019dade84c14e767ae9e4dcc064ce8cdd1de4d",
+    804
+  ],
+  "internal_child_pid": 669747,
+  "internal_exit_code": 0,
+  "internal_reaped": true,
+  "outer_owner_pid": 26600,
+  "outer_ssh_pid": 26601,
+  "outer_exit_code": 0,
+  "outer_reaped": true,
+  "checks": 17,
+  "child_commands": 23,
+  "devices": {
+    "left": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496,
+      "mode": 432,
+      "uid": 0,
+      "gid": 20,
+      "device_inode": 1552,
+      "link_inode": 1555,
+      "link_target": "../../ttyACM0",
+      "udev_command": {
+        "argv": [
+          "udevadm",
+          "info",
+          "--query=property",
+          "--name",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
+        ],
+        "started_ns": 1791884653500128507,
+        "started_monotonic_ns": 3637902960874850,
+        "pid": 669758,
+        "reaped": true,
+        "signals_sent": [],
+        "cleanup": false,
+        "communicate_errors": [],
+        "wait_returncode": 0,
+        "exit_code": 0,
+        "finished_ns": 1791884653503499397,
+        "elapsed_ns": 3368906,
+        "child_end_class": "EXIT_STATUS",
+        "stdout": "DEVPATH=/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0\nDEVNAME=/dev/ttyACM0\nMAJOR=166\nMINOR=0\nSUBSYSTEM=tty\nUSEC_INITIALIZED=3536208877616\nID_VENDOR=1a86\nID_VENDOR_ENC=1a86\nID_VENDOR_ID=1a86\nID_MODEL=USB_Single_Serial\nID_MODEL_ENC=USB\\x20Single\\x20Serial\nID_MODEL_ID=55d3\nID_REVISION=0445\nID_SERIAL=1a86_USB_Single_Serial_5A7C121427\nID_SERIAL_SHORT=5A7C121427\nID_TYPE=generic\nID_BUS=usb\nID_USB_INTERFACES=:020201:0a0000:\nID_USB_INTERFACE_NUM=00\nID_USB_DRIVER=cdc_acm\nID_USB_CLASS_FROM_DATABASE=Communications\nID_VENDOR_FROM_DATABASE=QinHeng Electronics\nID_PATH=platform-3610000.usb-usb-0:2.4.3:1.0\nID_PATH_TAG=platform-3610000_usb-usb-0_2_4_3_1_0\nID_MM_CANDIDATE=1\nDEVLINKS=/dev/serial/by-path/platform-3610000.usb-usb-0:2.4.3:1.0 /dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00\nTAGS=:systemd:\nCURRENT_TAGS=:systemd:\n",
+        "stderr": "",
+        "stdout_sha256": "c45e4216a03250c077746d557545a2e00284947cd2c967cae83abc1ee9898d12",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_bytes": 866,
+        "stderr_bytes": 0
+      }
+    },
+    "right": {
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497,
+      "mode": 432,
+      "uid": 0,
+      "gid": 20,
+      "device_inode": 1537,
+      "link_inode": 1540,
+      "link_target": "../../ttyACM1",
+      "udev_command": {
+        "argv": [
+          "udevadm",
+          "info",
+          "--query=property",
+          "--name",
+          "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00"
+        ],
+        "started_ns": 1791884653503895406,
+        "started_monotonic_ns": 3637902964641653,
+        "pid": 669759,
+        "reaped": true,
+        "signals_sent": [],
+        "cleanup": false,
+        "communicate_errors": [],
+        "wait_returncode": 0,
+        "exit_code": 0,
+        "finished_ns": 1791884653506702444,
+        "elapsed_ns": 2805246,
+        "child_end_class": "EXIT_STATUS",
+        "stdout": "DEVPATH=/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1\nDEVNAME=/dev/ttyACM1\nMAJOR=166\nMINOR=1\nSUBSYSTEM=tty\nUSEC_INITIALIZED=3359632006336\nID_VENDOR=1a86\nID_VENDOR_ENC=1a86\nID_VENDOR_ID=1a86\nID_MODEL=USB_Single_Serial\nID_MODEL_ENC=USB\\x20Single\\x20Serial\nID_MODEL_ID=55d3\nID_REVISION=0445\nID_SERIAL=1a86_USB_Single_Serial_5A7C122340\nID_SERIAL_SHORT=5A7C122340\nID_TYPE=generic\nID_BUS=usb\nID_USB_INTERFACES=:020201:0a0000:\nID_USB_INTERFACE_NUM=00\nID_USB_DRIVER=cdc_acm\nID_USB_CLASS_FROM_DATABASE=Communications\nID_VENDOR_FROM_DATABASE=QinHeng Electronics\nID_PATH=platform-3610000.usb-usb-0:2.4.4:1.0\nID_PATH_TAG=platform-3610000_usb-usb-0_2_4_4_1_0\nID_MM_CANDIDATE=1\nDEVLINKS=/dev/serial/by-path/platform-3610000.usb-usb-0:2.4.4:1.0 /dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00\nTAGS=:systemd:\nCURRENT_TAGS=:systemd:\n",
+        "stderr": "",
+        "stdout_sha256": "65a76a55d88f03c258676b2f759025abd2e53af3b7ea11476aa2c0996dfb178b",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_bytes": 866,
+        "stderr_bytes": 0
+      }
+    }
+  },
+  "field_stamp": 1791884367000000000,
+  "field_expected": [
+    "ffa941a0857f28478cd62dcb016ad94a1669326e904d6c14f8beb09920ed32fb",
+    1880
+  ],
+  "actual_exec": {
+    "start_chunk": "820444",
+    "session_id": 38334,
+    "completion_chunk": "49dc1e",
+    "exit_code": 0,
+    "session_closed": true
+  },
+  "UART_operations": 0,
+  "hardware_actions": 0,
+  "GO_created": false,
+  "baseline_USB_does_not_replace_current_binding": true
+}

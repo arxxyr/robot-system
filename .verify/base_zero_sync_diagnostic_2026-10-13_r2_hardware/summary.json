@@ -1,0 +1,107 @@
+{
+  "schema": "BASE_ZERO_SYNC_R2_HARDWARE_INCIDENT_SUMMARY",
+  "recorded_at_UTC": "2026-10-13T09:59:18.845874+00:00",
+  "status": "NEEDS_MANUAL_POWER_CUT_ORIGINAL_RETAINED_CLEANUP_CONFIRMED_BY_USER",
+  "actual_test": "唯一实机入口在首次左1握手即失败，右9诊断未执行，不计复测PASS。",
+  "first_failure": {
+    "sequence": 43,
+    "motor": "left:1",
+    "requested_operation": "read Operating_Mode",
+    "exit_code": 1,
+    "over_budget": false,
+    "elapsed_ns": 64489704,
+    "stdout_bytes": 0,
+    "stderr": "error: bus.connect (handshake) motor_id=1: 握手电机无响应：id=1\n",
+    "raw_handshake_frames": "UNKNOWN_NO_STRACE",
+    "power_or_cable_or_device_cause": "UNKNOWN"
+  },
+  "UART_tool_calls": 1,
+  "SYNC_WRITE_WRITE_Enable_calls": 0,
+  "after_failed_UART_calls": 0,
+  "zero_diag": "NOT_RUN",
+  "stop51": "UNKNOWN",
+  "complete_motor_identity": "UNKNOWN",
+  "physical_right_wheel_motion": "UNKNOWN_NO_NEW_RIGHT9_COMMANDS",
+  "driver": {
+    "pid": 669897,
+    "pane": "%112",
+    "window": "@112",
+    "exit": 1,
+    "natural_dead_verified": true
+  },
+  "direct_children": 61,
+  "raw_streams_verified": 122,
+  "all_direct_children_naturally_reaped": true,
+  "GO": {
+    "executed_once": true,
+    "field_stamp_ns": 1791885054000000000,
+    "expires_ns": 1791885654000000000,
+    "START_through_real_dead_observation_inside_GO": true,
+    "earlier_local_GO": "EXPIRED_NOT_LAUNCHED_RETAINED"
+  },
+  "preparation": {
+    "nonUART_checks": 17,
+    "nonUART_children": 23,
+    "bound_refs": 58,
+    "USB_changed_fields": {
+      "left": {},
+      "right": {}
+    },
+    "PLAN_sha256": "5771568b91c43d7c086a9ca204bc2263f71abc279f5a417c3c5283e7770806c4",
+    "frozen_candidate_helper_ELF": "3b681657/70d777bd/b2bfedb1_REUSED_NO_NEW_BUILD"
+  },
+  "local_observer_first_attempt": "quoted_None_binding_assert_failed_then_NOT_LAUNCHED_pid_null; original_receipt_retained; corrected_only_read_same_real_terminal",
+  "manual_cleanup": {
+    "power": "OFF_USER_REPORTED",
+    "support": "CONFIRMED_BY_USER",
+    "received_at_UTC": "2026-10-13T09:54:45+00:00",
+    "actual_cut_timestamp_and_telemetry": "UNKNOWN",
+    "watch": "RELEASED"
+  },
+  "evidence": {
+    "run": {
+      "path": "originals/base-zero-sync-diagnostic-r1/run.json",
+      "sha256": "3f804c06f0e2a8b89d35a1da9117db1c53636187118e5278286bd9b00948cf95",
+      "bytes": 213920
+    },
+    "original_archive": {
+      "path": "archives/hardware-originals-base-zero-sync-r2.tar.gz",
+      "sha256": "715be0c195f703e1062b512e5eedeea1af40bc71e910eb51a0d3be1a2257a725",
+      "bytes": 123007
+    },
+    "failed_read_stderr": {
+      "path": "originals/base-zero-sync-diagnostic-r1/command_0043.stderr",
+      "sha256": "8349c561bb8fc39d699f76c5637b928702d2324d310bbd5817877d6bc4419ffc",
+      "bytes": 72
+    },
+    "power_cut_receipt": {
+      "path": "followups/manual-power-cut-confirmation-r2.json",
+      "sha256": "aa9a54bba37919e84dd780fda8707d64f63cbcab50a94f7e4ec60b2f575ee768",
+      "bytes": 931
+    },
+    "seal_verification": {
+      "path": "seal-originals-verification-r2.json",
+      "sha256": "bc13ed9c839a5b9c7eb53964ace2d1542b738957dbffe4dc4281cf7a1d5d0a51",
+      "bytes": 3441
+    }
+  },
+  "scope_limits": {
+    "Rust_changes": false,
+    "new_Rust_tests_or_quality_build": false,
+    "formal_install_or_services_changed": false,
+    "independent_post17_after_failure": false,
+    "new_UART_after_sticky_failure": 0,
+    "new_GO_after_cleanup": false,
+    "committed": false
+  },
+  "right_H2": "PASS_PREVIOUSLY_CLOSED",
+  "D15": "OPEN_DEFERRED",
+  "deployable": false,
+  "next_step": "断电保持；先核对左侧电机供电与总线连接，当前日志不足以确定原因。不再自动重试右轮或放宽停止门。",
+  "collector": {
+    "child_count": 2,
+    "scope": "只核所属dead pane及回收，无UART或独立17后验",
+    "originals_verified": 156,
+    "report_status": "R2_INCIDENT_ORIGINALS_BYTE_VERIFIED_NOT_HARDWARE_PASS"
+  }
+}

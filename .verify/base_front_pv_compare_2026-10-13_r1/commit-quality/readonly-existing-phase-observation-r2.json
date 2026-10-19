@@ -1,0 +1,30 @@
+{
+  "status": "STRICT_READ_ONLY_EXISTING_PHASE_OBSERVATION_COMPLETED",
+  "observed": {
+    "status": "READ_ONLY_EXISTING_COMMIT_QUALITY_PHASE",
+    "phase": "/home/loosqk/robot-checks/base-front-pv-compare-r1-commit-quality-20261013",
+    "phase_exists": false,
+    "scope": "仅既有phase状态，不启动batch/不UART/USB/fuser/服务/GO"
+  },
+  "owner_pid": 25457,
+  "ssh_pid": 25458,
+  "exit_code": 0,
+  "reaped": true,
+  "signals_sent": [],
+  "log": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/base_front_pv_compare_2026-10-13_r1/commit-quality/tools/base-front-pv-compare-r1-observe-existing-20261013-r2.owner/child.log",
+    "sha256": "a19cf867211d14041b7331f2fe2365b005a26bbedc28b9b12a990bbb219fb05e",
+    "bytes": 242
+  },
+  "actual_exec": {
+    "start_chunk": "7da267",
+    "session_id": 19826,
+    "completion_chunk": "e1b4b0",
+    "exit_code": 0,
+    "session_closed": true
+  },
+  "quality_gate_PASS": false,
+  "old_two_banner_255_preserved": true,
+  "new_batch_upload_restart_or_kill": 0,
+  "USB_fuser_UART_ELF_GO_services": 0
+}

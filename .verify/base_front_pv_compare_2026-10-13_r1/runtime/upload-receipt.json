@@ -1,0 +1,27 @@
+{
+  "uploaded": [
+    {
+      "path": "/home/loosqk/robot-checks/base-front-pv-compare-r1/base_front_pv_compare_r1.py",
+      "sha256": "d6b74da1ec4a587a02366c4c6fa9647e0ae5abba9622b3021e459a01f8cb3886",
+      "bytes": 21849
+    },
+    {
+      "path": "/home/loosqk/robot-checks/base-front-pv-compare-r1/run_front_compare.py",
+      "sha256": "2a551f0c1f9bb8a79f6ba78d58f9cd136f661973803d3857fbba273d73ad64e4",
+      "bytes": 1570
+    },
+    {
+      "path": "/home/loosqk/robot-checks/base-front-pv-compare-r1/current-bindings.json",
+      "sha256": "3e1f5261e259007055edb41f02b94ae6d1acaacd6f29f7a1a4851d621dc56911",
+      "bytes": 31781
+    },
+    {
+      "path": "/home/loosqk/robot-checks/base-front-pv-compare-r1/config-draft.json",
+      "sha256": "084c43a60af077c4b0ae05e6a8c6206e99eb3ddf1936db836512144f1f5baae1",
+      "bytes": 3058
+    }
+  ],
+  "uart_calls": 0,
+  "field_confirmation": null,
+  "approval": null
+}

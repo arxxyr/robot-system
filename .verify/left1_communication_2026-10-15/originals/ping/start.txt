@@ -1,0 +1,3 @@
+field_seconds=1792069797
+started_utc=2026-10-15T13:10:34Z
+shell_pid=677661
