@@ -19,6 +19,7 @@
 //! ```bash
 //! feetech_poke <address> <motor_id> ping
 //! feetech_poke <address> <motor_id> sync-zero
+//! feetech_poke <address> <motor_id> sync-velocity <value>
 //! feetech_poke <address> <motor_id> read  <register>
 //! feetech_poke <address> <motor_id> read-raw <register>
 //! feetech_poke <address> <motor_id> write <register> <value>
@@ -36,6 +37,9 @@
 //!   原`read`仍为单 `READ`，不能用新 `SYNC_READ` 回包回填历史读数或推定运动。
 //! - `sync-zero`：固定发送单ID的 `Goal_Velocity=0`，地址46、宽度2字节。
 //!   `SYNC_WRITE` 无ACK，不启用电机，也不证明电机已接收、实际停止或零速启扭安全。
+//! - `sync-velocity`：发送单ID的原始 `Goal_Velocity`，范围-32767..=32767，
+//!   地址46、宽度2字节；不附带扭矩、模式或Phase写入。`SYNC_WRITE`无ACK，
+//!   发送成功不证明实际速度或固件对使能状态的影响，单位需另行核实。
 //!
 //! ## 实例
 //!
@@ -74,9 +78,10 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::ExitCode;
 
+use robot_adapter_feetech::encoding::encode_sign_magnitude;
 use robot_adapter_feetech::registers::{
     STS3215_CONTROL_TABLE, ensure_not_diagnostic_write, ensure_not_firmware_readonly_write,
-    get_register,
+    get_register, sign_bit_for,
 };
 use robot_adapter_feetech::transport::real::RealSerialTransport;
 use robot_adapter_feetech::{DEFAULT_BAUDRATE, FeetechBus, FeetechError, Motor};
@@ -122,6 +127,7 @@ fn usage(prog: &str) -> String {
         "usage:\n  \
          {prog} <address> <motor_id> ping\n  \
          {prog} <address> <motor_id> sync-zero\n  \
+         {prog} <address> <motor_id> sync-velocity <value>\n  \
          {prog} <address> <motor_id> read  <register>\n  \
          {prog} <address> <motor_id> read-raw <register>\n  \
          {prog} <address> <motor_id> write <register> <value>\n"
@@ -137,6 +143,21 @@ fn sync_zero_arguments(args: &[String], motor_id: u8) -> Result<(), String> {
     Ok(())
 }
 
+/// 与总线共用符号幅度规则；main在打开串口前拒绝无效ID、值和参数数量。
+fn sync_velocity_value(args: &[String], motor_id: u8) -> Result<i32, String> {
+    if args.len() != 5 {
+        return Err("sync-velocity要求一个原始速度参数".to_string());
+    }
+    Motor::new(motor_id).map_err(|error| format!("motor_id {motor_id}: {error}"))?;
+    let value = args[4]
+        .parse::<i32>()
+        .map_err(|error| format!("value '{}' 解析失败: {error}", args[4]))?;
+    let sign_bit =
+        sign_bit_for("Goal_Velocity").ok_or_else(|| "Goal_Velocity缺少符号位定义".to_string())?;
+    encode_sign_magnitude(value, sign_bit).map_err(|error| error.to_string())?;
+    Ok(value)
+}
+
 fn do_sync_zero<T: robot_adapter_feetech::SerialTransport>(
     bus: &mut FeetechBus<T>,
     motor_id: u8,
@@ -147,13 +168,39 @@ fn do_sync_zero<T: robot_adapter_feetech::SerialTransport>(
         eprintln!("error: {error}");
         return ExitCode::from(2);
     }
-    if let Err(error) = bus.sync_write_by_id("Goal_Velocity", &[(motor_id, 0)]) {
-        eprintln!("error: sync-zero Goal_Velocity@{motor_id}: {error}");
+    send_sync_velocity(bus, motor_id, 0, "sync-zero", output)
+}
+
+fn do_sync_velocity<T: robot_adapter_feetech::SerialTransport>(
+    bus: &mut FeetechBus<T>,
+    motor_id: u8,
+    args: &[String],
+    output: &mut impl std::io::Write,
+) -> ExitCode {
+    let value = match sync_velocity_value(args, motor_id) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    send_sync_velocity(bus, motor_id, value, "sync-velocity", output)
+}
+
+fn send_sync_velocity<T: robot_adapter_feetech::SerialTransport>(
+    bus: &mut FeetechBus<T>,
+    motor_id: u8,
+    value: i32,
+    action: &str,
+    output: &mut impl std::io::Write,
+) -> ExitCode {
+    if let Err(error) = bus.sync_write_by_id("Goal_Velocity", &[(motor_id, value)]) {
+        eprintln!("error: {action} Goal_Velocity@{motor_id}: {error}");
         return ExitCode::from(1);
     }
     match writeln!(
         output,
-        "sync-zero Goal_Velocity@{motor_id} <- 0: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度"
+        "{action} Goal_Velocity@{motor_id} <- {value}: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度"
     ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -324,6 +371,12 @@ fn main() -> ExitCode {
         eprintln!("error: {error}");
         return ExitCode::from(2);
     }
+    if action == "sync-velocity"
+        && let Err(error) = sync_velocity_value(&args, motor_id)
+    {
+        eprintln!("error: {error}");
+        return ExitCode::from(2);
+    }
 
     // 构造 bus：单 motor 名统一叫 "m"（本工具不关心名字语义）
     let transport = match RealSerialTransport::open(Path::new(address), DEFAULT_BAUDRATE) {
@@ -363,6 +416,9 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "sync-zero" => do_sync_zero(&mut bus, motor_id, &args, &mut std::io::stdout().lock()),
+        "sync-velocity" => {
+            do_sync_velocity(&mut bus, motor_id, &args, &mut std::io::stdout().lock())
+        }
         "read" => do_read(&mut bus, motor_id, &args, &prog),
         "read-raw" => do_read_raw(&mut bus, motor_id, &args, &mut std::io::stdout().lock()),
         "write" => do_write(&mut bus, motor_id, &args, &prog),
@@ -412,6 +468,112 @@ mod tests {
         frame.extend_from_slice(params);
         frame.push(robot_adapter_feetech::protocol::checksum(&frame[2..]));
         frame
+    }
+
+    fn velocity_arguments(value: &str) -> Vec<String> {
+        let mut args = arguments("sync-velocity", value, None);
+        args[2] = "9".to_string();
+        args
+    }
+
+    #[test]
+    fn sync_velocity_sends_only_two_velocity_bytes_without_ack_or_torque_write() {
+        for (value, low, high, checksum) in [
+            ("500", 0xf4, 0x01, 0x49),
+            ("-500", 0xf4, 0x81, 0xc9),
+            ("0", 0x00, 0x00, 0x3e),
+            ("32767", 0xff, 0x7f, 0xc0),
+            ("-32767", 0xff, 0xff, 0x40),
+        ] {
+            let (mut bus, handle) = raw_fixture();
+            // 同步写不等ACK；后续READ的预置回包必须完整保留。
+            handle.push_rx(&status_frame(9, &[0, 0]));
+            let mut output = Vec::new();
+            assert_eq!(
+                do_sync_velocity(&mut bus, 9, &velocity_arguments(value), &mut output),
+                ExitCode::SUCCESS
+            );
+            assert_eq!(
+                handle.peek_tx(),
+                [
+                    0xff, 0xff, 0xfe, 0x07, 0x83, 0x2e, 0x02, 0x09, low, high, checksum
+                ]
+            );
+            assert_eq!(
+                String::from_utf8(output).unwrap(),
+                format!(
+                    "sync-velocity Goal_Velocity@9 <- {value}: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n"
+                )
+            );
+            assert_eq!(bus.read("Present_Velocity", "m").unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn sync_velocity_rejects_bad_values_argument_counts_and_ids_before_mock_io() {
+        let base = velocity_arguments("500");
+        let mut invalid: Vec<_> = (0..5).map(|length| base[..length].to_vec()).collect();
+        let mut extra = base.clone();
+        extra.push("0".to_string());
+        invalid.push(extra);
+        for value in [
+            "",
+            "bad-value",
+            "1.5",
+            "Torque_Enable",
+            "32768",
+            "-32768",
+            "2147483647",
+            "-2147483648",
+            "2147483648",
+            "-2147483649",
+        ] {
+            invalid.push(velocity_arguments(value));
+        }
+        for (args, id) in invalid.into_iter().map(|args| (args, 9)).chain([
+            (base.clone(), 0),
+            (base.clone(), 254),
+            (base, 255),
+        ]) {
+            assert!(sync_velocity_value(&args, id).is_err());
+            let (mut bus, handle) = raw_fixture();
+            let mut output = Vec::new();
+            assert_eq!(
+                do_sync_velocity(&mut bus, id, &args, &mut output),
+                ExitCode::from(2)
+            );
+            assert!(handle.peek_tx().is_empty());
+            assert!(output.is_empty());
+        }
+        for id in [1, 253] {
+            assert_eq!(sync_velocity_value(&velocity_arguments("500"), id), Ok(500));
+        }
+    }
+
+    #[test]
+    fn sync_velocity_output_failure_does_not_resend_or_report_success() {
+        struct FailedOutput;
+        impl std::io::Write for FailedOutput {
+            fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("模拟输出失败"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let (mut bus, handle) = raw_fixture();
+        assert_eq!(
+            do_sync_velocity(&mut bus, 9, &velocity_arguments("500"), &mut FailedOutput),
+            ExitCode::from(1)
+        );
+        assert_eq!(
+            handle.peek_tx(),
+            [
+                0xff, 0xff, 0xfe, 0x07, 0x83, 0x2e, 0x02, 0x09, 0xf4, 0x01, 0x49
+            ]
+        );
     }
 
     #[test]

@@ -1,0 +1,66 @@
+{
+  "checked_at_ns": 1792490267630773256,
+  "status": "PASS_NON_UART_PREPARATION",
+  "plan_sha256": "bbeed8f5a7687240a1c33698036efab5ed39b042b43d756bdb540b8be24e8322",
+  "source_sha256": "135bb8db3f320ba5c542e531a2b21c17b0e452ee96e367a09c40a18121eb56ac",
+  "references_checked": 62,
+  "protection_unchanged": true,
+  "usb": {
+    "left": {
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3536208877616",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496
+    },
+    "right": {
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497
+    }
+  },
+  "holders": [
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "hardware_output_exists": false,
+  "go_exists": false,
+  "uart": 0,
+  "host_boot": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+}

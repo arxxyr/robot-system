@@ -1,0 +1,14 @@
+[
+  "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+  "-B",
+  "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/software/scripts/run_hardware_maintenance.py",
+  "--bindings",
+  "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/current-bindings.json",
+  "--output",
+  "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/hardware",
+  "--run-id",
+  "right-wheel-reference-r2",
+  "--artifact-root",
+  "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2",
+  "--right-wheel-pulse"
+]

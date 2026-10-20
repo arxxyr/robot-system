@@ -755,6 +755,8 @@ class RightPulseIO:
         self.fail_write=None; self.bad_raw=None; self.signal_on_enable=False
         self.slow_active_ns=0; self.stop_velocity=0; self.child=None; self.evidence_errors=[]
         self.sequence=0; self.commands=[]; self.interrupted=None; self.trace_calls=[]
+        self.zero_count=0; self.fail_zero_number=None; self.goal_write_enables=False
+        self.fail_read=None; self.read_counts={}
 
     def now(self): return self.t
     def check(self):
@@ -767,9 +769,9 @@ class RightPulseIO:
         if register in m.RIGHT_PULSE_METADATA:return m.RIGHT_PULSE_METADATA[register]
         if register=='Torque_Enable':return self.torque
         if register=='Goal_Velocity':return self.goal
-        if register=='Present_Velocity':return self.velocity if self.torque else self.stop_velocity
+        if register=='Present_Velocity':return self.velocity if self.torque and self.goal else self.stop_velocity
         if register=='Present_Position':
-            if self.torque:self.position=(self.position+self.delta)%4096
+            if self.torque and self.goal:self.position=(self.position+self.delta)%4096
             return self.position
         if register=='Goal_Position':return 1000
         raise AssertionError(register)
@@ -797,10 +799,19 @@ class RightPulseIO:
                 self.interrupted=signal.SIGTERM
                 self.check()
             return f'write {register}@9 <- {value} ok\n'
-        if action=='sync-zero':
-            self.goal=0
-            return 'sync-zero Goal_Velocity@9 <- 0: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n'
+        if action in ('sync-zero','sync-velocity'):
+            self.goal=0 if action=='sync-zero' else int(argv[4])
+            if self.goal_write_enables:self.torque=1
+            if action=='sync-zero':self.zero_count+=1
+            if self.fail_write==('Goal_Velocity',self.goal) or (
+                    action=='sync-zero' and self.zero_count==self.fail_zero_number):
+                self.fail_write=None
+                raise OSError('注入：SYNC已发送但结果未知')
+            return f'{action} Goal_Velocity@9 <- {self.goal}: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n'
         register=argv[4]
+        self.read_counts[register]=self.read_counts.get(register,0)+1
+        if self.fail_read==(register,self.read_counts[register]):
+            raise OSError('注入：读取未知')
         value=self.value(register)
         if action=='read':return f'read {register}@{argv[2]} = {value}\n'
         self.t+=self.slow_active_ns if self.torque else 0
@@ -827,13 +838,15 @@ class RightPulseTests(unittest.TestCase):
     def setUp(self):
         self.verify=patch.object(m,'verify_ref')
         self.verify.start();self.addCleanup(self.verify.stop)
+        self.sync_binding=patch.dict(m.RIGHT_PULSE_SYNC,sha256='a'*64,bytes=123456)
+        self.sync_binding.start();self.addCleanup(self.sync_binding.stop)
 
     def bindings(self):
         return {'schema':'MAINTENANCE_BINDINGS_V1','tool':dict(m.RIGHT_PULSE_WRITE),
                 'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
                 'host':{'boot_id':'pulse-fixture'},
-                'refs':[dict(r) for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_HELPER,m.RIGHT_PULSE_TRACE)],
-                'binary_paths':[r['path'] for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_TRACE)]}
+                'refs':[dict(r) for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_SYNC,m.RIGHT_PULSE_HELPER,m.RIGHT_PULSE_TRACE)],
+                'binary_paths':[r['path'] for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_SYNC,m.RIGHT_PULSE_TRACE)]}
 
     def plan(self):
         root='/home/loosqk/robot-checks/pulse-fixture'
@@ -857,24 +870,29 @@ class RightPulseTests(unittest.TestCase):
         return engine.right_pulse
 
     def writes(self,executor):
-        return [argv[3:] for argv,cleanup in executor.calls if argv[3] in ('write','sync-zero')]
+        return [argv[3:] for argv,cleanup in executor.calls if argv[3] in ('write','sync-zero','sync-velocity')]
 
     def test_normal_order_and_quantized_fifty_are_motion_not_stop_errors(self):
         for velocity in (50,500,1000):
             executor,engine=self.engine();executor.velocity=velocity
             row=self.perform(executor,engine)
             self.assertEqual(row['status'],'PASS')
-            self.assertEqual(self.writes(executor),[['write','Goal_Velocity','500'],['write','Torque_Enable','1'],
-                                                   ['write','Torque_Enable','0'],['sync-zero']])
+            self.assertEqual(self.writes(executor),[['sync-zero'],['write','Torque_Enable','1'],
+                                                   ['sync-velocity','500'],['sync-zero'],['write','Torque_Enable','0']])
             self.assertEqual(len(row['samples']),2)
             self.assertTrue(all(s['raw'][-1]['finished_ns']<=row['observation_deadline_ns'] for s in row['samples']))
             self.assertLessEqual(row['enabled_attempt_window_ns'],500_000_000)
             self.assertFalse(engine.manual_cut)
             self.assertEqual((executor.torque,executor.goal),(0,0))
             self.assertTrue(all(argv[1:3]==[m.DEVICES['right'],'9'] for argv,_ in executor.calls))
-            self.assertEqual(len(executor.trace_calls),4)
-            self.assertEqual([attempt['wire_trace']['instruction'] for attempt in row['writes']],[3,3,3,131])
-            self.assertEqual([attempt['wire_trace']['requested_register_address'] for attempt in row['writes']],[46,40,40,46])
+            self.assertEqual(len(executor.trace_calls),5)
+            self.assertEqual([attempt['wire_trace']['instruction'] for attempt in row['writes']],[131,3,131,131,3])
+            self.assertEqual([attempt['wire_trace']['requested_register_address'] for attempt in row['writes']],[46,40,46,46,40])
+            initial_goal=row['before_raw'][10]
+            self.assertEqual(initial_goal['register'],'Goal_Velocity')
+            self.assertGreaterEqual(initial_goal['started_ns']-row['initial_zero_finished_ns'],50_000_000)
+            self.assertEqual([sample['register'] for sample in row['cleanup_raw']],
+                             ['Torque_Enable','Present_Velocity','Goal_Velocity'])
             for attempt in row['writes']:
                 trace=attempt['wire_trace'];raw=Path(trace['path']).read_bytes()
                 self.assertEqual(hashlib.sha256(raw).hexdigest(),trace['sha256'])
@@ -905,17 +923,94 @@ class RightPulseTests(unittest.TestCase):
             executor,engine=self.engine();executor.fail_write=failed
             row=self.perform(executor,engine,False)
             writes=self.writes(executor)
-            self.assertEqual(writes.count(['write',failed[0],str(failed[1])]),1)
+            attempted=['sync-velocity','500'] if failed[0]=='Goal_Velocity' else ['write',failed[0],str(failed[1])]
+            self.assertEqual(writes.count(attempted),1)
             self.assertEqual(writes.count(['write','Torque_Enable','0']),1)
             self.assertEqual(row['status'],'FAIL');self.assertFalse(engine.manual_cut)
 
+    def test_velocity_write_torque_side_effect_cannot_reenable_after_final_disable(self):
+        executor,engine=self.engine();executor.goal_write_enables=True
+        row=self.perform(executor,engine)
+        self.assertTrue(row['enable_verified'])
+        self.assertEqual((executor.torque,executor.goal),(0,0))
+        self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
+
+    def test_initial_zero_failure_has_no_zero_retry_and_only_independent_disable(self):
+        executor,engine=self.engine();executor.fail_zero_number=1
+        row=self.perform(executor,engine,False)
+        self.assertEqual(self.writes(executor),[['sync-zero'],['write','Torque_Enable','0']])
+        self.assertTrue(row['errors']);self.assertFalse(row['enable_attempted'])
+
+    def test_cleanup_zero_failure_still_disables_once_then_blocks_uart(self):
+        executor,engine=self.engine();executor.fail_zero_number=2
+        row=self.perform(executor,engine,False)
+        self.assertEqual(self.writes(executor)[-2:],[['sync-zero'],['write','Torque_Enable','0']])
+        self.assertEqual(self.writes(executor).count(['sync-zero']),2)
+        self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
+        self.assertEqual(row['cleanup_raw'],[])
+        self.assertTrue(row['uart_blocked']);self.assertTrue(engine.manual_cut)
+        count=len(executor.calls)
+        with self.assertRaises(ValueError):executor.poke('right',9,'read','Torque_Enable',cleanup=True)
+        self.assertEqual(len(executor.calls),count)
+
+    def test_preparation_and_sample_read_failures_keep_single_disable(self):
+        for register,number,nonzero_sent in (('Goal_Velocity',2,False),('Torque_Enable',2,False),
+                ('Goal_Velocity',3,True),('Present_Velocity',2,True),('Present_Position',2,True)):
+            executor,engine=self.engine();executor.fail_read=(register,number)
+            row=self.perform(executor,engine,False)
+            self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
+            self.assertEqual(row['velocity_attempted'],nonzero_sent)
+            self.assertEqual(self.writes(executor).count(['sync-zero']),2 if nonzero_sent else 1)
+            self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
+            self.assertTrue(row['errors'])
+
+    def test_enable_must_read_one_before_nonzero_and_expiry_does_not_move_start(self):
+        for fault in ('readback','deadline'):
+            executor,engine=self.engine()
+            if fault=='readback':
+                original=executor.value
+                executor.value=lambda register:0 if register=='Torque_Enable' else original(register)
+            else:executor.slow_active_ns=500_000_000
+            row=self.perform(executor,engine,False)
+            self.assertFalse(row['velocity_attempted'])
+            self.assertEqual(row['observation_deadline_ns']-row['enable_attempt_started_ns'],500_000_000)
+            self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
+
+    def test_right9_ordinary_torque_captures_same_command_even_if_stop_nonzero(self):
+        for nonzero in (False,True):
+            executor,engine=self.engine();executor.torque=int(nonzero)
+            if nonzero:
+                with contextlib.redirect_stdout(io.StringIO()),self.assertRaises(ValueError):
+                    executor.poke('right',9,'read','Torque_Enable',cleanup=True)
+            else:self.assertEqual(executor.poke('right',9,'read','Torque_Enable'),0)
+            self.assertEqual(len(executor.calls),1)
+            trace=executor.commands[-1]['ordinary_read_trace']
+            self.assertEqual(trace['instruction'],2)
+            self.assertEqual(trace['requested_register_address'],40)
+            self.assertEqual(trace['width'],1)
+            self.assertEqual(hashlib.sha256(Path(trace['path']).read_bytes()).hexdigest(),trace['sha256'])
+            self.assertEqual(engine.manual_cut,nonzero)
+
+    def test_unfrozen_sync_tool_and_wrong_sync_command_reject_before_child(self):
+        for key,value in (('sha256',None),('bytes',None),('sha256','bad'),('bytes',0)):
+            with patch.dict(m.RIGHT_PULSE_SYNC,{key:value}),self.assertRaises(ValueError):
+                self.plan()
+        for tool,action in ((m.RIGHT_PULSE_RAW,['sync-velocity','500']),
+                            (m.RIGHT_PULSE_SYNC,['sync-velocity','501']),
+                            (m.RIGHT_PULSE_SYNC,['sync-zero'])):
+            executor,engine=self.engine()
+            with self.assertRaises(ValueError):
+                executor.command([tool['path'],m.DEVICES['right'],'9',*action])
+            self.assertEqual(executor.calls,[])
+
     def test_last_position_read_crossing_go_keeps_frame_fails_and_disables(self):
         executor,engine=self.engine()
-        engine.right_pulse_go_check=lambda:m.require(executor.now()<545_000_000,'夹具GO到期')
+        expiry=lambda:engine.right_pulse.get('enable_attempt_started_ns',10**12)+415_000_000
+        engine.right_pulse_go_check=lambda:m.require(executor.now()<expiry(),'夹具GO到期')
         row=self.perform(executor,engine,False)
         self.assertIn('GO到期',row['errors'][-1])
         self.assertEqual(row['samples'][-1]['raw'][-1]['status'],'READ_VALID')
-        self.assertGreaterEqual(row['samples'][-1]['raw'][-1]['finished_ns'],545_000_000)
+        self.assertGreaterEqual(row['samples'][-1]['raw'][-1]['finished_ns'],expiry())
         self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
         self.assertFalse(engine.manual_cut)
 
@@ -925,40 +1020,40 @@ class RightPulseTests(unittest.TestCase):
             engine.right_pulse_go_check=lambda:m.require(executor.now()<5_000_000,'返回时GO到期')
             if kind=='write':
                 engine.right_pulse['metadata_verified']=True
-                argv=[m.RIGHT_PULSE_WRITE['path'],m.DEVICES['right'],'9','write','Goal_Velocity','500']
+                argv=[m.RIGHT_PULSE_RAW['path'],m.DEVICES['right'],'9','sync-zero']
             else:argv=[m.RIGHT_PULSE_WRITE['path'],m.DEVICES['right'],'9','read','Torque_Enable']
             with contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'GO到期'):
                 executor.command(argv)
             self.assertEqual(len(executor.calls),1)
             if kind=='write':
-                self.assertEqual(engine.right_pulse['writes'][0]['status'],'ACK_STDOUT_VALID')
+                self.assertEqual(engine.right_pulse['writes'][0]['status'],'SENT_NO_ACK')
                 self.assertIn('wire_trace',engine.right_pulse['writes'][0])
 
     def test_trace_prepare_failure_never_prevents_single_disable(self):
-        for when in ('enable','disable'):
+        for when in ('enable','zero','disable'):
             executor,engine=self.engine()
             def verify(reference,**kwargs):
                 if reference==m.RIGHT_PULSE_TRACE and (
                         engine.right_pulse['off_attempted'] if when=='disable'
-                        else len(engine.right_pulse['writes'])==2):
+                        else len(engine.right_pulse['writes'])==(4 if when=='zero' else 2)):
                     raise OSError('夹具strace准备失败')
             with patch.object(m,'verify_ref',side_effect=verify):
                 row=self.perform(executor,engine,False)
             self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
             self.assertEqual(executor.torque,0)
             self.assertTrue(executor.evidence_errors)
-            if when=='disable':
+            if when in ('zero','disable'):
                 self.assertTrue(row['uart_blocked']);self.assertTrue(engine.manual_cut)
-                self.assertNotIn(['sync-zero'],self.writes(executor))
+                self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
             else:self.assertFalse(engine.manual_cut)
 
     def test_trace_save_failure_after_write_still_attempts_disable_and_preserves_failure(self):
         original=Path.read_bytes
-        for when in ('enable','disable'):
+        for when in ('enable','zero','disable'):
             executor,engine=self.engine()
             def read_bytes(path):
                 target=(engine.right_pulse['off_attempted'] if when=='disable'
-                        else len(engine.right_pulse['writes'])==2)
+                        else len(engine.right_pulse['writes'])==(4 if when=='zero' else 2))
                 if path.name.startswith('right9-pulse-write-') and target:
                     raise OSError('夹具trace落盘读取失败')
                 return original(path)
@@ -967,9 +1062,9 @@ class RightPulseTests(unittest.TestCase):
             self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
             self.assertEqual(executor.torque,0)
             self.assertEqual(row['status'],'FAIL');self.assertTrue(executor.evidence_errors)
-            self.assertEqual(engine.manual_cut,when=='disable')
+            self.assertEqual(engine.manual_cut,when in ('zero','disable'))
 
-    def test_disable_failure_or_nonzero_stop_blocks_zero_and_all_subsequent_uart(self):
+    def test_disable_failure_or_nonzero_stop_blocks_all_subsequent_uart(self):
         for fault in ('ack','speed'):
             executor,engine=self.engine()
             if fault=='ack':executor.fail_write=('Torque_Enable',0)
@@ -981,7 +1076,7 @@ class RightPulseTests(unittest.TestCase):
                 executor.value=lambda register:50 if register=='Present_Velocity' and engine.right_pulse['off_attempted'] else original(register)
             row=self.perform(executor,engine,False)
             self.assertTrue(engine.manual_cut);self.assertTrue(row['uart_blocked'])
-            self.assertNotIn(['sync-zero'],self.writes(executor))
+            self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
             count=len(executor.calls)
             with self.assertRaises(ValueError):executor.poke('right',9,'read','Present_Velocity',cleanup=True)
             self.assertEqual(len(executor.calls),count)
@@ -1017,12 +1112,18 @@ class RightPulseTests(unittest.TestCase):
                          ['--right-wheel-pulse','--execute'],['--right-wheel-pulse','500']):
                 with contextlib.redirect_stderr(io.StringIO()),self.assertRaises((ValueError,SystemExit)):
                     m.main(args)
-            for mutate in ('metadata','tool','refs','targets'):
+            for mutate in ('metadata','tool','refs','targets','sync_sha','sync_path','sync_bytes','sync_binary'):
                 plan=self.plan()
                 if mutate=='metadata':plan['right_wheel_pulse']['metadata']['Phase']=4
                 if mutate=='tool':plan['bindings']['tool']['sha256']='0'*64
                 if mutate=='refs':plan['bindings']['refs'].pop()
                 if mutate=='targets':plan['position_targets']=m.TARGETS
+                if mutate.startswith('sync_'):
+                    reference=next(ref for ref in plan['bindings']['refs'] if ref['path']==m.RIGHT_PULSE_SYNC['path'])
+                    if mutate=='sync_sha':reference['sha256']='b'*64
+                    if mutate=='sync_path':reference['path']='/tmp/wrong-tool'
+                    if mutate=='sync_bytes':reference['bytes']+=1
+                    if mutate=='sync_binary':plan['bindings']['binary_paths'].remove(reference['path'])
                 with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
             with self.assertRaises((ValueError,KeyError)):m.validate_go({},self.plan(),200)
             child.assert_not_called()
@@ -1031,6 +1132,8 @@ class RightPulseTests(unittest.TestCase):
         path=Path(m.__file__).parents[1]/'.verify/base_zero_sync_diagnostic_2026-10-20_r4/plan.json'
         document=json.loads(path.read_text())
         bindings=document.get('plan',document)['bindings']
+        bindings['refs'].append(dict(m.RIGHT_PULSE_SYNC))
+        bindings['binary_paths'].append(m.RIGHT_PULSE_SYNC['path'])
         original=copy.deepcopy(bindings)
         root='/home/loosqk/robot-checks/pulse-fixture'
         plan=m.make_plan(bindings,root+'/run','pulse-fixture',root,right_wheel_pulse=True)

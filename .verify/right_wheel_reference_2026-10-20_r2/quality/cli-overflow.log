@@ -1,0 +1,1 @@
+error: sign-magnitude magnitude 32768 exceeds 32767 (sign_bit_index=15)

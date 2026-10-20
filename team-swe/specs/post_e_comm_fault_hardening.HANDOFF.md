@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+### 对照原版调整右9单次诊断（2026-10-20，软件准备通过，待现场确认）
+
+先核对了[XLeRobot固定源码](https://github.com/Vector-Wangel/XLeRobot/blob/b017b5e6354bd9f61f4247a920c72622ca0aade0/software/src/robots/xlerobot/xlerobot.py#L618-L644)和Orin实际安装的`xlerobot-dimos 0.1.0`。后者的`bus2_base.py`与`common/feetech_io/bus.py`已同本地dimos提交`9ece6bd0e1ffda95248820c1e54b23541747cee0`逐文件核SHA：实际路径是SYNC零速、等待50ms、启用，再以GroupSyncWrite发送非零速度；地址46、宽度2字节。官方插件未锁定LeRobot版本，不能把上游当前依赖当成现场安装；已核对的LeRobot 0.6.1/SDK 1.0.0路径也没有隐含TE1写入。
+
+上一轮在断扭时预置GV500后提前失败，既没有执行计划Enable，也没有完成运动观察；GV500到TE0请求只有45.613ms。现仅调整既有维护入口和`feetech_poke`例子：新增受参数检查的单ID `sync-velocity`，右9固定执行“SYNC0→至少50ms→确认GV0→TE1及读回→SYNC500及读回→原100/400ms速度与位置观察→SYNC0→TE0”。500ms仍从TE1尝试前起算，TE0是最后一条动作写；任何不确定动作保留一次独立TE0，初始零失败不重发，收尾零失败在TE0后封锁UART。原STOP51、身份后验、失败粘性及600秒现场时效不变，仅补右9普通TE的同次strace。
+
+这次只回答原版顺序下右轮能否动作并完成停止读回，不修改Phase、模式、PID或EEPROM，不接三轮生产控制链。Python原版复用连接，当前维护诊断仍复用原有逐命令工具，这个差异明确保留，未另建连接框架。TE与GV变化的具体原因、旧静止±50仍未证实；单轮通过也不覆盖固件合同、D15或完整底盘验收。当前电源状态仍为上轮OFF_USER_REPORTED，无新UART；完成全部准备后再确认当次现场状态。软件验证与下一次执行只在[本轮入口](../../.verify/right_wheel_reference_2026-10-20_r2/summary.json)记结果。
+
+Orin实际fmt→根Clippy、real-hw例子Clippy、18项例子测试、release及坏参数拒绝均通过，nightly `07e526db9`和597项输入聚合`976cbae7…80a0e2`首尾一致。冻结ELF为1517688字节、`22693d15…1820b0`，已绑定最终Python；两端同69项维护测试通过，不重复累计。默认/完整PLAN、互斥及缺GO拒绝通过，PLAN固定`bbeed8f5…4e8322`；root核对62引用、保护文件、当前USB及两串口四锁无占用。所属软件pane `%128/%129`确认自然退出后已清理，复用原target，无正式安装、服务变更或硬件I/O。现仅待当前供电、架空支撑及持续观察确认；历史确认和GO不续用。
+
 ### 右9非零诊断在预置后失败，人工断电及两轮未动已确认（2026-10-20）
 
 09:14:13UTC记录当次供电、三轮架空、支撑、持续观察及立即断电确认，仅启动一次已准备的右9诊断。型号777、FW3.10、Mode1、Phase12、Lock1及初始TE/PV/GV零均读回；seq173普通WRITE向地址46写500并获有效ACK，seq174原帧确认GV500，seq175原帧却读到TE1。脚本报“预置后不是断扭”，计划中的显式Enable及500ms内两对PV/PP采样均未执行，不能称为完成一次非零转动。

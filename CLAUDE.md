@@ -52,7 +52,16 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-20 右9非零候选仅执行一次，预置GV500后TE原帧读回1，提前失败并断扭。
+本轮准备:  2026-10-20 已核对XLeRobot与Orin实际旧Python的调用链，按原版先启用再发非零SYNC。
+           仅修改既有poke例子和右9维护入口：SYNC0→等待50ms→TE1确认→SYNC500→原有界采样。
+           收尾改为SYNC0→TE0，TE0为末写；补右9普通TE同次原帧，停止门和固件合同不改。
+           两端同69项维护测试、Orin示例18项/优化构建及fmt→根Clippy、源码独审通过。
+           原生ELF22693d15已绑定，PLAN bbeed8f5及62引用/当前USB/两串口四锁核对通过。
+           所属软件进程和pane已清理，复用原target；尚无新GO或UART，待当前现场确认。
+           right_wheel_reference_2026-10-20_r2/summary.json；上轮断电状态不构成新动作授权。
+           不扩展框架或三轮控制，D15 OPEN/DEFERRED、deployable=false保持。
+
+近次实机:  2026-10-20 右9非零候选仅执行一次，预置GV500后TE原帧读回1，提前失败并断扭。
            实际三写原帧为GV500→TE0→SYNC GV0，没有TE1写；计划Enable及500ms采样均NOT_RUN。
            TE0后TE/PV原帧均零，但SYNC清目标后最终普通READ的TE又为1；该末读无strace原帧。
            两次TE1与GV写仅有时间关联，工具源码/三写帧未发现隐含启用，固件根因仍UNKNOWN。

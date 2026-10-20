@@ -1,0 +1,94 @@
+{
+  "schema": "RIGHT_WHEEL_REFERENCE_PYTHON_REVIEW_V1",
+  "reviewed_at_utc": "2026-10-20T09:49:02.563510+00:00",
+  "reviewer": "right_wheel_bounded_motion_review",
+  "result": "PASS_CANDIDATE_CODE_REVIEW",
+  "findings": [],
+  "source_before_and_after": [
+    {
+      "path": "scripts/run_hardware_maintenance.py",
+      "sha256": "ce5ac8ff0ccf1db6f1a2345be2603d0cf90f346c754869c28031b36771055d8f",
+      "bytes": 72462
+    },
+    {
+      "path": "scripts/tests/test_hardware_maintenance.py",
+      "sha256": "761d130d1c0184ed9de45816e0ac67ca644d1c14dfdfea7305c3f529e847be77",
+      "bytes": 75004
+    }
+  ],
+  "validation": {
+    "command": "uv run --no-project python -B -m unittest scripts.tests.test_hardware_maintenance -q",
+    "tests": 69,
+    "failed": 0,
+    "independent_scenarios": [
+      {
+        "case": "SYNC500返回延迟500ms",
+        "result": "PASS",
+        "enabled_attempt_window_ns": 550000000
+      },
+      {
+        "case": "SYNC500返回延迟1100ms",
+        "result": "PASS",
+        "enabled_attempt_window_ns": 1150000000
+      }
+    ]
+  },
+  "confirmed": [
+    "500ms从TE1命令前开始，不从非零写后重新计时；常规写与原帧读取均有返回时门",
+    "正常动作写顺序SYNC0→TE1→SYNC500→SYNC0→TE0，TE0为末次动作写",
+    "初始零失败不重试零；收尾零失败不阻止一次独立TE0，之后封锁UART并要求人工断电",
+    "STOP未知/非零、TE0未知、GO或绑定错误维持失败粘性；旧位置路径未改变",
+    "新增抓帧仅右9普通Torque_Enable读取，同一命令保存，现有轮速抓帧复用原helper",
+    "独立延迟场景均未继续采样，清零及TE0各按既定次数执行；1s超限保留FAIL"
+  ],
+  "pending": [
+    "RIGHT_PULSE_SYNC真实ARM64产物SHA及字节数尚待root填入；当前None拒绝可执行计划",
+    "绑定后需root重跑两端适用检查；本审查不构成硬件授权或固件合同证明"
+  ],
+  "hardware_io": 0,
+  "ssh_calls": 0,
+  "source_edits_by_reviewer": 0,
+  "limitations": [
+    "500ms及1s为软件观察/失败门，不是硬件截止；D15保持OPEN/DEFERRED，deployable=false"
+  ],
+  "rust_review": {
+    "reviewer": "base_zero_r3_raw_review",
+    "result": "PASS_SOURCE_REVIEW",
+    "source": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "sha256": "fc9382417321c56f12f87842324074dd45ca2975bdc2850242b146df855cf4c4",
+    "bytes": 33733,
+    "confirmed": [
+      "参数、ID和符号幅度范围在开串口前验证",
+      "与现场旧Python地址46/2字节/bit15符号幅度及小端编码一致",
+      "仅单ID同步速度写，无TE/模式/Phase写；无ACK不宣称接收或动作",
+      "旧sync-zero帧和stdout兼容，输出错误不重发"
+    ],
+    "new_hardware_io": 0
+  },
+  "root_final_binding": {
+    "status": "PASS_SOFTWARE_PREPARATION",
+    "checked_at_ns": 1792490306198724000,
+    "python_inputs": {
+      "scripts/run_hardware_maintenance.py": {
+        "bytes": 72515,
+        "sha256": "135bb8db3f320ba5c542e531a2b21c17b0e452ee96e367a09c40a18121eb56ac"
+      },
+      "scripts/tests/test_hardware_maintenance.py": {
+        "bytes": 75004,
+        "sha256": "761d130d1c0184ed9de45816e0ac67ca644d1c14dfdfea7305c3f529e847be77"
+      }
+    },
+    "ELF": {
+      "path": "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/frozen/feetech_poke",
+      "bytes": 1517688,
+      "sha256": "22693d15bbf926a9a99b8f295c8fffbff92341b8151e9da1620b7d94701820b0",
+      "elf_machine": "AArch64"
+    },
+    "native_quality": "quality/result.json",
+    "native_python": "software/result.json",
+    "local_tests": "local-tests.json",
+    "ready": "readiness.json",
+    "hardware_io": 0,
+    "note": "候选None仅改为实际冻结ELF及注释；最终69项两端通过，原独审的当时pending保留。"
+  }
+}

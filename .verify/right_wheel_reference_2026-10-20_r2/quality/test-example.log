@@ -1,0 +1,94 @@
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.189
+   Compiling serde_core v1.0.229
+   Compiling once_cell v1.21.4
+   Compiling zmij v1.0.23
+   Compiling tracing-core v0.1.36
+   Compiling serde v1.0.229
+   Compiling memchr v2.8.3
+   Compiling regex-syntax v0.8.11
+   Compiling itoa v1.0.18
+   Compiling serde_json v1.0.151
+   Compiling regex-automata v0.4.18
+   Compiling thiserror v2.0.20
+   Compiling zerocopy v0.8.56
+   Compiling pin-project-lite v0.2.17
+   Compiling bitflags v2.13.1
+   Compiling tracing v0.1.44
+   Compiling libudev-sys v0.1.4
+   Compiling half v2.7.1
+   Compiling clap_lex v1.1.0
+   Compiling bitflags v1.3.2
+   Compiling lazy_static v1.5.0
+   Compiling log v0.4.34
+   Compiling anstyle v1.0.14
+   Compiling ciborium-io v0.2.2
+   Compiling either v1.18.0
+   Compiling itertools v0.13.0
+   Compiling ciborium-ll v0.2.2
+   Compiling clap_builder v4.6.6
+   Compiling tracing-log v0.2.0
+   Compiling sharded-slab v0.1.7
+   Compiling nix v0.26.4
+   Compiling libudev v0.3.0
+   Compiling libc v1.0.0-alpha.4
+   Compiling unescaper v0.1.10
+   Compiling matchers v0.2.0
+   Compiling tracing-serde v0.2.0
+   Compiling thread_local v1.1.10
+   Compiling scopeguard v1.2.0
+   Compiling link-section v0.19.3
+   Compiling cast v0.3.0
+   Compiling nu-ansi-term v0.50.3
+   Compiling inventory v0.3.24
+   Compiling same-file v1.0.6
+   Compiling linux-raw-sys v0.12.1
+   Compiling smallvec v1.16.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling rustix v1.1.4
+   Compiling walkdir v2.5.0
+   Compiling ctor v1.0.13
+   Compiling robot-core v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-core)
+   Compiling criterion-plot v0.8.2
+   Compiling serialport v4.10.0
+   Compiling num-traits v0.2.19
+   Compiling alloca v0.4.0
+   Compiling getrandom v0.4.3
+   Compiling clap v4.6.6
+   Compiling ciborium v0.2.2
+   Compiling regex v1.13.1
+   Compiling tinytemplate v1.2.1
+   Compiling page_size v0.6.0
+   Compiling fastrand v2.5.0
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling criterion v0.8.2
+   Compiling tempfile v3.27.0
+   Compiling robot-adapter-feetech v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-adapters/feetech)
+   Compiling robot-logging v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-logging)
+   Compiling assert_no_alloc v1.1.2
+    Finished `test` profile [optimized + debuginfo] target(s) in 1m 31s
+     Running unittests examples/feetech_poke.rs (/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/debug/build/robot-adapter-feetech/89df59e987fea87d/out/feetech_poke-89df59e987fea87d)
+
+running 18 tests
+test tests::diagnostic_write_preflight_denies_even_missing_or_invalid_values ... ok
+test tests::existing_missing_invalid_and_unknown_arguments_remain_for_original_dispatch ... ok
+test tests::existing_write_preflight_keeps_supported_arguments ... ok
+test tests::original_do_write_still_rejects_bad_arguments_without_mock_io ... ok
+test tests::original_read_still_sends_single_read_data ... ok
+test tests::firmware_version_preflight_rejects_write_and_preserves_read_before_open ... ok
+test tests::read_raw_bad_checksum_has_exit1_and_no_json ... ok
+test tests::read_and_ping_preflight_preserve_existing_dispatch ... ok
+test tests::read_raw_missing_or_partial_reply_has_exit1_and_no_json ... ok
+test tests::read_raw_preflight_rejects_bad_count_register_and_id_with_zero_mock_io ... ok
+test tests::sync_velocity_output_failure_does_not_resend_or_report_success ... ok
+test tests::read_raw_keeps_bit15_words_unsigned_without_signed_or_si_fields ... ok
+test tests::read_raw_success_reports_requested_metadata_and_actual_sync_read_bytes ... ok
+test tests::sync_velocity_rejects_bad_values_argument_counts_and_ids_before_mock_io ... ok
+test tests::sync_zero_rejects_extra_arguments_and_invalid_ids_before_mock_io ... ok
+test tests::read_raw_wrong_response_id_has_exit1_and_no_json ... ok
+test tests::sync_velocity_sends_only_two_velocity_bytes_without_ack_or_torque_write ... ok
+test tests::sync_zero_sends_exact_single_id_packet_without_ack_or_other_register_writes ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
