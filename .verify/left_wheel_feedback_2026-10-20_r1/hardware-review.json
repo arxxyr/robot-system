@@ -1,0 +1,134 @@
+{
+  "status": "PASS_OFFLINE_CAPTURE_REVIEW",
+  "scope": "仅本地原件窄审；未访问 SSH/UART，未修改原件或源码",
+  "original_result": "DIAGNOSTIC_CAPTURED",
+  "run_sha256": "c9fd8651c57c1dfa01c16f58cb58a8fdd312b3745467439fba02940419e7687a",
+  "integrity": {
+    "manifest_files": 154,
+    "manifest_bytes": 278355,
+    "all_file_sha256_verified": true,
+    "hardware_files": 146,
+    "direct_children": 72,
+    "journal_equals_run_commands": true,
+    "streams_sha256_verified": 144,
+    "all_reaped": true,
+    "exit_codes": {
+      "0": 52,
+      "1": 20
+    },
+    "nonzero_exits": "20 个 fuser 无持有者返回 1，原流为空",
+    "child_errors_signals_over_budget": 0
+  },
+  "wire": {
+    "command_sequences": [
+      43,
+      54
+    ],
+    "operation": "SYNC_READ 0x82",
+    "source": "固定工具 read-raw 同次 stdout TX/RX，与 run.json 逐项一致；本轮没有独立 strace",
+    "motor": "右总线左轮 right7",
+    "all_twelve_tx_rx_length_id_error_checksum_valid": true,
+    "motor_write_commands": 0,
+    "torque_enable_first_last": [
+      0,
+      0
+    ],
+    "samples": [
+      {
+        "scheduled_ms": 0,
+        "pp_sequence": 44,
+        "pv_sequence": 45,
+        "pp_raw": 1211,
+        "pv_raw": 0,
+        "pv_sign_magnitude": 0,
+        "pp_start_ms": 0.549048,
+        "pv_start_ms": 12.665004,
+        "pv_end_ms": 23.572171
+      },
+      {
+        "scheduled_ms": 250,
+        "pp_sequence": 46,
+        "pv_sequence": 47,
+        "pp_raw": 1212,
+        "pv_raw": 0,
+        "pv_sign_magnitude": 0,
+        "pp_start_ms": 250.666913,
+        "pv_start_ms": 262.783381,
+        "pv_end_ms": 273.667667
+      },
+      {
+        "scheduled_ms": 500,
+        "pp_sequence": 48,
+        "pv_sequence": 49,
+        "pp_raw": 1212,
+        "pv_raw": 0,
+        "pv_sign_magnitude": 0,
+        "pp_start_ms": 500.65322,
+        "pv_start_ms": 512.82425,
+        "pv_end_ms": 523.701848
+      },
+      {
+        "scheduled_ms": 750,
+        "pp_sequence": 50,
+        "pv_sequence": 51,
+        "pp_raw": 1211,
+        "pv_raw": 0,
+        "pv_sign_magnitude": 0,
+        "pp_start_ms": 750.628582,
+        "pv_start_ms": 762.654678,
+        "pv_end_ms": 773.49349
+      },
+      {
+        "scheduled_ms": 1000,
+        "pp_sequence": 52,
+        "pv_sequence": 53,
+        "pp_raw": 1212,
+        "pv_raw": 32818,
+        "pv_sign_magnitude": -50,
+        "pp_start_ms": 1000.614953,
+        "pv_start_ms": 1012.677083,
+        "pv_end_ms": 1023.559801
+      }
+    ],
+    "last_pv_tx": "ff ff fe 05 82 3a 02 07 37",
+    "last_pv_rx": "ff ff 07 04 00 32 80 42",
+    "pp_pv_same_frame": false
+  },
+  "timing": {
+    "batch_elapsed_ms": 1056.519169,
+    "batch_limit_ms": 1500,
+    "all_twelve_completed_before_deadline": true,
+    "monotonic_command_intervals_valid": true
+  },
+  "authorization_cleanup": {
+    "plan_sha256": "225b8511b13ff2f2dc7acf4633332e35fd552c50f428f6bcc9170940f01a53a2",
+    "field_confirmed_at_utc": "2026-10-20T11:20:33Z",
+    "field_to_collection_ms": 117158.701498,
+    "go_consumed_once_binding_valid": true,
+    "launch_terminal_collection_inside_600s": true,
+    "same_terminal_identity": "left-wheel-feedback-20261020-r1 $97 %133 716357 1 0",
+    "exclusive_locks": 4,
+    "identity_checks_pass": 93,
+    "driver_absent": true,
+    "two_serial_four_lock_holders_empty": true,
+    "only_owned_dead_pane_removed": "%133",
+    "run_bytes_unchanged": true,
+    "release_uart": 0
+  },
+  "physical_observation": {
+    "source": "physical-observation.json",
+    "answer": "全程看清，左轮没有转动或抖动",
+    "status": "NO_VISIBLE_ROTATION_OR_JITTER",
+    "instrumented_stationary_proof": false
+  },
+  "conclusion": "本次只读 SYNC_READ 已复现末次 PV 原字 0x8032（符号幅度 −50）；首末 TE=0，五次 PP 为1211/1212/1212/1211/1212。现场报告左轮全程无可见转动或抖动。两种证据共同限定本次现象，不能确定固件、量化或机械原因。",
+  "boundaries": {
+    "stop_verification": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "right9_motion_pass": false,
+    "no_cause_inference": true,
+    "no_new_uart_authorized": true,
+    "D15": "OPEN/DEFERRED",
+    "deployable": false
+  },
+  "issues": []
+}

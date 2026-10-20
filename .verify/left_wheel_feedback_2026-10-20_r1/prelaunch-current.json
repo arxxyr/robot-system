@@ -1,0 +1,29 @@
+{
+  "checked_at_ns": 1792495279583367270,
+  "usb": {
+    "left": {
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3536208877616",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496
+    },
+    "right": {
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497
+    }
+  },
+  "references_checked": 62,
+  "holders_empty": [
+    "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+    "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+    "/var/lib/robot/xlerobot_left/rx_trust.lock",
+    "/var/lib/robot/xlerobot_left/estop_latch.lock",
+    "/var/lib/robot/xlerobot_right/rx_trust.lock",
+    "/var/lib/robot/xlerobot_right/estop_latch.lock"
+  ],
+  "uart": 0
+}

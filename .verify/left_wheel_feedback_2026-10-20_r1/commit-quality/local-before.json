@@ -1,0 +1,16 @@
+{
+  "head": "63d80f605fb78c9328bc6083d259ecfc988e6cc3",
+  "manifest_reference": ".verify/right_wheel_reference_2026-10-20_r2/quality/expected-source.json",
+  "source_count": 597,
+  "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "python_inputs": {
+    "scripts/run_hardware_maintenance.py": {
+      "bytes": 82276,
+      "sha256": "fc5cc4f9689b744c6425c0cf6f4accc1cf3a1e359082f02c7457cf1ec3997a84"
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "bytes": 89572,
+      "sha256": "75a6eb41ef09c8e309189fe12cd980d4b02a591ab4835cab1ccfd460c7224797"
+    }
+  }
+}

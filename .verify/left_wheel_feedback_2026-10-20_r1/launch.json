@@ -1,0 +1,26 @@
+{
+  "recorded_at_ns": 1792495279593666795,
+  "session": "left-wheel-feedback-20261020-r1",
+  "identity": "left-wheel-feedback-20261020-r1 $97 %133 716357",
+  "launch_exit": 0,
+  "stderr": "",
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "-B",
+    "/home/loosqk/robot-checks/left-wheel-feedback-20261020-r1/software/scripts/run_hardware_maintenance.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/left-wheel-feedback-20261020-r1/current-bindings.json",
+    "--output",
+    "/home/loosqk/robot-checks/left-wheel-feedback-20261020-r1/hardware",
+    "--run-id",
+    "left-wheel-feedback-r1",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/left-wheel-feedback-20261020-r1",
+    "--left-wheel-feedback-only",
+    "--approval",
+    "/home/loosqk/robot-checks/left-wheel-feedback-20261020-r1/go.json",
+    "--execute"
+  ],
+  "driver_log": "/home/loosqk/robot-checks/left-wheel-feedback-20261020-r1/driver.log",
+  "output": "/home/loosqk/robot-checks/left-wheel-feedback-20261020-r1/hardware"
+}

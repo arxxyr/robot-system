@@ -2,7 +2,19 @@
 
 ## 当前步骤
 
-### 左轮位置/速度短时只读已准备，等待本次现场确认（2026-10-20）
+### 左轮只读采到-50反馈，位置仅1计数跳变，现场未见转动（2026-10-20）
+
+11:20:33UTC收到当次供电、架空支撑及左轮全程观察确认，在600秒时效内仅执行一次固定12读。首末TE均0；五组PP为1211/1212/1212/1211/1212，PV为0/0/0/0/-50，末次速度原字8032及原帧保留。整批1056.519169ms，在原1.5秒软件预算内。只有12次SYNC_READ，没有写参数、Enable或动作；PP/PV先后采样，不称同帧。用户随后明确报告“全程看清，左轮没有转动或抖动”。这支持静止附近量化/抖动假设，不能证明精确静止、把±50直接判零或回填此前普通READ故障。
+
+原结果为DIAGNOSTIC_CAPTURED，STOP为NOT_EVALUATED_DIAGNOSTIC_ONLY，93项非UART身份检查通过。72直属child回收；11:21:43UTC观察同`$97/%133/PID716357`自然dead1/exit0，所属PID消失、两串口四锁无占用，仅本次dead pane已清理。154份原件278355字节逐SHA回收，原run SHA为c9fd8651…9e7687a。见[唯一摘要](../../.verify/left_wheel_feedback_2026-10-20_r1/summary.json)、[原帧独审](../../.verify/left_wheel_feedback_2026-10-20_r1/hardware-review.json)、[原始run](../../.verify/left_wheel_feedback_2026-10-20_r1/hardware/run.json)及[现场观察](../../.verify/left_wheel_feedback_2026-10-20_r1/physical-observation.json)。GO已消费、看护收尾，无后续UART或自动重试；电源最新仅用户本轮报告ON。
+
+下一步先核对现有轮子停止判据与厂家反馈精度，避免重复随机试验。当前未修改停止门、Phase、模式、PID或EEPROM；右9新顺序尚未执行，三轮动作及固件合同仍未闭环，D15 OPEN/DEFERRED、deployable=false保持。
+
+待用户决策的最小候选仅针对right7：TE/GV仍须严格为0；PV仅允许0或±50时，补一次固定1秒五组PP/PV，要求位置跨度不超过1计数，未知、超期或超界继续失败。原始PV保留，不加全局死区；其他电机及历史结果不变。这是需实现、软件负控和实机另行验证的候选，当前未落地或判安全。需一致处理普通READ即时门、`validate_snapshot`及`classify_stop_snapshot`，不能只改报表。厂家0.0146RPM与0.732RPM的比例约50，但原表精度说明位于目标速度，未承诺当前速度±50必为噪声；本次也未读GV。项目`CLAUDE.md`第28行明确“不修改冻结架构、安全判据或历史验收结论”，因此必须取得用户对这项判据变更的明确同意后继续实现，不从本次只读授权推定同意。
+
+本次结果提交前Orin同源597项、nightly07e526db9下实际fmt→根Clippy通过，两Python冻结文件未变，见[提交质量](../../.verify/left_wheel_feedback_2026-10-20_r1/commit-quality/result.json)。未重跑测试、构建产物或执行后续UART。
+
+### 左轮位置/速度短时只读准备（2026-10-20，以下为实机执行前记录）
 
 为区分持续位移与静止附近反馈跳变，仅在现有维护入口增加互斥`--left-wheel-feedback-only`。固定right7首TE0、0/250/500/750/1000ms五组PP后PV、末TE0，共12次读取；复用b2冻结工具，不写寄存器、不自动重试。整批1.5秒是软件预算而非硬截止，实际起止及原帧保留；TE非零、通信、GO或采集超期后停止后续UART。非零PV只作观测，成功结果为`DIAGNOSTIC_CAPTURED`，STOP明确为`NOT_EVALUATED_DIAGNOSTIC_ONLY`，不能放行右9动作。此处SYNC_READ与R2普通READ不同，不以未复现或采集成功回填原故障。
 

@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    {
+      "stage": "initial-launch-wrapper",
+      "exit_code": 1,
+      "stderr_preserved": false,
+      "result": "未生成stage或启动pane，后续只读核对已确认"
+    },
+    {
+      "stage": "quoted-inspection",
+      "exit_code": 1,
+      "error": "SyntaxError: invalid syntax，路径引号被shell剥离"
+    }
+  ],
+  "candidate_changed": false,
+  "cargo_started_before_corrected_launch": false,
+  "uart": 0
+}

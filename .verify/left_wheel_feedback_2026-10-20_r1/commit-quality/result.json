@@ -1,0 +1,92 @@
+{
+  "status": "PASS",
+  "steps": [
+    {
+      "name": "rustc-before",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T11:24:25.728396+00:00",
+      "pid": 716669,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T11:24:25.753548+00:00",
+      "reaped": true
+    },
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "started_at": "2026-10-20T11:24:25.754147+00:00",
+      "pid": 716675,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T11:24:29.128102+00:00",
+      "reaped": true
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at": "2026-10-20T11:24:29.211080+00:00",
+      "pid": 716686,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T11:24:29.935847+00:00",
+      "reaped": true
+    },
+    {
+      "name": "rustc-after",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T11:24:29.936520+00:00",
+      "pid": 716702,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T11:24:29.959621+00:00",
+      "reaped": true
+    }
+  ],
+  "uart": 0,
+  "services": 0,
+  "tests": 0,
+  "release_builds": 0,
+  "manifest_reference": "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/expected-source.json",
+  "local_head": "63d80f605fb78c9328bc6083d259ecfc988e6cc3",
+  "started_at": "2026-10-20T11:24:25.621385+00:00",
+  "source_count": 597,
+  "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "existing_compilers": [],
+  "python_before": {
+    "scripts/run_hardware_maintenance.py": {
+      "bytes": 82276,
+      "sha256": "fc5cc4f9689b744c6425c0cf6f4accc1cf3a1e359082f02c7457cf1ec3997a84"
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "bytes": 89572,
+      "sha256": "75a6eb41ef09c8e309189fe12cd980d4b02a591ab4835cab1ccfd460c7224797"
+    }
+  },
+  "python_after": {
+    "scripts/run_hardware_maintenance.py": {
+      "bytes": 82276,
+      "sha256": "fc5cc4f9689b744c6425c0cf6f4accc1cf3a1e359082f02c7457cf1ec3997a84"
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "bytes": 89572,
+      "sha256": "75a6eb41ef09c8e309189fe12cd980d4b02a591ab4835cab1ccfd460c7224797"
+    }
+  },
+  "source_unchanged": true,
+  "finished_at": "2026-10-20T11:24:30.042273+00:00"
+}
