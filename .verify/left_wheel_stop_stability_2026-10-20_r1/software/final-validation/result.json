@@ -1,0 +1,324 @@
+{
+  "status": "PASS",
+  "steps": [
+    {
+      "name": "rustc-before",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T14:15:58.338261+00:00",
+      "pid": 717875,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T14:15:58.362542+00:00",
+      "reaped": true
+    },
+    {
+      "name": "native-tests",
+      "argv": [
+        "/home/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "--offline",
+        "--no-python-downloads",
+        "--python",
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "python",
+        "-B",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/scripts/tests/test_hardware_maintenance.py"
+      ],
+      "started_at": "2026-10-20T14:15:58.363228+00:00",
+      "pid": 717881,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T14:16:00.156735+00:00",
+      "reaped": true
+    },
+    {
+      "name": "default-plan",
+      "argv": [
+        "/home/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "--offline",
+        "--no-python-downloads",
+        "--python",
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "python",
+        "-B",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/scripts/run_hardware_maintenance.py"
+      ],
+      "started_at": "2026-10-20T14:16:00.157898+00:00",
+      "pid": 717894,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T14:16:00.331894+00:00",
+      "reaped": true
+    },
+    {
+      "name": "left-feedback-plan",
+      "argv": [
+        "/home/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "--offline",
+        "--no-python-downloads",
+        "--python",
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "python",
+        "-B",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/scripts/run_hardware_maintenance.py",
+        "--bindings",
+        "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/current-bindings.json",
+        "--output",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/final-validation/plan-only-output",
+        "--run-id",
+        "left-stop-final-software-r1",
+        "--artifact-root",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1",
+        "--left-wheel-feedback-only"
+      ],
+      "started_at": "2026-10-20T14:16:00.332734+00:00",
+      "pid": 717898,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T14:16:00.511944+00:00",
+      "reaped": true
+    },
+    {
+      "name": "right-pulse-plan",
+      "argv": [
+        "/home/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "--offline",
+        "--no-python-downloads",
+        "--python",
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "python",
+        "-B",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/scripts/run_hardware_maintenance.py",
+        "--bindings",
+        "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/current-bindings.json",
+        "--output",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/final-validation/right-plan-only-output",
+        "--run-id",
+        "right-stop-final-software-r1",
+        "--artifact-root",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1",
+        "--right-wheel-pulse"
+      ],
+      "started_at": "2026-10-20T14:16:00.513704+00:00",
+      "pid": 717902,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T14:16:00.692302+00:00",
+      "reaped": true
+    },
+    {
+      "name": "right-missing-go",
+      "argv": [
+        "/home/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "--offline",
+        "--no-python-downloads",
+        "--python",
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "python",
+        "-B",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/scripts/run_hardware_maintenance.py",
+        "--bindings",
+        "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/current-bindings.json",
+        "--output",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/final-validation/right-plan-only-output",
+        "--run-id",
+        "right-stop-final-software-r1",
+        "--artifact-root",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1",
+        "--right-wheel-pulse",
+        "--execute"
+      ],
+      "started_at": "2026-10-20T14:16:00.694003+00:00",
+      "pid": 717906,
+      "exit_code": 2,
+      "finished_at": "2026-10-20T14:16:00.871289+00:00",
+      "reaped": true
+    },
+    {
+      "name": "conflicting-selection",
+      "argv": [
+        "/home/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "--offline",
+        "--no-python-downloads",
+        "--python",
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "python",
+        "-B",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/scripts/run_hardware_maintenance.py",
+        "--left-wheel-feedback-only",
+        "--position-target",
+        "head-1"
+      ],
+      "started_at": "2026-10-20T14:16:00.872242+00:00",
+      "pid": 717910,
+      "exit_code": 2,
+      "finished_at": "2026-10-20T14:16:01.046720+00:00",
+      "reaped": true
+    },
+    {
+      "name": "conflicting-wheel-modes",
+      "argv": [
+        "/home/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "--offline",
+        "--no-python-downloads",
+        "--python",
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "python",
+        "-B",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/scripts/run_hardware_maintenance.py",
+        "--left-wheel-feedback-only",
+        "--right-wheel-pulse"
+      ],
+      "started_at": "2026-10-20T14:16:01.047521+00:00",
+      "pid": 717914,
+      "exit_code": 2,
+      "finished_at": "2026-10-20T14:16:01.223159+00:00",
+      "reaped": true
+    },
+    {
+      "name": "missing-go",
+      "argv": [
+        "/home/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "--offline",
+        "--no-python-downloads",
+        "--python",
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "python",
+        "-B",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/scripts/run_hardware_maintenance.py",
+        "--bindings",
+        "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/current-bindings.json",
+        "--output",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/final-validation/plan-only-output",
+        "--run-id",
+        "left-stop-final-software-r1",
+        "--artifact-root",
+        "/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1",
+        "--left-wheel-feedback-only",
+        "--execute"
+      ],
+      "started_at": "2026-10-20T14:16:01.224161+00:00",
+      "pid": 717918,
+      "exit_code": 2,
+      "finished_at": "2026-10-20T14:16:01.400769+00:00",
+      "reaped": true
+    },
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "started_at": "2026-10-20T14:16:01.401761+00:00",
+      "pid": 717922,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T14:16:04.765092+00:00",
+      "reaped": true
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at": "2026-10-20T14:16:04.849417+00:00",
+      "pid": 717933,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T14:16:05.577194+00:00",
+      "reaped": true
+    },
+    {
+      "name": "rustc-after",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T14:16:05.578073+00:00",
+      "pid": 717949,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T14:16:05.600935+00:00",
+      "reaped": true
+    }
+  ],
+  "uart": 0,
+  "services": 0,
+  "tests": 88,
+  "release_builds": 0,
+  "local_head": "047123e76fbd728533b24102bdb8ccc6d5540cdf",
+  "manifest_reference": "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/expected-source.json",
+  "started_at": "2026-10-20T14:15:58.232461+00:00",
+  "source_count": 597,
+  "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "existing_compilers": [],
+  "python_inputs_before": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "4b822e7e4467eff318dd2e25fc75685d6181e98119e3d647983c1fc81276f624",
+      "bytes": 92426
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "0633803c782883d1891cd7be1a4b419495d80c1335d5fcfe77eeeccbc9410137",
+      "bytes": 106910
+    },
+    "scripts/tests/fixtures/hardware_maintenance_run02_return_error.json": {
+      "sha256": "a7bfa3fbfc3f3039be9db68973348ba4db156b74f807e57a01eecda8dfd27948",
+      "bytes": 6971
+    },
+    ".verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/originals/helpers/raw_right9_from_r14_r2.py": {
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    ".verify/base_zero_sync_diagnostic_2026-10-20_r4/plan.json": {
+      "sha256": "50316064d6a9c3459a0fddcca663e34a55d31feeed57c9173aed9e6a84de9b16",
+      "bytes": 40851
+    }
+  },
+  "python_included_in_597_rust_configuration_inputs": false,
+  "plan_sha256": "9acea988e7c8eb15aff806b7ad3ff75d60e2ae0a73f0bd65438f9b51736a0c93",
+  "right_plan_sha256": "a708e31880bda1b02fc19db1c464bc84fd9ace009166b1cf1871e6b8fdbfb5d3",
+  "python_inputs_after": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "4b822e7e4467eff318dd2e25fc75685d6181e98119e3d647983c1fc81276f624",
+      "bytes": 92426
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "0633803c782883d1891cd7be1a4b419495d80c1335d5fcfe77eeeccbc9410137",
+      "bytes": 106910
+    },
+    "scripts/tests/fixtures/hardware_maintenance_run02_return_error.json": {
+      "sha256": "a7bfa3fbfc3f3039be9db68973348ba4db156b74f807e57a01eecda8dfd27948",
+      "bytes": 6971
+    },
+    ".verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/originals/helpers/raw_right9_from_r14_r2.py": {
+      "sha256": "70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c",
+      "bytes": 12220
+    },
+    ".verify/base_zero_sync_diagnostic_2026-10-20_r4/plan.json": {
+      "sha256": "50316064d6a9c3459a0fddcca663e34a55d31feeed57c9173aed9e6a84de9b16",
+      "bytes": 40851
+    }
+  },
+  "old_binding_unchanged": true,
+  "old_binding_sha256": "0d73288e4587a38b72044d5289d36bb4fad0a38fedd511c7318bd107720ca5b2",
+  "source_unchanged": true,
+  "finished_at": "2026-10-20T14:16:05.684107+00:00"
+}

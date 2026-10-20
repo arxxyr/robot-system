@@ -1,0 +1,92 @@
+{
+  "status": "SOFTWARE_PASS_HARDWARE_PENDING",
+  "scope": "仅左轮right7新增获用户批准的停止稳定性判据，复用现有维护和只读入口",
+  "approval": "approval.json",
+  "contract": {
+    "version": "RIGHT7_STABILITY_V1",
+    "target": [
+      "right",
+      7,
+      "base_left_wheel"
+    ],
+    "torque_enable": 0,
+    "goal_velocity": 0,
+    "present_velocity_signed_raw": [
+      0,
+      50,
+      -50
+    ],
+    "observation_ns": 1000000000,
+    "position_velocity_pairs": 5,
+    "sample_offsets_ns": [
+      0,
+      250000000,
+      500000000,
+      750000000,
+      1000000000
+    ],
+    "position_span_raw_max": 1,
+    "include_current_snapshot_position": true,
+    "reads": 14,
+    "capture_budget_ns": 1500000000,
+    "budget_is_software_not_hardware_cutoff": true,
+    "missing_late_or_out_of_bounds": "FAIL_AND_BLOCK_UART"
+  },
+  "implementation": {
+    "files": [
+      "scripts/run_hardware_maintenance.py",
+      "scripts/tests/test_hardware_maintenance.py"
+    ],
+    "source_sha256": "4b822e7e4467eff318dd2e25fc75685d6181e98119e3d647983c1fc81276f624",
+    "test_sha256": "0633803c782883d1891cd7be1a4b419495d80c1335d5fcfe77eeeccbc9410137",
+    "other_motors": "原严格零值停止判据保持",
+    "raw_velocity_values_preserved": true,
+    "fresh_window_for_each_snapshot": true,
+    "historical_report_or_pass_flag_cannot_authorize": true,
+    "standalone_feedback_result": "DIAGNOSTIC_CAPTURED，仅左轮candidate子项判定",
+    "standalone_whole_robot_stop": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "right9_write_sequence_changed": false,
+    "no_new_cli_or_driver": true
+  },
+  "validation": {
+    "local_tests": 88,
+    "orin_tests": 88,
+    "new_methods_subset": 11,
+    "same_methods_across_hosts_not_added": true,
+    "native": "software/final-validation/result.json",
+    "review": "review.json",
+    "fmt_then_root_clippy": "PASS_ACTUALLY_RUN_ON_ORIN",
+    "nightly": "07e526db9",
+    "rust_input_count": 597,
+    "rust_input_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+    "root_local_597_and_final_python_matches": true,
+    "original_87_run_preserved": "software/result.json",
+    "final_fix": "journal关闭或run.json写入失败时撤销左轮candidate PASS",
+    "old_to_final_source_diff_only": "software/final-validation/source-change.patch",
+    "no_extra_full_source_copies_retained": true
+  },
+  "preparation": "preparation.json",
+  "plan": "plan.json",
+  "plan_sha256": "9b5df681f735196c160d06cd39027be94f62500820b72ffef57506578caa96a6",
+  "right_plan": "right-plan.json",
+  "right_plan_sha256": "2e15e4c82b95de85ef5493402c967613d478e14f291d02e018b99c8b442d29c4",
+  "unexecuted_plan_revision": "plan-revision.json",
+  "software_panes_cleaned": [
+    "%135/PID717446",
+    "%136/PID717871"
+  ],
+  "current_software_resources_cleaned": true,
+  "target_directory_reused": true,
+  "new_target_or_release_build": false,
+  "hardware_executed": false,
+  "uart": 0,
+  "go_created": false,
+  "field_readiness": "需要新的当前供电、架空、支撑和持续看护确认；本次判据批准不代替现场事实",
+  "next_step": "现场确认后先仅左轮14读验证；通过后才可按另一个当次有界GO复用原右9单次非零诊断。失败或未知不追加UART。",
+  "original_hardware_failures_unchanged": true,
+  "production_install_changed": false,
+  "services_changed": false,
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "recorded_at_utc": "2026-10-20T14:18:12.813716+00:00"
+}

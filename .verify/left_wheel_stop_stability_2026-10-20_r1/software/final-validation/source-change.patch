@@ -1,0 +1,81 @@
+--- a/scripts/run_hardware_maintenance.py
++++ b/scripts/run_hardware_maintenance.py
+@@ -1539,6 +1539,8 @@
+             io.journal.close()
+         except BaseException as error:
+             report['journal_close_error']=repr(error)
++            if feedback_only:
++                report['left7_candidate_verification']['status']='FAIL'
+             if engine:
+                 identity=report.setdefault('identity_verification',{'checks':[]})
+                 identity['status']='UNKNOWN'
+@@ -1554,6 +1556,7 @@
+             if feedback_only:
+                 report['result']='NEEDS_MANUAL_POWER_CUT'
+                 report['manual_power_cut_required']=True
++                report['left7_candidate_verification']['status']='FAIL'
+             elif report['result'] != 'NEEDS_MANUAL_POWER_CUT':
+                 report['result']='FAIL'
+             report['report_write_error']=repr(error)
+--- a/scripts/tests/test_hardware_maintenance.py
++++ b/scripts/tests/test_hardware_maintenance.py
+@@ -1601,7 +1601,13 @@
+         with self.assertRaises(ValueError):m.validate_go(go,plan,200)
+ 
+     def test_execute_reuses_locks_postchecks_but_never_snapshots_or_writes(self):
+-        for fault in (None,3,'post'):
++        self.check_execute_cases((None,3,'post'))
++
++    def test_final_journal_or_report_failure_revokes_candidate_pass(self):
++        self.check_execute_cases(('journal','report'))
++
++    def check_execute_cases(self,faults):
++        for fault in faults:
+             root=self.root/str(fault);root.mkdir()
+             helper=root/'helper.py';helper.write_text('# 本机空helper\n')
+             bindings=self.bindings();bindings['proc_helper']={'path':str(helper)}
+@@ -1612,6 +1618,15 @@
+                     path=root/f'{side}-{name}';path.write_bytes(b'unchanged\n')
+                     bindings['protection'][side][name]={'path':str(path)}
+             executor=FeedbackIO();executor.fail_at=fault
++            if fault=='journal':
++                class FailedClose(io.StringIO):
++                    def close(self):raise OSError('注入日志关闭失败')
++                executor.journal=FailedClose()
++            write_new=m.write_new
++            def write_report(path,value):
++                if fault=='report' and Path(path).name=='run.json':
++                    raise OSError('注入最终报告保存失败')
++                return write_new(path,value)
+             read_text=Path.read_text
+             def read_boot(path,*args,**kwargs):
+                 return 'unit-boot' if str(path)=='/proc/sys/kernel/random/boot_id' else read_text(path,*args,**kwargs)
+@@ -1626,17 +1641,25 @@
+                   patch.object(m,'snapshot',side_effect=AssertionError('只读不可整机snapshot')) as snapshot,
+                   patch.object(m,'run_motion_probes',side_effect=AssertionError('不可动作')) as motion,
+                   patch.object(m,'finish_verification',side_effect=AssertionError('不可STOP收尾')) as finish,
+-                  patch.object(m.signal,'signal'),contextlib.redirect_stdout(io.StringIO())):
++                  patch.object(m,'write_new',side_effect=write_report),
++                  patch.object(m.signal,'signal'),contextlib.redirect_stdout(io.StringIO()) as messages):
+                 plan=m.make_plan(bindings,root/'run','feedback',root,left_wheel_feedback_only=True)
+                 go=self.go(plan,m.time.time_ns());approval=root/'go.json';m.write_new(approval,go)
+                 self.assertEqual(m.execute(plan,go,approval),0 if fault is None else 1)
+                 snapshot.assert_not_called();motion.assert_not_called();finish.assert_not_called()
+                 self.assertEqual(process.call_count,1)
+-            report=json.loads((root/'run/run.json').read_text())
++            if fault=='report':
++                self.assertFalse((root/'run/run.json').exists())
++                report=json.loads(messages.getvalue().splitlines()[-1])
++                self.assertIn('report_write_error',report)
++            else:
++                report=json.loads((root/'run/run.json').read_text())
++            if fault=='journal':self.assertIn('journal_close_error',report)
+             self.assertEqual(report['result'],'DIAGNOSTIC_CAPTURED' if fault is None else 'NEEDS_MANUAL_POWER_CUT')
+             self.assertEqual(report['left7_candidate_verification']['status'],'PASS' if fault is None else 'FAIL')
+             self.assertEqual(report['stop_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
+-            self.assertEqual(report['identity_verification']['status'],'FAIL' if fault=='post' else 'PASS')
++            expected_identity={'post':'FAIL','journal':'UNKNOWN'}.get(fault,'PASS')
++            self.assertEqual(report['identity_verification']['status'],expected_identity)
+             self.assertEqual(len(report['owned_locks']),4)
+             self.assertEqual(len(executor.calls),3 if fault==3 else 14)
+             self.assertTrue(Path(str(approval)+'.consumed').exists())

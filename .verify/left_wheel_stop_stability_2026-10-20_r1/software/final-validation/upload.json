@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"updated_scripts\": 2, \"old_expected_manifest_unchanged\": true, \"python_inputs\": {\"scripts/run_hardware_maintenance.py\": {\"bytes\": 92426, \"sha256\": \"4b822e7e4467eff318dd2e25fc75685d6181e98119e3d647983c1fc81276f624\"}, \"scripts/tests/test_hardware_maintenance.py\": {\"bytes\": 106910, \"sha256\": \"0633803c782883d1891cd7be1a4b419495d80c1335d5fcfe77eeeccbc9410137\"}, \"scripts/tests/fixtures/hardware_maintenance_run02_return_error.json\": {\"bytes\": 6971, \"sha256\": \"a7bfa3fbfc3f3039be9db68973348ba4db156b74f807e57a01eecda8dfd27948\"}, \".verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/originals/helpers/raw_right9_from_r14_r2.py\": {\"bytes\": 12220, \"sha256\": \"70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c\"}, \".verify/base_zero_sync_diagnostic_2026-10-20_r4/plan.json\": {\"bytes\": 40851, \"sha256\": \"50316064d6a9c3459a0fddcca663e34a55d31feeed57c9173aed9e6a84de9b16\"}}}\n",
+  "stderr": ""
+}

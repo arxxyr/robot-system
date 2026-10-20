@@ -1,0 +1,20 @@
+{
+  "source": "用户直接回复call_db237087790545d3b5b98d7267fd7d1c",
+  "answer": "同意，按这个最小范围实现并验证",
+  "recorded_at_utc": "2026-10-20T13:51:28Z",
+  "scope": "仅左轮right7候选停止判据的实现和验证",
+  "requirements": {
+    "torque_enable": 0,
+    "goal_velocity": 0,
+    "allowed_present_velocity_signed_raw": [0, 50, -50],
+    "observation_ns": 1000000000,
+    "position_velocity_pairs": 5,
+    "maximum_position_span_raw": 1,
+    "missing_late_or_out_of_bounds": "FAIL"
+  },
+  "not_a_new_field_readiness_confirmation": true,
+  "does_not_rewrite_historical_results": true,
+  "other_motors_keep_original_criterion": true,
+  "implementation_status_at_recording": "IN_PROGRESS",
+  "hardware_validated": false
+}

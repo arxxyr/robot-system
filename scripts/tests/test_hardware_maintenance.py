@@ -20,7 +20,8 @@ import run_hardware_maintenance as m
 PLAN = {'position_targets':m.TARGETS, 'position_delta_raw':24,'minimum_excursion_raw':12,'return_tolerance_raw':4,
         'position_wait_ms':800,'base_raw':[20,-20],'pulse_target_ms':150,
         'nonzero_window_fail_ns':1_000_000_000,'observed_velocity_raw_max':40,
-        'observed_wheel_delta_raw_min':3,'observed_wheel_delta_raw_max':64}
+        'observed_wheel_delta_raw_min':3,'observed_wheel_delta_raw_max':64,
+        'left7_stop_contract':m.left_stop_contract()}
 CALI = {'id':5,'range_min':73,'range_max':3864}
 
 
@@ -226,7 +227,7 @@ class OwnerTests(unittest.TestCase):
 
     def test_go_rejects_wrong_plan_missing_facts_and_expiration(self):
         plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test',
-              'position_targets':m.TARGETS, 'bindings':{'host':{'boot_id':'test'}}}
+              'left7_stop_contract':m.left_stop_contract(),'position_targets':m.TARGETS, 'bindings':{'host':{'boot_id':'test'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root','plan_sha256':m.digest(plan),
             'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],'source':'当次用户现场答复',
             'physical':{s:{**{f:True for f in m.FACTS},'confirmed_at_ns':100} for s in m.SERIALS}}
@@ -243,7 +244,7 @@ class OwnerTests(unittest.TestCase):
                'continuous_presence_until_cleanup':True,'immediate_power_cut':True}
         self.assertEqual(set(m.FACTS),set(facts))
         plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test',
-              'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
+              'left7_stop_contract':m.left_stop_contract(),'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root',
             'plan_sha256':m.digest(plan),'issued_at_ns':100,'expires_at_ns':1000,
             'host':plan['bindings']['host'],'source':'当次用户现场答复',
@@ -254,7 +255,7 @@ class OwnerTests(unittest.TestCase):
         facts={'supported':True,'unloaded':True,'area_clear':True,
                'continuous_presence_until_cleanup':True,'immediate_power_cut':True}
         plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test',
-              'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
+              'left7_stop_contract':m.left_stop_contract(),'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root',
             'plan_sha256':m.digest(plan),'issued_at_ns':100,'expires_at_ns':1000,
             'host':plan['bindings']['host'],'source':'当次用户现场答复',
@@ -284,9 +285,63 @@ def idle_rows():
             for key in m.MOTOR_KEYS}
 
 
-class SnapshotIO:
+def feedback_reference(path):
+    elf=bytearray(64);elf[:6]=b'\x7fELF\x02\x01';elf[18:20]=(183).to_bytes(2,'little')
+    path.write_bytes(elf);path.chmod(0o755);info=path.stat()
+    return {'path':str(path),'sha256':hashlib.sha256(elf).hexdigest(),'bytes':len(elf),
+            'uid':info.st_uid,'gid':info.st_gid,'mode':0o755,'device':info.st_dev,
+            'inode':info.st_ino,'mtime_ns':info.st_mtime_ns,'ctime_ns':info.st_ctime_ns,
+            'nlink':1,'symlink':False,'elf_machine':183}
+
+
+class FeedbackIO:
+    """右7只读内存端点；计时、故障及原帧可独立注入。"""
+    def __init__(self):
+        self.t=0;self.sequence=0;self.commands=[];self.calls=[]
+        self.child=None;self.interrupted=None;self.evidence_errors=[]
+        self.process_snapshots=[];self.journal=io.StringIO()
+        self.fail_at=None;self.torque_at=None;self.signal_at=None;self.bad_at=None
+        self.slow_at=None;self.slow_ns=0;self.velocity_index=0;self.position_index=0
+        self.positions=[1212]*5;self.velocities=[0,50,-50,50,0];self.goal_at=None
+    def now(self):return self.t
+    def check(self):
+        if self.interrupted:raise ValueError('只读夹具信号')
+    def mark_signal(self,signum,_frame):self.interrupted=signum
+    def sleep(self,seconds,cleanup=False):
+        if not cleanup:self.check()
+        self.t+=round(seconds*1e9)
+    def command(self,argv,**kwargs):
+        if argv[0]!=m.RIGHT_PULSE_RAW['path']:
+            if 'fuser' in argv:return ''
+            raise AssertionError(argv)
+        self.check()
+        self.sequence+=1;self.calls.append(list(argv))
+        self.commands.append({'argv':list(argv),'started_ns':self.t})
+        self.t+=10_000_000+(self.slow_ns if self.sequence==self.slow_at else 0)
+        self.commands[-1]['finished_ns']=self.t
+        if self.sequence==self.fail_at:raise OSError('夹具通信失败')
+        if self.sequence==self.signal_at:self.interrupted=signal.SIGTERM
+        register=argv[4];address,width=m.LEFT_FEEDBACK_META[register]
+        value=0
+        if register=='Torque_Enable':value=int(self.sequence==self.torque_at)
+        if register=='Goal_Velocity':value=int(self.sequence==self.goal_at)
+        if register=='Present_Position':
+            value=self.positions[self.position_index%len(self.positions)];self.position_index+=1
+        if register=='Present_Velocity':
+            value=self.velocities[self.velocity_index%len(self.velocities)];self.velocity_index+=1
+        value=abs(value)|(0x8000 if value<0 else 0)
+        tx=[255,255,254,5,130,address,width,7];tx.append((~sum(tx[2:]))&255)
+        rx=[255,255,7,width+2,0,*value.to_bytes(width,'little')];rx.append((~sum(rx[2:]))&255)
+        if self.sequence==self.bad_at:rx[-1]^=1
+        return json.dumps({'operation':'sync_read','serial_device':m.DEVICES['right'],'motor_id':7,
+                           'register':register,'requested_register_address':address,'width':width,
+                           'raw_unsigned':value,'tx':tx,'rx':rx})+'\n'
+
+
+class SnapshotIO(FeedbackIO):
     def __init__(self,rows,fail=None):
-        self.rows=rows; self.fail=fail; self.reads=[]; self.child=None; self.evidence_errors=[]
+        super().__init__()
+        self.rows=rows;self.fail=fail;self.reads=[];self.positions=[rows['right:7']['Present_Position']]*5
     def poke(self,side,motor,action,register,cleanup=False):
         key=f'{side}:{motor}'; self.reads.append((key,register,cleanup))
         if (key,register)==self.fail: raise OSError('原始READ不可得')
@@ -306,7 +361,14 @@ class ClassificationTests(unittest.TestCase):
         return json.loads(path.read_text())
 
     def finish(self,before,after,probes,*,read_fail=None,manual=False,identity_fail=None):
-        executor=SnapshotIO(after,read_fail); engine=m.ProbeEngine(executor,PLAN)
+        directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
+        reference=feedback_reference(Path(directory.name)/'b2')
+        replacement=patch.dict(m.RIGHT_PULSE_RAW,{k:reference[k] for k in ('path','sha256','bytes')},clear=True)
+        replacement.start();self.addCleanup(replacement.stop)
+        executor=SnapshotIO(after,read_fail)
+        engine=m.ProbeEngine(executor,{**PLAN,'left7_stop_contract':m.left_stop_contract(),
+                                       'bindings':{'refs':[reference]}})
+        engine.left_stop_go_check=lambda:None
         engine.rows=copy.deepcopy(probes); engine.manual_cut=manual
         report={'before':before,'error':'原精度FAIL','received_signal':None,'child_active':False,'probes':engine.rows}
         called=[]
@@ -316,7 +378,7 @@ class ClassificationTests(unittest.TestCase):
         names=['rx_trust_marker','rx_trust_marker.bak','estop_latch','estop_latch.bak','rx_trust.lock','estop_latch.lock']
         bindings={'usb':{'left':{},'right':{}},'refs':[{'path':'/first'},{'path':'/next'}],
                   'protection':{side:{name:{'path':f'/fake/{side}/{name}'} for name in names} for side in m.SERIALS}}
-        with (patch.object(m,'verify_ref',side_effect=lambda r:verifier('ref:'+r['path'])),
+        with (patch.object(m,'verify_ref',side_effect=lambda r,**k:None if r['path']==reference['path'] else verifier('ref:'+r['path'])),
                 patch.object(m,'verify_protection_file',side_effect=lambda side,name,r:verifier(f'protection:{side}/{name}')),
                 patch.object(m,'inspect_unit',side_effect=lambda io,unit,**k:verifier('service:'+unit)),
                 patch.object(m,'inspect_processes',side_effect=lambda *a,**k:verifier('process_snapshot')),
@@ -578,11 +640,17 @@ class ClassificationTests(unittest.TestCase):
             def __init__(self,tool,output):
                 self.regs=idle_rows();self.calls=[];self.child=None;self.interrupted=None;self.commands=[]
                 self.process_snapshots=[];self.evidence_errors=[];self.journal=io.StringIO();self.t=0;self.output=Path(output)
+                self.feedback=FeedbackIO();self.feedback.positions=[1000]*5;self.sequence=0
             def mark_signal(self,*args):raise AssertionError('本例不发送信号')
             def check(self):pass
             def now(self):return self.t
             def sleep(self,seconds,cleanup=False):self.t+=int(seconds*1e9)
-            def command(self,*args,**kwargs):return ''
+            def command(self,argv,**kwargs):
+                if argv[0]!=m.RIGHT_PULSE_RAW['path']:return ''
+                self.feedback.t=self.t
+                result=self.feedback.command(argv,**kwargs)
+                self.t=self.feedback.t;self.sequence=self.feedback.sequence
+                return result
             def poke(self,side,motor,action,register,value=None,cleanup=False):
                 key=f'{side}:{motor}';self.calls.append((key,action,register,value,cleanup));row=self.regs[key]
                 if action=='write':row[register]=value;return None
@@ -597,6 +665,7 @@ class ClassificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             namespace=Path(temp).resolve();root=namespace/'approved';root.mkdir();helper=root/'helper.py';helper.write_text('# 纯本机测试helper\n')
             helper_data=helper.read_bytes();protection={}
+            reference=feedback_reference(root/'b2')
             for side in m.SERIALS:
                 protection[side]={}
                 for name in ('rx_trust.lock','estop_latch.lock'):
@@ -604,14 +673,15 @@ class ClassificationTests(unittest.TestCase):
             bindings={'schema':'MAINTENANCE_BINDINGS_V1','host':{'hostname':'unit-host','uid':actual_uid,'gid':actual_gid,'boot_id':'unit-boot'},
                       'tool':{'path':'/never-access-uart','sha256':m.TOOL_SHA,'bytes':m.TOOL_BYTES},
                       'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
-                      'refs':[],'protection':protection,'binary_paths':[],'proc_helper':{'path':str(helper),'bytes':len(helper_data),'sha256':hashlib.sha256(helper_data).hexdigest()},
+                      'refs':[reference],'protection':protection,'binary_paths':[reference['path']],'proc_helper':{'path':str(helper),'bytes':len(helper_data),'sha256':hashlib.sha256(helper_data).hexdigest()},
                       'calibrations':{name:{'id':motor,'range_min':73,'range_max':3864} for side,motor,name in m.TARGETS}}
             holder={};post=[]
             def factory(tool,output):holder['io']=IntegratedIO(tool,output);return holder['io']
-            with (patch.object(m,'MAINTENANCE_NAMESPACE',namespace),patch.object(m.sys,'platform','linux'),
+            with (patch.dict(m.RIGHT_PULSE_RAW,{k:reference[k] for k in ('path','sha256','bytes')},clear=True),
+                  patch.object(m,'MAINTENANCE_NAMESPACE',namespace),patch.object(m.sys,'platform','linux'),
                   patch.object(m.os,'uname',return_value=SimpleNamespace(machine='aarch64',nodename='unit-host')),
                   patch.object(Path,'read_text',boot_or_text),patch.object(m,'RealExecutor',side_effect=factory),
-                  patch.object(m,'verify_ref'),patch.object(m,'protected_and_refs'),patch.object(m,'verify_protection_file',return_value=None),
+                  patch.object(m,'verify_ref',return_value=None),patch.object(m,'protected_and_refs'),patch.object(m,'verify_protection_file',return_value=None),
                   patch.object(m,'idle'),patch.object(m,'usb_identity',side_effect=lambda *a,**k:post.append('usb')),
                   patch.object(m,'inspect_unit',side_effect=lambda *a,**k:post.append('unit')),
                   patch.object(m,'inspect_processes',side_effect=lambda *a,**k:post.append('proc')),
@@ -628,6 +698,10 @@ class ClassificationTests(unittest.TestCase):
             self.assertEqual([p['status'] for p in report['probes']],['PASS']*4+['NOT_RUN']*3)
             self.assertEqual(report['result'],'FAIL');self.assertFalse(report['manual_power_cut_required'])
             self.assertEqual(report['stop_verification']['status'],'PASS');self.assertEqual(report['identity_verification']['status'],'PASS')
+            self.assertEqual(len(executor.feedback.calls),28)
+            self.assertTrue(report['stop_verification']['left7_stability_used'])
+            self.assertNotEqual(report['before_left7_stability']['started_ns'],report['after_left7_stability']['started_ns'])
+            json.dumps(report)
             self.assertEqual(sum(len(row) for phase in ('before','after') for row in report[phase].values()),204)
             for motor in (7,8,9):
                 calls=[c for c in executor.calls if c[0]==f'right:{motor}']
@@ -639,6 +713,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_v1_go_and_changed_artifact_root_rejected(self):
         plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/new-run','position_targets':m.TARGETS,
+              'left7_stop_contract':m.left_stop_contract(),
               'bindings':{'host':{'boot_id':'same'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root','plan_sha256':m.digest(plan),
             'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],'source':'当前现场确认',
@@ -1172,45 +1247,6 @@ class RightPulseTests(unittest.TestCase):
         self.assertEqual(m.classify_stop_snapshot(after)['status'],'PASS')
 
 
-class FeedbackIO:
-    """右7只读内存端点；计时、故障及原帧可独立注入。"""
-    def __init__(self):
-        self.t=0;self.sequence=0;self.commands=[];self.calls=[]
-        self.child=None;self.interrupted=None;self.evidence_errors=[]
-        self.process_snapshots=[];self.journal=io.StringIO()
-        self.fail_at=None;self.torque_at=None;self.signal_at=None;self.bad_at=None
-        self.slow_at=None;self.slow_ns=0;self.velocity_index=0
-    def now(self):return self.t
-    def check(self):
-        if self.interrupted:raise ValueError('只读夹具信号')
-    def mark_signal(self,signum,_frame):self.interrupted=signum
-    def sleep(self,seconds,cleanup=False):
-        if not cleanup:self.check()
-        self.t+=round(seconds*1e9)
-    def command(self,argv,**kwargs):
-        if argv[0]!=m.RIGHT_PULSE_RAW['path']:
-            if 'fuser' in argv:return ''
-            raise AssertionError(argv)
-        self.check()
-        self.sequence+=1;self.calls.append(list(argv))
-        self.commands.append({'argv':list(argv),'started_ns':self.t})
-        self.t+=10_000_000+(self.slow_ns if self.sequence==self.slow_at else 0)
-        self.commands[-1]['finished_ns']=self.t
-        if self.sequence==self.fail_at:raise OSError('夹具通信失败')
-        if self.sequence==self.signal_at:self.interrupted=signal.SIGTERM
-        register=argv[4];address,width=m.LEFT_FEEDBACK_META[register]
-        value=0
-        if register=='Torque_Enable':value=int(self.sequence==self.torque_at)
-        if register=='Present_Position':value=1212
-        if register=='Present_Velocity':
-            value=(0,50,-50,50,0)[self.velocity_index];self.velocity_index+=1
-        value=abs(value)|(0x8000 if value<0 else 0)
-        tx=[255,255,254,5,130,address,width,7];tx.append((~sum(tx[2:]))&255)
-        rx=[255,255,7,width+2,0,*value.to_bytes(width,'little')];rx.append((~sum(rx[2:]))&255)
-        if self.sequence==self.bad_at:rx[-1]^=1
-        return json.dumps({'operation':'sync_read','serial_device':m.DEVICES['right'],'motor_id':7,
-                           'register':register,'requested_register_address':address,'width':width,
-                           'raw_unsigned':value,'tx':tx,'rx':rx})+'\n'
 
 
 class LeftFeedbackTests(unittest.TestCase):
@@ -1251,13 +1287,46 @@ class LeftFeedbackTests(unittest.TestCase):
     def engine(self):
         return m.ProbeEngine(FeedbackIO(),self.plan())
 
-    def test_fixed_twelve_reads_record_fifty_without_stop_pass(self):
+    def snapshot_engine(self,pv=0,guard=False):
+        rows=idle_rows();rows['right:7']['Present_Velocity']=pv
+        executor=SnapshotIO(rows)
+        engine=m.ProbeEngine(executor,self.plan());engine.left_stop_go_check=lambda:None
+        if guard:
+            raw_command=executor.command
+            def command(argv,**kwargs):
+                if argv[0]==m.RIGHT_PULSE_RAW['path']:
+                    return raw_command(argv,**kwargs)
+                self.assertEqual(argv[0],m.RIGHT_PULSE_WRITE['path'])
+                self.assertEqual(argv[3],'read')
+                side=next(side for side in m.SERIALS if m.DEVICES[side]==argv[1])
+                key=f'{side}:{argv[2]}';register=argv[4]
+                executor.reads.append((key,register,kwargs.get('cleanup',False)))
+                executor.sequence+=1;executor.t+=1_000_000
+                return f'read {register}@{argv[2]} = {rows[key][register]}\n'
+            executor.command=command
+            executor.tool=m.RIGHT_PULSE_WRITE
+            executor.poke=lambda *args,**kwargs:m.RealExecutor.poke(executor,*args,**kwargs)
+            helper=SimpleNamespace(META=m.LEFT_FEEDBACK_META,install_stop_wire_capture=lambda module:None)
+            m.install_right_pulse_guard(engine,helper)
+        return engine
+
+    def guard_patches(self):
+        stack=contextlib.ExitStack()
+        verify=m.verify_ref
+        stack.enter_context(patch.object(m,'verify_ref',side_effect=
+            lambda ref,**kwargs:verify(ref,**kwargs) if ref['path']==self.reference['path'] else None))
+        stack.enter_context(patch.object(m,'capture_right_pulse_wire',
+            side_effect=lambda executor,argv,original,attempt,**kwargs:original(argv,**kwargs)))
+        stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+        return stack
+
+    def test_fixed_fourteen_reads_record_fifty_without_whole_stop_pass(self):
         engine=self.engine();m.run_left_wheel_feedback(engine,lambda:None)
         row=engine.rows[0]
-        self.assertEqual(row['status'],'DIAGNOSTIC_CAPTURED')
+        self.assertEqual(row['status'],'PASS')
         self.assertFalse(row['stop_verified']);self.assertFalse(row['same_frame'])
         self.assertEqual([c[4] for c in engine.io.calls],
-                         ['Torque_Enable']+['Present_Position','Present_Velocity']*5+['Torque_Enable'])
+                         ['Torque_Enable','Goal_Velocity']+['Present_Position','Present_Velocity']*5+['Goal_Velocity','Torque_Enable'])
         self.assertTrue(all(c[:4]==[self.reference['path'],m.DEVICES['right'],'7','read-raw']
                             for c in engine.io.calls))
         pv=[s['raw']['raw_unsigned'] for s in row['samples'] if s['register']=='Present_Velocity']
@@ -1267,33 +1336,208 @@ class LeftFeedbackTests(unittest.TestCase):
         self.assertTrue(all(s['finished_ns']>s['started_ns'] for s in row['samples']))
         self.assertFalse(engine.manual_cut)
         with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
-        self.assertEqual(len(engine.io.calls),12)
+        self.assertEqual(len(engine.io.calls),14)
 
     def test_every_read_fault_stops_without_retry_or_final_torque_read(self):
         for fault in ('fail_at','bad_at','signal_at'):
-            for index in range(1,13):
+            for index in range(1,15):
                 engine=self.engine();setattr(engine.io,fault,index)
                 with self.subTest(fault=fault,index=index),self.assertRaises((ValueError,OSError)):
                     m.run_left_wheel_feedback(engine,lambda:None)
                 self.assertEqual(len(engine.io.calls),index)
                 self.assertTrue(engine.rows[0]['uart_blocked']);self.assertTrue(engine.manual_cut)
                 self.assertEqual(engine.rows[0]['status'],'FAIL')
-        for index in (1,12):
+        for index in (1,14):
             engine=self.engine();engine.io.torque_at=index
             with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
             self.assertEqual(len(engine.io.calls),index)
             self.assertEqual(engine.rows[0]['samples'][-1]['raw']['raw_unsigned'],1)
+        for index in (2,13):
+            engine=self.engine();engine.io.goal_at=index
+            with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
+            self.assertEqual(len(engine.io.calls),index)
+            self.assertTrue(engine.manual_cut)
+
+    def test_stability_rejects_motion_span_two_bad_speed_and_negative_zero(self):
+        for positions in ([1212,1213,1214,1215,1216],[1212,1212,1212,1212,1214],
+                          [4095,0,0,0,0],[-1]*5,[4096]*5):
+            engine=self.engine();engine.io.positions=positions
+            with self.subTest(positions=positions),self.assertRaises((ValueError,OverflowError)):
+                m.run_left_wheel_feedback(engine,lambda:None)
+            self.assertTrue(engine.manual_cut)
+        for velocity in (49,51,-49,-51,0x8000):
+            for index in range(5):
+                engine=self.engine();engine.io.velocities=[0]*5;engine.io.velocities[index]=velocity
+                with self.subTest(velocity=velocity,index=index),self.assertRaises(ValueError):
+                    m.run_left_wheel_feedback(engine,lambda:None)
+                self.assertEqual(len(engine.io.calls),4+index*2)
+                self.assertTrue(engine.manual_cut)
+
+    def test_snapshot_fresh_window_for_zero_and_fifty_and_original_pv_preserved(self):
+        for pv in (0,50,-50):
+            engine=self.snapshot_engine(pv)
+            values,errors=m.snapshot(engine.io,engine=engine)
+            self.assertEqual(errors,[]);self.assertEqual(len(engine.io.calls),14)
+            self.assertEqual(len(engine.io.reads),102)
+            m.validate_snapshot(values,engine=engine)
+            result=m.classify_stop_snapshot(values,engine=engine)
+            self.assertEqual(result['status'],'PASS')
+            self.assertTrue(result['left7_stability_used'])
+            self.assertEqual(result['observed']['right:7']['Present_Velocity'],pv)
+            if pv:
+                with self.assertRaises(ValueError):m.validate_snapshot(values)
+                self.assertEqual(m.classify_stop_snapshot(values)['status'],'FAIL')
+            original_evidence=engine.left_stop_evidence
+            next_values,next_errors=m.snapshot(engine.io,engine=engine)
+            self.assertEqual(next_errors,[]);self.assertEqual(len(engine.io.calls),28)
+            self.assertIsNot(original_evidence,engine.left_stop_evidence)
+            with self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
+            self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'UNKNOWN')
+            m.validate_snapshot(next_values,engine=engine)
+            json.dumps({'before':values,'before_window':original_evidence,
+                        'after':next_values,'after_window':engine.left_stop_evidence})
+
+    def test_missing_old_json_or_failed_next_window_cannot_supply_receipt(self):
+        for pv in (0,50,-50):
+            engine=self.snapshot_engine(pv);values,errors=m.snapshot(engine.io,engine=engine)
+            copied=json.loads(json.dumps(values))
+            with self.assertRaises(ValueError):m.validate_snapshot(copied,engine=engine)
+            self.assertEqual(m.classify_stop_snapshot(copied,engine=engine)['status'],'UNKNOWN')
+            receipt=engine.left_stop_receipt
+            for invalid in (None,{'status':'PASS','values':values,'evidence':engine.left_stop_evidence}):
+                engine.left_stop_receipt=invalid
+                with self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
+                self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'UNKNOWN')
+            engine.left_stop_receipt=receipt
+            engine.io.fail_at=engine.io.sequence+1
+            after,errors=m.snapshot(engine.io,engine=engine)
+            self.assertTrue(errors);self.assertIsNone(engine.left_stop_receipt)
+            self.assertEqual(m.classify_stop_snapshot(after,errors,engine=engine)['status'],'UNKNOWN')
+            count=len(engine.io.calls);m.snapshot(engine.io,cleanup=True,engine=engine)
+            self.assertEqual(len(engine.io.calls),count)
+
+    def test_snapshot_anchor_and_mode_are_not_lost_before_window(self):
+        engine=self.snapshot_engine(50);engine.io.positions=[1002]*5
+        values,errors=m.snapshot(engine.io,engine=engine)
+        self.assertTrue(errors);self.assertEqual(len(engine.io.calls),3)
+        self.assertEqual(engine.left_stop_evidence['anchor_raw'],1000)
+        self.assertEqual(m.classify_stop_snapshot(values,errors,engine=engine)['status'],'UNKNOWN')
+        for register,value in (('Operating_Mode',0),('Torque_Enable',1),('Goal_Velocity',1),
+                               ('Present_Velocity',49),('Present_Position',4096)):
+            engine=self.snapshot_engine();engine.io.rows['right:7'][register]=value
+            values,errors=m.snapshot(engine.io,engine=engine)
+            self.assertTrue(errors);self.assertTrue(engine.manual_cut)
+            if register!='Present_Position':self.assertEqual(engine.io.calls,[])
+
+    def test_recompute_raw_evidence_instead_of_status_or_pass_boolean(self):
+        for change in ('missing','bad_frame','bad_time','bad_offset','wrong_plan','wrong_anchor','error'):
+            engine=self.snapshot_engine(50);values,_=m.snapshot(engine.io,engine=engine)
+            evidence=engine.left_stop_evidence
+            evidence['status']='PASS';evidence['pass']=True
+            if change=='missing':evidence['samples'].pop()
+            if change=='bad_frame':evidence['samples'][3]['raw']['rx'][-1]^=1
+            if change=='bad_time':evidence['finished_ns']=evidence['deadline_ns']+1
+            if change=='bad_offset':evidence['samples'][4]['scheduled_offset_ns']=0
+            if change=='wrong_plan':evidence['plan_sha256']='0'*64
+            if change=='wrong_anchor':evidence['anchor_raw']+=1
+            if change=='error':evidence['samples'][-1]['error']='已失败'
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                m.validate_snapshot(values,engine=engine)
+            self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'UNKNOWN')
+
+    def test_other_motor_nonzero_never_uses_left_wheel_exception(self):
+        for key in ('right:8','right:9','left:7','left:1','right:5'):
+            for register in m.STOP_REGS:
+                engine=self.snapshot_engine(50);values,_=m.snapshot(engine.io,engine=engine)
+                values[key][register]=50
+                with self.subTest(key=key,register=register),self.assertRaises(ValueError):
+                    m.validate_snapshot(values,engine=engine)
+                self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'FAIL')
+        for register in ('Torque_Enable','Goal_Velocity'):
+            engine=self.snapshot_engine(50);values,_=m.snapshot(engine.io,engine=engine)
+            values['right:7'][register]=1
+            with self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
+            self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'FAIL')
+
+    def test_guard_snapshot_and_final_classifier_agree_and_cleanup_window_is_independent(self):
+        with self.guard_patches():
+            for pv in (0,50,-50):
+                engine=self.snapshot_engine(pv,guard=True)
+                before,errors=m.snapshot(engine.io,engine=engine)
+                self.assertEqual(errors,[]);m.validate_snapshot(before,engine=engine)
+                self.assertEqual(m.classify_stop_snapshot(before,engine=engine)['status'],'PASS')
+                engine.right_pulse['observation_deadline_ns']=0
+                engine.right_pulse['normal_failed']=True
+                after,errors=m.snapshot(engine.io,cleanup=True,engine=engine)
+                self.assertEqual(errors,[]);self.assertEqual(len(engine.io.calls),28)
+                self.assertEqual(m.classify_stop_snapshot(after,engine=engine)['status'],'PASS')
+                self.assertTrue(all(argv[3]=='read-raw' for argv in engine.io.calls))
+
+    def test_guard_only_buffers_exact_left_wheel_values_and_blocks_after_window_failure(self):
+        with self.guard_patches():
+            for side,motor,register,value in (
+                ('right',7,'Present_Velocity',49),('right',7,'Present_Velocity',51),
+                ('right',8,'Present_Velocity',50),('right',9,'Present_Velocity',-50),
+                ('left',7,'Present_Velocity',50),('left',1,'Present_Velocity',50),
+                ('right',7,'Torque_Enable',1),('right',7,'Goal_Velocity',1)):
+                engine=self.snapshot_engine(guard=True)
+                engine.io.rows[f'{side}:{motor}'][register]=value
+                with self.assertRaises(ValueError):engine.io.poke(side,motor,'read',register)
+                count=len(engine.io.reads)
+                with self.assertRaises(ValueError):engine.io.poke('right',7,'read','Torque_Enable',cleanup=True)
+                self.assertEqual(len(engine.io.reads),count);self.assertTrue(engine.manual_cut)
+            for fault in ('bad_at','signal_at','fail_at','slow_at'):
+                engine=self.snapshot_engine(guard=True)
+                setattr(engine.io,fault,91);engine.io.slow_ns=1_500_000_000
+                values,errors=m.snapshot(engine.io,engine=engine)
+                self.assertTrue(errors);self.assertTrue(engine.right_pulse['uart_blocked'])
+                self.assertTrue(engine.manual_cut)
+                count=len(engine.io.calls)+len(engine.io.reads)
+                with self.assertRaises(ValueError):
+                    engine.io.command([m.RIGHT_PULSE_RAW['path'],m.DEVICES['right'],'9','read-raw','Torque_Enable'])
+                self.assertEqual(len(engine.io.calls)+len(engine.io.reads),count)
+
+    def test_window_only_allows_four_raw_reads_and_never_writes(self):
+        with self.guard_patches():
+            for argv in (
+                [m.RIGHT_PULSE_WRITE['path'],m.DEVICES['right'],'9','write','Torque_Enable','0'],
+                [m.RIGHT_PULSE_RAW['path'],m.DEVICES['right'],'9','sync-zero'],
+                [m.RIGHT_PULSE_RAW['path'],m.DEVICES['right'],'8','read-raw','Present_Position'],
+                [m.RIGHT_PULSE_RAW['path'],m.DEVICES['right'],'7','read-raw','Goal_Position']):
+                engine=self.snapshot_engine(guard=True)
+                with self.assertRaises(ValueError):
+                    m.collect_left_stop_window(engine,lambda:engine.io.command(argv))
+                self.assertEqual(engine.io.calls,[]);self.assertTrue(engine.right_pulse['uart_blocked'])
+            engine=self.snapshot_engine(guard=True)
+            with self.assertRaises(ValueError):
+                engine.io.command([m.RIGHT_PULSE_RAW['path'],m.DEVICES['right'],'7','read-raw','Torque_Enable'])
+            self.assertEqual(engine.io.calls,[])
+
+    def test_new_plan_contract_required_and_old_plan_go_cannot_release(self):
+        plan=self.plan();go=self.go(plan,100)
+        for mutation in ('missing','old12','span','velocity','budget'):
+            bad=copy.deepcopy(plan)
+            if mutation=='missing':del bad['left7_stop_contract']
+            if mutation=='old12':bad['left7_stop_contract']['reads']=12
+            if mutation=='span':bad['left7_stop_contract']['position_span_max']=2
+            if mutation=='velocity':bad['left7_stop_contract']['present_velocity_raw_unsigned'].append(51)
+            if mutation=='budget':bad['left7_stop_contract']['capture_budget_ns']+=1
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                m.validate_go(go,bad,200)
+        old=copy.deepcopy(plan);del old['left7_stop_contract']
+        old_go=self.go(old,100)
+        with self.assertRaises(ValueError):m.validate_go(old_go,plan,200)
 
     def test_deadline_and_go_expiry_keep_last_frame_then_stop(self):
-        for index in (1,5,12):
+        for index in (1,5,14):
             engine=self.engine();engine.io.slow_at=index;engine.io.slow_ns=1_500_000_000
-            with self.assertRaisesRegex(ValueError,'窗口'):m.run_left_wheel_feedback(engine,lambda:None)
+            with self.assertRaisesRegex(ValueError,'超窗'):m.run_left_wheel_feedback(engine,lambda:None)
             self.assertEqual(len(engine.io.calls),index)
             self.assertIn('raw',engine.rows[0]['samples'][-1])
         engine=self.engine()
         with self.assertRaisesRegex(ValueError,'GO'):
-            m.run_left_wheel_feedback(engine,lambda:m.require(engine.io.now()<1_035_000_000,'夹具GO到期'))
-        self.assertEqual(len(engine.io.calls),12)
+            m.run_left_wheel_feedback(engine,lambda:m.require(engine.io.now()<1_055_000_000,'夹具GO到期'))
+        self.assertEqual(len(engine.io.calls),14)
         self.assertIn('raw',engine.rows[0]['samples'][-1])
 
     def test_tool_identity_and_prelaunch_expiry_reject_before_uart(self):
@@ -1308,7 +1552,7 @@ class LeftFeedbackTests(unittest.TestCase):
             m.run_left_wheel_feedback(engine,lambda:(_ for _ in ()).throw(ValueError('GO已失效')))
         self.assertEqual(engine.io.calls,[])
         with self.assertRaises(ValueError):
-            m.left_feedback_raw(engine.io,self.reference,'Goal_Velocity',lambda:None)
+            m.left_feedback_raw(engine.io,self.reference,'Goal_Position',lambda:None)
         self.assertEqual(engine.io.calls,[])
         engine=self.engine()
         with patch.object(m,'verify_ref',side_effect=lambda *a,**k:setattr(engine.io,'t',1_500_000_000)):
@@ -1357,7 +1601,13 @@ class LeftFeedbackTests(unittest.TestCase):
         with self.assertRaises(ValueError):m.validate_go(go,plan,200)
 
     def test_execute_reuses_locks_postchecks_but_never_snapshots_or_writes(self):
-        for fault in (None,3,'post'):
+        self.check_execute_cases((None,3,'post'))
+
+    def test_final_journal_or_report_failure_revokes_candidate_pass(self):
+        self.check_execute_cases(('journal','report'))
+
+    def check_execute_cases(self,faults):
+        for fault in faults:
             root=self.root/str(fault);root.mkdir()
             helper=root/'helper.py';helper.write_text('# 本机空helper\n')
             bindings=self.bindings();bindings['proc_helper']={'path':str(helper)}
@@ -1368,6 +1618,15 @@ class LeftFeedbackTests(unittest.TestCase):
                     path=root/f'{side}-{name}';path.write_bytes(b'unchanged\n')
                     bindings['protection'][side][name]={'path':str(path)}
             executor=FeedbackIO();executor.fail_at=fault
+            if fault=='journal':
+                class FailedClose(io.StringIO):
+                    def close(self):raise OSError('注入日志关闭失败')
+                executor.journal=FailedClose()
+            write_new=m.write_new
+            def write_report(path,value):
+                if fault=='report' and Path(path).name=='run.json':
+                    raise OSError('注入最终报告保存失败')
+                return write_new(path,value)
             read_text=Path.read_text
             def read_boot(path,*args,**kwargs):
                 return 'unit-boot' if str(path)=='/proc/sys/kernel/random/boot_id' else read_text(path,*args,**kwargs)
@@ -1382,18 +1641,27 @@ class LeftFeedbackTests(unittest.TestCase):
                   patch.object(m,'snapshot',side_effect=AssertionError('只读不可整机snapshot')) as snapshot,
                   patch.object(m,'run_motion_probes',side_effect=AssertionError('不可动作')) as motion,
                   patch.object(m,'finish_verification',side_effect=AssertionError('不可STOP收尾')) as finish,
-                  patch.object(m.signal,'signal'),contextlib.redirect_stdout(io.StringIO())):
+                  patch.object(m,'write_new',side_effect=write_report),
+                  patch.object(m.signal,'signal'),contextlib.redirect_stdout(io.StringIO()) as messages):
                 plan=m.make_plan(bindings,root/'run','feedback',root,left_wheel_feedback_only=True)
                 go=self.go(plan,m.time.time_ns());approval=root/'go.json';m.write_new(approval,go)
                 self.assertEqual(m.execute(plan,go,approval),0 if fault is None else 1)
                 snapshot.assert_not_called();motion.assert_not_called();finish.assert_not_called()
                 self.assertEqual(process.call_count,1)
-            report=json.loads((root/'run/run.json').read_text())
+            if fault=='report':
+                self.assertFalse((root/'run/run.json').exists())
+                report=json.loads(messages.getvalue().splitlines()[-1])
+                self.assertIn('report_write_error',report)
+            else:
+                report=json.loads((root/'run/run.json').read_text())
+            if fault=='journal':self.assertIn('journal_close_error',report)
             self.assertEqual(report['result'],'DIAGNOSTIC_CAPTURED' if fault is None else 'NEEDS_MANUAL_POWER_CUT')
+            self.assertEqual(report['left7_candidate_verification']['status'],'PASS' if fault is None else 'FAIL')
             self.assertEqual(report['stop_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
-            self.assertEqual(report['identity_verification']['status'],'FAIL' if fault=='post' else 'PASS')
+            expected_identity={'post':'FAIL','journal':'UNKNOWN'}.get(fault,'PASS')
+            self.assertEqual(report['identity_verification']['status'],expected_identity)
             self.assertEqual(len(report['owned_locks']),4)
-            self.assertEqual(len(executor.calls),3 if fault==3 else 12)
+            self.assertEqual(len(executor.calls),3 if fault==3 else 14)
             self.assertTrue(Path(str(approval)+'.consumed').exists())
             self.assertFalse(report['deployable'])
 
