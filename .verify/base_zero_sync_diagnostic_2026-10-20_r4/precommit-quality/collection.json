@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "files": 8,
+  "bytes": 7369,
+  "all_sha256_match": true,
+  "local_source_matches_before_and_after": true
+}

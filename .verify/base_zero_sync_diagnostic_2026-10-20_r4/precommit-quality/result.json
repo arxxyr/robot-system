@@ -1,0 +1,70 @@
+{
+  "status": "PASS",
+  "steps": [
+    {
+      "name": "rustc-before",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T08:49:18.966125+00:00",
+      "pid": 709208,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T08:49:18.990009+00:00",
+      "reaped": true
+    },
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "started_at": "2026-10-20T08:49:18.990650+00:00",
+      "pid": 709214,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T08:49:22.368737+00:00",
+      "reaped": true
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at": "2026-10-20T08:49:22.451791+00:00",
+      "pid": 709225,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T08:49:23.201189+00:00",
+      "reaped": true
+    },
+    {
+      "name": "rustc-after",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T08:49:23.201809+00:00",
+      "pid": 709241,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T08:49:23.224685+00:00",
+      "reaped": true
+    }
+  ],
+  "uart": 0,
+  "services": 0,
+  "tests": 0,
+  "release_builds": 0,
+  "started_at": "2026-10-20T08:49:18.860387+00:00",
+  "source_count": 597,
+  "source_manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "existing_compilers": [],
+  "source_unchanged": true,
+  "finished_at": "2026-10-20T08:49:23.306528+00:00"
+}

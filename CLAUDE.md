@@ -50,16 +50,20 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-20 网络恢复，10/19右9原SYNC零速R3的691原件/941208B已回收并逐SHA核对。
-           独立原帧复核通过：仅右9三写，SYNC后540.9ms才尝试Enable，TE1/TE0应答有效。
-           三次启用PV原字均0，最晚411.7ms完成；STOP51全零、93项身份后验通过，337直属child回收。
-           原run整体FAIL仅因BASE_FIRMWARE_CONTRACT_UNVERIFIED，人工断电标志false；不改写原结果。
-           同$84/%120/PID698162终态复核、PID消失、两串口四锁无占用，已清理仅本次dead pane。
-           用户对轮动观察答“再试一下”，R3实际轮动仍UNKNOWN；±50本次未复现，原因仍OPEN。
-           base_zero_sync_diagnostic_2026-10-19_r3/summary.json；原网络NOT_RUN保留，当前提交质量检查通过。
-           Orin最新nightly 07e526db9下实际fmt→根Clippy零警告，597源前后同ae00cf4f。
-           R4复用原候选，仅改输出路径；61refs/保护和两USB匹配，尚无新现场确认/GO/UART。
-           D15 OPEN/DEFERRED、deployable=false不变；下一步等待R4当前现场确认。
+本轮最新:  2026-10-20 右9原SYNC零速R4仅执行一次，PV三次原字均0；STOP51和93项身份通过。
+           337直属child回收；同$86/%122/PID708705终态dead1/exit1、PID消失、两串口四锁释放已核。
+           692份原件942266B已逐SHA回收及独立复核；仅本次dead pane已清理。
+           用户明确报告右轮/前轮都没动；该物理观察仅计R4，不回填R3 UNKNOWN或历史±50。
+           原整体FAIL仅因BASE_FIRMWARE_CONTRACT_UNVERIFIED，manual_power_cut_required=false。
+           base_zero_sync_diagnostic_2026-10-20_r4/summary.json；±50未复现，根因仍OPEN。
+           既有维护脚本新增固定--right-wheel-pulse：右9预置+500raw，Enable起500ms内两对PV/PP，
+           采完立即TE0，确认TE/PV零后才SYNC清GV，再原STOP51；无Phase/模式或其他电机写。
+           本机/Orin同62项、默认PLAN/缺GO拒绝、独审及61refs/当前USB无UART准备通过。
+           维护脚本b3296137/测试fed9f7fe；PLAN450df179，right_wheel_pulse_2026-10-20_r1/summary.json。
+           原pulse的raw20/150ms若细单位成立仅约0.26°，PV≤40又小于厂家约50raw精度；
+           量化仅为假设，不解释静止异常或放宽STOP51。非零动作未执行，等待当前现场条件。
+           Rust未改；nightly07e526db9下实际fmt→根Clippy通过，597源同ae00cf4f，两Python另核。
+           D15 OPEN/DEFERRED、deployable=false保持。
 
 近次只读:  2026-10-19 前轮right8三项只读实机通过：TE=0，SYNC/普通PV原字均0000。
            当次现场确认后复用既有b2入口，05:55:16–19UTC完成，九发九收校验正确。

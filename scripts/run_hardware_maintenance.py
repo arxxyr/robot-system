@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 
 TOOL_SHA = "f2014ee4008311e7a8725235a39f0d1b3913391f17cbd977b7441f120539114b"
 TOOL_BYTES = 1469904
@@ -39,6 +40,44 @@ TARGETS = [("left", 5, "left_arm_wrist_roll"), ("right", 5, "right_arm_wrist_rol
            ("left", 7, "head_motor_1"), ("left", 8, "head_motor_2")]
 POSITION_TARGETS = dict(zip(('left-wrist', 'right-wrist', 'head-1', 'head-2'), TARGETS))
 BASE_TARGETS = [('right',8,'base_front_wheel'),('right',7,'base_left_wheel'),('right',9,'base_right_wheel')]
+RIGHT_PULSE_SCOPE = '仅右9一次Goal_Velocity+500原始值→Enable起500ms两次速度/位置观察→独立Disable→确认静止后SYNC零目标及原STOP51；三轮已架空稳定支撑并持续观察'
+RIGHT_PULSE_RAW = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke',
+                   'sha256':'b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94','bytes':1507224}
+RIGHT_PULSE_HELPER = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py',
+                      'sha256':'70d777bd5c2a19e2ce3f57e68f9abd40eaed2b8a9aa8c592e7fe53a940f1e38c','bytes':12220}
+RIGHT_PULSE_TRACE = {'path':'/usr/bin/strace',
+                     'sha256':'5392f54d889a87341d49f970d91e21ab8c1f70a835ac9ead6ee4d17e532ae7f7','bytes':1583504}
+RIGHT_PULSE_WRITE = {'path':'/home/loosqk/robot-checks/h2-serial-recovery-20260930-r1/readback-tool-r1/feetech_poke',
+                     'sha256':TOOL_SHA,'bytes':TOOL_BYTES}
+RIGHT_PULSE_METADATA = {'Model_Number':777,'Firmware_Major_Version':3,'Firmware_Minor_Version':10,
+                        'Operating_Mode':1,'Phase':12,'Lock':1}
+
+
+def right_pulse_contract():
+    return {'scope':RIGHT_PULSE_SCOPE,'target':['right',9,'base_right_wheel'],'raw_velocity':500,
+            'observation_ns':500_000_000,'sample_offsets_ns':[100_000_000,400_000_000],
+            'nonzero_window_fail_ns':1_000_000_000,'velocity_raw_max':1000,'position_delta_raw_max':512,
+            'metadata':dict(RIGHT_PULSE_METADATA),'raw_tool':dict(RIGHT_PULSE_RAW),
+            'raw_helper':dict(RIGHT_PULSE_HELPER),'strace':dict(RIGHT_PULSE_TRACE),
+            'write_tool':dict(RIGHT_PULSE_WRITE),'firmware_contract_verified':False,
+            'limitations':['原始值尚未标定物理单位；500ms/1s是软件观察/失败门，不是硬件自动截止',
+                           '只诊断一次正向动作，不改变Phase/模式/保护、三轮合同或生产Velocity链']}
+
+
+def validate_right_pulse_plan(plan):
+    require(plan.get('position_targets') == [] and plan.get('right_wheel_pulse') == right_pulse_contract(),
+            '右轮诊断必须空位置目标及完整固定合同')
+    bindings=plan['bindings']
+    matches=lambda actual,expected: isinstance(actual,dict) and all(actual.get(key)==value for key,value in expected.items())
+    require(matches(bindings.get('tool'),RIGHT_PULSE_WRITE), '右轮诊断必须原冻结f201完整引用')
+    refs=(RIGHT_PULSE_WRITE,RIGHT_PULSE_RAW,RIGHT_PULSE_HELPER,RIGHT_PULSE_TRACE)
+    require(all(any(matches(actual,reference) for actual in bindings.get('refs',[])) for reference in refs),
+            '右轮工具/helper/strace引用缺失')
+    require(all(reference['path'] in bindings.get('binary_paths',[])
+                for reference in (RIGHT_PULSE_WRITE,RIGHT_PULSE_RAW,RIGHT_PULSE_TRACE)), '右轮二进制绑定缺失')
+    require(plan.get('base_targets') == [{'side':side,'motor':motor,'name':name,'decision':'DEFERRED',
+             'reason_code':'BASE_FIRMWARE_CONTRACT_UNVERIFIED'} for side,motor,name in BASE_TARGETS],
+            '三轮固件合同必须仍DEFERRED')
 
 
 def require(value, reason):
@@ -119,6 +158,9 @@ def select_position_targets(names=None):
 
 def position_targets_from_plan(plan):
     """执行只接受计划中已绑定的目标；不从全局四项列表补跑未选电机。"""
+    if 'right_wheel_pulse' in plan:
+        validate_right_pulse_plan(plan)
+        return []
     values = plan.get('position_targets')
     require(isinstance(values, (list, tuple)) and values, '缺少非空位置目标计划')
     targets = []
@@ -133,8 +175,10 @@ def position_targets_from_plan(plan):
     return targets
 
 
-def make_plan(bindings, output, run_id, artifact_root, position_target_names=None):
-    position_targets = select_position_targets(position_target_names)
+def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False):
+    require(type(right_wheel_pulse) is bool and not (right_wheel_pulse and position_target_names is not None),
+            '右轮诊断禁止混用位置选择')
+    position_targets = [] if right_wheel_pulse else select_position_targets(position_target_names)
     require(bindings["schema"] == "MAINTENANCE_BINDINGS_V1", "绑定 schema 错误")
     require(bindings["tool"]["sha256"] == TOOL_SHA and bindings["tool"]["bytes"] == TOOL_BYTES,
             "必须采用 root 指定冻结 poke")
@@ -148,7 +192,7 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
     script = Path(__file__).read_bytes()
     root=validate_artifact_root(artifact_root)
     require(Path(output).is_relative_to(root) and Path(output)!=root,'输出不在显式维护根目录内')
-    return {"schema": "MAINTENANCE_PLAN_V2", "run_id": run_id, "output": str(output), "artifact_root":str(root),
+    plan = {"schema": "MAINTENANCE_PLAN_V2", "run_id": run_id, "output": str(output), "artifact_root":str(root),
             "bindings": bindings, "script_sha256": hashlib.sha256(script).hexdigest(), "script_bytes": len(script),
             "position_targets": position_targets, "position_delta_raw": 24, "minimum_excursion_raw": 12,
             "return_tolerance_raw": 4, "position_wait_ms": 800, "base_order": [8, 7, 9],
@@ -159,6 +203,11 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
             "limitations": ["停止寄存器证据不替代物理独立断电确认",
                             "base仅mode1/Goal0合同；Model/Phase解释门未闭合，本软件结果不授权新base动作"],
             "scope": "单电机独立维护动作/停止验证；非整车运动学、S0/S1接入、H2/D15或生产验收"}
+    if right_wheel_pulse:
+        plan['right_wheel_pulse']=right_pulse_contract()
+        plan['scope']=RIGHT_PULSE_SCOPE
+        validate_right_pulse_plan(plan)
+    return plan
 
 
 def validate_go(go, plan, now_ns):
@@ -178,6 +227,17 @@ def validate_go(go, plan, now_ns):
         require(type(facts["confirmed_at_ns"]) is int
                 and go["issued_at_ns"] - 3600_000_000_000 <= facts["confirmed_at_ns"] <= now_ns,
                 "现场确认时间错误")
+    if 'right_wheel_pulse' in plan:
+        facts=go['physical']['right']
+        require(0 < go['expires_at_ns']-go['issued_at_ns'] <= 600_000_000_000
+                and 0 <= now_ns-facts['confirmed_at_ns'] <= 600_000_000_000,
+                '右轮诊断现场/GO最多600秒')
+        require(all(facts.get(key) is True for key in ('all_three_wheels_off_ground','base_stably_supported',
+                    'continuous_wheel_observation'))
+                and facts.get('base_confirmation_kind')=='CURRENT_SETUP_READY'
+                and facts.get('base_confirmation_scope')==RIGHT_PULSE_SCOPE
+                and isinstance(facts.get('base_confirmation_answer'),str) and facts['base_confirmation_answer'].strip(),
+                '缺本轮架空支撑/持续观察及具体动作现场确认')
 
 
 class RealExecutor:
@@ -492,6 +552,257 @@ class ProbeEngine:
         require(row["status"] == "PASS", f"轮维护失败：{row}")
 
 
+def load_right_pulse_helper():
+    """仅复用原帧校验/停止抓帧，不调用历史试验入口或其旧源码加载器。"""
+    for reference in (RIGHT_PULSE_WRITE,RIGHT_PULSE_RAW,RIGHT_PULSE_TRACE):
+        verify_ref(reference,executable=True)
+    verify_ref(RIGHT_PULSE_HELPER)
+    spec=importlib.util.spec_from_file_location('maintenance_right_pulse_raw',RIGHT_PULSE_HELPER['path'])
+    helper=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    helper.RAW_TOOL=dict(RIGHT_PULSE_RAW)
+    helper.META={**helper.META,'Present_Position':(56,2)}
+    return helper
+
+
+def capture_right_pulse_write(io,argv,original,attempt,**kwargs):
+    """同一次命令保留四动作wire；抓帧故障不阻止独立TE0，绝不重发动作。"""
+    def trace_error(error):
+        attempt.setdefault('trace_errors',[]).append(repr(error))
+        io.evidence_errors.append('right_pulse_write_trace:'+repr(error))
+
+    try:
+        verify_ref(RIGHT_PULSE_TRACE,executable=True)
+        trace=io.output/f'right9-pulse-write-command_{io.sequence+1:04d}.strace'
+        with trace.open('xb'):
+            pass
+    except BaseException as error:
+        trace_error(error)
+        if kwargs.get('cleanup') and argv[-3:]==['write','Torque_Enable','0']:
+            # 这里尚未启动child：只执行这一笔原始断扭，不是失败后重发。
+            attempt['untraced_disable_stdout']=original(argv,**kwargs)
+        raise
+    sync=argv[3]=='sync-zero'
+    velocity=sync or argv[4]=='Goal_Velocity'
+    succeeded=False
+    try:
+        text=original([RIGHT_PULSE_TRACE['path'],'-ttt','-xx','-s','256','-yy','-e',
+                       'trace=openat,close,read,write,ioctl','-o',str(trace),*argv],**kwargs)
+        succeeded=True
+        return text
+    finally:
+        try:
+            info=trace.lstat()
+            require(stat.S_ISREG(info.st_mode) and info.st_nlink==1,'动作strace原件身份错误')
+            raw=trace.read_bytes()
+            require(raw,'动作strace原件为空')
+            if succeeded:
+                require(re.search(rb'(?:^|\n)[^\n]*\+\+\+ exited with 0 \+\+\+\n?\Z',raw),
+                        '动作strace未记录成功终态')
+            evidence={'path':str(trace),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
+                      'original_argv':list(argv),'requested_register_address':46 if velocity else 40,
+                      'width':2 if velocity else 1,'instruction':0x83 if sync else 0x03,'motor_ids':[9],
+                      'ack':'NONE_SYNC_WRITE' if sync else 'ORDINARY_WRITE_ACK_REQUIRED',
+                      'capture_status':'NATURAL_SUCCESS_TERMINAL' if succeeded else 'ORIGINAL_COMMAND_FAILED',
+                      'wire_frame_review':'PENDING_ROOT_REVIEW_OF_ACTUAL_WRITE_STRACE'}
+            attempt['wire_trace']=evidence
+            io.commands[-1]['diagnostic_write_trace']=evidence
+        except BaseException as error:
+            trace_error(error)
+            if succeeded:
+                raise
+
+
+def install_right_pulse_guard(engine,helper):
+    """只包本轮执行器；初始/最终停止未知立即封锁，动作错误仅保留一次固定收尾。"""
+    io=engine.io
+    original=io.command
+    holder=SimpleNamespace(command=lambda _io,argv,**kwargs:original(argv,**kwargs))
+    helper.install_stop_wire_capture(SimpleNamespace(RealExecutor=holder,verify_ref=verify_ref))
+    traced=lambda argv,**kwargs:holder.command(io,argv,**kwargs)
+    row={'side':'right','motor':9,'name':'base_right_wheel','kind':'raw_velocity_diagnostic',
+         'status':'NOT_RUN','before_raw':[],'samples':[],'cleanup_raw':[],'writes':[],
+         'errors':[],'cleanup_errors':[],'uart_blocked':False,'normal_failed':False,
+         'metadata_verified':False,'goal_verified':False,'stopped_confirmed':False,
+         'off_attempted':False,'zero_attempted':False,'firmware_contract_verified':False}
+    engine.right_pulse=row
+    engine.right_pulse_helper=helper
+
+    def block(error):
+        row['uart_blocked']=True
+        engine.manual_cut=True
+        row['cleanup_errors'].append(repr(error))
+        print('爸爸，右轮诊断停止/身份未知，请立即人工断电；禁止后续UART。',flush=True)
+
+    engine.right_pulse_block=block
+    tool_paths=(RIGHT_PULSE_WRITE['path'],RIGHT_PULSE_RAW['path'],RIGHT_PULSE_TRACE['path'])
+
+    def returned(text,cleanup):
+        if not cleanup:
+            check_go=getattr(engine,'right_pulse_go_check',None)
+            if check_go is not None:
+                check_go()
+        return text
+
+    def command(argv,**kwargs):
+        path=str(argv[0]) if argv else ''
+        cleanup=kwargs.get('cleanup',False)
+        if path not in tool_paths:
+            require(not any(str(arg) in tool_paths for arg in argv[1:]),'禁止其他前缀绕过右轮工具名单')
+            return original(argv,**kwargs)
+        require(not row['uart_blocked'],'右轮诊断UART已粘性封锁')
+        try:
+            require(path!=RIGHT_PULSE_TRACE['path'],'不得直接调用strace绕过命令名单')
+            require(cleanup or not row['normal_failed'],'动作错误后禁止新常规UART')
+            if not cleanup:
+                check_go=getattr(engine,'right_pulse_go_check',None)
+                if check_go is not None:
+                    check_go()
+            sync=argv==[RIGHT_PULSE_RAW['path'],DEVICES['right'],'9','sync-zero']
+            writing=sync or (path==RIGHT_PULSE_WRITE['path'] and len(argv)>3 and argv[3]=='write')
+            if writing:
+                if sync:
+                    require(cleanup and row['stopped_confirmed'] and not row['zero_attempted'],
+                            '只有已确认断扭静止后才可一次SYNC零目标')
+                    row['zero_attempted']=True
+                elif argv==[RIGHT_PULSE_WRITE['path'],DEVICES['right'],'9','write','Goal_Velocity','500']:
+                    require(not cleanup and row['metadata_verified'] and not row['writes'],'仅一次断扭预置+500')
+                elif argv==[RIGHT_PULSE_WRITE['path'],DEVICES['right'],'9','write','Torque_Enable','1']:
+                    require(not cleanup and row['goal_verified'] and len(row['writes'])==1,
+                            '仅预置读回后一次Enable')
+                elif argv==[RIGHT_PULSE_WRITE['path'],DEVICES['right'],'9','write','Torque_Enable','0']:
+                    require(cleanup and row['writes'] and not row['off_attempted'],'仅一次独立Disable')
+                    row['off_attempted']=True
+                else:
+                    raise ValueError('右轮诊断写目标/寄存器/数值越界')
+                reference=RIGHT_PULSE_RAW if sync else RIGHT_PULSE_WRITE
+                verify_ref(reference,executable=True)
+                attempt={'argv':list(argv),'started_ns':io.now(),'cleanup':cleanup,'status':'UNKNOWN'}
+                row['writes'].append(attempt)
+                text=capture_right_pulse_write(io,argv,original,attempt,**kwargs)
+                expected=('sync-zero Goal_Velocity@9 <- 0: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n'
+                          if sync else f'write {argv[4]}@9 <- {argv[5]} ok\n')
+                require(text==expected,'右轮写入回执未知')
+                attempt.update(finished_ns=io.now(),status='SENT_NO_ACK' if sync else 'ACK_STDOUT_VALID')
+                return returned(text,cleanup)
+            if path==RIGHT_PULSE_RAW['path']:
+                require(len(argv)==5 and argv[1:4]==[DEVICES['right'],'9','read-raw']
+                        and argv[4] in helper.META
+                        and (not cleanup or argv[4] in ('Torque_Enable','Present_Velocity','Goal_Velocity')),
+                        '右轮原帧读取越界')
+                return traced(argv,**kwargs)
+            require(path==RIGHT_PULSE_WRITE['path'] and len(argv)==5 and argv[3]=='read'
+                    and argv[4] in REGS and any(argv[1:3]==[DEVICES[side],str(motor)]
+                    for side in SERIALS for motor in range(1,9 if side=='left' else 10)),
+                    '普通READ不在原17电机名单')
+            text=traced(argv,**kwargs)
+            match=re.fullmatch(rf'read {re.escape(argv[4])}@{argv[2]} = (-?\d+)\n',text)
+            require(match is not None,'普通READ回执未知')
+            require(argv[4] not in STOP_REGS or int(match[1])==0,'原停止READ非零:'+argv[4])
+            return returned(text,cleanup)
+        except BaseException as error:
+            row['normal_failed']=True
+            # 动作中失败保留独立TE0；初始/最终普通READ未知立即阻止后续UART。
+            ordinary_read=path==RIGHT_PULSE_WRITE['path'] and len(argv)>3 and argv[3]=='read'
+            if ordinary_read or cleanup:
+                block(error)
+            raise
+
+    io.command=command
+
+
+def run_right_wheel_pulse(engine):
+    row=engine.right_pulse
+    io=engine.io
+    engine.rows.append(row)
+    row['status']='FAIL'
+    helper=engine.right_pulse_helper
+    module=SimpleNamespace(verify_ref=verify_ref,DEVICES=DEVICES,strict_json=strict_json)
+
+    def read(register,destination,*,cleanup=False):
+        sample={'register':register,'started_ns':io.now(),'status':'UNKNOWN'}
+        destination.append(sample)
+        try:
+            raw=helper.raw_read(module,engine,register,cleanup=cleanup)
+            sample.update(raw=raw,finished_ns=io.now(),status='READ_VALID')
+            # 先保留本次已完整校验原帧，再检查返回时GO；过期仍进入独立TE0收尾。
+            check_go=getattr(engine,'right_pulse_go_check',None)
+            if not cleanup and check_go is not None:
+                check_go()
+            return raw['raw_unsigned']
+        except BaseException:
+            row['normal_failed']=True
+            raise
+
+    def write(register,value,*,cleanup=False):
+        return io.command([RIGHT_PULSE_WRITE['path'],DEVICES['right'],'9','write',register,str(value)],cleanup=cleanup)
+
+    try:
+        engine.check_gate()
+        for register,expected in {**RIGHT_PULSE_METADATA,'Torque_Enable':0,'Present_Velocity':0,'Goal_Velocity':0}.items():
+            require(read(register,row['before_raw'])==expected,'右轮元数据/初始静止不符:'+register)
+        anchor=read('Present_Position',row['before_raw'])
+        require(0<=anchor<=4095,'右轮初始位置超单圈范围')
+        row['anchor_raw']=anchor
+        row['metadata_verified']=True
+        write('Goal_Velocity',500)
+        require(read('Goal_Velocity',row['before_raw'])==500,'右轮+500预置读回不符')
+        require(read('Torque_Enable',row['before_raw'])==0,'预置后不是断扭')
+        row['goal_verified']=True
+        started=io.now()
+        row['enable_attempt_started_ns']=started
+        deadline=started+500_000_000
+        row['observation_deadline_ns']=deadline
+        write('Torque_Enable',1)
+        for offset in (100_000_000,400_000_000):
+            require(io.now()<deadline,'右轮观察窗口已耗尽')
+            io.sleep(max(0,started+offset-io.now())/1_000_000_000)
+            sample={'offset_ns':offset,'raw':[]}
+            row['samples'].append(sample)
+            require(io.now()<deadline,'右轮速度读取前已超窗')
+            word=read('Present_Velocity',sample['raw'])
+            velocity=-(word&0x7fff) if word&0x8000 else word
+            require(io.now()<=deadline,'右轮速度读取完成超窗')
+            require(0<=velocity<=1000,'右轮速度反向或超过固定raw上限')
+            position=read('Present_Position',sample['raw'])
+            require(io.now()<=deadline,'右轮位置读取完成超窗')
+            require(0<=position<=4095,'右轮观察位置超单圈范围')
+            delta=(position-anchor+2048)%4096-2048
+            sample.update(velocity_raw=velocity,position_raw=position,delta_raw=delta)
+            require(0<=delta<=512,'右轮位移反向或超过固定单圈差值上限')
+        require(any(s['velocity_raw']>0 for s in row['samples'])
+                and any(s['delta_raw']>0 for s in row['samples']),'右轮未观察到正向速度及位置变化')
+    except BaseException as error:
+        row['normal_failed']=True
+        row['errors'].append(repr(error))
+    finally:
+        if row['writes']:
+            try:
+                # Phase12的运动中零目标语义未闭合：先独立断扭，不能以GV0代替停止。
+                write('Torque_Enable',0,cleanup=True)
+                row['disable_finished_ns']=io.now()
+                if 'enable_attempt_started_ns' in row:
+                    elapsed=io.now()-row['enable_attempt_started_ns']
+                    row['enabled_attempt_window_ns']=elapsed
+                    if elapsed>1_000_000_000:
+                        row['errors'].append('启用尝试到Disable完成超过1秒；非硬件自动截止保证')
+                io.sleep(0.05,cleanup=True)
+                for register in ('Torque_Enable','Present_Velocity'):
+                    require(read(register,row['cleanup_raw'],cleanup=True)==0,'独立断扭停止未确认:'+register)
+                row['stopped_confirmed']=True
+                io.command([RIGHT_PULSE_RAW['path'],DEVICES['right'],'9','sync-zero'],cleanup=True)
+                io.sleep(0.05,cleanup=True)
+                require(read('Goal_Velocity',row['cleanup_raw'],cleanup=True)==0,'断扭后零目标读回未确认')
+            except BaseException as error:
+                if not row['uart_blocked']:
+                    engine.right_pulse_block(error)
+        elif row['errors']:
+            # 无写入仍保留未知/不符事实；不追加一轮UART尝试恢复结论。
+            engine.right_pulse_block(ValueError(row['errors'][-1]))
+    row['status']='PASS' if not row['errors'] and not row['cleanup_errors'] else 'FAIL'
+    require(row['status']=='PASS','右轮单次非零诊断失败，禁止重试')
+
+
 def inspect_unit(io,unit,*,cleanup=False):
     text = io.command(["systemctl", "show", unit, "--property=Id,LoadState,ActiveState,SubState,MainPID"],cleanup=cleanup)
     fields = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
@@ -726,6 +1037,9 @@ def classify_run_result(report):
 
 
 def run_motion_probes(engine,bindings,plan):
+    if 'right_wheel_pulse' in plan:
+        validate_right_pulse_plan(plan)
+        run_right_wheel_pulse(engine)
     for side,motor,name in position_targets_from_plan(plan):
         engine.position(side,motor,name,bindings['calibrations'][name])
     # 固定拒绝未闭合的固件合同；任何bindings里的verified布尔值都不是可接受证明。
@@ -768,6 +1082,7 @@ def execute(plan, go, approval):
             and os.getgid() == os.getegid() == host['gid']
             and Path('/proc/sys/kernel/random/boot_id').read_text().strip() == host['boot_id'], "真实主机身份不符")
     validate_go(go, plan, time.time_ns())
+    pulse_helper=load_right_pulse_helper() if 'right_wheel_pulse' in plan else None
     script=Path(__file__).read_bytes()
     require(hashlib.sha256(script).hexdigest()==plan['script_sha256'] and len(script)==plan['script_bytes'], '执行脚本SHA/bytes变化')
     root=plan['artifact_root']
@@ -815,6 +1130,9 @@ def execute(plan, go, approval):
                     usb_identity(io,side,bindings['usb'][side])
             gate()
             engine=ProbeEngine(io,plan,gate)
+            if pulse_helper is not None:
+                install_right_pulse_guard(engine,pulse_helper)
+                engine.right_pulse_go_check=lambda:validate_go(go,plan,time.time_ns())
             try:
                 report['before'],report['before_errors']=snapshot(io)
                 require(not report['before_errors'],'初始17电机读取失败')
@@ -875,8 +1193,11 @@ def main(argv=None):
     parser.add_argument('--approval',type=Path)
     parser.add_argument('--position-target', action='append', choices=tuple(POSITION_TARGETS),
                         help='可重复指定腕部/头部目标，按指定顺序执行；缺省为原四项')
+    parser.add_argument('--right-wheel-pulse',action='store_true',
+                        help='仅右9固定+500原始速度单次500ms诊断；禁止混用位置选择')
     options=parser.parse_args(argv)
-    selected_targets = select_position_targets(options.position_target)
+    require(not (options.right_wheel_pulse and options.position_target is not None),'右轮诊断禁止混用位置选择')
+    selected_targets = [] if options.right_wheel_pulse else select_position_targets(options.position_target)
     if not all((options.bindings,options.output,options.run_id,options.artifact_root)):
         require(not options.execute,'执行参数不完整')
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'required':['bindings','output','run-id','artifact-root'],
@@ -884,7 +1205,7 @@ def main(argv=None):
                           'scope':'单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
         return 0
     plan=make_plan(strict_json(options.bindings.read_text()),options.output,options.run_id,options.artifact_root,
-                   options.position_target)
+                   options.position_target,right_wheel_pulse=options.right_wheel_pulse)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

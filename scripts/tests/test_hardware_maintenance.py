@@ -747,4 +747,326 @@ class DeadlineExhaustionTests(unittest.TestCase):
 
 
 
+class RightPulseIO:
+    """内存wire端点；输出真实格式的校验帧，错误可发生在写生效之后。"""
+    def __init__(self):
+        self.t=0; self.torque=0; self.goal=0; self.position=1000
+        self.velocity=500; self.delta=80; self.calls=[]; self.tool=m.RIGHT_PULSE_WRITE
+        self.fail_write=None; self.bad_raw=None; self.signal_on_enable=False
+        self.slow_active_ns=0; self.stop_velocity=0; self.child=None; self.evidence_errors=[]
+        self.sequence=0; self.commands=[]; self.interrupted=None; self.trace_calls=[]
+
+    def now(self): return self.t
+    def check(self):
+        if self.interrupted: raise ValueError('注入现场信号')
+    def sleep(self,seconds,cleanup=False):
+        if not cleanup:self.check()
+        self.t+=int(seconds*1e9)
+    def poke(self,*args,**kwargs): return m.RealExecutor.poke(self,*args,**kwargs)
+    def value(self,register):
+        if register in m.RIGHT_PULSE_METADATA:return m.RIGHT_PULSE_METADATA[register]
+        if register=='Torque_Enable':return self.torque
+        if register=='Goal_Velocity':return self.goal
+        if register=='Present_Velocity':return self.velocity if self.torque else self.stop_velocity
+        if register=='Present_Position':
+            if self.torque:self.position=(self.position+self.delta)%4096
+            return self.position
+        if register=='Goal_Position':return 1000
+        raise AssertionError(register)
+    def command(self,argv,**kwargs):
+        cleanup=kwargs.get('cleanup',False)
+        if not cleanup:self.check()
+        if argv[0]==m.RIGHT_PULSE_TRACE['path']:
+            self.trace_calls.append(list(argv))
+            index=argv.index('-o')
+            Path(argv[index+1]).write_bytes(b'fixture wire capture\n+++ exited with 0 +++\n')
+            argv=argv[index+2:]
+        self.calls.append((list(argv),cleanup));self.sequence+=1
+        self.commands.append({'argv':list(argv),'cleanup':cleanup})
+        self.t+=10_000_000
+        action=argv[3]
+        if action=='write':
+            register,value=argv[4],int(argv[5])
+            if register=='Torque_Enable':self.torque=value
+            elif register=='Goal_Velocity':self.goal=value
+            else:raise AssertionError(register)
+            if self.fail_write==(register,value):
+                self.fail_write=None
+                raise OSError('注入：已写入但回执失败')
+            if register=='Torque_Enable' and value==1 and self.signal_on_enable:
+                self.interrupted=signal.SIGTERM
+                self.check()
+            return f'write {register}@9 <- {value} ok\n'
+        if action=='sync-zero':
+            self.goal=0
+            return 'sync-zero Goal_Velocity@9 <- 0: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n'
+        register=argv[4]
+        value=self.value(register)
+        if action=='read':return f'read {register}@{argv[2]} = {value}\n'
+        self.t+=self.slow_active_ns if self.torque else 0
+        address,width=self.meta[register]
+        raw=abs(value)|(0x8000 if value<0 else 0)
+        tx=[255,255,254,5,130,address,width,9];tx.append((~sum(tx[2:]))&255)
+        rx=[255,255,9,width+2,0,*raw.to_bytes(width,'little')];rx.append((~sum(rx[2:]))&255)
+        if self.torque and register==self.bad_raw:rx[-1]^=1
+        return json.dumps({'operation':'sync_read','serial_device':m.DEVICES['right'],'motor_id':9,
+                           'register':register,'requested_register_address':address,'width':width,
+                           'raw_unsigned':raw,'tx':tx,'rx':rx})+'\n'
+
+
+class RightPulseTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # 复用已入库的冻结校验器，不另写一份协议解析。
+        path=Path(m.__file__).parents[1]/'.verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/originals/helpers/raw_right9_from_r14_r2.py'
+        spec=m.importlib.util.spec_from_file_location('right_pulse_test_raw',path)
+        cls.raw=m.importlib.util.module_from_spec(spec);spec.loader.exec_module(cls.raw)
+        cls.raw.RAW_TOOL=dict(m.RIGHT_PULSE_RAW)
+        cls.raw.META={**cls.raw.META,'Present_Position':(56,2)}
+
+    def setUp(self):
+        self.verify=patch.object(m,'verify_ref')
+        self.verify.start();self.addCleanup(self.verify.stop)
+
+    def bindings(self):
+        return {'schema':'MAINTENANCE_BINDINGS_V1','tool':dict(m.RIGHT_PULSE_WRITE),
+                'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
+                'host':{'boot_id':'pulse-fixture'},
+                'refs':[dict(r) for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_HELPER,m.RIGHT_PULSE_TRACE)],
+                'binary_paths':[r['path'] for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_TRACE)]}
+
+    def plan(self):
+        root='/home/loosqk/robot-checks/pulse-fixture'
+        return m.make_plan(self.bindings(),root+'/run','pulse-fixture',root,right_wheel_pulse=True)
+
+    def engine(self):
+        executor=RightPulseIO();executor.meta=self.raw.META
+        directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
+        executor.output=Path(directory.name)
+        helper=SimpleNamespace(META=self.raw.META,raw_read=self.raw.raw_read,
+                               install_stop_wire_capture=lambda module:None)
+        engine=m.ProbeEngine(executor,self.plan())
+        m.install_right_pulse_guard(engine,helper)
+        return executor,engine
+
+    def perform(self,executor,engine,success=True):
+        with contextlib.redirect_stdout(io.StringIO()):
+            if success:m.run_right_wheel_pulse(engine)
+            else:
+                with self.assertRaises(ValueError):m.run_right_wheel_pulse(engine)
+        return engine.right_pulse
+
+    def writes(self,executor):
+        return [argv[3:] for argv,cleanup in executor.calls if argv[3] in ('write','sync-zero')]
+
+    def test_normal_order_and_quantized_fifty_are_motion_not_stop_errors(self):
+        for velocity in (50,500,1000):
+            executor,engine=self.engine();executor.velocity=velocity
+            row=self.perform(executor,engine)
+            self.assertEqual(row['status'],'PASS')
+            self.assertEqual(self.writes(executor),[['write','Goal_Velocity','500'],['write','Torque_Enable','1'],
+                                                   ['write','Torque_Enable','0'],['sync-zero']])
+            self.assertEqual(len(row['samples']),2)
+            self.assertTrue(all(s['raw'][-1]['finished_ns']<=row['observation_deadline_ns'] for s in row['samples']))
+            self.assertLessEqual(row['enabled_attempt_window_ns'],500_000_000)
+            self.assertFalse(engine.manual_cut)
+            self.assertEqual((executor.torque,executor.goal),(0,0))
+            self.assertTrue(all(argv[1:3]==[m.DEVICES['right'],'9'] for argv,_ in executor.calls))
+            self.assertEqual(len(executor.trace_calls),4)
+            self.assertEqual([attempt['wire_trace']['instruction'] for attempt in row['writes']],[3,3,3,131])
+            self.assertEqual([attempt['wire_trace']['requested_register_address'] for attempt in row['writes']],[46,40,40,46])
+            for attempt in row['writes']:
+                trace=attempt['wire_trace'];raw=Path(trace['path']).read_bytes()
+                self.assertEqual(hashlib.sha256(raw).hexdigest(),trace['sha256'])
+
+    def test_motion_direction_magnitude_and_no_motion_fail_but_disable(self):
+        for velocity,delta in ((-50,80),(1001,80),(0,0),(500,-1),(500,513)):
+            executor,engine=self.engine();executor.velocity=velocity;executor.delta=delta
+            row=self.perform(executor,engine,False)
+            self.assertEqual(row['status'],'FAIL');self.assertFalse(engine.manual_cut)
+            self.assertIn(['write','Torque_Enable','0'],self.writes(executor))
+            self.assertEqual((executor.torque,executor.goal),(0,0))
+
+    def test_bad_raw_signal_and_late_read_preserve_failure_and_attempt_disable(self):
+        for fault in ('frame','signal','late','over_one_second'):
+            executor,engine=self.engine()
+            if fault=='frame':executor.bad_raw='Present_Velocity'
+            if fault=='signal':executor.signal_on_enable=True
+            if fault=='late':executor.slow_active_ns=450_000_000
+            if fault=='over_one_second':executor.slow_active_ns=1_100_000_000
+            row=self.perform(executor,engine,False)
+            self.assertIn(['write','Torque_Enable','0'],self.writes(executor))
+            self.assertEqual((executor.torque,executor.goal),(0,0));self.assertFalse(engine.manual_cut)
+            self.assertTrue(row['errors'])
+            if fault=='over_one_second':self.assertGreater(row['enabled_attempt_window_ns'],1_000_000_000)
+
+    def test_each_uncertain_motion_write_still_disables_once_without_retry(self):
+        for failed in (('Goal_Velocity',500),('Torque_Enable',1)):
+            executor,engine=self.engine();executor.fail_write=failed
+            row=self.perform(executor,engine,False)
+            writes=self.writes(executor)
+            self.assertEqual(writes.count(['write',failed[0],str(failed[1])]),1)
+            self.assertEqual(writes.count(['write','Torque_Enable','0']),1)
+            self.assertEqual(row['status'],'FAIL');self.assertFalse(engine.manual_cut)
+
+    def test_last_position_read_crossing_go_keeps_frame_fails_and_disables(self):
+        executor,engine=self.engine()
+        engine.right_pulse_go_check=lambda:m.require(executor.now()<545_000_000,'夹具GO到期')
+        row=self.perform(executor,engine,False)
+        self.assertIn('GO到期',row['errors'][-1])
+        self.assertEqual(row['samples'][-1]['raw'][-1]['status'],'READ_VALID')
+        self.assertGreaterEqual(row['samples'][-1]['raw'][-1]['finished_ns'],545_000_000)
+        self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
+        self.assertFalse(engine.manual_cut)
+
+    def test_write_and_ordinary_read_return_recheck_go(self):
+        for kind in ('write','ordinary'):
+            executor,engine=self.engine()
+            engine.right_pulse_go_check=lambda:m.require(executor.now()<5_000_000,'返回时GO到期')
+            if kind=='write':
+                engine.right_pulse['metadata_verified']=True
+                argv=[m.RIGHT_PULSE_WRITE['path'],m.DEVICES['right'],'9','write','Goal_Velocity','500']
+            else:argv=[m.RIGHT_PULSE_WRITE['path'],m.DEVICES['right'],'9','read','Torque_Enable']
+            with contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'GO到期'):
+                executor.command(argv)
+            self.assertEqual(len(executor.calls),1)
+            if kind=='write':
+                self.assertEqual(engine.right_pulse['writes'][0]['status'],'ACK_STDOUT_VALID')
+                self.assertIn('wire_trace',engine.right_pulse['writes'][0])
+
+    def test_trace_prepare_failure_never_prevents_single_disable(self):
+        for when in ('enable','disable'):
+            executor,engine=self.engine()
+            def verify(reference,**kwargs):
+                if reference==m.RIGHT_PULSE_TRACE and (
+                        engine.right_pulse['off_attempted'] if when=='disable'
+                        else len(engine.right_pulse['writes'])==2):
+                    raise OSError('夹具strace准备失败')
+            with patch.object(m,'verify_ref',side_effect=verify):
+                row=self.perform(executor,engine,False)
+            self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
+            self.assertEqual(executor.torque,0)
+            self.assertTrue(executor.evidence_errors)
+            if when=='disable':
+                self.assertTrue(row['uart_blocked']);self.assertTrue(engine.manual_cut)
+                self.assertNotIn(['sync-zero'],self.writes(executor))
+            else:self.assertFalse(engine.manual_cut)
+
+    def test_trace_save_failure_after_write_still_attempts_disable_and_preserves_failure(self):
+        original=Path.read_bytes
+        for when in ('enable','disable'):
+            executor,engine=self.engine()
+            def read_bytes(path):
+                target=(engine.right_pulse['off_attempted'] if when=='disable'
+                        else len(engine.right_pulse['writes'])==2)
+                if path.name.startswith('right9-pulse-write-') and target:
+                    raise OSError('夹具trace落盘读取失败')
+                return original(path)
+            with patch.object(Path,'read_bytes',read_bytes):
+                row=self.perform(executor,engine,False)
+            self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
+            self.assertEqual(executor.torque,0)
+            self.assertEqual(row['status'],'FAIL');self.assertTrue(executor.evidence_errors)
+            self.assertEqual(engine.manual_cut,when=='disable')
+
+    def test_disable_failure_or_nonzero_stop_blocks_zero_and_all_subsequent_uart(self):
+        for fault in ('ack','speed'):
+            executor,engine=self.engine()
+            if fault=='ack':executor.fail_write=('Torque_Enable',0)
+            else:executor.stop_velocity=50
+            # 停止异常只在实际断扭后注入，不污染初始静止门。
+            if fault=='speed':
+                executor.stop_velocity=0
+                original=executor.value
+                executor.value=lambda register:50 if register=='Present_Velocity' and engine.right_pulse['off_attempted'] else original(register)
+            row=self.perform(executor,engine,False)
+            self.assertTrue(engine.manual_cut);self.assertTrue(row['uart_blocked'])
+            self.assertNotIn(['sync-zero'],self.writes(executor))
+            count=len(executor.calls)
+            with self.assertRaises(ValueError):executor.poke('right',9,'read','Present_Velocity',cleanup=True)
+            self.assertEqual(len(executor.calls),count)
+
+    def test_initial_and_final_ordinary_stop_failure_is_sticky(self):
+        for after_motion in (False,True):
+            executor,engine=self.engine()
+            if after_motion:self.perform(executor,engine)
+            executor.stop_velocity=50
+            with contextlib.redirect_stdout(io.StringIO()),self.assertRaises(ValueError):
+                executor.poke('right',8,'read','Present_Velocity',cleanup=after_motion)
+            count=len(executor.calls)
+            with self.assertRaises(ValueError):executor.poke('left',1,'read','Torque_Enable',cleanup=True)
+            self.assertEqual(len(executor.calls),count);self.assertTrue(engine.manual_cut)
+
+    def test_illegal_writes_are_refused_before_executor(self):
+        for side,motor,register,value in (('left',1,'Torque_Enable',1),('right',8,'Torque_Enable',1),
+                ('right',9,'Goal_Velocity',501),('right',9,'Goal_Position',1234),('right',9,'Phase',4)):
+            executor,engine=self.engine()
+            argv=[m.RIGHT_PULSE_WRITE['path'],m.DEVICES[side],str(motor),'write',register,str(value)]
+            with self.assertRaises(ValueError):executor.command(argv)
+            self.assertEqual(executor.calls,[])
+
+    def test_bad_actual_metadata_never_writes_or_continues_uart(self):
+        executor,engine=self.engine();original=executor.value
+        executor.value=lambda register:11 if register=='Firmware_Minor_Version' else original(register)
+        self.perform(executor,engine,False)
+        self.assertEqual(self.writes(executor),[]);self.assertTrue(engine.right_pulse['uart_blocked'])
+
+    def test_plan_flags_binding_and_missing_go_reject_without_child(self):
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('前置不许启动child')) as child:
+            for args in (['--right-wheel-pulse','--position-target','head-1'],
+                         ['--right-wheel-pulse','--execute'],['--right-wheel-pulse','500']):
+                with contextlib.redirect_stderr(io.StringIO()),self.assertRaises((ValueError,SystemExit)):
+                    m.main(args)
+            for mutate in ('metadata','tool','refs','targets'):
+                plan=self.plan()
+                if mutate=='metadata':plan['right_wheel_pulse']['metadata']['Phase']=4
+                if mutate=='tool':plan['bindings']['tool']['sha256']='0'*64
+                if mutate=='refs':plan['bindings']['refs'].pop()
+                if mutate=='targets':plan['position_targets']=m.TARGETS
+                with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
+            with self.assertRaises((ValueError,KeyError)):m.validate_go({},self.plan(),200)
+            child.assert_not_called()
+
+    def test_existing_r4_extended_identity_metadata_is_preserved(self):
+        path=Path(m.__file__).parents[1]/'.verify/base_zero_sync_diagnostic_2026-10-20_r4/plan.json'
+        document=json.loads(path.read_text())
+        bindings=document.get('plan',document)['bindings']
+        original=copy.deepcopy(bindings)
+        root='/home/loosqk/robot-checks/pulse-fixture'
+        plan=m.make_plan(bindings,root+'/run','pulse-fixture',root,right_wheel_pulse=True)
+        self.assertEqual(plan['bindings'],original)
+        self.assertIn('inode',plan['bindings']['tool'])
+
+    def test_go_binds_current_scope_and_600_seconds(self):
+        plan=self.plan()
+        facts={**{key:True for key in m.FACTS},'confirmed_at_ns':100}
+        go={'schema':'MAINTENANCE_GO_V2','issued_by':'root','artifact_root':plan['artifact_root'],
+            'plan_sha256':m.digest(plan),'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],
+            'source':'仅测试夹具','physical':{side:dict(facts) for side in m.SERIALS}}
+        go['physical']['right'].update(all_three_wheels_off_ground=True,base_stably_supported=True,
+            continuous_wheel_observation=True,base_confirmation_kind='CURRENT_SETUP_READY',
+            base_confirmation_scope=m.RIGHT_PULSE_SCOPE,base_confirmation_answer='夹具就绪')
+        m.validate_go(go,plan,200)
+        for fault in ('scope','observation','ttl','stale'):
+            bad=copy.deepcopy(go)
+            if fault=='scope':bad['physical']['right']['base_confirmation_scope']='旧零速'
+            if fault=='observation':bad['physical']['right']['continuous_wheel_observation']=False
+            if fault=='ttl':bad['expires_at_ns']=601_000_000_101
+            if fault=='stale':
+                bad['issued_at_ns']=601_000_000_100;bad['expires_at_ns']=601_000_000_900
+            with self.assertRaises(ValueError):m.validate_go(bad,plan,601_000_000_200 if fault=='stale' else 200)
+
+    def test_diagnostic_pass_keeps_firmware_deferred_and_other_wheels_untouched(self):
+        executor,engine=self.engine()
+        with self.assertRaisesRegex(ValueError,'BASE_FIRMWARE_CONTRACT_UNVERIFIED'):
+            m.run_motion_probes(engine,engine.plan['bindings'],engine.plan)
+        self.assertEqual(engine.rows[0]['status'],'PASS')
+        self.assertTrue(all(row['decision']=='DEFERRED' for row in engine.rows[1:]))
+        before=idle_rows();after=copy.deepcopy(before);after['right:9']['Present_Position']=executor.position
+        self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'PASS')
+        after['right:8']['Present_Position']+=5
+        self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'FAIL')
+        self.assertEqual(m.classify_stop_snapshot(after)['status'],'PASS')
+
+
 if __name__=='__main__': unittest.main(verbosity=2)

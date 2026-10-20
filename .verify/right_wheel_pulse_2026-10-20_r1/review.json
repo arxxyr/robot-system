@@ -1,0 +1,53 @@
+{
+  "reviewed_at": "2026-10-20T09:09:23.960955+00:00",
+  "status": "PASS_SOFTWARE_REVIEW",
+  "scope": "只审既有维护脚本右9固定非零诊断分支和对应测试；无SSH、UART或硬件执行",
+  "files": {
+    "scripts/run_hardware_maintenance.py": {
+      "bytes": 69383,
+      "sha256": "b32961374bba0b1fc910983202171d50157b2192f7493700b95efc98ebd62ff3"
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "bytes": 67982,
+      "sha256": "fed9f7fe25fb8864da34c79733b3a9b18351e94c56e19110bb451067660d9aa5"
+    }
+  },
+  "initial_review": {
+    "script_sha256": "3c2f5c0a3728336a3ee96dc943635b0e43fadd68c859ef401eeafd590b8b4e67",
+    "test_sha256": "4f54c2c9d77cb32af6b622d754c17e3e76b0fb3cdb094fefe0760ab9bc84b52b",
+    "findings": [
+      {
+        "issue": "四次动作写只经普通PV抓帧包装，缺WRITE/SYNC_WRITE实际原帧",
+        "status": "FIXED",
+        "verified_change": "同一命令使用strace保存四次写的原件、哈希、请求元数据，stdout回执不代替原帧；未新增动作重试。"
+      },
+      {
+        "issue": "末次PP在常规调用期间跨GO到期，原版本仍诊断PASS",
+        "status": "FIXED",
+        "original_reproduction": "纯内存夹具末次PP于540ms开始、550ms返回，GO545ms到期时旧版本PASS/errors为空。",
+        "verified_change": "写和普通READ返回时重查GO；原帧读取先校验并保留样本，再检查GO。过期留FAIL并进入独立TE0。"
+      }
+    ]
+  },
+  "verification": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 uv run --no-project python -m unittest discover -s scripts/tests -p test_hardware_maintenance.py -q",
+    "tests_passed": 62,
+    "failed": 0,
+    "source_sha_before_after_unchanged": true,
+    "checks": [
+      "四写抓帧元数据与原件哈希匹配，实际串口帧仍须实机原件确认。",
+      "末次PP跨GO保存READ_VALID原帧后FAIL，且只执行一次TE0。",
+      "写/普通READ返回GO过期拒绝，已有回执及证据保留。",
+      "抓帧准备失败时尚未启动child，TE0仍执行原f201一次；抓帧执行后失败不重发。",
+      "抓帧保存失败、未知写回执、坏原帧、信号和超期保留失败并尝试独立TE0。",
+      "TE0或停止读回未知时UART粘性封锁，不继续SYNC零目标。",
+      "默认位置路径保持，右轮分支无Mode/Phase/其他motor写，STOP51及DEFERRED合同保持。"
+    ]
+  },
+  "limits": [
+    "这是源码及纯软件测试结果，不是本次新实机验证或新的硬件GO。",
+    "500ms观察期限和1s失败门是软件判据，不是硬件自动断电保证。",
+    "三轮固件合同仍DEFERRED，D15 OPEN/DEFERRED，deployable=false。"
+  ],
+  "blocking_findings": []
+}

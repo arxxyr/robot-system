@@ -1,0 +1,14 @@
+{
+  "recorded_at_ns": 1792485976000000000,
+  "source": "用户直接答复call_b069664d6dc44b00a3c5ae6c4c784fd6；root于2026-10-20T08:46:16Z首次记录收到",
+  "answer": "全部就绪，能全程看清右轮和前轮，可执行一次",
+  "scope": "仅右9/base_right_wheel一次单ID9 SYNC_WRITE Goal_Velocity0（无ACK）→发送完成后至少50ms→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑",
+  "motor_supplies_on": true,
+  "all_three_wheels_off_ground": true,
+  "base_stably_supported": true,
+  "arms_unloaded_supported": true,
+  "areas_clear": true,
+  "continuous_watch": true,
+  "immediate_manual_power_cut": true,
+  "right_and_front_wheels_visible_through_final_stop": true
+}

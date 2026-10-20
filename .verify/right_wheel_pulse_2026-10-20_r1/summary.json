@@ -1,0 +1,46 @@
+{
+  "status": "SOFTWARE_AND_EXECUTION_PREPARATION_PASS_HARDWARE_PENDING",
+  "scope": "现有维护入口仅右9一次+500原始值；100/400ms各读PV及PP，500ms采样完成窗口，采完先TE0；确认TE/PV为零后SYNC清目标，原STOP51及身份后验",
+  "source": [
+    "scripts/run_hardware_maintenance.py",
+    "scripts/tests/test_hardware_maintenance.py"
+  ],
+  "rust_changed": false,
+  "tools": "复用f201写、b2 read-raw/sync-zero、原raw helper与strace；无新ELF或驱动框架",
+  "initial_review_findings": [
+    "四动作写须保留同次strace原帧",
+    "常规UART返回后须验证GO期限，超期记FAIL并保留TE0收尾"
+  ],
+  "hardware_executed": false,
+  "new_uart": 0,
+  "go_created": false,
+  "physical_confirmation": "PENDING_CURRENT_FIELD_FACTS",
+  "firmware_contract_verified": false,
+  "D15": "OPEN_DEFERRED",
+  "deployable": false,
+  "launch_argv": "launch-argv.json",
+  "software_result": "software/result.json",
+  "independent_review": "review.json",
+  "readiness": "readiness.json",
+  "plan": "plan.json",
+  "plan_sha256": "450df179a1e2be70e384810fe72e73661f89e9efea7cddd6c887ac53af249c2b",
+  "software_tests": {
+    "distinct_methods": 62,
+    "environments": [
+      "local",
+      "Orin"
+    ],
+    "same_methods_not_added": true
+  },
+  "source_identity": {
+    "scripts/run_hardware_maintenance.py": {
+      "bytes": 69383,
+      "sha256": "b32961374bba0b1fc910983202171d50157b2192f7493700b95efc98ebd62ff3"
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "bytes": 67982,
+      "sha256": "fed9f7fe25fb8864da34c79733b3a9b18351e94c56e19110bb451067660d9aa5"
+    }
+  },
+  "initial_review_findings_resolved": true
+}

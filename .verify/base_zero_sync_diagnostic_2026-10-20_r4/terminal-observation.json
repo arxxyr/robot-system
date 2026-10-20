@@ -1,0 +1,23 @@
+{
+  "observed_at_ns": 1792486069430772092,
+  "identity": "base-zero-sync-20261020-r4 $86 %122 708705 1 1",
+  "terminal": true,
+  "run_exists": true,
+  "result": "FAIL",
+  "error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+  "manual_power_cut_required": false,
+  "zero_diag_status": "PASS",
+  "uart_blocked": false,
+  "pv_raw": [
+    0,
+    0,
+    0
+  ],
+  "stop_verification": "PASS",
+  "identity_verification": "PASS",
+  "child_active": false,
+  "received_signal": null,
+  "evidence_errors": [],
+  "command_count": 337,
+  "driver_log": ""
+}
