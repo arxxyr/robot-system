@@ -1,0 +1,48 @@
+{
+  "at_ns": 1792492968025627247,
+  "terminal": "right-wheel-reference-20261020-r2 $94 %130 715088 1 1",
+  "driver_absent": true,
+  "holders": [
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "only_owned_dead_pane_removed": "%130",
+  "run_sha256_before_after": "32ecc765987d2ca48eca7277a039e1f8d7210dfbc50c4f6faa2b15cbaf377288",
+  "uart": 0,
+  "current_power_state": "OFF_USER_REPORTED",
+  "original_stop_identity_not_rewritten": true
+}

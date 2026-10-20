@@ -1,0 +1,1232 @@
+{
+  "observed_at_ns": 1792492890930195820,
+  "identity": "right-wheel-reference-20261020-r2 $94 %130 715088 1 1",
+  "commands": 148,
+  "owner_absent": true,
+  "files": {
+    "driver.log": {
+      "bytes": 175,
+      "sha256": "c97371da62100245a999039e599f8c66ebc65d36914bfebfc4b31e2434363dc7"
+    },
+    "field-confirmation.json": {
+      "bytes": 395,
+      "sha256": "d5cf2b6d45c13ea48a7de234e7c8cb3eb5cbeeb714bd142e9a09183393edeb86"
+    },
+    "go.json": {
+      "bytes": 1559,
+      "sha256": "af268ccf19e4e4208562c2ec99a56fc99654479c638b6ee20b217486680eea4c"
+    },
+    "go.json.consumed": {
+      "bytes": 129,
+      "sha256": "78580503437b225b6056f9f2d29eaeab6c77be3151f95a0bca5fd4c78e3877d9"
+    },
+    "hardware/command_0001.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0001.stdout": {
+      "bytes": 94,
+      "sha256": "8ee009dc3b945ec5975c6641f18ad5f4b1b94039fbcf03a5244a9a3267ba6076"
+    },
+    "hardware/command_0002.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0002.stdout": {
+      "bytes": 90,
+      "sha256": "04f5015f22458f8f84343d2adb0f73aa13ee368c4be72aece037d500c4521a32"
+    },
+    "hardware/command_0003.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0003.stdout": {
+      "bytes": 95,
+      "sha256": "26c454cca97603c2f8db9b2ff7c2e0c517377f9914302117e53dc4552de04d6e"
+    },
+    "hardware/command_0004.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0004.stdout": {
+      "bytes": 95,
+      "sha256": "d5e60e7c6262b26c51150b5bb2fe00038393ce9fe3fd8e8168c882b9416f4433"
+    },
+    "hardware/command_0005.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0005.stdout": {
+      "bytes": 91,
+      "sha256": "a613d2506c56eb0ed0f9610bcb3a999b55c1b3c24efa8c07e657a387a24a57c9"
+    },
+    "hardware/command_0006.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0006.stdout": {
+      "bytes": 96,
+      "sha256": "85034c411211c2b9067b76f55f337a3e252f13a7700024ab2285832474245931"
+    },
+    "hardware/command_0007.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0007.stdout": {
+      "bytes": 94,
+      "sha256": "4c812ad70468e2aa504d91a44f1359dfec8923236ea6f9c54bbf8b7738e0ded5"
+    },
+    "hardware/command_0008.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0008.stdout": {
+      "bytes": 86,
+      "sha256": "4f561bb21e6029cca0512db3be579b786f7f9f7aaabda1f1401610efc5b20a7d"
+    },
+    "hardware/command_0009.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0009.stdout": {
+      "bytes": 93,
+      "sha256": "7c3354fe8d0117d5e80d4ffefddeb7b924a41f15f4385dd357f35bcc888173cf"
+    },
+    "hardware/command_0010.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0010.stdout": {
+      "bytes": 93,
+      "sha256": "5ccfb59c61c26b609653cb9dce1b611e6872bb203f47cd4a23ab7dd42cb08ffa"
+    },
+    "hardware/command_0011.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0011.stdout": {
+      "bytes": 90,
+      "sha256": "36583cd4640715049992f0e50235cb4da80bd76446b4bbce82858e8b6f7c5242"
+    },
+    "hardware/command_0012.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0012.stdout": {
+      "bytes": 728,
+      "sha256": "59023677652c66b3d925a56db895087a53f391c4cbfbe66881a2feb1ab37c115"
+    },
+    "hardware/command_0013.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0013.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0014.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0014.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0015.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0015.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0016.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0016.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0017.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0017.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0018.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0018.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0019.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0019.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0020.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0020.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0021.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0021.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0022.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0022.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0023.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0023.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0024.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0024.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0025.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0025.stdout": {
+      "bytes": 94,
+      "sha256": "8ee009dc3b945ec5975c6641f18ad5f4b1b94039fbcf03a5244a9a3267ba6076"
+    },
+    "hardware/command_0026.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0026.stdout": {
+      "bytes": 90,
+      "sha256": "04f5015f22458f8f84343d2adb0f73aa13ee368c4be72aece037d500c4521a32"
+    },
+    "hardware/command_0027.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0027.stdout": {
+      "bytes": 95,
+      "sha256": "26c454cca97603c2f8db9b2ff7c2e0c517377f9914302117e53dc4552de04d6e"
+    },
+    "hardware/command_0028.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0028.stdout": {
+      "bytes": 95,
+      "sha256": "d5e60e7c6262b26c51150b5bb2fe00038393ce9fe3fd8e8168c882b9416f4433"
+    },
+    "hardware/command_0029.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0029.stdout": {
+      "bytes": 91,
+      "sha256": "a613d2506c56eb0ed0f9610bcb3a999b55c1b3c24efa8c07e657a387a24a57c9"
+    },
+    "hardware/command_0030.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0030.stdout": {
+      "bytes": 96,
+      "sha256": "85034c411211c2b9067b76f55f337a3e252f13a7700024ab2285832474245931"
+    },
+    "hardware/command_0031.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0031.stdout": {
+      "bytes": 94,
+      "sha256": "4c812ad70468e2aa504d91a44f1359dfec8923236ea6f9c54bbf8b7738e0ded5"
+    },
+    "hardware/command_0032.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0032.stdout": {
+      "bytes": 86,
+      "sha256": "4f561bb21e6029cca0512db3be579b786f7f9f7aaabda1f1401610efc5b20a7d"
+    },
+    "hardware/command_0033.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0033.stdout": {
+      "bytes": 93,
+      "sha256": "7c3354fe8d0117d5e80d4ffefddeb7b924a41f15f4385dd357f35bcc888173cf"
+    },
+    "hardware/command_0034.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0034.stdout": {
+      "bytes": 93,
+      "sha256": "5ccfb59c61c26b609653cb9dce1b611e6872bb203f47cd4a23ab7dd42cb08ffa"
+    },
+    "hardware/command_0035.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0035.stdout": {
+      "bytes": 90,
+      "sha256": "36583cd4640715049992f0e50235cb4da80bd76446b4bbce82858e8b6f7c5242"
+    },
+    "hardware/command_0036.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0036.stdout": {
+      "bytes": 728,
+      "sha256": "59023677652c66b3d925a56db895087a53f391c4cbfbe66881a2feb1ab37c115"
+    },
+    "hardware/command_0037.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0037.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0038.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0038.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0039.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0039.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0040.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0040.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0041.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0041.stdout": {
+      "bytes": 866,
+      "sha256": "c48ac6a802da247eb030d84a58d79ca14733b3d0beba28d0f64f6b1e803950b5"
+    },
+    "hardware/command_0042.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0042.stdout": {
+      "bytes": 866,
+      "sha256": "eb10e9a24c12c572342ebfdc2e17c8c16a59a5e92a6afa8aae8b29aae0b940df"
+    },
+    "hardware/command_0043.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0043.stdout": {
+      "bytes": 26,
+      "sha256": "b4efe0d0a143de8fc09d1fdf84050b12bfdfb1fc5e9385bf679c37c5399731f7"
+    },
+    "hardware/command_0044.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0044.stdout": {
+      "bytes": 25,
+      "sha256": "3a9c8a5005862a29ad015322117faa49be7f72c023c7abbd23e7e6e48f706460"
+    },
+    "hardware/command_0045.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0045.stdout": {
+      "bytes": 31,
+      "sha256": "e1a2ad95ac7736f11ff02ea1ab86d0aad742896a55dc2c6528c1987c4f5705ad"
+    },
+    "hardware/command_0046.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0046.stdout": {
+      "bytes": 28,
+      "sha256": "a82e1b57a6cb3b4dd0c197c8ce2c65253e3b8eac18937c04ac6fd578387a3ac6"
+    },
+    "hardware/command_0047.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0047.stdout": {
+      "bytes": 25,
+      "sha256": "25a1010353d14f65f47ea8206bef38a43935206ed1f884662527f13a68ea06dd"
+    },
+    "hardware/command_0048.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0048.stdout": {
+      "bytes": 25,
+      "sha256": "ad2275ffacf472a20b7ba291ac0805453d4d7c8bcb5dadf0cc25f1f0fca894cc"
+    },
+    "hardware/command_0049.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0049.stdout": {
+      "bytes": 26,
+      "sha256": "8b04563baa4262427ac22099d49b330c03f7205dcf8c6f32bcb32f1adc04b202"
+    },
+    "hardware/command_0050.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0050.stdout": {
+      "bytes": 25,
+      "sha256": "5bee2bfa2098dd23adf5bcdbb031931f2294ea3226834a1f7a1333b2f369c79b"
+    },
+    "hardware/command_0051.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0051.stdout": {
+      "bytes": 31,
+      "sha256": "187afec6940e39ee11e59f6c68987808bdda58de1cf7e7cd8fb3859fb95cb543"
+    },
+    "hardware/command_0052.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0052.stdout": {
+      "bytes": 28,
+      "sha256": "2e85ee8f81a9fe44e3c97729b229898f214d815ce92dc647240c9da04c6ddce5"
+    },
+    "hardware/command_0053.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0053.stdout": {
+      "bytes": 25,
+      "sha256": "8925e736ff33a11a31d2d907814b5c5c64730d02f0a5e2905a3ffc2766707c72"
+    },
+    "hardware/command_0054.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0054.stdout": {
+      "bytes": 25,
+      "sha256": "8d5f9fbcdf3462b606595394f326f0af547146ec50dbd5977c2efe48d4605cf3"
+    },
+    "hardware/command_0055.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0055.stdout": {
+      "bytes": 26,
+      "sha256": "73536313edb23f69747c852fb0c588255a148f6b0652a0499b20eaab7930e896"
+    },
+    "hardware/command_0056.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0056.stdout": {
+      "bytes": 25,
+      "sha256": "97af29a3c8a6db49221d370cb80fc0a67358b7cab468fe3545089b1174af869c"
+    },
+    "hardware/command_0057.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0057.stdout": {
+      "bytes": 31,
+      "sha256": "aba650db5c738efcbad764819a580b4bc145083debd7f11e8abad920952f8289"
+    },
+    "hardware/command_0058.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0058.stdout": {
+      "bytes": 28,
+      "sha256": "2f3bb0d3fb84f996e2edd1271db1e8dbb5c36cf0bb94b4b95255d43f3460c092"
+    },
+    "hardware/command_0059.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0059.stdout": {
+      "bytes": 25,
+      "sha256": "b642dbc176c2f29eb220dd3f44793090069d5207599c459b51931c7ed5b04ccb"
+    },
+    "hardware/command_0060.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0060.stdout": {
+      "bytes": 25,
+      "sha256": "4c70ab246372b10559116284f8c43444524f9675b1839e9c561db99e6fb21223"
+    },
+    "hardware/command_0061.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0061.stdout": {
+      "bytes": 26,
+      "sha256": "b821b6944d35ab5385911011095cbb468a146f112fb32347a228498a8ebcbca7"
+    },
+    "hardware/command_0062.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0062.stdout": {
+      "bytes": 25,
+      "sha256": "b2ccb8fff425419d6a0299a9b4262bb515a361510807e04772e59c8d541647b0"
+    },
+    "hardware/command_0063.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0063.stdout": {
+      "bytes": 31,
+      "sha256": "04b91eb66c229e3d067853eb5ae39a260c4f578e257da55502a703b7935329e4"
+    },
+    "hardware/command_0064.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0064.stdout": {
+      "bytes": 28,
+      "sha256": "368859b8c0f4fe42d5240419cb5e14181f8c6168c19e1d5b544a33b41c4bde5a"
+    },
+    "hardware/command_0065.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0065.stdout": {
+      "bytes": 25,
+      "sha256": "09d9ee06136b3e670b434736e412c760accbefc953ba5e733f04327861b423e4"
+    },
+    "hardware/command_0066.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0066.stdout": {
+      "bytes": 25,
+      "sha256": "882bcd9f29035d382a209a043d80c437739301cf7333bf273e5f7043203f7d10"
+    },
+    "hardware/command_0067.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0067.stdout": {
+      "bytes": 26,
+      "sha256": "b8332974616596b7d975504faf500b883d498d93e8b1152fc9e4f28998fdbd30"
+    },
+    "hardware/command_0068.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0068.stdout": {
+      "bytes": 25,
+      "sha256": "a76227a1625351988e7c640ac505fc637de2d9e892a3d1f0a815e184299af7ae"
+    },
+    "hardware/command_0069.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0069.stdout": {
+      "bytes": 31,
+      "sha256": "242f19681c92f1839d5befa4a53d52df610810039313f5ff9bd6c9c826edc112"
+    },
+    "hardware/command_0070.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0070.stdout": {
+      "bytes": 28,
+      "sha256": "430659fc4b2c13a46d564640912f0eea782f81724ce39805b755c7bd0eae9a8e"
+    },
+    "hardware/command_0071.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0071.stdout": {
+      "bytes": 25,
+      "sha256": "1ec93d67f4390f455787bf7928ee7bcbe45e6a1420774f76dbd0cff06edbacb6"
+    },
+    "hardware/command_0072.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0072.stdout": {
+      "bytes": 25,
+      "sha256": "1941c257dfc3937528954dc01e7b93dc114696c33ee6194c1efe489a5b76ad56"
+    },
+    "hardware/command_0073.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0073.stdout": {
+      "bytes": 26,
+      "sha256": "af94a8a2f847c85b8342e1e510a2452cdb9da56cbc73d5dbfa2de5c20d47fa23"
+    },
+    "hardware/command_0074.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0074.stdout": {
+      "bytes": 25,
+      "sha256": "3af536bf0b017f4e80fcee3eb7e764081fca3cd8fb17d68bf901e670d8a363d8"
+    },
+    "hardware/command_0075.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0075.stdout": {
+      "bytes": 31,
+      "sha256": "8417c98f0f4200851931a7662328c2ae8d166f55421a3b6b1acc3437961691d2"
+    },
+    "hardware/command_0076.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0076.stdout": {
+      "bytes": 28,
+      "sha256": "9d45c48eb7cae2ed09d0d252c0f87255b3497165f400a6a770fcbb4c972a5389"
+    },
+    "hardware/command_0077.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0077.stdout": {
+      "bytes": 25,
+      "sha256": "51053d2f5f8553512608187b123bb0edad99a93e5fa0f14aa3cbf8c67febefa3"
+    },
+    "hardware/command_0078.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0078.stdout": {
+      "bytes": 25,
+      "sha256": "70abf7ac23af45e16b91c0e6d16e70482d78141112b7d4b7fd6f82dc6d7661b3"
+    },
+    "hardware/command_0079.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0079.stdout": {
+      "bytes": 26,
+      "sha256": "7af947c121f5d276170535faaa243880b167cee004aca79979972da288a59835"
+    },
+    "hardware/command_0080.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0080.stdout": {
+      "bytes": 25,
+      "sha256": "8e44e1840990b1bc6607282fbfb3ca859ae1c1b32c110b465885ff78116dbf15"
+    },
+    "hardware/command_0081.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0081.stdout": {
+      "bytes": 31,
+      "sha256": "759998e6743fc6e3f2f750ee67eebfdf48a0755612c0835861bdbf674500acef"
+    },
+    "hardware/command_0082.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0082.stdout": {
+      "bytes": 28,
+      "sha256": "e67c4a73f5fc9ef43c5a32c8ab26787498bfeb8e2622110172b6b15303b83f03"
+    },
+    "hardware/command_0083.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0083.stdout": {
+      "bytes": 25,
+      "sha256": "36c162f5ae89653756d5699e4df9c4e7d63f7485614c07491795272cf150dd06"
+    },
+    "hardware/command_0084.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0084.stdout": {
+      "bytes": 25,
+      "sha256": "8a7f0be4a290e9a00672d753b3cfa2dee6f8a442555ef824b2fb84cb07408643"
+    },
+    "hardware/command_0085.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0085.stdout": {
+      "bytes": 26,
+      "sha256": "b4817ab1048b294d9afd25cfe57a6a60c2f1dc02afe89c9387666de74360c12e"
+    },
+    "hardware/command_0086.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0086.stdout": {
+      "bytes": 25,
+      "sha256": "63806863a2be4af79e0fc38036cf0f17bc5f86b0e45765db57ac3912b9c7dc44"
+    },
+    "hardware/command_0087.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0087.stdout": {
+      "bytes": 31,
+      "sha256": "feff439774d8171e1d78b65821fa41f428e146dc5c396cfaf2083d0df5ac74cd"
+    },
+    "hardware/command_0088.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0088.stdout": {
+      "bytes": 28,
+      "sha256": "bcd9cffc9dbf33a0c8aa137c5620284fd9f487ce511ffe60b1591971f602359a"
+    },
+    "hardware/command_0089.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0089.stdout": {
+      "bytes": 25,
+      "sha256": "42ceb2bf6125afe66f4892254b40194a7e68b69fed06e286b1e34f8e18e1543a"
+    },
+    "hardware/command_0090.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0090.stdout": {
+      "bytes": 25,
+      "sha256": "4cac9b7382bc2c691882b4b624a0323fdbf38c107944c38ad5602d192e7ac245"
+    },
+    "hardware/command_0091.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0091.stdout": {
+      "bytes": 26,
+      "sha256": "b4efe0d0a143de8fc09d1fdf84050b12bfdfb1fc5e9385bf679c37c5399731f7"
+    },
+    "hardware/command_0092.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0092.stdout": {
+      "bytes": 25,
+      "sha256": "3a9c8a5005862a29ad015322117faa49be7f72c023c7abbd23e7e6e48f706460"
+    },
+    "hardware/command_0093.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0093.stdout": {
+      "bytes": 31,
+      "sha256": "6d6ecad63b7af0502450aba2fc397db27808f921c85bece913602e145a604acf"
+    },
+    "hardware/command_0094.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0094.stdout": {
+      "bytes": 28,
+      "sha256": "a82e1b57a6cb3b4dd0c197c8ce2c65253e3b8eac18937c04ac6fd578387a3ac6"
+    },
+    "hardware/command_0095.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0095.stdout": {
+      "bytes": 25,
+      "sha256": "25a1010353d14f65f47ea8206bef38a43935206ed1f884662527f13a68ea06dd"
+    },
+    "hardware/command_0096.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0096.stdout": {
+      "bytes": 25,
+      "sha256": "ad2275ffacf472a20b7ba291ac0805453d4d7c8bcb5dadf0cc25f1f0fca894cc"
+    },
+    "hardware/command_0097.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0097.stdout": {
+      "bytes": 26,
+      "sha256": "8b04563baa4262427ac22099d49b330c03f7205dcf8c6f32bcb32f1adc04b202"
+    },
+    "hardware/command_0098.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0098.stdout": {
+      "bytes": 25,
+      "sha256": "5bee2bfa2098dd23adf5bcdbb031931f2294ea3226834a1f7a1333b2f369c79b"
+    },
+    "hardware/command_0099.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0099.stdout": {
+      "bytes": 31,
+      "sha256": "cb75fb9c3e127d2e18bfff2711885be26701de9ae25eced5d87b3cb35da4047d"
+    },
+    "hardware/command_0100.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0100.stdout": {
+      "bytes": 28,
+      "sha256": "2e85ee8f81a9fe44e3c97729b229898f214d815ce92dc647240c9da04c6ddce5"
+    },
+    "hardware/command_0101.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0101.stdout": {
+      "bytes": 25,
+      "sha256": "8925e736ff33a11a31d2d907814b5c5c64730d02f0a5e2905a3ffc2766707c72"
+    },
+    "hardware/command_0102.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0102.stdout": {
+      "bytes": 25,
+      "sha256": "8d5f9fbcdf3462b606595394f326f0af547146ec50dbd5977c2efe48d4605cf3"
+    },
+    "hardware/command_0103.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0103.stdout": {
+      "bytes": 26,
+      "sha256": "73536313edb23f69747c852fb0c588255a148f6b0652a0499b20eaab7930e896"
+    },
+    "hardware/command_0104.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0104.stdout": {
+      "bytes": 25,
+      "sha256": "97af29a3c8a6db49221d370cb80fc0a67358b7cab468fe3545089b1174af869c"
+    },
+    "hardware/command_0105.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0105.stdout": {
+      "bytes": 31,
+      "sha256": "6b36856eedf5ea5216165232e0d55b388320bbebfcfd15a6b63a197eebdeabaa"
+    },
+    "hardware/command_0106.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0106.stdout": {
+      "bytes": 28,
+      "sha256": "2f3bb0d3fb84f996e2edd1271db1e8dbb5c36cf0bb94b4b95255d43f3460c092"
+    },
+    "hardware/command_0107.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0107.stdout": {
+      "bytes": 25,
+      "sha256": "b642dbc176c2f29eb220dd3f44793090069d5207599c459b51931c7ed5b04ccb"
+    },
+    "hardware/command_0108.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0108.stdout": {
+      "bytes": 25,
+      "sha256": "4c70ab246372b10559116284f8c43444524f9675b1839e9c561db99e6fb21223"
+    },
+    "hardware/command_0109.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0109.stdout": {
+      "bytes": 26,
+      "sha256": "b821b6944d35ab5385911011095cbb468a146f112fb32347a228498a8ebcbca7"
+    },
+    "hardware/command_0110.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0110.stdout": {
+      "bytes": 25,
+      "sha256": "b2ccb8fff425419d6a0299a9b4262bb515a361510807e04772e59c8d541647b0"
+    },
+    "hardware/command_0111.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0111.stdout": {
+      "bytes": 31,
+      "sha256": "b4561058bc7a6072b91beca240fddcb81f070e47da83a16d6130ca8a9b0dceae"
+    },
+    "hardware/command_0112.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0112.stdout": {
+      "bytes": 28,
+      "sha256": "368859b8c0f4fe42d5240419cb5e14181f8c6168c19e1d5b544a33b41c4bde5a"
+    },
+    "hardware/command_0113.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0113.stdout": {
+      "bytes": 25,
+      "sha256": "09d9ee06136b3e670b434736e412c760accbefc953ba5e733f04327861b423e4"
+    },
+    "hardware/command_0114.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0114.stdout": {
+      "bytes": 25,
+      "sha256": "882bcd9f29035d382a209a043d80c437739301cf7333bf273e5f7043203f7d10"
+    },
+    "hardware/command_0115.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0115.stdout": {
+      "bytes": 26,
+      "sha256": "b8332974616596b7d975504faf500b883d498d93e8b1152fc9e4f28998fdbd30"
+    },
+    "hardware/command_0116.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0116.stdout": {
+      "bytes": 25,
+      "sha256": "a76227a1625351988e7c640ac505fc637de2d9e892a3d1f0a815e184299af7ae"
+    },
+    "hardware/command_0117.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0117.stdout": {
+      "bytes": 31,
+      "sha256": "65b55029276335e839d3e7cd94a7799029e9078bdb0029b67e973d99f86f128a"
+    },
+    "hardware/command_0118.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0118.stdout": {
+      "bytes": 28,
+      "sha256": "430659fc4b2c13a46d564640912f0eea782f81724ce39805b755c7bd0eae9a8e"
+    },
+    "hardware/command_0119.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0119.stdout": {
+      "bytes": 25,
+      "sha256": "1ec93d67f4390f455787bf7928ee7bcbe45e6a1420774f76dbd0cff06edbacb6"
+    },
+    "hardware/command_0120.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0120.stdout": {
+      "bytes": 25,
+      "sha256": "1941c257dfc3937528954dc01e7b93dc114696c33ee6194c1efe489a5b76ad56"
+    },
+    "hardware/command_0121.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0121.stdout": {
+      "bytes": 26,
+      "sha256": "af94a8a2f847c85b8342e1e510a2452cdb9da56cbc73d5dbfa2de5c20d47fa23"
+    },
+    "hardware/command_0122.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0122.stdout": {
+      "bytes": 25,
+      "sha256": "3af536bf0b017f4e80fcee3eb7e764081fca3cd8fb17d68bf901e670d8a363d8"
+    },
+    "hardware/command_0123.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0123.stdout": {
+      "bytes": 31,
+      "sha256": "728b324e05981bf03109a4887442abe81d80ae2df9947647607113d961fc3f95"
+    },
+    "hardware/command_0124.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0124.stdout": {
+      "bytes": 28,
+      "sha256": "9d45c48eb7cae2ed09d0d252c0f87255b3497165f400a6a770fcbb4c972a5389"
+    },
+    "hardware/command_0125.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0125.stdout": {
+      "bytes": 25,
+      "sha256": "51053d2f5f8553512608187b123bb0edad99a93e5fa0f14aa3cbf8c67febefa3"
+    },
+    "hardware/command_0126.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0126.stdout": {
+      "bytes": 25,
+      "sha256": "70abf7ac23af45e16b91c0e6d16e70482d78141112b7d4b7fd6f82dc6d7661b3"
+    },
+    "hardware/command_0127.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0127.stdout": {
+      "bytes": 26,
+      "sha256": "f80fbe4718d4379df6d34dcd6671e7d53f4e198836501316154fbd7d6b9559bc"
+    },
+    "hardware/command_0128.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0128.stdout": {
+      "bytes": 25,
+      "sha256": "8e44e1840990b1bc6607282fbfb3ca859ae1c1b32c110b465885ff78116dbf15"
+    },
+    "hardware/command_0129.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0129.stdout": {
+      "bytes": 31,
+      "sha256": "b5a755d9055bcacb8febb8f1c4d111e4fc7b2959702f399895d1b10d3d79197b"
+    },
+    "hardware/command_0130.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0130.stdout": {
+      "bytes": 29,
+      "sha256": "33996bf573c3df6bdd27448756340054ce3b9da8a04f3c2daf2e2e60fd1190b1"
+    },
+    "hardware/command_0131.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0131.stdout": {
+      "bytes": 94,
+      "sha256": "8ee009dc3b945ec5975c6641f18ad5f4b1b94039fbcf03a5244a9a3267ba6076"
+    },
+    "hardware/command_0132.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0132.stdout": {
+      "bytes": 90,
+      "sha256": "04f5015f22458f8f84343d2adb0f73aa13ee368c4be72aece037d500c4521a32"
+    },
+    "hardware/command_0133.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0133.stdout": {
+      "bytes": 95,
+      "sha256": "26c454cca97603c2f8db9b2ff7c2e0c517377f9914302117e53dc4552de04d6e"
+    },
+    "hardware/command_0134.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0134.stdout": {
+      "bytes": 95,
+      "sha256": "d5e60e7c6262b26c51150b5bb2fe00038393ce9fe3fd8e8168c882b9416f4433"
+    },
+    "hardware/command_0135.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0135.stdout": {
+      "bytes": 91,
+      "sha256": "a613d2506c56eb0ed0f9610bcb3a999b55c1b3c24efa8c07e657a387a24a57c9"
+    },
+    "hardware/command_0136.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0136.stdout": {
+      "bytes": 96,
+      "sha256": "85034c411211c2b9067b76f55f337a3e252f13a7700024ab2285832474245931"
+    },
+    "hardware/command_0137.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0137.stdout": {
+      "bytes": 94,
+      "sha256": "4c812ad70468e2aa504d91a44f1359dfec8923236ea6f9c54bbf8b7738e0ded5"
+    },
+    "hardware/command_0138.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0138.stdout": {
+      "bytes": 86,
+      "sha256": "4f561bb21e6029cca0512db3be579b786f7f9f7aaabda1f1401610efc5b20a7d"
+    },
+    "hardware/command_0139.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0139.stdout": {
+      "bytes": 93,
+      "sha256": "7c3354fe8d0117d5e80d4ffefddeb7b924a41f15f4385dd357f35bcc888173cf"
+    },
+    "hardware/command_0140.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0140.stdout": {
+      "bytes": 93,
+      "sha256": "5ccfb59c61c26b609653cb9dce1b611e6872bb203f47cd4a23ab7dd42cb08ffa"
+    },
+    "hardware/command_0141.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0141.stdout": {
+      "bytes": 90,
+      "sha256": "36583cd4640715049992f0e50235cb4da80bd76446b4bbce82858e8b6f7c5242"
+    },
+    "hardware/command_0142.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0142.stdout": {
+      "bytes": 728,
+      "sha256": "59023677652c66b3d925a56db895087a53f391c4cbfbe66881a2feb1ab37c115"
+    },
+    "hardware/command_0143.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0143.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0144.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0144.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0145.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0145.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0146.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0146.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0147.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0147.stdout": {
+      "bytes": 866,
+      "sha256": "c48ac6a802da247eb030d84a58d79ca14733b3d0beba28d0f64f6b1e803950b5"
+    },
+    "hardware/command_0148.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hardware/command_0148.stdout": {
+      "bytes": 866,
+      "sha256": "eb10e9a24c12c572342ebfdc2e17c8c16a59a5e92a6afa8aae8b29aae0b940df"
+    },
+    "hardware/commands.jsonl": {
+      "bytes": 134834,
+      "sha256": "8d6c6adbf08f037449755a8330060d1200a041e6039aae0ffbc29133eaa45a88"
+    },
+    "hardware/right7-normal-read-command_0130.strace": {
+      "bytes": 10040,
+      "sha256": "c4e34b9b525719f5859a10bf50829000e4fe41948003e129681f29409b99b523"
+    },
+    "hardware/run.json": {
+      "bytes": 289426,
+      "sha256": "32ecc765987d2ca48eca7277a039e1f8d7210dfbc50c4f6faa2b15cbaf377288"
+    },
+    "launch.json": {
+      "bytes": 1072,
+      "sha256": "08355f56fddfd8a0dad42152619b419eb237bba5e7f525ba8bb33c4d6afaf851"
+    },
+    "prelaunch-current.json": {
+      "bytes": 971,
+      "sha256": "bef703c52ab7bdacf70c07703f0e5b9884cff9e641d3a471713233834624c3ea"
+    },
+    "terminal-observation.json": {
+      "bytes": 643,
+      "sha256": "0836e42d77577ae4ba560578f775d21c77311fd270b01ec57ea3f3ac83724081"
+    }
+  }
+}

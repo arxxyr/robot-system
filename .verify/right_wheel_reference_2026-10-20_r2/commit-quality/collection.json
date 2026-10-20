@@ -1,0 +1,36 @@
+{
+  "pane": "right-wheel-ref-r2-commit-20261020 $95 %131 715440 1 0",
+  "owner_absent": true,
+  "direct_children_absent": true,
+  "source_snapshots_match": true,
+  "compiler_identity_unchanged": true,
+  "checked_at": "2026-10-20T10:44:20.259645+00:00",
+  "local_597_match": true,
+  "manifest_reference": ".verify/right_wheel_reference_2026-10-20_r2/quality/expected-source.json",
+  "downloaded": {
+    "result.json": {
+      "bytes": 1814,
+      "sha256": "63af5e943e6c68f310fd515d79e884248f9772ab4b5ab5612d7143c14547d156"
+    },
+    "owner.exit": {
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    "rustc-before.log": {
+      "bytes": 215,
+      "sha256": "e1420abb84497cbf262a0befd0efd96ad407451645417a125f0e711072110dd8"
+    },
+    "fmt.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "clippy.log": {
+      "bytes": 70,
+      "sha256": "f1f6bb9f4c92589d81aca53390edc2bb418ee5ef960ef13dd79d9fbbf4882394"
+    },
+    "rustc-after.log": {
+      "bytes": 215,
+      "sha256": "e1420abb84497cbf262a0befd0efd96ad407451645417a125f0e711072110dd8"
+    }
+  }
+}

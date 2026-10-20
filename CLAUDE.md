@@ -52,13 +52,23 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮准备:  2026-10-20 已核对XLeRobot与Orin实际旧Python的调用链，按原版先启用再发非零SYNC。
+本轮实机:  2026-10-20 新右9顺序尚未执行，初始right7普通速度READ有效原帧为0032（+50）。
+           此前独立读取Mode1/TE0/PP1212；全轮88次普通READ、动作写0，后续UART已封锁。
+           原STOP51全UNKNOWN、模式身份UNKNOWN及NEEDS_MANUAL_POWER_CUT保持，不回填通过。
+           同$94/%130/PID715088自然dead1/exit1，148直属child回收；306原件逐SHA核对。
+           用户10:41UTC确认双电源切断、机械臂和架空底盘稳定支撑；OFF_USER_REPORTED。
+           两串口四锁已释放，仅所属dead pane已清理；此后无UART或自动重试。
+           right_wheel_reference_2026-10-20_r2/summary.json；新顺序未获硬件评价，实际轮动UNKNOWN。
+           原Python没有±50死区或实际停止读回；下一步仅准备左轮位置/速度时序诊断，不放宽停止门。
+           Orin同源597项/最新nightly07e526db9下实际fmt→根Clippy通过；D15及deployable=false不变。
+
+本轮软件:  2026-10-20 已核对XLeRobot与Orin实际旧Python的调用链，按原版先启用再发非零SYNC。
            仅修改既有poke例子和右9维护入口：SYNC0→等待50ms→TE1确认→SYNC500→原有界采样。
            收尾改为SYNC0→TE0，TE0为末写；补右9普通TE同次原帧，停止门和固件合同不改。
            两端同69项维护测试、Orin示例18项/优化构建及fmt→根Clippy、源码独审通过。
            原生ELF22693d15已绑定，PLAN bbeed8f5及62引用/当前USB/两串口四锁核对通过。
-           所属软件进程和pane已清理，复用原target；尚无新GO或UART，待当前现场确认。
-           right_wheel_reference_2026-10-20_r2/summary.json；上轮断电状态不构成新动作授权。
+           所属软件进程和pane已清理，复用原target；以上为本轮实机前的软件准备结果。
+           right_wheel_reference_2026-10-20_r2/summary.json；软件通过不能覆盖上述实机失败。
            不扩展框架或三轮控制，D15 OPEN/DEFERRED、deployable=false保持。
 
 近次实机:  2026-10-20 右9非零候选仅执行一次，预置GV500后TE原帧读回1，提前失败并断扭。

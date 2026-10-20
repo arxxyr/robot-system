@@ -2,7 +2,17 @@
 
 ## 当前步骤
 
-### 对照原版调整右9单次诊断（2026-10-20，软件准备通过，待现场确认）
+### 新顺序在初始左轮读取阶段停止，断电收尾已确认（2026-10-20）
+
+10:38:49UTC收到当次恢复供电、三轮架空、支撑、持续观察及立即断电确认，在原600秒时效内仅启动一次。seq130为左轮right7普通READ地址58、宽2；请求`ff ff 07 04 02 3a 02 b6`，响应`ff ff 07 04 00 32 00 c2`，ID、长度、错误码和校验正确，原字0032解码为+50，与stdout一致。此前独立读取Mode1、TE0、PP1212，不能凭单个位置样本判断运动。原Python解码也返回+50，未发现符号或字节序差异。
+
+全轮88次普通READ，没有WRITE、SYNC_WRITE、启用或断扭命令；`probes=[]`，右9新顺序NOT_RUN。seq130后仅18项非UART收尾，148直属child及296原流全部回收。原STOP51全部UNKNOWN，模式身份UNKNOWN，另93项非UART身份检查通过；这些后验不能覆盖原`NEEDS_MANUAL_POWER_CUT`。10:40:10UTC已观察同`$94/%130/PID715088`自然dead1/exit1；10:41:00UTC收到“双电源已切断、机械臂和底盘仍有稳定支撑”，记OFF_USER_REPORTED，实际电气断电时刻未知。两串口四锁无占用，所属dead pane已清理，没有后续UART或重试。
+
+306份原件450294字节已逐SHA核对，原run SHA保持`32ecc765…377288`。见[本轮摘要](../../.verify/right_wheel_reference_2026-10-20_r2/summary.json)、[原帧独审](../../.verify/right_wheel_reference_2026-10-20_r2/hardware-review.json)和[断电回执](../../.verify/right_wheel_reference_2026-10-20_r2/power-cut-confirmation.json)。本次只补结果记录；Orin同源597项、nightly07e526db9下实际fmt→根Clippy通过，未重跑测试或发布构建，见[提交质量](../../.verify/right_wheel_reference_2026-10-20_r2/commit-quality/result.json)。
+
+对照原版后确认：dimos将PV直接换算为轮速和里程计，通信重试不对非零数值消抖；`write_stop()`仅发送零目标并将缓存速度清零，XLeRobot的`stop_base()`也没有PV停止读回。原版没有可直接移植的“±50即静止”判据。厂家细单位/精度之比约50只支持量化假设，不能证明本轮静止。下一步仅准备right7位置/速度原帧短时序列并同步观察左轮，区分持续位移与静止附近反馈跳变；不重复静态三读、不放宽STOP51、不自动重试右9。新采集须另有当次供电和看护确认；本轮断电回执不授权恢复供电。D15 OPEN/DEFERRED、deployable=false保持。
+
+### 对照原版调整右9单次诊断（2026-10-20，以下为实机执行前准备）
 
 先核对了[XLeRobot固定源码](https://github.com/Vector-Wangel/XLeRobot/blob/b017b5e6354bd9f61f4247a920c72622ca0aade0/software/src/robots/xlerobot/xlerobot.py#L618-L644)和Orin实际安装的`xlerobot-dimos 0.1.0`。后者的`bus2_base.py`与`common/feetech_io/bus.py`已同本地dimos提交`9ece6bd0e1ffda95248820c1e54b23541747cee0`逐文件核SHA：实际路径是SYNC零速、等待50ms、启用，再以GroupSyncWrite发送非零速度；地址46、宽度2字节。官方插件未锁定LeRobot版本，不能把上游当前依赖当成现场安装；已核对的LeRobot 0.6.1/SDK 1.0.0路径也没有隐含TE1写入。
 

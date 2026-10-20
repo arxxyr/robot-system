@@ -1,0 +1,9 @@
+{
+  "source": "用户直接答复call_70940a9f1d744c7a93c896ae1634969b",
+  "answer": "两个电机电源已切断，机械臂和底盘仍有稳定支撑",
+  "received_at_utc": "2026-10-20T10:41:00Z",
+  "state": "OFF_USER_REPORTED",
+  "physical_cut_time_unknown": true,
+  "original_run_not_rewritten": true,
+  "new_uart_after_failure": 0
+}
