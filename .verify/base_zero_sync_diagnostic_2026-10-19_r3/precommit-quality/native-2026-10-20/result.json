@@ -1,0 +1,84 @@
+{
+  "status": "PASS",
+  "steps": [
+    {
+      "name": "nightly-update",
+      "argv": [
+        "rustup",
+        "update",
+        "nightly",
+        "--no-self-update"
+      ],
+      "started_at": "2026-10-20T07:31:54.914581+00:00",
+      "pid": 703193,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T07:32:19.484629+00:00",
+      "reaped": true
+    },
+    {
+      "name": "rustc-before",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T07:32:19.485155+00:00",
+      "pid": 703303,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T07:32:19.509056+00:00",
+      "reaped": true
+    },
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "started_at": "2026-10-20T07:32:19.509747+00:00",
+      "pid": 703309,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T07:32:22.926666+00:00",
+      "reaped": true
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at": "2026-10-20T07:32:23.011516+00:00",
+      "pid": 703382,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T07:36:45.842103+00:00",
+      "reaped": true
+    },
+    {
+      "name": "rustc-after",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T07:36:45.842747+00:00",
+      "pid": 707980,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T07:36:45.865693+00:00",
+      "reaped": true
+    }
+  ],
+  "uart": 0,
+  "services": 0,
+  "tests": 0,
+  "release_builds": 0,
+  "started_at": "2026-10-20T07:31:54.805187+00:00",
+  "source_count": 597,
+  "source_manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "existing_compilers": [],
+  "source_unchanged": true,
+  "finished_at": "2026-10-20T07:36:45.946792+00:00"
+}

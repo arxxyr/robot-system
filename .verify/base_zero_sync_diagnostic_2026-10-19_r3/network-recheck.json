@@ -1,0 +1,12 @@
+{
+  "checked_at_utc": "2026-10-19T06:22:02.165424+00:00",
+  "gateway": [
+    {
+      "name": "docker-server",
+      "online": false,
+      "last_seen": "2026-10-19T14:15:47.142295208+08:00"
+    }
+  ],
+  "new_hardware_trial_started": false,
+  "network_configuration_changed": false
+}

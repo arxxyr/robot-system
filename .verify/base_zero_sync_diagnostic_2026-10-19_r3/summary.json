@@ -1,0 +1,109 @@
+{
+  "status": "COLLECTED_REVIEWED_DIAGNOSTIC_AND_STOP_PASS_PHYSICAL_UNKNOWN",
+  "scope": "仅右9/base_right_wheel一次单ID9 SYNC_WRITE Goal_Velocity0（无ACK）→发送完成后至少50ms→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑",
+  "preparation": {
+    "path": ".verify/base_zero_sync_diagnostic_2026-10-19_r3/preparation.json",
+    "bytes": 30922,
+    "sha256": "b918a25e92b6c2225b5c0bb4e8b11b37c087af8b8e48a25f9cd58ddb81d73a5c"
+  },
+  "plan": {
+    "path": ".verify/base_zero_sync_diagnostic_2026-10-19_r3/plan.json",
+    "bytes": 40851,
+    "sha256": "ea6a013efc72d67b7d35f146a352509818ae686dad2c31222079a68ca8c85827"
+  },
+  "collection": {
+    "path": ".verify/base_zero_sync_diagnostic_2026-10-19_r3/collection.json",
+    "bytes": 7835,
+    "sha256": "3eb0ede54a576af204616a2d42879b3128072bba26d872e4eda074cadd08db26"
+  },
+  "candidate_unchanged": true,
+  "new_build": false,
+  "new_approval": true,
+  "history_findings": [
+    {
+      "source": ".verify/base_feedback_diagnostic_2026-10-13_r1/summary.json",
+      "fact": "本轮没有写入或Enable，初始right7普通PV读回-50；此前TE0，GV未读，无该PV原帧。"
+    },
+    {
+      "source": ".verify/base_zero_sync_diagnostic_2026-10-13_r1_hardware/originals/base-zero-sync-diagnostic-r1/run.json",
+      "fact": "仅right9有三写，right9启用中三PV0；未启用right8最终TE0、PP3773，seq311有效原帧0032即+50，最终GV未读。",
+      "front_read_after_right9_disable_command_ms": 1077.636263
+    }
+  ],
+  "inference": "±50在本轮尚未Enable或整轮零写入时也曾出现，不能仅归因于本轮Enable；原字0032/8032与±50解码一致，尚无具体解码错误或物理运动证据。",
+  "chosen_next_trial": "完全复用原right9 SYNC零值500ms候选及原17电机前后停止检查；现场从启动前至停止检查结束持续观察右轮和前轮，以现有轮面纹理及固定参照判断可见移动。",
+  "not_added": [
+    "独立静态三读",
+    "新的诊断CLI或连接框架",
+    "启用窗口内额外PP/PV读取",
+    "Phase/模式/固件/停止门变更"
+  ],
+  "interpretation_boundary": "看见转动才记录可见移动；未看见不能证明持续静止或反馈虚假。即使单轮子项通过，仍保留原整轮判据和底盘固件合同未验证状态。",
+  "field_confirmation": {
+    "received_at_utc": "2026-10-19T06:12:30Z",
+    "valid_until_utc": "2026-10-19T06:22:30Z",
+    "source_question_id": "call_558d036c823d4f3cb8ff78a1ff1fb9f3",
+    "answer": "全部就绪，能持续看清右轮和前轮，可执行一次"
+  },
+  "D15": "OPEN_DEFERRED",
+  "deployable": false,
+  "uart_executed": true,
+  "hardware_observed_before_network_loss": {
+    "source": "本轮已完成的远端原run读取及同tmux终态观察；原文件尚待完整取回，不替代本地原帧复核",
+    "remote_root": "/home/loosqk/robot-checks/base-zero-sync-20261019-r3",
+    "driver_pid": 698162,
+    "tmux_session": "$84",
+    "tmux_pane": "%120",
+    "tmux_name": "base-zero-sync-20261019-r3",
+    "launched_at_ns": 1792390389694191464,
+    "terminal_observed_at_ns": 1792390405931128613,
+    "pane_dead": true,
+    "exit_code": 1,
+    "zero_diag_status": "PASS",
+    "right9_active_pv_raw": [
+      0,
+      0,
+      0
+    ],
+    "stop_verification_status": "PASS",
+    "zero_stop_readbacks": 51,
+    "identity_verification_status": "PASS",
+    "manual_power_cut_required": false,
+    "child_active": false,
+    "received_signal": null,
+    "evidence_errors": [],
+    "original_result": "FAIL",
+    "original_failure_reason": "BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse",
+    "diagnostic_interpretation": "本次未复现±50；仅右轮零目标启用诊断及原整机停止子项通过，不能外推三轮固件合同或实际运动闭环。"
+  },
+  "physical_observation": {
+    "status": "UNKNOWN",
+    "source_question_id": "call_d7ed106c350148b7aa18b65055ded6cd",
+    "answer": "再试一下",
+    "interpretation": "只授权再做一次；没有回答上轮轮动情况，不能写成未见转动。"
+  },
+  "repeat_request": {
+    "authorized": true,
+    "started": false,
+    "blocker": "网络已恢复；新的现场事实及独立GO尚未产生，R4未执行。",
+    "user_network_answer": "刚才碰到电源了，你再测一下网络",
+    "next_step": "先恢复既有连接、核同一已退出进程并取回原件；仍用原候选，只更换独立输出与GO。现场事实过期或状态改变时须重新确认，不续写旧时间戳。"
+  },
+  "remaining": [
+    "R4已准备，须当前现场确认后执行已授权一次重复试验",
+    "±50根因、三轮固件合同及实际运动闭环仍待实证"
+  ],
+  "commit_quality": {
+    "status": "PASS",
+    "path": ".verify/base_zero_sync_diagnostic_2026-10-19_r3/precommit-quality/native-2026-10-20/result.json",
+    "source_count": 597,
+    "source_manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+    "nightly": "07e526db9",
+    "previous_network_not_run": "precommit-quality/network-not-run.json"
+  },
+  "updated_at_utc": "2026-10-19T06:21:51.196477+00:00",
+  "hardware_collection": "hardware-collection.json",
+  "terminal_and_release": "terminal-and-release.json",
+  "raw_review": "review.json",
+  "collection_completed_on_utc_date": "2026-10-20"
+}

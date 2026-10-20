@@ -1,0 +1,15 @@
+[
+  "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+  "-B",
+  "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+  "--maintenance",
+  "/home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py",
+  "--raw-helper",
+  "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py",
+  "--bindings",
+  "/home/loosqk/robot-checks/base-front-pv-compare-r1/current-bindings.json",
+  "--output",
+  "/home/loosqk/robot-checks/base-zero-sync-20261020-r4/base-zero-sync-diagnostic-r1",
+  "--artifact-root",
+  "/home/loosqk/robot-checks/base-zero-sync-20261020-r4"
+]

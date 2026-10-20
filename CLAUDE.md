@@ -50,7 +50,18 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-19 前轮right8三项只读实机通过：TE=0，SYNC/普通PV原字均0000。
+本轮最新:  2026-10-20 网络恢复，10/19右9原SYNC零速R3的691原件/941208B已回收并逐SHA核对。
+           独立原帧复核通过：仅右9三写，SYNC后540.9ms才尝试Enable，TE1/TE0应答有效。
+           三次启用PV原字均0，最晚411.7ms完成；STOP51全零、93项身份后验通过，337直属child回收。
+           原run整体FAIL仅因BASE_FIRMWARE_CONTRACT_UNVERIFIED，人工断电标志false；不改写原结果。
+           同$84/%120/PID698162终态复核、PID消失、两串口四锁无占用，已清理仅本次dead pane。
+           用户对轮动观察答“再试一下”，R3实际轮动仍UNKNOWN；±50本次未复现，原因仍OPEN。
+           base_zero_sync_diagnostic_2026-10-19_r3/summary.json；原网络NOT_RUN保留，当前提交质量检查通过。
+           Orin最新nightly 07e526db9下实际fmt→根Clippy零警告，597源前后同ae00cf4f。
+           R4复用原候选，仅改输出路径；61refs/保护和两USB匹配，尚无新现场确认/GO/UART。
+           D15 OPEN/DEFERRED、deployable=false不变；下一步等待R4当前现场确认。
+
+近次只读:  2026-10-19 前轮right8三项只读实机通过：TE=0，SYNC/普通PV原字均0000。
            当次现场确认后复用既有b2入口，05:55:16–19UTC完成，九发九收校验正确。
            三工具及driver退出0，99直属child回收；六项非UART后验及串口/四锁释放通过。
            原帧和必要日志保留在base_front_pv_compare_2026-10-13_r1/hardware-2026-10-19。

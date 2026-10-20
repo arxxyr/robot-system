@@ -1,0 +1,18 @@
+{
+  "status": "PREPARED_NOT_EXECUTED",
+  "scope": "仅右9/base_right_wheel一次单ID9 SYNC_WRITE Goal_Velocity0（无ACK）→发送完成后至少50ms→Enable→500ms原PV观察→Disable及原STOP51；可能转动，三轮须已离地且底盘稳定支撑",
+  "plan_sha256": "b368a3dbfb7ff7efc33fa9d7204b36d9b77368eff0e84009bbd6b67031e30e1e",
+  "candidate_reused_from": ".verify/xlerobot_sync_zero_2026-10-13_software/diagnostic-candidate/base_zero_sync_diagnostic_r1.py",
+  "plan_changes_from_r3": [
+    "artifact_root",
+    "output"
+  ],
+  "readiness": "readiness.json",
+  "new_uart": 0,
+  "go_created": false,
+  "physical_confirmation": "PENDING_CURRENT_FIELD_FACTS",
+  "reason_current_confirmation_needed": "前次现场确认是2026-10-19，已超出原入口600秒时效，期间用户报告碰到电源；不能将继续或再试一下当作当前物理条件就绪。",
+  "D15": "OPEN_DEFERRED",
+  "deployable": false,
+  "commit_quality_ref": ".verify/base_zero_sync_diagnostic_2026-10-19_r3/precommit-quality/native-2026-10-20/result.json"
+}
