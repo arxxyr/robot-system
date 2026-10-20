@@ -2,7 +2,19 @@
 
 ## 当前步骤
 
-### 右9单次非零诊断的软件及执行准备通过，实机待当前现场确认（2026-10-20）
+### 右9非零诊断在预置后失败，人工断电及两轮未动已确认（2026-10-20）
+
+09:14:13UTC记录当次供电、三轮架空、支撑、持续观察及立即断电确认，仅启动一次已准备的右9诊断。型号777、FW3.10、Mode1、Phase12、Lock1及初始TE/PV/GV零均读回；seq173普通WRITE向地址46写500并获有效ACK，seq174原帧确认GV500，seq175原帧却读到TE1。脚本报“预置后不是断扭”，计划中的显式Enable及500ms内两对PV/PP采样均未执行，不能称为完成一次非零转动。
+
+本轮实际写帧仅右9 GV500、TE0、SYNC GV0三次，没有TE1写。f201对应历史b01603b源码的连接只做PING/型号READ，指定写入口未发现隐含启用。seq176独立TE0获ACK，seq177/178原帧为TE0/PV0；随后seq179 SYNC清目标，seq180原帧确认GV0。然而最终seq278普通READ输出`Torque_Enable@9 = 1`，其后UART粘性封锁。该末次TE只有原stdout、没有同次strace原帧；两次TE1与写目标速度的时间关联不能直接认定为固件自动启用。其余16电机48停止值零，右9的后续PV/GV未读取，原STOP UNKNOWN及`NEEDS_MANUAL_POWER_CUT`保持。
+
+09:15:25UTC已观察同`$89/%125/PID710022`自然dead1/exit1，296直属child结束，93项身份后验通过。608份原件共795442字节已回收逐SHA核对；所属PID消失、两串口四锁无人占用，仅所属dead pane已清理。09:16:48UTC收到用户“双电源已切断，机械臂和底盘仍有稳定支撑”的回执，之后用户报告“两轮都没动”，仅记本次右轮/前轮的现场观察。当前OFF_USER_REPORTED，实际电气断电时刻无遥测；不覆盖原失败，也不回填此前轮动UNKNOWN。原终态收集文件内当时的断电PENDING保留，以后续独立回执补充。
+
+见[本轮摘要](../../.verify/right_wheel_pulse_2026-10-20_r1/summary.json)、[原始run](../../.verify/right_wheel_pulse_2026-10-20_r1/hardware/run.json)及[现场观察](../../.verify/right_wheel_pulse_2026-10-20_r1/physical-observation.json)。本次收尾后无新UART或重试，未改驱动或参数。下一步只核实FW3.10/Phase12下GV写与TE反馈变化的关系，相关读取保留实际收发；不增加速度、不放宽预置或停止条件、不扩展三轮控制。D15 OPEN/DEFERRED、deployable=false保持。
+
+独立复核及root均核对608份原件，原run SHA仍为69e08d25…17108b2，原帧和普通READ输出的边界见[硬件证据复核](../../.verify/right_wheel_pulse_2026-10-20_r1/hardware-review.json)。本次仅补诊断记录；09:23:03UTC Orin实际fmt→根Clippy通过，597项源ae00cf4f及nightly07e526db9前后不变，两份Python另核未变，见[提交质量](../../.verify/right_wheel_pulse_2026-10-20_r1/commit-quality/result.json)。未重跑测试或新建发布产物，软件检查不覆盖本轮停止失败。
+
+### 右9单次非零诊断的软件及执行准备（2026-10-20，以下为实机执行前记录）
 
 按用户要求使动作可见，只在既有 `run_hardware_maintenance.py` 增加固定 `--right-wheel-pulse` 选择，与位置选择互斥，默认路径不变。复用f201普通写、b2原帧读取/SYNC清零和原raw helper/strace；无新ELF、连接框架、服务或生产Velocity接入。右9型号777/FW3.10/Mode1/Phase12/Lock1需当次匹配，断扭时预置+500raw并读回，启用尝试起100/400ms各取PV与PP，两对必须在500ms内完成，采完即断扭；500ms不是精确运行时长，1秒失败门也不是硬件截止保证。运动中反馈限于正向0–1000raw及单圈差值0–512，需观察到正向速度和位置变化；该判据与停止零值门分开，不把旧静止±50改判正常。
 

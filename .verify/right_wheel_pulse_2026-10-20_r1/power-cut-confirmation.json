@@ -1,0 +1,9 @@
+{
+  "received_at_utc": "2026-10-20T09:16:48Z",
+  "question_id": "call_44d32361dfec4e09801b17994294b263",
+  "reply": "两个电机电源已切断，机械臂和底盘仍有稳定支撑",
+  "state": "OFF_USER_REPORTED",
+  "actual_power_cut_time": "UNKNOWN",
+  "original_run_unchanged": true,
+  "new_uart": 0
+}

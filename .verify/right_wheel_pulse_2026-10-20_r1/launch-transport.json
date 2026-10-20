@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"recorded_at_ns\": 1792487704768554362, \"session\": \"right-wheel-pulse-20261020-r1\", \"identity\": \"right-wheel-pulse-20261020-r1 $89 %125 710022\", \"launch_exit\": 0, \"stderr\": \"\", \"argv\": [\"/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3\", \"-B\", \"/home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/software/scripts/run_hardware_maintenance.py\", \"--bindings\", \"/home/loosqk/robot-checks/base-front-pv-compare-r1/current-bindings.json\", \"--output\", \"/home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/hardware\", \"--run-id\", \"right-wheel-pulse-r1\", \"--artifact-root\", \"/home/loosqk/robot-checks/right-wheel-pulse-20261020-r1\", \"--right-wheel-pulse\", \"--approval\", \"/home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/go.json\", \"--execute\"], \"driver_log\": \"/home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/driver.log\", \"output\": \"/home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/hardware\"}\n",
+  "stderr": ""
+}

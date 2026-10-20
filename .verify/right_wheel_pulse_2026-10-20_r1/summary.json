@@ -1,6 +1,6 @@
 {
-  "status": "SOFTWARE_AND_EXECUTION_PREPARATION_PASS_HARDWARE_PENDING",
-  "scope": "现有维护入口仅右9一次+500原始值；100/400ms各读PV及PP，500ms采样完成窗口，采完先TE0；确认TE/PV为零后SYNC清目标，原STOP51及身份后验",
+  "status": "HARDWARE_FAILED_POWER_OFF_USER_REPORTED",
+  "scope": "已授权右9一次+500原始值诊断；实际在预置后TE读回1时失败，显式Enable及运动采样未执行",
   "source": [
     "scripts/run_hardware_maintenance.py",
     "scripts/tests/test_hardware_maintenance.py"
@@ -11,10 +11,9 @@
     "四动作写须保留同次strace原帧",
     "常规UART返回后须验证GO期限，超期记FAIL并保留TE0收尾"
   ],
-  "hardware_executed": false,
-  "new_uart": 0,
-  "go_created": false,
-  "physical_confirmation": "PENDING_CURRENT_FIELD_FACTS",
+  "hardware_executed": true,
+  "go_created": true,
+  "physical_confirmation": "field-confirmation.json",
   "firmware_contract_verified": false,
   "D15": "OPEN_DEFERRED",
   "deployable": false,
@@ -42,5 +41,107 @@
       "sha256": "fed9f7fe25fb8864da34c79733b3a9b18351e94c56e19110bb451067660d9aa5"
     }
   },
-  "initial_review_findings_resolved": true
+  "initial_review_findings_resolved": true,
+  "physical_observation": "physical-observation.json",
+  "power_cut_confirmation": "power-cut-confirmation.json",
+  "current_power_state": "OFF_USER_REPORTED",
+  "original_result": "NEEDS_MANUAL_POWER_CUT",
+  "original_manual_power_cut_required": true,
+  "original_run": "hardware/run.json",
+  "original_run_sha256": "69e08d257f5a3163a1deada06ef348e9ecea0c17f4161158f2c93062517108b2",
+  "original_run_unchanged": true,
+  "hardware_review": "hardware-review.json",
+  "hardware_collection": "hardware-collection.json",
+  "commit_quality": "commit-quality/result.json",
+  "new_uart_after_failure": 0,
+  "retry_count": 0,
+  "observed_sequence": [
+    {
+      "sequence": 169,
+      "kind": "SYNC_READ原帧",
+      "register": "Torque_Enable",
+      "value": 0
+    },
+    {
+      "sequence": 173,
+      "kind": "普通WRITE原帧及ACK",
+      "register": "Goal_Velocity",
+      "value": 500
+    },
+    {
+      "sequence": 174,
+      "kind": "SYNC_READ原帧",
+      "register": "Goal_Velocity",
+      "value": 500
+    },
+    {
+      "sequence": 175,
+      "kind": "SYNC_READ原帧",
+      "register": "Torque_Enable",
+      "value": 1
+    },
+    {
+      "sequence": 176,
+      "kind": "普通WRITE原帧及ACK",
+      "register": "Torque_Enable",
+      "value": 0
+    },
+    {
+      "sequence": 177,
+      "kind": "SYNC_READ原帧",
+      "register": "Torque_Enable",
+      "value": 0
+    },
+    {
+      "sequence": 178,
+      "kind": "SYNC_READ原帧",
+      "register": "Present_Velocity",
+      "value": 0
+    },
+    {
+      "sequence": 179,
+      "kind": "SYNC_WRITE原帧，无ACK",
+      "register": "Goal_Velocity",
+      "value": 0
+    },
+    {
+      "sequence": 180,
+      "kind": "SYNC_READ原帧",
+      "register": "Goal_Velocity",
+      "value": 0
+    },
+    {
+      "sequence": 278,
+      "kind": "普通READ的stdout，没有同次strace原帧",
+      "register": "Torque_Enable",
+      "value": 1
+    }
+  ],
+  "actual_enable_writes": 0,
+  "active_pv_pp_samples": 0,
+  "stop": {
+    "original_status": "UNKNOWN",
+    "accepted_zero_registers": 48,
+    "expected_registers": 51,
+    "right9_pv_gv_after_te_failure": "BLOCKED"
+  },
+  "identity_checks": {
+    "status": "PASS",
+    "count": 93
+  },
+  "release": {
+    "source": "terminal-and-release.json",
+    "terminal": "$89/%125/PID710022 dead1/exit1",
+    "driver_absent": true,
+    "serial_and_four_locks_free": true,
+    "own_dead_pane_removed": true,
+    "later_power_ack_does_not_rewrite_original_pending": true
+  },
+  "source_review": {
+    "tool_sha256": "f2014ee4008311e7a8725235a39f0d1b3913391f17cbd977b7441f120539114b",
+    "source_commit": "b01603b",
+    "finding": "对应历史源码连接仅PING和型号READ，指定写入口只写指定寄存器；三条实际写帧均无TE1，不认定固件自动使能"
+  },
+  "unresolved": "写GV后TE读回1的原因，以及旧±50，均UNKNOWN；现场未见运动不能证明断扭",
+  "next_step": "只核对FW3.10/Phase12下GV写与TE反馈的关系并补相关实际收发；不重跑非零动作或重复静态三读，不加速、不放宽预置和停止门"
 }

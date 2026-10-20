@@ -50,20 +50,23 @@
 ```
 设计版本:  v0.1.2（冻结）
 
-本轮最新:  2026-10-20 右9原SYNC零速R4仅执行一次，PV三次原字均0；STOP51和93项身份通过。
-           337直属child回收；同$86/%122/PID708705终态dead1/exit1、PID消失、两串口四锁释放已核。
-           692份原件942266B已逐SHA回收及独立复核；仅本次dead pane已清理。
-           用户明确报告右轮/前轮都没动；该物理观察仅计R4，不回填R3 UNKNOWN或历史±50。
-           原整体FAIL仅因BASE_FIRMWARE_CONTRACT_UNVERIFIED，manual_power_cut_required=false。
-           base_zero_sync_diagnostic_2026-10-20_r4/summary.json；±50未复现，根因仍OPEN。
-           既有维护脚本新增固定--right-wheel-pulse：右9预置+500raw，Enable起500ms内两对PV/PP，
-           采完立即TE0，确认TE/PV零后才SYNC清GV，再原STOP51；无Phase/模式或其他电机写。
-           本机/Orin同62项、默认PLAN/缺GO拒绝、独审及61refs/当前USB无UART准备通过。
-           维护脚本b3296137/测试fed9f7fe；PLAN450df179，right_wheel_pulse_2026-10-20_r1/summary.json。
-           原pulse的raw20/150ms若细单位成立仅约0.26°，PV≤40又小于厂家约50raw精度；
-           量化仅为假设，不解释静止异常或放宽STOP51。非零动作未执行，等待当前现场条件。
-           Rust未改；nightly07e526db9下实际fmt→根Clippy通过，597源同ae00cf4f，两Python另核。
-           D15 OPEN/DEFERRED、deployable=false保持。
+本轮最新:  2026-10-20 右9非零候选仅执行一次，预置GV500后TE原帧读回1，提前失败并断扭。
+           实际三写原帧为GV500→TE0→SYNC GV0，没有TE1写；计划Enable及500ms采样均NOT_RUN。
+           TE0后TE/PV原帧均零，但SYNC清目标后最终普通READ的TE又为1；该末读无strace原帧。
+           两次TE1与GV写仅有时间关联，工具源码/三写帧未发现隐含启用，固件根因仍UNKNOWN。
+           其余16电机48停止值零，右9随后PV/GV封锁；原STOP UNKNOWN、NEEDS_MANUAL_POWER_CUT保持。
+           同$89/%125/PID710022终态dead1/exit1、PID消失、两串口四锁释放及93项身份通过；
+           608份原件795442B已逐SHA回收，296直属child结束，仅清理所属dead pane。
+           用户已确认双电源切断、双臂和架空底盘稳定支撑，并报告本次右轮/前轮都没动。
+           OFF_USER_REPORTED，不回填原FAIL或历史轮动；此后新UART0、未重试。
+           right_wheel_pulse_2026-10-20_r1/summary.json；下一步只核GV写与TE变化关系，
+           不再加大速度，不把“预置后TE1”放行，不放宽停止门；D15 OPEN/DEFERRED、deployable=false。
+
+近次零速:  2026-10-20 原SYNC零速R4的PV三次均0、STOP51及93项身份通过，用户报告两轮没动。
+           692份原件已回收复核；原整体FAIL仅因BASE_FIRMWARE_CONTRACT_UNVERIFIED，manual标志false。
+           base_zero_sync_diagnostic_2026-10-20_r4/summary.json；不回填R3 UNKNOWN或历史±50。
+           随后非零候选软件本机/Orin同62项、默认PLAN/缺GO拒绝及独审通过；该结果不等于实机通过。
+           源码b3296137/fed9f7fe；nightly07e526db9下实际fmt→根Clippy通过，597源同ae00cf4f。
 
 近次只读:  2026-10-19 前轮right8三项只读实机通过：TE=0，SYNC/普通PV原字均0000。
            当次现场确认后复用既有b2入口，05:55:16–19UTC完成，九发九收校验正确。

@@ -1,0 +1,91 @@
+{
+  "status": "PASS",
+  "steps": [
+    {
+      "name": "rustc-before",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T09:22:58.949945+00:00",
+      "pid": 710560,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T09:22:58.975015+00:00",
+      "reaped": true
+    },
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "started_at": "2026-10-20T09:22:58.975971+00:00",
+      "pid": 710566,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T09:23:02.361351+00:00",
+      "reaped": true
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at": "2026-10-20T09:23:02.444514+00:00",
+      "pid": 710577,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T09:23:03.177850+00:00",
+      "reaped": true
+    },
+    {
+      "name": "rustc-after",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-20T09:23:03.178500+00:00",
+      "pid": 710593,
+      "exit_code": 0,
+      "finished_at": "2026-10-20T09:23:03.201548+00:00",
+      "reaped": true
+    }
+  ],
+  "uart": 0,
+  "services": 0,
+  "tests": 0,
+  "release_builds": 0,
+  "started_at": "2026-10-20T09:22:58.844998+00:00",
+  "source_count": 597,
+  "source_manifest_sha256": "ae00cf4f50d50e96de18a41ac362fc363851f2087afee04b01744bea11b68ee5",
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "existing_compilers": [],
+  "python_inputs_before": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "b32961374bba0b1fc910983202171d50157b2192f7493700b95efc98ebd62ff3",
+      "bytes": 69383
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "fed9f7fe25fb8864da34c79733b3a9b18351e94c56e19110bb451067660d9aa5",
+      "bytes": 67982
+    }
+  },
+  "python_included_in_597": false,
+  "python_inputs_after": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "b32961374bba0b1fc910983202171d50157b2192f7493700b95efc98ebd62ff3",
+      "bytes": 69383
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "fed9f7fe25fb8864da34c79733b3a9b18351e94c56e19110bb451067660d9aa5",
+      "bytes": 67982
+    }
+  },
+  "source_unchanged": true,
+  "finished_at": "2026-10-20T09:23:03.283568+00:00"
+}
